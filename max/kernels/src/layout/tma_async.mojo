@@ -988,12 +988,7 @@ struct TMATensorTile[
         eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
     ](
         self,
-        dst: TileTensor[
-            mut=True,
-            dtype=Self.dtype,
-            address_space=.SHARED,
-            ...,
-        ],
+        dst: TileTensor[mut=True, Self.dtype, address_space=.SHARED, ...],
         ref[AddressSpace.SHARED] mem_barrier: SharedMemBarrier,
         coords: Tuple[Int, Int],
     ):
@@ -1043,12 +1038,7 @@ struct TMATensorTile[
         eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
     ](
         self,
-        dst: TileTensor[
-            mut=True,
-            dtype=Self.dtype,
-            address_space=.SHARED,
-            ...,
-        ],
+        dst: TileTensor[mut=True, Self.dtype, address_space=.SHARED, ...],
         ref[AddressSpace.SHARED] mem_barrier: SharedMemBarrier,
         coords: Tuple[Int, Int],
         elect: Int32,
@@ -1265,12 +1255,7 @@ struct TMATensorTile[
         eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
     ](
         self,
-        dst: TileTensor[
-            mut=True,
-            dtype=Self.dtype,
-            address_space=.SHARED,
-            ...,
-        ],
+        dst: TileTensor[mut=True, Self.dtype, address_space=.SHARED, ...],
         ref[AddressSpace.SHARED] mem_barrier: SharedMemBarrier,
         coords: Tuple[Int, Int, Int],
     ):
@@ -1336,12 +1321,7 @@ struct TMATensorTile[
         eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
     ](
         self,
-        dst: TileTensor[
-            mut=True,
-            dtype=Self.dtype,
-            address_space=.SHARED,
-            ...,
-        ],
+        dst: TileTensor[mut=True, Self.dtype, address_space=.SHARED, ...],
         ref[AddressSpace.SHARED] mem_barrier: SharedMemBarrier,
         coords: Tuple[Int, Int, Int],
         elect: Int32,
@@ -1569,12 +1549,7 @@ struct TMATensorTile[
         eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
     ](
         self,
-        dst: TileTensor[
-            mut=True,
-            dtype=Self.dtype,
-            address_space=.SHARED,
-            ...,
-        ],
+        dst: TileTensor[mut=True, Self.dtype, address_space=.SHARED, ...],
         ref[AddressSpace.SHARED] mem_barrier: SharedMemBarrier,
         coords: Tuple[Int, Int, Int, Int],
     ):
@@ -1645,12 +1620,7 @@ struct TMATensorTile[
         eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
     ](
         self,
-        dst: TileTensor[
-            mut=True,
-            dtype=Self.dtype,
-            address_space=.SHARED,
-            ...,
-        ],
+        dst: TileTensor[mut=True, Self.dtype, address_space=.SHARED, ...],
         ref[AddressSpace.SHARED] mem_barrier: SharedMemBarrier,
         coords: Tuple[Int, Int, Int, Int],
         elect: Int32,
@@ -1894,12 +1864,7 @@ struct TMATensorTile[
         eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
     ](
         self,
-        dst: TileTensor[
-            mut=True,
-            dtype=Self.dtype,
-            address_space=.SHARED,
-            ...,
-        ],
+        dst: TileTensor[mut=True, Self.dtype, address_space=.SHARED, ...],
         ref[AddressSpace.SHARED] mem_barrier: SharedMemBarrier,
         coords: Tuple[Int, Int, Int, Int, Int],
     ):
@@ -1975,12 +1940,7 @@ struct TMATensorTile[
         eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
     ](
         self,
-        dst: TileTensor[
-            mut=True,
-            dtype=Self.dtype,
-            address_space=.SHARED,
-            ...,
-        ],
+        dst: TileTensor[mut=True, Self.dtype, address_space=.SHARED, ...],
         ref[AddressSpace.SHARED] mem_barrier: SharedMemBarrier,
         coords: Tuple[Int, Int, Int, Int, Int],
         elect: Int32,
@@ -2213,12 +2173,7 @@ struct TMATensorTile[
         eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
     ](
         self,
-        dst: TileTensor[
-            mut=True,
-            dtype=Self.dtype,
-            address_space=.SHARED,
-            ...,
-        ],
+        dst: TileTensor[mut=True, Self.dtype, address_space=.SHARED, ...],
         ref[AddressSpace.SHARED] mem_barrier: SharedMemBarrier,
         coords: StaticTuple[UInt32, coord_rank],
     ):
@@ -2285,12 +2240,7 @@ struct TMATensorTile[
         eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
     ](
         self,
-        dst: TileTensor[
-            mut=True,
-            dtype=Self.dtype,
-            address_space=.SHARED,
-            ...,
-        ],
+        dst: TileTensor[mut=True, Self.dtype, address_space=.SHARED, ...],
         ref[AddressSpace.SHARED] mem_barrier: SharedMemBarrier,
         coords: StaticTuple[UInt32, coord_rank],
         elect: Int32,
@@ -2647,7 +2597,7 @@ struct TMATensorTile[
         coord_rank: Int, //, cta_group: Int = 1
     ](
         self,
-        dst: TileTensor[dtype=Self.dtype, address_space=.SHARED, ...],
+        dst: TileTensor[Self.dtype, address_space=.SHARED, ...],
         coords: StaticTuple[UInt32, coord_rank],
     ):
         """Schedules an asynchronous store from shared memory to global memory.
@@ -2754,12 +2704,7 @@ struct TMATensorTile[
         cta_group: Int = 1,
     ](
         self,
-        dst: TileTensor[
-            mut=True,
-            dtype=Self.dtype,
-            address_space=.SHARED,
-            ...,
-        ],
+        dst: TileTensor[mut=True, Self.dtype, address_space=.SHARED, ...],
         ref[AddressSpace.SHARED] mem_barrier: SharedMemBarrier,
         coords: Tuple[Int, Int],
         multicast_mask: UInt16,
@@ -2896,12 +2841,7 @@ struct TMATensorTile[
         cta_group: Int = 1,
     ](
         self,
-        dst: TileTensor[
-            mut=True,
-            dtype=Self.dtype,
-            address_space=.SHARED,
-            ...,
-        ],
+        dst: TileTensor[mut=True, Self.dtype, address_space=.SHARED, ...],
         ref[AddressSpace.SHARED] mem_barrier: SharedMemBarrier,
         coords: Tuple[Int, Int, Int],
         multicast_mask: UInt16,
@@ -2965,12 +2905,7 @@ struct TMATensorTile[
         cta_group: Int = 1,
     ](
         self,
-        dst: TileTensor[
-            mut=True,
-            dtype=Self.dtype,
-            address_space=.SHARED,
-            ...,
-        ],
+        dst: TileTensor[mut=True, Self.dtype, address_space=.SHARED, ...],
         ref[AddressSpace.SHARED] mem_barrier: SharedMemBarrier,
         coords: Tuple[Int, Int, Int, Int],
         multicast_mask: UInt16,
@@ -3099,12 +3034,7 @@ struct TMATensorTile[
         tma_load_size: Int,
     ](
         self,
-        dst: TileTensor[
-            mut=True,
-            dtype=Self.dtype,
-            address_space=.SHARED,
-            ...,
-        ],
+        dst: TileTensor[mut=True, Self.dtype, address_space=.SHARED, ...],
         ref[AddressSpace.SHARED] mem_barrier: SharedMemBarrier,
         cta_rank: Int,
         coords: Tuple[Int, Int],
@@ -3198,7 +3128,7 @@ struct TMATensorTile[
     @always_inline
     def async_store(
         self,
-        src: TileTensor[dtype=Self.dtype, address_space=.SHARED, ...],
+        src: TileTensor[Self.dtype, address_space=.SHARED, ...],
         coords: Tuple[Int, Int],
     ):
         """
@@ -3309,7 +3239,7 @@ struct TMATensorTile[
     @always_inline
     def async_store_3d(
         self,
-        src: TileTensor[dtype=Self.dtype, address_space=.SHARED, ...],
+        src: TileTensor[Self.dtype, address_space=.SHARED, ...],
         coords: Tuple[Int, Int, Int],
     ):
         """
@@ -3427,7 +3357,7 @@ struct TMATensorTile[
     @always_inline
     def async_store_4d(
         self,
-        src: TileTensor[dtype=Self.dtype, address_space=.SHARED, ...],
+        src: TileTensor[Self.dtype, address_space=.SHARED, ...],
         coords: Tuple[Int, Int, Int, Int],
     ):
         """
@@ -6499,12 +6429,7 @@ struct TMATensorTileIm2col[
         eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
     ](
         self,
-        dst: TileTensor[
-            mut=True,
-            dtype=Self.dtype,
-            address_space=.SHARED,
-            ...,
-        ],
+        dst: TileTensor[mut=True, Self.dtype, address_space=.SHARED, ...],
         ref[AddressSpace.SHARED] mem_barrier: SharedMemBarrier,
         coords: Tuple[Int, Int],
     ):
@@ -6606,12 +6531,7 @@ struct TMATensorTileIm2col[
         eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
     ](
         self,
-        dst: TileTensor[
-            mut=True,
-            dtype=Self.dtype,
-            address_space=.SHARED,
-            ...,
-        ],
+        dst: TileTensor[mut=True, Self.dtype, address_space=.SHARED, ...],
         ref[AddressSpace.SHARED] mem_barrier: SharedMemBarrier,
         coords: Tuple[Int, Int],
         multicast_mask: UInt16,

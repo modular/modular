@@ -517,7 +517,7 @@ struct BF16TokenFormat[
     comptime dispatch_smem_size = 0
 
     comptime TensorType = TileTensor[
-        DType.bfloat16, Self.output_layout, MutUntrackedOrigin
+        .bfloat16, Self.output_layout, MutUntrackedOrigin
     ]
     var output_tokens: Self.TensorType
 
@@ -551,10 +551,7 @@ struct BF16TokenFormat[
     def __init__(
         out self,
         output_tokens: TileTensor[
-            DType.bfloat16,
-            Self.output_layout,
-            Storage=PointerStorage[],
-            ...,
+            .bfloat16, Self.output_layout, Storage=PointerStorage[], ...
         ],
     ):
         self.output_tokens = {
@@ -699,16 +696,10 @@ struct BlockwiseFP8TokenFormat[
     def __init__(
         out self,
         output_tokens: TileTensor[
-            Self.fp8_dtype,
-            Self.output_layout,
-            Storage=PointerStorage[],
-            ...,
+            Self.fp8_dtype, Self.output_layout, Storage=PointerStorage[], ...
         ],
         output_scales: TileTensor[
-            Self.scales_dtype,
-            Self.scales_layout,
-            Storage=PointerStorage[],
-            ...,
+            Self.scales_dtype, Self.scales_layout, Storage=PointerStorage[], ...
         ],
     ):
         self.output_tokens = {
@@ -926,7 +917,7 @@ struct NVBlockScaledTokenFormat[
         Self.quant_dtype, Self.output_layout, MutUntrackedOrigin
     ]
     comptime ScalesOffsetTensorType = TileTensor[
-        DType.uint32, Self.scales_offset_layout, MutUntrackedOrigin
+        .uint32, Self.scales_offset_layout, MutUntrackedOrigin
     ]
 
     @staticmethod
@@ -1014,21 +1005,13 @@ struct NVBlockScaledTokenFormat[
     def __init__(
         out self,
         output_tokens: TileTensor[
-            Self.quant_dtype,
-            Self.output_layout,
-            Storage=PointerStorage[],
-            ...,
+            Self.quant_dtype, Self.output_layout, Storage=PointerStorage[], ...
         ],
         output_scales: TileTensor[
-            Self.scales_dtype,
-            Storage=PointerStorage[],
-            ...,
+            Self.scales_dtype, Storage=PointerStorage[], ...
         ],
         output_scales_offset: TileTensor[
-            DType.uint32,
-            Self.scales_offset_layout,
-            Storage=PointerStorage[],
-            ...,
+            .uint32, Self.scales_offset_layout, Storage=PointerStorage[], ...
         ],
         ctx: DeviceContext,
     ):
@@ -1523,16 +1506,10 @@ struct MXTokenFormat[
     def __init__(
         out self,
         output_tokens: TileTensor[
-            Self.quant_dtype,
-            Self.output_layout,
-            Storage=PointerStorage[],
-            ...,
+            Self.quant_dtype, Self.output_layout, Storage=PointerStorage[], ...
         ],
         output_scales: TileTensor[
-            Self.scales_dtype,
-            Self.scales_layout,
-            Storage=PointerStorage[],
-            ...,
+            Self.scales_dtype, Self.scales_layout, Storage=PointerStorage[], ...
         ],
         max_padded_M: Int = 0,
     ):
@@ -2109,12 +2086,7 @@ struct EPDispatchKernel[
     @staticmethod
     @always_inline
     def monitor_and_signal_completion(
-        topk_ids: TileTensor[
-            mut=False,
-            DType.int32,
-            Storage=PointerStorage[],
-            ...,
-        ],
+        topk_ids: TileTensor[mut=False, .int32, Storage=PointerStorage[], ...],
         recv_count_ptrs: Array[
             UnsafePointer[UInt64, MutUntrackedOrigin], Self.p2p_world_size
         ],
@@ -2211,17 +2183,9 @@ struct EPDispatchKernel[
         input_scales_wrapper: Optional[input_scales_wrapper_type] = None,
     ](
         input_tokens: TileTensor[
-            mut=False,
-            input_type,
-            Storage=PointerStorage[],
-            ...,
+            mut=False, input_type, Storage=PointerStorage[], ...
         ],
-        topk_ids: TileTensor[
-            mut=False,
-            DType.int32,
-            Storage=PointerStorage[],
-            ...,
-        ],
+        topk_ids: TileTensor[mut=False, .int32, Storage=PointerStorage[], ...],
         send_buf_p: UnsafePointer[UInt8, MutUntrackedOrigin],
         recv_buf_ptrs: Array[
             UnsafePointer[UInt8, MutUntrackedOrigin], Self.p2p_world_size
@@ -2421,17 +2385,9 @@ struct EPDispatchKernel[
     def wait_for_arrivals_and_compute_offsets(
         format_handler: Self.token_fmt_type,
         row_offsets: TileTensor[
-            mut=True,
-            DType.uint32,
-            Storage=PointerStorage[],
-            ...,
+            mut=True, .uint32, Storage=PointerStorage[], ...
         ],
-        expert_ids: TileTensor[
-            mut=True,
-            DType.int32,
-            Storage=PointerStorage[],
-            ...,
-        ],
+        expert_ids: TileTensor[mut=True, .int32, Storage=PointerStorage[], ...],
         recv_count_p: UnsafePointer[UInt64, MutUntrackedOrigin],
         atomic_counter: UnsafePointer[Int32, MutUntrackedOrigin],
         my_rank: Int32,
@@ -2593,17 +2549,9 @@ struct EPDispatchKernel[
     def copy_received_tokens_to_output(
         format_handler: Self.token_fmt_type,
         row_offsets: TileTensor[
-            mut=True,
-            DType.uint32,
-            Storage=PointerStorage[],
-            ...,
+            mut=True, .uint32, Storage=PointerStorage[], ...
         ],
-        src_info: TileTensor[
-            mut=True,
-            DType.int32,
-            Storage=PointerStorage[],
-            ...,
-        ],
+        src_info: TileTensor[mut=True, .int32, Storage=PointerStorage[], ...],
         recv_buf_p: UnsafePointer[UInt8, MutUntrackedOrigin],
         atomic_counter: UnsafePointer[Int32, MutUntrackedOrigin],
         my_rank: Int32,
@@ -3037,9 +2985,7 @@ def dispatch_wait_kernel[
     input_scales_wrapper: Optional[input_scales_wrapper_type] = None,
 ](
     format_handler: token_fmt_type,
-    row_offsets: TileTensor[
-        DType.uint32, row_offsets_layout, MutUntrackedOrigin
-    ],
+    row_offsets: TileTensor[.uint32, row_offsets_layout, MutUntrackedOrigin],
     expert_ids: TileTensor[.int32, expert_ids_layout, MutUntrackedOrigin],
     src_info: TileTensor[.int32, src_info_layout, MutUntrackedOrigin],
     recv_buf_p: UnsafePointer[UInt8, MutUntrackedOrigin],
@@ -3250,10 +3196,7 @@ struct EPCombineKernel[
     ](
         input_tokens: TileTensor[input_type, Storage=PointerStorage[], ...],
         output_tokens: TileTensor[
-            mut=True,
-            input_type,
-            Storage=PointerStorage[],
-            ...,
+            mut=True, input_type, Storage=PointerStorage[], ...
         ],
     ) -> None:
         """Copies shared expert outputs to the output tensor.
@@ -3293,16 +3236,8 @@ struct EPCombineKernel[
         input_type: DType,
         //,
     ](
-        input_tokens: TileTensor[
-            input_type,
-            Storage=PointerStorage[],
-            ...,
-        ],
-        src_info: TileTensor[
-            DType.int32,
-            Storage=PointerStorage[],
-            ...,
-        ],
+        input_tokens: TileTensor[input_type, Storage=PointerStorage[], ...],
+        src_info: TileTensor[.int32, Storage=PointerStorage[], ...],
         send_buf_p: UnsafePointer[UInt8, MutUntrackedOrigin],
         recv_buf_ptrs: Array[
             UnsafePointer[UInt8, MutUntrackedOrigin], Self.p2p_world_size
@@ -3564,10 +3499,7 @@ struct EPCombineKernel[
         elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     ](
         output_tokens: TileTensor[
-            mut=True,
-            output_type,
-            Storage=PointerStorage[],
-            ...,
+            mut=True, output_type, Storage=PointerStorage[], ...
         ],
         recv_buf_p: UnsafePointer[UInt8, MutUntrackedOrigin],
         atomic_counter: UnsafePointer[Int32, MutUntrackedOrigin],
@@ -3972,9 +3904,7 @@ def dispatch_kernel[
     ],
     topk_ids: TileTensor[.int32, topk_ids_layout, ImmUntrackedOrigin],
     format_handler: token_fmt_type,
-    row_offsets: TileTensor[
-        DType.uint32, row_offsets_layout, MutUntrackedOrigin
-    ],
+    row_offsets: TileTensor[.uint32, row_offsets_layout, MutUntrackedOrigin],
     expert_ids: TileTensor[.int32, expert_ids_layout, MutUntrackedOrigin],
     src_info: TileTensor[.int32, src_info_layout, MutUntrackedOrigin],
     send_buf_p: UnsafePointer[UInt8, MutUntrackedOrigin],
@@ -4408,9 +4338,7 @@ def fused_silu_kernel[
 ](
     output_tensor: TileTensor[output_dtype, output_layout, MutUntrackedOrigin],
     input_tensor: TileTensor[input_dtype, input_layout, ImmUntrackedOrigin],
-    row_offsets: TileTensor[
-        DType.uint32, row_offsets_layout, ImmUntrackedOrigin
-    ],
+    row_offsets: TileTensor[.uint32, row_offsets_layout, ImmUntrackedOrigin],
 ):
     """
     This kernel performs the SILU operation for all the MLPs in the EP MoE
@@ -4643,11 +4571,9 @@ def fused_silu_nvfp4_kernel[
     input_tensor: TileTensor[input_dtype, input_layout, ImmUntrackedOrigin],
     row_offsets: TileTensor[.uint32, offsets_layout, ImmUntrackedOrigin],
     scales_offsets: TileTensor[
-        DType.uint32, scales_offsets_layout, ImmUntrackedOrigin
+        .uint32, scales_offsets_layout, ImmUntrackedOrigin
     ],
-    input_scales: TileTensor[
-        DType.float32, input_scales_layout, ImmUntrackedOrigin
-    ],
+    input_scales: TileTensor[.float32, input_scales_layout, ImmUntrackedOrigin],
 ):
     """
     This kernel performs the SILU operation for all the MLPs in the EP MoE
@@ -4826,11 +4752,9 @@ def fused_silu_nvfp4_interleaved_kernel[
     input_tensor: TileTensor[input_dtype, input_layout, ImmUntrackedOrigin],
     row_offsets: TileTensor[.uint32, offsets_layout, ImmUntrackedOrigin],
     scales_offsets: TileTensor[
-        DType.uint32, scales_offsets_layout, ImmUntrackedOrigin
+        .uint32, scales_offsets_layout, ImmUntrackedOrigin
     ],
-    input_scales: TileTensor[
-        DType.float32, input_scales_layout, ImmUntrackedOrigin
-    ],
+    input_scales: TileTensor[.float32, input_scales_layout, ImmUntrackedOrigin],
 ):
     """SwiGLU + NVFP4 quantization for interleaved gate/up layout.
 
@@ -5246,7 +5170,7 @@ def fused_silu_mxfp8_interleaved_kernel[
     input_tensor: TileTensor[input_dtype, input_layout, ImmUntrackedOrigin],
     row_offsets: TileTensor[.uint32, offsets_layout, ImmUntrackedOrigin],
     scales_offsets: TileTensor[
-        DType.uint32, scales_offsets_layout, ImmUntrackedOrigin
+        .uint32, scales_offsets_layout, ImmUntrackedOrigin
     ],
     # Runtime alpha and L for the clamped activation; ignored when
     # `clamp_activation=False`.

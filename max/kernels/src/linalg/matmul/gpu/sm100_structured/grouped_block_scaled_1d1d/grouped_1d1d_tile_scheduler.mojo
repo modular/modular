@@ -254,22 +254,13 @@ struct GroupedWorkIterator1D1D[
 
     # 1D TileTensor types: dynamic shape, stride 1 (flat arrays)
     comptime OffsetsTile = TileTensor[
-        DType.uint32,
-        GMEMLayout1D,
-        MutAnyOrigin,
-        Storage=Self.OffsetsStorage,
+        .uint32, GMEMLayout1D, MutAnyOrigin, Storage=Self.OffsetsStorage
     ]
     comptime ExpertIdsTile = TileTensor[
-        DType.int32,
-        GMEMLayout1D,
-        MutAnyOrigin,
-        Storage=Self.ExpertIdsStorage,
+        .int32, GMEMLayout1D, MutAnyOrigin, Storage=Self.ExpertIdsStorage
     ]
     comptime ExpertScalesTile = TileTensor[
-        DType.float32,
-        GMEMLayout1D,
-        MutAnyOrigin,
-        Storage=Self.ExpertScalesStorage,
+        .float32, GMEMLayout1D, MutAnyOrigin, Storage=Self.ExpertScalesStorage
     ]
 
     var num_active_experts: Int

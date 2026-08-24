@@ -1595,14 +1595,12 @@ def apply_qk_rms_norm_gpu_block[
         out_dtype, k_out_layout, k_out_origin, Storage=k_out_storage
     ],
     gamma_q: TileTensor[
-        DType.float32, gamma_q_layout, gamma_q_origin, Storage=gamma_q_storage
+        .float32, gamma_q_layout, gamma_q_origin, Storage=gamma_q_storage
     ],
     gamma_k: TileTensor[
-        DType.float32, gamma_k_layout, gamma_k_origin, Storage=gamma_k_storage
+        .float32, gamma_k_layout, gamma_k_origin, Storage=gamma_k_storage
     ],
-    qk_var: TileTensor[
-        DType.float32, var_layout, var_origin, Storage=var_storage
-    ],
+    qk_var: TileTensor[.float32, var_layout, var_origin, Storage=var_storage],
     q: TileTensor[in_dtype, q_layout, q_origin, Storage=q_storage],
     k: TileTensor[in_dtype, k_layout, k_origin, Storage=k_storage],
     epsilon: Float32,
@@ -1674,9 +1672,9 @@ def apply_qk_rms_norm_gpu[
 ](
     q_out: TileTensor[mut=True, out_dtype, ...],
     k_out: TileTensor[mut=True, out_dtype, ...],
-    gamma_q: TileTensor[mut=False, DType.float32, ...],
-    gamma_k: TileTensor[mut=False, DType.float32, ...],
-    qk_var: TileTensor[mut=False, DType.float32, ...],
+    gamma_q: TileTensor[mut=False, .float32, ...],
+    gamma_k: TileTensor[mut=False, .float32, ...],
+    qk_var: TileTensor[mut=False, .float32, ...],
     q: TileTensor[mut=False, in_dtype, ...],
     k: TileTensor[mut=False, in_dtype, ...],
     epsilon: Float32,
@@ -1814,9 +1812,9 @@ def apply_qk_rms_norm_cpu[
 ](
     q_out: TileTensor[mut=True, out_dtype, ...],
     k_out: TileTensor[mut=True, out_dtype, ...],
-    gamma_q: TileTensor[mut=False, DType.float32, ...],
-    gamma_k: TileTensor[mut=False, DType.float32, ...],
-    qk_var: TileTensor[mut=False, DType.float32, ...],
+    gamma_q: TileTensor[mut=False, .float32, ...],
+    gamma_k: TileTensor[mut=False, .float32, ...],
+    qk_var: TileTensor[mut=False, .float32, ...],
     q: TileTensor[mut=False, in_dtype, ...],
     k: TileTensor[mut=False, in_dtype, ...],
     epsilon: Float32,
@@ -1857,9 +1855,9 @@ def apply_qk_rms_norm[
 ](
     q_out: TileTensor[mut=True, out_dtype, ...],
     k_out: TileTensor[mut=True, out_dtype, ...],
-    gamma_q: TileTensor[mut=False, DType.float32, ...],
-    gamma_k: TileTensor[mut=False, DType.float32, ...],
-    qk_var: TileTensor[mut=False, DType.float32, ...],
+    gamma_q: TileTensor[mut=False, .float32, ...],
+    gamma_k: TileTensor[mut=False, .float32, ...],
+    qk_var: TileTensor[mut=False, .float32, ...],
     q: TileTensor[mut=False, in_dtype, ...],
     k: TileTensor[mut=False, in_dtype, ...],
     epsilon: Float32,

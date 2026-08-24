@@ -332,12 +332,12 @@ struct Shuffler[E: Int]:
     # ---- Wrapped TileTensor types — what the preshuffle functions return ----
     comptime BTileTensor[N: Int, K_BYTES: Int] = TileTensor[
         mut=True,
-        DType.uint8,
+        .uint8,
         type_of(Self.b_5d_grouped_layout[N=N, K_BYTES=K_BYTES]),
         MutAnyOrigin,
     ]
 
-    # Scale-buffer callers use a plain `TileTensor[DType.uint8, ...]` or a
+    # Scale-buffer callers use a plain `TileTensor[.uint8, ...]` or a
     # raw `HostBuffer[DType.uint8]` — the byte layout is fully expressed by
     # `scale_4d_byte_off`, no type-system marker needed.
 
@@ -520,8 +520,8 @@ struct Shuffler[E: Int]:
         K_BYTES: Int,
         lane_bytes: Int,
     ](
-        raw: TileTensor[mut=False, DType.uint8, address_space=.GENERIC, ...],
-        dst: TileTensor[mut=True, DType.uint8, address_space=.GENERIC, ...],
+        raw: TileTensor[mut=False, .uint8, address_space=.GENERIC, ...],
+        dst: TileTensor[mut=True, .uint8, address_space=.GENERIC, ...],
         ctx: DeviceContext,
     ) raises:
         """Launches the plane-split B preshuffle.
@@ -565,8 +565,8 @@ struct Shuffler[E: Int]:
         N: Int,
         K_BYTES: Int,
     ](
-        raw: TileTensor[mut=False, DType.uint8, address_space=.GENERIC, ...],
-        dst: TileTensor[mut=True, DType.uint8, address_space=.GENERIC, ...],
+        raw: TileTensor[mut=False, .uint8, address_space=.GENERIC, ...],
+        dst: TileTensor[mut=True, .uint8, address_space=.GENERIC, ...],
         ctx: DeviceContext,
     ) raises:
         """Launch the GPU MXFP4 B 5D preshuffle.
@@ -676,7 +676,7 @@ struct Shuffler[E: Int]:
         AOffsetsLayout: TensorLayout,
     ](
         sfa_raw: TileTensor[.uint8, SrcLayout, ImmutAnyOrigin],
-        sfa_pre: TileTensor[mut=True, DType.uint8, DstLayout, MutAnyOrigin],
+        sfa_pre: TileTensor[mut=True, .uint8, DstLayout, MutAnyOrigin],
         a_offsets: TileTensor[.uint32, AOffsetsLayout, ImmutAnyOrigin],
         num_active_experts: Int32,
         max_padded_M: Int32,
@@ -784,25 +784,13 @@ struct Shuffler[E: Int]:
         AOffsetsLayout: TensorLayout,
     ](
         sfa_raw: TileTensor[
-            mut=False,
-            DType.uint8,
-            SfaRawLayout,
-            address_space=.GENERIC,
-            ...,
+            mut=False, .uint8, SfaRawLayout, address_space=.GENERIC, ...
         ],
         sfa_pre: TileTensor[
-            mut=True,
-            DType.uint8,
-            SfaPreLayout,
-            address_space=.GENERIC,
-            ...,
+            mut=True, .uint8, SfaPreLayout, address_space=.GENERIC, ...
         ],
         a_offsets: TileTensor[
-            mut=False,
-            DType.uint32,
-            AOffsetsLayout,
-            address_space=.GENERIC,
-            ...,
+            mut=False, .uint32, AOffsetsLayout, address_space=.GENERIC, ...
         ],
         num_active_experts: Int,
         max_num_tokens_per_expert: Int,

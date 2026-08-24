@@ -22,7 +22,7 @@ from std.utils import IndexList
 from std.utils.numerics import min_or_neg_inf
 
 
-def fill_buffer[dtype: DType](buf: TileTensor[mut=True, dtype=dtype, ...]):
+def fill_buffer[dtype: DType](buf: TileTensor[mut=True, dtype, ...]):
     for j in range(buf.num_elements()):
         buf.raw_store(j, Scalar[dtype](j) + 1)
 
@@ -30,8 +30,8 @@ def fill_buffer[dtype: DType](buf: TileTensor[mut=True, dtype=dtype, ...]):
 def assert_allclose[
     dtype: DType
 ](
-    h_output_ref: TileTensor[dtype=dtype, ...],
-    h_output_gpu: TileTensor[dtype=dtype, ...],
+    h_output_ref: TileTensor[dtype, ...],
+    h_output_gpu: TileTensor[dtype, ...],
 ) raises:
     for i in range(h_output_ref.num_elements()):
         assert_almost_equal(h_output_ref.raw_load(i), h_output_gpu.raw_load(i))

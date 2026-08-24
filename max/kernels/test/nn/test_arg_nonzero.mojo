@@ -83,13 +83,13 @@ def test_where() raises:
     values[2, 1, 0] = -3.0
 
     var computed_stack = Array[Int, 9](uninitialized=True)
-    var computed_outputs = TileTensor[.int,](
+    var computed_outputs = TileTensor[.int](
         computed_stack,
         row_major[3, 3](),
     )
 
     var golden_stack = Array[Int, 9](uninitialized=True)
-    var golden_outputs = TileTensor[.int,](
+    var golden_outputs = TileTensor[.int](
         golden_stack,
         row_major[3, 3](),
     )

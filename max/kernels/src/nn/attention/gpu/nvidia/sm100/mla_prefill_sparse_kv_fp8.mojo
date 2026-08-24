@@ -321,7 +321,7 @@ struct MLAPrefillSparseFP8[
             Self.k_tma_tile_shape_fp8,
             Self.k_tma_desc_shape_fp8,
         ],
-        indices: TileTensor[DType.uint32, address_space=.GENERIC, ...],
+        indices: TileTensor[.uint32, address_space=.GENERIC, ...],
         kv_lut: Self.KVLUTType,
         k_smem_fp8_ptr: UnsafePointer[
             mut=True, Float8_e4m3fn, address_space=.SHARED, ...
@@ -383,7 +383,7 @@ struct MLAPrefillSparseFP8[
         scale_block_size: Int
     ](
         scales_ptr: UnsafePointer[Float32, ImmutAnyOrigin],
-        indices: TileTensor[DType.uint32, address_space=.GENERIC, ...],
+        indices: TileTensor[.uint32, address_space=.GENERIC, ...],
         kv_lut: Self.KVLUTType,
         k_scales_smem_ptr: UnsafePointer[
             mut=True, Float32, address_space=.SHARED, ...
@@ -573,7 +573,7 @@ struct MLAPrefillSparseFP8[
             Self.v_tma_tile_shape_fp8,
             Self.v_tma_desc_shape_fp8,
         ],
-        indices: TileTensor[DType.uint32, address_space=.GENERIC, ...],
+        indices: TileTensor[.uint32, address_space=.GENERIC, ...],
         kv_lut: Self.KVLUTType,
         v_smem_fp8_ptr: UnsafePointer[
             mut=True, Float8_e4m3fn, address_space=.SHARED, ...
@@ -654,7 +654,7 @@ struct MLAPrefillSparseFP8[
         scale_block_size: Int
     ](
         scales_ptr: UnsafePointer[Float32, ImmutAnyOrigin],
-        indices: TileTensor[DType.uint32, address_space=.GENERIC, ...],
+        indices: TileTensor[.uint32, address_space=.GENERIC, ...],
         kv_lut: Self.KVLUTType,
         v_scales_smem_ptr: UnsafePointer[
             mut=True, Float32, address_space=.SHARED, ...
@@ -1691,7 +1691,7 @@ def mla_prefill_sparse_fp8[
     q: TileTensor[q_type, address_space=.GENERIC, ...],
     kv_cache: cache_t,
     indices: TileTensor[.uint32, address_space=.GENERIC, ...],
-    topk_lengths: TileTensor[DType.uint32, address_space=.GENERIC, ...],
+    topk_lengths: TileTensor[.uint32, address_space=.GENERIC, ...],
     attn_sink_ptr: Optional[UnsafePointer[Float32, ImmutAnyOrigin]],
     scales_ptr: UnsafePointer[Float32, ImmutAnyOrigin],
     scale: Float32,

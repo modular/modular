@@ -479,7 +479,7 @@ def generic_fused_qk_rope_bshd_continuous_batch[
     kv_collection: ContinuousBatchingKVCacheCollection,
     freqs_cis: TileTensor[mut=False, dtype, ...],
     layer_idx: UInt32,
-    valid_lengths: TileTensor[mut=False, DType.uint32, ...],
+    valid_lengths: TileTensor[mut=False, .uint32, ...],
     output: TileTensor[mut=True, dtype, ...],
     context: DeviceContext,
 ) raises:
@@ -568,7 +568,7 @@ def generic_fused_qk_rope_bshd_paged[
     kv_collection: PagedKVCacheCollection,
     freqs_cis: TileTensor[mut=False, dtype, ...],
     layer_idx: UInt32,
-    valid_lengths: TileTensor[mut=False, DType.uint32, ...],
+    valid_lengths: TileTensor[mut=False, .uint32, ...],
     output: TileTensor[mut=True, dtype, ...],
     context: DeviceContext,
 ) raises:
@@ -947,7 +947,7 @@ def _fused_qk_rms_norm_ragged_paged_gpu[
     weight_offset: Float32,
     total_seq_len: UInt32,
     input_row_offsets: TileTensor[
-        DType.uint32, offsets_layout, offsets_origin, Storage=offsets_storage
+        .uint32, offsets_layout, offsets_origin, Storage=offsets_storage
     ],
     q_num_heads: Int32,
     num_cols: Int32,
@@ -1061,7 +1061,7 @@ def fused_qk_rms_norm_ragged_paged[
     epsilon: Float32,
     weight_offset: Scalar[dtype],
     layer_idx: UInt32,
-    input_row_offsets: TileTensor[mut=False, DType.uint32, ...],
+    input_row_offsets: TileTensor[mut=False, .uint32, ...],
     q_output: TileTensor[mut=True, dtype, ...],
     context: DeviceContext,
 ) raises:
@@ -1235,7 +1235,7 @@ def _fused_qk_rms_norm_rope_process_row[
     epsilon: Float32,
     weight_offset: Scalar[dtype],
     input_row_offsets: TileTensor[
-        DType.uint32, offsets_layout, offsets_origin, Storage=offsets_storage
+        .uint32, offsets_layout, offsets_origin, Storage=offsets_storage
     ],
     num_cols: Int,
 ):
@@ -1461,7 +1461,7 @@ def _fused_qk_rms_norm_rope_ragged_paged_gpu[
     weight_offset: Float32,
     total_seq_len: UInt32,
     input_row_offsets: TileTensor[
-        DType.uint32, offsets_layout, offsets_origin, Storage=offsets_storage
+        .uint32, offsets_layout, offsets_origin, Storage=offsets_storage
     ],
     q_num_heads: Int32,
     num_cols: Int32,
@@ -1541,7 +1541,7 @@ def fused_qk_rms_norm_rope_ragged_paged[
     epsilon: Float32,
     weight_offset: Scalar[dtype],
     layer_idx: UInt32,
-    input_row_offsets: TileTensor[mut=False, DType.uint32, ...],
+    input_row_offsets: TileTensor[mut=False, .uint32, ...],
     q_output: TileTensor[mut=True, q_out_dtype, ...],
     context: DeviceContext,
 ) raises:
@@ -1799,7 +1799,7 @@ def _fused_dual_qk_rms_norm_rope_ragged_paged_gpu[
     weight_offset: Float32,
     total_seq_len: UInt32,
     input_row_offsets: TileTensor[
-        DType.uint32, offsets_layout, offsets_origin, Storage=offsets_storage
+        .uint32, offsets_layout, offsets_origin, Storage=offsets_storage
     ],
     q_main_num_heads_dev: Int32,
     q_index_num_heads_dev: Int32,
@@ -1933,7 +1933,7 @@ def fused_dual_qk_rms_norm_rope_ragged_paged[
     index_epsilon: Float32,
     weight_offset: Scalar[dtype],
     layer_idx: UInt32,
-    input_row_offsets: TileTensor[mut=False, DType.uint32, ...],
+    input_row_offsets: TileTensor[mut=False, .uint32, ...],
     q_main_output: TileTensor[mut=True, q_main_out_dtype, ...],
     q_index_output: TileTensor[mut=True, q_index_out_dtype, ...],
     context: DeviceContext,
@@ -2176,7 +2176,7 @@ def rms_norm_kv_cache_ragged_paged[
     weight_offset: Scalar[dtype],
     layer_idx: UInt32,
     total_seq_len: UInt32,
-    input_row_offsets: TileTensor[mut=False, DType.uint32, ...],
+    input_row_offsets: TileTensor[mut=False, .uint32, ...],
     context: DeviceContext,
 ) raises:
     """Performs RMSNorm in place on new entries in the key cache.
@@ -2368,7 +2368,7 @@ def rms_norm_value_cache_ragged_paged[
     weight_offset: Scalar[dtype],
     layer_idx: UInt32,
     total_seq_len: UInt32,
-    input_row_offsets: TileTensor[mut=False, DType.uint32, ...],
+    input_row_offsets: TileTensor[mut=False, .uint32, ...],
     context: DeviceContext,
 ) raises:
     """Performs RMSNorm in place on new entries in the value cache.

@@ -2013,7 +2013,7 @@ def mla_sm100_prefill_per_token_scale[
     k_rope: KRopeType,
     v: VType,
     mask_functor: MaskType,
-    valid_length: TileTensor[DType.uint32, address_space=.GENERIC, ...],
+    valid_length: TileTensor[.uint32, address_space=.GENERIC, ...],
     max_prompt_len: MaxPromptLenType,
     scale: Float32,
     batch_size: Int,

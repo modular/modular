@@ -402,7 +402,7 @@ def _fill_strides[
     dtype: DType,
 ](
     buf: TileTensor[mut=False, dtype, ...],
-    strides: TileTensor[mut=True, DType.int, ...],
+    strides: TileTensor[mut=True, .int, ...],
 ):
     """
     Fill `strides`, which will be an array of strides indexed by axis, assuming

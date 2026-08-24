@@ -126,9 +126,7 @@ comptime _1d_row_major_tt_layout = InternalLayout[
     stride_types=Coord[ComptimeInt[1]].element_types,
 ]
 comptime ImmutTileTensor1D[dtype: DType] = TileTensor[
-    dtype,
-    _1d_row_major_tt_layout,
-    ImmutAnyOrigin,
+    dtype, _1d_row_major_tt_layout, ImmutAnyOrigin
 ]
 
 

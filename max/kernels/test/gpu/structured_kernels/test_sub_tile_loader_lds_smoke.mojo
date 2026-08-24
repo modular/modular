@@ -87,11 +87,9 @@ def kernel_case_a(
         Coord[ComptimeInt[BN], ComptimeInt[DEPTH]].element_types,
         Coord[ComptimeInt[DEPTH], ComptimeInt[1]].element_types,
     ]
-    var src = TileTensor[
-        DType.bfloat16,
-        src_layout_a,
-        MutAnyOrigin,
-    ](src_ptr, src_layout_a())
+    var src = TileTensor[.bfloat16, src_layout_a, MutAnyOrigin](
+        src_ptr, src_layout_a()
+    )
 
     var loader = SubTileLoaderLDS[.bfloat16, swizzle=Optional[Swizzle]()](src)
     loader.load(dst_smem, src)
@@ -123,11 +121,9 @@ def kernel_case_b(
         Coord[ComptimeInt[BN], ComptimeInt[DEPTH]].element_types,
         Coord[ComptimeInt[CACHE_DEPTH_B], ComptimeInt[1]].element_types,
     ]
-    var src = TileTensor[
-        DType.bfloat16,
-        src_layout_b,
-        MutAnyOrigin,
-    ](src_ptr, src_layout_b())
+    var src = TileTensor[.bfloat16, src_layout_b, MutAnyOrigin](
+        src_ptr, src_layout_b()
+    )
 
     var loader = SubTileLoaderLDS[.bfloat16, swizzle=Optional[Swizzle]()](src)
     loader.load(dst_smem, src)

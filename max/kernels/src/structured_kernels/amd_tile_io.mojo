@@ -345,12 +345,7 @@ struct TiledMmaLoader[
         simd_width: Int,
         imm_offset_bytes: Int = 0,
     ](
-        src: TileTensor[
-            Self.in_type,
-            _,
-            address_space=.SHARED,
-            ...,
-        ],
+        src: TileTensor[Self.in_type, _, address_space=.SHARED, ...],
     ) -> Array[
         SIMD[Self.in_type, simd_width], num_mmas
     ]:
@@ -420,12 +415,7 @@ struct TiledMmaLoader[
     @staticmethod
     @always_inline
     def load_b_tr(
-        tile: TileTensor[
-            Self.in_type,
-            _,
-            address_space=.SHARED,
-            ...,
-        ],
+        tile: TileTensor[Self.in_type, _, address_space=.SHARED, ...],
     ) -> SIMD[Self.in_type, 8]:
         """Transposed B operand load for double-rate MFMA shapes.
 
@@ -673,12 +663,7 @@ struct TiledMmaLoader[
         k_tile_idx: Int,
         imm_offset_bytes: Int = 0,
     ](
-        src: TileTensor[
-            Self.in_type,
-            _,
-            address_space=.SHARED,
-            ...,
-        ],
+        src: TileTensor[Self.in_type, _, address_space=.SHARED, ...],
     ) -> SIMD[
         Self.in_type, simd_width_of[Self.in_type]()
     ]:
@@ -1730,13 +1715,7 @@ struct SubTileLoaderLDS[
         hoist_scalar_offset: Bool = False,
     ](
         self,
-        dst: TileTensor[
-            Self.dtype,
-            _,
-            _,
-            address_space=.SHARED,
-            ...,
-        ],
+        dst: TileTensor[Self.dtype, _, _, address_space=.SHARED, ...],
         src: TileTensor[Self.dtype, ...],
         scalar_offset: Int = 0,
         worker_base: Int = 0,

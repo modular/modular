@@ -149,10 +149,7 @@ trait TileConsumer(DevicePassable, TrivialRegisterPassable):
         ref self,
         tile_coord: Coord,
         tile: TileTensor[
-            dtype,
-            LayoutType,
-            ...,
-            address_space=Self.src_address_space,
+            dtype, LayoutType, ..., address_space=Self.src_address_space
         ],
         thread_layout: _NewLayout,
     ) -> None:

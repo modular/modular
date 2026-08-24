@@ -109,7 +109,7 @@ def cpu_routed_reference(
     N: Int,
     K: Int,
     is_token_slot: Bool,
-    mut c_out: TileTensor[mut=True, DType.float32, ...],
+    mut c_out: TileTensor[mut=True, .float32, ...],
 ):
     """Computes the routed MoE matmul output on the CPU as one GEMV per
     (token, slot) pair — independent of the kernel's sort-block structure.

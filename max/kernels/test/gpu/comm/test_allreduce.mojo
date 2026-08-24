@@ -329,7 +329,7 @@ def allreduce_naive_test() raises -> None:
 
     # Build TileTensor arrays for the kernel API.
     comptime InTensorType = TileTensor[
-        DType.float32, type_of(row_major(length)), ImmutAnyOrigin
+        .float32, type_of(row_major(length)), ImmutAnyOrigin
     ]
     var in_tensors = Array[InTensorType, ngpus](uninitialized=True)
     for i in range(ngpus):
@@ -341,7 +341,7 @@ def allreduce_naive_test() raises -> None:
         )
 
     comptime OutTensorType = TileTensor[
-        DType.float32, type_of(row_major(length)), MutAnyOrigin
+        .float32, type_of(row_major(length)), MutAnyOrigin
     ]
     var out_tensors = Array[OutTensorType, ngpus](uninitialized=True)
     for i in range(ngpus):

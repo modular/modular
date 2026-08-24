@@ -28,11 +28,11 @@ Callers must provide template tensors in the correct shapes:
   SF_ATOM_M[1] * SF_ATOM_K)
 
 Usage:
-    # Per-group pointers as TileTensor[DType.uint64, ...]
+    # Per-group pointers as TileTensor[.uint64, ...]
     var a_ptrs = TileTensor(ptr, tile_row_major[num_groups, 1]())
     ...
 
-    # Problem sizes as TileTensor[DType.int32, ...]
+    # Problem sizes as TileTensor[.int32, ...]
     var problem_sizes = TileTensor(ptr, tile_row_major[num_groups, 4]())
 
     # 3D template TileTensors for TMA descriptor creation

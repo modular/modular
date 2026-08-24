@@ -118,9 +118,7 @@ struct Fp8WeightLoader[
     # (same field-origin rule as `Fp4WeightLoader` / `DenseALoader`). The kernel
     # arg this view derives from outlives the K-loop. Built via
     # `Fp8WeightLoader.from_kernel_args`.
-    var weight: TileTensor[
-        DType.float8_e4m3fn, Self.w_layout, ImmUntrackedOrigin
-    ]
+    var weight: TileTensor[.float8_e4m3fn, Self.w_layout, ImmUntrackedOrigin]
 
     @always_inline
     @staticmethod

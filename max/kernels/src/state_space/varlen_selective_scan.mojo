@@ -74,7 +74,7 @@ def varlen_selective_state_update_gpu[
     output: TileTensor[kernel_dtype, output_LT, MutUntrackedOrigin],
     dt_bias: TileTensor[kernel_dtype, dt_bias_LT, MutUntrackedOrigin],
     state_batch_indices: TileTensor[
-        DType.int32, state_batch_indices_LT, MutUntrackedOrigin
+        .int32, state_batch_indices_LT, MutUntrackedOrigin
     ],
     state_strides: Strides4D,  # (batch, nheads, dim, dstate)
     x_strides: Strides3D,  # (batch, nheads, dim)
@@ -283,13 +283,13 @@ def varlen_selective_scan_fwd_gpu[
         kernel_dtype, output_LT, MutUntrackedOrigin
     ],  # Output written here (or to z if z is present)
     query_start_loc: TileTensor[
-        DType.int32, query_start_loc_LT, MutUntrackedOrigin
+        .int32, query_start_loc_LT, MutUntrackedOrigin
     ],  # (batch + 1,)
     cache_indices: TileTensor[
-        DType.int32, cache_indices_LT, MutUntrackedOrigin
+        .int32, cache_indices_LT, MutUntrackedOrigin
     ],  # (batch,)
     has_initial_state: TileTensor[
-        DType.bool, has_initial_state_LT, MutUntrackedOrigin
+        .bool, has_initial_state_LT, MutUntrackedOrigin
     ],  # (batch,)
     u_strides: Strides2D,  # (dim, total_length)
     delta_strides: Strides2D,  # (dim, total_length)
@@ -500,7 +500,7 @@ def varlen_selective_state_update_cpu[
     z: TileTensor[mut=False, kernel_dtype, ...],
     output: TileTensor[mut=True, kernel_dtype, ...],
     dt_bias: TileTensor[mut=False, kernel_dtype, ...],
-    state_batch_indices: TileTensor[mut=False, DType.int32, ...],
+    state_batch_indices: TileTensor[mut=False, .int32, ...],
     # All strides (same as GPU version)
     state_strides: Strides4D,
     x_strides: Strides3D,
@@ -671,9 +671,9 @@ def varlen_selective_scan_fwd_cpu[
     delta_bias: TileTensor[mut=False, kernel_dtype, ...],
     ssm_states: TileTensor[mut=True, kernel_dtype, ...],
     output: TileTensor[mut=True, kernel_dtype, ...],
-    query_start_loc: TileTensor[mut=False, DType.int32, ...],
-    cache_indices: TileTensor[mut=False, DType.int32, ...],
-    has_initial_state: TileTensor[mut=False, DType.bool, ...],
+    query_start_loc: TileTensor[mut=False, .int32, ...],
+    cache_indices: TileTensor[mut=False, .int32, ...],
+    has_initial_state: TileTensor[mut=False, .bool, ...],
     # Strides (same as GPU version)
     u_strides: Strides2D,
     delta_strides: Strides2D,

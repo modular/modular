@@ -2224,17 +2224,13 @@ struct Struct_smallm_streaming_matmul:
                 unsafe_from_address=Int(c.unsafe_ptr())
             )
             var c_tt = TileTensor[
-                DType.bfloat16,
-                type_of(row_major(Coord(1, Idx[N]))),
-                MutAnyOrigin,
+                .bfloat16, type_of(row_major(Coord(1, Idx[N]))), MutAnyOrigin
             ](c_ptr, row_major(Coord(M, Idx[N])))
             var a_ptr = UnsafePointer[BFloat16, ImmutAnyOrigin](
                 unsafe_from_address=Int(a.unsafe_ptr())
             )
             var a_tt = TileTensor[
-                DType.bfloat16,
-                type_of(row_major(Coord(1, Idx[K]))),
-                ImmutAnyOrigin,
+                .bfloat16, type_of(row_major(Coord(1, Idx[K]))), ImmutAnyOrigin
             ](a_ptr, row_major(Coord(M, Idx[K])))
             var scratch_ptr = UnsafePointer[BFloat16, MutAnyOrigin](
                 unsafe_from_address=Int(a_scratch.unsafe_ptr())

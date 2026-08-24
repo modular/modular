@@ -270,9 +270,7 @@ struct Q4sym[
         input_tt: TileTensor[
             mut=False, Self.float_dtype, address_space=.GENERIC, ...
         ],
-        output_tt: TileTensor[
-            mut=True, DType.uint8, address_space=.GENERIC, ...
-        ],
+        output_tt: TileTensor[mut=True, .uint8, address_space=.GENERIC, ...],
         input_shape: IndexList[input_rank],
     ):
         """
@@ -353,14 +351,9 @@ struct Q4sym[
     def dequantize_and_write_to_tensor[
         output_rank: Int
     ](
-        input_tt: TileTensor[
-            mut=False, DType.uint8, address_space=.GENERIC, ...
-        ],
+        input_tt: TileTensor[mut=False, .uint8, address_space=.GENERIC, ...],
         output_tt: TileTensor[
-            mut=True,
-            Self.float_dtype,
-            address_space=.GENERIC,
-            ...,
+            mut=True, Self.float_dtype, address_space=.GENERIC, ...
         ],
         output_shape: IndexList[output_rank],
     ):
@@ -489,8 +482,8 @@ def scale_min_k4(
 
 
 def q4_k_dequantize_impl(
-    input_tt: TileTensor[mut=False, DType.uint8, address_space=.GENERIC, ...],
-    output_tt: TileTensor[mut=True, DType.float32, address_space=.GENERIC, ...],
+    input_tt: TileTensor[mut=False, .uint8, address_space=.GENERIC, ...],
+    output_tt: TileTensor[mut=True, .float32, address_space=.GENERIC, ...],
 ):
     """Dequantizes a Q4_K encoded tensor into a float32 output tensor.
 
@@ -587,8 +580,8 @@ struct block_Q6_K:
 def q6_k_dequantize_impl[
     output_rank: Int
 ](
-    input_tt: TileTensor[mut=False, DType.uint8, address_space=.GENERIC, ...],
-    output_tt: TileTensor[mut=True, DType.float32, address_space=.GENERIC, ...],
+    input_tt: TileTensor[mut=False, .uint8, address_space=.GENERIC, ...],
+    output_tt: TileTensor[mut=True, .float32, address_space=.GENERIC, ...],
     output_shape: IndexList[output_rank],
 ):
     """Dequantizes a Q6_K encoded tensor into a float32 output tensor.

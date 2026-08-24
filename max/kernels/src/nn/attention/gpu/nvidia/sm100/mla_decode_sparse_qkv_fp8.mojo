@@ -291,7 +291,7 @@ struct MLA_SM100_Decode_Sparse_QKV_FP8[
         extra_indices_stride_dev: Int32,
         extra_scales_ptr: OptionalReg[UnsafePointer[Float32, MutAnyOrigin]],
         scalar_args: TileTensor[
-            DType.int64, RowMajorLayout[ComptimeInt[3]], MutAnyOrigin
+            .int64, RowMajorLayout[ComptimeInt[3]], MutAnyOrigin
         ],
     ):
         comptime _mask_type_name: String = Self.MaskType.get_type_name()

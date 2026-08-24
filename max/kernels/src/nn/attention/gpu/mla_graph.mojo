@@ -110,7 +110,7 @@ def fused_rope_rmsnorm_kernel[
     ],
     q_rope: TileTensor[dtype, QRopeLayoutType, ImmUntrackedOrigin],
     input_row_offsets: TileTensor[
-        DType.uint32, InputRowOffsetsLayoutType, ImmUntrackedOrigin
+        .uint32, InputRowOffsetsLayoutType, ImmUntrackedOrigin
     ],
     freqs_cis: TileTensor[freq_dtype, FreqsCisLayoutType, ImmUntrackedOrigin],
     gamma: TileTensor[gamma_dtype, GammaLayoutType, ImmUntrackedOrigin],
@@ -296,7 +296,7 @@ def fused_rope_rmsnorm_quantization_kernel[
     ],
     q_rope: TileTensor[dtype, QRopeLayoutType, ImmUntrackedOrigin],
     input_row_offsets: TileTensor[
-        DType.uint32, InputRowOffsetsLayoutType, ImmUntrackedOrigin
+        .uint32, InputRowOffsetsLayoutType, ImmUntrackedOrigin
     ],
     freqs_cis: TileTensor[freq_dtype, FreqsCisLayoutType, ImmUntrackedOrigin],
     gamma: TileTensor[gamma_dtype, GammaLayoutType, ImmUntrackedOrigin],
@@ -478,7 +478,7 @@ def mla_fused_rope_rmsnorm_quantization[
 ](
     q_rope_output: TileTensor[mut=True, out_rope_dtype, ...],
     q_rope: TileTensor[mut=False, dtype, ...],
-    input_row_offsets: TileTensor[mut=False, DType.uint32, ...],
+    input_row_offsets: TileTensor[mut=False, .uint32, ...],
     freqs_cis: TileTensor[mut=False, freq_dtype, ...],
     gamma: TileTensor[mut=False, gamma_dtype, ...],
     kv_collection: collection_t,
@@ -610,17 +610,15 @@ def mla_prefill_branch_fp8[
 ](
     output: TileTensor[mut=True, dtype, address_space=.GENERIC, ...],
     q: TileTensor[dtype, address_space=.GENERIC, ...],
-    input_row_offsets: TileTensor[DType.uint32, address_space=.GENERIC, ...],
+    input_row_offsets: TileTensor[.uint32, address_space=.GENERIC, ...],
     freqs_cis: TileTensor[_, address_space=.GENERIC, ...],
     kv_norm_gamma: TileTensor[_, address_space=.GENERIC, ...],
     kv_collection: collection_t,
     layer_idx: UInt32,
     scale: Float32,
     epsilon: Float32,
-    buffer_row_offsets: TileTensor[DType.uint32, address_space=.GENERIC, ...],
-    cache_offsets: TileTensor[
-        mut=True, DType.uint32, address_space=.GENERIC, ...
-    ],
+    buffer_row_offsets: TileTensor[.uint32, address_space=.GENERIC, ...],
+    cache_offsets: TileTensor[mut=True, .uint32, address_space=.GENERIC, ...],
     buffer_length: Int,
     w_k: TileTensor[fp8_dtype, address_space=.GENERIC, ...],
     w_k_scale: TileTensor[fp8_scale_dtype, address_space=.GENERIC, ...],
@@ -1061,7 +1059,7 @@ def mla_decode_branch_fp8[
 ](
     output: TileTensor[mut=True, dtype, address_space=.GENERIC, ...],
     q: TileTensor[dtype, address_space=.GENERIC, ...],
-    input_row_offsets: TileTensor[DType.uint32, address_space=.GENERIC, ...],
+    input_row_offsets: TileTensor[.uint32, address_space=.GENERIC, ...],
     freqs_cis: TileTensor[_, address_space=.GENERIC, ...],
     kv_norm_gamma: TileTensor[_, address_space=.GENERIC, ...],
     kv_collection: collection_t,
@@ -1072,7 +1070,7 @@ def mla_decode_branch_fp8[
     w_uk_scale: TileTensor[fp8_scale_dtype, address_space=.GENERIC, ...],
     w_uv: TileTensor[fp8_dtype, address_space=.GENERIC, ...],
     w_uv_scale: TileTensor[fp8_scale_dtype, address_space=.GENERIC, ...],
-    scalar_args_buf: TileTensor[DType.int64, address_space=.GENERIC, ...],
+    scalar_args_buf: TileTensor[.int64, address_space=.GENERIC, ...],
     ctx: DeviceContext,
     d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
     indices_stride: Int = 0,
@@ -1375,7 +1373,7 @@ def mla_prefill_branch_sparse_fp8[
 ](
     output: TileTensor[mut=True, dtype, address_space=.GENERIC, ...],
     q: TileTensor[dtype, address_space=.GENERIC, ...],
-    input_row_offsets: TileTensor[DType.uint32, address_space=.GENERIC, ...],
+    input_row_offsets: TileTensor[.uint32, address_space=.GENERIC, ...],
     freqs_cis: TileTensor[_, address_space=.GENERIC, ...],
     kv_norm_gamma: TileTensor[_, address_space=.GENERIC, ...],
     kv_collection: collection_t,
@@ -1668,17 +1666,15 @@ def mla_prefill_decode_graph_fp8[
 ](
     output: TileTensor[mut=True, dtype, address_space=.GENERIC, ...],
     q: TileTensor[dtype, address_space=.GENERIC, ...],
-    input_row_offsets: TileTensor[DType.uint32, address_space=.GENERIC, ...],
+    input_row_offsets: TileTensor[.uint32, address_space=.GENERIC, ...],
     freqs_cis: TileTensor[_, address_space=.GENERIC, ...],
     kv_norm_gamma: TileTensor[_, address_space=.GENERIC, ...],
     kv_collection: collection_t,
     layer_idx: UInt32,
     scale: Float32,
     epsilon: Float32,
-    buffer_row_offsets: TileTensor[DType.uint32, address_space=.GENERIC, ...],
-    cache_offsets: TileTensor[
-        mut=True, DType.uint32, address_space=.GENERIC, ...
-    ],
+    buffer_row_offsets: TileTensor[.uint32, address_space=.GENERIC, ...],
+    cache_offsets: TileTensor[mut=True, .uint32, address_space=.GENERIC, ...],
     buffer_length: Int,
     max_seq_len: Int,
     w_k: TileTensor[fp8_dtype, address_space=.GENERIC, ...],
@@ -1687,7 +1683,7 @@ def mla_prefill_decode_graph_fp8[
     w_uk_scale: TileTensor[fp8_scale_dtype, address_space=.GENERIC, ...],
     w_uv: TileTensor[fp8_dtype, address_space=.GENERIC, ...],
     w_uv_scale: TileTensor[fp8_scale_dtype, address_space=.GENERIC, ...],
-    scalar_args_buf: TileTensor[DType.int64, address_space=.GENERIC, ...],
+    scalar_args_buf: TileTensor[.int64, address_space=.GENERIC, ...],
     ctx: DeviceContext,
     d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
     indices_stride: Int = 0,
@@ -1900,8 +1896,8 @@ def mla_prefill_decode_graph_fp8[
 
 @always_inline
 def convert_bf16_to_fp8_e4m3fn(
-    input_buffer: TileTensor[mut=False, DType.bfloat16, ...],
-    output_buffer: TileTensor[mut=True, DType.float8_e4m3fn, ...],
+    input_buffer: TileTensor[mut=False, .bfloat16, ...],
+    output_buffer: TileTensor[mut=True, .float8_e4m3fn, ...],
     context: DeviceContext,
 ) raises:
     """Convert bfloat16 weights to E4M3FN format.
@@ -1979,19 +1975,17 @@ def mla_prefill_branch_bf16[
     ],
     target: StaticString = "cpu",
 ](
-    output: TileTensor[mut=True, DType.bfloat16, address_space=.GENERIC, ...],
+    output: TileTensor[mut=True, .bfloat16, address_space=.GENERIC, ...],
     q: TileTensor[.bfloat16, address_space=.GENERIC, ...],
-    input_row_offsets: TileTensor[DType.uint32, address_space=.GENERIC, ...],
+    input_row_offsets: TileTensor[.uint32, address_space=.GENERIC, ...],
     freqs_cis: TileTensor[_, address_space=.GENERIC, ...],
     kv_norm_gamma: TileTensor[_, address_space=.GENERIC, ...],
     kv_collection: collection_t,
     layer_idx: UInt32,
     scale: Float32,
     epsilon: Float32,
-    buffer_row_offsets: TileTensor[DType.uint32, address_space=.GENERIC, ...],
-    cache_offsets: TileTensor[
-        mut=True, DType.uint32, address_space=.GENERIC, ...
-    ],
+    buffer_row_offsets: TileTensor[.uint32, address_space=.GENERIC, ...],
+    cache_offsets: TileTensor[mut=True, .uint32, address_space=.GENERIC, ...],
     buffer_length: Int,
     w_k: TileTensor[.bfloat16, address_space=.GENERIC, ...],
     w_uv: TileTensor[.bfloat16, address_space=.GENERIC, ...],
@@ -2284,9 +2278,9 @@ def mla_decode_branch_bf16[
     target: StaticString = "cpu",
     sparse_mla: Bool = False,
 ](
-    output: TileTensor[mut=True, DType.bfloat16, address_space=.GENERIC, ...],
+    output: TileTensor[mut=True, .bfloat16, address_space=.GENERIC, ...],
     q: TileTensor[.bfloat16, address_space=.GENERIC, ...],
-    input_row_offsets: TileTensor[DType.uint32, address_space=.GENERIC, ...],
+    input_row_offsets: TileTensor[.uint32, address_space=.GENERIC, ...],
     freqs_cis: TileTensor[_, address_space=.GENERIC, ...],
     kv_norm_gamma: TileTensor[_, address_space=.GENERIC, ...],
     kv_collection: collection_t,
@@ -2295,7 +2289,7 @@ def mla_decode_branch_bf16[
     epsilon: Float32,
     w_uk: TileTensor[.bfloat16, address_space=.GENERIC, ...],
     w_uv: TileTensor[.bfloat16, address_space=.GENERIC, ...],
-    scalar_args_buf: TileTensor[DType.int64, address_space=.GENERIC, ...],
+    scalar_args_buf: TileTensor[.int64, address_space=.GENERIC, ...],
     ctx: DeviceContext,
     d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
     indices_stride: Int = 0,
@@ -2535,9 +2529,9 @@ def mla_prefill_branch_sparse_bf16[
     indices_stride: Int,
     target: StaticString = "cpu",
 ](
-    output: TileTensor[mut=True, DType.bfloat16, address_space=.GENERIC, ...],
+    output: TileTensor[mut=True, .bfloat16, address_space=.GENERIC, ...],
     q: TileTensor[.bfloat16, address_space=.GENERIC, ...],
-    input_row_offsets: TileTensor[DType.uint32, address_space=.GENERIC, ...],
+    input_row_offsets: TileTensor[.uint32, address_space=.GENERIC, ...],
     freqs_cis: TileTensor[_, address_space=.GENERIC, ...],
     kv_norm_gamma: TileTensor[_, address_space=.GENERIC, ...],
     kv_collection: collection_t,
@@ -2805,9 +2799,9 @@ def mla_prefill_decode_graph_bf16[
     sparse_mla: Bool = False,
     sparse_indices_stride: Int = 0,
 ](
-    output: TileTensor[mut=True, DType.bfloat16, address_space=.GENERIC, ...],
+    output: TileTensor[mut=True, .bfloat16, address_space=.GENERIC, ...],
     q: TileTensor[.bfloat16, address_space=.GENERIC, ...],
-    input_row_offsets: TileTensor[DType.uint32, address_space=.GENERIC, ...],
+    input_row_offsets: TileTensor[.uint32, address_space=.GENERIC, ...],
     freqs_cis: TileTensor[_, address_space=.GENERIC, ...],
     kv_norm_gamma: TileTensor[_, address_space=.GENERIC, ...],
     kv_collection: collection_t,
@@ -2815,17 +2809,15 @@ def mla_prefill_decode_graph_bf16[
     scale: Float32,
     epsilon: Float32,
     buffer_row_offsets: TileTensor[
-        mut=False, DType.uint32, address_space=.GENERIC, ...
+        mut=False, .uint32, address_space=.GENERIC, ...
     ],
-    cache_offsets: TileTensor[
-        mut=True, DType.uint32, address_space=.GENERIC, ...
-    ],
+    cache_offsets: TileTensor[mut=True, .uint32, address_space=.GENERIC, ...],
     buffer_length: Int,
     max_seq_len: Int,
     w_k: TileTensor[.bfloat16, address_space=.GENERIC, ...],
     w_uk: TileTensor[.bfloat16, address_space=.GENERIC, ...],
     w_uv: TileTensor[.bfloat16, address_space=.GENERIC, ...],
-    scalar_args_buf: TileTensor[DType.int64, address_space=.GENERIC, ...],
+    scalar_args_buf: TileTensor[.int64, address_space=.GENERIC, ...],
     ctx: DeviceContext,
     d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
     indices_stride: Int = 0,

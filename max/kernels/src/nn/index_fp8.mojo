@@ -85,20 +85,18 @@ def fp8_index_kernel[
     VLStorageType: TensorStorage = PointerStorage[element_width=1],
 ](
     output_tt: TileTensor[
-        DType.float32, OutputLT, MutAnyOrigin, Storage=OutputStorageType
+        .float32, OutputLT, MutAnyOrigin, Storage=OutputStorageType
     ],
     # [total_seq_len, num_heads, depth]
     q_tt: TileTensor[dtype, QLT, ImmutAnyOrigin, Storage=QStorageType],
     # [total_seq_len, num_heads]
-    q_s_tt: TileTensor[
-        DType.float32, QSLT, MutAnyOrigin, Storage=QSStorageType
-    ],
+    q_s_tt: TileTensor[.float32, QSLT, MutAnyOrigin, Storage=QSStorageType],
     # MHAOperand for K values
     k_operand: k_operand_type,
     # MHAOperand for K scales
     ks_operand: ks_operand_type,
     valid_length_tt: TileTensor[
-        DType.uint32, VLLT, ImmutAnyOrigin, Storage=VLStorageType
+        .uint32, VLLT, ImmutAnyOrigin, Storage=VLStorageType
     ],
 ):
     """Computes the scalar FP8 index/gather score kernel as a Blackwell tensor-core fallback.
@@ -355,9 +353,9 @@ def fp8_index[
     q: TileTensor[mut=False, dtype, ...],
     q_s: TileTensor[.float32, ...],
     k: TileTensor[mut=False, dtype, ...],
-    k_s: TileTensor[mut=False, DType.float32, ...],
-    valid_length: TileTensor[mut=False, DType.uint32, ...],
-    cache_row_offsets: TileTensor[mut=False, DType.uint32, ...],
+    k_s: TileTensor[mut=False, .float32, ...],
+    valid_length: TileTensor[mut=False, .uint32, ...],
+    cache_row_offsets: TileTensor[mut=False, .uint32, ...],
     batch_size: Int,
     max_seq_len: Int,
     max_num_keys: Int,
@@ -667,8 +665,8 @@ def fp8_index_naive[
     q_s: TileTensor[.float32, ...],
     k: TileTensor[mut=False, dtype, ...],
     k_s: TileTensor[.float32, ...],
-    valid_length: TileTensor[mut=False, DType.uint32, ...],
-    cache_row_offsets: TileTensor[mut=False, DType.uint32, ...],
+    valid_length: TileTensor[mut=False, .uint32, ...],
+    cache_row_offsets: TileTensor[mut=False, .uint32, ...],
     batch_size: Int,
     max_seq_len: Int,
     max_num_keys: Int,

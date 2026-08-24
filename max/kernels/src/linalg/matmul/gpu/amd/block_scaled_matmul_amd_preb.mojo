@@ -304,31 +304,31 @@ struct BlockScaledMmaOp_PreB[
     ]()
 
     var _a_reg: TileTensor[
-        DType.uint8,
+        .uint8,
         type_of(Self._a_reg_layout),
         MutUntrackedOrigin,
         address_space=.LOCAL,
     ]
     var _b_reg: TileTensor[
-        DType.uint8,
+        .uint8,
         type_of(Self._b_reg_layout),
         MutUntrackedOrigin,
         address_space=.LOCAL,
     ]
     var _c_reg: TileTensor[
-        DType.float32,
+        .float32,
         type_of(Self._c_reg_layout),
         MutUntrackedOrigin,
         address_space=.LOCAL,
     ]
     var _a_scale_packed: TileTensor[
-        DType.int32,
+        .int32,
         type_of(Self._a_scale_layout),
         MutUntrackedOrigin,
         address_space=.LOCAL,
     ]
     var _b_scale_packed: TileTensor[
-        DType.int32,
+        .int32,
         type_of(Self._b_scale_layout),
         MutUntrackedOrigin,
         address_space=.LOCAL,
@@ -388,10 +388,7 @@ struct BlockScaledMmaOp_PreB[
     @always_inline
     def load_a_frag_from_smem[
         mma_k_idx: Int
-    ](
-        self,
-        a_smem_warp: TileTensor[DType.uint8, _, _, address_space=.SHARED, ...],
-    ):
+    ](self, a_smem_warp: TileTensor[.uint8, _, _, address_space=.SHARED, ...],):
         """Load A fragment for MFMA-K position `mma_k_idx` from row-major SMEM.
 
         XOR-16 swizzled read (matches the write in `copy_a_tile_to_smem`): each

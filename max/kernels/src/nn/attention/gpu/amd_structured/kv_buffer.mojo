@@ -102,9 +102,7 @@ struct KVCacheIterator[
         ].element_types,
     ]
     comptime GmemTileType = TileTensor[
-        Self.cache_t.dtype,
-        Self.GmemTileLayout,
-        ImmutAnyOrigin,
+        Self.cache_t.dtype, Self.GmemTileLayout, ImmutAnyOrigin
     ]
 
     var cache: Self.cache_t

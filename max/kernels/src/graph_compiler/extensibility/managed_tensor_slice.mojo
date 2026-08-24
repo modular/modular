@@ -2275,7 +2275,7 @@ struct ManagedTensorSlice[
     ](
         self,
         out result: TileTensor[
-            dtype=Self.dtype,
+            Self.dtype,
             origin=MutUntrackedOrigin,
             LayoutType=Self.RuntimeLayout,
         ],

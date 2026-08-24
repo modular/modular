@@ -23,7 +23,7 @@ def pool[
     count_boundary: Bool = False
 ](
     pool_method: PoolMethod,
-    output_tensor: TileTensor[mut=True, DType.float32, ...],
+    output_tensor: TileTensor[mut=True, .float32, ...],
 ) raises:
     var in_stack = Array[Float32, 2 * 5 * 7 * 2](uninitialized=True)
     var input_tensor = TileTensor(in_stack, row_major[2, 5, 7, 2]())
@@ -147,7 +147,7 @@ def test_avg_pool_2d() raises:
 
 def test_avg_pool_2d_with_padding[
     count_boundary: Bool = False
-](output_tensor: TileTensor[mut=True, DType.float32, ...]) raises:
+](output_tensor: TileTensor[mut=True, .float32, ...]) raises:
     var in_stack = Array[Float32, 1 * 7 * 7 * 1](uninitialized=True)
     var input_tensor = TileTensor(in_stack, row_major[1, 7, 7, 1]())
     arange(input_tensor)
@@ -307,7 +307,7 @@ def pool_ceil_test[
     count_boundary: Bool = False, ceil_mode: Bool = True
 ](
     pool_method: PoolMethod,
-    output_tensor: TileTensor[mut=True, DType.float32, ...],
+    output_tensor: TileTensor[mut=True, .float32, ...],
 ) raises:
     var in_stack = Array[Float32, 1 * 4 * 4 * 1](uninitialized=True)
     var input_tensor = TileTensor(in_stack, row_major[1, 4, 4, 1]())

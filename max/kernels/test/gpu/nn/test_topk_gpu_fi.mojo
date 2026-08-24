@@ -79,7 +79,7 @@ def compute_topk_mask[
     dtype: DType,
 ](
     values: TileTensor[dtype, ...],
-    mask: TileTensor[mut=True, DType.bool, ...],
+    mask: TileTensor[mut=True, .bool, ...],
     K: Int,
     batch_size: Int,
     N: Int,
@@ -193,7 +193,7 @@ def compute_topp_mask[
     dtype: DType,
 ](
     probs: TileTensor[dtype, ...],
-    mask: TileTensor[mut=True, DType.bool, ...],
+    mask: TileTensor[mut=True, .bool, ...],
     p: Float32,
     batch_size: Int,
     N: Int,
@@ -1040,7 +1040,7 @@ def _cpu_softmax[
     dtype: DType,
 ](
     logits: TileTensor[dtype, ...],
-    probs_out: TileTensor[mut=True, DType.float32, ...],
+    probs_out: TileTensor[mut=True, .float32, ...],
     batch_size: Int,
     N: Int,
     T: Float32,

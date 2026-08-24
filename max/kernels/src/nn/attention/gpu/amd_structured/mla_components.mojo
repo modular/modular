@@ -455,9 +455,7 @@ struct MlaPrefillV2Core[config: MlaConfigV2]:
         ), "MlaPrefillV2Core: k op dtype must equal `config.dtype`"
         return rebind[
             TileTensor[
-                Self.config.dtype,
-                Self._KFullPerTileLayoutT,
-                ImmutAnyOrigin,
+                Self.config.dtype, Self._KFullPerTileLayoutT, ImmutAnyOrigin
             ]
         ](
             k_op.block_paged_tile[Self.KV_BLOCK](
@@ -495,11 +493,7 @@ struct MlaPrefillV2Core[config: MlaConfigV2]:
             v_t.dtype == Self.config.dtype
         ), "MlaPrefillV2Core: V dtype must equal `config.dtype`"
         return rebind[
-            TileTensor[
-                Self.config.dtype,
-                Self._VPerTileLayoutT,
-                ImmutAnyOrigin,
-            ]
+            TileTensor[Self.config.dtype, Self._VPerTileLayoutT, ImmutAnyOrigin]
         ](
             v_op.block_paged_tile[Self.KV_BLOCK](
                 batch_idx,

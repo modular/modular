@@ -639,7 +639,7 @@ def test_tile_tensor_flat_rank() raises:
     """
     # Non-nested layout: flat_rank == rank
     comptime tensor1 = TileTensor[
-        DType.float32, type_of(row_major[3, 4]()), MutAnyOrigin
+        .float32, type_of(row_major[3, 4]()), MutAnyOrigin
     ]
     comptime assert tensor1.rank == 2
     comptime assert tensor1.flat_rank == 2
@@ -650,7 +650,7 @@ def test_tile_tensor_flat_rank() raises:
     comptime blocked_layout = blocked_product(block, tiler)
 
     comptime tensor2 = TileTensor[
-        DType.float32, type_of(blocked_layout), MutAnyOrigin
+        .float32, type_of(blocked_layout), MutAnyOrigin
     ]
     comptime assert tensor2.rank == 2  # Two top-level Coords
     comptime assert tensor2.flat_rank == 4  # Four scalar dimensions

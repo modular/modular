@@ -167,9 +167,7 @@ def _run_case[
     # Tensor views: full [rows, cols] inputs and [rank_units, cols] output
     # shards (true row count; the storage is >= 1 row).
     comptime InTensorType = TileTensor[
-        in_dtype,
-        type_of(row_major(Coord(Index(0, num_cols)))),
-        ImmutAnyOrigin,
+        in_dtype, type_of(row_major(Coord(Index(0, num_cols)))), ImmutAnyOrigin
     ]
     comptime OutShardType = TileTensor[
         mut=True,
@@ -613,9 +611,7 @@ def _run_prod_oracle_case[
         list_of_ctx[i].synchronize()
 
     comptime InTensorType = TileTensor[
-        in_dtype,
-        type_of(row_major(Coord(Index(0, num_cols)))),
-        ImmutAnyOrigin,
+        in_dtype, type_of(row_major(Coord(Index(0, num_cols)))), ImmutAnyOrigin
     ]
     comptime OutShardType = TileTensor[
         mut=True,
@@ -1032,9 +1028,7 @@ def _run_residual_case[
         list_of_ctx[i].synchronize()
 
     comptime InTensorType = TileTensor[
-        in_dtype,
-        type_of(row_major(Coord(Index(0, num_cols)))),
-        ImmutAnyOrigin,
+        in_dtype, type_of(row_major(Coord(Index(0, num_cols)))), ImmutAnyOrigin
     ]
     comptime OutShardType = TileTensor[
         mut=True,
@@ -1472,9 +1466,7 @@ def _run_interleaved_barrier_case[
         list_of_ctx[i].synchronize()
 
     comptime InTensorType = TileTensor[
-        in_dtype,
-        type_of(row_major(Coord(Index(0, num_cols)))),
-        ImmutAnyOrigin,
+        in_dtype, type_of(row_major(Coord(Index(0, num_cols)))), ImmutAnyOrigin
     ]
     comptime OutShardType = TileTensor[
         mut=True,
@@ -1693,9 +1685,7 @@ def _run_rank_validation_case[
     list_of_ctx[0].synchronize()
 
     comptime InTensorType = TileTensor[
-        in_dtype,
-        type_of(row_major(Coord(Index(0, num_cols)))),
-        ImmutAnyOrigin,
+        in_dtype, type_of(row_major(Coord(Index(0, num_cols)))), ImmutAnyOrigin
     ]
     comptime OutShardType = TileTensor[
         mut=True,

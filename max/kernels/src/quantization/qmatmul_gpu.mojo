@@ -1780,7 +1780,7 @@ def matmul_gpu_qint4[
 ](
     c_tt: TileTensor[mut=True, c_type, address_space=.GENERIC, ...],
     a_tt: TileTensor[mut=False, a_type, address_space=.GENERIC, ...],
-    b_tt: TileTensor[mut=False, DType.uint8, address_space=.GENERIC, ...],
+    b_tt: TileTensor[mut=False, .uint8, address_space=.GENERIC, ...],
     ctx: Optional[DeviceContext] = None,
 ) raises:
     """Launches a GPU int4 quantized matrix multiplication for the given tile tensors.
@@ -2342,8 +2342,8 @@ def matmul_gpu_qint4_impl[
 def gpu_qint4_repack_Q4_0[
     target: StaticString,
 ](
-    b_tt: TileTensor[mut=False, DType.uint8, address_space=.GENERIC, ...],
-    b_packed_tt: TileTensor[mut=True, DType.uint8, address_space=.GENERIC, ...],
+    b_tt: TileTensor[mut=False, .uint8, address_space=.GENERIC, ...],
+    b_packed_tt: TileTensor[mut=True, .uint8, address_space=.GENERIC, ...],
     ctx: Optional[DeviceContext] = None,
 ) raises:
     """Launches the GPU kernel that repacks Q4_0 weights into the packed GEMM layout.
@@ -2403,8 +2403,8 @@ def gpu_qint4_repack_GPTQ[
     group_size: Int,
     target: StaticString,
 ](
-    b_tt: TileTensor[mut=False, DType.uint8, address_space=.GENERIC, ...],
-    b_packed_tt: TileTensor[mut=True, DType.uint8, address_space=.GENERIC, ...],
+    b_tt: TileTensor[mut=False, .uint8, address_space=.GENERIC, ...],
+    b_packed_tt: TileTensor[mut=True, .uint8, address_space=.GENERIC, ...],
     perm_idx: OptionalReg[
         LayoutTensor[
             mut=False,

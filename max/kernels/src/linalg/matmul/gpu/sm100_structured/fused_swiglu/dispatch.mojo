@@ -43,10 +43,10 @@ def matmul_swiglu_dispatch_sm100[
     pdl_level: PDLLevel = PDLLevel(0),
 ](
     c_out: TileTensor[
-        mut=True, DType.bfloat16, Storage=PointerStorage[element_width=1], ...
+        mut=True, .bfloat16, Storage=PointerStorage[element_width=1], ...
     ],
-    a: TileTensor[mut=False, DType.bfloat16, ...],
-    b: TileTensor[mut=False, DType.bfloat16, ...],
+    a: TileTensor[mut=False, .bfloat16, ...],
+    b: TileTensor[mut=False, .bfloat16, ...],
     ctx: DeviceContext,
     bias_ptr: OptionalReg[UnsafePointer[BFloat16, ImmutAnyOrigin]] = None,
 ) raises:

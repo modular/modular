@@ -786,11 +786,7 @@ def select_and_launch_sm100_config[
         TileTensor[b_type, ...],
         DeviceContext,
         OptionalReg[
-            TileTensor[
-                c_type,
-                RowMajorLayout[Int64, Int64],
-                ImmutAnyOrigin,
-            ]
+            TileTensor[c_type, RowMajorLayout[Int64, Int64], ImmutAnyOrigin]
         ],
     ) raises -> None,
     //,
@@ -809,11 +805,7 @@ def select_and_launch_sm100_config[
     b: TileTensor[b_type, ...],
     ctx: DeviceContext,
     epilogue_tensor: OptionalReg[
-        TileTensor[
-            c_type,
-            RowMajorLayout[Int64, Int64],
-            ImmutAnyOrigin,
-        ]
+        TileTensor[c_type, RowMajorLayout[Int64, Int64], ImmutAnyOrigin]
     ] = None,
 ) raises -> Int:
     """Selects and launches an SM100 matmul config for the given shape.
@@ -934,11 +926,7 @@ def heuristic_and_outliers_dispatch[
     b: TileTensor[b_type, ...],
     ctx: DeviceContext,
     epilogue_tensor: OptionalReg[
-        TileTensor[
-            c.dtype,
-            RowMajorLayout[Int64, Int64],
-            ImmutAnyOrigin,
-        ]
+        TileTensor[c.dtype, RowMajorLayout[Int64, Int64], ImmutAnyOrigin]
     ] = None,
 ) raises -> Int:
     """Dispatches an SM100 matmul through the heuristic outlier config set.
@@ -984,11 +972,7 @@ def heuristic_and_outliers_dispatch[
         b_tensor: TileTensor[b_type, ...],
         dispatch_ctx: DeviceContext,
         dispatch_epilogue_tensor: OptionalReg[
-            TileTensor[
-                c_type,
-                RowMajorLayout[Int64, Int64],
-                ImmutAnyOrigin,
-            ]
+            TileTensor[c_type, RowMajorLayout[Int64, Int64], ImmutAnyOrigin]
         ],
     ) raises:
         _matmul_dispatch_sm100[
@@ -1298,11 +1282,7 @@ def _matmul_dispatch_sm100[
     b_tensor: TileTensor[b_type, ...],
     ctx: DeviceContext,
     epilogue_tensor: OptionalReg[
-        TileTensor[
-            c_type,
-            RowMajorLayout[Int64, Int64],
-            ImmutAnyOrigin,
-        ]
+        TileTensor[c_type, RowMajorLayout[Int64, Int64], ImmutAnyOrigin]
     ] = None,
 ) raises:
     _matmul_dispatch_sm100[
@@ -1338,11 +1318,7 @@ def _matmul_dispatch_sm100[
     b_tensor: TileTensor[b_type, ...],
     ctx: DeviceContext,
     epilogue_tensor: OptionalReg[
-        TileTensor[
-            c_type,
-            RowMajorLayout[Int64, Int64],
-            ImmutAnyOrigin,
-        ]
+        TileTensor[c_type, RowMajorLayout[Int64, Int64], ImmutAnyOrigin]
     ] = None,
 ) raises:
     """Our sm100 matmul kernel still does not support fusion of elementwise
@@ -1620,11 +1596,7 @@ def sm100_heuristic_and_outliers_dispatch[
     b: TileTensor[b_type, ...],
     ctx: DeviceContext,
     epilogue_tensor: OptionalReg[
-        TileTensor[
-            c.dtype,
-            RowMajorLayout[Int64, Int64],
-            ImmutAnyOrigin,
-        ]
+        TileTensor[c.dtype, RowMajorLayout[Int64, Int64], ImmutAnyOrigin]
     ] = None,
 ) raises -> Int:
     """Dispatches an SM100 matmul through the heuristic outlier config set.
@@ -1670,11 +1642,7 @@ def sm100_heuristic_and_outliers_dispatch[
         b_tensor: TileTensor[b_type, ...],
         dispatch_ctx: DeviceContext,
         dispatch_epilogue_tensor: OptionalReg[
-            TileTensor[
-                c_type,
-                RowMajorLayout[Int64, Int64],
-                ImmutAnyOrigin,
-            ]
+            TileTensor[c_type, RowMajorLayout[Int64, Int64], ImmutAnyOrigin]
         ],
     ) raises:
         blackwell_matmul_tma_umma_warp_specialized[

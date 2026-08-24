@@ -176,9 +176,7 @@ def _run_case[
         list_of_ctx[i].synchronize()
 
     comptime ShardType = TileTensor[
-        in_dtype,
-        type_of(row_major(Coord(Index(0, num_cols)))),
-        ImmutAnyOrigin,
+        in_dtype, type_of(row_major(Coord(Index(0, num_cols)))), ImmutAnyOrigin
     ]
     comptime FullType = TileTensor[
         mut=True,
@@ -188,13 +186,13 @@ def _run_case[
     ]
     comptime QuantType = TileTensor[
         mut=True,
-        DType.float8_e4m3fn,
+        .float8_e4m3fn,
         type_of(row_major(Coord(Index(0, num_cols)))),
         MutAnyOrigin,
     ]
     comptime ScaleType = TileTensor[
         mut=True,
-        DType.float8_e8m0fnu,
+        .float8_e8m0fnu,
         type_of(row_major(Coord(Index(0, scale_cols)))),
         MutAnyOrigin,
     ]

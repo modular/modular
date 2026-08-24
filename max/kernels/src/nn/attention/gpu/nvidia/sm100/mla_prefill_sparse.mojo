@@ -1038,10 +1038,7 @@ struct MLAPrefillSparse[
             SharedMemBarrier, address_space=.SHARED, ...
         ],
         smem_tensor: TileTensor[
-            mut=True,
-            Self.qkv_dtype,
-            address_space=.SHARED,
-            ...,
+            mut=True, Self.qkv_dtype, address_space=.SHARED, ...
         ],
         local_indices: Array[SIMD[.int32, 4], num_rows],
         warp_idx: UInt32,
@@ -1089,12 +1086,9 @@ struct MLAPrefillSparse[
             SharedMemBarrier, address_space=.SHARED, ...
         ],
         smem_tensor: TileTensor[
-            mut=True,
-            Self.qkv_dtype,
-            address_space=.SHARED,
-            ...,
+            mut=True, Self.qkv_dtype, address_space=.SHARED, ...
         ],
-        indices: TileTensor[DType.uint32, address_space=.GENERIC, ...],
+        indices: TileTensor[.uint32, address_space=.GENERIC, ...],
         kv_lut: Self.KVLUTType,
         warp_idx: UInt32,
         k: UInt32,
@@ -1179,7 +1173,7 @@ struct MLAPrefillSparse[
             Self.k_tile_shape,
             Self.k_desc_shape,
         ],
-        indices: TileTensor[DType.uint32, address_space=.GENERIC, ...],
+        indices: TileTensor[.uint32, address_space=.GENERIC, ...],
         kv_lut: Self.KVLUTType,
         k_smem_ptr: UnsafePointer[
             mut=True, Scalar[Self.qkv_dtype], address_space=.SHARED, ...
@@ -1323,7 +1317,7 @@ struct MLAPrefillSparse[
         sv_p1_done: UnsafePointer[SharedMemBarrier, address_space=.SHARED, ...],
         v_p0_ready: UnsafePointer[SharedMemBarrier, address_space=.SHARED, ...],
         v_p1_ready: UnsafePointer[SharedMemBarrier, address_space=.SHARED, ...],
-        indices: TileTensor[DType.uint32, address_space=.GENERIC, ...],
+        indices: TileTensor[.uint32, address_space=.GENERIC, ...],
         kv_lut: Self.KVLUTType,
         k: UInt32,
         warp_idx: UInt32,
@@ -1406,7 +1400,7 @@ def mla_prefill_sparse[
     q: TileTensor[q_type, address_space=.GENERIC, ...],
     kv_cache: cache_t,
     indices: TileTensor[.uint32, address_space=.GENERIC, ...],
-    topk_lengths: TileTensor[DType.uint32, address_space=.GENERIC, ...],
+    topk_lengths: TileTensor[.uint32, address_space=.GENERIC, ...],
     # Optional per-head attention sink. Pass `None` to skip the sink term
     # entirely; pass `Some(ptr)` with a buffer of `num_q_heads` fp32
     # values to add `exp2(sink_h - mi)` to the softmax normalizer per

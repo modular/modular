@@ -78,13 +78,9 @@ comptime probe_layout = row_major[NPROBE]()
 
 def _cast_probe_kernel(
     vals: TileTensor[.float32, type_of(probe_layout), MutAnyOrigin],
-    e8m0_out: TileTensor[
-        DType.float8_e8m0fnu, type_of(probe_layout), MutAnyOrigin
-    ],
+    e8m0_out: TileTensor[.float8_e8m0fnu, type_of(probe_layout), MutAnyOrigin],
     e8m0_back: TileTensor[.float32, type_of(probe_layout), MutAnyOrigin],
-    e4m3_out: TileTensor[
-        DType.float8_e4m3fn, type_of(probe_layout), MutAnyOrigin
-    ],
+    e4m3_out: TileTensor[.float8_e4m3fn, type_of(probe_layout), MutAnyOrigin],
     recip_out: TileTensor[.float32, type_of(probe_layout), MutAnyOrigin],
     n: Int32,
 ):

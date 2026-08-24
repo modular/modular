@@ -83,9 +83,7 @@ def fp4_gemv_kernel[
     c: TileTensor[c_type, c_layout, MutAnyOrigin],  # [1, N]
     a: TileTensor[.bfloat16, a_layout, ImmutAnyOrigin],  # [1, K]
     packed: TileTensor[.uint8, p_layout, ImmutAnyOrigin],  # [N, K//2]
-    scales: TileTensor[
-        DType.float8_e4m3fn, s_layout, ImmutAnyOrigin
-    ],  # [N,K//16]
+    scales: TileTensor[.float8_e4m3fn, s_layout, ImmutAnyOrigin],  # [N,K//16]
     n_arg: Int32,
     k_arg: Int32,
 ):

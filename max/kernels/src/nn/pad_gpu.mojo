@@ -289,7 +289,7 @@ def get_padding_output_shape[
     rank: Int
 ](
     input_shape: IndexList[rank],
-    paddings: TileTensor[mut=False, DType.int, ...],
+    paddings: TileTensor[mut=False, .int, ...],
 ) -> IndexList[rank]:
     """Computes the output shape produced by padding `input_shape` with the
     before/after amounts given in `paddings`.

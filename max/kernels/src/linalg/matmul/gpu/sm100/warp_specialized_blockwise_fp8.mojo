@@ -329,14 +329,14 @@ def multi_stage_reg_epilogue[
 ](
     c_upper_main_tile: TileTensor[
         mut=True,
-        dtype=accum_type,
+        accum_type,
         LayoutType=accum_layout,
         address_space=.LOCAL,
         ...,
     ],
     c_lower_main_tile: TileTensor[
         mut=True,
-        dtype=accum_type,
+        accum_type,
         LayoutType=accum_layout,
         address_space=.LOCAL,
         ...,
@@ -538,14 +538,14 @@ def promote_accumulators[
     a_scales_smem_tiles: SMemTileArray2DRowMajor[a_scales_type, ...],
     c_upper_main_tile: TileTensor[
         mut=True,
-        dtype=accum_type,
+        accum_type,
         LayoutType=accum_layout,
         address_space=.LOCAL,
         ...,
     ],
     c_lower_main_tile: TileTensor[
         mut=True,
-        dtype=accum_type,
+        accum_type,
         LayoutType=accum_layout,
         address_space=.LOCAL,
         ...,
@@ -929,10 +929,7 @@ def blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
     cluster_dim: StaticTuple[Int32, 3],
     num_iters: Int32,
     b_scales: TileTensor[
-        b_scales_type,
-        b_scales_layout,
-        ImmutAnyOrigin,
-        Storage=b_scales_storage,
+        b_scales_type, b_scales_layout, ImmutAnyOrigin, Storage=b_scales_storage
     ],
     problem_shape: StaticTuple[Int32, 3],
 ):

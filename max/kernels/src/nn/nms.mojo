@@ -142,7 +142,7 @@ def non_max_suppression[
 ](
     boxes: TileTensor[dtype, ...],
     scores: TileTensor[dtype, ...],
-    output: TileTensor[mut=True, DType.int64, ...],
+    output: TileTensor[mut=True, .int64, ...],
     max_output_boxes_per_class: Int,
     iou_threshold: Float32,
     score_threshold: Float32,

@@ -265,11 +265,7 @@ def interpolate_point_1d[
     out_coords: IndexList[InputLayoutType.rank],
     scale: Float32,
     input: TileTensor[
-        mut=False,
-        dtype,
-        InputLayoutType,
-        address_space=.GENERIC,
-        ...,
+        mut=False, dtype, InputLayoutType, address_space=.GENERIC, ...
     ],
     output: TileTensor[mut=True, dtype, address_space=.GENERIC, ...],
 ):

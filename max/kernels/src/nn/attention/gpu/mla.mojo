@@ -241,7 +241,7 @@ def flare_mla_decoding[
     q: TileTensor[dtype, address_space=.GENERIC, ...],
     k: cache_t,
     mask_functor: mask_t,
-    valid_length: TileTensor[DType.uint32, address_space=.GENERIC, ...],
+    valid_length: TileTensor[.uint32, address_space=.GENERIC, ...],
     scale: Float32,
     ctx: DeviceContext,
     scalar_args_buf: NullableTileTensor[
@@ -618,7 +618,7 @@ def flare_mla_decoding_dispatch[
     q: TileTensor[dtype, address_space=.GENERIC, ...],
     k: k_t,
     mask_functor: mask_t,
-    valid_length: TileTensor[DType.uint32, address_space=.GENERIC, ...],
+    valid_length: TileTensor[.uint32, address_space=.GENERIC, ...],
     max_prompt_len: Int,
     max_cache_valid_length: Int,
     scale: Float32,
@@ -1709,9 +1709,7 @@ def mla_decoding[
     num_partitions_dev: Int32,
     max_cache_valid_length_dev: Int32,  # longest KV cache entry
     valid_length_tt: TileTensor[
-        DType.uint32,
-        ValidLT,
-        ImmutAnyOrigin,
+        .uint32, ValidLT, ImmutAnyOrigin
     ],  # valid length per batch
     mask: mask_t,
 ):
@@ -2594,7 +2592,7 @@ def _ragged_kv_view(
 def _ragged_offsets_view(
     src: TileTensor[.uint32, address_space=.GENERIC, ...],
 ) -> TileTensor[
-    DType.uint32, RowMajorLayout[*Coord[Int].element_types], ImmutAnyOrigin
+    .uint32, RowMajorLayout[*Coord[Int].element_types], ImmutAnyOrigin
 ]:
     """Rebuild ragged cache-row-offsets as a rank-1 row-major TileTensor view.
 
@@ -2639,8 +2637,8 @@ def flare_mla_prefill[
     v: LayoutTensor[mut=False, _, address_space=.GENERIC, ...],
     k_rope: cache_t,
     mask_functor: mask_t,
-    valid_length: TileTensor[DType.uint32, address_space=.GENERIC, ...],
-    cache_row_offsets: TileTensor[DType.uint32, address_space=.GENERIC, ...],
+    valid_length: TileTensor[.uint32, address_space=.GENERIC, ...],
+    cache_row_offsets: TileTensor[.uint32, address_space=.GENERIC, ...],
     scale: Float32,
     ctx: DeviceContext,
     q_max_seq_len: OptionalReg[Int] = None,
@@ -2834,9 +2832,9 @@ def flare_mla_prefill[
     v: TileTensor[address_space=.GENERIC, ...],
     k_rope: TileTensor[address_space=.GENERIC, ...],
     mask_functor: mask_t,
-    valid_length: TileTensor[DType.uint32, address_space=.GENERIC, ...],
+    valid_length: TileTensor[.uint32, address_space=.GENERIC, ...],
     cache_row_offsets: TileTensor[
-        mut=True, DType.uint32, address_space=.GENERIC, ...
+        mut=True, .uint32, address_space=.GENERIC, ...
     ],
     scale: Float32,
     ctx: DeviceContext,
@@ -2961,9 +2959,9 @@ def flare_mla_prefill[
     k_rope: TileTensor[address_space=.GENERIC, ...],
     k_rope_scales: TileTensor[address_space=.GENERIC, ...],
     mask_functor: mask_t,
-    valid_length: TileTensor[DType.uint32, address_space=.GENERIC, ...],
+    valid_length: TileTensor[.uint32, address_space=.GENERIC, ...],
     cache_row_offsets: TileTensor[
-        mut=True, DType.uint32, address_space=.GENERIC, ...
+        mut=True, .uint32, address_space=.GENERIC, ...
     ],
     scale: Float32,
     ctx: DeviceContext,
@@ -3085,9 +3083,9 @@ def flare_mla_prefill[
     v: TileTensor[address_space=.GENERIC, ...],
     k_rope: TileTensor[address_space=.GENERIC, ...],
     mask_functor: mask_t,
-    valid_length: TileTensor[DType.uint32, address_space=.GENERIC, ...],
+    valid_length: TileTensor[.uint32, address_space=.GENERIC, ...],
     cache_row_offsets: TileTensor[
-        mut=True, DType.uint32, address_space=.GENERIC, ...
+        mut=True, .uint32, address_space=.GENERIC, ...
     ],
     scale: Float32,
     ctx: DeviceContext,
@@ -3228,9 +3226,9 @@ def flare_mla_prefill[
     v: TileTensor[address_space=.GENERIC, ...],
     k_rope: cache_t,
     mask_functor: mask_t,
-    valid_length: TileTensor[DType.uint32, address_space=.GENERIC, ...],
+    valid_length: TileTensor[.uint32, address_space=.GENERIC, ...],
     cache_row_offsets: TileTensor[
-        mut=True, DType.uint32, address_space=.GENERIC, ...
+        mut=True, .uint32, address_space=.GENERIC, ...
     ],
     scale: Float32,
     ctx: DeviceContext,
@@ -3369,7 +3367,7 @@ def flare_mla_prefill_dispatch[
     v: v_t,
     k_rope: k_rope_t,
     mask_functor: mask_t,
-    valid_length: TileTensor[DType.uint32, address_space=.GENERIC, ...],
+    valid_length: TileTensor[.uint32, address_space=.GENERIC, ...],
     max_prompt_len: Int,
     scale: Float32,
     ctx: DeviceContext,
@@ -3583,11 +3581,7 @@ def mla_prefill[
     scale: Float32,
     batch_size: Int32,
     seq_len_arg: Int32,
-    valid_length_tt: TileTensor[
-        DType.uint32,
-        valid_layout,
-        ImmutAnyOrigin,
-    ],
+    valid_length_tt: TileTensor[.uint32, valid_layout, ImmutAnyOrigin],
     cache_offsets: OptionalReg[
         LayoutTensor[
             DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
@@ -4520,7 +4514,7 @@ def set_buffer_lengths_to_zero[
     BufferLengthsLayoutType: TensorLayout,
 ](
     buffer_lengths: TileTensor[
-        mut=True, DType.int32, BufferLengthsLayoutType, MutUntrackedOrigin
+        mut=True, .int32, BufferLengthsLayoutType, MutUntrackedOrigin
     ],
 ):
     """Zeroes out every element of a 1D buffer-lengths tensor.
@@ -4547,10 +4541,10 @@ def set_buffer_lengths_to_zero[
 def mla_prefill_plan[
     cache_t: KVCacheT,
 ](
-    buffer_row_offsets: TileTensor[mut=True, DType.uint32, ...],
-    cache_offsets: TileTensor[mut=True, DType.uint32, ...],
-    buffer_lengths: TileTensor[mut=True, DType.int32, ...],
-    input_row_offsets: TileTensor[mut=False, DType.uint32, ...],
+    buffer_row_offsets: TileTensor[mut=True, .uint32, ...],
+    cache_offsets: TileTensor[mut=True, .uint32, ...],
+    buffer_lengths: TileTensor[mut=True, .int32, ...],
+    input_row_offsets: TileTensor[mut=False, .uint32, ...],
     k_cache: cache_t,
     buffer_token_size: UInt32,
     ctx: DeviceContext,
@@ -4630,27 +4624,16 @@ def mla_prefill_plan_kernel[
     cache_t: KVCacheT,
 ](
     buffer_row_offsets: TileTensor[
-        mut=True,
-        DType.uint32,
-        BufferRowOffsetsLayoutType,
-        MutUntrackedOrigin,
+        mut=True, .uint32, BufferRowOffsetsLayoutType, MutUntrackedOrigin
     ],
     cache_offsets: TileTensor[
-        mut=True,
-        DType.uint32,
-        CacheOffsetsLayoutType,
-        MutUntrackedOrigin,
+        mut=True, .uint32, CacheOffsetsLayoutType, MutUntrackedOrigin
     ],
     buffer_lengths: TileTensor[
-        mut=True,
-        DType.int32,
-        BufferLengthsLayoutType,
-        MutUntrackedOrigin,
+        mut=True, .int32, BufferLengthsLayoutType, MutUntrackedOrigin
     ],
     input_row_offsets: TileTensor[
-        DType.uint32,
-        InputRowOffsetsLayoutType,
-        ImmUntrackedOrigin,
+        .uint32, InputRowOffsetsLayoutType, ImmUntrackedOrigin
     ],
     k_cache: cache_t,
     buffer_token_size: UInt32,
@@ -4791,13 +4774,11 @@ def _k_cache_to_buffer[
     BufferRowOffsetsLayoutType: TensorLayout,
     CacheOffsetsLayoutType: TensorLayout,
 ](
-    buffer_row_offsets: TileTensor[
-        DType.uint32, BufferRowOffsetsLayoutType, ...
-    ],
+    buffer_row_offsets: TileTensor[.uint32, BufferRowOffsetsLayoutType, ...],
     cache_offsets: TileTensor[.uint32, CacheOffsetsLayoutType, ...],
     k_cache: cache_t,
     length: Int32,
-    buffer: TileTensor[mut=True, dtype=dtype, ...],
+    buffer: TileTensor[mut=True, dtype, ...],
     context: DeviceContext,
 ) raises:
     comptime num_heads = cache_t.kv_params.num_heads

@@ -1073,11 +1073,7 @@ struct BTileGenerator[
         global_offset: GemmShape,
         tile_dim_nk: IndexList[2],
         valid_data_dim_nk: IndexList[2],
-    ) -> TileTensor[
-        Self.b_type,
-        Self.PackedTileLayout,
-        ImmutAnyOrigin,
-    ]:
+    ) -> TileTensor[Self.b_type, Self.PackedTileLayout, ImmutAnyOrigin]:
         """Get a packed matrix (B) tile.
 
         Parameters:

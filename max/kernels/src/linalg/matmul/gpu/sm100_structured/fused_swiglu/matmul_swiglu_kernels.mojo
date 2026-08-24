@@ -1445,9 +1445,7 @@ struct SwiGLUKernelConstants[
     comptime NUM_THREADS = 224 + Self.EPILOGUE_LOAD_THREADS
     comptime Bias1DTileLayout = row_major[1, Self.MMA_N]()
     comptime Bias1DTile = TileTensor[
-        Self.c_type,
-        type_of(Self.Bias1DTileLayout),
-        ImmutAnyOrigin,
+        Self.c_type, type_of(Self.Bias1DTileLayout), ImmutAnyOrigin
     ]
 
 

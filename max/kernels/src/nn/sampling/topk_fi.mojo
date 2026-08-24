@@ -2061,10 +2061,7 @@ def topk_topp_sampling_from_prob[
     deterministic: Bool = False,
     rng_seed: Optional[
         TileTensor[
-            DType.uint64,
-            SeedLayoutType,
-            ImmutAnyOrigin,
-            Storage=SeedStorageType,
+            .uint64, SeedLayoutType, ImmutAnyOrigin, Storage=SeedStorageType
         ]
     ] = None,
     rng_offset: UInt64 = 0,
@@ -2086,7 +2083,7 @@ def topk_topp_sampling_from_prob[
     ] = None,
     top_p_arr: Optional[
         TileTensor[
-            DType.float32,
+            .float32,
             TopPArrLayoutType,
             ImmutAnyOrigin,
             Storage=TopPArrStorageType,
@@ -2094,7 +2091,7 @@ def topk_topp_sampling_from_prob[
     ] = None,
     temperature: Optional[
         TileTensor[
-            DType.float32,
+            .float32,
             TemperatureLayoutType,
             ImmutAnyOrigin,
             Storage=TemperatureStorageType,
@@ -2102,10 +2099,7 @@ def topk_topp_sampling_from_prob[
     ] = None,
     min_p: Optional[
         TileTensor[
-            DType.float32,
-            MinPLayoutType,
-            ImmutAnyOrigin,
-            Storage=MinPStorageType,
+            .float32, MinPLayoutType, ImmutAnyOrigin, Storage=MinPStorageType
         ]
     ] = None,
     out_dist: Optional[

@@ -809,13 +809,7 @@ def _concat_gpu_elementwise[
     num_inputs: Int,
     epilogue_fn: Optional[elementwise_epilogue_type],
 ](
-    output: TileTensor[
-        mut=True,
-        dtype,
-        address_space=.GENERIC,
-        Storage=_,
-        ...,
-    ],
+    output: TileTensor[mut=True, dtype, address_space=.GENERIC, Storage=_, ...],
     axis: Int,
     inputs: StaticTuple[
         TileTensor[dtype, InputLayoutType, input_origin, Storage=InputStorage],
@@ -842,13 +836,7 @@ def _concat_gpu_elementwise[
     num_inputs: Int,
     epilogue_fn: Optional[elementwise_epilogue_type],
 ](
-    output: TileTensor[
-        mut=True,
-        dtype,
-        address_space=.GENERIC,
-        Storage=_,
-        ...,
-    ],
+    output: TileTensor[mut=True, dtype, address_space=.GENERIC, Storage=_, ...],
     inputs: StaticTuple[
         TileTensor[dtype, InputLayoutType, input_origin, Storage=InputStorage],
         num_inputs,
@@ -979,13 +967,7 @@ def _concat_gpu[
     dtype: DType,
     epilogue_fn: Optional[elementwise_epilogue_type],
 ](
-    output: TileTensor[
-        mut=True,
-        dtype,
-        address_space=.GENERIC,
-        Storage=_,
-        ...,
-    ],
+    output: TileTensor[mut=True, dtype, address_space=.GENERIC, Storage=_, ...],
     axis: Int,
     inputs: StaticTuple[
         TileTensor[dtype, InputLayoutType, input_origin, Storage=InputStorage],
@@ -1078,13 +1060,7 @@ def _fused_concat_cpu[
 ](
     axis: Int,
     input_shapes: StaticTuple[IndexList[rank], size],
-    output: TileTensor[
-        mut=True,
-        dtype,
-        address_space=.GENERIC,
-        Storage=_,
-        ...,
-    ],
+    output: TileTensor[mut=True, dtype, address_space=.GENERIC, Storage=_, ...],
     ctx: Optional[DeviceContext],
 ) raises:
     var offset = 0
@@ -1313,13 +1289,7 @@ def _fused_concat_gpu_elementwise[
     size: Int,
 ](
     input_shapes: StaticTuple[IndexList[rank], size],
-    output: TileTensor[
-        mut=True,
-        dtype,
-        address_space=.GENERIC,
-        Storage=_,
-        ...,
-    ],
+    output: TileTensor[mut=True, dtype, address_space=.GENERIC, Storage=_, ...],
     ctx: DeviceContext,
 ) raises:
     comptime num_inputs = input_shapes.size
@@ -1409,19 +1379,11 @@ def _fused_dual_concat_gpu_elementwise[
 ](
     input_shapes_0: StaticTuple[IndexList[rank], size_0],
     output_0: TileTensor[
-        mut=True,
-        dtype,
-        address_space=.GENERIC,
-        Storage=_,
-        ...,
+        mut=True, dtype, address_space=.GENERIC, Storage=_, ...
     ],
     input_shapes_1: StaticTuple[IndexList[rank], size_1],
     output_1: TileTensor[
-        mut=True,
-        dtype,
-        address_space=.GENERIC,
-        Storage=_,
-        ...,
+        mut=True, dtype, address_space=.GENERIC, Storage=_, ...
     ],
     ctx: DeviceContext,
 ) raises:

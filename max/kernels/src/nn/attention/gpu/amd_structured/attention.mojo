@@ -437,9 +437,7 @@ struct Attention[
 
     @__allow_legacy_any_origin_fields
     var output_tile: TileTensor[
-        Self.output_type,
-        Self.OutputTileLayout,
-        MutAnyOrigin,
+        Self.output_type, Self.OutputTileLayout, MutAnyOrigin
     ]
 
     var batch_idx: Int

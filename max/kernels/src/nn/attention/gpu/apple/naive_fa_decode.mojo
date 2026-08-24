@@ -179,10 +179,7 @@ def naive_fa_decode_apple_core[
     v: v_t,
     mask_functor: mask_t,
     valid_length: TileTensor[
-        DType.uint32,
-        valid_length_layout,
-        ImmutAnyOrigin,
-        Storage=VLStorageType,
+        .uint32, valid_length_layout, ImmutAnyOrigin, Storage=VLStorageType
     ],
     sink_weights: OptionalReg[
         TileTensor[q_type, sink_layout, ImmutAnyOrigin, Storage=SinkStorageType]
@@ -496,10 +493,7 @@ def naive_fa_decode_apple_stitch[
     ],
     k: k_t,
     valid_length: TileTensor[
-        DType.uint32,
-        valid_length_layout,
-        ImmutAnyOrigin,
-        Storage=VLStorageType,
+        .uint32, valid_length_layout, ImmutAnyOrigin, Storage=VLStorageType
     ],
     max_prompt_len: Int32,
     # Full key count for the dense decode path; mirrors the producer so the

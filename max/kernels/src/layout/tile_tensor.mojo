@@ -1151,11 +1151,7 @@ struct TileTensor[
     def _distance(
         self: Self.Immut,
         other: TileTensor[
-            mut=False,
-            Self.dtype,
-            _,
-            address_space=Self.address_space,
-            ...,
+            mut=False, Self.dtype, _, address_space=Self.address_space, ...
         ],
     ) -> Scalar[Self.linear_idx_type]:
         """Calculate the element-wise distance between this tensor's storage
@@ -1413,7 +1409,7 @@ struct TileTensor[
         )
 
     comptime ViewType[new_layout: TensorLayout] = TileTensor[
-        dtype=Self.dtype,
+        Self.dtype,
         LayoutType=new_layout,
         origin=Self.origin,
         Storage=Self.Storage,
@@ -1432,7 +1428,7 @@ struct TileTensor[
         offsets: TypeList[Trait=CoordLike, ...],
         LayoutType: TensorLayout = Self.LayoutType,
     ] = TileTensor[
-        dtype=Self.dtype,
+        Self.dtype,
         LayoutType=LayoutType,
         origin=Self.origin,
         Storage=Self.Storage.OffsetResultType[offsets],
@@ -1591,7 +1587,7 @@ struct TileTensor[
         swizzle: Optional[Swizzle] = None,
     ](self, thread_id: Int) -> Tuple[
         TileTensor[
-            dtype=Self.dtype,
+            Self.dtype,
             origin=Self.origin,
             LayoutType=Layout[
                 shape_types=_Divide[
@@ -2176,7 +2172,7 @@ struct TileTensor[
     # ===------------------------------------------------------------------=== #
 
     comptime VectorizedType[*vector_shape: Int] = TileTensor[
-        dtype=Self.dtype,
+        Self.dtype,
         origin=Self.origin,
         LayoutType=Layout[
             shape_types=_CeilDiv[
@@ -2634,7 +2630,7 @@ struct TileTensor[
         }
 
     comptime AddressSpaceCastType[address_space: AddressSpace] = TileTensor[
-        dtype=Self.dtype,
+        Self.dtype,
         origin=Self.origin,
         LayoutType=Self.LayoutType,
         Storage=Self.Storage,
@@ -3251,10 +3247,7 @@ def stack_allocation[
     address_space: AddressSpace = .GENERIC,
     alignment: Int = align_of[dtype](),
 ](var layout: LayoutType) -> TileTensor[
-    dtype,
-    LayoutType,
-    MutUntrackedOrigin,
-    address_space=address_space,
+    dtype, LayoutType, MutUntrackedOrigin, address_space=address_space
 ] where LayoutType.all_dims_known:
     """Allocate a TileTensor on the stack with the given layout.
 
@@ -3283,10 +3276,7 @@ def stack_allocation[
         All layout dimensions must be statically known.
     """
     return TileTensor[
-        dtype,
-        LayoutType,
-        MutUntrackedOrigin,
-        address_space=address_space,
+        dtype, LayoutType, MutUntrackedOrigin, address_space=address_space
     ](
         _std_stack_allocation[
             Coord[*LayoutType._shape_types].static_product,
@@ -3581,10 +3571,7 @@ def _tile[
     tile_shape_types: TypeList[Trait=CoordLike, ...],
     //,
 ](
-    data_layout_tensor: TileTensor[
-        dtype,
-        ...,
-    ],
+    data_layout_tensor: TileTensor[dtype, ...],
     tile_shape: Coord[*tile_shape_types],
     tile_coords: Coord[*coord_types],
 ) -> data_layout_tensor.TileResultType[
@@ -3678,10 +3665,7 @@ def _tile_with_offset[
     tile_shape_types: TypeList[Trait=CoordLike, ...],
     //,
 ](
-    data_layout_tensor: TileTensor[
-        dtype,
-        ...,
-    ],
+    data_layout_tensor: TileTensor[dtype, ...],
     tile_shape: Coord[*tile_shape_types],
     tile_coords: Coord[*coord_types],
 ) -> Tuple[
@@ -3749,10 +3733,7 @@ def _tile[
     *,
     stride_layout: TensorLayout,
 ](
-    data_layout_tensor: TileTensor[
-        dtype,
-        ...,
-    ],
+    data_layout_tensor: TileTensor[dtype, ...],
     tile_shape: Coord[*tile_shape_types],
     tile_coords: Coord[*coord_types],
 ) -> data_layout_tensor.OffsetViewType[
@@ -3808,10 +3789,7 @@ def _tile_with_offset[
     *,
     stride_layout: TensorLayout,
 ](
-    data_layout_tensor: TileTensor[
-        dtype,
-        ...,
-    ],
+    data_layout_tensor: TileTensor[dtype, ...],
     tile_shape: Coord[*tile_shape_types],
     tile_coords: Coord[*coord_types],
 ) -> Tuple[
@@ -4137,7 +4115,7 @@ def flatten_leading[
     layout: TensorLayout,
     //,
 ](
-    tensor: TileTensor[dtype=dtype, LayoutType=layout, ...],
+    tensor: TileTensor[dtype, LayoutType=layout, ...],
 ) -> tensor.ViewType[
     RowMajorLayout[
         *Coord[Int64, layout._shape_types[layout.rank - 1]].element_types

@@ -1361,23 +1361,19 @@ def blackwell_block_scaled_matmul_tma_umma_warp_specialized[
 ](
     c_device: TileTensor[mut=True, config.c_type, address_space=.GENERIC, ...],
     a_device: TileTensor[mut=False, config.a_type, address_space=.GENERIC, ...],
-    group_offsets: TileTensor[
-        mut=False, DType.uint32, address_space=.GENERIC, ...
-    ],
+    group_offsets: TileTensor[mut=False, .uint32, address_space=.GENERIC, ...],
     group_scale_offsets: TileTensor[
-        mut=False, DType.uint32, address_space=.GENERIC, ...
+        mut=False, .uint32, address_space=.GENERIC, ...
     ],
     b_device: TileTensor[mut=False, config.b_type, address_space=.GENERIC, ...],
-    expert_ids: TileTensor[mut=False, DType.int32, address_space=.GENERIC, ...],
+    expert_ids: TileTensor[mut=False, .int32, address_space=.GENERIC, ...],
     a_scales: TileTensor[
         mut=False, config.sfa_dtype, address_space=.GENERIC, ...
     ],
     b_scales: TileTensor[
         mut=False, config.sfb_dtype, address_space=.GENERIC, ...
     ],
-    expert_scales: TileTensor[
-        mut=False, DType.float32, address_space=.GENERIC, ...
-    ],
+    expert_scales: TileTensor[mut=False, .float32, address_space=.GENERIC, ...],
     num_active_experts: Int,
     ctx: DeviceContext,
 ) raises:
@@ -2504,16 +2500,12 @@ def grouped_matmul_dynamic_scaled_nvfp4[
     b: TileTensor[mut=False, b_type, address_space=.GENERIC, ...],
     a_scales: TileTensor[mut=False, scales_type, address_space=.GENERIC, ...],
     b_scales: TileTensor[mut=False, scales_type, address_space=.GENERIC, ...],
-    group_offsets: TileTensor[
-        mut=False, DType.uint32, address_space=.GENERIC, ...
-    ],
+    group_offsets: TileTensor[mut=False, .uint32, address_space=.GENERIC, ...],
     group_scale_offsets: TileTensor[
-        mut=False, DType.uint32, address_space=.GENERIC, ...
+        mut=False, .uint32, address_space=.GENERIC, ...
     ],
-    expert_ids: TileTensor[mut=False, DType.int32, address_space=.GENERIC, ...],
-    expert_scales: TileTensor[
-        mut=False, DType.float32, address_space=.GENERIC, ...
-    ],
+    expert_ids: TileTensor[mut=False, .int32, address_space=.GENERIC, ...],
+    expert_scales: TileTensor[mut=False, .float32, address_space=.GENERIC, ...],
     num_active_experts: Int,
     ctx: DeviceContext,
 ) raises:

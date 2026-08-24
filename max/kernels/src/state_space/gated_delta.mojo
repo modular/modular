@@ -149,7 +149,7 @@ def gated_delta_recurrence_fwd_gpu[
         work_dtype, beta_per_token_LT, MutUntrackedOrigin
     ],
     input_row_offsets: TileTensor[
-        DType.uint32, input_row_offsets_LT, MutUntrackedOrigin
+        .uint32, input_row_offsets_LT, MutUntrackedOrigin
     ],
     # Strides for [total_seq_len, conv_dim] tensors
     qkv_conv_output_seqlen_stride: UInt32,

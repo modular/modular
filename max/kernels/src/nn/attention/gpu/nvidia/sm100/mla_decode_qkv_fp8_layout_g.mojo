@@ -1062,9 +1062,7 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
         ],
         scales_ptr: UnsafePointer[Float32, origin=MutAnyOrigin],
         scalar_args: TileTensor[
-            DType.int64,
-            RowMajorLayout[ComptimeInt[3]],
-            MutAnyOrigin,
+            .int64, RowMajorLayout[ComptimeInt[3]], MutAnyOrigin
         ],
     ):
         comptime assert Self.config.decode_layout_g, (

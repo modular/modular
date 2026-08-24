@@ -132,9 +132,7 @@ def fill_invalid_topk_kernel[
     output_indices: UnsafePointer[Int32, MutAnyOrigin],
     topk_indices: UnsafePointer[Int32, MutAnyOrigin],
     input_row_offsets: TileTensor[.uint32, IROLayoutType, iro_origin],
-    cache_lengths: TileTensor[
-        DType.uint32, cache_lengths_layout, ImmutAnyOrigin
-    ],
+    cache_lengths: TileTensor[.uint32, cache_lengths_layout, ImmutAnyOrigin],
     total_seq_len: Int32,
     top_k: Int32,
     effective_k: Int32,
@@ -250,9 +248,7 @@ def topk_row_bounds_kernel[
 ](
     row_bounds: UnsafePointer[Int32, MutAnyOrigin],
     input_row_offsets: TileTensor[.uint32, IROLayoutType, iro_origin],
-    cache_lengths: TileTensor[
-        DType.uint32, cache_lengths_layout, ImmutAnyOrigin
-    ],
+    cache_lengths: TileTensor[.uint32, cache_lengths_layout, ImmutAnyOrigin],
     total_seq_len: Int32,
     max_num_keys: Int32,
 ):
@@ -328,7 +324,7 @@ def mla_indexer_ragged_float8_paged[
     output_indices: TileTensor[.int32, ...],
     q: TileTensor[mut=False, dtype, ...],
     q_s: TileTensor[.float32, ...],
-    input_row_offsets: TileTensor[mut=False, DType.uint32, ...],
+    input_row_offsets: TileTensor[mut=False, .uint32, ...],
     k_collection: KCollectionT,
     layer_idx: UInt32,
     ctx: DeviceContext,

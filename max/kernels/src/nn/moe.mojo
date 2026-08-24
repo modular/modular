@@ -133,7 +133,7 @@ def _count_expert_tokens[
     expected_count: Int,
 ](
     topk_ids: TileTensor[mut=False, input_type, ...],
-    smem: TileTensor[mut=True, DType.uint32, ...],
+    smem: TileTensor[mut=True, .uint32, ...],
     bg_params: _BucketGroupParams[num_threads, input_type],
 ) -> UInt64:
     comptime assert topk_ids.flat_rank == 2
@@ -207,7 +207,7 @@ def _count_expert_tokens[
 
 @always_inline
 def _get_index_and_offset(
-    lock: TileTensor[mut=True, DType.uint64, ...],
+    lock: TileTensor[mut=True, .uint64, ...],
     total_writes: UInt32,
     aligned_total_writes: UInt32,
 ) -> Tuple[UInt32, UInt32, UInt32]:
@@ -280,9 +280,9 @@ def _copy_tokens_smem_to_gmem[
     //,
     expected_count: Int,
 ](
-    token_expert_order: TileTensor[mut=True, DType.uint32, ...],
-    restore_token_order: TileTensor[mut=True, DType.uint32, ...],
-    smem: TileTensor[mut=False, DType.uint32, ...],
+    token_expert_order: TileTensor[mut=True, .uint32, ...],
+    restore_token_order: TileTensor[mut=True, .uint32, ...],
+    smem: TileTensor[mut=False, .uint32, ...],
     g_offset: UInt32,
     total_writes: UInt64,
     bg_params: _BucketGroupParams[num_threads, input_type],
@@ -344,9 +344,9 @@ def _copy_tokens_to_gmem[
     expected_count: Int,
 ](
     topk_ids: TileTensor[mut=False, input_type, ...],
-    smem: TileTensor[mut=False, DType.uint32, ...],
-    token_expert_order: TileTensor[mut=True, DType.uint32, ...],
-    restore_token_order: TileTensor[mut=True, DType.uint32, ...],
+    smem: TileTensor[mut=False, .uint32, ...],
+    token_expert_order: TileTensor[mut=True, .uint32, ...],
+    restore_token_order: TileTensor[mut=True, .uint32, ...],
     total_writes: UInt64,
     g_offset: UInt32,
     bg_params: _BucketGroupParams[num_threads, input_type],
@@ -446,20 +446,18 @@ def moe_create_indices_bucket_group_kernel[
     _scale_alignment: UInt32 = 128,
 ](
     token_expert_order: TileTensor[
-        mut=True, DType.uint32, TokenExpertOrderLayoutType, MutAnyOrigin
+        mut=True, .uint32, TokenExpertOrderLayoutType, MutAnyOrigin
     ],
     lock: TileTensor[.uint64, LockLayoutType, MutAnyOrigin],
     expert_start_indices: TileTensor[
-        mut=True, DType.uint32, ExpertStartIndicesLayoutType, MutAnyOrigin
+        mut=True, .uint32, ExpertStartIndicesLayoutType, MutAnyOrigin
     ],
     restore_token_order: TileTensor[
-        mut=True, DType.uint32, RestoreTokenOrderLayoutType, MutAnyOrigin
+        mut=True, .uint32, RestoreTokenOrderLayoutType, MutAnyOrigin
     ],
-    expert_ids: TileTensor[
-        mut=True, DType.int32, ExpertIdsLayoutType, MutAnyOrigin
-    ],
+    expert_ids: TileTensor[mut=True, .int32, ExpertIdsLayoutType, MutAnyOrigin],
     expert_usage_stats: TileTensor[
-        mut=True, DType.uint32, ExpertUsageStatsLayoutType, MutAnyOrigin
+        mut=True, .uint32, ExpertUsageStatsLayoutType, MutAnyOrigin
     ],
     topk_ids: TileTensor[input_type, TopkIdsLayoutType, ImmutAnyOrigin],
     scales_offset_p: Optional[UnsafePointer[UInt32, MutAnyOrigin]],
@@ -595,11 +593,11 @@ def moe_create_indices[
     target: StaticString,
     expected_count: Int = 8192,
 ](
-    token_expert_order: TileTensor[mut=True, DType.uint32, ...],
-    expert_start_indices: TileTensor[mut=True, DType.uint32, ...],
-    restore_token_order: TileTensor[mut=True, DType.uint32, ...],
-    expert_ids: TileTensor[mut=True, DType.int32, ...],
-    expert_usage_stats: TileTensor[mut=True, DType.uint32, ...],
+    token_expert_order: TileTensor[mut=True, .uint32, ...],
+    expert_start_indices: TileTensor[mut=True, .uint32, ...],
+    restore_token_order: TileTensor[mut=True, .uint32, ...],
+    expert_ids: TileTensor[mut=True, .int32, ...],
+    expert_usage_stats: TileTensor[mut=True, .uint32, ...],
     topk_ids: TileTensor[mut=False, input_type, ...],
     context: DeviceContext,
     scales_offset_p: Optional[UnsafePointer[UInt32, MutAnyOrigin]] = None,
@@ -804,7 +802,7 @@ def group_limited_router_kernel[
     ] = None,
 ](
     expert_indices: TileTensor[
-        mut=True, DType.int32, ExpertIndicesLayoutType, MutAnyOrigin
+        mut=True, .int32, ExpertIndicesLayoutType, MutAnyOrigin
     ],
     expert_weights: TileTensor[
         mut=True, scores_type, ExpertWeightsLayoutType, MutAnyOrigin
@@ -1028,7 +1026,7 @@ def router_group_limited[
         def[width: Int](IndexList[2]) capturing -> SIMD[scores_type, width]
     ] = None,
 ](
-    expert_indices: TileTensor[mut=True, DType.int32, ...],
+    expert_indices: TileTensor[mut=True, .int32, ...],
     expert_weights: TileTensor[mut=True, scores_type, ...],
     expert_scores: TileTensor[mut=False, scores_type, ...],
     expert_bias: TileTensor[mut=False, bias_type, ...],
@@ -1128,7 +1126,7 @@ def single_group_router_kernel[
     ] = None,
 ](
     expert_indices: TileTensor[
-        mut=True, DType.int32, ExpertIndicesLayoutType, MutAnyOrigin
+        mut=True, .int32, ExpertIndicesLayoutType, MutAnyOrigin
     ],
     expert_weights: TileTensor[
         mut=True, scores_type, ExpertWeightsLayoutType, MutAnyOrigin
@@ -1337,10 +1335,10 @@ def single_group_router_eplb_kernel[
     ] = None,
 ](
     expert_indices: TileTensor[
-        mut=True, DType.int32, ExpertIndicesLayoutType, MutAnyOrigin
+        mut=True, .int32, ExpertIndicesLayoutType, MutAnyOrigin
     ],  # phy ids
     expert_indices_log: TileTensor[
-        mut=True, DType.int32, ExpertIndicesLogLayoutType, MutAnyOrigin
+        mut=True, .int32, ExpertIndicesLogLayoutType, MutAnyOrigin
     ],  # log ids (for EPLB histogram)
     expert_weights: TileTensor[
         mut=True, scores_type, ExpertWeightsLayoutType, MutAnyOrigin
@@ -1568,7 +1566,7 @@ def single_group_router[
         def[width: Int](IndexList[2]) capturing -> SIMD[scores_type, width]
     ] = None,
 ](
-    expert_indices: TileTensor[mut=True, DType.int32, ...],
+    expert_indices: TileTensor[mut=True, .int32, ...],
     expert_weight: TileTensor[mut=True, scores_type, ...],
     expert_scores: TileTensor[mut=False, scores_type, ...],
     expert_bias: TileTensor[mut=False, bias_type, ...],
@@ -1664,8 +1662,8 @@ def single_group_router_eplb[
         def[width: Int](IndexList[2]) capturing -> SIMD[scores_type, width]
     ] = None,
 ](
-    expert_indices: TileTensor[mut=True, DType.int32, ...],
-    expert_indices_log: TileTensor[mut=True, DType.int32, ...],
+    expert_indices: TileTensor[mut=True, .int32, ...],
+    expert_indices_log: TileTensor[mut=True, .int32, ...],
     expert_weights: TileTensor[mut=True, scores_type, ...],
     expert_scores: TileTensor[scores_type, ...],
     expert_bias: TileTensor[bias_type, ...],
@@ -1802,7 +1800,7 @@ def eplb_remap_kernel[
     tile_tokens: Int,  # rows of router_idx per block; threads/block = tile_tokens * K
     hash_decorrelate: Bool,
 ](
-    phy_idx: TileTensor[mut=True, DType.int32, PhyIdxLayoutType, MutAnyOrigin],
+    phy_idx: TileTensor[mut=True, .int32, PhyIdxLayoutType, MutAnyOrigin],
     router_idx: TileTensor[.int32, RouterIdxLayoutType, ImmutAnyOrigin],
     logcnt: TileTensor[.int32, LogcntLayoutType, ImmutAnyOrigin],
     log2phy: TileTensor[.int32, Log2phyLayoutType, ImmutAnyOrigin],
@@ -1947,7 +1945,7 @@ def eplb_remap[
     hash_decorrelate: Bool,
     target: StaticString,
 ](
-    phy_idx: TileTensor[mut=True, DType.int32, ...],  # [N, K] output
+    phy_idx: TileTensor[mut=True, .int32, ...],  # [N, K] output
     router_idx: TileTensor[.int32, ...],  # [N, K] logical ids
     logcnt: TileTensor[.int32, ...],  # [L, num_log]
     log2phy: TileTensor[.int32, ...],  # [L, num_log, max_replicas]

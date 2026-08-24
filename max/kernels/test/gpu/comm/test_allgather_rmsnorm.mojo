@@ -235,9 +235,7 @@ def _run_case[
     # Peer-shard array (all `ngpus` shards, P2P-accessible) -- identical on every
     # GPU; full `[num_rows, num_cols]` output views.
     comptime ShardType = TileTensor[
-        in_dtype,
-        type_of(row_major(Coord(Index(0, num_cols)))),
-        ImmutAnyOrigin,
+        in_dtype, type_of(row_major(Coord(Index(0, num_cols)))), ImmutAnyOrigin
     ]
     comptime FullType = TileTensor[
         mut=True,
@@ -658,9 +656,7 @@ def _run_prod_oracle_case[
         list_of_ctx[i].synchronize()
 
     comptime ShardType = TileTensor[
-        in_dtype,
-        type_of(row_major(Coord(Index(0, num_cols)))),
-        ImmutAnyOrigin,
+        in_dtype, type_of(row_major(Coord(Index(0, num_cols)))), ImmutAnyOrigin
     ]
     comptime FullType = TileTensor[
         mut=True,
@@ -1021,9 +1017,7 @@ def _run_interleaved_barrier_case[
         list_of_ctx[i].synchronize()
 
     comptime ShardType = TileTensor[
-        in_dtype,
-        type_of(row_major(Coord(Index(0, num_cols)))),
-        ImmutAnyOrigin,
+        in_dtype, type_of(row_major(Coord(Index(0, num_cols)))), ImmutAnyOrigin
     ]
     comptime FullType = TileTensor[
         mut=True,
@@ -1247,9 +1241,7 @@ def _run_rank_validation_case[
     list_of_ctx[0].synchronize()
 
     comptime ShardType = TileTensor[
-        in_dtype,
-        type_of(row_major(Coord(Index(0, num_cols)))),
-        ImmutAnyOrigin,
+        in_dtype, type_of(row_major(Coord(Index(0, num_cols)))), ImmutAnyOrigin
     ]
     comptime FullType = TileTensor[
         mut=True,

@@ -1245,16 +1245,10 @@ struct TensorCoreAsync[
         num_k_iters: Optional[Int] = None,
     ](
         a_smem_tile: TileTensor[
-            mut=True,
-            dtype=Self.a_type,
-            address_space=.SHARED,
-            ...,
+            mut=True, Self.a_type, address_space=.SHARED, ...
         ],
         b_smem_tile: TileTensor[
-            mut=True,
-            dtype=Self.b_type,
-            address_space=.SHARED,
-            ...,
+            mut=True, Self.b_type, address_space=.SHARED, ...
         ],
         c_reg_tile: LayoutTensor[
             mut=True,

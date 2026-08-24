@@ -1164,7 +1164,7 @@ struct ConvDirectNHWC[
         prefetch_offset: Int,
     ](
         self,
-        input_base_offsets: TileTensor[mut=False, DType.int32, ...],
+        input_base_offsets: TileTensor[mut=False, .int32, ...],
         input_offset: Int,
         c_tile_size: Int,
         input: UnsafePointer[mut=False, Scalar[Self.input_type], ...],

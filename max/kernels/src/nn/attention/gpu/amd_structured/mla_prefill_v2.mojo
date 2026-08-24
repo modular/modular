@@ -1681,7 +1681,7 @@ struct MlaPrefillV2[config: MlaConfigV2]:
 
         comptime _o_view_layout = Self._MmaOp.O_T_LAYOUT
         var o_normalized_view = TileTensor[
-            DType.float32,
+            .float32,
             type_of(_o_view_layout),
             MutUntrackedOrigin,
             address_space=.LOCAL,

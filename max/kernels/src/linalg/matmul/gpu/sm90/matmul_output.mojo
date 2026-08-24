@@ -125,7 +125,7 @@ struct MatmulTileWriter[
 
     comptime CTensorType = TileTensor[
         mut=True,
-        dtype=Self.dtype,
+        Self.dtype,
         LayoutType=Self.tensor_layout,
         origin=MutAnyOrigin,
         Storage=Self.tensor_storage,
@@ -143,7 +143,7 @@ struct MatmulTileWriter[
     @__allow_legacy_any_origin_fields
     var smem_tile: TileTensor[
         mut=True,
-        dtype=Self.dtype,
+        Self.dtype,
         LayoutType=Self.smem_tile_layout,
         origin=MutAnyOrigin,
         address_space=.SHARED,
@@ -160,7 +160,7 @@ struct MatmulTileWriter[
         tensor: Self.CTensorType,
         smem_tile: TileTensor[
             mut=True,
-            dtype=Self.dtype,
+            Self.dtype,
             LayoutType=Self.smem_tile_layout,
             origin=MutAnyOrigin,
             address_space=.SHARED,
@@ -461,7 +461,7 @@ struct MatmulTileWriter[
                         ]()
                         var tma_tile = TileTensor[
                             mut=True,
-                            dtype=Self.dtype,
+                            Self.dtype,
                             LayoutType=type_of(tma_smem_layout),
                             origin=MutAnyOrigin,
                             address_space=.SHARED,

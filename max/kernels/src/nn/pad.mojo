@@ -125,12 +125,7 @@ def pad_constant[
     paddings_type: DType,
     constant_type: DType,
 ](
-    output: TileTensor[
-        mut=True,
-        dtype,
-        address_space=.GENERIC,
-        ...,
-    ],
+    output: TileTensor[mut=True, dtype, address_space=.GENERIC, ...],
     input: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
     paddings: UnsafePointer[Scalar[paddings_type], _],
     constant: Scalar[constant_type],
@@ -194,12 +189,7 @@ def pad_reflect[
     dtype: DType,
     paddings_type: DType,
 ](
-    output: TileTensor[
-        mut=True,
-        dtype,
-        address_space=.GENERIC,
-        ...,
-    ],
+    output: TileTensor[mut=True, dtype, address_space=.GENERIC, ...],
     input: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
     paddings: UnsafePointer[Scalar[paddings_type], _],
 ):
@@ -313,11 +303,7 @@ def _do_pad[
     ) -> None,
 ](
     output: TileTensor[
-        mut=True,
-        dtype,
-        OutputLayoutType,
-        address_space=.GENERIC,
-        ...,
+        mut=True, dtype, OutputLayoutType, address_space=.GENERIC, ...
     ],
     input: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
     paddings: UnsafePointer[Scalar[paddings_type], _],

@@ -244,9 +244,7 @@ def bench_blockwise_fp8_1d2d[
             Coord(Idx[1]),
         ),
     )
-    var expert_scales_tt = TileTensor[
-        DType.float32, GMEMLayout1D, MutAnyOrigin
-    ](
+    var expert_scales_tt = TileTensor[.float32, GMEMLayout1D, MutAnyOrigin](
         expert_scales_dev_buf,
         GMEMLayout1D(
             Coord(Int64(num_experts)),

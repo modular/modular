@@ -252,9 +252,7 @@ struct MLA_SM100_Decode_Sparse_KV_BF16[
         extra_topk_lengths: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]],
         extra_indices_stride: Int32,
         scalar_args: TileTensor[
-            DType.int64,
-            RowMajorLayout[ComptimeInt[3]],
-            MutAnyOrigin,
+            .int64, RowMajorLayout[ComptimeInt[3]], MutAnyOrigin
         ],
     ):
         # The upstream dispatcher monomorphizes the kernel struct for both

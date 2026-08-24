@@ -171,7 +171,7 @@ def ep_dispatch_async_kernel_api[
 ](
     atomic_counters: TileTensor[.int32, Storage=PointerStorage[], ...],
     input_tokens: TileTensor[mut=False, Storage=PointerStorage[], ...],
-    topk_ids: TileTensor[mut=False, DType.int32, Storage=PointerStorage[], ...],
+    topk_ids: TileTensor[mut=False, .int32, Storage=PointerStorage[], ...],
     send_ptrs: TileTensor[.uint64, Storage=PointerStorage[], ...],
     recv_ptrs: TileTensor[.uint64, Storage=PointerStorage[], ...],
     recv_count_ptrs: TileTensor[.uint64, Storage=PointerStorage[], ...],
@@ -487,12 +487,9 @@ def ep_fused_dispatch_kernel_api[
     src_info: TileTensor[.int32, Storage=PointerStorage[], ...],
     atomic_counters: TileTensor[.int32, Storage=PointerStorage[], ...],
     input_tokens: TileTensor[
-        mut=False,
-        dispatch_dtype,
-        Storage=PointerStorage[],
-        ...,
+        mut=False, dispatch_dtype, Storage=PointerStorage[], ...
     ],
-    topk_ids: TileTensor[mut=False, DType.int32, Storage=PointerStorage[], ...],
+    topk_ids: TileTensor[mut=False, .int32, Storage=PointerStorage[], ...],
     send_ptrs: TileTensor[.uint64, Storage=PointerStorage[], ...],
     recv_ptrs: TileTensor[.uint64, Storage=PointerStorage[], ...],
     recv_count_ptrs: TileTensor[.uint64, Storage=PointerStorage[], ...],
@@ -700,12 +697,9 @@ def ep_combine_async_kernel_api[
 ](
     atomic_counters: TileTensor[.int32, Storage=PointerStorage[], ...],
     input_tokens: TileTensor[
-        mut=False,
-        combine_dtype,
-        Storage=PointerStorage[],
-        ...,
+        mut=False, combine_dtype, Storage=PointerStorage[], ...
     ],
-    src_info: TileTensor[mut=False, DType.int32, Storage=PointerStorage[], ...],
+    src_info: TileTensor[mut=False, .int32, Storage=PointerStorage[], ...],
     send_ptrs: TileTensor[.uint64, Storage=PointerStorage[], ...],
     recv_ptrs: TileTensor[.uint64, Storage=PointerStorage[], ...],
     recv_count_ptrs: TileTensor[.uint64, Storage=PointerStorage[], ...],
@@ -1026,12 +1020,9 @@ def ep_fused_combine_kernel_api[
     output_tokens: TileTensor[combine_dtype, Storage=PointerStorage[], ...],
     atomic_counters: TileTensor[.int32, Storage=PointerStorage[], ...],
     input_tokens: TileTensor[
-        mut=False,
-        combine_dtype,
-        Storage=PointerStorage[],
-        ...,
+        mut=False, combine_dtype, Storage=PointerStorage[], ...
     ],
-    src_info: TileTensor[mut=False, DType.int32, Storage=PointerStorage[], ...],
+    src_info: TileTensor[mut=False, .int32, Storage=PointerStorage[], ...],
     send_ptrs: TileTensor[.uint64, Storage=PointerStorage[], ...],
     recv_ptrs: TileTensor[.uint64, Storage=PointerStorage[], ...],
     recv_count_ptrs: TileTensor[.uint64, Storage=PointerStorage[], ...],

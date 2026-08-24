@@ -307,7 +307,7 @@ struct Fp4WeightLoader[
     var a: TileTensor[Self.in_type, Self.a_layout, ImmUntrackedOrigin]
     var packed: TileTensor[.uint8, Self.packed_layout, ImmUntrackedOrigin]
     var scales: TileTensor[
-        DType.float8_e4m3fn, Self.scale_layout, ImmUntrackedOrigin
+        .float8_e4m3fn, Self.scale_layout, ImmUntrackedOrigin
     ]
     var M: Int
     var N: Int
@@ -318,9 +318,7 @@ struct Fp4WeightLoader[
     def from_kernel_args(
         a: TileTensor[Self.in_type, Self.a_layout, ImmutAnyOrigin],
         packed: TileTensor[.uint8, Self.packed_layout, ImmutAnyOrigin],
-        scales: TileTensor[
-            DType.float8_e4m3fn, Self.scale_layout, ImmutAnyOrigin
-        ],
+        scales: TileTensor[.float8_e4m3fn, Self.scale_layout, ImmutAnyOrigin],
         M: Int,
         N: Int,
         K: Int,

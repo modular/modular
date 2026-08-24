@@ -293,19 +293,19 @@ struct BlockScaledMmaOp[
     ]()
 
     var _a_reg: TileTensor[
-        DType.uint8,
+        .uint8,
         type_of(Self._a_reg_layout),
         MutUntrackedOrigin,
         address_space=.LOCAL,
     ]
     var _b_reg: TileTensor[
-        DType.uint8,
+        .uint8,
         type_of(Self._b_reg_layout),
         MutUntrackedOrigin,
         address_space=.LOCAL,
     ]
     var _c_reg: TileTensor[
-        DType.float32,
+        .float32,
         type_of(Self._c_reg_layout),
         MutUntrackedOrigin,
         address_space=.LOCAL,
@@ -318,13 +318,13 @@ struct BlockScaledMmaOp[
     # other.
     comptime _scale_layout = row_major[1, Self.num_k_tiles]()
     var _a_scale_packed: TileTensor[
-        DType.int32,
+        .int32,
         type_of(Self._scale_layout),
         MutUntrackedOrigin,
         address_space=.LOCAL,
     ]
     var _b_scale_packed: TileTensor[
-        DType.int32,
+        .int32,
         type_of(Self._scale_layout),
         MutUntrackedOrigin,
         address_space=.LOCAL,
@@ -366,8 +366,8 @@ struct BlockScaledMmaOp[
         k_tile_idx: Int
     ](
         mut self,
-        a_smem_warp: TileTensor[DType.uint8, _, _, address_space=.SHARED, ...],
-        b_smem_warp: TileTensor[DType.uint8, _, _, address_space=.SHARED, ...],
+        a_smem_warp: TileTensor[.uint8, _, _, address_space=.SHARED, ...],
+        b_smem_warp: TileTensor[.uint8, _, _, address_space=.SHARED, ...],
     ):
         """Loads A/B fragments from row-major SMEM for k-tile `k_tile_idx`.
 
@@ -418,7 +418,7 @@ struct BlockScaledMmaOp[
         k_tile_idx: Int
     ](
         mut self,
-        b_smem_warp: TileTensor[DType.uint8, _, _, address_space=.SHARED, ...],
+        b_smem_warp: TileTensor[.uint8, _, _, address_space=.SHARED, ...],
     ):
         """Loads B fragments for a power-of-two encoding (FP4 or FP8).
 
@@ -465,7 +465,7 @@ struct BlockScaledMmaOp[
         k_tile_idx: Int
     ](
         mut self,
-        a_smem_warp: TileTensor[DType.uint8, _, _, address_space=.SHARED, ...],
+        a_smem_warp: TileTensor[.uint8, _, _, address_space=.SHARED, ...],
     ):
         """A-side counterpart of `_load_b_frag_vectorized`.
 
@@ -501,7 +501,7 @@ struct BlockScaledMmaOp[
         packed_k: Int, frag_w: Int, reg_w: Int
     ](
         self,
-        smem_warp: TileTensor[DType.uint8, _, _, address_space=.SHARED, ...],
+        smem_warp: TileTensor[.uint8, _, _, address_space=.SHARED, ...],
         mma_idx: Int,
         k_tile_idx: Int,
     ) -> SIMD[.uint8, reg_w]:
@@ -537,10 +537,7 @@ struct BlockScaledMmaOp[
     @always_inline
     def load_a_frag_from_smem[
         k_tile_idx: Int
-    ](
-        self,
-        a_smem_warp: TileTensor[DType.uint8, _, _, address_space=.SHARED, ...],
-    ):
+    ](self, a_smem_warp: TileTensor[.uint8, _, _, address_space=.SHARED, ...],):
         """A-only variant of `load_frag_from_smem` for callers that source B
         elsewhere (e.g. preshuffled DRAM via PreshuffledBLoader).
 
@@ -631,8 +628,8 @@ struct BlockScaledMmaOp[
         k_tile_idx: Int
     ](
         mut self,
-        a_scale_smem_warp: TileTensor[DType.uint8, address_space=.SHARED, ...],
-        b_scale_smem_warp: TileTensor[DType.uint8, address_space=.SHARED, ...],
+        a_scale_smem_warp: TileTensor[.uint8, address_space=.SHARED, ...],
+        b_scale_smem_warp: TileTensor[.uint8, address_space=.SHARED, ...],
     ):
         """Load packed scale VGPRs for k-tile k_tile_idx from SMEM.
 
@@ -1584,10 +1581,10 @@ def block_scaled_matmul_amd[
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c: TileTensor[mut=True, ...],
-    a: TileTensor[mut=False, DType.uint8, ...],
-    b: TileTensor[mut=False, DType.uint8, ...],
-    a_scales: TileTensor[mut=False, DType.float8_e8m0fnu, ...],
-    b_scales: TileTensor[mut=False, DType.float8_e8m0fnu, ...],
+    a: TileTensor[mut=False, .uint8, ...],
+    b: TileTensor[mut=False, .uint8, ...],
+    a_scales: TileTensor[mut=False, .float8_e8m0fnu, ...],
+    b_scales: TileTensor[mut=False, .float8_e8m0fnu, ...],
     ctx: DeviceContext,
 ) raises:
     """Launch native MXFP4 block-scaled matmul on AMD CDNA4.
@@ -1926,10 +1923,10 @@ def mxfp6_block_scaled_matmul_amd[
     num_splits: Int = 1,
 ](
     c: TileTensor[mut=True, ...],
-    a: TileTensor[mut=False, DType.uint8, ...],
-    b: TileTensor[mut=False, DType.uint8, ...],
-    a_scales: TileTensor[mut=False, DType.float8_e8m0fnu, ...],
-    b_scales: TileTensor[mut=False, DType.float8_e8m0fnu, ...],
+    a: TileTensor[mut=False, .uint8, ...],
+    b: TileTensor[mut=False, .uint8, ...],
+    a_scales: TileTensor[mut=False, .float8_e8m0fnu, ...],
+    b_scales: TileTensor[mut=False, .float8_e8m0fnu, ...],
     ctx: DeviceContext,
 ) raises:
     """Launch native MXFP6 block-scaled matmul on AMD CDNA4.

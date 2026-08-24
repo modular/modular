@@ -155,12 +155,7 @@ trait SMemTileWriter(TrivialRegisterPassable):
     @always_inline
     def write_tile(
         self,
-        src: TileTensor[
-            mut=True,
-            dtype=Self._dtype,
-            address_space=.SHARED,
-            ...,
-        ],
+        src: TileTensor[mut=True, Self._dtype, address_space=.SHARED, ...],
         coords: Tuple[Int, Int],
     ):
         """Write a tile from shared memory to global memory.
@@ -218,12 +213,7 @@ struct TileWriterTMA[
     @always_inline
     def write_tile(
         self,
-        src: TileTensor[
-            mut=True,
-            dtype=Self._dtype,
-            address_space=.SHARED,
-            ...,
-        ],
+        src: TileTensor[mut=True, Self._dtype, address_space=.SHARED, ...],
         coords: Tuple[Int, Int],
     ):
         """Write a tile using TMA hardware acceleration.
@@ -288,7 +278,7 @@ struct TileWriterThreadwise[
 
     comptime DstType = TileTensor[
         mut=True,
-        dtype=Self.dtype,
+        Self.dtype,
         LayoutType=Self.dst_layout,
         origin=Self.dst_origin,
         Storage=Self.dst_storage,
@@ -316,12 +306,7 @@ struct TileWriterThreadwise[
     @always_inline
     def write_tile(
         self,
-        src: TileTensor[
-            mut=True,
-            dtype=Self._dtype,
-            address_space=.SHARED,
-            ...,
-        ],
+        src: TileTensor[mut=True, Self._dtype, address_space=.SHARED, ...],
         coords: Tuple[Int, Int],
     ):
         """Write a tile using thread-distributed stores.
@@ -499,7 +484,7 @@ struct FragmentToSMemWriter[
     @__allow_legacy_any_origin_fields
     var c_tile: TileTensor[
         mut=True,
-        dtype=Self.c_type,
+        Self.c_type,
         LayoutType=Self.c_tile_layout,
         origin=MutAnyOrigin,
         address_space=.SHARED,
@@ -513,7 +498,7 @@ struct FragmentToSMemWriter[
         out self,
         c_tile: TileTensor[
             mut=True,
-            dtype=Self.c_type,
+            Self.c_type,
             LayoutType=Self.c_tile_layout,
             origin=MutAnyOrigin,
             address_space=.SHARED,
@@ -567,7 +552,7 @@ struct FragmentToSMemWriter[
         self,
         smem_tile: TileTensor[
             mut=True,
-            dtype=Self.c_type,
+            Self.c_type,
             origin=MutAnyOrigin,
             address_space=.SHARED,
             Storage=PointerStorage[element_width=1],
@@ -624,7 +609,7 @@ struct FragmentToSMemWriter[
         comptime flat_tile_layout = row_major[1, elements_per_tile]()
         var dest_tile_flat = TileTensor[
             mut=True,
-            dtype=Self.c_type,
+            Self.c_type,
             LayoutType=type_of(flat_tile_layout),
             origin=MutAnyOrigin,
             address_space=.SHARED,
@@ -742,7 +727,7 @@ struct RegisterToGMemWriter[
 
     comptime DstType = TileTensor[
         mut=True,
-        dtype=Self.c_type,
+        Self.c_type,
         LayoutType=Self.dst_layout,
         origin=Self.dst_origin,
         Storage=Self.dst_storage,

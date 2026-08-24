@@ -69,7 +69,7 @@ def _rope_split_store_ragged_impl[
     get_freq_pos: def(Int, Int, Int) capturing -> Int,
 ](
     qkv: TileTensor[mut=False, dtype, ...],
-    input_row_offsets: TileTensor[mut=False, DType.uint32, ...],
+    input_row_offsets: TileTensor[mut=False, .uint32, ...],
     freqs_cis: TileTensor[mut=False, freq_dtype, ...],
     k_cache: cache_t,
     v_cache: OptionalReg[cache_t],
@@ -386,7 +386,7 @@ def _rope_split_store_ragged[
     interleaved: Bool = True,
 ](
     qkv: TileTensor[mut=False, dtype, ...],
-    input_row_offsets: TileTensor[mut=False, DType.uint32, ...],
+    input_row_offsets: TileTensor[mut=False, .uint32, ...],
     freqs_cis: TileTensor[mut=False, freq_dtype, ...],
     k_cache: cache_t,
     v_cache: OptionalReg[cache_t],
@@ -435,7 +435,7 @@ def rope_split_store_paged_ragged[
     interleaved: Bool = True,
 ](
     qkv: TileTensor[mut=False, dtype, ...],
-    input_row_offsets: TileTensor[mut=False, DType.uint32, ...],
+    input_row_offsets: TileTensor[mut=False, .uint32, ...],
     freqs_cis: TileTensor[mut=False, freq_dtype, ...],
     kv_collection: PagedKVCacheCollection,
     layer_idx: UInt32,
@@ -510,13 +510,11 @@ def _rope_split_store_ragged_with_position_ids[
     ],
 ](
     qkv: TileTensor[mut=False, dtype, ...],
-    input_row_offsets: TileTensor[mut=False, DType.uint32, ...],
+    input_row_offsets: TileTensor[mut=False, .uint32, ...],
     freqs_cis: TileTensor[mut=False, freq_dtype, ...],
     k_cache: cache_t,
     v_cache: OptionalReg[cache_t],
-    position_ids: TileTensor[
-        mut=False, DType.uint32, PositionIdsLayoutType, ...
-    ],
+    position_ids: TileTensor[mut=False, .uint32, PositionIdsLayoutType, ...],
     q_output: TileTensor[mut=True, dtype, ...],
     context: Optional[DeviceContext],
 ) raises:
@@ -605,12 +603,10 @@ def rope_split_store_paged_ragged_with_position_ids[
     ],
 ](
     qkv: TileTensor[mut=False, dtype, ...],
-    input_row_offsets: TileTensor[mut=False, DType.uint32, ...],
+    input_row_offsets: TileTensor[mut=False, .uint32, ...],
     freqs_cis: TileTensor[mut=False, freq_dtype, ...],
     kv_collection: PagedKVCacheCollection,
-    position_ids: TileTensor[
-        mut=False, DType.uint32, PositionIdsLayoutType, ...
-    ],
+    position_ids: TileTensor[mut=False, .uint32, PositionIdsLayoutType, ...],
     layer_idx: UInt32,
     q_output: TileTensor[mut=True, dtype, ...],
     ctx: DeviceContext,

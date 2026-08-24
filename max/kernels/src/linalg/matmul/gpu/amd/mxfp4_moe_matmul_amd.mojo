@@ -193,9 +193,7 @@ struct MXFP4MoERoutedMatmul[
         b_pre_tt: TileTensor[.uint8, Storage=PointerStorage[], ...],
         sfa_pre_tt: TileTensor[.uint8, Storage=PointerStorage[], ...],
         sfb_pre_tt: TileTensor[.uint8, Storage=PointerStorage[], ...],
-        sorted_token_ids: TileTensor[
-            DType.uint32, Storage=PointerStorage[], ...
-        ],
+        sorted_token_ids: TileTensor[.uint32, Storage=PointerStorage[], ...],
         expert_ids: TileTensor[.int32, Storage=PointerStorage[], ...],
         num_tokens: Int32,
         size_expert_ids: Int32,
@@ -259,9 +257,7 @@ struct MXFP4MoERoutedMatmul[
         comptime sfb_per_expert_bytes = N_padded_scale * K_SCALES
         comptime sfa_per_block_bytes = Self.sort_block_m * K_SCALES
 
-        var b_pre_expert = TileTensor[
-            mut=False, dtype=DType.uint8, origin=ImmutAnyOrigin
-        ](
+        var b_pre_expert = TileTensor[mut=False, .uint8, origin=ImmutAnyOrigin](
             (b_pre_tt.ptr + expert_id * b_per_expert_bytes)
             .as_imm()
             .unsafe_origin_cast[ImmutAnyOrigin]()
@@ -269,7 +265,7 @@ struct MXFP4MoERoutedMatmul[
             row_major(Coord(Idx[1], Idx[b_per_expert_bytes])),
         )
         var sfb_pre_expert = TileTensor[
-            mut=False, dtype=DType.uint8, origin=ImmutAnyOrigin
+            mut=False, .uint8, origin=ImmutAnyOrigin
         ](
             (sfb_pre_tt.ptr + expert_id * sfb_per_expert_bytes)
             .as_imm()
@@ -278,7 +274,7 @@ struct MXFP4MoERoutedMatmul[
             row_major(Coord(Idx[1], Idx[sfb_per_expert_bytes])),
         )
         var sfa_pre_block = TileTensor[
-            mut=False, dtype=DType.uint8, origin=ImmutAnyOrigin
+            mut=False, .uint8, origin=ImmutAnyOrigin
         ](
             (sfa_pre_tt.ptr + bx * sfa_per_block_bytes)
             .as_imm()
