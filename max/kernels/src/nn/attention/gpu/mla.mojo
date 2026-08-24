@@ -249,9 +249,7 @@ def flare_mla_decoding[
     ],
     q_max_seq_len: OptionalReg[Int] = None,
     kv_input_row_offsets: OptionalReg[
-        LayoutTensor[
-            DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
-        ]
+        LayoutTensor[.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
     ] = None,
     num_partitions: Optional[Int] = None,
     # Per-token Q scale pointer: float32 array with one scale per Q token.
@@ -627,9 +625,7 @@ def flare_mla_decoding_dispatch[
         DType.int64, address_space=.GENERIC, ...
     ],
     kv_input_row_offsets: OptionalReg[
-        LayoutTensor[
-            DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
-        ]
+        LayoutTensor[.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
     ] = None,
     num_partitions: Optional[Int] = None,
     q_scale_ptr: OptionalReg[UnsafePointer[Float32, MutAnyOrigin]] = None,
@@ -892,7 +888,7 @@ def flare_mla_decoding_dispatch[
                 return
 
             comptime num_heads_val = type_of(q).static_shape[q.rank - 2]
-            comptime _is_fp8_kv = (k_t.dtype == .float8_e4m3fn)
+            comptime _is_fp8_kv = (k_t.dtype == DType.float8_e4m3fn)
             var local_args = MLADispatchScalarArgs[
                 num_heads=num_heads_val,
                 _is_cache_length_accurate=_is_cache_length_accurate,
@@ -2239,12 +2235,12 @@ def mla_decoding_single_batch[
 
         # kv cache gmem has to clip num rows as runtime layout
         var kv_runtime_layout = RuntimeLayout[
-            element_type=DType.int32, linear_idx_type=DType.int32
+            element_type=.int32, linear_idx_type=.int32
         ](
-            RuntimeTuple[kv_gmem_layout.shape, element_type=DType.int32](
+            RuntimeTuple[kv_gmem_layout.shape, element_type=.int32](
                 kv_tile_num_rows, depth
             ),
-            RuntimeTuple[kv_gmem_layout.stride, element_type=DType.int32](
+            RuntimeTuple[kv_gmem_layout.stride, element_type=.int32](
                 kv_num_heads * depth, 1
             ),
         )
@@ -2254,8 +2250,8 @@ def mla_decoding_single_batch[
         var k_gmem_block = LayoutTensor[
             k_type,
             kv_gmem_layout,
-            layout_int_type=DType.int32,
-            linear_idx_type=DType.int32,
+            layout_int_type=.int32,
+            linear_idx_type=.int32,
             masked=not not_last_iter,
         ](
             k_ptr,
@@ -2380,7 +2376,7 @@ def mla_decoding_single_batch[
 
                         comptime if masked:
                             p_reg_vec2[mma_id, i] = mask.mask(
-                                IndexList[4, element_type=DType.uint32](
+                                IndexList[4, element_type=.uint32](
                                     block_idx.z,
                                     score_head_idx,
                                     score_row_with_start_pos,
@@ -2400,10 +2396,10 @@ def mla_decoding_single_batch[
 
                         if not not_last_iter:
                             p_reg_vec2[mma_id, i] = _kernel_mask(
-                                IndexList[2, element_type=DType.uint32](
+                                IndexList[2, element_type=.uint32](
                                     score_row, score_col
                                 ),
-                                IndexList[2, element_type=DType.uint32](
+                                IndexList[2, element_type=.uint32](
                                     seq_len,
                                     num_keys,
                                 ),
@@ -2643,9 +2639,7 @@ def flare_mla_prefill[
     ctx: DeviceContext,
     q_max_seq_len: OptionalReg[Int] = None,
     cache_offsets: OptionalReg[
-        LayoutTensor[
-            DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
-        ]
+        LayoutTensor[.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin]
     ] = None,
 ) raises:
     """MLA prefill kernel that would only be called in the optimized compute
@@ -2840,9 +2834,7 @@ def flare_mla_prefill[
     ctx: DeviceContext,
     q_max_seq_len: OptionalReg[Int] = None,
     cache_offsets: OptionalReg[
-        LayoutTensor[
-            DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
-        ]
+        LayoutTensor[.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin]
     ] = None,
 ) raises:
     comptime assert rank == 3, "only support ragged inputs"
@@ -2967,9 +2959,7 @@ def flare_mla_prefill[
     ctx: DeviceContext,
     q_max_seq_len: OptionalReg[Int] = None,
     cache_offsets: OptionalReg[
-        LayoutTensor[
-            DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
-        ]
+        LayoutTensor[.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin]
     ] = None,
 ) raises:
     comptime assert rank == 3, "only support ragged inputs"
@@ -3091,9 +3081,7 @@ def flare_mla_prefill[
     ctx: DeviceContext,
     q_max_seq_len: OptionalReg[Int] = None,
     cache_offsets: OptionalReg[
-        LayoutTensor[
-            DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
-        ]
+        LayoutTensor[.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin]
     ] = None,
 ) raises:
     @always_inline
@@ -3234,9 +3222,7 @@ def flare_mla_prefill[
     ctx: DeviceContext,
     q_max_seq_len: OptionalReg[Int] = None,
     cache_offsets: OptionalReg[
-        LayoutTensor[
-            DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
-        ]
+        LayoutTensor[.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin]
     ] = None,
 ) raises:
     @always_inline
@@ -3372,9 +3358,7 @@ def flare_mla_prefill_dispatch[
     scale: Float32,
     ctx: DeviceContext,
     cache_offsets: OptionalReg[
-        LayoutTensor[
-            DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
-        ]
+        LayoutTensor[.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin]
     ] = None,
 ) raises:
     """Dispatches an MLA prefill request to the platform-specific kernel.
@@ -3583,9 +3567,7 @@ def mla_prefill[
     seq_len_arg: Int32,
     valid_length_tt: TileTensor[.uint32, valid_layout, ImmutAnyOrigin],
     cache_offsets: OptionalReg[
-        LayoutTensor[
-            DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
-        ]
+        LayoutTensor[.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin]
     ],
     mask: mask_t,
 ):
@@ -3864,16 +3846,16 @@ def mla_prefill_single_batch[
     var q_gmem_block = LayoutTensor[
         q_type,
         q_gmem_layout,
-        layout_int_type=DType.int32,
-        linear_idx_type=DType.int32,
+        layout_int_type=.int32,
+        linear_idx_type=.int32,
         masked=True,
     ](
         q_ptr + Int(q_offset),
-        RuntimeLayout[element_type=DType.int32, linear_idx_type=DType.int32](
-            RuntimeTuple[q_gmem_layout.shape, element_type=DType.int32](
+        RuntimeLayout[element_type=.int32, linear_idx_type=.int32](
+            RuntimeTuple[q_gmem_layout.shape, element_type=.int32](
                 Int(q_tile_num_rows), q_depth
             ),
-            RuntimeTuple[q_gmem_layout.stride, element_type=DType.int32](
+            RuntimeTuple[q_gmem_layout.stride, element_type=.int32](
                 num_heads * q_depth, 1
             ),
         ),
@@ -4031,12 +4013,12 @@ def mla_prefill_single_batch[
 
         # kv cache gmem has to clip num rows as runtime layout
         var kv_runtime_layout = RuntimeLayout[
-            element_type=DType.int32, linear_idx_type=DType.int32
+            element_type=.int32, linear_idx_type=.int32
         ](
-            RuntimeTuple[kv_gmem_layout.shape, element_type=DType.int32](
+            RuntimeTuple[kv_gmem_layout.shape, element_type=.int32](
                 kv_tile_num_rows, depth
             ),
-            RuntimeTuple[kv_gmem_layout.stride, element_type=DType.int32](
+            RuntimeTuple[kv_gmem_layout.stride, element_type=.int32](
                 num_heads * depth, 1
             ),
         )
@@ -4044,8 +4026,8 @@ def mla_prefill_single_batch[
         var k_gmem_block = LayoutTensor[
             k_type,
             kv_gmem_layout,
-            layout_int_type=DType.int32,
-            linear_idx_type=DType.int32,
+            layout_int_type=.int32,
+            linear_idx_type=.int32,
             masked=not not_last_iter,
         ](
             k.block_paged_ptr[BN](
@@ -4061,8 +4043,8 @@ def mla_prefill_single_batch[
         var v_gmem_block = LayoutTensor[
             v_type,
             kv_gmem_layout,
-            layout_int_type=DType.int32,
-            linear_idx_type=DType.int32,
+            layout_int_type=.int32,
+            linear_idx_type=.int32,
             masked=not not_last_iter,
         ](
             v.block_paged_ptr[BN](
@@ -4082,12 +4064,12 @@ def mla_prefill_single_batch[
         )
 
         var k_rope_runtime_layout = RuntimeLayout[
-            element_type=DType.int32, linear_idx_type=DType.int32
+            element_type=.int32, linear_idx_type=.int32
         ](
-            RuntimeTuple[k_rope_gmem_layout.shape, element_type=DType.int32](
+            RuntimeTuple[k_rope_gmem_layout.shape, element_type=.int32](
                 kv_tile_num_rows, cache_depth
             ),
-            RuntimeTuple[k_rope_gmem_layout.stride, element_type=DType.int32](
+            RuntimeTuple[k_rope_gmem_layout.stride, element_type=.int32](
                 cache_num_heads * cache_depth, 1
             ),
         )
@@ -4095,8 +4077,8 @@ def mla_prefill_single_batch[
         var k_rope_gmem_block = LayoutTensor[
             k_rope_type,
             k_rope_gmem_layout,
-            layout_int_type=DType.int32,
-            linear_idx_type=DType.int32,
+            layout_int_type=.int32,
+            linear_idx_type=.int32,
             masked=not not_last_iter,
         ](
             k_rope.block_paged_ptr[BN](
@@ -4238,7 +4220,7 @@ def mla_prefill_single_batch[
 
                         comptime if masked:
                             p_reg_vec2[mma_id, i] = mask.mask(
-                                IndexList[4, element_type=DType.uint32](
+                                IndexList[4, element_type=.uint32](
                                     block_idx.z,
                                     block_idx.y,
                                     Int(score_row_with_start_pos),
@@ -4258,10 +4240,10 @@ def mla_prefill_single_batch[
 
                         if not not_last_iter:
                             p_reg_vec2[mma_id, i] = _kernel_mask(
-                                IndexList[2, element_type=DType.uint32](
+                                IndexList[2, element_type=.uint32](
                                     Int(score_row), Int(score_col)
                                 ),
-                                IndexList[2, element_type=DType.uint32](
+                                IndexList[2, element_type=.uint32](
                                     seq_len,
                                     num_keys,
                                 ),
@@ -4425,20 +4407,20 @@ def mla_prefill_single_batch[
         head_idx + UInt32(num_heads) * q_tile_idx * UInt32(BM)
     )
     var output_gemm_runtime_layout = RuntimeLayout[
-        element_type=DType.int32, linear_idx_type=DType.int32
+        element_type=.int32, linear_idx_type=.int32
     ](
-        RuntimeTuple[output_gmem_layout.shape, element_type=DType.int32](
+        RuntimeTuple[output_gmem_layout.shape, element_type=.int32](
             Int(q_tile_num_rows), depth
         ),
-        RuntimeTuple[output_gmem_layout.stride, element_type=DType.int32](
+        RuntimeTuple[output_gmem_layout.stride, element_type=.int32](
             num_heads * depth, 1
         ),
     )
     var output_gmem_tile = LayoutTensor[
         output_type,
         output_gmem_layout,
-        layout_int_type=DType.int32,
-        linear_idx_type=DType.int32,
+        layout_int_type=.int32,
+        linear_idx_type=.int32,
         masked=True,
     ](
         output_ptr + Int(output_offset),

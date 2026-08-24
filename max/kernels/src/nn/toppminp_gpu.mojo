@@ -167,7 +167,7 @@ def normalize(value: BFloat16) -> UInt16:
     # Normalize bf16 values by flipping the sign bit for positive and fully
     # inverting negative numbers
     var bits = reinterpret(value)
-    comptime sign_bit_mask = 0b1 << (bit_width_of[DType.bfloat16]() - 1)
+    comptime sign_bit_mask = 0b1 << (bit_width_of[BFloat16]() - 1)
     if bits & UInt16(sign_bit_mask):
         # For negative numbers, flip all bits (two's complement behavior)
         return ~bits
@@ -201,7 +201,7 @@ def normalize(value: Int32) -> UInt32:
     # For signed integers: Flip the most significant bit to ensure correct ordering
     # This makes negative numbers appear "smaller" than positive numbers in
     # unsigned comparison
-    comptime sign_bit_mask = 0b1 << (bit_width_of[DType.int32]() - 1)
+    comptime sign_bit_mask = 0b1 << (bit_width_of[Int32]() - 1)
 
     return reinterpret(value) ^ UInt32(sign_bit_mask)
 
@@ -230,7 +230,7 @@ def normalize(value: Float32) -> UInt32:
         return bitcast[.uint32, 1](value)
 
     var bits = reinterpret(value)
-    comptime sign_bit = bit_width_of[DType.float32]() - 1
+    comptime sign_bit = bit_width_of[Float32]() - 1
     # Flip all bits if the value is negative (sign bit is 1)
     # This makes more negative numbers appear "smaller" in unsigned comparison
     return bits ^ ((-(bits >> UInt32(sign_bit))) | UInt32(0b1 << sign_bit))

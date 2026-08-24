@@ -47,7 +47,7 @@ from std.utils.index import IndexList
 
 comptime M = 128
 comptime N = 64
-comptime VEC = 4  # SIMD[DType.uint32, 4]
+comptime VEC = 4  # SIMD[.uint32, 4]
 comptime THREADS = 128  # one warp group
 comptime ELEMS_PER_ITER = THREADS * VEC  # 512 == 8 full rows
 comptime ITERS = (M * N) // ELEMS_PER_ITER  # 8192 / 512 == 16
@@ -60,7 +60,7 @@ def tma_store_uint32_kernel[
 ](tma_tile: TMATensorTile[.uint32, 2, tile_shape, desc_shape]):
     comptime smem_layout = Layout.row_major(M, N)
     var smem = LayoutTensor[
-        DType.uint32,
+        .uint32,
         smem_layout,
         MutAnyOrigin,
         address_space=.SHARED,

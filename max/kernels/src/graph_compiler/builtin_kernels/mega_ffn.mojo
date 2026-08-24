@@ -239,7 +239,7 @@ struct Struct_mega_ffn_nvfp4:
         # `a`/weights `float8_e4m3fn` (1 elem/byte), 32-elem scale blocks, no
         # `tensor_sf`. The intermediate SF dtype follows the A-scale operand
         # (`scales_type`: E4M3 for NVFP4, E8M0 for MXFP8).
-        comptime is_mxfp8 = a_type == .float8_e4m3fn
+        comptime is_mxfp8 = a_type == DType.float8_e4m3fn
         comptime sf_vector_size = MXFP8_SF_VECTOR_SIZE if is_mxfp8 else NVFP4_SF_VECTOR_SIZE
 
         # Total expert count is the kernel comptime `num_experts` (the

@@ -255,7 +255,7 @@ def kernel_pv_chain[
 
 
 def test_pv_chain[T: DType](ctx: DeviceContext) raises -> Bool:
-    var dtype_name = "BF16" if T == .bfloat16 else "FP8"
+    var dtype_name = "BF16" if T == DType.bfloat16 else "FP8"
     print("--- test_pv_chain[", dtype_name, "] ---")
 
     comptime CFG = MhaConfigV2(

@@ -307,8 +307,8 @@ def main() raises:
     # Fixed seed so random Q/K/V fills are reproducible across runs.
     seed(0)
 
-    comptime qkv_type = get_defined_dtype["qkv_type", DType.bfloat16]()
-    comptime mask_type = get_defined_dtype["mask_type", DType.bfloat16]()
+    comptime qkv_type = get_defined_dtype["qkv_type", .bfloat16]()
+    comptime mask_type = get_defined_dtype["mask_type", .bfloat16]()
     comptime depth = get_defined_int["depth", 128]()
     comptime num_heads = get_defined_int["num_heads", 16]()
     comptime kv_block = get_defined_int["kv_block", 64]()

@@ -104,9 +104,7 @@ def main() raises:
         row_offsets_host[1] = UInt32(valid_length)
         var row_offsets_dev = ctx.enqueue_create_buffer[.uint32](2)
         ctx.enqueue_copy(row_offsets_dev, row_offsets_host)
-        var row_offsets = LayoutTensor[
-            mut=False, DType.uint32, row_offsets_layout
-        ](
+        var row_offsets = LayoutTensor[mut=False, .uint32, row_offsets_layout](
             row_offsets_dev,
             RuntimeLayout[row_offsets_layout].row_major(IndexList[1](2)),
         )
@@ -116,7 +114,7 @@ def main() raises:
         var cache_lengths_dev = ctx.enqueue_create_buffer[.uint32](1)
         ctx.enqueue_copy(cache_lengths_dev, cache_lengths_host)
         var cache_lengths = LayoutTensor[
-            mut=False, DType.uint32, cache_lengths_layout
+            mut=False, .uint32, cache_lengths_layout
         ](
             cache_lengths_dev,
             RuntimeLayout[cache_lengths_layout].row_major(IndexList[1](1)),
@@ -165,7 +163,7 @@ def main() raises:
             lut_host[i] = UInt32(num_pages if i >= num_pages else i)
         var lut_dev = ctx.enqueue_create_buffer[.uint32](lut_cols)
         ctx.enqueue_copy(lut_dev, lut_host)
-        var lut = LayoutTensor[mut=False, DType.uint32, paged_lut_layout](
+        var lut = LayoutTensor[mut=False, .uint32, paged_lut_layout](
             lut_dev,
             RuntimeLayout[paged_lut_layout].row_major(
                 IndexList[2](1, lut_cols)

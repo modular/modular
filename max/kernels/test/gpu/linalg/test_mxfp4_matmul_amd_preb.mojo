@@ -342,7 +342,7 @@ def _test_case[
         cluster_drain_sched,
         mfma_cluster,
         deep_prime,
-        DType.float32,
+        .float32,
         type_of(c_tt).LayoutType,
         type_of(a_tt).LayoutType,
         type_of(b_pre_tt).LayoutType,

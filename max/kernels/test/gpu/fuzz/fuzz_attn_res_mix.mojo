@@ -381,8 +381,12 @@ def _run_case[
     contract: Bool = False,
     rerun: Int = 0,
 ) raises:
-    comptime ref_atol = (REF_ATOL_F32 if dtype == .float32 else REF_ATOL_BF16)
-    comptime ref_rtol = (REF_RTOL_F32 if dtype == .float32 else REF_RTOL_BF16)
+    comptime ref_atol = (
+        REF_ATOL_F32 if dtype == DType.float32 else REF_ATOL_BF16
+    )
+    comptime ref_rtol = (
+        REF_RTOL_F32 if dtype == DType.float32 else REF_RTOL_BF16
+    )
 
     var tokens = spec.tokens
     var hidden = spec.hidden

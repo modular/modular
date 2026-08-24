@@ -194,9 +194,7 @@ struct MLAIndexerRaggedFloat8Paged:
             page_size,
             quantization_granularity,
         ](
-            LayoutTensor[
-                DType.float8_e4m3fn, Layout.row_major[6](), MutAnyOrigin
-            ](
+            LayoutTensor[.float8_e4m3fn, Layout.row_major[6](), MutAnyOrigin](
                 k_blocks.to_layout_tensor().ptr,
                 RuntimeLayout[Layout.row_major[6]()].row_major(
                     k_blocks.to_layout_tensor().runtime_layout.shape.value
@@ -480,7 +478,7 @@ struct PaddedFlashAttentionGPU:
         var v_buffer = v.to_layout_tensor()
 
         comptime valid_length_t = LayoutTensor[
-            DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
+            .uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
         ]
         var _valid_length = rebind[valid_length_t](
             valid_length.to_layout_tensor()
@@ -570,7 +568,7 @@ struct RaggedFlashAttentionGPU:
         var v_buffer = v.to_layout_tensor()
 
         comptime input_row_offsets_t = LayoutTensor[
-            DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
+            .uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
         ]
         var _input_row_offsets = rebind[input_row_offsets_t](
             input_row_offsets.to_layout_tensor()
@@ -885,7 +883,7 @@ struct Struct_fused_qkv_matmul_padded_paged:
             kv_collection,
             layer_idx,
             LayoutTensor[
-                DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
+                .uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
             ](
                 valid_lengths_lt.ptr,
                 RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
@@ -1851,7 +1849,7 @@ struct Struct_mha_padded_paged:
             kv_collection,
             layer_idx,
             LayoutTensor[
-                DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
+                .uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
             ](
                 valid_lengths_lt.ptr,
                 RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
@@ -2501,12 +2499,12 @@ struct Struct_mla_compute_dispatch_args_scalar:
         is_fp8_kv: Bool,
         target: StaticString,
     ](
-        output: OutputTensor[dtype=.int64, rank=1, ...],
-        batch_size_tensor: InputTensor[dtype=.int64, rank=1, ...],
+        output: OutputTensor[dtype=DType.int64, rank=1, ...],
+        batch_size_tensor: InputTensor[dtype=DType.int64, rank=1, ...],
         max_cache_valid_length_tensor: InputTensor[
             dtype=DType.int64, rank=1, ...
         ],
-        q_max_seq_len_tensor: InputTensor[dtype=.int64, rank=1, ...],
+        q_max_seq_len_tensor: InputTensor[dtype=DType.int64, rank=1, ...],
         context: DeviceContext,
     ) raises:
         comptime assert is_gpu[

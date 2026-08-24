@@ -117,7 +117,7 @@ def test_mxfp8_matches_host_oracle[M: Int, K: Int](ctx: DeviceContext) raises:
             var multiplier: Float32
             var block_is_dead: Bool
             want_scale, multiplier, block_is_dead = compute_mxfp8_block_scale[
-                DType.float8_e8m0fnu
+                .float8_e8m0fnu
             ](group_max)
             # Host and device `recip` disagree at E8M0's subnormal floor, so an
             # oracle over a dead block would compare two different functions.
@@ -143,7 +143,7 @@ def test_mxfp8_matches_host_oracle[M: Int, K: Int](ctx: DeviceContext) raises:
 
             for e in range(MXFP8_SF_VECTOR_SIZE):
                 var want = (values[base + e] * multiplier).cast[
-                    DType.float8_e4m3fn
+                    .float8_e4m3fn
                 ]()
                 var got = data[base + e]
                 assert_equal(

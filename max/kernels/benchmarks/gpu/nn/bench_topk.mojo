@@ -838,9 +838,9 @@ def main() raises:
     var top_p = Float32(arg_parse("top_p", 0.95))
     var logit_sigma = arg_parse("logit_sigma", 2.0)
 
-    comptime dtype = get_defined_dtype["dtype", DType.float32]()
+    comptime dtype = get_defined_dtype["dtype", .float32]()
     comptime rank = get_defined_int["rank", 2]()
-    comptime out_idx_type = get_defined_dtype["out_idx_type", DType.int]()
+    comptime out_idx_type = get_defined_dtype["out_idx_type", .int]()
     comptime sampling = get_defined_bool["sampling", False]()
     comptime largest = get_defined_bool["largest", True]()
     comptime use_fi = get_defined_bool["USE_FI_TOPK_KERNEL", False]()

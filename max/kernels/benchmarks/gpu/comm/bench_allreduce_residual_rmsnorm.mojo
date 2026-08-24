@@ -1139,7 +1139,7 @@ def bench_allreduce_rmsnorm_fp8[
 
 
 def main() raises:
-    comptime in_dtype = get_defined_dtype["in_dtype", DType.bfloat16]()
+    comptime in_dtype = get_defined_dtype["in_dtype", .bfloat16]()
     # `quantize` selects the mode portably across platforms (the FP8 type is
     # platform-dependent, so it can't be named directly in the benchmark YAML):
     #   quantize=True  -> out_dtype is the platform FP8 type (fused quant).

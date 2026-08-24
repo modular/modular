@@ -187,15 +187,13 @@ def execute_test[
 
     # --- Build KV collections ---
     var cache_lengths_immut = LayoutTensor[
-        mut=False, DType.uint32, cache_lengths_layout
+        mut=False, .uint32, cache_lengths_layout
     ](
         cache_lengths_device,
         RuntimeLayout[cache_lengths_layout].row_major(Index(batch_size)),
     )
     comptime paged_lut_kv_layout = Layout.row_major[2]()
-    var paged_lut_immut = LayoutTensor[
-        mut=False, DType.uint32, paged_lut_kv_layout
-    ](
+    var paged_lut_immut = LayoutTensor[mut=False, .uint32, paged_lut_kv_layout](
         paged_lut_device,
         RuntimeLayout[paged_lut_kv_layout].row_major(paged_lut_shape),
     )
@@ -280,7 +278,7 @@ def execute_test[
     var unfused_k_cache = unfused_kv_collection.get_key_cache(layer_idx)
     var unfused_v_cache = unfused_kv_collection.get_value_cache(layer_idx)
     var row_offsets_lt = LayoutTensor[
-        DType.uint32,
+        .uint32,
         Layout(UNKNOWN_VALUE),
     ](
         row_offsets_device,
@@ -595,7 +593,7 @@ def execute_test_with_position_ids[
     # --- Build KV collections ---
     var cache_lengths_immut = LayoutTensor[
         mut=False,
-        DType.uint32,
+        .uint32,
         cache_lengths_layout,
     ](
         cache_lengths_device,
@@ -604,7 +602,7 @@ def execute_test_with_position_ids[
     comptime paged_lut_kv_layout = Layout.row_major[2]()
     var paged_lut_immut = LayoutTensor[
         mut=False,
-        DType.uint32,
+        .uint32,
         paged_lut_kv_layout,
     ](
         paged_lut_device,
@@ -697,7 +695,7 @@ def execute_test_with_position_ids[
     var unfused_k_cache = unfused_kv_collection.get_key_cache(layer_idx)
     var unfused_v_cache = unfused_kv_collection.get_value_cache(layer_idx)
     var row_offsets_lt = LayoutTensor[
-        DType.uint32,
+        .uint32,
         Layout(UNKNOWN_VALUE),
     ](
         row_offsets_device,
@@ -993,7 +991,7 @@ def execute_test_fp8[
     # --- Build KV collections ---
     var cache_lengths_immut = LayoutTensor[
         mut=False,
-        DType.uint32,
+        .uint32,
         cache_lengths_layout,
     ](
         cache_lengths_device,
@@ -1002,7 +1000,7 @@ def execute_test_fp8[
     comptime paged_lut_kv_layout = Layout.row_major[2]()
     var paged_lut_immut = LayoutTensor[
         mut=False,
-        DType.uint32,
+        .uint32,
         paged_lut_kv_layout,
     ](
         paged_lut_device,

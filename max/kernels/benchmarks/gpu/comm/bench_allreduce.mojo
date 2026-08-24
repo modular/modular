@@ -368,7 +368,7 @@ def _get_test_str[
 def main() raises:
     var num_bytes = arg_parse("num_bytes", 16 * 1024)
 
-    comptime dtype = get_defined_dtype["dtype", DType.bfloat16]()
+    comptime dtype = get_defined_dtype["dtype", .bfloat16]()
     comptime num_gpus = get_defined_int["num_gpus", 2]()
     comptime ragged = get_defined_bool["ragged", False]()
     # Force passing `max_num_blocks` explicitly.

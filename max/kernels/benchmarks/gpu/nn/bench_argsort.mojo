@@ -87,7 +87,7 @@ def bench_argsort[
 
 
 def main() raises:
-    comptime dtype = get_defined_dtype["dtype", DType.float32]()
+    comptime dtype = get_defined_dtype["dtype", .float32]()
     var N = get_defined_int["N", 131072]()
 
     var m = Bench()

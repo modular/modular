@@ -222,7 +222,7 @@ def main() raises:
                     test_blackwell_matmul_tma_umma_warp_specialized[
                         dtype,
                         dtype,
-                        DType.bfloat16,
+                        .bfloat16,
                         block_tile_shape,
                         umma_shape,
                         cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
@@ -240,7 +240,7 @@ def main() raises:
                         test_blackwell_matmul_tma_umma_warp_specialized[
                             dtype,
                             dtype,
-                            DType.bfloat16,
+                            .bfloat16,
                             block_tile_shape,
                             umma_shape,
                             cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
@@ -258,7 +258,7 @@ def main() raises:
                         test_blackwell_matmul_tma_umma_warp_specialized[
                             dtype,
                             dtype,
-                            DType.bfloat16,
+                            .bfloat16,
                             block_tile_shape,
                             umma_shape,
                             cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
@@ -277,7 +277,7 @@ def main() raises:
                     test_blackwell_matmul_tma_umma_warp_specialized[
                         dtype,
                         dtype,
-                        DType.bfloat16,
+                        .bfloat16,
                         block_tile_shape,
                         umma_shape,
                         cluster_shape=StaticTuple[Int32, 3](8, 2, 1),
@@ -294,7 +294,7 @@ def main() raises:
                     test_blackwell_matmul_tma_umma_warp_specialized[
                         dtype,
                         dtype,
-                        DType.bfloat16,
+                        .bfloat16,
                         block_tile_shape,
                         umma_shape,
                         cluster_shape=StaticTuple[Int32, 3](4, 4, 1),

@@ -132,7 +132,7 @@ def bench_grouped_block_scaled_gemm[
     comptime SF_VECTOR_SIZE = sf_vector_size
     comptime max_groups = num_groups
     # FP4 packs 2 values per byte, so K dimension arrays are halved
-    comptime is_fp4 = (a_type == .uint8)
+    comptime is_fp4 = (a_type == DType.uint8)
 
     # MMA shape and cluster shape
     comptime mma_shape = Index(256, 256, 32) if cta_group == 2 else Index(

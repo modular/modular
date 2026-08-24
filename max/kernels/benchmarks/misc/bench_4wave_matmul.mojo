@@ -567,8 +567,8 @@ def main() raises:
     # 4-wave kernel is FP8-only; default the bench dtype accordingly so
     # `bazel build` (no `-D dtype=...`) compiles cleanly. Override to
     # other FP8 variants via `-D dtype=...` at the command line.
-    comptime a_type = get_defined_dtype["dtype", DType.float8_e4m3fn]()
-    comptime c_type = get_defined_dtype["ctype", DType.bfloat16]()
+    comptime a_type = get_defined_dtype["dtype", .float8_e4m3fn]()
+    comptime c_type = get_defined_dtype["ctype", .bfloat16]()
 
     var M = Int(arg_parse("M", 1024))
     comptime N = get_defined_int["N", 16384]()

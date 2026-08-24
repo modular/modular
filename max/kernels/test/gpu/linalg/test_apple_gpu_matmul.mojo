@@ -584,7 +584,7 @@ def test_kernel_single_tile_nn_fp16(ctx: DeviceContext) raises:
     var pass_ = True
     for i in range(M):
         for j in range(N):
-            var exp = _host_matmul_nn[.float16, DType.float16](
+            var exp = _host_matmul_nn[.float16, .float16](
                 a_host.unsafe_ptr(), b_host.unsafe_ptr(), M, N, K, i, j
             )
             var got = d_host[i * N + j]
@@ -639,7 +639,7 @@ def test_kernel_single_tile_k128_nn_fp16(ctx: DeviceContext) raises:
     var pass_ = True
     for i in range(M):
         for j in range(N):
-            var exp = _host_matmul_nn[.float16, DType.float16](
+            var exp = _host_matmul_nn[.float16, .float16](
                 a_host.unsafe_ptr(), b_host.unsafe_ptr(), M, N, K, i, j
             )
             var got = d_host[i * N + j]
@@ -699,7 +699,7 @@ def test_kernel_64x64x17_nn_fp16(ctx: DeviceContext) raises:
     var pass_ = True
     for i in range(M):
         for j in range(N):
-            var exp = _host_matmul_nn[.float16, DType.float16](
+            var exp = _host_matmul_nn[.float16, .float16](
                 a_host.unsafe_ptr(), b_host.unsafe_ptr(), M, N, K, i, j
             )
             var got = d_host[i * N + j]
@@ -754,7 +754,7 @@ def test_kernel_256x256x16_nn_fp16(ctx: DeviceContext) raises:
     var pass_ = True
     for i in range(M):
         for j in range(N):
-            var exp = _host_matmul_nn[.float16, DType.float16](
+            var exp = _host_matmul_nn[.float16, .float16](
                 a_host.unsafe_ptr(), b_host.unsafe_ptr(), M, N, K, i, j
             )
             var got = d_host[i * N + j]
@@ -912,7 +912,7 @@ def test_kernel_128x128x32_nt_fp16(ctx: DeviceContext) raises:
     var pass_ = True
     for i in range(M):
         for j in range(N):
-            var exp = _host_matmul_nt[.float16, DType.float16](
+            var exp = _host_matmul_nt[.float16, .float16](
                 a_host.unsafe_ptr(), b_host.unsafe_ptr(), M, N, K, i, j
             )
             var got = d_host[i * N + j]
@@ -972,7 +972,7 @@ def test_kernel_ragged_100x200x33_nn_fp16(ctx: DeviceContext) raises:
     var pass_ = True
     for i in range(M):
         for j in range(N):
-            var exp = _host_matmul_nn[.float16, DType.float16](
+            var exp = _host_matmul_nn[.float16, .float16](
                 a_host.unsafe_ptr(), b_host.unsafe_ptr(), M, N, K, i, j
             )
             var got = d_host[i * N + j]
@@ -1038,7 +1038,7 @@ def test_kernel_ragged_100x200x32_nn_fp16(ctx: DeviceContext) raises:
     var pass_ = True
     for i in range(M):
         for j in range(N):
-            var exp = _host_matmul_nn[.float16, DType.float16](
+            var exp = _host_matmul_nn[.float16, .float16](
                 a_host.unsafe_ptr(), b_host.unsafe_ptr(), M, N, K, i, j
             )
             var got = d_host[i * N + j]
@@ -1105,7 +1105,7 @@ def test_kernel_ragged_100x200x32_nt_fp16(ctx: DeviceContext) raises:
     var pass_ = True
     for i in range(M):
         for j in range(N):
-            var exp = _host_matmul_nt[.float16, DType.float16](
+            var exp = _host_matmul_nt[.float16, .float16](
                 a_host.unsafe_ptr(), b_host.unsafe_ptr(), M, N, K, i, j
             )
             var got = d_host[i * N + j]
@@ -1171,7 +1171,7 @@ def test_kernel_M20_N80_K16_nn_fp16(ctx: DeviceContext) raises:
     var pass_ = True
     for i in range(M):
         for j in range(N):
-            var exp = _host_matmul_nn[.float16, DType.float16](
+            var exp = _host_matmul_nn[.float16, .float16](
                 a_host.unsafe_ptr(), b_host.unsafe_ptr(), M, N, K, i, j
             )
             var got = d_host[i * N + j]
@@ -1329,7 +1329,7 @@ def test_kernel_128x128x32_nn_bf16(ctx: DeviceContext) raises:
     var pass_ = True
     for i in range(M):
         for j in range(N):
-            var exp = _host_matmul_nn[.bfloat16, DType.bfloat16](
+            var exp = _host_matmul_nn[.bfloat16, .bfloat16](
                 a_host.unsafe_ptr(), b_host.unsafe_ptr(), M, N, K, i, j
             )
             var got = d_host[i * N + j]
@@ -1392,7 +1392,7 @@ def test_kernel_ragged_100x200x64_nn_bf16_clamp_chain(
     var pass_ = True
     for i in range(M):
         for j in range(N):
-            var exp = _host_matmul_nn[.bfloat16, DType.bfloat16](
+            var exp = _host_matmul_nn[.bfloat16, .bfloat16](
                 a_host.unsafe_ptr(), b_host.unsafe_ptr(), M, N, K, i, j
             )
             var got = d_host[i * N + j]
@@ -1447,7 +1447,7 @@ def test_kernel_128x128x32_nn_fp32(ctx: DeviceContext) raises:
     var pass_ = True
     for i in range(M):
         for j in range(N):
-            var exp = _host_matmul_nn[.float32, DType.float32](
+            var exp = _host_matmul_nn[.float32, .float32](
                 a_host.unsafe_ptr(), b_host.unsafe_ptr(), M, N, K, i, j
             )
             var got = d_host[i * N + j]
@@ -1481,7 +1481,7 @@ def test_enqueue_helper_fp16(ctx: DeviceContext) raises:
     var b_tt = TileTensor(b_dev.unsafe_ptr(), row_major(K, N))
     var d_tt = TileTensor(d_dev.unsafe_ptr(), row_major(M, N))
 
-    enqueue_apple_matmul[in_type=DType.float16, transpose_b=False](
+    enqueue_apple_matmul[in_type=.float16, transpose_b=False](
         d_tt, a_tt, b_tt, ctx
     )
 
@@ -1498,7 +1498,7 @@ def test_enqueue_helper_fp16(ctx: DeviceContext) raises:
     var pass_ = True
     for i in range(M):
         for j in range(N):
-            var exp = _host_matmul_nn[.float16, DType.float16](
+            var exp = _host_matmul_nn[.float16, .float16](
                 a_host.unsafe_ptr(), b_host.unsafe_ptr(), M, N, K, i, j
             )
             var got = d_host[i * N + j]
@@ -1535,8 +1535,8 @@ def test_kernel_128_nn_fp16_fp16_no_lambda(ctx: DeviceContext) raises:
     var d_tt = TileTensor(d_dev.unsafe_ptr(), row_major(M, N))
 
     enqueue_apple_matmul[
-        in_type=DType.float16,
-        c_type=DType.float16,
+        in_type=.float16,
+        c_type=.float16,
         transpose_b=False,
     ](d_tt, a_tt, b_tt, ctx)
 
@@ -1553,7 +1553,7 @@ def test_kernel_128_nn_fp16_fp16_no_lambda(ctx: DeviceContext) raises:
     var pass_ = True
     for i in range(M):
         for j in range(N):
-            var exp = _host_matmul_nn[.float16, DType.float16](
+            var exp = _host_matmul_nn[.float16, .float16](
                 a_host.unsafe_ptr(), b_host.unsafe_ptr(), M, N, K, i, j
             )
             # Compare in fp32 space; tolerance allows for fp16 downcast.
@@ -1591,8 +1591,8 @@ def test_kernel_128_nn_fp16_bf16_no_lambda(ctx: DeviceContext) raises:
     var d_tt = TileTensor(d_dev.unsafe_ptr(), row_major(M, N))
 
     enqueue_apple_matmul[
-        in_type=DType.float16,
-        c_type=DType.bfloat16,
+        in_type=.float16,
+        c_type=.bfloat16,
         transpose_b=False,
     ](d_tt, a_tt, b_tt, ctx)
 
@@ -1609,7 +1609,7 @@ def test_kernel_128_nn_fp16_bf16_no_lambda(ctx: DeviceContext) raises:
     var pass_ = True
     for i in range(M):
         for j in range(N):
-            var exp = _host_matmul_nn[.float16, DType.float16](
+            var exp = _host_matmul_nn[.float16, .float16](
                 a_host.unsafe_ptr(), b_host.unsafe_ptr(), M, N, K, i, j
             )
             var got = Float32(d_host[i * N + j])
@@ -1750,109 +1750,109 @@ def _run_bias_epilogue_test[
 def test_kernel_128_nt_fp16_fp16_bias_epilogue(ctx: DeviceContext) raises:
     """Bias-add via `elementwise_lambda_fn` — exercises column-coord propagation.
     """
-    _run_bias_epilogue_test[.float16, DType.float16, True](
+    _run_bias_epilogue_test[.float16, .float16, True](
         ctx, "test_kernel_128_nt_fp16_fp16_bias_epilogue"
     )
 
 
 def test_kernel_128_nn_fp16_fp16_bias_epilogue(ctx: DeviceContext) raises:
-    _run_bias_epilogue_test[.float16, DType.float16, False](
+    _run_bias_epilogue_test[.float16, .float16, False](
         ctx, "test_kernel_128_nn_fp16_fp16_bias_epilogue"
     )
 
 
 def test_kernel_128_nn_fp16_bf16_bias_epilogue(ctx: DeviceContext) raises:
-    _run_bias_epilogue_test[.float16, DType.bfloat16, False](
+    _run_bias_epilogue_test[.float16, .bfloat16, False](
         ctx, "test_kernel_128_nn_fp16_bf16_bias_epilogue"
     )
 
 
 def test_kernel_128_nn_fp16_fp32_bias_epilogue(ctx: DeviceContext) raises:
-    _run_bias_epilogue_test[.float16, DType.float32, False](
+    _run_bias_epilogue_test[.float16, .float32, False](
         ctx, "test_kernel_128_nn_fp16_fp32_bias_epilogue"
     )
 
 
 def test_kernel_128_nt_fp16_bf16_bias_epilogue(ctx: DeviceContext) raises:
-    _run_bias_epilogue_test[.float16, DType.bfloat16, True](
+    _run_bias_epilogue_test[.float16, .bfloat16, True](
         ctx, "test_kernel_128_nt_fp16_bf16_bias_epilogue"
     )
 
 
 def test_kernel_128_nt_fp16_fp32_bias_epilogue(ctx: DeviceContext) raises:
-    _run_bias_epilogue_test[.float16, DType.float32, True](
+    _run_bias_epilogue_test[.float16, .float32, True](
         ctx, "test_kernel_128_nt_fp16_fp32_bias_epilogue"
     )
 
 
 def test_kernel_128_nn_bf16_fp16_bias_epilogue(ctx: DeviceContext) raises:
-    _run_bias_epilogue_test[.bfloat16, DType.float16, False](
+    _run_bias_epilogue_test[.bfloat16, .float16, False](
         ctx, "test_kernel_128_nn_bf16_fp16_bias_epilogue"
     )
 
 
 def test_kernel_128_nn_bf16_bf16_bias_epilogue(ctx: DeviceContext) raises:
-    _run_bias_epilogue_test[.bfloat16, DType.bfloat16, False](
+    _run_bias_epilogue_test[.bfloat16, .bfloat16, False](
         ctx, "test_kernel_128_nn_bf16_bf16_bias_epilogue"
     )
 
 
 def test_kernel_128_nn_bf16_fp32_bias_epilogue(ctx: DeviceContext) raises:
-    _run_bias_epilogue_test[.bfloat16, DType.float32, False](
+    _run_bias_epilogue_test[.bfloat16, .float32, False](
         ctx, "test_kernel_128_nn_bf16_fp32_bias_epilogue"
     )
 
 
 def test_kernel_128_nt_bf16_fp16_bias_epilogue(ctx: DeviceContext) raises:
-    _run_bias_epilogue_test[.bfloat16, DType.float16, True](
+    _run_bias_epilogue_test[.bfloat16, .float16, True](
         ctx, "test_kernel_128_nt_bf16_fp16_bias_epilogue"
     )
 
 
 def test_kernel_128_nt_bf16_bf16_bias_epilogue(ctx: DeviceContext) raises:
-    _run_bias_epilogue_test[.bfloat16, DType.bfloat16, True](
+    _run_bias_epilogue_test[.bfloat16, .bfloat16, True](
         ctx, "test_kernel_128_nt_bf16_bf16_bias_epilogue"
     )
 
 
 def test_kernel_128_nt_bf16_fp32_bias_epilogue(ctx: DeviceContext) raises:
-    _run_bias_epilogue_test[.bfloat16, DType.float32, True](
+    _run_bias_epilogue_test[.bfloat16, .float32, True](
         ctx, "test_kernel_128_nt_bf16_fp32_bias_epilogue"
     )
 
 
 def test_kernel_128_nn_fp32_fp16_bias_epilogue(ctx: DeviceContext) raises:
-    _run_bias_epilogue_test[.float32, DType.float16, False](
+    _run_bias_epilogue_test[.float32, .float16, False](
         ctx, "test_kernel_128_nn_fp32_fp16_bias_epilogue"
     )
 
 
 def test_kernel_128_nn_fp32_bf16_bias_epilogue(ctx: DeviceContext) raises:
-    _run_bias_epilogue_test[.float32, DType.bfloat16, False](
+    _run_bias_epilogue_test[.float32, .bfloat16, False](
         ctx, "test_kernel_128_nn_fp32_bf16_bias_epilogue"
     )
 
 
 def test_kernel_128_nn_fp32_fp32_bias_epilogue(ctx: DeviceContext) raises:
-    _run_bias_epilogue_test[.float32, DType.float32, False](
+    _run_bias_epilogue_test[.float32, .float32, False](
         ctx, "test_kernel_128_nn_fp32_fp32_bias_epilogue"
     )
 
 
 def test_kernel_128_nt_fp32_fp16_bias_epilogue(ctx: DeviceContext) raises:
-    _run_bias_epilogue_test[.float32, DType.float16, True](
+    _run_bias_epilogue_test[.float32, .float16, True](
         ctx, "test_kernel_128_nt_fp32_fp16_bias_epilogue"
     )
 
 
 def test_kernel_128_nt_fp32_bf16_bias_epilogue(ctx: DeviceContext) raises:
-    _run_bias_epilogue_test[.float32, DType.bfloat16, True](
+    _run_bias_epilogue_test[.float32, .bfloat16, True](
         ctx, "test_kernel_128_nt_fp32_bf16_bias_epilogue"
     )
 
 
 def test_kernel_128_nt_fp32_fp32_bias_epilogue(ctx: DeviceContext) raises:
-    _run_bias_epilogue_test[.float32, DType.float32, True](
+    _run_bias_epilogue_test[.float32, .float32, True](
         ctx, "test_kernel_128_nt_fp32_fp32_bias_epilogue"
     )
 
@@ -1898,8 +1898,8 @@ def test_kernel_128_nt_fp16_fp16_relu_compose_epilogue(
         (d_ptr + coords[0] * N + coords[1]).store[alignment=alignment](relu_val)
 
     enqueue_apple_matmul[
-        in_type=DType.float16,
-        c_type=DType.float16,
+        in_type=.float16,
+        c_type=.float16,
         transpose_b=True,
         elementwise_lambda_fn=Optional[elementwise_epilogue_type](
             relu_compose_epilogue
@@ -1983,8 +1983,8 @@ def test_kernel_128_nt_fp16_fp16_bias_relu_compose_epilogue(
         )
 
     enqueue_apple_matmul[
-        in_type=DType.float16,
-        c_type=DType.float16,
+        in_type=.float16,
+        c_type=.float16,
         transpose_b=True,
         elementwise_lambda_fn=Optional[elementwise_epilogue_type](
             bias_relu_compose_epilogue
@@ -2068,8 +2068,8 @@ def test_kernel_ragged_100x100x97_nt_fp16_fp16_bias_epilogue(
         )
 
     enqueue_apple_matmul[
-        in_type=DType.float16,
-        c_type=DType.float16,
+        in_type=.float16,
+        c_type=.float16,
         transpose_b=True,
         elementwise_lambda_fn=Optional[elementwise_epilogue_type](
             bias_epilogue
@@ -2130,8 +2130,8 @@ def test_kernel_64x130x64_nn_fp16_fp16_oddn(ctx: DeviceContext) raises:
     var d_tt = TileTensor(d_dev.unsafe_ptr(), row_major(M, N))
 
     enqueue_apple_matmul[
-        in_type=DType.float16,
-        c_type=DType.float16,
+        in_type=.float16,
+        c_type=.float16,
         transpose_b=False,
     ](d_tt, a_tt, b_tt, ctx)
 
@@ -2148,7 +2148,7 @@ def test_kernel_64x130x64_nn_fp16_fp16_oddn(ctx: DeviceContext) raises:
     var pass_ = True
     for i in range(M):
         for j in range(N):
-            var exp = _host_matmul_nn[.float16, DType.float16](
+            var exp = _host_matmul_nn[.float16, .float16](
                 a_host.unsafe_ptr(), b_host.unsafe_ptr(), M, N, K, i, j
             )
             var got = Float32(d_host[i * N + j])
@@ -2209,8 +2209,8 @@ def test_kernel_64x130x64_nn_fp16_fp16_oddn_bias_epilogue(
         (d_ptr + coords[0] * N + coords[1]).store[alignment=alignment](v_c + b)
 
     enqueue_apple_matmul[
-        in_type=DType.float16,
-        c_type=DType.float16,
+        in_type=.float16,
+        c_type=.float16,
         transpose_b=False,
         elementwise_lambda_fn=Optional[elementwise_epilogue_type](
             bias_epilogue
@@ -2231,7 +2231,7 @@ def test_kernel_64x130x64_nn_fp16_fp16_oddn_bias_epilogue(
     var pass_ = True
     for i in range(M):
         for j in range(N):
-            var acc = _host_matmul_nn[.float16, DType.float16](
+            var acc = _host_matmul_nn[.float16, .float16](
                 a_host.unsafe_ptr(), b_host.unsafe_ptr(), M, N, K, i, j
             )
             var exp = acc + Float32(bias_host[j])
@@ -2255,63 +2255,55 @@ def main() raises:
     # 8x8 simdgroup-matrix path (`gemm_kernel_apple_8x8`, the M1-M4 dispatch
     # path). Valid on every Apple GPU, so these run regardless of compute
     # capability.
-    _run_8x8_case[.bfloat16, DType.bfloat16, True](
+    _run_8x8_case[.bfloat16, .bfloat16, True](
         ctx, 64, 64, 16, "8x8 bf16 nt min"
     )
-    _run_8x8_case[.bfloat16, DType.bfloat16, True](
+    _run_8x8_case[.bfloat16, .bfloat16, True](
         ctx, 512, 1024, 256, "8x8 bf16 nt large"
     )
-    _run_8x8_case[.bfloat16, DType.bfloat16, False](
-        ctx, 128, 256, 64, "8x8 bf16 nn"
-    )
-    _run_8x8_case[.float16, DType.float16, True](
-        ctx, 256, 256, 128, "8x8 fp16 nt"
-    )
-    _run_8x8_case[.bfloat16, DType.float32, True](
+    _run_8x8_case[.bfloat16, .bfloat16, False](ctx, 128, 256, 64, "8x8 bf16 nn")
+    _run_8x8_case[.float16, .float16, True](ctx, 256, 256, 128, "8x8 fp16 nt")
+    _run_8x8_case[.bfloat16, .float32, True](
         ctx, 128, 128, 64, "8x8 bf16 in f32 out"
     )
     # Ragged M (real prefill: seq_len not a multiple of 64) and ragged N.
-    _run_8x8_case[.bfloat16, DType.bfloat16, True](
+    _run_8x8_case[.bfloat16, .bfloat16, True](
         ctx, 100, 128, 64, "8x8 bf16 nt ragged-m"
     )
-    _run_8x8_case[.bfloat16, DType.bfloat16, False](
+    _run_8x8_case[.bfloat16, .bfloat16, False](
         ctx, 100, 200, 64, "8x8 bf16 nn ragged-mn"
     )
     # Odd M/N: edge subtiles where the bound splits a lane's 2-wide fragment.
     # NN + odd N hits the single-slot B-load path (`gj + 1 >= n > gj`); even
     # dims never trigger it since every lane's column index is even.
-    _run_8x8_case[.bfloat16, DType.bfloat16, False](
+    _run_8x8_case[.bfloat16, .bfloat16, False](
         ctx, 64, 129, 64, "8x8 bf16 nn odd-n"
     )
-    _run_8x8_case[.bfloat16, DType.bfloat16, True](
+    _run_8x8_case[.bfloat16, .bfloat16, True](
         ctx, 65, 129, 64, "8x8 bf16 nt odd-mn"
     )
 
     # Bias-add `elementwise_lambda_fn` epilogue (clean interior, odd NT edges,
     # and the NN odd-N load edge combined with the epilogue store).
-    _run_8x8_bias_case[.bfloat16, DType.bfloat16, True](
+    _run_8x8_bias_case[.bfloat16, .bfloat16, True](
         ctx, 128, 128, 64, "8x8 bias nt"
     )
-    _run_8x8_bias_case[.bfloat16, DType.bfloat16, True](
+    _run_8x8_bias_case[.bfloat16, .bfloat16, True](
         ctx, 65, 129, 64, "8x8 bias nt odd"
     )
-    _run_8x8_bias_case[.bfloat16, DType.bfloat16, False](
+    _run_8x8_bias_case[.bfloat16, .bfloat16, False](
         ctx, 64, 129, 64, "8x8 bias nn odd-n"
     )
 
     # f32 in/out: the 8x8 unit is full-precision for f32 (no fp19 truncation),
     # so these check against the tight f32 tolerance. Covers NT/NN, an odd edge,
     # and the epilogue store.
-    _run_8x8_case[.float32, DType.float32, True](
-        ctx, 256, 256, 128, "8x8 f32 nt"
-    )
-    _run_8x8_case[.float32, DType.float32, False](
-        ctx, 128, 256, 64, "8x8 f32 nn"
-    )
-    _run_8x8_case[.float32, DType.float32, False](
+    _run_8x8_case[.float32, .float32, True](ctx, 256, 256, 128, "8x8 f32 nt")
+    _run_8x8_case[.float32, .float32, False](ctx, 128, 256, 64, "8x8 f32 nn")
+    _run_8x8_case[.float32, .float32, False](
         ctx, 64, 129, 64, "8x8 f32 nn odd-n"
     )
-    _run_8x8_bias_case[.float32, DType.float32, True](
+    _run_8x8_bias_case[.float32, .float32, True](
         ctx, 128, 128, 64, "8x8 f32 bias nt"
     )
 
@@ -2364,37 +2356,37 @@ def main() raises:
 
     # Split-K path (folded in from the former test_apple_split_k.mojo).
     # Explicit split counts via enqueue_apple_matmul_split_k:
-    _run_split_k_case[.float16, DType.float32, False](
+    _run_split_k_case[.float16, .float32, False](
         ctx, 64, 64, 4096, "splitk nn k4096", splits=4
     )
-    _run_split_k_case[.float16, DType.float32, False](
+    _run_split_k_case[.float16, .float32, False](
         ctx, 64, 64, 4096, "splitk nn s8", splits=8
     )
     # K not BK-aligned (last split carries a tail).
-    _run_split_k_case[.float16, DType.float32, False](
+    _run_split_k_case[.float16, .float32, False](
         ctx, 64, 64, 4097, "splitk nn k4097 tail", splits=4
     )
     # split hint > num_strips: must cap (no empty splits / OOB).
-    _run_split_k_case[.float16, DType.float32, False](
+    _run_split_k_case[.float16, .float32, False](
         ctx, 64, 64, 64, "splitk nn s16cap", splits=16
     )
     # Ragged M/N + multi-tile.
-    _run_split_k_case[.float16, DType.float32, False](
+    _run_split_k_case[.float16, .float32, False](
         ctx, 100, 200, 2048, "splitk nn ragged", splits=4
     )
     # NT.
-    _run_split_k_case[.float16, DType.float32, True](
+    _run_split_k_case[.float16, .float32, True](
         ctx, 96, 96, 3072, "splitk nt k3072", splits=4
     )
     # bf16 in, fp16 out (exercises the reduce cast).
-    _run_split_k_case[.bfloat16, DType.float16, False](
+    _run_split_k_case[.bfloat16, .float16, False](
         ctx, 64, 128, 2048, "splitk bf16->fp16 reduce", splits=4
     )
     # force_split_k=True via enqueue_apple_matmul on balanced shapes that would
     # NOT auto-route: the forced split-K result must still match the reference.
-    _run_split_k_case[.float16, DType.float32, False](
+    _run_split_k_case[.float16, .float32, False](
         ctx, 128, 128, 256, "force nn", force_split_k=True
     )
-    _run_split_k_case[.float16, DType.bfloat16, True](
+    _run_split_k_case[.float16, .bfloat16, True](
         ctx, 96, 160, 2048, "force nt large-k", force_split_k=True
     )

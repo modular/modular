@@ -35,7 +35,7 @@ def _run_test_quant[group_size: Int, tolerance: Float32]() -> Bool:
     var unitary = SIMD[.float32, group_size](1.0)
 
     def run_fake_quant(input_vec: SIMD[.float32, group_size]) -> Bool:
-        var packed_result = Q4sym[group_size, DType.float32](input_vec)
+        var packed_result = Q4sym[group_size, .float32](input_vec)
         var decoded_result = packed_result.decode_fully()
         print("input_vec        :", input_vec)
         print("fakeq_result     :", decoded_result)

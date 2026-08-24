@@ -80,7 +80,7 @@ def test_tcgen05_st_ld_roundtrip(ctx: DeviceContext) raises:
     comptime M = 128
     comptime N = 8
     var data = ManagedLayoutTensor[
-        DType.float32,
+        .float32,
         Layout.row_major(M, N),
     ](ctx)
 
@@ -112,7 +112,7 @@ def tcgen05_cp_ld_roundtrip_kernel[
 
     comptime smem_layout = Layout.row_major(M_smem, N_smem)
     var smem_tile = LayoutTensor[
-        DType.float32,
+        .float32,
         smem_layout,
         MutAnyOrigin,
         address_space=.SHARED,
@@ -234,7 +234,7 @@ def test_tcgen05_cp_ld_roundtrip(ctx: DeviceContext) raises:
     comptime M = 32
     comptime N = 4
     var data = ManagedLayoutTensor[
-        DType.float32,
+        .float32,
         Layout.row_major(M, N),
     ](ctx)
     comptime kernel = tcgen05_cp_ld_roundtrip_kernel[M, N]

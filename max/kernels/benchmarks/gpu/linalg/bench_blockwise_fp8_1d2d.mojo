@@ -181,7 +181,7 @@ def bench_blockwise_fp8_1d2d[
         ),
     )
     var a_offsets_struct = LayoutTensor[
-        DType.uint32, Layout.row_major(UNKNOWN_VALUE)
+        .uint32, Layout.row_major(UNKNOWN_VALUE)
     ](
         a_offsets_dev_buf.unsafe_ptr().bitcast[UInt32](),
         RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
@@ -189,16 +189,14 @@ def bench_blockwise_fp8_1d2d[
         ),
     )
     var expert_ids_struct = LayoutTensor[
-        DType.int32, Layout.row_major(UNKNOWN_VALUE)
+        .int32, Layout.row_major(UNKNOWN_VALUE)
     ](
         expert_ids_dev_buf.unsafe_ptr().bitcast[Int32](),
         RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
             IndexList[1](num_active_experts)
         ),
     )
-    var expert_scales_struct = LayoutTensor[
-        DType.float32, expert_scales_layout
-    ](
+    var expert_scales_struct = LayoutTensor[.float32, expert_scales_layout](
         expert_scales_dev_buf.unsafe_ptr().bitcast[Float32](),
     )
 

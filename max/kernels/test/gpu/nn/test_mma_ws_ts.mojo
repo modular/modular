@@ -445,7 +445,7 @@ def sparse_mma_ws_ts_kernel[
     ],
     d_indices: UnsafePointer[Int32, MutAnyOrigin],
     p_output: LayoutTensor[
-        DType.float32, Layout.row_major(rows, 2 * rows), MutAnyOrigin
+        .float32, Layout.row_major(rows, 2 * rows), MutAnyOrigin
     ],
 ):
     """Q [rows, cols]: TMA bulk -> SMEM (SWIZZLE_128B) -> TMEM.
@@ -966,7 +966,7 @@ def test_sparse_mma_ws_ts[
 
     # ---- Allocate P output buffer [rows, 2*rows] ----
     var p_out_buf = ManagedLayoutTensor[
-        DType.float32, Layout.row_major(p_rows, p_cols)
+        .float32, Layout.row_major(p_rows, p_cols)
     ](ctx)
 
     # ---- Create Q TMA descriptor ----
@@ -1216,9 +1216,7 @@ def test_sparse_paged_mma_ws_ts[
 
     # ---- Build cache_lengths ----
     comptime cache_len_layout = Layout(UNKNOWN_VALUE)
-    var cache_lengths_managed = ManagedLayoutTensor[
-        DType.uint32, cache_len_layout
-    ](
+    var cache_lengths_managed = ManagedLayoutTensor[.uint32, cache_len_layout](
         RuntimeLayout[cache_len_layout].row_major(IndexList[1](batch_size)),
         ctx,
     )
@@ -1289,7 +1287,7 @@ def test_sparse_paged_mma_ws_ts[
 
     # ---- Allocate P output buffer [rows, 2*rows] ----
     var p_out_buf = ManagedLayoutTensor[
-        DType.float32, Layout.row_major(p_rows, p_cols)
+        .float32, Layout.row_major(p_rows, p_cols)
     ](ctx)
 
     # ---- Create Q TMA descriptor ----

@@ -208,49 +208,49 @@ def test_block_scaled_nvfp4_cublaslt[
 def main() raises:
     with DeviceContext() as ctx:
         test_block_scaled_nvfp4_cublaslt[
-            DType.bfloat16,
-            DType.float4_e2m1fn,
+            .bfloat16,
+            .float4_e2m1fn,
             True,
         ](ctx, Int(128), Idx[128], Idx[64])
 
         test_block_scaled_nvfp4_cublaslt[
-            DType.bfloat16,
-            DType.float4_e2m1fn,
+            .bfloat16,
+            .float4_e2m1fn,
             True,
         ](ctx, Int(256), Idx[256], Idx[64 - 32])
 
         test_block_scaled_nvfp4_cublaslt[
-            DType.bfloat16,
-            DType.float4_e2m1fn,
+            .bfloat16,
+            .float4_e2m1fn,
             True,
         ](ctx, Int(128), Idx[3 * 128], Idx[256 + 32])
 
         test_block_scaled_nvfp4_cublaslt[
-            DType.bfloat16,
-            DType.float4_e2m1fn,
+            .bfloat16,
+            .float4_e2m1fn,
             True,
         ](ctx, Int(3 * 128), Idx[128], Idx[3 * 64])
 
         test_block_scaled_nvfp4_cublaslt[
-            DType.bfloat16,
-            DType.float4_e2m1fn,
+            .bfloat16,
+            .float4_e2m1fn,
             True,
         ](ctx, Int(2560), Idx[4096], Idx[1024])
 
         test_block_scaled_nvfp4_cublaslt[
-            DType.bfloat16,
-            DType.float4_e2m1fn,
+            .bfloat16,
+            .float4_e2m1fn,
             True,
         ](ctx, Int(1000), Idx[4096], Idx[1024])
 
         test_block_scaled_nvfp4_cublaslt[
-            DType.bfloat16,
-            DType.float4_e2m1fn,
+            .bfloat16,
+            .float4_e2m1fn,
             True,
         ](ctx, Int(1000), Idx[4096 + 64], Idx[1024])
 
         test_block_scaled_nvfp4_cublaslt[
-            DType.bfloat16,
-            DType.float4_e2m1fn,
+            .bfloat16,
+            .float4_e2m1fn,
             True,
         ](ctx, Int(1000), Idx[4096 + 64], Idx[1024 + 64])

@@ -493,14 +493,14 @@ def mma_throughput_kernel[
 
 
 def main() raises:
-    comptime dtype = get_defined_dtype["dtype", DType.bfloat16]()
+    comptime dtype = get_defined_dtype["dtype", .bfloat16]()
     comptime BM = get_defined_int["BM", 128]()
     comptime BN = get_defined_int["BN", 128]()
     comptime M_LOGICAL = get_defined_int["M_LOGICAL", 128]()
     comptime N_LOGICAL = get_defined_int["N_LOGICAL", 256]()
     comptime K_LOGICAL = get_defined_int["K_LOGICAL", 131072]()
 
-    comptime MMA_K = 32 if dtype == .float8_e4m3fn else 16
+    comptime MMA_K = 32 if dtype == DType.float8_e4m3fn else 16
     comptime BK_DESC = MMA_K
     comptime accum_type = get_accum_type[dtype]()
     comptime num_threads = 128

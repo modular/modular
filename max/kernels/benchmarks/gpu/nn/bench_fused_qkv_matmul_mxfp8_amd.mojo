@@ -176,7 +176,7 @@ def bench_shape[
     var iro_dev = ctx.enqueue_create_buffer[.uint32](batch_size + 1)
     ctx.enqueue_copy(iro_dev, iro_host)
     var iro_tensor = LayoutTensor[
-        mut=False, DType.uint32, Layout.row_major(UNKNOWN_VALUE)
+        mut=False, .uint32, Layout.row_major(UNKNOWN_VALUE)
     ](
         iro_dev.unsafe_ptr(),
         RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
@@ -188,7 +188,7 @@ def bench_shape[
     var cache_lengths_dev = ctx.enqueue_create_buffer[.uint32](batch_size)
     ctx.enqueue_copy(cache_lengths_dev, cache_lengths_host)
     var cache_lengths_tensor = LayoutTensor[
-        mut=False, DType.uint32, Layout(UNKNOWN_VALUE)
+        mut=False, .uint32, Layout(UNKNOWN_VALUE)
     ](
         cache_lengths_dev.unsafe_ptr(),
         RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(
@@ -206,9 +206,7 @@ def bench_shape[
             block_counter += 1
     var lut_dev = ctx.enqueue_create_buffer[.uint32](batch_size * lut_cols)
     ctx.enqueue_copy(lut_dev, lut_host)
-    var lut_tensor = LayoutTensor[
-        mut=False, DType.uint32, Layout.row_major[2]()
-    ](
+    var lut_tensor = LayoutTensor[mut=False, .uint32, Layout.row_major[2]()](
         lut_dev.unsafe_ptr(),
         RuntimeLayout[Layout.row_major[2]()].row_major(
             IndexList[2](batch_size, lut_cols)

@@ -261,7 +261,7 @@ def tma_umma_kernel_ss[
         accum_type,
         a_type,
         b_type,
-        Index[dtype=DType.uint32](mma_shape[0], mma_shape[1]),
+        Index[dtype=.uint32](mma_shape[0], mma_shape[1]),
         transpose_a=transpose_a,
         transpose_b=transpose_b,
     ]()
@@ -492,7 +492,7 @@ def tma_umma_kernel_ts[
         accum_type,
         a_type,
         b_type,
-        Index[dtype=DType.uint32](mma_shape[0], mma_shape[1]),
+        Index[dtype=.uint32](mma_shape[0], mma_shape[1]),
         transpose_b=transpose_b,
     ]()
 
@@ -860,7 +860,7 @@ def main() raises:
                             test_tma_umma[
                                 dtype,
                                 dtype,
-                                DType.bfloat16,
+                                .bfloat16,
                                 Index(
                                     MMA_M * size_scale,
                                     128 * size_scale,
@@ -876,7 +876,7 @@ def main() raises:
                             test_tma_umma[
                                 dtype,
                                 dtype,
-                                DType.bfloat16,
+                                .bfloat16,
                                 Index(
                                     MMA_M * size_scale,
                                     128 * size_scale,
@@ -892,7 +892,7 @@ def main() raises:
                             test_tma_umma[
                                 dtype,
                                 dtype,
-                                DType.bfloat16,
+                                .bfloat16,
                                 Index(
                                     MMA_M * size_scale,
                                     128 * size_scale,
@@ -909,7 +909,7 @@ def main() raises:
                             test_tma_umma[
                                 dtype,
                                 dtype,
-                                DType.bfloat16,
+                                .bfloat16,
                                 Index(
                                     MMA_M * size_scale,
                                     128 * size_scale,
@@ -925,7 +925,7 @@ def main() raises:
                             test_tma_umma[
                                 dtype,
                                 dtype,
-                                DType.bfloat16,
+                                .bfloat16,
                                 Index(
                                     MMA_M * size_scale,
                                     128 * size_scale,
@@ -943,9 +943,9 @@ def main() raises:
             comptime for transpose_a in range(0, 2):
                 comptime for transpose_b in range(0, 2):
                     test_tma_umma[
-                        DType.bfloat16,
-                        DType.bfloat16,
-                        DType.bfloat16,
+                        .bfloat16,
+                        .bfloat16,
+                        .bfloat16,
                         Index(size_scale * 64, 8, 16),
                         Index(size_scale * 64, 8, 16),
                         Index(size_scale * 64, 8, 16),

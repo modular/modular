@@ -307,7 +307,7 @@ def blockscaled_pair_cta_mxfp8[
         a_type,
         b_type,
         a_scales_type,
-        Index[dtype=DType.uint32](mma_shape[0], mma_shape[1]),
+        Index[dtype=.uint32](mma_shape[0], mma_shape[1]),
         transpose_b=transpose_b,
     ]()
 
@@ -1024,7 +1024,7 @@ def main() raises:
         test_blockscaled_pair_cta_mxfp8[
             dtype,
             dtype,
-            DType.bfloat16,
+            .bfloat16,
             Index(128, 64, BK),
             Index(256, 128, MMA_K),
             cluster_shape=StaticTuple[Int32, 3](2, 1, 1),
@@ -1037,7 +1037,7 @@ def main() raises:
         test_blockscaled_pair_cta_mxfp8[
             dtype,
             dtype,
-            DType.bfloat16,
+            .bfloat16,
             Index(128, 64, BK),
             Index(256, 128, MMA_K),
             cluster_shape=StaticTuple[Int32, 3](2, 2, 1),
@@ -1050,7 +1050,7 @@ def main() raises:
         test_blockscaled_pair_cta_mxfp8[
             dtype,
             dtype,
-            DType.bfloat16,
+            .bfloat16,
             Index(128, 64, BK),
             Index(256, 128, MMA_K),
             cluster_shape=StaticTuple[Int32, 3](4, 4, 1),

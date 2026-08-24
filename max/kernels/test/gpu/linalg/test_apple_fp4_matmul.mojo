@@ -201,9 +201,9 @@ def _run_stage1_oracle(
     # Existing bf16 matmul: out = act @ wdense^T.
     var act_tt = TileTensor(act_dev.unsafe_ptr(), row_major(M, K)).as_immut()
     var out_tt = TileTensor(out_dev.unsafe_ptr(), row_major(M, N))
-    enqueue_apple_matmul[
-        in_type=DType.bfloat16, c_type=DType.float32, transpose_b=True
-    ](out_tt, act_tt, wdense_tt.as_immut(), ctx)
+    enqueue_apple_matmul[in_type=.bfloat16, c_type=.float32, transpose_b=True](
+        out_tt, act_tt, wdense_tt.as_immut(), ctx
+    )
 
     var out_host = ctx.enqueue_create_host_buffer[.float32](M * N)
     ctx.enqueue_copy(out_host, out_dev)
@@ -284,13 +284,13 @@ def _run_stage2_fused(
     var wdense_tt = TileTensor(wdense_dev.unsafe_ptr(), row_major(N, K))
     enqueue_fp4_materialize[.bfloat16](wdense_tt, packed_tt, scale_tt, ctx)
     var out_ref_tt = TileTensor(out_ref_dev.unsafe_ptr(), row_major(M, N))
-    enqueue_apple_matmul[
-        in_type=DType.bfloat16, c_type=DType.float32, transpose_b=True
-    ](out_ref_tt, act_tt, wdense_tt.as_immut(), ctx)
+    enqueue_apple_matmul[in_type=.bfloat16, c_type=.float32, transpose_b=True](
+        out_ref_tt, act_tt, wdense_tt.as_immut(), ctx
+    )
 
     # Fused: FP4 weight stays packed; dequant at the loader seam.
     var out_fused_tt = TileTensor(out_fused_dev.unsafe_ptr(), row_major(M, N))
-    enqueue_apple_fp4_matmul[c_type=DType.float32](
+    enqueue_apple_fp4_matmul[c_type=.float32](
         out_fused_tt, act_tt, packed_tt, scale_tt, ctx
     )
 
@@ -369,7 +369,7 @@ def _run_stage3_global_scale(
     var out_tt = TileTensor(out_dev.unsafe_ptr(), row_major(M, N))
 
     # Kernel applies block scales only (no global scalar).
-    enqueue_apple_fp4_matmul[c_type=DType.float32](
+    enqueue_apple_fp4_matmul[c_type=.float32](
         out_tt, act_tt, packed_tt, scale_tt, ctx
     )
 
@@ -465,7 +465,7 @@ def _run_stage4_dispatch_paths(
 
     # (1) Production dispatch (materialize->dense for this M).
     var out_disp_tt = TileTensor(out_disp_dev.unsafe_ptr(), row_major(M, N))
-    enqueue_apple_fp4_matmul[c_type=DType.float32](
+    enqueue_apple_fp4_matmul[c_type=.float32](
         out_disp_tt, act_tt, packed_tt, scale_tt, ctx
     )
 
@@ -475,7 +475,7 @@ def _run_stage4_dispatch_paths(
     # dispatch geometry (the BK=64 deep-K-strip win).
     var out_fused_tt = TileTensor(out_fused_dev.unsafe_ptr(), row_major(M, N))
     _launch_apple_fp4_matmul[
-        c_type=DType.float32,
+        c_type=.float32,
         elementwise_lambda_fn=None,
         BM=128,
         BK=64,

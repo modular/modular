@@ -102,9 +102,7 @@ def test_swiglu[
     NType: CoordLike,
     KType: CoordLike,
     //,
-    config: FusedSwiGLUMatmulConfig[
-        DType.bfloat16, DType.bfloat16, DType.bfloat16, True
-    ],
+    config: FusedSwiGLUMatmulConfig[.bfloat16, .bfloat16, .bfloat16, True],
 ](ctx: DeviceContext, m: MType, n: NType, k: KType) raises:
     comptime dtype = DType.bfloat16
 

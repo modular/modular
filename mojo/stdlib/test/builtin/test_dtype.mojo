@@ -34,7 +34,9 @@ comptime int_dtypes: List[DType] = [
 ]
 
 comptime non_index_integral_dtypes = uint_dtypes + int_dtypes
-comptime integral_dtypes = List([DType.int, .uint]) + non_index_integral_dtypes
+comptime integral_dtypes = List(
+    [DType.int, DType.uint]
+) + non_index_integral_dtypes
 
 comptime float_dtypes: List[DType] = [
     .float8_e3m4,

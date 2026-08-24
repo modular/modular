@@ -215,7 +215,7 @@ def test[
     )
 
     var null_valid_length = LayoutTensor[
-        DType.uint32,
+        .uint32,
         Layout.row_major(UNKNOWN_VALUE),
         MutAnyOrigin,
     ](

@@ -507,7 +507,7 @@ def bench_fused_lamport_allreduce_rmsnorm[
 
 
 def main() raises:
-    comptime dtype = get_defined_dtype["in_dtype", DType.bfloat16]()
+    comptime dtype = get_defined_dtype["in_dtype", .bfloat16]()
     comptime num_gpus = get_defined_int["num_gpus", 2]()
     var num_rows = Int(arg_parse("num_rows", 8))
     comptime num_cols = get_defined_int["num_cols", 7168]()

@@ -908,7 +908,7 @@ def bench_reducescatter_rmsnorm[
 
 
 def main() raises:
-    comptime in_dtype = get_defined_dtype["in_dtype", DType.bfloat16]()
+    comptime in_dtype = get_defined_dtype["in_dtype", .bfloat16]()
     comptime quantize = get_defined_bool["quantize", False]()
     comptime num_gpus = get_defined_int["num_gpus", 4]()
     var num_rows = Int(arg_parse("num_rows", 1))

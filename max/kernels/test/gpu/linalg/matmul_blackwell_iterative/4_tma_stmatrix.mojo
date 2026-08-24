@@ -254,7 +254,7 @@ def kernel_4[
         accum_type,
         a_type,
         b_type,
-        Index[dtype=DType.uint32](mma_shape[0], mma_shape[1]),
+        Index[dtype=.uint32](mma_shape[0], mma_shape[1]),
         transpose_b=transpose_b,
     ]()
 
@@ -331,8 +331,8 @@ def kernel_4[
 
     var st_matrix_rt_layout = RuntimeLayout[
         st_matrix_n_layout[c_type, TMA_BN, num_m_mmas, 1](),
-        element_type=DType.int32,
-        linear_idx_type=DType.int32,
+        element_type=.int32,
+        linear_idx_type=.int32,
     ]()
 
     comptime st_matrix_swizzle = make_swizzle[c_type, c_swizzle]()
@@ -711,9 +711,9 @@ def main() raises:
             return
 
         test_blackwell_kernel_4[
-            DType.bfloat16,
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
+            .bfloat16,
             umma_shape=Index(64, 256, 16),
             a_swizzle=TensorMapSwizzle.SWIZZLE_128B,
             b_swizzle=TensorMapSwizzle.SWIZZLE_128B,

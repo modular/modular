@@ -485,14 +485,14 @@ def run_test[
                 blocks_lt.runtime_layout.stride.value,
             ),
         ),
-        LayoutTensor[mut=False, DType.uint32, cl_layout](
+        LayoutTensor[mut=False, .uint32, cl_layout](
             cache_lengths_lt.ptr.as_unsafe_any_origin(),
             RuntimeLayout[cl_layout](
                 cache_lengths_lt.runtime_layout.shape.value,
                 cache_lengths_lt.runtime_layout.stride.value,
             ),
         ),
-        LayoutTensor[mut=False, DType.uint32, lt_layout_2d](
+        LayoutTensor[mut=False, .uint32, lt_layout_2d](
             lookup_table_lt.ptr.as_unsafe_any_origin(),
             RuntimeLayout[lt_layout_2d](
                 lookup_table_lt.runtime_layout.shape.value,
@@ -1142,14 +1142,14 @@ def run_test_with_scales[
                 blocks_lt.runtime_layout.stride.value,
             ),
         ),
-        LayoutTensor[mut=False, DType.uint32, cl_layout](
+        LayoutTensor[mut=False, .uint32, cl_layout](
             cache_lengths_lt.ptr.as_unsafe_any_origin(),
             RuntimeLayout[cl_layout](
                 cache_lengths_lt.runtime_layout.shape.value,
                 cache_lengths_lt.runtime_layout.stride.value,
             ),
         ),
-        LayoutTensor[mut=False, DType.uint32, lt_layout_2d](
+        LayoutTensor[mut=False, .uint32, lt_layout_2d](
             lookup_table_lt.ptr.as_unsafe_any_origin(),
             RuntimeLayout[lt_layout_2d](
                 lookup_table_lt.runtime_layout.shape.value,

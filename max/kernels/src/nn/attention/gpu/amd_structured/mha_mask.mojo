@@ -226,7 +226,7 @@ def _apply_mask_generic[
                 )
                 var score = Float32(frag[k_local].cast[.float32]())
                 var masked = mask_functor.mask(
-                    IndexList[4, element_type=DType.uint32](
+                    IndexList[4, element_type=.uint32](
                         Int(batch_idx),
                         Int(head_idx),
                         Int(q_pos),
@@ -371,11 +371,11 @@ struct MaskApplier[
         else:
             var status = self.mask_functor.status(
                 batch_idx,
-                IndexList[2, element_type=DType.uint32](
+                IndexList[2, element_type=.uint32](
                     Int(q_tile_idx * Self.Q_BLOCK_SIZE + start_pos),
                     Int(k_tile_idx * Self.KV_BLOCK_SIZE),
                 ),
-                IndexList[2, element_type=DType.uint32](
+                IndexList[2, element_type=.uint32](
                     Int(Self.Q_BLOCK_SIZE), Int(Self.KV_BLOCK_SIZE)
                 ),
             )

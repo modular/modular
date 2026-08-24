@@ -1232,7 +1232,7 @@ struct TileWriter[
             comptime for j in range(zipped.shape[1][0].value()):
                 var input_crd = RuntimeTuple[
                     IntTuple(UNKNOWN_VALUE, j),
-                    element_type=DType.uint32,
+                    element_type=.uint32,
                 ](thread_idx.x, j)
                 var linear_idx = rt_crd2idx[
                     IntTuple(UNKNOWN_VALUE, j),

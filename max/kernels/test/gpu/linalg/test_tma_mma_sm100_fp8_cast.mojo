@@ -280,7 +280,7 @@ def tma_umma_kernel_sgs[
         accum_type,
         a_type,
         b_smem_type,  # bfloat16
-        Index[dtype=DType.uint32](mma_shape[0], mma_shape[1]),
+        Index[dtype=.uint32](mma_shape[0], mma_shape[1]),
         transpose_a=False,  # A is not transposed
         transpose_b=transpose_b,
     ]()
@@ -525,9 +525,7 @@ def test_tma_umma_fp8_b[
     var b_bf16_host = b_bf16.tensor[update=False]()
     for row in range(b_layout.shape[0].value()):
         for col in range(b_layout.shape[1].value()):
-            b_bf16_host[row, col] = b_host_for_copy[row, col].cast[
-                DType.bfloat16
-            ]()
+            b_bf16_host[row, col] = b_host_for_copy[row, col].cast[.bfloat16]()
 
     var c = ManagedLayoutTensor[
         c_type,
@@ -639,9 +637,9 @@ def main() raises:
                     # Test single block case with SWIZZLE_NONE for B
                     # to avoid swizzle complexity in manual B loading
                     test_tma_umma_fp8_b[
-                        DType.bfloat16,  # A type
-                        DType.float8_e4m3fn,  # B gmem type
-                        DType.bfloat16,  # C type
+                        .bfloat16,  # A type
+                        .float8_e4m3fn,  # B gmem type
+                        .bfloat16,  # C type
                         Index(MMA_M, 128, BK),  # prob_shape matching block_tile
                         Index(MMA_M, 128, BK),  # block_tile
                         Index(MMA_M, 128, MMA_K),  # mma_shape
@@ -652,9 +650,9 @@ def main() raises:
 
                     # Test with multiple K iterations
                     test_tma_umma_fp8_b[
-                        DType.bfloat16,
-                        DType.float8_e4m3fn,
-                        DType.bfloat16,
+                        .bfloat16,
+                        .float8_e4m3fn,
+                        .bfloat16,
                         Index(MMA_M, 128, BK * 2),  # 2 K iterations
                         Index(MMA_M, 128, BK),
                         Index(MMA_M, 128, MMA_K),
@@ -665,9 +663,9 @@ def main() raises:
 
                     # Test multi-block in M dimension
                     test_tma_umma_fp8_b[
-                        DType.bfloat16,
-                        DType.float8_e4m3fn,
-                        DType.bfloat16,
+                        .bfloat16,
+                        .float8_e4m3fn,
+                        .bfloat16,
                         Index(MMA_M * 2, 128, BK),  # 2 M blocks
                         Index(MMA_M, 128, BK),
                         Index(MMA_M, 128, MMA_K),
@@ -678,9 +676,9 @@ def main() raises:
 
                     # Test multi-block in N dimension
                     test_tma_umma_fp8_b[
-                        DType.bfloat16,
-                        DType.float8_e4m3fn,
-                        DType.bfloat16,
+                        .bfloat16,
+                        .float8_e4m3fn,
+                        .bfloat16,
                         Index(MMA_M, 128 * 2, BK),  # 2 N blocks
                         Index(MMA_M, 128, BK),
                         Index(MMA_M, 128, MMA_K),

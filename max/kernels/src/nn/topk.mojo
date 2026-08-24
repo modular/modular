@@ -2444,9 +2444,7 @@ def _gumbel_argmax_fused_kernel[
                 seed=seed_val * UInt64(N) + UInt64(N - N_res) + UInt64(tid),
             )
             if tid < N_res:
-                var input_val = ld_ptr.load((N - N_res) + tid).cast[
-                    DType.float32
-                ]()
+                var input_val = ld_ptr.load((N - N_res) + tid).cast[.float32]()
                 var noised_logit: Float32
                 comptime if from_probs:
                     noised_logit = LOG2 * log2(input_val)

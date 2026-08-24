@@ -276,7 +276,7 @@ def execute_1q_sink_test[
     # `cache_lengths`/`lookup_table` at ImmutAnyOrigin; the ragged FA4 path
     # wants `input_row_offsets` immutable. Bake the origins into the types.
     var input_row_offsets_lt = LayoutTensor[
-        mut=False, DType.uint32, row_offsets_layout
+        mut=False, .uint32, row_offsets_layout
     ](
         input_row_offsets_dev,
         RuntimeLayout[row_offsets_layout].row_major(
@@ -284,12 +284,12 @@ def execute_1q_sink_test[
         ),
     )
     var cache_lengths_lt = LayoutTensor[
-        mut=False, DType.uint32, cache_lengths_layout
+        mut=False, .uint32, cache_lengths_layout
     ](
         cache_lengths_dev,
         RuntimeLayout[cache_lengths_layout].row_major(IndexList[1](batch_size)),
     )
-    var paged_lut_lt = LayoutTensor[mut=False, DType.uint32, paged_lut_layout](
+    var paged_lut_lt = LayoutTensor[mut=False, .uint32, paged_lut_layout](
         paged_lut_dev,
         RuntimeLayout[paged_lut_layout].row_major(paged_lut_shape),
     )

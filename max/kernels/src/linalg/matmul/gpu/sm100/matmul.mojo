@@ -204,7 +204,7 @@ def consumer_main_loop[
 
 
 comptime RLayout32Bits[layout: Layout] = RuntimeLayout[
-    layout, element_type=DType.uint32, linear_idx_type=DType.uint32
+    layout, element_type=.uint32, linear_idx_type=.uint32
 ]
 
 

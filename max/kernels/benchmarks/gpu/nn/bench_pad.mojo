@@ -83,7 +83,7 @@ def bench_pad_gpu[
 
 
 def main() raises:
-    comptime dtype = get_defined_dtype["dtype", DType.float32]()
+    comptime dtype = get_defined_dtype["dtype", .float32]()
     comptime shape = int_list_to_tuple[
         get_defined_shape["shape", "256x256"]()
     ]()

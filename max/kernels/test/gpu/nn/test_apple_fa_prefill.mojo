@@ -337,7 +337,7 @@ def _run[
     _ = vl_d^
 
     # Tolerance: bf16/fp16 inputs with fp32 accum; loosen for bf16.
-    var atol = Float32(2e-2) if qkv_type == .bfloat16 else Float32(8e-3)
+    var atol = Float32(2e-2) if qkv_type == DType.bfloat16 else Float32(8e-3)
     var pass_ = True
     var max_err = Float32(0)
     for i in range(o_n):

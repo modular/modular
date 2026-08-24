@@ -633,7 +633,7 @@ def bench_conv3d[
 
 
 def main() raises:
-    comptime dtype = get_defined_dtype["dtype", DType.bfloat16]()
+    comptime dtype = get_defined_dtype["dtype", .bfloat16]()
     comptime N = get_defined_int["N", 1]()
     comptime D = get_defined_int["D", 21]()
     comptime H = get_defined_int["H", 30]()

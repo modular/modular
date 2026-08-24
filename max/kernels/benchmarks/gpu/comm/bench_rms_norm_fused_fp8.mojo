@@ -529,8 +529,8 @@ def bench_rms_norm_fused_fp8[
 
 
 def main() raises:
-    comptime in_dtype = get_defined_dtype["in_dtype", DType.bfloat16]()
-    comptime out_dtype = get_defined_dtype["out_dtype", DType.float8_e4m3fn]()
+    comptime in_dtype = get_defined_dtype["in_dtype", .bfloat16]()
+    comptime out_dtype = get_defined_dtype["out_dtype", .float8_e4m3fn]()
     comptime shape = int_list_to_tuple[
         get_defined_shape["shape", "1x4096x16384"]()
     ]()

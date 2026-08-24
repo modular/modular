@@ -132,7 +132,7 @@ def _run_gemm_vs_quant_ref[
     ).as_immut()
     var c_tt = TileTensor(cd.unsafe_ptr(), row_major(M, N))
 
-    enqueue_apple_int8_matmul[c_type=DType.bfloat16, has_bias=with_bias](
+    enqueue_apple_int8_matmul[c_type=.bfloat16, has_bias=with_bias](
         c_tt, a_tt, b_tt, as_tt, bs_tt, bias_tt, ctx, i32_override
     )
 
@@ -269,7 +269,7 @@ def _run_end_to_end(
         biasd.unsafe_ptr(), row_major(max(N, 1))
     ).as_immut()
     var c_tt = TileTensor(cd.unsafe_ptr(), row_major(M, N))
-    enqueue_apple_int8_matmul[c_type=DType.bfloat16, has_bias=False](
+    enqueue_apple_int8_matmul[c_type=.bfloat16, has_bias=False](
         c_tt, aq_tt.as_immut(), b_tt, as_tt.as_immut(), bs_tt, bias_tt, ctx
     )
 

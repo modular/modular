@@ -28,7 +28,7 @@ def concat[
 
 
 def main():
-    var a = SIMD[DType.float32, 2](1, 2)
+    var a = SIMD[.float32, 2](1, 2)
     var x = concat(a, a)
 
     print("result type:", x.dtype, "length:", Int(x.length))

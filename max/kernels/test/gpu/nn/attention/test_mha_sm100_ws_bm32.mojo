@@ -209,7 +209,7 @@ def execute_ws_bm32_test[
     )
     ctx.enqueue_copy(input_row_offsets_dev, input_row_offsets)
     var input_row_offsets_lt = LayoutTensor[
-        mut=False, DType.uint32, row_offsets_layout
+        mut=False, .uint32, row_offsets_layout
     ](
         input_row_offsets_dev,
         RuntimeLayout[row_offsets_layout].row_major(
@@ -311,7 +311,7 @@ def execute_ws_bm32_test[
     var cache_lengths_dev = ctx.enqueue_create_buffer[.uint32](batch_size)
     ctx.enqueue_copy(cache_lengths_dev, cache_lengths_host)
     var cache_lengths_lt = LayoutTensor[
-        mut=False, DType.uint32, cache_lengths_layout
+        mut=False, .uint32, cache_lengths_layout
     ](
         cache_lengths_dev,
         RuntimeLayout[cache_lengths_layout].row_major(IndexList[1](batch_size)),
@@ -321,7 +321,7 @@ def execute_ws_bm32_test[
         batch_size * lut_cols
     )
     ctx.enqueue_copy(paged_lut_dev, paged_lut_host)
-    var paged_lut_lt = LayoutTensor[mut=False, DType.uint32, paged_lut_layout](
+    var paged_lut_lt = LayoutTensor[mut=False, .uint32, paged_lut_layout](
         paged_lut_dev,
         RuntimeLayout[paged_lut_layout].row_major(
             IndexList[2](batch_size, lut_cols)

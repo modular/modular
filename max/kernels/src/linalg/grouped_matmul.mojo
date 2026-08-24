@@ -428,7 +428,7 @@ def grouped_matmul_kernel_sm100[
         c_type,
         c_gmem_layout,
         MutAnyOrigin,
-        layout_int_type=DType.int32,
+        layout_int_type=.int32,
         address_space=.GENERIC,
     ]
 
@@ -989,7 +989,7 @@ def grouped_matmul[
     # un-quantized float32 model running LoRA, where the LoRA grouped matmul
     # inherits the float32 activation dtype) must fall through to the naive
     # path, which accumulates in float32 and supports a float32 store + epilogue.
-    comptime c_is_fp32 = c_type == .float32
+    comptime c_is_fp32 = c_type == DType.float32
     # The activation plane select (per-output-column-region) is implemented in
     # the SM100 persistent load stage and the naive kernel only. When it is set
     # (`a_plane_splits[0] > 0`), disable the SM90 and AMD paths so dispatch falls

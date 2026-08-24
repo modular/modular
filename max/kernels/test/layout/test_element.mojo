@@ -32,7 +32,7 @@ from std.utils import IndexList
 def test_element_load():
     print("== test_element_load")
     var tensor_8x8 = LayoutTensor[
-        DType.float32, Layout.row_major(8, 8), MutAnyOrigin
+        .float32, Layout.row_major(8, 8), MutAnyOrigin
     ].stack_allocation[stack_alignment=align_of[SIMD[.float32, 4]]()]()
     arange(tensor_8x8)
 
@@ -89,7 +89,7 @@ def test_element_load():
 def test_element_store():
     print("== test_element_store")
     var tensor_8x8 = LayoutTensor[
-        DType.float32, Layout.row_major(8, 8), MutAnyOrigin
+        .float32, Layout.row_major(8, 8), MutAnyOrigin
     ].stack_allocation[stack_alignment=align_of[SIMD[.float32, 4]]()]()
     arange(tensor_8x8)
 
@@ -164,19 +164,19 @@ def test_element_dynamic_layout() raises:
     comptime layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
 
     var dynamic_layout = RuntimeLayout[
-        layout, element_type=DType.int32, linear_idx_type=DType.int32
+        layout, element_type=.int32, linear_idx_type=.int32
     ](
-        RuntimeTuple[layout.shape, element_type=DType.int32](8, 8),
-        RuntimeTuple[layout.stride, element_type=DType.int32](8, 1),
+        RuntimeTuple[layout.shape, element_type=.int32](8, 8),
+        RuntimeTuple[layout.stride, element_type=.int32](8, 1),
     )
 
     var storage = List(length=dynamic_layout.size(), fill=Float32(0))
 
     var tensor_8x8 = LayoutTensor[
-        DType.float32,
+        .float32,
         layout,
-        layout_int_type=DType.int32,
-        linear_idx_type=DType.int32,
+        layout_int_type=.int32,
+        linear_idx_type=.int32,
     ](storage, dynamic_layout)
 
     arange(tensor_8x8)
@@ -297,7 +297,7 @@ def test_element_masked_load():
         ].masked_load(
             tensor_1x3_v4.ptr,
             type_of(tensor_1x3_v4.runtime_element_layout).row_major(
-                IndexList[2, element_type=DType.int32](1, 3)
+                IndexList[2, element_type=.int32](1, 3)
             ),
         )
     )
@@ -313,7 +313,7 @@ def test_element_masked_load():
         Element[index_type=tensor_3x1_v4.linear_idx_type].masked_load(
             tensor_3x1_v4.ptr,
             type_of(tensor_3x1_v4.runtime_element_layout).row_major(
-                IndexList[2, element_type=DType.int32](3, 1)
+                IndexList[2, element_type=.int32](3, 1)
             ),
         )
     )
@@ -325,7 +325,7 @@ def test_element_masked_load():
         Element[index_type=tensor_3x4_v4x4.linear_idx_type].masked_load(
             tensor_3x4_v4x4.ptr,
             type_of(tensor_3x4_v4x4.runtime_element_layout).row_major(
-                IndexList[2, element_type=DType.int32](3, 4)
+                IndexList[2, element_type=.int32](3, 4)
             ),
         )
     )
@@ -345,7 +345,7 @@ def test_element_masked_store():
             tensor_4x4_vec_1_4.dtype, tensor_4x4_vec_1_4.element_layout.size()
         ](1),
         type_of(tensor_4x4_vec_1_4.runtime_element_layout).row_major(
-            IndexList[2, element_type=DType.int32](1, 3)
+            IndexList[2, element_type=.int32](1, 3)
         ),
     )
     element_v_1_4.masked_store(tensor_4x4_vec_1_4.ptr)
@@ -364,7 +364,7 @@ def test_element_masked_store():
             tensor_4x4_vec_4_1.dtype, tensor_4x4_vec_4_1.element_layout.size()
         ](1),
         type_of(tensor_4x4_vec_4_1.runtime_element_layout).row_major(
-            IndexList[2, element_type=DType.int32](2, 1)
+            IndexList[2, element_type=.int32](2, 1)
         ),
     )
     element_v_4_1.masked_store(tensor_4x4_vec_4_1.ptr)
@@ -383,7 +383,7 @@ def test_element_masked_store():
             tensor_4x4_vec_4_4.dtype, tensor_4x4_vec_4_4.element_layout.size()
         ](1),
         type_of(tensor_4x4_vec_4_4.runtime_element_layout).row_major(
-            IndexList[2, element_type=DType.int32](3, 2)
+            IndexList[2, element_type=.int32](3, 2)
         ),
     )
     element_v_4_4.masked_store(tensor_4x4_vec_4_4.ptr)

@@ -794,11 +794,11 @@ def test_tma_load_two_buffers_row_major[
     var b_src = ManagedLayoutTensor[.float32, src_layout](ctx)
 
     var a_dst = ManagedLayoutTensor[
-        DType.float32, Layout.row_major(M_roundup, N_roundup)
+        .float32, Layout.row_major(M_roundup, N_roundup)
     ](ctx)
 
     var b_dst = ManagedLayoutTensor[
-        DType.float32, Layout.row_major(M_roundup, N_roundup)
+        .float32, Layout.row_major(M_roundup, N_roundup)
     ](ctx)
 
     arange(a_src.tensor(), 1)

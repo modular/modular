@@ -53,7 +53,7 @@ def test(ctx: DeviceContext) raises:
     )
     comptime offset_layout = Layout(group_len + 1)
     var dev_group_offsets = LayoutTensor[
-        DType.uint32,
+        .uint32,
         offset_layout,
     ](dev_group_offsets_buffer)
 

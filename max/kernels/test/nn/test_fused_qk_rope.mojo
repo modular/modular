@@ -111,17 +111,13 @@ def test_fused_qk_rope[dtype: DType](ctx: DeviceContext) raises -> None:
     # Create the actual KV cache type.
     var kv_collection = ContinuousBatchingKVCacheCollection[dtype, kv_params](
         blocks=kv_cache_block,
-        cache_lengths=LayoutTensor[
-            mut=False, DType.uint32, Layout(UNKNOWN_VALUE)
-        ](
+        cache_lengths=LayoutTensor[mut=False, .uint32, Layout(UNKNOWN_VALUE)](
             start_positions_dyn.unsafe_ptr(),
             RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(
                 IndexList[1](len(start_positions_dyn))
             ),
         ),
-        lookup_table=LayoutTensor[
-            mut=False, DType.uint32, Layout(UNKNOWN_VALUE)
-        ](
+        lookup_table=LayoutTensor[mut=False, .uint32, Layout(UNKNOWN_VALUE)](
             lookup_table.unsafe_ptr(),
             RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(
                 IndexList[1](len(lookup_table)),

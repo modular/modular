@@ -54,7 +54,7 @@ def pool[
     comptime simd_width = simd_width_of[DType.float32]()
 
     if pool_method == PoolMethod.MAX:
-        max_pool[int_type=DType.int32](
+        max_pool[int_type=.int32](
             input_tensor,
             filter_tensor,
             stride_tensor,
@@ -63,7 +63,7 @@ def pool[
             output_tensor,
         )
     else:
-        avg_pool[int_type=DType.int32, count_boundary=count_boundary](
+        avg_pool[int_type=.int32, count_boundary=count_boundary](
             input_tensor,
             filter_tensor,
             stride_tensor,
@@ -176,7 +176,7 @@ def test_avg_pool_2d_with_padding[
 
     comptime simd_width = simd_width_of[DType.float32]()
 
-    avg_pool[int_type=DType.int32, count_boundary=count_boundary](
+    avg_pool[int_type=.int32, count_boundary=count_boundary](
         input_tensor,
         filter_tensor,
         stride_tensor,
@@ -338,11 +338,11 @@ def pool_ceil_test[
     comptime simd_width = simd_width_of[DType.float32]()
 
     var output_shape = pool_shape_impl[
-        DType.float32,
-        DType.int32,
-        DType.int32,
-        DType.int32,
-        DType.int32,
+        .float32,
+        .int32,
+        .int32,
+        .int32,
+        .int32,
         ceil_mode,
     ](
         input_tensor,
@@ -353,7 +353,7 @@ def pool_ceil_test[
     )
 
     if pool_method == PoolMethod.MAX:
-        max_pool[int_type=DType.int32](
+        max_pool[int_type=.int32](
             input_tensor,
             filter_tensor,
             stride_tensor,
@@ -363,7 +363,7 @@ def pool_ceil_test[
             ceil_mode,
         )
     else:
-        avg_pool[int_type=DType.int32, count_boundary=count_boundary](
+        avg_pool[int_type=.int32, count_boundary=count_boundary](
             input_tensor,
             filter_tensor,
             stride_tensor,
@@ -445,7 +445,7 @@ def test_max_pool_pad_dilation_2d() raises:
 
     comptime simd_width = simd_width_of[DType.float32]()
 
-    max_pool[int_type=DType.int32](
+    max_pool[int_type=.int32](
         input_tensor,
         filter_tensor,
         stride_tensor,

@@ -1931,7 +1931,7 @@ def enqueue_apple_matmul[
         block_k=block_k,
         use_x2=use_x2,
         k_unroll=k_unroll,
-        linear_idx_type=DType.int32,
+        linear_idx_type=.int32,
     ]
     comptime kernel_i32 = MM_i32.run[
         type_of(c).LayoutType,
@@ -2245,7 +2245,7 @@ def enqueue_apple_matmul_split_k[
         block_k=block_k,
         use_x2=use_x2,
         k_unroll=k_unroll,
-        linear_idx_type=DType.int32,
+        linear_idx_type=.int32,
     ]
     comptime partial_kernel_i64 = MM.run_split_k_partial[
         type_of(a).LayoutType,
@@ -2378,7 +2378,7 @@ def enqueue_apple_matmul_clamp_chain[
         block_k=block_k,
         k_unroll=k_unroll,
         clamp_edge=True,
-        linear_idx_type=DType.int32,
+        linear_idx_type=.int32,
     ]
 
     comptime pass0_i64 = MM.run_chained[

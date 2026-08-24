@@ -63,10 +63,10 @@ def test_load_scalar_dynamic_layout() raises:
     comptime layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
 
     var dynamic_layout = RuntimeLayout[
-        layout, element_type=DType.int32, linear_idx_type=DType.int32
+        layout, element_type=.int32, linear_idx_type=.int32
     ](
-        RuntimeTuple[layout.shape, element_type=DType.int32](3, 4),
-        RuntimeTuple[layout.stride, element_type=DType.int32](4, 1),
+        RuntimeTuple[layout.shape, element_type=.int32](3, 4),
+        RuntimeTuple[layout.stride, element_type=.int32](4, 1),
     )
 
     var storage = Array[Float32, 12](uninitialized=True)
@@ -74,10 +74,10 @@ def test_load_scalar_dynamic_layout() raises:
         storage[i] = Float32(i)
 
     var tensor = LayoutTensor[
-        DType.float32,
+        .float32,
         layout,
-        layout_int_type=DType.int32,
-        linear_idx_type=DType.int32,
+        layout_int_type=.int32,
+        linear_idx_type=.int32,
     ](storage.unsafe_ptr(), dynamic_layout)
 
     # Test load_scalar at various positions
@@ -96,10 +96,10 @@ def test_load_scalar_with_runtime_tuple() raises:
     comptime layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
 
     var dynamic_layout = RuntimeLayout[
-        layout, element_type=DType.int32, linear_idx_type=DType.int32
+        layout, element_type=.int32, linear_idx_type=.int32
     ](
-        RuntimeTuple[layout.shape, element_type=DType.int32](4, 4),
-        RuntimeTuple[layout.stride, element_type=DType.int32](4, 1),
+        RuntimeTuple[layout.shape, element_type=.int32](4, 4),
+        RuntimeTuple[layout.stride, element_type=.int32](4, 1),
     )
 
     var storage = Array[Float32, 16](uninitialized=True)
@@ -107,10 +107,10 @@ def test_load_scalar_with_runtime_tuple() raises:
         storage[i] = Float32(i)
 
     var tensor = LayoutTensor[
-        DType.float32,
+        .float32,
         layout,
-        layout_int_type=DType.int32,
-        linear_idx_type=DType.int32,
+        layout_int_type=.int32,
+        linear_idx_type=.int32,
     ](storage.unsafe_ptr(), dynamic_layout)
 
     # Test load_scalar with RuntimeTuple

@@ -322,9 +322,7 @@ def execute_matmul_kv_cache_ragged[
             IndexList[2](total_length, hidden_size)
         ),
     )
-    var input_row_offsets_tensor = LayoutTensor[
-        mut=False, DType.uint32, layout_1d
-    ](
+    var input_row_offsets_tensor = LayoutTensor[mut=False, .uint32, layout_1d](
         input_row_offsets_device,
         RuntimeLayout[layout_1d].row_major(IndexList[1](batch_size + 1)),
     )
@@ -541,7 +539,7 @@ def execute_matmul_k_cache_ragged[
         ),
     )
     var input_row_offsets_tensor = LayoutTensor[
-        mut=False, DType.uint32, layout_1d, ImmutAnyOrigin
+        mut=False, .uint32, layout_1d, ImmutAnyOrigin
     ](
         input_row_offsets_device,
         RuntimeLayout[layout_1d].row_major(IndexList[1](batch_size + 1)),
@@ -823,9 +821,7 @@ def generic_execute_fused_qkv_cache_ragged[
             IndexList[2](total_length, hidden_size)
         ),
     )
-    var input_row_offsets_tensor = LayoutTensor[
-        mut=False, DType.uint32, layout_1d
-    ](
+    var input_row_offsets_tensor = LayoutTensor[mut=False, .uint32, layout_1d](
         input_row_offsets_device,
         RuntimeLayout[layout_1d].row_major(IndexList[1](batch_size + 1)),
     )
@@ -1088,11 +1084,11 @@ def execute_cont_batch_fused_qkv_matmul[
             kv_block_device,
             kv_block_runtime,
         ),
-        LayoutTensor[mut=False, DType.uint32, layout_1d](
+        LayoutTensor[mut=False, .uint32, layout_1d](
             cache_lengths_device,
             cache_len_runtime,
         ),
-        LayoutTensor[mut=False, DType.uint32, layout_1d](
+        LayoutTensor[mut=False, .uint32, layout_1d](
             lookup_table_device,
             cache_len_runtime,
         ),
@@ -1108,11 +1104,11 @@ def execute_cont_batch_fused_qkv_matmul[
             kv_block_host_ptr,
             kv_block_runtime,
         ),
-        LayoutTensor[mut=False, DType.uint32, layout_1d](
+        LayoutTensor[mut=False, .uint32, layout_1d](
             cache_lengths_host_ptr,
             cache_len_runtime,
         ),
-        LayoutTensor[mut=False, DType.uint32, layout_1d](
+        LayoutTensor[mut=False, .uint32, layout_1d](
             lookup_table_host_ptr,
             cache_len_runtime,
         ),

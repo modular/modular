@@ -1408,7 +1408,7 @@ def generic_fused_qkv_matmul_kv_cache_bshd_paged_kernel_api[
     kv_collection: PagedKVCacheCollection[dtype, ...],
     layer_idx: UInt32,
     valid_lengths: LayoutTensor[
-        DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
+        .uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
     ],
     output: ManagedTensorSlice[dtype=dtype, rank=3, ...],
     ctx: DeviceContext,
@@ -2814,7 +2814,7 @@ struct Struct_sampler_update_frequency_data:
         compressed_frequency_data: MutableInputTensor[
             dtype=DType.int32, rank=2, ...
         ],
-        frequency_offsets: InputTensor[dtype=.uint32, rank=1, ...],
+        frequency_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
         new_tokens: InputTensor[dtype=token_type, rank=1, ...],
         ctx: DeviceContext,
     ) raises:
@@ -2984,9 +2984,9 @@ struct BundledAllReduceAddRMSNormQuantFP8:
         ],
         residual: InputTensor[dtype=dtype, rank=rank, ...],
         gamma: InputTensor[dtype=dtype, rank=1, ...],
-        epsilon: InputTensor[dtype=.float32, ...],
+        epsilon: InputTensor[dtype=DType.float32, ...],
         weight_offset: InputTensor[dtype=dtype, ...],
-        scale_ub: InputTensor[dtype=.float32, ...],
+        scale_ub: InputTensor[dtype=DType.float32, ...],
         ctx: DeviceContext,
     ) capturing raises:
         """Per-device fused allreduce.sum + add + rms_norm + fp8 quantize.

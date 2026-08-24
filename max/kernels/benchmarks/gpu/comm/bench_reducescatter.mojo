@@ -518,7 +518,7 @@ def bench_reducescatter[
 
 
 def main() raises:
-    comptime dtype = get_defined_dtype["dtype", DType.bfloat16]()
+    comptime dtype = get_defined_dtype["dtype", .bfloat16]()
     comptime num_gpus = get_defined_int["num_gpus", 2]()
     comptime axis = get_defined_int["axis", -1]()
     comptime use_multimem = get_defined_bool["multimem", False]()

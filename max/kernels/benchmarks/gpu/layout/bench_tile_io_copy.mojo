@@ -673,7 +673,7 @@ def bench_copy_roundtrip[
 
 
 def main() raises:
-    comptime dtype = get_defined_dtype["dtype", DType.float32]()
+    comptime dtype = get_defined_dtype["dtype", .float32]()
     comptime M = get_defined_int["M", 64]()
     comptime N = get_defined_int["N", 64]()
     comptime num_threads = get_defined_int["num_threads", 128]()

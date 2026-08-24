@@ -627,7 +627,7 @@ def _matmul_gpu[
         and c_type in (DType.float16, DType.bfloat16, DType.float32)
     )
     comptime if apple_supported:
-        comptime f32_in = a_type == .float32
+        comptime f32_in = a_type == DType.float32
         if (
             ctx.compute_capability() == 5
             and (not f32_in or _apple_m5_allow_lossy_f32_matmul())

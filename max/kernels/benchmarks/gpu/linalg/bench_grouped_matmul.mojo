@@ -158,7 +158,7 @@ def bench_grouped_matmul[
     comptime N = expert_shape[0]
     comptime K = expert_shape[1]
 
-    comptime is_fp4e2m1 = _in_type == .float4_e2m1fn
+    comptime is_fp4e2m1 = _in_type == DType.float4_e2m1fn
     comptime in_type = DType.uint8 if is_fp4e2m1 else _in_type  # TODO: (KERN-2238): Replace with float4-e2m1fn
     comptime a_type = in_type
     # W4A8 is the one pair where A and B don't share a dtype: A stays
@@ -214,8 +214,8 @@ def bench_grouped_matmul[
     # For fp4, data is stored as uint8 (2 fp4 values per byte), so K dimension
     # is halved. W4A8 packs only B, so A and B need independent packed-K
     # extents; every other config has a_packed_K == b_packed_K.
-    comptime a_packed_K = K // 2 if a_type == .uint8 else K
-    comptime b_packed_K = K // 2 if b_type == .uint8 else K
+    comptime a_packed_K = K // 2 if a_type == DType.uint8 else K
+    comptime b_packed_K = K // 2 if b_type == DType.uint8 else K
     var a_size = total_num_tokens * a_packed_K
     var c_size = total_num_tokens * N
     var b_size = num_experts * N * b_packed_K
@@ -911,8 +911,8 @@ def string_to_list(string: String) raises -> List[Int]:
 
 
 def main() raises:
-    comptime in_type = get_defined_dtype["in_type", DType.bfloat16]()
-    comptime out_type = get_defined_dtype["out_type", DType.bfloat16]()
+    comptime in_type = get_defined_dtype["in_type", .bfloat16]()
+    comptime out_type = get_defined_dtype["out_type", .bfloat16]()
     # Defaults to `in_type` so every existing (same-dtype) config is
     # unaffected; W4A8 passes `-D b_in_type=uint8` explicitly.
     comptime b_in_type = get_defined_dtype["b_in_type", in_type]()

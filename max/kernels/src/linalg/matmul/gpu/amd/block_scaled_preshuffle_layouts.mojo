@@ -431,7 +431,7 @@ struct Shuffler[E: Int]:
         ).vectorize[1, 1, Self.MFMA_LANE_BYTES]()
 
         # LDS staging: 16 NLane × 4 KLane atoms in their literal slot.
-        var smem = stack_allocation[.uint8, address_space=.SHARED](
+        var smem = stack_allocation[DType.uint8, address_space=.SHARED](
             row_major[Self.MFMA_MN_LANES, Self.MFMA_K_BYTES]()
         )
         var smem_atoms = smem.vectorize[1, Self.MFMA_LANE_BYTES]()

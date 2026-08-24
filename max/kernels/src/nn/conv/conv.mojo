@@ -4951,7 +4951,7 @@ def conv_gpu[
     if has_asymmetric_padding:
         # Pre-pad on GPU so downstream kernels (including cuDNN) can assume symmetric padding.
         comptime full_rank = input_layout.rank()
-        var paddings_tensor = tt_stack_allocation[dtype=.int](
+        var paddings_tensor = tt_stack_allocation[dtype=DType.int](
             row_major[2 * full_rank]()
         )
 
@@ -5069,7 +5069,7 @@ def conv_gpu[
     comptime if input_lt.rank == 4:
         # Try SM100 structured conv2d on Blackwell GPUs (4-7x faster than cuDNN)
         comptime _is_sm100 = _is_sm10x_gpu(ctx.default_device_info)
-        comptime _is_supported_dtype = input_type == .bfloat16
+        comptime _is_supported_dtype = input_type == DType.bfloat16
 
         comptime if _is_sm100 and _is_supported_dtype:
             from nn.conv.gpu.nvidia.sm100.dispatch import (
@@ -5698,7 +5698,7 @@ def conv_gpu[
             # (which uses tcgen05 / Blackwell-only intrinsics) is not
             # instantiated when compiling for non-SM100 targets.
             comptime _is_sm100 = _is_sm10x_gpu(ctx.default_device_info)
-            comptime _is_supported_dtype = input_type == .bfloat16
+            comptime _is_supported_dtype = input_type == DType.bfloat16
             comptime if _is_sm100 and _is_supported_dtype:
                 if dispatch_qslice_conv3d_sm100[
                     filter_is_fcrs,

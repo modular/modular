@@ -361,7 +361,7 @@ def main() raises:
                 cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
                 a_swizzle=swizzle,
                 b_swizzle=swizzle,
-                scales_type=DType.bfloat16,
+                scales_type=.bfloat16,
                 cta_group=1,
             ](
                 ctx,
@@ -430,7 +430,7 @@ def main() raises:
                 cluster_shape=StaticTuple[Int32, 3](2, 2, 1),
                 a_swizzle=swizzle,
                 b_swizzle=swizzle,
-                scales_type=DType.bfloat16,
+                scales_type=.bfloat16,
                 cta_group=1,
             ](
                 ctx,

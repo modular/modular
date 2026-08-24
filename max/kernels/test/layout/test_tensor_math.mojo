@@ -141,9 +141,9 @@ def test_unary_scalar():
     print(tensor_4x4 * 10.0)
 
     var tensor_4x4_mul10_storage = Array[Float32, 4 * 4](uninitialized=True)
-    var tensor_4x4_mul_by_10 = LayoutTensor[
-        DType.float32, Layout.row_major(4, 4)
-    ](tensor_4x4_mul10_storage)
+    var tensor_4x4_mul_by_10 = LayoutTensor[.float32, Layout.row_major(4, 4)](
+        tensor_4x4_mul10_storage
+    )
     arange(tensor_4x4_mul_by_10, step=10.0)
 
     # CHECK: 0.0 1.0 2.0 3.0
@@ -269,7 +269,7 @@ def test_binary_broadcast_inner():
 def test_softmax_math():
     print("== test_softmax_math")
     var tensor_5x4 = LayoutTensor[
-        DType.float32, Layout.row_major(5, 4), MutAnyOrigin
+        .float32, Layout.row_major(5, 4), MutAnyOrigin
     ].stack_allocation()
     arange(tensor_5x4)
 
@@ -288,7 +288,7 @@ def test_softmax_math():
 def test_max_elemntwise():
     print("== test_max_elemntwise")
     var tensor_4x4_a = LayoutTensor[
-        DType.float32, Layout.row_major(4, 4), MutAnyOrigin
+        .float32, Layout.row_major(4, 4), MutAnyOrigin
     ].stack_allocation()
     arange(tensor_4x4_a)
 

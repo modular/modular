@@ -75,9 +75,9 @@ def test_rope_ragged[
     var q_tensor = TileTensor(q_host_buffer, q_layout)
 
     # Create input_row_offsets using HostBuffer + TileTensor
-    var input_row_offsets_host_buffer = ctx.enqueue_create_host_buffer[
-        DType.uint32
-    ](input_row_offsets_layout.static_product)
+    var input_row_offsets_host_buffer = ctx.enqueue_create_host_buffer[.uint32](
+        input_row_offsets_layout.static_product
+    )
     ctx.synchronize()
     for i in range(batch_size):
         input_row_offsets_host_buffer[i] = UInt32(i * seq_len)
@@ -236,9 +236,9 @@ def test_rope_ragged_rope_first[
     var freqs_cis_host_buffer = ctx.enqueue_create_host_buffer[dtype](
         freqs_cis_layout.static_product
     )
-    var input_row_offsets_host_buffer = ctx.enqueue_create_host_buffer[
-        DType.uint32
-    ](input_row_offsets_layout.static_product)
+    var input_row_offsets_host_buffer = ctx.enqueue_create_host_buffer[.uint32](
+        input_row_offsets_layout.static_product
+    )
     var start_pos_host_buffer = ctx.enqueue_create_host_buffer[.uint32](
         start_pos_layout.static_product
     )
@@ -359,14 +359,14 @@ def main() raises -> None:
     with DeviceContext(api="cpu") as ctx:
         # Full head RoPE - this works correctly and is production ready
         print("Full head RoPE")
-        test_rope_ragged[8, DType.float32](ctx)
+        test_rope_ragged[8, .float32](ctx)
 
         # TODO: This was failing for some reason, we don't actually need it for now.
         # Circle back and fix this.
         # Partial RoPE (last 4 elements of each head)
         print("Partial RoPE")
-        test_rope_ragged[4, DType.float32](ctx)
+        test_rope_ragged[4, .float32](ctx)
 
         # Partial RoPE over the *leading* 4 elements of each head.
         print("Leading-half RoPE (rope_first)")
-        test_rope_ragged_rope_first[4, DType.float32](ctx)
+        test_rope_ragged_rope_first[4, .float32](ctx)

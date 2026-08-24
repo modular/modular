@@ -497,7 +497,7 @@ def create_1d_tma_epilogue_benches[
 
 
 def main() raises:
-    comptime dtype = get_defined_dtype["dtype", DType.bfloat16]()
+    comptime dtype = get_defined_dtype["dtype", .bfloat16]()
 
     var M = Int(arg_parse("M", 2048))
     comptime N = get_defined_int["N", 1536]()

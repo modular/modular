@@ -113,14 +113,12 @@ def execute_ragged_flash_attention[
     ].row_major(cache_lengths_shape)
 
     # Create device buffers
-    var input_row_offsets = ManagedLayoutTensor[
-        DType.uint32, row_offsets_layout
-    ](
+    var input_row_offsets = ManagedLayoutTensor[.uint32, row_offsets_layout](
         row_offsets_runtime_layout,
         ctx,
     )
     var cache_lengths_managed = ManagedLayoutTensor[
-        DType.uint32, cache_lengths_layout
+        .uint32, cache_lengths_layout
     ](
         cache_lengths_runtime_layout,
         ctx,

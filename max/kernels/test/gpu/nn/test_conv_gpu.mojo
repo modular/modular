@@ -97,7 +97,7 @@ def test_conv3d_gpu[
     # its accumulator (fp32 for bf16 inputs), then narrow back to `dtype`.
     # Without this, a bf16 reference reduction drifts far outside any
     # reasonable tolerance for non-trivial channel counts.
-    comptime accum_dtype = DType.float32 if dtype == .bfloat16 else dtype
+    comptime accum_dtype = DType.float32 if dtype == DType.bfloat16 else dtype
     var output_ref_accum_host = ctx.enqueue_create_host_buffer[accum_dtype](
         output_size
     )
@@ -238,7 +238,7 @@ def test_conv3d_gpu_dispatch[
     rand(filter_host.as_span())
 
     # CPU reference at fp32 accumulator then narrow back (matches GPU).
-    comptime accum_dtype = DType.float32 if dtype == .bfloat16 else dtype
+    comptime accum_dtype = DType.float32 if dtype == DType.bfloat16 else dtype
     var output_ref_accum_host = ctx.enqueue_create_host_buffer[accum_dtype](
         output_size
     )
@@ -393,7 +393,7 @@ def test_conv3d_im2col_multi_tile[
     rand(input_host.as_span())
     rand(filter_host.as_span())
 
-    comptime accum_dtype = DType.float32 if dtype == .bfloat16 else dtype
+    comptime accum_dtype = DType.float32 if dtype == DType.bfloat16 else dtype
     var output_ref_accum_host = ctx.enqueue_create_host_buffer[accum_dtype](
         output_size
     )
@@ -569,7 +569,7 @@ def test_conv2d_im2col_multi_tile[
     rand(filter_host.as_span())
 
     # Naive2dConvolution internally uses 5-D NDHWC shapes with D=Q=1 for 2-D.
-    comptime accum_dtype = DType.float32 if dtype == .bfloat16 else dtype
+    comptime accum_dtype = DType.float32 if dtype == DType.bfloat16 else dtype
     var output_ref_accum_host = ctx.enqueue_create_host_buffer[accum_dtype](
         output_size
     )
@@ -730,7 +730,7 @@ def test_conv3d_1x1x1_matmul_direct[
     rand(input_host.as_span())
     rand(filter_host.as_span())
 
-    comptime accum_dtype = DType.float32 if dtype == .bfloat16 else dtype
+    comptime accum_dtype = DType.float32 if dtype == DType.bfloat16 else dtype
     var output_ref_accum_host = ctx.enqueue_create_host_buffer[accum_dtype](
         output_size
     )

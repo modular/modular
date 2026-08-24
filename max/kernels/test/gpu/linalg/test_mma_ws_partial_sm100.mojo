@@ -324,7 +324,7 @@ def ss_qk_partial_kernel[
         ACC_TYPE,
         FP8_TYPE,
         FP8_TYPE,
-        Index[dtype=DType.uint32](QK_M, QK_N),
+        Index[dtype=.uint32](QK_M, QK_N),
         transpose_b=True,
     ]()
 
@@ -538,7 +538,7 @@ def ss_qk_multistage_kernel[
         ACC_TYPE,
         FP8_TYPE,
         FP8_TYPE,
-        Index[dtype=DType.uint32](QK_M, QK_N),
+        Index[dtype=.uint32](QK_M, QK_N),
         transpose_b=True,
     ]()
 
@@ -1389,7 +1389,7 @@ def ss_nonws_partial_kernel[
         ACC_TYPE,
         FP8_TYPE,
         FP8_TYPE,
-        Index[dtype=DType.uint32](NW_M, QK_N),
+        Index[dtype=.uint32](NW_M, QK_N),
         transpose_b=True,
     ]()
 
@@ -2011,7 +2011,7 @@ def ts_partial_kernel[
         TS_ACCUM_TYPE,
         TS_OP_TYPE,
         TS_OP_TYPE,
-        Index[dtype=DType.uint32](TS_MMA_M, TS_MMA_N),
+        Index[dtype=.uint32](TS_MMA_M, TS_MMA_N),
         transpose_b=True,
     ]()
 
@@ -2247,7 +2247,7 @@ def test_ts_partial(ctx: DeviceContext) raises:
         row_major(Coord(TS_K_ROWS, TS_K_COLS)),
     )
     comptime gemm_naive = matmul_kernel_naive[
-        DType.float32,
+        .float32,
         TS_OP_TYPE,
         TS_OP_TYPE,
         type_of(c_ref_tt).LayoutType,

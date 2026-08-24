@@ -307,8 +307,8 @@ def main() raises:
 
         # Single group, GQA (q_dim != kv_dim), small R, aligned tokens.
         test[
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
             num_experts=1,
             q_dim=256,
             kv_dim=64,
@@ -317,8 +317,8 @@ def main() raises:
 
         # Single group, GQA, unaligned token count, R=32.
         test[
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
             num_experts=1,
             q_dim=256,
             kv_dim=64,
@@ -327,8 +327,8 @@ def main() raises:
 
         # q_dim == kv_dim case, R=64.
         test[
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
             num_experts=1,
             q_dim=128,
             kv_dim=128,
@@ -338,8 +338,8 @@ def main() raises:
         # Multiple active adapters with routing (expert_ids select a subset),
         # GQA, mixed aligned/unaligned token counts.
         test[
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
             num_experts=6,
             q_dim=512,
             kv_dim=128,
@@ -349,8 +349,8 @@ def main() raises:
         # Routing with an inactive adapter in the middle (expert id -1): output
         # for that group must be zero. Place -1 as the second active group.
         test[
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
             num_experts=4,
             q_dim=256,
             kv_dim=64,
@@ -359,8 +359,8 @@ def main() raises:
 
         # Larger token counts to exercise multiple M-tiles per group.
         test[
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
             num_experts=2,
             q_dim=512,
             kv_dim=128,
@@ -375,8 +375,8 @@ def main() raises:
 
         # Single group, GQA, aligned dims, small R.
         test[
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
             num_experts=1,
             q_dim=512,
             kv_dim=256,
@@ -386,8 +386,8 @@ def main() raises:
         # Multiple active adapters with routing (subset) + an inactive id (-1),
         # aligned dims, R=32, mixed aligned/unaligned token counts.
         test[
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
             num_experts=6,
             q_dim=768,
             kv_dim=256,
@@ -397,8 +397,8 @@ def main() raises:
         # Larger token counts to exercise multiple token-tiles per group on the
         # SM100 path, aligned dims, R=64.
         test[
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
             num_experts=2,
             q_dim=512,
             kv_dim=256,
@@ -409,8 +409,8 @@ def main() raises:
         # output-D tile is 128: dims that are 128-aligned (but not 256-aligned)
         # still take the SM100 path. Exercises the tighter `128 * cta_group` gate.
         test[
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
             num_experts=1,
             q_dim=384,
             kv_dim=128,
@@ -423,8 +423,8 @@ def main() raises:
         # c_type != float32) to the naive fallback. Direct kernel-level regression for
         # that dispatch fix; also checks route_qkv + a_plane_splits under fp32.
         test[
-            DType.float32,
-            DType.float32,
+            .float32,
+            .float32,
             num_experts=1,
             q_dim=512,
             kv_dim=256,

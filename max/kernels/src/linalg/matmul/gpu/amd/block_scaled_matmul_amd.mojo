@@ -338,13 +338,13 @@ struct BlockScaledMmaOp[
         comptime assert (
             Self.num_n_mmas <= 4
         ), "num_n_mmas must be <= 4 for packed scales"
-        self._a_reg = stack_allocation[.uint8, address_space=.LOCAL](
+        self._a_reg = stack_allocation[DType.uint8, address_space=.LOCAL](
             Self._a_reg_layout
         )
-        self._b_reg = stack_allocation[.uint8, address_space=.LOCAL](
+        self._b_reg = stack_allocation[DType.uint8, address_space=.LOCAL](
             Self._b_reg_layout
         )
-        self._c_reg = stack_allocation[.float32, address_space=.LOCAL](
+        self._c_reg = stack_allocation[DType.float32, address_space=.LOCAL](
             Self._c_reg_layout
         )
         _ = self._c_reg.fill(Float32(0))
@@ -944,18 +944,18 @@ struct BlockScaledMatmulAMD[
 
         # === SMEM tiles (row-major allocation; access is conditionally
         # XOR-swizzled per BlockScaledMmaOp.use_smem_swizzle) ===
-        var a_smem = stack_allocation[.uint8, address_space=.SHARED](
+        var a_smem = stack_allocation[DType.uint8, address_space=.SHARED](
             row_major[Self.BM, A_BK_BYTES]()
         )
-        var b_smem = stack_allocation[.uint8, address_space=.SHARED](
+        var b_smem = stack_allocation[DType.uint8, address_space=.SHARED](
             row_major[Self.BN, B_BK_BYTES]()
         )
 
         comptime scales_per_mma = Self.scales_per_mma
-        var sfa_smem = stack_allocation[.uint8, address_space=.SHARED](
+        var sfa_smem = stack_allocation[DType.uint8, address_space=.SHARED](
             row_major[Self.BM, scales_per_mma * num_k_tiles]()
         )
-        var sfb_smem = stack_allocation[.uint8, address_space=.SHARED](
+        var sfb_smem = stack_allocation[DType.uint8, address_space=.SHARED](
             row_major[Self.BN, scales_per_mma * num_k_tiles]()
         )
 
@@ -992,10 +992,10 @@ struct BlockScaledMatmulAMD[
 
         # Register buffers for DRAM loads (one per matrix). Sized per
         # matrix so BM != BN works.
-        var a_load_reg = stack_allocation[.uint8, address_space=.LOCAL](
+        var a_load_reg = stack_allocation[DType.uint8, address_space=.LOCAL](
             row_major[1, a_reg_elems]()
         )
-        var b_load_reg = stack_allocation[.uint8, address_space=.LOCAL](
+        var b_load_reg = stack_allocation[DType.uint8, address_space=.LOCAL](
             row_major[1, b_reg_elems]()
         )
 
@@ -1494,7 +1494,7 @@ def _launch_block_scaled_split_k[
     )
 
     comptime kernel = Kernel.run[
-        DType.float32,
+        .float32,
         type_of(ws_tile).LayoutType,
         type_of(a).LayoutType,
         type_of(b).LayoutType,

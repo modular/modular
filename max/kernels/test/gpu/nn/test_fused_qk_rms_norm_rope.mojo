@@ -276,13 +276,13 @@ def run_fused_qk_rms_norm_rope[
     var freqs_tt = TileTensor(freqs_device, freqs_tile_layout)
 
     var cache_lengths_tensor = LayoutTensor[
-        mut=False, DType.uint32, Layout(UNKNOWN_VALUE)
+        mut=False, .uint32, Layout(UNKNOWN_VALUE)
     ](
         cache_lengths_device,
         RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(cache_lengths_shape),
     )
     var paged_lut_tensor = LayoutTensor[
-        mut=False, DType.uint32, Layout.row_major[2]()
+        mut=False, .uint32, Layout.row_major[2]()
     ](
         paged_lut_device,
         RuntimeLayout[Layout.row_major[2]()].row_major(paged_lut_shape),
@@ -765,14 +765,12 @@ def run_fused_dual_qk_rms_norm_rope[
     )
 
     var cache_lengths_tt = LayoutTensor[
-        mut=False, DType.uint32, Layout(UNKNOWN_VALUE)
+        mut=False, .uint32, Layout(UNKNOWN_VALUE)
     ](
         cache_lengths_device,
         RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(Index(batch_size)),
     )
-    var paged_lut_tt = LayoutTensor[
-        mut=False, DType.uint32, Layout.row_major[2]()
-    ](
+    var paged_lut_tt = LayoutTensor[mut=False, .uint32, Layout.row_major[2]()](
         paged_lut_device,
         RuntimeLayout[Layout.row_major[2]()].row_major(paged_lut_shape),
     )

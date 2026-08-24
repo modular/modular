@@ -470,8 +470,8 @@ struct FragmentToSMemWriter[
 
     comptime st_matrix_rt_layout_type = RuntimeLayout[
         Self.st_matrix_layout_regular if not Self.swapAB else Self.st_matrix_layout_transpose,
-        element_type=DType.int32,
-        linear_idx_type=DType.int32,
+        element_type=.int32,
+        linear_idx_type=.int32,
     ]
 
     comptime st_matrix_tile_layout_regular = row_major[

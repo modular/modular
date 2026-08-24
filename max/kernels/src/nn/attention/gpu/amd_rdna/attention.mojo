@@ -143,7 +143,7 @@ def _mask_apply_rdna[
                         + group_idx if token_gen else block_idx.x
                     )
                     p_reg_vectorized[mma_id, 0][j] = mask.mask(
-                        IndexList[4, element_type=DType.uint32](
+                        IndexList[4, element_type=.uint32](
                             block_idx.z,
                             q_head_idx,
                             Int(score_seq_with_start_pos),
@@ -471,20 +471,20 @@ struct AttentionRDNA[
         comptime if Self.token_gen:
             return self.mask.status(
                 UInt32(self.batch_idx),
-                IndexList[2, element_type=DType.uint32](
+                IndexList[2, element_type=.uint32](
                     Int(self.num_keys - 1),
                     Int(kv_tile_start_row),
                 ),
-                IndexList[2, element_type=DType.uint32](1, Self.BN),
+                IndexList[2, element_type=.uint32](1, Self.BN),
             )
         else:
             return self.mask.status(
                 UInt32(self.batch_idx),
-                IndexList[2, element_type=DType.uint32](
+                IndexList[2, element_type=.uint32](
                     Int(self.mask_block_row + UInt32(self.start_pos)),
                     Int(kv_tile_start_row + UInt32(self.cache_start_pos)),
                 ),
-                IndexList[2, element_type=DType.uint32](Self.BM, Self.BN),
+                IndexList[2, element_type=.uint32](Self.BM, Self.BN),
             )
 
     @always_inline

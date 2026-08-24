@@ -136,9 +136,7 @@ def _quantize_a_block[
     var scale = (max_value / 127.0).cast[.float32]()
     var multiplier = 127.0 / max_value if max_value != 0.0 else 0.0
 
-    var quant_data_s8 = roundeven_to_int32(fp_data * multiplier).cast[
-        DType.int8
-    ]()
+    var quant_data_s8 = roundeven_to_int32(fp_data * multiplier).cast[.int8]()
     var quant_data = quant_data_s8.cast[aq_type]() + Scalar[aq_type](
         a_zero_point
     )
@@ -155,7 +153,7 @@ def _quantize_a_buffer[
 ](
     a: LayoutTensor[mut=False, dtype, address_space=.GENERIC, ...],
     a_quant: LayoutTensor[mut=True, aq_type, ...],
-    a_scale: LayoutTensor[mut=True, DType.float32, ...],
+    a_scale: LayoutTensor[mut=True, .float32, ...],
 ):
     """Converts a floating point buffer to a symmetrically quantized
     representation. The data is in a packed layout that can be efficiently
@@ -421,7 +419,7 @@ trait _MatmulQInt4Kernel:
     ](
         a: LayoutTensor[mut=False, dtype, address_space=.GENERIC, ...],
         a_quant: LayoutTensor[mut=True, aq_type, ...],
-        a_scale: LayoutTensor[mut=True, DType.float32, ...],
+        a_scale: LayoutTensor[mut=True, .float32, ...],
     ):
         ...
 
@@ -454,12 +452,12 @@ struct _MatmulQInt4Kernel_x86_vnni(_MatmulQInt4Kernel):
     @always_inline
     @staticmethod
     def aq_type() -> DType:
-        return DType.uint8
+        return .uint8
 
     @always_inline
     @staticmethod
     def aq_tuple_type() -> DType:
-        return DType.int32
+        return .int32
 
     @always_inline
     @staticmethod
@@ -468,7 +466,7 @@ struct _MatmulQInt4Kernel_x86_vnni(_MatmulQInt4Kernel):
     ](
         a: LayoutTensor[mut=False, dtype, address_space=.GENERIC, ...],
         a_quant: LayoutTensor[mut=True, aq_type, ...],
-        a_scale: LayoutTensor[mut=True, DType.float32, ...],
+        a_scale: LayoutTensor[mut=True, .float32, ...],
     ):
         comptime assert a.rank == 2
         comptime assert a_quant.rank == 2
@@ -590,12 +588,12 @@ struct _MatmulQInt4Kernel_x86_avx(_MatmulQInt4Kernel):
     @always_inline
     @staticmethod
     def aq_type() -> DType:
-        return DType.uint8
+        return .uint8
 
     @always_inline
     @staticmethod
     def aq_tuple_type() -> DType:
-        return DType.int32
+        return .int32
 
     @always_inline
     @staticmethod
@@ -604,7 +602,7 @@ struct _MatmulQInt4Kernel_x86_avx(_MatmulQInt4Kernel):
     ](
         a: LayoutTensor[mut=False, dtype, address_space=.GENERIC, ...],
         a_quant: LayoutTensor[mut=True, aq_type, ...],
-        a_scale: LayoutTensor[mut=True, DType.float32, ...],
+        a_scale: LayoutTensor[mut=True, .float32, ...],
     ):
         comptime assert a.rank == 2
         comptime assert a_quant.rank == 2
@@ -751,12 +749,12 @@ struct _MatmulQInt4Kernel_neon_dotprod(_MatmulQInt4Kernel):
     @always_inline
     @staticmethod
     def aq_type() -> DType:
-        return DType.int8
+        return .int8
 
     @always_inline
     @staticmethod
     def aq_tuple_type() -> DType:
-        return DType.int32
+        return .int32
 
     @always_inline
     @staticmethod
@@ -765,7 +763,7 @@ struct _MatmulQInt4Kernel_neon_dotprod(_MatmulQInt4Kernel):
     ](
         a: LayoutTensor[mut=False, dtype, address_space=.GENERIC, ...],
         a_quant: LayoutTensor[mut=True, aq_type, ...],
-        a_scale: LayoutTensor[mut=True, DType.float32, ...],
+        a_scale: LayoutTensor[mut=True, .float32, ...],
     ):
         comptime assert a.rank == 2
         comptime assert a_quant.rank == 2
@@ -798,12 +796,8 @@ struct _MatmulQInt4Kernel_neon_dotprod(_MatmulQInt4Kernel):
                     ](b_offset).cast[.uint8]()
                     b_offset += simd_width * 4
 
-                    var b_data_i4_lo = (b_data_packed & 15).cast[
-                        DType.int8
-                    ]() - 8
-                    var b_data_i4_hi = (b_data_packed >> 4).cast[
-                        DType.int8
-                    ]() - 8
+                    var b_data_i4_lo = (b_data_packed & 15).cast[.int8]() - 8
+                    var b_data_i4_hi = (b_data_packed >> 4).cast[.int8]() - 8
 
                     c_int32[0, col] = _neon_dotprod_lane[lane](
                         c_int32[0, col], b_data_i4_lo, a_val
@@ -863,12 +857,12 @@ struct _MatmulQInt4Kernel_neon_i8mm(_MatmulQInt4Kernel):
     @always_inline
     @staticmethod
     def aq_type() -> DType:
-        return DType.int8
+        return .int8
 
     @always_inline
     @staticmethod
     def aq_tuple_type() -> DType:
-        return DType.int64
+        return .int64
 
     @staticmethod
     def quantize_a_buffer[
@@ -876,7 +870,7 @@ struct _MatmulQInt4Kernel_neon_i8mm(_MatmulQInt4Kernel):
     ](
         a: LayoutTensor[mut=False, dtype, address_space=.GENERIC, ...],
         a_quant: LayoutTensor[mut=True, aq_type, ...],
-        a_scale: LayoutTensor[mut=True, DType.float32, ...],
+        a_scale: LayoutTensor[mut=True, .float32, ...],
     ):
         comptime assert a.rank == 2
         comptime assert a_quant.rank == 2
@@ -917,7 +911,7 @@ struct _MatmulQInt4Kernel_neon_i8mm(_MatmulQInt4Kernel):
     ):
         comptime block_m = max(tile_m // 2, 1)
         var c_int32_block = _Accumulator[
-            DType.int32, block_m, tile_n * 2, simd_width
+            .int32, block_m, tile_n * 2, simd_width
         ]()
 
         c_int32_block.init()
@@ -985,17 +979,15 @@ def _matmul_qint4_m_1[
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     a_quant: LayoutTensor[mut=False, aq_type, address_space=.GENERIC, ...],
-    a_scale: LayoutTensor[
-        mut=False, DType.float32, address_space=.GENERIC, ...
-    ],
+    a_scale: LayoutTensor[mut=False, .float32, address_space=.GENERIC, ...],
     b: LayoutTensor[
         mut=False,
-        DType.uint8,
+        .uint8,
         b_layout,
         address_space=.GENERIC,
         ...,
     ],
-    c: LayoutTensor[mut=True, DType.float32, address_space=.GENERIC, ...],
+    c: LayoutTensor[mut=True, .float32, address_space=.GENERIC, ...],
     ctx: Optional[DeviceContext] = None,
 ):
     comptime assert a_quant.rank == 2
@@ -1073,17 +1065,15 @@ def _matmul_qint4_m_any[
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     a_quant: LayoutTensor[mut=False, aq_type, address_space=.GENERIC, ...],
-    a_scale: LayoutTensor[
-        mut=False, DType.float32, address_space=.GENERIC, ...
-    ],
+    a_scale: LayoutTensor[mut=False, .float32, address_space=.GENERIC, ...],
     b: LayoutTensor[
         mut=False,
-        DType.uint8,
+        .uint8,
         b_layout,
         address_space=.GENERIC,
         ...,
     ],
-    c: LayoutTensor[mut=True, DType.float32, address_space=.GENERIC, ...],
+    c: LayoutTensor[mut=True, .float32, address_space=.GENERIC, ...],
     ctx: Optional[DeviceContext] = None,
 ):
     comptime simd_width = simd_width_of[DType.float32]()
@@ -1174,7 +1164,7 @@ def _matmul_qint4_m_any[
                 ](m: Int) {mut ak_scale_ptr, mut ak_ptr, imm}:
                     var c_ptr = c.ptr.unsafe_offset(c._offset(Index(m, n)))
                     var c_float = _Accumulator[
-                        DType.float32, tile_m, tile_n, simd_width
+                        .float32, tile_m, tile_n, simd_width
                     ]()
 
                     if ko == 0:
@@ -1241,15 +1231,15 @@ def _matmul_qint4[
     b_layout: Layout = Layout.row_major[2](),
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
-    a: LayoutTensor[mut=False, DType.float32, address_space=.GENERIC, ...],
+    a: LayoutTensor[mut=False, .float32, address_space=.GENERIC, ...],
     b: LayoutTensor[
         mut=False,
-        DType.uint8,
+        .uint8,
         b_layout,
         address_space=.GENERIC,
         ...,
     ],
-    c: LayoutTensor[mut=True, DType.float32, address_space=.GENERIC, ...],
+    c: LayoutTensor[mut=True, .float32, address_space=.GENERIC, ...],
     ctx: Optional[DeviceContext] = None,
 ):
     comptime simd_width = simd_width_of[DType.float32]()

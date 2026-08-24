@@ -22,7 +22,7 @@ def test_no_alloca_fill():
 
     def layout_tensor_kernel(
         output: LayoutTensor[
-            DType.float32,
+            .float32,
             Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE),
             MutAnyOrigin,
         ],

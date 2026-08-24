@@ -1807,9 +1807,9 @@ struct MatmulStaticScaledFloat8:
             comptime N = type_of(weight_tt).static_shape[0]
             var M = Int(input_tt.dim[0]())
             var device_ctx = ctx
-            var scratch_buffer = device_ctx.enqueue_create_buffer[
-                DType.float32
-            ](M * N)
+            var scratch_buffer = device_ctx.enqueue_create_buffer[.float32](
+                M * N
+            )
             var output_scratch = TileTensor(
                 scratch_buffer.unsafe_ptr(),
                 row_major(Coord(Int64(M), Idx[N])),

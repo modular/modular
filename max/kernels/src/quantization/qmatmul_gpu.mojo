@@ -1162,9 +1162,9 @@ def repack_Q4_0_for_sm8x[
     repack_layout: Layout,
     scales_type: DType,
 ](
-    q_weight: LayoutTensor[mut=False, DType.uint8, q_layout, ImmutAnyOrigin],
+    q_weight: LayoutTensor[mut=False, .uint8, q_layout, ImmutAnyOrigin],
     q_packed_weight: LayoutTensor[
-        mut=True, DType.uint8, repack_layout, MutAnyOrigin
+        mut=True, .uint8, repack_layout, MutAnyOrigin
     ],
 ):
     """Repacks Q4_0 quantized weights into the tiled layout expected by the SM8x quantized GEMM kernel.
@@ -1208,7 +1208,7 @@ def repack_Q4_0_for_sm8x[
     def convert_bytes_to_bf16[
         scales_type: DType
     ](input_bytes: SIMD[.uint8, _]) -> Scalar[scales_type]:
-        var f32_values = bitcast[.float16, 1](input_bytes).cast[DType.float32]()
+        var f32_values = bitcast[.float16, 1](input_bytes).cast[.float32]()
         return bitcast[scales_type, 2](f32_values)[1]
 
     comptime repacked_b_layout = Layout(
@@ -1238,7 +1238,7 @@ def repack_Q4_0_for_sm8x[
         alignment=align_of[UInt8](),
     ]()
     var qb_smem = LayoutTensor[
-        DType.uint8,
+        .uint8,
         Layout.row_major(BN, 2 * group_bytes),
         address_space=.SHARED,
     ](smem.bitcast[UInt8]())
@@ -1366,9 +1366,9 @@ def repack_GPTQ_for_sm8x[
     *,
     perm_layout: Layout = Layout(),
 ](
-    in_tensor: LayoutTensor[mut=False, DType.uint8, in_layout, ImmutAnyOrigin],
-    out_tensor: LayoutTensor[mut=True, DType.uint8, out_layout, MutAnyOrigin],
-    perm_idx: LayoutTensor[mut=False, DType.int32, perm_layout, ImmutAnyOrigin],
+    in_tensor: LayoutTensor[mut=False, .uint8, in_layout, ImmutAnyOrigin],
+    out_tensor: LayoutTensor[mut=True, .uint8, out_layout, MutAnyOrigin],
+    perm_idx: LayoutTensor[mut=False, .int32, perm_layout, ImmutAnyOrigin],
 ):
     """Repacks GPTQ quantized weights into the tiled layout expected by the SM8x quantized GEMM kernel.
 
@@ -1415,7 +1415,7 @@ def repack_GPTQ_for_sm8x[
     def convert_bytes_to_bf16[
         scales_type: DType
     ](input_bytes: SIMD[raw_scales_type, _]) -> Scalar[scales_type]:
-        var f32_values = bitcast[.float16, 1](input_bytes).cast[DType.float32]()
+        var f32_values = bitcast[.float16, 1](input_bytes).cast[.float32]()
         return bitcast[scales_type, 2](f32_values)[1]
 
     # Define 4-bit weights and scales for the raw input
@@ -1456,12 +1456,12 @@ def repack_GPTQ_for_sm8x[
         alignment=align_of[UInt8](),
     ]()
     var weights_smem = LayoutTensor[
-        DType.uint8,
+        .uint8,
         Layout.row_major(BN, 2 * weights_bytes_per_group),
         address_space=.SHARED,
     ](smem.bitcast[UInt8]())
     var weights_smem_uint4 = LayoutTensor[
-        DType.uint32,
+        .uint32,
         Layout.row_major(BN, 2 * group_size // pack_factor),
         address_space=.SHARED,
     ](smem.bitcast[UInt32]())
@@ -1830,7 +1830,7 @@ def matmul_gpu_qint4_impl[
 ](
     c: LayoutTensor[mut=True, c_type, address_space=.GENERIC, ...],
     a: LayoutTensor[mut=False, a_type, address_space=.GENERIC, ...],
-    b: LayoutTensor[mut=False, DType.uint8, address_space=.GENERIC, ...],
+    b: LayoutTensor[mut=False, .uint8, address_space=.GENERIC, ...],
     ctx: Optional[DeviceContext],
 ) raises:
     """Dispatches a GPU int4 quantized matrix multiplication to the tuned kernel configuration for the runtime M dimension.
@@ -2316,7 +2316,7 @@ def matmul_gpu_qint4_impl[
             )
             return
 
-    comptime default_config = MatmulConfig[a_type, DType.uint8, c_type, True](
+    comptime default_config = MatmulConfig[a_type, .uint8, c_type, True](
         block_tile_shape=Index(128, 128, 32),
         warp_tile_shape=Index(64, 64, 32),
         num_pipeline_stages=5,
@@ -2408,7 +2408,7 @@ def gpu_qint4_repack_GPTQ[
     perm_idx: OptionalReg[
         LayoutTensor[
             mut=False,
-            DType.int32,
+            .int32,
             Layout.row_major(UNKNOWN_VALUE),
             ImmutAnyOrigin,
         ]
@@ -2486,9 +2486,9 @@ def gpu_qint4_repack_GPTQ[
         ]
 
         # Create null tensor using MutUntrackedOrigin (null pointer with no real origin)
-        var null_tensor = LayoutTensor[
-            DType.int32, Layout(), MutUntrackedOrigin
-        ](None)
+        var null_tensor = LayoutTensor[.int32, Layout(), MutUntrackedOrigin](
+            None
+        )
 
         cuda_ctx.enqueue_function[repack](
             b,

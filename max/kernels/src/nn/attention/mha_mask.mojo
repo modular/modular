@@ -1949,9 +1949,7 @@ struct MaterializedMask[dtype_: DType, layout_: Layout, origin_: ImmOrigin](
 
     @__allow_legacy_any_origin_fields
     var start_pos: OptionalReg[
-        LayoutTensor[
-            DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
-        ]
+        LayoutTensor[.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
     ]
     var is_multiple_of_2: Bool
 
@@ -1975,7 +1973,7 @@ struct MaterializedMask[dtype_: DType, layout_: Layout, origin_: ImmOrigin](
         mask_tensor: LayoutTensor[Self.dtype_, Self.layout_, Self.origin_],
         start_pos: OptionalReg[
             LayoutTensor[
-                DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
+                .uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
             ]
         ] = None,
     ):
@@ -2756,13 +2754,13 @@ struct RelativeLogitsMask[
 
     @__allow_legacy_any_origin_fields
     var cache_lengths: LayoutTensor[
-        DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
+        .uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
     ]
     """Cached tokens before this call's new tokens."""
 
     @__allow_legacy_any_origin_fields
     var input_row_offsets: LayoutTensor[
-        DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
+        .uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
     ]
     """Ragged row offset into `bias`/`q` for this call's new tokens, `(batch + 1,)`."""
 
@@ -2785,10 +2783,10 @@ struct RelativeLogitsMask[
         out self,
         bias: LayoutTensor[Self.dtype_, Self.layout_, Self.origin_],
         cache_lengths: LayoutTensor[
-            DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
+            .uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
         ],
         input_row_offsets: LayoutTensor[
-            DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
+            .uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
         ],
     ):
         comptime assert (

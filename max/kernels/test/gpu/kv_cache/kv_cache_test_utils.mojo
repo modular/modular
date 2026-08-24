@@ -270,9 +270,7 @@ struct PagedLookupTable[page_size: Int](Copyable):
     ) raises:
         var batch_size = len(prompt_lens)
 
-        var host_tensor = LayoutTensor[
-            DType.uint32, type_of(self.paged_lut).layout
-        ](
+        var host_tensor = LayoutTensor[.uint32, type_of(self.paged_lut).layout](
             self.paged_lut.host_ptr,
             self.paged_lut._runtime_layout(),
         )

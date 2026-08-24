@@ -210,7 +210,7 @@ def test_simd_ue8m0_to_f32_ptx_path(ctx: DeviceContext) raises:
 
     var ue8m0_simd = f32_simd.cast[.float8_e8m0fnu]()
 
-    comptime kernel = test_simd_ue8m0_to_f32_ptx_kernel[8, DType.float32]
+    comptime kernel = test_simd_ue8m0_to_f32_ptx_kernel[8, .float32]
     ctx.enqueue_function[kernel](ue8m0_simd, grid_dim=1, block_dim=1)
     ctx.synchronize()
 

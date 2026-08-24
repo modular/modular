@@ -204,7 +204,7 @@ struct TensorCore[
 
     # Layout reference => https://github.com/NVIDIA/cutlass/blob/main/include/cute/atom/mma_traits_sm80.hpp#L44.
 
-    comptime supported_fp32 = Self.in_type == .float32 and (
+    comptime supported_fp32 = Self.in_type == DType.float32 and (
         Self.shape
         == shape_16x8x8 if is_nvidia_gpu() else Self.shape
         == shape_16x16x4
@@ -232,7 +232,7 @@ struct TensorCore[
         and Self.shape in (shape_16x16x32, shape_32x32x64)
     )
     """Whether float8 is supported for this tensor core configuration."""
-    comptime supported_fp64 = Self.in_type == .float64 and Self.out_type == .float64 and (
+    comptime supported_fp64 = Self.in_type == DType.float64 and Self.out_type == DType.float64 and (
         Self.shape in (shape_8x8x4, shape_16x8x4, shape_16x8x8, shape_16x8x16)
     ) if is_nvidia_gpu() else False
     """Whether float64 is supported for this tensor core configuration."""

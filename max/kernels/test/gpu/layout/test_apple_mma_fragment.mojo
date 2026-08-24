@@ -179,7 +179,7 @@ def mma_1x1_kernel(
     var b_tile = TileTensor(b_ptr, row_major[16, 16]())
     var d_tile = TileTensor(d_ptr, row_major[16, 16]())
 
-    var mma_op = MmaOpApple[.float32, DType.float16, 1, 1]()
+    var mma_op = MmaOpApple[.float32, .float16, 1, 1]()
     var accum = type_of(mma_op).zero_accum()
     mma_op.mma(accum, a_tile, b_tile)
     mma_op.store(accum, d_tile)
@@ -198,7 +198,7 @@ def mma_2x2_kernel(
     var b_mat = TileTensor(b_ptr, row_major[_K_2x2, 32]())
     var d_mat = TileTensor(d_ptr, row_major[32, 32]())
 
-    var mma_op = MmaOpApple[.float32, DType.float16, 2, 2]()
+    var mma_op = MmaOpApple[.float32, .float16, 2, 2]()
     var accum = type_of(mma_op).zero_accum()
 
     for k16 in range(_K_2x2 // 16):
@@ -284,7 +284,7 @@ def mma_parent_stride_kernel(
     var a_sub = a_mat.tile[16, 16](1, 2)
     var b_sub = b_mat.tile[16, 16](2, 1)
 
-    var mma_op = MmaOpApple[.float32, DType.float16, 1, 1]()
+    var mma_op = MmaOpApple[.float32, .float16, 1, 1]()
     var accum = type_of(mma_op).zero_accum()
     mma_op.mma(accum, a_sub, b_sub)
     mma_op.store(accum, d_mat)
@@ -307,7 +307,7 @@ def zero_accum_kernel(
     var d1_tile = TileTensor(d1_ptr, row_major[16, 16]())
     var d2_tile = TileTensor(d2_ptr, row_major[16, 16]())
 
-    var mma_op = MmaOpApple[.float32, DType.float16, 1, 1]()
+    var mma_op = MmaOpApple[.float32, .float16, 1, 1]()
     var accum = type_of(mma_op).zero_accum()
     mma_op.mma(accum, a_tile, b_tile)
     mma_op.store(accum, d1_tile)
@@ -465,7 +465,7 @@ def mma_k32_kernel(
     var b_tile = TileTensor(b_ptr, row_major[32, 16]())
     var d_tile = TileTensor(d_ptr, row_major[16, 16]())
 
-    var mma_op = MmaOpApple[.float32, DType.float16, 1, 1]()
+    var mma_op = MmaOpApple[.float32, .float16, 1, 1]()
     var accum = type_of(mma_op).zero_accum()
     mma_op.mma(accum, a_tile, b_tile)
     mma_op.store(accum, d_tile)
@@ -542,7 +542,7 @@ def mma_shared_kernel(
     var b_tile = TileTensor(b_shared, row_major[16, 16]())
     var d_tile = TileTensor(d_ptr, row_major[16, 16]())
 
-    var mma_op = MmaOpApple[.float32, DType.float16, 1, 1]()
+    var mma_op = MmaOpApple[.float32, .float16, 1, 1]()
     var accum = type_of(mma_op).zero_accum()
     mma_op.mma(accum, a_tile, b_tile)
     mma_op.store(accum, d_tile)
@@ -568,7 +568,7 @@ def mma_i8_k32_kernel(
     var b_tile = TileTensor(b_ptr, row_major[32, 16]())
     var d_tile = TileTensor(d_ptr, row_major[16, 16]())
 
-    var mma_op = MmaOpApple[.int32, DType.int8, 1, 1]()
+    var mma_op = MmaOpApple[.int32, .int8, 1, 1]()
     var accum = type_of(mma_op).zero_accum()
     mma_op.mma(accum, a_tile, b_tile)
     mma_op.store(accum, d_tile)
@@ -777,7 +777,7 @@ def bounded_mma_kernel(
     var b_tile = TileTensor(b_ptr, row_major[16, 16]())
     var d_tile = TileTensor(d_ptr, row_major[16, 16]())
 
-    var mma_op = MmaOpApple[.float32, DType.float16, 1, 1]()
+    var mma_op = MmaOpApple[.float32, .float16, 1, 1]()
     var accum = type_of(mma_op).zero_accum()
     mma_op.mma[bounded=True](
         accum,
@@ -803,7 +803,7 @@ def bounded_store_kernel(
     var b_tile = TileTensor(b_ptr, row_major[16, 16]())
     var d_tile = TileTensor(d_ptr, row_major[16, 16]())
 
-    var mma_op = MmaOpApple[.float32, DType.float16, 1, 1]()
+    var mma_op = MmaOpApple[.float32, .float16, 1, 1]()
     var accum = type_of(mma_op).zero_accum()
     mma_op.mma[bounded=True](
         accum,
@@ -1008,7 +1008,7 @@ def mma_col_major_a_kernel(
     var b_tile = TileTensor(b_ptr, row_major[16, 16]())
     var d_tile = TileTensor(d_ptr, row_major[16, 16]())
 
-    var mma_op = MmaOpApple[.float32, DType.float16, 1, 1]()
+    var mma_op = MmaOpApple[.float32, .float16, 1, 1]()
     var accum = type_of(mma_op).zero_accum()
     mma_op.mma(accum, a_tile, b_tile)
     mma_op.store(accum, d_tile)
@@ -1024,7 +1024,7 @@ def mma_col_major_b_kernel(
     var b_tile = TileTensor(b_ptr, col_major[16, 16]())
     var d_tile = TileTensor(d_ptr, row_major[16, 16]())
 
-    var mma_op = MmaOpApple[.float32, DType.float16, 1, 1]()
+    var mma_op = MmaOpApple[.float32, .float16, 1, 1]()
     var accum = type_of(mma_op).zero_accum()
     mma_op.mma(accum, a_tile, b_tile)
     mma_op.store(accum, d_tile)
@@ -1040,7 +1040,7 @@ def mma_col_major_ab_kernel(
     var b_tile = TileTensor(b_ptr, col_major[16, 16]())
     var d_tile = TileTensor(d_ptr, row_major[16, 16]())
 
-    var mma_op = MmaOpApple[.float32, DType.float16, 1, 1]()
+    var mma_op = MmaOpApple[.float32, .float16, 1, 1]()
     var accum = type_of(mma_op).zero_accum()
     mma_op.mma(accum, a_tile, b_tile)
     mma_op.store(accum, d_tile)

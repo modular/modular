@@ -335,7 +335,7 @@ struct MaskTileOp[
                                 Self.FragmentLayoutT()(Idx[j])
                             )
                             frag[j] = mask.mask(
-                                IndexList[4, element_type=DType.uint32](
+                                IndexList[4, element_type=.uint32](
                                     block_idx.z,
                                     q_head_idx,
                                     Int(score_row_with_start_pos),
@@ -366,11 +366,11 @@ struct MaskTileOp[
                         var bound_x = num_keys if Self.token_gen else seq_len
 
                         frag[j] = _kernel_mask(
-                            IndexList[2, element_type=DType.uint32](
+                            IndexList[2, element_type=.uint32](
                                 Int(score_row),
                                 Int(score_col + UInt32(fragment_col)),
                             ),
-                            IndexList[2, element_type=DType.uint32](
+                            IndexList[2, element_type=.uint32](
                                 Int(bound_x), Int(bound_y)
                             ),
                             frag[j],

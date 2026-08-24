@@ -209,113 +209,113 @@ def test_bf16(ctx: DeviceContext) raises:
     print("=== test_bf16")
 
     test[
-        in_type=DType.bfloat16,
-        out_type=DType.float32,
+        in_type=.bfloat16,
+        out_type=.float32,
         transpose_b=False,
         N=256,
         K=128,
     ](ctx, 256, 256, 128)
     test[
-        in_type=DType.bfloat16,
-        out_type=DType.float32,
+        in_type=.bfloat16,
+        out_type=.float32,
         transpose_b=True,
         N=256,
         K=128,
     ](ctx, 256, 256, 128)
     test[
-        in_type=DType.bfloat16,
-        out_type=DType.bfloat16,
+        in_type=.bfloat16,
+        out_type=.bfloat16,
         transpose_b=False,
         N=256,
         K=128,
     ](ctx, 256, 256, 128)
     test[
-        in_type=DType.bfloat16,
-        out_type=DType.bfloat16,
+        in_type=.bfloat16,
+        out_type=.bfloat16,
         transpose_b=True,
         N=256,
         K=128,
     ](ctx, 256, 256, 128)
 
     test[
-        in_type=DType.bfloat16,
-        out_type=DType.bfloat16,
+        in_type=.bfloat16,
+        out_type=.bfloat16,
         transpose_b=False,
         N=256,
         K=128,
     ](ctx, 1024, 256, 128)
     test[
-        in_type=DType.bfloat16,
-        out_type=DType.bfloat16,
+        in_type=.bfloat16,
+        out_type=.bfloat16,
         transpose_b=False,
         N=256,
         K=256,
     ](ctx, 1024, 256, 256)
     test[
-        in_type=DType.bfloat16,
-        out_type=DType.float32,
+        in_type=.bfloat16,
+        out_type=.float32,
         transpose_b=True,
         N=256,
         K=1024,
     ](ctx, 1024, 256, 1024)
     test[
-        in_type=DType.bfloat16,
-        out_type=DType.float32,
+        in_type=.bfloat16,
+        out_type=.float32,
         transpose_b=True,
         N=1024,
         K=1024,
     ](ctx, 1024, 1024, 1024)
 
     test[
-        in_type=DType.bfloat16,
-        out_type=DType.bfloat16,
+        in_type=.bfloat16,
+        out_type=.bfloat16,
         transpose_b=True,
         N=284,
         K=256,
     ](ctx, 256, 284, 256)
     test[
-        in_type=DType.bfloat16,
-        out_type=DType.bfloat16,
+        in_type=.bfloat16,
+        out_type=.bfloat16,
         transpose_b=True,
         N=260,
         K=1024,
     ](ctx, 259, 260, 1024)
 
     test[
-        in_type=DType.bfloat16,
-        out_type=DType.bfloat16,
+        in_type=.bfloat16,
+        out_type=.bfloat16,
         transpose_b=True,
         N=36864,
         K=6144,
     ](ctx, 2, 36864, 6144)
 
     test[
-        in_type=DType.bfloat16,
-        out_type=DType.bfloat16,
+        in_type=.bfloat16,
+        out_type=.bfloat16,
         transpose_b=True,
         N=55296,
         K=6144,
     ](ctx, 2, 55296, 6144)
 
     test[
-        in_type=DType.bfloat16,
-        out_type=DType.bfloat16,
+        in_type=.bfloat16,
+        out_type=.bfloat16,
         transpose_b=True,
         N=6144,
         K=24576,
     ](ctx, 2, 6144, 24576)
 
     test[
-        in_type=DType.bfloat16,
-        out_type=DType.bfloat16,
+        in_type=.bfloat16,
+        out_type=.bfloat16,
         transpose_b=True,
         N=6144,
         K=18432,
     ](ctx, 2, 6144, 18432)
 
     test[
-        in_type=DType.bfloat16,
-        out_type=DType.bfloat16,
+        in_type=.bfloat16,
+        out_type=.bfloat16,
         transpose_b=True,
         N=6144,
         K=6144,
@@ -327,14 +327,14 @@ def test_float8[fp8_type: DType](ctx: DeviceContext) raises:
 
     test[
         in_type=fp8_type,
-        out_type=DType.bfloat16,
+        out_type=.bfloat16,
         transpose_b=True,
         N=512,
         K=640,
     ](ctx, 480, 512, 640)
 
     test[
-        in_type=DType.bfloat16,
+        in_type=.bfloat16,
         out_type=fp8_type,
         transpose_b=True,
         N=384,
@@ -362,7 +362,7 @@ def test_block_k(ctx: DeviceContext) raises:
     comptime block_ks: List[Int] = [32, 64, 128, 256]
 
     comptime for i in range(len(block_ks)):
-        test_block_k[.bfloat16, DType.bfloat16, block_ks[i], 1024, 1024](
+        test_block_k[.bfloat16, .bfloat16, block_ks[i], 1024, 1024](
             192, 1024, 1024
         )
 
@@ -406,24 +406,22 @@ def test_warp_k_partitions(ctx: DeviceContext) raises:
         comptime for i in range(len(configs)):
             test[configs[i], N=N, K=K](ctx, m, n, k)
 
-    test_warp_k_partitions[.bfloat16, DType.bfloat16, 2048, 2048](
-        16, 2048, 2048
-    )
+    test_warp_k_partitions[.bfloat16, .bfloat16, 2048, 2048](16, 2048, 2048)
 
 
 def test_float32(ctx: DeviceContext) raises:
     print("=== test_float32")
 
     test[
-        in_type=DType.float32,
-        out_type=DType.float32,
+        in_type=.float32,
+        out_type=.float32,
         transpose_b=False,
         N=256,
         K=128,
     ](ctx, 256, 256, 128)
     test[
-        in_type=DType.float32,
-        out_type=DType.float32,
+        in_type=.float32,
+        out_type=.float32,
         transpose_b=True,
         N=256,
         K=128,
@@ -538,9 +536,7 @@ def _run_fp32_split_k[
 
     # Mirrors the fp32 split-K band's config; only num_k_partitions differs
     # (1 = single-pass, >1 = split-K).
-    comptime config = MatmulConfig[
-        DType.float32, DType.float32, DType.float32, True
-    ](
+    comptime config = MatmulConfig[.float32, .float32, .float32, True](
         block_tile_shape=Index(16, 16, 64),
         warp_tile_shape=Index(16, 16, 64),
         mma_shape=_amdgpu_get_mma_shape[.float32, True](),

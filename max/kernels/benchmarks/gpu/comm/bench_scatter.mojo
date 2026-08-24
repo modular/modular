@@ -257,7 +257,7 @@ def bench_scatter[
 def main() raises:
     var num_elems = arg_parse("num_elems", 16)
 
-    comptime dtype = get_defined_dtype["dtype", DType.uint32]()
+    comptime dtype = get_defined_dtype["dtype", .uint32]()
     comptime num_gpus = get_defined_int["num_gpus", 2]()
     comptime dp_size = get_defined_int["dp_size", 2]()
     comptime cache_busting = get_defined_bool["cache_busting", True]()

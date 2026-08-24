@@ -287,7 +287,7 @@ def execute_kv_cache_ragged_flash_attention[
 
     comptime cache_lengths_layout = Layout(UNKNOWN_VALUE)
     var cache_lengths_layout_tensor = LayoutTensor[
-        mut=False, DType.uint32, cache_lengths_layout
+        mut=False, .uint32, cache_lengths_layout
     ](
         cache_lengths_dev_buffer.unsafe_ptr(),
         RuntimeLayout[cache_lengths_layout].row_major(IndexList[1](batch_size)),
@@ -295,7 +295,7 @@ def execute_kv_cache_ragged_flash_attention[
 
     comptime paged_lut_layout = Layout.row_major[2]()
     var paged_lut_layout_tensor = LayoutTensor[
-        mut=False, DType.uint32, paged_lut_layout
+        mut=False, .uint32, paged_lut_layout
     ](
         paged_lut_dev_buffer.unsafe_ptr(),
         RuntimeLayout[paged_lut_layout].row_major(
@@ -347,7 +347,7 @@ def execute_kv_cache_ragged_flash_attention[
         )
 
     var kv_input_row_offsets_view = LayoutTensor[
-        mut=False, DType.uint32, Layout.row_major(UNKNOWN_VALUE)
+        mut=False, .uint32, Layout.row_major(UNKNOWN_VALUE)
     ](
         kv_input_row_offsets_dev_buffer.unsafe_ptr(),
         RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
@@ -539,7 +539,7 @@ def execute_kv_cache_ragged_flash_attention[
 
 
 def main() raises:
-    comptime dtype = get_defined_dtype["dtype", DType.bfloat16]()
+    comptime dtype = get_defined_dtype["dtype", .bfloat16]()
 
     comptime head_dim = get_defined_int["head_dim", 128]()
     comptime num_q_heads = get_defined_int["num_q_heads", 32]()

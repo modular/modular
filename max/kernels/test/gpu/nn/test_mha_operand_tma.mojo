@@ -363,10 +363,10 @@ def test_continuous_kv_cache[
                         dst_host, kv_block_runtime_layout
                     )
                     var lookup_host_tensor = LayoutTensor[
-                        DType.uint32, lookup_layout
+                        .uint32, lookup_layout
                     ](lookup_host, lookup_runtime_layout)
                     var cache_lengths_host_tensor = LayoutTensor[
-                        DType.uint32, lookup_layout
+                        .uint32, lookup_layout
                     ](cache_lengths_host, lookup_runtime_layout)
 
                     var src_host_collection = ContinuousBatchingKVCacheCollection[
@@ -544,10 +544,10 @@ def test_paged_kv_cache[
                         dst_host, kv_block_runtime_layout
                     )
                     var paged_lut_host_tensor = LayoutTensor[
-                        DType.uint32, paged_lut_layout
+                        .uint32, paged_lut_layout
                     ](paged_lut_host, paged_lut_runtime_layout)
                     var cache_lengths_host_tensor = LayoutTensor[
-                        DType.uint32, cache_lengths_layout
+                        .uint32, cache_lengths_layout
                     ](cache_lengths_host, cache_lengths_runtime_layout)
 
                     var src_host_collection = PagedKVCacheCollection[

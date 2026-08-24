@@ -166,7 +166,7 @@ def bench_rms_norm_fused_residual_add_gpu[
 
 
 def main() raises:
-    comptime dtype = get_defined_dtype["dtype", DType.bfloat16]()
+    comptime dtype = get_defined_dtype["dtype", .bfloat16]()
     comptime shape = int_list_to_tuple[get_defined_shape["shape", "1x5376"]()]()
 
     var m = Bench(BenchConfig(num_repetitions=1))

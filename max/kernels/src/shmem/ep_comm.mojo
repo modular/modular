@@ -633,7 +633,7 @@ struct BlockwiseFP8TokenFormat[
 
     Parameters:
         fp8_dtype: FP8 data type used for quantized values (e.g.
-            `DType.float8_e4m3fn`).
+            `.float8_e4m3fn`).
         scales_dtype: Data type for the block-wise scale factors.
         output_layout: Layout of the FP8 output `TileTensor`.
         scales_layout: Layout of the scales output `TileTensor`.
@@ -887,7 +887,7 @@ struct NVBlockScaledTokenFormat[
     Uses TMA-based copies for scale preshuffle into the output tensor.
 
     Parameters:
-        quant_dtype: Quantized element dtype (e.g. `DType.uint8` for FP4).
+        quant_dtype: Quantized element dtype (e.g. `.uint8` for FP4).
         scales_dtype: Scale factor dtype (FP8 variant).
         output_layout: Layout of the quantized output `TileTensor`.
         scales_offset_layout: Layout of the per-expert scale offset tensor.
@@ -1429,8 +1429,8 @@ struct MXTokenFormat[
     into the dispatch-wait copy path (KS224 up-projection fusion).
 
     Parameters:
-        quant_dtype: FP4 element dtype (e.g. `DType.uint8` with nibble packing).
-        scales_dtype: MX scale dtype (`DType.float8_e8m0fnu`).
+        quant_dtype: FP4 element dtype (e.g. `.uint8` with nibble packing).
+        scales_dtype: MX scale dtype (`.float8_e8m0fnu`).
         output_layout: Layout of the FP4 output `TileTensor`.
         scales_layout: Layout of the scale output `TileTensor`.
         _hid_dim: Hidden dimension; must be divisible by the group size
@@ -2068,16 +2068,14 @@ struct EPDispatchKernel[
     def recv_count_layout(coord: Coord, out offset: Int32):
         comptime if Self.skip_a2a:
             var _coord = Coord((coord[0], Idx[0]))
-            offset = Self._recv_count_layout[linear_idx_type=DType.int32](
-                _coord
-            )
+            offset = Self._recv_count_layout[linear_idx_type=.int32](_coord)
         else:
-            offset = Self._recv_count_layout[linear_idx_type=DType.int32](coord)
+            offset = Self._recv_count_layout[linear_idx_type=.int32](coord)
 
     @staticmethod
     @always_inline
     def send_buf_layout(coord: Coord, out offset: Int32):
-        offset = Self._send_layout[linear_idx_type=DType.int32](coord)
+        offset = Self._send_layout[linear_idx_type=.int32](coord)
 
     # ===-------------------------------------------------------------------===#
     # Dispatch Kernel Methods
@@ -2592,13 +2590,13 @@ struct EPDispatchKernel[
         # Shared memory: rank prefix sums, per-tile token-to-rank map,
         # expert start, and chunk_start broadcast slot.
         var rank_prefix = unsafe_stack_allocation[
-            Self.n_ranks, DType.int32, address_space=.SHARED
+            Self.n_ranks, Int32, address_space=.SHARED
         ]()
         var tok_rank_map = unsafe_stack_allocation[
-            tile_size, DType.int32, address_space=.SHARED
+            tile_size, Int32, address_space=.SHARED
         ]()
         var smem_vals = unsafe_stack_allocation[
-            2, DType.int32, address_space=.SHARED
+            2, Int32, address_space=.SHARED
         ]()
 
         @always_inline
@@ -3152,7 +3150,7 @@ struct EPCombineKernel[
     @staticmethod
     @always_inline
     def recv_buf_layout(coord: Coord) -> Int32:
-        return Self._recv_layout[linear_idx_type=DType.int32](coord)
+        return Self._recv_layout[linear_idx_type=.int32](coord)
 
     @staticmethod
     @always_inline
@@ -3180,9 +3178,9 @@ struct EPCombineKernel[
     def recv_count_layout(coord: Coord) -> Int32:
         comptime if Self.skip_a2a:
             var _coord = Coord((coord[0], Idx[0]))
-            return Self._recv_count_layout[linear_idx_type=DType.int32](_coord)
+            return Self._recv_count_layout[linear_idx_type=.int32](_coord)
         else:
-            return Self._recv_count_layout[linear_idx_type=DType.int32](coord)
+            return Self._recv_count_layout[linear_idx_type=.int32](coord)
 
     # ===-------------------------------------------------------------------===#
     # Combine Kernel Methods
@@ -4349,7 +4347,7 @@ def fused_silu_kernel[
 
     Parameters:
         output_dtype: Element type of the `output_tensor` (e.g.
-            `DType.bfloat16`).
+            `.bfloat16`).
         input_dtype: Element type of the `input_tensor`; its accumulation type
             must be floating-point.
         output_layout: Layout of the `output_tensor` `TileTensor`.
@@ -4450,7 +4448,7 @@ def fused_silu_fp8_kernel[
 
     Parameters:
         fp8_dtype: FP8 element type of the quantized `output_tensor` (e.g.
-            `DType.float8_e4m3fn`).
+            `.float8_e4m3fn`).
         scales_dtype: Element type of the block-wise scale factors stored in
             `scales_tensor`.
         input_dtype: Element type of the `input_tensor`; its accumulation type
@@ -4990,7 +4988,7 @@ def fused_silu_mx_kernel[
     # `quant_dtype` selects the MX format: MXFP4 packs two nibbles per byte,
     # MXFP8 stores one E4M3 byte per element. The E8M0 scale path is shared —
     # both formats scale groups of 32 elements.
-    comptime elems_per_byte = 2 if quant_dtype == .uint8 else 1
+    comptime elems_per_byte = 2 if quant_dtype == DType.uint8 else 1
     var _max_padded_M = Int(max_padded_M)
     comptime accum_dtype = DType.float32
     comptime assert (

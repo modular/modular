@@ -278,9 +278,7 @@ def _test_kernel_impl_base[
                 SF_VECTOR_SIZE,
             ):
                 if idx1 < effective_k:
-                    var scale_input = (1 << random_ui64(0, 2)).cast[
-                        DType.float32
-                    ]()
+                    var scale_input = (1 << random_ui64(0, 2)).cast[.float32]()
                     var scale_value: Scalar[scales_dtype]
                     comptime if scales_dtype == MXFP4_SF_DTYPE:
                         scale_value = _convert_f32_to_float8_ue8m0[
@@ -334,7 +332,7 @@ def _test_kernel_impl_base[
                 comptime if scales_dtype == MXFP4_SF_DTYPE:
                     if idx0 < effective_n and idx1 < effective_k:
                         var scale_input = (1 << random_ui64(0, 2)).cast[
-                            DType.float32
+                            .float32
                         ]()
                         var scale_value = _convert_f32_to_float8_ue8m0[
                             target=scales_dtype

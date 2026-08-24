@@ -62,8 +62,8 @@ def _softmax_unit_kernel(
     var rb = ((lane & 7) >> 1) + ((lane & 16) >> 2)
     var cb = ((lane & 1) << 2) + (lane & 8)
 
-    comptime ScoreMma = MmaOpApple[.float32, DType.float32, 1, NUM_N_MMAS]
-    comptime OutMma = MmaOpApple[.float32, DType.float32, 1, DEPTH_MMAS]
+    comptime ScoreMma = MmaOpApple[.float32, .float32, 1, NUM_N_MMAS]
+    comptime OutMma = MmaOpApple[.float32, .float32, 1, DEPTH_MMAS]
 
     # Online-softmax state as the kernel declares it (no-sink), seeded m=-inf, l=0.
     var sm_m = Array[Float32, _SOFTMAX_FRAG_ROWS](fill=Float32(-3.0e38))

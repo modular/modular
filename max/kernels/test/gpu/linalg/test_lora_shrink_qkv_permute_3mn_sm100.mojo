@@ -240,83 +240,83 @@ def main() raises:
             return
 
         test[
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
             num_experts=6,
             expert_shape=Index(192, 1024),
         ](4, [27, 1500, 300, 150], [0, 3, 2, 4], ctx)
 
         test[
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
             num_experts=1,
             expert_shape=Index(256, 256),
         ](1, [128], [0], ctx)
 
         test[
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
             num_experts=1,
             expert_shape=Index(16, 256),
         ](1, [128], [0], ctx)
 
         # unaligned matmul
         test[
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
             num_experts=1,
             expert_shape=Index(1024, 256),
         ](1, [200], [0], ctx)
 
         test[
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
             num_experts=1,
             expert_shape=Index(512, 1024),
         ](1, [256], [0], ctx)
 
         # simple expert routing
         test[
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
             num_experts=4,
             expert_shape=Index(256, 64),
         ](1, [128], [2], ctx)
 
         # simple aligned group routing
         test[
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
             num_experts=4,
             expert_shape=Index(256, 64),
         ](3, [32, 32 * 3, 32 * 7], [2, 0, 1], ctx)
 
         # simple unaligned group routing
         test[
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
             num_experts=4,
             expert_shape=Index(256, 64),
         ](2, [10, 60], [2, 0], ctx)
 
         test[
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
             num_experts=4,
             expert_shape=Index(2880, 512),
         ](2, [10, 60], [2, 0], ctx)
 
         test[
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
             num_experts=4,
             expert_shape=Index(5760, 512),
         ](2, [10, 60], [2, 0], ctx)
 
         # Multiple matmuls selecting part of experts
         test[
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
             num_experts=4,
             expert_shape=Index(768, 1024),
         ](2, [128, 256], [0, 2], ctx)
@@ -324,8 +324,8 @@ def main() raises:
         # Multiple matmuls selecting part of experts
         # num_tokens not multiple of tile size
         test[
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
             num_experts=6,
             expert_shape=Index(1280, 1024),
         ](4, [27, 1500, 300, 150], [0, 3, 2, 4], ctx)
@@ -334,30 +334,30 @@ def main() raises:
         # num_tokens not multiple of tile size
         # expert N dimension not multiple of 256
         test[
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
             num_experts=6,
             expert_shape=Index(192, 1024),
         ](4, [27, 1500, 300, 150], [0, 3, 2, 4], ctx)
 
         test[
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
             num_experts=6,
             expert_shape=Index(1280, 16),
         ](4, [27, 1500, 300, 150], [0, 3, 2, 4], ctx)
 
         test[
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
             num_experts=6,
             expert_shape=Index(16, 1024),
         ](4, [27, 1500, 300, 150], [0, 3, 2, 4], ctx)
 
         # Multiple matmuls selecting part of experts with epilogue
         test[
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
             num_experts=4,
             expert_shape=Index(768, 1024),
         ](2, [128, 256], [0, 2], ctx)

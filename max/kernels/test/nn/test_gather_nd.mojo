@@ -48,7 +48,7 @@ def main():
 
         comptime output_rank = 1
         var output_shape = gather_nd_shape[
-            output_rank, data_type, DType.int64, batch_dims
+            output_rank, data_type, .int64, batch_dims
         ](
             data.make_dynamic[.int64](),
             indices.make_dynamic[.int64](),
@@ -91,7 +91,7 @@ def main():
         var output_shape = gather_nd_shape[
             output_rank,
             data_type,
-            DType.int64,
+            .int64,
             batch_dims,
         ](
             data.make_dynamic[.int64](),
@@ -146,7 +146,7 @@ def main():
 
         comptime output_rank = 2
         var output_shape = gather_nd_shape[
-            output_rank, data_type, DType.int64, batch_dims
+            output_rank, data_type, .int64, batch_dims
         ](
             data.make_dynamic[.int64](),
             indices.make_dynamic[.int64](),
@@ -200,7 +200,7 @@ def main():
 
         comptime output_rank = 3
         var output_shape = gather_nd_shape[
-            output_rank, data_type, DType.int64, batch_dims
+            output_rank, data_type, .int64, batch_dims
         ](
             data.make_dynamic[.int64](),
             indices.make_dynamic[.int64](),
@@ -252,7 +252,7 @@ def main():
 
         comptime output_rank = 2
         var output_shape = gather_nd_shape[
-            output_rank, data_type, DType.int64, batch_dims
+            output_rank, data_type, .int64, batch_dims
         ](
             data.make_dynamic[.int64](),
             indices.make_dynamic[.int64](),
@@ -329,7 +329,7 @@ def main():
 
         comptime output_rank = 3
         var output_shape = gather_nd_shape[
-            output_rank, data_type, DType.int64, batch_dims
+            output_rank, data_type, .int64, batch_dims
         ](
             data.make_dynamic[.int64](),
             indices.make_dynamic[.int64](),
@@ -385,7 +385,7 @@ def main():
 
         comptime output_rank = 4
         var output_shape = gather_nd_shape[
-            output_rank, data_type, DType.int64, batch_dims
+            output_rank, data_type, .int64, batch_dims
         ](
             data.make_dynamic[.int64](),
             indices.make_dynamic[.int64](),
@@ -446,7 +446,7 @@ def main():
         var output_shape = gather_nd_shape[
             output_rank,
             data_type,
-            DType.int64,
+            .int64,
             batch_dims,
         ](
             data.make_dynamic[.int64](),

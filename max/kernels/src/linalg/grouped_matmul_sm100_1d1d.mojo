@@ -534,8 +534,8 @@ def copy_accum_to_gmem[
                 comptime c_smem_M = c_smem_tile.layout.shape[0].value()
                 comptime RLayout32Bits[layout: Layout] = RuntimeLayout[
                     layout,
-                    element_type=DType.uint32,
-                    linear_idx_type=DType.uint32,
+                    element_type=.uint32,
+                    linear_idx_type=.uint32,
                 ]
                 comptime simd_size = simd_width_of[c_type]()
                 comptime alignment = align_of[SIMD[c_type, simd_size]]()
@@ -563,13 +563,13 @@ def copy_accum_to_gmem[
                     comptime for j in range(zipped.shape[1][0].value()):
                         var input_crd = RuntimeTuple[
                             IntTuple(UNKNOWN_VALUE, j),
-                            element_type=DType.uint32,
+                            element_type=.uint32,
                         ](Int(thread_idx.x), j)
                         var linear_idx = zipped_rt(input_crd) * UInt32(
                             simd_size
                         )
                         var linear_tup = RuntimeTuple[
-                            IntTuple(UNKNOWN_VALUE), element_type=DType.uint32
+                            IntTuple(UNKNOWN_VALUE), element_type=.uint32
                         ](Int(linear_idx))
                         var cmem_crd = idx2crd(
                             linear_tup, split_rt.shape, split_rt.stride
@@ -739,7 +739,7 @@ def multi_stage_store_C[
 
     # TODO (GEX-2630): This is a temporary workaround to support float32 compute epilogue for FP8 models for which we use compute lambda for dequantization.
     # We should remove this once GEX-2630 is fixed.
-    comptime epilogue_dtype = c_type if input_type == .bfloat16 else DType.float32
+    comptime epilogue_dtype = c_type if input_type == DType.bfloat16 else DType.float32
 
     # we break down the output tile BM x MMA_N to BM x stageN tiles
     # and output one tile per stage.
@@ -953,7 +953,7 @@ def load_AB[
     scheduler: TileScheduler,
     expert_id: Int32,
     group_scale_offsets: LayoutTensor[
-        DType.uint32, group_scale_offsets_layout, MutAnyOrigin
+        .uint32, group_scale_offsets_layout, MutAnyOrigin
     ],
 ):
     """Issues multicast TMA loads for A, B, and their scale factors into shared memory.
@@ -1422,7 +1422,7 @@ def blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     # immutable TileTensor-derived pointers to MutAnyOrigin.
     comptime _group_offsets_lt_type = type_of(group_offsets.to_layout_tensor())
     var group_offsets_lt = LayoutTensor[
-        DType.uint32, _group_offsets_lt_type.layout, MutAnyOrigin
+        .uint32, _group_offsets_lt_type.layout, MutAnyOrigin
     ](
         rebind[UnsafePointer[UInt32, MutAnyOrigin]](group_offsets.ptr),
         group_offsets.to_layout_tensor().runtime_layout,
@@ -1431,14 +1431,14 @@ def blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         group_scale_offsets.to_layout_tensor()
     )
     var group_scale_offsets_lt = LayoutTensor[
-        DType.uint32, _group_scale_offsets_lt_type.layout, MutAnyOrigin
+        .uint32, _group_scale_offsets_lt_type.layout, MutAnyOrigin
     ](
         rebind[UnsafePointer[UInt32, MutAnyOrigin]](group_scale_offsets.ptr),
         group_scale_offsets.to_layout_tensor().runtime_layout,
     )
     comptime _expert_ids_lt_type = type_of(expert_ids.to_layout_tensor())
     var expert_ids_lt = LayoutTensor[
-        DType.int32, _expert_ids_lt_type.layout, MutAnyOrigin
+        .int32, _expert_ids_lt_type.layout, MutAnyOrigin
     ](
         rebind[UnsafePointer[Int32, MutAnyOrigin]](expert_ids.ptr),
         expert_ids.to_layout_tensor().runtime_layout,
@@ -1461,7 +1461,7 @@ def blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     )
     comptime _expert_scales_lt_type = type_of(expert_scales.to_layout_tensor())
     var expert_scales_lt = LayoutTensor[
-        DType.float32, _expert_scales_lt_type.layout, MutAnyOrigin
+        .float32, _expert_scales_lt_type.layout, MutAnyOrigin
     ](
         rebind[UnsafePointer[Float32, MutAnyOrigin]](expert_scales.ptr),
         expert_scales.to_layout_tensor().runtime_layout,
@@ -1609,16 +1609,12 @@ def _blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     c_device: LayoutTensor[c_type, c_layout, ...],
     a_device: LayoutTensor[mut=False, a_type, a_layout, ...],
     group_offsets: LayoutTensor[.uint32, group_offsets_layout, ...],
-    group_scale_offsets: LayoutTensor[
-        DType.uint32, group_scale_offsets_layout, ...
-    ],
+    group_scale_offsets: LayoutTensor[.uint32, group_scale_offsets_layout, ...],
     b_device: LayoutTensor[mut=False, b_type, b_layout, ...],
     expert_ids: LayoutTensor[.int32, expert_ids_layout, ...],
     a_scales: LayoutTensor[sfa_dtype, sfa_layout, MutAnyOrigin],
     b_scales: LayoutTensor[sfb_dtype, sfb_layout, MutAnyOrigin],
-    expert_scales: LayoutTensor[
-        DType.float32, expert_scale_layout, MutAnyOrigin
-    ],
+    expert_scales: LayoutTensor[.float32, expert_scale_layout, MutAnyOrigin],
     num_active_experts: Int,
     ctx: DeviceContext,
 ) raises:
@@ -1979,16 +1975,12 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
     sfb_tma_op: TMATensorTile[
         sfb_dtype, sfb_tile_rank, sfb_tile_shape, sfb_desc_shape
     ],
-    group_offsets: LayoutTensor[
-        DType.uint32, group_offsets_layout, MutAnyOrigin
-    ],
+    group_offsets: LayoutTensor[.uint32, group_offsets_layout, MutAnyOrigin],
     group_scale_offsets: LayoutTensor[
-        DType.uint32, group_scale_offsets_layout, MutAnyOrigin
+        .uint32, group_scale_offsets_layout, MutAnyOrigin
     ],
     expert_ids: LayoutTensor[.int32, expert_ids_layout, MutAnyOrigin],
-    expert_scales: LayoutTensor[
-        DType.float32, expert_scales_layout, MutAnyOrigin
-    ],
+    expert_scales: LayoutTensor[.float32, expert_scales_layout, MutAnyOrigin],
     cluster_dim: StaticTuple[Int32, 3],
     mnk: StaticTuple[UInt32, 3],
     workspace: Span[UInt64, MutAnyOrigin],

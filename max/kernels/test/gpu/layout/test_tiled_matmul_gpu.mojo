@@ -97,7 +97,7 @@ def sram_blocked_matmul[
 ):
     # Allocate an SRAM tile of (BM, BK) size with row-major layout for the l.h.s.
     var lhs_sram_tile = LayoutTensor[
-        DType.float32,
+        .float32,
         Layout(IntTuple(BM, BK)),
         MutAnyOrigin,
         address_space=.SHARED,
@@ -106,7 +106,7 @@ def sram_blocked_matmul[
     # Allocate an SRAM tile of (BK, BN) size with row-major layout for
     # the r.h.s.
     var rhs_sram_tile = LayoutTensor[
-        DType.float32,
+        .float32,
         Layout(IntTuple(BK, BN)),
         MutAnyOrigin,
         address_space=.SHARED,
@@ -325,7 +325,7 @@ def sram_blocked_matmul_dynamic_nd_buffer[
 ):
     # Allocate an SRAM tile of (BM, BK) size with row-major layout for the l.h.s.
     var lhs_sram_tile = LayoutTensor[
-        DType.float32,
+        .float32,
         Layout(IntTuple(BM, BK)),
         MutAnyOrigin,
         address_space=.SHARED,
@@ -334,7 +334,7 @@ def sram_blocked_matmul_dynamic_nd_buffer[
     # Allocate an SRAM tile of (BK, BN) size with row-major layout for
     # the r.h.s.
     var rhs_sram_tile = LayoutTensor[
-        DType.float32,
+        .float32,
         Layout(IntTuple(BK, BN)),
         MutAnyOrigin,
         address_space=.SHARED,
@@ -361,7 +361,7 @@ def sram_blocked_matmul_dynamic_nd_buffer[
     # TODO: Is it useful to have stack_allocation_like[thread_layout](nd_buffer) ? We can do this if needed.
     var dst_register_tile = (
         LayoutTensor[
-            DType.float32,
+            .float32,
             Layout.row_major(2, 2),
             MutAnyOrigin,
             address_space=.LOCAL,

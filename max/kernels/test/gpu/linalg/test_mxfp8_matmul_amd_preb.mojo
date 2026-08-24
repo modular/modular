@@ -16,7 +16,7 @@ MXFP8 sibling of `test_mxfp4_matmul_amd_preb.mojo`: same 16x16x128 f8f6f4 MFMA a
 the same preshuffled layouts, but one byte per element (so `K_BYTES == K`) and the
 E4M3 operand format. `BK_ELEMS` counts ELEMENTS, so 256 here holds the same byte
 footprint as 512 on the FP4 path. The reference is a per-element dequant + scalar
-accumulate through `DType.float8_e4m3fn` — no MFMA and no code shared with the
+accumulate through `.float8_e4m3fn` — no MFMA and no code shared with the
 kernel, so a fragment-layout bug cannot cancel out.
 
 Usage:
@@ -322,7 +322,7 @@ def _test_case[
         BK_ELEMS,
         WN,
         b_prefetch,
-        DType.float32,
+        .float32,
         type_of(c_tt).LayoutType,
         type_of(a_tt).LayoutType,
         type_of(b_pre_tt).LayoutType,

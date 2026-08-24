@@ -229,9 +229,9 @@ def run_matvec_with_epilogue_fn(
     @always_inline
     def run_func_gemv(ctx: DeviceContext) raises {mut c_device, imm}:
         comptime kernel = gemv_kernel[
-            DType.float32,
-            DType.float32,
-            DType.float32,
+            .float32,
+            .float32,
+            .float32,
             elementwise_lambda_fn=epilogue_fn,
         ]
         var func = ctx.compile_function[kernel]()
@@ -250,9 +250,9 @@ def run_matvec_with_epilogue_fn(
     @always_inline
     def run_func_gevm(ctx: DeviceContext) raises {mut c_device, imm}:
         comptime kernel = gevm_kernel[
-            DType.float32,
-            DType.float32,
-            DType.float32,
+            .float32,
+            .float32,
+            .float32,
             tile_size=WARP_SIZE * WARPS_PER_BLOCK,
             elementwise_lambda_fn=epilogue_fn,
         ]
@@ -304,9 +304,9 @@ def run_matvec_with_epilogue_fn(
     @always_inline
     def run_func_naive(ctx: DeviceContext) raises {mut c_device, imm}:
         comptime kernel = matmul_kernel[
-            DType.float32,
-            DType.float32,
-            DType.float32,
+            .float32,
+            .float32,
+            .float32,
             BLOCK_DIM,
             elementwise_lambda_fn=epilogue_fn,
         ]
@@ -520,33 +520,21 @@ def run_split_k_gemm[
 def main() raises:
     with DeviceContext() as ctx:
         # gemv for matrix vector multiply - FP32
-        run_matvec[.float32, DType.float32, DType.float32](
-            4096, 1, 4096, ctx=ctx
-        )
+        run_matvec[.float32, .float32, .float32](4096, 1, 4096, ctx=ctx)
         run_matvec_with_epilogue_fn(4096, 1, 4096, ctx=ctx)
         # gevm for vector matrix multiply - FP32
-        run_matvec[.float32, DType.float32, DType.float32](
-            1, 4096, 4096, ctx=ctx
-        )
+        run_matvec[.float32, .float32, .float32](1, 4096, 4096, ctx=ctx)
         run_matvec_with_epilogue_fn(1, 4096, 4096, ctx=ctx)
 
         # gemv for matrix vector multiply - BF16 input, FP8 output
-        run_matvec[.bfloat16, DType.bfloat16, DType.float8_e4m3fn](
-            4096, 1, 4096, ctx=ctx
-        )
+        run_matvec[.bfloat16, .bfloat16, .float8_e4m3fn](4096, 1, 4096, ctx=ctx)
         # gevm for vector matrix multiply - BF16 input, FP8 output
-        run_matvec[.bfloat16, DType.bfloat16, DType.float8_e4m3fn](
-            1, 4096, 4096, ctx=ctx
-        )
+        run_matvec[.bfloat16, .bfloat16, .float8_e4m3fn](1, 4096, 4096, ctx=ctx)
 
         # gemv for matrix vector multiply - BF16 input, BF16 output
-        run_matvec[.bfloat16, DType.bfloat16, DType.bfloat16](
-            4096, 1, 4096, ctx=ctx
-        )
+        run_matvec[.bfloat16, .bfloat16, .bfloat16](4096, 1, 4096, ctx=ctx)
         # gevm for vector matrix multiply - BF16 input, BF16 output
-        run_matvec[.bfloat16, DType.bfloat16, DType.bfloat16](
-            1, 4096, 4096, ctx=ctx
-        )
+        run_matvec[.bfloat16, .bfloat16, .bfloat16](1, 4096, 4096, ctx=ctx)
 
         # gemv_split_k GEMM (M > 1, N > 1), with and without an epilogue.
         # Covers both check_bounds_n=False (N % tile_n == 0) and the
@@ -574,8 +562,8 @@ def main() raises:
             128,
             6144,
             with_epilogue=False,
-            a_type=DType.bfloat16,
-            b_type=DType.float32,
+            a_type=.bfloat16,
+            b_type=.float32,
             tile_n=2,
             tile_m=1,
             num_threads=128,
@@ -586,8 +574,8 @@ def main() raises:
             128,
             6144,
             with_epilogue=False,
-            a_type=DType.bfloat16,
-            b_type=DType.float32,
+            a_type=.bfloat16,
+            b_type=.float32,
             tile_n=2,
             tile_m=1,
             num_threads=128,
@@ -598,8 +586,8 @@ def main() raises:
             128,
             6144,
             with_epilogue=False,
-            a_type=DType.bfloat16,
-            b_type=DType.float32,
+            a_type=.bfloat16,
+            b_type=.float32,
             tile_n=2,
             tile_m=1,
             num_threads=128,

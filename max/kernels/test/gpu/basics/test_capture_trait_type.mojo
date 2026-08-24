@@ -30,7 +30,7 @@ struct ImplT(BaseT):
 
     def __init__(
         out self,
-        buf: LayoutTensor[mut=True, DType.float32, Layout(UNKNOWN_VALUE), _],
+        buf: LayoutTensor[mut=True, .float32, Layout(UNKNOWN_VALUE), _],
     ) raises:
         self.values = buf.as_unsafe_any_origin()
 

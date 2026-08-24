@@ -83,7 +83,7 @@ def wgmma_f16_kernel[
             WMMA_K,
             a_type=a_type,
             b_type=b_type,
-            accum_type=DType.float16,
+            accum_type=.float16,
         ](mat_a_desc, mat_b_desc, c_reg)
         wgmma_commit_group_sync()
         wgmma_wait_group_sync()
@@ -179,7 +179,7 @@ def wgmma_e4m3_e4m3_f16_64x8x32(ctx: DeviceContext) raises:
     comptime K = 32
 
     var lhs = ManagedLayoutTensor[
-        DType.float8_e4m3fn,
+        .float8_e4m3fn,
         Layout.row_major(M, K),
     ](ctx)
 
@@ -190,7 +190,7 @@ def wgmma_e4m3_e4m3_f16_64x8x32(ctx: DeviceContext) raises:
             lhs_tensor[i, j] = i + j
 
     var rhs = ManagedLayoutTensor[
-        DType.float8_e4m3fn,
+        .float8_e4m3fn,
         Layout.row_major(K, N),
     ](ctx)
 
@@ -201,7 +201,7 @@ def wgmma_e4m3_e4m3_f16_64x8x32(ctx: DeviceContext) raises:
             rhs_tensor[i, j] = i + j
 
     var res = ManagedLayoutTensor[
-        DType.float16,
+        .float16,
         Layout.row_major(M, N),
     ](ctx)
 
@@ -225,8 +225,8 @@ def wgmma_e4m3_e4m3_f16_64x8x32(ctx: DeviceContext) raises:
         32,
         a_smem_layout,
         b_smem_layout,
-        a_type=DType.float8_e4m3fn,
-        b_type=DType.float8_e4m3fn,
+        a_type=.float8_e4m3fn,
+        b_type=.float8_e4m3fn,
     ]
     ctx.enqueue_function[kernel](
         lhs.device_tensor(),
@@ -315,7 +315,7 @@ def wgmma_e5m2_e5m2_f16_64x8x32(ctx: DeviceContext) raises:
     comptime K = 32
 
     var lhs = ManagedLayoutTensor[
-        DType.float8_e5m2,
+        .float8_e5m2,
         Layout.row_major(M, K),
     ](ctx)
 
@@ -326,7 +326,7 @@ def wgmma_e5m2_e5m2_f16_64x8x32(ctx: DeviceContext) raises:
             lhs_tensor[i, j] = i + j
 
     var rhs = ManagedLayoutTensor[
-        DType.float8_e5m2,
+        .float8_e5m2,
         Layout.row_major(K, N),
     ](ctx)
 
@@ -337,7 +337,7 @@ def wgmma_e5m2_e5m2_f16_64x8x32(ctx: DeviceContext) raises:
             rhs_tensor[i, j] = i + j
 
     var res = ManagedLayoutTensor[
-        DType.float16,
+        .float16,
         Layout.row_major(M, N),
     ](ctx)
 
@@ -361,8 +361,8 @@ def wgmma_e5m2_e5m2_f16_64x8x32(ctx: DeviceContext) raises:
         32,
         a_smem_layout,
         b_smem_layout,
-        a_type=DType.float8_e5m2,
-        b_type=DType.float8_e5m2,
+        a_type=.float8_e5m2,
+        b_type=.float8_e5m2,
     ]
 
     ctx.enqueue_function[kernel](
@@ -452,7 +452,7 @@ def wgmma_e4m3_e5m2_f16_64x8x32(ctx: DeviceContext) raises:
     comptime K = 32
 
     var lhs = ManagedLayoutTensor[
-        DType.float8_e4m3fn,
+        .float8_e4m3fn,
         Layout.row_major(M, K),
     ](ctx)
 
@@ -463,7 +463,7 @@ def wgmma_e4m3_e5m2_f16_64x8x32(ctx: DeviceContext) raises:
             lhs_tensor[i, j] = i + j
 
     var rhs = ManagedLayoutTensor[
-        DType.float8_e5m2,
+        .float8_e5m2,
         Layout.row_major(K, N),
     ](ctx)
 
@@ -474,7 +474,7 @@ def wgmma_e4m3_e5m2_f16_64x8x32(ctx: DeviceContext) raises:
             rhs_tensor[i, j] = i + j
 
     var res = ManagedLayoutTensor[
-        DType.float16,
+        .float16,
         Layout.row_major(M, N),
     ](ctx)
 
@@ -498,8 +498,8 @@ def wgmma_e4m3_e5m2_f16_64x8x32(ctx: DeviceContext) raises:
         32,
         a_smem_layout,
         b_smem_layout,
-        a_type=DType.float8_e4m3fn,
-        b_type=DType.float8_e5m2,
+        a_type=.float8_e4m3fn,
+        b_type=.float8_e5m2,
     ]
 
     ctx.enqueue_function[kernel](
@@ -589,7 +589,7 @@ def wgmma_e5m2_e4m3_f16_64x8x32(ctx: DeviceContext) raises:
     comptime K = 32
 
     var lhs = ManagedLayoutTensor[
-        DType.float8_e5m2,
+        .float8_e5m2,
         Layout.row_major(M, K),
     ](ctx)
 
@@ -600,7 +600,7 @@ def wgmma_e5m2_e4m3_f16_64x8x32(ctx: DeviceContext) raises:
             lhs_tensor[i, j] = i + j
 
     var rhs = ManagedLayoutTensor[
-        DType.float8_e4m3fn,
+        .float8_e4m3fn,
         Layout.row_major(K, N),
     ](ctx)
 
@@ -611,7 +611,7 @@ def wgmma_e5m2_e4m3_f16_64x8x32(ctx: DeviceContext) raises:
             rhs_tensor[i, j] = i + j
 
     var res = ManagedLayoutTensor[
-        DType.float16,
+        .float16,
         Layout.row_major(M, N),
     ](ctx)
 
@@ -635,8 +635,8 @@ def wgmma_e5m2_e4m3_f16_64x8x32(ctx: DeviceContext) raises:
         32,
         a_smem_layout,
         b_smem_layout,
-        a_type=DType.float8_e5m2,
-        b_type=DType.float8_e4m3fn,
+        a_type=.float8_e5m2,
+        b_type=.float8_e4m3fn,
     ]
 
     ctx.enqueue_function[kernel](

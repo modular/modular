@@ -201,9 +201,7 @@ def build_routing_metadata(
     expert_ids_input: List[Int],
     topk: Int,
     sort_block_m: Int,
-    mut sti_out: HostBuffer[
-        DType.uint32
-    ],  # length size_expert_ids * sort_block_m
+    mut sti_out: HostBuffer[.uint32],  # length size_expert_ids * sort_block_m
     mut ei_out: HostBuffer[.int32],  # length size_expert_ids
 ):
     """Builds `sorted_token_ids` and per-block `expert_ids` arrays.

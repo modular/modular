@@ -229,14 +229,12 @@ def bench_fused_qk_rms_norm_rope[
     var row_offsets_tile = TileTensor(row_offsets_d, row_major(batch_size + 1))
 
     var cache_lengths_tensor = LayoutTensor[
-        mut=False, DType.uint32, cache_lengths_layout
+        mut=False, .uint32, cache_lengths_layout
     ](
         cache_lengths_d,
         RuntimeLayout[cache_lengths_layout].row_major(Index(batch_size)),
     )
-    var paged_lut_tensor = LayoutTensor[
-        mut=False, DType.uint32, paged_lut_layout
-    ](
+    var paged_lut_tensor = LayoutTensor[mut=False, .uint32, paged_lut_layout](
         paged_lut_d,
         RuntimeLayout[paged_lut_layout].row_major(paged_lut_shape),
     )

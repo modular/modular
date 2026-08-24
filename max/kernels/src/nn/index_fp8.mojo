@@ -201,32 +201,32 @@ def fp8_index_kernel[
     ]
 
     comptime QSTileType = LayoutTensor[
-        DType.float32, Layout.row_major(1, num_heads), MutAnyOrigin
+        .float32, Layout.row_major(1, num_heads), MutAnyOrigin
     ]
 
     comptime LogitsType = LayoutTensor[
-        DType.float32,
+        .float32,
         Layout.row_major(BN // thread_dim_x, num_heads // thread_dim_y),
         MutAnyOrigin,
         address_space=.LOCAL,
     ]
 
     comptime QSRegTileType = LayoutTensor[
-        DType.float32,
+        .float32,
         Layout.row_major(1, num_heads // thread_dim_y),
         MutAnyOrigin,
         address_space=.LOCAL,
     ]
 
     comptime LogitsSumType = LayoutTensor[
-        DType.float32,
+        .float32,
         Layout.row_major(BN // thread_dim_x, 1),
         MutAnyOrigin,
         address_space=.LOCAL,
     ]
 
     comptime ScratchType = LayoutTensor[
-        DType.float32,
+        .float32,
         Layout.row_major(BN, thread_dim_y),
         MutAnyOrigin,
         address_space=.SHARED,
@@ -537,7 +537,7 @@ def _index_matmul_max[
     q_s: LayoutTensor[.float32, qs_layout, MutAnyOrigin],
     k: LayoutTensor[dtype, k_layout, ImmutAnyOrigin],
     valid_length: LayoutTensor[
-        DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
+        .uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
     ],
     k_lut: k_type,
     max_seq_len: Int32,
@@ -605,7 +605,7 @@ def _reduce_logits[
     output: LayoutTensor[.float32, output_layout, MutAnyOrigin],
     k_s: LayoutTensor[.float32, ks_layout, MutAnyOrigin],
     valid_length: LayoutTensor[
-        DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
+        .uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
     ],
     k_lut: k_type,
 ):
@@ -768,7 +768,7 @@ def fp8_index_naive[
     )
 
     var logits_tensor = LayoutTensor[
-        DType.float32,
+        .float32,
         logits_layout,
     ](logits_dev.unsafe_ptr(), logits_runtime_layout)
 

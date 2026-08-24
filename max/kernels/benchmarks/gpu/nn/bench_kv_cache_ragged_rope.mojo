@@ -238,7 +238,7 @@ def execute_kv_cache_ragged_rope[
 
 
 def main() raises:
-    comptime dtype = get_defined_dtype["dtype", DType.bfloat16]()
+    comptime dtype = get_defined_dtype["dtype", .bfloat16]()
 
     comptime head_dim = get_defined_int["head_dim", 128]()
     comptime num_q_heads = get_defined_int["num_q_heads", 32]()

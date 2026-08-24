@@ -235,12 +235,8 @@ def _mxfp6_matmul_ref[
     var magnitude = Float32(0)
 
     for ko in range(k_groups):
-        var a_scale = a_sf_ptr[unsafe_offset=m * k_groups + ko].cast[
-            DType.float32
-        ]()
-        var b_scale = b_sf_ptr[unsafe_offset=n * k_groups + ko].cast[
-            DType.float32
-        ]()
+        var a_scale = a_sf_ptr[unsafe_offset=m * k_groups + ko].cast[.float32]()
+        var b_scale = b_sf_ptr[unsafe_offset=n * k_groups + ko].cast[.float32]()
 
         # 32 elements is one MX block = 24 packed bytes, always 8-byte aligned
         # because k_bytes is a multiple of 24 whenever K is a multiple of 32.
@@ -378,7 +374,7 @@ def run_case[
     # partials in a different order again, hence the extra headroom.
     comptime ULP_F32 = 5.9604644775390625e-8
     comptime SPLIT_SLACK = 4.0 if num_splits > 1 else 1.0
-    var rel_tol = Float64(0.02) if out_dtype == .bfloat16 else (
+    var rel_tol = Float64(0.02) if out_dtype == DType.bfloat16 else (
         Float64(16 * K) * ULP_F32 * SPLIT_SLACK
     )
 
@@ -507,25 +503,25 @@ def test_split_k(ctx: DeviceContext) raises -> Int:
     comptime fmt = FP6Format.E2M3
     var bad = 0
     for m in [1, 16, 64]:
-        bad += _report[fmt, 4096, 7168, DType.float32, 14](
+        bad += _report[fmt, 4096, 7168, .float32, 14](
             ctx, m, DATA_RANDOM, SCALE_VARY
         )
-        bad += _report[fmt, 7168, 2048, DType.float32, 8](
+        bad += _report[fmt, 7168, 2048, .float32, 8](
             ctx, m, DATA_RANDOM, SCALE_VARY
         )
     # Unaligned M against split-K: the reduce kernel walks M*N flat, so a
     # partial final block is the interesting case.
-    bad += _report[fmt, 7168, 2048, DType.float32, 2](
+    bad += _report[fmt, 7168, 2048, .float32, 2](
         ctx, 17, DATA_RANDOM, SCALE_VARY
     )
-    bad += _report[fmt, 4096, 7168, DType.float32, 4](
+    bad += _report[fmt, 4096, 7168, .float32, 4](
         ctx, 63, DATA_SWEEP, SCALE_VARY
     )
-    bad += _report[fmt, 4096, 7168, DType.float32, 14](
+    bad += _report[fmt, 4096, 7168, .float32, 14](
         ctx, 129, DATA_RANDOM, SCALE_EXTREME
     )
     # bfloat16 output exercises the reduce kernel's cast.
-    bad += _report[fmt, 7168, 2048, DType.bfloat16, 8](
+    bad += _report[fmt, 7168, 2048, .bfloat16, 8](
         ctx, 64, DATA_RANDOM, SCALE_VARY
     )
     return bad
@@ -615,7 +611,7 @@ def test_e3m2(ctx: DeviceContext) raises -> Int:
         bad += _report[fmt, 64, 512](ctx, m, DATA_RANDOM, SCALE_VARY)
     bad += _report[fmt, 64, 128](ctx, 96, DATA_MAX, SCALE_UNIT)
     bad += _report[fmt, 7168, 2048](ctx, 17, DATA_RANDOM, SCALE_VARY)
-    bad += _report[fmt, 7168, 2048, DType.float32, 8](
+    bad += _report[fmt, 7168, 2048, .float32, 8](
         ctx, 16, DATA_RANDOM, SCALE_VARY
     )
     return bad
@@ -625,10 +621,10 @@ def test_output_dtypes(ctx: DeviceContext) raises -> Int:
     """`bfloat16` exercises the cast in the store epilogue."""
     var bad = 0
     for m in [1, 96, 97]:
-        bad += _report[FP6Format.E2M3, 64, 128, DType.bfloat16](
+        bad += _report[FP6Format.E2M3, 64, 128, .bfloat16](
             ctx, m, DATA_SWEEP, SCALE_VARY
         )
-        bad += _report[FP6Format.E3M2, 64, 256, DType.bfloat16](
+        bad += _report[FP6Format.E3M2, 64, 256, .bfloat16](
             ctx, m, DATA_RANDOM, SCALE_VARY
         )
     return bad

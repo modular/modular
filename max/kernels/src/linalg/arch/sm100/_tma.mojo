@@ -228,7 +228,7 @@ struct TMALoad[
         return materialize[repeat_pattern]()
 
 
-comptime UInt32Indices[rank: Int] = IndexList[rank, element_type=DType.uint32]
+comptime UInt32Indices[rank: Int] = IndexList[rank, element_type=.uint32]
 comptime MBarPtr = UnsafePointer[SharedMemBarrier, _, address_space=.SHARED]
 
 

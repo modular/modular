@@ -744,7 +744,7 @@ def stsm_helper[
 
     var lane = lane_id()
     comptime RLayout32Bits[layout: Layout] = RuntimeLayout[
-        layout, element_type=DType.uint32, linear_idx_type=DType.uint32
+        layout, element_type=.uint32, linear_idx_type=.uint32
     ]
     var stsm_lane_offset = UInt32(
         (lane & 15) * stride0 + (lane >> 4)
@@ -1592,7 +1592,7 @@ def blackwell_tma_umma_warp_specialized_kernel[
 
     comptime _offsets_layout = Layout.row_major(UNKNOWN_VALUE)
     var b_offsets_tensor = LayoutTensor[
-        DType.uint32,
+        .uint32,
         _offsets_layout,
         ImmutAnyOrigin,
     ](

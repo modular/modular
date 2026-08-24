@@ -238,7 +238,7 @@ def _dequantize_to_f32[T: DType](v: Scalar[T]) -> Float32:
 
 
 def test_qk_chain[T: DType](ctx: DeviceContext) raises -> Bool:
-    var dtype_name = "BF16" if T == .bfloat16 else "FP8"
+    var dtype_name = "BF16" if T == DType.bfloat16 else "FP8"
     print("--- test_qk_chain[", dtype_name, "] ---")
 
     comptime CFG = MhaConfigV2(
@@ -275,7 +275,7 @@ def test_qk_chain[T: DType](ctx: DeviceContext) raises -> Bool:
         for i in range(_SMEM_SIZE):
             host_k[i] = _quantize_to_K[T](Float32(0.0))
 
-        comptime _T_size = 1 if T == .float8_e4m3fn else 2  # bytes/elt
+        comptime _T_size = 1 if T == DType.float8_e4m3fn else 2  # bytes/elt
         var sub_elts = _K_SUB_ROWS * _K_SUB_COLS  # elements per sub-block
         for m_kv in range(KV_BLOCK):
             for d in range(DEPTH):

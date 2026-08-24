@@ -178,9 +178,7 @@ def _quantize[
 
 def _decode_block[
     fmt: FP6Format
-](block_bytes: SIMD[.uint8, 32], scale_byte: UInt8) -> SIMD[
-    DType.float32, BLOCK
-]:
+](block_bytes: SIMD[.uint8, 32], scale_byte: UInt8) -> SIMD[.float32, BLOCK]:
     """Decodes 24 packed bytes back to 32 scaled float32 values."""
     var scale = bitcast[.float8_e8m0fnu](scale_byte).cast[.float32]()
     return decode_fp6_to_f32[fmt](unpack_fp6_x32(block_bytes)) * scale

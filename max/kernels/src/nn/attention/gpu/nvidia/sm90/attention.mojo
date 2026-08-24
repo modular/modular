@@ -355,7 +355,7 @@ def _apply_mask[
 
                         comptime if masked:
                             p = mask.mask(
-                                IndexList[4, element_type=DType.uint32](
+                                IndexList[4, element_type=.uint32](
                                     Int(position.prompt_idx),
                                     Int(q_head_idx),
                                     Int(score_row_with_start_pos),
@@ -369,27 +369,27 @@ def _apply_mask[
                         comptime if mask_t.apply_log2e_after_mask:
                             p *= log2e
 
-                        var bound: IndexList[2, element_type=DType.uint32]
+                        var bound: IndexList[2, element_type=.uint32]
 
                         comptime if decoding:
-                            bound = IndexList[2, element_type=DType.uint32](
+                            bound = IndexList[2, element_type=.uint32](
                                 Int(position.num_keys),
                                 Int(position.num_keys),
                             )
                             p = _kernel_mask(
-                                IndexList[2, element_type=DType.uint32](
+                                IndexList[2, element_type=.uint32](
                                     Int(score_row), Int(score_col)
                                 ),
                                 bound,
                                 p,
                             )
                         elif masked:
-                            bound = IndexList[2, element_type=DType.uint32](
+                            bound = IndexList[2, element_type=.uint32](
                                 Int(position.seq_len),
                                 Int(position.num_keys),
                             )
                             p = _kernel_mask(
-                                IndexList[2, element_type=DType.uint32](
+                                IndexList[2, element_type=.uint32](
                                     Int(score_row), Int(score_col)
                                 ),
                                 bound,
@@ -621,8 +621,8 @@ def produce[
             k_smem_layout,
             type_of(kv_smem).origin,
             address_space=.SHARED,
-            layout_int_type=DType.int32,
-            linear_idx_type=DType.int32,
+            layout_int_type=.int32,
+            linear_idx_type=.int32,
             alignment=128,
         ],
     ):
@@ -1124,7 +1124,7 @@ def output_reg_to_smem[
         Layout.row_major(BM, padded_depth),
         address_space=.SHARED,
     ](q_smem)
-    comptime use_stmatrix = accum_type == .float32 and padded_depth % 16 == 0 and size_of[
+    comptime use_stmatrix = accum_type == DType.float32 and padded_depth % 16 == 0 and size_of[
         output_type
     ]() == 2 and o_frag_size % 8 == 0
 

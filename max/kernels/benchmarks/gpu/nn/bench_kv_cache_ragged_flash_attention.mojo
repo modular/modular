@@ -250,9 +250,7 @@ def execute_kv_cache_ragged_flash_attention[
     )
 
     comptime cache_lengths_lt_layout = Layout(UNKNOWN_VALUE)
-    var cache_lengths_tensor = LayoutTensor[
-        DType.uint32, cache_lengths_lt_layout
-    ](
+    var cache_lengths_tensor = LayoutTensor[.uint32, cache_lengths_lt_layout](
         cache_lengths_device,
         RuntimeLayout[cache_lengths_lt_layout].row_major(
             IndexList[1](batch_size)
@@ -333,7 +331,7 @@ def execute_kv_cache_ragged_flash_attention[
 
 
 def main() raises:
-    comptime dtype = get_defined_dtype["dtype", DType.bfloat16]()
+    comptime dtype = get_defined_dtype["dtype", .bfloat16]()
 
     comptime head_dim = get_defined_int["head_dim", 128]()
     comptime num_q_heads = get_defined_int["num_q_heads", 32]()

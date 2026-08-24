@@ -600,9 +600,7 @@ def naive_fa_decode_apple[
     v: v_t,
     mask_functor: mask_t,
     output: LayoutTensor[mut=True, output_type, address_space=.GENERIC, ...],
-    valid_length: LayoutTensor[
-        mut=False, DType.uint32, address_space=.GENERIC, ...
-    ],
+    valid_length: LayoutTensor[mut=False, .uint32, address_space=.GENERIC, ...],
     scale: Float32,
     batch_size: Int,
     max_prompt_len: Int,

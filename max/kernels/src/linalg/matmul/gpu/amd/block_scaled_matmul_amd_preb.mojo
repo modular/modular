@@ -355,13 +355,13 @@ struct BlockScaledMmaOp_PreB[
             Self.num_k_mmas % 2 == 0
         ), "preb scale path requires num_k_mmas % 2 == 0 (k_pack=2)"
 
-        self._a_reg = stack_allocation[.uint8, address_space=.LOCAL](
+        self._a_reg = stack_allocation[DType.uint8, address_space=.LOCAL](
             Self._a_reg_layout
         )
-        self._b_reg = stack_allocation[.uint8, address_space=.LOCAL](
+        self._b_reg = stack_allocation[DType.uint8, address_space=.LOCAL](
             Self._b_reg_layout
         )
-        self._c_reg = stack_allocation[.float32, address_space=.LOCAL](
+        self._c_reg = stack_allocation[DType.float32, address_space=.LOCAL](
             Self._c_reg_layout
         )
         _ = self._c_reg.fill(Float32(0))
@@ -857,7 +857,7 @@ struct BlockScaledMatmulAMD_PreB[
 
         # SMEM for A only — B and scales come direct from preshuffled DRAM.
         # `num_a_slots` buffers laid out slot-major ([slot, BM, BK_BYTES]).
-        var a_smem = stack_allocation[.uint8, address_space=.SHARED](
+        var a_smem = stack_allocation[DType.uint8, address_space=.SHARED](
             row_major[Self.num_a_slots * Self.BM, Self.BK_BYTES]()
         )
 
@@ -893,7 +893,7 @@ struct BlockScaledMatmulAMD_PreB[
         var a_blockrow = a.tile[Self.BM, A_K_BYTES](m_tile_idx, 0)
 
         # A DRAM-load landing ring (num_a_load_slots; 1 at the depth-2 default).
-        var a_load_reg = stack_allocation[.uint8, address_space=.LOCAL](
+        var a_load_reg = stack_allocation[DType.uint8, address_space=.LOCAL](
             row_major[Self.num_a_load_slots, a_reg_elems]()
         )
 
@@ -905,7 +905,7 @@ struct BlockScaledMatmulAMD_PreB[
         # the same one). Producer byte-swizzle == the consumer read swizzle.
         # Only consumed on the dram_to_lds path.
         var a_lds_loader = TileLoaderLDS[
-            DType.uint8,
+            .uint8,
             Self.BM,
             Self.BK_BYTES,
             stride=type_of(a_blockrow).static_stride[0],
