@@ -279,6 +279,7 @@ struct VarlenSelectiveScanFwd[delta_softplus: Bool = False]:
                         query_start_loc_tt.LayoutType,
                         cache_indices_tt.LayoutType,
                         has_initial_state_tt.LayoutType,
+                        output_tt.Storage,
                     ]
                 ]()
                 gpu_ctx.enqueue_function(
@@ -333,6 +334,7 @@ struct VarlenSelectiveScanFwd[delta_softplus: Bool = False]:
                         query_start_loc_tt.LayoutType,
                         cache_indices_tt.LayoutType,
                         has_initial_state_tt.LayoutType,
+                        output_tt.Storage,
                     ]
                 ]()
                 gpu_ctx.enqueue_function(
@@ -387,6 +389,7 @@ struct VarlenSelectiveScanFwd[delta_softplus: Bool = False]:
                         query_start_loc_tt.LayoutType,
                         cache_indices_tt.LayoutType,
                         has_initial_state_tt.LayoutType,
+                        output_tt.Storage,
                     ]
                 ]()
                 gpu_ctx.enqueue_function(
@@ -714,6 +717,7 @@ struct VarlenSelectiveStateUpdate[dt_softplus: Bool = False]:
                         output_tt.LayoutType,
                         dt_bias_tt.LayoutType,
                         state_batch_indices_tt.LayoutType,
+                        state_tt.Storage,
                     ]
                 ]()
                 gpu_ctx.enqueue_function(
@@ -767,6 +771,7 @@ struct VarlenSelectiveStateUpdate[dt_softplus: Bool = False]:
                         output_tt.LayoutType,
                         dt_bias_tt.LayoutType,
                         state_batch_indices_tt.LayoutType,
+                        state_tt.Storage,
                     ]
                 ]()
                 gpu_ctx.enqueue_function(
@@ -820,6 +825,7 @@ struct VarlenSelectiveStateUpdate[dt_softplus: Bool = False]:
                         output_tt.LayoutType,
                         dt_bias_tt.LayoutType,
                         state_batch_indices_tt.LayoutType,
+                        state_tt.Storage,
                     ]
                 ]()
                 gpu_ctx.enqueue_function(
