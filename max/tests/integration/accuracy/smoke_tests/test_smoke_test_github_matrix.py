@@ -30,6 +30,7 @@ def test_custom_models_defined_in_model_aliases() -> None:
         k
         for k in smoke_test_github_matrix.CUSTOM_MODELS
         if k not in smoke_test.MODEL_RECIPES
+        and k not in smoke_test_github_matrix.PRIVATE_RECIPE_MODELS
     ]
     assert not missing, (
         f"CUSTOM_MODELS keys must have a corresponding entry in "

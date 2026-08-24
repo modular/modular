@@ -177,7 +177,7 @@ def main(model: str) -> None:
     resolved_base = _ensure(base_repo, allow_canonicalize=True)
 
     for repo in extras:
-        _log(f"Draft model: '{repo}'")
+        _log(f"Also needed: '{repo}'")
         _ensure(repo, allow_canonicalize=False)
 
     # Stdout is the resolved base name; emit last so a partial run leaves it
