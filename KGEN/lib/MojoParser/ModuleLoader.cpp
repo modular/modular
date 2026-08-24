@@ -12,6 +12,10 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/MojoParser/ModuleLoader.h"
+
+#include "ModuleStore.h"
+
+#include "KGEN/MojoParser/ASTDecl.h"
 #include "KGEN/Support/Configuration.h"
 #include "KGEN/ToolCommon/CompilationOptions.h"
 #include "Support/Filesystem/Paths.h"
@@ -344,4 +348,51 @@ void ModuleLoader::traverseImportDirectories(
   for (StringRef includeDir : shared.getSourceMgr().getIncludeDirs())
     if (callback(includeDir).wasInterrupted())
       return;
+}
+
+//===----------------------------------------------------------------------===//
+// Origins
+//===----------------------------------------------------------------------===//
+
+static std::string mountPathFor(StringRef boundName, ASTDecl &parentDecl) {
+  std::string mount;
+  if (SymbolRefAttr parent = parentDecl.getSymbolRef()) {
+    mount = parent.getRootReference().str();
+    for (FlatSymbolRefAttr nested : parent.getNestedReferences())
+      mount += ("." + nested.getValue()).str();
+    mount += ".";
+  }
+  mount += boundName;
+  return mount;
+}
+
+ErrorOr<ModuleOrigin *> ModuleLoader::getOrCreateModuleOrigin(
+    const ModuleSpec &spec, StringRef boundName, ASTDecl &parentDecl) {
+  // A namespace is several directories under different import roots, so there
+  // is no single entity for it to own.
+  if (!spec.isSourceModule() && !spec.isSourcePackage() &&
+      !spec.isPrecompiled())
+    return nullptr;
+
+  std::string canonicalPath = spec.canonicalPath();
+  std::string mount = mountPathFor(boundName, parentDecl);
+
+  auto it = originsByCanonicalPath.find(canonicalPath);
+  if (it != originsByCanonicalPath.end()) {
+    ModuleOrigin *existing = it->second;
+    if (existing->canonicalMount != mount) {
+      return Error(
+          Twine{spec.isSourceModule() ? "module" : "package"} +
+          " imported as '" + existing->canonicalMount +
+          "' must not also be imported as '" + mount +
+          "'; remove the duplicate import root or file that reaches it twice");
+    }
+    return existing;
+  }
+
+  originAllocations.push_back(
+      std::make_unique<ModuleOrigin>(canonicalPath, std::move(mount)));
+  ModuleOrigin *origin = originAllocations.back().get();
+  originsByCanonicalPath[canonicalPath] = origin;
+  return origin;
 }
