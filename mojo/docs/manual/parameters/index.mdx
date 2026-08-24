@@ -638,8 +638,8 @@ def use_one():
 Note that you can create an instance of `One` without specifying the `Type`
 parameter—Mojo can infer it from the `value` argument.
 
-You can also infer parameters from a parameterized type passed to a initializer
-or static method:
+You can also infer parameters from a parameterized type passed to an
+initializer or static method:
 
 ```mojo
 struct Two[Type: Writable & Copyable & Deinitable]:
