@@ -128,12 +128,12 @@ class KVConnectorConfig(ConfigFileModel):
         default=None,
         description=(
             "Maximum host memory (GiB) for KV cache offloading, used by the "
-            "tiered connectors. When unset, sized to hold twice the device "
+            "tiered connectors. When unset, sized to hold 1.5 times the device "
             "page pool."
         ),
     )
     """Maximum host memory in GiB for KV cache offloading. ``None`` sizes it to
-    twice the device page pool."""
+    1.5 times the device page pool."""
 
     disk_offload_dir: str | None = Field(
         default=None,
@@ -148,11 +148,11 @@ class KVConnectorConfig(ConfigFileModel):
         default=None,
         description=(
             "Maximum disk space (GiB) for KV cache offloading. When unset, "
-            "sized to hold three times the device page pool."
+            "sized to hold twice the device page pool."
         ),
     )
     """Maximum disk space in GiB for KV cache offloading. ``None`` sizes it to
-    three times the device page pool."""
+    twice the device page pool."""
 
     num_disk_workers: int = Field(
         default=32,
