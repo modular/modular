@@ -333,9 +333,9 @@ def test_conv_transpose_shape_basic() raises:
     var pads = TileTensor(pads_ptr, row_major(Coord(Index(4))))
     var output_pads = TileTensor(output_pads_ptr, row_major(Coord(Index(2))))
 
-    var shape = conv_transpose_shape[
-        DType.float32, DType.int32, DType.int32, DType.int32, DType.int32
-    ](input, kernel, strides, dilations, pads, output_pads)
+    var shape = conv_transpose_shape[.float32, .int32, .int32, .int32, .int32](
+        input, kernel, strides, dilations, pads, output_pads
+    )
 
     assert_equal(shape[0], 1)
     assert_equal(shape[1], 5)
@@ -497,7 +497,7 @@ def main() raises:
     # Large shapes commented out to save CI cost.
 
     # # StarGan shape
-    # test_conv_transposed[DType.float32, 2](
+    # test_conv_transposed[.float32, 2](
     #     16,  # N
     #     Index(32, 32),
     #     256,  # C
@@ -509,7 +509,7 @@ def main() raises:
     #     1,  # num_groups
     # )
 
-    # test_conv_transposed[DType.float32, 2](
+    # test_conv_transposed[.float32, 2](
     #     16,  # N
     #     Index(64, 64),
     #     128,  # C
@@ -522,7 +522,7 @@ def main() raises:
     # )
 
     # # 3d Unet shapes
-    # test_conv_transposed[DType.float32, 3](
+    # test_conv_transposed[.float32, 3](
     #     1,  # N
     #     Index(4, 4, 4),
     #     320,  # C
@@ -534,7 +534,7 @@ def main() raises:
     #     1,  # num_groups
     # )
 
-    # test_conv_transposed[DType.float32, 3](
+    # test_conv_transposed[.float32, 3](
     #     1,  # N
     #     Index(8, 8, 8),
     #     320,  # C
@@ -546,7 +546,7 @@ def main() raises:
     #     1,  # num_groups
     # )
 
-    # test_conv_transposed[DType.float32, 3](
+    # test_conv_transposed[.float32, 3](
     #     1,  # N
     #     Index(16, 16, 16),
     #     256,  # C
@@ -558,7 +558,7 @@ def main() raises:
     #     1,  # num_groups
     # )
 
-    # test_conv_transposed[DType.float32, 3](
+    # test_conv_transposed[.float32, 3](
     #     1,  # N
     #     Index(32, 32, 32),
     #     128,  # C
@@ -570,7 +570,7 @@ def main() raises:
     #     1,  # num_groups
     # )
 
-    # test_conv_transposed[DType.float32, 3](
+    # test_conv_transposed[.float32, 3](
     #     1,  # N
     #     Index(64, 64, 64),
     #     64,  # C

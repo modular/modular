@@ -164,7 +164,7 @@ struct WaitAndAdvanceHandle[
 
 struct WorkIterator[
     num_stages: Int,
-    cluster_shape: IndexList[3, element_type=DType.uint32],
+    cluster_shape: IndexList[3, element_type=.uint32],
     rasterize_order: RasterOrder,
     block_swizzle_size: Int,
 ](Copyable, Iterable, Iterator, RegisterPassable):
@@ -255,7 +255,7 @@ struct WorkIterator[
 
 struct SchedulerWorkIterator[
     num_stages: Int,
-    cluster_shape: IndexList[3, element_type=DType.uint32],
+    cluster_shape: IndexList[3, element_type=.uint32],
     rasterize_order: RasterOrder,
     block_swizzle_size: Int,
 ](Copyable, Iterable, Iterator, RegisterPassable):
@@ -371,7 +371,7 @@ struct SchedulerWorkIterator[
 
 struct TileScheduler[
     num_stages: Int,
-    cluster_shape: IndexList[3, element_type=DType.uint32] = Index[
+    cluster_shape: IndexList[3, element_type=.uint32] = Index[
         dtype=DType.uint32
     ](1, 1, 1),
     rasterize_order: RasterOrder = RasterOrder.AlongM,

@@ -76,9 +76,9 @@ def test_mxfp4_dequant[
     comptime scale_cols = ceildiv(num_cols, 32)
 
     # FP8 has lower precision; use a wider tolerance.
-    comptime tol = Float32(0.1) if out_dtype == .float8_e4m3fn else Float32(
-        0.01
-    )
+    comptime tol = Float32(
+        0.1
+    ) if out_dtype == DType.float8_e4m3fn else Float32(0.01)
 
     var scale_f32 = _e8m0_to_float32(scale_exp)
     print(
@@ -225,12 +225,8 @@ def main() raises:
 
         # FP8 output (the path used by mxfp4_matmul_sm90)
         print("-- FP8 output --")
-        test_mxfp4_dequant[64, 64, out_dtype=DType.float8_e4m3fn](
-            ctx, UInt8(127)
-        )
-        test_mxfp4_dequant[128, 512, out_dtype=DType.float8_e4m3fn](
-            ctx, UInt8(127)
-        )
+        test_mxfp4_dequant[64, 64, out_dtype=.float8_e4m3fn](ctx, UInt8(127))
+        test_mxfp4_dequant[128, 512, out_dtype=.float8_e4m3fn](ctx, UInt8(127))
 
         print("======================================")
         print("ALL TESTS PASSED")

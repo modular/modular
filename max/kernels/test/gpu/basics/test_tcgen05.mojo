@@ -146,7 +146,7 @@ def cp_test_fn():
     var tmem_addr = ptr_tmem_addr[0]
 
     var smem_tile = LayoutTensor[
-        DType.float32,
+        .float32,
         Layout(IntTuple(32, 32)),
         MutAnyOrigin,
         address_space=.SHARED,

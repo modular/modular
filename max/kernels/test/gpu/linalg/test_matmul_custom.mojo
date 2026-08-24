@@ -90,9 +90,9 @@ def run_matmul_naive(ctx: DeviceContext, M: Int, N: Int, K: Int) raises:
     @__parameter
     def run_func_bf16() raises:
         comptime kernel = matmul_kernel_naive[
-            DType.bfloat16,
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
+            .bfloat16,
             type_of(c_tt_bf16).LayoutType,
             type_of(a_tt_bf16).LayoutType,
             type_of(b_tt_bf16).LayoutType,
@@ -139,9 +139,9 @@ def run_matmul_naive(ctx: DeviceContext, M: Int, N: Int, K: Int) raises:
     @__parameter
     def run_func_fp32() raises:
         comptime kernel = matmul_kernel_naive[
-            DType.float32,
-            DType.float32,
-            DType.float32,
+            .float32,
+            .float32,
+            .float32,
             type_of(c_tt_fp32).LayoutType,
             type_of(a_tt_fp32).LayoutType,
             type_of(b_tt_fp32).LayoutType,
@@ -738,16 +738,16 @@ def run_batched_matmul(
 def main() raises:
     with DeviceContext() as ctx:
         comptime kernels = MatmulKernels[
-            DType.bfloat16, DType.bfloat16, DType.bfloat16, False
+            .bfloat16, .bfloat16, .bfloat16, False
         ]()
         comptime config = kernels.ampere_256x128_3 if ctx.default_device_info == A100 else kernels.ampere_128x128_4
         run_matmul_split_k[.bfloat16, 512, 4096, 14336, config](
             ctx, atol=1.0, rng_width=1.0
         )
 
-        run_matmul_split_k[
-            DType.bfloat16, 128, 128, 4096, kernels.ampere_128x128_4
-        ](ctx, atol=0.5, rng_width=1.0)
+        run_matmul_split_k[.bfloat16, 128, 128, 4096, kernels.ampere_128x128_4](
+            ctx, atol=0.5, rng_width=1.0
+        )
 
         run_matmul_transpose[.bfloat16, 1, 200, 300](
             ctx, atol=0.25, rng_width=1.0
@@ -777,10 +777,10 @@ def main() raises:
         run_matmul[.bfloat16, 1, 1024, 1024](ctx)
 
         # KERN-1807 We need to systematically test the float16 kernels.
-        # run_matmul[DType.float16, 128, 128, 128](ctx, rng_width=10.0)
-        # run_matmul[DType.float16, 32, 32, 32](ctx, rng_width=10.0)
-        # run_matmul[DType.float16, 1024, 1, 1024](ctx, 1e-03, rng_width=10.0)
-        # run_matmul[DType.float16, 1, 1024, 1024](ctx, 1e-01, rng_width=10.0)
+        # run_matmul[.float16, 128, 128, 128](ctx, rng_width=10.0)
+        # run_matmul[.float16, 32, 32, 32](ctx, rng_width=10.0)
+        # run_matmul[.float16, 1024, 1, 1024](ctx, 1e-03, rng_width=10.0)
+        # run_matmul[.float16, 1, 1024, 1024](ctx, 1e-01, rng_width=10.0)
 
         run_batched_matmul(ctx, 1, 32, 32, 32)
         run_batched_matmul(ctx, 3, 32, 32, 32)

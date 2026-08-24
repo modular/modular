@@ -20,7 +20,7 @@ element, so `K_BYTES == K` and a lane's operand is TWO 16-byte halves
 loaders tile K per half so the geometry stays identical to MXFP4.
 
 The reference is a per-element dequant + scalar accumulate through
-`DType.float8_e4m3fn`: no MFMA and no code shared with the kernel, so a
+`.float8_e4m3fn`: no MFMA and no code shared with the kernel, so a
 fragment-layout error cannot cancel out. `data-only` and `scales-only` phases
 split a data-layout bug from a scale-index bug, which uniform fills cannot.
 """
@@ -173,7 +173,7 @@ def _test_case[
         matrix_format=CDNA4F8F6F4MatrixFormat.FLOAT8_E4M3,
     ]
     comptime kernel = Kernel.run[
-        DType.float32,
+        .float32,
         type_of(c_tt).LayoutType,
         type_of(a_tt).LayoutType,
         type_of(b_tt).LayoutType,

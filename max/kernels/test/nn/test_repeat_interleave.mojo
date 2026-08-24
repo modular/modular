@@ -59,7 +59,7 @@ def test_repeat_interleave_1d(ctx: DeviceContext) raises:
 
     # rank_repeats is always 1
     comptime rank_repeats = 1
-    # type_repeats is always DType.int64
+    # type_repeats is always .int64
     comptime type_repeats = DType.int64
 
     var repeats_stack = Array[Scalar[type_repeats], 4](uninitialized=True)
@@ -99,7 +99,7 @@ def test_repeat_interleave_1d_broadcast_repeats(ctx: DeviceContext) raises:
 
     # rank_repeats is always 1
     comptime rank_repeats = 1
-    # type_repeats is always DType.int64
+    # type_repeats is always .int64
     comptime type_repeats = DType.int64
 
     var repeats_stack = Array[Scalar[type_repeats], 1](uninitialized=True)
@@ -136,7 +136,7 @@ def test_repeat_interleave_2d_axis_0(ctx: DeviceContext) raises:
 
     # rank_repeats is always 1
     comptime rank_repeats = 1
-    # type_repeats is always DType.int64
+    # type_repeats is always .int64
     comptime type_repeats = DType.int64
 
     var repeats_stack = Array[Scalar[type_repeats], 4](uninitialized=True)
@@ -181,7 +181,7 @@ def test_repeat_interleave_2d_axis_1(ctx: DeviceContext) raises:
 
     # rank_repeats is always 1
     comptime rank_repeats = 1
-    # type_repeats is always DType.int64
+    # type_repeats is always .int64
     comptime type_repeats = DType.int64
 
     var repeats_stack = Array[Scalar[type_repeats], 2](uninitialized=True)
@@ -228,7 +228,7 @@ def test_repeat_interleave_3d(ctx: DeviceContext) raises:
 
     # rank_repeats is always 1
     comptime rank_repeats = 1
-    # type_repeats is always DType.int64
+    # type_repeats is always .int64
     comptime type_repeats = DType.int64
 
     var repeats_stack = Array[Scalar[type_repeats], 2](uninitialized=True)

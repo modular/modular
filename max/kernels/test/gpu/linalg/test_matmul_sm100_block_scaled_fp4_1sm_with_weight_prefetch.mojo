@@ -215,9 +215,7 @@ def _test_impl[
                 )
             comptime if scales_dtype == MXFP4_SF_DTYPE:
                 if idx0 < Int(m.value()) and idx1 < Int(k.value()):
-                    var scale_input = (1 << random_ui64(0, 2)).cast[
-                        DType.float32
-                    ]()
+                    var scale_input = (1 << random_ui64(0, 2)).cast[.float32]()
                     var scale_value = _convert_f32_to_float8_ue8m0[
                         target=scales_dtype
                     ](scale_input)
@@ -237,9 +235,7 @@ def _test_impl[
                 )
             comptime if scales_dtype == MXFP4_SF_DTYPE:
                 if idx0 < Int(n.value()) and idx1 < Int(k.value()):
-                    var scale_input = (1 << random_ui64(0, 2)).cast[
-                        DType.float32
-                    ]()
+                    var scale_input = (1 << random_ui64(0, 2)).cast[.float32]()
                     var scale_value = _convert_f32_to_float8_ue8m0[
                         target=scales_dtype
                     ](scale_input)

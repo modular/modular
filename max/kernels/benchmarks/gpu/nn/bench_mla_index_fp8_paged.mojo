@@ -223,11 +223,11 @@ def execute_mla_indexer_paged[
             k_block_device,
             k_block_runtime_layout,
         ),
-        LayoutTensor[mut=False, DType.uint32, cache_lengths_layout](
+        LayoutTensor[mut=False, .uint32, cache_lengths_layout](
             cache_lengths_device,
             cache_lengths_runtime_layout,
         ),
-        LayoutTensor[mut=False, DType.uint32, paged_lut_layout](
+        LayoutTensor[mut=False, .uint32, paged_lut_layout](
             k_lut_device,
             paged_lut_runtime_layout,
         ),

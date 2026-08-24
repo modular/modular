@@ -114,7 +114,7 @@ def test_index_tensor_DLRM() raises:
     var output_shape = index_tensor_shape[
         output_rank,
         input_type,
-        DType.uint64,
+        .uint64,
         batch_dims,
     ](input_dyn, indices_dyn)
 
@@ -216,7 +216,7 @@ def test_index_tensor_DLRM_batch() raises:
     var output_shape = index_tensor_shape[
         output_rank,
         input_type,
-        DType.uint64,
+        .uint64,
         batch_dims,
     ](input_dyn, indices_dyn)
 
@@ -322,7 +322,7 @@ def test_index_tensor_CLIPVIT() raises:
     var output_shape = gather_nd_shape[
         output_rank,
         input_type,
-        DType.uint64,
+        .uint64,
         0,
     ](
         input_dyn,

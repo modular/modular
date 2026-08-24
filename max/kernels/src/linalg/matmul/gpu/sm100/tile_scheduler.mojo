@@ -65,7 +65,7 @@ struct WorkInfo(TrivialRegisterPassable, Writable):
 
 struct TileScheduler[
     num_stages: Int,
-    cluster_shape: IndexList[3, element_type=DType.uint32] = Index[
+    cluster_shape: IndexList[3, element_type=.uint32] = Index[
         dtype=DType.uint32
     ](1, 1, 1),
     rasterize_order: RasterOrder = RasterOrder.AlongM,

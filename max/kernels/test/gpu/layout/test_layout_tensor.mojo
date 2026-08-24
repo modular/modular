@@ -77,10 +77,10 @@ def test_nested_layout_shape() raises:
     # Test case 2: Ensure non-nested layouts still work (regression test)
     comptime simple_layout = Layout.row_major(16, 32)
     comptime simple_shape0 = LayoutTensor[
-        DType.float32, simple_layout, MutAnyOrigin
+        .float32, simple_layout, MutAnyOrigin
     ].shape[0]()
     comptime simple_shape1 = LayoutTensor[
-        DType.float32, simple_layout, MutAnyOrigin
+        .float32, simple_layout, MutAnyOrigin
     ].shape[1]()
 
     assert_equal(simple_shape0, 16, "Non-nested shape[0] should still work")
@@ -173,7 +173,7 @@ def test_different_layouts_arithmetic() raises:
 
     # Create column-major tensor with same logical values
     var b = LayoutTensor[
-        DType.float32,
+        .float32,
         Layout.col_major(2, 2),
         MutAnyOrigin,
         address_space=.GENERIC,
@@ -220,7 +220,7 @@ def test_aligned_load() raises:
     # without going out of bounds (column 3 + width 4 = 7)
     var storage = Array[Float32, 4 * 7](uninitialized=True)
     var tensor = LayoutTensor[
-        DType.float32,
+        .float32,
         Layout([4, 7]),
     ](
         storage

@@ -141,7 +141,7 @@ def main() raises:
     var batch = Int(arg_parse("batch", 1))
     var num_elements = Int(arg_parse("N", 262144))
 
-    comptime dtype = get_defined_dtype["dtype", DType.bfloat16]()
+    comptime dtype = get_defined_dtype["dtype", .bfloat16]()
 
     var m = Bench()
     with DeviceContext() as ctx:

@@ -359,7 +359,7 @@ def test_mha_vs_naive[
         v_ref_tt.as_immut().as_unsafe_any_origin()
     )
     var null_valid_length = LayoutTensor[
-        DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
+        .uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
     ](
         None,
         RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(Index(0)),
@@ -490,7 +490,7 @@ def test_mha_vs_naive[
 
     # FP8 gate: cosine similarity >= 0.99 (per MLA convention).
     # BF16 gate: zero mismatches per the per-element tolerance.
-    comptime is_fp8 = qkv_type == .float8_e4m3fn
+    comptime is_fp8 = qkv_type == DType.float8_e4m3fn
     var passed: Bool = False
     if mismatches == 0:
         passed = True

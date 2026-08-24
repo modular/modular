@@ -387,7 +387,7 @@ def bench_conv2d[
         # FP8 accumulates into BF16; bf16/fp16 keep their input dtype
         # for the output (matches `structured_4wave_matmul`).
         comptime out_dtype = (
-            DType.bfloat16 if dtype == .float8_e4m3fn else dtype
+            DType.bfloat16 if dtype == DType.float8_e4m3fn else dtype
         )
 
         # Comptime H_out / W_out for the kernel's template params.
@@ -605,7 +605,7 @@ def bench_conv2d[
 
 
 def main() raises:
-    comptime dtype = get_defined_dtype["dtype", DType.bfloat16]()
+    comptime dtype = get_defined_dtype["dtype", .bfloat16]()
     comptime N = get_defined_int["N", 1]()
     comptime H = get_defined_int["H", 240]()
     comptime W = get_defined_int["W", 416]()

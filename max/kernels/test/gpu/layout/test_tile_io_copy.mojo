@@ -72,7 +72,7 @@ def dram_to_sram_to_dram_kernel(
 
     var src = TileTensor(src_ptr, row_major[_N, _N]())
     var dst = TileTensor(dst_ptr, row_major[_N, _N]())
-    var smem = stack_allocation[dtype=.float32, address_space=.SHARED](
+    var smem = stack_allocation[dtype=DType.float32, address_space=.SHARED](
         row_major[_N, _N]()
     )
 
@@ -93,7 +93,7 @@ def dram_to_local_to_dram_kernel(
 
     var src = TileTensor(src_ptr, row_major[_N, _N]())
     var dst = TileTensor(dst_ptr, row_major[_N, _N]())
-    var local = stack_allocation[dtype=.float32, address_space=.LOCAL](
+    var local = stack_allocation[dtype=DType.float32, address_space=.LOCAL](
         row_major[2, 2]()
     )
 
@@ -115,13 +115,13 @@ def sram_local_sram_kernel(
     var src = TileTensor(src_ptr, row_major[_N, _N]())
     var dst = TileTensor(dst_ptr, row_major[_N, _N]())
 
-    var smem_in = stack_allocation[dtype=.float32, address_space=.SHARED](
+    var smem_in = stack_allocation[dtype=DType.float32, address_space=.SHARED](
         row_major[_N, _N]()
     )
-    var smem_out = stack_allocation[dtype=.float32, address_space=.SHARED](
+    var smem_out = stack_allocation[dtype=DType.float32, address_space=.SHARED](
         row_major[_N, _N]()
     )
-    var local = stack_allocation[dtype=.float32, address_space=.LOCAL](
+    var local = stack_allocation[dtype=DType.float32, address_space=.LOCAL](
         row_major[2, 2]()
     )
 
@@ -149,10 +149,10 @@ def swizzled_local_to_shared_kernel(
     var src = TileTensor(src_ptr, row_major[_N, _N]())
     var dst = TileTensor(dst_ptr, row_major[_N, _N]())
 
-    var smem = stack_allocation[dtype=.float32, address_space=.SHARED](
+    var smem = stack_allocation[dtype=DType.float32, address_space=.SHARED](
         row_major[_N, _N]()
     )
-    var local = stack_allocation[dtype=.float32, address_space=.LOCAL](
+    var local = stack_allocation[dtype=DType.float32, address_space=.LOCAL](
         row_major[2, 2]()
     )
 
@@ -177,7 +177,7 @@ def async_dram_to_sram_to_dram_kernel(
 
     var src = TileTensor(src_ptr, row_major[_N, _N]())
     var dst = TileTensor(dst_ptr, row_major[_N, _N]())
-    var smem = stack_allocation[dtype=.float32, address_space=.SHARED](
+    var smem = stack_allocation[dtype=DType.float32, address_space=.SHARED](
         row_major[_N, _N]()
     )
 

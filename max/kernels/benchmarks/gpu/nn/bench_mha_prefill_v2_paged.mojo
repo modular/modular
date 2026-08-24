@@ -213,7 +213,7 @@ def run_mha_prefill_v2_paged[
     comptime cache_lengths_layout = Layout(UNKNOWN_VALUE)
     var cache_lengths_tensor = LayoutTensor[
         mut=False,
-        DType.uint32,
+        .uint32,
         cache_lengths_layout,
     ](
         cache_lengths_dev,
@@ -223,7 +223,7 @@ def run_mha_prefill_v2_paged[
     comptime paged_lut_layout = Layout.row_major[2]()
     var paged_lut_tensor = LayoutTensor[
         mut=False,
-        DType.uint32,
+        .uint32,
         paged_lut_layout,
     ](
         paged_lut_dev,
@@ -347,7 +347,7 @@ def run_mha_prefill_v2_paged[
 def main() raises:
     seed(0)
 
-    comptime qkv_type = get_defined_dtype["qkv_type", DType.bfloat16]()
+    comptime qkv_type = get_defined_dtype["qkv_type", .bfloat16]()
     comptime depth = get_defined_int["depth", 128]()
     comptime num_heads = get_defined_int["num_heads", 16]()
     comptime group = get_defined_int["group", 1]()

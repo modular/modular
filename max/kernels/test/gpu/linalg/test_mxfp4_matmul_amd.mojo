@@ -246,7 +246,7 @@ def test_mxfp4_matmul[
         MMA_K=MMA_K,
     ]
     comptime kernel = Kernel.run[
-        DType.float32,
+        .float32,
         type_of(c_tt).LayoutType,
         type_of(a_tt).LayoutType,
         type_of(b_tt).LayoutType,

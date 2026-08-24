@@ -110,7 +110,7 @@ def execute_ragged_flash_attention[
 
     # Create managed tensors for offset and length metadata.
     var input_row_offsets = ManagedLayoutTensor[
-        DType.uint32, input_row_offsets_layout
+        .uint32, input_row_offsets_layout
     ](
         RuntimeLayout[input_row_offsets_layout].row_major(
             Index(batch_size + 1)
@@ -118,13 +118,13 @@ def execute_ragged_flash_attention[
         ctx,
     )
     var cache_lengths_managed = ManagedLayoutTensor[
-        DType.uint32, cache_lengths_layout
+        .uint32, cache_lengths_layout
     ](
         RuntimeLayout[cache_lengths_layout].row_major(Index(batch_size)),
         ctx,
     )
     var valid_lengths_managed = ManagedLayoutTensor[
-        DType.uint32, valid_lengths_layout
+        .uint32, valid_lengths_layout
     ](
         RuntimeLayout[valid_lengths_layout].row_major(Index(batch_size)),
         ctx,
@@ -233,7 +233,7 @@ def execute_ragged_flash_attention[
 
     # Create lookup table
     var lookup_table_managed = ManagedLayoutTensor[
-        DType.uint32, lookup_table_layout
+        .uint32, lookup_table_layout
     ](
         RuntimeLayout[lookup_table_layout].row_major(Index(batch_size)),
         ctx,

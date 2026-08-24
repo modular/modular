@@ -289,7 +289,7 @@ def block_scaled_mxfp8_kernel[
         a_type,
         b_type,
         a_scales_type,
-        Index[dtype=DType.uint32](umma_shape[0], umma_shape[1]),
+        Index[dtype=.uint32](umma_shape[0], umma_shape[1]),
         transpose_b=transpose_b,
     ]()
 
@@ -923,7 +923,7 @@ def main() raises:
         test_block_scaled_mxfp8[
             dtype,
             dtype,
-            DType.bfloat16,
+            .bfloat16,
             Index(MMA_M, 256, BK),
             Index(MMA_M, 256, MMA_K),
             transpose_b=True,
@@ -932,7 +932,7 @@ def main() raises:
         test_block_scaled_mxfp8[
             dtype,
             dtype,
-            DType.bfloat16,
+            .bfloat16,
             Index(MMA_M, 256, BK),
             Index(MMA_M, 256, MMA_K),
             transpose_b=True,
@@ -941,7 +941,7 @@ def main() raises:
         test_block_scaled_mxfp8[
             dtype,
             dtype,
-            DType.bfloat16,
+            .bfloat16,
             Index(MMA_M, 256, BK),
             Index(MMA_M, 256, MMA_K),
             transpose_b=True,
@@ -951,7 +951,7 @@ def main() raises:
         test_block_scaled_mxfp8[
             dtype,
             dtype,
-            DType.bfloat16,
+            .bfloat16,
             Index(MMA_M, 128, BK),
             Index(MMA_M, 128, MMA_K),
             transpose_b=True,
@@ -960,7 +960,7 @@ def main() raises:
         test_block_scaled_mxfp8[
             dtype,
             dtype,
-            DType.bfloat16,
+            .bfloat16,
             Index(MMA_M, 128, BK),
             Index(MMA_M, 128, MMA_K),
             transpose_b=True,
@@ -969,7 +969,7 @@ def main() raises:
         test_block_scaled_mxfp8[
             dtype,
             dtype,
-            DType.bfloat16,
+            .bfloat16,
             Index(MMA_M, 128, BK),
             Index(MMA_M, 128, MMA_K),
             transpose_b=True,

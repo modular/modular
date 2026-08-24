@@ -289,12 +289,12 @@ def run_one_case(
         ),
     )
     comptime cl_layout = Layout(UNKNOWN_VALUE)
-    var cl_tensor = LayoutTensor[mut=False, DType.uint32, cl_layout](
+    var cl_tensor = LayoutTensor[mut=False, .uint32, cl_layout](
         cl_dev,
         RuntimeLayout[cl_layout].row_major(IndexList[1](batch_size)),
     )
     comptime lut_layout = Layout.row_major[2]()
-    var lut_tensor = LayoutTensor[mut=False, DType.uint32, lut_layout](
+    var lut_tensor = LayoutTensor[mut=False, .uint32, lut_layout](
         lut_dev,
         RuntimeLayout[lut_layout].row_major(
             IndexList[2](batch_size, max_pages)

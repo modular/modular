@@ -53,14 +53,14 @@ def wgmma_kernel_rs[
     c_gmem: LayoutTensor[c_type, c_layout, MutAnyOrigin],
 ):
     var a_smem_tile = LayoutTensor[
-        DType.bfloat16,
+        .bfloat16,
         a_smem_layout,
         MutAnyOrigin,
         address_space=.SHARED,
     ].stack_allocation()
 
     var b_smem_tile = LayoutTensor[
-        DType.bfloat16,
+        .bfloat16,
         b_smem_layout,
         MutAnyOrigin,
         address_space=.SHARED,
@@ -156,14 +156,14 @@ def wgmma_kernel_ss[
     c_gmem: LayoutTensor[c_type, c_layout, MutAnyOrigin],
 ):
     var a_smem_tile = LayoutTensor[
-        DType.bfloat16,
+        .bfloat16,
         a_smem_layout,
         MutAnyOrigin,
         address_space=.SHARED,
     ].stack_allocation()
 
     var b_smem_tile = LayoutTensor[
-        DType.bfloat16,
+        .bfloat16,
         b_smem_layout,
         MutAnyOrigin,
         address_space=.SHARED,

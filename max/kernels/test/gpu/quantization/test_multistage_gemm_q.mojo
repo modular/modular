@@ -105,7 +105,7 @@ def repack_Q4_0_for_sm8x[
     def convert_bytes_to_bf16[
         scales_type: DType
     ](input_bytes: SIMD[.uint8, _]) -> Scalar[scales_type]:
-        var f32_values = bitcast[.float16, 1](input_bytes).cast[DType.float32]()
+        var f32_values = bitcast[.float16, 1](input_bytes).cast[.float32]()
         return bitcast[scales_type, 2](f32_values)[1]
 
     comptime repacked_b_layout = Layout(
@@ -135,7 +135,7 @@ def repack_Q4_0_for_sm8x[
         alignment=align_of[UInt8](),
     ]()
     var qb_smem = LayoutTensor[
-        DType.uint8,
+        .uint8,
         Layout.row_major(BN, 2 * group_bytes),
         _,
         address_space=.SHARED,
@@ -463,9 +463,7 @@ def test_repack_Q4_0_for_sm8x[
         gguf_b_host_ptr,
     )
     comptime dequan_host_layout = Layout.row_major(_dequan_dim0, _dequan_dim1)
-    comptime dequan_lt_type = LayoutTensor[
-        DType.bfloat16, dequan_host_layout, _
-    ]
+    comptime dequan_lt_type = LayoutTensor[.bfloat16, dequan_host_layout, _]
     var gguf_dequan_ref_host_lt = dequan_lt_type(
         gguf_dequan_ref_host_ptr,
         RuntimeLayout[
@@ -504,7 +502,7 @@ def test_repack_Q4_0_for_sm8x[
     )
     comptime gguf_b_tensor_type = LayoutTensor[.uint8, gguf_b_layout, _]
     comptime repacked_dequan_tensor_type = LayoutTensor[
-        DType.bfloat16,
+        .bfloat16,
         repack_dequan_layout,
         _,
     ]

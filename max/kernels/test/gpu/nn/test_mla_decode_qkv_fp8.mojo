@@ -279,7 +279,7 @@ def test[
 
     # Valid length (empty -- not using ragged) for mha_gpu_naive
     var null_valid_length = LayoutTensor[
-        DType.uint32,
+        .uint32,
         Layout.row_major(UNKNOWN_VALUE),
         MutAnyOrigin,
     ](
@@ -813,7 +813,7 @@ def test_sw[
     )
 
     var null_valid_length = LayoutTensor[
-        DType.uint32,
+        .uint32,
         Layout.row_major(UNKNOWN_VALUE),
         MutAnyOrigin,
     ](

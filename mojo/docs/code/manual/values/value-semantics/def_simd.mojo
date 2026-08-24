@@ -18,6 +18,6 @@ def update_simd(var t: SIMD[DType.int32, 4]):
 
 
 def main():
-    var v = SIMD[DType.int32, 4](1, 2, 3, 4)
+    var v = SIMD[.int32, 4](1, 2, 3, 4)
     update_simd(v)
     print("v:", v)

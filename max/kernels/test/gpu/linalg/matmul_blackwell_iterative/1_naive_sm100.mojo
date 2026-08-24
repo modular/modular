@@ -173,9 +173,9 @@ def main() raises:
     with DeviceContext() as ctx:
         if is_benchmark():
             test_kernel_1[
-                DType.bfloat16,
-                DType.bfloat16,
-                DType.bfloat16,
+                .bfloat16,
+                .bfloat16,
+                .bfloat16,
                 transpose_b=True,
                 prob_shape=IndexList[3](4096, 4096, 4096),
                 benchmark=True,
@@ -185,9 +185,9 @@ def main() raises:
         # Test with transpose_b=True
         print("Testing with transpose_b=True")
         test_kernel_1[
-            DType.bfloat16,
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
+            .bfloat16,
             transpose_b=True,
             prob_shape=IndexList[3](4096, 4096, 4096),
         ](ctx)

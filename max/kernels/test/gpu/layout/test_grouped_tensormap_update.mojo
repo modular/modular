@@ -90,10 +90,10 @@ def test_grouped_tensormap_update_kernel[
     ],
     # Per-group source tensors (stored as pointers as integers)
     group_a_ptrs: LayoutTensor[
-        DType.uint64, Layout.row_major(num_groups, 1), MutAnyOrigin
+        .uint64, Layout.row_major(num_groups, 1), MutAnyOrigin
     ],
     group_b_ptrs: LayoutTensor[
-        DType.uint64, Layout.row_major(num_groups, 1), MutAnyOrigin
+        .uint64, Layout.row_major(num_groups, 1), MutAnyOrigin
     ],
     # Template TMA descriptor (grid constant, for SMEM init)
     template_tma_a: TMATensorTile[dtype, tma_rank, tile_shape, desc_shape],
@@ -324,14 +324,10 @@ def test_grouped_tensormap_update[
 
     # Create GMEM tensormap arrays (one entry per block)
     comptime tensormap_layout = Layout.row_major(128 * num_blocks)
-    var device_tensormaps_a = ManagedLayoutTensor[
-        DType.uint8, tensormap_layout
-    ](
+    var device_tensormaps_a = ManagedLayoutTensor[.uint8, tensormap_layout](
         ctx,
     )
-    var device_tensormaps_b = ManagedLayoutTensor[
-        DType.uint8, tensormap_layout
-    ](
+    var device_tensormaps_b = ManagedLayoutTensor[.uint8, tensormap_layout](
         ctx,
     )
 

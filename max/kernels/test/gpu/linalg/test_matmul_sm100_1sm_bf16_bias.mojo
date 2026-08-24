@@ -185,8 +185,8 @@ def test_blackwell_matmul_with_epilogue_tensor[
     #     for j in range(N):
     #         var idx = c_host.layout(Coord(i, j))
     #         print(
-    #             c_host.ptr[idx].cast[DType.float32]()
-    #             - c_host_ref.ptr[idx].cast[DType.float32](),
+    #             c_host.ptr[idx].cast[.float32]()
+    #             - c_host_ref.ptr[idx].cast[.float32](),
     #         end=" ",
     #     )
     #     print()
@@ -208,8 +208,8 @@ def test_blackwell_matmul_with_epilogue_tensor[
     #     for j in range(N):
     #         var idx = c_host.layout(Coord(i, j))
     #         print(
-    #             c_host.ptr[idx].cast[DType.float32]()
-    #             - c_host_ref.ptr[idx].cast[DType.float32](),
+    #             c_host.ptr[idx].cast[.float32]()
+    #             - c_host_ref.ptr[idx].cast[.float32](),
     #         end=" ",
     #     )
     #     print()
@@ -270,7 +270,7 @@ def main() raises:
                     test_blackwell_matmul_with_epilogue_tensor[
                         dtype,
                         dtype,
-                        DType.bfloat16,
+                        .bfloat16,
                         block_tile_shape,
                         umma_shape,
                         cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
@@ -291,7 +291,7 @@ def main() raises:
                     test_blackwell_matmul_with_epilogue_tensor[
                         dtype,
                         dtype,
-                        DType.bfloat16,
+                        .bfloat16,
                         block_tile_shape,
                         umma_shape,
                         cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
@@ -310,7 +310,7 @@ def main() raises:
                         test_blackwell_matmul_with_epilogue_tensor[
                             dtype,
                             dtype,
-                            DType.bfloat16,
+                            .bfloat16,
                             block_tile_shape,
                             umma_shape,
                             cluster_shape=StaticTuple[Int32, 3](4, 2, 1),
@@ -332,7 +332,7 @@ def main() raises:
                         test_blackwell_matmul_with_epilogue_tensor[
                             dtype,
                             dtype,
-                            DType.bfloat16,
+                            .bfloat16,
                             block_tile_shape,
                             umma_shape,
                             cluster_shape=StaticTuple[Int32, 3](8, 2, 1),
@@ -352,7 +352,7 @@ def main() raises:
                     test_blackwell_matmul_with_epilogue_tensor[
                         dtype,
                         dtype,
-                        DType.bfloat16,
+                        .bfloat16,
                         block_tile_shape,
                         umma_shape,
                         cluster_shape=StaticTuple[Int32, 3](4, 4, 1),

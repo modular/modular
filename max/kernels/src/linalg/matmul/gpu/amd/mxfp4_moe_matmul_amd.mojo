@@ -294,7 +294,7 @@ struct MXFP4MoERoutedMatmul[
         var a_bc = make_amd_buffer_resource(a_tt)
 
         # ---- SMEM for A ----
-        var a_smem = stack_allocation[.uint8, address_space=.SHARED](
+        var a_smem = stack_allocation[DType.uint8, address_space=.SHARED](
             row_major[Self.BM, Self.BK_BYTES]()
         )
 

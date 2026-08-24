@@ -661,76 +661,76 @@ def main() raises:
     with DeviceContext() as ctx:
         # Single matmul
         test[
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
             num_experts=1,
             expert_shape=Index(256, 256),
         ](1, [128], [0], ctx)
 
         test[
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
             num_experts=1,
             expert_shape=Index(16, 256),
         ](1, [128], [0], ctx)
 
         # unaligned matmul
         test[
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
             num_experts=1,
             expert_shape=Index(1024, 256),
         ](1, [200], [0], ctx)
 
         test[
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
             num_experts=1,
             expert_shape=Index(512, 1024),
         ](1, [256], [0], ctx)
 
         # simple expert routing
         test[
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
             num_experts=4,
             expert_shape=Index(256, 64),
         ](1, [128], [2], ctx)
 
         # simple aligned group routing
         test[
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
             num_experts=4,
             expert_shape=Index(256, 64),
         ](3, [32, 32 * 3, 32 * 7], [2, 0, 1], ctx)
 
         # simple unaligned group routing
         test[
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
             num_experts=4,
             expert_shape=Index(256, 64),
         ](2, [10, 60], [2, 0], ctx)
 
         test[
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
             num_experts=4,
             expert_shape=Index(2880, 512),
         ](2, [10, 60], [2, 0], ctx)
 
         test[
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
             num_experts=4,
             expert_shape=Index(5760, 512),
         ](2, [10, 60], [2, 0], ctx)
 
         # Multiple matmuls selecting part of experts
         test[
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
             num_experts=4,
             expert_shape=Index(768, 1024),
         ](2, [128, 256], [0, 2], ctx)
@@ -738,8 +738,8 @@ def main() raises:
         # Multiple matmuls selecting part of experts
         # num_tokesn not multiple of tile size
         test[
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
             num_experts=6,
             expert_shape=Index(1280, 1024),
         ](4, [27, 1500, 300, 150], [0, 3, 2, 4], ctx)
@@ -748,31 +748,31 @@ def main() raises:
         # num_tokesn not multiple of tile size
         # expert N dimension not multiple of 256
         test[
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
             num_experts=6,
             expert_shape=Index(192, 1024),
         ](4, [27, 1500, 300, 150], [0, 3, 2, 4], ctx)
 
         comptime if _is_sm10x_gpu(ctx.default_device_info):
             test[
-                DType.bfloat16,
-                DType.bfloat16,
+                .bfloat16,
+                .bfloat16,
                 num_experts=6,
                 expert_shape=Index(1280, 16),
             ](4, [27, 1500, 300, 150], [0, 3, 2, 4], ctx)
 
         test[
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
             num_experts=6,
             expert_shape=Index(16, 1024),
         ](4, [27, 1500, 300, 150], [0, 3, 2, 4], ctx)
 
         # Multiple matmuls selecting part of experts with epilogue
         test[
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
             num_experts=4,
             expert_shape=Index(768, 1024),
             has_epilogue=True,
@@ -791,24 +791,24 @@ def main() raises:
                         continue
                 # Test that expert id of -1 results in 0s in the output
                 test[
-                    DType.bfloat16,
-                    DType.bfloat16,
+                    .bfloat16,
+                    .bfloat16,
                     num_experts=2,
                     expert_shape=Index(n, m),
                 ](2, [64, 128], [0, -1], ctx)
 
                 # Test negative lora_id behavior with naive matmul
                 test_negative_lora_id[
-                    DType.bfloat16,
-                    DType.bfloat16,
+                    .bfloat16,
+                    .bfloat16,
                     num_experts=2,
                     expert_shape=Index(n, m),
                 ](2, [64, 128], [0, -1], ctx)
 
         # QKV perm dim test
         test[
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
             num_experts=6,
             expert_shape=Index(192, 1024),
             qkv_perm_dim=True,
@@ -825,30 +825,30 @@ def main() raises:
             # expert_shape=(2560, 4096).  Total B buffer is ~5.6 GiB;
             # the crash appears related to >4 GiB weight buffer
             # addressing in the sm100 grouped matmul kernel.
-            test_step3p5_moe_dims[
-                DType.bfloat16, DType.bfloat16, Index(2560, 4096), 288
-            ](8, 256, ctx)
+            test_step3p5_moe_dims[.bfloat16, .bfloat16, Index(2560, 4096), 288](
+                8, 256, ctx
+            )
 
         # FP8 grouped matmul (H100 only).
         comptime if ctx.default_device_info == H100:
             test[
-                DType.float8_e4m3fn,
-                DType.bfloat16,
+                .float8_e4m3fn,
+                .bfloat16,
                 num_experts=4,
                 expert_shape=Index(256, 256),
             ](2, [32, 64], [0, 2], ctx)
 
             test[
-                DType.float8_e4m3fn,
-                DType.bfloat16,
+                .float8_e4m3fn,
+                .bfloat16,
                 num_experts=4,
                 expert_shape=Index(256, 128),
             ](3, [10, 60, 30], [2, 0, 1], ctx)
 
             # Non-128-aligned K dimension.
             test[
-                DType.float8_e4m3fn,
-                DType.bfloat16,
+                .float8_e4m3fn,
+                .bfloat16,
                 num_experts=4,
                 expert_shape=Index(256, 192),
             ](2, [25, 40], [1, 3], ctx)
@@ -864,15 +864,15 @@ def main() raises:
         # expert_shape=(hidden, rank)). hidden=576, rank=16 = SmolLM-135M.
         # See SERVOPT-1478.
         test[
-            DType.float32,
-            DType.float32,
+            .float32,
+            .float32,
             num_experts=4,
             expert_shape=Index(16, 576),  # LoRA shrink (contracts hidden)
         ](2, [128, 64], [0, 2], ctx)
 
         test[
-            DType.float32,
-            DType.float32,
+            .float32,
+            .float32,
             num_experts=4,
             expert_shape=Index(576, 16),  # LoRA expand (contracts rank)
         ](2, [128, 64], [0, 2], ctx)
@@ -880,8 +880,8 @@ def main() raises:
         # float32 output with an elementwise epilogue (mirrors the LoRA
         # shrink's permute epilogue threading through the naive path).
         test[
-            DType.float32,
-            DType.float32,
+            .float32,
+            .float32,
             num_experts=4,
             expert_shape=Index(16, 576),
             has_epilogue=True,
@@ -890,8 +890,8 @@ def main() raises:
         # float32 QKV-permute epilogue: the exact epilogue shape the LoRA
         # shrink (`shrink_qkv_permute_3mn_sm100`) uses.
         test[
-            DType.float32,
-            DType.float32,
+            .float32,
+            .float32,
             num_experts=4,
             expert_shape=Index(16, 576),
             qkv_perm_dim=True,

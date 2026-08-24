@@ -203,13 +203,13 @@ def main() raises:
     with DeviceContext() as ctx:
         comptime for dtype in [DType.float8_e4m3fn, DType.bfloat16]:
             comptime for swizzle in [TensorMapSwizzle.SWIZZLE_128B]:
-                comptime MMA_K = 32 if dtype == .float8_e4m3fn else 16
+                comptime MMA_K = 32 if dtype == DType.float8_e4m3fn else 16
                 comptime BK = (swizzle.bytes() // size_of[dtype]())
 
                 test_matmul_sm100_fallback[
                     dtype,
                     dtype,
-                    DType.bfloat16,
+                    .bfloat16,
                     umma_shape=Index(64, 128, MMA_K),
                     swizzle=swizzle,
                     transpose_b=True,
@@ -223,7 +223,7 @@ def main() raises:
                 test_matmul_sm100_fallback[
                     dtype,
                     dtype,
-                    DType.bfloat16,
+                    .bfloat16,
                     umma_shape=Index(64, 128, MMA_K),
                     swizzle=swizzle,
                     transpose_b=True,
@@ -239,7 +239,7 @@ def main() raises:
                 test_matmul_sm100_fallback[
                     dtype,
                     dtype,
-                    DType.bfloat16,
+                    .bfloat16,
                     umma_shape=Index(64, 128, MMA_K),
                     swizzle=swizzle,
                     transpose_b=True,
@@ -254,7 +254,7 @@ def main() raises:
                 test_matmul_sm100_fallback[
                     dtype,
                     dtype,
-                    DType.bfloat16,
+                    .bfloat16,
                     umma_shape=Index(64, 128, MMA_K),
                     swizzle=swizzle,
                     transpose_b=True,
@@ -272,7 +272,7 @@ def main() raises:
                     test_matmul_sm100_fallback[
                         dtype,
                         dtype,
-                        DType.bfloat16,
+                        .bfloat16,
                         umma_shape=Index(64, 128, MMA_K),
                         transpose_b=True,
                         BK=_BK,
@@ -286,7 +286,7 @@ def main() raises:
                     test_matmul_sm100_fallback[
                         dtype,
                         dtype,
-                        DType.bfloat16,
+                        .bfloat16,
                         umma_shape=Index(64, 128, MMA_K),
                         transpose_b=True,
                         BK=_BK,
@@ -300,7 +300,7 @@ def main() raises:
                     test_matmul_sm100_fallback[
                         dtype,
                         dtype,
-                        DType.bfloat16,
+                        .bfloat16,
                         umma_shape=Index(64, 128, MMA_K),
                         transpose_b=True,
                         BK=_BK,
@@ -314,7 +314,7 @@ def main() raises:
                     test_matmul_sm100_fallback[
                         dtype,
                         dtype,
-                        DType.bfloat16,
+                        .bfloat16,
                         umma_shape=Index(64, 128, MMA_K),
                         transpose_b=True,
                         BK=_BK,
@@ -328,7 +328,7 @@ def main() raises:
                     test_matmul_sm100_fallback[
                         dtype,
                         dtype,
-                        DType.bfloat16,
+                        .bfloat16,
                         umma_shape=Index(64, 128, MMA_K),
                         transpose_b=True,
                         BK=_BK,

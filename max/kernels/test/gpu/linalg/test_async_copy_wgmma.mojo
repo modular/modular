@@ -275,9 +275,9 @@ def test_cpasync_wgmma[
 def main() raises:
     with DeviceContext() as ctx:
         test_cpasync_wgmma[
-            DType.bfloat16,
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
+            .bfloat16,
             Index(64, 64, 64),
             Index(64, 64, 64),
             Index(64, 64, 16),
@@ -287,9 +287,9 @@ def main() raises:
         ](ctx)
 
         test_cpasync_wgmma[
-            DType.bfloat16,
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
+            .bfloat16,
             Index(64, 128, 128),
             Index(64, 128, 128),
             Index(64, 128, 16),
@@ -299,9 +299,9 @@ def main() raises:
         ](ctx)
 
         test_cpasync_wgmma[
-            DType.bfloat16,
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
+            .bfloat16,
             Index(64, 64, 64),
             Index(64, 64, 64),
             Index(64, 64, 16),
@@ -311,9 +311,9 @@ def main() raises:
         ](ctx)
 
         test_cpasync_wgmma[
-            DType.bfloat16,
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
+            .bfloat16,
             Index(64, 128, 128),
             Index(64, 128, 128),
             Index(64, 128, 16),
@@ -323,9 +323,9 @@ def main() raises:
         ](ctx)
 
         test_cpasync_wgmma[
-            DType.bfloat16,
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
+            .bfloat16,
             Index(128, 64, 128),
             Index(128, 64, 128),
             Index(64, 64, 16),

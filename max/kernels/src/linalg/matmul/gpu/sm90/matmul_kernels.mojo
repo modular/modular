@@ -566,7 +566,7 @@ struct HopperMatmulSM90Kernel[
     @always_inline
     def get_block_swizzle(
         lut_ptr: OptionalReg[UnsafePointer[UInt32, MutAnyOrigin]] = None,
-    ) -> IndexList[2, element_type=DType.uint32]:
+    ) -> IndexList[2, element_type=.uint32]:
         """Calculate block swizzle for better L2 cache locality.
 
         Args:
@@ -584,16 +584,16 @@ struct HopperMatmulSM90Kernel[
                 var packed = lut_ptr.unsafe_value()[linear]
                 var new_x = packed & 0xFFFF
                 var new_y = packed >> 16
-                return Index[dtype=DType.uint32](new_x, new_y)
+                return Index[dtype=.uint32](new_x, new_y)
             else:
                 # Default swizzling pattern for L2 cache optimization
                 return block_swizzle(
-                    Index[dtype=DType.uint32](block_idx.x, block_idx.y),
-                    Index[dtype=DType.uint32](grid_dim.x, grid_dim.y),
+                    Index[dtype=.uint32](block_idx.x, block_idx.y),
+                    Index[dtype=.uint32](grid_dim.x, grid_dim.y),
                 )
         else:
             # Multi-cluster mode: no swizzling (handled by hardware)
-            return Index[dtype=DType.uint32](block_idx.x, block_idx.y)
+            return Index[dtype=.uint32](block_idx.x, block_idx.y)
 
     @staticmethod
     @always_inline
@@ -1637,7 +1637,7 @@ struct HopperMatmulSM90Kernel[
     ):
         warpgroup_fence(c_reg_tile)
         wgmma_op.arrive()
-        comptime scale_c = 0 if Self.a_type == .float8_e4m3fn else 1
+        comptime scale_c = 0 if Self.a_type == DType.float8_e4m3fn else 1
         wgmma_op.wgmma[Self.num_consumer, scale_c=scale_c](
             a_tile,
             b_tile,

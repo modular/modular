@@ -183,7 +183,7 @@ def test_fused_qk_rope[dtype: DType](ctx: DeviceContext) raises -> None:
     )
     var cache_lengths_tensor = LayoutTensor[
         mut=False,
-        DType.uint32,
+        .uint32,
         Layout(UNKNOWN_VALUE),
     ](
         cache_lengths_device,
@@ -191,7 +191,7 @@ def test_fused_qk_rope[dtype: DType](ctx: DeviceContext) raises -> None:
     )
     var lookup_table_tensor = LayoutTensor[
         mut=False,
-        DType.uint32,
+        .uint32,
         Layout(UNKNOWN_VALUE),
     ](
         lookup_table_device,

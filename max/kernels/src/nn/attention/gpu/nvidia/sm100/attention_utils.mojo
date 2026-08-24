@@ -3809,7 +3809,7 @@ def apply_mask[
 
             comptime if MaskStrategy.COMPUTED in mask_strategy:
                 s = mask.mask(
-                    IndexList[4, element_type=DType.uint32](
+                    IndexList[4, element_type=.uint32](
                         Int(prompt_idx),
                         Int(q_head_idx),
                         Int(score_row),

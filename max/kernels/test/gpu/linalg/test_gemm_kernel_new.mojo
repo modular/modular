@@ -196,11 +196,11 @@ def test_gemm_kernel_dynamic(ctx: DeviceContext) raises:
     var mat_c = TileTensor(c_device, row_major[M, N]())
 
     comptime kernel = gemm_kernel[
-        DType.float32,
+        .float32,
         mat_c.LayoutType,
-        DType.float32,
+        .float32,
         mat_a.LayoutType,
-        DType.float32,
+        .float32,
         mat_b.LayoutType,
         NUM_THREADS,
         BM,
@@ -227,11 +227,11 @@ def test_gemm_kernel_dynamic(ctx: DeviceContext) raises:
     # Naive gemm.
     comptime BLOCK_DIM = 16
     comptime gemm_naive = matmul_kernel_naive[
-        DType.float32,
+        .float32,
         mat_c.LayoutType,
-        DType.float32,
+        .float32,
         mat_a.LayoutType,
-        DType.float32,
+        .float32,
         mat_b.LayoutType,
         BLOCK_DIM,
     ]
@@ -337,11 +337,11 @@ def test_gemm_kernel_minimal(ctx: DeviceContext) raises:
     var mat_c = TileTensor(c_device, row_major[M, N]())
 
     comptime kernel = gemm_kernel[
-        DType.float32,
+        .float32,
         mat_c.LayoutType,
-        DType.float32,
+        .float32,
         mat_a.LayoutType,
-        DType.float32,
+        .float32,
         mat_b.LayoutType,
         NUM_THREADS,
         BM,
@@ -368,11 +368,11 @@ def test_gemm_kernel_minimal(ctx: DeviceContext) raises:
     # Naive gemm for reference
     comptime BLOCK_DIM = 16
     comptime gemm_naive = matmul_kernel_naive[
-        DType.float32,
+        .float32,
         mat_c.LayoutType,
-        DType.float32,
+        .float32,
         mat_a.LayoutType,
-        DType.float32,
+        .float32,
         mat_b.LayoutType,
         BLOCK_DIM,
     ]

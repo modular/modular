@@ -38,12 +38,12 @@ def main() raises:
         # otherwise we will get unhandled exception error.
         print("FP8-E4M3FN GEMM TESTS")
         test_matmul_sm90[
-            DType.float8_e4m3fn,
-            DType.float8_e4m3fn,
-            DType.bfloat16,
+            .float8_e4m3fn,
+            .float8_e4m3fn,
+            .bfloat16,
             Index(2, 1, 1),
-            block_tile_shape[80, DType.float8_e4m3fn],
-            wgmma_shape[80, DType.float8_e4m3fn],
+            block_tile_shape[80, .float8_e4m3fn],
+            wgmma_shape[80, .float8_e4m3fn],
             num_consumer=2,
             num_pipeline_stages=6,
             partitioned_multicast=False,
@@ -58,12 +58,12 @@ def main() raises:
         )
 
         test_matmul_sm90[
-            DType.float8_e4m3fn,
-            DType.float8_e4m3fn,
-            DType.bfloat16,
+            .float8_e4m3fn,
+            .float8_e4m3fn,
+            .bfloat16,
             Index(2, 1, 1),
-            block_tile_shape[128, DType.float8_e4m3fn],
-            wgmma_shape[128, DType.float8_e4m3fn],
+            block_tile_shape[128, .float8_e4m3fn],
+            wgmma_shape[128, .float8_e4m3fn],
             num_consumer=2,
             partitioned_multicast=False,
             num_pipeline_stages=6,
@@ -78,12 +78,12 @@ def main() raises:
         )
 
         test_matmul_sm90[
-            DType.float8_e4m3fn,
-            DType.float8_e4m3fn,
-            DType.bfloat16,
+            .float8_e4m3fn,
+            .float8_e4m3fn,
+            .bfloat16,
             Index(2, 1, 1),
-            block_tile_shape[128, DType.float8_e4m3fn],
-            wgmma_shape[128, DType.float8_e4m3fn],
+            block_tile_shape[128, .float8_e4m3fn],
+            wgmma_shape[128, .float8_e4m3fn],
             num_consumer=2,
             partitioned_multicast=False,
             num_pipeline_stages=6,
@@ -97,12 +97,12 @@ def main() raises:
         )
 
         test_matmul_sm90[
-            DType.float8_e4m3fn,
-            DType.float8_e4m3fn,
-            DType.bfloat16,
+            .float8_e4m3fn,
+            .float8_e4m3fn,
+            .bfloat16,
             Index(2, 1, 1),
-            block_tile_shape[128, DType.float8_e4m3fn],
-            wgmma_shape[128, DType.float8_e4m3fn],
+            block_tile_shape[128, .float8_e4m3fn],
+            wgmma_shape[128, .float8_e4m3fn],
             num_consumer=2,
             partitioned_multicast=False,
             num_pipeline_stages=6,
@@ -116,12 +116,12 @@ def main() raises:
         )
 
         test_matmul_sm90[
-            DType.float8_e4m3fn,
-            DType.float8_e4m3fn,
-            DType.bfloat16,
+            .float8_e4m3fn,
+            .float8_e4m3fn,
+            .bfloat16,
             Index(2, 1, 1),
-            block_tile_shape[128, DType.float8_e4m3fn],
-            wgmma_shape[128, DType.float8_e4m3fn],
+            block_tile_shape[128, .float8_e4m3fn],
+            wgmma_shape[128, .float8_e4m3fn],
             num_consumer=2,
             num_pipeline_stages=6,
             partitioned_multicast=False,
@@ -135,12 +135,12 @@ def main() raises:
         )
 
         test_matmul_sm90[
-            DType.float8_e4m3fn,
-            DType.float8_e4m3fn,
-            DType.bfloat16,
+            .float8_e4m3fn,
+            .float8_e4m3fn,
+            .bfloat16,
             Index(2, 1, 1),
-            block_tile_shape[128, DType.float8_e4m3fn],
-            wgmma_shape[128, DType.float8_e4m3fn],
+            block_tile_shape[128, .float8_e4m3fn],
+            wgmma_shape[128, .float8_e4m3fn],
             num_consumer=2,
             num_pipeline_stages=6,
             partitioned_multicast=False,
@@ -154,12 +154,12 @@ def main() raises:
         )
 
         test_matmul_sm90[
-            DType.float8_e4m3fn,
-            DType.float8_e4m3fn,
-            DType.bfloat16,
+            .float8_e4m3fn,
+            .float8_e4m3fn,
+            .bfloat16,
             Index(2, 1, 1),
-            block_tile_shape[128, DType.float8_e4m3fn],
-            wgmma_shape[128, DType.float8_e4m3fn],
+            block_tile_shape[128, .float8_e4m3fn],
+            wgmma_shape[128, .float8_e4m3fn],
             num_consumer=2,
             num_pipeline_stages=6,
             partitioned_multicast=False,
@@ -173,12 +173,12 @@ def main() raises:
         )
 
         test_matmul_sm90[
-            DType.float8_e4m3fn,
-            DType.float8_e4m3fn,
-            DType.bfloat16,
+            .float8_e4m3fn,
+            .float8_e4m3fn,
+            .bfloat16,
             Index(1, 2, 1),
-            block_tile_shape[128, DType.float8_e4m3fn],
-            wgmma_shape[128, DType.float8_e4m3fn],
+            block_tile_shape[128, .float8_e4m3fn],
+            wgmma_shape[128, .float8_e4m3fn],
             partitioned_multicast=True,
             measure_threshold=0.001,
         ](
@@ -189,12 +189,12 @@ def main() raises:
         )
 
         test_matmul_sm90[
-            DType.float8_e4m3fn,
-            DType.float8_e4m3fn,
-            DType.bfloat16,
+            .float8_e4m3fn,
+            .float8_e4m3fn,
+            .bfloat16,
             Index(1, 2, 1),
-            block_tile_shape[128, DType.float8_e4m3fn],
-            wgmma_shape[128, DType.float8_e4m3fn],
+            block_tile_shape[128, .float8_e4m3fn],
+            wgmma_shape[128, .float8_e4m3fn],
             partitioned_multicast=False,
             measure_threshold=0.001,
         ](
@@ -205,12 +205,12 @@ def main() raises:
         )
 
         test_matmul_sm90[
-            DType.float8_e4m3fn,
-            DType.float8_e4m3fn,
-            DType.bfloat16,
+            .float8_e4m3fn,
+            .float8_e4m3fn,
+            .bfloat16,
             Index(1, 2, 1),
-            block_tile_shape[128, DType.float8_e4m3fn],
-            wgmma_shape[128, DType.float8_e4m3fn],
+            block_tile_shape[128, .float8_e4m3fn],
+            wgmma_shape[128, .float8_e4m3fn],
             num_consumer=2,
             partitioned_multicast=True,
             measure_threshold=0.001,

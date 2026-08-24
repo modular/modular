@@ -125,9 +125,7 @@ def mha_sm90_dispatch[
     max_cache_valid_length_arg: Int,
     scale: Float32,
     kv_input_row_offsets: OptionalReg[
-        LayoutTensor[
-            DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
-        ]
+        LayoutTensor[.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
     ],
     batch_size_arg: Int,
     partition: PartitionType,
@@ -462,9 +460,7 @@ def _mha_sm90_sink_dispatch[
     num_keys_arg: UInt32,
     valid_length: DeviceBuffer[.uint32],
     kv_input_row_offsets: OptionalReg[
-        LayoutTensor[
-            DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
-        ]
+        LayoutTensor[.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
     ],
     sink_weights: OptionalReg[
         LayoutTensor[
@@ -595,9 +591,7 @@ def _mha_sm90_kv_input_row_offset_dispatch[
     num_keys_arg: UInt32,
     valid_length: DeviceBuffer[.uint32],
     kv_input_row_offsets: OptionalReg[
-        LayoutTensor[
-            DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
-        ]
+        LayoutTensor[.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
     ],
     sink_weights: SinkType,
     partition: PartitionType,
@@ -1282,8 +1276,8 @@ def _mha_sm90[
             k_smem_layout,
             MutAnyOrigin,
             address_space=.SHARED,
-            layout_int_type=DType.int32,
-            linear_idx_type=DType.int32,
+            layout_int_type=.int32,
+            linear_idx_type=.int32,
             alignment=128,
         ],
     ):
@@ -1299,8 +1293,8 @@ def _mha_sm90[
             v_smem_layout,
             MutAnyOrigin,
             address_space=.SHARED,
-            layout_int_type=DType.int32,
-            linear_idx_type=DType.int32,
+            layout_int_type=.int32,
+            linear_idx_type=.int32,
             alignment=128,
         ],
     ):

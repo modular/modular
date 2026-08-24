@@ -566,8 +566,8 @@ def main() raises:
     # The defaults below pin that shape (FP8 e4m3fn, kv_block=128) at the
     # DSV-TP4 head count (num_heads=32, num_kv_heads=1) — the reference target
     # config and the MlaPrefillV2 Phase-1 correctness shape.
-    comptime qkv_type = get_defined_dtype["dtype", DType.float8_e4m3fn]()
-    comptime out_type = get_defined_dtype["out_type", DType.bfloat16]()
+    comptime qkv_type = get_defined_dtype["dtype", .float8_e4m3fn]()
+    comptime out_type = get_defined_dtype["out_type", .bfloat16]()
     comptime num_heads = get_defined_int["num_heads", 32]()
     comptime num_kv_heads = get_defined_int["num_kv_heads", 1]()
     comptime kv_block = get_defined_int["kv_block", 128]()

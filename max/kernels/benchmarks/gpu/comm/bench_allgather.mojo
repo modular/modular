@@ -316,7 +316,7 @@ def bench_allgather[
 def main() raises:
     var num_bytes = arg_parse("num_bytes", 64 * 1024 * 1024)
 
-    comptime dtype = get_defined_dtype["dtype", DType.bfloat16]()
+    comptime dtype = get_defined_dtype["dtype", .bfloat16]()
     comptime num_gpus = get_defined_int["num_gpus", 2]()
     comptime cache_busting = get_defined_bool["cache_busting", True]()
     comptime length_mode = get_defined_string["length_mode", "uniform"]()

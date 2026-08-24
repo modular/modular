@@ -249,7 +249,7 @@ def _compute_swizzle_modes(
             # When not swapped, output_tile_shape[1] is the N dimension.
             # Key the swizzle off bytes so it is dtype-generic: bf16 tile_n
             # {64,32,16} and fp32 tile_n {32,16,8} both map to {128B,64B,32B}.
-            var elem_size = 2 if c_type == .bfloat16 else 4
+            var elem_size = 2 if c_type == DType.bfloat16 else 4
             var row_bytes = output_tile_shape[1] * elem_size
             if row_bytes == 128:
                 c_swizzle = TensorMapSwizzle.SWIZZLE_128B
@@ -892,7 +892,7 @@ def choose_config[
     # a larger range than mma_m.
     if M < M_pivote:
         # when output dtype is float8_e4m3fn, due to output TMA requirement, we need to use 16 as the granularity for 1CTA.
-        var MMA_N_GRANULARITY = 16 if c_type == .float8_e4m3fn else 8
+        var MMA_N_GRANULARITY = 16 if c_type == DType.float8_e4m3fn else 8
         for bm, mma_n in product(
             [64, 128],
             range(
@@ -1462,7 +1462,7 @@ def choose_block_scaled_config[
         sfa_dtype == sfb_dtype
     ), "sfa_dtype and sfb_dtype must be the same"
 
-    comptime is_fp4 = a_type == .uint8
+    comptime is_fp4 = a_type == DType.uint8
 
     comptime num_SMs = B200.sm_count
     # Nvidia mma instruction process 32B in K.

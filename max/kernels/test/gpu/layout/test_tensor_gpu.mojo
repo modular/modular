@@ -39,7 +39,7 @@ def test_copy_dram_to_sram_async(ctx: DeviceContext) raises:
     ):
         var dram_tile = dram_tensor.tile[4, 4](0, block_idx.x)
         var sram_tensor = LayoutTensor[
-            DType.float32,
+            .float32,
             Layout.row_major(4, 4),
             MutAnyOrigin,
             address_space=.SHARED,

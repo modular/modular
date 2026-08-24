@@ -401,7 +401,7 @@ struct MHAConfig[dtype: DType](TrivialRegisterPassable, Writable):
                 == .float32 else (128 if has_amd_gpu_accelerator() else 64)
             )
             var bk_arch_factor = 2 if num_pipeline_stages <= 2 else 1
-            var bk_type_factor = 1 if Self.dtype == .float32 else 2
+            var bk_type_factor = 1 if Self.dtype == DType.float32 else 2
             self.BK = BK.or_else(
                 16 * bk_arch_factor * bk_type_factor
             ) if has_nvidia_gpu_accelerator() else BK.or_else(
@@ -788,9 +788,7 @@ def dispatch_materialized_mask[
     mask_nd: LayoutTensor[mut=False, dtype, layout, _],
     callback_fn: Some[callback_fn_type],
     start_pos_nd: OptionalReg[
-        LayoutTensor[
-            DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
-        ]
+        LayoutTensor[.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
     ] = None,
 ) raises -> None:
     """Wrap a dense mask tensor in a `MaterializedMask` and invoke a callback.
@@ -826,10 +824,10 @@ def dispatch_relative_logits_mask[
 ](
     bias_nd: LayoutTensor[mut=False, dtype, layout, _],
     cache_lengths: LayoutTensor[
-        DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
+        .uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
     ],
     input_row_offsets: LayoutTensor[
-        DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
+        .uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
     ],
     callback_fn: Some[callback_fn_type],
 ) raises -> None:

@@ -495,7 +495,7 @@ def bench_rs_norm_gemm_pdl[
 
 
 def main() raises:
-    comptime in_dtype = get_defined_dtype["dtype", DType.bfloat16]()
+    comptime in_dtype = get_defined_dtype["dtype", .bfloat16]()
     comptime num_cols = get_defined_int["num_cols", 6144]()
     comptime gemm_n = get_defined_int["gemm_n", 4096]()
     comptime bm = get_defined_int["bm", 64]()

@@ -24,9 +24,7 @@ from std.utils.index import Index, IndexList
 
 def compute_rms[
     dtype: DType
-](data: TileTensor[dtype, ...], size: Int, eps: Float32) -> Scalar[
-    DType.float32
-]:
+](data: TileTensor[dtype, ...], size: Int, eps: Float32) -> Scalar[.float32]:
     comptime assert data.rank == 1, "data.rank must be 1"
     var sum_of_squares = Float32()
     for i in range(size):

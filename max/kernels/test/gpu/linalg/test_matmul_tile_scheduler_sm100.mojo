@@ -104,7 +104,7 @@ def test_kernel[
 
     var scheduler = TileScheduler[
         num_stages=num_stages,
-        cluster_shape=Index[dtype=DType.uint32](
+        cluster_shape=Index[dtype=.uint32](
             cluster_shape[0], cluster_shape[1], cluster_shape[2]
         ),
         block_swizzle_size=8,

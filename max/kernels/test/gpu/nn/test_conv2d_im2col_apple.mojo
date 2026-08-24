@@ -274,7 +274,7 @@ def test_conv2d_im2col_direct[
         filter_host[i] = Scalar[dtype](t * 0.5 - 0.25)
 
     # CPU reference at fp32 accumulator (matches the GPU matmul), narrowed back.
-    comptime accum_dtype = DType.float32 if dtype == .bfloat16 else dtype
+    comptime accum_dtype = DType.float32 if dtype == DType.bfloat16 else dtype
     var output_ref_accum_host = ctx.enqueue_create_host_buffer[accum_dtype](
         output_size
     )
@@ -435,7 +435,7 @@ def test_conv2d_fused_apple[
         var t = Float64(i % 13) / 13.0
         filter_host[i] = Scalar[dtype](t * 0.5 - 0.25)
 
-    comptime accum_dtype = DType.float32 if dtype == .bfloat16 else dtype
+    comptime accum_dtype = DType.float32 if dtype == DType.bfloat16 else dtype
     var output_ref_accum_host = ctx.enqueue_create_host_buffer[accum_dtype](
         output_size
     )
@@ -593,7 +593,7 @@ def test_conv2d_gpu_dispatch[
         var t = Float64(i % 13) / 13.0
         filter_host[i] = Scalar[dtype](t * 0.5 - 0.25)
 
-    comptime accum_dtype = DType.float32 if dtype == .bfloat16 else dtype
+    comptime accum_dtype = DType.float32 if dtype == DType.bfloat16 else dtype
     var output_ref_accum_host = ctx.enqueue_create_host_buffer[accum_dtype](
         output_size
     )

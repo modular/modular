@@ -198,11 +198,11 @@ def test_gemm_kernel_dynamic(ctx: DeviceContext) raises:
     var c_tensor = LayoutTensor[.float32, c_layout, MutAnyOrigin](c_device)
 
     comptime kernel = gemm_kernel[
-        DType.float32,
+        .float32,
         c_tensor.layout,
-        DType.float32,
+        .float32,
         a_tensor.layout,
-        DType.float32,
+        .float32,
         b_tensor.layout,
         NUM_THREADS,
         BM,
@@ -250,9 +250,9 @@ def test_gemm_kernel_dynamic(ctx: DeviceContext) raises:
     # Naive gemm.
     comptime BLOCK_DIM = 16
     comptime gemm_naive = matmul_kernel_naive[
-        DType.float32,
-        DType.float32,
-        DType.float32,
+        .float32,
+        .float32,
+        .float32,
         type_of(c_ref_tt).LayoutType,
         type_of(a_tt).LayoutType,
         type_of(b_tt).LayoutType,

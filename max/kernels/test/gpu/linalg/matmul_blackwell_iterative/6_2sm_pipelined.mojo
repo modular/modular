@@ -459,8 +459,8 @@ def store_C[
     # Create a layout for everything
     var st_matrix_rt_layout = RuntimeLayout[
         st_matrix_n_layout[c_type, TMA_BN, num_m_mmas, 1](),
-        element_type=DType.int32,
-        linear_idx_type=DType.int32,
+        element_type=.int32,
+        linear_idx_type=.int32,
     ]()
 
     # For 32-column tiles, we need a different swizzle pattern
@@ -1254,9 +1254,9 @@ def main() raises:
             block_tile_shape[0] * 2, block_tile_shape[1] * 2, 16
         )
         test_blackwell_kernel_6[
-            DType.bfloat16,
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
+            .bfloat16,
             block_tile_shape,
             umma_shape,
             cluster_shape=StaticTuple[Int32, 3](2, 1, 1),

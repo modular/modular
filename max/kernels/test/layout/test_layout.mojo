@@ -899,7 +899,7 @@ def test_arange_nested_layout() raises:
     """Test arange function with nested layout structures."""
     # Test nested layout with tile structure similar to GPU shared memory tiles
     var nested_tensor = LayoutTensor[
-        DType.float32,
+        .float32,
         Layout(
             IntTuple(IntTuple(16, 8), IntTuple(32, 2)),
             IntTuple(IntTuple(32, 1024), IntTuple(1, 512)),
@@ -911,7 +911,7 @@ def test_arange_nested_layout() raises:
 
     # Test simple 2D layout with row-major for comparison
     var simple_tensor = LayoutTensor[
-        DType.float32,
+        .float32,
         Layout.row_major(4, 4),
         MutAnyOrigin,
     ].stack_allocation()
@@ -929,7 +929,7 @@ def test_arange_nested_layout() raises:
 
     # Test column-major layout
     var col_major_tensor = LayoutTensor[
-        DType.float32,
+        .float32,
         Layout.col_major(4, 4),
         MutAnyOrigin,
     ].stack_allocation()

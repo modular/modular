@@ -110,9 +110,9 @@ def matmul_dispatch_sm90[
     comptime assert c.rank == 2, "c must be rank 2"
     comptime assert a.rank == 2, "a must be rank 2"
     comptime assert b.rank == 2, "b must be rank 2"
-    comptime is_AB_fp8 = a_type == b_type == .float8_e4m3fn
-    comptime is_AB_bf16 = a_type == b_type == .bfloat16
-    comptime is_AB_fp32 = a_type == b_type == .float32
+    comptime is_AB_fp8 = a_type == b_type == DType.float8_e4m3fn
+    comptime is_AB_bf16 = a_type == b_type == DType.bfloat16
+    comptime is_AB_fp32 = a_type == b_type == DType.float32
 
     comptime input_type_supported = is_AB_fp8 or is_AB_bf16 or is_AB_fp32
 
@@ -843,7 +843,7 @@ def matmul_dispatch_sm90_bf16_fp32[
     comptime assert c.rank == 2, "c must be rank 2"
     comptime assert a.rank == 2, "a must be rank 2"
     comptime assert b.rank == 2, "b must be rank 2"
-    comptime size_factor = 2 if a_type == .float32 else 1
+    comptime size_factor = 2 if a_type == DType.float32 else 1
     comptime mma_k = 16 // size_factor
     comptime BK = 64 // size_factor
 
@@ -1982,7 +1982,7 @@ def _find_largest_bn_for_sm90_matmul[dtype: DType, N: Int]() -> Int:
 
     def _get_max_bn() -> Int:
         # For float8_e4m3fn maximum BN that will not result in register spilling is 160
-        var BN = 160 if dtype == .float8_e4m3fn else 256
+        var BN = 160 if dtype == DType.float8_e4m3fn else 256
         while BN >= 8:
             if N % BN == 0:
                 return BN

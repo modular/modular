@@ -267,14 +267,14 @@ def test_paged_kv_cache_offset_correctness() raises:
                 blocks.runtime_layout.stride.value,
             ),
         ),
-        LayoutTensor[mut=False, DType.uint32, Layout(UNKNOWN_VALUE)](
+        LayoutTensor[mut=False, .uint32, Layout(UNKNOWN_VALUE)](
             cache_lengths.ptr,
             RuntimeLayout[Layout(UNKNOWN_VALUE)](
                 cache_lengths.runtime_layout.shape.value,
                 cache_lengths.runtime_layout.stride.value,
             ),
         ),
-        LayoutTensor[mut=False, DType.uint32, Layout.row_major[2]()](
+        LayoutTensor[mut=False, .uint32, Layout.row_major[2]()](
             lookup_table.ptr,
             RuntimeLayout[Layout.row_major[2]()](
                 lookup_table.runtime_layout.shape.value,
@@ -397,7 +397,7 @@ def test_scales_resolve_through_their_own_lookup_table() raises:
     # Values resolve through block 0.
     var lookup_table_ptr = alloc[UInt32](batch_size)
     lookup_table_ptr[0] = UInt32(0)
-    var lookup_table = LayoutTensor[mut=False, DType.uint32, layout_2d](
+    var lookup_table = LayoutTensor[mut=False, .uint32, layout_2d](
         lookup_table_ptr,
         RuntimeLayout[layout_2d].row_major(IndexList[2](batch_size, 1)),
     )
@@ -407,8 +407,8 @@ def test_scales_resolve_through_their_own_lookup_table() raises:
     var scales_lookup_table_ptr = alloc[UInt32](batch_size)
     scales_lookup_table_ptr[0] = UInt32(2)
     var scales_lookup_table_opt: OptionalReg[
-        LayoutTensor[mut=False, DType.uint32, layout_2d, MutUntrackedOrigin]
-    ] = LayoutTensor[mut=False, DType.uint32, layout_2d](
+        LayoutTensor[mut=False, .uint32, layout_2d, MutUntrackedOrigin]
+    ] = LayoutTensor[mut=False, .uint32, layout_2d](
         scales_lookup_table_ptr,
         RuntimeLayout[layout_2d].row_major(IndexList[2](batch_size, 1)),
     )

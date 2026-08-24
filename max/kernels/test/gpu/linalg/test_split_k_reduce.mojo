@@ -105,7 +105,7 @@ def test_split_k_reduce_rank3[
     ctx.enqueue_copy(c_host, c_device)
     ctx.synchronize()
 
-    comptime rtol = 1e-4 if c_type == .float32 else 1e-2
+    comptime rtol = 1e-4 if c_type == DType.float32 else 1e-2
     for i in range(M * N):
         if not isclose(c_host[i], c_host_ref[i], rtol=rtol):
             print(
@@ -120,6 +120,6 @@ def test_split_k_reduce_rank3[
 def main() raises:
     with DeviceContext() as ctx:
         # Rank-3 work space.
-        test_split_k_reduce_rank3[.bfloat16, DType.bfloat16](64, 64, 2, ctx)
-        test_split_k_reduce_rank3[.bfloat16, DType.float32](32, 32, 5, ctx)
-        test_split_k_reduce_rank3[.float32, DType.float32](32, 64, 3, ctx)
+        test_split_k_reduce_rank3[.bfloat16, .bfloat16](64, 64, 2, ctx)
+        test_split_k_reduce_rank3[.bfloat16, .float32](32, 32, 5, ctx)
+        test_split_k_reduce_rank3[.float32, .float32](32, 64, 3, ctx)

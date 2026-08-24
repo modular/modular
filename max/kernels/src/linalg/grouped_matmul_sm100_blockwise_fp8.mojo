@@ -454,7 +454,7 @@ def matmul_sm100_grouped_blockwise_scaled_fp8_1d2d_kernel[
         c_type,
         c_gmem_layout,
         MutAnyOrigin,
-        layout_int_type=DType.int32,
+        layout_int_type=.int32,
         address_space=.GENERIC,
     ]
 
@@ -1490,8 +1490,8 @@ def multi_stage_reg_epilogue[
             comptime c_smem_M = c_smem_tile.layout.shape[0].value()
             comptime RLayout32Bits[layout: Layout] = RuntimeLayout[
                 layout,
-                element_type=DType.uint32,
-                linear_idx_type=DType.uint32,
+                element_type=.uint32,
+                linear_idx_type=.uint32,
             ]
             comptime simd_size = simd_width_of[c_type]()
             comptime alignment = align_of[SIMD[c_type, simd_size]]()
@@ -1518,11 +1518,11 @@ def multi_stage_reg_epilogue[
                 # zipped.shape[1][1] == 1 by construction
                 comptime for j in range(zipped.shape[1][0].value()):
                     var input_crd = RuntimeTuple[
-                        IntTuple(UNKNOWN_VALUE, j), element_type=DType.uint32
+                        IntTuple(UNKNOWN_VALUE, j), element_type=.uint32
                     ](thread_idx.x, j)
                     var linear_idx = zipped_rt(input_crd) * UInt32(simd_size)
                     var linear_tup = RuntimeTuple[
-                        IntTuple(UNKNOWN_VALUE), element_type=DType.uint32
+                        IntTuple(UNKNOWN_VALUE), element_type=.uint32
                     ](Int(linear_idx))
                     var cmem_crd = idx2crd(
                         linear_tup, split_rt.shape, split_rt.stride

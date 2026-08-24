@@ -230,7 +230,7 @@ def kernel_3[
         accum_type,
         a_type,
         b_type,
-        Index[dtype=DType.uint32](mma_shape[0], mma_shape[1]),
+        Index[dtype=.uint32](mma_shape[0], mma_shape[1]),
         transpose_b=transpose_b,
     ]()
 
@@ -637,9 +637,9 @@ def main() raises:
             benchmark_blackwell_matmul(ctx)
 
         test_blackwell_kernel_3[
-            DType.bfloat16,
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
+            .bfloat16,
             umma_shape=Index(64, 256, 16),
             transpose_b=True,
             BK=64,

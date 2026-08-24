@@ -80,11 +80,11 @@ def test_fp8_multistage_gemm[
     var a_tt = a_device_nd.as_immut()
     var b_tt = b_device_nd.as_immut()
 
-    comptime kernels = MatmulKernels[dtype, dtype, DType.float32, transpose_b]()
+    comptime kernels = MatmulKernels[dtype, dtype, .float32, transpose_b]()
     comptime config = kernels.hopper_128x128_4
 
     comptime kernel = multistage_gemm_kernel[
-        DType.float32,  # c_type
+        .float32,  # c_type
         c_tt.LayoutType,
         dtype,  # a_type
         a_tt.LayoutType,
@@ -173,16 +173,16 @@ def test_fp8_multistage_gemm[
 def main() raises:
     with DeviceContext() as ctx:
         test_fp8_multistage_gemm[
-            DType.float8_e4m3fn, 128, 128, 64, transpose_b=True
+            .float8_e4m3fn, 128, 128, 64, transpose_b=True
         ](ctx)
         test_fp8_multistage_gemm[
-            DType.float8_e4m3fn, 128, 128, 128, transpose_b=True
+            .float8_e4m3fn, 128, 128, 128, transpose_b=True
         ](ctx)
 
     # FIXME: KERN-1480
     # test_fp8_multistage_gemm[
-    # DType.float8_e4m3fn, 128, 128, 64, transpose_b=False
+    # .float8_e4m3fn, 128, 128, 64, transpose_b=False
     # ](ctx)
     # test_fp8_multistage_gemm[
-    # DType.float8_e4m3fn, 128, 128, 128, transpose_b=False
+    # .float8_e4m3fn, 128, 128, 128, transpose_b=False
     # ](ctx)

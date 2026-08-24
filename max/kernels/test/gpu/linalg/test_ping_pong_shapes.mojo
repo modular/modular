@@ -77,9 +77,9 @@ def test_shape[
         # FP8 accumulation has more noise than BF16 due to lower precision inputs.
         # BF16 with small M and large K can also show >1% relative error on
         # tiny values due to cancellation and accumulation order differences.
-        var rel_tol = Float32(0.05) if in_dtype == .float8_e4m3fn else Float32(
-            0.03
-        )
+        var rel_tol = Float32(
+            0.05
+        ) if in_dtype == DType.float8_e4m3fn else Float32(0.03)
         var abs_tol = Float32(1e-4)
 
         for i in range(M * N):

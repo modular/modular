@@ -79,7 +79,7 @@ def execute_flash_attention[
     random(q.tensor())
 
     var valid_lengths = ManagedLayoutTensor[
-        DType.uint32, Layout.row_major(UNKNOWN_VALUE)
+        .uint32, Layout.row_major(UNKNOWN_VALUE)
     ](
         RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
             Index(batch_size)
@@ -110,7 +110,7 @@ def execute_flash_attention[
 
     # initialize our KVCache
     var cache_lengths_managed = ManagedLayoutTensor[
-        DType.uint32, Layout(UNKNOWN_VALUE)
+        .uint32, Layout(UNKNOWN_VALUE)
     ](
         RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(Index(batch_size)),
         ctx,
@@ -227,7 +227,7 @@ def execute_flash_attention_suite(ctx: DeviceContext) raises:
     comptime dtypes = (DType.float32, DType.bfloat16)
     var bs = 2
     var valid_length_managed = ManagedLayoutTensor[
-        DType.uint32, Layout(UNKNOWN_VALUE)
+        .uint32, Layout(UNKNOWN_VALUE)
     ](
         RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(Index(bs)),
         ctx,
@@ -235,7 +235,7 @@ def execute_flash_attention_suite(ctx: DeviceContext) raises:
     var valid_length = valid_length_managed.tensor[update=False]()
 
     var cache_valid_length_managed = ManagedLayoutTensor[
-        DType.uint32, Layout(UNKNOWN_VALUE)
+        .uint32, Layout(UNKNOWN_VALUE)
     ](
         RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(Index(bs)),
         ctx,

@@ -3305,7 +3305,7 @@ def clamped_index_coordinate(
     var tile_key_base: UInt32,
     var num_keys: Int,
     var cache_start_pos: UInt32,
-) -> IndexList[4, element_type=DType.uint32]:
+) -> IndexList[4, element_type=.uint32]:
     """Builds a four-component index coordinate with the key index clamped to the last valid key.
 
     Args:
@@ -3326,7 +3326,7 @@ def clamped_index_coordinate(
     # Clamp k to last valid key so MaterializedMask never reads OOB.
     var last_k_abs: UInt32 = cache_start_pos + UInt32(max(num_keys - 1, 0))
     var k_idx_abs_safe: UInt32 = min(k_idx_abs, last_k_abs)
-    return IndexList[4, element_type=DType.uint32](
+    return IndexList[4, element_type=.uint32](
         Int(prompt_idx),
         Int(q_head_idx),
         Int(q_idx_abs),

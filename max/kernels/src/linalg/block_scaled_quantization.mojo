@@ -284,7 +284,7 @@ def quantize_dynamic_scaled_fp4fp8_kernel[
         2,
         4,
     ), "NUM_THREADS_PER_SF must be 2 or 4"
-    comptime OUTPUT_WIDTH = 4 if out_dtype == .uint8 else 8
+    comptime OUTPUT_WIDTH = 4 if out_dtype == DType.uint8 else 8
 
     comptime assert (
         input.shape[1]() % ELEMENTS_PER_THREAD == 0
@@ -1568,7 +1568,7 @@ def grouped_quantize_dynamic_scaled_fp4_async_kernel[
 
         comptime ELEMENTS_PER_THREAD = 8
         comptime NUM_THREADS_PER_SF = SF_VECTOR_SIZE // ELEMENTS_PER_THREAD
-        comptime OUTPUT_WIDTH = 4 if output_dtype == .uint8 else 8
+        comptime OUTPUT_WIDTH = 4 if output_dtype == DType.uint8 else 8
         comptime num_threads_per_row = SF_K_GROUP_SIZE // ELEMENTS_PER_THREAD
         comptime rows_per_iter = num_threads // num_threads_per_row
         comptime num_iters = SF_MN_GROUP_SIZE // rows_per_iter
@@ -1886,7 +1886,7 @@ def block_scaled_matmul_with_epilogue[
 
     var m = Int(c.dim[0]())
     var n = Int(c.dim[1]())
-    var _k = Int(a.dim[1]()) * 2 if a_type == .uint8 else Int(a.dim[1]())
+    var _k = Int(a.dim[1]()) * 2 if a_type == DType.uint8 else Int(a.dim[1]())
     if m == 0 or n == 0:
         return
 
@@ -2090,7 +2090,7 @@ def block_scaled_matmul[
 
     var m = Int(c.dim[0]())
     var n = Int(c.dim[1]())
-    var k = Int(a.dim[1]()) * 2 if a_type == .uint8 else Int(a.dim[1]())
+    var k = Int(a.dim[1]()) * 2 if a_type == DType.uint8 else Int(a.dim[1]())
 
     if m == 0 or n == 0:
         return
@@ -2379,9 +2379,9 @@ def quantize_dynamic_block_scaled[
 
     comptime static_input_N = input_tensor.static_shape[1]
     comptime static_output_N = output_tensor.static_shape[1]
-    comptime is_nvfp4 = out_dtype == .uint8 and scales_dtype == NVFP4_SF_DTYPE and SF_VECTOR_SIZE == NVFP4_SF_VECTOR_SIZE
-    comptime is_mxfp4 = out_dtype == .uint8 and scales_dtype == MXFP4_SF_DTYPE and SF_VECTOR_SIZE == MXFP4_SF_VECTOR_SIZE
-    comptime is_fp8 = out_dtype == .float8_e4m3fn and scales_dtype == MXFP8_SF_DTYPE and SF_VECTOR_SIZE == MXFP8_SF_VECTOR_SIZE
+    comptime is_nvfp4 = out_dtype == DType.uint8 and scales_dtype == NVFP4_SF_DTYPE and SF_VECTOR_SIZE == NVFP4_SF_VECTOR_SIZE
+    comptime is_mxfp4 = out_dtype == DType.uint8 and scales_dtype == MXFP4_SF_DTYPE and SF_VECTOR_SIZE == MXFP4_SF_VECTOR_SIZE
+    comptime is_fp8 = out_dtype == DType.float8_e4m3fn and scales_dtype == MXFP8_SF_DTYPE and SF_VECTOR_SIZE == MXFP8_SF_VECTOR_SIZE
     comptime assert is_nvfp4 or is_mxfp4 or is_fp8, "invalid scaling kind"
 
     comptime is_packed_fp4 = is_nvfp4 or is_mxfp4
@@ -2614,7 +2614,7 @@ def _quantize_mx_amd_kernel[
     element. Only the scale derivation and the store width differ.
     """
     # 2 for MXFP4 (nibble-packed), 1 for MXFP8 (one byte per element).
-    comptime elems_per_byte = 2 if out_dtype == .uint8 else 1
+    comptime elems_per_byte = 2 if out_dtype == DType.uint8 else 1
     var _num_rows = Int(num_rows)
     var _num_cols = Int(num_cols)
     comptime NUM_THREADS_PER_SF = SF_VECTOR_SIZE // ELEMENTS_PER_THREAD

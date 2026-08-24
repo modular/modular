@@ -902,7 +902,7 @@ def bench_stencil_avg_pool_padded[
 
 
 def main() raises:
-    comptime dtype = get_defined_dtype["dtype", DType.bfloat16]()
+    comptime dtype = get_defined_dtype["dtype", .bfloat16]()
     comptime batch_size = get_defined_int["batch_size", 128]()
     comptime input_height = get_defined_int["input_height", 1024]()
     comptime input_width = get_defined_int["input_width", 1024]()

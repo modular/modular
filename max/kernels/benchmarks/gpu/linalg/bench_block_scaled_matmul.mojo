@@ -733,17 +733,13 @@ def bench_mxfp4_amd[
         sfa: TileTensor[.float8_e8m0fnu, ...],
         sfb: TileTensor[.float8_e8m0fnu, ...],
     ) raises:
-        var sfa_lt = LayoutTensor[
-            DType.float8_e8m0fnu, sfa_layout, ImmutAnyOrigin
-        ](
+        var sfa_lt = LayoutTensor[.float8_e8m0fnu, sfa_layout, ImmutAnyOrigin](
             rebind[UnsafePointer[Float8_e8m0fnu, ImmutAnyOrigin]](sfa.ptr),
             RuntimeLayout[sfa_layout].row_major(
                 IndexList[2](Int(sfa.dim[0]()), Int(sfa.dim[1]()))
             ),
         )
-        var sfb_lt = LayoutTensor[
-            DType.float8_e8m0fnu, sfb_layout, ImmutAnyOrigin
-        ](
+        var sfb_lt = LayoutTensor[.float8_e8m0fnu, sfb_layout, ImmutAnyOrigin](
             rebind[UnsafePointer[Float8_e8m0fnu, ImmutAnyOrigin]](sfb.ptr),
             RuntimeLayout[sfb_layout].row_major(
                 IndexList[2](Int(sfb.dim[0]()), Int(sfb.dim[1]()))

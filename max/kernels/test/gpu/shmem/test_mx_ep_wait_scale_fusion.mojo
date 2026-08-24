@@ -187,7 +187,7 @@ def _run_fusion_check[
     comptime assert hidden_size % MXFP4_SF_VECTOR_SIZE == 0
     # Mirrors `MXTokenFormat.elems_per_byte`, the only place the quant format
     # enters; the bracket assert below pins the two derivations together.
-    comptime elems_per_byte = 2 if quant_dtype == .uint8 else 1
+    comptime elems_per_byte = 2 if quant_dtype == DType.uint8 else 1
     comptime output_dim = hidden_size // elems_per_byte
     comptime scale_K = hidden_size // MXFP4_SF_VECTOR_SIZE
     comptime n_off = NUM_ACTIVE + 1

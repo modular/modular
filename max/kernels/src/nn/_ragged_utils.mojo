@@ -25,7 +25,7 @@ from std.utils import IndexList
 
 @always_inline
 def get_batch_from_row_offsets(
-    row_offsets: LayoutTensor[mut=False, DType.uint32, ...], tok_idx: Int
+    row_offsets: LayoutTensor[mut=False, .uint32, ...], tok_idx: Int
 ) -> Int:
     """Calculate the batch_idx for the given flattened token_idx using row_offsets.
     """

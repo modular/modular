@@ -396,14 +396,14 @@ def run_varlen_selective_scan_fwd_gpu[
     var delta_bias_gpu_lt = LayoutTensor[dtype, layout_1d, MutAnyOrigin](
         delta_bias_d, RuntimeLayout[layout_1d].row_major(Index(delta_bias_size))
     )
-    var query_start_loc_gpu_lt = LayoutTensor[
-        DType.int32, layout_1d, MutAnyOrigin
-    ](query_start_loc_d, RuntimeLayout[layout_1d].row_major(Index(batch + 1)))
-    var cache_indices_gpu_lt = LayoutTensor[
-        DType.int32, layout_1d, MutAnyOrigin
-    ](cache_indices_d, RuntimeLayout[layout_1d].row_major(Index(batch)))
+    var query_start_loc_gpu_lt = LayoutTensor[.int32, layout_1d, MutAnyOrigin](
+        query_start_loc_d, RuntimeLayout[layout_1d].row_major(Index(batch + 1))
+    )
+    var cache_indices_gpu_lt = LayoutTensor[.int32, layout_1d, MutAnyOrigin](
+        cache_indices_d, RuntimeLayout[layout_1d].row_major(Index(batch))
+    )
     var _has_initial_state_gpu_lt = LayoutTensor[
-        DType.bool, layout_1d, MutAnyOrigin
+        .bool, layout_1d, MutAnyOrigin
     ](has_initial_state_d, RuntimeLayout[layout_1d].row_major(Index(batch)))
 
     # Create TileTensors for GPU kernel

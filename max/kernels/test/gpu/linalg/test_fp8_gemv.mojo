@@ -265,7 +265,7 @@ def _run_tiled_fp8[
         enqueue_fp8_materialize[.bfloat16](wdense_tt, weight_tt, ctx)
         var oracle_tt = TileTensor(oracle_dev.unsafe_ptr(), row_major(M, N))
         enqueue_apple_matmul[
-            in_type=DType.bfloat16, c_type=c_type, transpose_b=True
+            in_type=.bfloat16, c_type=c_type, transpose_b=True
         ](oracle_tt, act_tt, wdense_tt.as_immut(), ctx)
         var oracle_host = ctx.enqueue_create_host_buffer[c_type](M * N)
         ctx.enqueue_copy(oracle_host, oracle_dev)

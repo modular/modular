@@ -101,7 +101,7 @@ def test_conv3d_qslice_direct[
     rand(input_host.as_span())
     rand(filter_host.as_span())
 
-    comptime accum_dtype = DType.float32 if dtype == .bfloat16 else dtype
+    comptime accum_dtype = DType.float32 if dtype == DType.bfloat16 else dtype
     var output_ref_accum_host = ctx.enqueue_create_host_buffer[accum_dtype](
         output_size
     )

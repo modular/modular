@@ -291,7 +291,7 @@ def execute_mla_decode_sparse[
 
 
 def main() raises:
-    comptime q_dtype = get_defined_dtype["q_dtype", DType.float8_e4m3fn]()
+    comptime q_dtype = get_defined_dtype["q_dtype", .float8_e4m3fn]()
     comptime num_heads = get_defined_int["num_heads", 8]()
     comptime page_size = get_defined_int["page_size", 128]()
     comptime top_k = get_defined_int["top_k", 2048]()

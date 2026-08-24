@@ -513,7 +513,7 @@ def bulk_mma_pair_cta_ts_kernel[
         accum_type,
         ab_type,
         ab_type,
-        Index[dtype=DType.uint32](MMA_M, MMA_N),
+        Index[dtype=.uint32](MMA_M, MMA_N),
         transpose_b=transpose_b,
     ]()
 
@@ -918,8 +918,8 @@ def main() raises:
             comptime for transpose_b in [True, False]:
                 # BM=64, BN=128 -> larger N tile, tests wider bulk_mma
                 test_bulk_mma_pair_cta[
-                    ab_type=DType.bfloat16,
-                    c_type=DType.bfloat16,
+                    ab_type=.bfloat16,
+                    c_type=.bfloat16,
                     prob_shape=Index(512, 1024, 8 * BK),
                     block_tile_shape=Index(64, 128, BK),
                     transpose_b=transpose_b,
@@ -932,8 +932,8 @@ def main() raises:
 
                 # BM=64 -> MMA_M=128, cluster_shape=(2,1,1)
                 test_bulk_mma_pair_cta[
-                    ab_type=DType.bfloat16,
-                    c_type=DType.bfloat16,
+                    ab_type=.bfloat16,
+                    c_type=.bfloat16,
                     prob_shape=Index(128, 2 * BN_BM64, 2 * BK),
                     block_tile_shape=Index(64, BN_BM64, BK),
                     transpose_b=transpose_b,
@@ -944,8 +944,8 @@ def main() raises:
 
                 # Larger cluster: (2,2,1)
                 test_bulk_mma_pair_cta[
-                    ab_type=DType.bfloat16,
-                    c_type=DType.bfloat16,
+                    ab_type=.bfloat16,
+                    c_type=.bfloat16,
                     prob_shape=Index(128, 4 * BN_BM64, 2 * BK),
                     block_tile_shape=Index(64, BN_BM64, BK),
                     transpose_b=transpose_b,
@@ -958,8 +958,8 @@ def main() raises:
 
                 # BM=128 -> MMA_M=256, tests different TMEM read-back path
                 test_bulk_mma_pair_cta[
-                    ab_type=DType.bfloat16,
-                    c_type=DType.bfloat16,
+                    ab_type=.bfloat16,
+                    c_type=.bfloat16,
                     prob_shape=Index(256, 2 * BN_BM128, 2 * BK),
                     block_tile_shape=Index(128, BN_BM128, BK),
                     transpose_b=transpose_b,
@@ -981,8 +981,8 @@ def main() raises:
 
             # Matches depth512 Q@K': BM=64, BN=128, BK=128, transpose_b=True
             test_bulk_mma_pair_cta[
-                ab_type=DType.bfloat16,
-                c_type=DType.bfloat16,
+                ab_type=.bfloat16,
+                c_type=.bfloat16,
                 prob_shape=Index(128, 256, 2 * BK2),
                 block_tile_shape=Index(64, 128, BK2),
                 transpose_b=True,
@@ -993,8 +993,8 @@ def main() raises:
 
             # Same with transpose_b=False (matches P@V geometry)
             test_bulk_mma_pair_cta[
-                ab_type=DType.bfloat16,
-                c_type=DType.bfloat16,
+                ab_type=.bfloat16,
+                c_type=.bfloat16,
                 prob_shape=Index(128, 256, 2 * BK2),
                 block_tile_shape=Index(64, 128, BK2),
                 transpose_b=False,
@@ -1016,8 +1016,8 @@ def main() raises:
 
                 # BM=128 (MMA_M=256): simple TMEM readback
                 test_bulk_mma_pair_cta[
-                    ab_type=DType.bfloat16,
-                    c_type=DType.bfloat16,
+                    ab_type=.bfloat16,
+                    c_type=.bfloat16,
                     prob_shape=Index(256, 2 * BN_TS_BM128, 2 * BK_TS),
                     block_tile_shape=Index(128, BN_TS_BM128, BK_TS),
                     transpose_b=transpose_b_ts,
@@ -1031,8 +1031,8 @@ def main() raises:
 
                 # BM=64 (MMA_M=128): split TMEM readback, 1 K iter
                 test_bulk_mma_pair_cta[
-                    ab_type=DType.bfloat16,
-                    c_type=DType.bfloat16,
+                    ab_type=.bfloat16,
+                    c_type=.bfloat16,
                     prob_shape=Index(128, 2 * BN_TS_BM64, BK_TS),
                     block_tile_shape=Index(64, BN_TS_BM64, BK_TS),
                     transpose_b=transpose_b_ts,
@@ -1044,8 +1044,8 @@ def main() raises:
 
                 # BM=64 (MMA_M=128): split TMEM readback, 2 K iters
                 test_bulk_mma_pair_cta[
-                    ab_type=DType.bfloat16,
-                    c_type=DType.bfloat16,
+                    ab_type=.bfloat16,
+                    c_type=.bfloat16,
                     prob_shape=Index(128, 2 * BN_TS_BM64, 2 * BK_TS),
                     block_tile_shape=Index(64, BN_TS_BM64, BK_TS),
                     transpose_b=transpose_b_ts,

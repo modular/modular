@@ -385,7 +385,7 @@ def _mma_wmma_rdna(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
             comptime if _has_shape[(16, 16, 8, 8)](
                 a.length, b.length, c.length, d.length
             ):
-                comptime type_name = "f16" if a.dtype == .float16 else "bf16"
+                comptime type_name = "f16" if a.dtype == DType.float16 else "bf16"
                 return "llvm.amdgcn.wmma.f32.16x16x16." + type_name
             else:
                 _unsupported_mma_op(d, a, b, c)
@@ -584,8 +584,8 @@ def _mma_wmma_rdna(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
         elif a.dtype == .int8 or a.dtype == .uint8:
             # iu8: the interleaved `i1` signedness and trailing `i1` clamp are
             # immediates; A/B pack to `<4 x i32>` (gfx11) or `<2 x i32>` (gfx12).
-            comptime a_signed = a.dtype == .int8
-            comptime b_signed = b.dtype == .int8
+            comptime a_signed = a.dtype == DType.int8
+            comptime b_signed = b.dtype == DType.int8
             comptime if _is_amd_rdna4():
                 var a8 = a.slice[8, offset=8]() if second_half else a.slice[
                     8, offset=0

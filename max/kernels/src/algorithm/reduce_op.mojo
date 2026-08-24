@@ -1463,7 +1463,7 @@ struct ArgMax[
             Self.dtype,
             _argmax_identity[Self.dtype](),
         ](val)
-        var idx_padded = Self.pad[Self.W, DType.int64, Int64.MAX](idx)
+        var idx_padded = Self.pad[Self.W, .int64, Int64.MAX](idx)
         # Strict `gt` (not `!le`): the two agree for every ordered pair, but
         # for a NaN candidate `gt` is false, so the accumulator is kept and
         # the NaN is skipped. `le` took it, poisoning the accumulator and
@@ -1644,7 +1644,7 @@ struct ArgMin[
             Self.dtype,
             _argmin_identity[Self.dtype](),
         ](val)
-        var idx_padded = Self.pad[Self.W, DType.int64, Int64.MAX](idx)
+        var idx_padded = Self.pad[Self.W, .int64, Int64.MAX](idx)
         # Strict `lt` (not `!ge`) so a NaN candidate is skipped rather than
         # taken; see the note in `ArgMax.accumulate`.
         var take = val_padded.lt(self.acc_values)

@@ -201,9 +201,7 @@ def get_min_max_value[
 
         if (i * block_size + tx) * vec_size < d:
             var offset = row_idx * d + i * block_size * vec_size + tx * vec_size
-            in_data_vec = in_data.load[width=vec_size](offset).cast[
-                DType.float32
-            ]()
+            in_data_vec = in_data.load[width=vec_size](offset).cast[.float32]()
 
         thread_max = max(thread_max, in_data_vec.reduce_max())
         thread_min = min(thread_min, in_data_vec.reduce_min())
@@ -556,7 +554,7 @@ def device_sampling_from_prob[
         # Step 5: Block-level exclusive scan.
         var thread_total = local_inclusive_cdf[vec_size - 1]
         var prefix_from_prev_threads = block.prefix_sum[
-            dtype=DType.float32,
+            dtype=.float32,
             block_size=block_size,
             exclusive=True,
         ](thread_total)
@@ -1031,13 +1029,9 @@ def TopKSamplingFromProbKernel[
                             (Idx[0], ((i * block_size + tx) * vec_size))
                         ).cast[.float32]()
 
-                    var probs_gt_pivot_0_values = SIMD[
-                        DType.float32, vec_size
-                    ]()
+                    var probs_gt_pivot_0_values = SIMD[.float32, vec_size]()
                     var probs_gt_pivot_0_counts = SIMD[.int32, vec_size]()
-                    var probs_gt_pivot_1_values = SIMD[
-                        DType.float32, vec_size
-                    ]()
+                    var probs_gt_pivot_1_values = SIMD[.float32, vec_size]()
                     var probs_gt_pivot_1_counts = SIMD[.int32, vec_size]()
 
                     comptime for j in range(vec_size):
@@ -1076,7 +1070,7 @@ def TopKSamplingFromProbKernel[
                 # For small K, acceptance (count_0 < k) is common, saving
                 # the pivot_1 reduction (2 barriers) on the fast path.
                 var aggregate_gt_pivot_0 = _block_reduce_value_count[
-                    DType.float32, broadcast=True
+                    .float32, broadcast=True
                 ](thread_vc_0_total)
 
                 if aggregate_gt_pivot_0.count < Int32(k):
@@ -1085,7 +1079,7 @@ def TopKSamplingFromProbKernel[
 
                 # Only reduce pivot_1 when pivot_0 is rejected.
                 var aggregate_gt_pivot_1 = _block_reduce_value_count[
-                    DType.float32, broadcast=True
+                    .float32, broadcast=True
                 ](thread_vc_1_total)
 
                 if aggregate_gt_pivot_1.count < Int32(k):
@@ -1688,7 +1682,7 @@ def TopKTopPSamplingFromProbKernel[
             # In from-logits mode this is the unnormalized softmax value with
             # the min-p mask applied inline.
             var v = probs_row.load[width=width]((Idx[0], offset)).cast[
-                DType.float32
+                .float32
             ]()
 
             comptime if from_logits:
@@ -1889,13 +1883,9 @@ def TopKTopPSamplingFromProbKernel[
                         probs_vec = load_dist[vec_size](
                             (i * block_size + tx) * vec_size
                         )
-                    var probs_gt_pivot_0_values = SIMD[
-                        DType.float32, vec_size
-                    ]()
+                    var probs_gt_pivot_0_values = SIMD[.float32, vec_size]()
                     var probs_gt_pivot_0_counts = SIMD[.int32, vec_size]()
-                    var probs_gt_pivot_1_values = SIMD[
-                        DType.float32, vec_size
-                    ]()
+                    var probs_gt_pivot_1_values = SIMD[.float32, vec_size]()
                     var probs_gt_pivot_1_counts = SIMD[.int32, vec_size]()
 
                     comptime for j in range(vec_size):
@@ -1932,7 +1922,7 @@ def TopKTopPSamplingFromProbKernel[
                 # For small K, acceptance (count_0 < k) is common, saving
                 # the pivot_1 reduction (2 barriers) on the fast path.
                 var aggregate_gt_pivot_0 = _block_reduce_value_count[
-                    DType.float32, broadcast=True
+                    .float32, broadcast=True
                 ](thread_vc_0_total)
 
                 if (
@@ -1946,7 +1936,7 @@ def TopKTopPSamplingFromProbKernel[
 
                 # Only reduce pivot_1 when pivot_0 is rejected.
                 var aggregate_gt_pivot_1 = _block_reduce_value_count[
-                    DType.float32, broadcast=True
+                    .float32, broadcast=True
                 ](thread_vc_1_total)
 
                 if (
@@ -2480,9 +2470,7 @@ def topk_softmax_sample_kernel[
 
         # Each thread processes elements and atomically writes to shared memory.
         for i in range(tx, _d, block_size):
-            var logit = logits_row.load[width=1]((Idx[0], i)).cast[
-                DType.float32
-            ]()
+            var logit = logits_row.load[width=1]((Idx[0], i)).cast[.float32]()
             if logit > pivot:
                 var exp_val = exp((logit - max_logit) / temp_val)
 
@@ -2755,7 +2743,7 @@ def TopKTopPMaskedProbsKernel[
     var thread_max = Float32.MIN
     for i in range(tx, _d // vec_size, block_size):
         var v = logits_row.load[width=vec_size]((Idx[0], i * vec_size)).cast[
-            DType.float32
+            .float32
         ]()
         thread_max = max(thread_max, v.reduce_max())
     var m = block.max[block_size=block_size, broadcast=True](thread_max)
@@ -2764,7 +2752,7 @@ def TopKTopPMaskedProbsKernel[
     @always_inline
     def load_e(offset: Int) -> SIMD[.float32, vec_size]:
         var v = logits_row.load[width=vec_size]((Idx[0], offset)).cast[
-            DType.float32
+            .float32
         ]()
         return exp((v - m) * inv_temp)
 

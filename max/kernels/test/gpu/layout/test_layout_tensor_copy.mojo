@@ -56,7 +56,7 @@ def async_copy_kernel[
     var input_tile = input.tile[BM, BN](block_idx.y, block_idx.x)
 
     var smem_tile = LayoutTensor[
-        DType.float32,
+        .float32,
         Layout(IntTuple(BM, BN)),
         MutAnyOrigin,
         address_space=.SHARED,
@@ -78,7 +78,7 @@ def test_async_copy[
     print("=== test_async_copy")
 
     comptime managed_layout_tensor_type = ManagedLayoutTensor[
-        DType.float32,
+        .float32,
         layout,
     ]
 
@@ -199,7 +199,7 @@ def test_swizzle_copy[
     print("=== test_swizzle_copy")
 
     comptime managed_layout_tensor_type = ManagedLayoutTensor[
-        DType.float32,
+        .float32,
         layout,
     ]
 
@@ -215,13 +215,13 @@ def test_swizzle_copy[
     ].row_major(IndexList[2, element_type=element_type](M, K))
 
     var a_tensor = ManagedLayoutTensor[
-        DType.float32,
+        .float32,
         layout,
     ](a_runtime_layout, ctx)
     arange(a_tensor.tensor())
 
     var b_tensor = ManagedLayoutTensor[
-        DType.float32,
+        .float32,
         layout,
     ](b_runtime_layout, ctx)
 
@@ -317,7 +317,7 @@ def partial_copy_dram_to_sram_async_kernel[
 ):
     var smem_tile = (
         LayoutTensor[
-            DType.float32,
+            .float32,
             layout,
             MutAnyOrigin,
             address_space=.SHARED,
@@ -356,14 +356,14 @@ def test_partial_copy_dram_to_sram_async[
     print("=== test_partial_copy_dram_to_sram_async")
 
     var input = ManagedLayoutTensor[
-        DType.float32,
+        .float32,
         layout,
     ](ctx)
 
     arange(input.tensor())
 
     var output = ManagedLayoutTensor[
-        DType.float32,
+        .float32,
         layout,
     ](ctx)
 
@@ -423,7 +423,7 @@ def copy_dram_to_sram_kernel[
 ):
     var smem_tile = (
         LayoutTensor[
-            DType.float32,
+            .float32,
             layout,
             MutAnyOrigin,
             address_space=.SHARED,
@@ -461,14 +461,14 @@ def test_copy_dram_to_sram[
     print("=== test_copy_dram_to_sram")
 
     var input = ManagedLayoutTensor[
-        DType.float32,
+        .float32,
         layout,
     ](ctx)
 
     arange(input.tensor())
 
     var output = ManagedLayoutTensor[
-        DType.float32,
+        .float32,
         layout,
     ](ctx)
 
@@ -533,7 +533,7 @@ def copy_sram_to_dram_kernel[
     var input_tile = input.tile[M - skew_M, N](0, 0)
 
     var smem_tile = LayoutTensor[
-        DType.float32,
+        .float32,
         Layout.row_major(M, N),
         MutAnyOrigin,
         address_space=.SHARED,
@@ -698,7 +698,7 @@ def copy_local_to_local_kernel[
     comptime simd_size = 2
 
     var reg_tile0 = LayoutTensor[
-        DType.float32,
+        .float32,
         Layout.row_major(MMA_M, MMA_N * simd_size),
         MutAnyOrigin,
         address_space=.LOCAL,
@@ -707,7 +707,7 @@ def copy_local_to_local_kernel[
 
     var reg_tile1 = (
         LayoutTensor[
-            DType.bfloat16,
+            .bfloat16,
             Layout.row_major(MMA_M, MMA_N * simd_size),
             MutAnyOrigin,
             address_space=.LOCAL,
@@ -840,7 +840,7 @@ def copy_dram_to_local_kernel[
 
     var reg_tile = (
         LayoutTensor[
-            DType.float32,
+            .float32,
             Layout.row_major(
                 layout.size() // num_active_threads // simd_width, simd_width
             ),
@@ -879,14 +879,14 @@ def test_copy_dram_to_local[
     print("=== test_copy_dram_to_local")
 
     var input = ManagedLayoutTensor[
-        DType.float32,
+        .float32,
         layout,
     ](ctx)
 
     arange(input.tensor())
 
     var output = ManagedLayoutTensor[
-        DType.float32,
+        .float32,
         layout,
     ](ctx)
 
@@ -955,7 +955,7 @@ def copy_local_to_sram_kernel[
     block_dim_count: Int = 1,
 ](output: LayoutTensor[dtype, layout, MutAnyOrigin]):
     var reg_tile0 = LayoutTensor[
-        DType.float32,
+        .float32,
         Layout.row_major(MMA_M * simd_size_row, MMA_N * simd_size_col),
         MutAnyOrigin,
         address_space=.LOCAL,

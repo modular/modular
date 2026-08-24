@@ -361,8 +361,8 @@ def kernel_5[
 
     var st_matrix_rt_layout = RuntimeLayout[
         st_matrix_n_layout[c_type, TMA_BN, num_m_mmas, 1](),
-        element_type=DType.int32,
-        linear_idx_type=DType.int32,
+        element_type=.int32,
+        linear_idx_type=.int32,
     ]()
 
     comptime st_matrix_swizzle = make_swizzle[c_type, c_swizzle]()
@@ -782,9 +782,9 @@ def benchmark_blackwell_matmul(ctx: DeviceContext) raises:
             "]",
         )
         test_blackwell_kernel_5[
-            DType.bfloat16,
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
+            .bfloat16,
             block_tile_shape,
             umma_shape,
             cluster_shape=StaticTuple[Int32, 3](2, 1, 1),
@@ -810,9 +810,9 @@ def main() raises:
         comptime umma_shape = Index(256, 256, 16)
 
         test_blackwell_kernel_5[
-            DType.bfloat16,
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
+            .bfloat16,
             block_tile_shape,
             umma_shape,
             cluster_shape=StaticTuple[Int32, 3](2, 1, 1),

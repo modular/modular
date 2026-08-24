@@ -63,7 +63,7 @@ def use_two():
 
 def main():
     # start-rsqrt-usage
-    var v = Scalar[DType.float16](42)
+    var v = Scalar[.float16](42)
     print(rsqrt(v))
     # end-rsqrt-usage
 

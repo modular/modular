@@ -66,9 +66,9 @@ def multistage_gemm_simple[
         b_type,
         b_tt_layout,
         transpose_b,
-        c_linear_idx_type=DType.int64,
-        a_linear_idx_type=DType.int64,
-        b_linear_idx_type=DType.int64,
+        c_linear_idx_type=.int64,
+        a_linear_idx_type=.int64,
+        b_linear_idx_type=.int64,
         config=config,
     ]
 
@@ -203,23 +203,23 @@ def main() raises:
             1024,
             1024,
             1024,
-            DType.bfloat16,
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
+            .bfloat16,
             False,
         ](ctx)
         multistage_gemm_simple[
             1024,
             1024,
             1024,
-            DType.bfloat16,
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
+            .bfloat16,
             False,
         ](ctx)
 
         multistage_gemm_simple[
-            550, 2048, 8, DType.float32, DType.float32, DType.float32, False
+            550, 2048, 8, .float32, .float32, .float32, False
         ](ctx)
 
         # fp32 C shapes the vectorized store cannot take: an odd N misaligns

@@ -2008,7 +2008,7 @@ def shared_memory_epilogue_transpose[
                     UNKNOWN_VALUE, iter_j, UNKNOWN_VALUE, iter_i
                 )
                 var coord = RuntimeTuple[
-                    [thread_shape, rest_shape], element_type=DType.uint32
+                    [thread_shape, rest_shape], element_type=.uint32
                 ](
                     Int(0),
                     Int(crd[1].value()),
@@ -2089,7 +2089,7 @@ def shared_memory_epilogue_transpose[
                         iter_i,
                     )
                     var coord = RuntimeTuple[
-                        [thread_shape, rest_shape], element_type=DType.uint32
+                        [thread_shape, rest_shape], element_type=.uint32
                     ](
                         Int(crd[0].value()),
                         Int(0),
@@ -2244,11 +2244,11 @@ def shared_memory_epilogue[
                     RuntimeTuple[IntTuple(UNKNOWN_VALUE)](offset_upper),
                     RuntimeTuple[
                         blocked_m_128_layout.shape,
-                        element_type=DType.int64,
+                        element_type=.int64,
                     ](),
                     RuntimeTuple[
                         blocked_m_128_layout.stride,
-                        element_type=DType.int64,
+                        element_type=.int64,
                     ](),
                 )
 
@@ -2256,11 +2256,11 @@ def shared_memory_epilogue[
                     RuntimeTuple[IntTuple(UNKNOWN_VALUE)](offset_lower),
                     RuntimeTuple[
                         blocked_m_128_layout.shape,
-                        element_type=DType.int64,
+                        element_type=.int64,
                     ](),
                     RuntimeTuple[
                         blocked_m_128_layout.stride,
-                        element_type=DType.int64,
+                        element_type=.int64,
                     ](),
                 )
 

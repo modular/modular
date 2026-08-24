@@ -482,18 +482,18 @@ struct MLAPrefillSparseFP8[
 
         var src_u8 = k_smem_fp8_ptr.bitcast[UInt8]()
 
-        var p0a_all = tt_stack_allocation[dtype=.uint32, address_space=.LOCAL](
-            row_major[4, COLS_PER_GROUP]()
-        )
-        var p0b_all = tt_stack_allocation[dtype=.uint32, address_space=.LOCAL](
-            row_major[4, COLS_PER_GROUP]()
-        )
-        var p1a_all = tt_stack_allocation[dtype=.uint32, address_space=.LOCAL](
-            row_major[4, COLS_PER_GROUP]()
-        )
-        var p1b_all = tt_stack_allocation[dtype=.uint32, address_space=.LOCAL](
-            row_major[4, COLS_PER_GROUP]()
-        )
+        var p0a_all = tt_stack_allocation[
+            dtype=DType.uint32, address_space=.LOCAL
+        ](row_major[4, COLS_PER_GROUP]())
+        var p0b_all = tt_stack_allocation[
+            dtype=DType.uint32, address_space=.LOCAL
+        ](row_major[4, COLS_PER_GROUP]())
+        var p1a_all = tt_stack_allocation[
+            dtype=DType.uint32, address_space=.LOCAL
+        ](row_major[4, COLS_PER_GROUP]())
+        var p1b_all = tt_stack_allocation[
+            dtype=DType.uint32, address_space=.LOCAL
+        ](row_major[4, COLS_PER_GROUP]())
 
         comptime for c in range(COLS_PER_GROUP):
             comptime col_byte_off = c * GROUP_SIZE * 16
@@ -756,12 +756,12 @@ struct MLAPrefillSparseFP8[
         # The SWIZZLE_128B BF16 writes clobber the aliased FP8 staging region,
         # so within a key-half every FP8 read must complete (barrier) before
         # any BF16 write.
-        var pa_all = tt_stack_allocation[dtype=.uint32, address_space=.LOCAL](
-            row_major[ROWS_PER_KH * COLS_PER_GROUP, 4]()
-        )
-        var pb_all = tt_stack_allocation[dtype=.uint32, address_space=.LOCAL](
-            row_major[ROWS_PER_KH * COLS_PER_GROUP, 4]()
-        )
+        var pa_all = tt_stack_allocation[
+            dtype=DType.uint32, address_space=.LOCAL
+        ](row_major[ROWS_PER_KH * COLS_PER_GROUP, 4]())
+        var pb_all = tt_stack_allocation[
+            dtype=DType.uint32, address_space=.LOCAL
+        ](row_major[ROWS_PER_KH * COLS_PER_GROUP, 4]())
 
         # Convert the two key-halves in sequence to halve register footprint.
         comptime for kh in range(2):

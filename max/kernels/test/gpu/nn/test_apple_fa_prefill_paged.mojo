@@ -387,7 +387,7 @@ def _run[
 
     # ---- compare against the independent fp32 reference ---------------- #
     var o_out = o_managed.tensor()
-    var atol = Float32(2e-2) if qkv_type == .bfloat16 else Float32(8e-3)
+    var atol = Float32(2e-2) if qkv_type == DType.bfloat16 else Float32(8e-3)
     var pass_ = True
     var max_err = Float32(0)
     for t in range(total_length):

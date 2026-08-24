@@ -119,7 +119,7 @@ def run_mandelbrot(ctx: DeviceContext) raises:
         for j in range(height):
             accum += out_host[i * width + j]
 
-    comptime ref_result = 4687767697 if float_type == .float64 else 4687810683
+    comptime ref_result = 4687767697 if float_type == DType.float64 else 4687810683
     assert_equal(Scalar[int_type](ref_result), accum)
 
 

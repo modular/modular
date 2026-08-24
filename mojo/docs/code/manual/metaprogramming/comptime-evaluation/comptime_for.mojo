@@ -20,7 +20,7 @@ def elementwise_max(lhs: SIMD, rhs: type_of(lhs), out result: type_of(lhs)):
 
 
 def main() raises:
-    comptime simd_type = SIMD[DType.int64, 4]
+    comptime simd_type = SIMD[.int64, 4]
     var v1 = simd_type(12, 0, 99, 77)
     var v2 = simd_type(0, 92, 11, 4)
     assert_equal(elementwise_max(v1, v2), simd_type(12, 92, 99, 77))

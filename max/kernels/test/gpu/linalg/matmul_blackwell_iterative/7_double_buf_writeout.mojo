@@ -1110,9 +1110,9 @@ def main() raises:
         comptime umma_shape = Index(256, 128, 16)
 
         test_blackwell_kernel_7[
-            DType.bfloat16,
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
+            .bfloat16,
             block_tile_shape,
             umma_shape,
             cluster_shape=StaticTuple[Int32, 3](2, 1, 1),

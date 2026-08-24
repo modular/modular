@@ -817,7 +817,7 @@ struct MLADispatchScalarArgs[
     """
 
     comptime MLAScalarArgsLT = LayoutTensor[
-        DType.int64, Layout.row_major(3), MutAnyOrigin
+        .int64, Layout.row_major(3), MutAnyOrigin
     ]
 
     var gpu_buf: DeviceBuffer[.int64]
@@ -977,7 +977,7 @@ def mla_decode_sm100_dispatch[
     var split_page_size = 64 if use_small_split_pages else 128
     comptime sm_count = ctx.default_device_info.sm_count
     comptime _half_sms = sm_count // 2
-    comptime _is_fp8_kv = (k_t.dtype == .float8_e4m3fn)
+    comptime _is_fp8_kv = (k_t.dtype == DType.float8_e4m3fn)
 
     # q_len=1 sparse FP8 split-K tuning (KERN-3217): the single-token sparse
     # FP8 decode with no extra_kv / variable_topk / attn_sink is SM-underfilled
@@ -1177,7 +1177,7 @@ def _mla_decode_sm100_dispatch_impl[
 
     comptime AccumType = get_accum_type[output.dtype]()
     comptime v_depth = depth - 64
-    comptime _is_fp8_kv = (k_t.dtype == .float8_e4m3fn)
+    comptime _is_fp8_kv = (k_t.dtype == DType.float8_e4m3fn)
 
     # Ensure KV cache page_size is evenly divisible by split_page_size.
     # If the KV cache page_size shrinks in the future, splits must not
@@ -2889,7 +2889,7 @@ def launch_mla_sm100_decode_enqueue_kernel[
     # Route ALL FP8 KV (both tensorwise and blockwise) to the FP8 converter
     # kernel. When we reach this function, native FP8 has already been ruled
     # out (Q is BF16), so the converter kernel handles FP8->BF16 conversion.
-    comptime _is_old_fp8 = KVLUTType.dtype == .float8_e4m3fn
+    comptime _is_old_fp8 = KVLUTType.dtype == DType.float8_e4m3fn
     comptime kernel = MLA_SM100_Decode_KV_FP8[
         q_type=q_type,
         KVLUTType=KVLUTType,
@@ -3207,7 +3207,7 @@ def launch_mla_sm100_decode_fp8_per_token_scale_rope_aware[
     valid_len: ValidLengthType,
     mask: MaskType,
     q_scale_ptr: OptionalReg[UnsafePointer[Float32, MutAnyOrigin]],
-    scalar_args_buf: TileTensor[.int64, address_space=.GENERIC, ...],
+    scalar_args_buf: TileTensor[DType.int64, address_space=.GENERIC, ...],
     ctx: DeviceContext,
 ) raises:
     """Launch the FP8 per-token-scale rope-aware MLA decode kernel with split content/rope TMAs.

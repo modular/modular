@@ -952,9 +952,7 @@ def _accumulate_and_store[
     is_last_k_iter: Bool,
 ):
     if accumulate:
-        var c_existing = _Accumulator[
-            DType.float32, tile_m, tile_n, simd_width
-        ]()
+        var c_existing = _Accumulator[.float32, tile_m, tile_n, simd_width]()
 
         c_existing.load(c_ptr, N)
 
@@ -1060,9 +1058,7 @@ def _matmul_Q4_K_tile[
     ] = a_tile_ptr[].q_bits.unsafe_ptr()
 
     for g in range(group_count):
-        var c_int32_group = _Accumulator[
-            DType.int32, tile_m, tile_n, simd_width
-        ]()
+        var c_int32_group = _Accumulator[.int32, tile_m, tile_n, simd_width]()
 
         c_int32_group.init()
 
@@ -1189,9 +1185,7 @@ def _matmul_Q4_K_columns[
 
         def matmul_group_unpacked(
             a_ptr: UnsafePointer[Int8, ImmutAnyOrigin],
-            mut c_int32_group: _Accumulator[
-                DType.int32, tile_m, tile_n, simd_width
-            ],
+            mut c_int32_group: _Accumulator[.int32, tile_m, tile_n, simd_width],
         ) {mut b_q_bits_ptr, imm}:
             _matmul_group_unpacked[group_size](
                 a_ptr, b_q_bits_ptr, c_int32_group
@@ -1281,9 +1275,7 @@ def _matmul_Q6_K_tile[
         # See `_matmul_Q4_K_tile` for why the origin is concrete.
         def(
             a_ptr: UnsafePointer[Int8, ImmutAnyOrigin],
-            mut c_int32_group: _Accumulator[
-                DType.int32, tile_m, tile_n, simd_width
-            ],
+            mut c_int32_group: _Accumulator[.int32, tile_m, tile_n, simd_width],
         ) -> None
     ],
 ):
@@ -1304,9 +1296,7 @@ def _matmul_Q6_K_tile[
     ] = a_tile_ptr[].q_bits.unsafe_ptr()
 
     for g in range(group_count):
-        var c_int32_group = _Accumulator[
-            DType.int32, tile_m, tile_n, simd_width
-        ]()
+        var c_int32_group = _Accumulator[.int32, tile_m, tile_n, simd_width]()
 
         c_int32_group.init()
 
@@ -1434,9 +1424,7 @@ def _matmul_Q6_K_columns[
 
         def matmul_group_unpacked(
             a_ptr: UnsafePointer[Int8, ImmutAnyOrigin],
-            mut c_int32_group: _Accumulator[
-                DType.int32, tile_m, tile_n, simd_width
-            ],
+            mut c_int32_group: _Accumulator[.int32, tile_m, tile_n, simd_width],
         ) {mut b_q_bits_ptr}:
             _matmul_group_unpacked[group_size](
                 a_ptr, b_q_bits_ptr, c_int32_group
@@ -1484,9 +1472,9 @@ def _matmul_Qb_K[
     interleave_group_sums: Bool = False,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
-    a: LayoutTensor[mut=False, DType.float32, address_space=.GENERIC, ...],
-    b: LayoutTensor[mut=False, DType.uint8, address_space=.GENERIC, ...],
-    c: LayoutTensor[mut=True, DType.float32, address_space=.GENERIC, ...],
+    a: LayoutTensor[mut=False, .float32, address_space=.GENERIC, ...],
+    b: LayoutTensor[mut=False, .uint8, address_space=.GENERIC, ...],
+    c: LayoutTensor[mut=True, .float32, address_space=.GENERIC, ...],
     ctx: Optional[DeviceContext] = None,
 ):
     comptime assert a.rank == 2

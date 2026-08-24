@@ -401,7 +401,7 @@ def main() raises:
     comptime token_dtype = get_defined_dtype[
         "token_dtype", DType.float8_e4m3fn
     ]()
-    comptime scales_dtype = get_defined_dtype["scales_dtype", DType.float32]()
+    comptime scales_dtype = get_defined_dtype["scales_dtype", .float32]()
 
     var m = Bench()
     var bencher_rank = m.check_mpirun()

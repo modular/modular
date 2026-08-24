@@ -282,8 +282,8 @@ def test_blockwise_fp8_1d2d_structured[
 
     # ===== Test: structured blockwise FP8 1D2D kernel =====
     grouped_matmul_dynamic_scaled_fp8_1d2d[
-        a_scales_type=DType.float32,
-        b_scales_type=DType.float32,
+        a_scales_type=.float32,
+        b_scales_type=.float32,
         transpose_b=transpose_b,
     ](
         c_tt,
@@ -339,24 +339,24 @@ def main() raises:
 
         # Single expert, aligned tokens
         test_blockwise_fp8_1d2d_structured[
-            DType.float8_e4m3fn,
-            DType.bfloat16,
+            .float8_e4m3fn,
+            .bfloat16,
             num_experts=8,
             expert_shape=Index(7168, 2048),
         ](1, [128], [0], ctx)
 
         # 4 active experts, uniform decode-like distribution
         test_blockwise_fp8_1d2d_structured[
-            DType.float8_e4m3fn,
-            DType.bfloat16,
+            .float8_e4m3fn,
+            .bfloat16,
             num_experts=8,
             expert_shape=Index(7168, 2048),
         ](4, [64, 64, 64, 64], [0, 2, 5, 7], ctx)
 
         # Unaligned token counts (realistic MoE routing)
         test_blockwise_fp8_1d2d_structured[
-            DType.float8_e4m3fn,
-            DType.bfloat16,
+            .float8_e4m3fn,
+            .bfloat16,
             num_experts=8,
             expert_shape=Index(7168, 2048),
         ](4, [20, 100, 4, 48], [0, 3, 5, 7], ctx)
@@ -367,16 +367,16 @@ def main() raises:
 
         # Single expert, aligned
         test_blockwise_fp8_1d2d_structured[
-            DType.float8_e4m3fn,
-            DType.bfloat16,
+            .float8_e4m3fn,
+            .bfloat16,
             num_experts=8,
             expert_shape=Index(2048, 7168),
         ](1, [128], [0], ctx)
 
         # Multi-expert, unaligned
         test_blockwise_fp8_1d2d_structured[
-            DType.float8_e4m3fn,
-            DType.bfloat16,
+            .float8_e4m3fn,
+            .bfloat16,
             num_experts=8,
             expert_shape=Index(2048, 7168),
         ](4, [20, 256, 4, 32], [0, 2, 5, 7], ctx)
@@ -387,24 +387,24 @@ def main() raises:
 
         # Minimal: 1 expert, small shape
         test_blockwise_fp8_1d2d_structured[
-            DType.float8_e4m3fn,
-            DType.bfloat16,
+            .float8_e4m3fn,
+            .bfloat16,
             num_experts=4,
             expert_shape=Index(256, 256),
         ](1, [128], [0], ctx)
 
         # Multi-expert unaligned
         test_blockwise_fp8_1d2d_structured[
-            DType.float8_e4m3fn,
-            DType.bfloat16,
+            .float8_e4m3fn,
+            .bfloat16,
             num_experts=4,
             expert_shape=Index(512, 1024),
         ](2, [20, 40], [0, 2], ctx)
 
         # float32 output
         test_blockwise_fp8_1d2d_structured[
-            DType.float8_e4m3fn,
-            DType.float32,
+            .float8_e4m3fn,
+            .float32,
             num_experts=4,
             expert_shape=Index(512, 1024),
         ](2, [20, 40], [0, 2], ctx)
@@ -414,8 +414,8 @@ def main() raises:
         # ============================================================
 
         test_blockwise_fp8_1d2d_structured[
-            DType.float8_e4m3fn,
-            DType.bfloat16,
+            .float8_e4m3fn,
+            .bfloat16,
             num_experts=8,
             expert_shape=Index(2048, 7168),
         ](4, [20, 1500, 300, 28], [0, 3, 5, 7], ctx)

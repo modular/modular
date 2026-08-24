@@ -79,7 +79,7 @@ def bench_cublas_per_group[
 
     comptime SF_VECTOR_SIZE = sf_vector_size
     comptime transpose_b = True
-    comptime is_fp4 = (a_type == .uint8)
+    comptime is_fp4 = (a_type == DType.uint8)
     comptime k_pack = 2 if is_fp4 else 1
     comptime K_ARRAY = KType.static_value // k_pack
     var k_array_val = Int(k.value()) // k_pack
@@ -226,7 +226,7 @@ def bench_structured_kernel[
     comptime transpose_b = True
     comptime mma_shape = Index(mma_m, mma_n, 32)
     comptime cluster_shape = Index(1, 1, 1)
-    comptime is_fp4 = (a_type == .uint8)
+    comptime is_fp4 = (a_type == DType.uint8)
     comptime k_pack = 2 if is_fp4 else 1
     comptime K_ARRAY = KType.static_value // k_pack
     var k_array_val = Int(k.value()) // k_pack

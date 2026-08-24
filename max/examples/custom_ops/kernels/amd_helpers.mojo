@@ -574,9 +574,9 @@ def compute_relative_error_kernel[
     var abs_diff = abs(comp_val - ref_val)
 
     # Compute denominator with epsilon to prevent division by zero
-    comptime epsilon = Scalar[dtype](1e-8) if dtype == .float32 else Scalar[
-        dtype
-    ](1e-4)
+    comptime epsilon = Scalar[dtype](
+        1e-8
+    ) if dtype == DType.float32 else Scalar[dtype](1e-4)
     var denominator = max(abs(ref_val), epsilon)
 
     # Compute relative error

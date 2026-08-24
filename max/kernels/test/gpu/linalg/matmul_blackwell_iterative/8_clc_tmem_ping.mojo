@@ -749,7 +749,7 @@ def kernel_8[
 
     var scheduler = TileScheduler[
         num_stages=num_clc_pipeline_stages,
-        cluster_shape=Index[dtype=DType.uint32](
+        cluster_shape=Index[dtype=.uint32](
             cluster_shape[0], cluster_shape[1], cluster_shape[2]
         ),
         block_swizzle_size=1,
@@ -1335,8 +1335,8 @@ def benchmark_blackwell_matmul(ctx: DeviceContext) raises:
             comptime shape = get_dic_of_shapes(i, dic_of_shapes)
             try:
                 test_blackwell_kernel_8[
-                    DType.bfloat16,
-                    DType.bfloat16,
+                    .bfloat16,
+                    .bfloat16,
                     c_type,
                     block_tile_shape,
                     umma_shape,
@@ -1362,9 +1362,9 @@ def main() raises:
         comptime umma_shape = Index(256, 128, 16)
 
         test_blackwell_kernel_8[
-            DType.bfloat16,
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
+            .bfloat16,
             block_tile_shape,
             umma_shape,
             cluster_shape=StaticTuple[Int32, 3](2, 1, 1),

@@ -390,7 +390,7 @@ struct LayoutTensor[
 
     comptime RuntimeElementLayoutType = RuntimeLayout[
         Self.element_layout,
-        element_type=DType.int32,
+        element_type=.int32,
         linear_idx_type=Self.linear_idx_type,
     ]
     """Type alias for the runtime element layout."""

@@ -210,7 +210,7 @@ def main() raises:
         test_structured[
             dtype,
             dtype,
-            DType.bfloat16,
+            .bfloat16,
             block_tile_shape=Index(64, 32, BK),
             mma_shape=Index(64, 32, MMA_K),
             cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
@@ -222,7 +222,7 @@ def main() raises:
         test_structured[
             dtype,
             dtype,
-            DType.bfloat16,
+            .bfloat16,
             block_tile_shape=Index(128, 64, BK),
             mma_shape=Index(256, 128, MMA_K),
             cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
@@ -234,7 +234,7 @@ def main() raises:
         test_structured[
             dtype,
             dtype,
-            DType.bfloat16,
+            .bfloat16,
             block_tile_shape=Index(128, 64, BK),
             mma_shape=Index(128, 64, MMA_K),
             cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
@@ -247,7 +247,7 @@ def main() raises:
         test_structured[
             dtype,
             dtype,
-            DType.bfloat16,
+            .bfloat16,
             block_tile_shape=Index(64, 32, BK),
             mma_shape=Index(128, 64, MMA_K),
             cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
@@ -260,7 +260,7 @@ def main() raises:
         test_structured[
             dtype,
             dtype,
-            DType.bfloat16,
+            .bfloat16,
             block_tile_shape=Index(64, 32, BK),
             mma_shape=Index(64, 32, MMA_K),
             cluster_shape=StaticTuple[Int32, 3](4, 2, 1),
@@ -273,7 +273,7 @@ def main() raises:
         test_structured[
             dtype,
             dtype,
-            DType.bfloat16,
+            .bfloat16,
             block_tile_shape=Index(128, 64, BK),
             mma_shape=Index(256, 128, MMA_K),
             cluster_shape=StaticTuple[Int32, 3](4, 4, 1),

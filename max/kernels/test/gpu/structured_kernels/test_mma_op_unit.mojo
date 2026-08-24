@@ -235,7 +235,7 @@ def kernel_mma_QK[
 
 
 def test_mma_QK[T: DType](ctx: DeviceContext) raises -> Bool:
-    var dtype_name = "BF16" if T == .bfloat16 else "FP8"
+    var dtype_name = "BF16" if T == DType.bfloat16 else "FP8"
     print("--- test_mma_QK[", dtype_name, "] ---")
 
     comptime CFG = MhaConfigV2(
@@ -478,7 +478,7 @@ def kernel_mma_PV[
 
 
 def test_mma_PV[T: DType](ctx: DeviceContext) raises -> Bool:
-    var dtype_name = "BF16" if T == .bfloat16 else "FP8"
+    var dtype_name = "BF16" if T == DType.bfloat16 else "FP8"
     print("--- test_mma_PV[", dtype_name, "] ---")
 
     comptime CFG = MhaConfigV2(

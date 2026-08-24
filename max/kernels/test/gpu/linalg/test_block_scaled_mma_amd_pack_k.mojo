@@ -50,7 +50,7 @@ from linalg.arch.amd.block_scaled_mma import (
 def _broadcast_scale_word(value: Float32) -> Int32:
     """Pack one E8M0 scale across all 4 bytes of an Int32."""
     var scale_byte = bitcast[.uint8](
-        _convert_f32_to_float8_ue8m0[target=DType.float8_e8m0fnu](value)
+        _convert_f32_to_float8_ue8m0[target=.float8_e8m0fnu](value)
     )
     return Int32(
         UInt32(scale_byte)
@@ -66,16 +66,16 @@ def _packed_scale_word(
 ) -> Int32:
     """Pack 4 distinct E8M0 scales into bytes 0..3 of an Int32."""
     var s0 = bitcast[.uint8](
-        _convert_f32_to_float8_ue8m0[target=DType.float8_e8m0fnu](b0)
+        _convert_f32_to_float8_ue8m0[target=.float8_e8m0fnu](b0)
     )
     var s1 = bitcast[.uint8](
-        _convert_f32_to_float8_ue8m0[target=DType.float8_e8m0fnu](b1)
+        _convert_f32_to_float8_ue8m0[target=.float8_e8m0fnu](b1)
     )
     var s2 = bitcast[.uint8](
-        _convert_f32_to_float8_ue8m0[target=DType.float8_e8m0fnu](b2)
+        _convert_f32_to_float8_ue8m0[target=.float8_e8m0fnu](b2)
     )
     var s3 = bitcast[.uint8](
-        _convert_f32_to_float8_ue8m0[target=DType.float8_e8m0fnu](b3)
+        _convert_f32_to_float8_ue8m0[target=.float8_e8m0fnu](b3)
     )
     return Int32(
         UInt32(s0) | (UInt32(s1) << 8) | (UInt32(s2) << 16) | (UInt32(s3) << 24)

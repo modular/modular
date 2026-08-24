@@ -230,10 +230,10 @@ def main() raises:
         test_mxfp6_dequant[FP6Format.E3M2, 64, 256](ctx, UInt8(133))
 
         print("-- float8_e4m3fn output --")
-        test_mxfp6_dequant[FP6Format.E2M3, 64, 256, DType.float8_e4m3fn](
+        test_mxfp6_dequant[FP6Format.E2M3, 64, 256, .float8_e4m3fn](
             ctx, UInt8(127)
         )
-        test_mxfp6_dequant[FP6Format.E3M2, 64, 256, DType.float8_e4m3fn](
+        test_mxfp6_dequant[FP6Format.E3M2, 64, 256, .float8_e4m3fn](
             ctx, UInt8(127)
         )
 

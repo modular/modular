@@ -71,15 +71,15 @@ comptime SomeComptime2[
 
 def main():
     # start-take-simd-usage
-    var v = SIMD[DType.float64, 4](1.0, 2.0, 3.0, 4.0)
+    var v = SIMD[.float64, 4](1.0, 2.0, 3.0, 4.0)
     take_simd(v)
     # end-take-simd-usage
 
     take_simd2(v)
 
     # start-interleave-usage
-    var a = SIMD[DType.int16, 4](1, 2, 3, 4)
-    var b = SIMD[DType.int16, 4](0, 0, 0, 0)
+    var a = SIMD[.int16, 4](1, 2, 3, 4)
+    var b = SIMD[.int16, 4](0, 0, 0, 0)
     var c = interleave(a, b)
     print(c)
     # end-interleave-usage

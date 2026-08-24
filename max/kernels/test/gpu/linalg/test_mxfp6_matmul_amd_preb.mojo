@@ -109,12 +109,8 @@ def _mxfp6_matmul_ref[
     var magnitude = Float32(0)
 
     for ko in range(k_groups):
-        var a_scale = a_sf_ptr[unsafe_offset=m * k_groups + ko].cast[
-            DType.float32
-        ]()
-        var b_scale = b_sf_ptr[unsafe_offset=n * k_groups + ko].cast[
-            DType.float32
-        ]()
+        var a_scale = a_sf_ptr[unsafe_offset=m * k_groups + ko].cast[.float32]()
+        var b_scale = b_sf_ptr[unsafe_offset=n * k_groups + ko].cast[.float32]()
 
         # 32 elements is one MX block = 24 packed bytes, always 8-byte aligned
         # because k_bytes is a multiple of 24 whenever K is a multiple of 32.
@@ -387,7 +383,7 @@ def _test_case[
         cluster_drain_sched,
         mfma_cluster,
         deep_prime,
-        DType.float32,
+        .float32,
         type_of(c_tt).LayoutType,
         type_of(a_tt).LayoutType,
         type_of(b_pre_tt).LayoutType,

@@ -40,14 +40,12 @@ def test_kv_cache_radd[
     assert (
         num_active_loras <= batch_size
     ), "num_active_loras must be less than or equal to batch_size"
-    var cache_lengths = ManagedLayoutTensor[
-        DType.uint32, Layout(UNKNOWN_VALUE)
-    ](
+    var cache_lengths = ManagedLayoutTensor[.uint32, Layout(UNKNOWN_VALUE)](
         RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(Index(batch_size)),
         ctx,
     )
     var input_row_offsets_slice = ManagedLayoutTensor[
-        DType.uint32, Layout(UNKNOWN_VALUE)
+        .uint32, Layout(UNKNOWN_VALUE)
     ](
         RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(
             Index(num_active_loras + 1)

@@ -178,7 +178,7 @@ def test_gemv_split_k[in_type: DType](ctx: DeviceContext) raises:
     """Test GEMV_SPLIT_K path: M=1, transpose_b=True, K % simd_width == 0."""
     print("=== Testing GEMV_SPLIT_K with", in_type, "===")
 
-    comptime out_type = DType.float32 if in_type == .bfloat16 else DType.bfloat16
+    comptime out_type = DType.float32 if in_type == DType.bfloat16 else DType.bfloat16
 
     # Basic GEMV_SPLIT_K
     test[
@@ -242,8 +242,8 @@ def main() raises:
         # GEMV_KERNEL_VECTOR: M = 1, N wider than the split-K grid limit and
         # K shallow enough that the kernel packs several rows per warp.
         test[
-            in_type=DType.bfloat16,
-            out_type=DType.bfloat16,
+            in_type=.bfloat16,
+            out_type=.bfloat16,
             transpose_b=True,
             M=None,
             N=Int(262144),
@@ -252,8 +252,8 @@ def main() raises:
 
         # GEMV_KERNEL_VECTOR: N = 1, K % simd_width == 0, transpose_b = False
         test[
-            in_type=DType.bfloat16,
-            out_type=DType.float32,
+            in_type=.bfloat16,
+            out_type=.float32,
             transpose_b=False,
             M=None,
             N=Int(1),
@@ -262,8 +262,8 @@ def main() raises:
 
         # GEMV_KERNEL_VECTOR: N = 1, K % simd_width == 0, transpose_b = True
         test[
-            in_type=DType.bfloat16,
-            out_type=DType.bfloat16,
+            in_type=.bfloat16,
+            out_type=.bfloat16,
             transpose_b=True,
             M=None,
             N=Int(1),
@@ -272,8 +272,8 @@ def main() raises:
 
         # GEMV_KERNEL: M = 1, K % simd_width !=0, transpose_b = True
         test[
-            in_type=DType.bfloat16,
-            out_type=DType.float32,
+            in_type=.bfloat16,
+            out_type=.float32,
             transpose_b=True,
             M=None,
             N=Int(4096),
@@ -282,8 +282,8 @@ def main() raises:
 
         # GEMV_KERNEL: N = 1, K % simd_width !=0, transpose_b = False
         test[
-            in_type=DType.bfloat16,
-            out_type=DType.float32,
+            in_type=.bfloat16,
+            out_type=.float32,
             transpose_b=False,
             M=None,
             N=Int(1),
@@ -292,8 +292,8 @@ def main() raises:
 
         # matmul_naive: M = 1, K % WARP_SIZE != 0, transpose_b = False
         test[
-            in_type=DType.bfloat16,
-            out_type=DType.float32,
+            in_type=.bfloat16,
+            out_type=.float32,
             transpose_b=False,
             M=None,
             N=Int(4096),

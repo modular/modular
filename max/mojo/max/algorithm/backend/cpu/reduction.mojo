@@ -124,7 +124,7 @@ def _reduce_along_inner_dimension[
     *,
     reduce_dim: Int,
 ](
-    shape: IndexList[_, element_type=DType.int64],
+    shape: IndexList[_, element_type=.int64],
     init_value: StaticTuple[Scalar[init_type], num_reductions],
 ):
     """Reduces the innermost (or specified) dimension of a tensor using SIMD-
@@ -299,7 +299,7 @@ def _reduce_along_outer_dimension[
     *,
     reduce_dim: Int,
 ](
-    shape: IndexList[_, element_type=DType.int64],
+    shape: IndexList[_, element_type=.int64],
     init: StaticTuple[Scalar[init_type], num_reductions],
 ):
     """Reduce the given tensor using the given reduction function. The

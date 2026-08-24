@@ -37,7 +37,7 @@ def main() raises:
 
     # start-type-examples
     comptime TwoOfAKind[dt: DType] = SIMD[dt, 2]
-    var twoFloats = TwoOfAKind[DType.float32](1.0, 2.0)
+    var twoFloats = TwoOfAKind[.float32](1.0, 2.0)
 
     comptime StringKeyDict[ValueType: Copyable & Deinitable] = Dict[
         String, ValueType

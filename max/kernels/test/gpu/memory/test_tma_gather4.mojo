@@ -286,9 +286,7 @@ def _run_paged_gather4_test[
 
     # Build cache_lengths.
     comptime cache_len_layout = Layout(UNKNOWN_VALUE)
-    var cache_lengths_managed = ManagedLayoutTensor[
-        DType.uint32, cache_len_layout
-    ](
+    var cache_lengths_managed = ManagedLayoutTensor[.uint32, cache_len_layout](
         RuntimeLayout[cache_len_layout].row_major(IndexList[1](batch_size)),
         ctx,
     )
@@ -483,9 +481,7 @@ def test_continuous_kv_cache[
 
     # Build cache_lengths.
     comptime cache_len_layout = Layout(UNKNOWN_VALUE)
-    var cache_lengths_managed = ManagedLayoutTensor[
-        DType.uint32, cache_len_layout
-    ](
+    var cache_lengths_managed = ManagedLayoutTensor[.uint32, cache_len_layout](
         RuntimeLayout[cache_len_layout].row_major(IndexList[1](batch_size)),
         ctx,
     )
@@ -912,9 +908,7 @@ def test_wide_gather4_paged_kv[
 
     # Build cache_lengths.
     comptime cache_len_layout = Layout(UNKNOWN_VALUE)
-    var cache_lengths_managed = ManagedLayoutTensor[
-        DType.uint32, cache_len_layout
-    ](
+    var cache_lengths_managed = ManagedLayoutTensor[.uint32, cache_len_layout](
         RuntimeLayout[cache_len_layout].row_major(IndexList[1](batch_size)),
         ctx,
     )
@@ -1059,9 +1053,7 @@ def test_wide_gather4_continuous_kv[
 
     # Build cache_lengths.
     comptime cache_len_layout = Layout(UNKNOWN_VALUE)
-    var cache_lengths_managed = ManagedLayoutTensor[
-        DType.uint32, cache_len_layout
-    ](
+    var cache_lengths_managed = ManagedLayoutTensor[.uint32, cache_len_layout](
         RuntimeLayout[cache_len_layout].row_major(IndexList[1](batch_size)),
         ctx,
     )
@@ -1198,9 +1190,7 @@ def test_wide_gather4_mha_operand[
 
     # Build cache_lengths.
     comptime cache_len_layout = Layout(UNKNOWN_VALUE)
-    var cache_lengths_managed = ManagedLayoutTensor[
-        DType.uint32, cache_len_layout
-    ](
+    var cache_lengths_managed = ManagedLayoutTensor[.uint32, cache_len_layout](
         RuntimeLayout[cache_len_layout].row_major(IndexList[1](batch_size)),
         ctx,
     )
@@ -1674,9 +1664,7 @@ def test_gather4_tile_api_paged[
 
     # ---- Build cache_lengths ----
     comptime cache_len_layout = Layout(UNKNOWN_VALUE)
-    var cache_lengths_managed = ManagedLayoutTensor[
-        DType.uint32, cache_len_layout
-    ](
+    var cache_lengths_managed = ManagedLayoutTensor[.uint32, cache_len_layout](
         RuntimeLayout[cache_len_layout].row_major(IndexList[1](batch_size)),
         ctx,
     )

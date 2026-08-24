@@ -137,8 +137,8 @@ def test_matmul[input_types: List[DType]]() raises:
 
 def main() raises:
     comptime if has_amd_gpu_accelerator():
-        test_matmul[[.float8_e4m3fnuz, DType.bfloat16]]()
+        test_matmul[[DType.float8_e4m3fnuz, DType.bfloat16]]()
     elif has_nvidia_gpu_accelerator():
-        test_matmul[[.float8_e4m3fn, DType.bfloat16]]()
+        test_matmul[[DType.float8_e4m3fn, DType.bfloat16]]()
     else:
         abort("Unknown GPU Accelerator.")

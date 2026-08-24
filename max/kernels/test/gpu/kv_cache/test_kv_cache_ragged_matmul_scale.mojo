@@ -310,7 +310,7 @@ def execute_matmul_k_cache_ragged_scale[
     )
     var input_row_offsets_tensor = LayoutTensor[
         mut=False,
-        DType.uint32,
+        .uint32,
         layout_1d,
     ](
         input_row_offsets_device,

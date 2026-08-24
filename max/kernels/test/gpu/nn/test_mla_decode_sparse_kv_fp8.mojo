@@ -632,14 +632,14 @@ def run_test_sparse_kv_fp8[
                 blocks_lt.runtime_layout.stride.value,
             ),
         ),
-        LayoutTensor[mut=False, DType.uint32, cl_layout](
+        LayoutTensor[mut=False, .uint32, cl_layout](
             cache_lengths_lt.ptr,
             RuntimeLayout[cl_layout](
                 cache_lengths_lt.runtime_layout.shape.value,
                 cache_lengths_lt.runtime_layout.stride.value,
             ),
         ),
-        LayoutTensor[mut=False, DType.uint32, lt_layout_2d](
+        LayoutTensor[mut=False, .uint32, lt_layout_2d](
             lookup_table_lt.ptr,
             RuntimeLayout[lt_layout_2d](
                 lookup_table_lt.runtime_layout.shape.value,
@@ -1176,14 +1176,14 @@ def run_test_sparse_kv_fp8_variable_topk[
                 blocks_lt.runtime_layout.stride.value,
             ),
         ),
-        LayoutTensor[mut=False, DType.uint32, cl_layout](
+        LayoutTensor[mut=False, .uint32, cl_layout](
             cache_lengths_lt.ptr,
             RuntimeLayout[cl_layout](
                 cache_lengths_lt.runtime_layout.shape.value,
                 cache_lengths_lt.runtime_layout.stride.value,
             ),
         ),
-        LayoutTensor[mut=False, DType.uint32, lt_layout_2d](
+        LayoutTensor[mut=False, .uint32, lt_layout_2d](
             lookup_table_lt.ptr,
             RuntimeLayout[lt_layout_2d](
                 lookup_table_lt.runtime_layout.shape.value,
@@ -1519,14 +1519,14 @@ def run_test_sparse_kv_fp8_attn_sink[
                 blocks_lt.runtime_layout.stride.value,
             ),
         ),
-        LayoutTensor[mut=False, DType.uint32, cl_layout](
+        LayoutTensor[mut=False, .uint32, cl_layout](
             cache_lengths_lt.ptr,
             RuntimeLayout[cl_layout](
                 cache_lengths_lt.runtime_layout.shape.value,
                 cache_lengths_lt.runtime_layout.stride.value,
             ),
         ),
-        LayoutTensor[mut=False, DType.uint32, lt_layout_2d](
+        LayoutTensor[mut=False, .uint32, lt_layout_2d](
             lookup_table_lt.ptr,
             RuntimeLayout[lt_layout_2d](
                 lookup_table_lt.runtime_layout.shape.value,
@@ -2075,14 +2075,14 @@ def run_test_sparse_kv_fp8_extra_kv[
                 blocks_lt.runtime_layout.stride.value,
             ),
         ),
-        LayoutTensor[mut=False, DType.uint32, cl_layout](
+        LayoutTensor[mut=False, .uint32, cl_layout](
             cache_lengths_lt.ptr.as_unsafe_any_origin(),
             RuntimeLayout[cl_layout](
                 cache_lengths_lt.runtime_layout.shape.value,
                 cache_lengths_lt.runtime_layout.stride.value,
             ),
         ),
-        LayoutTensor[mut=False, DType.uint32, lt_layout_2d](
+        LayoutTensor[mut=False, .uint32, lt_layout_2d](
             lookup_table_lt.ptr.as_unsafe_any_origin(),
             RuntimeLayout[lt_layout_2d](
                 lookup_table_lt.runtime_layout.shape.value,
@@ -2118,14 +2118,14 @@ def run_test_sparse_kv_fp8_extra_kv[
                 extra_blocks_lt.runtime_layout.stride.value,
             ),
         ),
-        LayoutTensor[mut=False, DType.uint32, cl_layout](
+        LayoutTensor[mut=False, .uint32, cl_layout](
             extra_cache_lengths_lt.ptr.as_unsafe_any_origin(),
             RuntimeLayout[cl_layout](
                 extra_cache_lengths_lt.runtime_layout.shape.value,
                 extra_cache_lengths_lt.runtime_layout.stride.value,
             ),
         ),
-        LayoutTensor[mut=False, DType.uint32, lt_layout_2d](
+        LayoutTensor[mut=False, .uint32, lt_layout_2d](
             extra_lookup_table_lt.ptr.as_unsafe_any_origin(),
             RuntimeLayout[lt_layout_2d](
                 extra_lookup_table_lt.runtime_layout.shape.value,
@@ -2521,14 +2521,14 @@ def run_test_sparse_kv_fp8_topk_clamping[
                 blocks_lt.runtime_layout.stride.value,
             ),
         ),
-        LayoutTensor[mut=False, DType.uint32, cl_layout, _](
+        LayoutTensor[mut=False, .uint32, cl_layout, _](
             cache_lengths_lt.ptr,
             RuntimeLayout[cl_layout](
                 cache_lengths_lt.runtime_layout.shape.value,
                 cache_lengths_lt.runtime_layout.stride.value,
             ),
         ),
-        LayoutTensor[mut=False, DType.uint32, lt_layout_2d, _](
+        LayoutTensor[mut=False, .uint32, lt_layout_2d, _](
             lookup_table_lt.ptr,
             RuntimeLayout[lt_layout_2d](
                 lookup_table_lt.runtime_layout.shape.value,

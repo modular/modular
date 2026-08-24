@@ -350,45 +350,45 @@ def main() raises:
     with DeviceContext() as ctx:
         # Test zero-dimension edge cases
         test_dynamic_shapes[
-            DType.bfloat16,
+            .bfloat16,
             transpose_b=False,
         ](ctx, 0, 2, 2, 2)
 
         # Test non-batch dispatch logic
         test_dynamic_shapes[
-            DType.bfloat16,
+            .bfloat16,
             transpose_b=False,
         ](ctx, 1, 2, 2, 2)
 
         test_dynamic_shapes[
-            DType.bfloat16,
+            .bfloat16,
             transpose_b=False,
         ](ctx, 2, 0, 2, 2)
 
         test_dynamic_shapes[
-            DType.bfloat16,
+            .bfloat16,
             transpose_b=False,
         ](ctx, 2, 2, 0, 2)
 
         test_dynamic_shapes[
-            DType.bfloat16,
+            .bfloat16,
             transpose_b=False,
         ](ctx, 2, 2, 2, 0)
 
         # tests naive kernels
         test_dynamic_shapes[
-            DType.bfloat16,
+            .bfloat16,
             transpose_b=False,
         ](ctx, 2, 2, 2, 2)
 
         test_dynamic_shapes[
-            DType.float32,
+            .float32,
             transpose_b=False,
             lambda_fn=elementwise_epilogue_fn,
         ](ctx, 2, 2, 2, 2)
 
         test_dynamic_shapes[
-            DType.float32,
+            .float32,
             transpose_b=False,
             lambda_fn=elementwise_epilogue_fn,
         ](ctx, 64, 256, 512, 128)
@@ -398,7 +398,7 @@ def main() raises:
 
             # tests kernels.ampere_128x128_4
             test_static_NK[
-                DType.bfloat16,
+                .bfloat16,
                 transpose_b=True,
                 lambda_fn=elementwise_epilogue_fn,
                 N=Int(128256),
@@ -407,7 +407,7 @@ def main() raises:
 
             # tests kernels.ampere_256x64_4
             test_static_NK[
-                DType.bfloat16,
+                .bfloat16,
                 transpose_b=True,
                 lambda_fn=elementwise_epilogue_fn,
                 N=Int(3072),
@@ -416,7 +416,7 @@ def main() raises:
 
             # tests DeepSeek Case
             test_static_NK[
-                DType.bfloat16,
+                .bfloat16,
                 transpose_b=True,
                 lambda_fn=elementwise_epilogue_fn,
                 N=Int(128),
@@ -424,7 +424,7 @@ def main() raises:
             ](ctx, 128, 256)
 
             test_static_NK[
-                DType.bfloat16,
+                .bfloat16,
                 transpose_b=True,
                 lambda_fn=elementwise_epilogue_fn,
                 N=Int(512),
@@ -432,7 +432,7 @@ def main() raises:
             ](ctx, 128, 256)
 
             test_static_NK[
-                DType.bfloat16,
+                .bfloat16,
                 transpose_b=False,
                 lambda_fn=elementwise_epilogue_fn,
                 N=Int(3072),
@@ -441,14 +441,14 @@ def main() raises:
 
             # test non-row major layout
             test_non_row_major_layout[
-                DType.bfloat16,
+                .bfloat16,
                 B=Int(128),
                 N=Int(128),
                 K=Int(512),
             ](ctx, 22)
 
             test_non_row_major_layout[
-                DType.bfloat16,
+                .bfloat16,
                 B=Int(128),
                 N=Int(512),
                 K=Int(128),

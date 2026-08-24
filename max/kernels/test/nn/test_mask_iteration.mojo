@@ -32,8 +32,8 @@ def compute_total_iters0[
     while (
         mask.status(
             seq_id,
-            Index[dtype=DType.int32](Int(q_row), Int(kv_row)),
-            Index[dtype=DType.int32](BM, BN),
+            Index[dtype=.int32](Int(q_row), Int(kv_row)),
+            Index[dtype=.int32](BM, BN),
         )
         == TileMaskStatus.FULL_MASK
     ):
@@ -46,8 +46,8 @@ def compute_total_iters0[
         if (
             mask.status(
                 seq_id,
-                Index[dtype=DType.int32](Int(q_row), Int(kv_row)),
-                Index[dtype=DType.int32](BM, BN),
+                Index[dtype=.int32](Int(q_row), Int(kv_row)),
+                Index[dtype=.int32](BM, BN),
             )
             == TileMaskStatus.FULL_MASK
         ):
@@ -67,8 +67,8 @@ def compute_total_iters1[
             Int(
                 mask.status(
                     seq_id,
-                    Index[dtype=DType.int32](Int(q_row), Int(kv_row)),
-                    Index[dtype=DType.int32](BM, BN),
+                    Index[dtype=.int32](Int(q_row), Int(kv_row)),
+                    Index[dtype=.int32](BM, BN),
                 )
                 != TileMaskStatus.FULL_MASK
             )
@@ -82,8 +82,8 @@ def status[
 ](mask: MaskType, q_row: UInt32, kv_row: UInt32) -> TileMaskStatus:
     return mask.status(
         UInt32(0),
-        Index[dtype=DType.int32](q_row, kv_row),
-        Index[dtype=DType.int32](BM, BN),
+        Index[dtype=.int32](q_row, kv_row),
+        Index[dtype=.int32](BM, BN),
     )
 
 

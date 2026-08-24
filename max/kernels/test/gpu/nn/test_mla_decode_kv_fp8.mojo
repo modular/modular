@@ -277,7 +277,7 @@ def test[
         comptime if mla_mask_type == MLAMaskType.CAUSAL:
             var k_operand = LayoutTensorMHAOperand(lt_to_tt(k_ref_device))
             var null_valid_length = LayoutTensor[
-                DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
+                .uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
             ](
                 None,
                 RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(

@@ -284,56 +284,56 @@ def main() raises:
     with DeviceContext() as ctx:
         # Single expert, M aligned.
         test_grouped_matmul_rowwise_scaled_fp8[
-            DType.float8_e4m3fn,
-            DType.bfloat16,
+            .float8_e4m3fn,
+            .bfloat16,
             num_experts=1,
             expert_shape=Index(256, 256),
         ](1, [128], [0], ctx)
 
         # Single expert, partial last M-tile (100 mod 16 != 0).
         test_grouped_matmul_rowwise_scaled_fp8[
-            DType.float8_e4m3fn,
-            DType.bfloat16,
+            .float8_e4m3fn,
+            .bfloat16,
             num_experts=1,
             expert_shape=Index(256, 256),
         ](1, [100], [0], ctx)
 
         # Sparse routing: a single active expert that is NOT id 0.
         test_grouped_matmul_rowwise_scaled_fp8[
-            DType.float8_e4m3fn,
-            DType.bfloat16,
+            .float8_e4m3fn,
+            .bfloat16,
             num_experts=4,
             expert_shape=Index(512, 1024),
         ](1, [256], [2], ctx)
 
         # Multi-expert ragged, sparse ids.
         test_grouped_matmul_rowwise_scaled_fp8[
-            DType.float8_e4m3fn,
-            DType.bfloat16,
+            .float8_e4m3fn,
+            .bfloat16,
             num_experts=4,
             expert_shape=Index(512, 1024),
         ](2, [20, 40], [0, 2], ctx)
 
         # Zero-token expert in the middle of a ragged batch (M == 0 group).
         test_grouped_matmul_rowwise_scaled_fp8[
-            DType.float8_e4m3fn,
-            DType.bfloat16,
+            .float8_e4m3fn,
+            .bfloat16,
             num_experts=6,
             expert_shape=Index(512, 1024),
         ](4, [20, 0, 300, 28], [0, 3, 2, 4], ctx)
 
         # Several small + medium experts, sparse ids.
         test_grouped_matmul_rowwise_scaled_fp8[
-            DType.float8_e4m3fn,
-            DType.bfloat16,
+            .float8_e4m3fn,
+            .bfloat16,
             num_experts=6,
             expert_shape=Index(7168, 2048),
         ](4, [20, 1500, 300, 28], [0, 3, 2, 4], ctx)
 
         # fp32 output.
         test_grouped_matmul_rowwise_scaled_fp8[
-            DType.float8_e4m3fn,
-            DType.float32,
+            .float8_e4m3fn,
+            .float32,
             num_experts=4,
             expert_shape=Index(512, 1024),
         ](2, [20, 40], [0, 2], ctx)
@@ -346,8 +346,8 @@ def main() raises:
         # sparse-id-against-many-experts routing is covered by the 7168x2048
         # ``num_experts=6`` case above.
         test_grouped_matmul_rowwise_scaled_fp8[
-            DType.float8_e4m3fn,
-            DType.bfloat16,
+            .float8_e4m3fn,
+            .bfloat16,
             num_experts=2,
             expert_shape=Index(8192, 5120),
         ](2, [13, 51], [0, 1], ctx)

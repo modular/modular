@@ -89,7 +89,7 @@ def run_copy_dram_to_sram_buffer_load_tests(ctx: DeviceContext) raises:
     var input_tensor = input.tensor[update=False]()
     arange(input_tensor)
     comptime kernel = copy_dram_to_sram_buffer_load_kernel[
-        DType.bfloat16, 4, 16, 8, thread_layout
+        .bfloat16, 4, 16, 8, thread_layout
     ]
     ctx.enqueue_function[kernel](
         input.device_tensor().ptr,
@@ -178,7 +178,7 @@ def run_copy_dram_to_local_buffer_load_tests(ctx: DeviceContext) raises:
     var input_tensor = input.tensor[update=False]()
     arange(input_tensor)
     comptime kernel = copy_dram_to_local_buffer_load_kernel[
-        DType.bfloat16, 4, 16, 8, thread_layout
+        .bfloat16, 4, 16, 8, thread_layout
     ]
     ctx.enqueue_function[kernel](
         input.device_tensor().ptr,
@@ -195,11 +195,11 @@ def test_codegen_copy_dram_to_local(ctx: DeviceContext) raises:
     ](ptr: UnsafePointer[BFloat16, ImmutAnyOrigin]):
         comptime simd_width = simd_width_of[DType.bfloat16]()
         var global_tensor = LayoutTensor[
-            DType.bfloat16,
+            .bfloat16,
             Layout.row_major(16, 128),
         ](ptr)
         var local_tensor = LayoutTensor[
-            DType.bfloat16,
+            .bfloat16,
             Layout.row_major(16, 8),
             MutAnyOrigin,
             address_space=.LOCAL,

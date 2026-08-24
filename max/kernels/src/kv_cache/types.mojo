@@ -3118,10 +3118,10 @@ struct ContinuousBatchingKVCacheCollection[
             Self.dtype, Layout.row_major[6](), Self.blocks_origin
         ],
         cache_lengths: LayoutTensor[
-            DType.uint32, Layout(UNKNOWN_VALUE), Self.cache_lengths_origin
+            .uint32, Layout(UNKNOWN_VALUE), Self.cache_lengths_origin
         ],
         lookup_table: LayoutTensor[
-            DType.uint32, Layout(UNKNOWN_VALUE), Self.lookup_table_origin
+            .uint32, Layout(UNKNOWN_VALUE), Self.lookup_table_origin
         ],
         max_seq_length: UInt32,
         max_cache_length: UInt32,
@@ -3350,10 +3350,10 @@ struct PagedKVCacheCollection[
             Self.dtype, Layout.row_major[6](), Self.blocks_origin
         ],
         cache_lengths: LayoutTensor[
-            DType.uint32, Layout(UNKNOWN_VALUE), Self.cache_lengths_origin
+            .uint32, Layout(UNKNOWN_VALUE), Self.cache_lengths_origin
         ],
         lookup_table: LayoutTensor[
-            DType.uint32, Layout.row_major[2](), Self.lookup_table_origin
+            .uint32, Layout.row_major[2](), Self.lookup_table_origin
         ],
         max_seq_length: UInt32,
         max_cache_length: UInt32,
@@ -3376,7 +3376,7 @@ struct PagedKVCacheCollection[
         # `lookup_table` (values/scales share one block-id space today).
         scales_lookup_table: OptionalReg[
             LayoutTensor[
-                DType.uint32, Layout.row_major[2](), Self.lookup_table_origin
+                .uint32, Layout.row_major[2](), Self.lookup_table_origin
             ]
         ] = None,
     ):

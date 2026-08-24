@@ -44,9 +44,9 @@ def main() raises:
         print("Test configuration: M=", M, ", N=", N, ", K=", K)
 
         test_matmul_sm90[
-            DType.bfloat16,
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
+            .bfloat16,
             Index(1, 1, 1),
             block_tile_shape[64],
             wgmma_shape[64],

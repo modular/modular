@@ -319,8 +319,8 @@ struct MHAPosition[
             dtype,
             Self.q_output_gmem_layout,
             type_of(ptr).origin,
-            layout_int_type=DType.int32,
-            linear_idx_type=DType.int32,
+            layout_int_type=.int32,
+            linear_idx_type=.int32,
             masked=True,
         ],
     ):
@@ -967,8 +967,8 @@ def output_reg_to_smem_st_matrix[
         st_matrix_n_layout[
             output_type, padded_depth, num_m_mmas, num_consumer
         ](),
-        element_type=DType.int32,
-        linear_idx_type=DType.int32,
+        element_type=.int32,
+        linear_idx_type=.int32,
     ]()
 
     comptime for m_mma in range(num_m_mmas):

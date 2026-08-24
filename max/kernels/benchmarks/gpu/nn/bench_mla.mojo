@@ -500,11 +500,11 @@ def bench_prefill_sparse[
             )
         ),
     )
-    var cache_lengths_lt = LayoutTensor[mut=False, DType.uint32, cl_layout](
+    var cache_lengths_lt = LayoutTensor[mut=False, .uint32, cl_layout](
         cache_lengths_device.unsafe_ptr(),
         RuntimeLayout[cl_layout].row_major(IndexList[1](batch_size)),
     )
-    var lut_lt = LayoutTensor[mut=False, DType.uint32, lut_layout, _](
+    var lut_lt = LayoutTensor[mut=False, .uint32, lut_layout, _](
         lut_device.unsafe_ptr(),
         RuntimeLayout[lut_layout].row_major(
             IndexList[2](batch_size, num_pages)
@@ -627,8 +627,8 @@ struct MLA_cfg(ImplicitlyCopyable, Writable):
 
 
 def main() raises:
-    comptime qkv_type = get_defined_dtype["qkv_type", DType.bfloat16]()
-    comptime output_type = get_defined_dtype["output_type", DType.bfloat16]()
+    comptime qkv_type = get_defined_dtype["qkv_type", .bfloat16]()
+    comptime output_type = get_defined_dtype["output_type", .bfloat16]()
     comptime depth = get_defined_int["depth", 576]()
     comptime prefill_depth = get_defined_int["prefill_depth", 192]()
     comptime num_heads = get_defined_int["num_heads", 128]()
