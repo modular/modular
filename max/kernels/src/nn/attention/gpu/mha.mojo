@@ -2440,11 +2440,7 @@ def flash_attention[
     sink: Bool = False,
 ](
     output: TileTensor[
-        mut=True,
-        output_type,
-        output_tt_layout,
-        address_space=.GENERIC,
-        ...,
+        mut=True, output_type, output_tt_layout, address_space=.GENERIC, ...
     ],
     q: TileTensor[mut=False, dtype, q_tt_layout, address_space=.GENERIC, ...],
     k: TileTensor[mut=False, dtype, k_tt_layout, address_space=.GENERIC, ...],
@@ -6872,18 +6868,10 @@ def mha_gpu_naive[
     k: TileTensor[mut=False, k_type, k_tt_layout, address_space=.GENERIC, ...],
     v: TileTensor[mut=False, v_type, v_tt_layout, address_space=.GENERIC, ...],
     mask: TileTensor[
-        mut=False,
-        mask_type,
-        mask_tt_layout,
-        address_space=.GENERIC,
-        ...,
+        mut=False, mask_type, mask_tt_layout, address_space=.GENERIC, ...
     ],
     output: TileTensor[
-        mut=True,
-        output_type,
-        output_tt_layout,
-        address_space=.GENERIC,
-        ...,
+        mut=True, output_type, output_tt_layout, address_space=.GENERIC, ...
     ],
     scale: Float32,
     batch_size: Int,
@@ -6965,11 +6953,7 @@ def mha_gpu_naive[
     v: TileTensor[mut=False, v_type, v_tt_layout, address_space=.GENERIC, ...],
     mask: MaskType,
     output: TileTensor[
-        mut=True,
-        output_type,
-        output_tt_layout,
-        address_space=.GENERIC,
-        ...,
+        mut=True, output_type, output_tt_layout, address_space=.GENERIC, ...
     ],
     scale: Float32,
     batch_size: Int,

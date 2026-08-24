@@ -83,7 +83,7 @@ comptime _NUM_ELEMENTS = _ROWS * _COLS
 # matches the origin-erased type the kernel parameter names after
 # `as_unsafe_any_origin()`.
 comptime _ProbeTile[LayoutType: TensorLayout] = TileTensor[
-    DType.float32,
+    .float32,
     LayoutType,
     UnsafeAnyOrigin[mut=True],
     Storage=DevicePointerStorage[element_width=1],

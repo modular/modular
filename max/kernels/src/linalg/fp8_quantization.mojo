@@ -91,8 +91,8 @@ def quantize_static_scaled_fp8[
     in_dtype: DType,
     scale_is_inverted: Bool = True,
 ](
-    out_tensor: TileTensor[mut=True, dtype=out_dtype, ...],
-    in_tensor: TileTensor[mut=False, dtype=in_dtype, ...],
+    out_tensor: TileTensor[mut=True, out_dtype, ...],
+    in_tensor: TileTensor[mut=False, in_dtype, ...],
     scale: Float32,
     context: DeviceContext,
 ) raises:
@@ -170,9 +170,7 @@ def max_reduction_scale_kernel[
     scale_layout: TensorLayout,
     num_threads: Int,
 ](
-    scale_global: TileTensor[
-        mut=True, DType.float32, scale_layout, MutAnyOrigin
-    ],
+    scale_global: TileTensor[mut=True, .float32, scale_layout, MutAnyOrigin],
     input_tensor: TileTensor[in_dtype, input_layout, MutAnyOrigin],
 ):
     """Per-row strided max-|x| reduction into a global FP8 scale.
@@ -218,8 +216,8 @@ def quantize_tensor_dynamic_scaled_fp8[
     pdl_level: PDLLevel = PDLLevel.ON,
 ](
     input_fn: InputFnType,
-    scaled_output: TileTensor[mut=True, dtype=out_dtype, ...],
-    scales: TileTensor[mut=True, dtype=scales_dtype, ...],
+    scaled_output: TileTensor[mut=True, out_dtype, ...],
+    scales: TileTensor[mut=True, scales_dtype, ...],
     scale_ub: Float32,
     ctx: DeviceContext,
     num_rows: Int,
@@ -377,8 +375,8 @@ def quantize_dynamic_scaled_fp8[
     pdl_level: PDLLevel = PDLLevel.ON,
 ](
     input_fn: InputFnType,
-    scaled_output: TileTensor[mut=True, dtype=out_dtype, ...],
-    scales: TileTensor[mut=True, dtype=scales_dtype, ...],
+    scaled_output: TileTensor[mut=True, out_dtype, ...],
+    scales: TileTensor[mut=True, scales_dtype, ...],
     scale_ub: Float32,
     ctx: DeviceContext,
     num_rows: Int,
@@ -787,8 +785,8 @@ def batched_quantize_dynamic_scaled_fp8[
     pdl_level: PDLLevel = PDLLevel.ON,
 ](
     input_fn: InputFnType,
-    scaled_output: TileTensor[mut=True, dtype=out_dtype, ...],
-    scales: TileTensor[mut=True, dtype=scales_dtype, ...],
+    scaled_output: TileTensor[mut=True, out_dtype, ...],
+    scales: TileTensor[mut=True, scales_dtype, ...],
     scale_ub: Float32,
     ctx: DeviceContext,
     num_rows: Int,
@@ -1864,8 +1862,8 @@ def naive_blockwise_scaled_fp8_grouped_matmul_kernel[
 
 @always_inline
 def convert_e4m3fn_to_e4m3fnuz(
-    input_buffer: TileTensor[mut=False, dtype=DType.float8_e4m3fn, ...],
-    output_buffer: TileTensor[mut=True, dtype=DType.float8_e4m3fnuz, ...],
+    input_buffer: TileTensor[mut=False, .float8_e4m3fn, ...],
+    output_buffer: TileTensor[mut=True, .float8_e4m3fnuz, ...],
     context: DeviceContext,
 ) raises:
     """Convert E4M3FN weights to E4M3FNUZ format for AMD GPU compatibility.

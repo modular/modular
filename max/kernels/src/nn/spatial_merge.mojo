@@ -46,10 +46,7 @@ def spatial_merge_kernel[
         dtype, InputLayoutType, input_origin, Storage=InputStorage
     ],
     grid_thw: TileTensor[
-        DType.int64,
-        GridThwLayoutType,
-        grid_thw_origin,
-        Storage=GridThwStorage,
+        .int64, GridThwLayoutType, grid_thw_origin, Storage=GridThwStorage
     ],
     batch_size: Int32,
     hidden_size: Int32,

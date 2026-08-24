@@ -436,7 +436,7 @@ struct MLAPrefillSparseQKVFP8[
         kv_tma_op: TMATensorTile[
             FP8_TYPE, 2, Self.kv_tile_shape, Self.kv_desc_shape
         ],
-        indices: TileTensor[DType.uint32, address_space=.GENERIC, ...],
+        indices: TileTensor[.uint32, address_space=.GENERIC, ...],
         kv_lut: Self.KVLUTType,
         kv_smem_buf: UnsafePointer[
             mut=True, Scalar[FP8_TYPE], address_space=.SHARED, ...
@@ -524,7 +524,7 @@ struct MLAPrefillSparseQKVFP8[
         kv_tma_op: TMATensorTile[
             FP8_TYPE, 2, Self.kv_tile_shape, Self.kv_desc_shape
         ],
-        indices: TileTensor[DType.uint32, address_space=.GENERIC, ...],
+        indices: TileTensor[.uint32, address_space=.GENERIC, ...],
         kv_lut: Self.KVLUTType,
         v_smem_buf: UnsafePointer[
             mut=True, Scalar[FP8_TYPE], address_space=.SHARED, ...
@@ -1525,7 +1525,7 @@ def mla_prefill_sparse_qkv_fp8[
     q: TileTensor[q_type, address_space=.GENERIC, ...],
     kv_cache: cache_t,
     indices: TileTensor[.uint32, address_space=.GENERIC, ...],
-    topk_lengths: TileTensor[DType.uint32, address_space=.GENERIC, ...],
+    topk_lengths: TileTensor[.uint32, address_space=.GENERIC, ...],
     attn_sink_ptr: Optional[UnsafePointer[Float32, ImmutAnyOrigin]],
     scale: Float32,
     indices_stride: Int32,

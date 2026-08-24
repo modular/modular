@@ -3495,9 +3495,7 @@ struct MLA_SM100_Decode_Common[
         comptime kv_elements = Self.config.BN_QK * Self.config.BK_QK
         comptime kv_tt_layout = tt_row_major[kv_elements]()
         var smem_tensor = TileTensor[
-            Self.kv_type,
-            type_of(kv_tt_layout),
-            address_space=.SHARED,
+            Self.kv_type, type_of(kv_tt_layout), address_space=.SHARED
         ](smem, kv_tt_layout)
         tma.async_copy_3d(smem_tensor, mbar[], (col_start, 0, row_start))
 
@@ -3518,9 +3516,7 @@ struct MLA_SM100_Decode_Common[
         comptime q_elements = Self.config.BM * Self.config.BK_QK
         comptime q_tt_layout = tt_row_major[q_elements]()
         var smem_tensor = TileTensor[
-            Self.q_type,
-            type_of(q_tt_layout),
-            address_space=.SHARED,
+            Self.q_type, type_of(q_tt_layout), address_space=.SHARED
         ](smem, q_tt_layout)
 
         tma.async_copy(smem_tensor, mbar[], (col_start, row_start))
@@ -3837,9 +3833,7 @@ struct MLA_SM100_Decode_Common[
         # yielding 0 for even iterations and WARPGROUP_SIZE for odd ones.
         comptime smem_1d_layout = tt_row_major[WARPGROUP_SIZE]()
         var li_Smem_Tensor = TileTensor[
-            Self.AccumType,
-            type_of(smem_1d_layout),
-            address_space=.SHARED,
+            Self.AccumType, type_of(smem_1d_layout), address_space=.SHARED
         ](li_smem, smem_1d_layout)
 
         var corr_scale_tmem = tmem_addr + UInt32(Self.config.TMEM_CORR_SCALE)
@@ -4090,9 +4084,7 @@ struct MLA_SM100_Decode_Common[
             # no divergent branch on the critical path.
             var buf_offset = (tiles_done & 1) * WARPGROUP_SIZE
             var max_buf = TileTensor[
-                Self.AccumType,
-                type_of(smem_1d_layout),
-                address_space=.SHARED,
+                Self.AccumType, type_of(smem_1d_layout), address_space=.SHARED
             ](max_smem + buf_offset, smem_1d_layout)
             max_buf[lane_id] = current_max
             named_barrier[Int32(WARPGROUP_SIZE)](2)

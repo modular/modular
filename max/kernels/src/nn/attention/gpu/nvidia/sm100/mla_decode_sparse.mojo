@@ -426,7 +426,7 @@ struct MLA_SM100_Decode_Sparse[
             UnsafePointer[Float32, origin=MutAnyOrigin]
         ],
         scalar_args: TileTensor[
-            DType.int64, RowMajorLayout[ComptimeInt[3]], MutAnyOrigin
+            .int64, RowMajorLayout[ComptimeInt[3]], MutAnyOrigin
         ],
     ):
         # SlidingWindowCausalMask is supported ONLY by the native FP8 backend

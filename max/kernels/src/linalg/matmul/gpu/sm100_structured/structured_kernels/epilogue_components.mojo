@@ -157,9 +157,7 @@ def st_shared_frag_to_smem[
 ](
     vec: Array[Scalar[vec_dtype], vec_size],
     dst: TileTensor[
-        address_space=.SHARED,
-        Storage=PointerStorage[element_width=1],
-        ...,
+        address_space=.SHARED, Storage=PointerStorage[element_width=1], ...
     ],
     warp_offset: UInt32 = 0,
 ):
@@ -276,9 +274,7 @@ def store_fragment_to_smem[
 ](
     vec: Array[Scalar[vec_dtype], vec_size],
     dst: TileTensor[
-        address_space=.SHARED,
-        Storage=PointerStorage[element_width=1],
-        ...,
+        address_space=.SHARED, Storage=PointerStorage[element_width=1], ...
     ],
     warp_offset: UInt32 = 0,
 ):
@@ -536,7 +532,7 @@ struct TMAStoreExecutor[
         desc_shape: IndexList[tma_rank],
         //,
     ](
-        c_smem_tile: TileTensor[dtype=Self.c_type, address_space=.SHARED, ...],
+        c_smem_tile: TileTensor[Self.c_type, address_space=.SHARED, ...],
         store_coords: TMAStoreCoords[
             Self.epc,
             Self.c_smem_shape0,
@@ -574,7 +570,7 @@ struct TMAStoreExecutor[
         tile_shape: IndexList[tma_rank],
         desc_shape: IndexList[tma_rank],
     ](
-        c_smem_tile: TileTensor[dtype=Self.c_type, address_space=.SHARED, ...],
+        c_smem_tile: TileTensor[Self.c_type, address_space=.SHARED, ...],
         store_coords: TMAStoreCoords[
             Self.epc,
             Self.c_smem_shape0,
@@ -605,7 +601,7 @@ struct TMAStoreExecutor[
         tile_shape: IndexList[tma_rank],
         desc_shape: IndexList[tma_rank],
     ](
-        c_smem_tile: TileTensor[dtype=Self.c_type, address_space=.SHARED, ...],
+        c_smem_tile: TileTensor[Self.c_type, address_space=.SHARED, ...],
         store_coords: TMAStoreCoords[
             Self.epc,
             Self.c_smem_shape0,
@@ -727,7 +723,7 @@ struct TMAReduceExecutor[
         desc_shape: IndexList[tma_rank],
     ](
         c_smem_tile: TileTensor[
-            dtype=Self.c_type,
+            Self.c_type,
             address_space=.SHARED,
             Storage=PointerStorage[element_width=1],
             ...,
@@ -1385,9 +1381,7 @@ struct TMEMToSMemWriter[
             Scalar[Self.c_type], Self.Config.fragment_size * repeat
         ],
         c_smem_tile: TileTensor[
-            address_space=.SHARED,
-            Storage=PointerStorage[element_width=1],
-            ...,
+            address_space=.SHARED, Storage=PointerStorage[element_width=1], ...
         ],
     ):
         """Write pre-loaded fragments to SMEM."""
@@ -1414,9 +1408,7 @@ struct TMEMToSMemWriter[
             Scalar[Self.c_type], Self.Config.fragment_size * repeat
         ],
         c_smem_tile: TileTensor[
-            address_space=.SHARED,
-            Storage=PointerStorage[element_width=1],
-            ...,
+            address_space=.SHARED, Storage=PointerStorage[element_width=1], ...
         ],
     ):
         """Transposed output using reshape.
@@ -1583,9 +1575,7 @@ struct TMEMToSMemWriter[
             Scalar[Self.c_type], Self.Config.fragment_size * repeat
         ],
         c_smem_tile: TileTensor[
-            address_space=.SHARED,
-            Storage=PointerStorage[element_width=1],
-            ...,
+            address_space=.SHARED, Storage=PointerStorage[element_width=1], ...
         ],
     ):
         """Non-transposed output."""
@@ -1726,7 +1716,7 @@ struct SMemEpilogueWriter[
         upper_frag: Array[Scalar[Self.epilogue_dtype], Self.rep_frag_size],
         lower_frag: Array[Scalar[Self.epilogue_dtype], Self.rep_frag_size],
         c_smem_tile: TileTensor[
-            dtype=Self.c_type,
+            Self.c_type,
             address_space=.SHARED,
             Storage=PointerStorage[element_width=1],
             ...,
@@ -1879,7 +1869,7 @@ struct SMemEpilogueWriter[
         upper_frag: Array[Scalar[Self.epilogue_dtype], Self.rep_frag_size],
         lower_frag: Array[Scalar[Self.epilogue_dtype], Self.rep_frag_size],
         c_smem_tile: TileTensor[
-            dtype=Self.c_type,
+            Self.c_type,
             address_space=.SHARED,
             Storage=PointerStorage[element_width=1],
             ...,
@@ -1980,7 +1970,7 @@ def shared_memory_epilogue_transpose[
     c_col: Int,
     c_row: Int,
     c_smem: TileTensor[
-        dtype=c_type,
+        c_type,
         address_space=.SHARED,
         Storage=PointerStorage[element_width=1],
         ...,
@@ -2165,13 +2155,13 @@ def shared_memory_epilogue[
     c_col: Int,
     c_row: Int,
     c_smem_warp_tile_upper: TileTensor[
-        dtype=c_type,
+        c_type,
         address_space=.SHARED,
         Storage=PointerStorage[element_width=1],
         ...,
     ],
     c_smem_warp_tile_lower: TileTensor[
-        dtype=c_type,
+        c_type,
         address_space=.SHARED,
         Storage=PointerStorage[element_width=1],
         ...,

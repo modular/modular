@@ -249,9 +249,9 @@ def run_one_case(ctx: DeviceContext, spec: CaseSpec) raises:
     var expert_ids_layout = row_major[n_local_experts]()
     var src_info_layout = row_major((Idx[max_recv_num_tokens], Idx[2]))
 
-    var topk_ids_t = TileTensor[
-        mut=False, DType.int32, type_of(topk_ids_layout)
-    ](ptr=topk_ids_dev.unsafe_ptr(), layout=topk_ids_layout)
+    var topk_ids_t = TileTensor[mut=False, .int32, type_of(topk_ids_layout)](
+        ptr=topk_ids_dev.unsafe_ptr(), layout=topk_ids_layout
+    )
     var input_tokens_t = TileTensor[
         mut=False, input_type, type_of(input_tokens_layout)
     ](ptr=input_tokens_dev.unsafe_ptr(), layout=input_tokens_layout)

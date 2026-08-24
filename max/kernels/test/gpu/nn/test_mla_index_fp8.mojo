@@ -55,9 +55,9 @@ def _score_paged_sm100[
     KCollectionT: KVCollectionT,
 ](
     output: TileTensor[.float32, ...],
-    q: TileTensor[mut=False, DType.float8_e4m3fn, ...],
-    q_s: TileTensor[mut=False, DType.float32, ...],
-    input_row_offsets: TileTensor[mut=False, DType.uint32, ...],
+    q: TileTensor[mut=False, .float8_e4m3fn, ...],
+    q_s: TileTensor[mut=False, .float32, ...],
+    input_row_offsets: TileTensor[mut=False, .uint32, ...],
     k_collection: KCollectionT,
     batch_size: Int,
     max_seq_len: Int,

@@ -58,18 +58,10 @@ def matmul_qint4_pack_b[
     group_size: Int
 ](
     b: TileTensor[
-        mut=False,
-        DType.uint8,
-        address_space=.GENERIC,
-        Storage=PointerStorage[],
-        ...,
+        mut=False, .uint8, address_space=.GENERIC, Storage=PointerStorage[], ...
     ],
     b_rot: TileTensor[
-        mut=True,
-        DType.uint8,
-        address_space=.GENERIC,
-        Storage=PointerStorage[],
-        ...,
+        mut=True, .uint8, address_space=.GENERIC, Storage=PointerStorage[], ...
     ],
 ) raises:
     """Repacks block-wise quantized int4 weights into the tiled layout
@@ -1308,9 +1300,9 @@ def matmul_qint4[
     group_size: Int,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
-    a_tt: TileTensor[mut=False, DType.float32, address_space=.GENERIC, ...],
-    b_tt: TileTensor[mut=False, DType.uint8, address_space=.GENERIC, ...],
-    c_tt: TileTensor[mut=True, DType.float32, address_space=.GENERIC, ...],
+    a_tt: TileTensor[mut=False, .float32, address_space=.GENERIC, ...],
+    b_tt: TileTensor[mut=False, .uint8, address_space=.GENERIC, ...],
+    c_tt: TileTensor[mut=True, .float32, address_space=.GENERIC, ...],
     ctx: Optional[DeviceContext] = None,
 ):
     """Computes a matrix multiply of a float32 A matrix against block-wise

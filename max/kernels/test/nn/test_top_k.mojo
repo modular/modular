@@ -59,12 +59,8 @@ struct TestTensor[rank: Int, dtype: DType](Movable):
             TileTensor[
                 Self.dtype,
                 Layout[
-                    shape_types=DynamicCoord[
-                        DType.int64, Self.rank
-                    ].element_types,
-                    stride_types=DynamicCoord[
-                        DType.int64, Self.rank
-                    ].element_types,
+                    shape_types=DynamicCoord[.int64, Self.rank].element_types,
+                    stride_types=DynamicCoord[.int64, Self.rank].element_types,
                 ],
                 origin_of(self.storage),
             ]

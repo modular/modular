@@ -155,7 +155,7 @@ def _reshape_tile_tensor_with_batch_to_3d(
             _shape_types_to_3d[tensor.LayoutType._shape_types](),
             _slice_types[tensor.LayoutType._stride_types, 3](),
         ],
-        dtype=tensor.dtype,
+        tensor.dtype,
         origin=tensor.origin,
         address_space=tensor.address_space,
         linear_idx_type=tensor.linear_idx_type,

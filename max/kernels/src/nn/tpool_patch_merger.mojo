@@ -50,7 +50,7 @@ def tpool_patch_merger_kernel[
     x_tile: TileTensor[dtype, XLayout, x_origin, Storage=XStorage],
     out_tile: TileTensor[dtype, OutLayout, out_origin, Storage=OutStorage],
     grid_thws: TileTensor[
-        DType.int64, GridThwLayout, grid_thw_origin, Storage=GridThwStorage
+        .int64, GridThwLayout, grid_thw_origin, Storage=GridThwStorage
     ],
     kH: Int32,
     kW: Int32,
@@ -191,7 +191,7 @@ def tpool_patch_merger[
     ],
     x: TileTensor[dtype, x_layout, ImmutAnyOrigin, Storage=XStorage],
     bounds: TileTensor[
-        DType.int64, bounds_layout, ImmutAnyOrigin, Storage=BoundsStorage
+        .int64, bounds_layout, ImmutAnyOrigin, Storage=BoundsStorage
     ],
     kH: Int,
     kW: Int,

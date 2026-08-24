@@ -314,11 +314,7 @@ def fa_prefill_apple_core[
     k: k_t,
     v: v_t,
     mask_functor: mask_t,
-    valid_length: TileTensor[
-        DType.uint32,
-        valid_length_layout,
-        ImmutAnyOrigin,
-    ],
+    valid_length: TileTensor[.uint32, valid_length_layout, ImmutAnyOrigin],
     sink_weights: OptionalReg[TileTensor[q_type, sink_layout, ImmutAnyOrigin]],
     scale: Float32,
     batch_size: Int32,

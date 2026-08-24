@@ -377,7 +377,7 @@ def sliced_add[
     c: TileTensor[mut=True, dtype, ...],
     a: TileTensor[mut=False, dtype, ...],
     b: TileTensor[mut=False, dtype, ...],
-    lora_end_idx: TileTensor[mut=False, DType.int64, ...],
+    lora_end_idx: TileTensor[mut=False, .int64, ...],
     ctx: DeviceContext,
 ) raises:
     """Adds tensors a and b element-wise for rows < lora_end_idx, otherwise copies a.

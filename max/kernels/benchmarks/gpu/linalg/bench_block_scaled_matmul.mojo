@@ -472,7 +472,7 @@ def bench_matmul[
     @__copy_capture(a_scales_shape, b_scales_shape)
     def run_vendor_blas(
         ctx: DeviceContext,
-        c: TileTensor[mut=True, DType.bfloat16, ...],
+        c: TileTensor[mut=True, .bfloat16, ...],
         a: TileTensor[dtype, ...],
         b: TileTensor[dtype, ...],
         a_scales: TileTensor[scales_type, ...],
@@ -727,7 +727,7 @@ def bench_mxfp4_amd[
     @always_inline
     def run_vendor_blas(
         ctx: DeviceContext,
-        c: TileTensor[mut=True, DType.float32, ...],
+        c: TileTensor[mut=True, .float32, ...],
         a: TileTensor[.uint8, ...],
         b: TileTensor[.uint8, ...],
         sfa: TileTensor[.float8_e8m0fnu, ...],

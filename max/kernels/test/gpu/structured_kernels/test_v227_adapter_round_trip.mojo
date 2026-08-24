@@ -151,11 +151,9 @@ def kernel_v227_round_trip(
         Coord[ComptimeInt[KV_BLOCK], ComptimeInt[DEPTH]].element_types,
         Coord[ComptimeInt[DEPTH], ComptimeInt[1]].element_types,
     ]
-    var v_src = TileTensor[
-        DType.float8_e4m3fn,
-        v_src_layout,
-        MutAnyOrigin,
-    ](v_src_ptr, v_src_layout())
+    var v_src = TileTensor[.float8_e4m3fn, v_src_layout, MutAnyOrigin](
+        v_src_ptr, v_src_layout()
+    )
 
     # Two LDS slots: v227 (padded) + reference (contiguous).
     var v_smem_v227 = tt_stack_allocation[

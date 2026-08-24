@@ -1709,12 +1709,7 @@ def conv_transposed_gpu[
     output_type: DType,
     elementwise_epilogue: Optional[elementwise_simd_epilogue_type] = None,
 ](
-    output: TileTensor[
-        mut=True,
-        output_type,
-        address_space=.GENERIC,
-        ...,
-    ],
+    output: TileTensor[mut=True, output_type, address_space=.GENERIC, ...],
     input: TileTensor[mut=False, input_type, address_space=.GENERIC, ...],
     filter: TileTensor[mut=False, filter_type, address_space=.GENERIC, ...],
     stride: IndexList[input.rank - 2],

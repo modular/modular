@@ -1291,9 +1291,7 @@ def gemv_gpu_dispatch[
                     unsafe_from_address=Int(b.ptr)
                 )
                 var b_tile_n_major = TileTensor[
-                    b_type,
-                    type_of(b_n_major_layout),
-                    b.origin,
+                    b_type, type_of(b_n_major_layout), b.origin
                 ](b_ptr, b_n_major_layout)
 
                 comptime kernel = gemv_kernel_vector[

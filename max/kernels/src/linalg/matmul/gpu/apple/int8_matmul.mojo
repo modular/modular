@@ -590,18 +590,18 @@ struct AppleM5Int8MatMul[
                     # int32-indexed A/B views; enqueue only dispatches here for
                     # shapes that fit i32, so no per-tile guard is needed.
                     var a32 = TileTensor[
-                        DType.int8,
+                        .int8,
                         type_of(a).LayoutType,
                         type_of(a).origin,
                         address_space=type_of(a).address_space,
-                        linear_idx_type=DType.int32,
+                        linear_idx_type=.int32,
                     ](ptr=a.ptr, layout=a.layout)
                     var b32 = TileTensor[
-                        DType.int8,
+                        .int8,
                         type_of(b).LayoutType,
                         type_of(b).origin,
                         address_space=type_of(b).address_space,
-                        linear_idx_type=DType.int32,
+                        linear_idx_type=.int32,
                     ](ptr=b.ptr, layout=b.layout)
                     for ks in range(n_full_strips):
                         Self._mma_width16_abs(
@@ -1034,9 +1034,9 @@ def _threadgroup_max[nthreads: Int](val: Float32) -> Float32:
 def enqueue_apple_int8_quantize_activation[
     in_type: DType = .bfloat16,
 ](
-    q: TileTensor[mut=True, DType.int8, ...],
+    q: TileTensor[mut=True, .int8, ...],
     a: TileTensor[in_type, ...],
-    a_scale: TileTensor[mut=True, DType.float32, ...],
+    a_scale: TileTensor[mut=True, .float32, ...],
     ctx: DeviceContext,
 ) raises:
     """Quantize `a` `(M, K)` to int8 `q` + per-row fp32 `a_scale` `(M,)`.

@@ -169,9 +169,7 @@ def test_fused_qk_rope[
         position_ids_input_buffer, position_ids_layout
     )
     var position_ids = TileTensor[
-        DType.uint32,
-        type_of(position_ids_static).LayoutType,
-        ImmutAnyOrigin,
+        .uint32, type_of(position_ids_static).LayoutType, ImmutAnyOrigin
     ](
         position_ids_static._storage.as_imm().unsafe_origin_cast[
             ImmutAnyOrigin

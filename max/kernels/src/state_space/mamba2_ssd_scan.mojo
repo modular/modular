@@ -126,19 +126,19 @@ def mamba2_ssd_chunk_scan_varlen_fwd_gpu[
         kernel_dtype, dt_bias_LT, MutUntrackedOrigin, Storage=Storage
     ],  # (nheads,) optional
     initial_states: TileTensor[
-        DType.float32, initial_states_LT, MutUntrackedOrigin, Storage=Storage
+        .float32, initial_states_LT, MutUntrackedOrigin, Storage=Storage
     ],  # (batch, nheads, head_dim, dstate) optional
     y: TileTensor[
         kernel_dtype, y_LT, MutUntrackedOrigin, Storage=Storage
     ],  # (total_len, nheads, head_dim)
     final_states: TileTensor[
-        DType.float32, final_states_LT, MutUntrackedOrigin, Storage=Storage
+        .float32, final_states_LT, MutUntrackedOrigin, Storage=Storage
     ],  # (batch, nheads, head_dim, dstate)
     query_start_loc: TileTensor[
-        DType.int32, query_start_loc_LT, MutUntrackedOrigin, Storage=Storage
+        .int32, query_start_loc_LT, MutUntrackedOrigin, Storage=Storage
     ],  # (batch + 1,)
     has_initial_state: TileTensor[
-        DType.bool, has_initial_state_LT, MutUntrackedOrigin, Storage=Storage
+        .bool, has_initial_state_LT, MutUntrackedOrigin, Storage=Storage
     ],  # (batch,) optional
     x_strides: Strides3D,  # (total_len, nheads, head_dim)
     dt_strides: Strides2D,  # (total_len, nheads)
@@ -328,16 +328,16 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu[
     # state (when has_initial_state[b]) and written in-place at slot
     # cache_indices[b] (instead of a separate final_states output).
     ssm_pool: TileTensor[
-        DType.float32, ssm_pool_LT, MutUntrackedOrigin, Storage=Storage
+        .float32, ssm_pool_LT, MutUntrackedOrigin, Storage=Storage
     ],
     query_start_loc: TileTensor[
-        DType.int32, query_start_loc_LT, MutUntrackedOrigin, Storage=Storage
+        .int32, query_start_loc_LT, MutUntrackedOrigin, Storage=Storage
     ],
     has_initial_state: TileTensor[
-        DType.bool, has_initial_state_LT, MutUntrackedOrigin, Storage=Storage
+        .bool, has_initial_state_LT, MutUntrackedOrigin, Storage=Storage
     ],
     cache_indices: TileTensor[
-        DType.uint32, cache_indices_LT, MutUntrackedOrigin, Storage=Storage
+        .uint32, cache_indices_LT, MutUntrackedOrigin, Storage=Storage
     ],
     x_strides: Strides3D,
     dt_strides: Strides2D,
@@ -609,15 +609,11 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu_dstate_split[
     dt_bias: TileTensor[kernel_dtype, dt_bias_LT, MutUntrackedOrigin],
     y: TileTensor[kernel_dtype, y_LT, MutUntrackedOrigin],
     ssm_pool: TileTensor[.float32, ssm_pool_LT, MutUntrackedOrigin],
-    query_start_loc: TileTensor[
-        DType.int32, query_start_loc_LT, MutUntrackedOrigin
-    ],
+    query_start_loc: TileTensor[.int32, query_start_loc_LT, MutUntrackedOrigin],
     has_initial_state: TileTensor[
-        DType.bool, has_initial_state_LT, MutUntrackedOrigin
+        .bool, has_initial_state_LT, MutUntrackedOrigin
     ],
-    cache_indices: TileTensor[
-        DType.uint32, cache_indices_LT, MutUntrackedOrigin
-    ],
+    cache_indices: TileTensor[.uint32, cache_indices_LT, MutUntrackedOrigin],
     x_strides: Strides3D,
     dt_strides: Strides2D,
     A_strides: Strides1D,
@@ -1132,13 +1128,13 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu_apple[
         state_dtype, ssm_pool_LT, MutUntrackedOrigin, Storage=Storage
     ],
     query_start_loc: TileTensor[
-        DType.int32, query_start_loc_LT, MutUntrackedOrigin, Storage=Storage
+        .int32, query_start_loc_LT, MutUntrackedOrigin, Storage=Storage
     ],
     has_initial_state: TileTensor[
-        DType.bool, has_initial_state_LT, MutUntrackedOrigin, Storage=Storage
+        .bool, has_initial_state_LT, MutUntrackedOrigin, Storage=Storage
     ],
     cache_indices: TileTensor[
-        DType.uint32, cache_indices_LT, MutUntrackedOrigin, Storage=Storage
+        .uint32, cache_indices_LT, MutUntrackedOrigin, Storage=Storage
     ],
     x_strides: Strides3D,
     dt_strides: Strides2D,
@@ -1389,10 +1385,10 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_cpu[
     # ssm_pool: [max_slots, nheads, head_dim, dstate] fp32 — read for initial
     # state (when has_initial_state[b]) and written in-place at slot
     # cache_indices[b] (instead of a separate final_states output).
-    ssm_pool: TileTensor[mut=True, DType.float32, ...],
-    query_start_loc: TileTensor[mut=False, DType.int32, ...],
-    has_initial_state: TileTensor[mut=False, DType.bool, ...],
-    cache_indices: TileTensor[mut=False, DType.uint32, ...],
+    ssm_pool: TileTensor[mut=True, .float32, ...],
+    query_start_loc: TileTensor[mut=False, .int32, ...],
+    has_initial_state: TileTensor[mut=False, .bool, ...],
+    cache_indices: TileTensor[mut=False, .uint32, ...],
     x_strides: Strides3D,
     dt_strides: Strides2D,
     A_strides: Strides1D,
@@ -1597,11 +1593,11 @@ def mamba2_ssd_chunk_scan_varlen_fwd_cpu[
     C: TileTensor[mut=False, kernel_dtype, ...],
     D: TileTensor[mut=False, kernel_dtype, ...],
     dt_bias: TileTensor[mut=False, kernel_dtype, ...],
-    initial_states: TileTensor[mut=False, DType.float32, ...],
+    initial_states: TileTensor[mut=False, .float32, ...],
     y: TileTensor[mut=True, kernel_dtype, ...],
-    final_states: TileTensor[mut=True, DType.float32, ...],
-    query_start_loc: TileTensor[mut=False, DType.int32, ...],
-    has_initial_state: TileTensor[mut=False, DType.bool, ...],
+    final_states: TileTensor[mut=True, .float32, ...],
+    query_start_loc: TileTensor[mut=False, .int32, ...],
+    has_initial_state: TileTensor[mut=False, .bool, ...],
     x_strides: Strides3D,
     dt_strides: Strides2D,
     A_strides: Strides1D,

@@ -1893,11 +1893,11 @@ def grouped_matmul_sm100_persistent[
 ](
     c: TileTensor[mut=True, c_type, address_space=.GENERIC, ...],
     a: TileTensor[mut=False, a_type, address_space=.GENERIC, ...],
-    a_offsets: TileTensor[mut=False, DType.uint32, address_space=.GENERIC, ...],
+    a_offsets: TileTensor[mut=False, .uint32, address_space=.GENERIC, ...],
     b: TileTensor[mut=False, b_type, address_space=.GENERIC, ...],
-    expert_ids: TileTensor[mut=False, DType.int32, address_space=.GENERIC, ...],
+    expert_ids: TileTensor[mut=False, .int32, address_space=.GENERIC, ...],
     expert_usage_stats: TileTensor[
-        mut=False, DType.uint32, address_space=.GENERIC, ...
+        mut=False, .uint32, address_space=.GENERIC, ...
     ],
     ctx: DeviceContext,
 ) raises:

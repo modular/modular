@@ -87,12 +87,7 @@ def _mask_apply_rdna[
     scale: Float32,
     mask: mask_t,
     p_reg_tile: TileTensor[
-        mut=True,
-        accum_type,
-        _,
-        _,
-        address_space=.LOCAL,
-        linear_idx_type=_,
+        mut=True, accum_type, _, _, address_space=.LOCAL, linear_idx_type=_
     ],
     not_last_iter: Bool,
     cache_start_pos: UInt32 = 0,

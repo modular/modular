@@ -272,7 +272,7 @@ struct TileLoaderTMA[
         # TileTensor, but TMATensorTile is parameterized on Self._dtype.
         var dst_exact = TileTensor[
             mut=True,
-            dtype=Self._dtype,
+            Self._dtype,
             LayoutType=type_of(dst).LayoutType,
             origin=MutAnyOrigin,
             address_space=.SHARED,
@@ -353,7 +353,7 @@ struct TileLoaderCPAsync[
     @__allow_legacy_any_origin_fields
     var src: TileTensor[
         mut=False,
-        dtype=Self.dtype,
+        Self.dtype,
         LayoutType=Self.src_layout,
         origin=ImmutAnyOrigin,
         address_space=.GENERIC,
@@ -364,7 +364,7 @@ struct TileLoaderCPAsync[
         out self,
         src: TileTensor[
             mut=False,
-            dtype=Self.dtype,
+            Self.dtype,
             LayoutType=Self.src_layout,
             origin=ImmutAnyOrigin,
             address_space=.GENERIC,
@@ -422,7 +422,7 @@ struct TileLoaderCPAsync[
         # Vectorized tiles cannot be reconstructed directly from a pointer.
         var dst_exact = TileTensor[
             mut=True,
-            dtype=Self._dtype,
+            Self._dtype,
             LayoutType=type_of(dst).LayoutType,
             origin=MutAnyOrigin,
             address_space=.SHARED,
@@ -451,7 +451,7 @@ def async_copy_with_bound_check[
 ](
     src: TileTensor[
         mut=False,
-        dtype=dtype,
+        dtype,
         LayoutType=src_layout,
         origin=ImmutAnyOrigin,
         address_space=.GENERIC,
@@ -460,7 +460,7 @@ def async_copy_with_bound_check[
     ],
     dst: TileTensor[
         mut=True,
-        dtype=dtype,
+        dtype,
         LayoutType=dst_layout,
         origin=MutAnyOrigin,
         address_space=.SHARED,

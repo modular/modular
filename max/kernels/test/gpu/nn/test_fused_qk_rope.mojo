@@ -240,9 +240,7 @@ def test_fused_qk_rope[dtype: DType](ctx: DeviceContext) raises -> None:
         valid_lengths_device, valid_lengths_tile_layout
     )
     var valid_lengths_tensor = TileTensor[
-        DType.uint32,
-        type_of(valid_lengths_static).LayoutType,
-        MutAnyOrigin,
+        .uint32, type_of(valid_lengths_static).LayoutType, MutAnyOrigin
     ](
         valid_lengths_static._storage.unsafe_origin_cast[MutAnyOrigin](),
         valid_lengths_static.layout,

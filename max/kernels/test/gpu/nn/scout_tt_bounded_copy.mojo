@@ -56,7 +56,7 @@ def _make_view[
         stride_types=ResultLayout._stride_types,
     ],
     ImmutAnyOrigin,
-    linear_idx_type=DType.int64,
+    linear_idx_type=.int64,
 ]:
     var immut_ptr = (
         ptr.address_space_cast[.GENERIC]().as_imm().as_unsafe_any_origin()
@@ -73,7 +73,7 @@ def _make_view[
         comptime if not stride_c.element_types[i].is_static_value:
             stride_c[i] = rebind[stride_c.element_types[i]](Int64(strides[i]))
     return TileTensor[
-        dtype, ConcLayout, ImmutAnyOrigin, linear_idx_type=DType.int64
+        dtype, ConcLayout, ImmutAnyOrigin, linear_idx_type=.int64
     ](ptr=immut_ptr, layout=ConcLayout(shape_c, stride_c))
 
 
@@ -108,9 +108,7 @@ comptime copy_layout = tt_row_major[
 
 @__name(t"scout_bounded")
 def scout_bounded(
-    q_tt: TileTensor[
-        dtype, QTTLayout, ImmutAnyOrigin, linear_idx_type=DType.int64
-    ],
+    q_tt: TileTensor[dtype, QTTLayout, ImmutAnyOrigin, linear_idx_type=.int64],
     out_buf: UnsafePointer[Scalar[dtype], MutAnyOrigin],
     valid_rows_dev: Int32,
 ):

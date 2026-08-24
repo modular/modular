@@ -1108,28 +1108,19 @@ struct Grouped1D1DMatmulKernel[
 
     # 1D data TileTensor types (offsets, expert IDs, scales)
     comptime OffsetsTile = TileTensor[
-        DType.uint32,
-        GMEMLayout1D,
-        MutAnyOrigin,
-        Storage=Self.offsets_storage,
+        .uint32, GMEMLayout1D, MutAnyOrigin, Storage=Self.offsets_storage
     ]
     comptime AScaleOffsetsTile = TileTensor[
-        DType.uint32,
+        .uint32,
         GMEMLayout1D,
         MutAnyOrigin,
         Storage=Self.a_scale_offsets_storage,
     ]
     comptime ExpertIdsTile = TileTensor[
-        DType.int32,
-        GMEMLayout1D,
-        MutAnyOrigin,
-        Storage=Self.expert_ids_storage,
+        .int32, GMEMLayout1D, MutAnyOrigin, Storage=Self.expert_ids_storage
     ]
     comptime ExpertScalesTile = TileTensor[
-        DType.float32,
-        GMEMLayout1D,
-        MutAnyOrigin,
-        Storage=Self.expert_scales_storage,
+        .float32, GMEMLayout1D, MutAnyOrigin, Storage=Self.expert_scales_storage
     ]
 
     # C device tensor type (for bounds-checked stores)

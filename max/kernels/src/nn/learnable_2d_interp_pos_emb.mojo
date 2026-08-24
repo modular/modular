@@ -89,10 +89,10 @@ def _gpu_kernel[
         dtype, WeightLayoutType, weight_origin, Storage=WeightStorage
     ],
     grid_thws: TileTensor[
-        DType.int64, GridLayoutType, grid_origin, Storage=GridStorage
+        .int64, GridLayoutType, grid_origin, Storage=GridStorage
     ],
     time_weight: TileTensor[
-        DType.float32, TimeLayoutType, time_origin, Storage=TimeStorage
+        .float32, TimeLayoutType, time_origin, Storage=TimeStorage
     ],
     N: Int32,
     dim: Int32,

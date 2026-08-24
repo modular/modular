@@ -603,12 +603,7 @@ struct HopperMatmulSM90Kernel[
         ] = Self.elementwise_lambda_fn
     ](
         c_tma_op: TMATensorTile[Self.c_type, _, _, _],
-        c: TileTensor[
-            mut=True,
-            dtype=Self.c_type,
-            address_space=.GENERIC,
-            ...,
-        ],
+        c: TileTensor[mut=True, Self.c_type, address_space=.GENERIC, ...],
         c_tile: Self.SMem.CTile,
         output_reg_tile: Self.AccumRegTile,
         warp_group_thread_idx: Int,
@@ -1290,11 +1285,9 @@ struct HopperMatmulSM90Kernel[
         c_tma_op: TMATensorTile[
             Self.c_type, c_tma_rank, c_tile_shape, c_desc_shape
         ],
-        a_offsets: TileTensor[
-            mut=False, DType.uint32, AOffsetsLayout, MutAnyOrigin
-        ],
+        a_offsets: TileTensor[mut=False, .uint32, AOffsetsLayout, MutAnyOrigin],
         expert_ids: TileTensor[
-            mut=False, DType.int32, ExpertIdsLayout, MutAnyOrigin
+            mut=False, .int32, ExpertIdsLayout, MutAnyOrigin
         ],
         c: TileTensor[Self.c_type, c_tensor_layout, MutAnyOrigin],
     ):

@@ -1433,12 +1433,10 @@ def grouped_quantize_dynamic_scaled_fp4_async_kernel[
     ],
     input_tensor: TileTensor[input_dtype, input_layout, ImmutAnyOrigin],
     row_offsets: TileTensor[.uint32, row_offsets_layout, ImmutAnyOrigin],
-    scales_offsets: TileTensor[
-        DType.uint32, scales_offsets_layout, ImmutAnyOrigin
-    ],
+    scales_offsets: TileTensor[.uint32, scales_offsets_layout, ImmutAnyOrigin],
     expert_ids: TileTensor[.int32, expert_ids_layout, ImmutAnyOrigin],
     sf_tensor: TileTensor[
-        DType.float32, sf_layout, ImmutAnyOrigin
+        .float32, sf_layout, ImmutAnyOrigin
     ],  # tensor-wise scale factor
 ):
     """GPU kernel that quantizes per-expert BF16 activation tiles to NVFP4/MXFP4/MXFP8 with TMA-based scale-factor stores.
@@ -1678,16 +1676,10 @@ def grouped_quantize_dynamic_scaled_fp4_async[
     input_tensor: TileTensor[
         mut=False, input_dtype, address_space=.GENERIC, ...
     ],
-    row_offsets: TileTensor[
-        mut=False, DType.uint32, address_space=.GENERIC, ...
-    ],
-    scales_offsets: TileTensor[
-        mut=False, DType.uint32, address_space=.GENERIC, ...
-    ],
-    expert_ids: TileTensor[mut=False, DType.int32, address_space=.GENERIC, ...],
-    sf_tensor: TileTensor[
-        mut=False, DType.float32, address_space=.GENERIC, ...
-    ],
+    row_offsets: TileTensor[mut=False, .uint32, address_space=.GENERIC, ...],
+    scales_offsets: TileTensor[mut=False, .uint32, address_space=.GENERIC, ...],
+    expert_ids: TileTensor[mut=False, .int32, address_space=.GENERIC, ...],
+    sf_tensor: TileTensor[mut=False, .float32, address_space=.GENERIC, ...],
     ctx: DeviceContext,
 ) raises:
     """Launches the grouped per-expert quantization kernel for NVFP4/MXFP4/MXFP8 on SM100 hardware.
@@ -2813,8 +2805,8 @@ def quantize_dynamic_block_scaled_mxfp4_kernel[
 def quantize_dynamic_block_scaled_mxfp4[
     in_dtype: DType
 ](
-    output: TileTensor[mut=True, DType.uint8, ...],
-    output_scales: TileTensor[mut=True, DType.float8_e8m0fnu, ...],
+    output: TileTensor[mut=True, .uint8, ...],
+    output_scales: TileTensor[mut=True, .float8_e8m0fnu, ...],
     input: TileTensor[mut=False, in_dtype, ...],
     ctx: DeviceContext,
 ) raises:
@@ -2980,10 +2972,10 @@ def matmul_dynamic_block_scaled_amd[
     out_dtype: DType
 ](
     c: TileTensor[mut=True, out_dtype, ...],
-    a: TileTensor[mut=False, DType.uint8, ...],
-    b: TileTensor[mut=False, DType.uint8, ...],
-    a_scales: TileTensor[mut=False, DType.float8_e8m0fnu, ...],
-    b_scales: TileTensor[mut=False, DType.float8_e8m0fnu, ...],
+    a: TileTensor[mut=False, .uint8, ...],
+    b: TileTensor[mut=False, .uint8, ...],
+    a_scales: TileTensor[mut=False, .float8_e8m0fnu, ...],
+    b_scales: TileTensor[mut=False, .float8_e8m0fnu, ...],
     ctx: DeviceContext,
 ) raises:
     """Launches the AMD CDNA4 MXFP4 block-scaled matmul kernel.
@@ -3091,12 +3083,12 @@ def grouped_matmul_block_scaled_amd[
     out_dtype: DType,
 ](
     c: TileTensor[mut=True, out_dtype, ...],
-    a: TileTensor[mut=False, DType.uint8, ...],
-    b: TileTensor[mut=False, DType.uint8, ...],
-    a_scales: TileTensor[mut=False, DType.float8_e8m0fnu, ...],
-    b_scales: TileTensor[mut=False, DType.float8_e8m0fnu, ...],
-    row_offsets: TileTensor[mut=False, DType.uint32, ...],
-    expert_ids: TileTensor[mut=False, DType.int32, ...],
+    a: TileTensor[mut=False, .uint8, ...],
+    b: TileTensor[mut=False, .uint8, ...],
+    a_scales: TileTensor[mut=False, .float8_e8m0fnu, ...],
+    b_scales: TileTensor[mut=False, .float8_e8m0fnu, ...],
+    row_offsets: TileTensor[mut=False, .uint32, ...],
+    expert_ids: TileTensor[mut=False, .int32, ...],
     num_active_experts: Int,
     ctx: DeviceContext,
 ) raises:

@@ -1000,7 +1000,7 @@ struct MLAPrefillSparseCommon[
     @always_inline
     @staticmethod
     def kv_valid_producer(
-        indices: TileTensor[DType.uint32, address_space=.GENERIC, ...],
+        indices: TileTensor[.uint32, address_space=.GENERIC, ...],
         is_k_valid_ptr: UnsafePointer[
             mut=True, UInt8, address_space=.SHARED, ...
         ],

@@ -141,17 +141,8 @@ def _irfft[
     input_type: DType,
     output_type: DType,
 ](
-    input: TileTensor[
-        input_type,
-        address_space=.GENERIC,
-        ...,
-    ],
-    output: TileTensor[
-        mut=True,
-        output_type,
-        address_space=.GENERIC,
-        ...,
-    ],
+    input: TileTensor[input_type, address_space=.GENERIC, ...],
+    output: TileTensor[mut=True, output_type, address_space=.GENERIC, ...],
     n: Int,
     buffer_size_mb: Int,
     ctx: DeviceContext,
@@ -314,17 +305,8 @@ def irfft[
     input_type: DType,
     output_type: DType,
 ](
-    input: TileTensor[
-        input_type,
-        address_space=.GENERIC,
-        ...,
-    ],
-    output: TileTensor[
-        mut=True,
-        output_type,
-        address_space=.GENERIC,
-        ...,
-    ],
+    input: TileTensor[input_type, address_space=.GENERIC, ...],
+    output: TileTensor[mut=True, output_type, address_space=.GENERIC, ...],
     n: Int,
     buffer_size_mb: Int,
     ctx: DeviceContext,

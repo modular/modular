@@ -282,9 +282,7 @@ struct MLA_SM100_Decode_QKV_FP8[
         ],
         scales_ptr: UnsafePointer[Float32, origin=MutAnyOrigin],
         scalar_args: TileTensor[
-            DType.int64,
-            RowMajorLayout[ComptimeInt[3]],
-            MutAnyOrigin,
+            .int64, RowMajorLayout[ComptimeInt[3]], MutAnyOrigin
         ],
     ):
         # MaskType assertion: native FP8 backend supports NullMask, CausalMask,

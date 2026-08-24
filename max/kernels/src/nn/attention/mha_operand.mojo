@@ -1441,7 +1441,7 @@ struct RaggedMHAOperand[
         Self.scale_dtype, Self.scale_layout, ImmutAnyOrigin
     ]
     var cache_row_offsets: TileTensor[
-        DType.uint32, Self.cache_layout, Self.cache_origin
+        .uint32, Self.cache_layout, Self.cache_origin
     ]
 
     comptime device_type: AnyType = Self
@@ -1459,7 +1459,7 @@ struct RaggedMHAOperand[
         out self,
         buffer: TileTensor[Self.dtype, Self.layout, Self.origin],
         cache_row_offsets: TileTensor[
-            DType.uint32, Self.cache_layout, Self.cache_origin
+            .uint32, Self.cache_layout, Self.cache_origin
         ],
     ):
         comptime assert (
@@ -1495,7 +1495,7 @@ struct RaggedMHAOperand[
             Self.scale_dtype, Self.scale_layout, ImmutAnyOrigin
         ],
         cache_row_offsets: TileTensor[
-            DType.uint32, Self.cache_layout, Self.cache_origin
+            .uint32, Self.cache_layout, Self.cache_origin
         ],
     ):
         self.buffer = buffer

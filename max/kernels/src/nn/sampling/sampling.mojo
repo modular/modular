@@ -35,8 +35,8 @@ def apply_penalties_to_logits[
     target: StaticString,
 ](
     logits: TileTensor[mut=True, logit_type, ...],
-    compressed_frequency_data: TileTensor[mut=False, DType.int32, ...],
-    frequency_offsets: TileTensor[mut=False, DType.uint32, ...],
+    compressed_frequency_data: TileTensor[mut=False, .int32, ...],
+    frequency_offsets: TileTensor[mut=False, .uint32, ...],
     frequency_penalty: TileTensor[mut=False, penalty_type, ...],
     presence_penalty: TileTensor[mut=False, penalty_type, ...],
     repetition_penalty: TileTensor[mut=False, penalty_type, ...],
@@ -150,10 +150,10 @@ def update_frequency_data_kernel[
     block_size: Int,
 ](
     compressed_frequency_data: TileTensor[
-        DType.int32, FreqDataLayoutType, freq_data_origin
+        .int32, FreqDataLayoutType, freq_data_origin
     ],
     frequency_offsets: TileTensor[
-        DType.uint32, FreqOffsetsLayoutType, freq_offsets_origin
+        .uint32, FreqOffsetsLayoutType, freq_offsets_origin
     ],
     new_tokens: TileTensor[token_type, NewTokensLayoutType, new_tokens_origin],
 ):
@@ -249,10 +249,10 @@ def update_frequency_data[
     target: StaticString,
 ](
     compressed_frequency_data: TileTensor[
-        mut=True, DType.int32, address_space=.GENERIC, ...
+        mut=True, .int32, address_space=.GENERIC, ...
     ],
     frequency_offsets: TileTensor[
-        mut=False, DType.uint32, address_space=.GENERIC, ...
+        mut=False, .uint32, address_space=.GENERIC, ...
     ],
     new_tokens: TileTensor[mut=False, token_type, address_space=.GENERIC, ...],
     ctx: DeviceContext,

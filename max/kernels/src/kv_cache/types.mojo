@@ -1139,7 +1139,7 @@ trait KVCacheT(DevicePassable, TrivialRegisterPassable):
 
     def cache_lengths_nd(
         self,
-    ) -> TileTensor[.uint32, _1d_tt_layout, ImmutAnyOrigin,]:
+    ) -> TileTensor[.uint32, _1d_tt_layout, ImmutAnyOrigin]:
         """Returns the cache lengths as a TileTensor."""
         ...
 
@@ -1540,12 +1540,12 @@ struct ContinuousBatchingKVCache[
 
     comptime cache_lengths_tt_layout = _1d_tt_layout
     comptime cache_lengths_tt_type = TileTensor[
-        DType.uint32, Self.cache_lengths_tt_layout, Self.cache_lengths_origin
+        .uint32, Self.cache_lengths_tt_layout, Self.cache_lengths_origin
     ]
 
     comptime lookup_table_tt_layout = _1d_tt_layout
     comptime lookup_table_tt_type = TileTensor[
-        DType.uint32, Self.lookup_table_tt_layout, Self.lookup_table_origin
+        .uint32, Self.lookup_table_tt_layout, Self.lookup_table_origin
     ]
 
     var blocks: Self.blocks_tt_type
@@ -2110,12 +2110,12 @@ struct PagedKVCache[
 
     comptime cache_lengths_tt_layout = _1d_tt_layout
     comptime cache_lengths_tt_type = TileTensor[
-        DType.uint32, Self.cache_lengths_tt_layout, Self.cache_lengths_origin
+        .uint32, Self.cache_lengths_tt_layout, Self.cache_lengths_origin
     ]
 
     comptime lookup_table_tt_layout = _2d_row_major_tt_layout
     comptime lookup_table_tt_type = TileTensor[
-        DType.uint32, Self.lookup_table_tt_layout, Self.lookup_table_origin
+        .uint32, Self.lookup_table_tt_layout, Self.lookup_table_origin
     ]
 
     var blocks: Self.blocks_tt_type

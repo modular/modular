@@ -119,13 +119,13 @@ comptime _GroupPtrLayout[max_groups: Int] = RowMajorLayout[
     *Coord[ComptimeInt[max_groups], ComptimeInt[1]].element_types
 ]
 comptime _GroupPtrTile[max_groups: Int] = TileTensor[
-    DType.uint64, _GroupPtrLayout[max_groups], MutAnyOrigin
+    .uint64, _GroupPtrLayout[max_groups], MutAnyOrigin
 ]
 comptime _ProblemSizesLayout[max_groups: Int] = RowMajorLayout[
     *Coord[ComptimeInt[max_groups], ComptimeInt[4]].element_types
 ]
 comptime _ProblemSizesTile[max_groups: Int] = TileTensor[
-    DType.int32, _ProblemSizesLayout[max_groups], MutAnyOrigin
+    .int32, _ProblemSizesLayout[max_groups], MutAnyOrigin
 ]
 
 

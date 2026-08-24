@@ -273,10 +273,7 @@ struct TiledMma[
         a_reg: TileTensor[Self.in_type, a_layout, _, address_space=.LOCAL],
         b_reg: TileTensor[Self.in_type, b_layout, _, address_space=.LOCAL],
         c_reg: TileTensor[
-            Self.out_type,
-            c_layout,
-            MutUntrackedOrigin,
-            address_space=.LOCAL,
+            Self.out_type, c_layout, MutUntrackedOrigin, address_space=.LOCAL
         ],
     ):
         """Execute group_size MMA operations across the K dimension.

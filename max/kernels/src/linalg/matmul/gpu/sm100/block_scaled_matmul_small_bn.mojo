@@ -2376,7 +2376,7 @@ def _create_tma_and_launch[
     )
     var sfa_4d_layout = tt_row_major(sfa_4d_shape)
     var sfa_4d_tensor = TileTensor[
-        DType.uint16, type_of(sfa_4d_layout), ImmutAnyOrigin
+        .uint16, type_of(sfa_4d_layout), ImmutAnyOrigin
     ](
         rebind[UnsafePointer[UInt16, ImmutAnyOrigin]](sfa_5d_tensor.ptr),
         sfa_4d_layout,

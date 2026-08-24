@@ -2292,9 +2292,7 @@ def _matmul_blockwise_scaled_fp8_common[
     def _lt_to_tt[
         dtype: DType,
     ](lt: LayoutTensor[dtype, _, ...]) -> TileTensor[
-        dtype,
-        RowMajorLayout[*Coord[Int64, Int64].element_types],
-        lt.origin,
+        dtype, RowMajorLayout[*Coord[Int64, Int64].element_types], lt.origin
     ]:
         var layout = row_major(
             (
@@ -2303,9 +2301,7 @@ def _matmul_blockwise_scaled_fp8_common[
             )
         )
         return TileTensor[
-            dtype,
-            RowMajorLayout[*Coord[Int64, Int64].element_types],
-            lt.origin,
+            dtype, RowMajorLayout[*Coord[Int64, Int64].element_types], lt.origin
         ](
             ptr=UnsafePointer[Scalar[dtype], lt.origin](
                 unsafe_from_address=Int(lt.ptr)
@@ -3488,11 +3484,11 @@ def generic_fused_qk_rope_bshd_paged_ragged[
 ](
     q_proj: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
     input_row_offsets: TileTensor[
-        mut=False, DType.uint32, address_space=.GENERIC, ...
+        mut=False, .uint32, address_space=.GENERIC, ...
     ],
     kv_collection: PagedKVCacheCollection,
     freqs_cis: TileTensor[mut=False, freq_dtype, address_space=.GENERIC, ...],
-    position_ids: TileTensor[DType.uint32, address_space=.GENERIC, ...],
+    position_ids: TileTensor[.uint32, address_space=.GENERIC, ...],
     layer_idx: UInt32,
     output: TileTensor[mut=True, dtype, address_space=.GENERIC, ...],
     context: DeviceContext,
@@ -4049,15 +4045,13 @@ def generic_flare_mla_decode_kv_cache_ragged[
 ](
     q: TileTensor[mut=False, q_dtype, address_space=.GENERIC, ...],
     input_row_offsets: TileTensor[
-        mut=False, DType.uint32, address_space=.GENERIC, ...
+        mut=False, .uint32, address_space=.GENERIC, ...
     ],
     kv_collection: collection_t,
     layer_idx: UInt32,
     scale: Float32,
     output: TileTensor[mut=True, address_space=.GENERIC, ...],
-    scalar_args_buf: TileTensor[
-        mut=False, DType.int64, address_space=.GENERIC, ...
-    ],
+    scalar_args_buf: TileTensor[mut=False, .int64, address_space=.GENERIC, ...],
     context: DeviceContext,
     q_scale_ptr: OptionalReg[UnsafePointer[Float32, MutAnyOrigin]] = None,
     d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
@@ -4203,15 +4197,13 @@ def _flare_mla_decode_kv_cache_ragged[
 ](
     q: TileTensor[mut=False, q_dtype, address_space=.GENERIC, ...],
     input_row_offsets: TileTensor[
-        mut=False, DType.uint32, address_space=.GENERIC, ...
+        mut=False, .uint32, address_space=.GENERIC, ...
     ],
     kv_collection: collection_t,
     layer_idx: UInt32,
     scale: Float32,
     output: TileTensor[mut=True, address_space=.GENERIC, ...],
-    scalar_args_buf: TileTensor[
-        mut=False, DType.int64, address_space=.GENERIC, ...
-    ],
+    scalar_args_buf: TileTensor[mut=False, .int64, address_space=.GENERIC, ...],
     context: DeviceContext,
     # TODO: Must use OptionalReg as Optional does not work with @__copy_capture.
     q_scale_ptr: OptionalReg[UnsafePointer[Float32, MutAnyOrigin]] = None,
@@ -4352,13 +4344,11 @@ def generic_flare_mla_prefill_kv_cache_ragged[
     k: TileTensor[mut=False, input_dtype, address_space=.GENERIC, ...],
     v: TileTensor[mut=False, input_dtype, address_space=.GENERIC, ...],
     buffer_row_offsets: TileTensor[
-        mut=False, DType.uint32, address_space=.GENERIC, ...
+        mut=False, .uint32, address_space=.GENERIC, ...
     ],
-    cache_offsets: TileTensor[
-        mut=True, DType.uint32, address_space=.GENERIC, ...
-    ],
+    cache_offsets: TileTensor[mut=True, .uint32, address_space=.GENERIC, ...],
     input_row_offsets: TileTensor[
-        mut=False, DType.uint32, address_space=.GENERIC, ...
+        mut=False, .uint32, address_space=.GENERIC, ...
     ],
     kv_collection: collection_t,
     layer_idx: UInt32,
@@ -4489,13 +4479,11 @@ def _flare_mla_prefill_kv_cache_ragged[
     k: TileTensor[mut=False, input_dtype, address_space=.GENERIC, ...],
     v: TileTensor[mut=False, input_dtype, address_space=.GENERIC, ...],
     buffer_row_offsets: TileTensor[
-        mut=False, DType.uint32, address_space=.GENERIC, ...
+        mut=False, .uint32, address_space=.GENERIC, ...
     ],
-    cache_offsets: TileTensor[
-        mut=True, DType.uint32, address_space=.GENERIC, ...
-    ],
+    cache_offsets: TileTensor[mut=True, .uint32, address_space=.GENERIC, ...],
     input_row_offsets: TileTensor[
-        mut=False, DType.uint32, address_space=.GENERIC, ...
+        mut=False, .uint32, address_space=.GENERIC, ...
     ],
     kv_collection: collection_t,
     layer_idx: UInt32,
@@ -4634,14 +4622,12 @@ def kv_cache_row_offsets_ragged_paged[
     target: StaticString,
 ](
     cache_row_offsets: TileTensor[
-        mut=True, DType.uint32, address_space=.GENERIC, ...
+        mut=True, .uint32, address_space=.GENERIC, ...
     ],
     input_row_offsets: TileTensor[
-        mut=False, DType.uint32, address_space=.GENERIC, ...
+        mut=False, .uint32, address_space=.GENERIC, ...
     ],
-    cache_lengths: TileTensor[
-        mut=False, DType.uint32, address_space=.GENERIC, ...
-    ],
+    cache_lengths: TileTensor[mut=False, .uint32, address_space=.GENERIC, ...],
     ctx: DeviceContext,
 ) raises:
     """Builds cumulative valid-cache row offsets for a ragged prefill batch.
@@ -4683,20 +4669,13 @@ def kv_cache_row_offsets_ragged_paged_kernel[
     CacheLengthsLayoutType: TensorLayout,
 ](
     cache_row_offsets: TileTensor[
-        mut=True,
-        DType.uint32,
-        CacheRowOffsetsLayoutType,
-        MutUntrackedOrigin,
+        mut=True, .uint32, CacheRowOffsetsLayoutType, MutUntrackedOrigin
     ],
     input_row_offsets: TileTensor[
-        DType.uint32,
-        InputRowOffsetsLayoutType,
-        ImmUntrackedOrigin,
+        .uint32, InputRowOffsetsLayoutType, ImmUntrackedOrigin
     ],
     cache_lengths: TileTensor[
-        DType.uint32,
-        CacheLengthsLayoutType,
-        ImmUntrackedOrigin,
+        .uint32, CacheLengthsLayoutType, ImmUntrackedOrigin
     ],
 ):
     """Computes cumulative valid-cache row offsets for one batch index in a ragged prefill batch.

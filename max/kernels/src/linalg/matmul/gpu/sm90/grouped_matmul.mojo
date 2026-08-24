@@ -92,10 +92,10 @@ def grouped_matmul_sm90[
 ](
     c: TileTensor[mut=True, c_type, address_space=.GENERIC, ...],
     a: TileTensor[a_type, address_space=.GENERIC, ...],
-    a_offsets: TileTensor[mut=False, DType.uint32, address_space=.GENERIC, ...],
+    a_offsets: TileTensor[mut=False, .uint32, address_space=.GENERIC, ...],
     max_num_tokens_per_expert: Int,
     b: TileTensor[b_type, address_space=.GENERIC, ...],
-    expert_ids: TileTensor[mut=False, DType.int32, address_space=.GENERIC, ...],
+    expert_ids: TileTensor[mut=False, .int32, address_space=.GENERIC, ...],
     num_active_experts: Int,
     ctx: DeviceContext,
 ) raises:

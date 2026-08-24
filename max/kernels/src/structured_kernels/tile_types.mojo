@@ -558,11 +558,7 @@ def create_tma_tile[
 comptime GMEMTile[
     dtype: DType,
     tt_layout: TensorLayout,
-] = TileTensor[
-    dtype,
-    tt_layout,
-    MutAnyOrigin,
-]
+] = TileTensor[dtype, tt_layout, MutAnyOrigin]
 """Global memory TileTensor for global memory kernel parameters.
 
 Used for kernel parameter types, replacing LayoutTensor parameters.

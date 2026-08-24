@@ -147,7 +147,7 @@ def gather_reduce[
 ](
     output: TileTensor[mut=True, dtype, ...],
     input: TileTensor[mut=False, dtype, ...],
-    indices: TileTensor[mut=False, DType.int32, ...],
+    indices: TileTensor[mut=False, .int32, ...],
     reduce_init: Scalar[dtype],
     ctx: Optional[DeviceContext] = None,
 ):

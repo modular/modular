@@ -229,12 +229,10 @@ def _fp8_index_body[
     k_operand: KOperand,
     ks_operand: KSOperand,
     valid_length: TileTensor[
-        DType.uint32, VLLT, ImmutAnyOrigin, Storage=VLStorageType
+        .uint32, VLLT, ImmutAnyOrigin, Storage=VLStorageType
     ],
     q_s: TileTensor[.float32, QSLT, ImmutAnyOrigin, Storage=QSStorageType],
-    output: TileTensor[
-        DType.float32, OutLT, MutAnyOrigin, Storage=OutStorageType
-    ],
+    output: TileTensor[.float32, OutLT, MutAnyOrigin, Storage=OutStorageType],
     max_num_keys: Int,
     causal: Int,
     nt_start: Int,
@@ -623,12 +621,10 @@ def _fp8_index_score_kernel_sm100[
     k_operand: KOperand,
     ks_operand: KSOperand,
     valid_length: TileTensor[
-        DType.uint32, VLLT, ImmutAnyOrigin, Storage=VLStorageType
+        .uint32, VLLT, ImmutAnyOrigin, Storage=VLStorageType
     ],
     q_s: TileTensor[.float32, QSLT, ImmutAnyOrigin, Storage=QSStorageType],
-    output: TileTensor[
-        DType.float32, OutLT, MutAnyOrigin, Storage=OutStorageType
-    ],
+    output: TileTensor[.float32, OutLT, MutAnyOrigin, Storage=OutStorageType],
     max_num_keys_dev: Int32,
     causal_dev: Int32,
     out_row_begin_dev: Int32,
@@ -718,12 +714,10 @@ def _fp8_index_score_kernel_sm100_split[
     k_operand: KOperand,
     ks_operand: KSOperand,
     valid_length: TileTensor[
-        DType.uint32, VLLT, ImmutAnyOrigin, Storage=VLStorageType
+        .uint32, VLLT, ImmutAnyOrigin, Storage=VLStorageType
     ],
     q_s: TileTensor[.float32, QSLT, ImmutAnyOrigin, Storage=QSStorageType],
-    output: TileTensor[
-        DType.float32, OutLT, MutAnyOrigin, Storage=OutStorageType
-    ],
+    output: TileTensor[.float32, OutLT, MutAnyOrigin, Storage=OutStorageType],
     max_num_keys_dev: Int32,
     causal_dev: Int32,
     out_row_begin_dev: Int32,
@@ -803,10 +797,10 @@ def fp8_index_score_sm100[
 ](
     output: TileTensor[.float32, ...],
     q: TileTensor[mut=False, dtype, ...],
-    q_s: TileTensor[mut=False, DType.float32, ...],
+    q_s: TileTensor[mut=False, .float32, ...],
     k_operand: KOperand,
     ks_operand: KSOperand,
-    valid_length: TileTensor[mut=False, DType.uint32, ...],
+    valid_length: TileTensor[mut=False, .uint32, ...],
     batch_size: Int,
     max_seq_len: Int,
     max_num_keys: Int,

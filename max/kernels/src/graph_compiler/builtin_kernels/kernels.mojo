@@ -4212,9 +4212,7 @@ struct Mamba2SSDChunkScanVarlenFwdInplace[dt_softplus: Bool = True]:
                     y_tt,
                     rebind[
                         TileTensor[
-                            DType.float32,
-                            ssm_pool_tt.LayoutType,
-                            ssm_pool_tt.origin,
+                            .float32, ssm_pool_tt.LayoutType, ssm_pool_tt.origin
                         ]
                     ](ssm_pool_tt),
                     query_start_loc_tt,
