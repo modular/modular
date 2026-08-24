@@ -161,9 +161,11 @@ struct Interpolator[mode: InterpolationMode](
 
 
 def resize_nearest_neighbor[
+    dtype: DType,
+    //,
     coordinate_transformation_mode: CoordinateTransformationMode,
     round_mode: RoundMode,
-    dtype: DType,
+    target: StaticString = "cpu",
 ](
     input: TileTensor[mut=False, dtype, ...],
     output: TileTensor[mut=True, dtype, ...],
@@ -172,9 +174,10 @@ def resize_nearest_neighbor[
     """Resizes input to output shape using nearest-neighbor interpolation.
 
     Parameters:
+        dtype: Type of input and output.
         coordinate_transformation_mode: How to map a coordinate in output to a coordinate in input.
         round_mode: How to round fractional input coordinates to integer indices.
-        dtype: Type of input and output.
+        target: Device target used to execute the elementwise kernel.
 
     Args:
         input: The input to be resized.
@@ -230,7 +233,9 @@ def resize_nearest_neighbor[
         output.raw_store(out_idx, input.ptr[in_idx])
 
     # TODO (#21439): can use unsafe_memcpy when scale on inner dimension is 1
-    elementwise[1](nn_interpolate, output.layout.shape_coord(), ctx)
+    elementwise[1, target=target](
+        nn_interpolate, output.layout.shape_coord(), ctx
+    )
 
 
 @always_inline
@@ -389,7 +394,7 @@ def _resize[
 
     var in_ptr = input.ptr.unsafe_origin_cast[MutUntrackedOrigin]()
     # SAFETY: Placeholder; always overwritten below.
-    var out_ptr = UnsafePointer[Scalar[dtype], MutAnyOrigin].unsafe_dangling()
+    var out_ptr = Pointer[Scalar[dtype], MutAnyOrigin].unsafe_dangling()
 
     var using_tmp1 = False
     var tmp_buffer1 = List[Scalar[dtype]]()
