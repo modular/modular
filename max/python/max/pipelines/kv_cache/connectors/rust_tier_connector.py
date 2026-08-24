@@ -173,7 +173,7 @@ class RustTierConnector(KVConnector):
         # budget would be far too small for one and wasteful for another.
         GiB = 1024**3
         if host_offload_max_gb is None:
-            total_num_host_blocks = 2 * total_num_pages
+            total_num_host_blocks = int(1.5 * total_num_pages)
         else:
             total_num_host_blocks = (
                 int(host_offload_max_gb * GiB) // bytes_per_page
@@ -187,7 +187,7 @@ class RustTierConnector(KVConnector):
                     f"{to_human_readable_bytes(int(host_offload_max_gb * GiB))}."
                 )
         if disk_offload_max_gb is None:
-            disk_offload_max_gb = 3 * total_num_pages * bytes_per_page / GiB
+            disk_offload_max_gb = 2 * total_num_pages * bytes_per_page / GiB
 
         # The shared pinned host buffer the Rust lanes copy to/from. It is not
         # GC-managed (see `_unsafe_alloc_fast_pinned_buffer`), so it must be
@@ -198,6 +198,7 @@ class RustTierConnector(KVConnector):
         _check_disk_capacity(disk_cache_dir, int(disk_offload_max_gb * GiB))
         total_gib = total_bytes / (1024**3)
         start = time.perf_counter()
+        logger.info("Allocating %.1f GiB pinned host KV cache...", total_gib)
         self._host_buffer = _unsafe_alloc_fast_pinned_buffer(
             DType.uint8, [total_num_host_blocks, bytes_per_page], gpu0
         )
