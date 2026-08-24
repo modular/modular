@@ -412,7 +412,7 @@ program:
 ```mojo title="check_gpu.mojo"
 from max.gpu.host import DeviceContext
 
-def main():
+def main() raises:
     var ctx = DeviceContext()
     print("GPU:", ctx.name())
 ```
