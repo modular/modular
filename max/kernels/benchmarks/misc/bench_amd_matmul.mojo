@@ -267,12 +267,19 @@ def _bench_one_kernel[
         # Dummy 1-element workspace for non-split-K kernels — never read.
         split_k_workspace = SplitKWorkspace[num_splits](ctx, 1)
 
-    @__parameter
-    @__copy_capture(
-        cb_a, cb_b, cb_c, shape_c, shape_a, shape_b, split_k_workspace
-    )
     @always_inline
-    def bench_func(mut b: Bencher):
+    def bench_func(
+        mut b: Bencher,
+    ) {
+        var cb_a,
+        var cb_b,
+        var cb_c,
+        var shape_c,
+        var shape_a,
+        var shape_b,
+        var split_k_workspace,
+        imm,
+    }:
         @always_inline
         def kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
             var tensor_a = TileTensor(
@@ -332,7 +339,8 @@ def _bench_one_kernel[
         * Int(shape_c[1].value())
         * Int(shape_a[1].value()),
     )
-    b.bench_function[bench_func](
+    b.bench_function(
+        bench_func,
         BenchId(
             _get_run_name[
                 dtype,

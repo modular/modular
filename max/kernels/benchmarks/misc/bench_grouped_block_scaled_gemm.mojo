@@ -339,23 +339,24 @@ def bench_grouped_block_scaled_gemm[
     # Total FLOPs for all groups
     var total_flops = 2 * M * Int(n.value()) * Int(k.value()) * num_groups
 
-    @__parameter
-    @__copy_capture(
-        a_ptrs_tensor,
-        b_ptrs_tensor,
-        c_ptrs_tensor,
-        sfa_ptrs_tensor,
-        sfb_ptrs_tensor,
-        problem_sizes_tensor_host,
-        a_template,
-        b_template,
-        c_template,
-        sfa_template,
-        sfb_template,
-        total_tiles,
-    )
     @always_inline
-    def bench_func(mut bencher: Bencher):
+    def bench_func(
+        mut bencher: Bencher,
+    ) {
+        var a_ptrs_tensor,
+        var b_ptrs_tensor,
+        var c_ptrs_tensor,
+        var sfa_ptrs_tensor,
+        var sfb_ptrs_tensor,
+        var problem_sizes_tensor_host,
+        var a_template,
+        var b_template,
+        var c_template,
+        var sfa_template,
+        var sfb_template,
+        var total_tiles,
+        imm,
+    }:
         @always_inline
         def kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
             grouped_block_scaled_matmul[
@@ -381,7 +382,8 @@ def bench_grouped_block_scaled_gemm[
 
         bencher_iter_custom(bencher, kernel_launch, ctx)
 
-    bench.bench_function[bench_func](
+    bench.bench_function(
+        bench_func,
         BenchId(
             _get_run_name[a_type, c_type](
                 num_groups, M, Int(n.value()), Int(k.value()), cta_group
