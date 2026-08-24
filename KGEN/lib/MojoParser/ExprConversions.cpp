@@ -228,7 +228,6 @@ static FuncType getReducedFnType(FuncType sig) {
   MLIRContext *ctx = sig.getContext();
 
   auto origPogListAttr = sig.getArgListAttrs();
-  ArrayRef<PogMetadataAttr> pogs = origPogListAttr.getPogs();
 
   SmallVector<PassingKind> passingKinds;
   SmallVector<StringAttr> names;
@@ -236,7 +235,7 @@ static FuncType getReducedFnType(FuncType sig) {
   SmallVector<TypedAttr> defaults(sig.getNumArguments(), {});
   for (size_t i = 0, e = sig.getNumArguments(); i != e; ++i) {
     passingKinds.push_back(origPogListAttr.getPassingKind(i));
-    names.push_back(pogs[i].getName());
+    names.push_back(origPogListAttr.getName(i));
     variadics.push_back(origPogListAttr.getVariadicKind(i));
   }
 

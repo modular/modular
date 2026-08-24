@@ -1958,11 +1958,17 @@ ASTDecl *IREmitter::createParametricClosureTrait(SharedState &shared) {
 
 TraitType IREmitter::bindParamsToClosureTraitFromSig(const ExprNode *expr,
                                                      FnTypeGeneratorType sig) {
-  // We don't have scope for the FnGenBuilderParamDeclAttr, just make sure every
-  // name we created is unique.
-  // FIXME: use a demangler here for a deterministic name.
-  static size_t uniqueIdx = 0;
-  std::string uniqueIdxStr = llvm::utostr(uniqueIdx++);
+  // We don't have scope for the FnGenBuilderParamDeclAttr, just use the number
+  // of pre existing closure trait symbols as the unique index (we just need to
+  // ensure the name is unique for all the nested closure traits that are
+  // "dominated" by the current trait).
+  size_t uniqueIdx = 0;
+  sig.walk([&](TraitSymbolAttr symbol) {
+    if (symbol.getSymbol() ==
+        shared.getUniversalParametricClosureTrait()->getSymbolRef())
+      uniqueIdx++;
+  });
+  std::string uniqueIdxStr = llvm::utostr(uniqueIdx);
 
   MLIRContext *ctx = shared.getContext();
   ASTDecl *closureTraitDecl = shared.getUniversalParametricClosureTrait();
