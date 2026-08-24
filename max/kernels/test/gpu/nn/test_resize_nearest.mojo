@@ -58,5 +58,27 @@ def main() raises:
                 )
                 assert_equal(output_host[row * 4 + col], expected)
 
+        # Half-pixel coordinates begin at -0.25 during a 2x upsample. Floor
+        # rounds that to -1, so the kernel must clamp it to the first element.
+        resize_nearest_neighbor[
+            CoordinateTransformationMode.HalfPixel,
+            RoundMode.Floor,
+            target="gpu",
+        ](
+            TileTensor(input_device, row_major(input_shape)),
+            TileTensor(output_device, row_major(output_shape)),
+            ctx,
+        )
+
+        ctx.enqueue_copy(output_host, output_device)
+        ctx.synchronize()
+
+        for row in range(4):
+            for col in range(4):
+                var expected = Scalar[DType.float32](
+                    (row // 3) * 2 + col // 3 + 1
+                )
+                assert_equal(output_host[row * 4 + col], expected)
+
         _ = input_device
         _ = output_device

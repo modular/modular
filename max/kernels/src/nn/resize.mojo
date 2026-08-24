@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Implements tensor resize (upsample/downsample) with nearest, bilinear, and other interpolation modes."""
 
-from std.math import ceil, floor
+from std.math import ceil, clamp, floor
 
 
 from max.algorithm.functional import elementwise
@@ -213,7 +213,7 @@ def resize_nearest_neighbor[
         var in_coords = IndexList[input.rank](0)
 
         comptime for i in range(input.rank):
-            in_coords[i] = min(
+            in_coords[i] = clamp(
                 Int(
                     round(
                         coord_transform[coordinate_transformation_mode](
@@ -224,6 +224,7 @@ def resize_nearest_neighbor[
                         )
                     )
                 ),
+                0,
                 Int(input.dim(i)) - 1,
             )
 
