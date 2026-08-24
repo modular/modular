@@ -607,7 +607,7 @@ struct ExoticDelExample(RegisterPassable):
 
 
 # CHECK-LABEL: lit.fn @"def_borrowed
-# CHECK-SAME: %a: !lit.ref<!MemExample, imm {{.*}}> read_mem
+# CHECK-SAME: %a: !lit.ref<!MemExample, imm {{.*}}> imm_mem
 def def_borrowed(a: MemExample) raises -> None:
   # CHECK: lit.ref.store %none, %__result__
   # CHECK-NEXT: [[FALSE:%.*]] = kgen.param.constant: scalar<bool> = <false>
@@ -618,7 +618,7 @@ def def_borrowed(a: MemExample) raises -> None:
 # An explicit `imm` argument produces the same immutable-reference IR as the
 # implicit default above.
 # CHECK-LABEL: lit.fn @"def_imm
-# CHECK-SAME: %a: !lit.ref<!MemExample, imm {{.*}}> read_mem
+# CHECK-SAME: %a: !lit.ref<!MemExample, imm {{.*}}> imm_mem
 def def_imm(imm a: MemExample) raises -> None:
   # CHECK: lit.ref.store %none, %__result__
   # CHECK-NEXT: [[FALSE:%.*]] = kgen.param.constant: scalar<bool> = <false>
@@ -716,7 +716,7 @@ def test_or(a: MemExample) -> MemExample:
 
 # CHECK-LABEL: lit.fn @"variadic_mems
 # CHECK-SAME: [imm *"mems`2"](
-# CHECK-SAME: %mems: !lit.ref<!lit.struct<#VariadicList <:!Bool {:scalar<bool> false}, :origin<false> *"mems.origin._mlir_origin``", :!lit.struct<#Origin <:!Bool {:scalar<bool> false}, :origin<false> *"mems.origin._mlir_origin``">> *"mems.origin`1", :!AnyType !MemExample, :!Bool {:scalar<bool> false}>>, imm *"mems`2"> read_mem|pos_vararg)
+# CHECK-SAME: %mems: !lit.ref<!lit.struct<#VariadicList <:!Bool {:scalar<bool> false}, :origin<false> *"mems.origin._mlir_origin``", :!lit.struct<#Origin <:!Bool {:scalar<bool> false}, :origin<false> *"mems.origin._mlir_origin``">> *"mems.origin`1", :!AnyType !MemExample, :!Bool {:scalar<bool> false}>>, imm *"mems`2"> imm_mem|pos_vararg)
 def variadic_mems(*mems: MemExample):
   # CHECK-NEXT: %none = kgen.param.constant
   pass

@@ -163,7 +163,7 @@ kgen.func @regtype__moveinit__(%arg0: index owned) -> index {
   kgen.return %arg0 : index
 }
 
-kgen.func @mixtypes_fun(%arg0: !kgen.pointer<struct<(index) memoryOnly>> read_mem, %arg1: !kgen.pointer<none> read, %arg2: !kgen.scalar<si16> read) -> index {
+kgen.func @mixtypes_fun(%arg0: !kgen.pointer<struct<(index) memoryOnly>> imm_mem, %arg1: !kgen.pointer<none> imm, %arg2: !kgen.scalar<si16> imm) -> index {
   %0 = kgen.param.constant = <1>
   kgen.return %0 : index
 }
@@ -173,16 +173,16 @@ kgen.func @byrefresult_fun(%arg0: index, %arg1: !kgen.pointer<none>) -> !kgen.sc
   kgen.return %0 : !kgen.scalar<si32>
 }
 // CHECK-LABEL: kgen.func @byrefresult_create_reg_stub
-kgen.func @byrefresult_create_reg_stub() -> !kgen.generator<(!kgen.pointer<struct<(index) memoryOnly>> read_mem, !kgen.pointer<none>, !kgen.pointer<struct<(scalar<si32>) memoryOnly>> byref_result) -> !kgen.none> {
-  // CHECK: kgen.stage_closure = ([[ARG0:%.*]]: !kgen.pointer<struct<(index) memoryOnly>> read_mem, [[ARG1:%.*]]: !kgen.pointer<none>, [[ARG2:%.*]]: !kgen.pointer<struct<(scalar<si32>) memoryOnly>> byref_result) {
+kgen.func @byrefresult_create_reg_stub() -> !kgen.generator<(!kgen.pointer<struct<(index) memoryOnly>> imm_mem, !kgen.pointer<none>, !kgen.pointer<struct<(scalar<si32>) memoryOnly>> byref_result) -> !kgen.none> {
+  // CHECK: kgen.stage_closure = ([[ARG0:%.*]]: !kgen.pointer<struct<(index) memoryOnly>> imm_mem, [[ARG1:%.*]]: !kgen.pointer<none>, [[ARG2:%.*]]: !kgen.pointer<struct<(scalar<si32>) memoryOnly>> byref_result) {
   // CHECK-NEXT: [[V1:%.*]] = pop.pointer.bitcast [[ARG0]] : !kgen.pointer<struct<(index) memoryOnly>> to !kgen.pointer<index>
   // CHECK-NEXT: [[V2:%.*]] = pop.load [[V1]] : !kgen.pointer<index>
   // CHECK-NEXT: [[V3:%.*]] = pop.pointer.bitcast [[ARG2]] : !kgen.pointer<struct<(scalar<si32>) memoryOnly>> to !kgen.pointer<scalar<si32>>
   // CHECK-NEXT: [[V4:%.*]] = kgen.call @byrefresult_fun([[V2]], [[ARG1]]) : (index, !kgen.pointer<none>) -> !kgen.scalar<si32>
   // CHECK-NEXT: pop.store [[V4]], [[V3]] : !kgen.pointer<scalar<si32>>
   // CHECK-NEXT: kgen.return
-  %0 = kgen.create_reg_stub [(index, !kgen.pointer<none>) -> !kgen.scalar<si32>: @byrefresult_fun] : <(!kgen.pointer<struct<(index) memoryOnly>> read_mem, !kgen.pointer<none>, !kgen.pointer<struct<(scalar<si32>) memoryOnly>> byref_result) -> !kgen.none>
-  kgen.return %0 : !kgen.generator<(!kgen.pointer<struct<(index) memoryOnly>> read_mem, !kgen.pointer<none>, !kgen.pointer<struct<(scalar<si32>) memoryOnly>> byref_result) -> !kgen.none>
+  %0 = kgen.create_reg_stub [(index, !kgen.pointer<none>) -> !kgen.scalar<si32>: @byrefresult_fun] : <(!kgen.pointer<struct<(index) memoryOnly>> imm_mem, !kgen.pointer<none>, !kgen.pointer<struct<(scalar<si32>) memoryOnly>> byref_result) -> !kgen.none>
+  kgen.return %0 : !kgen.generator<(!kgen.pointer<struct<(index) memoryOnly>> imm_mem, !kgen.pointer<none>, !kgen.pointer<struct<(scalar<si32>) memoryOnly>> byref_result) -> !kgen.none>
 }
 
 kgen.func @noargs_fun() -> !kgen.none {

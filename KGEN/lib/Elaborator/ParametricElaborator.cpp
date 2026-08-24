@@ -1896,7 +1896,7 @@ ParametricElaborator::bundleCompileOffloadOp(CompileOffloadOp op,
   auto noneType = KGEN::NoneType::get(ctx);
   auto populateFnType = FuncTypeGeneratorType::get(
       {}, b.getFunctionType(PointerType::get(noneType), noneType),
-      {ArgConvention::ReadReg}, FnEffects().setCapturing());
+      {ArgConvention::ImmReg}, FnEffects().setCapturing());
 
   // Specialize the generator with another target by slicing it and its
   // transitive dependencies out of the IR and re-invoking the elaborator. If it

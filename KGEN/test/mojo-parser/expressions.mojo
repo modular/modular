@@ -53,7 +53,7 @@ struct MemoryOnlyPair(ImplicitlyCopyable):
   var x: MemoryOnlyInt
   var y: Int
 
-  # CHECK: lit.fn @"__init__{{.*}}(*, %copy: !lit.ref<!MemoryOnlyPair, imm {{.*}}> read_mem,
+  # CHECK: lit.fn @"__init__{{.*}}(*, %copy: !lit.ref<!MemoryOnlyPair, imm {{.*}}> imm_mem,
   # CHECK-SAME: %self: !lit.ref<!MemoryOnlyPair, mut {{.*}}> byref_result)
   def __init__(out self, *, copy: MemoryOnlyPair):
     # CHECK-NEXT: %0 = lit.ref.struct.ger %self[x]
@@ -971,7 +971,7 @@ def testMemoryOnlyIntArray(mut arr: MemoryOnlyIntArray, x: Int, var moi: MemoryO
 struct MyInlineIntInit(Movable where False):
     var value: MemoryOnlyInt
     # CHECK-LABEL: lit.fn @"__init__(expressions::MemoryOnlyInt)"
-    # CHECK-SAME: (%value: !lit.ref<!MemoryOnlyInt, imm {{.*}}> read_mem, ?, %self: !lit.ref<!MyInlineIntInit, mut {{.*}}> byref_result) -> !kgen.none
+    # CHECK-SAME: (%value: !lit.ref<!MemoryOnlyInt, imm {{.*}}> imm_mem, ?, %self: !lit.ref<!MyInlineIntInit, mut {{.*}}> byref_result) -> !kgen.none
     @implicit
     def __init__(out self, value: MemoryOnlyInt):
         # CHECK: %0 = lit.ref.struct.ger %self[value]
@@ -1051,13 +1051,13 @@ def function_types():
 
   # CHECK: lit.alias.decl *"p2{{.*}}"Ts": !lit.struct<#TypeList{{.*}} pos_vararg{{.*}}(!lit.ref<{{.*}}#VariadicPack
   # CHECK-SAME: <:!Bool {:scalar<bool> false},  :origin<false> *(0,2){{.*}}, :meta<!AnyType> !AnyType, :param_list<!AnyType> *(0,0), :!Bool {:scalar<bool> false}, {{.*}}>>, imm *[0,0]>
-  # CHECK-SAME: read_mem|pack_vararg, ?, "__result__": !lit.ref<none, mut *[0,1]> byref_result) async
+  # CHECK-SAME: imm_mem|pack_vararg, ?, "__result__": !lit.ref<none, mut *[0,1]> byref_result) async
   comptime p2 = async def[*Ts: AnyType](* *Ts) thin -> None
 
   # CHECK: lit.var.decl "float0"{{.*}}(!Int, |) -> !alias_Int1
   var float0: def(Int) thin -> Int
 
-  # CHECK: lit.var.decl "float1"{{.*}}(!lit.ref<!MemoryType, imm {{.*}}> read_mem, |, ?, "__result__": !lit.ref<!MemoryType, mut {{.*}}> byref_result) -> !kgen.none
+  # CHECK: lit.var.decl "float1"{{.*}}(!lit.ref<!MemoryType, imm {{.*}}> imm_mem, |, ?, "__result__": !lit.ref<!MemoryType, mut {{.*}}> byref_result) -> !kgen.none
   var float1: def(MemoryType) thin -> MemoryType
 
   # CHECK: lit.var.decl "float2"{{.*}}(!lit.ref<!RegType, mut *[0,0]> owned_in_mem, |) -> !RegType
@@ -1075,14 +1075,14 @@ def function_types():
   # CHECK: lit.var.decl "float6"{{.*}}(!Int, |, ?, "__result__": !lit.ref<none, mut *[0,0]> byref_result) async|capturing -> !kgen.none
   var float6: async def(Int) capturing thin -> None
 
-  # CHECK: lit.var.decl "float7"{{.*}}(!lit.ref<!lit.struct<#VariadicList <:!Bool {:scalar<bool> false}, :origin<false> *(0,0), :!lit.struct<#Origin <:!Bool {:scalar<bool> false}, :origin<false> *(0,0)>> *(0,1), :!AnyType !Int, :!Bool {:scalar<bool> false}>>, imm *[0,0]> read_mem|pos_vararg, ?, {{.*}}) throws -> !kgen.scalar<bool>
+  # CHECK: lit.var.decl "float7"{{.*}}(!lit.ref<!lit.struct<#VariadicList <:!Bool {:scalar<bool> false}, :origin<false> *(0,0), :!lit.struct<#Origin <:!Bool {:scalar<bool> false}, :origin<false> *(0,0)>> *(0,1), :!AnyType !Int, :!Bool {:scalar<bool> false}>>, imm *[0,0]> imm_mem|pos_vararg, ?, {{.*}}) throws -> !kgen.scalar<bool>
   var float7: def(*Int) thin raises -> None
 
   # CHECK: lit.var.decl "float12"{{.*}}<(!Int = {:scalar<index> 10}, {{.*}}StringLiteral <:string "foo">
   # CHECK-SAME: , |) -> !kgen.none>
   var float12: def(Int = 10, StaticString = "foo") thin -> None
 
-  # CHECK: lit.var.decl "named"{{.*}}<[1]("x": !lit.ref<!MemoryType, imm {{.*}}> read_mem) -> !alias_Int1>
+  # CHECK: lit.var.decl "named"{{.*}}<[1]("x": !lit.ref<!MemoryType, imm {{.*}}> imm_mem) -> !alias_Int1>
   var named: def(x: MemoryType) thin -> Int
 
 # CHECK-LABEL: lit.struct.decl @Mem

@@ -247,7 +247,7 @@ def testContextSensitiveKeyword(out x: Int, out2: Int):
 
 # CHECK-LABEL: lit.fn @"ownedConventionMem
 # CHECK-SAME: (%a: !lit.ref<!StructWithInit, mut {{.*}}> owned_in_mem,
-# CHECK-SAME:  %b: !lit.ref<!StructWithInit, imm {{.*}}> read_mem)
+# CHECK-SAME:  %b: !lit.ref<!StructWithInit, imm {{.*}}> imm_mem)
 def ownedConventionMem(var a: StructWithInit, b: StructWithInit):
     # CHECK: [[AX:%.*]] = lit.ref.struct.ger %a[x]
     # CHECK: [[AXR:%.*]] = kgen.rebind [[AX]]
@@ -276,7 +276,7 @@ struct RPStructWithInitTrivial(TrivialRegisterPassable):
 
 # CHECK-LABEL: lit.fn @"ownedConventionReg
 # CHECK-SAME: (%a: !lit.ref<!RPStructWithInit, mut *"a`"> owned_in_mem,
-# CHECK-SAME:  %b: !lit.ref<!RPStructWithInit, imm *"b`1"> read_mem,
+# CHECK-SAME:  %b: !lit.ref<!RPStructWithInit, imm *"b`1"> imm_mem,
 # CHECK-SAME:  %triv: !RPStructWithInitTrivial)
 def ownedConventionReg(
     var a: RPStructWithInit,
@@ -307,7 +307,7 @@ struct BorrowStruct(Movable where False):
 
 
 # CHECK-LABEL: callerFn
-# CHECK-SAME: (%arg0: !lit.ref<{{.*}}> read_mem)
+# CHECK-SAME: (%arg0: !lit.ref<{{.*}}> imm_mem)
 def callerFn(arg0: BorrowStruct):
     # CHECK-NEXT: lit.call {{.*}}testMethod{{.*}}(%arg0)
     arg0.testMethod()
@@ -398,7 +398,7 @@ struct MemoryType(Movable where False):
 
 
 # CHECK-LABEL: lit.fn @"defaultArgumentNonRegisterType
-# CHECK-SAME: read_mem = apply_result_slot({{.*}}__init__
+# CHECK-SAME: imm_mem = apply_result_slot({{.*}}__init__
 def defaultArgumentNonRegisterType(a: MemoryType = 1):
     pass
 
@@ -431,7 +431,7 @@ struct Outer[X: Int](Movable where False):
         pass
 
 
-# CHECK-LABEL: lit.fn @"variadics{{.*}}SIMD[DType.int, 1]*)"{{.*}}(%a: !lit.ref<!lit.struct<#VariadicList{{.*}}> read_mem|pos_vararg)
+# CHECK-LABEL: lit.fn @"variadics{{.*}}SIMD[DType.int, 1]*)"{{.*}}(%a: !lit.ref<!lit.struct<#VariadicList{{.*}}> imm_mem|pos_vararg)
 def variadics(*a: Int):
     # CHECK-NEXT: %none = kgen.param.constant
     pass
@@ -516,7 +516,7 @@ def variadic_mem_only(*values: MemStruct) -> Int:
 # CHECK-LABEL: lit.fn @"test_variadic_mem_only{{.*}}"<x: !MemStruct, y: !MemStruct>
 def test_variadic_mem_only[x: MemStruct, y: MemStruct]():
     # CHECK: lit.alias.decl {{.*}}: !alias_Int1 = <apply(
-    # CHECK-SAME: :!lit.generator<[1]("values": {{.*}}#VariadicList{{.*}}:!AnyType !MemStruct, :!Bool {:scalar<bool> false}>>, imm #lit.comptime.origin> read_mem|pos_vararg) -> !alias_Int1> {{.*}}::@"variadic_mem_only{{.*}}::MemStruct*)"
+    # CHECK-SAME: :!lit.generator<[1]("values": {{.*}}#VariadicList{{.*}}:!AnyType !MemStruct, :!Bool {:scalar<bool> false}>>, imm #lit.comptime.origin> imm_mem|pos_vararg) -> !alias_Int1> {{.*}}::@"variadic_mem_only{{.*}}::MemStruct*)"
     # CHECK-SAME: [store_to_mem(x), store_to_mem(y)])
     comptime b = variadic_mem_only(x, y)
 
@@ -1041,7 +1041,7 @@ def coroutine_origins():
     # CHECK: var.decl "y" var : {{.*}}mut [[Y_LT:.*]]>
     var y: Awaitable
     # CHECK: [[Y_IMM:%.*]] = lit.ref.immut %y
-    # CHECK: [[CORO:%.*]] = lit.async.call[!lit.generator<[3]("x": !lit.ref<!Awaitable, mut *[0,0]> mut, "y": !lit.ref<!Awaitable, imm *[0,1]> read_mem, ?, "__result__": !lit.ref<none, mut *[0,2]> byref_result) async -> !kgen.none>
+    # CHECK: [[CORO:%.*]] = lit.async.call[!lit.generator<[3]("x": !lit.ref<!Awaitable, mut *[0,0]> mut, "y": !lit.ref<!Awaitable, imm *[0,1]> imm_mem, ?, "__result__": !lit.ref<none, mut *[0,2]> byref_result) async -> !kgen.none>
     # CHECK-SAME: [mut [[X_LT]], muttoimm [[Y_LT]], imm {}](%x, [[Y_IMM]])
     # CHECK: [[CORO2:%.*]] = kgen.rebind [[CORO]] : !co.routine to !alias_AnyCoroutine1
     # CHECK: lit.call {{.*}}Coroutine::@"__init__{{.*}}<:!AnyType [{{.*}}@__MLIRType<:non_struct_type none>, none], :origin.set {mut [[X_LT]], mut [[Y_LT]]}>([[CORO2]])

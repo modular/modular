@@ -63,7 +63,7 @@ struct MyKernel(Kernel):
 # CHECK-LABEL: kgen.generator @"moco_4146::go
 def go[K: Kernel, o: MutOrigin](alg: K, c: Tile[.float32, o]):
     # Make sure that we fold the type `Tile[DType.float32, o]` used in the indirect call to `!kgen.pointer<none>` correctly.
-    # CHECK: kgen.call_param tail[(!kgen.pointer<K> read_mem, !kgen.pointer<none>)
+    # CHECK: kgen.call_param tail[(!kgen.pointer<K> imm_mem, !kgen.pointer<none>)
     alg.run(c)
 
 

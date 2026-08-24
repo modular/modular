@@ -54,9 +54,9 @@ class EmitAs(enum.Enum):
     llvm_opt_bitcode = 5
 
 class ArgConvention(enum.Enum):
-    read = 0
+    imm = 0
 
-    read_mem = 1
+    imm_mem = 1
 
     owned = 2
 

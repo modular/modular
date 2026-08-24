@@ -17,7 +17,7 @@
 # CHECK-LABEL: lit.trait.decl @Trait
 # CHECK-SAME: <?, [[T:.*]]: !AnyType_Trait>
 trait Trait:
-    # CHECK: lit.fn @"f0{{.*}}(%self: !lit.ref<:!AnyType_Trait [[T]], imm {{.*}}> read_mem) -> !kgen.none
+    # CHECK: lit.fn @"f0{{.*}}(%self: !lit.ref<:!AnyType_Trait [[T]], imm {{.*}}> imm_mem) -> !kgen.none
     # CHECK-NEXT: kgen.unreachable
     def f0(self):
         ...
@@ -34,12 +34,12 @@ trait Trait:
     def f2(mut self):
         pass
 
-    # CHECK: lit.fn @"f3{{.*}}(%self: !lit.ref<{{.*}}> read_mem, ?, %__error__: !lit.ref<!Error, {{.*}}> byref_error, %__result__: !lit.ref<none, mut *"__result__`2x2"> byref_result) throws -> !kgen.scalar<bool>
+    # CHECK: lit.fn @"f3{{.*}}(%self: !lit.ref<{{.*}}> imm_mem, ?, %__error__: !lit.ref<!Error, {{.*}}> byref_error, %__result__: !lit.ref<none, mut *"__result__`2x2"> byref_result) throws -> !kgen.scalar<bool>
     # CHECK-NEXT: kgen.unreachable
     def f3(self) raises:
         ...
 
-    # CHECK: lit.fn @"f4{{.*}}(%self: !lit.ref<{{.*}}> read_mem, ?, %__error__: !lit.ref<!Error, {{.*}}> byref_error, %__result__: !lit.ref<none, mut *"__result__`2x2"> byref_result) throws -> !kgen.scalar<bool>
+    # CHECK: lit.fn @"f4{{.*}}(%self: !lit.ref<{{.*}}> imm_mem, ?, %__error__: !lit.ref<!Error, {{.*}}> byref_error, %__result__: !lit.ref<none, mut *"__result__`2x2"> byref_result) throws -> !kgen.scalar<bool>
     # CHECK-NEXT: %none = kgen.param.constant: none = <#kgen.none>
     # CHECK-NEXT: lit.ref.store %none, %__result__ : <none, mut *"__result__`2x2">
     # CHECK-NEXT: %simd = kgen.param.constant: scalar<bool> = <false>
@@ -84,7 +84,7 @@ trait EmptyTrait:
 # CHECK-LABEL: lit.trait.decl @Trait1
 # CHECK-SAME: <?, [[T:.*]]: !AnyType_Trait1>
 trait Trait1:
-    # CHECK: lit.fn @"f{{.*}}(%self: !lit.ref<{{.*}}> read_mem, ?, %__result__: !lit.ref<:!AnyType_Trait1 [[T]], mut {{.*}}> byref_result) -> !kgen.none
+    # CHECK: lit.fn @"f{{.*}}(%self: !lit.ref<{{.*}}> imm_mem, ?, %__result__: !lit.ref<:!AnyType_Trait1 [[T]], mut {{.*}}> byref_result) -> !kgen.none
     def f(self) -> Self:
         ...
 
@@ -96,14 +96,14 @@ trait Trait2:
 
 # CHECK-LABEL: lit.struct.decl @StructWithTraits({{.*}}Trait1_Trait2)
 struct StructWithTraits(Trait1, Trait2, Movable where False):
-    # CHECK: lit.fn @"f{{.*}}(%self: !lit.ref<!StructWithTraits, imm {{.*}}> read_mem, ?, %{{.*}}: !lit.ref<!StructWithTraits, mut {{.*}}> byref_result) -> !kgen.none
+    # CHECK: lit.fn @"f{{.*}}(%self: !lit.ref<!StructWithTraits, imm {{.*}}> imm_mem, ?, %{{.*}}: !lit.ref<!StructWithTraits, mut {{.*}}> byref_result) -> !kgen.none
     def f(self) -> Self:
         ...
 
 
 # CHECK-LABEL: lit.trait.decl @CFMTrait
 trait CFMTrait:
-    # CHECK: lit.fn @"f1{{.*}}(%self: !lit.ref<{{.*}}> read_mem) -> !kgen.none
+    # CHECK: lit.fn @"f1{{.*}}(%self: !lit.ref<{{.*}}> imm_mem) -> !kgen.none
     def f1(self):
         pass
 
@@ -115,7 +115,7 @@ trait CFMTrait:
 
 # CHECK-LABEL: lit.struct.decl @CFMStruct({{.*}}CFMTrait)
 struct CFMStruct(CFMTrait, Movable where False):
-    # CHECK: lit.fn @"f1({{.*}})"[{{.*}}](%self: !lit.ref<!CFMStruct, imm {{.*}}> read_mem) -> !kgen.none
+    # CHECK: lit.fn @"f1({{.*}})"[{{.*}}](%self: !lit.ref<!CFMStruct, imm {{.*}}> imm_mem) -> !kgen.none
     def f1(self):
         pass
 
@@ -137,7 +137,7 @@ trait CFMTraitParams:
 struct CFMStructParams[t1: TrivialRegisterPassable, t2: TrivialRegisterPassable](
     CFMTraitParams, Movable where False
 ):
-    # CHECK: lit.fn @"f1{{.*}}"<x: !AnyType_CFMTraitParams>[{{.*}}](%self: !lit.ref<!lit.struct<#CFMStructParams <:!AnyType_Copyable_Deinitable_ImplicitlyCopyable_Movable_RegisterPassable_TrivialRegisterPassable t1, :!AnyType_Copyable_Deinitable_ImplicitlyCopyable_Movable_RegisterPassable_TrivialRegisterPassable t2>>{{.*}}> read_mem)
+    # CHECK: lit.fn @"f1{{.*}}"<x: !AnyType_CFMTraitParams>[{{.*}}](%self: !lit.ref<!lit.struct<#CFMStructParams <:!AnyType_Copyable_Deinitable_ImplicitlyCopyable_Movable_RegisterPassable_TrivialRegisterPassable t1, :!AnyType_Copyable_Deinitable_ImplicitlyCopyable_Movable_RegisterPassable_TrivialRegisterPassable t2>>{{.*}}> imm_mem)
     def f1[x: CFMTraitParams](self):
         pass
 
@@ -148,9 +148,9 @@ struct CFMStructParams[t1: TrivialRegisterPassable, t2: TrivialRegisterPassable]
 
 
 # CHECK-LABEL: lit.fn @"generic_trait_fn{{.*}}<T: !AnyType_Trait>
-# CHECK-SAME: %x: !lit.ref<:!AnyType_Trait T, imm {{.*}}> read_mem
+# CHECK-SAME: %x: !lit.ref<:!AnyType_Trait T, imm {{.*}}> imm_mem
 def generic_trait_fn[T: Trait](x: T):
-    # CHECK: lit.call tail[!lit.generator<[1]("self": {{.*}} read_mem) -> !kgen.none>:
+    # CHECK: lit.call tail[!lit.generator<[1]("self": {{.*}} imm_mem) -> !kgen.none>:
     # CHECK-SAME: #kgen.get_witness<:!AnyType_Trait T, @traits::@Trait, "f0{{.*}}">]{{.*}}(%x)
     x.f0()
 
@@ -164,7 +164,7 @@ def generic_trait_fn[T: Trait](x: T):
     # CHECK-SAME: #kgen.get_witness<:!AnyType_Trait T, @traits::@Trait, "overloaded{{.*}}">]{{.*}}(%x, %{{.*}})
     x.overloaded(__mlir_attr.`"trait" : !kgen.string`)
 
-    # CHECK: lit.call tail[!lit.generator<[1]("self": {{[^)]*}} read_mem)
+    # CHECK: lit.call tail[!lit.generator<[1]("self": {{[^)]*}} imm_mem)
     # CHECK-SAME: bind_params(:!lit.generator<<"x": !Int>[1](
     # CHECK-SAME: #kgen.get_witness<:!AnyType_Trait T, @traits::@Trait, "parametric{{.*}}">, {{.*}}1{{.*}})
     x.parametric[1]()
@@ -249,10 +249,10 @@ def trait_static_method[T: StaticMethodTrait]():
 
 # CHECK-LABEL: lit.fn @"copy_me
 # CHECK-SAME: <T: !AnyType_Copyable_ImplicitlyCopyable_Movable
-# CHECK-SAME: %value: !lit.ref<:!AnyType_Copyable_ImplicitlyCopyable_Movable T, imm {{.*}}> read_mem, ?,
+# CHECK-SAME: %value: !lit.ref<:!AnyType_Copyable_ImplicitlyCopyable_Movable T, imm {{.*}}> imm_mem, ?,
 # CHECK-SAME: %__result__: !lit.ref<:!AnyType_Copyable_ImplicitlyCopyable_Movable T, mut {{.*}}> byref_result
 def copy_me[T: ImplicitlyCopyable](value: T) -> T:
-    # CHECK-NEXT: lit.call tail[!lit.generator<[2](*, "copy": {{.*}}T, {{.*}}> read_mem, ?, "self": {{.*}}T, {{.*}}> byref_result) -> !kgen.none>:
+    # CHECK-NEXT: lit.call tail[!lit.generator<[2](*, "copy": {{.*}}T, {{.*}}> imm_mem, ?, "self": {{.*}}T, {{.*}}> byref_result) -> !kgen.none>:
     # CHECK-SAME: #kgen.get_witness<:!AnyType_Copyable_ImplicitlyCopyable_Movable T, @std::@builtin::@stubs::@Copyable, "__init__(copy:$0)">]{{.*}}(%value, %__result__)
     return value
 
@@ -361,7 +361,7 @@ struct VariadicTrait[*I: Int](RegisterPassable, SimpleTraitMethod):
         pass
 
     # CHECK-LABEL: kgen.conformance @{{.*}}SimpleTraitMethod
-    # CHECK-NEXT: kgen.witness "foo{{.*}}" : !lit.generator<[1]("self": {{.*}} read_mem) -> !kgen.none> = {{.*}}@"foo
+    # CHECK-NEXT: kgen.witness "foo{{.*}}" : !lit.generator<[1]("self": {{.*}} imm_mem) -> !kgen.none> = {{.*}}@"foo
 
 # CHECK-LABEL: lit.fn @"test_bind_variadic
 def test_bind_variadic():
@@ -896,13 +896,13 @@ comptime _AnyTypeMetaType = type_of(AnyType)
 struct TestAnyTrait[element_trait: _AnyTypeMetaType](Movable where False):
     # CHECK: lit.fn @"take_any_type
     # CHECK-SAME: <b_type: !AnyType>[{{.*}}](%self:
-    # CHECK-SAME: %b_value: !lit.ref<:!AnyType b_type, imm {{.*}} read_mem)
+    # CHECK-SAME: %b_value: !lit.ref<:!AnyType b_type, imm {{.*}} imm_mem)
     def take_any_type[b_type: AnyType](self, b_value: b_type):
         pass
 
     # CHECK: lit.fn @"test
     # CHECK-SAME: <a_type: !kgen.param<:meta<!AnyType> element_trait>>
-    # CHECK-SAME: (%self: {{.*}}%a_value: !lit.ref<:{{.*}} element_trait> a_type, imm {{.*}}> read_mem
+    # CHECK-SAME: (%self: {{.*}}%a_value: !lit.ref<:{{.*}} element_trait> a_type, imm {{.*}}> imm_mem
     def test[a_type: Self.element_trait](self, a_value: a_type):
         self.take_any_type(a_value)
 
@@ -912,7 +912,7 @@ struct ParamType[x: Int](TrivialRegisterPassable):
 
 # CHECK: lit.trait.decl @RGTrait{{.*}}
 trait RGTrait(Deinitable, RegisterPassable):
-    # CHECK-NEXT: lit.fn @"doSomething{{.*}}"[imm *"{{.*}}"](%self: !lit.ref<:!AnyType_Deinitable_Movable_RegisterPassable_RGTrait *"{{.*}}", imm *"{{.*}}"> read_mem) -> !kgen.none
+    # CHECK-NEXT: lit.fn @"doSomething{{.*}}"[imm *"{{.*}}"](%self: !lit.ref<:!AnyType_Deinitable_Movable_RegisterPassable_RGTrait *"{{.*}}", imm *"{{.*}}"> imm_mem) -> !kgen.none
     def doSomething(self):
         ...
     # CHECK: lit.fn @"__deinit__({{.*}})"[mut *"{{.*}}"](%self: !lit.ref<:!AnyType_Deinitable_Movable_RegisterPassable_RGTrait *"{{.*}}", mut *"{{.*}}"> deinit_mem, |) -> !kgen.none

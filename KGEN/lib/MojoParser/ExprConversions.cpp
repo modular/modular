@@ -78,10 +78,10 @@ bool checkConventionsConvertible(ArgConvention expectedConv,
   case ArgConvention::MutRef:
   case ArgConvention::Ref:
   case ArgConvention::Mut:
-    if (actualConv == ArgConvention::ReadMem) {
+    if (actualConv == ArgConvention::ImmMem) {
       // If the actual function accepts a read reference, and we have an
       // owned/mutref/ref/mut, we can make a thunk to convert those nicely.
-    } else if (actualConv == ArgConvention::ReadReg) {
+    } else if (actualConv == ArgConvention::ImmReg) {
       // If the actual function accepts a register-passable read, and we have
       // an owned/mutref/ref/mut, we can make a thunk to convert that nicely.
     } else if (actualConv == expectedConv) {
@@ -91,9 +91,9 @@ bool checkConventionsConvertible(ArgConvention expectedConv,
     }
     break;
 
-  case ArgConvention::ReadMem:
-  case ArgConvention::ReadReg:
-    if (!llvm::is_contained({ArgConvention::ReadMem, ArgConvention::ReadReg},
+  case ArgConvention::ImmMem:
+  case ArgConvention::ImmReg:
+    if (!llvm::is_contained({ArgConvention::ImmMem, ArgConvention::ImmReg},
                             actualConv))
       return false;
     break;
@@ -420,7 +420,7 @@ static FnOp generateConversionThunk(Attribute key, ASTDecl &moduleDecl,
       if (!getItemResult)
         return {};
       argForActual = getItemResult.getMlirValue();
-      convForActual = ArgConvention::ReadMem;
+      convForActual = ArgConvention::ImmMem;
     } else {
       argForActual = thunk.getArgument(actualArgIndex);
       convForActual = thunkSignature.getArgConvention(actualArgIndex);
@@ -442,10 +442,10 @@ static FnOp generateConversionThunk(Attribute key, ASTDecl &moduleDecl,
     case ArgConvention::DeinitMem:
       value = MRValue(argForActual);
       break;
-    case ArgConvention::ReadReg:
+    case ArgConvention::ImmReg:
       value = SRValue(argForActual);
       break;
-    case ArgConvention::ReadMem:
+    case ArgConvention::ImmMem:
       value = MBValue(argForActual);
       break;
     case ArgConvention::Ref:

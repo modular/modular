@@ -1279,11 +1279,11 @@ void TypeCheckedParamList::emitBodyConstraints() {
 }
 
 PogListAttr TypeCheckedParamList::getParamListAttr() const {
-  // In a parameter list, any variadic list is claimed to be ReadMem.
+  // In a parameter list, any variadic list is claimed to be ImmMem.
   std::optional<ArgConvention> origVariadicConvention;
   for (auto var : variadicKinds) {
     if (var != VariadicKind::None)
-      origVariadicConvention = ArgConvention::ReadMem;
+      origVariadicConvention = ArgConvention::ImmMem;
   }
 
   return PogListAttr::get(shared.getContext(), names, passingKinds,
@@ -2090,7 +2090,7 @@ static void typeCheckOneArgument(size_t idx, ASTDecl *fnDecl,
     break;
   }
   case ParsedArgument::kConventionImm: {
-    arg.kgenConvention = ArgConvention::ReadMem;
+    arg.kgenConvention = ArgConvention::ImmMem;
     TypeConvention conv = type.getRegisterPassability(arg.loc, shared);
     // FIXME(MOCO-725): Borrows of non-trivial register-passable values don't
     // have origins and can't be correctly tracked if captured in an async
@@ -2106,7 +2106,7 @@ static void typeCheckOneArgument(size_t idx, ASTDecl *fnDecl,
     // pass non-trivial ones because we cannot diagnose ownership and have other
     // lifetime issues.
     if (conv == TypeConvention::RegisterPassableTrivial)
-      arg.kgenConvention = ArgConvention::ReadReg;
+      arg.kgenConvention = ArgConvention::ImmReg;
     break;
   }
   case ParsedArgument::kConventionMut:
@@ -2137,12 +2137,12 @@ static void typeCheckOneArgument(size_t idx, ASTDecl *fnDecl,
       arg.kgenConvention = ArgConvention::OwnedMem;
       break;
     case ParsedArgument::kConventionImm:
-      arg.variadicArgConvention = ArgConvention::ReadMem;
-      arg.kgenConvention = ArgConvention::ReadMem;
+      arg.variadicArgConvention = ArgConvention::ImmMem;
+      arg.kgenConvention = ArgConvention::ImmMem;
       break;
     case ParsedArgument::kConventionMut:
       arg.variadicArgConvention = ArgConvention::Mut;
-      arg.kgenConvention = ArgConvention::ReadMem;
+      arg.kgenConvention = ArgConvention::ImmMem;
       break;
     }
   }
@@ -2152,7 +2152,7 @@ static void typeCheckOneArgument(size_t idx, ASTDecl *fnDecl,
   Type fullType;
   if (hasImplicitOrigin(arg.kgenConvention) &&
       arg.variadicKind != VariadicKind::KwVarArg) {
-    bool isMutable = arg.kgenConvention != ArgConvention::ReadMem;
+    bool isMutable = arg.kgenConvention != ArgConvention::ImmMem;
     fullType =
         makeImplicitRefTypeForArg(arg, idx, type, isMutable, tcSignature);
   } else {
@@ -2221,7 +2221,7 @@ static void typeCheckOneArgument(size_t idx, ASTDecl *fnDecl,
       blockOwningArg.addArgument(fullType, shared.translateLocation(arg.loc));
 
   DeclIRValue argIRValue;
-  if (arg.kgenConvention == ArgConvention::ReadReg)
+  if (arg.kgenConvention == ArgConvention::ImmReg)
     argIRValue = SRValue(bbArg);
   else // Everything else is passed in memory.
     argIRValue = CValue::getMValueForRef(bbArg);

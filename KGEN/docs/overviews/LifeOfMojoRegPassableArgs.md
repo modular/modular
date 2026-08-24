@@ -52,7 +52,7 @@ You get IR out of the parser like this (slightly simplified for readability):
       // Convert the mutable reference to %a_string to an immutable one.
       %2 = lit.ref.immut %a_string : <!String, mut *"a_string`1">
       // Pass the immutable reference.
-      %3 = lit.call @use_str[muttoimm *"a_string`1"](%2) : (!lit.ref<!String, imm *[0,0]> read_mem) -> !kgen.none
+      %3 = lit.call @use_str[muttoimm *"a_string`1"](%2) : (!lit.ref<!String, imm *[0,0]> imm_mem) -> !kgen.none
 ```
 
 You can get the full IR by using `kgen-translate -import-mojo x.mojo | less` .
@@ -163,8 +163,8 @@ This gets lowered into the following IR (simplified a bit again), with
 // These are the lit-level signatures for the functions.  You can see that these
 // are all passed as a !lit.ref (basically a pointer + origin).  The origin of
 // the argument is an implicit parameter *"a`", and each of the arguments
-// has a different MLIR-level convention: read_mem, owned_in_mem, and mut.
-lit.fn @use_rp[imm *"a`"](%a: !lit.ref<!MyRPType, imm *"a`"> read_mem) {}
+// has a different MLIR-level convention: imm_mem, owned_in_mem, and mut.
+lit.fn @use_rp[imm *"a`"](%a: !lit.ref<!MyRPType, imm *"a`"> imm_mem) {}
 lit.fn @use_rp_type_mut[mut *"a`"](%a: !lit.ref<!MyRPType, mut *"a`"> mut) {}
 lit.fn @use_rp_type_owned[mut *"a`"](%a: !lit.ref<!MyRPType, mut *"a`"> owned_in_mem) {}
 
@@ -244,7 +244,7 @@ Our example looks like this (just add the `-lower-lit` flag to the above
   // !lit.ref lowers to !kgen.pointer and origins are gone.  Our RP type is
   // flattened into its structural representation - in this case an empty
   // kgen struct because it has no members
-  kgen.generator @use_rp(%arg0: !kgen.pointer<struct<()>> read_mem) {
+  kgen.generator @use_rp(%arg0: !kgen.pointer<struct<()>> imm_mem) {
   }
   kgen.generator @use_rp_type_mut(%arg0: !kgen.pointer<struct<()>> mut) {
   }
@@ -439,7 +439,7 @@ def example3():
 
 ```mlir
  lit.fn @use_generic_type<T: !Copyable>[imm *"a`"]
-     (%a: !lit.ref<:!Copyable T, imm *"a`"> read_mem)
+     (%a: !lit.ref<:!Copyable T, imm *"a`"> imm_mem)
 ```
 
 Let's break this down:
@@ -455,8 +455,8 @@ Let's break this down:
 - You see the ``*"a`"`` origin that the argument is passed with.
 
 - You can see the `%a` argument is passed as
-  ``!lit.ref<:!Copyable T, imm *"a`"> read_mem`` which you can read as “a
-  reference to value of type T, with origin ``*”a`”`` and passed `read_mem`
+  ``!lit.ref<:!Copyable T, imm *"a`"> imm_mem`` which you can read as “a
+  reference to value of type T, with origin ``*”a`”`` and passed `imm_mem`
   argument convention.
 
 We don't dive into the body, but you can try checking the example around to do
@@ -480,11 +480,11 @@ kgen-opt -lower-lit -eliminate-dead-symbols -outline-closures -elaborate-generat
 We get something like this:
 
 ```mlir
-  kgen.func @"use_generic_type,T=Int"(%arg0: !kgen.pointer<index> read_mem){
+  kgen.func @"use_generic_type,T=Int"(%arg0: !kgen.pointer<index> imm_mem){
   }
-  kgen.func @"use_generic_type,T=String"(%arg0: !kgen.pointer<struct<(struct<(pointer<none>, index, index) memoryOnly>) memoryOnly>> read_mem) -> !kgen.none {
+  kgen.func @"use_generic_type,T=String"(%arg0: !kgen.pointer<struct<(struct<(pointer<none>, index, index) memoryOnly>) memoryOnly>> imm_mem) -> !kgen.none {
   }
-  kgen.func @"use_generic_type,T=MyRPType"(%arg0: !kgen.pointer<struct<()>> read_mem) -> !kgen.none {
+  kgen.func @"use_generic_type,T=MyRPType"(%arg0: !kgen.pointer<struct<()>> imm_mem) -> !kgen.none {
   }
 ```
 
@@ -498,7 +498,7 @@ concrete instantiations of the function instead of calling the generic one,
 e.g.:
 
 ```mlir
-    kgen.call @"use_generic_type, T="(%0) : (!kgen.pointer<struct<(struct<(pointer<none>, index, index) memoryOnly>) memoryOnly>> read_mem) -> !kgen.none
+    kgen.call @"use_generic_type, T="(%0) : (!kgen.pointer<struct<(struct<(pointer<none>, index, index) memoryOnly>) memoryOnly>> imm_mem) -> !kgen.none
 ```
 
 Note in the IR dump that we treat RP-Trivial types and RP types and memory
@@ -514,7 +514,7 @@ callee side again:
     %0 = pop.stack_allocation 1 x index
     pop.store %arg0, %0 : !kgen.pointer<index>
   }
-  kgen.func @"use_generic_type,T=String"(%arg0: !kgen.pointer<struct<(struct<(pointer<none>, index, index) memoryOnly>) memoryOnly>> read_mem) {
+  kgen.func @"use_generic_type,T=String"(%arg0: !kgen.pointer<struct<(struct<(pointer<none>, index, index) memoryOnly>) memoryOnly>> imm_mem) {
   }
   kgen.func @"use_generic_type,T=MyRPType"(%arg0: struct<()>) {
     %0 = pop.stack_allocation 1 x struct<()>
@@ -597,7 +597,7 @@ Coming out of the parser, the signature ends up looking like this:
              :!Bool {:i1 0},
              :@Origin<:!Bool {:i1 0}> {_mlir_origin: origin<0> = *"args`"},
              :!lit.anytrait<!AnyType> !AnyType, :param_list<!AnyType> Ts>, imm *"args`1"
-          > read_mem|pack) {
+          > imm_mem|pack) {
 ```
 
 Ok, that's a lot to take in, but the comments above break it down: we have a
@@ -666,7 +666,7 @@ are gone, which makes it easier to read:
     %7 = pop.stack_allocation 1 x struct<(!kgen.pack<[#type_value4, #type_value5]>, i1)> marked
     pop.stack_alloc.lifetime.start(%7) : !kgen.pointer<struct<(!kgen.pack<[#type_value4, #type_value5]>, i1)>>
     pop.store %6, %7 : !kgen.pointer<struct<(!kgen.pack<[#type_value4, #type_value5]>, i1)>>
-    %8 = kgen.call @example4(%7) : (!kgen.pointer<struct<(!kgen.pack<[#type_value4, #type_value5]>, i1)>> read_mem) -> !kgen.none
+    %8 = kgen.call @example4(%7) : (!kgen.pointer<struct<(!kgen.pack<[#type_value4, #type_value5]>, i1)>> imm_mem) -> !kgen.none
     %9 = kgen.call @String::__del__(%0) : (!kgen.pointer<struct<(struct<(pointer<none>, index, index) memoryOnly>) memoryOnly>> owned_in_mem) -> !kgen.none
     %10 = kgen.call @"y::MyRPType::__del__(y::MyRPType)"(%2) : (!kgen.pointer<struct<()>> owned_in_mem) -> !kgen.none
     %11 = kgen.call @VariadicPack::__del__(%7) : (!kgen.pointer<struct<(!kgen.pack<[#type_value4, #type_value5]>, i1)>> owned_in_mem) -> !kgen.none

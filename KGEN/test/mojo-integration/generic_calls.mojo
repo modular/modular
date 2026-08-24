@@ -63,7 +63,7 @@ def test_owned(var x: RegPassable, var y: MemOnly) abi("Mojo"):
 
 # CHECK: kgen.func export @test_borrowed(
 # CHECK-SAME: %arg0: !kgen.struct<(scalar<f32>, scalar<f32>)>,
-# CHECK-SAME: %arg1: !kgen.pointer<struct<(scalar<index>, scalar<index>) memoryOnly>> read_mem)
+# CHECK-SAME: %arg1: !kgen.pointer<struct<(scalar<index>, scalar<index>) memoryOnly>> imm_mem)
 @export
 def test_borrowed(x: RegPassable, y: MemOnly) abi("Mojo"):
     # CHECK: [[LEN:%.*]] = kgen.param.constant = <16>

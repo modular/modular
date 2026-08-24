@@ -44,8 +44,8 @@ constexpr llvm::StringLiteral kStructElemLayoutError =
 /// Return a string like "imm" or "mut".
 const char *KGEN::getUserSyntax(ArgConvention convention) {
   switch (convention) {
-  case ArgConvention::ReadReg:
-  case ArgConvention::ReadMem:
+  case ArgConvention::ImmReg:
+  case ArgConvention::ImmMem:
     return "imm";
   case ArgConvention::OwnedReg:
   case ArgConvention::OwnedMem:
