@@ -568,7 +568,7 @@ def test_memory_estimation__raise_oom_error_max_batch_size_set_and_max_length_se
             1,
         ),
         # KV connectors fan MLA-replicated blocks out via plain P2P copies
-        # (see dkv/kv-tier-connector/src/copy_engine.rs), not a signal-buffer
+        # (see rust_kv/kv-tier-connector/src/copy_engine.rs), not a signal-buffer
         # broadcast, so none of them add an extra set.
         (
             [DeviceSpec.accelerator(id=i) for i in range(2)],
