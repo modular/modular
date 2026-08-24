@@ -3148,3 +3148,31 @@ def test_excludes_overlapping_prefixes() -> None:
     assert not _accepts(compiled, "abce")
     # And a string containing neither is still accepted.
     assert _accepts(compiled, "abxe")
+
+
+def test_excludes_match_beginning_inside_another_branch() -> None:
+    # The output-link half, a different defect from the failure-link one above:
+    # failure links decide where matching RESUMES, output links whether a pattern
+    # ENDED. With excludes {"ab", "xaby"}, "xab" walks the "xaby" branch and never
+    # lands on "ab"'s end state.
+    tag = xgr.StructuralTag(format=AnyTextFormat(excludes=["ab", "xaby"]))
+    compiled = _excludes_vocab_compiler().compile_structural_tag(tag)
+
+    assert not _accepts(compiled, "xab")
+    assert not _accepts(compiled, "ab")
+    # A string containing neither excluded pattern is still accepted.
+    assert _accepts(compiled, "xy")
+
+
+def test_excludes_output_links_are_transitive() -> None:
+    # The failure chain can pass through several states before reaching the
+    # excluded end, so the propagation has to close over itself: "zxab" fails
+    # to "xab", which is only a match because it fails to "ab".
+    tag = xgr.StructuralTag(
+        format=AnyTextFormat(excludes=["ab", "xaby", "zxabyy"])
+    )
+    compiled = _excludes_vocab_compiler().compile_structural_tag(tag)
+
+    assert not _accepts(compiled, "zxab")
+    assert not _accepts(compiled, "xab")
+    assert _accepts(compiled, "zxy")

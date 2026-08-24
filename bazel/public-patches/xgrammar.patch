@@ -1,5 +1,5 @@
 diff --git a/cpp/fsm_builder.cc b/cpp/fsm_builder.cc
-index b620cc7..3d26f35 100644
+index b620cc7..14c20ec 100644
 --- a/cpp/fsm_builder.cc
 +++ b/cpp/fsm_builder.cc
 @@ -6,6 +6,7 @@
@@ -32,9 +32,40 @@ index b620cc7..3d26f35 100644
    Result<FSMWithStartEnd> child_result =
        std::visit([&](auto&& arg) { return RegexIR::visit(arg); }, state.states[0]);
    if (child_result.IsErr()) {
-@@ -892,66 +908,76 @@ std::optional<FSMWithStartEnd> TrieFSMBuilderImpl::Build(
+@@ -786,7 +802,12 @@ class TrieFSMBuilderImpl {
+       bool allow_overlap,
+       bool add_back_edges
+   );
+-  void AddBackEdges(FSM* fsm, int start, const std::unordered_set<int>& ends);
++  void AddBackEdges(
++      FSM* fsm,
++      int start,
++      const std::unordered_set<int>& ends,
++      std::unordered_set<int32_t>* dead_states
++  );
+ };
  
- void TrieFSMBuilderImpl::AddBackEdges(FSM* fsm, int start, const std::unordered_set<int>& ends) {
+ std::optional<FSMWithStartEnd> TrieFSMBuilderImpl::Build(
+@@ -863,7 +884,7 @@ std::optional<FSMWithStartEnd> TrieFSMBuilderImpl::Build(
+     }
+ 
+     // Add back edges.
+-    AddBackEdges(&fsm, start, ends);
++    AddBackEdges(&fsm, start, ends, &dead_state_set);
+ 
+     // Remove the edges to excluded end states.
+     if (dead_state_set.size() != 0) {
+@@ -890,68 +911,107 @@ std::optional<FSMWithStartEnd> TrieFSMBuilderImpl::Build(
+   return FSMWithStartEnd(fsm, start, is_end_state);
+ }
+ 
+-void TrieFSMBuilderImpl::AddBackEdges(FSM* fsm, int start, const std::unordered_set<int>& ends) {
++void TrieFSMBuilderImpl::AddBackEdges(
++    FSM* fsm,
++    int start,
++    const std::unordered_set<int>& ends,
++    std::unordered_set<int32_t>* dead_states
++) {
    // Build an Aho-Corasick automaton by adding back edges.
 -  // When matching on the trie fails, we should go back to the start state and
 -  // find the next match. Back edges represent such state transitions.
@@ -63,6 +94,10 @@ index b620cc7..3d26f35 100644
 -    XGRAMMAR_DCHECK(cur_edges_set.begin()->min == 0);
 -    XGRAMMAR_DCHECK(std::prev(cur_edges_set.end())->max == 255);
 -  };
+-
+-  for (int i = 0; i < fsm->NumStates(); i++) {
+-    if (i == start || ends.count(i) > 0) {
+-      continue;
 +  // When matching on the trie fails at state u on byte b, the matcher must resume from
 +  // the longest proper suffix of u's prefix that is still a path in the trie (the
 +  // failure state), and retry b from there. Falling back only to the start state (or to
@@ -82,7 +117,18 @@ index b620cc7..3d26f35 100644
 +    for (const auto& edge : fsm->GetEdges(bfs_order[head])) {
 +      XGRAMMAR_DCHECK(edge.min == edge.max && edge.min >= 0 && edge.min <= 255);
 +      bfs_order.push_back(edge.target);
-+    }
+     }
+-    std::vector<FSMEdge>& cur_edges = fsm->GetEdges(i);
+-    XGRAMMAR_DCHECK(cur_edges.size() > 0);
+-    std::set<FSMEdge, FSMEdgeRangeComparator> cur_edges_set(cur_edges.begin(), cur_edges.end());
+-
+-    // Step 1. Add edges in the edges of the start state.
+-    // For start--(c)-->t, add i--(c)-->t.
+-    const auto& root_edges = fsm->GetEdges(start);
+-    for (const auto& root_edge : root_edges) {
+-      XGRAMMAR_DCHECK(root_edge.min == root_edge.max);
+-      if (cur_edges_set.count(root_edge) == 0) {
+-        cur_edges_set.insert(root_edge);
 +  }
 +  XGRAMMAR_DCHECK(static_cast<int>(bfs_order.size()) == num_states);
 +
@@ -110,29 +156,45 @@ index b620cc7..3d26f35 100644
 +        delta[u][byte] = fallback;
 +      } else {
 +        fail[child] = fallback;
-+      }
-+    }
+       }
+     }
 +  }
  
--  for (int i = 0; i < fsm->NumStates(); i++) {
--    if (i == start || ends.count(i) > 0) {
+-    // Step 2. Add i--(c)-->start for c not in the edge set of i.
+-    f_add_range_edges(i, cur_edges_set);
+-
+-    // Step 3. Update the edges of i.
+-    cur_edges.clear();
+-    cur_edges.insert(cur_edges.end(), cur_edges_set.begin(), cur_edges_set.end());
++  // Step 2b. Aho-Corasick output links. Following failure links resumes matching
++  // at the longest suffix still in the trie, but landing on a state does not by
++  // itself say a pattern ENDED there: a state whose failure chain reaches an
++  // excluded pattern's end has just read that pattern as a suffix and must count
++  // as a match too. Without this, an exclude whose match begins inside another
++  // pattern's branch never lands on its own end state -- with {"ab", "xaby"},
++  // "xab" walks the "xaby" branch and "ab" is silently accepted. The caller
++  // deletes the edges into these states, which is what rejects the input.
++  // fail[u] is strictly shallower than u, so BFS order makes one pass transitive.
++  if (dead_states != nullptr && !dead_states->empty()) {
++    for (int u : bfs_order) {
++      if (u != start && dead_states->count(fail[u]) > 0) {
++        dead_states->insert(u);
++      }
++    }
+   }
+ 
+-  // Finally, add range edges to the start state.
+-  std::vector<FSMEdge>& start_edges = fsm->GetEdges(start);
+-  std::set<FSMEdge, FSMEdgeRangeComparator> start_edges_set(start_edges.begin(), start_edges.end());
+-  f_add_range_edges(start, start_edges_set);
+-  start_edges.clear();
+-  start_edges.insert(start_edges.end(), start_edges_set.begin(), start_edges_set.end());
 +  // Step 3. Overwrite the edges of every non-end state with its resolved row,
 +  // compressing consecutive bytes with the same target into range edges.
 +  for (int u = 0; u < num_states; u++) {
 +    if (u != start && ends.count(u) > 0) {
-       continue;
-     }
--    std::vector<FSMEdge>& cur_edges = fsm->GetEdges(i);
--    XGRAMMAR_DCHECK(cur_edges.size() > 0);
--    std::set<FSMEdge, FSMEdgeRangeComparator> cur_edges_set(cur_edges.begin(), cur_edges.end());
--
--    // Step 1. Add edges in the edges of the start state.
--    // For start--(c)-->t, add i--(c)-->t.
--    const auto& root_edges = fsm->GetEdges(start);
--    for (const auto& root_edge : root_edges) {
--      XGRAMMAR_DCHECK(root_edge.min == root_edge.max);
--      if (cur_edges_set.count(root_edge) == 0) {
--        cur_edges_set.insert(root_edge);
++      continue;
++    }
 +    const auto& row = delta[u];
 +    std::vector<FSMEdge> new_edges;
 +    for (int byte = 0; byte < 256;) {
@@ -140,26 +202,19 @@ index b620cc7..3d26f35 100644
 +      int range_end = byte;
 +      while (range_end + 1 < 256 && row[range_end + 1] == target) {
 +        range_end++;
-       }
-+      new_edges.push_back(FSMEdge(byte, range_end, target));
++      }
++      // Every state the BFS reached resolves each byte to a real state, because
++      // the chain of failure links ends at the start state, whose row is total.
++      // A state the BFS never reached keeps the gaps it started with, and an
++      // edge into kNoNextState would be a malformed transition rather than a
++      // missing one, so leave those bytes without an edge.
++      if (target != FSM::kNoNextState) {
++        new_edges.push_back(FSMEdge(byte, range_end, target));
++      }
 +      byte = range_end + 1;
-     }
--
--    // Step 2. Add i--(c)-->start for c not in the edge set of i.
--    f_add_range_edges(i, cur_edges_set);
--
--    // Step 3. Update the edges of i.
--    cur_edges.clear();
--    cur_edges.insert(cur_edges.end(), cur_edges_set.begin(), cur_edges_set.end());
++    }
 +    fsm->GetEdges(u) = std::move(new_edges);
-   }
--
--  // Finally, add range edges to the start state.
--  std::vector<FSMEdge>& start_edges = fsm->GetEdges(start);
--  std::set<FSMEdge, FSMEdgeRangeComparator> start_edges_set(start_edges.begin(), start_edges.end());
--  f_add_range_edges(start, start_edges_set);
--  start_edges.clear();
--  start_edges.insert(start_edges.end(), start_edges_set.begin(), start_edges_set.end());
++  }
  }
  
  std::optional<FSMWithStartEnd> TrieFSMBuilder::Build(
