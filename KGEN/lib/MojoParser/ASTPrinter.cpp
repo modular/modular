@@ -366,10 +366,8 @@ static void printParamList(raw_ostream &os, PogListAttr paramInfo,
             os << '*';
 
           TypedAttr value = std::get<1>(param);
-          if (typesImplied && diagShared)
-            ASTType::printParamAfterType(os, value, ctx);
-          else
-            ASTType::printParam(os, value, ctx);
+          ASTType::printParam(os, value, ctx,
+                              /*hasContextualType=*/typesImplied && diagShared);
         });
     os << ']';
   }
@@ -673,12 +671,28 @@ findArgNameForImplicitOriginRef(ImplicitOriginRefAttr originRef,
 
 /// Pretty print a parameter value.
 void ASTType::printParam(raw_ostream &os, TypedAttr param,
-                         ASTTypePrinterContext ctx) {
+                         ASTTypePrinterContext ctx, bool hasContextualType) {
   SharedState *diagShared = ctx.shared;
   if (auto cast = dyn_cast<CastFromBuiltinAttr>(param))
     return printParam(os, cast.getArg(), ctx);
   if (auto cast = dyn_cast<CastToBuiltinAttr>(param))
     return printParam(os, cast.getArg(), ctx);
+
+  // It is pretty common for function arguments to use default conversions
+  // from the actual value they want, and may not be an
+  // always_inline("builtin") constructor, e.g.:
+  //   def example(v: Optional[Int64] = None):
+  // Without doing anything fancy, we would get something like:
+  //   def example(v: Optional[Int64] = Optional[Int64](None)):
+  // Which is literally what is happening, but not very pretty.  To clean this
+  // up, check to see if call is to an implicit constructor, and if so, elide
+  // the call.
+  if (hasContextualType) {
+    TypedAttr oldParam = param;
+    removeImplicitCtorCall(param, ctx.shared);
+    if (param != oldParam) // Only allow one implicit conversion.
+      hasContextualType = false;
+  }
 
   auto printOperands =
       [&](ArrayRef<TypedAttr> operands, StringRef separator = ", ",
@@ -1242,14 +1256,18 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
 
       if (typeName == "DType") {
         if (auto dtypeAttr = sugarDynCast<DTypeConstantAttr>(elt)) {
-          os << "DType." << dtypeAttr.getDType().getAsString(/*libForm=*/true);
+          if (!hasContextualType)
+            os << "DType";
+          os << '.' << dtypeAttr.getDType().getAsString(/*libForm=*/true);
           return;
         }
       }
       if (typeName == "AddressSpace") {
         if (auto intAttr = getSingleElementStructAttr<IntegerAttr>(elt)) {
           if (intAttr.getValue().isZero()) {
-            os << "AddressSpace.GENERIC";
+            if (!hasContextualType)
+              os << "AddressSpace";
+            os << ".GENERIC";
             return;
           }
         }
@@ -1904,24 +1922,6 @@ void ASTType::print(raw_ostream &os, ASTTypePrinterContext ctx) const {
       quote = "";
     os << "__mlir_type." << quote << result << quote;
   }
-}
-
-/// This is the same as printParam, but is only used user pretty printing
-/// circumstances (not mangling) after emitting a type annotation.  This
-/// avoids printing obvious implicit conversion calls.
-void ASTType::printParamAfterType(raw_ostream &os, TypedAttr value,
-                                  ASTTypePrinterContext ctx) {
-  // It is pretty common for function arguments to use default conversions
-  // from the actual value they want, and may not be an
-  // always_inline("builtin") constructor, e.g.:
-  //   def example(v: Optional[Int64] = None):
-  // Without doing anything fancy, we would get something like:
-  //   def example(v: Optional[Int64] = Optional[Int64](None)):
-  // Which is literally what is happening, but not very pretty.  To clean this
-  // up, check to see if call is to an implicit constructor, and if so, elide
-  // the call.
-  removeImplicitCtorCall(value, ctx.shared);
-  printParam(os, value, ctx);
 }
 
 /// Convert this type to a human readable string representation so it can be
