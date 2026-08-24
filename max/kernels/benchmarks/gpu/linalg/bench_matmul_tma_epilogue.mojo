@@ -319,9 +319,8 @@ def bench_matmul_tma_epilogue[
                 ctx,
             )
 
-    @__parameter
     @always_inline
-    def bench_func(mut b: Bencher) raises:
+    def bench_func(mut b: Bencher) raises {imm}:
         bencher_iter_custom(b, kernel_launch, ctx)
 
     var flops = ThroughputMeasure(
@@ -345,7 +344,8 @@ def bench_matmul_tma_epilogue[
     )
 
     if run_benchmark:
-        b.bench_function[bench_func](
+        b.bench_function(
+            bench_func,
             BenchId(bench_name),
             [flops],
         )

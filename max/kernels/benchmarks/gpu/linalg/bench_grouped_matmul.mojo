@@ -405,20 +405,21 @@ def bench_grouped_matmul[
             row_major(Coord(Int64(num_experts))),
         ).as_unsafe_any_origin()
 
-        @__parameter
-        @__copy_capture(
-            a_dev,
-            b_dev,
-            c_dev,
-            a_offsets_dev,
-            expert_ids_dev,
-            a_scale_offsets_dev,
-            a_scales_tt,
-            b_scales_tt,
-            expert_scales_tt,
-        )
         @always_inline
-        def bench_func_nvfp4(mut bench: Bencher):
+        def bench_func_nvfp4(
+            mut bench: Bencher,
+        ) {
+            var a_dev,
+            var b_dev,
+            var c_dev,
+            var a_offsets_dev,
+            var expert_ids_dev,
+            var a_scale_offsets_dev,
+            var a_scales_tt,
+            var b_scales_tt,
+            var expert_scales_tt,
+            imm,
+        }:
             @always_inline
             def kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
                 comptime if use_vendor_blas:
@@ -453,7 +454,8 @@ def bench_grouped_matmul[
 
             bencher_iter_custom(bench, kernel_launch, ctx)
 
-        bench.bench_function[bench_func_nvfp4](
+        bench.bench_function(
+            bench_func_nvfp4,
             BenchId(
                 _get_run_name[
                     _in_type,
@@ -582,20 +584,21 @@ def bench_grouped_matmul[
             row_major(Coord(Int64(num_experts))),
         ).as_unsafe_any_origin()
 
-        @__parameter
-        @__copy_capture(
-            a_dev,
-            b_dev,
-            c_dev,
-            a_offsets_dev,
-            expert_ids_dev,
-            a_scale_offsets_dev,
-            a_scales_tt,
-            b_scales_tt,
-            expert_scales_tt,
-        )
         @always_inline
-        def bench_func_mxf8f6f4(mut bench: Bencher):
+        def bench_func_mxf8f6f4(
+            mut bench: Bencher,
+        ) {
+            var a_dev,
+            var b_dev,
+            var c_dev,
+            var a_offsets_dev,
+            var expert_ids_dev,
+            var a_scale_offsets_dev,
+            var a_scales_tt,
+            var b_scales_tt,
+            var expert_scales_tt,
+            imm,
+        }:
             @always_inline
             def kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
                 comptime if use_vendor_blas:
@@ -629,7 +632,8 @@ def bench_grouped_matmul[
 
             bencher_iter_custom(bench, kernel_launch, ctx)
 
-        bench.bench_function[bench_func_mxf8f6f4](
+        bench.bench_function(
+            bench_func_mxf8f6f4,
             BenchId(
                 _get_run_name[
                     _in_type,
@@ -704,18 +708,19 @@ def bench_grouped_matmul[
             ctx,
         )
 
-        @__parameter
-        @__copy_capture(
-            a_dev,
-            b_dev,
-            c_dev,
-            a_offsets_dev,
-            expert_ids_dev,
-            a_scales_dev,
-            b_scales_dev,
-        )
         @always_inline
-        def bench_func_fp8_1d2d(mut bench: Bencher):
+        def bench_func_fp8_1d2d(
+            mut bench: Bencher,
+        ) {
+            var a_dev,
+            var b_dev,
+            var c_dev,
+            var a_offsets_dev,
+            var expert_ids_dev,
+            var a_scales_dev,
+            var b_scales_dev,
+            imm,
+        }:
             @always_inline
             def kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
                 comptime if use_vendor_blas:
@@ -754,7 +759,8 @@ def bench_grouped_matmul[
 
             bencher_iter_custom(bench, kernel_launch, ctx)
 
-        bench.bench_function[bench_func_fp8_1d2d](
+        bench.bench_function(
+            bench_func_fp8_1d2d,
             BenchId(
                 _get_run_name[
                     in_type,
@@ -781,16 +787,17 @@ def bench_grouped_matmul[
         _ = b_scales_dev_buffer^
     else:
 
-        @__parameter
-        @__copy_capture(
-            a_dev,
-            b_dev,
-            c_dev,
-            a_offsets_dev,
-            expert_ids_dev,
-        )
         @always_inline
-        def bench_func(mut bench: Bencher):
+        def bench_func(
+            mut bench: Bencher,
+        ) {
+            var a_dev,
+            var b_dev,
+            var c_dev,
+            var a_offsets_dev,
+            var expert_ids_dev,
+            imm,
+        }:
             @always_inline
             def kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
                 comptime if use_vendor_blas:
@@ -815,7 +822,8 @@ def bench_grouped_matmul[
 
             bencher_iter_custom(bench, kernel_launch, ctx)
 
-        bench.bench_function[bench_func](
+        bench.bench_function(
+            bench_func,
             BenchId(
                 _get_run_name[
                     in_type,

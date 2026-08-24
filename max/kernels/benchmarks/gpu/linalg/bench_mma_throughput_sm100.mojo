@@ -594,14 +594,14 @@ def main() raises:
                 ),
             )
 
-        @__parameter
         @always_inline
-        def bench_func(mut bencher: Bencher) raises:
+        def bench_func(mut bencher: Bencher) raises {imm}:
             bencher_iter_custom(bencher, kernel_launch, ctx)
 
         var bench = Bench()
 
-        bench.bench_function[bench_func](
+        bench.bench_function(
+            bench_func,
             BenchId(
                 "mma_throughput_sm100",
                 input_id=String(

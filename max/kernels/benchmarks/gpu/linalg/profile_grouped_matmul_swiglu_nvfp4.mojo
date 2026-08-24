@@ -674,13 +674,13 @@ def main() raises:
                             attributes=pdl_launch_attributes(PDLLevel.ON),
                         )
 
-        @__parameter
         @always_inline
-        def bench_func(mut b: Bencher) raises:
+        def bench_func(mut b: Bencher) raises {imm}:
             bencher_iter_custom(b, kernel_launch, ctx)
 
         var m = Bench()
-        m.bench_function[bench_func](
+        m.bench_function(
+            bench_func,
             BenchId(run_name),
             [
                 ThroughputMeasure(BenchMetric.flops, Int(total_flops)),

@@ -259,12 +259,12 @@ def bench_preb[
             estimated_total_m,
         )
 
-    @__parameter
     @always_inline
-    def bench_func(mut bencher: Bencher):
+    def bench_func(mut bencher: Bencher) {imm}:
         bencher_iter_custom(bencher, kernel_launch, ctx)
 
-    bench.bench_function[bench_func](
+    bench.bench_function(
+        bench_func,
         BenchId(
             _run_name(
                 "gmm_amd_preb (uint8 -> float32)",
