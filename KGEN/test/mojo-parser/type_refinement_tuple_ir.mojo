@@ -32,7 +32,7 @@ trait Extra:
 # CHECK: lit.ownership.use %{{.*}}
 # CHECK: lit.ownership.use %{{.*}}
 def tuple_unpack_param_no_call[T: Base & Copyable & ImplicitlyCopyable](
-    read pair: Tuple[T, T]
+    imm pair: Tuple[T, T]
 ) where conforms_to(T, Extra):
     var a, b = pair
     _ = a
@@ -50,7 +50,7 @@ def tuple_unpack_param_no_call[T: Base & Copyable & ImplicitlyCopyable](
 # CHECK: kgen.rebind [[INNER_A]] : {{.*}}to {{.*}}Extra{{.*}}downcast(:!AnyType_Copyable_ImplicitlyCopyable_Movable_Base T){{.*}}
 # CHECK: kgen.rebind [[INNER_B]] : {{.*}}to {{.*}}Extra{{.*}}downcast(:!AnyType_Copyable_ImplicitlyCopyable_Movable_Base T){{.*}}
 def tuple_unpack_shadow_no_call[T: Base & Copyable & ImplicitlyCopyable](
-    read first: Tuple[T, T], read second: Tuple[T, T]
+    imm first: Tuple[T, T], imm second: Tuple[T, T]
 ) where conforms_to(T, Extra):
     var a, b = first
     _ = a
@@ -71,7 +71,7 @@ def tuple_unpack_shadow_no_call[T: Base & Copyable & ImplicitlyCopyable](
 # CHECK: lit.ownership.use [[A_REBIND]]
 # CHECK: lit.ownership.use [[B_REBIND]]
 def tuple_unpack_ref_no_call[T: Base & Copyable & ImplicitlyCopyable](
-    read pair: Tuple[T, T]
+    imm pair: Tuple[T, T]
 ) where conforms_to(T, Extra):
     ref (a, b) = pair
     _ = a

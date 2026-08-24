@@ -32,7 +32,7 @@
 def captures_with_default_convention():
     var a, b, c, d = ("a", "b", "c", "d")
 
-    def my_fn() {mut a, b, c^, read}:
+    def my_fn() {mut a, b, c^, imm}:
         pass
 
 # COM: Verify stateless promoted closures are registered for apply attributes.

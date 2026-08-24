@@ -272,7 +272,7 @@ ParseResult ParsedArgument::parse(ParserBase &p, KWArgMarkerInfo &markerInfo,
   } else if (p.consumeIfSoftIdentifier("read")) {
     handleContextualArgConvention("read", kConventionImm);
     if (convention == kConventionImm)
-      p.emitWarning(loc, "'read' is deprecated; use 'imm'")
+      p.emitError(loc, "'read' was removed; use 'imm'")
           << FixIt::replaceToken(loc, "imm");
   } else if (p.consumeIfSoftIdentifier("deinit")) {
     handleContextualArgConvention("deinit", kConventionDeinit);
@@ -1405,7 +1405,7 @@ ParseResult ParsedCaptureList::parseCaptureList(ParserBase &p) {
     } else if (p.consumeIfSoftIdentifier("imm")) {
       return CaptureConvention::kConventionRead;
     } else if (p.consumeIfSoftIdentifier("read")) {
-      p.emitWarning(convLoc, "'read' is deprecated; use 'imm'")
+      p.emitError(convLoc, "'read' was removed; use 'imm'")
           << FixIt::replaceToken(convLoc, "imm");
       return CaptureConvention::kConventionRead;
     } else if (p.consumeIf(Token::kw_ref)) {

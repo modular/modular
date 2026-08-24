@@ -40,10 +40,10 @@ struct Ptr[mut: Bool, //, O: Origin[mut=mut]](TrivialRegisterPassable):
         return rebind[Self.Immutable](self)
 
 
-def observe[O: ImmOrigin](x: String, y: Int, read ptr: Ptr[O]):
+def observe[O: ImmOrigin](x: String, y: Int, imm ptr: Ptr[O]):
     pass
 
-def take_it[O: ImmOrigin](arg: Some[def() -> None], read ptr: Ptr[O]):
+def take_it[O: ImmOrigin](arg: Some[def() -> None], imm ptr: Ptr[O]):
     arg()
 
 

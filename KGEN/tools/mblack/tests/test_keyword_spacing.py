@@ -67,10 +67,10 @@ def test_var_keyword_spacing_mixed():
 
 
 def test_contextual_keyword_spacing():
-    source = "struct Foo:\n    def __init__(out self, mut v:Int, read x:Int): pass"
+    source = "struct Foo:\n    def __init__(out self, mut v:Int, imm x:Int): pass"
     expected = (
         "struct Foo:\n"
-        "    def __init__(out self, mut v: Int, read x: Int):\n"
+        "    def __init__(out self, mut v: Int, imm x: Int):\n"
         "        pass\n"
     )
     assert_mojo_format(source, expected)
