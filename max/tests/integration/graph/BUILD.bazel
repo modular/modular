@@ -43,6 +43,7 @@ _SEPARATE_TARGET_TESTS = [
     "test_load_weights_no_deps.py",
     "test_logits_processor_gpu.py",
     "test_mega_ffn_nvfp4_fusion_gpu.py",
+    "test_resize_nearest.py",
     "test_rowwise_reductions.py",
     "test_runtime_source_notes.py",
     "test_scatter.py",
@@ -351,6 +352,35 @@ modular_py_test(
         requirement("hypothesis"),
         requirement("numpy"),
         requirement("torch"),
+    ],
+)
+
+# Regression coverage for #6781: `resize` with NEAREST interpolation failed to
+# compile on any accelerator, because the `mo.resize.nearest` kernel was CPU-only
+# and the op itself is `MO_HostOnly`. Kept out of the bulk `graph` target
+# precisely because that target is Apple-incompatible (MOCO-2411) and Metal is
+# where the bug was reported -- this target runs on every GPU lane, Apple
+# included.
+modular_py_test(
+    name = "test_resize_nearest",
+    size = "large",
+    srcs = [
+        "conftest.py",
+        "test_resize_nearest.py",
+    ],
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    gpu_constraints = ["//:has_gpu"],
+    mojo_deps = ["//max:builtin_kernels"],
+    tags = ["gpu"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        requirement("hypothesis"),
+        requirement("numpy"),
     ],
 )
 

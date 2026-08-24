@@ -19,6 +19,7 @@ from max._core.dialects import builtin, kgen, mo, rmo
 from ..graph import Graph
 from ..type import Shape, ShapeLike, TensorType
 from ..value import TensorValue, TensorValueLike
+from .custom import custom
 from .shape_to_tensor import shape_to_tensor
 
 
@@ -206,6 +207,22 @@ def resize_nearest(
         )
 
     result_type = TensorType(dtype=input.dtype, shape=size, device=input.device)
+
+    if not input.device.is_cpu():
+        # `mo.resize.nearest` is `MO_HostOnly`, which pins its operands to the
+        # host, so placing the op on an accelerator fails to compile (#6781).
+        # The `mo.resize.nearest` kernel itself is device-agnostic, so reach it
+        # directly as a custom op rather than round-tripping through the host.
+        return custom(
+            "mo.resize.nearest",
+            input.device,
+            [input, shape_to_tensor(size)],
+            [result_type],
+            parameters={
+                "coordinate_transform_mode": coordinate_transform_mode,
+                "round_mode": round_mode,
+            },
+        )[0].tensor
 
     return Graph.current._add_op_generated(
         rmo.MoResizeNearestOp,
