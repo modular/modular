@@ -884,6 +884,15 @@ This version is still a work in progress.
   (`xcodebuild -downloadComponent MetalToolchain`), instead of the opaque
   "Please submit a bug report." message.
 
+- Fixed GPU discovery inside a container granted only MIG compute instances,
+  which made MAX and Mojo unusable on MIG-sliced clusters. Discovery reported
+  `GPU is not present`, and a container holding several instances carved from
+  the same GPU saw only one of them. Where NVML answers for the parent GPU,
+  discovery now defers to CUDA, which describes the instance: for a device's
+  memory when NVML rejects the query, and for the device count when MIG is
+  enabled.
+  ([Issue #6896](https://github.com/modular/modular/issues/6896))
+
 - Fixed tool-call requests failing with HTTP 400 (`anyOf branch and base
   schema both set "description"`) on models whose grammar compiles in strict
   mode (GLM-5.x, Gemma 4). The xgrammar JSON-schema converter's `anyOf`
