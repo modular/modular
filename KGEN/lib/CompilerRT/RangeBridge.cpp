@@ -59,9 +59,13 @@ KGEN_CompilerRT_RangeEnd(void) {
 #endif
 }
 
-// Step counter advance. MAX's Model::execute() calls this once per
-// invocation to drive the warmup/active state machine. Exposed via FFI so
-// Mojo-side runtime entry points can also drive it when appropriate.
+// Step counter advance, driving the warmup/active step-window state
+// machine. The production step boundary is C++-side — MAX's
+// ModelHandle::executeDeviceTensors() calls M::Profiling::step() directly
+// once per model execute (InferenceSession.cpp), not through this export.
+// This FFI entry exists so a Mojo-side runtime entry point that constitutes
+// its own step boundary can drive the machine too; it has no in-tree caller.
+// Same disabled fast path as step() itself: one predicted branch.
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
 KGEN_CompilerRT_RangeStep(void) {
 #if MODULAR_KGEN_PROFILING_ENABLED
