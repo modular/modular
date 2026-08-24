@@ -171,7 +171,14 @@ async def _resolve_host(host: str, port: int) -> list[str]:
     """
     loop = asyncio.get_running_loop()
     infos = await loop.getaddrinfo(host, port, type=socket.SOCK_STREAM)
-    return [info[4][0] for info in infos]
+    # sockaddr[0] is typed str | int because typeshed includes the AF_PACKET
+    # form; SOCK_STREAM lookups only yield AF_INET/AF_INET6, where it is a str.
+    addrs: list[str] = []
+    for info in infos:
+        addr = info[4][0]
+        assert isinstance(addr, str)
+        addrs.append(addr)
+    return addrs
 
 
 async def _validate_and_pin(
