@@ -366,13 +366,6 @@ public:
   /// in the package's importable scope).
   SmallVector<ASTDecl *> getNestedModuleDecls(PackageOp packageOp) const;
 
-  /// Scan a source package's directory and register a child decl for every
-  /// sibling module/sub-package - a deferred `FileModuleOp` for each `.mojo`
-  /// file and a (already-deferred) `PackageOp` for each sub-package. The
-  /// children are unlisted (in the module-state cache + package IR, never the
-  /// package's importable scope) and their bodies/files are opened lazily.
-  void registerSourcePackageChildren(ASTDecl &packageDecl);
-
   /// Open and lex the source file of a deferred module, wiring up its parse
   /// cursor so its body can be resolved. The loc is the location that triggered
   /// materialization (e.g. the import that first referenced the module).
@@ -674,42 +667,10 @@ private:
   ASTDecl *getCachedBuiltinTypeDecl(const ImportPath &path, StringRef name,
                                     llvm::SMLoc loc);
 
-  /// Import the specified module or package, returning the module state.
-  /// Always returns a valid module state, even if the module could not be
-  /// found. `isImplicit` marks a package pulled in by the compiler rather than
-  /// a user `import`.
-  ModuleState &importModuleState(const ImportPath &path, ASTDecl *context,
-                                 llvm::SMLoc loc, bool isImplicit = false);
-
-  /// Look up a module by its name, in the specified parent scope, in the module
-  /// cache. Returns nullptr on a miss. On a hit:
-  ///   * Prevent module self-imports
-  ///   * Memoizes the import loc on first resolution
-  ModuleState *lookupModuleCache(StringRef name, ASTDecl *parentDecl,
-                                 ModuleState *parentState, llvm::SMLoc loc,
-                                 llvm::SMLoc identifierLoc, bool emitErrors);
-
-  /// Import the specified module or package nested within the given parent
-  /// decl, returning the module state. Always returns a valid module state,
-  /// even if the module could not be found.
-  ModuleState &importSubModuleState(StringRef name, ASTDecl *parentDecl,
-                                    llvm::SMLoc loc, llvm::SMLoc identifierLoc);
-
-  ModuleState *importSubModuleStateImpl(StringRef name, ASTDecl *parentDecl,
-                                        llvm::SMLoc loc,
-                                        llvm::SMLoc identifierLoc,
-                                        bool emitErrors);
-
   /// Open (and lex-prepare) the module source file at the given path within the
   /// source manager, reusing an already-open buffer if present. Returns null
   /// without emitting a diagnostic if the file cannot be opened.
   const llvm::MemoryBuffer *openModuleFile(StringRef path, llvm::SMLoc loc);
-
-  /// Import the specified module or package, which contains `.` indexing,
-  /// returning the module state. Always returns a valid module state, even if
-  /// the module could not be found.
-  ModuleState &importRelativeModuleState(const ImportPath &path,
-                                         ASTDecl *parentDecl, llvm::SMLoc loc);
 
   /// Implicitly import the builtin modules into the given module decl.
   void importBuiltinModules(ASTDecl &moduleDecl);

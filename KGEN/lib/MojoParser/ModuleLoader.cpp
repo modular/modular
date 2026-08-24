@@ -446,6 +446,497 @@ void ModuleLoader::eraseState(ASTDecl *decl) {
 }
 
 //===----------------------------------------------------------------------===//
+// Importing
+//===----------------------------------------------------------------------===//
+
+ASTDecl &ModuleLoader::importModule(const SharedState::ImportPath &path,
+                                    PackageOp currentPackage, llvm::SMLoc loc) {
+  ModuleState *moduleState = lookupPackageState(currentPackage);
+  assert(moduleState && "unexpected package without a module state");
+  return *importModuleState(path, moduleState->decl, loc).decl;
+}
+
+ModuleState &
+ModuleLoader::importModuleState(const SharedState::ImportPath &path,
+                                ASTDecl *context, llvm::SMLoc loc,
+                                bool isImplicit) {
+  CompilerTimeTraceScope fullTimeScope("importModule",
+                                       [&] { return path.toDottedString(); });
+
+  // TODO: The terms "relative" and "submodule" are being stretched quite far
+  // here. We're invoking "sub" on any trivial path ("std") and "relative" on
+  // anything else.
+  ModuleState &state =
+      (path.components.size() > 1 || path.relativeLevel)
+          ? importRelativeModuleState(path, context, loc)
+          : importSubModuleState(path.components.front(),
+                                 &shared.getTopLevelDecl(), loc, loc);
+
+  // An implicit import gets no import location, so its diagnostics aren't
+  // threaded through to the user file that triggered the implicit import. Clear
+  // any location a nested resolution may already have set.
+  if (isImplicit) {
+    state.isImplicitImport = true;
+    state.importLoc = SMLoc();
+  }
+
+  return state;
+}
+
+ModuleState &ModuleLoader::importSubModuleState(StringRef name,
+                                                ASTDecl *parentDecl,
+                                                llvm::SMLoc loc,
+                                                llvm::SMLoc identifierLoc) {
+  // emitErrors=true never returns null: on any failure it produces (and
+  // returns) an error module state.
+  return *importSubModuleStateImpl(name, parentDecl, loc, identifierLoc,
+                                   /*emitErrors=*/true);
+}
+
+ModuleState *
+ModuleLoader::lookupModuleCache(StringRef name, ASTDecl *parentDecl,
+                                ModuleState *parentState, llvm::SMLoc loc,
+                                llvm::SMLoc identifierLoc, bool emitErrors) {
+  auto declNameAttr = StringAttr::get(getContext(), name);
+  auto it = parentState->nestedModules.find(declNameAttr);
+  if (it == parentState->nestedModules.end())
+    return nullptr;
+
+  ModuleState *state = it->second;
+
+  // A standalone module importing its own bare name can only ever cache-hit
+  // itself: the module is registered under its name at creation, so nothing
+  // else can be found. Reject it conservatively so the choice of meaning stays
+  // open.
+  // A self-import inside a package names the enclosing package (a PackageOp)
+  // and is unaffected, as are package-qualified imports of the module through
+  // its own package.
+  auto isSelfImport = [&](ModuleState *state) {
+    if (parentDecl != &shared.getTopLevelDecl())
+      return false;
+    if (!isa_and_nonnull<FileModuleOp>(state->decl->getIfOperation()))
+      return false;
+    unsigned importerBufferId = getSourceMgr().FindBufferContainingLoc(loc);
+    if (!importerBufferId)
+      return false;
+    // The importer's module is necessarily materialized, so a deferred target
+    // (invalid decl loc) cannot be the importer itself.
+    unsigned targetBufferId =
+        getSourceMgr().FindBufferContainingLoc(state->decl->getLoc());
+    if (targetBufferId && importerBufferId == targetBufferId)
+      return true;
+    // Imports written in a REPL/LSP docstring wrapper buffer are still
+    // self-imports of the module they wrap.
+    std::optional<StringRef> wrapped =
+        shared.getWrappedSourcePath(importerBufferId);
+    std::optional<std::string> sourcePath = state->sourcePath();
+    return wrapped && sourcePath && *wrapped == *sourcePath;
+  };
+
+  // Reject self-imports with an unregistered erroneous state. The name *is*
+  // resolvable so it must not be poisoned in the parent's name table; use an
+  // unlisted decl for this.
+  if (isSelfImport(state)) {
+    if (!emitErrors)
+      return state;
+    return &createErrorModuleState(
+        identifierLoc, declNameAttr, *parentState->decl,
+        "module '" + name + "' cannot import itself", /*unlisted=*/true);
+  }
+
+  // Memoize the "imported from" location; the first resolution wins.
+  if (!state->importLoc.isValid() && !state->isImplicitImport)
+    state->importLoc = loc;
+
+  return state;
+}
+
+/// Stdlib subpackages relocated to the `max` package. Entries are added or
+/// removed as the stdlib restructuring for the compiler OSS release shapes up
+/// in MSTDL-2788.
+static constexpr StringLiteral kMovedStdlibSubpackages[] = {"runtime", "gpu",
+                                                            "algorithm"};
+
+/// Attached to import failures under those subpackages.
+static constexpr StringLiteral kMovedStdlibNote =
+    "many stdlib items recently moved to the `max` package, try `from "
+    "max.<module>`";
+
+ModuleState *ModuleLoader::importSubModuleStateImpl(StringRef name,
+                                                    ASTDecl *parentDecl,
+                                                    llvm::SMLoc loc,
+                                                    llvm::SMLoc identifierLoc,
+                                                    bool emitErrors) {
+  // Grab the parent module state.
+  ModuleState *parentState = lookupState(parentDecl);
+  assert(parentState && "parent decl must have a module state");
+  auto declNameAttr = StringAttr::get(getContext(), name);
+
+  // Don't cascade diagnostics through an already-erroneous parent; propagate
+  // its state silently.
+  if (parentState->decl && parentState->decl->isErroneous())
+    return parentState;
+
+  // Check to see if we've already imported this module.
+  if (ModuleState *state = lookupModuleCache(name, parentDecl, parentState, loc,
+                                             identifierLoc, emitErrors)) {
+    return state;
+  }
+
+  // On a genuine "no such submodule": null when probing (emitErrors=false), or
+  // an error module state with the given message when importing (true).
+  auto notFound = [&](const Twine &message) -> ModuleState * {
+    if (!emitErrors)
+      return nullptr;
+    return &createErrorModuleState(identifierLoc, declNameAttr,
+                                   *parentState->decl, message);
+  };
+
+  // As `notFound`, for a module missing under `std`: a subpackage that moved to
+  // the `max` package also gets a migration note.
+  auto notFoundModule = [&]() -> ModuleState * {
+    if (!emitErrors)
+      return nullptr;
+    bool movedToMax =
+        parentState->decl->getParentDecl() == &shared.getTopLevelDecl() &&
+        parentState->spec && parentState->spec->name == "std" &&
+        llvm::is_contained(kMovedStdlibSubpackages, name);
+    return &createErrorModuleState(
+        identifierLoc, declNameAttr, *parentState->decl,
+        "unable to locate module '" + name + "'", /*unlisted=*/false,
+        movedToMax ? Twine(kMovedStdlibNote) : Twine());
+  };
+
+  // Resolve the parent's body so that any lazily-materialized children (e.g.
+  // from binary packages, or deferred source siblings) are registered in
+  // nestedModules before we fall through to filesystem resolution.
+  if (failed(getDeclResolver().resolveBody(*parentDecl, loc)))
+    return notFound("failed to resolve parent package body");
+
+  // Check the cache again after body resolution
+  if (ModuleState *state = lookupModuleCache(name, parentDecl, parentState, loc,
+                                             identifierLoc, emitErrors)) {
+    return state;
+  }
+
+  // Resolve the path for this module.
+  std::optional<ModuleSpec> modulePath;
+  if (parentState->decl != &shared.getTopLevelDecl()) {
+    if (parentState->spec && parentState->spec->isNamespace()) {
+      // A plain directory from the import path is a namespace: one dotted
+      // name may span several roots, so search every portion visible from
+      // this import site rather than the single directory the name first
+      // resolved through.
+      SmallVector<ModuleSpec> candidates = resolveNamespaceSubModule(
+          name, *parentState->spec,
+          getSourceMgr().FindBufferContainingLoc(loc));
+      if (candidates.size() > 1) {
+        std::string paths;
+        for (const ModuleSpec &candidate : candidates) {
+          if (!paths.empty())
+            paths += ", ";
+          paths += "'" + candidate.path.string() + "'";
+        }
+        return notFound("ambiguous import '" + name + "': found " + paths);
+      }
+      if (!candidates.empty())
+        modulePath = std::move(candidates.front());
+    } else if (parentState->sourcePath()) {
+      modulePath = resolveModulePath(name, *parentState->sourcePath(),
+                                     shared.arePrebuiltPackagesDisabled(),
+                                     parentState->spec->isSourcePackage());
+    } else {
+      return notFoundModule();
+    }
+  } else {
+    // Otherwise, go through the normal import path.
+    modulePath = resolveModulePath(name, loc);
+  }
+
+  if (!modulePath)
+    return notFoundModule();
+
+  // A name that previously failed to resolve through this scope now resolves
+  // successfully: drop the stale failure record and disable its decl so neither
+  // shadows the fresh binding.
+  if (parentState->failedImports) {
+    auto failedIt = parentState->failedImports->find(declNameAttr);
+    if (failedIt != parentState->failedImports->end()) {
+      failedIt->second->decl->markDisabled();
+      eraseState(failedIt->second->decl);
+      parentState->failedImports->erase(failedIt);
+    }
+  }
+
+  // If the path was a source package, record the import location so the
+  // package's __init__ is opened "included from" here.
+  if (modulePath->isSourcePackageLike()) {
+    return &createPackageState(*modulePath, *parentState, /*importLoc=*/loc);
+  }
+
+  const auto &pathRef = modulePath->path;
+
+  // Check if the path is a precompiled file or binary package.
+  if (modulePath->isPrecompiled())
+    return &createBinaryPackageState(loc, *modulePath, *parentState);
+
+  // Open + lex the module source file.
+  assert(modulePath->isSourceModule() && "Unexpected import kind");
+  SMLoc openLoc =
+      parentState->importLoc.isValid() ? parentState->importLoc : loc;
+  const llvm::MemoryBuffer *moduleBuffer =
+      shared.openModuleFile(pathRef.string(), openLoc);
+  if (!moduleBuffer)
+    return notFound("unable to resolve imported module '" + pathRef.string() +
+                    "'");
+  auto fileLoc = shared.createLocation(moduleBuffer->getBufferIdentifier(),
+                                       /*line=*/1, /*column=*/1);
+  return &createModuleState(declNameAttr, moduleBuffer, *parentState, fileLoc,
+                            *modulePath);
+}
+
+ModuleState &
+ModuleLoader::importRelativeModuleState(const SharedState::ImportPath &path,
+                                        ASTDecl *parentDecl, llvm::SMLoc loc) {
+  ASTDecl &importContext = *parentDecl;
+  llvm::SMLoc identifierLoc = loc.isValid() ? loc : parentDecl->getLoc();
+  // These are structural path failures, not name-binding failures: the record
+  // exists for per-site diagnostic dedup and to hand back an erroneous state.
+  auto emitError = [&](const Twine &message = "") -> ModuleState & {
+    return createErrorModuleState(
+        identifierLoc, StringAttr::get(getContext(), path.toDottedString()),
+        importContext, message, /*unlisted=*/true);
+  };
+
+  auto adjustIdentifierLoc = [&](unsigned offset) {
+    if (!identifierLoc.isValid())
+      return identifierLoc;
+    return llvm::SMLoc::getFromPointer(identifierLoc.getPointer() + offset);
+  };
+
+  bool isRelative = path.relativeLevel > 0;
+  if (!isRelative) {
+    // We're resolving relative to a top-level package.
+    assert(!path.components.empty() && "Importing empty path?");
+    StringRef parentName = path.components.front();
+    identifierLoc = adjustIdentifierLoc(parentName.size() + 1);
+    parentDecl =
+        importModuleState({parentName}, &shared.getTopLevelDecl(), loc).decl;
+  } else {
+    auto relativeLevel = path.relativeLevel;
+    // Find the current package.
+    identifierLoc = adjustIdentifierLoc(1);
+    while (!isa_and_nonnull<PackageOp>(parentDecl->getIfOperation()) &&
+           parentDecl->parentDecl)
+      parentDecl = parentDecl->parentDecl;
+    if (!isa_and_nonnull<PackageOp>(parentDecl->getIfOperation()))
+      return emitError("cannot import relative to a top-level package");
+
+    // Otherwise, this is a package relative to the current parent.
+    while (--relativeLevel) {
+      identifierLoc = adjustIdentifierLoc(1);
+      if (!parentDecl->parentDecl ||
+          !isa_and_nonnull<PackageOp>(
+              parentDecl->parentDecl->getIfOperation())) {
+        return emitError(
+            "attempted relative import with no known parent package");
+      }
+      parentDecl = parentDecl->parentDecl;
+    }
+
+    // If the path itself is empty, we're grabbing the parent package.
+    if (path.components.empty())
+      return *lookupState(parentDecl);
+  }
+
+  // The rest of the path resolves a nested module or package from the current
+  // parent. Use importSubModuleState for each segment, which checks
+  // nestedModules first. The non-relative branch above has already consumed
+  // the leading component as the top-level package.
+  unsigned consumedComponents = isRelative ? 0 : 1;
+  SmallVector<StringRef> remainingNames{
+      path.components.begin() + consumedComponents, path.components.end()};
+  StringRef leafModule = remainingNames.pop_back_val();
+  for (auto [i, parentName] : enumerate(remainingNames)) {
+    ModuleState &nextState =
+        importSubModuleState(parentName, parentDecl, loc, identifierLoc);
+    parentDecl = nextState.decl;
+
+    // If we've recursed through a package, all is well; continue.
+    if (isa_and_nonnull<PackageOp>(parentDecl->getIfOperation())) {
+      identifierLoc = adjustIdentifierLoc(parentName.size() + 1);
+      continue;
+    }
+
+    // Otherwise we've hit an error case.
+
+    // We've found a *module* - not a package. We can't recurse any further. The
+    // user has probably written one of the following:
+    //   - import package.(module)+(.symbol)?
+    //   - from package.(module)+(.symbol)? import other_symbol
+    if (isa_and_nonnull<FileModuleOp>(parentDecl->getIfOperation())) {
+      auto child =
+          i + 1 < remainingNames.size() ? remainingNames[i + 1] : leafModule;
+      return emitError(
+          "'" + parentName +
+          "' is a module, not a package; it has no nested module or package '" +
+          child + "'");
+    }
+
+    // Otherwise the user has done something we can't recognise.
+    return emitError("'" + parentName + "' does not refer to a nested package");
+  }
+
+  return importSubModuleState(leafModule, parentDecl, loc, identifierLoc);
+}
+
+bool ModuleLoader::hasNestedModule(PackageOp packageOp, StringRef name) const {
+  ModuleState *packageState = lookupPackageState(packageOp);
+  if (!packageState)
+    return false;
+  return packageState->nestedModules.count(
+             StringAttr::get(getContext(), name)) > 0;
+}
+
+SmallVector<ASTDecl *>
+ModuleLoader::getNestedModuleDecls(PackageOp packageOp) const {
+  ModuleState *state = lookupPackageState(packageOp);
+  if (!state)
+    return {};
+  SmallVector<std::pair<StringRef, ASTDecl *>> named;
+  named.reserve(state->nestedModules.size());
+  for (auto &[name, sub] : state->nestedModules)
+    named.emplace_back(name.getValue(), sub->decl);
+  llvm::sort(named,
+             [](const auto &a, const auto &b) { return a.first < b.first; });
+  SmallVector<ASTDecl *> result;
+  result.reserve(named.size());
+  for (auto &[name, decl] : named)
+    result.push_back(decl);
+  return result;
+}
+
+ASTDecl *ModuleLoader::tryImportSubModule(ASTDecl &parent, StringRef name,
+                                          llvm::SMLoc loc) {
+  // A submodule lives under a real package/module (never the synthetic
+  // top-level scope) that has a module state.
+  if (&parent == &shared.getTopLevelDecl() || !lookupState(&parent))
+    return nullptr;
+  // emitErrors=false: returns null (no diagnostic) when `name` is not a
+  // submodule - that is the "this is a plain symbol, not a submodule" case the
+  // caller falls back from. A genuine error (e.g. a parse failure in a
+  // submodule that does exist) is still reported.
+  ModuleState *state = importSubModuleStateImpl(name, &parent, loc, loc,
+                                                /*emitErrors=*/false);
+  return state ? state->decl : nullptr;
+}
+
+void ModuleLoader::registerSourcePackageChildren(ASTDecl &packageDecl) {
+  ModuleState *parentState = lookupState(&packageDecl);
+  if (!parentState || !parentState->sourcePath())
+    return;
+  // A namespace parent enumerates the union of all its portions; other
+  // parents enumerate their single directory.
+  SmallVector<std::string> directories;
+  if (!parentState->spec->isNamespace()) {
+    directories.push_back(*parentState->sourcePath());
+  } else {
+    unsigned bufferId =
+        getSourceMgr().FindBufferContainingLoc(parentState->importLoc);
+    directories = collectNamespacePortions(*parentState->spec, bufferId);
+  }
+
+  // Collect the directory entries and sort them, so children are registered in
+  // a deterministic order across platforms. In-directory precedence applies
+  // first, so cross-portion merging sees one candidate per name per portion:
+  // portions merge, a closed candidate beats portions, and two closed
+  // candidates from different portions are ambiguous; such a name is not
+  // registered, and a direct import of it reports the ambiguity.
+  std::map<std::string, ModuleSpec> packageChildren;
+  llvm::StringSet<> ambiguousChildren;
+  for (const std::string &directory : directories) {
+    std::error_code ec;
+    if (!std::filesystem::is_directory(directory, ec) || ec)
+      continue;
+    std::map<std::string, ModuleSpec> portionChildren;
+    for (const auto &entry :
+         std::filesystem::directory_iterator(directory, ec)) {
+      auto moduleSpec = ModuleSpec::classify(entry.path());
+      if (!moduleSpec)
+        continue;
+      // Precompiled children aren't supported in source packages.
+      if ((shared.arePrebuiltPackagesDisabled() ||
+           parentState->spec->isSourcePackage()) &&
+          moduleSpec->isPrecompiled())
+        continue;
+      if (auto it = portionChildren.find(moduleSpec->name);
+          it == portionChildren.end() ||
+          moduleSpec->takesImportPrecedence(it->second)) {
+        portionChildren[moduleSpec->name] = *moduleSpec;
+      }
+    }
+    for (auto &[childName, childSpec] : portionChildren) {
+      auto it = packageChildren.find(childName);
+      if (it == packageChildren.end()) {
+        packageChildren[childName] = childSpec;
+        continue;
+      }
+      bool haveDir = it->second.kind == ModuleSpec::Kind::SourceDir;
+      bool newDir = childSpec.kind == ModuleSpec::Kind::SourceDir;
+      // Portions merge; the first portion remains the (advisory) home.
+      if (haveDir && newDir)
+        continue;
+      // A closed candidate beats portion directories in either order.
+      if (haveDir != newDir) {
+        if (haveDir)
+          it->second = childSpec;
+        continue;
+      }
+      ambiguousChildren.insert(childName);
+    }
+  }
+  for (const auto &ambiguous : ambiguousChildren)
+    packageChildren.erase(ambiguous.getKey().str());
+
+  // A directory child of a namespace is itself a namespace: tag it with its
+  // component chain so its own submodules resolve across portions.
+  if (parentState->spec->isNamespace()) {
+    for (auto &[childName, childSpec] : packageChildren) {
+      if (childSpec.kind != ModuleSpec::Kind::SourceDir)
+        continue;
+      childSpec.namespaceComponents = parentState->spec->namespaceComponents;
+      childSpec.namespaceComponents.push_back(childName);
+    }
+  }
+
+  for (const auto &[name, value] : packageChildren) {
+    // The package's own __init__ is resolved separately by resolveBody.
+    if (name == "__init__")
+      continue;
+    // Skip names already registered (e.g. a sibling imported while resolving
+    // __init__, or __init__ itself).
+    auto declNameAttr = StringAttr::get(getContext(), value.name);
+    if (parentState->nestedModules.count(declNameAttr))
+      continue;
+    if (value.isSourcePackageLike()) {
+      // Registered by the directory scan so it gets no import location here.
+      // We'll resolve that location if/when it's actually resolved.
+      createPackageState(value, *parentState, /*importLoc=*/{});
+    } else if (value.isPrecompiled()) {
+      // NB: We don't call createBinaryPackageState here because it will eagerly
+      // load the bytecode (and potentially even throw errors to our unknown
+      // import location!). We instead skip registration and wait for the user
+      // to actually import it, at which point we'll hit the file system and
+      // load the bytecode module.
+      // The tradeoff is that nothing will enumerate these precompiled children
+      // (e.g., the LSP) until it's actually imported.
+    } else {
+      createDeferredModuleState(value, *parentState);
+    }
+  }
+}
+
+//===----------------------------------------------------------------------===//
 // Loading
 //===----------------------------------------------------------------------===//
 
