@@ -108,17 +108,14 @@ def bench_multicontext[
     var results_b = List[BenchmarkInfo](length=num_ctxs, fill=default_info)
 
     # This closure runs in parallel on the host, 1 host thread per context.
-    @__parameter
-    def per_gpu(i: Int) raises:
-        @__parameter
-        def context_closure(mut b: Bencher) raises:
+    # `sync_parallelize` still takes its body as a comptime `capturing`
+    # parameter, so `per_gpu` cannot yet be passed as a closure value.
+    def per_gpu(i: Int) raises capturing:
+        def context_closure(mut b: Bencher) raises {imm}:
             func(b, list_of_ctx[i], i)
 
         var b = Bench()
-        b.bench_function[context_closure](
-            bench_id,
-            measures,
-        )
+        b.bench_function(context_closure, bench_id, measures)
         results_b[i] = b.info_vec[0].copy()
 
     sync_parallelize[per_gpu](num_ctxs)

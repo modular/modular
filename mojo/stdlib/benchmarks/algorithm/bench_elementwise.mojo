@@ -24,7 +24,6 @@ from std.utils.index import IndexList
 # ===-----------------------------------------------------------------------===#
 # Benchmark elementwise
 # ===-----------------------------------------------------------------------===#
-@__parameter
 def bench_elementwise[n: Int](mut b: Bencher) raises:
     var vector = Array[Int, n](fill=-1)
 
@@ -44,14 +43,14 @@ def bench_elementwise[n: Int](mut b: Bencher) raises:
 
 def main() raises:
     var m = Bench(BenchConfig(num_repetitions=1))
-    m.bench_function[bench_elementwise[32]](BenchId("bench_elementwise_32"))
-    m.bench_function[bench_elementwise[128]](BenchId("bench_elementwise_128"))
-    m.bench_function[bench_elementwise[1024]](BenchId("bench_elementwise_1024"))
-    m.bench_function[bench_elementwise[8192]](BenchId("bench_elementwise_8192"))
-    m.bench_function[bench_elementwise[32768]](
-        BenchId("bench_elementwise_32768")
+    m.bench_function(bench_elementwise[32], BenchId("bench_elementwise_32"))
+    m.bench_function(bench_elementwise[128], BenchId("bench_elementwise_128"))
+    m.bench_function(bench_elementwise[1024], BenchId("bench_elementwise_1024"))
+    m.bench_function(bench_elementwise[8192], BenchId("bench_elementwise_8192"))
+    m.bench_function(
+        bench_elementwise[32768], BenchId("bench_elementwise_32768")
     )
-    m.bench_function[bench_elementwise[131072]](
-        BenchId("bench_elementwise_131072")
+    m.bench_function(
+        bench_elementwise[131072], BenchId("bench_elementwise_131072")
     )
     m.dump_report()
