@@ -11,7 +11,7 @@
 // limitations under the License.
 //===----------------------------------------------------------------------===//
 
-#include "KGEN/ToolCommon/LLVMTimingRegions.h"
+#include "KGEN/ToolCommon/PipelineTiming.h"
 #include "KGEN/ToolCommon/CompilationOptions.h"
 #include "llvm/Support/Threading.h"
 #include "llvm/Support/Timer.h"
@@ -60,9 +60,9 @@ void closeCurrentPart() {
     state.parts.push_back({state.currentLabel, std::move(report)});
 }
 
-/// Names the pipeline that `options` describes: the role, the target triple,
-/// the target processor, and the emission options of the offload group.
-std::string makeLabel(const CompilationOptions &options) {
+} // namespace
+
+std::string M::KGEN::pipelineTimingLabel(const CompilationOptions &options) {
   llvm::Triple triple(options.targetTriple);
   std::string label = isGPUTriple(triple) ? "offload " : "host ";
   label += options.targetTriple;
@@ -86,7 +86,6 @@ std::string makeLabel(const CompilationOptions &options) {
   }
   return label;
 }
-} // namespace
 
 void M::KGEN::enableLLVMTimingRegions() { getRegionState().enabled = true; }
 
@@ -125,7 +124,7 @@ LLVMTimingRegion::LLVMTimingRegion(const CompilationOptions &options)
   if (state.depth++ > 0)
     return;
 
-  std::string label = makeLabel(options);
+  std::string label = pipelineTimingLabel(options);
   if (label != state.currentLabel) {
     closeCurrentPart();
     state.currentLabel = std::move(label);
@@ -135,4 +134,59 @@ LLVMTimingRegion::LLVMTimingRegion(const CompilationOptions &options)
 LLVMTimingRegion::~LLVMTimingRegion() {
   if (active)
     --getRegionState().depth;
+}
+
+//===----------------------------------------------------------------------===//
+// MLIR
+//===----------------------------------------------------------------------===//
+
+namespace {
+/// The width of the rule around the name of an offload scope.
+constexpr size_t kOffloadScopeRuleWidth = 72;
+
+/// The root scope of the MLIR timing. The value is null if the timing is off.
+/// The value is global because the function that makes the pass manager of an
+/// offload target gets no scope. That function is also deep inside the
+/// elaboration of the host.
+mlir::TimingScope *&getMLIRTimingRoot() {
+  static mlir::TimingScope *root = nullptr;
+  return root;
+}
+} // namespace
+
+void M::KGEN::setMLIRTimingRoot(mlir::TimingScope *root) {
+  getMLIRTimingRoot() = root;
+}
+
+mlir::TimingScope
+M::KGEN::nestMLIROffloadScope(const CompilationOptions &options) {
+  mlir::TimingScope *root = getMLIRTimingRoot();
+  if (!root)
+    return mlir::TimingScope();
+  // The scope is at the same depth as a host pass, and the scope holds many
+  // rows. The marks around the name show that the scope is not a host pass.
+  // The marks also show where one offload pipeline stops and the next offload
+  // pipeline starts.
+  //
+  // The host pass that runs the offload contains this scope. Thus the time of
+  // this scope is also part of that host pass. The two rows are siblings in
+  // the report, but the times are not separate. The words in the label tell
+  // the reader not to add the two rows together.
+  std::string name =
+      "===--- " + pipelineTimingLabel(options) + " (also in host) ";
+  // Each scope gets a rule of the same width. Thus the rules look like
+  // dividers between the parts of the report. A label that is longer than the
+  // rule keeps its own length.
+  if (name.size() < kOffloadScopeRuleWidth - 3)
+    name.append(kOffloadScopeRuleWidth - 3 - name.size(), '-');
+  name += "===";
+  // `nest` takes a lock if the thread is not the thread of the root.
+  // Thus elaboration can run this function on a worker thread.
+  //
+  // The compiler compiles one offload group at a time today. Take care if the
+  // compiler compiles the groups in parallel later. MLIR joins two scopes that
+  // have the same name into one row. Thus the label must give a different name
+  // to each pipeline that needs a row of its own. The LLVM part of this file
+  // has a stronger rule, because it reads global timers. See `RegionState`.
+  return root->nest(name);
 }

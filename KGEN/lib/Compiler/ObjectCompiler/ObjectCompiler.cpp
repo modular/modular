@@ -29,7 +29,7 @@
 #include "KGEN/ToolCommon/CompilationOptions.h"
 #include "KGEN/ToolCommon/Debug.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
-#include "KGEN/ToolCommon/LLVMTimingRegions.h"
+#include "KGEN/ToolCommon/PipelineTiming.h"
 #include "KGENToLLVMPipeline.h"
 #include "LLVMAccessorHelper.h"
 #include "LLVMPassesPipeline.h"
