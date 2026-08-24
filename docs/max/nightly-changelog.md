@@ -497,6 +497,13 @@ This version is still a work in progress.
   readback. A CPU device returns the buffer's own pointer, since its
   allocations are host memory already; devices whose memory is not
   CPU-addressable raise.
+- `DeviceContext.create_event()` and `DeviceEvent` are now supported on Apple
+  GPUs, backed by `MTLSharedEvent`. Event queries and waits track actual GPU
+  completion instead of command-buffer submission order, and waiting on an
+  event from another context's queue no longer blocks the host thread.
+- `DeviceContext.create_event()` on NVIDIA GPUs now honors the default
+  `disable_timing` flag (previously inverted) and recycles events through the
+  driver's event cache instead of growing it on every create/destroy cycle.
 
 ### Inference server
 
