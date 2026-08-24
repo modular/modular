@@ -42,7 +42,6 @@ from typing_extensions import Self, override
 from ..deepseekV3_modulev3.model_config import DeepseekV3Config
 
 
-@dataclass(kw_only=True)
 class _KimiK2_5VisionCacheConfig:
     """Vision-cache facts shared by both registered Kimi K2.5 arch configs."""
 
