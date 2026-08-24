@@ -189,7 +189,7 @@ struct List[T: AnyType, /](
     var filled = List[Float64](length=10, fill=0.0)
 
     # With initial values and an explicit element type
-    var numbers: List[Int] = [1, 2, 3, 4, 5
+    var numbers: List[Int] = [1, 2, 3, 4, 5]
     ```
 
     Be aware of the following characteristics:
