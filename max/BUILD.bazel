@@ -23,6 +23,7 @@ package_group(
         "//max_private/...",  # private-only entrypoints + tool parsers
         "//oss/...",
         "//oss/modular/max/...",
+        "//plugins/...",
         "//utils/...",
     ],
 )

@@ -41,6 +41,7 @@ package_group(
         "//oss/modular/docs/...",
         "//oss/modular/max/python/max/_core/internal/...",  # Only when testing internally
         "//oss/modular/mojo/docs/...",
+        "//plugins/...",
         "//utils/...",
     ],
 )
