@@ -32,6 +32,10 @@
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/Support/PrettyStackTrace.h"
 
+namespace mlir {
+class ParserConfig;
+} // namespace mlir
+
 namespace M::KGEN {
 class CompilationOptions;
 class NoneAttr;
@@ -50,6 +54,7 @@ class ModuleLoader;
 class ExprNode;
 struct ModuleOrigin;
 struct ModuleState;
+struct ModuleStore;
 struct Operand;
 class FileModuleOp;
 class FnOp;
@@ -124,6 +129,8 @@ enum class DeclResolvedness : uint8_t {
 /// This is state shared across multiple different instances of Parser
 /// which are always shared across them.
 class SharedState {
+  friend class ModuleLoader;
+
 public:
   SharedState(llvm::SourceMgr &sourceMgr, ParserConfig &config);
   ~SharedState();
@@ -704,54 +711,18 @@ private:
   ModuleState &importRelativeModuleState(const ImportPath &path,
                                          ASTDecl *parentDecl, llvm::SMLoc loc);
 
-  /// Shared core of createModuleState and createDeferredModuleState: create the
-  /// `FileModuleOp` + unlisted decl + nested module state. The caller supplies
-  /// the parse cursor (valid for an already-open module, invalid for a deferred
-  /// one) and is responsible for importing builtins (eagerly, or at
-  /// materialization for a deferred module).
-  ModuleState &createFileModuleState(StringAttr declName,
-                                     ModuleState &parentState,
-                                     FileLineColLoc loc, llvm::SMLoc declLoc,
-                                     LexerCursor cursor, LexerCursor endCursor,
-                                     const ModuleSpec &spec);
-
-  /// Create a new module state with the given name, location, and body.
-  ModuleState &createModuleState(StringAttr declName,
-                                 const llvm::MemoryBuffer *moduleBuffer,
-                                 ModuleState &parentState, FileLineColLoc loc,
-                                 const ModuleSpec &spec);
-
-  /// Create a module state for a source module whose file has not been opened.
-  ModuleState &createDeferredModuleState(ModuleSpec moduleSpec,
-                                         ModuleState &parentState);
-
-  /// Create a new module state for a package with the given spec, location,
-  /// and body. The importLoc, if valid, is the location of the `import` that
-  /// pulled the package in. The spec's kind must be a SourcePackage or
-  /// SourceDir.
-  ModuleState &createPackageState(ModuleSpec moduleSpec,
-                                  ModuleState &parentState, SMLoc importLoc);
-
-  /// Create a new module state for a binary package with the given spec.
-  ModuleState &createBinaryPackageState(SMLoc loc, const ModuleSpec &spec,
-                                        ModuleState &parentState);
-
-  /// Returns the dotted module path of `target` below `root`, or an empty
-  /// string when `target` is not nested below `root`.
-  static std::string moduleMountPath(const ModuleState &root,
-                                     const ModuleState &target);
-
-  /// Create an error module state and emit the given error message. If
-  /// `unlisted` is set, the erroneous decl is not registered in
-  /// `errorContext`'s name table. A non-empty `note` is attached to the error.
-  ModuleState &createErrorModuleState(SMLoc loc, StringAttr name,
-                                      ASTDecl &errorContext,
-                                      const Twine &errorMsg,
-                                      bool unlisted = false,
-                                      const Twine &note = {});
-
   /// Implicitly import the builtin modules into the given module decl.
   void importBuiltinModules(ASTDecl &moduleDecl);
+
+  /// The config bytecode is parsed with.
+  mlir::ParserConfig &getBytecodeParserConfig();
+
+  /// Record a file as read, so it lands in the generated dependency file.
+  void addIncludedFile(std::string path);
+
+  /// Claim `key` for `thunk`, returning false when a thunk is already
+  /// registered under it and this one is a redundant copy.
+  bool tryRegisterConversionThunk(Attribute key, FnOp thunk);
 
   /// This is used for memory that lives as long as the global parser does.
   llvm::BumpPtrAllocator persistentAllocator;
