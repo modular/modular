@@ -19,6 +19,7 @@
 #include "IREmitter.h"
 #include "KGEN/MojoParser/ASTDecl.h"
 #include "KGEN/MojoParser/Constraints.h"
+#include "KGEN/MojoParser/ModuleLoader.h"
 #include "MojoUtils.h"
 #include "ParserBase.h"
 #include "ParserEvaluationContext.h"
@@ -2642,7 +2643,7 @@ ParseResult DeclResolver::resolveBody(LIT::PackageOp op, ASTDecl &decl) {
 
   // Register a (deferred, unlisted) child decl for every sibling module and
   // sub-package.
-  shared.registerSourcePackageChildren(decl);
+  shared.getModuleLoader().registerSourcePackageChildren(decl);
 
   return success();
 }

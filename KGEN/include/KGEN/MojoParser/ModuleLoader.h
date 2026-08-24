@@ -116,10 +116,6 @@ public:
   /// The state this decl was imported as, or null if it names no module.
   ModuleState *lookupState(ASTDecl *decl) const;
 
-  /// The state this package op was imported as, or null. Distinct from
-  /// `lookupState` only because one op can be reached through several decls.
-  ModuleState *lookupPackageState(PackageOp packageOp) const;
-
   /// Record `state` as what `decl` was imported as.
   void setState(ASTDecl &decl, ModuleState &state);
 
@@ -128,6 +124,51 @@ public:
 
   /// Forget the state of a decl whose import turned out to have failed.
   void eraseState(ASTDecl *decl);
+
+  //===--------------------------------------------------------------------===//
+  // Importing
+  //===--------------------------------------------------------------------===//
+
+  /// Import the specified module or package, returning the decl. Always returns
+  /// a valid decl, even if a corresponding module or package could not be
+  /// found.
+  ASTDecl &importModule(const SharedState::ImportPath &path,
+                        PackageOp currentPackage, llvm::SMLoc loc);
+
+  /// Import the specified module or package, returning the module state.
+  /// Always returns a valid module state, even if the module could not be
+  /// found. `isImplicit` marks a package pulled in by the compiler rather than
+  /// a user `import`.
+  ModuleState &importModuleState(const SharedState::ImportPath &path,
+                                 ASTDecl *context, llvm::SMLoc loc,
+                                 bool isImplicit = false);
+
+  /// Import the specified module or package nested within the given parent
+  /// decl, returning the module state. Always returns a valid module state,
+  /// even if the module could not be found.
+  ModuleState &importSubModuleState(StringRef name, ASTDecl *parentDecl,
+                                    llvm::SMLoc loc, llvm::SMLoc identifierLoc);
+
+  /// Try to import a direct submodule with the given name, returning the
+  /// submodule's decl, or null if no such submodule exists.
+  ASTDecl *tryImportSubModule(ASTDecl &parent, StringRef name, llvm::SMLoc loc);
+
+  /// Return true if the package has a nested module with the given name in the
+  /// module-state cache. The package body must be resolved before calling this
+  /// for the result to be accurate.
+  bool hasNestedModule(PackageOp packageOp, StringRef name) const;
+
+  /// Return the decls of every nested module/package currently materialized in
+  /// the package's module-state cache. These are navigable but unlisted (not
+  /// in the package's importable scope).
+  SmallVector<ASTDecl *> getNestedModuleDecls(PackageOp packageOp) const;
+
+  /// Scan a source package's directory and register a child decl for every
+  /// sibling module/sub-package - a deferred `FileModuleOp` for each `.mojo`
+  /// file and a (already-deferred) `PackageOp` for each sub-package. The
+  /// children are unlisted (in the module-state cache + package IR, never the
+  /// package's importable scope) and their bodies/files are opened lazily.
+  void registerSourcePackageChildren(ASTDecl &packageDecl);
 
   //===--------------------------------------------------------------------===//
   // Loading
@@ -180,6 +221,32 @@ public:
                                       const Twine &note = {});
 
 private:
+  /// The state this package op was imported as, or null. Distinct from
+  /// `lookupState` only because one op can be reached through several decls.
+  ModuleState *lookupPackageState(PackageOp packageOp) const;
+
+  /// Shared core of `importSubModuleState` and `tryImportSubModule`. With
+  /// `emitErrors` clear, a name that is simply not a submodule returns null
+  /// rather than a diagnostic, which is the probe the latter needs.
+  ModuleState *importSubModuleStateImpl(StringRef name, ASTDecl *parentDecl,
+                                        llvm::SMLoc loc,
+                                        llvm::SMLoc identifierLoc,
+                                        bool emitErrors);
+
+  /// Look up a module by its name, in the specified parent scope, in the module
+  /// cache. Returns nullptr on a miss. On a hit:
+  ///   * Prevent module self-imports
+  ///   * Memoizes the import loc on first resolution
+  ModuleState *lookupModuleCache(StringRef name, ASTDecl *parentDecl,
+                                 ModuleState *parentState, llvm::SMLoc loc,
+                                 llvm::SMLoc identifierLoc, bool emitErrors);
+
+  /// Import the specified module or package, which contains `.` indexing,
+  /// returning the module state. Always returns a valid module state, even if
+  /// the module could not be found.
+  ModuleState &importRelativeModuleState(const SharedState::ImportPath &path,
+                                         ASTDecl *parentDecl, llvm::SMLoc loc);
+
   /// The directories searched before the working directory and the source
   /// manager's include directories: configured search paths, or the defaults
   /// from the Mojo config when none were given.
