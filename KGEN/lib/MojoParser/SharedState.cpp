@@ -274,6 +274,18 @@ private:
 /// precompiled artifact whose single file holds many modules. Every binding
 /// that reads out of it points at this one record.
 struct SharedState::ModuleOrigin {
+  ModuleOrigin(std::string canonicalPath, std::string canonicalMount)
+      : canonicalPath(std::move(canonicalPath)),
+        canonicalMount(std::move(canonicalMount)) {}
+
+  ~ModuleOrigin() {
+    // Drop any remaining operations in the reader to avoid dangling
+    // unmaterialized operations. If these were needed, they would have been
+    // handled already as part of parsing.
+    if (bytecodeReader)
+      (void)bytecodeReader->finalize([](Operation *) { return false; });
+  }
+
   /// The canonical path. Also the key this origin is stored under.
   std::string canonicalPath;
 
@@ -281,6 +293,28 @@ struct SharedState::ModuleOrigin {
   /// contents are named by. Re-anchoring rewrites an artifact's references to
   /// exactly one path, so only one binding can contribute to symbol paths.
   std::string canonicalMount;
+
+  //===--------------------------------------------------------------------===//
+  // Precompiled Artifact State
+  //===--------------------------------------------------------------------===//
+
+  /// Keeps the bytecode buffer alive for deferred lazy materialization.
+  /// BytecodeReader holds bufferOwnerRef by reference, so this is declared
+  /// first to outlive the reader below.
+  std::shared_ptr<llvm::SourceMgr> sourceMgr;
+
+  /// The reader every module bound out of this file materializes through. Null
+  /// until the artifact is read, and for anything built from source.
+  std::unique_ptr<mlir::BytecodeReader> bytecodeReader;
+
+  /// A temporary module used to load the bytecode.
+  ModuleOp tmpModule;
+
+  /// Where the artifact was imported. Its source files are never parsed, so a
+  /// decl materialized out of it later has no location of its own and gets
+  /// reported at the import site instead. Distinct from the per-binding
+  /// `ModuleState::importLoc`, which a module inside the artifact never has.
+  SMLoc bytecodeImportLoc;
 };
 
 //===----------------------------------------------------------------------===//
@@ -710,13 +744,6 @@ void ASTDecl::setBodyDecorators(ArrayRef<ExprNode *> decorators) {
 struct SharedState::ModuleState {
   ModuleState(ASTDecl *decl = nullptr) : decl(decl) {}
   ModuleState(ASTDecl *decl, const ModuleSpec &spec) : decl(decl), spec(spec) {}
-  ~ModuleState() {
-    // Drop any remaining operations in the reader to avoid dangling
-    // unmaterialized operations. If these were needed, they would have been
-    // handled already as part of parsing.
-    if (bytecodeReader)
-      (void)bytecodeReader->finalize([](Operation *) { return false; });
-  }
 
   /// Insert a nested module state.
   ModuleState &insertNestedModule(StringAttr name,
@@ -728,13 +755,9 @@ struct SharedState::ModuleState {
 
   /// The decl associated with the module or package.
   ASTDecl *decl = nullptr;
-  /// An optional bytecode reader, in the case where this decl was loaded from
-  /// bytecode as opposed to source.
-  std::unique_ptr<mlir::BytecodeReader> bytecodeReader;
-  /// A temporary module used to load the bytecode.
-  ModuleOp tmpModule;
-  /// The module spec this state was created from. Absent for the top-level
-  /// and erroneous module states.
+  /// The module spec this state was created from. Absent for any state that
+  /// resolution never produced a candidate for: the top-level state, error
+  /// states, and the modules found inside an already-loaded artifact.
   std::optional<ModuleSpec> spec;
 
   /// The entity this state reads out of, shared with every other binding of
@@ -777,10 +800,6 @@ struct SharedState::ModuleState {
   /// re-attempt must not duplicate the report, while a distinct import site
   /// of the same missing name still gets its own.
   std::unique_ptr<SmallVector<SMLoc>> reportedFailureLocs;
-
-  /// Keeps the bytecode buffer alive for deferred lazy materialization.
-  /// BytecodeReader holds bufferOwnerRef by reference, so this must outlive it.
-  std::shared_ptr<llvm::SourceMgr> sourceMgr;
 
 #if !defined(NDEBUG) || defined(LLVM_ENABLE_DUMP)
   LLVM_DUMP_METHOD void dump(unsigned indent = 0) const {
@@ -1056,16 +1075,16 @@ auto SharedState::lookupAllDeclsWithName(StringRef name, SMLoc loc,
 
 PackageOp SharedState::getPrecompiledStdlibPackage() {
   ModuleState *stdState = impl->stdPackageState;
-  if (!stdState || !stdState->bytecodeReader)
+  if (!stdState || !stdState->origin || !stdState->origin->bytecodeReader)
     return {};
   return dyn_cast_or_null<PackageOp>(stdState->decl->getIfOperation());
 }
 
 void SharedState::materializePrecompiledStdlibOp(Operation *op) {
   ModuleState *stdState = impl->stdPackageState;
-  if (!stdState || !stdState->bytecodeReader)
+  if (!stdState || !stdState->origin || !stdState->origin->bytecodeReader)
     return;
-  mlir::BytecodeReader &reader = *stdState->bytecodeReader;
+  mlir::BytecodeReader &reader = *stdState->origin->bytecodeReader;
   // Best-effort: a failed materialization just means this subtree contributes
   // no import suggestion. The sole caller runs on the error path of an
   // already-failing compile, so we never disturb the in-progress diagnostic.
@@ -1380,8 +1399,8 @@ SharedState::getOrCreateModuleOrigin(const ModuleSpec &spec,
     return existing;
   }
 
-  impl->originAllocations.push_back(std::make_unique<ModuleOrigin>(
-      ModuleOrigin{canonicalPath, std::move(mount)}));
+  impl->originAllocations.push_back(
+      std::make_unique<ModuleOrigin>(canonicalPath, std::move(mount)));
   ModuleOrigin *origin = impl->originAllocations.back().get();
   impl->originsByCanonicalPath[canonicalPath] = origin;
   return origin;
@@ -2223,10 +2242,18 @@ SharedState::createBinaryPackageState(SMLoc loc, const ModuleSpec &spec,
   // at the import site.
   moduleState.importLoc = loc;
   moduleState.origin = *originOrErr;
-  moduleState.bytecodeReader = std::move(bytecodeReader);
+
+  // The reader and the buffers under it belong to the file, so every module
+  // bound out of this artifact reaches them through the shared origin. The
+  // module cache means an artifact is only ever read once.
+  assert(moduleState.origin && "precompiled artifact without an origin");
+  ModuleOrigin &origin = *moduleState.origin;
+  assert(!origin.bytecodeReader && "artifact read twice");
+  origin.bytecodeReader = std::move(bytecodeReader);
   // keep buffer alive for deferred materialize
-  moduleState.sourceMgr = sourceMgr;
-  moduleState.tmpModule = tmpModule;
+  origin.sourceMgr = sourceMgr;
+  origin.tmpModule = tmpModule;
+  origin.bytecodeImportLoc = loc;
 
   impl->moduleStates[&decl] = &moduleState;
   impl->packageStates[cast_or_null<PackageOp>(decl.getIfOperation())] =
@@ -2456,10 +2483,12 @@ SharedState::resolveDeclFromBytecode(ASTDecl &decl,
     if (!isa_and_nonnull<FileModuleOp, PackageOp>(parentDecl->getIfOperation()))
       continue;
 
+    // Any module inside the artifact answers, since they all share its origin.
     ModuleState *moduleState = impl->moduleStates[parentDecl];
-    if (moduleState->bytecodeReader) {
-      bytecodeReader = &*moduleState->bytecodeReader;
-      packageImportLoc = moduleState->importLoc;
+    ModuleOrigin *origin = moduleState->origin;
+    if (origin && origin->bytecodeReader) {
+      bytecodeReader = &*origin->bytecodeReader;
+      packageImportLoc = origin->bytecodeImportLoc;
       break;
     }
   } while ((parentDecl = parentDecl->parentDecl));
@@ -2614,16 +2643,12 @@ SharedState::resolveDeclFromBytecode(ASTDecl &decl,
             diags.recordImportedFileIncludeLoc(op->getLoc(), packageImportLoc);
             ASTDecl &decl = addDeclForOp(op, name);
 
-            // Record a nested module state for this decl, inheriting the
-            // enclosing package's spec (kind and path) under its own name.
+            // Record a nested module state for this decl. The child is a
+            // module inside the artifact's one file, so it shares the
+            // enclosing package's origin and holds no spec of its own: it was
+            // never resolved, so there is no candidate to describe.
             auto childState = std::make_unique<ModuleState>(&decl);
-            // The child is a module inside the artifact's one file, so it
-            // shares the enclosing package's origin rather than owning one.
             childState->origin = packageState->origin;
-            if (packageState->spec) {
-              childState->spec = *packageState->spec;
-              childState->spec->name = name.getValue().str();
-            }
             ModuleState &moduleState =
                 packageState->insertNestedModule(name, std::move(childState));
 
@@ -2660,9 +2685,9 @@ LogicalResult SharedState::finalizeImportedBytecodeModules() {
   // Collect all bytecode readers so we can identify which ops are still lazy
   // stubs (isMaterializable == true).
   SmallVector<mlir::BytecodeReader *> readers;
-  for (ModuleState *module : llvm::make_second_range(impl->moduleStates)) {
-    if (module->bytecodeReader)
-      readers.push_back(&*module->bytecodeReader);
+  for (auto &origin : impl->originAllocations) {
+    if (origin->bytecodeReader)
+      readers.push_back(&*origin->bytecodeReader);
   }
 
   // Collect unparsed bytecode decls whose ops are fully materialized (not lazy
@@ -2687,17 +2712,17 @@ LogicalResult SharedState::finalizeImportedBytecodeModules() {
     decl->setIRValue(PValue(BoolAttr::get(getContext(), false)));
   }
 
-  for (auto &module : llvm::make_second_range(impl->moduleStates)) {
-    if (!module->bytecodeReader)
+  for (auto &origin : impl->originAllocations) {
+    if (!origin->bytecodeReader)
       continue;
 
     // Finalize the bytecode. Any op that was never materialized is dropped,
     // *unless* its results are still referenced by materialized IR.
-    if (failed(module->bytecodeReader->finalize(
+    if (failed(origin->bytecodeReader->finalize(
             [&](Operation *op) { return !op->use_empty(); })))
       return failure();
     // Erase the temporary ModuleOp that was used to read bytecode.
-    module->tmpModule.erase();
+    origin->tmpModule.erase();
   }
 
   for (Operation *op : materializedUnparsedOps)
