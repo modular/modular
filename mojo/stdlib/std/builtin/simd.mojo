@@ -2114,12 +2114,38 @@ struct SIMD[dtype: DType, length: SIMDLength](
     def __hash__[H: Hasher](self, mut hasher: H):
         """Updates hasher with this SIMD value.
 
+        For a floating-point vector, `-0.0` hashes as `0.0`, since the two
+        compare equal.
+
         Parameters:
             H: The hasher type.
 
         Args:
             hasher: The hasher instance.
         """
+
+        # `float8_e8m0fnu` encodes no zero at all, so asking for the bit
+        # pattern of one is a compile error rather than a value to fold.
+        comptime if (
+            Self.dtype.is_floating_point()
+            and Self.dtype != DType.float8_e8m0fnu
+        ):
+            comptime neg_zero = Scalar[Self.dtype](-0.0).to_bits()
+
+            # The `fnuz` encodings have no negative zero, so nothing to fold.
+            comptime if neg_zero != 0:
+                # Match on the bit pattern rather than the value: a float
+                # compare crashes the compiler for every sub-16-bit encoding
+                # (MOCO-4680). The hashers start from `to_bits()` either way,
+                # so this leaves every other value's hash unchanged.
+                var bits = self.to_bits()
+                hasher._update_with_simd(
+                    bits.eq(type_of(bits)(neg_zero)).select(
+                        type_of(bits)(0), bits
+                    )
+                )
+                return
+
         hasher._update_with_simd(self)
 
     @always_inline

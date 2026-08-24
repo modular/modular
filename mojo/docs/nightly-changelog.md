@@ -381,6 +381,12 @@ This release completes the removal of APIs deprecated during the v1.0 cycle.
   `where Ts.contains[T]()` with such a `T` failed with `lacking evidence to
   prove correctness`, even though `T` was plainly in `Ts`.
 
+- `hash()` on a floating-point `SIMD` value now normalizes the sign of zero, so
+  `hash(-0.0) == hash(0.0)`. Hashing the raw bit pattern broke the `Hashable`
+  contract that equal values hash equally: a `Dict` or `Set` could hold both
+  `-0.0` and `0.0` as separate keys even though they compare equal, and a
+  lookup could then return a value stored under the other key.
+
 - `mojo build` can cross-compile to RISC-V again. Emitting LLVM IR, assembly,
   or an object for a `riscv32` or `riscv64` triple failed with `target '...'
   is not supported by this build`.
