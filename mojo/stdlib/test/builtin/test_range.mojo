@@ -407,6 +407,18 @@ def test_range_forward_step_past_int_limit() raises:
     assert_equal(descending[0], Int.MIN + 1)
 
 
+def test_range_forward_bounds_past_dtype_limit() raises:
+    # The step off the last element wraps out of the dtype and lands the cursor
+    # back inside `[start, end)`. The iterator is spent at that point, and its
+    # size hint has to say so rather than count from where the cursor landed.
+    _test_range_iter_bounds(range(UInt8(250), UInt8(255), UInt8(2)), 3)
+    _test_range_iter_bounds(range(UInt8(0), UInt8(255), UInt8(200)), 2)
+    _test_range_iter_bounds(range(Int8(120), Int8(127), Int8(5)), 2)
+    _test_range_iter_bounds(range(Int8(-120), Int8(-128), Int8(-5)), 2)
+    _test_range_iter_bounds(range(Int.MAX - 1, Int.MAX, 5), 1)
+    _test_range_iter_bounds(range(Int.MIN + 1, Int.MIN, -5), 1)
+
+
 def test_range_forward_step_past_dtype_limit_comptime() raises:
     # Unrolling the same ranges must terminate too: a cursor that wrapped back
     # into the range would hang the compiler rather than the program.

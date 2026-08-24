@@ -8,6 +8,11 @@ _DATA = [
 
 _NO_ASAN = [
     "test_simd.mojo",  # Takes too long to compile with ASAN
+    # 25 `compile_info[...]` calls, every one of them retargeting to NVPTX or
+    # AMDGPU. Under asan on aarch64 the comptime compiler invocations blow past
+    # the remote-executor timeout, the same way `test_compile_atomic.mojo` does.
+    # Tracked in MOCO-3794.
+    "test_range_codegen.mojo",
 ]
 
 _PLATFORM_CONSTRAINTS = {
@@ -70,6 +75,13 @@ _EXPECT_CRASH = [
     "test_range_len_overflow_abort.mojo",
 ]
 
+# Codegen budgets have to read the assembly a release build emits, so this test
+# opts out of the debug info and the assertions the rest of the package compiles
+# with — both of which land instructions in the loops it measures.
+_CODEGEN_TESTS = [
+    "test_range_codegen.mojo",
+]
+
 _EXTRA_DEPS = {
     "test_device_passable.mojo": ["//max:max_mojo"],
 }
@@ -110,8 +122,22 @@ _EXTRA_DEPS = {
     )
     for src in glob(
         ["*.mojo"],
-        exclude = _FILECHECK_TESTS + _LIT_TESTS,
+        exclude = _FILECHECK_TESTS + _LIT_TESTS + _CODEGEN_TESTS,
     )
+]
+
+[
+    mojo_test(
+        name = src + ".test",
+        srcs = [src],
+        enable_assertions = False,
+        target_compatible_with = _PLATFORM_CONSTRAINTS.get(src, []),
+        deps = [
+            "@mojo//:std",
+            "@mojo//:test_utils",
+        ],
+    )
+    for src in _CODEGEN_TESTS
 ]
 
 lit_tests(
