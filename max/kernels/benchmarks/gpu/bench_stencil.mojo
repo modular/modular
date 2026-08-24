@@ -216,9 +216,8 @@ def bench_stencil_avg_pool[
             avg_pool_compute_finalize_gpu,
         )
 
-    @__parameter
     @always_inline
-    def bench_gpu(mut b: Bencher) raises:
+    def bench_gpu(mut b: Bencher) raises {imm}:
         bencher_iter_custom(b, kernel_launch, ctx)
 
     def map_fn_cpu(
@@ -264,12 +263,10 @@ def bench_stencil_avg_pool[
         var res = val / Scalar[dtype](pool_window_h * pool_window_w)
         h_output_ref.store_linear(point, res)
 
-    @__parameter
     @always_inline
-    def bench_cpu(mut b: Bencher):
-        @__parameter
+    def bench_cpu(mut b: Bencher) {imm}:
         @always_inline
-        def kernel_launch():
+        def kernel_launch() {imm}:
             comptime stencil_axis = IndexList[stencil_rank](1, 2)
             stencil[
                 rank,
@@ -288,7 +285,7 @@ def bench_stencil_avg_pool[
                 avg_pool_compute_finalize_cpu,
             )
 
-        b.iter[kernel_launch]()
+        b.iter(kernel_launch)
 
     # Calculate FLOPs for throughput measurement
     def compute_flops() -> Int:
@@ -311,12 +308,14 @@ def bench_stencil_avg_pool[
         num_channels,
     )
     var flops = ThroughputMeasure(BenchMetric.flops, compute_flops())
-    m.bench_function[bench_gpu](
+    m.bench_function(
+        bench_gpu,
         BenchId(bench_name + "_gpu"),
         [flops],
     )
 
-    m.bench_function[bench_cpu](
+    m.bench_function(
+        bench_cpu,
         BenchId(bench_name + "_cpu"),
         [flops],
     )
@@ -502,9 +501,8 @@ def bench_stencil_max_pool[
             max_pool_compute_finalize_gpu,
         )
 
-    @__parameter
     @always_inline
-    def bench_gpu(mut b: Bencher) raises:
+    def bench_gpu(mut b: Bencher) raises {imm}:
         bencher_iter_custom(b, kernel_launch, ctx)
 
     def map_fn_cpu(
@@ -549,12 +547,10 @@ def bench_stencil_max_pool[
     }:
         h_output_ref.store_linear(point, val)
 
-    @__parameter
     @always_inline
-    def bench_cpu(mut b: Bencher):
-        @__parameter
+    def bench_cpu(mut b: Bencher) {imm}:
         @always_inline
-        def kernel_launch():
+        def kernel_launch() {imm}:
             comptime stencil_axis = IndexList[stencil_rank](1, 2)
             stencil[
                 rank,
@@ -573,7 +569,7 @@ def bench_stencil_max_pool[
                 max_pool_compute_finalize_cpu,
             )
 
-        b.iter[kernel_launch]()
+        b.iter(kernel_launch)
 
     # Calculate FLOPs for throughput measurement
     def compute_flops() -> Int:
@@ -593,12 +589,14 @@ def bench_stencil_max_pool[
         num_channels,
     )
     var flops = ThroughputMeasure(BenchMetric.flops, compute_flops())
-    m.bench_function[bench_gpu](
+    m.bench_function(
+        bench_gpu,
         BenchId(bench_name + "_gpu"),
         [flops],
     )
 
-    m.bench_function[bench_cpu](
+    m.bench_function(
+        bench_cpu,
         BenchId(bench_name + "_cpu"),
         [flops],
     )
@@ -779,9 +777,8 @@ def bench_stencil_avg_pool_padded[
             avg_pool_compute_finalize_gpu,
         )
 
-    @__parameter
     @always_inline
-    def bench_gpu(mut b: Bencher) raises:
+    def bench_gpu(mut b: Bencher) raises {imm}:
         bencher_iter_custom(b, kernel_launch, ctx)
 
     def map_fn_cpu(
@@ -829,12 +826,10 @@ def bench_stencil_avg_pool_padded[
         var res = val / Scalar[dtype](pool_window_h * pool_window_w)
         h_output_ref.store_linear(point, res)
 
-    @__parameter
     @always_inline
-    def bench_cpu(mut b: Bencher):
-        @__parameter
+    def bench_cpu(mut b: Bencher) {imm}:
         @always_inline
-        def kernel_launch():
+        def kernel_launch() {imm}:
             comptime stencil_axis = IndexList[stencil_rank](1, 2)
             stencil[
                 rank,
@@ -853,7 +848,7 @@ def bench_stencil_avg_pool_padded[
                 avg_pool_compute_finalize_cpu,
             )
 
-        b.iter[kernel_launch]()
+        b.iter(kernel_launch)
 
     # Calculate FLOPs for throughput measurement
     def compute_flops() -> Int:
@@ -879,12 +874,14 @@ def bench_stencil_avg_pool_padded[
     )
 
     var flops = ThroughputMeasure(BenchMetric.flops, compute_flops())
-    m.bench_function[bench_gpu](
+    m.bench_function(
+        bench_gpu,
         BenchId(bench_name + "_gpu"),
         [flops],
     )
 
-    m.bench_function[bench_cpu](
+    m.bench_function(
+        bench_cpu,
         BenchId(bench_name + "_cpu"),
         [flops],
     )

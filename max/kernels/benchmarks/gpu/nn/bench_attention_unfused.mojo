@@ -146,15 +146,15 @@ def bench_flash[
 
     if bench:
 
-        @__parameter
         @always_inline
-        def bench_func(mut b: Bencher) raises:
+        def bench_func(mut b: Bencher) raises {imm}:
             bencher_iter_custom(b, _kernel_launch, ctx)
 
         def compute_flops() {imm} -> Int:
             return 4 * batch_size * num_heads * seq_len * num_keys * depth
 
-        m.bench_function[bench_func](
+        m.bench_function(
+            bench_func,
             BenchId(
                 "flash_attention",
                 # fmt: off
@@ -297,15 +297,15 @@ def bench_naive[
 
     if bench:
 
-        @__parameter
         @always_inline
-        def bench_func(mut b: Bencher) raises:
+        def bench_func(mut b: Bencher) raises {imm}:
             bencher_iter_custom(b, _kernel_launch, ctx)
 
         def compute_flops() {imm} -> Int:
             return 4 * batch_size * num_heads * seq_len * num_keys * depth
 
-        m.bench_function[bench_func](
+        m.bench_function(
+            bench_func,
             BenchId(
                 "mha_gpu_naive",
                 # fmt: off
@@ -486,15 +486,15 @@ def bench_manual[
 
     if bench:
 
-        @__parameter
         @always_inline
-        def bench_func(mut b: Bencher) raises:
+        def bench_func(mut b: Bencher) raises {imm}:
             bencher_iter_custom(b, _kernel_launch, ctx)
 
         def compute_flops() {imm} -> Int:
             return 4 * batch_size * num_heads * seq_len * num_keys * depth
 
-        m.bench_function[bench_func](
+        m.bench_function(
+            bench_func,
             BenchId(
                 "manual_matmul",
                 # fmt: off

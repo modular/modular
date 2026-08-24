@@ -251,22 +251,23 @@ def bench_fused_qk_rms_norm_rope[
         kv_blocks_fused_d, kv_block_rt
     )
 
-    @__parameter
-    @__copy_capture(
-        kv_blocks_ref_lt,
-        cache_lengths_tensor,
-        paged_lut_tensor,
-        q_tile,
-        q_out_ref_tile,
-        gamma_q_tile,
-        gamma_k_tile,
-        freqs_tile,
-        row_offsets_tile,
-        max_prompt_len,
-        max_cache_len,
-    )
     @always_inline
-    def bench_two_step(mut b: Bencher):
+    def bench_two_step(
+        mut b: Bencher,
+    ) {
+        var kv_blocks_ref_lt,
+        var cache_lengths_tensor,
+        var paged_lut_tensor,
+        var q_tile,
+        var q_out_ref_tile,
+        var gamma_q_tile,
+        var gamma_k_tile,
+        var freqs_tile,
+        var row_offsets_tile,
+        var max_prompt_len,
+        var max_cache_len,
+        imm,
+    }:
         @always_inline
         def kernel_launch(ctx: DeviceContext) raises {imm}:
             var kv_ref = PagedKVCacheCollection[dtype, kv_params, page_size](
@@ -307,30 +308,32 @@ def bench_fused_qk_rms_norm_rope[
 
         bencher_iter_custom(b, kernel_launch, ctx)
 
-    m.bench_function[bench_two_step](
+    m.bench_function(
+        bench_two_step,
         BenchId(
             _bench_name[
                 dtype, head_dim, rope_dim, num_q_heads, num_kv_heads, "two_step"
             ](batch_size, seq_len)
-        )
+        ),
     )
 
-    @__parameter
-    @__copy_capture(
-        kv_blocks_fused_lt,
-        cache_lengths_tensor,
-        paged_lut_tensor,
-        q_fused_tile,
-        q_out_fused_tile,
-        gamma_q_tile,
-        gamma_k_tile,
-        freqs_tile,
-        row_offsets_tile,
-        max_prompt_len,
-        max_cache_len,
-    )
     @always_inline
-    def bench_fused(mut b: Bencher):
+    def bench_fused(
+        mut b: Bencher,
+    ) {
+        var kv_blocks_fused_lt,
+        var cache_lengths_tensor,
+        var paged_lut_tensor,
+        var q_fused_tile,
+        var q_out_fused_tile,
+        var gamma_q_tile,
+        var gamma_k_tile,
+        var freqs_tile,
+        var row_offsets_tile,
+        var max_prompt_len,
+        var max_cache_len,
+        imm,
+    }:
         @always_inline
         def kernel_launch(ctx: DeviceContext) raises {imm}:
             var kv_fused = PagedKVCacheCollection[dtype, kv_params, page_size](
@@ -370,12 +373,13 @@ def bench_fused_qk_rms_norm_rope[
 
         bencher_iter_custom(b, kernel_launch, ctx)
 
-    m.bench_function[bench_fused](
+    m.bench_function(
+        bench_fused,
         BenchId(
             _bench_name[
                 dtype, head_dim, rope_dim, num_q_heads, num_kv_heads, "fused"
             ](batch_size, seq_len)
-        )
+        ),
     )
 
 

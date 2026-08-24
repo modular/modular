@@ -386,10 +386,11 @@ def bench_rms_norm_gemm_pdl[
             )
 
         @always_inline
-        def bench_fn(mut bench: Bencher) raises capturing:
+        def bench_fn(mut bench: Bencher) raises {imm}:
             bencher_iter_custom(bench, call_fn, ctx)
 
-        b.bench_function[bench_fn](
+        b.bench_function(
+            bench_fn,
             BenchId(vname, input_id=bench_prefix),
             [ThroughputMeasure(BenchMetric.bytes, total_bytes)],
         )

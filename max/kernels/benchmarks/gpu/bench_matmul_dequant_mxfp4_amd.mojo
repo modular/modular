@@ -210,9 +210,8 @@ def bench_dequant_mxfp4[
             num_cols=K,
         )
 
-    @__parameter
     @always_inline
-    def bench_func(mut bencher: Bencher) raises:
+    def bench_func(mut bencher: Bencher) raises {imm}:
         bencher_iter_custom(bencher, kernel_launch, ctx)
 
     # Memory traffic: read packed (N*K/2) + scales (N*K/32), write FP8 (N*K)
@@ -221,7 +220,8 @@ def bench_dequant_mxfp4[
     ]()
     var bandwidth = ThroughputMeasure(BenchMetric.bytes, total_bytes)
 
-    b.bench_function[bench_func](
+    b.bench_function(
+        bench_func,
         BenchId(String("dequant_mxfp4(N=", N, ",K=", K, ")")),
         [bandwidth],
     )
@@ -254,16 +254,16 @@ def bench_cast_bf16_to_fp8[
     ) raises {mut a_fp8_tt, imm}:
         _cast_bf16_to_fp8(ctx, a_fp8_tt, a_tt, M, K)
 
-    @__parameter
     @always_inline
-    def bench_func(mut bencher: Bencher) raises:
+    def bench_func(mut bencher: Bencher) raises {imm}:
         bencher_iter_custom(bencher, kernel_launch, ctx)
 
     # Memory traffic: read BF16 (M*K*2), write FP8 (M*K*1)
     var total_bytes = M * K * (size_of[DType.bfloat16]() + size_of[fp8_type]())
     var bandwidth = ThroughputMeasure(BenchMetric.bytes, total_bytes)
 
-    b.bench_function[bench_func](
+    b.bench_function(
+        bench_func,
         BenchId(String("cast_bf16_to_fp8(M=", M, ",K=", K, ")")),
         [bandwidth],
     )
@@ -317,14 +317,14 @@ def bench_fp8_matmul[
             c_tt, a_fp8_tt, b_fp8_tt, ctx
         )
 
-    @__parameter
     @always_inline
-    def bench_func(mut bencher: Bencher) raises:
+    def bench_func(mut bencher: Bencher) raises {imm}:
         bencher_iter_custom(bencher, kernel_launch, ctx)
 
     var flops = ThroughputMeasure(BenchMetric.flops, 2 * M * N * K)
 
-    b.bench_function[bench_func](
+    b.bench_function(
+        bench_func,
         BenchId(String("fp8_matmul(M=", M, ",N=", N, ",K=", K, ")")),
         [flops],
     )
@@ -367,14 +367,14 @@ def bench_mxfp4_matmul[
 
     if run_benchmark:
 
-        @__parameter
         @always_inline
-        def bench_func(mut bencher: Bencher) raises:
+        def bench_func(mut bencher: Bencher) raises {imm}:
             bencher_iter_custom(bencher, kernel_launch, ctx)
 
         var flops = ThroughputMeasure(BenchMetric.flops, 2 * M * N * K)
 
-        b.bench_function[bench_func](
+        b.bench_function(
+            bench_func,
             BenchId(
                 String(
                     "mxfp4_matmul(M=",

@@ -314,12 +314,12 @@ def bench_shape(
             ctx,
         )
 
-    @__parameter
     @always_inline
-    def fused_bench(mut b: Bencher) raises:
+    def fused_bench(mut b: Bencher) raises {imm}:
         bencher_iter_custom(b, fused_launch, ctx)
 
-    m.bench_function[fused_bench](
+    m.bench_function(
+        fused_bench,
         BenchId("fused   " + regime + " total_seq=" + String(total_seq)),
         [
             ThroughputMeasure(BenchMetric.flops, flops),
@@ -375,12 +375,12 @@ def bench_shape(
             ctx,
         )
 
-    @__parameter
     @always_inline
-    def unfused_bench(mut b: Bencher) raises:
+    def unfused_bench(mut b: Bencher) raises {imm}:
         bencher_iter_custom(b, unfused_launch, ctx)
 
-    m.bench_function[unfused_bench](
+    m.bench_function(
+        unfused_bench,
         BenchId("unfused " + regime + " total_seq=" + String(total_seq)),
         [
             ThroughputMeasure(BenchMetric.flops, flops),
