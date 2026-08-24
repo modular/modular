@@ -541,6 +541,15 @@ This version is still a work in progress.
   cold multi-second compile of a complex schema now delays only that
   request instead of stalling inter-token latency for every active
   request.
+- A JSON schema that composes with `allOf` is now enforced instead of
+  refused. `response_format` and tool-call schemas previously returned 400
+  for any `allOf` with more than one member, or with a sibling object
+  keyword. The members now fold into one schema before compilation,
+  including members nested in another member's `allOf` and members that are
+  a bare local `$ref`, so the common "shared definition plus an extension"
+  shape compiles. A conjunction that cannot be folded exactly still returns
+  400 naming the keyword pair at fault, rather than compiling to a looser
+  grammar.
 
 - MAX Serve no longer drops uvicorn's log records. The console, file, and
   OTLP handlers filter on an allowlist of logger prefixes that omitted
