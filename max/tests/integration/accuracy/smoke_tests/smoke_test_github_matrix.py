@@ -46,6 +46,7 @@ DISABLE = set(RUNNERS)
 # Runs only on the dedicated internal 8xB200 runner; everything else excluded.
 INTERNAL_ONLY = set(RUNNERS) - {"8xB200_internal"}
 B200_2X_ONLY = set(RUNNERS) - {"2xB200"}
+B200_8X_ONLY = set(RUNNERS) - {"8xB200"}
 # The AMD members of XL. A B200-only model excludes the whole set rather than
 # naming one runner, so adding the next AMD runner is a change here and not a
 # sweep over every entry that forgot to mention it.
@@ -96,7 +97,10 @@ HF_MODELS: Mapping[str, set[str]] = {
     # the AMD 8x runner, hence the literal 4xMI355 where its neighbours use
     # AMD_XL. max-ci exercises the private M3 arch; sglang serves the HF
     # checkpoint as a reference. vLLM and released MAX are excluded.
-    "MiniMaxAI/MiniMax-M3-MXFP8": NON_XL | {"4xMI355", "max", "vllm"},
+    # 8xB200 serves the production MTP recipe, which is the __mtp alias below;
+    # sglang still runs the plain checkpoint there as the reference.
+    "MiniMaxAI/MiniMax-M3-MXFP8": NON_XL
+    | {"4xMI355", "max", "vllm", "max-ci@8xB200"},
     "modularai/MiniMax-M3-MXFP6": NON_XL | {"8xB200", "max"},
     "mistralai/Mistral-Small-3.1-24B-Instruct-2503": MULTI | {"vllm"},
     "modularai/Llama-3.1-405B-Instruct-autofp8": NON_XL | {"8xMI355", "max"},
@@ -147,7 +151,13 @@ CUSTOM_MODELS: Mapping[str, set[str]] = {
     # disaggregated serving yet, so it can't run on multi-GPU runners.
     "google/gemma-4-31B-it__jenga": MULTI,
     "thinkingmachines/Inkling-Small-NVFP4__mtp": B200_2X_ONLY,
+    "MiniMaxAI/MiniMax-M3-MXFP8__mtp": B200_8X_ONLY | {"max"},
 }
+
+# Aliases whose recipe ships with a private arch, so it cannot appear in
+# MODEL_RECIPES: the private entrypoint resolves it from its own hw_recipes
+# table instead.
+PRIVATE_RECIPE_MODELS = frozenset({"MiniMaxAI/MiniMax-M3-MXFP8__mtp"})
 
 MODELS: Mapping[str, set[str]] = {**HF_MODELS, **CUSTOM_MODELS}
 # fmt: on
