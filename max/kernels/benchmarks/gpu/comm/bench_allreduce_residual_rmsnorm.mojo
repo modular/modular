@@ -768,11 +768,10 @@ def bench_allreduce_rmsnorm_fp8[
 
     # ===== Benchmark 1: allreduce only =====
 
-    @__parameter
     @always_inline
     def bench_allreduce_iter(
         mut bench: Bencher, ctx: DeviceContext, ctx_idx: Int
-    ) raises:
+    ) raises {mut in_tensors, imm}:
         @always_inline
         def call_fn(
             ctx_inner: DeviceContext, cache_iter: Int
@@ -793,8 +792,9 @@ def bench_allreduce_rmsnorm_fp8[
 
         bencher_iter_custom(bench, call_fn, ctx)
 
-    bench_multicontext[bench_allreduce_iter](
+    bench_multicontext(
         b,
+        bench_allreduce_iter,
         list_of_ctx,
         BenchId("allreduce_only", input_id=bench_name_prefix),
         [ThroughputMeasure(BenchMetric.bytes, total_bytes)],
@@ -803,11 +803,10 @@ def bench_allreduce_rmsnorm_fp8[
     # ===== Benchmark 2: allreduce + fused RMSNorm+FP8 (FP8 only) =====
     comptime if quantize:
 
-        @__parameter
         @always_inline
         def bench_ar_fused_iter(
             mut bench: Bencher, ctx: DeviceContext, ctx_idx: Int
-        ) raises:
+        ) raises {mut in_tensors, imm}:
             @always_inline
             def call_fn(
                 ctx_inner: DeviceContext, cache_iter: Int
@@ -865,8 +864,9 @@ def bench_allreduce_rmsnorm_fp8[
 
             bencher_iter_custom(bench, call_fn, ctx)
 
-        bench_multicontext[bench_ar_fused_iter](
+        bench_multicontext(
             b,
+            bench_ar_fused_iter,
             list_of_ctx,
             BenchId(
                 "allreduce_then_fused_rmsnorm_fp8",
@@ -877,11 +877,10 @@ def bench_allreduce_rmsnorm_fp8[
 
     # ===== Benchmark 3: fully fused allreduce+RMSNorm (single kernel) =====
 
-    @__parameter
     @always_inline
     def bench_fully_fused_iter(
         mut bench: Bencher, ctx: DeviceContext, ctx_idx: Int
-    ) raises:
+    ) raises {mut in_tensors, imm}:
         @always_inline
         def call_fn(
             ctx_inner: DeviceContext, cache_iter: Int
@@ -914,8 +913,9 @@ def bench_allreduce_rmsnorm_fp8[
 
         bencher_iter_custom(bench, call_fn, ctx)
 
-    bench_multicontext[bench_fully_fused_iter](
+    bench_multicontext(
         b,
+        bench_fully_fused_iter,
         list_of_ctx,
         BenchId(
             "fused_allreduce_rmsnorm_fp8",
@@ -926,11 +926,10 @@ def bench_allreduce_rmsnorm_fp8[
     # ===== Benchmark 4: allreduce (add epilogue) + fused RMSNorm+FP8 (FP8) ===
     comptime if quantize:
 
-        @__parameter
         @always_inline
         def bench_ar_add_fused_iter(
             mut bench: Bencher, ctx: DeviceContext, ctx_idx: Int
-        ) raises:
+        ) raises {mut in_tensors, mut ar_out_dev, imm}:
             @always_inline
             def call_fn(
                 ctx_inner: DeviceContext, cache_iter: Int
@@ -1015,8 +1014,9 @@ def bench_allreduce_rmsnorm_fp8[
 
             bencher_iter_custom(bench, call_fn, ctx)
 
-        bench_multicontext[bench_ar_add_fused_iter](
+        bench_multicontext(
             b,
+            bench_ar_add_fused_iter,
             list_of_ctx,
             BenchId(
                 "allreduce_epilogue_add_then_fused_rmsnorm_fp8",
@@ -1027,11 +1027,10 @@ def bench_allreduce_rmsnorm_fp8[
 
     # ===== Benchmark 5: fused allreduce+add+RMSNorm (single kernel) =====
 
-    @__parameter
     @always_inline
     def bench_fused_add_iter(
         mut bench: Bencher, ctx: DeviceContext, ctx_idx: Int
-    ) raises:
+    ) raises {mut in_tensors, imm}:
         @always_inline
         def call_fn(
             ctx_inner: DeviceContext, cache_iter: Int
@@ -1072,8 +1071,9 @@ def bench_allreduce_rmsnorm_fp8[
 
         bencher_iter_custom(bench, call_fn, ctx)
 
-    bench_multicontext[bench_fused_add_iter](
+    bench_multicontext(
         b,
+        bench_fused_add_iter,
         list_of_ctx,
         BenchId(
             "fused_allreduce_residual_rmsnorm_fp8",

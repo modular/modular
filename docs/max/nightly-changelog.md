@@ -823,6 +823,13 @@ This version is still a work in progress.
   drop `@__parameter` / `@__copy_capture` in favor of an explicit capture list,
   for example `def body(start: Int, end: Int) {imm}:`.
 
+- Removed the parametric
+  `max.benchmark.bench_multicontext[fn](bench, ctxs, ...)` overload. Pass the
+  body as a unified closure in the second runtime argument:
+  `bench_multicontext(bench, fn, ctxs, ...)`. Nested closures passed this way
+  drop `@__parameter` in favor of an explicit capture list such as `{imm}` or
+  `{mut buf, imm}`.
+
 - Removed the parametric `capturing` overloads of
   `DeviceContext.execution_time[fn](num_iters)`,
   `DeviceContext.execution_time_iter[fn](num_iters)`, and

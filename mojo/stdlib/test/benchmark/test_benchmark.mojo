@@ -365,6 +365,22 @@ def test_bench_function_no_arg_unified() raises:
     assert_true(count > 0)
 
 
+def test_bench_function_no_arg_raising_unified() raises:
+    """Tests Bench.bench_function with a raising no-arg unified closure."""
+    var bench = Bench(BenchConfig(max_iters=2, max_runtime_secs=0.01))
+
+    var count = 0
+
+    @always_inline
+    def my_func() raises {
+        mut count,
+    }:
+        count += 1
+
+    bench.bench_function(my_func, BenchId("test_noarg_raising_unified"))
+    assert_true(count > 0)
+
+
 def test_bench_id_hash() raises:
     var bench_id1 = BenchId("foo()", "123")
 

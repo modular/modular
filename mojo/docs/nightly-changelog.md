@@ -142,6 +142,10 @@ This version is still a work in progress.
 
 - `Bencher.bench_function()` now takes a raising closure.
 
+- The zero-argument `Bench.bench_function()` overload now takes a raising
+  closure as a runtime argument. The compile-time parameter form
+  `bench_function[fn]()` for a raising zero-argument body has been removed.
+
 - `Bencher.iter_preproc()` now takes its closures as runtime arguments instead
   of compile-time parameters, along with an explicit state value that is passed
   mutably to both: the preprocessing function prepares the state before each
