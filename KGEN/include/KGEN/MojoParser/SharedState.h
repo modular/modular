@@ -22,6 +22,7 @@
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "KGEN/LITDialect/OriginTrackable.h"
 #include "KGEN/MojoParser/IRValues.h"
+#include "KGEN/MojoParser/ModuleSpec.h"
 #include "KGEN/MojoParser/MojoDiags.h"
 
 #include "Support/DebugInfoDialect/IR/DIBuilder.h"
@@ -45,6 +46,7 @@ class ASTDecl;
 class ASTType;
 class ClosureEmitter;
 class DeclResolver;
+class ModuleLoader;
 class ExprNode;
 struct Operand;
 class FileModuleOp;
@@ -128,6 +130,7 @@ public:
   const CompilationOptions &options;
 
   std::unique_ptr<DeclResolver> declResolver;
+  std::unique_ptr<ModuleLoader> moduleLoader;
   std::unique_ptr<ClosureEmitter> closureEmitter;
   std::unique_ptr<DebugInfo::DIBuilder> diBuilder;
   ParserListener *parserListener;
@@ -151,10 +154,15 @@ public:
   llvm::SourceMgr &getSourceMgr() const { return diags.sourceMgr; }
   MLIRContext *getContext() const { return diags.context; }
   DeclResolver &getDeclResolver() const { return *declResolver; }
+  ModuleLoader &getModuleLoader() const { return *moduleLoader; }
   ClosureEmitter &getClosureEmitter() const { return *closureEmitter; }
 
   /// Returns if we should diagnose missing doc strings.
   bool shouldDiagnoseMissingDocStrings() const;
+
+  /// Returns true if `.mojoc` candidates should be ignored when resolving
+  /// imports, so that a source build never picks up a prebuilt package.
+  bool arePrebuiltPackagesDisabled() const { return disablePrebuiltPackages; }
 
   /// Get the library base path for documentation generation.
   StringRef getDocsBasePath() const { return docsBasePath; }
@@ -404,136 +412,6 @@ public:
 
   /// Get the list of files included while processing all modules.
   ArrayRef<std::string> getIncludedFiles() const;
-
-  /// Traverse the directories available for importing modules and packages,
-  /// calling the given callback for each directory found.
-  void
-  traverseImportDirectories(unsigned importBufferFileId,
-                            function_ref<WalkResult(StringRef)> callback) const;
-
-  struct ModuleSpec {
-    /// Mojo import kinds. Enumerator order defines resolution priority: a
-    /// lower value outranks a higher one when several candidates share a stem.
-    enum class Kind {
-      SourcePackage,
-      Precompiled,
-      SourceModule,
-      SourceDir,
-    };
-
-    /// Importable name: whole filename for directories, stem for files
-    std::string name;
-    std::filesystem::path path;
-    Kind kind;
-
-    /// For a SourceDir resolved from the import path: the dotted chain of
-    /// directory names (including `name`) relative to the import roots. A
-    /// plain directory is a namespace whose one name may span several roots, so
-    /// submodules resolve against these components under every import root, not
-    /// against `path`, which records only the first root's portion. Empty for
-    /// every other kind, and for directories nested inside a source package,
-    /// which stay single-homed and resolve through `path`.
-    ///
-    /// For example, given `-I one -I two` and
-    ///
-    ///   one/foo/bar/baz.mojo
-    ///   two/foo/bar/qux.mojo
-    ///
-    /// the name `foo.bar` is one namespace spanning both roots. Its spec is
-    ///
-    ///   { name = "bar", path = "one/foo/bar", kind = SourceDir,
-    ///     namespaceComponents = ["foo", "bar"] }
-    ///
-    /// and resolving `foo.bar.qux` searches `<root>/foo/bar` under every
-    /// root, finding two/foo/bar/qux.mojo even though `path` names the
-    /// first root's directory. The closed candidate baz.mojo gets
-    ///
-    ///   { name = "baz", path = "one/foo/bar/baz.mojo", kind = SourceModule,
-    ///     namespaceComponents = [] }
-    std::vector<std::string> namespaceComponents = {};
-
-    bool isNamespace() const {
-      return kind == Kind::SourceDir && !namespaceComponents.empty();
-    }
-
-    /// Return the module classification of a given path, optionally matching a
-    /// specific name. Returns std::nullopt if not a (matching) ModuleSpec.
-    static std::optional<ModuleSpec> classify(const std::filesystem::path &path,
-                                              llvm::StringRef moduleName = "");
-
-    /// Return true if the import candidate (kind, path) takes precedence over
-    /// the other. Higher-priority kinds win; between candidates of
-    /// the same kind (e.g. directories foo and foo.bar, which share the stem
-    /// 'foo'), the lexicographically smaller filename wins so the result does
-    /// not depend on the platform's directory iteration order.
-    bool takesImportPrecedence(ModuleSpec other) {
-      if (kind != other.kind)
-        return kind < other.kind;
-      return path.filename() < other.path.filename();
-    }
-
-    bool isPrecompiled() const { return kind == ModuleSpec::Kind::Precompiled; }
-
-    bool isSourcePackage() const {
-      return kind == ModuleSpec::Kind::SourcePackage;
-    }
-
-    bool isSourcePackageLike() const {
-      return kind == ModuleSpec::Kind::SourcePackage ||
-             kind == ModuleSpec::Kind::SourceDir;
-    }
-
-    bool isSourceModule() const {
-      return kind == ModuleSpec::Kind::SourceModule;
-    }
-
-    /// The canonical form of `path`, with symlinks resolved: the identity of
-    /// the entity this spec names.
-    std::string canonicalPath() const;
-  };
-
-  /// Resolve the absolute path for a given module name. Returns nullopt if the
-  /// module cannot be found.
-  std::optional<ModuleSpec> resolveModulePath(StringRef moduleName,
-                                              llvm::SMLoc includeLoc);
-
-  /// Resolve the absolute path for a given module name within the provided
-  /// directory. Returns nullopt if the module cannot be found.
-  ///
-  /// \p isInsideSourcePackage is true for submodule search inside a source
-  /// package. In that mode, any `.mojoc` candidate is ignored.
-  std::optional<SharedState::ModuleSpec>
-  resolveModulePath(StringRef moduleName, StringRef includeDir,
-                    bool ignorePrebuilt, bool isInsideSourcePackage);
-
-  /// Collect the portion directories of the namespace described by
-  /// `parentSpec`: for each import directory visible from
-  /// `importBufferFileId`, descend the spec's namespace components as plain
-  /// directories. Portions are returned in traversal order, deduplicated.
-  ///
-  /// A "portion" is one root's directory contributing to the namespace. For the
-  /// example on `namespaceComponents`, the portions of `foo.bar` are
-  ///
-  ///   [ one/foo/bar, two/foo/bar ]
-  ///
-  /// The search path always contains the same directories for every
-  /// import site, and portions are recomputed from it at each resolution
-  /// step, so a root where `foo` is missing, or is claimed by a source
-  /// package or module file (a closed candidate), simply contributes no
-  /// portion.
-  SmallVector<std::string>
-  collectNamespacePortions(const ModuleSpec &parentSpec,
-                           unsigned importBufferFileId);
-
-  /// Resolve the name as a submodule of the namespace described by
-  /// `parentSpec`, searching every portion. Returns every distinct thing the
-  /// name could be: closed (non-directory) candidates win over directory
-  /// candidates, which merge into a single nested-namespace spec rather than
-  /// competing. More than one element therefore means the import is
-  /// ambiguous; several portions provide a closed candidate.
-  SmallVector<ModuleSpec>
-  resolveNamespaceSubModule(StringRef moduleName, const ModuleSpec &parentSpec,
-                            unsigned importBufferFileId);
 
   void registerWrapperBuffer(unsigned bufferId, StringRef wrappedSourcePath);
   std::optional<StringRef> getWrappedSourcePath(unsigned bufferId) const;
