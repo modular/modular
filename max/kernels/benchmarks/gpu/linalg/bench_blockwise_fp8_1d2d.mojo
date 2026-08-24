@@ -270,18 +270,19 @@ def bench_blockwise_fp8_1d2d[
         k_group_size=1,
     )
 
-    @__parameter
-    @__copy_capture(
-        a_tt,
-        b_tt,
-        c_tt,
-        a_scales_tt,
-        b_scales_tt,
-        a_offsets_tt,
-        expert_ids_tt,
-    )
     @always_inline
-    def bench_legacy(mut bencher: Bencher):
+    def bench_legacy(
+        mut bencher: Bencher,
+    ) {
+        var a_tt,
+        var b_tt,
+        var c_tt,
+        var a_scales_tt,
+        var b_scales_tt,
+        var a_offsets_tt,
+        var expert_ids_tt,
+        imm,
+    }:
         @always_inline
         def kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
             grouped_matmul_sm100_blockwise_scaled_fp8_persistent[
@@ -301,25 +302,27 @@ def bench_blockwise_fp8_1d2d[
 
         bencher_iter_custom(bencher, kernel_launch, ctx)
 
-    bench.bench_function[bench_legacy](
+    bench.bench_function(
+        bench_legacy,
         BenchId(run_name_prefix + " legacy"),
         [ThroughputMeasure(BenchMetric.flops, total_flops)],
     )
 
     # ===== Benchmark Structured Kernel =====
-    @__parameter
-    @__copy_capture(
-        a_struct,
-        b_struct,
-        c_struct,
-        a_scales_struct,
-        b_scales_struct,
-        a_offsets_struct,
-        expert_ids_struct,
-        expert_scales_struct,
-    )
     @always_inline
-    def bench_structured(mut bencher: Bencher):
+    def bench_structured(
+        mut bencher: Bencher,
+    ) {
+        var a_tt,
+        var b_tt,
+        var c_tt,
+        var a_scales_tt,
+        var b_scales_tt,
+        var a_offsets_tt,
+        var expert_ids_tt,
+        var expert_scales_tt,
+        imm,
+    }:
         @always_inline
         def kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
             grouped_matmul_dynamic_scaled_fp8_1d2d[
@@ -341,7 +344,8 @@ def bench_blockwise_fp8_1d2d[
 
         bencher_iter_custom(bencher, kernel_launch, ctx)
 
-    bench.bench_function[bench_structured](
+    bench.bench_function(
+        bench_structured,
         BenchId(run_name_prefix + " structured"),
         [ThroughputMeasure(BenchMetric.flops, total_flops)],
     )

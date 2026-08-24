@@ -473,9 +473,8 @@ def bench_matmul[
                     elementwise_compute_lambda_fn=optional_compute_lambda_fn,
                 ](tensor_c, tensor_a, tensor_b, ctx)
 
-    @__parameter
     @always_inline
-    def bench_func(mut b: Bencher) raises:
+    def bench_func(mut b: Bencher) raises {imm}:
         bencher_iter_custom(b, kernel_launch, ctx)
 
     var flops = ThroughputMeasure(
@@ -487,7 +486,8 @@ def bench_matmul[
         * Int(shape_a[1].value()),
     )
     if run_benchmark:
-        b.bench_function[bench_func](
+        b.bench_function(
+            bench_func,
             BenchId(
                 _get_run_name[
                     c_type,

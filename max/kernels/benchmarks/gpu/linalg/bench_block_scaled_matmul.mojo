@@ -468,8 +468,6 @@ def bench_matmul[
     cb_b_scales.init_scales_on_device(init_type, ctx)
 
     # Helper to run vendor BLAS matmul - used by both benchmark and verification
-    @__parameter
-    @__copy_capture(a_scales_shape, b_scales_shape)
     def run_vendor_blas(
         ctx: DeviceContext,
         c: TileTensor[mut=True, .bfloat16, ...],
@@ -477,7 +475,7 @@ def bench_matmul[
         b: TileTensor[dtype, ...],
         a_scales: TileTensor[scales_type, ...],
         b_scales: TileTensor[scales_type, ...],
-    ) raises:
+    ) raises {var a_scales_shape, var b_scales_shape, imm}:
         vendor_blas.matmul[scales_type=scales_type](
             ctx,
             c,
@@ -506,7 +504,6 @@ def bench_matmul[
             cb_b_scales.offset_ptr(iteration), row_major(b_scales_shape)
         )
 
-        @__parameter
         @always_inline
         @__copy_capture(c)
         def test_lambda_add_coords_prod[
@@ -543,9 +540,8 @@ def bench_matmul[
                 ctx,
             )
 
-    @__parameter
     @always_inline
-    def bench_func(mut b: Bencher) raises:
+    def bench_func(mut b: Bencher) raises {imm}:
         bencher_iter_custom(b, kernel_launch, ctx)
 
     var flops = ThroughputMeasure(
@@ -554,7 +550,8 @@ def bench_matmul[
         2 * Int(M) * Int(N) * Int(K),
     )
     if run_benchmark:
-        b.bench_function[bench_func](
+        b.bench_function(
+            bench_func,
             BenchId(
                 _get_run_name[
                     dtype,
@@ -723,7 +720,6 @@ def bench_mxfp4_amd[
 
     # Run hipBLASLt on the given tensors. Repacks 2D uint8 scales into
     # 2D LayoutTensors and calls the handle-taking vendor_blas entry.
-    @__parameter
     @always_inline
     def run_vendor_blas(
         ctx: DeviceContext,
@@ -732,7 +728,7 @@ def bench_mxfp4_amd[
         b: TileTensor[.uint8, ...],
         sfa: TileTensor[.float8_e8m0fnu, ...],
         sfb: TileTensor[.float8_e8m0fnu, ...],
-    ) raises:
+    ) raises {imm}:
         var sfa_lt = LayoutTensor[.float8_e8m0fnu, sfa_layout, ImmutAnyOrigin](
             rebind[UnsafePointer[Float8_e8m0fnu, ImmutAnyOrigin]](sfa.ptr),
             RuntimeLayout[sfa_layout].row_major(
@@ -776,9 +772,8 @@ def bench_mxfp4_amd[
         else:
             block_scaled_matmul_amd(c_tt, a_tt, b_tt, sfa_tt, sfb_tt, ctx)
 
-    @__parameter
     @always_inline
-    def bench_func(mut bencher: Bencher) raises:
+    def bench_func(mut bencher: Bencher) raises {imm}:
         bencher_iter_custom(bencher, kernel_launch, ctx)
 
     var flops = ThroughputMeasure(
@@ -801,7 +796,7 @@ def bench_mxfp4_amd[
     )
 
     if run_benchmark:
-        b.bench_function[bench_func](BenchId(run_name), [flops])
+        b.bench_function(bench_func, BenchId(run_name), [flops])
     else:
         kernel_launch(ctx, 0)
 
