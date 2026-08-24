@@ -48,6 +48,8 @@ class ClosureEmitter;
 class DeclResolver;
 class ModuleLoader;
 class ExprNode;
+struct ModuleOrigin;
+struct ModuleState;
 struct Operand;
 class FileModuleOp;
 class FnOp;
@@ -652,13 +654,6 @@ public:
                                            ArrayRef<TypedAttr> paramValues);
 
 private:
-  /// The physical entity a module or package is read out of, shared by every
-  /// binding of it.
-  struct ModuleOrigin;
-
-  /// The internal state of an imported module or package.
-  struct ModuleState;
-
   /// Add magic things to the builtins decl when parsing starts.
   void addBuiltinTypes(ASTDecl &builtinsDecl);
 
@@ -707,20 +702,6 @@ private:
   /// the module could not be found.
   ModuleState &importRelativeModuleState(const ImportPath &path,
                                          ASTDecl *parentDecl, llvm::SMLoc loc);
-
-  /// Returns the ModuleOrigin that the spec names, shared by every binding of
-  /// the same entity.
-  ///
-  /// The bound name is in the given parent decl's scope. An origin can carry
-  /// one symbol path only, since re-anchoring an artefact rewrites its
-  /// references to a single path. Binding one entity under two names is a
-  /// dual-mount error.
-  ///
-  /// Null is a success: a namespace spans several import roots, so names no
-  /// single entity.
-  ErrorOr<ModuleOrigin *> getOrCreateModuleOrigin(const ModuleSpec &spec,
-                                                  StringRef boundName,
-                                                  ASTDecl &parentDecl);
 
   /// Shared core of createModuleState and createDeferredModuleState: create the
   /// `FileModuleOp` + unlisted decl + nested module state. The caller supplies

@@ -19,6 +19,7 @@
 #include "DebugInfo.h"
 #include "ExprNodes.h"
 #include "IREmitter.h"
+#include "ModuleStore.h"
 #include "MojoUtils.h"
 #include "OverloadSet.h"
 #include "ParserEvaluationContext.h"
@@ -267,57 +268,6 @@ private:
 } // namespace
 
 //===----------------------------------------------------------------------===//
-// ModuleOrigin
-//===----------------------------------------------------------------------===//
-
-/// One importable filesystem entity: a source file, a package directory, or a
-/// precompiled artifact whose single file holds many modules. Every binding
-/// that reads out of it points at this one record.
-struct SharedState::ModuleOrigin {
-  ModuleOrigin(std::string canonicalPath, std::string canonicalMount)
-      : canonicalPath(std::move(canonicalPath)),
-        canonicalMount(std::move(canonicalMount)) {}
-
-  ~ModuleOrigin() {
-    // Drop any remaining operations in the reader to avoid dangling
-    // unmaterialized operations. If these were needed, they would have been
-    // handled already as part of parsing.
-    if (bytecodeReader)
-      (void)bytecodeReader->finalize([](Operation *) { return false; });
-  }
-
-  /// The canonical path. Also the key this origin is stored under.
-  std::string canonicalPath;
-
-  /// The dotted name of the binding that fixes the symbol path this origin's
-  /// contents are named by. Re-anchoring rewrites an artifact's references to
-  /// exactly one path, so only one binding can contribute to symbol paths.
-  std::string canonicalMount;
-
-  //===--------------------------------------------------------------------===//
-  // Precompiled Artifact State
-  //===--------------------------------------------------------------------===//
-
-  /// Keeps the bytecode buffer alive for deferred lazy materialization.
-  /// BytecodeReader holds bufferOwnerRef by reference, so this is declared
-  /// first to outlive the reader below.
-  std::shared_ptr<llvm::SourceMgr> sourceMgr;
-
-  /// The reader every module bound out of this file materializes through. Null
-  /// until the artifact is read, and for anything built from source.
-  std::unique_ptr<mlir::BytecodeReader> bytecodeReader;
-
-  /// A temporary module used to load the bytecode.
-  ModuleOp tmpModule;
-
-  /// Where the artifact was imported. Its source files are never parsed, so a
-  /// decl materialized out of it later has no location of its own and gets
-  /// reported at the import site instead. Distinct from the per-binding
-  /// `ModuleState::importLoc`, which a module inside the artifact never has.
-  SMLoc bytecodeImportLoc;
-};
-
-//===----------------------------------------------------------------------===//
 // SharedState
 //===----------------------------------------------------------------------===//
 
@@ -376,14 +326,6 @@ struct SharedState::Impl {
   /// The set of pre-existing source buffers within the source manager, used if
   /// importing a module whose file is already in the source manager.
   DenseMap<StringRef, int> existingSourceMgrBuffers;
-
-  /// Every origin, owned here so it outlives the states pointing at it.
-  SmallVector<std::unique_ptr<ModuleOrigin>> originAllocations;
-
-  /// Origins by canonical path. One origin bound under two names is two
-  /// ModuleStates, and so two of every type it declares, which is why a
-  /// second differently-named binding is rejected rather than aliased.
-  llvm::StringMap<ModuleOrigin *> originsByCanonicalPath;
 
   /// Flag indicating if the deps of a module are currently being resolved.
   bool activelyResolvingModuleDeps = false;
@@ -736,86 +678,6 @@ void ASTDecl::setBodyDecorators(ArrayRef<ExprNode *> decorators) {
   shared.getImpl().bodyDecorators.insert({this, decorators.vec()});
   hasBodyDecorators = true;
 }
-
-//===----------------------------------------------------------------------===//
-// ModuleState
-//===----------------------------------------------------------------------===//
-
-struct SharedState::ModuleState {
-  ModuleState(ASTDecl *decl = nullptr) : decl(decl) {}
-  ModuleState(ASTDecl *decl, const ModuleSpec &spec) : decl(decl), spec(spec) {}
-
-  /// Insert a nested module state.
-  ModuleState &insertNestedModule(StringAttr name,
-                                  std::unique_ptr<ModuleState> module) {
-    nestedModuleAllocations.emplace_back(std::move(module));
-    nestedModules.insert({name, nestedModuleAllocations.back().get()});
-    return *nestedModuleAllocations.back();
-  }
-
-  /// The decl associated with the module or package.
-  ASTDecl *decl = nullptr;
-  /// The module spec this state was created from. Absent for any state that
-  /// resolution never produced a candidate for: the top-level state, error
-  /// states, and the modules found inside an already-loaded artifact.
-  std::optional<ModuleSpec> spec;
-
-  /// The entity this state reads out of, shared with every other binding of
-  /// the same one. Null for the top-level and erroneous states, and for a
-  /// namespace, which spans several directories and so has no single one.
-  ModuleOrigin *origin = nullptr;
-
-  /// The optional source path of this module if it was loaded from source.
-  std::optional<std::string> sourcePath() const {
-    if (spec && !spec->isPrecompiled())
-      return spec->path.string();
-    return std::nullopt;
-  }
-  /// For a package, the location of the import statement that first pulled it
-  /// in; used for diagnostics. Imported module states are shared across all
-  /// compilation units so we can only meaningfully track one location, even if
-  /// it's imported in multiple places.
-  SMLoc importLoc;
-  /// True for packages pulled in implicitly by the compiler (e.g., std/prelude)
-  /// rather than by a user `import`. Such packages never get an `importLoc`, to
-  /// avoid spurious "included from" locations.
-  bool isImplicitImport = false;
-
-  //===--------------------------------------------------------------------===//
-  // Package Specific State
-  //===--------------------------------------------------------------------===//
-
-  /// The set of nested modules.
-  SmallVector<std::unique_ptr<ModuleState>> nestedModuleAllocations;
-  DenseMap<StringAttr, ModuleState *> nestedModules;
-
-  /// Imports that failed to resolve through this scope, sharing one erroneous
-  /// state per name. Lazily allocated.
-  std::unique_ptr<DenseMap<StringAttr, std::unique_ptr<ModuleState>>>
-      failedImports;
-
-  /// For a failed-import state: the import locations already diagnosed.
-  /// Resolver passes legitimately re-attempt the same statement and
-  /// genuinely re-resolve, since failures aren't cached as modules; the
-  /// re-attempt must not duplicate the report, while a distinct import site
-  /// of the same missing name still gets its own.
-  std::unique_ptr<SmallVector<SMLoc>> reportedFailureLocs;
-
-#if !defined(NDEBUG) || defined(LLVM_ENABLE_DUMP)
-  LLVM_DUMP_METHOD void dump(unsigned indent = 0) const {
-    for (auto &[name, state] : nestedModules) {
-      llvm::dbgs() << llvm::indent(indent * 2) << name;
-      if (state->nestedModules.empty()) {
-        llvm::dbgs() << ",\n";
-        continue;
-      }
-      llvm::dbgs() << " [\n";
-      state->dump(indent + 1);
-      llvm::dbgs() << llvm::indent(indent * 2) << "],\n";
-    }
-  }
-#endif
-};
 
 //===----------------------------------------------------------------------===//
 // Name Lookup
@@ -1230,10 +1092,9 @@ bool SharedState::hasNestedModule(PackageOp packageOp, StringRef name) const {
              StringAttr::get(getContext(), name)) > 0;
 }
 
-SharedState::ModuleState &SharedState::importModuleState(const ImportPath &path,
-                                                         ASTDecl *context,
-                                                         llvm::SMLoc loc,
-                                                         bool isImplicit) {
+ModuleState &SharedState::importModuleState(const ImportPath &path,
+                                            ASTDecl *context, llvm::SMLoc loc,
+                                            bool isImplicit) {
   CompilerTimeTraceScope fullTimeScope("importModule",
                                        [&] { return path.toDottedString(); });
 
@@ -1270,9 +1131,10 @@ const llvm::MemoryBuffer *SharedState::openModuleFile(StringRef path,
   return getSourceMgr().getMemoryBuffer(fileID);
 }
 
-SharedState::ModuleState &
-SharedState::importSubModuleState(StringRef name, ASTDecl *parentDecl,
-                                  llvm::SMLoc loc, llvm::SMLoc identifierLoc) {
+ModuleState &SharedState::importSubModuleState(StringRef name,
+                                               ASTDecl *parentDecl,
+                                               llvm::SMLoc loc,
+                                               llvm::SMLoc identifierLoc) {
   // emitErrors=true never returns null: on any failure it produces (and
   // returns) an error module state.
   return *importSubModuleStateImpl(name, parentDecl, loc, identifierLoc,
@@ -1294,10 +1156,11 @@ ASTDecl *SharedState::tryImportSubModule(ASTDecl &parent, StringRef name,
   return state ? state->decl : nullptr;
 }
 
-SharedState::ModuleState *
-SharedState::lookupModuleCache(StringRef name, ASTDecl *parentDecl,
-                               ModuleState *parentState, llvm::SMLoc loc,
-                               llvm::SMLoc identifierLoc, bool emitErrors) {
+ModuleState *SharedState::lookupModuleCache(StringRef name, ASTDecl *parentDecl,
+                                            ModuleState *parentState,
+                                            llvm::SMLoc loc,
+                                            llvm::SMLoc identifierLoc,
+                                            bool emitErrors) {
   auto declNameAttr = StringAttr::get(getContext(), name);
   auto it = parentState->nestedModules.find(declNameAttr);
   if (it == parentState->nestedModules.end())
@@ -1362,53 +1225,11 @@ static constexpr StringLiteral kMovedStdlibNote =
     "many stdlib items recently moved to the `max` package, try `from "
     "max.<module>`";
 
-static std::string mountPathFor(StringRef boundName, ASTDecl &parentDecl) {
-  std::string mount;
-  if (SymbolRefAttr parent = parentDecl.getSymbolRef()) {
-    mount = parent.getRootReference().str();
-    for (FlatSymbolRefAttr nested : parent.getNestedReferences())
-      mount += ("." + nested.getValue()).str();
-    mount += ".";
-  }
-  mount += boundName;
-  return mount;
-}
-
-ErrorOr<SharedState::ModuleOrigin *>
-SharedState::getOrCreateModuleOrigin(const ModuleSpec &spec,
-                                     StringRef boundName, ASTDecl &parentDecl) {
-  // A namespace is several directories under different import roots, so there
-  // is no single entity for it to own.
-  if (!spec.isSourceModule() && !spec.isSourcePackage() &&
-      !spec.isPrecompiled())
-    return nullptr;
-
-  std::string canonicalPath = spec.canonicalPath();
-  std::string mount = mountPathFor(boundName, parentDecl);
-
-  auto it = impl->originsByCanonicalPath.find(canonicalPath);
-  if (it != impl->originsByCanonicalPath.end()) {
-    ModuleOrigin *existing = it->second;
-    if (existing->canonicalMount != mount) {
-      return Error(
-          Twine{spec.isSourceModule() ? "module" : "package"} +
-          " imported as '" + existing->canonicalMount +
-          "' must not also be imported as '" + mount +
-          "'; remove the duplicate import root or file that reaches it twice");
-    }
-    return existing;
-  }
-
-  impl->originAllocations.push_back(
-      std::make_unique<ModuleOrigin>(canonicalPath, std::move(mount)));
-  ModuleOrigin *origin = impl->originAllocations.back().get();
-  impl->originsByCanonicalPath[canonicalPath] = origin;
-  return origin;
-}
-
-SharedState::ModuleState *SharedState::importSubModuleStateImpl(
-    StringRef name, ASTDecl *parentDecl, llvm::SMLoc loc,
-    llvm::SMLoc identifierLoc, bool emitErrors) {
+ModuleState *SharedState::importSubModuleStateImpl(StringRef name,
+                                                   ASTDecl *parentDecl,
+                                                   llvm::SMLoc loc,
+                                                   llvm::SMLoc identifierLoc,
+                                                   bool emitErrors) {
   // Grab the parent module state.
   ModuleState *parentState = impl->moduleStates.lookup(parentDecl);
   assert(parentState && "parent decl must have a module state");
@@ -1539,9 +1360,9 @@ SharedState::ModuleState *SharedState::importSubModuleStateImpl(
                             *modulePath);
 }
 
-SharedState::ModuleState &
-SharedState::importRelativeModuleState(const ImportPath &path,
-                                       ASTDecl *parentDecl, llvm::SMLoc loc) {
+ModuleState &SharedState::importRelativeModuleState(const ImportPath &path,
+                                                    ASTDecl *parentDecl,
+                                                    llvm::SMLoc loc) {
   ASTDecl &importContext = *parentDecl;
   llvm::SMLoc identifierLoc = loc.isValid() ? loc : parentDecl->getLoc();
   // These are structural path failures, not name-binding failures: the record
@@ -1929,14 +1750,15 @@ std::optional<std::string> SharedState::getModuleSourcePath(ASTDecl &module) {
   return it->second->sourcePath();
 }
 
-SharedState::ModuleState &SharedState::createFileModuleState(
+ModuleState &SharedState::createFileModuleState(
     StringAttr declName, ModuleState &parentState, FileLineColLoc loc,
     llvm::SMLoc declLoc, LexerCursor cursor, LexerCursor endCursor,
     const ModuleSpec &spec) {
   // A module's identity is its position, so one file bound under a second name
   // declares a second copy of every type in it.
   ErrorOr<ModuleOrigin *> originOrErr =
-      getOrCreateModuleOrigin(spec, declName.getValue(), *parentState.decl);
+      getModuleLoader().getOrCreateModuleOrigin(spec, declName.getValue(),
+                                                *parentState.decl);
   if (const char *originError = originOrErr.getError()) {
     return createErrorModuleState(declLoc.isValid() ? declLoc
                                                     : parentState.importLoc,
@@ -1959,7 +1781,7 @@ SharedState::ModuleState &SharedState::createFileModuleState(
   return moduleState;
 }
 
-SharedState::ModuleState &SharedState::createModuleState(
+ModuleState &SharedState::createModuleState(
     StringAttr declName, const llvm::MemoryBuffer *moduleBuffer,
     ModuleState &parentState, FileLineColLoc loc, const ModuleSpec &spec) {
   // An eagerly-opened module: its cursor points at the freshly-lexed buffer.
@@ -1978,9 +1800,8 @@ SharedState::ModuleState &SharedState::createModuleState(
   return moduleState;
 }
 
-SharedState::ModuleState &
-SharedState::createDeferredModuleState(ModuleSpec moduleSpec,
-                                       ModuleState &parentState) {
+ModuleState &SharedState::createDeferredModuleState(ModuleSpec moduleSpec,
+                                                    ModuleState &parentState) {
   // A deferred module: the FileModuleOp + decl exist but its file is NOT
   // opened. The decl carries an invalid cursor; it is opened + lexed on first
   // body resolution, at which point materializeDeferredModule sets its real
@@ -2027,9 +1848,9 @@ LogicalResult SharedState::materializeDeferredModule(ASTDecl &decl, SMLoc loc) {
   return success();
 }
 
-SharedState::ModuleState &
-SharedState::createPackageState(ModuleSpec moduleSpec, ModuleState &parentState,
-                                SMLoc importLoc) {
+ModuleState &SharedState::createPackageState(ModuleSpec moduleSpec,
+                                             ModuleState &parentState,
+                                             SMLoc importLoc) {
   StringAttr declName = StringAttr::get(getContext(), moduleSpec.name);
   // Create a new decl for this module. We use createUnlistedDecl instead of
   // addDecl so the package is NOT added to parentState.decl->declsInScope.
@@ -2042,7 +1863,8 @@ SharedState::createPackageState(ModuleSpec moduleSpec, ModuleState &parentState,
   // second name declares a second, incompatible copy of every type in it. A
   // namespace gets no origin, so it is exempt without a kind check here.
   ErrorOr<ModuleOrigin *> originOrErr =
-      getOrCreateModuleOrigin(moduleSpec, moduleSpec.name, *parentState.decl);
+      getModuleLoader().getOrCreateModuleOrigin(moduleSpec, moduleSpec.name,
+                                                *parentState.decl);
   if (const char *originError = originOrErr.getError()) {
     return createErrorModuleState(importLoc, declName, *parentState.decl,
                                   originError);
@@ -2088,9 +1910,9 @@ std::string SharedState::moduleMountPath(const ModuleState &root,
   return {};
 }
 
-SharedState::ModuleState &
-SharedState::createBinaryPackageState(SMLoc loc, const ModuleSpec &spec,
-                                      ModuleState &parentState) {
+ModuleState &SharedState::createBinaryPackageState(SMLoc loc,
+                                                   const ModuleSpec &spec,
+                                                   ModuleState &parentState) {
   std::string pathStr = spec.path.string();
   auto declNameAttr = StringAttr::get(getContext(), spec.name);
   auto makeError = [&](const Twine &msg) -> ModuleState & {
@@ -2117,7 +1939,8 @@ SharedState::createBinaryPackageState(SMLoc loc, const ModuleSpec &spec,
   // One artifact bound under two names is two packages, and every type it
   // declares exists twice over.
   ErrorOr<ModuleOrigin *> originOrErr =
-      getOrCreateModuleOrigin(spec, spec.name, *parentState.decl);
+      getModuleLoader().getOrCreateModuleOrigin(spec, spec.name,
+                                                *parentState.decl);
   if (const char *originError = originOrErr.getError())
     return makeError(originError);
 
@@ -2262,9 +2085,11 @@ SharedState::createBinaryPackageState(SMLoc loc, const ModuleSpec &spec,
   return moduleState;
 }
 
-SharedState::ModuleState &SharedState::createErrorModuleState(
-    SMLoc loc, StringAttr name, ASTDecl &errorContext, const Twine &errorMsg,
-    bool unlisted, const Twine &note) {
+ModuleState &SharedState::createErrorModuleState(SMLoc loc, StringAttr name,
+                                                 ASTDecl &errorContext,
+                                                 const Twine &errorMsg,
+                                                 bool unlisted,
+                                                 const Twine &note) {
   // Track the failure in the scope whose lookup failed.
   ModuleState *contextState = impl->moduleStates.lookup(&errorContext);
   if (!contextState)
@@ -2685,7 +2510,7 @@ LogicalResult SharedState::finalizeImportedBytecodeModules() {
   // Collect all bytecode readers so we can identify which ops are still lazy
   // stubs (isMaterializable == true).
   SmallVector<mlir::BytecodeReader *> readers;
-  for (auto &origin : impl->originAllocations) {
+  for (auto &origin : getModuleLoader().getOrigins()) {
     if (origin->bytecodeReader)
       readers.push_back(&*origin->bytecodeReader);
   }
@@ -2712,7 +2537,7 @@ LogicalResult SharedState::finalizeImportedBytecodeModules() {
     decl->setIRValue(PValue(BoolAttr::get(getContext(), false)));
   }
 
-  for (auto &origin : impl->originAllocations) {
+  for (auto &origin : getModuleLoader().getOrigins()) {
     if (!origin->bytecodeReader)
       continue;
 

@@ -21,6 +21,9 @@
 #include "KGEN/MojoParser/ModuleSpec.h"
 #include "KGEN/MojoParser/SharedState.h"
 
+#include "llvm/ADT/StringMap.h"
+
+#include <memory>
 #include <optional>
 
 namespace M::KGEN::LIT {
@@ -83,11 +86,38 @@ public:
   traverseImportDirectories(unsigned importBufferFileId,
                             function_ref<WalkResult(StringRef)> callback) const;
 
+  /// Returns the ModuleOrigin that the spec names, shared by every binding of
+  /// the same entity.
+  ///
+  /// The bound name is in the given parent decl's scope. An origin can carry
+  /// one symbol path only, since re-anchoring an artefact rewrites its
+  /// references to a single path. Binding one entity under two names is a
+  /// dual-mount error.
+  ///
+  /// Null is a success: a namespace spans several import roots, so names no
+  /// single entity.
+  ErrorOr<ModuleOrigin *> getOrCreateModuleOrigin(const ModuleSpec &spec,
+                                                  StringRef boundName,
+                                                  ASTDecl &parentDecl);
+
+  /// Every origin created so far, in creation order.
+  ArrayRef<std::unique_ptr<ModuleOrigin>> getOrigins() const {
+    return originAllocations;
+  }
+
 private:
   /// The directories searched before the working directory and the source
   /// manager's include directories: configured search paths, or the defaults
   /// from the Mojo config when none were given.
   SmallVector<std::string> autoImportDirs;
+
+  /// Every origin, owned here so it outlives the states pointing at it.
+  SmallVector<std::unique_ptr<ModuleOrigin>> originAllocations;
+
+  /// Origins by canonical path. One origin bound under two names is two
+  /// ModuleStates, and so two of every type it declares, which is why a
+  /// second differently-named binding is rejected rather than aliased.
+  llvm::StringMap<ModuleOrigin *> originsByCanonicalPath;
 };
 
 } // namespace M::KGEN::LIT
