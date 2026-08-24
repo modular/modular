@@ -188,8 +188,8 @@ struct List[T: AnyType, /](
     # With initial size and fill value
     var filled = List[Float64](length=10, fill=0.0)
 
-    # With initial values and inferred type (Int)
-    var numbers = [1, 2, 3, 4, 5]
+    # With initial values and an explicit element type
+    var numbers: List[Int] = [1, 2, 3, 4, 5
     ```
 
     Be aware of the following characteristics:
@@ -199,8 +199,8 @@ struct List[T: AnyType, /](
       improves performance:
 
       ```mojo
-      var int_list = [1, 2, 3]        # List[Int]
-      var str_list = ["a", "b", "c"]  # List[String]
+      var int_list: List[Int] = [1, 2, 3]
+      var str_list: List[String] = ["a", "b", "c"]
       # var mixed = [1, "hello"]      # Error! All elements must be same type
       ```
 
@@ -213,7 +213,7 @@ struct List[T: AnyType, /](
       assignment creates a deep copy of all elements:
 
       ```mojo
-      var list1 = [1, 2, 3]
+      var list1: List[Int] = [1, 2, 3]
       var list2 = list1.copy()        # Deep copy
       list2.append(4)
       print(list1)   # => [1, 2, 3]
@@ -229,7 +229,7 @@ struct List[T: AnyType, /](
       you specify `ref`:
 
       ```mojo
-      var numbers = [10, 20, 30]
+      var numbers: List[Int] = [10, 20, 30]
 
       # Default behavior creates immutable (read-only) references:
       # for num in numbers:
@@ -246,10 +246,10 @@ struct List[T: AnyType, /](
       original list is no longer accessible after the loop:
 
       ```mojo
-      var names = ["alice", "bob"]
+      var names: List[String] = ["alice", "bob"]
       for x in names^:
           # `x` is an owned `String` value.
-          print(x^)
+          print(x)
       # `names` is consumed and can no longer be used here
       ```
 
@@ -257,7 +257,7 @@ struct List[T: AnyType, /](
       abort:
 
       ```mojo
-      var my_list = [1, 2, 3]
+      var my_list: List[Int] = [1, 2, 3]
       print(my_list[5])  # Aborts with an Assert Error: index 5 is
                          # out of bounds, valid range is 0 to 2
       ```
@@ -266,7 +266,7 @@ struct List[T: AnyType, /](
       handle errors gracefully:
 
       ```mojo
-      var my_list = [1, 2, 3]
+      var my_list: List[Int] = [1, 2, 3]
       if 5 < len(my_list):
           print(my_list[5])  # Safe: check bounds first
       else:
@@ -283,7 +283,7 @@ struct List[T: AnyType, /](
     Examples:
 
     ```mojo
-    var my_list = [10, 20, 30]
+    var my_list: List[Int] = [10, 20, 30]
 
     # Add elements
     my_list.append(40)           # [10, 20, 30, 40]
@@ -304,11 +304,12 @@ struct List[T: AnyType, /](
     print('cap:', my_list.capacity())    # Current allocated capacity
 
     # Multiply a list
-    var repeated = [1, 2] * 3
+    var base: List[Int] = [1, 2]
+    var repeated = base * 3
     print(repeated)    # [1, 2, 1, 2, 1, 2]
 
     # Iterate over a list:
-    var fruits = ["apple", "banana", "orange"]
+    var fruits: List[String] = ["apple", "banana", "orange"]
 
     # Iterate by reference (immutable)
     for fruit in fruits:
@@ -323,9 +324,9 @@ struct List[T: AnyType, /](
         print(i, fruits[i])
 
     # Iterate by ownership (consumes the list)
-    var temps = ["a", "b", "c"]
+    var temps: List[String] = ["a", "b", "c"]
     for x in temps^:
-        print(x^)
+        print(x)
     # `temps` is no longer accessible here
 
     # Concatenate with + and +=
