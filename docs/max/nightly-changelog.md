@@ -757,8 +757,8 @@ This version is still a work in progress.
   `--kv-connector-config '{"type": "rust_tiered"}'`, and in a recipe set
   `model.kv_cache.kv_connector_config.type`. `host_kvcache_swap_space_gb` is
   renamed `host_offload_max_gb` to match `disk_offload_max_gb`, and both now
-  default to sizing their tier from the device page pool (twice it on host,
-  three times on disk) rather than to a fixed 50 GiB. Dict-valued `kv_cache`
+  default to sizing their tier from the device page pool (1.5 times it on host,
+  twice on disk) rather than to a fixed 50 GiB. Dict-valued `kv_cache`
   flags now merge field-wise over a config file's value instead of replacing
   it, so overriding one connector field on the command line keeps the rest --
   previously a partial override reset the connector type and silently disabled

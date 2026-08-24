@@ -148,9 +148,9 @@ class RustTierConnector(KVConnector):
             replica_kv_memory: Per-DP-replica offload-ready KV memory units.
             disk_cache_dir: Directory backing the disk last level.
             host_offload_max_gb: Host budget. ``None`` sizes the host pool to
-                hold twice the device page pool.
-            disk_offload_max_gb: Disk budget. ``None`` sizes it to hold three
-                times the device page pool.
+                hold 1.5 times the device page pool.
+            disk_offload_max_gb: Disk budget. ``None`` sizes it to hold twice
+                the device page pool.
             num_disk_workers: Disk I/O worker threads.
         """
         # Lazy import: OSS MAX can import this module without the extension.
