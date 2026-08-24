@@ -167,7 +167,8 @@ defm mlir_timing_display: CommandOptionHidden<["--", "-"],
   HelpText<
     "How `--mlir-timing` groups its report. `tree` (the default) nests "
     "timings by pipeline structure; `list` aggregates per pass name, sorted "
-    "by total time.">>;
+    "by total time. The `list` mode merges the passes of all pipelines, so it "
+    "cannot show the time of one offload target on its own.">>;
 
 //===----------------------------------------------------------------------===//
 // Linker Options

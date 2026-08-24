@@ -11,21 +11,30 @@
 // limitations under the License.
 //===----------------------------------------------------------------------===//
 //
-// Splits the LLVM pass timing report into one part for each pipeline that a
-// compiler command runs. A command runs the host pipeline, and it runs one
-// more pipeline for each `kgen.compile_offload` target.
+// This file splits the timing reports. Each pipeline that a compiler command
+// runs gets one part. A command runs the host pipeline. A command also runs
+// one more pipeline for each `kgen.compile_offload` target. The LLVM report
+// and the MLIR report keep the parts apart, but each report uses a different
+// method. The two timing libraries hold their times in a different
+// structure.
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef KGEN_TOOLCOMMON_LLVMTIMINGREGIONS_H
-#define KGEN_TOOLCOMMON_LLVMTIMINGREGIONS_H
+#ifndef KGEN_TOOLCOMMON_PIPELINETIMING_H
+#define KGEN_TOOLCOMMON_PIPELINETIMING_H
 
+#include "mlir/Support/Timing.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
 #include <string>
 
 namespace M::KGEN {
 class CompilationOptions;
+
+/// Gives the name of the pipeline that `options` describes. Both reports use
+/// this name. Then a reader can compare a part of one report with a part of
+/// the other report.
+std::string pipelineTimingLabel(const CompilationOptions &options);
 
 /// One part of the LLVM pass timing report.
 struct LLVMTimingReportPart {
@@ -71,6 +80,29 @@ private:
   bool active;
 };
 
+//===----------------------------------------------------------------------===//
+// MLIR
+//===----------------------------------------------------------------------===//
+
+/// Holds the root scope of the MLIR timing for the command. The driver sets
+/// the root for the `--mlir-timing` option. The driver clears the root after
+/// it prints the report.
+///
+/// MLIR holds its times in a tree. Thus a pipeline does not need a report of
+/// its own. A pipeline needs only a scope of its own under the root. The pass
+/// manager of an offload target is deep inside the elaboration of the host.
+/// The function that makes this pass manager gets no scope. Thus the root
+/// moves through this function.
+void setMLIRTimingRoot(mlir::TimingScope *root);
+
+/// Gives a scope for the offload pipeline that `options` describes. The scope
+/// is under the root that `setMLIRTimingRoot` holds. The scope is empty if the
+/// timing is off. A pass manager that gets an empty scope records no times.
+///
+/// The time of the scope is also part of the host pass that runs the offload,
+/// because the host pass contains the offload pipeline.
+mlir::TimingScope nestMLIROffloadScope(const CompilationOptions &options);
+
 } // namespace M::KGEN
 
-#endif // KGEN_TOOLCOMMON_LLVMTIMINGREGIONS_H
+#endif // KGEN_TOOLCOMMON_PIPELINETIMING_H
