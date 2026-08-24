@@ -146,10 +146,6 @@ def test_divmod() raises:
     assert_equal(a, 0)
     assert_equal(b, 0)
 
-    a, b = divmod(5, 0)
-    assert_equal(a, 0)
-    assert_equal(b, 0)
-
 
 def test_abs() raises:
     assert_equal(Int(-5).__abs__(), 5)

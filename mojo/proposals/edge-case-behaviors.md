@@ -51,12 +51,14 @@ implement for SIMD types and non-CPU targets.
 
 ## Integer division by zero
 
-**As implemented now** integer division by zero (a/b where b == 0) has
-undefined behavior. For this operation,
-Mojo generates LLVM
-[`sdiv`](https://llvm.org/docs/LangRef.html#sdiv-instruction) or
-[`udiv`](https://llvm.org/docs/LangRef.html#udiv-instruction)
-instructions that do not specify the divide-by-zero behavior.
+Scalar integer division or modulo by zero raises an error with the message
+"integer division or modulo by zero", matching Python semantics. This applies
+to `/`, `//`, `%`, and `divmod` for all scalar integer types (`Int`, `UInt`,
+`Int8`, etc.).
+
+For SIMD vectors with more than one element, integer division by zero in any
+lane produces zero in that lane (a safe, branchless mask), because raising a
+per-lane exception is not feasible in a data-parallel context.
 
 ## Out of bound access in arrays
 

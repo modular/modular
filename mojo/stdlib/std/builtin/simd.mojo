@@ -51,6 +51,7 @@ from std.collections.string.string import (
 from std.hashlib.hasher import Hasher
 from std.math import Ceilable, CeilDivable, Floorable, Truncable
 from std.math.math import _call_ptx_intrinsic, trunc
+from std.os.os import _abort_base
 from std.sys import (
     CompilationTarget,
     _RegisterPackType,
@@ -1099,7 +1100,7 @@ struct SIMD[dtype: DType, length: SIMDLength](
             mlir_value=__mlir_op.`pop.mul`(self._mlir_value, rhs._mlir_value)
         )
 
-    @always_inline("builtin")
+    @always_inline("nodebug")
     def __truediv__(self, rhs: Self) -> Self:
         """Computes `self / rhs`.
 
@@ -1111,6 +1112,9 @@ struct SIMD[dtype: DType, length: SIMDLength](
             `self[i] / rhs[i]`.
         """
         comptime assert Self.dtype.is_numeric(), "the SIMD type must be numeric"
+        comptime if Int(Self.length) == 1 and Self.dtype.is_integral():
+            if rhs == Self(0):
+                _abort_base()
         return Self(
             mlir_value=__mlir_op.`pop.div`(self._mlir_value, rhs._mlir_value)
         )
@@ -1130,6 +1134,10 @@ struct SIMD[dtype: DType, length: SIMDLength](
             `floor(self / rhs)` value.
         """
         comptime assert Self.dtype.is_numeric(), "the type must be numeric"
+
+        comptime if Int(Self.length) == 1 and Self.dtype.is_integral():
+            if rhs == Self(0):
+                _abort_base()
 
         var is_zero_mask = Self._Mask(fill=Self.dtype.is_integral()) and rhs.eq(
             0
@@ -1154,6 +1162,10 @@ struct SIMD[dtype: DType, length: SIMDLength](
             The remainder of dividing self by rhs.
         """
         comptime assert Self.dtype.is_numeric(), "the type must be numeric"
+
+        comptime if Int(Self.length) == 1 and Self.dtype.is_integral():
+            if rhs == Self(0):
+                _abort_base()
 
         var is_zero_mask = Self._Mask(fill=Self.dtype.is_integral()) and rhs.eq(
             0
@@ -1189,6 +1201,9 @@ struct SIMD[dtype: DType, length: SIMDLength](
             The quotient and remainder as a
             `Tuple(self // denominator, self % denominator)`.
         """
+        comptime if Int(Self.length) == 1 and Self.dtype.is_integral():
+            if denominator == Self(0):
+                _abort_base()
         var is_zero_mask = denominator.eq(0)
         var safe_denominator = is_zero_mask.select(Self(1), denominator)
 

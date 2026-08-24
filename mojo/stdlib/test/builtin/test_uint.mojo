@@ -179,10 +179,6 @@ def test_divmod() raises:
     assert_equal(a, UInt(0))
     assert_equal(b, UInt(0))
 
-    a, b = divmod(UInt(5), UInt(0))
-    assert_equal(a, UInt(0))
-    assert_equal(b, UInt(0))
-
 
 def test_abs() raises:
     assert_equal(UInt(Int(-5)).__abs__(), UInt(18446744073709551611))

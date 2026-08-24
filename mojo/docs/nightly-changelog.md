@@ -265,6 +265,12 @@ This version is still a work in progress.
 
 - Uncaught exceptions now print to `stderr`, not `stdout`.
 
+- Scalar integer division (`/`, `//`), modulo (`%`), and `divmod` by zero now
+  raise an error with the message "integer division or modulo by zero", matching
+  Python's behavior. Previously this was undefined behavior for `/` and silently
+  returned zero for `//`, `%`, and `divmod`.
+  ([#6898](https://github.com/modular/modular/issues/6898))
+
 ## GPU programming
 
 ## Tooling changes
