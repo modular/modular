@@ -19,12 +19,15 @@
 #ifndef KGEN_LIB_MOJOPARSER_MODULESTORE_H
 #define KGEN_LIB_MOJOPARSER_MODULESTORE_H
 
+#include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/MojoParser/ModuleSpec.h"
 
 #include "mlir/Bytecode/BytecodeReader.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/MapVector.h"
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/ADT/StringMap.h"
 #include "llvm/Support/SourceMgr.h"
 
 #include <memory>
@@ -166,6 +169,37 @@ struct ModuleState {
     }
   }
 #endif
+};
+
+//===----------------------------------------------------------------------===//
+// ModuleStore
+//===----------------------------------------------------------------------===//
+
+/// Everything imported so far: the entities read off disk, and the bindings
+/// naming them. Owned by `ModuleLoader`, which is the only thing that should
+/// reach in here.
+struct ModuleStore {
+  /// A module state corresponding to the top-level decl. All imported packages
+  /// or modules are nested within.
+  std::unique_ptr<ModuleState> topLevelModuleState;
+
+  /// A mapping between ASTDecl and the corresponding module state.
+  llvm::MapVector<ASTDecl *, ModuleState *> moduleStates;
+
+  /// A mapping between packages and their corresponding module state. A nullptr
+  /// entry corresponds to the top level module state.
+  /// FIXME(#17327): This only exists to work around the fact that we can't rely
+  /// on an ASTDecl's parent reflecting the IR parent. When that issue gets
+  /// fixed, this map should be removed in favor of just `moduleStates`.
+  llvm::DenseMap<PackageOp, ModuleState *> packageStates;
+
+  /// Every origin, owned here so it outlives the states pointing at it.
+  llvm::SmallVector<std::unique_ptr<ModuleOrigin>> originAllocations;
+
+  /// Origins by canonical path. One origin bound under two names is two
+  /// ModuleStates, and so two of every type it declares, which is why a
+  /// second differently-named binding is rejected rather than aliased.
+  llvm::StringMap<ModuleOrigin *> originsByCanonicalPath;
 };
 
 } // namespace M::KGEN::LIT

@@ -21,8 +21,6 @@
 #include "KGEN/MojoParser/ModuleSpec.h"
 #include "KGEN/MojoParser/SharedState.h"
 
-#include "llvm/ADT/StringMap.h"
-
 #include <memory>
 #include <optional>
 
@@ -35,6 +33,7 @@ namespace M::KGEN::LIT {
 class ModuleLoader : public SharedStateUser {
 public:
   ModuleLoader(SharedState &shared);
+  ~ModuleLoader();
 
   /// Resolve the absolute path for a given module name. Returns nullopt if the
   /// module cannot be found.
@@ -101,9 +100,84 @@ public:
                                                   ASTDecl &parentDecl);
 
   /// Every origin created so far, in creation order.
-  ArrayRef<std::unique_ptr<ModuleOrigin>> getOrigins() const {
-    return originAllocations;
-  }
+  ArrayRef<std::unique_ptr<ModuleOrigin>> getOrigins() const;
+
+  //===--------------------------------------------------------------------===//
+  // Module states
+  //===--------------------------------------------------------------------===//
+
+  /// Create the state the whole import tree nests inside. Called once, when
+  /// the top-level decl exists.
+  void initializeTopLevel(ASTDecl &topLevelDecl);
+
+  /// The state of the top-level decl, which every import is nested within.
+  ModuleState &getTopLevelState() const;
+
+  /// The state this decl was imported as, or null if it names no module.
+  ModuleState *lookupState(ASTDecl *decl) const;
+
+  /// The state this package op was imported as, or null. Distinct from
+  /// `lookupState` only because one op can be reached through several decls.
+  ModuleState *lookupPackageState(PackageOp packageOp) const;
+
+  /// Record `state` as what `decl` was imported as.
+  void setState(ASTDecl &decl, ModuleState &state);
+
+  /// Record `state` as what `packageOp` was imported as.
+  void setPackageState(PackageOp packageOp, ModuleState &state);
+
+  /// Forget the state of a decl whose import turned out to have failed.
+  void eraseState(ASTDecl *decl);
+
+  //===--------------------------------------------------------------------===//
+  // Loading
+  //===--------------------------------------------------------------------===//
+
+  /// Shared core of createModuleState and createDeferredModuleState: create the
+  /// `FileModuleOp` + unlisted decl + nested module state. The caller supplies
+  /// the parse cursor (valid for an already-open module, invalid for a deferred
+  /// one) and is responsible for importing builtins (eagerly, or at
+  /// materialization for a deferred module).
+  ModuleState &createFileModuleState(StringAttr declName,
+                                     ModuleState &parentState,
+                                     FileLineColLoc loc, llvm::SMLoc declLoc,
+                                     LexerCursor cursor, LexerCursor endCursor,
+                                     const ModuleSpec &spec);
+
+  /// Create a new module state with the given name, location, and body.
+  ModuleState &createModuleState(StringAttr declName,
+                                 const llvm::MemoryBuffer *moduleBuffer,
+                                 ModuleState &parentState, FileLineColLoc loc,
+                                 const ModuleSpec &spec);
+
+  /// Create a module state for a source module whose file has not been opened.
+  ModuleState &createDeferredModuleState(ModuleSpec moduleSpec,
+                                         ModuleState &parentState);
+
+  /// Create a new module state for a package with the given spec, location,
+  /// and body. The importLoc, if valid, is the location of the `import` that
+  /// pulled the package in. The spec's kind must be a SourcePackage or
+  /// SourceDir.
+  ModuleState &createPackageState(ModuleSpec moduleSpec,
+                                  ModuleState &parentState, SMLoc importLoc);
+
+  /// Create a new module state for a binary package with the given spec.
+  ModuleState &createBinaryPackageState(SMLoc loc, const ModuleSpec &spec,
+                                        ModuleState &parentState);
+
+  /// Returns the dotted module path of `target` below `root`, or an empty
+  /// string when `target` is not nested below `root`.
+  static std::string moduleMountPath(const ModuleState &root,
+                                     const ModuleState &target);
+
+  /// Create an error module state and emit the given error message. If
+  /// `unlisted` is set, the erroneous decl is not registered in
+  /// `errorContext`'s name table. A non-empty `note` is attached to the error.
+  ModuleState &createErrorModuleState(SMLoc loc, StringAttr name,
+                                      ASTDecl &errorContext,
+                                      const Twine &errorMsg,
+                                      bool unlisted = false,
+                                      const Twine &note = {});
 
 private:
   /// The directories searched before the working directory and the source
@@ -111,13 +185,8 @@ private:
   /// from the Mojo config when none were given.
   SmallVector<std::string> autoImportDirs;
 
-  /// Every origin, owned here so it outlives the states pointing at it.
-  SmallVector<std::unique_ptr<ModuleOrigin>> originAllocations;
-
-  /// Origins by canonical path. One origin bound under two names is two
-  /// ModuleStates, and so two of every type it declares, which is why a
-  /// second differently-named binding is rejected rather than aliased.
-  llvm::StringMap<ModuleOrigin *> originsByCanonicalPath;
+  /// What has been imported so far.
+  std::unique_ptr<ModuleStore> store;
 };
 
 } // namespace M::KGEN::LIT
