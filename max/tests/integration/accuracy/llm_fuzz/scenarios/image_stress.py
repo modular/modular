@@ -43,9 +43,6 @@ signal MXSERV-395 would have tripped.
 
 from __future__ import annotations
 
-import asyncio
-import dataclasses
-import json
 import time
 from typing import TYPE_CHECKING, Any
 
@@ -63,220 +60,21 @@ from scenarios._image_fixtures import (
     image_part,
     image_payload,
 )
+from scenarios._image_stress_common import (
+    CONCURRENCY_PER_NODE,
+    HEAVY_TIMEOUT_SEC,
+    PAYLOAD_OVERHEAD_TOKENS,
+    PRODUCTION_BATCH_SIZES,
+    TYPICAL_SIDE,
+    LivenessProbe,
+    probe_result,
+    served_context_window,
+    stall_threshold,
+    unique_parts,
+)
 
 if TYPE_CHECKING:
     from client import RunConfig
-
-# Batch sizes taken from the per-pod "fatal encode size" column in
-# MXSERV-395 -- the image counts pods were processing when they wedged.
-# Deliberately unremarkable; the trigger was concurrency, not size.
-PRODUCTION_BATCH_SIZES = [1, 2, 4, 5, 5, 5, 6, 7, 8, 8, 8, 11, 14, 25, 26]
-
-# Source dimensions for a "typical" production image. Under the default
-# detail tier this lands around 1.3k tokens, so a handful of them straddle
-# the vision encoder's chunk boundary.
-TYPICAL_SIDE = 1024
-
-# In-flight requests per simulated node. Production orchestrators cap at 80
-# per pod across all traffic; image requests are a fraction of that.
-CONCURRENCY_PER_NODE = 8
-
-# Large-payload requests preprocess hundreds of millions of pixels before
-# they can answer, well past the 30s default.
-HEAVY_TIMEOUT_SEC = 300.0
-
-# Non-image tokens a request carries: chat template, the text prompt, and the
-# reserved generation budget. Measured at 305 + max_tokens against
-# MiniMax-M3-MXFP4; rounded up so a template change does not push the
-# "largest legal payload" case over the window it was sized against.
-PAYLOAD_OVERHEAD_TOKENS = 512
-
-
-def _unique_parts(
-    count: int,
-    tag: str,
-    side: int = TYPICAL_SIDE,
-    detail: str | None = None,
-) -> list[dict[str, Any]]:
-    """Builds ``count`` image parts that are guaranteed cache misses."""
-    return [
-        image_part(side, side, nonce=f"{tag}-{i}", detail=detail)
-        for i in range(count)
-    ]
-
-
-async def _served_context_window(
-    client: FuzzClient, config: RunConfig
-) -> tuple[int, str]:
-    """Context window the server enforces, and where the number came from.
-
-    ``model_config`` holds the *architectural* window read from the HF config,
-    which is what the model could do rather than what this deployment does:
-    MiniMax-M3 reports 1,048,576 there while a recipe routinely serves a
-    fraction of it, and the served number is the one that rejects a request.
-    ``/v1/models`` reports it as ``max_model_len``, so prefer that and keep
-    the architectural value as the fallback for endpoints that omit it.
-    """
-    architectural = config.model_config.max_position_embeddings
-    resp = await client.get_path("/v1/models")
-    if resp.status == 200:
-        try:
-            for entry in json.loads(resp.body).get("data", []):
-                served = entry.get("max_model_len")
-                if served and entry.get("id") == config.model:
-                    return int(served), "served"
-        except (ValueError, TypeError, AttributeError):
-            pass
-    return architectural, "architectural"
-
-
-class _LivenessProbe:
-    """Background canary tracking the longest stall in server progress.
-
-    Runs on its own :class:`FuzzClient`, and therefore its own thread pool:
-    the shared client's pool is sized to ``--max-concurrency`` and every
-    in-flight stress request occupies a slot in it, so a probe sharing that
-    pool would queue behind the very traffic it is meant to observe and
-    report a stall that is really just saturation.
-    """
-
-    def __init__(
-        self, config: RunConfig, interval: float = 1.0, timeout: float = 30.0
-    ) -> None:
-        self._config = dataclasses.replace(
-            config, max_concurrency=4, timeout=timeout
-        )
-        self._interval = interval
-        self._task: asyncio.Task[None] | None = None
-        self._client: FuzzClient | None = None
-        self._last_ok = 0.0
-        self.max_gap_sec = 0.0
-        self.probes = 0
-        self.failures = 0
-
-    async def __aenter__(self) -> _LivenessProbe:
-        self._client = FuzzClient(self._config)
-        self._last_ok = time.monotonic()
-        self._task = asyncio.create_task(self._loop())
-        return self
-
-    async def __aexit__(self, *exc: object) -> None:
-        if self._task is not None:
-            self._task.cancel()
-            try:
-                await self._task
-            except asyncio.CancelledError:
-                pass
-        # Close the gap against the wall clock rather than against the last
-        # probe that came back. A wedged server answers nothing, so the final
-        # probe never returns to record how long the stall had grown -- and a
-        # phase that ends mid-stall would otherwise report only the gap as of
-        # the last completed probe, understating it by a whole probe timeout.
-        self._observe(time.monotonic())
-        if self._client is not None:
-            await self._client.__aexit__()
-
-    def _observe(self, now: float) -> None:
-        self.max_gap_sec = max(self.max_gap_sec, now - self._last_ok)
-
-    async def _loop(self) -> None:
-        """Samples at a fixed rate, not a fixed gap between samples.
-
-        Sleeping ``interval`` *after* each probe returns makes the sampling
-        period ``interval + latency``, so the probe samples least often exactly
-        when the server is slowest -- and a probe that runs into its own
-        timeout stretches the period by 30s, thinning coverage right where a
-        hang would show. Deducting the elapsed time holds the rate steady and
-        lets a stalled probe re-fire immediately.
-        """
-        assert self._client is not None
-        next_tick = time.monotonic()
-        while True:
-            resp = await self._client.health_check()
-            self.probes += 1
-            now = time.monotonic()
-            if resp.status == 200:
-                self._last_ok = now
-            else:
-                self.failures += 1
-            self._observe(now)
-            next_tick += self._interval
-            # A probe slower than the interval leaves the schedule in the
-            # past; resuming from now re-fires once immediately rather than
-            # firing a catch-up burst for every tick that was missed.
-            next_tick = max(next_tick, now)
-            await asyncio.sleep(next_tick - now)
-
-    @property
-    def failure_ratio(self) -> float:
-        return self.failures / self.probes if self.probes else 0.0
-
-    def summary(self) -> str:
-        return (
-            f"liveness: {self.probes} probes, {self.failures} failed, "
-            f"max stall {self.max_gap_sec:.0f}s"
-        )
-
-
-def _stall_threshold(config: RunConfig) -> float:
-    """Stall gap that counts as a hang rather than queueing.
-
-    The production hang is permanent -- the pod never recovers without a
-    restart -- so this sits well above any plausible queueing delay, to keep
-    a slow batch from reading as a deadlock.
-    """
-    return max(90.0, config.timeout * 2)
-
-
-def _probe_result(
-    scenario: str, test: str, probe: _LivenessProbe, config: RunConfig
-) -> ScenarioResult:
-    """Grades the liveness probe. Shared by the matrix and the soak."""
-    threshold = _stall_threshold(config)
-    if probe.probes == 0:
-        return ScenarioResult(
-            scenario_name=scenario,
-            test_name=test,
-            verdict=Verdict.ERROR,
-            detail="liveness probe never ran",
-        )
-    if probe.max_gap_sec > threshold:
-        return ScenarioResult(
-            scenario_name=scenario,
-            test_name=test,
-            verdict=Verdict.FAIL,
-            detail=(
-                f"no forward progress for {probe.max_gap_sec:.0f}s "
-                f"(threshold {threshold:.0f}s) -- {probe.summary()}"
-            ),
-        )
-    # A majority of probes failing is conclusive on its own. The gap can stay
-    # under the threshold simply because the phase was short -- a probe that
-    # never returns is only observed once its timeout expires -- but a trivial
-    # request failing more often than not is never healthy at any duration.
-    if probe.failure_ratio > 0.5:
-        return ScenarioResult(
-            scenario_name=scenario,
-            test_name=test,
-            verdict=Verdict.FAIL,
-            detail=(
-                f"{probe.failures}/{probe.probes} liveness probes failed "
-                f"-- {probe.summary()}"
-            ),
-        )
-    if probe.failures or probe.max_gap_sec > threshold / 2:
-        return ScenarioResult(
-            scenario_name=scenario,
-            test_name=test,
-            verdict=Verdict.INTERESTING,
-            detail=f"progress degraded but recovered -- {probe.summary()}",
-        )
-    return ScenarioResult(
-        scenario_name=scenario,
-        test_name=test,
-        verdict=Verdict.PASS,
-        detail=probe.summary(),
-    )
 
 
 @register_scenario
@@ -345,7 +143,7 @@ class ImageStress(BaseScenario):
         self, client: FuzzClient, model: str
     ) -> ScenarioResult:
         """200 images -- the vendor per-request ceiling, exactly at the limit."""
-        parts = _unique_parts(IMAGE_MAX_COUNT, "count-200", side=224)
+        parts = unique_parts(IMAGE_MAX_COUNT, "count-200", side=224)
         resp = await client.post_json(
             image_payload(model, parts), timeout=HEAVY_TIMEOUT_SEC
         )
@@ -360,7 +158,7 @@ class ImageStress(BaseScenario):
         self, client: FuzzClient, model: str
     ) -> ScenarioResult:
         """201 images -- one past the limit. Must be a clean 4xx."""
-        parts = _unique_parts(IMAGE_MAX_COUNT + 1, "count-201", side=224)
+        parts = unique_parts(IMAGE_MAX_COUNT + 1, "count-201", side=224)
         resp = await client.post_json(
             image_payload(model, parts), timeout=HEAVY_TIMEOUT_SEC
         )
@@ -385,7 +183,7 @@ class ImageStress(BaseScenario):
         per_image = estimate_tokens(TYPICAL_SIDE, TYPICAL_SIDE)
         at_budget = max(1, VISION_CHUNK_TOKENS // per_image)
         payloads = [
-            image_payload(model, _unique_parts(n, f"chunk-{n}"))
+            image_payload(model, unique_parts(n, f"chunk-{n}"))
             for n in (at_budget - 1, at_budget, at_budget + 1, at_budget * 2)
         ]
         responses = await client.concurrent_requests(payloads, max_concurrent=2)
@@ -443,7 +241,7 @@ class ImageStress(BaseScenario):
         reveals nothing about the vision path and buries the axis under a
         result that never changes.
         """
-        window, source = await _served_context_window(client, config)
+        window, source = await served_context_window(client, config)
         count = min(
             IMAGE_MAX_COUNT,
             (window - PAYLOAD_OVERHEAD_TOKENS) // MAX_IMAGE_TOKENS,
@@ -524,7 +322,7 @@ class ImageStress(BaseScenario):
         payloads = [
             image_payload(
                 config.model,
-                _unique_parts(
+                unique_parts(
                     PRODUCTION_BATCH_SIZES[i % len(PRODUCTION_BATCH_SIZES)],
                     f"conc-{i}",
                 ),
@@ -532,7 +330,7 @@ class ImageStress(BaseScenario):
             for i in range(concurrency * 3)
         ]
 
-        async with _LivenessProbe(config) as probe:
+        async with LivenessProbe(config) as probe:
             responses = await client.concurrent_requests(
                 payloads, max_concurrent=concurrency
             )
@@ -548,7 +346,7 @@ class ImageStress(BaseScenario):
                     "all images byte-unique"
                 ),
             ),
-            _probe_result(
+            probe_result(
                 self.name, "concurrent_uncached_liveness", probe, config
             ),
         ]
@@ -565,19 +363,19 @@ class ImageStress(BaseScenario):
         """
         nodes = max(1, config.image_stress_nodes)
         concurrency = nodes * CONCURRENCY_PER_NODE
-        shared = _unique_parts(4, "shared-hot")
+        shared = unique_parts(4, "shared-hot")
         payloads: list[dict[str, Any]] = []
         for i in range(concurrency * 3):
             if i % 2 == 0:
                 parts = list(shared)  # repeat -- hits the preprocess cache
             else:
-                parts = _unique_parts(
+                parts = unique_parts(
                     PRODUCTION_BATCH_SIZES[i % len(PRODUCTION_BATCH_SIZES)],
                     f"mixed-{i}",
                 )
             payloads.append(image_payload(config.model, parts))
 
-        async with _LivenessProbe(config) as probe:
+        async with LivenessProbe(config) as probe:
             responses = await client.concurrent_requests(
                 payloads, max_concurrent=concurrency
             )
@@ -595,7 +393,7 @@ class ImageStress(BaseScenario):
         # second row.
         if (
             result.verdict == Verdict.PASS
-            and probe.max_gap_sec > _stall_threshold(config)
+            and probe.max_gap_sec > stall_threshold(config)
         ):
             return self.make_result(
                 self.name,
@@ -760,12 +558,12 @@ class ImageStressSoak(BaseScenario):
         server_errors = 0
         dropped = 0
 
-        async with _LivenessProbe(config) as probe:
+        async with LivenessProbe(config) as probe:
             while time.monotonic() < deadline:
                 payloads = [
                     image_payload(
                         config.model,
-                        _unique_parts(
+                        unique_parts(
                             PRODUCTION_BATCH_SIZES[
                                 (sent + i) % len(PRODUCTION_BATCH_SIZES)
                             ],
@@ -807,5 +605,5 @@ class ImageStressSoak(BaseScenario):
                 verdict,
                 detail=f"{tally} -- {probe.summary()}",
             ),
-            _probe_result(self.name, "image_soak_liveness", probe, config),
+            probe_result(self.name, "image_soak_liveness", probe, config),
         ]

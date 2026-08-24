@@ -164,17 +164,18 @@ These require the `openai` Python package, which Bazel provides automatically.
 
 Run with `--model-profile kimi-k2.5` or `--model-profile glm-5.1`.
 
-| Scenario            | Model      | Tests | What it validates                                                                |
-|---------------------|------------|-------|----------------------------------------------------------------------------------|
-| `kimi_battle`       | Kimi K2.5  | 15    | xgrammar edge cases, parallel TCs, structural tags                               |
-| `kimi_3am`          | Kimi K2.5  | 12    | Production edge cases, soak tests, precision                                     |
-| `kimi_production`   | Kimi K2.5  | 10    | Long context, error recovery, token counting                                     |
-| `kimi_k2vv`         | Kimi K2.5  | 2K    | K2 Vendor Verifier benchmark (see below)                                         |
-| `kimi_freeze_repro` | Kimi K2.5  | 6     | Production freeze repro: oneOf/const tool schemas under concurrent load          |
-| `glm_battle`        | GLM-5.1    | 12    | Schema compilation, tool calling, streaming                                      |
-| `glm_3am`           | GLM-5.1    | 10    | Edge cases, soak tests, concurrent stress                                        |
-| `image_stress`      | MiniMax-M3 | 11    | Huge image batches: max count/size/tokens, skewed ratios, cache-miss concurrency |
-| `image_stress_soak` | MiniMax-M3 | 2     | Sustained image batches for minutes-scale hang reproduction                      |
+| Scenario              | Model      | Tests | What it validates                                                                |
+|-----------------------|------------|-------|----------------------------------------------------------------------------------|
+| `kimi_battle`         | Kimi K2.5  | 15    | xgrammar edge cases, parallel TCs, structural tags                               |
+| `kimi_3am`            | Kimi K2.5  | 12    | Production edge cases, soak tests, precision                                     |
+| `kimi_production`     | Kimi K2.5  | 10    | Long context, error recovery, token counting                                     |
+| `kimi_k2vv`           | Kimi K2.5  | 2K    | K2 Vendor Verifier benchmark (see below)                                         |
+| `kimi_freeze_repro`   | Kimi K2.5  | 6     | Production freeze repro: oneOf/const tool schemas under concurrent load          |
+| `glm_battle`          | GLM-5.1    | 12    | Schema compilation, tool calling, streaming                                      |
+| `glm_3am`             | GLM-5.1    | 10    | Edge cases, soak tests, concurrent stress                                        |
+| `image_stress`        | MiniMax-M3 | 11    | Huge image batches: max count/size/tokens, skewed ratios, cache-miss concurrency |
+| `image_stress_soak`   | MiniMax-M3 | 2     | Sustained image batches for minutes-scale hang reproduction                      |
+| `image_kv_saturation` | MiniMax-M3 | 6     | Concurrent max-payload requests ramped 1→2→4 to fill KV cache with vision tokens |
 
 ### Image stress (MiniMax-M3)
 
@@ -195,7 +196,7 @@ $LLM_FUZZ --url http://localhost:8400 --model minimax-m3 \
 
 Covers two different production failures, which want opposite things from a
 test. **CENG-880** is a size bug — an OOM on requests carrying enough image
-tokens — so `single_max_image`, `max_total_image_tokens` (61 max-size images,
+tokens — so `single_max_image`, `max_total_image_tokens` (63 max-size images,
 ~1M merged tokens) and `over_budget_request` push the size axes to their
 vendor limits. **MXSERV-395** is not: pods wedged on requests carrying 1, 2,
 4, 5, 6 and 8 images, with concurrency and a preprocess-cache miss as the only
@@ -209,6 +210,24 @@ sized to `--max-concurrency`, so a probe sharing it would queue behind the
 traffic it is measuring). The probe reports the longest interval in which the
 server completed no trivial request — the signal a hang produces and a
 per-request timeout does not.
+
+### Vision KV saturation (MiniMax-M3)
+
+```bash
+# Ramp 1 -> 2 -> 4 concurrent max-payload requests
+$LLM_FUZZ --url http://localhost:8400 --model minimax-m3 \
+    --model-profile minimax-m3 --scenarios image_kv_saturation
+```
+
+`image_stress` sends the largest payload a single *request* may carry, which
+is a per-request ceiling. CENG-880 closes on an aggregate one: a batch filling
+G0 KV cache upwards of 90% with vision tokens, roughly 1M per DP rank and ~2M
+together. No single request reaches that, because the served window caps it.
+So `image_kv_saturation` holds the payload at the per-request maximum and ramps
+concurrency instead — 2 is the first rung whose aggregate exceeds one rank's
+capacity, and 4 overshoots. Each rung reports how close it came to the target,
+and a deployment whose window is too small to saturate G0 is flagged rather
+than passed, so a green run cannot be mistaken for clearing the criterion.
 
 Images are synthesised in-process with a stdlib PNG encoder; nothing is
 downloaded. Uniqueness comes from a `tEXt` nonce, so a cache-missing variant
