@@ -193,6 +193,13 @@ async def test_data_uri_within_cap_roundtrips() -> None:
 # ---------------------------------------------------------------------------
 
 
+def _no_ssrf() -> Settings:
+    # These fetch tests drive the fake ``client.stream(...)`` directly, so they
+    # exercise the break-glass (unvalidated) streaming path rather than the
+    # SSRF-guarded path that would resolve the host through real DNS.
+    return Settings(media_url_ssrf_protection_enabled=False)
+
+
 class _FakeResponse:
     def __init__(
         self,
@@ -271,7 +278,7 @@ async def test_http_oversized_content_length_rejected_without_download(
     with pytest.raises(InputError, match="video exceeds the maximum"):
         await resolve_image_from_url(
             AnyUrl("https://example.com/big.mp4"),
-            settings=Settings(),
+            settings=_no_ssrf(),
             max_bytes=50 * 1024 * 1024,
             media_kind="video",
         )
@@ -293,7 +300,7 @@ async def test_http_stream_aborts_when_total_exceeds_cap(
     with pytest.raises(InputError, match="image exceeds the maximum"):
         await resolve_image_from_url(
             AnyUrl("https://example.com/sneaky.png"),
-            settings=Settings(),
+            settings=_no_ssrf(),
             max_bytes=100,
         )
     assert len(read_log) == 2  # aborted early, not all ten chunks
@@ -308,7 +315,7 @@ async def test_http_within_cap_downloads_fully(monkeypatch) -> None:  # noqa: AN
     )
     out = await resolve_image_from_url(
         AnyUrl("https://example.com/ok.png"),
-        settings=Settings(),
+        settings=_no_ssrf(),
         max_bytes=_CAP,
     )
     assert out == b"abcdefghijkl"
@@ -371,7 +378,7 @@ async def test_http_read_timeout_raises_clean_input_error(
     with pytest.raises(InputError, match="timed out fetching video"):
         await resolve_image_from_url(
             AnyUrl("https://example.com/slow.mp4"),
-            settings=Settings(),
+            settings=_no_ssrf(),
             max_bytes=_CAP,
             media_kind="video",
         )
@@ -389,7 +396,7 @@ async def test_http_transport_error_raises_clean_input_error(
     with pytest.raises(InputError, match="failed to fetch video"):
         await resolve_image_from_url(
             AnyUrl("https://example.com/unreachable.mp4"),
-            settings=Settings(),
+            settings=_no_ssrf(),
             max_bytes=_CAP,
             media_kind="video",
         )
@@ -418,7 +425,7 @@ async def test_http_client_uses_explicit_non_default_timeout(
     monkeypatch.setattr(_image_resolution, "AsyncClient", _factory)
     await resolve_image_from_url(
         AnyUrl("https://example.com/ok.png"),
-        settings=Settings(),
+        settings=_no_ssrf(),
         max_bytes=_CAP,
     )
     assert "timeout" in captured, (

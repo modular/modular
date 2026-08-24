@@ -551,30 +551,12 @@ This version is still a work in progress.
   400 naming the keyword pair at fault, rather than compiling to a looser
   grammar.
 
-- MAX Serve no longer drops uvicorn's log records. The console, file, and
-  OTLP handlers filter on an allowlist of logger prefixes that omitted
-  uvicorn, which owns the HTTP error log, so an exception escaping the ASGI
-  application, a malformed request, and the cancellation of in-flight
-  requests when the shutdown drain expires all went unreported. The uvicorn
-  logger stays at `WARNING`, so the per-request access log remains
-  suppressed.
-
-- Added `MAX_SERVE_HTTP_KEEPALIVE_TIMEOUT_S` to control how long an idle HTTP
-  connection is held open, defaulting to 120 seconds (previously hard-coded to
-  5 seconds). A server that retires idle connections sooner than its clients do
-  always wins the close race, and a close landing just as a pooled client
-  writes its next request reaches that client as a TCP reset rather than a
-  response. A client cannot replay a POST body, so it surfaces the reset
-  instead of retrying. Keep this above the idle-connection timeout of every
-  client that pools connections to MAX Serve.
-
-- An unhandled server error now returns the standard OpenAI `error` envelope as
-  JSON rather than a bare `text/plain` `Internal Server Error`. The
-  request-session middleware runs outside Starlette's exception middleware, so
-  raising from it bypassed the app's exception handler and reached
-  `ServerErrorMiddleware`, which replies in plain text and then re-raises,
-  prompting uvicorn to close the connection under a client that was owed a
-  response.
+- Hardened the server-side fetch of client-supplied `image_url` / `video_url`
+  references against SSRF: the host is now validated and hosts that resolve to
+  internal or reserved addresses are rejected before the fetch. On by default
+  (`MAX_SERVE_MEDIA_URL_SSRF_PROTECTION_ENABLED`); a per-host allowlist
+  (`MAX_SERVE_MEDIA_URL_ALLOWED_HOSTS`, hostnames or CIDRs) permits trusted
+  internal hosts.
 
 - Speculative decoding takes `--draft-proposal sampled` (default `argmax`,
   unchanged). The draft model samples its proposal under the request's
