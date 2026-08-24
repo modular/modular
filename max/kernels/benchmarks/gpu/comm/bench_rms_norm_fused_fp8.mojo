@@ -101,16 +101,16 @@ def bench_rms_norm_fused_fp8[
 
     # ===== Benchmark 1: RMS norm alone =====
     @always_inline
-    @__copy_capture(
-        shape,
-        gamma_tensor,
-        epsilon,
-        weight_offset,
-        cb_data,
-        cb_rms_output,
-    )
-    @__parameter
-    def bench_rms_norm(mut b: Bencher) raises:
+    def bench_rms_norm(
+        mut b: Bencher,
+    ) raises {
+        var gamma_tensor,
+        var epsilon,
+        var weight_offset,
+        var cb_data,
+        var cb_rms_output,
+        imm,
+    }:
         @always_inline
         def kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
             # Construct buffers with offsets
@@ -158,7 +158,8 @@ def bench_rms_norm_fused_fp8[
 
         bencher_iter_custom(b, kernel_launch, ctx)
 
-    b.bench_function[bench_rms_norm](
+    b.bench_function(
+        bench_rms_norm,
         BenchId(
             "rms_norm_only",
             input_id=String(fn_name, "/", in_dtype, "/", out_dtype, "/", shape),
@@ -169,13 +170,9 @@ def bench_rms_norm_fused_fp8[
     var scales_base_ptr = scales_d.unsafe_ptr()
 
     @always_inline
-    @__copy_capture(
-        cb_rms_output,
-        cb_fp8_output,
-        scales_base_ptr,
-    )
-    @__parameter
-    def bench_fp8_quant(mut b: Bencher) raises:
+    def bench_fp8_quant(
+        mut b: Bencher,
+    ) raises {var cb_rms_output, var cb_fp8_output, var scales_base_ptr, imm,}:
         @always_inline
         def kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
             # Input function for FP8 quant (reads from RMS norm output)
@@ -205,7 +202,8 @@ def bench_rms_norm_fused_fp8[
 
         bencher_iter_custom(b, kernel_launch, ctx)
 
-    b.bench_function[bench_fp8_quant](
+    b.bench_function(
+        bench_fp8_quant,
         BenchId(
             "fp8_quant_only",
             input_id=String(fn_name, "/", in_dtype, "/", out_dtype, "/", shape),
@@ -216,17 +214,17 @@ def bench_rms_norm_fused_fp8[
     var scales_base_ptr_fused = scales_base_ptr
 
     @always_inline
-    @__copy_capture(
-        shape,
-        gamma_tensor,
-        epsilon,
-        weight_offset,
-        cb_data,
-        cb_fused_output,
-        scales_base_ptr_fused,
-    )
-    @__parameter
-    def bench_fused(mut b: Bencher) raises:
+    def bench_fused(
+        mut b: Bencher,
+    ) raises {
+        var gamma_tensor,
+        var epsilon,
+        var weight_offset,
+        var cb_data,
+        var cb_fused_output,
+        var scales_base_ptr_fused,
+        imm,
+    }:
         @always_inline
         def kernel_launch(ctx_: DeviceContext, iteration: Int) raises {imm}:
             # Input function with offset
@@ -278,7 +276,8 @@ def bench_rms_norm_fused_fp8[
 
         bencher_iter_custom(b, kernel_launch, ctx)
 
-    b.bench_function[bench_fused](
+    b.bench_function(
+        bench_fused,
         BenchId(
             "rms_norm_fused_fp8",
             input_id=String(fn_name, "/", in_dtype, "/", out_dtype, "/", shape),

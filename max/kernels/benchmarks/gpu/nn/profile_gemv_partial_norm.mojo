@@ -262,15 +262,14 @@ def main() raises:
                     ctx,
                 )
 
-        @__parameter
         @always_inline
-        def bench_func(mut b: Bencher) raises:
+        def bench_func(mut b: Bencher) raises {imm}:
             bencher_iter_custom(b, kernel_launch, ctx)
 
         var bw = ThroughputMeasure(BenchMetric.bytes, total_bytes)
 
         var m = Bench()
-        m.bench_function[bench_func](BenchId(run_name), [bw])
+        m.bench_function(bench_func, BenchId(run_name), [bw])
 
         # Post-bench correctness verification: re-run the kernel into
         # iter=0's output slots and compare to the vendor-BLAS + host

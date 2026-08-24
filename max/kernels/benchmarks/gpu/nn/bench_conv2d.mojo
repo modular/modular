@@ -336,12 +336,12 @@ def bench_conv2d[
                 ctx,
             )
 
-        @__parameter
         @always_inline
-        def im2col_bench(mut bencher: Bencher) raises:
+        def im2col_bench(mut bencher: Bencher) raises {imm}:
             bencher_iter_custom(bencher, im2col_kernel, ctx)
 
-        b.bench_function[im2col_bench](
+        b.bench_function(
+            im2col_bench,
             BenchId("conv2d_im2col", input_id=bench_input_id),
             [ThroughputMeasure(BenchMetric.flops, flops)],
         )
@@ -364,12 +364,12 @@ def bench_conv2d[
                 ctx,
             )
 
-        @__parameter
         @always_inline
-        def cudnn_bench(mut bencher: Bencher) raises:
+        def cudnn_bench(mut bencher: Bencher) raises {imm}:
             bencher_iter_custom(bencher, cudnn_kernel, ctx)
 
-        b.bench_function[cudnn_bench](
+        b.bench_function(
+            cudnn_bench,
             BenchId("conv2d_cudnn", input_id=bench_input_id),
             [ThroughputMeasure(BenchMetric.flops, flops)],
         )
@@ -501,12 +501,12 @@ def bench_conv2d[
                 C_in=in_channels,
             ](input_nhwc_amd, filter_frsc_tt, output_2d_tt, ctx)
 
-        @__parameter
         @always_inline
-        def amd_4wave_bench(mut bencher: Bencher) raises:
+        def amd_4wave_bench(mut bencher: Bencher) raises {imm}:
             bencher_iter_custom(bencher, amd_4wave_kernel, ctx)
 
-        b.bench_function[amd_4wave_bench](
+        b.bench_function(
+            amd_4wave_bench,
             BenchId("conv2d_amd_4wave", input_id=bench_input_id),
             [ThroughputMeasure(BenchMetric.flops, flops)],
         )
@@ -543,12 +543,12 @@ def bench_conv2d[
                 block_dim=(block_size, block_size, 1),
             )
 
-        @__parameter
         @always_inline
-        def naive_bench(mut bencher: Bencher) raises:
+        def naive_bench(mut bencher: Bencher) raises {imm}:
             bencher_iter_custom(bencher, naive_conv_kernel, ctx)
 
-        b.bench_function[naive_bench](
+        b.bench_function(
+            naive_bench,
             BenchId("conv2d_naive", input_id=bench_input_id),
             [ThroughputMeasure(BenchMetric.flops, flops)],
         )

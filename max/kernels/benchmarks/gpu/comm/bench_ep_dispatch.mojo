@@ -104,6 +104,7 @@ def bench_dispatch[
 
     ctx.enqueue_memset(recv_count_buf, UInt64.MAX_FINITE)
     ctx.enqueue_memset(atomic_counter, Int32(0))
+    var atomic_sync_counters = EPLocalSyncCounters[n_experts](atomic_counter)
 
     # These host buffers are intentionally leaked (no free in the original
     # code): async `enqueue_copy` reads them, so they must outlive this scope.
@@ -188,12 +189,13 @@ def bench_dispatch[
     dealloc(host_input_tokens^)
 
     @always_inline
-    @__parameter
-    def clean_up(ctx: DeviceContext) raises:
+    def clean_up(
+        ctx: DeviceContext,
+        atomic_counter: DeviceBuffer[DType.int32],
+    ) raises {}:
         ctx.enqueue_memset(atomic_counter, Int32(0))
 
     @always_inline
-    @__parameter
     def setup_and_run_benchmark[
         TokenFmtType: TokenFormat,
         FormatHandlerType: TokenFormat,
@@ -204,7 +206,8 @@ def bench_dispatch[
         format_handler: FormatHandlerType,
         bench_name: String,
         throughput_dtype: DType,
-    ) raises:
+        atomic_counter: DeviceBuffer[DType.int32],
+    ) raises {imm}:
         var msg_bytes = TokenFmtType.msg_size()
 
         var send_buf = shmem_malloc[.uint8](n_tokens_per_rank * msg_bytes)
@@ -243,8 +246,7 @@ def bench_dispatch[
         var func_wait = ctx.compile_function[dispatch_wait]()
 
         @always_inline
-        @__parameter
-        def run_dispatch_async(ctx: DeviceContext) raises:
+        def run_dispatch_async(ctx: DeviceContext) raises {imm}:
             # the recv_buf ptrs and recv_count ptrs need to be passed in a InlinedArray
             var recv_buf_ptrs: Array[UnsafePointer[UInt8, MutAnyOrigin], 1] = [
                 recv_buf.as_unsafe_any_origin()
@@ -260,15 +262,14 @@ def bench_dispatch[
                 send_buf,
                 recv_buf_ptrs,
                 recv_count_ptrs,
-                EPLocalSyncCounters[n_experts](atomic_counter),
+                atomic_sync_counters,
                 Int32(my_rank),
                 grid_dim=hw_info.sm_count,
                 block_dim=hw_info.max_thread_block_size,
             )
 
         @always_inline
-        @__parameter
-        def run_dispatch_async_wait(ctx: DeviceContext) raises:
+        def run_dispatch_async_wait(ctx: DeviceContext) raises {imm}:
             ctx.enqueue_function(
                 func_wait,
                 format_handler,
@@ -277,33 +278,30 @@ def bench_dispatch[
                 src_token_info_tensor,
                 recv_buf,
                 recv_count,
-                EPLocalSyncCounters[n_experts](atomic_counter),
+                atomic_sync_counters,
                 Int32(my_rank),
                 grid_dim=hw_info.sm_count,
                 block_dim=hw_info.max_thread_block_size,
             )
 
         @always_inline
-        @__parameter
-        def run_e2e(ctx: DeviceContext) raises:
+        def run_e2e(ctx: DeviceContext) raises {imm}:
             run_dispatch_async(ctx)
             run_dispatch_async_wait(ctx)
 
         shmem_barrier_all_on_stream(ctx.stream())
 
         @always_inline
-        @__parameter
-        def run_func() raises:
+        def run_func() raises {imm}:
             run_e2e(ctx)
-            clean_up(ctx)
+            clean_up(ctx, atomic_counter)
 
-        @__parameter
         @always_inline
-        def bench_func(mut b: Bencher):
-            @always_inline
-            def kernel_launch(ctx: DeviceContext) raises {imm}:
-                run_func()
+        def kernel_launch(ctx: DeviceContext) raises {imm}:
+            run_func()
 
+        @always_inline
+        def bench_func(mut b: Bencher) {imm}:
             bencher_iter_custom(b, kernel_launch, ctx)
 
         var input_id_parts = String(
@@ -323,7 +321,8 @@ def bench_dispatch[
             String(throughput_dtype),
         )
 
-        b.bench_function[bench_func](
+        b.bench_function(
+            bench_func,
             BenchId(bench_name, input_id=input_id_parts),
             [
                 ThroughputMeasure(
@@ -359,6 +358,7 @@ def bench_dispatch[
             format_handler,
             "ep_dispatch",
             token_dtype,
+            atomic_counter,
         )
 
     else:
@@ -386,6 +386,7 @@ def bench_dispatch[
             format_handler,
             "ep_dispatch",
             token_dtype,
+            atomic_counter,
         )
 
     shmem_free(recv_count)
