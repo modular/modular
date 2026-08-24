@@ -48,7 +48,7 @@ def make_closure(x: Int):
     # COM: `var x` on a trivial Int becomes a trivial copy threaded through the
     # COM: closure storage initializer.
     # CHECK: lit.call {{.*}}my_closure::__storage"::@"__init__
-    # CHECK-SAME: "x": !lit.ref<!Int, {{[^>]*}}> read_mem
+    # CHECK-SAME: "x": !lit.ref<!Int, {{[^>]*}}> imm_mem
     def my_closure(y: Int) {var x} -> Int:
         return x + y
 
@@ -257,7 +257,7 @@ def longCaptureLists(
     # COM: The mixed capture list threads each value through the storage
     # COM: initializer with its own convention.
     # CHECK: lit.call {{.*}}closure::__storage"::@"__init__
-    # CHECK-SAME: "something": !lit.ref<!String, {{[^>]*}}> read_mem
+    # CHECK-SAME: "something": !lit.ref<!String, {{[^>]*}}> imm_mem
     # CHECK-SAME: "something2": !lit.ref<!String, mut {{[^>]*}}> ref
     # CHECK-SAME: "something3": !lit.ref<!String, muttoimm {{[^>]*}}> ref
     def closure() raises {

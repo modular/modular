@@ -924,7 +924,7 @@ lit.fn @elif(%arg0: index, %arg1: index, %arg2: index) -> index {
 // COM: When cloning the finally block, we must uniquely mangle parameters to
 // COM: avoid duplicate parameter name errors.
 // CHECK-LABEL: lit.fn @mangle_params_finally_1
-lit.fn @mangle_params_finally_1<x>(%c: !kgen.scalar<bool> read) -> !kgen.none {
+lit.fn @mangle_params_finally_1<x>(%c: !kgen.scalar<bool> imm) -> !kgen.none {
   lit.try {
     // CHECK: hlcf.if %c
     hlcf.if %c {
@@ -959,7 +959,7 @@ lit.fn @mangle_params_finally_1<x>(%c: !kgen.scalar<bool> read) -> !kgen.none {
 
 
 // CHECK-LABEL: lit.fn @mangle_params_finally_2
-lit.fn @mangle_params_finally_2<x>(%c: !kgen.scalar<bool> read) -> !kgen.none {
+lit.fn @mangle_params_finally_2<x>(%c: !kgen.scalar<bool> imm) -> !kgen.none {
   lit.try {
     // CHECK: hlcf.if %c
     hlcf.if %c {
@@ -1010,7 +1010,7 @@ lit.fn @mangle_params_finally_2<x>(%c: !kgen.scalar<bool> read) -> !kgen.none {
 
 
 // CHECK-LABEL: lit.fn @mangle_params_finally_3
-lit.fn @mangle_params_finally_3<x>(%c: !kgen.scalar<bool> read) -> !kgen.none {
+lit.fn @mangle_params_finally_3<x>(%c: !kgen.scalar<bool> imm) -> !kgen.none {
   lit.try {
     // CHECK: lit.fn nested()
     lit.fn nested() -> !kgen.none {

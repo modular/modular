@@ -2179,7 +2179,7 @@ StringAttr DeclResolver::getMangledName(StringAttr baseName, ASTDecl &container,
       continue;
     } else if (fullSig.isKwVarArg(argNo)) {
       // TODO: Propagate convention correctly.
-      convention = ArgConvention::ReadReg;
+      convention = ArgConvention::ImmReg;
       argType = argType.getKwargsDictRefValueType();
       numStars = 2;
     } else {
@@ -2195,8 +2195,8 @@ StringAttr DeclResolver::getMangledName(StringAttr baseName, ASTDecl &container,
     case ArgConvention::DeinitMem:
       mangledName += '$';
       break;
-    case ArgConvention::ReadReg:
-    case ArgConvention::ReadMem:
+    case ArgConvention::ImmReg:
+    case ArgConvention::ImmMem:
     case ArgConvention::Mut:
       break;
     case ArgConvention::Ref:

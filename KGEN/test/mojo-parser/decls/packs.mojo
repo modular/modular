@@ -196,14 +196,14 @@ struct MyTuple[*Ts: AnyType](Movable where False):
 
 # CHECK-LABEL: lit.fn @"pack
 # CHECK-SAME: Ts: !lit.struct<#TypeList <:meta<!AnyType> !AnyType{{.*}}> pos_vararg
-# CHECK-SAME: (%args: !lit.ref<{{.*}}#VariadicPack <:!Bool {:scalar<bool> false}, :origin<false> *"args.origin{{.*}}, :meta<!AnyType> !AnyType, :param_list<!AnyType> {{.*}}Ts>>, imm *"args`3"> read_mem|pack_vararg)
+# CHECK-SAME: (%args: !lit.ref<{{.*}}#VariadicPack <:!Bool {:scalar<bool> false}, :origin<false> *"args.origin{{.*}}, :meta<!AnyType> !AnyType, :param_list<!AnyType> {{.*}}Ts>>, imm *"args`3"> imm_mem|pack_vararg)
 def pack[*Ts: AnyType](*args: *Ts):
     pass
 
 
 # CHECK-LABEL: lit.fn @"packBorrowed[
 # CHECK-SAME: Ts: !lit.struct<#TypeList <:meta<!AnyType> !AnyType{{.*}}> pos_vararg
-# CHECK-SAME: (%args: !lit.ref<{{.*}}#VariadicPack <:!Bool {:scalar<bool> false}, :origin<false> *"args.origin{{.*}}, :meta<!AnyType> !AnyType, :param_list<!AnyType> {{.*}}Ts>>, imm *"args`3"> read_mem|pack_vararg)
+# CHECK-SAME: (%args: !lit.ref<{{.*}}#VariadicPack <:!Bool {:scalar<bool> false}, :origin<false> *"args.origin{{.*}}, :meta<!AnyType> !AnyType, :param_list<!AnyType> {{.*}}Ts>>, imm *"args`3"> imm_mem|pack_vararg)
 def packBorrowed[*Ts: AnyType](*args: *Ts):
     pass
 
@@ -247,7 +247,7 @@ def usePacks(x: FloatDyn, y: Int):
 def test_comptime_call[a: Int]():
     # CHECK: lit.alias.decl *"foo`": none =
     # CHECK-SAME: <apply(:!lit.generator<[1](
-    # CHECK-SAME: "args": !lit.ref<{{.*}}#VariadicPack <:!Bool {:scalar<bool> false}, :origin<false> #lit.comptime.origin, {{.*}}, :meta<!AnyType> !AnyType, :param_list<!AnyType> [!Int], {{.*}}>, imm #lit.comptime.origin> read_mem|pack_vararg)
+    # CHECK-SAME: "args": !lit.ref<{{.*}}#VariadicPack <:!Bool {:scalar<bool> false}, :origin<false> #lit.comptime.origin, {{.*}}, :meta<!AnyType> !AnyType, :param_list<!AnyType> [!Int], {{.*}}>, imm #lit.comptime.origin> imm_mem|pack_vararg)
     # CHECK-SAME: <store_to_mem(a)>))
     comptime foo = pack(a)
 
@@ -313,14 +313,14 @@ def forward_pack[*Ts: AnyType](*args: *Ts):
 
 
 # CHECK-LABEL: variadic_pack_intable_sink_borrowed
-# CHECK-SAME: read_mem|pack_vararg
+# CHECK-SAME: imm_mem|pack_vararg
 def variadic_pack_intable_sink_borrowed[*Ts: Intable](*elts: *Ts):
     pass
 
 
 # CHECK-LABEL: forward_variadic_pack_borrowed_intable
 # CHECK-SAME: [imm *[[IMP_ORIGIN_0:.*]]]
-# CHECK-SAME: read_mem|pack_vararg
+# CHECK-SAME: imm_mem|pack_vararg
 def forward_variadic_pack_borrowed_intable[*Ts: Intable](*pack: *Ts):
     # CHECK: lit.call tail {{.*}}variadic_pack_intable_sink_borrowed
     # CHECK-SAME:[imm *[[IMP_ORIGIN_0]]]

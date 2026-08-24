@@ -269,7 +269,7 @@ struct ValueMem(ImplicitlyCopyable):
 # CHECK-NEXT: lit.ref.store %5, %3
 
 # CHECK: lit.fn @"__init__{{.*}}"{{.*}}*,
-# CHECK-SAME:  %copy: !lit.ref<!ValueMem, imm {{.*}}> read_mem,
+# CHECK-SAME:  %copy: !lit.ref<!ValueMem, imm {{.*}}> imm_mem,
 # CHECK-SAME:  %self: !lit.ref<!ValueMem, mut {{.*}}> byref_result)
 # CHECK-SAME: -> !kgen.none always_inline_no_debug attributes
 # CHECK-NEXT: %0 = lit.ref.struct.ger %self[a]
@@ -318,7 +318,7 @@ struct ValueMemHasMove(ImplicitlyCopyable, Movable):
 # CHECK-NEXT: lit.ownership.mark_destroyed %move
 # CHECK-NEXT: lit.return %none : !kgen.none
 
-# CHECK: lit.fn @"__init__{{.*}}"{{.*}}[{{.*}}](*, %copy: !lit.ref<!ValueRegTrivial, {{.*}}> read_mem,
+# CHECK: lit.fn @"__init__{{.*}}"{{.*}}[{{.*}}](*, %copy: !lit.ref<!ValueRegTrivial, {{.*}}> imm_mem,
 # CHECK-SAME: %self: !lit.ref<!ValueRegTrivial, {{.*}}> byref_result) -> !kgen.none always_inline_no_debug
 # CHECK-NEXT: [[V0:%.*]] = lit.ref.load %copy : <!ValueRegTrivial
 # CHECK-NEXT: lit.ref.store [[V0]], %self
@@ -338,7 +338,7 @@ struct ValueReg(ImplicitlyCopyable, RegisterPassable):
     var b: StructExample
 
 
-# CHECK: lit.fn @"__init__{{.*}}"{{.*}}(*, %copy: !lit.ref<!ValueReg, imm *"copy`"> read_mem,
+# CHECK: lit.fn @"__init__{{.*}}"{{.*}}(*, %copy: !lit.ref<!ValueReg, imm *"copy`"> imm_mem,
 # CHECK-SAME : %self: !lit.ref<!ValueReg, mut *"self`"> byref_result)
 # CHECK-SAME: attributes {{.*}}specialFnKind = 3 : i8
 # CHECK-NEXT: [[SELFA:%.*]] = lit.ref.struct.ger %self[a]
@@ -393,7 +393,7 @@ struct TraitMember[T: ImplicitlyCopyable & Deinitable](ImplicitlyCopyable):
     # CHECK: lit.call{{.*}}__init__(copy:$0)">
 
 
-# CHECK: lit.fn @"notSynthetic{{.*}}(%self: !lit.ref<!NotSynthetic, imm {{.*}}> read_mem) -> !kgen.none attributes {sourceName = "notSynthetic", specialFnKind = 0 : i8}
+# CHECK: lit.fn @"notSynthetic{{.*}}(%self: !lit.ref<!NotSynthetic, imm {{.*}}> imm_mem) -> !kgen.none attributes {sourceName = "notSynthetic", specialFnKind = 0 : i8}
 # CHECK: lit.fn @"__init__{{.*}}"{{.*}}(*, %move:{{.*}}synthetic
 # CHECK: lit.fn @"__init__{{.*}}"{{.*}}(*, %copy:{{.*}}synthetic
 # CHECK: lit.fn @"__init__{{.*}}synthetic
@@ -410,7 +410,7 @@ struct NotSynthetic(ImplicitlyCopyable):
 struct VarArgInit(TrivialRegisterPassable):
     var a: Int
 
-    # CHECK: lit.fn @"__init__{{.*}}(decorators::ValueMem*)"{{.*}}(%values: {{.*}}> read_mem|pos_vararg
+    # CHECK: lit.fn @"__init__{{.*}}(decorators::ValueMem*)"{{.*}}(%values: {{.*}}> imm_mem|pos_vararg
     # The argument is intentionally memory-only.
     @implicit
     def __init__(out self, *values: ValueMem):

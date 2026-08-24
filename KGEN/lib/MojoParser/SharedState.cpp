@@ -4168,7 +4168,7 @@ TypedAttr SharedState::foldInlineBuiltinFunction(ArrayRef<TypedAttr> operands,
   for (auto [convention, arg, argValue] :
        llvm::zip(fnOp.getFuncTypeGenerator().getArgConventions(),
                  fnOp.getBody()->getArguments(), operands)) {
-    if (convention != ArgConvention::ReadReg) {
+    if (convention != ArgConvention::ImmReg) {
       folder.emitError(arg.getLoc())
           << "does not support this argument convention";
       return {};

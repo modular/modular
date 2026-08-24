@@ -2488,11 +2488,11 @@ ParseResult DeclResolver::resolveBody(FnOp funcOp, Lexer &lexer,
     }
 
     CValue argValue;
-    if (convention == ArgConvention::ReadMem) {
+    if (convention == ArgConvention::ImmMem) {
       setDecl(MBValue(refinedArg)); // borrowed (possibly refined)
       continue;
     }
-    if (convention == ArgConvention::ReadReg) {
+    if (convention == ArgConvention::ImmReg) {
       // borrowed_in_reg is used for TrivialRegisterPassable types. Use
       // SBValue (not SRValue) to preserve borrowed semantics, while still
       // keeping any type refinement rebind visible in the function body.
@@ -3903,7 +3903,7 @@ static FnOp findFieldwiseInit(ASTDecl &structDecl) {
       // Fieldwise initializers must have read/owned conventions. ref etc
       // are lit.ref's mechanically but these are invisible the to the caller.
       if (hasImplicitOrigin(conv)) {
-        if (conv != ArgConvention::ReadMem && conv != ArgConvention::OwnedMem &&
+        if (conv != ArgConvention::ImmMem && conv != ArgConvention::OwnedMem &&
             conv != ArgConvention::DeinitMem) {
           isMatch = false;
           break;

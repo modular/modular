@@ -177,7 +177,7 @@ KGEN::parseOptionalParameterSpec(AsmParser &p,
     // Parameters don't have ArgConvention's.
     if (argsVariadic.back() == VariadicKind::PackVarArg ||
         argsVariadic.back() == VariadicKind::PosVarArg)
-      origVariadicConvention = ArgConvention::ReadReg;
+      origVariadicConvention = ArgConvention::ImmReg;
 
     TypedAttr defaultVal;
     if (failed(parseOptionalDefaultValue(p, defaultVal, decl.getType())))
@@ -218,7 +218,7 @@ ParseResult KGEN::parseConventionAndVariadicness(
     std::optional<ArgConvention> &origVariadicConvention, size_t idx) {
   mlir::SMLoc loc = p.getCurrentLocation();
   StringRef str;
-  convention = ArgConvention::ReadReg;
+  convention = ArgConvention::ImmReg;
   if (succeeded(p.parseOptionalKeyword(&str))) {
     if (std::optional<ArgConvention> conv = symbolizeArgConvention(str)) {
       convention = *conv;
@@ -232,7 +232,7 @@ ParseResult KGEN::parseConventionAndVariadicness(
           variadic == VariadicKind::PackVarArg) {
         origVariadicConvention = convention;
         if (convention != ArgConvention::OwnedMem)
-          convention = ArgConvention::ReadMem;
+          convention = ArgConvention::ImmMem;
       }
       return success();
     }
@@ -246,7 +246,7 @@ ParseResult KGEN::parseConventionAndVariadicness(
         variadic == VariadicKind::PackVarArg) {
       origVariadicConvention = convention;
       if (convention != ArgConvention::OwnedMem)
-        convention = ArgConvention::ReadMem;
+        convention = ArgConvention::ImmMem;
     }
   }
   return success();
@@ -262,7 +262,7 @@ static void printVariadicness(AsmPrinter &p, VariadicKind variadicness,
 void KGEN::printConventionAndVariadicness(AsmPrinter &p,
                                           ArgConvention convention,
                                           VariadicKind variadicness) {
-  if (convention != ArgConvention::ReadReg) {
+  if (convention != ArgConvention::ImmReg) {
     p << ' ' << stringifyArgConvention(convention);
     printVariadicness(p, variadicness, '|');
   } else if (variadicness != VariadicKind::None) {
@@ -362,7 +362,7 @@ ParseResult KGEN::parseOptionalParamSignature(
 
     if (argVariadics.back() == VariadicKind::PackVarArg ||
         argVariadics.back() == VariadicKind::PosVarArg)
-      origVariadicConvention = ArgConvention::ReadMem;
+      origVariadicConvention = ArgConvention::ImmMem;
 
     TypedAttr defaultVal;
     if (failed(parseOptionalDefaultValue(p, defaultVal, type)))

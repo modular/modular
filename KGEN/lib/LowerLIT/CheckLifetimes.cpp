@@ -3777,7 +3777,7 @@ DestructorInserter::optimizeCopyDestroys(Operation *opWithUse) {
   // Handle the register form: `__init__(*, copy: src) -> T`.
   if (copyInitCall.getNumOperands() == 1) {
     assert(copyInitCall.getCalleeType().getArgConvention(0) ==
-               ArgConvention::ReadMem &&
+               ArgConvention::ImmMem &&
            "non-trivial register types passed in memory");
     ValueToDestroy *deadSrc = nullptr;
     Value copyDst = copyInitCall.getResult(0);
@@ -3970,7 +3970,7 @@ static bool canEntirelyElideMemoryTemporary(LIT::CallOp copyInitCall,
           operand.getOperandNumber());
       if (convention != ArgConvention::OwnedMem &&
           convention != ArgConvention::DeinitMem &&
-          convention != ArgConvention::ReadMem)
+          convention != ArgConvention::ImmMem)
         return false;
       userOfTmp.insert(callUser);
     }

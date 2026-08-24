@@ -32,7 +32,7 @@ kgen.func @complex_empty_types(
 
 // CHECK-LABEL: llvm.func internal @has_ptr
 // CHECK-SAME: (%arg0: !llvm.ptr {llvm.nonnull, llvm.noundef}, %arg1: !llvm.struct<(i64, i64)> {llvm.noundef})
-kgen.func @has_ptr(%arg0: !kgen.none, %arg1: !kgen.pointer<none> read_mem, %arg3: !kgen.struct<(index,index)>) {
+kgen.func @has_ptr(%arg0: !kgen.none, %arg1: !kgen.pointer<none> imm_mem, %arg3: !kgen.struct<(index,index)>) {
   kgen.return
 }
 

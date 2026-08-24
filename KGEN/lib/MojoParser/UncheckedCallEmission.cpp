@@ -345,11 +345,11 @@ AnyValue CallEmitter::emitOneArgVal(ASTExprAnd<AnyValue> operand,
     return CValue::getMValueForRef(refValue);
   }
 
-  case ArgConvention::ReadMem:
+  case ArgConvention::ImmMem:
     // by-ref arguments are converted to the expected r-value type.
     expectedType = sugarCast<RefType>(expectedType).getElementType();
     [[fallthrough]];
-  case ArgConvention::ReadReg:
+  case ArgConvention::ImmReg:
     return emitter.emitBValue(operand, EC_CallArgValue, expectedType);
   }
   llvm_unreachable("unknown argument convention");
@@ -927,7 +927,7 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
   case ArgConvention::DeinitMem:
     // Promote PValue's if needed.
     return checkMValueAddrSpace(emitter.emitMRValue(argValAndExpr, ctx));
-  case ArgConvention::ReadReg:
+  case ArgConvention::ImmReg:
     // If this is already an SValue, then use it.
     if (argValAndExpr.ir.isSValue())
       return argValAndExpr.ir.getSValueRegister();
@@ -935,7 +935,7 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
     // Otherwise, materialize or load the value.
     return emitter.emitSRValue(argValAndExpr, ctx);
 
-  case ArgConvention::ReadMem: {
+  case ArgConvention::ImmMem: {
     // Promote PValue's if needed.
     Value result =
         checkMValueAddrSpace(emitter.emitMBValue(argValAndExpr, ctx));

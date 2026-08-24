@@ -100,8 +100,8 @@ void populateArgumentInfos(SharedState &shared, FnTypeGeneratorType signature,
       passingKind =
           args.empty() ? PassingKind::PosOrKw : args.back().passingKind;
       break;
-    case ArgConvention::ReadReg:
-    case ArgConvention::ReadMem:
+    case ArgConvention::ImmReg:
+    case ArgConvention::ImmMem:
       break;
     case ArgConvention::Mut:
       declConvention = ArgumentConvention::kInOut;
@@ -636,7 +636,7 @@ std::string generateTypeString(SharedState &shared, ASTType type,
     if (convention && !isa<ParamListType>(type)) {
       type = RefType::stripRefConvention(type, *convention);
       type = type.getVariadicListInfo().elementType;
-      convention = ArgConvention::ReadReg;
+      convention = ArgConvention::ImmReg;
     } else {
       type = type.getParameterListInfo().elementType;
     }

@@ -191,7 +191,7 @@ def KGEN_ArgConvention : I32EnumAttr<"ArgConvention",
   /// call.
   ///
   /// The MLIR type is any non-memory type that can be lowered to LLVM.
-  I32EnumAttrCase<"ReadReg", 0, "read">,
+  I32EnumAttrCase<"ImmReg", 0, "imm">,
 
   /// This is an immutably borrowed memory-only value, which is passed
   /// indirectly.  The caller passes a reference to an initialized memory
@@ -199,7 +199,7 @@ def KGEN_ArgConvention : I32EnumAttr<"ArgConvention",
   ///
   /// The MLIR type is a LIT::RefType which is lowered by LowerLIT to
   /// KGEN::PointerType.
-  I32EnumAttrCase<"ReadMem", 1, "read_mem">,
+  I32EnumAttrCase<"ImmMem", 1, "imm_mem">,
 
   /// This is an owned register-passable value an SSA register.  The callee is
   /// responsible for destroying the value before returning.  The Mojo parser

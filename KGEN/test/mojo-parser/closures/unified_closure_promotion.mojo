@@ -75,7 +75,7 @@ def async_unified_closure():
 
 # COM: Verify promoted closures keep captured params before implicit origins.
 # S3-LABEL: lit.fn @"trigger_dtype_implicit_origin{{.*}}"<n: !Int>() -> !kgen.none
-# S3-DAG: lit.alias.decl *"dtype{{.*}}": !DType = <apply(:!lit.generator<[1]("impl": !lit.ref<!String, imm #lit.comptime.origin> read_mem) -> !DType> rebind(:!lit.generator<[1]("impl": !lit.ref<!String, imm *[0,0]> read_mem) -> !DType> @{{.*}}::@"nonsense{{.*}}"<:!Int n, :!AnyType !String>)
+# S3-DAG: lit.alias.decl *"dtype{{.*}}": !DType = <apply(:!lit.generator<[1]("impl": !lit.ref<!String, imm #lit.comptime.origin> imm_mem) -> !DType> rebind(:!lit.generator<[1]("impl": !lit.ref<!String, imm *[0,0]> imm_mem) -> !DType> @{{.*}}::@"nonsense{{.*}}"<:!Int n, :!AnyType !String>)
 # S3-DAG: lit.fn @"nonsense{{.*}}"<n: !Int, U: !AnyType, +>[imm *{{.*}}](%impl:
 
 
@@ -96,7 +96,7 @@ def trigger_dtype_implicit_origin[n: Int]():
 # COM: Verify promoted stateless closures can bind captured params
 # COM: before satisfying thin function generic constraints.
 # S4-LABEL: lit.fn @"trigger_promoted_params{{.*}}"<n: !Int>() -> !kgen.none
-# S4-DAG: lit.call tail @{{.*}}::@"takesThin{{.*}}"<:!lit.generator<<"U": !AnyType, +>[1]("impl": !lit.ref<:!AnyType *(0,0), imm *[0,0]> read_mem) -> !DType> @{{.*}}::@"nonsense{{.*}}"<:!Int n, :!AnyType ?>
+# S4-DAG: lit.call tail @{{.*}}::@"takesThin{{.*}}"<:!lit.generator<<"U": !AnyType, +>[1]("impl": !lit.ref<:!AnyType *(0,0), imm *[0,0]> imm_mem) -> !DType> @{{.*}}::@"nonsense{{.*}}"<:!Int n, :!AnyType ?>
 # S4-DAG: lit.fn @"nonsense{{.*}}"<n: !Int, U: !AnyType, +>[imm *{{.*}}](%impl:
 
 #

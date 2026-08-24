@@ -174,7 +174,7 @@ def useParameterizedField[x: Pair[.float32]]():
 # CHECK-LABEL: lit.struct.decl @TypeParameter
 # CHECK-SAME: <[[TYPE:.*]]: non_struct_type>
 struct TypeParameter[T: __mlir_type.`!kgen.non_struct_type`](Movable where False):
-  # CHECK: @"bar(parameters::TypeParameter{{.*}}(%self: {{.*}} read_mem, %val: !kgen.param<:non_struct_type [[TYPE]]>)
+  # CHECK: @"bar(parameters::TypeParameter{{.*}}(%self: {{.*}} imm_mem, %val: !kgen.param<:non_struct_type [[TYPE]]>)
   def bar(self, val: Self.T):
     pass
 

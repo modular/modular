@@ -38,7 +38,7 @@
 # CHECK-SAME:     :param_list<type> [#kgen.fn_gen_builder.param.decl<"Fn_P#0`0", !AnyType_Copyable_Movable>],
 # CHECK-SAME:     :param_list<type> [!lit.ref<!lit.struct<#List <:!AnyType_Copyable_Movable #kgen.fn_gen_builder.param.decl.ref<"Fn_P#0`0", !AnyType_Copyable_Movable>>>, imm #kgen.fn_gen_builder.param.decl.ref<"0_unnamed`0", !lit.origin<false>>>]
 # CHECK-SAME:     :type !NoneType,
-# CHECK-SAME:     :non_struct_type #kgen.fn_metadata<[mut, read_mem], "none"
+# CHECK-SAME:     :non_struct_type #kgen.fn_metadata<[mut, imm_mem], "none"
 # CHECK-SAME:     :param_list<string> ["0_unnamed`0"]
 comptime ClosureTraitP = def[T: Copyable](List[T]) __param_trait__ -> NoneType
 

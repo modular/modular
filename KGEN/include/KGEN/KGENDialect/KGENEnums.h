@@ -32,7 +32,7 @@ namespace M::KGEN {
 /// Determine whether an argument with the given input convention expects to
 /// have a pointer or reference type.
 static inline bool hasAddress(ArgConvention conv) {
-  return conv != ArgConvention::OwnedReg && conv != ArgConvention::ReadReg;
+  return conv != ArgConvention::OwnedReg && conv != ArgConvention::ImmReg;
 }
 
 /// Determine whether an argument with the given input convention expects to
@@ -42,11 +42,11 @@ static inline bool hasImplicitOrigin(ArgConvention conv) {
   case ArgConvention::Ref:
   case ArgConvention::MutRef:
   case ArgConvention::OwnedReg:
-  case ArgConvention::ReadReg:
+  case ArgConvention::ImmReg:
     return false;
   case ArgConvention::OwnedMem:
   case ArgConvention::DeinitMem:
-  case ArgConvention::ReadMem:
+  case ArgConvention::ImmMem:
   case ArgConvention::Mut:
   case ArgConvention::ByRefResult:
   case ArgConvention::ByRefError:

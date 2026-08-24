@@ -327,7 +327,7 @@ kgen.generator export @main() {
 // -----
 // COM: MOCO-2892 unbound parameter causing interpret crash fix.
 // expected-note @below {{struct not a writeable type, got #kgen.unbound}}
-kgen.generator @fn(%arg0: !kgen.pointer<struct<(index) memoryOnly>> read_mem, %arg1: index) -> index {
+kgen.generator @fn(%arg0: !kgen.pointer<struct<(index) memoryOnly>> imm_mem, %arg1: index) -> index {
   %0 = kgen.struct.gep %arg0[0]: <struct<(index) memoryOnly>>
   %1 = pop.load %0: !kgen.pointer<index>
   %2 = index.add %1, %arg1
@@ -427,7 +427,7 @@ kgen.generator @sum_from_zero<upper>() -> index {
   // expected-warning @below {{comptime for unrolling loop more than 27 times may cause long compilation time and large code size. (use '--loop-unrolling-warn-threshold' to increase the threshold or set to `0` to disable this warning}}
   %0 = kgen.param.for i in upper
     has_next :(index) -> i1 @count_to_zero_has_next
-    get_next_iter :(!kgen.pointer<index> read_mem, !kgen.pointer<index> byref_result) -> !kgen.none @count_to_zero
+    get_next_iter :(!kgen.pointer<index> imm_mem, !kgen.pointer<index> byref_result) -> !kgen.none @count_to_zero
     (%arg0 = %idx0 : index) -> index {
     kgen.unreachable
   } else {
@@ -442,7 +442,7 @@ kgen.generator export @param_for(%arg0: i1, %arg1: index) {
   kgen.return
 }
 
-kgen.generator @count_to_zero(%arg0: !kgen.pointer<index> read_mem, %arg1: !kgen.pointer<index> byref_result) -> !kgen.none {
+kgen.generator @count_to_zero(%arg0: !kgen.pointer<index> imm_mem, %arg1: !kgen.pointer<index> byref_result) -> !kgen.none {
   %i0 = pop.load %arg0 : !kgen.pointer<index>
   %idx1 = index.constant 1
   %1 = index.sub %i0, %idx1

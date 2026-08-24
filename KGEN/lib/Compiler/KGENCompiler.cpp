@@ -197,7 +197,7 @@ writeCaptureArgs(ModuleOp module, FuncOp sliced, StringAttr preRenameSym) {
   auto noneType = b.getType<KGEN::NoneType>();
   auto nonePtr = PointerType::get(noneType);
   auto sig = FuncType::get(b.getFunctionType(nonePtr, noneType),
-                           ArgConvention::ReadReg, FnEffects().setCapturing());
+                           ArgConvention::ImmReg, FnEffects().setCapturing());
   OwningOpRef<FuncOp> func =
       FuncOp::create(b, b.getStringAttr(name.getValue() + "_populate_captures"),
                      sig, InlineLevel::Always);

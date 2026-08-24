@@ -138,7 +138,7 @@ lit.fn @slashAfterStar(%a: index, *, |, %b: index) {
 // -----
 
 // expected-error @+1 {{expected variadic kind, got: stuff}}
-lit.fn @incorrect_arg_variadicness(%a: index read|stuff) {
+lit.fn @incorrect_arg_variadicness(%a: index imm|stuff) {
   kgen.return
 }
 
@@ -243,8 +243,8 @@ lit.unresolved_import <0> as @newModule
 
 // -----
 
-// expected-error @below {{argument #0 with convention 'read_mem' in signature type should be a `!lit.ref` but got: 'index'}}
-!type = !lit.generator<(index read_mem) -> ()>
+// expected-error @below {{argument #0 with convention 'imm_mem' in signature type should be a `!lit.ref` but got: 'index'}}
+!type = !lit.generator<(index imm_mem) -> ()>
 
 // -----
 

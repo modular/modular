@@ -138,10 +138,10 @@ LogicalResult SpecializeInf::matchArgument(Type actualType,
   }
   case ArgConvention::OwnedMem:
   case ArgConvention::DeinitMem:
-  case ArgConvention::ReadMem:
+  case ArgConvention::ImmMem:
     expectedType = expectedType.getReferenceElementType();
     break;
-  case ArgConvention::ReadReg:
+  case ArgConvention::ImmReg:
     break;
   }
 

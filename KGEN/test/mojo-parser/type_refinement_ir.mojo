@@ -233,7 +233,7 @@ def refine_type_value_associated_binding_preserves_original_bound[C: AnyType]():
 
 
 # CHECK-LABEL: lit.fn @"refine_from_where
-# CHECK-SAME: ([[ARG:%.*]]: !lit.ref<:!AnyType_Base T, imm *"x`"> read_mem)
+# CHECK-SAME: ([[ARG:%.*]]: !lit.ref<:!AnyType_Base T, imm *"x`"> imm_mem)
 # CHECK: [[WHERE_REF:%.*]] = kgen.rebind [[ARG]] : {{.*}} to {{.*}}Base_Extra downcast(:!AnyType_Base T){{.*}}
 # CHECK: lit.call{{.*}}@{{.*}}@"use_base
 # CHECK: lit.call{{.*}}@{{.*}}@"use_extra
@@ -243,7 +243,7 @@ def refine_from_where[T: Base](imm x: T) where conforms_to(T, Extra):
 
 
 # CHECK-LABEL: lit.fn @"refine_in_comptime_if
-# CHECK-SAME: ([[ARG:%.*]]: !lit.ref<:!AnyType_Base T, imm *"x`"> read_mem)
+# CHECK-SAME: ([[ARG:%.*]]: !lit.ref<:!AnyType_Base T, imm *"x`"> imm_mem)
 # CHECK: kgen.param.if <{{.*}}conforms_to(:!AnyType_Base T, :meta<!{{.*}}Extra> !{{.*}}Extra){{.*}}> {
 # CHECK: [[IF_REF:%.*]] = kgen.rebind [[ARG]] : {{.*}} to {{.*}}Base_Extra downcast(:!AnyType_Base T){{.*}}
 # CHECK: lit.call{{.*}}@{{.*}}@"use_base
@@ -255,7 +255,7 @@ def refine_in_comptime_if[T: Base](imm x: T):
 
 
 # CHECK-LABEL: lit.fn @"refine_after_comptime_assert
-# CHECK-SAME: ([[ARG:%.*]]: !lit.ref<:!AnyType_Base T, imm *"x`"> read_mem)
+# CHECK-SAME: ([[ARG:%.*]]: !lit.ref<:!AnyType_Base T, imm *"x`"> imm_mem)
 # CHECK: kgen.param.assert <{{.*}}conforms_to(:!AnyType_Base T, :meta<!{{.*}}Extra> !{{.*}}Extra){{.*}}>
 # CHECK: [[ASSERT_REF:%.*]] = kgen.rebind [[ARG]] : {{.*}} to {{.*}}Base_Extra downcast(:!AnyType_Base T){{.*}}
 # CHECK: lit.call{{.*}}@{{.*}}@"use_base
@@ -267,7 +267,7 @@ def refine_after_comptime_assert[T: Base](imm x: T):
 
 
 # CHECK-LABEL: lit.fn @"refinement_does_not_leak_after_comptime_if
-# CHECK-SAME: ([[ARG:%.*]]: !lit.ref<:!AnyType_Base T, imm *"x`"> read_mem)
+# CHECK-SAME: ([[ARG:%.*]]: !lit.ref<:!AnyType_Base T, imm *"x`"> imm_mem)
 # CHECK: kgen.param.if <{{.*}}conforms_to(:!AnyType_Base T, :meta<!{{.*}}Extra> !{{.*}}Extra){{.*}}> {
 # CHECK: [[IF_REF:%.*]] = kgen.rebind [[ARG]] : {{.*}} to {{.*}}Base_Extra downcast(:!AnyType_Base T){{.*}}
 # CHECK: lit.call{{.*}}@{{.*}}@"use_extra
@@ -280,7 +280,7 @@ def refinement_does_not_leak_after_comptime_if[T: Base](imm x: T):
 
 
 # CHECK-LABEL: lit.fn @"no_refinement_before_comptime_assert
-# CHECK-SAME: ([[ARG:%.*]]: !lit.ref<:!AnyType_Base T, imm *"x`"> read_mem)
+# CHECK-SAME: ([[ARG:%.*]]: !lit.ref<:!AnyType_Base T, imm *"x`"> imm_mem)
 # CHECK-NOT: kgen.rebind [[ARG]]
 # CHECK: lit.call{{.*}}@{{.*}}@"use_base
 # CHECK: kgen.param.assert <{{.*}}conforms_to(:!AnyType_Base T, :meta<!{{.*}}Extra> !{{.*}}Extra){{.*}}>
