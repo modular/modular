@@ -418,7 +418,7 @@ class PipelineConfig(ConfigFileModel):
         from :class:`PipelineConfig` is the main model graph, and only for
         multi-GPU pipelines. The ``tiered``/``rust_tiered`` KV connectors fan
         MLA-replicated blocks out via plain P2P copies, not a signal-buffer
-        broadcast (see ``dkv/kv-tier-connector/src/copy_engine.rs``), so they
+        broadcast (see ``rust_kv/kv-tier-connector/src/copy_engine.rs``), so they
         contribute no additional term here.
 
         Returns 0 for single-device pipelines.
