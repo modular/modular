@@ -43,6 +43,7 @@ if TYPE_CHECKING:
         TextAndVisionContext,
         TextContext,
     )
+    from max.pipelines.diffusion.config import TaylorSeerDefaults
     from max.pipelines.kv_cache.memory_planner import MemoryPlanner
     from max.pipelines.modeling.config_enums import SupportedEncoding
     from max.pipelines.modeling.types import (
@@ -305,6 +306,9 @@ class SupportedArchitecture:
 
     If None, the global default (compact JSON) is used.
     """
+
+    denoising_cache_defaults: TaylorSeerDefaults | None = None
+    """TaylorSeer tuning for this architecture. User-set fields always win."""
 
     supports_overlap_scheduler: bool = True
     """Whether this architecture supports auto-enabling the overlap scheduler.

@@ -291,14 +291,7 @@ class TestPipelineConfigUtilityMethods:
 
     @mock_pipeline_config_resolve
     def test_denoising_cache_survives_runtime_kwargs(self) -> None:
-        """``--taylorseer`` and friends must reach ``runtime.denoising_cache``
-        even when runtime kwargs are also present.
-
-        The CLI ``serve`` flow flattens every flag into ``PipelineConfig``
-        kwargs, so taylorseer/FBC fields and runtime fields like
-        ``max_batch_size`` arrive together. Cache fields must not be wiped
-        when the runtime config gets reconstructed from the runtime kwargs.
-        """
+        """CLI ``--taylorseer`` flags reach ``runtime.denoising_cache``."""
         kwargs = {
             "model_path": "test/model",
             # DenoisingCacheConfig fields (--taylorseer etc.)
@@ -322,7 +315,7 @@ class TestPipelineConfigUtilityMethods:
 
     @mock_pipeline_config_resolve
     def test_first_block_caching_survives_runtime_kwargs(self) -> None:
-        """``--first-block-caching`` must also survive runtime reconstruction."""
+        """CLI ``--first-block-caching`` reaches ``runtime.denoising_cache``."""
         kwargs = {
             "model_path": "test/model",
             "first_block_caching": True,

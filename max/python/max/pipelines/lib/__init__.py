@@ -42,6 +42,7 @@ from .bfloat16_utils import (
 )
 from .config import (
     DenoisingCacheConfig,
+    DenoisingCacheSettings,
     KVCacheConfig,
     KVConnectorConfig,
     LoRAConfig,
@@ -115,6 +116,7 @@ __all__ = [
     "BatchProcessorRuntime",
     "CompilationTimer",
     "DenoisingCacheConfig",
+    "DenoisingCacheSettings",
     "EmbeddingsPipeline",
     "EmbeddingsPipelineType",
     "GraphPipelineModel",

@@ -851,6 +851,14 @@ This version is still a work in progress.
   `PipelineArgs.max_length` and the construction-resolved
   `PipelineConfig.model.max_length`, which keep their names.
 
+- Denoising-cache input is now a frozen `DenoisingCacheSettings` on
+  `PipelineArgs` (`denoising_cache`; in config files this section moves
+  from `runtime.denoising_cache` to the top level). Construction fills
+  unset fields from the architecture's TaylorSeer defaults into a frozen
+  `DenoisingCacheConfig`. Enabling TaylorSeer without resolvable tuning
+  fails at construction, as does enabling TaylorSeer and first-block
+  caching together.
+
 ## Fixes
 
 - Fixed reductions over a zero-extent axis — for example `ops.sum(x, axis=1)`

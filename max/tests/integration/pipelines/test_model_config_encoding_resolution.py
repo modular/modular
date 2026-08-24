@@ -700,11 +700,12 @@ class TestPipelineArgsWriteThroughRegressions:
         """`PipelineArgs` accepts nested `runtime=PipelineRuntimeConfig(...)`.
 
         Nested is the canonical shape shared with recipes and
-        `PipelineConfig`; runtime knobs like `prefer_module_v3` and
-        `denoising_cache` live on the `runtime` sub-config, including for
-        multi-component (diffusion) manifests.
+        `PipelineConfig`; runtime knobs like `prefer_module_v3` live on the
+        `runtime` sub-config, and denoising-cache settings on the top-level
+        `denoising_cache` field, including for multi-component (diffusion)
+        manifests.
         """
-        from max.pipelines.diffusion.cache import DenoisingCacheConfig
+        from max.pipelines.diffusion.config import DenoisingCacheSettings
         from max.pipelines.lib import (
             ModelManifest,
             PipelineArgs,
@@ -723,10 +724,8 @@ class TestPipelineArgsWriteThroughRegressions:
 
             args = PipelineArgs(
                 models=models,
-                runtime=PipelineRuntimeConfig(
-                    prefer_module_v3=True,
-                    denoising_cache=DenoisingCacheConfig(taylorseer=True),
-                ),
+                runtime=PipelineRuntimeConfig(prefer_module_v3=True),
+                denoising_cache=DenoisingCacheSettings(taylorseer=True),
             )
             assert args.runtime.prefer_module_v3 is True
-            assert args.runtime.denoising_cache.taylorseer is True
+            assert args.denoising_cache.taylorseer is True

@@ -13,6 +13,7 @@
 
 from max.graph.weights import WeightsFormat
 from max.pipelines.context import PixelContext
+from max.pipelines.diffusion.config import GENERIC_TAYLORSEER_DEFAULTS
 from max.pipelines.lib import SupportedArchitecture
 from max.pipelines.modeling.types import InputModality, PipelineTask
 
@@ -34,6 +35,7 @@ qwen_image_edit_arch = SupportedArchitecture(
     default_weights_format=WeightsFormat.safetensors,
     tokenizer=QwenImageEditTokenizer,
     config=QwenImageArchConfig,
+    denoising_cache_defaults=GENERIC_TAYLORSEER_DEFAULTS,
 )
 
 qwen_image_edit_plus_arch = SupportedArchitecture(
@@ -50,4 +52,5 @@ qwen_image_edit_plus_arch = SupportedArchitecture(
     default_weights_format=WeightsFormat.safetensors,
     tokenizer=QwenImageEditTokenizer,
     config=QwenImageArchConfig,
+    denoising_cache_defaults=GENERIC_TAYLORSEER_DEFAULTS,
 )

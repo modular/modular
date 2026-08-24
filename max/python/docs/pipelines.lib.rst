@@ -29,6 +29,7 @@ Configuration
    :template: autosummary/class.rst
 
    DenoisingCacheConfig
+   DenoisingCacheSettings
    KVConnectorConfig
    MAXConfig
    MAXModelConfigBase
