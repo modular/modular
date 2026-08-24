@@ -26,10 +26,10 @@ from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import Graph, TensorType, ops
 from max.pipelines.diffusion.cache import (
-    DenoisingCacheConfig,
     TaylorSeerBufferState,
     TaylorSeerCache,
 )
+from max.pipelines.diffusion.config import DenoisingCacheConfig
 from max.pipelines.lib.bfloat16_utils import float32_to_bfloat16_as_uint16
 from max.pipelines.lib.config.model_config import (
     _resolve_component_encoding_and_weights,
@@ -182,11 +182,6 @@ class WanExecutor(
 
     default_num_inference_steps: int = 50
 
-    # TaylorSeer defaults (from https://github.com/Shenyi-Z/TaylorSeer).
-    _DEFAULT_TAYLORSEER_CACHE_INTERVAL: int = 5
-    _DEFAULT_TAYLORSEER_WARMUP_STEPS: int = 4
-    _DEFAULT_TAYLORSEER_MAX_ORDER: int = 1
-
     def __init__(
         self,
         manifest: ModelManifest,
@@ -248,7 +243,6 @@ class WanExecutor(
         self._cache_config: DenoisingCacheConfig = (
             runtime_config.denoising_cache
         )
-        self._resolve_cache_defaults()
 
         self._taylor_cache: TaylorSeerCache | None = None
         if self._cache_config.taylorseer:
@@ -922,18 +916,6 @@ class WanExecutor(
         return self._session.load(g)
 
     # -- TaylorSeer helpers ---------------------------------------------------
-
-    def _resolve_cache_defaults(self) -> None:
-        """Fill nullable DenoisingCacheConfig fields with Wan defaults."""
-        cc = self._cache_config
-        if cc.taylorseer_cache_interval is None:
-            cc.taylorseer_cache_interval = (
-                self._DEFAULT_TAYLORSEER_CACHE_INTERVAL
-            )
-        if cc.taylorseer_warmup_steps is None:
-            cc.taylorseer_warmup_steps = self._DEFAULT_TAYLORSEER_WARMUP_STEPS
-        if cc.taylorseer_max_order is None:
-            cc.taylorseer_max_order = self._DEFAULT_TAYLORSEER_MAX_ORDER
 
     def _taylor_predict_5d(
         self,

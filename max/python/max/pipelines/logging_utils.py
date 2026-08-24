@@ -106,24 +106,9 @@ def log_pipeline_info(
         cache_entries: list[tuple[str, Any]] = [
             ("first_block_caching", cache.first_block_caching),
             ("taylorseer", cache.taylorseer),
-            (
-                "taylorseer_cache_interval",
-                cache.taylorseer_cache_interval
-                if cache.taylorseer_cache_interval is not None
-                else "model-default",
-            ),
-            (
-                "taylorseer_warmup_steps",
-                cache.taylorseer_warmup_steps
-                if cache.taylorseer_warmup_steps is not None
-                else "model-default",
-            ),
-            (
-                "taylorseer_max_order",
-                cache.taylorseer_max_order
-                if cache.taylorseer_max_order is not None
-                else "model-default",
-            ),
+            ("taylorseer_cache_interval", cache.taylorseer_cache_interval),
+            ("taylorseer_warmup_steps", cache.taylorseer_warmup_steps),
+            ("taylorseer_max_order", cache.taylorseer_max_order),
         ]
 
         _logger.info("Denoising Cache")

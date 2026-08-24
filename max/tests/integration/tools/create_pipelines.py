@@ -46,7 +46,7 @@ from max.pipelines.architectures.internvl.tokenizer import InternVLProcessor
 from max.pipelines.architectures.qwen3.text_encoder import (
     Qwen3TextEncoderKleinModel,
 )
-from max.pipelines.diffusion.cache import DenoisingCacheConfig
+from max.pipelines.diffusion.config import DenoisingCacheSettings
 from max.pipelines.lib import PipelineConfig
 from max.pipelines.lib.model_manifest import ModelManifest
 from max.pipelines.modeling.types import PipelineTask, PipelineTokenizer
@@ -1474,20 +1474,21 @@ class ImageGenerationOracle(PipelineOracle):
                 quantization_encoding=encoding,
             )
 
-        runtime_kwargs: dict[str, Any] = {
-            "prefer_module_v3": prefer_module_v3,
-        }
+        args_kwargs: dict[str, Any] = {}
 
         # Optional denoising-cache overrides (e.g. TaylorSeer / FBCache).
         denoising_cache = self.config_params.get("denoising_cache")
         if denoising_cache is not None:
-            runtime_kwargs["denoising_cache"] = DenoisingCacheConfig(
+            args_kwargs["denoising_cache"] = DenoisingCacheSettings(
                 **denoising_cache
             )
 
         config = pipelines.PipelineArgs(
             models=models,
-            runtime=pipelines.PipelineRuntimeConfig(**runtime_kwargs),
+            runtime=pipelines.PipelineRuntimeConfig(
+                prefer_module_v3=prefer_module_v3
+            ),
+            **args_kwargs,
         )
 
         # retrieve resolves the manifest and picks the tokenizer/executor

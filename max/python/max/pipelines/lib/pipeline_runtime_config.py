@@ -18,7 +18,10 @@ from __future__ import annotations
 import os
 
 from max.config import ConfigFileModel
-from max.pipelines.diffusion.cache import DenoisingCacheConfig
+from max.pipelines.diffusion.config import (
+    DEFAULT_DENOISING_CACHE_CONFIG,
+    DenoisingCacheConfig,
+)
 from max.pipelines.modeling.config_enums import PipelineRole
 from pydantic import Field, PrivateAttr
 
@@ -528,10 +531,10 @@ class PipelineRuntimeConfig(ConfigFileModel):
     )
 
     denoising_cache: DenoisingCacheConfig = Field(
-        default_factory=DenoisingCacheConfig,
+        default=DEFAULT_DENOISING_CACHE_CONFIG,
         description=(
-            "Cache configuration for diffusion model denoising "
-            "(FBCache, TaylorSeer)."
+            "Resolved denoising-cache config. Construction fills this from "
+            "top-level settings and architecture defaults."
         ),
     )
 

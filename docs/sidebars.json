@@ -501,6 +501,17 @@
               "items": [
                 {
                   "type": "category",
+                  "label": "config",
+                  "link": {
+                    "type": "doc",
+                    "id": "api/python/pipelines.diffusion.config"
+                  },
+                  "items": [
+                    "__AUTOGEN:max.pipelines.diffusion.config__"
+                  ]
+                },
+                {
+                  "type": "category",
                   "label": "schedulers",
                   "link": {
                     "type": "doc",

@@ -23,6 +23,7 @@ from max.config import ConfigFileModel
 from max.driver import accelerator_api
 from max.engine import InferenceSession
 from max.nn.comm import Signals
+from max.pipelines.diffusion.config import resolve_denoising_cache
 from max.pipelines.lib.arch_lookup import (
     find_architecture,
     import_custom_architectures,
@@ -1371,11 +1372,40 @@ class PipelineConfig(ConfigFileModel):
                 )
             manifest = manifest.with_override(component, **fields)
 
+        # Fill unset denoising-cache fields from the architecture's defaults.
+        try:
+            denoising_arch_name: str | None = manifest.main_architecture_name
+        except (ValueError, FileNotFoundError):
+            logger.debug(
+                "Could not determine the architecture name for "
+                "denoising-cache resolution.",
+                exc_info=True,
+            )
+            denoising_arch_name = None
+        denoising_arch = find_architecture(
+            denoising_arch_name,
+            prefer_module_v3=args.runtime.prefer_module_v3,
+            task=(
+                args.task
+                if args.task != PipelineTask.UNDEFINED
+                else PipelineTask.TEXT_GENERATION
+            ),
+        )
+        denoising_cache = resolve_denoising_cache(
+            args.denoising_cache,
+            denoising_arch.denoising_cache_defaults
+            if denoising_arch is not None
+            else None,
+            arch_name=denoising_arch_name,
+        )
+
         config = cls(
             models=manifest,
             model_override=list(args.model_override),
             sampling=sampling,
-            runtime=_construct_from_user_fields(args.runtime),
+            runtime=_construct_from_user_fields(
+                args.runtime, denoising_cache=denoising_cache
+            ),
             profiling=_construct_from_user_fields(args.profiling),
             lora=args.lora.model_copy(deep=True) if args.lora else None,
             speculative=args.speculative.model_copy(deep=True)
