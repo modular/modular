@@ -49,16 +49,16 @@ comptime NRUN = 1
 def time_kernel[
     func: def(DeviceContext) raises capturing -> None
 ](mut m: Bench, ctx: DeviceContext, size: Int, kernel_name: String) raises:
-    @__parameter
     @always_inline
-    def bench_func(mut m: Bencher):
+    def bench_func(mut m: Bencher) {imm}:
         @always_inline
         def kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
             func(ctx)
 
         bencher_iter_custom(m, kernel_launch, ctx)
 
-    m.bench_function[bench_func](
+    m.bench_function(
+        bench_func,
         BenchId(kernel_name),
         [ThroughputMeasure(BenchMetric.elements, 2 * size)],
     )
@@ -82,8 +82,7 @@ def run_cublas[
 
     with vendor_blas.Handle() as _handle:
 
-        @__parameter
-        def bench_func(mut m: Bencher):
+        def bench_func(mut m: Bencher) {imm}:
             @always_inline
             def kernel_launch(ctx: DeviceContext) raises {imm}:
                 vendor_blas.matmul[use_tf32=enable_tc](
@@ -104,7 +103,8 @@ def run_cublas[
             else:
                 return "cublas"
 
-        m.bench_function[bench_func](
+        m.bench_function(
+            bench_func,
             BenchId(get_bench_id()),
             [ThroughputMeasure(BenchMetric.elements, 2 * M * N * K)],
         )

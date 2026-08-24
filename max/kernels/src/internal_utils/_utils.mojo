@@ -91,11 +91,9 @@ def bench_compile_time[
 
     # TODO: add docstring, this function should be used on its own or at the end of measured benchmarks.
     @always_inline
-    @__parameter
-    def bench_call(mut b: Bencher) raises:
+    def bench_call(mut b: Bencher) raises {}:
         @always_inline
-        @__parameter
-        def bench_iter() raises:
+        def bench_iter() raises {}:
             comptime if emission_kind == "asm" or emission_kind == "llvm":
                 var s = compile_info[func, emission_kind=emission_kind]().asm
                 keep(s)
@@ -108,7 +106,7 @@ def bench_compile_time[
                     keep(UnsafePointer(to=func))
                     clobber_memory()
 
-        b.iter[bench_iter]()
+        b.iter(bench_iter)
 
     # To ensure consistency of Bench.dump_report, we should set
     # the value of all measured metrics m to 0.
@@ -119,8 +117,10 @@ def bench_compile_time[
             var metric = ref_measures[i].metric
             measures.append(ThroughputMeasure(metric, 0))
 
-    m.bench_function[bench_call](
-        BenchId("bench_compile" + "/" + emission_kind, name), measures=measures
+    m.bench_function(
+        bench_call,
+        BenchId("bench_compile" + "/" + emission_kind, name),
+        measures=measures,
     )
 
 

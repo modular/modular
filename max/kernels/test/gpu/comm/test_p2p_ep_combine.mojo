@@ -494,13 +494,14 @@ def test_combine[
 
     def per_gpu_combine(i: Int) raises capturing:
         @always_inline
-        def bench_iter(mut b: Bencher) raises capturing:
+        def bench_iter(mut b: Bencher) raises {imm}:
             bencher_iter_custom(b, call_fn_combine, list_of_ctx[i])
 
         var bench_config = BenchConfig()
         bench_config.show_progress = False
         var b = Bench(bench_config^)
-        b.bench_function[bench_iter](
+        b.bench_function(
+            bench_iter,
             BenchId("bench combine"),
             [ThroughputMeasure(BenchMetric.bytes, 0)],
             fixed_iterations=n_slots,
@@ -533,13 +534,14 @@ def test_combine[
 
     def per_gpu_combine_wait(i: Int) raises capturing:
         @always_inline
-        def bench_iter(mut b: Bencher) raises capturing:
+        def bench_iter(mut b: Bencher) raises {imm}:
             bencher_iter_custom(b, call_fn_combine_wait, list_of_ctx[i])
 
         var bench_config = BenchConfig()
         bench_config.show_progress = False
         var b = Bench(bench_config^)
-        b.bench_function[bench_iter](
+        b.bench_function(
+            bench_iter,
             BenchId("bench combine_wait"),
             [ThroughputMeasure(BenchMetric.bytes, 0)],
             fixed_iterations=n_slots,
