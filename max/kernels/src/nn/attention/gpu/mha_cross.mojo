@@ -48,10 +48,8 @@ def _bmm0_bs[
     p_ptr: UnsafePointer[Scalar[p_type], MutAnyOrigin],
     q_ptr: UnsafePointer[Scalar[q_type], ImmutAnyOrigin],
     k_cache: cache_t,
-    q_input_row_offsets: TileTensor[DType.uint32, QLayoutType, ImmutAnyOrigin],
-    kv_input_row_offsets: TileTensor[
-        DType.uint32, KVLayoutType, ImmutAnyOrigin
-    ],
+    q_input_row_offsets: TileTensor[.uint32, QLayoutType, ImmutAnyOrigin],
+    kv_input_row_offsets: TileTensor[.uint32, KVLayoutType, ImmutAnyOrigin],
     scale: Float32,
     batch_size: Int32,
     q_max_seq_len: Int32,
@@ -165,10 +163,8 @@ def _bmm1_bs[
     output_ptr: UnsafePointer[Scalar[output_type], MutAnyOrigin],
     p_ptr: UnsafePointer[Scalar[p_type], ImmutAnyOrigin],
     v_cache: cache_t,
-    q_input_row_offsets: TileTensor[DType.uint32, QLayoutType, ImmutAnyOrigin],
-    kv_input_row_offsets: TileTensor[
-        DType.uint32, KVLayoutType, ImmutAnyOrigin
-    ],
+    q_input_row_offsets: TileTensor[.uint32, QLayoutType, ImmutAnyOrigin],
+    kv_input_row_offsets: TileTensor[.uint32, KVLayoutType, ImmutAnyOrigin],
     q_max_seq_len: Int32,
     kv_max_seq_len: Int32,
     max_cache_size: Int32,
@@ -247,13 +243,13 @@ def mha_cross_gpu_naive[
     //,
     rank: Int,
 ](
-    output: TileTensor[address_space=AddressSpace.GENERIC, ...],
-    q: TileTensor[mut=False, dtype, address_space=AddressSpace.GENERIC, ...],
-    q_input_row_offsets: TileTensor[mut=False, DType.uint32, ...],
+    output: TileTensor[address_space=.GENERIC, ...],
+    q: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
+    q_input_row_offsets: TileTensor[mut=False, .uint32, ...],
     q_max_seq_len: Int,
     k: cache_t,
     v: cache_t,
-    kv_input_row_offsets: TileTensor[mut=False, DType.uint32, ...],
+    kv_input_row_offsets: TileTensor[mut=False, .uint32, ...],
     mask_functor: mask_t,
     scale: Float32,
     ctx: DeviceContext,
@@ -312,7 +308,7 @@ def mha_cross_gpu_naive[
         q.dtype == cache_t.dtype == cache_t.dtype == output.dtype
     ), "Q, K, V, output should have same type."
     comptime assert (
-        q.dtype == DType.float32 or q.dtype.is_half_float()
+        q.dtype == .float32 or q.dtype.is_half_float()
     ), "Only support single and half precision."
 
     comptime config = MHAConfig[dtype](

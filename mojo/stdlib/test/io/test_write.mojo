@@ -136,23 +136,23 @@ def test_write_simd_padded() raises:
     # ----------------------------------
 
     var s3 = String()
-    SIMD[DType.int32, 2](12345).write_padded(s3, width=3)
+    SIMD[.int32, 2](12345).write_padded(s3, width=3)
     assert_equal(s3, "[12345,12345]")
 
     s3 = String()
-    SIMD[DType.int32, 2](12345).write_padded(s3, width=5)
+    SIMD[.int32, 2](12345).write_padded(s3, width=5)
     assert_equal(s3, "[12345,12345]")
 
     s3 = String()
-    SIMD[DType.int32, 2](12345).write_padded(s3, width=6)
+    SIMD[.int32, 2](12345).write_padded(s3, width=6)
     assert_equal(s3, "[ 12345, 12345]")
 
     s3 = String()
-    SIMD[DType.int32, 2](-12345).write_padded(s3, width=7)
+    SIMD[.int32, 2](-12345).write_padded(s3, width=7)
     assert_equal(s3, "[ -12345, -12345]")
 
     s3 = String()
-    SIMD[DType.int8, 4](127, 1, 10, 0).write_padded(s3, width=6)
+    SIMD[.int8, 4](127, 1, 10, 0).write_padded(s3, width=6)
     assert_equal(s3, "[   127,     1,    10,     0]")
 
 
@@ -184,13 +184,13 @@ def test_hex_digits_to_hex_chars() raises:
 
 def test_write_hex() raises:
     var s = String()
-    _write_hex[amnt_hex_bytes=8](s, Scalar[DType.int](ord("🔥")))
+    _write_hex[amnt_hex_bytes=8](s, Int(ord("🔥")))
     assert_equal(r"\U0001f525", s)
     s = ""
-    _write_hex[amnt_hex_bytes=4](s, Scalar[DType.int](ord("你")))
+    _write_hex[amnt_hex_bytes=4](s, Int(ord("你")))
     assert_equal(r"\u4f60", s)
     s = ""
-    _write_hex[amnt_hex_bytes=2](s, Scalar[DType.int](ord("Ö")))
+    _write_hex[amnt_hex_bytes=2](s, Int(ord("Ö")))
     assert_equal(r"\xd6", s)
 
 

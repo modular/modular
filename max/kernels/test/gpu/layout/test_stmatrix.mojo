@@ -48,26 +48,26 @@ def test_stmatrix(
     comptime mma_n: Int = 8
     comptime mma_k: Int = 8
 
-    var d_reg = SIMD[DType.float32, 4](0)
+    var d_reg = SIMD[.float32, 4](0)
     var tid = thread_idx.x
     var a_shared = unsafe_stack_allocation[
         mma_m * mma_k,
         DType.float32,
         alignment=32,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
     var b_shared = unsafe_stack_allocation[
         mma_n * mma_k,
         DType.float32,
         alignment=32,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
 
     var c_shared = unsafe_stack_allocation[
         mma_m * mma_n,
         DType.float32,
         alignment=32,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
 
     for i in range(tid, mma_m * mma_k, WARP_SIZE):
@@ -89,9 +89,7 @@ def test_stmatrix(
     )
 
     mma(d_reg, a_reg, b_reg, d_reg)
-    st_matrix[4](
-        c_shared + thread_idx.x * 4, rebind[SIMD[DType.float32, 4]](d_reg)
-    )
+    st_matrix[4](c_shared + thread_idx.x * 4, rebind[SIMD[.float32, 4]](d_reg))
 
     var base = tid * 4
     for i in range(4):
@@ -122,17 +120,17 @@ def test_stmatrix_gen[
     var d_reg = SIMD[accum_type, c_frag_size](0)
 
     var a_shared = unsafe_stack_allocation[
-        M * K, input_type, alignment=32, address_space=AddressSpace.SHARED
+        M * K, input_type, alignment=32, address_space=.SHARED
     ]()
     var b_shared = unsafe_stack_allocation[
-        N * K, input_type, alignment=32, address_space=AddressSpace.SHARED
+        N * K, input_type, alignment=32, address_space=.SHARED
     ]()
 
     var c_shared = unsafe_stack_allocation[
         M * N,
         accum_type,
         alignment=32,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
 
     for i in range(lane, M * K, WARP_SIZE):
@@ -154,7 +152,7 @@ def test_stmatrix_gen[
     mma(d_reg, a_reg, b_reg, d_reg)
     st_matrix[c_frag_size](
         c_shared + thread_idx.x * 4,
-        rebind[SIMD[DType.float32, c_frag_size]](d_reg),
+        rebind[SIMD[.float32, c_frag_size]](d_reg),
     )
 
     var base = thread_idx.x * 4
@@ -290,20 +288,20 @@ def check_stmatrix(
 
     for i in range(M * K):
         var val = random_si64(rand_min, rand_max)
-        a_host[i] = val.cast[DType.float32]()
+        a_host[i] = val.cast[.float32]()
 
     for i in range(K * N):
         var val = random_si64(rand_min, rand_max)
-        b_host[i] = val.cast[DType.float32]()
+        b_host[i] = val.cast[.float32]()
 
     for i in range(M * N):
         c_host[i] = 0
         c_host_ref[i] = 0
 
-    var a_device = ctx.enqueue_create_buffer[DType.float32](M * K)
-    var b_device = ctx.enqueue_create_buffer[DType.float32](K * N)
-    var c_device = ctx.enqueue_create_buffer[DType.float32](M * N)
-    var c_device_ref = ctx.enqueue_create_buffer[DType.float32](M * N)
+    var a_device = ctx.enqueue_create_buffer[.float32](M * K)
+    var b_device = ctx.enqueue_create_buffer[.float32](K * N)
+    var c_device = ctx.enqueue_create_buffer[.float32](M * N)
+    var c_device_ref = ctx.enqueue_create_buffer[.float32](M * N)
 
     ctx.enqueue_copy(a_device, a_host)
     ctx.enqueue_copy(b_device, b_host)
@@ -342,13 +340,13 @@ def check_stmatrix(
         row_major(Coord(M, N)),
     )
     var a_tt = TileTensor(
-        UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin](
+        UnsafePointer[Float32, ImmutAnyOrigin](
             unsafe_from_address=Int(a_device.unsafe_ptr())
         ),
         row_major(Coord(M, K)),
     )
     var b_tt = TileTensor(
-        UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin](
+        UnsafePointer[Float32, ImmutAnyOrigin](
             unsafe_from_address=Int(b_device.unsafe_ptr())
         ),
         row_major(Coord(K, N)),
@@ -397,4 +395,4 @@ def check_stmatrix(
 def main() raises:
     with DeviceContext() as ctx:
         check_stmatrix(16, 8, 8, -100, 100, ctx)
-        check_stmatrix_gen[DType.bfloat16, DType.bfloat16](ctx)
+        check_stmatrix_gen[.bfloat16, DType.bfloat16](ctx)

@@ -14,7 +14,6 @@
 """Provides shared CPU matmul utilities including tile-consumer traits, kernel shape selection, and partial SIMD load/store helpers."""
 
 from std.math import align_down, align_up, ceildiv, iota
-from std.sys import align_of
 from std.sys._build import is_debug_build
 from std.sys.info import CompilationTarget, simd_width_of, size_of
 from std.sys.intrinsics import masked_load, masked_store
@@ -60,9 +59,9 @@ def partial_simd_load[
         The SIMD vector loaded and zero-filled.
     """
     # Create a mask based on input bounds.
-    var effective_lbound = SIMD[DType.int32, width](max(lbound, 0))
-    var effective_rbound = SIMD[DType.int32, width](min(width, rbound))
-    var incr = iota[DType.int32, width]()
+    var effective_lbound = SIMD[.int32, width](max(lbound, 0))
+    var effective_rbound = SIMD[.int32, width](min(width, rbound))
+    var incr = iota[.int32, width]()
     var mask = incr.ge(effective_lbound) & incr.lt(effective_rbound)
 
     return masked_load[width](storage, mask, pad_value)
@@ -99,9 +98,9 @@ def partial_simd_store[
         data: The vector value to store.
     """
     # Create a mask based on input bounds.
-    var effective_lbound = SIMD[DType.int32, width](max(lbound, 0))
-    var effective_rbound = SIMD[DType.int32, width](min(width, rbound))
-    var incr = iota[DType.int32, width]()
+    var effective_lbound = SIMD[.int32, width](max(lbound, 0))
+    var effective_rbound = SIMD[.int32, width](min(width, rbound))
+    var incr = iota[.int32, width]()
     var mask = incr.ge(effective_lbound) & incr.lt(effective_rbound)
 
     return masked_store(data, storage, mask)
@@ -150,10 +149,7 @@ trait TileConsumer(DevicePassable, TrivialRegisterPassable):
         ref self,
         tile_coord: Coord,
         tile: TileTensor[
-            dtype,
-            LayoutType,
-            ...,
-            address_space=Self.src_address_space,
+            dtype, LayoutType, ..., address_space=Self.src_address_space
         ],
         thread_layout: _NewLayout,
     ) -> None:
@@ -1036,15 +1032,11 @@ def use_vnni_fn[a_type: DType, b_type: DType, c_type: DType]() -> Bool:
         and not CompilationTarget.has_neon_int8_matmul()
     ):
         return (
-            (a_type == DType.int8 and b_type == DType.int8)
-            or (a_type == DType.uint8 and b_type == DType.uint8)
-        ) and c_type == DType.int32
+            (a_type == .int8 and b_type == .int8)
+            or (a_type == .uint8 and b_type == .uint8)
+        ) and c_type == .int32
     elif CompilationTarget.has_avx2():
-        return (
-            a_type == DType.uint8
-            and b_type == DType.int8
-            and c_type == DType.int32
-        )
+        return a_type == .uint8 and b_type == .int8 and c_type == .int32
     else:
         return False
 
@@ -1063,11 +1055,11 @@ def use_i8mm_fn[a_type: DType, b_type: DType, c_type: DType]() -> Bool:
     # SIMD vectors.
     return (
         CompilationTarget.has_neon_int8_matmul()
-        and (c_type == DType.int32 or c_type == DType.uint32)
+        and (c_type == .int32 or c_type == .uint32)
         and (
-            (a_type == DType.uint8 and b_type == DType.uint8)
-            or (a_type == DType.uint8 and b_type == DType.int8)
-            or (a_type == DType.int8 and b_type == DType.int8)
+            (a_type == .uint8 and b_type == .uint8)
+            or (a_type == .uint8 and b_type == .int8)
+            or (a_type == .int8 and b_type == .int8)
         )
     )
 
@@ -1228,74 +1220,3 @@ def select_inner_kernel[
         return InnerKernelID.DEFAULT
     else:
         return InnerKernelID.VNNI
-
-
-@always_inline
-def apply_epilogue[
-    elementwise_lambda: elementwise_epilogue_type,
-    dst_layout: Layout,
-    dst_element_layout: Layout = Layout(1, 1),
-](src: LayoutTensor[mut=False, ...], offset: Int):  # register or shared memory
-    """Applies an elementwise epilogue lambda to a source tile.
-
-    Walks the elements of `src` and invokes `elementwise_lambda` with each
-    element's `(m, n)` coordinate and value, handling both 2D SIMD tiles and
-    the scalar/1D case.
-
-    Parameters:
-        elementwise_lambda: The epilogue lambda to apply per element.
-        dst_layout: The layout of the destination tensor.
-        dst_element_layout: The element layout of the destination tensor.
-
-    Args:
-        src: The source tile to read elements from.
-        offset: The linear offset into the destination tensor.
-    """
-    # Check if input is 2D simd tile. This is only for double buffer gemm
-    # TODO: extend it to 1D simd tile.
-    comptime if (
-        src.element_layout.rank() == 2
-        and dst_element_layout.shape == src.element_layout.shape
-        and dst_element_layout.stride[1] == 1
-        and src.element_layout.stride[1] == 1
-    ):
-        # update an element tensor.
-        comptime num_copies = src.element_layout.shape[0].value()
-        comptime vec_width = src.element_layout.shape[1].value()
-
-        comptime for i in range(dst_layout.size()):
-            # Offset to the current element.
-            comptime src_offset = src.layout(i)
-            comptime dst_offset = dst_layout(i)
-
-            comptime for j in range(num_copies):
-                comptime src_idx = src_offset + src.element_layout(j)
-                comptime dst_idx = dst_offset + dst_element_layout(j)
-                # C matrix dimension. For 2D simd tile, element_layout preserves
-                # the matrix dimension, layout doesn't.
-                comptime N = dst_element_layout.stride[0].value()
-
-                var vec = src.ptr.load[
-                    width=vec_width,
-                    alignment=align_of[SIMD[src.dtype, vec_width]](),
-                ](src_idx)
-
-                var m, n = divmod(dst_idx + offset, N)
-
-                elementwise_lambda[src.dtype, vec_width]((m, n), vec)
-
-    # Scalar case
-    # TODO: 1D vector is included, should handle it in a separate branch.
-    else:
-        comptime assert dst_element_layout.rank() == 1
-
-        comptime for i in range(src.layout.size() * src.element_size):
-            comptime src_idx = make_layout(src.element_layout, src.layout)(i)
-            comptime dst_idx = make_layout(dst_element_layout, dst_layout)(i)
-            # C matrix dimension. For scalar or 1D vector element, the layout
-            # preserves the matrix dimension.
-            comptime N = dst_layout.stride[0].value()
-
-            var m, n = divmod(src_idx + offset, N)
-
-            elementwise_lambda[src.dtype, 1]((m, n), src.ptr[src_idx + offset])

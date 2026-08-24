@@ -478,6 +478,36 @@ class TestSpeculativeArchitectureOverride:
         )
         assert self._resolved_arch(cfg) == "DeepseekV3ForCausalLM"
 
+    def test_inkling_mtp_no_draft(self) -> None:
+        cfg = self._make_config(
+            "InklingForConditionalGeneration", draft_arch=None
+        )
+        cfg.model.huggingface_config.mtp_config = SimpleNamespace(
+            num_nextn_predict_layers=8
+        )
+        assert (
+            self._resolved_arch(cfg)
+            == "UnifiedMTPInklingForConditionalGeneration"
+        )
+
+    def test_inkling_without_mtp_config_is_noop(self) -> None:
+        cfg = self._make_config(
+            "InklingForConditionalGeneration", draft_arch=None
+        )
+        assert self._resolved_arch(cfg) == "InklingForConditionalGeneration"
+
+    def test_inkling_mtp_dict_config_no_draft(self) -> None:
+        cfg = self._make_config(
+            "InklingForConditionalGeneration", draft_arch=None
+        )
+        cfg.model.huggingface_config.mtp_config = {
+            "num_nextn_predict_layers": 8
+        }
+        assert (
+            self._resolved_arch(cfg)
+            == "UnifiedMTPInklingForConditionalGeneration"
+        )
+
 
 class TestDraftModelDefaultsInheritance:
     """Tests that draft model inherits certain defaults from the target model."""

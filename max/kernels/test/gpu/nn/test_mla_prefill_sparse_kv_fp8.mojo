@@ -166,7 +166,7 @@ def host_reference[
                 var bs = b * seq_len + s
                 var q_base = bs * num_heads * qk_depth + h * qk_depth
 
-                var mi = Float64(min_or_neg_inf[DType.float32]())
+                var mi = Float64(min_or_neg_inf[.float32]())
                 var s_buf = alloc[Float64](n_valid)
 
                 for k in range(n_valid):
@@ -174,8 +174,8 @@ def host_reference[
                     var dot = Float64(0)
                     for d in range(qk_depth):
                         dot += (
-                            q_ptr[q_base + d].cast[DType.float64]()
-                            * kv_sparse_ptr[kv_base + d].cast[DType.float64]()
+                            q_ptr[q_base + d].cast[.float64]()
+                            * kv_sparse_ptr[kv_base + d].cast[.float64]()
                         )
                     # Match kernel's `cur_pi_max *= scale_log2e` step.
                     s_buf[k] = dot * scale_log2e
@@ -217,7 +217,7 @@ def host_reference[
                         var kv_base = (bs * topk + k) * qk_depth
                         acc += (
                             s_buf[k]
-                            * kv_sparse_ptr[kv_base + d].cast[DType.float64]()
+                            * kv_sparse_ptr[kv_base + d].cast[.float64]()
                         )
                     output_ptr[o_base + d] = acc.cast[q_type]()
 
@@ -361,10 +361,8 @@ def run_test_prefill_sparse_fp8[
     # matching the kernel's `scales_ptr[get_tma_row(raw) * scales_per_token]`.
     # -----------------------------------------------------------------------
     var kv_total = batch_size * num_kv_tokens * QK_DEPTH
-    var kv_bf16_host = alloc[Scalar[DType.bfloat16]](kv_total)
-    randn[DType.bfloat16](
-        kv_bf16_host, kv_total, mean=0.0, standard_deviation=0.5
-    )
+    var kv_bf16_host = alloc[BFloat16](kv_total)
+    randn[.bfloat16](kv_bf16_host, kv_total, mean=0.0, standard_deviation=0.5)
 
     # scale_block_size == 0 => no-scale mode (unit scale): FP8 latents are
     # quantized/dequantized with s == 1.0 (no per-block scaling), matching the
@@ -381,22 +379,22 @@ def run_test_prefill_sparse_fp8[
     for i in range(total_phys_rows * scales_per_token):
         scales_host[i] = Float32(1.0)
 
-    var blocks_fp8_host = alloc[Scalar[DType.float8_e4m3fn]](block_elems)
+    var blocks_fp8_host = alloc[Float8_e4m3fn](block_elems)
     # Multi-layer: seed every layer with a distinct nonzero pattern so a
     # gather into the wrong layer (the num_layers>1 addressing bug) reads it
     # and decorrelates the output. Layer `layer_idx` is overwritten with the
     # real quantized KV below. Single-layer stays zero-initialized (NFC).
     if num_layers > 1:
         for i in range(block_elems):
-            blocks_fp8_host[i] = Scalar[DType.float8_e4m3fn](
+            blocks_fp8_host[i] = Float8_e4m3fn(
                 Float32(Int(i % 17) - 8) * Float32(0.5)
             )
     else:
         for i in range(block_elems):
-            blocks_fp8_host[i] = Scalar[DType.float8_e4m3fn](0)
+            blocks_fp8_host[i] = Float8_e4m3fn(0)
 
     # dequantized BF16 values for host reference.
-    var kv_dequant_host = alloc[Scalar[DType.bfloat16]](kv_total)
+    var kv_dequant_host = alloc[BFloat16](kv_total)
 
     for bi in range(batch_size):
         for t in range(num_kv_tokens):
@@ -414,9 +412,7 @@ def run_test_prefill_sparse_fp8[
                 comptime blk_end = min(blk_start + eff_block, QK_DEPTH)
                 var abs_max = Float32(0.0)
                 for d in range(blk_start, blk_end):
-                    var v = abs(
-                        kv_bf16_host[src_base + d].cast[DType.float32]()
-                    )
+                    var v = abs(kv_bf16_host[src_base + d].cast[.float32]())
                     if v > abs_max:
                         abs_max = v
                 # No-scale mode forces s == 1.0 (unit scale, no dequant).
@@ -432,26 +428,24 @@ def run_test_prefill_sparse_fp8[
                     + tok_in_page * QK_DEPTH
                 )
                 for d in range(blk_start, blk_end):
-                    var q_val = (
-                        kv_bf16_host[src_base + d].cast[DType.float32]() / s
-                    )
+                    var q_val = kv_bf16_host[src_base + d].cast[.float32]() / s
                     # Clamp to FP8 range to prevent overflow → NaN (FP8 e4m3fn
                     # overflows to NaN, not infinity, for values > 448).
                     var q_val_clamped = min(
                         max(q_val, -FP8_E4M3_MAX), FP8_E4M3_MAX
                     )
-                    var fp8_val = q_val_clamped.cast[DType.float8_e4m3fn]()
+                    var fp8_val = q_val_clamped.cast[.float8_e4m3fn]()
                     blocks_fp8_host[base + d] = fp8_val
                     kv_dequant_host[src_base + d] = (
-                        fp8_val.cast[DType.float32]() * s
-                    ).cast[DType.bfloat16]()
+                        fp8_val.cast[.float32]() * s
+                    ).cast[.bfloat16]()
 
     # -----------------------------------------------------------------------
     # Q tensor: [total_q_tokens, num_heads, qk_depth]  (BF16)
     # -----------------------------------------------------------------------
     var q_elems = total_q_tokens * num_heads * QK_DEPTH
-    var q_host = alloc[Scalar[DType.bfloat16]](q_elems)
-    randn[DType.bfloat16](q_host, q_elems, mean=0.0, standard_deviation=0.5)
+    var q_host = alloc[BFloat16](q_elems)
+    randn[.bfloat16](q_host, q_elems, mean=0.0, standard_deviation=0.5)
 
     # -----------------------------------------------------------------------
     # Per-query token selection (same coprime rotation).
@@ -471,7 +465,7 @@ def run_test_prefill_sparse_fp8[
     # Sparse KV ref from DEQUANTIZED values.
     # -----------------------------------------------------------------------
     var kv_sparse_size = total_q_tokens * topk * QK_DEPTH
-    var kv_sparse = alloc[Scalar[DType.bfloat16]](kv_sparse_size)
+    var kv_sparse = alloc[BFloat16](kv_sparse_size)
     for bi in range(batch_size):
         for s in range(seq_len):
             var bs = bi * seq_len + s
@@ -486,8 +480,8 @@ def run_test_prefill_sparse_fp8[
     # Host reference output.
     # -----------------------------------------------------------------------
     var out_elems = total_q_tokens * num_heads * V_DEPTH
-    var ref_host = alloc[Scalar[DType.bfloat16]](out_elems)
-    host_reference[DType.bfloat16](
+    var ref_host = alloc[BFloat16](out_elems)
+    host_reference[.bfloat16](
         q_host,
         kv_sparse,
         ref_host,
@@ -504,29 +498,25 @@ def run_test_prefill_sparse_fp8[
     # -----------------------------------------------------------------------
     # Copy data to device.
     # -----------------------------------------------------------------------
-    var blocks_device = ctx.enqueue_create_buffer[DType.float8_e4m3fn](
-        block_elems
-    )
+    var blocks_device = ctx.enqueue_create_buffer[.float8_e4m3fn](block_elems)
     ctx.enqueue_copy(blocks_device, blocks_fp8_host)
 
     var cache_lengths_host = alloc[UInt32](batch_size)
     for bi in range(batch_size):
         cache_lengths_host[bi] = UInt32(num_kv_tokens)
 
-    var cache_lengths_device = ctx.enqueue_create_buffer[DType.uint32](
-        batch_size
-    )
+    var cache_lengths_device = ctx.enqueue_create_buffer[.uint32](batch_size)
     ctx.enqueue_copy(cache_lengths_device, cache_lengths_host)
 
-    var lookup_table_device = ctx.enqueue_create_buffer[DType.uint32](lut_size)
+    var lookup_table_device = ctx.enqueue_create_buffer[.uint32](lut_size)
     ctx.enqueue_copy(lookup_table_device, lookup_table_host)
 
-    var q_device = ctx.enqueue_create_buffer[DType.bfloat16](q_elems)
+    var q_device = ctx.enqueue_create_buffer[.bfloat16](q_elems)
     ctx.enqueue_copy(q_device, q_host)
 
-    var out_device = ctx.enqueue_create_buffer[DType.bfloat16](out_elems)
+    var out_device = ctx.enqueue_create_buffer[.bfloat16](out_elems)
 
-    var scales_device = ctx.enqueue_create_buffer[DType.float32](
+    var scales_device = ctx.enqueue_create_buffer[.float32](
         total_phys_rows * scales_per_token
     )
     ctx.enqueue_copy(scales_device, scales_host)
@@ -560,7 +550,7 @@ def run_test_prefill_sparse_fp8[
                     # to -inf via topk_lengths.
                     h_indices[bs * topk + i] = UInt32(0xFFFFFFFF)
 
-    var indices_device = ctx.enqueue_create_buffer[DType.uint32](total_indices)
+    var indices_device = ctx.enqueue_create_buffer[.uint32](total_indices)
     ctx.enqueue_copy(indices_device, h_indices)
 
     # Reported length: `valid_topk` by default, or a constant override
@@ -572,9 +562,7 @@ def run_test_prefill_sparse_fp8[
     for i in range(total_q_tokens):
         h_topk_lengths[i] = UInt32(reported_len)
 
-    var topk_lengths_device = ctx.enqueue_create_buffer[DType.uint32](
-        total_q_tokens
-    )
+    var topk_lengths_device = ctx.enqueue_create_buffer[.uint32](total_q_tokens)
     ctx.enqueue_copy(topk_lengths_device, h_topk_lengths)
 
     ctx.synchronize()
@@ -582,19 +570,19 @@ def run_test_prefill_sparse_fp8[
     # -----------------------------------------------------------------------
     # Build FP8 PagedKVCacheCollection.
     # -----------------------------------------------------------------------
-    var blocks_lt = LayoutTensor[DType.float8_e4m3fn, Layout.row_major[6]()](
+    var blocks_lt = LayoutTensor[.float8_e4m3fn, Layout.row_major[6]()](
         blocks_device.unsafe_ptr(),
         RuntimeLayout[Layout.row_major[6]()].row_major(block_shape),
     )
 
     comptime cl_layout = Layout(UNKNOWN_VALUE)
-    var cache_lengths_lt = LayoutTensor[DType.uint32, cl_layout](
+    var cache_lengths_lt = LayoutTensor[.uint32, cl_layout](
         cache_lengths_device.unsafe_ptr(),
         RuntimeLayout[cl_layout].row_major(IndexList[1](batch_size)),
     )
 
     comptime lt_layout_2d = Layout.row_major[2]()
-    var lookup_table_lt = LayoutTensor[DType.uint32, lt_layout_2d](
+    var lookup_table_lt = LayoutTensor[.uint32, lt_layout_2d](
         lookup_table_device.unsafe_ptr(),
         RuntimeLayout[lt_layout_2d].row_major(
             IndexList[2](batch_size, max_pages_per_batch)
@@ -604,21 +592,21 @@ def run_test_prefill_sparse_fp8[
     var kv_collection = PagedKVCacheCollection[
         DType.float8_e4m3fn, kv_params, PAGE_SIZE
     ](
-        LayoutTensor[DType.float8_e4m3fn, Layout.row_major[6]()](
+        LayoutTensor[.float8_e4m3fn, Layout.row_major[6]()](
             blocks_lt.ptr,
             RuntimeLayout[Layout.row_major[6]()](
                 blocks_lt.runtime_layout.shape.value,
                 blocks_lt.runtime_layout.stride.value,
             ),
         ),
-        LayoutTensor[mut=False, DType.uint32, cl_layout](
+        LayoutTensor[mut=False, .uint32, cl_layout](
             cache_lengths_lt.ptr,
             RuntimeLayout[cl_layout](
                 cache_lengths_lt.runtime_layout.shape.value,
                 cache_lengths_lt.runtime_layout.stride.value,
             ),
         ),
-        LayoutTensor[mut=False, DType.uint32, lt_layout_2d](
+        LayoutTensor[mut=False, .uint32, lt_layout_2d](
             lookup_table_lt.ptr,
             RuntimeLayout[lt_layout_2d](
                 lookup_table_lt.runtime_layout.shape.value,
@@ -677,7 +665,7 @@ def run_test_prefill_sparse_fp8[
     # sub-64 padded-row guard reading sink[num_heads..63] is a real OOB).
     var attn_sink_ptr = Optional[UnsafePointer[Float32, ImmutAnyOrigin]](None)
     var sink_len = len(sink_values) if len(sink_values) > 0 else 1
-    var sink_device = ctx.enqueue_create_buffer[DType.float32](sink_len)
+    var sink_device = ctx.enqueue_create_buffer[.float32](sink_len)
     if len(sink_values) > 0:
         var sink_host = alloc[Float32](len(sink_values))
         for i in range(len(sink_values)):
@@ -712,7 +700,7 @@ def run_test_prefill_sparse_fp8[
     # -----------------------------------------------------------------------
     # Verify output.
     # -----------------------------------------------------------------------
-    var out_host = alloc[Scalar[DType.bfloat16]](out_elems)
+    var out_host = alloc[BFloat16](out_elems)
     ctx.enqueue_copy(out_host, out_device)
     ctx.synchronize()
 
@@ -752,8 +740,8 @@ def run_test_prefill_sparse_fp8[
                         + h * V_DEPTH
                         + d
                     )
-                    var ref_val = ref_host[idx].cast[DType.float64]()
-                    var actual_val = out_host[idx].cast[DType.float64]()
+                    var ref_val = ref_host[idx].cast[.float64]()
+                    var actual_val = out_host[idx].cast[.float64]()
                     var err = abs(actual_val - ref_val)
                     if err > max_err:
                         max_err = err
@@ -1156,9 +1144,7 @@ def main() raises:
             # (run under compute-sanitizer: no OOB read of sink[8..63]).
             var sink_fp8_h8_neginf = List[Float32]()
             for _ in range(8):
-                sink_fp8_h8_neginf.append(
-                    Float32(min_or_neg_inf[DType.float32]())
-                )
+                sink_fp8_h8_neginf.append(Float32(min_or_neg_inf[.float32]()))
             run_test_prefill_sparse_fp8[8, 64, QK_DEPTH](
                 "b1_s32_h8_kv256_topk64_sink_neginf_fp8_tensorwise",
                 1,

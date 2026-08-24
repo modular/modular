@@ -354,6 +354,8 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
         cls,
         pipeline_config: PipelineConfig,
         model_config: MAXModelConfig | None = None,
+        *,
+        max_seq_len: int,
     ) -> NemotronHConfig:
         """``ArchConfig`` protocol entry point.
 
@@ -394,6 +396,7 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
             dtype,
             kv_params,
             device_refs,
+            max_seq_len=max_seq_len,
         )
 
     @classmethod
@@ -404,6 +407,8 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
         dtype: DType,
         kv_params: KVCacheParams,
         devices: list[DeviceRef],
+        *,
+        max_seq_len: int,
     ) -> NemotronHConfig:
         # The model (activation / embedding / norm / attention) dtype is always
         # bf16; FP8 is applied PER-MODULE to specific Linears via quant_config,
@@ -421,9 +426,7 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
             vocab_size=huggingface_config.vocab_size,
             num_hidden_layers=huggingface_config.num_hidden_layers,
             layer_norm_epsilon=huggingface_config.layer_norm_epsilon,
-            max_seq_len=cls.calculate_max_seq_len(
-                pipeline_config, huggingface_config
-            ),
+            max_seq_len=max_seq_len,
             dtype=dtype,
             devices=devices,
             tie_word_embeddings=getattr(

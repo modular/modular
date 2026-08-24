@@ -50,9 +50,9 @@ def shared_memory_alloc_example() raises:
         )
         # start-shared-memory-alloc-example
         comptime tile_layout = row_major[block_size, block_size]()
-        var shared_tile = stack_allocation[
-            dtype, address_space=AddressSpace.SHARED
-        ](tile_layout)
+        var shared_tile = stack_allocation[dtype, address_space=.SHARED](
+            tile_layout
+        )
         # end-shared-memory-alloc-example
 
         # Copy one element from the global tile to the shared tile.
@@ -135,10 +135,8 @@ def tile_tensor_distribute_example() raises:
 
     try:
         var ctx = DeviceContext()
-        var dev_buf = ctx.enqueue_create_buffer[DType.int32](rows * columns)
-        var host_buf = ctx.enqueue_create_host_buffer[DType.int32](
-            rows * columns
-        )
+        var dev_buf = ctx.enqueue_create_buffer[.int32](rows * columns)
+        var host_buf = ctx.enqueue_create_host_buffer[.int32](rows * columns)
         for i in range(rows * columns):
             host_buf[i] = Int32(i)
         var tensor = TileTensor(dev_buf, layout)
@@ -169,9 +167,9 @@ def simple_copy_example():
             Int(block_idx.y), Int(block_idx.x)
         )
         comptime tile_layout = row_major[block_size, block_size]()
-        var shared_tile = stack_allocation[
-            dtype, address_space=AddressSpace.SHARED
-        ](tile_layout)
+        var shared_tile = stack_allocation[dtype, address_space=.SHARED](
+            tile_layout
+        )
 
         if global_idx.y < rows and global_idx.x < cols:
             shared_tile[thread_idx.y, thread_idx.x] = global_tile[

@@ -34,8 +34,8 @@ def p2p_copy_kernel(
 
 def launch_p2p_copy_kernel(
     ctx1: DeviceContext,
-    dst_buf: DeviceBuffer[DType.float32],
-    src_buf: DeviceBuffer[DType.float32],
+    dst_buf: DeviceBuffer[.float32],
+    src_buf: DeviceBuffer[.float32],
     num_elements: Int,
 ) raises:
     comptime BLOCK_SIZE = 256
@@ -76,9 +76,9 @@ def main() raises:
     print("Checkpoint - successfully enabled peer access")
 
     # Create and initialize device buffers
-    var dst_buf = ctx1.create_buffer_sync[DType.float32](length)
+    var dst_buf = ctx1.create_buffer_sync[.float32](length)
     dst_buf.enqueue_fill(1.0)
-    var src_buf = ctx2.create_buffer_sync[DType.float32](length)
+    var src_buf = ctx2.create_buffer_sync[.float32](length)
 
     # Initialize source data
     with src_buf.map_to_host() as host_data:

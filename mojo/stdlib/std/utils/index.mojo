@@ -160,7 +160,7 @@ def _type_of_width[bitwidth: Int, unsigned: Bool]() -> DType:
         return _int_type_of_width[bitwidth]()
 
 
-struct IndexList[size: Int, *, element_type: DType = DType.int64](
+struct IndexList[size: Int, *, element_type: DType = .int64](
     Comparable,
     Defaultable,
     DevicePassable,
@@ -343,14 +343,14 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
     @always_inline("nodebug")
     def canonicalize(
         self,
-        out result: IndexList[Self.size, element_type=DType.int64],
+        out result: IndexList[Self.size, element_type=.int64],
     ):
         """Canonicalizes the IndexList.
 
         Returns:
             Canonicalizes the object.
         """
-        return self.cast[DType.int64]()
+        return self.cast[.int64]()
 
     @always_inline
     def reverse(self) -> Self:
@@ -711,7 +711,7 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
     def get_type_name() -> String:
         """
         Gets the name of the host type (the one implementing this trait).
-        For example, Int would return "Int", DeviceBuffer[DType.float32] would
+        For example, Int would return "Int", DeviceBuffer[.float32] would
         return "DeviceBuffer[DType.float32]". This is used for error messages
         when passing types to the device.
         TODO: This method will be retired soon when better kernel call error
@@ -731,7 +731,7 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
 @always_inline
 def Index[
     *Ts: Intable,
-    dtype: DType = DType.int64,
+    dtype: DType = .int64,
 ](*args: *Ts, out result: IndexList[args.__len__(), element_type=dtype]):
     """Constructs an N-D Index from the given values.
 

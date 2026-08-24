@@ -91,8 +91,8 @@ def gather[
     invariant: Bool = False,
     alignment: Int = 0,
 ](
-    var base: SIMD[DType.int, size],
-    mask: SIMD[DType.bool, size],
+    var base: SIMD[.int, size],
+    mask: SIMD[.bool, size],
     passthrough: SIMD[dtype, size],
 ) -> SIMD[dtype, size]:
     """Reads scalar values from a SIMD vector, and gathers them into one vector.
@@ -188,8 +188,8 @@ def scatter[
     alignment: Int = 0,
 ](
     value: SIMD[dtype, size],
-    var base: SIMD[DType.int, size],
-    mask: SIMD[DType.bool, size],
+    var base: SIMD[.int, size],
+    mask: SIMD[.bool, size],
 ):
     """Takes scalar values from a SIMD vector and `scatters` them into a
     vector of pointers.
@@ -528,7 +528,7 @@ def masked_load[
     alignment: Int = 1,
 ](
     addr: ImmPointer[Scalar[dtype], ...],
-    mask: SIMD[DType.bool, size],
+    mask: SIMD[.bool, size],
     passthrough: SIMD[dtype, size],
 ) -> SIMD[dtype, size]:
     """Loads data from memory and return it, replacing masked lanes with values
@@ -576,7 +576,7 @@ def masked_store[
 ](
     value: SIMD,
     addr: MutPointer[Scalar[value.dtype], ...],
-    mask: SIMD[DType.bool, size],
+    mask: SIMD[.bool, size],
 ):
     """Stores a value at a memory location, skipping masked lanes.
 
@@ -615,7 +615,7 @@ def compressed_store[
 ](
     value: SIMD[dtype, size],
     addr: MutPointer[Scalar[dtype], ...],
-    mask: SIMD[DType.bool, size],
+    mask: SIMD[.bool, size],
 ):
     """Compresses the lanes of `value`, skipping `mask` lanes, and stores
     at `addr`.
@@ -653,9 +653,7 @@ def strided_load[
 ](
     addr: ImmPointer[Scalar[dtype], ...],
     stride: Int,
-    mask: SIMD[DType.bool, simd_width] = SIMD[DType.bool, simd_width](
-        fill=True
-    ),
+    mask: SIMD[.bool, simd_width] = SIMD[.bool, simd_width](fill=True),
 ) -> SIMD[dtype, simd_width]:
     """Loads values from addr according to a specific stride.
 
@@ -691,9 +689,9 @@ def strided_load[
         return result
 
     var offset = (
-        SIMD[DType.int, simd_width](Int(addr))
-        + SIMD[DType.int, simd_width](stride * size_of[dtype]())
-        * std.math.iota[DType.int, simd_width]()
+        SIMD[.int, simd_width](Int(addr))
+        + SIMD[.int, simd_width](stride * size_of[dtype]())
+        * std.math.iota[.int, simd_width]()
     )
     var passthrough = SIMD[dtype, simd_width]()
     return gather[invariant=invariant](offset, mask, passthrough)
@@ -711,9 +709,7 @@ def strided_store[
     value: SIMD[dtype, simd_width],
     addr: MutPointer[Scalar[dtype], ...],
     stride: Int,
-    mask: SIMD[DType.bool, simd_width] = SIMD[DType.bool, simd_width](
-        fill=True
-    ),
+    mask: SIMD[.bool, simd_width] = SIMD[.bool, simd_width](fill=True),
 ):
     """Loads values from addr according to a specific stride.
 
@@ -734,9 +730,9 @@ def strided_store[
         return
 
     var offset = (
-        SIMD[DType.int, simd_width](Int(addr))
-        + SIMD[DType.int, simd_width](stride * size_of[dtype]())
-        * std.math.iota[DType.int, simd_width]()
+        SIMD[.int, simd_width](Int(addr))
+        + SIMD[.int, simd_width](stride * size_of[dtype]())
+        * std.math.iota[.int, simd_width]()
     )
     scatter(value, offset, mask)
 
@@ -861,9 +857,7 @@ def assume(val: Bool):
 
 @always_inline
 def implicitarg_ptr(
-    out result: Pointer[
-        UInt8, MutUntrackedOrigin, address_space=AddressSpace.CONSTANT
-    ]
+    out result: Pointer[UInt8, MutUntrackedOrigin, address_space=.CONSTANT]
 ):
     """
     Get a pointer to AMD's implicit arguments table.
@@ -989,6 +983,6 @@ def ballot[dtype: DType](value: Bool) -> Scalar[dtype]:
     """
     comptime assert is_amd_gpu(), "This intrinsic is only defined for AMD GPUs"
     comptime assert (
-        dtype == DType.int32 or dtype == DType.int64
+        dtype == .int32 or dtype == .int64
     ), "This intrinsic is only defined for i32 or i64"
     return llvm_intrinsic["llvm.amdgcn.ballot", Scalar[dtype]](value)

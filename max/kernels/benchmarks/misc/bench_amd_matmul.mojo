@@ -509,9 +509,9 @@ def _shape_set_m_values(shape_set_id: Int, N: Int, single_M: Int) -> List[Int]:
 
 
 def main() raises:
-    comptime dtype = get_defined_dtype["dtype", DType.float8_e4m3fn]()
+    comptime dtype = get_defined_dtype["dtype", .float8_e4m3fn]()
     comptime assert (
-        dtype.is_float8() or dtype == DType.bfloat16 or dtype == DType.float16
+        dtype.is_float8() or dtype == .bfloat16 or dtype == .float16
     ), "bench_amd_matmul supports float8_e4m3fn, bfloat16, or float16"
 
     comptime N = get_defined_int["N", 4096]()

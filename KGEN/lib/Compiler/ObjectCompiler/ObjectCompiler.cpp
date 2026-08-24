@@ -29,6 +29,7 @@
 #include "KGEN/ToolCommon/CompilationOptions.h"
 #include "KGEN/ToolCommon/Debug.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
+#include "KGEN/ToolCommon/LLVMTimingRegions.h"
 #include "KGENToLLVMPipeline.h"
 #include "LLVMAccessorHelper.h"
 #include "LLVMPassesPipeline.h"
@@ -295,8 +296,7 @@ runLlcPasses(llvm::Module &module, CompilationOptions &options,
   // This is required by passes like ExpandFp and PreISelIntrinsicLowering.
   const llvm::TargetOptions &tmOptions = targetMachine.Options;
   passMgr.add(new RuntimeLibraryInfoWrapper(
-      Triple(module.getTargetTriple()), tmOptions.ExceptionModel,
-      tmOptions.FloatABIType, tmOptions.EABIVersion,
+      tmOptions.ExceptionModel, tmOptions.EABIVersion,
       tmOptions.MCOptions.ABIName, tmOptions.VecLib));
 
 #ifndef MODULAR_PRODUCTION
@@ -1020,6 +1020,7 @@ static void computeFnOrdering(llvm::Module &module,
 ErrorOr<BufferRef> ObjectCompiler::emitArchive(OwningOpRef<ModuleOp> module,
                                                bool emitAssembly,
                                                std::string *outKeyHash) {
+  LLVMTimingRegion timingRegion(options);
   CompilerTimeTraceScope traceScope("produce-archive");
 
   auto tmOr = createTargetMachine(options, isJIT);
@@ -1244,6 +1245,7 @@ ObjectCompiler::lowerLLVMModuleToObjects(
 
 ErrorOrSuccess ObjectCompiler::lowerAllFuncsToLLVMAndOptimize(
     ModuleOp module, LLVMModuleAndContext &llvmModule) {
+  LLVMTimingRegion timingRegion(options);
   CompilerTimeTraceScope traceScope("lowerAllFuncsToLLVMAndOptimize");
 
   if (auto err = llvmModule.create([&](llvm::LLVMContext &ctx) {
@@ -1271,6 +1273,7 @@ ErrorOrSuccess ObjectCompiler::lowerAllFuncsToLLVMAndOptimize(
 
 ErrorOrSuccess ObjectCompiler::emitLLVMIR(ModuleOp module,
                                           llvm::raw_pwrite_stream &os) {
+  LLVMTimingRegion timingRegion(options);
   CompilerTimeTraceScope traceScope("emitLLVMIR");
 
   LLVMModuleAndContext llvmModule;
@@ -1287,6 +1290,7 @@ ErrorOrSuccess ObjectCompiler::emitLLVMIR(ModuleOp module,
 
 ErrorOrSuccess ObjectCompiler::emitAssembly(OwningOpRef<ModuleOp> module,
                                             llvm::raw_pwrite_stream &os) {
+  LLVMTimingRegion timingRegion(options);
   CompilerTimeTraceScope traceScope("emitAssembly");
   ErrorOr<BufferRef> buf =
       ObjectCompiler::emitArchive(std::move(module), /*emitAssembly=*/true);
@@ -1436,6 +1440,7 @@ static ErrorOr<BufferRef> createSharedObject(BufferRef buf,
 
 ErrorOrSuccess ObjectCompiler::emitSharedObject(OwningOpRef<ModuleOp> module,
                                                 llvm::raw_pwrite_stream &os) {
+  LLVMTimingRegion timingRegion(options);
   llvm::Triple triple(options.targetTriple);
 
   // Only ELF and MachO object formats are currently supported for
@@ -1812,6 +1817,7 @@ ErrorOr<DenseMap<uint64_t, DenseMap<EmitAs, BufferRef>>>
 ObjectCompiler::emitOffloadKernels(
     OwningOpRef<ModuleOp> module,
     llvm::DenseMap<uint64_t, llvm::SmallSet<EmitAs, 4>> kernelEmissionKinds) {
+  LLVMTimingRegion timingRegion(options);
   CompilerTimeTraceScope traceScope("emitOffloadKernels");
 
   // Perform a cache aware transformation to translate the module to an

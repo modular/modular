@@ -130,10 +130,10 @@ def sgemm_warp_tiling_kernel[
     # Use 4 to comply with f4 alignment used in accumulation.
     comptime sram_bank_padding_size = 4
     comptime BM_padded = BM + sram_bank_padding_size
-    var a_sram = stack_allocation[a_type, address_space=AddressSpace.SHARED](
+    var a_sram = stack_allocation[a_type, address_space=.SHARED](
         row_major[BK * BM_padded]()
     )
-    var b_sram = stack_allocation[b_type, address_space=AddressSpace.SHARED](
+    var b_sram = stack_allocation[b_type, address_space=.SHARED](
         row_major[BK * BN]()
     )
 
@@ -393,9 +393,9 @@ def bench_matmuls(mut m: Bench, ctx: DeviceContext) raises:
     for i in range(M * N):
         c_host_naive[i] = 0
 
-    var a_device = ctx.enqueue_create_buffer[DType.float32](M * K)
-    var b_device = ctx.enqueue_create_buffer[DType.float32](K * N)
-    var c_device = ctx.enqueue_create_buffer[DType.float32](M * N)
+    var a_device = ctx.enqueue_create_buffer[.float32](M * K)
+    var b_device = ctx.enqueue_create_buffer[.float32](K * N)
+    var c_device = ctx.enqueue_create_buffer[.float32](M * N)
 
     ctx.enqueue_copy(a_device, a_host)
     ctx.enqueue_copy(b_device, b_host)

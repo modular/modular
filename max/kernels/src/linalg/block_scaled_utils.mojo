@@ -41,7 +41,7 @@ def compute_mxfp8_block_scale[
     var e8m0 = (group_max * E4M3_MAXABS_RECIP).cast[scales_dtype]()
     var multiplier = Float32(0.0)
     if group_max != 0:
-        multiplier = recip(e8m0.cast[DType.float32]())
+        multiplier = recip(e8m0.cast[.float32]())
 
     # `recip` is non-finite at both ends of E8M0's range: the 2^-127 floor is an
     # fp32 subnormal that V_RCP_F32 flushes to inf, and a `group_max` that

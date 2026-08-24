@@ -94,7 +94,7 @@ def reduce_sum[
         # dynamic here — these entry points take no static_cols param).
         var row = rowwise.Row[
             params, dtype, dtype, reduce_dim, rank, is_cached=False
-        ](row_coords, Scalar[DType.int](axis_size), ctx, load)
+        ](row_coords, Int(axis_size), ctx, load)
 
         # Reduce: sum via the ReduceSum monoid.
         @always_inline
@@ -184,7 +184,7 @@ def reduce_max[
         # dynamic here — these entry points take no static_cols param).
         var row = rowwise.Row[
             params, dtype, dtype, reduce_dim, rank, is_cached=False
-        ](row_coords, Scalar[DType.int](axis_size), ctx, load)
+        ](row_coords, Int(axis_size), ctx, load)
 
         # Reduce: max via the ReduceMax monoid.
         @always_inline
@@ -267,7 +267,7 @@ def reduce_min[
         # dynamic here — these entry points take no static_cols param).
         var row = rowwise.Row[
             params, dtype, dtype, reduce_dim, rank, is_cached=False
-        ](row_coords, Scalar[DType.int](axis_size), ctx, load)
+        ](row_coords, Int(axis_size), ctx, load)
 
         # Reduce: min via the ReduceMin monoid.
         @always_inline
@@ -350,7 +350,7 @@ def reduce_product[
         # dynamic here — these entry points take no static_cols param).
         var row = rowwise.Row[
             params, dtype, dtype, reduce_dim, rank, is_cached=False
-        ](row_coords, Scalar[DType.int](axis_size), ctx, load)
+        ](row_coords, Int(axis_size), ctx, load)
 
         # Reduce: product via the ReduceProduct monoid.
         @always_inline
@@ -435,7 +435,7 @@ def reduce_mean[
         # dynamic here — these entry points take no static_cols param).
         var row = rowwise.Row[
             params, dtype, dtype, reduce_dim, rank, is_cached=False
-        ](row_coords, Scalar[DType.int](axis_size), ctx, load)
+        ](row_coords, Int(axis_size), ctx, load)
 
         # Reduce: sum via the ReduceSum monoid.
         @always_inline
@@ -458,16 +458,43 @@ def reduce_mean[
 
             comptime if dtype.is_floating_point():
                 comptime float_type = DType.float32 if has_apple_gpu_accelerator() else DType.float64
+                # `axis_size == 0` gives `recip = inf` and `total` (the
+                # `ReduceSum` identity) is `0`, so `total * recip` is the
+                # IEEE-754 `0 * inf = NaN` — the same "no data" signal
+                # `numpy.mean` reports (via upcast-to-float) for an empty
+                # reduction. No explicit guard needed for this branch.
                 var recip = (
                     Scalar[float_type](1) / Scalar[float_type](axis_size)
                 ).cast[dtype]()
                 output_fn[params.emit_tile_width, rank](oc, total * recip)
             else:
+                # Integer `dtype` has no NaN to signal "no data" with, and
+                # this divide is `SIMD.__truediv__` — a raw `pop.div`, no
+                # zero-guard — so an empty axis is undefined behavior here
+                # rather than merely a wrong number, and it does not trap
+                # where you would hope. Measured with the substitution
+                # removed: NVIDIA SM100 hands back `-1`, and on CPU LLVM
+                # takes the poison and drops the store outright, leaving
+                # the output unwritten — the exact symptom this change
+                # exists to remove. `total` is already `0` (the `ReduceSum`
+                # identity) whenever `axis_size == 0`, so substituting any
+                # nonzero divisor is exact, not a guess; `1` keeps the
+                # result `0`, matching `sum`'s own identity for an empty
+                # axis.
+                #
+                # Keep the select here rather than hoisting it to host
+                # scope: `axis_size` is already captured, while a hoisted
+                # divisor is one more captured value, which changes the
+                # body's closure type enough to cost an extra `_BlockKernel`
+                # instantiation per dtype. Measured on a 24-reduce graph,
+                # hoisting cost +2 instantiations and +95 KB of MEF for a
+                # select the compiler hoists out of the row loop anyway.
+                var divisor = axis_size if axis_size != 0 else 1
                 output_fn[params.emit_tile_width, rank](
                     oc,
                     total
                     / SIMD[dtype, params.emit_tile_width](
-                        Scalar[dtype](axis_size)
+                        Scalar[dtype](divisor)
                     ),
                 )
 
@@ -503,7 +530,7 @@ def reduce_argmin[
     & (
         def[
             width: SIMDLength, rank: Int
-        ](IndexList[rank], SIMD[DType.int64, width]) -> None
+        ](IndexList[rank], SIMD[.int64, width]) -> None
     ),
     /,
     target: StaticString,
@@ -544,7 +571,7 @@ def reduce_argmin[
         # dynamic here — these entry points take no static_cols param).
         var row = rowwise.Row[
             params, dtype, dtype, reduce_dim, rank, is_cached=False
-        ](row_coords, Scalar[DType.int](axis_size), ctx, load)
+        ](row_coords, Int(axis_size), ctx, load)
 
         # Reduce: argmin via the ArgMin monoid (lower index wins ties).
         @always_inline
@@ -591,7 +618,7 @@ def reduce_argmax[
     & (
         def[
             width: SIMDLength, rank: Int
-        ](IndexList[rank], SIMD[DType.int64, width]) -> None
+        ](IndexList[rank], SIMD[.int64, width]) -> None
     ),
     /,
     target: StaticString,
@@ -629,7 +656,7 @@ def reduce_argmax[
         # dynamic here — these entry points take no static_cols param).
         var row = rowwise.Row[
             params, dtype, dtype, reduce_dim, rank, is_cached=False
-        ](row_coords, Scalar[DType.int](axis_size), ctx, load)
+        ](row_coords, Int(axis_size), ctx, load)
 
         # Reduce: argmax via the ArgMax monoid (lower index wins ties).
         @always_inline
@@ -730,7 +757,7 @@ def reduce_min_and_max[
         # dynamic here — these entry points take no static_cols param).
         var row = rowwise.Row[
             params, dtype, dtype, reduce_dim, rank, is_cached=False
-        ](row_coords, Scalar[DType.int](axis_size), ctx, load)
+        ](row_coords, Int(axis_size), ctx, load)
 
         # Reduce: min and max in one pass via the MinMax monoid.
         @always_inline

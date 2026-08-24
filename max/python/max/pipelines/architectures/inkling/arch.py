@@ -24,6 +24,7 @@ from .model import InklingModel
 from .model_config import InklingConfig
 from .reasoning import InklingReasoningParser  # noqa: F401  registers "inkling"
 from .tokenizer import InklingTokenizer
+from .tool_parser import InklingToolParser  # noqa: F401  registers "inkling"
 from .weight_adapters import convert_safetensor_state_dict
 
 inkling_arch = SupportedArchitecture(
@@ -38,6 +39,10 @@ inkling_arch = SupportedArchitecture(
     tokenizer=InklingTokenizer,
     context_type=TextAndVisionContext,
     config=InklingConfig,
+    tool_parser="inkling",
+    # The tool-call grammar is an xgrammar structural tag, so llguidance cannot
+    # compile it.
+    default_structured_output_backend="xgrammar",
     weight_adapters={
         WeightsFormat.safetensors: convert_safetensor_state_dict,
     },

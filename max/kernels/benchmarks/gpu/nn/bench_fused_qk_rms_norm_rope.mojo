@@ -126,8 +126,8 @@ def bench_fused_qk_rms_norm_rope[
     # batch_size + 1, not total_seq_len + 1 (which left the tail unfilled
     # and fed garbage into get_batch_from_row_offsets' binary search for
     # any seq_len > ~3).
-    var row_offsets_d = ctx.enqueue_create_buffer[DType.uint32](batch_size + 1)
-    var cache_lengths_d = ctx.enqueue_create_buffer[DType.uint32](batch_size)
+    var row_offsets_d = ctx.enqueue_create_buffer[.uint32](batch_size + 1)
+    var cache_lengths_d = ctx.enqueue_create_buffer[.uint32](batch_size)
     # Separate input Q buffers so each benchmark reads the same original data.
     # bench_two_step wrote its RoPE output back into q_d, which would corrupt
     # bench_fused's input if they shared a buffer.
@@ -151,19 +151,15 @@ def bench_fused_qk_rms_norm_rope[
     var kv_blocks_fused_d = ctx.enqueue_create_buffer[dtype](
         kv_block_shape.flattened_length()
     )
-    var paged_lut_d = ctx.enqueue_create_buffer[DType.uint32](
+    var paged_lut_d = ctx.enqueue_create_buffer[.uint32](
         paged_lut_shape.flattened_length()
     )
     comptime freqs_static_layout = Layout.row_major(max_seq_len, rope_dim)
     var freqs_d = ctx.enqueue_create_buffer[dtype](max_seq_len * rope_dim)
 
-    var row_offsets_h = ctx.enqueue_create_host_buffer[DType.uint32](
-        batch_size + 1
-    )
-    var cache_lengths_h = ctx.enqueue_create_host_buffer[DType.uint32](
-        batch_size
-    )
-    var paged_lut_h = ctx.enqueue_create_host_buffer[DType.uint32](
+    var row_offsets_h = ctx.enqueue_create_host_buffer[.uint32](batch_size + 1)
+    var cache_lengths_h = ctx.enqueue_create_host_buffer[.uint32](batch_size)
+    var paged_lut_h = ctx.enqueue_create_host_buffer[.uint32](
         paged_lut_shape.flattened_length()
     )
     for i in range(batch_size + 1):
@@ -233,14 +229,12 @@ def bench_fused_qk_rms_norm_rope[
     var row_offsets_tile = TileTensor(row_offsets_d, row_major(batch_size + 1))
 
     var cache_lengths_tensor = LayoutTensor[
-        mut=False, DType.uint32, cache_lengths_layout
+        mut=False, .uint32, cache_lengths_layout
     ](
         cache_lengths_d,
         RuntimeLayout[cache_lengths_layout].row_major(Index(batch_size)),
     )
-    var paged_lut_tensor = LayoutTensor[
-        mut=False, DType.uint32, paged_lut_layout
-    ](
+    var paged_lut_tensor = LayoutTensor[mut=False, .uint32, paged_lut_layout](
         paged_lut_d,
         RuntimeLayout[paged_lut_layout].row_major(paged_lut_shape),
     )

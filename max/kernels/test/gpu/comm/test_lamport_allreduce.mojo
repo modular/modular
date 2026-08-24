@@ -106,7 +106,7 @@ def lamport_allreduce_test[
     # Signal buffers: Signal header + scratch for the Lamport region
     # (3 generations * ngpus slots * max-small-message).
     var scratch_bytes = 3 * ngpus * Lamport.MAX_SMALL_MESSAGE_BYTES
-    var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
+    var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
     var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
         uninitialized=True
     )
@@ -136,7 +136,7 @@ def lamport_allreduce_test[
                 host_buffer[j] = Scalar[dtype](i + 1)
 
         signal_buffers.append(
-            list_of_ctx[i].create_buffer_sync[DType.uint8](
+            list_of_ctx[i].create_buffer_sync[.uint8](
                 size_of[Signal]() + scratch_bytes
             )
         )
@@ -313,7 +313,7 @@ def lamport_mixed_size_test[
     )
 
     var scratch_bytes = 3 * ngpus * Lamport.MAX_SMALL_MESSAGE_BYTES
-    var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
+    var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
     var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
         uninitialized=True
     )
@@ -323,7 +323,7 @@ def lamport_mixed_size_test[
         out_dev.append(list_of_ctx[i].enqueue_create_buffer[dtype](max_length))
         host.append(alloc[Scalar[dtype]](max_length))
         signal_buffers.append(
-            list_of_ctx[i].create_buffer_sync[DType.uint8](
+            list_of_ctx[i].create_buffer_sync[.uint8](
                 size_of[Signal]() + scratch_bytes
             )
         )
@@ -501,7 +501,7 @@ def lamport_coexist_test[
     # Buffer = sizeof(Signal) (counters + embedded Lamport region) + the 2-stage
     # scratch (ngpus * large message), which trails the struct.
     var scratch_bytes = ngpus * large_len * size_of[dtype]()
-    var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
+    var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
     var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
         uninitialized=True
     )
@@ -517,7 +517,7 @@ def lamport_coexist_test[
         lout_dev.append(list_of_ctx[i].enqueue_create_buffer[dtype](large_len))
         shost.append(alloc[Scalar[dtype]](small_len))
         signal_buffers.append(
-            list_of_ctx[i].create_buffer_sync[DType.uint8](
+            list_of_ctx[i].create_buffer_sync[.uint8](
                 size_of[Signal]() + scratch_bytes
             )
         )
@@ -700,7 +700,7 @@ def lamport_unsynced_skew_test[
     )
 
     var scratch_bytes = 3 * ngpus * Lamport.MAX_SMALL_MESSAGE_BYTES
-    var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
+    var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
     var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
         uninitialized=True
     )
@@ -722,7 +722,7 @@ def lamport_unsynced_skew_test[
         list_of_ctx[i].enqueue_copy(in_dev[i], h)
 
         signal_buffers.append(
-            list_of_ctx[i].create_buffer_sync[DType.uint8](
+            list_of_ctx[i].create_buffer_sync[.uint8](
                 size_of[Signal]() + scratch_bytes
             )
         )

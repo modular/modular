@@ -51,9 +51,9 @@ def test_rope_ragged_position_ids[
     var freqs_dev = ctx.enqueue_create_buffer[dtype](
         freqs_layout.static_product
     )
-    var ro_dev = ctx.enqueue_create_buffer[DType.uint32](2)
-    var sp_dev = ctx.enqueue_create_buffer[DType.uint32](1)
-    var pid_dev = ctx.enqueue_create_buffer[DType.uint32](seq_len)
+    var ro_dev = ctx.enqueue_create_buffer[.uint32](2)
+    var sp_dev = ctx.enqueue_create_buffer[.uint32](1)
+    var pid_dev = ctx.enqueue_create_buffer[.uint32](seq_len)
 
     # x[token, head, dim] = deterministic small values.
     with x_dev.map_to_host() as h:
@@ -146,5 +146,5 @@ def test_rope_ragged_position_ids[
 
 def main() raises:
     with DeviceContext() as ctx:
-        test_rope_ragged_position_ids[DType.float32](ctx)
+        test_rope_ragged_position_ids[.float32](ctx)
         print("test_rope_ragged_position_ids: PASS")

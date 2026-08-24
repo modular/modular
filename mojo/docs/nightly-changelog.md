@@ -16,6 +16,37 @@ This version is still a work in progress.
 
 ## Language enhancements
 
+- Mojo now supports contextually inferred member references: a leading-dot form
+  such as `.red` or `.float64` resolves against the expected type of the
+  expression, so you can omit a redundant type name when context already
+  supplies it. Static methods, parametric static methods, parentheses, attribute
+  chains, and typed collection literals all work:
+
+  ```mojo
+  struct Color(ImplicitlyCopyable):
+      comptime red = Color(...)
+      comptime green = Color(...)
+
+      @staticmethod
+      def hsb_to_rgb(h: Int, s: Int, b: Int) -> Color:
+          return Color(...)
+
+      def opacity(self, amount: Float64) -> Color:
+          return Color(...)
+      def __init__(out self, ...):
+
+  def takes_color(c: Color):
+  def takes_colors(colors: List[Color]):
+
+  takes_color(.green)
+  takes_color(.hsb_to_rgb(120, 100, 50))
+  takes_color(.red.opacity(0.5))
+  var x: Color = .red
+  takes_colors([.red, .green])
+  ```
+
+  Without a contextual type, `.member` is an error.
+
 - A `thin` function type can now carry trailing `where` clauses, constraining
   the parameters it declares. This lets a generic algorithm state what it
   promises the function it is handed, instead of leaving the constraint to be
@@ -145,6 +176,10 @@ This version is still a work in progress.
   The existing 1-D `copy_to_numpy_array()` and `from_numpy_array()` are
   unchanged.
 
+- `Array` now conforms to `Comparable` when its element type does, adding `<`,
+  `<=`, `>`, and `>=`. The ordering is **lexicographic**: the first differing
+  element decides, so `[1, 5] < [2, 3]` is `True`.
+
 - `StringDict` now conforms to `Writable` when its value type is `Writable`,
   matching the existing behavior of `Dict`. This lets you `print()` a
   `StringDict` or convert it to a `String`.
@@ -175,8 +210,8 @@ This version is still a work in progress.
 
 - `Array` now conforms to `Defaultable` when its type `T` is also `Defaultable`.
 
-- `Array` now supports concatenation with the `+` operator when its type `T` is
-  `Movable`. Both operands are consumed and their elements are moved into the
+- `Array` now supports concatenation with the `concat` method when its type `T`
+  is `Movable`. Both operands are consumed and their elements are moved into the
   new array, whose length is the sum of the operands' lengths.
 
 - `Array` now supports repetition with the `repeat` method when its type `T` is
@@ -413,3 +448,7 @@ This release completes the removal of APIs deprecated during the v1.0 cycle.
   the `Int` range. Values just past `Int.MAX` (such as `Int.MAX + 1`) no
   longer wrap silently, and `Int.MIN` parses correctly by design rather than
   by wraparound.
+
+- Every value of a struct type whose `@align(N)` exceeds its natural
+  alignment is now aligned to `N`, including every element of an array or a
+  `List` of that type.

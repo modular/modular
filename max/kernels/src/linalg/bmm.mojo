@@ -155,7 +155,7 @@ def _reshape_tile_tensor_with_batch_to_3d(
             _shape_types_to_3d[tensor.LayoutType._shape_types](),
             _slice_types[tensor.LayoutType._stride_types, 3](),
         ],
-        dtype=tensor.dtype,
+        tensor.dtype,
         origin=tensor.origin,
         address_space=tensor.address_space,
         linear_idx_type=tensor.linear_idx_type,
@@ -226,15 +226,9 @@ def _batched_matmul_cpu[
     elementwise_epilogue_fn: Optional[elementwise_epilogue_type] = None,
     saturated_vnni: Bool = False,
 ](
-    c_tile: TileTensor[
-        mut=True, c_type, address_space=AddressSpace.GENERIC, ...
-    ],
-    a_tile: TileTensor[
-        mut=False, a_type, address_space=AddressSpace.GENERIC, ...
-    ],
-    b_tile: TileTensor[
-        mut=False, b_type, address_space=AddressSpace.GENERIC, ...
-    ],
+    c_tile: TileTensor[mut=True, c_type, address_space=.GENERIC, ...],
+    a_tile: TileTensor[mut=False, a_type, address_space=.GENERIC, ...],
+    b_tile: TileTensor[mut=False, b_type, address_space=.GENERIC, ...],
     ctx: Optional[DeviceContext] = None,
 ) raises:
     comptime assert rank < 5, "max rank for batched matmul is currently 4"
@@ -929,9 +923,9 @@ def batched_matmul[
     saturated_vnni: Bool = False,
     target: StaticString = "cpu",
 ](
-    c_buf: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
-    a_buf: TileTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
-    b_buf: TileTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
+    c_buf: TileTensor[mut=True, address_space=.GENERIC, ...],
+    a_buf: TileTensor[mut=False, address_space=.GENERIC, ...],
+    b_buf: TileTensor[mut=False, address_space=.GENERIC, ...],
     *,
     context: Optional[DeviceContext] = None,
 ) raises:
@@ -1274,11 +1268,11 @@ def bmm_sm100_blockwise_scaled_fp8[
     comptime assert transpose_b, "Only support transposed B"
 
     comptime assert (
-        a_type == b_type == DType.float8_e4m3fn
+        a_type == b_type == .float8_e4m3fn
     ), "Only support float8_e4m3fn"
 
     comptime assert (
-        b_scales_type == a_scales_type == DType.float32
+        b_scales_type == a_scales_type == .float32
     ), "Only support float32 for a_scales and b_scales"
 
     comptime assert c.rank == 3, "Only support rank 3 tensors"
@@ -1483,11 +1477,11 @@ def batched_matmul_dynamic_scaled_fp8_naive[
     var b_scales_lt = b_scales_.to_layout_tensor()
 
     # naive implementation requires all tensor have AddressSpace.GENERIC
-    var c = c_lt.address_space_cast[AddressSpace.GENERIC]()
-    var a = a_lt.address_space_cast[AddressSpace.GENERIC]()
-    var b = b_lt.address_space_cast[AddressSpace.GENERIC]()
-    var a_scales = a_scales_lt.address_space_cast[AddressSpace.GENERIC]()
-    var b_scales = b_scales_lt.address_space_cast[AddressSpace.GENERIC]()
+    var c = c_lt.address_space_cast[.GENERIC]()
+    var a = a_lt.address_space_cast[.GENERIC]()
+    var b = b_lt.address_space_cast[.GENERIC]()
+    var a_scales = a_scales_lt.address_space_cast[.GENERIC]()
+    var b_scales = b_scales_lt.address_space_cast[.GENERIC]()
 
     var B = c.dim(0)
     var M = c.dim(1)
@@ -1622,10 +1616,10 @@ def batched_matmul_dynamic_scaled_fp8[
         " in (64, 128)."
     )
     comptime assert (
-        a_type == b_type == DType.float8_e4m3fn
+        a_type == b_type == .float8_e4m3fn
     ), "input A and B dtype should be float8_e4m3fn"
     comptime assert (
-        a_scales_type == b_scales_type == DType.float32
+        a_scales_type == b_scales_type == .float32
     ), "input A and B scales dtype should be float32"
 
     comptime assert (

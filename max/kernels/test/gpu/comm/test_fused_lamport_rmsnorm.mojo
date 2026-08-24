@@ -71,7 +71,7 @@ def _neg_zero_bits() -> Scalar[dtype]:
     lanes before pushing -- if that path is broken, real data is mistaken
     for the sentinel and the kernel deadlocks or returns wrong sums.
     """
-    return bitcast[dtype, 1](SIMD[DType.uint16, 1](0x8000))[0]
+    return bitcast[dtype, 1](UInt16(0x8000))[0]
 
 
 def _run_rms_norm_unfused(
@@ -158,8 +158,8 @@ def rmsnorm_test[
     # Separate signal buffers for the unfused AR vs the fused AR+RMSNorm
     # kernel; both use the same `Signal` layout (lamport_region +
     # lamport_state) but each rotates its own generation flag independently.
-    var sigs_ar_devbufs = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
-    var sigs_fused_devbufs = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
+    var sigs_ar_devbufs = List[DeviceBuffer[.uint8]](capacity=ngpus)
+    var sigs_fused_devbufs = List[DeviceBuffer[.uint8]](capacity=ngpus)
     var rank_sigs_ar = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
         uninitialized=True
     )
@@ -199,10 +199,10 @@ def rmsnorm_test[
         # generic allreduce also routes to Lamport for these small bf16
         # messages and uses the same region.
         sigs_ar_devbufs.append(
-            list_of_ctx[g].create_buffer_sync[DType.uint8](size_of[Signal]())
+            list_of_ctx[g].create_buffer_sync[.uint8](size_of[Signal]())
         )
         sigs_fused_devbufs.append(
-            list_of_ctx[g].create_buffer_sync[DType.uint8](size_of[Signal]())
+            list_of_ctx[g].create_buffer_sync[.uint8](size_of[Signal]())
         )
         init_signal_buffer(sigs_ar_devbufs[g], list_of_ctx[g])
         init_signal_buffer(sigs_fused_devbufs[g], list_of_ctx[g])
@@ -286,7 +286,7 @@ def rmsnorm_test[
     list_of_ctx[0].synchronize()
     var expected = alloc[Float32](act_size)
     for i in range(act_size):
-        expected[i] = expected_host[i].cast[DType.float32]()
+        expected[i] = expected_host[i].cast[.float32]()
 
     # ---- Fused kernel: `lamport_allreduce_rmsnorm` on each device. ----
     var host = alloc[Scalar[dtype]](act_size)
@@ -320,7 +320,7 @@ def rmsnorm_test[
             list_of_ctx[g].enqueue_copy(host, fused_out[g])
             list_of_ctx[g].synchronize()
             for i in range(act_size):
-                got[i] = host[i].cast[DType.float32]()
+                got[i] = host[i].cast[.float32]()
             assert_almost_equal(
                 got, expected, num_elements=act_size, atol=1e-2, rtol=1e-2
             )
@@ -375,8 +375,8 @@ def unsynced_skew_test[
     )
 
     # Separate signal buffers per kernel path -- as in `rmsnorm_test`.
-    var sigs_ar_devbufs = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
-    var sigs_fused_devbufs = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
+    var sigs_ar_devbufs = List[DeviceBuffer[.uint8]](capacity=ngpus)
+    var sigs_fused_devbufs = List[DeviceBuffer[.uint8]](capacity=ngpus)
     var rank_sigs_ar = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
         uninitialized=True
     )
@@ -412,10 +412,10 @@ def unsynced_skew_test[
         list_of_ctx[g].enqueue_copy(gamma[g], gamma_host)
 
         sigs_ar_devbufs.append(
-            list_of_ctx[g].create_buffer_sync[DType.uint8](size_of[Signal]())
+            list_of_ctx[g].create_buffer_sync[.uint8](size_of[Signal]())
         )
         sigs_fused_devbufs.append(
-            list_of_ctx[g].create_buffer_sync[DType.uint8](size_of[Signal]())
+            list_of_ctx[g].create_buffer_sync[.uint8](size_of[Signal]())
         )
         init_signal_buffer(sigs_ar_devbufs[g], list_of_ctx[g])
         init_signal_buffer(sigs_fused_devbufs[g], list_of_ctx[g])
@@ -527,8 +527,8 @@ def unsynced_skew_test[
     for it in range(NUM_UNSYNCED_ITERS):
         var base = it * slice_size
         for i in range(slice_size):
-            expected_f32[i] = unfused_host[base + i].cast[DType.float32]()
-            got_f32[i] = fused_host[base + i].cast[DType.float32]()
+            expected_f32[i] = unfused_host[base + i].cast[.float32]()
+            got_f32[i] = fused_host[base + i].cast[.float32]()
         assert_almost_equal(
             got_f32,
             expected_f32,

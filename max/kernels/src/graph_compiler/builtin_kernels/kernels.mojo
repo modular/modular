@@ -132,6 +132,8 @@ from extensibility import (
     IOSpec,
     ManagedTensorSlice,
     OutputTensor,
+    Tensor,
+    TileTensorable,
     VariadicTensors,
     simd_load_from_managed_tensor_slice,
     simd_store_into_managed_tensor_slice,
@@ -169,19 +171,12 @@ from nn.tpool_patch_merger import (
 
 
 @always_inline("nodebug")
-def reduce_shape[
-    input_rank: Int, input_type: DType, //
-](
-    input_buf: ManagedTensorSlice[dtype=input_type, rank=input_rank, ...],
-    axis: Int,
-) raises -> IndexList[input_rank]:
+def reduce_shape(
+    input_buf: Some[Tensor], axis: Int
+) raises -> IndexList[type_of(input_buf).rank]:
     """
     Compute the output shape of a `reduce` operation, and assert the inputs are
     compatible.
-
-    Parameters:
-        input_rank: Input_rank of the input tensor.
-        input_type: Type of the input tensor.
 
     Args:
         input_buf: The input tensor.
@@ -192,15 +187,17 @@ def reduce_shape[
     """
 
     # compute and return the output shape
-    var output_shape = input_buf.shape()
-    output_shape[normalize_neg_index(axis, input_rank)] = 1
+    var output_shape = rebind[IndexList[type_of(input_buf).rank]](
+        coord_to_index_list(input_buf.shape().tuple())
+    )
+    output_shape[normalize_neg_index(axis, type_of(input_buf).rank)] = 1
     return output_shape
 
 
 @always_inline
 def _unsafe_str_to_coord[
     str_slice: StaticString
-]() -> DynamicCoord[DType.int64, len(str_slice.split("_"))]:
+]() -> DynamicCoord[.int64, len(str_slice.split("_"))]:
     """
     Convert a string of integers separated by "_" to an IntTuple.
 
@@ -211,7 +208,7 @@ def _unsafe_str_to_coord[
         The IntTuple.
     """
     comptime size = len(str_slice.split("_"))
-    var coord = DynamicCoord[DType.int64, size]()
+    var coord = DynamicCoord[.int64, size]()
 
     comptime for i in range(size):
         comptime sub_string = str_slice.split("_")[i]
@@ -336,8 +333,8 @@ struct NanCheckCountOp:
         target: StaticString,
         _trace_name: StaticString = "",
     ](
-        nan_count_out: OutputTensor[dtype=DType.int32, rank=1, ...],
-        inf_count_out: OutputTensor[dtype=DType.int32, rank=1, ...],
+        nan_count_out: OutputTensor[dtype=.int32, rank=1, ...],
+        inf_count_out: OutputTensor[dtype=.int32, rank=1, ...],
         input: InputTensor[dtype=dtype, rank=rank, ...],
         ctx: DeviceContext,
     ) capturing raises:
@@ -362,8 +359,8 @@ struct NanCheckRaiseOp:
         label: StaticString = "",
         type_str: StaticString = "",
     ](
-        nan_count: InputTensor[dtype=DType.int32, rank=1, ...],
-        inf_count: InputTensor[dtype=DType.int32, rank=1, ...],
+        nan_count: InputTensor[dtype=.int32, rank=1, ...],
+        inf_count: InputTensor[dtype=.int32, rank=1, ...],
         ctx: DeviceContext,
     ) capturing raises:
         from .nan_check import nan_check_raise
@@ -383,7 +380,7 @@ comptime _TransposeStrideTypesTabulator[
     permutations: IntTuple,
     input_stride_types: TypeList[Trait=CoordLike, ...],
     idx: Int,
-]: CoordLike = Scalar[DType.int] if Int(
+]: CoordLike = Int if Int(
     permutations[idx]
 ) == UNKNOWN_VALUE else input_stride_types[
     Int(permutations[idx])
@@ -451,34 +448,26 @@ struct MaxPool:
         ctx: DeviceContext,
     ) raises:
         max_pool[target=target](
-            input.to_tile_tensor[DType.int64](),
-            filter.to_tile_tensor[DType.int64](),
-            strides.to_tile_tensor[DType.int64](),
-            dilations.to_tile_tensor[DType.int64](),
-            paddings.to_tile_tensor[DType.int64](),
-            output.to_tile_tensor[DType.int64](),
+            input.to_tile_tensor[.int64](),
+            filter.to_tile_tensor[.int64](),
+            strides.to_tile_tensor[.int64](),
+            dilations.to_tile_tensor[.int64](),
+            paddings.to_tile_tensor[.int64](),
+            output.to_tile_tensor[.int64](),
             False,
             ctx,
         )
 
 
 @extensibility.register_shape_function("mo.max_pool")
-def max_pool_shape[
-    dtype: DType,
-    int_type: DType,
-](
-    input: InputTensor[dtype=dtype, rank=4, ...],
-    filter: InputTensor[dtype=int_type, rank=1, ...],
-    strides: InputTensor[dtype=int_type, rank=1, ...],
-    dilations: InputTensor[dtype=int_type, rank=1, ...],
-    paddings: InputTensor[dtype=int_type, rank=1, ...],
-) raises -> IndexList[input.rank]:
+def max_pool_shape(
+    input: Some[TileTensorable],
+    filter: Some[TileTensorable],
+    strides: Some[TileTensorable],
+    dilations: Some[TileTensorable],
+    paddings: Some[TileTensorable],
+) raises -> IndexList[type_of(input).rank]:
     """Computes the output shape for the `mo.max_pool` graph op.
-
-    Parameters:
-        dtype: Element type of the pooling `input` tensor.
-        int_type: Element type of the `filter`, `strides`, `dilations`, and
-            `paddings` tensors.
 
     Args:
         input: Rank-4 batched image input to the pooling operator.
@@ -495,13 +484,23 @@ def max_pool_shape[
     Returns:
         The output shape of the max pooling operation.
     """
-    return rebind[IndexList[input.rank]](
+    comptime assert type_of(input).rank == 4, "input must be rank 4"
+    comptime assert type_of(filter).rank == 1, "filter must be rank 1"
+    comptime assert type_of(strides).rank == 1, "strides must be rank 1"
+    comptime assert type_of(dilations).rank == 1, "dilations must be rank 1"
+    comptime assert type_of(paddings).rank == 1, "paddings must be rank 1"
+    comptime assert (
+        type_of(strides).dtype == type_of(filter).dtype
+        and type_of(dilations).dtype == type_of(filter).dtype
+        and type_of(paddings).dtype == type_of(filter).dtype
+    ), "filter, strides, dilations, and paddings must share a dtype"
+    return rebind[IndexList[type_of(input).rank]](
         pool_shape(
-            input.to_tile_tensor[DType.int64](),
-            filter.to_tile_tensor[DType.int64](),
-            strides.to_tile_tensor[DType.int64](),
-            dilations.to_tile_tensor[DType.int64](),
-            paddings.to_tile_tensor[DType.int64](),
+            input.to_tile_tensor(),
+            filter.to_tile_tensor(),
+            strides.to_tile_tensor(),
+            dilations.to_tile_tensor(),
+            paddings.to_tile_tensor(),
         )
     )
 
@@ -526,34 +525,26 @@ struct MaxPoolCeilModeTrue:
         ctx: DeviceContext,
     ) raises:
         max_pool[target=target](
-            input.to_tile_tensor[DType.int64](),
-            filter.to_tile_tensor[DType.int64](),
-            strides.to_tile_tensor[DType.int64](),
-            dilations.to_tile_tensor[DType.int64](),
-            paddings.to_tile_tensor[DType.int64](),
-            output.to_tile_tensor[DType.int64](),
+            input.to_tile_tensor[.int64](),
+            filter.to_tile_tensor[.int64](),
+            strides.to_tile_tensor[.int64](),
+            dilations.to_tile_tensor[.int64](),
+            paddings.to_tile_tensor[.int64](),
+            output.to_tile_tensor[.int64](),
             True,
             ctx,
         )
 
 
 @extensibility.register_shape_function("mo.max_pool_ceil_mode_true")
-def max_pool_ceil_mode_true_shape[
-    dtype: DType,
-    int_type: DType,
-](
-    input: InputTensor[dtype=dtype, rank=4, ...],
-    filter: InputTensor[dtype=int_type, rank=1, ...],
-    strides: InputTensor[dtype=int_type, rank=1, ...],
-    dilations: InputTensor[dtype=int_type, rank=1, ...],
-    paddings: InputTensor[dtype=int_type, rank=1, ...],
-) raises -> IndexList[input.rank]:
+def max_pool_ceil_mode_true_shape(
+    input: Some[TileTensorable],
+    filter: Some[TileTensorable],
+    strides: Some[TileTensorable],
+    dilations: Some[TileTensorable],
+    paddings: Some[TileTensorable],
+) raises -> IndexList[type_of(input).rank]:
     """Computes the output shape for the `mo.max_pool_ceil_mode_true` graph op.
-
-    Parameters:
-        dtype: Element type of the pooling `input` tensor.
-        int_type: Element type of the `filter`, `strides`, `dilations`, and
-            `paddings` tensors.
 
     Args:
         input: Rank-4 batched image input to the pooling operator.
@@ -570,13 +561,23 @@ def max_pool_ceil_mode_true_shape[
     Returns:
         The output shape of the max pooling operation with ceil mode enabled.
     """
-    return rebind[IndexList[input.rank]](
+    comptime assert type_of(input).rank == 4, "input must be rank 4"
+    comptime assert type_of(filter).rank == 1, "filter must be rank 1"
+    comptime assert type_of(strides).rank == 1, "strides must be rank 1"
+    comptime assert type_of(dilations).rank == 1, "dilations must be rank 1"
+    comptime assert type_of(paddings).rank == 1, "paddings must be rank 1"
+    comptime assert (
+        type_of(strides).dtype == type_of(filter).dtype
+        and type_of(dilations).dtype == type_of(filter).dtype
+        and type_of(paddings).dtype == type_of(filter).dtype
+    ), "filter, strides, dilations, and paddings must share a dtype"
+    return rebind[IndexList[type_of(input).rank]](
         pool_shape_ceil(
-            input.to_tile_tensor[DType.int64](),
-            filter.to_tile_tensor[DType.int64](),
-            strides.to_tile_tensor[DType.int64](),
-            dilations.to_tile_tensor[DType.int64](),
-            paddings.to_tile_tensor[DType.int64](),
+            input.to_tile_tensor(),
+            filter.to_tile_tensor(),
+            strides.to_tile_tensor(),
+            dilations.to_tile_tensor(),
+            paddings.to_tile_tensor(),
         )
     )
 
@@ -595,7 +596,7 @@ struct NonMaximumSuppression:
     def execute[
         dtype: DType
     ](
-        output: OutputTensor[dtype=DType.int64, rank=2, ...],
+        output: OutputTensor[dtype=.int64, rank=2, ...],
         boxes: InputTensor[dtype=dtype, rank=3, ...],
         scores: InputTensor[dtype=dtype, rank=3, ...],
         max_output_boxes_per_class: Int64,
@@ -607,9 +608,9 @@ struct NonMaximumSuppression:
         var score_threshold_float = score_threshold
 
         non_max_suppression(
-            boxes.to_tile_tensor[DType.int64](),
-            scores.to_tile_tensor[DType.int64](),
-            output.to_tile_tensor[DType.int64](),
+            boxes.to_tile_tensor[.int64](),
+            scores.to_tile_tensor[.int64](),
+            output.to_tile_tensor[.int64](),
             max_output_boxes_int,
             iou_threshold_float,
             score_threshold_float,
@@ -617,19 +618,14 @@ struct NonMaximumSuppression:
 
 
 @extensibility.register_shape_function("mo.non_maximum_suppression")
-def non_maximum_suppression_shape[
-    dtype: DType
-](
-    boxes: InputTensor[dtype=dtype, rank=3, ...],
-    scores: InputTensor[dtype=dtype, rank=3, ...],
+def non_maximum_suppression_shape(
+    boxes: Some[TileTensorable],
+    scores: Some[TileTensorable],
     max_output_boxes_per_class: Int64,
     iou_threshold: Float32,
     score_threshold: Float32,
 ) -> IndexList[2]:
     """Computes the output shape for the `mo.non_maximum_suppression` graph op.
-
-    Parameters:
-        dtype: Element type of the `boxes` and `scores` tensors.
 
     Args:
         boxes: Rank-3 tensor of bounding boxes with shape
@@ -647,13 +643,18 @@ def non_maximum_suppression_shape[
     Returns:
         Two-element `IndexList` of shape `(num_selected_boxes, 3)`.
     """
+    comptime assert type_of(boxes).rank == 3, "boxes must be rank 3"
+    comptime assert type_of(scores).rank == 3, "scores must be rank 3"
+    comptime assert (
+        type_of(scores).dtype == type_of(boxes).dtype
+    ), "scores dtype must match boxes dtype"
     var max_output_boxes_int = Int(max_output_boxes_per_class)
     var iou_threshold_float = iou_threshold
     var score_threshold_float = score_threshold
 
     return non_max_suppression_shape_func(
-        boxes.to_tile_tensor[DType.int64](),
-        scores.to_tile_tensor[DType.int64](),
+        boxes.to_tile_tensor(),
+        scores.to_tile_tensor().bitcast[type_of(boxes).dtype](),
         max_output_boxes_int,
         iou_threshold_float,
         score_threshold_float,
@@ -684,9 +685,9 @@ struct ROIAlign:
         sampling_ratio: Scalar,
     ):
         roi_align_nhwc[aligned, mode](
-            output.to_tile_tensor[DType.int64](),
-            input.to_tile_tensor[DType.int64](),
-            rois.to_tile_tensor[DType.int64](),
+            output.to_tile_tensor[.int64](),
+            input.to_tile_tensor[.int64](),
+            rois.to_tile_tensor[.int64](),
             Int(output_height),
             Int(output_width),
             spatial_scale,
@@ -696,8 +697,8 @@ struct ROIAlign:
 
 @extensibility.register_shape_function("mo.roi_align")
 def roi_align_shape(
-    input: InputTensor[rank=4, ...],
-    rois: InputTensor[rank=2, ...],
+    input: Some[Tensor],
+    rois: Some[Tensor],
     output_height: Int64,
     output_width: Int64,
     spatial_scale: Scalar,
@@ -720,14 +721,19 @@ def roi_align_shape(
     Returns:
         The output shape `(num_rois, output_height, output_width, channels)`.
     """
+    comptime assert type_of(input).rank == 4, "input must be rank 4"
+    comptime assert type_of(rois).rank == 2, "rois must be rank 2"
+    var input_shape = coord_to_index_list(input.shape().tuple())
+    var rois_shape = coord_to_index_list(rois.shape().tuple())
+
     var shape = IndexList[4]()
     # input shape is [N, H, W, C]
     # rois shape is [M, 5]
     # output shape is [M, output_height, output_width, C]
-    shape[0] = rois.dim_size[0]()
+    shape[0] = rois_shape[0]
     shape[1] = Int(output_height)
     shape[2] = Int(output_width)
-    shape[3] = input.dim_size[3]()
+    shape[3] = input_shape[3]
 
     return shape
 
@@ -754,18 +760,18 @@ struct RepeatInterleave:
         ), "axis value must be integer type"
 
         repeat_interleave(
-            input.to_tile_tensor[DType.int64](),
-            repeats.to_tile_tensor[DType.int64](),
+            input.to_tile_tensor[.int64](),
+            repeats.to_tile_tensor[.int64](),
             Int(normalize_neg_index(axis, input.rank)),
-            output.to_tile_tensor[DType.int64](),
+            output.to_tile_tensor[.int64](),
             ctx,
         )
 
 
 @extensibility.register_shape_function("repeat_interleave")
 def repeat_interleave_kernel_shape(
-    input: InputTensor, repeats: InputTensor[rank=1, ...], axis: Scalar
-) raises -> IndexList[input.rank]:
+    input: Some[TileTensorable], repeats: Some[TileTensorable], axis: Scalar
+) raises -> IndexList[type_of(input).rank]:
     """Computes the output shape for the `repeat_interleave` graph op.
 
     Args:
@@ -780,14 +786,15 @@ def repeat_interleave_kernel_shape(
         The output shape with `axis` expanded by the repeat counts.
     """
     comptime assert axis.dtype.is_integral(), "axis value must be integer type"
+    comptime assert type_of(repeats).rank == 1, "repeats must be rank 1"
 
     var interleave_shape = repeat_interleave_shape(
-        input.to_tile_tensor[DType.int64](),
-        repeats.to_tile_tensor[DType.int64](),
-        Int(normalize_neg_index(axis, input.rank)),
+        input.to_tile_tensor(),
+        repeats.to_tile_tensor(),
+        Int(normalize_neg_index(axis, type_of(input).rank)),
     )
 
-    return rebind[IndexList[input.rank]](interleave_shape)
+    return rebind[IndexList[type_of(input).rank]](interleave_shape)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -808,7 +815,7 @@ struct RandomNormal:
         shape: InputTensor[rank=1, ...],
         mean: Float32,
         variance: Float32,
-        seed_value: InputTensor[dtype=DType.uint64, rank=1, ...],
+        seed_value: InputTensor[dtype=.uint64, rank=1, ...],
         ctx: DeviceContext,
     ) capturing raises:
         @always_inline
@@ -825,7 +832,7 @@ struct RandomNormal:
             output.shape(),
             mean,
             variance,
-            seed_value.unsafe_ptr[DType.uint64](),
+            seed_value.unsafe_ptr[.uint64](),
             ctx,
             output_fn,
         )
@@ -833,12 +840,12 @@ struct RandomNormal:
 
 @extensibility.register_shape_function("mo.random.normal")
 def random_normal_shape[
-    output_rank: Int
+    output_rank: Int,
 ](
-    shape: InputTensor[rank=1, ...],
+    shape: Some[TileTensorable],
     mean: Scalar,
     variance: Scalar,
-    seed_value: InputTensor[dtype=DType.uint64, rank=1, ...],
+    seed_value: Some[Tensor],
 ) -> IndexList[output_rank]:
     """Computes the output shape for the `mo.random.normal` graph op.
 
@@ -859,9 +866,15 @@ def random_normal_shape[
     Returns:
         The output shape specified by `shape`.
     """
+    comptime assert type_of(shape).rank == 1, "shape must be rank 1"
+    comptime assert type_of(seed_value).rank == 1, "seed_value must be rank 1"
+    comptime assert (
+        type_of(seed_value).dtype == .uint64
+    ), "seed_value dtype must be uint64"
+    var shape_tt = shape.to_tile_tensor()
     var unrolled_shape = IndexList[output_rank]()
     for i in range(output_rank):
-        unrolled_shape[i] = Int(shape[i])
+        unrolled_shape[i] = Int(shape_tt.load[1](Coord(i)))
 
     return unrolled_shape
 
@@ -879,7 +892,7 @@ struct RandomUniform:
         shape: InputTensor[rank=1, ...],
         lower_bound: Scalar[dtype],
         upper_bound: Scalar[dtype],
-        seed_value: InputTensor[dtype=DType.uint64, rank=1, ...],
+        seed_value: InputTensor[dtype=.uint64, rank=1, ...],
         ctx: DeviceContext,
     ) capturing raises:
         @always_inline
@@ -896,7 +909,7 @@ struct RandomUniform:
             output.shape(),
             lower_bound,
             upper_bound,
-            seed_value.unsafe_ptr[DType.uint64](),
+            seed_value.unsafe_ptr[.uint64](),
             ctx,
             output_fn,
         )
@@ -904,12 +917,12 @@ struct RandomUniform:
 
 @extensibility.register_shape_function("mo.random.uniform")
 def random_uniform_shape[
-    output_rank: Int
+    output_rank: Int,
 ](
-    shape: InputTensor[rank=1, ...],
+    shape: Some[TileTensorable],
     mean: Scalar,
     variance: Scalar,
-    seed_value: InputTensor[dtype=DType.uint64, rank=1, ...],
+    seed_value: Some[Tensor],
 ) -> IndexList[output_rank]:
     """Computes the output shape for the `mo.random.uniform` graph op.
 
@@ -930,11 +943,17 @@ def random_uniform_shape[
     Returns:
         The output shape specified by `shape`.
     """
-    assert shape.dim_size[0]() == output_rank
+    comptime assert type_of(shape).rank == 1, "shape must be rank 1"
+    comptime assert type_of(seed_value).rank == 1, "seed_value must be rank 1"
+    comptime assert (
+        type_of(seed_value).dtype == .uint64
+    ), "seed_value dtype must be uint64"
+    var shape_tt = shape.to_tile_tensor()
+    assert Int(shape_tt.dim(0)) == output_rank
 
     var unrolled_shape = IndexList[output_rank]()
     for i in range(output_rank):
-        unrolled_shape[i] = Int(shape[i])
+        unrolled_shape[i] = Int(shape_tt.load[1](Coord(i)))
 
     return unrolled_shape
 
@@ -1099,8 +1118,8 @@ struct Fold:
         ), "kernel_size and output_size must have integral type"
         var output_size_tuple = Index(output_size._ptr[0], output_size._ptr[1])
         var kernel_size_tuple = Index(kernel_size._ptr[0], kernel_size._ptr[1])
-        var input_tensor = input.to_tile_tensor[DType.int64]()
-        var output_tensor = output.to_tile_tensor[DType.int64]()
+        var input_tensor = input.to_tile_tensor[.int64]()
+        var output_tensor = output.to_tile_tensor[.int64]()
 
         fold[
             stride=(stride_h, stride_w),
@@ -1118,7 +1137,6 @@ struct Fold:
 
 @extensibility.register_shape_function("fold")
 def fold_kernel_shape[
-    dtype: DType,
     stride_h: Int,
     stride_w: Int,
     dilation_h: Int,
@@ -1126,14 +1144,13 @@ def fold_kernel_shape[
     padding_h: Int,
     padding_w: Int,
 ](
-    input: InputTensor[dtype=dtype, rank=3, ...],
-    output_size: InputTensor,
-    kernel_size: InputTensor,
+    input: Some[TileTensorable],
+    output_size: Some[TileTensorable],
+    kernel_size: Some[TileTensorable],
 ) raises -> IndexList[4]:
     """Computes the output shape for the `fold` graph op.
 
     Parameters:
-        dtype: Element type of the input tensor.
         stride_h: Vertical stride of the sliding window, in elements.
         stride_w: Horizontal stride of the sliding window, in elements.
         dilation_h: Vertical dilation factor applied to the kernel.
@@ -1152,13 +1169,25 @@ def fold_kernel_shape[
     Returns:
         The four-dimensional output shape of the folded tensor.
     """
+    comptime assert type_of(input).rank == 3, "input must be rank 3"
+    comptime assert type_of(output_size).rank == 1, "output_size must be rank 1"
+    comptime assert type_of(kernel_size).rank == 1, "kernel_size must be rank 1"
     comptime assert (
-        kernel_size.dtype.is_integral() and output_size.dtype.is_integral()
+        type_of(kernel_size).dtype.is_integral()
+        and type_of(output_size).dtype.is_integral()
     ), "kernel_size and output_size must have integral type"
-    var output_size_tuple = Index(output_size._ptr[0], output_size._ptr[1])
-    var kernel_size_tuple = Index(kernel_size._ptr[0], kernel_size._ptr[1])
+    var output_size_tt = output_size.to_tile_tensor()
+    var kernel_size_tt = kernel_size.to_tile_tensor()
+    var output_size_tuple = Index(
+        Int(output_size_tt.load[1](Coord(0))),
+        Int(output_size_tt.load[1](Coord(1))),
+    )
+    var kernel_size_tuple = Index(
+        Int(kernel_size_tt.load[1](Coord(0))),
+        Int(kernel_size_tt.load[1](Coord(1))),
+    )
     return fold_shape(
-        input.to_tile_tensor[DType.int64](),
+        input.to_tile_tensor(),
         output_size_tuple,
         kernel_size_tuple,
     )
@@ -1188,8 +1217,8 @@ struct IRFFT:
         comptime assert is_gpu[target](), "only valid on GPUs"
 
         irfft(
-            input.to_tile_tensor[DType.int64](),
-            output.to_tile_tensor[DType.int64](),
+            input.to_tile_tensor[.int64](),
+            output.to_tile_tensor[.int64](),
             n,
             buffer_size_mb,
             ctx,
@@ -1379,7 +1408,7 @@ def generic_fused_qkv_matmul_kv_cache_bshd_paged_kernel_api[
     kv_collection: PagedKVCacheCollection[dtype, ...],
     layer_idx: UInt32,
     valid_lengths: LayoutTensor[
-        DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
+        .uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
     ],
     output: ManagedTensorSlice[dtype=dtype, rank=3, ...],
     ctx: DeviceContext,
@@ -1444,13 +1473,13 @@ struct Struct_rope_split_store_ragged_paged[interleaved: Bool]:
     ](
         output: OutputTensor[dtype=out_dtype, rank=2, ...],
         qkv: InputTensor[dtype=qkv_dtype, rank=2, ...],
-        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+        input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
         freqs_cis: InputTensor[dtype=freq_dtype, rank=2, ...],
         kv_blocks: MutableInputTensor[dtype=cache_dtype, rank=6, ...],
-        cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
-        kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
-        max_prompt_length: InputTensor[dtype=DType.uint32, rank=1, ...],
-        max_cache_length: InputTensor[dtype=DType.uint32, rank=1, ...],
+        cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
+        max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
+        max_cache_length: InputTensor[dtype=.uint32, rank=1, ...],
         layer_idx: UInt32,
         ctx: DeviceContext,
     ) raises:
@@ -1466,12 +1495,12 @@ struct Struct_rope_split_store_ragged_paged[interleaved: Bool]:
             target=target,
             interleaved=Self.interleaved,
         ](
-            qkv.to_tile_tensor[DType.int64](),
-            input_row_offsets.to_tile_tensor[DType.int64](),
-            freqs_cis.to_tile_tensor[DType.int64](),
+            qkv.to_tile_tensor[.int64](),
+            input_row_offsets.to_tile_tensor[.int64](),
+            freqs_cis.to_tile_tensor[.int64](),
             kv_collection,
             layer_idx,
-            output.to_tile_tensor[DType.int64](),
+            output.to_tile_tensor[.int64](),
             ctx,
         )
 
@@ -1498,14 +1527,14 @@ struct Struct_rope_split_store_ragged_paged_with_position_id[interleaved: Bool]:
     ](
         output: OutputTensor[dtype=dtype, rank=2, ...],
         qkv: InputTensor[dtype=dtype, rank=2, ...],
-        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+        input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
         freqs_cis: InputTensor[dtype=freq_dtype, rank=2, ...],
         kv_blocks: MutableInputTensor[dtype=dtype, rank=6, ...],
-        cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
-        kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
-        max_prompt_length: InputTensor[dtype=DType.uint32, rank=1, ...],
-        max_cache_length: InputTensor[dtype=DType.uint32, rank=1, ...],
-        position_ids: InputTensor[dtype=DType.uint32, rank=2, ...],
+        cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
+        max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
+        max_cache_length: InputTensor[dtype=.uint32, rank=1, ...],
+        position_ids: InputTensor[dtype=.uint32, rank=2, ...],
         layer_idx: UInt32,
         ctx: DeviceContext,
     ) raises:
@@ -1522,13 +1551,13 @@ struct Struct_rope_split_store_ragged_paged_with_position_id[interleaved: Bool]:
                 target=target,
                 interleaved=Self.interleaved,
             ](
-                qkv.to_tile_tensor[DType.int64](),
-                input_row_offsets.to_tile_tensor[DType.int64](),
-                freqs_cis.to_tile_tensor[DType.int64](),
+                qkv.to_tile_tensor[.int64](),
+                input_row_offsets.to_tile_tensor[.int64](),
+                freqs_cis.to_tile_tensor[.int64](),
                 kv_collection,
-                position_ids.to_tile_tensor[DType.int64](),
+                position_ids.to_tile_tensor[.int64](),
                 layer_idx,
-                output.to_tile_tensor[DType.int64](),
+                output.to_tile_tensor[.int64](),
                 ctx,
             )
         else:
@@ -1539,13 +1568,13 @@ struct Struct_rope_split_store_ragged_paged_with_position_id[interleaved: Bool]:
                 mrope_types=mrope.element_types,
                 mrope_section=mrope,
             ](
-                qkv.to_tile_tensor[DType.int64](),
-                input_row_offsets.to_tile_tensor[DType.int64](),
-                freqs_cis.to_tile_tensor[DType.int64](),
+                qkv.to_tile_tensor[.int64](),
+                input_row_offsets.to_tile_tensor[.int64](),
+                freqs_cis.to_tile_tensor[.int64](),
                 kv_collection,
-                position_ids.to_tile_tensor[DType.int64](),
+                position_ids.to_tile_tensor[.int64](),
                 layer_idx,
-                output.to_tile_tensor[DType.int64](),
+                output.to_tile_tensor[.int64](),
                 ctx,
             )
 
@@ -1620,13 +1649,13 @@ def generic_fused_qk_rope_bshd_paged_ragged_kernel_api[
         mrope_types=mrope_types,
         mrope_section=mrope_section,
     ](
-        q_proj.to_tile_tensor[DType.int64](),
-        input_row_offsets.to_tile_tensor[DType.int64](),
+        q_proj.to_tile_tensor[.int64](),
+        input_row_offsets.to_tile_tensor[.int64](),
         kv_collection,
-        freqs_cis.to_tile_tensor[DType.int64](),
-        position_ids.to_tile_tensor[DType.int64](),
+        freqs_cis.to_tile_tensor[.int64](),
+        position_ids.to_tile_tensor[.int64](),
         layer_idx,
-        output.to_tile_tensor[DType.int64](),
+        output.to_tile_tensor[.int64](),
         context,
     )
 
@@ -1664,8 +1693,8 @@ struct Struct_rope_ragged_paged[interleaved: Bool, rope_first: Bool]:
     ](
         output: FusedOutputTensor[dtype=out_dtype, rank=3, ...],
         x: InputTensor[dtype=dtype, rank=3, ...],
-        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
-        start_pos: InputTensor[dtype=DType.uint32, rank=1, ...],
+        input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
+        start_pos: InputTensor[dtype=.uint32, rank=1, ...],
         freqs_cis: InputTensor[dtype=freq_dtype, rank=2, ...],
         ctx: DeviceContext,
     ) capturing raises:
@@ -1698,10 +1727,10 @@ struct Struct_rope_ragged_paged[interleaved: Bool, rope_first: Bool]:
                 cast_saturating[out_dtype](val),
             )
 
-        var x_tensor = x.to_tile_tensor[DType.int64]()
-        var row_offsets_tensor = input_row_offsets.to_tile_tensor[DType.int64]()
-        var start_tensor = start_pos.to_tile_tensor[DType.int64]()
-        var freqs_cis_tensor = freqs_cis.to_tile_tensor[DType.int64]()
+        var x_tensor = x.to_tile_tensor[.int64]()
+        var row_offsets_tensor = input_row_offsets.to_tile_tensor[.int64]()
+        var start_tensor = start_pos.to_tile_tensor[.int64]()
+        var freqs_cis_tensor = freqs_cis.to_tile_tensor[.int64]()
         comptime assert row_offsets_tensor.flat_rank == 1
         comptime assert start_tensor.flat_rank == 1
         comptime assert freqs_cis_tensor.flat_rank == 2
@@ -1741,10 +1770,10 @@ struct Struct_rope_ragged_paged_with_position_id[interleaved: Bool]:
     ](
         output: FusedOutputTensor[dtype=dtype, rank=3, ...],
         x: InputTensor[dtype=dtype, rank=3, ...],
-        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
-        start_pos: InputTensor[dtype=DType.uint32, rank=1, ...],
+        input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
+        start_pos: InputTensor[dtype=.uint32, rank=1, ...],
         freqs_cis: InputTensor[dtype=freq_dtype, rank=2, ...],
-        position_ids: InputTensor[dtype=DType.uint32, rank=2, ...],
+        position_ids: InputTensor[dtype=.uint32, rank=2, ...],
         ctx: DeviceContext,
     ) capturing raises:
         @always_inline
@@ -1776,11 +1805,11 @@ struct Struct_rope_ragged_paged_with_position_id[interleaved: Bool]:
                 rebind[SIMD[dtype, width]](val),
             )
 
-        var x_tensor = x.to_tile_tensor[DType.int64]()
-        var row_offsets_tensor = input_row_offsets.to_tile_tensor[DType.int64]()
-        var start_tensor = start_pos.to_tile_tensor[DType.int64]()
-        var freqs_cis_tensor = freqs_cis.to_tile_tensor[DType.int64]()
-        var position_ids_tensor = position_ids.to_tile_tensor[DType.int64]()
+        var x_tensor = x.to_tile_tensor[.int64]()
+        var row_offsets_tensor = input_row_offsets.to_tile_tensor[.int64]()
+        var start_tensor = start_pos.to_tile_tensor[.int64]()
+        var freqs_cis_tensor = freqs_cis.to_tile_tensor[.int64]()
+        var position_ids_tensor = position_ids.to_tile_tensor[.int64]()
         comptime assert row_offsets_tensor.flat_rank == 1
         comptime assert start_tensor.flat_rank == 1
         comptime assert freqs_cis_tensor.flat_rank == 2
@@ -1810,7 +1839,7 @@ struct Struct_rope_ragged_paged_with_position_id[interleaved: Bool]:
 
 @always_inline
 def _unmarshal_mha_decode_dispatch_metadata(
-    mha_decode_dispatch_metadata: InputTensor[dtype=DType.int64, rank=1, ...],
+    mha_decode_dispatch_metadata: InputTensor[dtype=.int64, rank=1, ...],
 ) -> MHADecodeDispatchMetadata:
     return MHADecodeDispatchMetadata(
         Int(mha_decode_dispatch_metadata.unsafe_ptr()[0]),
@@ -1833,15 +1862,15 @@ def _execute_mha_ragged_paged_scalar_args[
 ](
     output: OutputTensor[dtype=output_dtype, rank=3, ...],
     q: InputTensor[dtype=q_dtype, rank=3, ...],
-    input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+    input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
     kv_blocks: MutableInputTensor[dtype=cache_dtype, rank=6, ...],
-    cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
-    kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
-    max_prompt_length: InputTensor[dtype=DType.uint32, rank=1, ...],
-    max_cache_length: InputTensor[dtype=DType.uint32, rank=1, ...],
+    cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
+    kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
+    max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
+    max_cache_length: InputTensor[dtype=.uint32, rank=1, ...],
     layer_idx: UInt32,
     scale: Float32,
-    mha_decode_dispatch_metadata: InputTensor[dtype=DType.int64, rank=1, ...],
+    mha_decode_dispatch_metadata: InputTensor[dtype=.int64, rank=1, ...],
     context: DeviceContext,
     sink_weights: OptionalReg[
         LayoutTensor[q_dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
@@ -1907,16 +1936,16 @@ def _execute_mha_ragged_paged_rel_logits[
 ](
     output: OutputTensor[dtype=output_dtype, rank=3, ...],
     q: InputTensor[dtype=q_dtype, rank=3, ...],
-    input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+    input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
     kv_blocks: MutableInputTensor[dtype=cache_dtype, rank=6, ...],
-    cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
-    kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
-    max_prompt_length: InputTensor[dtype=DType.uint32, rank=1, ...],
-    max_cache_length: InputTensor[dtype=DType.uint32, rank=1, ...],
+    cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
+    kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
+    max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
+    max_cache_length: InputTensor[dtype=.uint32, rank=1, ...],
     layer_idx: UInt32,
     scale: Float32,
     bias: InputTensor[dtype=q_dtype, rank=3, ...],
-    mha_decode_dispatch_metadata: InputTensor[dtype=DType.int64, rank=1, ...],
+    mha_decode_dispatch_metadata: InputTensor[dtype=.int64, rank=1, ...],
     context: DeviceContext,
 ) raises:
     var decode_dispatch_metadata = _unmarshal_mha_decode_dispatch_metadata(
@@ -2001,21 +2030,21 @@ struct Struct_moe_create_indices:
     def execute[
         target: StaticString,
     ](
-        token_expert_order: OutputTensor[dtype=DType.uint32, rank=1, ...],
-        expert_start_indices: OutputTensor[dtype=DType.uint32, rank=1, ...],
-        restore_token_order: OutputTensor[dtype=DType.uint32, rank=1, ...],
-        expert_ids: OutputTensor[dtype=DType.int32, rank=1, ...],
-        expert_usage_stats: OutputTensor[dtype=DType.uint32, rank=1, ...],
-        topk_ids: InputTensor[dtype=DType.int32, rank=1, ...],
+        token_expert_order: OutputTensor[dtype=.uint32, rank=1, ...],
+        expert_start_indices: OutputTensor[dtype=.uint32, rank=1, ...],
+        restore_token_order: OutputTensor[dtype=.uint32, rank=1, ...],
+        expert_ids: OutputTensor[dtype=.int32, rank=1, ...],
+        expert_usage_stats: OutputTensor[dtype=.uint32, rank=1, ...],
+        topk_ids: InputTensor[dtype=.int32, rank=1, ...],
         context: DeviceContext,
     ) raises:
         moe_create_indices[target=target](
-            token_expert_order.to_tile_tensor[DType.int64](),
-            expert_start_indices.to_tile_tensor[DType.int64](),
-            restore_token_order.to_tile_tensor[DType.int64](),
-            expert_ids.to_tile_tensor[DType.int64](),
-            expert_usage_stats.to_tile_tensor[DType.int64](),
-            topk_ids.to_tile_tensor[DType.int64](),
+            token_expert_order.to_tile_tensor[.int64](),
+            expert_start_indices.to_tile_tensor[.int64](),
+            restore_token_order.to_tile_tensor[.int64](),
+            expert_ids.to_tile_tensor[.int64](),
+            expert_usage_stats.to_tile_tensor[.int64](),
+            topk_ids.to_tile_tensor[.int64](),
             context,
         )
 
@@ -2039,7 +2068,7 @@ struct Struct_moe_router_group_limited:
         norm_weights: Bool,
         target: StaticString,
     ](
-        expert_indices: OutputTensor[dtype=DType.int32, rank=2, ...],
+        expert_indices: OutputTensor[dtype=.int32, rank=2, ...],
         expert_weights: OutputTensor[dtype=scores_type, rank=2, ...],
         expert_scores: FusedInputTensor[dtype=scores_type, rank=2, ...],
         expert_bias: InputTensor[dtype=bias_type, rank=1, ...],
@@ -2066,10 +2095,10 @@ struct Struct_moe_router_group_limited:
                 ](IndexList[2]) capturing -> SIMD[scores_type, width]
             ](scores_input_fn),
         ](
-            expert_indices.to_tile_tensor[DType.int64](),
-            expert_weights.to_tile_tensor[DType.int64](),
-            expert_scores.to_tile_tensor[DType.int64]().as_immut(),
-            expert_bias.to_tile_tensor[DType.int64]().as_immut(),
+            expert_indices.to_tile_tensor[.int64](),
+            expert_weights.to_tile_tensor[.int64](),
+            expert_scores.to_tile_tensor[.int64]().as_immut(),
+            expert_bias.to_tile_tensor[.int64]().as_immut(),
             routed_scaling_factor,
             context,
         )
@@ -2085,22 +2114,22 @@ struct Struct_moe_create_indices_with_scales_offset:
     def execute[
         target: StaticString,
     ](
-        token_expert_order: OutputTensor[dtype=DType.uint32, rank=1, ...],
-        expert_start_indices: OutputTensor[dtype=DType.uint32, rank=1, ...],
-        restore_token_order: OutputTensor[dtype=DType.uint32, rank=1, ...],
-        expert_ids: OutputTensor[dtype=DType.int32, rank=1, ...],
-        expert_usage_stats: OutputTensor[dtype=DType.uint32, rank=1, ...],
-        scales_offset: OutputTensor[dtype=DType.uint32, rank=1, ...],
-        topk_ids: InputTensor[dtype=DType.int32, rank=1, ...],
+        token_expert_order: OutputTensor[dtype=.uint32, rank=1, ...],
+        expert_start_indices: OutputTensor[dtype=.uint32, rank=1, ...],
+        restore_token_order: OutputTensor[dtype=.uint32, rank=1, ...],
+        expert_ids: OutputTensor[dtype=.int32, rank=1, ...],
+        expert_usage_stats: OutputTensor[dtype=.uint32, rank=1, ...],
+        scales_offset: OutputTensor[dtype=.uint32, rank=1, ...],
+        topk_ids: InputTensor[dtype=.int32, rank=1, ...],
         context: DeviceContext,
     ) raises:
         moe_create_indices[target=target](
-            token_expert_order.to_tile_tensor[DType.int64](),
-            expert_start_indices.to_tile_tensor[DType.int64](),
-            restore_token_order.to_tile_tensor[DType.int64](),
-            expert_ids.to_tile_tensor[DType.int64](),
-            expert_usage_stats.to_tile_tensor[DType.int64](),
-            topk_ids.to_tile_tensor[DType.int64](),
+            token_expert_order.to_tile_tensor[.int64](),
+            expert_start_indices.to_tile_tensor[.int64](),
+            restore_token_order.to_tile_tensor[.int64](),
+            expert_ids.to_tile_tensor[.int64](),
+            expert_usage_stats.to_tile_tensor[.int64](),
+            topk_ids.to_tile_tensor[.int64](),
             context,
             scales_offset_p=scales_offset._ptr.as_unsafe_any_origin(),
         )
@@ -2126,14 +2155,14 @@ struct Struct_moe_single_group_router_eplb:
         hash_decorrelate: Bool,
         target: StaticString,
     ](
-        expert_indices: OutputTensor[dtype=DType.int32, rank=2, ...],
-        expert_indices_log: OutputTensor[dtype=DType.int32, rank=2, ...],
+        expert_indices: OutputTensor[dtype=.int32, rank=2, ...],
+        expert_indices_log: OutputTensor[dtype=.int32, rank=2, ...],
         expert_weights: OutputTensor[dtype=scores_type, rank=2, ...],
         expert_scores: FusedInputTensor[dtype=scores_type, rank=2, ...],
         expert_bias: InputTensor[dtype=bias_type, rank=1, ...],
-        logcnt: InputTensor[dtype=DType.int32, rank=2, ...],
-        log2phy: InputTensor[dtype=DType.int32, rank=3, ...],
-        layer_idx: InputTensor[dtype=DType.int32, rank=1, ...],
+        logcnt: InputTensor[dtype=.int32, rank=2, ...],
+        log2phy: InputTensor[dtype=.int32, rank=3, ...],
+        layer_idx: InputTensor[dtype=.int32, rank=1, ...],
         routed_scaling_factor: Float32,
         context: DeviceContext,
     ) raises:
@@ -2158,14 +2187,14 @@ struct Struct_moe_single_group_router_eplb:
                 ](IndexList[2]) capturing -> SIMD[scores_type, width]
             ](scores_input_fn),
         ](
-            expert_indices.to_tile_tensor[DType.int64](),
-            expert_indices_log.to_tile_tensor[DType.int64](),
-            expert_weights.to_tile_tensor[DType.int64](),
-            expert_scores.to_tile_tensor[DType.int64]().as_immut(),
-            expert_bias.to_tile_tensor[DType.int64]().as_immut(),
-            logcnt.to_tile_tensor[DType.int64]().as_immut(),
-            log2phy.to_tile_tensor[DType.int64]().as_immut(),
-            layer_idx.to_tile_tensor[DType.int64]().as_immut(),
+            expert_indices.to_tile_tensor[.int64](),
+            expert_indices_log.to_tile_tensor[.int64](),
+            expert_weights.to_tile_tensor[.int64](),
+            expert_scores.to_tile_tensor[.int64]().as_immut(),
+            expert_bias.to_tile_tensor[.int64]().as_immut(),
+            logcnt.to_tile_tensor[.int64]().as_immut(),
+            log2phy.to_tile_tensor[.int64]().as_immut(),
+            layer_idx.to_tile_tensor[.int64]().as_immut(),
             routed_scaling_factor,
             context,
         )
@@ -2188,7 +2217,7 @@ struct Struct_moe_single_group_router:
         norm_weights: Bool,
         target: StaticString,
     ](
-        expert_indices: OutputTensor[dtype=DType.int32, rank=2, ...],
+        expert_indices: OutputTensor[dtype=.int32, rank=2, ...],
         expert_weights: OutputTensor[dtype=scores_type, rank=2, ...],
         expert_scores: FusedInputTensor[dtype=scores_type, rank=2, ...],
         expert_bias: InputTensor[dtype=bias_type, rank=1, ...],
@@ -2213,10 +2242,10 @@ struct Struct_moe_single_group_router:
                 ](IndexList[2]) capturing -> SIMD[scores_type, width]
             ](scores_input_fn),
         ](
-            expert_indices.to_tile_tensor[DType.int64](),
-            expert_weights.to_tile_tensor[DType.int64](),
-            expert_scores.to_tile_tensor[DType.int64]().as_immut(),
-            expert_bias.to_tile_tensor[DType.int64]().as_immut(),
+            expert_indices.to_tile_tensor[.int64](),
+            expert_weights.to_tile_tensor[.int64](),
+            expert_scores.to_tile_tensor[.int64]().as_immut(),
+            expert_bias.to_tile_tensor[.int64]().as_immut(),
             routed_scaling_factor,
             context,
         )
@@ -2236,11 +2265,11 @@ struct Struct_moe_eplb_remap:
         hash_decorrelate: Bool,
         target: StaticString,
     ](
-        phy_idx: OutputTensor[dtype=DType.int32, rank=2, ...],
-        router_idx: InputTensor[dtype=DType.int32, rank=2, ...],
-        logcnt: InputTensor[dtype=DType.int32, rank=2, ...],
-        log2phy: InputTensor[dtype=DType.int32, rank=3, ...],
-        layer_idx: InputTensor[dtype=DType.int32, rank=1, ...],
+        phy_idx: OutputTensor[dtype=.int32, rank=2, ...],
+        router_idx: InputTensor[dtype=.int32, rank=2, ...],
+        logcnt: InputTensor[dtype=.int32, rank=2, ...],
+        log2phy: InputTensor[dtype=.int32, rank=3, ...],
+        layer_idx: InputTensor[dtype=.int32, rank=1, ...],
         context: DeviceContext,
     ) raises:
         eplb_remap[
@@ -2250,11 +2279,11 @@ struct Struct_moe_eplb_remap:
             hash_decorrelate=hash_decorrelate,
             target=target,
         ](
-            phy_idx.to_tile_tensor[DType.int64](),
-            router_idx.to_tile_tensor[DType.int64]().as_immut(),
-            logcnt.to_tile_tensor[DType.int64]().as_immut(),
-            log2phy.to_tile_tensor[DType.int64]().as_immut(),
-            layer_idx.to_tile_tensor[DType.int64]().as_immut(),
+            phy_idx.to_tile_tensor[.int64](),
+            router_idx.to_tile_tensor[.int64]().as_immut(),
+            logcnt.to_tile_tensor[.int64]().as_immut(),
+            log2phy.to_tile_tensor[.int64]().as_immut(),
+            layer_idx.to_tile_tensor[.int64]().as_immut(),
             context,
         )
 
@@ -2300,8 +2329,8 @@ def layout_transform_conv_transpose_filter_common[
     # last param is num_groups which is currently not an available
     # arg for the MO level op
     _pack_conv_transpose_filter(
-        filter.to_tile_tensor[DType.int64](),
-        packed_filter.to_tile_tensor[DType.int64](),
+        filter.to_tile_tensor[.int64](),
+        packed_filter.to_tile_tensor[.int64](),
         1,
     )
 
@@ -2321,26 +2350,17 @@ struct PackConvTransposeFilterShape:
 
 
 @extensibility.register_shape_function("pack_conv_transpose_filter_shape")
-def pack_conv_transpose_filter_shape_shape[
-    rank: Int,
-    filter_type: DType,
-](filter_buf: InputTensor[dtype=filter_type, rank=rank, ...]) -> IndexList[
-    rank + 1
-]:
+def pack_conv_transpose_filter_shape_shape(
+    filter_buf: Some[TileTensorable],
+) -> IndexList[type_of(filter_buf).rank + 1]:
     """Computes the output shape for the `pack_conv_transpose_filter_shape` graph op.
-
-    Parameters:
-        rank: Number of dimensions of the input `filter_buf` tensor.
-        filter_type: Element type of the `filter_buf` tensor.
 
     Args:
         filter_buf: Input transposed-convolution filter tensor whose packed
             output shape is computed.
     """
-    return rebind[IndexList[rank + 1]](
-        pack_filter_shape_conv_transpose(
-            filter_buf.to_tile_tensor[DType.int64](), 1
-        )
+    return rebind[IndexList[type_of(filter_buf).rank + 1]](
+        pack_filter_shape_conv_transpose(filter_buf.to_tile_tensor(), 1)
     )
 
 
@@ -2373,8 +2393,8 @@ def layout_transform_conv_filter_common[
     # last param is num_groups which is currently not an available
     # arg for the MO level op
     _pack_conv_filter(
-        filter.to_tile_tensor[DType.int64](),
-        packed_filter.to_tile_tensor[DType.int64](),
+        filter.to_tile_tensor[.int64](),
+        packed_filter.to_tile_tensor[.int64](),
         num_groups,
     )
 
@@ -2391,8 +2411,8 @@ def _layout_transform_conv_filter_from_fcrs[
     # this kernel should no longer be called. But keep it as a fallback
     # using int64 convention (same as the RSCF path).
     _pack_conv_filter_from_fcrs(
-        filter.to_tile_tensor[DType.int64](),
-        packed_filter.to_tile_tensor[DType.int64](),
+        filter.to_tile_tensor[.int64](),
+        packed_filter.to_tile_tensor[.int64](),
         num_groups,
     )
 
@@ -2425,10 +2445,10 @@ def print_kv_cache_paged_generic_kernel_api[
     kv_params: KVCacheStaticParams,
     page_size: Int,
 ](
-    valid_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
+    valid_lengths: InputTensor[dtype=.uint32, rank=1, ...],
     kv_collection: PagedKVCacheCollection[dtype, kv_params, page_size, ...],
     layer_idx: UInt32,
-    is_print_compact: InputTensor[dtype=DType.bool, rank=1, ...],
+    is_print_compact: InputTensor[dtype=.bool, rank=1, ...],
     context: DeviceContext,
 ) raises:
     """Prints the contents of a paged KV cache for debugging.
@@ -2506,13 +2526,13 @@ struct Struct_fused_token_sampling:
         _trace_name: StaticString,
     ](
         out_idxs: OutputTensor[dtype=out_idx_type, rank=rank, ...],
-        K: InputTensor[dtype=DType.int64, rank=1, ...],
+        K: InputTensor[dtype=.int64, rank=1, ...],
         max_k: Scalar,
-        temperature: InputTensor[dtype=DType.float32, rank=1, ...],
-        top_p: InputTensor[dtype=DType.float32, rank=1, ...],
+        temperature: InputTensor[dtype=.float32, rank=1, ...],
+        top_p: InputTensor[dtype=.float32, rank=1, ...],
         min_top_p: Float32,
-        min_p: InputTensor[dtype=DType.float32, rank=1, ...],
-        seed: InputTensor[dtype=DType.uint64, rank=1, ...],
+        min_p: InputTensor[dtype=.float32, rank=1, ...],
+        seed: InputTensor[dtype=.uint64, rank=1, ...],
         input: InputTensor[dtype=dtype, rank=rank, ...],
         ctx: DeviceContext,
     ) raises:
@@ -2524,26 +2544,24 @@ struct Struct_fused_token_sampling:
             # drop in q4_k benchmarking for llama 3.
             if max_k == 1:
                 argmax(
-                    input.to_tile_tensor[DType.int64](),
+                    input.to_tile_tensor[.int64](),
                     rank - 1,
-                    out_idxs.to_tile_tensor[DType.int64](),
+                    out_idxs.to_tile_tensor[.int64](),
                     Optional[DeviceContext](ctx),
                 )
                 return
             _fused_token_sampling_cpu(
                 Int(max_k),
-                input.to_tile_tensor[DType.int64](),
-                out_idxs.to_tile_tensor[DType.int64](),
-                k=K.to_tile_tensor[DType.int64]()
+                input.to_tile_tensor[.int64](),
+                out_idxs.to_tile_tensor[.int64](),
+                k=K.to_tile_tensor[.int64]().as_unsafe_any_origin().as_immut(),
+                temperature=temperature.to_tile_tensor[.int64]()
                 .as_unsafe_any_origin()
                 .as_immut(),
-                temperature=temperature.to_tile_tensor[DType.int64]()
+                top_p=top_p.to_tile_tensor[.int64]()
                 .as_unsafe_any_origin()
                 .as_immut(),
-                top_p=top_p.to_tile_tensor[DType.int64]()
-                .as_unsafe_any_origin()
-                .as_immut(),
-                seed=seed.to_tile_tensor[DType.int64]()
+                seed=seed.to_tile_tensor[.int64]()
                 .as_unsafe_any_origin()
                 .as_immut(),
             )
@@ -2552,21 +2570,19 @@ struct Struct_fused_token_sampling:
                 ctx,
                 Int(max_k),
                 min_top_p,
-                input.to_tile_tensor[DType.int64](),
-                out_idxs.to_tile_tensor[DType.int64](),
-                k=K.to_tile_tensor[DType.int64]()
+                input.to_tile_tensor[.int64](),
+                out_idxs.to_tile_tensor[.int64](),
+                k=K.to_tile_tensor[.int64]().as_unsafe_any_origin().as_immut(),
+                temperature=temperature.to_tile_tensor[.int64]()
                 .as_unsafe_any_origin()
                 .as_immut(),
-                temperature=temperature.to_tile_tensor[DType.int64]()
+                top_p=top_p.to_tile_tensor[.int64]()
                 .as_unsafe_any_origin()
                 .as_immut(),
-                top_p=top_p.to_tile_tensor[DType.int64]()
+                min_p=min_p.to_tile_tensor[.int64]()
                 .as_unsafe_any_origin()
                 .as_immut(),
-                min_p=min_p.to_tile_tensor[DType.int64]()
-                .as_unsafe_any_origin()
-                .as_immut(),
-                seed=seed.to_tile_tensor[DType.int64]()
+                seed=seed.to_tile_tensor[.int64]()
                 .as_unsafe_any_origin()
                 .as_immut(),
             )
@@ -2592,13 +2608,13 @@ struct Struct_fused_token_sampling_with_dist:
         target: StaticString,
         _trace_name: StaticString,
     ](
-        out_tokens: OutputTensor[dtype=DType.int64, rank=1, ...],
+        out_tokens: OutputTensor[dtype=.int64, rank=1, ...],
         out_dist: OutputTensor[dtype=dist_dtype, rank=2, ...],
-        K: InputTensor[dtype=DType.int64, rank=1, ...],
+        K: InputTensor[dtype=.int64, rank=1, ...],
         max_k: Scalar,
-        temperature: InputTensor[dtype=DType.float32, rank=1, ...],
-        top_p: InputTensor[dtype=DType.float32, rank=1, ...],
-        seed: InputTensor[dtype=DType.uint64, rank=1, ...],
+        temperature: InputTensor[dtype=.float32, rank=1, ...],
+        top_p: InputTensor[dtype=.float32, rank=1, ...],
+        seed: InputTensor[dtype=.uint64, rank=1, ...],
         input: InputTensor[dtype=dtype, rank=2, ...],
         ctx: DeviceContext,
     ) raises:
@@ -2609,19 +2625,19 @@ struct Struct_fused_token_sampling_with_dist:
             from_logits=True, emit_dist=True, dist_dtype=dist_dtype
         ](
             ctx,
-            input.to_tile_tensor[DType.int64](),
-            out_tokens.to_tile_tensor[DType.int64](),
+            input.to_tile_tensor[.int64](),
+            out_tokens.to_tile_tensor[.int64](),
             Int(max_k),
-            top_k_arr=K.to_tile_tensor[DType.int64]()
+            top_k_arr=K.to_tile_tensor[.int64]()
             .as_unsafe_any_origin()
             .as_immut(),
-            top_p_arr=top_p.to_tile_tensor[DType.int64]()
+            top_p_arr=top_p.to_tile_tensor[.int64]()
             .as_unsafe_any_origin()
             .as_immut(),
-            temperature=temperature.to_tile_tensor[DType.int64]()
+            temperature=temperature.to_tile_tensor[.int64]()
             .as_unsafe_any_origin()
             .as_immut(),
-            rng_seed=seed.to_tile_tensor[DType.int64]()
+            rng_seed=seed.to_tile_tensor[.int64]()
             .as_unsafe_any_origin()
             .as_immut(),
             out_dist=out_dist.to_tile_tensor[
@@ -2647,10 +2663,10 @@ struct Struct_topk_topp_masked_probs:
         target: StaticString,
         _trace_name: StaticString,
     ](
-        probs: OutputTensor[dtype=DType.float32, rank=2, ...],
-        K: InputTensor[dtype=DType.int64, rank=1, ...],
-        temperature: InputTensor[dtype=DType.float32, rank=1, ...],
-        top_p: InputTensor[dtype=DType.float32, rank=1, ...],
+        probs: OutputTensor[dtype=.float32, rank=2, ...],
+        K: InputTensor[dtype=.int64, rank=1, ...],
+        temperature: InputTensor[dtype=.float32, rank=1, ...],
+        top_p: InputTensor[dtype=.float32, rank=1, ...],
         input: InputTensor[dtype=dtype, rank=2, ...],
         ctx: DeviceContext,
     ) raises:
@@ -2659,16 +2675,16 @@ struct Struct_topk_topp_masked_probs:
         ](), "sampler.topk_topp_masked_probs is GPU-only"
         topk_topp_masked_probs(
             ctx,
-            input.to_tile_tensor[DType.int64](),
-            probs.to_tile_tensor[DType.int64]().as_unsafe_any_origin(),
+            input.to_tile_tensor[.int64](),
+            probs.to_tile_tensor[.int64]().as_unsafe_any_origin(),
             top_k_val=-1,
-            top_k_arr=K.to_tile_tensor[DType.int64]()
+            top_k_arr=K.to_tile_tensor[.int64]()
             .as_unsafe_any_origin()
             .as_immut(),
-            top_p_arr=top_p.to_tile_tensor[DType.int64]()
+            top_p_arr=top_p.to_tile_tensor[.int64]()
             .as_unsafe_any_origin()
             .as_immut(),
-            temperature=temperature.to_tile_tensor[DType.int64]()
+            temperature=temperature.to_tile_tensor[.int64]()
             .as_unsafe_any_origin()
             .as_immut(),
         )
@@ -2691,9 +2707,9 @@ struct Struct_gumbel_argmax_from_probs:
         target: StaticString,
         _trace_name: StaticString,
     ](
-        out_tokens: OutputTensor[dtype=DType.int64, rank=1, ...],
-        seed: InputTensor[dtype=DType.uint64, rank=1, ...],
-        probs: InputTensor[dtype=DType.float32, rank=2, ...],
+        out_tokens: OutputTensor[dtype=.int64, rank=1, ...],
+        seed: InputTensor[dtype=.uint64, rank=1, ...],
+        probs: InputTensor[dtype=.float32, rank=2, ...],
         ctx: DeviceContext,
     ) raises:
         comptime assert is_gpu[
@@ -2701,9 +2717,9 @@ struct Struct_gumbel_argmax_from_probs:
         ](), "sampler.gumbel_argmax_from_probs is GPU-only"
         gumbel_sampling_fused_gpu[from_probs=True](
             ctx,
-            probs.to_tile_tensor[DType.int64](),
-            out_tokens.to_tile_tensor[DType.int64](),
-            seed=seed.to_tile_tensor[DType.int64]()
+            probs.to_tile_tensor[.int64](),
+            out_tokens.to_tile_tensor[.int64](),
+            seed=seed.to_tile_tensor[.int64]()
             .as_unsafe_any_origin()
             .as_immut(),
         )
@@ -2732,17 +2748,17 @@ struct Struct_min_p_sampling:
 
         comptime if is_cpu[target]():
             min_p_sampling_cpu(
-                min_ps.to_tile_tensor[DType.int64](),
-                input.to_tile_tensor[DType.int64](),
-                out_token_ids.to_tile_tensor[DType.int64](),
+                min_ps.to_tile_tensor[.int64](),
+                input.to_tile_tensor[.int64](),
+                out_token_ids.to_tile_tensor[.int64](),
                 temperature,
             )
         else:
             min_p_sampling_gpu(
                 ctx,
-                min_ps.to_tile_tensor[DType.int64](),
-                input.to_tile_tensor[DType.int64](),
-                out_token_ids.to_tile_tensor[DType.int64](),
+                min_ps.to_tile_tensor[.int64](),
+                input.to_tile_tensor[.int64](),
+                out_token_ids.to_tile_tensor[.int64](),
                 temperature,
             )
 
@@ -2762,8 +2778,8 @@ struct Struct_sampler_apply_penalties:
         _trace_name: StaticString,
     ](
         logits: MutableInputTensor[dtype=logit_type, rank=rank, ...],
-        compressed_frequency_data: InputTensor[dtype=DType.int32, rank=2, ...],
-        frequency_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+        compressed_frequency_data: InputTensor[dtype=.int32, rank=2, ...],
+        frequency_offsets: InputTensor[dtype=.uint32, rank=1, ...],
         frequency_penalty: InputTensor[dtype=penalty_type, rank=1, ...],
         presence_penalty: InputTensor[dtype=penalty_type, rank=1, ...],
         repetition_penalty: InputTensor[dtype=penalty_type, rank=1, ...],
@@ -2772,12 +2788,12 @@ struct Struct_sampler_apply_penalties:
         comptime assert is_valid_target[target](), "not a valid target"
 
         apply_penalties_to_logits[target=target](
-            logits.to_tile_tensor[DType.int64](),
-            compressed_frequency_data.to_tile_tensor[DType.int64](),
-            frequency_offsets.to_tile_tensor[DType.int64](),
-            frequency_penalty.to_tile_tensor[DType.int64](),
-            presence_penalty.to_tile_tensor[DType.int64](),
-            repetition_penalty.to_tile_tensor[DType.int64](),
+            logits.to_tile_tensor[.int64](),
+            compressed_frequency_data.to_tile_tensor[.int64](),
+            frequency_offsets.to_tile_tensor[.int64](),
+            frequency_penalty.to_tile_tensor[.int64](),
+            presence_penalty.to_tile_tensor[.int64](),
+            repetition_penalty.to_tile_tensor[.int64](),
             ctx,
         )
 
@@ -2805,9 +2821,9 @@ struct Struct_sampler_update_frequency_data:
         comptime assert is_valid_target[target](), "not a valid target"
 
         update_frequency_data[target=target](
-            compressed_frequency_data.to_tile_tensor[DType.int64](),
-            frequency_offsets.to_tile_tensor[DType.int64](),
-            new_tokens.to_tile_tensor[DType.int64](),
+            compressed_frequency_data.to_tile_tensor[.int64](),
+            frequency_offsets.to_tile_tensor[.int64](),
+            new_tokens.to_tile_tensor[.int64](),
             ctx,
         )
 
@@ -2905,17 +2921,17 @@ struct BundledAllReduceSum:
         )
 
         comptime InputTensorType = type_of(
-            inputs[0].to_tile_tensor[DType.int64]().as_immut()
+            inputs[0].to_tile_tensor[.int64]().as_immut()
         )
         var in_tensors = Array[InputTensorType, num_devices](uninitialized=True)
-        var out_buf = output.to_tile_tensor[DType.int64]()
+        var out_buf = output.to_tile_tensor[.int64]()
         var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
             uninitialized=True
         )
 
         comptime for i in range(num_devices):
             in_tensors[i] = rebind[InputTensorType](
-                inputs[i].to_tile_tensor[DType.int64]().as_immut()
+                inputs[i].to_tile_tensor[.int64]().as_immut()
             )
             rank_sigs[i] = (
                 signal_buffers[i]._ptr.bitcast[Signal]().as_unsafe_any_origin()
@@ -3036,7 +3052,7 @@ struct BundledAllReduceAddRMSNormQuantFP8:
         )
 
         comptime InputTensorType = type_of(
-            inputs[0].to_tile_tensor[DType.int64]().as_immut()
+            inputs[0].to_tile_tensor[.int64]().as_immut()
         )
         var in_tensors = Array[InputTensorType, num_devices](uninitialized=True)
         var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
@@ -3045,7 +3061,7 @@ struct BundledAllReduceAddRMSNormQuantFP8:
 
         comptime for i in range(num_devices):
             in_tensors[i] = rebind[InputTensorType](
-                inputs[i].to_tile_tensor[DType.int64]().as_immut()
+                inputs[i].to_tile_tensor[.int64]().as_immut()
             )
             rank_sigs[i] = (
                 signal_buffers[i]._ptr.bitcast[Signal]().as_unsafe_any_origin()
@@ -3053,14 +3069,14 @@ struct BundledAllReduceAddRMSNormQuantFP8:
 
         allreduce_residual_rmsnorm(
             in_tensors,
-            residual.to_tile_tensor[DType.int64]().as_immut(),
-            output.to_tile_tensor[DType.int64](),
-            out_residual.to_tile_tensor[DType.int64](),
-            gamma.to_tile_tensor[DType.int64](),
+            residual.to_tile_tensor[.int64]().as_immut(),
+            output.to_tile_tensor[.int64](),
+            out_residual.to_tile_tensor[.int64](),
+            gamma.to_tile_tensor[.int64](),
             epsilon.unsafe_ptr()[],
             weight_offset.unsafe_ptr()[],
             scale_ub.unsafe_ptr()[],
-            out_scale.to_tile_tensor[DType.int64](),
+            out_scale.to_tile_tensor[.int64](),
             rank_sigs,
             ctx,
         )
@@ -3090,15 +3106,15 @@ struct EaglePrefillShiftTokens:
     ](
         output: OutputTensor[dtype=dtype, rank=rank, ...],
         tokens: InputTensor[dtype=dtype, rank=rank, ...],
-        offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+        offsets: InputTensor[dtype=.uint32, rank=1, ...],
         shift_next_tokens: InputTensor[dtype=dtype, rank=1, ...],
         ctx: DeviceContext,
     ) raises:
         eagle_prefill_shift_tokens[target=target](
-            output.to_tile_tensor[DType.int64](),
-            tokens.to_tile_tensor[DType.int64](),
-            offsets.to_tile_tensor[DType.uint32](),
-            shift_next_tokens.to_tile_tensor[DType.int64](),
+            output.to_tile_tensor[.int64](),
+            tokens.to_tile_tensor[.int64](),
+            offsets.to_tile_tensor[.uint32](),
+            shift_next_tokens.to_tile_tensor[.int64](),
             ctx,
         )
 
@@ -3123,8 +3139,8 @@ struct Learnable2DInterpPosEmb:
         output: OutputTensor[dtype=dtype, rank=2, ...],
         x: InputTensor[dtype=dtype, rank=2, ...],
         weight: InputTensor[dtype=dtype, rank=3, ...],
-        grid_thws: InputTensor[dtype=DType.int64, rank=2, ...],
-        time_weight: InputTensor[dtype=DType.float32, rank=2, ...],
+        grid_thws: InputTensor[dtype=.int64, rank=2, ...],
+        time_weight: InputTensor[dtype=.float32, rank=2, ...],
         ctx: DeviceContext,
     ) raises:
         comptime assert is_gpu[
@@ -3132,11 +3148,11 @@ struct Learnable2DInterpPosEmb:
         ](), "learnable_2d_interp_pos_emb only supported on GPUs"
 
         learnable_2d_interp_pos_emb[dtype](
-            output.to_tile_tensor[DType.int64](),
-            x.to_tile_tensor[DType.int64](),
-            weight.to_tile_tensor[DType.int64](),
-            grid_thws.to_tile_tensor[DType.int64](),
-            time_weight.to_tile_tensor[DType.int64](),
+            output.to_tile_tensor[.int64](),
+            x.to_tile_tensor[.int64](),
+            weight.to_tile_tensor[.int64](),
+            grid_thws.to_tile_tensor[.int64](),
+            time_weight.to_tile_tensor[.int64](),
             ctx,
         )
 
@@ -3154,7 +3170,7 @@ struct SpatialMerge:
     ](
         output: OutputTensor[dtype=dtype, rank=2, ...],
         input: InputTensor[dtype=dtype, rank=2, ...],
-        grid_thw: InputTensor[dtype=DType.int64, rank=2, ...],
+        grid_thw: InputTensor[dtype=.int64, rank=2, ...],
         hidden_size: Int32,
         merge_size: Int32,
         ctx: DeviceContext,
@@ -3162,9 +3178,9 @@ struct SpatialMerge:
         comptime assert is_gpu[target](), "spatial_merge only supported on GPUs"
 
         spatial_merge[dtype](
-            output.to_tile_tensor[DType.int64](),
-            input.to_tile_tensor[DType.int64](),
-            grid_thw.to_tile_tensor[DType.int64](),
+            output.to_tile_tensor[.int64](),
+            input.to_tile_tensor[.int64](),
+            grid_thw.to_tile_tensor[.int64](),
             Int(hidden_size),
             Int(merge_size),
             ctx,
@@ -3184,7 +3200,7 @@ struct TPoolPatchMerger:
     ](
         output: OutputTensor[dtype=dtype, rank=2, ...],
         input: InputTensor[dtype=dtype, rank=2, ...],
-        grid_thws: InputTensor[dtype=DType.int64, rank=2, ...],
+        grid_thws: InputTensor[dtype=.int64, rank=2, ...],
         kH: Int32,
         kW: Int32,
         max_h: Int32,
@@ -3196,9 +3212,9 @@ struct TPoolPatchMerger:
             target
         ](), "tpool_patch_merger only supported on GPUs"
 
-        var out_tt = output.to_tile_tensor[DType.int64]()
-        var in_tt = input.to_tile_tensor[DType.int64]()
-        var grid_tt = grid_thws.to_tile_tensor[DType.int64]()
+        var out_tt = output.to_tile_tensor[.int64]()
+        var in_tt = input.to_tile_tensor[.int64]()
+        var grid_tt = grid_thws.to_tile_tensor[.int64]()
 
         nn_tpool_patch_merger[dtype](
             TileTensor(
@@ -3223,8 +3239,8 @@ struct TPoolPatchMerger:
 
 @extensibility.register_shape_function("tpool_patch_merger")
 def tpool_patch_merger_shape(
-    input: InputTensor[rank=2, ...],
-    _grid_thws: InputTensor[dtype=DType.int64, rank=2, ...],
+    input: Some[Tensor],
+    _grid_thws: Some[Tensor],
     _kH: Int32,
     _kW: Int32,
     _max_h: Int32,
@@ -3247,7 +3263,13 @@ def tpool_patch_merger_shape(
         total_output_patches: Total number of output patches across all
             videos; becomes the first dimension of the output shape.
     """
-    return IndexList[2](Int(total_output_patches), Int(input.dim_size(1)))
+    comptime assert type_of(input).rank == 2, "input must be rank 2"
+    comptime assert type_of(_grid_thws).rank == 2, "_grid_thws must be rank 2"
+    comptime assert (
+        type_of(_grid_thws).dtype == .int64
+    ), "_grid_thws dtype must be int64"
+    var input_shape = coord_to_index_list(input.shape().tuple())
+    return IndexList[2](Int(total_output_patches), Int(input_shape[1]))
 
 
 # ===-----------------------------------------------------------------------===#
@@ -3285,8 +3307,8 @@ struct GatedDeltaConv1dFwd:
         qkv_input_ragged: InputTensor[dtype=work_dtype, rank=2, ...],
         conv_weight: InputTensor[dtype=work_dtype, rank=2, ...],
         conv_state: MutableInputTensor[dtype=state_dtype, rank=3, ...],
-        slot_idx: InputTensor[dtype=DType.uint32, rank=1, ...],
-        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+        slot_idx: InputTensor[dtype=.uint32, rank=1, ...],
+        input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
         ctx: DeviceContext,
     ) capturing raises:
         # Number of threads per block along the conv_dim axis.
@@ -3333,10 +3355,10 @@ struct GatedDeltaConv1dFwd:
         var conv_output_ragged_tt = conv_output_ragged.to_tile_tensor[
             DType.int64
         ]()
-        var qkv_input_ragged_tt = qkv_input_ragged.to_tile_tensor[DType.int64]()
-        var conv_weight_tt = conv_weight.to_tile_tensor[DType.int64]()
-        var conv_state_tt = conv_state.to_tile_tensor[DType.int64]()
-        var slot_idx_tt = slot_idx.to_tile_tensor[DType.int64]()
+        var qkv_input_ragged_tt = qkv_input_ragged.to_tile_tensor[.int64]()
+        var conv_weight_tt = conv_weight.to_tile_tensor[.int64]()
+        var conv_state_tt = conv_state.to_tile_tensor[.int64]()
+        var slot_idx_tt = slot_idx.to_tile_tensor[.int64]()
         var input_row_offsets_tt = input_row_offsets.to_tile_tensor[
             DType.int64
         ]()
@@ -3414,23 +3436,14 @@ struct GatedDeltaConv1dFwd:
 
 
 @extensibility.register_shape_function("gated_delta_conv1d_fwd")
-def gated_delta_conv1d_fwd_shape[
-    work_dtype: DType,
-    state_dtype: DType,
-](
-    qkv_input_ragged: InputTensor[dtype=work_dtype, rank=2, ...],
-    conv_weight: InputTensor[dtype=work_dtype, rank=2, ...],
-    conv_state: InputTensor[dtype=state_dtype, rank=3, ...],
-    slot_idx: InputTensor[dtype=DType.uint32, rank=1, ...],
-    input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+def gated_delta_conv1d_fwd_shape(
+    qkv_input_ragged: Some[Tensor],
+    conv_weight: Some[Tensor],
+    conv_state: Some[Tensor],
+    slot_idx: Some[Tensor],
+    input_row_offsets: Some[Tensor],
 ) -> IndexList[2]:
     """Computes the output shape for the `gated_delta_conv1d_fwd` graph op.
-
-    Parameters:
-        work_dtype: Element type of the per-token input and weight tensors
-            (inferred).
-        state_dtype: Element type of the persistent conv-state pool,
-            independent of `work_dtype` (inferred).
 
     Args:
         qkv_input_ragged: Ragged QKV input tensor of shape
@@ -3444,8 +3457,28 @@ def gated_delta_conv1d_fwd_shape[
         input_row_offsets: Cumulative row offsets per batch, shape
             `[batch_size + 1]`.
     """
+    comptime assert (
+        type_of(qkv_input_ragged).rank == 2
+    ), "qkv_input_ragged must be rank 2"
+    comptime assert type_of(conv_weight).rank == 2, "conv_weight must be rank 2"
+    comptime assert (
+        type_of(conv_weight).dtype == type_of(qkv_input_ragged).dtype
+    ), "qkv_input_ragged and conv_weight must share a dtype"
+    comptime assert type_of(conv_state).rank == 3, "conv_state must be rank 3"
+    comptime assert type_of(slot_idx).rank == 1, "slot_idx must be rank 1"
+    comptime assert (
+        type_of(slot_idx).dtype == .uint32
+    ), "slot_idx dtype must be uint32"
+    comptime assert (
+        type_of(input_row_offsets).rank == 1
+    ), "input_row_offsets must be rank 1"
+    comptime assert (
+        type_of(input_row_offsets).dtype == .uint32
+    ), "input_row_offsets dtype must be uint32"
     # conv_output_ragged has same shape as qkv_input_ragged
-    return qkv_input_ragged.shape()
+    return rebind[IndexList[2]](
+        coord_to_index_list(qkv_input_ragged.shape().tuple())
+    )
 
 
 @extensibility.register("gated_delta_recurrence_fwd")
@@ -3478,8 +3511,8 @@ struct GatedDeltaRecurrenceFwd:
         decay_per_token: InputTensor[dtype=work_dtype, rank=2, ...],
         beta_per_token: InputTensor[dtype=work_dtype, rank=2, ...],
         recurrent_state: MutableInputTensor[dtype=state_dtype, rank=4, ...],
-        slot_idx: InputTensor[dtype=DType.uint32, rank=1, ...],
-        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+        slot_idx: InputTensor[dtype=.uint32, rank=1, ...],
+        input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
         ctx: DeviceContext,
     ) capturing raises:
         var total_seq_len = qkv_conv_output.dim_size(0)
@@ -3550,11 +3583,11 @@ struct GatedDeltaRecurrenceFwd:
         var recurrence_output_tt = recurrence_output.to_tile_tensor[
             DType.int64
         ]()
-        var qkv_conv_output_tt = qkv_conv_output.to_tile_tensor[DType.int64]()
-        var decay_per_token_tt = decay_per_token.to_tile_tensor[DType.int64]()
-        var beta_per_token_tt = beta_per_token.to_tile_tensor[DType.int64]()
-        var recurrent_state_tt = recurrent_state.to_tile_tensor[DType.int64]()
-        var slot_idx_tt = slot_idx.to_tile_tensor[DType.int64]()
+        var qkv_conv_output_tt = qkv_conv_output.to_tile_tensor[.int64]()
+        var decay_per_token_tt = decay_per_token.to_tile_tensor[.int64]()
+        var beta_per_token_tt = beta_per_token.to_tile_tensor[.int64]()
+        var recurrent_state_tt = recurrent_state.to_tile_tensor[.int64]()
+        var slot_idx_tt = slot_idx.to_tile_tensor[.int64]()
         var input_row_offsets_tt = input_row_offsets.to_tile_tensor[
             DType.int64
         ]()
@@ -3657,23 +3690,15 @@ struct GatedDeltaRecurrenceFwd:
 
 
 @extensibility.register_shape_function("gated_delta_recurrence_fwd")
-def gated_delta_recurrence_fwd_shape[
-    work_dtype: DType,
-    state_dtype: DType,
-](
-    qkv_conv_output: InputTensor[dtype=work_dtype, rank=2, ...],
-    decay_per_token: InputTensor[dtype=work_dtype, rank=2, ...],
-    beta_per_token: InputTensor[dtype=work_dtype, rank=2, ...],
-    recurrent_state: InputTensor[dtype=state_dtype, rank=4, ...],
-    slot_idx: InputTensor[dtype=DType.uint32, rank=1, ...],
-    input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+def gated_delta_recurrence_fwd_shape(
+    qkv_conv_output: Some[Tensor],
+    decay_per_token: Some[Tensor],
+    beta_per_token: Some[Tensor],
+    recurrent_state: Some[Tensor],
+    slot_idx: Some[Tensor],
+    input_row_offsets: Some[Tensor],
 ) -> IndexList[2]:
     """Computes the output shape for the `gated_delta_recurrence_fwd` graph op.
-
-    Parameters:
-        work_dtype: Element type of the per-token input tensors (inferred).
-        state_dtype: Element type of the persistent recurrent-state pool,
-            independent of `work_dtype` (inferred).
 
     Args:
         qkv_conv_output: Ragged conv output of shape
@@ -3689,10 +3714,45 @@ def gated_delta_recurrence_fwd_shape[
         input_row_offsets: Cumulative row offsets per batch, shape
             `[batch_size + 1]`.
     """
+    comptime assert (
+        type_of(qkv_conv_output).rank == 2
+    ), "qkv_conv_output must be rank 2"
+    comptime assert (
+        type_of(decay_per_token).rank == 2
+    ), "decay_per_token must be rank 2"
+    comptime assert (
+        type_of(beta_per_token).rank == 2
+    ), "beta_per_token must be rank 2"
+    comptime assert (
+        type_of(recurrent_state).rank == 4
+    ), "recurrent_state must be rank 4"
+    comptime assert (
+        type_of(decay_per_token).dtype == type_of(qkv_conv_output).dtype
+        and type_of(beta_per_token).dtype == type_of(qkv_conv_output).dtype
+    ), "qkv_conv_output, decay_per_token, and beta_per_token must share a dtype"
+    comptime assert type_of(slot_idx).rank == 1, "slot_idx must be rank 1"
+    comptime assert (
+        type_of(slot_idx).dtype == .uint32
+    ), "slot_idx dtype must be uint32"
+    comptime assert (
+        type_of(input_row_offsets).rank == 1
+    ), "input_row_offsets must be rank 1"
+    comptime assert (
+        type_of(input_row_offsets).dtype == .uint32
+    ), "input_row_offsets dtype must be uint32"
     # recurrence_output: [total_seq_len, value_dim]
-    var total_seq_len = qkv_conv_output.dim_size(0)
-    var num_value_heads = decay_per_token.dim_size(1)
-    var value_head_dim = recurrent_state.dim_size(3)
+    var qkv_conv_output_shape = coord_to_index_list(
+        qkv_conv_output.shape().tuple()
+    )
+    var decay_per_token_shape = coord_to_index_list(
+        decay_per_token.shape().tuple()
+    )
+    var recurrent_state_shape = coord_to_index_list(
+        recurrent_state.shape().tuple()
+    )
+    var total_seq_len = qkv_conv_output_shape[0]
+    var num_value_heads = decay_per_token_shape[1]
+    var value_head_dim = recurrent_state_shape[3]
     var value_dim = num_value_heads * value_head_dim
     return IndexList[2](total_seq_len, value_dim)
 
@@ -3739,7 +3799,7 @@ struct Mamba2SSDChunkScanVarlenFwd[dt_softplus: Bool = True]:
         target: StaticString,
     ](
         y: OutputTensor[dtype=dtype, rank=3, ...],
-        final_states: OutputTensor[dtype=DType.float32, rank=4, ...],
+        final_states: OutputTensor[dtype=.float32, rank=4, ...],
         x: InputTensor[dtype=dtype, rank=3, ...],
         dt: InputTensor[dtype=dtype, rank=2, ...],
         A: InputTensor[dtype=dtype, rank=1, ...],
@@ -3747,9 +3807,9 @@ struct Mamba2SSDChunkScanVarlenFwd[dt_softplus: Bool = True]:
         C: InputTensor[dtype=dtype, rank=3, ...],
         D: InputTensor[dtype=dtype, rank=1, ...],
         dt_bias: InputTensor[dtype=dtype, rank=1, ...],
-        initial_states: InputTensor[dtype=DType.float32, rank=4, ...],
-        query_start_loc: InputTensor[dtype=DType.int32, rank=1, ...],
-        has_initial_state: InputTensor[dtype=DType.bool, rank=1, ...],
+        initial_states: InputTensor[dtype=.float32, rank=4, ...],
+        query_start_loc: InputTensor[dtype=.int32, rank=1, ...],
+        has_initial_state: InputTensor[dtype=.bool, rank=1, ...],
         ctx: DeviceContext,
     ) capturing raises:
         var nheads = x.dim_size(1)
@@ -3762,17 +3822,17 @@ struct Mamba2SSDChunkScanVarlenFwd[dt_softplus: Bool = True]:
         # TileTensors: the layout-type placeholder dtype int32 follows the
         # existing varlen_selective_scan_ops idiom; kernel_dtype is supplied
         # separately. fp32 state tensors use a fp32 placeholder.
-        var y_tt = y.to_tile_tensor[DType.int32]()
-        var final_states_tt = final_states.to_tile_tensor[DType.float32]()
-        var x_tt = x.to_tile_tensor[DType.int32]()
-        var dt_tt = dt.to_tile_tensor[DType.int32]()
-        var A_tt = A.to_tile_tensor[DType.int32]()
-        var B_tt = B.to_tile_tensor[DType.int32]()
-        var C_tt = C.to_tile_tensor[DType.int32]()
-        var D_tt = D.to_tile_tensor[DType.int32]()
-        var dt_bias_tt = dt_bias.to_tile_tensor[DType.int32]()
-        var initial_states_tt = initial_states.to_tile_tensor[DType.float32]()
-        var query_start_loc_tt = query_start_loc.to_tile_tensor[DType.int32]()
+        var y_tt = y.to_tile_tensor[.int32]()
+        var final_states_tt = final_states.to_tile_tensor[.float32]()
+        var x_tt = x.to_tile_tensor[.int32]()
+        var dt_tt = dt.to_tile_tensor[.int32]()
+        var A_tt = A.to_tile_tensor[.int32]()
+        var B_tt = B.to_tile_tensor[.int32]()
+        var C_tt = C.to_tile_tensor[.int32]()
+        var D_tt = D.to_tile_tensor[.int32]()
+        var dt_bias_tt = dt_bias.to_tile_tensor[.int32]()
+        var initial_states_tt = initial_states.to_tile_tensor[.float32]()
+        var query_start_loc_tt = query_start_loc.to_tile_tensor[.int32]()
         var has_initial_state_tt = has_initial_state.to_tile_tensor[
             DType.int32
         ]()
@@ -3933,25 +3993,19 @@ struct Mamba2SSDChunkScanVarlenFwd[dt_softplus: Bool = True]:
 
 
 @extensibility.register_shape_function("mamba2_ssd_chunk_scan_varlen_fwd")
-def mamba2_ssd_chunk_scan_varlen_fwd_shape[
-    dtype: DType,
-](
-    x: InputTensor[dtype=dtype, rank=3, ...],
-    dt: InputTensor[dtype=dtype, rank=2, ...],
-    A: InputTensor[dtype=dtype, rank=1, ...],
-    B: InputTensor[dtype=dtype, rank=3, ...],
-    C: InputTensor[dtype=dtype, rank=3, ...],
-    D: InputTensor[dtype=dtype, rank=1, ...],
-    dt_bias: InputTensor[dtype=dtype, rank=1, ...],
-    initial_states: InputTensor[dtype=DType.float32, rank=4, ...],
-    query_start_loc: InputTensor[dtype=DType.int32, rank=1, ...],
-    has_initial_state: InputTensor[dtype=DType.bool, rank=1, ...],
+def mamba2_ssd_chunk_scan_varlen_fwd_shape(
+    x: Some[Tensor],
+    dt: Some[Tensor],
+    A: Some[Tensor],
+    B: Some[Tensor],
+    C: Some[Tensor],
+    D: Some[Tensor],
+    dt_bias: Some[Tensor],
+    initial_states: Some[Tensor],
+    query_start_loc: Some[Tensor],
+    has_initial_state: Some[Tensor],
 ) -> IndexList[3]:
     """Computes the output shape for the `mamba2_ssd_chunk_scan_varlen_fwd` graph op.
-
-    Parameters:
-        dtype: Element type of the SSM input and parameter tensors
-            (inferred).
 
     Args:
         x: Packed input tensor of shape
@@ -3975,8 +4029,41 @@ def mamba2_ssd_chunk_scan_varlen_fwd_shape[
             in `bool` indicating whether to load `initial_states`;
             may be empty when no initial states are used.
     """
+    comptime assert type_of(x).rank == 3, "x must be rank 3"
+    comptime assert type_of(dt).rank == 2, "dt must be rank 2"
+    comptime assert type_of(A).rank == 1, "A must be rank 1"
+    comptime assert type_of(B).rank == 3, "B must be rank 3"
+    comptime assert type_of(C).rank == 3, "C must be rank 3"
+    comptime assert type_of(D).rank == 1, "D must be rank 1"
+    comptime assert type_of(dt_bias).rank == 1, "dt_bias must be rank 1"
+    comptime assert (
+        type_of(initial_states).rank == 4
+    ), "initial_states must be rank 4"
+    comptime assert (
+        type_of(initial_states).dtype == .float32
+    ), "initial_states dtype must be float32"
+    comptime assert (
+        type_of(query_start_loc).rank == 1
+    ), "query_start_loc must be rank 1"
+    comptime assert (
+        type_of(query_start_loc).dtype == .int32
+    ), "query_start_loc dtype must be int32"
+    comptime assert (
+        type_of(has_initial_state).rank == 1
+    ), "has_initial_state must be rank 1"
+    comptime assert (
+        type_of(has_initial_state).dtype == .bool
+    ), "has_initial_state dtype must be bool"
+    comptime assert (
+        type_of(dt).dtype == type_of(x).dtype
+        and type_of(A).dtype == type_of(x).dtype
+        and type_of(B).dtype == type_of(x).dtype
+        and type_of(C).dtype == type_of(x).dtype
+        and type_of(D).dtype == type_of(x).dtype
+        and type_of(dt_bias).dtype == type_of(x).dtype
+    ), "x, dt, A, B, C, D, and dt_bias must share a dtype"
     # y has the same shape as x: (total_len, nheads, head_dim).
-    return x.shape()
+    return rebind[IndexList[3]](coord_to_index_list(x.shape().tuple()))
 
 
 @extensibility.register("mamba2_ssd_chunk_scan_varlen_fwd_inplace")
@@ -4033,9 +4120,9 @@ struct Mamba2SSDChunkScanVarlenFwdInplace[dt_softplus: Bool = True]:
         # storage dtype is independent of the working dtype (fp32 everywhere;
         # bf16 on Apple GPUs — see the Apple kernel's numerics contract).
         ssm_pool: MutableInputTensor[dtype=state_dtype, rank=4, ...],
-        query_start_loc: InputTensor[dtype=DType.int32, rank=1, ...],
-        has_initial_state: InputTensor[dtype=DType.bool, rank=1, ...],
-        cache_indices: InputTensor[dtype=DType.uint32, rank=1, ...],
+        query_start_loc: InputTensor[dtype=.int32, rank=1, ...],
+        has_initial_state: InputTensor[dtype=.bool, rank=1, ...],
+        cache_indices: InputTensor[dtype=.uint32, rank=1, ...],
         ctx: DeviceContext,
     ) capturing raises:
         var nheads = x.dim_size(1)
@@ -4044,20 +4131,20 @@ struct Mamba2SSDChunkScanVarlenFwdInplace[dt_softplus: Bool = True]:
         var batch = query_start_loc.dim_size(0) - 1
         var nheads_ngroups_ratio = nheads // ngroups
 
-        var y_tt = y.to_tile_tensor[DType.int32]()
-        var x_tt = x.to_tile_tensor[DType.int32]()
-        var dt_tt = dt.to_tile_tensor[DType.int32]()
-        var A_tt = A.to_tile_tensor[DType.int32]()
-        var B_tt = B.to_tile_tensor[DType.int32]()
-        var C_tt = C.to_tile_tensor[DType.int32]()
-        var D_tt = D.to_tile_tensor[DType.int32]()
-        var dt_bias_tt = dt_bias.to_tile_tensor[DType.int32]()
-        var ssm_pool_tt = ssm_pool.to_tile_tensor[DType.float32]()
-        var query_start_loc_tt = query_start_loc.to_tile_tensor[DType.int32]()
+        var y_tt = y.to_tile_tensor[.int32]()
+        var x_tt = x.to_tile_tensor[.int32]()
+        var dt_tt = dt.to_tile_tensor[.int32]()
+        var A_tt = A.to_tile_tensor[.int32]()
+        var B_tt = B.to_tile_tensor[.int32]()
+        var C_tt = C.to_tile_tensor[.int32]()
+        var D_tt = D.to_tile_tensor[.int32]()
+        var dt_bias_tt = dt_bias.to_tile_tensor[.int32]()
+        var ssm_pool_tt = ssm_pool.to_tile_tensor[.float32]()
+        var query_start_loc_tt = query_start_loc.to_tile_tensor[.int32]()
         var has_initial_state_tt = has_initial_state.to_tile_tensor[
             DType.int32
         ]()
-        var cache_indices_tt = cache_indices.to_tile_tensor[DType.uint32]()
+        var cache_indices_tt = cache_indices.to_tile_tensor[.uint32]()
 
         var x_strides = IndexList[3](
             x.strides()[0], x.strides()[1], x.strides()[2]
@@ -4107,7 +4194,7 @@ struct Mamba2SSDChunkScanVarlenFwdInplace[dt_softplus: Bool = True]:
             # `rebind`-ed to its fp32 spelling — a compile-time promise the
             # compiler verifies at instantiation, where this branch only
             # exists with `state_dtype == float32`.
-            comptime if state_dtype == DType.float32:
+            comptime if state_dtype == .float32:
                 mamba2_ssd_chunk_scan_varlen_fwd_inplace_cpu[dtype, DSTATE_VAL](
                     nheads,
                     head_dim,
@@ -4125,9 +4212,7 @@ struct Mamba2SSDChunkScanVarlenFwdInplace[dt_softplus: Bool = True]:
                     y_tt,
                     rebind[
                         TileTensor[
-                            DType.float32,
-                            ssm_pool_tt.LayoutType,
-                            ssm_pool_tt.origin,
+                            .float32, ssm_pool_tt.LayoutType, ssm_pool_tt.origin
                         ]
                     ](ssm_pool_tt),
                     query_start_loc_tt,
@@ -4180,7 +4265,7 @@ struct Mamba2SSDChunkScanVarlenFwdInplace[dt_softplus: Bool = True]:
             # Python side only allocates a bf16 pool on Apple (nemotron_h
             # `_ssm_state_dtype`), so this guard is defensive.
             comptime assert (
-                state_dtype == DType.float32 or use_apple_vec
+                state_dtype == .float32 or use_apple_vec
             ), "non-fp32 SSM state is only supported on the Apple GPU kernel"
 
             comptime if use_dstate_split:
@@ -4380,29 +4465,20 @@ struct Mamba2SSDChunkScanVarlenFwdInplace[dt_softplus: Bool = True]:
 @extensibility.register_shape_function(
     "mamba2_ssd_chunk_scan_varlen_fwd_inplace"
 )
-def mamba2_ssd_chunk_scan_varlen_fwd_inplace_shape[
-    dtype: DType,
-    state_dtype: DType,
-](
-    x: InputTensor[dtype=dtype, rank=3, ...],
-    dt: InputTensor[dtype=dtype, rank=2, ...],
-    A: InputTensor[dtype=dtype, rank=1, ...],
-    B: InputTensor[dtype=dtype, rank=3, ...],
-    C: InputTensor[dtype=dtype, rank=3, ...],
-    D: InputTensor[dtype=dtype, rank=1, ...],
-    dt_bias: InputTensor[dtype=dtype, rank=1, ...],
-    ssm_pool: InputTensor[dtype=state_dtype, rank=4, ...],
-    query_start_loc: InputTensor[dtype=DType.int32, rank=1, ...],
-    has_initial_state: InputTensor[dtype=DType.bool, rank=1, ...],
-    cache_indices: InputTensor[dtype=DType.uint32, rank=1, ...],
+def mamba2_ssd_chunk_scan_varlen_fwd_inplace_shape(
+    x: Some[Tensor],
+    dt: Some[Tensor],
+    A: Some[Tensor],
+    B: Some[Tensor],
+    C: Some[Tensor],
+    D: Some[Tensor],
+    dt_bias: Some[Tensor],
+    ssm_pool: Some[Tensor],
+    query_start_loc: Some[Tensor],
+    has_initial_state: Some[Tensor],
+    cache_indices: Some[Tensor],
 ) -> IndexList[3]:
     """Computes the output shape for the `mamba2_ssd_chunk_scan_varlen_fwd_inplace` graph op.
-
-    Parameters:
-        dtype: Element type of the SSM input and parameter tensors
-            (inferred).
-        state_dtype: Element type of the SSM state pool tensor
-            (inferred).
 
     Args:
         x: Packed input tensor of shape
@@ -4431,8 +4507,42 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_shape[
             `(batch,)` in `uint32` selecting where in `ssm_pool`
             the final states are written.
     """
+    comptime assert type_of(x).rank == 3, "x must be rank 3"
+    comptime assert type_of(dt).rank == 2, "dt must be rank 2"
+    comptime assert type_of(A).rank == 1, "A must be rank 1"
+    comptime assert type_of(B).rank == 3, "B must be rank 3"
+    comptime assert type_of(C).rank == 3, "C must be rank 3"
+    comptime assert type_of(D).rank == 1, "D must be rank 1"
+    comptime assert type_of(dt_bias).rank == 1, "dt_bias must be rank 1"
+    comptime assert type_of(ssm_pool).rank == 4, "ssm_pool must be rank 4"
+    comptime assert (
+        type_of(query_start_loc).rank == 1
+    ), "query_start_loc must be rank 1"
+    comptime assert (
+        type_of(query_start_loc).dtype == .int32
+    ), "query_start_loc dtype must be int32"
+    comptime assert (
+        type_of(has_initial_state).rank == 1
+    ), "has_initial_state must be rank 1"
+    comptime assert (
+        type_of(has_initial_state).dtype == .bool
+    ), "has_initial_state dtype must be bool"
+    comptime assert (
+        type_of(cache_indices).rank == 1
+    ), "cache_indices must be rank 1"
+    comptime assert (
+        type_of(cache_indices).dtype == .uint32
+    ), "cache_indices dtype must be uint32"
+    comptime assert (
+        type_of(dt).dtype == type_of(x).dtype
+        and type_of(A).dtype == type_of(x).dtype
+        and type_of(B).dtype == type_of(x).dtype
+        and type_of(C).dtype == type_of(x).dtype
+        and type_of(D).dtype == type_of(x).dtype
+        and type_of(dt_bias).dtype == type_of(x).dtype
+    ), "x, dt, A, B, C, D, and dt_bias must share a dtype"
     # y has the same shape as x: (total_len, nheads, head_dim).
-    return x.shape()
+    return rebind[IndexList[3]](coord_to_index_list(x.shape().tuple()))
 
 
 @extensibility.register("causal_conv1d_varlen_fwd")
@@ -4492,9 +4602,9 @@ struct CausalConv1DVarlenFwd[
         # buffer rather than treating it as a freshly-produced output --
         # mirroring the `gated_delta_conv1d_fwd` precedent above.
         conv_states: MutableInputTensor[dtype=dtype, rank=3, ...],
-        query_start_loc: InputTensor[dtype=DType.int32, rank=1, ...],
-        cache_indices: InputTensor[dtype=DType.int32, rank=1, ...],
-        has_initial_state: InputTensor[dtype=DType.bool, rank=1, ...],
+        query_start_loc: InputTensor[dtype=.int32, rank=1, ...],
+        cache_indices: InputTensor[dtype=.int32, rank=1, ...],
+        has_initial_state: InputTensor[dtype=.bool, rank=1, ...],
         ctx: DeviceContext,
     ) capturing raises:
         # Axis of `x`/`output` holding channels vs. tokens (see
@@ -4507,16 +4617,16 @@ struct CausalConv1DVarlenFwd[
         var width = weight.dim_size(1)
         var batch = query_start_loc.dim_size(0) - 1
 
-        var output_tt = output.to_tile_tensor[DType.int32]()
-        var x_tt = x.to_tile_tensor[DType.int32]()
-        var weight_tt = weight.to_tile_tensor[DType.int32]()
-        var bias_tt = bias.to_tile_tensor[DType.int32]()
-        var query_start_loc_tt = query_start_loc.to_tile_tensor[DType.int32]()
-        var cache_indices_tt = cache_indices.to_tile_tensor[DType.int32]()
+        var output_tt = output.to_tile_tensor[.int32]()
+        var x_tt = x.to_tile_tensor[.int32]()
+        var weight_tt = weight.to_tile_tensor[.int32]()
+        var bias_tt = bias.to_tile_tensor[.int32]()
+        var query_start_loc_tt = query_start_loc.to_tile_tensor[.int32]()
+        var cache_indices_tt = cache_indices.to_tile_tensor[.int32]()
         var has_initial_state_tt = has_initial_state.to_tile_tensor[
             DType.int32
         ]()
-        var conv_states_tt = conv_states.to_tile_tensor[DType.int32]()
+        var conv_states_tt = conv_states.to_tile_tensor[.int32]()
 
         # Get strides as UInt32
         var x_strides = x.strides()
@@ -4750,27 +4860,21 @@ struct CausalConv1DVarlenFwd[
 
 
 @extensibility.register_shape_function("causal_conv1d_varlen_fwd")
-def causal_conv1d_varlen_fwd_shape[
-    dtype: DType,
-](
-    x: InputTensor[dtype=dtype, rank=2, ...],
-    weight: InputTensor[dtype=dtype, rank=2, ...],
-    bias: InputTensor[dtype=dtype, rank=1, ...],
+def causal_conv1d_varlen_fwd_shape(
+    x: Some[Tensor],
+    weight: Some[Tensor],
+    bias: Some[Tensor],
     # Must mirror the execute function's input-tensor list (incl. the in/out
     # `conv_states` pool) or the MOGG kernel-library validator rejects the op
     # ("Execute and shape functions do not have the same input tensors").
-    # Declared as InputTensor here (the shape fn does not mutate), matching the
-    # SSD-inplace `ssm_pool` shape-fn convention.
-    conv_states: InputTensor[dtype=dtype, rank=3, ...],
-    query_start_loc: InputTensor[dtype=DType.int32, rank=1, ...],
-    cache_indices: InputTensor[dtype=DType.int32, rank=1, ...],
-    has_initial_state: InputTensor[dtype=DType.bool, rank=1, ...],
+    # Bound as a role-less tensor trait here (the shape fn does not mutate),
+    # matching the SSD-inplace `ssm_pool` shape-fn convention.
+    conv_states: Some[Tensor],
+    query_start_loc: Some[Tensor],
+    cache_indices: Some[Tensor],
+    has_initial_state: Some[Tensor],
 ) -> IndexList[2]:
     """Computes the output shape for the `causal_conv1d_varlen_fwd` graph op.
-
-    Parameters:
-        dtype: Element type of the conv input, weight, bias, and conv state
-            tensors.
 
     Args:
         x: Input tensor of concatenated sequence elements with shape
@@ -4785,7 +4889,34 @@ def causal_conv1d_varlen_fwd_shape[
         has_initial_state: Whether each sequence has an initial state with
             shape (batch,).
     """
-    return x.shape()
+    comptime assert type_of(x).rank == 2, "x must be rank 2"
+    comptime assert type_of(weight).rank == 2, "weight must be rank 2"
+    comptime assert type_of(bias).rank == 1, "bias must be rank 1"
+    comptime assert type_of(conv_states).rank == 3, "conv_states must be rank 3"
+    comptime assert (
+        type_of(weight).dtype == type_of(x).dtype
+        and type_of(bias).dtype == type_of(x).dtype
+        and type_of(conv_states).dtype == type_of(x).dtype
+    ), "x, weight, bias, and conv_states must share a dtype"
+    comptime assert (
+        type_of(query_start_loc).rank == 1
+    ), "query_start_loc must be rank 1"
+    comptime assert (
+        type_of(query_start_loc).dtype == .int32
+    ), "query_start_loc dtype must be int32"
+    comptime assert (
+        type_of(cache_indices).rank == 1
+    ), "cache_indices must be rank 1"
+    comptime assert (
+        type_of(cache_indices).dtype == .int32
+    ), "cache_indices dtype must be int32"
+    comptime assert (
+        type_of(has_initial_state).rank == 1
+    ), "has_initial_state must be rank 1"
+    comptime assert (
+        type_of(has_initial_state).dtype == .bool
+    ), "has_initial_state dtype must be bool"
+    return rebind[IndexList[2]](coord_to_index_list(x.shape().tuple()))
 
 
 # ===-----------------------------------------------------------------------===#
@@ -4827,7 +4958,7 @@ struct GatedGroupRMSNorm[group_size: Int]:
         output: OutputTensor[dtype=dtype, rank=2, ...],
         y: InputTensor[dtype=dtype, rank=2, ...],
         gate: InputTensor[dtype=gate_dtype, rank=2, ...],
-        weight: InputTensor[dtype=DType.float32, rank=1, ...],
+        weight: InputTensor[dtype=.float32, rank=1, ...],
         eps: Float32,
         ctx: DeviceContext,
     ) capturing raises:
@@ -4848,10 +4979,10 @@ struct GatedGroupRMSNorm[group_size: Int]:
         )
         var num_groups = intermediate // gs
 
-        var output_tt = output.to_tile_tensor[DType.int32]()
-        var y_tt = y.to_tile_tensor[DType.int32]()
-        var gate_tt = gate.to_tile_tensor[DType.int32]()
-        var weight_tt = weight.to_tile_tensor[DType.int32]()
+        var output_tt = output.to_tile_tensor[.int32]()
+        var y_tt = y.to_tile_tensor[.int32]()
+        var gate_tt = gate.to_tile_tensor[.int32]()
+        var weight_tt = weight.to_tile_tensor[.int32]()
 
         comptime if is_cpu[target]():
             gated_group_rmsnorm_cpu[dtype, gate_dtype](
@@ -4881,16 +5012,19 @@ struct GatedGroupRMSNorm[group_size: Int]:
 
 
 @extensibility.register_shape_function("gated_group_rmsnorm")
-def gated_group_rmsnorm_shape[
-    dtype: DType,
-    gate_dtype: DType,
-](
-    y: InputTensor[dtype=dtype, rank=2, ...],
-    gate: InputTensor[dtype=gate_dtype, rank=2, ...],
-    weight: InputTensor[dtype=DType.float32, rank=1, ...],
+def gated_group_rmsnorm_shape(
+    y: Some[Tensor],
+    gate: Some[Tensor],
+    weight: Some[Tensor],
     eps: Float32,
 ) -> IndexList[2]:
-    return y.shape()
+    comptime assert type_of(y).rank == 2, "y must be rank 2"
+    comptime assert type_of(gate).rank == 2, "gate must be rank 2"
+    comptime assert type_of(weight).rank == 1, "weight must be rank 1"
+    comptime assert (
+        type_of(weight).dtype == .float32
+    ), "weight dtype must be float32"
+    return rebind[IndexList[2]](coord_to_index_list(y.shape().tuple()))
 
 
 # ===-----------------------------------------------------------------------===#
@@ -5025,7 +5159,7 @@ struct LaunchHostFunc:
     ](
         # A mutable input buffer prevents the op from being DCE'd (see
         # `mo.sleep` above; tracked in GEX-3080).
-        payload: MutableInputTensor[dtype=DType.int64, rank=1, ...],
+        payload: MutableInputTensor[dtype=.int64, rank=1, ...],
         ctx: DeviceContext,
     ) raises:
         comptime _HostFuncTy = def(OpaquePointer[MutAnyOrigin]) thin -> None
@@ -5069,7 +5203,7 @@ struct WaitHostValue:
         # MutableInputTensor mirrors `mo.launch_host_func` so this op is
         # not DCE'd. Both the CompletionFlag pointer and the expected
         # value encode into 64-bit elements.
-        payload: MutableInputTensor[dtype=DType.int64, rank=1, ...],
+        payload: MutableInputTensor[dtype=.int64, rank=1, ...],
         ctx: DeviceContext,
     ) raises:
         var flag = CompletionFlag(unsafe_from_address=Int(payload[0]))
@@ -5102,7 +5236,7 @@ struct WaitHostValueWithDep:
         dep_dtype: DType,
         dep_rank: Int,
     ](
-        payload: MutableInputTensor[dtype=DType.int64, rank=1, ...],
+        payload: MutableInputTensor[dtype=.int64, rank=1, ...],
         # `dep` is intentionally unused: it exists only to register a
         # mutation on the buffer so downstream consumers of the same
         # buffer chain after this op.

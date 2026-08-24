@@ -380,9 +380,7 @@ struct BlockReducer[BLOCK_SIZE: Int](Reducer, TrivialRegisterPassable):
             _warp_shuffle_combine(state)
 
             comptime n_warps = Self.BLOCK_SIZE // WARP_SIZE
-            var shmem = stack_allocation[
-                n_warps, S, address_space=AddressSpace.SHARED
-            ]()
+            var shmem = stack_allocation[n_warps, S, address_space=.SHARED]()
             var w_idx = Int(warp_id())
             var l_idx = Int(lane_id())
 
@@ -403,10 +401,22 @@ struct BlockReducer[BLOCK_SIZE: Int](Reducer, TrivialRegisterPassable):
                     shmem[0] = state
             barrier()
             state = shmem[0]
+            # The broadcast read above is the last shmem access of this
+            # combine, with no barrier after it — so when a kernel calls
+            # `generic` again (the block tier grid-strides several rows per
+            # block), a fast warp's next-call publish can overwrite `shmem`
+            # while a lagging warp still reads it. NVIDIA/AMD warps never
+            # drift that far in practice; Metal loses this race readily
+            # (measured: layer_norm block tier, run-to-run divergent bytes
+            # on M5, frequency scaling with rows per block). Close the
+            # reuse window on Apple only, keeping other targets' codegen
+            # byte-identical.
+            comptime if is_apple_gpu():
+                barrier()
         else:
             # Block-wide shmem tree: log2(BLOCK_SIZE) halving steps.
             var shmem = stack_allocation[
-                Self.BLOCK_SIZE, S, address_space=AddressSpace.SHARED
+                Self.BLOCK_SIZE, S, address_space=.SHARED
             ]()
             var tid = Int(thread_idx.x)
             shmem[tid] = state
@@ -425,6 +435,10 @@ struct BlockReducer[BLOCK_SIZE: Int](Reducer, TrivialRegisterPassable):
                 barrier()
 
             state = shmem[0]
+            # Same cross-call shmem-reuse race as the small-state path
+            # above; same Apple-only close.
+            comptime if is_apple_gpu():
+                barrier()
 
 
 struct WarpReducer[WARPS_PER_BLOCK: Int = 1](Reducer, TrivialRegisterPassable):
@@ -523,7 +537,7 @@ struct WarpReducer[WARPS_PER_BLOCK: Int = 1](Reducer, TrivialRegisterPassable):
             var shmem = stack_allocation[
                 Self.WARPS_PER_BLOCK * WARP_SIZE,
                 S,
-                address_space=AddressSpace.SHARED,
+                address_space=.SHARED,
             ]()
             var warp_base = Int(warp_id()) * WARP_SIZE
             var lid = Int(lane_id())
@@ -846,9 +860,7 @@ def pjoin[
             + row_idx_ * blocks_per_row_ * _SPLITK_STATE_BYTES
         )
         var counter_ptr = ctx._counters_base + row_idx_
-        var last_shmem = stack_allocation[
-            1, Bool, address_space=AddressSpace.SHARED
-        ]()
+        var last_shmem = stack_allocation[1, Bool, address_space=.SHARED]()
         var tid_ = thread_idx.x
         if tid_ == 0:
             var slot_ptr = (
@@ -1014,6 +1026,27 @@ def _pointwise_splitk_combine[
     return local
 
 
+@always_inline
+def _num_rows_excluding_axis[axis: Int](shape: Coord) -> Int:
+    """Product of `shape`'s dims other than `axis`.
+
+    `shape.product() // shape[axis]` cannot supply that count when the
+    reduce axis is empty (`shape[axis] == 0`). Not because it faults:
+    Mojo's `//` inserts a zero-guard, so `0 // 0` yields `0` —
+    indistinguishable from the `0` a shape with no rows at all produces,
+    which is exactly why an empty axis used to read as "nothing to
+    launch". A reduce-shaped body still owns one output per row when the
+    axis is empty (the monoid identity, from an axis walk of zero
+    elements), so both `launch` and every per-tier kernel count rows
+    without dividing by the (possibly empty) axis.
+    """
+    var num_rows = 1
+    comptime for i in range(shape.rank):
+        if i != axis:
+            num_rows *= Int(shape[i].value())
+    return num_rows
+
+
 # ===-----------------------------------------------------------------------===#
 # Kernels — one per tier; each binds `ctx` and calls the body.
 # ===-----------------------------------------------------------------------===#
@@ -1036,13 +1069,13 @@ struct _BlockKernel[rank: Int, params: ContextParams, Body: RowBody](
     """Block-per-row kernel: one block per row, grid-strided over rows."""
 
     var body: Self.Body
-    var shape: DynamicCoord[DType.int64, Self.rank]
+    var shape: DynamicCoord[.int64, Self.rank]
 
     @always_inline
     def __init__(
         out self,
         body: Self.Body,
-        shape: DynamicCoord[DType.int64, Self.rank],
+        shape: DynamicCoord[.int64, Self.rank],
     ):
         # `body` borrowed + copied (not consumed) so the launch's dispatch
         # closures can construct the kernel without moving out of a
@@ -1056,8 +1089,7 @@ struct _BlockKernel[rank: Int, params: ContextParams, Body: RowBody](
         )
     )
     def __call__(self) capturing:
-        var row_size = Int(self.shape[Self.params.axis].value())
-        var num_rows = Int(self.shape.product()) // row_size
+        var num_rows = _num_rows_excluding_axis[Self.params.axis](self.shape)
 
         with PDL():
             var ctx = Context[Self.params].empty()
@@ -1075,13 +1107,13 @@ struct _WarpKernel[rank: Int, params: ContextParams, Body: RowBody](
     grid-strided over row groups."""
 
     var body: Self.Body
-    var shape: DynamicCoord[DType.int64, Self.rank]
+    var shape: DynamicCoord[.int64, Self.rank]
 
     @always_inline
     def __init__(
         out self,
         body: Self.Body,
-        shape: DynamicCoord[DType.int64, Self.rank],
+        shape: DynamicCoord[.int64, Self.rank],
     ):
         self.body = body
         self.shape = shape
@@ -1093,8 +1125,7 @@ struct _WarpKernel[rank: Int, params: ContextParams, Body: RowBody](
     )
     def __call__(self) capturing:
         comptime warps_per_block = Self.params.BLOCK_SIZE // WARP_SIZE
-        var row_size = Int(self.shape[Self.params.axis].value())
-        var num_rows = Int(self.shape.product()) // row_size
+        var num_rows = _num_rows_excluding_axis[Self.params.axis](self.shape)
 
         with PDL():
             var ctx = Context[Self.params].empty()
@@ -1119,13 +1150,13 @@ struct _TiledKernel[rank: Int, params: ContextParams, Body: RowBody](
     Grid-strided over output tiles."""
 
     var body: Self.Body
-    var shape: DynamicCoord[DType.int64, Self.rank]
+    var shape: DynamicCoord[.int64, Self.rank]
 
     @always_inline
     def __init__(
         out self,
         body: Self.Body,
-        shape: DynamicCoord[DType.int64, Self.rank],
+        shape: DynamicCoord[.int64, Self.rank],
     ):
         self.body = body
         self.shape = shape
@@ -1144,8 +1175,7 @@ struct _TiledKernel[rank: Int, params: ContextParams, Body: RowBody](
             or Self.params._tier == ReduceTier.Serial
         ), "tiled kernel needs a one-thread-per-output tier"
 
-        var axis_size = Int(self.shape[Self.params.axis].value())
-        var num_outputs = Int(self.shape.product()) // axis_size
+        var num_outputs = _num_rows_excluding_axis[Self.params.axis](self.shape)
 
         # Index math is not data-dependent — compute it before the PDL
         # wait so it overlaps with the prior grid's tail.
@@ -1177,7 +1207,7 @@ struct _SplitkKernel[rank: Int, params: ContextParams, Body: RowBody](
     without seeing the split-K plumbing."""
 
     var body: Self.Body
-    var shape: DynamicCoord[DType.int64, Self.rank]
+    var shape: DynamicCoord[.int64, Self.rank]
     var partials: UnsafePointer[UInt8, MutUntrackedOrigin]
     var counters: UnsafePointer[Int32, MutUntrackedOrigin]
     var blocks_per_row: Int32
@@ -1186,7 +1216,7 @@ struct _SplitkKernel[rank: Int, params: ContextParams, Body: RowBody](
     def __init__(
         out self,
         body: Self.Body,
-        shape: DynamicCoord[DType.int64, Self.rank],
+        shape: DynamicCoord[.int64, Self.rank],
         partials: UnsafePointer[UInt8, MutUntrackedOrigin],
         counters: UnsafePointer[Int32, MutUntrackedOrigin],
         blocks_per_row: Int32,
@@ -1203,8 +1233,7 @@ struct _SplitkKernel[rank: Int, params: ContextParams, Body: RowBody](
         )
     )
     def __call__(self) capturing:
-        var row_size = Int(self.shape[Self.params.axis].value())
-        var num_rows = Int(self.shape.product()) // row_size
+        var num_rows = _num_rows_excluding_axis[Self.params.axis](self.shape)
 
         var qr = udivmod(Int(block_idx.x), Int(self.blocks_per_row))
         var row_idx_ = qr[0]
@@ -1239,7 +1268,7 @@ struct _PointwiseSplitkKernel[rank: Int, params: ContextParams, Body: RowBody](
     unchanged; the `Row`'s pointwise-split-K branch reads `ctx._phase`."""
 
     var body: Self.Body
-    var shape: DynamicCoord[DType.int64, Self.rank]
+    var shape: DynamicCoord[.int64, Self.rank]
     var partials: UnsafePointer[UInt8, MutUntrackedOrigin]
     var num_splits: Int32
     var phase: Int32
@@ -1248,7 +1277,7 @@ struct _PointwiseSplitkKernel[rank: Int, params: ContextParams, Body: RowBody](
     def __init__(
         out self,
         body: Self.Body,
-        shape: DynamicCoord[DType.int64, Self.rank],
+        shape: DynamicCoord[.int64, Self.rank],
         partials: UnsafePointer[UInt8, MutUntrackedOrigin],
         num_splits: Int32,
         phase: Int32,
@@ -1265,8 +1294,7 @@ struct _PointwiseSplitkKernel[rank: Int, params: ContextParams, Body: RowBody](
         )
     )
     def __call__(self) capturing:
-        var row_size = Int(self.shape[Self.params.axis].value())
-        var num_rows = Int(self.shape.product()) // row_size
+        var num_rows = _num_rows_excluding_axis[Self.params.axis](self.shape)
 
         var qr = udivmod(Int(block_idx.x), Int(self.num_splits))
         var row_idx_ = qr[0]
@@ -1399,8 +1427,14 @@ def launch[
     var shape_il = coord_to_index_list(shape)
     var shape_dc = Coord(shape_il)
     var row_size = shape_il[axis]
-    var num_rows = shape_il.flattened_length() // row_size
-    if num_rows == 0 or row_size == 0:
+    # `num_rows` is the product of every dim other than `axis`, so it stays
+    # well-defined when the reduce axis itself is empty (`row_size == 0`) —
+    # unlike `flattened_length() // row_size`, which is a `0 // 0` form in
+    # that case. A reduce-shaped body still owns one output per row when
+    # the axis is empty (the monoid identity), so only `num_rows == 0`
+    # (no rows at all) means there is truly nothing to launch.
+    var num_rows = _num_rows_excluding_axis[axis](shape_dc)
+    if num_rows == 0:
         return
 
     # ----- Non-inner axis ------------------------------------------------
@@ -1528,7 +1562,7 @@ def launch[
             # write phase needs no slot of its own). No memset — slot
             # [row, reduce, split] is written in its reduce's partial phase
             # before any combine reads it.
-            var partials_buf = ctx.enqueue_create_buffer[DType.uint8](
+            var partials_buf = ctx.enqueue_create_buffer[.uint8](
                 num_rows * (num_phases - 1) * num_splits * _SPLITK_STATE_BYTES
             )
             var partials_ptr = partials_buf.unsafe_ptr().unsafe_origin_cast[
@@ -1678,10 +1712,10 @@ def launch[
                 )
             var total_blocks = num_rows * blocks_per_row
 
-            var partials_buf = ctx.enqueue_create_buffer[DType.uint8](
+            var partials_buf = ctx.enqueue_create_buffer[.uint8](
                 total_blocks * _SPLITK_STATE_BYTES
             )
-            var counters_buf = ctx.enqueue_create_buffer[DType.int32](num_rows)
+            var counters_buf = ctx.enqueue_create_buffer[.int32](num_rows)
             ctx.enqueue_memset(counters_buf, Int32(0))
 
             var partials_ptr = partials_buf.unsafe_ptr().unsafe_origin_cast[

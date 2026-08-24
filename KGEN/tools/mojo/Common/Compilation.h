@@ -20,8 +20,10 @@
 
 #include "KGEN/ExecutionEngine/ExecutionEngine.h"
 #include "KGEN/ToolCommon/CompilationOptions.h"
+#include "KGEN/ToolCommon/PassManagerConfigOptions.h"
 #include "Support/Driver/DriverSupport.h"
 #include "Support/ErrorOr.h"
+#include "mlir/Support/Timing.h"
 #include "llvm/Option/ArgList.h"
 
 namespace llvm {
@@ -30,7 +32,6 @@ class SourceMgr;
 
 namespace mlir {
 class PassManager;
-class TimingScope;
 } // namespace mlir
 
 namespace M {
@@ -202,6 +203,90 @@ ErrorOrSuccess parseTargetOptions(
     llvm::opt::OptSpecifier relocationModelId = {},
     llvm::opt::OptSpecifier abiId = {});
 
+/// This class holds the MLIR timing manager for one compiler command, and
+/// gives the root scope that the steps of the compilation nest under. The
+/// timing is off unless the `--mlir-timing` option is present. A command
+/// without the option nests the parse under an empty scope, which records
+/// nothing, and leaves `PassManagerConfigOptions::timingScope` unset, so no
+/// pass manager gains timing instrumentation.
+class MLIRPassTiming {
+public:
+  // `passManagerOptions` gives the address of `root` to other code. A move of
+  // this object makes that address invalid. A copy is also not correct,
+  // because each copy prints the same report again.
+  MLIRPassTiming() = default;
+  MLIRPassTiming(const MLIRPassTiming &) = delete;
+  MLIRPassTiming &operator=(const MLIRPassTiming &) = delete;
+  MLIRPassTiming(MLIRPassTiming &&) = delete;
+  MLIRPassTiming &operator=(MLIRPassTiming &&) = delete;
+
+  /// Makes the timing active if the `--mlir-timing` option is present. Sets
+  /// the display mode from the `--mlir-timing-display` option. Gives an error
+  /// if the display mode is not correct.
+  ErrorOrSuccess configure(const llvm::opt::InputArgList &args,
+                           llvm::opt::OptSpecifier timingId,
+                           llvm::opt::OptSpecifier displayModeId);
+
+  /// The root scope for the steps of the compilation. The scope is empty if
+  /// the timing is off.
+  mlir::TimingScope &rootScope() { return root; }
+
+  /// The pass manager configuration that sends the times to this scope. The
+  /// scope stays empty if the timing is off. Then a build that has the trace
+  /// function keeps its own timing manager.
+  KGEN::PassManagerConfigOptions passManagerOptions();
+
+  /// Prints the report and stops the timing, for a command that keeps working
+  /// after the compilation. `mojo run` executes the program next: the wall
+  /// time of the program does not belong in the report, and an `exit()` from
+  /// the program would suppress the report. A command that ends with the
+  /// compilation leaves this to the destructor.
+  void finish();
+
+  ~MLIRPassTiming() { finish(); }
+
+private:
+  mlir::DefaultTimingManager manager;
+  // `root` comes after the manager in this declaration. Thus the program
+  // destroys `root` first, and the manager sees a scope that is not active if
+  // it prints from its own destructor.
+  mlir::TimingScope root;
+};
+
+/// This class turns on the pass timing of LLVM for one compiler command.
+/// `StandardInstrumentations` and the legacy pass manager already install the
+/// instrumentation that collects the times. LLVM keeps the times in timer
+/// groups that are global to the process. Therefore this class only starts the
+/// collection and prints the report.
+class LLVMPassTiming {
+public:
+  // The destructor prints the report and changes state that is global to the
+  // process. A copy or a move of this object prints the report again.
+  LLVMPassTiming() = default;
+  LLVMPassTiming(const LLVMPassTiming &) = delete;
+  LLVMPassTiming &operator=(const LLVMPassTiming &) = delete;
+  LLVMPassTiming(LLVMPassTiming &&) = delete;
+  LLVMPassTiming &operator=(LLVMPassTiming &&) = delete;
+
+  /// Turns on the timing if the command has the `--llvm-timing` option. Also
+  /// sets the compilation to one thread, because the timers of LLVM are
+  /// global to the process and are not safe for more than one thread. Call
+  /// this before the program makes the CPU device from `options`.
+  void configure(const llvm::opt::InputArgList &args,
+                 llvm::opt::OptSpecifier timingId,
+                 KGEN::CompilationOptions &options);
+
+  /// Prints the report to stderr and clears the timers. Does nothing if the
+  /// timing is off. Does nothing on a second call. The destructor calls this
+  /// function for a command that ends with the compilation.
+  void finish();
+
+  ~LLVMPassTiming() { finish(); }
+
+private:
+  bool enabled = false;
+};
+
 /// Wrap a parser invocation to Mojo, populating the necessary parsing context,
 /// and attaching post parse metadata. On success, returns the parsed module
 /// operation. If the `autoFixIt` flag is set and the parser collects any
@@ -215,6 +300,7 @@ ErrorOr<OwningOpRef<ModuleOp>> invokeMojoParser(
     llvm::opt::OptSpecifier stripFilePrefixId,
     llvm::opt::OptSpecifier disableBuiltins, llvm::opt::OptSpecifier stdlibPath,
     llvm::opt::OptSpecifier autoFixIt, llvm::opt::OptSpecifier exportFixit,
+    mlir::TimingScope *timingScope,
     function_ref<OwningOpRef<ModuleOp>(KGEN::LIT::ParserConfig &,
                                        mlir::TimingScope &)>
         parseFn);

@@ -13,18 +13,18 @@
 
 
 @no_inline
-def takeIt[F: def[width: Int](idx: Int) -> Scalar[DType.int]](impl: F):
+def takeIt[F: def[width: Int](idx: Int) -> Int](impl: F):
     print(impl.__call__[1](0))
 
 
-def emitLoad(x: SIMD[DType.int, 1]):
-    var ptr = alloc[SIMD[DType.int, 1]]({count = 1}).unsafe_leak()
+def emitLoad(x: Int):
+    var ptr = alloc[Int]({count = 1}).unsafe_leak()
     ptr.store(x)
-    var count = Scalar[DType.int](0)
+    var count = Int(0)
 
     @no_inline
-    def foo[width: Int](idx: Int) {mut count, read ptr} -> Scalar[DType.int]:
-        var vec = ptr.load[width=width](idx).cast[DType.int]()
+    def foo[width: Int](idx: Int) {mut count, read ptr} -> Int:
+        var vec = ptr.load[width=width](idx).cast[.int]()
         count = count + rebind[type_of(count)](vec)
         return count
 

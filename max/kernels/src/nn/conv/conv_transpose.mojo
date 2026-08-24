@@ -489,7 +489,7 @@ struct ConvTransposedPacked[
     # padded, only ho is partitioned for now.
     var partition: ConvPartition
 
-    var cf_tile_size: DynamicCoord[DType.int64, 2]
+    var cf_tile_size: DynamicCoord[.int64, 2]
 
     @staticmethod
     def run(
@@ -500,7 +500,7 @@ struct ConvTransposedPacked[
             Self.output_origin,
             Storage=Self.output_storage,
             linear_idx_type=Self.output_linear_idx_type,
-            address_space=AddressSpace.GENERIC,
+            address_space=.GENERIC,
             ...,
         ],
         input: TileTensor[
@@ -509,7 +509,7 @@ struct ConvTransposedPacked[
             Self.input_origin,
             Storage=Self.input_storage,
             linear_idx_type=Self.input_linear_idx_type,
-            address_space=AddressSpace.GENERIC,
+            address_space=.GENERIC,
             ...,
         ],
         filter: TileTensor[
@@ -518,7 +518,7 @@ struct ConvTransposedPacked[
             Self.filter_origin,
             Storage=Self.filter_storage,
             linear_idx_type=Self.filter_linear_idx_type,
-            address_space=AddressSpace.GENERIC,
+            address_space=.GENERIC,
             ...,
         ],
         conv_shape: ConvShape[Self.conv_attr_rank],
@@ -1552,9 +1552,9 @@ def conv_transposed_cpu[
     has_epilogue_fusion: Bool,
     elementwise_lambda: elementwise_simd_epilogue_type,
 ](
-    output: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
-    input: TileTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
-    filter: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
+    output: TileTensor[mut=True, address_space=.GENERIC, ...],
+    input: TileTensor[mut=False, address_space=.GENERIC, ...],
+    filter: TileTensor[mut=True, address_space=.GENERIC, ...],
     stride: IndexList[input.rank - 2],
     dilation: IndexList[input.rank - 2],
     pad_d: IndexList[2],
@@ -1709,18 +1709,9 @@ def conv_transposed_gpu[
     output_type: DType,
     elementwise_epilogue: Optional[elementwise_simd_epilogue_type] = None,
 ](
-    output: TileTensor[
-        mut=True,
-        output_type,
-        address_space=AddressSpace.GENERIC,
-        ...,
-    ],
-    input: TileTensor[
-        mut=False, input_type, address_space=AddressSpace.GENERIC, ...
-    ],
-    filter: TileTensor[
-        mut=False, filter_type, address_space=AddressSpace.GENERIC, ...
-    ],
+    output: TileTensor[mut=True, output_type, address_space=.GENERIC, ...],
+    input: TileTensor[mut=False, input_type, address_space=.GENERIC, ...],
+    filter: TileTensor[mut=False, filter_type, address_space=.GENERIC, ...],
     stride: IndexList[input.rank - 2],
     dilation: IndexList[input.rank - 2],
     padding: IndexList[input.rank - 2],
@@ -1797,13 +1788,9 @@ def _conv_transposed_cudnn[
     filter_type: DType,
     output_type: DType,
 ](
-    input: TileTensor[
-        mut=False, input_type, address_space=AddressSpace.GENERIC, ...
-    ],
-    filter: TileTensor[
-        mut=False, filter_type, address_space=AddressSpace.GENERIC, ...
-    ],
-    output: TileTensor[output_type, address_space=AddressSpace.GENERIC, ...],
+    input: TileTensor[mut=False, input_type, address_space=.GENERIC, ...],
+    filter: TileTensor[mut=False, filter_type, address_space=.GENERIC, ...],
+    output: TileTensor[output_type, address_space=.GENERIC, ...],
     stride: IndexList[2],
     dilation: IndexList[2],
     padding: IndexList[2],
@@ -1887,9 +1874,7 @@ def _conv_transposed_cudnn[
         )
     )
 
-    var workspace_buffer = ctx.enqueue_create_buffer[DType.uint8](
-        workspace_size
-    )
+    var workspace_buffer = ctx.enqueue_create_buffer[.uint8](workspace_size)
 
     var alpha = Float32(1.0)
     var beta = Float32(0.0)
@@ -1921,13 +1906,9 @@ def conv_transposed_cudnn[
     filter_type: DType,
     output_type: DType,
 ](
-    input: TileTensor[
-        mut=False, input_type, address_space=AddressSpace.GENERIC, ...
-    ],
-    filter: TileTensor[
-        mut=False, filter_type, address_space=AddressSpace.GENERIC, ...
-    ],
-    output: TileTensor[output_type, address_space=AddressSpace.GENERIC, ...],
+    input: TileTensor[mut=False, input_type, address_space=.GENERIC, ...],
+    filter: TileTensor[mut=False, filter_type, address_space=.GENERIC, ...],
+    output: TileTensor[output_type, address_space=.GENERIC, ...],
     stride: IndexList[2],
     dilation: IndexList[2],
     padding: IndexList[2],

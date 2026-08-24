@@ -118,9 +118,9 @@ def cdna4_block_scaled_mfma[
     a_matrix_format: CDNA4F8F6F4MatrixFormat,
     b_matrix_format: CDNA4F8F6F4MatrixFormat,
 ](
-    mut d: SIMD[DType.float32, _],
-    a: SIMD[DType.uint8, _],
-    b: SIMD[DType.uint8, _],
+    mut d: SIMD[.float32, _],
+    a: SIMD[.uint8, _],
+    b: SIMD[.uint8, _],
     packed_scale_word_a: Int32,
     packed_scale_word_b: Int32,
 ):
@@ -148,10 +148,10 @@ def cdna4_block_scaled_mfma[
     # scale word: 0 -> bits 7:0, 1 -> 15:8, 2 -> 23:16, 3 -> 31:24.
     d = llvm_intrinsic[
         intrinsic,
-        SIMD[DType.float32, d.length],
+        SIMD[.float32, d.length],
     ](
-        bitcast[DType.int32, a.length // size_of[DType.int32]()](a),
-        bitcast[DType.int32, b.length // size_of[DType.int32]()](b),
+        bitcast[.int32, a.length // size_of[DType.int32]()](a),
+        bitcast[.int32, b.length // size_of[DType.int32]()](b),
         d,
         a_matrix_format,
         b_matrix_format,

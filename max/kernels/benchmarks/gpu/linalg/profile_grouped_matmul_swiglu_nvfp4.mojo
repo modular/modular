@@ -325,23 +325,23 @@ def main() raises:
         ctx.enqueue_memset(s_buf, Scalar[scales_dtype](0))
 
         # Per-expert offsets / IDs (small, host-built once).
-        var a_offsets_host_alloc = alloc[Scalar[DType.uint32]](
+        var a_offsets_host_alloc = alloc[UInt32](
             {count = num_active_experts + 1}
         ).into_managed()
         var a_offsets_host = a_offsets_host_alloc.unsafe_ptr()
-        var a_scale_offsets_host_alloc = alloc[Scalar[DType.uint32]](
+        var a_scale_offsets_host_alloc = alloc[UInt32](
             {count = num_active_experts}
         ).into_managed()
         var a_scale_offsets_host = a_scale_offsets_host_alloc.unsafe_ptr()
-        var expert_ids_host_alloc = alloc[Scalar[DType.int32]](
+        var expert_ids_host_alloc = alloc[Int32](
             {count = num_active_experts}
         ).into_managed()
         var expert_ids_host = expert_ids_host_alloc.unsafe_ptr()
-        var expert_scales_host_alloc = alloc[Scalar[DType.float32]](
+        var expert_scales_host_alloc = alloc[Float32](
             {count = num_experts}
         ).into_managed()
         var expert_scales_host = expert_scales_host_alloc.unsafe_ptr()
-        var input_scales_host_alloc = alloc[Scalar[DType.float32]](
+        var input_scales_host_alloc = alloc[Float32](
             {count = num_active_experts}
         ).into_managed()
         var input_scales_host = input_scales_host_alloc.unsafe_ptr()
@@ -361,19 +361,17 @@ def main() raises:
         for i in range(num_active_experts):
             input_scales_host[i] = 1.0 + Float32(i + 1) * 0.01
 
-        var a_offsets_dev = ctx.enqueue_create_buffer[DType.uint32](
+        var a_offsets_dev = ctx.enqueue_create_buffer[.uint32](
             num_active_experts + 1
         )
-        var a_scale_offsets_dev = ctx.enqueue_create_buffer[DType.uint32](
+        var a_scale_offsets_dev = ctx.enqueue_create_buffer[.uint32](
             num_active_experts
         )
-        var expert_ids_dev = ctx.enqueue_create_buffer[DType.int32](
+        var expert_ids_dev = ctx.enqueue_create_buffer[.int32](
             num_active_experts
         )
-        var expert_scales_dev = ctx.enqueue_create_buffer[DType.float32](
-            num_experts
-        )
-        var input_scales_dev = ctx.enqueue_create_buffer[DType.float32](
+        var expert_scales_dev = ctx.enqueue_create_buffer[.float32](num_experts)
+        var input_scales_dev = ctx.enqueue_create_buffer[.float32](
             num_active_experts
         )
 
@@ -390,9 +388,7 @@ def main() raises:
         var trace_buf_size = trace_num_blocks * Int(
             GROUPED_SWIGLU_TRACE_EVENTS_PER_BLOCK
         )
-        var trace_buf_dev = ctx.enqueue_create_buffer[DType.uint64](
-            trace_buf_size
-        )
+        var trace_buf_dev = ctx.enqueue_create_buffer[.uint64](trace_buf_size)
         ctx.enqueue_memset(trace_buf_dev, UInt64(0))
 
         ctx.synchronize()
@@ -731,7 +727,7 @@ def main() raises:
         # Issue latency = X_S − X_D. Real-work span = X_E − X_S.
         # Slot 0 (= L0_D) is the kernel-never-ran sentinel.
         if trace and fused:
-            var trace_host_alloc = alloc[Scalar[DType.uint64]](
+            var trace_host_alloc = alloc[UInt64](
                 {count = trace_buf_size}
             ).into_managed()
             var trace_host = trace_host_alloc.unsafe_ptr()

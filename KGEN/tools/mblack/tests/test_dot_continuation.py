@@ -13,9 +13,7 @@
 
 # Tests for dot-prefixed method chain continuation across lines.
 
-import pytest
-import mblack.parsing
-from tests.util import assert_mojo_format, mojo_format_str
+from tests.util import assert_mojo_format
 
 
 def test_dot_continuation():
@@ -76,15 +74,14 @@ def test_dot_continuation_chained():
 
 
 def test_dot_at_same_indent_not_joined():
-    """A dot line at same or lesser indent should not be joined — it's likely
-    a separate statement or error, not a continuation."""
+    """A dot line at same or lesser indent should not be joined — it's a separate
+    statement (e.g. an inferred member reference), not a continuation."""
     source = (
         "def main():\n"
         '    var x = String("hello")\n'
         "    .upper()\n"
     )
-    with pytest.raises(mblack.parsing.InvalidInput):
-        mojo_format_str(source)
+    assert_mojo_format(source, source)
 
 
 def test_ellipsis_not_joined():

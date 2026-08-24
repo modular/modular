@@ -55,9 +55,7 @@ class DeepseekV3_2Model(DeepseekV3Model):
         #   == num_devices  ->  DP attention  (each device owns a batch shard)
         #   == 1            ->  TP attention  (heads sharded, tokens replicated)
         data_parallel_degree = self.pipeline_config.model.data_parallel_degree
-        max_batch_total_tokens = (
-            self.pipeline_config.runtime.max_batch_total_tokens
-        )
+        max_batch_total_tokens = self.planned_max_batch_total_tokens
         # PipelineConfig would automatically resolve it if not set by user.
         assert max_batch_total_tokens is not None, "max_length must be set"
 
@@ -138,7 +136,7 @@ class DeepseekV3_2Model(DeepseekV3Model):
             correction_bias_dtype = None
 
         # Initialize config with parameters from pipeline_config
-        model_config = self.model_config_cls.initialize(self.pipeline_config)
+        model_config = self.arch_config
 
         # Finalize config with state_dict-dependent parameters
         model_config.norm_dtype = norm_dtype

@@ -73,7 +73,7 @@ __extension Attention:
         comptime k_swizzle = Swizzle(2, 0, 2)
 
         var warp_id = UInt32(
-            readfirstlane(bitcast[DType.int32](UInt32(get_warp_id())))
+            readfirstlane(bitcast[.int32](UInt32(get_warp_id())))
         )
 
         # QK MMA op.

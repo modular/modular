@@ -131,7 +131,7 @@ def bench_topk_batched[
 
     ctx.enqueue_copy(device_in_buffer, in_buffer_ptr)
 
-    var K_dev_buffer = ctx.enqueue_create_buffer[DType.int64](batch_size)
+    var K_dev_buffer = ctx.enqueue_create_buffer[.int64](batch_size)
     var k = TileTensor(K_dev_buffer, row_major(batch_size))
     var K_host_ptr = List(length=batch_size, fill=Int64(K))
     var K_host_buffer = TileTensor(K_host_ptr, row_major(batch_size))
@@ -148,7 +148,7 @@ def bench_topk_batched[
     ctx.enqueue_copy(K_dev_buffer, K_host_ptr)
 
     # Top-p buffer.
-    var top_p_dev_buffer = ctx.enqueue_create_buffer[DType.float32](batch_size)
+    var top_p_dev_buffer = ctx.enqueue_create_buffer[.float32](batch_size)
     var top_p_host_ptr = List(length=batch_size, fill=top_p)
     ctx.enqueue_copy(top_p_dev_buffer, top_p_host_ptr)
     var top_p_tt = TileTensor(top_p_dev_buffer, row_major(batch_size))
@@ -224,7 +224,7 @@ def bench_topk_batched[
                 topk_vals_cpu_ptr[i],
             )
 
-            comptime if dtype == DType.float32:
+            comptime if dtype == .float32:
                 assert_equal(
                     topk_idxs_ptr[i],
                     topk_idxs_cpu_ptr[i].cast[out_idx_type](),
@@ -250,7 +250,7 @@ def bench_topk_batched[
 def bench_topk_multi_rank[
     dtype: DType,
     rank: Int,
-    out_idx_type: DType = DType.int,
+    out_idx_type: DType = .int,
 ](
     ctx: DeviceContext,
     mut m: Bench,
@@ -319,7 +319,7 @@ def bench_topk_multi_rank[
     var K_host_ptr = List(length=batch_size, fill=Int64(K))
     var K_host_buffer = TileTensor(K_host_ptr, row_major(batch_size))
 
-    var K_dev_buffer = ctx.enqueue_create_buffer[DType.int64](batch_size)
+    var K_dev_buffer = ctx.enqueue_create_buffer[.int64](batch_size)
     var k = TileTensor(K_dev_buffer, row_major(batch_size))
     ctx.enqueue_copy(K_dev_buffer, K_host_ptr)
     ctx.synchronize()
@@ -394,7 +394,7 @@ def bench_topk_multi_rank[
                 topk_vals_cpu_ptr[i],
             )
 
-            comptime if dtype == DType.float32:
+            comptime if dtype == .float32:
                 assert_equal(
                     topk_idxs_ptr[i],
                     topk_idxs_cpu_ptr[i].cast[out_idx_type](),
@@ -442,9 +442,7 @@ def bench_topk_fi[
     var device_out_idxs_buffer = ctx.enqueue_create_buffer[out_idx_type](
         batch_size
     )
-    var device_temp_buffer = ctx.enqueue_create_buffer[DType.float32](
-        batch_size
-    )
+    var device_temp_buffer = ctx.enqueue_create_buffer[.float32](batch_size)
 
     var device_in = TileTensor(device_in_buffer, row_major(batch_size, N))
     var device_out_idxs = TileTensor(
@@ -460,7 +458,7 @@ def bench_topk_fi[
     ctx.enqueue_copy(device_temp_buffer, temp_host_ptr)
 
     # Create per-row seed buffer on device.
-    var seed_device_buffer = ctx.enqueue_create_buffer[DType.uint64](batch_size)
+    var seed_device_buffer = ctx.enqueue_create_buffer[.uint64](batch_size)
     var seed_host_ptr = List(length=batch_size, fill=UInt64(0))
     for i in range(batch_size):
         seed_host_ptr[i] = UInt64(42 + i)
@@ -552,22 +550,22 @@ def bench_topk_topp_dist[
     var tokens_dev = ctx.enqueue_create_buffer[out_idx_type](batch_size)
     # Kept allocated but unused when `emit_dist` is off, so the two variants
     # differ only in the kernel's work.
-    var dist_dev = ctx.enqueue_create_buffer[DType.float32](in_size)
+    var dist_dev = ctx.enqueue_create_buffer[.float32](in_size)
 
-    var temp_host = ctx.enqueue_create_host_buffer[DType.float32](batch_size)
-    var top_p_host = ctx.enqueue_create_host_buffer[DType.float32](batch_size)
+    var temp_host = ctx.enqueue_create_host_buffer[.float32](batch_size)
+    var top_p_host = ctx.enqueue_create_host_buffer[.float32](batch_size)
     var top_k_host = ctx.enqueue_create_host_buffer[out_idx_type](batch_size)
-    var seed_host = ctx.enqueue_create_host_buffer[DType.uint64](batch_size)
+    var seed_host = ctx.enqueue_create_host_buffer[.uint64](batch_size)
     for row in range(batch_size):
         temp_host[row] = temperature
         top_p_host[row] = top_p
         top_k_host[row] = Scalar[out_idx_type](k)
         seed_host[row] = UInt64(42 + row)
 
-    var temp_dev = ctx.enqueue_create_buffer[DType.float32](batch_size)
-    var top_p_dev = ctx.enqueue_create_buffer[DType.float32](batch_size)
+    var temp_dev = ctx.enqueue_create_buffer[.float32](batch_size)
+    var top_p_dev = ctx.enqueue_create_buffer[.float32](batch_size)
     var top_k_dev = ctx.enqueue_create_buffer[out_idx_type](batch_size)
-    var seed_dev = ctx.enqueue_create_buffer[DType.uint64](batch_size)
+    var seed_dev = ctx.enqueue_create_buffer[.uint64](batch_size)
     ctx.enqueue_copy(temp_dev, temp_host)
     ctx.enqueue_copy(top_p_dev, top_p_host)
     ctx.enqueue_copy(top_k_dev, top_k_host)
@@ -672,18 +670,18 @@ def bench_topk_topp_masked[
 
     var logits_dev = ctx.enqueue_create_buffer[dtype](in_size)
     ctx.enqueue_copy(logits_dev, in_buffer_ptr)
-    var probs_dev = ctx.enqueue_create_buffer[DType.float32](in_size)
+    var probs_dev = ctx.enqueue_create_buffer[.float32](in_size)
 
-    var temp_host = ctx.enqueue_create_host_buffer[DType.float32](batch_size)
-    var top_p_host = ctx.enqueue_create_host_buffer[DType.float32](batch_size)
-    var top_k_host = ctx.enqueue_create_host_buffer[DType.int64](batch_size)
+    var temp_host = ctx.enqueue_create_host_buffer[.float32](batch_size)
+    var top_p_host = ctx.enqueue_create_host_buffer[.float32](batch_size)
+    var top_k_host = ctx.enqueue_create_host_buffer[.int64](batch_size)
     for row in range(batch_size):
         temp_host[row] = temperature
         top_p_host[row] = top_p
         top_k_host[row] = Int64(k)
-    var temp_dev = ctx.enqueue_create_buffer[DType.float32](batch_size)
-    var top_p_dev = ctx.enqueue_create_buffer[DType.float32](batch_size)
-    var top_k_dev = ctx.enqueue_create_buffer[DType.int64](batch_size)
+    var temp_dev = ctx.enqueue_create_buffer[.float32](batch_size)
+    var top_p_dev = ctx.enqueue_create_buffer[.float32](batch_size)
+    var top_k_dev = ctx.enqueue_create_buffer[.int64](batch_size)
     ctx.enqueue_copy(temp_dev, temp_host)
     ctx.enqueue_copy(top_p_dev, top_p_host)
     ctx.enqueue_copy(top_k_dev, top_k_host)
@@ -840,9 +838,9 @@ def main() raises:
     var top_p = Float32(arg_parse("top_p", 0.95))
     var logit_sigma = arg_parse("logit_sigma", 2.0)
 
-    comptime dtype = get_defined_dtype["dtype", DType.float32]()
+    comptime dtype = get_defined_dtype["dtype", .float32]()
     comptime rank = get_defined_int["rank", 2]()
-    comptime out_idx_type = get_defined_dtype["out_idx_type", DType.int]()
+    comptime out_idx_type = get_defined_dtype["out_idx_type", .int]()
     comptime sampling = get_defined_bool["sampling", False]()
     comptime largest = get_defined_bool["largest", True]()
     comptime use_fi = get_defined_bool["USE_FI_TOPK_KERNEL", False]()
@@ -886,9 +884,9 @@ def main() raises:
                     )
 
                 if in_dtype_name == "bfloat16":
-                    run_masked[DType.bfloat16]()
+                    run_masked[.bfloat16]()
                 else:
-                    run_masked[DType.float32]()
+                    run_masked[.float32]()
                 m.dump_report()
                 return
 
@@ -911,9 +909,9 @@ def main() raises:
                 @__parameter
                 def run_dist_emit[emit: Bool]() raises:
                     if in_dtype_name == "bfloat16":
-                        run_dist[DType.bfloat16, emit]()
+                        run_dist[.bfloat16, emit]()
                     else:
-                        run_dist[DType.float32, emit]()
+                        run_dist[.float32, emit]()
 
                 if emit_dist:
                     run_dist_emit[True]()
@@ -949,8 +947,8 @@ def bench_dispatch[
     buf3.enqueue_fill(Scalar[dtype](0.04))
 
     comptime out_k = 1 if max_k == -1 else max_k
-    var out_buf = ctx.enqueue_create_buffer[DType.int32](batch_size * out_k)
-    var seed_buf = ctx.enqueue_create_buffer[DType.uint64](batch_size)
+    var out_buf = ctx.enqueue_create_buffer[.int32](batch_size * out_k)
+    var seed_buf = ctx.enqueue_create_buffer[.uint64](batch_size)
     seed_buf.enqueue_fill(UInt64(42))
     ctx.synchronize()
 
@@ -1066,7 +1064,7 @@ def bench_bitonic_topk(
     comptime dtype = DType.float32
 
     var scores_buf = ctx.enqueue_create_buffer[dtype](batch_size * N)
-    var idxs_buf = ctx.enqueue_create_buffer[DType.int32](batch_size * K)
+    var idxs_buf = ctx.enqueue_create_buffer[.int32](batch_size * K)
     # Fill scores with a non-trivial pattern so the sort is exercised.
     var scores_tt = TileTensor(scores_buf, row_major(batch_size, N))
     scores_buf.enqueue_fill(Scalar[dtype](0.5))
@@ -1082,7 +1080,7 @@ def bench_bitonic_topk(
                 rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
                     scores_tt.ptr
                 ),
-                rebind[UnsafePointer[Scalar[DType.int32], MutAnyOrigin]](
+                rebind[UnsafePointer[Int32, MutAnyOrigin]](
                     idxs_buf.unsafe_ptr()
                 ),
                 N,

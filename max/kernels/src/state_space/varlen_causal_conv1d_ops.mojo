@@ -83,8 +83,8 @@ struct CausalConv1DVarlenUpdate[activation: StaticString]:
         x: InputTensor[dtype=dtype, rank=3, ...],
         weight: InputTensor[dtype=dtype, rank=2, ...],
         bias: InputTensor[dtype=dtype, rank=1, ...],
-        cache_seqlens: InputTensor[dtype=DType.int32, rank=1, ...],
-        conv_state_indices: InputTensor[dtype=DType.int32, rank=1, ...],
+        cache_seqlens: InputTensor[dtype=.int32, rank=1, ...],
+        conv_state_indices: InputTensor[dtype=.int32, rank=1, ...],
         ctx: DeviceContext,
     ) capturing raises:
         var batch = x.dim_size(0)
@@ -93,12 +93,12 @@ struct CausalConv1DVarlenUpdate[activation: StaticString]:
         var width = weight.dim_size(1)
         var state_len = conv_state.dim_size(2)
 
-        var output_tt = output.to_tile_tensor[DType.int32]()
-        var x_tt = x.to_tile_tensor[DType.int32]()
-        var weight_tt = weight.to_tile_tensor[DType.int32]()
-        var bias_tt = bias.to_tile_tensor[DType.int32]()
-        var conv_state_tt = conv_state.to_tile_tensor[DType.int32]()
-        var cache_seqlens_tt = cache_seqlens.to_tile_tensor[DType.int32]()
+        var output_tt = output.to_tile_tensor[.int32]()
+        var x_tt = x.to_tile_tensor[.int32]()
+        var weight_tt = weight.to_tile_tensor[.int32]()
+        var bias_tt = bias.to_tile_tensor[.int32]()
+        var conv_state_tt = conv_state.to_tile_tensor[.int32]()
+        var cache_seqlens_tt = cache_seqlens.to_tile_tensor[.int32]()
         var conv_state_indices_tt = conv_state_indices.to_tile_tensor[
             DType.int32
         ]()
@@ -403,8 +403,8 @@ def causal_conv1d_varlen_update_shape[
     x: InputTensor[dtype=dtype, rank=3, ...],
     weight: InputTensor[dtype=dtype, rank=2, ...],
     bias: InputTensor[dtype=dtype, rank=1, ...],
-    cache_seqlens: InputTensor[dtype=DType.int32, rank=1, ...],
-    conv_state_indices: InputTensor[dtype=DType.int32, rank=1, ...],
+    cache_seqlens: InputTensor[dtype=.int32, rank=1, ...],
+    conv_state_indices: InputTensor[dtype=.int32, rank=1, ...],
 ) -> IndexList[3]:
     """Returns the output shape for the `causal_conv1d_varlen_update` op.
 
@@ -453,7 +453,7 @@ struct CausalConv1DVarlenStates:
     ](
         states: OutputTensor[dtype=dtype, rank=3, ...],
         x: InputTensor[dtype=dtype, rank=2, ...],
-        cu_seqlens: InputTensor[dtype=DType.int32, rank=1, ...],
+        cu_seqlens: InputTensor[dtype=.int32, rank=1, ...],
         ctx: DeviceContext,
     ) capturing raises:
         var total_tokens = x.dim_size(0)
@@ -461,9 +461,9 @@ struct CausalConv1DVarlenStates:
         var batch = cu_seqlens.dim_size(0) - 1
         var state_len = states.dim_size(2)
 
-        var states_tt = states.to_tile_tensor[DType.int32]()
-        var x_tt = x.to_tile_tensor[DType.int32]()
-        var cu_seqlens_tt = cu_seqlens.to_tile_tensor[DType.int32]()
+        var states_tt = states.to_tile_tensor[.int32]()
+        var x_tt = x.to_tile_tensor[.int32]()
+        var cu_seqlens_tt = cu_seqlens.to_tile_tensor[.int32]()
 
         var x_strides = x.strides()
         var states_strides = states.strides()
@@ -534,7 +534,7 @@ def causal_conv1d_varlen_states_shape[
     dtype: DType,
 ](
     x: InputTensor[dtype=dtype, rank=2, ...],
-    cu_seqlens: InputTensor[dtype=DType.int32, rank=1, ...],
+    cu_seqlens: InputTensor[dtype=.int32, rank=1, ...],
 ) -> IndexList[3]:
     """Returns the output shape for the `causal_conv1d_varlen_states` op.
 

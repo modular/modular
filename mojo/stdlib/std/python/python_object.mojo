@@ -254,17 +254,17 @@ struct PythonObject(
         """
         ref cpy = Python().cpython()
 
-        comptime if dtype == DType.bool:
+        comptime if dtype == .bool:
             var val = c_long(Int(value))
             self = Self(from_owned=cpy.PyBool_FromLong(val))
         elif dtype.is_unsigned():
-            var val = c_size_t(value.cast[DType.uint]())
+            var val = c_size_t(value.cast[.uint]())
             self = Self(from_owned=cpy.PyLong_FromSize_t(val))
         elif dtype.is_integral():
-            var val = c_ssize_t(value.cast[DType.int]())
+            var val = c_ssize_t(value.cast[.int]())
             self = Self(from_owned=cpy.PyLong_FromSsize_t(val))
         else:
-            var val = c_double(value.cast[DType.float64]())
+            var val = c_double(value.cast[.float64]())
             self = Self(from_owned=cpy.PyFloat_FromDouble(val))
 
     @implicit

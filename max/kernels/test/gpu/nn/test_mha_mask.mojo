@@ -102,10 +102,8 @@ def test_causal_mask_asm() raises:
     ):
         var mask = CausalMask()
         var vec = mask.mask(
-            IndexList[4, element_type=DType.uint32](
-                0, 0, Int(q_idx), Int(k_idx)
-            ),
-            SIMD[DType.float32, 4](0),
+            IndexList[4, element_type=.uint32](0, 0, Int(q_idx), Int(k_idx)),
+            SIMD[.float32, 4](0),
         )
         if (
             mask.status(
@@ -241,10 +239,8 @@ def test_sliding_window_causal_mask_asm() raises:
     ):
         var mask = SlidingWindowCausalMask[8]()
         var vec = mask.mask(
-            IndexList[4, element_type=DType.uint32](
-                0, 0, Int(q_idx), Int(k_idx)
-            ),
-            SIMD[DType.float32, 4](0),
+            IndexList[4, element_type=.uint32](0, 0, Int(q_idx), Int(k_idx)),
+            SIMD[.float32, 4](0),
         )
         if (
             mask.status(

@@ -1208,7 +1208,7 @@ def test_origin_of_deprecated[T: AnyType](a: T):
 
 def some_complex_calculation() -> Int: return 4
 comptime ideal_width = some_complex_calculation()*4
-comptime IdealSIMD = SIMD[DType.int32, ideal_width]
+comptime IdealSIMD = SIMD[.int32, ideal_width]
 
 def get_data() -> IdealSIMD: return IdealSIMD()
 
@@ -1223,20 +1223,20 @@ def sugar_test():
     sugar_test1(HasIntParam[int_fn(0)])
 
     var a = get_data()  # Ok
-    var b : SIMD[DType.int32, 4]
+    var b : SIMD[.int32, 4]
 
-    # expected-error @below {{cannot implicitly convert 'IdealSIMD' value to 'SIMD[DType.int32, SIMDLength(4)]'}}
-    # expected-note @below {{'IdealSIMD' is aka 'SIMD[DType.int32, Int((mul some_complex_calculation(), 4))]'}}
+    # expected-error @below {{cannot implicitly convert 'IdealSIMD' value to 'SIMD[.int32, 4]'}}
+    # expected-note @below {{'IdealSIMD' is aka 'SIMD[.int32, Int((mul some_complex_calculation(), 4))]'}}
     b = get_data()
 
     var c = a.join(a) # c has twice the width.
 
-    # expected-error @below {{cannot implicitly convert 'SIMD[DType.int32, (SIMDLength(Int((mul some_complex_calculation(), 4))) * SIMDLength(2))]' value to 'SIMD[DType.int32, SIMDLength(4)]'}}
-    # expected-note @below {{.size of the first value is '(SIMDLength(Int((mul some_complex_calculation(), 4))) * SIMDLength(2))' but the second value is 'SIMDLength(4)'}}
+    # expected-error @below {{cannot implicitly convert 'SIMD[.int32, (SIMDLength(Int((mul some_complex_calculation(), 4))) * 2)]' value to 'SIMD[.int32, 4]'}}
+    # expected-note @below {{.size of the first value is '(SIMDLength(Int((mul some_complex_calculation(), 4))) * 2)' but the second value is '4'}}
     b = c
 
-    # expected-error @below {{cannot implicitly convert 'IdealSIMD' value to 'SIMD[DType.int32, SIMDLength(4)]'}}
-    # expected-note @below {{'IdealSIMD' is aka 'SIMD[DType.int32, Int((mul some_complex_calculation(), 4))]'}}
+    # expected-error @below {{cannot implicitly convert 'IdealSIMD' value to 'SIMD[.int32, 4]'}}
+    # expected-note @below {{'IdealSIMD' is aka 'SIMD[.int32, Int((mul some_complex_calculation(), 4))]'}}
     b = a+a
 
 
@@ -1292,3 +1292,74 @@ def take_anytype[T: AnyType]():
 def ternary_missing_else(a: Int, b: Int) -> Int:
   # expected-error @+1 {{expected 'else' clause in ternary; add 'else' and the false branch}}
   return a if a > b
+
+
+##===----------------------------------------------------------------------===##
+# Inferred attribute references (`.member`)
+##===----------------------------------------------------------------------===##
+
+struct Color(ImplicitlyCopyable):
+  comptime red = Color()
+  comptime green = Color()
+  comptime blue = Color()
+  comptime size: Int = 42
+
+  @staticmethod
+  def hsb_to_rgb(h: Int, s: Int, b: Int) -> Color:
+    return Color()
+
+  @staticmethod
+  def alpha_blended[a: Int](x: Int, y: Int) -> Color:
+    return Color()
+
+  def opacity(self, amount: Float64) -> Color:
+    return Color()
+
+  def __init__(out self):
+    pass
+
+def takes_color(c: Color):  # expected-note {{function declared here}}
+  pass
+
+def takes_colors(colors: List[Color]):
+  pass
+
+def test_inferred_attribute_ref():
+  # Without a contextual type the base cannot be inferred.
+  # expected-error @below {{cannot resolve inferred member without a contextual type}}
+  _ = .red
+
+  # Call arguments provide a contextual type, so `.green` resolves as
+  # `Color.green`.
+  takes_color(.green)
+
+  var x: Color = .blue
+  takes_color(x)
+
+  # static methods also resolve.
+  takes_color(.hsb_to_rgb(120, 100, 50))
+
+  # Parentheses around inferred refs are transparent.
+  takes_color((.hsb_to_rgb)(120, 100, 50))
+
+  # Parametric static methods resolve too.
+  takes_color(.alpha_blended[42](1, 2))
+
+  # Chained members resolve the leading inferred base, then continue normally.
+  takes_color(.red.opacity(0.5))
+
+  # List elements resolve against the element type from List[Color].
+  takes_colors([.red, .green, .blue])
+  var palette: List[Color] = [.red, .hsb_to_rgb(120, 100, 50)]
+
+  # The member resolves on Color, but its type is Int rather than Color.
+  # expected-error @below {{cannot implicitly convert 'Int' value to 'Color'}}
+  var wrong: Color = .size
+
+  # expected-error @below {{cannot implicitly convert 'Int' value to 'Color'}}
+  # expected-error @below {{invalid call to 'takes_color': cannot resolve inferred attribute reference}}
+  takes_color(.size)
+
+def test_dtype_error_message():
+    # expected-error @below {{cannot implicitly convert 'SIMD[.float32, 3]' value to 'SIMD[.float32, 4]'}}
+    var x: SIMD[DType.float32, 4] = SIMD[DType.float32, 3](1.0)

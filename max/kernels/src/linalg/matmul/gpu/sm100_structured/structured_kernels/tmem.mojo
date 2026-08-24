@@ -341,7 +341,7 @@ struct TmemTensor[
     Example:
         # Create typed TMEM view with (64, 128) accumulator layout
         comptime layout = Layout.row_major(64, 128)
-        var tmem = TmemTensor[DType.float32, layout](col_offset)
+        var tmem = TmemTensor[.float32, layout](col_offset)
 
         # Use with MMA operations (returns raw UInt32 offset)
         mma_op.mma(a_tile, b_tile, tmem.offset(), init_c=True)
@@ -574,7 +574,7 @@ struct TmemFragments[
 
     Example:
         # Load both fragments in one call
-        var frags = TmemFragments[DType.float32, 16].load(tmem_addr)
+        var frags = TmemFragments[.float32, 16].load(tmem_addr)
 
         # Work with fragments
         frags.upper = process(frags.upper)

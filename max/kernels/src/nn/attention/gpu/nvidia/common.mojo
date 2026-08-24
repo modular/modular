@@ -107,7 +107,7 @@ comptime _LocalTT[dtype: DType, layout: InternalLayout] = TileTensor[
         stride_types=layout.stride_types,
     ],
     MutAnyOrigin,
-    address_space=AddressSpace.LOCAL,
+    address_space=.LOCAL,
 ]
 comptime _SharedMemTT[dtype: DType, layout: InternalLayout] = TileTensor[
     dtype,
@@ -116,7 +116,7 @@ comptime _SharedMemTT[dtype: DType, layout: InternalLayout] = TileTensor[
         stride_types=layout.stride_types,
     ],
     MutAnyOrigin,
-    address_space=AddressSpace.SHARED,
+    address_space=.SHARED,
 ]
 
 # TileTensor type alias for 1D row-major tensors with dynamic size, used for
@@ -126,9 +126,7 @@ comptime _1d_row_major_tt_layout = InternalLayout[
     stride_types=Coord[ComptimeInt[1]].element_types,
 ]
 comptime ImmutTileTensor1D[dtype: DType] = TileTensor[
-    dtype,
-    _1d_row_major_tt_layout,
-    ImmutAnyOrigin,
+    dtype, _1d_row_major_tt_layout, ImmutAnyOrigin
 ]
 
 
@@ -321,8 +319,8 @@ struct MHAPosition[
             dtype,
             Self.q_output_gmem_layout,
             type_of(ptr).origin,
-            layout_int_type=DType.int32,
-            linear_idx_type=DType.int32,
+            layout_int_type=.int32,
+            linear_idx_type=.int32,
             masked=True,
         ],
     ):
@@ -552,7 +550,7 @@ def get_seq_info[
     # SAFETY: Stored in MHATileState.sidx_ptr but never dereferenced.
     var state: MHATileState = scheduler.initial_state(
         UnsafePointer[
-            UInt32, MutAnyOrigin, address_space=AddressSpace.SHARED
+            UInt32, MutAnyOrigin, address_space=.SHARED
         ].unsafe_dangling(),
         tile_summary,
     )
@@ -969,8 +967,8 @@ def output_reg_to_smem_st_matrix[
         st_matrix_n_layout[
             output_type, padded_depth, num_m_mmas, num_consumer
         ](),
-        element_type=DType.int32,
-        linear_idx_type=DType.int32,
+        element_type=.int32,
+        linear_idx_type=.int32,
     ]()
 
     comptime for m_mma in range(num_m_mmas):
@@ -988,5 +986,5 @@ def output_reg_to_smem_st_matrix[
             var output_frag = output_reg_tile.raw_load[width=8](
                 m_mma * o_frag_size + i * 8
             ).cast[output_type]()
-            var output_frag_f32_packed = bitcast[DType.float32, 4](output_frag)
+            var output_frag_f32_packed = bitcast[.float32, 4](output_frag)
             st_matrix[simd_width=4](offset, output_frag_f32_packed)

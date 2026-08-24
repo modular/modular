@@ -214,11 +214,13 @@ arith_expr: term (('+'|'-') term)*
 term: factor (('*'|'@'|'/'|'%'|'//') factor)*
 factor: ('+'|'-'|'~') factor | power
 power: [AWAIT] atom trailer* ['**' factor]
+# Contextually inferred member references (`.member`) are atoms so they parse
+# wherever an expression is expected: call args, subscripts, annotations, etc.
 atom: ('(' [yield_expr|testlist_gexp] ')' |
        '[' [listmaker] ']' |
        '{' [dictsetmaker] '}' |
        '`' testlist1 '`' |
-       NAME | NUMBER | STRING+ | '.' '.' '.')
+       NAME | NUMBER | STRING+ | '.' NAME | '.' '.' '.')
 listmaker: (namedexpr_test|star_expr) ( old_comp_for | (',' (namedexpr_test|star_expr))* [','] )
 testlist_gexp: (namedexpr_test|star_expr) ( old_comp_for | (',' (namedexpr_test|star_expr))* [','] )
 # A Mojo lambda mirrors the `funcdef` signature (optional metaparams, an optional

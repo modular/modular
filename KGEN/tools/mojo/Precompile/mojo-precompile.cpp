@@ -577,6 +577,7 @@ static int precompile(const State &subcommandState) {
       /*definesId=*/llvm::opt::OptSpecifier(), options::OPT_strip_file_prefix,
       options::OPT_disable_builtins, options::OPT_mojo_search_paths,
       options::OPT_fixit, options::OPT_export_fixit,
+      /*timingScope=*/nullptr,
       [&](LIT::ParserConfig &parserConfig, mlir::TimingScope &ts) {
         OwningOpRef<ModuleOp> moduleOp;
         std::tie(moduleOp, packageOp) = LIT::importMojoPackage(

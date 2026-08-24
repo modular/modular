@@ -35,8 +35,11 @@ from max.pipelines.lib.config import (
     PipelineConfig,
     SpeculativeConfig,
 )
-from max.pipelines.lib.interfaces.arch_config import ArchConfigWithKVCache
+from max.pipelines.lib.interfaces.arch_config import (
+    ArchConfigWithKVCache,
+)
 from max.pipelines.modeling.config_enums import SupportedEncoding
+from transformers import AutoConfig
 from typing_extensions import Self
 
 from ..gemma4.model_config import Gemma4ForConditionalGenerationConfig
@@ -163,6 +166,8 @@ class UnifiedDSparkGemma4_31BConfig(ArchConfigWithKVCache):
         cls,
         pipeline_config: PipelineConfig,
         model_config: MAXModelConfig | None = None,
+        *,
+        max_seq_len: int,
     ) -> Self:
         model_config = model_config or pipeline_config.model
         assert model_config.huggingface_config is not None
@@ -173,7 +178,9 @@ class UnifiedDSparkGemma4_31BConfig(ArchConfigWithKVCache):
 
         target_config = (
             Gemma4ForConditionalGenerationConfig.initialize_from_config(
-                pipeline_config, model_config.huggingface_config
+                pipeline_config,
+                model_config.huggingface_config,
+                max_seq_len=max_seq_len,
             )
         )
         draft_config = DSparkSpeculatorsDraftConfig.from_huggingface_config(
@@ -207,3 +214,14 @@ class UnifiedDSparkGemma4_31BConfig(ArchConfigWithKVCache):
 
     def get_max_seq_len(self) -> int:
         return self.target.get_max_seq_len()
+
+    @classmethod
+    def calculate_max_seq_len(
+        cls,
+        pipeline_config: PipelineConfig,
+        huggingface_config: AutoConfig,
+        model_config: MAXModelConfig | None = None,
+    ) -> int:
+        return Gemma4ForConditionalGenerationConfig.calculate_max_seq_len(
+            pipeline_config, huggingface_config, model_config
+        )

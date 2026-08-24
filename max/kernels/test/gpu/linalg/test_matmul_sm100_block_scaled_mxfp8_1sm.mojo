@@ -189,7 +189,7 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
             if idx0 < Int(m.value()) and idx1 < Int(k.value()):
                 var scale_value = (
                     (1 << random_ui64(0, 3))
-                    .cast[DType.float32]()
+                    .cast[.float32]()
                     .cast[scales_dtype]()
                 )
                 set_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
@@ -209,7 +209,7 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
             if idx0 < Int(n.value()) and idx1 < Int(k.value()):
                 var scale_value = (
                     (1 << random_ui64(0, 3))
-                    .cast[DType.float32]()
+                    .cast[.float32]()
                     .cast[scales_dtype]()
                 )
                 set_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
@@ -253,7 +253,7 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         ctx,
     )
 
-    comptime assert a_type != DType.float8_e4m3fn or transpose_b, (
+    comptime assert a_type != .float8_e4m3fn or transpose_b, (
         "Testing is only supported for transposed_b==True when"
         " a_type==float8_e4m3fn. Add the non-transposed case if needed."
     )

@@ -396,18 +396,18 @@ def _test_elementwise_zero_dimension_3d(ctx: DeviceContext) raises:
 
 def test_elementwise_gpu() raises:
     with DeviceContext() as ctx:
-        run_elementwise[DType.float32](ctx)
-        run_elementwise_uneven_simd[DType.float32](ctx)
-        run_elementwise_exact_boundary_uses_simd[DType.float32](ctx)
-        run_elementwise_transpose_copy[DType.float32](ctx)
-        run_elementwise[DType.bfloat16](ctx)
-        run_elementwise_uneven_simd[DType.bfloat16](ctx)
-        run_elementwise_exact_boundary_uses_simd[DType.bfloat16](ctx)
-        run_elementwise_transpose_copy[DType.bfloat16](ctx)
-        run_elementwise[DType.float16](ctx)
-        run_elementwise_uneven_simd[DType.float16](ctx)
-        run_elementwise_exact_boundary_uses_simd[DType.float16](ctx)
-        run_elementwise_transpose_copy[DType.float16](ctx)
+        run_elementwise[.float32](ctx)
+        run_elementwise_uneven_simd[.float32](ctx)
+        run_elementwise_exact_boundary_uses_simd[.float32](ctx)
+        run_elementwise_transpose_copy[.float32](ctx)
+        run_elementwise[.bfloat16](ctx)
+        run_elementwise_uneven_simd[.bfloat16](ctx)
+        run_elementwise_exact_boundary_uses_simd[.bfloat16](ctx)
+        run_elementwise_transpose_copy[.bfloat16](ctx)
+        run_elementwise[.float16](ctx)
+        run_elementwise_uneven_simd[.float16](ctx)
+        run_elementwise_exact_boundary_uses_simd[.float16](ctx)
+        run_elementwise_transpose_copy[.float16](ctx)
         _test_elementwise_zero_dimension_3d(ctx)
 
 

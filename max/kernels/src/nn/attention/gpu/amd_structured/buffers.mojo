@@ -54,16 +54,16 @@ def _cast_f32_to_fp8_raw[
     P→PV cast where softmax output is in (0, 1].
     """
     comptime assert (
-        src_dtype == DType.float32
+        src_dtype == .float32
     ), "_cast_f32_to_fp8_raw source dtype must be float32."
     comptime assert (
         size % 4 == 0
     ), "_cast_f32_to_fp8_raw requires size divisible by 4."
     comptime assert (
-        dtype == DType.float8_e4m3fn or dtype == DType.float8_e5m2
+        dtype == .float8_e4m3fn or dtype == .float8_e5m2
     ), "_cast_f32_to_fp8_raw requires E4M3FN or E5M2 destination dtype."
 
-    var f32_src = rebind[SIMD[DType.float32, size]](src)
+    var f32_src = rebind[SIMD[.float32, size]](src)
     var result = SIMD[dtype, size]()
     comptime for i in range(size // 4):
         var chunk = cvt_pk_fp8_f32_raw[dtype](f32_src.slice[4, offset=i * 4]())
@@ -150,7 +150,7 @@ struct QRegisterBuffer[
         Self.dtype,
         type_of(Self.reg_layout),
         MutUntrackedOrigin,
-        address_space=AddressSpace.LOCAL,
+        address_space=.LOCAL,
     ]
     var reg_tile: Self.RegType
 
@@ -176,7 +176,7 @@ struct QRegisterBuffer[
         Args:
             q_tile: The full Q tile as a DRAM TileTensor.
         """
-        self.reg_tile = stack_allocation[Self.dtype, AddressSpace.LOCAL](
+        self.reg_tile = stack_allocation[Self.dtype, address_space=.LOCAL](
             Self.reg_layout
         )
         # Zero before DMA: the partial-tile case (depth % BK != 0) loads OOB
@@ -245,7 +245,7 @@ struct QRegisterBuffer[
         Self.dtype,
         type_of(row_major[Self.num_mmas, Self.input_frag_size]()),
         MutUntrackedOrigin,
-        address_space=AddressSpace.LOCAL,
+        address_space=.LOCAL,
     ]:
         """Return MMA-sized sub-tile for the given tile and k indices.
 
@@ -259,7 +259,7 @@ struct QRegisterBuffer[
                 Self.dtype,
                 type_of(row_major[Self.num_mmas, Self.input_frag_size]()),
                 MutUntrackedOrigin,
-                address_space=AddressSpace.LOCAL,
+                address_space=.LOCAL,
             ]
         ](
             self.reg_tile.tile[Self._rows_per_tile, Self.input_frag_size](
@@ -334,13 +334,13 @@ struct OutputRegisterBuffer[
         Self.dtype,
         type_of(Self.reg_layout),
         MutUntrackedOrigin,
-        address_space=AddressSpace.LOCAL,
+        address_space=.LOCAL,
     ]
     var reg_tile: Self.RegType
 
     @always_inline
     def __init__(out self):
-        self.reg_tile = stack_allocation[Self.dtype, AddressSpace.LOCAL](
+        self.reg_tile = stack_allocation[Self.dtype, address_space=.LOCAL](
             Self.reg_layout
         )
 
@@ -446,7 +446,7 @@ struct PRegisterBuffer[
         Self.accum_type_,
         type_of(Self.reg_layout),
         MutUntrackedOrigin,
-        address_space=AddressSpace.LOCAL,
+        address_space=.LOCAL,
     ]
     var reg_tile: Self.RegType
 
@@ -458,7 +458,7 @@ struct PRegisterBuffer[
         Self.accum_type_,
         type_of(Self.stage_layout),
         MutUntrackedOrigin,
-        address_space=AddressSpace.LOCAL,
+        address_space=.LOCAL,
     ]
 
     # TiledMmaOp for SMEM→register A-matrix loads.
@@ -483,7 +483,7 @@ struct PRegisterBuffer[
         Self.dtype,
         type_of(Self._smem_layout),
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]
 
     @__allow_legacy_any_origin_fields
@@ -497,14 +497,14 @@ struct PRegisterBuffer[
         Self.dtype,
         type_of(Self._block_smem_layout),
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]
 
     @always_inline
     def __init__(out self, smem_tile: Self.SmemTileType):
-        self.reg_tile = stack_allocation[Self.accum_type_, AddressSpace.LOCAL](
-            Self.reg_layout
-        )
+        self.reg_tile = stack_allocation[
+            Self.accum_type_, address_space=.LOCAL
+        ](Self.reg_layout)
         self.smem_tile = smem_tile
 
     @always_inline
@@ -516,7 +516,7 @@ struct PRegisterBuffer[
     def get_mma_tile_shared[
         tile_idx: Int, k_idx: Int
     ](self) -> Self.MmaTileType:
-        var result = stack_allocation[Self.mma_dtype, AddressSpace.LOCAL](
+        var result = stack_allocation[Self.mma_dtype, address_space=.LOCAL](
             Self._mma_layout
         )
         var warp_row = get_warp_coords[Self.BN, Self.WN]()[0]
@@ -655,7 +655,7 @@ struct PRegisterBuffer[
         Self.mma_dtype,
         type_of(Self._mma_layout),
         MutUntrackedOrigin,
-        address_space=AddressSpace.LOCAL,
+        address_space=.LOCAL,
     ]
 
     @always_inline
@@ -677,7 +677,7 @@ struct PRegisterBuffer[
         comptime if Self.shared_memory_backed:
             return self.get_mma_tile_shared[tile_idx, k_idx]()
 
-        var result = stack_allocation[Self.mma_dtype, AddressSpace.LOCAL](
+        var result = stack_allocation[Self.mma_dtype, address_space=.LOCAL](
             Self._mma_layout
         )
         var result_vec = result.vectorize[1, Self.input_frag_size]()
@@ -810,9 +810,7 @@ struct PRegisterBuffer[
     ](
         self,
         smem_base: UnsafePointer[
-            Scalar[Self.dtype],
-            MutAnyOrigin,
-            address_space=AddressSpace.SHARED,
+            Scalar[Self.dtype], MutAnyOrigin, address_space=.SHARED
         ],
         byte_offset: Int,
         m_mma: Int,
@@ -835,7 +833,7 @@ struct PRegisterBuffer[
             Self.dtype,
             type_of(row_major[Self.WM, Self.BK]()),
             MutAnyOrigin,
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
         ](smem_base + byte_offset, row_major[Self.WM, Self.BK]())
 
         var mma_tile_res = smem_warp_tile.tile_with_offset[
@@ -865,10 +863,7 @@ struct PRegisterBuffer[
             )
         )
         var mma_3d = TileTensor[
-            Self.dtype,
-            layout_3d,
-            MutAnyOrigin,
-            address_space=AddressSpace.SHARED,
+            Self.dtype, layout_3d, MutAnyOrigin, address_space=.SHARED
         ](mma_tile.ptr, layout_3d())
 
         var dist_res = mma_3d.distribute_with_offset[tl_3d](lane_id())

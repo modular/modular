@@ -69,7 +69,7 @@ def tma_swizzle_multicast_load_kernel[
         dtype,
         cluster_tile_layout,
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
     ].stack_allocation()
 
@@ -78,7 +78,7 @@ def tma_swizzle_multicast_load_kernel[
     var mbar = unsafe_stack_allocation[
         1,
         SharedMemBarrier,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=8,
     ]()
     if thread_idx.x == 0:
@@ -142,7 +142,7 @@ def test_tma_multicast_swizzle[
     var src = ManagedLayoutTensor[dtype, layout](ctx)
     var dst = ManagedLayoutTensor[dtype, layout](ctx)  # FIX THIS
 
-    comptime if dtype == DType.float8_e4m3fn:
+    comptime if dtype == .float8_e4m3fn:
         random(src.tensor())
         random(dst.tensor())
     else:
@@ -227,8 +227,8 @@ def test_tma_multicast_swizzle[
                     for i in range(desc_tile_size):
                         var desc_idx = swizzle(i)
                         assert_equal(
-                            desc_tile.ptr[desc_idx].cast[DType.float64](),
-                            dst_tile_ptr[i].cast[DType.float64](),
+                            desc_tile.ptr[desc_idx].cast[.float64](),
+                            dst_tile_ptr[i].cast[.float64](),
                         )
                     dst_tile_ptr += desc_tile_size
 

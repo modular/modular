@@ -39,8 +39,8 @@ from std.utils.numerics import min_or_neg_inf
 def assert_allclose[
     dtype: DType
 ](
-    h_output_ref: TileTensor[dtype=dtype, ...],
-    h_output_gpu: TileTensor[dtype=dtype, ...],
+    h_output_ref: TileTensor[dtype, ...],
+    h_output_gpu: TileTensor[dtype, ...],
 ) raises:
     for i in range(h_output_ref.num_elements()):
         assert_almost_equal(h_output_ref.raw_load(i), h_output_gpu.raw_load(i))
@@ -902,7 +902,7 @@ def bench_stencil_avg_pool_padded[
 
 
 def main() raises:
-    comptime dtype = get_defined_dtype["dtype", DType.bfloat16]()
+    comptime dtype = get_defined_dtype["dtype", .bfloat16]()
     comptime batch_size = get_defined_int["batch_size", 128]()
     comptime input_height = get_defined_int["input_height", 1024]()
     comptime input_width = get_defined_int["input_width", 1024]()

@@ -118,7 +118,7 @@ struct Element[
 
     var runtime_layout: RuntimeLayout[
         Self.layout,
-        element_type=DType.int32,
+        element_type=.int32,
         linear_idx_type=Self.index_type,
     ]
     """The runtime layout information for memory access patterns.
@@ -142,7 +142,7 @@ struct Element[
         element_data: Self.element_data_type,
         runtime_layout: RuntimeLayout[
             Self.layout,
-            element_type=DType.int32,
+            element_type=.int32,
             linear_idx_type=Self.index_type,
         ],
     ):
@@ -161,11 +161,11 @@ struct Element[
         ptr: UnsafePointer[Scalar[Self.dtype], ...],
         runtime_layout: RuntimeLayout[
             Self.layout,
-            element_type=DType.int32,
+            element_type=.int32,
             linear_idx_type=Self.index_type,
         ] = RuntimeLayout[
             Self.layout,
-            element_type=DType.int32,
+            element_type=.int32,
             linear_idx_type=Self.index_type,
         ](),
     ) -> Self:
@@ -245,11 +245,11 @@ struct Element[
         ptr: UnsafePointer[Scalar[Self.dtype], ...],
         runtime_layout: RuntimeLayout[
             Self.layout,
-            element_type=DType.int32,
+            element_type=.int32,
             linear_idx_type=Self.index_type,
         ] = RuntimeLayout[
             Self.layout,
-            element_type=DType.int32,
+            element_type=.int32,
             linear_idx_type=Self.index_type,
         ](),
     ) -> Self:
@@ -618,9 +618,7 @@ struct MemoryElement[
     ]
 
     var ptr: UnsafePointer[
-        Scalar[Self.dtype],
-        Self.origin,
-        address_space=Self.address_space,
+        Scalar[Self.dtype], Self.origin, address_space=Self.address_space
     ]
     """Pointer to the memory location where the data is stored.
 
@@ -631,7 +629,7 @@ struct MemoryElement[
 
     var runtime_layout: RuntimeLayout[
         Self.layout,
-        element_type=DType.int32,
+        element_type=.int32,
         linear_idx_type=Self.index_type,
     ]
     """Runtime layout information used for memory access calculations.
@@ -644,13 +642,11 @@ struct MemoryElement[
     def __init__(
         out self,
         ptr: UnsafePointer[
-            Scalar[Self.dtype],
-            Self.origin,
-            address_space=Self.address_space,
+            Scalar[Self.dtype], Self.origin, address_space=Self.address_space
         ],
         runtime_layout: RuntimeLayout[
             Self.layout,
-            element_type=DType.int32,
+            element_type=.int32,
             linear_idx_type=Self.index_type,
         ],
     ):

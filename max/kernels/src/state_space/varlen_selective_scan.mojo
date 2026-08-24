@@ -74,7 +74,7 @@ def varlen_selective_state_update_gpu[
     output: TileTensor[kernel_dtype, output_LT, MutUntrackedOrigin],
     dt_bias: TileTensor[kernel_dtype, dt_bias_LT, MutUntrackedOrigin],
     state_batch_indices: TileTensor[
-        DType.int32, state_batch_indices_LT, MutUntrackedOrigin
+        .int32, state_batch_indices_LT, MutUntrackedOrigin
     ],
     state_strides: Strides4D,  # (batch, nheads, dim, dstate)
     x_strides: Strides3D,  # (batch, nheads, dim)
@@ -146,7 +146,7 @@ def varlen_selective_state_update_gpu[
             )
             var bias_val = Scalar[kernel_dtype](
                 dt_bias.raw_load(dt_bias_offset)
-            ).cast[DType.float32]()
+            ).cast[.float32]()
             dt_val += bias_val
 
         # Apply softplus if requested
@@ -190,7 +190,7 @@ def varlen_selective_state_update_gpu[
             )
             var state_val = Scalar[kernel_dtype](
                 state.raw_load(state_offset)
-            ).cast[DType.float32]()
+            ).cast[.float32]()
 
             # Update state: state = state * dA + dB * x
             state_val = state_val * dA + dB * x_val
@@ -283,13 +283,13 @@ def varlen_selective_scan_fwd_gpu[
         kernel_dtype, output_LT, MutUntrackedOrigin
     ],  # Output written here (or to z if z is present)
     query_start_loc: TileTensor[
-        DType.int32, query_start_loc_LT, MutUntrackedOrigin
+        .int32, query_start_loc_LT, MutUntrackedOrigin
     ],  # (batch + 1,)
     cache_indices: TileTensor[
-        DType.int32, cache_indices_LT, MutUntrackedOrigin
+        .int32, cache_indices_LT, MutUntrackedOrigin
     ],  # (batch,)
     has_initial_state: TileTensor[
-        DType.bool, has_initial_state_LT, MutUntrackedOrigin
+        .bool, has_initial_state_LT, MutUntrackedOrigin
     ],  # (batch,)
     u_strides: Strides2D,  # (dim, total_length)
     delta_strides: Strides2D,  # (dim, total_length)
@@ -339,23 +339,22 @@ def varlen_selective_scan_fwd_gpu[
     var D_val = Float32(0.0)
     if has_D:
         var D_offset = UInt32(d * D_strides[0])
-        D_val = Scalar[kernel_dtype](D.raw_load(D_offset)).cast[DType.float32]()
+        D_val = Scalar[kernel_dtype](D.raw_load(D_offset)).cast[.float32]()
 
     var delta_bias_val = Float32(0.0)
     if has_delta_bias:
         var bias_offset = UInt32(d * delta_bias_strides[0])
         delta_bias_val = Scalar[kernel_dtype](
             delta_bias.raw_load(bias_offset)
-        ).cast[DType.float32]()
+        ).cast[.float32]()
 
     # Pre-load A values for this _dim and pre-multiply by LOG2E for faster exp2
-    var A_vals = SIMD[DType.float32, MAX_DSTATE](0.0)
+    var A_vals = SIMD[.float32, MAX_DSTATE](0.0)
 
     comptime for n in range(DSTATE):
         var A_offset = UInt32(d * A_strides[0] + n * A_strides[1])
         A_vals[n] = (
-            Scalar[kernel_dtype](A.raw_load(A_offset)).cast[DType.float32]()
-            * LOG2E
+            Scalar[kernel_dtype](A.raw_load(A_offset)).cast[.float32]() * LOG2E
         )
 
     # Determine group for this _dim
@@ -363,7 +362,7 @@ def varlen_selective_scan_fwd_gpu[
     var group_id = d // group_size
 
     # Initialize state - either from cache or zeros
-    var state = SIMD[DType.float32, MAX_DSTATE](0.0)
+    var state = SIMD[.float32, MAX_DSTATE](0.0)
 
     # Load initial state if requested
     var use_initial_state = False
@@ -380,7 +379,7 @@ def varlen_selective_scan_fwd_gpu[
             )
             state[n] = Scalar[kernel_dtype](
                 ssm_states.raw_load(state_offset)
-            ).cast[DType.float32]()
+            ).cast[.float32]()
 
     # Process sequence
     for t in range(seq_len):
@@ -411,8 +410,8 @@ def varlen_selective_scan_fwd_gpu[
         var delta_u = delta_val * u_val
 
         # Load B and C values for this timestep
-        var B_vals = SIMD[DType.float32, MAX_DSTATE](0.0)
-        var C_vals = SIMD[DType.float32, MAX_DSTATE](0.0)
+        var B_vals = SIMD[.float32, MAX_DSTATE](0.0)
+        var C_vals = SIMD[.float32, MAX_DSTATE](0.0)
 
         comptime for n in range(DSTATE):
             var B_offset = UInt32(
@@ -501,7 +500,7 @@ def varlen_selective_state_update_cpu[
     z: TileTensor[mut=False, kernel_dtype, ...],
     output: TileTensor[mut=True, kernel_dtype, ...],
     dt_bias: TileTensor[mut=False, kernel_dtype, ...],
-    state_batch_indices: TileTensor[mut=False, DType.int32, ...],
+    state_batch_indices: TileTensor[mut=False, .int32, ...],
     # All strides (same as GPU version)
     state_strides: Strides4D,
     x_strides: Strides3D,
@@ -559,7 +558,7 @@ def varlen_selective_state_update_cpu[
             )
             var bias_val = Scalar[kernel_dtype](
                 dt_bias.raw_load(dt_bias_offset)
-            ).cast[DType.float32]()
+            ).cast[.float32]()
             dt_val += bias_val
 
         # Apply softplus if requested
@@ -601,7 +600,7 @@ def varlen_selective_state_update_cpu[
             )
             var state_val = Scalar[kernel_dtype](
                 state.raw_load(state_offset)
-            ).cast[DType.float32]()
+            ).cast[.float32]()
 
             # Update state
             state_val = state_val * dA + dB * x_val
@@ -672,9 +671,9 @@ def varlen_selective_scan_fwd_cpu[
     delta_bias: TileTensor[mut=False, kernel_dtype, ...],
     ssm_states: TileTensor[mut=True, kernel_dtype, ...],
     output: TileTensor[mut=True, kernel_dtype, ...],
-    query_start_loc: TileTensor[mut=False, DType.int32, ...],
-    cache_indices: TileTensor[mut=False, DType.int32, ...],
-    has_initial_state: TileTensor[mut=False, DType.bool, ...],
+    query_start_loc: TileTensor[mut=False, .int32, ...],
+    cache_indices: TileTensor[mut=False, .int32, ...],
+    has_initial_state: TileTensor[mut=False, .bool, ...],
     # Strides (same as GPU version)
     u_strides: Strides2D,
     delta_strides: Strides2D,
@@ -712,15 +711,15 @@ def varlen_selective_scan_fwd_cpu[
             var bias_offset = UInt32(d * delta_bias_strides[0])
             delta_bias_val = Scalar[kernel_dtype](
                 delta_bias.raw_load(bias_offset)
-            ).cast[DType.float32]()
+            ).cast[.float32]()
 
         # Pre-load A values for this dim and pre-multiply by LOG2E for faster exp2
-        var A_vals = SIMD[DType.float32, MAX_DSTATE](0.0)
+        var A_vals = SIMD[.float32, MAX_DSTATE](0.0)
 
         comptime for n in range(DSTATE):
             var A_offset = UInt32(d * A_strides[0] + n * A_strides[1])
             A_vals[n] = (
-                Scalar[kernel_dtype](A.raw_load(A_offset)).cast[DType.float32]()
+                Scalar[kernel_dtype](A.raw_load(A_offset)).cast[.float32]()
                 * LOG2E
             )
 
@@ -742,7 +741,7 @@ def varlen_selective_scan_fwd_cpu[
                     continue
 
             # Initialize state
-            var state = SIMD[DType.float32, MAX_DSTATE](0.0)
+            var state = SIMD[.float32, MAX_DSTATE](0.0)
 
             var use_initial_state = False
             if has_initial_state_tensor:
@@ -758,7 +757,7 @@ def varlen_selective_scan_fwd_cpu[
                     )
                     state[n] = Scalar[kernel_dtype](
                         ssm_states.raw_load(state_offset)
-                    ).cast[DType.float32]()
+                    ).cast[.float32]()
 
             # Process sequence
             for t in range(seq_len):
@@ -779,7 +778,7 @@ def varlen_selective_scan_fwd_cpu[
                 )
                 var delta_val = Scalar[kernel_dtype](
                     delta.raw_load(delta_offset)
-                ).cast[DType.float32]()
+                ).cast[.float32]()
 
                 if has_delta_bias:
                     delta_val += delta_bias_val
@@ -789,8 +788,8 @@ def varlen_selective_scan_fwd_cpu[
 
                 var delta_u = delta_val * u_val
 
-                var B_vals = SIMD[DType.float32, MAX_DSTATE](0.0)
-                var C_vals = SIMD[DType.float32, MAX_DSTATE](0.0)
+                var B_vals = SIMD[.float32, MAX_DSTATE](0.0)
+                var C_vals = SIMD[.float32, MAX_DSTATE](0.0)
 
                 comptime for n in range(DSTATE):
                     var B_offset = UInt32(

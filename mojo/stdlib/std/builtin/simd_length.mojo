@@ -67,7 +67,7 @@ struct SIMDLength(
 
     @implicit
     @always_inline("builtin")
-    def __init__(out self, value: Scalar[DType.int], /):
+    def __init__(out self, value: Int, /):
         """Construct a SIMDLength from the given Int.
 
         Args:

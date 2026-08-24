@@ -110,10 +110,10 @@ def _run_case[
     var c_disp_host_ptr = ctx.enqueue_create_host_buffer[out_type](c_size)
     var c_direct_host_ptr = ctx.enqueue_create_host_buffer[out_type](c_size)
     var c_ref_host_ptr = ctx.enqueue_create_host_buffer[out_type](c_size)
-    var a_offsets_host_ptr = ctx.enqueue_create_host_buffer[DType.uint32](
+    var a_offsets_host_ptr = ctx.enqueue_create_host_buffer[.uint32](
         num_experts + 1
     )
-    var expert_ids_host_ptr = ctx.enqueue_create_host_buffer[DType.int32](
+    var expert_ids_host_ptr = ctx.enqueue_create_host_buffer[.int32](
         num_experts
     )
 
@@ -142,8 +142,8 @@ def _run_case[
     var c_disp_dev_buf = ctx.enqueue_create_buffer[out_type](c_size)
     var c_direct_dev_buf = ctx.enqueue_create_buffer[out_type](c_size)
     var c_ref_dev_buf = ctx.enqueue_create_buffer[out_type](c_size)
-    var off_dev_buf = ctx.enqueue_create_buffer[DType.uint32](num_experts + 1)
-    var eid_dev_buf = ctx.enqueue_create_buffer[DType.int32](num_experts)
+    var off_dev_buf = ctx.enqueue_create_buffer[.uint32](num_experts + 1)
+    var eid_dev_buf = ctx.enqueue_create_buffer[.int32](num_experts)
 
     var a_dev = TileTensor[in_type](
         a_dev_buf, row_major(Coord(total_num_tokens, Idx[K]))
@@ -160,10 +160,10 @@ def _run_case[
     var c_ref_dev = TileTensor[out_type](
         c_ref_dev_buf, row_major(Coord(total_num_tokens, Idx[N]))
     )
-    var off_dev = TileTensor[DType.uint32](
+    var off_dev = TileTensor[.uint32](
         off_dev_buf, row_major(Coord(num_experts + 1))
     )
-    var eid_dev = TileTensor[DType.int32](
+    var eid_dev = TileTensor[.int32](
         eid_dev_buf, row_major(Coord(Idx[num_experts]))
     )
 

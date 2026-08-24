@@ -179,14 +179,14 @@ def vectorize[
 
         def closure[width: Int](i: Int, evl: Int) {mut}:
             print("storing", evl, "of", width, "els at pos", i)
-            var val = SIMD[DType.int32, width](i)
+            var val = SIMD[.int32, width](i)
 
             # Optimization: Constant propagation eliminates this check in the main loop
             if evl == width:
                 allocation.unsafe_ptr().store[width=width](i, val)
             else:
                 # Tail loop: Generate mask from EVL to prevent OOB
-                var mask = iota[DType.int32, width]().lt(Int32(evl))
+                var mask = iota[.int32, width]().lt(Int32(evl))
                 masked_store[width](val, allocation.unsafe_ptr() + i, mask)
 
         vectorize[simd_width](size, closure)

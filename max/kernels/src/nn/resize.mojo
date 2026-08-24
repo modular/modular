@@ -89,7 +89,7 @@ def coord_transform[
         # note: resized image will have same corners as original image
         return (
             out_coord_f32
-            * (Float64(in_dim - 1) / Float64(out_dim - 1)).cast[DType.float32]()
+            * (Float64(in_dim - 1) / Float64(out_dim - 1)).cast[.float32]()
         )
     elif mode == CoordinateTransformationMode.Asymmetric:
         return out_coord_f32 / scale
@@ -265,15 +265,9 @@ def interpolate_point_1d[
     out_coords: IndexList[InputLayoutType.rank],
     scale: Float32,
     input: TileTensor[
-        mut=False,
-        dtype,
-        InputLayoutType,
-        address_space=AddressSpace.GENERIC,
-        ...,
+        mut=False, dtype, InputLayoutType, address_space=.GENERIC, ...
     ],
-    output: TileTensor[
-        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
-    ],
+    output: TileTensor[mut=True, dtype, address_space=.GENERIC, ...],
 ):
     """Computes one-dimensional interpolation for a single output point along a given dimension.
 
@@ -327,10 +321,8 @@ def resize_linear[
     antialias: Bool,
     dtype: DType,
 ](
-    input: TileTensor[mut=True, dtype, address_space=AddressSpace.GENERIC, ...],
-    output: TileTensor[
-        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
-    ],
+    input: TileTensor[mut=True, dtype, address_space=.GENERIC, ...],
+    output: TileTensor[mut=True, dtype, address_space=.GENERIC, ...],
 ):
     """Resizes input to output shape using linear interpolation.
 
@@ -357,10 +349,8 @@ def _resize[
     antialias: Bool,
     dtype: DType,
 ](
-    input: TileTensor[mut=True, dtype, address_space=AddressSpace.GENERIC, ...],
-    output: TileTensor[
-        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
-    ],
+    input: TileTensor[mut=True, dtype, address_space=.GENERIC, ...],
+    output: TileTensor[mut=True, dtype, address_space=.GENERIC, ...],
 ):
     comptime assert (
         input.rank == output.rank

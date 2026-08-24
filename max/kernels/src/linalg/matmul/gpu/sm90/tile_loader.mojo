@@ -64,7 +64,7 @@ trait TileLoader(TrivialRegisterPassable):
         self,
         dst: TileTensor[
             mut=True,
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
             Storage=PointerStorage[element_width=1],
             ...,
         ],
@@ -245,7 +245,7 @@ struct TileLoaderTMA[
         self,
         dst: TileTensor[
             mut=True,
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
             Storage=PointerStorage[element_width=1],
             ...,
         ],
@@ -272,10 +272,10 @@ struct TileLoaderTMA[
         # TileTensor, but TMATensorTile is parameterized on Self._dtype.
         var dst_exact = TileTensor[
             mut=True,
-            dtype=Self._dtype,
+            Self._dtype,
             LayoutType=type_of(dst).LayoutType,
             origin=MutAnyOrigin,
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
             linear_idx_type=type_of(dst).linear_idx_type,
         ](
             dst._storage.as_unsafe_any_origin().bitcast[Scalar[Self._dtype]](),
@@ -353,10 +353,10 @@ struct TileLoaderCPAsync[
     @__allow_legacy_any_origin_fields
     var src: TileTensor[
         mut=False,
-        dtype=Self.dtype,
+        Self.dtype,
         LayoutType=Self.src_layout,
         origin=ImmutAnyOrigin,
-        address_space=AddressSpace.GENERIC,
+        address_space=.GENERIC,
     ]
 
     @always_inline
@@ -364,10 +364,10 @@ struct TileLoaderCPAsync[
         out self,
         src: TileTensor[
             mut=False,
-            dtype=Self.dtype,
+            Self.dtype,
             LayoutType=Self.src_layout,
             origin=ImmutAnyOrigin,
-            address_space=AddressSpace.GENERIC,
+            address_space=.GENERIC,
         ],
     ):
         """Initialize the cp.async tile loader.
@@ -381,7 +381,7 @@ struct TileLoaderCPAsync[
         self,
         dst: TileTensor[
             mut=True,
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
             Storage=PointerStorage[element_width=1],
             ...,
         ],
@@ -422,10 +422,10 @@ struct TileLoaderCPAsync[
         # Vectorized tiles cannot be reconstructed directly from a pointer.
         var dst_exact = TileTensor[
             mut=True,
-            dtype=Self._dtype,
+            Self._dtype,
             LayoutType=type_of(dst).LayoutType,
             origin=MutAnyOrigin,
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
             linear_idx_type=type_of(dst).linear_idx_type,
         ](
             dst._storage.as_unsafe_any_origin().bitcast[Scalar[Self._dtype]](),
@@ -451,19 +451,19 @@ def async_copy_with_bound_check[
 ](
     src: TileTensor[
         mut=False,
-        dtype=dtype,
+        dtype,
         LayoutType=src_layout,
         origin=ImmutAnyOrigin,
-        address_space=AddressSpace.GENERIC,
+        address_space=.GENERIC,
         Storage=PointerStorage[element_width=src_element_width],
         ...,
     ],
     dst: TileTensor[
         mut=True,
-        dtype=dtype,
+        dtype,
         LayoutType=dst_layout,
         origin=MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         Storage=PointerStorage[element_width=dst_element_width],
         ...,
     ],
@@ -562,9 +562,7 @@ def async_copy_with_bound_check[
 
         # Calculate source pointer based on 2D coordinates
         var src_ptr = (
-            src._storage.bitcast[Scalar[dtype]]().address_space_cast[
-                AddressSpace.GLOBAL
-            ]()
+            src._storage.bitcast[Scalar[dtype]]().address_space_cast[.GLOBAL]()
             + dst_coord1
             + dst_coord0 * Int32(src_stride0)
         )

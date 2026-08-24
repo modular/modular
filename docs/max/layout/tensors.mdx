@@ -90,7 +90,7 @@ because some APIs can only accept scalar values (SIMD vectors of width 1). For
 example, consider the following code:
 
 ```mojo
-var i: Int = SIMD[DType.int32, width](15)
+var i: Int = SIMD[.int32, width](15)
 ```
 
 If `width` is 1, the vector can be implicitly converted to an `Int`, but if
@@ -184,7 +184,7 @@ comptime rows = 8
 comptime columns = 16
 comptime layout = Layout.row_major(rows, columns)
 var storage = Array[Float32, rows * columns](uninitialized=True)
-var tensor = LayoutTensor[DType.float32, layout](storage).fill(0)
+var tensor = LayoutTensor[.float32, layout](storage).fill(0)
 ```
 
 `Array` is a statically-sized, stack-allocated array, so it's a fast and
@@ -202,7 +202,7 @@ comptime buf_size = rows * columns
 comptime layout = Layout.row_major(rows, columns)
 var ptr = alloc[Float32](buf_size)
 unsafe_memset(ptr, 0, buf_size)
-var tensor = LayoutTensor[DType.float32, layout](ptr)
+var tensor = LayoutTensor[.float32, layout](ptr)
 ```
 
 Note that this example uses
@@ -316,7 +316,7 @@ comptime tile_layout = Layout.row_major(16, 16)
 var shared_tile = LayoutTensor[
     dtype,
     tile_layout,
-    address_space=AddressSpace.SHARED,
+    address_space=.SHARED,
 ].stack_allocation()
 ```
 
@@ -378,7 +378,7 @@ comptime tiled_layout = blocked_product(tile_layout, tiler_layout)
 var storage = Array[Float32, tiled_layout.size()](uninitialized=True)
 for i in range(comptime (tiled_layout.size())):
     storage[i] = Float32(i)
-var tensor = LayoutTensor[DType.float32, tiled_layout](storage)
+var tensor = LayoutTensor[.float32, tiled_layout](storage)
 var tile = tensor.tile[tile_size, tile_size](0, 1)
 ```
 
@@ -447,7 +447,7 @@ for i in range(buf_size):
     storage[i] = Int16(i)
 comptime tile_layout = Layout.row_major(4, 4)
 var iter = LayoutTensorIter[
-    DType.int16,
+    .int16,
     tile_layout,
 ](storage.unsafe_ptr(), buf_size)
 
@@ -624,7 +624,7 @@ def copy_from_async_example():
         var shared_tile = LayoutTensor[
             dtype,
             tile_layout,
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
         ].stack_allocation()
 
         # Create thread layouts for copying

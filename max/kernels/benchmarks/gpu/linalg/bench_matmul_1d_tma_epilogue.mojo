@@ -72,7 +72,7 @@ def _verify_buffers_gpu[
     length: Int32,
     atol: Float32,
     rtol: Float32,
-    result: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
+    result: UnsafePointer[Float32, MutAnyOrigin],
 ):
     var abs_diff_sum: Float32 = 0
     var abs_ref_sum: Float32 = 0
@@ -83,8 +83,8 @@ def _verify_buffers_gpu[
     var i = global_idx.x
     var stride = grid_dim.x * block_dim.x
     while i < Int(length):
-        var x = output[i].cast[DType.float32]()
-        var y = reference[i].cast[DType.float32]()
+        var x = output[i].cast[.float32]()
+        var y = reference[i].cast[.float32]()
         abs_diff_sum += abs(x - y)
         abs_ref_sum += abs(y)
         max_violation = max(max_violation, abs(x - y) - (atol + rtol * abs(y)))
@@ -122,11 +122,11 @@ def _check_verification_result[
 ) raises:
     var rtol64: Float64
     var atol64: Float64
-    rtol64, atol64 = pytorch_like_tolerances_for[DType.bfloat16]()
+    rtol64, atol64 = pytorch_like_tolerances_for[.bfloat16]()
     var rtol = Float32(rtol64)
     var atol = Float32(atol64)
 
-    var result_device = ctx.enqueue_create_buffer[DType.float32](NUM_BLOCKS * 5)
+    var result_device = ctx.enqueue_create_buffer[.float32](NUM_BLOCKS * 5)
 
     comptime kernel = _verify_buffers_gpu[c_type, BLOCK_SIZE]
     ctx.enqueue_function[kernel](
@@ -140,7 +140,7 @@ def _check_verification_result[
         block_dim=BLOCK_SIZE,
     )
 
-    var result_host_alloc = alloc[Scalar[DType.float32]](
+    var result_host_alloc = alloc[Float32](
         {count = NUM_BLOCKS * 5}
     ).into_managed()
     var result_host = result_host_alloc.unsafe_ptr()
@@ -422,8 +422,8 @@ def bench_matmul_1d_tma_epilogue[
                 for j in range(N):
                     var ref_idx = i * N + j
                     c_ref_host[ref_idx] = (
-                        c_ref_host[ref_idx].cast[DType.float32]()
-                        + bias_host[j].cast[DType.float32]()
+                        c_ref_host[ref_idx].cast[.float32]()
+                        + bias_host[j].cast[.float32]()
                     ).cast[dtype]()
 
             ctx.enqueue_copy(c_ref_dev, c_ref_host)
@@ -497,7 +497,7 @@ def create_1d_tma_epilogue_benches[
 
 
 def main() raises:
-    comptime dtype = get_defined_dtype["dtype", DType.bfloat16]()
+    comptime dtype = get_defined_dtype["dtype", .bfloat16]()
 
     var M = Int(arg_parse("M", 2048))
     comptime N = get_defined_int["N", 1536]()

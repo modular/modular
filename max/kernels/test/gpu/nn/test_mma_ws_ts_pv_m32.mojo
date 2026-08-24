@@ -238,7 +238,7 @@ def pv_ts_batched_kernel[
 
     # ---- Dynamic SMEM: `num_d_tiles` mn-major V regions + metadata ----
     var smem_base = external_memory[
-        UInt8, address_space=AddressSpace.SHARED, alignment=128
+        UInt8, address_space=.SHARED, alignment=128
     ]()
     var v_smem_ptr = smem_base.bitcast[Scalar[OP_TYPE]]()
 
@@ -286,7 +286,7 @@ def pv_ts_batched_kernel[
                 var chunk_tile = LayoutTensor[
                     OP_TYPE,
                     nat_chunk_layout,
-                    address_space=AddressSpace.SHARED,
+                    address_space=.SHARED,
                     alignment=128,
                 ](v_smem_ptr + t * V_REGION_ELEMS)
                 v_tma_op.async_copy(
@@ -299,7 +299,7 @@ def pv_ts_batched_kernel[
                     var band_tile = LayoutTensor[
                         OP_TYPE,
                         v_band_layout,
-                        address_space=AddressSpace.SHARED,
+                        address_space=.SHARED,
                         alignment=128,
                     ](v_smem_ptr + t * V_REGION_ELEMS + gq * BAND_ELEMS)
                     v_tma_op.async_copy(
@@ -314,12 +314,12 @@ def pv_ts_batched_kernel[
     # All 4 warps store to the SAME address a_tmem (datapaths=32); the hardware
     # subpartition routes warp g's store to quarter g (no per-warp offset). This
     # single packed P feeds ALL depth-tile MMAs (P is depth-independent).
-    var frag = Array[Scalar[DType.uint32], P_FRAG_U32](uninitialized=True)
+    var frag = Array[UInt32, P_FRAG_U32](uninitialized=True)
     for j in range(P_FRAG_U32):
         var pair = SIMD[OP_TYPE, 2]()
         pair[0] = p_input[row, g * PART_KEYS + 2 * j][0]
         pair[1] = p_input[row, g * PART_KEYS + 2 * j + 1][0]
-        frag[j] = bitcast[DType.uint32, 1](pair)
+        frag[j] = bitcast[.uint32, 1](pair)
 
     tcgen05_st[datapaths=32, bits=32, repeat=P_FRAG_U32, pack=False](
         a_tmem, frag

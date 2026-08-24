@@ -274,7 +274,7 @@ trait WriteableMMAOperandDescriptor(TrivialRegisterPassable):
             src_type,
             src_layout,
             MutAnyOrigin,
-            address_space=AddressSpace.LOCAL,
+            address_space=.LOCAL,
             element_layout=src_element_layout,
         ],
     ):
@@ -305,7 +305,7 @@ def local_tensor_type[
         dtype,
         layout,
         MutAnyOrigin,
-        address_space=AddressSpace.LOCAL,
+        address_space=.LOCAL,
         element_layout=element_layout,
     ]
 ):
@@ -349,7 +349,7 @@ trait AccumulatorTile(TrivialRegisterPassable):
             Self.dtype,
             Self.rows_of_frags_layout,
             MutAnyOrigin,
-            address_space=AddressSpace.LOCAL,
+            address_space=.LOCAL,
         ],
     ):
         ...
@@ -558,7 +558,7 @@ struct TMemAccumulator[
             Self.dtype,
             Self.rows_of_frags_layout,
             MutAnyOrigin,
-            address_space=AddressSpace.LOCAL,
+            address_space=.LOCAL,
         ],
     ):
         Self.check_constraints()
@@ -595,13 +595,9 @@ struct TMemAccumulator[
                     n_mma=n_mma,
                 )
                 var tmem = self.tmem_addr + UInt32(tmem_offset)
-                var frag = bitcast[DType.uint32, frag_size_b32](
-                    frags[mma_id, 0]
-                )
+                var frag = bitcast[.uint32, frag_size_b32](frags[mma_id, 0])
                 # 16 x 256b results in repeated 8x4 matrix of <1,2> vector pattern
-                var frag_st = Array[Scalar[DType.uint32], frag_size_b32](
-                    uninitialized=True
-                )
+                var frag_st = Array[UInt32, frag_size_b32](uninitialized=True)
 
                 comptime for _i in range(frag_size_b32):
                     frag_st[_i] = frag[_i]
@@ -663,7 +659,7 @@ struct TMemAccumulator[
                         pack=False,
                         width=half_frag,
                     ](tmem + UInt32(half_col_offset))
-                    var _ld_simd = SIMD[DType.uint32, frag_size_b32]()
+                    var _ld_simd = SIMD[.uint32, frag_size_b32]()
 
                     comptime for _i in range(half_frag):
                         _ld_simd[_i] = _ld_lo[_i]
@@ -680,7 +676,7 @@ struct TMemAccumulator[
                         pack=False,
                         width=frag_size_b32,
                     ](tmem)
-                    var _ld_simd = SIMD[DType.uint32, frag_size_b32]()
+                    var _ld_simd = SIMD[.uint32, frag_size_b32]()
 
                     comptime for _i in range(frag_size_b32):
                         _ld_simd[_i] = _ld_result[_i]
@@ -759,7 +755,7 @@ struct TMemOperand[
             src_type,
             src_layout,
             MutAnyOrigin,
-            address_space=AddressSpace.LOCAL,
+            address_space=.LOCAL,
             element_layout=src_element_layout,
         ],
     ):
@@ -803,7 +799,7 @@ struct TMemOperand[
                 IntTuple(Self.frag_size),
             ),
             MutAnyOrigin,
-            address_space=AddressSpace.LOCAL,
+            address_space=.LOCAL,
             element_layout=Layout.row_major(Self.frag_size),
         ](src.ptr)
         # frags = src.vectorize[1, Self.frag_size]()
@@ -814,14 +810,12 @@ struct TMemOperand[
 
         comptime for m_mma in range(Self.num_m_mmas):
             var tmem = self.offset[m_mma, 0]()
-            var frag = bitcast[DType.uint32, frag_size_b32](
+            var frag = bitcast[.uint32, frag_size_b32](
                 frags[m_mma].cast[Self.dtype]()
             )
             # 16 x 256b results in repeated 8x4<1x64b> pattern
             # 256b means 256 // 4 = 64b per thread
-            var frag_st2 = Array[Scalar[DType.uint32], frag_size_b32](
-                uninitialized=True
-            )
+            var frag_st2 = Array[UInt32, frag_size_b32](uninitialized=True)
 
             comptime if Self.dtype.is_float8():
                 # The SS-D fragment per thread (output of Q@K^T MMA) puts
@@ -872,8 +866,8 @@ struct TMemOperand[
                         k_lo_half * lane_cols_per_k_half
                     )
                     var src_lane_b = src_lane_a + 1
-                    var received_a: Scalar[DType.uint32] = 0
-                    var received_b: Scalar[DType.uint32] = 0
+                    var received_a: UInt32 = 0
+                    var received_b: UInt32 = 0
                     # Each lane_col publishes a different slot of a_frag;
                     # only the iteration matching this thread's lane_col
                     # contributes to its output u32.
@@ -881,7 +875,7 @@ struct TMemOperand[
                         comptime publisher_slot = (
                             mma_n_tile * src_slots_per_n_tile + c_val
                         )
-                        var val: Scalar[DType.uint32] = frag[publisher_slot]
+                        var val: UInt32 = frag[publisher_slot]
                         var ra = warp.shuffle_idx(val, src_lane_a)
                         var rb = warp.shuffle_idx(val, src_lane_b)
                         if lane_col_ui == UInt32(c_val):
@@ -889,15 +883,15 @@ struct TMemOperand[
                             received_b = rb
 
                     comptime which_half = Int(m_local_src)
-                    var ab_halves = bitcast[DType.uint16, 4](
-                        SIMD[DType.uint32, 2](received_a, received_b)
+                    var ab_halves = bitcast[.uint16, 4](
+                        SIMD[.uint32, 2](received_a, received_b)
                     )
                     # ab_halves = [a_lo, a_hi, b_lo, b_hi]
-                    var packed = SIMD[DType.uint16, 2](
+                    var packed = SIMD[.uint16, 2](
                         ab_halves[which_half],
                         ab_halves[which_half + 2],
                     )
-                    frag_st2[s_dst] = bitcast[DType.uint32, 1](packed)
+                    frag_st2[s_dst] = bitcast[.uint32, 1](packed)
             else:
                 comptime for _i in range(frag_size_b32):
                     frag_st2[_i] = frag[_i]
@@ -923,7 +917,7 @@ struct TMemOperand[
             dst_type,
             dst_layout,
             MutAnyOrigin,
-            address_space=AddressSpace.LOCAL,
+            address_space=.LOCAL,
             element_layout=dst_element_layout,
         ],
     ):
@@ -966,7 +960,7 @@ struct TMemOperand[
                 pack=False,
                 width=frag_size_b32,
             ](tmem)
-            var _ld_simd2 = SIMD[DType.uint32, frag_size_b32]()
+            var _ld_simd2 = SIMD[.uint32, frag_size_b32]()
 
             comptime for _i in range(frag_size_b32):
                 _ld_simd2[_i] = _ld_result2[_i]
@@ -1084,9 +1078,7 @@ struct SM100TensorAccumulatorSS[
     comptime num_m_blocks_per_warp = 2 * Self.BM // Self.num_softmax_threads
 
     comptime smem_ptr_t = UnsafePointer[
-        Scalar[Self.operand_t],
-        MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        Scalar[Self.operand_t], MutAnyOrigin, address_space=.SHARED
     ]
 
     comptime a_offset = MMAOperandOffsetFn[
@@ -1130,7 +1122,7 @@ struct SM100TensorAccumulatorSS[
 
     @__allow_legacy_any_origin_fields
     var mbar: UnsafePointer[
-        SharedMemBarrier, MutAnyOrigin, address_space=AddressSpace.SHARED
+        SharedMemBarrier, MutAnyOrigin, address_space=.SHARED
     ]
     var pipeline: PipelineState[Self.pipeline_stages]
 
@@ -1156,7 +1148,7 @@ struct SM100TensorAccumulatorSS[
     def __init__(
         out self,
         smem: UnsafePointer[
-            SharedMemBarrier, MutAnyOrigin, address_space=AddressSpace.SHARED
+            SharedMemBarrier, MutAnyOrigin, address_space=.SHARED
         ],
     ):
         Self.check_constraints()
@@ -1177,10 +1169,10 @@ struct SM100TensorAccumulatorSS[
         dtype_a: DType, dtype_b: DType
     ](
         p_a: UnsafePointer[
-            Scalar[dtype_a], MutAnyOrigin, address_space=AddressSpace.SHARED
+            Scalar[dtype_a], MutAnyOrigin, address_space=.SHARED
         ],
         p_b: UnsafePointer[
-            Scalar[dtype_b], MutAnyOrigin, address_space=AddressSpace.SHARED
+            Scalar[dtype_b], MutAnyOrigin, address_space=.SHARED
         ],
     ) -> Self.ab_t:
         Self.check_constraints()
@@ -1347,9 +1339,7 @@ struct SM100TensorAccumulatorTS[
         UMMAKind.KIND_F8F6F4 if Self.operand_t.is_float8() else UMMAKind.KIND_F16
     )
     comptime smem_ptr_t = UnsafePointer[
-        Scalar[Self.operand_t],
-        MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        Scalar[Self.operand_t], MutAnyOrigin, address_space=.SHARED
     ]
 
     comptime num_m_mmas = Self.BM // Self.MMA_M
@@ -1398,7 +1388,7 @@ struct SM100TensorAccumulatorTS[
 
     @__allow_legacy_any_origin_fields
     var mbar: UnsafePointer[
-        SharedMemBarrier, MutAnyOrigin, address_space=AddressSpace.SHARED
+        SharedMemBarrier, MutAnyOrigin, address_space=.SHARED
     ]
     var phase: UInt32
 
@@ -1419,7 +1409,7 @@ struct SM100TensorAccumulatorTS[
     def __init__(
         out self,
         smem: UnsafePointer[
-            SharedMemBarrier, MutAnyOrigin, address_space=AddressSpace.SHARED
+            SharedMemBarrier, MutAnyOrigin, address_space=.SHARED
         ],
     ):
         Self.check_constraints()
@@ -1443,7 +1433,7 @@ struct SM100TensorAccumulatorTS[
         dtype_b: DType
     ](
         p_b: UnsafePointer[
-            Scalar[dtype_b], MutAnyOrigin, address_space=AddressSpace.SHARED
+            Scalar[dtype_b], MutAnyOrigin, address_space=.SHARED
         ],
     ) -> Self.ab_t.b_t:
         Self.check_constraints()
@@ -1556,11 +1546,11 @@ def mha_sm100_dispatch[
     v: KVType,
     num_rows_q: Int,
     mask: MaskType,
-    valid_length: DeviceBuffer[DType.uint32],
+    valid_length: DeviceBuffer[.uint32],
     max_prompt_len_arg: MaxPromptLenType,
     max_cache_valid_length_arg: Int,
     scale: Float32,
-    kv_input_row_offsets: OptionalReg[ImmutTileTensor1D[DType.uint32]],
+    kv_input_row_offsets: OptionalReg[ImmutTileTensor1D[.uint32]],
     batch_size_arg: Int,
     partition: PartitionType,
     ctx: DeviceContext,
@@ -1812,15 +1802,15 @@ def _mha_sm100_kv_input_row_offset_dispatch[
     batch_size: UInt32,
     max_seq_len: MaxSeqLenType,  # sequence length after padding.
     num_keys_arg: UInt32,
-    valid_length: DeviceBuffer[DType.uint32],
-    kv_input_row_offsets: OptionalReg[ImmutTileTensor1D[DType.uint32]],
+    valid_length: DeviceBuffer[.uint32],
+    kv_input_row_offsets: OptionalReg[ImmutTileTensor1D[.uint32]],
     sink_weights: SinkType,
     partition: PartitionType,
     mask: MaskType,
     ctx: DeviceContext,
 ) raises:
-    comptime KVRowOffsetsNonNull = NonNullPointer[DType.uint32]
-    comptime KVRowOffsetsNull = NullPointer[DType.uint32]
+    comptime KVRowOffsetsNonNull = NonNullPointer[.uint32]
+    comptime KVRowOffsetsNull = NullPointer[.uint32]
     if kv_input_row_offsets:
         var kv_row_offsets: KVRowOffsetsNonNull = {
             kv_input_row_offsets.value().ptr
@@ -1936,7 +1926,7 @@ def _mha_sm100_valid_length_dispatch[
     batch_size: UInt32,
     max_seq_len: MaxSeqLenType,  # sequence length after padding.
     num_keys_arg: UInt32,
-    valid_length: DeviceBuffer[DType.uint32],
+    valid_length: DeviceBuffer[.uint32],
     kv_input_row_offsets: KVRowOffsetsType,
     sink_weights: SinkType,
     partition: PartitionType,
@@ -1944,7 +1934,7 @@ def _mha_sm100_valid_length_dispatch[
     ctx: DeviceContext,
 ) raises:
     comptime if ragged:
-        comptime ValidLengthType = NonNullPointer[DType.uint32]
+        comptime ValidLengthType = NonNullPointer[.uint32]
         var valid_len: ValidLengthType = {valid_length}
         _mha_sm100_enqueue[
             SchedulerType=SchedulerType,
@@ -1979,7 +1969,7 @@ def _mha_sm100_valid_length_dispatch[
             ctx,
         )
     else:
-        comptime ValidLengthType = NullPointer[DType.uint32]
+        comptime ValidLengthType = NullPointer[.uint32]
         var valid_len: ValidLengthType = {}
         _mha_sm100_enqueue[
             SchedulerType=SchedulerType,
@@ -2430,7 +2420,7 @@ def _mha_sm100[
     comptime q_smem_size = BM * padded_depth * q_or_out_kv_elems
     var q_smem = external_memory[
         Scalar[kv_type],
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
         name="mha_dynamic_shared_memory",
     ]()
@@ -2983,26 +2973,26 @@ def _mha_sm100[
             UMMA0Type.accum_t,
             Layout.row_major(num_rows_per_warp),
             MutAnyOrigin,
-            address_space=AddressSpace.LOCAL,
+            address_space=.LOCAL,
         ].stack_allocation()
         var rowsum = LayoutTensor[
             UMMA0Type.accum_t,
             Layout.row_major(num_rows_per_warp),
             MutAnyOrigin,
-            address_space=AddressSpace.LOCAL,
+            address_space=.LOCAL,
         ].stack_allocation()
         comptime VecPType = LayoutTensor[
             accum_type,
             p_vec_output_layout,
             MutAnyOrigin,
-            address_space=AddressSpace.LOCAL,
+            address_space=.LOCAL,
             element_layout=element_layout,
         ]
         comptime VecOType = LayoutTensor[
             accum_type,
             o_vec_output_layout,
             MutAnyOrigin,
-            address_space=AddressSpace.LOCAL,
+            address_space=.LOCAL,
             element_layout=element_layout,
         ]
 
@@ -3122,7 +3112,7 @@ def _mha_sm100[
             var accum_smem_tile = LayoutTensor[
                 output_type,
                 Layout.row_major(BM, config.padded_depth),
-                address_space=AddressSpace.SHARED,
+                address_space=.SHARED,
             ]((q_smem).bitcast[Scalar[output_type]]())
             var accum_smem_warp_tile = accum_smem_tile.tile[WM, BN](
                 Int(warp_y), Int(warp_x)
@@ -3323,7 +3313,7 @@ def _mha_sm100[
                 var p_smem_tile = LayoutTensor[
                     kv_type,
                     Layout.row_major(BM, MMA_N0),
-                    address_space=AddressSpace.SHARED,
+                    address_space=.SHARED,
                 ](p_smem.bitcast[Scalar[kv_type]]())
                 var p_smem_warp_tile = p_smem_tile.tile[WM, MMA_N0](
                     Int(warp_y), 0
@@ -3401,7 +3391,7 @@ def _mha_sm100[
             var p_smem_tile = LayoutTensor[
                 kv_type,
                 Layout.row_major(BM, MMA_N0),
-                address_space=AddressSpace.SHARED,
+                address_space=.SHARED,
             ](p_smem.bitcast[Scalar[kv_type]]())
             var p_smem_warp_tile = p_smem_tile.tile[WM, MMA_N0](Int(warp_y), 0)
             copy_local_to_shared[

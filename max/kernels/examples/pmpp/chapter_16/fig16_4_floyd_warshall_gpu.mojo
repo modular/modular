@@ -46,8 +46,8 @@ def floyd_warshall_kernel(
     # Allocate shared memory for row value - all threads in block share same i
     var k_row_shared = unsafe_stack_allocation[
         1,
-        Scalar[DType.float32],
-        address_space=AddressSpace.SHARED,
+        Float32,
+        address_space=.SHARED,
     ]()
 
     # blockIdx.y gives row i, blockIdx.x and threadIdx.x give column j
@@ -59,7 +59,7 @@ def floyd_warshall_kernel(
 
     # Thread 0 loads A[i][k] into shared memory once for the whole block
     if thread_idx.x == 0:
-        k_row_shared[0] = Scalar[DType.float32](A[i * num_vertices + curr_k])
+        k_row_shared[0] = Float32(A[i * num_vertices + curr_k])
 
     barrier()
 

@@ -96,10 +96,10 @@ def block_reduce[
     dtype: DType, max_warps_per_block: Int
 ](val: Scalar[dtype]) -> Scalar[dtype]:
     var m2_shared = unsafe_stack_allocation[
-        max_warps_per_block, dtype, address_space=AddressSpace.SHARED
+        max_warps_per_block, dtype, address_space=.SHARED
     ]()
     var m2_broadcast = unsafe_stack_allocation[
-        1, dtype, address_space=AddressSpace.SHARED
+        1, dtype, address_space=.SHARED
     ]()
 
     var warp_m2 = warp.sum(val)
@@ -137,17 +137,13 @@ def block_reduce_dual_sum[
 ]:
     """Combined block reduction for two sums using only 2 barriers."""
     var shared0 = unsafe_stack_allocation[
-        max_warps_per_block, dtype, address_space=AddressSpace.SHARED
+        max_warps_per_block, dtype, address_space=.SHARED
     ]()
     var shared1 = unsafe_stack_allocation[
-        max_warps_per_block, dtype, address_space=AddressSpace.SHARED
+        max_warps_per_block, dtype, address_space=.SHARED
     ]()
-    var broadcast0 = unsafe_stack_allocation[
-        1, dtype, address_space=AddressSpace.SHARED
-    ]()
-    var broadcast1 = unsafe_stack_allocation[
-        1, dtype, address_space=AddressSpace.SHARED
-    ]()
+    var broadcast0 = unsafe_stack_allocation[1, dtype, address_space=.SHARED]()
+    var broadcast1 = unsafe_stack_allocation[1, dtype, address_space=.SHARED]()
 
     var warp_sum0 = warp.sum(val0)
     var warp_sum1 = warp.sum(val1)
@@ -252,22 +248,22 @@ def welford_block_all_reduce[
     mut res_count: Scalar[dtype],
 ):
     var mean_shared = unsafe_stack_allocation[
-        WARP_SIZE, dtype, address_space=AddressSpace.SHARED
+        WARP_SIZE, dtype, address_space=.SHARED
     ]()
     var m2_shared = unsafe_stack_allocation[
-        WARP_SIZE, dtype, address_space=AddressSpace.SHARED
+        WARP_SIZE, dtype, address_space=.SHARED
     ]()
     var count_shared = unsafe_stack_allocation[
-        WARP_SIZE, dtype, address_space=AddressSpace.SHARED
+        WARP_SIZE, dtype, address_space=.SHARED
     ]()
     var mean_broadcast = unsafe_stack_allocation[
-        1, dtype, address_space=AddressSpace.SHARED
+        1, dtype, address_space=.SHARED
     ]()
     var m2_broadcast = unsafe_stack_allocation[
-        1, dtype, address_space=AddressSpace.SHARED
+        1, dtype, address_space=.SHARED
     ]()
     var count_broadcast = unsafe_stack_allocation[
-        1, dtype, address_space=AddressSpace.SHARED
+        1, dtype, address_space=.SHARED
     ]()
 
     var warp_idx = warp_id()
@@ -1071,8 +1067,8 @@ def rms_norm_gpu[
             ctx.enqueue_function[kernel](
                 shape_il.canonicalize(),
                 gamma,
-                epsilon.cast[DType.float32](),
-                weight_offset.cast[DType.float32](),
+                epsilon.cast[.float32](),
+                weight_offset.cast[.float32](),
                 Int32(cols),
                 grid_dim=rows,
                 block_dim=threads_per_block,
@@ -1090,7 +1086,7 @@ def rms_norm_gpu[
         # When the number of columns are less enough that they can be placed in
         # registers we do warp tiling which is a single pass to do mean/var
         # computation and normalization.
-        if cols <= 128 and dtype == DType.bfloat16:
+        if cols <= 128 and dtype == .bfloat16:
             # Experimentally determined to be the best - tapers off at 2.
             comptime warps_per_block = 2
             # Each warp handles 2 rows, so total rows per block is warps_per_block * 2.
@@ -1111,8 +1107,8 @@ def rms_norm_gpu[
             ]
             ctx.enqueue_function[kernel](
                 gamma,
-                epsilon.cast[DType.float32](),
-                weight_offset.cast[DType.float32](),
+                epsilon.cast[.float32](),
+                weight_offset.cast[.float32](),
                 Int32(rows),
                 Int32(cols),
                 grid_dim=grid_dim,
@@ -1160,8 +1156,8 @@ def rms_norm_gpu[
                         ]
                         ctx.enqueue_function[kernel](
                             gamma,
-                            epsilon.cast[DType.float32](),
-                            weight_offset.cast[DType.float32](),
+                            epsilon.cast[.float32](),
+                            weight_offset.cast[.float32](),
                             Int32(rows),
                             Int32(cols),
                             grid_dim=grid_dim,
@@ -1185,8 +1181,8 @@ def rms_norm_gpu[
                 ]
                 ctx.enqueue_function[kernel](
                     gamma,
-                    epsilon.cast[DType.float32](),
-                    weight_offset.cast[DType.float32](),
+                    epsilon.cast[.float32](),
+                    weight_offset.cast[.float32](),
                     Int32(rows),
                     Int32(cols),
                     grid_dim=grid_dim,
@@ -1245,8 +1241,8 @@ def rms_norm_gpu[
             ]
             ctx.enqueue_function[kernel](
                 gamma,
-                epsilon.cast[DType.float32](),
-                weight_offset.cast[DType.float32](),
+                epsilon.cast[.float32](),
+                weight_offset.cast[.float32](),
                 Int32(cols),
                 grid_dim=grid_dim,
                 block_dim=block_dim,
@@ -1267,8 +1263,8 @@ def rms_norm_gpu[
         ]
         ctx.enqueue_function[kernel](
             gamma,
-            epsilon.cast[DType.float32](),
-            weight_offset.cast[DType.float32](),
+            epsilon.cast[.float32](),
+            weight_offset.cast[.float32](),
             Int32(cols),
             grid_dim=grid_dim,
             block_dim=block_dim,
@@ -1599,14 +1595,12 @@ def apply_qk_rms_norm_gpu_block[
         out_dtype, k_out_layout, k_out_origin, Storage=k_out_storage
     ],
     gamma_q: TileTensor[
-        DType.float32, gamma_q_layout, gamma_q_origin, Storage=gamma_q_storage
+        .float32, gamma_q_layout, gamma_q_origin, Storage=gamma_q_storage
     ],
     gamma_k: TileTensor[
-        DType.float32, gamma_k_layout, gamma_k_origin, Storage=gamma_k_storage
+        .float32, gamma_k_layout, gamma_k_origin, Storage=gamma_k_storage
     ],
-    qk_var: TileTensor[
-        DType.float32, var_layout, var_origin, Storage=var_storage
-    ],
+    qk_var: TileTensor[.float32, var_layout, var_origin, Storage=var_storage],
     q: TileTensor[in_dtype, q_layout, q_origin, Storage=q_storage],
     k: TileTensor[in_dtype, k_layout, k_origin, Storage=k_storage],
     epsilon: Float32,
@@ -1627,7 +1621,7 @@ def apply_qk_rms_norm_gpu_block[
     var _k_cols = Int(k_cols)
     comptime assert q.flat_rank == 2, "q must have rank 2"
     comptime assert k.flat_rank == 2, "k must have rank 2"
-    comptime align = align_of[SIMD[DType.float32, simd_width]]()
+    comptime align = align_of[SIMD[.float32, simd_width]]()
 
     var tid = thread_idx.x
     var row = block_idx.x
@@ -1649,7 +1643,7 @@ def apply_qk_rms_norm_gpu_block[
                 if is_k:
                     var xf = k.load[width=simd_width](
                         Coord(Index(Int(row), offset))
-                    ).cast[DType.float32]()
+                    ).cast[.float32]()
                     var g = gamma_k.load[width=simd_width, alignment=align](
                         Coord(offset)
                     )
@@ -1660,7 +1654,7 @@ def apply_qk_rms_norm_gpu_block[
                 else:
                     var xf = q.load[width=simd_width](
                         Coord(Index(Int(row), offset))
-                    ).cast[DType.float32]()
+                    ).cast[.float32]()
                     var g = gamma_q.load[width=simd_width, alignment=align](
                         Coord(offset)
                     )
@@ -1678,9 +1672,9 @@ def apply_qk_rms_norm_gpu[
 ](
     q_out: TileTensor[mut=True, out_dtype, ...],
     k_out: TileTensor[mut=True, out_dtype, ...],
-    gamma_q: TileTensor[mut=False, DType.float32, ...],
-    gamma_k: TileTensor[mut=False, DType.float32, ...],
-    qk_var: TileTensor[mut=False, DType.float32, ...],
+    gamma_q: TileTensor[mut=False, .float32, ...],
+    gamma_k: TileTensor[mut=False, .float32, ...],
+    qk_var: TileTensor[mut=False, .float32, ...],
     q: TileTensor[mut=False, in_dtype, ...],
     k: TileTensor[mut=False, in_dtype, ...],
     epsilon: Float32,
@@ -1818,9 +1812,9 @@ def apply_qk_rms_norm_cpu[
 ](
     q_out: TileTensor[mut=True, out_dtype, ...],
     k_out: TileTensor[mut=True, out_dtype, ...],
-    gamma_q: TileTensor[mut=False, DType.float32, ...],
-    gamma_k: TileTensor[mut=False, DType.float32, ...],
-    qk_var: TileTensor[mut=False, DType.float32, ...],
+    gamma_q: TileTensor[mut=False, .float32, ...],
+    gamma_k: TileTensor[mut=False, .float32, ...],
+    qk_var: TileTensor[mut=False, .float32, ...],
     q: TileTensor[mut=False, in_dtype, ...],
     k: TileTensor[mut=False, in_dtype, ...],
     epsilon: Float32,
@@ -1861,9 +1855,9 @@ def apply_qk_rms_norm[
 ](
     q_out: TileTensor[mut=True, out_dtype, ...],
     k_out: TileTensor[mut=True, out_dtype, ...],
-    gamma_q: TileTensor[mut=False, DType.float32, ...],
-    gamma_k: TileTensor[mut=False, DType.float32, ...],
-    qk_var: TileTensor[mut=False, DType.float32, ...],
+    gamma_q: TileTensor[mut=False, .float32, ...],
+    gamma_k: TileTensor[mut=False, .float32, ...],
+    qk_var: TileTensor[mut=False, .float32, ...],
     q: TileTensor[mut=False, in_dtype, ...],
     k: TileTensor[mut=False, in_dtype, ...],
     epsilon: Float32,
@@ -1968,8 +1962,8 @@ def group_norm_reshape[
     out result: TileTensor[
         dtype,
         Layout[
-            shape_types=DynamicCoord[DType.int64, 2].element_types,
-            stride_types=DynamicCoord[DType.int64, 2].element_types,
+            shape_types=DynamicCoord[.int64, 2].element_types,
+            stride_types=DynamicCoord[.int64, 2].element_types,
         ],
         buf.origin,
         address_space=buf.address_space,
@@ -2499,7 +2493,7 @@ def group_norm_gpu[
             ]
             ctx.enqueue_function[kernel](
                 output_rs,
-                epsilon.cast[DType.float32](),
+                epsilon.cast[.float32](),
                 Int32(num_groups),
                 Int32(channels_per_group),
                 Int32(spatial),
@@ -2589,7 +2583,7 @@ def group_norm_gpu[
                 ctx.enqueue_function[norm_kernel](
                     output_rs,
                     stats,
-                    epsilon.cast[DType.float32](),
+                    epsilon.cast[.float32](),
                     Int32(num_groups),
                     Int32(channels_per_group),
                     Int32(spatial),
@@ -2613,7 +2607,7 @@ def group_norm_gpu[
                 ]
                 ctx.enqueue_function[kernel](
                     output_rs,
-                    epsilon.cast[DType.float32](),
+                    epsilon.cast[.float32](),
                     Int32(num_groups),
                     Int32(channels_per_group),
                     Int32(spatial),
@@ -2633,7 +2627,7 @@ def group_norm_gpu[
         ]
         ctx.enqueue_function[kernel](
             output_rs,
-            epsilon.cast[DType.float32](),
+            epsilon.cast[.float32](),
             Int32(num_groups),
             Int32(channels_per_group),
             Int32(spatial),
@@ -3397,8 +3391,8 @@ def layer_norm_rope_ragged[
     gamma: TileTensor[mut=False, input_dtype, ...],
     beta: TileTensor[mut=False, input_dtype, ...],
     epsilon: Scalar[input_dtype],
-    input_row_offsets: TileTensor[DType.uint32, ...],
-    start_pos: TileTensor[DType.uint32, ...],
+    input_row_offsets: TileTensor[.uint32, ...],
+    start_pos: TileTensor[.uint32, ...],
     freqs_cis: TileTensor[freq_dtype, ...],
     context: Optional[DeviceContext] = None,
 ) raises:
@@ -3654,7 +3648,7 @@ def row_mean_of_squares[
         # the axis size is always the dynamic form.
         var row = rowwise.Row[
             params, accum, in_dtype, reduce_dim, row_rank, is_cached=False
-        ](row_coords, Scalar[DType.int](axis_size), ctx_p, load)
+        ](row_coords, Int(axis_size), ctx_p, load)
 
         # Reduce: sum of squares -> mean of squares.
         @always_inline

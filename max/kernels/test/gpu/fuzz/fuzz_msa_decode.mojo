@@ -172,7 +172,7 @@ def run_one_case(
     # Block selection: slot 0 = prefix block 0, last slot = the partial LOCAL
     # block, interior slots = blocks in [1, local-1]. Duplicates are harmless
     # (kernel and oracle both iterate the same idx).
-    var idx_host = ctx.enqueue_create_host_buffer[DType.int32](idx_count)
+    var idx_host = ctx.enqueue_create_host_buffer[.int32](idx_count)
     ctx.synchronize()
     for b in range(batch_size):
         var lblk = local_blk[b]
@@ -251,11 +251,11 @@ def run_one_case(
                 kv_host[v_off] = vval
 
     var q_dev = ctx.enqueue_create_buffer[dtype](q_size)
-    var idx_dev = ctx.enqueue_create_buffer[DType.int32](idx_count)
+    var idx_dev = ctx.enqueue_create_buffer[.int32](idx_count)
     var o_dev = ctx.enqueue_create_buffer[dtype](q_size)
     var kv_block_dev = ctx.enqueue_create_buffer[dtype](kv_block_size)
-    var cl_host = ctx.enqueue_create_host_buffer[DType.uint32](batch_size)
-    var lut_host = ctx.enqueue_create_host_buffer[DType.uint32](
+    var cl_host = ctx.enqueue_create_host_buffer[.uint32](batch_size)
+    var lut_host = ctx.enqueue_create_host_buffer[.uint32](
         batch_size * max_pages
     )
     ctx.synchronize()
@@ -263,10 +263,8 @@ def run_one_case(
         cl_host[b] = UInt32(cache_length[b])
         for lb in range(max_pages):
             lut_host[b * max_pages + lb] = UInt32(lut[b * max_pages + lb])
-    var cl_dev = ctx.enqueue_create_buffer[DType.uint32](batch_size)
-    var lut_dev = ctx.enqueue_create_buffer[DType.uint32](
-        batch_size * max_pages
-    )
+    var cl_dev = ctx.enqueue_create_buffer[.uint32](batch_size)
+    var lut_dev = ctx.enqueue_create_buffer[.uint32](batch_size * max_pages)
 
     # Poison O so an unwritten output slot is caught too.
     var o_init = ctx.enqueue_create_host_buffer[dtype](q_size)
@@ -291,12 +289,12 @@ def run_one_case(
         ),
     )
     comptime cl_layout = Layout(UNKNOWN_VALUE)
-    var cl_tensor = LayoutTensor[mut=False, DType.uint32, cl_layout](
+    var cl_tensor = LayoutTensor[mut=False, .uint32, cl_layout](
         cl_dev,
         RuntimeLayout[cl_layout].row_major(IndexList[1](batch_size)),
     )
     comptime lut_layout = Layout.row_major[2]()
-    var lut_tensor = LayoutTensor[mut=False, DType.uint32, lut_layout](
+    var lut_tensor = LayoutTensor[mut=False, .uint32, lut_layout](
         lut_dev,
         RuntimeLayout[lut_layout].row_major(
             IndexList[2](batch_size, max_pages)
@@ -320,13 +318,13 @@ def run_one_case(
     comptime config = MHAConfig[dtype](num_q_heads, head_dim)
 
     # Ragged Q offsets [batch+1], one decode token per batch (iro[b] = b).
-    var iro_host = ctx.enqueue_create_host_buffer[DType.uint32](batch_size + 1)
+    var iro_host = ctx.enqueue_create_host_buffer[.uint32](batch_size + 1)
     ctx.synchronize()
     for b in range(batch_size + 1):
         iro_host[b] = UInt32(b)
-    var iro_dev = ctx.enqueue_create_buffer[DType.uint32](batch_size + 1)
+    var iro_dev = ctx.enqueue_create_buffer[.uint32](batch_size + 1)
     ctx.enqueue_copy(iro_dev, iro_host)
-    var valid_length = DeviceBuffer[DType.uint32](
+    var valid_length = DeviceBuffer[.uint32](
         ctx, iro_dev.unsafe_ptr(), batch_size + 1, owning=False
     )
 
@@ -406,7 +404,7 @@ def run_one_case(
 
     # NaN/Inf guard (an all-poison softmax can overflow).
     for i in range(q_size):
-        var x = o_host[i].cast[DType.float32]()
+        var x = o_host[i].cast[.float32]()
         if isnan(x) or isinf(x):
             print("FUZZ_NUMERIC_FAIL kind=naninf idx=", i, "val=", x)
             raise Error("MSA decode output NaN/Inf (poison tail attended?)")
@@ -436,8 +434,7 @@ def run_one_case(
                     var ko = kv_off(b, blk, c)
                     for d in range(head_dim):
                         dot += (
-                            q_host[q_base + d].cast[DType.float64]()
-                            * k_f64[ko + d]
+                            q_host[q_base + d].cast[.float64]() * k_f64[ko + d]
                         )
                     logits.append(dot * scale_f64)
                     slot_lin.append(k_logical)
@@ -457,7 +454,7 @@ def run_one_case(
                     var bl = slot_lin[i] // BN
                     var c = slot_lin[i] % BN
                     acc += w * v_f64[kv_off(b, bl, c) + d]
-                var got = o_host[q_base + d].cast[DType.float64]()
+                var got = o_host[q_base + d].cast[.float64]()
                 var ae = abs(got - acc)
                 max_abs = max(max_abs, ae)
                 if abs(acc) > 0.1:

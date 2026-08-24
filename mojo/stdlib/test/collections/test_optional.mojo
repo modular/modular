@@ -373,7 +373,7 @@ def test_optional_conditional_register_passable() raises:
 
 def test_optional_conditional_device_passable() raises:
     assert_true(conforms_to(Optional[Int], DevicePassable))
-    assert_true(conforms_to(Optional[Scalar[DType.float32]], DevicePassable))
+    assert_true(conforms_to(Optional[Float32], DevicePassable))
     assert_false(conforms_to(Optional[Bool], DevicePassable))
     assert_false(conforms_to(Optional[String], DevicePassable))
     assert_false(conforms_to(Optional[MoveOnly[Int]], DevicePassable))

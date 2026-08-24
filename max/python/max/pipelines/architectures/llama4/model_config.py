@@ -299,6 +299,8 @@ class Llama4Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
         cls,
         pipeline_config: PipelineConfig,
         model_config: MAXModelConfig | None = None,
+        *,
+        max_seq_len: int,
     ) -> Self:
         model_config = model_config or pipeline_config.model
         huggingface_config = model_config.huggingface_config
@@ -309,7 +311,10 @@ class Llama4Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
                 "repository contains a valid config.json file."
             )
         return cls.initialize_from_config(
-            pipeline_config, huggingface_config, model_config
+            pipeline_config,
+            huggingface_config,
+            model_config,
+            max_seq_len=max_seq_len,
         )
 
     @classmethod
@@ -318,6 +323,8 @@ class Llama4Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
         pipeline_config: PipelineConfig,
         huggingface_config: AutoConfig,
         model_config: MAXModelConfig | None = None,
+        *,
+        max_seq_len: int,
     ) -> Self:
         model_config = model_config or pipeline_config.model
         text_config = get_text_config(huggingface_config)
@@ -380,11 +387,7 @@ class Llama4Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
                 quantization_encoding,
                 pipeline_config.model.huggingface_config,
             ),
-            max_seq_len=cls.calculate_max_seq_len(
-                pipeline_config,
-                huggingface_config=huggingface_config,
-                model_config=model_config,
-            ),
+            max_seq_len=max_seq_len,
             kv_params=cls.construct_kv_params(
                 huggingface_config=huggingface_config,
                 pipeline_config=pipeline_config,

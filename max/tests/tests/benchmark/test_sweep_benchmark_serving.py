@@ -30,6 +30,10 @@ import pytest
 import pytest_mock
 import yaml
 from max.benchmark import sweep_benchmark_serving
+from max.benchmark.benchmark_shared.metrics import (
+    BenchmarkResult,
+    TextGenAggregates,
+)
 
 pytestmark = pytest.mark.usefixtures("offline_dryrun_mocks")
 
@@ -592,6 +596,30 @@ def test_result_filename_none_when_not_provided(
 # ===========================================================================
 
 
+def _real_text_result(
+    *, completed: int = 5, duration: float = 1.0
+) -> BenchmarkResult:
+    """A minimal real result: ``save_result_json`` reads ``result_groups``
+    from the model field, so a ``MagicMock`` no longer suffices."""
+    return BenchmarkResult(
+        task_type="text",
+        max_concurrency=1,
+        text_data=TextGenAggregates(
+            duration=duration,
+            completed=completed,
+            failures=0,
+            request_throughput=completed / duration,
+            total_input=10,
+            total_output=20,
+            nonempty_response_chunks=20,
+            max_input=10,
+            max_output=20,
+            max_total=30,
+            global_cached_token_rate=0.0,
+        ),
+    )
+
+
 def test_save_result_json_writes_valid_json(
     tmp_path: Path, workload_config: Path
 ) -> None:
@@ -612,18 +640,10 @@ def test_save_result_json_writes_valid_json(
         ]
     )
 
-    mock_result = MagicMock()
-    mock_result.aggregates.completed = 5
-    mock_result.to_result_dict.return_value = {
-        "duration": 1.0,
-        "completed": 5,
-        "failures": 0,
-    }
-
     save_result_json(
         config.result_filename,
         config,
-        mock_result,
+        _real_text_result(completed=5),
         benchmark_task="text-generation",
         model_id="myorg/mymodel",
         tokenizer_id="myorg/mymodel",
@@ -643,6 +663,7 @@ def test_save_result_json_writes_valid_json(
     assert data["request_rate"] == 10.0
     assert "date" in data
     assert "duration" in data
+    assert data["result_groups"]["summary"]["completed"] == 5
 
 
 def test_result_json_written_at_specified_path(
@@ -958,27 +979,19 @@ def test_upload_writes_correct_data_to_correct_files(
     )
     from max.benchmark.benchmark_shared.config import ServingBenchmarkConfig
 
-    MC1_SENTINEL = "mc1_data"
-    MC2_SENTINEL = "mc2_data"
-
     def fake_benchmark_serving_main(
         config: ServingBenchmarkConfig,
         **kwargs: object,
     ) -> Iterator[BenchmarkRunResult]:
         assert config.model is not None
-        for mc, sentinel in [(1, MC1_SENTINEL), (2, MC2_SENTINEL)]:
-            mock_result = MagicMock()
-            mock_result.aggregates.completed = 5
-            mock_result.to_result_dict.return_value = {
-                "duration": float(mc),
-                "completed": 5,
-                "failures": 0,
-                "test_sentinel": sentinel,
-            }
+        for mc in [1, 2]:
+            # ``duration == float(mc)`` is the per-iteration sentinel: stale
+            # mc1 data in mc2's file (or vice versa) shows as the wrong value.
+            result = _real_text_result(completed=5, duration=float(mc))
             save_result_json(
                 config.result_filename,
                 config,
-                mock_result,
+                result,
                 benchmark_task="text-generation",
                 model_id=config.model,
                 tokenizer_id=config.model,
@@ -989,7 +1002,7 @@ def test_upload_writes_correct_data_to_correct_files(
                 max_concurrency=mc,
                 request_rate=float(mc),
                 num_prompts=10,
-                result=mock_result,
+                result=result,
             )
 
     mocker.patch(
@@ -1029,11 +1042,11 @@ def test_upload_writes_correct_data_to_correct_files(
 
     mc1_data = json.loads(mc1_file.read_text())
     mc2_data = json.loads(mc2_file.read_text())
-    assert mc1_data.get("test_sentinel") == MC1_SENTINEL, (
-        f"results-1-median.json contains mc2 data (sentinel={mc1_data.get('test_sentinel')!r})"
+    assert mc1_data.get("duration") == 1.0, (
+        f"results-1-median.json contains mc2 data (duration={mc1_data.get('duration')!r})"
     )
-    assert mc2_data.get("test_sentinel") == MC2_SENTINEL, (
-        f"results-2-median.json contains wrong data (sentinel={mc2_data.get('test_sentinel')!r})"
+    assert mc2_data.get("duration") == 2.0, (
+        f"results-2-median.json contains wrong data (duration={mc2_data.get('duration')!r})"
     )
 
 

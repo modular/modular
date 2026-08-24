@@ -513,13 +513,13 @@ def load_AB_SFA[
                 sfa_tma_dtype,
                 sfa_smem_tile.LayoutType,
                 MutAnyOrigin,
-                address_space=AddressSpace.SHARED,
+                address_space=.SHARED,
             ](
                 rebind[
                     UnsafePointer[
                         Scalar[sfa_tma_dtype],
                         MutAnyOrigin,
-                        address_space=AddressSpace.SHARED,
+                        address_space=.SHARED,
                     ]
                 ](sfa_smem_tile.ptr),
                 sfa_smem_tile.layout,
@@ -671,13 +671,13 @@ def _prefetch_weight_tiles_sbn[
                     sfa_tma_dtype,
                     sfa_smem_tile.LayoutType,
                     MutAnyOrigin,
-                    address_space=AddressSpace.SHARED,
+                    address_space=.SHARED,
                 ](
                     rebind[
                         UnsafePointer[
                             Scalar[sfa_tma_dtype],
                             MutAnyOrigin,
-                            address_space=AddressSpace.SHARED,
+                            address_space=.SHARED,
                         ]
                     ](sfa_smem_tile.ptr),
                     sfa_smem_tile.layout,
@@ -796,13 +796,13 @@ def _complete_activation_tiles_sbn[
                     sfa_tma_dtype,
                     sfa_smem_tile.LayoutType,
                     MutAnyOrigin,
-                    address_space=AddressSpace.SHARED,
+                    address_space=.SHARED,
                 ](
                     rebind[
                         UnsafePointer[
                             Scalar[sfa_tma_dtype],
                             MutAnyOrigin,
-                            address_space=AddressSpace.SHARED,
+                            address_space=.SHARED,
                         ]
                     ](sfa_smem_tile.ptr),
                     sfa_smem_tile.layout,
@@ -880,9 +880,7 @@ def consumer_main_loop[
     sfb_smem_tiles: SMemTileArrayWithLayout[sfb_dtype, ...],
     load_mma_pipeline: ProducerConsumerPipeline[pipeline_stages],
     sfb_pipeline: ProducerConsumerPipeline[num_group_pipeline_stages],
-    sfb_ready_mbars: UnsafePointer[
-        SharedMemBarrier, _, address_space=AddressSpace.SHARED
-    ],
+    sfb_ready_mbars: UnsafePointer[SharedMemBarrier, _, address_space=.SHARED],
     mut sfb_ready_state: PipelineState[num_group_pipeline_stages],
     mma_op: MmaOpSM100_BlockScaled_SS[
         c_type,
@@ -1038,7 +1036,7 @@ def _sfb_cpasync_produce_tile[
     num_iters: UInt32,
     mut sfb_pipeline: ProducerConsumerPipeline[num_sfb_pipeline_stages],
     sfb_smem_base_ptr: UnsafePointer[
-        mut=True, Scalar[sfb_dtype], _, address_space=AddressSpace.SHARED
+        mut=True, Scalar[sfb_dtype], _, address_space=.SHARED
     ],
     sfb_global_ptr: UnsafePointer[mut=False, Scalar[sfb_dtype], _],
     sfb_batch_stride: Int,
@@ -1150,10 +1148,10 @@ def _sfb_cpasync_produce_tile[
                             async_copy[size=SF_ATOM_K * size_of[sfb_dtype](),](
                                 (
                                     sfb_global_ptr + global_offset
-                                ).address_space_cast[AddressSpace.GLOBAL](),
+                                ).address_space_cast[.GLOBAL](),
                                 (
                                     sfb_smem_tile_ptr + smem_offset
-                                ).address_space_cast[AddressSpace.SHARED](),
+                                ).address_space_cast[.SHARED](),
                             )
                         else:
                             (sfb_smem_tile_ptr + smem_offset).store(
@@ -1184,7 +1182,7 @@ def _sfb_cpasync_produce_tile_warpwide[
     num_iters: UInt32,
     mut sfb_pipeline: ProducerConsumerPipeline[num_sfb_pipeline_stages],
     sfb_smem_base_ptr: UnsafePointer[
-        mut=True, Scalar[sfb_dtype], _, address_space=AddressSpace.SHARED
+        mut=True, Scalar[sfb_dtype], _, address_space=.SHARED
     ],
     sfb_global_ptr: UnsafePointer[mut=False, Scalar[sfb_dtype], _],
     sfb_batch_stride: Int,
@@ -1299,10 +1297,10 @@ def _sfb_cpasync_produce_tile_warpwide[
                     )
                     async_copy[size=SF_ATOM_K * size_of[sfb_dtype](),](
                         (sfb_global_ptr + global_offset).address_space_cast[
-                            AddressSpace.GLOBAL
+                            .GLOBAL
                         ](),
                         (sfb_smem_tile_ptr + smem_offset).address_space_cast[
-                            AddressSpace.SHARED
+                            .SHARED
                         ](),
                     )
                 else:
@@ -1396,7 +1394,7 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
     var _sfb_n_stride = Int(sfb_n_stride)
     var _sfb_k_tiles = Int(sfb_k_tiles)
     var _sfb_n_total = Int(sfb_n_total)
-    comptime assert c_type != DType.float32, "c_type cannot be float32"
+    comptime assert c_type != .float32, "c_type cannot be float32"
     comptime assert transpose_b, "only support k-major B"
 
     comptime num_output_warps = 4
@@ -1501,8 +1499,8 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
     ]
 
     ref smem_storage = external_memory[
-        Scalar[DType.uint8],
-        address_space=AddressSpace.SHARED,
+        UInt8,
+        address_space=.SHARED,
         alignment=128,
     ]().bitcast[SmemType]()[]
 
@@ -1645,28 +1643,26 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
     )
 
     var ptr_tmem_addr: UnsafePointer[
-        UInt32,
-        origin_of(tmem_addr_storage),
-        address_space=AddressSpace.SHARED,
+        UInt32, origin_of(tmem_addr_storage), address_space=.SHARED
     ] = tmem_addr_storage.unsafe_ptr()
 
     var clc_response = clc_response_storage.unsafe_ptr()
     var clc_full_mbar: UnsafePointer[
         SharedMemBarrier,
         origin_of(clc_mbars_full_storage),
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ] = clc_mbars_full_storage.unsafe_ptr()
     var clc_empty_mbar: UnsafePointer[
         SharedMemBarrier,
         origin_of(clc_mbars_empty_storage),
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ] = clc_mbars_empty_storage.unsafe_ptr()
 
     var tmem_dealloc_mbar = tmem_dealloc_mbar_storage.unsafe_ptr()
     var sfb_ready_mbars: UnsafePointer[
         SharedMemBarrier,
         origin_of(sfb_ready_mbars_storage),
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ] = sfb_ready_mbars_storage.unsafe_ptr()
 
     var warp_id = get_warp_id()
@@ -2380,11 +2376,9 @@ def _create_tma_and_launch[
     )
     var sfa_4d_layout = tt_row_major(sfa_4d_shape)
     var sfa_4d_tensor = TileTensor[
-        DType.uint16, type_of(sfa_4d_layout), ImmutAnyOrigin
+        .uint16, type_of(sfa_4d_layout), ImmutAnyOrigin
     ](
-        rebind[UnsafePointer[Scalar[DType.uint16], ImmutAnyOrigin]](
-            sfa_5d_tensor.ptr
-        ),
+        rebind[UnsafePointer[UInt16, ImmutAnyOrigin]](sfa_5d_tensor.ptr),
         sfa_4d_layout,
     )
 

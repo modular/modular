@@ -94,11 +94,11 @@ def bench_dispatch[
         (Idx[hidden_size // group_size], Idx[max_recv_tokens])
     )
 
-    var recv_count = shmem_malloc[DType.uint64](n_local_experts * n_ranks)
+    var recv_count = shmem_malloc[.uint64](n_local_experts * n_ranks)
     var recv_count_buf = DeviceBuffer(
         ctx, recv_count, n_local_experts * n_ranks, owning=False
     )
-    var atomic_counter = ctx.enqueue_create_buffer[DType.int32](
+    var atomic_counter = ctx.enqueue_create_buffer[.int32](
         EPLocalSyncCounters[n_experts].total_size()
     )
 
@@ -113,7 +113,7 @@ def bench_dispatch[
     var host_input_tokens = alloc[Scalar[input_type]](
         {count = n_tokens_per_rank * hidden_size}
     ).into_managed()
-    var device_topk_buf = ctx.enqueue_create_buffer[DType.int32](
+    var device_topk_buf = ctx.enqueue_create_buffer[.int32](
         n_tokens_per_rank * top_k
     )
     var device_input_buf = ctx.enqueue_create_buffer[input_type](
@@ -125,13 +125,13 @@ def bench_dispatch[
     var device_output_scales_buf = ctx.enqueue_create_buffer[scales_dtype](
         max_recv_tokens * hidden_size // group_size
     )
-    var device_row_offsets_buf = ctx.enqueue_create_buffer[DType.uint32](
+    var device_row_offsets_buf = ctx.enqueue_create_buffer[.uint32](
         n_local_experts + 1
     )
-    var device_expert_ids_buf = ctx.enqueue_create_buffer[DType.int32](
+    var device_expert_ids_buf = ctx.enqueue_create_buffer[.int32](
         n_local_experts
     )
-    var device_src_token_info_buf = ctx.enqueue_create_buffer[DType.int32](
+    var device_src_token_info_buf = ctx.enqueue_create_buffer[.int32](
         n_tokens_per_rank * n_ranks * n_local_experts * 2
     )
 
@@ -207,8 +207,8 @@ def bench_dispatch[
     ) raises:
         var msg_bytes = TokenFmtType.msg_size()
 
-        var send_buf = shmem_malloc[DType.uint8](n_tokens_per_rank * msg_bytes)
-        var recv_buf = shmem_malloc[DType.uint8](
+        var send_buf = shmem_malloc[.uint8](n_tokens_per_rank * msg_bytes)
+        var recv_buf = shmem_malloc[.uint8](
             n_local_experts * n_ranks * n_tokens_per_rank * msg_bytes
         )
 
@@ -339,7 +339,7 @@ def bench_dispatch[
         shmem_free(send_buf)
         shmem_free(recv_buf)
 
-    comptime if token_dtype == DType.bfloat16:
+    comptime if token_dtype == .bfloat16:
         comptime token_fmt_type = BF16TokenFormat[
             output_layout=type_of(output_tt_layout), hidden_size, top_k
         ]
@@ -401,7 +401,7 @@ def main() raises:
     comptime token_dtype = get_defined_dtype[
         "token_dtype", DType.float8_e4m3fn
     ]()
-    comptime scales_dtype = get_defined_dtype["scales_dtype", DType.float32]()
+    comptime scales_dtype = get_defined_dtype["scales_dtype", .float32]()
 
     var m = Bench()
     var bencher_rank = m.check_mpirun()

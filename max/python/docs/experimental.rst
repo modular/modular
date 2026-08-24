@@ -19,6 +19,7 @@ Modules
 .. toctree::
    :maxdepth: 1
 
+   experimental.compilation
    experimental.functional
    experimental.nn
    experimental.nn.norm

@@ -60,23 +60,23 @@ def bench_single_group_router_eplb[
         num_tokens * n_routed_experts
     )
     var bias_d = ctx.enqueue_create_buffer[dtype](n_routed_experts)
-    var phy_d = ctx.enqueue_create_buffer[DType.int32](
+    var phy_d = ctx.enqueue_create_buffer[.int32](
         num_tokens * n_experts_per_tok
     )
-    var log_d = ctx.enqueue_create_buffer[DType.int32](
+    var log_d = ctx.enqueue_create_buffer[.int32](
         num_tokens * n_experts_per_tok
     )
     var w_d = ctx.enqueue_create_buffer[dtype](num_tokens * n_experts_per_tok)
-    var logcnt_d = ctx.enqueue_create_buffer[DType.int32](num_layers * num_log)
-    var log2phy_d = ctx.enqueue_create_buffer[DType.int32](
+    var logcnt_d = ctx.enqueue_create_buffer[.int32](num_layers * num_log)
+    var log2phy_d = ctx.enqueue_create_buffer[.int32](
         num_layers * num_log * max_replicas
     )
-    var layer_idx_d = ctx.enqueue_create_buffer[DType.int32](1)
+    var layer_idx_d = ctx.enqueue_create_buffer[.int32](1)
     ctx.enqueue_copy(scores_d, scores_h)
     ctx.enqueue_copy(bias_d, bias_h)
     ctx.enqueue_copy(logcnt_d, logcnt_h)
     ctx.enqueue_copy(log2phy_d, log2phy_h)
-    var layer_idx_h = ctx.enqueue_create_host_buffer[DType.int32](1)
+    var layer_idx_h = ctx.enqueue_create_host_buffer[.int32](1)
     layer_idx_h[0] = Int32(num_layers // 2)
     ctx.enqueue_copy(layer_idx_d, layer_idx_h)
     var expert_indices = TileTensor(
@@ -177,24 +177,20 @@ def bench_single_group_router_eplb[
 def bench_moe_create_indices[
     num_tokens: Int, num_experts: Int
 ](ctx: DeviceContext, mut b: Bench) raises:
-    var topk_h = ctx.enqueue_create_host_buffer[DType.uint32](num_tokens)
+    var topk_h = ctx.enqueue_create_host_buffer[.uint32](num_tokens)
     for i in range(num_tokens):
         topk_h[i] = UInt32(i % num_experts)
 
-    var topk_d = ctx.enqueue_create_buffer[DType.uint32](num_tokens)
-    ctx.enqueue_copy[DType.uint32](topk_d.unsafe_ptr(), topk_h)
+    var topk_d = ctx.enqueue_create_buffer[.uint32](num_tokens)
+    ctx.enqueue_copy[.uint32](topk_d.unsafe_ptr(), topk_h)
 
-    var token_expert_order_d = ctx.enqueue_create_buffer[DType.uint32](
-        num_tokens
-    )
-    var expert_start_indices_d = ctx.enqueue_create_buffer[DType.uint32](
+    var token_expert_order_d = ctx.enqueue_create_buffer[.uint32](num_tokens)
+    var expert_start_indices_d = ctx.enqueue_create_buffer[.uint32](
         num_experts + 1
     )
-    var restore_token_order_d = ctx.enqueue_create_buffer[DType.uint32](
-        num_tokens
-    )
-    var expert_ids_d = ctx.enqueue_create_buffer[DType.int32](num_experts)
-    var expert_usage_stats_d = ctx.enqueue_create_buffer[DType.uint32](2)
+    var restore_token_order_d = ctx.enqueue_create_buffer[.uint32](num_tokens)
+    var expert_ids_d = ctx.enqueue_create_buffer[.int32](num_experts)
+    var expert_usage_stats_d = ctx.enqueue_create_buffer[.uint32](2)
 
     var token_expert_order = TileTensor(
         token_expert_order_d, row_major[num_tokens]()
@@ -274,7 +270,7 @@ def bench_router_group_limited[
         num_tokens * n_routed_experts
     )
     var bias_d = ctx.enqueue_create_buffer[dtype](n_routed_experts)
-    var indices_d = ctx.enqueue_create_buffer[DType.int32](
+    var indices_d = ctx.enqueue_create_buffer[.int32](
         num_tokens * n_experts_per_tok
     )
     var weights_d = ctx.enqueue_create_buffer[dtype](
@@ -375,7 +371,7 @@ def bench_single_group_router[
         num_tokens * n_routed_experts
     )
     var bias_d = ctx.enqueue_create_buffer[dtype](n_routed_experts)
-    var indices_d = ctx.enqueue_create_buffer[DType.int32](
+    var indices_d = ctx.enqueue_create_buffer[.int32](
         num_tokens * n_experts_per_tok
     )
     var weights_d = ctx.enqueue_create_buffer[dtype](
@@ -481,20 +477,20 @@ def bench_eplb_remap[
                 )
 
     # Device buffers + TileTensors ----------------------------------------
-    var router_d = ctx.enqueue_create_buffer[DType.int32](num_tokens * K)
-    var phy_d = ctx.enqueue_create_buffer[DType.int32](num_tokens * K)
-    var logcnt_d = ctx.enqueue_create_buffer[DType.int32](num_layers * num_log)
-    var log2phy_d = ctx.enqueue_create_buffer[DType.int32](
+    var router_d = ctx.enqueue_create_buffer[.int32](num_tokens * K)
+    var phy_d = ctx.enqueue_create_buffer[.int32](num_tokens * K)
+    var logcnt_d = ctx.enqueue_create_buffer[.int32](num_layers * num_log)
+    var log2phy_d = ctx.enqueue_create_buffer[.int32](
         num_layers * num_log * max_replicas
     )
-    var layer_idx_d = ctx.enqueue_create_buffer[DType.int32](1)
+    var layer_idx_d = ctx.enqueue_create_buffer[.int32](1)
 
     ctx.enqueue_copy(router_d, router_h)
     ctx.enqueue_copy(logcnt_d, logcnt_h)
     ctx.enqueue_copy(log2phy_d, log2phy_h)
 
     # Pick a middle layer for the bench.
-    var layer_idx_h = ctx.enqueue_create_host_buffer[DType.int32](1)
+    var layer_idx_h = ctx.enqueue_create_host_buffer[.int32](1)
     layer_idx_h[0] = Int32(num_layers // 2)
     ctx.enqueue_copy(layer_idx_d, layer_idx_h)
 

@@ -244,7 +244,7 @@ trait TileTensorable(DenseTensor):
     def to_tile_tensor(
         self,
     ) -> TileTensor[
-        dtype=Self.dtype,
+        Self.dtype,
         LayoutType=Self.LayoutType,
         origin=UntrackedOrigin[mut=Self.mut],
     ]:

@@ -31,7 +31,7 @@ def _verify_buffers_gpu[
     length_dev: Int32,
     atol: Float32,
     rtol: Float32,
-    result: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
+    result: UnsafePointer[Float32, MutAnyOrigin],
 ):
     """GPU kernel that computes verification metrics in one pass.
 
@@ -52,8 +52,8 @@ def _verify_buffers_gpu[
     var i = global_idx.x
     var stride = grid_dim.x * block_dim.x
     while i < length:
-        var x = output[i].cast[DType.float32]()
-        var y = reference[i].cast[DType.float32]()
+        var x = output[i].cast[.float32]()
+        var y = reference[i].cast[.float32]()
         abs_diff_sum += abs(x - y)
         abs_ref_sum += abs(y)
         max_violation = max(max_violation, abs(x - y) - (atol + rtol * abs(y)))
@@ -124,7 +124,7 @@ def run_verify_kernel[
     atol: Float32,
     rtol: Float32,
 ) raises -> VerifyMetrics:
-    var result_device = ctx.enqueue_create_buffer[DType.float32](NUM_BLOCKS * 5)
+    var result_device = ctx.enqueue_create_buffer[.float32](NUM_BLOCKS * 5)
 
     comptime kernel = _verify_buffers_gpu[dtype, BLOCK_SIZE]
     ctx.enqueue_function[kernel](
@@ -138,9 +138,7 @@ def run_verify_kernel[
         block_dim=BLOCK_SIZE,
     )
 
-    var result_host = ctx.enqueue_create_host_buffer[DType.float32](
-        NUM_BLOCKS * 5
-    )
+    var result_host = ctx.enqueue_create_host_buffer[.float32](NUM_BLOCKS * 5)
     ctx.enqueue_copy(result_host, result_device)
     ctx.synchronize()
 

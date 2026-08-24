@@ -24,6 +24,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
+from max.pipelines.lib import MemoryPlan
 from max.pipelines.lib.config.model_config import _format_config_entries
 from max.pipelines.lib.registry import PIPELINE_REGISTRY, get_pipeline_for_task
 from max.pipelines.modeling.types.task import PipelineTask
@@ -36,11 +37,14 @@ __all__ = ["log_basic_config", "log_pipeline_info"]
 _logger = logging.getLogger("max.pipelines")
 
 
-def log_pipeline_info(pipeline_config: PipelineConfig) -> None:
+def log_pipeline_info(
+    pipeline_config: PipelineConfig, *, memory_plan: MemoryPlan
+) -> None:
     """Logs comprehensive pipeline and KVCache configuration information.
 
     Args:
         pipeline_config: The resolved pipeline configuration to log.
+        memory_plan: The memory plan the pipeline was sized against.
 
     Raises:
         ValueError: If no architecture is found for the model. This should not
@@ -74,9 +78,7 @@ def log_pipeline_info(pipeline_config: PipelineConfig) -> None:
     pipeline_config.models.log_model_info()
     pipeline_entries: list[tuple[str, Any]] = []
     if "main" in pipeline_config.models:
-        pipeline_entries.append(
-            ("max_seq_len", pipeline_config.model.max_length)
-        )
+        pipeline_entries.append(("max_seq_len", memory_plan.planned_max_length))
     pipeline_entries.extend(
         [
             ("chunked_prefill", pipeline_config.runtime.enable_chunked_prefill),
@@ -131,7 +133,9 @@ def log_pipeline_info(pipeline_config: PipelineConfig) -> None:
         _logger.info("")
 
 
-def log_basic_config(pipeline_config: PipelineConfig) -> None:
+def log_basic_config(
+    pipeline_config: PipelineConfig, *, memory_plan: MemoryPlan
+) -> None:
     """Logs minimal pipeline configuration information.
 
     Logs basic pipeline options including model name, pipeline task,
@@ -139,6 +143,7 @@ def log_basic_config(pipeline_config: PipelineConfig) -> None:
 
     Args:
         pipeline_config: The resolved pipeline configuration to log.
+        memory_plan: The memory plan the pipeline was sized against.
 
     Raises:
         ValueError: If no architecture is found for the model. This should not
@@ -175,7 +180,7 @@ def log_basic_config(pipeline_config: PipelineConfig) -> None:
         config_entries.extend(
             [
                 ("model", pipeline_config.model.model_path),
-                ("max_seq_len", pipeline_config.model.max_length),
+                ("max_seq_len", memory_plan.planned_max_length),
             ]
         )
 

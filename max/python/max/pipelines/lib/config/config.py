@@ -27,8 +27,13 @@ from max.pipelines.lib.arch_lookup import (
     find_architecture,
     import_custom_architectures,
 )
+from max.pipelines.lib.host_memory import (
+    _PREPROCESS_CACHE_MAX_FRACTION_OF_HOST_MEMORY,
+    _host_memory_limit,
+)
 from max.pipelines.lib.interfaces import (
     ArchConfig,
+    arch_has_vision_tower,
 )
 from max.pipelines.lib.model_manifest import ModelManifest
 from max.pipelines.lib.pipeline_runtime_config import (
@@ -43,6 +48,7 @@ from max.pipelines.sampling import (
     SamplingConfig,
 )
 from max.pipelines.speculative.config import SpeculativeConfig
+from max.support.human_readable_formatter import to_human_readable_bytes
 from pydantic import (
     BaseModel,
     ConfigDict,
@@ -95,18 +101,20 @@ def _nested_model_class(annotation: Any) -> type[BaseModel] | None:
 _SubConfigT = TypeVar("_SubConfigT", bound=ConfigFileModel)
 
 
-def _construct_from_user_fields(sub: _SubConfigT) -> _SubConfigT:
+def _construct_from_user_fields(
+    sub: _SubConfigT, **overrides: Any
+) -> _SubConfigT:
     """Constructs a fresh sub-config from only the caller-set fields.
 
-    The result is built once, through the class constructor: unset fields
-    re-derive from the class defaults and nested models are rebuilt rather
-    than aliased, so it shares no mutable state with ``sub``.
+    Unset fields re-derive from the class defaults. Nested models are rebuilt
+    rather than aliased. ``overrides`` are kwargs applied on top of the
+    caller-set fields.
     """
-    return type(sub)(
-        **sub.model_dump(
-            include=sub.model_fields_set - {"config_file", "section_name"}
-        )
+    fields = sub.model_dump(
+        include=sub.model_fields_set - {"config_file", "section_name"}
     )
+    fields.update(overrides)
+    return type(sub)(**fields)
 
 
 def _is_disable_parser_sentinel(value: str | None) -> bool:
@@ -491,33 +499,38 @@ class PipelineConfig(ConfigFileModel):
             ("PipelineRuntimeConfig", self.runtime),
             ("MAXModelConfig", self.model),
             ("SamplingConfig", self.sampling),
-            ("KVCacheConfig", self.model.kv_cache),
         ]
+        kv_cache_owners = [("KVCacheConfig", self.model)]
 
         # Add draft model configurations if present
         if self.draft_model is not None:
-            config_objects.extend(
-                [
-                    ("Draft_MAXModelConfig", self.draft_model),
-                    (
-                        "Draft_KVCacheConfig",
-                        self.draft_model.kv_cache,
-                    ),
-                ]
-            )
+            config_objects.append(("Draft_MAXModelConfig", self.draft_model))
+            kv_cache_owners.append(("Draft_KVCacheConfig", self.draft_model))
 
         for arg_name, required_value in architecture.required_arguments.items():
-            # Check each config object for the required argument
+            # Skip config objects that do not declare this field.
             for config_name, config_obj in config_objects:
-                current_value = getattr(config_obj, arg_name, required_value)
+                if arg_name not in type(config_obj).model_fields:
+                    continue
+                current_value = getattr(config_obj, arg_name)
                 if current_value != required_value:
                     logger.warning(
                         f"Architecture '{architecture.name}' requires {config_name}.{arg_name}={required_value}, "
                         f"overriding current value {current_value}"
                     )
                     setattr(config_obj, arg_name, required_value)
-                # We should be able to override this value for all config objects.
-                continue
+            for config_name, owner in kv_cache_owners:
+                if arg_name not in type(owner.kv_cache).model_fields:
+                    continue
+                current_value = getattr(owner.kv_cache, arg_name)
+                if current_value != required_value:
+                    logger.warning(
+                        f"Architecture '{architecture.name}' requires {config_name}.{arg_name}={required_value}, "
+                        f"overriding current value {current_value}"
+                    )
+                    owner.kv_cache = _construct_from_user_fields(
+                        owner.kv_cache, **{arg_name: required_value}
+                    )
 
     def _apply_speculative_target_architecture(self) -> None:
         """Override the target architecture for unified spec-decode pipelines.
@@ -676,6 +689,18 @@ class PipelineConfig(ConfigFileModel):
             ) > 0
             if self.draft_model is None and has_mtp:
                 target_archs[0] = "UnifiedMTPGlmMoeDsaForCausalLM"
+        if target_archs[0] == "InklingForConditionalGeneration":
+            # Inkling bakes chained MTP depths into the target checkpoint.
+            mtp_config = getattr(
+                self.model.huggingface_config, "mtp_config", None
+            )
+            n_mtp = (
+                mtp_config.get("num_nextn_predict_layers")
+                if isinstance(mtp_config, dict)
+                else getattr(mtp_config, "num_nextn_predict_layers", None)
+            )
+            if self.draft_model is None and (n_mtp or 0) > 0:
+                target_archs[0] = "UnifiedMTPInklingForConditionalGeneration"
 
     def _validate_synthetic_acceptance_with_constrained_decoding(self) -> None:
         """Rejects synthetic acceptance when constrained decoding can fire.
@@ -851,6 +876,136 @@ class PipelineConfig(ConfigFileModel):
         self.sampling.structured_output_any_whitespace = (
             DEFAULT_STRUCTURED_OUTPUT_ANY_WHITESPACE
         )
+
+    def _resolve_max_length(self, arch: Any, draft_arch: Any = None) -> None:
+        """Resolves each model's ``max_length`` through its architecture.
+
+        The architecture owns the rule — whether the checkpoint's length is a
+        hard cap or just a default — and it runs here, once. Memory planning
+        may lower the result to fit the device, but only on the plan.
+        """
+        # Capture intent before overwriting: anything that set max_length
+        # since __init__ counts as user-provided.
+        self.model._max_length_user_provided = self.model.max_length is not None
+        self.model.max_length = arch.config.calculate_max_seq_len(
+            self, self.model.huggingface_config, self.model
+        )
+        if draft_arch is not None and self.draft_model is not None:
+            self.draft_model._max_length_user_provided = (
+                self.draft_model.max_length is not None
+            )
+            self.draft_model.max_length = (
+                draft_arch.config.calculate_max_seq_len(
+                    self,
+                    self.draft_model.huggingface_config,
+                    self.draft_model,
+                )
+            )
+
+    def _apply_arch_kv_head_replication(
+        self, arch: Any, draft_arch: Any = None
+    ) -> None:
+        """Set ``allow_kv_head_replication`` when the architecture requires it."""
+        models = [(self.model, arch)]
+        if self.draft_model is not None and draft_arch is not None:
+            models.append((self.draft_model, draft_arch))
+        for model, model_arch in models:
+            if not model_arch.requires_kv_head_replication:
+                continue
+            if model.kv_cache.allow_kv_head_replication:
+                continue
+            model.kv_cache = _construct_from_user_fields(
+                model.kv_cache, allow_kv_head_replication=True
+            )
+
+    def _resolve_preprocess_cache_budgets(self, arch: Any) -> None:
+        """Caps the preprocessed-media cache budgets against host memory.
+
+        Reduces the image and video budgets proportionally when their sum
+        exceeds :data:`_PREPROCESS_CACHE_MAX_FRACTION_OF_HOST_MEMORY` of what
+        this process may use, by scaling both by a common factor so the split
+        the caller chose survives (exactly, up to integer truncation).
+        Proportionally, rather than clamping each in turn, so that raising one
+        budget cannot silently starve the other.
+
+        Leaves the budgets alone for architectures with no vision tower, which
+        never construct the caches, and when host memory cannot be determined --
+        an unbounded guess would be worse than the configured ceiling.
+
+        Runs at construction so every consumer -- including tokenizers built
+        without a memory plan -- sees the bounded values.
+        """
+        runtime = self.runtime
+        image_bytes = max(0, runtime.max_vision_preprocess_cache_bytes)
+        video_bytes = max(0, runtime.max_video_preprocess_cache_bytes)
+        requested = image_bytes + video_bytes
+        if requested == 0:
+            return
+
+        if arch is None or not arch_has_vision_tower(
+            arch.config, self.model.huggingface_config
+        ):
+            return
+
+        host_bytes = _host_memory_limit()
+        if host_bytes is None:
+            logger.debug(
+                "Could not determine host memory; leaving the preprocessed-"
+                "media cache ceiling at %s.",
+                to_human_readable_bytes(requested),
+            )
+            return
+
+        cap = int(host_bytes * _PREPROCESS_CACHE_MAX_FRACTION_OF_HOST_MEMORY)
+        if requested <= cap:
+            logger.info(
+                "Preprocessed-media cache: %s ceiling (%s images, %s video).",
+                to_human_readable_bytes(requested),
+                to_human_readable_bytes(image_bytes),
+                to_human_readable_bytes(video_bytes),
+            )
+            return
+
+        scale = cap / requested
+        runtime.max_vision_preprocess_cache_bytes = int(image_bytes * scale)
+        runtime.max_video_preprocess_cache_bytes = int(video_bytes * scale)
+        logger.warning(
+            "Reduced the preprocessed-media cache from %s to %s (%s images, %s "
+            "video): the configured ceiling exceeded %.0f%% of the %s this "
+            "process may use.",
+            to_human_readable_bytes(requested),
+            to_human_readable_bytes(
+                runtime.max_vision_preprocess_cache_bytes
+                + runtime.max_video_preprocess_cache_bytes
+            ),
+            to_human_readable_bytes(runtime.max_vision_preprocess_cache_bytes),
+            to_human_readable_bytes(runtime.max_video_preprocess_cache_bytes),
+            _PREPROCESS_CACHE_MAX_FRACTION_OF_HOST_MEMORY * 100,
+            to_human_readable_bytes(host_bytes),
+        )
+
+    def _resolve_vision_cache_utilization(self, arch: Any) -> None:
+        """Disables the vision encoder cache when the planner cannot shape it.
+
+        An arch config that reports a per-entry size but no row spec cannot back
+        the block cache. Zeroing the utilization here, at construction, lets
+        the tokenizers and memory planning agree without planning writing
+        back to the config.
+        """
+        if self.runtime.vision_cache_utilization == 0:
+            return
+        hf_config = self.model.huggingface_config
+        if arch is None or not arch_has_vision_tower(arch.config, hf_config):
+            return
+        if arch.config.get_vision_cache_row_spec(hf_config) is None:
+            logger.warning(
+                "Disabling vision encoder cache: %s's arch config reports "
+                "a per-entry estimate but no row spec "
+                "(get_vision_cache_row_spec); images will be re-encoded on "
+                "every request.",
+                arch.name,
+            )
+            self.runtime.vision_cache_utilization = 0.0
 
     def _validate_and_resolve_overlap_scheduler(self, arch: Any = None) -> None:
         if not self.runtime.force:
@@ -1114,6 +1269,10 @@ class PipelineConfig(ConfigFileModel):
         self._resolve_default_tool_parser(arch=arch)
         self._resolve_default_structured_output_backend(arch=arch)
         self._resolve_default_structured_output_any_whitespace(arch=arch)
+        self._resolve_max_length(arch=arch, draft_arch=draft_arch)
+        self._apply_arch_kv_head_replication(arch=arch, draft_arch=draft_arch)
+        self._resolve_preprocess_cache_budgets(arch=arch)
+        self._resolve_vision_cache_utilization(arch=arch)
         self._validate_synthetic_acceptance_with_constrained_decoding()
 
         if (

@@ -700,7 +700,8 @@ std::string getDefaultValueString(TypedAttr defaultValue, SharedState &shared) {
   std::string value;
   llvm::raw_string_ostream os(value);
   // Default values are always printed after a type annotation.
-  ASTType::printParamAfterType(os, defaultValue, shared);
+  ASTType::printParam(os, defaultValue, /*ctx=*/{&shared},
+                      /*hasContextualType=*/true);
   return os.str();
 }
 

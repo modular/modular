@@ -164,15 +164,57 @@ These require the `openai` Python package, which Bazel provides automatically.
 
 Run with `--model-profile kimi-k2.5` or `--model-profile glm-5.1`.
 
-| Scenario            | Model     | Tests | What it validates                                                       |
-|---------------------|-----------|-------|-------------------------------------------------------------------------|
-| `kimi_battle`       | Kimi K2.5 | 15    | xgrammar edge cases, parallel TCs, structural tags                      |
-| `kimi_3am`          | Kimi K2.5 | 12    | Production edge cases, soak tests, precision                            |
-| `kimi_production`   | Kimi K2.5 | 10    | Long context, error recovery, token counting                            |
-| `kimi_k2vv`         | Kimi K2.5 | 2K    | K2 Vendor Verifier benchmark (see below)                                |
-| `kimi_freeze_repro` | Kimi K2.5 | 6     | Production freeze repro: oneOf/const tool schemas under concurrent load |
-| `glm_battle`        | GLM-5.1   | 12    | Schema compilation, tool calling, streaming                             |
-| `glm_3am`           | GLM-5.1   | 10    | Edge cases, soak tests, concurrent stress                               |
+| Scenario            | Model      | Tests | What it validates                                                                |
+|---------------------|------------|-------|----------------------------------------------------------------------------------|
+| `kimi_battle`       | Kimi K2.5  | 15    | xgrammar edge cases, parallel TCs, structural tags                               |
+| `kimi_3am`          | Kimi K2.5  | 12    | Production edge cases, soak tests, precision                                     |
+| `kimi_production`   | Kimi K2.5  | 10    | Long context, error recovery, token counting                                     |
+| `kimi_k2vv`         | Kimi K2.5  | 2K    | K2 Vendor Verifier benchmark (see below)                                         |
+| `kimi_freeze_repro` | Kimi K2.5  | 6     | Production freeze repro: oneOf/const tool schemas under concurrent load          |
+| `glm_battle`        | GLM-5.1    | 12    | Schema compilation, tool calling, streaming                                      |
+| `glm_3am`           | GLM-5.1    | 10    | Edge cases, soak tests, concurrent stress                                        |
+| `image_stress`      | MiniMax-M3 | 11    | Huge image batches: max count/size/tokens, skewed ratios, cache-miss concurrency |
+| `image_stress_soak` | MiniMax-M3 | 2     | Sustained image batches for minutes-scale hang reproduction                      |
+
+### Image stress (MiniMax-M3)
+
+```bash
+# Full matrix against a local server
+$LLM_FUZZ --url http://localhost:8400 --model minimax-m3 \
+    --model-profile minimax-m3 --scenarios image_stress
+
+# Against a live endpoint, scaled for a 4-node deployment
+$LLM_FUZZ --url https://<endpoint> --api-key $KEY --model minimax-m3 \
+    --model-profile minimax-m3 --scenarios image_stress \
+    --image-stress-nodes 4
+
+# Sustained soak (the shape that reproduces the production hang)
+$LLM_FUZZ --url http://localhost:8400 --model minimax-m3 \
+    --model-profile minimax-m3 --endurance --endurance-duration 20
+```
+
+Covers two different production failures, which want opposite things from a
+test. **CENG-880** is a size bug — an OOM on requests carrying enough image
+tokens — so `single_max_image`, `max_total_image_tokens` (61 max-size images,
+~1M merged tokens) and `over_budget_request` push the size axes to their
+vendor limits. **MXSERV-395** is not: pods wedged on requests carrying 1, 2,
+4, 5, 6 and 8 images, with concurrency and a preprocess-cache miss as the only
+common thread. `concurrent_uncached_batches` and `mixed_cache_hit_miss` target
+that, drawing batch sizes from the observed distribution and making every
+image byte-unique so it misses the cache.
+
+Because a wedged engine never answers, the concurrency phases run under a
+background liveness probe on its own connection pool (the shared pool is
+sized to `--max-concurrency`, so a probe sharing it would queue behind the
+traffic it is measuring). The probe reports the longest interval in which the
+server completed no trivial request — the signal a hang produces and a
+per-request timeout does not.
+
+Images are synthesised in-process with a stdlib PNG encoder; nothing is
+downloaded. Uniqueness comes from a `tEXt` nonce, so a cache-missing variant
+costs no re-encode. Note that a max-size image needs `detail: "high"` — the
+default tier caps the long side at 2016 px and silently reduces a
+16384-token image to 5184.
 
 ### K2 Vendor Verifier (K2VV)
 

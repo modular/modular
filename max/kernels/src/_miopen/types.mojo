@@ -102,11 +102,11 @@ struct DataType(Equatable, TrivialRegisterPassable):
         self._value = Int32(value)
 
     def __init__(out self, dtype: DType) raises:
-        if dtype == DType.float32:
+        if dtype == .float32:
             self = Self.FLOAT
-        elif dtype == DType.float16:
+        elif dtype == .float16:
             self = Self.HALF
-        elif dtype == DType.bfloat16:
+        elif dtype == .bfloat16:
             self = Self.BFLOAT16
         else:
             raise Error(

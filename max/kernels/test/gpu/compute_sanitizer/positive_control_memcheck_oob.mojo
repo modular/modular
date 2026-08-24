@@ -50,7 +50,7 @@ def oob_global_write(dst: UnsafePointer[Float32, MutAnyOrigin], n_dev: Int32):
 def main() raises:
     with DeviceContext() as ctx:
         var n = 16
-        var dst = ctx.enqueue_create_buffer[DType.float32](n)
+        var dst = ctx.enqueue_create_buffer[.float32](n)
         ctx.enqueue_function[oob_global_write](
             dst,
             Int32(n),

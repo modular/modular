@@ -153,12 +153,8 @@ def _pad_constant_impl[
     max_threads: Int = 256,
     threads_per_row: Int = 16,
 ](
-    input_tensor: TileTensor[
-        mut=False, dtype, address_space=AddressSpace.GENERIC, ...
-    ],
-    output_tensor: TileTensor[
-        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
-    ],
+    input_tensor: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
+    output_tensor: TileTensor[mut=True, dtype, address_space=.GENERIC, ...],
     ctx: DeviceContext,
 ) raises:
     # Zero-element input (e.g. a ``(B, C, 0, 0)`` tensor padded out to
@@ -293,7 +289,7 @@ def get_padding_output_shape[
     rank: Int
 ](
     input_shape: IndexList[rank],
-    paddings: TileTensor[mut=False, DType.int, ...],
+    paddings: TileTensor[mut=False, .int, ...],
 ) -> IndexList[rank]:
     """Computes the output shape produced by padding `input_shape` with the
     before/after amounts given in `paddings`.

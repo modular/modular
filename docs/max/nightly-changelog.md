@@ -32,6 +32,10 @@ This version is still a work in progress.
     proportional to actual sequence lengths (per-layer kernel cost measured
     flat across frozen bounds), and a weekly long-context serving benchmark
     tracks the end-to-end throughput at this configuration.
+- Added multi-token prediction (MTP) speculative decoding for Inkling
+  (`UnifiedMTPInklingForConditionalGeneration`), serving the checkpoint's
+  chained dense draft depths; enabled automatically for Inkling checkpoints
+  that ship `mtp_config` with `--speculative-method mtp`.
 - Added Laguna (`LagunaForCausalLM`) support for
   `poolside/Laguna-M.1-NVFP4`, including tool calling.
 - Added DiffusionGemma (`DiffusionGemmaForBlockDiffusion`) support for
@@ -197,7 +201,7 @@ This version is still a work in progress.
 ## MAX framework
 
 - Added `max.pipelines.lib.MemoryPlan`, the result of memory planning when a
-  pipeline is loaded: the effective `max_length`, `max_batch_size`,
+  pipeline is loaded: the effective `planned_max_length`, `max_batch_size`,
   `max_batch_total_tokens`, KV-cache budget, and device specs the pipeline
   and its schedulers consume.
 - Renamed `MemoryEstimator.estimate_memory_footprint` to
@@ -205,6 +209,28 @@ This version is still a work in progress.
   `MemoryEstimator.plan` instead to plan from a `PipelineConfig` alone;
   `plan_from_sizes` is for callers that have already computed the weight,
   activation, and signal-buffer sizes.
+- The sequence-length rule now runs once, when the config is built:
+  `config.model.max_length` holds the resolved length and
+  `PipelineArgs.max_length` keeps what the user asked for.
+  `ArchConfig.initialize` receives that length instead of deriving it
+  (`max_seq_len` is now a required keyword argument), and memory planning
+  may only lower it, on the plan.
+  `PipelineModel.calculate_max_seq_len`,
+  `ArchConfigWithAttentionKVCache.user_provided_max_length` and
+  `model_max_seq_len` are removed; architectures own the rule, so Mistral,
+  Mistral3 and Pixtral now bound `max_length` on their configs.
+
+- Memory planning no longer writes its planned `max_length` and
+  `max_batch_total_tokens` back onto the pipeline config. After startup,
+  `PipelineConfig.model.max_length` keeps the construction-resolved value
+  and `PipelineConfig.runtime.max_batch_total_tokens` keeps the
+  user-provided value (`None` when unset); the effective
+  values live on `MemoryPlan`.
+- `PipelineModel` now requires the `memory_plan` constructor argument
+  (keyword-only; constructing a pipeline model without a plan raises a
+  `TypeError`), and `PipelineModel.max_seq_len` is a read-only view of the
+  plan's `planned_max_length` rather than a stored copy with a config
+  fallback.
 - Made `MemoryEstimator.free_memory`, `static_memory_size`,
   `available_kv_cache_memory`, and `max_supported_sequence_length` private.
   They are steps within a memory plan rather than useful on their own, and
@@ -474,6 +500,16 @@ This version is still a work in progress.
 
 ### Inference server
 
+- `/v1/responses` now fetches client-supplied `input_image` URLs through the
+  same media resolver as `/v1/chat/completions`, so the two paths share one
+  byte cap and one error mapping. Previously the responses path had its own
+  downloader with no size limit, meaning an arbitrarily large image could be
+  fetched and base64-expanded in memory, and its failures echoed the
+  underlying network error back to the client. The inlined `data:` URI's MIME
+  type is now sniffed from the fetched bytes instead of guessed from the URL,
+  and content that is not a decodable image is rejected with a 400 rather than
+  inlined as an image.
+
 - GLM models now map `reasoning_effort` onto the two thinking levels their
   chat template can express, instead of forwarding it verbatim. The template
   reads only `high` as a distinct level and treats every other value as
@@ -586,6 +622,19 @@ This version is still a work in progress.
   saying whether a value reachable by two paths is one object or two. Import
   the module as a namespace: `from max.experimental import tree_utils as tree`.
 
+- Added `max.experimental.compilation`, three transforms over plain
+  callables. `stage(fn)(*args, **kwargs)` traces `fn` into a `max.graph`
+  that can be printed and inspected as MLIR. The arguments are `fn`'s own,
+  except that each tensor is given as a `TensorType`. This partially
+  evaluates `fn`: the tensor types become graph inputs, and every other
+  argument is evaluated during tracing. `compile(fn, weights=...)(*args,
+  **kwargs)` stages the same way and compiles the graph; the result is
+  callable on real tensors. Weights and device memory load only on the
+  first call, so `export_mef` can save the compiled graph to a file without
+  loading either. `as_subgraph(fn)` returns a drop-in replacement for `fn`
+  that, during tracing, calls one shared subgraph instead of inlining its
+  body, so a stack of identical layers compiles once.
+
 - `max.graph.ops.reduce_scatter_rms_norm` takes an optional `group_size`
   argument, matching `max.graph.ops.reducescatter.sum`: the devices split into
   contiguous groups of that many, each reducing independently, so the fused op
@@ -696,6 +745,14 @@ This version is still a work in progress.
 - `max.pipelines.lib.LoRAConfig` and `max.pipelines.lib.ProfilingConfig` are
   now immutable (pydantic `frozen=True`); assigning to a field after
   construction raises a `ValidationError`. Construct with the desired values.
+
+- `KVCacheConfig` and nested `KVConnectorConfig` are now immutable:
+  assigning to a field after construction raises a pydantic
+  `ValidationError`. Construct them with the values you need.
+  Architectures that need KV-head replication declare
+  `requires_kv_head_replication`; construction sets the flag on the
+  model's KV-cache config.
+
 - The KV cache connector is now configured as a single object: its type moved
   onto `--kv-connector-config` as a `type` field, and the separate
   `--kv-connector` flag is removed. Replace `--kv-connector rust_tiered` with
@@ -754,13 +811,66 @@ This version is still a work in progress.
   overloads and unused `bencher_iter_custom_multicontext()`. Pass the launch
   closure as a value: `bencher_iter_custom(bencher, fn, ctx)`.
 
+- Removed `max.algorithm.reduce_boolean()`, which took its `reduce_fn` and
+  `continue_fn` as `capturing` compile-time parameters and had no callers. Use
+  `max.algorithm.reduce()` with a boolean accumulator, or write the early-exit
+  loop directly.
+
+- Removed the parametric `max.algorithm.parallelize[func](num_work_items, ...)`
+  and `max.algorithm.parallelize_over_rows[func](shape, axis, grain_size, ...)`
+  overloads that took a `capturing` closure as a compile-time parameter. Pass
+  the body as a unified closure in the first runtime argument instead:
+  `parallelize(func, num_work_items, ...)` and
+  `parallelize_over_rows(func, shape, axis, grain_size, ...)`. Closure bodies
+  drop `@__parameter` / `@__copy_capture` in favor of an explicit capture list,
+  for example `def body(start: Int, end: Int) {imm}:`.
+
+- Removed the parametric `capturing` overloads of
+  `DeviceContext.execution_time[fn](num_iters)`,
+  `DeviceContext.execution_time_iter[fn](num_iters)`, and
+  `DeviceContext.enqueue_cpu_function[fn]()`. Pass the closure as a runtime
+  argument instead: `execution_time(fn, num_iters)`,
+  `execution_time_iter(fn, num_iters)`, and `enqueue_cpu_function(fn)`. Nested
+  closures passed this way are unified closures, so replace `@__parameter` and
+  `@__copy_capture(x)` with an explicit capture list such as `{imm}` or
+  `{var x, imm}`.
+
 - `PipelineRegistry.retrieve_factory` now returns a `RetrievedPipeline`
   dataclass with `tokenizer`, `factory`, and `memory_plan` fields instead of
   a `(tokenizer, factory)` tuple, so callers can reach the memory plan
   computed during retrieval. Replace tuple unpacking with attribute access.
   `PipelineRegistry.retrieve` is unchanged.
 
+- The serving surface now reads the planned sequence length and batch token
+  budget from the memory plan instead of re-reading them from the pipeline
+  config. `TokenGenerationSchedulerConfig.from_pipeline_config`,
+  `start_model_worker`, the scheduler loaders, and the startup log helpers
+  (`log_basic_config`, `log_pipeline_info`) take the memory plan as a
+  parameter. Resolved values are unchanged.
+
+- Renamed `MemoryPlan.max_length` to `MemoryPlan.planned_max_length` to
+  distinguish the plan's value from the user intent on
+  `PipelineArgs.max_length` and the construction-resolved
+  `PipelineConfig.model.max_length`, which keep their names.
+
 ## Fixes
+
+- Fixed reductions over a zero-extent axis — for example `ops.sum(x, axis=1)`
+  where that axis has length `0` — leaving their output unwritten, along with
+  anything fused into the reduction's epilogue. Each now writes its identity:
+  `0` for `sum`, `1` for `prod`, the dtype's minimum for `max` and its maximum
+  for `min`, index `0` for `argmax` and `argmin`, and NaN for floating-point
+  `mean` (as `numpy.mean` reports). Integer `mean` returns `0`. Note that
+  `max`, `min`, `argmax`, and `argmin` return an identity here rather than
+  raising the way numpy does.
+
+- Fixed run-to-run nondeterminism of `layer_norm`, `rms_norm`, and other
+  Row-API rowwise reductions on Apple Silicon GPUs: a block that reduced
+  several rows re-used its shared-memory strip across row iterations
+  without ordering the trailing broadcast read against the next combine's
+  first store. Model outputs on Metal (for example FLUX.2 image
+  generation) are now byte-identical across runs; NVIDIA and AMD codegen
+  is unchanged.
 
 - On Apple Silicon, a missing Metal Toolchain (a separate download since
   Xcode 16) now surfaces `xcrun`'s own error, which names the fix

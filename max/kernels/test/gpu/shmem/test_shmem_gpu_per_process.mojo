@@ -42,7 +42,7 @@ def main() raises:
     # Initializes SHMEM/MPI and finalizes at the end of the scope
     with SHMEMContext() as ctx:
         # Set up buffers to test devices are communicating with the correct IDs
-        var target_device = ctx.enqueue_create_buffer[DType.int32](1)
+        var target_device = ctx.enqueue_create_buffer[.int32](1)
         var target_host = alloc[Int32](1)
 
         # SHMEMContext takes care of initializing device state into

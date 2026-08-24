@@ -82,8 +82,8 @@ def cpu_matmul_naive[
                 else:
                     b_idx = k * N + n
                 acc += (
-                    A.ptr.load(a_idx).cast[DType.float32]()
-                    * B.ptr.load(b_idx).cast[DType.float32]()
+                    A.ptr.load(a_idx).cast[.float32]()
+                    * B.ptr.load(b_idx).cast[.float32]()
                 )
             var c_idx = m * N + n
             C.ptr.store(c_idx, acc.cast[C.dtype]())
@@ -120,7 +120,7 @@ def tma_umma_kernel_ss[
     var num_iters = Int(num_iters_dev)
     comptime assert num_threads == 128 or num_threads == 256
     comptime assert (
-        a_type == b_type and a_type == DType.float8_e4m3fn
+        a_type == b_type and a_type == .float8_e4m3fn
     ), "a_type and b_type must be the same and float8_e4m3fn type"
 
     comptime BM = block_tile_shape[0]
@@ -148,14 +148,12 @@ def tma_umma_kernel_ss[
 
     var a_smem = rebind[
         UnsafePointer[
-            Scalar[a_type],
-            address_space=AddressSpace.SHARED,
-            UntrackedOrigin[mut=True],
+            Scalar[a_type], address_space=.SHARED, UntrackedOrigin[mut=True]
         ]
     ](
         external_memory[
             Scalar[a_type],
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
             alignment=128,
             name="tmem_test_dynamic_shared_memory",
         ]()
@@ -164,14 +162,14 @@ def tma_umma_kernel_ss[
         a_type,
         a_smem_layout,
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
     ]
     comptime b_smem_tile_t = LayoutTensor[
         b_type,
         b_smem_layout,
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
     ]
 
@@ -263,7 +261,7 @@ def tma_umma_kernel_ss[
         accum_type,
         a_type,
         b_type,
-        Index[dtype=DType.uint32](mma_shape[0], mma_shape[1]),
+        Index[dtype=.uint32](mma_shape[0], mma_shape[1]),
         transpose_a=transpose_a,
         transpose_b=transpose_b,
     ]()
@@ -402,7 +400,7 @@ def tma_umma_kernel_ts_fp8[
         num_m_mmas == 1 and num_n_mmas == 1
     ), "num_m_mmas and num_n_mmas must be 1"
     comptime assert (
-        a_type == b_type and a_type == DType.float8_e4m3fn
+        a_type == b_type and a_type == .float8_e4m3fn
     ), "a_type and b_type must be the same and float8_e4m3fn type"
     comptime b_smem_layout = tile_layout_k_major[
         b_type, BN, BK, swizzle_mode=b_swizzle
@@ -412,14 +410,12 @@ def tma_umma_kernel_ts_fp8[
 
     var b_smem = rebind[
         UnsafePointer[
-            Scalar[b_type],
-            address_space=AddressSpace.SHARED,
-            UntrackedOrigin[mut=True],
+            Scalar[b_type], address_space=.SHARED, UntrackedOrigin[mut=True]
         ]
     ](
         external_memory[
             Scalar[b_type],
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
             alignment=128,
             name="tmem_test_dynamic_shared_memory",
         ]()
@@ -428,7 +424,7 @@ def tma_umma_kernel_ts_fp8[
         b_type,
         b_smem_layout,
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
     ]
 
@@ -496,7 +492,7 @@ def tma_umma_kernel_ts_fp8[
         accum_type,
         a_type,
         b_type,
-        Index[dtype=DType.uint32](mma_shape[0], mma_shape[1]),
+        Index[dtype=.uint32](mma_shape[0], mma_shape[1]),
         transpose_b=transpose_b,
     ]()
 
@@ -508,7 +504,7 @@ def tma_umma_kernel_ts_fp8[
         warp_id = 2 * warp_id_r + warp_id_q
 
     comptime a_frag_size = BM * BK * size_of[a_type]() // 4 // num_threads
-    var a_frag = Array[Scalar[DType.uint32], a_frag_size](uninitialized=True)
+    var a_frag = Array[UInt32, a_frag_size](uninitialized=True)
 
     # FP8 elements are 1 byte each; load 8 elements per vector so each
     # SIMD vec is 8 bytes (== 2 uint32) and the split-into-uint32 pattern
@@ -529,8 +525,8 @@ def tma_umma_kernel_ts_fp8[
             comptime for j in range(num_vecs_m):
                 var vec = a_gmem_frag[j, k]
                 comptime idx = k * num_vecs_m + j
-                a_frag[2 * idx] = bitcast[DType.uint32, 1](vec.split()[0])
-                a_frag[2 * idx + 1] = bitcast[DType.uint32, 1](vec.split()[1])
+                a_frag[2 * idx] = bitcast[.uint32, 1](vec.split()[0])
+                a_frag[2 * idx + 1] = bitcast[.uint32, 1](vec.split()[1])
 
         tcgen05_st[
             datapaths=16,
@@ -697,9 +693,7 @@ def test_tma_umma[
         Layout.row_major(K, M) if transpose_a else Layout.row_major(M, K),
     ](ctx)
 
-    var a_extreme: Float32 = sqrt(
-        sqrt(max_finite[a_type]().cast[DType.float32]())
-    )
+    var a_extreme: Float32 = sqrt(sqrt(max_finite[a_type]().cast[.float32]()))
     random(
         a.tensor[update=False](),
         min=(-a_extreme).cast[a_type](),
@@ -712,9 +706,7 @@ def test_tma_umma[
     var b = ManagedLayoutTensor[b_type, b_layout](ctx)
     var b_col_major = ManagedLayoutTensor[b_type, Layout.row_major(N, K)](ctx)
 
-    var b_extreme: Float32 = sqrt(
-        sqrt(max_finite[b_type]().cast[DType.float32]())
-    )
+    var b_extreme: Float32 = sqrt(sqrt(max_finite[b_type]().cast[.float32]()))
     random(
         b.tensor[update=False](),
         min=(-b_extreme).cast[b_type](),
@@ -891,7 +883,7 @@ def main() raises:
                             test_tma_umma[
                                 dtype,
                                 dtype,
-                                DType.bfloat16,
+                                .bfloat16,
                                 Index(
                                     MMA_M * size_scale,
                                     128 * size_scale,
@@ -907,7 +899,7 @@ def main() raises:
                             test_tma_umma[
                                 dtype,
                                 dtype,
-                                DType.bfloat16,
+                                .bfloat16,
                                 Index(
                                     MMA_M * size_scale,
                                     128 * size_scale,
@@ -923,7 +915,7 @@ def main() raises:
                             test_tma_umma[
                                 dtype,
                                 dtype,
-                                DType.bfloat16,
+                                .bfloat16,
                                 Index(64, 128, 128),
                                 Index(64, 128, 128),
                                 Index(64, 128, 32),
@@ -935,7 +927,7 @@ def main() raises:
                             test_tma_umma[
                                 dtype,
                                 dtype,
-                                DType.bfloat16,
+                                .bfloat16,
                                 Index(64, 128, 512),
                                 Index(64, 128, 128),
                                 Index(64, 128, 32),
@@ -947,7 +939,7 @@ def main() raises:
                             test_tma_umma[
                                 dtype,
                                 dtype,
-                                DType.bfloat16,
+                                .bfloat16,
                                 Index(64, 128, 64),
                                 Index(64, 128, 64),
                                 Index(64, 128, 32),

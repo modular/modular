@@ -98,7 +98,7 @@ def fa4_correction[
     # (2-O / DeepSeek / MHA codegen is unchanged).
     @__parameter
     @always_inline
-    def _rescale_o(o_tmem: TmemAddress, c_pair: SIMD[DType.float32, 2]):
+    def _rescale_o(o_tmem: TmemAddress, c_pair: SIMD[.float32, 2]):
         comptime batch_size = 16 if config.ov_depth % 16 == 0 else 8
         comptime assert config.ov_depth % batch_size == 0
         # output is BM x depth
@@ -135,7 +135,7 @@ def fa4_correction[
 
             comptime for _i in range(0, batch_size, 2):
                 var pair = mul_ftz(
-                    SIMD[DType.float32, 2](o_b0[_i], o_b0[_i + 1]),
+                    SIMD[.float32, 2](o_b0[_i], o_b0[_i + 1]),
                     c_pair,
                 )
                 o_b0_scaled[_i] = pair[0]
@@ -159,7 +159,7 @@ def fa4_correction[
 
             comptime for _i in range(0, batch_size, 2):
                 var pair = mul_ftz(
-                    SIMD[DType.float32, 2](o_b1[_i], o_b1[_i + 1]),
+                    SIMD[.float32, 2](o_b1[_i], o_b1[_i + 1]),
                     c_pair,
                 )
                 o_b1_scaled[_i] = pair[0]
@@ -176,7 +176,7 @@ def fa4_correction[
 
             comptime for _i in range(0, load_remainder, 2):
                 var pair = mul_ftz(
-                    SIMD[DType.float32, 2](o_b0[_i], o_b0[_i + 1]),
+                    SIMD[.float32, 2](o_b0[_i], o_b0[_i + 1]),
                     c_pair,
                 )
                 o_b0_scaled_rem[_i] = pair[0]
@@ -225,9 +225,7 @@ def fa4_correction[
             change = _vote_nvidia_helper(c_scalar < 1.0) != 0
             pipeline_o_so.wait()
             if change:
-                _rescale_o(
-                    o0_tmem_so, SIMD[DType.float32, 2](c_scalar, c_scalar)
-                )
+                _rescale_o(o0_tmem_so, SIMD[.float32, 2](c_scalar, c_scalar))
 
             pipeline_o_so.release()
             pipeline_c0_so.release()
@@ -317,7 +315,7 @@ def fa4_correction[
             else:
                 o_tmem = o1_tmem
 
-            _rescale_o(o_tmem, SIMD[DType.float32, 2](c_scalar, c_scalar))
+            _rescale_o(o_tmem, SIMD[.float32, 2](c_scalar, c_scalar))
 
         comptime if config.pair_cta:
             umma_arrive_leader_cta(pipeline_o.consumer_mbar())

@@ -133,7 +133,7 @@ def _count_expert_tokens[
     expected_count: Int,
 ](
     topk_ids: TileTensor[mut=False, input_type, ...],
-    smem: TileTensor[mut=True, DType.uint32, ...],
+    smem: TileTensor[mut=True, .uint32, ...],
     bg_params: _BucketGroupParams[num_threads, input_type],
 ) -> UInt64:
     comptime assert topk_ids.flat_rank == 2
@@ -207,7 +207,7 @@ def _count_expert_tokens[
 
 @always_inline
 def _get_index_and_offset(
-    lock: TileTensor[mut=True, DType.uint64, ...],
+    lock: TileTensor[mut=True, .uint64, ...],
     total_writes: UInt32,
     aligned_total_writes: UInt32,
 ) -> Tuple[UInt32, UInt32, UInt32]:
@@ -280,9 +280,9 @@ def _copy_tokens_smem_to_gmem[
     //,
     expected_count: Int,
 ](
-    token_expert_order: TileTensor[mut=True, DType.uint32, ...],
-    restore_token_order: TileTensor[mut=True, DType.uint32, ...],
-    smem: TileTensor[mut=False, DType.uint32, ...],
+    token_expert_order: TileTensor[mut=True, .uint32, ...],
+    restore_token_order: TileTensor[mut=True, .uint32, ...],
+    smem: TileTensor[mut=False, .uint32, ...],
     g_offset: UInt32,
     total_writes: UInt64,
     bg_params: _BucketGroupParams[num_threads, input_type],
@@ -344,9 +344,9 @@ def _copy_tokens_to_gmem[
     expected_count: Int,
 ](
     topk_ids: TileTensor[mut=False, input_type, ...],
-    smem: TileTensor[mut=False, DType.uint32, ...],
-    token_expert_order: TileTensor[mut=True, DType.uint32, ...],
-    restore_token_order: TileTensor[mut=True, DType.uint32, ...],
+    smem: TileTensor[mut=False, .uint32, ...],
+    token_expert_order: TileTensor[mut=True, .uint32, ...],
+    restore_token_order: TileTensor[mut=True, .uint32, ...],
     total_writes: UInt64,
     g_offset: UInt32,
     bg_params: _BucketGroupParams[num_threads, input_type],
@@ -446,20 +446,18 @@ def moe_create_indices_bucket_group_kernel[
     _scale_alignment: UInt32 = 128,
 ](
     token_expert_order: TileTensor[
-        mut=True, DType.uint32, TokenExpertOrderLayoutType, MutAnyOrigin
+        mut=True, .uint32, TokenExpertOrderLayoutType, MutAnyOrigin
     ],
-    lock: TileTensor[DType.uint64, LockLayoutType, MutAnyOrigin],
+    lock: TileTensor[.uint64, LockLayoutType, MutAnyOrigin],
     expert_start_indices: TileTensor[
-        mut=True, DType.uint32, ExpertStartIndicesLayoutType, MutAnyOrigin
+        mut=True, .uint32, ExpertStartIndicesLayoutType, MutAnyOrigin
     ],
     restore_token_order: TileTensor[
-        mut=True, DType.uint32, RestoreTokenOrderLayoutType, MutAnyOrigin
+        mut=True, .uint32, RestoreTokenOrderLayoutType, MutAnyOrigin
     ],
-    expert_ids: TileTensor[
-        mut=True, DType.int32, ExpertIdsLayoutType, MutAnyOrigin
-    ],
+    expert_ids: TileTensor[mut=True, .int32, ExpertIdsLayoutType, MutAnyOrigin],
     expert_usage_stats: TileTensor[
-        mut=True, DType.uint32, ExpertUsageStatsLayoutType, MutAnyOrigin
+        mut=True, .uint32, ExpertUsageStatsLayoutType, MutAnyOrigin
     ],
     topk_ids: TileTensor[input_type, TopkIdsLayoutType, ImmutAnyOrigin],
     scales_offset_p: Optional[UnsafePointer[UInt32, MutAnyOrigin]],
@@ -516,7 +514,7 @@ def moe_create_indices_bucket_group_kernel[
 
     # Allocate shared memory for temporary storage of matching token indices
     # alignment=128,
-    var smem = tensor_alloc[DType.uint32, address_space=AddressSpace.SHARED](
+    var smem = tensor_alloc[.uint32, address_space=.SHARED](
         row_major[1, expected_count]()
     )
 
@@ -595,11 +593,11 @@ def moe_create_indices[
     target: StaticString,
     expected_count: Int = 8192,
 ](
-    token_expert_order: TileTensor[mut=True, DType.uint32, ...],
-    expert_start_indices: TileTensor[mut=True, DType.uint32, ...],
-    restore_token_order: TileTensor[mut=True, DType.uint32, ...],
-    expert_ids: TileTensor[mut=True, DType.int32, ...],
-    expert_usage_stats: TileTensor[mut=True, DType.uint32, ...],
+    token_expert_order: TileTensor[mut=True, .uint32, ...],
+    expert_start_indices: TileTensor[mut=True, .uint32, ...],
+    restore_token_order: TileTensor[mut=True, .uint32, ...],
+    expert_ids: TileTensor[mut=True, .int32, ...],
+    expert_usage_stats: TileTensor[mut=True, .uint32, ...],
     topk_ids: TileTensor[mut=False, input_type, ...],
     context: DeviceContext,
     scales_offset_p: Optional[UnsafePointer[UInt32, MutAnyOrigin]] = None,
@@ -665,7 +663,7 @@ def moe_create_indices[
     with Trace[TraceLevel.OP, target=target](
         "mo.moe.create_indices", task_id=Int(context.id())
     ):
-        var lock_buffer = context.enqueue_create_buffer[DType.uint64](1)
+        var lock_buffer = context.enqueue_create_buffer[.uint64](1)
 
         def fill_zero_kernel(
             lock_ptr: UnsafePointer[UInt64, MutAnyOrigin],
@@ -804,7 +802,7 @@ def group_limited_router_kernel[
     ] = None,
 ](
     expert_indices: TileTensor[
-        mut=True, DType.int32, ExpertIndicesLayoutType, MutAnyOrigin
+        mut=True, .int32, ExpertIndicesLayoutType, MutAnyOrigin
     ],
     expert_weights: TileTensor[
         mut=True, scores_type, ExpertWeightsLayoutType, MutAnyOrigin
@@ -906,10 +904,10 @@ def group_limited_router_kernel[
     var shared_mem = unsafe_stack_allocation[
         topk_group * n_experts_per_tok,
         TopK_2[scores_type],
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
     var selected_group = unsafe_stack_allocation[
-        topk_group, DType.int32, address_space=AddressSpace.SHARED
+        topk_group, DType.int32, address_space=.SHARED
     ]()
     var thread_group_id, tid_in_group = divmod(tid, group_size)
 
@@ -1028,7 +1026,7 @@ def router_group_limited[
         def[width: Int](IndexList[2]) capturing -> SIMD[scores_type, width]
     ] = None,
 ](
-    expert_indices: TileTensor[mut=True, DType.int32, ...],
+    expert_indices: TileTensor[mut=True, .int32, ...],
     expert_weights: TileTensor[mut=True, scores_type, ...],
     expert_scores: TileTensor[mut=False, scores_type, ...],
     expert_bias: TileTensor[mut=False, bias_type, ...],
@@ -1128,7 +1126,7 @@ def single_group_router_kernel[
     ] = None,
 ](
     expert_indices: TileTensor[
-        mut=True, DType.int32, ExpertIndicesLayoutType, MutAnyOrigin
+        mut=True, .int32, ExpertIndicesLayoutType, MutAnyOrigin
     ],
     expert_weights: TileTensor[
         mut=True, scores_type, ExpertWeightsLayoutType, MutAnyOrigin
@@ -1214,7 +1212,7 @@ def single_group_router_kernel[
     var shared_mem = unsafe_stack_allocation[
         total_smem,
         TopK_2[scores_type],
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
 
     var shared_mem_phase1 = shared_mem
@@ -1337,10 +1335,10 @@ def single_group_router_eplb_kernel[
     ] = None,
 ](
     expert_indices: TileTensor[
-        mut=True, DType.int32, ExpertIndicesLayoutType, MutAnyOrigin
+        mut=True, .int32, ExpertIndicesLayoutType, MutAnyOrigin
     ],  # phy ids
     expert_indices_log: TileTensor[
-        mut=True, DType.int32, ExpertIndicesLogLayoutType, MutAnyOrigin
+        mut=True, .int32, ExpertIndicesLogLayoutType, MutAnyOrigin
     ],  # log ids (for EPLB histogram)
     expert_weights: TileTensor[
         mut=True, scores_type, ExpertWeightsLayoutType, MutAnyOrigin
@@ -1349,9 +1347,9 @@ def single_group_router_eplb_kernel[
         scores_type, ExpertScoresLayoutType, ImmutAnyOrigin
     ],
     expert_bias: TileTensor[bias_type, ExpertBiasLayoutType, ImmutAnyOrigin],
-    logcnt: TileTensor[DType.int32, LogcntLayoutType, ImmutAnyOrigin],
-    log2phy: TileTensor[DType.int32, Log2phyLayoutType, ImmutAnyOrigin],
-    layer_idx: TileTensor[DType.int32, LayerIdxLayoutType, ImmutAnyOrigin],
+    logcnt: TileTensor[.int32, LogcntLayoutType, ImmutAnyOrigin],
+    log2phy: TileTensor[.int32, Log2phyLayoutType, ImmutAnyOrigin],
+    layer_idx: TileTensor[.int32, LayerIdxLayoutType, ImmutAnyOrigin],
     routed_scaling_factor: Float32,
 ):
     """Single-group MoE router fused with EPLB log->phy remap.
@@ -1431,7 +1429,7 @@ def single_group_router_eplb_kernel[
     var shared_mem = unsafe_stack_allocation[
         total_smem,
         TopK_2[scores_type],
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
     var shared_mem_phase1 = shared_mem
     var shared_mem_phase2 = shared_mem + phase1_candidates
@@ -1501,7 +1499,7 @@ def single_group_router_eplb_kernel[
             var log: Int = 0
             var original_weight: Scalar[scores_type] = 0
             var cnt: Int = 1
-            var phy_all = SIMD[DType.int32, max_replicas](0)
+            var phy_all = SIMD[.int32, max_replicas](0)
 
             if l_id < n_experts_per_tok:
                 log = Int(sorted_val3.p)
@@ -1568,7 +1566,7 @@ def single_group_router[
         def[width: Int](IndexList[2]) capturing -> SIMD[scores_type, width]
     ] = None,
 ](
-    expert_indices: TileTensor[mut=True, DType.int32, ...],
+    expert_indices: TileTensor[mut=True, .int32, ...],
     expert_weight: TileTensor[mut=True, scores_type, ...],
     expert_scores: TileTensor[mut=False, scores_type, ...],
     expert_bias: TileTensor[mut=False, bias_type, ...],
@@ -1664,14 +1662,14 @@ def single_group_router_eplb[
         def[width: Int](IndexList[2]) capturing -> SIMD[scores_type, width]
     ] = None,
 ](
-    expert_indices: TileTensor[mut=True, DType.int32, ...],
-    expert_indices_log: TileTensor[mut=True, DType.int32, ...],
+    expert_indices: TileTensor[mut=True, .int32, ...],
+    expert_indices_log: TileTensor[mut=True, .int32, ...],
     expert_weights: TileTensor[mut=True, scores_type, ...],
     expert_scores: TileTensor[scores_type, ...],
     expert_bias: TileTensor[bias_type, ...],
-    logcnt: TileTensor[DType.int32, ...],
-    log2phy: TileTensor[DType.int32, ...],
-    layer_idx: TileTensor[DType.int32, ...],
+    logcnt: TileTensor[.int32, ...],
+    log2phy: TileTensor[.int32, ...],
+    layer_idx: TileTensor[.int32, ...],
     routed_scaling_factor: Float32,
     context: DeviceContext,
 ) raises:
@@ -1802,11 +1800,11 @@ def eplb_remap_kernel[
     tile_tokens: Int,  # rows of router_idx per block; threads/block = tile_tokens * K
     hash_decorrelate: Bool,
 ](
-    phy_idx: TileTensor[mut=True, DType.int32, PhyIdxLayoutType, MutAnyOrigin],
-    router_idx: TileTensor[DType.int32, RouterIdxLayoutType, ImmutAnyOrigin],
-    logcnt: TileTensor[DType.int32, LogcntLayoutType, ImmutAnyOrigin],
-    log2phy: TileTensor[DType.int32, Log2phyLayoutType, ImmutAnyOrigin],
-    layer_idx: TileTensor[DType.int32, LayerIdxLayoutType, ImmutAnyOrigin],
+    phy_idx: TileTensor[mut=True, .int32, PhyIdxLayoutType, MutAnyOrigin],
+    router_idx: TileTensor[.int32, RouterIdxLayoutType, ImmutAnyOrigin],
+    logcnt: TileTensor[.int32, LogcntLayoutType, ImmutAnyOrigin],
+    log2phy: TileTensor[.int32, Log2phyLayoutType, ImmutAnyOrigin],
+    layer_idx: TileTensor[.int32, LayerIdxLayoutType, ImmutAnyOrigin],
 ):
     """Fused EPLB per tile_token rows of router idx; one thread per (n,k) element.
     Each block cooperatively caces the current layer's logcnt and log2phy slices in
@@ -1883,13 +1881,13 @@ def eplb_remap_kernel[
     var smem_cnt = unsafe_stack_allocation[
         num_log,
         DType.int32,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
 
     var smem_phy = unsafe_stack_allocation[
         num_log * max_replicas,
         DType.int32,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
 
     with PDL():
@@ -1947,11 +1945,11 @@ def eplb_remap[
     hash_decorrelate: Bool,
     target: StaticString,
 ](
-    phy_idx: TileTensor[mut=True, DType.int32, ...],  # [N, K] output
-    router_idx: TileTensor[DType.int32, ...],  # [N, K] logical ids
-    logcnt: TileTensor[DType.int32, ...],  # [L, num_log]
-    log2phy: TileTensor[DType.int32, ...],  # [L, num_log, max_replicas]
-    layer_idx: TileTensor[DType.int32, ...],  # rank-1 [1] scalar
+    phy_idx: TileTensor[mut=True, .int32, ...],  # [N, K] output
+    router_idx: TileTensor[.int32, ...],  # [N, K] logical ids
+    logcnt: TileTensor[.int32, ...],  # [L, num_log]
+    log2phy: TileTensor[.int32, ...],  # [L, num_log, max_replicas]
+    layer_idx: TileTensor[.int32, ...],  # rank-1 [1] scalar
     context: DeviceContext,
 ) raises:
     """Launch the fused EPLB log->phy remap on GPU.

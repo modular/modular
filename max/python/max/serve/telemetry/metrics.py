@@ -227,6 +227,87 @@ SERVE_METRICS: dict[str, SupportedInstruments] = {
         unit="ms",
         description="Distribution of batch execution time",
     ),  # type: ignore
+    "maxserve.di.decode_admission_queue_wait_time": _meter.create_histogram(
+        "maxserve.di.decode_admission_queue_wait_time",
+        unit="ms",
+        description=(
+            "Decode-local time a request spends in decode's own admission "
+            "queue (self.pending_reqs) before being admitted into the "
+            "in-flight set and dispatched to prefill. Decode-clock only, "
+            "single process. Added after the dispatch-latency breakdown "
+            "(di.dispatch_rtt/prefill_span/reply_rtt) showed the "
+            "decode-prefill pipeline staying flat while TTFT still grew "
+            "sharply past mc=40 -- this covers the one remaining segment "
+            "upstream of dispatch that had no wait-time instrumentation."
+        ),
+    ),  # type: ignore
+    "maxserve.di.decode_send_time": _meter.create_histogram(
+        "maxserve.di.decode_send_time",
+        unit="ms",
+        description=(
+            "Decode-side time to build and send a PrefillRequest (struct "
+            "construction, msgspec serialization, ZMQ enqueue). Decode-local; "
+            "does not include network transit. Part of the DI dispatch "
+            "latency breakdown."
+        ),
+    ),  # type: ignore
+    "maxserve.di.dispatch_rtt": _meter.create_histogram(
+        "maxserve.di.dispatch_rtt",
+        unit="ms",
+        description=(
+            "Decode-clock round trip from sending a PrefillRequest to "
+            "receiving prefill's 'arrived' ack ping. Covers the outbound ZMQ "
+            "hop, prefill's negligible ack-send overhead, and the ack's "
+            "return hop combined -- a one-way network leg is not measurable "
+            "without synchronized clocks, so this is reported as a round "
+            "trip rather than split. Part of the DI dispatch latency "
+            "breakdown."
+        ),
+    ),  # type: ignore
+    "maxserve.di.prefill_span": _meter.create_histogram(
+        "maxserve.di.prefill_span",
+        unit="ms",
+        description=(
+            "Decode-clock time between prefill's 'arrived' and 'ce_done' "
+            "ack pings for a request: prefill's queue wait + CE execution + "
+            "the second ping's return hop. Cross-check this against "
+            "'maxserve.di.prefill_queue_wait_time' + "
+            "'maxserve.batch_execution_time' (batch_type=CE), which measure "
+            "the same work on prefill's own clock without the ping transit. "
+            "Part of the DI dispatch latency breakdown."
+        ),
+    ),  # type: ignore
+    "maxserve.di.reply_rtt": _meter.create_histogram(
+        "maxserve.di.reply_rtt",
+        unit="ms",
+        description=(
+            "Decode-clock time from prefill's 'ce_done' ack ping to the "
+            "real PrefillResponse arriving: KV-transfer initiation, reply "
+            "construction/serialization on prefill, and its network transit. "
+            "Part of the DI dispatch latency breakdown."
+        ),
+    ),  # type: ignore
+    "maxserve.di.prefill_queue_wait_time": _meter.create_histogram(
+        "maxserve.di.prefill_queue_wait_time",
+        unit="ms",
+        description=(
+            "Prefill-local time a request spends enqueued before its first "
+            "CE batch executes. Prefill-clock only, single process -- tests "
+            "whether TTFT growth at high concurrency is queue saturation "
+            "rather than dispatch/network overhead."
+        ),
+    ),  # type: ignore
+    "maxserve.di.decode_postprocess_time": _meter.create_histogram(
+        "maxserve.di.decode_postprocess_time",
+        unit="ms",
+        description=(
+            "Decode-local time from receiving a PrefillResponse to handing "
+            "the result off to the response queue. Decode-clock only; does "
+            "not include the API-process hop after the response queue (see "
+            "'maxserve.response_queue_time' for the API-side tail). Part of "
+            "the DI dispatch latency breakdown."
+        ),
+    ),  # type: ignore
     "maxserve.cache.num_used_blocks": _meter.create_gauge(
         "maxserve.cache.num_used_blocks",
         unit="blocks",
@@ -994,6 +1075,66 @@ class _AsyncMetrics:
                 "maxserve.batch_execution_time",
                 execution_time,
                 {**self.extra_attributes, "batch_type": batch_type},
+            ),
+        )
+
+    def di_decode_admission_queue_wait_time(self, ms: float) -> None:
+        """Decode-local wait in decode's own admission queue before dispatch."""
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.di.decode_admission_queue_wait_time",
+                ms,
+                self.extra_attributes,
+            ),
+        )
+
+    def di_decode_send_time(self, ms: float) -> None:
+        """Decode-side PrefillRequest build+serialize+send duration."""
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.di.decode_send_time", ms, self.extra_attributes
+            ),
+        )
+
+    def di_dispatch_rtt(self, ms: float) -> None:
+        """Decode-clock round trip to prefill's 'arrived' ack ping."""
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.di.dispatch_rtt", ms, self.extra_attributes
+            ),
+        )
+
+    def di_prefill_span(self, ms: float) -> None:
+        """Decode-clock span between prefill's 'arrived' and 'ce_done' pings."""
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.di.prefill_span", ms, self.extra_attributes
+            ),
+        )
+
+    def di_reply_rtt(self, ms: float) -> None:
+        """Decode-clock span from the 'ce_done' ping to the real reply."""
+        self.client.send_measurement(
+            MaxMeasurement("maxserve.di.reply_rtt", ms, self.extra_attributes),
+        )
+
+    def di_prefill_queue_wait_time(self, ms: float) -> None:
+        """Prefill-local queue wait before a request's first CE batch."""
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.di.prefill_queue_wait_time",
+                ms,
+                self.extra_attributes,
+            ),
+        )
+
+    def di_decode_postprocess_time(self, ms: float) -> None:
+        """Decode-local time from PrefillResponse receipt to response queue."""
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.di.decode_postprocess_time",
+                ms,
+                self.extra_attributes,
             ),
         )
 

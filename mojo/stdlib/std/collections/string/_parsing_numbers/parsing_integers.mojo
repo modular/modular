@@ -87,7 +87,7 @@ def to_integer(standardized_x: Array[Byte, CONTAINER_SIZE]) raises -> UInt64:
     # change 24 to be adapted to the simd width.
     comptime simd_width = min(simd_width_of[DType.uint64](), 8)
 
-    var accumulator = SIMD[DType.uint64, simd_width](0)
+    var accumulator = SIMD[.uint64, simd_width](0)
 
     # We use unsafe_memcmp to check that the number is not too large.
     comptime max_standardized_x = String(UInt64.MAX).ascii_rjust(
@@ -120,8 +120,8 @@ def to_integer(standardized_x: Array[Byte, CONTAINER_SIZE]) raises -> UInt64:
         var ascii_vector = std_x_ptr.unsafe_offset(i * simd_width).unsafe_load[
             width=simd_width
         ]()
-        var as_digits = ascii_vector - SIMD[DType.uint8, simd_width](ord("0"))
-        var as_digits_index = as_digits.cast[DType.uint64]()
+        var as_digits = ascii_vector - SIMD[.uint8, simd_width](ord("0"))
+        var as_digits_index = as_digits.cast[.uint64]()
         comptime vector_slice = vector_with_exponents.unsafe_ptr().unsafe_offset(
             i * simd_width
         ).unsafe_load[

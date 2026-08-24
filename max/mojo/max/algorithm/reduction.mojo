@@ -926,63 +926,6 @@ def reduce[
     return out
 
 
-@always_inline
-@__parameter
-def reduce_boolean[
-    reduce_fn: def[dtype: DType, width: SIMDLength](
-        SIMD[dtype, width]
-    ) capturing[_] -> Bool,
-    continue_fn: def(Bool) capturing[_] -> Bool,
-    dtype: DType,
-](src: Span[Scalar[dtype], _], init: Bool) -> Bool:
-    """Computes a bool reduction of buffer elements. The reduction will early
-    exit if the `continue_fn` returns False.
-
-    Parameters:
-        reduce_fn: A boolean reduction function. This function is used to reduce
-          a vector to a scalar. E.g. when we got `8xfloat32` vector and want to
-          reduce it to a `bool`.
-        continue_fn: A function to indicate whether we want to continue
-          processing the rest of the iterations. This takes the result of the
-          reduce_fn and returns True to continue processing and False to early
-          exit.
-        dtype: The dtype of the input.
-
-    Args:
-        src: The input buffer.
-        init: The initial value to use.
-
-    Returns:
-        The computed reduction value.
-    """
-    comptime simd_width = simd_width_of[dtype]()
-    comptime unroll_factor = 8  # TODO: search
-    # TODO: explicitly unroll like vectorize_unroll does.
-    comptime unrolled_simd_width = simd_width * unroll_factor
-
-    var length = len(src)
-    var unrolled_vector_end = align_down(length, unrolled_simd_width)
-    var vector_end = align_down(length, simd_width)
-    var curr = init
-    for i in range(0, unrolled_vector_end, unrolled_simd_width):
-        curr = reduce_fn(
-            src.unsafe_ptr().unsafe_load[width=unrolled_simd_width](i)
-        )
-        if not continue_fn(curr):
-            return curr
-
-    for i in range(unrolled_vector_end, vector_end, simd_width):
-        curr = reduce_fn(src.unsafe_ptr().unsafe_load[width=simd_width](i))
-        if not continue_fn(curr):
-            return curr
-
-    for i in range(vector_end, length):
-        curr = reduce_fn(src[i])
-        if not continue_fn(curr):
-            return curr
-    return curr
-
-
 # ===-----------------------------------------------------------------------===#
 # max (Span overload)
 # ===-----------------------------------------------------------------------===#

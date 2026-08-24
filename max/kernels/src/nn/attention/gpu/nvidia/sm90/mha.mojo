@@ -120,14 +120,12 @@ def mha_sm90_dispatch[
     v: KVType,
     num_rows_q: Int,
     mask_functor: MaskType,
-    valid_length: DeviceBuffer[DType.uint32],
+    valid_length: DeviceBuffer[.uint32],
     max_prompt_len_arg: MaxPromptLenType,
     max_cache_valid_length_arg: Int,
     scale: Float32,
     kv_input_row_offsets: OptionalReg[
-        LayoutTensor[
-            DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
-        ]
+        LayoutTensor[.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
     ],
     batch_size_arg: Int,
     partition: PartitionType,
@@ -369,7 +367,7 @@ def mha_sm90_dispatch[
             UInt32(num_scheduler_heads),
             decoding=decoding,
         ]
-        var schedule = ctx.enqueue_create_buffer[DType.uint32](1)
+        var schedule = ctx.enqueue_create_buffer[.uint32](1)
         schedule.enqueue_fill(UInt32(H100.sm_count))
         ctx.synchronize()
         var scheduler: SchedulerType = SchedulerType(
@@ -460,11 +458,9 @@ def _mha_sm90_sink_dispatch[
     batch_size: UInt32,
     max_seq_len: MaxSeqLenType,  # sequence length after padding.
     num_keys_arg: UInt32,
-    valid_length: DeviceBuffer[DType.uint32],
+    valid_length: DeviceBuffer[.uint32],
     kv_input_row_offsets: OptionalReg[
-        LayoutTensor[
-            DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
-        ]
+        LayoutTensor[.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
     ],
     sink_weights: OptionalReg[
         LayoutTensor[
@@ -593,19 +589,17 @@ def _mha_sm90_kv_input_row_offset_dispatch[
     batch_size: UInt32,
     max_seq_len: MaxSeqLenType,  # sequence length after padding.
     num_keys_arg: UInt32,
-    valid_length: DeviceBuffer[DType.uint32],
+    valid_length: DeviceBuffer[.uint32],
     kv_input_row_offsets: OptionalReg[
-        LayoutTensor[
-            DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
-        ]
+        LayoutTensor[.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
     ],
     sink_weights: SinkType,
     partition: PartitionType,
     mask: MaskType,
     ctx: DeviceContext,
 ) raises:
-    comptime KVRowOffsetsNonNull = NonNullPointer[DType.uint32]
-    comptime KVRowOffsetsNull = NullPointer[DType.uint32]
+    comptime KVRowOffsetsNonNull = NonNullPointer[.uint32]
+    comptime KVRowOffsetsNull = NullPointer[.uint32]
     if kv_input_row_offsets:
         var kv_row_offsets: KVRowOffsetsNonNull = {
             kv_input_row_offsets.value().ptr
@@ -721,7 +715,7 @@ def _mha_sm90_valid_length_dispatch[
     batch_size: UInt32,
     max_seq_len: MaxSeqLenType,  # sequence length after padding.
     num_keys_arg: UInt32,
-    valid_length: DeviceBuffer[DType.uint32],
+    valid_length: DeviceBuffer[.uint32],
     kv_input_row_offsets: KVRowOffsetsType,
     sink_weights: SinkType,
     partition: PartitionType,
@@ -729,7 +723,7 @@ def _mha_sm90_valid_length_dispatch[
     ctx: DeviceContext,
 ) raises:
     comptime if ragged:
-        comptime ValidLengthType = NonNullPointer[DType.uint32]
+        comptime ValidLengthType = NonNullPointer[.uint32]
         var valid_len: ValidLengthType = {valid_length}
         _mha_sm90_enqueue[
             SchedulerType=SchedulerType,
@@ -764,7 +758,7 @@ def _mha_sm90_valid_length_dispatch[
             ctx,
         )
     else:
-        comptime ValidLengthType = NullPointer[DType.uint32]
+        comptime ValidLengthType = NullPointer[.uint32]
         var valid_len: ValidLengthType = {}
         _mha_sm90_enqueue[
             SchedulerType=SchedulerType,
@@ -1051,7 +1045,7 @@ def _mha_sm90[
     comptime q_smem_size = 2 * q_size if persistent else q_size
     var q_smem = external_memory[
         Scalar[kv_type],
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
         name="mha_dynamic_shared_memory",
     ]()
@@ -1281,9 +1275,9 @@ def _mha_sm90[
             kv_type,
             k_smem_layout,
             MutAnyOrigin,
-            address_space=AddressSpace.SHARED,
-            layout_int_type=DType.int32,
-            linear_idx_type=DType.int32,
+            address_space=.SHARED,
+            layout_int_type=.int32,
+            linear_idx_type=.int32,
             alignment=128,
         ],
     ):
@@ -1298,9 +1292,9 @@ def _mha_sm90[
             kv_type,
             v_smem_layout,
             MutAnyOrigin,
-            address_space=AddressSpace.SHARED,
-            layout_int_type=DType.int32,
-            linear_idx_type=DType.int32,
+            address_space=.SHARED,
+            layout_int_type=.int32,
+            linear_idx_type=.int32,
             alignment=128,
         ],
     ):
@@ -1388,7 +1382,7 @@ def _mha_sm90[
             kv_type,
             q_smem_layout_consumer,
             MutAnyOrigin,
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
             alignment=128,
         ]:
             return {(q_smem + UInt32(q_size) * q_idx).as_unsafe_any_origin()}
@@ -1406,14 +1400,14 @@ def _mha_sm90[
             accum_type,
             s_reg_tile_layout,
             MutAnyOrigin,
-            address_space=AddressSpace.LOCAL,
+            address_space=.LOCAL,
         ].stack_allocation()
         var output_reg_tile = (
             LayoutTensor[
                 accum_type,
                 o_reg_tile_layout,
                 MutAnyOrigin,
-                address_space=AddressSpace.LOCAL,
+                address_space=.LOCAL,
             ]
             .stack_allocation()
             .fill(0)
@@ -1425,7 +1419,7 @@ def _mha_sm90[
             kv_type,
             p_reg_tile_layout,
             MutAnyOrigin,
-            address_space=AddressSpace.LOCAL,
+            address_space=.LOCAL,
         ].stack_allocation()
 
         @__parameter
@@ -1435,7 +1429,7 @@ def _mha_sm90[
                 accum_type,
                 p_vec_output_layout,
                 MutAnyOrigin,
-                address_space=AddressSpace.LOCAL,
+                address_space=.LOCAL,
                 element_layout=element_layout,
             ],
         ):
@@ -1448,7 +1442,7 @@ def _mha_sm90[
                 accum_type,
                 o_vec_output_layout,
                 MutAnyOrigin,
-                address_space=AddressSpace.LOCAL,
+                address_space=.LOCAL,
                 element_layout=element_layout,
             ],
         ):
@@ -1458,13 +1452,13 @@ def _mha_sm90[
             accum_type,
             Layout.row_major(num_rows_per_warp),
             MutAnyOrigin,
-            address_space=AddressSpace.LOCAL,
+            address_space=.LOCAL,
         ].stack_allocation()
         var rowsum = LayoutTensor[
             accum_type,
             Layout.row_major(num_rows_per_warp),
             MutAnyOrigin,
-            address_space=AddressSpace.LOCAL,
+            address_space=.LOCAL,
         ].stack_allocation()
 
         # Mask global memory iterator.

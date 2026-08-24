@@ -166,18 +166,14 @@ struct MHATileState(TrivialRegisterPassable):
     var idx: UInt32
 
     @__allow_legacy_any_origin_fields
-    var sidx_ptr: UnsafePointer[
-        UInt32, MutAnyOrigin, address_space=AddressSpace.SHARED
-    ]
+    var sidx_ptr: UnsafePointer[UInt32, MutAnyOrigin, address_space=.SHARED]
     var max_idx: UInt32
 
     @always_inline
     def __init__(
         out self,
         idx: UInt32,
-        sidx_ptr: UnsafePointer[
-            UInt32, MutAnyOrigin, address_space=AddressSpace.SHARED
-        ],
+        sidx_ptr: UnsafePointer[UInt32, MutAnyOrigin, address_space=.SHARED],
         max_idx: UInt32,
     ):
         self.idx = idx
@@ -453,9 +449,7 @@ trait MHATileScheduler(Copyable, DevicePassable, TrivialRegisterPassable):
         //,
     ](
         self,
-        ptr: UnsafePointer[
-            UInt32, MutAnyOrigin, address_space=AddressSpace.SHARED
-        ],
+        ptr: UnsafePointer[UInt32, MutAnyOrigin, address_space=.SHARED],
         tile_summary: MHATileSummary[ValidLengthType],
     ) -> MHATileState:
         """Create the initial state object.
@@ -697,9 +691,7 @@ struct TransientScheduler[
         //,
     ](
         self,
-        ptr: UnsafePointer[
-            UInt32, MutAnyOrigin, address_space=AddressSpace.SHARED
-        ],
+        ptr: UnsafePointer[UInt32, MutAnyOrigin, address_space=.SHARED],
         tile_summary: MHATileSummary[ValidLengthType],
     ) -> MHATileState:
         return MHATileState(0, ptr, 1)
@@ -820,7 +812,7 @@ struct TileScheduler[
         # NOTE: mha_sm90 assumes `grid_dim` limits the grid
         # size for persistent kernels, so that it doesn't
         # need to check the first `work_info` for validity.
-        var bx, by, bz = MHATileSummary[NullPointer[DType.uint32]].grid_dim[
+        var bx, by, bz = MHATileSummary[NullPointer[.uint32]].grid_dim[
             Self.num_heads
         ](max_num_prompt_tiles, batch_size)
         var size = min(Int(Self.num_ctas), bx * by * bz)
@@ -832,9 +824,7 @@ struct TileScheduler[
         //,
     ](
         self,
-        ptr: UnsafePointer[
-            UInt32, MutAnyOrigin, address_space=AddressSpace.SHARED
-        ],
+        ptr: UnsafePointer[UInt32, MutAnyOrigin, address_space=.SHARED],
         tile_summary: MHATileSummary[ValidLengthType],
     ) -> MHATileState:
         return MHATileState(
@@ -878,9 +868,7 @@ struct QueuedTileScheduler[
 
     # Linear work tile index i.e. idx-th work among all possible workload.
     @__allow_legacy_any_origin_fields
-    var gidx_ptr: UnsafePointer[
-        UInt32, MutAnyOrigin, address_space=AddressSpace.GLOBAL
-    ]
+    var gidx_ptr: UnsafePointer[UInt32, MutAnyOrigin, address_space=.GLOBAL]
 
     comptime may_advance: Bool = True
     comptime mha_schedule: MHASchedule = Self.schedule
@@ -890,7 +878,7 @@ struct QueuedTileScheduler[
         out self,
         gidx_ptr: UnsafePointer[UInt32, MutAnyOrigin],
     ):
-        self.gidx_ptr = gidx_ptr.address_space_cast[AddressSpace.GLOBAL]()
+        self.gidx_ptr = gidx_ptr.address_space_cast[.GLOBAL]()
 
     @always_inline
     def get_current_work_info[
@@ -988,7 +976,7 @@ struct QueuedTileScheduler[
         # NOTE: mha_sm90 assumes `grid_dim` limits the grid
         # size for persistent kernels, so that it doesn't
         # need to check the first `work_info` for validity.
-        var bx, by, bz = MHATileSummary[NullPointer[DType.uint32]].grid_dim[
+        var bx, by, bz = MHATileSummary[NullPointer[.uint32]].grid_dim[
             Self.num_heads
         ](max_num_prompt_tiles, batch_size)
         var size = min(Int(Self.num_ctas), bx * by * bz)
@@ -1000,9 +988,7 @@ struct QueuedTileScheduler[
         //,
     ](
         self,
-        ptr: UnsafePointer[
-            UInt32, MutAnyOrigin, address_space=AddressSpace.SHARED
-        ],
+        ptr: UnsafePointer[UInt32, MutAnyOrigin, address_space=.SHARED],
         tile_summary: MHATileSummary[ValidLengthType],
     ) -> MHATileState:
         var state = MHATileState(

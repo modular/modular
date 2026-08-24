@@ -1307,7 +1307,7 @@ struct Pointer[
     T: AnyType,
     origin: Origin[mut=mut],
     *,
-    address_space: AddressSpace = AddressSpace.GENERIC,
+    address_space: AddressSpace = .GENERIC,
 ](Defaultable, TrivialRegisterPassable):
     comptime type = Self.T
 
@@ -1421,19 +1421,13 @@ struct Pointer[
     ](self) -> Pointer[U, Self.origin, address_space=Self.address_space]:
         return __mlir_op.`pop.pointer.bitcast`[
             _type=Pointer[
-                U,
-                Self.origin,
-                address_space=Self.address_space,
+                U, Self.origin, address_space=Self.address_space
             ]._mlir_type,
         ](self._mlir_value)
 
     comptime _OriginCastType[
         target_mut: Bool, //, target_origin: Origin[mut=target_mut]
-    ] = Pointer[
-        Self.T,
-        target_origin,
-        address_space=Self.address_space,
-    ]
+    ] = Pointer[Self.T, target_origin, address_space=Self.address_space]
 
     @always_inline("builtin")
     def unsafe_mut_cast[
@@ -1485,7 +1479,7 @@ comptime UnsafePointer[
     T: AnyType,
     origin: Origin[mut=mut],
     *,
-    address_space: AddressSpace = AddressSpace.GENERIC,
+    address_space: AddressSpace = .GENERIC,
 ] = Pointer[T, origin, address_space=address_space]
 
 
@@ -1519,7 +1513,7 @@ struct Tuple[*element_types: Movable](ImplicitlyCopyable):
 comptime MutOpaquePointer[
     origin: Origin[mut=True],
     *,
-    address_space: AddressSpace = AddressSpace.GENERIC,
+    address_space: AddressSpace = .GENERIC,
 ] = Pointer[NoneType, origin, address_space=address_space]
 
 
@@ -1799,10 +1793,11 @@ struct SIMDLength(TrivialRegisterPassable):
         )
 
 
-comptime Float32 = SIMD[DType.float32, 1]
-comptime Float64 = SIMD[DType.float64, 1]
-comptime Int32 = SIMD[DType.int32, 1]
-comptime UInt32 = SIMD[DType.uint32, 1]
+comptime Float32 = SIMD[.float32, 1]
+comptime Float64 = SIMD[.float64, 1]
+comptime Float4_e2m1fn = SIMD[.float4_e2m1fn, 1]
+comptime Int32 = SIMD[.int32, 1]
+comptime UInt32 = SIMD[.uint32, 1]
 
 # ===----------------------------------------------------------------------=== #
 #  SIMD
@@ -1828,7 +1823,7 @@ struct SIMD[dtype: DType, size: SIMDLength](
     @always_inline("builtin")
     def __init__(out self: Int, *, mlir_value: __mlir_type.index):
         self._mlir_value = __mlir_op.`pop.cast_from_builtin`[
-            _type=SIMD[DType.int, 1]._mlir_type
+            _type=SIMD[.int, 1]._mlir_type
         ](mlir_value)
 
     @stable
@@ -1870,7 +1865,7 @@ struct SIMD[dtype: DType, size: SIMDLength](
     def __mlir_index__(self) -> __mlir_type.index:
         return __mlir_op.`pop.cast_to_builtin`[_type=__mlir_type.index](
             __mlir_op.`pop.cast`[
-                _type=SIMD[DType.int, 1]._mlir_type, fast=__mlir_attr.unit
+                _type=SIMD[.int, 1]._mlir_type, fast=__mlir_attr.unit
             ](rebind[SIMD[Self.dtype, SIMDLength(1)]](self)._mlir_value)
         )
 

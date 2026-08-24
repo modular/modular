@@ -60,12 +60,10 @@ comptime TokenFmt = MXTokenFormat[
 @__name("mxfp6_send_buf_probe")
 def _send_buf_probe_kernel(
     buf: Pointer[UInt8, MutAnyOrigin],
-    src: Pointer[Scalar[DType.bfloat16], MutAnyOrigin],
+    src: Pointer[BFloat16, MutAnyOrigin],
 ):
     """Runs one token through the dispatch packer, as `ep_dispatch` would."""
-    TokenFmt.copy_token_to_send_buf[DType.bfloat16, BLOCK](
-        buf, src, Float32(1.0)
-    )
+    TokenFmt.copy_token_to_send_buf[.bfloat16, BLOCK](buf, src, Float32(1.0))
 
 
 def main() raises:
@@ -77,16 +75,16 @@ def main() raises:
 
     print("===> MXFP6 send buffer vs quantize_mxfp6_amd")
 
-    var src_h = ctx.enqueue_create_host_buffer[DType.bfloat16](HID)
+    var src_h = ctx.enqueue_create_host_buffer[.bfloat16](HID)
     ctx.synchronize()
     for i in range(HID):
-        src_h[i] = Scalar[DType.bfloat16](random_float64(-6.0, 6.0))
+        src_h[i] = BFloat16(random_float64(-6.0, 6.0))
 
-    var src_d = ctx.enqueue_create_buffer[DType.bfloat16](HID)
+    var src_d = ctx.enqueue_create_buffer[.bfloat16](HID)
     ctx.enqueue_copy(src_d, src_h)
 
     var token_bytes = TokenFmt.token_size()
-    var buf_d = ctx.enqueue_create_buffer[DType.uint8](token_bytes)
+    var buf_d = ctx.enqueue_create_buffer[.uint8](token_bytes)
     buf_d.enqueue_fill(UInt8(0))
 
     ctx.enqueue_function[_send_buf_probe_kernel](
@@ -97,8 +95,8 @@ def main() raises:
     )
 
     # Reference: the standalone quantizer, already pinned to the OCP tables.
-    var ref_out_d = ctx.enqueue_create_buffer[DType.uint8](QUANT_BYTES)
-    var ref_scales_d = ctx.enqueue_create_buffer[DType.float8_e8m0fnu](SCALE_K)
+    var ref_out_d = ctx.enqueue_create_buffer[.uint8](QUANT_BYTES)
+    var ref_scales_d = ctx.enqueue_create_buffer[.float8_e8m0fnu](SCALE_K)
     quantize_mxfp6_amd[FP6Format.E2M3](
         ctx,
         TileTensor[origin=MutAnyOrigin](
@@ -110,11 +108,9 @@ def main() raises:
         TileTensor[origin=MutAnyOrigin](src_d, row_major(Idx[1], Idx[HID])),
     )
 
-    var buf_h = ctx.enqueue_create_host_buffer[DType.uint8](token_bytes)
-    var ref_out_h = ctx.enqueue_create_host_buffer[DType.uint8](QUANT_BYTES)
-    var ref_scales_h = ctx.enqueue_create_host_buffer[DType.float8_e8m0fnu](
-        SCALE_K
-    )
+    var buf_h = ctx.enqueue_create_host_buffer[.uint8](token_bytes)
+    var ref_out_h = ctx.enqueue_create_host_buffer[.uint8](QUANT_BYTES)
+    var ref_scales_h = ctx.enqueue_create_host_buffer[.float8_e8m0fnu](SCALE_K)
     ctx.enqueue_copy(buf_h, buf_d)
     ctx.enqueue_copy(ref_out_h, ref_out_d)
     ctx.enqueue_copy(ref_scales_h, ref_scales_d)
@@ -143,7 +139,7 @@ def main() raises:
     var scale_mismatch = 0
     for i in range(SCALE_K):
         var got = buf_h[scale_off + i]
-        var want = bitcast[DType.uint8, 1](ref_scales_h[i])
+        var want = bitcast[.uint8, 1](ref_scales_h[i])
         if got != want:
             scale_mismatch += 1
     print("  scales:", SCALE_K, " mismatched:", scale_mismatch)

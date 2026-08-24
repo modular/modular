@@ -215,6 +215,7 @@ struct _ArrayIterOwned[T: Movable & Deinitable, length: Int](
 )
 @stable(since="1.0")
 struct Array[T: AnyType, length: Int](
+    Comparable where conforms_to(T, Comparable),
     Copyable where conforms_to(T, Copyable),
     Defaultable where conforms_to(T, Defaultable),
     Deinitable where conforms_to(T, Deinitable),
@@ -261,6 +262,11 @@ struct Array[T: AnyType, length: Int](
     # Access elements
     print(arr[0])  # Prints 1
     ```
+
+    Notes:
+        When the element type is `Comparable`, `Array` is too and orders
+        **lexicographically**: elements compare pairwise and the first differing
+        pair decides the result.
     """
 
     comptime __del__is_trivial: Bool = IsTriviallyDeinitable[Self.T]
@@ -755,7 +761,7 @@ struct Array[T: AnyType, length: Int](
         return Pointer[_, origin_of(self)](_mlir_value=ptr)[]
 
     @always_inline
-    def __add__(
+    def concat(
         deinit self,
         deinit rhs: Array[Self.T, _],
         out result: Array[Self.T, Self.length + rhs.length],
@@ -778,7 +784,7 @@ struct Array[T: AnyType, length: Int](
         ```mojo
         var a: Array[Int, 2] = [1, 2]
         var b: Array[Int, 3] = [3, 4, 5]
-        var c = (a^) + (b^)  # [1, 2, 3, 4, 5]
+        var c = a^.concat(b^)  # [1, 2, 3, 4, 5]
         ```
         """
         result = {uninitialized = True}
@@ -846,6 +852,82 @@ struct Array[T: AnyType, length: Int](
             if self.unsafe_get(i) != other.unsafe_get(i):
                 return True
         return False
+
+    @always_inline
+    def _compare(
+        self, other: Self
+    ) -> Int where conforms_to(Self.T, Comparable):
+        """Lexicographically three-way compares this array to another.
+
+        Both arrays share the same compile-time `length`, so the comparison
+        walks the elements pairwise and the first differing pair decides the
+        result.
+
+        Args:
+            other: The other array to compare against.
+
+        Returns:
+            A negative value if `self` sorts before `other`, zero if they are
+            equal, and a positive value if `self` sorts after `other`.
+        """
+        for i in range(Self.length):
+            if self.unsafe_get(i) < other.unsafe_get(i):
+                return -1
+            if other.unsafe_get(i) < self.unsafe_get(i):
+                return 1
+        return 0
+
+    @always_inline
+    def __lt__(self, other: Self) -> Bool where conforms_to(Self.T, Comparable):
+        """Compares two arrays lexicographically for less-than ordering.
+
+        Args:
+            other: The other array to compare against.
+
+        Returns:
+            True if `self` sorts before `other` lexicographically, comparing
+            elements pairwise so the first differing pair decides the result.
+        """
+        return self._compare(other) < 0
+
+    @always_inline
+    def __le__(self, other: Self) -> Bool where conforms_to(Self.T, Comparable):
+        """Compares two arrays lexicographically for less-than-or-equal
+        ordering.
+
+        Args:
+            other: The other array to compare against.
+
+        Returns:
+            True if `self` sorts before or equal to `other` lexicographically.
+        """
+        return self._compare(other) <= 0
+
+    @always_inline
+    def __gt__(self, other: Self) -> Bool where conforms_to(Self.T, Comparable):
+        """Compares two arrays lexicographically for greater-than ordering.
+
+        Args:
+            other: The other array to compare against.
+
+        Returns:
+            True if `self` sorts after `other` lexicographically, comparing
+            elements pairwise so the first differing pair decides the result.
+        """
+        return self._compare(other) > 0
+
+    @always_inline
+    def __ge__(self, other: Self) -> Bool where conforms_to(Self.T, Comparable):
+        """Compares two arrays lexicographically for greater-than-or-equal
+        ordering.
+
+        Args:
+            other: The other array to compare against.
+
+        Returns:
+            True if `self` sorts after or equal to `other` lexicographically.
+        """
+        return self._compare(other) >= 0
 
     def __hash__[
         H: Hasher

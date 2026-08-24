@@ -41,9 +41,7 @@ from std.utils import Index, IndexList
 
 def test_fused_qk_rope[dtype: DType](ctx: DeviceContext) raises -> None:
     """Verifies fused_qk_rope against golden values computed with PyTorch."""
-    comptime assert (
-        dtype == DType.float32
-    ), "goldens only for float32, currently"
+    comptime assert dtype == .float32, "goldens only for float32, currently"
 
     # Set up test hyperparameters.
     comptime batch_size = 2
@@ -63,7 +61,7 @@ def test_fused_qk_rope[dtype: DType](ctx: DeviceContext) raises -> None:
         return max_item
 
     comptime assert max_seq_len > (
-        seq_len + Int(_max[DType.uint32, items=start_positions]())
+        seq_len + Int(_max[.uint32, items=start_positions]())
     ), "KV cache size smaller than sum of sequence length and start pos"
     comptime num_heads = 2
     comptime dim = 16
@@ -112,12 +110,8 @@ def test_fused_qk_rope[dtype: DType](ctx: DeviceContext) raises -> None:
     var kv_block_device = ctx.enqueue_create_buffer[dtype](
         kv_block_shape.flattened_length()
     )
-    var cache_lengths_device = ctx.enqueue_create_buffer[DType.uint32](
-        batch_size
-    )
-    var lookup_table_device = ctx.enqueue_create_buffer[DType.uint32](
-        batch_size
-    )
+    var cache_lengths_device = ctx.enqueue_create_buffer[.uint32](batch_size)
+    var lookup_table_device = ctx.enqueue_create_buffer[.uint32](batch_size)
     var q_device = ctx.enqueue_create_buffer[dtype](q_shape.flattened_length())
     var freqs_device = ctx.enqueue_create_buffer[dtype](
         freqs_shape.flattened_length()
@@ -189,7 +183,7 @@ def test_fused_qk_rope[dtype: DType](ctx: DeviceContext) raises -> None:
     )
     var cache_lengths_tensor = LayoutTensor[
         mut=False,
-        DType.uint32,
+        .uint32,
         Layout(UNKNOWN_VALUE),
     ](
         cache_lengths_device,
@@ -197,7 +191,7 @@ def test_fused_qk_rope[dtype: DType](ctx: DeviceContext) raises -> None:
     )
     var lookup_table_tensor = LayoutTensor[
         mut=False,
-        DType.uint32,
+        .uint32,
         Layout(UNKNOWN_VALUE),
     ](
         lookup_table_device,
@@ -236,9 +230,7 @@ def test_fused_qk_rope[dtype: DType](ctx: DeviceContext) raises -> None:
     ] = expected_k_out_buffer.unsafe_ptr()
 
     # Create valid_lengths device buffer - all sequences have full seq_len valid
-    var valid_lengths_device = ctx.enqueue_create_buffer[DType.uint32](
-        batch_size
-    )
+    var valid_lengths_device = ctx.enqueue_create_buffer[.uint32](batch_size)
     with valid_lengths_device.map_to_host() as valid_lengths_host:
         for i in range(batch_size):
             valid_lengths_host[i] = UInt32(seq_len)
@@ -248,9 +240,7 @@ def test_fused_qk_rope[dtype: DType](ctx: DeviceContext) raises -> None:
         valid_lengths_device, valid_lengths_tile_layout
     )
     var valid_lengths_tensor = TileTensor[
-        DType.uint32,
-        type_of(valid_lengths_static).LayoutType,
-        MutAnyOrigin,
+        .uint32, type_of(valid_lengths_static).LayoutType, MutAnyOrigin
     ](
         valid_lengths_static._storage.unsafe_origin_cast[MutAnyOrigin](),
         valid_lengths_static.layout,
@@ -306,4 +296,4 @@ def test_fused_qk_rope[dtype: DType](ctx: DeviceContext) raises -> None:
 
 def main() raises -> None:
     with DeviceContext() as ctx:
-        test_fused_qk_rope[DType.float32](ctx)
+        test_fused_qk_rope[.float32](ctx)

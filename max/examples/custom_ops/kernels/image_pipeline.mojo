@@ -29,15 +29,15 @@ struct Grayscale:
         # The kind of device this is running on: "cpu" or "gpu"
         target: StaticString,
     ](
-        img_out: OutputTensor[dtype=DType.uint8, rank=2, ...],
-        img_in: InputTensor[dtype=DType.uint8, rank=3, ...],
+        img_out: OutputTensor[dtype=.uint8, rank=2, ...],
+        img_in: InputTensor[dtype=.uint8, rank=3, ...],
         ctx: DeviceContext,
     ) raises:
         @__parameter
         @always_inline
         def color_to_grayscale[
             simd_width: Int
-        ](idx: Coord) -> SIMD[DType.uint8, simd_width]:
+        ](idx: Coord) -> SIMD[.uint8, simd_width]:
             var idx_l = coord_to_index_list(idx)
             var row = idx_l[0]
             var col = idx_l[1]
@@ -46,13 +46,13 @@ struct Grayscale:
             var g_idx = IndexList[3](row, col, 1)
             var b_idx = IndexList[3](row, col, 2)
 
-            var r_f32 = img_in.load[simd_width](r_idx).cast[DType.float32]()
-            var g_f32 = img_in.load[simd_width](g_idx).cast[DType.float32]()
-            var b_f32 = img_in.load[simd_width](b_idx).cast[DType.float32]()
+            var r_f32 = img_in.load[simd_width](r_idx).cast[.float32]()
+            var g_f32 = img_in.load[simd_width](g_idx).cast[.float32]()
+            var b_f32 = img_in.load[simd_width](b_idx).cast[.float32]()
 
             var gray_f32 = 0.21 * r_f32 + 0.71 * g_f32 + 0.07 * b_f32
 
-            return gray_f32.clamp(0, 255).cast[DType.uint8]()
+            return gray_f32.clamp(0, 255).cast[.uint8]()
 
         foreach[color_to_grayscale, target=target, simd_width=1](img_out, ctx)
 
@@ -63,8 +63,8 @@ struct Brightness:
     def execute[
         target: StaticString,
     ](
-        img_out: OutputTensor[dtype=DType.uint8, rank=2, ...],
-        img_in: InputTensor[dtype=DType.uint8, rank=2, ...],
+        img_out: OutputTensor[dtype=.uint8, rank=2, ...],
+        img_in: InputTensor[dtype=.uint8, rank=2, ...],
         brightness: Float32,
         ctx: DeviceContext,
     ) raises:
@@ -72,12 +72,12 @@ struct Brightness:
         @always_inline  # Added for consistency
         def brighten[
             simd_width: Int  # Renamed 'width' to 'simd_width'
-        ](idx: Coord) -> SIMD[DType.uint8, simd_width]:
-            var pixels_f32 = img_in.load[simd_width](idx).cast[DType.float32]()
+        ](idx: Coord) -> SIMD[.uint8, simd_width]:
+            var pixels_f32 = img_in.load[simd_width](idx).cast[.float32]()
 
             var brightened_f32 = pixels_f32 * brightness
 
-            return brightened_f32.clamp(0, 255).cast[DType.uint8]()
+            return brightened_f32.clamp(0, 255).cast[.uint8]()
 
         foreach[brighten, target=target](img_out, ctx)
 
@@ -88,8 +88,8 @@ struct Blur:
     def execute[
         target: StaticString,
     ](
-        img_out: OutputTensor[dtype=DType.uint8, rank=2, ...],
-        img_in: InputTensor[dtype=DType.uint8, rank=2, ...],
+        img_out: OutputTensor[dtype=.uint8, rank=2, ...],
+        img_in: InputTensor[dtype=.uint8, rank=2, ...],
         blur_size: Int64,
         ctx: DeviceContext,
     ) raises:
@@ -97,7 +97,7 @@ struct Blur:
         @always_inline
         def blur_kernel[
             simd_width: Int
-        ](idx: Coord) -> SIMD[DType.uint8, simd_width]:
+        ](idx: Coord) -> SIMD[.uint8, simd_width]:
             """
             Computes the blurred value for a SIMD vector of pixels.
             """

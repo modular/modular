@@ -94,7 +94,7 @@ def _mojo_block_hasher[
     py_array_object_ptr: Pointer[PyArrayObject[dtype], _],
     block_size: Int,
     parent_hash: Int,
-    seed: SIMD[DType.uint64, 4],
+    seed: SIMD[.uint64, 4],
 ) -> PythonObject:
     # Compute number of hashes
     var num_elts: Int = py_array_object_ptr[].num_elts()
@@ -114,7 +114,7 @@ def _mojo_block_hasher[
         var hash_ptr_ints = hash_ptr_base.unsafe_offset(block_idx * block_size)
         var hash_ptr_bytes = hash_ptr_ints.unsafe_bitcast[Byte]()
         var token_hash = hash_seeded_bytes(hash_ptr_bytes, num_bytes, seed)
-        var pair_to_hash = SIMD[DType.uint64, 2](UInt64(prev_hash), token_hash)
+        var pair_to_hash = SIMD[.uint64, 2](UInt64(prev_hash), token_hash)
         var curr_hash = hash_seeded(pair_to_hash, seed)
         # Convert the hash result to a Python object and store it in our
         # uninitialized list.
@@ -133,7 +133,7 @@ def mojo_block_hasher(
     seed_obj: PythonObject,
 ) raises -> PythonObject:
     # Parse np array tokens input
-    var py_array_object_ptr = Pointer[PyArrayObject[DType.int32], _](
+    var py_array_object_ptr = Pointer[PyArrayObject[.int32], _](
         unchecked_downcast_value=py_array_object
     )
 
@@ -142,7 +142,7 @@ def mojo_block_hasher(
     var parent_hash = Int(py=parent_hash_obj)
 
     # Parse the 32-byte seed into 4 uint64 lanes.
-    var seed_array_ptr = Pointer[PyArrayObject[DType.uint8], _](
+    var seed_array_ptr = Pointer[PyArrayObject[.uint8], _](
         unchecked_downcast_value=seed_obj
     )
     var seed = (
@@ -159,10 +159,10 @@ def mojo_block_hasher(
 
 @always_inline
 def _mojo_block_hasher_sha256(
-    tokens_ptr: Pointer[PyArrayObject[DType.int32], _],
+    tokens_ptr: Pointer[PyArrayObject[.int32], _],
     block_size: Int,
-    parent_hash_ptr: Pointer[PyArrayObject[DType.uint8], _],
-    out_ptr: Pointer[PyArrayObject[DType.uint8], _],
+    parent_hash_ptr: Pointer[PyArrayObject[.uint8], _],
+    out_ptr: Pointer[PyArrayObject[.uint8], _],
 ):
     """Chained block hashing using SHA-256. Writes (num_blocks, 32) bytes to out_ptr.
     Args:
@@ -213,8 +213,8 @@ def _mojo_block_hasher_sha256(
 
 @always_inline
 def _mojo_sha256_oneshot(
-    data_ptr: Pointer[PyArrayObject[DType.uint8], _],
-    out_ptr: Pointer[PyArrayObject[DType.uint8], _],
+    data_ptr: Pointer[PyArrayObject[.uint8], _],
+    out_ptr: Pointer[PyArrayObject[.uint8], _],
 ):
     """One-shot SHA-256 of a uint8 array; writes 32-byte digest to ``out``."""
     var n = data_ptr[].num_elts()
@@ -228,10 +228,10 @@ def mojo_sha256_oneshot(
     data_obj: PythonObject,
     out_obj: PythonObject,
 ) raises -> PythonObject:
-    var data_ptr = Pointer[PyArrayObject[DType.uint8], _](
+    var data_ptr = Pointer[PyArrayObject[.uint8], _](
         unchecked_downcast_value=data_obj
     )
-    var out_ptr = Pointer[PyArrayObject[DType.uint8], _](
+    var out_ptr = Pointer[PyArrayObject[.uint8], _](
         unchecked_downcast_value=out_obj
     )
     _mojo_sha256_oneshot(data_ptr, out_ptr)
@@ -244,13 +244,13 @@ def mojo_block_hasher_sha256(
     parent_hash_obj: PythonObject,
     out_obj: PythonObject,
 ) raises -> PythonObject:
-    var tokens_ptr = Pointer[PyArrayObject[DType.int32], _](
+    var tokens_ptr = Pointer[PyArrayObject[.int32], _](
         unchecked_downcast_value=tokens_obj
     )
-    var parent_ptr = Pointer[PyArrayObject[DType.uint8], _](
+    var parent_ptr = Pointer[PyArrayObject[.uint8], _](
         unchecked_downcast_value=parent_hash_obj
     )
-    var out_ptr = Pointer[PyArrayObject[DType.uint8], _](
+    var out_ptr = Pointer[PyArrayObject[.uint8], _](
         unchecked_downcast_value=out_obj
     )
     var block_size = Int(py=block_size_obj)

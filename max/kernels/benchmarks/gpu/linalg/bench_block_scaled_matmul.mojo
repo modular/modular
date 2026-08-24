@@ -75,7 +75,7 @@ def _verify_buffers_gpu[
     length: Int32,
     atol: Float32,
     rtol: Float32,
-    result: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
+    result: UnsafePointer[Float32, MutAnyOrigin],
 ):
     """GPU kernel that computes verification metrics in one pass.
 
@@ -97,8 +97,8 @@ def _verify_buffers_gpu[
     var i = global_idx.x
     var stride = grid_dim.x * block_dim.x
     while i < Int(length):
-        var x = output[i].cast[DType.float32]()
-        var y = reference[i].cast[DType.float32]()
+        var x = output[i].cast[.float32]()
+        var y = reference[i].cast[.float32]()
         abs_diff_sum += abs(x - y)
         abs_ref_sum += abs(y)
         max_violation = max(max_violation, abs(x - y) - (atol + rtol * abs(y)))
@@ -253,11 +253,11 @@ def verify_matmul[
     else:
         var rtol64: Float64
         var atol64: Float64
-        rtol64, atol64 = pytorch_like_tolerances_for[DType.bfloat16]()
+        rtol64, atol64 = pytorch_like_tolerances_for[.bfloat16]()
         rtol = Float32(rtol64)
         atol = Float32(atol64)
 
-    var result_device = ctx.enqueue_create_buffer[DType.float32](NUM_BLOCKS * 5)
+    var result_device = ctx.enqueue_create_buffer[.float32](NUM_BLOCKS * 5)
 
     comptime kernel = _verify_buffers_gpu[c_type, BLOCK_SIZE]
     ctx.enqueue_function[kernel](
@@ -272,7 +272,7 @@ def verify_matmul[
     )
 
     # Copy back only NUM_BLOCKS * 5 Float32 values
-    var result_host = List(length=NUM_BLOCKS * 5, fill=Scalar[DType.float32](0))
+    var result_host = List(length=NUM_BLOCKS * 5, fill=Float32(0))
     ctx.enqueue_copy(result_host, result_device)
     ctx.synchronize()
 
@@ -458,9 +458,7 @@ def bench_matmul[
     comptime simd_size = 4
     var cb_a = CacheBustingBuffer[dtype](get_size(shape_a), simd_size, ctx)
     var cb_b = CacheBustingBuffer[dtype](get_size(shape_b), simd_size, ctx)
-    var cb_c = CacheBustingBuffer[DType.bfloat16](
-        get_size(shape_c), simd_size, ctx
-    )
+    var cb_c = CacheBustingBuffer[.bfloat16](get_size(shape_c), simd_size, ctx)
     var cb_a_scales = CacheBustingBuffer[scales_type](a_scales_size, 16, ctx)
     var cb_b_scales = CacheBustingBuffer[scales_type](b_scales_size, 16, ctx)
 
@@ -474,7 +472,7 @@ def bench_matmul[
     @__copy_capture(a_scales_shape, b_scales_shape)
     def run_vendor_blas(
         ctx: DeviceContext,
-        c: TileTensor[mut=True, DType.bfloat16, ...],
+        c: TileTensor[mut=True, .bfloat16, ...],
         a: TileTensor[dtype, ...],
         b: TileTensor[dtype, ...],
         a_scales: TileTensor[scales_type, ...],
@@ -703,13 +701,13 @@ def bench_mxfp4_amd[
     comptime sfb_shape = row_major(Coord(Idx[N_VAL], Idx[K_SCALES]))
 
     comptime simd_size = 4
-    var cb_a = CacheBustingBuffer[DType.uint8](a_size, simd_size, ctx)
-    var cb_b = CacheBustingBuffer[DType.uint8](b_size, simd_size, ctx)
-    var cb_c = CacheBustingBuffer[DType.float32](c_size, simd_size, ctx)
-    var cb_sfa = CacheBustingBuffer[DType.float8_e8m0fnu](
+    var cb_a = CacheBustingBuffer[.uint8](a_size, simd_size, ctx)
+    var cb_b = CacheBustingBuffer[.uint8](b_size, simd_size, ctx)
+    var cb_c = CacheBustingBuffer[.float32](c_size, simd_size, ctx)
+    var cb_sfa = CacheBustingBuffer[.float8_e8m0fnu](
         a_scales_size, simd_size, ctx
     )
-    var cb_sfb = CacheBustingBuffer[DType.float8_e8m0fnu](
+    var cb_sfb = CacheBustingBuffer[.float8_e8m0fnu](
         b_scales_size, simd_size, ctx
     )
 
@@ -729,28 +727,20 @@ def bench_mxfp4_amd[
     @always_inline
     def run_vendor_blas(
         ctx: DeviceContext,
-        c: TileTensor[mut=True, DType.float32, ...],
-        a: TileTensor[DType.uint8, ...],
-        b: TileTensor[DType.uint8, ...],
-        sfa: TileTensor[DType.float8_e8m0fnu, ...],
-        sfb: TileTensor[DType.float8_e8m0fnu, ...],
+        c: TileTensor[mut=True, .float32, ...],
+        a: TileTensor[.uint8, ...],
+        b: TileTensor[.uint8, ...],
+        sfa: TileTensor[.float8_e8m0fnu, ...],
+        sfb: TileTensor[.float8_e8m0fnu, ...],
     ) raises:
-        var sfa_lt = LayoutTensor[
-            DType.float8_e8m0fnu, sfa_layout, ImmutAnyOrigin
-        ](
-            rebind[UnsafePointer[Scalar[DType.float8_e8m0fnu], ImmutAnyOrigin]](
-                sfa.ptr
-            ),
+        var sfa_lt = LayoutTensor[.float8_e8m0fnu, sfa_layout, ImmutAnyOrigin](
+            rebind[UnsafePointer[Float8_e8m0fnu, ImmutAnyOrigin]](sfa.ptr),
             RuntimeLayout[sfa_layout].row_major(
                 IndexList[2](Int(sfa.dim[0]()), Int(sfa.dim[1]()))
             ),
         )
-        var sfb_lt = LayoutTensor[
-            DType.float8_e8m0fnu, sfb_layout, ImmutAnyOrigin
-        ](
-            rebind[UnsafePointer[Scalar[DType.float8_e8m0fnu], ImmutAnyOrigin]](
-                sfb.ptr
-            ),
+        var sfb_lt = LayoutTensor[.float8_e8m0fnu, sfb_layout, ImmutAnyOrigin](
+            rebind[UnsafePointer[Float8_e8m0fnu, ImmutAnyOrigin]](sfb.ptr),
             RuntimeLayout[sfb_layout].row_major(
                 IndexList[2](Int(sfb.dim[0]()), Int(sfb.dim[1]()))
             ),
@@ -758,7 +748,7 @@ def bench_mxfp4_amd[
         with ctx.push_context() as cur_ctx:
             vendor_blas.matmul[scales_type=DType.float8_e8m0fnu](
                 cur_ctx,
-                vendor_blas._get_global_handle[DType.uint8](ctx),
+                vendor_blas._get_global_handle[.uint8](ctx),
                 c,
                 a,
                 b,
@@ -830,7 +820,7 @@ def bench_mxfp4_amd[
             block_scaled_matmul_amd(c_tt0, a_tt0, b_tt0, sfa_tt0, sfb_tt0, ctx)
 
             # hipBLASLt reference into a separate buffer.
-            var c_ref_buf = ctx.enqueue_create_buffer[DType.float32](c_size)
+            var c_ref_buf = ctx.enqueue_create_buffer[.float32](c_size)
             var c_ref_tt = TileTensor[mut=True](c_ref_buf, c_shape)
             run_vendor_blas(ctx, c_ref_tt, a_tt0, b_tt0, sfa_tt0, sfb_tt0)
 
@@ -840,7 +830,7 @@ def bench_mxfp4_amd[
 
             var rtol = Float32(1.3e-6)
             var atol = Float32(1e-5)
-            var result_device = ctx.enqueue_create_buffer[DType.float32](
+            var result_device = ctx.enqueue_create_buffer[.float32](
                 NUM_BLOCKS * 5
             )
 
@@ -858,9 +848,7 @@ def bench_mxfp4_amd[
                 block_dim=BLOCK_SIZE,
             )
 
-            var result_host = List(
-                length=NUM_BLOCKS * 5, fill=Scalar[DType.float32](0)
-            )
+            var result_host = List(length=NUM_BLOCKS * 5, fill=Float32(0))
             ctx.enqueue_copy(result_host, result_device)
             ctx.synchronize()
 

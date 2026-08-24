@@ -122,10 +122,10 @@ def _check_sf[BM: Int, BK: Int, SF_SCALE_SIZE: Int]() raises:
 
 
 def test_k_major_and_mn_major_match_legacy() raises:
-    _check_all_shapes[DType.bfloat16]()
-    _check_all_shapes[DType.float16]()
-    _check_all_shapes[DType.float32]()
-    _check_all_shapes[DType.float8_e4m3fn]()
+    _check_all_shapes[.bfloat16]()
+    _check_all_shapes[.float16]()
+    _check_all_shapes[.float32]()
+    _check_all_shapes[.float8_e4m3fn]()
 
 
 def test_sf_layout_matches_legacy() raises:

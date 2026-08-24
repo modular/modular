@@ -25,8 +25,8 @@ from std.sys import size_of, _RegisterPackType
 from std.gpu import thread_idx, block_idx, warp_id
 from max.gpu.sync import barrier
 from std.gpu.globals import WARPGROUP_SIZE
-from max.gpu.host import DeviceContext
-from max.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.host import DeviceBuffer, DeviceContext
+from max.gpu.host.nvidia.tma import TensorMapSwizzle, create_tma_descriptor
 from max.gpu.host.info import B200
 from max.gpu.memory import fence_async_view_proxy
 from max.gpu.primitives.grid_controls import launch_dependent_grids
@@ -154,6 +154,88 @@ def tma_tile_qo[
     )
 
 
+# Output TMA tile whose stored row count is chosen per copy. The row axis is
+# its own descriptor dim of extent BM, so a row coordinate of
+# BM - rows_to_store leaves rows_to_store box rows in bounds and the TMA
+# masks the rest. tma_tile_o builds the descriptor and store_row_coords the
+# coordinate.
+# Similar ragged masking technique as RaggedTMA3DTile in
+# layout/tma_async.mojo; consider merging the two in the future.
+comptime ORaggedTMATile[
+    dtype: DType, BM: Int, BK: Int, swizzle_mode: TensorMapSwizzle
+] = TMATensorTile[
+    dtype,
+    3,
+    IndexList[3](1, BM, BK),
+    _default_desc_shape[3, dtype, IndexList[3](1, BM, BK), swizzle_mode](),
+    is_k_major=True,
+]
+
+
+@always_inline
+def tma_tile_o[
+    dtype: DType,
+    //,
+    swizzle_mode: TensorMapSwizzle,
+    *,
+    BM: Int,
+    BK: Int,
+    depth: Int,
+](
+    ctx: DeviceContext,
+    ptr: UnsafePointer[mut=True, Scalar[dtype], _],
+    rows: Int,
+    out res: ORaggedTMATile[dtype, BM, BK, swizzle_mode],
+) raises:
+    """Creates the MLA decode output TMA descriptor.
+
+    The row axis is its own descriptor dim of extent BM, reached through a
+    separate outer dim with the same row stride. This makes the stored row
+    count a per-copy coordinate, built by store_row_coords. Box row r lands
+    on tensor row row + r, and box rows at or past rows_to_store fall
+    outside the extent and are dropped. The descriptor base sits BM rows
+    before ptr, but masked rows are never written, so memory before ptr is
+    never touched.
+
+    Parameters:
+        dtype: Element type of the output tensor (inferred).
+        swizzle_mode: TMA swizzle mode applied to the descriptor.
+        BM: Row extent of the box.
+        BK: Tile width in columns for each TMA copy.
+        depth: Column count of the full output tensor.
+
+    Args:
+        ctx: Device context used to create the TMA descriptor.
+        ptr: Base pointer of the output tensor in device memory.
+        rows: Number of rows in the full output tensor.
+    """
+    # Outer coordinates run up to rows, so the extent is one past that. Its
+    # box is 1, so it never masks.
+    res = create_tma_descriptor[dtype, 3, swizzle_mode](
+        DeviceBuffer(ctx, ptr - depth * BM, 1, owning=False),
+        IndexList[3](rows + 1, BM, depth),
+        IndexList[3](depth, depth, 1),
+        _default_desc_shape[3, dtype, IndexList[3](1, BM, BK), swizzle_mode](),
+    )
+
+
+@always_inline
+def store_row_coords[
+    BM: Int
+](col: Int, row: Int, rows_to_store: Int) -> Tuple[Int, Int, Int]:
+    """Builds the ORaggedTMATile store coordinate for a partial row count.
+
+    Args:
+        col: Column offset within the output row.
+        row: First output tensor row the copy writes.
+        rows_to_store: How many rows of the box are real, at most BM.
+
+    Returns:
+        Coordinates for async_store_3d, ordered innermost dim first.
+    """
+    return (col, BM - rows_to_store, row + rows_to_store)
+
+
 # Per-token scales TMA tile: loads BN_QK contiguous float32 values via TMA.
 # Scales are treated as a flat 1D array indexed by row_idx (same paging
 # as the KV cache blocks). The TMA uses a [1, total_elements] 2D layout
@@ -177,7 +259,7 @@ def tma_tile_scales[
     BN_QK: Int,
 ](
     ctx: DeviceContext,
-    ptr: UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin],
+    ptr: UnsafePointer[Float32, origin=MutAnyOrigin],
     total_elements: Int,
     out res: ScalesTMATile[BN_QK],
 ) raises:
@@ -204,9 +286,7 @@ def tma_tile_scales[
     var rt_layout = RuntimeLayout[layout].row_major(
         IndexList[2](1, total_elements)
     )
-    var tensor = LayoutTensor[DType.float32, layout, MutAnyOrigin](
-        ptr, rt_layout
-    )
+    var tensor = LayoutTensor[.float32, layout, MutAnyOrigin](ptr, rt_layout)
     res = rebind[ScalesTMATile[BN_QK]](
         create_tensor_tile[
             IndexList[2](1, BN_QK),
@@ -735,6 +815,26 @@ struct MLA_SM100_Decode_Config:
             and self.MMA_M == 32
             and self.num_kv_stages >= 4
         )
+
+
+@always_inline
+def rows_owned[config: MLA_SM100_Decode_Config](block_x: Int) -> Int:
+    """Returns the number of output rows the CTA at grid x-index block_x
+    owns.
+
+    Every head group is out_rows tall except the last, which holds the
+    remainder of num_q_heads.
+
+    Parameters:
+        config: Decode config supplying the head-group geometry.
+
+    Args:
+        block_x: The CTA's grid x-index.
+
+    Returns:
+        The number of output rows the CTA owns, at most out_rows.
+    """
+    return min(config.out_rows, config.num_q_heads - block_x * config.BM)
 
 
 # ------------------------------------------------------------------------------
@@ -2861,7 +2961,7 @@ def write_bf16x2_row_to_smem_chunked[
     scale_needed: Bool = False,
 ](
     shared_mem: UnsafePointer[
-        Scalar[out_dtype], MutAnyOrigin, address_space=AddressSpace.SHARED
+        Scalar[out_dtype], MutAnyOrigin, address_space=.SHARED
     ],
     local_mem: LocalTensor[in_dtype, row_major[local_tile_size]()],
     col_start: Int,
@@ -2928,7 +3028,7 @@ def write_bf16x2_row_to_smem_chunked[
                 vec_val *= scale
 
             var bf16_vec = vec_val.cast[out_dtype]()
-            var packed = bitcast[DType.uint32, 4](bf16_vec)
+            var packed = bitcast[.uint32, 4](bf16_vec)
             st_shared_v4_b32_at_bf16_elem_off[out_dtype=out_dtype](
                 shared_mem,
                 phys_offsets[vec_idx],
@@ -2949,7 +3049,7 @@ def write_fp8_row_to_smem_chunked[
     swizzle_kind: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_64B,
 ](
     shared_mem: UnsafePointer[
-        Scalar[out_dtype], MutAnyOrigin, address_space=AddressSpace.SHARED
+        Scalar[out_dtype], MutAnyOrigin, address_space=.SHARED
     ],
     local_mem: LocalTensor[in_dtype, row_major[local_tile_size]()],
     col_start: Int,
@@ -3015,13 +3115,13 @@ def write_fp8_row_to_smem_chunked[
             # Process 16 FP8 elements: load 4x float32, cast to 4x FP8
             # But we need to pack 16 FP8 values into 4 uint32 registers.
             # Load 4 groups of 4 float32, cast each group to 4 FP8, pack into uint32.
-            var packed = SIMD[DType.uint32, 4](0)
+            var packed = SIMD[.uint32, 4](0)
             comptime for sub in range(4):
                 var vec_val = lmv[vec_base + sub]
                 comptime if scale_needed:
                     vec_val *= scale
                 var fp8_vec = vec_val.cast[out_dtype]()
-                packed[sub] = bitcast[DType.uint32, 1](fp8_vec)
+                packed[sub] = bitcast[.uint32, 1](fp8_vec)
 
             st_shared_v4_b32_at_fp8_elem_off[out_dtype=out_dtype](
                 shared_mem,
@@ -3035,10 +3135,10 @@ def st_shared_v4_b32_at_fp8_elem_off[
     out_dtype: DType
 ](
     dst_fp8: UnsafePointer[
-        Scalar[out_dtype], MutAnyOrigin, address_space=AddressSpace.SHARED
+        Scalar[out_dtype], MutAnyOrigin, address_space=.SHARED
     ],
     elem_off: Int,  # FP8 element offset
-    packed: SIMD[DType.uint32, 4],
+    packed: SIMD[.uint32, 4],
 ):
     """Stores four uint32 values to shared memory at an FP8 element offset.
 
@@ -3059,11 +3159,9 @@ def st_shared_v4_b32_at_fp8_elem_off[
 
 @always_inline
 def ld_shared_v4_u32(
-    src_u8: UnsafePointer[
-        mut=True, Scalar[DType.uint8], _, address_space=AddressSpace.SHARED
-    ],
+    src_u8: UnsafePointer[mut=True, UInt8, _, address_space=.SHARED],
     byte_off: Int,
-) -> SIMD[DType.uint32, 4]:
+) -> SIMD[.uint32, 4]:
     """Loads four contiguous uint32 values from shared memory at a byte offset.
 
     Args:
@@ -3078,7 +3176,7 @@ def ld_shared_v4_u32(
         constraints="=r,=r,=r,=r,l",
         has_side_effect=False,
     ](addr)
-    return SIMD[DType.uint32, 4](result[0], result[1], result[2], result[3])
+    return SIMD[.uint32, 4](result[0], result[1], result[2], result[3])
 
 
 @always_inline
@@ -3086,7 +3184,7 @@ def cvt_fp8x8_from_2xu32_to_bf16x8_packed_u32x4[
     *,
     fp8_dtype: DType,
     out_dtype: DType,
-](w0: UInt32, w1: UInt32,) -> SIMD[DType.uint32, 4]:
+](w0: UInt32, w1: UInt32,) -> SIMD[.uint32, 4]:
     """Converts eight FP8 values packed in two uint32 registers to eight BF16 values packed in four uint32 registers.
 
     Parameters:
@@ -3101,10 +3199,10 @@ def cvt_fp8x8_from_2xu32_to_bf16x8_packed_u32x4[
         w1: Upper uint32 register holding the next four packed FP8
             values.
     """
-    var u32x2: SIMD[DType.uint32, 2] = SIMD[DType.uint32, 2](w0, w1)
+    var u32x2: SIMD[.uint32, 2] = SIMD[.uint32, 2](w0, w1)
     var fp8x8: SIMD[fp8_dtype, 8] = bitcast[fp8_dtype, 8](u32x2)
     var bf16x8: SIMD[out_dtype, 8] = fp8x8.cast[out_dtype]()
-    return bitcast[DType.uint32, 4](bf16x8)
+    return bitcast[.uint32, 4](bf16x8)
 
 
 @always_inline
@@ -3112,9 +3210,9 @@ def cvt_fp8x16_from_u32x4_to_bf16x16_packed_2xu32x4[
     *,
     fp8_dtype: DType,
     out_dtype: DType,
-](w: SIMD[DType.uint32, 4]) -> StaticTuple[SIMD[DType.uint32, 4], 2]:
+](w: SIMD[.uint32, 4]) -> StaticTuple[SIMD[.uint32, 4], 2]:
     """Converts 16 FP8 bytes (one v4.b32 load) to 16 packed BF16 values."""
-    return StaticTuple[SIMD[DType.uint32, 4], 2](
+    return StaticTuple[SIMD[.uint32, 4], 2](
         cvt_fp8x8_from_2xu32_to_bf16x8_packed_u32x4[
             fp8_dtype=fp8_dtype, out_dtype=out_dtype
         ](w[0], w[1]),
@@ -3129,10 +3227,10 @@ def st_shared_v4_b32_at_bf16_elem_off[
     out_dtype: DType
 ](
     dst_bf16: UnsafePointer[
-        mut=True, Scalar[out_dtype], _, address_space=AddressSpace.SHARED
+        mut=True, Scalar[out_dtype], _, address_space=.SHARED
     ],
     elem_off: Int,  # bf16 element offset
-    packed: SIMD[DType.uint32, 4],
+    packed: SIMD[.uint32, 4],
 ):
     """Stores four uint32 values to shared memory at a BF16 element offset.
 
@@ -3171,7 +3269,7 @@ def e8m0_to_bf16_broadcast(scale_byte: UInt8) -> UInt32:
 @always_inline
 def hmul2_bf16x8_by_scalar[
     out_dtype: DType,
-](packed: SIMD[DType.uint32, 4], scale_bf16: UInt32) -> SIMD[DType.uint32, 4]:
+](packed: SIMD[.uint32, 4], scale_bf16: UInt32) -> SIMD[.uint32, 4]:
     """Multiply 8 packed bf16 values (in 4 uint32 registers) by a bf16x2 scalar broadcast.
 
     Parameters:
@@ -3207,7 +3305,7 @@ def clamped_index_coordinate(
     var tile_key_base: UInt32,
     var num_keys: Int,
     var cache_start_pos: UInt32,
-) -> IndexList[4, element_type=DType.uint32]:
+) -> IndexList[4, element_type=.uint32]:
     """Builds a four-component index coordinate with the key index clamped to the last valid key.
 
     Args:
@@ -3228,7 +3326,7 @@ def clamped_index_coordinate(
     # Clamp k to last valid key so MaterializedMask never reads OOB.
     var last_k_abs: UInt32 = cache_start_pos + UInt32(max(num_keys - 1, 0))
     var k_idx_abs_safe: UInt32 = min(k_idx_abs, last_k_abs)
-    return IndexList[4, element_type=DType.uint32](
+    return IndexList[4, element_type=.uint32](
         Int(prompt_idx),
         Int(q_head_idx),
         Int(q_idx_abs),
@@ -3326,7 +3424,7 @@ struct MLA_SM100_Decode_Common[
         out_row_offset: Int,
         batch_size: Int,
         lse_accum_split_ptr: Self.SplitAccumType,
-        o_tma: QOTMATile[
+        o_tma: ORaggedTMATile[
             dtype=Self.output_dtype,
             BM=Self.config.out_rows,
             # BN_PV/4 (per-warp stripe), not BN_QK — must match `store`'s
@@ -3367,10 +3465,7 @@ struct MLA_SM100_Decode_Common[
                     + head_idx
                 )
                 var lse_ptr = rebind[
-                    UnsafePointer[
-                        Scalar[Self.AccumType],
-                        origin=MutAnyOrigin,
-                    ]
+                    UnsafePointer[Scalar[Self.AccumType], origin=MutAnyOrigin]
                 ](lse_accum_split_ptr.value())
                 lse_ptr[lse_offset] = neg_inf_val
 
@@ -3400,9 +3495,7 @@ struct MLA_SM100_Decode_Common[
         comptime kv_elements = Self.config.BN_QK * Self.config.BK_QK
         comptime kv_tt_layout = tt_row_major[kv_elements]()
         var smem_tensor = TileTensor[
-            Self.kv_type,
-            type_of(kv_tt_layout),
-            address_space=AddressSpace.SHARED,
+            Self.kv_type, type_of(kv_tt_layout), address_space=.SHARED
         ](smem, kv_tt_layout)
         tma.async_copy_3d(smem_tensor, mbar[], (col_start, 0, row_start))
 
@@ -3423,9 +3516,7 @@ struct MLA_SM100_Decode_Common[
         comptime q_elements = Self.config.BM * Self.config.BK_QK
         comptime q_tt_layout = tt_row_major[q_elements]()
         var smem_tensor = TileTensor[
-            Self.q_type,
-            type_of(q_tt_layout),
-            address_space=AddressSpace.SHARED,
+            Self.q_type, type_of(q_tt_layout), address_space=.SHARED
         ](smem, q_tt_layout)
 
         tma.async_copy(smem_tensor, mbar[], (col_start, row_start))
@@ -3570,11 +3661,11 @@ struct MLA_SM100_Decode_Common[
                 # can represent: causal_limit >= 1 here (CausalMask is
                 # required), and saturating the bound keeps a horizon wider
                 # than Int32 admitting every slot, as the Int compare did.
-                var causal_last = SIMD[DType.int32, logical_batch](
+                var causal_last = SIMD[.int32, logical_batch](
                     Int32(min(causal_limit - 1, Int(Int32.MAX)))
                 )
                 # -1 marks a padding slot, so the low bound rejects it.
-                comptime lowest_pos = SIMD[DType.int32, logical_batch](0)
+                comptime lowest_pos = SIMD[.int32, logical_batch](0)
                 var logical_bits: UInt32 = 0
                 var slot = 0
                 while slot + logical_batch <= n_readable:
@@ -3695,15 +3786,9 @@ struct MLA_SM100_Decode_Common[
         prompt_idx: UInt32,  # batch index
         lse_accum_split_ptr: Self.SplitAccumType,
         batch_size: Int,
-        scale_k_smem: OptionalReg[
-            SharedMemPointer[Scalar[DType.float32]]
-        ] = None,
-        q_scale_ptr: OptionalReg[
-            UnsafePointer[Scalar[DType.float32], MutAnyOrigin]
-        ] = None,
-        attn_sink_log2: Scalar[DType.float32] = Scalar[DType.float32](
-            min_or_neg_inf[DType.float32]()
-        ),
+        scale_k_smem: OptionalReg[SharedMemPointer[Float32]] = None,
+        q_scale_ptr: OptionalReg[UnsafePointer[Float32, MutAnyOrigin]] = None,
+        attn_sink_log2: Float32 = Float32(min_or_neg_inf[.float32]()),
         # Logical sparse indices and their valid per-q_token length, forwarded
         # to the inner apply_mask (documented there); required non-null when
         # SparseCausalLogical is derived below.
@@ -3748,9 +3833,7 @@ struct MLA_SM100_Decode_Common[
         # yielding 0 for even iterations and WARPGROUP_SIZE for odd ones.
         comptime smem_1d_layout = tt_row_major[WARPGROUP_SIZE]()
         var li_Smem_Tensor = TileTensor[
-            Self.AccumType,
-            type_of(smem_1d_layout),
-            address_space=AddressSpace.SHARED,
+            Self.AccumType, type_of(smem_1d_layout), address_space=.SHARED
         ](li_smem, smem_1d_layout)
 
         var corr_scale_tmem = tmem_addr + UInt32(Self.config.TMEM_CORR_SCALE)
@@ -3854,7 +3937,7 @@ struct MLA_SM100_Decode_Common[
 
             # Each thread reads one full 32-element row (128 rows x 32 columns)
             var s_row = tt_stack_allocation[
-                dtype=Self.AccumType, address_space=AddressSpace.LOCAL
+                dtype=Self.AccumType, address_space=.LOCAL
             ](row_major[half_load]())
             var s_row_val = tcgen05_ld[
                 datapaths=32,
@@ -3883,7 +3966,7 @@ struct MLA_SM100_Decode_Common[
             # Register-cached per-token scales for this tile.
             # Declared outside the comptime if so it's in scope for Place 2.
             var _sigma_kv_regs = tt_stack_allocation[
-                dtype=Self.AccumType, address_space=AddressSpace.LOCAL
+                dtype=Self.AccumType, address_space=.LOCAL
             ](row_major[half_load]())
             comptime if has_per_token_scales:
                 # Compute the scale SMEM pointer for this pipeline stage.
@@ -4001,9 +4084,7 @@ struct MLA_SM100_Decode_Common[
             # no divergent branch on the critical path.
             var buf_offset = (tiles_done & 1) * WARPGROUP_SIZE
             var max_buf = TileTensor[
-                Self.AccumType,
-                type_of(smem_1d_layout),
-                address_space=AddressSpace.SHARED,
+                Self.AccumType, type_of(smem_1d_layout), address_space=.SHARED
             ](max_smem + buf_offset, smem_1d_layout)
             max_buf[lane_id] = current_max
             named_barrier[Int32(WARPGROUP_SIZE)](2)
@@ -4230,10 +4311,10 @@ struct MLA_SM100_Decode_Common[
         # Epilogue: scale output by recip(li) and write to shared memory as bf16
         # --------------------------------------------------------------------------
         comptime assert (
-            Self.AccumType == DType.float32
+            Self.AccumType == .float32
         ), "accumulator type should be float32"
         comptime assert (
-            Self.output_dtype == DType.bfloat16
+            Self.output_dtype == .bfloat16
         ), "output type should be bfloat16"
 
         comptime DecodeOutProducerType = DecodeOutProducer[
@@ -4319,7 +4400,7 @@ struct MLA_SM100_Decode_Common[
 
                 # Load all data for this tile into a LocalTensor
                 var o_row_subtile = tt_stack_allocation[
-                    dtype=Self.AccumType, address_space=AddressSpace.LOCAL
+                    dtype=Self.AccumType, address_space=.LOCAL
                 ](row_major[total_elems]())
                 var _o_ld_result = tcgen05_ld[
                     datapaths=32,
@@ -4450,7 +4531,7 @@ struct MLA_SM100_Decode_Common[
                         )
                         var o_row_subtile = tt_stack_allocation[
                             dtype=Self.AccumType,
-                            address_space=AddressSpace.LOCAL,
+                            address_space=.LOCAL,
                         ](row_major[Self.config.BN_QK]())
                         var _o_ld_corr = tcgen05_ld[
                             datapaths=32,
@@ -4531,7 +4612,7 @@ struct MLA_SM100_Decode_Common[
             num_consumer=1,
         ],
         out_smem: SharedMemPointer[Scalar[Self.output_dtype]],
-        o_tma: QOTMATile[
+        o_tma: ORaggedTMATile[
             dtype=Self.output_dtype,
             BM=Self.config.out_rows,
             # BF16/SWIZZLE_128B clamps innermost to 64 (= BN_PV/4).
@@ -4564,6 +4645,7 @@ struct MLA_SM100_Decode_Common[
         var elect_mask = elect()
         var is_leader = elect_mask != 0
         var row: Int = offset_position.out_row_offset
+        var rows_to_store = rows_owned[Self.config](Int(block_idx.x))
 
         #   0       64     128     192      256      320      384     448     512
         #   |-------|-------|-------|--------|--------|--------|-------|-------|
@@ -4596,28 +4678,34 @@ struct MLA_SM100_Decode_Common[
                             var smem_tensor = TileTensor[
                                 Self.output_dtype,
                                 type_of(o_tt_layout),
-                                address_space=AddressSpace.SHARED,
+                                address_space=.SHARED,
                             ](q_stage_ptr, o_tt_layout)
                             if is_leader:
                                 fence_async_view_proxy()
-                                o_tma.async_store(
+                                o_tma.async_store_3d(
                                     smem_tensor,
-                                    (
+                                    store_row_coords[Self.config.out_rows](
                                         col,
                                         offset_position.out_row_offset_at(
                                             q_local
                                         ),
+                                        rows_to_store,
                                     ),
                                 )
                     else:
                         var smem_tensor = TileTensor[
                             Self.output_dtype,
                             type_of(o_tt_layout),
-                            address_space=AddressSpace.SHARED,
+                            address_space=.SHARED,
                         ](stage_ptr, o_tt_layout)
                         if is_leader:
                             fence_async_view_proxy()
-                            o_tma.async_store(smem_tensor, (col, row))
+                            o_tma.async_store_3d(
+                                smem_tensor,
+                                store_row_coords[Self.config.out_rows](
+                                    col, row, rows_to_store
+                                ),
+                            )
                 out_cons.release(elect_mask)
         if is_leader:
             o_tma.commit_group()

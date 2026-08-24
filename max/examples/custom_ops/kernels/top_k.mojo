@@ -67,7 +67,7 @@ struct TopK:
         target: StaticString,
     ](
         out_vals: OutputTensor[dtype=dtype, rank=rank, ...],
-        out_idxs: OutputTensor[dtype=DType.int32, rank=rank, ...],
+        out_idxs: OutputTensor[dtype=.int32, rank=rank, ...],
         in_vals: InputTensor[dtype=dtype, rank=rank, ...],
         ctx: DeviceContext,
     ) raises:
@@ -98,7 +98,7 @@ struct TopK:
             # Get a pointer to shared memory for the indices and values
             var top_k_sram = external_memory[
                 TopKElement[dtype],
-                address_space=AddressSpace.SHARED,
+                address_space=.SHARED,
                 alignment=align_of[TopKElement[dtype]](),
             ]()
 
@@ -151,8 +151,7 @@ struct TopK:
             )
         else:
 
-            @__parameter
-            def top_k_cpu(start_idx: Int, end_idx: Int):
+            def top_k_cpu(start_idx: Int, end_idx: Int) {imm}:
                 for row_idx in range(start_idx, end_idx):
                     var offset = row_idx * K
                     iota(out_idxs.unsafe_ptr().unsafe_offset(offset), K)
@@ -179,4 +178,4 @@ struct TopK:
                         var sorted_idx = Int(out_idxs[row_idx, i])
                         out_vals[row_idx, i] = in_vals[row_idx, sorted_idx]
 
-            parallelize_over_rows[top_k_cpu](shape, axis=1, grain_size=1)
+            parallelize_over_rows(top_k_cpu, shape, axis=1, grain_size=1)

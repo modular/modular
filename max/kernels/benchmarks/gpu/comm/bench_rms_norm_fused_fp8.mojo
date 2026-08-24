@@ -81,7 +81,7 @@ def bench_rms_norm_fused_fp8[
         data_size, simd_size, ctx, cache_busting
     )
     var gamma_d = ctx.enqueue_create_buffer[in_dtype](cols)
-    var scales_d = ctx.enqueue_create_buffer[DType.float32](rows)
+    var scales_d = ctx.enqueue_create_buffer[.float32](rows)
 
     var param_shape = Index(cols)
 
@@ -437,8 +437,8 @@ def bench_rms_norm_fused_fp8[
     var atol = Float32(2.0)  # Absolute tolerance for FP8
 
     for i in range(rows * cols):
-        var fp8_val = fp8_output_h[i].cast[DType.float32]()
-        var fused_val = fused_output_h[i].cast[DType.float32]()
+        var fp8_val = fp8_output_h[i].cast[.float32]()
+        var fused_val = fused_output_h[i].cast[.float32]()
         var diff = abs(fp8_val - fused_val)
 
         if diff > max_diff:
@@ -447,7 +447,7 @@ def bench_rms_norm_fused_fp8[
         if fp8_val == fused_val:
             num_exact += 1
 
-        sum_abs_diff += diff.cast[DType.float64]()
+        sum_abs_diff += diff.cast[.float64]()
 
         # Calculate relative difference
         var avg_val = (abs(fp8_val) + abs(fused_val)) / 2.0
@@ -529,8 +529,8 @@ def bench_rms_norm_fused_fp8[
 
 
 def main() raises:
-    comptime in_dtype = get_defined_dtype["in_dtype", DType.bfloat16]()
-    comptime out_dtype = get_defined_dtype["out_dtype", DType.float8_e4m3fn]()
+    comptime in_dtype = get_defined_dtype["in_dtype", .bfloat16]()
+    comptime out_dtype = get_defined_dtype["out_dtype", .float8_e4m3fn]()
     comptime shape = int_list_to_tuple[
         get_defined_shape["shape", "1x4096x16384"]()
     ]()

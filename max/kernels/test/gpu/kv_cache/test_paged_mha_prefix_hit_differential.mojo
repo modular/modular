@@ -191,13 +191,13 @@ def _run_paged_mha[
     var q_dev = ctx.enqueue_create_buffer[dtype](q_size)
     var o_dev = ctx.enqueue_create_buffer[dtype](q_size)
     var kv_block_dev = ctx.enqueue_create_buffer[dtype](kv_block_size)
-    var cl_dev = ctx.enqueue_create_buffer[DType.uint32](1)
-    var lut_dev = ctx.enqueue_create_buffer[DType.uint32](lut_cols)
-    var ro_dev = ctx.enqueue_create_buffer[DType.uint32](2)
+    var cl_dev = ctx.enqueue_create_buffer[.uint32](1)
+    var lut_dev = ctx.enqueue_create_buffer[.uint32](lut_cols)
+    var ro_dev = ctx.enqueue_create_buffer[.uint32](2)
 
-    var cl_host = ctx.enqueue_create_host_buffer[DType.uint32](1)
-    var lut_host = ctx.enqueue_create_host_buffer[DType.uint32](lut_cols)
-    var ro_host = ctx.enqueue_create_host_buffer[DType.uint32](2)
+    var cl_host = ctx.enqueue_create_host_buffer[.uint32](1)
+    var lut_host = ctx.enqueue_create_host_buffer[.uint32](lut_cols)
+    var ro_host = ctx.enqueue_create_host_buffer[.uint32](2)
     ctx.synchronize()
     cl_host[0] = UInt32(prefix)
     for p in range(lut_cols):
@@ -219,11 +219,11 @@ def _run_paged_mha[
         ),
     )
     comptime cl_layout = Layout(UNKNOWN_VALUE)
-    var cl_tensor = LayoutTensor[mut=False, DType.uint32, cl_layout](
+    var cl_tensor = LayoutTensor[mut=False, .uint32, cl_layout](
         cl_dev, RuntimeLayout[cl_layout].row_major(IndexList[1](1))
     )
     comptime lut_layout = Layout.row_major[2]()
-    var lut_tensor = LayoutTensor[mut=False, DType.uint32, lut_layout](
+    var lut_tensor = LayoutTensor[mut=False, .uint32, lut_layout](
         lut_dev, RuntimeLayout[lut_layout].row_major(IndexList[2](1, lut_cols))
     )
 
@@ -253,7 +253,7 @@ def _run_paged_mha[
         ),
     )
     comptime ro_layout = Layout(UNKNOWN_VALUE)
-    var ro_tensor = LayoutTensor[mut=False, DType.uint32, ro_layout](
+    var ro_tensor = LayoutTensor[mut=False, .uint32, ro_layout](
         ro_dev, RuntimeLayout[ro_layout].row_major(IndexList[1](2))
     )
 
@@ -275,7 +275,7 @@ def _run_paged_mha[
 
     var out = List[Float64](length=q_size, fill=Float64(0))
     for i in range(q_size):
-        out[i] = o_host[i].cast[DType.float64]()
+        out[i] = o_host[i].cast[.float64]()
     _ = q_dev
     _ = o_dev
     _ = kv_block_dev
@@ -327,8 +327,8 @@ def test_prefill_prefix_hit[
     var row_w = num_q_heads * head_dim
     var num_pages = ceildiv(L, PAGE_SIZE)
 
-    var cold_q = ctx.enqueue_create_host_buffer[DType.bfloat16](L * row_w)
-    var kv_rand = ctx.enqueue_create_host_buffer[DType.bfloat16](
+    var cold_q = ctx.enqueue_create_host_buffer[.bfloat16](L * row_w)
+    var kv_rand = ctx.enqueue_create_host_buffer[.bfloat16](
         L * head_kv * head_dim
     )
     ctx.synchronize()
@@ -336,7 +336,7 @@ def test_prefill_prefix_hit[
     randn(cold_q.as_span())
     randn(kv_rand.as_span())
 
-    var hit_q = ctx.enqueue_create_host_buffer[DType.bfloat16]((L - P) * row_w)
+    var hit_q = ctx.enqueue_create_host_buffer[.bfloat16]((L - P) * row_w)
     ctx.synchronize()
     for r in range(L - P):
         for c in range(row_w):
@@ -446,8 +446,8 @@ def test_decode_page_layout[
     )
 
     var row_w = num_q_heads * head_dim
-    var q_host = ctx.enqueue_create_host_buffer[DType.bfloat16](row_w)
-    var kv_rand = ctx.enqueue_create_host_buffer[DType.bfloat16](
+    var q_host = ctx.enqueue_create_host_buffer[.bfloat16](row_w)
+    var kv_rand = ctx.enqueue_create_host_buffer[.bfloat16](
         total_keys * head_kv * head_dim
     )
     ctx.synchronize()
@@ -575,10 +575,10 @@ def test_prefill_partial_block_nan_canary[
     )
 
     var row_w = num_q_heads * head_dim
-    var cold_q = ctx.enqueue_create_host_buffer[DType.bfloat16](L * row_w)
+    var cold_q = ctx.enqueue_create_host_buffer[.bfloat16](L * row_w)
     # kv_rand spans the full physical extent; the tail rows are overwritten by
     # garbage_tail inside _run_paged_mha, so their kv_rand values are unused.
-    var kv_rand = ctx.enqueue_create_host_buffer[DType.bfloat16](
+    var kv_rand = ctx.enqueue_create_host_buffer[.bfloat16](
         phys_tokens * head_kv * head_dim
     )
     ctx.synchronize()
@@ -586,7 +586,7 @@ def test_prefill_partial_block_nan_canary[
     randn(cold_q.as_span())
     randn(kv_rand.as_span())
 
-    var hit_q = ctx.enqueue_create_host_buffer[DType.bfloat16]((L - P) * row_w)
+    var hit_q = ctx.enqueue_create_host_buffer[.bfloat16]((L - P) * row_w)
     ctx.synchronize()
     for r in range(L - P):
         for c in range(row_w):
@@ -739,6 +739,6 @@ def main() raises:
         ](200, 128, Float64(5.0), ctx)
         test_prefill_partial_block_nan_canary[
             head_dim=128, num_q_heads=8, group=8
-        ](200, 128, nan[DType.float64](), ctx)
+        ](200, 128, nan[.float64](), ctx)
 
         print("all paged-MHA prefix-hit differential cases passed")

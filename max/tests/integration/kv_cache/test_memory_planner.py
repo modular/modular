@@ -38,7 +38,6 @@ from max.pipelines.lib.vision_encoder_cache import VisionCachePlan
 if TYPE_CHECKING:
     from max.pipelines.lib.config import PipelineConfig
     from max.pipelines.lib.config.model_config import MAXModelConfig
-    from max.pipelines.lib.interfaces import ArchConfig
     from max.pipelines.lib.registry import SupportedArchitecture
 
 # ---------------------------------------------------------------------------
@@ -110,11 +109,6 @@ def test_paged_planner_accepts_kv_config() -> None:
     assert planner is not None
 
 
-def test_paged_planner_estimate_vision_cache_entry_bytes_zero() -> None:
-    planner = PagedMemoryPlanner(_KVConfig())
-    assert planner.estimate_vision_cache_entry_bytes(None) == 0
-
-
 def test_paged_planner_estimate_activation_memory_zero_by_default() -> None:
     """Default estimate_activation_memory should return 0."""
     planner = PagedMemoryPlanner(_KVConfig())
@@ -136,12 +130,6 @@ def test_with_activation_reservation_returns_correct_bytes() -> None:
         planner.estimate_activation_memory(MagicMock(), MagicMock())
         == reservation
     )
-
-
-def test_paged_planner_vision_cache_row_spec_none() -> None:
-    """Default hook means no vision cache (text-only architectures)."""
-    planner = PagedMemoryPlanner(_KVConfig())
-    assert planner.get_vision_cache_row_spec(None) is None
 
 
 def _block_reserve(
@@ -238,18 +226,26 @@ def _memory_reserve(
     """Run _reserve_vision_cache_memory against a real runtime config."""
     runtime = PipelineRuntimeConfig(vision_cache_utilization=utilization)
     pipeline_config = SimpleNamespace(runtime=runtime)
-    planner = MagicMock()
-    planner.estimate_vision_cache_entry_bytes.return_value = per_entry_bytes
-    planner.get_vision_cache_row_spec.return_value = row_spec
-    arch = SimpleNamespace(
-        name="test-arch", memory_planner=MagicMock(return_value=planner)
-    )
+
+    class _VisionArchConfig:
+        @classmethod
+        def estimate_vision_cache_entry_bytes(
+            cls, huggingface_config: object
+        ) -> int:
+            return per_entry_bytes
+
+        @classmethod
+        def get_vision_cache_row_spec(
+            cls, huggingface_config: object
+        ) -> tuple[int, DType] | None:
+            return row_spec
+
+    arch = SimpleNamespace(name="test-arch", config=_VisionArchConfig)
     total, plan = MemoryEstimator._reserve_vision_cache_memory(
         cast("PipelineConfig", pipeline_config),
         cast("MAXModelConfig", SimpleNamespace(huggingface_config=None)),
         available_memory,
         [cast(Device, MagicMock())] * n_devices,
-        cast("ArchConfig", MagicMock()),
         arch=cast("SupportedArchitecture", arch),
     )
     return total, plan, runtime
@@ -267,15 +263,17 @@ def test_reserve_vision_cache_memory_disabled_when_utilization_zero() -> None:
 
 
 def test_reserve_vision_cache_memory_disabled_when_no_row_spec() -> None:
+    default_utilization = PipelineRuntimeConfig().vision_cache_utilization
     total, plan, runtime = _memory_reserve(
-        utilization=PipelineRuntimeConfig().vision_cache_utilization,
+        utilization=default_utilization,
         per_entry_bytes=1024,
         available_memory=1024**3,
         row_spec=None,
     )
     assert total == 0
     assert plan is None
-    assert runtime.vision_cache_utilization == 0.0
+    # Planning no longer writes the config; construction owns the disable.
+    assert runtime.vision_cache_utilization == default_utilization
 
 
 def test_reserve_vision_cache_memory_disabled_when_no_vision_tower() -> None:

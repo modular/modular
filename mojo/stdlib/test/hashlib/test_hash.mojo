@@ -85,15 +85,15 @@ def _test_hash_int_simd[
 
 
 def test_hash_simd() raises:
-    _test_hash_int_simd[DType.int8]()
-    _test_hash_int_simd[DType.int16]()
-    _test_hash_int_simd[DType.int32]()
-    _test_hash_int_simd[DType.int64]()
+    _test_hash_int_simd[.int8]()
+    _test_hash_int_simd[.int16]()
+    _test_hash_int_simd[.int32]()
+    _test_hash_int_simd[.int64]()
     # float32 currently has low entropy in the low bits for these test examples.
     # this could affect performance of small dicts some. Let's punt and see
     # if this is an issue in practice, if so we can specialize the float
     # hash implementation.
-    _test_hash_int_simd[DType.float32](max_num_same=7)
+    _test_hash_int_simd[.float32](max_num_same=7)
     # TODO: test hashing different NaNs.
 
     # Test a couple other random things
@@ -102,28 +102,28 @@ def test_hash_simd() raises:
         hash(Float32(1e10)),
     )
     assert_equal(
-        hash(Scalar[DType.bool](True)),
-        hash(Scalar[DType.bool](True)),
+        hash(Scalar[.bool](True)),
+        hash(Scalar[.bool](True)),
     )
     assert_equal(
-        hash(Scalar[DType.bool](False)),
-        hash(Scalar[DType.bool](False)),
+        hash(Scalar[.bool](False)),
+        hash(Scalar[.bool](False)),
     )
     assert_not_equal(
-        hash(Scalar[DType.bool](True)),
-        hash(Scalar[DType.bool](False)),
+        hash(Scalar[.bool](True)),
+        hash(Scalar[.bool](False)),
     )
     assert_equal(
-        hash(SIMD[DType.bool, 2](fill=True)),
-        hash(SIMD[DType.bool, 2](fill=True)),
+        hash(SIMD[.bool, 2](fill=True)),
+        hash(SIMD[.bool, 2](fill=True)),
     )
     assert_equal(
-        hash(SIMD[DType.bool, 2](fill=False)),
-        hash(SIMD[DType.bool, 2](fill=False)),
+        hash(SIMD[.bool, 2](fill=False)),
+        hash(SIMD[.bool, 2](fill=False)),
     )
     assert_not_equal(
-        hash(SIMD[DType.bool, 2](fill=True)),
-        hash(SIMD[DType.bool, 2](fill=False)),
+        hash(SIMD[.bool, 2](fill=True)),
+        hash(SIMD[.bool, 2](fill=False)),
     )
 
 

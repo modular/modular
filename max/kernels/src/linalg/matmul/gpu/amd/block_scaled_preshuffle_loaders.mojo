@@ -30,7 +30,7 @@ from std.gpu.intrinsics import AMDBufferResource
 from max.gpu.memory import CacheOperation
 from std.memory.unsafe import bitcast
 
-from layout import Coord, Idx, TileTensor
+from layout import Coord, Idx, TileTensor, PointerStorage
 from layout._utils import make_amd_buffer_resource
 
 from .block_scaled_preshuffle_layouts import Shuffler
@@ -67,7 +67,10 @@ struct PreshuffledBLoader[
     var bc: AMDBufferResource
 
     @always_inline
-    def __init__(out self, b_gmem_tile: TileTensor[DType.uint8, ...]):
+    def __init__(
+        out self,
+        b_gmem_tile: TileTensor[.uint8, Storage=PointerStorage[], ...],
+    ):
         """Builds the V# from a preshuffled per-expert B byte buffer.
 
         Args:
@@ -80,7 +83,7 @@ struct PreshuffledBLoader[
     @always_inline
     def load_fragment(
         self, n: Int, k_byte: Int
-    ) -> SIMD[DType.uint8, Self.reg_bytes]:
+    ) -> SIMD[.uint8, Self.reg_bytes]:
         """Loads one lane's B fragment at logical `(n, k_byte)`.
 
         For one MFMA dispatch a lane calls this with
@@ -96,7 +99,7 @@ struct PreshuffledBLoader[
             n: Logical N row index into the `[N, K_BYTES]` tile.
             k_byte: Logical K byte index into the `[N, K_BYTES]` tile.
         """
-        var frag = SIMD[DType.uint8, Self.reg_bytes](0)
+        var frag = SIMD[.uint8, Self.reg_bytes](0)
 
         comptime for p in range(Self.num_planes):
             comptime pb = Shuffler[1].plane_bytes[Self.lane_bytes, p]()
@@ -109,9 +112,7 @@ struct PreshuffledBLoader[
                 ](0, n, k_byte)
             )
             frag = frag.insert[offset=p * 16](
-                self.bc.load[DType.uint8, pb, cache_policy=Self.cache_policy](
-                    off
-                )
+                self.bc.load[.uint8, pb, cache_policy=Self.cache_policy](off)
             )
         return frag
 
@@ -133,7 +134,10 @@ struct PreshuffledScaleLoader[MN_padded: Int, K_SCALES: Int](
     var bc: AMDBufferResource
 
     @always_inline
-    def __init__(out self, scale_gmem_tile: TileTensor[DType.uint8, ...]):
+    def __init__(
+        out self,
+        scale_gmem_tile: TileTensor[.uint8, Storage=PointerStorage[], ...],
+    ):
         """Builds the V# from a preshuffled per-expert scale byte buffer.
 
         Args:
@@ -165,5 +169,5 @@ struct PreshuffledScaleLoader[MN_padded: Int, K_SCALES: Int](
                 K_SCALES=Self.K_SCALES, packed_mode=True
             ](mn, k_scale)
         )
-        var v = self.bc.load[DType.uint8, 4](byte_off)
-        return bitcast[DType.int32, 1](v)[0]
+        var v = self.bc.load[.uint8, 4](byte_off)
+        return bitcast[.int32, 1](v)[0]

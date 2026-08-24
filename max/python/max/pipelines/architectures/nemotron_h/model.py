@@ -47,6 +47,7 @@ from max.pipelines.lib import (
     PipelineConfig,
     SupportsSSMStateWarmup,
 )
+from max.pipelines.lib.memory_estimation import MemoryPlan
 from max.pipelines.modeling.types import RequestID
 from max.profiler import traced
 from typing_extensions import override
@@ -120,6 +121,8 @@ class NemotronHModel(LlamaModelBase, SupportsSSMStateWarmup):
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
         weights: Weights,
+        *,
+        memory_plan: MemoryPlan,
         adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
         return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
@@ -131,10 +134,11 @@ class NemotronHModel(LlamaModelBase, SupportsSSMStateWarmup):
             devices,
             kv_cache_config,
             weights,
-            adapter,
-            return_logits,
-            return_hidden_states,
+            adapter=adapter,
+            return_logits=return_logits,
+            return_hidden_states=return_hidden_states,
             max_batch_size=max_batch_size,
+            memory_plan=memory_plan,
         )
 
     @traced
@@ -201,6 +205,7 @@ class NemotronHModel(LlamaModelBase, SupportsSSMStateWarmup):
             self.dtype,
             self.kv_params,
             [device_ref],
+            max_seq_len=self.max_seq_len,
         )
         # FP8 is per-module: a Linear is FP8 iff its weight_scale is present in
         # the checkpoint. Record which layers are FP8 from weight_scale keys.

@@ -39,10 +39,10 @@ from max.pipelines.lib import (
     ModuleV3MultiGraphPipelineModelWithKVCache,
     PipelineConfig,
 )
+from max.pipelines.lib.memory_estimation import MemoryPlan
 from max.pipelines.weights.weight_loading import (
     auto_cast_weights_from_env,
 )
-from transformers.models.auto.configuration_auto import AutoConfig
 
 from .batch_processor import Idefics3ModuleV3BatchProcessor
 from .model_config import Idefics3Config
@@ -102,21 +102,6 @@ class Idefics3Model(
         Idefics3ModuleV3BatchProcessor
     )
 
-    @classmethod
-    def calculate_max_seq_len(
-        cls,
-        pipeline_config: PipelineConfig,
-        huggingface_config: AutoConfig,
-    ) -> int:
-        """Uses ``max_length`` when set, else ``text_config.max_position_embeddings`` (config bounds)."""
-        max_seq_len = pipeline_config.model.max_length
-        if max_seq_len:
-            return max_seq_len
-        text_config = getattr(
-            huggingface_config, "text_config", huggingface_config
-        )
-        return getattr(text_config, "max_position_embeddings", 4096)
-
     vision_model: Callable[..., Any] | None
     """The compiled vision model."""
 
@@ -130,6 +115,8 @@ class Idefics3Model(
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
         weights: Weights,
+        *,
+        memory_plan: MemoryPlan,
         adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
         max_batch_size: int = 1,
@@ -140,9 +127,10 @@ class Idefics3Model(
             devices,
             kv_cache_config,
             weights,
-            adapter,
-            return_logits,
+            adapter=adapter,
+            return_logits=return_logits,
             max_batch_size=max_batch_size,
+            memory_plan=memory_plan,
         )
 
         self.vision_model, self.language_model = self.load_model()
@@ -168,7 +156,9 @@ class Idefics3Model(
     ) -> Idefics3Config:
         del state_dict
 
-        idefics3_config = Idefics3Config.initialize(self.pipeline_config)
+        idefics3_config = Idefics3Config.initialize(
+            self.pipeline_config, max_seq_len=self.max_seq_len
+        )
         idefics3_config.finalize(
             huggingface_config=self.huggingface_config,
             llm_state_dict=self._language_weights_dict,

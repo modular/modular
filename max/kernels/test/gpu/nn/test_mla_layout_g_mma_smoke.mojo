@@ -200,7 +200,7 @@ def qk_smoke_kernel[
 
     # ---- Dynamic SMEM ----
     var smem_base = external_memory[
-        UInt8, address_space=AddressSpace.SHARED, alignment=128
+        UInt8, address_space=.SHARED, alignment=128
     ]()
     var a_smem_ptr = (smem_base + QK_A_OFFSET).bitcast[Scalar[FP8_TYPE]]()
     var b_smem_ptr = (smem_base + QK_B_OFFSET).bitcast[Scalar[FP8_TYPE]]()
@@ -208,13 +208,13 @@ def qk_smoke_kernel[
     var a_smem_tile = LayoutTensor[
         FP8_TYPE,
         Layout.row_major(QK_M, QK_K),
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
     ](a_smem_ptr)
     var b_smem_tile = LayoutTensor[
         FP8_TYPE,
         Layout.row_major(QK_N, QK_K),
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
     ](b_smem_ptr)
 
@@ -368,7 +368,7 @@ def pv_smoke_kernel[
     """SS .ws MMA: C [32,512] = A [32,64] x B [512,64] (mn-major B, FP8)."""
 
     var smem_base = external_memory[
-        UInt8, address_space=AddressSpace.SHARED, alignment=128
+        UInt8, address_space=.SHARED, alignment=128
     ]()
     var a_smem_ptr = (smem_base + PV_A_OFFSET).bitcast[Scalar[FP8_TYPE]]()
     var b_smem_ptr = (smem_base + PV_B_OFFSET).bitcast[Scalar[FP8_TYPE]]()
@@ -376,7 +376,7 @@ def pv_smoke_kernel[
     var a_smem_tile = LayoutTensor[
         FP8_TYPE,
         Layout.row_major(PV_M, PV_K),
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
     ](a_smem_ptr)
     # B is mn-major: [PV_N rows, PV_K cols] but the descriptor will treat
@@ -384,7 +384,7 @@ def pv_smoke_kernel[
     var b_smem_tile = LayoutTensor[
         FP8_TYPE,
         Layout.row_major(PV_N, PV_K),
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
     ](b_smem_ptr)
 
@@ -517,7 +517,7 @@ def fill_random_fp8[
     values, scale them down to fit FP8's e4m3 range, and cast.
     """
     var f32_buf = alloc[Float32](n)
-    randn[DType.float32](f32_buf, n)
+    randn[.float32](f32_buf, n)
     for i in range(n):
         # Scale to ~[-2, 2] to keep values well inside FP8 e4m3 range
         # (max representable ~448, but we want non-saturated values).

@@ -51,10 +51,10 @@ def block_reduce[
     dtype: DType, max_warps_per_block: Int = 32
 ](val: Scalar[dtype]) -> Scalar[dtype]:
     var m2_shared = unsafe_stack_allocation[
-        max_warps_per_block, dtype, address_space=AddressSpace.SHARED
+        max_warps_per_block, dtype, address_space=.SHARED
     ]()
     var m2_broadcast = unsafe_stack_allocation[
-        1, dtype, address_space=AddressSpace.SHARED
+        1, dtype, address_space=.SHARED
     ]()
 
     var tid = thread_idx.x
@@ -132,15 +132,13 @@ def tma_reduction_kernel[
     var rows = Int(rows_dev)
     var cols = Int(cols_dev)
     var shmem = external_memory[
-        Scalar[dtype], address_space=AddressSpace.SHARED, alignment=128
+        Scalar[dtype], address_space=.SHARED, alignment=128
     ]()
     # Calculate elements offset for this block (row).
     var block_offset = block_idx.x
 
     # Create barrier for TMA transfer from GMEM to SMEM.
-    var mbar = unsafe_stack_allocation[
-        1, Int64, address_space=AddressSpace.SHARED
-    ]()
+    var mbar = unsafe_stack_allocation[1, Int64, address_space=.SHARED]()
 
     var descriptor_ptr = UnsafePointer(to=descriptor).bitcast[NoneType]()
     mbarrier_init(mbar, 1)
@@ -202,9 +200,8 @@ def test_tma_block_reduce[
     ctx.enqueue_memset(d_out, 0)
 
     # Define the kernel launch function for benchmarking
-    @__parameter
     @always_inline
-    def kernel_launch(ctx: DeviceContext) raises -> None:
+    def kernel_launch(ctx: DeviceContext) raises {imm} -> None:
         comptime if use_tma:
             var tma_desc = create_tma_descriptor[dtype, 2](
                 d_data,
@@ -266,7 +263,7 @@ def test_tma_block_reduce[
             kernel_launch(ctx)
 
         # Timed runs
-        var total_time = ctx.execution_time[kernel_launch](num_iters)
+        var total_time = ctx.execution_time(kernel_launch, num_iters)
         var avg_time_ms = Float64(total_time) / Float64(num_iters) * 1e6
 
         print(

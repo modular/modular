@@ -109,7 +109,7 @@ def bench_rms_norm_gemm_pdl[
         b: Benchmark harness.
         ctx: Device context.
     """
-    comptime assert dtype == DType.bfloat16, "this bench is bf16-only"
+    comptime assert dtype == .bfloat16, "this bench is bf16-only"
 
     comptime simd_size = simd_width_of[dtype, target=get_gpu_target()]()
     comptime MMA_K = 16
@@ -409,7 +409,7 @@ def bench_rms_norm_gemm_pdl[
 
 
 def main() raises:
-    comptime dtype = get_defined_dtype["dtype", DType.bfloat16]()
+    comptime dtype = get_defined_dtype["dtype", .bfloat16]()
     comptime num_cols = get_defined_int["num_cols", 6144]()
     comptime gemm_n = get_defined_int["gemm_n", 2624]()
     comptime mma_m = get_defined_int["mma_m", 128]()

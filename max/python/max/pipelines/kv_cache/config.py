@@ -113,7 +113,7 @@ class KVConnectorConfig(ConfigFileModel):
     via ``extra="allow"`` and are accessible via ``model_extra``.
     """
 
-    model_config = ConfigDict(strict=False, extra="allow")
+    model_config = ConfigDict(strict=False, extra="allow", frozen=True)
 
     type: KVConnectorType = Field(
         default=KVConnectorType.null,
@@ -186,6 +186,8 @@ class KVConnectorConfig(ConfigFileModel):
 class KVCacheConfig(ConfigFileModel):
     """Configuration for the paged KV cache."""
 
+    model_config = ConfigDict(frozen=True)
+
     kv_cache_page_size: int = Field(
         default=128,
         description=(
@@ -242,11 +244,10 @@ class KVCacheConfig(ConfigFileModel):
     allow_kv_head_replication: bool = Field(
         default=False,
         description=(
-            "Allow TP wider than the KV head count by replicating each KV head "
-            "across a group of devices. Used as the default for "
-            "to_params(allow_kv_head_replication=...) so it reaches base-class "
-            "paths that don't thread the flag. Only for architectures whose "
-            "attention shards K/V projections to match."
+            "Allow tensor parallelism wider than the KV-head count by "
+            "replicating each head across a group of devices. Architectures "
+            "that need this declare ``requires_kv_head_replication``; "
+            "construction sets the flag here."
         ),
     )
     """Default for :meth:`to_params`'s ``allow_kv_head_replication`` argument."""

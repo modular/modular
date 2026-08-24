@@ -225,6 +225,13 @@ Examples:
         help="Activate model-specific test scenarios (e.g. kimi-k2.5, glm-5.1, gemma4)",
     )
     profile_group.add_argument(
+        "--image-stress-nodes",
+        type=int,
+        default=1,
+        metavar="N",
+        help="Scale image_stress concurrency for an N-node deployment (default: 1)",
+    )
+    profile_group.add_argument(
         "--k2vv-mode",
         choices=["quick", "full"],
         default="quick",
@@ -379,6 +386,7 @@ async def run(args: argparse.Namespace) -> int:
         endurance_intensity=args.endurance_intensity,
         model_config=model_config,
         verbose=args.verbose,
+        image_stress_nodes=args.image_stress_nodes,
     )
 
     scenario_classes = select_scenarios(args)

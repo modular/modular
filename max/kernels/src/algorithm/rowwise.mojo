@@ -23,7 +23,7 @@ Author contract — one body, two targets:
 
 ```
 def reduce_sum[...](shape, target="cpu", ctx=None) raises:
-    var axis_size = ...
+    var axis_size: DType = ...
 
     @always_inline
     def body[
@@ -348,9 +348,7 @@ def strided_load[
     invariant: Bool = True,
 ](
     addr: UnsafePointer[mut=False, Scalar[dtype], ...],
-    mask: SIMD[DType.bool, simd_width] = SIMD[DType.bool, simd_width](
-        fill=True
-    ),
+    mask: SIMD[.bool, simd_width] = SIMD[.bool, simd_width](fill=True),
 ) -> SIMD[dtype, simd_width]:
     """Loads `simd_width` values from `addr` with a compile-time `stride`.
 
@@ -938,9 +936,7 @@ struct RowCache[
                 Int(warp_id()) * Self.cols
             ) if Self.params._tier == ReduceTier.Warp else 0
             var sh = UnsafePointer[
-                Scalar[Self.T],
-                MutUntrackedOrigin,
-                address_space=AddressSpace.SHARED,
+                Scalar[Self.T], MutUntrackedOrigin, address_space=.SHARED
             ](unsafe_from_address=self._shmem_addr)
             return sh.load[width=w, alignment=al](warp_off + coord[Self.axis])
         else:
@@ -1129,7 +1125,7 @@ struct Row[
 
     @staticmethod
     @always_inline
-    def _index_vector[w: Int](pos: Int) -> SIMD[DType.int64, w]:
+    def _index_vector[w: Int](pos: Int) -> SIMD[.int64, w]:
         # Per-lane axis positions for a tile starting at `pos`. Lane stride
         # is the tier discriminator (comptime): `1` when lanes are
         # consecutive axis positions (cooperative tiers), `0` when they are
@@ -1137,9 +1133,7 @@ struct Row[
         # Keeping this `iota`/splat choice (pure layout) in the scaffolder
         # leaves the monoid's `reduce` purely elementwise.
         comptime lane_stride = 0 if Self.params.emit_tile_width > 1 else 1
-        return SIMD[DType.int64, w](pos) + iota[DType.int64, w]() * Int64(
-            lane_stride
-        )
+        return SIMD[.int64, w](pos) + iota[.int64, w]() * Int64(lane_stride)
 
     @always_inline
     def reduce[
@@ -1505,7 +1499,7 @@ struct Row[
                     Scalar[T],
                     name=_STAGED_SHMEM_NAME,
                     alignment=align_of[SIMD[T, Self._W]](),
-                    address_space=AddressSpace.SHARED,
+                    address_space=.SHARED,
                 ]()
                 var warp_off = (
                     Int(warp_id()) * Self._cols

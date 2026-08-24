@@ -118,7 +118,7 @@ def _verify_results[
 ](
     num_rows: Int,
     list_of_ctx: List[DeviceContext],
-    signal_buffers: List[DeviceBuffer[DType.uint8]],
+    signal_buffers: List[DeviceBuffer[.uint8]],
     cb_shards: List[CacheBustingBuffer[in_dtype]],
     rank_sigs: Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     gamma_dev: DeviceBuffer[in_dtype],
@@ -218,7 +218,7 @@ def _verify_results[
         list_of_ctx[i].synchronize()
 
     # Host oracle + comparison on GPU 0.
-    var woff = weight_offset.cast[DType.float32]()
+    var woff = weight_offset.cast[.float32]()
     var normed_h = List[Scalar[in_dtype]](
         length=full_n, fill=Scalar[in_dtype](0)
     )
@@ -236,14 +236,14 @@ def _verify_results[
         var base = r * num_cols
         var m2 = Float32(0)
         for c in range(num_cols):
-            var x = _gathered_value[in_dtype](r, c).cast[DType.float32]()
+            var x = _gathered_value[in_dtype](r, c).cast[.float32]()
             m2 += x * x
         var nf = rsqrt(m2 / Float32(num_cols) + epsilon)
         for c in range(num_cols):
-            var x = _gathered_value[in_dtype](r, c).cast[DType.float32]()
-            var g_f = gamma_host[c].cast[DType.float32]() + woff
-            var ref_v = ((x * nf) * g_f).cast[DType.bfloat16]()
-            var gpu = normed_h[base + c].cast[DType.bfloat16]()
+            var x = _gathered_value[in_dtype](r, c).cast[.float32]()
+            var g_f = gamma_host[c].cast[.float32]() + woff
+            var ref_v = ((x * nf) * g_f).cast[.bfloat16]()
+            var gpu = normed_h[base + c].cast[.bfloat16]()
             var ulp = abs(Int(gpu.to_bits()) - Int(ref_v.to_bits()))
             if ulp > max_ulp:
                 max_ulp = ulp
@@ -318,7 +318,7 @@ def bench_allgather_rmsnorm[
     var normed = List[DeviceBuffer[in_dtype]](capacity=ngpus)
     var sum_full = List[DeviceBuffer[in_dtype]](capacity=ngpus)
     var ag_full = List[DeviceBuffer[in_dtype]](capacity=ngpus)
-    var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
+    var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
     var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
         uninitialized=True
     )
@@ -365,7 +365,7 @@ def bench_allgather_rmsnorm[
         _ = cold_h^
 
         signal_buffers.append(
-            list_of_ctx[i].create_buffer_sync[DType.uint8](size_of[Signal]())
+            list_of_ctx[i].create_buffer_sync[.uint8](size_of[Signal]())
         )
         init_signal_buffer(signal_buffers[i], list_of_ctx[i])
         rank_sigs[i] = (
@@ -692,7 +692,7 @@ def bench_allgather_rmsnorm[
 
 
 def main() raises:
-    comptime in_dtype = get_defined_dtype["in_dtype", DType.bfloat16]()
+    comptime in_dtype = get_defined_dtype["in_dtype", .bfloat16]()
     comptime quantize = get_defined_bool["quantize", False]()
     comptime num_gpus = get_defined_int["num_gpus", 4]()
     var num_rows = Int(arg_parse("num_rows", 1))

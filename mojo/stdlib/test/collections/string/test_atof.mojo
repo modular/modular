@@ -62,7 +62,7 @@ def test_trailing_f() raises:
 
 def test_large_exponents() raises:
     """Test handling of large exponents."""
-    assert_equal(atof("1e309"), inf[DType.float64]())
+    assert_equal(atof("1e309"), inf[.float64]())
     assert_equal(atof("1e-309"), 1e-309)
 
 
@@ -159,7 +159,7 @@ def test_atof_generate_cases() raises:
 
 def test_normal_subnormal_boundary() raises:
     def as_bits(f: Float64) -> UInt64:
-        return bitcast[DType.uint64](f)
+        return bitcast[.uint64](f)
 
     # Smallest normal: biased exponent 1, mantissa 0
     # Bit pattern: 0x0010000000000000

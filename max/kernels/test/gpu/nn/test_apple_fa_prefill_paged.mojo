@@ -263,7 +263,7 @@ def _run[
 
     # ---- input_row_offsets [batch+1] ----------------------------------- #
     comptime ro_layout = Layout(UNKNOWN_VALUE)
-    var ro_managed = ManagedLayoutTensor[DType.uint32, ro_layout](
+    var ro_managed = ManagedLayoutTensor[.uint32, ro_layout](
         RuntimeLayout[ro_layout].row_major(IndexList[1](batch_size + 1)),
         ctx,
     )
@@ -273,7 +273,7 @@ def _run[
 
     # ---- per-sequence cache_lengths (all 0: pure prefill) -------------- #
     comptime cl_layout = Layout(UNKNOWN_VALUE)
-    var cl_managed = ManagedLayoutTensor[DType.uint32, cl_layout](
+    var cl_managed = ManagedLayoutTensor[.uint32, cl_layout](
         RuntimeLayout[cl_layout].row_major(IndexList[1](batch_size)),
         ctx,
     )
@@ -306,7 +306,7 @@ def _run[
 
     comptime lut_layout = Layout.row_major[2]()
     var max_pages = _padded_lut_cols(num_pages_per_batch)
-    var lut_managed = ManagedLayoutTensor[DType.uint32, lut_layout](
+    var lut_managed = ManagedLayoutTensor[.uint32, lut_layout](
         RuntimeLayout[lut_layout].row_major(
             IndexList[2](batch_size, max_pages)
         ),
@@ -393,7 +393,7 @@ def _run[
     for t in range(total_length):
         for h in range(num_q_heads):
             for d in range(depth):
-                var got = o_out[t, h, d].cast[DType.float32]()[0]
+                var got = o_out[t, h, d].cast[.float32]()[0]
                 var exp_v = ref_out[(t * num_q_heads + h) * depth + d]
                 var err = abs(got - exp_v)
                 max_err = max(max_err, err)
@@ -436,45 +436,37 @@ def _cases(ctx: DeviceContext) raises:
 
     # --- page_size 16: a single Sk=32 KV tile spans TWO pages. The crux. ---
     # NullMask, fp16 + bf16, seq spanning many pages.
-    _run[DType.float16, 16, 4, kv_d64_h4, NullMask, 0](NullMask(), [48], ctx)
-    _run[DType.bfloat16, 16, 4, kv_d64_h4, NullMask, 0](NullMask(), [48], ctx)
+    _run[.float16, 16, 4, kv_d64_h4, NullMask, 0](NullMask(), [48], ctx)
+    _run[.bfloat16, 16, 4, kv_d64_h4, NullMask, 0](NullMask(), [48], ctx)
     # CausalMask with page_size 16, seq=48 (3 pages).
-    _run[DType.float16, 16, 4, kv_d64_h4, CausalMask, 1](
-        CausalMask(), [48], ctx
-    )
+    _run[.float16, 16, 4, kv_d64_h4, CausalMask, 1](CausalMask(), [48], ctx)
 
     # --- page_size 32 == Sk: each KV tile maps to exactly one page. ---
-    _run[DType.float16, 32, 4, kv_d64_h4, CausalMask, 1](
-        CausalMask(), [64], ctx
-    )
+    _run[.float16, 32, 4, kv_d64_h4, CausalMask, 1](CausalMask(), [64], ctx)
 
     # --- partial last page: num_keys not a multiple of page_size. ---
     # seq=37, page_size=16 -> pages of 16,16,5 (last page 5/16 valid).
-    _run[DType.float16, 16, 4, kv_d64_h4, CausalMask, 1](
-        CausalMask(), [37], ctx
-    )
-    _run[DType.bfloat16, 16, 2, kv_d64_h2, NullMask, 0](NullMask(), [29], ctx)
+    _run[.float16, 16, 4, kv_d64_h4, CausalMask, 1](CausalMask(), [37], ctx)
+    _run[.bfloat16, 16, 2, kv_d64_h2, NullMask, 0](NullMask(), [29], ctx)
 
     # --- ragged: mixed sequence lengths across the batch, multiple pages. ---
-    _run[DType.float16, 16, 4, kv_d64_h4, CausalMask, 1](
+    _run[.float16, 16, 4, kv_d64_h4, CausalMask, 1](
         CausalMask(), [20, 48, 35], ctx
     )
-    _run[DType.bfloat16, 32, 2, kv_d64_h2, CausalMask, 1](
+    _run[.bfloat16, 32, 2, kv_d64_h2, CausalMask, 1](
         CausalMask(), [33, 17], ctx
     )
 
     # --- GQA: num_q_heads > kv_heads, paged. ---
-    _run[DType.float16, 16, 8, kv_d64_h2, CausalMask, 1](
-        CausalMask(), [40], ctx
-    )
+    _run[.float16, 16, 8, kv_d64_h2, CausalMask, 1](CausalMask(), [40], ctx)
 
     # --- SlidingWindowCausalMask, paged. ---
-    _run[DType.float16, 16, 2, kv_d64_h2, SlidingWindowCausalMask[16], 2, 16](
+    _run[.float16, 16, 2, kv_d64_h2, SlidingWindowCausalMask[16], 2, 16](
         SlidingWindowCausalMask[16](), [48], ctx
     )
 
     # --- depth 128, paged page_size 32. ---
-    _run[DType.float16, 32, 2, kv_d128_h2, CausalMask, 1](
+    _run[.float16, 32, 2, kv_d128_h2, CausalMask, 1](
         CausalMask(), [40, 33], ctx
     )
 

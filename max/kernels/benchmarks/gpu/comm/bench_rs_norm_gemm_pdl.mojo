@@ -104,7 +104,7 @@ def bench_rs_norm_gemm_pdl[
         list_of_ctx: One context per participating GPU.
     """
     comptime assert (
-        in_dtype == DType.bfloat16
+        in_dtype == .bfloat16
     ), "the fused RS+RMSNorm producer is bf16-only"
 
     comptime simd_size = simd_width_of[in_dtype, target=get_gpu_target()]()
@@ -149,7 +149,7 @@ def bench_rs_norm_gemm_pdl[
     var gamma_dev = List[DeviceBuffer[in_dtype]](capacity=ngpus)
     var c_dev = List[DeviceBuffer[in_dtype]](capacity=ngpus)
     var c_ref_dev = List[DeviceBuffer[in_dtype]](capacity=ngpus)
-    var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
+    var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
     var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
         uninitialized=True
     )
@@ -229,7 +229,7 @@ def bench_rs_norm_gemm_pdl[
         )
 
         signal_buffers.append(
-            list_of_ctx[i].create_buffer_sync[DType.uint8](size_of[Signal]())
+            list_of_ctx[i].create_buffer_sync[.uint8](size_of[Signal]())
         )
         rank_sigs[i] = (
             signal_buffers[i]
@@ -495,7 +495,7 @@ def bench_rs_norm_gemm_pdl[
 
 
 def main() raises:
-    comptime in_dtype = get_defined_dtype["dtype", DType.bfloat16]()
+    comptime in_dtype = get_defined_dtype["dtype", .bfloat16]()
     comptime num_cols = get_defined_int["num_cols", 6144]()
     comptime gemm_n = get_defined_int["gemm_n", 4096]()
     comptime bm = get_defined_int["bm", 64]()

@@ -53,10 +53,10 @@ def test_ldmatrix_fp8[
     var d = SIMD[accum_type, c_frag_size](0)
 
     var a_shared = unsafe_stack_allocation[
-        M * K, input_type, alignment=32, address_space=AddressSpace.SHARED
+        M * K, input_type, alignment=32, address_space=.SHARED
     ]()
     var b_shared = unsafe_stack_allocation[
-        N * K, input_type, alignment=32, address_space=AddressSpace.SHARED
+        N * K, input_type, alignment=32, address_space=.SHARED
     ]()
 
     for i in range(lane_id(), M * K, WARP_SIZE):
@@ -79,7 +79,7 @@ def test_ldmatrix_fp8[
     store_matrix_d[M, N, K](
         c_ptr,
         # Store matrix is hardcoded to store 4 elements.
-        rebind[SIMD[DType.float32, 4]](d),
+        rebind[SIMD[.float32, 4]](d),
         0,
         0,
         mma_shape[1],
@@ -117,8 +117,8 @@ def check_ldmatrix_fp8[
 
     var a_device = ctx.enqueue_create_buffer[input_type](M * K)
     var b_device = ctx.enqueue_create_buffer[input_type](K * N)
-    var c_device = ctx.enqueue_create_buffer[DType.float32](M * N)
-    var c_device_ref = ctx.enqueue_create_buffer[DType.float32](M * N)
+    var c_device = ctx.enqueue_create_buffer[.float32](M * N)
+    var c_device_ref = ctx.enqueue_create_buffer[.float32](M * N)
 
     ctx.enqueue_copy(a_device, a_host)
     ctx.enqueue_copy(b_device, b_host)
@@ -203,5 +203,5 @@ def check_ldmatrix_fp8[
 
 def main() raises:
     with DeviceContext() as ctx:
-        check_ldmatrix_fp8[DType.float8_e4m3fn](ctx)
-        check_ldmatrix_fp8[DType.float8_e5m2](ctx)
+        check_ldmatrix_fp8[.float8_e4m3fn](ctx)
+        check_ldmatrix_fp8[.float8_e5m2](ctx)

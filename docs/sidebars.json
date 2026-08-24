@@ -242,6 +242,7 @@
             "id": "api/python/experimental"
           },
           "items": [
+            "api/python/experimental.compilation",
             "api/python/experimental.functional",
             {
               "type": "category",
@@ -474,6 +475,7 @@
                 "api/python/pipelines.architectures.unified_mtp_deepseekV3",
                 "api/python/pipelines.architectures.unified_mtp_gemma4",
                 "api/python/pipelines.architectures.unified_mtp_glm5_2",
+                "api/python/pipelines.architectures.unified_mtp_inkling",
                 "api/python/pipelines.architectures.unified_mtp_qwen3_5",
                 "api/python/pipelines.architectures.wan"
               ]

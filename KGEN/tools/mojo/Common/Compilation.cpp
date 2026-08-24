@@ -19,16 +19,19 @@
 #include "KGEN/MojoParser/EntryPoint.h"
 #include "KGEN/Support/Configuration.h"
 #include "KGEN/ToolCommon/InitAllDialects.h"
+#include "KGEN/ToolCommon/LLVMTimingRegions.h"
 #include "Support/Compiler/Diags.h"
 #include "Support/MArchTarget/MArchTarget.h"
 #include "Support/MDialect/MAttrs.h"
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Support/Timing.h"
 #include "llvm/ADT/StringExtras.h"
+#include "llvm/IR/PassTimingInfo.h"
 #include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/Path.h"
 #include "llvm/Support/SourceMgr.h"
 #include "llvm/Support/TargetSelect.h"
+#include "llvm/Support/Timer.h"
 #include "llvm/Target/TargetMachine.h"
 
 using namespace M;
@@ -639,6 +642,113 @@ ErrorOrSuccess M::parseTargetOptions(
   return success();
 }
 
+ErrorOrSuccess
+M::MLIRPassTiming::configure(const llvm::opt::InputArgList &args,
+                             llvm::opt::OptSpecifier timingId,
+                             llvm::opt::OptSpecifier displayModeId) {
+  StringLiteral kTree = "tree";
+  StringLiteral kList = "list";
+  // The code reads the display mode also when the timing is off. An argument
+  // that stays unclaimed makes `State::assertNoUnusedArguments` fail. An
+  // incorrect mode is also an error when the compiler does not use the mode.
+  StringRef displayMode = args.getLastArgValue(displayModeId, kTree);
+  if (!llvm::is_contained({kTree, kList}, displayMode)) {
+    return Error(llvm::formatv(
+        "invalid mlir-timing-display '{0}', expected one of: `{1}` (the "
+        "default value), or `{2}`",
+        displayMode, kTree, kList));
+  }
+
+  if (!args.hasArg(timingId))
+    return success();
+
+  manager.setEnabled(true);
+  if (displayMode == kList)
+    manager.setDisplayMode(mlir::DefaultTimingManager::DisplayMode::List);
+  root = manager.getRootScope();
+  return success();
+}
+
+KGEN::PassManagerConfigOptions M::MLIRPassTiming::passManagerOptions() {
+  KGEN::PassManagerConfigOptions options;
+  // The scope stays empty when the timing is off. Then `configurePassManager`
+  // uses the time-trace manager, which the trace builds need.
+  if (manager.isEnabled())
+    options.timingScope = &root;
+  return options;
+}
+
+/// The reports of MLIR and of LLVM are this many columns wide.
+static constexpr unsigned kTimingTitleWidth = 79;
+
+/// Writes a title above a timing report. MLIR and LLVM both write a report
+/// that does not name the tool that made it, and a command can ask for both
+/// reports. The title tells the two reports apart.
+static void printTimingReportTitle(StringRef title) {
+  // The title is one line. A report starts with a box of three lines, and a
+  // box above a box looks like one damaged box.
+  std::string prefix = ("===--- " + title + " ").str();
+  unsigned fill = prefix.size() < kTimingTitleWidth - 3
+                      ? kTimingTitleWidth - 3 - prefix.size()
+                      : 0;
+  llvm::errs() << "\n" << prefix << std::string(fill, '-') << "===\n\n";
+}
+
+void M::MLIRPassTiming::finish() {
+  if (!manager.isEnabled())
+    return;
+  // Stop the root scope first. Then the total covers the compilation, and the
+  // scope is empty, so a later nest operation records nothing.
+  root.stop();
+  printTimingReportTitle("MLIR pass timing (--mlir-timing)");
+  manager.print();
+  // The destructor of the manager also prints. A manager that is off prints
+  // nothing.
+  manager.setEnabled(false);
+}
+
+void M::LLVMPassTiming::configure(const llvm::opt::InputArgList &args,
+                                  llvm::opt::OptSpecifier timingId,
+                                  KGEN::CompilationOptions &options) {
+  if (!args.hasArg(timingId))
+    return;
+
+  enabled = true;
+  // The legacy pass manager that does the code generation reads this global
+  // variable. `StandardInstrumentations` also reads the variable when it makes
+  // the `TimePassesHandler` for the optimization pipeline. Both of them write
+  // to the same timer groups.
+  llvm::TimePassesIsEnabled = true;
+
+  // The timers of LLVM are global to the process, and a timer of a code
+  // generation region has one object for each name. Two threads that run the
+  // same region thus start one timer two times, and LLVM stops with an
+  // assertion. One thread also keeps one row for each pass, because the report
+  // does not merge the rows of the units that a parallel build makes. The
+  // split of the report into one part for each pipeline needs one thread as
+  // well, because it reads the same global timers.
+  options.numThreads = 1;
+
+  KGEN::enableLLVMTimingRegions();
+}
+
+void M::LLVMPassTiming::finish() {
+  if (!enabled)
+    return;
+  enabled = false;
+  // Stop the collection before the report. Then no more times go into a
+  // report that no one prints.
+  llvm::TimePassesIsEnabled = false;
+
+  // Each part holds one pipeline: the host, and one for each offload target.
+  // A pipeline that the compilation cache answered gives no part, so a run
+  // that gets all of its object code from the cache writes nothing at all.
+  for (const KGEN::LLVMTimingReportPart &part : KGEN::takeLLVMTimingReport()) {
+    printTimingReportTitle("LLVM pass timing (--llvm-timing): " + part.label);
+    llvm::errs() << part.report;
+  }
+}
+
 ErrorOr<OwningOpRef<ModuleOp>> M::invokeMojoParser(
     const State &state, const llvm::opt::InputArgList &args,
     KGEN::CompilationOptions &compilationOptions, MLIRContext *ctx,
@@ -647,6 +757,7 @@ ErrorOr<OwningOpRef<ModuleOp>> M::invokeMojoParser(
     llvm::opt::OptSpecifier stripFilePrefixId,
     llvm::opt::OptSpecifier disableBuiltins, llvm::opt::OptSpecifier stdLibPath,
     llvm::opt::OptSpecifier autoFixIt, llvm::opt::OptSpecifier exportFixit,
+    mlir::TimingScope *timingScope,
     function_ref<OwningOpRef<ModuleOp>(ParserConfig &, mlir::TimingScope &)>
         parseFn) {
   // Mutual exclusion check for fixit flags.
@@ -655,9 +766,11 @@ ErrorOr<OwningOpRef<ModuleOp>> M::invokeMojoParser(
                  "--experimental-export-fixit simultaneously");
   }
 
-  // We don't allow users to configure the time profiler.
-  mlir::DefaultTimingManager timingManager;
-  mlir::TimingScope timing = timingManager.getRootScope();
+  // A command with the `--mlir-timing` option holds the timing manager. Thus
+  // the report shows all of the compilation, not only the parse. The other
+  // commands use an empty scope, which records no data.
+  mlir::TimingScope disabledScope;
+  mlir::TimingScope &timing = timingScope ? *timingScope : disabledScope;
 
   DialectRegistry registry;
   registerAllKGENDialects(registry);

@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from max.pipelines.lib import PipelineConfig
+from max.pipelines.lib import MemoryPlan, PipelineConfig
 
 
 @dataclass
@@ -132,15 +132,31 @@ class TokenGenerationSchedulerConfig:
 
     @classmethod
     def from_pipeline_config(
-        cls, pipeline_config: PipelineConfig, max_batch_size: int
+        cls,
+        pipeline_config: PipelineConfig,
+        max_batch_size: int,
+        memory_plan: MemoryPlan | None,
     ) -> TokenGenerationSchedulerConfig:
+        """Builds the scheduler config from the pipeline config and memory plan.
+
+        ``memory_plan`` carries the planned sequence length and batch token
+        budget; ``None`` only for pipelines sized without a plan (test echoes).
+        """
         assert pipeline_config.model is not None
 
         return cls(
             max_batch_size=max_batch_size,
             target_tokens_per_batch_ce=pipeline_config.runtime.max_batch_input_tokens,
-            max_seq_len=pipeline_config.model.max_length,
-            max_batch_total_tokens=pipeline_config.runtime.max_batch_total_tokens,
+            max_seq_len=(
+                memory_plan.planned_max_length
+                if memory_plan is not None
+                else None
+            ),
+            max_batch_total_tokens=(
+                memory_plan.planned_max_batch_total_tokens
+                if memory_plan is not None
+                else None
+            ),
             enable_chunked_prefill=pipeline_config.runtime.enable_chunked_prefill,
             chunked_prefill_min_chunk_size=pipeline_config.runtime.chunked_prefill_min_chunk_size,
             enable_in_flight_batching=pipeline_config.runtime.enable_in_flight_batching,

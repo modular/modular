@@ -265,7 +265,7 @@ def create_matmul_bench[
 
 
 def main() raises:
-    comptime dtype = get_defined_dtype["dtype", DType.bfloat16]()
+    comptime dtype = get_defined_dtype["dtype", .bfloat16]()
 
     var M = Int(arg_parse("M", 1))
     comptime N = get_defined_int["N", 1]()

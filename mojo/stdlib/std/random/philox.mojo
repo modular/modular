@@ -46,9 +46,9 @@ from std.memory import bitcast
 from std.gpu.intrinsics import mulwide
 
 
-def _mulhilow(a: UInt32, b: UInt32) -> SIMD[DType.uint32, 2]:
+def _mulhilow(a: UInt32, b: UInt32) -> SIMD[.uint32, 2]:
     var res = mulwide(a, b)
-    return bitcast[DType.uint32, 2](res)
+    return bitcast[.uint32, 2](res)
 
 
 struct Random[rounds: Int = 10](Copyable):
@@ -63,8 +63,8 @@ struct Random[rounds: Int = 10](Copyable):
                quality at the cost of performance. Default is 10.
     """
 
-    var _key: SIMD[DType.uint32, 2]
-    var _counter: SIMD[DType.uint32, 4]
+    var _key: SIMD[.uint32, 2]
+    var _counter: SIMD[.uint32, 4]
 
     def __init__(
         out self,
@@ -80,19 +80,19 @@ struct Random[rounds: Int = 10](Copyable):
             subsequence: Subsequence number for generating independent streams. Default is 0.
             offset: Starting offset in the sequence. Default is 0.
         """
-        self._key = bitcast[DType.uint32, 2](seed)
-        self._counter = bitcast[DType.uint32, 4](
-            SIMD[DType.uint64, 2](offset, subsequence)
+        self._key = bitcast[.uint32, 2](seed)
+        self._counter = bitcast[.uint32, 4](
+            SIMD[.uint64, 2](offset, subsequence)
         )
 
     @always_inline
-    def step(mut self) -> SIMD[DType.uint32, 4]:
+    def step(mut self) -> SIMD[.uint32, 4]:
         """Generate 4 random 32-bit unsigned integers.
 
         Returns:
             SIMD vector containing 4 random 32-bit unsigned integers.
         """
-        comptime K_PHILOX_10 = SIMD[DType.uint32, 2](0x9E3779B9, 0xBB67AE85)
+        comptime K_PHILOX_10 = SIMD[.uint32, 2](0x9E3779B9, 0xBB67AE85)
 
         var counter = self._counter
         var key = self._key
@@ -105,7 +105,7 @@ struct Random[rounds: Int = 10](Copyable):
         return res
 
     @always_inline
-    def step_uniform(mut self) -> SIMD[DType.float32, 4]:
+    def step_uniform(mut self) -> SIMD[.float32, 4]:
         """Generate 4 random floating point numbers uniformly distributed in [0,1).
 
         Returns:
@@ -113,10 +113,10 @@ struct Random[rounds: Int = 10](Copyable):
         """
         # maximum value such that `MAX_INT * scale < 1.0` (with float rounding)
         comptime SCALE = 4.6566127342e-10
-        return (self.step() & 0x7FFFFFFF).cast[DType.float32]() * SCALE
+        return (self.step() & 0x7FFFFFFF).cast[.float32]() * SCALE
 
     @always_inline
-    def step_uniform_unbiased(mut self) -> SIMD[DType.float32, 4]:
+    def step_uniform_unbiased(mut self) -> SIMD[.float32, 4]:
         """Generate 4 uniform float32 values in (0, 1), unbiased.
 
         Uses all 32 raw bits of each Philox output via the conversion
@@ -132,9 +132,9 @@ struct Random[rounds: Int = 10](Copyable):
         comptime SCALE = Float32(2.3283064e-10)  # 1 / 2^32
         comptime SCALE_HALF = SCALE * Float32(0.5)
         return fma(
-            self.step().cast[DType.float32](),
-            SIMD[DType.float32, 4](SCALE),
-            SIMD[DType.float32, 4](SCALE_HALF),
+            self.step().cast[.float32](),
+            SIMD[.float32, 4](SCALE),
+            SIMD[.float32, 4](SCALE_HALF),
         )
 
     @always_inline
@@ -144,7 +144,7 @@ struct Random[rounds: Int = 10](Copyable):
         Args:
             n: Amount to increment the counter by.
         """
-        var hilo = bitcast[DType.uint32, 2](n)
+        var hilo = bitcast[.uint32, 2](n)
         var hi, lo = (hilo[1], hilo[0]) if is_little_endian() else (
             hilo[0],
             hilo[1],
@@ -168,8 +168,8 @@ struct Random[rounds: Int = 10](Copyable):
     @always_inline
     @staticmethod
     def _single_round(
-        counter: SIMD[DType.uint32, 4], key: SIMD[DType.uint32, 2]
-    ) -> SIMD[DType.uint32, 4]:
+        counter: SIMD[.uint32, 4], key: SIMD[.uint32, 2]
+    ) -> SIMD[.uint32, 4]:
         """Perform a single round of the Philox mixing function.
 
         Args:
@@ -184,7 +184,7 @@ struct Random[rounds: Int = 10](Copyable):
 
         var res0 = _mulhilow(K_PHILOX_SA, counter[0])
         var res1 = _mulhilow(K_PHILOX_SB, counter[2])
-        return SIMD[DType.uint32, 4](
+        return SIMD[.uint32, 4](
             res1[1] ^ counter[1] ^ key[0],
             res1[0],
             res0[1] ^ counter[3] ^ key[1],
@@ -226,7 +226,7 @@ struct NormalRandom[rounds: Int = 10](Copyable):
 
     def step_normal(
         mut self, mean: Float32 = 0.0, stddev: Float32 = 1.0
-    ) -> SIMD[DType.float32, 8]:
+    ) -> SIMD[.float32, 8]:
         """Generate 8 normally distributed random numbers using Box-Muller transform.
 
         Args:
@@ -255,7 +255,7 @@ struct NormalRandom[rounds: Int = 10](Copyable):
     @always_inline
     def step_normal_4(
         mut self, mean: Float32 = 0.0, stddev: Float32 = 1.0
-    ) -> SIMD[DType.float32, 4]:
+    ) -> SIMD[.float32, 4]:
         """Generate 4 normal floats from a single Philox step.
 
         Pairs adjacent uint32 outputs `(raw[0], raw[1])` and
@@ -280,28 +280,28 @@ struct NormalRandom[rounds: Int = 10](Copyable):
         comptime SCALE_HALF = SCALE * Float32(0.5)
         comptime SCALE_2PI_HALF = SCALE_2PI * Float32(0.5)
 
-        var raw = self._rng.step().cast[DType.float32]()
+        var raw = self._rng.step().cast[.float32]()
 
         # Pair 0 → (raw[0], raw[1]); Pair 1 → (raw[2], raw[3]).
         # u from even lanes, v (angle) from odd lanes.
-        var u_raw = SIMD[DType.float32, 2](raw[0], raw[2])
-        var v_raw = SIMD[DType.float32, 2](raw[1], raw[3])
+        var u_raw = SIMD[.float32, 2](raw[0], raw[2])
+        var v_raw = SIMD[.float32, 2](raw[1], raw[3])
 
         var u = fma(
             u_raw,
-            SIMD[DType.float32, 2](SCALE),
-            SIMD[DType.float32, 2](SCALE_HALF),
+            SIMD[.float32, 2](SCALE),
+            SIMD[.float32, 2](SCALE_HALF),
         )
         var v = fma(
             v_raw,
-            SIMD[DType.float32, 2](SCALE_2PI),
-            SIMD[DType.float32, 2](SCALE_2PI_HALF),
+            SIMD[.float32, 2](SCALE_2PI),
+            SIMD[.float32, 2](SCALE_2PI_HALF),
         )
         var s = sqrt(log(u) * Float32(-2.0))
         var sin_v = sin(v)
         var cos_v = cos(v)
 
-        var result = SIMD[DType.float32, 4](
+        var result = SIMD[.float32, 4](
             s[0] * sin_v[0],
             s[0] * cos_v[0],
             s[1] * sin_v[1],

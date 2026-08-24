@@ -87,7 +87,7 @@ comptime UI8_139 = __mlir_attr.`#kgen.simd<139> : !kgen.scalar<ui8>`
 
 # CHECK-LABEL: lit.fn @"fold_dtype_as_ui8
 def fold_dtype_as_ui8() -> UInt8T[UI8_139]:
-    comptime A: DType = DType.int32
+    comptime A = DType.int32
     # CHECK: %a = lit.var.decl "a" var : !lit.ref<!lit.struct<#UInt8T <:scalar<ui8> {{.*}}, 139)>>, mut *"a
     var a = UInt8T[A._as_ui8()]()
     return a
@@ -102,9 +102,9 @@ struct DTypeT[x: DType](ImplicitlyCopyable):
 
 
 # CHECK-LABEL: lit.fn @"fold_dtype_from_ui8
-def fold_dtype_from_ui8() -> DTypeT[DType.int32]:
+def fold_dtype_from_ui8() -> DTypeT[.int32]:
     # CHECK: %a = lit.var.decl "a" var : !lit.ref<!lit.struct<#DTypeT <:!DType {:dtype si32}>>, mut *"a
-    var a = DTypeT[DType._from_ui8(UI8_139)]()
+    var a = DTypeT[._from_ui8(UI8_139)]()
     return a
 
 

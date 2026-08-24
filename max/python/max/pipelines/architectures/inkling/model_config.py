@@ -17,12 +17,12 @@ from __future__ import annotations
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass, fields, replace
-from typing import ClassVar, Final
+from typing import Any, ClassVar, Final
 
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.graph.weights import WeightData
-from max.nn.kv_cache import KVCacheParams, MultiKVCacheParams
+from max.nn.kv_cache import KVCacheParams, MHAKVCacheParams, MultiKVCacheParams
 from max.nn.quant_config import QuantConfig
 from max.pipelines.kv_cache import cache_dtype_for_encoding
 from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
@@ -32,6 +32,7 @@ from max.pipelines.lib.config.model_config import (
 from max.pipelines.lib.interfaces import ArchConfigWithKVCache
 from max.pipelines.lib.utils import upper_bounded_default
 from max.pipelines.modeling.config_enums import SupportedEncoding
+from max.pipelines.speculative.config import SpeculativeConfig
 from max.pipelines.weights.quant import parse_quant_config
 from transformers import AutoConfig, PretrainedConfig
 from typing_extensions import Self
@@ -150,70 +151,54 @@ class InklingTextConfig:
         return self.num_hidden_layers - self.num_local_layers
 
     def is_local_attention(self, layer_idx: int) -> bool:
+        """Whether this layer uses sliding-window attention."""
         return layer_idx in self.local_layer_ids
 
     def is_moe_layer(self, layer_idx: int) -> bool:
         return layer_idx >= self.dense_mlp_idx
 
-    def num_heads_for_layer(self, layer_idx: int) -> int:
+    def num_heads(self, is_local: bool) -> int:
         return (
             self.swa_num_attention_heads
-            if self.is_local_attention(layer_idx)
+            if is_local
             else self.num_attention_heads
         )
 
-    def num_kv_heads_for_layer(self, layer_idx: int) -> int:
+    def num_kv_heads(self, is_local: bool) -> int:
         return (
             self.swa_num_key_value_heads
-            if self.is_local_attention(layer_idx)
+            if is_local
             else self.num_key_value_heads
         )
 
-    def head_dim_for_layer(self, layer_idx: int) -> int:
-        return (
-            self.swa_head_dim
-            if self.is_local_attention(layer_idx)
-            else self.head_dim
-        )
+    def head_dim_for(self, is_local: bool) -> int:
+        return self.swa_head_dim if is_local else self.head_dim
 
-    def rel_extent_for_layer(self, layer_idx: int) -> int:
-        return (
-            self.sliding_window_size
-            if self.is_local_attention(layer_idx)
-            else self.rel_extent
-        )
+    def rel_extent_for(self, is_local: bool) -> int:
+        return self.sliding_window_size if is_local else self.rel_extent
 
-    def attention_window_for_layer(self, layer_idx: int) -> int | None:
+    def attention_window(self, is_local: bool) -> int | None:
         """MAX counts the query in the window; vLLM's FA4 passes size - 1."""
-        return (
-            self.sliding_window_size
-            if self.is_local_attention(layer_idx)
-            else None
-        )
+        return self.sliding_window_size if is_local else None
 
-    def applies_log_scaling(self, layer_idx: int) -> bool:
+    def applies_log_scaling(self, is_local: bool) -> bool:
         """Global only; the factor must scale both ``q`` and the rel bias."""
-        return not self.is_local_attention(layer_idx)
+        return not is_local
 
-    def qkvr_out_dims_for_layer(
-        self, layer_idx: int
-    ) -> tuple[int, int, int, int]:
+    def qkvr_out_dims(self, is_local: bool) -> tuple[int, int, int, int]:
         """q, k, v, r output widths; ``r`` is ``num_heads * d_rel`` wide."""
-        num_heads = self.num_heads_for_layer(layer_idx)
-        kv_width = self.num_kv_heads_for_layer(
-            layer_idx
-        ) * self.head_dim_for_layer(layer_idx)
+        num_heads = self.num_heads(is_local)
+        head_dim = self.head_dim_for(is_local)
+        kv_width = self.num_kv_heads(is_local) * head_dim
         return (
-            num_heads * self.head_dim_for_layer(layer_idx),
+            num_heads * head_dim,
             kv_width,
             kv_width,
             num_heads * self.d_rel,
         )
 
-    def kv_conv_dim_for_layer(self, layer_idx: int) -> int:
-        return self.num_kv_heads_for_layer(layer_idx) * self.head_dim_for_layer(
-            layer_idx
-        )
+    def kv_conv_dim(self, is_local: bool) -> int:
+        return self.num_kv_heads(is_local) * self.head_dim_for(is_local)
 
     @classmethod
     def from_hf(cls, text_config: PretrainedConfig) -> InklingTextConfig:
@@ -273,6 +258,95 @@ class InklingVisionConfig:
         )
 
 
+@dataclass(kw_only=True, frozen=True)
+class InklingMTPConfig:
+    """Checkpoint ``mtp_config``: chained draft depths baked into the weights."""
+
+    num_nextn_predict_layers: int
+    chain_hidden_post_norm: bool
+    local_layer_ids: tuple[int, ...]
+    hidden_states_first: bool = True
+
+    def num_depths(self, num_speculative_tokens: int) -> int:
+        """How many checkpoint depths to build for this speculative width."""
+        if num_speculative_tokens < 1:
+            raise ValueError(
+                "Inkling MTP requires at least one speculative token, got "
+                f"{num_speculative_tokens}"
+            )
+        if self.num_nextn_predict_layers < 1:
+            raise ValueError("Inkling MTP checkpoint declares no next-n layers")
+        return min(num_speculative_tokens, self.num_nextn_predict_layers)
+
+    def num_depths_for(self, spec: SpeculativeConfig) -> int:
+        """Depths to build for a speculative config, whose width MTP resolves."""
+        assert spec.num_speculative_tokens is not None
+        return self.num_depths(spec.num_speculative_tokens)
+
+    def local_flags(self, n_depths: int) -> tuple[bool, ...]:
+        """Which of the first ``n_depths`` depths use sliding-window attention."""
+        local_ids = set(self.local_layer_ids)
+        return tuple(i in local_ids for i in range(n_depths))
+
+
+def parse_inkling_mtp_config(
+    huggingface_config: object,
+) -> InklingMTPConfig | None:
+    """Reads top-level ``mtp_config``; missing or empty means no MTP weights."""
+    raw = getattr(huggingface_config, "mtp_config", None)
+    if raw is None:
+        return None
+
+    def field(key: str, default: Any) -> Any:
+        """``mtp_config`` arrives either as a dict or as a nested config."""
+        if isinstance(raw, Mapping):
+            return raw.get(key, default)
+        return getattr(raw, key, default)
+
+    n_layers = int(field("num_nextn_predict_layers", 0) or 0)
+    if n_layers < 1:
+        return None
+    return InklingMTPConfig(
+        num_nextn_predict_layers=n_layers,
+        chain_hidden_post_norm=bool(field("chain_hidden_post_norm", False)),
+        local_layer_ids=tuple(field("local_layer_ids", ()) or ()),
+        hidden_states_first=bool(field("mtp_hidden_states_first", True)),
+    )
+
+
+def nest_inkling_mtp_kv_params(
+    target: MultiKVCacheParams,
+    mtp: InklingMTPConfig,
+    n_depths: int,
+) -> MultiKVCacheParams:
+    """Wraps backbone caches under ``target`` and adds per-depth ``draft`` caches.
+
+    Idempotent when ``target`` is already the nested MTP tree.
+    """
+    if "target" in target.children and "draft" in target.children:
+        return target
+    n_local = sum(mtp.local_flags(n_depths))
+    n_global = n_depths - n_local
+    draft_children: dict[str, MHAKVCacheParams] = {}
+    for key, count in (
+        (GLOBAL_ATTENTION, n_global),
+        (LOCAL_ATTENTION, n_local),
+    ):
+        if count == 0:
+            continue
+        child = target.children[key]
+        assert isinstance(child, MHAKVCacheParams)
+        draft_children[key] = replace(child, num_layers=count)
+    if not draft_children:
+        raise ValueError("Inkling MTP built zero draft attention layers")
+    return MultiKVCacheParams.from_params(
+        {
+            "target": target,
+            "draft": MultiKVCacheParams.from_params(draft_children),
+        }
+    )
+
+
 @dataclass(kw_only=True)
 class InklingConfig(ArchConfigWithKVCache):
     """Top-level Inkling config wrapping the text and vision backbones."""
@@ -299,6 +373,9 @@ class InklingConfig(ArchConfigWithKVCache):
     """Set by :meth:`finalize` when the routed experts are packed FP4."""
 
     use_subgraphs: bool = True
+
+    mtp: InklingMTPConfig | None = None
+    """Set on the unified MTP path; the text-only architecture leaves it None."""
 
     def __post_init__(self) -> None:
         # Caught here so a mismatched checkpoint fails at config time with the
@@ -358,6 +435,16 @@ class InklingConfig(ArchConfigWithKVCache):
         """One cache per attention flavor; they differ in KV head count."""
         text_config = InklingTextConfig.from_hf(huggingface_config.text_config)
 
+        spec = pipeline_config.speculative
+        mtp = parse_inkling_mtp_config(huggingface_config)
+        mtp_depths = (
+            mtp.num_depths_for(spec)
+            if mtp is not None
+            and spec is not None
+            and spec.speculative_method == "mtp"
+            else 0
+        )
+
         def params_for(
             n_kv_heads: int, head_dim: int, num_layers: int
         ) -> KVCacheParams:
@@ -368,9 +455,13 @@ class InklingConfig(ArchConfigWithKVCache):
                 num_layers=num_layers,
                 devices=devices,
                 data_parallel_degree=pipeline_config.model.data_parallel_degree,
+                # Draft steps write past a request's max_seq_len; this slack
+                # keeps the page budget and the captured-graph buckets large
+                # enough for requests at the context limit.
+                num_draft_tokens=mtp_depths,
             )
 
-        return MultiKVCacheParams.from_params(
+        target = MultiKVCacheParams.from_params(
             {
                 GLOBAL_ATTENTION: params_for(
                     text_config.num_key_value_heads,
@@ -384,12 +475,22 @@ class InklingConfig(ArchConfigWithKVCache):
                 ),
             }
         )
+        if mtp_depths == 0:
+            return target
+        assert mtp is not None
+        # TODO(thomas.borstad): give the draft its own dispatch metadata
+        # (declare `speculative_method="mtp"`) instead of replaying the
+        # verify metadata over zeroed cache lengths; that changes the
+        # graph's input signature.
+        return nest_inkling_mtp_kv_params(target, mtp, mtp_depths)
 
     @classmethod
     def initialize(
         cls,
         pipeline_config: PipelineConfig,
         model_config: MAXModelConfig | None = None,
+        *,
+        max_seq_len: int,
     ) -> Self:
         model_config = model_config or pipeline_config.model
         huggingface_config = model_config.huggingface_config
@@ -415,14 +516,16 @@ class InklingConfig(ArchConfigWithKVCache):
                 quantization_encoding, model_config.kv_cache.kv_cache_format
             ),
         )
+        spec = pipeline_config.speculative
+        mtp = parse_inkling_mtp_config(huggingface_config)
+        if spec is None or spec.speculative_method != "mtp":
+            mtp = None
         return cls(
             devices=device_refs,
             # bfloat16 even for NVFP4: FP4 covers only the routed experts.
             dtype=DType.bfloat16,
             kv_params=kv_params,
-            max_seq_len=cls.calculate_max_seq_len(
-                pipeline_config, huggingface_config
-            ),
+            max_seq_len=max_seq_len,
             text_config=InklingTextConfig.from_hf(
                 huggingface_config.text_config
             ),
@@ -430,6 +533,7 @@ class InklingConfig(ArchConfigWithKVCache):
                 huggingface_config.vision_config
             ),
             use_subgraphs=model_config.use_subgraphs,
+            mtp=mtp,
         )
 
     def finalize(

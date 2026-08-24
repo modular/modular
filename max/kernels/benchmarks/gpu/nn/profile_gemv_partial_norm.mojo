@@ -73,14 +73,14 @@ def _host_reference[
     var n_unnormed = n - n_normed
     var sumsq: Float64 = 0.0
     for i in range(n_normed):
-        var v = y_ref_ptr[i].cast[DType.float64]()
+        var v = y_ref_ptr[i].cast[.float64]()
         sumsq += v * v
     var mean_sq = sumsq / Float64(n_normed)
-    var norm_factor = Float64(1) / sqrt(mean_sq + eps.cast[DType.float64]())
+    var norm_factor = Float64(1) / sqrt(mean_sq + eps.cast[.float64]())
 
     for i in range(n_normed):
-        var v = y_ref_ptr[i].cast[DType.float64]()
-        var g = gamma_ptr[i].cast[DType.float64]()
+        var v = y_ref_ptr[i].cast[.float64]()
+        var g = gamma_ptr[i].cast[.float64]()
         normed_ref[i] = (v * norm_factor * g).cast[c_type]()
 
     for i in range(n_unnormed):
@@ -195,8 +195,8 @@ def main() raises:
         var eps = Float32(0.001)
 
         # Kernel-internal scratch: reused across iters by design.
-        var counter_buf = ctx.enqueue_create_buffer[DType.int32](1)
-        ctx.enqueue_memset(counter_buf, Scalar[DType.int32](0))
+        var counter_buf = ctx.enqueue_create_buffer[.int32](1)
+        ctx.enqueue_memset(counter_buf, Int32(0))
 
         ctx.synchronize()
 

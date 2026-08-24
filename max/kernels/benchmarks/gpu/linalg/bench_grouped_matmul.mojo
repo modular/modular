@@ -221,15 +221,9 @@ def bench_grouped_matmul[
     var b_size = num_experts * N * b_packed_K
 
     # Host allocations
-    var a_offsets_host_ptr = List(
-        length=num_active_experts + 1, fill=Scalar[DType.uint32](0)
-    )
-    var a_scale_offsets_ptr = List(
-        length=num_active_experts, fill=Scalar[DType.uint32](0)
-    )
-    var expert_ids_host_ptr = List(
-        length=num_active_experts, fill=Scalar[DType.int32](0)
-    )
+    var a_offsets_host_ptr = List(length=num_active_experts + 1, fill=UInt32(0))
+    var a_scale_offsets_ptr = List(length=num_active_experts, fill=UInt32(0))
+    var expert_ids_host_ptr = List(length=num_active_experts, fill=Int32(0))
 
     # Setup offsets and expert ids
     var a_scale_dim0 = 0
@@ -247,7 +241,7 @@ def bench_grouped_matmul[
         # float32 scale loads; the block-scaled (mxf8f6f4/nvfp4) path pads
         # ragged experts to SF_MN_GROUP_SIZE via `a_scale_offsets` instead
         # and has no such per-4-token constraint.
-        comptime if in_type == DType.float8_e4m3fn and scaling_kind_str == "1d2d":
+        comptime if in_type == .float8_e4m3fn and scaling_kind_str == "1d2d":
             comptime a_scale_alignment = 16 // size_of[DType.float32]()
             if num_tokens % a_scale_alignment != 0:
                 abort(
@@ -263,10 +257,10 @@ def bench_grouped_matmul[
     var a_dev_buffer = ctx.enqueue_create_buffer[a_type](a_size)
     var b_dev_buffer = ctx.enqueue_create_buffer[b_type](b_size)
     var c_dev_buffer = ctx.enqueue_create_buffer[c_type](c_size)
-    var a_offsets_dev_buffer = ctx.enqueue_create_buffer[DType.uint32](
+    var a_offsets_dev_buffer = ctx.enqueue_create_buffer[.uint32](
         num_active_experts + 1
     )
-    var expert_ids_dev_buffer = ctx.enqueue_create_buffer[DType.int32](
+    var expert_ids_dev_buffer = ctx.enqueue_create_buffer[.int32](
         num_active_experts
     )
 
@@ -397,12 +391,10 @@ def bench_grouped_matmul[
             ),
         ).as_unsafe_any_origin()
 
-        var expert_scales_dev_buffer = ctx.enqueue_create_buffer[DType.float32](
+        var expert_scales_dev_buffer = ctx.enqueue_create_buffer[.float32](
             num_experts
         )
-        var expert_scales_host_ptr = List(
-            length=num_experts, fill=Scalar[DType.float32](0)
-        )
+        var expert_scales_host_ptr = List(length=num_experts, fill=Float32(0))
         for i in range(num_experts):
             expert_scales_host_ptr[i] = 1.0 + Float32(i + 1) / Float32(
                 num_experts
@@ -498,7 +490,7 @@ def bench_grouped_matmul[
         # TMA unpack costs/saves in the matmul, without also varying the
         # dispatch tactic (mma_bn/cta_group/AB_swapped) between them.
         comptime assert (
-            a_type == DType.float8_e4m3fn
+            a_type == .float8_e4m3fn
         ), "mxf8f6f4 scaling kind requires float8_e4m3fn activations"
 
         var a_scale_offsets_dev_buffer = ctx.enqueue_create_buffer[
@@ -576,12 +568,10 @@ def bench_grouped_matmul[
             ),
         ).as_unsafe_any_origin()
 
-        var expert_scales_dev_buffer = ctx.enqueue_create_buffer[DType.float32](
+        var expert_scales_dev_buffer = ctx.enqueue_create_buffer[.float32](
             num_experts
         )
-        var expert_scales_host_ptr = List(
-            length=num_experts, fill=Scalar[DType.float32](0)
-        )
+        var expert_scales_host_ptr = List(length=num_experts, fill=Float32(0))
         for i in range(num_experts):
             expert_scales_host_ptr[i] = 1.0 + Float32(i + 1) / Float32(
                 num_experts
@@ -668,7 +658,7 @@ def bench_grouped_matmul[
         _ = expert_scales_dev_buffer^
         _ = expert_scales_host_ptr^
 
-    elif in_type == DType.float8_e4m3fn:
+    elif in_type == .float8_e4m3fn:
         comptime assert (
             scaling_kind_str == "1d2d"
         ), "Only support 1d2d scaling kind for float8_e4m3fn"
@@ -679,10 +669,10 @@ def bench_grouped_matmul[
         )
 
         # Scales device allocations
-        var a_scales_dev_buffer = ctx.enqueue_create_buffer[DType.float32](
+        var a_scales_dev_buffer = ctx.enqueue_create_buffer[.float32](
             a_scales_size
         )
-        var b_scales_dev_buffer = ctx.enqueue_create_buffer[DType.float32](
+        var b_scales_dev_buffer = ctx.enqueue_create_buffer[.float32](
             b_scales_size
         )
 
@@ -701,13 +691,13 @@ def bench_grouped_matmul[
             ),
         ).as_unsafe_any_origin()
 
-        init_vector_launch[DType.float32](
+        init_vector_launch[.float32](
             a_scales_dev_buffer,
             a_scales_size,
             init_type,
             ctx,
         )
-        init_vector_launch[DType.float32](
+        init_vector_launch[.float32](
             b_scales_dev_buffer,
             b_scales_size,
             init_type,
@@ -921,8 +911,8 @@ def string_to_list(string: String) raises -> List[Int]:
 
 
 def main() raises:
-    comptime in_type = get_defined_dtype["in_type", DType.bfloat16]()
-    comptime out_type = get_defined_dtype["out_type", DType.bfloat16]()
+    comptime in_type = get_defined_dtype["in_type", .bfloat16]()
+    comptime out_type = get_defined_dtype["out_type", .bfloat16]()
     # Defaults to `in_type` so every existing (same-dtype) config is
     # unaffected; W4A8 passes `-D b_in_type=uint8` explicitly.
     comptime b_in_type = get_defined_dtype["b_in_type", in_type]()

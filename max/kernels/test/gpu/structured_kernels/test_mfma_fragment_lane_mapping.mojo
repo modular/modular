@@ -47,7 +47,7 @@ from layout.tile_tensor import stack_allocation as tt_stack_allocation
 # also documented in `MhaMmaOp.ACC_ROW_OFFSETS_32x32`).
 # Per BASE TILE, each lane holds 16 fp32 arranged as 8 packed data[idx]
 # (.x, .y) entries, at rows:
-comptime ACC_ROW_OFFSETS_32x32 = SIMD[DType.int32, 16](
+comptime ACC_ROW_OFFSETS_32x32 = SIMD[.int32, 16](
     0, 1, 2, 3, 8, 9, 10, 11, 16, 17, 18, 19, 24, 25, 26, 27
 )
 # Plus +4 if lane >= 32. Col within tile is just (lane & 31).
@@ -144,7 +144,7 @@ def _fp8_a_k_for(lane: Int, elt: Int) -> Int:
 # Kernel: BF16 32x32x16 — uniform C value (sum-of-k validation)
 # ===========================================================================
 def kernel_bf16_32x32x16(
-    dump_ptr: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
+    dump_ptr: UnsafePointer[Float32, MutAnyOrigin],
 ):
     """Per-lane test of v_mfma_f32_32x32x16_bf16 with uniform output.
 
@@ -160,17 +160,17 @@ def kernel_bf16_32x32x16(
     var lid = Int(lane_id())
 
     # A: SIMD[bf16, 8] — all ones (every element of A is 1.0).
-    var a_frag = SIMD[DType.bfloat16, BF16_FRAG](1.0)
+    var a_frag = SIMD[.bfloat16, BF16_FRAG](1.0)
 
     # B: SIMD[bf16, 8] — element `elt` gets value k+1 where k is the
     # K-index this lane/elt owns. With the above mapping:
     #   b_frag[elt] = (lane // 32) * 8 + elt + 1
-    var b_frag = SIMD[DType.bfloat16, BF16_FRAG](0)
+    var b_frag = SIMD[.bfloat16, BF16_FRAG](0)
     for elt in range(BF16_FRAG):
         b_frag[elt] = BFloat16(_bf16_b_k_for(lid, elt) + 1)
 
     # C: SIMD[fp32, 16] — zero accumulator.
-    var c_frag = SIMD[DType.float32, C_FRAG](0.0)
+    var c_frag = SIMD[.float32, C_FRAG](0.0)
 
     gpu_mma(c_frag, a_frag, b_frag, c_frag)
 
@@ -183,7 +183,7 @@ def kernel_bf16_32x32x16(
 # Kernel: BF16 32x32x16 — non-uniform C (validates row/col fragment layout)
 # ===========================================================================
 def kernel_bf16_32x32x16_col(
-    dump_ptr: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
+    dump_ptr: UnsafePointer[Float32, MutAnyOrigin],
 ):
     """Stress per-lane (row, col) decomposition of the C fragment.
 
@@ -195,15 +195,15 @@ def kernel_bf16_32x32x16_col(
     """
     var lid = Int(lane_id())
 
-    var a_frag = SIMD[DType.bfloat16, BF16_FRAG](1.0)
+    var a_frag = SIMD[.bfloat16, BF16_FRAG](1.0)
 
     # B[k, n] = n. Each lane's per-elt n is constant in elt (= lane % 32).
-    var b_frag = SIMD[DType.bfloat16, BF16_FRAG](0)
+    var b_frag = SIMD[.bfloat16, BF16_FRAG](0)
     var n_val = BFloat16(_bf16_b_n_for(lid))
     for elt in range(BF16_FRAG):
         b_frag[elt] = n_val
 
-    var c_frag = SIMD[DType.float32, C_FRAG](0.0)
+    var c_frag = SIMD[.float32, C_FRAG](0.0)
     gpu_mma(c_frag, a_frag, b_frag, c_frag)
 
     for p in range(C_FRAG):
@@ -211,7 +211,7 @@ def kernel_bf16_32x32x16_col(
 
 
 def kernel_bf16_32x32x16_row(
-    dump_ptr: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
+    dump_ptr: UnsafePointer[Float32, MutAnyOrigin],
 ):
     """Stress per-lane row mapping by placing the M-index in A.
 
@@ -224,14 +224,14 @@ def kernel_bf16_32x32x16_row(
     var lid = Int(lane_id())
 
     # A[m, k] = m. Per-lane: m = lane % 32, constant across elts.
-    var a_frag = SIMD[DType.bfloat16, BF16_FRAG](0)
+    var a_frag = SIMD[.bfloat16, BF16_FRAG](0)
     var m_val = BFloat16(_bf16_a_m_for(lid))
     for elt in range(BF16_FRAG):
         a_frag[elt] = m_val
 
-    var b_frag = SIMD[DType.bfloat16, BF16_FRAG](1.0)
+    var b_frag = SIMD[.bfloat16, BF16_FRAG](1.0)
 
-    var c_frag = SIMD[DType.float32, C_FRAG](0.0)
+    var c_frag = SIMD[.float32, C_FRAG](0.0)
     gpu_mma(c_frag, a_frag, b_frag, c_frag)
 
     for p in range(C_FRAG):
@@ -242,7 +242,7 @@ def kernel_bf16_32x32x16_row(
 # Kernel: FP8 32x32x64 — non-uniform variants
 # ===========================================================================
 def kernel_fp8_32x32x64_col(
-    dump_ptr: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
+    dump_ptr: UnsafePointer[Float32, MutAnyOrigin],
 ):
     """FP8 analogue of `kernel_bf16_32x32x16_col`.
 
@@ -255,15 +255,15 @@ def kernel_fp8_32x32x64_col(
     """
     var lid = Int(lane_id())
 
-    var a_frag = SIMD[DType.float8_e4m3fn, FP8_FRAG](1.0)
+    var a_frag = SIMD[.float8_e4m3fn, FP8_FRAG](1.0)
 
-    var b_frag = SIMD[DType.float8_e4m3fn, FP8_FRAG](0)
+    var b_frag = SIMD[.float8_e4m3fn, FP8_FRAG](0)
     var n_val = Float32(_fp8_b_n_for(lid)) / 32.0
-    var n_fp8 = n_val.cast[DType.float8_e4m3fn]()
+    var n_fp8 = n_val.cast[.float8_e4m3fn]()
     for elt in range(FP8_FRAG):
         b_frag[elt] = n_fp8
 
-    var c_frag = SIMD[DType.float32, C_FRAG](0.0)
+    var c_frag = SIMD[.float32, C_FRAG](0.0)
     gpu_mma(c_frag, a_frag, b_frag, c_frag)
 
     for p in range(C_FRAG):
@@ -271,7 +271,7 @@ def kernel_fp8_32x32x64_col(
 
 
 def kernel_fp8_32x32x64_row(
-    dump_ptr: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
+    dump_ptr: UnsafePointer[Float32, MutAnyOrigin],
 ):
     """FP8 analogue of `kernel_bf16_32x32x16_row`. Tests row mapping.
 
@@ -280,15 +280,15 @@ def kernel_fp8_32x32x64_row(
     """
     var lid = Int(lane_id())
 
-    var a_frag = SIMD[DType.float8_e4m3fn, FP8_FRAG](0)
+    var a_frag = SIMD[.float8_e4m3fn, FP8_FRAG](0)
     var m_val = Float32(_fp8_a_m_for(lid)) / 32.0
-    var m_fp8 = m_val.cast[DType.float8_e4m3fn]()
+    var m_fp8 = m_val.cast[.float8_e4m3fn]()
     for elt in range(FP8_FRAG):
         a_frag[elt] = m_fp8
 
-    var b_frag = SIMD[DType.float8_e4m3fn, FP8_FRAG](1.0)
+    var b_frag = SIMD[.float8_e4m3fn, FP8_FRAG](1.0)
 
-    var c_frag = SIMD[DType.float32, C_FRAG](0.0)
+    var c_frag = SIMD[.float32, C_FRAG](0.0)
     gpu_mma(c_frag, a_frag, b_frag, c_frag)
 
     for p in range(C_FRAG):
@@ -299,7 +299,7 @@ def kernel_fp8_32x32x64_row(
 # Kernel: BF16 32x32x16 swap_a_b
 # ===========================================================================
 def kernel_bf16_32x32x16_swap(
-    dump_ptr: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
+    dump_ptr: UnsafePointer[Float32, MutAnyOrigin],
 ):
     """Emulates swap_a_b by calling gpu_mma with A and B swapped.
 
@@ -319,12 +319,12 @@ def kernel_bf16_32x32x16_swap(
     # Now we want B @ A semantically; B=ones, A=k-pattern.
     # In the swap call, original B operand (passed first) is the new "A
     # role". So make orig_a = k-pattern and orig_b = 1.
-    var a_frag = SIMD[DType.bfloat16, BF16_FRAG](0)
+    var a_frag = SIMD[.bfloat16, BF16_FRAG](0)
     for elt in range(BF16_FRAG):
         a_frag[elt] = BFloat16(_bf16_a_k_for(lid, elt) + 1)
-    var b_frag = SIMD[DType.bfloat16, BF16_FRAG](1.0)
+    var b_frag = SIMD[.bfloat16, BF16_FRAG](1.0)
 
-    var c_frag = SIMD[DType.float32, C_FRAG](0.0)
+    var c_frag = SIMD[.float32, C_FRAG](0.0)
 
     # Swapped argument order: gpu_mma(c, b, a, c).
     gpu_mma(c_frag, b_frag, a_frag, c_frag)
@@ -337,7 +337,7 @@ def kernel_bf16_32x32x16_swap(
 # Kernel: FP8 32x32x64
 # ===========================================================================
 def kernel_fp8_32x32x64(
-    dump_ptr: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
+    dump_ptr: UnsafePointer[Float32, MutAnyOrigin],
 ):
     """Per-lane test of v_mfma_scale_f32_32x32x64_f8f6f4 (e4m3fn).
 
@@ -353,16 +353,16 @@ def kernel_fp8_32x32x64(
     var lid = Int(lane_id())
 
     # A: SIMD[fp8, 32] — all ones.
-    var a_frag = SIMD[DType.float8_e4m3fn, FP8_FRAG](1.0)
+    var a_frag = SIMD[.float8_e4m3fn, FP8_FRAG](1.0)
 
     # B: SIMD[fp8, 32] — element elt gets value ((k % 8) + 1) / 8.
-    var b_frag = SIMD[DType.float8_e4m3fn, FP8_FRAG](0)
+    var b_frag = SIMD[.float8_e4m3fn, FP8_FRAG](0)
     for elt in range(FP8_FRAG):
         var k = _fp8_b_k_for(lid, elt)
         var val = Float32((k % 8) + 1) * 0.125
-        b_frag[elt] = val.cast[DType.float8_e4m3fn]()
+        b_frag[elt] = val.cast[.float8_e4m3fn]()
 
-    var c_frag = SIMD[DType.float32, C_FRAG](0.0)
+    var c_frag = SIMD[.float32, C_FRAG](0.0)
 
     gpu_mma(c_frag, a_frag, b_frag, c_frag)
 
@@ -374,21 +374,21 @@ def kernel_fp8_32x32x64(
 # Kernel: FP8 32x32x64 swap_a_b
 # ===========================================================================
 def kernel_fp8_32x32x64_swap(
-    dump_ptr: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
+    dump_ptr: UnsafePointer[Float32, MutAnyOrigin],
 ):
     """Emulates swap_a_b for FP8 32x32x64. Same idea as BF16 swap test."""
     var lid = Int(lane_id())
 
     # orig_a = k-pattern, orig_b = ones; swap brings k-pattern into the
     # B-operand slot.
-    var a_frag = SIMD[DType.float8_e4m3fn, FP8_FRAG](0)
+    var a_frag = SIMD[.float8_e4m3fn, FP8_FRAG](0)
     for elt in range(FP8_FRAG):
         var k = _fp8_a_k_for(lid, elt)
         var val = Float32((k % 8) + 1) * 0.125
-        a_frag[elt] = val.cast[DType.float8_e4m3fn]()
-    var b_frag = SIMD[DType.float8_e4m3fn, FP8_FRAG](1.0)
+        a_frag[elt] = val.cast[.float8_e4m3fn]()
+    var b_frag = SIMD[.float8_e4m3fn, FP8_FRAG](1.0)
 
-    var c_frag = SIMD[DType.float32, C_FRAG](0.0)
+    var c_frag = SIMD[.float32, C_FRAG](0.0)
 
     gpu_mma(c_frag, b_frag, a_frag, c_frag)
 
@@ -406,8 +406,8 @@ def kernel_fp8_32x32x64_swap(
 def test_bf16_32x32x16(ctx: DeviceContext) raises:
     print("--- BF16 32x32x16 (gpu_mma direct) ---")
 
-    var dev_dump = ctx.enqueue_create_buffer[DType.float32](C_DUMP_SIZE)
-    var host_dump = ctx.enqueue_create_host_buffer[DType.float32](C_DUMP_SIZE)
+    var dev_dump = ctx.enqueue_create_buffer[.float32](C_DUMP_SIZE)
+    var host_dump = ctx.enqueue_create_host_buffer[.float32](C_DUMP_SIZE)
     # Zero-init dev buffer so unwritten dump entries don't carry old state.
     with dev_dump.map_to_host() as init_h:
         for i in range(C_DUMP_SIZE):
@@ -465,8 +465,8 @@ def test_bf16_32x32x16_col(ctx: DeviceContext) raises:
     """Validates per-lane C-fragment col mapping for BF16 32x32x16."""
     print("--- BF16 32x32x16 col-pattern (validates fragment col mapping) ---")
 
-    var dev_dump = ctx.enqueue_create_buffer[DType.float32](C_DUMP_SIZE)
-    var host_dump = ctx.enqueue_create_host_buffer[DType.float32](C_DUMP_SIZE)
+    var dev_dump = ctx.enqueue_create_buffer[.float32](C_DUMP_SIZE)
+    var host_dump = ctx.enqueue_create_host_buffer[.float32](C_DUMP_SIZE)
     with dev_dump.map_to_host() as init_h:
         for i in range(C_DUMP_SIZE):
             init_h[i] = Float32(0)
@@ -520,8 +520,8 @@ def test_bf16_32x32x16_row(ctx: DeviceContext) raises:
     """Validates per-lane C-fragment row mapping for BF16 32x32x16."""
     print("--- BF16 32x32x16 row-pattern (validates fragment row mapping) ---")
 
-    var dev_dump = ctx.enqueue_create_buffer[DType.float32](C_DUMP_SIZE)
-    var host_dump = ctx.enqueue_create_host_buffer[DType.float32](C_DUMP_SIZE)
+    var dev_dump = ctx.enqueue_create_buffer[.float32](C_DUMP_SIZE)
+    var host_dump = ctx.enqueue_create_host_buffer[.float32](C_DUMP_SIZE)
     with dev_dump.map_to_host() as init_h:
         for i in range(C_DUMP_SIZE):
             init_h[i] = Float32(0)
@@ -578,15 +578,15 @@ def _fp8_quantize(x: Float32) -> Float32:
     Used by the FP8 col/row validators to compute expected values that
     match what the MFMA actually sees (FP8-quantized inputs).
     """
-    return Float32(x.cast[DType.float8_e4m3fn]())
+    return Float32(x.cast[.float8_e4m3fn]())
 
 
 def test_fp8_32x32x64_col(ctx: DeviceContext) raises:
     """Validates per-lane C-fragment col mapping for FP8 32x32x64."""
     print("--- FP8 32x32x64 col-pattern (KEY DATAPOINT for fragment col) ---")
 
-    var dev_dump = ctx.enqueue_create_buffer[DType.float32](C_DUMP_SIZE)
-    var host_dump = ctx.enqueue_create_host_buffer[DType.float32](C_DUMP_SIZE)
+    var dev_dump = ctx.enqueue_create_buffer[.float32](C_DUMP_SIZE)
+    var host_dump = ctx.enqueue_create_host_buffer[.float32](C_DUMP_SIZE)
     with dev_dump.map_to_host() as init_h:
         for i in range(C_DUMP_SIZE):
             init_h[i] = Float32(0)
@@ -644,8 +644,8 @@ def test_fp8_32x32x64_row(ctx: DeviceContext) raises:
     """Validates per-lane C-fragment row mapping for FP8 32x32x64."""
     print("--- FP8 32x32x64 row-pattern (KEY DATAPOINT for fragment row) ---")
 
-    var dev_dump = ctx.enqueue_create_buffer[DType.float32](C_DUMP_SIZE)
-    var host_dump = ctx.enqueue_create_host_buffer[DType.float32](C_DUMP_SIZE)
+    var dev_dump = ctx.enqueue_create_buffer[.float32](C_DUMP_SIZE)
+    var host_dump = ctx.enqueue_create_host_buffer[.float32](C_DUMP_SIZE)
     with dev_dump.map_to_host() as init_h:
         for i in range(C_DUMP_SIZE):
             init_h[i] = Float32(0)
@@ -700,8 +700,8 @@ def test_fp8_32x32x64_row(ctx: DeviceContext) raises:
 def test_bf16_32x32x16_swap(ctx: DeviceContext) raises:
     print("--- BF16 32x32x16 swap_a_b ---")
 
-    var dev_dump = ctx.enqueue_create_buffer[DType.float32](C_DUMP_SIZE)
-    var host_dump = ctx.enqueue_create_host_buffer[DType.float32](C_DUMP_SIZE)
+    var dev_dump = ctx.enqueue_create_buffer[.float32](C_DUMP_SIZE)
+    var host_dump = ctx.enqueue_create_host_buffer[.float32](C_DUMP_SIZE)
     with dev_dump.map_to_host() as init_h:
         for i in range(C_DUMP_SIZE):
             init_h[i] = Float32(0)
@@ -753,8 +753,8 @@ def test_bf16_32x32x16_swap(ctx: DeviceContext) raises:
 def test_fp8_32x32x64(ctx: DeviceContext) raises:
     print("--- FP8 32x32x64 (gpu_mma direct) ---")
 
-    var dev_dump = ctx.enqueue_create_buffer[DType.float32](C_DUMP_SIZE)
-    var host_dump = ctx.enqueue_create_host_buffer[DType.float32](C_DUMP_SIZE)
+    var dev_dump = ctx.enqueue_create_buffer[.float32](C_DUMP_SIZE)
+    var host_dump = ctx.enqueue_create_host_buffer[.float32](C_DUMP_SIZE)
     with dev_dump.map_to_host() as init_h:
         for i in range(C_DUMP_SIZE):
             init_h[i] = Float32(0)
@@ -811,8 +811,8 @@ def test_fp8_32x32x64(ctx: DeviceContext) raises:
 def test_fp8_32x32x64_swap(ctx: DeviceContext) raises:
     print("--- FP8 32x32x64 swap_a_b ---")
 
-    var dev_dump = ctx.enqueue_create_buffer[DType.float32](C_DUMP_SIZE)
-    var host_dump = ctx.enqueue_create_host_buffer[DType.float32](C_DUMP_SIZE)
+    var dev_dump = ctx.enqueue_create_buffer[.float32](C_DUMP_SIZE)
+    var host_dump = ctx.enqueue_create_host_buffer[.float32](C_DUMP_SIZE)
     with dev_dump.map_to_host() as init_h:
         for i in range(C_DUMP_SIZE):
             init_h[i] = Float32(0)

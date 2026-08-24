@@ -82,9 +82,7 @@ def reduce_add_via_shared_cas(
     local-address-space `cmpxchg` path."""
     # `Int` is not device-passable; widen the fixed-width arg.
     var len = Int(len_dev)
-    var shared = unsafe_stack_allocation[
-        1, Float32, address_space=AddressSpace.SHARED
-    ]()
+    var shared = unsafe_stack_allocation[1, Float32, address_space=.SHARED]()
 
     if thread_idx.x == 0:
         shared[unsafe_offset=0] = 0

@@ -94,10 +94,15 @@ class LFM2Config(Llama3Config):
         pipeline_config: Any,
         huggingface_config: AutoConfig,
         model_config: Any = None,
+        *,
+        max_seq_len: int,
     ) -> LFM2Config:
         cls._ensure_optional_rope_fields(huggingface_config)
         cfg = super().initialize_from_config(
-            pipeline_config, huggingface_config, model_config
+            pipeline_config,
+            huggingface_config,
+            model_config,
+            max_seq_len=max_seq_len,
         )
         cfg.layer_types = list(getattr(huggingface_config, "layer_types", []))
         cfg.conv_L_cache = int(getattr(huggingface_config, "conv_L_cache", 3))

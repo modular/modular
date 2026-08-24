@@ -56,16 +56,14 @@ def _rand_operand_byte[lane_bytes: Int]() -> UInt8:
         return UInt8(Int(random_ui64(0, 255)))
     else:
         var f = Float32(Int(random_ui64(0, 2000))) / 1000.0 - 1.0
-        return bitcast[DType.uint8, 1](
-            SIMD[DType.float8_e4m3fn, 1](f.cast[DType.float8_e4m3fn]())
-        )[0]
+        return bitcast[.uint8, 1](Float8_e4m3fn(f.cast[.float8_e4m3fn]()))[0]
 
 
 def _assert_epilogue_arm(
-    epi: UnsafePointer[Scalar[DType.float32], _],
-    reduced: UnsafePointer[Scalar[DType.float32], _],
-    fire: UnsafePointer[Scalar[DType.int32], _],
-    c: UnsafePointer[Scalar[DType.float32], _],
+    epi: UnsafePointer[Float32, _],
+    reduced: UnsafePointer[Float32, _],
+    fire: UnsafePointer[Int32, _],
+    c: UnsafePointer[Float32, _],
     saw_wide: Int,
     n_elems: Int,
     arm: String,
@@ -153,18 +151,18 @@ def test_split_k_epilogue[
         "]",
     )
 
-    var a_h = ctx.enqueue_create_host_buffer[DType.uint8](M_static * K_BYTES)
-    var b_h = ctx.enqueue_create_host_buffer[DType.uint8](N_static * K_BYTES)
-    var sfa_h = ctx.enqueue_create_host_buffer[DType.float8_e8m0fnu](
+    var a_h = ctx.enqueue_create_host_buffer[.uint8](M_static * K_BYTES)
+    var b_h = ctx.enqueue_create_host_buffer[.uint8](N_static * K_BYTES)
+    var sfa_h = ctx.enqueue_create_host_buffer[.float8_e8m0fnu](
         M_static * K_SCALES
     )
-    var sfb_h = ctx.enqueue_create_host_buffer[DType.float8_e8m0fnu](
+    var sfb_h = ctx.enqueue_create_host_buffer[.float8_e8m0fnu](
         N_static * K_SCALES
     )
-    var epi_h = ctx.enqueue_create_host_buffer[DType.float32](N_ELEMS)
-    var fire_h = ctx.enqueue_create_host_buffer[DType.int32](N_ELEMS)
-    var wide_h = ctx.enqueue_create_host_buffer[DType.int32](1)
-    var c_init_h = ctx.enqueue_create_host_buffer[DType.float32](N_ELEMS)
+    var epi_h = ctx.enqueue_create_host_buffer[.float32](N_ELEMS)
+    var fire_h = ctx.enqueue_create_host_buffer[.int32](N_ELEMS)
+    var wide_h = ctx.enqueue_create_host_buffer[.int32](1)
+    var c_init_h = ctx.enqueue_create_host_buffer[.float32](N_ELEMS)
     ctx.synchronize()
 
     for i in range(M_static * K_BYTES):
@@ -172,32 +170,24 @@ def test_split_k_epilogue[
     for i in range(N_static * K_BYTES):
         b_h[i] = _rand_operand_byte[lane_bytes]()
     for i in range(M_static * K_SCALES):
-        sfa_h[i] = bitcast[DType.float8_e8m0fnu](
-            UInt8(Int(random_ui64(124, 130)))
-        )
+        sfa_h[i] = bitcast[.float8_e8m0fnu](UInt8(Int(random_ui64(124, 130))))
     for i in range(N_static * K_SCALES):
-        sfb_h[i] = bitcast[DType.float8_e8m0fnu](
-            UInt8(Int(random_ui64(124, 130)))
-        )
+        sfb_h[i] = bitcast[.float8_e8m0fnu](UInt8(Int(random_ui64(124, 130))))
     for i in range(N_ELEMS):
         epi_h[i] = Float32(0)
         fire_h[i] = Int32(0)
         c_init_h[i] = SENTINEL
     wide_h[0] = Int32(0)
 
-    var a_d = ctx.enqueue_create_buffer[DType.uint8](M_static * K_BYTES)
-    var b_d = ctx.enqueue_create_buffer[DType.uint8](N_static * K_BYTES)
-    var sfa_d = ctx.enqueue_create_buffer[DType.float8_e8m0fnu](
-        M_static * K_SCALES
-    )
-    var sfb_d = ctx.enqueue_create_buffer[DType.float8_e8m0fnu](
-        N_static * K_SCALES
-    )
-    var c_d = ctx.enqueue_create_buffer[DType.float32](N_ELEMS)
-    var reduced_d = ctx.enqueue_create_buffer[DType.float32](N_ELEMS)
-    var epi_d = ctx.enqueue_create_buffer[DType.float32](N_ELEMS)
-    var fire_d = ctx.enqueue_create_buffer[DType.int32](N_ELEMS)
-    var wide_d = ctx.enqueue_create_buffer[DType.int32](1)
+    var a_d = ctx.enqueue_create_buffer[.uint8](M_static * K_BYTES)
+    var b_d = ctx.enqueue_create_buffer[.uint8](N_static * K_BYTES)
+    var sfa_d = ctx.enqueue_create_buffer[.float8_e8m0fnu](M_static * K_SCALES)
+    var sfb_d = ctx.enqueue_create_buffer[.float8_e8m0fnu](N_static * K_SCALES)
+    var c_d = ctx.enqueue_create_buffer[.float32](N_ELEMS)
+    var reduced_d = ctx.enqueue_create_buffer[.float32](N_ELEMS)
+    var epi_d = ctx.enqueue_create_buffer[.float32](N_ELEMS)
+    var fire_d = ctx.enqueue_create_buffer[.int32](N_ELEMS)
+    var wide_d = ctx.enqueue_create_buffer[.int32](1)
     ctx.enqueue_copy(a_d, a_h)
     ctx.enqueue_copy(b_d, b_h)
     ctx.enqueue_copy(sfa_d, sfa_h)
@@ -229,14 +219,14 @@ def test_split_k_epilogue[
             wide_ptr[0] = Int32(1)
         var base = idx[0] * N_static + idx[1]
         comptime for w in range(width):
-            epi_ptr[base + w] = val[w].cast[DType.float32]() * 2.0 + 1.0
+            epi_ptr[base + w] = val[w].cast[.float32]() * 2.0 + 1.0
             _ = Atomic[Int32].fetch_add(fire_ptr + base + w, Int32(1))
 
-    var c_h = ctx.enqueue_create_host_buffer[DType.float32](N_ELEMS)
-    var reduced_h = ctx.enqueue_create_host_buffer[DType.float32](N_ELEMS)
-    var epi_out_h = ctx.enqueue_create_host_buffer[DType.float32](N_ELEMS)
-    var fire_out_h = ctx.enqueue_create_host_buffer[DType.int32](N_ELEMS)
-    var wide_out_h = ctx.enqueue_create_host_buffer[DType.int32](1)
+    var c_h = ctx.enqueue_create_host_buffer[.float32](N_ELEMS)
+    var reduced_h = ctx.enqueue_create_host_buffer[.float32](N_ELEMS)
+    var epi_out_h = ctx.enqueue_create_host_buffer[.float32](N_ELEMS)
+    var fire_out_h = ctx.enqueue_create_host_buffer[.int32](N_ELEMS)
+    var wide_out_h = ctx.enqueue_create_host_buffer[.int32](1)
 
     # Direct launch. The plain arm fixes `num_splits`, so it reduces in the
     # same order as the epilogue arm and the value check below is exact.
@@ -355,12 +345,12 @@ def test_dispatch_workspace_cap[
         K_static,
     )
 
-    var a_h = ctx.enqueue_create_host_buffer[DType.uint8](M_static * K_BYTES)
-    var b_h = ctx.enqueue_create_host_buffer[DType.uint8](N_static * K_BYTES)
-    var sf_h = ctx.enqueue_create_host_buffer[DType.float8_e8m0fnu](
+    var a_h = ctx.enqueue_create_host_buffer[.uint8](M_static * K_BYTES)
+    var b_h = ctx.enqueue_create_host_buffer[.uint8](N_static * K_BYTES)
+    var sf_h = ctx.enqueue_create_host_buffer[.float8_e8m0fnu](
         max(M_static, N_static) * K_SCALES
     )
-    var wide_h = ctx.enqueue_create_host_buffer[DType.int32](1)
+    var wide_h = ctx.enqueue_create_host_buffer[.int32](1)
     ctx.synchronize()
 
     for i in range(M_static * K_BYTES):
@@ -368,20 +358,16 @@ def test_dispatch_workspace_cap[
     for i in range(N_static * K_BYTES):
         b_h[i] = _rand_operand_byte[lane_bytes]()
     for i in range(max(M_static, N_static) * K_SCALES):
-        sf_h[i] = bitcast[DType.float8_e8m0fnu](UInt8(127))
+        sf_h[i] = bitcast[.float8_e8m0fnu](UInt8(127))
     wide_h[0] = Int32(0)
 
-    var a_d = ctx.enqueue_create_buffer[DType.uint8](M_static * K_BYTES)
-    var b_d = ctx.enqueue_create_buffer[DType.uint8](N_static * K_BYTES)
-    var sfa_d = ctx.enqueue_create_buffer[DType.float8_e8m0fnu](
-        M_static * K_SCALES
-    )
-    var sfb_d = ctx.enqueue_create_buffer[DType.float8_e8m0fnu](
-        N_static * K_SCALES
-    )
-    var c_d = ctx.enqueue_create_buffer[DType.float32](M_static * N_static)
-    var seen_d = ctx.enqueue_create_buffer[DType.int32](1)
-    var wide_d = ctx.enqueue_create_buffer[DType.int32](1)
+    var a_d = ctx.enqueue_create_buffer[.uint8](M_static * K_BYTES)
+    var b_d = ctx.enqueue_create_buffer[.uint8](N_static * K_BYTES)
+    var sfa_d = ctx.enqueue_create_buffer[.float8_e8m0fnu](M_static * K_SCALES)
+    var sfb_d = ctx.enqueue_create_buffer[.float8_e8m0fnu](N_static * K_SCALES)
+    var c_d = ctx.enqueue_create_buffer[.float32](M_static * N_static)
+    var seen_d = ctx.enqueue_create_buffer[.int32](1)
+    var wide_d = ctx.enqueue_create_buffer[.int32](1)
     ctx.enqueue_copy(a_d, a_h)
     ctx.enqueue_copy(b_d, b_h)
     ctx.enqueue_copy(sfa_d, sf_h)
@@ -416,8 +402,8 @@ def test_dispatch_workspace_cap[
         c_tt, a_tt, b_tt, sfa_tt, sfb_tt, ctx
     )
 
-    var wide_out_h = ctx.enqueue_create_host_buffer[DType.int32](1)
-    var seen_out_h = ctx.enqueue_create_host_buffer[DType.int32](1)
+    var wide_out_h = ctx.enqueue_create_host_buffer[.int32](1)
+    var seen_out_h = ctx.enqueue_create_host_buffer[.int32](1)
     ctx.enqueue_copy(wide_out_h, wide_d)
     ctx.enqueue_copy(seen_out_h, seen_d)
     ctx.synchronize()

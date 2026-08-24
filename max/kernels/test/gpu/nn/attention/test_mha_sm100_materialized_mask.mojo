@@ -165,17 +165,17 @@ def execute_materialized_mask_test(ctx: DeviceContext) raises:
     seed(0x9F3A)
 
     # --- Row offsets ---
-    var input_row_offsets = ctx.enqueue_create_host_buffer[DType.uint32](
+    var input_row_offsets = ctx.enqueue_create_host_buffer[.uint32](
         batch_size + 1
     )
     input_row_offsets[0] = 0
     input_row_offsets[1] = UInt32(valid_length)
-    var input_row_offsets_dev = ctx.enqueue_create_buffer[DType.uint32](
+    var input_row_offsets_dev = ctx.enqueue_create_buffer[.uint32](
         batch_size + 1
     )
     ctx.enqueue_copy(input_row_offsets_dev, input_row_offsets)
     var input_row_offsets_lt = LayoutTensor[
-        mut=False, DType.uint32, row_offsets_layout
+        mut=False, .uint32, row_offsets_layout
     ](
         input_row_offsets_dev,
         RuntimeLayout[row_offsets_layout].row_major(
@@ -236,7 +236,7 @@ def execute_materialized_mask_test(ctx: DeviceContext) raises:
     # --- Lookup table ---
     var full_pages = ceildiv(num_keys, page_size)
     var lut_cols = padded_lut_cols(full_pages)
-    var paged_lut_host = ctx.enqueue_create_host_buffer[DType.uint32](
+    var paged_lut_host = ctx.enqueue_create_host_buffer[.uint32](
         batch_size * lut_cols
     )
     var lut_set = Set[Int]()
@@ -248,24 +248,22 @@ def execute_materialized_mask_test(ctx: DeviceContext) raises:
         paged_lut_host[blk] = UInt32(randval)
 
     # --- Cache lengths ---
-    var cache_lengths_host = ctx.enqueue_create_host_buffer[DType.uint32](
-        batch_size
-    )
+    var cache_lengths_host = ctx.enqueue_create_host_buffer[.uint32](batch_size)
     cache_lengths_host[0] = UInt32(cache_length)
-    var cache_lengths_dev = ctx.enqueue_create_buffer[DType.uint32](batch_size)
+    var cache_lengths_dev = ctx.enqueue_create_buffer[.uint32](batch_size)
     ctx.enqueue_copy(cache_lengths_dev, cache_lengths_host)
     var cache_lengths_lt = LayoutTensor[
-        mut=False, DType.uint32, cache_lengths_layout
+        mut=False, .uint32, cache_lengths_layout
     ](
         cache_lengths_dev,
         RuntimeLayout[cache_lengths_layout].row_major(IndexList[1](batch_size)),
     )
 
-    var paged_lut_dev = ctx.enqueue_create_buffer[DType.uint32](
+    var paged_lut_dev = ctx.enqueue_create_buffer[.uint32](
         batch_size * lut_cols
     )
     ctx.enqueue_copy(paged_lut_dev, paged_lut_host)
-    var paged_lut_lt = LayoutTensor[mut=False, DType.uint32, paged_lut_layout](
+    var paged_lut_lt = LayoutTensor[mut=False, .uint32, paged_lut_layout](
         paged_lut_dev,
         RuntimeLayout[paged_lut_layout].row_major(
             IndexList[2](batch_size, lut_cols)
@@ -350,8 +348,8 @@ def execute_materialized_mask_test(ctx: DeviceContext) raises:
         for h in range(num_q_heads):
             for d in range(head_size):
                 var flat = (i * num_q_heads + h) * head_size + d
-                var a = test_out_host[flat].cast[DType.float32]()
-                var expected = ref_out_host[flat].cast[DType.float32]()
+                var a = test_out_host[flat].cast[.float32]()
+                var expected = ref_out_host[flat].cast[.float32]()
                 var diff = abs(a - expected)
                 if diff > max_abs_diff:
                     max_abs_diff = diff

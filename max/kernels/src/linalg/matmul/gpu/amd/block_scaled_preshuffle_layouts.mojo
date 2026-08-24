@@ -332,12 +332,12 @@ struct Shuffler[E: Int]:
     # ---- Wrapped TileTensor types — what the preshuffle functions return ----
     comptime BTileTensor[N: Int, K_BYTES: Int] = TileTensor[
         mut=True,
-        DType.uint8,
+        .uint8,
         type_of(Self.b_5d_grouped_layout[N=N, K_BYTES=K_BYTES]),
         MutAnyOrigin,
     ]
 
-    # Scale-buffer callers use a plain `TileTensor[DType.uint8, ...]` or a
+    # Scale-buffer callers use a plain `TileTensor[.uint8, ...]` or a
     # raw `HostBuffer[DType.uint8]` — the byte layout is fully expressed by
     # `scale_4d_byte_off`, no type-system marker needed.
 
@@ -377,8 +377,8 @@ struct Shuffler[E: Int]:
         RawLayout: TensorLayout,
         DstLayout: TensorLayout,
     ](
-        raw: TileTensor[DType.uint8, RawLayout, ImmutAnyOrigin],
-        dst: TileTensor[DType.uint8, DstLayout, MutAnyOrigin],
+        raw: TileTensor[.uint8, RawLayout, ImmutAnyOrigin],
+        dst: TileTensor[.uint8, DstLayout, MutAnyOrigin],
     ):
         """LDS-staged per-tile B 5D preshuffle on AMD GPU.
 
@@ -431,7 +431,7 @@ struct Shuffler[E: Int]:
         ).vectorize[1, 1, Self.MFMA_LANE_BYTES]()
 
         # LDS staging: 16 NLane × 4 KLane atoms in their literal slot.
-        var smem = stack_allocation[DType.uint8, AddressSpace.SHARED](
+        var smem = stack_allocation[DType.uint8, address_space=.SHARED](
             row_major[Self.MFMA_MN_LANES, Self.MFMA_K_BYTES]()
         )
         var smem_atoms = smem.vectorize[1, Self.MFMA_LANE_BYTES]()
@@ -475,8 +475,8 @@ struct Shuffler[E: Int]:
         K_BYTES: Int,
         lane_bytes: Int,
     ](
-        raw: UnsafePointer[Scalar[DType.uint8], ImmutAnyOrigin],
-        dst: UnsafePointer[Scalar[DType.uint8], MutAnyOrigin],
+        raw: UnsafePointer[UInt8, ImmutAnyOrigin],
+        dst: UnsafePointer[UInt8, MutAnyOrigin],
         num_frags: Int32,
     ):
         """Scatters each lane fragment into its planes.
@@ -520,12 +520,8 @@ struct Shuffler[E: Int]:
         K_BYTES: Int,
         lane_bytes: Int,
     ](
-        raw: TileTensor[
-            mut=False, DType.uint8, address_space=AddressSpace.GENERIC, ...
-        ],
-        dst: TileTensor[
-            mut=True, DType.uint8, address_space=AddressSpace.GENERIC, ...
-        ],
+        raw: TileTensor[mut=False, .uint8, address_space=.GENERIC, ...],
+        dst: TileTensor[mut=True, .uint8, address_space=.GENERIC, ...],
         ctx: DeviceContext,
     ) raises:
         """Launches the plane-split B preshuffle.
@@ -569,12 +565,8 @@ struct Shuffler[E: Int]:
         N: Int,
         K_BYTES: Int,
     ](
-        raw: TileTensor[
-            mut=False, DType.uint8, address_space=AddressSpace.GENERIC, ...
-        ],
-        dst: TileTensor[
-            mut=True, DType.uint8, address_space=AddressSpace.GENERIC, ...
-        ],
+        raw: TileTensor[mut=False, .uint8, address_space=.GENERIC, ...],
+        dst: TileTensor[mut=True, .uint8, address_space=.GENERIC, ...],
         ctx: DeviceContext,
     ) raises:
         """Launch the GPU MXFP4 B 5D preshuffle.
@@ -629,8 +621,8 @@ struct Shuffler[E: Int]:
         K_SCALES: Int,
         SrcLayout: TensorLayout,
     ](
-        src: TileTensor[DType.uint8, SrcLayout, MutAnyOrigin],
-        mut dst: HostBuffer[DType.uint8],
+        src: TileTensor[.uint8, SrcLayout, MutAnyOrigin],
+        mut dst: HostBuffer[.uint8],
     ):
         # shuffles the scale layout on CPU, and pads the layout
         # to align the scales with the atom
@@ -683,9 +675,9 @@ struct Shuffler[E: Int]:
         DstLayout: TensorLayout,
         AOffsetsLayout: TensorLayout,
     ](
-        sfa_raw: TileTensor[DType.uint8, SrcLayout, ImmutAnyOrigin],
-        sfa_pre: TileTensor[mut=True, DType.uint8, DstLayout, MutAnyOrigin],
-        a_offsets: TileTensor[DType.uint32, AOffsetsLayout, ImmutAnyOrigin],
+        sfa_raw: TileTensor[.uint8, SrcLayout, ImmutAnyOrigin],
+        sfa_pre: TileTensor[mut=True, .uint8, DstLayout, MutAnyOrigin],
+        a_offsets: TileTensor[.uint32, AOffsetsLayout, ImmutAnyOrigin],
         num_active_experts: Int32,
         max_padded_M: Int32,
         total_wg: Int32,
@@ -763,7 +755,7 @@ struct Shuffler[E: Int]:
                 # OOB rows past num_tokens stay zero in the cell (= the
                 # last partial m_block's pad rows). Higher m_blocks are
                 # not iterated at all.
-                var cell_bytes = SIMD[DType.uint8, 4](0)
+                var cell_bytes = SIMD[.uint8, 4](0)
 
                 comptime for k_pack in range(Self.S_K_PACK):
                     comptime for mn_pack in range(Self.S_MN_PACK):
@@ -777,10 +769,8 @@ struct Shuffler[E: Int]:
                 var cell_byte_off = Self.scale_4d_slot_byte_off[
                     K_SCALES=K_SCALES, packed_mode=True
                 ](expert_slot, cell_mn_base, cell_k_base, _max_padded_M)
-                var dst_ptr = (sfa_pre.ptr + cell_byte_off).bitcast[
-                    Scalar[DType.int32]
-                ]()
-                dst_ptr[0] = bitcast[DType.int32, 1](cell_bytes)[0]
+                var dst_ptr = (sfa_pre.ptr + cell_byte_off).bitcast[Int32]()
+                dst_ptr[0] = bitcast[.int32, 1](cell_bytes)[0]
 
                 target_tile += _total_wg
 
@@ -794,25 +784,13 @@ struct Shuffler[E: Int]:
         AOffsetsLayout: TensorLayout,
     ](
         sfa_raw: TileTensor[
-            mut=False,
-            DType.uint8,
-            SfaRawLayout,
-            address_space=AddressSpace.GENERIC,
-            ...,
+            mut=False, .uint8, SfaRawLayout, address_space=.GENERIC, ...
         ],
         sfa_pre: TileTensor[
-            mut=True,
-            DType.uint8,
-            SfaPreLayout,
-            address_space=AddressSpace.GENERIC,
-            ...,
+            mut=True, .uint8, SfaPreLayout, address_space=.GENERIC, ...
         ],
         a_offsets: TileTensor[
-            mut=False,
-            DType.uint32,
-            AOffsetsLayout,
-            address_space=AddressSpace.GENERIC,
-            ...,
+            mut=False, .uint32, AOffsetsLayout, address_space=.GENERIC, ...
         ],
         num_active_experts: Int,
         max_num_tokens_per_expert: Int,

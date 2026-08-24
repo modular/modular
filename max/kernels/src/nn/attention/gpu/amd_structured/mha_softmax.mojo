@@ -48,7 +48,7 @@ from structured_kernels.amd_tile_io import RegTile
 # ===----------------------------------------------------------------------=== #
 
 
-struct OnlineSoftmax[att_dtype: DType = DType.float32](ImplicitlyCopyable):
+struct OnlineSoftmax[att_dtype: DType = .float32](ImplicitlyCopyable):
     """Online softmax row-state bundle for `MhaPrefillV2`.
 
     Parametrized on `att_dtype`: the dtype of the `att_block`
@@ -198,9 +198,9 @@ struct OnlineSoftmax[att_dtype: DType = DType.float32](ImplicitlyCopyable):
 
         var lane_val: Float32
         comptime if op == "max":
-            lane_val = simd_accum.reduce_max().cast[DType.float32]()
+            lane_val = simd_accum.reduce_max().cast[.float32]()
         else:
-            lane_val = simd_accum.reduce_add().cast[DType.float32]()
+            lane_val = simd_accum.reduce_add().cast[.float32]()
 
         # Combine the two half-warps sharing each column.
         var swapped = permlane_swap[32](lane_val, lane_val)
@@ -258,8 +258,8 @@ struct OnlineSoftmax[att_dtype: DType = DType.float32](ImplicitlyCopyable):
         # then fold every remaining pair as `max3(s[p], s[p+1], acc)`.
         var simd_0 = src_v[0, 0, 0]
         var acc = max(
-            simd_0[0].cast[DType.float32](),
-            simd_0[1].cast[DType.float32](),
+            simd_0[0].cast[.float32](),
+            simd_0[1].cast[.float32](),
         )
         comptime for i in range(src_height):
             var simd_row = src_v[i, 0, 0]
@@ -267,8 +267,8 @@ struct OnlineSoftmax[att_dtype: DType = DType.float32](ImplicitlyCopyable):
             comptime for p in range(start, base_tile_elts, 2):
                 acc = max(
                     max(
-                        simd_row[p].cast[DType.float32](),
-                        simd_row[p + 1].cast[DType.float32](),
+                        simd_row[p].cast[.float32](),
+                        simd_row[p + 1].cast[.float32](),
                     ),
                     acc,
                 )
@@ -395,7 +395,7 @@ struct OnlineSoftmax[att_dtype: DType = DType.float32](ImplicitlyCopyable):
     @staticmethod
     @always_inline
     def _div_scalar_inplace(
-        mut dst: RegTile[DType.float32, ...],
+        mut dst: RegTile[.float32, ...],
         scalar: Float32,
     ):
         """`dst /= scalar` per element: final `o_reg /= norm_vec`.
@@ -604,7 +604,7 @@ struct OnlineSoftmax[att_dtype: DType = DType.float32](ImplicitlyCopyable):
         att_full_dtype: DType
     ](
         mut self,
-        mut o_reg: RegTile[DType.float32, _, MutUntrackedOrigin],
+        mut o_reg: RegTile[.float32, _, MutUntrackedOrigin],
         mut att_bf16_full: RegTile[att_full_dtype, _, MutUntrackedOrigin],
         threshold: Float32,
     ) -> Bool:
@@ -646,7 +646,7 @@ struct OnlineSoftmax[att_dtype: DType = DType.float32](ImplicitlyCopyable):
                 exceeds this, the rescale is applied.
         """
         var lane_ok = (self.max_vec - self.max_vec_prev) <= threshold
-        var ballot = warp_vote[DType.uint64](lane_ok)
+        var ballot = warp_vote[.uint64](lane_ok)
         var all_ok = ballot == UInt64(0xFFFFFFFFFFFFFFFF)
         var pending_scale = False
         if unlikely(not all_ok):
@@ -684,7 +684,7 @@ struct OnlineSoftmax[att_dtype: DType = DType.float32](ImplicitlyCopyable):
     @always_inline
     def rescale_output(
         mut self,
-        mut o_reg: RegTile[DType.float32, _, MutUntrackedOrigin],
+        mut o_reg: RegTile[.float32, _, MutUntrackedOrigin],
     ):
         """`o_reg *= scale_vec` per element.
 
@@ -746,7 +746,7 @@ struct OnlineSoftmax[att_dtype: DType = DType.float32](ImplicitlyCopyable):
     @always_inline
     def normalize_output(
         mut self,
-        mut o_reg: RegTile[DType.float32, _, MutUntrackedOrigin],
+        mut o_reg: RegTile[.float32, _, MutUntrackedOrigin],
     ):
         """Final `o_reg /= norm_vec` in place.
 

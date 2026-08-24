@@ -140,7 +140,7 @@ def reference_masked_probs_topk_only(
 
 
 def run_probs[
-    dtype: DType = DType.float32
+    dtype: DType = .float32
 ](
     ctx: DeviceContext,
     rows: Int,
@@ -160,18 +160,18 @@ def run_probs[
     var logits_dev = ctx.enqueue_create_buffer[dtype](rows * d)
     ctx.enqueue_copy(logits_dev, logits_host)
 
-    var probs_dev = ctx.enqueue_create_buffer[DType.float32](rows * d)
+    var probs_dev = ctx.enqueue_create_buffer[.float32](rows * d)
 
-    var temp_host = ctx.enqueue_create_host_buffer[DType.float32](rows)
-    var top_p_host = ctx.enqueue_create_host_buffer[DType.float32](rows)
-    var top_k_host = ctx.enqueue_create_host_buffer[DType.int64](rows)
+    var temp_host = ctx.enqueue_create_host_buffer[.float32](rows)
+    var top_p_host = ctx.enqueue_create_host_buffer[.float32](rows)
+    var top_k_host = ctx.enqueue_create_host_buffer[.int64](rows)
     for row in range(rows):
         temp_host[row] = Float32(temperature)
         top_p_host[row] = Float32(top_p)
         top_k_host[row] = Int64(k)
-    var temp_dev = ctx.enqueue_create_buffer[DType.float32](rows)
-    var top_p_dev = ctx.enqueue_create_buffer[DType.float32](rows)
-    var top_k_dev = ctx.enqueue_create_buffer[DType.int64](rows)
+    var temp_dev = ctx.enqueue_create_buffer[.float32](rows)
+    var top_p_dev = ctx.enqueue_create_buffer[.float32](rows)
+    var top_k_dev = ctx.enqueue_create_buffer[.int64](rows)
     ctx.enqueue_copy(temp_dev, temp_host)
     ctx.enqueue_copy(top_p_dev, top_p_host)
     ctx.enqueue_copy(top_k_dev, top_k_host)
@@ -193,7 +193,7 @@ def run_probs[
         .as_immut(),
     )
 
-    var probs_host = ctx.enqueue_create_host_buffer[DType.float32](rows * d)
+    var probs_host = ctx.enqueue_create_host_buffer[.float32](rows * d)
     ctx.enqueue_copy(probs_host, probs_dev)
     ctx.synchronize()
 
@@ -240,8 +240,8 @@ def test_empty_batch(ctx: DeviceContext, d: Int) raises:
     drafts to verify (any prefill-only step), so the empty batch is a normal
     input rather than an edge case.
     """
-    var logits = ctx.enqueue_create_buffer[DType.float32](0)
-    var probs = ctx.enqueue_create_buffer[DType.float32](0)
+    var logits = ctx.enqueue_create_buffer[.float32](0)
+    var probs = ctx.enqueue_create_buffer[.float32](0)
 
     topk_topp_masked_probs(
         ctx,

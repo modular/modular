@@ -165,9 +165,7 @@ def bench_shape[
 
     var total_seq = 0
     var max_seq = 0
-    var iro_host = List[Scalar[DType.uint32]](
-        length=batch_size + 1, fill=Scalar[DType.uint32](0)
-    )
+    var iro_host = List[UInt32](length=batch_size + 1, fill=UInt32(0))
     for i in range(batch_size):
         iro_host[i] = UInt32(total_seq)
         total_seq += prompt_lens[i]
@@ -175,10 +173,10 @@ def bench_shape[
     iro_host[batch_size] = UInt32(total_seq)
     var max_ctx = max_seq
 
-    var iro_dev = ctx.enqueue_create_buffer[DType.uint32](batch_size + 1)
+    var iro_dev = ctx.enqueue_create_buffer[.uint32](batch_size + 1)
     ctx.enqueue_copy(iro_dev, iro_host)
     var iro_tensor = LayoutTensor[
-        mut=False, DType.uint32, Layout.row_major(UNKNOWN_VALUE)
+        mut=False, .uint32, Layout.row_major(UNKNOWN_VALUE)
     ](
         iro_dev.unsafe_ptr(),
         RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
@@ -186,13 +184,11 @@ def bench_shape[
         ),
     )
 
-    var cache_lengths_host = List[Scalar[DType.uint32]](
-        length=batch_size, fill=Scalar[DType.uint32](0)
-    )
-    var cache_lengths_dev = ctx.enqueue_create_buffer[DType.uint32](batch_size)
+    var cache_lengths_host = List[UInt32](length=batch_size, fill=UInt32(0))
+    var cache_lengths_dev = ctx.enqueue_create_buffer[.uint32](batch_size)
     ctx.enqueue_copy(cache_lengths_dev, cache_lengths_host)
     var cache_lengths_tensor = LayoutTensor[
-        mut=False, DType.uint32, Layout(UNKNOWN_VALUE)
+        mut=False, .uint32, Layout(UNKNOWN_VALUE)
     ](
         cache_lengths_dev.unsafe_ptr(),
         RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(
@@ -201,20 +197,16 @@ def bench_shape[
     )
 
     var lut_cols = ((ceildiv(max_ctx, page_size) + 7) // 8) * 8 + 16
-    var lut_host = List[Scalar[DType.uint32]](
-        length=batch_size * lut_cols, fill=Scalar[DType.uint32](0)
-    )
+    var lut_host = List[UInt32](length=batch_size * lut_cols, fill=UInt32(0))
     var block_counter = 0
     for b in range(batch_size):
         var pages = ceildiv(prompt_lens[b], page_size)
         for p in range(pages):
             lut_host[b * lut_cols + p] = UInt32(block_counter)
             block_counter += 1
-    var lut_dev = ctx.enqueue_create_buffer[DType.uint32](batch_size * lut_cols)
+    var lut_dev = ctx.enqueue_create_buffer[.uint32](batch_size * lut_cols)
     ctx.enqueue_copy(lut_dev, lut_host)
-    var lut_tensor = LayoutTensor[
-        mut=False, DType.uint32, Layout.row_major[2]()
-    ](
+    var lut_tensor = LayoutTensor[mut=False, .uint32, Layout.row_major[2]()](
         lut_dev.unsafe_ptr(),
         RuntimeLayout[Layout.row_major[2]()].row_major(
             IndexList[2](batch_size, lut_cols)
@@ -232,12 +224,10 @@ def bench_shape[
     # E8M0 has no zero encoding, so a `CacheBustingBuffer` of it trips an
     # APFloat assertion in the compiler; hold the scale bytes as uint8 and
     # reinterpret them at the tensor seam instead.
-    var cb_asf = CacheBustingBuffer[DType.uint8](
+    var cb_asf = CacheBustingBuffer[.uint8](
         total_seq * k_scales, simd_size, ctx
     )
-    var cb_bsf = CacheBustingBuffer[DType.uint8](
-        n_total * k_scales, simd_size, ctx
-    )
+    var cb_bsf = CacheBustingBuffer[.uint8](n_total * k_scales, simd_size, ctx)
     cb_hs.init_on_device(InitializationType.uniform_distribution, ctx)
     cb_w.init_on_device(InitializationType.uniform_distribution, ctx)
     cb_asf.init_on_device(InitializationType.uniform_distribution, ctx)
@@ -452,7 +442,7 @@ def bench_shape[
                 IndexList[2](total_seq, k_scales)
             ),
         )
-        var hs_tt = lt_to_tt(hs).bitcast[DType.uint8]()
+        var hs_tt = lt_to_tt(hs).bitcast[.uint8]()
         var asf_tt = lt_to_tt(asf)
 
         # Q band: the only wide one (N=2048); the rest are N=128.
@@ -492,7 +482,7 @@ def bench_shape[
             block_scaled_matmul_amd[lane_bytes=32](
                 lt_to_tt(c),
                 hs_tt,
-                lt_to_tt(w).bitcast[DType.uint8](),
+                lt_to_tt(w).bitcast[.uint8](),
                 asf_tt,
                 lt_to_tt(bsf),
                 ctx,

@@ -179,6 +179,8 @@ class Idefics3Config(ArchVLConfigWithTextSubconfig, ArchConfigWithKVCache):
         cls,
         pipeline_config: PipelineConfig,
         model_config: MAXModelConfig | None = None,
+        *,
+        max_seq_len: int,
     ) -> Self:
         """Initializes an Idefics3Config instance from pipeline configuration.
 
@@ -202,7 +204,7 @@ class Idefics3Config(ArchVLConfigWithTextSubconfig, ArchConfigWithKVCache):
             huggingface_config, "text_config", huggingface_config
         )
         text_config = Llama3Config.initialize_from_config(
-            pipeline_config, hf_text_config
+            pipeline_config, hf_text_config, max_seq_len=max_seq_len
         )
 
         vision_config = Idefics3VisionConfig.initialize_from_config(

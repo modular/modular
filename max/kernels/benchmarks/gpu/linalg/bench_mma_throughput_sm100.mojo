@@ -277,14 +277,12 @@ def mma_throughput_kernel[
 
     var a_smem = rebind[
         UnsafePointer[
-            Scalar[a_type],
-            address_space=AddressSpace.SHARED,
-            UntrackedOrigin[mut=True],
+            Scalar[a_type], address_space=.SHARED, UntrackedOrigin[mut=True]
         ]
     ](
         external_memory[
             Scalar[a_type],
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
             alignment=128,
             name="mma_throughput_dynamic_shared_memory",
         ]()
@@ -293,14 +291,14 @@ def mma_throughput_kernel[
         a_type,
         a_smem_layout,
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
     ]
     comptime b_smem_tile_t = LayoutTensor[
         a_type,
         b_smem_layout,
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
     ]
 
@@ -365,8 +363,7 @@ def mma_throughput_kernel[
     var bdesc = MMASmemDescriptor.create[bSBO, bLBO, b_swizzle](b_smem_tile.ptr)
 
     comptime mma_kind = (
-        UMMAKind.KIND_F8F6F4 if a_type
-        == DType.float8_e4m3fn else UMMAKind.KIND_F16
+        UMMAKind.KIND_F8F6F4 if a_type == .float8_e4m3fn else UMMAKind.KIND_F16
     )
     var idesc = UMMAInsDescriptor[mma_kind].create[
         accum_type,
@@ -496,7 +493,7 @@ def mma_throughput_kernel[
 
 
 def main() raises:
-    comptime dtype = get_defined_dtype["dtype", DType.bfloat16]()
+    comptime dtype = get_defined_dtype["dtype", .bfloat16]()
     comptime BM = get_defined_int["BM", 128]()
     comptime BN = get_defined_int["BN", 128]()
     comptime M_LOGICAL = get_defined_int["M_LOGICAL", 128]()

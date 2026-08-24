@@ -153,6 +153,8 @@ _LEAK_MARKERS = [
     # GLM style
     "<tool_call>",
     "</tool_call>",
+    # Inkling style
+    "<|content_invoke_tool_json|>",
 ]
 
 # Pre-compiled to avoid re-compiling in the hot path of

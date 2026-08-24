@@ -304,34 +304,34 @@ struct BlockScaledMmaOp_PreB[
     ]()
 
     var _a_reg: TileTensor[
-        DType.uint8,
+        .uint8,
         type_of(Self._a_reg_layout),
         MutUntrackedOrigin,
-        address_space=AddressSpace.LOCAL,
+        address_space=.LOCAL,
     ]
     var _b_reg: TileTensor[
-        DType.uint8,
+        .uint8,
         type_of(Self._b_reg_layout),
         MutUntrackedOrigin,
-        address_space=AddressSpace.LOCAL,
+        address_space=.LOCAL,
     ]
     var _c_reg: TileTensor[
-        DType.float32,
+        .float32,
         type_of(Self._c_reg_layout),
         MutUntrackedOrigin,
-        address_space=AddressSpace.LOCAL,
+        address_space=.LOCAL,
     ]
     var _a_scale_packed: TileTensor[
-        DType.int32,
+        .int32,
         type_of(Self._a_scale_layout),
         MutUntrackedOrigin,
-        address_space=AddressSpace.LOCAL,
+        address_space=.LOCAL,
     ]
     var _b_scale_packed: TileTensor[
-        DType.int32,
+        .int32,
         type_of(Self._b_scale_layout),
         MutUntrackedOrigin,
-        address_space=AddressSpace.LOCAL,
+        address_space=.LOCAL,
     ]
 
     # Per-kernel runtime parity shifts for BM=16 / WN=16 cell-straddle.
@@ -355,23 +355,23 @@ struct BlockScaledMmaOp_PreB[
             Self.num_k_mmas % 2 == 0
         ), "preb scale path requires num_k_mmas % 2 == 0 (k_pack=2)"
 
-        self._a_reg = stack_allocation[DType.uint8, AddressSpace.LOCAL](
+        self._a_reg = stack_allocation[DType.uint8, address_space=.LOCAL](
             Self._a_reg_layout
         )
-        self._b_reg = stack_allocation[DType.uint8, AddressSpace.LOCAL](
+        self._b_reg = stack_allocation[DType.uint8, address_space=.LOCAL](
             Self._b_reg_layout
         )
-        self._c_reg = stack_allocation[DType.float32, AddressSpace.LOCAL](
+        self._c_reg = stack_allocation[DType.float32, address_space=.LOCAL](
             Self._c_reg_layout
         )
-        _ = self._c_reg.fill(Scalar[DType.float32](0))
+        _ = self._c_reg.fill(Float32(0))
 
         self._a_scale_packed = stack_allocation[
-            DType.int32, AddressSpace.LOCAL
+            DType.int32, address_space=.LOCAL
         ](Self._a_scale_layout)
 
         self._b_scale_packed = stack_allocation[
-            DType.int32, AddressSpace.LOCAL
+            DType.int32, address_space=.LOCAL
         ](Self._b_scale_layout)
 
         # WM=16 / WN=16 cell-straddle: when warp_*_off // 16 is odd, the CTA's
@@ -388,12 +388,7 @@ struct BlockScaledMmaOp_PreB[
     @always_inline
     def load_a_frag_from_smem[
         mma_k_idx: Int
-    ](
-        self,
-        a_smem_warp: TileTensor[
-            DType.uint8, _, _, address_space=AddressSpace.SHARED, ...
-        ],
-    ):
+    ](self, a_smem_warp: TileTensor[.uint8, _, _, address_space=.SHARED, ...],):
         """Load A fragment for MFMA-K position `mma_k_idx` from row-major SMEM.
 
         XOR-16 swizzled read (matches the write in `copy_a_tile_to_smem`): each
@@ -430,10 +425,10 @@ struct BlockScaledMmaOp_PreB[
                     + Int(k_vec) * Self.mma_frag_width_bytes
                 )
                 var off = swizzle(Int(tile_layout(Coord(row, col_byte))))
-                var frag = SIMD[DType.uint8, Self.reg_frag_bytes](0)
+                var frag = SIMD[.uint8, Self.reg_frag_bytes](0)
                 comptime for chunk in range(Self.mma_frag_width_bytes // 8):
                     frag = frag.insert[offset=chunk * 8](
-                        rebind[SIMD[DType.uint8, 8]](
+                        rebind[SIMD[.uint8, 8]](
                             a_smem_warp.raw_load[width=8](off + chunk * 8)
                         )
                     )
@@ -502,7 +497,7 @@ struct BlockScaledMmaOp_PreB[
                 )
                 self._b_reg.vectorize[1, 1, 1, Self.b_reg_frag_bytes]()[
                     slot, mma_k_idx, i, 0
-                ] = rebind[SIMD[DType.uint8, Self.b_reg_frag_bytes]](
+                ] = rebind[SIMD[.uint8, Self.b_reg_frag_bytes]](
                     b_loader.load_fragment(n_log, k_byte_log)
                 )
             else:
@@ -514,7 +509,7 @@ struct BlockScaledMmaOp_PreB[
                         + lane_klane * Self.FRAG_HALF_BYTES
                     )
                     b_reg_v[slot, mma_k_idx, i, h] = rebind[
-                        SIMD[DType.uint8, Self.FRAG_HALF_BYTES]
+                        SIMD[.uint8, Self.FRAG_HALF_BYTES]
                     ](b_loader.load_fragment(n_log, k_byte_log))
 
     @always_inline
@@ -821,10 +816,10 @@ struct BlockScaledMatmulAMD_PreB[
         K_BYTES: Int,
     ](
         c: TileTensor[out_dtype, c_layout, MutAnyOrigin],
-        a: TileTensor[DType.uint8, a_layout, ImmutAnyOrigin],
-        b_pre: TileTensor[DType.uint8, b_pre_layout, ImmutAnyOrigin],
-        sfa: TileTensor[DType.float8_e8m0fnu, sfa_layout, ImmutAnyOrigin],
-        sfb: TileTensor[DType.float8_e8m0fnu, sfb_layout, ImmutAnyOrigin],
+        a: TileTensor[.uint8, a_layout, ImmutAnyOrigin],
+        b_pre: TileTensor[.uint8, b_pre_layout, ImmutAnyOrigin],
+        sfa: TileTensor[.float8_e8m0fnu, sfa_layout, ImmutAnyOrigin],
+        sfb: TileTensor[.float8_e8m0fnu, sfb_layout, ImmutAnyOrigin],
         n_tile_idx: Int,
         m_tile_idx: Int,
     ):
@@ -862,7 +857,7 @@ struct BlockScaledMatmulAMD_PreB[
 
         # SMEM for A only — B and scales come direct from preshuffled DRAM.
         # `num_a_slots` buffers laid out slot-major ([slot, BM, BK_BYTES]).
-        var a_smem = stack_allocation[DType.uint8, AddressSpace.SHARED](
+        var a_smem = stack_allocation[DType.uint8, address_space=.SHARED](
             row_major[Self.num_a_slots * Self.BM, Self.BK_BYTES]()
         )
 
@@ -874,12 +869,8 @@ struct BlockScaledMatmulAMD_PreB[
         ](b_pre)
         # Bitcast scales' float8_e8m0fnu to uint8 — same byte representation,
         # the PreshuffledScaleLoader expects uint8 buffers.
-        var sfa_u8 = TileTensor(
-            sfa.ptr.bitcast[Scalar[DType.uint8]](), sfa.layout
-        )
-        var sfb_u8 = TileTensor(
-            sfb.ptr.bitcast[Scalar[DType.uint8]](), sfb.layout
-        )
+        var sfa_u8 = TileTensor(sfa.ptr.bitcast[UInt8](), sfa.layout)
+        var sfb_u8 = TileTensor(sfb.ptr.bitcast[UInt8](), sfb.layout)
         var a_scale_loader = PreshuffledScaleLoader[
             MN_padded=MN_PADDED_PLACEHOLDER, K_SCALES=K_SCALES
         ](sfa_u8)
@@ -902,11 +893,11 @@ struct BlockScaledMatmulAMD_PreB[
         var a_blockrow = a.tile[Self.BM, A_K_BYTES](m_tile_idx, 0)
 
         # A DRAM-load landing ring (num_a_load_slots; 1 at the depth-2 default).
-        var a_load_reg = stack_allocation[DType.uint8, AddressSpace.LOCAL](
+        var a_load_reg = stack_allocation[DType.uint8, address_space=.LOCAL](
             row_major[Self.num_a_load_slots, a_reg_elems]()
         )
 
-        var a_loader = RegTileLoader[DType.uint8, load_layout](
+        var a_loader = RegTileLoader[.uint8, load_layout](
             a_blockrow,
             bounds_from=a,
         )
@@ -914,7 +905,7 @@ struct BlockScaledMatmulAMD_PreB[
         # the same one). Producer byte-swizzle == the consumer read swizzle.
         # Only consumed on the dram_to_lds path.
         var a_lds_loader = TileLoaderLDS[
-            DType.uint8,
+            .uint8,
             Self.BM,
             Self.BK_BYTES,
             stride=type_of(a_blockrow).static_stride[0],

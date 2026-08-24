@@ -135,8 +135,8 @@ def cpu_pv_naive(
             var acc: Float32 = 0.0
             for k in range(K):
                 acc += (
-                    P.ptr.load(m * K + k).cast[DType.float32]()
-                    * V.ptr.load(k * N + n).cast[DType.float32]()
+                    P.ptr.load(m * K + k).cast[.float32]()
+                    * V.ptr.load(k * N + n).cast[.float32]()
                 )
             O.ptr.store(m * N + n, acc.cast[O.dtype]())
 
@@ -194,14 +194,12 @@ def pv_mma_kernel[
 
     var p_smem = rebind[
         UnsafePointer[
-            Scalar[ab_type],
-            address_space=AddressSpace.SHARED,
-            UntrackedOrigin[mut=True],
+            Scalar[ab_type], address_space=.SHARED, UntrackedOrigin[mut=True]
         ]
     ](
         external_memory[
             Scalar[ab_type],
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
             alignment=128,
             name="pv_spike_dynamic_smem",
         ]()
@@ -210,14 +208,14 @@ def pv_mma_kernel[
         ab_type,
         p_smem_layout,
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
     ]
     comptime v_smem_tile_t = LayoutTensor[
         ab_type,
         v_smem_layout,
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
     ]
 
@@ -447,7 +445,7 @@ def run_pv_spike[
             DeviceBuffer(
                 ctx,
                 v_dev.ptr.unsafe_mut_cast[True]().address_space_cast[
-                    AddressSpace.GENERIC
+                    .GENERIC
                 ](),
                 1,
                 owning=False,
@@ -581,7 +579,7 @@ def _print_layouts[mn: Int, k: Int]():
     comptime cur = tile_layout_mn_major[
         DType.bfloat16, mn, k, swizzle_mode=sw
     ]()
-    comptime nat = _tile_layout_mn_major_native[DType.bfloat16, mn, k, sw]()
+    comptime nat = _tile_layout_mn_major_native[.bfloat16, mn, k, sw]()
     comptime cur_can = tile_to_descriptor[
         DType.bfloat16, cur, is_k_major=False
     ]()

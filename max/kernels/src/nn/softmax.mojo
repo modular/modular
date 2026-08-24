@@ -210,25 +210,23 @@ def _log_concrete(x: SIMD) -> type_of(x):
 # generic helpers below; only the MSA single-tile path opts in.
 @always_inline
 def _fma_f32x2(
-    a: SIMD[DType.float32, 2],
-    b: SIMD[DType.float32, 2],
-    c: SIMD[DType.float32, 2],
-) -> SIMD[DType.float32, 2]:
+    a: SIMD[.float32, 2],
+    b: SIMD[.float32, 2],
+    c: SIMD[.float32, 2],
+) -> SIMD[.float32, 2]:
     return inlined_assembly[
         "fma.rn.ftz.f32x2 $0, $1, $2, $3;",
-        SIMD[DType.float32, 2],
+        SIMD[.float32, 2],
         constraints="=l,l,l,l",
         has_side_effect=False,
     ](a, b, c)
 
 
 @always_inline
-def _add_f32x2(
-    a: SIMD[DType.float32, 2], b: SIMD[DType.float32, 2]
-) -> SIMD[DType.float32, 2]:
+def _add_f32x2(a: SIMD[.float32, 2], b: SIMD[.float32, 2]) -> SIMD[.float32, 2]:
     return inlined_assembly[
         "add.ftz.f32x2 $0, $1, $2;",
-        SIMD[DType.float32, 2],
+        SIMD[.float32, 2],
         constraints="=l,l,l",
         has_side_effect=False,
     ](a, b)
@@ -895,11 +893,11 @@ def softmax_kernel[
     var row_size: Int = shape[axis]
     var num_rows = ufloordiv(shape.flattened_length(), row_size)
 
-    var max_buf = tt_stack_allocation[
-        dtype=accum_type, address_space=AddressSpace.SHARED
-    ](row_major[1]())
+    var max_buf = tt_stack_allocation[dtype=accum_type, address_space=.SHARED](
+        row_major[1]()
+    )
     var exp_sum_buf = tt_stack_allocation[
-        dtype=accum_type, address_space=AddressSpace.SHARED
+        dtype=accum_type, address_space=.SHARED
     ](row_major[1]())
 
     @__parameter
@@ -1208,7 +1206,7 @@ def _softmax_gpu[
                         simd_width if use_vectorized else 1
                     )
                     var null_temp_arr = Optional[
-                        UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin]
+                        UnsafePointer[Float32, ImmutAnyOrigin]
                     ]()
 
                     if num_splits > 1:
@@ -1755,7 +1753,7 @@ def _softmax_split_combine_kernel[
 
 def softmax_with_temperature[
     dtype: DType,
-    temp_dtype: DType = DType.float32,
+    temp_dtype: DType = .float32,
     TempLayoutType: TensorLayout = RowMajorLayout[Int64],
     TempStorageType: TensorStorage = PointerStorage[element_width=1],
 ](
@@ -1836,7 +1834,7 @@ def softmax_with_temperature[
     ctx.enqueue_function[kernel](
         IndexList[2](batch_size, d),
         output,
-        temperature.cast[DType.float32](),
+        temperature.cast[.float32](),
         temp_ptr,
         grid_dim=num_blocks,
         block_dim=BLOCK_SIZE,
@@ -1915,7 +1913,7 @@ def _online_softmax_kernel[
         dtype,
         Layout.row_major(num_m_mmas * num_n_mmas, frag_size),
         MutAnyOrigin,
-        address_space=AddressSpace.LOCAL,
+        address_space=.LOCAL,
     ].stack_allocation()
 
     comptime fragment_layout = Layout.row_major(1, 2) if is_nvidia_gpu() else (
@@ -1944,7 +1942,7 @@ def _online_softmax_kernel[
             dtype,
             Layout.row_major(num_m_mmas * num_n_mmas, frag_size),
             MutAnyOrigin,
-            address_space=AddressSpace.LOCAL,
+            address_space=.LOCAL,
         ]
         .stack_allocation()
         .fill(0.0)
@@ -1968,7 +1966,7 @@ def _online_softmax_kernel[
         dtype,
         Layout.row_major(2 * num_rowwise_warps, WM),
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ].stack_allocation()
 
     comptime for i in range(0, frag_num_rows * num_m_mmas, frag_num_rows):
@@ -2094,19 +2092,19 @@ def _online_softmax_iter_for_mma_output[
         dtype,
         Layout.row_major(num_colwise_tiles, frag_num_rows),
         MutAnyOrigin,
-        address_space=AddressSpace.LOCAL,
+        address_space=.LOCAL,
     ].stack_allocation()
     var score_frag_rowsum = LayoutTensor[
         dtype,
         Layout.row_major(num_colwise_tiles, frag_num_rows),
         MutAnyOrigin,
-        address_space=AddressSpace.LOCAL,
+        address_space=.LOCAL,
     ].stack_allocation()
     var correction = LayoutTensor[
         dtype,
         Layout.row_major(num_colwise_tiles, frag_num_rows),
         MutAnyOrigin,
-        address_space=AddressSpace.LOCAL,
+        address_space=.LOCAL,
     ].stack_allocation()
 
     var rowmax_tensor = LayoutTensor[
@@ -2400,17 +2398,12 @@ def _online_softmax_iter_for_mma_output_split_warp_reduce[
         mut=True,
         dtype,
         output_layout,
-        address_space=AddressSpace.LOCAL,
+        address_space=.LOCAL,
         ...,
     ],
-    warp_scratch: LayoutTensor[
-        mut=True, dtype, address_space=AddressSpace.SHARED, ...
-    ],
+    warp_scratch: LayoutTensor[mut=True, dtype, address_space=.SHARED, ...],
     o_smem_ptr_base: UnsafePointer[
-        mut=True,
-        Scalar[dtype],
-        address_space=AddressSpace.SHARED,
-        _,
+        mut=True, Scalar[dtype], address_space=.SHARED, _
     ],
     rowmax: UnsafePointer[mut=True, Scalar[dtype], _],
     rowsum: UnsafePointer[mut=True, Scalar[dtype], _],
@@ -2495,7 +2488,7 @@ def _online_softmax_iter_for_mma_output_split_warp_reduce[
 
     comptime layout = Layout.row_major(num_m_mmas, frag_num_rows)
     comptime TensorType = LayoutTensor[
-        dtype, layout, MutAnyOrigin, address_space=AddressSpace.LOCAL
+        dtype, layout, MutAnyOrigin, address_space=.LOCAL
     ]
     var interwarp_frag_rowmax = TensorType.stack_allocation()
     var interwarp_frag_rowsum = TensorType.stack_allocation()
@@ -2658,7 +2651,7 @@ def _online_softmax_iter_for_mma_output_split_warp_reduce[
                 LayoutTensor[
                     dtype,
                     o_smem_layout,
-                    address_space=AddressSpace.SHARED,
+                    address_space=.SHARED,
                 ](o_smem_ptr_write)
                 .vectorize[1, frag_size]()
                 .distribute[Layout.row_major(WARP_SIZE, 1)](Int(lane))
@@ -2688,7 +2681,7 @@ def _online_softmax_iter_for_mma_output_split_warp_reduce[
             LayoutTensor[
                 dtype,
                 o_smem_layout,
-                address_space=AddressSpace.SHARED,
+                address_space=.SHARED,
             ](o_smem_ptr_reduce)
             .vectorize[1, frag_size]()
             .distribute[Layout.row_major(WARP_SIZE, 1)](Int(lane))
@@ -2715,21 +2708,21 @@ def _rowmax_online_softmax[
         dtype,
         row_accum_layout,
         MutAnyOrigin,
-        address_space=AddressSpace.LOCAL,
+        address_space=.LOCAL,
         element_layout=accum_frag_layout,
     ],
     score_reg_tile: LayoutTensor[
         dtype,
         reg_tile_layout,
         MutAnyOrigin,
-        address_space=AddressSpace.LOCAL,
+        address_space=.LOCAL,
         element_layout=fragment_layout,
     ],
     rowmax_tensor: LayoutTensor[
         dtype,
         row_accum_layout,
         MutAnyOrigin,
-        address_space=AddressSpace.LOCAL,
+        address_space=.LOCAL,
         element_layout=accum_frag_layout,
     ],
     init_rowmax: Bool = False,
@@ -2792,18 +2785,16 @@ def _rowmax_online_softmax[
         # scale_subtract_rowmax; the score is RAW S, the rowmax is over raw S.
         comptime if fold_scale_fma:
             comptime assert (
-                dtype == DType.float32 and frag_size == 2
+                dtype == .float32 and frag_size == 2
             ), "fold_scale_fma needs the f32x2 score pair"
-            var vscale = SIMD[DType.float32, 2](
-                rebind[Scalar[DType.float32]](scale_log2e)
-            )
-            var neg_m_scaled = SIMD[DType.float32, 2](
-                rebind[Scalar[DType.float32]](score_frag_rowmax[col_tile])
-                * rebind[Scalar[DType.float32]](scale_log2e)
+            var vscale = SIMD[.float32, 2](rebind[Float32](scale_log2e))
+            var neg_m_scaled = SIMD[.float32, 2](
+                rebind[Float32](score_frag_rowmax[col_tile])
+                * rebind[Float32](scale_log2e)
                 * -1.0
             )
             comptime for row_tile in range(num_rowwise_tiles):
-                var s = rebind[SIMD[DType.float32, 2]](
+                var s = rebind[SIMD[.float32, 2]](
                     score_reg_tile[col_tile, row_tile]
                 )
                 score_reg_tile[col_tile, row_tile] = rebind[
@@ -2837,14 +2828,14 @@ def _rowsum[
         dtype,
         reg_tile_layout,
         MutAnyOrigin,
-        address_space=AddressSpace.LOCAL,
+        address_space=.LOCAL,
         element_layout=fragment_layout,
     ],
     out score_frag_rowsum: LayoutTensor[
         dtype,
         Layout.row_major(reg_tile_layout[0].size()),
         MutAnyOrigin,
-        address_space=AddressSpace.LOCAL,
+        address_space=.LOCAL,
         element_layout=Layout.row_major(fragment_layout.shape[0].value()),
     ],
 ):
@@ -2869,16 +2860,14 @@ def _rowsum[
     # MM-Sparse ref fadd_reduce. Halves the in-fragment FADD count.
     comptime if packed_reduce:
         comptime assert (
-            dtype == DType.float32 and frag_size == 2 and frag_num_rows == 1
+            dtype == .float32 and frag_size == 2 and frag_num_rows == 1
         ), "packed_reduce needs the f32x2 score pair (one row per fragment)"
         comptime for col_tile in range(num_colwise_tiles):
-            var acc = rebind[SIMD[DType.float32, 2]](
-                score_reg_tile[col_tile, 0]
-            )
+            var acc = rebind[SIMD[.float32, 2]](score_reg_tile[col_tile, 0])
             comptime for row_tile in range(1, num_rowwise_tiles):
                 acc = _add_f32x2(
                     acc,
-                    rebind[SIMD[DType.float32, 2]](
+                    rebind[SIMD[.float32, 2]](
                         score_reg_tile[col_tile, row_tile]
                     ),
                 )
@@ -2917,14 +2906,14 @@ def _online_softmax_correction[
         dtype,
         row_accum_layout,
         MutAnyOrigin,
-        address_space=AddressSpace.LOCAL,
+        address_space=.LOCAL,
         element_layout=accum_frag_layout,
     ],
     score_frag_rowmax: LayoutTensor[
         dtype,
         row_accum_layout,
         MutAnyOrigin,
-        address_space=AddressSpace.LOCAL,
+        address_space=.LOCAL,
         element_layout=accum_frag_layout,
     ],
 ):

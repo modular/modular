@@ -62,16 +62,16 @@ def _get_fft_workarea(
         return lookup.unsafe_value()
 
     # manually allocate the memory on the device, and cache the pointer
-    var work_space = ctx.enqueue_create_buffer[DType.uint8](buffer_size)
+    var work_space = ctx.enqueue_create_buffer[.uint8](buffer_size)
     var device_ptr = work_space.take_ptr()
 
     global_cache_insert(
         fft_buffer_key,
         # bitcast the device pointer to a void * to cache it
-        device_ptr.bitcast[NoneType](),
+        device_ptr.unsafe_bitcast[NoneType](),
     )
 
-    return device_ptr.bitcast[NoneType]().unsafe_origin_cast[
+    return device_ptr.unsafe_bitcast[NoneType]().unsafe_origin_cast[
         MutUntrackedOrigin
     ]()
 
@@ -100,7 +100,7 @@ def _get_fft_plan[
 
     var plan = cufftHandle(0)
     var mem_size: Int = 0
-    check_error(cufftCreate(UnsafePointer(to=plan)))
+    check_error(cufftCreate(Pointer(to=plan)))
     check_error(cufftSetAutoAllocation(plan, 0))
     check_error(
         cufftMakePlan1d(
@@ -108,12 +108,12 @@ def _get_fft_plan[
             Int32(output_size),
             Type.CUFFT_C2R,
             Int32(batch_size),
-            UnsafePointer(to=mem_size),
+            Pointer(to=mem_size),
         )
     )
     var work_size: Int = 0
     # Get the precise size of the plan, assert that it is less than the allocated size
-    check_error(cufftGetSize(plan, UnsafePointer(to=work_size)))
+    check_error(cufftGetSize(plan, Pointer(to=work_size)))
     var work_space_ptr = _get_fft_workarea(workspace_size, ctx)
 
     if work_size > workspace_size:
@@ -131,9 +131,7 @@ def _get_fft_plan[
         cached_plan_key,
         # we are bitcasting the integer plan to a void * to cache it,
         # because that's what KGEN_CompilerRT_InsertGlobal expects.
-        UnsafePointer[NoneType, MutUntrackedOrigin](
-            unsafe_from_address=Int(plan)
-        ),
+        Pointer[NoneType, MutUntrackedOrigin](unsafe_from_address=Int(plan)),
     )
 
     return plan
@@ -143,17 +141,8 @@ def _irfft[
     input_type: DType,
     output_type: DType,
 ](
-    input: TileTensor[
-        input_type,
-        address_space=AddressSpace.GENERIC,
-        ...,
-    ],
-    output: TileTensor[
-        mut=True,
-        output_type,
-        address_space=AddressSpace.GENERIC,
-        ...,
-    ],
+    input: TileTensor[input_type, address_space=.GENERIC, ...],
+    output: TileTensor[mut=True, output_type, address_space=.GENERIC, ...],
     n: Int,
     buffer_size_mb: Int,
     ctx: DeviceContext,
@@ -162,10 +151,10 @@ def _irfft[
         input.rank == output.rank
     ), "Input and output must have the same rank"
     comptime assert (
-        input_type == DType.float32
+        input_type == .float32
     ), "Only Float32 is supported for IRFFT"
     comptime assert (
-        output_type == DType.float32
+        output_type == .float32
     ), "Only Float32 is supported for IRFFT"
     # we allocate 64 MB more than the buffer size because the estimation might
     # not be exact.
@@ -204,8 +193,8 @@ def _irfft[
     )
     if plan:
         check_error(cufftSetStream(plan, cuda_stream))
-        var input_ptr = input.ptr.bitcast[ComplexFloat32]()
-        var output_ptr = output.ptr.bitcast[Float32]()
+        var input_ptr = input.ptr.unsafe_bitcast[ComplexFloat32]()
+        var output_ptr = output.ptr.unsafe_bitcast[Float32]()
         check_error(cufftExecC2R(plan, input_ptr, output_ptr))
 
         return
@@ -216,7 +205,7 @@ def _irfft[
             Int32(output_size),
             Type.CUFFT_C2R,
             Int32(batch_size),
-            UnsafePointer(to=work_size),
+            Pointer(to=work_size),
         )
     )
 
@@ -233,8 +222,8 @@ def _irfft[
         # stream from the context we are executing within
         check_error(cufftSetStream(plan, cuda_stream))
 
-        var input_ptr = input.ptr.bitcast[ComplexFloat32]()
-        var output_ptr = output.ptr.bitcast[Float32]()
+        var input_ptr = input.ptr.unsafe_bitcast[ComplexFloat32]()
+        var output_ptr = output.ptr.unsafe_bitcast[Float32]()
         check_error(cufftExecC2R(plan, input_ptr, output_ptr))
 
     else:
@@ -250,7 +239,7 @@ def _irfft[
                         Int32(output_size),
                         Type.CUFFT_C2R,
                         Int32(reduced_batch_size),
-                        UnsafePointer(to=work_size),
+                        Pointer(to=work_size),
                     )
                 )
                 if work_size < EST_WORKSPACE_SIZE:
@@ -281,15 +270,19 @@ def _irfft[
             check_error(
                 cufftExecC2R(
                     plan,
-                    input_ptr.bitcast[ComplexFloat32](),
-                    output_ptr.bitcast[Float32](),
+                    input_ptr.unsafe_bitcast[ComplexFloat32](),
+                    output_ptr.unsafe_bitcast[Float32](),
                 )
             )
 
             # Update the pointers for the next batch
             batch_size -= reduced_batch_size
-            input_ptr += reduced_batch_size * input_shape[axis]
-            output_ptr += reduced_batch_size * output_shape[axis]
+            input_ptr = input_ptr.unsafe_offset(
+                reduced_batch_size * input_shape[axis]
+            )
+            output_ptr = output_ptr.unsafe_offset(
+                reduced_batch_size * output_shape[axis]
+            )
 
         if batch_size > 0:
             # Create a new cuFFT plan for the remaining batch size
@@ -302,8 +295,8 @@ def _irfft[
             check_error(
                 cufftExecC2R(
                     plan,
-                    input_ptr.bitcast[ComplexFloat32](),
-                    output_ptr.bitcast[Float32](),
+                    input_ptr.unsafe_bitcast[ComplexFloat32](),
+                    output_ptr.unsafe_bitcast[Float32](),
                 )
             )
 
@@ -312,17 +305,8 @@ def irfft[
     input_type: DType,
     output_type: DType,
 ](
-    input: TileTensor[
-        input_type,
-        address_space=AddressSpace.GENERIC,
-        ...,
-    ],
-    output: TileTensor[
-        mut=True,
-        output_type,
-        address_space=AddressSpace.GENERIC,
-        ...,
-    ],
+    input: TileTensor[input_type, address_space=.GENERIC, ...],
+    output: TileTensor[mut=True, output_type, address_space=.GENERIC, ...],
     n: Int,
     buffer_size_mb: Int,
     ctx: DeviceContext,

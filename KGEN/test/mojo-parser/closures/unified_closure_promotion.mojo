@@ -36,7 +36,7 @@ def captures_with_default_convention():
         pass
 
 # COM: Verify stateless promoted closures are registered for apply attributes.
-# S1-DAG: lit.alias.decl *"dtype{{.*}}": !DType = <apply(:!lit.generator<("n": !Int) -> !DType> @{{.*}}::@"nonsense(::SIMD[::DType(int), ::SIMDLength(1)])`{{.*}}", {:scalar<index> 64})>
+# S1-DAG: lit.alias.decl *"dtype{{.*}}": !DType = <apply(:!lit.generator<("n": !Int) -> !DType> @{{.*}}::@"nonsense(::SIMD[DType.int, 1])`{{.*}}", {:scalar<index> 64})>
 
 #
 
@@ -176,15 +176,15 @@ def s6_trigger[xx: Int, func: def(Int) capturing -> Int]() -> Int:
 # COM: Verify promoted top-level functions with captured parameters
 # COM: build a wrapper whose Impl type is self-contained while preserving the
 # COM: promoted function symbol's native parameter ordering.
-# S7-DAG: lit.struct.decl @"def[dtype: DType, //, simd_width: Int]() thin -> SIMD[dtype, SIMDLength(simd_width)]_PtrWrapper"
+# S7-DAG: lit.struct.decl @"def[dtype: DType, //, simd_width: Int]() thin -> SIMD[dtype, simd_width]_PtrWrapper"
 # S7-DAG: lit.alias.decl dtype: !DType = <__capture_dtype>
-# S7-DAG: lit.fn @"__call__[::DType,::SIMD[::DType(int), ::SIMDLength(1)]](unified_closure_promotion::def[dtype: DType, //, simd_width: Int]() thin -> SIMD[dtype, SIMDLength(simd_width)]_PtrWrapper[$0, $1])"
+# S7-DAG: lit.fn @"__call__[::DType,::SIMD[DType.int, 1]](unified_closure_promotion::def[dtype: DType, //, simd_width: Int]() thin -> SIMD[dtype, simd_width]_PtrWrapper[$0, $1])"
 # S7-DAG: {{.*}} = lit.call tail[!lit.generator<() -> !lit.struct<#SIMD {{.*}}: bind_params{{.*}}Impl, :!DType _dtype, :!Int simd_width)]()
 # S7-DAG: kgen.witness "dtype" : !DType = __capture_dtype
-# S7-LABEL: lit.fn @"s7_trigger[::SIMD[::DType(int), ::SIMDLength(1)],::DType]()"
+# S7-LABEL: lit.fn @"s7_trigger[::SIMD[DType.int, 1],::DType]()"
 # S7: %[[S7_WRAP:.*]] = lit.var.decl "__call_result_tmp__" synth : !lit.ref<!lit.struct
-# S7-SAME: @{{.*}}::@"compute_init2[::SIMD[::DType(int), ::SIMDLength(1)]](){{.*}}"<:!DType *(0,0), :!Int *(0,1)>
-# S7: %[[S7_INIT:.*]] = lit.call @{{.*}}::@"def[dtype: DType, //, simd_width: Int]() thin -> SIMD[dtype, SIMDLength(simd_width)]_PtrWrapper"::@"__init__()"{{.*}}(%[[S7_WRAP]])
+# S7-SAME: @{{.*}}::@"compute_init2[::SIMD[DType.int, 1]](){{.*}}"<:!DType *(0,0), :!Int *(0,1)>
+# S7: %[[S7_INIT:.*]] = lit.call @{{.*}}::@"def[dtype: DType, //, simd_width: Int]() thin -> SIMD[dtype, simd_width]_PtrWrapper"::@"__init__()"{{.*}}(%[[S7_WRAP]])
 # S7: %[[S7_IMM:.*]] = lit.ref.immut %[[S7_WRAP]]
 # S7: lit.call @{{.*}}::@"local_higher_order
 

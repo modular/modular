@@ -49,20 +49,21 @@ class ExprNode {
 public:
   // This indicates the subclass.
   enum Kind {
-    kSynthetic,         // There is no source corresponding to the IR.
-    kIntLiteral,        // 42
-    kFloatLiteral,      // 1.1
-    kBoolLiteral,       // False
-    kSelfLiteral,       // Self
-    kStringLiteral,     // "Hello"
-    kTStringLiteral,    // t"Hello, {name}!"
-    kNoneLiteral,       // None
-    kDiscardLiteral,    // _
-    kEllipsisLiteral,   // ...
-    kDeclRef,           // x
-    kAttributeRef,      // x.y
-    kParen,             // (x+y)
-    kTuple,             // (), (x,), (x, y), etc
+    kSynthetic,            // There is no source corresponding to the IR.
+    kIntLiteral,           // 42
+    kFloatLiteral,         // 1.1
+    kBoolLiteral,          // False
+    kSelfLiteral,          // Self
+    kStringLiteral,        // "Hello"
+    kTStringLiteral,       // t"Hello, {name}!"
+    kNoneLiteral,          // None
+    kDiscardLiteral,       // _
+    kEllipsisLiteral,      // ...
+    kDeclRef,              // x
+    kAttributeRef,         // x.y
+    kInferredAttributeRef, // .y  (inferred base, e.g. foo(.f64))
+    kParen,                // (x+y)
+    kTuple,                // (), (x,), (x, y), etc
     kSliceLiteral,      // :, a:, :a, ::, a:b:c, etc.  Only valid in subscripts.
     kListLiteral,       // [x, y]
     kDictLiteral,       // {a: 1, b: 2, **dictUnpack}

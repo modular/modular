@@ -138,17 +138,15 @@ def bench_preb[
 
     # Routing tables are tiny metadata read once per launch; keep them as plain
     # single buffers (not cache-busted).
-    var a_offsets_dev = ctx.enqueue_create_buffer[DType.uint32](
+    var a_offsets_dev = ctx.enqueue_create_buffer[.uint32](
         num_active_experts + 1
     )
-    var expert_ids_dev = ctx.enqueue_create_buffer[DType.int32](
-        num_active_experts
-    )
+    var expert_ids_dev = ctx.enqueue_create_buffer[.int32](num_active_experts)
 
-    var a_off_h = ctx.enqueue_create_host_buffer[DType.uint32](
+    var a_off_h = ctx.enqueue_create_host_buffer[.uint32](
         num_active_experts + 1
     )
-    var ei_h = ctx.enqueue_create_host_buffer[DType.int32](num_active_experts)
+    var ei_h = ctx.enqueue_create_host_buffer[.int32](num_active_experts)
     a_off_h[0] = 0
     var max_count = 0
     for e in range(num_active_experts):
@@ -191,26 +189,26 @@ def bench_preb[
         "MiB windows=",
         b_windows,
     )
-    var cb_a = CacheBustingBuffer[DType.uint8](
+    var cb_a = CacheBustingBuffer[.uint8](
         total_routes * packed_K, simd_size, ctx, cache_bust
     )
-    var cb_b = CacheBustingBuffer[DType.uint8](
+    var cb_b = CacheBustingBuffer[.uint8](
         num_experts * N * packed_K,
         simd_size,
         ctx,
         cache_bust,
         budget_bytes=b_budget,
     )
-    var cb_c = CacheBustingBuffer[DType.float32](
+    var cb_c = CacheBustingBuffer[.float32](
         total_routes * N, simd_size, ctx, cache_bust
     )
     # Scale buffers (uint8 — the dispatcher reads these in scale-4d byte order
     # via PreshuffledScaleLoader). Fill the whole buffer with a valid E8M0 byte
     # (0x7F = magnitude 1).
-    var cb_a_sc = CacheBustingBuffer[DType.uint8](
+    var cb_a_sc = CacheBustingBuffer[.uint8](
         num_experts * max_padded_M * scale_K, simd_size, ctx, cache_bust
     )
-    var cb_b_sc = CacheBustingBuffer[DType.uint8](
+    var cb_b_sc = CacheBustingBuffer[.uint8](
         num_experts * N * scale_K, simd_size, ctx, cache_bust
     )
 
@@ -237,15 +235,11 @@ def bench_preb[
         # dispatcher signature. The kernel internally re-bitcasts to uint8 for
         # V# construction; the dtype is a wrapping convention.
         var sfa_tt = TileTensor[mut=False](
-            cb_a_sc.offset_ptr(iteration).bitcast[
-                Scalar[DType.float8_e8m0fnu]
-            ](),
+            cb_a_sc.offset_ptr(iteration).bitcast[Float8_e8m0fnu](),
             row_major(Coord(num_experts * max_padded_M, Idx[scale_K])),
         )
         var sfb_tt = TileTensor[mut=False](
-            cb_b_sc.offset_ptr(iteration).bitcast[
-                Scalar[DType.float8_e8m0fnu]
-            ](),
+            cb_b_sc.offset_ptr(iteration).bitcast[Float8_e8m0fnu](),
             row_major[num_experts, N, scale_K](),
         )
         var c_tt = TileTensor[mut=True](

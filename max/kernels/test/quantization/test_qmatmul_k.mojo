@@ -47,11 +47,7 @@ def fill_random[dtype: DType](mut array: Array[Scalar[dtype], ...]):
 def random_float16(min: Float64 = 0, max: Float64 = 1) -> Float16:
     # Avoid pulling in a __truncdfhf2 dependency for a float64->float16
     # conversion by casting through float32 first.
-    return (
-        random_float64(min=min, max=max)
-        .cast[DType.float32]()
-        .cast[DType.float16]()
-    )
+    return random_float64(min=min, max=max).cast[.float32]().cast[.float16]()
 
 
 def quantize_a_Q8[
@@ -62,8 +58,8 @@ def quantize_a_Q8[
     var fp_data = a.load[width=group_size]()
     var max_value = abs(fp_data).reduce_max()
     var multiplier = 127.0 / max_value if max_value != 0.0 else 0.0
-    var scale = (max_value / 127.0).cast[DType.float32]()
-    var quant_data = round(fp_data * multiplier).cast[DType.int8]()
+    var scale = (max_value / 127.0).cast[.float32]()
+    var quant_data = round(fp_data * multiplier).cast[.int8]()
 
     a_quant.store(quant_data)
     return scale
@@ -82,9 +78,9 @@ def dot_product_QK_K[
     var sum: Int32 = 0
     for i in range(_block_QK_K.quantized_k):
         sum += (
-            a_quant_data[i].cast[DType.int32]()
-            * (b_quant_data[i].cast[DType.int32]() - b_zero_point)
-            * b_scales[i // group_size].cast[DType.int32]()
+            a_quant_data[i].cast[.int32]()
+            * (b_quant_data[i].cast[.int32]() - b_zero_point)
+            * b_scales[i // group_size].cast[.int32]()
         )
     return sum
 
@@ -97,28 +93,28 @@ trait QuantizedGemm:
     @staticmethod
     def build_b_buffer(
         N: Int, K: Int
-    ) -> LayoutTensor[DType.uint8, Layout.row_major[2](), MutAnyOrigin]:
+    ) -> LayoutTensor[.uint8, Layout.row_major[2](), MutAnyOrigin]:
         ...
 
     @staticmethod
     def pack_b_buffer(
-        b: LayoutTensor[mut=True, DType.uint8, Layout.row_major[2](), _],
-        b_packed: LayoutTensor[mut=True, DType.uint8, Layout.row_major[2](), _],
+        b: LayoutTensor[mut=True, .uint8, Layout.row_major[2](), _],
+        b_packed: LayoutTensor[mut=True, .uint8, Layout.row_major[2](), _],
     ) raises:
         ...
 
     @staticmethod
     def kernel(
-        a: LayoutTensor[DType.float32, Layout.row_major[2](), _],
-        b: LayoutTensor[DType.uint8, Layout.row_major[2](), _],
-        c: LayoutTensor[mut=True, DType.float32, Layout.row_major[2](), _],
+        a: LayoutTensor[.float32, Layout.row_major[2](), _],
+        b: LayoutTensor[.uint8, Layout.row_major[2](), _],
+        c: LayoutTensor[mut=True, .float32, Layout.row_major[2](), _],
     ):
         ...
 
     @staticmethod
     def dot_product(
-        a: LayoutTensor[DType.float32, Layout.row_major[2](), _],
-        b: LayoutTensor[DType.uint8, Layout.row_major[2](), _],
+        a: LayoutTensor[.float32, Layout.row_major[2](), _],
+        b: LayoutTensor[.uint8, Layout.row_major[2](), _],
         m: Int,
         n: Int,
         k: Int,
@@ -141,7 +137,7 @@ struct qgemm_Q4_0(QuantizedGemm):
     @staticmethod
     def build_b_buffer(
         N: Int, K: Int
-    ) -> LayoutTensor[DType.uint8, Layout.row_major[2](), MutUntrackedOrigin]:
+    ) -> LayoutTensor[.uint8, Layout.row_major[2](), MutUntrackedOrigin]:
         var k_groups = ceildiv(K, Self.k_group_size())
         var b_ptr = alloc[UInt8](N * k_groups * size_of[_block_Q4_0]())
         var block_ptr = b_ptr.bitcast[_block_Q4_0]()
@@ -152,7 +148,7 @@ struct qgemm_Q4_0(QuantizedGemm):
                 fill_random(block_ptr[].q_bits)
                 block_ptr += 1
 
-        return LayoutTensor[DType.uint8, Layout.row_major[2]()](
+        return LayoutTensor[.uint8, Layout.row_major[2]()](
             b_ptr,
             RuntimeLayout[Layout.row_major[2]()].row_major(
                 Index(N, k_groups * size_of[_block_Q4_0]())
@@ -161,8 +157,8 @@ struct qgemm_Q4_0(QuantizedGemm):
 
     @staticmethod
     def pack_b_buffer(
-        b: LayoutTensor[mut=True, DType.uint8, Layout.row_major[2](), _],
-        b_packed: LayoutTensor[mut=True, DType.uint8, Layout.row_major[2](), _],
+        b: LayoutTensor[mut=True, .uint8, Layout.row_major[2](), _],
+        b_packed: LayoutTensor[mut=True, .uint8, Layout.row_major[2](), _],
     ) raises:
         matmul_qint4_pack_b[_block_Q4_0.group_size](
             lt_to_tt(b), lt_to_tt(b_packed)
@@ -170,9 +166,9 @@ struct qgemm_Q4_0(QuantizedGemm):
 
     @staticmethod
     def kernel(
-        a: LayoutTensor[DType.float32, Layout.row_major[2](), _],
-        b: LayoutTensor[DType.uint8, Layout.row_major[2](), _],
-        c: LayoutTensor[mut=True, DType.float32, Layout.row_major[2](), _],
+        a: LayoutTensor[.float32, Layout.row_major[2](), _],
+        b: LayoutTensor[.uint8, Layout.row_major[2](), _],
+        c: LayoutTensor[mut=True, .float32, Layout.row_major[2](), _],
     ):
         matmul_qint4[_block_Q4_0.group_size](
             lt_to_tt(a), lt_to_tt(b), lt_to_tt(c)
@@ -180,8 +176,8 @@ struct qgemm_Q4_0(QuantizedGemm):
 
     @staticmethod
     def dot_product(
-        a: LayoutTensor[DType.float32, Layout.row_major[2](), _],
-        b: LayoutTensor[DType.uint8, Layout.row_major[2](), _],
+        a: LayoutTensor[.float32, Layout.row_major[2](), _],
+        b: LayoutTensor[.uint8, Layout.row_major[2](), _],
         m: Int,
         n: Int,
         k: Int,
@@ -221,13 +217,12 @@ struct qgemm_Q4_0(QuantizedGemm):
         comptime b_zero_point = 8
 
         for i in range(_block_Q4_0.group_size):
-            sum += a_quant_data[i].cast[DType.int32]() * (
-                (b_quant_data[i].cast[DType.int32]() - b_zero_point)
+            sum += a_quant_data[i].cast[.int32]() * (
+                (b_quant_data[i].cast[.int32]() - b_zero_point)
             )
 
         var sumf = (
-            sum.cast[DType.float32]()
-            * block_ptr[].base_scale.cast[DType.float32]()
+            sum.cast[.float32]() * block_ptr[].base_scale.cast[.float32]()
         )
 
         return sumf * a_scale
@@ -241,7 +236,7 @@ struct qgemm_Q4_K(QuantizedGemm):
     @staticmethod
     def build_b_buffer(
         N: Int, K: Int
-    ) -> LayoutTensor[DType.uint8, Layout.row_major[2](), MutUntrackedOrigin]:
+    ) -> LayoutTensor[.uint8, Layout.row_major[2](), MutUntrackedOrigin]:
         var k_groups = ceildiv(K, Self.k_group_size())
         var b_ptr = alloc[UInt8](N * k_groups * size_of[_block_Q4_K]())
         var block_ptr = b_ptr.bitcast[_block_Q4_K]()
@@ -254,7 +249,7 @@ struct qgemm_Q4_K(QuantizedGemm):
                 fill_random(block_ptr[].q_bits)
                 block_ptr += 1
 
-        return LayoutTensor[DType.uint8, Layout.row_major[2]()](
+        return LayoutTensor[.uint8, Layout.row_major[2]()](
             b_ptr,
             RuntimeLayout[Layout.row_major[2]()].row_major(
                 Index(N, k_groups * size_of[_block_Q4_K]())
@@ -263,23 +258,23 @@ struct qgemm_Q4_K(QuantizedGemm):
 
     @staticmethod
     def pack_b_buffer(
-        b: LayoutTensor[mut=True, DType.uint8, Layout.row_major[2](), _],
-        b_packed: LayoutTensor[mut=True, DType.uint8, Layout.row_major[2](), _],
+        b: LayoutTensor[mut=True, .uint8, Layout.row_major[2](), _],
+        b_packed: LayoutTensor[mut=True, .uint8, Layout.row_major[2](), _],
     ) raises:
         matmul_Q4_K_pack_b(lt_to_tt(b), lt_to_tt(b_packed))
 
     @staticmethod
     def kernel(
-        a: LayoutTensor[DType.float32, Layout.row_major[2](), _],
-        b: LayoutTensor[DType.uint8, Layout.row_major[2](), _],
-        c: LayoutTensor[mut=True, DType.float32, Layout.row_major[2](), _],
+        a: LayoutTensor[.float32, Layout.row_major[2](), _],
+        b: LayoutTensor[.uint8, Layout.row_major[2](), _],
+        c: LayoutTensor[mut=True, .float32, Layout.row_major[2](), _],
     ):
         matmul_Q4_K(lt_to_tt(a), lt_to_tt(b), lt_to_tt(c))
 
     @staticmethod
     def dot_product(
-        a: LayoutTensor[DType.float32, Layout.row_major[2](), _],
-        b: LayoutTensor[DType.uint8, Layout.row_major[2](), _],
+        a: LayoutTensor[.float32, Layout.row_major[2](), _],
+        b: LayoutTensor[.uint8, Layout.row_major[2](), _],
         m: Int,
         n: Int,
         k: Int,
@@ -307,7 +302,7 @@ struct qgemm_Q4_K(QuantizedGemm):
                 a_quant_data_ptr.load[width=_block_Q4_K.group_size](
                     i * _block_Q4_K.group_size
                 )
-                .cast[DType.int32]()
+                .cast[.int32]()
                 .reduce_add()
             )
 
@@ -348,7 +343,7 @@ struct qgemm_Q4_K(QuantizedGemm):
         var sum2: Int32 = 0
 
         for i in range(_block_Q4_K.group_count):
-            sum2 += a_block_sums[i] * b_mins[i].cast[DType.int32]()
+            sum2 += a_block_sums[i] * b_mins[i].cast[.int32]()
 
         var sum = dot_product_QK_K[group_size=_block_Q4_K.group_size](
             a_quant_data.unsafe_ptr(),
@@ -357,13 +352,10 @@ struct qgemm_Q4_K(QuantizedGemm):
         )
 
         var sumf = (
-            sum.cast[DType.float32]()
-            * block_ptr[].base_scale.cast[DType.float32]()
+            sum.cast[.float32]() * block_ptr[].base_scale.cast[.float32]()
         )
         sumf = (
-            sumf
-            - sum2.cast[DType.float32]()
-            * block_ptr[].base_min.cast[DType.float32]()
+            sumf - sum2.cast[.float32]() * block_ptr[].base_min.cast[.float32]()
         )
 
         return sumf * a_scale
@@ -377,7 +369,7 @@ struct qgemm_Q6_K(QuantizedGemm):
     @staticmethod
     def build_b_buffer(
         N: Int, K: Int
-    ) -> LayoutTensor[DType.uint8, Layout.row_major[2](), MutUntrackedOrigin]:
+    ) -> LayoutTensor[.uint8, Layout.row_major[2](), MutUntrackedOrigin]:
         var k_groups = ceildiv(K, Self.k_group_size())
         var b_ptr = alloc[UInt8](N * k_groups * size_of[_block_Q6_K]())
         var block_ptr = b_ptr.bitcast[_block_Q6_K]()
@@ -390,7 +382,7 @@ struct qgemm_Q6_K(QuantizedGemm):
                 block_ptr[].base_scale = random_float16(max=0.001)
                 block_ptr += 1
 
-        return LayoutTensor[DType.uint8, Layout.row_major[2]()](
+        return LayoutTensor[.uint8, Layout.row_major[2]()](
             b_ptr,
             RuntimeLayout[Layout.row_major[2]()].row_major(
                 Index(N, k_groups * size_of[_block_Q6_K]())
@@ -399,23 +391,23 @@ struct qgemm_Q6_K(QuantizedGemm):
 
     @staticmethod
     def pack_b_buffer(
-        b: LayoutTensor[mut=True, DType.uint8, Layout.row_major[2](), _],
-        b_packed: LayoutTensor[mut=True, DType.uint8, Layout.row_major[2](), _],
+        b: LayoutTensor[mut=True, .uint8, Layout.row_major[2](), _],
+        b_packed: LayoutTensor[mut=True, .uint8, Layout.row_major[2](), _],
     ) raises:
         matmul_Q6_K_pack_b(lt_to_tt(b), lt_to_tt(b_packed))
 
     @staticmethod
     def kernel(
-        a: LayoutTensor[DType.float32, Layout.row_major[2](), _],
-        b: LayoutTensor[DType.uint8, Layout.row_major[2](), _],
-        c: LayoutTensor[mut=True, DType.float32, Layout.row_major[2](), _],
+        a: LayoutTensor[.float32, Layout.row_major[2](), _],
+        b: LayoutTensor[.uint8, Layout.row_major[2](), _],
+        c: LayoutTensor[mut=True, .float32, Layout.row_major[2](), _],
     ):
         matmul_Q6_K(lt_to_tt(a), lt_to_tt(b), lt_to_tt(c))
 
     @staticmethod
     def dot_product(
-        a: LayoutTensor[DType.float32, Layout.row_major[2](), _],
-        b: LayoutTensor[DType.uint8, Layout.row_major[2](), _],
+        a: LayoutTensor[.float32, Layout.row_major[2](), _],
+        b: LayoutTensor[.uint8, Layout.row_major[2](), _],
         m: Int,
         n: Int,
         k: Int,
@@ -473,8 +465,7 @@ struct qgemm_Q6_K(QuantizedGemm):
         )
 
         var sumf = (
-            sum.cast[DType.float32]()
-            * block_ptr[].base_scale.cast[DType.float32]()
+            sum.cast[.float32]() * block_ptr[].base_scale.cast[.float32]()
         )
 
         return sumf * a_scale
@@ -483,9 +474,9 @@ struct qgemm_Q6_K(QuantizedGemm):
 def reference_gemm[
     qgemm: QuantizedGemm
 ](
-    a: LayoutTensor[DType.float32, Layout.row_major[2](), _],
-    b: LayoutTensor[DType.uint8, Layout.row_major[2](), _],
-    c: LayoutTensor[mut=True, DType.float32, Layout.row_major[2](), _],
+    a: LayoutTensor[.float32, Layout.row_major[2](), _],
+    b: LayoutTensor[.uint8, Layout.row_major[2](), _],
+    c: LayoutTensor[mut=True, .float32, Layout.row_major[2](), _],
 ):
     var M = a.dim[0]()
     var N = b.dim[0]()
@@ -517,49 +508,45 @@ def reference_gemm[
 
 struct GemmContext[qgemm: QuantizedGemm]:
     @__allow_legacy_any_origin_fields
-    var a: LayoutTensor[DType.float32, Layout.row_major[2](), MutAnyOrigin]
+    var a: LayoutTensor[.float32, Layout.row_major[2](), MutAnyOrigin]
 
     @__allow_legacy_any_origin_fields
-    var b: LayoutTensor[DType.uint8, Layout.row_major[2](), MutAnyOrigin]
+    var b: LayoutTensor[.uint8, Layout.row_major[2](), MutAnyOrigin]
 
     @__allow_legacy_any_origin_fields
-    var b_packed: LayoutTensor[DType.uint8, Layout.row_major[2](), MutAnyOrigin]
+    var b_packed: LayoutTensor[.uint8, Layout.row_major[2](), MutAnyOrigin]
 
     @__allow_legacy_any_origin_fields
-    var c: LayoutTensor[DType.float32, Layout.row_major[2](), MutAnyOrigin]
+    var c: LayoutTensor[.float32, Layout.row_major[2](), MutAnyOrigin]
 
     @__allow_legacy_any_origin_fields
-    var c_golden: LayoutTensor[
-        DType.float32, Layout.row_major[2](), MutAnyOrigin
-    ]
+    var c_golden: LayoutTensor[.float32, Layout.row_major[2](), MutAnyOrigin]
 
     @staticmethod
     def _build_float_buffer(
         M: Int, N: Int
     ) raises -> LayoutTensor[
-        DType.float32, Layout.row_major[2](), MutUntrackedOrigin
+        .float32, Layout.row_major[2](), MutUntrackedOrigin
     ]:
         var ptr = alloc[Float32](M * N)
         for i in range(M * N):
-            ptr[i] = random_float64(min=-1.0, max=+1.0).cast[DType.float32]()
-        return LayoutTensor[DType.float32, Layout.row_major[2]()](
+            ptr[i] = random_float64(min=-1.0, max=+1.0).cast[.float32]()
+        return LayoutTensor[.float32, Layout.row_major[2]()](
             ptr, RuntimeLayout[Layout.row_major[2]()].row_major(Index(M, N))
         )
 
     @staticmethod
     def _build_b_buffer(
         N: Int, K: Int
-    ) raises -> LayoutTensor[DType.uint8, Layout.row_major[2](), MutAnyOrigin]:
+    ) raises -> LayoutTensor[.uint8, Layout.row_major[2](), MutAnyOrigin]:
         return Self.qgemm.build_b_buffer(N, K)
 
     @staticmethod
     def _pack_b_buffer(
-        b: LayoutTensor[mut=True, DType.uint8, Layout.row_major[2](), _]
-    ) raises -> LayoutTensor[
-        DType.uint8, Layout.row_major[2](), MutUntrackedOrigin
-    ]:
+        b: LayoutTensor[mut=True, .uint8, Layout.row_major[2](), _]
+    ) raises -> LayoutTensor[.uint8, Layout.row_major[2](), MutUntrackedOrigin]:
         var b_packed_buffer = alloc[UInt8](b.size())
-        var b_packed = LayoutTensor[DType.uint8, Layout.row_major[2]()](
+        var b_packed = LayoutTensor[.uint8, Layout.row_major[2]()](
             b_packed_buffer,
             RuntimeLayout[Layout.row_major[2]()].row_major(
                 b.runtime_layout.shape.value.canonicalize()

@@ -287,7 +287,7 @@ def _apply_mask[
         accum_type,
         reg_tile_layout,
         MutAnyOrigin,
-        address_space=AddressSpace.LOCAL,
+        address_space=.LOCAL,
         element_layout=element_layout,
     ],
 ):
@@ -355,7 +355,7 @@ def _apply_mask[
 
                         comptime if masked:
                             p = mask.mask(
-                                IndexList[4, element_type=DType.uint32](
+                                IndexList[4, element_type=.uint32](
                                     Int(position.prompt_idx),
                                     Int(q_head_idx),
                                     Int(score_row_with_start_pos),
@@ -369,27 +369,27 @@ def _apply_mask[
                         comptime if mask_t.apply_log2e_after_mask:
                             p *= log2e
 
-                        var bound: IndexList[2, element_type=DType.uint32]
+                        var bound: IndexList[2, element_type=.uint32]
 
                         comptime if decoding:
-                            bound = IndexList[2, element_type=DType.uint32](
+                            bound = IndexList[2, element_type=.uint32](
                                 Int(position.num_keys),
                                 Int(position.num_keys),
                             )
                             p = _kernel_mask(
-                                IndexList[2, element_type=DType.uint32](
+                                IndexList[2, element_type=.uint32](
                                     Int(score_row), Int(score_col)
                                 ),
                                 bound,
                                 p,
                             )
                         elif masked:
-                            bound = IndexList[2, element_type=DType.uint32](
+                            bound = IndexList[2, element_type=.uint32](
                                 Int(position.seq_len),
                                 Int(position.num_keys),
                             )
                             p = _kernel_mask(
-                                IndexList[2, element_type=DType.uint32](
+                                IndexList[2, element_type=.uint32](
                                     Int(score_row), Int(score_col)
                                 ),
                                 bound,
@@ -455,27 +455,21 @@ def produce[
         BN=kv_sub_tile_rows(BN, KVLUTType.page_size),
         BK=padded_depth,
     ],
-    q_smem: UnsafePointer[
-        mut=True, Scalar[qkv_type], _, address_space=AddressSpace.SHARED
-    ],
+    q_smem: UnsafePointer[mut=True, Scalar[qkv_type], _, address_space=.SHARED],
     kv_smem: UnsafePointer[
-        mut=True, Scalar[qkv_type], _, address_space=AddressSpace.SHARED
+        mut=True, Scalar[qkv_type], _, address_space=.SHARED
     ],
     produced_mbar_kv: UnsafePointer[
-        mut=True, SharedMemBarrier, _, address_space=AddressSpace.SHARED
+        mut=True, SharedMemBarrier, _, address_space=.SHARED
     ],
     consumed_mbar_kv: UnsafePointer[
-        mut=True, SharedMemBarrier, _, address_space=AddressSpace.SHARED
+        mut=True, SharedMemBarrier, _, address_space=.SHARED
     ],
     produced_mbar_q: Optional[
-        UnsafePointer[
-            SharedMemBarrier, MutAnyOrigin, address_space=AddressSpace.SHARED
-        ]
+        UnsafePointer[SharedMemBarrier, MutAnyOrigin, address_space=.SHARED]
     ],
     consumed_mbar_q: Optional[
-        UnsafePointer[
-            SharedMemBarrier, MutAnyOrigin, address_space=AddressSpace.SHARED
-        ]
+        UnsafePointer[SharedMemBarrier, MutAnyOrigin, address_space=.SHARED]
     ],
     kv_lut: KVLUTType,
     initial_position: MHAPosition[
@@ -608,7 +602,7 @@ def produce[
         qkv_type,
         Layout.row_major(q_tile_shape),
         type_of(q_smem).origin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
     ]:
         return {q_smem + UInt32(q_size) * q_idx + offset}
@@ -626,9 +620,9 @@ def produce[
             qkv_type,
             k_smem_layout,
             type_of(kv_smem).origin,
-            address_space=AddressSpace.SHARED,
-            layout_int_type=DType.int32,
-            linear_idx_type=DType.int32,
+            address_space=.SHARED,
+            layout_int_type=.int32,
+            linear_idx_type=.int32,
             alignment=128,
         ],
     ):
@@ -1080,19 +1074,19 @@ def output_reg_to_smem[
     local_warp_group_idx: UInt32,
     warp_y: UInt32,
     q_smem: UnsafePointer[
-        Scalar[output_type], MutAnyOrigin, address_space=AddressSpace.SHARED
+        Scalar[output_type], MutAnyOrigin, address_space=.SHARED
     ],
     output_reg_tile: LayoutTensor[
         accum_type,
         Layout.row_major(num_m_mmas, o_frag_size),
         MutAnyOrigin,
-        address_space=AddressSpace.LOCAL,
+        address_space=.LOCAL,
     ],
 ) -> LayoutTensor[
     output_type,
     Layout.row_major(BM, padded_depth),
     MutAnyOrigin,
-    address_space=AddressSpace.SHARED,
+    address_space=.SHARED,
 ]:
     """Stores the output accumulator registers from local memory into shared memory.
 
@@ -1128,7 +1122,7 @@ def output_reg_to_smem[
     var accum_smem_tile = LayoutTensor[
         output_type,
         Layout.row_major(BM, padded_depth),
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ](q_smem)
     comptime use_stmatrix = accum_type == DType.float32 and padded_depth % 16 == 0 and size_of[
         output_type

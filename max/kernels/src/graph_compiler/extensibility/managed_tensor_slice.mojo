@@ -176,7 +176,7 @@ def _dot_prod[rank: Int](x: IndexList[rank], y: IndexList[rank]) -> Int:
 # ===----------------------------------------------------------------------=== #
 
 comptime _AllScalar[rank: Int] = TypeList.splat[
-    Trait=CoordLike, count=rank, type=Scalar[DType.int]
+    Trait=CoordLike, count=rank, type=Int
 ]()
 """A variadic of `rank` Scalar types."""
 
@@ -198,7 +198,7 @@ comptime _RowMajorTileLayout[
 comptime _IndexListToCoordLikeTabulator[
     list: IndexList,
     idx: Int,
-]: CoordLike = ComptimeInt[list[idx]] if list[idx] >= 0 else Scalar[DType.int]
+]: CoordLike = ComptimeInt[list[idx]] if list[idx] >= 0 else Int
 
 """Maps a single IndexList element to a CoordLike type.
 Negative values (-1 = dynamic) become Scalar, others become ComptimeInt."""
@@ -223,14 +223,14 @@ Negative values (-1) become Scalar, non-negative become ComptimeInt."""
 
 comptime _RowMajorIntTupleTileLayout[
     shape: IntTuple,
-] = _RowMajorTileLayout[_IntTupleToCoordLike[DType.int, shape]]
+] = _RowMajorTileLayout[_IntTupleToCoordLike[.int, shape]]
 """A TileLayout with row-major strides derived from an IntTuple shape."""
 
 
 comptime _IntTupleShapeIndexListStridesToTileLayout[
     shape: IntTuple, strides: IndexList
 ] = TileLayout[
-    shape_types=_IntTupleToCoordLike[DType.int, shape],
+    shape_types=_IntTupleToCoordLike[.int, shape],
     stride_types=_IndexListToCoordLike[strides],
 ]
 """Convert an IntTuple shape and IndexList strides to a TileLayout."""
@@ -252,7 +252,7 @@ def get_row_major_tensor_spec_static[
         rank: The tensor rank (must match `len(shape_dims)`).
         shape_dims: Compile-time integer dimensions of the tensor shape.
     """
-    return {align_of[dtype](), AddressSpace.GENERIC}
+    return {align_of[dtype](), .GENERIC}
 
 
 def _get_unknown_tensor_spec[
@@ -262,7 +262,7 @@ def _get_unknown_tensor_spec[
     Returns a StaticTensorSpec with the specified type and rank with all
     fields dynamic or defaulted.
     """
-    return {1, AddressSpace.GENERIC}
+    return {1, .GENERIC}
 
 
 # ===----------------------------------------------------------------------=== #
@@ -878,8 +878,8 @@ def simd_store_into_managed_tensor_slice[
     @__parameter
     @always_inline
     def store_stride1():
-        comptime if dtype == DType.bool:
-            var v = value.cast[DType.uint8]()
+        comptime if dtype == .bool:
+            var v = value.cast[.uint8]()
             tensor._ptr.unsafe_bitcast[UInt8]().unsafe_store(flat_index, v)
         else:
             tensor._ptr.unsafe_store[alignment=max_alignment](flat_index, value)
@@ -888,8 +888,8 @@ def simd_store_into_managed_tensor_slice[
     @__parameter
     @always_inline
     def store_strided(stride: Int):
-        comptime if dtype == DType.bool:
-            var v = value.cast[DType.uint8]()
+        comptime if dtype == .bool:
+            var v = value.cast[.uint8]()
             strided_store(
                 v,
                 tensor._ptr.unsafe_bitcast[UInt8]().unsafe_offset(flat_index),
@@ -1047,7 +1047,7 @@ def simd_load_from_managed_tensor_slice[
     @__parameter
     @always_inline
     def load_stride1() -> SIMD[dtype, simd_width]:
-        comptime if dtype == DType.bool:
+        comptime if dtype == .bool:
             var v = tensor._ptr.unsafe_bitcast[UInt8]().unsafe_load[
                 width=simd_width,
                 invariant=invariant,
@@ -1062,7 +1062,7 @@ def simd_load_from_managed_tensor_slice[
     @__parameter
     @always_inline
     def load_strided(stride: Int) -> SIMD[dtype, simd_width]:
-        comptime if dtype == DType.bool:
+        comptime if dtype == .bool:
             var v = strided_load[simd_width, invariant=invariant](
                 tensor._ptr.unsafe_bitcast[UInt8]().unsafe_offset(flat_index),
                 stride,
@@ -2271,11 +2271,11 @@ struct ManagedTensorSlice[
 
     @always_inline
     def to_tile_tensor[
-        coord_dtype: DType = DType.int64
+        coord_dtype: DType = .int64
     ](
         self,
         out result: TileTensor[
-            dtype=Self.dtype,
+            Self.dtype,
             origin=MutUntrackedOrigin,
             LayoutType=Self.RuntimeLayout,
         ],

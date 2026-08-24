@@ -69,7 +69,7 @@ def stencil1d_smem(
     var b = TileTensor(b_ptr, row_major(Coord(Int(arr_size))))
 
     var a_shared = unsafe_stack_allocation[
-        BLOCK_DIM + 2, DType.float32, address_space=AddressSpace.SHARED
+        BLOCK_DIM + 2, DType.float32, address_space=.SHARED
     ]()
 
     a_shared[lindex] = a.load[width=1](Coord(tid))
@@ -111,8 +111,8 @@ def run_stencil1d[smem: Bool](ctx: DeviceContext) raises:
         a_host[i] = Float32(i)
         b_host[i] = 0
 
-    var a_device = ctx.enqueue_create_buffer[DType.float32](m)
-    var b_device = ctx.enqueue_create_buffer[DType.float32](m)
+    var a_device = ctx.enqueue_create_buffer[.float32](m)
+    var b_device = ctx.enqueue_create_buffer[.float32](m)
 
     ctx.enqueue_copy(a_device, a_host)
     ctx.enqueue_copy(b_device, b_host)

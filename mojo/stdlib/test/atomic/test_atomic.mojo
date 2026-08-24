@@ -88,8 +88,8 @@ def _test_atomic[dtype: DType]() raises:
 
 
 def test_atomic() raises:
-    _test_atomic[DType.int32]()
-    _test_atomic[DType.float64]()
+    _test_atomic[.int32]()
+    _test_atomic[.float64]()
 
 
 def _test_compare_exchange[dtype: DType]() raises:
@@ -114,8 +114,8 @@ def _test_compare_exchange[dtype: DType]() raises:
 
 
 def test_compare_exchange() raises:
-    _test_compare_exchange[DType.int32]()
-    _test_compare_exchange[DType.float64]()
+    _test_compare_exchange[.int32]()
+    _test_compare_exchange[.float64]()
 
 
 def test_comptime_atomic() raises:

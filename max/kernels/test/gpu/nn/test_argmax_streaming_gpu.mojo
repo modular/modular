@@ -223,7 +223,7 @@ def _run_dtype[dtype: DType, out_idx_type: DType](ctx: DeviceContext) raises:
 def main() raises:
     seed(24301)
     with DeviceContext() as ctx:
-        _run_dtype[DType.float32, DType.int64](ctx)
-        _run_dtype[DType.bfloat16, DType.int64](ctx)
-        _run_dtype[DType.bfloat16, DType.int32](ctx)
+        _run_dtype[.float32, DType.int64](ctx)
+        _run_dtype[.bfloat16, DType.int64](ctx)
+        _run_dtype[.bfloat16, DType.int32](ctx)
     print("OK")

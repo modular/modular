@@ -77,6 +77,7 @@ from nn.attention.gpu.nvidia.sm100.mla_decode_utils import (
     MLA_SM100_Decode_Config,
     MLA_SM100_Decode_Common,
     QOTMATile,
+    ORaggedTMATile,
     MLA_Decode_Pack,
     OffsetPosition,
     KVPipelineGeneric,
@@ -220,7 +221,7 @@ struct MLA_SM100_Decode_Sparse_KV_BF16[
             tile_shape=IndexList[2](Self.config.BK_PV, Self.kv_gather4_box_w),
             desc_shape=IndexList[2](1, Self.kv_gather4_box_w),
         ],
-        o_tma: QOTMATile[
+        o_tma: ORaggedTMATile[
             dtype=Self.output_type,
             BM=Self.config.out_rows,
             BK=Self.config.BN_PV // 4,
@@ -236,9 +237,7 @@ struct MLA_SM100_Decode_Sparse_KV_BF16[
         d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]],
         indices_stride: Int32,
         topk_lengths: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]],
-        attn_sink_ptr: OptionalReg[
-            UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin]
-        ],
+        attn_sink_ptr: OptionalReg[UnsafePointer[Float32, origin=MutAnyOrigin]],
         # Extra KV TMA: BF16, SWIZZLE_128B, tile_width=padded_q_depth=576,
         # box_w=_gather4_box_width[bfloat16, 576, SWIZZLE_128B]()=64.
         # Same descriptor shape as the main K_TMA.
@@ -253,9 +252,7 @@ struct MLA_SM100_Decode_Sparse_KV_BF16[
         extra_topk_lengths: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]],
         extra_indices_stride: Int32,
         scalar_args: TileTensor[
-            DType.int64,
-            RowMajorLayout[ComptimeInt[3]],
-            MutAnyOrigin,
+            .int64, RowMajorLayout[ComptimeInt[3]], MutAnyOrigin
         ],
     ):
         # The upstream dispatcher monomorphizes the kernel struct for both
@@ -263,7 +260,7 @@ struct MLA_SM100_Decode_Sparse_KV_BF16[
         # selected at runtime via `num_partitions > 1`.
         var _indices_stride = Int(indices_stride)
         var _extra_indices_stride = Int(extra_indices_stride)
-        comptime assert Self.KVLUTType.dtype == DType.bfloat16
+        comptime assert Self.KVLUTType.dtype == .bfloat16
         comptime assert size_of[Self.KVLUTType.dtype]() == 2
         comptime assert Self.config.supported()
         comptime assert Self.config.scale_block_size == 0
@@ -310,7 +307,7 @@ struct MLA_SM100_Decode_Sparse_KV_BF16[
                 UnsafePointer[
                     Scalar[Self.ValidLengthType.dtype],
                     ImmutAnyOrigin,
-                    address_space=AddressSpace.GENERIC,
+                    address_space=.GENERIC,
                 ]
             ](valid_length.value()),
             q_max_seq_len,
@@ -387,7 +384,7 @@ struct MLA_SM100_Decode_Sparse_KV_BF16[
 
         var q_smem = external_memory[
             Scalar[Self.q_type],
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
             alignment=128,
             name="mha_dynamic_shared_memory",
         ]()
@@ -503,9 +500,7 @@ struct MLA_SM100_Decode_Sparse_KV_BF16[
             # Per-head attn_sink_log2 (one head per thread in the warpgroup).
             # When attn_sink_ptr is null, attn_sink_log2 stays at -inf and
             # exp2(-inf - mi) = 0, leaving the denominator unchanged.
-            var attn_sink_log2 = Scalar[DType.float32](
-                min_or_neg_inf[DType.float32]()
-            )
+            var attn_sink_log2 = Float32(min_or_neg_inf[.float32]())
             comptime if Self.has_attn_sink:
                 var lane_idx = Int(lane_id())
                 var row = lane_idx & 0x3F
@@ -513,7 +508,7 @@ struct MLA_SM100_Decode_Sparse_KV_BF16[
                 if head_idx_local < Self.config.num_q_heads:
                     attn_sink_log2 = attn_sink_ptr.unsafe_value()[
                         head_idx_local
-                    ] * Scalar[DType.float32](log2e)
+                    ] * Float32(log2e)
 
             Self.Common_MLA_Op.Softmax[has_attn_sink=Self.has_attn_sink,](
                 ptr_tmem_addr[0],
@@ -645,7 +640,7 @@ struct MLA_SM100_Decode_Sparse_KV_BF16[
             DType.bfloat16
         ]()
         var kv_stage_ptr = kv_prod.stage_base_ptr[qk_stage=0]().bitcast[
-            Scalar[DType.bfloat16]
+            BFloat16
         ]()
         var k_mbar = kv_prod.producer_mbar[qk_stage=0]()
         var idx_smem = idx_smem_base + kv_prod.stage_index[

@@ -250,10 +250,10 @@ def bench_prefill[
         cache_row_offsets[i] = UInt32(i * num_keys)
     input_row_offsets[batch_size] = UInt32(batch_size * seq_len)
     cache_row_offsets[batch_size] = UInt32(batch_size * num_keys)
-    var input_row_offsets_device_ptr = ctx.enqueue_create_buffer[DType.uint32](
+    var input_row_offsets_device_ptr = ctx.enqueue_create_buffer[.uint32](
         batch_size + 1
     )
-    var cache_row_offsets_device_ptr = ctx.enqueue_create_buffer[DType.uint32](
+    var cache_row_offsets_device_ptr = ctx.enqueue_create_buffer[.uint32](
         batch_size + 1
     )
 
@@ -446,7 +446,7 @@ def bench_prefill_sparse[
     var lut_host = lut_host_alloc.unsafe_ptr()
     for i in range(num_pages):
         lut_host[i] = UInt32(i)
-    var lut_device = ctx.enqueue_create_buffer[DType.uint32](num_pages)
+    var lut_device = ctx.enqueue_create_buffer[.uint32](num_pages)
     ctx.enqueue_copy(lut_device, lut_host)
 
     var cache_lengths_host_alloc = alloc[UInt32](
@@ -454,9 +454,7 @@ def bench_prefill_sparse[
     ).into_managed()
     var cache_lengths_host = cache_lengths_host_alloc.unsafe_ptr()
     cache_lengths_host[0] = UInt32(num_kv_tokens)
-    var cache_lengths_device = ctx.enqueue_create_buffer[DType.uint32](
-        batch_size
-    )
+    var cache_lengths_device = ctx.enqueue_create_buffer[.uint32](batch_size)
     ctx.enqueue_copy(cache_lengths_device, cache_lengths_host)
 
     # Physical indices: cycle through all valid (page, offset) pairs.
@@ -468,14 +466,14 @@ def bench_prefill_sparse[
         var page_id = i % num_pages
         var tok_in_page = i % page_size
         indices_host[i] = UInt32(page_id * page_size + tok_in_page)
-    var indices_device = ctx.enqueue_create_buffer[DType.uint32](total_indices)
+    var indices_device = ctx.enqueue_create_buffer[.uint32](total_indices)
     ctx.enqueue_copy(indices_device, indices_host)
 
     var topk_lengths_host_alloc = alloc[UInt32]({count = s_q}).into_managed()
     var topk_lengths_host = topk_lengths_host_alloc.unsafe_ptr()
     for i in range(s_q):
         topk_lengths_host[i] = UInt32(topk)
-    var topk_lengths_device = ctx.enqueue_create_buffer[DType.uint32](s_q)
+    var topk_lengths_device = ctx.enqueue_create_buffer[.uint32](s_q)
     ctx.enqueue_copy(topk_lengths_device, topk_lengths_host)
 
     ctx.synchronize()
@@ -502,11 +500,11 @@ def bench_prefill_sparse[
             )
         ),
     )
-    var cache_lengths_lt = LayoutTensor[mut=False, DType.uint32, cl_layout](
+    var cache_lengths_lt = LayoutTensor[mut=False, .uint32, cl_layout](
         cache_lengths_device.unsafe_ptr(),
         RuntimeLayout[cl_layout].row_major(IndexList[1](batch_size)),
     )
-    var lut_lt = LayoutTensor[mut=False, DType.uint32, lut_layout, _](
+    var lut_lt = LayoutTensor[mut=False, .uint32, lut_layout, _](
         lut_device.unsafe_ptr(),
         RuntimeLayout[lut_layout].row_major(
             IndexList[2](batch_size, num_pages)
@@ -629,8 +627,8 @@ struct MLA_cfg(ImplicitlyCopyable, Writable):
 
 
 def main() raises:
-    comptime qkv_type = get_defined_dtype["qkv_type", DType.bfloat16]()
-    comptime output_type = get_defined_dtype["output_type", DType.bfloat16]()
+    comptime qkv_type = get_defined_dtype["qkv_type", .bfloat16]()
+    comptime output_type = get_defined_dtype["output_type", .bfloat16]()
     comptime depth = get_defined_int["depth", 576]()
     comptime prefill_depth = get_defined_int["prefill_depth", 192]()
     comptime num_heads = get_defined_int["num_heads", 128]()

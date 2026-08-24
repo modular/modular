@@ -112,9 +112,7 @@ def tma_umma_kernel_pair_cta[
         b_type, BN, BK, swizzle_mode=b_swizzle
     ]()
 
-    var smem = external_memory[
-        UInt8, address_space=AddressSpace.SHARED, alignment=8
-    ]()
+    var smem = external_memory[UInt8, address_space=.SHARED, alignment=8]()
 
     comptime a_smem_bytes = a_smem_layout.size() * size_of[a_type]()
     comptime b_smem_bytes = b_smem_layout.size() * size_of[b_type]()
@@ -127,14 +125,14 @@ def tma_umma_kernel_pair_cta[
     var a_smem_tile = LayoutTensor[
         a_type,
         a_smem_layout,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
     ](a_smem.as_unsafe_any_origin())
 
     var b_smem_tile = LayoutTensor[
         b_type,
         b_smem_layout,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
     ](b_smem.as_unsafe_any_origin())
 
@@ -208,7 +206,7 @@ def tma_umma_kernel_pair_cta[
         accum_type,
         a_type,
         b_type,
-        Index[dtype=DType.uint32](mma_shape[0], mma_shape[1]),
+        Index[dtype=.uint32](mma_shape[0], mma_shape[1]),
         transpose_b=transpose_b,
     ]()
 
@@ -527,7 +525,7 @@ def test_tma_umma_pair_cta[
         ),
     )
 
-    comptime if ab_type == DType.float8_e4m3fn and (not transpose_b):
+    comptime if ab_type == .float8_e4m3fn and (not transpose_b):
         # NOTE: Matrix B should always be in col-major layout for cublasLt to work
         var b_host_col_major = b_col_major.tensor()
         var b_tensor = b.tensor()
@@ -589,7 +587,7 @@ def main() raises:
 
                 test_tma_umma_pair_cta[
                     ab_type=dtype,
-                    c_type=DType.bfloat16,
+                    c_type=.bfloat16,
                     prob_shape=Index(512, 1024, 2 * BK),
                     block_tile_shape=Index(64, 64, BK),
                     transpose_b=True,
@@ -600,7 +598,7 @@ def main() raises:
                 ](ctx)
                 test_tma_umma_pair_cta[
                     ab_type=dtype,
-                    c_type=DType.bfloat16,
+                    c_type=.bfloat16,
                     prob_shape=Index(256, 1024, 2 * BK),
                     block_tile_shape=Index(64, 128, BK),
                     transpose_b=True,
@@ -613,7 +611,7 @@ def main() raises:
                 # we skip for fp8 !transpose_b to avoid excessive BN
                 test_tma_umma_pair_cta[
                     ab_type=dtype,
-                    c_type=DType.bfloat16,
+                    c_type=.bfloat16,
                     prob_shape=Index(512, 512, 2 * BK),
                     block_tile_shape=Index(128, 64, BK),
                     transpose_b=True,
@@ -631,7 +629,7 @@ def main() raises:
 
                     test_tma_umma_pair_cta[
                         ab_type=dtype,
-                        c_type=DType.bfloat16,
+                        c_type=.bfloat16,
                         prob_shape=Index(128, 4 * BN_BM64, 2 * BK),
                         block_tile_shape=Index(64, BN_BM64, BK),
                         transpose_b=transpose_b,
@@ -643,7 +641,7 @@ def main() raises:
 
                     test_tma_umma_pair_cta[
                         ab_type=dtype,
-                        c_type=DType.bfloat16,
+                        c_type=.bfloat16,
                         prob_shape=Index(128, 2 * BN_BM64, 2 * BK),
                         block_tile_shape=Index(64, BN_BM64, BK),
                         transpose_b=transpose_b,
@@ -656,7 +654,7 @@ def main() raises:
 
                     test_tma_umma_pair_cta[
                         ab_type=dtype,
-                        c_type=DType.bfloat16,
+                        c_type=.bfloat16,
                         prob_shape=Index(256, 2 * BN_BM128, 2 * BK),
                         block_tile_shape=Index(128, BN_BM128, BK),
                         transpose_b=transpose_b,
@@ -668,7 +666,7 @@ def main() raises:
 
                     test_tma_umma_pair_cta[
                         ab_type=dtype,
-                        c_type=DType.bfloat16,
+                        c_type=.bfloat16,
                         prob_shape=Index(256, 4 * BN_BM128, 2 * BK),
                         block_tile_shape=Index(128, BN_BM128, BK),
                         transpose_b=transpose_b,

@@ -33,15 +33,13 @@ def main() raises:
     assert_equal(finite_precision, 0.99999999999999978)
 
     # start-numeric-conversion-1
-    var simd1 = SIMD[DType.float32, 4](2.2, 3.3, 4.4, 5.5)
-    var simd2 = SIMD[DType.int16, 4](-1, 2, -3, 4)
+    var simd1 = SIMD[.float32, 4](2.2, 3.3, 4.4, 5.5)
+    var simd2 = SIMD[.int16, 4](-1, 2, -3, 4)
     var simd3 = (
         simd1 * simd2.cast[DType.float32]()
     )  # Convert with cast() method
     print("simd3:", simd3)
-    var simd4 = simd2 + SIMD[DType.int16, 4](
-        simd1
-    )  # Convert with SIMD constructor
+    var simd4 = simd2 + SIMD[.int16, 4](simd1)  # Convert with SIMD constructor
     print("simd4:", simd4)
     # start-numeric-conversion-1
     assert_equal(simd3, SIMD[DType.float32, 4](-2.2, 6.6, -13.200001, 22.0))
@@ -50,7 +48,7 @@ def main() raises:
     # start-numeric-conversion-scalars
     var my_int: Int16 = 12  # SIMD[DType.int16, 1]
     var my_float: Float32 = 0.75  # SIMD[DType.float32, 1]
-    var result = Float32(my_int) * my_float  # Result is SIMD[DType.float32, 1]
+    var result = Float32(my_int) * my_float  # Result is SIMD[.float32, 1]
     print("Result:", result)
     # end-numeric-conversion-scalars
     assert_equal(result, 9.0)

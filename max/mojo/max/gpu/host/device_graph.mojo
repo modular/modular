@@ -1140,7 +1140,7 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
 
         with DeviceContext() as ctx:
             var scale: Float32 = 2.0
-            var buf = ctx.enqueue_create_buffer[DType.float32](256)
+            var buf = ctx.enqueue_create_buffer[.float32](256)
             var ptr = buf.unsafe_ptr()
 
             def scale_kernel() {var}:
@@ -1633,13 +1633,13 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
         var value: UInt64
 
         comptime if bitwidth == 8:
-            value = UInt64(Int(bitcast[DType.uint8, 1](val)))
+            value = UInt64(Int(bitcast[.uint8, 1](val)))
         elif bitwidth == 16:
-            value = UInt64(Int(bitcast[DType.uint16, 1](val)))
+            value = UInt64(Int(bitcast[.uint16, 1](val)))
         elif bitwidth == 32:
-            value = UInt64(bitcast[DType.uint32, 1](val))
+            value = UInt64(bitcast[.uint32, 1](val))
         else:
-            value = bitcast[DType.uint64, 1](val)
+            value = bitcast[.uint64, 1](val)
 
         dependencies = self._merge_implicit(dependencies^)
         var dep_args = _pack_dep_args(dependencies)
@@ -1762,10 +1762,10 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
         from max.gpu.host import DeviceContext, DeviceGraph, DeviceGraphBuilder
 
         with DeviceContext() as ctx:
-            var buf_a = ctx.enqueue_create_buffer[DType.uint8](100)
-            var buf_b = ctx.enqueue_create_buffer[DType.uint8](100)
-            var buf_c = ctx.enqueue_create_buffer[DType.uint8](100)
-            var host_src = ctx.enqueue_create_host_buffer[DType.uint8](100)
+            var buf_a = ctx.enqueue_create_buffer[.uint8](100)
+            var buf_b = ctx.enqueue_create_buffer[.uint8](100)
+            var buf_c = ctx.enqueue_create_buffer[.uint8](100)
+            var host_src = ctx.enqueue_create_host_buffer[.uint8](100)
 
             def build(mut builder: DeviceGraphBuilder) raises {imm}:
                 def add_producers(mut b: DeviceGraphBuilder) raises {imm} -> None:

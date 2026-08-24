@@ -25,7 +25,7 @@ from max.experimental.nn.embedding import Embedding
 from max.experimental.nn.linear import Linear
 from max.experimental.nn.sequential import ModuleList
 from max.experimental.tensor import Tensor
-from max.graph import TensorValue, ops
+from max.graph import ops
 from max.nn.kv_cache import (
     KVCacheInputs,
     KVCacheParamInterface,
@@ -173,7 +173,7 @@ class Olmo2TextModel(
             logits = self._compute_logits(self.norm(last_tokens))
             offsets = ops.range(
                 0,
-                TensorValue(last_indices.shape[0]) + return_n_logits[0],
+                last_indices.shape[0] + return_n_logits[0],
                 return_n_logits[0],
                 out_dim="logit_offsets",
                 device=h.device,

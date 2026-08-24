@@ -69,10 +69,7 @@ struct TileLoaderTMAIm2col[
     ](
         self,
         dest: TileTensor[
-            Self.dtype,
-            LayoutType,
-            MutAnyOrigin,
-            address_space=AddressSpace.SHARED,
+            Self.dtype, LayoutType, MutAnyOrigin, address_space=.SHARED
         ],
         ref[AddressSpace.SHARED] barrier: SharedMemBarrier,
         k_coord: Int,

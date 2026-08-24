@@ -210,6 +210,8 @@ class LagunaConfig(Llama3Config):
         cls,
         pipeline_config: PipelineConfig,
         model_config: MAXModelConfig | None = None,
+        *,
+        max_seq_len: int,
     ) -> Self:
         """Initializes a LagunaConfig from pipeline configuration.
 
@@ -227,7 +229,9 @@ class LagunaConfig(Llama3Config):
                 "but config could not be loaded. "
                 "Please ensure the model repository contains a valid config.json file."
             )
-        return cls.initialize_from_config(pipeline_config, huggingface_config)
+        return cls.initialize_from_config(
+            pipeline_config, huggingface_config, max_seq_len=max_seq_len
+        )
 
     @override
     @classmethod
@@ -236,6 +240,8 @@ class LagunaConfig(Llama3Config):
         pipeline_config: PipelineConfig,
         huggingface_config: AutoConfig,
         model_config: MAXModelConfig | None = None,
+        *,
+        max_seq_len: int,
     ) -> Self:
         """Initializes a LagunaConfig from pipeline and HuggingFace configs.
 
@@ -269,7 +275,10 @@ class LagunaConfig(Llama3Config):
 
         try:
             base_config = Llama3Config.initialize_from_config(
-                pipeline_config, huggingface_config, model_config
+                pipeline_config,
+                huggingface_config,
+                model_config,
+                max_seq_len=max_seq_len,
             )
         finally:
             # Restore the originals so downstream readers see the

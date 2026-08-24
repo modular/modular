@@ -160,7 +160,7 @@ def run_rms_norm_fused_residual_add_gpu[
         fused_output_fn,
         fused_residual_output_fn,
         Coord(shape),
-        Scalar[DType.int](cols),
+        Int(cols),
         gamma1,
         epsilon1.cast[dtype](),
         weight_offset1,
@@ -260,24 +260,20 @@ def run_rms_norm_fused_residual_add_gpu[
 def main() raises:
     with DeviceContext() as ctx:
         # Test various shapes similar to test_rms_norm.mojo
-        run_rms_norm_fused_residual_add_gpu[DType.float32](ctx, Index(5))
-        run_rms_norm_fused_residual_add_gpu[DType.float32](
+        run_rms_norm_fused_residual_add_gpu[.float32](ctx, Index(5))
+        run_rms_norm_fused_residual_add_gpu[.float32](
             ctx, Index(3, 4, 10, 20, 8)
         )
-        run_rms_norm_fused_residual_add_gpu[DType.bfloat16](
+        run_rms_norm_fused_residual_add_gpu[.bfloat16](
             ctx, Index(1, 5, 6, 10, 128)
         )
-        run_rms_norm_fused_residual_add_gpu[DType.float32](ctx, Index(2, 5))
-        run_rms_norm_fused_residual_add_gpu[DType.bfloat16](ctx, Index(2, 55))
-        run_rms_norm_fused_residual_add_gpu[DType.float32](ctx, Index(7, 557))
-        run_rms_norm_fused_residual_add_gpu[DType.bfloat16](ctx, Index(2, 8191))
-        run_rms_norm_fused_residual_add_gpu[DType.float32](ctx, Index(2, 8192))
-        run_rms_norm_fused_residual_add_gpu[DType.bfloat16](
-            ctx, Index(2, 16384)
-        )
-        run_rms_norm_fused_residual_add_gpu[DType.bfloat16](
-            ctx, Index(2, 16385)
-        )
+        run_rms_norm_fused_residual_add_gpu[.float32](ctx, Index(2, 5))
+        run_rms_norm_fused_residual_add_gpu[.bfloat16](ctx, Index(2, 55))
+        run_rms_norm_fused_residual_add_gpu[.float32](ctx, Index(7, 557))
+        run_rms_norm_fused_residual_add_gpu[.bfloat16](ctx, Index(2, 8191))
+        run_rms_norm_fused_residual_add_gpu[.float32](ctx, Index(2, 8192))
+        run_rms_norm_fused_residual_add_gpu[.bfloat16](ctx, Index(2, 16384))
+        run_rms_norm_fused_residual_add_gpu[.bfloat16](ctx, Index(2, 16385))
 
         # TODO(KERN-1951): the following fails with CUDA_ERROR_INVALID_VALUE, not sure why
         # run_rms_norm_fused_residual_add_gpu[DType.float32](ctx, Index(2, 16384))

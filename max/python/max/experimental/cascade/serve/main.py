@@ -129,7 +129,3 @@ async def serve(
         )
 
         await app.serve(host, port)
-
-
-if __name__ == "__main__":
-    cli()

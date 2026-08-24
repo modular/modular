@@ -74,12 +74,6 @@ class DummyPipelineModel(PipelineModelWithKVCache):  # type: ignore[type-arg]
             next_token_logits=model_inputs.input1, logits=model_inputs.input1
         )
 
-    @classmethod
-    def calculate_max_seq_len(
-        cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
-    ) -> int:
-        raise NotImplementedError("calculate_max_seq_len is not implemented")
-
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[TextContext]],
@@ -198,23 +192,7 @@ class DummyPipelineModel(PipelineModelWithKVCache):  # type: ignore[type-arg]
 
 
 class DummyLlamaPipelineModel(DummyPipelineModel):
-    @classmethod
-    def calculate_max_seq_len(
-        cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
-    ) -> int:
-        assert pipeline_config.model is not None
-        try:
-            return upper_bounded_default(
-                upper_bound=huggingface_config.max_position_embeddings,
-                default=pipeline_config.model.max_length,
-            )
-        except ValueError as e:
-            raise ValueError(
-                "Unable to infer max_length for DummyModel, the provided "
-                f"max_length ({pipeline_config.model.max_length}) exceeds the "
-                f"model's max_position_embeddings "
-                f"({huggingface_config.max_position_embeddings})."
-            ) from e
+    """Llama-flavored dummy; the bounded policy lives on its arch config."""
 
 
 class DummyTextTokenizer(TextTokenizer):
@@ -302,11 +280,24 @@ class DummyPixelArchConfig(ArchConfig):
         return self.max_seq_len
 
     @classmethod
+    def calculate_max_seq_len(
+        cls,
+        pipeline_config: PipelineConfig,
+        huggingface_config: Any,
+        model_config: MAXModelConfig | None = None,
+    ) -> int:
+        del pipeline_config, huggingface_config, model_config
+        return 123
+
+    @classmethod
     def initialize(
         cls,
         pipeline_config: PipelineConfig,
         model_config: MAXModelConfig | None = None,
+        *,
+        max_seq_len: int,
     ) -> DummyPixelArchConfig:
+        del max_seq_len
         return cls()
 
 
@@ -354,6 +345,31 @@ class DummyLlamaArchConfig(ArchConfigWithAttentionKVCache):
     DEFAULT_ENCODING = "bfloat16"
     SUPPORTED_ENCODINGS = {"bfloat16"}
 
+    def get_kv_params(self) -> KVCacheParams:
+        # Mirror DummyLlamaPipelineModel.get_kv_params: memory estimation reads
+        # the params from this config, so an fp8 cache must carry the same
+        # quantization (scale) overhead here or the estimated budget comes up
+        # short of what allocation actually needs per page.
+        if self._kv_params is not None:
+            return self._kv_params
+        cache_dtype = self.cache_dtype or self.dtype
+        kvcache_quant_config = None
+        if cache_dtype in (DType.float8_e4m3fn, DType.float8_e4m3fnuz):
+            kvcache_quant_config = KVCacheQuantizationConfig(
+                scale_dtype=DType.float32,
+                quantization_granularity=self.head_dim // 2,
+            )
+        self._kv_params = self.kv_cache.to_params(
+            dtype=cache_dtype,
+            n_kv_heads=self.num_key_value_heads,
+            head_dim=self.head_dim,
+            num_layers=self.num_layers,
+            devices=self.devices,
+            data_parallel_degree=self.data_parallel_degree,
+            kvcache_quant_config=kvcache_quant_config,
+        )
+        return self._kv_params
+
     @property
     def num_key_value_heads(self) -> int:
         """Number of key-value heads to use for the KV cache."""
@@ -383,6 +399,19 @@ class DummyLlamaArchConfig(ArchConfigWithAttentionKVCache):
         """The maximum sequence length that can be processed by the model."""
         assert self.huggingface_config is not None
         return self.huggingface_config.max_position_embeddings
+
+    @classmethod
+    def calculate_max_seq_len(
+        cls,
+        pipeline_config: PipelineConfig,
+        huggingface_config: AutoConfig,
+        model_config: MAXModelConfig | None = None,
+    ) -> int:
+        model_config = model_config or pipeline_config.model
+        return upper_bounded_default(
+            upper_bound=huggingface_config.max_position_embeddings,
+            default=model_config.max_length,
+        )
 
 
 # Wire the ArchConfig onto the pipeline models (mirrors real arches, which set

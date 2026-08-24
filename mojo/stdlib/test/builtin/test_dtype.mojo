@@ -16,21 +16,21 @@ from std.sys import size_of
 from std.testing import assert_equal, assert_false, assert_true, TestSuite
 
 comptime uint_dtypes: List[DType] = [
-    DType.uint8,
-    DType.uint16,
-    DType.uint32,
-    DType.uint64,
-    DType.uint128,
-    DType.uint256,
+    .uint8,
+    .uint16,
+    .uint32,
+    .uint64,
+    .uint128,
+    .uint256,
 ]
 
 comptime int_dtypes: List[DType] = [
-    DType.int8,
-    DType.int16,
-    DType.int32,
-    DType.int64,
-    DType.int128,
-    DType.int256,
+    .int8,
+    .int16,
+    .int32,
+    .int64,
+    .int128,
+    .int256,
 ]
 
 comptime non_index_integral_dtypes = uint_dtypes + int_dtypes
@@ -39,25 +39,25 @@ comptime integral_dtypes = List(
 ) + non_index_integral_dtypes
 
 comptime float_dtypes: List[DType] = [
-    DType.float8_e3m4,
-    DType.float8_e4m3fn,
-    DType.float8_e4m3fnuz,
-    DType.float8_e5m2,
-    DType.float8_e5m2fnuz,
-    DType.bfloat16,
-    DType.float16,
-    DType.float32,
-    DType.float64,
+    .float8_e3m4,
+    .float8_e4m3fn,
+    .float8_e4m3fnuz,
+    .float8_e5m2,
+    .float8_e5m2fnuz,
+    .bfloat16,
+    .float16,
+    .float32,
+    .float64,
 ]
 
 comptime all_dtypes = List([DType.bool]) + integral_dtypes + float_dtypes
 
 
 def test_equality() raises:
-    assert_true(DType.float32 == DType.float32)
-    assert_true(DType.float32 != DType.int32)
-    assert_true(DType.float32 == DType.float32)
-    assert_true(DType.float32 != DType.int32)
+    assert_true(DType.float32 == .float32)
+    assert_true(DType.float32 != .int32)
+    assert_true(DType.float32 == .float32)
+    assert_true(DType.float32 != .int32)
 
 
 def test_stringable() raises:
@@ -116,24 +116,24 @@ def test_mantissa_width() raises:
     a whole byte, so a width derived from it reports a mantissa several bits
     too wide.
     """
-    assert_equal(DType.mantissa_width[DType.float4_e2m1fn](), 1)
-    assert_equal(DType.mantissa_width[DType.float6_e2m3fn](), 3)
-    assert_equal(DType.mantissa_width[DType.float6_e3m2fn](), 2)
-    assert_equal(DType.mantissa_width[DType.float8_e4m3fn](), 3)
-    assert_equal(DType.mantissa_width[DType.float8_e5m2](), 2)
-    assert_equal(DType.mantissa_width[DType.float16](), 10)
-    assert_equal(DType.mantissa_width[DType.bfloat16](), 7)
-    assert_equal(DType.mantissa_width[DType.float32](), 23)
-    assert_equal(DType.mantissa_width[DType.float64](), 52)
+    assert_equal(DType.mantissa_width[.float4_e2m1fn](), 1)
+    assert_equal(DType.mantissa_width[.float6_e2m3fn](), 3)
+    assert_equal(DType.mantissa_width[.float6_e3m2fn](), 2)
+    assert_equal(DType.mantissa_width[.float8_e4m3fn](), 3)
+    assert_equal(DType.mantissa_width[.float8_e5m2](), 2)
+    assert_equal(DType.mantissa_width[.float16](), 10)
+    assert_equal(DType.mantissa_width[.bfloat16](), 7)
+    assert_equal(DType.mantissa_width[.float32](), 23)
+    assert_equal(DType.mantissa_width[.float64](), 52)
 
 
 def test_float6() raises:
     """The OCP MX FP6 encodings, per the microscaling specification."""
-    assert_equal(DType.exponent_width[DType.float6_e2m3fn](), 2)
-    assert_equal(DType.exponent_width[DType.float6_e3m2fn](), 3)
+    assert_equal(DType.exponent_width[.float6_e2m3fn](), 2)
+    assert_equal(DType.exponent_width[.float6_e3m2fn](), 3)
 
-    assert_equal(DType.max_exponent[DType.float6_e2m3fn](), 2)
-    assert_equal(DType.max_exponent[DType.float6_e3m2fn](), 4)
+    assert_equal(DType.max_exponent[.float6_e2m3fn](), 2)
+    assert_equal(DType.max_exponent[.float6_e3m2fn](), 4)
 
     # Storage formats with no native arithmetic, like float4_e2m1fn.
     assert_false(DType.float6_e2m3fn.is_numeric())

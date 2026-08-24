@@ -83,12 +83,12 @@ def _mfma_format[fmt: FP6Format]() -> CDNA4F8F6F4MatrixFormat:
 def _mxfp6_matmul_ref[
     fmt: FP6Format
 ](
-    a_ptr: UnsafePointer[Scalar[DType.uint8], ImmutAnyOrigin],
-    b_ptr: UnsafePointer[Scalar[DType.uint8], ImmutAnyOrigin],
-    a_sf_ptr: UnsafePointer[Scalar[DType.float8_e8m0fnu], ImmutAnyOrigin],
-    b_sf_ptr: UnsafePointer[Scalar[DType.float8_e8m0fnu], ImmutAnyOrigin],
-    c_ptr: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
-    mag_ptr: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
+    a_ptr: UnsafePointer[UInt8, ImmutAnyOrigin],
+    b_ptr: UnsafePointer[UInt8, ImmutAnyOrigin],
+    a_sf_ptr: UnsafePointer[Float8_e8m0fnu, ImmutAnyOrigin],
+    b_sf_ptr: UnsafePointer[Float8_e8m0fnu, ImmutAnyOrigin],
+    c_ptr: UnsafePointer[Float32, MutAnyOrigin],
+    mag_ptr: UnsafePointer[Float32, MutAnyOrigin],
     M_dev: Int32,
     N_dev: Int32,
     K_dev: Int32,
@@ -109,20 +109,16 @@ def _mxfp6_matmul_ref[
     var magnitude = Float32(0)
 
     for ko in range(k_groups):
-        var a_scale = a_sf_ptr[unsafe_offset=m * k_groups + ko].cast[
-            DType.float32
-        ]()
-        var b_scale = b_sf_ptr[unsafe_offset=n * k_groups + ko].cast[
-            DType.float32
-        ]()
+        var a_scale = a_sf_ptr[unsafe_offset=m * k_groups + ko].cast[.float32]()
+        var b_scale = b_sf_ptr[unsafe_offset=n * k_groups + ko].cast[.float32]()
 
         # 32 elements is one MX block = 24 packed bytes, always 8-byte aligned
         # because k_bytes is a multiple of 24 whenever K is a multiple of 32.
         var a_base = m * k_bytes + ko * 24
         var b_base = n * k_bytes + ko * 24
 
-        var fa = SIMD[DType.uint8, 32](0)
-        var fb = SIMD[DType.uint8, 32](0)
+        var fa = SIMD[.uint8, 32](0)
+        var fb = SIMD[.uint8, 32](0)
         comptime for chunk in range(3):
             fa = fa.insert[offset=chunk * 8](
                 a_ptr.load[width=8](a_base + chunk * 8)
@@ -183,10 +179,10 @@ def _preb_grid_kernel[
     K_BYTES: Int,
 ](
     c: TileTensor[mut=True, out_dtype, LayoutC, MutAnyOrigin],
-    a: TileTensor[DType.uint8, LayoutA, ImmutAnyOrigin],
-    b_pre: TileTensor[DType.uint8, LayoutBPre, ImmutAnyOrigin],
-    sfa: TileTensor[DType.float8_e8m0fnu, LayoutSFA, ImmutAnyOrigin],
-    sfb: TileTensor[DType.float8_e8m0fnu, LayoutSFB, ImmutAnyOrigin],
+    a: TileTensor[.uint8, LayoutA, ImmutAnyOrigin],
+    b_pre: TileTensor[.uint8, LayoutBPre, ImmutAnyOrigin],
+    sfa: TileTensor[.float8_e8m0fnu, LayoutSFA, ImmutAnyOrigin],
+    sfb: TileTensor[.float8_e8m0fnu, LayoutSFB, ImmutAnyOrigin],
 ):
     BlockScaledMatmulAMD_PreB[
         BM=BM,
@@ -275,16 +271,12 @@ def _test_case[
     # Scale buffers stay uint8 throughout (E8M0 is byte-equivalent) so
     # `Shuffler.preshuffle_scale_4d` can take them directly; bitcast back to
     # float8_e8m0fnu at the reference / kernel call sites.
-    var a_h = ctx.enqueue_create_host_buffer[DType.uint8](M_static * K_BYTES)
-    var b_h = ctx.enqueue_create_host_buffer[DType.uint8](N_static * K_BYTES)
-    var sfa_h = ctx.enqueue_create_host_buffer[DType.uint8](M_static * scale_K)
-    var sfb_h = ctx.enqueue_create_host_buffer[DType.uint8](N_static * scale_K)
-    var sfa_pre_h = ctx.enqueue_create_host_buffer[DType.uint8](
-        padded_M * scale_K
-    )
-    var sfb_pre_h = ctx.enqueue_create_host_buffer[DType.uint8](
-        N_static * scale_K
-    )
+    var a_h = ctx.enqueue_create_host_buffer[.uint8](M_static * K_BYTES)
+    var b_h = ctx.enqueue_create_host_buffer[.uint8](N_static * K_BYTES)
+    var sfa_h = ctx.enqueue_create_host_buffer[.uint8](M_static * scale_K)
+    var sfb_h = ctx.enqueue_create_host_buffer[.uint8](N_static * scale_K)
+    var sfa_pre_h = ctx.enqueue_create_host_buffer[.uint8](padded_M * scale_K)
+    var sfb_pre_h = ctx.enqueue_create_host_buffer[.uint8](N_static * scale_K)
     ctx.synchronize()
 
     # Every 6-bit code is a finite number in both encodings, so random bytes
@@ -314,16 +306,16 @@ def _test_case[
         sfb_h_tt, sfb_pre_h
     )
 
-    var a_d = ctx.enqueue_create_buffer[DType.uint8](M_static * K_BYTES)
-    var b_d = ctx.enqueue_create_buffer[DType.uint8](N_static * K_BYTES)
-    var b_pre_d = ctx.enqueue_create_buffer[DType.uint8](N_static * K_BYTES)
-    var sfa_d = ctx.enqueue_create_buffer[DType.uint8](M_static * scale_K)
-    var sfb_d = ctx.enqueue_create_buffer[DType.uint8](N_static * scale_K)
-    var sfa_pre_d = ctx.enqueue_create_buffer[DType.uint8](padded_M * scale_K)
-    var sfb_pre_d = ctx.enqueue_create_buffer[DType.uint8](N_static * scale_K)
-    var c_d = ctx.enqueue_create_buffer[DType.float32](M_static * N_static)
-    var c_ref_d = ctx.enqueue_create_buffer[DType.float32](M_static * N_static)
-    var mag_d = ctx.enqueue_create_buffer[DType.float32](M_static * N_static)
+    var a_d = ctx.enqueue_create_buffer[.uint8](M_static * K_BYTES)
+    var b_d = ctx.enqueue_create_buffer[.uint8](N_static * K_BYTES)
+    var b_pre_d = ctx.enqueue_create_buffer[.uint8](N_static * K_BYTES)
+    var sfa_d = ctx.enqueue_create_buffer[.uint8](M_static * scale_K)
+    var sfb_d = ctx.enqueue_create_buffer[.uint8](N_static * scale_K)
+    var sfa_pre_d = ctx.enqueue_create_buffer[.uint8](padded_M * scale_K)
+    var sfb_pre_d = ctx.enqueue_create_buffer[.uint8](N_static * scale_K)
+    var c_d = ctx.enqueue_create_buffer[.float32](M_static * N_static)
+    var c_ref_d = ctx.enqueue_create_buffer[.float32](M_static * N_static)
+    var mag_d = ctx.enqueue_create_buffer[.float32](M_static * N_static)
     c_d.enqueue_fill(Float32(0.0))
     c_ref_d.enqueue_fill(Float32(0.0))
     mag_d.enqueue_fill(Float32(0.0))
@@ -349,8 +341,8 @@ def _test_case[
     ctx.enqueue_function[_mxfp6_matmul_ref[fmt]](
         a_d.unsafe_ptr(),
         b_d.unsafe_ptr(),
-        sfa_d.unsafe_ptr().bitcast[Scalar[DType.float8_e8m0fnu]](),
-        sfb_d.unsafe_ptr().bitcast[Scalar[DType.float8_e8m0fnu]](),
+        sfa_d.unsafe_ptr().bitcast[Float8_e8m0fnu](),
+        sfb_d.unsafe_ptr().bitcast[Float8_e8m0fnu](),
         c_ref_d.unsafe_ptr(),
         mag_d.unsafe_ptr(),
         Int32(M_static),
@@ -370,11 +362,11 @@ def _test_case[
     # kernel reads the underlying bytes through `PreshuffledScaleLoader`, so
     # the TileTensor layout is unused.
     var sfa_tt = TileTensor[mut=False](
-        sfa_pre_d.unsafe_ptr().bitcast[Scalar[DType.float8_e8m0fnu]](),
+        sfa_pre_d.unsafe_ptr().bitcast[Float8_e8m0fnu](),
         row_major[padded_M, scale_K](),
     )
     var sfb_tt = TileTensor[mut=False](
-        sfb_pre_d.unsafe_ptr().bitcast[Scalar[DType.float8_e8m0fnu]](),
+        sfb_pre_d.unsafe_ptr().bitcast[Float8_e8m0fnu](),
         row_major[N_static, scale_K](),
     )
     var c_tt = TileTensor[mut=True](c_d, row_major[M_static, N_static]())
@@ -391,7 +383,7 @@ def _test_case[
         cluster_drain_sched,
         mfma_cluster,
         deep_prime,
-        DType.float32,
+        .float32,
         type_of(c_tt).LayoutType,
         type_of(a_tt).LayoutType,
         type_of(b_pre_tt).LayoutType,
@@ -418,13 +410,9 @@ def _test_case[
     )
     ctx.synchronize()
 
-    var c_h = ctx.enqueue_create_host_buffer[DType.float32](M_static * N_static)
-    var c_ref_h = ctx.enqueue_create_host_buffer[DType.float32](
-        M_static * N_static
-    )
-    var mag_h = ctx.enqueue_create_host_buffer[DType.float32](
-        M_static * N_static
-    )
+    var c_h = ctx.enqueue_create_host_buffer[.float32](M_static * N_static)
+    var c_ref_h = ctx.enqueue_create_host_buffer[.float32](M_static * N_static)
+    var mag_h = ctx.enqueue_create_host_buffer[.float32](M_static * N_static)
     ctx.enqueue_copy(c_h, c_d)
     ctx.enqueue_copy(c_ref_h, c_ref_d)
     ctx.enqueue_copy(mag_h, mag_d)

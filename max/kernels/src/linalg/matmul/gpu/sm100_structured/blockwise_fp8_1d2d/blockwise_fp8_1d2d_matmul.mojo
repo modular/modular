@@ -93,7 +93,7 @@ def grouped_matmul_1d2d_blockwise_fp8[
     comptime c_type = config.c_type
     comptime assert transpose_b, "Only support transposed B"
     comptime assert (
-        a_type == b_type and a_type == DType.float8_e4m3fn
+        a_type == b_type and a_type == .float8_e4m3fn
     ), "Only support float8_e4m3fn"
     comptime assert (
         a_scales_type == b_scales_type
@@ -158,6 +158,11 @@ def grouped_matmul_1d2d_blockwise_fp8[
             Int32(config.cluster_shape[1]),
             Int32(config.cluster_shape[2]),
         ),
+        b_scales_storage=type_of(b_scales_2d).Storage,
+        c_device_storage=type_of(c_device).Storage,
+        offsets_storage=type_of(a_offsets).Storage,
+        expert_ids_storage=type_of(expert_ids).Storage,
+        expert_scales_storage=type_of(expert_scales).Storage,
     ]
     comptime kernel = KernelType.run
 

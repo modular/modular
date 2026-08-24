@@ -23,6 +23,7 @@ import torch
 from max.driver import DeviceSpec, load_devices, scan_available_devices
 from max.engine import InferenceSession, Model
 from max.graph.weights import SafetensorWeights, WeightsAdapter
+from max.pipelines.lib import MemoryPlan
 from test_common.mocks import DummyPipelineConfig
 from transformers import PretrainedConfig
 from transformers.models.llama.configuration_llama import LlamaConfig
@@ -118,4 +119,12 @@ def assert_load_model_succeeds(
         kv_cache_config=pipeline_config.model.kv_cache,
         weights=weights,
         adapter=adapter,
+        # The factory pins max_length to the checkpoint bound, so the
+        # planned value equals what the arch policies derived before plans
+        # became required.
+        memory_plan=MemoryPlan(
+            planned_max_batch_size=1,
+            footprint=0,
+            planned_max_length=pipeline_config.model.max_length,
+        ),
     )

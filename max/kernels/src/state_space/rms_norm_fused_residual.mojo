@@ -461,7 +461,7 @@ def rms_norm_fused_residual_gpu_block[
 
     var shared_mem = external_memory[
         Scalar[dtype],
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=align_of[SIMD[dtype, simd_width]](),
         name="intermediate_shared_memory",
     ]()
@@ -663,10 +663,10 @@ def rms_norm_fused_residual_gpu[
     ]
     ctx.enqueue_function[kernel](
         gamma,
-        epsilon.cast[DType.float32](),
-        weight_offset.cast[DType.float32](),
+        epsilon.cast[.float32](),
+        weight_offset.cast[.float32](),
         Int32(cols),
-        dropout_p.cast[DType.float32](),
+        dropout_p.cast[.float32](),
         seed,
         grid_dim=grid_dim,
         block_dim=block_dim,

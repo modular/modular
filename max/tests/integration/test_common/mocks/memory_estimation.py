@@ -34,15 +34,15 @@ def _fake_plan_from_sizes(
 ) -> MemoryPlan:
     """Stands in for ``plan_from_sizes`` without touching devices.
 
-    Mirrors the config's own values so that publishing the plan back onto the
-    config is a no-op.
+    Mirrors the config's own values so readers that consume the plan see
+    the construction-resolved configuration.
     """
     return MemoryPlan(
-        max_batch_size=1,
+        planned_max_batch_size=1,
         footprint=0,
-        max_length=model_config.max_length,
+        planned_max_length=model_config.max_length,
         device_specs=tuple(model_config.device_specs),
-        max_batch_total_tokens=pipeline_config.runtime.max_batch_total_tokens,
+        planned_max_batch_total_tokens=pipeline_config.runtime.max_batch_total_tokens,
     )
 
 

@@ -113,9 +113,9 @@ def _resolve_impl[impl: StaticString, dtype: DType]() -> StaticString:
             return "cudnn"
         else:
             comptime if has_amd_gpu_accelerator() and (
-                dtype == DType.float8_e4m3fn
-                or dtype == DType.bfloat16
-                or dtype == DType.float16
+                dtype == .float8_e4m3fn
+                or dtype == .bfloat16
+                or dtype == .float16
             ):
                 return "amd_4wave"
             else:
@@ -379,9 +379,7 @@ def bench_conv2d[
             " accelerator (e.g. amdgpu:mi355) or pick a different impl."
         )
         comptime assert (
-            dtype == DType.float8_e4m3fn
-            or dtype == DType.bfloat16
-            or dtype == DType.float16
+            dtype == .float8_e4m3fn or dtype == .bfloat16 or dtype == .float16
         ), (
             "impl=amd_4wave requires dtype in"
             " {float8_e4m3fn, bfloat16, float16}."
@@ -587,8 +585,8 @@ def bench_conv2d[
         ctx.synchronize()
         var max_diff: Float32 = 0.0
         for i in range(output_size):
-            var a = output_host[i].cast[DType.float32]()
-            var c = output_ref_host[i].cast[DType.float32]()
+            var a = output_host[i].cast[.float32]()
+            var c = output_ref_host[i].cast[.float32]()
             var d = abs(a - c)
             if d > max_diff:
                 max_diff = d
@@ -607,7 +605,7 @@ def bench_conv2d[
 
 
 def main() raises:
-    comptime dtype = get_defined_dtype["dtype", DType.bfloat16]()
+    comptime dtype = get_defined_dtype["dtype", .bfloat16]()
     comptime N = get_defined_int["N", 1]()
     comptime H = get_defined_int["H", 240]()
     comptime W = get_defined_int["W", 416]()
