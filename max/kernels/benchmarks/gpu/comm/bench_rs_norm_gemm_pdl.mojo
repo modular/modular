@@ -413,11 +413,10 @@ def bench_rs_norm_gemm_pdl[
             == 4 else "consumer_only"
         )
 
-        @__parameter
         @always_inline
         def bench_pair_iter(
             mut bench: Bencher, ctx: DeviceContext, ctx_idx: Int
-        ) raises:
+        ) raises {mut in_bufs, imm}:
             var local_rows = config.rank_units(ctx_idx)
 
             @always_inline
@@ -476,8 +475,9 @@ def bench_rs_norm_gemm_pdl[
 
             bencher_iter_custom(bench, call_fn, ctx)
 
-        bench_multicontext[bench_pair_iter](
+        bench_multicontext(
             b,
+            bench_pair_iter,
             list_of_ctx,
             BenchId(variant_name, input_id=bench_name_prefix),
             [ThroughputMeasure(BenchMetric.bytes, total_bytes)],

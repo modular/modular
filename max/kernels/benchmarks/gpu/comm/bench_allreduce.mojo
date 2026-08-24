@@ -227,9 +227,10 @@ def bench_reduce[
             raise "Vendor CCL not available; skipping vendor path."
         vendor_ccl.init_comms(ngpus)
 
-    @__parameter
     @always_inline
-    def bench_iter(mut b: Bencher, ctx: DeviceContext, ctx_idx: Int) raises:
+    def bench_iter(
+        mut b: Bencher, ctx: DeviceContext, ctx_idx: Int
+    ) raises {mut in_tensors, imm}:
         @always_inline
         def call_fn(
             ctx_inner: DeviceContext, cache_iter: Int
@@ -277,8 +278,9 @@ def bench_reduce[
 
         bencher_iter_custom(b, call_fn, ctx)
 
-    bench_multicontext[bench_iter](
+    bench_multicontext(
         b,
+        bench_iter,
         list_of_ctx,
         BenchId(name),
         [ThroughputMeasure(BenchMetric.bytes, num_bytes)],

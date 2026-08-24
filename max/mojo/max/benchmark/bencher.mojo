@@ -34,43 +34,7 @@ from max.algorithm import sync_parallelize
 
 @always_inline
 def bench_multicontext[
-    bench_fn: def(mut Bencher, DeviceContext, Int) raises capturing[_] -> None,
-](
-    mut self_: Bench,
-    list_of_ctx: List[DeviceContext],
-    bench_id: BenchId,
-    measures: List[ThroughputMeasure] = {},
-) raises:
-    """Benchmarks or Tests an input function across multiple device contexts.
-
-    The metric returned represents the *slowest* performing device.
-
-    Parameters:
-        bench_fn: The function to be benchmarked.
-
-    Args:
-        self_: The benchmark configuration.
-        list_of_ctx: A list of device contexts on which the bench_fn is run in parallel.
-        bench_id: The benchmark Id object used for identification.
-        measures: Optional arg used to represent a list of ThroughputMeasure's.
-
-    Raises:
-        If the operation fails.
-    """
-
-    @always_inline
-    def func_unified(mut b: Bencher, ctx: DeviceContext, i: Int) {}:
-        try:
-            bench_fn(b, ctx, i)
-        except e:
-            abort(String(e))
-
-    bench_multicontext(self_, func_unified, list_of_ctx, bench_id, measures)
-
-
-@always_inline
-def bench_multicontext[
-    FuncType: def(mut Bencher, DeviceContext, Int) -> None,
+    FuncType: def(mut Bencher, DeviceContext, Int) raises -> None,
 ](
     mut self_: Bench,
     func: FuncType,

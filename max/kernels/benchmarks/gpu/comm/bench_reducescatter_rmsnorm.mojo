@@ -679,11 +679,10 @@ def bench_reducescatter_rmsnorm[
     )
 
     # ===== Variant 1: reduce-scatter only -> t_RS =====
-    @__parameter
     @always_inline
     def bench_rs_iter(
         mut bench: Bencher, ctx: DeviceContext, ctx_idx: Int
-    ) raises:
+    ) raises {mut in_bufs, imm}:
         @always_inline
         def call_fn(
             ctx_inner: DeviceContext, cache_iter: Int
@@ -701,19 +700,19 @@ def bench_reducescatter_rmsnorm[
 
         bencher_iter_custom(bench, call_fn, ctx)
 
-    bench_multicontext[bench_rs_iter](
+    bench_multicontext(
         b,
+        bench_rs_iter,
         list_of_ctx,
         BenchId("reducescatter_only", input_id=bench_name_prefix),
         [ThroughputMeasure(BenchMetric.bytes, total_bytes)],
     )
 
     # ===== Variant 2: standalone RMSNorm on a cold shard -> t_norm(shard) =====
-    @__parameter
     @always_inline
     def bench_norm_cold_iter(
         mut bench: Bencher, ctx: DeviceContext, ctx_idx: Int
-    ) raises:
+    ) raises {imm}:
         var local_rows = config.rank_units(ctx_idx)
 
         @always_inline
@@ -731,19 +730,19 @@ def bench_reducescatter_rmsnorm[
 
         bencher_iter_custom(bench, call_fn, ctx)
 
-    bench_multicontext[bench_norm_cold_iter](
+    bench_multicontext(
         b,
+        bench_norm_cold_iter,
         list_of_ctx,
         BenchId("rms_norm_shard_cold", input_id=bench_name_prefix),
         [ThroughputMeasure(BenchMetric.bytes, total_bytes)],
     )
 
     # ===== Variant 3: RS then RMSNorm on the live RS output -> t_chained =====
-    @__parameter
     @always_inline
     def bench_chained_iter(
         mut bench: Bencher, ctx: DeviceContext, ctx_idx: Int
-    ) raises:
+    ) raises {mut in_bufs, imm}:
         var local_rows = config.rank_units(ctx_idx)
 
         @always_inline
@@ -773,8 +772,9 @@ def bench_reducescatter_rmsnorm[
 
         bencher_iter_custom(bench, call_fn, ctx)
 
-    bench_multicontext[bench_chained_iter](
+    bench_multicontext(
         b,
+        bench_chained_iter,
         list_of_ctx,
         BenchId(
             "reducescatter_then_rms_norm_chained", input_id=bench_name_prefix
@@ -783,11 +783,10 @@ def bench_reducescatter_rmsnorm[
     )
 
     # ===== Variant 4: fused reduce-scatter + RMSNorm kernel -> t_fused =====
-    @__parameter
     @always_inline
     def bench_fused_iter(
         mut bench: Bencher, ctx: DeviceContext, ctx_idx: Int
-    ) raises:
+    ) raises {mut in_bufs, imm}:
         @always_inline
         def call_fn(
             ctx_inner: DeviceContext, cache_iter: Int
@@ -812,8 +811,9 @@ def bench_reducescatter_rmsnorm[
 
         bencher_iter_custom(bench, call_fn, ctx)
 
-    bench_multicontext[bench_fused_iter](
+    bench_multicontext(
         b,
+        bench_fused_iter,
         list_of_ctx,
         BenchId("reducescatter_rmsnorm_fused", input_id=bench_name_prefix),
         [ThroughputMeasure(BenchMetric.bytes, total_bytes)],
@@ -823,11 +823,10 @@ def bench_reducescatter_rmsnorm[
     # Two-launch path is caller-supplied so `comm` stays free of `nn`; the
     # dispatch auto-routes on per-rank shard size (fused below
     # `RS_NORM_FUSE_THRESHOLD`, two-launch above).
-    @__parameter
     @always_inline
     def bench_dispatch_iter(
         mut bench: Bencher, ctx: DeviceContext, ctx_idx: Int
-    ) raises:
+    ) raises {mut in_bufs, imm}:
         var local_rows = config.rank_units(ctx_idx)
 
         @always_inline
@@ -872,8 +871,9 @@ def bench_reducescatter_rmsnorm[
 
         bencher_iter_custom(bench, call_fn, ctx)
 
-    bench_multicontext[bench_dispatch_iter](
+    bench_multicontext(
         b,
+        bench_dispatch_iter,
         list_of_ctx,
         BenchId("reducescatter_rmsnorm_dispatch", input_id=bench_name_prefix),
         [ThroughputMeasure(BenchMetric.bytes, total_bytes)],

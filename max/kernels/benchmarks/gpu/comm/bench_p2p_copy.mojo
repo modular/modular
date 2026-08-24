@@ -161,11 +161,10 @@ def bench_p2p[
         human_readable_size(num_bytes),
     )
 
-    @__parameter
     @always_inline
     def bench_iter(
         mut bencher: Bencher, ctx: DeviceContext, ctx_idx: Int
-    ) raises:
+    ) raises {mut buf0_write, mut buf1_write, imm}:
         @always_inline
         def call_fn(
             ctx_inner: DeviceContext, cache_iter: Int
@@ -214,8 +213,9 @@ def bench_p2p[
 
         bencher_iter_custom(bencher, call_fn, ctx)
 
-    bench_multicontext[bench_iter](
+    bench_multicontext(
         b,
+        bench_iter,
         ctxs,
         BenchId(name),
         [ThroughputMeasure(BenchMetric.bytes, num_bytes)],
