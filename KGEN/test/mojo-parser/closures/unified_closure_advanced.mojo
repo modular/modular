@@ -115,7 +115,7 @@ def s2_bind[
 
 
 def s2_top[A: Copyable, B: Copyable](aa: A, bb: B):
-    def closure[C: Copyable, //](a: A, b: B, c: C) {read}:
+    def closure[C: Copyable, //](a: A, b: B, c: C) {imm}:
         pass
 
     closure(aa, bb, 3)
@@ -138,7 +138,7 @@ def s3_bind[
 
 
 def s3_top():
-    def closureConcrete[C: Copyable, //](a: String, b: String, c: C) {read}:
+    def closureConcrete[C: Copyable, //](a: String, b: String, c: C) {imm}:
         pass
 
     s3_bind[String, String, type_of(closureConcrete)](closureConcrete)
@@ -156,18 +156,18 @@ def can_mutate[FuncType: def() -> None](impl: FuncType):
 def s4_demo[
     o: Origin[mut=True]
 ](ptr: UnsafePointer[Int, o, address_space=.GENERIC],):
-    def write() {read ptr}:
+    def write() {imm ptr}:
         ptr.store(0, 3)
 
     can_mutate(write)
 
 # COM: If a mutable origin is captured but only in the context of a cast to immutable, do not lift and bind a mutable origin to the closure struct
-# S5: lit.struct.decl @"s5_demo{{.*}}::read::__storage"
+# S5: lit.struct.decl @"s5_demo{{.*}}::imm::__storage"
 # S5-SAME: <{{.*}}*"o._mlir_origin`": origin<false>, {{.*}}*"immut_ptr{{.*}}": origin<false>
 
 
 
-def must_be_read_only[
+def must_be_imm_only[
     Mut: Bool, //, o: Origin[mut=Mut], FuncType: def() -> None
 ](
     impl: FuncType,
@@ -182,10 +182,10 @@ def s5_demo[
     var immut_ptr = ptr.as_imm()
 
 
-    def read() {read immut_ptr}:
+    def imm() {imm immut_ptr}:
         _ = immut_ptr[0]
 
-    must_be_read_only(read, immut_ptr)
+    must_be_imm_only(imm, immut_ptr)
 
 # COM: MOCO-4128
 # S6-LABEL: lit.fn @"apply_closure

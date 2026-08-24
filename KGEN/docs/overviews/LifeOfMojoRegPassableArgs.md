@@ -4,7 +4,7 @@ Mojo has the ability to represent something as `@register_passable` (shortened
 to “RP” in this doc, the decorator is now deprecated in favor of
 `RegisterPassable` trait). The former means that the value is **guaranteed** to
 be passed in an MLIR “SSA register” (and thus, typically but not always, a
-machine register) when passed to a function “read” or “owned”, or when
+machine register) when passed to a function “imm” or “owned”, or when
 **returned from a function** by value. In contrast, values that are not RP (and
 all `ref` and `mut` arguments/results) are passed indirectly in memory.
 
@@ -131,7 +131,7 @@ struct MyRPType(Movable, Copyable, RegisterPassable):
     def __del__(deinit self): pass
 
 # Functions that use MyRPType with different argument conventions.
-def use_rp(a: MyRPType): pass # read convention
+def use_rp(a: MyRPType): pass # imm convention
 def use_rp_type_mut(mut a: MyRPType): pass
 def use_rp_type_owned(var a: MyRPType): pass
 ```
@@ -178,7 +178,7 @@ lit.fn @example2():
   %0 = lit.call @MyRPType::@__init__()
   lit.ref.store %0, %a_rp
 
-  // Pass by immutable reference for "read".
+  // Pass by immutable reference for "imm".
   %1 = lit.ref.immut %a_rp : <!MyRPType, mut *"a_rp`">
   lit.call @use_rp[muttoimm *"a_rp`"](%1)
 
@@ -308,7 +308,7 @@ With this, we get something interesting, let's look at the noop functions first:
 Suddenly things got a lot more interesting! The `-lower-arg-conventions` pass
 did our job for us! It noticed that the argument to `use_rp` and
 `use_rp_type_owned` are both RP types, and that the argument convention is
-“read” and “owned” respectively, so it transformed the signature of the
+“imm” and “owned” respectively, so it transformed the signature of the
 function to use the struct in a register (notice that there is no pointer) but
 it left the “mut” function alone (because the body could mutate the value, so
 it needs to be passed by address).
@@ -408,7 +408,7 @@ a super power of Mojo 🔥!
 
 All the above is a really trivial example, but the benefits of this approach
 stack and generalize nicely, let's look at generic functions. I'll focus on the
-“read” convention just to shorten this doc, but please try changing these
+“imm” convention just to shorten this doc, but please try changing these
 around and looking at the IR to see that `var` and `mut` ”just work” as well
 with the correct semantics.
 
@@ -580,7 +580,7 @@ def example4[*Ts: AnyType](args:
 You can go ahead and look at the declaration of `struct VariadicPack` to see
 how this works. Before we go any further, notice that variadic packs work with
 all argument conventions, including `var` and `mut` and `ref` , this is just
-showing the `read` convention one for simplicity.
+showing the `imm` convention one for simplicity.
 
 Coming out of the parser, the signature ends up looking like this:
 
@@ -618,7 +618,7 @@ ends up lowering:
       // ... init %my_str and %my_rp ...
 
       // Convert the mutable origins for the two variables into immutable origins,
-      // because this is a pack of "read" values.
+      // because this is a pack of "imm" values.
       %2 = lit.ref.immut %my_str : <!String, mut *"my_str`">
       %3 = lit.ref.immut %my_rp : <!MyRPType, mut *"my_rp`1">
       // Rebind the references to a common (unioned) origin of the two origins.

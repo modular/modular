@@ -248,7 +248,7 @@ def main() raises:
     @always_inline
     def my_func[
         simd_width: Int, rank: Int, alignment: Int = 1
-    ]() {read x, var mem}:
+    ]() {imm x, var mem}:
         print(x)
 
     s7_callee[simd_width=4](10, 11, my_func)
@@ -316,7 +316,7 @@ def repro_variadic_attr():
 
     def my_map_fn(
         point: ToyIndex[2],
-    ) {read x, var mem} -> Tuple[ToyIndex[2], ToyIndex[2]]:
+    ) {imm x, var mem} -> Tuple[ToyIndex[2], ToyIndex[2]]:
         return ToyIndex[2](), ToyIndex[2]()
 
     variadic_callee[2, type_of(my_map_fn)](my_map_fn)

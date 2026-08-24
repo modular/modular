@@ -46,9 +46,9 @@ named_effect: NAME ['(' STRING ')']
 captures: '{' [capture_list] '}'
 capture_list: capture_item (',' capture_item)* [',']
 # Support both specific captures (e.g., "var x", "var x^", "mut y") and
-# global capture modes (e.g., "var", "var^", "read"). The move marker '^'
+# global capture modes (e.g., "var", "var^", "imm"). The move marker '^'
 # follows either VAR or a bare name ("var x^", "var^", "x^").
-capture_item: (VAR [NAME ['^'] | '^' [NAME]]) | (READ [NAME]) | (IMM [NAME]) | (MUT [NAME]) | (REF [NAME]) | (NAME ['^' | NAME])
+capture_item: (VAR [NAME ['^'] | '^' [NAME]]) | (IMM [NAME]) | (MUT [NAME]) | (REF [NAME]) | (NAME ['^' | NAME])
 metaparams: '[' [typedargslist] ']'
 parameters: '(' [typedargslist] ')'
 result_type: [REF '[' test [',' test [',']] ']'] (functype | generatortype | or_expr)
@@ -67,7 +67,7 @@ result_type: [REF '[' test [',' test [',']] ']'] (functype | generatortype | or_
 #
 # It needs to be fully expanded to allow our LL(1) parser to work on it.
 
-convention: VAR | (OUT ['[' test [',' test [',']] ']']) | READ | IMM | MUT | DEINIT | (REF ['[' test [',' test [',']] ']'])
+convention: VAR | (OUT ['[' test [',' test [',']] ']']) | IMM | MUT | DEINIT | (REF ['[' test [',' test [',']] ']'])
 #tname: NAME [metaparams] [':' test]
 
 typedargslist: ((([convention] ['**'|'*'] tfpdef ['=' test])|'/'|'*'|'//') [','])*
@@ -260,7 +260,7 @@ type_atom: functype | generatortype | atom
 classdef: STRUCT NAME [metaparams] ['(' [arglist] ')'] (where_clause)* ':' suite | ('class' | TRAIT | EXTENSION) NAME [metaparams] ['(' [arglist] ')'] ':' suite
 
 typeconvexpr: atom trailer* | functype | generatortype
-typeconv: (['*'|VAR|READ|MUT|OUT|DEINIT] ['*'|'**'] typeconvexpr [':' ['*'|'**'] test]) | '/' | '*' | '//'
+typeconv: (['*'|VAR|IMM|MUT|OUT|DEINIT] ['*'|'**'] typeconvexpr [':' ['*'|'**'] test]) | '/' | '*' | '//'
 # A `thin` function type may carry trailing `where` clauses constraining its own
 # parameters. The clauses bind to the innermost function type, so a declaration
 # whose result type is a function type must parenthesize it to keep a trailing

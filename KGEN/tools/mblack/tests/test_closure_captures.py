@@ -19,7 +19,7 @@ from tests.util import assert_mojo_format
 
 # Bare capture modes (no name). `ref` always requires a name, so it's
 # covered by `test_raises_mixed_capture_list` instead.
-CAPTURE_MODES = ["var", "var^", "read", "imm", "mut"]
+CAPTURE_MODES = ["var", "var^", "imm", "mut"]
 
 # Type expressions accepted after `raises` in a closure. `Foo.Bar` requires a
 # `struct Foo` prelude.
@@ -52,7 +52,7 @@ def test_empty_captures(raises):
 
 
 def test_raises_mixed_capture_list():
-    """Formats a mixed capture list (``var``/``read``/``mut``/``ref``) with named captures."""
+    """Formats a mixed capture list (``var``/``imm``/``mut``/``ref``) with named captures."""
     source = (
         "def main() raises:\n"
         "    var a: Int = 0\n"
@@ -61,7 +61,7 @@ def test_raises_mixed_capture_list():
         "    var d: Int = 0\n"
         "\n"
         "    @always_inline\n"
-        "    def cb[]() raises {var a, read b, mut c, ref d}:\n"
+        "    def cb[]() raises {var a, imm b, mut c, ref d}:\n"
         "        var x = a + b + d\n"
         "        c = 1\n"
     )
@@ -140,7 +140,7 @@ def test_bare_move_in_mixed_capture_list():
         '    var c = String("z")\n'
         "\n"
         "    @always_inline\n"
-        "    def cb[]() raises {var a^, b^, read c}:\n"
+        "    def cb[]() raises {var a^, b^, imm c}:\n"
         "        var x = a + b + c\n"
     )
     assert_mojo_format(source, expected=source)

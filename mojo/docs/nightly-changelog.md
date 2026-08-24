@@ -109,6 +109,9 @@ This version is still a work in progress.
   - Intra-package accesses without explicit `import`s are now an error,
     following a period of deprecation.
 
+- Use of the `read` argument convention is now a hard error, following a period
+  of deprecation; use `imm` instead.
+
 ## Library stabilizations
 
 - String

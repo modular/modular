@@ -59,7 +59,7 @@ KEYWORDS = [
     "print",
     "raise",
     "raises",
-    "read",
+    "read", # Used to be a keyword
     "ref",
     "return",
     "struct",
