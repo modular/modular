@@ -1129,13 +1129,14 @@ def test_dispatch_common[
 
     def per_gpu_dispatch(i: Int) raises capturing:
         @always_inline
-        def bench_iter(mut b: Bencher) raises capturing:
+        def bench_iter(mut b: Bencher) raises {imm}:
             bencher_iter_custom(b, call_fn_dispatch, list_of_ctx[i])
 
         var bench_config = BenchConfig()
         bench_config.show_progress = False
         var b = Bench(bench_config^)
-        b.bench_function[bench_iter](
+        b.bench_function(
+            bench_iter,
             BenchId("bench dispatch"),
             [ThroughputMeasure(BenchMetric.bytes, 0)],
             fixed_iterations=n_slots,
@@ -1168,13 +1169,14 @@ def test_dispatch_common[
 
     def per_gpu_dispatch_wait(i: Int) raises capturing:
         @always_inline
-        def bench_iter(mut b: Bencher) raises capturing:
+        def bench_iter(mut b: Bencher) raises {imm}:
             bencher_iter_custom(b, call_fn_dispatch_wait, list_of_ctx[i])
 
         var bench_config = BenchConfig()
         bench_config.show_progress = False
         var b = Bench(bench_config^)
-        b.bench_function[bench_iter](
+        b.bench_function(
+            bench_iter,
             BenchId("bench dispatch_wait"),
             [ThroughputMeasure(BenchMetric.bytes, 0)],
             fixed_iterations=n_slots,
@@ -1211,7 +1213,7 @@ def test_dispatch_common[
 
         def per_gpu_e2e(i: Int) raises capturing:
             @always_inline
-            def bench_iter(mut b: Bencher) raises capturing:
+            def bench_iter(mut b: Bencher) raises {imm}:
                 bencher_iter_custom(b, call_fn_e2e, list_of_ctx[i])
 
             run_e2e(i, 0)
@@ -1220,7 +1222,8 @@ def test_dispatch_common[
             var bench_config = BenchConfig()
             bench_config.show_progress = False
             var b = Bench(bench_config^)
-            b.bench_function[bench_iter](
+            b.bench_function(
+                bench_iter,
                 BenchId("bench dispatch e2e"),
                 [ThroughputMeasure(BenchMetric.bytes, num_bytes)],
                 fixed_iterations=n_slots - 1,
