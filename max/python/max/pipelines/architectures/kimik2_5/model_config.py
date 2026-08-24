@@ -66,7 +66,6 @@ def _extract_eagle_aux_layer_ids(
     return list(raw) or None
 
 
-@dataclass(kw_only=True)
 class _KimiK2_5VisionCacheConfig:
     """Vision-cache facts shared by both registered Kimi K2.5 arch configs."""
 
