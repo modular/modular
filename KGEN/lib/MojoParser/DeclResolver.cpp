@@ -1897,7 +1897,8 @@ Operation *DeclResolver::finalizeFuncSignature(FnOp funcOp, ASTDecl &decl) {
 ASTDecl *DeclResolver::getTraitDecl(TraitType trait) {
   SmallVector<TraitSymbolAttr> symbols =
       LIT::reduceTraitCompositionSymbols(shared, trait.getSymbols());
-  if (symbols.size() == 1)
+  // If the trait type is a simple non-parametric trait, return the trait decl.
+  if (symbols.size() == 1 && symbols.front().getParamValues().empty())
     return &getDeclForTypeSymbol(symbols.front().getSymbol());
 
   assert(getCanonicalTrait(trait) == trait &&

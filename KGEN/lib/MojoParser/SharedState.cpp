@@ -2617,6 +2617,11 @@ ASTDecl *SharedState::getUniversalParametricClosureTrait() {
   return impl->parametricClosureTrait;
 }
 
+bool SharedState::isUniversalParametricClosureTrait(TraitSymbolAttr symbol) {
+  return getUniversalParametricClosureTrait()->getSymbolRef() ==
+         symbol.getSymbol();
+}
+
 ASTDecl *SharedState::getOrCreateExtension(SMLoc loc, TraitDeclOp sourceTrait,
                                            TraitDeclOp targetTrait,
                                            ASTType sourceMetaType,

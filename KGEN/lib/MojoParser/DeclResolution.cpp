@@ -5381,6 +5381,13 @@ ParseResult DeclResolver::resolveBody(TraitType traitType, ASTDecl &traitDecl) {
     if (failed(resolveBody(parentDecl, traitDecl.getLoc())))
       return failure();
 
+    if (shared.isUniversalParametricClosureTrait(symbol)) {
+      // TODO: implement this!
+      continue;
+    }
+
+    assert(symbol.getParamValues().empty() &&
+           "non-closure trait should have no param values");
     // Inherit members from the parent.
     for (auto &[name, decls] : parentDecl.getDeclsInScope()) {
       for (ASTDecl *decl : decls) {

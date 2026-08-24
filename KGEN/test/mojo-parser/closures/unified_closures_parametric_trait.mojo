@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %parse-mojo-isolated %s --kgen-print-inline-type-values | FileCheck %s
+# RUN: %parse-mojo-isolated %s --kgen-print-inline-type-values -split-input-file | FileCheck %s
 
 # A closure trait declares its call method as a function generator type builder
 # whose four components - parameter declarations, argument types, result type
@@ -50,3 +50,89 @@ struct Foo[T: AnyType](def(T) __param_trait__):
     # CHECK-NEXT:   kgen.witness "__call__" : {{.*}} @unified_closures_parametric_trait::@Foo::@"__call__(unified_closures_parametric_trait::Foo[$0],$0)"<:!AnyType T>)
     def __call__(mut self, arg: Self.T):
         pass
+
+
+# CHECK: lit.alias.decl *"NestedClosure
+# CHECK-SAME: "##__mojo_closure__##"<:param_list<type> [
+# CHECK-SAME:   #kgen.fn_gen_builder.param.decl<"Fn_P#0`1", !AnyType>,
+# CHECK-SAME:   #kgen.fn_gen_builder.param.decl<"Fn_P#1`1", !lit.trait<@"##__mojo_closure__##"<:param_list<type> [
+# CHECK-SAME:     #kgen.fn_gen_builder.param.decl<"Fn_P#0`0", !kgen.param<:!AnyType #kgen.fn_gen_builder.param.decl.ref<"Fn_P#0`1", !AnyType>>>
+comptime NestedClosure = def[
+    T: AnyType,
+    InnerClosure: def[T]() __param_trait__,
+](t: InnerClosure) __param_trait__
+
+
+# // -----
+
+
+struct MemOnly:
+    pass
+
+
+@fieldwise_init
+struct Foo[T: AnyType](def(T) __param_trait__):
+    def __call__(mut self, arg: Self.T):
+        pass
+
+
+def call_int[T: def(Int) __param_trait__](closure: T):
+    # TODO: closure.__call__(1)
+    pass
+
+
+def call_mem_only[T: def(MemOnly) __param_trait__](closure: T):
+    pass
+
+
+def main():
+    # Parametric trait enables matching between parametric closure and instantiated one.
+
+    var fi = Foo[Int]()
+    # CHECK:      lit.call {{.*}}@"call_int[##__mojo_closure__## & ::AnyType & ::Deinitable & ::Movable]($0)"
+    # CHECK-SAME:   <:trait<@"##__mojo_closure__##"<
+    # CHECK-SAME:     :param_list<type> [!lit.ref<!Int, imm #kgen.fn_gen_builder.param.decl.ref<"0_unnamed`0", !lit.origin<false>>>],
+    # CHECK-SAME:     @Foo<:!AnyType !Int>>
+    call_int(fi)
+
+    var fm = Foo[MemOnly]()
+    # CHECK:      lit.call {{.*}}@"call_mem_only[##__mojo_closure__## & ::AnyType & ::Deinitable & ::Movable]($0)"
+    # CHECK-SAME:   <:trait<@"##__mojo_closure__##"<
+    # CHECK-SAME:     :param_list<type> [!lit.ref<!MemOnly, imm #kgen.fn_gen_builder.param.decl.ref<"0_unnamed`0", !lit.origin<false>>>],
+    # CHECK-SAME:     @Foo<:!AnyType !MemOnly>>
+    call_mem_only(fm)
+
+
+# // -----
+
+
+trait MyStrategy(Movable):
+    comptime Value: Copyable & Deinitable
+
+
+@fieldwise_init
+struct IntStrategy(MyStrategy):
+    comptime Value = Int
+
+
+@fieldwise_init
+struct Runner(Movable):
+    def test[
+        StrategyType: MyStrategy, //
+    ](
+        self,
+        var strategy: StrategyType,
+        f: Some[def(var StrategyType.Value) __param_trait__],
+    ):
+        pass
+
+
+def foo[C: def(var Int) __param_trait__](c: C):
+    # Parametric trait enables matching between foldable expression during binding.
+
+    # CHECK:      lit.call {{.*}}@Runner::@"test[
+    # CHECK-SAME:   <:!AnyType_Movable_MyStrategy !IntStrategy,
+    # CHECK-SAME:     :trait<@"##__mojo_closure__##"<
+    # CHECK-SAME:     :param_list<type> [!lit.ref<:!AnyType_Copyable_Deinitable_Movable
+    # CHECK-SAME:     sugar_member_alias(!IntStrategy, "Value", !Int), mut
+    Runner().test(IntStrategy(), c)

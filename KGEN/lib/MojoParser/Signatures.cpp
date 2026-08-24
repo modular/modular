@@ -2091,6 +2091,12 @@ static void typeCheckOneArgument(size_t idx, ASTDecl *fnDecl,
   }
   case ParsedArgument::kConventionImm: {
     arg.kgenConvention = ArgConvention::ImmMem;
+    // For parametric closure traits, we don't care about register passability.
+    // All arguments will be parsed as if they are mem type, such that we can
+    // match `def (T)` with both `def (Int)` and `def (MemType)`.
+    if (tcSignature.argList.isExperimentalParamTrait)
+      break;
+
     TypeConvention conv = type.getRegisterPassability(arg.loc, shared);
     // FIXME(MOCO-725): Borrows of non-trivial register-passable values don't
     // have origins and can't be correctly tracked if captured in an async

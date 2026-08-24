@@ -575,6 +575,7 @@ public:
   /// signatures and we can adapt the trait to any signature.
   ASTDecl *getUniversalParametricClosureTrait();
 
+  bool isUniversalParametricClosureTrait(TraitSymbolAttr symbol);
   bool isUniversalParametricClosureTrait(ASTDecl *trait) {
     return trait == getUniversalParametricClosureTrait();
   }
