@@ -18,7 +18,7 @@ coords. The body composes a few helpers from this module:
 
 - `reduce` — tier-aware iteration over the reduce axis, then a
   cross-thread join of the body's accumulators. Takes a per-tile
-  callback `tile_fn[ws, _r]` (which closes over input closures +
+  callback `tile_fn[ws]` (which closes over input closures +
   local monoid states) and a variadic of `ReduceOp` states to pjoin
   after the loop. Zero states runs iteration only — used by
   2-pass algorithms' second pass.
@@ -66,11 +66,16 @@ from std.sys.info import (
     is_apple_gpu,
 )
 from std.utils.coord import Coord, DynamicCoord, coord_to_index_list
-from std.utils.index import IndexList
 from std.utils.static_tuple import StaticTuple
 
 from algorithm.cpu.rowwise import SerialReducer
-from algorithm.rowwise_types import Context, ContextParams, ReduceTier, RowBody
+from algorithm.rowwise_types import (
+    Context,
+    ContextParams,
+    ReduceTier,
+    RowBody,
+    RowCoord,
+)
 from std.algorithm.backend.unswitch import unswitch
 from algorithm.reduce_op import ReduceOp, Reducer
 from max.algorithm.reduction import _get_nd_indices_from_flat_index
@@ -567,14 +572,20 @@ struct WarpReducer[WARPS_PER_BLOCK: Int = 1](Reducer, TrivialRegisterPassable):
 @always_inline
 def reduce[
     params: ContextParams,
+    rank: Int,
     //,
-    TileFn: ImplicitlyCopyable & (def[ws: Int, _r: Int](IndexList[_r]) -> None),
-](row_coords: Coord, axis_size: Int, mut ctx: Context[params], tile_fn: TileFn):
+    TileFn: ImplicitlyCopyable & (def[ws: Int](RowCoord[rank]) -> None),
+](
+    row_coords: RowCoord[rank],
+    axis_size: Int,
+    mut ctx: Context[params],
+    tile_fn: TileFn,
+):
     """Drives the tier-aware iteration over the reduce axis, with no
     monoid state — pure per-tile iteration for map/emit terminals (see
     the state-carrying overload below for reduce phases).
 
-    `tile_fn[ws, _r]` is invoked per tile with the scaffolder's SIMD
+    `tile_fn[ws]` is invoked per tile with the scaffolder's SIMD
     width and the row's coords. It's a value closure (its copy-captured
     state — input/output closures — rides the value).
 
@@ -613,13 +624,12 @@ def reduce[
         ctx: The dispatch bundle.
         tile_fn: Per-tile callback; closes over input/output closures.
     """
-    comptime rank = row_coords.rank
-    var coords = coord_to_index_list(row_coords)
+    var coords = row_coords
 
     comptime if ctx._tier == ReduceTier.Serial:
         for k in range(axis_size):
-            coords[ctx.axis] = k
-            tile_fn[1, rank](coords)
+            coords.write_axis[ctx.axis](k)
+            tile_fn[1](coords)
     elif ctx._tier == ReduceTier.Warp:
         # One warp covers the row, grid-striding by `WARP_SIZE * sw` to
         # span up to `_WARP_TIER_CHUNK_CAP` SIMD chunks; each lane handles
@@ -636,20 +646,20 @@ def reduce[
             if lane_base < axis_size:
                 var lane_count = min(axis_size - lane_base, sw)
                 if lane_count == sw:
-                    coords[ctx.axis] = lane_base
-                    tile_fn[sw, rank](coords)
+                    coords.write_axis[ctx.axis](lane_base)
+                    tile_fn[sw](coords)
                 else:
                     for j in range(lane_count):
-                        coords[ctx.axis] = lane_base + j
-                        tile_fn[1, rank](coords)
+                        coords.write_axis[ctx.axis](lane_base + j)
+                        tile_fn[1](coords)
     elif ctx.emit_tile_width > 1:
         # Tiled (SIMD-on-outputs). One thread owns `emit_tile_width`
         # adjacent rows; per axis step, one SIMD load on innermost
         # dim — the body's tile_fn dispatches each lane.
         comptime W = ctx.emit_tile_width
         for k in range(axis_size):
-            coords[ctx.axis] = k
-            tile_fn[W, rank](coords)
+            coords.write_axis[ctx.axis](k)
+            tile_fn[W](coords)
     elif ctx._tier == ReduceTier.Splitk:
         # Split-K iteration: threads stripe `sw`-wide tiles across
         # `blocks_per_row * BLOCK_SIZE` lanes, so adjacent threads load
@@ -665,8 +675,8 @@ def reduce[
         # needs no ragged tail: every in-range `elem_idx` has a full tile behind
         # it.
         for elem_idx in range(row_tid * sw, axis_size, row_total_threads * sw):
-            coords[ctx.axis] = elem_idx
-            tile_fn[sw, rank](coords)
+            coords.write_axis[ctx.axis](elem_idx)
+            tile_fn[sw](coords)
     else:
         # Block tier (cooperative, simd along axis).
         comptime BLOCK_SPAN = ctx.BLOCK_SIZE * ctx.simd_width
@@ -676,23 +686,24 @@ def reduce[
             if lane_base < axis_size:
                 var lane_count = min(axis_size - lane_base, ctx.simd_width)
                 if lane_count == ctx.simd_width:
-                    coords[ctx.axis] = lane_base
-                    tile_fn[ctx.simd_width, rank](coords)
+                    coords.write_axis[ctx.axis](lane_base)
+                    tile_fn[ctx.simd_width](coords)
                 else:
                     for j in range(lane_count):
-                        coords[ctx.axis] = lane_base + j
-                        tile_fn[1, rank](coords)
+                        coords.write_axis[ctx.axis](lane_base + j)
+                        tile_fn[1](coords)
 
 
 @always_inline
 def reduce[
     State: ReduceOp,
     params: ContextParams,
+    rank: Int,
     //,
     TileFn: ImplicitlyCopyable
-    & (def[ws: Int, _r: Int](mut State, IndexList[_r]) -> None),
+    & (def[ws: Int](mut State, RowCoord[rank]) -> None),
 ](
-    row_coords: Coord,
+    row_coords: RowCoord[rank],
     axis_size: Int,
     mut ctx: Context[params],
     mut state: State,
@@ -718,13 +729,12 @@ def reduce[
         tile_fn: Per-tile callback; closes over input closures and
             folds each tile into `state`.
     """
-    comptime rank = row_coords.rank
-    var coords = coord_to_index_list(row_coords)
+    var coords = row_coords
 
     comptime if ctx._tier == ReduceTier.Serial:
         for k in range(axis_size):
-            coords[ctx.axis] = k
-            tile_fn[1, rank](state, coords)
+            coords.write_axis[ctx.axis](k)
+            tile_fn[1](state, coords)
     elif ctx._tier == ReduceTier.Warp:
         comptime sw = ctx.simd_width
         comptime warp_span = WARP_SIZE * sw
@@ -734,17 +744,17 @@ def reduce[
             if lane_base < axis_size:
                 var lane_count = min(axis_size - lane_base, sw)
                 if lane_count == sw:
-                    coords[ctx.axis] = lane_base
-                    tile_fn[sw, rank](state, coords)
+                    coords.write_axis[ctx.axis](lane_base)
+                    tile_fn[sw](state, coords)
                 else:
                     for j in range(lane_count):
-                        coords[ctx.axis] = lane_base + j
-                        tile_fn[1, rank](state, coords)
+                        coords.write_axis[ctx.axis](lane_base + j)
+                        tile_fn[1](state, coords)
     elif ctx.emit_tile_width > 1:
         comptime W = ctx.emit_tile_width
         for k in range(axis_size):
-            coords[ctx.axis] = k
-            tile_fn[W, rank](state, coords)
+            coords.write_axis[ctx.axis](k)
+            tile_fn[W](state, coords)
     elif ctx._tier == ReduceTier.Splitk:
         comptime sw = ctx.simd_width
         var blocks_per_row = Int(ctx._blocks_per_row)
@@ -754,8 +764,8 @@ def reduce[
         var row_total_threads = blocks_per_row * ctx.BLOCK_SIZE
 
         for elem_idx in range(row_tid * sw, axis_size, row_total_threads * sw):
-            coords[ctx.axis] = elem_idx
-            tile_fn[sw, rank](state, coords)
+            coords.write_axis[ctx.axis](elem_idx)
+            tile_fn[sw](state, coords)
     else:
         comptime BLOCK_SPAN = ctx.BLOCK_SIZE * ctx.simd_width
         var tid = thread_idx.x
@@ -764,12 +774,12 @@ def reduce[
             if lane_base < axis_size:
                 var lane_count = min(axis_size - lane_base, ctx.simd_width)
                 if lane_count == ctx.simd_width:
-                    coords[ctx.axis] = lane_base
-                    tile_fn[ctx.simd_width, rank](state, coords)
+                    coords.write_axis[ctx.axis](lane_base)
+                    tile_fn[ctx.simd_width](state, coords)
                 else:
                     for j in range(lane_count):
-                        coords[ctx.axis] = lane_base + j
-                        tile_fn[1, rank](state, coords)
+                        coords.write_axis[ctx.axis](lane_base + j)
+                        tile_fn[1](state, coords)
 
 
 @always_inline

@@ -21,10 +21,11 @@ single reduce phase plus a per-row `emit` — and runs on both CPU and GPU.
 
 from max.gpu.host import DeviceContext
 from std.sys.info import has_apple_gpu_accelerator
-from std.utils.coord import Coord
+from std.utils.coord import Coord, coord_to_index_list
 from std.utils.index import IndexList
 
 from algorithm import rowwise
+from algorithm.rowwise_types import RowCoord
 from algorithm.reduce_op import (
     ArgMax,
     ArgMin,
@@ -84,10 +85,10 @@ def reduce_sum[
         # Load: fuses the caller's input closure into the row's primary load.
         @always_inline
         def load[
-            width: Int, alignment: Int, coord_rank: Int
-        ](idx: IndexList[coord_rank]) {var input_fn} -> SIMD[dtype, width]:
+            width: Int, alignment: Int
+        ](idx: RowCoord[rank]) {var input_fn} -> SIMD[dtype, width]:
             return input_fn[width, alignment, rank](
-                rebind[IndexList[rank]](idx)
+                rebind[IndexList[rank]](coord_to_index_list(idx.coord))
             )
 
         # Prepare Row: build the row view over the axis size (always
@@ -100,7 +101,7 @@ def reduce_sum[
         @always_inline
         def add[
             width: Int
-        ](tile: SIMD[dtype, width], idx: IndexList[rank]) {} -> SIMD[
+        ](tile: SIMD[dtype, width], idx: RowCoord[rank]) {} -> SIMD[
             dtype, width
         ]:
             return tile
@@ -109,9 +110,10 @@ def reduce_sum[
 
         # Emit: per-row output — the reduced scalar.
         @always_inline
-        def write(oc: IndexList[rank]) {var acc, var output_fn}:
+        def write(oc: RowCoord[rank]) {var acc, var output_fn}:
             output_fn[params.emit_tile_width, rank](
-                oc, acc.slice[params.emit_tile_width]()
+                rebind[IndexList[rank]](coord_to_index_list(oc.coord)),
+                acc.slice[params.emit_tile_width](),
             )
 
         # `acc`/`output_fn` ride `write`'s capture list into `emit`.
@@ -174,10 +176,10 @@ def reduce_max[
         # Load: fuses the caller's input closure into the row's primary load.
         @always_inline
         def load[
-            width: Int, alignment: Int, coord_rank: Int
-        ](idx: IndexList[coord_rank]) {var input_fn} -> SIMD[dtype, width]:
+            width: Int, alignment: Int
+        ](idx: RowCoord[rank]) {var input_fn} -> SIMD[dtype, width]:
             return input_fn[width, alignment, rank](
-                rebind[IndexList[rank]](idx)
+                rebind[IndexList[rank]](coord_to_index_list(idx.coord))
             )
 
         # Prepare Row: build the row view over the axis size (always
@@ -190,7 +192,7 @@ def reduce_max[
         @always_inline
         def val[
             width: Int
-        ](tile: SIMD[dtype, width], idx: IndexList[rank]) {} -> SIMD[
+        ](tile: SIMD[dtype, width], idx: RowCoord[rank]) {} -> SIMD[
             dtype, width
         ]:
             return tile
@@ -199,9 +201,10 @@ def reduce_max[
 
         # Emit: per-row output — the reduced scalar.
         @always_inline
-        def write(oc: IndexList[rank]) {var acc, var output_fn}:
+        def write(oc: RowCoord[rank]) {var acc, var output_fn}:
             output_fn[params.emit_tile_width, rank](
-                oc, acc.slice[params.emit_tile_width]()
+                rebind[IndexList[rank]](coord_to_index_list(oc.coord)),
+                acc.slice[params.emit_tile_width](),
             )
 
         # `acc`/`output_fn` ride `write`'s capture list into `emit`.
@@ -257,10 +260,10 @@ def reduce_min[
         # Load: fuses the caller's input closure into the row's primary load.
         @always_inline
         def load[
-            width: Int, alignment: Int, coord_rank: Int
-        ](idx: IndexList[coord_rank]) {var input_fn} -> SIMD[dtype, width]:
+            width: Int, alignment: Int
+        ](idx: RowCoord[rank]) {var input_fn} -> SIMD[dtype, width]:
             return input_fn[width, alignment, rank](
-                rebind[IndexList[rank]](idx)
+                rebind[IndexList[rank]](coord_to_index_list(idx.coord))
             )
 
         # Prepare Row: build the row view over the axis size (always
@@ -273,7 +276,7 @@ def reduce_min[
         @always_inline
         def val[
             width: Int
-        ](tile: SIMD[dtype, width], idx: IndexList[rank]) {} -> SIMD[
+        ](tile: SIMD[dtype, width], idx: RowCoord[rank]) {} -> SIMD[
             dtype, width
         ]:
             return tile
@@ -282,9 +285,10 @@ def reduce_min[
 
         # Emit: per-row output — the reduced scalar.
         @always_inline
-        def write(oc: IndexList[rank]) {var acc, var output_fn}:
+        def write(oc: RowCoord[rank]) {var acc, var output_fn}:
             output_fn[params.emit_tile_width, rank](
-                oc, acc.slice[params.emit_tile_width]()
+                rebind[IndexList[rank]](coord_to_index_list(oc.coord)),
+                acc.slice[params.emit_tile_width](),
             )
 
         # `acc`/`output_fn` ride `write`'s capture list into `emit`.
@@ -340,10 +344,10 @@ def reduce_product[
         # Load: fuses the caller's input closure into the row's primary load.
         @always_inline
         def load[
-            width: Int, alignment: Int, coord_rank: Int
-        ](idx: IndexList[coord_rank]) {var input_fn} -> SIMD[dtype, width]:
+            width: Int, alignment: Int
+        ](idx: RowCoord[rank]) {var input_fn} -> SIMD[dtype, width]:
             return input_fn[width, alignment, rank](
-                rebind[IndexList[rank]](idx)
+                rebind[IndexList[rank]](coord_to_index_list(idx.coord))
             )
 
         # Prepare Row: build the row view over the axis size (always
@@ -356,7 +360,7 @@ def reduce_product[
         @always_inline
         def val[
             width: Int
-        ](tile: SIMD[dtype, width], idx: IndexList[rank]) {} -> SIMD[
+        ](tile: SIMD[dtype, width], idx: RowCoord[rank]) {} -> SIMD[
             dtype, width
         ]:
             return tile
@@ -367,9 +371,10 @@ def reduce_product[
 
         # Emit: per-row output — the reduced scalar.
         @always_inline
-        def write(oc: IndexList[rank]) {var acc, var output_fn}:
+        def write(oc: RowCoord[rank]) {var acc, var output_fn}:
             output_fn[params.emit_tile_width, rank](
-                oc, acc.slice[params.emit_tile_width]()
+                rebind[IndexList[rank]](coord_to_index_list(oc.coord)),
+                acc.slice[params.emit_tile_width](),
             )
 
         # `acc`/`output_fn` ride `write`'s capture list into `emit`.
@@ -425,10 +430,10 @@ def reduce_mean[
         # Load: fuses the caller's input closure into the row's primary load.
         @always_inline
         def load[
-            width: Int, alignment: Int, coord_rank: Int
-        ](idx: IndexList[coord_rank]) {var input_fn} -> SIMD[dtype, width]:
+            width: Int, alignment: Int
+        ](idx: RowCoord[rank]) {var input_fn} -> SIMD[dtype, width]:
             return input_fn[width, alignment, rank](
-                rebind[IndexList[rank]](idx)
+                rebind[IndexList[rank]](coord_to_index_list(idx.coord))
             )
 
         # Prepare Row: build the row view over the axis size (always
@@ -441,7 +446,7 @@ def reduce_mean[
         @always_inline
         def add[
             width: Int
-        ](tile: SIMD[dtype, width], idx: IndexList[rank]) {} -> SIMD[
+        ](tile: SIMD[dtype, width], idx: RowCoord[rank]) {} -> SIMD[
             dtype, width
         ]:
             return tile
@@ -453,7 +458,9 @@ def reduce_mean[
         # cast to `dtype`; ints integer-divide by the axis length.
         # Accumulation stays in `dtype` (no upcast).
         @always_inline
-        def write(oc: IndexList[rank]) {var acc, var axis_size, var output_fn}:
+        def write(
+            oc: RowCoord[rank],
+        ) {var acc, var axis_size, var output_fn}:
             var total = acc.slice[params.emit_tile_width]()
 
             comptime if dtype.is_floating_point():
@@ -466,7 +473,10 @@ def reduce_mean[
                 var recip = (
                     Scalar[float_type](1) / Scalar[float_type](axis_size)
                 ).cast[dtype]()
-                output_fn[params.emit_tile_width, rank](oc, total * recip)
+                output_fn[params.emit_tile_width, rank](
+                    rebind[IndexList[rank]](coord_to_index_list(oc.coord)),
+                    total * recip,
+                )
             else:
                 # Integer `dtype` has no NaN to signal "no data" with, and
                 # this divide is `SIMD.__truediv__` — a raw `pop.div`, no
@@ -491,7 +501,7 @@ def reduce_mean[
                 # select the compiler hoists out of the row loop anyway.
                 var divisor = axis_size if axis_size != 0 else 1
                 output_fn[params.emit_tile_width, rank](
-                    oc,
+                    rebind[IndexList[rank]](coord_to_index_list(oc.coord)),
                     total
                     / SIMD[dtype, params.emit_tile_width](
                         Scalar[dtype](divisor)
@@ -561,10 +571,10 @@ def reduce_argmin[
         # Load: fuses the caller's input closure into the row's primary load.
         @always_inline
         def load[
-            width: Int, alignment: Int, coord_rank: Int
-        ](idx: IndexList[coord_rank]) {var input_fn} -> SIMD[dtype, width]:
+            width: Int, alignment: Int
+        ](idx: RowCoord[rank]) {var input_fn} -> SIMD[dtype, width]:
             return input_fn[width, alignment, rank](
-                rebind[IndexList[rank]](idx)
+                rebind[IndexList[rank]](coord_to_index_list(idx.coord))
             )
 
         # Prepare Row: build the row view over the axis size (always
@@ -577,7 +587,7 @@ def reduce_argmin[
         @always_inline
         def val[
             width: Int
-        ](tile: SIMD[dtype, width], idx: IndexList[rank]) {} -> SIMD[
+        ](tile: SIMD[dtype, width], idx: RowCoord[rank]) {} -> SIMD[
             dtype, width
         ]:
             return tile
@@ -588,9 +598,10 @@ def reduce_argmin[
 
         # Emit: per-row output — the winning index.
         @always_inline
-        def write(oc: IndexList[rank]) {var indices, var output_fn}:
+        def write(oc: RowCoord[rank]) {var indices, var output_fn}:
             output_fn[params.emit_tile_width, rank](
-                oc, indices.slice[params.emit_tile_width]()
+                rebind[IndexList[rank]](coord_to_index_list(oc.coord)),
+                indices.slice[params.emit_tile_width](),
             )
 
         # `indices`/`output_fn` ride `write`'s capture list into `emit`.
@@ -646,10 +657,10 @@ def reduce_argmax[
         # Load: fuses the caller's input closure into the row's primary load.
         @always_inline
         def load[
-            width: Int, alignment: Int, coord_rank: Int
-        ](idx: IndexList[coord_rank]) {var input_fn} -> SIMD[dtype, width]:
+            width: Int, alignment: Int
+        ](idx: RowCoord[rank]) {var input_fn} -> SIMD[dtype, width]:
             return input_fn[width, alignment, rank](
-                rebind[IndexList[rank]](idx)
+                rebind[IndexList[rank]](coord_to_index_list(idx.coord))
             )
 
         # Prepare Row: build the row view over the axis size (always
@@ -662,7 +673,7 @@ def reduce_argmax[
         @always_inline
         def val[
             width: Int
-        ](tile: SIMD[dtype, width], idx: IndexList[rank]) {} -> SIMD[
+        ](tile: SIMD[dtype, width], idx: RowCoord[rank]) {} -> SIMD[
             dtype, width
         ]:
             return tile
@@ -673,9 +684,10 @@ def reduce_argmax[
 
         # Emit: per-row output — the winning index.
         @always_inline
-        def write(oc: IndexList[rank]) {var indices, var output_fn}:
+        def write(oc: RowCoord[rank]) {var indices, var output_fn}:
             output_fn[params.emit_tile_width, rank](
-                oc, indices.slice[params.emit_tile_width]()
+                rebind[IndexList[rank]](coord_to_index_list(oc.coord)),
+                indices.slice[params.emit_tile_width](),
             )
 
         # `indices`/`output_fn` ride `write`'s capture list into `emit`.
@@ -747,10 +759,10 @@ def reduce_min_and_max[
         # Load: fuses the caller's input closure into the row's primary load.
         @always_inline
         def load[
-            width: Int, alignment: Int, coord_rank: Int
-        ](idx: IndexList[coord_rank]) {var input_fn} -> SIMD[dtype, width]:
+            width: Int, alignment: Int
+        ](idx: RowCoord[rank]) {var input_fn} -> SIMD[dtype, width]:
             return input_fn[width, alignment, rank](
-                rebind[IndexList[rank]](idx)
+                rebind[IndexList[rank]](coord_to_index_list(idx.coord))
             )
 
         # Prepare Row: build the row view over the axis size (always
@@ -763,7 +775,7 @@ def reduce_min_and_max[
         @always_inline
         def val[
             width: Int
-        ](tile: SIMD[dtype, width], idx: IndexList[rank]) {} -> SIMD[
+        ](tile: SIMD[dtype, width], idx: RowCoord[rank]) {} -> SIMD[
             dtype, width
         ]:
             return tile
@@ -775,13 +787,15 @@ def reduce_min_and_max[
         # Emit: per-row output — both the min and the max.
         @always_inline
         def write(
-            oc: IndexList[rank],
+            oc: RowCoord[rank],
         ) {var mn, var mx, var output_min_fn, var output_max_fn,}:
             output_min_fn[params.emit_tile_width, rank](
-                oc, mn.slice[params.emit_tile_width]()
+                rebind[IndexList[rank]](coord_to_index_list(oc.coord)),
+                mn.slice[params.emit_tile_width](),
             )
             output_max_fn[params.emit_tile_width, rank](
-                oc, mx.slice[params.emit_tile_width]()
+                rebind[IndexList[rank]](coord_to_index_list(oc.coord)),
+                mx.slice[params.emit_tile_width](),
             )
 
         # `mn`/`mx`/`output_min_fn`/`output_max_fn` ride into `emit`.
