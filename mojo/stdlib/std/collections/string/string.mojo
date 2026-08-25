@@ -2528,6 +2528,8 @@ def atol(str_slice: StringSlice, base: Int = 10) raises -> Int:
     var str_len = str_slice.byte_length()
 
     start, is_negative = _trim_and_handle_sign(str_slice, str_len)
+    if start >= str_len:
+        raise Error(_str_to_base_error(base, str_slice))
 
     comptime ord_0 = ord("0")
     comptime ord_letter_min = (ord("a"), ord("A"))
@@ -2641,6 +2643,8 @@ def _trim_and_handle_sign(
         and Codepoint(buff[unsafe_offset=start]).is_posix_space()
     ):
         start += 1
+    if start == str_len:
+        return start, False
     var p: Bool = buff[unsafe_offset=start] == UInt8(ord("+"))
     var n: Bool = buff[unsafe_offset=start] == UInt8(ord("-"))
     return start + (Int(p) or Int(n)), n
