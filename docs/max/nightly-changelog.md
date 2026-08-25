@@ -877,6 +877,12 @@ This version is still a work in progress.
   `max`, `min`, `argmax`, and `argmin` return an identity here rather than
   raising the way numpy does.
 
+- Fixed `max benchmark --base-url` failing before the first request against
+  remote OpenAI-compatible endpoints: the server-readiness probe and the
+  prefix-cache flush now target the `--base-url` endpoint (instead of
+  `http://<host>:<port>`) and send `Authorization: Bearer $OPENAI_API_KEY`,
+  matching the benchmark requests themselves.
+
 - Fixed run-to-run nondeterminism of `layer_norm`, `rms_norm`, and other
   Row-API rowwise reductions on Apple Silicon GPUs: a block that reduced
   several rows re-used its shared-memory strip across row iterations

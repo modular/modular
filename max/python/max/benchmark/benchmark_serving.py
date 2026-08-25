@@ -119,6 +119,7 @@ from max.benchmark.benchmark_shared.utils import (
     fetch_server_max_model_len,
     get_tokenizer,
     is_castable_to_int,
+    openai_bearer_auth_headers,
     print_section,
     resolve_revision,
     set_ulimit,
@@ -937,9 +938,19 @@ def _apply_workload_to_config(
 
 
 def flush_prefix_cache(
-    backend: Backend, host: str, port: int, dry_run: bool
+    backend: Backend,
+    host: str,
+    port: int,
+    dry_run: bool,
+    base_url: str | None = None,
 ) -> None:
-    """Flush the serving engine's prefix cache via HTTP POST."""
+    """Flush the serving engine's prefix cache via HTTP POST.
+
+    When ``base_url`` is set (a remote endpoint, e.g. ``--base-url``), it
+    replaces the ``http://<host>:<port>`` prefix and the request carries an
+    ``Authorization: Bearer $OPENAI_API_KEY`` header, matching the auth the
+    benchmark requests themselves send.
+    """
     if backend not in CACHE_RESET_ENDPOINT_MAP:
         raise ValueError(
             f"Cannot flush prefix cache for {backend} backend: this backend"
@@ -947,11 +958,16 @@ def flush_prefix_cache(
         )
     import requests as _http_requests  # lazy - avoid hard dep for non-sweep use
 
-    api_url = f"http://{host}:{port}{CACHE_RESET_ENDPOINT_MAP[backend]}"
+    headers: Mapping[str, str] | None = None
+    if base_url is not None:
+        api_url = f"{base_url.rstrip('/')}{CACHE_RESET_ENDPOINT_MAP[backend]}"
+        headers = openai_bearer_auth_headers()
+    else:
+        api_url = f"http://{host}:{port}{CACHE_RESET_ENDPOINT_MAP[backend]}"
     if dry_run:
         logger.info(f"Dry-run flush: POST {api_url}")
         return
-    response = _http_requests.post(api_url)
+    response = _http_requests.post(api_url, headers=headers)
     if response.status_code == 400:
         logger.warning(
             f"Prefix caching is not enabled on backend {backend} at {api_url};"
@@ -1380,7 +1396,11 @@ def _run_benchmark_sweep(
             for _iteration in range(args.num_iters):
                 if args.flush_prefix_cache:
                     flush_prefix_cache(
-                        args.backend, args.host, args.port, args.dry_run
+                        args.backend,
+                        args.host,
+                        args.port,
+                        args.dry_run,
+                        base_url=args.base_url,
                     )
 
                 logger.info("mc=%s seed=%d", mc, mc_seed)
@@ -1477,6 +1497,7 @@ def main_with_parsed_args(
         timeout_s=args.server_ready_timeout_s,
         backend=args.backend,
         liveness_check=server_liveness,
+        base_url=args.base_url,
     )
 
     # The server may not have been up during session build (it is launched
