@@ -32,6 +32,7 @@ from max.pipelines.kv_cache import (
     PagedKVCacheManagerInterface,
     TransferReqData,
 )
+from max.pipelines.kv_cache.kv_connector import KVConnectorTransfer
 from max.pipelines.lib import (
     PIPELINE_REGISTRY,
     MemoryPlan,
@@ -114,6 +115,23 @@ class PendingDecodeRequest:
     cancelled: bool = False
 
 
+@dataclass
+class _OnloadingDecodeRequest:
+    """A newly-claimed decode request cordoned out of the send-to-prefill
+    path while its KV onload (a reused-prefix H2D copy) is in flight.
+
+    Blocks are already claimed and allocated (pinned by ``event``); the
+    request is held here until ``event`` polls complete, then sent to
+    prefill like any other freshly-admitted request. Mirrors
+    ``TextBatchConstructor``'s CE-side onload cordon
+    (``_OnloadingRequest``/``_readmit_completed_onloads``).
+    """
+
+    context: TextContext
+    replica_idx: int
+    event: KVConnectorTransfer
+
+
 class DecodeScheduler(Scheduler):
     def __init__(
         self,
@@ -146,6 +164,9 @@ class DecodeScheduler(Scheduler):
         # Initialize Scheduler state.
         self.pending_reqs: OrderedDict[RequestID, TextContext] = OrderedDict()
         self.requests: dict[RequestID, PendingDecodeRequest] = {}
+        self._onloading_reqs: OrderedDict[
+            RequestID, _OnloadingDecodeRequest
+        ] = OrderedDict()
         self.prefill_reqs_per_replica: list[int] = [
             0 for _ in range(scheduler_config.data_parallel_degree)
         ]
@@ -343,8 +364,42 @@ class DecodeScheduler(Scheduler):
         )
         METRICS.di_decode_send_time((time.monotonic() - send_start) * 1000)
 
+    def _send_admitted_request_to_prefill(
+        self, req_id: RequestID, context: TextContext, replica_idx: int
+    ) -> None:
+        """Sends a claimed, fully-onloaded request to the prefill node."""
+        dst_idxs = self.kv_cache.get_req_blocks(context)
+        self.requests[req_id] = PendingDecodeRequest(
+            context=context,
+            replica_idx=replica_idx,
+            phase=DecodeRequestPhase.AWAITING_PREFILL,
+            phase_entered_at=time.monotonic(),
+        )
+        self.send_prefill_request(req_id, context, dst_idxs, replica_idx)
+
+    def _send_completed_onloads_to_prefill(self) -> None:
+        """Sends cordoned requests whose KV onload has completed to prefill.
+
+        Runs once per iteration, before admitting new requests, so a
+        request that's been waiting on its onload doesn't wait an extra
+        cycle once the copy lands. Mirrors
+        ``TextBatchConstructor._readmit_completed_onloads``.
+        """
+        completed = [
+            req_id
+            for req_id, onloading in self._onloading_reqs.items()
+            if onloading.event.is_complete()
+        ]
+        for req_id in completed:
+            onloading = self._onloading_reqs.pop(req_id)
+            self._send_admitted_request_to_prefill(
+                req_id, onloading.context, onloading.replica_idx
+            )
+
     def reserve_memory_and_send_to_prefill(self) -> None:
         """Continuously pulls requests from the request queue and forwards them to the prefill node."""
+        self._send_completed_onloads_to_prefill()
+
         # max_batch_size is a per-replica limit (see TextBatchConstructor's
         # docstring), but the in-flight counts below sum every replica --
         # scale by DP degree so admission isn't capped at one replica's share.
@@ -365,7 +420,11 @@ class DecodeScheduler(Scheduler):
 
         while (
             self.pending_reqs
-            and (len(self.batch_constructor.all_tg_reqs) + len(self.requests))
+            and (
+                len(self.batch_constructor.all_tg_reqs)
+                + len(self.requests)
+                + len(self._onloading_reqs)
+            )
             < total_max_batch_size
             and (
                 self.kv_cache is None
@@ -395,9 +454,6 @@ class DecodeScheduler(Scheduler):
             # so we must allocate matching blocks on the decode side.
             try:
                 load_event = self.kv_cache.alloc(context)
-                # TODO: cordon the request (like the CE batch constructor) so the
-                # onload overlaps GPU execution instead of blocking here.
-                load_event.synchronize()
             except InsufficientBlocksError:
                 # If we don't have enough space, we will return this to the request queue.
                 self.pending_reqs[req_id] = context
@@ -405,22 +461,27 @@ class DecodeScheduler(Scheduler):
                 self.kv_cache.release(context)
                 break
 
-            # Send to the Prefill Node
-            dst_idxs = self.kv_cache.get_req_blocks(context)
             admitted_at = time.monotonic()
             enqueued_at = self._admission_enqueue_time.pop(req_id, None)
             if enqueued_at is not None:
                 METRICS.di_decode_admission_queue_wait_time(
                     (admitted_at - enqueued_at) * 1000
                 )
-            self.requests[req_id] = PendingDecodeRequest(
-                context=context,
-                replica_idx=replica_idx,
-                phase=DecodeRequestPhase.AWAITING_PREFILL,
-                phase_entered_at=admitted_at,
-            )
             self.prefill_reqs_per_replica[replica_idx] += 1
-            self.send_prefill_request(req_id, context, dst_idxs, replica_idx)
+
+            # Cordon the request if its KV onload (a reused-prefix H2D
+            # copy) has not landed yet: hold it out of the send-to-prefill
+            # path so the scheduler keeps admitting/dispatching other work
+            # while the copy completes, instead of blocking this thread on
+            # it. Checked again next iteration by
+            # _send_completed_onloads_to_prefill.
+            if not load_event.is_complete():
+                self._onloading_reqs[req_id] = _OnloadingDecodeRequest(
+                    context=context, replica_idx=replica_idx, event=load_event
+                )
+                continue
+
+            self._send_admitted_request_to_prefill(req_id, context, replica_idx)
 
     def _handle_cancelled_requests(self) -> None:
         for req_id in get_cancelled_reqs(self.cancel_queue):
@@ -428,6 +489,20 @@ class DecodeScheduler(Scheduler):
                 # Remove it from the active batch.
                 self.batch_constructor.release_request(req_id)
                 # Send the cancelled result back to the response q
+                self.response_queue.put_nowait(
+                    {req_id: SchedulerResult.cancelled()}
+                )
+                continue
+
+            onloading = self._onloading_reqs.pop(req_id, None)
+            if onloading is not None:
+                # Never sent to prefill -- nothing there to cancel. Its
+                # pending onload keeps the blocks pinned until it
+                # completes; release() is safe to call regardless (mirrors
+                # the CE batch constructor's cordon cleanup in
+                # release_request).
+                self.prefill_reqs_per_replica[onloading.replica_idx] -= 1
+                self.kv_cache.release(onloading.context)
                 self.response_queue.put_nowait(
                     {req_id: SchedulerResult.cancelled()}
                 )
@@ -596,6 +671,10 @@ class DecodeScheduler(Scheduler):
             1
             for pending in self.requests.values()
             if pending.replica_idx == replica_idx
+        ) + sum(
+            1
+            for onloading in self._onloading_reqs.values()
+            if onloading.replica_idx == replica_idx
         )
 
     @traced
@@ -683,7 +762,11 @@ class DecodeScheduler(Scheduler):
         t1 = time.monotonic()
         batch_creation_time_s = t1 - t0
 
-        total_pending = len(self.pending_reqs) + len(self.requests)
+        total_pending = (
+            len(self.pending_reqs)
+            + len(self.requests)
+            + len(self._onloading_reqs)
+        )
         if inputs or total_pending == 0:
             self._last_batch_activity = time.monotonic()
         elif self.scheduler_config.decode_stall_timeout_s is not None:
@@ -691,11 +774,13 @@ class DecodeScheduler(Scheduler):
             if stall_duration > self.scheduler_config.decode_stall_timeout_s:
                 logger.error(
                     "Decode stall detected: no batch activity for %.1fs"
-                    " with %d pending requests (%d queued, %d in"
-                    " prefill). Terminating worker to trigger restart.",
+                    " with %d pending requests (%d queued, %d onloading,"
+                    " %d in prefill). Terminating worker to trigger"
+                    " restart.",
                     stall_duration,
                     total_pending,
                     len(self.pending_reqs),
+                    len(self._onloading_reqs),
                     len(self.requests),
                 )
                 # SystemExit bypasses except Exception handlers in the
@@ -736,7 +821,7 @@ class DecodeScheduler(Scheduler):
             kv_cache=self.kv_cache,
             batch_creation_time_s=batch_creation_time_s,
             batch_execution_time_s=batch_execution_time_s,
-            num_pending_reqs=len(self.pending_reqs) + len(self.requests),
+            num_pending_reqs=total_pending,
             num_terminated_reqs=num_terminated_reqs,
             total_preemption_count=self.batch_constructor.total_preemption_count,
             batch_spec_decode_metrics=self.pipeline.batch_spec_decode_metrics()
