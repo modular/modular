@@ -201,7 +201,6 @@ struct PreShuffledBGroupedGEMM[
         dram_to_lds: Bool = False,
         cluster_drain_sched: Bool = False,
         mfma_cluster: Int = 4,
-        deep_prime: Bool = False,
         pipeline_depth: Int = 2,
         waves_per_eu: Int = 0,
     ](
@@ -235,7 +234,6 @@ struct PreShuffledBGroupedGEMM[
             dram_to_lds=dram_to_lds,
             cluster_drain_sched=cluster_drain_sched,
             mfma_cluster=mfma_cluster,
-            deep_prime=deep_prime,
             pipeline_depth=pipeline_depth,
         ]
         # K_SCALES (= K / 32) derived from A's K byte extent. The
@@ -414,7 +412,6 @@ struct PreShuffledBGroupedGEMM[
         dram_to_lds: Bool = False,
         cluster_drain_sched: Bool = False,
         mfma_cluster: Int = 4,
-        deep_prime: Bool = False,
         pipeline_depth: Int = 2,
         waves_per_eu: Int = 0,
     ](
@@ -447,7 +444,6 @@ struct PreShuffledBGroupedGEMM[
             dram_to_lds=dram_to_lds,
             cluster_drain_sched=cluster_drain_sched,
             mfma_cluster=mfma_cluster,
-            deep_prime=deep_prime,
             pipeline_depth=pipeline_depth,
         ]
         # K_SCALES (= K / 32) derived from A's K byte extent. The
@@ -525,7 +521,6 @@ struct PreShuffledBGroupedGEMM[
         dram_to_lds: Bool = False,
         cluster_drain_sched: Bool = False,
         mfma_cluster: Int = 4,
-        deep_prime: Bool = False,
         pipeline_depth: Int = 2,
         waves_per_eu: Int = 0,
         static_grid_z: Bool = False,
@@ -553,7 +548,6 @@ struct PreShuffledBGroupedGEMM[
             dram_to_lds=dram_to_lds,
             cluster_drain_sched=cluster_drain_sched,
             mfma_cluster=mfma_cluster,
-            deep_prime=deep_prime,
             pipeline_depth=pipeline_depth,
         ]
 
@@ -619,7 +613,6 @@ struct PreShuffledBGroupedGEMM[
                 dram_to_lds,
                 cluster_drain_sched,
                 mfma_cluster,
-                deep_prime,
                 pipeline_depth,
                 waves_per_eu,
             ]
@@ -656,7 +649,6 @@ struct PreShuffledBGroupedGEMM[
                 dram_to_lds,
                 cluster_drain_sched,
                 mfma_cluster,
-                deep_prime,
                 pipeline_depth,
                 waves_per_eu,
             ]
@@ -1147,7 +1139,6 @@ def block_scaled_grouped_matmul_amd_preb[
         WN: Int,
         persistent: Bool,
         b_cache_policy: CacheOperation = CacheOperation.ALWAYS,
-        deep_prime: Bool = False,
         wg_per_cu: Int = 2,
         use_decode_cap: Bool = False,
         pipeline_depth: Int = 2,
@@ -1178,7 +1169,6 @@ def block_scaled_grouped_matmul_amd_preb[
             WN=WN,
             persistent=persistent,
             b_cache_policy=b_cache_policy,
-            deep_prime=deep_prime,
             pipeline_depth=pipeline_depth,
             cluster_drain_sched=cluster_drain_sched,
             mfma_cluster=mfma_cluster,
@@ -1231,9 +1221,9 @@ def block_scaled_grouped_matmul_amd_preb[
         elif etm <= 6144:
             return run_kernel[128, 128, 512, 64, True]()
         elif etm <= 9216:
-            return run_kernel[64, 128, 512, 64, True, deep_prime=True]()
+            return run_kernel[64, 128, 512, 64, True]()
         else:
-            return run_kernel[64, 128, 512, 64, False, deep_prime=True]()
+            return run_kernel[64, 128, 512, 64, False]()
 
     comptime if LB == 16 and N == 6144 and packed_K == (
         6144 // 2
@@ -1316,7 +1306,7 @@ def block_scaled_grouped_matmul_amd_preb[
                 32, 128, 256, 32, False, STREAM, cluster_drain_sched=True
             ]()
         elif etm <= 512:
-            return run_kernel[64, 128, 512, 32, False, deep_prime=True]()
+            return run_kernel[64, 128, 512, 32, False]()
         elif etm <= 2048:
             return run_kernel[
                 64,
@@ -1349,11 +1339,9 @@ def block_scaled_grouped_matmul_amd_preb[
                 32, 128, 256, 32, False, STREAM, pipeline_depth=3
             ]()
         elif etm <= 512:
-            return run_kernel[
-                64, 128, 512, 32, False, STREAM, deep_prime=True
-            ]()
+            return run_kernel[64, 128, 512, 32, False, STREAM]()
         elif etm <= 2048:
-            return run_kernel[64, 128, 512, 32, False, deep_prime=True]()
+            return run_kernel[64, 128, 512, 32, False]()
         else:
             return run_kernel[128, 128, 256, 64, True, waves_per_eu=2]()
 
