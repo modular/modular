@@ -148,11 +148,11 @@ def unsafe_memcmp[
     """
     var byte_count = count * size_of[type]()
 
-    comptime if size_of[type]() % size_of[DType.int32]() == 0:
+    comptime if size_of[type]() % size_of[UInt32]() == 0:
         return _memcmp_impl(
-            s1.unsafe_bitcast[Int32](),
-            s2.unsafe_bitcast[Int32](),
-            byte_count // size_of[DType.int32](),
+            s1.unsafe_bitcast[UInt32](),
+            s2.unsafe_bitcast[UInt32](),
+            byte_count // size_of[UInt32](),
         )
 
     return _memcmp_impl(
