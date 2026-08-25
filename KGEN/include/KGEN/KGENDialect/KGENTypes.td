@@ -228,6 +228,9 @@ def KGEN_GeneratorType : KGENType<"Generator", "generator", [
     /// Get this GeneratorType with a new body.
     GeneratorType getWithBody(Type newBody);
 
+    /// Get this GeneratorType with a new input parameter types.
+    GeneratorType getWithInputParamTypes(ArrayRef<Type> newInputTypes);
+
     /// Get this GeneratorType with some parameters bound.
     GeneratorType getSpecializedGenerator(
       PartiallySpecializedInputParams &specialization,

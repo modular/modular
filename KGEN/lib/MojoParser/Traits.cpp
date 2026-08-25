@@ -586,7 +586,7 @@ LIT::verifyAndBuildConformance(ASTDecl &structDecl, TraitSymbolAttr parent,
   // Prepare an error. It will be abandoned if the check succeeds.
   diag = shared.emitError(structDecl.getLoc())
          << selfType << " does not implement all requirements for "
-         << ASTType(TraitType::get(parent));
+         << shared.declResolver->getCanonicalTrait(parent);
 
   // Returns failure() to stop the verifyConformance loop.
   auto checkMethod = [&](StringAttr name, ASTDecl *traitFnDecl,
@@ -982,7 +982,8 @@ LIT::verifyAndBuildConformance(ASTDecl &structDecl, TraitSymbolAttr parent,
 
   // Otherwise, emit the set of requirements that are missing.
   diag->attachNote(traitDecl)
-      << "trait " << ASTType(TraitType::get(parent)) << " declared here";
+      << "trait " << ASTType(shared.declResolver->getCanonicalTrait(parent))
+      << " declared here";
   if (auto *inheritedFrom = structDecl.getTraitConformanceLineage()) {
     if (auto it = inheritedFrom->find(parent);
         it != inheritedFrom->end() && it->second.first != parent) {
@@ -1193,10 +1194,9 @@ static TriState doesNominalTypeConformToUncached(
     // Search for extensions in the trait's parent scope(s).
     // TODO(MOCO-522): Arcana docs on our orphan rule.
     for (TraitSymbolAttr traitSymbol : trait.getSymbols()) {
-      ASTDecl *traitDecl =
-          shared.declResolver->getTraitDecl(TraitType::get(traitSymbol));
-      assert(traitDecl && "couldn't find trait decl for trait symbol");
-      if (ASTDecl *traitParent = traitDecl->getParentDecl()) {
+      ASTDecl &traitDecl =
+          shared.declResolver->getDeclForTypeSymbol(traitSymbol.getSymbol());
+      if (ASTDecl *traitParent = traitDecl.getParentDecl()) {
         traitParent->findExtensionsInScopeForStruct(self->getSymbolRef(),
                                                     uniqueExtensions);
       }
@@ -1516,33 +1516,6 @@ LIT::getTraitBoundFromAssumptions(TypedAttr typeAttr, SharedState &shared,
 //===----------------------------------------------------------------------===//
 // IREmitter::emitMetaTypeToTraitConversion
 //===----------------------------------------------------------------------===//
-
-namespace {
-/// The signature for a trait requirement will have a Self parameter first whose
-/// type is a TraitType for the trait it was found in.  We want to force
-/// substitute a new parameter for the Self references even though it has a
-/// different metatype.  This doesn't remove the parameter, that will be done
-/// later.
-struct TraitSelfBinder : public IndexParameterReplacer<TraitSelfBinder> {
-  TypedAttr selfValue;
-
-  TraitSelfBinder(TypedAttr selfValue) : selfValue(selfValue) {}
-
-  // CRTP methods.
-  Attribute tryReplace(Attribute attr, size_t depth) {
-    // Replace a reference to $(0,0) with the new selfValue.
-    auto paramRef = dyn_cast<ParamIndexRefAttr>(attr);
-    if (!paramRef || paramRef.getIndex() != 0 ||
-        // Check to see if this is a param ref referring to our Self or some
-        // other Self (perhaps in a signature parameter-value that declares its
-        // own self or something), see PSTIAIRAID.
-        paramRef.getDepth() + 1 != depth)
-      return {};
-    return selfValue;
-  }
-  Type tryReplace(Type type, size_t depth) { return {}; }
-};
-} // namespace
 
 /// Given a method from a trait like 'Movable.__del__', rebind the method to
 /// have a different self for a conforming type, e.g.

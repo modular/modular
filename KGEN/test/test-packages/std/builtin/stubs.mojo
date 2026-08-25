@@ -877,11 +877,6 @@ def materialize[T: AnyType, //, value: T](out result: T):
     )
 
 
-trait ExplicitlyDestroyedMovable:
-    def __init__(out self, *, deinit move: Self):
-        ...
-
-
 @stable
 trait Movable:
     def __init__(out self, *, deinit move: Self):

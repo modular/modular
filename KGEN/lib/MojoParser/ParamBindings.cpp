@@ -85,8 +85,9 @@ void LIT::emitUnprovableConstraintsFromFitness(
 /// FIXME: why do we need a substitution here? shouldn't we just generate the
 /// right signature during parsing??
 FnTypeGeneratorType LIT::substituteTraitAliasesIntoSignature(
-    DeclResolver &declResolver, ASTDecl &traitDecl, FnOp candidateFunc,
+    DeclResolver &declResolver, TraitSymbolAttr traitSymbol,
     FnTypeGeneratorType desiredSignature, PValue selfPValue) {
+  auto &traitDecl = declResolver.getDeclForTypeSymbol(traitSymbol.getSymbol());
   ParameterEvaluator traitAliasReplacer =
       declResolver.shared.getParameterEvaluator();
   for (auto &[name, decls] : traitDecl.getDeclsInScope()) {
@@ -96,9 +97,7 @@ FnTypeGeneratorType LIT::substituteTraitAliasesIntoSignature(
       if (!traitAlias)
         continue;
       StringAttr nameStringAttr =
-          StringAttr::get(candidateFunc->getContext(), name.str());
-      TraitSymbolAttr traitSymbol = candidateFunc.getInheritedFrom().value_or(
-          TraitSymbolAttr::get(traitDecl.getSymbolRef()));
+          StringAttr::get(traitDecl.getContext(), name.str());
       TypedAttr aliasRef =
           declResolver.shared.getEvaluationContext().getAndFold<GetWitnessAttr>(
               selfPValue, traitSymbol, nameStringAttr, traitAlias.getType());
@@ -252,50 +251,52 @@ static bool isReferenceFromOwnFnBody(ASTDecl &fnDecl, ASTDecl &useScope) {
 TypedAttr LIT::getBoundConstAttrForFn(ASTDecl &fnDecl, SharedState &shared,
                                       const VerifiedParamBindings &verified,
                                       ASTDecl &useScope, SMLoc useLoc) {
-  auto funcOp = cast<FnOp>(fnDecl.getIfOperation());
-  if (isReferenceFromOwnFnBody(fnDecl, useScope)) {
-    StringRef name = funcOp.getDeclName().getValue();
-    auto diag =
-        shared.emitError(useLoc, "recursive references to nested functions are "
-                                 "not supported; define '")
-        << name << "' at file scope";
-    diag.attachNote(fnDecl) << "nested function declared here";
-    return {};
-  }
-  // If this is a global function or struct reference, bind it directly.
-  auto parentTrait = dyn_cast<TraitDeclOp>(funcOp->getParentOp());
-  if (!parentTrait) {
+  auto funcOp = dyn_cast_or_null<FnOp>(fnDecl.getIfOperation());
+  if (funcOp) {
+    if (isReferenceFromOwnFnBody(fnDecl, useScope)) {
+      StringRef name = funcOp.getDeclName().getValue();
+      auto diag = shared.emitError(
+                      useLoc, "recursive references to nested functions are "
+                              "not supported; define '")
+                  << name << "' at file scope";
+      diag.attachNote(fnDecl) << "nested function declared here";
+      return {};
+    }
+
+    assert(!isa<TraitDeclOp>(funcOp->getParentOp()) &&
+           "trait witness should always retrieved from a witness entry");
     return funcOp.getFuncLiteralGenerator(
         shared.getEvaluationContext(), verified.asAttr(),
         verified.getDischargedBodyConstraints());
   }
+
+  auto witnessEntry = fnDecl.getIfWitness();
+  assert(witnessEntry);
 
   ArrayRef<TypedAttr> verifiedValues = verified.getValues();
   // Must at least have one `_Self` parameter.
   assert(!verifiedValues.empty());
 
   TypedAttr selfExpr = verifiedValues[0];
-  ASTDecl *traitDecl = ASTType(selfExpr.getType()).getDecl(shared);
-  FnTypeGeneratorType signature = funcOp.getFullSignature();
+  auto signature =
+      cast<FnTypeGeneratorType>(witnessEntry->getWitnessEntry().witnessType);
 
   SmallVector<TypedAttr> paramValues;
   paramValues.push_back(selfExpr);
   for (Type t : signature.getInputParamTypes().drop_front())
     paramValues.push_back(UnboundAttr::get(t));
 
+  TraitSymbolAttr witnessFor = witnessEntry->traitSymbol;
   signature = substituteTraitAliasesIntoSignature(
-      *shared.declResolver, *traitDecl, funcOp, funcOp.getFullSignature(),
-      selfExpr);
+      *shared.declResolver, witnessFor, signature, selfExpr);
 
   // Get the signature with only `_Self` bound.
   signature = signature.getSpecializedGenerator(paramValues,
                                                 &shared.getEvaluationContext());
 
-  TraitSymbolAttr traitSymbol = funcOp.getInheritedFrom().value_or(
-      TraitSymbolAttr::get(traitDecl->getSymbolRef()));
-
   TypedAttr fnRef = shared.getEvaluationContext().getAndFold<GetWitnessAttr>(
-      selfExpr, traitSymbol, funcOp.getSymNameAttr(), signature);
+      selfExpr, witnessFor, witnessEntry->getWitnessEntry().witnessName,
+      signature);
 
   ArrayRef<TypedAttr> remainingParamValues = verifiedValues.drop_front();
   const llvm::BitVector &discharged = verified.getDischargedBodyConstraints();
@@ -309,8 +310,7 @@ TypedAttr LIT::getBoundConstAttrForFn(ASTDecl &fnDecl,
                                       const ParamBindings &unverified) {
   VerifiedParamBindings verifiedBindings;
   if (!unverified.empty()) {
-    auto funcOp = cast<FnOp>(fnDecl.getIfOperation());
-    FnTypeGeneratorType signature = funcOp.getFullSignature();
+    FnTypeGeneratorType signature = fnDecl.getDeclFullSignature();
     // Check that the signature can be rebound with our set of bindings.
     ParamInf inference(unverified, signature.getInputParamTypes(),
                        signature.getParamListAttrs(),

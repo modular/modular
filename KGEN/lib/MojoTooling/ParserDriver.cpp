@@ -107,6 +107,12 @@ MojoASTDeclRef MojoParserContext::getDecl(MojoASTTypeRef type) {
   return type.getDecl(impl->sharedState);
 }
 
+MojoASTDeclRef
+MojoParserContext::getTraitDecl(KGEN::TraitSymbolAttr traitSymbol) {
+  return MojoASTDeclRef(&impl->sharedState.declResolver->getDeclForTypeSymbol(
+      traitSymbol.getSymbol()));
+}
+
 MojoASTTypeRef MojoParserContext::concretizeType(MojoASTTypeRef base,
                                                  ArrayRef<TypedAttr> params,
                                                  MojoASTTypeRef type) {

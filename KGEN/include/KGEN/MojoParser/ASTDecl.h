@@ -40,7 +40,39 @@ class TraitDeclOp;
 class TraitType;
 struct ConstraintFailure;
 
-using DeclIRValue = SmartVariant<Operation *, CValue, std::nullopt_t>;
+// TODO(MOCO-4712): This should just be a CValue variant, we should
+// simplify how trait witness are created in general, then it should be merged
+// with the CValue variants when we have a IR representation for the witness
+// decl.
+struct WitnessDecl {
+  // This is the merged witness non-function decls with the same witness name,
+  // they might conflict each other if their types are not reconcilable.
+  using UnresolvedDecls = SmallVector<ASTDecl *>;
+
+  // This is the resolved witness entry.
+  struct ResolvedType {
+    StringAttr witnessName;
+    Type witnessType;
+
+    // Some extra information that is not available via a fnType. Meaningless
+    // for non-function witnesses.
+    ImplicitConversionKind implicitConversion = ImplicitConversionKind::None;
+    bool isStaticMethod = false;
+  };
+
+  UnresolvedDecls getDecls() const { return cast<UnresolvedDecls>(storage); }
+  ResolvedType getWitnessEntry() const { return cast<ResolvedType>(storage); }
+
+  // Depending on whether the decl is fully resolved, it could be either be a
+  // array lof decls that it depends on, or it could be a resolved witness type.
+  SmartVariant<ResolvedType, UnresolvedDecls> storage;
+
+  // This is the trait symbol that the decl witnessed.
+  TraitSymbolAttr traitSymbol;
+};
+
+using DeclIRValue =
+    SmartVariant<Operation *, WitnessDecl, CValue, std::nullopt_t>;
 
 struct UnresolvedWildcardImport {
   ImportPathAttr moduleName;
@@ -80,6 +112,24 @@ public:
   /// This is used for things like Module, StructDecl, Func, or ParamDecl.
   Operation *getIfOperation() const { return dyn_cast<Operation *>(irValue); }
   void setIRValue(DeclIRValue value) { irValue = value; }
+
+  WitnessDecl *getIfWitness() const {
+    if (isa<WitnessDecl>(irValue))
+      return &cast<WitnessDecl>(irValue);
+    return nullptr;
+  }
+
+  /// Return true if this decl is callable: a `FnOp`, or a witness for one.
+  bool isCallableDecl() const;
+
+  /// Return the full signature of this callable decl.
+  FnTypeGeneratorType getDeclFullSignature() const;
+
+  /// Return true if this decl is a static method.
+  bool isStaticMethodDecl() const;
+
+  /// Return how this decl may be used as an implicit conversion.
+  ImplicitConversionKind getDeclImplicitConversionKind() const;
 
   // When handling things like default trait method, we might insert placeholder
   // ASTDecl for default implementation that later become invalid after body

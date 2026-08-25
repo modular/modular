@@ -56,27 +56,6 @@ def test_no_where_clause[T: ImplicitlyCopyable](val: T) -> Int:
     return process_element_2(val)  # expected-error {{cannot be converted}}
 
 
-# --- Ambiguous method from declared and refined traits ---
-
-
-trait TraitWithValue:
-    # expected-note @below {{candidate declared here}}
-    def get_value(self) -> Int:
-        ...
-
-
-trait TraitWithDoubleValue:
-    # expected-note @below {{candidate declared here}}
-    def get_value(self) -> Int:
-        ...
-
-
-def test_ambiguous_method[
-    T: TraitWithValue
-](x: T) -> Int where conforms_to(T, TraitWithDoubleValue):
-    return x.get_value()  # expected-error {{ambiguous call to 'get_value'}}
-
-
 # --- comptime assert on unrelated condition should NOT refine ---
 
 
@@ -155,6 +134,7 @@ def test_nested_assert_refinement_does_not_leak[
 
 
 # --- Variadic helper refinement must NOT persist past comptime if ---
+
 
 # expected-note @below {{function declared here}}
 def needs_copyable_trait[T: Copyable](x: T):

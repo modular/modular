@@ -32,3 +32,7 @@ trait B(A):
 # CHECK: lit.struct.decl @S<T: !A_B>
 struct S[T: A & B]():
     var _value: Self.T
+
+    def test_foo(self):
+        # This should not trigger ambiguous call.
+        self._value.foo()

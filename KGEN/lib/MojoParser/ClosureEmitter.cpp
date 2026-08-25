@@ -247,8 +247,9 @@ TraitDeclOp ClosureEmitter::ClosureParent::getTrait(ASTDecl &moduleDecl) {
 
   for (auto [_, decls] : traitDeclParent->getDeclsInScope()) {
     for ([[maybe_unused]] auto decl : decls) {
-      assert(succeeded(shared.declResolver->resolveSignature(*decl,
-                                                             decl->getLoc())) &&
+      [[maybe_unused]] bool outcome = succeeded(
+          shared.declResolver->resolveSignature(*decl, decl->getLoc()));
+      assert(outcome &&
              "builtin trait nested decls should not fail signature resolution");
     }
   }

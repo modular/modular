@@ -1262,7 +1262,7 @@ static void collectParentTraits(MojoParserContext &ctx, MojoASTDeclRef self,
   for (TraitSymbolAttr symbol : canonicalTrait.getSymbols()) {
     if (!seenDecls.insert(symbol).second)
       continue;
-    MojoASTDeclRef decl = ctx.getDecl(TraitType::get(symbol));
+    MojoASTDeclRef decl = ctx.getTraitDecl(symbol);
     if (!decl || decl == self)
       continue;
     std::optional<StringRef> name = decl.getName();
@@ -1302,7 +1302,7 @@ collectParentTraitsWithMetadata(MojoParserContext &ctx, MojoASTDeclRef self,
     StringRef condition = lookupConformanceCondition(conditions, symbol);
 
     // Try to resolve the trait through AST
-    MojoASTDeclRef decl = ctx.getDecl(TraitType::get(symbol));
+    MojoASTDeclRef decl = ctx.getTraitDecl(symbol);
     if (decl && decl != self) {
       std::optional<StringRef> name = decl.getName();
       if (name && isa_and_nonnull<TraitDeclOp>(decl.getIfOperation())) {

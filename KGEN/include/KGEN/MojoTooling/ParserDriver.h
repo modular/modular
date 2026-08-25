@@ -357,6 +357,9 @@ public:
   /// Get the declaration that defined an AST type.
   MojoASTDeclRef getDecl(MojoASTTypeRef type);
 
+  /// Get the declaration that defined the trait.
+  MojoASTDeclRef getTraitDecl(KGEN::TraitSymbolAttr traitSymbol);
+
   /// Substitute parameters into a type and resolve them into a different type.
   MojoASTTypeRef concretizeType(MojoASTTypeRef base, ArrayRef<TypedAttr> params,
                                 MojoASTTypeRef type);

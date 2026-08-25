@@ -41,6 +41,30 @@ ASTDecl::ASTDecl(SharedState &shared, DeclIRValue irValue, llvm::SMLoc loc,
   isExplicitParamScope = false;
 }
 
+bool ASTDecl::isCallableDecl() const {
+  if (auto witness = getIfWitness())
+    return isa<FnTypeGeneratorType>(witness->getWitnessEntry().witnessType);
+  return isa_and_nonnull<FnOp>(getIfOperation());
+}
+
+FnTypeGeneratorType ASTDecl::getDeclFullSignature() const {
+  if (auto witness = getIfWitness()) // already expanded.
+    return cast<FnTypeGeneratorType>(witness->getWitnessEntry().witnessType);
+  return cast<FnOp>(getIfOperation()).getFullSignature();
+}
+
+bool ASTDecl::isStaticMethodDecl() const {
+  if (auto witness = getIfWitness())
+    return witness->getWitnessEntry().isStaticMethod;
+  return cast<FnOp>(getIfOperation()).getIsStatic();
+}
+
+ImplicitConversionKind ASTDecl::getDeclImplicitConversionKind() const {
+  if (auto witness = getIfWitness())
+    return witness->getWitnessEntry().implicitConversion;
+  return cast<FnOp>(getIfOperation()).getImplicitConversion();
+}
+
 DocStringAttr ASTDecl::getDocString() const {
   if (auto astDeclOp = dyn_cast_or_null<ASTDeclInterface>(getIfOperation()))
     return astDeclOp.getDocStringAttr();
@@ -335,6 +359,17 @@ void ASTDecl::dump() const {
     llvm::errs() << "\n";
   } else if (auto cv = getIfIRValue()) {
     cv.dump();
+  } else if (auto witness = getIfWitness()) {
+    llvm::errs() << "witness ";
+    if (resolvedness < DeclResolvedness::signature) {
+      llvm::errs() << "<unresolved>";
+    } else {
+      auto resolvedType = witness->getWitnessEntry();
+      resolvedType.witnessName.print(llvm::errs());
+      llvm::errs() << ": ";
+      resolvedType.witnessType.print(llvm::errs());
+    }
+    llvm::errs() << "\n";
   } else {
     llvm::errs() << "<null decl>\n";
   }

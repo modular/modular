@@ -248,16 +248,12 @@ OverloadFitness OverloadFitness::evaluate(ASTDecl *candidate,
                                           const OverloadSet &callable,
                                           PValue selfPValue) {
   DeclResolver &resolver = *callable.getShared().declResolver;
-  auto func = cast_or_null<FnOp>(candidate->getIfOperation());
-  FnTypeGeneratorType signature = func.getFullSignature();
+  FnTypeGeneratorType signature = candidate->getDeclFullSignature();
 
-  if (selfPValue) {
+  if (auto witness = candidate->getIfWitness(); witness && selfPValue) {
     // TODO(MOCO-1259): Support static methods with associated aliases
-    auto parentDecl = candidate->getParentDecl();
-    if (dyn_cast_or_null<TraitDeclOp>(parentDecl->getIfOperation())) {
-      signature = substituteTraitAliasesIntoSignature(
-          resolver, *parentDecl, func, signature, selfPValue);
-    }
+    signature = substituteTraitAliasesIntoSignature(
+        resolver, witness->traitSymbol, signature, selfPValue);
   }
 
   ParamInf inference(callable.paramBindings, signature.getInputParamTypes(),
@@ -315,6 +311,15 @@ closureParamCapturesIfClosure(ASTDecl *funcIfDirect,
                               const OverloadSet &callable) {
   if (!funcIfDirect)
     return {};
+
+  StringRef declNames = [=]() -> StringRef {
+    if (auto witness = funcIfDirect->getIfWitness())
+      return witness->getWitnessEntry().witnessName;
+    return cast<FnOp>(funcIfDirect->getIfOperation()).getDeclName();
+  }();
+  if (!declNames.starts_with("__call__"))
+    return {};
+
   if (operands.empty())
     return {};
   auto selfCValue = operands[0].ir.getIfCValue();
@@ -359,7 +364,8 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
   // Types with large __init__ overload sets (e.g. SIMD) make the inference
   // cost significant when converting many values, as in collection literals.
   if (funcIfDirect && callable.syntax == CallSyntax::kImplicitConvert &&
-      !cast<FnOp>(funcIfDirect->getIfOperation()).isImplicitConversion()) {
+      funcIfDirect->getDeclImplicitConversionKind() ==
+          ImplicitConversionKind::None) {
     // Name the target with the concrete Self type rather than the signature's
     // result type, which is still unsubstituted this early.
     assert(callable.selfResultType &&
@@ -372,20 +378,16 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
     return std::move(diag);
   }
 
-  if (!operands.empty()) {
+  if (!operands.empty() && funcIfDirect) {
     if (auto selfCValue = operands[0].ir.getIfCValue()) {
       if (auto selfPValue = PValue(selfCValue.getRValueType().mlirType)) {
         // TODO(MOCO-1259): Support static methods with associated aliases
-        if (funcIfDirect) {
-          if (auto func =
-                  dyn_cast_or_null<FnOp>(funcIfDirect->getIfOperation())) {
-            auto parentDecl = funcIfDirect->getParentDecl();
-            if (dyn_cast_or_null<TraitDeclOp>(parentDecl->getIfOperation())) {
-              signature = substituteTraitAliasesIntoSignature(
-                  *shared.declResolver, *parentDecl, func, signature,
-                  selfPValue);
-            }
-          }
+        if (WitnessDecl *witness = funcIfDirect->getIfWitness();
+            witness &&
+            isa<FnTypeGeneratorType>(witness->getWitnessEntry().witnessType)) {
+          signature = substituteTraitAliasesIntoSignature(
+              *shared.declResolver, witness->traitSymbol, signature,
+              selfPValue);
         }
       }
     }
@@ -415,23 +417,21 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
   // captured closure parameters. Only applies to method call syntax on a
   // __call__ method — not direct calls that happen to pass a closure as an
   // argument.
-  ArrayRef<ClosureParamCapture> implicitParams;
-  if (funcIfDirect) {
-    if (auto fnOp = dyn_cast_or_null<FnOp>(funcIfDirect->getIfOperation())) {
-      if (fnOp.getSourceNameAttr() &&
-          fnOp.getSourceNameAttr().getValue() == "__call__")
-        implicitParams =
-            closureParamCapturesIfClosure(funcIfDirect, operands, callable);
-    }
-  }
+  ArrayRef<ClosureParamCapture> implicitParams =
+      closureParamCapturesIfClosure(funcIfDirect, operands, callable);
   if (!implicitParams.empty()) {
     // Capture slots are at the front of the method's own parameter list
     // (Inferred PassingKind), but getFullSignature() prepends contextual
     // params (e.g. the trait's _Self). Skip past them.
-    auto fnOp = cast<FnOp>(funcIfDirect->getIfOperation());
-    size_t contextualParams =
-        signature.getInputParamTypes().size() -
-        fnOp.getFuncTypeGenerator().getInputParamTypes().size();
+    //
+    // TODO: we won't be needing this after migrating to parametric trait.
+    size_t contextualParams = [&]() -> size_t {
+      if (funcIfDirect->getIfWitness())
+        return 1; // _Self param for trait witness
+      auto fnOp = cast<FnOp>(funcIfDirect->getIfOperation());
+      return signature.getInputParamTypes().size() -
+             fnOp.getFuncTypeGenerator().getInputParamTypes().size();
+    }();
     const CallOperands &paramBindings = callable.paramBindings.getParameters();
     size_t paramIdx = contextualParams;
     for (const auto &[paramName, paramType] : implicitParams) {
