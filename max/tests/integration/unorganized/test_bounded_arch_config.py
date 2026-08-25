@@ -86,7 +86,9 @@ def test_over_long_max_length_raises(
     with pytest.raises(
         ValueError, match="exceeds the model's max_position_embeddings"
     ):
-        config_cls.calculate_max_seq_len(pipeline_config, hf_config_factory())
+        config_cls.calculate_max_seq_len(
+            hf_config_factory(), pipeline_config.model
+        )
 
 
 @pytest.mark.parametrize(("config_cls", "hf_config_factory"), _CASES)
@@ -97,6 +99,8 @@ def test_valid_max_length_resolves(
     pipeline_config = _pipeline_config(64)
 
     assert (
-        config_cls.calculate_max_seq_len(pipeline_config, hf_config_factory())
+        config_cls.calculate_max_seq_len(
+            hf_config_factory(), pipeline_config.model
+        )
         == 64
     )

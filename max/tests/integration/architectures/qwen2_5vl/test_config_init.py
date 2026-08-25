@@ -99,7 +99,7 @@ def test_all_config_entry_points() -> None:
 
     # calculate_max_seq_len
     max_seq_len = Qwen2_5VLConfig.calculate_max_seq_len(
-        pipeline_config, hf_config
+        hf_config, pipeline_config.model
     )
     assert max_seq_len > 0
 

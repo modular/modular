@@ -207,9 +207,8 @@ class InternVLConfig(ArchConfigWithKVCache):
     @classmethod
     def calculate_max_seq_len(
         cls,
-        pipeline_config: PipelineConfig,
         huggingface_config: AutoConfig,
-        model_config: MAXModelConfig | None = None,
+        model_config: MAXModelConfig,
     ) -> int:
         """Calculate maximum sequence length for InternVL."""
         # Delegate to the selected decoder family for language model parameters.
@@ -218,7 +217,6 @@ class InternVLConfig(ArchConfigWithKVCache):
         )
         ConfigCls = _select_llm_config_class(llm_hf_cfg)
         return ConfigCls.calculate_max_seq_len(
-            pipeline_config,
             huggingface_config=llm_hf_cfg,
             model_config=model_config,
         )

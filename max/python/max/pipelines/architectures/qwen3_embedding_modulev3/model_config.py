@@ -43,12 +43,10 @@ class Qwen3EmbeddingConfig(ArchConfig):
     @classmethod
     def calculate_max_seq_len(
         cls,
-        pipeline_config: PipelineConfig,
         huggingface_config: AutoConfig,
-        model_config: MAXModelConfig | None = None,
+        model_config: MAXModelConfig,
     ) -> int:
         # The configured max_length, bounded by max_position_embeddings.
-        model_config = model_config or pipeline_config.model
         model_max = getattr(
             huggingface_config, "max_position_embeddings", 32768
         )

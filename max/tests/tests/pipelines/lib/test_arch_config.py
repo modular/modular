@@ -15,7 +15,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
 from unittest.mock import MagicMock, NonCallableMock
 
 import pytest
@@ -47,6 +46,7 @@ from max.pipelines.lib.interfaces.arch_config import (
 )
 from max.pipelines.modeling.config_enums import SupportedEncoding
 from pydantic import ValidationError
+from transformers import AutoConfig
 
 
 @dataclass
@@ -68,11 +68,10 @@ class ConcreteArchConfig(ArchConfigWithAttentionKVCache):
     @classmethod
     def calculate_max_seq_len(
         cls,
-        pipeline_config: PipelineConfig,
-        huggingface_config: Any,
-        model_config: MAXModelConfig | None = None,
+        huggingface_config: AutoConfig,
+        model_config: MAXModelConfig,
     ) -> int:
-        del pipeline_config, huggingface_config, model_config
+        del huggingface_config, model_config
         return 2048
 
 
@@ -145,9 +144,8 @@ def test_arch_config_protocol_check() -> None:
         @classmethod
         def calculate_max_seq_len(
             cls,
-            pipeline_config: PipelineConfig,
-            huggingface_config: Any,
-            model_config: MAXModelConfig | None = None,
+            huggingface_config: AutoConfig,
+            model_config: MAXModelConfig,
         ) -> int:
             return 2048
 
@@ -176,9 +174,8 @@ def test_arch_config_with_cache_protocol_check() -> None:
         @classmethod
         def calculate_max_seq_len(
             cls,
-            pipeline_config: PipelineConfig,
-            huggingface_config: Any,
-            model_config: MAXModelConfig | None = None,
+            huggingface_config: AutoConfig,
+            model_config: MAXModelConfig,
         ) -> int:
             return 2048
 

@@ -424,11 +424,10 @@ class DSparkSpeculatorsDraftArchConfig:
     @classmethod
     def calculate_max_seq_len(
         cls,
-        pipeline_config: PipelineConfig,
         huggingface_config: AutoConfig,
-        model_config: MAXModelConfig | None = None,
+        model_config: MAXModelConfig,
     ) -> int:
-        del pipeline_config, model_config
+        del model_config
         layer_cfg = _get(huggingface_config, "transformer_layer_config")
         max_pos = (
             _get(layer_cfg, "max_position_embeddings")

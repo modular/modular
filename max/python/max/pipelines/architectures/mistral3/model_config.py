@@ -35,17 +35,14 @@ class Mistral3Config(MistralConfig):
     @classmethod
     def calculate_max_seq_len(
         cls,
-        pipeline_config: PipelineConfig,
         huggingface_config: AutoConfig,
-        model_config: MAXModelConfig | None = None,
+        model_config: MAXModelConfig,
     ) -> int:
         """Bounds against the text config's ``max_position_embeddings``."""
         huggingface_config = getattr(
             huggingface_config, "text_config", huggingface_config
         )
-        return super().calculate_max_seq_len(
-            pipeline_config, huggingface_config, model_config
-        )
+        return super().calculate_max_seq_len(huggingface_config, model_config)
 
     @override
     @classmethod

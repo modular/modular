@@ -303,11 +303,9 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
     @classmethod
     def calculate_max_seq_len(
         cls,
-        pipeline_config: PipelineConfig,
         huggingface_config: AutoConfig,
-        model_config: MAXModelConfig | None = None,
+        model_config: MAXModelConfig,
     ) -> int:
-        model_config = model_config or pipeline_config.model
         max_seq_len = model_config.max_length
         if max_seq_len:
             return max_seq_len

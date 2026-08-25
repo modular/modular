@@ -397,11 +397,9 @@ class InklingConfig(ArchConfigWithKVCache):
 
     @staticmethod
     def calculate_max_seq_len(
-        pipeline_config: PipelineConfig,
         huggingface_config: AutoConfig,
-        model_config: MAXModelConfig | None = None,
+        model_config: MAXModelConfig,
     ) -> int:
-        model_config = model_config or pipeline_config.model
         # Relative-bias attention has no position-embedding table, so the
         # checkpoint bounds its context with `model_max_length` where most
         # architectures use `max_position_embeddings`.
