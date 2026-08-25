@@ -35,7 +35,6 @@ from std.sys.info import (
 )
 from std.sys.intrinsics import readfirstlane
 from std.memory import AddressSpace
-from std.builtin.int import _FromInt
 
 from ..globals import WARP_SIZE
 from . import warp
@@ -142,22 +141,21 @@ def warp_id[*, broadcast: Bool = False]() -> Int:
     Returns:
         The warp ID (0 to BLOCK_SIZE/WARP_SIZE-1) of the current thread.
     """
-    return _warp_id[Int, broadcast=broadcast]()
+    return _warp_id[broadcast=broadcast]()
 
 
 @always_inline("nodebug")
 def _warp_id[
-    ResultType: _FromInt,
     *,
     broadcast: Bool = False,
-]() -> ResultType:
+]() -> Int:
     var res = ufloordiv(thread_idx.x, WARP_SIZE)
     comptime if broadcast:
         comptime if is_amd_gpu():
             res = readfirstlane(res)
         else:
             res = warp.broadcast(res)
-    return ResultType(from_int=res)
+    return Int(res)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -202,12 +200,9 @@ def sm_id() -> Int:
 # ===-----------------------------------------------------------------------===#
 
 
-struct _ThreadIdx[ResultType: _FromInt](Defaultable, TrivialRegisterPassable):
+struct _ThreadIdx(Defaultable, TrivialRegisterPassable):
     """Provides accessors for getting the `x`, `y`, and `z` coordinates of
     a thread within a block.
-
-    Parameters:
-        ResultType: Type of index accessors, typically `Int`.
     """
 
     @always_inline("nodebug")
@@ -229,7 +224,7 @@ struct _ThreadIdx[ResultType: _FromInt](Defaultable, TrivialRegisterPassable):
             ]()
 
     @always_inline("nodebug")
-    def __getattr_param__[dim: StringLiteral](self) -> Self.ResultType:
+    def __getattr_param__[dim: StringLiteral](self) -> Int:
         """Gets the `x`, `y`, or `z` coordinates of a thread within a block.
 
         Returns:
@@ -238,10 +233,10 @@ struct _ThreadIdx[ResultType: _FromInt](Defaultable, TrivialRegisterPassable):
         _verify_xyz[dim]()
         comptime intrinsic_name = Self._get_intrinsic_name[dim]()
         var i = llvm_intrinsic[intrinsic_name, UInt32, has_side_effect=False]()
-        return Self.ResultType(from_int=Int(i))
+        return Int(i)
 
 
-comptime thread_idx = _ThreadIdx[Int]()
+comptime thread_idx = _ThreadIdx()
 """Contains the thread index in the block, as `x`, `y`, and `z` values."""
 
 
@@ -250,12 +245,9 @@ comptime thread_idx = _ThreadIdx[Int]()
 # ===-----------------------------------------------------------------------===#
 
 
-struct _BlockIdx[ResultType: _FromInt](Defaultable, TrivialRegisterPassable):
+struct _BlockIdx(Defaultable, TrivialRegisterPassable):
     """Provides accessors for getting the `x`, `y`, and `z` coordinates of
     a block within a grid.
-
-    Parameters:
-        ResultType: Type of index accessors, typically `Int`.
     """
 
     @always_inline("nodebug")
@@ -277,7 +269,7 @@ struct _BlockIdx[ResultType: _FromInt](Defaultable, TrivialRegisterPassable):
             ]()
 
     @always_inline("nodebug")
-    def __getattr_param__[dim: StringLiteral](self) -> Self.ResultType:
+    def __getattr_param__[dim: StringLiteral](self) -> Int:
         """Gets the `x`, `y`, or `z` coordinates of a block within a grid.
 
         Returns:
@@ -286,10 +278,10 @@ struct _BlockIdx[ResultType: _FromInt](Defaultable, TrivialRegisterPassable):
         _verify_xyz[dim]()
         comptime intrinsic_name = Self._get_intrinsic_name[dim]()
         var i = llvm_intrinsic[intrinsic_name, UInt32, has_side_effect=False]()
-        return Self.ResultType(from_int=Int(i))
+        return Int(i)
 
 
-comptime block_idx = _BlockIdx[Int]()
+comptime block_idx = _BlockIdx()
 """Contains the block index in the grid, as `x`, `y`, and `z` values."""
 
 # ===-----------------------------------------------------------------------===#
@@ -297,7 +289,7 @@ comptime block_idx = _BlockIdx[Int]()
 # ===-----------------------------------------------------------------------===#
 
 
-struct _BlockDim[ResultType: _FromInt](Defaultable, TrivialRegisterPassable):
+struct _BlockDim(Defaultable, TrivialRegisterPassable):
     """Provides accessors for getting the `x`, `y`, and `z` dimensions of a
     block."""
 
@@ -306,7 +298,7 @@ struct _BlockDim[ResultType: _FromInt](Defaultable, TrivialRegisterPassable):
         return
 
     @always_inline("nodebug")
-    def __getattr_param__[dim: StaticString](self) -> Self.ResultType:
+    def __getattr_param__[dim: StaticString](self) -> Int:
         """Gets the `x`, `y`, or `z` dimension of the block.
 
         Returns:
@@ -319,14 +311,14 @@ struct _BlockDim[ResultType: _FromInt](Defaultable, TrivialRegisterPassable):
             var i = llvm_intrinsic[
                 intrinsic_name, Int32, has_side_effect=False
             ]()
-            return Self.ResultType(from_int=Int(i))
+            return Int(i)
         elif is_apple_gpu():
             var i = llvm_intrinsic[
                 "llvm.air.threads_per_threadgroup." + dim,
                 Int32,
                 has_side_effect=False,
             ]()
-            return Self.ResultType(from_int=Int(i))
+            return Int(i)
         elif is_amd_gpu():
 
             def _get_offset() -> Int:
@@ -338,9 +330,7 @@ struct _BlockDim[ResultType: _FromInt](Defaultable, TrivialRegisterPassable):
                     comptime assert dim == "z"
                     return 8
 
-            return Self.ResultType(
-                from_int=_get_gcn_idx[_get_offset(), DType.uint16]()
-            )
+            return Int(_get_gcn_idx[_get_offset(), DType.uint16]())
 
         else:
             CompilationTarget.unsupported_target_error[
@@ -348,7 +338,7 @@ struct _BlockDim[ResultType: _FromInt](Defaultable, TrivialRegisterPassable):
             ]()
 
 
-comptime block_dim = _BlockDim[Int]()
+comptime block_dim = _BlockDim()
 """Contains the dimensions of the block as `x`, `y`, and `z` values.
 
 For example: `block_dim.y`."""
@@ -359,7 +349,7 @@ For example: `block_dim.y`."""
 # ===-----------------------------------------------------------------------===#
 
 
-struct _GridDim[ResultType: _FromInt](Defaultable, TrivialRegisterPassable):
+struct _GridDim(Defaultable, TrivialRegisterPassable):
     """Provides accessors for getting the `x`, `y`, and `z` dimensions of a
     grid."""
 
@@ -368,7 +358,7 @@ struct _GridDim[ResultType: _FromInt](Defaultable, TrivialRegisterPassable):
         return
 
     @always_inline("nodebug")
-    def __getattr_param__[dim: StaticString](self) -> Self.ResultType:
+    def __getattr_param__[dim: StaticString](self) -> Int:
         """Gets the `x`, `y`, or `z` dimension of the grid.
 
         Returns:
@@ -381,7 +371,7 @@ struct _GridDim[ResultType: _FromInt](Defaultable, TrivialRegisterPassable):
             var i = llvm_intrinsic[
                 intrinsic_name, Int32, has_side_effect=False
             ]()
-            return Self.ResultType(from_int=Int(i))
+            return Int(i)
         elif is_amd_gpu():
 
             def _get_offset() -> Int:
@@ -393,9 +383,7 @@ struct _GridDim[ResultType: _FromInt](Defaultable, TrivialRegisterPassable):
                     comptime assert dim == "z"
                     return 2
 
-            return Self.ResultType(
-                from_int=_get_gcn_idx[_get_offset(), DType.uint32]()
-            )
+            return Int(_get_gcn_idx[_get_offset(), DType.uint32]())
         elif is_apple_gpu():
             comptime intrinsic_name = "llvm.air.threads_per_grid." + dim
             var gridDim = Int(
@@ -405,14 +393,14 @@ struct _GridDim[ResultType: _FromInt](Defaultable, TrivialRegisterPassable):
             # To make things compatible with NVidia and AMDGPU, divide result
             # by block_dim.dim
             var i = ufloordiv(gridDim, block_dim.__getattr_param__[dim]())
-            return Self.ResultType(from_int=i)
+            return Int(i)
         else:
             CompilationTarget.unsupported_target_error[
                 operation=__get_current_function_name(),
             ]()
 
 
-comptime grid_dim = _GridDim[Int]()
+comptime grid_dim = _GridDim()
 """Provides accessors for getting the `x`, `y`, and `z`
 dimensions of a grid."""
 
@@ -422,7 +410,7 @@ dimensions of a grid."""
 # ===-----------------------------------------------------------------------===#
 
 
-struct _GlobalIdx[ResultType: _FromInt](Defaultable, TrivialRegisterPassable):
+struct _GlobalIdx(Defaultable, TrivialRegisterPassable):
     """Provides accessors for getting the `x`, `y`, and `z` global offset of
     the kernel launch."""
 
@@ -431,7 +419,7 @@ struct _GlobalIdx[ResultType: _FromInt](Defaultable, TrivialRegisterPassable):
         return
 
     @always_inline("nodebug")
-    def __getattr_param__[dim: StringLiteral](self) -> Self.ResultType:
+    def __getattr_param__[dim: StringLiteral](self) -> Int:
         """Gets the `x`, `y`, or `z` dimension of the program.
 
         Returns:
@@ -442,10 +430,10 @@ struct _GlobalIdx[ResultType: _FromInt](Defaultable, TrivialRegisterPassable):
         var b_idx = block_idx.__getattr_param__[dim]()
         var b_dim = block_dim.__getattr_param__[dim]()
 
-        return Self.ResultType(from_int=b_idx * b_dim + t_idx)
+        return Int(b_idx * b_dim + t_idx)
 
 
-comptime global_idx = _GlobalIdx[Int]()
+comptime global_idx = _GlobalIdx()
 """Contains the global offset of the kernel launch, as `x`, `y`, and `z`
 values."""
 
