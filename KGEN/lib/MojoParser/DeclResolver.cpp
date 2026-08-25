@@ -419,13 +419,21 @@ TraitType DeclResolver::getCanonicalTrait(
   return TraitType::get(getContext(), symbols, constraints);
 }
 
-void DeclResolver::attachDeclToTraitCompositionDecl(ASTDecl *traitDecl,
-                                                    ASTDecl *childDecl,
-                                                    StringAttr name) {
+void DeclResolver::attachDeclToTraitCompositionDecl(
+    ASTDecl *traitDecl, TraitSymbolAttr witnessFor,
+    SmallVector<ASTDecl *> &&childDecl, StringAttr name) {
   // Lazy allocate declsInScope.
   if (!traitDecl->declsInScope)
     traitDecl->declsInScope.reset(new ASTDecl::DeclInScopeType());
-  (*traitDecl->declsInScope)[name].push_back(childDecl);
+
+  auto loc = childDecl.front()->getLoc(); // Just use the first location.
+  ASTDecl *witnessDecl = &createUnlistedDecl(
+      DeclIRValue(WitnessDecl{std::move(childDecl), witnessFor}), loc,
+      /*parentDecl=*/traitDecl, LexerCursor(), LexerCursor(),
+      /*indentation=*/-1);
+  witnessDecl->resolvedness = DeclResolvedness::unparsed;
+
+  (*traitDecl->declsInScope)[name].push_back(witnessDecl);
 }
 
 //===----------------------------------------------------------------------===//
@@ -1606,6 +1614,9 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
                           "decl!");
       if (failed(resolveSignature(traitType, decl)))
         decl.setErroneous();
+    } else if (auto witness = decl.getIfWitness()) {
+      if (failed(resolveSignature(witness, decl)))
+        decl.setErroneous();
     } else {
       llvm_unreachable(
           "do not know how to resolve the signature of this decl!");
@@ -1701,6 +1712,9 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
       auto traitType = dyn_cast_or_null<TraitType>(decl.getIfTypeValue());
       assert(traitType && "do not know how to resolve the body of this decl!");
       if (failed(resolveBody(traitType, decl)))
+        decl.setErroneous();
+    } else if (auto witness = decl.getIfWitness()) {
+      if (failed(resolveBody(witness, decl)))
         decl.setErroneous();
     } else {
       llvm_unreachable("do not know how to resolve the body of this decl!");
@@ -1956,12 +1970,8 @@ Operation *DeclResolver::finalizeFuncSignature(FnOp funcOp, ASTDecl &decl) {
 }
 
 ASTDecl *DeclResolver::getTraitDecl(TraitType trait) {
-  SmallVector<TraitSymbolAttr> symbols =
-      LIT::reduceTraitCompositionSymbols(shared, trait.getSymbols());
-  // If the trait type is a simple non-parametric trait, return the trait decl.
-  if (symbols.size() == 1 && symbols.front().getParamValues().empty())
-    return &getDeclForTypeSymbol(symbols.front().getSymbol());
-
+  // This is the invariant that we want to enforce, if the assertion triggered,
+  // there must be something wrong elsewhere.
   assert(getCanonicalTrait(trait) == trait &&
          "trait type should always be canonicalized");
 

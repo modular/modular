@@ -324,6 +324,11 @@ GeneratorType GeneratorType::getWithBody(Type newBody) {
   return GeneratorType::get(getInputParamTypes(), newBody, getParamListAttrs());
 }
 
+GeneratorType
+GeneratorType::getWithInputParamTypes(ArrayRef<Type> inputParamTypes) {
+  return GeneratorType::get(inputParamTypes, getBody(), getParamListAttrs());
+}
+
 StringAttr GeneratorType::getParamName(size_t idx) {
   return getParamListAttrs().getName(idx);
 }

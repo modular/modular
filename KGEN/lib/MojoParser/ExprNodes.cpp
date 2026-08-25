@@ -1116,6 +1116,8 @@ lookupMembersInDecls(SmallVectorImpl<ASTDecl *> &memberDecls,
     bool isExtension =
         isa_and_nonnull<ExtensionDeclOp>(containerDecl->getIfOperation());
     for (ASTDecl *decl : lookup.getIfSuccess()) {
+      if (decl->isDisabled())
+        continue;
       if (isExtension)
         if (!decl->getIfOperation())
           if (PValue cv = decl->getIfIRValue().getIfPValue())
@@ -2013,8 +2015,7 @@ AnyValue emitGetterSetterAccess(const ExprNode *node, ASTExprAnd<CValue> base,
   // __setitem__ use the same name for their value argument, so we just sniff
   // at the first entry of the set to see what it uses and assume the rest use
   // the same name.
-  auto firstFnSig = cast<FnOp>(setterSet.fnDecls.front()->getIfOperation())
-                        .getFuncTypeGenerator();
+  auto firstFnSig = setterSet.fnDecls.front()->getDeclFullSignature();
 
   // Find the last user declared argument.
   auto argNo = firstFnSig.getNumArguments();
@@ -2293,7 +2294,7 @@ auto AttributeRefNode::emitLCVIR(ExprDest &dest, IREmitter &emitter,
   }
 
   // Handle method references, which might be overloaded.
-  if (isa_and_nonnull<FnOp>(memberDecls[0]->getIfOperation())) {
+  if (memberDecls[0]->isCallableDecl()) {
     // Build an overload set of all matching function declarations.
 
     // TODO(ParameterizedType): This representation is subtly wrong.  We should
@@ -2333,43 +2334,41 @@ auto AttributeRefNode::emitLCVIR(ExprDest &dest, IREmitter &emitter,
   // Functions are checked in CallEmission.cpp::getCallee after overload
   // resolution.
   for (ASTDecl *memberDecl : memberDecls)
-    checkDeclUsageWarnings(*memberDecl, getIdentifierLoc(),
-                           emitter.getDeclScope(), shared, getRange(),
-                           CallSyntax::kDirectCall, {});
+    if (memberDecl->getIfOperation())
+      checkDeclUsageWarnings(*memberDecl, getIdentifierLoc(),
+                             emitter.getDeclScope(), shared, getRange(),
+                             CallSyntax::kDirectCall, {});
+
+  assert(memberDecls.size() == 1 && "only methods may be overloaded");
+  // Maintain sugar.  The base might be dynamic so we turn it into
+  // "Type.member" from a sugar perspective.
+  auto getParamMemberSugar = [&](PValue value) -> PValue {
+    // Propagate failures, never sugar aliases that start with an _.  These
+    // are internal implementation details of types and eliding this
+    // chops gigabytes of IR out of .mlir files for the std.
+    if (!value || isInternalName(spelling))
+      return value;
+
+    auto memberName = StringAttr::get(emitter.getContext(), spelling);
+    return SugarAttr::getMemberAlias(baseRVType, memberName, value);
+  };
 
   // References to an AliasDecl form a PValue.
-  if (all_of(memberDecls, [](ASTDecl *memberDecl) {
-        return isa_and_nonnull<AliasDeclOp>(memberDecl->getIfOperation());
-      })) {
-    // Maintain sugar.  The base might be dynamic so we turn it into
-    // "Type.member" from a sugar perspective.
-    auto getParamMemberSugar = [&](PValue value) -> PValue {
-      // Propagate failures, never sugar aliases that start with an _.  These
-      // are internal implementation details of types and eliding this
-      // chops gigabytes of IR out of .mlir files for the std.
-      if (!value || isInternalName(spelling))
-        return value;
-
-      auto memberName = StringAttr::get(emitter.getContext(), spelling);
-      return SugarAttr::getMemberAlias(baseRVType, memberName, value);
-    };
-
+  if (isa_and_nonnull<AliasDeclOp>(memberDecls[0]->getIfOperation())) {
     // Handle accessing an alias in a struct or an extension.
-    if (isa_and_nonnull<StructDeclOp>(typeDeclOp) ||
-        isa_and_nonnull<ExtensionDeclOp>(
-            memberDecls[0]->getParentDecl()->getIfOperation())) {
-      assert(memberDecls.size() == 1 && "only one alias is allowed in struct");
-      PValue result = resolveAliasReference(
-          cast<AliasDeclOp>(memberDecls[0]->getIfOperation()), spelling,
-          baseRVType.getParamBindings(), getLoc(), emitter);
-      return emitter.emitResult(getParamMemberSugar(result), this, dest);
-    }
+    // Can not be a TraitDeclOp, member lookup should be routed with a TraitType
+    // Decl, and should be handled below;
+    assert(isa_and_nonnull<StructDeclOp>(typeDeclOp) ||
+           isa_and_nonnull<ExtensionDeclOp>(
+               memberDecls[0]->getParentDecl()->getIfOperation()));
+    PValue result = resolveAliasReference(
+        cast<AliasDeclOp>(memberDecls[0]->getIfOperation()), spelling,
+        baseRVType.getParamBindings(), getLoc(), emitter);
+    return emitter.emitResult(getParamMemberSugar(result), this, dest);
+  } else if (WitnessDecl *witness = memberDecls[0]->getIfWitness()) {
+    assert(sugarIsa<TraitType>(typeDecl->getIfTypeValue()) &&
+           "Trait witness lookup must be routed via TraitType decl.");
 
-    // If we get here, we're accessing an alias in a trait. We /might/ see
-    // multiple entries of associated type aliases.
-    assert((isa_and_nonnull<TraitDeclOp>(typeDecl->getIfOperation()) ||
-            sugarIsa<TraitType>(typeDecl->getIfTypeValue())) &&
-           "Alias's parent should be struct, trait, or extension");
     PValue basePValue = baseVal.getIfPValue();
     if (!basePValue) {
       emitter.emitError(getLoc(), "can't access '")
@@ -2377,53 +2376,21 @@ auto AttributeRefNode::emitLCVIR(ExprDest &dest, IREmitter &emitter,
       return {};
     }
 
-    ASTDecl *memberDecl = memberDecls[0];
-    auto aliasDeclOpParam = cast<AliasDeclOp>(memberDecl->getIfOperation());
-    Type aliasType = aliasDeclOpParam.getType();
-    if (memberDecls.size() > 1) {
-      // There are multiple trait providing the same associated type alias.
-      // Since we know that `T : A & B & C` satisfies all A, B and C, merge them
-      // to the tightest bound. The decl must be a trait composition: There
-      // should be no conflict on a single trait.
-      assert(sugarIsa<TraitType>(typeDecl->getIfTypeValue()));
-
-      SmallVector<TraitSymbolAttr> mergedTraitSymbols;
-      for (ASTDecl *decl : memberDecls) {
-        auto aliasDeclOp = cast<AliasDeclOp>(decl->getIfOperation());
-        // Must be a trait are mergeable, otherwise we should have already
-        // errored out during body resolving the trait type.
-        if (auto traitType = sugarCast<TraitType>(aliasDeclOp.getType())) {
-          mergedTraitSymbols.append(traitType.getSymbols().begin(),
-                                    traitType.getSymbols().end());
-        }
-      }
-      sortAndDeduplicateTraitSymbols(mergedTraitSymbols);
-      aliasType = TraitType::get(emitter.getContext(), mergedTraitSymbols);
-    }
+    Type aliasType = witness->getWitnessEntry().witnessType;
+    StringAttr witnessName = witness->getWitnessEntry().witnessName;
+    TraitSymbolAttr traitSymbol = witness->traitSymbol;
 
     // If the base has a parametric type, use the trait type instead.
     if (auto paramType = sugarDynCast<ParamType>(baseRVType))
       basePValue = PValue(paramType.getParam());
 
-    // Make a get_witness call to extract the value out of the trait
-    // value's conformance table.
-    // See
-    // https://www.notion.so/modularai/verifyConformance-Arcana-13e1044d37bb80e88cb5c285a232784e?pvs=4#13e1044d37bb80bf8b42f3953af880f8
-    // for why and where else we do this.
-    auto witnessEntryName = StringAttr::get(emitter.getContext(), spelling);
-    // The trait reference is the "inheritedFrom" symbol (if it was inherited),
-    // or the parent trait of the alias decl if it was self-declared.
-    TraitSymbolAttr traitSymbol = aliasDeclOpParam.getInheritedFrom().value_or(
-        TraitSymbolAttr::get(memberDecl->getParentDecl()->getSymbolRef()));
-
-    // If the base is a trait composition type, upcast the composition into the
-    // trait that defined the alias so that types match.
-    ASTDecl *traitDecl = memberDecl->getParentDecl();
-    if (typeDecl != traitDecl) {
-      basePValue = emitter.emitMetaTypeToTraitConversion(
-          {basePValue, base},
-          cast<TraitDeclOp>(traitDecl->getIfOperation()).getCanonicalTrait());
-    }
+    // Upcast the composition into the trait that defined the alias so that
+    // types match.
+    ASTDecl *traitDecl =
+        &shared.declResolver->getDeclForTypeSymbol(traitSymbol.getSymbol());
+    basePValue = emitter.emitMetaTypeToTraitConversion(
+        {basePValue, base},
+        cast<TraitDeclOp>(traitDecl->getIfOperation()).getCanonicalTrait());
 
     // In the case that aliasDeclOpParam is a dependent associated type alias,
     // we need to first rebind `_Self` to `T`.
@@ -2458,12 +2425,11 @@ auto AttributeRefNode::emitLCVIR(ExprDest &dest, IREmitter &emitter,
 
     auto witnessEntryResult =
         shared.getEvaluationContext().getAndFold<GetWitnessAttr>(
-            basePValue, traitSymbol, witnessEntryName, aliasType);
+            basePValue, traitSymbol, witnessName, aliasType);
     return emitter.emitResult(getParamMemberSugar(witnessEntryResult), this,
                               dest);
   }
 
-  assert(memberDecls.size() == 1 && "only methods may be overloaded");
   ASTDecl &memberDecl = *memberDecls[0];
   // If the field is a variable, emit a reference to it.
   if (auto fieldOp =

@@ -1887,8 +1887,12 @@ ASTDecl *IREmitter::createParametricClosureTrait(SharedState &shared) {
   DenseSet<TraitSymbolAttr> immediateParents;
   for (auto traitName : {"AnyType", "Movable", "Deinitable"}) {
     ASTDecl *traitDecl = shared.lookupBuiltinTrait(traitName, SMLoc());
-    parents.push_back(
-        cast<TraitDeclOp>(traitDecl->getIfOperation()).bindReference({}));
+    if (traitDecl) { // builtin might be disabled.
+      if (failed(shared.declResolver->resolveSignature(*traitDecl, SMLoc())))
+        return nullptr; // should this be an assertion?
+      parents.push_back(
+          cast<TraitDeclOp>(traitDecl->getIfOperation()).bindReference({}));
+    }
   }
 
   SmallVector<ParamDeclAttr> decls = {

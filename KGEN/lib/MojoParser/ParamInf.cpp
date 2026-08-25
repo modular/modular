@@ -698,7 +698,8 @@ ParamInf::inferAndEmitOneParam(ASTExprAnd<AnyValue> binding,
   // problem.
   DeclResolver::DiagnosticDeclContextChanger x(&(getDeclScope()));
   MojoInflightDiag &diag = getMojoDiag(binding.expr->getLoc());
-  if (declIfKnown) // Why only structs? Seems arbitrary, push higher?
+  // Why only structs? Seems arbitrary, push higher?
+  if (declIfKnown && declIfKnown->getUserNameIfOperation().has_value())
     diag << "'" << *declIfKnown->getUserNameIfOperation() << "' ";
   diag << "parameter "
        << ParamDeclRefAttr::get(declaredParamPogs.getName(paramIdx),
@@ -1282,7 +1283,8 @@ LogicalResult ParamInf::finalizeWithUnbound() {
 
   auto emitInferenceFailure = [&](size_t paramIdx) {
     MojoInflightDiag &diag = getMojoDiag(paramBindings.getExprLoc());
-    if (declIfKnown && isa<StructDeclOp>(declIfKnown->getIfOperation()))
+    if (declIfKnown &&
+        isa_and_nonnull<StructDeclOp>(declIfKnown->getIfOperation()))
       diag << "'" << *declIfKnown->getUserNameIfOperation() << "' ";
 
     {
@@ -1295,7 +1297,7 @@ LogicalResult ParamInf::finalizeWithUnbound() {
 
     // If this is a method on a struct and we couldn't infer something from
     // its self parameters, complain about the struct.
-    if (declIfKnown && isa<FnOp>(declIfKnown->getIfOperation())) {
+    if (declIfKnown && isa_and_nonnull<FnOp>(declIfKnown->getIfOperation())) {
       if (auto structOp = dyn_cast<StructDeclOp>(
               cast<FnOp>(declIfKnown->getIfOperation())->getParentOp())) {
         auto structSig = structOp.getSignature();
@@ -1808,7 +1810,8 @@ LogicalResult CallParamInf::inferCTADParams() {
 
   // We need to convert named parameters like "T", which are ParamDeclRefAttr
   // into ParamIndexRefAttr(0) style of representation.
-  if (auto structDecl = dyn_cast<StructDeclOp>(decl->getIfOperation())) {
+  if (auto structDecl =
+          dyn_cast_or_null<StructDeclOp>(decl->getIfOperation())) {
     IndexRefRemapper remapper(structDecl.getParams(), /*resultParams*/ {});
     selfType = remapper.replace(selfType.mlirType);
   }
@@ -2382,11 +2385,12 @@ VerifiedParamBindings CallParamInf::inferForCall() {
   //         pass
   // All of the arguments have been resolved here so all parameters must be
   // inferred (or not able to).
-  if (declIfKnown && cast<FnOp>(declIfKnown->getIfOperation())
-                         .getSpecialFunctionInfo()
-                         .hasSelfResult()) {
-    if (failed(inferSelfFromInitResult()))
-      return {};
+  if (declIfKnown && declIfKnown->getIfOperation()) {
+    if (cast<FnOp>(declIfKnown->getIfOperation())
+            .getSpecialFunctionInfo()
+            .hasSelfResult())
+      if (failed(inferSelfFromInitResult()))
+        return {};
   }
 
   // Check to see if this is a CTAD parameter - a parameter on the struct
@@ -2405,7 +2409,9 @@ VerifiedParamBindings CallParamInf::inferForCall() {
   //
   // TODO: Provide a first class representation for conditional conformance
   // that doesn't have us shadowing parameters like this!
-  if (declIfKnown) {
+  // A trait member's enclosing declaration is a trait rather than a struct, so
+  // the struct-shaped CTAD inference never applies to one.
+  if (declIfKnown && !declIfKnown->getIfWitness()) {
     auto fnOp = cast<FnOp>(declIfKnown->getIfOperation());
     if (!fnOp.getIsStatic() && isa<StructDeclOp>(fnOp->getParentOp())) {
       if (failed(inferCTADParams()))

@@ -21,6 +21,7 @@
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/LITDialect/LITTypes.h"
 #include "KGEN/LITDialect/SpecialFunctions.h"
+#include "KGEN/MojoParser/ASTDecl.h"
 #include "KGEN/MojoParser/IRValues.h"
 #include "KGEN/MojoParser/Lexer.h"
 #include "KGEN/MojoParser/SharedState.h"
@@ -35,7 +36,6 @@ enum class PassingKind : uint32_t;
 
 namespace M::KGEN::LIT {
 class AliasDeclOp;
-class ASTDecl;
 struct UnresolvedWildcardImport;
 class FileModuleOp;
 class FnOp;
@@ -57,11 +57,6 @@ class BaseDLValue;
 //===----------------------------------------------------------------------===//
 // DeclResolver
 //===----------------------------------------------------------------------===//
-
-/// This stores declaration references (e.g. vardecls, structdecls, funcdecls)
-/// as operations.  It stores RValues for parameters and SSA values as an
-/// RValue.
-using DeclIRValue = SmartVariant<Operation *, CValue, std::nullopt_t>;
 
 class DeclResolver : public SharedStateUser {
 public:
@@ -128,7 +123,9 @@ public:
   /// Attach a declaration to a trait composition's decl. This does not modify
   /// any existing parent-child relationships of the `childDecl`. It merely adds
   /// it to the trait composition's declsInScope map.
-  void attachDeclToTraitCompositionDecl(ASTDecl *traitDecl, ASTDecl *childDecl,
+  void attachDeclToTraitCompositionDecl(ASTDecl *traitDecl,
+                                        TraitSymbolAttr witnessFor,
+                                        SmallVector<ASTDecl *> &&childDecls,
                                         StringAttr name);
 
 public:
@@ -331,6 +328,10 @@ public:
 
   /// Given a trait type, return its canonical form (cached).
   TraitType getCanonicalTrait(TraitType trait);
+  TraitType getCanonicalTrait(TraitSymbolAttr trait) {
+    return getCanonicalTrait(TraitType::get(trait));
+  }
+
   /// Given a list of symbols, canonicalize the list and return the canonical
   /// trait type.
   TraitType getCanonicalTrait(
@@ -413,6 +414,9 @@ private:
 
   ParseResult resolveSignature(TraitType traitType, ASTDecl &decl);
   ParseResult resolveBody(TraitType traitType, ASTDecl &decl);
+  ParseResult resolveSignature(WitnessDecl *witness, ASTDecl &decl);
+  ParseResult resolveBody(WitnessDecl *witness, ASTDecl &decl);
+
   ParseResult resolveBody(ConformanceOp op, ASTDecl &decl);
 
   /// This map tracks the ASTDecl for every MLIR type declaration with a symbol.

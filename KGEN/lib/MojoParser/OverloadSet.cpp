@@ -171,7 +171,7 @@ static bool filterForBestCandidates(
 
     // If the current best candidates are not static, we ignore new static
     // candidates.
-    bool isStatic = cast<FnOp>(candidate->getIfOperation()).getIsStatic();
+    bool isStatic = candidate->isStaticMethodDecl();
     if (!areTheBestCandidatesStatic && isStatic)
       continue;
 
@@ -180,8 +180,8 @@ static bool filterForBestCandidates(
     // converted. Otherwise the implicit ctor + explicit trait ctor will be
     // ambiguous when initializing with an implicitly convertible type e.g.
     // Bool is Intable and ImplicitlyIntable, so `Int(True)` would be ambiguous.
-    bool isImplicit =
-        cast<FnOp>(candidate->getIfOperation()).isImplicitConversion();
+    bool isImplicit = candidate->getDeclImplicitConversionKind() !=
+                      ImplicitConversionKind::None;
     if (!areTheBestCandidatesImplicit && isImplicit)
       continue;
 
@@ -576,8 +576,8 @@ static LogicalResult emitOperandsNeedingOriginsToMemory(
 }
 
 bool LIT::isNeverCallableSynthesizedCandidate(ASTDecl *candidate) {
-  auto func = cast<FnOp>(candidate->getIfOperation());
-  if (!func.isSynthetic())
+  auto func = cast_or_null<FnOp>(candidate->getIfOperation());
+  if (!func || !func.isSynthetic())
     return false;
   for (ConstraintAttr constraint :
        func.getFullSignature().getParamListAttrs().getBodyConstraints())
@@ -612,21 +612,52 @@ PValue OverloadSet::filterOverloadSet(
               kOverloadEvaluationsInlineSize>
       evaluations;
   bool allInvalid = true;
+
+  // We do allow:
+  //
+  // trait A:
+  //     def foo(self):
+  //         ...
+  //
+  // trait B(A):
+  //     def foo(self):
+  //         ...
+  //
+  // This set keeps track of the overload witness with the exact same type, and
+  // skip one if needed.
+  DenseSet<Type> seenWitness;
+  ASTType selfTrait;
   for (ASTDecl *candidate : fnDecls) {
     if (candidate->isDisabled())
       continue;
 
-    auto func = cast<FnOp>(candidate->getIfOperation());
-
     // If we are dealing with a static method, we check if the operands include
     // a self operand and remove it, otherwise the signature might not match.
-    if (operands.hasSelfOperand && func.getIsStatic()) {
+    if (operands.hasSelfOperand && candidate->isStaticMethodDecl()) {
       savedSelfOperand = operands[0];
       operands.values.erase(operands.values.begin());
       operands.hasSelfOperand = false;
     }
 
-    auto desiredSignature = func.getFullSignature();
+    FnTypeGeneratorType desiredSignature = candidate->getDeclFullSignature();
+    if (candidate->getIfWitness()) {
+      auto sig = cast<FnTypeGeneratorType>(getCanonicalType(desiredSignature));
+      SmallVector<Type> inputTypes(sig.getInputParamTypes());
+      if (inputTypes.empty() || !isa<TraitType>(inputTypes[0]))
+        continue;
+      // does not really matter which we pick, we just want to test equality
+      // without considering `_Self` parameter.
+      if (!selfTrait)
+        selfTrait = inputTypes[0];
+      inputTypes[0] = selfTrait;
+      Type dedupKey = sig.getWithInputParamTypes(inputTypes);
+      TypedAttr self =
+          TypeParamAttr::get(selfTrait, selfTrait.extractMetaType());
+      TraitSelfBinder selfBinder(self);
+      if (!seenWitness.insert(selfBinder.replace(dedupKey)).second)
+        continue; // skip if saw the same witness.
+    }
+
     evaluations.emplace_back(
         candidate,
         OverloadFitness::evaluate(desiredSignature, candidate, *this, operands,
@@ -812,11 +843,9 @@ PValue OverloadSet::filterOverloadSet(
   if (evaluations.size() == 1) {
     ASTDecl *selectedDecl = evaluations[0].first;
     OverloadFitness &bestFitness = evaluations[0].second;
-    auto selectedFunc = cast<FnOp>(selectedDecl->getIfOperation());
-
     // If the target is static and there is a self operand, remove it from the
     // operand list so it doesn't get passed.
-    if (operands.hasSelfOperand && selectedFunc.getIsStatic()) {
+    if (operands.hasSelfOperand && selectedDecl->isStaticMethodDecl()) {
       operands.values.erase(operands.values.begin());
       operands.hasSelfOperand = false;
     }
@@ -827,7 +856,7 @@ PValue OverloadSet::filterOverloadSet(
                                      bestFitness.getParamBindings());
 
     if (emitDiagnosticOnFailure && syntax == CallSyntax::kImplicitConvert &&
-        selectedFunc.getImplicitConversion() ==
+        selectedDecl->getDeclImplicitConversionKind() ==
             ImplicitConversionKind::Deprecated) {
       auto diag = emitter.emitWarning(getExprLoc(),
                                       "deprecated implicit conversion from ")
@@ -970,9 +999,13 @@ std::pair<PValue, ASTDecl *> OverloadSet::filterOverloadSetForValueType(
     if (candidate->isDisabled())
       continue;
 
+    // A trait member reached through a composition has no `FnOp` to form a
+    // function literal from, so it cannot be referenced as a function value.
+    auto candidateFn = dyn_cast_or_null<FnOp>(candidate->getIfOperation());
+    if (!candidateFn)
+      continue;
     Type candidateType =
-        cast<FnOp>(candidate->getIfOperation())
-            .getFuncLiteralGenerator(getShared().getEvaluationContext())
+        candidateFn.getFuncLiteralGenerator(getShared().getEvaluationContext())
             .getType();
     if (VerifiedParamBindings bindings = getBindingsIfValidCandidate(
             sugarCast<GeneratorType>(candidateType))) {
@@ -1028,8 +1061,7 @@ std::pair<PValue, ASTDecl *> OverloadSet::filterOverloadSetForValueType(
 
   for (ASTDecl *candidate : declsToReport) {
     diag.attachNote(*candidate) << "candidate declared here with type ";
-    FnTypeGeneratorType candidateType =
-        cast<FnOp>(candidate->getIfOperation()).getFullSignature();
+    FnTypeGeneratorType candidateType = candidate->getDeclFullSignature();
     // If there are bindings, specialize the candidate type and print the
     // specialized type.
     bool hadCandidate = false;
@@ -1116,7 +1148,7 @@ OverloadSet OverloadSet::lookup(ASTDecl &declScope, ASTType type,
       if (lookup.isSuccess()) {
         ArrayRef<ASTDecl *> foundDecls = lookup.getIfSuccess();
         for (ASTDecl *decl : foundDecls) {
-          if (!isa_and_nonnull<FnOp>(decl->getIfOperation()))
+          if (!decl->isCallableDecl())
             continue;
           result.fnDecls.push_back(decl);
         }
@@ -1145,7 +1177,7 @@ OverloadSet OverloadSet::lookup(ASTDecl &declScope, ASTType type,
           continue;
         // If we find a vardecl or any other thing, then fail to find anything
         // because it cannot be called.
-        if (!isa<FnOp>(decl->getIfOperation())) {
+        if (!decl->isCallableDecl()) {
           // FIXME: This seems wrong. why aren't we emitting an error??
           return result;
         }
@@ -1177,7 +1209,7 @@ OverloadSet OverloadSet::lookup(ASTDecl &declScope, ASTType type,
             continue;
           // If we find a vardecl or any other thing, then fail to find anything
           // because it cannot be called.
-          if (!isa<FnOp>(decl->getIfOperation())) {
+          if (!decl->isCallableDecl()) {
             // FIXME: This seems wrong. why aren't we emitting an error??
             return result;
           }

@@ -271,6 +271,27 @@ private:
 };
 
 //===----------------------------------------------------------------------===//
+// TraitSelfBinder
+//===----------------------------------------------------------------------===//
+
+/// The signature for a trait requirement will have a Self parameter first whose
+/// type is a TraitType for the trait it was found in.  We want to force
+/// substitute a new parameter for the Self references even though it has a
+/// different metatype.  This doesn't remove the parameter, that will be done
+/// later.
+class TraitSelfBinder : public IndexParameterReplacer<TraitSelfBinder> {
+public:
+  TraitSelfBinder(TypedAttr selfValue) : selfValue(selfValue) {}
+
+private:
+  Attribute tryReplace(Attribute attr, size_t depth);
+  Type tryReplace(Type, size_t) { return {}; }
+  friend class IndexParameterReplacer<TraitSelfBinder>;
+
+  TypedAttr selfValue;
+};
+
+//===----------------------------------------------------------------------===//
 // ImplicitOriginRefAttrReplacer
 //===----------------------------------------------------------------------===//
 
