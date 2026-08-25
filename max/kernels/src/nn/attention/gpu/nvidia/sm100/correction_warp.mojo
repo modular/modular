@@ -91,20 +91,23 @@ def fa4_correction[
 
     # Pure O-rescale arithmetic (online-softmax correction of a previously
     # accumulated O tile by `c`). Depends only on `o_tmem`, `c_pair` and
-    # comptime `config.ov_depth` — no pipeline / warp-group state — so it is
-    # shared verbatim by BOTH the single-O loop below and the two-WG
+    # comptime `config.correction_o_cols()` — no pipeline / warp-group state —
+    # so it is shared verbatim by BOTH the single-O loop below and the two-WG
     # `_correction_step` closure further down. `@always_inline` => inlining
     # it back into either caller reproduces the identical instruction stream
     # (2-O / DeepSeek / MHA codegen is unchanged).
+    #
+    # Walks `correction_o_cols()` -- the PHYSICAL extent of one O accumulator,
+    # not the logical depth. See its docstring: under shared-key the logical
+    # depth runs 4x past the accumulator and silently corrupts.
     @__parameter
     @always_inline
     def _rescale_o(o_tmem: TmemAddress, c_pair: SIMD[.float32, 2]):
-        comptime batch_size = 16 if config.ov_depth % 16 == 0 else 8
-        comptime assert config.ov_depth % batch_size == 0
+        comptime o_cols = config.correction_o_cols()
+        comptime batch_size = 16 if o_cols % 16 == 0 else 8
+        comptime assert o_cols % batch_size == 0
         # output is BM x depth
-        comptime load_iters, load_remainder = divmod(
-            config.ov_depth, 2 * batch_size
-        )
+        comptime load_iters, load_remainder = divmod(o_cols, 2 * batch_size)
         comptime assert load_iters > 1
         comptime assert (load_remainder == batch_size) or (load_remainder == 0)
 
@@ -144,7 +147,7 @@ def fa4_correction[
                 (o_tmem + b0_offset0).addr, o_b0_scaled
             )
 
-            comptime if b0_offset1 + batch_size <= config.ov_depth:
+            comptime if b0_offset1 + batch_size <= o_cols:
                 o_b0 = tcgen05_ld[
                     datapaths=32,
                     bits=32,

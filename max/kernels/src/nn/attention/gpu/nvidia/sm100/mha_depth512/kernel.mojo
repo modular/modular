@@ -296,9 +296,9 @@ struct SM100MHADepth512[
         # (graph capture) a re-read could observe a stale/pre-alloc slot value
         # -> garbage TMEM base -> invalid `UTCHMMA` operand ->
         # CUDA_ERROR_ILLEGAL_INSTRUCTION. Reading once post-barrier and passing
-        # by register (matches the proven `mha_1q` structure) removes every
-        # in-body slot reload. Value is identical to the old per-warp reads
-        # (same published base), so single-shot is bit-identical.
+        # by register (matches the proven `SM100MHA2Q` FA4 structure) removes
+        # every in-body slot reload. Value is identical to the old per-warp
+        # reads (same published base), so single-shot is bit-identical.
         var tmem_addr: UInt32 = smem.tmem_addr_ptr()[]
 
         # ---- Warp dispatch -----------------------------------------------

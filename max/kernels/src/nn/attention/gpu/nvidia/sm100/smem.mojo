@@ -143,7 +143,9 @@ struct SM100AttentionSMem[
     # `BN x (shared_kv_cols // num_qk_stages)` sub-tiles ("Convention B"): one KV
     # ring slot holds ONE such sub-tile, not a full-depth K/V tile. This matches
     # the launch reservation `config.smem_used` (attention.mojo `__init__` WS
-    # branch: `bytes_per_subtile = BN * sub_depth * qkv_dt`), so the struct total
+    # branch: `bytes_per_subtile = BN * sub_depth * qkv_dt + 2 * mbar_size` --
+    # the two per-slot barriers are part of the slot and must NOT be dropped
+    # from this reconciliation), so the struct total
     # reconciles with it — the reservation must EQUAL this struct or the mbar /
     # tmem_addr regions laid out after KV spill past it (OOB __shared__). rope and
     # scale are 0 on the WS MHA path (enforced by `supported()`), so a sub-tile is
@@ -233,9 +235,29 @@ struct SM100AttentionSMem[
         Self.q_scale_byte_offset + Self.q_scale_bytes
     )
 
+    # ---- shared-key regions (0 bytes unless `config.ws_shared_key`) ----------
+    # Placed AFTER the KV ring, not before it: the epilogue staging aliases
+    # `o_smem` onto the Q base and deliberately spills forward into the live KV
+    # ring (`fa4_softmax`'s WS epilogue carve), so anything the epilogue must
+    # not clobber has to sit past KV. `ws_exchange` in particular: it is written
+    # per KV tile, while Q and the ring are still live, so it could not survive
+    # inside the arena at all. Keeping them here also leaves the
+    # `q_bytes + kv_bytes` staging bound untouched.
+    #
+    # Sizes come from `FA4Config`, not re-derived: it charges the same two
+    # numbers into `smem_used`, and the MLA blockscale sibling asserts
+    # `smem_size() == smem_used` exactly.
+    comptime p_bytes: Int = Self.config.p_smem_bytes()
+    comptime p_byte_offset: Int = Self.k_scale_byte_offset + Self.k_scale_bytes
+
+    comptime ws_exchange_bytes: Int = Self.config.ws_exchange_bytes()
+    comptime ws_exchange_byte_offset: Int = Self.p_byte_offset + Self.p_bytes
+
     # Mbarrier region.
+    # Both shared-key regions fold to 0 off-mode, so this is arithmetically
+    # `k_scale_byte_offset + k_scale_bytes` there.
     comptime mbar_byte_offset: Int = (
-        Self.k_scale_byte_offset + Self.k_scale_bytes
+        Self.ws_exchange_byte_offset + Self.ws_exchange_bytes
     )
 
     comptime MiscMBarsType = FA4MiscMBars[
@@ -387,6 +409,42 @@ struct SM100AttentionSMem[
         return (self.base + Self.k_scale_byte_offset).bitcast[
             Scalar[Self.scale_dtype]
         ]()
+
+    @always_inline
+    def p_smem(self) -> SharedMemPointer[Scalar[Self.qkv_dtype]]:
+        """Base of the shared-key P staging region (0-sized when off).
+
+        Two `BM x BN` tiles, one per softmax warpgroup; warpgroup `wg` owns
+        `p_smem() + wg * BM * BN`. Only written under `config.ws_shared_key`,
+        where the P@V MMA takes P as an SMEM A operand.
+        """
+        # The P@V A-descriptor is built over this base, and
+        # `MMASmemDescriptorPair.create` encodes the address as `(ptr >> 4)`
+        # masked to 14 bits -- it SILENTLY TRUNCATES a base that is not 16 B
+        # aligned. The offset is 16 B aligned today only as an arithmetic
+        # consequence of the regions ahead of it (`correction_bytes`,
+        # `q_scale_bytes`, `k_scale_bytes`), and until the SS P@V nothing read
+        # this region through a descriptor, so nothing depended on it. Checked
+        # here rather than at the offset because only a caller can be
+        # instantiated, and the only callers are the shared-key producer and
+        # consumer.
+        comptime assert Self.p_byte_offset % 16 == 0, (
+            "the shared-key P region must be 16 B aligned; the P@V"
+            " A-descriptor truncates a misaligned base instead of failing"
+        )
+        return (self.base + Self.p_byte_offset).bitcast[
+            Scalar[Self.qkv_dtype]
+        ]()
+
+    @always_inline
+    def ws_exchange_smem(self) -> SharedMemPointer[Float32]:
+        """Base of the shared-key cross-warp exchange region (0-sized off).
+
+        `2 * 2 * WARPGROUP_SIZE` Float32 slots. Warpgroup `wg` at iteration
+        parity `p` owns `[(wg*2 + p) * WARPGROUP_SIZE, +WARPGROUP_SIZE)`;
+        `fa4_ws_exchange4` does that indexing.
+        """
+        return (self.base + Self.ws_exchange_byte_offset).bitcast[Float32]()
 
     @always_inline
     def tmem_addr_ptr(self) -> SharedMemPointer[UInt32]:

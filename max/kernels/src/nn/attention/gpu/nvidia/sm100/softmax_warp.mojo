@@ -73,6 +73,7 @@ from nn.attention.gpu.nvidia.sm100.attention_utils import (
     splitk_window,
     splitk_num_partitions,
     st_shared_v4_b32,
+    store_p_quadrant,
     sub_ftz,
     TMemTile,
 )
@@ -446,6 +447,205 @@ def fa4_lse_combine_write[
 
 
 @always_inline
+def fa4_ws_exchange4[
+    op: StaticString,
+    *,
+    m_pack: Int,
+    rows: Int,
+](
+    partial: Float32,
+    local_row: UInt32,
+    partition_g: UInt32,
+    warp_group_idx: UInt32,
+    exchange_seq: UInt32,
+    xchg_smem: SharedMemPointer[Scalar[DType.float32]],
+) -> Float32:
+    """`m_pack`-way cross-warp reduction within one softmax warpgroup.
+
+    The shared-key sub-mode (`config.ws_shared_key`) gives all `m_pack` warps
+    of a warpgroup ONE key band and ONE shared O accumulator, so the warps
+    must agree on the running row max every KV tile before they may rescale
+    it. Warp shuffles cannot cross warps, so the reduction transits SMEM.
+
+    "Everyone reduces": every thread writes its own partial, then every thread
+    reads all `m_pack` of them. No broadcast step, no designated reducer --
+    which is what makes ONE barrier enough (see below).
+
+    Generalized from the depth512 `exchange_reduce` ancestor, which is 2-way
+    and spends **two** barriers: it single-buffers into `correction_smem` and
+    does a read-modify-write there, so the upper half must not overwrite the
+    slot before the lower half has read it. This one has its own
+    double-buffered region and no write-back, so one barrier is provably
+    sufficient.
+
+    **Why one barrier is race-free.** Let `p = exchange_seq & 1`. Exchange `i`
+    writes buffer `p`, barriers, reads `p`. A warp that runs ahead writes
+    `1 - p` at `i+1` -- a *different* buffer, so it cannot disturb a sibling
+    still reading `p`. To touch `p` again it must reach `i+2`, which requires
+    passing `i+1`'s barrier, which the slow sibling must also reach; and to
+    reach it the sibling must already have finished reading `p`. So no warp is
+    ever two exchanges ahead. **Do not add a second "to be safe" barrier** --
+    it is pure critical-path cost on the per-KV-tile path.
+
+    That argument depends on `exchange_seq` being a **monotone counter across
+    every call in the warpgroup's lifetime**, never reset per phase. In
+    particular the post-loop row-sum "add" must continue the loop's sequence
+    rather than restart at 0: restarting could hand it the same parity a
+    lagging warp is still reading from the final loop iteration.
+
+    **Bit-identical across warps, by construction.** The fold is a fixed left
+    fold over `g = 0 .. m_pack-1`, the same order on every thread, so all
+    `m_pack` warps obtain the *same* f32 result -- not merely equal-up-to-
+    rounding. The shared-key design's deferred row-sum rests on this: with an
+    identical `row_max` the per-warp `correction = exp2(diff)` is identical,
+    so the warp-uniform lazy-rescale vote resolves the same way everywhere and
+    the four partial sums stay in one scale, making the final combine a plain
+    add.
+
+    Barrier id is `warp_group_idx` (0 or 1), the established WG-scoped idiom
+    in this file. Two facts make it safe and neither is enforced by the type
+    system:
+    * The correction, MMA and load warps never call `named_barrier`. They do
+      execute one full-CTA `barrier()` before the warp-role dispatch, hardware
+      barrier 0 and the only `barrier()` in the kernel, so it is
+      phase-separated from every 128-thread use of id 0, never concurrent.
+      (Under pair-CTA / split-K that site is `cluster_sync()` instead, which
+      does not touch the named-barrier id space.)
+    * The two hard-coded `named_barrier[...](Int32(0))` sites sit past a
+      `warp_group_idx != 0 -> return` guard, so only WG0 arrives at them.
+
+    Parameters:
+        op: `"max"` or `"add"`.
+        m_pack: Warps per warpgroup sharing the reduction (2 or 4).
+        rows: Query rows per warp (`BM`). `m_pack * rows` must be
+            `WARPGROUP_SIZE`, since the slot map is a bijection from the
+            warpgroup's 128 threads onto 128 Float32 slots.
+
+    Args:
+        partial: This thread's partial value.
+        local_row: Query row `r` this thread owns, in `[0, rows)`.
+        partition_g: This thread's warp index within the warpgroup,
+            `[0, m_pack)`.
+        warp_group_idx: 0 or 1; doubles as the named-barrier id.
+        exchange_seq: Monotone per-warpgroup exchange counter (see above).
+        xchg_smem: Base of `SM100AttentionSMem.ws_exchange_smem()`, i.e. all
+            `2 * 2 * WARPGROUP_SIZE` slots; this function selects its own
+            warpgroup's and parity's window.
+
+    Returns:
+        The reduction over all `m_pack` warps' partials for row `local_row`,
+        identical in every warp.
+    """
+    comptime assert (
+        op == "max" or op == "add"
+    ), "fa4_ws_exchange4 op must be 'max' or 'add'"
+    comptime assert (
+        m_pack == 2 or m_pack == 4
+    ), "fa4_ws_exchange4 is for the packed-TMEM WS datapath (m_pack 2 or 4)"
+    # The slot map below (`partition_g * rows + local_row`) is a bijection onto
+    # WARPGROUP_SIZE slots only under this identity. Violate it and two warps
+    # alias one slot: a plausible-but-wrong row max, no fault.
+    comptime assert (
+        m_pack * rows == WARPGROUP_SIZE
+    ), "fa4_ws_exchange4 slot map needs m_pack * rows == WARPGROUP_SIZE"
+
+    # Warpgroup `wg` at parity `p` owns [(wg*2 + p)*WARPGROUP_SIZE, +128).
+    var buf = xchg_smem + (
+        (warp_group_idx * 2 + (exchange_seq & 1)) * UInt32(WARPGROUP_SIZE)
+    )
+    buf[partition_g * UInt32(rows) + local_row] = partial
+
+    named_barrier[Int32(WARPGROUP_SIZE)](Int32(warp_group_idx))
+
+    var acc = buf[local_row]
+    comptime for g in range(1, m_pack):
+        var other = buf[UInt32(g * rows) + local_row]
+        comptime if op == "max":
+            acc = max_ftz(acc, other)
+        else:
+            acc = add_ftz(acc, other)
+    return acc
+
+
+@always_inline
+def fa4_ws_level0_band[
+    band_cols: Int,
+](o_tmem: UInt32, mut o_band: Array[Scalar[DType.float32], band_cols],):
+    """Level 0 of the shared-key combine: this warp's own O depth band, as-is.
+
+    The shared-key counterpart of `fa4_ws_level1_combine`, and it is startling
+    how little is left. Level 1 exists because the key-split gives each of a
+    warpgroup's `m_pack` warps an INDEPENDENT key partition carrying a
+    full-depth O partial, so it must stage all `m_pack` partials through SMEM,
+    barrier, agree a cross-warp max, and fold them with per-partition scales.
+
+    Under `config.ws_shared_key` there is one key band and ONE accumulator, and
+    the packed-TMEM quarters are DEPTH BANDS of the same result. So:
+
+    * **No fold.** Warp `g`'s band is already final -- there is no `O_p` from a
+      sibling to add. The `m_pack`-way FMA chain, the `scale[]`/`lps[]` arrays
+      and the whole staging round trip disappear.
+    * **No barrier, and none is missing.** The `m_pack` warps read DISJOINT
+      hardware subpartitions of one accumulator that a single MMA wrote. There
+      is no cross-warp data flow here at all, so there is nothing to order.
+      (The cross-warp traffic the mode does need is elsewhere: the per-KV-tile
+      row-max and the once-per-tile row-sum, both via `fa4_ws_exchange4`.)
+    * **No max.** Every warp already holds the same `row_max`, because the
+      per-iteration `fa4_ws_exchange4["max"]` made it so. That agreement is the
+      premise the deferred row-sum rests on -- see `fa4_ws_exchange4`'s
+      bit-identity paragraph.
+
+    Packed-TMEM addressing rule, stated here rather than cited: for a
+    `tcgen05.mma.ws` accumulator with `MMA_M < 128` and `m_pack = 128 //
+    MMA_M`, an `MMA_M x MMA_N` accumulator occupies only `MMA_N / m_pack`
+    PHYSICAL TMEM columns, because the hardware subpartition does the lane
+    folding. So all `m_pack` warps issue this `tcgen05_ld` at the SAME column
+    address and the routing hands each its own column-quarter.
+    Do NOT add a per-warp column offset; the per-warp *logical* depth
+    base (`depth_base + partition_g * band_cols`) is a consumer-side quantity
+    and belongs to Level 2, which takes it as `depth_base`/`band_cols`.
+
+    Caller contract, identical to `fa4_ws_intracta_combine`: make `O` visible
+    in TMEM (wait the O-producer barrier and issue `tcgen05_fence_after()`)
+    before calling. No `tcgen05_load_wait()` here -- the loads are ordered by
+    data dependency, and the wait belongs to whoever next OVERWRITES the TMEM.
+
+    Parameters:
+        band_cols: Physical columns of one accumulator this warp reads, i.e.
+            `config.pv_mma_n() // config.m_pack`. Call once per output depth
+            tile with `o_tmem` advanced by `band_cols`; do NOT pass the whole
+            `o_phys_cols()` at `num_o_tiles() > 1`, or the register array grows
+            past what `num_reg_softmax` affords (128 f32 at d512, against 192).
+
+    Args:
+        o_tmem: TMEM column address of THIS depth tile's accumulator, i.e.
+            `tmem_addr + config.TMEM_O{wg} + t * band_cols`.
+        o_band: Out-param receiving the band, unnormalized, in registers.
+    """
+    comptime accum_dtype = DType.float32
+    # Same `tcgen05.ld` register-pressure cap as `fa4_ws_intracta_combine`
+    # (`ptxas` C7602 -- a width-128 read needs 128 consecutive destination
+    # registers). At the shared-key geometry `band_cols` is 64 and this folds
+    # to a single read; the split only matters if a future `pv_mma_n` makes the
+    # band wider.
+    comptime ld_width = min(band_cols, 64)
+    comptime ld_splits = band_cols // ld_width
+    comptime assert band_cols % ld_width == 0
+
+    comptime for ld in range(ld_splits):
+        var c_frag = tcgen05_ld[
+            datapaths=32,
+            bits=32,
+            repeat=ld_width,
+            dtype=accum_dtype,
+            pack=False,
+            width=ld_width,
+        ](o_tmem + UInt32(ld * ld_width))
+        comptime for i in range(ld_width):
+            o_band[ld * ld_width + i] = c_frag[i]
+
+
+@always_inline
 def fa4_ws_intracta_combine[
     output_type: DType,
     //,
@@ -522,8 +722,7 @@ def fa4_ws_intracta_combine[
     """
     comptime accum_dtype = DType.float32
     # Physical band width per depth-tile == MMA_N_max(256, F16) / m_pack, and the
-    # P@V MMA wrote `num_d_tiles` such tiles contiguously (Step 1 of
-    # docs/plans/sm100-fa4-ws-mma32-warp-splitk.md, §8), so warp g's full-depth O
+    # P@V MMA wrote `num_d_tiles` such tiles contiguously, so warp g's full-depth O
     # reads back as `num_d_tiles` per-tile `tcgen05_ld`s of `depth_tile` columns.
     # `min(_, ov_depth)`: Layout-G (m_pack==4) DEPTH-SCATTERS into `256//m_pack`
     # (=64)-wide tiles, always <= ov_depth. Layout-E (m_pack==2) instead
@@ -729,8 +928,7 @@ def fa4_ws_level1_combine[
     in the `o_band` register array. `(m_wg, l_wg)` are per-row and identical
     across the WG's `m_pack` warps (every warp reduces the same `maxsum_smem`).
     Level 2 (`fa4_ws_level2_reduce_scatter_write`) merges the two warpgroups'
-    `(m_wg, l_wg, o_band)` and normalizes. See §5c of
-    docs/plans/sm100-fa4-ws-mma32-two-pipeline-splitk.md.
+    `(m_wg, l_wg, o_band)` and normalizes.
 
     Same caller contract, comptime params, and empty-partition neutral element
     (`m_g = -inf, l_g = 0, finite-0 O_g`) as `fa4_ws_intracta_combine`.
@@ -875,6 +1073,9 @@ def fa4_ws_level2_reduce_scatter_write[
     m_pack: Int,
     rows: Int,
     ov_depth: Int,
+    band_cols: Int = ov_depth // m_pack,
+    depth_base: Int = 0,
+    single_wg: Bool = False,
     use_fma: Bool = True,
 ](
     local_row: UInt32,
@@ -883,7 +1084,7 @@ def fa4_ws_level2_reduce_scatter_write[
     own_max: Float32,
     own_sum: Float32,
     scale_log2e: Float32,
-    o_band: Array[Float32, ov_depth // m_pack],
+    o_band: Array[Float32, band_cols],
     l2_stage_smem: SharedMemPointer[Float32],
     l2_maxsum_smem: SharedMemPointer[Float32],
     o_smem: SharedMemPointer[Scalar[output_type]],
@@ -917,12 +1118,44 @@ def fa4_ws_level2_reduce_scatter_write[
     `s_w * O_w = 0` and it drops out of `L` -- relies on the >=1-active-partition
     invariant (`M > -inf`, `L > 0`).
 
+    Two things about the tiled form are load-bearing:
+
+    1. **Give each tile its own `l2_stage_smem` window.** This routine is
+       `WG1 scatters -> barrier(3) -> WG0 gathers`, and NOTHING orders WG1's
+       *next* scatter against WG0's *current* gather. Calling it twice on one
+       window is a WAR race: at `t=1` WG1 can overwrite the staging while WG0
+       is still reading `t=0`. Pass `l2_stage_smem + t * (m_pack * band_cols) *
+       rows`. Summed over the tiles that is `padded_ov * rows` f32 -- exactly
+       the single-call footprint, so the fix costs no SMEM and no barrier.
+    2. **Only tile 0 transports `(m_1, l_1)`.** They are depth-independent, so
+       the `l2_maxsum_smem` write is gated on `depth_base == 0` and later tiles
+       read what tile 0 left. Re-writing it every tile would be a same-value
+       store racing WG0's read for no reason.
+
+    **Single-warpgroup invocation (`single_wg`).** There is no second partial to
+    merge when only WG0 is alive -- `total_iters_combined == 1`, where WG1 has
+    already returned through `named_barrier[256](2)`. Reaching the barrier at
+    (2) below with 128 of its 256 threads gone is a HANG, so that case cannot
+    simply call this with a neutral peer. `single_wg=True` drops the scatter,
+    the barrier and the gather, leaving `O_final = O_0[band g] * recip(l_0)`.
+
+    It is a parameter here rather than a fourth combine routine because the tail
+    that survives -- the `col0` block walk, the f32x2 pack, the `st_shared_v4_b32`
+    -- is the part with the swizzle geometry in it, and that part is already
+    duplicated once (`fa4_ws_intracta_combine`'s tail is structurally the same
+    code). One reduction tree, not a fork. `False` is the default and leaves
+    every existing call byte-identical.
+
     Parameters:
         output_type: The `o_smem` element dtype (bf16 in-kernel; f32 for tests).
-        m_pack: Number of datapath quarters per WG (4 for MMA_M=32); sets
-            `own_cols = ov_depth // m_pack`, the per-warp band width.
+        m_pack: Number of datapath quarters per WG (4 for MMA_M=32).
         rows: Query rows per tile (`config.BM`, 32 for MMA_M=32).
-        ov_depth: Output value depth.
+        ov_depth: Output value depth; sets the `o_smem` block geometry.
+        band_cols: Columns this warp owns in THIS call. Defaults to
+            `ov_depth // m_pack` (the whole band, single-tile).
+        depth_base: Global depth column where this tile starts. Defaults to 0.
+        single_wg: WG0 is the only live warpgroup; skip the cross-WG transport
+            entirely (no scatter, no barrier, no gather). Defaults to False.
         use_fma: Gate the `* scale_log2e` step (matches Level 1).
 
     Args:
@@ -932,39 +1165,59 @@ def fa4_ws_level2_reduce_scatter_write[
         own_max: This WG's Level-1 `m_wg[local_row]`.
         own_sum: This WG's Level-1 `l_wg[local_row]`.
         scale_log2e: The softmax `log2(e)` scale.
-        o_band: This warp's unnormalized Level-1 band (`ov_depth // m_pack` f32).
-        l2_stage_smem: SMEM scratch, `>= ov_depth*rows` f32 (WG1's O staging).
+        o_band: This warp's unnormalized band for this tile (`band_cols` f32).
+        l2_stage_smem: SMEM scratch for THIS tile, `>= m_pack*band_cols*rows`
+            f32 (WG1's O staging).
         l2_maxsum_smem: SMEM scratch, `>= rows*2` f32 (WG1's (m_1, l_1)).
         o_smem: Output sink, SWIZZLE_NONE 16 B block-major of `output_type`.
     """
     comptime accum_dtype = DType.float32
-    comptime own_cols = ov_depth // m_pack
     comptime stage_K = 16 // size_of[accum_dtype]()  # f32 -> 4
-    comptime own_sblocks = own_cols // stage_K
+    comptime own_sblocks = band_cols // stage_K
     comptime o_sw_K = 16 // size_of[output_type]()  # bf16 -> 8, f32 -> 4
-    comptime own_oblocks = own_cols // o_sw_K
+    comptime own_oblocks = band_cols // o_sw_K
     comptime sub = o_sw_K // stage_K  # stage-blocks per output block (1 or 2)
     comptime assert ov_depth % m_pack == 0
-    comptime assert own_cols % stage_K == 0
-    comptime assert own_cols % o_sw_K == 0
+    comptime assert band_cols % stage_K == 0
+    comptime assert band_cols % o_sw_K == 0
+    # `oblk` below is `(depth_base + g*band_cols) // o_sw_K`; an unaligned
+    # `depth_base` would silently round the whole tile's output block index
+    # DOWN onto the previous tile's blocks.
+    comptime assert depth_base % o_sw_K == 0
+    comptime assert depth_base + m_pack * band_cols <= ov_depth
 
     var g = Int(band_g)
     var r = Int(local_row)
 
     # ---- (1) scatter: WG1 stages its band's O into l2_stage + (m_1,l_1) ----
-    if warp_group_idx == UInt32(1):
-        comptime for lb in range(own_sblocks):
-            var sblk = g * own_sblocks + lb  # global stage-block (runtime g)
-            var v = SIMD[accum_dtype, stage_K]()
-            comptime for k in range(stage_K):
-                v[k] = o_band[lb * stage_K + k]
-            (l2_stage_smem + sblk * rows * stage_K + r * stage_K).store(v)
-        if band_g == UInt32(0):  # WG1 warp 0's 32 lanes own all 32 rows' (m,l)
-            l2_maxsum_smem[r * 2] = own_max
-            l2_maxsum_smem[r * 2 + 1] = own_sum
-
     # ---- (2) cross-WG rendezvous (fences l2_stage / l2_maxsum, all 256) ----
-    named_barrier[Int32(2 * WARPGROUP_SIZE)](Int32(3))
+    # Both vanish under `single_wg`. Not as an optimization: there is no WG1 to
+    # scatter, and a 256-count barrier with 128 of its threads already returned
+    # is a HANG rather than a no-op.
+    comptime if not single_wg:
+        if warp_group_idx == UInt32(1):
+            # `sblk` is WINDOW-local, not global: `l2_stage_smem` is THIS tile's
+            # own window (see the tiled-invocation note above), so it spans only
+            # `m_pack * band_cols` columns.
+            comptime for lb in range(own_sblocks):
+                var sblk = (
+                    g * own_sblocks + lb
+                )  # window stage-block (runtime g)
+                var v = SIMD[accum_dtype, stage_K]()
+                comptime for k in range(stage_K):
+                    v[k] = o_band[lb * stage_K + k]
+                (l2_stage_smem + sblk * rows * stage_K + r * stage_K).store(v)
+            # `(m_1, l_1)` are depth-independent, so only the FIRST tile
+            # transports them and later tiles read what it left. Folds to
+            # unconditional at the default `depth_base == 0`.
+            comptime if depth_base == 0:
+                if band_g == UInt32(
+                    0
+                ):  # WG1 warp 0's lanes own all rows' (m,l)
+                    l2_maxsum_smem[r * 2] = own_max
+                    l2_maxsum_smem[r * 2 + 1] = own_sum
+
+        named_barrier[Int32(2 * WARPGROUP_SIZE)](Int32(3))
 
     # ---- (3) WG0: gather WG1's band, 2-way combine, normalize, pack -> o_smem
     # Per-CTA (M_cta, L_cta) for the workspace (unfused split-K) egress: WG0
@@ -975,35 +1228,51 @@ def fa4_ws_level2_reduce_scatter_write[
     if warp_group_idx == UInt32(0):
         var m0 = own_max
         var l0 = own_sum
-        var m1 = l2_maxsum_smem[r * 2]
-        var l1 = l2_maxsum_smem[r * 2 + 1]
-        var gmax = max_ftz(m0, m1)
-        var d0 = m0 - gmax
-        var d1 = m1 - gmax
-        comptime if use_fma:
-            d0 = mul_ftz(d0, scale_log2e)
-            d1 = mul_ftz(d1, scale_log2e)
-        var s0 = exp2(d0)
-        var s1 = exp2(d1)
-        var l_acc = s1.fma(l1, mul_ftz(s0, l0))
+        # `single_wg` initializers -- and in that mode they are the ANSWER, not
+        # placeholders: with no peer, M == m_0 exactly, so s_0 == 1 and L == l_0.
+        # `s1 == 0` additionally folds the peer FMA out of the pack loop below.
+        var gmax = m0
+        var s0 = Float32(1)
+        var s1 = Float32(0)
+        var l_acc = l0
+        comptime if not single_wg:
+            var m1 = l2_maxsum_smem[r * 2]
+            var l1 = l2_maxsum_smem[r * 2 + 1]
+            gmax = max_ftz(m0, m1)
+            var d0 = m0 - gmax
+            var d1 = m1 - gmax
+            comptime if use_fma:
+                d0 = mul_ftz(d0, scale_log2e)
+                d1 = mul_ftz(d1, scale_log2e)
+            s0 = exp2(d0)
+            s1 = exp2(d1)
+            l_acc = s1.fma(l1, mul_ftz(s0, l0))
         var inv_l = recip(l_acc)
         ret_m = gmax
         ret_l = l_acc
-
-        var col0 = g * own_cols
+        # GLOBAL depth column this warp's band starts at. `depth_base` is 0 for
+        # every single-tile call, so this is literally the old `g * own_cols`.
+        var col0 = depth_base + g * band_cols
         comptime for ob in range(own_oblocks):
             var oblk = (col0 // o_sw_K) + ob  # global output-block index
             var packed = SIMD[.uint32, 4]()
             comptime for sb in range(sub):
                 comptime lsblk = ob * sub + sb  # local stage-block within band
-                var sblk = g * own_sblocks + lsblk  # global stage-block
+                var sblk = g * own_sblocks + lsblk  # window stage-block
                 comptime for hc in range(2):  # two f32x2 halves per stage-block
-                    var o1 = (
-                        l2_stage_smem
-                        + sblk * rows * stage_K
-                        + r * stage_K
-                        + 2 * hc
-                    ).load[width=2]()
+                    # The load must be SUPPRESSED under `single_wg`, not merely
+                    # scaled by `s1 == 0`: nothing scattered into this window, so
+                    # it still holds whatever the dead Q/KV span held, and
+                    # `fma(0, NaN, acc)` is NaN. The dead initializer folds away
+                    # off-mode, keeping the load in its original position.
+                    var o1 = f32x2(0)
+                    comptime if not single_wg:
+                        o1 = (
+                            l2_stage_smem
+                            + sblk * rows * stage_K
+                            + r * stage_K
+                            + 2 * hc
+                        ).load[width=2]()
                     comptime obase = lsblk * stage_K + 2 * hc
                     var o0 = f32x2(o_band[obase], o_band[obase + 1])
                     var acc = mul_ftz(f32x2(s0), o0)
@@ -1427,12 +1696,10 @@ def fa4_ws_splitk_reduce_scatter_write[
                     cp_async_bulk_commit_group()
                 cp_async_bulk_wait_group[0]()
 
-    # Static-per-P (#92167): each partition count P compiles its OWN kernel, so
+    # Static-per-P: each partition count P compiles its OWN kernel, so
     # `num_partitions == P == config.splitk_partitions` (see the call sites) and
     # the active count is comptime. Dispatch the band split on comptime `P` --
     # mirrors the 1Q `fa4_splitk_reduce_scatter_write` (reduce_scatter_p[P]()).
-    # (Was a runtime `if num_partitions == 2 ... else 4` select over a single
-    # P_MAX=4 kernel under the pre-#92167 dynamic-cluster model, now removed.)
     reduce_scatter_p[P]()
 
 
@@ -1835,7 +2102,7 @@ def fa4_splitk_combine_write[
     # np-1 ranks, skipping `b`, via 16 B v4 DSMEM reads of their `stage_smem`.
     # The partition loop is the outermost runtime loop so each rank's unrolled v4
     # reads issue back-to-back (DSMEM-latency MLP). `o_final` spans the FULL band
-    # and is written once per block, so the depth-128 column-clobber (#36) is
+    # and is written once per block, so the depth-128 column-clobber is
     # impossible.
     var row_F = local_row * UInt32(F)
 
@@ -2256,6 +2523,11 @@ def fa4_softmax[
         num_stages=config.num_qk_stages,
         cta_group=cta_group,
     ]
+    # `MMA_N` DIVERGES from the authoritative P@V declaration in
+    # `mma_warp.mojo` (`MMA_N=pv_mma_n`). Inert: only `AType` and
+    # `use_3_then_1_split` are read off this alias, and neither depends on
+    # `MMA_N`. Fixing it in place would duplicate `mma_warp`'s three-way ladder;
+    # the exit is one shared accumulator alias replacing both declarations.
     comptime UMMA1Type = SM100TensorAccumulator[
         qkv_type,
         accum_dtype,
@@ -2329,7 +2601,7 @@ def fa4_softmax[
     # width is s_cols = BN // m_pack == TMEM_S1 - TMEM_S0 (== BN for the non-WS
     # m_pack==1 layout, so byte-identical). Under packed WS TMEM all m_pack warps
     # share this base; the HW subpartition routes each warp its column-quarter,
-    # so there is NO per-warp column offset here (see sm100/CLAUDE.md).
+    # so there is NO per-warp column offset here.
     s_tmem += UInt32(config.TMEM_S1 - config.TMEM_S0) * warp_group_idx
 
     # Cross-stage P (2Q + non-WS only): write this WG's P into the OTHER
@@ -2955,29 +3227,56 @@ def fa4_softmax[
             comptime for i in range(1, batch_size // 2):
                 acc = add_ftz(acc, s_load[i]())
 
-        BatchTileType(p_tmem).store_async(s)
+        # Shared-key sinks P to `p_smem` instead, in ONE whole-quadrant store
+        # at the tail (see the `store_p_quadrant` call below). The per-batch
+        # TMEM stores are the off-mode path and are unchanged.
+        comptime if not config.ws_shared_key:
+            BatchTileType(p_tmem).store_async(s)
 
         comptime for b in range(1, num_batch_iters):
             comptime offset = batch_size * b
 
-            comptime if use_3_then_1_split:
-                comptime if 4 * b == 3 * num_batch_iters:
+            # Shared-key releases NOTHING mid-tile. Its P sub-stage split is
+            # per-warp along each warp's OWN column range, so `consumer_s[k]`
+            # would mean "the first k+1 sub-stages of EVERY warp's columns" --
+            # a striped set, not any contiguous key chunk, and no key-chunk
+            # P@V MMA may legally start after it. The releases move to the
+            # tail; they cannot simply be dropped, or stages
+            # `0 ..< num_pv_stages-1` would never be released and the MMA's
+            # `consumer_wait` would hang.
+            #
+            # Guarded around BOTH arms, not on each one: the local
+            # `use_3_then_1_split` reads this file's inert `UMMA1Type`, so it is
+            # True for shared-key too, and guarding only the `elif` would leave
+            # its stage-0 release live while the tail released stage 0 a SECOND
+            # time -- an extra `consumer_mbar[0]` arrival that compiles clean
+            # and corrupts at runtime. The MMA that actually runs under the mode
+            # (`mma_warp`'s `UMMA1SKType`) has the flag False; editing this
+            # alias to match would move the S-release cadence of every shipping
+            # non-shared-key config.
+            comptime if not config.ws_shared_key:
+                comptime if use_3_then_1_split:
+                    comptime if 4 * b == 3 * num_batch_iters:
+                        tcgen05_store_wait()
+                        tcgen05_fence_before()
+                        comptime if config.pair_cta:
+                            umma_arrive_leader_cta(
+                                pipeline_s.consumer_mbar[0]()
+                            )
+                        else:
+                            pipeline_s.release_no_step[0]()
+                elif config.num_pv_stages > 1:
+                    comptime assert config.num_pv_stages == num_batch_iters
                     tcgen05_store_wait()
                     tcgen05_fence_before()
-                    comptime if config.pair_cta:
-                        umma_arrive_leader_cta(pipeline_s.consumer_mbar[0]())
-                    else:
-                        pipeline_s.release_no_step[0]()
-            elif config.num_pv_stages > 1:
-                comptime assert config.num_pv_stages == num_batch_iters
-                tcgen05_store_wait()
-                tcgen05_fence_before()
 
-                comptime assert config.num_pv_stages == num_batch_iters
-                comptime if config.pair_cta:
-                    umma_arrive_leader_cta(pipeline_s.consumer_mbar[b - 1]())
-                else:
-                    pipeline_s.release_no_step[b - 1]()
+                    comptime assert config.num_pv_stages == num_batch_iters
+                    comptime if config.pair_cta:
+                        umma_arrive_leader_cta(
+                            pipeline_s.consumer_mbar[b - 1]()
+                        )
+                    else:
+                        pipeline_s.release_no_step[b - 1]()
 
             comptime for idx in range(offset, offset + batch_size):
                 exp_iter[idx]()
@@ -2993,9 +3292,10 @@ def fa4_softmax[
             comptime tmem_offset = (el_offset * size_of[qkv_type]()) // size_of[
                 accum_dtype
             ]()
-            BatchTileType(p_tmem + UInt32(tmem_offset)).store_async[
-                src_offset=el_offset
-            ](s)
+            comptime if not config.ws_shared_key:
+                BatchTileType(p_tmem + UInt32(tmem_offset)).store_async[
+                    src_offset=el_offset
+                ](s)
 
         comptime if remainder > 0:
             comptime offset = batch_size * num_batch_iters
@@ -3007,18 +3307,45 @@ def fa4_softmax[
             comptime tmem_offset = (el_offset * size_of[qkv_type]()) // size_of[
                 accum_dtype
             ]()
-            RemainderTileType(p_tmem + UInt32(tmem_offset)).store_async[
-                src_offset=el_offset
-            ](s)
+            comptime if not config.ws_shared_key:
+                RemainderTileType(p_tmem + UInt32(tmem_offset)).store_async[
+                    src_offset=el_offset
+                ](s)
 
-        tcgen05_store_wait()
+        comptime if config.ws_shared_key:
+            # `tcgen05_load_wait`, NOT `tcgen05_store_wait`. Off-mode the WAR
+            # against the MMA's next Q@K' is covered only TRANSITIVELY: P's
+            # `tcgen05.st` targets the same TMEM addresses the S `load_async`
+            # read, so store-completion implies the read happened. With P in
+            # SMEM there is no such store, and `tcgen05_store_wait()` here
+            # would be a no-op that still LOOKS like a guarantee -- while
+            # `load_async` emits a bare `tcgen05.ld` that never waits and the
+            # release below lets the MMA overwrite S.
+            tcgen05_load_wait()
+            store_p_quadrant[BN=config.BN, p_tile_rows=config.BM](
+                smem.p_smem() + warp_group_idx * UInt32(config.BM * config.BN),
+                s,
+                thread_tile_row,
+                partition_g,
+            )
+            # P left through the generic proxy; the SS P@V MMA reads it through
+            # the async proxy. `tcgen05_fence_before()` does not cover that.
+            fence_async_view_proxy()
+        else:
+            tcgen05_store_wait()
         tcgen05_fence_before()
         comptime if config.pair_cta:
+            comptime if config.ws_shared_key:
+                comptime for pv_stage in range(config.num_pv_stages - 1):
+                    umma_arrive_leader_cta(pipeline_s.consumer_mbar[pv_stage]())
             umma_arrive_leader_cta(
                 pipeline_s.consumer_mbar[config.num_pv_stages - 1]()
             )
             pipeline_s.step()
         else:
+            comptime if config.ws_shared_key:
+                comptime for pv_stage in range(config.num_pv_stages - 1):
+                    pipeline_s.release_no_step[pv_stage]()
             pipeline_s.release[config.num_pv_stages - 1]()
 
         pipeline_c.acquire()
@@ -3117,9 +3444,9 @@ def fa4_softmax[
 
         # Split-K (1Q): restrict this CTA to a balanced sub-window
         # [part_cb, part_ce) of the combined tile range [0, T) (T =
-        # masked_set_ends[-1]) and offset kv_row to its first tile. Same
-        # window as load/mma/correction -- masked_set_ends[-1] ==
-        # total_iters for check_mask==False masks (mha_mask.mojo:651-658).
+        # masked_set_ends[-1]) and offset kv_row to its first tile. Same window
+        # as load/mma/correction -- masked_set_ends[-1] == total_iters for
+        # check_mask==False masks.
         var part_cb: UInt32 = 0
         var part_ce: UInt32 = mask_ends[num_sets - 1]
         comptime if config.num_q == 1 and (
@@ -3249,10 +3576,8 @@ def fa4_softmax[
                     # (`ws_l2_stage` / `ws_maxsum1`) so the DSMEM offsets line up
                     # across partitions. No non-WS `fa4_splitk_reduce_scatter_write`
                     # here (it assumes the BM=128 row=thread TMEM grid).
-                    comptime WS_STAGE = (
-                        config.m_pack * config.BM * config.ov_depth
-                    )
-                    comptime WS_ML = config.m_pack * config.BM * 2
+                    comptime WS_STAGE = config.ws_epilogue_stage_f32()
+                    comptime WS_ML = config.ws_epilogue_ml_f32()
                     comptime WS_L2STAGE = config.ov_depth * config.BM
                     comptime WS_L2MS = config.BM * 2
                     var ws_f32e = smem.o_smem[.float32]()
@@ -3454,18 +3779,78 @@ def fa4_softmax[
     # partitions (quarters for Layout-G, halves for Layout-E). The intra-CTA
     # mass add below is WG0-gated (warp_group_idx == 0) but NOT per-partition,
     # so every WG0 warp would each fold the sink -> an m_pack-x over-count in
-    # the combined denominator. Confine the ENTIRE fold (the `row_max` clamp
-    # AND the mass add, both gated on `fold_sink`) to WG0 PARTITION 0
-    # (`partition_g == 0`) -- exactly the split-K partition-0 discipline
-    # above. The two-level LSE combine then rescales WG0's partial (which
-    # carries `m >= sink` and `l += exp2(sink - m)`) into `exp2(sink - Gmax)`
-    # exactly once. `partition_g == 0` (covering ALL `warps_per_partition`
-    # warps of partition 0 -- both row-halves at Layout-E, not just
-    # `warp_idx == 0`) keeps the clamp out of every OTHER partition's warps,
-    # which would otherwise inflate their `m_wg` toward the sink with no
-    # matching mass.
+    # the combined denominator. Gate on partition 0 (`partition_g == 0`) --
+    # exactly the split-K partition-0 discipline above. The two-level LSE
+    # combine then rescales WG0's partial (which carries `m >= sink` and
+    # `l += exp2(sink - m)`) into `exp2(sink - Gmax)` exactly once.
+    # `partition_g == 0` covers ALL `warps_per_partition` warps of partition 0
+    # -- both row-halves at Layout-E, not just `warp_idx == 0`.
+    #
+    # Precise about WHICH half this gates. `fold_sink` carries no
+    # `warp_group_idx` term, so the CLAMP below fires in WG1's partition-0 warp
+    # too; only the MASS add is WG0-gated, at its own site. That asymmetry is
+    # benign and stays benign: the two-level combine is exactly scale-invariant
+    # in `m_wg` (a larger `m_wg` shrinks `l_wg` by the same factor), so WG1
+    # carrying `m >= sink` with no matching mass changes nothing. Do not "fix"
+    # it to match the comment without re-deriving the combine -- and note the
+    # shared-key exchange propagates WG1's clamped max to all four of WG1's
+    # warps, which is still scale-invariant.
     comptime if config.use_ws:
         fold_sink = fold_sink and partition_g == UInt32(0)
+
+    # Monotone `fa4_ws_exchange4` counter for this warpgroup. Declared ahead of
+    # the sink clamp because the PEEL exchange below needs it, and shared from
+    # here through the KV loop and into the epilogue -- ONE counter, because its
+    # double-buffering proof (see that function's docstring) needs the sequence
+    # consecutive across the warpgroup's whole lifetime: exchange `i` writes
+    # parity `i & 1`, and a warp two exchanges ahead would land on the parity a
+    # lagging sibling is still reading. So the epilogue's row-sum must be
+    # exactly `last + 1`, never a restart at 0 and never a jump.
+    #
+    # Skipping or repeating a value is not a near-miss: it puts two successive
+    # exchanges on the SAME buffer, which is a plausible-but-wrong row max --
+    # no fault, no hang. Nothing machine-checks it either: not the helper, not
+    # `supported()`, and not `test_ws_exchange_reduce4.mojo`, whose every arm
+    # passes a clean `range`. `sk_shared_max` is the mechanism instead -- it is
+    # the only caller of the max exchange AND the only writer of this counter,
+    # so the two cannot drift. Do not open-code either half.
+    var ws_exchange_seq: UInt32 = 0
+
+    @__parameter
+    @always_inline
+    def sk_shared_max(m: Float32) -> Float32:
+        """Shared-key: agree the running row max across the warpgroup's warps.
+
+        Off-mode this is the identity and elaborates to nothing.
+
+        On-mode the `m_pack` warps of a warpgroup share ONE O accumulator, so
+        they must rescale it as a unit, which means agreeing the max every KV
+        tile. Their local maxima genuinely differ: each warp still owns a
+        disjoint key quarter (`kv_row += partition_g * score_cols`), and that
+        disjointness is the entire reason this exists.
+
+        Only the MAX is shared. Row sums stay per-warp and are summed once in
+        the epilogue -- which is exact precisely BECAUSE the maxima agree. With
+        a shared `old_max` and a shared `new_row_max` every warp computes the
+        same `diff`, resolves the lazy-rescale vote the same way, and gets a
+        bit-identical `correction` (the helper's fold order is fixed), so the
+        four per-quarter sums stay in one scale and the combine is a plain add.
+        """
+        comptime if config.ws_shared_key:
+            var shared = fa4_ws_exchange4[
+                "max", m_pack=config.m_pack, rows=config.BM
+            ](
+                m,
+                thread_tile_row,
+                partition_g,
+                warp_group_idx,
+                ws_exchange_seq,
+                smem.ws_exchange_smem(),
+            )
+            ws_exchange_seq += 1
+            return shared
+        else:
+            return m
 
     comptime if not SinkType.is_null:
         var sink_weights_ptr = rebind[
@@ -3482,6 +3867,36 @@ def fa4_softmax[
             row_max = max(row_max, sink_weight)
     else:
         sink_weight = 0.0
+
+    # PEEL EXCHANGE -- the first of two, and the one the sink ordering
+    # constraint actually governs.
+    #
+    # `peel_mask` already folded the first tile into `row_max`, and the
+    # `store_exp` further below turns it into P. Off-mode that P is per-warp and
+    # correct. On-mode the warps share one O accumulator, so the peel's P has to
+    # go out at ONE exponent scale like every later tile's -- an in-loop
+    # exchange alone would leave exactly the first tile wrong.
+    #
+    # It runs AFTER the clamp above, and that order is load-bearing. The clamp
+    # is warp-0-only (`fold_sink and partition_g == 0`), so in this order the
+    # sink enters through warp 0's operand and the `max` reduction hands
+    # `max(all four maxima, sink)` to all four warps -- exact, and free. Reverse
+    # them and only warp 0 carries the sink: warps 1-3 write P at a different
+    # scale and the epilogue's deferred row-sum is wrong by `exp2((m_0 - m_g) *
+    # s)` per warp. A silent wrong answer, INVISIBLE without a sink, since
+    # `fold_sink == False` makes the clamp a no-op and the two orders agree. The
+    # dataflow is the enforcement: this call consumes the clamped value.
+    #
+    # A full-warpgroup barrier HERE is safe because every `return` that can
+    # precede it is warpgroup-uniform: the 1Q T<=1 exit parks the whole of WG1,
+    # and the three empty-partition / all-masked exits are gated on
+    # `total_iters_combined`, a per-CTA quantity (each of those blocks arrives at
+    # a 256-count `named_barrier(2)` before returning, so a per-warp predicate
+    # there would already hang today). This exchange adds NO uniformity
+    # obligation the function did not already carry. A future early return
+    # between `peel_mask` and here WOULD: make it warpgroup-uniform, or skip the
+    # exchange for the whole warpgroup.
+    row_max = sk_shared_max(row_max)
 
     # use_fma carries the running max in the negated log2-domain
     # (`neg_max_scaled = -row_max*scale_log2e`, with `p_fp8_bias` folded in for
@@ -3666,6 +4081,17 @@ def fa4_softmax[
                 else:
                     new_row_max = load_mask_max[mask_strategy](kv_row, old_max)
 
+                # PER-ITERATION EXCHANGE. Placed before `diff` and not merely
+                # before `store_exp`, because the lazy-rescale gate below is a
+                # warp VOTE: only a shared `new_row_max` (against an
+                # already-shared `old_max`) makes the vote resolve identically
+                # in all four warps, and hence `correction` bit-identical. Move
+                # it after the vote and the warps disagree about whether they
+                # rescaled -- their O quarters drift apart with no diagnostic.
+                # Unconditional in the iteration, so the counter advances in
+                # lockstep across the warpgroup whatever the skip vote says.
+                new_row_max = sk_shared_max(new_row_max)
+
                 if not blasst_wg_skip:
                     # Loop-body scoped so `nms_new` reaches the gate's adoption
                     # below (dead `0.0` for non-fma; DCE'd).
@@ -3710,6 +4136,26 @@ def fa4_softmax[
                     store_exp_skip()
                 o_phase ^= 1
     else:
+        # The shared-key row-max exchange cannot be wired into THIS arm, and
+        # the combination is refused rather than left to hang.
+        #
+        # The `break` and `continue` below are driven by `kv_row` and by a
+        # per-tile mask status, and `kv_row` is PER WARP (`kv_row +=
+        # partition_g * score_cols`), so the warps of a warpgroup can take
+        # different trip counts. `fa4_ws_exchange4` arrives at a 128-count
+        # `named_barrier`; different trip counts on a full-warpgroup barrier is
+        # a hang, not a wrong answer.
+        #
+        # Stated as a build error (not a runtime assert) because UNKNOWN_MASK
+        # dispatch is currently gated OFF, and this assert is the obligation any
+        # future ungating inherits. The work then is making the trip counts
+        # warp-uniform (or hoisting the exchange out of the skip), not deleting
+        # this assert.
+        comptime assert not config.ws_shared_key, (
+            "shared-key + UNKNOWN_MASK: this runtime mask-skip loop gives the"
+            " warps of a warpgroup different trip counts, which hangs the"
+            " row-max exchange's warpgroup barrier"
+        )
         while True:
             kv_row += UInt32(kv_row_stride)
             if kv_row >= num_keys:
@@ -3808,10 +4254,14 @@ def fa4_softmax[
         # `BM // config.num_q` matches the helper's signature
         # (`config.BM // config.num_q`) at the comptime-expression level;
         # numerically identical to HalfBM = BM // 2 inside this 2Q branch.
+        # The `TMemTile` type param stays `padded_ov_depth` while the stride
+        # comes from the TMEM addresses: the two are equal here (shared-key
+        # requires `num_q == 1`), and the 14 `TMemTile` declarations form one
+        # type-identity set that must move together.
         var o_tile = TMemTile[accum_dtype, BM // config.num_q, padded_ov_depth](
             tmem_addr
             + UInt32(config.TMEM_O0)
-            + warp_group_idx * UInt32(padded_ov_depth)
+            + warp_group_idx * UInt32(config.TMEM_O1 - config.TMEM_O0)
         )
 
         # wait on the o_pipeline producer
@@ -3905,33 +4355,49 @@ def fa4_softmax[
             # maxsum1|l2_stage|l2_maxsum|o]. `ws_o` (the bf16 output) sits past
             # the f32 regions; the TMA egress reads whatever pointer it is handed.
             #
-            # HAZARD: `ws_o == smem.o_smem() == the Q base (q_byte_offset == 0)`,
-            # and for BM=32 the Q region is tiny (q_bytes == BM*padded_qk_depth*2
-            # == 8192 B) while `ws_stage0` alone is m_pack*BM*ov_depth*4 == 65536
-            # B, so the staging spills FAR past Q into the LIVE KV ring slots. The
-            # budget assert below only proves it FITS q_bytes+kv_bytes -- it does
-            # NOT prove the KV ring is drained. Every staging write MUST therefore
-            # be gated behind the O producer(s) that drain the ring: T==1 waits o0
-            # (MMA returns after o0); T>=2 waits BOTH o0 and o1 (the peer wait --
-            # the MMA's epilogue reads ring-wrapped V_o[0] between the o0 and o1
-            # commits). Do not stage before those waits.
-            comptime WS_STAGE = config.m_pack * config.BM * config.ov_depth
-            comptime WS_ML = config.m_pack * config.BM * 2
+            # HAZARD: `ws_f32 == smem.o_smem() == the Q base
+            # (q_byte_offset == 0)`, and for BM=32 the Q region is tiny
+            # (q_bytes == BM*padded_qk_depth*2 == 8192 B) while `ws_stage0` alone
+            # is m_pack*BM*ov_depth*4 == 65536 B, so the staging spills FAR past
+            # Q into the LIVE KV ring slots. The budget assert below only proves
+            # it FITS q_bytes+kv_bytes -- it does NOT prove the KV ring is
+            # drained. Every staging write MUST therefore be gated behind the O
+            # producer(s) that drain the ring: T==1 waits o0 (MMA returns after
+            # o0); T>=2 waits BOTH o0 and o1 (the peer wait -- the MMA's epilogue
+            # reads ring-wrapped V_o[0] between the o0 and o1 commits). Do not
+            # stage before those waits.
+            #
+            # The hazard is `ws_f32`'s, not `ws_o`'s: `ws_o` is derived BELOW
+            # every f32 region and is the last thing in the carve. It applies
+            # under shared-key too, where the f32 regions collapse to
+            # `ws_l2_stage` alone -- still `ov_depth * BM` f32 (32 KiB at d256)
+            # against a `q_bytes` of 16 KiB, still written by WG1, so still
+            # spilling into live ring slots. A 6x smaller carve is not no carve.
+            #
+            # TWO epilogues share this carve, selected by `ws_shared_key`.
+            #
+            # The KEY-SPLIT one (the bulk of this block, past the shared-key
+            # early return) folds the four packed-TMEM key partitions through
+            # `ws_stage*`, because each of a warpgroup's `m_pack` warps carries
+            # an independent full-depth O partial.
+            #
+            # SHARED-KEY has no such fold: one key band, one accumulator, and
+            # the quarters are DEPTH bands, so warp `g`'s TMEM subpartition is
+            # already its final band. Its `ws_epilogue_stage_f32()` and
+            # `ws_epilogue_ml_f32()` are therefore 0, collapsing the carve to
+            # `~48 KiB` and so fitting depth 256/512. What survives is
+            # `[l2_stage | l2_maxsum | ws_o]` -- the same three regions, at the
+            # same expressions, since the two zeroed terms drop out of the
+            # running sum below. The carve is written ONCE, here, for both modes.
+            comptime WS_STAGE = config.ws_epilogue_stage_f32()
+            comptime WS_ML = config.ws_epilogue_ml_f32()
             comptime WS_L2STAGE = config.ov_depth * config.BM
             comptime WS_L2MS = config.BM * 2
             comptime assert (
-                2 * WS_STAGE + 2 * WS_ML + WS_L2STAGE + WS_L2MS
-            ) * size_of[
-                DType.float32
-            ]() + config.BM * config.ov_depth * size_of[
-                output_type
-            ]() <= type_of(
-                smem
-            ).q_bytes + type_of(
-                smem
-            ).kv_bytes, (
-                "WS two-level combine staging must fit the dead Q+KV span"
-            )
+                config.ws_epilogue_f32_slots() * size_of[DType.float32]()
+                + config.BM * config.ov_depth * size_of[output_type]()
+                <= type_of(smem).q_bytes + type_of(smem).kv_bytes
+            ), "WS two-level combine staging must fit the dead Q+KV span"
             var ws_f32 = smem.o_smem[.float32]()
             var ws_stage0 = ws_f32
             var ws_stage1 = ws_stage0 + WS_STAGE
@@ -3942,6 +4408,207 @@ def fa4_softmax[
             var ws_o = (ws_l2_maxsum + WS_L2MS).bitcast[Scalar[output_type]]()
 
             var ws_row_sum = row_sum.reduce_add()
+
+            comptime if config.ws_shared_key:
+                # ---- Shared-key epilogue ----
+                # Early `return` rather than an `else` around the key-split code
+                # below, to keep that block un-reindented.
+                #
+                # There is no Level 1: warp `g`'s packed-TMEM subpartition IS
+                # depth band `g` of the one shared accumulator, so
+                # `fa4_ws_level0_band` reads it straight to registers -- no
+                # staging, no fold, no barrier. Level 2 stays, because it is the
+                # cross-WARPGROUP key merge (WG0 even tiles, WG1 odd), which
+                # this mode does not touch.
+                #
+                # Barrier budget of everything below, and it is the spec:
+                #   1 (row-sum) + num_o_tiles() (Level 2) + 1 (egress)
+                #   + 1 (terminal)
+                # -- five at d512. Level 0 needs none, and the tiles need none
+                # between them: Level 2's own barrier(3) is the next sync point
+                # either way.
+                comptime SK_BAND = config.pv_mma_n() // config.m_pack
+
+                # The walk must cover the accumulator exactly: too few tiles
+                # leaves the top of O unwritten, too many run past the TMEM
+                # allocation. `num_o_tiles()` is DEFINED by this invariant, so
+                # this guards the definition drifting, it does not restate it.
+                comptime assert (
+                    config.num_o_tiles() * SK_BAND == config.o_phys_cols()
+                ), "shared-key epilogue does not tile o_phys_cols() exactly"
+                # In-warp mirror of `supported()` conjunct (5): the per-tile L2
+                # windows sum to `padded_ov_depth * BM` f32 while the carve
+                # provides `ov_depth * BM`. Equal only when the swizzle does not
+                # pad; unequal means the last window runs over `ws_l2_maxsum`
+                # and the output tile, silently.
+                comptime assert (
+                    config.num_o_tiles() * config.pv_mma_n() * config.BM
+                    <= WS_L2STAGE
+                ), "shared-key per-tile L2 windows overrun the epilogue carve"
+                # In-warp mirror of `supported()` conjunct (4). Both fused
+                # split-K arms stage the per-CTA (M, L) in `ws_maxsum1`, which
+                # is the SAME pointer as `ws_l2_stage` once
+                # `ws_epilogue_ml_f32()` is 0. Rejected at dispatch; asserted
+                # here so a hand-built config is a build error, not corruption.
+                comptime assert config.splitk_partitions == 1, (
+                    "shared-key + fused split-K: ws_maxsum1 aliases ws_l2_stage"
+                    " once ws_epilogue_ml_f32() == 0 -- re-carve them first"
+                )
+                # `single_o` parks WG1 for EVERY T, not just T==1 (see the
+                # num_q==1 early-out), so the T>=2 arm's Level 2 would wait a
+                # 256-count barrier(3) that 128 threads never reach -- a hang.
+                # The early-out's own comment asserts "the packed WS config has
+                # single_o == False"; this makes that claim checked rather than
+                # stated. (The key-split T>=2 arm below has the same exposure
+                # and the same protection-by-comment -- not this task's to fix,
+                # but do not read its silence as a proof.)
+                comptime assert not config.single_o, (
+                    "shared-key + single_o parks WG1 for every T, so Level 2's"
+                    " 256-count barrier(3) would hang"
+                )
+
+                # ONE `m_pack`-way add, OUTSIDE the tile loop. Each warp
+                # accumulated the row sum over its own key quadrant, and the
+                # total is a plain add ONLY because all four already share
+                # `row_max` -- which `sk_shared_max` establishes at the peel and
+                # again every KV tile. Remove either of those calls and this
+                # add silently stops being a sum of comparable quantities.
+                #
+                # `ws_exchange_seq` arrives here as `1 + <loop iterations>`,
+                # continuing the sequence rather than restarting: the counter is
+                # written in exactly one place, and only by `sk_shared_max`.
+                #
+                # Ordered BEFORE the O-producer waits on purpose:
+                # `ws_exchange_smem()` is carved PAST `kv_bytes`, so it is the
+                # one epilogue SMEM touch that does not alias the live KV ring,
+                # and overlapping it with the MMA drain costs nothing.
+                var sk_l_wg = fa4_ws_exchange4[
+                    "add", m_pack=config.m_pack, rows=config.BM
+                ](
+                    ws_row_sum,
+                    thread_tile_row,
+                    partition_g,
+                    warp_group_idx,
+                    ws_exchange_seq,
+                    smem.ws_exchange_smem(),
+                )
+
+                @__parameter
+                @always_inline
+                def sk_epilogue[single_wg: Bool]():
+                    # (M, L) are depth-independent, so every tile computes the
+                    # same pair; keep tile 0's. They are carried OUT of the loop
+                    # rather than used inside it because the egress below must
+                    # not run until every tile has packed its bands.
+                    var sk_m = Float32(0)
+                    var sk_l = Float32(0)
+                    comptime for t in range(config.num_o_tiles()):
+                        # ONE tile's band, never `o_phys_cols()`: at d512 the
+                        # latter is 128 live f32 against num_reg_softmax = 192.
+                        var o_band = Array[Scalar[DType.float32], SK_BAND](
+                            uninitialized=True
+                        )
+                        # All `m_pack` warps issue at the SAME column address;
+                        # the subpartition routes each its own quarter. No
+                        # per-warp column offset.
+                        fa4_ws_level0_band[SK_BAND](
+                            tmem_addr
+                            + UInt32(config.TMEM_O0)
+                            + warp_group_idx
+                            * UInt32(config.TMEM_O1 - config.TMEM_O0)
+                            + UInt32(t * SK_BAND),
+                            o_band,
+                        )
+                        var m_t, l_t = fa4_ws_level2_reduce_scatter_write[
+                            config.m_pack,
+                            config.BM,
+                            config.ov_depth,
+                            band_cols=SK_BAND,
+                            depth_base=t * config.pv_mma_n(),
+                            single_wg=single_wg,
+                            use_fma=use_fma,
+                        ](
+                            thread_tile_row,
+                            partition_g,
+                            warp_group_idx,
+                            row_max,
+                            sk_l_wg,
+                            scale_log2e,
+                            o_band,
+                            # Each tile gets its OWN window. Level 2 is
+                            # scatter -> barrier -> gather and NOTHING orders
+                            # WG1's next scatter against WG0's current gather,
+                            # so one shared window is a WAR race. Summed over
+                            # the tiles this is exactly `WS_L2STAGE` -- the fix
+                            # costs no SMEM and no barrier.
+                            ws_l2_stage + t * config.pv_mma_n() * config.BM,
+                            ws_l2_maxsum,
+                            ws_o,
+                        )
+                        comptime if t == 0:
+                            sk_m = m_t
+                            sk_l = l_t
+
+                    # AFTER the loop, not inside it at `t == 0`. Level 2 packs
+                    # only THIS tile's `pv_mma_n()` output columns into `ws_o`,
+                    # so at `num_o_tiles() > 1` an egress from inside the loop
+                    # TMA-stores a half-written tile -- the depth columns of
+                    # every later tile would still hold whatever the dead Q/KV
+                    # span held. Invisible at d256 (one tile, so the loop body
+                    # IS the whole epilogue), silently wrong at d512.
+                    #
+                    # `fa4_tma_store_o_smem` fences with its own
+                    # `named_barrier[128](warp_group_idx)`, and only WG0 ever
+                    # writes `ws_o` (Level 2's gather arm), so a WG-scoped
+                    # barrier is the right width here.
+                    if warp_group_idx == UInt32(0):
+                        fa4_tma_store_o_smem(
+                            warp_idx & 3,
+                            warp_group_idx,
+                            ws_o,
+                            ragged_tma_store,
+                            num_output_rows,
+                            head_idx,
+                            gmem_row + cta_q_offset + ws_o_row_off,
+                        )
+                    _ws_write_lse(sk_m, sk_l)
+
+                if total_iters_combined == UInt32(1):
+                    # WG0 alone: WG1 returned at the num_q==1 early-out having
+                    # already taken `named_barrier[256](2)`, so Level 2's
+                    # 256-count barrier(3) would HANG. `single_wg` drops the
+                    # whole cross-WG transport rather than feeding it a neutral
+                    # peer, which would not fix the barrier count.
+                    o_prod_mbar[0].wait(o_phase)
+                    tcgen05_fence_after()
+                    sk_epilogue[True]()
+                    named_barrier[Int32(2 * WARPGROUP_SIZE)](2)
+                else:
+                    # BOTH waits, for the two distinct reasons the key-split
+                    # T>=2 arm documents below. The OWN wait gates this WG's
+                    # TMEM read. The PEER wait is the SMEM/KV happens-before for
+                    # `ws_l2_stage`, which under this mode is still
+                    # `ov_depth * BM` f32 -- 32 KiB at d256 against a `q_bytes`
+                    # of 16 KiB -- so it still spills into live ring slots that
+                    # the MMA's epilogue reads between the o0 and o1 commits.
+                    # Dropping WS_STAGE shrank the hazard; it did not remove it.
+                    o_prod_mbar[warp_group_idx].wait(o_phase)
+                    tcgen05_fence_after()
+                    o_prod_mbar[UInt32(1) - warp_group_idx].wait(
+                        o_phase ^ (total_iters_combined & UInt32(1))
+                    )
+                    sk_epilogue[False]()
+                    named_barrier[Int32(2 * WARPGROUP_SIZE)](4)
+                comptime if (
+                    not config.pair_cta and config.splitk_partitions == 1
+                ):
+                    if warp_idx == 0:
+                        tcgen05_release_allocation_lock[Int32(cta_group)]()
+                        tcgen05_dealloc[Int32(cta_group)](
+                            tmem_addr, UInt32(config.sm100_tmem_cols)
+                        )
+                return
+
             if total_iters_combined == UInt32(1):
                 # T==1 fast path: WG0 alone holds all 4 quarters in TMEM_O0 (WG1
                 # returned at the num_q==1 early-out). 4-way combine + egress.
@@ -4079,7 +4746,7 @@ def fa4_softmax[
                     scale_log2e,
                     tmem_addr
                     + UInt32(config.TMEM_O0)
-                    + warp_group_idx * UInt32(padded_ov_depth),
+                    + warp_group_idx * UInt32(config.TMEM_O1 - config.TMEM_O0),
                     ws_stage,
                     ws_maxsum,
                     o_band,
@@ -4378,12 +5045,12 @@ def fa4_softmax[
         var own_o_tile = TMemTile[accum_dtype, BM, padded_ov_depth](
             tmem_addr
             + UInt32(config.TMEM_O0)
-            + warp_group_idx * UInt32(padded_ov_depth)
+            + warp_group_idx * UInt32(config.TMEM_O1 - config.TMEM_O0)
         )
         var peer_o_tile = TMemTile[accum_dtype, BM, padded_ov_depth](
             tmem_addr
             + UInt32(config.TMEM_O0)
-            + peer_wg * UInt32(padded_ov_depth)
+            + peer_wg * UInt32(config.TMEM_O1 - config.TMEM_O0)
         )
 
         # 6. Per-WG comptime j-range specialization for the helper.

@@ -18,11 +18,14 @@ of values, including sequences and random distributions.
 
 The module includes:
 - Sequential value generation (`arange`)
-- Random value generation (`random`)
+- Uniform random value generation (`random`)
+- Heavier-tailed (Student-t) random value generation (`randt`)
 """
 
 from std.itertools import product
+from std.math import sqrt
 from std.random import random_float64
+from std.random.philox import NormalRandom
 from std.sys import is_nvidia_gpu
 from layout.coord import Coord
 
@@ -35,6 +38,37 @@ from std.utils.numerics import max_finite
 
 # A batch size for filler functions loop bounds.
 comptime BATCH_SIZE = 2048
+
+
+@always_inline
+def _randt_sample[
+    nu: Int
+](mut rng: NormalRandom, amp: Float64, cap: Float64) -> Float64:
+    """One Student-t sample, scaled to `amp` and clamped to `+/-cap`."""
+    comptime assert not is_nvidia_gpu(), "Cannot run randt on the gpu"
+    comptime assert nu >= 1 and nu <= 7, (
+        "randt supports nu in [1, 7]: a sample draws nu + 1 normals and must"
+        " fit ONE step_normal() vector of 8"
+    )
+    var z = rng.step_normal()
+    var sq = z * z
+    # Lane 0 is the numerator; lanes 1..nu are the chi-square terms.
+    var ss = Float64(0)
+    for j in range(1, nu + 1):
+        ss += Float64(sq[j])
+    var t = Float64(z[0]) / sqrt(ss / Float64(nu))
+    return max(-cap, min(cap, t * amp))
+
+
+@always_inline
+def _randt_amp[nu: Int](sigma: Float64) -> Float64:
+    """Divides out the theoretical sd so a fill is one pass."""
+    # Var(t_nu) = nu / (nu - 2) for nu > 2 and is undefined at or below it, so
+    # `sigma` degenerates to a spread parameter there rather than an sd.
+    comptime pop_sd = sqrt(
+        Float64(nu) / Float64(nu - 2)
+    ) if nu > 2 else Float64(1)
+    return sigma / pop_sd
 
 
 def _filler_impl[

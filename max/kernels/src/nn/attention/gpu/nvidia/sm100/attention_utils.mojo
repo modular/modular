@@ -550,6 +550,69 @@ def st_shared_v4_b32[
 
 
 @always_inline
+def store_p_quadrant[
+    cols: Int,  # quadrant width; must equal BN // 4
+    p_type: DType,
+    //,
+    *,
+    BN: Int,
+    # Physical row count of the P SMEM tile. The layout is chunk-outer with
+    # chunk stride `p_tile_rows * sw_K`, so this MUST match the tile the P@V
+    # A-descriptor is built over (`BM` for the shared-key datapath).
+    p_tile_rows: Int,
+](
+    p_smem: UnsafePointer[
+        mut=True, Scalar[p_type], _, address_space=AddressSpace.SHARED
+    ],
+    p: Array[Scalar[DType.float32], cols],
+    row: UInt32,
+    warp_in_wg: UInt32,
+):
+    """Row-local P quadrant writer (Layout-G register map -> SWIZZLE_NONE SMEM).
+
+    Lane identity = row (< 32); warp `w` holds columns [w*BN/4, (w+1)*BN/4).
+    Casts the fp32 quadrant to `p_type` and stores it in the k-major layout the
+    SS P@V A-descriptor reads: element (r, k) sits in block `k // sw_K` at block
+    base `(k // sw_K) * p_tile_rows * sw_K`, at within-block offset `r * sw_K`.
+    16 B stores; the caller owns the `fence_async_view_proxy` + barrier before
+    the MMA reads P.
+
+    Parameters:
+        cols: Quadrant width in elements; must equal `BN // 4` (inferred).
+        p_type: Element dtype of the P SMEM tile (inferred).
+        BN: Key-block width of the full P tile.
+        p_tile_rows: Physical row count of the P SMEM tile.
+
+    Args:
+        p_smem: Base of this warpgroup's P tile in shared memory.
+        p: This thread's fp32 P quadrant register array (one row, `cols`
+            wide).
+        row: This thread's row within the tile (lane identity, < p_tile_rows).
+        warp_in_wg: This warp's index within the warpgroup (0..3).
+    """
+    # The SWIZZLE_NONE box is 16 B; spelled as `16 // size_of` for the same
+    # reason `fa4_scale_write_output` spells its `o_sw_K` that way.
+    comptime sw_K = 16 // size_of[p_type]()  # bf16 -> 8, fp8 -> 16
+    comptime group_elems = 16 // size_of[p_type]()  # one st.shared.v4.b32
+    comptime num_groups = cols // group_elems
+    comptime assert cols * 4 == BN, "quadrant width must be BN // 4"
+    comptime assert cols % group_elems == 0, "quadrant not 16B-store aligned"
+    comptime assert p_tile_rows % 8 == 0, "8-row core matrices"
+
+    var block_base = (Int(warp_in_wg) * cols) // sw_K
+    var within = Int(row) * sw_K
+
+    comptime for g in range(num_groups):
+        # `sw_K == group_elems`, so group `g` IS block `block_base + g`.
+        var off = (block_base + g) * (p_tile_rows * sw_K) + within
+        st_shared_v4_b32(
+            p_smem,
+            off,
+            pack_row[p_type, w=group_elems, start=g * group_elems](p),
+        )
+
+
+@always_inline
 def _tmem_offset(dtype_size: Int, *, MMA_N: Int, m_mma: Int, n_mma: Int) -> Int:
     var row = 16 * m_mma
     var col = (MMA_N * n_mma * dtype_size) // 4
@@ -961,12 +1024,17 @@ struct SM100TensorAccumulator[
     # (`mma_warp.mojo`) sets this False so its `num_stages==2` P sub-stage
     # split stays an EVEN 2-then-2 of each reduction chunk's own `BK`, instead
     # of the 3-then-1 split calibrated for Layout-G's (non-reduction-split)
-    # P write cadence -- see docs/plans/sm100-fa4-layout-e-mma64.md.
+    # P write cadence.
     allow_3_then_1_split: Bool = True,
 ](TrivialRegisterPassable):
     """Performs the `C = A @ B` tensor contraction on SM100 using `tcgen05.mma` instructions.
 
     The A operand is either an SMEM tile (`a_tmem=False`, the "SS" contraction) or a TMEM tile (`a_tmem=True`, the "TS" contraction); B is always an SMEM descriptor. When `cta_group == 1 and MMA_M <= 64`, the warp-specialized `.ws` datapath is used.
+
+    Every `mma*` helper below takes a `c_scale`, lowered as
+    `setp.ne.b32 %ps, c_scale, 0` feeding UMMA's `enable-input-d`: ZERO
+    OVERWRITES the accumulator (`D = A@B`) -- pass 0 on the first block -- and
+    NONZERO ACCUMULATES (`D = A@B + D`).
 
     Parameters:
         operand_type: Element dtype of the A and B input operands.
@@ -1022,7 +1090,7 @@ struct SM100TensorAccumulator[
     # producer must write it accordingly -- and consumers must read the
     # accumulator with the packed layout: all `m_pack` warps issue
     # tcgen05_ld/st against the SAME TMEM column address (no per-warp
-    # column offsets) -- see sm100/CLAUDE.md.
+    # column offsets), because the HW subpartition does the lane folding.
     comptime use_ws = Self.cta_group == 1 and Self.MMA_M <= 64
     comptime tcgen05_mma_type = "tcgen05.mma.ws.cta_group::1."
     comptime operand_t = Self.operand_type
@@ -1623,8 +1691,8 @@ def bulk_mma[
         a: SMEM descriptor pair for the A operand.
         b: SMEM descriptor pair for the B operand.
         c_tmem: TMEM base address of the output accumulator `C`.
-        c_scale: Accumulator init/accumulate scale; nonzero on the first
-            block to initialize the accumulator, zero to accumulate.
+        c_scale: Accumulator overwrite/accumulate selector; 0 overwrites. See
+            the struct docstring.
         elect: `elect()` result selecting the single thread that issues
             the MMA.
     """
@@ -1681,8 +1749,8 @@ def bulk_mma[
         a: TMEM base address of the A operand.
         b: SMEM descriptor pair for the B operand.
         c_tmem: TMEM base address of the output accumulator `C`.
-        c_scale: Accumulator init/accumulate scale; nonzero on the first
-            block to initialize the accumulator, zero to accumulate.
+        c_scale: Accumulator overwrite/accumulate selector; 0 overwrites. See
+            the struct docstring.
         elect: `elect()` result selecting the single thread that issues
             the MMA.
     """
@@ -1747,8 +1815,8 @@ def bulk_mma_partial[
         a: Un-offset (stage-0) TMEM base address of the A operand.
         b: Un-offset (stage-0) SMEM descriptor pair for the B operand.
         c_tmem: TMEM base address of the output accumulator `C`.
-        c_scale: Accumulator init/accumulate scale; nonzero on the first
-            block to initialize the accumulator, zero to accumulate.
+        c_scale: Accumulator overwrite/accumulate selector; 0 overwrites. See
+            the struct docstring.
         elect: `elect()` result selecting the single thread that issues
             the MMA.
         valid_k_mmas: Count of loaded `mma_k`-sized blocks; blocks whose
@@ -1826,8 +1894,8 @@ def bulk_mma_ss_partial[
         a: Un-offset (stage-0) SMEM descriptor pair for the A operand.
         b: Un-offset (stage-0) SMEM descriptor pair for the B operand.
         c_tmem: TMEM base address of the output accumulator `C`.
-        c_scale: Accumulator init/accumulate scale; nonzero on the first
-            block to initialize the accumulator, zero to accumulate.
+        c_scale: Accumulator overwrite/accumulate selector; 0 overwrites. See
+            the struct docstring.
         elect: `elect()` result selecting the single thread that issues
             the MMA.
         valid_k_mmas: Count of loaded `mma_k`-sized blocks; blocks whose
@@ -1940,8 +2008,8 @@ def bulk_mma_ws[
         a: SMEM descriptor pair for the A operand.
         b: SMEM descriptor pair for the B operand.
         c_tmem: TMEM base address of the output accumulator `C`.
-        c_scale: Accumulator init/accumulate scale; nonzero on the first
-            block to initialize the accumulator, zero to accumulate.
+        c_scale: Accumulator overwrite/accumulate selector; 0 overwrites. See
+            the struct docstring.
         elect: `elect()` result selecting the single thread that issues
             the MMA.
     """
@@ -2034,9 +2102,8 @@ def bulk_mma_ws_ts[
         a: TMEM base address of the A operand.
         b: SMEM descriptor pair for the B operand.
         c_tmem: TMEM base address of the output accumulator `C`.
-        c_scale: Accumulator init/accumulate scale; nonzero on the
-            first block to initialize the accumulator, zero to
-            accumulate.
+        c_scale: Accumulator overwrite/accumulate selector; 0 overwrites. See
+            the struct docstring.
         elect: `elect()` result selecting the single thread that issues
             the MMA.
     """
@@ -2139,8 +2206,8 @@ def bulk_mma_ws_partial[
         a: Un-offset (stage-0) SMEM descriptor pair for the A operand.
         b: Un-offset (stage-0) SMEM descriptor pair for the B operand.
         c_tmem: TMEM base address of the output accumulator `C`.
-        c_scale: Accumulator init/accumulate scale; nonzero on the first
-            block to initialize the accumulator, zero to accumulate.
+        c_scale: Accumulator overwrite/accumulate selector; 0 overwrites. See
+            the struct docstring.
         elect: `elect()` result selecting the single thread that issues
             the MMA.
         valid_k_mmas: Count of loaded `mma_k`-sized blocks; blocks whose
@@ -2245,9 +2312,8 @@ def bulk_mma_ws_ts_partial[
         a: Un-offset (stage-0) TMEM base address of the A operand.
         b: Un-offset (stage-0) SMEM descriptor pair for the B operand.
         c_tmem: TMEM base address of the output accumulator `C`.
-        c_scale: Accumulator init/accumulate scale; nonzero on the
-            first block to initialize the accumulator, zero to
-            accumulate.
+        c_scale: Accumulator overwrite/accumulate selector; 0 overwrites. See
+            the struct docstring.
         elect: `elect()` result selecting the single thread that issues
             the MMA.
         valid_k_mmas: Count of loaded `mma_k`-sized blocks; blocks

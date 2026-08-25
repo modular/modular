@@ -381,28 +381,14 @@ struct MHAPosition[
         UnsafePointer[Scalar[partition_t.accum_dtype], MutAnyOrigin],
         UnsafePointer[Scalar[partition_t.accum_dtype], MutAnyOrigin],
     ]:
-        # Every caller already reaches this under `comptime if
-        # PartitionType.do_partition`; asserting it here is what makes the
-        # mutability laundering below sound, since only `SplitKPartition` owns a
-        # real buffer.
         comptime assert partition_t.do_partition, (
             "exp_sum_qk_max_ptr is split-K only; a non-partitioning scheme has"
             " no partial-statistics buffer to point at"
         )
-        # `NullPointer.value()` returns a dangling address rather than trapping,
-        # so non-nullness has to be established before the unwrap below. The
-        # SM100 2Q kernel pins the full biconditional
-        # (`do_partition == not LSEPointerType.is_null`), but it is instantiated
-        # only from `sm100/kernel.mojo` — the sm90, MSA, and `mha_1q` callers of
-        # this method never reach it. For those this assert is the only check,
-        # not a redundant one.
         comptime assert not partition_t.LSEPointerType.is_null, (
             "the split-K LSE pointer must be the non-null conformer before"
             " `value()`"
         )
-        # Both conformers derive `LSEPointerType` from `accum_dtype`, but that
-        # tie is not expressible in the trait, so the equality is asserted here
-        # and the `rebind` below reconciles the (identically-represented) types.
         comptime assert (
             partition_t.LSEPointerType.dtype == partition_t.accum_dtype
         ), "the split-K LSE buffer must be typed by the scheme's accum_dtype"

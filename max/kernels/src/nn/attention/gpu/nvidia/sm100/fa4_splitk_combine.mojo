@@ -66,7 +66,7 @@ parameter:
     not itself a rung (B200: 37 through the sweep, then decaying). The same vectorized
     + prefetched accumulation shape runs over a RUNTIME `num_partitions` bound,
     paying a dynamically-indexed `local_lse`. The array is sized at a fixed
-    comptime ceiling (`_P_MAX`, covering every current-generation `sm_count`) so
+    comptime ceiling (`P_MAX`, covering every current-generation `sm_count`) so
     this fallback compiles exactly once, independent of the `P` it is handed.
 
 Target hardware family: NVIDIA SM100 (B200 / B300).
@@ -127,11 +127,11 @@ comptime _ACC = DType.float32
 # `160` -- unchanged production behavior -- and `fa4_splitk_combine` asserts
 # against whatever value is in effect so an un-raised ceiling fails loudly
 # instead of silently corrupting the reduction or reading out of bounds.
-comptime _P_MAX = get_defined_int["FA4_COMBINE_P_MAX", 160]()
+comptime P_MAX = get_defined_int["FA4_COMBINE_P_MAX", 160]()
 
 
 @__name(
-    t"sm100_splitk_combine_d{ov_depth}_{output_type}_{intermediate_type}_p{P_STATIC}",
+    t"sm100_mha_splitk_combine_d{ov_depth}_{output_type}_{intermediate_type}_p{P_STATIC}",
 )
 def _fa4_splitk_combine_kernel[
     output_type: DType,
@@ -242,7 +242,7 @@ def _fa4_splitk_combine_kernel[
     # derivation below overwrites them in place.
     comptime num_lse_per_thread = ceildiv(
         P_STATIC, WARP_SIZE
-    ) if P_STATIC > 0 else ceildiv(_P_MAX, WARP_SIZE)
+    ) if P_STATIC > 0 else ceildiv(P_MAX, WARP_SIZE)
 
     var local_lse = Array[Scalar[_ACC], num_lse_per_thread](
         fill=min_or_neg_inf[_ACC]()
@@ -501,14 +501,14 @@ def fa4_splitk_combine[
 
     # Off-ladder `P`: fall through to the runtime-`P` kernel (compiled once,
     # shared by every off-rung shape). Its LSE array/loops only cover
-    # `[0, _P_MAX)` -- fail loudly instead of silently corrupting the
+    # `[0, P_MAX)` -- fail loudly instead of silently corrupting the
     # reduction (or reading OOB) if a caller's `P` exceeds the ceiling.
     debug_assert[assert_mode="safe"](
-        num_partitions <= UInt32(_P_MAX),
+        num_partitions <= UInt32(P_MAX),
         "fa4_splitk_combine: off-ladder num_partitions=",
         num_partitions,
-        " exceeds the runtime-P fallback's _P_MAX=",
-        _P_MAX,
+        " exceeds the runtime-P fallback's P_MAX=",
+        P_MAX,
         (
             " ceiling. Add a `splitk_p_ladder` rung, or raise the ceiling with"
             " -D FA4_COMBINE_P_MAX=<N>."
