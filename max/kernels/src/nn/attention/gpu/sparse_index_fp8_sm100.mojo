@@ -118,9 +118,10 @@ from nn.attention.gpu.nvidia.sm100.attention_utils import (
 from nn.attention.mha_operand import MHAOperand
 from nn.attention.gpu.sparse_index_fp8_sm100_prefill import (
     _KEYSPLIT_MAX_TOKEN_TILES,
-    _KEYSPLIT_MIN_KEY_TILES,
     _PREFILL_MIN_TOKEN_TILES,
     _ctas_per_sm,
+    _is_keysplit_shape,
+    _prefill_cons_wgs,
     fp8_index_score_sm100_prefill,
 )
 
@@ -180,6 +181,16 @@ comptime SPEC_DECODE_N_TOKENS_ALT = 3
 comptime _ALT_NTOK_FORCE = get_defined_int["FP8_INDEX_ALT_NTOK", 0]()
 comptime _ALT_FORCE_ANY = get_defined_int["FP8_INDEX_ALT_FORCE", 0]()
 comptime _ALT_OFF = get_defined_int["FP8_INDEX_ALT_OFF", 0]()
+
+# The WIDE speculative-decode tile: one 192-column block covering a whole 6-token
+# GLM 5.x MTP step at nh=32, against the alternate tile's two 96-column blocks.
+# Unlike the alternate tile this deliberately CROSSES the TMEM step function and
+# takes 1 CTA/SM, which only pays because such a tile now runs two consumer
+# warpgroups (`_prefill_cons_wgs`) and so keeps its consumer warp count. Not a
+# caller hint: 6 tokens is a property of the step, but 192 columns being the right
+# trade is a property of nh=32, and the gate below enforces that.
+comptime SPEC_DECODE_N_TOKENS_WIDE = 6
+
 
 # Q buffer 1 sits at the END of the SMEM layout so a decode launch (every
 # batch entry a single token tile, so buffer 1 is never touched) can allocate
@@ -919,16 +930,25 @@ def fp8_index_score_sm100[
     # prefix or a NULL mask regressed it). The penalty is per-CTA occupancy, not grid
     # underfill.
     #
-    # TODO(cme): the kernel now targets 2 CTAs/SM, halving that deficit, so BOTH
-    # thresholds are stale in the conservative direction -- re-measure them. Left as-is
-    # so a routing change cannot be confused with the kernel change. nh in {4, 8}
+    # TODO(cme): the kernel now targets 2 CTAs/SM, halving that deficit, so the nh=64
+    # threshold is stale in the conservative direction -- re-measure it. nh in {4, 8}
     # reach only the key-split arm below.
+    #
+    # At nh=32 the thresholds are gone entirely: `UNIFY` sends every shape to the
+    # warp-specialized kernel. What they excluded was not a slow corner but a hole --
+    # `max_num_keys <= max_seq_len` is false the moment a request has any cached
+    # prefix, so every chunked-prefill continuation fell to the scorer, which is
+    # 1.37-2.00x slower there, and the 448-tile floor sent 256/512/1024-token chunks
+    # the same way at 1.25x. The two shapes the scorer still wins are a 3-token tail
+    # over a shallow cache (~1.1x on a ~6 us call) and shallow-cache decode (a wash);
+    # neither justifies keeping a second kernel family alive.
+    comptime UNIFY = num_heads == 32
     comptime if (
         num_heads == 64 or num_heads == 32 or num_heads == 8 or num_heads == 4
     ):
         var token_tiles = ceildiv(max_seq_len, N_TOKENS)
-        var to_prefill = False
-        comptime if num_heads == 64 or num_heads == 32:
+        var to_prefill = UNIFY
+        comptime if num_heads == 64:
             comptime min_tiles = (
                 _PREFILL_MIN_TOKEN_TILES if num_heads
                 == 64 else _PREFILL_MIN_TOKEN_TILES_NH32
@@ -946,11 +966,85 @@ def fp8_index_score_sm100[
         # CTAs for a batch-8 GLM MTP step at 107K keys. Deliberately NOT gated
         # on `causal`: `fp8_index` hard-codes it to False, so a causal gate
         # would leave the benchmark measuring the route it is meant to replace.
-        to_prefill = to_prefill or (
-            token_tiles <= _KEYSPLIT_MAX_TOKEN_TILES
-            and ceildiv(max_num_keys, BM_key) >= _KEYSPLIT_MIN_KEY_TILES
+        to_prefill = to_prefill or _is_keysplit_shape[num_heads, BM_key](
+            max_seq_len, max_num_keys
         )
         if to_prefill:
+            # The WIDE tile first: one block covering a whole speculative step, taken
+            # only when the step is EXACTLY that wide. What it recovers is not the
+            # fold (the FMNMX / FFMA2 / LDS counts measure identical across tile
+            # widths) but the MMA and the TMEM reads, which are issued for dead
+            # columns too -- an MTP step of 6 tokens at nh=32 otherwise runs two
+            # 4-token blocks, 256 MMA columns for 192 live ones.
+            #
+            # This tile crosses the TMEM step function on purpose and drops to
+            # 1 CTA/SM. That trade was previously recorded as a WASH, halving the
+            # consumer warps per SM for what the work cut saved -- but that was
+            # measured against a kernel whose consumer was always ONE warpgroup. An
+            # SM-owning tile now runs two, so the warps come back and the work cut is
+            # kept. `_prefill_cons_wgs[MMA_N_WIDE] == 2` below is what ties this arm
+            # to that property rather than to the tile width.
+            #
+            # `num_heads == 32` is a measurement boundary, not a physical one: at
+            # nh=64 the same 192 columns cover 3 tokens rather than 6, which is a
+            # different trade and was never swept.
+            # TODO(cme): sweep nh=64 and nh in {4, 8}; if the trade holds there, fold
+            # this into the divisor search below rather than enumerating head counts.
+            comptime N_WIDE = (
+                SPEC_DECODE_N_TOKENS_WIDE if num_heads == 32 else 0
+            )
+            comptime MMA_N_WIDE = N_WIDE * num_heads
+            comptime if (
+                N_WIDE > N_TOKENS
+                and MMA_N_WIDE % 16 == 0
+                and MMA_N_WIDE <= 256
+                # Strictly FEWER CTAs/SM: this is the arm that buys tile exactness
+                # with residency, the opposite of the alternate tile's clause below,
+                # and it is only admissible because of the warpgroup clause next.
+                and _ctas_per_sm[MMA_N_WIDE]() < _ctas_per_sm[MMA_N]()
+                and _prefill_cons_wgs[MMA_N_WIDE]() == 2
+            ):
+                # One block for the whole run, or nothing: what was measured is the
+                # token-block count collapsing 2 -> 1. A wider tile that still needs
+                # several blocks pays the residency without collapsing the step, and
+                # a SHORTER run (a 3-token tail) would spend half its columns on dead
+                # tokens -- that shape keeps the alternate tile below.
+                if max_seq_len == N_WIDE:
+                    var q_tma_wide = create_split_tma[
+                        Index(MMA_N_WIDE, 1, depth),
+                        Index(UNKNOWN_VALUE, 1, depth),
+                        _INDEX_SWIZZLE,
+                    ](
+                        ctx,
+                        rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
+                            q.ptr
+                        ),
+                        total_q_rows,
+                    )
+                    fp8_index_score_sm100_prefill[
+                        dtype,
+                        KOperand,
+                        KSOperand,
+                        num_heads,
+                        depth,
+                        BM_key,
+                        N_WIDE,
+                        _is_cache_length_accurate,
+                    ](
+                        rebind[QTMATileT[dtype, MMA_N_WIDE, depth]](q_tma_wide),
+                        rebind[KTMATileT[dtype, BM_key, depth]](k_tma_tile),
+                        k_operand,
+                        ks_operand,
+                        valid_length,
+                        q_s,
+                        output,
+                        batch_size,
+                        max_seq_len,
+                        max_num_keys,
+                        Int(causal),
+                        ctx,
+                    )
+                    return
             # Optional alternate N-tile, taken when it divides the run and the default
             # does not. The default packs `128 // num_heads` whole tokens, so an MTP
             # step of seq_len 6 at nh=32 runs two 4-token blocks: 256 MMA columns for
@@ -962,9 +1056,10 @@ def fp8_index_score_sm100[
             # `_S_TMEM_STAGES * align_up(MMA_N, 32)` rounded up to a power of two is
             # what buys or loses the second co-resident CTA: 6 tokens at nh=32 needs
             # 384 -> 512 columns and drops to 1 CTA/SM, while 3 tokens needs 192 -> 256
-            # and keeps 2. The 6-token tile was measured a WASH in cycles, because
-            # halving the consumer warps per SM cost what the work cut saved. See
-            # `_ctas_per_sm` in the prefill file.
+            # and keeps 2. This arm therefore stays on the 2-CTA/SM side; the wide arm
+            # above is the one that pays residency for exactness, and it can only do
+            # so because it recovers the consumer warps. See `_ctas_per_sm` and
+            # `_prefill_cons_wgs` in the prefill file.
             #
             # The hint is a TOKEN count, so one caller-side constant reaches every head
             # count and is inert where it cannot apply: 3 is 24 columns at nh=8, not a
@@ -1075,103 +1170,117 @@ def fp8_index_score_sm100[
             )
             return
 
-    comptime kernel_flat = _fp8_index_score_kernel_sm100[
-        dtype,
-        KOperand,
-        KSOperand,
-        type_of(valid_length.as_immut()).LayoutType,
-        type_of(q_s).LayoutType,
-        type_of(output).LayoutType,
-        num_heads,
-        depth,
-        BM_key,
-        N_TOKENS,
-        _is_cache_length_accurate,
-        VLStorageType=type_of(valid_length.as_immut()).Storage,
-        QSStorageType=q_s.Storage,
-        OutStorageType=output.Storage,
-    ]
-    comptime kernel_split = _fp8_index_score_kernel_sm100_split[
-        dtype,
-        KOperand,
-        KSOperand,
-        type_of(valid_length.as_immut()).LayoutType,
-        type_of(q_s).LayoutType,
-        type_of(output).LayoutType,
-        num_heads,
-        depth,
-        BM_key,
-        N_TOKENS,
-        _is_cache_length_accurate,
-        VLStorageType=type_of(valid_length.as_immut()).Storage,
-        QSStorageType=q_s.Storage,
-        OutStorageType=output.Storage,
-    ]
+    # The K-resident scorer, and the token-slice split that feeds it. Guarded
+    # rather than merely unreachable: dead straight-line code still instantiates
+    # its kernels, so without this `comptime if` a unified nh=32 build would
+    # keep compiling two kernel families it can never launch. With it, "the
+    # scorer never runs for GLM-5.2" is checkable from the emitted blob set.
+    comptime if not UNIFY:
+        comptime kernel_flat = _fp8_index_score_kernel_sm100[
+            dtype,
+            KOperand,
+            KSOperand,
+            type_of(valid_length.as_immut()).LayoutType,
+            type_of(q_s).LayoutType,
+            type_of(output).LayoutType,
+            num_heads,
+            depth,
+            BM_key,
+            N_TOKENS,
+            _is_cache_length_accurate,
+            VLStorageType=type_of(valid_length.as_immut()).Storage,
+            QSStorageType=q_s.Storage,
+            OutStorageType=output.Storage,
+        ]
+        comptime kernel_split = _fp8_index_score_kernel_sm100_split[
+            dtype,
+            KOperand,
+            KSOperand,
+            type_of(valid_length.as_immut()).LayoutType,
+            type_of(q_s).LayoutType,
+            type_of(output).LayoutType,
+            num_heads,
+            depth,
+            BM_key,
+            N_TOKENS,
+            _is_cache_length_accurate,
+            VLStorageType=type_of(valid_length.as_immut()).Storage,
+            QSStorageType=q_s.Storage,
+            OutStorageType=output.Storage,
+        ]
 
-    comptime q1_offset = _Q1SmemOffset[dtype, BM_key, MMA_N, depth]
-    comptime smem_bytes = q1_offset + MMA_N * depth * size_of[Scalar[dtype]]()
-    var smem_bytes_rt = q1_offset if win_seq_len <= N_TOKENS else smem_bytes
+        comptime q1_offset = _Q1SmemOffset[dtype, BM_key, MMA_N, depth]
+        comptime smem_bytes = q1_offset + MMA_N * depth * size_of[
+            Scalar[dtype]
+        ]()
+        var smem_bytes_rt = q1_offset if win_seq_len <= N_TOKENS else smem_bytes
 
-    # Split each sequence's token tiles over grid.z only when the key-tile
-    # grid leaves SMs idle (batch-1 prefill at 2K keys is 32 CTAs on ~148
-    # SMs), targeting `_SLICE_CTAS_PER_SM` CTAs per SM. Slices re-stage the
-    # (L2-hot) K tile and halve the per-slice pipeline depth, so a grid already
-    # at one wave never splits (a 256-CTA GLM MTP-decode shape measured -29%
-    # when split), and a slice never gets fewer than `_SLICE_MIN_TOKEN_TILES`.
-    #
-    # The fill arm FLOORS, for the same reason as the prefill kernel's twin
-    # (`sparse_index_fp8_sm100_prefill.mojo`): it wants the largest slice count
-    # whose grid still fits the target, and `ceildiv` overshoots it by
-    # construction, buying a second wave that carries a handful of CTAs.
-    comptime sm_count = ctx.default_device_info.sm_count
-    var base_ctas = batch_size * ceildiv(max_num_keys, BM_key)
-    var num_slices = 1
-    if base_ctas < sm_count:
-        num_slices = max(
-            1,
-            min(
-                (_SLICE_CTAS_PER_SM * sm_count) // base_ctas,
-                ceildiv(ceildiv(win_seq_len, N_TOKENS), _SLICE_MIN_TOKEN_TILES),
-            ),
-        )
+        # Split each sequence's token tiles over grid.z only when the key-tile
+        # grid leaves SMs idle (batch-1 prefill at 2K keys is 32 CTAs on ~148
+        # SMs), targeting `_SLICE_CTAS_PER_SM` CTAs per SM. Slices re-stage the
+        # (L2-hot) K tile and halve the per-slice pipeline depth, so a grid already
+        # at one wave never splits (a 256-CTA GLM MTP-decode shape measured -29%
+        # when split), and a slice never gets fewer than `_SLICE_MIN_TOKEN_TILES`.
+        #
+        # The fill arm FLOORS, for the same reason as the prefill kernel's twin
+        # (`sparse_index_fp8_sm100_prefill.mojo`): it wants the largest slice count
+        # whose grid still fits the target, and `ceildiv` overshoots it by
+        # construction, buying a second wave that carries a handful of CTAs.
+        comptime sm_count = ctx.default_device_info.sm_count
+        var base_ctas = batch_size * ceildiv(max_num_keys, BM_key)
+        var num_slices = 1
+        if base_ctas < sm_count:
+            num_slices = max(
+                1,
+                min(
+                    (_SLICE_CTAS_PER_SM * sm_count) // base_ctas,
+                    ceildiv(
+                        ceildiv(win_seq_len, N_TOKENS), _SLICE_MIN_TOKEN_TILES
+                    ),
+                ),
+            )
 
-    if num_slices > 1:
-        ctx.enqueue_function[kernel_split](
-            rebind[QTMATileT[dtype, MMA_N, depth]](q_tma_tile),
-            rebind[KTMATileT[dtype, BM_key, depth]](k_tma_tile),
-            k_operand,
-            ks_operand,
-            valid_length.as_immut(),
-            q_s,
-            output,
-            Int32(max_num_keys),
-            Int32(causal),
-            Int32(out_row_begin),
-            Int32(out_row_begin + out_rows),
-            grid_dim=(batch_size, ceildiv(max_num_keys, BM_key), num_slices),
-            block_dim=_NTHREADS,
-            shared_mem_bytes=smem_bytes_rt,
-            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                UInt32(smem_bytes)
-            ),
-        )
-    else:
-        ctx.enqueue_function[kernel_flat](
-            rebind[QTMATileT[dtype, MMA_N, depth]](q_tma_tile),
-            rebind[KTMATileT[dtype, BM_key, depth]](k_tma_tile),
-            k_operand,
-            ks_operand,
-            valid_length.as_immut(),
-            q_s,
-            output,
-            Int32(max_num_keys),
-            Int32(causal),
-            Int32(out_row_begin),
-            Int32(out_row_begin + out_rows),
-            grid_dim=(batch_size, ceildiv(max_num_keys, BM_key), 1),
-            block_dim=_NTHREADS,
-            shared_mem_bytes=smem_bytes_rt,
-            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                UInt32(smem_bytes)
-            ),
-        )
+        if num_slices > 1:
+            ctx.enqueue_function[kernel_split](
+                rebind[QTMATileT[dtype, MMA_N, depth]](q_tma_tile),
+                rebind[KTMATileT[dtype, BM_key, depth]](k_tma_tile),
+                k_operand,
+                ks_operand,
+                valid_length.as_immut(),
+                q_s,
+                output,
+                Int32(max_num_keys),
+                Int32(causal),
+                Int32(out_row_begin),
+                Int32(out_row_begin + out_rows),
+                grid_dim=(
+                    batch_size,
+                    ceildiv(max_num_keys, BM_key),
+                    num_slices,
+                ),
+                block_dim=_NTHREADS,
+                shared_mem_bytes=smem_bytes_rt,
+                func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+                    UInt32(smem_bytes)
+                ),
+            )
+        else:
+            ctx.enqueue_function[kernel_flat](
+                rebind[QTMATileT[dtype, MMA_N, depth]](q_tma_tile),
+                rebind[KTMATileT[dtype, BM_key, depth]](k_tma_tile),
+                k_operand,
+                ks_operand,
+                valid_length.as_immut(),
+                q_s,
+                output,
+                Int32(max_num_keys),
+                Int32(causal),
+                Int32(out_row_begin),
+                Int32(out_row_begin + out_rows),
+                grid_dim=(batch_size, ceildiv(max_num_keys, BM_key), 1),
+                block_dim=_NTHREADS,
+                shared_mem_bytes=smem_bytes_rt,
+                func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+                    UInt32(smem_bytes)
+                ),
+            )

@@ -182,9 +182,27 @@ def _prefill_prod_warps[MMA_N: Int]() -> Int:
     return 4
 
 
+# Consumer warpgroups. A tile wide enough to own the whole SM gets all of its TMEM
+# and SMEM, but only HALF the co-resident consumer warps -- and the epilogue is
+# instruction- and latency-bound, so consumer warps per SM is what sets its rate.
+# A second consumer warpgroup hands an SM-owning tile back the warp count that
+# residency took away, which is what makes such a tile a win rather than the wash
+# it was first recorded as.
+#
+# Every tile at or below 128 columns still seats 2 CTAs/SM and so still takes one
+# warpgroup: this is inert for every kernel that shipped before a wide tile was
+# admitted.
+@always_inline
+def _prefill_cons_wgs[MMA_N: Int]() -> Int:
+    return 2 if _ctas_per_sm[MMA_N]() == 1 else 1
+
+
 @always_inline
 def _prefill_nthreads[MMA_N: Int]() -> Int:
-    return _NUM_SOFTMAX_THREADS + WARP_SIZE * _prefill_prod_warps[MMA_N]()
+    return (
+        _NUM_SOFTMAX_THREADS * _prefill_cons_wgs[MMA_N]()
+        + WARP_SIZE * _prefill_prod_warps[MMA_N]()
+    )
 
 
 # `setmaxnreg` needs BOTH warpgroups whole: with a partial producer warpgroup
@@ -263,9 +281,58 @@ def _n_mbars[MMA_N: Int]() -> Int:
 # A one-sided dial: raise it and the consumer gets the room, lower it and the
 # consumer spills. Do NOT lower it to "save" anything -- the producers are already
 # at the 40 they need, and the pool identity has to hold.
+#
+# What the file can actually honour, as opposed to what the body would like.
+# `setmaxnreg` redistributes one 65536-register file across `_ctas_per_sm` CTAs:
+# every thread of a consumer warpgroup holds the consumer cap, all four producer
+# warps hold `_NUM_REG_PRODUCER`, and allocation is granular in 8. Derived rather
+# than tabulated because the consumer warpgroup COUNT enters it -- a second
+# warpgroup halves what each may claim, and the flat 256 below would overrun the
+# file by 5120 registers at two of them. It is the identity the launcher asserts,
+# so deriving the cap from it means that assert cannot fire on a shape this
+# function chose.
 @always_inline
-def _num_reg_consumer[MMA_N: Int]() -> Int:
-    return 216 if MMA_N <= 128 else 256
+def _consumer_reg_cap[MMA_N: Int]() -> Int:
+    return align_down(
+        (
+            65536 // _ctas_per_sm[MMA_N]()
+            - WARP_SIZE * _prefill_prod_warps[MMA_N]() * _NUM_REG_PRODUCER
+        )
+        // (_NUM_SOFTMAX_THREADS * _prefill_cons_wgs[MMA_N]()),
+        8,
+    )
+
+
+# Measured with a version-matched `ptxas -v` over the `setmaxnreg.inc` operand,
+# every instantiation the tree compiles, 176 to the legal cap in steps of 8.
+# Spill in bytes, `.` = clean:
+#
+#   MMA_N  nh    176  184  192  200  208  216      window
+#     192  32      .    .    .    .    .    .      all (cap 232)
+#      96  32      .    .    .    .    .    .      all
+#     128  32     56   24    .    .   68   68      192-200
+#     128  64      .    .    .    .   28    .      all but 208
+#     128   8      .    .    .    .    .    .      all
+#     128   4    120   88   56   32    .    .      208-216
+#
+# The landscape is a VALLEY, not a slope: more registers buy a more aggressive
+# schedule that then does not fit. A two-point probe reads it as a trend and
+# concludes the opposite of the truth, so re-sweep rather than extrapolate --
+# and note the individual cells move with any codegen change while the windows
+# are the stable part.
+#
+# The head count is in the key because the table forces it to be: nh=32 needs
+# 200 or below at 128 columns and nh=4 needs 208 or above, and no value in the
+# range is clean for both. Keyed only on `MMA_N`, as this was, one of the two
+# has to spill -- and the one that did was nh=32, which is every GLM-5.2 shape
+# that is not 3, 6 or 9 tokens wide or prefill-shaped. Per key, take the HIGHEST
+# clean value: a lower budget is not free, it just moves the cost from spill to
+# schedule quality.
+@always_inline
+def _num_reg_consumer[MMA_N: Int, num_heads: Int]() -> Int:
+    comptime if MMA_N == 128 and num_heads == 32:
+        return min(200, _consumer_reg_cap[MMA_N]())
+    return min(216 if MMA_N <= 128 else 256, _consumer_reg_cap[MMA_N]())
 
 
 # The per-thread LAUNCH allocation: what the driver divides into the register file
@@ -354,6 +421,38 @@ def _hoist_q_scales[MMA_N: Int]() -> Bool:
 # enough to amortize the CTA prologue (TMEM alloc, mbar init, Q staging) and to
 # keep the K ring full; the launcher overrides it upward in part count when that
 # many tiles per CTA would not fill a wave.
+#
+# 16 is the WORST-CASE choice, not the best-average one, because the two decode
+# regimes want opposite counts and the launcher cannot tell them apart.
+#
+# Swept on B200 over [4, 8, 16, 32, 64, 128, 256] at 16 decode shapes, 30 reps,
+# with every part count confirmed against the launch witness. Against `main`,
+# geometric mean and worst cell:
+#
+#     K       4      8     16     32     64    128    256
+#   geo   0.857  0.860  0.863  0.875  0.830  0.819  0.822
+#   worst 1.071  1.110  1.054  1.104  1.596  1.794  1.794
+#
+# What drives it is not this constant but where the resulting grid falls inside
+# a wave: grids that fit one wave read a median 0.752, grids that just cross a
+# boundary read 0.992. A large K lands on few parts, which is the one-wave
+# optimum on a UNIFORM-depth batch -- and is exactly wrong on a ragged one,
+# where the deepest entry's key range is the critical path and only a fine split
+# shortens it.
+#
+# The two cannot be separated here. A uniform batch-8 163840-key step and a
+# graded-depth one (12k..163840) present byte-identical launch arguments --
+# same batch, same `max_seq_len`, same `max_num_keys` -- yet the first is
+# fastest at 18 parts (0.748) and slowest at 72 (0.970), the second fastest at
+# 72 (1.002) and slowest at 18 (1.794). Per-entry depths live in device memory,
+# so no host-side policy can read them. 16 is therefore chosen to bound the
+# damage on the ragged side, which is what serving actually produces.
+#
+# TODO(cme): this leaves ~9% on the table for uniform-depth decode (the
+# "one wave" bucket against the 4-wave one this value selects). Recovering it
+# needs the part count chosen on the DEVICE, from per-entry depths -- a
+# persistent or CLC walk -- not a different constant here. Revisit if that
+# lands, or if a host-visible raggedness signal ever reaches the launcher.
 comptime _KEY_TILES_PER_CTA = 16
 
 # Ceiling, in waves at `_ctas_per_sm`, on the part count the amortized arm of
@@ -444,9 +543,25 @@ def _fp8_index_score_prefill_kernel_sm100[
     comptime CTAS_PER_SM = _ctas_per_sm[MMA_N]()
     # The `nvvm.minctasm` decorator spells this inline; keep them in lockstep.
     comptime assert CTAS_PER_SM == (2 if MMA_N <= 128 else 1)
-    # WG1 (producer) thread roles.
-    comptime MMA_WARP = 4
-    comptime TMA_WARP = 5
+    # Consumer warpgroups, each draining whole key tiles of its own; see the
+    # consumer branch below for the tile-to-warpgroup map.
+    comptime CONS_WGS = _prefill_cons_wgs[MMA_N]()
+    comptime CONS_WARPS = 4 * CONS_WGS
+    comptime CONS_THREADS = _NUM_SOFTMAX_THREADS * CONS_WGS
+    # A warpgroup's S^T stage cursor advances by CONS_WGS per iteration, so it can
+    # never skip a whole lap of the ring, which would desync the mbarrier phase.
+    # This is also what keeps one warpgroup the sole owner of a stage, and so what
+    # keeps the `s_empty` arrive count at one warpgroup's worth of threads.
+    comptime assert CONS_WGS <= N_S, (
+        "each consumer warpgroup strides the S^T ring by CONS_WGS, so the ring"
+        " must be at least that deep; got CONS_WGS="
+        + String(CONS_WGS)
+        + " and N_S="
+        + String(N_S)
+    )
+    # Producer warpgroup thread roles, immediately after the consumer warps.
+    comptime MMA_WARP = CONS_WARPS
+    comptime TMA_WARP = MMA_WARP + 1
 
     # Index arithmetic runs in SIGNED 32-bit. Every quantity below is bounded by a
     # context length or a token count, and `Int` is 64-bit here, which costs a second
@@ -670,9 +785,9 @@ def _fp8_index_score_prefill_kernel_sm100[
     comptime k_bytes = k_elems * size_of[dtype]()
     comptime q_bytes = q_elems * size_of[dtype]()
 
-    if wid < 4:
+    if wid < CONS_WARPS:
         comptime if _use_setmaxnreg[MMA_N]():
-            warpgroup_reg_alloc[_num_reg_consumer[MMA_N]()]()
+            warpgroup_reg_alloc[_num_reg_consumer[MMA_N, num_heads]()]()
 
         # q_scale staging, one f32 per (token, head) column. This sits INSIDE the
         # consumer branch rather than the whole-CTA prologue because it is a dependent
@@ -681,10 +796,14 @@ def _fp8_index_score_prefill_kernel_sm100[
         # K issue without waiting on 128 cold global loads. A `bar.sync` fences
         # intra-CTA `st.shared`/`ld.shared`, so no `fence_async_view_proxy` is needed.
         #
-        # One wave per `_NUM_SOFTMAX_THREADS` columns, with the bound check emitted ONLY
-        # for a wave that does not fill, so MMA_N=128 stages with no predicate at all.
-        # Waves rather than `tid < MMA_N` because the staging must not reach past the
-        # consumer warpgroup: at MMA_N=192 the old form wrote from warps 4 and 5 too.
+        # One wave per `CONS_THREADS` columns, with the bound check emitted ONLY for
+        # a wave that does not fill, so MMA_N=128 at one consumer warpgroup stages
+        # with no predicate at all. Waves rather than `tid < MMA_N` because the
+        # staging must not reach past the consumer warpgroups: at MMA_N=192 the old
+        # form wrote from warps 4 and 5 too. The wave width is the CONSUMER thread
+        # count and not one warpgroup's -- at two warpgroups a 128-column tile would
+        # otherwise run tid 128..255 straight past the end of `qs_smem` and into the
+        # mbars.
         @__parameter
         @always_inline
         def stage_qs(col: Int):
@@ -696,28 +815,59 @@ def _fp8_index_score_prefill_kernel_sm100[
             else:
                 qs_smem[col] = 0.0
 
-        comptime for w in range(ceildiv(MMA_N, _NUM_SOFTMAX_THREADS)):
-            comptime col_base = w * _NUM_SOFTMAX_THREADS
-            comptime if col_base + _NUM_SOFTMAX_THREADS > MMA_N:
+        comptime for w in range(ceildiv(MMA_N, CONS_THREADS)):
+            comptime col_base = w * CONS_THREADS
+            comptime if col_base + CONS_THREADS > MMA_N:
                 if tid + col_base < MMA_N:
                     stage_qs(tid + col_base)
             else:
                 stage_qs(tid + col_base)
-        named_barrier[Int32(_NUM_SOFTMAX_THREADS + WARP_SIZE)](_CONSUMER_BAR)
+        named_barrier[Int32(CONS_THREADS + WARP_SIZE)](_CONSUMER_BAR)
         var tmem_addr: UInt32 = ptr_tmem[0]
-        # `tcgen05_ld[datapaths=32]` maps warp w, lane l -> accumulator row
-        # `WARP_SIZE * w + l`, so this warpgroup's 4 warps cover all BM_key rows
-        # one-per-thread. A thread owning a whole key row makes the head sum
-        # thread-local (no cross-lane reduction) and puts 32 consecutive
-        # `key_local` in each warp, so each store is one 128B transaction.
-        # The consumer is warps 0-3, so masking `tid` gives `wid * 32 + lane_id()`
-        # identically while reading `tid` once, avoiding a second `S2R`.
+        # `tcgen05_ld[datapaths=32]` picks its TMEM sub-partition WARPGROUP-relative
+        # (`warp_id % 4`), mapping warp w, lane l -> accumulator row
+        # `WARP_SIZE * (w % 4) + l`. So each consumer warpgroup's 4 warps cover all
+        # BM_key rows one-per-thread, and several warpgroups each cover the same rows
+        # of their OWN stage. A thread owning a whole key row makes the head sum
+        # thread-local (no cross-lane reduction) and puts 32 consecutive `key_local`
+        # in each warp, so each store is one 128B transaction. Masking `tid` is
+        # therefore the right spelling at any warpgroup count -- it is already
+        # warpgroup-local -- and gives `(wid % 4) * 32 + lane_id()` identically while
+        # reading `tid` once, avoiding a second `S2R`.
         # `llvm_opaque_tid` is FA4's anti-hoist intrinsic; it does NOT bind here
         # (exactly one `%tid.x` read either way, in the prologue ahead of
         # `TRY_ALLOC`, because the q-scale staging above already needs `tid`), and is
         # kept only for the cheaper spelling.
         var row = Int32(llvm_opaque_tid() & (_NUM_SOFTMAX_THREADS - 1))
+        # This warpgroup's index, and with it the key tiles it owns: warpgroup w
+        # takes global tiles w, w + CONS_WGS, w + 2*CONS_WGS, ... and folds ALL
+        # MMA_N columns of each. Splitting by TILE rather than by column keeps the
+        # fold untouched: a column split would have to land on a token boundary
+        # (`CONS_WGS | N_TOKENS`), and the head sum would need SMEM plus a barrier
+        # per tile instead of staying thread-local. Alternating whole tiles is
+        # token-aligned by construction at every head count.
+        #
+        # Kept a comptime literal zero at one warpgroup rather than reading
+        # `wid // 4` unconditionally: the runtime read does not fold away even under
+        # `wid < 4`, and it cost the shipping kernels +347 B of PTX and +11
+        # registers for a value that is provably 0.
+        var cons_wg: Int32 = 0
+        comptime if CONS_WGS > 1:
+            cons_wg = Int32(wid // 4)
+        # `PipelineState[N].step()` is `index += 1; if index == N { index = 0;
+        # phase ^= 1 }` with no power-of-two masking, so the pair (index, phase) IS
+        # a global tile counter encoded mod 2N. Stepping it CONS_WGS times per
+        # iteration therefore lands exactly on the state for tile `i + CONS_WGS`,
+        # for ANY ring depth -- including a ring whose depth does not divide the
+        # warpgroup count, where a warpgroup's own visit count for a stage does NOT
+        # have the same parity as that mbarrier's true phase. Seeding the index with
+        # the warpgroup number is what puts each warpgroup on its own subsequence.
+        # Spelled as the default construction at one warpgroup so the shipping
+        # kernels keep main's exact prologue rather than relying on a seed of 0
+        # folding away.
         var c_state = PipelineState[N_S]()
+        comptime if CONS_WGS > 1:
+            c_state = PipelineState[N_S](Int(cons_wg), 0, 0)
 
         # The q_scales a thread needs are CTA-invariant, yet the tile loop below
         # re-read all of them on EVERY key tile: measured at 128 columns as 1,295,264
@@ -753,15 +903,21 @@ def _fp8_index_score_prefill_kernel_sm100[
                 )[0].cast[.float32]()
             return 0.0
 
-        # Rotate that gather a whole key tile ahead. It is a two-hop dependent load
-        # (block table -> scale row) whose only consumer is the final `FMUL` of each
-        # token's fold, so issuing it in the same iteration leaves just the first
-        # token's fold to cover the miss -- 37% L2 hit, putting 5.5% of warp-stall
-        # samples on that one `FMUL` against 0.2% on the identical one a token later.
-        # Do NOT add an `i + 1 < n_tiles_local` guard: it buys nothing over
+        # Rotate that gather one of THIS warpgroup's key tiles ahead -- a stride of
+        # `CONS_WGS * BM_key`, since the next tile it folds is `CONS_WGS` further on.
+        # It is a two-hop dependent load (block table -> scale row) whose only
+        # consumer is the final `FMUL` of each token's fold, so issuing it in the
+        # same iteration leaves just the first token's fold to cover the miss -- 37%
+        # L2 hit, putting 5.5% of warp-stall samples on that one `FMUL` against 0.2%
+        # on the identical one a token later. Do NOT add a
+        # `tile_i + CONS_WGS < n_tiles_local` guard: it buys nothing over
         # `< num_keys` and would turn a predicated `LDG` into a reconvergence
-        # quartet. The price is one speculative gather per CTA.
-        var k_scale = gather_k_scale(tile_begin * Int32(BM_key) + row)
+        # quartet. The price is one speculative gather per warpgroup, and the
+        # launcher reserves `(CONS_WGS + 1) * BM_key` of Int32 headroom for it.
+        comptime KS_STRIDE = CONS_WGS * BM_key
+        var k_scale = gather_k_scale(
+            (tile_begin + cons_wg) * Int32(BM_key) + row
+        )
 
         # Raw base of the score buffer, for the `_PRED_STORE` arm only -- it takes
         # a pointer, where `raw_store` takes an offset. Element (0, 0), so this is
@@ -770,13 +926,23 @@ def _fp8_index_score_prefill_kernel_sm100[
         # code (and free) in the branch arm.
         var out_base = output.ptr
 
-        # `n_tiles_local` is `Int32`, so `range` yields an `Int32` induction
-        # variable directly (`range.mojo:495`) -- the whole key-index chain stays
-        # 32-bit with no per-iteration cast, which is what the narrowing rule
-        # requires. All three warp roles walk this same count.
-        for tile_i in range(n_tiles_local):
+        # This warpgroup's own trip count over its subsequence of the tile window.
+        # SIGNED throughout: at `n_tiles_local == 1` warpgroup 1 gets zero tiles, and
+        # an unsigned `n_tiles_local - cons_wg` would underflow to ~4e9 and spin on a
+        # stage the MMA never fills. A zero-tile warpgroup must fall through to the
+        # drain barrier below, never return.
+        #
+        # `n_my_tiles` is `Int32`, so `range` yields an `Int32` induction variable
+        # directly (`range.mojo:495`) -- the whole key-index chain stays 32-bit with
+        # no per-iteration cast, which is what the narrowing rule requires. All three
+        # warp roles still walk the same tile WINDOW; only its partition differs.
+        var n_my_tiles = n_tiles_local
+        comptime if CONS_WGS > 1:
+            n_my_tiles = ceildiv(n_tiles_local - cons_wg, Int32(CONS_WGS))
+        for my_i in range(n_my_tiles):
+            var tile_i = cons_wg + my_i * Int32(CONS_WGS)
             var key_local = (tile_begin + tile_i) * Int32(BM_key) + row
-            var k_scale_next = gather_k_scale(key_local + Int32(BM_key))
+            var k_scale_next = gather_k_scale(key_local + Int32(KS_STRIDE))
 
             # `PipelineState.index()` is already `UInt32`; keep it that way
             # rather than round-tripping through 64-bit `Int`.
@@ -941,12 +1107,18 @@ def _fp8_index_score_prefill_kernel_sm100[
                 comptime if _EPI_ROTATE < 2:
                     release_stage()
             k_scale = k_scale_next
-            c_state.step()
+            # Advance to THIS warpgroup's next tile. CONS_WGS steps, not one: see
+            # the seeding comment above for why that is exactly the (index, phase)
+            # of tile `tile_i + CONS_WGS` at any ring depth.
+            comptime for _ in range(CONS_WGS):
+                c_state.step()
 
-        # Single warpgroup-wide drain: the consumer's last `s_empty` arrive
-        # happens-before this barrier, so no S^T stage is live when the MMA warp
-        # frees TMEM.
-        named_barrier[Int32(_NUM_SOFTMAX_THREADS)](_CONSUMER_BAR)
+        # Single drain across ALL consumer warps: every consumer's last `s_empty`
+        # arrive happens-before this barrier, so no S^T stage is live when the MMA
+        # warp frees TMEM. Every consumer warp must reach it, including a warpgroup
+        # that owned zero tiles -- which is why the loop above is bounded rather
+        # than skipped by an early return.
+        named_barrier[Int32(CONS_THREADS)](_CONSUMER_BAR)
         if wid == 0:
             tcgen05_dealloc[1](tmem_addr, TMEM_COLS)
     else:
@@ -960,9 +1132,7 @@ def _fp8_index_score_prefill_kernel_sm100[
             # convergence barrier the other 31 lanes never reach.
             comptime if _use_setmaxnreg[MMA_N]():
                 warpgroup_reg_dealloc[_NUM_REG_PRODUCER]()
-            named_barrier[Int32(_NUM_SOFTMAX_THREADS + WARP_SIZE)](
-                _CONSUMER_BAR
-            )
+            named_barrier[Int32(CONS_THREADS + WARP_SIZE)](_CONSUMER_BAR)
             var tmem_addr: UInt32 = ptr_tmem[0]
             var e = elect()
             var kc_state = PipelineState[NSTAGE]()
@@ -1144,6 +1314,38 @@ comptime _KEYSPLIT_MIN_KEY_TILES = 64
 
 
 @always_inline
+def _is_keysplit_shape[
+    num_heads: Int, BM_key: Int
+](max_seq_len: Int, max_num_keys: Int) -> Bool:
+    """Whether a shape is decode-shaped: few token blocks, deep key range.
+
+    One definition, read by both the router (which admits such a shape to the
+    Q-resident kernel) and the launcher (which relaxes its key-split guard for
+    it). Deliberately measured against the DEFAULT `128 // num_heads` tile
+    rather than the tile actually launched: a wider tile makes any shape look
+    like fewer token blocks, and a 17-token prefill batch on the 8-token tile
+    would otherwise read as decode.
+
+    Parameters:
+        num_heads: Query index heads.
+        BM_key: Keys per tile.
+
+    Args:
+        max_seq_len: Batch maximum of new query tokens.
+        max_num_keys: Row stride of the score buffer; an upper bound on any
+            entry's key count, and under graph capture a frozen one.
+
+    Returns:
+        True when the token-block grid alone cannot fill the machine but the
+        key range is deep enough that splitting it can.
+    """
+    return (
+        ceildiv(max_seq_len, 128 // num_heads) <= _KEYSPLIT_MAX_TOKEN_TILES
+        and ceildiv(max_num_keys, BM_key) >= _KEYSPLIT_MIN_KEY_TILES
+    )
+
+
+@always_inline
 def fp8_index_score_sm100_prefill[
     dtype: DType,
     KOperand: MHAOperand,
@@ -1208,13 +1410,48 @@ def fp8_index_score_sm100_prefill[
     # CTAs. Past a few waves the extra parts buy no parallelism even when the
     # bound matches the runtime key range -- capped parts just stream more tiles each, which the
     # K-ring amortizes better than more prologues would.
+    #
+    # `base_ctas` counts the CTAs that will WORK, not the ones the grid totals.
+    # `batch_size * ceildiv(max_seq_len, N_TOKENS)` is the total, and on a ragged
+    # batch nearly all of the excess retires at the
+    # `block_idx.y * N_TOKENS >= seq_len` bail before doing anything. A batch that
+    # launches past `sm_count` while working well under it would otherwise be read
+    # as a full machine, decline the split, and leave the deepest entry streaming
+    # its whole key range on ONE CTA. The token total is exact (`output` is
+    # `[total_seq, max_num_keys]` by both entries' contract) and the `min` makes
+    # this a pure RELAXATION: `base_ctas` can only fall, so every uniform batch
+    # keeps its grid byte for byte and no shape loses a split it already had.
+    #
+    # The second clause lets a DECODE-shaped launch split even when the token-block
+    # grid already fills the machine. Without it, at batch >= sm_count no key part
+    # is ever assigned, so a ragged CONTEXT mix -- uniform query width, wildly
+    # different cache depths -- runs the deepest entry on one CTA beside SMs that
+    # finished early, and the host cannot see that skew because per-entry depths
+    # are device data. Measured worth 2.3x-4.5x at batch >= 148. It is restricted
+    # to `_is_keysplit_shape` because relaxing it at prefill widths would multiply
+    # an already-full grid for no extra parallelism.
     comptime sm_count = ctx.default_device_info.sm_count
     comptime MMA_N = N_TOKENS * num_heads
     comptime CTAS_PER_SM = _ctas_per_sm[MMA_N]()
-    var base_ctas = batch_size * token_blocks
+    # Each entry occupies `ceildiv(seq_len, N_TOKENS)` blocks, and summing that
+    # over the batch without per-entry lengths is exactly the second term, which
+    # over-counts by at most `batch_size - 1`. The `max(1, ...)` guards an empty
+    # batch only; `wave_parts` below divides by this. The first term is bounded
+    # by the row window (`out_rows`), so a chunked score-matrix launch sizes
+    # its grid to the rows it fills rather than the whole batch (see #96716);
+    # an unwindowed caller has `out_rows >= max_seq_len` and the `min` is a no-op.
+    var base_ctas = max(
+        1,
+        min(
+            batch_size * ceildiv(min(max_seq_len, out_rows), N_TOKENS),
+            (Int(output.dim[0]()) + batch_size * (N_TOKENS - 1)) // N_TOKENS,
+        ),
+    )
     var key_tiles = ceildiv(max_num_keys, BM_key)
     var num_key_parts = 1
-    if base_ctas < sm_count:
+    if base_ctas < sm_count or _is_keysplit_shape[num_heads, BM_key](
+        max_seq_len, max_num_keys
+    ):
         var wave_parts = (CTAS_PER_SM * sm_count) // base_ctas
         num_key_parts = max(
             1,
@@ -1249,10 +1486,14 @@ def fp8_index_score_sm100_prefill[
     # The `setmaxnreg` caps redistribute a fixed file: 65536 registers/SM shared
     # by `CTAS_PER_SM` CTAs, and every thread of a warpgroup holds that
     # warpgroup's cap. Counted per thread rather than per warpgroup so it stays
-    # right when the producer is not a full warpgroup.
+    # right when the producer is not a full warpgroup -- and multiplied by the
+    # CONSUMER warpgroup count, without which this would pass a config that
+    # demands `CONS_WGS` times the consumer registers it checks for.
     comptime if _use_setmaxnreg[MMA_N]():
         comptime assert (
-            _NUM_SOFTMAX_THREADS * _num_reg_consumer[MMA_N]()
+            _prefill_cons_wgs[MMA_N]()
+            * _NUM_SOFTMAX_THREADS
+            * _num_reg_consumer[MMA_N, num_heads]()
             + WARP_SIZE * _prefill_prod_warps[MMA_N]() * _NUM_REG_PRODUCER
             <= 65536 // CTAS_PER_SM
         ), (
@@ -1279,17 +1520,20 @@ def fp8_index_score_sm100_prefill[
     )
     # `max_num_keys` crosses the ABI as `Int32` and the kernel's whole key-index chain
     # is 32-bit signed, so the narrowing here is a silent truncation of a caller-supplied
-    # `Int`. The bound reserves TWO key tiles of headroom rather than stopping at
-    # `Int32.MAX` because the `k_scale` prefetch evaluates `key_local + BM_key` one tile
-    # PAST the last real key; at `Int32.MAX` that wraps negative, passes the signed
-    # `key < num_keys` guard, and `UInt32(key)` turns it into a ~2.1e9 pool row -- an OOB
-    # read rather than the `0.0` the guard should produce.
+    # `Int`. The bound reserves key-tile headroom rather than stopping at `Int32.MAX`
+    # because the `k_scale` prefetch evaluates `key_local + CONS_WGS * BM_key`, i.e. a
+    # whole warpgroup stride PAST the last real key; at `Int32.MAX` that wraps negative,
+    # passes the signed `key < num_keys` guard, and `UInt32(key)` turns it into a ~2.1e9
+    # pool row -- an OOB read rather than the `0.0` the guard should produce.
+    # `key_local` itself already reaches one tile past `num_keys` on the last tile of a
+    # non-BM-aligned range, hence `CONS_WGS + 1`.
     debug_assert[assert_mode="safe"](
-        max_num_keys <= Int(Int32.MAX) - 2 * BM_key,
+        max_num_keys
+        <= Int(Int32.MAX) - (_prefill_cons_wgs[MMA_N]() + 1) * BM_key,
         (
-            "fp8 index prefill: max_num_keys must leave two key tiles of"
-            " headroom under Int32.MAX; the device-side key arithmetic is"
-            " 32-bit signed"
+            "fp8 index prefill: max_num_keys must leave a warpgroup stride of"
+            " key tiles of headroom under Int32.MAX; the device-side key"
+            " arithmetic is 32-bit signed"
         ),
     )
     ctx.enqueue_function[kernel](
