@@ -771,10 +771,12 @@ class JengaBlockManager:
             ctx, replica_idx
         )
 
-        # Updates cache hit metrics
+        # Updates cache hit metrics. This manager has no KV connector, so every
+        # reused token came from the device prefix cache and none is external.
         self._metrics.device_blocks_served += num_hit_blocks
         self._metrics.cache_tokens += num_hit_blocks * self._block_size
         ctx.cached_prefix_length = num_hit_blocks * self._block_size
+        ctx.cached_prefix_external_length = 0
 
         if num_hit_blocks == 0:
             return 0

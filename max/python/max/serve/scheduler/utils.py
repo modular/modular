@@ -164,6 +164,17 @@ class BatchMetrics:
     dkv_total_clients: int = 0
     dkv_reconnect_attempts: int = 0
 
+    # Cache blocks dKV served this batch, an upper bound on delivered reuse:
+    # a block behind a hole in the request's hash chain is served and then
+    # dropped untransferred. Pairs with cache_hit_external_tokens to surface
+    # the served-versus-landed gap. Zero when no dKV tier is attached.
+    dkv_read_blocks: int = 0
+
+    # How many of ``cache_hit_tokens`` the KV connector served. The remainder
+    # came from the device prefix cache, which is how ``cache_hits`` splits per
+    # ``tier``. Always 0 without a connector.
+    cache_hit_external_tokens: int = 0
+
     # When True, ``batch_execution_time_s`` and the throughputs describe the
     # previously enqueued batch, so ``completed`` is reported instead.
     overlap_active: bool = False
@@ -276,6 +287,7 @@ class BatchMetrics:
         dkv_connected_clients = 0
         dkv_total_clients = 0
         dkv_reconnect_attempts = 0
+        dkv_read_blocks = 0
         num_replicas = sch_config.data_parallel_degree
 
         # Data-parallel balance, along two axes: active tokens (compute load
@@ -360,6 +372,7 @@ class BatchMetrics:
             dkv_connected_clients = metrics_agg.dkv_connected_clients
             dkv_total_clients = metrics_agg.dkv_total_clients
             dkv_reconnect_attempts = metrics_agg.dkv_reconnect_attempts
+            dkv_read_blocks = metrics_agg.nixl_read_blocks
 
             kv_cache.reset_metrics()
 
@@ -374,6 +387,7 @@ class BatchMetrics:
         per_request_prefix_coverage: list[float] = []
         admission_hit_tokens = 0
         admission_prompt_tokens = 0
+        admission_external_tokens = 0
         if inputs.batch_type == BatchType.CE:
             for ctx in inputs.flat_batch:
                 if (
@@ -388,6 +402,11 @@ class BatchMetrics:
                     per_request_prefix_coverage.append(cached / prompt_length)
                     admission_hit_tokens += cached
                     admission_prompt_tokens += prompt_length
+                    # The block manager caps this at ``cached``, so the device
+                    # remainder below can never go negative.
+                    admission_external_tokens += (
+                        ctx.cached_prefix_external_length
+                    )
 
         cache_hit_tokens = admission_hit_tokens
         cache_miss_tokens = admission_prompt_tokens - admission_hit_tokens
@@ -445,6 +464,7 @@ class BatchMetrics:
             cache_hit_rate=cache_hit_rate,
             cache_hit_tokens=cache_hit_tokens,
             cache_miss_tokens=cache_miss_tokens,
+            cache_hit_external_tokens=admission_external_tokens,
             device_blocks_served=device_blocks_served,
             used_host_kv_pct=used_host_kv_pct,
             total_host_kv_blocks=total_host_kv_blocks,
@@ -471,6 +491,7 @@ class BatchMetrics:
             dkv_connected_clients=dkv_connected_clients,
             dkv_total_clients=dkv_total_clients,
             dkv_reconnect_attempts=dkv_reconnect_attempts,
+            dkv_read_blocks=dkv_read_blocks,
             overlap_active=overlap_active,
             completed=completed_batch_stats,
             dp_active_token_occupancy_pct=dp_active_token_occupancy_pct,
@@ -743,6 +764,7 @@ class BatchMetrics:
             extra["cache_hit_rate"] = self.cache_hit_rate
             extra["cache_hit_tokens"] = self.cache_hit_tokens
             extra["cache_miss_tokens"] = self.cache_miss_tokens
+            extra["cache_hit_external_tokens"] = self.cache_hit_external_tokens
             extra["device_blocks_served"] = self.device_blocks_served
 
         if self.total_host_kv_blocks != 0:
@@ -829,6 +851,9 @@ class BatchMetrics:
             extra["dkv_total_clients"] = self.dkv_total_clients
             extra["dkv_reconnect_attempts"] = self.dkv_reconnect_attempts
 
+        if self.dkv_read_blocks > 0:
+            extra["dkv_read_blocks"] = self.dkv_read_blocks
+
         return extra
 
     def publish_metrics(self, *, defer_execution_metrics: bool = False) -> None:
@@ -910,7 +935,30 @@ class BatchMetrics:
             METRICS.cache_used_kv_pct(self.used_kv_pct * 100)
 
         if self.batch_type == BatchType.CE and self.num_new_admissions > 0:
-            METRICS.cache_hits(self.cache_hit_tokens)
+            # Tag each hit with the tier that served it. The two add up to
+            # ``cache_hit_tokens``, so a query that does not group by ``tier``
+            # still reads the same total it did before the attribute existed.
+            #
+            # ``g0`` fires even at zero: before the attribute an all-cold CE
+            # batch recorded 0, so an ungrouped query read 0. Skipping it would
+            # leave the series absent on a cold server, and rate() over an
+            # absent series returns no data rather than a flat zero.
+            #
+            # ``external`` follows the same rule, but keyed on whether a tier is
+            # ATTACHED rather than on whether it delivered: a connector that has
+            # served nothing all process (dKV down at startup, or degraded
+            # before its first hit) is exactly the state worth alerting on, and
+            # skipping it there would publish nothing to alert on. Same
+            # reasoning as the dKV health gauges below. Without a connector
+            # there is no series to mint.
+            device_tokens = (
+                self.cache_hit_tokens - self.cache_hit_external_tokens
+            )
+            METRICS.cache_hits(device_tokens, tier="g0")
+            if self.cache_hit_external_tokens > 0 or self.dkv_total_clients > 0:
+                METRICS.cache_hits(
+                    self.cache_hit_external_tokens, tier="external"
+                )
             METRICS.cache_misses(self.cache_miss_tokens)
             METRICS.cache_device_blocks_served(self.device_blocks_served)
             for coverage in self.per_request_prefix_coverage:
@@ -936,6 +984,13 @@ class BatchMetrics:
             METRICS.dkv_rpc_acquire_latency(self.rpc_acquire_latency_avg_ms)
         if self.rpc_read_latency_avg_ms > 0:
             METRICS.dkv_rpc_read_latency(self.rpc_read_latency_avg_ms)
+        # Its own guard, not the cache-hit clause: this is a per-window delta
+        # that ``reset_metrics`` clears after every batch, so a window published
+        # under a different batch type would lose its count for good. Keyed on a
+        # tier being attached rather than on it moving blocks, so a dead tier
+        # reads a flat zero instead of nothing.
+        if self.dkv_read_blocks > 0 or self.dkv_total_clients > 0:
+            METRICS.dkv_read_blocks(self.dkv_read_blocks)
 
         # Publish dKV health whenever a dKV tier is attached, independent of
         # transfer activity, because a dead tier does no transfers and yet is

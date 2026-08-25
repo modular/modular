@@ -206,7 +206,7 @@ def test_async_onload_defers_commit_and_pins_blocks() -> None:
     rid = RequestID("req-onload")
     bm.req_to_hashes[rid] = [_b(1), _b(2)]
 
-    blocks, event = bm.get_full_blocks_from_prefix_cache(_make_ctx(bm, rid))
+    blocks, event, _ = bm.get_full_blocks_from_prefix_cache(_make_ctx(bm, rid))
 
     assert len(blocks) == 2
     assert not event.is_complete()
@@ -229,7 +229,7 @@ def test_poll_transfers_is_noop_while_onload_incomplete() -> None:
     rid = RequestID("req-poll-incomplete")
     bm.req_to_hashes[rid] = [_b(1), _b(2)]
 
-    _, event = bm.get_full_blocks_from_prefix_cache(_make_ctx(bm, rid))
+    _, event, _ = bm.get_full_blocks_from_prefix_cache(_make_ctx(bm, rid))
     assert not event.is_complete()
 
     bm.poll_transfers()
@@ -247,7 +247,7 @@ def test_poll_transfers_commits_and_unpins_on_completion() -> None:
     rid = RequestID("req-poll-complete")
     bm.req_to_hashes[rid] = [_b(1), _b(2)]
 
-    blocks, event = bm.get_full_blocks_from_prefix_cache(_make_ctx(bm, rid))
+    blocks, event, _ = bm.get_full_blocks_from_prefix_cache(_make_ctx(bm, rid))
 
     # Complete the transfer, then drain.
     event.synchronize()
@@ -276,7 +276,7 @@ def test_partial_onload_frees_surplus_blocks() -> None:
     rid = RequestID("req-partial")
     bm.req_to_hashes[rid] = [_b(1), _b(2)]
 
-    blocks, event = bm.get_full_blocks_from_prefix_cache(_make_ctx(bm, rid))
+    blocks, event, _ = bm.get_full_blocks_from_prefix_cache(_make_ctx(bm, rid))
 
     assert len(blocks) == 1
     assert len(event.g0_blocks) == 1

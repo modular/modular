@@ -555,6 +555,20 @@ class TextContext:
     chunked-prefill follow-up calls.
     """
 
+    cached_prefix_external_length: int = field(default=0)
+    """How many of :obj:`cached_prefix_length` tokens the KV connector served.
+
+    Set alongside :obj:`cached_prefix_length` on first admission. The remainder
+    came from the on-device prefix cache, which is what lets the scheduler tag
+    its hit counter per tier without a second lookup. Always ``0`` when no
+    connector is configured.
+
+    Not split into the connector's own tiers: :meth:`KVConnector.load` reports
+    only a loaded-block count, so the host/disk (dKV G1/G2) breakdown does not
+    cross that boundary and these tokens are reported as ``external`` rather
+    than guessed at.
+    """
+
     _cache_metrics_emitted: bool = field(default=False)
     """Set to ``True`` after the first CE batch to prevent re-emitting cache hit metrics on chunked-prefill follow-up calls."""
 

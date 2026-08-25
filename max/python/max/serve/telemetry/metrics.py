@@ -338,7 +338,12 @@ SERVE_METRICS: dict[str, SupportedInstruments] = {
         unit="tokens",
         description=(
             "Cumulative KV cache hit tokens across all CE batches "
-            "(prompt tokens served from prefix cache)."
+            "(prompt tokens served from prefix cache). Tagged with the tier "
+            "that served each token: g0 for the on-device prefix cache, "
+            "external for the KV connector. The tiers sum to the untagged "
+            "total. g0 includes cross-replica device-to-device copies, and "
+            "counts first admissions only, so it does not match "
+            "maxserve.cache.device_blocks_served scaled by the page size."
         ),
     ),  # type: ignore
     "maxserve.cache.misses": _meter.create_counter(
@@ -378,6 +383,11 @@ SERVE_METRICS: dict[str, SupportedInstruments] = {
         "maxserve.dkv.rpc_read_latency",
         unit="ms",
         description="dKV read_blocks RPC latency",
+    ),  # type: ignore
+    "maxserve.dkv.read_blocks": _meter.create_counter(
+        "maxserve.dkv.read_blocks",
+        unit="blocks",
+        description="Cache blocks LANDED in device memory from the dKV tier, over both the remote NIXL path and same-host device copies. Only confirmed-complete transfers count, so this is delivered reuse and not an upper bound on it: blocks dKV holds but cannot serve as a contiguous prefix are dropped before a transfer is ever built, and never reach this counter. For any load that lands it is proportional to maxserve.cache.hits{tier=external}; a persistent shortfall means transfers are failing.",
     ),  # type: ignore
     "maxserve.dkv.connected_clients": _meter.create_gauge(
         "maxserve.dkv.connected_clients",
@@ -1165,9 +1175,26 @@ class _AsyncMetrics:
             ),
         )
 
-    def cache_hits(self, hits: int) -> None:
+    def cache_hits(self, hits: int, *, tier: str) -> None:
+        """Records prefix-cache hit tokens served by ``tier``.
+
+        Args:
+            hits: Prompt tokens served from the cache.
+            tier: Which tier served them, one of ``g0`` (device prefix cache) or
+                ``external`` (the KV connector, tier unresolved). Shared with
+                Mach's ``mach.cache.hits`` so one dashboard panel covers both
+                engines; Mach additionally resolves ``g1`` and ``g2``.
+
+        Every hit point carries a ``tier``, so the tiers sum to the counter's
+        untagged total and a query that does not group by ``tier`` reads exactly
+        what it read before the attribute existed.
+        """
         self.client.send_measurement(
-            MaxMeasurement("maxserve.cache.hits", hits, self.extra_attributes),
+            MaxMeasurement(
+                "maxserve.cache.hits",
+                hits,
+                {**self.extra_attributes, "tier": tier},
+            ),
         )
 
     def cache_misses(self, cache_misses: int) -> None:
@@ -1342,6 +1369,15 @@ class _AsyncMetrics:
             MaxMeasurement(
                 "maxserve.dkv.reconnect_attempts",
                 value,
+                self.extra_attributes,
+            ),
+        )
+
+    def dkv_read_blocks(self, blocks: int) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.dkv.read_blocks",
+                blocks,
                 self.extra_attributes,
             ),
         )
