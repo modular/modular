@@ -11,7 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.testing import assert_equal, assert_false, assert_true, TestSuite
+from std.testing import (
+    assert_equal,
+    assert_false,
+    assert_raises,
+    assert_true,
+    TestSuite,
+)
 from test_utils import ExplicitDelOnly
 
 from std.builtin.variadics import _call_with_dynamic_pack_pointers
@@ -634,6 +640,24 @@ def format_args(
     buffer[].write(x, " ", y, " ", z)
 
 
+def return_from_dynamic_pack(
+    buffer: Pointer[String, MutAnyOrigin],
+    x: Int,
+    y: String,
+    z: List[Int],
+) -> Int:
+    return x
+
+
+def raise_from_dynamic_pack(
+    buffer: Pointer[String, MutAnyOrigin],
+    x: Int,
+    y: String,
+    z: List[Int],
+) raises StopIteration:
+    raise StopIteration()
+
+
 def test_dynamic_variadic_pack() raises:
     var buffer = String()
     var buffer_ptr = Pointer(to=buffer).as_unsafe_any_origin()
@@ -668,6 +692,18 @@ def test_dynamic_variadic_pack() raises:
     _call_with_dynamic_pack_pointers[format_args](make_elem_ptr)
 
     assert_equal(buffer, "5 hello [1, 20, 300]")
+
+    # Test that dynamic pack call works with callees that return a value
+    assert_equal(
+        _call_with_dynamic_pack_pointers[return_from_dynamic_pack](
+            make_elem_ptr
+        ),
+        5,
+    )
+
+    # Test that dynamic pack call works with callees that `raises`
+    with assert_raises(contains="StopIteration"):
+        _call_with_dynamic_pack_pointers[raise_from_dynamic_pack](make_elem_ptr)
 
 
 def main() raises:
