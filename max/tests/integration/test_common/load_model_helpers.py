@@ -83,7 +83,9 @@ def make_pipeline_config_factory(
             device_specs=device_specs,
         )
         pipeline_config.model._huggingface_config = hf_config
-        pipeline_config.model.weight_path = [Path("fake.safetensors")]
+        pipeline_config.models["main"] = pipeline_config.model.model_copy(
+            update={"weight_path": [Path("fake.safetensors")]}
+        )
         return pipeline_config
 
     return _make

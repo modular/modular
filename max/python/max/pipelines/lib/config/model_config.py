@@ -720,6 +720,8 @@ class MAXModelConfigBase(ConfigFileModel):
 class MAXModelConfig(MAXModelConfigBase):
     """Configuration for a pipeline model."""
 
+    model_config = ConfigDict(arbitrary_types_allowed=True, frozen=True)
+
     use_subgraphs: bool = Field(
         default=True,
         description=(

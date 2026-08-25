@@ -644,9 +644,9 @@ class TestDraftModelQuantizationEncoding:
     ) -> None:
         """Run _validate_speculative_model_configs with mocked internals.
 
-        Mocks architecture resolution so that calling it on the target model
-        sets its encoding to ``"bfloat16"`` and on the draft model sets its
-        encoding to ``draft_encoding`` (simulating auto-detection from weights).
+        Sets the target encoding to ``"float8_e4m3fn"`` and defaults the
+        draft encoding to ``draft_encoding`` up front, mirroring the
+        construction-time resolution (auto-detection from weights).
 
         Args:
             config: The pipeline config to resolve.
@@ -663,20 +663,20 @@ class TestDraftModelQuantizationEncoding:
         mock_arch.pipeline_model.estimate_weights_size.return_value = 0
         mock_arch.config.initialize.return_value = mock_draft_arch_config
 
-        def fake_validate_against_arch(
-            model_config: MAXModelConfig, arch: Any
-        ) -> None:
-            if model_config is config.model:
-                model_config.quantization_encoding = "float8_e4m3fn"
-            elif model_config is config.draft_model:
-                # Draft model auto-detects its own encoding from weights
-                if model_config.quantization_encoding is None:
-                    model_config.quantization_encoding = draft_encoding
+        # Encodings resolve at construction, before the speculative
+        # validation runs; mirror that by replacing the models up front.
+        config.models["main"] = config.model.model_copy(
+            update={"quantization_encoding": "float8_e4m3fn"}
+        )
+        assert config.draft_model is not None
+        if config.draft_model.quantization_encoding is None:
+            config.models["draft"] = config.draft_model.model_copy(
+                update={"quantization_encoding": draft_encoding}
+            )
 
         with patch.object(
             PipelineConfig,
             "_validate_model_config_against_arch",
-            side_effect=fake_validate_against_arch,
         ):
             config._validate_speculative_model_configs(
                 target_arch=mock_arch, draft_arch=mock_arch

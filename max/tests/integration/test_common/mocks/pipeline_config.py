@@ -104,8 +104,8 @@ class DummyPipelineConfig(PipelineConfig):
             quantization_encoding=quantization_encoding,
             max_length=max_length,
             weight_path=[],
+            kv_cache=KVCacheConfig(),
         )
-        model_config.kv_cache = KVCacheConfig()
         # model_construct bypasses __init__, where user intent for max_length
         # is captured; mirror the capture so planning sees the same bit.
         model_config._max_length_user_provided = max_length is not None
