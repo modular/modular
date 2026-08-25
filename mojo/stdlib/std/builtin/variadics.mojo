@@ -1707,6 +1707,7 @@ def _call_with_dynamic_pack_pointers[
 
     Parameters:
         Args: The argument types accepted by `user_func`.
+        RetType: Type returned by the closure to be called.
         MakeElemPtr: Element initialization function.
         user_func: The user function to call with the dynamically initialized
             argument pack.
