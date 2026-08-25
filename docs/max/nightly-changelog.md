@@ -8,6 +8,10 @@ This version is still a work in progress.
 
 ## Documentation
 
+- Added a dedicated [metrics](/serve/metrics) reference page with all
+available Prometheus metrics, categorized by subsystem. The metrics section in
+the [container](/container) page now links to the new page.
+
 ## MAX models
 
 - Fixed unbounded host-memory usage in Gemma 4 video pre-processing: the

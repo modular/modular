@@ -53,7 +53,8 @@
         "serve/prefix-caching",
         "serve/lora-adapters",
         "serve/speculative-decoding",
-        "serve/recipes"
+        "serve/recipes",
+        "serve/metrics"
       ]
     },
     {
