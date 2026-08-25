@@ -835,24 +835,6 @@ def _resolve_models_max_length(
         manifest[role] = replaced
 
 
-def _apply_arch_kv_head_replication(
-    manifest: ModelManifest, arch: Any, draft_arch: Any
-) -> None:
-    """Sets ``allow_kv_head_replication`` when the architecture requires it."""
-    for role, model_arch in (("main", arch), ("draft", draft_arch)):
-        model = manifest.get(role)
-        if model is None or model_arch is None:
-            continue
-        if not model_arch.requires_kv_head_replication:
-            continue
-        if model.kv_cache.allow_kv_head_replication:
-            continue
-        kv_cache = _construct_from_user_fields(
-            model.kv_cache, allow_kv_head_replication=True
-        )
-        manifest[role] = model.model_copy(update={"kv_cache": kv_cache})
-
-
 class PipelineConfig(ConfigFileModel):
     """Configuration for a pipeline.
 
@@ -1510,7 +1492,6 @@ class PipelineConfig(ConfigFileModel):
                     arch, manifest, runtime, sampling, top_level
                 )
             _resolve_models_max_length(manifest, arch, draft_arch)
-            _apply_arch_kv_head_replication(manifest, arch, draft_arch)
             runtime, sampling = _resolved_runtime_and_sampling(
                 runtime, sampling, lora, manifest["main"], arch
             )

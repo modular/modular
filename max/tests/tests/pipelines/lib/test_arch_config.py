@@ -365,20 +365,6 @@ class TestArchConfigWithAttentionKVCache:
         assert config.cache_dtype == DType.bfloat16
 
 
-def test_to_params_reads_allow_kv_head_replication_from_config() -> None:
-    """``to_params`` uses the config flag when the argument is omitted."""
-    kv_cache_config = KVCacheConfig(allow_kv_head_replication=True)
-    # 4 KV heads over 8 devices: the flag replicates each head across 2 devices.
-    params = kv_cache_config.to_params(
-        dtype=DType.bfloat16,
-        n_kv_heads=4,
-        head_dim=128,
-        num_layers=1,
-        devices=[DeviceRef.GPU(i) for i in range(8)],
-    )
-    assert params.n_kv_heads_per_device == 1
-
-
 def test_to_params_replication_disabled_by_default() -> None:
     """Without the config flag, wide TP still raises the strict error."""
     kv_cache_config = KVCacheConfig()
@@ -395,9 +381,11 @@ def test_to_params_replication_disabled_by_default() -> None:
         )
 
 
-def test_to_params_explicit_arg_overrides_config() -> None:
-    """An explicit allow_kv_head_replication argument wins over the config."""
-    kv_cache_config = KVCacheConfig(allow_kv_head_replication=False)
+def test_to_params_replication_argument_replicates_heads() -> None:
+    """The allow_kv_head_replication argument replicates each KV head.
+
+    4 KV heads over 8 devices: each head spans a group of 2 devices."""
+    kv_cache_config = KVCacheConfig()
     params = kv_cache_config.to_params(
         dtype=DType.bfloat16,
         n_kv_heads=4,
@@ -411,10 +399,10 @@ def test_to_params_explicit_arg_overrides_config() -> None:
 
 def test_kv_cache_config_is_frozen() -> None:
     kv_cache_config = KVCacheConfig()
-    field = "allow_kv_head_replication"
+    field = "enable_prefix_caching"
     with pytest.raises(ValidationError, match="frozen"):
-        setattr(kv_cache_config, field, True)
-    assert kv_cache_config.allow_kv_head_replication is False
+        setattr(kv_cache_config, field, False)
+    assert kv_cache_config.enable_prefix_caching is True
 
 
 def test_kv_connector_config_is_frozen() -> None:
@@ -433,7 +421,7 @@ def test_frozen_kv_connector_config_matches_interface() -> None:
 def test_kv_cache_config_model_copy_update() -> None:
     kv_cache_config = KVCacheConfig()
     patched = kv_cache_config.model_copy(
-        update={"allow_kv_head_replication": True}
+        update={"enable_prefix_caching": False}
     )
-    assert patched.allow_kv_head_replication is True
-    assert kv_cache_config.allow_kv_head_replication is False
+    assert patched.enable_prefix_caching is False
+    assert kv_cache_config.enable_prefix_caching is True
