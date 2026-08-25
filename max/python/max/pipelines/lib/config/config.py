@@ -889,7 +889,7 @@ class PipelineConfig(ConfigFileModel):
         # since __init__ counts as user-provided.
         self.model._max_length_user_provided = self.model.max_length is not None
         self.model.max_length = arch.config.calculate_max_seq_len(
-            self, self.model.huggingface_config, self.model
+            self.model.huggingface_config, self.model
         )
         if draft_arch is not None and self.draft_model is not None:
             self.draft_model._max_length_user_provided = (
@@ -897,7 +897,6 @@ class PipelineConfig(ConfigFileModel):
             )
             self.draft_model.max_length = (
                 draft_arch.config.calculate_max_seq_len(
-                    self,
                     self.draft_model.huggingface_config,
                     self.draft_model,
                 )

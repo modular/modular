@@ -98,26 +98,21 @@ class ArchConfig(Protocol):
     @classmethod
     def calculate_max_seq_len(
         cls,
-        pipeline_config: PipelineConfig,
         huggingface_config: AutoConfig,
-        model_config: MAXModelConfig | None = None,
+        model_config: MAXModelConfig,
     ) -> int:
-        """Returns the architecture's maximum-sequence-length policy value.
+        """Returns the resolved maximum sequence length.
 
-        Bounds or defaults the user-provided ``max_length``
-        (``model_config.max_length``) with the model's own limits. This is
-        pure policy over model metadata and user intent: construction runs it
-        exactly once and stores the result on ``model_config.max_length``;
-        memory planning consumes that value and carries any VRAM-lowered
-        length on the memory plan, never back on the config.
+        Bounds or defaults the user's ``model_config.max_length`` with the
+        model's own limits. Construction runs this once and stores the
+        result on ``model_config.max_length``; memory planning may lower
+        it further, but only on the memory plan.
 
         Args:
-            pipeline_config: The pipeline configuration.
-            huggingface_config: The HuggingFace config to read model bounds
-                from.
-            model_config: The model configuration whose ``max_length``
-                expresses user intent. When ``None`` (the default),
-                ``pipeline_config.model`` is used.
+            huggingface_config: The HuggingFace config to read model
+                bounds from.
+            model_config: The model config whose ``max_length`` carries
+                the user's setting.
         """
 
 
@@ -196,12 +191,10 @@ class ArchConfigWithBoundedMaxSeqLen:
     @classmethod
     def calculate_max_seq_len(
         cls,
-        pipeline_config: PipelineConfig,
         huggingface_config: AutoConfig,
-        model_config: MAXModelConfig | None = None,
+        model_config: MAXModelConfig,
     ) -> int:
         """Bounds ``max_length`` by ``max_position_embeddings``."""
-        model_config = model_config or pipeline_config.model
         try:
             return upper_bounded_default(
                 upper_bound=huggingface_config.max_position_embeddings,
@@ -287,12 +280,10 @@ class ArchConfigWithPermissiveMaxSeqLen:
     @classmethod
     def calculate_max_seq_len(
         cls,
-        pipeline_config: PipelineConfig,
         huggingface_config: AutoConfig,
-        model_config: MAXModelConfig | None = None,
+        model_config: MAXModelConfig,
     ) -> int:
         """Uses ``max_length`` when set, else ``max_position_embeddings``."""
-        model_config = model_config or pipeline_config.model
         if model_config.max_length:
             return model_config.max_length
         return huggingface_config.max_position_embeddings
@@ -360,13 +351,11 @@ class ArchVLConfigWithTextSubconfig:
     @classmethod
     def calculate_max_seq_len(
         cls,
-        pipeline_config: PipelineConfig,
         huggingface_config: AutoConfig,
-        model_config: MAXModelConfig | None = None,
+        model_config: MAXModelConfig,
     ) -> int:
         """Delegates to the annotated text config class."""
         return cls._text_config_cls().calculate_max_seq_len(
-            pipeline_config,
             cls._hf_text_config(huggingface_config),
             model_config,
         )

@@ -259,9 +259,8 @@ class KimiK2_5TextConfig(
     @classmethod
     def calculate_max_seq_len(
         cls,
-        pipeline_config: PipelineConfig,
         huggingface_config: AutoConfig,
-        model_config: MAXModelConfig | None = None,
+        model_config: MAXModelConfig,
     ) -> int:
         # DeepseekV3Config does not inherit ArchConfigWithStoredKVParams, so the
         # VLM mixin cannot delegate max_seq_len to this class directly.
@@ -270,7 +269,6 @@ class KimiK2_5TextConfig(
         # while a direct arch registration (arch.py) passes the top-level one,
         # which on a VL checkpoint carries the text params under text_config.
         return ArchConfigWithStoredKVParams.calculate_max_seq_len(
-            pipeline_config,
             getattr(huggingface_config, "text_config", huggingface_config),
             model_config,
         )

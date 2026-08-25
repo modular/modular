@@ -47,11 +47,10 @@ class QwenImageArchConfig(ArchConfig):
     @classmethod
     def calculate_max_seq_len(
         cls,
-        pipeline_config: PipelineConfig,
         huggingface_config: AutoConfig,
-        model_config: MAXModelConfig | None = None,
+        model_config: MAXModelConfig,
     ) -> int:
-        del pipeline_config, huggingface_config, model_config
+        del huggingface_config, model_config
         return 0
 
     @classmethod

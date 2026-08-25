@@ -182,14 +182,13 @@ class Gemma4TextConfig(Gemma3Config):
     @classmethod
     def calculate_max_seq_len(
         cls,
-        pipeline_config: PipelineConfig,
         huggingface_config: AutoConfig,
-        model_config: MAXModelConfig | None = None,
+        model_config: MAXModelConfig,
     ) -> int:
         # Gemma3Config (parent) is permissive; Gemma4 text uses upper-bounded
         # max_length semantics instead.
         return ArchConfigWithStoredKVParams.calculate_max_seq_len(
-            pipeline_config, huggingface_config, model_config
+            huggingface_config, model_config
         )
 
     @classmethod
@@ -567,13 +566,12 @@ class Gemma4ForConditionalGenerationConfig(
     @classmethod
     def calculate_max_seq_len(
         cls,
-        pipeline_config: PipelineConfig,
         huggingface_config: AutoConfig,
-        model_config: MAXModelConfig | None = None,
+        model_config: MAXModelConfig,
     ) -> int:
         """Calculates the maximum sequence length for the Gemma 4 model."""
         return Gemma4TextConfig.calculate_max_seq_len(
-            pipeline_config, huggingface_config.text_config, model_config
+            huggingface_config.text_config, model_config
         )
 
     @override

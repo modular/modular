@@ -257,9 +257,8 @@ class Llama4Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
     @override
     def calculate_max_seq_len(
         cls,
-        pipeline_config: PipelineConfig,
         huggingface_config: AutoConfig,
-        model_config: MAXModelConfig | None = None,
+        model_config: MAXModelConfig,
     ) -> int:
         """Bounds ``max_length`` by the text config's ``max_position_embeddings``.
 
@@ -268,7 +267,6 @@ class Llama4Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
         top-level config, so route it through :func:`get_text_config` first.
         """
         return super().calculate_max_seq_len(
-            pipeline_config,
             huggingface_config=get_text_config(huggingface_config),
             model_config=model_config,
         )

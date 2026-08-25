@@ -144,11 +144,10 @@ class Gemma4DSparkDraftArchConfig:
     @classmethod
     def calculate_max_seq_len(
         cls,
-        pipeline_config: PipelineConfig,
         huggingface_config: AutoConfig,
-        model_config: MAXModelConfig | None = None,
+        model_config: MAXModelConfig,
     ) -> int:
-        del pipeline_config, model_config
+        del model_config
         max_pos = getattr(huggingface_config, "max_position_embeddings", None)
         if isinstance(huggingface_config, dict):
             max_pos = huggingface_config.get("max_position_embeddings")
@@ -316,10 +315,9 @@ class UnifiedDSparkGemma4_12BConfig(ArchConfigWithKVCache):
     @classmethod
     def calculate_max_seq_len(
         cls,
-        pipeline_config: PipelineConfig,
         huggingface_config: AutoConfig,
-        model_config: MAXModelConfig | None = None,
+        model_config: MAXModelConfig,
     ) -> int:
         return Gemma4ForConditionalGenerationConfig.calculate_max_seq_len(
-            pipeline_config, huggingface_config, model_config
+            huggingface_config, model_config
         )

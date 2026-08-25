@@ -756,7 +756,7 @@ class PipelineRegistry:
             arch_config = arch.config.initialize(
                 pipeline_config,
                 max_seq_len=arch.config.calculate_max_seq_len(
-                    pipeline_config, first_config.huggingface_config
+                    first_config.huggingface_config, first_config
                 ),
             )
             max_length = arch_config.get_max_seq_len()
