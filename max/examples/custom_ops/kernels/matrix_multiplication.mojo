@@ -344,12 +344,12 @@ def tiled_matrix_multiplication[
     var dst = c.tile[BM, BN](block_idx.y, block_idx.x)
 
     # Allocate shared memory for tiles of input matrices A and B
-    var a_smem = stack_allocation[
-        dtype=dtype, address_space=AddressSpace.SHARED
-    ](row_major[BM, BK]())
-    var b_smem = stack_allocation[
-        dtype=dtype, address_space=AddressSpace.SHARED
-    ](row_major[BK, BN]())
+    var a_smem = stack_allocation[dtype=dtype, address_space=.SHARED](
+        row_major[BM, BK]()
+    )
+    var b_smem = stack_allocation[dtype=dtype, address_space=.SHARED](
+        row_major[BK, BN]()
+    )
 
     # Initialize the register to accumulate the result
     var dst_reg: c.ElementType = 0
@@ -450,17 +450,17 @@ def tiled_register_matrix_multiplication[
     var dst = c.tile[BM, BN](block_idx.y, block_idx.x).tile[TM, 1](row, col)
 
     # Allocate shared memory for tiles of A and B.
-    var a_smem = stack_allocation[
-        dtype=dtype, address_space=AddressSpace.SHARED
-    ](row_major[BM, BK]())
-    var b_smem = stack_allocation[
-        dtype=dtype, address_space=AddressSpace.SHARED
-    ](row_major[BK, BN]())
+    var a_smem = stack_allocation[dtype=dtype, address_space=.SHARED](
+        row_major[BM, BK]()
+    )
+    var b_smem = stack_allocation[dtype=dtype, address_space=.SHARED](
+        row_major[BK, BN]()
+    )
 
     # Allocate a register tile to store the partial results.
-    var dst_reg = stack_allocation[
-        dtype=dtype, address_space=AddressSpace.LOCAL
-    ](row_major[TM]())
+    var dst_reg = stack_allocation[dtype=dtype, address_space=.LOCAL](
+        row_major[TM]()
+    )
     dst_reg.copy_from(dst)
 
     # Define the layout for loading tiles of A and B into shared
@@ -567,22 +567,22 @@ def block_tiled_matrix_multiplication[
         partition_row, partition_col
     )
 
-    var a_smem = stack_allocation[
-        dtype=dtype, address_space=AddressSpace.SHARED
-    ](row_major[BM, BK]())
-    var b_smem = stack_allocation[
-        dtype=dtype, address_space=AddressSpace.SHARED
-    ](row_major[BK, BN]())
+    var a_smem = stack_allocation[dtype=dtype, address_space=.SHARED](
+        row_major[BM, BK]()
+    )
+    var b_smem = stack_allocation[dtype=dtype, address_space=.SHARED](
+        row_major[BK, BN]()
+    )
 
-    var dst_reg = stack_allocation[
-        dtype=dtype, address_space=AddressSpace.LOCAL
-    ](row_major[TM, TN]())
+    var dst_reg = stack_allocation[dtype=dtype, address_space=.LOCAL](
+        row_major[TM, TN]()
+    )
     dst_reg.copy_from(dst)
 
-    var a_reg = stack_allocation[dtype=dtype, address_space=AddressSpace.LOCAL](
+    var a_reg = stack_allocation[dtype=dtype, address_space=.LOCAL](
         row_major[TM]()
     )
-    var b_reg = stack_allocation[dtype=dtype, address_space=AddressSpace.LOCAL](
+    var b_reg = stack_allocation[dtype=dtype, address_space=.LOCAL](
         row_major[TN]()
     )
 
@@ -685,23 +685,23 @@ def block_tiled_vectorized_matrix_multiplication[
 
     # Allocate shared memory for tiles of A and B.
     # Use column-major layout for A to get the transpose.
-    var a_smem = stack_allocation[
-        dtype=dtype, address_space=AddressSpace.SHARED
-    ](col_major[BM, BK]())
-    var b_smem = stack_allocation[
-        dtype=dtype, address_space=AddressSpace.SHARED
-    ](row_major[BK, BN]())
+    var a_smem = stack_allocation[dtype=dtype, address_space=.SHARED](
+        col_major[BM, BK]()
+    )
+    var b_smem = stack_allocation[dtype=dtype, address_space=.SHARED](
+        row_major[BK, BN]()
+    )
 
     # Allocate register tiles to store the partial results and operands.
-    var dst_reg = stack_allocation[
-        dtype=dtype, address_space=AddressSpace.LOCAL
-    ](row_major[TM, TN]())
+    var dst_reg = stack_allocation[dtype=dtype, address_space=.LOCAL](
+        row_major[TM, TN]()
+    )
     dst_reg.copy_from(dst)
 
-    var a_reg = stack_allocation[dtype=dtype, address_space=AddressSpace.LOCAL](
+    var a_reg = stack_allocation[dtype=dtype, address_space=.LOCAL](
         row_major[TM]()
     )
-    var b_reg = stack_allocation[dtype=dtype, address_space=AddressSpace.LOCAL](
+    var b_reg = stack_allocation[dtype=dtype, address_space=.LOCAL](
         row_major[TN]()
     )
 
@@ -836,13 +836,13 @@ def tensor_core_matrix_multiplication[
         A.dtype,
         Layout.row_major(BM, BK),
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ].stack_allocation()
     var B_sram_tile = LayoutTensor[
         B.dtype,
         Layout.row_major(BK, BN),
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ].stack_allocation()
 
     # Allocate register tile for accumulating partial results
@@ -851,7 +851,7 @@ def tensor_core_matrix_multiplication[
             C.dtype,
             Layout.row_major(WM // MMA_M, (WN * 4) // MMA_N),
             MutAnyOrigin,
-            address_space=AddressSpace.LOCAL,
+            address_space=.LOCAL,
         ]
         .stack_allocation()
         .fill(0)

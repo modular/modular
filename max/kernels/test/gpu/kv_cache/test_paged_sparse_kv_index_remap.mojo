@@ -168,10 +168,10 @@ def main() raises:
     var h_out = alloc[Int32](NUM_IDX)
 
     with DeviceContext() as ctx:
-        var d_log = ctx.enqueue_create_buffer[DType.int32](NUM_IDX)
-        var d_row_off = ctx.enqueue_create_buffer[DType.uint32](NUM_BATCHES + 1)
-        var d_lut = ctx.enqueue_create_buffer[DType.uint32](LUT_ROWS * LUT_COLS)
-        var d_out = ctx.enqueue_create_buffer[DType.int32](NUM_IDX)
+        var d_log = ctx.enqueue_create_buffer[.int32](NUM_IDX)
+        var d_row_off = ctx.enqueue_create_buffer[.uint32](NUM_BATCHES + 1)
+        var d_lut = ctx.enqueue_create_buffer[.uint32](LUT_ROWS * LUT_COLS)
+        var d_out = ctx.enqueue_create_buffer[.int32](NUM_IDX)
 
         ctx.enqueue_copy(d_log, h_log)
         ctx.enqueue_copy(d_row_off, h_row_off)

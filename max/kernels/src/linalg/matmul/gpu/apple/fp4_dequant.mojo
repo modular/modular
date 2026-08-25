@@ -78,8 +78,8 @@ def fp4_materialize_kernel[
     out_layout: TensorLayout,
 ](
     out_w: TileTensor[out_type, out_layout, MutAnyOrigin],
-    packed: TileTensor[DType.uint8, w_layout, ImmutAnyOrigin],
-    scales: TileTensor[DType.float8_e4m3fn, s_layout, ImmutAnyOrigin],
+    packed: TileTensor[.uint8, w_layout, ImmutAnyOrigin],
+    scales: TileTensor[.float8_e4m3fn, s_layout, ImmutAnyOrigin],
 ):
     """Materializes the packed-FP4 weight into a dense `[N, K]` `out_type` buffer.
 
@@ -117,11 +117,9 @@ def fp4_materialize_kernel[
     if n >= N or k >= K:
         return
 
-    var byte = rebind[Scalar[DType.uint8]](packed[n, k // 2])
-    var scale = rebind[Scalar[DType.float8_e4m3fn]](
-        scales[n, k // NVFP4_SF_VECTOR_SIZE]
-    )
-    var scale_abs = abs(scale.cast[DType.float32]())
+    var byte = rebind[UInt8](packed[n, k // 2])
+    var scale = rebind[Float8_e4m3fn](scales[n, k // NVFP4_SF_VECTOR_SIZE])
+    var scale_abs = abs(scale.cast[.float32]())
     out_w[n, k] = rebind[out_w.ElementType](
         dequant_fp4_nibble[out_type](byte, (k % 2) == 1, scale_abs)
     )
@@ -132,8 +130,8 @@ def enqueue_fp4_materialize[
     out_type: DType
 ](
     out_w: TileTensor[mut=True, out_type, ...],
-    packed: TileTensor[DType.uint8, ...],
-    scales: TileTensor[DType.float8_e4m3fn, ...],
+    packed: TileTensor[.uint8, ...],
+    scales: TileTensor[.float8_e4m3fn, ...],
     ctx: DeviceContext,
 ) raises:
     """Enqueues `fp4_materialize_kernel`: packed FP4 + scales -> dense `[N, K]`.

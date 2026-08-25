@@ -359,7 +359,7 @@ def test_mha_vs_naive[
         v_ref_tt.as_immut().as_unsafe_any_origin()
     )
     var null_valid_length = LayoutTensor[
-        DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
+        .uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
     ](
         None,
         RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(Index(0)),

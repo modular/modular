@@ -34,11 +34,11 @@ def bench_pad_gpu[
     rank: Int, //, dtype: DType, shape: IndexList[rank], pad_size: Int
 ](ctx: DeviceContext, mut b: Bench) raises:
     # Create paddings with uniform pre/post padding on all dimensions.
-    var paddings_stack = Array[Scalar[DType.int], 2 * rank](uninitialized=True)
+    var paddings_stack = Array[Int, 2 * rank](uninitialized=True)
     var paddings = TileTensor(paddings_stack, row_major[2 * rank]())
     for i in range(rank):
-        paddings[2 * i] = Scalar[DType.int](pad_size)
-        paddings[2 * i + 1] = Scalar[DType.int](pad_size)
+        paddings[2 * i] = Int(pad_size)
+        paddings[2 * i + 1] = Int(pad_size)
 
     var output_shape = get_padding_output_shape(shape, paddings)
     var input_size = shape.flattened_length()
@@ -83,7 +83,7 @@ def bench_pad_gpu[
 
 
 def main() raises:
-    comptime dtype = get_defined_dtype["dtype", DType.float32]()
+    comptime dtype = get_defined_dtype["dtype", .float32]()
     comptime shape = int_list_to_tuple[
         get_defined_shape["shape", "256x256"]()
     ]()

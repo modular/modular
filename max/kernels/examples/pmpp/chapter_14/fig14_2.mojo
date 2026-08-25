@@ -118,8 +118,8 @@ def main() raises:
     var ctx = DeviceContext()
 
     # Allocate device memory
-    var d_data = ctx.enqueue_create_buffer[DType.uint32](N)
-    var d_hasChanged = ctx.enqueue_create_buffer[DType.uint32](1)
+    var d_data = ctx.enqueue_create_buffer[.uint32](N)
+    var d_hasChanged = ctx.enqueue_create_buffer[.uint32](1)
 
     # Copy to device
     ctx.enqueue_copy(d_data, h_data)

@@ -84,6 +84,7 @@ from nn.attention.gpu.nvidia.sm100.mla_decode_utils import (
     MLA_SM100_Decode_Config,
     MLA_SM100_Decode_Common,
     QOTMATile,
+    ORaggedTMATile,
     MLA_Decode_Pack,
     OffsetPosition,
     KVPipelineGeneric,
@@ -383,7 +384,7 @@ struct MLA_SM100_Decode_Sparse[
             tile_shape=IndexList[2](Self.config.BK_PV, Self.rope_gather4_box_w),
             desc_shape=IndexList[2](1, Self.rope_gather4_box_w),
         ],
-        o_tma: QOTMATile[
+        o_tma: ORaggedTMATile[
             dtype=Self.output_type,
             BM=Self.config.out_rows,
             # Per-warp output stripe (= BN_PV/4), not BN_QK.
@@ -400,10 +401,8 @@ struct MLA_SM100_Decode_Sparse[
         d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]],
         indices_stride_dev: Int32,
         topk_lengths: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]],
-        scales_ptr: UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin],
-        attn_sink_ptr: OptionalReg[
-            UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin]
-        ],
+        scales_ptr: UnsafePointer[Float32, origin=MutAnyOrigin],
+        attn_sink_ptr: OptionalReg[UnsafePointer[Float32, origin=MutAnyOrigin]],
         # Extra KV parameters: separate cache for always-attend tokens.
         # When has_extra_kv is True, these provide a second KV cache
         # with its own TMA descriptors, indices, and scales.
@@ -424,10 +423,10 @@ struct MLA_SM100_Decode_Sparse[
         extra_topk_lengths: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]],
         extra_indices_stride_dev: Int32,
         extra_scales_ptr: OptionalReg[
-            UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin]
+            UnsafePointer[Float32, origin=MutAnyOrigin]
         ],
         scalar_args: TileTensor[
-            DType.int64, RowMajorLayout[ComptimeInt[3]], MutAnyOrigin
+            .int64, RowMajorLayout[ComptimeInt[3]], MutAnyOrigin
         ],
     ):
         # SlidingWindowCausalMask is supported ONLY by the native FP8 backend
@@ -478,7 +477,7 @@ struct MLA_SM100_Decode_Sparse[
                 UnsafePointer[
                     Scalar[Self.ValidLengthType.dtype],
                     ImmutAnyOrigin,
-                    address_space=AddressSpace.GENERIC,
+                    address_space=.GENERIC,
                 ]
             ](valid_length.value()),
             q_max_seq_len,
@@ -564,7 +563,7 @@ struct MLA_SM100_Decode_Sparse[
                 return  # This query position doesn't exist for this batch
         var q_smem = external_memory[
             Scalar[Self.q_type],
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
             alignment=128,
             name="mha_dynamic_shared_memory",
         ]()
@@ -622,9 +621,7 @@ struct MLA_SM100_Decode_Sparse[
         # stage 1 at scale_smem_base + scale_smem_per_stage.
         # When scale_block_size == 0 (tensorwise), scale_smem_per_stage is 0
         # and this region is empty.
-        var scale_smem_base = (li_smem + WARPGROUP_SIZE).bitcast[
-            Scalar[DType.uint8]
-        ]()
+        var scale_smem_base = (li_smem + WARPGROUP_SIZE).bitcast[UInt8]()
 
         #  Now we have to define MBARS for the kernel
         var mbar_base: MBarType = (
@@ -774,9 +771,7 @@ struct MLA_SM100_Decode_Sparse[
             # FlashMLA reference: kernel.cuh:149
             # When attn_sink_ptr is null, attn_sink_log2 stays at -inf,
             # and exp2(-inf - mi) = 0, so the denominator is unchanged.
-            var attn_sink_log2 = Scalar[DType.float32](
-                min_or_neg_inf[DType.float32]()
-            )
+            var attn_sink_log2 = Float32(min_or_neg_inf[.float32]())
             comptime if Self.has_attn_sink:
                 var lane_idx = Int(lane_id())
                 var row = lane_idx & 0x3F
@@ -784,7 +779,7 @@ struct MLA_SM100_Decode_Sparse[
                 if head_idx_local < Self.config.num_q_heads:
                     attn_sink_log2 = attn_sink_ptr.unsafe_value()[
                         head_idx_local
-                    ] * Scalar[DType.float32](log2e)
+                    ] * Float32(log2e)
 
             Self.Common_MLA_Op.Softmax[has_attn_sink=Self.has_attn_sink,](
                 ptr_tmem_addr[0],
@@ -972,8 +967,8 @@ struct MLA_SM100_Decode_Sparse[
         kv_lut: Self.KVLUTType,
         d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]],
         topk: Int,
-        scales_ptr: UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin],
-        scale_smem_base: SharedMemPointer[Scalar[DType.uint8]],
+        scales_ptr: UnsafePointer[Float32, origin=MutAnyOrigin],
+        scale_smem_base: SharedMemPointer[UInt8],
         offset_position: OffsetPosition[
             Self.config,
             Self.KVLUTType,
@@ -990,7 +985,7 @@ struct MLA_SM100_Decode_Sparse[
         extra_d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]],
         extra_topk: Int,
         extra_scales_ptr: OptionalReg[
-            UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin]
+            UnsafePointer[Float32, origin=MutAnyOrigin]
         ],
     ):
         """Index transform producer running on warp 11 (32 threads).
@@ -1352,8 +1347,8 @@ struct MLA_SM100_Decode_Sparse[
     @staticmethod
     @always_inline
     def _load_scales_for_tile(
-        scale_smem_base: SharedMemPointer[Scalar[DType.uint8]],
-        scales_ptr: UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin],
+        scale_smem_base: SharedMemPointer[UInt8],
+        scales_ptr: UnsafePointer[Float32, origin=MutAnyOrigin],
         kv_lut: Self.KVLUTType,
         stage_idx: UInt32,
         tile_kv_row_start: UInt32,
@@ -1391,8 +1386,8 @@ struct MLA_SM100_Decode_Sparse[
             # if it sees the opportunity.
             comptime for s in range(scales_per_token):
                 var fp32_val = row_base[s]
-                scale_smem_stage[smem_off + s] = bitcast[DType.uint8](
-                    fp32_val.cast[DType.float8_e8m0fnu]()
+                scale_smem_stage[smem_off + s] = bitcast[.uint8](
+                    fp32_val.cast[.float8_e8m0fnu]()
                 )
 
     @staticmethod
@@ -1442,7 +1437,7 @@ struct MLA_SM100_Decode_Sparse[
                 tile_width=Self.config.padded_depth // 8,
                 eviction_policy=CacheEviction.EVICT_LAST,
             ](
-                nope_stage_ptr.bitcast[Scalar[DType.int64]](),
+                nope_stage_ptr.bitcast[Int64](),
                 k_mbar[],
                 idx_smem,
                 start_idx=0,
@@ -1522,7 +1517,7 @@ struct MLA_SM100_Decode_Sparse[
                     tile_width=Self.config.padded_depth // 8,
                     eviction_policy=CacheEviction.EVICT_LAST,
                 ](
-                    nope_stage_ptr.bitcast[Scalar[DType.int64]](),
+                    nope_stage_ptr.bitcast[Int64](),
                     k_mbar[],
                     idx_smem,
                     start_idx=0,
@@ -1548,10 +1543,8 @@ struct MLA_SM100_Decode_Sparse[
     @staticmethod
     @always_inline
     def _load_scales_for_tile_sparse(
-        scale_smem_base: SharedMemPointer[Scalar[DType.uint8]],
-        scales_ptr: OptionalReg[
-            UnsafePointer[Scalar[DType.float32], MutAnyOrigin]
-        ],
+        scale_smem_base: SharedMemPointer[UInt8],
+        scales_ptr: OptionalReg[UnsafePointer[Float32, MutAnyOrigin]],
         stage_idx: UInt32,
         d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]],
         indices_base: Int,
@@ -1590,8 +1583,8 @@ struct MLA_SM100_Decode_Sparse[
 
             comptime for s in range(scales_per_token):
                 var fp32_val = row_base[s]
-                scale_smem_stage[smem_off + s] = bitcast[DType.uint8](
-                    fp32_val.cast[DType.float8_e8m0fnu]()
+                scale_smem_stage[smem_off + s] = bitcast[.uint8](
+                    fp32_val.cast[.float8_e8m0fnu]()
                 )
 
     @staticmethod
@@ -1612,7 +1605,7 @@ struct MLA_SM100_Decode_Sparse[
             num_consumer=2,
         ],
         num_k_tiles: Int,
-        scale_smem_base: SharedMemPointer[Scalar[DType.uint8]],
+        scale_smem_base: SharedMemPointer[UInt8],
     ):
         # Only convert nope part (512 dims = 8 blocks). Rope is already BF16.
         # FP8 data lands linearly in SMEM (INT64/SWIZZLE_NONE TMA):
@@ -1685,9 +1678,7 @@ struct MLA_SM100_Decode_Sparse[
             kv_load_cons_cvt.wait()
             kv_cvt_prod.acquire()
 
-            var src_u8 = kv_load_cons_cvt.stage_base_ptr().bitcast[
-                Scalar[DType.uint8]
-            ]()
+            var src_u8 = kv_load_cons_cvt.stage_base_ptr().bitcast[UInt8]()
             var dst = kv_cvt_prod.stage_base_ptr()
 
             var cvt_stage_idx = kv_load_cons_cvt.pipe.state.index()
@@ -1699,16 +1690,16 @@ struct MLA_SM100_Decode_Sparse[
             # Each thread: 2 rows x 8 column iterations x 2 chunks
             # = 32 converted values of 4 uint32 each = 128 uint32.
             var p0a_all = tt_stack_allocation[
-                dtype=DType.uint32, address_space=AddressSpace.LOCAL
+                dtype=.uint32, address_space=.LOCAL
             ](row_major[4, COLS_PER_GROUP]())
             var p0b_all = tt_stack_allocation[
-                dtype=DType.uint32, address_space=AddressSpace.LOCAL
+                dtype=.uint32, address_space=.LOCAL
             ](row_major[4, COLS_PER_GROUP]())
             var p1a_all = tt_stack_allocation[
-                dtype=DType.uint32, address_space=AddressSpace.LOCAL
+                dtype=.uint32, address_space=.LOCAL
             ](row_major[4, COLS_PER_GROUP]())
             var p1b_all = tt_stack_allocation[
-                dtype=DType.uint32, address_space=AddressSpace.LOCAL
+                dtype=.uint32, address_space=.LOCAL
             ](row_major[4, COLS_PER_GROUP]())
 
             comptime for c in range(COLS_PER_GROUP):

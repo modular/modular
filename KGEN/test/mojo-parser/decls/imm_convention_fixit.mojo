@@ -11,16 +11,16 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-# Tests the fixit on the 'read'-is-deprecated warning: the 'read' token is
+# Tests the fixit on the 'read'-is-removed warning: the 'read' token is
 # replaced by 'imm' in both argument-convention and capture position. Uses
 # JSON diagnostic format to verify the exact fixit positions. (No 'not' on the
 # RUN line: warnings don't fail the parse.)
 
-# RUN: %parse-mojo-isolated --diagnostic-format json --use-mlir-diagnostics=false %s -o /dev/null 2>&1 | FileCheck %s
+# RUN: not %parse-mojo-isolated --diagnostic-format json --use-mlir-diagnostics=false %s -o /dev/null 2>&1 | FileCheck %s
 
 
 # CHECK: "fixIts":[{"end":{"column":18,"line":[[#@LINE+2]]},"start":{"column":14,"line":[[#@LINE+2]]},"text":"imm"}]
-# CHECK-SAME: "message":"'read' is deprecated; use 'imm'"
+# CHECK-SAME: "message":"'read' was removed; use 'imm'"
 def read_arg(read x: Int) -> Int:
     return x
 
@@ -29,7 +29,7 @@ def read_capture() -> Int:
     var base = 0
 
     # CHECK: "fixIts":[{"end":{"column":24,"line":[[#@LINE+2]]},"start":{"column":20,"line":[[#@LINE+2]]},"text":"imm"}]
-    # CHECK-SAME: "message":"'read' is deprecated; use 'imm'"
+    # CHECK-SAME: "message":"'read' was removed; use 'imm'"
     def closure() {read base} -> Int:
         return base
 

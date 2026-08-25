@@ -47,7 +47,7 @@ from std.utils.index import IndexList
 
 comptime M = 128
 comptime N = 64
-comptime VEC = 4  # SIMD[DType.uint32, 4]
+comptime VEC = 4  # SIMD[.uint32, 4]
 comptime THREADS = 128  # one warp group
 comptime ELEMS_PER_ITER = THREADS * VEC  # 512 == 8 full rows
 comptime ITERS = (M * N) // ELEMS_PER_ITER  # 8192 / 512 == 16
@@ -57,13 +57,13 @@ comptime ITERS = (M * N) // ELEMS_PER_ITER  # 8192 / 512 == 16
 def tma_store_uint32_kernel[
     tile_shape: IndexList[2],
     desc_shape: IndexList[2],
-](tma_tile: TMATensorTile[DType.uint32, 2, tile_shape, desc_shape]):
+](tma_tile: TMATensorTile[.uint32, 2, tile_shape, desc_shape]):
     comptime smem_layout = Layout.row_major(M, N)
     var smem = LayoutTensor[
-        DType.uint32,
+        .uint32,
         smem_layout,
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
     ].stack_allocation()
 
@@ -71,14 +71,14 @@ def tma_store_uint32_kernel[
     # Lane offsets 0,1,2,3 packed into the SIMD vector. value == row-major
     # offset, so each thread writes consecutive integers at its assigned
     # 4-element chunk.
-    var iota = SIMD[DType.uint32, VEC](0, 1, 2, 3)
+    var iota = SIMD[.uint32, VEC](0, 1, 2, 3)
 
     for it in range(ITERS):
         # Conflict-free canonical (non-swizzled) placement: 8 consecutive
         # threads write 32 contiguous uint32 == one full sweep over all 32
         # banks.
         var base = UInt32(it * ELEMS_PER_ITER) + UInt32(tid) * UInt32(VEC)
-        smem.ptr.store(Int(base), SIMD[DType.uint32, VEC](base) + iota)
+        smem.ptr.store(Int(base), SIMD[.uint32, VEC](base) + iota)
 
     barrier()
     fence_async_view_proxy()
@@ -92,7 +92,7 @@ def tma_store_uint32_kernel[
 
 def test_tma_swizzle_none_uint32_store(ctx: DeviceContext) raises:
     comptime layout = Layout.row_major(M, N)
-    var dst = ManagedLayoutTensor[DType.uint32, layout](ctx)
+    var dst = ManagedLayoutTensor[.uint32, layout](ctx)
 
     # Seed the destination with a distinct ramp so a missing/partial store
     # cannot pass on stale data.

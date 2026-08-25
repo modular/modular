@@ -86,32 +86,29 @@ def _fmt_min_normal[fmt: FP6Format]() -> Float32:
 
 def _reference_block[
     fmt: FP6Format
-](
-    values: SIMD[DType.float32, BLOCK],
-    mut out_bytes: SIMD[DType.uint8, 32],
-) -> UInt8:
+](values: SIMD[.float32, BLOCK], mut out_bytes: SIMD[.uint8, 32],) -> UInt8:
     """Fills the block's 24 packed bytes and returns its E8M0 scale byte."""
     var group_max = abs(values).reduce_max()
     var e8m0 = compute_mxfp6_even_scale[fmt](group_max)
 
     var out_scale = Float32(0.0)
     if group_max != Float32(0.0):
-        out_scale = recip(e8m0.cast[DType.float32]())
+        out_scale = recip(e8m0.cast[.float32]())
     if not isfinite(out_scale):
         out_scale = Float32(0.0)
-        e8m0 = bitcast[DType.float8_e8m0fnu](UInt8(0))
+        e8m0 = bitcast[.float8_e8m0fnu](UInt8(0))
 
     var codes = encode_f32_to_fp6[fmt](values * out_scale)
-    out_bytes = SIMD[DType.uint8, 32](0)
+    out_bytes = SIMD[.uint8, 32](0)
     for g in range(BLOCK // 4):
-        var quad = SIMD[DType.uint8, 4](0)
+        var quad = SIMD[.uint8, 4](0)
         for j in range(4):
             quad[j] = codes[g * 4 + j]
         var word = pack_fp6_x4(quad)
         for b in range(3):
             out_bytes[g * 3 + b] = UInt8((word >> UInt32(8 * b)) & UInt32(0xFF))
 
-    return bitcast[DType.uint8](e8m0)
+    return bitcast[.uint8](e8m0)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -137,22 +134,22 @@ def _quantize[
     comptime K_BYTES = (K * 6) // 8
     comptime SCALE_K = K // BLOCK
 
-    var in_h = ctx.enqueue_create_host_buffer[DType.bfloat16](M * K)
-    var out_h = ctx.enqueue_create_host_buffer[DType.uint8](M * K_BYTES)
-    var sc_h = ctx.enqueue_create_host_buffer[DType.float8_e8m0fnu](M * SCALE_K)
+    var in_h = ctx.enqueue_create_host_buffer[.bfloat16](M * K)
+    var out_h = ctx.enqueue_create_host_buffer[.uint8](M * K_BYTES)
+    var sc_h = ctx.enqueue_create_host_buffer[.float8_e8m0fnu](M * SCALE_K)
     ctx.synchronize()
 
     for i in range(M * K):
-        in_h[i] = values[i].cast[DType.bfloat16]()
+        in_h[i] = values[i].cast[.bfloat16]()
 
-    var in_d = ctx.enqueue_create_buffer[DType.bfloat16](M * K)
-    var out_d = ctx.enqueue_create_buffer[DType.uint8](M * K_BYTES)
-    var sc_d = ctx.enqueue_create_buffer[DType.float8_e8m0fnu](M * SCALE_K)
+    var in_d = ctx.enqueue_create_buffer[.bfloat16](M * K)
+    var out_d = ctx.enqueue_create_buffer[.uint8](M * K_BYTES)
+    var sc_d = ctx.enqueue_create_buffer[.float8_e8m0fnu](M * SCALE_K)
 
     # Poison both outputs so a skipped element cannot read back as a plausible
     # zero, and an unwritten scale cannot look like the legitimate zero scale.
     out_d.enqueue_fill(POISON)
-    sc_d.enqueue_fill(bitcast[DType.float8_e8m0fnu](POISON))
+    sc_d.enqueue_fill(bitcast[.float8_e8m0fnu](POISON))
     ctx.enqueue_copy(in_d, in_h)
 
     quantize_mxfp6_amd[fmt](
@@ -171,7 +168,7 @@ def _quantize[
         data.append(out_h[i])
     var scales = List[UInt8]()
     for i in range(M * SCALE_K):
-        scales.append(bitcast[DType.uint8](sc_h[i]))
+        scales.append(bitcast[.uint8](sc_h[i]))
 
     _ = in_d^
     _ = out_d^
@@ -181,11 +178,9 @@ def _quantize[
 
 def _decode_block[
     fmt: FP6Format
-](block_bytes: SIMD[DType.uint8, 32], scale_byte: UInt8) -> SIMD[
-    DType.float32, BLOCK
-]:
+](block_bytes: SIMD[.uint8, 32], scale_byte: UInt8) -> SIMD[.float32, BLOCK]:
     """Decodes 24 packed bytes back to 32 scaled float32 values."""
-    var scale = bitcast[DType.float8_e8m0fnu](scale_byte).cast[DType.float32]()
+    var scale = bitcast[.float8_e8m0fnu](scale_byte).cast[.float32]()
     return decode_fp6_to_f32[fmt](unpack_fp6_x32(block_bytes)) * scale
 
 
@@ -221,16 +216,16 @@ def test_bitwise_vs_reference[
     var bad_scales = 0
     for m in range(M):
         for blk in range(SCALE_K):
-            var vals = SIMD[DType.float32, BLOCK](0)
+            var vals = SIMD[.float32, BLOCK](0)
             for i in range(BLOCK):
                 # Round-trip through bfloat16: the kernel sees the truncated
                 # value, so the reference must too.
                 vals[i] = (
                     values[m * K + blk * BLOCK + i]
-                    .cast[DType.bfloat16]()
-                    .cast[DType.float32]()
+                    .cast[.bfloat16]()
+                    .cast[.float32]()
                 )
-            var want_bytes = SIMD[DType.uint8, 32](0)
+            var want_bytes = SIMD[.uint8, 32](0)
             var want_scale = _reference_block[fmt](vals, want_bytes)
 
             if got.scales[m * SCALE_K + blk] != want_scale:
@@ -288,7 +283,7 @@ def test_roundtrip[
     var bad = 0
     for m in range(M):
         for blk in range(SCALE_K):
-            var packed = SIMD[DType.uint8, 32](0)
+            var packed = SIMD[.uint8, 32](0)
             for b in range(24):
                 packed[b] = got.data[m * ((K * 6) // 8) + blk * 24 + b]
             var decoded = _decode_block[fmt](
@@ -298,15 +293,15 @@ def test_roundtrip[
             for i in range(BLOCK):
                 var want = (
                     values[m * K + blk * BLOCK + i]
-                    .cast[DType.bfloat16]()
-                    .cast[DType.float32]()
+                    .cast[.bfloat16]()
+                    .cast[.float32]()
                 )
                 block_max = max(block_max, abs(want))
             for i in range(BLOCK):
                 var want = (
                     values[m * K + blk * BLOCK + i]
-                    .cast[DType.bfloat16]()
-                    .cast[DType.float32]()
+                    .cast[.bfloat16]()
+                    .cast[.float32]()
                 )
                 var err = abs(decoded[i] - want)
                 # Absolute floor: the block's step size cannot resolve below
@@ -370,7 +365,7 @@ def test_sign_preserved[fmt: FP6Format](ctx: DeviceContext) raises -> Bool:
     var got = _quantize[fmt, M, K](ctx, values)
     for m in range(M):
         for blk in range(K // BLOCK):
-            var packed = SIMD[DType.uint8, 32](0)
+            var packed = SIMD[.uint8, 32](0)
             for b in range(24):
                 packed[b] = got.data[m * ((K * 6) // 8) + blk * 24 + b]
             var decoded = _decode_block[fmt](
@@ -408,8 +403,8 @@ def test_outlier_dominates_block[
             values.append(Float32(0.5))
 
     var got = _quantize[fmt, M, K](ctx, values)
-    var s0 = bitcast[DType.float8_e8m0fnu](got.scales[0]).cast[DType.float32]()
-    var s1 = bitcast[DType.float8_e8m0fnu](got.scales[1]).cast[DType.float32]()
+    var s0 = bitcast[.float8_e8m0fnu](got.scales[0]).cast[.float32]()
+    var s1 = bitcast[.float8_e8m0fnu](got.scales[1]).cast[.float32]()
 
     if not (s0 > s1):
         print(
@@ -424,7 +419,7 @@ def test_outlier_dominates_block[
 
     # And the outlier itself must survive: decoding block 0 must recover
     # something close to 1024, not a clipped value.
-    var packed = SIMD[DType.uint8, 32](0)
+    var packed = SIMD[.uint8, 32](0)
     for b in range(24):
         packed[b] = got.data[b]
     var decoded = _decode_block[fmt](packed, got.scales[0])
@@ -461,7 +456,7 @@ def test_saturation[fmt: FP6Format](ctx: DeviceContext) raises -> Bool:
             values.append(Float32(0.0))
 
     var got = _quantize[fmt, M, K](ctx, values)
-    var packed = SIMD[DType.uint8, 32](0)
+    var packed = SIMD[.uint8, 32](0)
     for b in range(24):
         packed[b] = got.data[b]
     var decoded = _decode_block[fmt](packed, got.scales[0])

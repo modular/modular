@@ -191,7 +191,7 @@ def ldg[
     width: Int = 1,
     *,
     alignment: Int = align_of[SIMD[dtype, width]](),
-](x: Pointer[Scalar[dtype], address_space=AddressSpace.GENERIC, ...]) -> SIMD[
+](x: Pointer[Scalar[dtype], address_space=.GENERIC, ...]) -> SIMD[
     dtype, width
 ] where dtype.is_numeric():
     """Load data from global memory through the non-coherent cache.
@@ -412,8 +412,8 @@ def mulhi(a: UInt16, b: UInt16) -> UInt32:
             "llvm.nvvm.mulhi.us", UInt32, has_side_effect=False
         ](a, b)
 
-    var au32 = a.cast[DType.uint32]()
-    var bu32 = b.cast[DType.uint32]()
+    var au32 = a.cast[.uint32]()
+    var bu32 = b.cast[.uint32]()
     return au32 * bu32
 
 
@@ -442,8 +442,8 @@ def mulhi(a: Int16, b: Int16) -> Int32:
             "llvm.nvvm.mulhi.s", Int32, has_side_effect=False
         ](a, b)
 
-    var ai32 = a.cast[DType.int32]()
-    var bi32 = b.cast[DType.int32]()
+    var ai32 = a.cast[.int32]()
+    var bi32 = b.cast[.int32]()
     return ai32 * bi32
 
 
@@ -472,9 +472,9 @@ def mulhi(a: UInt32, b: UInt32) -> UInt32:
             "llvm.nvvm.mulhi.ui", UInt32, has_side_effect=False
         ](a, b)
 
-    var au64 = a.cast[DType.uint64]()
-    var bu64 = b.cast[DType.uint64]()
-    return ((au64 * bu64) >> 32).cast[DType.uint32]()
+    var au64 = a.cast[.uint64]()
+    var bu64 = b.cast[.uint64]()
+    return ((au64 * bu64) >> 32).cast[.uint32]()
 
 
 @always_inline
@@ -502,9 +502,9 @@ def mulhi(a: Int32, b: Int32) -> Int32:
             "llvm.nvvm.mulhi.i", Int32, has_side_effect=False
         ](a, b)
 
-    var ai64 = a.cast[DType.int64]()
-    var bi64 = b.cast[DType.int64]()
-    return ((ai64 * bi64) >> 32).cast[DType.int32]()
+    var ai64 = a.cast[.int64]()
+    var bi64 = b.cast[.int64]()
+    return ((ai64 * bi64) >> 32).cast[.int32]()
 
 
 @always_inline
@@ -532,9 +532,9 @@ def mulhi(a: UInt64, b: UInt64) -> UInt64:
             "llvm.nvvm.mulhi.ull", UInt64, has_side_effect=False
         ](a, b)
 
-    var au128 = a.cast[DType.uint128]()
-    var bu128 = b.cast[DType.uint128]()
-    return ((au128 * bu128) >> 64).cast[DType.uint64]()
+    var au128 = a.cast[.uint128]()
+    var bu128 = b.cast[.uint128]()
+    return ((au128 * bu128) >> 64).cast[.uint64]()
 
 
 @always_inline
@@ -562,9 +562,9 @@ def mulhi(a: Int64, b: Int64) -> Int64:
             "llvm.nvvm.mulhi.ll", Int64, has_side_effect=False
         ](a, b)
 
-    var ai128 = a.cast[DType.int128]()
-    var bi128 = b.cast[DType.int128]()
-    return ((ai128 * bi128) >> 64).cast[DType.int64]()
+    var ai128 = a.cast[.int128]()
+    var bi128 = b.cast[.int128]()
+    return ((ai128 * bi128) >> 64).cast[.int64]()
 
 
 # ===-----------------------------------------------------------------------===#
@@ -599,8 +599,8 @@ def mulwide(a: UInt32, b: UInt32) -> UInt64:
             has_side_effect=False,
         ](a, b)
 
-    var au64 = a.cast[DType.uint64]()
-    var bu64 = b.cast[DType.uint64]()
+    var au64 = a.cast[.uint64]()
+    var bu64 = b.cast[.uint64]()
     return au64 * bu64
 
 
@@ -631,8 +631,8 @@ def mulwide(a: Int32, b: Int32) -> Int64:
             has_side_effect=False,
         ](a, b)
 
-    var ai64 = a.cast[DType.int64]()
-    var bi64 = b.cast[DType.int64]()
+    var ai64 = a.cast[.int64]()
+    var bi64 = b.cast[.int64]()
     return ai64 * bi64
 
 
@@ -805,7 +805,7 @@ def _get_nvtx_register_constraint[dtype: DType]() -> StaticString:
         "the _get_nvtx_register_constraint function is currently restricted"
         " to only be defined on NVIDIA GPUs"
     )
-    if dtype == DType.bool:
+    if dtype == .bool:
         return "b"
     if dtype.is_half_float():
         return "h"
@@ -817,9 +817,9 @@ def _get_nvtx_register_constraint[dtype: DType]() -> StaticString:
             return "r"
         if width == 64:
             return "l"
-    if dtype == DType.float32:
+    if dtype == .float32:
         return "f"
-    if dtype == DType.float64:
+    if dtype == .float64:
         return "d"
 
     return "<<unknown_register_constraint>>"
@@ -831,7 +831,7 @@ struct AMDBufferResource(TrivialRegisterPassable):
     Used for buffer_load/buffer_store instructions.
     """
 
-    var desc: SIMD[DType.uint32, 4]
+    var desc: SIMD[.uint32, 4]
     """The 128-bit buffer descriptor encoded as four 32-bit values."""
 
     @always_inline("nodebug")
@@ -857,8 +857,8 @@ struct AMDBufferResource(TrivialRegisterPassable):
             is_amd_gpu()
         ), "The AMDBufferResource struct is only applicable on AMDGPU hardware."
 
-        self.desc = SIMD[DType.uint32, 4](0)
-        var address = bitcast[DType.uint32, 2](UInt64(Int(gds_ptr)))
+        self.desc = SIMD[.uint32, 4](0)
+        var address = bitcast[.uint32, 2](UInt64(Int(gds_ptr)))
         self.desc[0] = address[0]
         # assuming 0 stride currently
         self.desc[1] = address[1]
@@ -896,9 +896,7 @@ struct AMDBufferResource(TrivialRegisterPassable):
             The base pointer address as an integer.
         """
         return Int(
-            bitcast[DType.int64, 1](
-                SIMD[DType.uint32, 2](self.desc[0], self.desc[1])
-            )
+            bitcast[.int64, 1](SIMD[.uint32, 2](self.desc[0], self.desc[1]))
         )
 
     @always_inline("nodebug")
@@ -960,9 +958,7 @@ struct AMDBufferResource(TrivialRegisterPassable):
     ](
         self,
         vector_offset: Int32,
-        shared_ptr: Pointer[
-            Scalar[dtype], address_space=AddressSpace.SHARED, ...
-        ],
+        shared_ptr: Pointer[Scalar[dtype], address_space=.SHARED, ...],
         *,
         scalar_offset: Int32 = 0,
     ):
@@ -1019,18 +1015,12 @@ struct AMDBufferResource(TrivialRegisterPassable):
         # Convert the SIMD[uint32, 4] descriptor to a `ptr addrspace(8)`
         # so the `.ptr.` form of the intrinsic accepts it.
         var desc_ptr = Pointer[
-            Scalar[DType.bfloat16],
-            MutAnyOrigin,
-            address_space=AddressSpace.BUFFER_RESOURCE,
+            BFloat16, MutAnyOrigin, address_space=.BUFFER_RESOURCE
         ].unsafe_dangling()
         var ptr_to_ptr = Pointer(to=desc_ptr)
         var ptr_to_simd = Pointer(to=self.desc)
         ptr_to_ptr[] = ptr_to_simd.unsafe_bitcast[
-            Pointer[
-                Scalar[DType.bfloat16],
-                MutAnyOrigin,
-                address_space=AddressSpace.BUFFER_RESOURCE,
-            ]
+            Pointer[BFloat16, MutAnyOrigin, address_space=.BUFFER_RESOURCE]
         ]()[]
 
         comptime if not async_copies:
@@ -1220,9 +1210,9 @@ def _get_buffer_intrinsic_simd_width[bytes: Int]() -> Int:
 def ds_read_tr16_b64[
     dtype: DType,
     //,
-](
-    shared_ptr: Pointer[Scalar[dtype], address_space=AddressSpace.SHARED, ...]
-) -> SIMD[dtype, 4]:
+](shared_ptr: Pointer[Scalar[dtype], address_space=.SHARED, ...]) -> SIMD[
+    dtype, 4
+]:
     """Reads a 64-bit LDS transpose block using TR16 layout and returns SIMD[dtype, 4] of 16-bit types.
 
     Parameters:
@@ -1261,9 +1251,9 @@ def ds_read_tr16_b64[
 def ds_read_tr8_b64[
     dtype: DType,
     //,
-](
-    shared_ptr: Pointer[Scalar[dtype], address_space=AddressSpace.SHARED, ...]
-) -> SIMD[dtype, 8]:
+](shared_ptr: Pointer[Scalar[dtype], address_space=.SHARED, ...]) -> SIMD[
+    dtype, 8
+]:
     """Reads a 64-bit LDS transpose block using TR8 layout and returns SIMD[dtype, 8] of 8-bit types.
 
     Each 16-lane row reads 16x8 bytes from LDS and performs two interleaved
@@ -1299,7 +1289,7 @@ def ds_read_tr8_b64[
     # Must use v2i32 return type; v8i8 crashes LLVM type legalizer.
     var raw = llvm_intrinsic[
         "llvm.amdgcn.ds.read.tr8.b64",
-        SIMD[DType.uint32, 2],
+        SIMD[.uint32, 2],
         has_side_effect=True,
     ](shared_ptr)
     return bitcast[dtype, 8](raw)
@@ -1313,7 +1303,7 @@ def ds_read_tr8_b64[
 @always_inline
 def cvt_pk_fp8_f32_raw[
     dtype: DType,
-](src: SIMD[DType.float32, 4]) -> SIMD[dtype, 4]:
+](src: SIMD[.float32, 4]) -> SIMD[dtype, 4]:
     """Packs 4 f32 into 4 fp8 via 2 chained `v_cvt_pk_fp8_f32` ops.
 
     Unlike `SIMD.cast[fp8]()`, this bypasses the compiler's clamp + NaN
@@ -1345,12 +1335,12 @@ def cvt_pk_fp8_f32_raw[
         _cdna_4_or_newer()
     ), "cvt_pk_fp8_f32_raw is only supported on CDNA4+"
     comptime assert (
-        dtype == DType.float8_e4m3fn or dtype == DType.float8_e5m2
+        dtype == .float8_e4m3fn or dtype == .float8_e5m2
     ), "cvt_pk_fp8_f32_raw requires E4M3FN or E5M2 destination dtype."
 
     comptime intrinsic_name = (
         "llvm.amdgcn.cvt.pk.fp8.f32" if dtype
-        == DType.float8_e4m3fn else "llvm.amdgcn.cvt.pk.bf8.f32"
+        == .float8_e4m3fn else "llvm.amdgcn.cvt.pk.bf8.f32"
     )
 
     var lo = llvm_intrinsic[intrinsic_name, UInt32, has_side_effect=False](
@@ -1399,8 +1389,8 @@ def permlane_swap[
         _RegisterPackType[Int32, Int32],
         has_side_effect=False,
     ](
-        bitcast[DType.int32, 1](val1),
-        bitcast[DType.int32, 1](val2),
+        bitcast[.int32, 1](val1),
+        bitcast[.int32, 1](val2),
         False,
         False,
     )

@@ -347,10 +347,10 @@ def assert_with_measure[
     """
     comptime sqrt_eps = exp2(
         -0.5 * Float64(FPUtils[dtype].mantissa_width())
-    ).cast[DType.float64]()
+    ).cast[.float64]()
     var m = measure(
-        x.address_space_cast[AddressSpace.GENERIC](),
-        y.address_space_cast[AddressSpace.GENERIC](),
+        x.address_space_cast[.GENERIC](),
+        y.address_space_cast[.GENERIC](),
         num_elements,
     )
     var t = threshold.or_else(sqrt_eps)
@@ -383,18 +383,18 @@ def pytorch_like_tolerances_for[dtype: DType]() -> Tuple[Float64, Float64]:
 
     Example:
         ```mojo
-        rtol, atol = pytorch_like_tolerances_for[DType.float16]()
+        rtol, atol = pytorch_like_tolerances_for[.float16]()
         assert_almost_equal(x, y, n, rtol=rtol, atol=atol)
         ```
     """
 
-    comptime if dtype == DType.float16:
+    comptime if dtype == .float16:
         return (1e-3, 1e-5)
-    elif dtype == DType.bfloat16:
+    elif dtype == .bfloat16:
         return (1.6e-2, 1e-5)
-    elif dtype == DType.float32:
+    elif dtype == .float32:
         return (1.3e-6, 1e-5)
-    elif dtype == DType.float64:
+    elif dtype == .float64:
         return (1e-7, 1e-7)
     else:
         return (0.0, 0.0)
@@ -409,7 +409,7 @@ def pytorch_like_tolerances_for[dtype: DType]() -> Tuple[Float64, Float64]:
 @__parameter
 def test_value_for_gpu_element[
     dtype: DType,
-    modulo: Int = 251 if dtype == DType.float32 else 13,
+    modulo: Int = 251 if dtype == .float32 else 13,
 ](gpu_rank: Int, element_idx: Int) -> Scalar[dtype]:
     """Generates unique deterministic test values per GPU and element index.
 
@@ -425,7 +425,7 @@ def test_value_for_gpu_element[
         A unique scalar value for this GPU and element combination.
 
     Examples:
-        `test_value_for_gpu_element[DType.float32](0, 0)` !=
-        `test_value_for_gpu_element[DType.float32](1, 0)`.
+        `test_value_for_gpu_element[.float32](0, 0)` !=
+        `test_value_for_gpu_element[.float32](1, 0)`.
     """
     return Scalar[dtype](gpu_rank + 1) + Scalar[dtype](element_idx % modulo)

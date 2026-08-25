@@ -58,7 +58,7 @@ def _single_mfma_kernel[
 
     var a_frag = a_in.load[width=fragment_width](lane * fragment_width)
     var b_frag = b_in.load[width=fragment_width](lane * fragment_width)
-    var acc = SIMD[DType.float32, accum_width](0.0)
+    var acc = SIMD[.float32, accum_width](0.0)
 
     cdna4_block_scaled_mfma[0, 0, matrix_format, matrix_format](
         acc, a_frag, b_frag, scales[0], scales[1]

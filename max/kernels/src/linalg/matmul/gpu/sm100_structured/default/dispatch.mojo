@@ -411,8 +411,8 @@ def matmul_dispatch_sm100[
     # rides through as elementwise_lambda_wrapper (which already folds in any
     # compute lambda) and is applied per output element by the GEMV.
     comptime has_precise_f32_gemv = (
-        a_type == DType.float32
-        and c_type == DType.float32
+        a_type == .float32
+        and c_type == .float32
         and transpose_b
         and static_N > -1
         and static_N <= 256
@@ -423,9 +423,7 @@ def matmul_dispatch_sm100[
     # use_tf32=False promises IEEE-fp32 multiplies, which the SM100 tensor
     # core cannot deliver (tcgen05 has no fp32 UMMA kind) — the split-K GEMV
     # is the only fp32-precise path, so the shape must satisfy its gate.
-    comptime assert (
-        use_tf32 or a_type != DType.float32 or has_precise_f32_gemv
-    ), (
+    comptime assert use_tf32 or a_type != .float32 or has_precise_f32_gemv, (
         "use_tf32=False requires the IEEE-fp32 split-K GEMV: an fp32"
         " transpose_b matmul with static N <= 256 and static K >= 2048 (K a"
         " multiple of the fp32 simd width); this shape has no fp32-precise"
@@ -462,14 +460,11 @@ def matmul_dispatch_sm100[
         comptime if (
             (
                 (
-                    a_type == DType.bfloat16
+                    a_type == .bfloat16
                     and c_type in (DType.bfloat16, DType.float8_e4m3fn)
                 )
-                or (
-                    a_type == DType.float8_e4m3fn
-                    and c_type in (DType.bfloat16,)
-                )
-                or (a_type == DType.float32 and c_type in (DType.float32,))
+                or (a_type == .float8_e4m3fn and c_type in (DType.bfloat16,))
+                or (a_type == .float32 and c_type in (DType.float32,))
             )
             and static_N * size_of[c_type]() % 16 == 0
             and static_K * size_of[a_type]() % 16 == 0
@@ -530,7 +525,7 @@ def matmul_dispatch_sm100[
     ):
         var status = DISPATCH_MISS
 
-        comptime if a_type == DType.bfloat16 and c_type in (
+        comptime if a_type == .bfloat16 and c_type in (
             DType.bfloat16,
             DType.float8_e4m3fn,
         ):
@@ -545,7 +540,7 @@ def matmul_dispatch_sm100[
                 pdl_level=pdl_level,
             ](c, a, b, ctx)
 
-        elif a_type == DType.float8_e4m3fn and c_type in (DType.bfloat16,):
+        elif a_type == .float8_e4m3fn and c_type in (DType.bfloat16,):
             status = matmul_dispatch_sm100_fp8[
                 c_type=c_type,
                 a_type=a_type,
@@ -556,7 +551,7 @@ def matmul_dispatch_sm100[
                 pdl_level=pdl_level,
             ](c, a, b, ctx)
 
-        elif a_type == DType.float32 and c_type in (DType.float32,):
+        elif a_type == .float32 and c_type in (DType.float32,):
             status = matmul_dispatch_sm100_fp32[
                 c_type=c_type,
                 a_type=a_type,
@@ -767,11 +762,11 @@ def _sm100_outlier_configs[
     def rule(x: TuningConfigSM100) {} -> Bool:
         return x.K == static_K and x.N == static_N
 
-    comptime if a_type == DType.bfloat16:
+    comptime if a_type == .bfloat16:
         return Table(
             _get_tuning_list_sm100_bf16(), "bf16_heuristic_outliers"
         ).find(rule=rule)
-    elif a_type == DType.float32:
+    elif a_type == .float32:
         return Table(
             _get_tuning_list_sm100_fp32(), "fp32_heuristic_outliers"
         ).find(rule=rule)
@@ -791,11 +786,7 @@ def select_and_launch_sm100_config[
         TileTensor[b_type, ...],
         DeviceContext,
         OptionalReg[
-            TileTensor[
-                c_type,
-                RowMajorLayout[Int64, Int64],
-                ImmutAnyOrigin,
-            ]
+            TileTensor[c_type, RowMajorLayout[Int64, Int64], ImmutAnyOrigin]
         ],
     ) raises -> None,
     //,
@@ -814,11 +805,7 @@ def select_and_launch_sm100_config[
     b: TileTensor[b_type, ...],
     ctx: DeviceContext,
     epilogue_tensor: OptionalReg[
-        TileTensor[
-            c_type,
-            RowMajorLayout[Int64, Int64],
-            ImmutAnyOrigin,
-        ]
+        TileTensor[c_type, RowMajorLayout[Int64, Int64], ImmutAnyOrigin]
     ] = None,
 ) raises -> Int:
     """Selects and launches an SM100 matmul config for the given shape.
@@ -841,7 +828,7 @@ def select_and_launch_sm100_config[
         DType.float32,
     ), "Only support bfloat16, float8_e4m3fn, and float32 input types"
     comptime assert (
-        a_type != DType.float32 or c_type == DType.float32
+        a_type != .float32 or c_type == .float32
     ), "float32 input only supports float32 output"
 
     comptime MMA_K = 32 // size_of[a_type]()
@@ -852,7 +839,7 @@ def select_and_launch_sm100_config[
     ]()
 
     # do not use outliers list when c_type is FP8 as we don't support all tile shapes dude to TMA requirements
-    comptime if c_type != DType.float8_e4m3fn:
+    comptime if c_type != .float8_e4m3fn:
         comptime for tuning_config in outlier_configs:
             if m >= tuning_config.M and m < tuning_config.M_end:
                 comptime matmul_config = MatmulConfig[
@@ -906,7 +893,7 @@ def select_and_launch_sm100_config[
 
     # For float8_e4m3fn output, dispatch should never fail; use the
     # default config.
-    comptime if c_type == DType.float8_e4m3fn:
+    comptime if c_type == .float8_e4m3fn:
         comptime default_config = default_matmul_config_bf16_fp8[
             a_type,
             b_type,
@@ -939,11 +926,7 @@ def heuristic_and_outliers_dispatch[
     b: TileTensor[b_type, ...],
     ctx: DeviceContext,
     epilogue_tensor: OptionalReg[
-        TileTensor[
-            c.dtype,
-            RowMajorLayout[Int64, Int64],
-            ImmutAnyOrigin,
-        ]
+        TileTensor[c.dtype, RowMajorLayout[Int64, Int64], ImmutAnyOrigin]
     ] = None,
 ) raises -> Int:
     """Dispatches an SM100 matmul through the heuristic outlier config set.
@@ -989,11 +972,7 @@ def heuristic_and_outliers_dispatch[
         b_tensor: TileTensor[b_type, ...],
         dispatch_ctx: DeviceContext,
         dispatch_epilogue_tensor: OptionalReg[
-            TileTensor[
-                c_type,
-                RowMajorLayout[Int64, Int64],
-                ImmutAnyOrigin,
-            ]
+            TileTensor[c_type, RowMajorLayout[Int64, Int64], ImmutAnyOrigin]
         ],
     ) raises:
         _matmul_dispatch_sm100[
@@ -1196,7 +1175,7 @@ def matmul_dispatch_sm100_fp32[
     comptime assert a.rank == 2, "a must be of rank 2"
     comptime assert b.rank == 2, "b must be of rank 2"
     comptime assert (
-        a_type == b_type == DType.float32 and c_type == DType.float32
+        a_type == b_type == .float32 and c_type == .float32
     ), "matmul_dispatch_sm100_fp32 only supports float32 input and output"
 
     return sm100_heuristic_and_outliers_dispatch[
@@ -1303,11 +1282,7 @@ def _matmul_dispatch_sm100[
     b_tensor: TileTensor[b_type, ...],
     ctx: DeviceContext,
     epilogue_tensor: OptionalReg[
-        TileTensor[
-            c_type,
-            RowMajorLayout[Int64, Int64],
-            ImmutAnyOrigin,
-        ]
+        TileTensor[c_type, RowMajorLayout[Int64, Int64], ImmutAnyOrigin]
     ] = None,
 ) raises:
     _matmul_dispatch_sm100[
@@ -1343,11 +1318,7 @@ def _matmul_dispatch_sm100[
     b_tensor: TileTensor[b_type, ...],
     ctx: DeviceContext,
     epilogue_tensor: OptionalReg[
-        TileTensor[
-            c_type,
-            RowMajorLayout[Int64, Int64],
-            ImmutAnyOrigin,
-        ]
+        TileTensor[c_type, RowMajorLayout[Int64, Int64], ImmutAnyOrigin]
     ] = None,
 ) raises:
     """Our sm100 matmul kernel still does not support fusion of elementwise
@@ -1460,12 +1431,12 @@ def _sm100_batched_outlier_configs[
     def rule(x: TuningConfigSM100) {} -> Bool:
         return x.K == static_K and x.N == static_N
 
-    comptime if a_type == DType.bfloat16:
+    comptime if a_type == .bfloat16:
         return Table(
             _get_tuning_list_sm100_batched_bf16(),
             "batched_bf16_heuristic_outliers",
         ).find(rule=rule)
-    elif a_type == DType.float32:
+    elif a_type == .float32:
         return Table(
             _get_tuning_list_sm100_batched_fp32(),
             "batched_fp32_heuristic_outliers",
@@ -1625,11 +1596,7 @@ def sm100_heuristic_and_outliers_dispatch[
     b: TileTensor[b_type, ...],
     ctx: DeviceContext,
     epilogue_tensor: OptionalReg[
-        TileTensor[
-            c.dtype,
-            RowMajorLayout[Int64, Int64],
-            ImmutAnyOrigin,
-        ]
+        TileTensor[c.dtype, RowMajorLayout[Int64, Int64], ImmutAnyOrigin]
     ] = None,
 ) raises -> Int:
     """Dispatches an SM100 matmul through the heuristic outlier config set.
@@ -1675,11 +1642,7 @@ def sm100_heuristic_and_outliers_dispatch[
         b_tensor: TileTensor[b_type, ...],
         dispatch_ctx: DeviceContext,
         dispatch_epilogue_tensor: OptionalReg[
-            TileTensor[
-                c_type,
-                RowMajorLayout[Int64, Int64],
-                ImmutAnyOrigin,
-            ]
+            TileTensor[c_type, RowMajorLayout[Int64, Int64], ImmutAnyOrigin]
         ],
     ) raises:
         blackwell_matmul_tma_umma_warp_specialized[

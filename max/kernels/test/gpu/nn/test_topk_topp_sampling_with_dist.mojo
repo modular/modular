@@ -103,7 +103,7 @@ struct SamplingRun(Movable):
 
 
 def run_sampling[
-    dtype: DType = DType.float32, emit_dist: Bool = True
+    dtype: DType = .float32, emit_dist: Bool = True
 ](
     ctx: DeviceContext,
     logits_host: HostBuffer[dtype],
@@ -120,26 +120,26 @@ def run_sampling[
     var logits_dev = ctx.enqueue_create_buffer[dtype](rows * d)
     ctx.enqueue_copy(logits_dev, logits_host)
 
-    var tokens_dev = ctx.enqueue_create_buffer[DType.int64](rows)
+    var tokens_dev = ctx.enqueue_create_buffer[.int64](rows)
     var dist_len = rows * d if emit_dist else 1
-    var dist_dev = ctx.enqueue_create_buffer[DType.float32](dist_len)
+    var dist_dev = ctx.enqueue_create_buffer[.float32](dist_len)
 
-    var temp_host = ctx.enqueue_create_host_buffer[DType.float32](rows)
-    var top_p_host = ctx.enqueue_create_host_buffer[DType.float32](rows)
-    var top_k_host = ctx.enqueue_create_host_buffer[DType.int64](rows)
-    var seed_host = ctx.enqueue_create_host_buffer[DType.uint64](rows)
-    var min_p_host = ctx.enqueue_create_host_buffer[DType.float32](rows)
+    var temp_host = ctx.enqueue_create_host_buffer[.float32](rows)
+    var top_p_host = ctx.enqueue_create_host_buffer[.float32](rows)
+    var top_k_host = ctx.enqueue_create_host_buffer[.int64](rows)
+    var seed_host = ctx.enqueue_create_host_buffer[.uint64](rows)
+    var min_p_host = ctx.enqueue_create_host_buffer[.float32](rows)
     for row in range(rows):
         temp_host[row] = Float32(temperature)
         top_p_host[row] = Float32(top_p)
         top_k_host[row] = Int64(k)
         seed_host[row] = seed_base + UInt64(row)
         min_p_host[row] = Float32(min_p)
-    var temp_dev = ctx.enqueue_create_buffer[DType.float32](rows)
-    var top_p_dev = ctx.enqueue_create_buffer[DType.float32](rows)
-    var top_k_dev = ctx.enqueue_create_buffer[DType.int64](rows)
-    var seed_dev = ctx.enqueue_create_buffer[DType.uint64](rows)
-    var min_p_dev = ctx.enqueue_create_buffer[DType.float32](rows)
+    var temp_dev = ctx.enqueue_create_buffer[.float32](rows)
+    var top_p_dev = ctx.enqueue_create_buffer[.float32](rows)
+    var top_k_dev = ctx.enqueue_create_buffer[.int64](rows)
+    var seed_dev = ctx.enqueue_create_buffer[.uint64](rows)
+    var min_p_dev = ctx.enqueue_create_buffer[.float32](rows)
     ctx.enqueue_copy(temp_dev, temp_host)
     ctx.enqueue_copy(top_p_dev, top_p_host)
     ctx.enqueue_copy(top_k_dev, top_k_host)
@@ -205,8 +205,8 @@ def run_sampling[
             ).as_unsafe_any_origin(),
         )
 
-    var tokens_out = ctx.enqueue_create_host_buffer[DType.int64](rows)
-    var dist_out = ctx.enqueue_create_host_buffer[DType.float32](dist_len)
+    var tokens_out = ctx.enqueue_create_host_buffer[.int64](rows)
+    var dist_out = ctx.enqueue_create_host_buffer[.float32](dist_len)
     ctx.enqueue_copy(tokens_out, tokens_dev)
     ctx.enqueue_copy(dist_out, dist_dev)
     ctx.synchronize()
@@ -241,7 +241,7 @@ def fill_logits[
 
 
 def test_dist_matches_reference[
-    dtype: DType = DType.float32
+    dtype: DType = .float32
 ](
     ctx: DeviceContext,
     rows: Int,
@@ -314,8 +314,8 @@ def test_tokens_match_without_dist(
     The production sampler runs the same kernel with `emit_dist=False`, so
     the extra output has to be inert.
     """
-    var logits_host = fill_logits[DType.float32](ctx, rows, d)
-    var with_dist = run_sampling[DType.float32, emit_dist=True](
+    var logits_host = fill_logits[.float32](ctx, rows, d)
+    var with_dist = run_sampling[.float32, emit_dist=True](
         ctx,
         logits_host,
         rows,
@@ -325,7 +325,7 @@ def test_tokens_match_without_dist(
         temperature=1.0,
         seed_base=99,
     )
-    var without_dist = run_sampling[DType.float32, emit_dist=False](
+    var without_dist = run_sampling[.float32, emit_dist=False](
         ctx,
         logits_host,
         rows,
@@ -351,12 +351,12 @@ def test_empirical_distribution(
     Every row carries the same logits, so one launch yields `rows` draws from
     the same distribution.
     """
-    var logits_host = ctx.enqueue_create_host_buffer[DType.float32](rows * d)
+    var logits_host = ctx.enqueue_create_host_buffer[.float32](rows * d)
     for row in range(rows):
         for col in range(d):
             logits_host[row * d + col] = Float32(scrambled_logit(0, col))
 
-    var run = run_sampling[DType.float32](
+    var run = run_sampling[.float32](
         ctx,
         logits_host,
         rows,
@@ -413,14 +413,14 @@ def test_empirical_distribution_cluster(
     single-block kernel. Here the batch stays small enough to cluster and the
     draws accumulate over many launches, re-seeded per launch.
     """
-    var logits_host = ctx.enqueue_create_host_buffer[DType.float32](rows * d)
+    var logits_host = ctx.enqueue_create_host_buffer[.float32](rows * d)
     for row in range(rows):
         for col in range(d):
             logits_host[row * d + col] = Float32(scrambled_logit(0, col))
 
     var counts = List[Int](length=d, fill=0)
     for launch in range(launches):
-        var run = run_sampling[DType.float32](
+        var run = run_sampling[.float32](
             ctx,
             logits_host,
             rows,
@@ -477,7 +477,7 @@ def main() raises:
         test_dist_matches_reference(
             ctx, rows=2, d=256, k=-1, top_p=1.0, temperature=0.0
         )
-        test_dist_matches_reference[DType.bfloat16](
+        test_dist_matches_reference[.bfloat16](
             ctx, rows=2, d=512, k=32, top_p=0.95, temperature=1.0
         )
         # A batch wider than the SM count: the grid runs multiple waves of

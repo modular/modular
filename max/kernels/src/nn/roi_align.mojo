@@ -162,8 +162,8 @@ def roi_align_nhwc[
 
     assert mode == "AVG" or mode == "MAX", "mode must be AVG or MAX"
 
-    var spatial_scale = in_spatial_scale.cast[DType.float32]()
-    var sampling_ratio = in_sampling_ratio.cast[DType.float32]()
+    var spatial_scale = in_spatial_scale.cast[.float32]()
+    var sampling_ratio = in_sampling_ratio.cast[.float32]()
 
     # Runtime extents: `static_shape` reports -1 for a symbolic dim.
     var n_regions = Int(rois.dim[0]())

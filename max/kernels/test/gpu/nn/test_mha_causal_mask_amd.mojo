@@ -119,24 +119,24 @@ def test[
 
     # Initialize Q, K, V in bf16, then roundtrip through qkv_type so the
     # naive bf16 reference sees identical values (matters for fp8).
-    var q_bf16_ptr = ctx.enqueue_create_host_buffer[DType.bfloat16](q_size)
-    var k_bf16_ptr = ctx.enqueue_create_host_buffer[DType.bfloat16](k_size)
-    var v_bf16_ptr = ctx.enqueue_create_host_buffer[DType.bfloat16](v_size)
+    var q_bf16_ptr = ctx.enqueue_create_host_buffer[.bfloat16](q_size)
+    var k_bf16_ptr = ctx.enqueue_create_host_buffer[.bfloat16](k_size)
+    var v_bf16_ptr = ctx.enqueue_create_host_buffer[.bfloat16](v_size)
     rand(q_bf16_ptr.as_span())
     rand(k_bf16_ptr.as_span())
     rand(v_bf16_ptr.as_span())
     for i in range(q_size):
         var val = q_bf16_ptr[i].cast[qkv_type]()
         q_ptr[i] = val
-        q_bf16_ptr[i] = val.cast[DType.bfloat16]()
+        q_bf16_ptr[i] = val.cast[.bfloat16]()
     for i in range(k_size):
         var val = k_bf16_ptr[i].cast[qkv_type]()
         k_ptr[i] = val
-        k_bf16_ptr[i] = val.cast[DType.bfloat16]()
+        k_bf16_ptr[i] = val.cast[.bfloat16]()
     for i in range(v_size):
         var val = v_bf16_ptr[i].cast[qkv_type]()
         v_ptr[i] = val
-        v_bf16_ptr[i] = val.cast[DType.bfloat16]()
+        v_bf16_ptr[i] = val.cast[.bfloat16]()
 
     # Initialize causal mask.
     for b in range(batch_size):
@@ -184,10 +184,17 @@ def test[
         row_major((batch_size, seq_len, Idx[num_heads], Idx[depth])),
     )
 
-    @__parameter
     @always_inline
-    @__copy_capture(q_device, k_device, v_device, mask4d, output_device)
-    def kernel_launch(ctx: DeviceContext) raises:
+    def kernel_launch(
+        ctx: DeviceContext,
+    ) raises {
+        var q_device,
+        var k_device,
+        var v_device,
+        var mask4d,
+        var output_device,
+        imm,
+    }:
         flash_attention(
             output_device,
             q_device,
@@ -204,7 +211,7 @@ def test[
         # Warmup
         kernel_launch(ctx)
 
-        var nstime = Float64(ctx.execution_time[kernel_launch](nrun)) / Float64(
+        var nstime = Float64(ctx.execution_time(kernel_launch, nrun)) / Float64(
             nrun
         )
         var sectime = nstime / 1000000
@@ -219,9 +226,9 @@ def test[
 
     # Naive reference: use roundtripped bf16 values so both flash and
     # naive see identical input data.
-    var q_ref_device_ptr = ctx.enqueue_create_buffer[DType.bfloat16](q_size)
-    var k_ref_device_ptr = ctx.enqueue_create_buffer[DType.bfloat16](k_size)
-    var v_ref_device_ptr = ctx.enqueue_create_buffer[DType.bfloat16](v_size)
+    var q_ref_device_ptr = ctx.enqueue_create_buffer[.bfloat16](q_size)
+    var k_ref_device_ptr = ctx.enqueue_create_buffer[.bfloat16](k_size)
+    var v_ref_device_ptr = ctx.enqueue_create_buffer[.bfloat16](v_size)
     ctx.enqueue_copy(q_ref_device_ptr, q_bf16_ptr)
     ctx.enqueue_copy(k_ref_device_ptr, k_bf16_ptr)
     ctx.enqueue_copy(v_ref_device_ptr, v_bf16_ptr)
@@ -279,8 +286,8 @@ def test[
             for s in range(seq_len):
                 for d in range(depth):
                     var idx = d + depth * (h + num_heads * (s + seq_len * b))
-                    var expect = output_ptr[idx].cast[DType.float64]()
-                    var actual = flash_output_ptr[idx].cast[DType.float64]()
+                    var expect = output_ptr[idx].cast[.float64]()
+                    var actual = flash_output_ptr[idx].cast[.float64]()
                     if not isclose(actual, expect, atol=atol, rtol=rtol):
                         var rerr = abs((actual - expect) / expect)
                         print(b, h, s, d, actual, expect, rerr)
@@ -470,7 +477,7 @@ def test_fold_eligibility() raises:
     assert_false(_mha_decode_fold_ok[bf16, 256, 16, 16, 4]())
     assert_false(_mha_decode_fold_ok[bf16, 256, 16, 1, 4]())
     # fp16 shares the MMA shape but is untested through the fold.
-    assert_false(_mha_decode_fold_ok[DType.float16, 128, 16, 1, 4]())
+    assert_false(_mha_decode_fold_ok[.float16, 128, 16, 1, 4]())
     # FP8 at depth 64 picks the 32x32x64 decode MFMA, whose MMA_M outruns the
     # fold's 16-row warp M-tile.
     assert_false(_mha_decode_fold_ok[fp8, 64, 16, 1, 4]())

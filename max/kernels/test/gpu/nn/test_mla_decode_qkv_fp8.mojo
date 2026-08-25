@@ -279,7 +279,7 @@ def test[
 
     # Valid length (empty -- not using ragged) for mha_gpu_naive
     var null_valid_length = LayoutTensor[
-        DType.uint32,
+        .uint32,
         Layout.row_major(UNKNOWN_VALUE),
         MutAnyOrigin,
     ](
@@ -439,13 +439,13 @@ def test[
                         d
                         + depth * (h + s * num_heads)
                         + b * depth * num_heads * seq_len
-                    ].cast[DType.float64]()
+                    ].cast[.float64]()
                     # Kernel output: [b, s, h, d] with stride v_depth
                     var actual = flash_output_ptr[
                         d
                         + v_depth * (h + s * num_heads)
                         + b * v_depth * num_heads * seq_len
-                    ].cast[DType.float64]()
+                    ].cast[.float64]()
                     if abs((actual - expect)) > 1e-1:
                         if num_mismatches < 10:
                             print(b, h, s, d, actual, expect)
@@ -544,15 +544,12 @@ def bench[
     )
     var scalar_args_buf_tt = mla_args.gpu_tile_tensor()
 
-    @__parameter
     @always_inline
-    @__copy_capture(
-        q_fp8_tt,
-        k_fp8_tt,
-        out_tt,
-        scalar_args_buf_tt,
-    )
-    def kernel_launch(ctx: DeviceContext) raises:
+    def kernel_launch(
+        ctx: DeviceContext,
+    ) raises {
+        var q_fp8_tt, var k_fp8_tt, var out_tt, var scalar_args_buf_tt, imm
+    }:
         comptime config = MHAConfig[q_type](num_heads, depth)
         flare_mla_decoding[config=config](
             out_tt.as_unsafe_any_origin(),
@@ -571,7 +568,7 @@ def bench[
         kernel_launch(ctx)
     ctx.synchronize()
 
-    var nstime = Float64(ctx.execution_time[kernel_launch](nrun)) / Float64(
+    var nstime = Float64(ctx.execution_time(kernel_launch, nrun)) / Float64(
         nrun
     )
     var ustime = nstime / 1000.0
@@ -816,7 +813,7 @@ def test_sw[
     )
 
     var null_valid_length = LayoutTensor[
-        DType.uint32,
+        .uint32,
         Layout.row_major(UNKNOWN_VALUE),
         MutAnyOrigin,
     ](
@@ -930,12 +927,12 @@ def test_sw[
                         d
                         + depth * (h + s * num_heads)
                         + b * depth * num_heads * seq_len
-                    ).cast[DType.float64]()
+                    ).cast[.float64]()
                     var actual = flash_output_ptr.load(
                         d
                         + v_depth * (h + s * num_heads)
                         + b * v_depth * num_heads * seq_len
-                    ).cast[DType.float64]()
+                    ).cast[.float64]()
                     if abs((actual - expect)) > 1e-1:
                         if num_mismatches < 10:
                             print(b, h, s, d, actual, expect)

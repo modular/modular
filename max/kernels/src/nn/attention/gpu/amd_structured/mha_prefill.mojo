@@ -114,7 +114,7 @@ __extension Attention:
         # --- Buffer init ---
 
         var warp_id = UInt32(
-            readfirstlane(bitcast[DType.int32](UInt32(get_warp_id())))
+            readfirstlane(bitcast[.int32](UInt32(get_warp_id())))
         )
         comptime _smem_depth = align_up(Self.depth, Self.BK)
         comptime KBufT = KVBuffer[

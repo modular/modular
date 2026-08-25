@@ -48,11 +48,11 @@ def mxfp4_dequant_matmul_amd(
     comptime b_type = b_packed.dtype
     comptime b_scales_type = b_scales.dtype
 
-    comptime assert c_type == DType.bfloat16, "output must be bfloat16"
-    comptime assert a_type == DType.bfloat16, "activations must be bfloat16"
-    comptime assert b_type == DType.uint8, "weights must be uint8 (packed FP4)"
+    comptime assert c_type == .bfloat16, "output must be bfloat16"
+    comptime assert a_type == .bfloat16, "activations must be bfloat16"
+    comptime assert b_type == .uint8, "weights must be uint8 (packed FP4)"
     comptime assert (
-        b_scales_type == DType.float8_e8m0fnu
+        b_scales_type == .float8_e8m0fnu
     ), "scales must be float8_e8m0fnu"
 
     var M = Int(c.dim[0]())

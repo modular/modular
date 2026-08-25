@@ -167,41 +167,39 @@ def _test_swiglu_interleave[
 
     # ---- Per-expert offsets / IDs (static lengths so the SwiGLU kernel's
     # ----  comptime n_groups = scales_offsets.static_shape[0] resolves) ----
-    var a_offsets_host_ptr = alloc[Scalar[DType.uint32]](num_active_experts + 1)
-    var a_scale_offsets_ptr = alloc[Scalar[DType.uint32]](num_active_experts)
-    var expert_ids_host_ptr = alloc[Scalar[DType.int32]](num_active_experts)
-    var expert_scales_host_ptr = alloc[Scalar[DType.float32]](num_experts)
-    var input_scales_host_ptr = alloc[Scalar[DType.float32]](num_active_experts)
+    var a_offsets_host_ptr = alloc[UInt32](num_active_experts + 1)
+    var a_scale_offsets_ptr = alloc[UInt32](num_active_experts)
+    var expert_ids_host_ptr = alloc[Int32](num_active_experts)
+    var expert_scales_host_ptr = alloc[Float32](num_experts)
+    var input_scales_host_ptr = alloc[Float32](num_active_experts)
 
-    var a_offsets_device = ctx.enqueue_create_buffer[DType.uint32](
+    var a_offsets_device = ctx.enqueue_create_buffer[.uint32](
         num_active_experts + 1
     )
     var a_offsets_tensor = TileTensor(
         a_offsets_device,
         row_major(Coord(Idx[num_active_experts + 1])),
     )
-    var a_scale_offsets_device = ctx.enqueue_create_buffer[DType.uint32](
+    var a_scale_offsets_device = ctx.enqueue_create_buffer[.uint32](
         num_active_experts
     )
     var a_scale_offsets_tensor = TileTensor(
         a_scale_offsets_device,
         row_major(Coord(Idx[num_active_experts])),
     )
-    var expert_ids_device = ctx.enqueue_create_buffer[DType.int32](
+    var expert_ids_device = ctx.enqueue_create_buffer[.int32](
         num_active_experts
     )
     var expert_ids_tensor = TileTensor(
         expert_ids_device,
         row_major(Coord(Idx[num_active_experts])),
     )
-    var expert_scales_device = ctx.enqueue_create_buffer[DType.float32](
-        num_experts
-    )
+    var expert_scales_device = ctx.enqueue_create_buffer[.float32](num_experts)
     var expert_scales_tensor = TileTensor(
         expert_scales_device,
         row_major(Coord(Idx[num_experts])),
     )
-    var input_scales_device = ctx.enqueue_create_buffer[DType.float32](
+    var input_scales_device = ctx.enqueue_create_buffer[.float32](
         num_active_experts
     )
     var input_scales_tensor = TileTensor(
@@ -328,7 +326,7 @@ def _test_swiglu_interleave[
                 if idx1 < K:
                     var scale_value = _convert_f32_to_float8_scalar[
                         scales_dtype
-                    ]((1 << random_ui64(0, 2)).cast[DType.float32]())
+                    ]((1 << random_ui64(0, 2)).cast[.float32]())
                     set_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
                         a_scales_tensor_host, idx0, idx1, scale_value
                     )

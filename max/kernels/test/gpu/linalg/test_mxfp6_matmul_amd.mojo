@@ -87,7 +87,7 @@ comptime SENTINEL = Float32(-98765.0)
 
 
 def _fill_codes(
-    codes: UnsafePointer[mut=True, Scalar[DType.uint8], _],
+    codes: UnsafePointer[mut=True, UInt8, _],
     count: Int,
     pattern: Int,
     salt: Int,
@@ -114,7 +114,7 @@ def _fill_codes(
 
 
 def _fill_scales(
-    scales: UnsafePointer[mut=True, Scalar[DType.uint8], _],
+    scales: UnsafePointer[mut=True, UInt8, _],
     rows: Int,
     scale_cols: Int,
     pattern: Int,
@@ -136,8 +136,8 @@ def _fill_scales(
 
 
 def _pack_fp6(
-    codes: UnsafePointer[mut=False, Scalar[DType.uint8], _],
-    packed: UnsafePointer[mut=True, Scalar[DType.uint8], _],
+    codes: UnsafePointer[mut=False, UInt8, _],
+    packed: UnsafePointer[mut=True, UInt8, _],
     rows: Int,
     K: Int,
 ):
@@ -172,7 +172,7 @@ def _e8m0(bits: UInt8) -> Float64:
 
 
 def _fill_packed_random(
-    packed: UnsafePointer[mut=True, Scalar[DType.uint8], _],
+    packed: UnsafePointer[mut=True, UInt8, _],
     nbytes: Int,
     salt: Int,
 ):
@@ -195,12 +195,12 @@ def _fill_packed_random(
 def _mxfp6_matmul_ref[
     fmt: FP6Format
 ](
-    a_ptr: UnsafePointer[Scalar[DType.uint8], ImmutAnyOrigin],
-    b_ptr: UnsafePointer[Scalar[DType.uint8], ImmutAnyOrigin],
-    a_sf_ptr: UnsafePointer[Scalar[DType.float8_e8m0fnu], ImmutAnyOrigin],
-    b_sf_ptr: UnsafePointer[Scalar[DType.float8_e8m0fnu], ImmutAnyOrigin],
-    c_ptr: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
-    mag_ptr: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
+    a_ptr: UnsafePointer[UInt8, ImmutAnyOrigin],
+    b_ptr: UnsafePointer[UInt8, ImmutAnyOrigin],
+    a_sf_ptr: UnsafePointer[Float8_e8m0fnu, ImmutAnyOrigin],
+    b_sf_ptr: UnsafePointer[Float8_e8m0fnu, ImmutAnyOrigin],
+    c_ptr: UnsafePointer[Float32, MutAnyOrigin],
+    mag_ptr: UnsafePointer[Float32, MutAnyOrigin],
     M_dev: Int32,
     N_dev: Int32,
     K_dev: Int32,
@@ -235,20 +235,16 @@ def _mxfp6_matmul_ref[
     var magnitude = Float32(0)
 
     for ko in range(k_groups):
-        var a_scale = a_sf_ptr[unsafe_offset=m * k_groups + ko].cast[
-            DType.float32
-        ]()
-        var b_scale = b_sf_ptr[unsafe_offset=n * k_groups + ko].cast[
-            DType.float32
-        ]()
+        var a_scale = a_sf_ptr[unsafe_offset=m * k_groups + ko].cast[.float32]()
+        var b_scale = b_sf_ptr[unsafe_offset=n * k_groups + ko].cast[.float32]()
 
         # 32 elements is one MX block = 24 packed bytes, always 8-byte aligned
         # because k_bytes is a multiple of 24 whenever K is a multiple of 32.
         var a_base = m * k_bytes + ko * 24
         var b_base = n * k_bytes + ko * 24
 
-        var fa = SIMD[DType.uint8, 32](0)
-        var fb = SIMD[DType.uint8, 32](0)
+        var fa = SIMD[.uint8, 32](0)
+        var fb = SIMD[.uint8, 32](0)
         comptime for chunk in range(3):
             fa = fa.insert[offset=chunk * 8](
                 a_ptr.load[width=8](a_base + chunk * 8)
@@ -271,7 +267,7 @@ def run_case[
     fmt: FP6Format,
     N: Int,
     K: Int,
-    out_dtype: DType = DType.float32,
+    out_dtype: DType = .float32,
     num_splits: Int = 1,
 ](
     ctx: DeviceContext, M: Int, data_pattern: Int, scale_pattern: Int
@@ -287,44 +283,44 @@ def run_case[
         == FP6Format.E2M3 else CDNA4F8F6F4MatrixFormat.FLOAT6_E3M2
     )
 
-    var a_packed = ctx.enqueue_create_host_buffer[DType.uint8](M * K_BYTES)
-    var b_packed = ctx.enqueue_create_host_buffer[DType.uint8](N * K_BYTES)
+    var a_packed = ctx.enqueue_create_host_buffer[.uint8](M * K_BYTES)
+    var b_packed = ctx.enqueue_create_host_buffer[.uint8](N * K_BYTES)
 
     if data_pattern == DATA_RANDOM:
         # Direct byte fill: no unpacked code array, so production sizes fit.
         _fill_packed_random(a_packed.unsafe_ptr(), M * K_BYTES, 1)
         _fill_packed_random(b_packed.unsafe_ptr(), N * K_BYTES, 2)
     else:
-        var a_codes = ctx.enqueue_create_host_buffer[DType.uint8](M * K)
-        var b_codes = ctx.enqueue_create_host_buffer[DType.uint8](N * K)
+        var a_codes = ctx.enqueue_create_host_buffer[.uint8](M * K)
+        var b_codes = ctx.enqueue_create_host_buffer[.uint8](N * K)
         _fill_codes(a_codes.unsafe_ptr(), M * K, data_pattern, 0)
         _fill_codes(b_codes.unsafe_ptr(), N * K, data_pattern, 1)
         _pack_fp6(a_codes.unsafe_ptr(), a_packed.unsafe_ptr(), M, K)
         _pack_fp6(b_codes.unsafe_ptr(), b_packed.unsafe_ptr(), N, K)
 
-    var a_sf = ctx.enqueue_create_host_buffer[DType.uint8](M * K_SCALES)
-    var b_sf = ctx.enqueue_create_host_buffer[DType.uint8](N * K_SCALES)
+    var a_sf = ctx.enqueue_create_host_buffer[.uint8](M * K_SCALES)
+    var b_sf = ctx.enqueue_create_host_buffer[.uint8](N * K_SCALES)
     _fill_scales(a_sf.unsafe_ptr(), M, K_SCALES, scale_pattern, 0)
     _fill_scales(b_sf.unsafe_ptr(), N, K_SCALES, scale_pattern, 3)
 
-    var a_sf_typed = ctx.enqueue_create_host_buffer[DType.float8_e8m0fnu](
+    var a_sf_typed = ctx.enqueue_create_host_buffer[.float8_e8m0fnu](
         M * K_SCALES
     )
-    var b_sf_typed = ctx.enqueue_create_host_buffer[DType.float8_e8m0fnu](
+    var b_sf_typed = ctx.enqueue_create_host_buffer[.float8_e8m0fnu](
         N * K_SCALES
     )
     for i in range(M * K_SCALES):
-        a_sf_typed[i] = bitcast[DType.float8_e8m0fnu](a_sf[i])
+        a_sf_typed[i] = bitcast[.float8_e8m0fnu](a_sf[i])
     for i in range(N * K_SCALES):
-        b_sf_typed[i] = bitcast[DType.float8_e8m0fnu](b_sf[i])
+        b_sf_typed[i] = bitcast[.float8_e8m0fnu](b_sf[i])
 
-    var a_dev = ctx.enqueue_create_buffer[DType.uint8](M * K_BYTES)
-    var b_dev = ctx.enqueue_create_buffer[DType.uint8](N * K_BYTES)
-    var a_sf_dev = ctx.enqueue_create_buffer[DType.float8_e8m0fnu](M * K_SCALES)
-    var b_sf_dev = ctx.enqueue_create_buffer[DType.float8_e8m0fnu](N * K_SCALES)
+    var a_dev = ctx.enqueue_create_buffer[.uint8](M * K_BYTES)
+    var b_dev = ctx.enqueue_create_buffer[.uint8](N * K_BYTES)
+    var a_sf_dev = ctx.enqueue_create_buffer[.float8_e8m0fnu](M * K_SCALES)
+    var b_sf_dev = ctx.enqueue_create_buffer[.float8_e8m0fnu](N * K_SCALES)
     var c_dev = ctx.enqueue_create_buffer[out_dtype](M * N)
-    var ref_dev = ctx.enqueue_create_buffer[DType.float32](M * N)
-    var mag_dev = ctx.enqueue_create_buffer[DType.float32](M * N)
+    var ref_dev = ctx.enqueue_create_buffer[.float32](M * N)
+    var mag_dev = ctx.enqueue_create_buffer[.float32](M * N)
 
     # Poison the output so an element the kernel never writes stays
     # distinguishable from one it legitimately computed as zero.
@@ -365,8 +361,8 @@ def run_case[
     ctx.synchronize()
 
     var c_host = ctx.enqueue_create_host_buffer[out_dtype](M * N)
-    var ref_host = ctx.enqueue_create_host_buffer[DType.float32](M * N)
-    var mag_host = ctx.enqueue_create_host_buffer[DType.float32](M * N)
+    var ref_host = ctx.enqueue_create_host_buffer[.float32](M * N)
+    var mag_host = ctx.enqueue_create_host_buffer[.float32](M * N)
     ctx.enqueue_copy(c_host, c_dev)
     ctx.enqueue_copy(ref_host, ref_dev)
     ctx.enqueue_copy(mag_host, mag_dev)
@@ -389,7 +385,7 @@ def run_case[
         var want = Float64(ref_host[i])
         if want != Float64(0.0):
             saw_nonzero = True
-        var got = Float64(c_host[i].cast[DType.float32]())
+        var got = Float64(c_host[i].cast[.float32]())
         if got == Float64(SENTINEL):
             unwritten += 1
         elif abs(got - want) > rel_tol * Float64(mag_host[i]):
@@ -428,7 +424,7 @@ def _report[
     fmt: FP6Format,
     N: Int,
     K: Int,
-    out_dtype: DType = DType.float32,
+    out_dtype: DType = .float32,
     num_splits: Int = 1,
 ](
     ctx: DeviceContext, M: Int, data_pattern: Int, scale_pattern: Int
@@ -507,25 +503,25 @@ def test_split_k(ctx: DeviceContext) raises -> Int:
     comptime fmt = FP6Format.E2M3
     var bad = 0
     for m in [1, 16, 64]:
-        bad += _report[fmt, 4096, 7168, DType.float32, 14](
+        bad += _report[fmt, 4096, 7168, .float32, 14](
             ctx, m, DATA_RANDOM, SCALE_VARY
         )
-        bad += _report[fmt, 7168, 2048, DType.float32, 8](
+        bad += _report[fmt, 7168, 2048, .float32, 8](
             ctx, m, DATA_RANDOM, SCALE_VARY
         )
     # Unaligned M against split-K: the reduce kernel walks M*N flat, so a
     # partial final block is the interesting case.
-    bad += _report[fmt, 7168, 2048, DType.float32, 2](
+    bad += _report[fmt, 7168, 2048, .float32, 2](
         ctx, 17, DATA_RANDOM, SCALE_VARY
     )
-    bad += _report[fmt, 4096, 7168, DType.float32, 4](
+    bad += _report[fmt, 4096, 7168, .float32, 4](
         ctx, 63, DATA_SWEEP, SCALE_VARY
     )
-    bad += _report[fmt, 4096, 7168, DType.float32, 14](
+    bad += _report[fmt, 4096, 7168, .float32, 14](
         ctx, 129, DATA_RANDOM, SCALE_EXTREME
     )
     # bfloat16 output exercises the reduce kernel's cast.
-    bad += _report[fmt, 7168, 2048, DType.bfloat16, 8](
+    bad += _report[fmt, 7168, 2048, .bfloat16, 8](
         ctx, 64, DATA_RANDOM, SCALE_VARY
     )
     return bad
@@ -615,7 +611,7 @@ def test_e3m2(ctx: DeviceContext) raises -> Int:
         bad += _report[fmt, 64, 512](ctx, m, DATA_RANDOM, SCALE_VARY)
     bad += _report[fmt, 64, 128](ctx, 96, DATA_MAX, SCALE_UNIT)
     bad += _report[fmt, 7168, 2048](ctx, 17, DATA_RANDOM, SCALE_VARY)
-    bad += _report[fmt, 7168, 2048, DType.float32, 8](
+    bad += _report[fmt, 7168, 2048, .float32, 8](
         ctx, 16, DATA_RANDOM, SCALE_VARY
     )
     return bad
@@ -625,10 +621,10 @@ def test_output_dtypes(ctx: DeviceContext) raises -> Int:
     """`bfloat16` exercises the cast in the store epilogue."""
     var bad = 0
     for m in [1, 96, 97]:
-        bad += _report[FP6Format.E2M3, 64, 128, DType.bfloat16](
+        bad += _report[FP6Format.E2M3, 64, 128, .bfloat16](
             ctx, m, DATA_SWEEP, SCALE_VARY
         )
-        bad += _report[FP6Format.E3M2, 64, 256, DType.bfloat16](
+        bad += _report[FP6Format.E3M2, 64, 256, .bfloat16](
             ctx, m, DATA_RANDOM, SCALE_VARY
         )
     return bad
@@ -660,8 +656,8 @@ def test_quantizer_feeds_matmul[
     comptime K_BYTES = (K * 6) // 8
     comptime K_SCALES = K // 32
 
-    var a_bf = ctx.enqueue_create_host_buffer[DType.bfloat16](M * K)
-    var b_bf = ctx.enqueue_create_host_buffer[DType.bfloat16](N * K)
+    var a_bf = ctx.enqueue_create_host_buffer[.bfloat16](M * K)
+    var b_bf = ctx.enqueue_create_host_buffer[.bfloat16](N * K)
     ctx.synchronize()
 
     var state = UInt64(0xC2B2AE3D27D4EB4F)
@@ -669,22 +665,22 @@ def test_quantizer_feeds_matmul[
         state = state * 6364136223846793005 + 1442695040888963407
         a_bf[i] = (
             Float32(Int((state >> 40) & 0xFF)) / Float32(128.0) - Float32(1.0)
-        ).cast[DType.bfloat16]()
+        ).cast[.bfloat16]()
     for i in range(N * K):
         state = state * 6364136223846793005 + 1442695040888963407
         b_bf[i] = (
             Float32(Int((state >> 40) & 0xFF)) / Float32(128.0) - Float32(1.0)
-        ).cast[DType.bfloat16]()
+        ).cast[.bfloat16]()
 
-    var a_bf_d = ctx.enqueue_create_buffer[DType.bfloat16](M * K)
-    var b_bf_d = ctx.enqueue_create_buffer[DType.bfloat16](N * K)
+    var a_bf_d = ctx.enqueue_create_buffer[.bfloat16](M * K)
+    var b_bf_d = ctx.enqueue_create_buffer[.bfloat16](N * K)
     ctx.enqueue_copy(a_bf_d, a_bf)
     ctx.enqueue_copy(b_bf_d, b_bf)
 
-    var a_q = ctx.enqueue_create_buffer[DType.uint8](M * K_BYTES)
-    var b_q = ctx.enqueue_create_buffer[DType.uint8](N * K_BYTES)
-    var a_sf = ctx.enqueue_create_buffer[DType.float8_e8m0fnu](M * K_SCALES)
-    var b_sf = ctx.enqueue_create_buffer[DType.float8_e8m0fnu](N * K_SCALES)
+    var a_q = ctx.enqueue_create_buffer[.uint8](M * K_BYTES)
+    var b_q = ctx.enqueue_create_buffer[.uint8](N * K_BYTES)
+    var a_sf = ctx.enqueue_create_buffer[.float8_e8m0fnu](M * K_SCALES)
+    var b_sf = ctx.enqueue_create_buffer[.float8_e8m0fnu](N * K_SCALES)
 
     quantize_mxfp6_amd[fmt](
         ctx,
@@ -699,9 +695,9 @@ def test_quantizer_feeds_matmul[
         TileTensor[mut=False](b_bf_d, row_major[N, K]()),
     )
 
-    var c_d = ctx.enqueue_create_buffer[DType.float32](M * N)
-    var ref_d = ctx.enqueue_create_buffer[DType.float32](M * N)
-    var mag_d = ctx.enqueue_create_buffer[DType.float32](M * N)
+    var c_d = ctx.enqueue_create_buffer[.float32](M * N)
+    var ref_d = ctx.enqueue_create_buffer[.float32](M * N)
+    var mag_d = ctx.enqueue_create_buffer[.float32](M * N)
 
     comptime REF_BLOCK = 16
     ctx.enqueue_function[_mxfp6_matmul_ref[fmt]](
@@ -732,9 +728,9 @@ def test_quantizer_feeds_matmul[
     )
     ctx.synchronize()
 
-    var c_h = ctx.enqueue_create_host_buffer[DType.float32](M * N)
-    var ref_h = ctx.enqueue_create_host_buffer[DType.float32](M * N)
-    var mag_h = ctx.enqueue_create_host_buffer[DType.float32](M * N)
+    var c_h = ctx.enqueue_create_host_buffer[.float32](M * N)
+    var ref_h = ctx.enqueue_create_host_buffer[.float32](M * N)
+    var mag_h = ctx.enqueue_create_host_buffer[.float32](M * N)
     ctx.enqueue_copy(c_h, c_d)
     ctx.enqueue_copy(ref_h, ref_d)
     ctx.enqueue_copy(mag_h, mag_d)

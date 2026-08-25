@@ -93,7 +93,7 @@ def _apply_causal_mask_fast[
         # `rel < _ROW_OFFSETS[p]` is the per-element form of `k_pos > q_pos`
         # once the per-element row offset is folded in.
         var rel = q_pos - (k_base + Int32(i * 32) + row_extra)
-        var mask = SIMD[DType.int32, 16](rel).lt(_ROW_OFFSETS)
+        var mask = SIMD[.int32, 16](rel).lt(_ROW_OFFSETS)
         comptime for j in range(dst_width):
             dst_vec[i, j, 0] = mask.select(_NEG_INF_VEC, dst_vec[i, j, 0])
 
@@ -150,7 +150,7 @@ def _apply_kbound_mask_fast[
         # `bound <= _ROW_OFFSETS[p]` is the per-element form of
         # `k_pos >= num_keys` once the per-element row offset is folded in.
         var bound = num_keys - (k_base + Int32(i * 32) + row_extra)
-        var mask = SIMD[DType.int32, 16](bound).le(_ROW_OFFSETS)
+        var mask = SIMD[.int32, 16](bound).le(_ROW_OFFSETS)
         comptime for j in range(dst_width):
             dst_vec[i, j, 0] = mask.select(_NEG_INF_VEC, dst_vec[i, j, 0])
 
@@ -224,11 +224,9 @@ def _apply_mask_generic[
                     + row_extra
                     + Int32(ACC_ROW_OFFSETS_32x32[k_local])
                 )
-                var score = SIMD[DType.float32, 1](
-                    frag[k_local].cast[DType.float32]()
-                )
+                var score = Float32(frag[k_local].cast[.float32]())
                 var masked = mask_functor.mask(
-                    IndexList[4, element_type=DType.uint32](
+                    IndexList[4, element_type=.uint32](
                         Int(batch_idx),
                         Int(head_idx),
                         Int(q_pos),
@@ -373,11 +371,11 @@ struct MaskApplier[
         else:
             var status = self.mask_functor.status(
                 batch_idx,
-                IndexList[2, element_type=DType.uint32](
+                IndexList[2, element_type=.uint32](
                     Int(q_tile_idx * Self.Q_BLOCK_SIZE + start_pos),
                     Int(k_tile_idx * Self.KV_BLOCK_SIZE),
                 ),
-                IndexList[2, element_type=DType.uint32](
+                IndexList[2, element_type=.uint32](
                     Int(Self.Q_BLOCK_SIZE), Int(Self.KV_BLOCK_SIZE)
                 ),
             )

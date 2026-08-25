@@ -73,12 +73,12 @@ def _mfma_format[fmt: FP6Format]() -> CDNA4F8F6F4MatrixFormat:
 def _mxfp6_matmul_ref[
     fmt: FP6Format
 ](
-    a_ptr: UnsafePointer[Scalar[DType.uint8], ImmutAnyOrigin],
-    b_ptr: UnsafePointer[Scalar[DType.uint8], ImmutAnyOrigin],
-    a_sf_ptr: UnsafePointer[Scalar[DType.float8_e8m0fnu], ImmutAnyOrigin],
-    b_sf_ptr: UnsafePointer[Scalar[DType.float8_e8m0fnu], ImmutAnyOrigin],
-    c_ptr: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
-    mag_ptr: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
+    a_ptr: UnsafePointer[UInt8, ImmutAnyOrigin],
+    b_ptr: UnsafePointer[UInt8, ImmutAnyOrigin],
+    a_sf_ptr: UnsafePointer[Float8_e8m0fnu, ImmutAnyOrigin],
+    b_sf_ptr: UnsafePointer[Float8_e8m0fnu, ImmutAnyOrigin],
+    c_ptr: UnsafePointer[Float32, MutAnyOrigin],
+    mag_ptr: UnsafePointer[Float32, MutAnyOrigin],
     M_dev: Int32,
     N_dev: Int32,
     K_dev: Int32,
@@ -102,20 +102,16 @@ def _mxfp6_matmul_ref[
     var magnitude = Float32(0)
 
     for ko in range(k_groups):
-        var a_scale = a_sf_ptr[unsafe_offset=m * k_groups + ko].cast[
-            DType.float32
-        ]()
-        var b_scale = b_sf_ptr[unsafe_offset=n * k_groups + ko].cast[
-            DType.float32
-        ]()
+        var a_scale = a_sf_ptr[unsafe_offset=m * k_groups + ko].cast[.float32]()
+        var b_scale = b_sf_ptr[unsafe_offset=n * k_groups + ko].cast[.float32]()
 
         # 32 elements is one MX block = 24 packed bytes, always 8-byte aligned
         # because k_bytes is a multiple of 24 whenever K is a multiple of 32.
         var a_base = m * k_bytes + ko * 24
         var b_base = n * k_bytes + ko * 24
 
-        var fa = SIMD[DType.uint8, 32](0)
-        var fb = SIMD[DType.uint8, 32](0)
+        var fa = SIMD[.uint8, 32](0)
+        var fb = SIMD[.uint8, 32](0)
         comptime for chunk in range(3):
             fa = fa.insert[offset=chunk * 8](
                 a_ptr.load[width=8](a_base + chunk * 8)
@@ -193,22 +189,20 @@ def test_mxfp6_grouped_matmul[
         total_tokens,
     )
 
-    var a_host = ctx.enqueue_create_host_buffer[DType.uint8](
-        total_tokens * K_BYTES
-    )
-    var b_host = ctx.enqueue_create_host_buffer[DType.uint8](
+    var a_host = ctx.enqueue_create_host_buffer[.uint8](total_tokens * K_BYTES)
+    var b_host = ctx.enqueue_create_host_buffer[.uint8](
         num_experts * N * K_BYTES
     )
-    var a_scales_host = ctx.enqueue_create_host_buffer[DType.float8_e8m0fnu](
+    var a_scales_host = ctx.enqueue_create_host_buffer[.float8_e8m0fnu](
         total_tokens * scale_K
     )
-    var b_scales_host = ctx.enqueue_create_host_buffer[DType.float8_e8m0fnu](
+    var b_scales_host = ctx.enqueue_create_host_buffer[.float8_e8m0fnu](
         num_experts * N * scale_K
     )
-    var a_offsets_host = ctx.enqueue_create_host_buffer[DType.uint32](
+    var a_offsets_host = ctx.enqueue_create_host_buffer[.uint32](
         num_active_experts + 1
     )
-    var expert_ids_host = ctx.enqueue_create_host_buffer[DType.int32](
+    var expert_ids_host = ctx.enqueue_create_host_buffer[.int32](
         num_active_experts
     )
     ctx.synchronize()
@@ -222,11 +216,11 @@ def test_mxfp6_grouped_matmul[
 
     # Scales: exponent range [125..129] for reasonable magnitudes.
     for i in range(total_tokens * scale_K):
-        a_scales_host[i] = bitcast[DType.float8_e8m0fnu](
+        a_scales_host[i] = bitcast[.float8_e8m0fnu](
             UInt8(random_ui64(125, 129))
         )
     for i in range(num_experts * N * scale_K):
-        b_scales_host[i] = bitcast[DType.float8_e8m0fnu](
+        b_scales_host[i] = bitcast[.float8_e8m0fnu](
             UInt8(random_ui64(125, 129))
         )
 
@@ -237,25 +231,21 @@ def test_mxfp6_grouped_matmul[
         )
         expert_ids_host[i] = Int32(expert_ids_list[i])
 
-    var a_dev = ctx.enqueue_create_buffer[DType.uint8](total_tokens * K_BYTES)
-    var b_dev = ctx.enqueue_create_buffer[DType.uint8](
-        num_experts * N * K_BYTES
-    )
-    var a_scales_dev = ctx.enqueue_create_buffer[DType.float8_e8m0fnu](
+    var a_dev = ctx.enqueue_create_buffer[.uint8](total_tokens * K_BYTES)
+    var b_dev = ctx.enqueue_create_buffer[.uint8](num_experts * N * K_BYTES)
+    var a_scales_dev = ctx.enqueue_create_buffer[.float8_e8m0fnu](
         total_tokens * scale_K
     )
-    var b_scales_dev = ctx.enqueue_create_buffer[DType.float8_e8m0fnu](
+    var b_scales_dev = ctx.enqueue_create_buffer[.float8_e8m0fnu](
         num_experts * N * scale_K
     )
-    var a_offsets_dev = ctx.enqueue_create_buffer[DType.uint32](
+    var a_offsets_dev = ctx.enqueue_create_buffer[.uint32](
         num_active_experts + 1
     )
-    var expert_ids_dev = ctx.enqueue_create_buffer[DType.int32](
-        num_active_experts
-    )
-    var c_dev = ctx.enqueue_create_buffer[DType.float32](total_tokens * N)
-    var c_ref_dev = ctx.enqueue_create_buffer[DType.float32](total_tokens * N)
-    var mag_dev = ctx.enqueue_create_buffer[DType.float32](total_tokens * N)
+    var expert_ids_dev = ctx.enqueue_create_buffer[.int32](num_active_experts)
+    var c_dev = ctx.enqueue_create_buffer[.float32](total_tokens * N)
+    var c_ref_dev = ctx.enqueue_create_buffer[.float32](total_tokens * N)
+    var mag_dev = ctx.enqueue_create_buffer[.float32](total_tokens * N)
 
     # Inactive slots are written by neither side, so both need a known value.
     c_dev.enqueue_fill(Float32(0.0))
@@ -330,13 +320,9 @@ def test_mxfp6_grouped_matmul[
     )
     ctx.synchronize()
 
-    var c_host = ctx.enqueue_create_host_buffer[DType.float32](total_tokens * N)
-    var c_ref_host = ctx.enqueue_create_host_buffer[DType.float32](
-        total_tokens * N
-    )
-    var mag_host = ctx.enqueue_create_host_buffer[DType.float32](
-        total_tokens * N
-    )
+    var c_host = ctx.enqueue_create_host_buffer[.float32](total_tokens * N)
+    var c_ref_host = ctx.enqueue_create_host_buffer[.float32](total_tokens * N)
+    var mag_host = ctx.enqueue_create_host_buffer[.float32](total_tokens * N)
     ctx.enqueue_copy(c_host, c_dev)
     ctx.enqueue_copy(c_ref_host, c_ref_dev)
     ctx.enqueue_copy(mag_host, mag_dev)

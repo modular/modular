@@ -377,6 +377,12 @@ def cli_serve(
     # Initialize config, and serve.
     # Load tokenizer & pipeline.
     pipeline_args = PipelineArgs.from_flat_kwargs(**config_kwargs)
+    if not pipeline_args.model_path:
+        raise click.UsageError(
+            "No model specified. Pass --model with a Hugging Face repo ID "
+            "or local path, e.g.:\n"
+            "  max serve --model modularai/Llama-3.1-8B-Instruct-GGUF"
+        )
 
     # Log Pipeline and Sampling Configuration
     if pretty_print_config:

@@ -126,7 +126,7 @@ struct TileScheduler[
 
     var num_active_experts: Int
     var group_offsets: LayoutTensor[
-        DType.uint32, Self.offsets_layout, Self.group_offsets_origin
+        .uint32, Self.offsets_layout, Self.group_offsets_origin
     ]
     var current_iter: Int32  # Tracks the scheduler's progress across kernel launches
     var current_group_idx: UInt32
@@ -135,7 +135,7 @@ struct TileScheduler[
     comptime cta_group_tile_shape = Index(
         Self.tile_shape[0] * Self.cta_group, Self.tile_shape[1] * Self.cta_group
     )
-    comptime div_dynamic_block = FastDiv[DType.uint32](
+    comptime div_dynamic_block = FastDiv[.uint32](
         Self.cta_group_tile_shape[Self.dynamic_dim]
     )
     var current_dynamic_dim_cumsum: UInt32
@@ -151,7 +151,7 @@ struct TileScheduler[
         out self,
         num_active_experts: Int,
         group_offsets: LayoutTensor[
-            DType.uint32, Self.offsets_layout, Self.group_offsets_origin
+            .uint32, Self.offsets_layout, Self.group_offsets_origin
         ],
     ):
         comptime assert (
@@ -193,7 +193,7 @@ struct TileScheduler[
         var next_block_idx = UInt32(self.current_iter) * UInt32(
             grid_dim.x
         ) + UInt32(block_idx.x)
-        var start_idx = rebind[Scalar[DType.uint32]](
+        var start_idx = rebind[UInt32](
             self.group_offsets[Int(self.current_group_idx)]
         )
 
@@ -204,7 +204,7 @@ struct TileScheduler[
                 # at this point, we finished all groups
                 return WorkInfo(0, 0, False, True)
 
-            var end_idx = rebind[Scalar[DType.uint32]](
+            var end_idx = rebind[UInt32](
                 self.group_offsets[Int(self.current_group_idx + 1)]
             )
             var current_dynamic_dim = end_idx - start_idx
@@ -273,9 +273,7 @@ struct TileScheduler[
         var primary_num_blocks: UInt32 = (
             Self.num_static_dim_blocks if Self.swapAB else num_dynamic_dim_blocks
         )
-        var div_primary_num_blocks = FastDiv[DType.uint32](
-            Int(primary_num_blocks)
-        )
+        var div_primary_num_blocks = FastDiv[.uint32](Int(primary_num_blocks))
         comptime uint_type = div_primary_num_blocks.uint_type
         var block_idx = rebind[Scalar[uint_type]](_block_idx)
         if not Self.swizzle:
@@ -296,7 +294,7 @@ struct TileScheduler[
         var num_blocks_per_group = (
             secondary_num_blocks * Self.kNum1DBlocksPerGroup
         )
-        var div_num_blocks_per_group = FastDiv[DType.uint32](
+        var div_num_blocks_per_group = FastDiv[.uint32](
             Int(num_blocks_per_group)
         )
         var group_idx = UInt32(block_idx / div_num_blocks_per_group)
@@ -305,9 +303,7 @@ struct TileScheduler[
         var num_blocks_in_group = min(
             Self.kNum1DBlocksPerGroup, primary_num_blocks - first_block_idx
         )
-        var div_num_blocks_in_group = FastDiv[DType.uint32](
-            Int(num_blocks_in_group)
-        )
+        var div_num_blocks_in_group = FastDiv[.uint32](Int(num_blocks_in_group))
         comptime uint_type2 = div_num_blocks_in_group.uint_type
         m_block_idx = first_block_idx + UInt32(
             in_group_idx % div_num_blocks_in_group

@@ -55,9 +55,9 @@ from linalg.matmul.gpu.apple.int8_matmul import (
 
 
 def _host_quant_rows(
-    fp: HostBuffer[DType.float32],
-    q: HostBuffer[DType.int8],
-    scale: HostBuffer[DType.float32],
+    fp: HostBuffer[.float32],
+    q: HostBuffer[.int8],
+    scale: HostBuffer[.float32],
     rows: Int,
     cols: Int,
 ):
@@ -70,14 +70,12 @@ def _host_quant_rows(
         var mult = 127.0 / amax if amax != 0.0 else Float32(0)
         for j in range(cols):
             var qi = Int(round(fp[i * cols + j] * mult))
-            q[i * cols + j] = Scalar[DType.int8](qi)
+            q[i * cols + j] = Int8(qi)
 
 
-def _fill_fp32(
-    buf: HostBuffer[DType.float32], count: Int, lo: Float64, hi: Float64
-):
+def _fill_fp32(buf: HostBuffer[.float32], count: Int, lo: Float64, hi: Float64):
     for i in range(count):
-        buf[i] = random_float64(lo, hi).cast[DType.float32]()
+        buf[i] = random_float64(lo, hi).cast[.float32]()
 
 
 # ===----------------------------------------------------------------------=== #
@@ -97,28 +95,28 @@ def _run_gemm_vs_quant_ref[
 ) raises:
     print("== stage1", name, M, "x", N, "x", K, "bias", with_bias)
 
-    var af = ctx.enqueue_create_host_buffer[DType.float32](M * K)
-    var bf = ctx.enqueue_create_host_buffer[DType.float32](N * K)
+    var af = ctx.enqueue_create_host_buffer[.float32](M * K)
+    var bf = ctx.enqueue_create_host_buffer[.float32](N * K)
     _fill_fp32(af, M * K, -1.0, 1.0)
     _fill_fp32(bf, N * K, -1.0, 1.0)
 
-    var aq = ctx.enqueue_create_host_buffer[DType.int8](M * K)
-    var bq = ctx.enqueue_create_host_buffer[DType.int8](N * K)
-    var asc = ctx.enqueue_create_host_buffer[DType.float32](M)
-    var bsc = ctx.enqueue_create_host_buffer[DType.float32](N)
+    var aq = ctx.enqueue_create_host_buffer[.int8](M * K)
+    var bq = ctx.enqueue_create_host_buffer[.int8](N * K)
+    var asc = ctx.enqueue_create_host_buffer[.float32](M)
+    var bsc = ctx.enqueue_create_host_buffer[.float32](N)
     _host_quant_rows(af, aq, asc, M, K)  # A per-row
     _host_quant_rows(bf, bq, bsc, N, K)  # B per-column == per-row of B(N,K)
 
-    var bias_h = ctx.enqueue_create_host_buffer[DType.bfloat16](max(N, 1))
+    var bias_h = ctx.enqueue_create_host_buffer[.bfloat16](max(N, 1))
     for j in range(N):
-        bias_h[j] = random_si64(Int64(-2), Int64(2)).cast[DType.bfloat16]()
+        bias_h[j] = random_si64(Int64(-2), Int64(2)).cast[.bfloat16]()
 
-    var ad = ctx.enqueue_create_buffer[DType.int8](M * K)
-    var bd = ctx.enqueue_create_buffer[DType.int8](N * K)
-    var asd = ctx.enqueue_create_buffer[DType.float32](M)
-    var bsd = ctx.enqueue_create_buffer[DType.float32](N)
-    var biasd = ctx.enqueue_create_buffer[DType.bfloat16](max(N, 1))
-    var cd = ctx.enqueue_create_buffer[DType.bfloat16](M * N)
+    var ad = ctx.enqueue_create_buffer[.int8](M * K)
+    var bd = ctx.enqueue_create_buffer[.int8](N * K)
+    var asd = ctx.enqueue_create_buffer[.float32](M)
+    var bsd = ctx.enqueue_create_buffer[.float32](N)
+    var biasd = ctx.enqueue_create_buffer[.bfloat16](max(N, 1))
+    var cd = ctx.enqueue_create_buffer[.bfloat16](M * N)
     ctx.enqueue_copy(ad, aq)
     ctx.enqueue_copy(bd, bq)
     ctx.enqueue_copy(asd, asc)
@@ -134,11 +132,11 @@ def _run_gemm_vs_quant_ref[
     ).as_immut()
     var c_tt = TileTensor(cd.unsafe_ptr(), row_major(M, N))
 
-    enqueue_apple_int8_matmul[c_type=DType.bfloat16, has_bias=with_bias](
+    enqueue_apple_int8_matmul[c_type=.bfloat16, has_bias=with_bias](
         c_tt, a_tt, b_tt, as_tt, bs_tt, bias_tt, ctx, i32_override
     )
 
-    var c_h = ctx.enqueue_create_host_buffer[DType.bfloat16](M * N)
+    var c_h = ctx.enqueue_create_host_buffer[.bfloat16](M * N)
     ctx.enqueue_copy(c_h, cd)
     ctx.synchronize()
 
@@ -182,24 +180,22 @@ def _run_gemm_vs_quant_ref[
 def _run_act_quant(ctx: DeviceContext, M: Int, K: Int, name: String) raises:
     print("== stage2 act-quant", name, M, "x", K)
 
-    var af = ctx.enqueue_create_host_buffer[DType.bfloat16](M * K)
+    var af = ctx.enqueue_create_host_buffer[.bfloat16](M * K)
     for i in range(M * K):
-        af[i] = (random_float64(-1.0, 1.0)).cast[DType.bfloat16]()
+        af[i] = (random_float64(-1.0, 1.0)).cast[.bfloat16]()
 
-    var ad = ctx.enqueue_create_buffer[DType.bfloat16](M * K)
-    var qd = ctx.enqueue_create_buffer[DType.int8](M * K)
-    var sd = ctx.enqueue_create_buffer[DType.float32](M)
+    var ad = ctx.enqueue_create_buffer[.bfloat16](M * K)
+    var qd = ctx.enqueue_create_buffer[.int8](M * K)
+    var sd = ctx.enqueue_create_buffer[.float32](M)
     ctx.enqueue_copy(ad, af)
 
     var a_tt = TileTensor(ad.unsafe_ptr(), row_major(M, K)).as_immut()
     var q_tt = TileTensor(qd.unsafe_ptr(), row_major(M, K))
     var s_tt = TileTensor(sd.unsafe_ptr(), row_major(M))
-    enqueue_apple_int8_quantize_activation[DType.bfloat16](
-        q_tt, a_tt, s_tt, ctx
-    )
+    enqueue_apple_int8_quantize_activation[.bfloat16](q_tt, a_tt, s_tt, ctx)
 
-    var q_h = ctx.enqueue_create_host_buffer[DType.int8](M * K)
-    var s_h = ctx.enqueue_create_host_buffer[DType.float32](M)
+    var q_h = ctx.enqueue_create_host_buffer[.int8](M * K)
+    var s_h = ctx.enqueue_create_host_buffer[.float32](M)
     ctx.enqueue_copy(q_h, qd)
     ctx.enqueue_copy(s_h, sd)
     ctx.synchronize()
@@ -240,24 +236,24 @@ def _run_end_to_end(
 ) raises:
     print("== stage3 e2e", name, M, "x", N, "x", K)
 
-    var af = ctx.enqueue_create_host_buffer[DType.bfloat16](M * K)
-    var bf = ctx.enqueue_create_host_buffer[DType.float32](N * K)
+    var af = ctx.enqueue_create_host_buffer[.bfloat16](M * K)
+    var bf = ctx.enqueue_create_host_buffer[.float32](N * K)
     for i in range(M * K):
-        af[i] = (random_float64(-1.0, 1.0)).cast[DType.bfloat16]()
+        af[i] = (random_float64(-1.0, 1.0)).cast[.bfloat16]()
     _fill_fp32(bf, N * K, -1.0, 1.0)
 
     # B pre-quantized on host (weight-load path); A quantized on device.
-    var bq = ctx.enqueue_create_host_buffer[DType.int8](N * K)
-    var bsc = ctx.enqueue_create_host_buffer[DType.float32](N)
+    var bq = ctx.enqueue_create_host_buffer[.int8](N * K)
+    var bsc = ctx.enqueue_create_host_buffer[.float32](N)
     _host_quant_rows(bf, bq, bsc, N, K)
 
-    var ad = ctx.enqueue_create_buffer[DType.bfloat16](M * K)
-    var aqd = ctx.enqueue_create_buffer[DType.int8](M * K)
-    var asd = ctx.enqueue_create_buffer[DType.float32](M)
-    var bd = ctx.enqueue_create_buffer[DType.int8](N * K)
-    var bsd = ctx.enqueue_create_buffer[DType.float32](N)
-    var biasd = ctx.enqueue_create_buffer[DType.bfloat16](max(N, 1))
-    var cd = ctx.enqueue_create_buffer[DType.bfloat16](M * N)
+    var ad = ctx.enqueue_create_buffer[.bfloat16](M * K)
+    var aqd = ctx.enqueue_create_buffer[.int8](M * K)
+    var asd = ctx.enqueue_create_buffer[.float32](M)
+    var bd = ctx.enqueue_create_buffer[.int8](N * K)
+    var bsd = ctx.enqueue_create_buffer[.float32](N)
+    var biasd = ctx.enqueue_create_buffer[.bfloat16](max(N, 1))
+    var cd = ctx.enqueue_create_buffer[.bfloat16](M * N)
     ctx.enqueue_copy(ad, af)
     ctx.enqueue_copy(bd, bq)
     ctx.enqueue_copy(bsd, bsc)
@@ -265,9 +261,7 @@ def _run_end_to_end(
     var a_tt = TileTensor(ad.unsafe_ptr(), row_major(M, K)).as_immut()
     var aq_tt = TileTensor(aqd.unsafe_ptr(), row_major(M, K))
     var as_tt = TileTensor(asd.unsafe_ptr(), row_major(M))
-    enqueue_apple_int8_quantize_activation[DType.bfloat16](
-        aq_tt, a_tt, as_tt, ctx
-    )
+    enqueue_apple_int8_quantize_activation[.bfloat16](aq_tt, a_tt, as_tt, ctx)
 
     var b_tt = TileTensor(bd.unsafe_ptr(), row_major(N, K)).as_immut()
     var bs_tt = TileTensor(bsd.unsafe_ptr(), row_major(N)).as_immut()
@@ -275,14 +269,14 @@ def _run_end_to_end(
         biasd.unsafe_ptr(), row_major(max(N, 1))
     ).as_immut()
     var c_tt = TileTensor(cd.unsafe_ptr(), row_major(M, N))
-    enqueue_apple_int8_matmul[c_type=DType.bfloat16, has_bias=False](
+    enqueue_apple_int8_matmul[c_type=.bfloat16, has_bias=False](
         c_tt, aq_tt.as_immut(), b_tt, as_tt.as_immut(), bs_tt, bias_tt, ctx
     )
 
     # Read back the device-quantized A + scales for the reference.
-    var aq_h = ctx.enqueue_create_host_buffer[DType.int8](M * K)
-    var as_h = ctx.enqueue_create_host_buffer[DType.float32](M)
-    var c_h = ctx.enqueue_create_host_buffer[DType.bfloat16](M * N)
+    var aq_h = ctx.enqueue_create_host_buffer[.int8](M * K)
+    var as_h = ctx.enqueue_create_host_buffer[.float32](M)
+    var c_h = ctx.enqueue_create_host_buffer[.bfloat16](M * N)
     ctx.enqueue_copy(aq_h, aqd)
     ctx.enqueue_copy(as_h, asd)
     ctx.enqueue_copy(c_h, cd)

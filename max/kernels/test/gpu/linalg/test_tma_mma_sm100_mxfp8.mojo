@@ -117,7 +117,7 @@ def block_scaled_mxfp8_kernel[
     var num_iters = Int(num_iters_dev)
     comptime assert num_threads == 256
     comptime assert (
-        a_type == b_type and a_type == DType.float8_e4m3fn
+        a_type == b_type and a_type == .float8_e4m3fn
     ), "Only support float8_e4m3fn"
 
     comptime BM = block_tile_shape[0]
@@ -139,23 +139,21 @@ def block_scaled_mxfp8_kernel[
         b_type, BN, BK, swizzle_mode=b_swizzle
     ]()
 
-    var smem = external_memory[
-        UInt8, address_space=AddressSpace.SHARED, alignment=8
-    ]()
+    var smem = external_memory[UInt8, address_space=.SHARED, alignment=8]()
     var a_smem = smem.bitcast[Scalar[a_type]]()
 
     comptime a_smem_tile_t = LayoutTensor[
         a_type,
         a_smem_layout,
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
     ]
     comptime b_smem_tile_t = LayoutTensor[
         b_type,
         b_smem_layout,
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
     ]
 
@@ -175,14 +173,14 @@ def block_scaled_mxfp8_kernel[
         a_scales_type,
         a_scales_smem_layout,
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
     ]
     comptime b_scales_smem_tile_t = LayoutTensor[
         b_scales_type,
         b_scales_smem_layout,
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
     ]
 
@@ -291,7 +289,7 @@ def block_scaled_mxfp8_kernel[
         a_type,
         b_type,
         a_scales_type,
-        Index[dtype=DType.uint32](umma_shape[0], umma_shape[1]),
+        Index[dtype=.uint32](umma_shape[0], umma_shape[1]),
         transpose_b=transpose_b,
     ]()
 
@@ -515,7 +513,7 @@ def sm100_block_scaled_mxfp8[
     comptime assert transpose_b, "Only support transposed B"
 
     comptime assert (
-        a_type == b_type and a_type == DType.float8_e4m3fn
+        a_type == b_type and a_type == .float8_e4m3fn
     ), "Only support float8_e4m3fn"
 
     var M = c.dim(0)
@@ -925,7 +923,7 @@ def main() raises:
         test_block_scaled_mxfp8[
             dtype,
             dtype,
-            DType.bfloat16,
+            .bfloat16,
             Index(MMA_M, 256, BK),
             Index(MMA_M, 256, MMA_K),
             transpose_b=True,
@@ -934,7 +932,7 @@ def main() raises:
         test_block_scaled_mxfp8[
             dtype,
             dtype,
-            DType.bfloat16,
+            .bfloat16,
             Index(MMA_M, 256, BK),
             Index(MMA_M, 256, MMA_K),
             transpose_b=True,
@@ -943,7 +941,7 @@ def main() raises:
         test_block_scaled_mxfp8[
             dtype,
             dtype,
-            DType.bfloat16,
+            .bfloat16,
             Index(MMA_M, 256, BK),
             Index(MMA_M, 256, MMA_K),
             transpose_b=True,
@@ -953,7 +951,7 @@ def main() raises:
         test_block_scaled_mxfp8[
             dtype,
             dtype,
-            DType.bfloat16,
+            .bfloat16,
             Index(MMA_M, 128, BK),
             Index(MMA_M, 128, MMA_K),
             transpose_b=True,
@@ -962,7 +960,7 @@ def main() raises:
         test_block_scaled_mxfp8[
             dtype,
             dtype,
-            DType.bfloat16,
+            .bfloat16,
             Index(MMA_M, 128, BK),
             Index(MMA_M, 128, MMA_K),
             transpose_b=True,
@@ -971,7 +969,7 @@ def main() raises:
         test_block_scaled_mxfp8[
             dtype,
             dtype,
-            DType.bfloat16,
+            .bfloat16,
             Index(MMA_M, 128, BK),
             Index(MMA_M, 128, MMA_K),
             transpose_b=True,

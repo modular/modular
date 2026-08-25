@@ -119,13 +119,13 @@ comptime _GroupPtrLayout[max_groups: Int] = RowMajorLayout[
     *Coord[ComptimeInt[max_groups], ComptimeInt[1]].element_types
 ]
 comptime _GroupPtrTile[max_groups: Int] = TileTensor[
-    DType.uint64, _GroupPtrLayout[max_groups], MutAnyOrigin
+    .uint64, _GroupPtrLayout[max_groups], MutAnyOrigin
 ]
 comptime _ProblemSizesLayout[max_groups: Int] = RowMajorLayout[
     *Coord[ComptimeInt[max_groups], ComptimeInt[4]].element_types
 ]
 comptime _ProblemSizesTile[max_groups: Int] = TileTensor[
-    DType.int32, _ProblemSizesLayout[max_groups], MutAnyOrigin
+    .int32, _ProblemSizesLayout[max_groups], MutAnyOrigin
 ]
 
 
@@ -159,46 +159,46 @@ struct GroupedTensormapSmem(TrivialRegisterPassable):
 
     @__allow_legacy_any_origin_fields
     var desc_a: UnsafePointer[
-        TMADescriptor, MutAnyOrigin, address_space=AddressSpace.SHARED
+        TMADescriptor, MutAnyOrigin, address_space=.SHARED
     ]
 
     @__allow_legacy_any_origin_fields
     var desc_b: UnsafePointer[
-        TMADescriptor, MutAnyOrigin, address_space=AddressSpace.SHARED
+        TMADescriptor, MutAnyOrigin, address_space=.SHARED
     ]
 
     @__allow_legacy_any_origin_fields
     var desc_sfa: UnsafePointer[
-        TMADescriptor, MutAnyOrigin, address_space=AddressSpace.SHARED
+        TMADescriptor, MutAnyOrigin, address_space=.SHARED
     ]
 
     @__allow_legacy_any_origin_fields
     var desc_sfb: UnsafePointer[
-        TMADescriptor, MutAnyOrigin, address_space=AddressSpace.SHARED
+        TMADescriptor, MutAnyOrigin, address_space=.SHARED
     ]
 
     @__allow_legacy_any_origin_fields
     var desc_c: UnsafePointer[
-        TMADescriptor, MutAnyOrigin, address_space=AddressSpace.SHARED
+        TMADescriptor, MutAnyOrigin, address_space=.SHARED
     ]
 
     @staticmethod
     @always_inline
     def from_smem(
         ptr_a: UnsafePointer[
-            TMADescriptor, MutAnyOrigin, address_space=AddressSpace.SHARED
+            TMADescriptor, MutAnyOrigin, address_space=.SHARED
         ],
         ptr_b: UnsafePointer[
-            TMADescriptor, MutAnyOrigin, address_space=AddressSpace.SHARED
+            TMADescriptor, MutAnyOrigin, address_space=.SHARED
         ],
         ptr_sfa: UnsafePointer[
-            TMADescriptor, MutAnyOrigin, address_space=AddressSpace.SHARED
+            TMADescriptor, MutAnyOrigin, address_space=.SHARED
         ],
         ptr_sfb: UnsafePointer[
-            TMADescriptor, MutAnyOrigin, address_space=AddressSpace.SHARED
+            TMADescriptor, MutAnyOrigin, address_space=.SHARED
         ],
         ptr_c: UnsafePointer[
-            TMADescriptor, MutAnyOrigin, address_space=AddressSpace.SHARED
+            TMADescriptor, MutAnyOrigin, address_space=.SHARED
         ],
     ) -> Self:
         """Create tensormap pointers from explicit SMEM pointers.
@@ -596,7 +596,7 @@ def is_valid_dtypes_and_scale_factor_vec_size(
 
     # Check sf_dtype and sf_vec_size combinations
     # Float8E4M3FN scale factors only valid with sf_vec_size=16 (NVF4)
-    if sf_dtype == DType.float8_e4m3fn and sf_vec_size == 32:
+    if sf_dtype == .float8_e4m3fn and sf_vec_size == 32:
         return False
 
     # MXF8 (Float8) requires sf_vec_size=32
@@ -1449,8 +1449,8 @@ struct GroupedBlockScaledMatmulKernel[
 
         # ===== Shared Memory Setup =====
         ref smem = external_memory[
-            Scalar[DType.uint8],
-            address_space=AddressSpace.SHARED,
+            UInt8,
+            address_space=.SHARED,
             alignment=128,
         ]().bitcast[Self.SmemType]()[]
 
@@ -2056,8 +2056,8 @@ struct GroupedBlockScaledMatmulKernel[
 
         # ===== Shared Memory Setup =====
         ref smem = external_memory[
-            Scalar[DType.uint8],
-            address_space=AddressSpace.SHARED,
+            UInt8,
+            address_space=.SHARED,
             alignment=128,
         ]().bitcast[Self.SmemType]()[]
 

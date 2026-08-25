@@ -41,6 +41,7 @@ from max.pipelines.lib.config.model_config import (
 from max.pipelines.lib.interfaces.pipeline_model import (
     AlwaysSignalBuffersMixin,
 )
+from max.pipelines.lib.memory_estimation import MemoryPlan
 from max.pipelines.lib.pipeline_variants.unified_spec_decode_model import (
     _UnifiedSpecDecodeModelMixin,
 )
@@ -117,6 +118,8 @@ class UnifiedDSparkGemma4_31BModel(
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
         weights: Weights,
+        *,
+        memory_plan: MemoryPlan,
         adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
         return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
@@ -128,10 +131,11 @@ class UnifiedDSparkGemma4_31BModel(
             devices,
             kv_cache_config,
             weights,
-            adapter,
+            adapter=adapter,
             return_logits=ReturnLogits.VARIABLE,
             return_hidden_states=ReturnHiddenStates.SELECTED_LAYERS,
             max_batch_size=max_batch_size,
+            memory_plan=memory_plan,
         )
         self.model = self.load_model(session)
 
@@ -177,7 +181,7 @@ class UnifiedDSparkGemma4_31BModel(
         # to the drafter's trained width) before any KV params are derived
         # from it below.
         unified_config = UnifiedDSparkGemma4_31BConfig.initialize(
-            self.pipeline_config
+            self.pipeline_config, max_seq_len=self.max_seq_len
         )
         target_hf_config = self.huggingface_config
         assert target_hf_config is not None

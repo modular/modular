@@ -73,9 +73,9 @@ from max.pipelines.architectures.unified_dspark_gemma4_31b.unified_dspark_gemma4
     _block_dispatch_metadata,
 )
 from max.pipelines.kv_cache import KVCacheConfig, cache_dtype_for_encoding
+from max.pipelines.lib import MAXModelConfig
 from max.pipelines.lib._hf_config import load_huggingface_config
 from max.pipelines.lib.config import (
-    MAXModelConfig,
     PipelineConfig,
     SpeculativeConfig,
 )
@@ -308,24 +308,20 @@ def test_missing_nested_max_position_embeddings_rejected() -> None:
 
 
 def test_draft_arch_config_reads_nested_max_position_embeddings() -> None:
-    model_config = SimpleNamespace(
-        huggingface_config=PretrainedConfig.from_dict(_raw())
+    assert (
+        DSparkSpeculatorsDraftArchConfig.calculate_max_seq_len(
+            PretrainedConfig.from_dict(_raw()),
+            cast(MAXModelConfig, None),
+        )
+        == 262144
     )
-    arch_config = DSparkSpeculatorsDraftArchConfig.initialize(
-        cast(PipelineConfig, None),
-        model_config=cast(MAXModelConfig, model_config),
-    )
-    assert arch_config.get_max_seq_len() == 262144
 
     raw = _raw()
     del raw["transformer_layer_config"]["max_position_embeddings"]
-    model_config = SimpleNamespace(
-        huggingface_config=PretrainedConfig.from_dict(raw)
-    )
     with pytest.raises(ValueError, match="max_position_embeddings"):
-        DSparkSpeculatorsDraftArchConfig.initialize(
-            cast(PipelineConfig, None),
-            model_config=cast(MAXModelConfig, model_config),
+        DSparkSpeculatorsDraftArchConfig.calculate_max_seq_len(
+            PretrainedConfig.from_dict(raw),
+            cast(MAXModelConfig, None),
         )
 
 

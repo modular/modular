@@ -87,10 +87,7 @@ struct _OutputFusionTileConsumer[
         ref self,
         tile_coord: Coord,
         tile: TileTensor[
-            dtype,
-            LayoutType,
-            ...,
-            address_space=Self.src_address_space,
+            dtype, LayoutType, ..., address_space=Self.src_address_space
         ],
         thread_layout: _NewLayout,
     ) -> None:
@@ -188,18 +185,18 @@ struct _NaiveRMSNormTileAdapter[
         var x_val = self.input.load[width=1](Coord(row, col)).cast[
             DType.float32
         ]()
-        var g_val = self.gamma.load[width=1](Coord(col)).cast[DType.float32]()
-        var w_off = self.weight_offset.cast[DType.float32]()
+        var g_val = self.gamma.load[width=1](Coord(col)).cast[.float32]()
+        var w_off = self.weight_offset.cast[.float32]()
         var y = (x_val * inv_rms) * (g_val + w_off)
 
         # Driver-owned per-thread output fragment; see `_NaiveMatmulTileAdapter`
         # for the LOCAL->GENERIC staging dance (TODO(GEX-3912)).
         var dst_local = stack_allocation[
-            dtype=Self.dtype, address_space=AddressSpace.LOCAL
+            dtype=Self.dtype, address_space=.LOCAL
         ](row_major[1, 1]())
         var dst = TileTensor(
             dst_local._storage.address_space_cast[
-                AddressSpace.GENERIC
+                .GENERIC
             ]().unsafe_origin_cast[MutAnyOrigin](),
             row_major[1, 1](),
         )
@@ -208,7 +205,7 @@ struct _NaiveRMSNormTileAdapter[
         # Terminal store. A bound `TileConsumer` OWNS the store (the fusion's
         # `store` performs the final `LocalToGenericTileCopier` copy itself);
         # otherwise the adapter stores the fragment directly.
-        var dst_local_view = dst.address_space_cast[AddressSpace.LOCAL]()
+        var dst_local_view = dst.address_space_cast[.LOCAL]()
         comptime if is_valid_epilogue[Self.TileConsumerType]():
             var consumer = self.tile_consumer.value()
             consumer(
@@ -267,7 +264,7 @@ struct RMSNormTileSM100:
             rank == 2
         ), "tile-codegen rms_norm only supports rank-2 tensors"
         comptime assert (
-            dtype == DType.float32
+            dtype == .float32
         ), "tile-codegen rms_norm is correctness-only and f32-only"
 
         # TODO(GEX-3905): a real rms_norm must own its own tile shape rather

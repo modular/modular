@@ -93,9 +93,9 @@ def gated_delta_conv1d_fwd_gpu[
     ],
     conv_weight: TileTensor[work_dtype, conv_weight_LT, MutUntrackedOrigin],
     conv_state: TileTensor[state_dtype, conv_state_LT, MutUntrackedOrigin],
-    slot_idx: TileTensor[DType.uint32, slot_idx_LT, MutUntrackedOrigin],
+    slot_idx: TileTensor[.uint32, slot_idx_LT, MutUntrackedOrigin],
     input_row_offsets: TileTensor[
-        DType.uint32, input_row_offsets_LT, MutUntrackedOrigin
+        .uint32, input_row_offsets_LT, MutUntrackedOrigin
     ],
     conv_output_ragged: TileTensor[
         work_dtype, conv_output_ragged_LT, MutUntrackedOrigin

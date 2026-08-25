@@ -125,7 +125,7 @@ def _has_shape[
 def _dtype_to_nvvm_type[
     out_type: DType, in_type: DType = out_type
 ]() -> __mlir_type.`!kgen.deferred`:
-    comptime if out_type == DType.float16 or out_type == DType.uint32:
+    comptime if out_type == .float16 or out_type == .uint32:
         # Special case when input types are integers, the result has to be integer too.
         if in_type != out_type and in_type.is_integral():
             return __mlir_attr.`si32`
@@ -137,20 +137,20 @@ def _dtype_to_nvvm_type[
 def _dtype_to_nvvm_wgmma_type[
     out_type: DType, in_type: DType = out_type
 ]() -> __mlir_type.`!kgen.deferred`:
-    comptime if out_type == DType.float8_e4m3fn:
+    comptime if out_type == .float8_e4m3fn:
         return __mlir_attr[`#nvvm.wgmma_type<e4m3>`]
-    elif out_type == DType.float8_e5m2:
+    elif out_type == .float8_e5m2:
         return __mlir_attr[`#nvvm.wgmma_type<e5m2>`]
-    elif out_type == DType.float16 or out_type == DType.uint32:
+    elif out_type == .float16 or out_type == .uint32:
         # Special case when input types are integers, the result has to be integer too.
         if in_type != out_type and in_type.is_integral():
             return __mlir_attr[`#nvvm.wgmma_type<s32>`]
         return __mlir_attr[`#nvvm.wgmma_type<f16>`]
-    elif out_type == DType.int8:
+    elif out_type == .int8:
         return __mlir_attr[`#nvvm.wgmma_type<s8>`]
-    elif out_type == DType.uint8:
+    elif out_type == .uint8:
         return __mlir_attr[`#nvvm.wgmma_type<u8>`]
-    elif out_type == DType.float32:
+    elif out_type == .float32:
         return __mlir_attr[`#nvvm.wgmma_type<tf32>`]
     else:
         return __mlir_deferred_attr[
@@ -272,7 +272,7 @@ def ld_matrix[
         from max.gpu.compute.mma import ld_matrix
         from std.memory import alloc, dealloc, Layout
 
-        var layout = Layout[Scalar[DType.float16]](count=8)
+        var layout = Layout[Float16](count=8)
         var allocation = alloc(layout)
         var ptr = allocation.unsafe_ptr()
 
@@ -364,8 +364,8 @@ def ld_matrix[
 def st_matrix[
     dtype: DType, //, simd_width: Int, *, transpose: Bool = False
 ](
-    ptr: Pointer[mut=True, Scalar[dtype], _, address_space=AddressSpace.SHARED],
-    d: SIMD[DType.float32, simd_width],
+    ptr: Pointer[mut=True, Scalar[dtype], _, address_space=.SHARED],
+    d: SIMD[.float32, simd_width],
 ):
     """Performs warp-synchronized copy from registers to shared memory.
 
@@ -517,11 +517,7 @@ struct WGMMADescriptor[dtype: DType](
         leading_byte_offset: Int,
         swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
     ](
-        smem_ptr: Pointer[
-            Scalar[Self.dtype],
-            address_space=AddressSpace.SHARED,
-            ...,
-        ],
+        smem_ptr: Pointer[Scalar[Self.dtype], address_space=.SHARED, ...],
     ) -> Self:
         """Create a descriptor for shared memory operand.
 
@@ -542,9 +538,9 @@ struct WGMMADescriptor[dtype: DType](
         @__parameter
         def _convert_swizzle_enum[mode: Int32]() -> Int64:
             comptime if mode == 0:
-                return mode.cast[DType.int64]()
+                return mode.cast[.int64]()
             else:
-                return (4 - mode).cast[DType.int64]()
+                return (4 - mode).cast[.int64]()
 
         comptime swizzle = _convert_swizzle_enum[swizzle_mode._value]()
         var offset = Int64(0)
@@ -952,13 +948,13 @@ def wgmma_async[
     # for now, limited support
     comptime assert m == 64
     comptime assert k == 16
-    comptime assert a_type == DType.bfloat16
-    comptime assert b_type == DType.bfloat16
-    comptime assert accum_type == DType.float32
-    comptime assert c_dtype == DType.float32
+    comptime assert a_type == .bfloat16
+    comptime assert b_type == .bfloat16
+    comptime assert accum_type == .float32
+    comptime assert c_dtype == .float32
     comptime assert layout_a == "row"
     comptime assert layout_b == "col" or (
-        layout_b == "row" and b_type == DType.bfloat16
+        layout_b == "row" and b_type == .bfloat16
     )
 
     var desc_b_value = __mlir_op.`pop.cast_to_builtin`[_type=__mlir_type.i64](
@@ -969,29 +965,29 @@ def wgmma_async[
     comptime assert (
         m == 64
         and k == 16
-        and a_type == b_type == DType.bfloat16
-        and accum_type == c_dtype == DType.float32
+        and a_type == b_type == .bfloat16
+        and accum_type == c_dtype == .float32
     ), "unsupported config"
-    var a0 = bitcast[DType.uint32, 1](
-        SIMD[DType.bfloat16, 2](
+    var a0 = bitcast[.uint32, 1](
+        SIMD[.bfloat16, 2](
             rebind[BFloat16](mat_a_frag[0]),
             rebind[BFloat16](mat_a_frag[1]),
         )
     )
-    var a1 = bitcast[DType.uint32, 1](
-        SIMD[DType.bfloat16, 2](
+    var a1 = bitcast[.uint32, 1](
+        SIMD[.bfloat16, 2](
             rebind[BFloat16](mat_a_frag[2]),
             rebind[BFloat16](mat_a_frag[3]),
         )
     )
-    var a2 = bitcast[DType.uint32, 1](
-        SIMD[DType.bfloat16, 2](
+    var a2 = bitcast[.uint32, 1](
+        SIMD[.bfloat16, 2](
             rebind[BFloat16](mat_a_frag[4]),
             rebind[BFloat16](mat_a_frag[5]),
         )
     )
-    var a3 = bitcast[DType.uint32, 1](
-        SIMD[DType.bfloat16, 2](
+    var a3 = bitcast[.uint32, 1](
+        SIMD[.bfloat16, 2](
             rebind[BFloat16](mat_a_frag[6]),
             rebind[BFloat16](mat_a_frag[7]),
         )
@@ -1023,7 +1019,7 @@ def wgmma_async[
         )
 
         return rebind[type_of(c)](
-            SIMD[DType.float32, 4](r[0], r[1], r[2], r[3])
+            SIMD[.float32, 4](r[0], r[1], r[2], r[3])
         )
     elif n == 16:
         var r = inlined_assembly[
@@ -1048,7 +1044,7 @@ def wgmma_async[
         )
 
         return rebind[type_of(c)](
-            SIMD[DType.float32, 8](
+            SIMD[.float32, 8](
                 r[0], r[1], r[2], r[3], r[4], r[5], r[6], r[7]
             )
         )
@@ -1078,7 +1074,7 @@ def wgmma_async[
         )
 
         return rebind[type_of(c)](
-            SIMD[DType.float32, 16](
+            SIMD[.float32, 16](
                 r[0],  r[1],  r[2],  r[3],  r[4],  r[5],  r[6],  r[7],
                 r[8],  r[9],  r[10], r[11], r[12], r[13], r[14], r[15],
             )
@@ -1115,7 +1111,7 @@ def wgmma_async[
         )
 
         return rebind[type_of(c)](
-            SIMD[DType.float32, 32](
+            SIMD[.float32, 32](
                 r[0],  r[1],  r[2],  r[3],  r[4],  r[5],  r[6],  r[7],
                 r[8],  r[9],  r[10], r[11], r[12], r[13], r[14], r[15],
                 r[16], r[17], r[18], r[19], r[20], r[21], r[22], r[23],
@@ -1165,7 +1161,7 @@ def wgmma_async[
             c[56], c[57], c[58], c[59], c[60], c[61], c[62], c[63],
         )
         return rebind[type_of(c)](
-            SIMD[DType.float32, 64](
+            SIMD[.float32, 64](
                 r[0], r[1], r[2], r[3], r[4], r[5], r[6], r[7], r[8], r[9],
                 r[10], r[11], r[12], r[13], r[14], r[15], r[16], r[17],
                 r[18], r[19], r[20], r[21], r[22], r[23], r[24], r[25],
@@ -1244,7 +1240,7 @@ def wgmma_async[
         )
 
         return rebind[type_of(c)](
-            SIMD[DType.float32, 128](
+            SIMD[.float32, 128](
                 r[0], r[1], r[2], r[3], r[4], r[5], r[6], r[7], r[8], r[9],
                 r[10], r[11], r[12], r[13], r[14], r[15], r[16], r[17], r[18],
                 r[19], r[20], r[21], r[22], r[23], r[24], r[25], r[26], r[27],

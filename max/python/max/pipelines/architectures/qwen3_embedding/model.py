@@ -41,9 +41,9 @@ from max.pipelines.lib import (
     ModelOutputs,
     PipelineConfig,
 )
+from max.pipelines.lib.memory_estimation import MemoryPlan
 from max.pipelines.lib.pipeline_variants.utils import get_rope_theta
 from max.pipelines.lib.utils import parse_state_dict_from_weights
-from transformers import AutoConfig
 from typing_extensions import override
 
 from .batch_processor import Qwen3EmbeddingBatchProcessor
@@ -109,6 +109,8 @@ class Qwen3EmbeddingModel(GraphPipelineModel[TextContext]):
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
         weights: Weights,
+        *,
+        memory_plan: MemoryPlan,
         adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.ALL,
         max_batch_size: int = 1,
@@ -130,9 +132,10 @@ class Qwen3EmbeddingModel(GraphPipelineModel[TextContext]):
             devices,
             kv_cache_config,
             weights,
-            adapter,
-            return_logits,
+            adapter=adapter,
+            return_logits=return_logits,
             max_batch_size=max_batch_size,
+            memory_plan=memory_plan,
         )
         self.model = self.load_model(session)
 
@@ -157,7 +160,6 @@ class Qwen3EmbeddingModel(GraphPipelineModel[TextContext]):
 
         # Create RoPE
         head_dim = self.huggingface_config.head_dim
-        max_seq_len = self.pipeline_config.model.max_length or 32768
         rope_scaling_params: Llama3RopeScalingParams | None = None
         rope_scaling = getattr(self.huggingface_config, "rope_scaling", None)
         if rope_scaling is not None:
@@ -177,7 +179,7 @@ class Qwen3EmbeddingModel(GraphPipelineModel[TextContext]):
             dim=self.huggingface_config.hidden_size,
             n_heads=self.huggingface_config.num_attention_heads,
             theta=get_rope_theta(self.huggingface_config),
-            max_seq_len=max_seq_len,
+            max_seq_len=self.max_seq_len,
             head_dim=head_dim,
             interleaved=False,  # Qwen3 uses non-interleaved RoPE
             scaling_params=rope_scaling_params,
@@ -340,30 +342,3 @@ class Qwen3EmbeddingModel(GraphPipelineModel[TextContext]):
         # Return embeddings in logits field for pipeline compatibility
         assert isinstance(model_outputs[0], Buffer)
         return ModelOutputs(logits=model_outputs[0])
-
-    @classmethod
-    def calculate_max_seq_len(
-        cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
-    ) -> int:
-        """Calculate maximum sequence length.
-
-        Args:
-            pipeline_config: Pipeline configuration
-            huggingface_config: HuggingFace configuration
-
-        Returns:
-            Maximum sequence length
-        """
-        # Use configured max_length, bounded by model's max_position_embeddings
-        model_max = getattr(
-            huggingface_config, "max_position_embeddings", 32768
-        )
-        configured_max = pipeline_config.model.max_length or 8192
-
-        if configured_max > model_max:
-            raise ValueError(
-                f"Configured max_length ({configured_max}) exceeds model's "
-                f"max_position_embeddings ({model_max})"
-            )
-
-        return configured_max

@@ -27,7 +27,7 @@ from std.utils.index import IndexList
 struct ReduceBuffers:
     @staticmethod
     def execute(
-        output: OutputTensor[dtype=DType.float32, rank=1, ...],
+        output: OutputTensor[dtype=.float32, rank=1, ...],
         inputs: MutableInputVariadicTensors[dtype=DType.float32, rank=1, ...],
     ) -> None:
         print("Success!")
@@ -35,17 +35,15 @@ struct ReduceBuffers:
 
 @fieldwise_init
 struct SIMDPair[S0: Int, S1: Int](ImplicitlyCopyable, RegisterPassable):
-    var x: SIMD[DType.int32, Self.S0]
-    var y: SIMD[DType.int32, Self.S1]
+    var x: SIMD[.int32, Self.S0]
+    var y: SIMD[.int32, Self.S1]
 
 
 @extensibility.register("make_simd_pair")
 struct MakeSimdPair:
     @staticmethod
     def execute[P0: Int, P1: Int]() -> SIMDPair[P0, P1]:
-        return SIMDPair[P0, P1](
-            iota[DType.int32, P0](), iota[DType.int32, P1](Int32(P0))
-        )
+        return SIMDPair[P0, P1](iota[.int32, P0](), iota[.int32, P1](Int32(P0)))
 
 
 @extensibility.register("kernel_with_parameterized_opaque")
@@ -54,7 +52,7 @@ struct ParameterizedOpaqueType:
     def execute[
         P0: Int
     ](
-        output: OutputTensor[dtype=DType.int32, rank=1, ...],
+        output: OutputTensor[dtype=.int32, rank=1, ...],
         x: SIMDPair[P0, _],
     ) capturing:
         output.store(IndexList[1](0), x.x)

@@ -532,7 +532,7 @@ kgen.generator @param_for() -> index {
   // CHECK-SAME: (%arg0 = %idx0 : index) -> index
   kgen.param.for decl: index in :index 2
     has_next :(index) -> i1 @has_next_wrapper
-    get_next_iter :(!kgen.pointer<index> read_mem, !kgen.pointer<index> byref_result) -> !kgen.none @wrapper {
+    get_next_iter :(!kgen.pointer<index> imm_mem, !kgen.pointer<index> byref_result) -> !kgen.none @wrapper {
 
     kgen.param.if <apply(:!lit.generator<(index) -> !kgen.scalar<bool>> @has_next_wrapper, decl)> {
       // CHECK: %index = kgen.param.constant

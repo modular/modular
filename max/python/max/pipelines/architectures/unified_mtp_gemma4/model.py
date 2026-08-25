@@ -42,6 +42,7 @@ from max.pipelines.lib import (
     UnifiedEagleOutputs,
     UnifiedSpecDecodeInputs,
 )
+from max.pipelines.lib.memory_estimation import MemoryPlan
 from max.pipelines.lib.pipeline_variants.unified_spec_decode_model import (
     _UnifiedSpecDecodeModelMixin,
 )
@@ -139,6 +140,8 @@ class UnifiedMTPGemma4Model(
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
         weights: Weights,
+        *,
+        memory_plan: MemoryPlan,
         adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
         return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
@@ -151,9 +154,10 @@ class UnifiedMTPGemma4Model(
             devices,
             kv_cache_config,
             weights,
-            adapter,
+            adapter=adapter,
             return_logits=ReturnLogits.VARIABLE,
             return_hidden_states=ReturnHiddenStates.ALL_NORMALIZED,
+            memory_plan=memory_plan,
         )
 
         # Force signal buffer initialization.
@@ -200,7 +204,7 @@ class UnifiedMTPGemma4Model(
         self, state_dict: dict[str, Any]
     ) -> Gemma4ForConditionalGenerationConfig:
         config = Gemma4ForConditionalGenerationConfig.initialize(
-            self.pipeline_config
+            self.pipeline_config, max_seq_len=self.max_seq_len
         )
         config.finalize(
             huggingface_config=self.huggingface_config,
@@ -520,14 +524,6 @@ class UnifiedMTPGemma4Model(
             *raw.cu_seqlens,
             *raw.pool_gather_index,
             raw.max_seq_len,
-        )
-
-    @classmethod
-    def calculate_max_seq_len(
-        cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
-    ) -> int:
-        return Gemma4ForConditionalGenerationConfig.calculate_max_seq_len(
-            pipeline_config, huggingface_config
         )
 
     def _convert_draft_weights(

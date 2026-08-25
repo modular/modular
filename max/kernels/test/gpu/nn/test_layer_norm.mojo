@@ -87,7 +87,7 @@ def run_layer_norm_gpu[
         input_fn,
         output_fn,
         Coord(shape),
-        Scalar[DType.int](cols),
+        Int(cols),
         gamma,
         beta,
         epsilon,
@@ -121,13 +121,13 @@ def main() raises:
         # End-to-end layer_norm across shapes. The blocked/warp-tiled kernel
         # selection is a scaffolder implementation detail, so only the op's
         # end-to-end behavior is tested here.
-        run_layer_norm_gpu[DType.float32](ctx, Index(3, 5))
-        run_layer_norm_gpu[DType.float32](ctx, Index(3, 8))
-        run_layer_norm_gpu[DType.float32](ctx, Index(7, 33))
-        run_layer_norm_gpu[DType.float32](ctx, Index(1, 1024))
-        run_layer_norm_gpu[DType.float32](ctx, Index(1, 8192), rtol=0.1)
-        run_layer_norm_gpu[DType.float32](ctx, Index(10, 4096))
+        run_layer_norm_gpu[.float32](ctx, Index(3, 5))
+        run_layer_norm_gpu[.float32](ctx, Index(3, 8))
+        run_layer_norm_gpu[.float32](ctx, Index(7, 33))
+        run_layer_norm_gpu[.float32](ctx, Index(1, 1024))
+        run_layer_norm_gpu[.float32](ctx, Index(1, 8192), rtol=0.1)
+        run_layer_norm_gpu[.float32](ctx, Index(10, 4096))
         # variable rank
-        run_layer_norm_gpu[DType.float32](ctx, Index(5))
-        run_layer_norm_gpu[DType.float32](ctx, Index(3, 4, 10, 20, 8))
-        run_layer_norm_gpu[DType.float32](ctx, Index(1, 5, 6, 10, 128))
+        run_layer_norm_gpu[.float32](ctx, Index(5))
+        run_layer_norm_gpu[.float32](ctx, Index(3, 4, 10, 20, 8))
+        run_layer_norm_gpu[.float32](ctx, Index(1, 5, 6, 10, 128))

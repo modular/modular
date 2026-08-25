@@ -83,9 +83,9 @@ struct TensorCoreMMA[algorithm: StaticString]:
         N: Int,
         K: Int,
     ](
-        output: OutputTensor[dtype=DType.float32, rank=2, ...],
-        a: InputTensor[dtype=DType.float16, rank=2, ...],
-        b: InputTensor[dtype=DType.float16, rank=2, ...],
+        output: OutputTensor[dtype=.float32, rank=2, ...],
+        a: InputTensor[dtype=.float16, rank=2, ...],
+        b: InputTensor[dtype=.float16, rank=2, ...],
         perform_validation: Bool,
         # the context is needed for some GPU calls
         ctx: DeviceContext,
@@ -499,9 +499,9 @@ def naive_tensor[
     comptime frag_size = MMA_M * MMA_N // WARP_SIZE
 
     # Allocate only small register tile for accumulating partial results
-    var c_reg = stack_allocation[
-        dtype=output_type, address_space=AddressSpace.LOCAL
-    ](row_major[1, frag_size]()).fill(0)
+    var c_reg = stack_allocation[dtype=output_type, address_space=.LOCAL](
+        row_major[1, frag_size]()
+    ).fill(0)
 
     # `TensorCore` operates on `LayoutTensor`, so bridge the register tile to a
     # `LayoutTensor` view (aliasing the same storage) for the MMA fragment ops.
@@ -610,21 +610,21 @@ def basic_shared_mem[
     ]()
 
     # Allocate shared memory for tiles of A and B
-    var A_sram_tile = stack_allocation[
-        dtype=input_type, address_space=AddressSpace.SHARED
-    ](row_major[BM, BK]())
-    var B_sram_tile = stack_allocation[
-        dtype=input_type, address_space=AddressSpace.SHARED
-    ](row_major[BK, BN]())
+    var A_sram_tile = stack_allocation[dtype=input_type, address_space=.SHARED](
+        row_major[BM, BK]()
+    )
+    var B_sram_tile = stack_allocation[dtype=input_type, address_space=.SHARED](
+        row_major[BK, BN]()
+    )
 
     # Calculate correct accumulator fragment size based on MMA configuration
     # AMD 32x32x8 MFMA requires 16 f32 accumulator values per thread (with WARP_SIZE=64)
     comptime frag_size = MMA_M * MMA_N // WARP_SIZE
 
     # Allocate register tile for accumulating partial results
-    var c_reg = stack_allocation[
-        dtype=output_type, address_space=AddressSpace.LOCAL
-    ](row_major[1, frag_size]()).fill(0)
+    var c_reg = stack_allocation[dtype=output_type, address_space=.LOCAL](
+        row_major[1, frag_size]()
+    ).fill(0)
 
     # `TensorCore` operates on `LayoutTensor`, so bridge the register tile to a
     # `LayoutTensor` view (aliasing the same storage) for the MMA fragment ops.
@@ -752,21 +752,21 @@ def multi_block_tiled[
     ]()
 
     # Allocate shared memory for tiles of A and B
-    var A_sram_tile = stack_allocation[
-        dtype=input_type, address_space=AddressSpace.SHARED
-    ](row_major[BM, BK]())
-    var B_sram_tile = stack_allocation[
-        dtype=input_type, address_space=AddressSpace.SHARED
-    ](row_major[BK, BN]())
+    var A_sram_tile = stack_allocation[dtype=input_type, address_space=.SHARED](
+        row_major[BM, BK]()
+    )
+    var B_sram_tile = stack_allocation[dtype=input_type, address_space=.SHARED](
+        row_major[BK, BN]()
+    )
 
     # Calculate correct accumulator fragment size based on MMA configuration
     # AMD 32x32x8 MFMA requires 16 f32 accumulator values per thread (with WARP_SIZE=64)
     comptime frag_size = MMA_M * MMA_N // WARP_SIZE
 
     # Allocate register tile for accumulating partial results
-    var c_reg = stack_allocation[
-        dtype=output_type, address_space=AddressSpace.LOCAL
-    ](row_major[WM // MMA_M, (WN * frag_size) // MMA_N]()).fill(0)
+    var c_reg = stack_allocation[dtype=output_type, address_space=.LOCAL](
+        row_major[WM // MMA_M, (WN * frag_size) // MMA_N]()
+    ).fill(0)
 
     # Thread layout for memory transfers
     comptime load_layout = row_major[16, 16]()  # 256 threads - full utilization
@@ -911,12 +911,12 @@ def scheduler_hints[
     ]()
 
     # Allocate single set of shared memory buffers (single buffering to fit memory limit)
-    var A_sram_tile = stack_allocation[
-        dtype=input_type, address_space=AddressSpace.SHARED
-    ](row_major[BM, BK]())
-    var B_sram_tile = stack_allocation[
-        dtype=input_type, address_space=AddressSpace.SHARED
-    ](row_major[BK, BN]())
+    var A_sram_tile = stack_allocation[dtype=input_type, address_space=.SHARED](
+        row_major[BM, BK]()
+    )
+    var B_sram_tile = stack_allocation[dtype=input_type, address_space=.SHARED](
+        row_major[BK, BN]()
+    )
 
     # Calculate correct accumulator fragment size based on MMA configuration
     # AMD 32x32x8 MFMA requires 16 f32 accumulator values per thread (with WARP_SIZE=64)
@@ -924,9 +924,9 @@ def scheduler_hints[
 
     # Allocate register tile for accumulating partial results
     # AMD 32x32x8 MFMA requires 16 f32 accumulator values per thread (with WARP_SIZE=64)
-    var c_reg = stack_allocation[
-        dtype=output_type, address_space=AddressSpace.LOCAL
-    ](row_major[WM // MMA_M, (WN * frag_size) // MMA_N]()).fill(0)
+    var c_reg = stack_allocation[dtype=output_type, address_space=.LOCAL](
+        row_major[WM // MMA_M, (WN * frag_size) // MMA_N]()
+    ).fill(0)
 
     # Thread layout for memory transfers
     comptime load_layout = row_major[16, 16]()  # 256 threads - full utilization
@@ -1092,16 +1092,16 @@ def double_buffer[
 
     # Allocate two sets of shared memory buffers for double buffering
     var A_sram_buffer_0 = stack_allocation[
-        dtype=input_type, address_space=AddressSpace.SHARED
+        dtype=input_type, address_space=.SHARED
     ](row_major[BM, BK]())
     var A_sram_buffer_1 = stack_allocation[
-        dtype=input_type, address_space=AddressSpace.SHARED
+        dtype=input_type, address_space=.SHARED
     ](row_major[BM, BK]())
     var B_sram_buffer_0 = stack_allocation[
-        dtype=input_type, address_space=AddressSpace.SHARED
+        dtype=input_type, address_space=.SHARED
     ](row_major[BK, BN]())
     var B_sram_buffer_1 = stack_allocation[
-        dtype=input_type, address_space=AddressSpace.SHARED
+        dtype=input_type, address_space=.SHARED
     ](row_major[BK, BN]())
 
     # Calculate correct accumulator fragment size based on MMA configuration
@@ -1110,9 +1110,9 @@ def double_buffer[
 
     # Allocate register tile for accumulating partial results
     # AMD 32x32x8 MFMA requires 16 f32 accumulator values per thread (with WARP_SIZE=64)
-    var c_reg = stack_allocation[
-        dtype=output_type, address_space=AddressSpace.LOCAL
-    ](row_major[WM // MMA_M, (WN * frag_size) // MMA_N]()).fill(0)
+    var c_reg = stack_allocation[dtype=output_type, address_space=.LOCAL](
+        row_major[WM // MMA_M, (WN * frag_size) // MMA_N]()
+    ).fill(0)
     # Thread layout for memory transfers
     comptime load_layout = row_major[32, 8]()  # 256 threads - full utilization
 
@@ -1435,9 +1435,9 @@ def mma_tile_buffers[
     # AMD 32x32x8 MFMA requires 16 f32 accumulator values per thread (with WARP_SIZE=64)
     comptime frag_size = (MMA_M * MMA_N) // WARP_SIZE
 
-    var c_reg_tile = stack_allocation[
-        dtype=accum_type, address_space=AddressSpace.LOCAL
-    ](row_major[num_m_mmas * num_n_mmas, frag_size]()).fill(0)
+    var c_reg_tile = stack_allocation[dtype=accum_type, address_space=.LOCAL](
+        row_major[num_m_mmas * num_n_mmas, frag_size]()
+    ).fill(0)
 
     # Helper functions for matrix operations
     @always_inline

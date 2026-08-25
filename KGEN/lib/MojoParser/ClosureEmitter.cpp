@@ -130,7 +130,7 @@ static LogicalResult emitForwardingCall(ImplicitLocOpBuilder &builder,
       continue;
 
     AnyValue argValue = [&]() -> AnyValue {
-      if (convention == ArgConvention::ReadReg)
+      if (convention == ArgConvention::ImmReg)
         return SRValue(bbArg);
       // Forward the moved argument.
       if (convention == ArgConvention::OwnedMem ||
@@ -1488,7 +1488,7 @@ ASTDecl *ClosureEmitter::createClosureTrait(
 
     RefType refType = decl.getTypeDeclSelf().getRefForArgument("self", true);
     FnTypeGeneratorType sig = addClosureSelfArgToFunctionSignature(
-        refType, ArgConvention::ReadMem, signatureNoSelf);
+        refType, ArgConvention::ImmMem, signatureNoSelf);
     // Augment the call function with auxiliary parameters. These auxiliary
     // parameters enable rebinding argument types in terms of external
     // parameters (e.g. "T") in terms of the alias members of closure type C
@@ -2514,7 +2514,7 @@ ClosureEmitter::Closure ClosureEmitter::liftClosure(
       structOp.bindReference(selfRefParamValues);
   assert(isa<FnOp>(nestedFnDecl.getIfOperation()) &&
          "expected nested closure declaration to be a function");
-  PromotedClosureSelfArg selfArg{closureStructType, ArgConvention::ReadMem};
+  PromotedClosureSelfArg selfArg{closureStructType, ArgConvention::ImmMem};
   ASTDecl *promotedCallDecl = liftClosureIntoMethod(
       nestedFnDecl, structDecl, selfArg, concreteFieldDecls,
       concreteFieldCaptures, concreteFieldCaptureConventions,
@@ -2597,7 +2597,7 @@ ClosureEmitter::Closure ClosureEmitter::liftClosure(
     case CaptureConvention::kConventionCopy:
       argType = ASTType(fieldType).getRefForArgument(initArgName.getValue(),
                                                      /*isMut=*/false);
-      argConvention = ArgConvention::ReadMem;
+      argConvention = ArgConvention::ImmMem;
       break;
     case CaptureConvention::kConventionMove: {
       TypeConvention passability = ASTType(fieldType).getRegisterPassability(
@@ -2673,10 +2673,10 @@ ClosureEmitter::Closure ClosureEmitter::liftClosure(
       // Value captures
       CValue argValue;
       switch (argConventions[index]) {
-      case ArgConvention::ReadReg:
+      case ArgConvention::ImmReg:
         argValue = SRValue(arg);
         break;
-      case ArgConvention::ReadMem:
+      case ArgConvention::ImmMem:
         argValue = MBValue(arg);
         break;
       case ArgConvention::OwnedMem:
@@ -3846,7 +3846,7 @@ void ClosureEmitter::buildCallAdaptorAndAddWitness(
 
     // Handle convention mismatches between the adaptor (trait signature) and
     // the callee (storage/wrapper `__call__`). Generic trait parameters use
-    // ReadMem (ref), but concrete RegisterPassable types use ReadReg (value).
+    // ImmMem (ref), but concrete RegisterPassable types use ImmReg (value).
     if (!hasImplicitOrigin(conv) && isa<RefType>(operand.getType()))
       operand = RefLoadOp::create(b, operand);
 

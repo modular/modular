@@ -10,19 +10,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Inkling multi-token prediction for unified speculative decoding."""
 
-# 'imm' and 'read' are the same convention: both lower to an imm-origin
-# read_mem reference. (The 'read' spelling additionally warns; warnings go to
-# stderr and are not FileChecked here.)
+from .arch import unified_mtp_inkling_arch
+from .model import UnifiedMTPInklingInputs, UnifiedMTPInklingModel
 
-# RUN: %parse-mojo-isolated %s | FileCheck %s
-
-
-# CHECK: lit.fn @"imm_spelling(::String)"[imm *"x`"](%x: !lit.ref<!String, imm *"x`"> read_mem)
-def imm_spelling(imm x: String) -> Int:
-    return 1
-
-
-# CHECK: lit.fn @"read_spelling(::String)"[imm *"x`"](%x: !lit.ref<!String, imm *"x`"> read_mem)
-def read_spelling(read x: String) -> Int:
-    return 1
+__all__ = [
+    "UnifiedMTPInklingInputs",
+    "UnifiedMTPInklingModel",
+    "unified_mtp_inkling_arch",
+]

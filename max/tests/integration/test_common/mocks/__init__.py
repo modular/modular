@@ -34,7 +34,7 @@ from .pipeline_config import (
     mock_plan_from_sizes,
     patched_hf_construction,
 )
-from .pipeline_model import MockPipelineModel
+from .pipeline_model import MOCK_MODEL_MAX_SEQ_LEN, MockPipelineModel
 from .tokenizer import MockTextTokenizer
 
 REPO_ID = "HuggingFaceTB/SmolLM2-135M-Instruct"
@@ -82,10 +82,16 @@ def retrieve_mock_text_generation_pipeline(
             pipeline_model=MockPipelineModel,
             weight_adapters={},
             tokenizer=tokenizer,
+            # Plans are always populated with the model's effective bound;
+            # mirror the mock model's clamp when the caller sets no length.
             memory_plan=MemoryPlan(
-                max_batch_size=mock_config.runtime.max_batch_size or 1,
+                planned_max_batch_size=mock_config.runtime.max_batch_size or 1,
                 footprint=0,
-                max_length=max_length,
+                planned_max_length=(
+                    max_length
+                    if max_length is not None
+                    else MOCK_MODEL_MAX_SEQ_LEN
+                ),
                 device_specs=tuple(device_specs),
             ),
         )

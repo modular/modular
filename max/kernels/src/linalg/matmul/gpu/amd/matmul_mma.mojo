@@ -114,30 +114,30 @@ struct QuadrantMmaOp[
         Self.in_type,
         type_of(Self._a_reg_layout),
         MutUntrackedOrigin,
-        address_space=AddressSpace.LOCAL,
+        address_space=.LOCAL,
     ]
     var _b_reg: TileTensor[
         Self.in_type,
         type_of(Self._b_reg_layout),
         MutUntrackedOrigin,
-        address_space=AddressSpace.LOCAL,
+        address_space=.LOCAL,
     ]
     var _c_reg: TileTensor[
         Self.out_type,
         type_of(Self._c_reg_layout),
         MutUntrackedOrigin,
-        address_space=AddressSpace.LOCAL,
+        address_space=.LOCAL,
     ]
 
     @always_inline
     def __init__(out self):
-        self._a_reg = stack_allocation[Self.in_type, AddressSpace.LOCAL](
+        self._a_reg = stack_allocation[Self.in_type, address_space=.LOCAL](
             Self._a_reg_layout
         )
-        self._b_reg = stack_allocation[Self.in_type, AddressSpace.LOCAL](
+        self._b_reg = stack_allocation[Self.in_type, address_space=.LOCAL](
             Self._b_reg_layout
         )
-        self._c_reg = stack_allocation[Self.out_type, AddressSpace.LOCAL](
+        self._c_reg = stack_allocation[Self.out_type, address_space=.LOCAL](
             Self._c_reg_layout
         )
         comptime num_c_elems = (
@@ -227,7 +227,7 @@ struct QuadrantMmaOp[
         Self.out_type,
         type_of(Self._c_reg_layout),
         MutUntrackedOrigin,
-        address_space=AddressSpace.LOCAL,
+        address_space=.LOCAL,
     ]:
         """Return the accumulator register tile."""
         return self._c_reg
@@ -270,17 +270,10 @@ struct TiledMma[
         b_layout: TensorLayout,
         c_layout: TensorLayout,
     ](
-        a_reg: TileTensor[
-            Self.in_type, a_layout, _, address_space=AddressSpace.LOCAL
-        ],
-        b_reg: TileTensor[
-            Self.in_type, b_layout, _, address_space=AddressSpace.LOCAL
-        ],
+        a_reg: TileTensor[Self.in_type, a_layout, _, address_space=.LOCAL],
+        b_reg: TileTensor[Self.in_type, b_layout, _, address_space=.LOCAL],
         c_reg: TileTensor[
-            Self.out_type,
-            c_layout,
-            MutUntrackedOrigin,
-            address_space=AddressSpace.LOCAL,
+            Self.out_type, c_layout, MutUntrackedOrigin, address_space=.LOCAL
         ],
     ):
         """Execute group_size MMA operations across the K dimension.
@@ -390,30 +383,30 @@ struct MmaOp[
         Self.in_type,
         type_of(Self._a_reg_layout),
         MutUntrackedOrigin,
-        address_space=AddressSpace.LOCAL,
+        address_space=.LOCAL,
     ]
     var _b_reg: TileTensor[
         Self.in_type,
         type_of(Self._b_reg_layout),
         MutUntrackedOrigin,
-        address_space=AddressSpace.LOCAL,
+        address_space=.LOCAL,
     ]
     var _c_reg: TileTensor[
         Self.out_type,
         type_of(Self._c_reg_layout),
         MutUntrackedOrigin,
-        address_space=AddressSpace.LOCAL,
+        address_space=.LOCAL,
     ]
 
     @always_inline
     def __init__(out self):
-        self._a_reg = stack_allocation[Self.in_type, AddressSpace.LOCAL](
+        self._a_reg = stack_allocation[Self.in_type, address_space=.LOCAL](
             Self._a_reg_layout
         )
-        self._b_reg = stack_allocation[Self.in_type, AddressSpace.LOCAL](
+        self._b_reg = stack_allocation[Self.in_type, address_space=.LOCAL](
             Self._b_reg_layout
         )
-        self._c_reg = stack_allocation[Self.out_type, AddressSpace.LOCAL](
+        self._c_reg = stack_allocation[Self.out_type, address_space=.LOCAL](
             Self._c_reg_layout
         )
         comptime num_c_elems = (

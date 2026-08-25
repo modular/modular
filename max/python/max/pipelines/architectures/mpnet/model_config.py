@@ -58,6 +58,8 @@ class MPNetConfig(ArchConfigWithBoundedMaxSeqLen, ArchConfig):
         cls,
         pipeline_config: PipelineConfig,
         model_config: MAXModelConfig | None = None,
+        *,
+        max_seq_len: int,
     ) -> Self:
         """Initializes an MPNetConfig instance from pipeline configuration.
 
@@ -88,8 +90,6 @@ class MPNetConfig(ArchConfigWithBoundedMaxSeqLen, ArchConfig):
             ),
             pool_embeddings=model_config.pool_embeddings,
             huggingface_config=huggingface_config,
-            max_seq_len=cls.calculate_max_seq_len(
-                pipeline_config, huggingface_config, model_config
-            ),
+            max_seq_len=max_seq_len,
             quantization_encoding=quantization_encoding,
         )

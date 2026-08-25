@@ -125,7 +125,7 @@ _EXTRA_DEPS = {
             "kv_cache_test_utils.mojo",  # Imported source, not a test
             "test_kv_cache_ragged_matmul.mojo",  # Split by dtype x kernel below (KERN-3152 compile time)
             "test_batch_kv_cache_flash_attention_causal_mask_ragged.mojo",  # Split by dtype below; the fp8 fold arm is AMD-only
-            "test_mha_inflight_batching_gemma3_hang.mojo",  # KERN-2734: manual repro test, split by page_size below
+            "test_mha_inflight_batching_gemma3_hang.mojo",  # Split by page_size below (B200-only PAQ-2333 repro)
             "test_batch_kv_cache_flash_attention_causal_mask_ragged_paged.mojo",  # Split by page_size below
             "test_mha_gemma4_shapes.mojo",  # Split by (page_size, mask_kind) below
             "test_paged_lut_load_boundary.mojo",  # Split by page_size below (B200 LUT-load OOB regression)
@@ -431,7 +431,19 @@ _PAGED_FA_CONFIGS = [
     for page_size, head_size, constraints in _PAGED_FA_CONFIGS
 ]
 
-# TODO(KERN-2734): Remove "manual" tag once the FA4 TMA barrier deadlock is fixed.
+# PAQ-2333 / KERN-2734: mixed TG+CE ragged paged batch on Gemma3 27B shapes
+# (230 TG + 40 CE, 270 requests) that production hit as an FA4 TMA transaction
+# barrier deadlock. This ran as "manual" for a long time on the belief that it
+# reproduced that deadlock; it did not -- it oversubscribed its own KV block
+# pool and died in host setup before any launch (see the `num_blocks` note in
+# the test). With the pool sized to the batch it passes, so it runs in CI as a
+# hang/NaN regression gate for this shape mix. Passing here is NOT evidence
+# that the TMA deadlock class is fixed -- the repro never reached the kernel,
+# so no commit exists at which it both passed and exercised FA4.
+#
+# B200-only: the deadlock under test is SM100 FA4, and page_size=64 cannot
+# build on gfx950 at all -- the AMD decode path instantiates tile_size=128 and
+# `PagedKVCache` rejects a tile wider than the page (kv_cache/types.mojo).
 [
     mojo_test(
         name = "test_mha_inflight_batching_gemma3_hang_ps{}.mojo.test".format(page_size),
@@ -449,11 +461,11 @@ _PAGED_FA_CONFIGS = [
             "test.resources:gpu-memory": "8",
         },
         main = "test_mha_inflight_batching_gemma3_hang.mojo",
-        tags = [
-            "gpu",
-            "manual",
-        ],
-        target_compatible_with = ["//:has_gpu"] + _APPLE_GPU_INCOMPATIBLE,
+        tags = ["gpu"],
+        target_compatible_with = ["//:has_gpu"] + select({
+            "//:b200_gpu": [],
+            "//conditions:default": ["@platforms//:incompatible"],
+        }),
         deps = [
             "//max:internal_utils",
             "//max:kv_cache",

@@ -56,14 +56,14 @@ def wgmma_kernel_ss[
         a_type,
         a_smem_layout,
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ].stack_allocation()
 
     var b_smem_tile = LayoutTensor[
         b_type,
         b_smem_layout,
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ].stack_allocation()
 
     comptime num_output_regs = WMMA_M * WMMA_N // 128
@@ -139,17 +139,17 @@ def wgmma_e4m3_e4m3_f32[
     ]()
     comptime c_shape = row_major[M, N]()
 
-    var a_host_ptr = ctx.enqueue_create_host_buffer[DType.float8_e4m3fn](M * K)
+    var a_host_ptr = ctx.enqueue_create_host_buffer[.float8_e4m3fn](M * K)
     var b_size = N * K if transpose_b else K * N
-    var b_host_ptr = ctx.enqueue_create_host_buffer[DType.float8_e4m3fn](b_size)
+    var b_host_ptr = ctx.enqueue_create_host_buffer[.float8_e4m3fn](b_size)
     var c_host_ptr = ctx.enqueue_create_host_buffer[c_type](M * N)
     var c_host = TileTensor(c_host_ptr, c_shape)
     var c_host_ref_ptr = ctx.enqueue_create_host_buffer[c_type](M * N)
     var c_host_ref = TileTensor(c_host_ref_ptr, c_shape)
 
-    var a_device = ctx.enqueue_create_buffer[DType.float8_e4m3fn](M * K)
+    var a_device = ctx.enqueue_create_buffer[.float8_e4m3fn](M * K)
     var a_device_tt = TileTensor(a_device, a_shape)
-    var b_device = ctx.enqueue_create_buffer[DType.float8_e4m3fn](b_size)
+    var b_device = ctx.enqueue_create_buffer[.float8_e4m3fn](b_size)
     var b_device_tt = TileTensor(b_device, b_shape)
     var c_device = ctx.enqueue_create_buffer[c_type](M * N)
     var c_device_tt = TileTensor(c_device, c_shape)
@@ -224,7 +224,7 @@ def wgmma_e4m3_e4m3_f32[
             for j in range(K):
                 b_host_col_major_ptr[i * K + j] = b_host_ptr[j * N + i]
 
-        var b_device_col_major = ctx.enqueue_create_buffer[DType.float8_e4m3fn](
+        var b_device_col_major = ctx.enqueue_create_buffer[.float8_e4m3fn](
             N * K
         )
         var b_device_col_major_tt = TileTensor(

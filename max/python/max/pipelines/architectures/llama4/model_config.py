@@ -257,9 +257,8 @@ class Llama4Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
     @override
     def calculate_max_seq_len(
         cls,
-        pipeline_config: PipelineConfig,
         huggingface_config: AutoConfig,
-        model_config: MAXModelConfig | None = None,
+        model_config: MAXModelConfig,
     ) -> int:
         """Bounds ``max_length`` by the text config's ``max_position_embeddings``.
 
@@ -268,7 +267,6 @@ class Llama4Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
         top-level config, so route it through :func:`get_text_config` first.
         """
         return super().calculate_max_seq_len(
-            pipeline_config,
             huggingface_config=get_text_config(huggingface_config),
             model_config=model_config,
         )
@@ -282,9 +280,12 @@ class Llama4Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
         devices: list[DeviceRef],
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
+        *,
+        allow_kv_head_replication: bool = False,
     ) -> KVCacheParams:
         text_config = get_text_config(huggingface_config)
         return kv_cache_config.to_params(
+            allow_kv_head_replication=allow_kv_head_replication,
             dtype=cache_dtype,
             n_kv_heads=text_config.num_key_value_heads,
             head_dim=cls.get_head_dim(huggingface_config),
@@ -299,6 +300,8 @@ class Llama4Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
         cls,
         pipeline_config: PipelineConfig,
         model_config: MAXModelConfig | None = None,
+        *,
+        max_seq_len: int,
     ) -> Self:
         model_config = model_config or pipeline_config.model
         huggingface_config = model_config.huggingface_config
@@ -309,7 +312,10 @@ class Llama4Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
                 "repository contains a valid config.json file."
             )
         return cls.initialize_from_config(
-            pipeline_config, huggingface_config, model_config
+            pipeline_config,
+            huggingface_config,
+            model_config,
+            max_seq_len=max_seq_len,
         )
 
     @classmethod
@@ -318,6 +324,8 @@ class Llama4Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
         pipeline_config: PipelineConfig,
         huggingface_config: AutoConfig,
         model_config: MAXModelConfig | None = None,
+        *,
+        max_seq_len: int,
     ) -> Self:
         model_config = model_config or pipeline_config.model
         text_config = get_text_config(huggingface_config)
@@ -380,11 +388,7 @@ class Llama4Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
                 quantization_encoding,
                 pipeline_config.model.huggingface_config,
             ),
-            max_seq_len=cls.calculate_max_seq_len(
-                pipeline_config,
-                huggingface_config=huggingface_config,
-                model_config=model_config,
-            ),
+            max_seq_len=max_seq_len,
             kv_params=cls.construct_kv_params(
                 huggingface_config=huggingface_config,
                 pipeline_config=pipeline_config,

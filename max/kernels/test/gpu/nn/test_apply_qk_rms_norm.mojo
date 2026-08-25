@@ -48,26 +48,26 @@ def run_apply_qk_rms_norm_gpu[
 
     var q_h = ctx.enqueue_create_host_buffer[in_dtype](rows * q_cols)
     var k_h = ctx.enqueue_create_host_buffer[in_dtype](rows * k_cols)
-    var gq_h = ctx.enqueue_create_host_buffer[DType.float32](q_cols)
-    var gk_h = ctx.enqueue_create_host_buffer[DType.float32](k_cols)
-    var var_h = ctx.enqueue_create_host_buffer[DType.float32](rows * 2)
+    var gq_h = ctx.enqueue_create_host_buffer[.float32](q_cols)
+    var gk_h = ctx.enqueue_create_host_buffer[.float32](k_cols)
+    var var_h = ctx.enqueue_create_host_buffer[.float32](rows * 2)
     var qo_h = ctx.enqueue_create_host_buffer[out_dtype](rows * q_cols)
     var ko_h = ctx.enqueue_create_host_buffer[out_dtype](rows * k_cols)
 
     rand[in_dtype](q_h.as_span())
     rand[in_dtype](k_h.as_span())
-    rand[DType.float32](gq_h.as_span())
-    rand[DType.float32](gk_h.as_span())
+    rand[.float32](gq_h.as_span())
+    rand[.float32](gk_h.as_span())
     # qk_var holds mean-of-squares stats (positive). Use a positive range.
-    rand[DType.float32](var_h.as_span())
+    rand[.float32](var_h.as_span())
     for i in range(rows * 2):
         var_h[i] = var_h[i] * Float32(0.5) + Float32(0.25)
 
     var q_d = ctx.enqueue_create_buffer[in_dtype](rows * q_cols)
     var k_d = ctx.enqueue_create_buffer[in_dtype](rows * k_cols)
-    var gq_d = ctx.enqueue_create_buffer[DType.float32](q_cols)
-    var gk_d = ctx.enqueue_create_buffer[DType.float32](k_cols)
-    var var_d = ctx.enqueue_create_buffer[DType.float32](rows * 2)
+    var gq_d = ctx.enqueue_create_buffer[.float32](q_cols)
+    var gk_d = ctx.enqueue_create_buffer[.float32](k_cols)
+    var var_d = ctx.enqueue_create_buffer[.float32](rows * 2)
     var qo_d = ctx.enqueue_create_buffer[out_dtype](rows * q_cols)
     var ko_d = ctx.enqueue_create_buffer[out_dtype](rows * k_cols)
 
@@ -109,7 +109,7 @@ def run_apply_qk_rms_norm_gpu[
     for r in range(rows):
         var rs_q = rsqrt(var_h[r * 2 + 0] + epsilon)
         for c in range(q_cols):
-            var xf = q_h[r * q_cols + c].cast[DType.float32]()
+            var xf = q_h[r * q_cols + c].cast[.float32]()
             var g = gq_h[c]
             var expect = ((xf * rs_q) * g).cast[out_dtype]()
             assert_almost_equal(
@@ -121,7 +121,7 @@ def run_apply_qk_rms_norm_gpu[
 
         var rs_k = rsqrt(var_h[r * 2 + 1] + epsilon)
         for c in range(k_cols):
-            var xf = k_h[r * k_cols + c].cast[DType.float32]()
+            var xf = k_h[r * k_cols + c].cast[.float32]()
             var g = gk_h[c]
             var expect = ((xf * rs_k) * g).cast[out_dtype]()
             assert_almost_equal(
@@ -146,21 +146,21 @@ def main() raises:
         # Nq=1536 (6144/4), K slice Nk=256 (1024/4). Decode (small M) +
         # prefill row counts, an odd k tail (scalar path), and a wide
         # grid-stride case. bf16 cast loses precision -> looser tolerance.
-        run_apply_qk_rms_norm_gpu[DType.bfloat16](ctx, 1, 1536, 256)
-        run_apply_qk_rms_norm_gpu[DType.bfloat16](ctx, 16, 1536, 256)
-        run_apply_qk_rms_norm_gpu[DType.bfloat16](ctx, 17, 1536, 256)
-        run_apply_qk_rms_norm_gpu[DType.bfloat16](ctx, 512, 1536, 256)
+        run_apply_qk_rms_norm_gpu[.bfloat16](ctx, 1, 1536, 256)
+        run_apply_qk_rms_norm_gpu[.bfloat16](ctx, 16, 1536, 256)
+        run_apply_qk_rms_norm_gpu[.bfloat16](ctx, 17, 1536, 256)
+        run_apply_qk_rms_norm_gpu[.bfloat16](ctx, 512, 1536, 256)
         # Non-simd-multiple width exercises the scalar fallback path.
-        run_apply_qk_rms_norm_gpu[DType.bfloat16](ctx, 16, 1536, 257)
+        run_apply_qk_rms_norm_gpu[.bfloat16](ctx, 16, 1536, 257)
         # Wide grid-stride case.
-        run_apply_qk_rms_norm_gpu[DType.bfloat16](ctx, 4, 8192, 8192)
+        run_apply_qk_rms_norm_gpu[.bfloat16](ctx, 4, 8192, 8192)
         # Equal widths must also work.
-        run_apply_qk_rms_norm_gpu[DType.bfloat16](ctx, 16, 512, 512)
+        run_apply_qk_rms_norm_gpu[.bfloat16](ctx, 16, 512, 512)
 
         # float32 must also be accepted (tight tolerance: same f32 grouping).
-        run_apply_qk_rms_norm_gpu[DType.float32](
+        run_apply_qk_rms_norm_gpu[.float32](
             ctx, 16, 1536, 256, rtol=1e-6, atol=1e-6
         )
-        run_apply_qk_rms_norm_gpu[DType.float32](
+        run_apply_qk_rms_norm_gpu[.float32](
             ctx, 17, 1537, 257, rtol=1e-6, atol=1e-6
         )

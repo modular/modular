@@ -88,7 +88,7 @@ def mha_operand_tma_copy_kernel[
         kv_t.dtype,
         smem_layout,
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
     ].stack_allocation()
 
@@ -96,7 +96,7 @@ def mha_operand_tma_copy_kernel[
     ref mbar = unsafe_stack_allocation[
         1,
         SharedMemBarrier,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=8,
     ]()[0]
 
@@ -288,12 +288,8 @@ def test_continuous_kv_cache[
         lookup_shape
     )
 
-    var lookup_table_device = ctx.enqueue_create_buffer[DType.uint32](
-        batch_size
-    )
-    var cache_lengths_device = ctx.enqueue_create_buffer[DType.uint32](
-        batch_size
-    )
+    var lookup_table_device = ctx.enqueue_create_buffer[.uint32](batch_size)
+    var cache_lengths_device = ctx.enqueue_create_buffer[.uint32](batch_size)
 
     with lookup_table_device.map_to_host() as lookup_host:
         for i in range(batch_size):
@@ -310,10 +306,10 @@ def test_continuous_kv_cache[
         LayoutTensor[dtype, kv_block_layout, MutAnyOrigin](
             kv_block_device, kv_block_runtime_layout
         ),
-        LayoutTensor[DType.uint32, lookup_layout, ImmutAnyOrigin](
+        LayoutTensor[.uint32, lookup_layout, ImmutAnyOrigin](
             cache_lengths_device, lookup_runtime_layout
         ),
-        LayoutTensor[DType.uint32, lookup_layout, ImmutAnyOrigin](
+        LayoutTensor[.uint32, lookup_layout, ImmutAnyOrigin](
             lookup_table_device, lookup_runtime_layout
         ),
         UInt32(max_seq_len),
@@ -336,10 +332,10 @@ def test_continuous_kv_cache[
         LayoutTensor[dtype, kv_block_layout, MutAnyOrigin](
             dst_block_device, kv_block_runtime_layout
         ),
-        LayoutTensor[DType.uint32, lookup_layout, ImmutAnyOrigin](
+        LayoutTensor[.uint32, lookup_layout, ImmutAnyOrigin](
             cache_lengths_device, lookup_runtime_layout
         ),
-        LayoutTensor[DType.uint32, lookup_layout, ImmutAnyOrigin](
+        LayoutTensor[.uint32, lookup_layout, ImmutAnyOrigin](
             lookup_table_device, lookup_runtime_layout
         ),
         UInt32(max_seq_len),
@@ -367,10 +363,10 @@ def test_continuous_kv_cache[
                         dst_host, kv_block_runtime_layout
                     )
                     var lookup_host_tensor = LayoutTensor[
-                        DType.uint32, lookup_layout
+                        .uint32, lookup_layout
                     ](lookup_host, lookup_runtime_layout)
                     var cache_lengths_host_tensor = LayoutTensor[
-                        DType.uint32, lookup_layout
+                        .uint32, lookup_layout
                     ](cache_lengths_host, lookup_runtime_layout)
 
                     var src_host_collection = ContinuousBatchingKVCacheCollection[
@@ -457,13 +453,13 @@ def test_paged_kv_cache[
         paged_lut_shape
     )
 
-    var paged_lut_device = ctx.enqueue_create_buffer[DType.uint32](
+    var paged_lut_device = ctx.enqueue_create_buffer[.uint32](
         paged_lut_shape.flattened_length()
     )
 
     var paged_lut_set = Set[Int]()
     with paged_lut_device.map_to_host() as paged_lut_host:
-        var paged_lut_tensor = LayoutTensor[DType.uint32, paged_lut_layout](
+        var paged_lut_tensor = LayoutTensor[.uint32, paged_lut_layout](
             paged_lut_host, paged_lut_runtime_layout
         )
         for bs in range(batch_size):
@@ -481,9 +477,7 @@ def test_paged_kv_cache[
         cache_lengths_layout
     ].row_major(cache_lengths_shape)
 
-    var cache_lengths_device = ctx.enqueue_create_buffer[DType.uint32](
-        batch_size
-    )
+    var cache_lengths_device = ctx.enqueue_create_buffer[.uint32](batch_size)
 
     with cache_lengths_device.map_to_host() as cache_lengths_host:
         for i in range(batch_size):
@@ -494,10 +488,10 @@ def test_paged_kv_cache[
         LayoutTensor[dtype, kv_block_layout, MutAnyOrigin](
             kv_block_device, kv_block_runtime_layout
         ),
-        LayoutTensor[DType.uint32, cache_lengths_layout, ImmutAnyOrigin](
+        LayoutTensor[.uint32, cache_lengths_layout, ImmutAnyOrigin](
             cache_lengths_device, cache_lengths_runtime_layout
         ),
-        LayoutTensor[DType.uint32, paged_lut_layout, ImmutAnyOrigin](
+        LayoutTensor[.uint32, paged_lut_layout, ImmutAnyOrigin](
             paged_lut_device, paged_lut_runtime_layout
         ),
         UInt32(max_seq_len),
@@ -519,10 +513,10 @@ def test_paged_kv_cache[
         LayoutTensor[dtype, kv_block_layout, MutAnyOrigin](
             dst_block_device, kv_block_runtime_layout
         ),
-        LayoutTensor[DType.uint32, cache_lengths_layout, ImmutAnyOrigin](
+        LayoutTensor[.uint32, cache_lengths_layout, ImmutAnyOrigin](
             cache_lengths_device, cache_lengths_runtime_layout
         ),
-        LayoutTensor[DType.uint32, paged_lut_layout, ImmutAnyOrigin](
+        LayoutTensor[.uint32, paged_lut_layout, ImmutAnyOrigin](
             paged_lut_device, paged_lut_runtime_layout
         ),
         UInt32(max_seq_len),
@@ -550,10 +544,10 @@ def test_paged_kv_cache[
                         dst_host, kv_block_runtime_layout
                     )
                     var paged_lut_host_tensor = LayoutTensor[
-                        DType.uint32, paged_lut_layout
+                        .uint32, paged_lut_layout
                     ](paged_lut_host, paged_lut_runtime_layout)
                     var cache_lengths_host_tensor = LayoutTensor[
-                        DType.uint32, cache_lengths_layout
+                        .uint32, cache_lengths_layout
                     ](cache_lengths_host, cache_lengths_runtime_layout)
 
                     var src_host_collection = PagedKVCacheCollection[
@@ -726,7 +720,7 @@ def test_ragged[
     var total_tokens = 0
 
     # Create cache row offsets
-    var cache_row_offsets_device = ctx.enqueue_create_buffer[DType.uint32](
+    var cache_row_offsets_device = ctx.enqueue_create_buffer[.uint32](
         batch_size + 1
     )
 

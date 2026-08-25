@@ -270,15 +270,17 @@ static void internTimeTraceProfile(M::Context &maxContext) {
 /// along to that program, initializes an execution engine and executes the
 /// program. Returns a successful exit code if the program was executed
 /// successfully, and an unsuccessful exit code otherwise.
-static int executeModule(const State &state, AsyncRT::CPUDevice &cpuDevice,
-                         MLIRContext &context,
-                         const CompilationOptions &options,
-                         OwningOpRef<ModuleOp> module, TargetInfoAttr target,
-                         ArrayRef<const char *> arguments,
-                         M::Context &maxContext,
-                         ArrayRef<std::string> additionalLibraries) {
+static int
+executeModule(const State &state, AsyncRT::CPUDevice &cpuDevice,
+              MLIRContext &context, const CompilationOptions &options,
+              OwningOpRef<ModuleOp> module, TargetInfoAttr target,
+              ArrayRef<const char *> arguments, M::Context &maxContext,
+              ArrayRef<std::string> additionalLibraries,
+              MLIRPassTiming &mlirTiming, LLVMPassTiming &llvmTiming) {
+  PassManagerConfigOptions pmOptions = mlirTiming.passManagerOptions();
+
   // Compile the Mojo module to the end of the KGEN pipeline.
-  KGENCompiler compiler(context, options);
+  KGENCompiler compiler(context, options, pmOptions);
   if (ErrorOrSuccess err = compiler.runKGENPipeline(*module, target))
     return state.reportError(err.getError());
 
@@ -289,8 +291,9 @@ static int executeModule(const State &state, AsyncRT::CPUDevice &cpuDevice,
     return state.reportError("module does not define a `main` function");
 
   // Create the object compiler and compile the module to an archive.
-  auto objCompilerOr = ObjectCompiler::create(kMojoCacheBaseDirName, options,
-                                              /*isJIT=*/true, context);
+  auto objCompilerOr =
+      ObjectCompiler::create(kMojoCacheBaseDirName, options,
+                             /*isJIT=*/true, context, pmOptions);
   if (failed(objCompilerOr))
     return state.reportError(objCompilerOr.getError());
   ObjectCompiler &objCompiler = **objCompilerOr;
@@ -326,6 +329,11 @@ static int executeModule(const State &state, AsyncRT::CPUDevice &cpuDevice,
   ErrorOr<CompiledFunc> funcOr = engine.lookup("main");
   if (failed(funcOr))
     return state.reportError(funcOr.getError());
+
+  // Compilation is over, so report the pass timings now: the program below
+  // may run for a long time, and may never return here at all.
+  mlirTiming.finish();
+  llvmTiming.finish();
 
   // Finally, execute the 'main' function of the Mojo program.
   CompilerTimeTraceScope traceScope("execute-main");
@@ -365,6 +373,12 @@ static int run(const State &subcommandState) {
 
   warnBuildingForDebugWithDebugBuiltCompiler(state, options.debugLevel);
 
+  // Comes before the CPU device, because the option sets the thread count to
+  // one. Comes before the MLIR timing, so that the program deletes it later
+  // and the MLIR report is the first report.
+  LLVMPassTiming llvmTiming;
+  llvmTiming.configure(args, options::OPT_llvm_timing, options);
+
   AsyncRT::CPUDeviceOptions cpuDeviceOptions;
   configureCPUDeviceOptions(cpuDeviceOptions, options);
 
@@ -382,12 +396,18 @@ static int run(const State &subcommandState) {
   ScopedMLIRWarningHandler warningHandler(&mlirCtx, options.disableWarnings,
                                           options.warningsAsErrors);
 
+  // The timing shows the parse, the passes, and the code generation.
+  MLIRPassTiming timing;
+  if (ErrorOrSuccess err = timing.configure(args, options::OPT_mlir_timing,
+                                            options::OPT_mlir_timing_display))
+    return state.reportError(err.getError());
+
   ErrorOr<OwningOpRef<ModuleOp>> moduleOp = invokeMojoParser(
       state, args, options, &mlirCtx, cpuDevice,
       options::OPT_diagnose_missing_doc_strings, options::OPT_max_notes,
       options::OPT_D, options::OPT_strip_file_prefix,
       options::OPT_disable_builtins, options::OPT_mojo_search_paths,
-      options::OPT_fixit, options::OPT_export_fixit,
+      options::OPT_fixit, options::OPT_export_fixit, &timing.rootScope(),
       [&](LIT::ParserConfig &parserConfig, mlir::TimingScope &ts) {
         return LIT::importMojoFile(ctx, sourceManager, parserConfig, ts);
       });
@@ -435,7 +455,7 @@ static int run(const State &subcommandState) {
   int result = executeModule(
       state, cpuDevice, mlirCtx, options, moduleOp.takeValue(), target,
       state.arguments.slice(args.getLastArg(options::OPT_INPUT)->getIndex()),
-      *ctx, additionalLibraries);
+      *ctx, additionalLibraries, timing, llvmTiming);
   if (result != EXIT_SUCCESS)
     return result;
 

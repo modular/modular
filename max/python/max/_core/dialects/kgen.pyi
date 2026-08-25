@@ -54,9 +54,9 @@ class EmitAs(enum.Enum):
     llvm_opt_bitcode = 5
 
 class ArgConvention(enum.Enum):
-    read = 0
+    imm = 0
 
-    read_mem = 1
+    imm_mem = 1
 
     owned = 2
 
@@ -1636,6 +1636,10 @@ class ParamListConcatAttr(max._core.Attribute):
     ```
     """
 
+    @overload
+    def __init__(
+        self, param_lists: Sequence[max._core.dialects.builtin.TypedAttr]
+    ) -> None: ...
     @overload
     def __init__(
         self,

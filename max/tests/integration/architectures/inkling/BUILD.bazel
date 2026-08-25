@@ -2,6 +2,7 @@
 
 load(
     "//bazel:api.bzl",
+    "modular_py_library",
     "modular_py_test",
     "requirement",
 )
@@ -19,5 +20,28 @@ modular_py_test(
         "//max/python/max/pipelines/architectures/inkling",
         requirement("numpy"),
         requirement("pytest-asyncio"),
+    ],
+)
+
+modular_py_library(
+    name = "grammar_harness",
+    testonly = True,
+    srcs = ["_grammar_harness.py"],
+    imports = ["."],
+    deps = [
+        "//max/python/max:_core",
+        "//max/python/max/pipelines/architectures/inkling",
+        requirement("numpy"),
+    ],
+)
+
+modular_py_test(
+    name = "test_tool_parser",
+    srcs = ["test_tool_parser.py"],
+    deps = [
+        ":grammar_harness",
+        "//max/python/max/pipelines/architectures/inkling",
+        "//max/python/max/pipelines/context",
+        "//max/python/max/pipelines/modeling",
     ],
 )

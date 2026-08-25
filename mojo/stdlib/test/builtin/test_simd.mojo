@@ -40,79 +40,77 @@ from std.utils.numerics import isfinite, isinf, isnan, nan
 
 def test_cast() raises:
     assert_equal(
-        SIMD[DType.bool, 4](False, True, False, True).cast[DType.bool](),
-        SIMD[DType.bool, 4](False, True, False, True),
+        SIMD[.bool, 4](False, True, False, True).cast[.bool](),
+        SIMD[.bool, 4](False, True, False, True),
     )
 
     assert_equal(
-        SIMD[DType.bool, 4](False, True, False, True).cast[DType.int32](),
-        SIMD[DType.int32, 4](0, 1, 0, 1),
+        SIMD[.bool, 4](False, True, False, True).cast[.int32](),
+        SIMD[.int32, 4](0, 1, 0, 1),
     )
 
     assert_equal(
-        SIMD[DType.float32, 4](0, 1, 0, -12).cast[DType.int32](),
-        SIMD[DType.int32, 4](0, 1, 0, -12),
+        SIMD[.float32, 4](0, 1, 0, -12).cast[.int32](),
+        SIMD[.int32, 4](0, 1, 0, -12),
     )
 
     assert_equal(
-        SIMD[DType.float32, 4](0, 1, 0, -12).cast[DType.bool](),
-        SIMD[DType.bool, 4](False, True, False, True),
+        SIMD[.float32, 4](0, 1, 0, -12).cast[.bool](),
+        SIMD[.bool, 4](False, True, False, True),
     )
 
     var b: UInt16 = 128
-    assert_equal(Int(b.cast[DType.uint8]()), 128)
-    assert_equal(Int(b.cast[DType.uint16]()), 128)
-    assert_equal(Int(b.cast[DType.int8]()), -128)
-    assert_equal(Int(b.cast[DType.int16]()), 128)
+    assert_equal(Int(b.cast[.uint8]()), 128)
+    assert_equal(Int(b.cast[.uint16]()), 128)
+    assert_equal(Int(b.cast[.int8]()), -128)
+    assert_equal(Int(b.cast[.int16]()), 128)
 
-    assert_equal(
-        BFloat16(33.0).cast[DType.float32]().cast[DType.bfloat16](), 33
-    )
-    assert_equal(Float16(33.0).cast[DType.float32]().cast[DType.float16](), 33)
-    assert_equal(Float64(33.0).cast[DType.float32]().cast[DType.float16](), 33)
+    assert_equal(BFloat16(33.0).cast[.float32]().cast[.bfloat16](), 33)
+    assert_equal(Float16(33.0).cast[.float32]().cast[.float16](), 33)
+    assert_equal(Float64(33.0).cast[.float32]().cast[.float16](), 33)
 
     # Test with a number right on the boundary of 32 bit and 64 bit, to make
     # sure the compiler can cast between the platform dependent types.
     comptime u1 = UInt(4294967296)
-    comptime i1 = Scalar[DType.int](4294967296)
-    comptime uc1 = i1.cast[DType.uint]()
-    comptime ic1 = u1.cast[DType.int]()
+    comptime i1 = Int(4294967296)
+    comptime uc1 = i1.cast[.uint]()
+    comptime ic1 = u1.cast[.int]()
     assert_equal(uc1, u1)
     assert_equal(ic1, i1)
 
     comptime if is_64bit():
         assert_equal(
-            UInt(18446744073709551615).cast[DType.int](),
-            Scalar[DType.int](-1),
+            UInt(18446744073709551615).cast[.int](),
+            Int(-1),
         )
 
         comptime u2 = UInt(18446744073709551615)
-        comptime i2 = Scalar[DType.int](-1)
-        comptime uc2 = i2.cast[DType.uint]()
-        comptime ic2 = u2.cast[DType.int]()
+        comptime i2 = Int(-1)
+        comptime uc2 = i2.cast[.uint]()
+        comptime ic2 = u2.cast[.int]()
         assert_equal(uc2, u2)
         assert_equal(ic2, i2)
     else:
         assert_equal(
-            UInt(4294967295).cast[DType.int](),
-            Scalar[DType.int](-1),
+            UInt(4294967295).cast[.int](),
+            Int(-1),
         )
 
         comptime u3 = UInt(4294967295)
-        comptime i3 = Scalar[DType.int](-1)
-        comptime uc3 = i3.cast[DType.uint]()
-        comptime ic3 = u3.cast[DType.int]()
+        comptime i3 = Int(-1)
+        comptime uc3 = i3.cast[.uint]()
+        comptime ic3 = u3.cast[.int]()
         assert_equal(uc3, u3)
         assert_equal(ic3, i3)
 
 
 def test_list_literal_ctor() raises:
-    var s: SIMD[DType.uint8, 8] = [1, 2, 3, 4, 5, 6, 7, 8]
+    var s: SIMD[.uint8, 8] = [1, 2, 3, 4, 5, 6, 7, 8]
     assert_equal(s[0], 1)
     assert_equal(s[4], 5)
     assert_equal(s[7], 8)
 
-    var s2: SIMD[DType.bool, 2] = [True, False]
+    var s2: SIMD[.bool, 2] = [True, False]
     assert_true(s2[0])
     assert_false(s2[1])
 
@@ -148,9 +146,7 @@ def test_cast_init() raises:
     assert_equal(Int64(Float64(42.2)), Int64(42))
 
     # Pass a scalar to initialize a SIMD vector with more elements
-    assert_equal(
-        SIMD[DType.float64, 4](Float32(21.5)), SIMD[DType.float64, 4](21.5)
-    )
+    assert_equal(SIMD[.float64, 4](Float32(21.5)), SIMD[.float64, 4](21.5))
 
 
 def test_init_from_index() raises:
@@ -188,8 +184,8 @@ def test_init_from_intable() raises:
 
 
 def test_from_bits() raises:
-    assert_true(Scalar[DType.bool](from_bits=UInt8(0x01)))
-    assert_false(Scalar[DType.bool](from_bits=UInt8(0x00)))
+    assert_true(Scalar[.bool](from_bits=UInt8(0x01)))
+    assert_false(Scalar[.bool](from_bits=UInt8(0x00)))
 
     assert_equal(Int64(from_bits=UInt64(0xFFFFFFFFFFFFFFFF)), -1)
     assert_equal(UInt128(from_bits=Int128(-1)), -1)
@@ -198,10 +194,10 @@ def test_from_bits() raises:
     assert_equal(Float32(from_bits=UInt32(0xBF800000)), -1.0)
 
     # Test from_bits with different integer types
-    var uint32_bits = SIMD[DType.uint32, 4](
+    var uint32_bits = SIMD[.uint32, 4](
         0x3F800000, 0x40000000, 0x40400000, 0x40800000
     )
-    var float32_from_bits = SIMD[DType.float32, 4](from_bits=uint32_bits)
+    var float32_from_bits = SIMD[.float32, 4](from_bits=uint32_bits)
 
     # These bit patterns represent 1.0, 2.0, 3.0, 4.0 in IEEE 754 float32
     assert_almost_equal(float32_from_bits[0], Float32(1.0), atol=1e-6)
@@ -210,44 +206,42 @@ def test_from_bits() raises:
     assert_almost_equal(float32_from_bits[3], Float32(4.0), atol=1e-6)
 
     # Test with int64 -> float64
-    var uint64_bits = SIMD[DType.uint64, 2](
-        0x3FF0000000000000, 0x4000000000000000
-    )
-    var float64_from_bits = SIMD[DType.float64, 2](from_bits=uint64_bits)
+    var uint64_bits = SIMD[.uint64, 2](0x3FF0000000000000, 0x4000000000000000)
+    var float64_from_bits = SIMD[.float64, 2](from_bits=uint64_bits)
 
     assert_almost_equal(float64_from_bits[0], Float64(1.0), atol=1e-15)
     assert_almost_equal(float64_from_bits[1], Float64(2.0), atol=1e-15)
 
     # Test with int32 -> int32 (identity)
-    var int32_bits = SIMD[DType.int32, 4](42, -42, 100, -100)
-    var int32_from_bits = SIMD[DType.int32, 4](from_bits=int32_bits)
+    var int32_bits = SIMD[.int32, 4](42, -42, 100, -100)
+    var int32_from_bits = SIMD[.int32, 4](from_bits=int32_bits)
     assert_equal(int32_from_bits, int32_bits)
 
 
 def test_to_bits() raises:
-    assert_equal(Scalar[DType.bool](True).to_bits(), 0x01)
-    assert_equal(Scalar[DType.bool](False).to_bits(), 0x00)
-    assert_equal(Scalar[DType.bool](True).to_bits[DType.uint8](), UInt8(0x01))
+    assert_equal(Scalar[.bool](True).to_bits(), 0x01)
+    assert_equal(Scalar[.bool](False).to_bits(), 0x00)
+    assert_equal(Scalar[.bool](True).to_bits[.uint8](), UInt8(0x01))
 
     assert_equal(Float32(1.0).to_bits(), 0x3F800000)
     assert_equal(Float32(-1.0).to_bits(), 0xBF800000)
-    assert_equal(Float32(1.0).to_bits[DType.uint32](), UInt32(0x3F800000))
-    assert_equal(Float32(1.0).to_bits[DType.uint64](), UInt64(0x3F800000))
+    assert_equal(Float32(1.0).to_bits[.uint32](), UInt32(0x3F800000))
+    assert_equal(Float32(1.0).to_bits[.uint64](), UInt64(0x3F800000))
 
     # Test to_bits conversion
-    var float32_vals = SIMD[DType.float32, 4](1.0, 2.0, 3.0, 4.0)
+    var float32_vals = SIMD[.float32, 4](1.0, 2.0, 3.0, 4.0)
     var bits = float32_vals.to_bits()
 
     # Convert back and check
-    var reconstructed = SIMD[DType.float32, 4](from_bits=bits)
+    var reconstructed = SIMD[.float32, 4](from_bits=bits)
     assert_equal(reconstructed, float32_vals)
 
     # Test with different target bit width
-    var int16_vals = SIMD[DType.int16, 4](1000, -1000, 2000, -2000)
-    var uint16_bits = int16_vals.to_bits[DType.uint16]()
+    var int16_vals = SIMD[.int16, 4](1000, -1000, 2000, -2000)
+    var uint16_bits = int16_vals.to_bits[.uint16]()
 
     # Should preserve bit patterns
-    var reconstructed_int16 = SIMD[DType.int16, 4](from_bits=uint16_bits)
+    var reconstructed_int16 = SIMD[.int16, 4](from_bits=uint16_bits)
     assert_equal(reconstructed_int16, int16_vals)
 
 
@@ -289,21 +283,21 @@ def test_from_to_bits_roundtrip_property_test() raises:
 
 
 def test_simd_variadic() raises:
-    assert_equal(String(SIMD[DType.int, 4](52, 12, -43, 5)), "[52, 12, -43, 5]")
-    assert_equal(String(SIMD[DType.uint, 4](52, 12, 43, 5)), "[52, 12, 43, 5]")
+    assert_equal(String(SIMD[.int, 4](52, 12, -43, 5)), "[52, 12, -43, 5]")
+    assert_equal(String(SIMD[.uint, 4](52, 12, 43, 5)), "[52, 12, 43, 5]")
 
 
 def test_convert_simd_to_string() raises:
-    var a: SIMD[DType.float32, 2] = 5
+    var a: SIMD[.float32, 2] = 5
     assert_equal(String(a), "[5.0, 5.0]")
 
-    var b: SIMD[DType.float64, 4] = 6
+    var b: SIMD[.float64, 4] = 6
     assert_equal(String(b), "[6.0, 6.0, 6.0, 6.0]")
 
-    var c: SIMD[DType.int, 8] = -7
+    var c: SIMD[.int, 8] = -7
     assert_equal(String(c), "[-7, -7, -7, -7, -7, -7, -7, -7]")
 
-    var d: SIMD[DType.uint, 8] = 8
+    var d: SIMD[.uint, 8] = 8
     assert_equal(String(d), "[8, 8, 8, 8, 8, 8, 8, 8]")
 
     # TODO: uncomment when https://github.com/modular/modular/issues/2353 is fixed
@@ -319,7 +313,7 @@ def test_convert_simd_to_string() raises:
     # https://github.com/modular/modular/issues/556
     assert_equal(
         String(
-            SIMD[DType.uint64, 4](
+            SIMD[.uint64, 4](
                 0xA0761D6478BD642F,
                 0xE7037ED1A0B428DB,
                 0x8EBC6AF09C88C6E3,
@@ -333,9 +327,7 @@ def test_convert_simd_to_string() raises:
     )
 
     assert_equal(
-        String(
-            SIMD[DType.int32, 4](-943274556, -875902520, -808530484, -741158448)
-        ),
+        String(SIMD[.int32, 4](-943274556, -875902520, -808530484, -741158448)),
         "[-943274556, -875902520, -808530484, -741158448]",
     )
 
@@ -350,11 +342,11 @@ def _test_repr(value: SIMD, expected: String) raises:
 def test_simd_repr_and_write_repr_to() raises:
     # Basic integer vectors
     _test_repr(
-        SIMD[DType.int32, 4](1, 2, 3, 4),
+        SIMD[.int32, 4](1, 2, 3, 4),
         "SIMD[DType.int32, 4](1, 2, 3, 4)",
     )
     _test_repr(
-        SIMD[DType.int32, 4](-1, 2, -3, 4),
+        SIMD[.int32, 4](-1, 2, -3, 4),
         "SIMD[DType.int32, 4](-1, 2, -3, 4)",
     )
 
@@ -373,27 +365,27 @@ def test_simd_repr_and_write_repr_to() raises:
 
     # size > 1 keeps the verbose `SIMD[...]` form.
     _test_repr(
-        SIMD[DType.uint32, 2](0, UInt32.MAX),
+        SIMD[.uint32, 2](0, UInt32.MAX),
         "SIMD[DType.uint32, 2](0, 4294967295)",
     )
 
     # Boolean scalars have no scalar alias, so they keep the `SIMD[...]` form.
     _test_repr(
-        SIMD[DType.bool, 1](True),
+        SIMD[.bool, 1](True),
         "SIMD[DType.bool, 1](True)",
     )
 
     # Boolean vectors - all patterns
     _test_repr(
-        SIMD[DType.bool, 2](True, False),
+        SIMD[.bool, 2](True, False),
         "SIMD[DType.bool, 2](True, False)",
     )
     _test_repr(
-        SIMD[DType.bool, 4](True, True, True, True),
+        SIMD[.bool, 4](True, True, True, True),
         "SIMD[DType.bool, 4](True, True, True, True)",
     )
     _test_repr(
-        SIMD[DType.bool, 4](False, False, False, False),
+        SIMD[.bool, 4](False, False, False, False),
         "SIMD[DType.bool, 4](False, False, False, False)",
     )
 
@@ -409,9 +401,7 @@ def test_simd_repr_and_write_repr_to() raises:
 
     # Float special values (inf, -inf, nan, -0.0)
     _test_repr(
-        SIMD[DType.float32, 4](
-            Float32.MAX, Float32.MIN, -0.0, nan[DType.float32]()
-        ),
+        SIMD[.float32, 4](Float32.MAX, Float32.MIN, -0.0, nan[.float32]()),
         "SIMD[DType.float32, 4](inf, -inf, -0.0, nan)",
     )
 
@@ -429,11 +419,11 @@ def test_issue_1625() raises:
     # FIXME (40568) should directly use the SIMD assert_equal
     assert_equal(
         String(evens_and_odds[0]),
-        String(SIMD[DType.int64, 8](0, 2, 4, 6, 8, 10, 12, 14)),
+        String(SIMD[.int64, 8](0, 2, 4, 6, 8, 10, 12, 14)),
     )
     assert_equal(
         String(evens_and_odds[1]),
-        String(SIMD[DType.int64, 8](1, 3, 5, 7, 9, 11, 13, 15)),
+        String(SIMD[.int64, 8](1, 3, 5, 7, 9, 11, 13, 15)),
     )
 
 
@@ -450,7 +440,7 @@ def test_issue_20421() raises:
     dealloc(ThinAllocation(unsafe_owned_ptr=ptr).unsafe_with_layout(a_layout))
     assert_equal(
         av16,
-        SIMD[DType.int32, 4](-943274556, -875902520, -808530484, -741158448),
+        SIMD[.int32, 4](-943274556, -875902520, -808530484, -741158448),
     )
 
 
@@ -504,8 +494,8 @@ def test_issue_30237() raises:
 
 
 def test_bool() raises:
-    assert_true(Scalar[DType.bool](True).__bool__())
-    assert_false(Scalar[DType.bool](False).__bool__())
+    assert_true(Scalar[.bool](True).__bool__())
+    assert_false(Scalar[.bool](False).__bool__())
     assert_true(Int32(5).__bool__())
     assert_false(Int32(0).__bool__())
     assert_true(Float32(5.0).__bool__())
@@ -539,14 +529,14 @@ def test_truthy() raises:
         comptime dtype = rebind[DType](dtypes[i])
         test_dtype[dtype]()
 
-    test_dtype[DType.bfloat16]()
+    test_dtype[.bfloat16]()
 
 
 def test_len() raises:
     var i1 = Int32(0)
     assert_equal(i1.__len__(), 1)
 
-    comptime I32 = SIMD[DType.int32, 4]
+    comptime I32 = SIMD[.int32, 4]
     var i2 = I32(-1)
     assert_equal(4, i2.__len__())
     var i3 = I32(-1, 0, 1, 3)
@@ -555,19 +545,19 @@ def test_len() raises:
     var i4 = Int8(1)
     assert_equal(1, i4.__len__())
 
-    comptime UI64 = SIMD[DType.uint64, 16]
+    comptime UI64 = SIMD[.uint64, 16]
     var i5 = UI64(10)
     assert_equal(16, i5.__len__())
     var i6 = UI64(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15)
     assert_equal(16, i6.__len__())
 
-    comptime BF16 = SIMD[DType.bfloat16, 2]
+    comptime BF16 = SIMD[.bfloat16, 2]
     var f1 = BF16(0.0)
     assert_equal(2, f1.__len__())
     var f2 = BF16(0.1, 0.2)
     assert_equal(2, f2.__len__())
 
-    comptime F = SIMD[DType.float64, 8]
+    comptime F = SIMD[.float64, 8]
     var f3 = F(1.0)
     assert_equal(8, f3.__len__())
     var f4 = F(0, -1.0, 1.0, -1.111, 1.111, -2.2222, 2.2222, 3.1415)
@@ -575,7 +565,7 @@ def test_len() raises:
 
 
 def test_add() raises:
-    comptime I = SIMD[DType.int32, 4]
+    comptime I = SIMD[.int32, 4]
     var i = I(-2, -4, 0, 1)
     assert_equal(i.__add__(0), I(-2, -4, 0, 1))
     assert_equal(i.__add__(Int32(0)), I(-2, -4, 0, 1))
@@ -586,14 +576,14 @@ def test_add() raises:
     var i2 = I(2, 5, 3, 1)
     assert_equal(i1.__add__(i2), I(3, 1, 0, 3))
 
-    comptime F = SIMD[DType.float32, 8]
+    comptime F = SIMD[.float32, 8]
     var f1 = F(1, -1, 1, -1, 1, -1, 1, -1)
     var f2 = F(-1, 1, -1, 1, -1, 1, -1, 1)
     assert_equal(f1.__add__(f2), F(0, 0, 0, 0, 0, 0, 0, 0))
 
 
 def test_radd() raises:
-    comptime I = SIMD[DType.int32, 4]
+    comptime I = SIMD[.int32, 4]
     var i = I(-2, -4, 0, 1)
     assert_equal(i.__radd__(0), I(-2, -4, 0, 1))
     assert_equal(i.__radd__(Int32(0)), I(-2, -4, 0, 1))
@@ -604,14 +594,14 @@ def test_radd() raises:
     var i2 = I(2, 5, 3, 1)
     assert_equal(i1.__radd__(i2), I(3, 1, 0, 3))
 
-    comptime F = SIMD[DType.float32, 8]
+    comptime F = SIMD[.float32, 8]
     var f1 = F(1, -1, 1, -1, 1, -1, 1, -1)
     var f2 = F(-1, 1, -1, 1, -1, 1, -1, 1)
     assert_equal(f1.__radd__(f2), F(0, 0, 0, 0, 0, 0, 0, 0))
 
 
 def test_iadd() raises:
-    comptime I = SIMD[DType.int32, 4]
+    comptime I = SIMD[.int32, 4]
     var i = I(-2, -4, 0, 1)
     i.__iadd__(0)
     assert_equal(i, I(-2, -4, 0, 1))
@@ -627,7 +617,7 @@ def test_iadd() raises:
     i1.__iadd__(i2)
     assert_equal(i1, I(3, 1, 0, 3))
 
-    comptime F = SIMD[DType.float32, 8]
+    comptime F = SIMD[.float32, 8]
     var f1 = F(1, -1, 1, -1, 1, -1, 1, -1)
     var f2 = F(-1, 1, -1, 1, -1, 1, -1, 1)
     f1.__iadd__(f2)
@@ -635,7 +625,7 @@ def test_iadd() raises:
 
 
 def test_sub() raises:
-    comptime I = SIMD[DType.int32, 4]
+    comptime I = SIMD[.int32, 4]
     var i = I(-2, -4, 0, 1)
     assert_equal(i.__sub__(0), I(-2, -4, 0, 1))
     assert_equal(i.__sub__(Int32(0)), I(-2, -4, 0, 1))
@@ -646,14 +636,14 @@ def test_sub() raises:
     var i2 = I(2, 5, 3, 1)
     assert_equal(i1.__sub__(i2), I(-1, -9, -6, 1))
 
-    comptime F = SIMD[DType.float32, 8]
+    comptime F = SIMD[.float32, 8]
     var f1 = F(1, -1, 1, -1, 1, -1, 1, -1)
     var f2 = F(-1, 1, -1, 1, -1, 1, -1, 1)
     assert_equal(f1.__sub__(f2), F(2, -2, 2, -2, 2, -2, 2, -2))
 
 
 def test_rsub() raises:
-    comptime I = SIMD[DType.int32, 4]
+    comptime I = SIMD[.int32, 4]
     var i = I(-2, -4, 0, 1)
     assert_equal(i.__rsub__(0), I(2, 4, 0, -1))
     assert_equal(i.__rsub__(Int32(0)), I(2, 4, 0, -1))
@@ -664,14 +654,14 @@ def test_rsub() raises:
     var i2 = I(2, 5, 3, 1)
     assert_equal(i1.__rsub__(i2), I(1, 9, 6, -1))
 
-    comptime F = SIMD[DType.float32, 8]
+    comptime F = SIMD[.float32, 8]
     var f1 = F(1, -1, 1, -1, 1, -1, 1, -1)
     var f2 = F(-1, 1, -1, 1, -1, 1, -1, 1)
     assert_equal(f1.__rsub__(f2), F(-2, 2, -2, 2, -2, 2, -2, 2))
 
 
 def test_isub() raises:
-    comptime I = SIMD[DType.int32, 4]
+    comptime I = SIMD[.int32, 4]
     var i = I(-2, -4, 0, 1)
     i.__isub__(0)
     assert_equal(i, I(-2, -4, 0, 1))
@@ -687,7 +677,7 @@ def test_isub() raises:
     i1.__isub__(i2)
     assert_equal(i1, I(-1, -9, -6, 1))
 
-    comptime F = SIMD[DType.float32, 8]
+    comptime F = SIMD[.float32, 8]
     var f1 = F(1, -1, 1, -1, 1, -1, 1, -1)
     var f2 = F(-1, 1, -1, 1, -1, 1, -1, 1)
     f1.__isub__(f2)
@@ -701,20 +691,20 @@ def test_ceil() raises:
 
     assert_equal(BFloat16.__ceil__(BFloat16(2.5)), 3.0)
 
-    comptime F = SIMD[DType.float32, 4]
+    comptime F = SIMD[.float32, 4]
     assert_equal(
         F.__ceil__(F(0.0, 1.4, -42.5, -12.6)), F(0.0, 2.0, -42.0, -12.0)
     )
 
-    comptime I = SIMD[DType.int32, 4]
+    comptime I = SIMD[.int32, 4]
     var i = I(0, 2, -42, -12)
     assert_equal(I.__ceil__(i), i)
 
-    comptime U = SIMD[DType.uint32, 4]
+    comptime U = SIMD[.uint32, 4]
     var u = U(0, 2, 42, 12)
     assert_equal(U.__ceil__(u), u)
 
-    comptime B = SIMD[DType.bool, 4]
+    comptime B = SIMD[.bool, 4]
     var b = B(True, False, True, False)
     assert_equal(B.__ceil__(b), b)
 
@@ -726,20 +716,20 @@ def test_floor() raises:
 
     assert_equal(BFloat16.__floor__(BFloat16(2.5)), 2.0)
 
-    comptime F = SIMD[DType.float32, 4]
+    comptime F = SIMD[.float32, 4]
     assert_equal(
         F.__floor__(F(0.0, 1.6, -42.5, -12.4)), F(0.0, 1.0, -43.0, -13.0)
     )
 
-    comptime I = SIMD[DType.int32, 4]
+    comptime I = SIMD[.int32, 4]
     var i = I(0, 2, -42, -12)
     assert_equal(I.__floor__(i), i)
 
-    comptime U = SIMD[DType.uint32, 4]
+    comptime U = SIMD[.uint32, 4]
     var u = U(0, 2, 42, 12)
     assert_equal(U.__floor__(u), u)
 
-    comptime B = SIMD[DType.bool, 4]
+    comptime B = SIMD[.bool, 4]
     var b = B(True, False, True, False)
     assert_equal(B.__floor__(b), b)
 
@@ -749,20 +739,20 @@ def test_trunc() raises:
     assert_equal(Float32.__trunc__(Float32(-1.5)), -1.0)
     assert_equal(Float32.__trunc__(Float32(3.0)), 3.0)
 
-    comptime F = SIMD[DType.float32, 4]
+    comptime F = SIMD[.float32, 4]
     assert_equal(
         F.__trunc__(F(0.0, 1.6, -42.5, -12.4)), F(0.0, 1.0, -42.0, -12.0)
     )
 
-    comptime I = SIMD[DType.int32, 4]
+    comptime I = SIMD[.int32, 4]
     var i = I(0, 2, -42, -12)
     assert_equal(I.__trunc__(i), i)
 
-    comptime U = SIMD[DType.uint32, 4]
+    comptime U = SIMD[.uint32, 4]
     var u = U(0, 2, 42, 12)
     assert_equal(U.__trunc__(u), u)
 
-    comptime B = SIMD[DType.bool, 4]
+    comptime B = SIMD[.bool, 4]
     var b = B(True, False, True, False)
     assert_equal(B.__trunc__(b), b)
 
@@ -772,7 +762,7 @@ def test_round() raises:
     assert_equal(Float32.__round__(Float32(3.5)), 4.0)
     assert_equal(Float32.__round__(Float32(-3.5)), -4.0)
 
-    comptime F = SIMD[DType.float32, 4]
+    comptime F = SIMD[.float32, 4]
     assert_equal(F.__round__(F(1.5, 2.5, -2.5, -3.5)), F(2.0, 2.0, -2.0, -4.0))
 
     assert_equal(Int32.__round__(1342, 0), 1342)
@@ -793,9 +783,9 @@ def test_div() raises:
     assert_false(isnan(Float32(33).__truediv__(0)))
     assert_true(isnan(Float32(0).__truediv__(0)))
 
-    comptime F32 = SIMD[DType.float32, 4]
+    comptime F32 = SIMD[.float32, 4]
     var res = F32.__truediv__(F32(1, 0, 3, -1), F32(0, 0, 1, 0))
-    comptime B = SIMD[DType.bool, 4]
+    comptime B = SIMD[.bool, 4]
     assert_equal(isfinite(res), B(False, False, True, False))
     assert_equal(isinf(res), B(True, False, False, True))
     assert_equal(isnan(res), B(False, True, False, False))
@@ -822,36 +812,36 @@ def test_floordiv() raises:
     assert_equal(Float32(2).__floordiv__(Float32(-2)), -1)
     assert_equal(Float32(99).__floordiv__(Float32(-2)), -50)
 
-    comptime I = SIMD[DType.int32, 4]
+    comptime I = SIMD[.int32, 4]
     var i = I(2, 4, -2, -4)
     assert_equal(i.__floordiv__(2), I(1, 2, -1, -2))
     assert_equal(i.__floordiv__(Int32(2)), I(1, 2, -1, -2))
 
-    comptime F = SIMD[DType.float32, 4]
+    comptime F = SIMD[.float32, 4]
     var f = F(3, -4, 1, 5)
     assert_equal(f.__floordiv__(3), F(1, -2, 0, 1))
     assert_equal(f.__floordiv__(Float32(3)), F(1, -2, 0, 1))
 
     var res = F.__floordiv__(F(1, 0, 3, -1), F(0, 0, 1, 0))
-    comptime B = SIMD[DType.bool, 4]
+    comptime B = SIMD[.bool, 4]
     assert_equal(isfinite(res), B(False, False, True, False))
     assert_equal(isinf(res), B(True, False, False, True))
     assert_equal(isnan(res), B(False, True, False, False))
 
     # test that for any element of the divisor that is zero, the corresponding
     # result is zero.
-    var a = SIMD[DType.int32, 4](99, 0, 8, 0)
-    var b = SIMD[DType.int32, 4](4, 3, -2, 0)
-    assert_equal(a.__floordiv__(b), SIMD[DType.int32, 4](24, 0, -4, 0))
+    var a = SIMD[.int32, 4](99, 0, 8, 0)
+    var b = SIMD[.int32, 4](4, 3, -2, 0)
+    assert_equal(a.__floordiv__(b), SIMD[.int32, 4](24, 0, -4, 0))
 
 
 def test_rfloordiv() raises:
-    comptime I = SIMD[DType.int32, 4]
+    comptime I = SIMD[.int32, 4]
     var i = I(2, 4, -2, -4)
     assert_equal(i.__rfloordiv__(2), I(1, 0, -1, -1))
     assert_equal(i.__rfloordiv__(Int32(2)), I(1, 0, -1, -1))
 
-    comptime F = SIMD[DType.float32, 4]
+    comptime F = SIMD[.float32, 4]
     var f = F(3, -4, 1, 5)
     assert_equal(f.__rfloordiv__(3), F(1, -1, 3, 0))
     assert_equal(f.__rfloordiv__(Float32(3)), F(1, -1, 3, 0))
@@ -869,24 +859,22 @@ def test_mod() raises:
     assert_equal(UInt32(99) % UInt32(1), 0)
     assert_equal(UInt32(99) % UInt32(3), 0)
 
-    assert_equal(
-        SIMD[DType.int32, 2](7, 7) % Int32(Int(4)), SIMD[DType.int32, 2](3, 3)
-    )
+    assert_equal(SIMD[.int32, 2](7, 7) % Int32(Int(4)), SIMD[.int32, 2](3, 3))
 
     # fmt: off
-    var a = SIMD[DType.float32, 16](
+    var a = SIMD[.float32, 16](
          3.1,  3.1,  3.1,  3.1,
          3.1,  3.1, -3.1, -3.1,
         -3.1, -3.1, -3.1, -3.1,
          3.1,  3.1, -3.1, -3.1,
     )
-    var b = SIMD[DType.float32, 16](
+    var b = SIMD[.float32, 16](
          3.2,  2.2,  1.2, -3.2,
         -2.2, -1.2,  3.2,  2.2,
          1.2, -3.2, -2.2, -1.2,
          3.1, -3.1,  3.1, -3.1,
     )
-    assert_equal(a % b, SIMD[DType.float32, 16](
+    assert_equal(a % b, SIMD[.float32, 16](
          3.0999999046325684,  0.89999985694885254, 0.69999980926513672, -0.10000014305114746,
         -1.3000001907348633, -0.5000002384185791,  0.10000014305114746,  1.3000001907348633,
          0.5000002384185791, -3.0999999046325684, -0.89999985694885254, -0.69999980926513672,
@@ -894,18 +882,18 @@ def test_mod() raises:
     ))
     # fmt: on
 
-    comptime F = SIMD[DType.float32, 4]
+    comptime F = SIMD[.float32, 4]
     var res = F.__mod__(F(1, 0, 3, -1), F(0, 0, 1, 0))
-    comptime B = SIMD[DType.bool, 4]
+    comptime B = SIMD[.bool, 4]
     assert_equal(isfinite(res), B(False, False, True, False))
     assert_equal(isinf(res), B(False, False, False, False))
     assert_equal(isnan(res), B(True, True, False, True))
 
     # test that for any element of the divisor that is zero, the corresponding
     # result is zero.
-    var c = SIMD[DType.int32, 4](99, 1, 8, 8)
-    var d = SIMD[DType.int32, 4](4, 3, 3, 0)
-    assert_equal(c % d, SIMD[DType.int32, 4](3, 1, 2, 0))
+    var c = SIMD[.int32, 4](99, 1, 8, 8)
+    var d = SIMD[.int32, 4](4, 3, 3, 0)
+    assert_equal(c % d, SIMD[.int32, 4](3, 1, 2, 0))
 
 
 def test_divmod() raises:
@@ -921,26 +909,26 @@ def test_divmod() raises:
     assert_equal(divmod(UInt32(99), UInt32(4)), (UInt32(24), UInt32(3)))
 
     # fmt: off
-    var e = SIMD[DType.float32, 16](
+    var e = SIMD[.float32, 16](
          3.1,  3.1,  3.1,  3.1,
          3.1,  3.1, -3.1, -3.1,
         -3.1, -3.1, -3.1, -3.1,
          3.1,  3.1, -3.1, -3.1,
     )
-    var f = SIMD[DType.float32, 16](
+    var f = SIMD[.float32, 16](
          3.2,  2.2,  1.2, -3.2,
         -2.2, -1.2,  3.2,  2.2,
          1.2, -3.2, -2.2, -1.2,
          3.1, -3.1,  3.1, -3.1,
     )
     assert_equal(divmod(e, f), (
-        SIMD[DType.float32, 16](
+        SIMD[.float32, 16](
              0.0,  1.0,  2.0, -1.0,
             -2.0, -3.0, -1.0, -2.0,
             -3.0,  0.0,  1.0,  2.0,
              1.0, -1.0, -1.0,  1.0,
         ),
-        SIMD[DType.float32, 16](
+        SIMD[.float32, 16](
              3.1,         0.89999986,  0.6999998,  -0.10000014,
             -1.3000002,  -0.50000024,  0.10000014,  1.3000002,
              0.50000024, -3.1,        -0.89999986, -0.6999998,
@@ -951,13 +939,13 @@ def test_divmod() raises:
 
     # test that for any element of the divisor that is zero, the corresponding
     # result is zero.
-    var i = SIMD[DType.int32, 4](99, 0, 8, 0)
-    var j = SIMD[DType.int32, 4](4, 3, -2, 0)
+    var i = SIMD[.int32, 4](99, 0, 8, 0)
+    var j = SIMD[.int32, 4](4, 3, -2, 0)
     assert_equal(
         divmod(i, j),
         (
-            SIMD[DType.int32, 4](24, 0, -4, 0),
-            SIMD[DType.int32, 4](3, 0, 0, 0),
+            SIMD[.int32, 4](24, 0, -4, 0),
+            SIMD[.int32, 4](3, 0, 0, 0),
         ),
     )
 
@@ -965,11 +953,11 @@ def test_divmod() raises:
 def test_rmod() raises:
     assert_equal(Int32(3).__rmod__(Int32(Int(4))), 1)
 
-    comptime I = SIMD[DType.int32, 2]
+    comptime I = SIMD[.int32, 2]
     var i = I(78, 78)
     assert_equal(i.__rmod__(Int32(Int(78))), I(0, 0))
 
-    comptime F = SIMD[DType.float32, 4]
+    comptime F = SIMD[.float32, 4]
     var f = F(3, -4, 1, 5)
     assert_equal(f.__rmod__(3), F(0, -1, 0, 3))
     assert_equal(f.__rmod__(Float32(3)), F(0, -1, 0, 3))
@@ -978,12 +966,12 @@ def test_rmod() raises:
 def test_rotate() raises:
     # Test with larger vectors and different data types
     assert_equal(
-        SIMD[DType.uint16, 8](1, 0, 1, 1, 0, 1, 0, 0).rotate_right[1](),
-        SIMD[DType.uint16, 8](0, 1, 0, 1, 1, 0, 1, 0),
+        SIMD[.uint16, 8](1, 0, 1, 1, 0, 1, 0, 0).rotate_right[1](),
+        SIMD[.uint16, 8](0, 1, 0, 1, 1, 0, 1, 0),
     )
     assert_equal(
-        SIMD[DType.uint32, 8](1, 0, 1, 1, 0, 1, 0, 0).rotate_right[5](),
-        SIMD[DType.uint32, 8](1, 0, 1, 0, 0, 1, 0, 1),
+        SIMD[.uint32, 8](1, 0, 1, 1, 0, 1, 0, 0).rotate_right[5](),
+        SIMD[.uint32, 8](1, 0, 1, 0, 0, 1, 0, 1),
     )
 
     # Test systematic rotation with 4-element vector
@@ -1044,16 +1032,16 @@ def test_rotate() raises:
     )
 
     # Test with sequential patterns for easier verification
-    var sequential = SIMD[DType.int32, 4](1, 2, 3, 4)
-    assert_equal(sequential.rotate_left[1](), SIMD[DType.int32, 4](2, 3, 4, 1))
-    assert_equal(sequential.rotate_left[2](), SIMD[DType.int32, 4](3, 4, 1, 2))
-    assert_equal(sequential.rotate_right[1](), SIMD[DType.int32, 4](4, 1, 2, 3))
-    assert_equal(sequential.rotate_right[2](), SIMD[DType.int32, 4](3, 4, 1, 2))
+    var sequential = SIMD[.int32, 4](1, 2, 3, 4)
+    assert_equal(sequential.rotate_left[1](), SIMD[.int32, 4](2, 3, 4, 1))
+    assert_equal(sequential.rotate_left[2](), SIMD[.int32, 4](3, 4, 1, 2))
+    assert_equal(sequential.rotate_right[1](), SIMD[.int32, 4](4, 1, 2, 3))
+    assert_equal(sequential.rotate_right[2](), SIMD[.int32, 4](3, 4, 1, 2))
 
     # Test with 8-element vector
-    var simd8 = SIMD[DType.uint8, 8](0, 1, 2, 3, 4, 5, 6, 7)
+    var simd8 = SIMD[.uint8, 8](0, 1, 2, 3, 4, 5, 6, 7)
     var rotate8_3 = simd8.rotate_left[3]()
-    var expected8_3 = SIMD[DType.uint8, 8](3, 4, 5, 6, 7, 0, 1, 2)
+    var expected8_3 = SIMD[.uint8, 8](3, 4, 5, 6, 7, 0, 1, 2)
     assert_equal(rotate8_3, expected8_3)
 
 
@@ -1062,19 +1050,17 @@ def test_shift() raises:
     comptime type = DType.uint32
 
     assert_equal(
-        SIMD[DType.uint16, 8](1, 0, 1, 1, 0, 1, 0, 0).shift_right[1](),
-        SIMD[DType.uint16, 8](0, 1, 0, 1, 1, 0, 1, 0),
+        SIMD[.uint16, 8](1, 0, 1, 1, 0, 1, 0, 0).shift_right[1](),
+        SIMD[.uint16, 8](0, 1, 0, 1, 1, 0, 1, 0),
     )
     assert_equal(
-        SIMD[DType.uint32, 8](11, 0, 13, 12, 0, 100, 0, 0).shift_right[5](),
-        SIMD[DType.uint32, 8](0, 0, 0, 0, 0, 11, 0, 13),
+        SIMD[.uint32, 8](11, 0, 13, 12, 0, 100, 0, 0).shift_right[5](),
+        SIMD[.uint32, 8](0, 0, 0, 0, 0, 11, 0, 13),
     )
 
     assert_equal(
-        SIMD[DType.float64, 8](11.1, 0, 13.1, 12.2, 0, 100.4, 0, 0).shift_right[
-            5
-        ](),
-        SIMD[DType.float64, 8](0, 0, 0, 0, 0, 11.1, 0, 13.1),
+        SIMD[.float64, 8](11.1, 0, 13.1, 12.2, 0, 100.4, 0, 0).shift_right[5](),
+        SIMD[.float64, 8](0, 0, 0, 0, 0, 11.1, 0, 13.1),
     )
 
     assert_equal(
@@ -1163,50 +1149,50 @@ def test_shuffle() raises:
 
 
 def test_shuffle_dynamic_size_4_uint8() raises:
-    var lookup_table = SIMD[DType.uint8, 16](
+    var lookup_table = SIMD[.uint8, 16](
         0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120, 130, 140, 150
     )
 
-    var indices = SIMD[DType.uint8, 4](3, 3, 5, 5)
+    var indices = SIMD[.uint8, 4](3, 3, 5, 5)
 
     var result = lookup_table._dynamic_shuffle(indices)
-    var expected_result = SIMD[DType.uint8, 4](30, 30, 50, 50)
+    var expected_result = SIMD[.uint8, 4](30, 30, 50, 50)
     assert_equal(result, expected_result)
 
 
 def test_shuffle_dynamic_size_8_uint8() raises:
-    var lookup_table = SIMD[DType.uint8, 16](
+    var lookup_table = SIMD[.uint8, 16](
         0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120, 130, 140, 150
     )
 
     # Let's use size 8
-    var indices = SIMD[DType.uint8, 8](3, 3, 5, 5, 7, 7, 9, 0)
+    var indices = SIMD[.uint8, 8](3, 3, 5, 5, 7, 7, 9, 0)
 
     var result = lookup_table._dynamic_shuffle(indices)
-    var expected_result = SIMD[DType.uint8, 8](30, 30, 50, 50, 70, 70, 90, 0)
+    var expected_result = SIMD[.uint8, 8](30, 30, 50, 50, 70, 70, 90, 0)
     assert_equal(result, expected_result)
 
 
 def test_shuffle_dynamic_size_16_uint8() raises:
-    var lookup_table = SIMD[DType.uint8, 16](
+    var lookup_table = SIMD[.uint8, 16](
         0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120, 130, 140, 150
     )
-    var indices = SIMD[DType.uint8, 16](
+    var indices = SIMD[.uint8, 16](
         3, 3, 5, 5, 7, 7, 9, 9, 11, 11, 13, 13, 15, 15, 0, 1
     )
     var result = lookup_table._dynamic_shuffle(indices)
-    var expected_result = SIMD[DType.uint8, 16](
+    var expected_result = SIMD[.uint8, 16](
         30, 30, 50, 50, 70, 70, 90, 90, 110, 110, 130, 130, 150, 150, 0, 10
     )
     assert_equal(result, expected_result)
 
 
 def test_shuffle_dynamic_size_32_uint8() raises:
-    var table_lookup = SIMD[DType.uint8, 16](
+    var table_lookup = SIMD[.uint8, 16](
         0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120, 130, 140, 150
     )
     # fmt: off
-    var indices = SIMD[DType.uint8, 32](
+    var indices = SIMD[.uint8, 32](
         3 , 3 , 5 , 5 , 7 , 7 , 9 , 9 ,
         11, 11, 13, 13, 15, 15, 0 , 1 ,
         0 , 1 , 2 , 3 , 4 , 5 , 6 , 7 ,
@@ -1214,7 +1200,7 @@ def test_shuffle_dynamic_size_32_uint8() raises:
     )
     var result = table_lookup._dynamic_shuffle(indices)
 
-    var expected_result = SIMD[DType.uint8, 32](
+    var expected_result = SIMD[.uint8, 32](
         30 , 30 , 50 , 50 , 70 , 70 , 90 , 90 ,
         110, 110, 130, 130, 150, 150, 0  , 10 ,
         0  , 10 , 20 , 30 , 40 , 50 , 60 , 70 ,
@@ -1225,11 +1211,11 @@ def test_shuffle_dynamic_size_32_uint8() raises:
 
 
 def test_shuffle_dynamic_size_64_uint8() raises:
-    var table_lookup = SIMD[DType.uint8, 16](
+    var table_lookup = SIMD[.uint8, 16](
         0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120, 130, 140, 150
     )
     # fmt: off
-    var indices = SIMD[DType.uint8, 32](
+    var indices = SIMD[.uint8, 32](
         3 , 3 , 5 , 5 , 7 , 7 , 9 , 9 ,
         11, 11, 13, 13, 15, 15, 0 , 1 ,
         0 , 1 , 2 , 3 , 4 , 5 , 6 , 7 ,
@@ -1237,7 +1223,7 @@ def test_shuffle_dynamic_size_64_uint8() raises:
     )
     var result = table_lookup._dynamic_shuffle(indices.join(indices))
 
-    var expected_result = SIMD[DType.uint8, 32](
+    var expected_result = SIMD[.uint8, 32](
         30 , 30 , 50 , 50 , 70 , 70 , 90 , 90 ,
         110, 110, 130, 130, 150, 150, 0  , 10 ,
         0  , 10 , 20 , 30 , 40 , 50 , 60 , 70 ,
@@ -1249,11 +1235,11 @@ def test_shuffle_dynamic_size_64_uint8() raises:
 
 def test_shuffle_dynamic_size_32_float() raises:
     # fmt: off
-    var table_lookup = SIMD[DType.float64, 16](
+    var table_lookup = SIMD[.float64, 16](
         0.0, 10.0, 20.0, 30.0, 40.0, 50.0, 60.0, 70.0,
         80.0, 90.0, 100.0, 110.0, 120.0, 130.0, 140.0, 150.0,
     )
-    var indices = SIMD[DType.uint8, 32](
+    var indices = SIMD[.uint8, 32](
         3 , 3 , 5 , 5 , 7 , 7 , 9 , 9 ,
         11, 11, 13, 13, 15, 15, 0 , 1 ,
         0 , 1 , 2 , 3 , 4 , 5 , 6 , 7 ,
@@ -1261,7 +1247,7 @@ def test_shuffle_dynamic_size_32_float() raises:
     )
     var result = table_lookup._dynamic_shuffle(indices)
 
-    var expected_result = SIMD[DType.float64, 32](
+    var expected_result = SIMD[.float64, 32](
         30. , 30. , 50. , 50. , 70. , 70. , 90. , 90. ,
         110., 110., 130., 130., 150., 150., 0.  , 10. ,
         0.  , 10. , 20. , 30. , 40. , 50. , 60. , 70. ,
@@ -1275,71 +1261,69 @@ def test_insert() raises:
     assert_equal(Int32(3).insert(Int32(4)), 4)
 
     assert_equal(
-        SIMD[DType.int, 4](0, 1, 2, 3).insert(SIMD[DType.int, 2](9, 6)),
-        SIMD[DType.int, 4](9, 6, 2, 3),
+        SIMD[.int, 4](0, 1, 2, 3).insert(SIMD[.int, 2](9, 6)),
+        SIMD[.int, 4](9, 6, 2, 3),
     )
 
     assert_equal(
-        SIMD[DType.int, 4](0, 1, 2, 3).insert[offset=2](
-            SIMD[DType.int, 2](9, 6)
-        ),
-        SIMD[DType.int, 4](0, 1, 9, 6),
+        SIMD[.int, 4](0, 1, 2, 3).insert[offset=2](SIMD[.int, 2](9, 6)),
+        SIMD[.int, 4](0, 1, 9, 6),
     )
 
     assert_equal(
-        SIMD[DType.uint, 8](0, 1, 2, 3, 5, 6, 7, 8).insert[offset=4](
-            SIMD[DType.uint, 4](9, 6, 3, 7)
+        SIMD[.uint, 8](0, 1, 2, 3, 5, 6, 7, 8).insert[offset=4](
+            SIMD[.uint, 4](9, 6, 3, 7)
         ),
-        SIMD[DType.uint, 8](0, 1, 2, 3, 9, 6, 3, 7),
+        SIMD[.uint, 8](0, 1, 2, 3, 9, 6, 3, 7),
     )
 
     assert_equal(
-        SIMD[DType.uint, 8](0, 1, 2, 3, 5, 6, 7, 8).insert[offset=0](
-            SIMD[DType.uint, 4](9, 6, 3, 7)
+        SIMD[.uint, 8](0, 1, 2, 3, 5, 6, 7, 8).insert[offset=0](
+            SIMD[.uint, 4](9, 6, 3, 7)
         ),
-        SIMD[DType.uint, 8](9, 6, 3, 7, 5, 6, 7, 8),
+        SIMD[.uint, 8](9, 6, 3, 7, 5, 6, 7, 8),
     )
 
 
 def test_join() raises:
-    comptime I2 = SIMD[DType.int32, 2]
+    comptime I2 = SIMD[.int32, 2]
     assert_equal(Int32(3).join(Int32(4)), I2(3, 4))
 
-    comptime I4 = SIMD[DType.int32, 4]
+    comptime I4 = SIMD[.int32, 4]
     assert_equal(I2(5, 6).join(I2(9, 10)), I4(5, 6, 9, 10))
 
     var vec = I4(100, 101, 102, 103)
     assert_equal(
         vec.join(vec),
-        SIMD[DType.int32, 8](100, 101, 102, 103, 100, 101, 102, 103),
+        SIMD[.int32, 8](100, 101, 102, 103, 100, 101, 102, 103),
     )
 
 
 def test_interleave() raises:
     assert_equal(
         String(Int32(0).interleave(Int32(1))),
-        String(SIMD[DType.int32, 2](0, 1)),
+        String(SIMD[.int32, 2](0, 1)),
     )
 
     assert_equal(
-        SIMD[DType.int, 2](0, -2).interleave(SIMD[DType.int, 2](1, -3)),
-        SIMD[DType.int, 4](0, 1, -2, -3),
+        SIMD[.int, 2](0, -2).interleave(SIMD[.int, 2](1, -3)),
+        SIMD[.int, 4](0, 1, -2, -3),
     )
 
     assert_equal(
-        SIMD[DType.uint, 2](0, 2).interleave(SIMD[DType.uint, 2](1, 3)),
-        SIMD[DType.uint, 4](0, 1, 2, 3),
+        SIMD[.uint, 2](0, 2).interleave(SIMD[.uint, 2](1, 3)),
+        SIMD[.uint, 4](0, 1, 2, 3),
     )
 
 
 def test_deinterleave() raises:
-    var tup2 = SIMD[DType.float32, 2](1, 2).deinterleave()
+    var tup2 = SIMD[.float32, 2](1, 2).deinterleave()
     assert_equal(tup2, (Float32(1), Float32(2)))
 
-    var tup4 = SIMD[DType.int, 4](0, 1, -2, -3).deinterleave()
+    var tup4 = SIMD[.int, 4](0, 1, -2, -3).deinterleave()
     assert_equal(tup4, (type_of(tup4[0])(0, -2), type_of(tup4[0])(1, -3)))
 
-    var tup8 = SIMD[DType.uint, 8](0, 1, 2, 3, 4, 5, 6, 7).deinterleave()
+    var tup8 = SIMD[.uint, 8](0, 1, 2, 3, 4, 5, 6, 7).deinterleave()
     assert_equal(
         tup8, (type_of(tup8[0])(0, 2, 4, 6), type_of(tup8[0])(1, 3, 5, 7))
     )
@@ -1352,23 +1336,23 @@ def test_extract() raises:
     assert_equal(s2, 99)
 
     assert_equal(
-        SIMD[DType.int, 4](99, 1, 2, 4).slice[4](),
-        SIMD[DType.int, 4](99, 1, 2, 4),
+        SIMD[.int, 4](99, 1, 2, 4).slice[4](),
+        SIMD[.int, 4](99, 1, 2, 4),
     )
 
     assert_equal(
-        SIMD[DType.int, 4](99, 1, 2, 4).slice[2, offset=0](),
-        SIMD[DType.int, 2](99, 1),
+        SIMD[.int, 4](99, 1, 2, 4).slice[2, offset=0](),
+        SIMD[.int, 2](99, 1),
     )
 
     assert_equal(
-        SIMD[DType.uint, 4](99, 1, 2, 4).slice[2, offset=2](),
-        SIMD[DType.uint, 2](2, 4),
+        SIMD[.uint, 4](99, 1, 2, 4).slice[2, offset=2](),
+        SIMD[.uint, 2](2, 4),
     )
 
     assert_equal(
-        SIMD[DType.uint, 4](99, 1, 2, 4).slice[2, offset=1](),
-        SIMD[DType.uint, 2](1, 2),
+        SIMD[.uint, 4](99, 1, 2, 4).slice[2, offset=1](),
+        SIMD[.uint, 2](1, 2),
     )
 
 
@@ -1378,16 +1362,16 @@ def test_limits() raises:
         var min_value = Scalar[dtype].MIN
         assert_equal(max_value + 1, min_value)
 
-    test_integral_overflow[DType.int]()
-    test_integral_overflow[DType.uint]()
-    test_integral_overflow[DType.int8]()
-    test_integral_overflow[DType.uint8]()
-    test_integral_overflow[DType.int16]()
-    test_integral_overflow[DType.uint16]()
-    test_integral_overflow[DType.int32]()
-    test_integral_overflow[DType.uint32]()
-    test_integral_overflow[DType.int64]()
-    test_integral_overflow[DType.uint64]()
+    test_integral_overflow[.int]()
+    test_integral_overflow[.uint]()
+    test_integral_overflow[.int8]()
+    test_integral_overflow[.uint8]()
+    test_integral_overflow[.int16]()
+    test_integral_overflow[.uint16]()
+    test_integral_overflow[.int32]()
+    test_integral_overflow[.uint32]()
+    test_integral_overflow[.int64]()
+    test_integral_overflow[.uint64]()
 
 
 def test_abs() raises:
@@ -1395,20 +1379,20 @@ def test_abs() raises:
     assert_equal(abs(Float32(-1.0)), 1)
     assert_equal(abs(Float32(0.0)), 0)
     assert_equal(
-        abs(SIMD[DType.float32, 4](0.0, 1.5, -42.5, -12.7)),
-        SIMD[DType.float32, 4](0.0, 1.5, 42.5, 12.7),
+        abs(SIMD[.float32, 4](0.0, 1.5, -42.5, -12.7)),
+        SIMD[.float32, 4](0.0, 1.5, 42.5, 12.7),
     )
     assert_equal(
-        abs(SIMD[DType.int32, 4](0, 2, -42, -12)),
-        SIMD[DType.int32, 4](0, 2, 42, 12),
+        abs(SIMD[.int32, 4](0, 2, -42, -12)),
+        SIMD[.int32, 4](0, 2, 42, 12),
     )
     assert_equal(
-        abs(SIMD[DType.uint32, 4](0, 2, 42, 12)),
-        SIMD[DType.uint32, 4](0, 2, 42, 12),
+        abs(SIMD[.uint32, 4](0, 2, 42, 12)),
+        SIMD[.uint32, 4](0, 2, 42, 12),
     )
     assert_equal(
-        abs(SIMD[DType.bool, 4](True, False, True, False)),
-        SIMD[DType.bool, 4](True, False, True, False),
+        abs(SIMD[.bool, 4](True, False, True, False)),
+        SIMD[.bool, 4](True, False, True, False),
     )
     # Test signed minimum representable values
     assert_equal(abs(Int8.MIN), Int8.MIN)
@@ -1421,50 +1405,46 @@ def test_abs() raises:
 
 def test_clamp() raises:
     # Basic clamp tests
-    comptime F = SIMD[DType.float32, 4]
+    comptime F = SIMD[.float32, 4]
     var f = F(-10.5, -5.0, 5.0, 10.0)
     assert_equal(f.clamp(-6.0, 5.5), F(-6.0, -5.0, 5.0, 5.5))
 
-    comptime I = SIMD[DType.int32, 4]
+    comptime I = SIMD[.int32, 4]
     var i = I(-10, -5, 5, 10)
     assert_equal(i.clamp(-7, 4), I(-7, -5, 4, 4))
 
     # Test clamping with edge cases
-    var simd = SIMD[DType.float32, 8](
-        -10.0, -1.0, 0.0, 1.0, 5.0, 10.0, 15.0, 20.0
-    )
-    var lower = SIMD[DType.float32, 8](0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
-    var upper = SIMD[DType.float32, 8](
+    var simd = SIMD[.float32, 8](-10.0, -1.0, 0.0, 1.0, 5.0, 10.0, 15.0, 20.0)
+    var lower = SIMD[.float32, 8](0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
+    var upper = SIMD[.float32, 8](
         10.0, 10.0, 10.0, 10.0, 10.0, 10.0, 10.0, 10.0
     )
 
     var clamped = simd.clamp(lower, upper)
-    var expected = SIMD[DType.float32, 8](
-        0.0, 0.0, 0.0, 1.0, 5.0, 10.0, 10.0, 10.0
-    )
+    var expected = SIMD[.float32, 8](0.0, 0.0, 0.0, 1.0, 5.0, 10.0, 10.0, 10.0)
 
     assert_equal(clamped, expected)
 
     # Test with integer types
-    var int_simd = SIMD[DType.int32, 4](-5, 0, 10, 20)
-    var int_lower = SIMD[DType.int32, 4](0, 0, 0, 0)
-    var int_upper = SIMD[DType.int32, 4](15, 15, 15, 15)
+    var int_simd = SIMD[.int32, 4](-5, 0, 10, 20)
+    var int_lower = SIMD[.int32, 4](0, 0, 0, 0)
+    var int_upper = SIMD[.int32, 4](15, 15, 15, 15)
 
     var int_clamped = int_simd.clamp(int_lower, int_upper)
-    var int_expected = SIMD[DType.int32, 4](0, 0, 10, 15)
+    var int_expected = SIMD[.int32, 4](0, 0, 10, 15)
 
     assert_equal(int_clamped, int_expected)
 
     # Test where lower == upper (should clamp to that value)
-    var constant_bounds = SIMD[DType.int32, 4](5, 5, 5, 5)
+    var constant_bounds = SIMD[.int32, 4](5, 5, 5, 5)
     var const_clamped = int_simd.clamp(constant_bounds, constant_bounds)
-    var const_expected = SIMD[DType.int32, 4](5, 5, 5, 5)
+    var const_expected = SIMD[.int32, 4](5, 5, 5, 5)
 
     assert_equal(const_clamped, const_expected)
 
 
 def test_indexing() raises:
-    var s = SIMD[DType.int32, 4](1, 2, 3, 4)
+    var s = SIMD[.int32, 4](1, 2, 3, 4)
     assert_equal(s[Int(False)], 1)
     assert_equal(s[Int(2)], 3)
     assert_equal(s[3], 4)
@@ -1619,14 +1599,14 @@ def test_reduce() raises:
             assert_equal(x8.reduce_max[8](), x8)
             assert_equal(X2(6, -3).reduce_max(), 6)
 
-        comptime if dtype == DType.bool:
+        comptime if dtype == .bool:
             # reduce_and
-            var x8b = SIMD[DType.bool, 8](
+            var x8b = SIMD[.bool, 8](
                 False, False, True, True, False, True, False, True
             )
-            var x4b = SIMD[DType.bool, 4](False, False, False, True)
-            var x2b = SIMD[DType.bool, 2](False, False)
-            var x1b = Scalar[DType.bool](False)
+            var x4b = SIMD[.bool, 4](False, False, False, True)
+            var x2b = SIMD[.bool, 2](False, False)
+            var x1b = Scalar[.bool](False)
             assert_equal(x8b.reduce_and(), x1b)
             assert_equal(x4b.reduce_and(), x1b)
             assert_equal(x2b.reduce_and(), x1b)
@@ -1637,15 +1617,15 @@ def test_reduce() raises:
             assert_equal(x8b.reduce_and[4](), x4b)
             assert_equal(x4b.reduce_and[4](), x4b)
             assert_equal(x8b.reduce_and[8](), x8b)
-            assert_equal(SIMD[DType.bool, 2](True, True).reduce_and(), True)
+            assert_equal(SIMD[.bool, 2](True, True).reduce_and(), True)
 
             # reduce_or
-            x8b = SIMD[DType.bool, 8](
+            x8b = SIMD[.bool, 8](
                 False, False, True, True, False, True, False, True
             )
-            x4b = SIMD[DType.bool, 4](False, True, True, True)
-            x2b = SIMD[DType.bool, 2](True, True)
-            x1b = Scalar[DType.bool](True)
+            x4b = SIMD[.bool, 4](False, True, True, True)
+            x2b = SIMD[.bool, 2](True, True)
+            x1b = Scalar[.bool](True)
             assert_equal(x8b.reduce_or(), x1b)
             assert_equal(x4b.reduce_or(), x1b)
             assert_equal(x2b.reduce_or(), x1b)
@@ -1656,7 +1636,7 @@ def test_reduce() raises:
             assert_equal(x8b.reduce_or[4](), x4b)
             assert_equal(x4b.reduce_or[4](), x4b)
             assert_equal(x8b.reduce_or[8](), x8b)
-            assert_equal(SIMD[DType.bool, 2](False, False).reduce_or(), False)
+            assert_equal(SIMD[.bool, 2](False, False).reduce_or(), False)
 
         comptime if dtype.is_integral():
             # reduce_and
@@ -1693,38 +1673,38 @@ def test_reduce() raises:
             assert_equal(x8.reduce_or[8](), x8)
             assert_equal(X2(6, 3).reduce_or(), 7)
 
-    test_dtype[DType.bool]()
-    test_dtype[DType.int8]()
-    test_dtype[DType.int16]()
-    test_dtype[DType.int32]()
-    test_dtype[DType.int64]()
-    test_dtype[DType.uint8]()
-    test_dtype[DType.uint16]()
-    test_dtype[DType.uint32]()
-    test_dtype[DType.uint64]()
-    test_dtype[DType.float16]()
-    test_dtype[DType.float32]()
-    test_dtype[DType.float64]()
-    test_dtype[DType.int]()
-    test_dtype[DType.uint]()
+    test_dtype[.bool]()
+    test_dtype[.int8]()
+    test_dtype[.int16]()
+    test_dtype[.int32]()
+    test_dtype[.int64]()
+    test_dtype[.uint8]()
+    test_dtype[.uint16]()
+    test_dtype[.uint32]()
+    test_dtype[.uint64]()
+    test_dtype[.float16]()
+    test_dtype[.float32]()
+    test_dtype[.float64]()
+    test_dtype[.int]()
+    test_dtype[.uint]()
 
-    test_dtype[DType.bfloat16]()
+    test_dtype[.bfloat16]()
 
 
 def test_reduce_bit_count() raises:
     var int_0xFFFF = Int32(0xFFFF)
     assert_equal(int_0xFFFF.reduce_bit_count(), 16)
 
-    var int_iota8 = SIMD[DType.int32, 8](0, 1, 2, 3, 4, 5, 6, 7)
+    var int_iota8 = SIMD[.int32, 8](0, 1, 2, 3, 4, 5, 6, 7)
     assert_equal(int_iota8.reduce_bit_count(), 12)
 
-    var bool_true = Scalar[DType.bool](True)
+    var bool_true = Scalar[.bool](True)
     assert_equal(bool_true.reduce_bit_count(), 1)
 
-    var bool_false = Scalar[DType.bool](False)
+    var bool_false = Scalar[.bool](False)
     assert_equal(bool_false.reduce_bit_count(), 0)
 
-    var bool_true16 = SIMD[DType.bool, 16](fill=True)
+    var bool_true16 = SIMD[.bool, 16](fill=True)
     assert_equal(bool_true16.reduce_bit_count(), 16)
 
 
@@ -1735,8 +1715,8 @@ def test_pow() raises:
     comptime neg_inf = FloatLiteral.negative_infinity
 
     # Float32 tests
-    comptime F32x4 = SIMD[DType.float32, 4]
-    comptime F32x8 = SIMD[DType.float32, 8]
+    comptime F32x4 = SIMD[.float32, 4]
+    comptime F32x8 = SIMD[.float32, 8]
 
     var f32x4_val = F32x4(0, 1, 2, 3)
     var f32x8_val = F32x8(0, 1, 2, 3, 4, 5, 6, 7)
@@ -1811,7 +1791,7 @@ def test_pow() raises:
     )
 
     # Float64 tests
-    comptime F64x4 = SIMD[DType.float64, 4]
+    comptime F64x4 = SIMD[.float64, 4]
 
     assert_equal(
         F64x4(0, 1, 2, 3).__pow__(20),
@@ -1824,7 +1804,7 @@ def test_pow() raises:
     )
 
     # Int32 tests
-    comptime I32x4 = SIMD[DType.int32, 4]
+    comptime I32x4 = SIMD[.int32, 4]
 
     var i32x4_val = I32x4(0, 1, 2, 3)
 
@@ -1848,7 +1828,7 @@ def test_pow() raises:
     assert_equal(i32x4_edge_base.__pow__(32), I32x4(0, 1, 0, 1))
 
     # UInt32 tests
-    comptime U32x4 = SIMD[DType.uint32, 4]
+    comptime U32x4 = SIMD[.uint32, 4]
 
     var u32x4_val = U32x4(0, 1, 2, 3)
 
@@ -1866,7 +1846,7 @@ def test_pow() raises:
     assert_equal(u32x4_edge_base.__pow__(32), U32x4(0, 1, 1, 1))
 
     # Int8 tests
-    comptime I8x4 = SIMD[DType.int8, 4]
+    comptime I8x4 = SIMD[.int8, 4]
 
     var i8x4_val = I8x4(0, 1, 2, 3)
 
@@ -1875,7 +1855,7 @@ def test_pow() raises:
     assert_equal(I8x4(-128, -1, 0, 127).__pow__(3), I8x4(0, -1, 0, 127))
 
     # UInt8 tests
-    comptime U8x4 = SIMD[DType.uint8, 4]
+    comptime U8x4 = SIMD[.uint8, 4]
 
     var u8x4_val = U8x4(0, 1, 2, 3)
     assert_equal(u8x4_val.__pow__(2), U8x4(0, 1, 4, 9))
@@ -1913,15 +1893,15 @@ def test_powf() raises:
     assert_almost_equal(Float32(-4) ** Float32(-3), -0.015625)
 
     assert_almost_equal(
-        SIMD[DType.float64, 8](1.0, -1.0, 2.0, -2.0, 4.0, -4.0, -2.0, 3.0)
-        ** SIMD[DType.float64, 8](1, 2, 3, 4, 5, 6, 2, 1),
-        SIMD[DType.float64, 8](1, 1, 8, 16, 1024, 4096, 4, 3),
+        SIMD[.float64, 8](1.0, -1.0, 2.0, -2.0, 4.0, -4.0, -2.0, 3.0)
+        ** SIMD[.float64, 8](1, 2, 3, 4, 5, 6, 2, 1),
+        SIMD[.float64, 8](1, 1, 8, 16, 1024, 4096, 4, 3),
     )
 
 
 def test_rpow() raises:
-    comptime F32x4 = SIMD[DType.float32, 4]
-    comptime I32x4 = SIMD[DType.int32, 4]
+    comptime F32x4 = SIMD[.float32, 4]
+    comptime I32x4 = SIMD[.int32, 4]
 
     var f32x4_val = F32x4(0, 1, 2, 3)
     var i32x4_val = I32x4(0, 1, 2, 3)
@@ -1966,20 +1946,20 @@ def test_modf() raises:
 
 
 def test_split() raises:
-    var tup4 = SIMD[DType.int, 4](1, 2, -3, -4).split()
+    var tup4 = SIMD[.int, 4](1, 2, -3, -4).split()
     assert_equal(tup4[0], type_of(tup4[0])(1, 2))
     assert_equal(tup4[1], type_of(tup4[1])(-3, -4))
 
-    var tup8 = SIMD[DType.uint, 8](1, 2, 3, 4, 5, 6, 7, 8).split()
+    var tup8 = SIMD[.uint, 8](1, 2, 3, 4, 5, 6, 7, 8).split()
     assert_equal(tup8[0], type_of(tup8[0])(1, 2, 3, 4))
     assert_equal(tup8[1], type_of(tup8[1])(5, 6, 7, 8))
 
 
 def test_contains() raises:
-    var x = SIMD[DType.int8, 4](1, 2, 3, 4)
+    var x = SIMD[.int8, 4](1, 2, 3, 4)
     assert_true(1 in x and 2 in x and 3 in x and 4 in x)
     assert_false(0 in x or 5 in x)
-    var y = SIMD[DType.float16, 4](1, 2, 3, 4)
+    var y = SIMD[.float16, 4](1, 2, 3, 4)
     assert_true(1 in y and 2 in y and 3 in y and 4 in y)
     assert_false(0 in y or 5 in y)
 
@@ -2125,10 +2105,10 @@ def test_comparison() raises:
             assert_true(mixed_ge[2])
             assert_true(mixed_ge[3])
 
-        comptime if dtype == DType.bool:
-            var all_true = SIMD[DType.bool, 4](fill=True)
-            var all_false = SIMD[DType.bool, 4](fill=False)
-            var mixed = SIMD[DType.bool, 4](True, True, False, False)
+        comptime if dtype == .bool:
+            var all_true = SIMD[.bool, 4](fill=True)
+            var all_false = SIMD[.bool, 4](fill=False)
+            var mixed = SIMD[.bool, 4](True, True, False, False)
 
             assert_true(all_true == all_true)
             assert_false(all_true == all_false)
@@ -2156,9 +2136,7 @@ def test_comparison() raises:
             assert_false(mixed_le[3])
 
             assert_true(
-                all_true.eq(
-                    SIMD[DType.bool, 4](True, True, True, True)
-                ).reduce_and()
+                all_true.eq(SIMD[.bool, 4](True, True, True, True)).reduce_and()
             )
             assert_false(all_true.eq(all_false).reduce_or())
             var mixed_eq = all_true.eq(mixed)
@@ -2169,9 +2147,7 @@ def test_comparison() raises:
 
             assert_true(all_true.ne(all_false).reduce_and())
             assert_false(
-                all_true.ne(
-                    SIMD[DType.bool, 4](True, True, True, True)
-                ).reduce_or()
+                all_true.ne(SIMD[.bool, 4](True, True, True, True)).reduce_or()
             )
             var mixed_ne = all_true.ne(mixed)
             assert_false(mixed_ne[0])
@@ -2199,7 +2175,7 @@ def test_comparison() raises:
         comptime dtype = rebind[DType](dtypes[i])
         test_dtype[dtype]()
 
-    test_dtype[DType.bfloat16]()
+    test_dtype[.bfloat16]()
 
 
 def test_float_conversion() raises:
@@ -2249,30 +2225,26 @@ def test_from_bytes_as_bytes() raises:
             )
 
     # Test SIMD vector roundtrip conversions (from test_comprehensive_from_bytes)
-    var original_int32 = SIMD[DType.int32, 2](1, 2)
+    var original_int32 = SIMD[.int32, 2](1, 2)
 
     # Test little endian roundtrip
     var bytes_le = original_int32.as_bytes[big_endian=False]()
-    var int32_from_le = SIMD[DType.int32, 2].from_bytes[big_endian=False](
-        bytes_le
-    )
+    var int32_from_le = SIMD[.int32, 2].from_bytes[big_endian=False](bytes_le)
     assert_equal(int32_from_le, original_int32)
 
     # Test big endian roundtrip
     var bytes_be = original_int32.as_bytes[big_endian=True]()
-    var int32_from_be = SIMD[DType.int32, 2].from_bytes[big_endian=True](
-        bytes_be
-    )
+    var int32_from_be = SIMD[.int32, 2].from_bytes[big_endian=True](bytes_be)
     assert_equal(int32_from_be, original_int32)
 
     # Test with float64 roundtrip (using default endianness)
-    var original_float64 = SIMD[DType.float64, 2](1.0, 2.0)
+    var original_float64 = SIMD[.float64, 2](1.0, 2.0)
     var float_bytes = original_float64.as_bytes()
-    var float64_from_bytes = SIMD[DType.float64, 2].from_bytes(float_bytes)
+    var float64_from_bytes = SIMD[.float64, 2].from_bytes(float_bytes)
     assert_equal(float64_from_bytes, original_float64)
 
     # Test as_bytes conversion with specific byte patterns (from test_comprehensive_as_bytes)
-    var int32_vals = SIMD[DType.int32, 2](0x12345678, 0x87654321)
+    var int32_vals = SIMD[.int32, 2](0x12345678, 0x87654321)
     var bytes_le_vals = int32_vals.as_bytes[big_endian=False]()
     var bytes_be_vals = int32_vals.as_bytes[big_endian=True]()
 
@@ -2289,10 +2261,10 @@ def test_from_bytes_as_bytes() raises:
     assert_equal(bytes_be_vals[3], 0x78)
 
     # Test roundtrip conversion
-    var reconstructed_le = SIMD[DType.int32, 2].from_bytes[big_endian=False](
+    var reconstructed_le = SIMD[.int32, 2].from_bytes[big_endian=False](
         bytes_le_vals
     )
-    var reconstructed_be = SIMD[DType.int32, 2].from_bytes[big_endian=True](
+    var reconstructed_be = SIMD[.int32, 2].from_bytes[big_endian=True](
         bytes_be_vals
     )
     assert_equal(reconstructed_le, int32_vals)
@@ -2301,10 +2273,10 @@ def test_from_bytes_as_bytes() raises:
 
 def test_vector_from_bytes_as_bytes() raises:
     # Test various SIMD vector types with comprehensive byte conversions
-    var v8_u8 = SIMD[DType.uint8, 8](1, 2, 3, 4, 5, 6, 7, 8)
-    assert_equal(v8_u8, SIMD[DType.uint8, 8].from_bytes(v8_u8.as_bytes()))
+    var v8_u8 = SIMD[.uint8, 8](1, 2, 3, 4, 5, 6, 7, 8)
+    assert_equal(v8_u8, SIMD[.uint8, 8].from_bytes(v8_u8.as_bytes()))
 
-    var v8_u16 = SIMD[DType.uint16, 8](1, 2, 3, 4, 5, 6, 7, 8)
+    var v8_u16 = SIMD[.uint16, 8](1, 2, 3, 4, 5, 6, 7, 8)
     # fmt: off
     var expected_v8_u16_be_bytes = [
         0, 1, 0, 2, 0, 3, 0, 4, 0, 5, 0, 6, 0, 7, 0, 8,
@@ -2322,29 +2294,27 @@ def test_vector_from_bytes_as_bytes() raises:
     for i, expected in enumerate(expected_v8_u16_le_bytes):
         assert_equal(Int(actual_v8_u16_le_bytes[i]), expected)
 
-    var v8_i64 = SIMD[DType.int64, 8](1, -2, 3, -4, 5, -6, 7, -8)
+    var v8_i64 = SIMD[.int64, 8](1, -2, 3, -4, 5, -6, 7, -8)
     assert_equal(
         v8_i64,
-        SIMD[DType.int64, 8].from_bytes[big_endian=False](
+        SIMD[.int64, 8].from_bytes[big_endian=False](
             v8_i64.as_bytes[big_endian=False]()
         ),
     )
     assert_equal(
         v8_i64,
-        SIMD[DType.int64, 8].from_bytes[big_endian=True](
+        SIMD[.int64, 8].from_bytes[big_endian=True](
             v8_i64.as_bytes[big_endian=True]()
         ),
     )
 
-    var v8_f64 = SIMD[DType.float64, 8](
-        1.1, -2.2, 3.3, -4.4, 5.5, -6.6, 7.7, -8.8
-    )
-    assert_equal(v8_f64, SIMD[DType.float64, 8].from_bytes(v8_f64.as_bytes()))
+    var v8_f64 = SIMD[.float64, 8](1.1, -2.2, 3.3, -4.4, 5.5, -6.6, 7.7, -8.8)
+    assert_equal(v8_f64, SIMD[.float64, 8].from_bytes(v8_f64.as_bytes()))
 
-    var v8_bool = SIMD[DType.bool, 8](
+    var v8_bool = SIMD[.bool, 8](
         True, True, False, True, False, True, True, True
     )
-    assert_equal(v8_bool, SIMD[DType.bool, 8].from_bytes(v8_bool.as_bytes()))
+    assert_equal(v8_bool, SIMD[.bool, 8].from_bytes(v8_bool.as_bytes()))
 
 
 def test_reversed() raises:
@@ -2353,17 +2323,17 @@ def test_reversed() raises:
             SIMD[dtype, 4](1, 2, 3, 4).reversed(), SIMD[dtype, 4](4, 3, 2, 1)
         )
 
-    test[DType.uint8]()
-    test[DType.uint16]()
-    test[DType.uint32]()
-    test[DType.uint64]()
-    test[DType.int8]()
-    test[DType.int16]()
-    test[DType.int32]()
-    test[DType.int64]()
-    test[DType.float16]()
-    test[DType.float32]()
-    test[DType.float64]()
+    test[.uint8]()
+    test[.uint16]()
+    test[.uint32]()
+    test[.uint64]()
+    test[.int8]()
+    test[.int16]()
+    test[.int32]()
+    test[.int64]()
+    test[.float16]()
+    test[.float32]()
+    test[.float64]()
 
 
 def test_large_int_types() raises:
@@ -2377,83 +2347,81 @@ def test_large_int_types() raises:
     assert_equal(z, 1234567890)
     assert_equal(w, 1234567890)
 
-    assert_equal(x.cast[DType.uint128](), y)
-    assert_equal(x.cast[DType.int256](), z)
-    assert_equal(x.cast[DType.uint256](), w)
+    assert_equal(x.cast[.uint128](), y)
+    assert_equal(x.cast[.int256](), z)
+    assert_equal(x.cast[.uint256](), w)
 
-    assert_equal(y.cast[DType.int128](), x)
-    assert_equal(y.cast[DType.int256](), z)
-    assert_equal(y.cast[DType.uint256](), w)
+    assert_equal(y.cast[.int128](), x)
+    assert_equal(y.cast[.int256](), z)
+    assert_equal(y.cast[.uint256](), w)
 
-    assert_equal(z.cast[DType.int128](), x)
-    assert_equal(z.cast[DType.uint128](), y)
-    assert_equal(z.cast[DType.uint256](), w)
+    assert_equal(z.cast[.int128](), x)
+    assert_equal(z.cast[.uint128](), y)
+    assert_equal(z.cast[.uint256](), w)
 
-    assert_equal(w.cast[DType.int128](), x)
-    assert_equal(w.cast[DType.uint128](), y)
-    assert_equal(w.cast[DType.int256](), z)
+    assert_equal(w.cast[.int128](), x)
+    assert_equal(w.cast[.uint128](), y)
+    assert_equal(w.cast[.int256](), z)
 
-    assert_equal(x.cast[DType.uint128]() + y, y + y)
-    assert_equal(x.cast[DType.int256]() + z, z + z)
+    assert_equal(x.cast[.uint128]() + y, y + y)
+    assert_equal(x.cast[.int256]() + z, z + z)
 
 
 def test_is_power_of_two() raises:
     # Test comprehensive cases with known powers of two
-    var powers = SIMD[DType.uint32, 8](1, 2, 4, 8, 16, 32, 64, 128)
+    var powers = SIMD[.uint32, 8](1, 2, 4, 8, 16, 32, 64, 128)
     var power_results = powers.is_power_of_two()
-    var expected_powers = SIMD[DType.bool, 8](
+    var expected_powers = SIMD[.bool, 8](
         True, True, True, True, True, True, True, True
     )
     assert_equal(power_results, expected_powers)
 
     # Test non-powers of two including zero and common edge cases
-    var non_powers = SIMD[DType.uint32, 8](0, 3, 5, 6, 7, 9, 10, 15)
+    var non_powers = SIMD[.uint32, 8](0, 3, 5, 6, 7, 9, 10, 15)
     var non_power_results = non_powers.is_power_of_two()
-    var expected_non_powers = SIMD[DType.bool, 8](
+    var expected_non_powers = SIMD[.bool, 8](
         False, False, False, False, False, False, False, False
     )
     assert_equal(non_power_results, expected_non_powers)
 
     # Test with different integer types and larger powers (avoiding duplicate zero tests)
     # Note that for DType.int8, the maximum value is 127, so 2**7 == 128 which overflows.
-    comptime var1 = SIMD[DType.int8, 4](-114, 100, Int8(2**6), Int8(2**7))
+    comptime var1 = SIMD[.int8, 4](-114, 100, Int8(2**6), Int8(2**7))
     assert_equal(
         var1.is_power_of_two(),
-        SIMD[DType.bool, 4](False, False, True, False),
+        SIMD[.bool, 4](False, False, True, False),
     )
 
-    comptime var2 = SIMD[DType.int16, 4](
+    comptime var2 = SIMD[.int16, 4](
         -11444, 3000, Int16(2**13), Int16(2**14)
     )
     assert_equal(
         var2.is_power_of_two(),
-        SIMD[DType.bool, 4](False, False, True, True),
+        SIMD[.bool, 4](False, False, True, True),
     )
 
-    comptime var3 = SIMD[DType.int32, 4](
+    comptime var3 = SIMD[.int32, 4](
         -111444, 30000, Int32(2**29), Int32(2**30)
     )
     assert_equal(
         var3.is_power_of_two(),
-        SIMD[DType.bool, 4](False, False, True, True),
+        SIMD[.bool, 4](False, False, True, True),
     )
 
     # TODO: use this line after #2882 is fixed
     # alias var4 = SIMD[DType.int64, 4](-111444444, 3000000, 2**59, 2**60)
-    comptime var4 = SIMD[DType.int64, 4](
+    comptime var4 = SIMD[.int64, 4](
         -111444444, 3000000, 576460752303423488, 1152921504606846976
     )
     assert_equal(
         var4.is_power_of_two(),
-        SIMD[DType.bool, 4](False, False, True, True),
+        SIMD[.bool, 4](False, False, True, True),
     )
 
     # Test edge cases: negative numbers and boundary values
-    var signed_edge_cases = SIMD[DType.int32, 4](
-        -4, -1, Int32.MAX, Int32(2**31)
-    )
+    var signed_edge_cases = SIMD[.int32, 4](-4, -1, Int32.MAX, Int32(2**31))
     var signed_results = signed_edge_cases.is_power_of_two()
-    var expected_signed = SIMD[DType.bool, 4](False, False, False, False)
+    var expected_signed = SIMD[.bool, 4](False, False, False, False)
     assert_equal(signed_results, expected_signed)
 
     assert_equal(Int64.MIN.is_power_of_two(), False)
@@ -2468,45 +2436,45 @@ def test_comptime() raises:
 
 def test_fma() raises:
     # Test fused multiply-add operation: self * multiplier + accumulator
-    var simd = SIMD[DType.float32, 4](1.0, 2.0, 3.0, 4.0)
-    var multiplier = SIMD[DType.float32, 4](2.0, 3.0, 4.0, 5.0)
-    var accumulator = SIMD[DType.float32, 4](1.0, 1.0, 1.0, 1.0)
+    var simd = SIMD[.float32, 4](1.0, 2.0, 3.0, 4.0)
+    var multiplier = SIMD[.float32, 4](2.0, 3.0, 4.0, 5.0)
+    var accumulator = SIMD[.float32, 4](1.0, 1.0, 1.0, 1.0)
 
     var result = simd.fma(multiplier, accumulator)
-    var expected = SIMD[DType.float32, 4](
+    var expected = SIMD[.float32, 4](
         3.0, 7.0, 13.0, 21.0
     )  # (1*2+1, 2*3+1, 3*4+1, 4*5+1)
 
     assert_equal(result, expected)
 
     # Test with integer types
-    var int_simd = SIMD[DType.int32, 4](1, 2, 3, 4)
-    var int_mult = SIMD[DType.int32, 4](2, 3, 4, 5)
-    var int_acc = SIMD[DType.int32, 4](1, 1, 1, 1)
+    var int_simd = SIMD[.int32, 4](1, 2, 3, 4)
+    var int_mult = SIMD[.int32, 4](2, 3, 4, 5)
+    var int_acc = SIMD[.int32, 4](1, 1, 1, 1)
 
     var int_result = int_simd.fma(int_mult, int_acc)
-    var int_expected = SIMD[DType.int32, 4](3, 7, 13, 21)
+    var int_expected = SIMD[.int32, 4](3, 7, 13, 21)
 
     assert_equal(int_result, int_expected)
 
 
 def test_slice() raises:
     # Test slicing SIMD vectors
-    var simd8 = SIMD[DType.int32, 8](1, 2, 3, 4, 5, 6, 7, 8)
+    var simd8 = SIMD[.int32, 8](1, 2, 3, 4, 5, 6, 7, 8)
 
     # Test slice with default offset (0)
     var slice4_0 = simd8.slice[4]()
-    var expected4_0 = SIMD[DType.int32, 4](1, 2, 3, 4)
+    var expected4_0 = SIMD[.int32, 4](1, 2, 3, 4)
     assert_equal(slice4_0, expected4_0)
 
     # Test slice with offset
     var slice4_2 = simd8.slice[4, offset=2]()
-    var expected4_2 = SIMD[DType.int32, 4](3, 4, 5, 6)
+    var expected4_2 = SIMD[.int32, 4](3, 4, 5, 6)
     assert_equal(slice4_2, expected4_2)
 
     # Test slice with width 2
     var slice2_3 = simd8.slice[2, offset=3]()
-    var expected2_3 = SIMD[DType.int32, 2](4, 5)
+    var expected2_3 = SIMD[.int32, 2](4, 5)
     assert_equal(slice2_3, expected2_3)
 
     # Test with scalar (width 1)
@@ -2517,9 +2485,9 @@ def test_slice() raises:
 
 def test_hash() raises:
     # Test hash function for SIMD values
-    var simd1 = SIMD[DType.int32, 4](1, 2, 3, 4)
-    var simd2 = SIMD[DType.int32, 4](1, 2, 3, 4)  # Same values
-    var simd3 = SIMD[DType.int32, 4](1, 2, 3, 5)  # Different last value
+    var simd1 = SIMD[.int32, 4](1, 2, 3, 4)
+    var simd2 = SIMD[.int32, 4](1, 2, 3, 4)  # Same values
+    var simd3 = SIMD[.int32, 4](1, 2, 3, 5)  # Different last value
 
     # Same values should have same hash
     assert_equal(hash(simd1), hash(simd2))
@@ -2528,7 +2496,7 @@ def test_hash() raises:
     assert_true(hash(simd1) != hash(simd3))
 
     # Test with different types
-    var float_simd = SIMD[DType.float32, 4](1.0, 2.0, 3.0, 4.0)
+    var float_simd = SIMD[.float32, 4](1.0, 2.0, 3.0, 4.0)
     var float_hash = hash(float_simd)
     # Hash should be consistent for same values
     assert_equal(hash(float_simd), float_hash)
@@ -2536,8 +2504,8 @@ def test_hash() raises:
 
 def test_reduce_bitwise_ops() raises:
     # Test reduce_and
-    var all_ones = SIMD[DType.uint8, 4](0xFF, 0xFF, 0xFF, 0xFF)
-    var mixed_bits = SIMD[DType.uint8, 4](0xFF, 0xF0, 0x0F, 0xFF)
+    var all_ones = SIMD[.uint8, 4](0xFF, 0xFF, 0xFF, 0xFF)
+    var mixed_bits = SIMD[.uint8, 4](0xFF, 0xF0, 0x0F, 0xFF)
 
     assert_equal(all_ones.reduce_and(), UInt8(0xFF))
     assert_equal(
@@ -2545,8 +2513,8 @@ def test_reduce_bitwise_ops() raises:
     )  # 0xFF & 0xF0 & 0x0F & 0xFF = 0x00
 
     # Test reduce_or
-    var all_zeros = SIMD[DType.uint8, 4](0x00, 0x00, 0x00, 0x00)
-    var some_bits = SIMD[DType.uint8, 4](0x01, 0x02, 0x04, 0x08)
+    var all_zeros = SIMD[.uint8, 4](0x00, 0x00, 0x00, 0x00)
+    var some_bits = SIMD[.uint8, 4](0x01, 0x02, 0x04, 0x08)
 
     assert_equal(all_zeros.reduce_or(), UInt8(0x00))
     assert_equal(
@@ -2554,12 +2522,12 @@ def test_reduce_bitwise_ops() raises:
     )  # 0x01 | 0x02 | 0x04 | 0x08 = 0x0F
 
     # Test with larger vectors
-    var large_and = SIMD[DType.uint16, 8](
+    var large_and = SIMD[.uint16, 8](
         0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF
     )
     assert_equal(large_and.reduce_and(), UInt16(0xFFFF))
 
-    var pattern_or = SIMD[DType.uint16, 8](
+    var pattern_or = SIMD[.uint16, 8](
         0x0001, 0x0002, 0x0004, 0x0008, 0x0010, 0x0020, 0x0040, 0x0080
     )
     assert_equal(pattern_or.reduce_or(), UInt16(0x00FF))
@@ -2567,19 +2535,19 @@ def test_reduce_bitwise_ops() raises:
 
 def test_float_literal_init() raises:
     # Test initialization from FloatLiteral
-    var float_simd = SIMD[DType.float32, 4](3.14159)
+    var float_simd = SIMD[.float32, 4](3.14159)
     assert_almost_equal(float_simd[0], Float32(3.14159), atol=1e-5)
     assert_almost_equal(float_simd[1], Float32(3.14159), atol=1e-5)
     assert_almost_equal(float_simd[2], Float32(3.14159), atol=1e-5)
     assert_almost_equal(float_simd[3], Float32(3.14159), atol=1e-5)
 
     # Test with double precision
-    var double_simd = SIMD[DType.float64, 2](2.718281828459045)
+    var double_simd = SIMD[.float64, 2](2.718281828459045)
     assert_almost_equal(double_simd[0], Float64(2.718281828459045), atol=1e-15)
     assert_almost_equal(double_simd[1], Float64(2.718281828459045), atol=1e-15)
 
     # Test with various float types
-    var f16_simd = SIMD[DType.float16, 4](1.5)
+    var f16_simd = SIMD[.float16, 4](1.5)
     # Note: float16 has limited precision
     assert_almost_equal(
         Float32(Float32(f16_simd[0])),
@@ -2607,7 +2575,7 @@ def test_int_literal_init() raises:
     assert_equal(Int64(-9223372036854775808), Int64(9223372036854775808))
     assert_equal(Int64(-9223372036854775809), Int64(9223372036854775807))
 
-    comptime Index = Scalar[DType.int]
+    comptime Index = Int
     comptime UIndex = UInt
 
     comptime if is_64bit():
@@ -2638,16 +2606,14 @@ def test_int_literal_init() raises:
 
 def test_bool_init() raises:
     # Test initialization from Bool for boolean SIMD types
-    var bool_simd = SIMD[DType.bool, 4](fill=True)
-    assert_equal(bool_simd, SIMD[DType.bool, 4](True, True, True, True))
+    var bool_simd = SIMD[.bool, 4](fill=True)
+    assert_equal(bool_simd, SIMD[.bool, 4](True, True, True, True))
 
-    var bool_simd_false = SIMD[DType.bool, 4](fill=False)
-    assert_equal(
-        bool_simd_false, SIMD[DType.bool, 4](False, False, False, False)
-    )
+    var bool_simd_false = SIMD[.bool, 4](fill=False)
+    assert_equal(bool_simd_false, SIMD[.bool, 4](False, False, False, False))
 
     # Test mixed boolean initialization
-    var mixed_bool = SIMD[DType.bool, 4](True, False, True, False)
+    var mixed_bool = SIMD[.bool, 4](True, False, True, False)
     assert_true(mixed_bool[0])
     assert_false(mixed_bool[1])
     assert_true(mixed_bool[2])
@@ -2676,8 +2642,8 @@ def test_write_half_float_matches_float32() raises:
     # already widens everything but `float64` and the `float8` variants to
     # `Float32` before formatting. Pin the equivalence so a future
     # precision-aware formatter cannot silently change what `print` emits.
-    _assert_half_float_writes_like_float32[DType.float16]()
-    _assert_half_float_writes_like_float32[DType.bfloat16]()
+    _assert_half_float_writes_like_float32[.float16]()
+    _assert_half_float_writes_like_float32[.bfloat16]()
 
 
 def test_float8_e8m0fnu_type_alias() raises:
@@ -2702,8 +2668,8 @@ def test_float8_e8m0fnu_cast_from_float32() raises:
     expected_exp.append(128)  # 2^1
     expected_exp.append(126)  # 2^-1
     for i in range(len(f32_vals)):
-        var fp8_val = f32_vals[i].cast[DType.float8_e8m0fnu]()
-        assert_equal(bitcast[DType.uint8](fp8_val), expected_exp[i])
+        var fp8_val = f32_vals[i].cast[.float8_e8m0fnu]()
+        assert_equal(bitcast[.uint8](fp8_val), expected_exp[i])
 
     # Test bfloat16 -> float8_e8m0fnu
     var bf16_vals = List[BFloat16]()
@@ -2713,8 +2679,8 @@ def test_float8_e8m0fnu_cast_from_float32() raises:
     bf16_expected.append(127)
     bf16_expected.append(128)
     for i in range(len(bf16_vals)):
-        var fp8_val = bf16_vals[i].cast[DType.float8_e8m0fnu]()
-        assert_equal(bitcast[DType.uint8](fp8_val), bf16_expected[i])
+        var fp8_val = bf16_vals[i].cast[.float8_e8m0fnu]()
+        assert_equal(bitcast[.uint8](fp8_val), bf16_expected[i])
 
     # Test float8_e8m0fnu -> float32
     var exp_vals = List[UInt8]()
@@ -2732,20 +2698,20 @@ def test_float8_e8m0fnu_cast_from_float32() raises:
     expected_f32_bits.append(0x7F000000)
     expected_f32_bits.append(0)  # Placeholder for NaN value.
     for i in range(len(exp_vals)):
-        var fp8 = bitcast[DType.float8_e8m0fnu](exp_vals[i])
-        var f32_val = fp8.cast[DType.float32]()
+        var fp8 = bitcast[.float8_e8m0fnu](exp_vals[i])
+        var f32_val = fp8.cast[.float32]()
         if exp_vals[i] == 0xFF:
             assert_true(isnan(f32_val))
             assert_false(isinf(f32_val))
         else:
-            assert_equal(bitcast[DType.uint32](f32_val), expected_f32_bits[i])
+            assert_equal(bitcast[.uint32](f32_val), expected_f32_bits[i])
 
     # Also test with randn to ensure arbitrary runtime values work.
     seed(42)
     var h_A = List[Float32](unsafe_uninit_length=1)
     randn(h_A.unsafe_ptr(), size=1)
     # Simply verify that cast doesn't error.
-    _ = h_A[0].cast[DType.float8_e8m0fnu]()
+    _ = h_A[0].cast[.float8_e8m0fnu]()
 
 
 def main() raises:

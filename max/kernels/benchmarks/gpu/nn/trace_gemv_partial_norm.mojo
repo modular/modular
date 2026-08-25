@@ -83,11 +83,11 @@ def main() raises:
 
         var eps = Float32(0.001)
 
-        var counter_buf = ctx.enqueue_create_buffer[DType.int32](1)
-        ctx.enqueue_memset(counter_buf, Scalar[DType.int32](0))
+        var counter_buf = ctx.enqueue_create_buffer[.int32](1)
+        ctx.enqueue_memset(counter_buf, Int32(0))
 
         # Trace buffer: num_blocks * GEMV_TRACE_EVENTS_PER_BLOCK uint64.
-        var trace_buf = ctx.enqueue_create_buffer[DType.uint64](
+        var trace_buf = ctx.enqueue_create_buffer[.uint64](
             num_blocks * GEMV_TRACE_EVENTS_PER_BLOCK
         )
         ctx.enqueue_memset(trace_buf, UInt64(0))
@@ -135,7 +135,7 @@ def main() raises:
 
         var trace_host = List(
             length=num_blocks * GEMV_TRACE_EVENTS_PER_BLOCK,
-            fill=Scalar[DType.uint64](0),
+            fill=UInt64(0),
         )
         ctx.enqueue_copy(trace_host, trace_buf)
         ctx.synchronize()

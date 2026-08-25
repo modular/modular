@@ -62,10 +62,10 @@ struct BackToBackMatmulConfig[
     # D is MxN
     # We block over M and L, yielding BM and BL.
     # BM x BN x BK
-    var block_tile_shape: IndexList[3, element_type=DType.uint64]
+    var block_tile_shape: IndexList[3, element_type=.uint64]
 
     # WM x WN x WK
-    var warp_tile_shape: IndexList[3, element_type=DType.uint64]
+    var warp_tile_shape: IndexList[3, element_type=.uint64]
 
     var num_pipeline_stages: Int
 
@@ -96,8 +96,8 @@ struct BackToBackMatmulConfig[
 
     def __init__(
         out self,
-        block_tile_shape: IndexList[3, element_type=DType.uint64],
-        warp_tile_shape: IndexList[3, element_type=DType.uint64],
+        block_tile_shape: IndexList[3, element_type=.uint64],
+        warp_tile_shape: IndexList[3, element_type=.uint64],
         num_pipeline_stages: Int = 2,
     ):
         self.block_tile_shape = block_tile_shape
@@ -230,7 +230,7 @@ def b2b_gemm[
     # memory and reuse it on each iteration.
     var a_smem = external_memory[
         Scalar[in_type],
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=align_of[SIMD[in_type, simd_size]](),
     ]()
     comptime a_smem_size = BM * K  # single block
@@ -253,7 +253,7 @@ def b2b_gemm[
     var b_smem_iter = LayoutTensorIter[
         in_type,
         b_smem_layout,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         circular=True,
     ](b_smem, b_smem_size)
     # C may not have the same layout
@@ -293,7 +293,7 @@ def b2b_gemm[
             accum_type,
             layout,
             MutAnyOrigin,
-            address_space=AddressSpace.LOCAL,
+            address_space=.LOCAL,
         ]
         .stack_allocation()
         .fill(0)
@@ -303,7 +303,7 @@ def b2b_gemm[
         accum_type,
         layout,
         MutAnyOrigin,
-        address_space=AddressSpace.LOCAL,
+        address_space=.LOCAL,
     ].stack_allocation()
     for l in range(num_l_iter):
         _ = ab_reg_tile.fill(0)
@@ -447,7 +447,7 @@ def b2b_gemm[
         var accum_smem_warp_tile = LayoutTensor[
             accum_type,
             Layout.row_major(WM, WN),
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
         ](a_smem.bitcast[Scalar[accum_type]]() + warp_id * WM * WN)
 
         copy_local_to_shared[
@@ -720,8 +720,8 @@ def test_b2b_matmul(ctx: DeviceContext) raises:
     # print("Host Matrix:\n", host_d_ref)
 
     comptime config = BackToBackMatmulConfig[dst_type, src_type](
-        IndexList[3, element_type=DType.uint64](32, 64, 64),
-        IndexList[3, element_type=DType.uint64](16, 64, 16),
+        IndexList[3, element_type=.uint64](32, 64, 64),
+        IndexList[3, element_type=.uint64](16, 64, 16),
         num_pipeline_stages=2,
     )
     multistage_b2b_gemm[config](

@@ -171,11 +171,11 @@ OriginTrackable::OriginTrackable(Value v) {
 
   unsigned argIdx = bbArg.getArgNumber();
   switch (signature.getArgConvention(argIdx)) {
-  case ArgConvention::ReadReg:
+  case ArgConvention::ImmReg:
     // This is immutable so don't need to be tracked.
     return;
 
-  case ArgConvention::ReadMem:
+  case ArgConvention::ImmMem:
   case ArgConvention::Mut:
   case ArgConvention::MutRef:
   case ArgConvention::Ref:
@@ -302,9 +302,9 @@ void OperationEffects::analyzeCallOp(Operation &op) {
     case ArgConvention::OwnedMem:
     case ArgConvention::DeinitMem:
       return OperandEffect::memConsume;
-    case ArgConvention::ReadReg:
+    case ArgConvention::ImmReg:
       return OperandEffect::regUse;
-    case ArgConvention::ReadMem:
+    case ArgConvention::ImmMem:
       return OperandEffect::memLoad;
     case ArgConvention::Mut:
     case ArgConvention::MutRef:
@@ -774,8 +774,11 @@ static bool handleOriginAttr(TypedAttr attr,
     //
     // ParamIndexRefAttr is only meaningful relative to an un-parameterized
     // generator scope.
-    if (isa<ImplicitOriginRefAttr, ParamIndexRefAttr>(
-            OriginMutCastAttr::strip(raw)))
+    //
+    // FnGenBuilderParamDeclRefAttr is just a metadata for constructing the
+    // function type.
+    if (isa<ImplicitOriginRefAttr, ParamIndexRefAttr,
+            FnGenBuilderParamDeclRefAttr>(OriginMutCastAttr::strip(raw)))
       return;
 
     results.push_back(raw);

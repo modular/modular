@@ -322,8 +322,8 @@ struct MLAPrefillSparse[
             Self.o_tile_shape,
             Self.o_desc_shape,
         ],
-        topk_lengths: TileTensor[DType.uint32, TopKLengthLayout, MutAnyOrigin],
-        indices: TileTensor[DType.uint32, IndicesLayout, MutAnyOrigin],
+        topk_lengths: TileTensor[.uint32, TopKLengthLayout, MutAnyOrigin],
+        indices: TileTensor[.uint32, IndicesLayout, MutAnyOrigin],
         kv_lut: Self.KVLUTType,
         scale: Float32,
         attn_sink_ptr: Optional[UnsafePointer[Float32, ImmutAnyOrigin]],
@@ -350,7 +350,7 @@ struct MLAPrefillSparse[
             v_tma_op.prefetch_descriptor()
 
         ref smem = external_memory[
-            UInt8, address_space=AddressSpace.SHARED, alignment=128
+            UInt8, address_space=.SHARED, alignment=128
         ]().bitcast[Self.SMemType]()[]
         ref qkvo_union = smem.qkvo_union
 
@@ -360,98 +360,70 @@ struct MLAPrefillSparse[
             mut=True,
             Scalar[Self.qkv_dtype],
             origin_of(shared_qkv),
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
         ] = shared_qkv.unsafe_ptr()
         var q_smem_ptr = shared_qkv_ptr
         var v_smem_ptr = shared_qkv_ptr + Self.SMemType.SHARED_Q_SIZE
         var k_smem_ptr = v_smem_ptr + Self.SMemType.V_SIZE
         ref o_union = qkvo_union.unsafe_get[Self.O_TYPE]()
         var o_ptr: UnsafePointer[
-            Scalar[Self.qkv_dtype],
-            origin_of(o_union),
-            address_space=AddressSpace.SHARED,
+            Scalar[Self.qkv_dtype], origin_of(o_union), address_space=.SHARED
         ] = o_union.unsafe_ptr()
         var scores_ptr = smem.scores.unsafe_ptr()
         var p_ptr = smem.p.unsafe_ptr()
         var prologue_q_ptr = smem.prologue_q.unsafe_ptr()
         var prologue_q_cp_ptr = smem.prologue_q_cp.unsafe_ptr()
         var qk_ss_done_ptr: UnsafePointer[
-            SharedMemBarrier,
-            origin_of(smem.qk_ss_done),
-            address_space=AddressSpace.SHARED,
+            SharedMemBarrier, origin_of(smem.qk_ss_done), address_space=.SHARED
         ] = smem.qk_ss_done.unsafe_ptr()
         var qk_ts_done_ptr: UnsafePointer[
-            SharedMemBarrier,
-            origin_of(smem.qk_ts_done),
-            address_space=AddressSpace.SHARED,
+            SharedMemBarrier, origin_of(smem.qk_ts_done), address_space=.SHARED
         ] = smem.qk_ts_done.unsafe_ptr()
         var sv_p0_done_ptr: UnsafePointer[
-            SharedMemBarrier,
-            origin_of(smem.sv_p0_done),
-            address_space=AddressSpace.SHARED,
+            SharedMemBarrier, origin_of(smem.sv_p0_done), address_space=.SHARED
         ] = smem.sv_p0_done.unsafe_ptr()
         var sv_p1_done_ptr: UnsafePointer[
-            SharedMemBarrier,
-            origin_of(smem.sv_p1_done),
-            address_space=AddressSpace.SHARED,
+            SharedMemBarrier, origin_of(smem.sv_p1_done), address_space=.SHARED
         ] = smem.sv_p1_done.unsafe_ptr()
         var k_p0_ready_ptr: UnsafePointer[
-            SharedMemBarrier,
-            origin_of(smem.k_p0_ready),
-            address_space=AddressSpace.SHARED,
+            SharedMemBarrier, origin_of(smem.k_p0_ready), address_space=.SHARED
         ] = smem.k_p0_ready.unsafe_ptr()
         var k_p1_ready_ptr: UnsafePointer[
-            SharedMemBarrier,
-            origin_of(smem.k_p1_ready),
-            address_space=AddressSpace.SHARED,
+            SharedMemBarrier, origin_of(smem.k_p1_ready), address_space=.SHARED
         ] = smem.k_p1_ready.unsafe_ptr()
         var v_p0_ready_ptr: UnsafePointer[
-            SharedMemBarrier,
-            origin_of(smem.v_p0_ready),
-            address_space=AddressSpace.SHARED,
+            SharedMemBarrier, origin_of(smem.v_p0_ready), address_space=.SHARED
         ] = smem.v_p0_ready.unsafe_ptr()
         var v_p1_ready_ptr: UnsafePointer[
-            SharedMemBarrier,
-            origin_of(smem.v_p1_ready),
-            address_space=AddressSpace.SHARED,
+            SharedMemBarrier, origin_of(smem.v_p1_ready), address_space=.SHARED
         ] = smem.v_p1_ready.unsafe_ptr()
         var p_free_ptr: UnsafePointer[
-            SharedMemBarrier,
-            origin_of(smem.p_free),
-            address_space=AddressSpace.SHARED,
+            SharedMemBarrier, origin_of(smem.p_free), address_space=.SHARED
         ] = smem.p_free.unsafe_ptr()
         var so_ready_ptr: UnsafePointer[
-            SharedMemBarrier,
-            origin_of(smem.so_ready),
-            address_space=AddressSpace.SHARED,
+            SharedMemBarrier, origin_of(smem.so_ready), address_space=.SHARED
         ] = smem.so_ready.unsafe_ptr()
         var k_valid_ready_ptr: UnsafePointer[
             SharedMemBarrier,
             origin_of(smem.k_valid_ready),
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
         ] = smem.k_valid_ready.unsafe_ptr()
         var k_valid_free_ptr: UnsafePointer[
             SharedMemBarrier,
             origin_of(smem.k_valid_free),
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
         ] = smem.k_valid_free.unsafe_ptr()
         # Byte at offset `buf * MASK_BYTES_PER_BUF + j` holds bits for
         # keys `[j*8, j*8+8)` of buffer `buf`.
         var is_k_valid_ptr: UnsafePointer[
-            UInt8,
-            origin_of(smem.is_k_valid),
-            address_space=AddressSpace.SHARED,
+            UInt8, origin_of(smem.is_k_valid), address_space=.SHARED
         ] = smem.is_k_valid.unsafe_ptr()
         var tmem_addr_ptr = smem.tmem_addr.unsafe_ptr()
         var rowwise_max_ptr: UnsafePointer[
-            Float32,
-            origin_of(smem.rowwise_max),
-            address_space=AddressSpace.SHARED,
+            Float32, origin_of(smem.rowwise_max), address_space=.SHARED
         ] = smem.rowwise_max.unsafe_ptr()
         var rowwise_sum_ptr: UnsafePointer[
-            Float32,
-            origin_of(smem.rowwise_sum),
-            address_space=AddressSpace.SHARED,
+            Float32, origin_of(smem.rowwise_sum), address_space=.SHARED
         ] = smem.rowwise_sum.unsafe_ptr()
 
         if warp_idx == 0:
@@ -511,7 +483,7 @@ struct MLAPrefillSparse[
             comptime MAX_INIT_VAL = Float32(-1e30)
             var mi: Float32 = MAX_INIT_VAL
             var li: Float32 = 0.0
-            var real_mi: Float32 = Float32(min_or_neg_inf[DType.float32]())
+            var real_mi: Float32 = Float32(min_or_neg_inf[.float32]())
 
             var scale_log2e = scale * Float32(log2e)
 
@@ -601,13 +573,11 @@ struct MLAPrefillSparse[
                     comptime bit_idx = i % 8
                     var mask_byte = is_k_valid_ptr[mask_byte_base + byte_offset]
                     if ((mask_byte >> UInt8(bit_idx)) & UInt8(1)) == UInt8(0):
-                        p[i] = Float32(min_or_neg_inf[DType.float32]())
+                        p[i] = Float32(min_or_neg_inf[.float32]())
                 _ = k_valid_free_ptr[cur_buf].arrive()
 
                 # Per-thread row max over local P (scaled to log2 domain).
-                var cur_pi_max: Float32 = Float32(
-                    min_or_neg_inf[DType.float32]()
-                )
+                var cur_pi_max: Float32 = Float32(min_or_neg_inf[.float32]())
                 comptime for i in range(P_PER_THREAD):
                     cur_pi_max = max(cur_pi_max, p[i])
                 cur_pi_max = mul_ftz(cur_pi_max, scale_log2e)
@@ -628,7 +598,7 @@ struct MLAPrefillSparse[
                 # Warp-uniform "should we rescale O?" decision (>6 log2-units
                 # means rescaling lifts mass by < 1/64 — phase1.cuh skips
                 # the rescale below that threshold to reduce TMEM traffic).
-                var should_scale_o = warp.vote[DType.uint32](
+                var should_scale_o = warp.vote[.uint32](
                     cur_pi_max - mi > Float32(6.0)
                 ) != UInt32(0)
 
@@ -646,10 +616,10 @@ struct MLAPrefillSparse[
                 var s_bf16 = Array[Scalar[Self.qkv_dtype], P_PER_THREAD](
                     uninitialized=True
                 )
-                var vscale = SIMD[DType.float32, 2](scale_log2e)
-                var vneg_max = SIMD[DType.float32, 2](-new_max)
+                var vscale = SIMD[.float32, 2](scale_log2e)
+                var vneg_max = SIMD[.float32, 2](-new_max)
                 comptime for j in range(P_PER_THREAD // 2):
-                    var pj = SIMD[DType.float32, 2](
+                    var pj = SIMD[.float32, 2](
                         p[2 * j],
                         p[2 * j + 1],
                     )
@@ -671,9 +641,9 @@ struct MLAPrefillSparse[
                     ) & 1
                     sv_p1_done_ptr[prev_buf].wait(prev_phase)
 
-                var o_chunk_prefetch = Array[
-                    Scalar[DType.float32], O_RESCALE_CHUNK
-                ](uninitialized=True)
+                var o_chunk_prefetch = Array[Float32, O_RESCALE_CHUNK](
+                    uninitialized=True
+                )
                 if k > 0 and should_scale_o:
                     tcgen05_fence_after()
                     o_chunk_prefetch = tcgen05_ld[
@@ -704,16 +674,16 @@ struct MLAPrefillSparse[
                     st_shared_v4_b32_at_bf16_elem_off[out_dtype=Self.qkv_dtype](
                         scores_ptr,
                         s_smem_bf16_elem_base + i * 512,
-                        bitcast[DType.uint32, 4](s_vec),
+                        bitcast[.uint32, 4](s_vec),
                     )
 
                 # Rescale O (in TMEM) if mi changed materially; chunk 0
                 # was prefetched above, chunks 1..N-1 load sequentially.
                 if k > 0 and should_scale_o:
                     tcgen05_load_wait()
-                    var o_scaled_0 = Array[
-                        Scalar[DType.float32], O_RESCALE_CHUNK
-                    ](uninitialized=True)
+                    var o_scaled_0 = Array[Float32, O_RESCALE_CHUNK](
+                        uninitialized=True
+                    )
                     comptime for j in range(O_RESCALE_CHUNK):
                         o_scaled_0[j] = mul_ftz(
                             o_chunk_prefetch[j],
@@ -738,9 +708,9 @@ struct MLAPrefillSparse[
                             + UInt32(chunk_idx * O_RESCALE_CHUNK)
                         )
                         tcgen05_load_wait()
-                        var o_scaled = Array[
-                            Scalar[DType.float32], O_RESCALE_CHUNK
-                        ](uninitialized=True)
+                        var o_scaled = Array[Float32, O_RESCALE_CHUNK](
+                            uninitialized=True
+                        )
                         comptime for j in range(O_RESCALE_CHUNK):
                             o_scaled[j] = mul_ftz(
                                 o_chunk[j],
@@ -774,9 +744,9 @@ struct MLAPrefillSparse[
             # ever contributed. Reset li/mi to match the definition that
             # output_scale = 1/(li + exp2(sink - mi)) gives 0 when output
             # is unused.
-            if real_mi == Float32(min_or_neg_inf[DType.float32]()):
+            if real_mi == Float32(min_or_neg_inf[.float32]()):
                 li = 0.0
-                mi = Float32(min_or_neg_inf[DType.float32]())
+                mi = Float32(min_or_neg_inf[.float32]())
 
             # Cross-thread li sum (paired threads share the row).
             rowwise_sum_ptr[idx_in_wg] = li
@@ -817,7 +787,7 @@ struct MLAPrefillSparse[
             # Guard against deadlocks if some lanes' li==0 (entirely
             # invalid rows): tcgen05_ld below must run uniformly across
             # the warpgroup, so we vote and pick a uniform path.
-            var have_valid_indices = warp.vote[DType.uint32](
+            var have_valid_indices = warp.vote[.uint32](
                 li != Float32(0.0)
             ) != UInt32(0)
             if not have_valid_indices:
@@ -866,7 +836,7 @@ struct MLAPrefillSparse[
                     var col_group = (
                         Int(depth_col_block) * 2 + atom_idx * 4 + chunk
                     )
-                    var c_chunk: Array[Scalar[DType.float32], CHUNK]
+                    var c_chunk: Array[Float32, CHUNK]
                     c_chunk = tcgen05_ld[
                         datapaths=32,
                         bits=32,
@@ -1065,15 +1035,12 @@ struct MLAPrefillSparse[
     ](
         tma_op: TMATensorTile[Self.qkv_dtype, 2, _, _],
         smem_barrier: UnsafePointer[
-            SharedMemBarrier, address_space=AddressSpace.SHARED, ...
+            SharedMemBarrier, address_space=.SHARED, ...
         ],
         smem_tensor: TileTensor[
-            mut=True,
-            Self.qkv_dtype,
-            address_space=AddressSpace.SHARED,
-            ...,
+            mut=True, Self.qkv_dtype, address_space=.SHARED, ...
         ],
-        local_indices: Array[SIMD[DType.int32, 4], num_rows],
+        local_indices: Array[SIMD[.int32, 4], num_rows],
         warp_idx: UInt32,
     ):
         # layout for complying to 128B swizzle atom
@@ -1116,17 +1083,12 @@ struct MLAPrefillSparse[
     ](
         tma_op: TMATensorTile[Self.qkv_dtype, 2, _, _],
         smem_barrier: UnsafePointer[
-            SharedMemBarrier, address_space=AddressSpace.SHARED, ...
+            SharedMemBarrier, address_space=.SHARED, ...
         ],
         smem_tensor: TileTensor[
-            mut=True,
-            Self.qkv_dtype,
-            address_space=AddressSpace.SHARED,
-            ...,
+            mut=True, Self.qkv_dtype, address_space=.SHARED, ...
         ],
-        indices: TileTensor[
-            DType.uint32, address_space=AddressSpace.GENERIC, ...
-        ],
+        indices: TileTensor[.uint32, address_space=.GENERIC, ...],
         kv_lut: Self.KVLUTType,
         warp_idx: UInt32,
         k: UInt32,
@@ -1164,7 +1126,7 @@ struct MLAPrefillSparse[
                         + (UInt32(local_row) * UInt32(num_warps) + warp_idx)
                         * UInt32(4)
                     )
-                ).cast[DType.int32](),
+                ).cast[.int32](),
             )
             comptime for cg in range(num_col_groups):
                 # local_row stride within col-group: 16 rows × 64 cols
@@ -1211,28 +1173,15 @@ struct MLAPrefillSparse[
             Self.k_tile_shape,
             Self.k_desc_shape,
         ],
-        indices: TileTensor[
-            DType.uint32, address_space=AddressSpace.GENERIC, ...
-        ],
+        indices: TileTensor[.uint32, address_space=.GENERIC, ...],
         kv_lut: Self.KVLUTType,
         k_smem_ptr: UnsafePointer[
-            mut=True,
-            Scalar[Self.qkv_dtype],
-            address_space=AddressSpace.SHARED,
-            ...,
+            mut=True, Scalar[Self.qkv_dtype], address_space=.SHARED, ...
         ],
-        qk_ss_done: UnsafePointer[
-            SharedMemBarrier, address_space=AddressSpace.SHARED, ...
-        ],
-        qk_ts_done: UnsafePointer[
-            SharedMemBarrier, address_space=AddressSpace.SHARED, ...
-        ],
-        k_p0_ready: UnsafePointer[
-            SharedMemBarrier, address_space=AddressSpace.SHARED, ...
-        ],
-        k_p1_ready: UnsafePointer[
-            SharedMemBarrier, address_space=AddressSpace.SHARED, ...
-        ],
+        qk_ss_done: UnsafePointer[SharedMemBarrier, address_space=.SHARED, ...],
+        qk_ts_done: UnsafePointer[SharedMemBarrier, address_space=.SHARED, ...],
+        k_p0_ready: UnsafePointer[SharedMemBarrier, address_space=.SHARED, ...],
+        k_p1_ready: UnsafePointer[SharedMemBarrier, address_space=.SHARED, ...],
         k: UInt32,
         cta_id: UInt32,
         warp_idx: UInt32,
@@ -1246,7 +1195,7 @@ struct MLAPrefillSparse[
             Self.config.B_TOPK // Self.config.cta_group
         ) // 4 // num_warps
 
-        var local_indices = Array[SIMD[DType.int32, 4], num_rows_per_warp](
+        var local_indices = Array[SIMD[.int32, 4], num_rows_per_warp](
             uninitialized=True
         )
         var max_idx: Int32 = -1
@@ -1270,7 +1219,7 @@ struct MLAPrefillSparse[
             )
             local_indices[local_row] = indices.load[width=4](
                 Coord(indices_offset)
-            ).cast[DType.int32]()
+            ).cast[.int32]()
             max_idx = max(max_idx, local_indices[local_row].reduce_max())
             min_idx = min(min_idx, local_indices[local_row].reduce_min())
 
@@ -1362,26 +1311,13 @@ struct MLAPrefillSparse[
             Self.v_desc_shape,
         ],
         v_smem_ptr: UnsafePointer[
-            mut=True,
-            Scalar[Self.qkv_dtype],
-            address_space=AddressSpace.SHARED,
-            ...,
+            mut=True, Scalar[Self.qkv_dtype], address_space=.SHARED, ...
         ],
-        sv_p0_done: UnsafePointer[
-            SharedMemBarrier, address_space=AddressSpace.SHARED, ...
-        ],
-        sv_p1_done: UnsafePointer[
-            SharedMemBarrier, address_space=AddressSpace.SHARED, ...
-        ],
-        v_p0_ready: UnsafePointer[
-            SharedMemBarrier, address_space=AddressSpace.SHARED, ...
-        ],
-        v_p1_ready: UnsafePointer[
-            SharedMemBarrier, address_space=AddressSpace.SHARED, ...
-        ],
-        indices: TileTensor[
-            DType.uint32, address_space=AddressSpace.GENERIC, ...
-        ],
+        sv_p0_done: UnsafePointer[SharedMemBarrier, address_space=.SHARED, ...],
+        sv_p1_done: UnsafePointer[SharedMemBarrier, address_space=.SHARED, ...],
+        v_p0_ready: UnsafePointer[SharedMemBarrier, address_space=.SHARED, ...],
+        v_p1_ready: UnsafePointer[SharedMemBarrier, address_space=.SHARED, ...],
+        indices: TileTensor[.uint32, address_space=.GENERIC, ...],
         kv_lut: Self.KVLUTType,
         k: UInt32,
         warp_idx: UInt32,
@@ -1460,13 +1396,11 @@ def mla_prefill_sparse[
     group: Int,
     q_depth: Int,
 ](
-    output: TileTensor[output_dtype, address_space=AddressSpace.GENERIC, ...],
-    q: TileTensor[q_type, address_space=AddressSpace.GENERIC, ...],
+    output: TileTensor[output_dtype, address_space=.GENERIC, ...],
+    q: TileTensor[q_type, address_space=.GENERIC, ...],
     kv_cache: cache_t,
-    indices: TileTensor[DType.uint32, address_space=AddressSpace.GENERIC, ...],
-    topk_lengths: TileTensor[
-        DType.uint32, address_space=AddressSpace.GENERIC, ...
-    ],
+    indices: TileTensor[.uint32, address_space=.GENERIC, ...],
+    topk_lengths: TileTensor[.uint32, address_space=.GENERIC, ...],
     # Optional per-head attention sink. Pass `None` to skip the sink term
     # entirely; pass `Some(ptr)` with a buffer of `num_q_heads` fp32
     # values to add `exp2(sink_h - mi)` to the softmax normalizer per

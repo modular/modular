@@ -51,7 +51,7 @@ def bin(num: Scalar, /, *, prefix: StaticString = "0b") -> String:
 
 # Need this until we have constraints to stop the compiler from matching this
 # directly to bin[dtype: DType](num: Scalar[dtype]).
-def bin(b: Scalar[DType.bool], /, *, prefix: StaticString = "0b") -> String:
+def bin(b: Scalar[.bool], /, *, prefix: StaticString = "0b") -> String:
     """Returns the binary representation of a scalar bool.
 
     Args:
@@ -61,7 +61,7 @@ def bin(b: Scalar[DType.bool], /, *, prefix: StaticString = "0b") -> String:
     Returns:
         The binary string representation of b.
     """
-    return bin(b.cast[DType.int8](), prefix=prefix)
+    return bin(b.cast[.int8](), prefix=prefix)
 
 
 def bin[T: Intable, //](num: T, /, *, prefix: StaticString = "0b") -> String:
@@ -77,7 +77,7 @@ def bin[T: Intable, //](num: T, /, *, prefix: StaticString = "0b") -> String:
     Returns:
         The binary string representation of num.
     """
-    return bin(Scalar[DType.int](Int(num)), prefix=prefix)
+    return bin(Int(Int(num)), prefix=prefix)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -121,10 +121,10 @@ def hex[T: Intable, //](value: T, /, *, prefix: StaticString = "0x") -> String:
     Returns:
         A string containing the hex representation of the given integer.
     """
-    return hex(Scalar[DType.int](Int(value)), prefix=prefix)
+    return hex(Int(Int(value)), prefix=prefix)
 
 
-def hex(value: Scalar[DType.bool], /, *, prefix: StaticString = "0x") -> String:
+def hex(value: Scalar[.bool], /, *, prefix: StaticString = "0x") -> String:
     """Returns the hex string representation of the given scalar bool.
 
     The hexadecimal representation is a base-16 encoding of the bool.
@@ -139,7 +139,7 @@ def hex(value: Scalar[DType.bool], /, *, prefix: StaticString = "0x") -> String:
     Returns:
         A string containing the hex representation of the given bool.
     """
-    return hex(value.cast[DType.int8](), prefix=prefix)
+    return hex(value.cast[.int8](), prefix=prefix)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -183,10 +183,10 @@ def oct[T: Intable, //](value: T, /, *, prefix: StaticString = "0o") -> String:
     Returns:
         A string containing the octal representation of the given integer.
     """
-    return oct(Scalar[DType.int](Int(value)), prefix=prefix)
+    return oct(Int(Int(value)), prefix=prefix)
 
 
-def oct(value: Scalar[DType.bool], /, *, prefix: StaticString = "0o") -> String:
+def oct(value: Scalar[.bool], /, *, prefix: StaticString = "0o") -> String:
     """Returns the octal string representation of the given scalar bool.
 
     The octal representation is a base-8 encoding of the bool.
@@ -201,7 +201,7 @@ def oct(value: Scalar[DType.bool], /, *, prefix: StaticString = "0o") -> String:
     Returns:
         A string containing the octal representation of the given bool.
     """
-    return oct(value.cast[DType.int8](), prefix=prefix)
+    return oct(value.cast[.int8](), prefix=prefix)
 
 
 # ===-----------------------------------------------------------------------===#

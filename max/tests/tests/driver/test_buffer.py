@@ -1131,3 +1131,87 @@ def test_tensor_slicing_to_numpy_3d(device_factory: type) -> None:
         expected,
         f"3D second dimension slice failed on {device_factory.__name__}",
     )
+
+
+# The cases below replace the C++ unit tests over `DeviceMemory::createView`
+# (CreateViewTest.cpp) that went away with the GenericML Driver layer. That
+# logic survives as `Python::createStorageView`.
+#
+# Only the unaligned view below actually enters `createStorageView`: `view()`
+# takes an early return that just adjusts `startOffset` whenever the byte
+# offset divides evenly into the target dtype, and element reads compute their
+# own offset in `Buffer::data()`. The rest cover the slice arithmetic around
+# it, which nothing else pins this directly.
+
+
+def test_view_byte_offset_basic() -> None:
+    # A slice starting partway into a buffer must read from the corresponding
+    # byte offset, not from the base pointer.
+    tensor = Buffer(DType.float32, (16,))
+    for i in range(16):
+        tensor[i] = np.float32(i)
+
+    tail = tensor[8:]
+    assert tail.shape == (8,)
+    for i in range(8):
+        assert tail[i].item() == float(i + 8)
+
+
+def test_view_byte_offset_cross_dtype() -> None:
+    # The core bug scenario: storage allocated as one dtype, viewed as another,
+    # then offset. The byte offset must come from the view's dtype rather than
+    # the storage's, or the reinterpreted slice reads the wrong bytes.
+    tensor = Buffer(DType.bfloat16, (8,))  # 8 * 2 == 16 bytes
+    as_bytes = tensor.view(DType.uint8, (16,))
+    for i in range(16):
+        as_bytes[i] = np.uint8(i)
+
+    tail = as_bytes[12:]
+    assert tail.shape == (4,)
+    for i in range(4):
+        assert tail[i].item() == i + 12
+
+
+def test_view_zero_offset_shares_storage() -> None:
+    # A view with no offset and an equivalent spec shares the original buffer
+    # rather than creating a sub-buffer, so writes are visible both ways.
+    tensor = Buffer(DType.float32, (4,))
+    for i in range(4):
+        tensor[i] = np.float32(i)
+
+    same = tensor.view(DType.float32, (4,))
+    same[0] = np.float32(99)
+    assert tensor[0].item() == 99.0
+
+    # Reinterpreting the whole buffer at a wider dtype also aliases it.
+    as_int = tensor.view(DType.int32, (4,))
+    assert as_int.shape == (4,)
+
+
+def test_view_out_of_bounds_rejected() -> None:
+    # A view wider than its backing storage must be refused rather than
+    # silently reading past the end.
+    tensor = Buffer(DType.float32, (4,))  # 16 bytes
+    with pytest.raises((ValueError, RuntimeError)):
+        tensor.view(DType.float32, (8,))  # 32 bytes
+
+
+def test_unaligned_cross_dtype_view_offsets_storage() -> None:
+    # The core bug scenario from CreateViewTest, and the one path that reaches
+    # `Python::createStorageView`: a slice whose byte offset is not a multiple
+    # of the target dtype's size cannot be folded into a startOffset, so the
+    # view has to materialize a sub-buffer starting at that byte offset. If the
+    # offset were dropped, these reads would come from the base of the buffer.
+    tensor = Buffer(DType.uint8, (16,))
+    for i in range(16):
+        tensor[i] = np.uint8(i)
+
+    window = tensor[3:7]  # 4 bytes, byte offset 3
+    assert window.shape == (4,)
+
+    as_i16 = window.view(DType.int16, (2,))  # 4 bytes; 3 % 2 != 0 -> unaligned
+    assert as_i16.shape == (2,)
+
+    # Little-endian: bytes (3, 4) -> 0x0403, bytes (5, 6) -> 0x0605.
+    assert as_i16[0].item() == 0x0403
+    assert as_i16[1].item() == 0x0605

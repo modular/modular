@@ -67,9 +67,9 @@ def test_gather() raises:
         comptime simd_width = simd_width_of[__mlir_type.`!kgen.scalar<f32>`]()
 
         gather[axis=0](
-            output.make_dynamic[DType.int64](),
-            input.make_dynamic[DType.int64](),
-            indices.make_dynamic[DType.int64](),
+            output.make_dynamic[.int64](),
+            input.make_dynamic[.int64](),
+            indices.make_dynamic[.int64](),
             context=DeviceContext(api="cpu"),
         )
 
@@ -84,12 +84,12 @@ def test_gather() raises:
     # CHECK-NEXT: 1.0
     # CHECK-NEXT: 3.0
     # CHECK-NEXT: 7.0
-    _test_gather[DType.int32]()
+    _test_gather[.int32]()
     # CHECK: 0.0
     # CHECK-NEXT: 1.0
     # CHECK-NEXT: 3.0
     # CHECK-NEXT: 7.0
-    _test_gather[DType.int64]()
+    _test_gather[.int64]()
 
 
 def test_gather_3d() raises:
@@ -133,9 +133,9 @@ def test_gather_3d() raises:
         comptime simd_width = simd_width_of[DType.float32]()
 
         gather[axis=0](
-            output.make_dynamic[DType.int64](),
-            input.make_dynamic[DType.int64](),
-            indices.make_dynamic[DType.int64](),
+            output.make_dynamic[.int64](),
+            input.make_dynamic[.int64](),
+            indices.make_dynamic[.int64](),
             context=DeviceContext(api="cpu"),
         )
 
@@ -148,12 +148,12 @@ def test_gather_3d() raises:
     # CHECK-NEXT: 1.0
     # CHECK-NEXT: 3.0
     # CHECK-NEXT: 7.0
-    _test_gather[DType.int32]()
+    _test_gather[.int32]()
     # CHECK: 0.0
     # CHECK-NEXT: 1.0
     # CHECK-NEXT: 3.0
     # CHECK-NEXT: 7.0
-    _test_gather[DType.int64]()
+    _test_gather[.int64]()
 
 
 # CHECK-LABEL: test_gather_empty_indices
@@ -198,14 +198,14 @@ def test_gather_empty_indices() raises:
         comptime simd_width = simd_width_of[DType.float32]()
 
         gather[axis=0](
-            output.make_dynamic[DType.int64](),
-            input.make_dynamic[DType.int64](),
-            indices.make_dynamic[DType.int64](),
+            output.make_dynamic[.int64](),
+            input.make_dynamic[.int64](),
+            indices.make_dynamic[.int64](),
             context=DeviceContext(api="cpu"),
         )
 
-    _test_gather[DType.int32]()
-    _test_gather[DType.int64]()
+    _test_gather[.int32]()
+    _test_gather[.int64]()
 
 
 def main() raises:

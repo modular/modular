@@ -91,7 +91,7 @@ def block_scaled_operands_compatible[a_type: DType, b_type: DType]() -> Bool:
     )
 
 
-comptime E2M1_TO_FLOAT32 = SIMD[DType.float32, 16](
+comptime E2M1_TO_FLOAT32 = SIMD[.float32, 16](
     0.0,
     0.5,
     1.0,
@@ -114,7 +114,7 @@ comptime E2M1_TO_FLOAT32 = SIMD[DType.float32, 16](
 @always_inline
 def decode_e2m1_to_bf16[
     width: SIMDLength, //
-](nibble: SIMD[DType.uint16, width]) -> SIMD[DType.bfloat16, width]:
+](nibble: SIMD[.uint16, width]) -> SIMD[.bfloat16, width]:
     """Decodes E2M1 nibbles to bfloat16 with branch-free bit arithmetic.
 
     Maps each 4-bit E2M1 value (`s e1 e0 m0`: bit3 sign, bits2:1 exponent,
@@ -141,7 +141,7 @@ def decode_e2m1_to_bf16[
         nibble: One E2M1 nibble per lane in the low 4 bits (`0..15`).
 
     Returns:
-        The decoded values as `SIMD[DType.bfloat16, width]`, bit-identical to
+        The decoded values as `SIMD[.bfloat16, width]`, bit-identical to
         casting `E2M1_TO_FLOAT32[nibble]` to bfloat16.
     """
     var e = (nibble >> 1) & 0x3  # bits 2:1 -> exponent class
@@ -155,13 +155,13 @@ def decode_e2m1_to_bf16[
 
     var is_subnormal = e.eq(type_of(e)(0))  # SIMD[bool, width] mask
     var mag = is_subnormal.select(subnormal_mag, normal_mag)
-    return bitcast[DType.bfloat16](sign | mag)
+    return bitcast[.bfloat16](sign | mag)
 
 
 @always_inline
 def decode_e2m1_to_f16[
     width: SIMDLength, //
-](nibble: SIMD[DType.uint16, width]) -> SIMD[DType.float16, width]:
+](nibble: SIMD[.uint16, width]) -> SIMD[.float16, width]:
     """Decodes E2M1 nibbles to float16 by exponent injection (Preston's trick).
 
     The float16 twin of `decode_e2m1_to_f32_inject`, but -- unlike the f32/bf16
@@ -195,20 +195,20 @@ def decode_e2m1_to_f16[
         nibble: One E2M1 nibble per lane in the low 4 bits (`0..15`).
 
     Returns:
-        The decoded values as `SIMD[DType.float16, width]`, bit-identical to
+        The decoded values as `SIMD[.float16, width]`, bit-identical to
         casting `E2M1_TO_FLOAT32[nibble]` to float16.
     """
     # (e1 e0 m0) -> f16 bits 11:9 (exp low 2 bits + mantissa MSB); sign -> 15.
     var mag = (nibble & 0x7) << 9
     var sign = (nibble & 0x8) << 12
-    comptime c2_14 = bitcast[DType.float16](UInt16(0x7400))  # 2^14
-    return bitcast[DType.float16](sign | mag) * c2_14
+    comptime c2_14 = bitcast[.float16](UInt16(0x7400))  # 2^14
+    return bitcast[.float16](sign | mag) * c2_14
 
 
 @always_inline
 def decode_e2m1_to_f32[
     width: SIMDLength, //
-](nibble: SIMD[DType.uint16, width]) -> SIMD[DType.float32, width]:
+](nibble: SIMD[.uint16, width]) -> SIMD[.float32, width]:
     """Decodes E2M1 nibbles to float32 with branch-free bit arithmetic.
 
     The float32-native twin of `decode_e2m1_to_bf16`: it builds the float32 bit
@@ -234,10 +234,10 @@ def decode_e2m1_to_f32[
         nibble: One E2M1 nibble per lane in the low 4 bits (`0..15`).
 
     Returns:
-        The decoded values as `SIMD[DType.float32, width]`, bit-identical to
+        The decoded values as `SIMD[.float32, width]`, bit-identical to
         indexing `E2M1_TO_FLOAT32[nibble]`.
     """
-    var n = nibble.cast[DType.uint32]()
+    var n = nibble.cast[.uint32]()
     var e = (n >> 1) & 0x3  # bits 2:1 -> exponent class
     var m = n & 0x1  # bit 0    -> mantissa
     var sign = (n & 0x8) << 28  # bit 3 -> float32 sign bit (31)
@@ -249,13 +249,13 @@ def decode_e2m1_to_f32[
 
     var is_subnormal = e.eq(type_of(e)(0))  # SIMD[bool, width] mask
     var mag = is_subnormal.select(subnormal_mag, normal_mag)
-    return bitcast[DType.float32](sign | mag)
+    return bitcast[.float32](sign | mag)
 
 
 @always_inline
 def decode_e2m1_to_f32_inject[
     width: SIMDLength, //
-](nibble: SIMD[DType.uint16, width]) -> SIMD[DType.float32, width]:
+](nibble: SIMD[.uint16, width]) -> SIMD[.float32, width]:
     """Decodes E2M1 nibbles to float32 by exponent injection (Preston's trick).
 
     A branch-free alternative to `decode_e2m1_to_f32` with NO `select`: inject
@@ -302,25 +302,25 @@ def decode_e2m1_to_f32_inject[
         nibble: One E2M1 nibble per lane in the low 4 bits (`0..15`).
 
     Returns:
-        The decoded values as `SIMD[DType.float32, width]`, bit-identical to
+        The decoded values as `SIMD[.float32, width]`, bit-identical to
         `E2M1_TO_FLOAT32[nibble]`.
     """
-    var n = nibble.cast[DType.uint32]()
+    var n = nibble.cast[.uint32]()
     # Inject (e1 e0 m0) at bits 22..24, sign (bit 3) at bit 31.
     var inj = ((n & 0x7) << 22) | ((n & 0x8) << 28)
-    comptime c2_126 = bitcast[DType.float32](UInt32(0x7E800000))
-    return bitcast[DType.float32](inj) * c2_126
+    comptime c2_126 = bitcast[.float32](UInt32(0x7E800000))
+    return bitcast[.float32](inj) * c2_126
 
 
 @always_inline
-def compute_mxfp4_even_scale(max_val: Float32) -> Scalar[DType.float8_e8m0fnu]:
+def compute_mxfp4_even_scale(max_val: Float32) -> Float8_e8m0fnu:
     """Computes the OCP MXFP4 E8M0 scale using even-mode rounding.
 
     Even-mode rounding rounds the block maximum before deriving the scale
     exponent. This differs from ceil(max / 6) and preserves more precision for
     smaller values in the same 32-element block.
     """
-    comptime FP32_MANTISSA_WIDTH = FPUtils[DType.float32].mantissa_width()
+    comptime FP32_MANTISSA_WIDTH = FPUtils[.float32].mantissa_width()
     # MXFP4 stores only a power-of-two scale. Pick the scale so the largest
     # value in the block still fits in FP4 E2M1 after rounding, where the
     # largest finite FP4 E2M1 value is 6.0 = 1.5 * 2^2.
@@ -338,17 +338,17 @@ def compute_mxfp4_even_scale(max_val: Float32) -> Scalar[DType.float8_e8m0fnu]:
     comptime ROUND_TO_FP4_E2M1_MANTISSA = 1 << (
         FP32_MANTISSA_WIDTH - FP4_E2M1_MANTISSA_WIDTH - 1
     )
-    var max_bits = FPUtils[DType.float32].bitcast_to_uint(max_val)
+    var max_bits = FPUtils[.float32].bitcast_to_uint(max_val)
     var rounded_max_bits = max_bits + type_of(max_bits)(
         ROUND_TO_FP4_E2M1_MANTISSA
     )
-    var rounded_max = bitcast[DType.float32](rounded_max_bits)
+    var rounded_max = bitcast[.float32](rounded_max_bits)
     var scale_exp = (
-        FPUtils[DType.float32].get_exponent_biased(rounded_max)
+        FPUtils[.float32].get_exponent_biased(rounded_max)
         - FP4_E2M1_MAX_EXPONENT
     )
     scale_exp = max(0, min(scale_exp, 254))
-    return bitcast[DType.float8_e8m0fnu](UInt8(scale_exp))
+    return bitcast[.float8_e8m0fnu](UInt8(scale_exp))
 
 
 def cast_uint_to_fp4e2m1[
@@ -469,7 +469,7 @@ def cast_fp_to_fp4e2m1[
 def cast_fp32_to_fp4e2m1[
     width: SIMDLength,
     //,
-](x: SIMD[DType.float32, width]) -> UInt32:
+](x: SIMD[.float32, width]) -> UInt32:
     """Converts eight float32 values to a packed FP4 E2M1 word using SM100 PTX instructions.
 
     Issues four `cvt.rn.satfinite.e2m1x2.f32` PTX instructions to convert pairs of
@@ -509,7 +509,7 @@ mov.b32 $0, {byte0, byte1, byte2, byte3};
     ](x[0], x[1], x[2], x[3], x[4], x[5], x[6], x[7])
 
 
-def cast_f4e2m1x2_to_fp16x2(x: Scalar[DType.uint8]) -> SIMD[DType.float16, 2]:
+def cast_f4e2m1x2_to_fp16x2(x: UInt8) -> SIMD[.float16, 2]:
     """Converts two FP4 E2M1 nibbles packed in one byte to two float16 values using SM100 PTX.
 
     Issues the `cvt.rn.f16x2.e2m1x2` PTX instruction to decode both nibbles in a
@@ -539,7 +539,7 @@ cvt.rn.f16x2.e2m1x2 $0, byte0;
         asm_code, UInt32, constraints="=r,h", has_side_effect=True
     ](UInt16(x))
 
-    return bitcast[DType.float16, 2](result)
+    return bitcast[.float16, 2](result)
 
 
 @always_inline
@@ -575,12 +575,12 @@ def cast_float_to_fp4e2m1_amd[
     var packed = UInt32(0)
 
     comptime for i in range(width // 2):
-        comptime if dtype == DType.bfloat16:
+        comptime if dtype == .bfloat16:
             packed = llvm_intrinsic[
                 "llvm.amdgcn.cvt.scalef32.pk.fp4.bf16",
                 UInt32,
             ](packed, input.slice[2, offset=i * 2](), scale, Int32(i))
-        elif dtype == DType.float32:
+        elif dtype == .float32:
             packed = llvm_intrinsic[
                 "llvm.amdgcn.cvt.scalef32.pk.fp4.f32",
                 UInt32,
@@ -1014,10 +1014,10 @@ def convert_ref_scales_to_mxfp8_format[
         b_scales: Mutable 5D output tensor receiving the converted B scales.
     """
     comptime assert (
-        ref_scales_type == DType.float32
+        ref_scales_type == .float32
     ), "Only support float32 reference scales"
     comptime assert (
-        scales_type == DType.float8_e8m0fnu
+        scales_type == .float8_e8m0fnu
     ), "Only support float8_e8m0fnu scales"
     comptime assert ref_a_scales_layout.rank() == 2, "ref_a_scales must be 2D"
     comptime assert ref_b_scales_layout.rank() == 2, "ref_b_scales must be 2D"
@@ -1085,13 +1085,13 @@ def block_scaled_umma_kind[
             scales_dtype == MXFP8_SF_DTYPE
         ), "W4A8 requires E8M0 scales on both operands"
         return UMMAKind.KIND_MXF8F6F4
-    elif a_type == DType.uint8 and scales_dtype == NVFP4_SF_DTYPE:
+    elif a_type == .uint8 and scales_dtype == NVFP4_SF_DTYPE:
         return UMMAKind.KIND_MXF4NVF4
-    elif a_type == DType.uint8 and scales_dtype == MXFP4_SF_DTYPE:
+    elif a_type == .uint8 and scales_dtype == MXFP4_SF_DTYPE:
         return UMMAKind.KIND_MXF4
     else:
         comptime assert (
-            a_type == DType.float8_e4m3fn and scales_dtype == MXFP8_SF_DTYPE
+            a_type == .float8_e4m3fn and scales_dtype == MXFP8_SF_DTYPE
         ), "unsupported a_type/scales_dtype for block-scaled matmul"
         comptime assert (
             a_type == b_type

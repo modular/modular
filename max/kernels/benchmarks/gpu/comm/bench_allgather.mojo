@@ -139,7 +139,7 @@ def bench_allgather[
     var out_bufs_list = List[DeviceBuffer[dtype]](capacity=ngpus * ngpus)
 
     # Create signal buffers for synchronization.
-    var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
+    var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
     var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
         uninitialized=True
     )
@@ -188,13 +188,9 @@ def bench_allgather[
 
         # Signal buffers.
         signal_buffers.append(
-            list_of_ctx[gpu_idx].create_buffer_sync[DType.uint8](
-                size_of[Signal]()
-            )
+            list_of_ctx[gpu_idx].create_buffer_sync[.uint8](size_of[Signal]())
         )
-        list_of_ctx[gpu_idx].enqueue_memset[DType.uint8](
-            signal_buffers[gpu_idx], 0
-        )
+        list_of_ctx[gpu_idx].enqueue_memset[.uint8](signal_buffers[gpu_idx], 0)
         rank_sigs[gpu_idx] = (
             signal_buffers[gpu_idx]
             .unsafe_ptr()
@@ -222,11 +218,10 @@ def bench_allgather[
             )
         list_of_ctx[gpu_idx].synchronize()
 
-    @__parameter
     @always_inline
     def bench_iter(
         mut bencher: Bencher, ctx: DeviceContext, ctx_idx: Int
-    ) raises:
+    ) raises {mut tt_in, imm}:
         @always_inline
         def call_fn(
             ctx_inner: DeviceContext, cache_iter: Int
@@ -253,8 +248,9 @@ def bench_allgather[
 
         bencher_iter_custom(bencher, call_fn, ctx)
 
-    bench_multicontext[bench_iter](
+    bench_multicontext(
         b,
+        bench_iter,
         list_of_ctx,
         BenchId(name),
         [ThroughputMeasure(BenchMetric.bytes, total_bytes)],
@@ -320,7 +316,7 @@ def bench_allgather[
 def main() raises:
     var num_bytes = arg_parse("num_bytes", 64 * 1024 * 1024)
 
-    comptime dtype = get_defined_dtype["dtype", DType.bfloat16]()
+    comptime dtype = get_defined_dtype["dtype", .bfloat16]()
     comptime num_gpus = get_defined_int["num_gpus", 2]()
     comptime cache_busting = get_defined_bool["cache_busting", True]()
     comptime length_mode = get_defined_string["length_mode", "uniform"]()

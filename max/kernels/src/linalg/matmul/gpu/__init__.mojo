@@ -165,12 +165,12 @@ def matmul_kernel[
     var a_shared = unsafe_stack_allocation[
         tile_size * tile_size,
         a_type,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
     var b_shared = unsafe_stack_allocation[
         tile_size * tile_size,
         b_type,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
 
     # Global index in C.
@@ -506,7 +506,7 @@ def _matmul_gpu[
     # targets whose fp32 matmul paths have no TF32 opt-out wired up.
     comptime assert (
         use_tf32
-        or a_type != DType.float32
+        or a_type != .float32
         or (has_nvidia_gpu_accelerator() and _has_blackwell_tcgen05())
     ), "use_tf32=False is only implemented for the SM100 matmul dispatch"
 
@@ -587,7 +587,7 @@ def _matmul_gpu[
     var h100_matmul_cond = (
         materialize[ctx.default_device_info == H100]()
         and n % 8 == 0
-        and a_type == DType.bfloat16
+        and a_type == .bfloat16
     )
     var amdgpu_matmul_cond = has_amd_gpu_accelerator() and n % 4 == 0
     # AMD matmul kernels require K % BK == 0 and K >= 2*BK due to the
@@ -894,8 +894,8 @@ def _matmul_gpu[
                 #     1024-aligned.
                 comptime _4wave_dtype_ok = (
                     a_type.is_float8()
-                    or a_type == DType.bfloat16
-                    or a_type == DType.float16
+                    or a_type == .bfloat16
+                    or a_type == .float16
                 )
                 comptime if (
                     _4wave_dtype_ok
@@ -1247,7 +1247,7 @@ def _matmul_gpu[
                 # at BM=16.
                 comptime split_k_p = 16
                 comptime if (
-                    a_type == DType.float32
+                    a_type == .float32
                     and transpose_b
                     and static_N <= 256
                     and static_K >= 2048

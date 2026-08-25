@@ -469,7 +469,7 @@ def _swiglu_epilogue_gmem[
     M_bound: UInt32,
     H_bound: UInt32,
     bias_smem_ptr: UnsafePointer[
-        Scalar[c_type], MutAnyOrigin, address_space=AddressSpace.SHARED
+        Scalar[c_type], MutAnyOrigin, address_space=.SHARED
     ],
 ):
     """TMEM → FP32 SwiGLU → BF16 GMEM epilogue. No SMEM, no TMA."""
@@ -863,16 +863,14 @@ def _swiglu_epilogue_smem_tma[
     output_stage_index: UInt32,
     c_tma_op: TMATensorTile[c_type, c_rank, c_tile_shape, c_desc_shape],
     c_out_smem: UnsafePointer[
-        Scalar[c_type],
-        MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        Scalar[c_type], MutAnyOrigin, address_space=.SHARED
     ],
     c_m_base: UInt32,
     c_h_base: UInt32,
     M_bound: UInt32,
     H_bound: UInt32,
     bias_smem_ptr: UnsafePointer[
-        Scalar[c_type], MutAnyOrigin, address_space=AddressSpace.SHARED
+        Scalar[c_type], MutAnyOrigin, address_space=.SHARED
     ],
 ):
     """TMEM → FP32 SwiGLU → half SMEM → TMA store epilogue."""
@@ -1447,9 +1445,7 @@ struct SwiGLUKernelConstants[
     comptime NUM_THREADS = 224 + Self.EPILOGUE_LOAD_THREADS
     comptime Bias1DTileLayout = row_major[1, Self.MMA_N]()
     comptime Bias1DTile = TileTensor[
-        Self.c_type,
-        type_of(Self.Bias1DTileLayout),
-        ImmutAnyOrigin,
+        Self.c_type, type_of(Self.Bias1DTileLayout), ImmutAnyOrigin
     ]
 
 
@@ -1600,15 +1596,13 @@ def blackwell_swiglu_warp_specialized_kernel[
 
     # ===== Shared memory =====
     var smem_bytes = external_memory[
-        Scalar[DType.uint8],
-        address_space=AddressSpace.SHARED,
+        UInt8,
+        address_space=.SHARED,
         alignment=128,
     ]()
     ref smem = smem_bytes.bitcast[SmemType]()[]
     var ptr_tmem_addr: UnsafePointer[
-        UInt32,
-        origin_of(smem.tmem_addr),
-        address_space=AddressSpace.SHARED,
+        UInt32, origin_of(smem.tmem_addr), address_space=.SHARED
     ] = smem.tmem_addr.unsafe_ptr()
     var tmem_dealloc_mbar = smem.tmem_dealloc_mbar.unsafe_ptr()
     var c_out_smem = (smem_bytes + c_out_smem_offset).bitcast[Scalar[c_type]]()
@@ -1890,11 +1884,11 @@ def blackwell_swiglu_warp_specialized_kernel[
                     )
                     var src_ptr = (
                         bias_1d_tile._storage + gmem_offset + lane_start
-                    ).address_space_cast[AddressSpace.GLOBAL]()
+                    ).address_space_cast[.GLOBAL]()
                     var bias_smem_base: UnsafePointer[
                         Scalar[c_type],
                         origin_of(smem.bias_smem),
-                        address_space=AddressSpace.SHARED,
+                        address_space=.SHARED,
                     ] = smem.bias_smem.unsafe_ptr()
                     var dst_ptr = (
                         bias_smem_base + Int(stage) * bias_dim + lane_start
@@ -1951,7 +1945,7 @@ def blackwell_swiglu_warp_specialized_kernel[
                 var bias_smem_base: UnsafePointer[
                     Scalar[c_type],
                     origin_of(smem.bias_smem),
-                    address_space=AddressSpace.SHARED,
+                    address_space=.SHARED,
                 ] = smem.bias_smem.unsafe_ptr()
                 var bias_smem_ptr = bias_smem_base + epi_stage * bias_dim
                 comptime if config.register_swiglu:

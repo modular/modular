@@ -65,7 +65,7 @@ struct WorkInfo(TrivialRegisterPassable, Writable):
 
 struct TileScheduler[
     num_stages: Int,
-    cluster_shape: IndexList[3, element_type=DType.uint32] = Index[
+    cluster_shape: IndexList[3, element_type=.uint32] = Index[
         dtype=DType.uint32
     ](1, 1, 1),
     rasterize_order: RasterOrder = RasterOrder.AlongM,
@@ -95,34 +95,28 @@ struct TileScheduler[
     comptime cluster_size = Self.cluster_shape[0] * Self.cluster_shape[
         1
     ] * Self.cluster_shape[2]
-    comptime log_cluster_m = FastDiv[DType.uint32](Self.cluster_shape[0])
-    comptime log_cluster_n = FastDiv[DType.uint32](Self.cluster_shape[1])
-    comptime log_cluster_k = FastDiv[DType.uint32](Self.cluster_shape[2])
+    comptime log_cluster_m = FastDiv[.uint32](Self.cluster_shape[0])
+    comptime log_cluster_n = FastDiv[.uint32](Self.cluster_shape[1])
+    comptime log_cluster_k = FastDiv[.uint32](Self.cluster_shape[2])
 
     var cluster_dim: StaticTuple[Int32, 3]
-    var log_cluster_dim_m: FastDiv[DType.uint32]
-    var log_cluster_dim_n: FastDiv[DType.uint32]
-    var log_cluster_dim_k: FastDiv[DType.uint32]
+    var log_cluster_dim_m: FastDiv[.uint32]
+    var log_cluster_dim_n: FastDiv[.uint32]
+    var log_cluster_dim_k: FastDiv[.uint32]
 
     @__allow_legacy_any_origin_fields
     var clc_response: UnsafePointer[
-        UInt128,
-        MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        UInt128, MutAnyOrigin, address_space=.SHARED
     ]
 
     @__allow_legacy_any_origin_fields
     var full_mbar: UnsafePointer[
-        SharedMemBarrier,
-        MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        SharedMemBarrier, MutAnyOrigin, address_space=.SHARED
     ]
 
     @__allow_legacy_any_origin_fields
     var empty_mbar: UnsafePointer[
-        SharedMemBarrier,
-        MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        SharedMemBarrier, MutAnyOrigin, address_space=.SHARED
     ]
 
     @always_inline
@@ -130,13 +124,13 @@ struct TileScheduler[
         out self,
         cluster_dim: StaticTuple[Int32, 3],
         clc_response_ptr: UnsafePointer[
-            mut=True, UInt128, _, address_space=AddressSpace.SHARED
+            mut=True, UInt128, _, address_space=.SHARED
         ],
         full_mbar_ptr: UnsafePointer[
-            mut=True, SharedMemBarrier, _, address_space=AddressSpace.SHARED
+            mut=True, SharedMemBarrier, _, address_space=.SHARED
         ],
         empty_mbar_ptr: UnsafePointer[
-            mut=True, SharedMemBarrier, _, address_space=AddressSpace.SHARED
+            mut=True, SharedMemBarrier, _, address_space=.SHARED
         ],
     ):
         comptime assert Self.block_swizzle_size in [
@@ -148,9 +142,9 @@ struct TileScheduler[
         ], "block_swizzle_size must be 0, 1, 2, 4, or 8"
 
         self.cluster_dim = cluster_dim
-        self.log_cluster_dim_m = FastDiv[DType.uint32](Int(cluster_dim[0]))
-        self.log_cluster_dim_n = FastDiv[DType.uint32](Int(cluster_dim[1]))
-        self.log_cluster_dim_k = FastDiv[DType.uint32](Int(cluster_dim[2]))
+        self.log_cluster_dim_m = FastDiv[.uint32](Int(cluster_dim[0]))
+        self.log_cluster_dim_n = FastDiv[.uint32](Int(cluster_dim[1]))
+        self.log_cluster_dim_k = FastDiv[.uint32](Int(cluster_dim[2]))
         self.clc_response = clc_response_ptr.as_unsafe_any_origin()
         self.full_mbar = full_mbar_ptr.as_unsafe_any_origin()
         self.empty_mbar = empty_mbar_ptr.as_unsafe_any_origin()
@@ -158,9 +152,7 @@ struct TileScheduler[
     @always_inline
     @staticmethod
     def work_info_from_clc_response(
-        result: UnsafePointer[
-            mut=True, UInt128, _, address_space=AddressSpace.SHARED
-        ],
+        result: UnsafePointer[mut=True, UInt128, _, address_space=.SHARED],
     ) -> WorkInfo:
         comptime asm = """{
             .reg .pred p1;
@@ -191,14 +183,14 @@ struct TileScheduler[
     def work_info_from_cluster(
         work_info: WorkInfo,
         cluster_dim: StaticTuple[Int32, 3],
-        log_cluster_dim_m: FastDiv[DType.uint32],
-        log_cluster_dim_n: FastDiv[DType.uint32],
+        log_cluster_dim_m: FastDiv[.uint32],
+        log_cluster_dim_n: FastDiv[.uint32],
     ) -> WorkInfo:
-        comptime FastUInt = Scalar[FastDiv[DType.uint32].uint_type]
+        comptime FastUInt = Scalar[FastDiv[.uint32].uint_type]
 
         var normalized_m = FastUInt(work_info.m) / Self.log_cluster_m
         var normalized_n = FastUInt(work_info.n) / Self.log_cluster_n
-        comptime log_block_swizzle_size = FastDiv[DType.uint32](
+        comptime log_block_swizzle_size = FastDiv[.uint32](
             Self.block_swizzle_size
         )
         var linear_cluster_id = (

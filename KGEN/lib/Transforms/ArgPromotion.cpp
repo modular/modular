@@ -212,12 +212,12 @@ State Graph::doAnalysis(BlockArgument arg) {
 /// arguments are both.
 static std::pair<bool, bool> getInOutFlags(ArgConvention conv) {
   switch (conv) {
-  case ArgConvention::ReadReg:
+  case ArgConvention::ImmReg:
   case ArgConvention::OwnedReg:
     llvm_unreachable("these conventions should be treated as capturing");
 
   // 'read' and 'owned' arguments convey no side-effects to callees.
-  case ArgConvention::ReadMem:
+  case ArgConvention::ImmMem:
   case ArgConvention::OwnedMem:
   case ArgConvention::DeinitMem:
     return {true, false};
@@ -243,7 +243,7 @@ static ArgConvention getByValueConvention(ArgConvention conv) {
   assert(hasAddress(conv));
   return (conv == ArgConvention::OwnedMem || conv == ArgConvention::DeinitMem)
              ? ArgConvention::OwnedReg
-             : ArgConvention::ReadReg;
+             : ArgConvention::ImmReg;
 }
 
 void Graph::doRewrite(const Node *node) {

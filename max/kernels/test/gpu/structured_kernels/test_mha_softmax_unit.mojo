@@ -96,7 +96,7 @@ comptime DIAG_PER_LANE = 5  # o_avg, max_vec, norm_vec, scale_vec, nan_count
 
 @always_inline
 def _fill_att_block(
-    mut att_block: RegTile[DType.float32, _, MutUntrackedOrigin],
+    mut att_block: RegTile[.float32, _, MutUntrackedOrigin],
     value: Float32,
 ):
     """Sets every per-lane element of `att_block` to `value`."""
@@ -110,7 +110,7 @@ def _fill_att_block(
 
 @always_inline
 def _fill_att_block_one_hot(
-    mut att_block: RegTile[DType.float32, _, MutUntrackedOrigin],
+    mut att_block: RegTile[.float32, _, MutUntrackedOrigin],
     base_value: Float32,
     hot_value: Float32,
     hot_lane: Int,
@@ -132,7 +132,7 @@ def _fill_att_block_one_hot(
 
 @always_inline
 def _exp2_inplace(
-    mut att_block: RegTile[DType.float32, _, MutUntrackedOrigin],
+    mut att_block: RegTile[.float32, _, MutUntrackedOrigin],
 ):
     """Local copy of `MhaMmaOp.exp2_inplace_range[0, ATT_PER_LANE]` —
     avoids pulling in a full `MhaMmaOp` instantiation for the unit
@@ -146,8 +146,8 @@ def _exp2_inplace(
 
 @always_inline
 def _accumulate_o_from_att(
-    mut o_reg: RegTile[DType.float32, _, MutUntrackedOrigin],
-    att_block: RegTile[DType.float32, _, MutUntrackedOrigin],
+    mut o_reg: RegTile[.float32, _, MutUntrackedOrigin],
+    att_block: RegTile[.float32, _, MutUntrackedOrigin],
     v_value: Float32,
 ):
     """`o_reg[*] += sum(att_block) * v_value * 2`. Emulates PV MFMA
@@ -181,8 +181,8 @@ def _accumulate_o_from_att(
 
 @always_inline
 def _emit_diag(
-    out_ptr: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
-    o_reg: RegTile[DType.float32, _, MutUntrackedOrigin],
+    out_ptr: UnsafePointer[Float32, MutAnyOrigin],
+    o_reg: RegTile[.float32, _, MutUntrackedOrigin],
     softmax: OnlineSoftmax,
 ):
     """Writes 5 diag scalars (o_avg, max_vec, norm_vec, scale_vec,
@@ -216,10 +216,10 @@ def _emit_diag(
 
 
 def kernel_case1_uniform(
-    out_ptr: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
+    out_ptr: UnsafePointer[Float32, MutAnyOrigin],
 ):
-    var att_block = reg_alloc[DType.float32](ATT_LAYOUT)
-    var o_reg = reg_alloc[DType.float32](O_LAYOUT)
+    var att_block = reg_alloc[.float32](ATT_LAYOUT)
+    var o_reg = reg_alloc[.float32](O_LAYOUT)
     _ = att_block.fill(0)
     _ = o_reg.fill(0)
     var softmax = OnlineSoftmax()
@@ -253,10 +253,10 @@ def kernel_case1_uniform(
 
 
 def kernel_case2_one_hot(
-    out_ptr: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
+    out_ptr: UnsafePointer[Float32, MutAnyOrigin],
 ):
-    var att_block = reg_alloc[DType.float32](ATT_LAYOUT)
-    var o_reg = reg_alloc[DType.float32](O_LAYOUT)
+    var att_block = reg_alloc[.float32](ATT_LAYOUT)
+    var o_reg = reg_alloc[.float32](O_LAYOUT)
     _ = att_block.fill(0)
     _ = o_reg.fill(0)
     var softmax = OnlineSoftmax()
@@ -290,10 +290,10 @@ def kernel_case2_one_hot(
 
 
 def kernel_case3_negative(
-    out_ptr: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
+    out_ptr: UnsafePointer[Float32, MutAnyOrigin],
 ):
-    var att_block = reg_alloc[DType.float32](ATT_LAYOUT)
-    var o_reg = reg_alloc[DType.float32](O_LAYOUT)
+    var att_block = reg_alloc[.float32](ATT_LAYOUT)
+    var o_reg = reg_alloc[.float32](O_LAYOUT)
     _ = att_block.fill(0)
     _ = o_reg.fill(0)
     var softmax = OnlineSoftmax()
@@ -329,10 +329,10 @@ def kernel_case3_negative(
 
 
 def kernel_case4_subnormal(
-    out_ptr: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
+    out_ptr: UnsafePointer[Float32, MutAnyOrigin],
 ):
-    var att_block = reg_alloc[DType.float32](ATT_LAYOUT)
-    var o_reg = reg_alloc[DType.float32](O_LAYOUT)
+    var att_block = reg_alloc[.float32](ATT_LAYOUT)
+    var o_reg = reg_alloc[.float32](O_LAYOUT)
     _ = att_block.fill(0)
     _ = o_reg.fill(0)
     var softmax = OnlineSoftmax()
@@ -387,10 +387,10 @@ def _logit_for_tile(t: Int) -> Float32:
 
 
 def kernel_case5_eager(
-    out_ptr: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
+    out_ptr: UnsafePointer[Float32, MutAnyOrigin],
 ):
-    var att_block = reg_alloc[DType.float32](ATT_LAYOUT)
-    var o_reg = reg_alloc[DType.float32](O_LAYOUT)
+    var att_block = reg_alloc[.float32](ATT_LAYOUT)
+    var o_reg = reg_alloc[.float32](O_LAYOUT)
     _ = att_block.fill(0)
     _ = o_reg.fill(0)
     var softmax = OnlineSoftmax()
@@ -417,10 +417,10 @@ def kernel_case5_eager(
 
 
 def kernel_case5_lazy(
-    out_ptr: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
+    out_ptr: UnsafePointer[Float32, MutAnyOrigin],
 ):
-    var att_block = reg_alloc[DType.float32](ATT_LAYOUT)
-    var o_reg = reg_alloc[DType.float32](O_LAYOUT)
+    var att_block = reg_alloc[.float32](ATT_LAYOUT)
+    var o_reg = reg_alloc[.float32](O_LAYOUT)
     # `att_bf16_full` plays the role of the previous tile's already-exp'd
     # attention values still pending in the PV pipeline. Production's
     # `lazy_rescale_decision` rescales it by `scale_vec` alongside `o_reg`
@@ -430,7 +430,7 @@ def kernel_case5_lazy(
     # the next fill), so rescaling this scratch tile is inert on the
     # validated row-state (o_reg / max / norm / scale) — it exists only to
     # exercise the real 3-arg signature and keep lazy == eager exact.
-    var att_scratch = reg_alloc[DType.float32](ATT_LAYOUT)
+    var att_scratch = reg_alloc[.float32](ATT_LAYOUT)
     _ = att_block.fill(0)
     _ = o_reg.fill(0)
     _ = att_scratch.fill(0)
@@ -468,7 +468,7 @@ def kernel_case5_lazy(
 def test_case1_uniform(ctx: DeviceContext) raises:
     print("--- Case 1: Uniform positive logits ---")
     var size = NUM_LANES * DIAG_PER_LANE
-    var dev_out = ctx.enqueue_create_buffer[DType.float32](size)
+    var dev_out = ctx.enqueue_create_buffer[.float32](size)
     _ = dev_out.enqueue_fill(Float32(-1))
     ctx.enqueue_function[kernel_case1_uniform](
         dev_out, grid_dim=1, block_dim=NUM_LANES
@@ -503,7 +503,7 @@ def test_case1_uniform(ctx: DeviceContext) raises:
 def test_case2_one_hot(ctx: DeviceContext) raises:
     print("--- Case 2: One dominant logit ---")
     var size = NUM_LANES * DIAG_PER_LANE
-    var dev_out = ctx.enqueue_create_buffer[DType.float32](size)
+    var dev_out = ctx.enqueue_create_buffer[.float32](size)
     _ = dev_out.enqueue_fill(Float32(-1))
     ctx.enqueue_function[kernel_case2_one_hot](
         dev_out, grid_dim=1, block_dim=NUM_LANES
@@ -553,7 +553,7 @@ def test_case2_one_hot(ctx: DeviceContext) raises:
 def test_case3_negative(ctx: DeviceContext) raises:
     print("--- Case 3: All negative mean-shifted (-10) ---")
     var size = NUM_LANES * DIAG_PER_LANE
-    var dev_out = ctx.enqueue_create_buffer[DType.float32](size)
+    var dev_out = ctx.enqueue_create_buffer[.float32](size)
     _ = dev_out.enqueue_fill(Float32(-1))
     ctx.enqueue_function[kernel_case3_negative](
         dev_out, grid_dim=1, block_dim=NUM_LANES
@@ -586,7 +586,7 @@ def test_case3_negative(ctx: DeviceContext) raises:
 def test_case4_subnormal(ctx: DeviceContext) raises:
     print("--- Case 4: Sub-normal boundary (lane 0 max=120 in tile 0) ---")
     var size = NUM_LANES * DIAG_PER_LANE
-    var dev_out = ctx.enqueue_create_buffer[DType.float32](size)
+    var dev_out = ctx.enqueue_create_buffer[.float32](size)
     _ = dev_out.enqueue_fill(Float32(-1))
     ctx.enqueue_function[kernel_case4_subnormal](
         dev_out, grid_dim=1, block_dim=NUM_LANES
@@ -621,8 +621,8 @@ def test_case4_subnormal(ctx: DeviceContext) raises:
 def test_case5_lazy_vs_eager(ctx: DeviceContext) raises:
     print("--- Case 5: Lazy vs eager rescale equivalence ---")
     var size = NUM_LANES * DIAG_PER_LANE
-    var dev_eager = ctx.enqueue_create_buffer[DType.float32](size)
-    var dev_lazy = ctx.enqueue_create_buffer[DType.float32](size)
+    var dev_eager = ctx.enqueue_create_buffer[.float32](size)
+    var dev_lazy = ctx.enqueue_create_buffer[.float32](size)
     _ = dev_eager.enqueue_fill(Float32(-1))
     _ = dev_lazy.enqueue_fill(Float32(-1))
     ctx.enqueue_function[kernel_case5_eager](

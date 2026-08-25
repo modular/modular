@@ -109,7 +109,7 @@ def pack_ptrs_array[
         0
     ],
 ](
-    _ptrs: TileTensor[DType.uint64, ptrs_layout, ...],
+    _ptrs: TileTensor[.uint64, ptrs_layout, ...],
     my_rank: Int32,
     out result: Array[
         UnsafePointer[Scalar[ptr_type], MutUntrackedOrigin], n_gpus_per_node
@@ -169,12 +169,12 @@ def ep_dispatch_async_kernel_api[
     input_scales_wrapper: Optional[input_scales_wrapper_type] = None,
     use_shmem: Bool = (n_nodes > 1),
 ](
-    atomic_counters: TileTensor[DType.int32, Storage=PointerStorage[], ...],
+    atomic_counters: TileTensor[.int32, Storage=PointerStorage[], ...],
     input_tokens: TileTensor[mut=False, Storage=PointerStorage[], ...],
-    topk_ids: TileTensor[mut=False, DType.int32, Storage=PointerStorage[], ...],
-    send_ptrs: TileTensor[DType.uint64, Storage=PointerStorage[], ...],
-    recv_ptrs: TileTensor[DType.uint64, Storage=PointerStorage[], ...],
-    recv_count_ptrs: TileTensor[DType.uint64, Storage=PointerStorage[], ...],
+    topk_ids: TileTensor[mut=False, .int32, Storage=PointerStorage[], ...],
+    send_ptrs: TileTensor[.uint64, Storage=PointerStorage[], ...],
+    recv_ptrs: TileTensor[.uint64, Storage=PointerStorage[], ...],
+    recv_count_ptrs: TileTensor[.uint64, Storage=PointerStorage[], ...],
     context: DeviceContext,
 ) raises:
     """Execute the Expert Parallelism async dispatch kernel.
@@ -287,8 +287,8 @@ def ep_dispatch_async_kernel_api[
         var send_ptr = UnsafePointer[UInt8, MutUntrackedOrigin](
             unsafe_from_address=Int(send_ptrs[gpu_id])
         )
-        var recv_ptrs_arr = pack_ptrs_array[DType.uint8](recv_ptrs, my_rank)
-        var recv_count_ptrs_arr = pack_ptrs_array[DType.uint64](
+        var recv_ptrs_arr = pack_ptrs_array[.uint8](recv_ptrs, my_rank)
+        var recv_count_ptrs_arr = pack_ptrs_array[.uint64](
             recv_count_ptrs, my_rank
         )
         var ep_counters = EPLocalSyncCounters[n_experts](
@@ -328,12 +328,12 @@ def ep_dispatch_wait_kernel_api[
     input_scales_wrapper: Optional[input_scales_wrapper_type] = None,
 ](
     token_handler: token_fmt_type,
-    row_offsets: TileTensor[DType.uint32, Storage=PointerStorage[], ...],
-    expert_ids: TileTensor[DType.int32, Storage=PointerStorage[], ...],
-    src_info: TileTensor[DType.int32, Storage=PointerStorage[], ...],
-    recv_ptrs: TileTensor[DType.uint64, Storage=PointerStorage[], ...],
-    recv_count_ptrs: TileTensor[DType.uint64, Storage=PointerStorage[], ...],
-    atomic_counters: TileTensor[DType.int32, Storage=PointerStorage[], ...],
+    row_offsets: TileTensor[.uint32, Storage=PointerStorage[], ...],
+    expert_ids: TileTensor[.int32, Storage=PointerStorage[], ...],
+    src_info: TileTensor[.int32, Storage=PointerStorage[], ...],
+    recv_ptrs: TileTensor[.uint64, Storage=PointerStorage[], ...],
+    recv_count_ptrs: TileTensor[.uint64, Storage=PointerStorage[], ...],
+    atomic_counters: TileTensor[.int32, Storage=PointerStorage[], ...],
     context: DeviceContext,
     num_input_tokens: Int = -1,
 ) raises:
@@ -482,20 +482,17 @@ def ep_fused_dispatch_kernel_api[
     allreduce_world_size: Int = 1,
 ](
     token_handler: token_fmt_type,
-    row_offsets: TileTensor[DType.uint32, Storage=PointerStorage[], ...],
-    expert_ids: TileTensor[DType.int32, Storage=PointerStorage[], ...],
-    src_info: TileTensor[DType.int32, Storage=PointerStorage[], ...],
-    atomic_counters: TileTensor[DType.int32, Storage=PointerStorage[], ...],
+    row_offsets: TileTensor[.uint32, Storage=PointerStorage[], ...],
+    expert_ids: TileTensor[.int32, Storage=PointerStorage[], ...],
+    src_info: TileTensor[.int32, Storage=PointerStorage[], ...],
+    atomic_counters: TileTensor[.int32, Storage=PointerStorage[], ...],
     input_tokens: TileTensor[
-        mut=False,
-        dispatch_dtype,
-        Storage=PointerStorage[],
-        ...,
+        mut=False, dispatch_dtype, Storage=PointerStorage[], ...
     ],
-    topk_ids: TileTensor[mut=False, DType.int32, Storage=PointerStorage[], ...],
-    send_ptrs: TileTensor[DType.uint64, Storage=PointerStorage[], ...],
-    recv_ptrs: TileTensor[DType.uint64, Storage=PointerStorage[], ...],
-    recv_count_ptrs: TileTensor[DType.uint64, Storage=PointerStorage[], ...],
+    topk_ids: TileTensor[mut=False, .int32, Storage=PointerStorage[], ...],
+    send_ptrs: TileTensor[.uint64, Storage=PointerStorage[], ...],
+    recv_ptrs: TileTensor[.uint64, Storage=PointerStorage[], ...],
+    recv_count_ptrs: TileTensor[.uint64, Storage=PointerStorage[], ...],
     context: DeviceContext,
 ) raises:
     """Execute the fused Expert Parallelism dispatch kernel.
@@ -540,7 +537,7 @@ def ep_fused_dispatch_kernel_api[
 
     # Ensure this kernel only runs on GPU targets
     comptime assert is_gpu[target](), "EP is only supported on GPU."
-    comptime assert dispatch_dtype == DType.bfloat16
+    comptime assert dispatch_dtype == .bfloat16
     comptime assert (
         send_ptrs.flat_rank == 1
     ), "Send pointers must be a 1D tensor."
@@ -698,17 +695,14 @@ def ep_combine_async_kernel_api[
     target: StaticString,
     use_shmem: Bool = (n_nodes > 1),
 ](
-    atomic_counters: TileTensor[DType.int32, Storage=PointerStorage[], ...],
+    atomic_counters: TileTensor[.int32, Storage=PointerStorage[], ...],
     input_tokens: TileTensor[
-        mut=False,
-        combine_dtype,
-        Storage=PointerStorage[],
-        ...,
+        mut=False, combine_dtype, Storage=PointerStorage[], ...
     ],
-    src_info: TileTensor[mut=False, DType.int32, Storage=PointerStorage[], ...],
-    send_ptrs: TileTensor[DType.uint64, Storage=PointerStorage[], ...],
-    recv_ptrs: TileTensor[DType.uint64, Storage=PointerStorage[], ...],
-    recv_count_ptrs: TileTensor[DType.uint64, Storage=PointerStorage[], ...],
+    src_info: TileTensor[mut=False, .int32, Storage=PointerStorage[], ...],
+    send_ptrs: TileTensor[.uint64, Storage=PointerStorage[], ...],
+    recv_ptrs: TileTensor[.uint64, Storage=PointerStorage[], ...],
+    recv_count_ptrs: TileTensor[.uint64, Storage=PointerStorage[], ...],
     context: DeviceContext,
 ) raises:
     """Execute the Expert Parallelism combine kernel.
@@ -818,8 +812,8 @@ def ep_combine_async_kernel_api[
             unsafe_from_address=Int(send_ptrs[gpu_id])
         )
         # Create inline arrays to store all the p2p accessible pointers
-        var recv_ptrs_arr = pack_ptrs_array[DType.uint8](recv_ptrs, my_rank)
-        var recv_count_ptrs_arr = pack_ptrs_array[DType.uint64](
+        var recv_ptrs_arr = pack_ptrs_array[.uint8](recv_ptrs, my_rank)
+        var recv_count_ptrs_arr = pack_ptrs_array[.uint64](
             recv_count_ptrs, my_rank
         )
         var ep_counters = EPLocalSyncCounters[n_experts](
@@ -862,9 +856,9 @@ def ep_combine_wait_kernel_api[
     epilogue_fn: Optional[elementwise_epilogue_type] = None,
 ](
     output_tokens: TileTensor[combine_dtype, Storage=PointerStorage[], ...],
-    atomic_counters: TileTensor[DType.int32, Storage=PointerStorage[], ...],
-    recv_ptrs: TileTensor[DType.uint64, Storage=PointerStorage[], ...],
-    recv_count_ptrs: TileTensor[DType.uint64, Storage=PointerStorage[], ...],
+    atomic_counters: TileTensor[.int32, Storage=PointerStorage[], ...],
+    recv_ptrs: TileTensor[.uint64, Storage=PointerStorage[], ...],
+    recv_count_ptrs: TileTensor[.uint64, Storage=PointerStorage[], ...],
     context: DeviceContext,
     num_input_tokens: Int = -1,
 ) raises:
@@ -1024,17 +1018,14 @@ def ep_fused_combine_kernel_api[
     allreduce_world_size: Int = 1,
 ](
     output_tokens: TileTensor[combine_dtype, Storage=PointerStorage[], ...],
-    atomic_counters: TileTensor[DType.int32, Storage=PointerStorage[], ...],
+    atomic_counters: TileTensor[.int32, Storage=PointerStorage[], ...],
     input_tokens: TileTensor[
-        mut=False,
-        combine_dtype,
-        Storage=PointerStorage[],
-        ...,
+        mut=False, combine_dtype, Storage=PointerStorage[], ...
     ],
-    src_info: TileTensor[mut=False, DType.int32, Storage=PointerStorage[], ...],
-    send_ptrs: TileTensor[DType.uint64, Storage=PointerStorage[], ...],
-    recv_ptrs: TileTensor[DType.uint64, Storage=PointerStorage[], ...],
-    recv_count_ptrs: TileTensor[DType.uint64, Storage=PointerStorage[], ...],
+    src_info: TileTensor[mut=False, .int32, Storage=PointerStorage[], ...],
+    send_ptrs: TileTensor[.uint64, Storage=PointerStorage[], ...],
+    recv_ptrs: TileTensor[.uint64, Storage=PointerStorage[], ...],
+    recv_count_ptrs: TileTensor[.uint64, Storage=PointerStorage[], ...],
     context: DeviceContext,
     topk_ids_p: Optional[UnsafePointer[Int32, ImmUntrackedOrigin]] = None,
 ) raises:

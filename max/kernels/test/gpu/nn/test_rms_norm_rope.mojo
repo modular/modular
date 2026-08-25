@@ -192,7 +192,7 @@ def run_rms_norm_rope_gpu[
         sin_fn,
         output_fn,
         Coord(shape),
-        Scalar[DType.int](cols),
+        Int(cols),
         gamma,
         epsilon.cast[dtype](),
         weight_offset,
@@ -216,22 +216,22 @@ def run_rms_norm_rope_gpu[
 def main() raises:
     with DeviceContext() as ctx:
         # Basic shapes
-        run_rms_norm_rope_gpu[DType.float32](ctx, Index(2, 4))
-        run_rms_norm_rope_gpu[DType.float32](ctx, Index(3, 8))
-        run_rms_norm_rope_gpu[DType.float32](ctx, Index(5, 16))
+        run_rms_norm_rope_gpu[.float32](ctx, Index(2, 4))
+        run_rms_norm_rope_gpu[.float32](ctx, Index(3, 8))
+        run_rms_norm_rope_gpu[.float32](ctx, Index(5, 16))
         # Higher rank
-        run_rms_norm_rope_gpu[DType.float32](ctx, Index(2, 3, 8))
-        run_rms_norm_rope_gpu[DType.float32](ctx, Index(1, 5, 6, 16))
+        run_rms_norm_rope_gpu[.float32](ctx, Index(2, 3, 8))
+        run_rms_norm_rope_gpu[.float32](ctx, Index(1, 5, 6, 16))
         # Larger cols
-        run_rms_norm_rope_gpu[DType.float32](ctx, Index(4, 128))
-        run_rms_norm_rope_gpu[DType.float32](ctx, Index(2, 256))
-        run_rms_norm_rope_gpu[DType.float32](ctx, Index(2, 4096))
+        run_rms_norm_rope_gpu[.float32](ctx, Index(4, 128))
+        run_rms_norm_rope_gpu[.float32](ctx, Index(2, 256))
+        run_rms_norm_rope_gpu[.float32](ctx, Index(2, 4096))
         # bfloat16
         # BFloat16 accumulates rounding from both RMSNorm and RoPE; use 5%.
-        run_rms_norm_rope_gpu[DType.bfloat16](ctx, Index(3, 128), rtol=5e-2)
-        run_rms_norm_rope_gpu[DType.bfloat16](ctx, Index(2, 4096), rtol=5e-2)
+        run_rms_norm_rope_gpu[.bfloat16](ctx, Index(3, 128), rtol=5e-2)
+        run_rms_norm_rope_gpu[.bfloat16](ctx, Index(2, 4096), rtol=5e-2)
         # Mixed cos/sin dtype
-        run_rms_norm_rope_gpu[DType.bfloat16, cos_sin_dtype=DType.float32](
+        run_rms_norm_rope_gpu[.bfloat16, cos_sin_dtype=DType.float32](
             ctx, Index(2, 128), rtol=5e-2
         )
         # Decoupled output dtype: f32 input/weight, bf16 output (the JSC-32

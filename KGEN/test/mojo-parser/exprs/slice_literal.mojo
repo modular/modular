@@ -22,9 +22,9 @@ struct Variant[*Ts: Movable](Movable where False):
         pass
 
 
-# The variadic parameter resolves to `[::SIMD[::DType(int), ::SIMDLength(1)], ::ContiguousSlice]`, proving the
+# The variadic parameter resolves to `[::SIMD[DType.int, 1], ::ContiguousSlice]`, proving the
 # integer literal and the slice literal each select the matching `Variant` arm.
-# CHECK: lit.fn @"foo[KGENParamList[slice_literal::Variant[::SIMD[::DType(int), ::SIMDLength(1)], ::ContiguousSlice, *()]]
+# CHECK: lit.fn @"foo[KGENParamList[slice_literal::Variant[::SIMD[DType.int, 1], ::ContiguousSlice, *()]]
 # CHECK-SAME: sourceName = "foo"
 def foo[*elts: Variant[Int, ContiguousSlice]]() -> NoneType:
     pass
@@ -43,6 +43,6 @@ def foo[*elts: Variant[Int, ContiguousSlice]]() -> NoneType:
 
 # CHECK: lit.fn @"test()"
 # CHECK: lit.call tail @slice_literal::@"foo[
-# CHECK-SAME: @std::@builtin::@builtin_slice::@ContiguousSlice::@"__init__(::Optional[::SIMD[::DType(int), ::SIMDLength(1)]],::Optional[::SIMD[::DType(int), ::SIMDLength(1)]],::NoneType,::NoneType)"
+# CHECK-SAME: @std::@builtin::@builtin_slice::@ContiguousSlice::@"__init__(::Optional[::SIMD[DType.int, 1]],::Optional[::SIMD[DType.int, 1]],::NoneType,::NoneType)"
 def test():
     foo[0, :, 0, :]()

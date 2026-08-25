@@ -29,7 +29,7 @@ def test_conv_transposed_cudnn[
     stride_val: Int = 1,
     dilation_val: Int = 1,
     pad_val: Int = 0,
-    dtype: DType = DType.float32,
+    dtype: DType = .float32,
 ](ctx: DeviceContext,) raises:
     """
     Fixed 1-D transposed-convolution test with correct QRSFC kernel layout.

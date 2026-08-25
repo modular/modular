@@ -293,22 +293,22 @@ struct BlockScaledMmaOp[
     ]()
 
     var _a_reg: TileTensor[
-        DType.uint8,
+        .uint8,
         type_of(Self._a_reg_layout),
         MutUntrackedOrigin,
-        address_space=AddressSpace.LOCAL,
+        address_space=.LOCAL,
     ]
     var _b_reg: TileTensor[
-        DType.uint8,
+        .uint8,
         type_of(Self._b_reg_layout),
         MutUntrackedOrigin,
-        address_space=AddressSpace.LOCAL,
+        address_space=.LOCAL,
     ]
     var _c_reg: TileTensor[
-        DType.float32,
+        .float32,
         type_of(Self._c_reg_layout),
         MutUntrackedOrigin,
-        address_space=AddressSpace.LOCAL,
+        address_space=.LOCAL,
     ]
 
     # Packed scale VGPRs: one Int32 per k_tile for A and B. Byte i of
@@ -318,16 +318,16 @@ struct BlockScaledMmaOp[
     # other.
     comptime _scale_layout = row_major[1, Self.num_k_tiles]()
     var _a_scale_packed: TileTensor[
-        DType.int32,
+        .int32,
         type_of(Self._scale_layout),
         MutUntrackedOrigin,
-        address_space=AddressSpace.LOCAL,
+        address_space=.LOCAL,
     ]
     var _b_scale_packed: TileTensor[
-        DType.int32,
+        .int32,
         type_of(Self._scale_layout),
         MutUntrackedOrigin,
-        address_space=AddressSpace.LOCAL,
+        address_space=.LOCAL,
     ]
 
     @always_inline
@@ -338,24 +338,24 @@ struct BlockScaledMmaOp[
         comptime assert (
             Self.num_n_mmas <= 4
         ), "num_n_mmas must be <= 4 for packed scales"
-        self._a_reg = stack_allocation[DType.uint8, AddressSpace.LOCAL](
+        self._a_reg = stack_allocation[DType.uint8, address_space=.LOCAL](
             Self._a_reg_layout
         )
-        self._b_reg = stack_allocation[DType.uint8, AddressSpace.LOCAL](
+        self._b_reg = stack_allocation[DType.uint8, address_space=.LOCAL](
             Self._b_reg_layout
         )
-        self._c_reg = stack_allocation[DType.float32, AddressSpace.LOCAL](
+        self._c_reg = stack_allocation[DType.float32, address_space=.LOCAL](
             Self._c_reg_layout
         )
-        _ = self._c_reg.fill(Scalar[DType.float32](0))
+        _ = self._c_reg.fill(Float32(0))
         self._a_scale_packed = stack_allocation[
-            DType.int32, AddressSpace.LOCAL
+            DType.int32, address_space=.LOCAL
         ](Self._scale_layout)
         self._b_scale_packed = stack_allocation[
-            DType.int32, AddressSpace.LOCAL
+            DType.int32, address_space=.LOCAL
         ](Self._scale_layout)
-        _ = self._a_scale_packed.fill(Scalar[DType.int32](0))
-        _ = self._b_scale_packed.fill(Scalar[DType.int32](0))
+        _ = self._a_scale_packed.fill(Int32(0))
+        _ = self._b_scale_packed.fill(Int32(0))
 
     @always_inline
     def accum_tile(self) -> ref[self._c_reg] type_of(self._c_reg):
@@ -366,12 +366,8 @@ struct BlockScaledMmaOp[
         k_tile_idx: Int
     ](
         mut self,
-        a_smem_warp: TileTensor[
-            DType.uint8, _, _, address_space=AddressSpace.SHARED, ...
-        ],
-        b_smem_warp: TileTensor[
-            DType.uint8, _, _, address_space=AddressSpace.SHARED, ...
-        ],
+        a_smem_warp: TileTensor[.uint8, _, _, address_space=.SHARED, ...],
+        b_smem_warp: TileTensor[.uint8, _, _, address_space=.SHARED, ...],
     ):
         """Loads A/B fragments from row-major SMEM for k-tile `k_tile_idx`.
 
@@ -422,9 +418,7 @@ struct BlockScaledMmaOp[
         k_tile_idx: Int
     ](
         mut self,
-        b_smem_warp: TileTensor[
-            DType.uint8, _, _, address_space=AddressSpace.SHARED, ...
-        ],
+        b_smem_warp: TileTensor[.uint8, _, _, address_space=.SHARED, ...],
     ):
         """Loads B fragments for a power-of-two encoding (FP4 or FP8).
 
@@ -471,9 +465,7 @@ struct BlockScaledMmaOp[
         k_tile_idx: Int
     ](
         mut self,
-        a_smem_warp: TileTensor[
-            DType.uint8, _, _, address_space=AddressSpace.SHARED, ...
-        ],
+        a_smem_warp: TileTensor[.uint8, _, _, address_space=.SHARED, ...],
     ):
         """A-side counterpart of `_load_b_frag_vectorized`.
 
@@ -509,12 +501,10 @@ struct BlockScaledMmaOp[
         packed_k: Int, frag_w: Int, reg_w: Int
     ](
         self,
-        smem_warp: TileTensor[
-            DType.uint8, _, _, address_space=AddressSpace.SHARED, ...
-        ],
+        smem_warp: TileTensor[.uint8, _, _, address_space=.SHARED, ...],
         mma_idx: Int,
         k_tile_idx: Int,
-    ) -> SIMD[DType.uint8, reg_w]:
+    ) -> SIMD[.uint8, reg_w]:
         """Reads one lane's 24 FP6 payload bytes out of row-major SMEM.
 
         `vectorize`/`distribute` cannot express a 24-byte element, so this
@@ -535,10 +525,10 @@ struct BlockScaledMmaOp[
         var row = mma_idx * Self.MMA_M + (lane % Self.MMA_M)
         var byte_base = k_tile_idx * packed_k + (lane // Self.MMA_M) * frag_w
 
-        var fragment = SIMD[DType.uint8, reg_w](0)
+        var fragment = SIMD[.uint8, reg_w](0)
         comptime for chunk in range(frag_w // 8):
             fragment = fragment.insert[offset=chunk * 8](
-                rebind[SIMD[DType.uint8, 8]](
+                rebind[SIMD[.uint8, 8]](
                     smem_warp.load[8](Coord(row, byte_base + chunk * 8))
                 )
             )
@@ -547,12 +537,7 @@ struct BlockScaledMmaOp[
     @always_inline
     def load_a_frag_from_smem[
         k_tile_idx: Int
-    ](
-        self,
-        a_smem_warp: TileTensor[
-            DType.uint8, _, _, address_space=AddressSpace.SHARED, ...
-        ],
-    ):
+    ](self, a_smem_warp: TileTensor[.uint8, _, _, address_space=.SHARED, ...],):
         """A-only variant of `load_frag_from_smem` for callers that source B
         elsewhere (e.g. preshuffled DRAM via PreshuffledBLoader).
 
@@ -643,12 +628,8 @@ struct BlockScaledMmaOp[
         k_tile_idx: Int
     ](
         mut self,
-        a_scale_smem_warp: TileTensor[
-            DType.uint8, address_space=AddressSpace.SHARED, ...
-        ],
-        b_scale_smem_warp: TileTensor[
-            DType.uint8, address_space=AddressSpace.SHARED, ...
-        ],
+        a_scale_smem_warp: TileTensor[.uint8, address_space=.SHARED, ...],
+        b_scale_smem_warp: TileTensor[.uint8, address_space=.SHARED, ...],
     ):
         """Load packed scale VGPRs for k-tile k_tile_idx from SMEM.
 
@@ -686,9 +667,7 @@ struct BlockScaledMmaOp[
                     0
                 ]
             )
-            a_packed = a_packed | bitcast[DType.int32](
-                byte_val << UInt32(m_mma * 8)
-            )
+            a_packed = a_packed | bitcast[.int32](byte_val << UInt32(m_mma * 8))
         self._a_scale_packed.raw_store(k_tile_idx, a_packed)
 
         var b_packed = Int32(0)
@@ -706,9 +685,7 @@ struct BlockScaledMmaOp[
                     0
                 ]
             )
-            b_packed = b_packed | bitcast[DType.int32](
-                byte_val << UInt32(n_mma * 8)
-            )
+            b_packed = b_packed | bitcast[.int32](byte_val << UInt32(n_mma * 8))
         self._b_scale_packed.raw_store(k_tile_idx, b_packed)
 
     @always_inline
@@ -867,10 +844,10 @@ struct BlockScaledMatmulAMD[
         num_splits: Int = 1,
     ](
         c: TileTensor[out_dtype, c_layout, MutAnyOrigin],
-        a: TileTensor[DType.uint8, a_layout, ImmutAnyOrigin],
-        b: TileTensor[DType.uint8, b_layout, ImmutAnyOrigin],
-        sfa: TileTensor[DType.float8_e8m0fnu, sfa_layout, ImmutAnyOrigin],
-        sfb: TileTensor[DType.float8_e8m0fnu, sfb_layout, ImmutAnyOrigin],
+        a: TileTensor[.uint8, a_layout, ImmutAnyOrigin],
+        b: TileTensor[.uint8, b_layout, ImmutAnyOrigin],
+        sfa: TileTensor[.float8_e8m0fnu, sfa_layout, ImmutAnyOrigin],
+        sfb: TileTensor[.float8_e8m0fnu, sfb_layout, ImmutAnyOrigin],
     ):
         """MXFP4 block-scaled GEMM kernel with SMEM pipeline.
 
@@ -962,23 +939,23 @@ struct BlockScaledMatmulAMD[
         var warp_m, warp_n = divmod(_warp_id, Self.num_warps_n)
 
         # === GMEM views ===
-        var a_gmem = TileTensor(a.ptr.bitcast[Scalar[DType.uint8]](), a.layout)
-        var b_gmem = TileTensor(b.ptr.bitcast[Scalar[DType.uint8]](), b.layout)
+        var a_gmem = TileTensor(a.ptr.bitcast[UInt8](), a.layout)
+        var b_gmem = TileTensor(b.ptr.bitcast[UInt8](), b.layout)
 
         # === SMEM tiles (row-major allocation; access is conditionally
         # XOR-swizzled per BlockScaledMmaOp.use_smem_swizzle) ===
-        var a_smem = stack_allocation[DType.uint8, AddressSpace.SHARED](
+        var a_smem = stack_allocation[DType.uint8, address_space=.SHARED](
             row_major[Self.BM, A_BK_BYTES]()
         )
-        var b_smem = stack_allocation[DType.uint8, AddressSpace.SHARED](
+        var b_smem = stack_allocation[DType.uint8, address_space=.SHARED](
             row_major[Self.BN, B_BK_BYTES]()
         )
 
         comptime scales_per_mma = Self.scales_per_mma
-        var sfa_smem = stack_allocation[DType.uint8, AddressSpace.SHARED](
+        var sfa_smem = stack_allocation[DType.uint8, address_space=.SHARED](
             row_major[Self.BM, scales_per_mma * num_k_tiles]()
         )
-        var sfb_smem = stack_allocation[DType.uint8, AddressSpace.SHARED](
+        var sfb_smem = stack_allocation[DType.uint8, address_space=.SHARED](
             row_major[Self.BN, scales_per_mma * num_k_tiles]()
         )
 
@@ -1015,21 +992,21 @@ struct BlockScaledMatmulAMD[
 
         # Register buffers for DRAM loads (one per matrix). Sized per
         # matrix so BM != BN works.
-        var a_load_reg = stack_allocation[DType.uint8, AddressSpace.LOCAL](
+        var a_load_reg = stack_allocation[DType.uint8, address_space=.LOCAL](
             row_major[1, a_reg_elems]()
         )
-        var b_load_reg = stack_allocation[DType.uint8, AddressSpace.LOCAL](
+        var b_load_reg = stack_allocation[DType.uint8, address_space=.LOCAL](
             row_major[1, b_reg_elems]()
         )
 
         # RegTileLoader wraps each block-row in an AMD buffer resource
         # descriptor. `bounds_from=a_gmem` clamps OOB buffer_load_dwordx4
         # reads to zero at the hardware level (no fault, no garbage).
-        var a_loader = RegTileLoader[DType.uint8, load_layout](
+        var a_loader = RegTileLoader[.uint8, load_layout](
             a_blockrow,
             bounds_from=a_gmem,
         )
-        var b_loader = RegTileLoader[DType.uint8, b_load_layout](
+        var b_loader = RegTileLoader[.uint8, b_load_layout](
             b_blockrow,
             bounds_from=b_gmem,
         )
@@ -1184,14 +1161,12 @@ struct BlockScaledMatmulAMD[
                 if row < M:
                     var src_word_base = (row * K_SCALES + base_scale_k) // 4
                     comptime for w in range(SCALE_WORDS_PER_ROW):
-                        sfa_smem.ptr.bitcast[Scalar[DType.int32]]()[
+                        sfa_smem.ptr.bitcast[Int32]()[
                             tid * SCALE_WORDS_PER_ROW + w
-                        ] = sfa.ptr.bitcast[Scalar[DType.int32]]()[
-                            src_word_base + w
-                        ]
+                        ] = sfa.ptr.bitcast[Int32]()[src_word_base + w]
                 else:
                     comptime for w in range(SCALE_WORDS_PER_ROW):
-                        sfa_smem.ptr.bitcast[Scalar[DType.int32]]()[
+                        sfa_smem.ptr.bitcast[Int32]()[
                             tid * SCALE_WORDS_PER_ROW + w
                         ] = Int32(0)
             # B scales: guard N-OOB rows (B is transposed).
@@ -1200,14 +1175,12 @@ struct BlockScaledMatmulAMD[
                 if row < N:
                     var src_word_base = (row * K_SCALES + base_scale_k) // 4
                     comptime for w in range(SCALE_WORDS_PER_ROW):
-                        sfb_smem.ptr.bitcast[Scalar[DType.int32]]()[
+                        sfb_smem.ptr.bitcast[Int32]()[
                             tid * SCALE_WORDS_PER_ROW + w
-                        ] = sfb.ptr.bitcast[Scalar[DType.int32]]()[
-                            src_word_base + w
-                        ]
+                        ] = sfb.ptr.bitcast[Int32]()[src_word_base + w]
                 else:
                     comptime for w in range(SCALE_WORDS_PER_ROW):
-                        sfb_smem.ptr.bitcast[Scalar[DType.int32]]()[
+                        sfb_smem.ptr.bitcast[Int32]()[
                             tid * SCALE_WORDS_PER_ROW + w
                         ] = Int32(0)
 
@@ -1521,7 +1494,7 @@ def _launch_block_scaled_split_k[
     )
 
     comptime kernel = Kernel.run[
-        DType.float32,
+        .float32,
         type_of(ws_tile).LayoutType,
         type_of(a).LayoutType,
         type_of(b).LayoutType,
@@ -1608,10 +1581,10 @@ def block_scaled_matmul_amd[
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c: TileTensor[mut=True, ...],
-    a: TileTensor[mut=False, DType.uint8, ...],
-    b: TileTensor[mut=False, DType.uint8, ...],
-    a_scales: TileTensor[mut=False, DType.float8_e8m0fnu, ...],
-    b_scales: TileTensor[mut=False, DType.float8_e8m0fnu, ...],
+    a: TileTensor[mut=False, .uint8, ...],
+    b: TileTensor[mut=False, .uint8, ...],
+    a_scales: TileTensor[mut=False, .float8_e8m0fnu, ...],
+    b_scales: TileTensor[mut=False, .float8_e8m0fnu, ...],
     ctx: DeviceContext,
 ) raises:
     """Launch native MXFP4 block-scaled matmul on AMD CDNA4.
@@ -1950,10 +1923,10 @@ def mxfp6_block_scaled_matmul_amd[
     num_splits: Int = 1,
 ](
     c: TileTensor[mut=True, ...],
-    a: TileTensor[mut=False, DType.uint8, ...],
-    b: TileTensor[mut=False, DType.uint8, ...],
-    a_scales: TileTensor[mut=False, DType.float8_e8m0fnu, ...],
-    b_scales: TileTensor[mut=False, DType.float8_e8m0fnu, ...],
+    a: TileTensor[mut=False, .uint8, ...],
+    b: TileTensor[mut=False, .uint8, ...],
+    a_scales: TileTensor[mut=False, .float8_e8m0fnu, ...],
+    b_scales: TileTensor[mut=False, .float8_e8m0fnu, ...],
     ctx: DeviceContext,
 ) raises:
     """Launch native MXFP6 block-scaled matmul on AMD CDNA4.

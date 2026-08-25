@@ -339,6 +339,10 @@ def KGEN_ParamListConcatAttr : KGEN_ExprAttr<"ParamListConcat", "param_list.conc
     AttrBuilderWithInferredContext<(ins
        "ParamListType":$type, "TypedAttr":$paramLists), "", "TypedAttr">,
 
+    // Concat the array of paramLists, the array must be non-empty.
+    AttrBuilderWithInferredContext<(ins
+        "ArrayRef<TypedAttr>":$paramLists), "", "TypedAttr">,
+
     // Verbose form with MLIRContext, needed for ODS constructors.
     AttrBuilder<(ins "ParamListType":$type, "TypedAttr":$paramLists), [{
       return get(type, paramLists);
@@ -884,6 +888,7 @@ def KGEN_TraitSymbolAttr : KGENAttr<"TraitSymbol", "trait_symbol"> {
   let parameters = (ins
     "SymbolRefAttr":$symbol,
     OptionalArrayRefParameter<"TypedAttr">:$paramValues
+
   );
 
   let assemblyFormat = "`<` $symbol `` custom<ParameterValues>($paramValues) `` `>`";

@@ -46,6 +46,7 @@ build_test(
         ":fuzz_mxfp8_quantize.mojo.test",
         ":fuzz_numeric_canary.mojo.test",
         ":fuzz_oob_canary.mojo.test",
+        ":fuzz_reductions.mojo.test",
         ":fuzz_rms_norm.mojo.test",
         ":fuzz_softmax.mojo.test",
         ":fuzz_sparse_indexer.mojo.test",
@@ -506,6 +507,33 @@ mojo_test(
     deps = [
         "//max:internal_utils",
         "//max:nn",
+        "@mojo//:std",
+    ],
+)
+
+# Target: the algorithm.reductions entry points over the rowwise GPU scaffolder
+# (written-contract + numerical ref oracle). The reduced axis is drawn from 0 —
+# an empty axis is in the contract and must still write the monoid identity.
+mojo_test(
+    name = "fuzz_reductions.mojo.test",
+    size = "large",
+    srcs = [
+        "_fuzz.mojo",
+        "fuzz_reductions.mojo",
+    ],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
+    exec_properties = {
+        "test.resources:gpu-memory": "4",
+    },
+    main = "fuzz_reductions.mojo",
+    tags = [
+        "gpu",
+        "manual",
+    ],
+    target_compatible_with = ["//:has_gpu"],
+    deps = [
+        "//max:algorithm",
+        "//max:layout",
         "@mojo//:std",
     ],
 )

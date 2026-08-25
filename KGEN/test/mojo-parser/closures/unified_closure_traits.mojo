@@ -28,7 +28,7 @@
 # COM: requires recursive matching through both composite attr types.
 # S0-LABEL: lit.fn @"repro_struct_attr()"
 # S0: lit.var.decl "my_fn" var : !lit.ref<!lit.struct<{{.*}}storage{{.*}}
-# S0: lit.call @unified_closure_traits::@"struct_callee[::SIMD[::DType(int), ::SIMDLength(1)],def[tag: Int, //]() -> Container[Pair(tag, Int(0))]{1} & ::AnyType & ::Deinitable & ::Movable]($1){identical($1.tag, $0)}"
+# S0: lit.call @unified_closure_traits::@"struct_callee[::SIMD[DType.int, 1],def[tag: Int, //]() -> Container[Pair(tag, Int(0))]{1} & ::AnyType & ::Deinitable & ::Movable]($1){identical($1.tag, $0)}"
 # S0-SAME: <:!Int {:scalar<index> 2}
 
 
@@ -63,7 +63,7 @@ def repro_struct_attr():
 # COM: parameterized by a function reference (exercises symbol recursion).
 # S1-LABEL: lit.fn @"repro_symbol_attr()"
 # S1-DAG: lit.var.decl "my_fn" var : !lit.ref<!lit.struct<{{.*}}storage{{.*}}
-# S1-DAG: lit.call @unified_closure_traits::@"symbol_callee[::SIMD[::DType(int), ::SIMDLength(1)],def() -> Dispatch[identity] & ::AnyType & ::Deinitable & ::Movable]($1)"{{.*}}<:!Int {:scalar<index> 1}
+# S1-DAG: lit.call @unified_closure_traits::@"symbol_callee[::SIMD[DType.int, 1],def() -> Dispatch[identity] & ::AnyType & ::Deinitable & ::Movable]($1)"{{.*}}<:!Int {:scalar<index> 1}
 
 
 struct Dispatch[F: def(Int) thin -> Int](Movable where False):
@@ -301,8 +301,7 @@ struct s9_MiniTuple[*element_types: Movable & Deinitable](Movable):
         var elt_kgen_ptr = __mlir_op.`kgen.struct.gep`[
             index=idx.__mlir_index__(),
             _type=UnsafePointer[
-                Self.element_types[idx], origin_of(self)
-            ]._mlir_type,
+                Self.element_types[idx], origin_of(self)]._mlir_type,
         ](storage_kgen_ptr)
         return UnsafePointer[_, origin_of(self)](elt_kgen_ptr)[]
 

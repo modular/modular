@@ -29,7 +29,7 @@ discriminators and split-K plumbing — are `_`-prefixed.
 
 from std.memory import UnsafePointer
 from std.gpu.host.info import is_cpu
-from std.utils.coord import Coord
+from std.utils.coord import Coord, DynamicCoord
 
 
 # ===-----------------------------------------------------------------------===#
@@ -388,3 +388,69 @@ copy-captured state (the fused `input_fn` / `output_fn` value closures,
 `axis_size`) is serialized across the launch. `ImplicitlyCopyable &
 RegisterPassable` lets the kernel struct hold it as a register-passable
 field; the callable trait is non-`capturing` (captures ride the value)."""
+
+
+# TODO(MOCO-4713): Remove this and use a DynamicCoord with
+# wrapper functions where needed
+@fieldwise_init
+struct RowCoord[rank: Int](
+    ImplicitlyCopyable, Movable, TrivialRegisterPassable
+):
+    """A row's coordinates, as a non-variadic handle.
+
+    Wraps an all-dynamic `Coord`: the reduce axis is overwritten per tile,
+    which a statically typed element cannot hold.
+
+    The wrapper is not cosmetic. A `Coord` parameterized by a symbolic rank
+    expands to a variadic pack (`TypeList.splat`), and such a pack does not
+    survive substitution into a closure-type trait bound.
+
+    Parameters:
+        rank: The coordinate's rank.
+    """
+
+    var coord: DynamicCoord[DType.int64, Self.rank]
+    """The wrapped coordinates."""
+
+    @always_inline
+    @implicit
+    def __init__(out self, row_coords: Coord):
+        """Builds a handle from any `Coord`, dropping static dims.
+
+        Args:
+            row_coords: The row's coords, static dims permitted.
+        """
+        self.coord = rebind[DynamicCoord[DType.int64, Self.rank]](
+            row_coords.make_dynamic[DType.int64]()
+        )
+
+    @always_inline
+    def write_axis[axis: Int](mut self, pos: Int):
+        """Sets the reduce axis to `pos`, in place.
+
+        Parameters:
+            axis: The reduce axis to overwrite.
+
+        Args:
+            pos: The column position along the reduce axis.
+        """
+        Pointer(to=self.coord[axis]).write(
+            rebind[type_of(self.coord[axis])](Scalar[DType.int64](pos))
+        )
+
+    @always_inline
+    def at_axis[axis: Int](self, pos: Int) -> Self:
+        """A copy with the reduce axis set to `pos`.
+
+        Parameters:
+            axis: The reduce axis to overwrite.
+
+        Args:
+            pos: The column position along the reduce axis.
+
+        Returns:
+            A copy of `self` with element `axis` set to `pos`.
+        """
+        var result = self
+        result.write_axis[axis](pos)
+        return result

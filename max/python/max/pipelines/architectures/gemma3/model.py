@@ -34,6 +34,7 @@ from max.pipelines.lib import (
     PipelineConfig,
 )
 from max.pipelines.lib.log_probabilities import LogProbabilitiesMixin
+from max.pipelines.lib.memory_estimation import MemoryPlan
 from max.pipelines.weights.quant import parse_quant_config
 from transformers import AutoConfig
 
@@ -93,6 +94,8 @@ class Gemma3Model(
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
         weights: Weights,
+        *,
+        memory_plan: MemoryPlan,
         adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
         max_batch_size: int = 1,
@@ -117,9 +120,10 @@ class Gemma3Model(
             devices,
             kv_cache_config,
             weights,
-            adapter,
-            return_logits,
+            adapter=adapter,
+            return_logits=return_logits,
             max_batch_size=max_batch_size,
+            memory_plan=memory_plan,
         )
         # Detect multimodal models by presence of text_config
         self._is_multimodal = hasattr(self.huggingface_config, "text_config")
@@ -173,7 +177,7 @@ class Gemma3Model(
             ignored_modules_prefix=state_dict_prefix or "model.",
         )
         model_config = Gemma3Config.initialize_from_config(
-            self.pipeline_config, text_config
+            self.pipeline_config, text_config, max_seq_len=self.max_seq_len
         )
         model_config.finalize(
             huggingface_config=text_config,

@@ -201,9 +201,9 @@ def bt_frag_coord(lane: Int, i: Int) -> IndexList[2]:
 
 @always_inline
 def matmul2d_mma_regc_bt_native(
-    a_frag: SIMD[DType.bfloat16, 8],
-    b_frag: SIMD[DType.bfloat16, 16],
-    mut c_acc: SIMD[DType.float32, 16],
+    a_frag: SIMD[.bfloat16, 8],
+    b_frag: SIMD[.bfloat16, 16],
+    mut c_acc: SIMD[.float32, 16],
 ):
     """Pure-Mojo `transpose_right=1` 16x32x16 MMA (native `simdgroup_matrix`).
 
@@ -230,7 +230,7 @@ def matmul2d_mma_regc_bt_native(
             elements 0-7 = N 0..15, 8-15 = N 16..31).
         c_acc: This lane's 16-element C accumulator, updated in place.
     """
-    var d_lo = SIMD[DType.float32, 8](0)
+    var d_lo = SIMD[.float32, 8](0)
     _mma_apple_transposable(
         d_lo,
         a_frag,
@@ -239,7 +239,7 @@ def matmul2d_mma_regc_bt_native(
         False,
         True,
     )
-    var d_hi = SIMD[DType.float32, 8](0)
+    var d_hi = SIMD[.float32, 8](0)
     _mma_apple_transposable(
         d_hi,
         a_frag,
@@ -305,9 +305,9 @@ struct Fp4WeightLoader[
     # kernel args these views derive from outlive the K-loop, so the explicit-
     # lifetime case applies. Constructed via `Fp4WeightLoader.from_kernel_args`.
     var a: TileTensor[Self.in_type, Self.a_layout, ImmUntrackedOrigin]
-    var packed: TileTensor[DType.uint8, Self.packed_layout, ImmUntrackedOrigin]
+    var packed: TileTensor[.uint8, Self.packed_layout, ImmUntrackedOrigin]
     var scales: TileTensor[
-        DType.float8_e4m3fn, Self.scale_layout, ImmUntrackedOrigin
+        .float8_e4m3fn, Self.scale_layout, ImmUntrackedOrigin
     ]
     var M: Int
     var N: Int
@@ -317,10 +317,8 @@ struct Fp4WeightLoader[
     @staticmethod
     def from_kernel_args(
         a: TileTensor[Self.in_type, Self.a_layout, ImmutAnyOrigin],
-        packed: TileTensor[DType.uint8, Self.packed_layout, ImmutAnyOrigin],
-        scales: TileTensor[
-            DType.float8_e4m3fn, Self.scale_layout, ImmutAnyOrigin
-        ],
+        packed: TileTensor[.uint8, Self.packed_layout, ImmutAnyOrigin],
+        scales: TileTensor[.float8_e4m3fn, Self.scale_layout, ImmutAnyOrigin],
         M: Int,
         N: Int,
         K: Int,
@@ -433,14 +431,14 @@ struct Fp4WeightLoader[
                 Coord(n_abs, k_abs0 // 2)
             )
             var pw = UInt16(two[0]) | (UInt16(two[1]) << UInt16(8))
-            var nib = SIMD[DType.uint16, 4](0)
+            var nib = SIMD[.uint16, 4](0)
             nib[0] = pw & UInt16(0xF)  # k+0 (lo)
             nib[1] = (pw >> UInt16(4)) & UInt16(0xF)  # k+1 (hi)
             nib[2] = (pw >> UInt16(8)) & UInt16(0xF)  # k+2 (lo)
             nib[3] = (pw >> UInt16(12)) & UInt16(0xF)  # k+3 (hi)
             # One block scale for all 4 K (cb+3 < 16 -> same 16-block).
             var scale_abs = abs(
-                self.scales[n_abs, k_abs0 // Self.SF][0].cast[DType.float32]()
+                self.scales[n_abs, k_abs0 // Self.SF][0].cast[.float32]()
             )
             var dec = (decode_e2m1_to_f32(nib) * scale_abs).cast[Self.in_type]()
             comptime for e in range(4):
@@ -504,20 +502,20 @@ struct Fp4WeightLoader[
         var bytes = self.packed.load[width=bytes_per_thread, alignment=1](
             Coord(n_abs, (k0 // 2) + byte0)
         )
-        var nib = SIMD[DType.uint16, cols_per_thread](0)
+        var nib = SIMD[.uint16, cols_per_thread](0)
         comptime for j in range(bytes_per_thread):
             var bj = UInt16(bytes[j])
             nib[2 * j] = bj & UInt16(0xF)
             nib[2 * j + 1] = (bj >> UInt16(4)) & UInt16(0xF)
         var scale_abs = abs(
-            self.scales[n_abs, (k0 + col0) // Self.SF][0].cast[DType.float32]()
+            self.scales[n_abs, (k0 + col0) // Self.SF][0].cast[.float32]()
         )
         var dec = (decode_e2m1_to_f32(nib) * scale_abs).cast[Self.in_type]()
         b_view.store[width=cols_per_thread](Coord(n_local, col0), dec)
 
 
 struct Matmul2dFp4[
-    c_type: DType = DType.float32,
+    c_type: DType = .float32,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     num_sg_m: Int = 2,
     num_sg_n: Int = 2,
@@ -590,8 +588,8 @@ struct Matmul2dFp4[
     ](
         c: TileTensor[Self.c_type, c_layout, MutAnyOrigin],
         a: TileTensor[Self.in_type, a_layout, ImmutAnyOrigin],
-        packed: TileTensor[DType.uint8, packed_layout, ImmutAnyOrigin],
-        scales: TileTensor[DType.float8_e4m3fn, scale_layout, ImmutAnyOrigin],
+        packed: TileTensor[.uint8, packed_layout, ImmutAnyOrigin],
+        scales: TileTensor[.float8_e4m3fn, scale_layout, ImmutAnyOrigin],
         M_arg: Int32,
         N_arg: Int32,
         K_arg: Int32,
@@ -652,16 +650,14 @@ struct Matmul2dFp4[
             Self.in_type, a_layout, packed_layout, scale_layout
         ].from_kernel_args(a, packed, scales, M, N, K)
 
-        var accs = Array[SIMD[DType.float32, 16], Self.tm * Self.tn](
+        var accs = Array[SIMD[.float32, 16], Self.tm * Self.tn](
             uninitialized=True
         )
         comptime for t in range(Self.tm * Self.tn):
-            accs[t] = SIMD[DType.float32, 16](0)
+            accs[t] = SIMD[.float32, 16](0)
 
-        var a_frag = Array[SIMD[DType.bfloat16, 8], Self.tm](uninitialized=True)
-        var b_frag = Array[SIMD[DType.bfloat16, 16], Self.tn](
-            uninitialized=True
-        )
+        var a_frag = Array[SIMD[.bfloat16, 8], Self.tm](uninitialized=True)
+        var b_frag = Array[SIMD[.bfloat16, 16], Self.tn](uninitialized=True)
 
         var k0 = 0
         while k0 < K:
@@ -711,8 +707,8 @@ struct Matmul2dFp4[
     ](
         c: TileTensor[Self.c_type, c_layout, MutAnyOrigin],
         a: TileTensor[Self.in_type, a_layout, ImmutAnyOrigin],
-        packed: TileTensor[DType.uint8, packed_layout, ImmutAnyOrigin],
-        scales: TileTensor[DType.float8_e4m3fn, scale_layout, ImmutAnyOrigin],
+        packed: TileTensor[.uint8, packed_layout, ImmutAnyOrigin],
+        scales: TileTensor[.float8_e4m3fn, scale_layout, ImmutAnyOrigin],
         M_arg: Int32,
         N_arg: Int32,
         K_arg: Int32,
@@ -785,7 +781,7 @@ struct Matmul2dFp4[
         # are TileTensor indexed (`b_view[n, col]`), in-bounds by construction --
         # no raw SMEM pointer arithmetic.
         var b_sm = unsafe_stack_allocation[
-            BN * BK, Scalar[Self.in_type], address_space=AddressSpace.SHARED
+            BN * BK, Scalar[Self.in_type], address_space=.SHARED
         ]()
         var b_view = TileTensor(b_sm, Layout(Coord(BN, BK), Coord(BK, Idx[1])))
 
@@ -806,16 +802,14 @@ struct Matmul2dFp4[
             Self.in_type, a_layout, packed_layout, scale_layout
         ].from_kernel_args(a, packed, scales, M, N, K)
 
-        var accs = Array[SIMD[DType.float32, 16], Self.tm * Self.tn](
+        var accs = Array[SIMD[.float32, 16], Self.tm * Self.tn](
             uninitialized=True
         )
         comptime for t in range(Self.tm * Self.tn):
-            accs[t] = SIMD[DType.float32, 16](0)
+            accs[t] = SIMD[.float32, 16](0)
 
-        var a_frag = Array[SIMD[DType.bfloat16, 8], Self.tm](uninitialized=True)
-        var b_frag = Array[SIMD[DType.bfloat16, 16], Self.tn](
-            uninitialized=True
-        )
+        var a_frag = Array[SIMD[.bfloat16, 8], Self.tm](uninitialized=True)
+        var b_frag = Array[SIMD[.bfloat16, 16], Self.tn](uninitialized=True)
 
         # This thread's cooperative-decode slot: N-row + contiguous byte-run.
         var dec_nrow = tid // THREADS_PER_ROW
@@ -853,7 +847,7 @@ struct Matmul2dFp4[
                     comptime for jn in range(Self.tn):
                         # SG's N-subtile within the (BN) strip.
                         var n_local0 = (sg_n * Self.tn + jn) * Self.MMA_N
-                        var v = SIMD[DType.bfloat16, 16](0)
+                        var v = SIMD[.bfloat16, 16](0)
                         comptime for i in range(16):
                             var nl = n_local0 + b_nk[i][0]  # local N in [0, BN)
                             var kl = ks + b_nk[i][1]  # local K in [0, BK)
@@ -893,7 +887,7 @@ struct Matmul2dFp4[
 
 @always_inline
 def enqueue_matmul2d_fp4[
-    c_type: DType = DType.float32,
+    c_type: DType = .float32,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     num_sg_m: Int = 2,
     num_sg_n: Int = 2,
@@ -901,9 +895,9 @@ def enqueue_matmul2d_fp4[
     tn: Int = 2,
 ](
     c: TileTensor[mut=True, c_type, ...],
-    a: TileTensor[DType.bfloat16, ...],
-    packed: TileTensor[DType.uint8, ...],
-    scales: TileTensor[DType.float8_e4m3fn, ...],
+    a: TileTensor[.bfloat16, ...],
+    packed: TileTensor[.uint8, ...],
+    scales: TileTensor[.float8_e4m3fn, ...],
     ctx: DeviceContext,
 ) raises:
     """Enqueue the `matmul2d` W4A16 GEMM: `out = a @ dequant(packed, scales)^T`.
@@ -962,9 +956,7 @@ def enqueue_matmul2d_fp4[
         )
 
     comptime assert (
-        c_type == DType.float16
-        or c_type == DType.bfloat16
-        or c_type == DType.float32
+        c_type == .float16 or c_type == .bfloat16 or c_type == .float32
     ), "enqueue_matmul2d_fp4: c_type must be one of {fp16, bf16, fp32}"
 
     var m = Int(c.dim[0]())
@@ -1000,7 +992,7 @@ def enqueue_matmul2d_fp4[
 
 @always_inline
 def enqueue_matmul2d_fp4_smem[
-    c_type: DType = DType.float32,
+    c_type: DType = .float32,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     # Production default = the M5-Max-tuned geometry: 16 simdgroups (512 threads)
     # sharing a NARROW BN=32 decoded B tile (tm=4, tn=1) with a DEEP smem_bk=256
@@ -1023,9 +1015,9 @@ def enqueue_matmul2d_fp4_smem[
     smem_bk: Int = 256,
 ](
     c: TileTensor[mut=True, c_type, ...],
-    a: TileTensor[DType.bfloat16, ...],
-    packed: TileTensor[DType.uint8, ...],
-    scales: TileTensor[DType.float8_e4m3fn, ...],
+    a: TileTensor[.bfloat16, ...],
+    packed: TileTensor[.uint8, ...],
+    scales: TileTensor[.float8_e4m3fn, ...],
     ctx: DeviceContext,
 ) raises:
     """Enqueue the cooperative-decode `matmul2d` W4A16 GEMM (`run_smem_decode`).
@@ -1085,9 +1077,7 @@ def enqueue_matmul2d_fp4_smem[
         )
 
     comptime assert (
-        c_type == DType.float16
-        or c_type == DType.bfloat16
-        or c_type == DType.float32
+        c_type == .float16 or c_type == .bfloat16 or c_type == .float32
     ), "enqueue_matmul2d_fp4_smem: c_type must be one of {fp16, bf16, fp32}"
 
     var m = Int(c.dim[0]())

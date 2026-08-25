@@ -79,7 +79,7 @@ struct TileTensor[
     origin: Origin[mut=mut],
     *,
     Storage: TensorStorage = PointerStorage[element_width=1],
-    address_space: AddressSpace = AddressSpace.GENERIC,
+    address_space: AddressSpace = .GENERIC,
     linear_idx_type: DType = _get_index_type[LayoutType](address_space),
 ](DevicePassable, ImplicitlyCopyable, TrivialRegisterPassable, Writable):
     """A tensor type with trait-based layouts supporting nested and hierarchical
@@ -158,7 +158,7 @@ struct TileTensor[
     comptime TileResultType[
         tile_shape_types: TypeList[Trait=CoordLike, ...],
         *,
-        linear_idx_type: DType = DType.int,
+        linear_idx_type: DType = .int,
     ] = TileTensor[
         Self.dtype,
         Layout[
@@ -283,7 +283,7 @@ struct TileTensor[
         Self.LayoutType,
         Self.origin,
         Storage=PointerStorage[element_width=1],
-        address_space=AddressSpace.GENERIC,
+        address_space=.GENERIC,
         linear_idx_type=Self.linear_idx_type,
     ]
     """Type alias for this tensor with GENERIC address space.
@@ -297,7 +297,7 @@ struct TileTensor[
         Self.LayoutType,
         origin,
         Storage=DevicePointerStorage[element_width=1],
-        address_space=AddressSpace.GENERIC,
+        address_space=.GENERIC,
         linear_idx_type=Self.linear_idx_type,
     ]
     """Type alias for this tensor backed by `DevicePointerStorage`.
@@ -1151,11 +1151,7 @@ struct TileTensor[
     def _distance(
         self: Self.Immut,
         other: TileTensor[
-            mut=False,
-            Self.dtype,
-            _,
-            address_space=Self.address_space,
-            ...,
+            mut=False, Self.dtype, _, address_space=Self.address_space, ...
         ],
     ) -> Scalar[Self.linear_idx_type]:
         """Calculate the element-wise distance between this tensor's storage
@@ -1413,7 +1409,7 @@ struct TileTensor[
         )
 
     comptime ViewType[new_layout: TensorLayout] = TileTensor[
-        dtype=Self.dtype,
+        Self.dtype,
         LayoutType=new_layout,
         origin=Self.origin,
         Storage=Self.Storage,
@@ -1432,7 +1428,7 @@ struct TileTensor[
         offsets: TypeList[Trait=CoordLike, ...],
         LayoutType: TensorLayout = Self.LayoutType,
     ] = TileTensor[
-        dtype=Self.dtype,
+        Self.dtype,
         LayoutType=LayoutType,
         origin=Self.origin,
         Storage=Self.Storage.OffsetResultType[offsets],
@@ -1591,7 +1587,7 @@ struct TileTensor[
         swizzle: Optional[Swizzle] = None,
     ](self, thread_id: Int) -> Tuple[
         TileTensor[
-            dtype=Self.dtype,
+            Self.dtype,
             origin=Self.origin,
             LayoutType=Layout[
                 shape_types=_Divide[
@@ -2176,7 +2172,7 @@ struct TileTensor[
     # ===------------------------------------------------------------------=== #
 
     comptime VectorizedType[*vector_shape: Int] = TileTensor[
-        dtype=Self.dtype,
+        Self.dtype,
         origin=Self.origin,
         LayoutType=Layout[
             shape_types=_CeilDiv[
@@ -2505,7 +2501,7 @@ struct TileTensor[
             from layout.tile_layout import row_major
             var storage = Array[Float32, 12](uninitialized=True)
             var tensor = TileTensor(Span(storage), row_major[3, 4]())
-            var dynamic = tensor.make_dynamic[DType.int64]()
+            var dynamic = tensor.make_dynamic[.int64]()
             # dynamic has Int64 for all shape/stride dimensions
             ```
         """
@@ -2634,7 +2630,7 @@ struct TileTensor[
         }
 
     comptime AddressSpaceCastType[address_space: AddressSpace] = TileTensor[
-        dtype=Self.dtype,
+        Self.dtype,
         origin=Self.origin,
         LayoutType=Self.LayoutType,
         Storage=Self.Storage,
@@ -2915,7 +2911,7 @@ struct NullableTileTensor[
     LayoutType: TensorLayout,
     origin: Origin[mut=mut],
     *,
-    address_space: AddressSpace = AddressSpace.GENERIC,
+    address_space: AddressSpace = .GENERIC,
     linear_idx_type: DType = _get_index_type[LayoutType](address_space),
     element_size: Int = 1,
 ](ImplicitlyCopyable, RegisterPassable):
@@ -3010,7 +3006,7 @@ struct NullableTileTensor[
         Self.dtype,
         Self.LayoutType,
         Self.origin,
-        address_space=AddressSpace.GENERIC,
+        address_space=.GENERIC,
         linear_idx_type=Self.linear_idx_type,
     ]
     """Type alias for this tensor with GENERIC address space.
@@ -3229,7 +3225,7 @@ comptime _ComptimeConditionalTileTensor[
     origin: Origin[mut=mut],
     *,
     engaged: Bool = False,
-    address_space: AddressSpace = AddressSpace.GENERIC,
+    address_space: AddressSpace = .GENERIC,
     linear_idx_type: DType = _get_index_type[LayoutType](address_space),
 ] = _ComptimeConditional[
     TileTensor[
@@ -3248,13 +3244,10 @@ def stack_allocation[
     LayoutType: TensorLayout,
     //,
     dtype: DType,
-    address_space: AddressSpace = AddressSpace.GENERIC,
+    address_space: AddressSpace = .GENERIC,
     alignment: Int = align_of[dtype](),
 ](var layout: LayoutType) -> TileTensor[
-    dtype,
-    LayoutType,
-    MutUntrackedOrigin,
-    address_space=address_space,
+    dtype, LayoutType, MutUntrackedOrigin, address_space=address_space
 ] where LayoutType.all_dims_known:
     """Allocate a TileTensor on the stack with the given layout.
 
@@ -3283,10 +3276,7 @@ def stack_allocation[
         All layout dimensions must be statically known.
     """
     return TileTensor[
-        dtype,
-        LayoutType,
-        MutUntrackedOrigin,
-        address_space=address_space,
+        dtype, LayoutType, MutUntrackedOrigin, address_space=address_space
     ](
         _std_stack_allocation[
             Coord[*LayoutType._shape_types].static_product,
@@ -3581,10 +3571,7 @@ def _tile[
     tile_shape_types: TypeList[Trait=CoordLike, ...],
     //,
 ](
-    data_layout_tensor: TileTensor[
-        dtype,
-        ...,
-    ],
+    data_layout_tensor: TileTensor[dtype, ...],
     tile_shape: Coord[*tile_shape_types],
     tile_coords: Coord[*coord_types],
 ) -> data_layout_tensor.TileResultType[
@@ -3678,10 +3665,7 @@ def _tile_with_offset[
     tile_shape_types: TypeList[Trait=CoordLike, ...],
     //,
 ](
-    data_layout_tensor: TileTensor[
-        dtype,
-        ...,
-    ],
+    data_layout_tensor: TileTensor[dtype, ...],
     tile_shape: Coord[*tile_shape_types],
     tile_coords: Coord[*coord_types],
 ) -> Tuple[
@@ -3749,10 +3733,7 @@ def _tile[
     *,
     stride_layout: TensorLayout,
 ](
-    data_layout_tensor: TileTensor[
-        dtype,
-        ...,
-    ],
+    data_layout_tensor: TileTensor[dtype, ...],
     tile_shape: Coord[*tile_shape_types],
     tile_coords: Coord[*coord_types],
 ) -> data_layout_tensor.OffsetViewType[
@@ -3808,10 +3789,7 @@ def _tile_with_offset[
     *,
     stride_layout: TensorLayout,
 ](
-    data_layout_tensor: TileTensor[
-        dtype,
-        ...,
-    ],
+    data_layout_tensor: TileTensor[dtype, ...],
     tile_shape: Coord[*tile_shape_types],
     tile_coords: Coord[*coord_types],
 ) -> Tuple[
@@ -4137,7 +4115,7 @@ def flatten_leading[
     layout: TensorLayout,
     //,
 ](
-    tensor: TileTensor[dtype=dtype, LayoutType=layout, ...],
+    tensor: TileTensor[dtype, LayoutType=layout, ...],
 ) -> tensor.ViewType[
     RowMajorLayout[
         *Coord[Int64, layout._shape_types[layout.rank - 1]].element_types
@@ -4259,12 +4237,12 @@ def lt_to_tt[
     comptime for i in range(rank):
         comptime if not shape_c.element_types[i].is_static_value:
             shape_c[i] = rebind[shape_c.element_types[i]](
-                Scalar[DType.int64](lt.runtime_layout.shape.value[i])
+                Int64(lt.runtime_layout.shape.value[i])
             )
 
         comptime if not stride_c.element_types[i].is_static_value:
             stride_c[i] = rebind[stride_c.element_types[i]](
-                Scalar[DType.int64](lt.runtime_layout.stride.value[i])
+                Int64(lt.runtime_layout.stride.value[i])
             )
 
     var ptr = Pointer[Scalar[dtype], lt.origin, address_space=lt.address_space](
@@ -4284,7 +4262,7 @@ def lt_to_tt_idx[
     lt_layout: _LegacyLayout,
     //,
     ResultLayout: TensorLayout = LTToTTLayout[lt_layout],
-    linear_idx_type: DType = DType.int64,
+    linear_idx_type: DType = .int64,
 ](lt: _LayoutTensor[dtype, lt_layout, ...]) -> TileTensor[
     dtype,
     Layout[
@@ -4333,12 +4311,12 @@ def lt_to_tt_idx[
     comptime for i in range(rank):
         comptime if not shape_c.element_types[i].is_static_value:
             shape_c[i] = rebind[shape_c.element_types[i]](
-                Scalar[DType.int64](lt.runtime_layout.shape.value[i])
+                Int64(lt.runtime_layout.shape.value[i])
             )
 
         comptime if not stride_c.element_types[i].is_static_value:
             stride_c[i] = rebind[stride_c.element_types[i]](
-                Scalar[DType.int64](lt.runtime_layout.stride.value[i])
+                Int64(lt.runtime_layout.stride.value[i])
             )
 
     var ptr = Pointer[Scalar[dtype], lt.origin, address_space=lt.address_space](

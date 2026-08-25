@@ -62,17 +62,17 @@ def execute_fp8_index[
     var ks_size = batch_size * num_keys
     var o_size = batch_size * seq_len * num_keys
 
-    var q_device_ptr = ctx.enqueue_create_buffer[DType.float8_e4m3fn](q_size)
-    var qs_device_ptr = ctx.enqueue_create_buffer[DType.float32](qs_size)
-    var k_device_ptr = ctx.enqueue_create_buffer[DType.float8_e4m3fn](k_size)
-    var ks_device_ptr = ctx.enqueue_create_buffer[DType.float32](ks_size)
-    var input_row_offsets_device_ptr = ctx.enqueue_create_buffer[DType.uint32](
+    var q_device_ptr = ctx.enqueue_create_buffer[.float8_e4m3fn](q_size)
+    var qs_device_ptr = ctx.enqueue_create_buffer[.float32](qs_size)
+    var k_device_ptr = ctx.enqueue_create_buffer[.float8_e4m3fn](k_size)
+    var ks_device_ptr = ctx.enqueue_create_buffer[.float32](ks_size)
+    var input_row_offsets_device_ptr = ctx.enqueue_create_buffer[.uint32](
         batch_size + 1
     )
-    var cache_row_offsets_device_ptr = ctx.enqueue_create_buffer[DType.uint32](
+    var cache_row_offsets_device_ptr = ctx.enqueue_create_buffer[.uint32](
         batch_size + 1
     )
-    var o_device_ptr = ctx.enqueue_create_buffer[DType.float32](o_size)
+    var o_device_ptr = ctx.enqueue_create_buffer[.float32](o_size)
 
     var q_layout = row_major((batch_size * seq_len, Idx[num_heads], Idx[depth]))
     var qs_layout = row_major((batch_size * seq_len, Idx[num_heads]))
@@ -119,18 +119,19 @@ def execute_fp8_index[
 
     if run_benchmark:
 
-        @__parameter
-        @__copy_capture(
-            q_device,
-            qs_device,
-            k_device,
-            ks_device,
-            o_device,
-            input_row_offsets_device,
-            cache_row_offsets_device,
-        )
         @always_inline
-        def bench_func(mut b: Bencher):
+        def bench_func(
+            mut b: Bencher,
+        ) raises {
+            var q_device,
+            var qs_device,
+            var k_device,
+            var ks_device,
+            var o_device,
+            var input_row_offsets_device,
+            var cache_row_offsets_device,
+            imm,
+        }:
             @always_inline
             def kernel_launch(ctx: DeviceContext) raises {imm}:
                 fp8_index[num_heads, depth](
@@ -149,7 +150,8 @@ def execute_fp8_index[
 
             bencher_iter_custom(b, kernel_launch, ctx)
 
-        m.bench_function[bench_func](
+        m.bench_function(
+            bench_func,
             BenchId(
                 _get_run_name[num_heads, depth](batch_size, seq_len, num_keys)
             ),

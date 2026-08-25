@@ -38,6 +38,7 @@ from max.pipelines.lib.config.model_config import (
 from max.pipelines.lib.interfaces.arch_config import (
     ArchConfigWithKVCache,
     ArchConfigWithStoredKVParams,
+    ArchConfigWithVisionCache,
 )
 from max.pipelines.modeling.config_enums import (
     SupportedEncoding,
@@ -181,14 +182,13 @@ class Gemma4TextConfig(Gemma3Config):
     @classmethod
     def calculate_max_seq_len(
         cls,
-        pipeline_config: PipelineConfig,
         huggingface_config: AutoConfig,
-        model_config: MAXModelConfig | None = None,
+        model_config: MAXModelConfig,
     ) -> int:
         # Gemma3Config (parent) is permissive; Gemma4 text uses upper-bounded
         # max_length semantics instead.
         return ArchConfigWithStoredKVParams.calculate_max_seq_len(
-            pipeline_config, huggingface_config, model_config
+            huggingface_config, model_config
         )
 
     @classmethod
@@ -196,6 +196,8 @@ class Gemma4TextConfig(Gemma3Config):
         cls,
         pipeline_config: PipelineConfig,
         huggingface_config: AutoConfig,
+        *,
+        max_seq_len: int,
     ) -> Self:
         """Initialize Gemma4TextConfig from pipeline and HuggingFace configs.
 
@@ -266,9 +268,7 @@ class Gemma4TextConfig(Gemma3Config):
             head_dim=huggingface_config.head_dim,
             hidden_activation=hidden_activation,
             max_position_embeddings=huggingface_config.max_position_embeddings,
-            max_seq_len=Gemma4TextConfig.calculate_max_seq_len(
-                pipeline_config, huggingface_config=huggingface_config
-            ),
+            max_seq_len=max_seq_len,
             rms_norm_eps=huggingface_config.rms_norm_eps,
             # Gemma4 uses different ropes for global and sliding window attention
             rope_theta=-1,
@@ -433,7 +433,9 @@ class Gemma4VisionConfig:
 
 
 @dataclass(kw_only=True)
-class Gemma4ForConditionalGenerationConfig(ArchConfigWithKVCache):
+class Gemma4ForConditionalGenerationConfig(
+    ArchConfigWithKVCache, ArchConfigWithVisionCache
+):
     """Base configuration for Gemma 4 multimodal models.
 
     This is the top-level config that composes text and vision sub-configs.
@@ -561,13 +563,15 @@ class Gemma4ForConditionalGenerationConfig(ArchConfigWithKVCache):
             }
         )
 
-    @staticmethod
+    @classmethod
     def calculate_max_seq_len(
-        pipeline_config: PipelineConfig, huggingface_config: AutoConfig
+        cls,
+        huggingface_config: AutoConfig,
+        model_config: MAXModelConfig,
     ) -> int:
         """Calculates the maximum sequence length for the Gemma 4 model."""
         return Gemma4TextConfig.calculate_max_seq_len(
-            pipeline_config, huggingface_config.text_config
+            huggingface_config.text_config, model_config
         )
 
     @override
@@ -576,6 +580,8 @@ class Gemma4ForConditionalGenerationConfig(ArchConfigWithKVCache):
         cls,
         pipeline_config: PipelineConfig,
         model_config: MAXModelConfig | None = None,
+        *,
+        max_seq_len: int,
     ) -> Self:
         """Initializes from pipeline configuration.
 
@@ -595,13 +601,17 @@ class Gemma4ForConditionalGenerationConfig(ArchConfigWithKVCache):
                 " Please ensure the model repository contains a valid"
                 " config.json file."
             )
-        return cls.initialize_from_config(pipeline_config, huggingface_config)
+        return cls.initialize_from_config(
+            pipeline_config, huggingface_config, max_seq_len=max_seq_len
+        )
 
     @classmethod
     def initialize_from_config(
         cls,
         pipeline_config: PipelineConfig,
         huggingface_config: AutoConfig,
+        *,
+        max_seq_len: int,
     ) -> Self:
         """Initializes from pipeline and HuggingFace configs.
 
@@ -654,6 +664,7 @@ class Gemma4ForConditionalGenerationConfig(ArchConfigWithKVCache):
         text_config = Gemma4TextConfig.initialize_from_config(
             pipeline_config=pipeline_config,
             huggingface_config=hf_text_config,
+            max_seq_len=max_seq_len,
         )
 
         kv_params = cls.construct_kv_params(
@@ -723,3 +734,64 @@ class Gemma4ForConditionalGenerationConfig(ArchConfigWithKVCache):
             return_logits=return_logits,
             quant_config=quant_config,
         )
+
+    @classmethod
+    def estimate_vision_cache_entry_bytes(
+        cls,
+        huggingface_config: AutoConfig,
+    ) -> int:
+        """Estimates per-entry bytes for the Gemma4 vision encoder cache.
+
+        Worst-case tokens per image is
+        ``position_embedding_size / pooling_kernel_size²``, stored at the text
+        hidden size in bfloat16.
+
+        Args:
+            huggingface_config: HuggingFace model configuration.
+
+        Returns:
+            Estimated bytes per vision cache entry.
+
+        Raises:
+            ValueError: If the required vision or text config is absent.
+        """
+        vision_config = getattr(huggingface_config, "vision_config", None)
+        if vision_config is None:
+            raise ValueError(
+                "Gemma4 requires a vision_config in the HuggingFace config"
+            )
+        text_config = getattr(huggingface_config, "text_config", None)
+        if text_config is None:
+            raise ValueError(
+                "Gemma4 requires a text_config in the HuggingFace config"
+            )
+        if getattr(huggingface_config, "model_type", None) == "gemma4_unified":
+            # These checkpoints are served text-only (different vision
+            # schema); no vision cache is needed.
+            return 0
+        k = vision_config.pooling_kernel_size
+        max_tokens = vision_config.position_embedding_size // (k * k)
+        spec = cls.get_vision_cache_row_spec(huggingface_config)
+        if spec is None:
+            return 0
+        hidden, dtype = spec
+        return max_tokens * hidden * dtype.size_in_bytes
+
+    @classmethod
+    def get_vision_cache_row_spec(
+        cls,
+        huggingface_config: AutoConfig,
+    ) -> tuple[int, DType] | None:
+        """One embedding row per merged vision token: text hidden, bfloat16.
+
+        ``None`` for the text-only ``gemma4_unified`` checkpoints, which
+        have no vision cache.
+        """
+        if getattr(huggingface_config, "model_type", None) == "gemma4_unified":
+            return None
+        text_config = getattr(huggingface_config, "text_config", None)
+        if text_config is None:
+            raise ValueError(
+                "Gemma4 requires a text_config in the HuggingFace config"
+            )
+        return (text_config.hidden_size, DType.bfloat16)

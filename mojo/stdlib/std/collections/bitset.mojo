@@ -133,7 +133,7 @@ struct BitSet[size: Int](Boolable, Copyable, Defaultable, Sized, Writable):
         """Initializes an empty BitSet with zero capacity and size."""
         self._words = type_of(self._words)(fill=0)
 
-    def __init__(init: SIMD[DType.bool, _], out self: BitSet[init.length]):
+    def __init__(init: SIMD[.bool, _], out self: BitSet[init.length]):
         """Initializes a BitSet with the given SIMD vector of booleans.
 
         Args:
@@ -148,7 +148,7 @@ struct BitSet[size: Int](Boolable, Copyable, Defaultable, Sized, Writable):
         comptime for i in range(Self._words_size):
             self._words.unsafe_get(i) = pack_bits(
                 init.slice[step, offset=i * step]()
-            ).cast[DType.int64]()
+            ).cast[.int64]()
 
     def __init__[
         other_size: Int,
@@ -399,7 +399,7 @@ struct BitSet[size: Int](Boolable, Copyable, Defaultable, Sized, Writable):
             @always_inline
             def _violations[
                 width: Int, //
-            ](word: SIMD[DType.int64, width]) -> SIMD[DType.int64, width]:
+            ](word: SIMD[.int64, width]) -> SIMD[.int64, width]:
                 comptime if bit_value:
                     return ~word
                 else:
@@ -493,9 +493,11 @@ struct BitSet[size: Int](Boolable, Copyable, Defaultable, Sized, Writable):
             def[
                 simd_width: Int
             ](
-                SIMD[DType.int64, simd_width],
-                SIMD[DType.int64, simd_width],
-            ) -> SIMD[DType.int64, simd_width]
+                SIMD[.int64, simd_width],
+                SIMD[.int64, simd_width],
+            ) -> SIMD[
+                .int64, simd_width
+            ]
         ],
     ) -> Self:
         """Applies a vectorized binary operation between two bitsets.
@@ -530,8 +532,8 @@ struct BitSet[size: Int](Boolable, Copyable, Defaultable, Sized, Writable):
             simd_width: Int
         ](offset: Int) {mut res, imm left, imm right, imm func}:
             # Initialize SIMD vectors to hold multiple words from each bitset
-            var left_vec = SIMD[DType.int64, simd_width]()
-            var right_vec = SIMD[DType.int64, simd_width]()
+            var left_vec = SIMD[.int64, simd_width]()
+            var right_vec = SIMD[.int64, simd_width]()
 
             # Load a batch of words from both bitsets into SIMD vectors
             comptime for i in range(simd_width):
@@ -577,9 +579,9 @@ struct BitSet[size: Int](Boolable, Copyable, Defaultable, Sized, Writable):
         def _union[
             simd_width: Int
         ](
-            left: SIMD[DType.int64, simd_width],
-            right: SIMD[DType.int64, simd_width],
-        ) -> SIMD[DType.int64, simd_width]:
+            left: SIMD[.int64, simd_width],
+            right: SIMD[.int64, simd_width],
+        ) -> SIMD[.int64, simd_width]:
             return left | right
 
         return Self._vectorize_apply(self, other, _union)
@@ -598,9 +600,9 @@ struct BitSet[size: Int](Boolable, Copyable, Defaultable, Sized, Writable):
         def _intersection[
             simd_width: Int
         ](
-            left: SIMD[DType.int64, simd_width],
-            right: SIMD[DType.int64, simd_width],
-        ) -> SIMD[DType.int64, simd_width]:
+            left: SIMD[.int64, simd_width],
+            right: SIMD[.int64, simd_width],
+        ) -> SIMD[.int64, simd_width]:
             return left & right
 
         return Self._vectorize_apply(self, other, _intersection)
@@ -619,9 +621,9 @@ struct BitSet[size: Int](Boolable, Copyable, Defaultable, Sized, Writable):
         def _difference[
             simd_width: Int
         ](
-            left: SIMD[DType.int64, simd_width],
-            right: SIMD[DType.int64, simd_width],
-        ) -> SIMD[DType.int64, simd_width]:
+            left: SIMD[.int64, simd_width],
+            right: SIMD[.int64, simd_width],
+        ) -> SIMD[.int64, simd_width]:
             return left & ~right
 
         return Self._vectorize_apply(self, other, _difference)

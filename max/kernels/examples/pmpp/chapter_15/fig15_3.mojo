@@ -34,12 +34,7 @@ def loadTile(
     lda: Int,
     maxRow: Int,
     maxCol: Int,
-    T_s: UnsafePointer[
-        mut=True,
-        Scalar[DType.float32],
-        _,
-        address_space=AddressSpace.SHARED,
-    ],
+    T_s: UnsafePointer[mut=True, Float32, _, address_space=.SHARED],
     ldas: Int,
     height: Int,
     width: Int,
@@ -66,9 +61,9 @@ def loadTile(
         row += subtile * num_rows_per_tile
 
         if row < maxRow and col < maxCol:
-            T_s[row * ldas + col] = Scalar[DType.float32](T[row * lda + col])
+            T_s[row * ldas + col] = Float32(T[row * lda + col])
         else:
-            T_s[row * ldas + col] = Scalar[DType.float32](0.0)
+            T_s[row * ldas + col] = Float32(0.0)
 
 
 def mm_tiled_kernel(
@@ -102,18 +97,18 @@ def mm_tiled_kernel(
     var tCol = tile_y * tN
 
     # Register accumulator - use SIMD vector
-    var Cr = SIMD[DType.float32, tM * tN](0.0)
+    var Cr = SIMD[.float32, tM * tN](0.0)
 
     # Allocate shared memory
     var A_s = unsafe_stack_allocation[
         bM * bK,
-        Scalar[DType.float32],
-        address_space=AddressSpace.SHARED,
+        Float32,
+        address_space=.SHARED,
     ]()
     var B_s = unsafe_stack_allocation[
         bK * bN,
-        Scalar[DType.float32],
-        address_space=AddressSpace.SHARED,
+        Float32,
+        address_space=.SHARED,
     ]()
 
     # Iterate over tiles

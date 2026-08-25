@@ -64,6 +64,7 @@ from max.pipelines.lib.eplb_stats import (
     EplbStatsMetadata,
     EplbStatsSnapshot,
 )
+from max.pipelines.lib.memory_estimation import MemoryPlan
 from max.pipelines.lib.vision_encoder_cache import VisionEncodeResult
 from max.pipelines.modeling.config_enums import is_float4_encoding
 from max.pipelines.weights.block_scaled_preshuffle import (
@@ -187,6 +188,8 @@ class KimiK2_5Model(
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
         weights: Weights,
+        *,
+        memory_plan: MemoryPlan,
         adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.ALL,
         return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
@@ -203,10 +206,11 @@ class KimiK2_5Model(
             devices,
             kv_cache_config,
             weights,
-            adapter,
-            return_logits,
-            return_hidden_states,
+            adapter=adapter,
+            return_logits=return_logits,
+            return_hidden_states=return_hidden_states,
             max_batch_size=max_batch_size,
+            memory_plan=memory_plan,
         )
 
         self.vision_model, self.language_model = self.load_model(session)
@@ -275,9 +279,7 @@ class KimiK2_5Model(
         #   == num_devices  ->  DP attention  (each device owns a batch shard)
         #   == 1            ->  TP attention  (heads sharded, tokens replicated)
         data_parallel_degree = self.pipeline_config.model.data_parallel_degree
-        max_batch_total_tokens = (
-            self.pipeline_config.runtime.max_batch_total_tokens
-        )
+        max_batch_total_tokens = self.planned_max_batch_total_tokens
         # PipelineConfig would automatically resolve it if not set by user.
         assert max_batch_total_tokens is not None, "max_length must be set"
 
@@ -386,7 +388,9 @@ class KimiK2_5Model(
             correction_bias_dtype = None
 
         # Initialize config with parameters from pipeline_config
-        model_config = KimiK2_5TextConfig.initialize(self.pipeline_config)
+        model_config = KimiK2_5TextConfig.initialize(
+            self.pipeline_config, max_seq_len=self.max_seq_len
+        )
 
         # Finalize config with state_dict-dependent parameters
         model_config.norm_dtype = norm_dtype
@@ -517,6 +521,7 @@ class KimiK2_5Model(
             pipeline_config=self.pipeline_config,
             huggingface_config=self.huggingface_config,
             llm_config=config,
+            max_seq_len=self.max_seq_len,
         )
         self.model_config = kimik2_5_config
         self.nn_model = KimiK2_5(self.model_config)

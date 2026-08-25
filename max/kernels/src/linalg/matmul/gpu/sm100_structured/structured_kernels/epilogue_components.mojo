@@ -157,9 +157,7 @@ def st_shared_frag_to_smem[
 ](
     vec: Array[Scalar[vec_dtype], vec_size],
     dst: TileTensor[
-        address_space=AddressSpace.SHARED,
-        Storage=PointerStorage[element_width=1],
-        ...,
+        address_space=.SHARED, Storage=PointerStorage[element_width=1], ...
     ],
     warp_offset: UInt32 = 0,
 ):
@@ -174,7 +172,7 @@ def st_shared_frag_to_smem[
     per-store offsets are even.
     """
     comptime assert (
-        dst.dtype == DType.float32 or stageN == 16
+        dst.dtype == .float32 or stageN == 16
     ), "stageN must be 16 for FP8 output type"
     comptime assert vec_dtype == dst.dtype and dst.dtype in (
         DType.float8_e4m3fn,
@@ -276,9 +274,7 @@ def store_fragment_to_smem[
 ](
     vec: Array[Scalar[vec_dtype], vec_size],
     dst: TileTensor[
-        address_space=AddressSpace.SHARED,
-        Storage=PointerStorage[element_width=1],
-        ...,
+        address_space=.SHARED, Storage=PointerStorage[element_width=1], ...
     ],
     warp_offset: UInt32 = 0,
 ):
@@ -348,7 +344,7 @@ def store_fragment_to_smem[
 
         st_matrix[simd_width=stmtx_simd_width, transpose=transpose_c](
             dst._storage.unsafe_mut_cast[True]() + offset,
-            bitcast[DType.float32, stmtx_simd_width](v),
+            bitcast[.float32, stmtx_simd_width](v),
         )
 
 
@@ -536,9 +532,7 @@ struct TMAStoreExecutor[
         desc_shape: IndexList[tma_rank],
         //,
     ](
-        c_smem_tile: TileTensor[
-            dtype=Self.c_type, address_space=AddressSpace.SHARED, ...
-        ],
+        c_smem_tile: TileTensor[Self.c_type, address_space=.SHARED, ...],
         store_coords: TMAStoreCoords[
             Self.epc,
             Self.c_smem_shape0,
@@ -576,9 +570,7 @@ struct TMAStoreExecutor[
         tile_shape: IndexList[tma_rank],
         desc_shape: IndexList[tma_rank],
     ](
-        c_smem_tile: TileTensor[
-            dtype=Self.c_type, address_space=AddressSpace.SHARED, ...
-        ],
+        c_smem_tile: TileTensor[Self.c_type, address_space=.SHARED, ...],
         store_coords: TMAStoreCoords[
             Self.epc,
             Self.c_smem_shape0,
@@ -609,9 +601,7 @@ struct TMAStoreExecutor[
         tile_shape: IndexList[tma_rank],
         desc_shape: IndexList[tma_rank],
     ](
-        c_smem_tile: TileTensor[
-            dtype=Self.c_type, address_space=AddressSpace.SHARED, ...
-        ],
+        c_smem_tile: TileTensor[Self.c_type, address_space=.SHARED, ...],
         store_coords: TMAStoreCoords[
             Self.epc,
             Self.c_smem_shape0,
@@ -733,8 +723,8 @@ struct TMAReduceExecutor[
         desc_shape: IndexList[tma_rank],
     ](
         c_smem_tile: TileTensor[
-            dtype=Self.c_type,
-            address_space=AddressSpace.SHARED,
+            Self.c_type,
+            address_space=.SHARED,
             Storage=PointerStorage[element_width=1],
             ...,
         ],
@@ -1234,9 +1224,7 @@ struct EpilogueApplier[
         local_row: UInt32,
         local_col: UInt32,
         is_upper: Bool,
-        src_ptr: UnsafePointer[
-            Scalar[c_type], _, address_space=AddressSpace.SHARED
-        ],
+        src_ptr: UnsafePointer[Scalar[c_type], _, address_space=.SHARED],
         beta: Scalar[epilogue_dtype],
     ):
         """Add beta * C to fragment elements by loading C from swizzled SMEM.
@@ -1301,9 +1289,7 @@ struct EpilogueApplier[
         mut upper_frag: Array[Scalar[epilogue_dtype], frag_size],
         mut lower_frag: Array[Scalar[epilogue_dtype], frag_size],
         stage: UInt32,
-        src_ptr: UnsafePointer[
-            Scalar[c_type], _, address_space=AddressSpace.SHARED
-        ],
+        src_ptr: UnsafePointer[Scalar[c_type], _, address_space=.SHARED],
         beta: Scalar[epilogue_dtype],
     ) -> Tuple[
         Array[Scalar[epilogue_dtype], frag_size],
@@ -1395,9 +1381,7 @@ struct TMEMToSMemWriter[
             Scalar[Self.c_type], Self.Config.fragment_size * repeat
         ],
         c_smem_tile: TileTensor[
-            address_space=AddressSpace.SHARED,
-            Storage=PointerStorage[element_width=1],
-            ...,
+            address_space=.SHARED, Storage=PointerStorage[element_width=1], ...
         ],
     ):
         """Write pre-loaded fragments to SMEM."""
@@ -1424,9 +1408,7 @@ struct TMEMToSMemWriter[
             Scalar[Self.c_type], Self.Config.fragment_size * repeat
         ],
         c_smem_tile: TileTensor[
-            address_space=AddressSpace.SHARED,
-            Storage=PointerStorage[element_width=1],
-            ...,
+            address_space=.SHARED, Storage=PointerStorage[element_width=1], ...
         ],
     ):
         """Transposed output using reshape.
@@ -1593,9 +1575,7 @@ struct TMEMToSMemWriter[
             Scalar[Self.c_type], Self.Config.fragment_size * repeat
         ],
         c_smem_tile: TileTensor[
-            address_space=AddressSpace.SHARED,
-            Storage=PointerStorage[element_width=1],
-            ...,
+            address_space=.SHARED, Storage=PointerStorage[element_width=1], ...
         ],
     ):
         """Non-transposed output."""
@@ -1736,8 +1716,8 @@ struct SMemEpilogueWriter[
         upper_frag: Array[Scalar[Self.epilogue_dtype], Self.rep_frag_size],
         lower_frag: Array[Scalar[Self.epilogue_dtype], Self.rep_frag_size],
         c_smem_tile: TileTensor[
-            dtype=Self.c_type,
-            address_space=AddressSpace.SHARED,
+            Self.c_type,
+            address_space=.SHARED,
             Storage=PointerStorage[element_width=1],
             ...,
         ],
@@ -1889,8 +1869,8 @@ struct SMemEpilogueWriter[
         upper_frag: Array[Scalar[Self.epilogue_dtype], Self.rep_frag_size],
         lower_frag: Array[Scalar[Self.epilogue_dtype], Self.rep_frag_size],
         c_smem_tile: TileTensor[
-            dtype=Self.c_type,
-            address_space=AddressSpace.SHARED,
+            Self.c_type,
+            address_space=.SHARED,
             Storage=PointerStorage[element_width=1],
             ...,
         ],
@@ -1929,9 +1909,7 @@ struct SMemEpilogueWriter[
         # aliasing (upper and lower share the same c_smem_tile origin).
         comptime warp_tile_layout = row_major[Self.data_paths, Self.stageN]()
         comptime SMemPtr = UnsafePointer[
-            Scalar[Self.c_type],
-            MutUntrackedOrigin,
-            address_space=AddressSpace.SHARED,
+            Scalar[Self.c_type], MutUntrackedOrigin, address_space=.SHARED
         ]
         var upper_tile = TileTensor(
             rebind[SMemPtr](c_smem_warp_tile_upper._storage),
@@ -1992,8 +1970,8 @@ def shared_memory_epilogue_transpose[
     c_col: Int,
     c_row: Int,
     c_smem: TileTensor[
-        dtype=c_type,
-        address_space=AddressSpace.SHARED,
+        c_type,
+        address_space=.SHARED,
         Storage=PointerStorage[element_width=1],
         ...,
     ],
@@ -2030,7 +2008,7 @@ def shared_memory_epilogue_transpose[
                     UNKNOWN_VALUE, iter_j, UNKNOWN_VALUE, iter_i
                 )
                 var coord = RuntimeTuple[
-                    [thread_shape, rest_shape], element_type=DType.uint32
+                    [thread_shape, rest_shape], element_type=.uint32
                 ](
                     Int(0),
                     Int(crd[1].value()),
@@ -2111,7 +2089,7 @@ def shared_memory_epilogue_transpose[
                         iter_i,
                     )
                     var coord = RuntimeTuple[
-                        [thread_shape, rest_shape], element_type=DType.uint32
+                        [thread_shape, rest_shape], element_type=.uint32
                     ](
                         Int(crd[0].value()),
                         Int(0),
@@ -2177,14 +2155,14 @@ def shared_memory_epilogue[
     c_col: Int,
     c_row: Int,
     c_smem_warp_tile_upper: TileTensor[
-        dtype=c_type,
-        address_space=AddressSpace.SHARED,
+        c_type,
+        address_space=.SHARED,
         Storage=PointerStorage[element_width=1],
         ...,
     ],
     c_smem_warp_tile_lower: TileTensor[
-        dtype=c_type,
-        address_space=AddressSpace.SHARED,
+        c_type,
+        address_space=.SHARED,
         Storage=PointerStorage[element_width=1],
         ...,
     ],
@@ -2266,11 +2244,11 @@ def shared_memory_epilogue[
                     RuntimeTuple[IntTuple(UNKNOWN_VALUE)](offset_upper),
                     RuntimeTuple[
                         blocked_m_128_layout.shape,
-                        element_type=DType.int64,
+                        element_type=.int64,
                     ](),
                     RuntimeTuple[
                         blocked_m_128_layout.stride,
-                        element_type=DType.int64,
+                        element_type=.int64,
                     ](),
                 )
 
@@ -2278,11 +2256,11 @@ def shared_memory_epilogue[
                     RuntimeTuple[IntTuple(UNKNOWN_VALUE)](offset_lower),
                     RuntimeTuple[
                         blocked_m_128_layout.shape,
-                        element_type=DType.int64,
+                        element_type=.int64,
                     ](),
                     RuntimeTuple[
                         blocked_m_128_layout.stride,
-                        element_type=DType.int64,
+                        element_type=.int64,
                     ](),
                 )
 
@@ -2305,18 +2283,16 @@ def shared_memory_epilogue[
 
             else:
                 # MMA_M=256: simple row-major indexing
-                comptime fast_div = FastDiv[DType.uint32](shared_n)
+                comptime fast_div = FastDiv[.uint32](shared_n)
 
                 local_upper_row = (
-                    Scalar[DType.int](offset_upper).cast[fast_div.uint_type]()
-                    / fast_div
-                ).cast[DType.int64]()
+                    Int(offset_upper).cast[fast_div.uint_type]() / fast_div
+                ).cast[.int64]()
                 local_upper_col = Int64(offset_upper % shared_n)
 
                 local_lower_row = (
-                    Scalar[DType.int](offset_lower).cast[fast_div.uint_type]()
-                    / fast_div
-                ).cast[DType.int64]()
+                    Int(offset_lower).cast[fast_div.uint_type]() / fast_div
+                ).cast[.int64]()
                 local_lower_col = Int64(offset_lower % shared_n)
 
             # Convert local SMEM coords to global memory coords

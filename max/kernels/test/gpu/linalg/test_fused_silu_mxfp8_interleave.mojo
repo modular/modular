@@ -109,21 +109,17 @@ def _test_silu_mxfp8[
     var out_tensor = TileTensor(out_device, out_shape)
 
     # ---- Per-expert offsets ----
-    var row_offsets_host_ptr = alloc[Scalar[DType.uint32]](
-        num_active_experts + 1
-    )
-    var scales_offsets_host_ptr = alloc[Scalar[DType.uint32]](
-        num_active_experts
-    )
+    var row_offsets_host_ptr = alloc[UInt32](num_active_experts + 1)
+    var scales_offsets_host_ptr = alloc[UInt32](num_active_experts)
 
-    var row_offsets_device = ctx.enqueue_create_buffer[DType.uint32](
+    var row_offsets_device = ctx.enqueue_create_buffer[.uint32](
         num_active_experts + 1
     )
     var row_offsets_tensor = TileTensor(
         row_offsets_device,
         row_major(Coord(Idx[num_active_experts + 1])),
     )
-    var scales_offsets_device = ctx.enqueue_create_buffer[DType.uint32](
+    var scales_offsets_device = ctx.enqueue_create_buffer[.uint32](
         num_active_experts
     )
     var scales_offsets_tensor = TileTensor(
@@ -190,16 +186,16 @@ def _test_silu_mxfp8[
             var m = start + tok
             for k_blk in range(H // SF_VECTOR_SIZE):
                 var k_base = k_blk * SF_VECTOR_SIZE
-                var gate_block = SIMD[DType.float32, SF_VECTOR_SIZE]()
-                var up_block = SIMD[DType.float32, SF_VECTOR_SIZE]()
+                var gate_block = SIMD[.float32, SF_VECTOR_SIZE]()
+                var up_block = SIMD[.float32, SF_VECTOR_SIZE]()
                 for j in range(SF_VECTOR_SIZE):
                     var col = k_base + j
                     var g_bf = in_host_ptr[m * two_H + 2 * col]
                     var u_bf = in_host_ptr[m * two_H + 2 * col + 1]
-                    gate_block[j] = g_bf.cast[DType.float32]()
-                    up_block[j] = u_bf.cast[DType.float32]()
+                    gate_block[j] = g_bf.cast[.float32]()
+                    up_block[j] = u_bf.cast[.float32]()
 
-                var z = SIMD[DType.float32, SF_VECTOR_SIZE]()
+                var z = SIMD[.float32, SF_VECTOR_SIZE]()
                 var block_max = Float32(0.0)
                 for j in range(SF_VECTOR_SIZE):
                     var g = gate_block[j]
@@ -222,7 +218,7 @@ def _test_silu_mxfp8[
                 var sf = scale_factor.cast[scales_dtype]()
                 var output_scale = Float32(0.0)
                 if block_max != 0:
-                    output_scale = recip(sf.cast[DType.float32]())
+                    output_scale = recip(sf.cast[.float32]())
 
                 var scaled = z * output_scale
                 var out_vec = scaled.cast[fp8_dtype]()
@@ -293,12 +289,10 @@ def _test_silu_mxfp8[
     var out_mismatch = 0
     var first_bad_out = -1
     for i in range(out_size):
-        var got_b = bitcast[DType.uint8, 1](
-            SIMD[fp8_dtype, 1](out_host_ptr[i])
-        )[0]
-        var ref_b = bitcast[DType.uint8, 1](
-            SIMD[fp8_dtype, 1](out_ref_host_ptr[i])
-        )[0]
+        var got_b = bitcast[.uint8, 1](SIMD[fp8_dtype, 1](out_host_ptr[i]))[0]
+        var ref_b = bitcast[.uint8, 1](SIMD[fp8_dtype, 1](out_ref_host_ptr[i]))[
+            0
+        ]
         if got_b != ref_b:
             if first_bad_out < 0:
                 first_bad_out = i
@@ -307,10 +301,10 @@ def _test_silu_mxfp8[
     var sf_mismatch = 0
     var first_bad_sf = -1
     for i in range(scales_size):
-        var got_b = bitcast[DType.uint8, 1](
+        var got_b = bitcast[.uint8, 1](
             SIMD[scales_dtype, 1](scales_host_ptr[i])
         )[0]
-        var ref_b = bitcast[DType.uint8, 1](
+        var ref_b = bitcast[.uint8, 1](
             SIMD[scales_dtype, 1](scales_ref_host_ptr[i])
         )[0]
         if got_b != ref_b:
@@ -332,10 +326,10 @@ def _test_silu_mxfp8[
         if first_bad_out >= 0:
             var m_bad = first_bad_out // H
             var k_bad = first_bad_out % H
-            var ref_byte = bitcast[DType.uint8, 1](
+            var ref_byte = bitcast[.uint8, 1](
                 SIMD[fp8_dtype, 1](out_ref_host_ptr[first_bad_out])
             )[0]
-            var got_byte = bitcast[DType.uint8, 1](
+            var got_byte = bitcast[.uint8, 1](
                 SIMD[fp8_dtype, 1](out_host_ptr[first_bad_out])
             )[0]
             print(

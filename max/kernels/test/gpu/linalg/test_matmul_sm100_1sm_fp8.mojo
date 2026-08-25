@@ -148,7 +148,7 @@ def test_blackwell_matmul_tma_umma_warp_specialized[
         ctx,
     )
 
-    comptime assert a_type != DType.float8_e4m3fn or transpose_b, (
+    comptime assert a_type != .float8_e4m3fn or transpose_b, (
         "Testing is only supported for transposed_b==True when"
         " a_type==float8_e4m3fn. Add the non-transposed case if needed."
     )
@@ -221,7 +221,7 @@ def main() raises:
                     test_blackwell_matmul_tma_umma_warp_specialized[
                         dtype,
                         dtype,
-                        DType.bfloat16,
+                        .bfloat16,
                         block_tile_shape,
                         umma_shape,
                         cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
@@ -239,7 +239,7 @@ def main() raises:
                     test_blackwell_matmul_tma_umma_warp_specialized[
                         dtype,
                         dtype,
-                        DType.bfloat16,
+                        .bfloat16,
                         block_tile_shape,
                         umma_shape,
                         cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
@@ -258,7 +258,7 @@ def main() raises:
                     test_blackwell_matmul_tma_umma_warp_specialized[
                         dtype,
                         dtype,
-                        DType.bfloat16,
+                        .bfloat16,
                         block_tile_shape,
                         umma_shape,
                         cluster_shape=StaticTuple[Int32, 3](4, 2, 1),
@@ -278,7 +278,7 @@ def main() raises:
                     test_blackwell_matmul_tma_umma_warp_specialized[
                         dtype,
                         dtype,
-                        DType.bfloat16,
+                        .bfloat16,
                         block_tile_shape,
                         umma_shape,
                         cluster_shape=StaticTuple[Int32, 3](8, 2, 1),
@@ -296,7 +296,7 @@ def main() raises:
                     test_blackwell_matmul_tma_umma_warp_specialized[
                         dtype,
                         dtype,
-                        DType.bfloat16,
+                        .bfloat16,
                         block_tile_shape,
                         umma_shape,
                         cluster_shape=StaticTuple[Int32, 3](4, 4, 1),

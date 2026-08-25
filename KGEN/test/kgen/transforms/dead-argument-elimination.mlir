@@ -75,7 +75,7 @@ kgen.func @f_maybe_live(%arg0: index, %arg1: index) -> index {
 }
 
 kgen.func @f_reference() {
-  %0 = kgen.param.constant: (index read, index read) -> index = <@f_maybe_live>
+  %0 = kgen.param.constant: (index imm, index imm) -> index = <@f_maybe_live>
   kgen.return
 }
 

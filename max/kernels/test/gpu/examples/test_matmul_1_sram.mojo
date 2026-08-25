@@ -57,12 +57,12 @@ def matmul_sram(
     var a_shared = unsafe_stack_allocation[
         tile_size * tile_size,
         DType.float32,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
     var b_shared = unsafe_stack_allocation[
         tile_size * tile_size,
         DType.float32,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
 
     # Global index in C.
@@ -165,9 +165,9 @@ def run_matmul(ctx: DeviceContext) raises:
     _ = b_host.fill(Float32(1))
     _ = c_host.fill(Float32(0))
 
-    var a_device = ctx.enqueue_create_buffer[DType.float32](M * K)
-    var b_device = ctx.enqueue_create_buffer[DType.float32](K * N)
-    var c_device = ctx.enqueue_create_buffer[DType.float32](M * N)
+    var a_device = ctx.enqueue_create_buffer[.float32](M * K)
+    var b_device = ctx.enqueue_create_buffer[.float32](K * N)
+    var c_device = ctx.enqueue_create_buffer[.float32](M * N)
 
     ctx.enqueue_copy(a_device, a_host_ptr)
     ctx.enqueue_copy(b_device, b_host_ptr)

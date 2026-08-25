@@ -77,8 +77,8 @@ __extension HopperMatmulSM90Kernel:
         # Initialize WgmmaOp and SMem first
         var wgmma_op = Self.WgmmaOp()
         ref smem = external_memory[
-            Scalar[DType.uint8],
-            address_space=AddressSpace.SHARED,
+            UInt8,
+            address_space=.SHARED,
             alignment=128,
         ]().bitcast[Self.SMem]()[]
 
@@ -156,8 +156,7 @@ __extension HopperMatmulSM90Kernel:
                 var block_y = Int(ceildiv(work_info.m, UInt32(Self.BM)))
                 var block_x = Int(ceildiv(work_info.n, UInt32(Self.BN)))
                 var output_reg_tile = (
-                    final_c_reg_tile if a_type
-                    == DType.float8_e4m3fn else c_reg_tile
+                    final_c_reg_tile if a_type == .float8_e4m3fn else c_reg_tile
                 )
 
                 Self.consumer_output(
@@ -201,8 +200,8 @@ __extension HopperMatmulSM90Kernel:
         # Initialize WgmmaOp and SMem first
         var wgmma_op = Self.WgmmaOp()
         ref smem = external_memory[
-            Scalar[DType.uint8],
-            address_space=AddressSpace.SHARED,
+            UInt8,
+            address_space=.SHARED,
             alignment=128,
         ]().bitcast[Self.SMem]()[]
 
@@ -271,8 +270,7 @@ __extension HopperMatmulSM90Kernel:
             )
 
             var output_reg_tile = (
-                final_c_reg_tile if a_type
-                == DType.float8_e4m3fn else c_reg_tile
+                final_c_reg_tile if a_type == .float8_e4m3fn else c_reg_tile
             )
 
             Self.consumer_output(

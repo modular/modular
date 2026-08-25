@@ -138,8 +138,8 @@ def reader_kernel[
 ](
     own_buf: UnsafePointer[Scalar[DTYPE], MutAnyOrigin],
     num_slots_dev: Int32,
-    torn_counts: UnsafePointer[Scalar[DType.int64], MutAnyOrigin],
-    max_seen: UnsafePointer[Scalar[DType.int64], MutAnyOrigin],
+    torn_counts: UnsafePointer[Int64, MutAnyOrigin],
+    max_seen: UnsafePointer[Int64, MutAnyOrigin],
 ):
     """Spins on its own slot, detecting torn reads and tracking progress.
 
@@ -233,10 +233,10 @@ def run_variant[
     reader_ctx.enqueue_copy(shared, init_host)
     reader_ctx.synchronize()
 
-    var torn_buf = reader_ctx.create_buffer_sync[DType.int64](NUM_SLOTS)
-    var seen_buf = reader_ctx.create_buffer_sync[DType.int64](NUM_SLOTS)
-    reader_ctx.enqueue_memset[DType.int64](torn_buf, 0)
-    reader_ctx.enqueue_memset[DType.int64](seen_buf, 0)
+    var torn_buf = reader_ctx.create_buffer_sync[.int64](NUM_SLOTS)
+    var seen_buf = reader_ctx.create_buffer_sync[.int64](NUM_SLOTS)
+    reader_ctx.enqueue_memset[.int64](torn_buf, 0)
+    reader_ctx.enqueue_memset[.int64](seen_buf, 0)
     reader_ctx.synchronize()
 
     var shared_ptr = shared.unsafe_ptr().as_unsafe_any_origin()
@@ -266,8 +266,8 @@ def run_variant[
     reader_ctx.synchronize()
 
     # Reduce results on the host.
-    var torn_host = alloc[Scalar[DType.int64]](NUM_SLOTS)
-    var seen_host = alloc[Scalar[DType.int64]](NUM_SLOTS)
+    var torn_host = alloc[Int64](NUM_SLOTS)
+    var seen_host = alloc[Int64](NUM_SLOTS)
     reader_ctx.enqueue_copy(torn_host, torn_buf)
     reader_ctx.enqueue_copy(seen_host, seen_buf)
     reader_ctx.synchronize()

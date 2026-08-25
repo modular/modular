@@ -165,10 +165,10 @@ def test_blackwell_matmul_with_1d_bias[
     # Add 1D bias to reference: C_ref[i, j] += bias[j] for all i (broadcast).
     for i in range(M):
         for j in range(N):
-            var bias_val = bias_host_ptr[j].cast[DType.float32]()
+            var bias_val = bias_host_ptr[j].cast[.float32]()
             var idx = c_host_ref.layout(Coord(i, j))
             c_host_ref_ptr[idx] = (
-                c_host_ref_ptr[idx].cast[DType.float32]() + bias_val
+                c_host_ref_ptr[idx].cast[.float32]() + bias_val
             ).cast[c_type]()
 
     comptime rtol = 1e-2
@@ -226,7 +226,7 @@ def main() raises:
                     test_blackwell_matmul_with_1d_bias[
                         dtype,
                         dtype,
-                        DType.bfloat16,
+                        .bfloat16,
                         block_tile_shape,
                         umma_shape,
                         cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
@@ -244,7 +244,7 @@ def main() raises:
                     test_blackwell_matmul_with_1d_bias[
                         dtype,
                         dtype,
-                        DType.bfloat16,
+                        .bfloat16,
                         block_tile_shape,
                         umma_shape,
                         cluster_shape=StaticTuple[Int32, 3](4, 2, 1),
@@ -266,7 +266,7 @@ def main() raises:
                     test_blackwell_matmul_with_1d_bias[
                         dtype,
                         dtype,
-                        DType.bfloat16,
+                        .bfloat16,
                         block_tile_shape,
                         umma_shape,
                         cluster_shape=StaticTuple[Int32, 3](8, 2, 1),
@@ -285,7 +285,7 @@ def main() raises:
                     test_blackwell_matmul_with_1d_bias[
                         dtype,
                         dtype,
-                        DType.bfloat16,
+                        .bfloat16,
                         block_tile_shape,
                         umma_shape,
                         cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
@@ -310,7 +310,7 @@ def main() raises:
                     test_blackwell_matmul_with_1d_bias[
                         dtype,
                         dtype,
-                        DType.bfloat16,
+                        .bfloat16,
                         block_tile_shape,
                         umma_shape,
                         cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
@@ -329,7 +329,7 @@ def main() raises:
                     test_blackwell_matmul_with_1d_bias[
                         dtype,
                         dtype,
-                        DType.bfloat16,
+                        .bfloat16,
                         block_tile_shape,
                         umma_shape,
                         cluster_shape=StaticTuple[Int32, 3](4, 2, 1),
@@ -360,7 +360,7 @@ def main() raises:
                     test_blackwell_matmul_with_1d_bias[
                         dtype,
                         dtype,
-                        DType.bfloat16,
+                        .bfloat16,
                         block_tile_shape,
                         umma_shape,
                         cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
@@ -380,7 +380,7 @@ def main() raises:
                     test_blackwell_matmul_with_1d_bias[
                         dtype,
                         dtype,
-                        DType.bfloat16,
+                        .bfloat16,
                         block_tile_shape,
                         umma_shape,
                         cluster_shape=StaticTuple[Int32, 3](4, 2, 1),
@@ -404,7 +404,7 @@ def main() raises:
                 test_blackwell_matmul_with_1d_bias[
                     dtype,
                     dtype,
-                    DType.bfloat16,
+                    .bfloat16,
                     block_tile_shape,
                     umma_shape,
                     cluster_shape=StaticTuple[Int32, 3](4, 4, 1),

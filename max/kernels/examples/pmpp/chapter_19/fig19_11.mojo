@@ -43,9 +43,9 @@ def conv_layer_mm_kernel(
     W_dev: Int32,
     K_dev: Int32,
     N_batch_dev: Int32,
-    F: UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin],
-    X: UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin],
-    Y: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
+    F: UnsafePointer[Float32, ImmutAnyOrigin],
+    X: UnsafePointer[Float32, ImmutAnyOrigin],
+    Y: UnsafePointer[Float32, MutAnyOrigin],
 ):
     """Tiled matrix multiplication kernel for convolution.
 
@@ -78,13 +78,13 @@ def conv_layer_mm_kernel(
     # Fds[TILE_WIDTH][TILE_WIDTH] + Bds[TILE_WIDTH][TILE_WIDTH]
     var Fds = unsafe_stack_allocation[
         TILE_WIDTH * TILE_WIDTH,
-        Scalar[DType.float32],
-        address_space=AddressSpace.SHARED,
+        Float32,
+        address_space=.SHARED,
     ]()
     var Bds = unsafe_stack_allocation[
         TILE_WIDTH * TILE_WIDTH,
-        Scalar[DType.float32],
-        address_space=AddressSpace.SHARED,
+        Float32,
+        address_space=.SHARED,
     ]()
 
     var bx = block_idx.x
@@ -202,9 +202,9 @@ def main() raises:
     var ctx = DeviceContext()
 
     # Allocate device memory
-    var d_X = ctx.enqueue_create_buffer[DType.float32](size_X)
-    var d_F = ctx.enqueue_create_buffer[DType.float32](size_F)
-    var d_Y = ctx.enqueue_create_buffer[DType.float32](size_Y)
+    var d_X = ctx.enqueue_create_buffer[.float32](size_X)
+    var d_F = ctx.enqueue_create_buffer[.float32](size_F)
+    var d_Y = ctx.enqueue_create_buffer[.float32](size_Y)
 
     # Copy to device
     ctx.enqueue_copy(d_X, h_X)

@@ -101,6 +101,8 @@ class Idefics3Config(ArchVLConfigWithTextSubconfig, ArchConfigWithKVCache):
         cls,
         pipeline_config: PipelineConfig,
         model_config: MAXModelConfig | None = None,
+        *,
+        max_seq_len: int,
     ) -> Self:
         """Initializes an Idefics3Config instance from pipeline configuration."""
         model_config = model_config or pipeline_config.model
@@ -118,7 +120,7 @@ class Idefics3Config(ArchVLConfigWithTextSubconfig, ArchConfigWithKVCache):
 
         # Build a V3 Llama3Config for the text component.
         text_config = _create_llama3_text_config(
-            pipeline_config, hf_text_config
+            pipeline_config, hf_text_config, max_seq_len
         )
 
         vision_config = Idefics3VisionConfig.initialize_from_config(
@@ -168,10 +170,11 @@ class Idefics3Config(ArchVLConfigWithTextSubconfig, ArchConfigWithKVCache):
 def _create_llama3_text_config(
     pipeline_config: PipelineConfig,
     hf_text_config: AutoConfig,
+    max_seq_len: int,
 ) -> Llama3Config:
     """Create a V3 Llama3Config from a text sub-config.
 
-    This replicates the initialization logic of Llama3Config.initialize()
+    This replicates the initialization logic of Llama3Config.initialize(max_seq_len=max_seq_len)
     but accepts a specific HuggingFace text sub-config rather than reading
     from pipeline_config.model.huggingface_config.
     """
@@ -211,10 +214,6 @@ def _create_llama3_text_config(
 
     attention_multiplier = Llama3Config.calculate_attention_multiplier(
         hf_text_config
-    )
-
-    max_seq_len = Llama3Config.calculate_max_seq_len(
-        pipeline_config, huggingface_config=hf_text_config
     )
 
     return Llama3Config(

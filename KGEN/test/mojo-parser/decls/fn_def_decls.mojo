@@ -91,7 +91,7 @@ def default_args(a: Int, b: Int = 8, *, c: Int, d: Int = 9):
 
 
 # CHECK-LABEL: lit.fn @"variadic_and_kw_only
-# CHECK-SAME: (%a: !Int, %b: !Int, %args: !lit.ref<!lit.struct<#VariadicList{{.*}}> read_mem|pos_vararg, *, %c: !Int, %d: !Int = {:scalar<index> 9})
+# CHECK-SAME: (%a: !Int, %b: !Int, %args: !lit.ref<!lit.struct<#VariadicList{{.*}}> imm_mem|pos_vararg, *, %c: !Int, %d: !Int = {:scalar<index> 9})
 def variadic_and_kw_only(
     a: Int, b: Int, *args: Int, c: Int, d: Int = 9
 ):
@@ -99,7 +99,7 @@ def variadic_and_kw_only(
 
 
 # CHECK-LABEL: lit.fn @"variadic_arg_after_default
-# CHECK-SAME: (%a: !Int, %b: !Int = {:scalar<index> 0}, %args: !lit.ref<!lit.struct<#VariadicList{{.*}}> read_mem|pos_vararg = :none *?,
+# CHECK-SAME: (%a: !Int, %b: !Int = {:scalar<index> 0}, %args: !lit.ref<!lit.struct<#VariadicList{{.*}}> imm_mem|pos_vararg = :none *?,
 # CHECK-SAME:  *, %c: !Int, %d: !Int = {:scalar<index> 1}, %kwargs: {{.*}}|kw_vararg = :none *?)
 def variadic_arg_after_default(
     a: Int,
@@ -289,30 +289,30 @@ def test_fn_literal_type[x: Int, y: Int]() -> FN_LITERAL_RET[x, y]:
 
 # CHECK:      lit.alias.decl *"test_fn_literal_type_type{{.*}}": {{.*}} =
 # CHECK-SAME: !kgen.func.literal<:!lit.fn<[1]({{.*}}!lit.struct<#RET <:!Int *(0,0), :!Int *(0,1)>>{{.*}}) -> !kgen.none>
-# CHECK-SAME: #kgen.func.symbol<@{{.*}}::@"test_fn_literal_type[::SIMD[::DType(int), ::SIMDLength(1)],::SIMD[::DType(int), ::SIMDLength(1)]]()"<:!Int *(0,0), :!Int *(0,1)>>
+# CHECK-SAME: #kgen.func.symbol<@{{.*}}::@"test_fn_literal_type[::SIMD[DType.int, 1],::SIMD[DType.int, 1]]()"<:!Int *(0,0), :!Int *(0,1)>>
 comptime test_fn_literal_type_type = type_of(test_fn_literal_type)
 
 # CHECK:      lit.alias.decl *"test_fn_literal_type_type_1{{.*}}": {{.*}} =
 # CHECK-SAME: !kgen.func.literal<:!lit.fn<[1]({{.*}}!lit.struct<#RET <:!Int {:scalar<index> 1}, :!Int *(0,0)>>{{.*}}) -> !kgen.none>
-# CHECK-SAME: #kgen.func.symbol<@{{.*}}::@"test_fn_literal_type[::SIMD[::DType(int), ::SIMDLength(1)],::SIMD[::DType(int), ::SIMDLength(1)]]()"<:!Int {:scalar<index> 1}, :!Int *(0,0)>>
+# CHECK-SAME: #kgen.func.symbol<@{{.*}}::@"test_fn_literal_type[::SIMD[DType.int, 1],::SIMD[DType.int, 1]]()"<:!Int {:scalar<index> 1}, :!Int *(0,0)>>
 comptime test_fn_literal_type_type_1 = type_of(test_fn_literal_type[1, _])
 
 # CHECK:      lit.alias.decl *"test_fn_literal_type_type_2{{.*}}": {{.*}} =
 # CHECK-SAME: !kgen.func.literal<:!lit.fn<[1]({{.*}}!lit.struct<#RET <:!Int {:scalar<index> 1}, :!Int {:scalar<index> 2}>>{{.*}}) -> !kgen.none>
-# CHECK-SAME: #kgen.func.symbol<@{{.*}}::@"test_fn_literal_type[::SIMD[::DType(int), ::SIMDLength(1)],::SIMD[::DType(int), ::SIMDLength(1)]]()"<:!Int {:scalar<index> 1}, :!Int {:scalar<index> 2}>>
+# CHECK-SAME: #kgen.func.symbol<@{{.*}}::@"test_fn_literal_type[::SIMD[DType.int, 1],::SIMD[DType.int, 1]]()"<:!Int {:scalar<index> 1}, :!Int {:scalar<index> 2}>>
 comptime test_fn_literal_type_type_2 = type_of(test_fn_literal_type[1, 2])
 
 # CHECK-LABEL:      lit.fn @"test_fn_literal_parameter{{.*}}"
 def test_fn_literal_parameter[x : test_fn_literal_type_type_1]():
     # CHECK:      lit.alias.decl *"t{{[^"]*}}":
     # CHECK-SAME: !kgen.func.literal<:!lit.fn<[1]({{.*}}!lit.struct<#RET <:!Int {:scalar<index> 1}, :!Int {:scalar<index> 3}>>{{.*}}) -> !kgen.none>
-    # CHECK-SAME: #kgen.func.symbol<@{{.*}}::@"test_fn_literal_type[::SIMD[::DType(int), ::SIMDLength(1)],::SIMD[::DType(int), ::SIMDLength(1)]]()"<:!Int {:scalar<index> 1}, :!Int {:scalar<index> 3}>>
+    # CHECK-SAME: #kgen.func.symbol<@{{.*}}::@"test_fn_literal_type[::SIMD[DType.int, 1],::SIMD[DType.int, 1]]()"<:!Int {:scalar<index> 1}, :!Int {:scalar<index> 3}>>
     # CHECK-SAME: = <bind_params({{.*}}, :!Int {:scalar<index> 3})>
     comptime t = x[3]
 
 
 def test_fn_literal_call():
-    # CHECK: lit.call @{{.*}}::@"test_fn_literal_type[::SIMD[::DType(int), ::SIMDLength(1)],::SIMD[::DType(int), ::SIMDLength(1)]]()"{{.*}}<:!Int {:scalar<index> 1}, :!Int {:scalar<index> 2}>
+    # CHECK: lit.call @{{.*}}::@"test_fn_literal_type[::SIMD[DType.int, 1],::SIMD[DType.int, 1]]()"{{.*}}<:!Int {:scalar<index> 1}, :!Int {:scalar<index> 2}>
     var _ = test_fn_literal_type[1, 2]()
 
 
@@ -323,7 +323,7 @@ trait FooTrait:
 
 @fieldwise_init
 struct Foo[x: Int, y: Int](FooTrait, Movable where False):
-    # CHECK: kgen.witness "foo[::SIMD[::DType(int), ::SIMDLength(1)],::SIMD[::DType(int), ::SIMDLength(1)]]($0)"
+    # CHECK: kgen.witness "foo[::SIMD[DType.int, 1],::SIMD[DType.int, 1]]($0)"
     def foo[q: Int, z: Int](self) -> Int:
         return Self.x + Self.y
 

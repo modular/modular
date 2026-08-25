@@ -26,7 +26,7 @@ comptime TileProjection[
     mut: Bool, TensorType: DenseTensor
 ]: AnyType = TileTensor[
     mut=mut,
-    dtype=TensorType.dtype,
+    TensorType.dtype,
     LayoutType=TensorType.LayoutType,
     origin=UntrackedOrigin[mut=mut],
 ]

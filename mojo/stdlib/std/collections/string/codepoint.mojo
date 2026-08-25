@@ -610,10 +610,10 @@ struct Codepoint(Comparable, ImplicitlyCopyable, Intable, Movable, Writable):
 
         # Minimum codepoint values (respectively) that can fit in a 1, 2, 3,
         # and 4 byte encoded UTF-8 sequence.
-        comptime sizes = SIMD[DType.uint32, 4](
+        comptime sizes = SIMD[.uint32, 4](
             0, UInt32(2**7), UInt32(2**11), UInt32(2**16)
         )
 
         # Count how many of the minimums this codepoint exceeds, which is equal
         # to the number of bytes needed to encode it.
-        return Int(sizes.le(self.to_u32()).cast[DType.uint8]().reduce_add())
+        return Int(sizes.le(self.to_u32()).cast[.uint8]().reduce_add())

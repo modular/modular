@@ -2078,12 +2078,12 @@ def test_load_b_tr(ctx: DeviceContext) raises:
 
     def kernel[
         mma_shape: IndexList[3]
-    ](flag: UnsafePointer[Scalar[DType.bool], MutAnyOrigin]):
+    ](flag: UnsafePointer[Scalar[.bool], MutAnyOrigin]):
         var smem = LayoutTensor[
-            DType.bfloat16,
+            .bfloat16,
             Layout.row_major(mma_shape[2], mma_shape[1]),
             MutAnyOrigin,
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
         ].stack_allocation()
 
         if lane_id() == 0:
@@ -2100,7 +2100,7 @@ def test_load_b_tr(ctx: DeviceContext) raises:
 
         flag[lane_id()] = frags_simd == rebind[type_of(frags_simd)](frags_tr)
 
-    var flag = ctx.enqueue_create_buffer[DType.bool](WARP_SIZE)
+    var flag = ctx.enqueue_create_buffer[.bool](WARP_SIZE)
 
     comptime kernel_32_32_16 = kernel[IndexList[3](32, 32, 16)]
     ctx.enqueue_function[kernel_32_32_16](

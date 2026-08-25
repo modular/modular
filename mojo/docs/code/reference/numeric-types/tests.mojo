@@ -28,7 +28,7 @@ from std.sys import bit_width_of
 
 
 def test_simd_broadcast_mul() raises:
-    var v = SIMD[DType.float32, 4](1.0, 2.0, 3.0, 4.0)
+    var v = SIMD[.float32, 4](1.0, 2.0, 3.0, 4.0)
     var doubled = v * 2.0
     assert_equal(doubled[0], 2.0)
     assert_equal(doubled[1], 4.0)
@@ -40,7 +40,7 @@ def test_simd_broadcast_mul() raises:
 
 
 def test_simd_element_access() raises:
-    var v = SIMD[DType.float32, 4](1.0, 2.0, 3.0, 4.0)
+    var v = SIMD[.float32, 4](1.0, 2.0, 3.0, 4.0)
     assert_equal(v[0], 1.0)
     v[0] = 5.0
     assert_equal(v[0], 5.0)
@@ -50,8 +50,8 @@ def test_simd_element_access() raises:
 
 
 def test_simd_arithmetic() raises:
-    var a = SIMD[DType.float32, 4](1.0, 2.0, 3.0, 4.0)
-    var b = SIMD[DType.float32, 4](5.0, 6.0, 7.0, 8.0)
+    var a = SIMD[.float32, 4](1.0, 2.0, 3.0, 4.0)
+    var b = SIMD[.float32, 4](5.0, 6.0, 7.0, 8.0)
     var sum = a + b
     assert_equal(sum[0], 6.0)
     assert_equal(sum[3], 12.0)
@@ -64,7 +64,7 @@ def test_simd_arithmetic() raises:
 
 
 def test_simd_reductions() raises:
-    var a = SIMD[DType.float32, 4](1.0, 2.0, 3.0, 4.0)
+    var a = SIMD[.float32, 4](1.0, 2.0, 3.0, 4.0)
     assert_equal(a.reduce_add(), 10.0)
     assert_equal(a.reduce_max(), 4.0)
     assert_equal(a.reduce_min(), 1.0)
@@ -74,14 +74,14 @@ def test_simd_reductions() raises:
 
 
 def test_simd_cast() raises:
-    var a = SIMD[DType.float32, 4](1.0, 2.0, 3.0, 4.0)
-    var ints = a.cast[DType.int32]()
+    var a = SIMD[.float32, 4](1.0, 2.0, 3.0, 4.0)
+    var ints = a.cast[.int32]()
     assert_equal(ints[0], 1)
     assert_equal(ints[3], 4)
-    var wide = a.cast[DType.float64]()
+    var wide = a.cast[.float64]()
     assert_equal(wide[0], 1.0)
     assert_equal(wide[3], 4.0)
-    var tiny = a.cast[DType.float16]()
+    var tiny = a.cast[.float16]()
     assert_equal(tiny[0], 1.0)
     assert_equal(tiny[3], 4.0)
 
@@ -90,7 +90,7 @@ def test_simd_cast() raises:
 
 
 def test_simd_clamp() raises:
-    var a = SIMD[DType.float32, 4](1.0, 2.0, 3.0, 4.0)
+    var a = SIMD[.float32, 4](1.0, 2.0, 3.0, 4.0)
     var clamped = a.clamp(1.5, 3.5)
     assert_equal(clamped[0], 1.5)
     assert_equal(clamped[1], 2.0)
@@ -102,8 +102,8 @@ def test_simd_clamp() raises:
 
 
 def test_min_max() raises:
-    var a = SIMD[DType.float32, 4](1.0, 2.0, 7.0, 4.0)
-    var b = SIMD[DType.float32, 4](5.0, 1.0, 3.0, 8.0)
+    var a = SIMD[.float32, 4](1.0, 2.0, 7.0, 4.0)
+    var b = SIMD[.float32, 4](5.0, 1.0, 3.0, 8.0)
     var minimum = min(a, b)
     assert_equal(minimum[0], 1.0)
     assert_equal(minimum[2], 3.0)
@@ -116,9 +116,9 @@ def test_min_max() raises:
 
 
 def test_scalar_aliases() raises:
-    var a: Scalar[DType.float32] = 3.14
+    var a: Scalar[.float32] = 3.14
     var b: Float32 = 3.14
-    var c: SIMD[DType.float32, 1] = 3.14
+    var c: SIMD[.float32, 1] = 3.14
     assert_equal(a, b)
     assert_equal(b, c)
 
@@ -131,8 +131,8 @@ def double[T: DType](x: Scalar[T]) -> Scalar[T]:
 
 
 def test_dtype_parameterized() raises:
-    assert_equal(double[DType.float32](3.5), 7.0)
-    assert_equal(double[DType.int16](21), 42)
+    assert_equal(double[.float32](3.5), 7.0)
+    assert_equal(double[.int16](21), 42)
 
 
 # --- Int constants ---
@@ -153,7 +153,7 @@ def test_sized_int_bounds() raises:
     assert_equal(Int8.MIN, -128)
     assert_equal(UInt32.MAX, 4294967295)
     assert_equal(Int32.MIN, -2147483648)
-    assert_equal(SIMD[DType.int16, 1].MIN, -32768)
+    assert_equal(SIMD[.int16, 1].MIN, -32768)
 
 
 # --- Byte is UInt8 ---
@@ -217,8 +217,8 @@ def test_float_literal_materialization() raises:
     var y: Float64 = 3.14
     var z: BFloat16 = 0.5
     # Approximate equality across widths: round-trip through Float64
-    assert_equal(x.cast[DType.float64]() > 3.13, True)
-    assert_equal(x.cast[DType.float64]() < 3.15, True)
+    assert_equal(x.cast[.float64]() > 3.13, True)
+    assert_equal(x.cast[.float64]() < 3.15, True)
     assert_equal(y, 3.14)
     assert_equal(z, 0.5)
 
@@ -267,8 +267,8 @@ def test_explicit_conversions() raises:
 
 def test_cast_method() raises:
     var a = Float32(3.14)
-    var b = a.cast[DType.int32]()  # Float32 → Int32 (truncates)
-    var c = a.cast[DType.float64]()
+    var b = a.cast[.int32]()  # Float32 → Int32 (truncates)
+    var c = a.cast[.float64]()
     assert_equal(b, 3)
     # Float32 → Float64 widens; some bit-pattern drift is acceptable
     assert_equal(c > 3.13, True)

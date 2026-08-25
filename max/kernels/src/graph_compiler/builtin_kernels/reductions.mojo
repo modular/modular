@@ -57,7 +57,12 @@ from state_space.rms_norm_fused_residual import (
     _rms_norm_fused_residual_cpu_entry,
     rms_norm_fused_residual,
 )
-from extensibility import InputTensor, OutputTensor
+from extensibility import (
+    InputTensor,
+    OutputTensor,
+    Tensor,
+    TileTensorable,
+)
 from extensibility import (
     _FusedInputTensor as FusedInputTensor,
 )
@@ -70,7 +75,7 @@ comptime logger = Logger()
 """Logger for the reductions module."""
 
 from std.utils import IndexList
-from std.utils.coord import ComptimeInt, Coord
+from std.utils.coord import ComptimeInt, Coord, coord_to_index_list
 from layout import UNKNOWN_VALUE
 from std.utils.index import Index
 
@@ -124,7 +129,7 @@ struct ArgMax:
         @always_inline
         def output_fn[
             width: SIMDLength, _rank: Int
-        ](coords: IndexList[_rank], val: SIMD[DType.int64, width]) {var output}:
+        ](coords: IndexList[_rank], val: SIMD[.int64, width]) {var output}:
             output._lambda_store[width=width](
                 rebind[IndexList[output.rank]](coords),
                 rebind[SIMD[output.dtype, width]](val),
@@ -183,7 +188,7 @@ struct ArgMin:
         @always_inline
         def output_fn[
             width: SIMDLength, _rank: Int
-        ](coords: IndexList[_rank], val: SIMD[DType.int64, width]) {var output}:
+        ](coords: IndexList[_rank], val: SIMD[.int64, width]) {var output}:
             output._lambda_store[width=width](
                 rebind[IndexList[output.rank]](coords),
                 rebind[SIMD[output.dtype, width]](val),
@@ -212,13 +217,13 @@ struct ArgNonZero:
             input_buffer: Input tensor whose nonzero indices are found.
         """
         arg_nonzero.arg_nonzero(
-            input_buffer.to_tile_tensor[DType.int64](),
-            output_buffer.to_tile_tensor[DType.int64](),
+            input_buffer.to_tile_tensor[.int64](),
+            output_buffer.to_tile_tensor[.int64](),
         )
 
 
 @extensibility.register_shape_function("mo.arg_nonzero")
-def arg_nonzero_shape(input_buffer: InputTensor) -> IndexList[2]:
+def arg_nonzero_shape(input_buffer: Some[TileTensorable]) -> IndexList[2]:
     """Computes the output shape for the `mo.arg_nonzero` graph op.
 
     Args:
@@ -227,9 +232,7 @@ def arg_nonzero_shape(input_buffer: InputTensor) -> IndexList[2]:
     Returns:
         The output shape as a rank-2 `IndexList` of nonzero element indices.
     """
-    return arg_nonzero.arg_nonzero_shape(
-        input_buffer.to_tile_tensor[DType.int64]()
-    )
+    return arg_nonzero.arg_nonzero_shape(input_buffer.to_tile_tensor())
 
 
 @extensibility.register("mo.reduce.mean")
@@ -286,18 +289,11 @@ struct Mean:
 
 @extensibility.register_shape_function("mo.reduce.mean")
 def reduce_mean_shape[
-    input_rank: Int,
-    input_type: DType,
     axis: Int,
-](
-    input: InputTensor[dtype=input_type, rank=input_rank, ...],
-) raises -> IndexList[input_rank]:
+](input: Some[Tensor]) raises -> IndexList[type_of(input).rank]:
     """Computes the output shape for the `mo.reduce.mean` graph op.
 
     Parameters:
-        input_rank: Number of dimensions in the `input` and output
-            tensors.
-        input_type: Element type of the `input` tensor.
         axis: Dimension along which to average the elements of `input`.
 
     Args:
@@ -366,9 +362,7 @@ struct RowMeanOfSquares:
 
 
 @extensibility.register_shape_function("mo.reduce.row_mean_of_squares")
-def reduce_row_mean_of_squares_shape(
-    input: InputTensor[rank=2, ...],
-) -> IndexList[2]:
+def reduce_row_mean_of_squares_shape(input: Some[Tensor]) -> IndexList[2]:
     """Computes the output shape for the `mo.reduce.row_mean_of_squares` graph op.
 
     Args:
@@ -379,7 +373,9 @@ def reduce_row_mean_of_squares_shape(
         The output shape `[M, 1]` after computing the per-row
         mean of squares.
     """
-    return Index(input.shape()[0], 1)
+    comptime assert type_of(input).rank == 2, "input must be rank 2"
+    var input_shape = coord_to_index_list(input.shape().tuple())
+    return Index(input_shape[0], 1)
 
 
 @extensibility.register("mo.reduce.row_mean_of_squares_qk")
@@ -426,9 +422,9 @@ struct RowMeanOfSquaresQK:
         # `k` is bitcast to `q.dtype` to unify the single `in_dtype` kernel
         # parameter (q and k share a dtype, asserted above).
         row_mean_of_squares_qk[target=target](
-            output.to_tile_tensor[DType.int64](),
-            q.to_tile_tensor[DType.int64](),
-            k.to_tile_tensor[DType.int64]().bitcast[q.dtype](),
+            output.to_tile_tensor[.int64](),
+            q.to_tile_tensor[.int64](),
+            k.to_tile_tensor[.int64]().bitcast[q.dtype](),
             q.shape()[0],
             q.shape()[1],
             k.shape()[1],
@@ -438,8 +434,7 @@ struct RowMeanOfSquaresQK:
 
 @extensibility.register_shape_function("mo.reduce.row_mean_of_squares_qk")
 def reduce_row_mean_of_squares_qk_shape(
-    q: InputTensor[rank=2, ...],
-    k: InputTensor[rank=2, ...],
+    q: Some[Tensor], k: Some[Tensor]
 ) -> IndexList[2]:
     """Computes the output shape for the `mo.reduce.row_mean_of_squares_qk` graph op.
 
@@ -453,7 +448,11 @@ def reduce_row_mean_of_squares_qk_shape(
         The output shape `[M, 2]` with per-row mean of squares
         for `q` and `k`.
     """
-    return Index(q.shape()[0], 2)
+    comptime assert (
+        type_of(q).rank == 2 and type_of(k).rank == 2
+    ), "q and k must be rank 2"
+    var q_shape = coord_to_index_list(q.shape().tuple())
+    return Index(q_shape[0], 2)
 
 
 @extensibility.register("mo.norm.apply_qk_rms_norm")
@@ -484,9 +483,9 @@ struct ApplyQKRMSNorm:
         k_out: OutputTensor[rank=2, ...],
         q: InputTensor[rank=2, ...],
         k: InputTensor[rank=2, ...],
-        qk_var: InputTensor[dtype=DType.float32, rank=2, ...],
-        gamma_q: InputTensor[dtype=DType.float32, rank=1, ...],
-        gamma_k: InputTensor[dtype=DType.float32, rank=1, ...],
+        qk_var: InputTensor[dtype=.float32, rank=2, ...],
+        gamma_q: InputTensor[dtype=.float32, rank=1, ...],
+        gamma_k: InputTensor[dtype=.float32, rank=1, ...],
         epsilon: Float32,
         ctx: DeviceContext,
     ) capturing raises:
@@ -533,13 +532,13 @@ struct ApplyQKRMSNorm:
         # unify the single `out_dtype` parameter. Likewise `in_dtype` is
         # inferred from `q`, so bitcast `k` to `q.dtype`.
         apply_qk_rms_norm[target=target,](
-            q_out.to_tile_tensor[DType.int64](),
-            k_out.to_tile_tensor[DType.int64]().bitcast[q_out.dtype](),
-            gamma_q.to_tile_tensor[DType.int64](),
-            gamma_k.to_tile_tensor[DType.int64](),
-            qk_var.to_tile_tensor[DType.int64](),
-            q.to_tile_tensor[DType.int64](),
-            k.to_tile_tensor[DType.int64]().bitcast[q.dtype](),
+            q_out.to_tile_tensor[.int64](),
+            k_out.to_tile_tensor[.int64]().bitcast[q_out.dtype](),
+            gamma_q.to_tile_tensor[.int64](),
+            gamma_k.to_tile_tensor[.int64](),
+            qk_var.to_tile_tensor[.int64](),
+            q.to_tile_tensor[.int64](),
+            k.to_tile_tensor[.int64]().bitcast[q.dtype](),
             epsilon,
             q.shape()[0],
             q.shape()[1],
@@ -604,18 +603,11 @@ struct ReduceAdd:
 
 @extensibility.register_shape_function("mo.reduce.add")
 def reduce_add_shape[
-    input_rank: Int,
-    input_type: DType,
     axis: Int,
-](
-    input: InputTensor[dtype=input_type, rank=input_rank, ...],
-) raises -> IndexList[input_rank]:
+](input: Some[Tensor]) raises -> IndexList[type_of(input).rank]:
     """Computes the output shape for the `mo.reduce.add` graph op.
 
     Parameters:
-        input_rank: Number of dimensions in the `input` and output
-            tensors.
-        input_type: Element type of the `input` tensor.
         axis: Dimension along which to sum the elements of `input`.
 
     Args:
@@ -683,18 +675,11 @@ struct ReduceMul:
 
 @extensibility.register_shape_function("mo.reduce.mul")
 def reduce_mul_shape[
-    input_rank: Int,
-    input_type: DType,
     axis: Int,
-](
-    input: InputTensor[dtype=input_type, rank=input_rank, ...],
-) raises -> IndexList[input_rank]:
+](input: Some[Tensor]) raises -> IndexList[type_of(input).rank]:
     """Computes the output shape for the `mo.reduce.mul` graph op.
 
     Parameters:
-        input_rank: Number of dimensions in the `input` and output
-            tensors.
-        input_type: Element type of the `input` tensor.
         axis: Dimension along which to multiply the elements of `input`.
 
     Args:
@@ -763,18 +748,11 @@ struct ReduceMax:
 
 @extensibility.register_shape_function("mo.reduce.max")
 def reduce_max_shape[
-    input_rank: Int,
-    input_type: DType,
     axis: Int,
-](
-    input: InputTensor[dtype=input_type, rank=input_rank, ...],
-) raises -> IndexList[input_rank]:
+](input: Some[Tensor]) raises -> IndexList[type_of(input).rank]:
     """Computes the output shape for the `mo.reduce.max` graph op.
 
     Parameters:
-        input_rank: Number of dimensions in the `input` and output
-            tensors.
-        input_type: Element type of the `input` tensor.
         axis: Dimension along which to take the maximum of `input`.
 
     Args:
@@ -842,18 +820,11 @@ struct ReduceMin:
 
 @extensibility.register_shape_function("mo.reduce.min")
 def reduce_min_shape[
-    input_rank: Int,
-    input_type: DType,
     axis: Int,
-](
-    input: InputTensor[dtype=input_type, rank=input_rank, ...],
-) raises -> IndexList[input_rank]:
+](input: Some[Tensor]) raises -> IndexList[type_of(input).rank]:
     """Computes the output shape for the `mo.reduce.min` graph op.
 
     Parameters:
-        input_rank: Number of dimensions in the `input` and output
-            tensors.
-        input_type: Element type of the `input` tensor.
         axis: Dimension along which to take the minimum of `input`.
 
     Args:
@@ -938,8 +909,8 @@ struct LayerNorm:
                 output_fn,
                 input.shape_coord(),
                 ComptimeInt[ln_cols](),
-                gamma.to_tile_tensor[DType.int64](),
-                beta.to_tile_tensor[DType.int64](),
+                gamma.to_tile_tensor[.int64](),
+                beta.to_tile_tensor[.int64](),
                 epsilon.cast[dtype](),
                 ctx,
             )
@@ -948,29 +919,22 @@ struct LayerNorm:
                 input_fn,
                 output_fn,
                 input.shape_coord(),
-                Scalar[DType.int](Int(input.shape()[rank - 1])),
-                gamma.to_tile_tensor[DType.int64](),
-                beta.to_tile_tensor[DType.int64](),
+                Int(Int(input.shape()[rank - 1])),
+                gamma.to_tile_tensor[.int64](),
+                beta.to_tile_tensor[.int64](),
                 epsilon.cast[dtype](),
                 ctx,
             )
 
 
 @extensibility.register_shape_function("mo.reduce.layer_norm")
-def reduce_layer_norm_shape[
-    dtype: DType,
-    rank: Int,
-](
-    input: InputTensor[dtype=dtype, rank=rank, ...],
-    gamma: InputTensor[dtype=dtype, rank=1, ...],
-    beta: InputTensor[dtype=dtype, rank=1, ...],
+def reduce_layer_norm_shape(
+    input: Some[Tensor],
+    gamma: Some[Tensor],
+    beta: Some[Tensor],
     epsilon: Float32,
-) -> IndexList[rank]:
+) -> IndexList[type_of(input).rank]:
     """Computes the output shape for the `mo.reduce.layer_norm` graph op.
-
-    Parameters:
-        dtype: Element type of the `input`, `gamma`, and `beta` tensors.
-        rank: Number of dimensions in the `input` and output tensors.
 
     Args:
         input: Input tensor normalized across the last dimension.
@@ -982,7 +946,17 @@ def reduce_layer_norm_shape[
     Returns:
         The output shape, which matches the `input` shape.
     """
-    return input.shape()
+    comptime assert (
+        type_of(gamma).dtype == type_of(input).dtype
+    ), "gamma dtype must match input dtype"
+    comptime assert (
+        type_of(beta).dtype == type_of(input).dtype
+    ), "beta dtype must match input dtype"
+    comptime assert type_of(gamma).rank == 1, "gamma must be rank 1"
+    comptime assert type_of(beta).rank == 1, "beta must be rank 1"
+    return rebind[IndexList[type_of(input).rank]](
+        coord_to_index_list(input.shape().tuple())
+    )
 
 
 @extensibility.register("mo.reduce.rms_norm")
@@ -1061,7 +1035,7 @@ struct ReduceRMSNorm:
                 output_fn,
                 input.shape_coord(),
                 ComptimeInt[rms_cols](),
-                gamma.to_tile_tensor[DType.int64](),
+                gamma.to_tile_tensor[.int64](),
                 epsilon.cast[dtype](),
                 weight_offset,
                 ctx,
@@ -1076,8 +1050,8 @@ struct ReduceRMSNorm:
                 input_fn,
                 output_fn,
                 input.shape_coord(),
-                Scalar[DType.int](Int(input.shape()[rank - 1])),
-                gamma.to_tile_tensor[DType.int64](),
+                Int(Int(input.shape()[rank - 1])),
+                gamma.to_tile_tensor[.int64](),
                 epsilon.cast[dtype](),
                 weight_offset,
                 ctx,
@@ -1087,18 +1061,13 @@ struct ReduceRMSNorm:
 @extensibility.register_shape_function("mo.reduce.rms_norm")
 def reduce_rms_norm_shape[
     dtype: DType,
-    rank: Int,
 ](
-    input: InputTensor[dtype=dtype, rank=rank, ...],
-    gamma: InputTensor[dtype=dtype, rank=1, ...],
+    input: Some[Tensor],
+    gamma: Some[Tensor],
     epsilon: Float32,
     weight_offset: Scalar[dtype=dtype],
-) -> IndexList[rank]:
+) -> IndexList[type_of(input).rank]:
     """Computes the output shape for the `mo.reduce.rms_norm` graph op.
-
-    Parameters:
-        dtype: Element type of the `input` and `gamma` tensors.
-        rank: Number of dimensions in the `input` and output tensors.
 
     Args:
         input: Input tensor normalized across the last dimension.
@@ -1110,7 +1079,16 @@ def reduce_rms_norm_shape[
     Returns:
         The output shape, which matches the `input` shape.
     """
-    return input.shape()
+    comptime assert (
+        type_of(gamma).dtype == type_of(input).dtype
+    ), "gamma dtype must match input dtype"
+    comptime assert type_of(gamma).rank == 1, "gamma must be rank 1"
+    comptime assert (
+        dtype == type_of(input).dtype
+    ), "weight_offset dtype must match input dtype"
+    return rebind[IndexList[type_of(input).rank]](
+        coord_to_index_list(input.shape().tuple())
+    )
 
 
 @extensibility.register("mo.composite.rms_norm_rope")
@@ -1202,7 +1180,7 @@ struct ReduceRMSNormRoPE:
                 output_fn,
                 input.shape_coord(),
                 ComptimeInt[rope_cols](),
-                weight.to_tile_tensor[DType.int64](),
+                weight.to_tile_tensor[.int64](),
                 epsilon.cast[dtype](),
                 weight_offset,
                 ctx,
@@ -1221,8 +1199,8 @@ struct ReduceRMSNormRoPE:
                 sin_fn,
                 output_fn,
                 input.shape_coord(),
-                Scalar[DType.int](Int(input.shape()[rank - 1])),
-                weight.to_tile_tensor[DType.int64](),
+                Int(Int(input.shape()[rank - 1])),
+                weight.to_tile_tensor[.int64](),
                 epsilon.cast[dtype](),
                 weight_offset,
                 ctx,
@@ -1232,23 +1210,15 @@ struct ReduceRMSNormRoPE:
 @extensibility.register_shape_function("mo.composite.rms_norm_rope")
 def composite_rms_norm_rope_shape[
     dtype: DType,
-    cos_sin_dtype: DType,
-    rank: Int,
 ](
-    input: InputTensor[dtype=dtype, rank=rank, ...],
-    weight: InputTensor[dtype=dtype, rank=1, ...],
+    input: Some[Tensor],
+    weight: Some[Tensor],
     epsilon: Float32,
     weight_offset: Scalar[dtype=dtype],
-    cos_vals: InputTensor[dtype=cos_sin_dtype, rank=rank, ...],
-    sin_vals: InputTensor[dtype=cos_sin_dtype, rank=rank, ...],
-) -> IndexList[rank]:
+    cos_vals: Some[Tensor],
+    sin_vals: Some[Tensor],
+) -> IndexList[type_of(input).rank]:
     """Computes the output shape for the `mo.composite.rms_norm_rope` graph op.
-
-    Parameters:
-        dtype: Element type of the `input` and `weight` tensors.
-        cos_sin_dtype: Element type of the `cos_vals` and `sin_vals` RoPE
-            tables.
-        rank: Number of dimensions in the `input` and output tensors.
 
     Args:
         input: Activation tensor normalized by RMS then rotated by RoPE;
@@ -1265,7 +1235,25 @@ def composite_rms_norm_rope_shape[
     Returns:
         The output shape, which matches the `input` shape.
     """
-    return input.shape()
+    comptime assert (
+        type_of(weight).dtype == type_of(input).dtype
+    ), "weight dtype must match input dtype"
+    comptime assert type_of(weight).rank == 1, "weight must be rank 1"
+    comptime assert (
+        dtype == type_of(input).dtype
+    ), "weight_offset dtype must match input dtype"
+    comptime assert (
+        type_of(cos_vals).dtype == type_of(sin_vals).dtype
+    ), "cos_vals and sin_vals must share a dtype"
+    comptime assert (
+        type_of(cos_vals).rank == type_of(input).rank
+    ), "cos_vals rank must match input rank"
+    comptime assert (
+        type_of(sin_vals).rank == type_of(input).rank
+    ), "sin_vals rank must match input rank"
+    return rebind[IndexList[type_of(input).rank]](
+        coord_to_index_list(input.shape().tuple())
+    )
 
 
 @extensibility.register("mo.composite.layer_norm_rope_ragged")
@@ -1291,8 +1279,8 @@ struct LayerNormRopeRagged:
         gamma: InputTensor[dtype=input_dtype, rank=1, ...],
         beta: InputTensor[dtype=input_dtype, rank=1, ...],
         epsilon: Float32,
-        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
-        start_pos: InputTensor[dtype=DType.uint32, rank=1, ...],
+        input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
+        start_pos: InputTensor[dtype=.uint32, rank=1, ...],
         freqs_cis: InputTensor[dtype=freq_dtype, rank=2, ...],
         ctx: DeviceContext,
     ) capturing raises:
@@ -1339,12 +1327,12 @@ struct LayerNormRopeRagged:
                 output_fn,
                 input.shape_coord(),
                 ComptimeInt[ln_cols](),
-                gamma.to_tile_tensor[DType.int64](),
-                beta.to_tile_tensor[DType.int64](),
+                gamma.to_tile_tensor[.int64](),
+                beta.to_tile_tensor[.int64](),
                 epsilon.cast[input_dtype](),
-                input_row_offsets.to_tile_tensor[DType.int64](),
-                start_pos.to_tile_tensor[DType.int64](),
-                freqs_cis.to_tile_tensor[DType.int64](),
+                input_row_offsets.to_tile_tensor[.int64](),
+                start_pos.to_tile_tensor[.int64](),
+                freqs_cis.to_tile_tensor[.int64](),
                 ctx,
             )
         else:
@@ -1359,37 +1347,28 @@ struct LayerNormRopeRagged:
                 input_fn,
                 output_fn,
                 input.shape_coord(),
-                Scalar[DType.int](Int(input.shape()[rank - 1])),
-                gamma.to_tile_tensor[DType.int64](),
-                beta.to_tile_tensor[DType.int64](),
+                Int(Int(input.shape()[rank - 1])),
+                gamma.to_tile_tensor[.int64](),
+                beta.to_tile_tensor[.int64](),
                 epsilon.cast[input_dtype](),
-                input_row_offsets.to_tile_tensor[DType.int64](),
-                start_pos.to_tile_tensor[DType.int64](),
-                freqs_cis.to_tile_tensor[DType.int64](),
+                input_row_offsets.to_tile_tensor[.int64](),
+                start_pos.to_tile_tensor[.int64](),
+                freqs_cis.to_tile_tensor[.int64](),
                 ctx,
             )
 
 
 @extensibility.register_shape_function("mo.composite.layer_norm_rope_ragged")
-def composite_layer_norm_rope_ragged_shape[
-    dtype: DType,
-    freq_dtype: DType,
-    rank: Int,
-](
-    input: InputTensor[dtype=dtype, rank=rank, ...],
-    gamma: InputTensor[dtype=dtype, rank=1, ...],
-    beta: InputTensor[dtype=dtype, rank=1, ...],
+def composite_layer_norm_rope_ragged_shape(
+    input: Some[Tensor],
+    gamma: Some[Tensor],
+    beta: Some[Tensor],
     epsilon: Float32,
-    input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
-    start_pos: InputTensor[dtype=DType.uint32, rank=1, ...],
-    freqs_cis: InputTensor[dtype=freq_dtype, rank=2, ...],
-) -> IndexList[rank]:
+    input_row_offsets: Some[Tensor],
+    start_pos: Some[Tensor],
+    freqs_cis: Some[Tensor],
+) -> IndexList[type_of(input).rank]:
     """Computes the output shape for the `mo.composite.layer_norm_rope_ragged` graph op.
-
-    Parameters:
-        dtype: Element type of the `input`, `gamma`, and `beta` tensors.
-        freq_dtype: Element type of the `freqs_cis` RoPE table.
-        rank: Number of dimensions in the `input` and output tensors.
 
     Args:
         input: Activation tensor normalized by LayerNorm then partially
@@ -1406,7 +1385,28 @@ def composite_layer_norm_rope_ragged_shape[
     Returns:
         The output shape, which matches the `input` shape.
     """
-    return input.shape()
+    comptime assert (
+        type_of(gamma).dtype == type_of(input).dtype
+    ), "gamma dtype must match input dtype"
+    comptime assert (
+        type_of(beta).dtype == type_of(input).dtype
+    ), "beta dtype must match input dtype"
+    comptime assert type_of(gamma).rank == 1, "gamma must be rank 1"
+    comptime assert type_of(beta).rank == 1, "beta must be rank 1"
+    comptime assert (
+        type_of(input_row_offsets).dtype == .uint32
+    ), "input_row_offsets must be uint32"
+    comptime assert (
+        type_of(input_row_offsets).rank == 1
+    ), "input_row_offsets must be rank 1"
+    comptime assert (
+        type_of(start_pos).dtype == .uint32
+    ), "start_pos must be uint32"
+    comptime assert type_of(start_pos).rank == 1, "start_pos must be rank 1"
+    comptime assert type_of(freqs_cis).rank == 2, "freqs_cis must be rank 2"
+    return rebind[IndexList[type_of(input).rank]](
+        coord_to_index_list(input.shape().tuple())
+    )
 
 
 @extensibility.register("mo.reduce.group_norm")
@@ -1470,27 +1470,20 @@ struct ReduceGroupNorm:
             shape=input.shape(),
             epsilon=epsilon,
             groups=num_groups,
-            output=output.to_tile_tensor[DType.int64](),
+            output=output.to_tile_tensor[.int64](),
             ctx=ctx,
         )
 
 
 @extensibility.register_shape_function("mo.reduce.group_norm")
-def reduce_group_norm_shape[
-    dtype: DType,
-    rank: Int,
-](
-    input: InputTensor[dtype=dtype, rank=rank, ...],
-    gamma: InputTensor[dtype=dtype, rank=1, ...],
-    beta: InputTensor[dtype=dtype, rank=1, ...],
+def reduce_group_norm_shape(
+    input: Some[Tensor],
+    gamma: Some[Tensor],
+    beta: Some[Tensor],
     epsilon: Float32,
     num_groups: Int32,
-) -> IndexList[rank]:
+) -> IndexList[type_of(input).rank]:
     """Computes the output shape for the `mo.reduce.group_norm` graph op.
-
-    Parameters:
-        dtype: Element type of the `input`, `gamma`, and `beta` tensors.
-        rank: Number of dimensions in the `input` and output tensors.
 
     Args:
         input: Input tensor normalized across grouped channels.
@@ -1504,7 +1497,17 @@ def reduce_group_norm_shape[
     Returns:
         The output shape, which matches the `input` shape.
     """
-    return input.shape()
+    comptime assert (
+        type_of(gamma).dtype == type_of(input).dtype
+    ), "gamma dtype must match input dtype"
+    comptime assert (
+        type_of(beta).dtype == type_of(input).dtype
+    ), "beta dtype must match input dtype"
+    comptime assert type_of(gamma).rank == 1, "gamma must be rank 1"
+    comptime assert type_of(beta).rank == 1, "beta must be rank 1"
+    return rebind[IndexList[type_of(input).rank]](
+        coord_to_index_list(input.shape().tuple())
+    )
 
 
 @extensibility.register("mo.reduce.reduce_min_and_max")
@@ -1570,7 +1573,7 @@ struct ReduceMinAndMax:
 @extensibility.register_shape_function("mo.reduce.reduce_min_and_max")
 def reduce_reduce_min_and_max_shape[
     axis: Int,
-](input: InputTensor) -> IndexList[input.rank]:
+](input: Some[Tensor]) -> IndexList[type_of(input).rank]:
     """Computes the output shape for the `mo.reduce.reduce_min_and_max` graph op.
 
     Parameters:
@@ -1582,8 +1585,10 @@ def reduce_reduce_min_and_max_shape[
     Returns:
         The output shape with `axis` replaced by 2 (for min and max).
     """
-    var new_shape = input.shape()
-    new_shape[_unsafe_normalize_neg_index(axis, input.rank)] = 2
+    var new_shape = rebind[IndexList[type_of(input).rank]](
+        coord_to_index_list(input.shape().tuple())
+    )
+    new_shape[_unsafe_normalize_neg_index(axis, type_of(input).rank)] = 2
 
     return new_shape
 
@@ -1697,10 +1702,10 @@ struct ReduceRMSNormFusedResidualAdd:
                 residual_output_fn,
                 input.shape_coord(),
                 ComptimeInt[cols](),
-                gamma1.to_tile_tensor[DType.int64](),
+                gamma1.to_tile_tensor[.int64](),
                 epsilon1.cast[dtype](),
                 weight_offset1,
-                gamma2.to_tile_tensor[DType.int64](),
+                gamma2.to_tile_tensor[.int64](),
                 epsilon2.cast[dtype](),
                 weight_offset2,
                 ctx,
@@ -1717,11 +1722,11 @@ struct ReduceRMSNormFusedResidualAdd:
                 output_fn,
                 residual_output_fn,
                 input.shape_coord(),
-                Scalar[DType.int](Int(input.shape()[rank - 1])),
-                gamma1.to_tile_tensor[DType.int64](),
+                Int(Int(input.shape()[rank - 1])),
+                gamma1.to_tile_tensor[.int64](),
                 epsilon1.cast[dtype](),
                 weight_offset1,
-                gamma2.to_tile_tensor[DType.int64](),
+                gamma2.to_tile_tensor[.int64](),
                 epsilon2.cast[dtype](),
                 weight_offset2,
                 ctx,
@@ -1733,23 +1738,17 @@ struct ReduceRMSNormFusedResidualAdd:
 )
 def composite_rms_norm_fused_residual_add_shape[
     dtype: DType,
-    rank: Int,
 ](
-    input: InputTensor[dtype=dtype, rank=rank, ...],
-    residual_input: InputTensor[dtype=dtype, rank=rank, ...],
-    gamma1: InputTensor[dtype=dtype, rank=1, ...],
-    gamma2: InputTensor[dtype=dtype, rank=1, ...],
+    input: Some[Tensor],
+    residual_input: Some[Tensor],
+    gamma1: Some[Tensor],
+    gamma2: Some[Tensor],
     epsilon1: Float32,
     epsilon2: Float32,
     weight_offset1: Scalar[dtype=dtype],
     weight_offset2: Scalar[dtype=dtype],
-) -> IndexList[rank]:
+) -> IndexList[type_of(input).rank]:
     """Computes the output shape for the `mo.composite.rms_norm_fused_residual_add` graph op.
-
-    Parameters:
-        dtype: Element type of the `input`, `residual_input`, and weight
-            tensors.
-        rank: Number of dimensions in the `input` and output tensors.
 
     Args:
         input: Primary input tensor whose shape the output mirrors.
@@ -1770,7 +1769,26 @@ def composite_rms_norm_fused_residual_add_shape[
     Returns:
         The output shape, which matches the `input` shape.
     """
-    return input.shape()
+    comptime assert (
+        type_of(residual_input).dtype == type_of(input).dtype
+    ), "residual_input dtype must match input dtype"
+    comptime assert (
+        type_of(residual_input).rank == type_of(input).rank
+    ), "residual_input rank must match input rank"
+    comptime assert (
+        type_of(gamma1).dtype == type_of(input).dtype
+    ), "gamma1 dtype must match input dtype"
+    comptime assert (
+        type_of(gamma2).dtype == type_of(input).dtype
+    ), "gamma2 dtype must match input dtype"
+    comptime assert type_of(gamma1).rank == 1, "gamma1 must be rank 1"
+    comptime assert type_of(gamma2).rank == 1, "gamma2 must be rank 1"
+    comptime assert (
+        dtype == type_of(input).dtype
+    ), "weight_offset1/weight_offset2 dtype must match input dtype"
+    return rebind[IndexList[type_of(input).rank]](
+        coord_to_index_list(input.shape().tuple())
+    )
 
 
 @extensibility.register("mo.composite.rms_norm_residual_add")
@@ -1861,7 +1879,7 @@ struct RMSNormResidualAdd:
                 multiply_before_cast=multiply_before_cast,
             ](
                 input.shape(),
-                gamma.to_tile_tensor[DType.int64](),
+                gamma.to_tile_tensor[.int64](),
                 epsilon,
                 weight_offset,
                 ctx,
@@ -1922,7 +1940,7 @@ struct RMSNormResidualAdd:
                 output_fn_cpu,
                 residual_output_fn_cpu,
                 input.shape(),
-                gamma.to_tile_tensor[DType.int64](),
+                gamma.to_tile_tensor[.int64](),
                 epsilon,
                 weight_offset,
             )
@@ -1931,15 +1949,29 @@ struct RMSNormResidualAdd:
 @extensibility.register_shape_function("mo.composite.rms_norm_residual_add")
 def composite_rms_norm_residual_add_shape[
     dtype: DType,
-    rank: Int,
 ](
-    input: InputTensor[dtype=dtype, rank=rank, ...],
-    residual_input: InputTensor[dtype=dtype, rank=rank, ...],
-    gamma: InputTensor[dtype=dtype, rank=1, ...],
+    input: Some[Tensor],
+    residual_input: Some[Tensor],
+    gamma: Some[Tensor],
     epsilon: Float32,
     weight_offset: Scalar[dtype=dtype],
-) -> IndexList[rank]:
-    return input.shape()
+) -> IndexList[type_of(input).rank]:
+    comptime assert (
+        type_of(residual_input).dtype == type_of(input).dtype
+    ), "residual_input dtype must match input dtype"
+    comptime assert (
+        type_of(residual_input).rank == type_of(input).rank
+    ), "residual_input rank must match input rank"
+    comptime assert (
+        type_of(gamma).dtype == type_of(input).dtype
+    ), "gamma dtype must match input dtype"
+    comptime assert type_of(gamma).rank == 1, "gamma must be rank 1"
+    comptime assert (
+        dtype == type_of(input).dtype
+    ), "weight_offset dtype must match input dtype"
+    return rebind[IndexList[type_of(input).rank]](
+        coord_to_index_list(input.shape().tuple())
+    )
 
 
 @extensibility.register("mo.bottom_k")
@@ -1953,11 +1985,11 @@ struct BottomK:
         target: StaticString,
     ](
         values: OutputTensor[dtype=dtype, rank=rank, ...],
-        indices: OutputTensor[dtype=DType.int64, rank=rank, ...],
+        indices: OutputTensor[dtype=.int64, rank=rank, ...],
         input: InputTensor[dtype=dtype, rank=rank, ...],
         k: Scalar,
         axis: Scalar,
-        sorted: Scalar[DType.bool],
+        sorted: Scalar[.bool],
         ctx: DeviceContext,
     ) raises:
         """Executes the `mo.bottom_k` graph op.
@@ -1980,11 +2012,11 @@ struct BottomK:
             Error: If the operation parameters are invalid.
         """
         top_k[largest=False, target=target](
-            input.to_tile_tensor[DType.int64](),
+            input.to_tile_tensor[.int64](),
             Int(k),
             Int(axis),
-            values.to_tile_tensor[DType.int64](),
-            indices.to_tile_tensor[DType.int64](),
+            values.to_tile_tensor[.int64](),
+            indices.to_tile_tensor[.int64](),
             sorted,
             ctx,
         )
@@ -1992,11 +2024,11 @@ struct BottomK:
 
 @extensibility.register_shape_function("mo.bottom_k")
 def bottom_k_shape(
-    input: InputTensor,
+    input: Some[TileTensorable],
     k: Scalar,
     axis: Scalar,
-    sorted: Scalar[DType.bool],
-) raises -> IndexList[input.rank]:
+    sorted: Scalar[.bool],
+) raises -> IndexList[type_of(input).rank]:
     """Computes the output shape for the `mo.bottom_k` graph op.
 
     Args:
@@ -2008,9 +2040,9 @@ def bottom_k_shape(
     Returns:
         The output shape after selecting the bottom-k values along `axis`.
     """
-    return rebind[IndexList[input.rank]](
+    return rebind[IndexList[type_of(input).rank]](
         top_k_shape_impl(
-            input.to_tile_tensor[DType.int64](),
+            input.to_tile_tensor(),
             Int(k),
             Int(axis),
         )
@@ -2029,11 +2061,11 @@ struct TopK:
         _trace_name: StaticString,
     ](
         values: OutputTensor[dtype=dtype, rank=rank, ...],
-        indices: OutputTensor[dtype=DType.int64, rank=rank, ...],
+        indices: OutputTensor[dtype=.int64, rank=rank, ...],
         input: InputTensor[dtype=dtype, rank=rank, ...],
         k: Scalar,
         axis: Scalar,
-        sorted: Scalar[DType.bool],
+        sorted: Scalar[.bool],
         ctx: DeviceContext,
     ) raises:
         """Executes the `mo.top_k` graph op.
@@ -2057,11 +2089,11 @@ struct TopK:
             Error: If the operation parameters are invalid.
         """
         top_k[largest=True, target=target](
-            input.to_tile_tensor[DType.int64](),
+            input.to_tile_tensor[.int64](),
             Int(k),
             Int(axis),
-            values.to_tile_tensor[DType.int64](),
-            indices.to_tile_tensor[DType.int64](),
+            values.to_tile_tensor[.int64](),
+            indices.to_tile_tensor[.int64](),
             sorted,
             ctx,
         )
@@ -2069,11 +2101,11 @@ struct TopK:
 
 @extensibility.register_shape_function("mo.top_k")
 def top_k_shape(
-    input: InputTensor,
+    input: Some[TileTensorable],
     k: Scalar,
     axis: Scalar,
-    sorted: Scalar[DType.bool],
-) raises -> IndexList[input.rank]:
+    sorted: Scalar[.bool],
+) raises -> IndexList[type_of(input).rank]:
     """Computes the output shape for the `mo.top_k` graph op.
 
     Args:
@@ -2085,9 +2117,9 @@ def top_k_shape(
     Returns:
         The output shape after selecting the top-k values along `axis`.
     """
-    return rebind[IndexList[input.rank]](
+    return rebind[IndexList[type_of(input).rank]](
         top_k_shape_impl(
-            input.to_tile_tensor[DType.int64](),
+            input.to_tile_tensor(),
             Int(k),
             Int(axis),
         )
@@ -2145,7 +2177,7 @@ struct Softmax:
                 input_fn,
                 Coord(output.shape()),
                 ComptimeInt[sm_cols](),
-                output.to_tile_tensor[DType.int64](),
+                output.to_tile_tensor[.int64](),
                 axis,
                 context=ctx,
             )
@@ -2153,8 +2185,8 @@ struct Softmax:
             softmax[output.dtype, output.rank, target=target, reduce_dim=axis](
                 input_fn,
                 Coord(output.shape()),
-                Scalar[DType.int](Int(input.shape()[axis])),
-                output.to_tile_tensor[DType.int64](),
+                Int(Int(input.shape()[axis])),
+                output.to_tile_tensor[.int64](),
                 axis,
                 context=ctx,
             )
@@ -2217,7 +2249,7 @@ struct LogSoftmax:
                 input_fn,
                 Coord(output.shape()),
                 ComptimeInt[lsm_cols](),
-                output.to_tile_tensor[DType.int64](),
+                output.to_tile_tensor[.int64](),
                 axis,
                 context=ctx,
             )
@@ -2231,8 +2263,8 @@ struct LogSoftmax:
             ](
                 input_fn,
                 Coord(output.shape()),
-                Scalar[DType.int](Int(input.shape()[axis])),
-                output.to_tile_tensor[DType.int64](),
+                Int(Int(input.shape()[axis])),
+                output.to_tile_tensor[.int64](),
                 axis,
                 context=ctx,
             )
@@ -2269,8 +2301,8 @@ struct CumSum:
             ctx: Device context used to enqueue the kernel.
         """
         cumsum[dtype, Bool(exclusive), Bool(reverse), axis=axis](
-            output.to_tile_tensor[DType.int64](),
-            input.to_tile_tensor[DType.int64](),
+            output.to_tile_tensor[.int64](),
+            input.to_tile_tensor[.int64](),
         )
 
 
@@ -2299,8 +2331,8 @@ struct ArgSort[*, ascending: Bool]:
         Raises:
             Error: If the operation parameters are invalid.
         """
-        var indices_tensor = indices.to_tile_tensor[DType.int64]()
-        var input_tensor = input.to_tile_tensor[DType.int64]()
+        var indices_tensor = indices.to_tile_tensor[.int64]()
+        var input_tensor = input.to_tile_tensor[.int64]()
 
         comptime if target == "cpu":
             argsort[ascending=Self.ascending](indices_tensor, input_tensor)

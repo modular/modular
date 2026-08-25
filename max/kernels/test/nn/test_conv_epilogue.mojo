@@ -300,7 +300,7 @@ def test[
 
 def main() raises:
     # No packing or padding.
-    test[2, DType.float32, False](
+    test[2, .float32, False](
         1,  # N
         Index(6, 5),  # H, W
         1,  # C
@@ -312,7 +312,7 @@ def main() raises:
         1,  # num_groups
     )
 
-    test[3, DType.float32, False](
+    test[3, .float32, False](
         1,  # N
         Index(4, 8, 13),
         16,  # C
@@ -324,7 +324,7 @@ def main() raises:
         1,  # num_groups
     )
 
-    test[1, DType.float32, False](
+    test[1, .float32, False](
         1,  # N
         Index(14),
         7,  # C
@@ -338,7 +338,7 @@ def main() raises:
 
     # Pre-packed test w/o padding.
 
-    test[2, DType.float32, True](
+    test[2, .float32, True](
         1,  # N
         Index(12, 12),
         12,  # C
@@ -350,7 +350,7 @@ def main() raises:
         1,  # num_groups
     )
 
-    test[3, DType.float32, True](
+    test[3, .float32, True](
         5,  # N
         Index(9, 12, 11),
         8,  # C
@@ -362,7 +362,7 @@ def main() raises:
         1,  # num_groups
     )
 
-    test[1, DType.float32, True](
+    test[1, .float32, True](
         1,  # N
         Index(17),
         11,  # C
@@ -376,7 +376,7 @@ def main() raises:
 
     # No packing, w/ padding, and F not multiple of simd_size.
 
-    test[2, DType.float32, False](
+    test[2, .float32, False](
         1,  # N
         Index(5, 5),
         3,  # C
@@ -388,7 +388,7 @@ def main() raises:
         1,  # num_groups
     )
 
-    test[3, DType.float32, False](
+    test[3, .float32, False](
         1,  # N
         Index(9, 10, 5),
         2,  # C
@@ -401,7 +401,7 @@ def main() raises:
     )
 
     # Pre-packed, F not multiple of simd_size
-    test[2, DType.float32, True](
+    test[2, .float32, True](
         1,  # N
         Index(7, 7),
         2,  # C
@@ -413,7 +413,7 @@ def main() raises:
         1,  # num_groups
     )
 
-    test[1, DType.float32, True](
+    test[1, .float32, True](
         1,  # N
         Index(11),
         2,  # C
@@ -425,7 +425,7 @@ def main() raises:
         1,  # num_groups
     )
 
-    test[3, DType.float32, True](
+    test[3, .float32, True](
         1,  # N
         Index(7, 7, 9),
         2,  # C
@@ -437,7 +437,7 @@ def main() raises:
         1,  # num_groups
     )
 
-    test[2, DType.float32, True](
+    test[2, .float32, True](
         1,  # N
         Index(14, 14),
         3,  # C
@@ -450,7 +450,7 @@ def main() raises:
     )
 
     # grouped conv tests
-    test[2, DType.float32, True](
+    test[2, .float32, True](
         1,  # N
         Index(3, 3),
         18,  # C
@@ -462,7 +462,7 @@ def main() raises:
         3,  # num_groups
     )
 
-    test[2, DType.float32, True](
+    test[2, .float32, True](
         3,  # N
         Index(11, 17),
         36,  # C
@@ -474,7 +474,7 @@ def main() raises:
         3,  # num_groups
     )
 
-    test[2, DType.float32, True](
+    test[2, .float32, True](
         1,  # N
         Index(11, 17),
         36,  # C
@@ -487,7 +487,7 @@ def main() raises:
     )
 
     # depthwise conv
-    test[2, DType.float32, True](
+    test[2, .float32, True](
         1,  # N
         Index(11, 7),
         33,  # C
@@ -500,7 +500,7 @@ def main() raises:
     )
 
     # 1D edge case
-    test[1, DType.float32, True](
+    test[1, .float32, True](
         2,  # N
         Index(49),  # W
         1024,  # C

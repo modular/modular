@@ -136,17 +136,17 @@ struct AddressSpace(
         Args:
             writer: The object to write to.
         """
-        if self == AddressSpace.GENERIC:
+        if self == .GENERIC:
             writer.write("AddressSpace.GENERIC")
-        elif self == AddressSpace.GLOBAL:
+        elif self == .GLOBAL:
             writer.write("AddressSpace.GLOBAL")
-        elif self == AddressSpace.SHARED:
+        elif self == .SHARED:
             writer.write("AddressSpace.SHARED")
-        elif self == AddressSpace.CONSTANT:
+        elif self == .CONSTANT:
             writer.write("AddressSpace.CONSTANT")
-        elif self == AddressSpace.LOCAL:
+        elif self == .LOCAL:
             writer.write("AddressSpace.LOCAL")
-        elif self == AddressSpace.SHARED_CLUSTER:
+        elif self == .SHARED_CLUSTER:
             writer.write("AddressSpace.SHARED_CLUSTER")
         else:
             writer.write("AddressSpace(", Int(self.value()), ")")

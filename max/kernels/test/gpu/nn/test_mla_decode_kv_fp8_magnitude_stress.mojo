@@ -71,7 +71,7 @@ def not_finite[dtype: DType](x: Scalar[dtype]) -> Bool:
     # NaN via isnan; Inf via magnitude (any real Inf exceeds 1e30, while bf16/f32
     # finite values of interest here are far smaller). Avoids depending on an
     # `isinf` export that the stdlib numerics module may not provide.
-    return isnan(x) or (abs(x.cast[DType.float64]()) > Float64(1e30))
+    return isnan(x) or (abs(x.cast[.float64]()) > Float64(1e30))
 
 
 @fieldwise_init
@@ -117,7 +117,7 @@ def magnitude_stress_inplace[
     dtype: DType
 ](buf: UnsafePointer[mut=True, Scalar[dtype], _], n: Int, stress: Float32):
     for i in range(n):
-        buf[i] = (buf[i].cast[DType.float32]() * stress).cast[dtype]()
+        buf[i] = (buf[i].cast[.float32]() * stress).cast[dtype]()
 
 
 def test[
@@ -246,7 +246,7 @@ def test[
     comptime if mla_mask_type == MLAMaskType.CAUSAL:
         var k_operand = LayoutTensorMHAOperand(lt_to_tt(k_ref_device))
         var null_valid_length = LayoutTensor[
-            DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
+            .uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
         ](
             None,
             RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(Index(0)),
@@ -300,8 +300,7 @@ def test[
                         ref_nonfinite += 1
                     if not not_finite(actual) and not not_finite(expect):
                         var e = abs(
-                            actual.cast[DType.float64]()
-                            - expect.cast[DType.float64]()
+                            actual.cast[.float64]() - expect.cast[.float64]()
                         )
                         if e > max_abs_err:
                             max_abs_err = e

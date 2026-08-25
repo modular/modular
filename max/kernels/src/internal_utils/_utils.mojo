@@ -91,11 +91,9 @@ def bench_compile_time[
 
     # TODO: add docstring, this function should be used on its own or at the end of measured benchmarks.
     @always_inline
-    @__parameter
-    def bench_call(mut b: Bencher) raises:
+    def bench_call(mut b: Bencher) raises {}:
         @always_inline
-        @__parameter
-        def bench_iter() raises:
+        def bench_iter() raises {}:
             comptime if emission_kind == "asm" or emission_kind == "llvm":
                 var s = compile_info[func, emission_kind=emission_kind]().asm
                 keep(s)
@@ -108,7 +106,7 @@ def bench_compile_time[
                     keep(UnsafePointer(to=func))
                     clobber_memory()
 
-        b.iter[bench_iter]()
+        b.iter(bench_iter)
 
     # To ensure consistency of Bench.dump_report, we should set
     # the value of all measured metrics m to 0.
@@ -119,8 +117,10 @@ def bench_compile_time[
             var metric = ref_measures[i].metric
             measures.append(ThroughputMeasure(metric, 0))
 
-    m.bench_function[bench_call](
-        BenchId("bench_compile" + "/" + emission_kind, name), measures=measures
+    m.bench_function(
+        bench_call,
+        BenchId("bench_compile" + "/" + emission_kind, name),
+        measures=measures,
     )
 
 
@@ -383,7 +383,7 @@ def init_vector_gpu[
             values = SIMD[dtype, 4](rng.step_uniform())
 
         elif dtype.is_unsigned():
-            values = (rng.step() & Scalar[dtype].MAX.cast[DType.uint32]()).cast[
+            values = (rng.step() & Scalar[dtype].MAX.cast[.uint32]()).cast[
                 dtype
             ]()
         else:
@@ -450,9 +450,9 @@ def _init_block_scaled_scales_gpu[
     # Then add 127 to get exponents -> scale values of 1, 2, 4, 8.
     var rng = Random(offset=UInt64(tid))
 
-    comptime if dtype == DType.float8_e8m0fnu:
+    comptime if dtype == .float8_e8m0fnu:
         var rand_floats = rng.step_uniform() * 4
-        var rand_u8 = rand_floats.cast[DType.uint8]() & 3
+        var rand_u8 = rand_floats.cast[.uint8]() & 3
         var values = bitcast[dtype, 4](rand_u8 + 127)
         apply(values)
     else:

@@ -71,9 +71,9 @@ from shmem.ep_comm import fused_silu_mxfp8_interleaved_kernel
 
 
 @always_inline
-def e8m0(x: Float32) -> Scalar[DType.float8_e8m0fnu]:
+def e8m0(x: Float32) -> Float8_e8m0fnu:
     """Construct an E8M0 scalar from a Float32 via cast."""
-    return x.cast[DType.float8_e8m0fnu]()
+    return x.cast[.float8_e8m0fnu]()
 
 
 def _make_uniform(value: Int, count: Int) -> List[Int]:
@@ -105,15 +105,15 @@ struct _SharedB(Movable):
     per-expert N-axis sigma permutation run only once.
     """
 
-    var b_perm: DeviceBuffer[DType.float8_e4m3fn]
+    var b_perm: DeviceBuffer[.float8_e4m3fn]
     var b_scales_perm: DeviceBuffer[MXFP8_SF_DTYPE]
-    var expert_scales: DeviceBuffer[DType.float32]
+    var expert_scales: DeviceBuffer[.float32]
 
     def __init__(
         out self,
-        var b_perm: DeviceBuffer[DType.float8_e4m3fn],
+        var b_perm: DeviceBuffer[.float8_e4m3fn],
         var b_scales_perm: DeviceBuffer[MXFP8_SF_DTYPE],
-        var expert_scales: DeviceBuffer[DType.float32],
+        var expert_scales: DeviceBuffer[.float32],
     ):
         self.b_perm = b_perm^
         self.b_scales_perm = b_scales_perm^
@@ -159,7 +159,7 @@ def _build_shared_b[
     var b_scales_host = TileTensor(b_scales_host_ptr, b_scales_shape)
     var b_scales_perm_host = TileTensor(b_scales_perm_host_ptr, b_scales_shape)
 
-    var expert_scales_host_ptr = alloc[Scalar[DType.float32]](num_experts)
+    var expert_scales_host_ptr = alloc[Float32](num_experts)
     for i in range(num_experts):
         expert_scales_host_ptr[i] = 1.0 + Float32(i + 1) / Float32(num_experts)
 
@@ -240,9 +240,7 @@ def _build_shared_b[
     var b_scales_perm_device = ctx.enqueue_create_buffer[scales_dtype](
         b_scales_total
     )
-    var expert_scales_device = ctx.enqueue_create_buffer[DType.float32](
-        num_experts
-    )
+    var expert_scales_device = ctx.enqueue_create_buffer[.float32](num_experts)
 
     ctx.enqueue_copy(b_perm_device, b_perm_host_ptr)
     ctx.enqueue_copy(b_scales_perm_device, b_scales_perm_host_ptr)
@@ -358,23 +356,19 @@ def _test_swiglu_mxfp8_dispatch[
     # ---- Per-expert offsets / IDs sized at comptime upper bound
     # `num_experts`. Tail slots [num_active_experts, num_experts) are
     # padded (0 tokens, -1 id); the kernel skips expert_id < 0.
-    var a_offsets_host_ptr = alloc[Scalar[DType.uint32]](num_experts + 1)
-    var a_scale_offsets_ptr = alloc[Scalar[DType.uint32]](num_experts)
-    var expert_ids_host_ptr = alloc[Scalar[DType.int32]](num_experts)
+    var a_offsets_host_ptr = alloc[UInt32](num_experts + 1)
+    var a_scale_offsets_ptr = alloc[UInt32](num_experts)
+    var expert_ids_host_ptr = alloc[Int32](num_experts)
 
-    var a_offsets_device = ctx.enqueue_create_buffer[DType.uint32](
-        num_experts + 1
-    )
+    var a_offsets_device = ctx.enqueue_create_buffer[.uint32](num_experts + 1)
     var a_offsets_tensor = TileTensor(
         a_offsets_device, row_major(Coord(Idx[num_experts + 1]))
     )
-    var a_scale_offsets_device = ctx.enqueue_create_buffer[DType.uint32](
-        num_experts
-    )
+    var a_scale_offsets_device = ctx.enqueue_create_buffer[.uint32](num_experts)
     var a_scale_offsets_tensor = TileTensor(
         a_scale_offsets_device, row_major(Coord(Idx[num_experts]))
     )
-    var expert_ids_device = ctx.enqueue_create_buffer[DType.int32](num_experts)
+    var expert_ids_device = ctx.enqueue_create_buffer[.int32](num_experts)
     var expert_ids_tensor = TileTensor(
         expert_ids_device, row_major(Coord(Idx[num_experts]))
     )
@@ -578,12 +572,10 @@ def _test_swiglu_mxfp8_dispatch[
     var O_mismatch = 0
     var first_bad_O = -1
     for i in range(O_size):
-        var ref_b = bitcast[DType.uint8, 1](
-            SIMD[fp8_dtype, 1](O_ref_host_ptr[i])
-        )[0]
-        var test_b = bitcast[DType.uint8, 1](
-            SIMD[fp8_dtype, 1](O_test_host_ptr[i])
-        )[0]
+        var ref_b = bitcast[.uint8, 1](SIMD[fp8_dtype, 1](O_ref_host_ptr[i]))[0]
+        var test_b = bitcast[.uint8, 1](SIMD[fp8_dtype, 1](O_test_host_ptr[i]))[
+            0
+        ]
         if ref_b != test_b:
             if first_bad_O < 0:
                 first_bad_O = i
@@ -592,10 +584,10 @@ def _test_swiglu_mxfp8_dispatch[
     var S_mismatch = 0
     var first_bad_S = -1
     for i in range(S_size):
-        var ref_b = bitcast[DType.uint8, 1](
+        var ref_b = bitcast[.uint8, 1](
             SIMD[scales_dtype, 1](S_ref_host_ptr[i])
         )[0]
-        var test_b = bitcast[DType.uint8, 1](
+        var test_b = bitcast[.uint8, 1](
             SIMD[scales_dtype, 1](S_test_host_ptr[i])
         )[0]
         if ref_b != test_b:

@@ -130,21 +130,20 @@ def _check_router(
         var biased = List[Float64]()
         for e in range(N_EXPERTS):
             biased.append(
-                scores[base + e].cast[DType.float64]()
-                + bias[e].cast[DType.float64]()
+                scores[base + e].cast[.float64]() + bias[e].cast[.float64]()
             )
         # k-th largest biased score (the top-k membership threshold).
         var work = biased.copy()
-        var threshold = neg_inf[DType.float64]()
+        var threshold = neg_inf[.float64]()
         for _ in range(TOPK):
             var best = 0
-            var best_val = neg_inf[DType.float64]()
+            var best_val = neg_inf[.float64]()
             for e in range(N_EXPERTS):
                 if work[e] > best_val:
                     best_val = work[e]
                     best = e
             threshold = best_val
-            work[best] = neg_inf[DType.float64]()
+            work[best] = neg_inf[.float64]()
         var tol = 1e-3 + 1e-3 * abs(threshold)
 
         # (1) Every selected expert is in the true top-k (up to ties).
@@ -190,7 +189,7 @@ def _check_router(
             comptime if NORM:
                 w /= wsum
             w *= ROUTED_SCALING
-            var got = actual_w[kbase + j].cast[DType.float64]()
+            var got = actual_w[kbase + j].cast[.float64]()
             if abs(got - w) > 1e-2 + 1e-2 * abs(w):
                 print(
                     "FUZZ_NUMERIC_FAIL kind=weight token=",
@@ -281,7 +280,7 @@ def run_one_case(
 
     var scores_dev = ctx.enqueue_create_buffer[scores_type](nt * N_EXPERTS)
     var bias_dev = ctx.enqueue_create_buffer[bias_type](N_EXPERTS)
-    var idx_dev = ctx.enqueue_create_buffer[DType.int32](nt * TOPK)
+    var idx_dev = ctx.enqueue_create_buffer[.int32](nt * TOPK)
     var w_dev = ctx.enqueue_create_buffer[scores_type](nt * TOPK)
     ctx.enqueue_copy(scores_dev, scores_host)
     ctx.enqueue_copy(bias_dev, bias_host)
@@ -304,7 +303,7 @@ def run_one_case(
     ctx.synchronize()
 
     if contract:
-        var idx_h = ctx.enqueue_create_host_buffer[DType.int32](nt * TOPK)
+        var idx_h = ctx.enqueue_create_host_buffer[.int32](nt * TOPK)
         ctx.enqueue_copy(idx_h, idx_dev)
         ctx.synchronize()
         if not _check_index_contract(
@@ -312,7 +311,7 @@ def run_one_case(
         ):
             raise Error("MoE router index contract violated")
     elif check:
-        var idx_h = ctx.enqueue_create_host_buffer[DType.int32](nt * TOPK)
+        var idx_h = ctx.enqueue_create_host_buffer[.int32](nt * TOPK)
         var w_h = ctx.enqueue_create_host_buffer[scores_type](nt * TOPK)
         ctx.enqueue_copy(idx_h, idx_dev)
         ctx.enqueue_copy(w_h, w_dev)

@@ -35,7 +35,7 @@ def _cpu_ref[
     proj_h: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
     norm_h: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
     eps: Float32,
-    out_h: UnsafePointer[Scalar[DType.float32], MutUntrackedOrigin],
+    out_h: UnsafePointer[Float32, MutUntrackedOrigin],
 ):
     for t in range(tokens):
         var scores = List[Float64]()
@@ -43,11 +43,8 @@ def _cpu_ref[
             var sum_sq = Float64(0)
             var dot = Float64(0)
             for h in range(hidden):
-                var val = v_h[(t * C + c) * hidden + h].cast[DType.float64]()
-                var sw = (
-                    proj_h[h].cast[DType.float64]()
-                    * norm_h[h].cast[DType.float64]()
-                )
+                var val = v_h[(t * C + c) * hidden + h].cast[.float64]()
+                var sw = proj_h[h].cast[.float64]() * norm_h[h].cast[.float64]()
                 sum_sq += val * val
                 dot += val * sw
             var rms_scale = 1.0 / sqrt(sum_sq / Float64(hidden) + Float64(eps))
@@ -67,19 +64,16 @@ def _cpu_ref[
         for h in range(hidden):
             var acc = Float64(0)
             for c in range(C):
-                acc += (
-                    probs[c]
-                    * v_h[(t * C + c) * hidden + h].cast[DType.float64]()
-                )
+                acc += probs[c] * v_h[(t * C + c) * hidden + h].cast[.float64]()
             out_h[t * hidden + h] = Float32(acc)
 
 
 def _producer_kernel(
-    dst: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
-    src: UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin],
+    dst: UnsafePointer[Float32, MutAnyOrigin],
+    src: UnsafePointer[Float32, ImmutAnyOrigin],
     n: Int32,
     spin: Int32,
-    sink: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
+    sink: UnsafePointer[Float32, MutAnyOrigin],
 ):
     """Stand-in for the real graph's `concat`: a GPU grid that writes the
     exact buffer `attn_res_mix_gpu` reads next, immediately before it on the
@@ -100,9 +94,7 @@ def _producer_kernel(
     # so neither the loop nor the stall can be folded away.
     var acc = src[0]
     for _ in range(Int(spin)):
-        acc = acc * Scalar[DType.float32](1.0000001) + Scalar[DType.float32](
-            1e-9
-        )
+        acc = acc * Float32(1.0000001) + Float32(1e-9)
 
     var start = Int(block_idx.x) * Int(block_dim.x) + Int(thread_idx.x)
     var stride = Int(grid_dim.x) * Int(block_dim.x)
@@ -120,7 +112,7 @@ def _assert_finite_contract[
     dtype: DType
 ](
     got: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
-    want: UnsafePointer[Scalar[DType.float32], MutUntrackedOrigin],
+    want: UnsafePointer[Float32, MutUntrackedOrigin],
     n: Int,
     context: String,
 ) raises:
@@ -161,7 +153,7 @@ def _check[
     var v_h = alloc[Scalar[dtype]](tokens * C * hidden)
     var proj_h = alloc[Scalar[dtype]](hidden)
     var norm_h = alloc[Scalar[dtype]](hidden)
-    var ref_out_h = alloc[Scalar[DType.float32]](tokens * hidden)
+    var ref_out_h = alloc[Float32](tokens * hidden)
 
     # Quantize the fill through `dtype` so the fp64 reference consumes exactly
     # the values the device sees -- otherwise a low-precision run is charged
@@ -201,9 +193,13 @@ def _check[
         attn_res_mix_gpu[
             dtype,
             out_tt.LayoutType,
+            out_tt.Storage,
             v_tt.LayoutType,
+            v_tt.Storage,
             proj_tt.LayoutType,
+            proj_tt.Storage,
             norm_tt.LayoutType,
+            norm_tt.Storage,
             C,
             BLOCK,
         ]
@@ -230,8 +226,8 @@ def _check[
     var max_abs_err = Float64(0)
     var max_abs_ref = Float64(0)
     for i in range(tokens * hidden):
-        var got = out_h[i].cast[DType.float64]()
-        var want = ref_out_h[i].cast[DType.float64]()
+        var got = out_h[i].cast[.float64]()
+        var want = ref_out_h[i].cast[.float64]()
         var err = abs(got - want)
         if err > max_abs_err:
             max_abs_err = err
@@ -276,26 +272,26 @@ comptime BF16_REL_TOL = 1e-2
 
 def test_single_candidate_fixture_hidden(ctx: DeviceContext) raises:
     """C=1 (no earlier candidates, softmax degenerates to a no-op)."""
-    _check[DType.float32, 1](4, 1024, F32_REL_TOL, ctx)
+    _check[.float32, 1](4, 1024, F32_REL_TOL, ctx)
 
 
 def test_two_candidates_fixture_hidden(ctx: DeviceContext) raises:
-    _check[DType.float32, 2](8, 1024, F32_REL_TOL, ctx)
+    _check[.float32, 2](8, 1024, F32_REL_TOL, ctx)
 
 
 def test_three_candidates_k3_mini_hidden(ctx: DeviceContext) raises:
     """K3-mini / real K3's own shape: hidden=7168, C up to 3 there."""
-    _check[DType.float32, 3](8, 7168, F32_REL_TOL, ctx)
+    _check[.float32, 3](8, 7168, F32_REL_TOL, ctx)
 
 
 def test_eight_candidates_k3_mini_hidden(ctx: DeviceContext) raises:
     """Full K3 (93 layers, attn_res_block_size=12) reaches C=8."""
-    _check[DType.float32, 8](2, 7168, F32_REL_TOL, ctx)
+    _check[.float32, 8](2, 7168, F32_REL_TOL, ctx)
 
 
 def test_single_token_decode_shape(ctx: DeviceContext) raises:
     """Decode: exactly 1 token, the shape this kernel exists to speed up."""
-    _check[DType.float32, 3](1, 7168, F32_REL_TOL, ctx)
+    _check[.float32, 3](1, 7168, F32_REL_TOL, ctx)
 
 
 def test_bfloat16_k3_mini_hidden(ctx: DeviceContext) raises:
@@ -303,19 +299,19 @@ def test_bfloat16_k3_mini_hidden(ctx: DeviceContext) raises:
     graph op (`builtin_kernels/attn_res.mojo`), so an fp32-only test leaves
     the production specialization uncompiled -- and it is the one whose input
     casts and output downcast are lossy."""
-    _check[DType.bfloat16, 3](8, 7168, BF16_REL_TOL, ctx)
+    _check[.bfloat16, 3](8, 7168, BF16_REL_TOL, ctx)
 
 
 def test_bfloat16_single_token_decode_shape(ctx: DeviceContext) raises:
     """The bf16 decode shape: one token, so one CTA carries the whole
     reduction."""
-    _check[DType.bfloat16, 3](1, 7168, BF16_REL_TOL, ctx)
+    _check[.bfloat16, 3](1, 7168, BF16_REL_TOL, ctx)
 
 
 def test_bfloat16_eight_candidates(ctx: DeviceContext) raises:
     """The bf16 case at the widest candidate axis, where the softmax has the
     most room to amplify a score error."""
-    _check[DType.bfloat16, 8](2, 7168, BF16_REL_TOL, ctx)
+    _check[.bfloat16, 8](2, 7168, BF16_REL_TOL, ctx)
 
 
 def test_overflow_matches_unfused_semantics(ctx: DeviceContext) raises:
@@ -342,9 +338,9 @@ def test_overflow_matches_unfused_semantics(ctx: DeviceContext) raises:
     # the sum regardless of `hidden`.
     comptime BIG = Float32(1e20)
 
-    var v_h = alloc[Scalar[DType.float32]](tokens * C * hidden)
-    var proj_h = alloc[Scalar[DType.float32]](hidden)
-    var norm_h = alloc[Scalar[DType.float32]](hidden)
+    var v_h = alloc[Float32](tokens * C * hidden)
+    var proj_h = alloc[Float32](hidden)
+    var norm_h = alloc[Float32](hidden)
     for t in range(tokens):
         for c in range(C):
             for h in range(hidden):
@@ -353,10 +349,10 @@ def test_overflow_matches_unfused_semantics(ctx: DeviceContext) raises:
         proj_h[h] = BIG
         norm_h[h] = Float32(1.0)
 
-    var v_dev = ctx.enqueue_create_buffer[DType.float32](tokens * C * hidden)
-    var proj_dev = ctx.enqueue_create_buffer[DType.float32](hidden)
-    var norm_dev = ctx.enqueue_create_buffer[DType.float32](hidden)
-    var out_dev = ctx.enqueue_create_buffer[DType.float32](tokens * hidden)
+    var v_dev = ctx.enqueue_create_buffer[.float32](tokens * C * hidden)
+    var proj_dev = ctx.enqueue_create_buffer[.float32](hidden)
+    var norm_dev = ctx.enqueue_create_buffer[.float32](hidden)
+    var out_dev = ctx.enqueue_create_buffer[.float32](tokens * hidden)
     with ctx.push_context():
         ctx.enqueue_copy(v_dev, v_h)
         ctx.enqueue_copy(proj_dev, proj_h)
@@ -371,9 +367,13 @@ def test_overflow_matches_unfused_semantics(ctx: DeviceContext) raises:
         attn_res_mix_gpu[
             DType.float32,
             out_tt.LayoutType,
+            out_tt.Storage,
             v_tt.LayoutType,
+            v_tt.Storage,
             proj_tt.LayoutType,
+            proj_tt.Storage,
             norm_tt.LayoutType,
+            norm_tt.Storage,
             C,
             BLOCK,
         ]
@@ -388,7 +388,7 @@ def test_overflow_matches_unfused_semantics(ctx: DeviceContext) raises:
         block_dim=(BLOCK,),
     )
 
-    var out_h = alloc[Scalar[DType.float32]](tokens * hidden)
+    var out_h = alloc[Float32](tokens * hidden)
     with ctx.push_context():
         ctx.enqueue_copy(out_h, out_dev)
     ctx.synchronize()
@@ -397,7 +397,7 @@ def test_overflow_matches_unfused_semantics(ctx: DeviceContext) raises:
     var expected = Float64(2e20)
     var worst = Float64(0)
     for i in range(tokens * hidden):
-        var got = out_h[i].cast[DType.float64]()
+        var got = out_h[i].cast[.float64]()
         assert_true(
             not Bool(std.math.isnan(out_h[i])),
             (
@@ -451,25 +451,23 @@ def test_pdl_no_host_sync_before_producer(ctx: DeviceContext) raises:
     comptime PRODUCER_SPIN = 2000000
     comptime ITERATIONS = 20
 
-    var proj_h = alloc[Scalar[DType.float32]](hidden)
-    var norm_h = alloc[Scalar[DType.float32]](hidden)
-    var ref_out_h = alloc[Scalar[DType.float32]](tokens * hidden)
-    var out_h = alloc[Scalar[DType.float32]](tokens * hidden)
+    var proj_h = alloc[Float32](hidden)
+    var norm_h = alloc[Float32](hidden)
+    var ref_out_h = alloc[Float32](tokens * hidden)
+    var out_h = alloc[Float32](tokens * hidden)
     for i in range(hidden):
-        proj_h[i] = Scalar[DType.float32](
-            std.math.cos(Float32(i + 3) * Float32(0.091))
-        )
-        norm_h[i] = Scalar[DType.float32](
+        proj_h[i] = Float32(std.math.cos(Float32(i + 3) * Float32(0.091)))
+        norm_h[i] = Float32(
             Float32(1.0)
             + std.math.sin(Float32(i + 2) * Float32(0.043)) * Float32(0.2)
         )
     var eps = Float32(1e-6)
 
-    var proj_dev = ctx.enqueue_create_buffer[DType.float32](hidden)
-    var norm_dev = ctx.enqueue_create_buffer[DType.float32](hidden)
-    var v_dev = ctx.enqueue_create_buffer[DType.float32](tokens * C * hidden)
-    var out_dev = ctx.enqueue_create_buffer[DType.float32](tokens * hidden)
-    var sink_dev = ctx.enqueue_create_buffer[DType.float32](1)
+    var proj_dev = ctx.enqueue_create_buffer[.float32](hidden)
+    var norm_dev = ctx.enqueue_create_buffer[.float32](hidden)
+    var v_dev = ctx.enqueue_create_buffer[.float32](tokens * C * hidden)
+    var out_dev = ctx.enqueue_create_buffer[.float32](tokens * hidden)
+    var sink_dev = ctx.enqueue_create_buffer[.float32](1)
     with ctx.push_context():
         ctx.enqueue_copy(proj_dev, proj_h)
         ctx.enqueue_copy(norm_dev, norm_h)
@@ -486,15 +484,15 @@ def test_pdl_no_host_sync_before_producer(ctx: DeviceContext) raises:
     var n = tokens * C * hidden
 
     for iteration in range(ITERATIONS):
-        var v_h = alloc[Scalar[DType.float32]](n)
+        var v_h = alloc[Float32](n)
         # Vary the data per iteration so a stale read (previous iteration's
         # or uninitialized `v_dev`) doesn't accidentally match by construction.
         for i in range(n):
-            v_h[i] = Scalar[DType.float32](
+            v_h[i] = Float32(
                 std.math.sin(Float32(i + 1 + iteration * 97) * Float32(0.173))
                 * Float32(0.7)
             )
-        var staging_dev = ctx.enqueue_create_buffer[DType.float32](n)
+        var staging_dev = ctx.enqueue_create_buffer[.float32](n)
         with ctx.push_context():
             ctx.enqueue_copy(staging_dev, v_h)
         ctx.synchronize()  # only the H2D upload syncs; not the risk surface.
@@ -504,7 +502,7 @@ def test_pdl_no_host_sync_before_producer(ctx: DeviceContext) raises:
         # Poison `v_dev` so an early read is a wrong ANSWER, not just an
         # unlucky one: all-zero candidates mix to an all-zero output, which is
         # nowhere near the reference.
-        ctx.enqueue_memset[DType.float32](v_dev, 0)
+        ctx.enqueue_memset[.float32](v_dev, 0)
 
         # Producer grid (stands in for `concat`) writes `v_dev`, then
         # `attn_res_mix_gpu` reads it -- back-to-back, same stream, no
@@ -522,9 +520,13 @@ def test_pdl_no_host_sync_before_producer(ctx: DeviceContext) raises:
             attn_res_mix_gpu[
                 DType.float32,
                 out_tt.LayoutType,
+                out_tt.Storage,
                 v_tt.LayoutType,
+                v_tt.Storage,
                 proj_tt.LayoutType,
+                proj_tt.Storage,
                 norm_tt.LayoutType,
+                norm_tt.Storage,
                 C,
                 BLOCK,
             ]

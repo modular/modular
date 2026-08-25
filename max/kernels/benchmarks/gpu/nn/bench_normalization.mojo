@@ -123,7 +123,7 @@ def bench_layer_norm_gpu[
                 input_fn,
                 output_fn,
                 shape_coord,
-                Scalar[DType.int](cols),
+                Int(cols),
                 gamma,
                 beta,
                 epsilon,
@@ -236,7 +236,7 @@ def bench_rms_norm_gpu[
 
 
 def main() raises:
-    comptime dtype = get_defined_dtype["dtype", DType.bfloat16]()
+    comptime dtype = get_defined_dtype["dtype", .bfloat16]()
     comptime shape = int_list_to_tuple[
         get_defined_shape["shape", "256x256"]()
     ]()

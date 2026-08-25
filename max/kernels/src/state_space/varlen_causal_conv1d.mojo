@@ -80,7 +80,7 @@ def _apply_silu[
         comptime if output_dtype.is_floating_point():
             return silu(out_val)
         else:
-            return silu(out_val.cast[DType.float32]()).cast[output_dtype]()
+            return silu(out_val.cast[.float32]()).cast[output_dtype]()
     return out_val
 
 
@@ -1307,9 +1307,7 @@ def causal_conv1d_varlen_fwd_seqparallel_gpu[
             comptime if output_dtype.is_floating_point():
                 out_val = silu(out_val)
             else:
-                out_val = silu(out_val.cast[DType.float32]()).cast[
-                    output_dtype
-                ]()
+                out_val = silu(out_val.cast[.float32]()).cast[output_dtype]()
 
         # Store output
         var out_offset = (

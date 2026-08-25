@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from typing import Any
 
@@ -148,7 +149,9 @@ class UnifiedMTPQwen3_5Model(_UnifiedSpecDecodeModelMixin, Qwen3_5Model):
     @override
     def _create_model_config(self, state_dict: dict[str, Any]) -> Qwen3_5Config:
         config = Qwen3_5Config.initialize_from_config(
-            self.pipeline_config, self.huggingface_config
+            self.pipeline_config,
+            self.huggingface_config,
+            max_seq_len=self.max_seq_len,
         )
         config.finalize(
             huggingface_config=Qwen3_5Config._get_text_config(
@@ -204,23 +207,7 @@ class UnifiedMTPQwen3_5Model(_UnifiedSpecDecodeModelMixin, Qwen3_5Model):
             enable_structured_output=self.pipeline_config.needs_bitmask_constraints,
         )
 
-        # One flat namespace: the draft's decoder layer is also `layers.0.`,
-        # so the two halves can only be told apart by their module path.
-        full_state_dict: dict[str, Any] = {
-            f"{_TARGET_PREFIX}{name}": value
-            for name, value in state_dict.items()
-        }
-        full_state_dict.update(
-            {
-                f"{_DRAFT_PREFIX}{name}": value
-                for name, value in self._draft_state_dict.items()
-            }
-        )
-        # The draft aliases the target's embedding module, so the walk reaches
-        # the same weight under two names and both must carry the same data.
-        full_state_dict[f"{_DRAFT_PREFIX}embed_tokens.weight"] = (
-            full_state_dict[f"{_TARGET_PREFIX}embed_tokens.weight"]
-        )
+        full_state_dict = _merge_state_dicts(state_dict, self._draft_state_dict)
 
         _check_weights_match(
             expected=set(nn_model.raw_state_dict().keys()),
@@ -324,6 +311,39 @@ class UnifiedMTPQwen3_5Model(_UnifiedSpecDecodeModelMixin, Qwen3_5Model):
             graph.output(*outputs)
 
         return graph, weights_registry
+
+
+def _merge_state_dicts(
+    target: Mapping[str, Any], draft: Mapping[str, Any]
+) -> dict[str, Any]:
+    """Prefixes both halves into the one flat namespace the graph declares.
+
+    The draft's decoder layer is also ``layers.0.``, so the two halves can
+    only be told apart by their module path.
+
+    The draft shares the target's embedding module, and the name walk dedupes
+    by module identity, so that weight is declared once, under
+    ``target.embed_tokens.weight``. Adding a ``draft.embed_tokens.weight``
+    alias here therefore fails the load rather than aliasing anything:
+    ``_check_weights_match`` refuses every ``draft.*`` key the graph does not
+    consume.
+
+    Args:
+        target: Checkpoint tensors for the target, unprefixed.
+        draft: Checkpoint tensors for the MTP head, unprefixed.
+
+    Returns:
+        The two halves under ``target.`` and ``draft.``. Whether that covers
+        what the graph declares depends on the checkpoint, and
+        ``_check_weights_match`` is what decides it.
+    """
+    merged: dict[str, Any] = {
+        f"{_TARGET_PREFIX}{name}": value for name, value in target.items()
+    }
+    merged.update(
+        {f"{_DRAFT_PREFIX}{name}": value for name, value in draft.items()}
+    )
+    return merged
 
 
 def _check_weights_match(expected: set[str], provided: set[str]) -> None:

@@ -67,7 +67,7 @@ def test_tma_replace_global_addr_in_gmem_descriptor_kernel[
         dtype,
         __cta_tile_layout,
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
     ].stack_allocation()
 
@@ -80,7 +80,7 @@ def test_tma_replace_global_addr_in_gmem_descriptor_kernel[
     var mbar = unsafe_stack_allocation[
         1,
         SharedMemBarrier,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=8,
     ]()
 
@@ -107,9 +107,9 @@ def test_tma_replace_global_addr_in_gmem_descriptor[
 
     comptime dst_layout = Layout.row_major(num_of_tensormaps * M, N)
 
-    var old_src = ManagedLayoutTensor[DType.bfloat16, src_layout](ctx)
-    var new_src = ManagedLayoutTensor[DType.bfloat16, src_layout](ctx)
-    var dst = ManagedLayoutTensor[DType.bfloat16, dst_layout](ctx)
+    var old_src = ManagedLayoutTensor[.bfloat16, src_layout](ctx)
+    var new_src = ManagedLayoutTensor[.bfloat16, src_layout](ctx)
+    var dst = ManagedLayoutTensor[.bfloat16, dst_layout](ctx)
 
     arange(old_src.tensor(), 1)
     arange(new_src.tensor(), 1001)
@@ -118,7 +118,7 @@ def test_tma_replace_global_addr_in_gmem_descriptor[
         ctx, old_src.device_tensor()
     )
 
-    var device_tensormaps = ctx.enqueue_create_buffer[DType.uint8](
+    var device_tensormaps = ctx.enqueue_create_buffer[.uint8](
         128 * num_of_tensormaps
     )
     var tensormaps = TMATensorTileArray[
@@ -173,8 +173,8 @@ def test_tma_replace_global_addr_in_gmem_descriptor[
         for n in range(N):
             if m < M and n < N:
                 assert_equal(
-                    new_src_host[m % M, n].cast[DType.float32](),
-                    dst_host[m, n].cast[DType.float32](),
+                    new_src_host[m % M, n].cast[.float32](),
+                    dst_host[m, n].cast[.float32](),
                 )
 
     ctx.synchronize()
@@ -215,12 +215,12 @@ def test_tma_replace_global_addr_in_smem_descriptor_kernel[
         dtype,
         __cta_tile_layout,
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
     ].stack_allocation()
 
     var smem_desc = unsafe_stack_allocation[
-        1, TMADescriptor, alignment=128, address_space=AddressSpace.SHARED
+        1, TMADescriptor, alignment=128, address_space=.SHARED
     ]()
 
     # load the tensormap from gmem into smem. Only the one elected thread should call this
@@ -248,7 +248,7 @@ def test_tma_replace_global_addr_in_smem_descriptor_kernel[
     var mbar = unsafe_stack_allocation[
         1,
         SharedMemBarrier,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=8,
     ]()
 
@@ -274,9 +274,9 @@ def test_tma_replace_global_addr_in_smem_descriptor[
     comptime num_of_tensormaps = 4
     comptime dst_layout = Layout.row_major(num_of_tensormaps * M, N)
 
-    var old_src = ManagedLayoutTensor[DType.bfloat16, src_layout](ctx)
-    var new_src = ManagedLayoutTensor[DType.bfloat16, src_layout](ctx)
-    var dst = ManagedLayoutTensor[DType.bfloat16, dst_layout](ctx)
+    var old_src = ManagedLayoutTensor[.bfloat16, src_layout](ctx)
+    var new_src = ManagedLayoutTensor[.bfloat16, src_layout](ctx)
+    var dst = ManagedLayoutTensor[.bfloat16, dst_layout](ctx)
 
     arange(old_src.tensor(), 1)
     arange(new_src.tensor(), 1001)
@@ -285,7 +285,7 @@ def test_tma_replace_global_addr_in_smem_descriptor[
         ctx, old_src.device_tensor()
     )
 
-    var device_tensormaps = ctx.enqueue_create_buffer[DType.uint8](
+    var device_tensormaps = ctx.enqueue_create_buffer[.uint8](
         128 * num_of_tensormaps
     )
     var tensormaps = TMATensorTileArray[
@@ -340,8 +340,8 @@ def test_tma_replace_global_addr_in_smem_descriptor[
         for n in range(N):
             if m < M and n < N:
                 assert_equal(
-                    new_src_host[m % M, n].cast[DType.float32](),
-                    dst_host[m, n].cast[DType.float32](),
+                    new_src_host[m % M, n].cast[.float32](),
+                    dst_host[m, n].cast[.float32](),
                 )
 
     ctx.synchronize()
@@ -381,12 +381,12 @@ def test_tma_replace_global_dim_in_smem_descriptor_kernel[
         dtype,
         __cta_tile_layout,
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
     ].stack_allocation()
 
     var smem_desc = unsafe_stack_allocation[
-        1, TMADescriptor, alignment=128, address_space=AddressSpace.SHARED
+        1, TMADescriptor, alignment=128, address_space=.SHARED
     ]()
 
     # load the tensormap from gmem into smem. Only the one elected thread should call this
@@ -431,7 +431,7 @@ def test_tma_replace_global_dim_in_smem_descriptor_kernel[
     var mbar = unsafe_stack_allocation[
         1,
         SharedMemBarrier,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=8,
     ]()
 
@@ -490,7 +490,7 @@ def test_tma_replace_global_dim_in_smem_descriptor[
     var dst = ManagedLayoutTensor[dtype, dst_layout](ctx)
     arange(new_src.tensor(), 1001)
 
-    var device_tensormaps = ctx.enqueue_create_buffer[DType.uint8](
+    var device_tensormaps = ctx.enqueue_create_buffer[.uint8](
         128 * num_of_subtensors
     )
     var tensormaps_host_ptr = unsafe_stack_allocation[

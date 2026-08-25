@@ -40,6 +40,9 @@ from transformers import AutoConfig, PretrainedConfig
 CONFIG_DIR = Path(__file__).parent / "configs" / "gemma4_e4b"
 
 
+_MAX_SEQ_LEN = 1024
+
+
 def _load_hf_config() -> PretrainedConfig:
     # No trust_remote_code: importing model_config above registers the
     # gemma4 config shim, so AutoConfig resolves the local fixture natively.
@@ -111,7 +114,7 @@ def test_text_config_init_with_null_global_kv_heads() -> None:
     pipeline_config = _mock_pipeline_config()
 
     text_config = Gemma4TextConfig.initialize_from_config(
-        pipeline_config, hf_config.text_config
+        pipeline_config, hf_config.text_config, max_seq_len=_MAX_SEQ_LEN
     )
     assert text_config.num_global_key_value_heads == 2
     assert (
@@ -127,7 +130,7 @@ def test_top_level_initialize_from_config() -> None:
     pipeline_config = _mock_pipeline_config()
 
     config = Gemma4ForConditionalGenerationConfig.initialize_from_config(
-        pipeline_config, hf_config
+        pipeline_config, hf_config, max_seq_len=_MAX_SEQ_LEN
     )
     assert config.text_config.num_global_key_value_heads == 2
     assert config.vision_config is not None

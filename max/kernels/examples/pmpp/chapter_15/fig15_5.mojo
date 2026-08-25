@@ -24,11 +24,7 @@ def loadTile(
     lda: Int,
     maxRow: Int,
     maxCol: Int,
-    T_s: UnsafePointer[
-        Scalar[DType.float32],
-        MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
-    ],
+    T_s: UnsafePointer[Float32, MutAnyOrigin, address_space=.SHARED],
     ldas: Int,
     height: Int,
     width: Int,
@@ -55,9 +51,9 @@ def loadTile(
         row += subtile * num_rows_per_tile
 
         if row < maxRow and col < maxCol:
-            T_s[row * ldas + col] = Scalar[DType.float32](T[row * lda + col])
+            T_s[row * ldas + col] = Float32(T[row * lda + col])
         else:
-            T_s[row * ldas + col] = Scalar[DType.float32](0.0)
+            T_s[row * ldas + col] = Float32(0.0)
 
 
 def main():

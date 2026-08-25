@@ -36,6 +36,7 @@ from max.pipelines.lib import (
     MultiGraphPipelineModelWithKVCache,
     PipelineConfig,
 )
+from max.pipelines.lib.memory_estimation import MemoryPlan
 from transformers import AutoConfig
 
 from .batch_processor import Gemma3MultiModalBatchProcessor
@@ -145,6 +146,8 @@ class Gemma3_MultiModalModel(
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
         weights: Weights,
+        *,
+        memory_plan: MemoryPlan,
         adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
         max_batch_size: int = 1,
@@ -156,8 +159,9 @@ class Gemma3_MultiModalModel(
             devices,
             kv_cache_config,
             weights,
-            adapter,
-            return_logits,
+            adapter=adapter,
+            return_logits=return_logits,
+            memory_plan=memory_plan,
         )
 
         # signal_buffers are provided by AlwaysSignalBuffersMixin as a cached_property
@@ -191,7 +195,7 @@ class Gemma3_MultiModalModel(
         self, state_dict: dict[str, Any]
     ) -> Gemma3ForConditionalGenerationConfig:
         model_config = Gemma3ForConditionalGenerationConfig.initialize(
-            self.pipeline_config
+            self.pipeline_config, max_seq_len=self.max_seq_len
         )
         model_config.finalize(
             huggingface_config=self.huggingface_config,

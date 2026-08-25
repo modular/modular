@@ -95,7 +95,7 @@ def construct_implicit_type_explicitly():
 
 # CHECK-LABEL: lit.fn @"async_trait
 def async_trait[T: AsyncTrait](value: T):
-    # CHECK: lit.async.call[!lit.generator<[2]("self": {{.*}} read_mem, ?, "__result__": !lit.ref<:meta<!Int> #alias_Int, mut *[0,1]> byref_result) async -> !kgen.none>: #kgen.get_witness
+    # CHECK: lit.async.call[!lit.generator<[2]("self": {{.*}} imm_mem, ?, "__result__": !lit.ref<:meta<!Int> #alias_Int, mut *[0,1]> byref_result) async -> !kgen.none>: #kgen.get_witness
     _ = value.foo()
 
 

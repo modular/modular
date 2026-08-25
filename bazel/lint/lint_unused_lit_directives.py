@@ -125,7 +125,8 @@ def _main() -> None:
                     errors.append(
                         f"error: {file}: has a CHECK line but is not a filecheck test file, either change it to use the 'mojo_filecheck_test' or 'lit_tests' rules, or remove the CHECK line"
                     )
-            else:
+            # FIXME (SDLC-4326): Temporary exclusion on `plugins` directory
+            elif not str(file).startswith("plugins"):
                 errors.append(
                     f"error: {file}: has a RUN line but is not a lit test file, either change it to use the 'lit_tests' rule, or remove the RUN lines"
                 )

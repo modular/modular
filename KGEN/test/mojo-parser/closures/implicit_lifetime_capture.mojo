@@ -37,5 +37,5 @@ def capture_implicit_origin(var x: Foo, y: Thing[origin_of(x)]):
     # CHECK: lit.call {{.*}}capture_it::__storage"::@"__init__
     # CHECK-SAME: <:origin<true> *"x
     # CHECK-SAME: "y":
-    def capture_it() {read y}:
+    def capture_it() {imm y}:
         use(y)

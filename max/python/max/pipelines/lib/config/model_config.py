@@ -18,7 +18,7 @@ import json
 import logging
 import os
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, TypeVar
 
 from huggingface_hub import constants as hf_hub_constants
 from max.config import ConfigFileModel
@@ -143,6 +143,53 @@ def _parse_weight_and_model_paths(
     return weight_path, model_path, weights_repo_id
 
 
+_MODEL_PATH_ADAPTER = TypeAdapter(str)
+_WEIGHT_PATH_ADAPTER = TypeAdapter(list[Path])
+_SUBFOLDER_ADAPTER: TypeAdapter[str | None] = TypeAdapter(str | None)
+
+_ModelConfigT = TypeVar("_ModelConfigT", bound="MAXModelConfig")
+
+
+def _build_model_config(
+    config_cls: type[_ModelConfigT], **data: Any
+) -> _ModelConfigT:
+    """Constructs a model config carrying its resolved values.
+
+    The weight and model paths derive from each other and the subfolder,
+    so they are computed first -- from inputs validated with the same
+    types as the fields -- and the config is constructed once with the
+    results. The already-loaded HuggingFace state may be seeded through
+    ``_huggingface_config`` and ``_weights_repo_id``; whatever is not
+    seeded is loaded here, so the result is fully specified.
+
+    Plain construction (``MAXModelConfig(...)``) validates the given
+    fields and nothing more; the config layer builds models through this
+    function.
+    """
+    seeded_huggingface_config = data.pop("_huggingface_config", None)
+    seeded_weights_repo_id = data.pop("_weights_repo_id", None)
+    weight_path, model_path, weights_repo_id = _parse_weight_and_model_paths(
+        model_path=_MODEL_PATH_ADAPTER.validate_python(
+            data.get("model_path") or ""
+        ),
+        weight_path=_WEIGHT_PATH_ADAPTER.validate_python(
+            data.get("weight_path") or []
+        ),
+        subfolder=_SUBFOLDER_ADAPTER.validate_python(data.get("subfolder")),
+        weights_repo_id=seeded_weights_repo_id,
+    )
+    model = config_cls(
+        **{**data, "weight_path": weight_path, "model_path": model_path}
+    )
+    if seeded_huggingface_config is not None:
+        model._huggingface_config = seeded_huggingface_config
+    model._weights_repo_id = weights_repo_id
+    model._populate_repo_handles()
+    model._populate_hf_config()
+    model._populate_generation_config()
+    return model
+
+
 def _resolve_dtype_cast(
     *,
     from_encoding: SupportedEncoding,
@@ -235,7 +282,7 @@ def _infer_quantization_encoding(
     # yet — the filename/repo branches above otherwise disagree with the
     # supported-encodings branch on which encoding to pick. Scoped to the CPU
     # target only: a CPU-only encoding on a GPU target is handled by the CPU
-    # override in _populate_weights_and_encoding, and an explicit user
+    # override in _resolve_weights_and_encoding, and an explicit user
     # encoding is validated separately.
     if (
         config.quantization_encoding is None
@@ -547,7 +594,7 @@ def _device_specs_for_encoding(
     check). Read-only.
 
     Set *warn* only where the downcast is applied
-    (:func:`_populate_weights_and_encoding`) so it fires once per model.
+    (:func:`_resolve_weights_and_encoding`) so it fires once per model.
     """
     if supported_encoding_supported_devices(quantization_encoding) == (
         "cpu",
@@ -596,19 +643,27 @@ def _discover_default_weight_paths(
     return []
 
 
-def _populate_weights_and_encoding(
+def _resolve_weights_and_encoding(
     config: MAXModelConfig,
     *,
     default_encoding: SupportedEncoding,
     supported_encodings: set[SupportedEncoding],
     default_weights_format: WeightsFormat,
-) -> None:
-    """Assigns encoding, weight paths, and devices for an architecture.
+) -> tuple[
+    SupportedEncoding,
+    tuple[SupportedEncoding | None, SupportedEncoding | None],
+    list[Path],
+    list[DeviceSpec],
+]:
+    """Resolves encoding, weight paths, and devices for an architecture.
 
     Discovers default weight files when no explicit ``weight_path`` was
-    given, and records any load-time dtype cast on the config. Assigns the
-    effective ``device_specs`` (a CPU-only encoding downcasts all-GPU
-    devices to CPU, warning once per model).
+    given, and resolves any load-time dtype cast. The effective
+    ``device_specs`` downcast all-GPU devices to CPU for a CPU-only
+    encoding, warning once per model. Reads the config without writing it.
+
+    Returns:
+        An ``(encoding, dtype_cast, weight_path, device_specs)`` tuple.
 
     Raises:
         ValueError: If the resolved encoding is unsupported by the
@@ -622,25 +677,23 @@ def _populate_weights_and_encoding(
         raise ValueError(
             f"quantization_encoding of '{encoding}' not supported by MAX engine."
         )
-    config.quantization_encoding = encoding
-    config._resolved_dtype_cast = (cast_from, cast_to)
-    if not config.weight_path:
-        discovered = _discover_default_weight_paths(
+    weight_path = config.weight_path
+    if not weight_path:
+        weight_path = _discover_default_weight_paths(
             config.huggingface_weight_repo,
             encoding,
             cast_from,
             default_weights_format,
         )
-        if not discovered:
+        if not weight_path:
             raise ValueError(
                 f"compatible weights cannot be found for '{encoding}', in the provided repo: '{config.huggingface_weight_repo.repo_id}'"
             )
-        config.weight_path = discovered
-    config._validate_final_architecture_model_path_weight_path()
-    config.device_specs = _device_specs_for_encoding(
+    config._validate_final_architecture_model_path_weight_path(weight_path)
+    device_specs = _device_specs_for_encoding(
         config.device_specs, encoding, warn=True
     )
-    for spec in config.device_specs:
+    for spec in device_specs:
         if not supported_encoding_supported_on(encoding, spec):
             raise ValueError(
                 f"The encoding '{encoding}' is not compatible with the selected device type '{spec.device_type}'.\n\n"
@@ -649,6 +702,7 @@ def _populate_weights_and_encoding(
                 f"2. Use a different encoding (encodings available for this model: {', '.join(sorted(str(e) for e in supported_encodings))})\n\n"
                 f"Please use the --help flag for more information."
             )
+    return encoding, (cast_from, cast_to), weight_path, device_specs
 
 
 class MAXModelConfigBase(ConfigFileModel):
@@ -665,6 +719,8 @@ class MAXModelConfigBase(ConfigFileModel):
 
 class MAXModelConfig(MAXModelConfigBase):
     """Configuration for a pipeline model."""
+
+    model_config = ConfigDict(arbitrary_types_allowed=True, frozen=True)
 
     use_subgraphs: bool = Field(
         default=True,
@@ -694,8 +750,9 @@ class MAXModelConfig(MAXModelConfigBase):
         default=None,
         description=(
             "Maximum sequence length the model can process. If not specified, "
-            "defaults to the model's ``max_position_embeddings``. May be clamped "
-            "during resolution based on available memory."
+            "defaults to the model's ``max_position_embeddings``. Resolved to "
+            "the architecture's policy value at construction; memory planning "
+            "may lower it for VRAM on the memory plan only, never here."
         ),
     )
     """The maximum sequence length the model can process."""
@@ -707,6 +764,18 @@ class MAXModelConfig(MAXModelConfigBase):
         if v is not None and v < 0:
             raise ValueError("max_length must be non-negative")
         return v
+
+    @property
+    def max_length_is_user_provided(self) -> bool:
+        """Whether the user set ``max_length``, rather than the architecture.
+
+        Memory planning may shrink a resolved default to fit device memory,
+        but never a length the user asked for.
+        """
+        captured = getattr(self, "_max_length_user_provided", None)
+        if captured is not None:
+            return captured
+        return self.max_length is not None
 
     # NOTE: model_path is made a str of "" by default, to avoid having
     # it be Optional to check for None and then littering the codebase with
@@ -887,53 +956,18 @@ class MAXModelConfig(MAXModelConfigBase):
     cast. Persisted because re-deriving against the populated
     ``weight_path`` gives a different answer for casted checkpoints."""
 
+    _max_length_user_provided: bool | None = PrivateAttr(default=None)
+    """Whether ``max_length`` was explicitly supplied, captured before the
+    architecture's sequence-length policy overwrites the field at
+    construction. A private attr (not a field) because it is derived state:
+    it must never surface as a CLI flag or a config-file key. ``None`` on
+    paths that bypass capture (e.g. ``model_construct``); readers fall back
+    to the field's presence via :attr:`max_length_is_user_provided`."""
+
     _config_file_section_name: str = PrivateAttr(default="model_config")
     """The section name to use when loading this config from a MAXConfig file.
     This is used to differentiate between different config sections in a single
     MAXConfig file."""
-
-    # TODO(SERVSYS-1083): This should just be a temporary fix until we can figure out a
-    # better way to inject custom PrivateAttrs without relying on a custom
-    # constructor.
-    # NOTE: We intentionally hide this constructor override from static type
-    # checkers so we preserve pydantic's generated `__init__` signature (or the
-    # project's mypy plugin behavior) for normal call sites.
-    if not TYPE_CHECKING:
-
-        def __init__(self, **data: Any) -> None:
-            """Initialize, seeding private attrs and resolving the weight path.
-
-            Private attributes (``PrivateAttr``) aren't accepted as constructor
-            kwargs by default, so we pop the seeded ones
-            (``_huggingface_config``, ``_weights_repo_id``) here, then resolve
-            the weight-path identity eagerly.
-            """
-            seeded_huggingface_config = data.pop("_huggingface_config", None)
-            seeded_weights_repo_id = data.pop("_weights_repo_id", None)
-            super().__init__(**data)
-            if seeded_huggingface_config is not None:
-                self._huggingface_config = seeded_huggingface_config
-            if seeded_weights_repo_id is not None:
-                self._weights_repo_id = seeded_weights_repo_id
-
-            # Resolve weight-path identity eagerly so the config is fully
-            # specified once constructed.
-            self.weight_path, self.model_path, self._weights_repo_id = (
-                _parse_weight_and_model_paths(
-                    model_path=self.model_path,
-                    weight_path=self.weight_path,
-                    subfolder=self.subfolder,
-                    weights_repo_id=self._weights_repo_id,
-                )
-            )
-
-            # Build the HuggingFace repo handles once, here, so all repo
-            # setup (and the access check under ``HF_HUB_OFFLINE`` / local
-            # paths) is consolidated at construction rather than sprinkled
-            # across lazy property accesses.
-            self._populate_repo_handles()
-            self._populate_hf_config()
-            self._populate_generation_config()
 
     # TODO(SERVSYS-1085): Figure out a better way to avoid having to roll our
     # own custom __getstate__/__setstate__ methods.
@@ -1100,9 +1134,6 @@ class MAXModelConfig(MAXModelConfigBase):
         a subsequent call with the same ``args``. Set the corresponding field
         on ``args`` itself instead.
         """
-        # Seed ``_weights_repo_id`` (a PrivateAttr) so __init__'s weight-path
-        # resolution sees it. Passed via a kwargs dict because the
-        # private-attr-seeding __init__ is hidden from type checkers.
         init_kwargs: dict[str, Any] = dict(
             model_path=args.model_path,
             served_model_name=args.served_model_name,
@@ -1126,7 +1157,7 @@ class MAXModelConfig(MAXModelConfigBase):
             kv_cache=args.kv_cache.model_copy(deep=True),
             _weights_repo_id=args._weights_repo_id,
         )
-        return cls(**init_kwargs)
+        return _build_model_config(cls, **init_kwargs)
 
     def validate_repo_access(self) -> None:
         """Validates that the model's Hugging Face repo is accessible.
@@ -1364,12 +1395,14 @@ class MAXModelConfig(MAXModelConfigBase):
                 f"Multiple GPU inference is currently not supported for {self.model_path}."
             )
 
-    def _validate_final_architecture_model_path_weight_path(self) -> None:
+    def _validate_final_architecture_model_path_weight_path(
+        self, weight_path: list[Path]
+    ) -> None:
         # Assume at this point, an architecture,
         # a model_path and weight_paths are available.
-        assert self.weight_path, "weight_path must be provided."
+        assert weight_path, "weight_path must be provided."
         repo = self.huggingface_weight_repo
-        for path in self.weight_path:
+        for path in weight_path:
             path_str = str(path)
             # Check if file exists locally (direct, local repo, or cache).
             if self._local_weight_path(path):

@@ -316,7 +316,7 @@ def fused_qk_rope[
     kv_collection: collection_t,
     freqs_cis: TileTensor[dtype, ...],
     layer_idx: UInt32,
-    valid_lengths: TileTensor[DType.uint32, ...],
+    valid_lengths: TileTensor[.uint32, ...],
     output: TileTensor[mut=True, dtype, ...],
     context: DeviceContext,
 ) raises:
@@ -455,11 +455,11 @@ def fused_qk_rope_ragged[
     ],
 ](
     q_proj: TileTensor[dtype, ...],
-    input_row_offsets: TileTensor[DType.uint32, ...],
+    input_row_offsets: TileTensor[.uint32, ...],
     kv_collection: collection_t,
     freqs_cis: TileTensor[freq_dtype, ...],
     position_ids: OptionalReg[
-        TileTensor[DType.uint32, PositionIdsLayoutType, ImmutAnyOrigin]
+        TileTensor[.uint32, PositionIdsLayoutType, ImmutAnyOrigin]
     ],
     layer_idx: UInt32,
     output: TileTensor[mut=True, dtype, ...],

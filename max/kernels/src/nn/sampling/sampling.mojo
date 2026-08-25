@@ -35,8 +35,8 @@ def apply_penalties_to_logits[
     target: StaticString,
 ](
     logits: TileTensor[mut=True, logit_type, ...],
-    compressed_frequency_data: TileTensor[mut=False, DType.int32, ...],
-    frequency_offsets: TileTensor[mut=False, DType.uint32, ...],
+    compressed_frequency_data: TileTensor[mut=False, .int32, ...],
+    frequency_offsets: TileTensor[mut=False, .uint32, ...],
     frequency_penalty: TileTensor[mut=False, penalty_type, ...],
     presence_penalty: TileTensor[mut=False, penalty_type, ...],
     repetition_penalty: TileTensor[mut=False, penalty_type, ...],
@@ -150,10 +150,10 @@ def update_frequency_data_kernel[
     block_size: Int,
 ](
     compressed_frequency_data: TileTensor[
-        DType.int32, FreqDataLayoutType, freq_data_origin
+        .int32, FreqDataLayoutType, freq_data_origin
     ],
     frequency_offsets: TileTensor[
-        DType.uint32, FreqOffsetsLayoutType, freq_offsets_origin
+        .uint32, FreqOffsetsLayoutType, freq_offsets_origin
     ],
     new_tokens: TileTensor[token_type, NewTokensLayoutType, new_tokens_origin],
 ):
@@ -198,7 +198,7 @@ def update_frequency_data_kernel[
 
     var tok_start = Int(frequency_offsets[batch_id])
     var tok_end = Int(frequency_offsets[batch_id + 1])
-    var new_token = new_tokens[batch_id].cast[DType.int32]()
+    var new_token = new_tokens[batch_id].cast[.int32]()
 
     var num_scans = ceildiv(tok_end - tok_start, block_size * simd_width)
 
@@ -206,7 +206,7 @@ def update_frequency_data_kernel[
     for scan_idx in range(num_scans):
         var tok_idx = tok_start + ((tid + scan_idx * block_size) * simd_width)
 
-        var val = SIMD[DType.int32, simd_width](0)
+        var val = SIMD[.int32, simd_width](0)
 
         comptime for i in range(simd_width):
             if tok_idx + i < tok_end:
@@ -215,12 +215,12 @@ def update_frequency_data_kernel[
                 val[i] = Int32.MAX_FINITE
 
         var if_found = val.eq(new_token).select(
-            iota[DType.int32, simd_width](Int32(tok_idx)),
-            SIMD[DType.int32, simd_width](Int32.MIN_FINITE),
+            iota[.int32, simd_width](Int32(tok_idx)),
+            SIMD[.int32, simd_width](Int32.MIN_FINITE),
         )
         var first_padding_idx = val.eq(PADDING_TOKEN).select(
-            iota[DType.int32, simd_width](Int32(tok_idx)),
-            SIMD[DType.int32, simd_width](Int32.MAX_FINITE),
+            iota[.int32, simd_width](Int32(tok_idx)),
+            SIMD[.int32, simd_width](Int32.MAX_FINITE),
         )
 
         var target_token_idx = block.max[block_size=block_size, broadcast=True](
@@ -249,14 +249,12 @@ def update_frequency_data[
     target: StaticString,
 ](
     compressed_frequency_data: TileTensor[
-        mut=True, DType.int32, address_space=AddressSpace.GENERIC, ...
+        mut=True, .int32, address_space=.GENERIC, ...
     ],
     frequency_offsets: TileTensor[
-        mut=False, DType.uint32, address_space=AddressSpace.GENERIC, ...
+        mut=False, .uint32, address_space=.GENERIC, ...
     ],
-    new_tokens: TileTensor[
-        mut=False, token_type, address_space=AddressSpace.GENERIC, ...
-    ],
+    new_tokens: TileTensor[mut=False, token_type, address_space=.GENERIC, ...],
     ctx: DeviceContext,
 ) raises:
     """
@@ -319,7 +317,7 @@ def update_frequency_data[
             var tok_start = frequency_offsets[idx]
             var tok_end = frequency_offsets[idx[0].value() + 1]
 
-            var new_token = new_tokens[idx[0]][0].cast[DType.int32]()
+            var new_token = new_tokens[idx[0]][0].cast[.int32]()
 
             for tok_id in range(tok_start, tok_end):
                 if compressed_frequency_data[tok_id, 0] == new_token:

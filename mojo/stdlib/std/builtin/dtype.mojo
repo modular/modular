@@ -64,7 +64,7 @@ struct DType(
     Example:
 
     ```mojo
-    var data = SIMD[DType.float16, 4](1.5, 2.5, 3.5, 4.5)
+    var data = SIMD[.float16, 4](1.5, 2.5, 3.5, 4.5)
     var dtype = data.dtype
 
     print("Is float:", dtype.is_floating_point())  # True
@@ -530,7 +530,7 @@ struct DType(
     @doc_hidden
     @always_inline("builtin")
     # Raw MLIR type avoids a circular dependency: UInt8._mlir_type would pull
-    # in UInt8 = Scalar[DType.uint8] → Scalar → SIMD signature → DevicePassable
+    # in UInt8 = UInt8 → Scalar → SIMD signature → DevicePassable
     # where-clause → _as_ui8 → UInt8 (cycle) during constraint evaluation.
     def _as_ui8(self) -> __mlir_type.`!kgen.scalar<ui8>`:
         return __mlir_op.`pop.cast_from_builtin`[

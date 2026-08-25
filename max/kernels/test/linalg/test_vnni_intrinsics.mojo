@@ -57,8 +57,8 @@ def test_i8_to_i32() raises:
         .unsafe_load[width=16]()
     )
     var bv16 = b.unsafe_bitcast[Int32]().unsafe_load[width=16]()
-    var cv16u: SIMD[DType.int32, 16]
-    var cv16s: SIMD[DType.int32, 16]
+    var cv16u: SIMD[.int32, 16]
+    var cv16s: SIMD[.int32, 16]
     if CompilationTarget.has_avx512f():
         cv16u = dot_i8_to_i32_AVX2[16](c.unsafe_load[width=16](), av16u, bv16)
         cv16s = dot_i8_to_i32_saturated_AVX2[16](
@@ -87,7 +87,7 @@ def test_i8_to_i32() raises:
 
     assert_equal(
         cv16u,
-        SIMD[DType.int32, 16](
+        SIMD[.int32, 16](
             -97906,
             -96769,
             -95504,
@@ -108,7 +108,7 @@ def test_i8_to_i32() raises:
     )
     assert_equal(
         cv16s,
-        SIMD[DType.int32, 16](
+        SIMD[.int32, 16](
             -33138,
             -34049,
             -34832,
@@ -146,13 +146,13 @@ def test_i8_to_i32() raises:
 
     assert_equal(
         cv8u,
-        SIMD[DType.int32, 8](
+        SIMD[.int32, 8](
             -97906, -96769, -95504, -94111, -92590, -90941, -89164, -87259
         ),
     )
     assert_equal(
         cv8s,
-        SIMD[DType.int32, 8](
+        SIMD[.int32, 8](
             -33138, -34049, -34832, -35487, -36014, -36413, -36684, -36827
         ),
     )
@@ -173,16 +173,16 @@ def test_i8_to_i32() raises:
         c.unsafe_bitcast[Int32]().unsafe_load[width=4](), av4s, bv4
     )
 
-    assert_equal(cv4u, SIMD[DType.int32, 4](-97906, -96769, -95504, -94111))
-    assert_equal(cv4s, SIMD[DType.int32, 4](-33138, -34049, -34832, -35487))
+    assert_equal(cv4u, SIMD[.int32, 4](-97906, -96769, -95504, -94111))
+    assert_equal(cv4s, SIMD[.int32, 4](-33138, -34049, -34832, -35487))
 
 
 def test_i16_to_i32() raises:
     def test_simd_width[width: Int]() raises:
-        var a = SIMD[DType.int16, SIMDLength(width) * 2]()
-        var b = SIMD[DType.int16, SIMDLength(width) * 2]()
-        var c_start = SIMD[DType.int32, width]()
-        var c_golden = SIMD[DType.int32, width]()
+        var a = SIMD[.int16, SIMDLength(width) * 2]()
+        var b = SIMD[.int16, SIMDLength(width) * 2]()
+        var c_start = SIMD[.int32, width]()
+        var c_golden = SIMD[.int32, width]()
 
         comptime for i in range(width * 2):
             a[i] = Int16(i * 17 - 191)
@@ -195,8 +195,8 @@ def test_i16_to_i32() raises:
             c_golden[i] = c_start[i]
 
             comptime for j in range(2):
-                var a_val = a[i * 2 + j].cast[DType.int32]()
-                var b_val = b[i * 2 + j].cast[DType.int32]()
+                var a_val = a[i * 2 + j].cast[.int32]()
+                var b_val = b[i * 2 + j].cast[.int32]()
                 c_golden[i] += a_val * b_val
 
         var c_avx2 = dot_i16_to_i32_AVX2(c_start, a, b)

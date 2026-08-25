@@ -715,7 +715,7 @@ struct Coord[*element_types: CoordLike](
             ```mojo
             from std.utils.coord import Coord, ComptimeInt
             var c = Coord(ComptimeInt[3](), Int32(5), ComptimeInt[7]())
-            var dynamic = c.make_dynamic[DType.int64]()
+            var dynamic = c.make_dynamic[.int64]()
             # dynamic is Coord(Int64(3), Int64(5), Int64(7))
             ```
         """
@@ -890,7 +890,7 @@ def crd2idx[
     Index: CoordLike,
     Shape: CoordLike,
     Stride: CoordLike,
-    out_type: DType = DType.int64,
+    out_type: DType = .int64,
 ](crd: Index, shape: Shape, stride: Stride) -> Scalar[out_type]:
     """Calculate the linear index from a coordinate tuple.
 
@@ -986,7 +986,7 @@ def crd2idx[
 def idx2crd[
     Shape: CoordLike,
     Stride: CoordLike,
-    out_dtype: DType = DType.int64,
+    out_dtype: DType = .int64,
 ](idx: Int, shape: Shape, stride: Stride) -> Coord[
     *_Idx2CrdResultTypes[
         out_dtype,
@@ -1098,7 +1098,7 @@ def idx2crd[
     Index: CoordLike,
     Shape: CoordLike,
     Stride: CoordLike,
-    out_dtype: DType = DType.int64,
+    out_dtype: DType = .int64,
 ](idx: Index, shape: Shape, stride: Stride) -> Coord[
     *_Idx2CrdResultTypes[
         out_dtype, Index, Stride.ParamListType, Shape.ParamListType
@@ -1472,9 +1472,9 @@ Example:
 
     ```mojo
     from std.utils.coord import _CoordToDynamic, ComptimeInt, CoordLike
-    # All elements become Scalar[DType.int64]
-    comptime types = _CoordToDynamic[DType.int64, TypeList.of[Trait=CoordLike, ComptimeInt[3], Scalar[DType.int32], ComptimeInt[5]]()]
-    # types is equivalent to TypeList.of[Trait=CoordLike, Scalar[DType.int64], Scalar[DType.int64], Scalar[DType.int64]]()
+    # All elements become Int64
+    comptime types = _CoordToDynamic[.int64, TypeList.of[Trait=CoordLike, ComptimeInt[3], Int32, ComptimeInt[5]]()]
+    # types is equivalent to TypeList.of[Trait=CoordLike, Int64, Int64, Int64]()
     ```
 """
 
@@ -1643,7 +1643,7 @@ Example:
     from std.utils.coord import _Idx2CrdResultTypes, ComptimeInt, CoordLike
     comptime stride_t = TypeList.of[Trait=CoordLike, ComptimeInt[4], ComptimeInt[4], ComptimeInt[1]]()
     comptime shape_t = TypeList.of[Trait=CoordLike, ComptimeInt[3], ComptimeInt[1], ComptimeInt[4]]()
-    comptime types = _Idx2CrdResultTypes[DType.int64, Int64, stride_t, shape_t]
+    comptime types = _Idx2CrdResultTypes[.int64, Int64, stride_t, shape_t]
     ```
 """
 

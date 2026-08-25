@@ -118,14 +118,12 @@ struct Fp8WeightLoader[
     # (same field-origin rule as `Fp4WeightLoader` / `DenseALoader`). The kernel
     # arg this view derives from outlives the K-loop. Built via
     # `Fp8WeightLoader.from_kernel_args`.
-    var weight: TileTensor[
-        DType.float8_e4m3fn, Self.w_layout, ImmUntrackedOrigin
-    ]
+    var weight: TileTensor[.float8_e4m3fn, Self.w_layout, ImmUntrackedOrigin]
 
     @always_inline
     @staticmethod
     def from_kernel_args(
-        weight: TileTensor[DType.float8_e4m3fn, Self.w_layout, ImmutAnyOrigin],
+        weight: TileTensor[.float8_e4m3fn, Self.w_layout, ImmutAnyOrigin],
     ) -> Self:
         """Build the loader from the kernel's `AnyOrigin` weight arg.
 
@@ -142,7 +140,7 @@ struct Fp8WeightLoader[
     @always_inline
     def load_col_chunk[
         width: Int
-    ](self, n: Int, k0: Int) -> SIMD[DType.float32, width]:
+    ](self, n: Int, k0: Int) -> SIMD[.float32, width]:
         """This column's `width` FP8 weights at `[n, k0 : k0+width)`, E4M3 -> f32.
 
         One coalesced width-`width` `float8_e4m3fn` load (adjacent lanes read
@@ -173,8 +171,8 @@ def fp8_gemv_kernel[
     elementwise_lambda_fn: Optional[elementwise_epilogue_type],
 ](
     c: TileTensor[c_type, c_layout, MutAnyOrigin],  # [1, N]
-    a: TileTensor[DType.bfloat16, a_layout, ImmutAnyOrigin],  # [1, K]
-    weight: TileTensor[DType.float8_e4m3fn, w_layout, ImmutAnyOrigin],  # [N, K]
+    a: TileTensor[.bfloat16, a_layout, ImmutAnyOrigin],  # [1, K]
+    weight: TileTensor[.float8_e4m3fn, w_layout, ImmutAnyOrigin],  # [N, K]
     n_arg: Int32,
     k_arg: Int32,
 ):
@@ -197,7 +195,7 @@ def fp8_gemv_kernel[
 
     var loader = Fp8WeightLoader[w_layout].from_kernel_args(weight)
 
-    var acc = SIMD[DType.float32, 1](0)
+    var acc = Float32(0)
 
     # Vectorized interior: each lane owns whole `TILE_K` chunks, strided by
     # `WARP_SIZE` chunks. Adjacent lanes read adjacent runs -> coalesced.
@@ -206,7 +204,7 @@ def fp8_gemv_kernel[
     while chunk < nchunk:
         var k0 = chunk * TILE_K
         var wv = loader.load_col_chunk[TILE_K](n_idx, k0)
-        var xv = a.load[width=TILE_K](Coord(0, k0)).cast[DType.float32]()
+        var xv = a.load[width=TILE_K](Coord(0, k0)).cast[.float32]()
         acc[0] += (xv * wv).reduce_add()
         chunk += WARP_SIZE
 
@@ -217,7 +215,7 @@ def fp8_gemv_kernel[
     var kt = ktail0 + lid
     while kt < k:
         var wv = loader.load_col_chunk[1](n_idx, kt)
-        var xv = a.load[width=1](Coord(0, kt)).cast[DType.float32]()
+        var xv = a.load[width=1](Coord(0, kt)).cast[.float32]()
         acc[0] += (xv * wv).reduce_add()
         kt += WARP_SIZE
 
@@ -234,12 +232,12 @@ def fp8_gemv_kernel[
 
 @always_inline
 def enqueue_apple_fp8_gemv[
-    c_type: DType = DType.float32,
+    c_type: DType = .float32,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c: TileTensor[mut=True, c_type, ...],
-    a: TileTensor[DType.bfloat16, ...],
-    weight: TileTensor[DType.float8_e4m3fn, ...],
+    a: TileTensor[.bfloat16, ...],
+    weight: TileTensor[.float8_e4m3fn, ...],
     n: Int,
     k: Int,
     ctx: DeviceContext,
@@ -285,7 +283,7 @@ def fp8_materialize_kernel[
     out_layout: TensorLayout,
 ](
     out_w: TileTensor[out_type, out_layout, MutAnyOrigin],
-    weight: TileTensor[DType.float8_e4m3fn, w_layout, ImmutAnyOrigin],
+    weight: TileTensor[.float8_e4m3fn, w_layout, ImmutAnyOrigin],
 ):
     """Materializes the FP8 weight into a dense `[N, K]` `out_type` buffer.
 
@@ -312,7 +310,7 @@ def fp8_materialize_kernel[
     # cast (mirrors `fp4_materialize_kernel`; the GPU skill's tensor-element read
     # idiom), then rebind the widened value back to the output ElementType. bf16
     # represents every E4M3 value exactly, so this cast is lossless.
-    var wv = rebind[Scalar[DType.float8_e4m3fn]](weight[n, k])
+    var wv = rebind[Float8_e4m3fn](weight[n, k])
     out_w[n, k] = rebind[out_w.ElementType](wv.cast[out_type]())
 
 
@@ -321,7 +319,7 @@ def enqueue_fp8_materialize[
     out_type: DType
 ](
     out_w: TileTensor[mut=True, out_type, ...],
-    weight: TileTensor[DType.float8_e4m3fn, ...],
+    weight: TileTensor[.float8_e4m3fn, ...],
     ctx: DeviceContext,
 ) raises:
     """Enqueues `fp8_materialize_kernel`: FP8 weight -> dense `[N, K]` `out_type`.
@@ -353,8 +351,8 @@ def _enqueue_apple_fp8_materialize_dense[
     elementwise_lambda_fn: Optional[elementwise_epilogue_type],
 ](
     c: TileTensor[mut=True, c_type, ...],
-    a: TileTensor[DType.bfloat16, ...],
-    weight: TileTensor[DType.float8_e4m3fn, ...],
+    a: TileTensor[.bfloat16, ...],
+    weight: TileTensor[.float8_e4m3fn, ...],
     m: Int,
     n: Int,
     k: Int,
@@ -379,10 +377,10 @@ def _enqueue_apple_fp8_materialize_dense[
     pins the handle alive until AFTER both enqueues are issued. Same pattern as
     `_enqueue_apple_fp4_materialize_dense`.
     """
-    var wdense_dev = ctx.enqueue_create_buffer[DType.bfloat16](n * k)
+    var wdense_dev = ctx.enqueue_create_buffer[.bfloat16](n * k)
     var wdense_tt = TileTensor(wdense_dev.unsafe_ptr(), row_major(n, k))
 
-    enqueue_fp8_materialize[DType.bfloat16](wdense_tt, weight, ctx)
+    enqueue_fp8_materialize[.bfloat16](wdense_tt, weight, ctx)
 
     if ctx.compute_capability() == 5:
         enqueue_apple_matmul[
@@ -427,12 +425,12 @@ def _enqueue_apple_fp8_materialize_dense[
 
 @always_inline
 def enqueue_apple_fp8_matmul[
-    c_type: DType = DType.float32,
+    c_type: DType = .float32,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c: TileTensor[mut=True, c_type, ...],
-    a: TileTensor[DType.bfloat16, ...],
-    weight: TileTensor[DType.float8_e4m3fn, ...],
+    a: TileTensor[.bfloat16, ...],
+    weight: TileTensor[.float8_e4m3fn, ...],
     ctx: DeviceContext,
 ) raises:
     """Enqueue the W8A16 matmul: `out = a @ W_fp8^T` (raw, unscaled).
@@ -467,9 +465,7 @@ def enqueue_apple_fp8_matmul[
             contract), threaded to whichever path runs.
     """
     comptime assert (
-        c_type == DType.float16
-        or c_type == DType.bfloat16
-        or c_type == DType.float32
+        c_type == .float16 or c_type == .bfloat16 or c_type == .float32
     ), "enqueue_apple_fp8_matmul: c_type must be one of {fp16, bf16, fp32}"
 
     var m = Int(c.dim[0]())

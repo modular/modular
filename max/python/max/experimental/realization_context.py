@@ -91,6 +91,8 @@ if TYPE_CHECKING:
     from max.experimental.sharding import DeviceMapping, DeviceMesh
 
 Ex = TypeVar("Ex", bound=BaseException)
+#: What a caller files beside a shared subgraph body, handed back unchanged.
+Entry = TypeVar("Entry")
 
 _SEED: Tensor | None = None
 
@@ -508,11 +510,18 @@ class LazyRealizationContext(EagerRealizationContext):
 
 
 def _fresh_subgraph_name(graph: Graph, base: str) -> str:
-    """Returns ``base`` or a numbered variant not yet registered on ``graph``."""
-    if base not in graph._subgraphs:
+    """Returns ``base`` or a numbered variant not yet taken on ``graph``.
+
+    ``graph``'s own name counts as taken: a subgraph sharing it would make
+    ``mo.call`` resolve to the enclosing graph, failing verification with "Only
+    subgraphs can be called". That happens whenever a graph is named after the
+    same callable it lowers to a subgraph.
+    """
+    taken = {*graph._subgraphs, graph.name}
+    if base not in taken:
         return base
     i = 1
-    while f"{base}_{i}" in graph._subgraphs:
+    while f"{base}_{i}" in taken:
         i += 1
     return f"{base}_{i}"
 
@@ -540,17 +549,20 @@ class GraphRealizationContext(RealizationContext):
     graph: Graph
     """The graph being constructed in this context."""
     signal_buffers: list[BufferValue] | None
-    #: Subgraph dedup table; armed by ``Module.compile``, ``None`` inlines.
+    #: Subgraph dedup table; armed by the root trace, ``None`` inlines.
     subgraph_cache: dict[Any, Any] | None
     #: Output tree structure per keyed subgraph, so a caller that reuses a
     #: cached subgraph (skipping its body trace) can still rebuild the call's
     #: results. Keyed by the same dedup key as :attr:`subgraph_cache`.
     subgraph_out_defs: dict[str, Any]
+    #: What names here are relative to: the enclosing call's prefix, or ``""``.
+    prefix: str
 
     def __init__(
         self,
         graph: Graph,
         signal_buffers: list[BufferValue] | None = None,
+        prefix: str = "",
     ):
         """Initializes the graph realization context.
 
@@ -558,11 +570,13 @@ class GraphRealizationContext(RealizationContext):
             graph: The graph to construct operations in.
             signal_buffers: GPU signal buffer graph values for
                 multi-device collective ops.
+            prefix: What names recorded in this graph are relative to.
         """
         self.graph = graph
         self.signal_buffers = signal_buffers
         self.subgraph_cache = None
         self.subgraph_out_defs = {}
+        self.prefix = prefix
 
     async def realize_all(self) -> list[Tensor]:
         """Raises TypeError - graph contexts cannot realize tensors.
@@ -686,6 +700,24 @@ def lazy() -> Generator[None]:
         yield
 
 
+def subgraph_context() -> (
+    GraphRealizationContext | LazyRealizationContext | None
+):
+    """The context a subgraph would be defined on here, or what inlines instead.
+
+    Returns:
+        The root trace context when one is capturing and armed for
+        deduplication, and :obj:`None` when a body belongs inline.
+    """
+    ctx = current_realization_context(None)
+    if (
+        isinstance(ctx, (GraphRealizationContext, LazyRealizationContext))
+        and ctx.subgraph_cache is not None
+    ):
+        return ctx
+    return None
+
+
 def define_subgraph(
     ctx: GraphRealizationContext | LazyRealizationContext,
     name: str,
@@ -714,44 +746,104 @@ def define_subgraph(
     if cache is None:
         raise TypeError("define_subgraph requires the root trace context.")
 
-    if key is not None and (subgraph := cache.get(key)) is not None:
-        return subgraph
+    # A keyed hit answers before tracing; the caller keeps its own out defs.
+    if key is not None and (found := cache.get(key)) is not None:
+        return found[0]
 
+    with open_subgraph(ctx, key or name, input_types) as subgraph:
+        n = len(input_types)
+        subgraph.output(*build_body(list(subgraph.inputs[:n])))
+    return share_subgraph(ctx, subgraph, None, key=key)[0]
+
+
+@contextlib.contextmanager
+def open_subgraph(
+    ctx: GraphRealizationContext | LazyRealizationContext,
+    name: str,
+    input_types: Sequence[Type[Any]],
+    *,
+    prefix: str = "",
+) -> Generator[Graph]:
+    """Opens a fresh subgraph on ``ctx``, entered under its own child context.
+
+    ``ctx``'s signal buffers become trailing inputs so collectives in the body
+    work; the caller appends ``ctx.signal_buffers`` to its
+    :func:`~max.graph.ops.call` operands to match.
+
+    Args:
+        ctx: The root trace context to add the subgraph to.
+        name: The base name for the symbol, numbered when already taken.
+        input_types: Operand types, excluding the trailing signal buffers.
+        prefix: What names declared in the body are relative to.
+
+    Yields:
+        The subgraph, whose leading inputs are the operands'.
+    """
     signals = ctx.signal_buffers or []
-    name = _fresh_subgraph_name(ctx.graph, key or name)
     subgraph = ctx.graph.add_subgraph(
-        name,
+        _fresh_subgraph_name(ctx.graph, name),
         input_types=[*input_types, *(b.type for b in signals)],
         custom_extensions=ctx.graph.kernel_libraries_paths,
         devices=list(ctx.graph.device_chains),
     )
-    n = len(input_types)
     child = GraphRealizationContext(
         subgraph,
-        signal_buffers=[i.buffer for i in subgraph.inputs[n:]] or None,
+        signal_buffers=[i.buffer for i in subgraph.inputs[len(input_types) :]]
+        or None,
+        prefix=prefix,
     )
     # child.subgraph_cache stays None, so a nested call in the body inlines.
     with realization_context(child), child:
-        subgraph.output(*build_body(list(subgraph.inputs[:n])))
+        yield subgraph
 
+
+def share_subgraph(
+    ctx: GraphRealizationContext | LazyRealizationContext,
+    subgraph: Graph,
+    entry: Entry,
+    *,
+    key: str | None = None,
+) -> tuple[Graph, Entry]:
+    """Files a traced body for reuse, or discards it for an identical one.
+
+    A body already filed under the same ``key`` -- or, when no key is given,
+    one whose IR hashes the same -- stands in for this one, which is erased.
+
+    Args:
+        ctx: The root trace context owning the deduplication table.
+        subgraph: The body just traced, erased here when an identical body is
+            already filed.
+        entry: Whatever the caller needs at the call site but can only learn
+            while tracing, filed beside the body and handed back unchanged.
+            ``as_subgraph`` files the output tree structure, which is what
+            rebuilds a return value from the call's flat results.
+        key: What identifies the body, or :obj:`None` to hash the traced IR.
+
+    Returns:
+        The subgraph to call and the entry filed with it -- the already-filed
+        body's, when this one duplicated it.
+
+    Raises:
+        TypeError: If ``ctx`` owns no deduplication table.
+    """
+    if ctx.subgraph_cache is None:
+        raise TypeError("subgraph dedup requires the root trace context.")
     if key is None:
-        # No user key: dedup on the body's IR. Blank only the first ``"{name}"``
-        # (the op's own sym_name), leaving an identical name string in the body
-        # (e.g. a custom op) untouched, so an identical body hashes the same
-        # regardless of its fresh name.
+        # The symbol name is what a reader sees, so it is not the key: naming
+        # it after one would print the argument structure into every mo.call.
         asm = subgraph._mlir_op.get_asm(
             assume_verified=True,
             enable_debug_info=False,
             print_generic_op_form=True,
             use_local_scope=True,
-        ).replace(f'"{name}"', '"_"', 1)
+        ).replace(f'"{subgraph.name}"', '"_"', 1)
         key = hashlib.sha256(asm.encode()).hexdigest()
-    if key in cache:
-        ctx.graph._subgraphs.pop(name, None)
+    if (filed := ctx.subgraph_cache.get(key)) is not None:
+        ctx.graph._subgraphs.pop(subgraph.name, None)
         subgraph._mlir_op.erase()
-        return cache[key]
-    cache[key] = subgraph
-    return subgraph
+        return filed
+    ctx.subgraph_cache[key] = (subgraph, entry)
+    return subgraph, entry
 
 
 __all__ = [

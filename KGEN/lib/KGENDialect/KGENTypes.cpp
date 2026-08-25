@@ -44,8 +44,8 @@ constexpr llvm::StringLiteral kStructElemLayoutError =
 /// Return a string like "imm" or "mut".
 const char *KGEN::getUserSyntax(ArgConvention convention) {
   switch (convention) {
-  case ArgConvention::ReadReg:
-  case ArgConvention::ReadMem:
+  case ArgConvention::ImmReg:
+  case ArgConvention::ImmMem:
     return "imm";
   case ArgConvention::OwnedReg:
   case ArgConvention::OwnedMem:
@@ -545,7 +545,10 @@ Type FuncGeneratorTypeBuilderType::get(MLIRContext *ctx, TypedAttr paramDecls,
   cstParamDecls = remapper.replace(cstParamDecls);
   cstArgTypes = remapper.replace(cstArgTypes);
   resultType = remapper.replace(resultType);
-  if (cstMetadata.getMetadata()) {
+  if (!cstImplicitOriginDecls.getValues().empty()) {
+    assert(cstMetadata.getMetadata() &&
+           "origin metadata must be present for implicit origin decls");
+
     SmallVector<StringAttr> names = llvm::map_to_vector(
         cstImplicitOriginDecls.getValues(),
         [](TypedAttr attr) -> StringAttr { return cast<StringAttr>(attr); });

@@ -167,7 +167,7 @@ def _softmax_seed_sink(
 def _softmax_row_max[
     num_n_mmas: Int
 ](
-    scores: MmaOpApple[DType.float32, DType.float32, 1, num_n_mmas].AccumType,
+    scores: MmaOpApple[.float32, DType.float32, 1, num_n_mmas].AccumType,
 ) -> Array[Float32, _SOFTMAX_FRAG_ROWS]:
     """Full-row max over the single score row-block (across all `ni` cols).
 
@@ -235,12 +235,8 @@ def _softmax_update[
     var l_acc = Array[Float32, _SOFTMAX_FRAG_ROWS](fill=Float32(0))
     comptime for ni in range(num_n_mmas):
         var p = scores[ni]
-        var p_lo = exp2(
-            p.slice[4, offset=0]() - SIMD[DType.float32, 4](m_new[0])
-        )
-        var p_hi = exp2(
-            p.slice[4, offset=4]() - SIMD[DType.float32, 4](m_new[1])
-        )
+        var p_lo = exp2(p.slice[4, offset=0]() - SIMD[.float32, 4](m_new[0]))
+        var p_hi = exp2(p.slice[4, offset=4]() - SIMD[.float32, 4](m_new[1]))
         scores[ni] = p_lo.join(p_hi)
         l_acc[0] = l_acc[0] + (p_lo[0] + p_lo[1] + p_lo[2] + p_lo[3])
         l_acc[1] = l_acc[1] + (p_hi[0] + p_hi[1] + p_hi[2] + p_hi[3])
@@ -255,8 +251,8 @@ def _softmax_update[
 
     comptime for ni in range(out_num_n_mmas):
         var o = output[ni]
-        var o_lo = o.slice[4, offset=0]() * SIMD[DType.float32, 4](alpha[0])
-        var o_hi = o.slice[4, offset=4]() * SIMD[DType.float32, 4](alpha[1])
+        var o_lo = o.slice[4, offset=0]() * SIMD[.float32, 4](alpha[0])
+        var o_hi = o.slice[4, offset=4]() * SIMD[.float32, 4](alpha[1])
         output[ni] = o_lo.join(o_hi)
 
 
@@ -284,8 +280,8 @@ def _softmax_normalize[
     inv[1] = Float32(1) / sm_l[1] if sm_l[1] > Float32(0) else Float32(0)
     comptime for ni in range(out_num_n_mmas):
         var o = output[ni]
-        var o_lo = o.slice[4, offset=0]() * SIMD[DType.float32, 4](inv[0])
-        var o_hi = o.slice[4, offset=4]() * SIMD[DType.float32, 4](inv[1])
+        var o_lo = o.slice[4, offset=0]() * SIMD[.float32, 4](inv[0])
+        var o_hi = o.slice[4, offset=4]() * SIMD[.float32, 4](inv[1])
         output[ni] = o_lo.join(o_hi)
 
 
@@ -318,11 +314,7 @@ def fa_prefill_apple_core[
     k: k_t,
     v: v_t,
     mask_functor: mask_t,
-    valid_length: TileTensor[
-        DType.uint32,
-        valid_length_layout,
-        ImmutAnyOrigin,
-    ],
+    valid_length: TileTensor[.uint32, valid_length_layout, ImmutAnyOrigin],
     sink_weights: OptionalReg[TileTensor[q_type, sink_layout, ImmutAnyOrigin]],
     scale: Float32,
     batch_size: Int32,
@@ -541,7 +533,7 @@ def fa_prefill_apple_core[
         b_type=k_t.dtype,
         transpose_b=True,
     ]
-    comptime OutMma = MmaOpApple[DType.float32, q_type, 1, DEPTH_MMAS]
+    comptime OutMma = MmaOpApple[.float32, q_type, 1, DEPTH_MMAS]
 
     # QK MMA op (lane-offset setup is loop-invariant).
     var score_mma = ScoreMma()
@@ -558,9 +550,7 @@ def fa_prefill_apple_core[
         # (`* log2e`) to match the log2e-folded scores. The deref is comptime-gated
         # on `sink`, so None is never reached.
         var sw = rebind[Scalar[q_type]](sink_weights.value()[head_id])
-        _softmax_seed_sink(
-            sm_m, sm_l, sw.cast[DType.float32]() * Float32(log2e)
-        )
+        _softmax_seed_sink(sm_m, sm_l, sw.cast[.float32]() * Float32(log2e))
 
     # Fold log2e into the scale so per-element scaling lands scores directly in
     # the units `exp2` consumes. Exact here: the supported masks only pass-through
@@ -708,11 +698,11 @@ def fa_prefill_apple_core[
                 comptime for ni in range(NumNMmas):
                     var kbase = kv0 + ni * 16 + cb
                     # Per-key in-bounds mask for the 4 consecutive keys.
-                    var keys = SIMD[DType.int32, 4](Int32(kbase)) + SIMD[
+                    var keys = SIMD[.int32, 4](Int32(kbase)) + SIMD[
                         DType.int32, 4
                     ](0, 1, 2, 3)
                     var k_ok = keys.lt(Int32(cur_cache_len))
-                    var neg = SIMD[DType.float32, 4](NEG_INF)
+                    var neg = SIMD[.float32, 4](NEG_INF)
                     var lrow_lo = rb
                     var lrow_hi = lrow_lo + 8
                     var s_lo = scores[ni].slice[4, offset=0]()
@@ -730,15 +720,11 @@ def fa_prefill_apple_core[
                         s_hi,
                     )
                     var ib_lo = (
-                        SIMD[DType.bool, 4](
-                            fill=q_row0 + lrow_lo < cur_query_len
-                        )
+                        SIMD[.bool, 4](fill=q_row0 + lrow_lo < cur_query_len)
                         & k_ok
                     )
                     var ib_hi = (
-                        SIMD[DType.bool, 4](
-                            fill=q_row0 + lrow_hi < cur_query_len
-                        )
+                        SIMD[.bool, 4](fill=q_row0 + lrow_hi < cur_query_len)
                         & k_ok
                     )
                     scores[ni] = ib_lo.select(m_lo, neg).join(
@@ -878,16 +864,12 @@ def fa_prefill_apple[
     _is_cache_length_accurate: Bool = False,
     num_simdgroups: Int = 4,
 ](
-    q: LayoutTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
+    q: LayoutTensor[mut=False, address_space=.GENERIC, ...],
     k: k_t,
     v: v_t,
     mask_functor: mask_t,
-    output: LayoutTensor[
-        mut=True, output_type, address_space=AddressSpace.GENERIC, ...
-    ],
-    valid_length: LayoutTensor[
-        mut=False, DType.uint32, address_space=AddressSpace.GENERIC, ...
-    ],
+    output: LayoutTensor[mut=True, output_type, address_space=.GENERIC, ...],
+    valid_length: LayoutTensor[mut=False, .uint32, address_space=.GENERIC, ...],
     scale: Float32,
     batch_size: Int,
     max_prompt_len: Int,

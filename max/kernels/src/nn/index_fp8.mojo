@@ -20,8 +20,10 @@ from layout import (
     Idx,
     Layout,
     LayoutTensor,
+    PointerStorage,
     RuntimeLayout,
     TensorLayout,
+    TensorStorage,
     TileTensor,
     UNKNOWN_VALUE,
 )
@@ -58,7 +60,7 @@ struct IndexSmemStorage[
 
     var q_smem: Array[Scalar[Self.dtype], Self.num_heads * Self.depth]
     var k_smem: Array[Scalar[Self.dtype], Self.BN * Self.depth]
-    var scratch: Array[Scalar[DType.float32], Self.BN * 8]
+    var scratch: Array[Float32, Self.BN * 8]
 
 
 @__name(t"fp8_index_{dtype}")
@@ -76,17 +78,26 @@ def fp8_index_kernel[
     # When False: num_keys = cache_length + seq_len (cache_length excludes new tokens).
     # When True: num_keys = cache_length (cache_length already includes new tokens).
     _is_cache_length_accurate: Bool = False,
+    *,
+    OutputStorageType: TensorStorage = PointerStorage[element_width=1],
+    QStorageType: TensorStorage = PointerStorage[element_width=1],
+    QSStorageType: TensorStorage = PointerStorage[element_width=1],
+    VLStorageType: TensorStorage = PointerStorage[element_width=1],
 ](
-    output_tt: TileTensor[DType.float32, OutputLT, MutAnyOrigin],
+    output_tt: TileTensor[
+        .float32, OutputLT, MutAnyOrigin, Storage=OutputStorageType
+    ],
     # [total_seq_len, num_heads, depth]
-    q_tt: TileTensor[dtype, QLT, ImmutAnyOrigin],
+    q_tt: TileTensor[dtype, QLT, ImmutAnyOrigin, Storage=QStorageType],
     # [total_seq_len, num_heads]
-    q_s_tt: TileTensor[DType.float32, QSLT, MutAnyOrigin],
+    q_s_tt: TileTensor[.float32, QSLT, MutAnyOrigin, Storage=QSStorageType],
     # MHAOperand for K values
     k_operand: k_operand_type,
     # MHAOperand for K scales
     ks_operand: ks_operand_type,
-    valid_length_tt: TileTensor[DType.uint32, VLLT, ImmutAnyOrigin],
+    valid_length_tt: TileTensor[
+        .uint32, VLLT, ImmutAnyOrigin, Storage=VLStorageType
+    ],
 ):
     """Computes the scalar FP8 index/gather score kernel as a Blackwell tensor-core fallback.
 
@@ -106,6 +117,10 @@ def fp8_index_kernel[
         num_heads: Number of attention heads.
         depth: Per-head feature depth.
         _is_cache_length_accurate: When True, `cache_length` already includes new tokens.
+        OutputStorageType: Storage policy of the `output_tt` tile.
+        QStorageType: Storage policy of the `q_tt` tile.
+        QSStorageType: Storage policy of the `q_s_tt` tile.
+        VLStorageType: Storage policy of the `valid_length_tt` tile.
 
     Args:
         output_tt: Output score tensor of shape `[total_seq_len, num_keys]`.
@@ -150,8 +165,8 @@ def fp8_index_kernel[
         return
 
     ref smem_ptr = external_memory[
-        Scalar[DType.uint8],
-        address_space=AddressSpace.SHARED,
+        UInt8,
+        address_space=.SHARED,
         alignment=128,
     ]().bitcast[IndexSmemStorage[dtype, num_heads, depth, BN]]()[]
 
@@ -162,17 +177,17 @@ def fp8_index_kernel[
     var q_smem_tile = LayoutTensor[
         dtype,
         Layout.row_major(num_heads, depth),
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ](q_smem.unsafe_ptr())
 
     var k_smem_tile = LayoutTensor[
         dtype,
         Layout.row_major(BN, depth),
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ](k_smem.unsafe_ptr())
 
     var k_smem_ptr: UnsafePointer[
-        Scalar[dtype], origin_of(k_smem), address_space=AddressSpace.SHARED
+        Scalar[dtype], origin_of(k_smem), address_space=.SHARED
     ] = k_smem.unsafe_ptr()
 
     var q_ptr = q.ptr_at_offset(Index(start_of_seq + UInt32(seq_offset), 0, 0))
@@ -186,35 +201,35 @@ def fp8_index_kernel[
     ]
 
     comptime QSTileType = LayoutTensor[
-        DType.float32, Layout.row_major(1, num_heads), MutAnyOrigin
+        .float32, Layout.row_major(1, num_heads), MutAnyOrigin
     ]
 
     comptime LogitsType = LayoutTensor[
-        DType.float32,
+        .float32,
         Layout.row_major(BN // thread_dim_x, num_heads // thread_dim_y),
         MutAnyOrigin,
-        address_space=AddressSpace.LOCAL,
+        address_space=.LOCAL,
     ]
 
     comptime QSRegTileType = LayoutTensor[
-        DType.float32,
+        .float32,
         Layout.row_major(1, num_heads // thread_dim_y),
         MutAnyOrigin,
-        address_space=AddressSpace.LOCAL,
+        address_space=.LOCAL,
     ]
 
     comptime LogitsSumType = LayoutTensor[
-        DType.float32,
+        .float32,
         Layout.row_major(BN // thread_dim_x, 1),
         MutAnyOrigin,
-        address_space=AddressSpace.LOCAL,
+        address_space=.LOCAL,
     ]
 
     comptime ScratchType = LayoutTensor[
-        DType.float32,
+        .float32,
         Layout.row_major(BN, thread_dim_y),
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]
 
     var q_tile = QTileType(q_ptr)
@@ -242,7 +257,7 @@ def fp8_index_kernel[
     # num_heads < 16 or depth // simd_width < 8 (e.g. depth == 64).
     comptime q_vecs = num_heads * depth // simd_width
     var q_smem_dst: UnsafePointer[
-        Scalar[dtype], origin_of(q_smem), address_space=AddressSpace.SHARED
+        Scalar[dtype], origin_of(q_smem), address_space=.SHARED
     ] = q_smem.unsafe_ptr()
     for v in range(Int(tid), q_vecs, num_threads):
         q_smem_dst.store(
@@ -282,7 +297,7 @@ def fp8_index_kernel[
                 UInt32(0),
                 UInt32(0),
             )
-            k_s_reg = ks_ptr[0].cast[DType.float32]()
+            k_s_reg = ks_ptr[0].cast[.float32]()
 
         var q_smem_frag = q_smem_tile.tile[num_heads // thread_dim_y, depth](
             thread_idx.y, 0
@@ -298,8 +313,8 @@ def fp8_index_kernel[
             comptime for mma_m in range(BN // thread_dim_x):
                 comptime for mma_n in range(num_heads // thread_dim_y):
                     logits[mma_m, mma_n] += (
-                        k_smem_frag[mma_m, k][0].cast[DType.float32]()
-                        * q_smem_frag[mma_n, k][0].cast[DType.float32]()
+                        k_smem_frag[mma_m, k][0].cast[.float32]()
+                        * q_smem_frag[mma_n, k][0].cast[.float32]()
                     )
 
         comptime for l_i in range(BN // thread_dim_x):
@@ -334,13 +349,13 @@ def fp8_index[
     num_heads: Int,
     depth: Int,
 ](
-    output: TileTensor[DType.float32, ...],
+    output: TileTensor[.float32, ...],
     q: TileTensor[mut=False, dtype, ...],
-    q_s: TileTensor[DType.float32, ...],
+    q_s: TileTensor[.float32, ...],
     k: TileTensor[mut=False, dtype, ...],
-    k_s: TileTensor[mut=False, DType.float32, ...],
-    valid_length: TileTensor[mut=False, DType.uint32, ...],
-    cache_row_offsets: TileTensor[mut=False, DType.uint32, ...],
+    k_s: TileTensor[mut=False, .float32, ...],
+    valid_length: TileTensor[mut=False, .uint32, ...],
+    cache_row_offsets: TileTensor[mut=False, .uint32, ...],
     batch_size: Int,
     max_seq_len: Int,
     max_num_keys: Int,
@@ -482,6 +497,10 @@ def fp8_index[
             num_heads,
             depth,
             _is_cache_length_accurate=True,
+            OutputStorageType=output.Storage,
+            QStorageType=q.Storage,
+            QSStorageType=q_s.Storage,
+            VLStorageType=valid_length.Storage,
         ]
 
         ctx.enqueue_function[kernel](
@@ -513,12 +532,12 @@ def _index_matmul_max[
     k_layout: Layout,
     k_type: MHAOperand,
 ](
-    output: LayoutTensor[DType.float32, output_layout, MutAnyOrigin],
+    output: LayoutTensor[.float32, output_layout, MutAnyOrigin],
     q: LayoutTensor[dtype, q_layout, ImmutAnyOrigin],
-    q_s: LayoutTensor[DType.float32, qs_layout, MutAnyOrigin],
+    q_s: LayoutTensor[.float32, qs_layout, MutAnyOrigin],
     k: LayoutTensor[dtype, k_layout, ImmutAnyOrigin],
     valid_length: LayoutTensor[
-        DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
+        .uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
     ],
     k_lut: k_type,
     max_seq_len: Int32,
@@ -559,7 +578,7 @@ def _index_matmul_max[
     var o_runtime_layout = RuntimeLayout[output_layout].row_major(
         Index(seq_len, num_keys, num_heads)
     )
-    var o_batch = LayoutTensor[DType.float32, output_layout, MutAnyOrigin](
+    var o_batch = LayoutTensor[.float32, output_layout, MutAnyOrigin](
         o_ptr, o_runtime_layout
     )
 
@@ -567,8 +586,8 @@ def _index_matmul_max[
     # (FP8×FP8 in low precision can saturate/widen differently than F32 products).
     var accum = Float32(0.0)
     for d in range(Int(depth)):
-        var kd = k_batch[key_idx, 0, d][0].cast[DType.float32]()
-        var qd = q_batch[seq_idx, head_idx, d][0].cast[DType.float32]()
+        var kd = k_batch[key_idx, 0, d][0].cast[.float32]()
+        var qd = q_batch[seq_idx, head_idx, d][0].cast[.float32]()
         accum += kd * qd
 
     accum = max(accum, 0) * q_s[start_of_seq + UInt32(seq_idx), head_idx][0]
@@ -582,11 +601,11 @@ def _reduce_logits[
     ks_layout: Layout,
     k_type: MHAOperand,
 ](
-    logits: LayoutTensor[DType.float32, logits_layout, MutAnyOrigin],
-    output: LayoutTensor[DType.float32, output_layout, MutAnyOrigin],
-    k_s: LayoutTensor[DType.float32, ks_layout, MutAnyOrigin],
+    logits: LayoutTensor[.float32, logits_layout, MutAnyOrigin],
+    output: LayoutTensor[.float32, output_layout, MutAnyOrigin],
+    k_s: LayoutTensor[.float32, ks_layout, MutAnyOrigin],
     valid_length: LayoutTensor[
-        DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
+        .uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
     ],
     k_lut: k_type,
 ):
@@ -612,7 +631,7 @@ def _reduce_logits[
     var o_runtime_layout = RuntimeLayout[output_layout].row_major(
         Index(seq_len, num_keys)
     )
-    var o_batch = LayoutTensor[DType.float32, output_layout, MutAnyOrigin](
+    var o_batch = LayoutTensor[.float32, output_layout, MutAnyOrigin](
         o_ptr, o_runtime_layout
     )
     var k_s_runtime_layout = RuntimeLayout[ks_layout].row_major(Index(num_keys))
@@ -620,10 +639,10 @@ def _reduce_logits[
     var logits_runtime_layout = RuntimeLayout[logits_layout].row_major(
         Index(seq_len, num_keys, num_heads)
     )
-    var logits_batch = LayoutTensor[DType.float32, logits_layout, MutAnyOrigin](
+    var logits_batch = LayoutTensor[.float32, logits_layout, MutAnyOrigin](
         logits_ptr, logits_runtime_layout
     )
-    var k_s_batch = LayoutTensor[DType.float32, ks_layout, MutAnyOrigin](
+    var k_s_batch = LayoutTensor[.float32, ks_layout, MutAnyOrigin](
         k_s_ptr, k_s_runtime_layout
     )
 
@@ -641,13 +660,13 @@ def fp8_index_naive[
     num_heads: Int,
     depth: Int,
 ](
-    output: TileTensor[DType.float32, ...],
+    output: TileTensor[.float32, ...],
     q: TileTensor[mut=False, dtype, ...],
-    q_s: TileTensor[DType.float32, ...],
+    q_s: TileTensor[.float32, ...],
     k: TileTensor[mut=False, dtype, ...],
-    k_s: TileTensor[DType.float32, ...],
-    valid_length: TileTensor[mut=False, DType.uint32, ...],
-    cache_row_offsets: TileTensor[mut=False, DType.uint32, ...],
+    k_s: TileTensor[.float32, ...],
+    valid_length: TileTensor[mut=False, .uint32, ...],
+    cache_row_offsets: TileTensor[mut=False, .uint32, ...],
     batch_size: Int,
     max_seq_len: Int,
     max_num_keys: Int,
@@ -701,7 +720,7 @@ def fp8_index_naive[
             Index(total_seq_len, num_heads, depth)
         ),
     )
-    var q_s_lt = LayoutTensor[DType.float32, qs_layout, MutAnyOrigin](
+    var q_s_lt = LayoutTensor[.float32, qs_layout, MutAnyOrigin](
         rebind[UnsafePointer[Float32, MutAnyOrigin]](q_s.ptr),
         RuntimeLayout[qs_layout].row_major(Index(total_seq_len, num_heads)),
     )
@@ -709,17 +728,17 @@ def fp8_index_naive[
         rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](k.ptr),
         RuntimeLayout[k_layout].row_major(Index(total_keys, 1, depth)),
     )
-    var k_s_lt = LayoutTensor[DType.float32, ks_layout, MutAnyOrigin](
+    var k_s_lt = LayoutTensor[.float32, ks_layout, MutAnyOrigin](
         rebind[UnsafePointer[Float32, MutAnyOrigin]](k_s.ptr),
         RuntimeLayout[ks_layout].row_major(Index(total_keys)),
     )
-    var output_lt = LayoutTensor[DType.float32, output_layout, MutAnyOrigin](
+    var output_lt = LayoutTensor[.float32, output_layout, MutAnyOrigin](
         rebind[UnsafePointer[Float32, MutAnyOrigin]](output.ptr),
         RuntimeLayout[output_layout].row_major(
             Index(total_seq_len, max_num_keys)
         ),
     )
-    var valid_length_lt = LayoutTensor[DType.uint32, vl_layout, ImmutAnyOrigin](
+    var valid_length_lt = LayoutTensor[.uint32, vl_layout, ImmutAnyOrigin](
         rebind[UnsafePointer[UInt32, ImmutAnyOrigin]](valid_length.ptr),
         RuntimeLayout[vl_layout].row_major(Index(vl_size)),
     )
@@ -737,7 +756,7 @@ def fp8_index_naive[
 
     var logits_size = batch_size * max_seq_len * max_num_keys * num_heads
 
-    var logits_dev = ctx.enqueue_create_buffer[DType.float32](logits_size)
+    var logits_dev = ctx.enqueue_create_buffer[.float32](logits_size)
     logits_dev.enqueue_fill(Float32(0.0))
 
     comptime logits_layout = Layout.row_major(
@@ -749,7 +768,7 @@ def fp8_index_naive[
     )
 
     var logits_tensor = LayoutTensor[
-        DType.float32,
+        .float32,
         logits_layout,
     ](logits_dev.unsafe_ptr(), logits_runtime_layout)
 

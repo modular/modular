@@ -40,6 +40,7 @@ directory layout:
 ├── layers/
 ├── __init__.py
 ├── arch.py
+├── batch_processor.py
 ├── model_config.py
 ├── model.py
 ├── {model_name}.py
@@ -56,6 +57,14 @@ Each file serves a distinct role:
   match the `architectures[0]` value in the model's Hugging Face `config.json`),
   supported encodings, and the classes that implement the config, model, and
   weight adapter.
+- `batch_processor.py`: optional batch processor that prepares model inputs for
+  each scheduled batch. Create one only when the model has unique batching
+  logic; if batching matches an existing family, reuse that family's processor
+  by registering it through the
+  [`batching`](/api/python/generated/max.pipelines.lib.registry.SupportedArchitecture#max.pipelines.lib.registry.SupportedArchitecture.batching)
+  field in `arch.py` (for example, `batching=Llama3BatchProcessor`) rather than
+  creating a new file or overriding the model class. See
+  [Delegating input preparation to a batch processor](/develop/pipelines#delegating-input-preparation-to-a-batch-processor).
 - `model_config.py`: translates Hugging Face `config.json` fields into a typed
   configuration object MAX uses to build the compute graph.
 - `model.py`: the pipeline model class registered in `arch.py`. When building

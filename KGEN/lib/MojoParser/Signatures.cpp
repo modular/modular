@@ -272,7 +272,7 @@ ParseResult ParsedArgument::parse(ParserBase &p, KWArgMarkerInfo &markerInfo,
   } else if (p.consumeIfSoftIdentifier("read")) {
     handleContextualArgConvention("read", kConventionImm);
     if (convention == kConventionImm)
-      p.emitWarning(loc, "'read' is deprecated; use 'imm'")
+      p.emitError(loc, "'read' was removed; use 'imm'")
           << FixIt::replaceToken(loc, "imm");
   } else if (p.consumeIfSoftIdentifier("deinit")) {
     handleContextualArgConvention("deinit", kConventionDeinit);
@@ -1279,11 +1279,11 @@ void TypeCheckedParamList::emitBodyConstraints() {
 }
 
 PogListAttr TypeCheckedParamList::getParamListAttr() const {
-  // In a parameter list, any variadic list is claimed to be ReadMem.
+  // In a parameter list, any variadic list is claimed to be ImmMem.
   std::optional<ArgConvention> origVariadicConvention;
   for (auto var : variadicKinds) {
     if (var != VariadicKind::None)
-      origVariadicConvention = ArgConvention::ReadMem;
+      origVariadicConvention = ArgConvention::ImmMem;
   }
 
   return PogListAttr::get(shared.getContext(), names, passingKinds,
@@ -1405,7 +1405,7 @@ ParseResult ParsedCaptureList::parseCaptureList(ParserBase &p) {
     } else if (p.consumeIfSoftIdentifier("imm")) {
       return CaptureConvention::kConventionRead;
     } else if (p.consumeIfSoftIdentifier("read")) {
-      p.emitWarning(convLoc, "'read' is deprecated; use 'imm'")
+      p.emitError(convLoc, "'read' was removed; use 'imm'")
           << FixIt::replaceToken(convLoc, "imm");
       return CaptureConvention::kConventionRead;
     } else if (p.consumeIf(Token::kw_ref)) {
@@ -2090,7 +2090,13 @@ static void typeCheckOneArgument(size_t idx, ASTDecl *fnDecl,
     break;
   }
   case ParsedArgument::kConventionImm: {
-    arg.kgenConvention = ArgConvention::ReadMem;
+    arg.kgenConvention = ArgConvention::ImmMem;
+    // For parametric closure traits, we don't care about register passability.
+    // All arguments will be parsed as if they are mem type, such that we can
+    // match `def (T)` with both `def (Int)` and `def (MemType)`.
+    if (tcSignature.argList.isExperimentalParamTrait)
+      break;
+
     TypeConvention conv = type.getRegisterPassability(arg.loc, shared);
     // FIXME(MOCO-725): Borrows of non-trivial register-passable values don't
     // have origins and can't be correctly tracked if captured in an async
@@ -2106,7 +2112,7 @@ static void typeCheckOneArgument(size_t idx, ASTDecl *fnDecl,
     // pass non-trivial ones because we cannot diagnose ownership and have other
     // lifetime issues.
     if (conv == TypeConvention::RegisterPassableTrivial)
-      arg.kgenConvention = ArgConvention::ReadReg;
+      arg.kgenConvention = ArgConvention::ImmReg;
     break;
   }
   case ParsedArgument::kConventionMut:
@@ -2137,12 +2143,12 @@ static void typeCheckOneArgument(size_t idx, ASTDecl *fnDecl,
       arg.kgenConvention = ArgConvention::OwnedMem;
       break;
     case ParsedArgument::kConventionImm:
-      arg.variadicArgConvention = ArgConvention::ReadMem;
-      arg.kgenConvention = ArgConvention::ReadMem;
+      arg.variadicArgConvention = ArgConvention::ImmMem;
+      arg.kgenConvention = ArgConvention::ImmMem;
       break;
     case ParsedArgument::kConventionMut:
       arg.variadicArgConvention = ArgConvention::Mut;
-      arg.kgenConvention = ArgConvention::ReadMem;
+      arg.kgenConvention = ArgConvention::ImmMem;
       break;
     }
   }
@@ -2152,7 +2158,7 @@ static void typeCheckOneArgument(size_t idx, ASTDecl *fnDecl,
   Type fullType;
   if (hasImplicitOrigin(arg.kgenConvention) &&
       arg.variadicKind != VariadicKind::KwVarArg) {
-    bool isMutable = arg.kgenConvention != ArgConvention::ReadMem;
+    bool isMutable = arg.kgenConvention != ArgConvention::ImmMem;
     fullType =
         makeImplicitRefTypeForArg(arg, idx, type, isMutable, tcSignature);
   } else {
@@ -2221,7 +2227,7 @@ static void typeCheckOneArgument(size_t idx, ASTDecl *fnDecl,
       blockOwningArg.addArgument(fullType, shared.translateLocation(arg.loc));
 
   DeclIRValue argIRValue;
-  if (arg.kgenConvention == ArgConvention::ReadReg)
+  if (arg.kgenConvention == ArgConvention::ImmReg)
     argIRValue = SRValue(bbArg);
   else // Everything else is passed in memory.
     argIRValue = CValue::getMValueForRef(bbArg);

@@ -59,13 +59,13 @@ def _load_a_reg_tile[
         dtype,
         _compute_reg_tile_layout(layout, 16 // size_of[dtype]()),
         MutAnyOrigin,
-        address_space=AddressSpace.LOCAL,
+        address_space=.LOCAL,
     ],
     smem_tile: LayoutTensor[
         dtype,
         layout,
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         ...,
     ],
 ):
@@ -142,7 +142,7 @@ def tma_wgmma_kernel[
         a_type,
         a_smem_layout,
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
     ].stack_allocation()
 
@@ -150,7 +150,7 @@ def tma_wgmma_kernel[
         b_type,
         b_smem_layout,
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
     ].stack_allocation()
 
@@ -170,7 +170,7 @@ def tma_wgmma_kernel[
         accum_type,
         Layout.row_major(num_m_mmas * num_n_mmas, c_frag_size),
         MutAnyOrigin,
-        address_space=AddressSpace.LOCAL,
+        address_space=.LOCAL,
     ].stack_allocation()
 
     _ = c_reg_tile.fill(0.0)
@@ -182,7 +182,7 @@ def tma_wgmma_kernel[
     var mbar = unsafe_stack_allocation[
         1,
         SharedMemBarrier,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=8,
     ]()
     if thread_idx.x == 0:
@@ -380,27 +380,27 @@ def test_tma_wgmma[
 def main() raises:
     with DeviceContext() as ctx:
         test_tma_wgmma[
-            DType.bfloat16,
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
+            .bfloat16,
             Index(128, 16, 32),
             Index(128, 16, 32),
             Index(64, 8, 16),
         ](ctx)
 
         test_tma_wgmma[
-            DType.bfloat16,
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
+            .bfloat16,
             Index(64, 8, 64),
             Index(64, 8, 64),
             Index(64, 8, 16),
         ](ctx)
 
         test_tma_wgmma[
-            DType.bfloat16,
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
+            .bfloat16,
             Index(64, 8, 64),
             Index(64, 8, 64),
             Index(64, 8, 16),
@@ -409,9 +409,9 @@ def main() raises:
         ](ctx)
 
         test_tma_wgmma[
-            DType.bfloat16,
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
+            .bfloat16,
             Index(128, 16, 32),
             Index(128, 16, 32),
             Index(64, 8, 16),
@@ -420,9 +420,9 @@ def main() raises:
         ](ctx)
 
         test_tma_wgmma[
-            DType.bfloat16,
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
+            .bfloat16,
             Index(128, 16, 16),
             Index(128, 16, 16),
             Index(64, 8, 16),
@@ -433,9 +433,9 @@ def main() raises:
         comptime for log2BN in range(6, 8):
             comptime BN = 1 << log2BN
             test_tma_wgmma[
-                DType.bfloat16,
-                DType.bfloat16,
-                DType.bfloat16,
+                .bfloat16,
+                .bfloat16,
+                .bfloat16,
                 Index(128, 256, 64),
                 Index(64, BN, 64),
                 Index(64, 64, 16),
@@ -445,9 +445,9 @@ def main() raises:
             ](ctx)
 
             test_tma_wgmma[
-                DType.bfloat16,
-                DType.bfloat16,
-                DType.bfloat16,
+                .bfloat16,
+                .bfloat16,
+                .bfloat16,
                 Index(128, 256, 64),
                 Index(64, BN, 64),
                 Index(64, 64, 16),
@@ -457,9 +457,9 @@ def main() raises:
             ](ctx)
 
             test_tma_wgmma[
-                DType.bfloat16,
-                DType.bfloat16,
-                DType.bfloat16,
+                .bfloat16,
+                .bfloat16,
+                .bfloat16,
                 Index(128, 256, 16),
                 Index(64, BN, 16),
                 Index(64, 64, 16),
@@ -469,9 +469,9 @@ def main() raises:
             ](ctx)
 
             test_tma_wgmma[
-                DType.bfloat16,
-                DType.bfloat16,
-                DType.bfloat16,
+                .bfloat16,
+                .bfloat16,
+                .bfloat16,
                 Index(128, 256, 16),
                 Index(64, BN, 16),
                 Index(64, 64, 16),
@@ -482,9 +482,9 @@ def main() raises:
             ](ctx)
 
         test_tma_wgmma[
-            DType.bfloat16,
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
+            .bfloat16,
             Index(64, 8, 64),
             Index(64, 8, 64),
             Index(64, 8, 16),

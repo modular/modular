@@ -39,7 +39,7 @@ def _callee_fill_and_reduce(
     """
     var smem = external_memory[
         Float32,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=4,
         name="callee_ext",
     ]()
@@ -61,7 +61,7 @@ def test_external_memory_in_callee(ctx: DeviceContext) raises:
         _callee_fill_and_reduce(data, thread_idx.x, block_idx.x)
 
     var host_buf = alloc[Float32](NUM_BLOCKS)
-    var dev_buf = ctx.enqueue_create_buffer[DType.float32](NUM_BLOCKS)
+    var dev_buf = ctx.enqueue_create_buffer[.float32](NUM_BLOCKS)
 
     for i in range(NUM_BLOCKS):
         host_buf[i] = -1.0
@@ -99,7 +99,7 @@ def _deep_baz(
     """Innermost callee — owns the external_memory reference."""
     var smem = external_memory[
         Float32,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=4,
         name="deep_ext",
     ]()
@@ -129,7 +129,7 @@ def test_external_memory_deep_callgraph(ctx: DeviceContext) raises:
         _deep_bar(data, thread_idx.x, block_idx.x)
 
     var host_buf = alloc[Float32](NUM_BLOCKS)
-    var dev_buf = ctx.enqueue_create_buffer[DType.float32](NUM_BLOCKS)
+    var dev_buf = ctx.enqueue_create_buffer[.float32](NUM_BLOCKS)
 
     for i in range(NUM_BLOCKS):
         host_buf[i] = -1.0

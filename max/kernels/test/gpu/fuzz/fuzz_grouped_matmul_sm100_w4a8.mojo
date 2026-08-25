@@ -114,9 +114,7 @@ comptime b_expert_scale_count = (
 comptime MAX_M_PER_EXPERT = 512
 
 # Exact in E4M3, and small enough that every partial sum stays exact in FP32.
-comptime A_VALUES = SIMD[DType.float32, 8](
-    0.0, 0.5, 1.0, 2.0, -0.5, -1.0, -2.0, 1.5
-)
+comptime A_VALUES = SIMD[.float32, 8](0.0, 0.5, 1.0, 2.0, -0.5, -1.0, -2.0, 1.5)
 
 # Bounds the strided host recompute at ~SAMPLE_BUDGET*K multiply-adds.
 comptime SAMPLE_BUDGET = 4096
@@ -210,16 +208,16 @@ def run_one_case(
         c_host_ptr, row_major(Coord(total_num_tokens, Idx[N]))
     )
 
-    var a_offsets_host = ctx.enqueue_create_host_buffer[DType.uint32](
+    var a_offsets_host = ctx.enqueue_create_host_buffer[.uint32](
         num_active_experts + 1
     )
-    var a_scale_offsets_host = ctx.enqueue_create_host_buffer[DType.uint32](
+    var a_scale_offsets_host = ctx.enqueue_create_host_buffer[.uint32](
         num_active_experts
     )
-    var expert_ids_host = ctx.enqueue_create_host_buffer[DType.int32](
+    var expert_ids_host = ctx.enqueue_create_host_buffer[.int32](
         num_active_experts
     )
-    var expert_scales_host = ctx.enqueue_create_host_buffer[DType.float32](
+    var expert_scales_host = ctx.enqueue_create_host_buffer[.float32](
         num_experts
     )
 
@@ -335,18 +333,16 @@ def run_one_case(
         a_scales_shape.product()
     )
     var b_scales_dev = ctx.enqueue_create_buffer[scales_dtype](b_scale_elems)
-    var a_offsets_dev = ctx.enqueue_create_buffer[DType.uint32](
+    var a_offsets_dev = ctx.enqueue_create_buffer[.uint32](
         num_active_experts + 1
     )
-    var a_scale_offsets_dev = ctx.enqueue_create_buffer[DType.uint32](
+    var a_scale_offsets_dev = ctx.enqueue_create_buffer[.uint32](
         max(num_active_experts, 1)
     )
-    var expert_ids_dev = ctx.enqueue_create_buffer[DType.int32](
+    var expert_ids_dev = ctx.enqueue_create_buffer[.int32](
         max(num_active_experts, 1)
     )
-    var expert_scales_dev = ctx.enqueue_create_buffer[DType.float32](
-        num_experts
-    )
+    var expert_scales_dev = ctx.enqueue_create_buffer[.float32](num_experts)
 
     ctx.enqueue_copy(a_dev, a_host_ptr)
     ctx.enqueue_copy(b_dev, b_host_ptr)
@@ -522,13 +518,13 @@ def run_one_case(
                     for kb in range(0, K, SF_VECTOR_SIZE):
                         var sfa = get_scale_factor[
                             SF_VECTOR_SIZE=SF_VECTOR_SIZE
-                        ](a_scales_host, a_scale_row, kb).cast[DType.float32]()
+                        ](a_scales_host, a_scale_row, kb).cast[.float32]()
                         var sfb = get_scale_factor[
                             SF_VECTOR_SIZE=SF_VECTOR_SIZE
-                        ](b_scale_slice, n, kb).cast[DType.float32]()
+                        ](b_scale_slice, n, kb).cast[.float32]()
                         var block = Float32(0.0)
                         for k in range(kb, kb + SF_VECTOR_SIZE):
-                            var av = a_host[m, k].cast[DType.float32]()
+                            var av = a_host[m, k].cast[.float32]()
                             var packed = Int(b_host[expert_id, n, k // 2])
                             var nibble = (packed >> 4) if k % 2 else (
                                 packed & 0xF

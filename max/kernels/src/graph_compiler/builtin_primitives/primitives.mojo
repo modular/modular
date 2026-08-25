@@ -79,8 +79,8 @@ from max.runtime.async_value import AnyAsyncValueRef, _AsyncValuePtr
 
 from .buffer_plan import BufferPlanState, BufferPlanStats
 
-comptime MutByteBuffer = DynamicTensor[DType.int8, 1]
-comptime ImmutByteBuffer = DynamicTensor[DType.int8, 1]
+comptime MutByteBuffer = DynamicTensor[.int8, 1]
+comptime ImmutByteBuffer = DynamicTensor[.int8, 1]
 comptime logger = Logger()
 
 # ===-----------------------------------------------------------------------===#
@@ -145,7 +145,7 @@ struct OwnedByteBuffer(DeviceGraphInput, ImplicitlyCopyable, Movable):
         self.view = view
         self.storage = storage^
 
-    def __init__(out self, var buffer: DeviceBuffer[DType.int8]):
+    def __init__(out self, var buffer: DeviceBuffer[.int8]):
         """Builds the composite from a DeviceBuffer.
 
         Args:
@@ -158,7 +158,7 @@ struct OwnedByteBuffer(DeviceGraphInput, ImplicitlyCopyable, Movable):
 
         self = Self(view, storage^)
 
-    def unsafe_ptr(self) -> Pointer[Scalar[DType.int8], MutAnyOrigin]:
+    def unsafe_ptr(self) -> Pointer[Int8, MutAnyOrigin]:
         """Returns the view's raw device data pointer.
 
         Returns:
@@ -203,7 +203,7 @@ struct OwnedByteBuffer(DeviceGraphInput, ImplicitlyCopyable, Movable):
         ](storage^.take_handle(), ptr, n)
         return AnyAsyncValueRef(handle)
 
-    def to_device_buffer(self, ctx: DeviceContext) -> DeviceBuffer[DType.int8]:
+    def to_device_buffer(self, ctx: DeviceContext) -> DeviceBuffer[.int8]:
         """Wraps the view's memory in a non-owning `DeviceBuffer` for a copy.
 
         Rebuilds a fresh view from the origin-erased data pointer so the
@@ -575,7 +575,7 @@ def mgp_tensor_extract_buffer[
     # Unwrap the tensor into a size-less buffer view, retaining the tensor's
     # storage so the buffer keeps the backing memory alive independently.
     var view = MutByteBuffer(
-        tensor.tensor.unsafe_ptr[DType.int8](),
+        tensor.tensor.unsafe_ptr[.int8](),
         IndexList[1](tensor.bytecount()),
     )
     return OwnedByteBuffer(view, AnyAsyncValueRef(copy=tensor.storage))
@@ -589,7 +589,7 @@ def mgp_tensor_slice[
 ](
     input: OwnedTensor[dtype, rank, _],
     output_spec: IndexList[rank],
-    start: OwnedTensor[DType.int64, 1, _],
+    start: OwnedTensor[.int64, 1, _],
     dev_context: DeviceContext,
 ) raises -> OwnedTensor[dtype, rank, input.mut]:
     var input_shape = input.shape()
@@ -660,7 +660,7 @@ def mgp_buffer_alloc(
     # alias alignment = 0 if bRawAlign == UInt64.MAX else Int(bRawAlign)
 
     # This primitive has a byte-size input, so always assume a byte format
-    return {dev_context.enqueue_create_buffer[DType.int8](byte_size)}
+    return {dev_context.enqueue_create_buffer[.int8](byte_size)}
 
 
 @register_internal("mgp.device_graph.alloc")
@@ -668,7 +668,7 @@ def mgp_buffer_alloc(
 def mgp_device_graph_alloc[
     is_host: Bool
 ](byte_size: Int, builder: DeviceGraphBuilder) raises -> OwnedByteBuffer:
-    return {builder.create_buffer[DType.int8](byte_size, is_host=is_host)}
+    return {builder.create_buffer[.int8](byte_size, is_host=is_host)}
 
 
 @register_internal("mgp.buffer.constant")
@@ -710,9 +710,9 @@ def mgp_buffer_set_with_index[
 
     var elSize = bufSize // numArgs
     if elSize == 4:
-        fill_buffer[DType.int32](buffer.view, *vals)
+        fill_buffer[.int32](buffer.view, *vals)
     elif elSize == 8:
-        fill_buffer[DType.int64](buffer.view, *vals)
+        fill_buffer[.int64](buffer.view, *vals)
     else:
         raise Error("unsupported element size")
 
@@ -768,7 +768,7 @@ def mgp_buffer_slice(
         If `[offset, offset + size)` does not fit within the parent buffer.
     """
     var parent = buffer.to_device_buffer(dev_context)
-    var sub = parent.create_sub_buffer[DType.int8](offset, size)
+    var sub = parent.create_sub_buffer[.int8](offset, size)
     var view = MutByteBuffer(sub.unsafe_ptr(), Index(size))
     return OwnedByteBuffer(view, AnyAsyncValueRef(copy=buffer.storage))
 
@@ -924,9 +924,7 @@ def mgp_buffer_concat[
             .as_unsafe_any_origin()
             .as_immut()
         )
-    concat[DType.int8, bDevice, None](
-        output_lt, 0, input_tensors, context=call_ctx
-    )
+    concat[.int8, bDevice, None](output_lt, 0, input_tensors, context=call_ctx)
 
 
 @register_internal("mgp.buffer.device_to_host")
@@ -940,7 +938,7 @@ def mgp_buffer_device_to_host[
     dev_ctx: DeviceContext,
 ) raises:
     comptime if is_cpu[dHostDevice]() and is_accelerator[cOtherDevice]():
-        dev_ctx.enqueue_copy[DType.int8](
+        dev_ctx.enqueue_copy[.int8](
             host_buf.unsafe_ptr(),
             dev_buf.to_device_buffer(dev_ctx),
         )
@@ -966,7 +964,7 @@ def mgp_buffer_device_to_device[
         # The graph emits explicit mgp.device_wait ops around this copy to
         # synchronize the source and destination streams, so the driver must
         # not insert its own cross-stream synchronization here.
-        dst_dev_ctx.enqueue_copy_no_cross_stream_sync[DType.int8](
+        dst_dev_ctx.enqueue_copy_no_cross_stream_sync[.int8](
             dst_buf.to_device_buffer(dst_dev_ctx),
             src_buf.to_device_buffer(src_dev_ctx),
         )
@@ -1056,19 +1054,19 @@ def mgp_buffer_memset[
     # `cast` to the matching-width unsigned int truncates to the low N bits,
     # which is exactly the little-endian low-byte pattern.
     if elem_size == 1:
-        _memset_buffer[DType.uint8, bDevice](
-            buffer, value_bits.cast[DType.uint8](), dev_context
+        _memset_buffer[.uint8, bDevice](
+            buffer, value_bits.cast[.uint8](), dev_context
         )
     elif elem_size == 2:
-        _memset_buffer[DType.uint16, bDevice](
-            buffer, value_bits.cast[DType.uint16](), dev_context
+        _memset_buffer[.uint16, bDevice](
+            buffer, value_bits.cast[.uint16](), dev_context
         )
     elif elem_size == 4:
-        _memset_buffer[DType.uint32, bDevice](
-            buffer, value_bits.cast[DType.uint32](), dev_context
+        _memset_buffer[.uint32, bDevice](
+            buffer, value_bits.cast[.uint32](), dev_context
         )
     elif elem_size == 8:
-        _memset_buffer[DType.uint64, bDevice](buffer, value_bits, dev_context)
+        _memset_buffer[.uint64, bDevice](buffer, value_bits, dev_context)
     else:
         raise Error("mgp.buffer.memset: elem_size must be one of {1, 2, 4, 8}")
 
@@ -1084,7 +1082,7 @@ def mgp_buffer_host_to_device[
     dev_ctx: DeviceContext,
 ) raises:
     comptime if is_accelerator[dOtherDevice]() and is_cpu[cHostDevice]():
-        dev_ctx.enqueue_copy[DType.int8](
+        dev_ctx.enqueue_copy[.int8](
             dev_buf.to_device_buffer(dev_ctx),
             host_buf.unsafe_ptr(),
         )
@@ -1738,7 +1736,7 @@ def mogg_tensor_init[
         dtype,
         rank,
         static_layout=LayoutType,
-    ](alignment, AddressSpace.GENERIC),
+    ](alignment, .GENERIC),
 ]:
     """
     Helper for constructing a ManagedTensorSlice from a layout.
@@ -1852,7 +1850,7 @@ def reshape_contiguous_buffer[
         buffer.dtype,
         new_rank,
         static_layout=static_layout,
-    ](1, AddressSpace.GENERIC),
+    ](1, .GENERIC),
 ]:
     """
     Constructs a new ManagedTensorSlice with a new shape and static spec.
@@ -2347,11 +2345,11 @@ struct _ElementwiseFusionTileAdapter[
         # TODO(GEX-3912): generalizes the trait's tile address space and makes
         # `dst` an inout to remove this.
         var dst_local = stack_allocation[
-            dtype=Self.dtype, address_space=AddressSpace.LOCAL
+            dtype=Self.dtype, address_space=.LOCAL
         ](row_major[1, 1]())
         var dst = TileTensor(
             dst_local._storage.unsafe_address_space_cast[
-                AddressSpace.GENERIC
+                .GENERIC
             ]().unsafe_origin_cast[MutAnyOrigin](),
             row_major[1, 1](),
         )
@@ -2369,7 +2367,7 @@ struct _ElementwiseFusionTileAdapter[
         var out_tile = self.tensor.to_tile_tensor().tile[
             Self.tile_shape[0], Self.tile_shape[1]
         ](tc)
-        var res_local = res.address_space_cast[AddressSpace.LOCAL]()
+        var res_local = res.address_space_cast[.LOCAL]()
         LocalToGenericTileCopier[Self.thread_layout]().copy(out_tile, res_local)
 
 

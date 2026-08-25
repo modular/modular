@@ -263,32 +263,28 @@ def _test_memcmp_extensive[
 
 
 def test_memcmp_extensive() raises:
-    _test_memcmp_extensive[DType.int8](1)
-    _test_memcmp_extensive[DType.int8](3)
+    _test_memcmp_extensive[.int8](1)
+    _test_memcmp_extensive[.int8](3)
 
-    _test_memcmp_extensive[DType.int](3)
-    _test_memcmp_extensive[DType.int](simd_width_of[Int]())
-    _test_memcmp_extensive[DType.int](4 * simd_width_of[DType.int]())
-    _test_memcmp_extensive[DType.int](4 * simd_width_of[DType.int]() + 1)
-    _test_memcmp_extensive[DType.int](4 * simd_width_of[DType.int]() - 1)
+    _test_memcmp_extensive[.int](3)
+    _test_memcmp_extensive[.int](simd_width_of[Int]())
+    _test_memcmp_extensive[.int](4 * simd_width_of[DType.int]())
+    _test_memcmp_extensive[.int](4 * simd_width_of[DType.int]() + 1)
+    _test_memcmp_extensive[.int](4 * simd_width_of[DType.int]() - 1)
 
-    _test_memcmp_extensive[DType.float32](3)
-    _test_memcmp_extensive[DType.float32](simd_width_of[DType.float32]())
-    _test_memcmp_extensive[DType.float32](4 * simd_width_of[DType.float32]())
-    _test_memcmp_extensive[DType.float32](
-        4 * simd_width_of[DType.float32]() + 1
-    )
-    _test_memcmp_extensive[DType.float32](
-        4 * simd_width_of[DType.float32]() - 1
-    )
+    _test_memcmp_extensive[.float32](3)
+    _test_memcmp_extensive[.float32](simd_width_of[DType.float32]())
+    _test_memcmp_extensive[.float32](4 * simd_width_of[DType.float32]())
+    _test_memcmp_extensive[.float32](4 * simd_width_of[DType.float32]() + 1)
+    _test_memcmp_extensive[.float32](4 * simd_width_of[DType.float32]() - 1)
 
-    _test_memcmp_extensive[DType.float32, "nan"](3)
-    _test_memcmp_extensive[DType.float32, "nan"](99)
-    _test_memcmp_extensive[DType.float32, "nan"](254)
+    _test_memcmp_extensive[.float32, "nan"](3)
+    _test_memcmp_extensive[.float32, "nan"](99)
+    _test_memcmp_extensive[.float32, "nan"](254)
 
-    _test_memcmp_extensive[DType.float32, "inf"](3)
-    _test_memcmp_extensive[DType.float32, "inf"](99)
-    _test_memcmp_extensive[DType.float32, "inf"](254)
+    _test_memcmp_extensive[.float32, "inf"](3)
+    _test_memcmp_extensive[.float32, "inf"](99)
+    _test_memcmp_extensive[.float32, "inf"](254)
 
 
 def test_memcmp_simd_boundary() raises:
@@ -662,7 +658,7 @@ def test_dtypepointer_gather() raises:
         width: SIMDLength
     ](
         offset: SIMD[_, width],
-        mask: SIMD[DType.bool, width],
+        mask: SIMD[.bool, width],
         default: SIMD[ptr.T.dtype, width],
         desired: SIMD[ptr.T.dtype, width],
     ) raises {imm}:
@@ -671,19 +667,19 @@ def test_dtypepointer_gather() raises:
             actual, desired, msg="_test_masked_gather", atol=0.0, rtol=0.0
         )
 
-    var offset = SIMD[DType.int64, 8](3, 0, 2, 1, 2, 0, 3, 1)
+    var offset = SIMD[.int64, 8](3, 0, 2, 1, 2, 0, 3, 1)
     var desired = SIMD[ptr.T.dtype, 8](3.0, 0.0, 2.0, 1.0, 2.0, 0.0, 3.0, 1.0)
 
     _test_gather[1](UInt16(2), 2.0)
-    _test_gather(offset.cast[DType.uint32]().slice[2](), desired.slice[2]())
-    _test_gather(offset.cast[DType.uint64]().slice[4](), desired.slice[4]())
+    _test_gather(offset.cast[.uint32]().slice[2](), desired.slice[2]())
+    _test_gather(offset.cast[.uint64]().slice[4](), desired.slice[4]())
 
     var mask = offset.ge(0) & offset.lt(3)
     var default = SIMD[ptr.T.dtype, 8](-1.0)
     desired = SIMD[ptr.T.dtype, 8](-1.0, 0.0, 2.0, 1.0, 2.0, 0.0, -1.0, 1.0)
 
-    _test_masked_gather[1](Int16(2), Scalar[DType.bool](False), -1.0, -1.0)
-    _test_masked_gather[1](Int32(2), Scalar[DType.bool](True), -1.0, 2.0)
+    _test_masked_gather[1](Int16(2), Scalar[.bool](False), -1.0, -1.0)
+    _test_masked_gather[1](Int32(2), Scalar[.bool](True), -1.0, 2.0)
     _test_masked_gather(offset, mask, default, desired)
 
 
@@ -710,7 +706,7 @@ def test_dtypepointer_scatter() raises:
     ](
         offset: SIMD[_, width],
         val: SIMD[ptr.T.dtype, width],
-        mask: SIMD[DType.bool, width],
+        mask: SIMD[.bool, width],
         desired: SIMD[ptr.T.dtype, 4],
     ) raises {imm}:
         ptr.unsafe_scatter(offset, val, mask)
@@ -721,12 +717,12 @@ def test_dtypepointer_scatter() raises:
 
     _test_scatter[1](UInt16(2), 2.0, SIMD[ptr.T.dtype, 4](0.0, 0.0, 2.0, 0.0))
     _test_scatter(  # Test with repeated offsets
-        SIMD[DType.uint32, 4](1, 1, 1, 1),
+        SIMD[.uint32, 4](1, 1, 1, 1),
         SIMD[ptr.T.dtype, 4](-1.0, 2.0, -2.0, 1.0),
         SIMD[ptr.T.dtype, 4](0.0, 1.0, 2.0, 0.0),
     )
     _test_scatter(
-        SIMD[DType.uint64, 4](3, 2, 1, 0),
+        SIMD[.uint64, 4](3, 2, 1, 0),
         SIMD[ptr.T.dtype, 4](0.0, 1.0, 2.0, 3.0),
         SIMD[ptr.T.dtype, 4](3.0, 2.0, 1.0, 0.0),
     )
@@ -736,25 +732,25 @@ def test_dtypepointer_scatter() raises:
     _test_masked_scatter[1](
         Int16(2),
         2.0,
-        Scalar[DType.bool](False),
+        Scalar[.bool](False),
         SIMD[ptr.T.dtype, 4](0.0, 0.0, 0.0, 0.0),
     )
     _test_masked_scatter[1](
         Int32(2),
         2.0,
-        Scalar[DType.bool](True),
+        Scalar[.bool](True),
         SIMD[ptr.T.dtype, 4](0.0, 0.0, 2.0, 0.0),
     )
     _test_masked_scatter(  # Test with repeated offsets
-        SIMD[DType.int64, 4](1, 1, 1, 1),
+        SIMD[.int64, 4](1, 1, 1, 1),
         SIMD[ptr.T.dtype, 4](-1.0, 2.0, -2.0, 1.0),
-        SIMD[DType.bool, 4](True, True, True, False),
+        SIMD[.bool, 4](True, True, True, False),
         SIMD[ptr.T.dtype, 4](0.0, -2.0, 2.0, 0.0),
     )
     _test_masked_scatter(
-        SIMD[DType.int, 4](3, 2, 1, 0),
+        SIMD[.int, 4](3, 2, 1, 0),
         SIMD[ptr.T.dtype, 4](0.0, 1.0, 2.0, 3.0),
-        SIMD[DType.bool, 4](True, False, True, True),
+        SIMD[.bool, 4](True, False, True, True),
         SIMD[ptr.T.dtype, 4](3.0, 2.0, 2.0, 0.0),
     )
 

@@ -65,7 +65,7 @@ comptime _PDL_LEVEL = PDLLevel.ON
 
 @always_inline("nodebug")
 def _mbarrier_wait_acquire_cta(
-    mbar: Pointer[mut=True, Int64, _, address_space=AddressSpace.SHARED],
+    mbar: Pointer[mut=True, Int64, _, address_space=.SHARED],
     phase: UInt32,
 ):
     """Spin-waits on an mbarrier until the given phase completes, with acquire
@@ -179,25 +179,25 @@ struct _ClcKernel[
         var result = unsafe_stack_allocation[
             1,
             UInt128,
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
             alignment=16,
         ]()
         var mbar = unsafe_stack_allocation[
             1,
             Int64,
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
             alignment=8,
         ]()
         # Shared variables for single-barrier broadcast of cancel results.
         var canceled = unsafe_stack_allocation[
             1,
             UInt32,
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
         ]()
         var next_tile = unsafe_stack_allocation[
             1,
             UInt32,
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
         ]()
 
         var tile_id = block_idx.x
@@ -920,7 +920,7 @@ def _elementwise_impl_gpu[
                     threads_per_multiprocessor=threads_per_multiprocessor,
                     elems_per_thread=elems_per_thread,
                     trace_description=trace_description,
-                ](func=func, shape=shape_idx.cast[DType.uint32](), ctx=ctx)
+                ](func=func, shape=shape_idx.cast[.uint32](), ctx=ctx)
             else:
                 _elementwise_impl_gpu_grid_stride[
                     shape_types=type_of(shape).ParamListType,
@@ -931,7 +931,7 @@ def _elementwise_impl_gpu[
                     threads_per_multiprocessor=threads_per_multiprocessor,
                     elems_per_thread=elems_per_thread,
                     trace_description=trace_description,
-                ](func=func, shape=shape_idx.cast[DType.uint64](), ctx=ctx)
+                ](func=func, shape=shape_idx.cast[.uint64](), ctx=ctx)
         else:
             if use_32bit:
                 _elementwise_impl_gpu_clc[
@@ -940,7 +940,7 @@ def _elementwise_impl_gpu[
                     block_size=block_size,
                     elems_per_thread=elems_per_thread,
                     trace_description=trace_description,
-                ](func=func, shape=shape_idx.cast[DType.uint32](), ctx=ctx)
+                ](func=func, shape=shape_idx.cast[.uint32](), ctx=ctx)
             else:
                 _elementwise_impl_gpu_clc[
                     shape_types=type_of(shape).ParamListType,
@@ -948,7 +948,7 @@ def _elementwise_impl_gpu[
                     block_size=block_size,
                     elems_per_thread=elems_per_thread,
                     trace_description=trace_description,
-                ](func=func, shape=shape_idx.cast[DType.uint64](), ctx=ctx)
+                ](func=func, shape=shape_idx.cast[.uint64](), ctx=ctx)
     else:
         if use_32bit:
             _elementwise_impl_gpu_grid_stride[
@@ -960,7 +960,7 @@ def _elementwise_impl_gpu[
                 threads_per_multiprocessor=threads_per_multiprocessor,
                 elems_per_thread=elems_per_thread,
                 trace_description=trace_description,
-            ](func=func, shape=shape_idx.cast[DType.uint32](), ctx=ctx)
+            ](func=func, shape=shape_idx.cast[.uint32](), ctx=ctx)
         else:
             _elementwise_impl_gpu_grid_stride[
                 shape_types=type_of(shape).ParamListType,
@@ -971,7 +971,7 @@ def _elementwise_impl_gpu[
                 threads_per_multiprocessor=threads_per_multiprocessor,
                 elems_per_thread=elems_per_thread,
                 trace_description=trace_description,
-            ](func=func, shape=shape_idx.cast[DType.uint64](), ctx=ctx)
+            ](func=func, shape=shape_idx.cast[.uint64](), ctx=ctx)
 
 
 @always_inline
@@ -1060,8 +1060,8 @@ def _dual_elementwise_impl_gpu[
         ](
             func_0=func_0,
             func_1=func_1,
-            shape_0=shape_0.cast[DType.uint32](),
-            shape_1=shape_1.cast[DType.uint32](),
+            shape_0=shape_0.cast[.uint32](),
+            shape_1=shape_1.cast[.uint32](),
             ctx=ctx,
         )
     else:
@@ -1076,7 +1076,7 @@ def _dual_elementwise_impl_gpu[
         ](
             func_0=func_0,
             func_1=func_1,
-            shape_0=shape_0.cast[DType.uint64](),
-            shape_1=shape_1.cast[DType.uint64](),
+            shape_0=shape_0.cast[.uint64](),
+            shape_1=shape_1.cast[.uint64](),
             ctx=ctx,
         )

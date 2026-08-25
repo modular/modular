@@ -210,6 +210,8 @@ class Qwen3VLConfig(ArchVLConfigWithTextSubconfig, ArchConfigWithKVCache):
         cls,
         pipeline_config: PipelineConfig,
         model_config: MAXModelConfig | None = None,
+        *,
+        max_seq_len: int,
     ) -> Self:
         """Initializes a Qwen3VLConfig instance from pipeline configuration.
 
@@ -227,13 +229,17 @@ class Qwen3VLConfig(ArchVLConfigWithTextSubconfig, ArchConfigWithKVCache):
                 "but config could not be loaded. "
                 "Please ensure the model repository contains a valid config.json file."
             )
-        return cls.initialize_from_config(pipeline_config, huggingface_config)
+        return cls.initialize_from_config(
+            pipeline_config, huggingface_config, max_seq_len=max_seq_len
+        )
 
     @classmethod
     def initialize_from_config(
         cls,
         pipeline_config: PipelineConfig,
         huggingface_config: AutoConfig,
+        *,
+        max_seq_len: int,
     ) -> Self:
         """Initializes a Qwen3VLConfig from pipeline and HuggingFace configs.
 
@@ -297,7 +303,7 @@ class Qwen3VLConfig(ArchVLConfigWithTextSubconfig, ArchConfigWithKVCache):
             )
 
         llm_config = Llama3Config.initialize_from_config(
-            pipeline_config, text_config
+            pipeline_config, text_config, max_seq_len=max_seq_len
         )
 
         # Handle both MoE (e.g., 30B) and dense (e.g., VL 2B 4B etc) variants.

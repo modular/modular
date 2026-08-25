@@ -108,20 +108,20 @@ def check_cublas_error(stat: Result, msg: StringSlice) raises:
 
 @always_inline
 def _convert_to_cublas_datatype[mojo_type: DType]() -> DataType:
-    comptime if mojo_type == DType.float32:
+    comptime if mojo_type == .float32:
         return DataType.R_32F
-    elif mojo_type == DType.float16:
+    elif mojo_type == .float16:
         return DataType.R_16F
-    elif mojo_type == DType.float8_e4m3fn:
+    elif mojo_type == .float8_e4m3fn:
         return DataType.R_8F_E4M3
-    elif mojo_type == DType.float8_e5m2:
+    elif mojo_type == .float8_e5m2:
         return DataType.R_8F_E5M2
     # TODO (KERN-2238): uint8 is a proxy data type for two Float4-E2M1 values for now.
     # Replace this with float4-e2m1fn when GENAI-337 is fixed.
-    elif mojo_type == DType.uint8:
+    elif mojo_type == .uint8:
         return DataType.R_4F_E2M1
     else:
-        comptime assert mojo_type == DType.bfloat16, (
+        comptime assert mojo_type == .bfloat16, (
             "Only support FP32, FP16, BF16, E4M3, E5M2, and E2M1x2 (UInt8)."
             " Please extend it if more types are needed."
         )

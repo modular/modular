@@ -31,11 +31,15 @@ from .openai_tool_call_schema import (
 )
 from .structural_tag import (
     AnyTextFormat,
+    AnyTokensFormat,
     ConstStringFormat,
+    Format,
     JSONSchemaFormat,
     OptionalFormat,
+    OrFormat,
     RegexFormat,
     SequenceFormat,
+    StarFormat,
     StructuralTag,
     TagFormat,
     TagsWithSeparatorFormat,
@@ -1754,6 +1758,249 @@ def get_gemma_4_structural_tag(
     )
     return StructuralTag(
         format=SequenceFormat(elements=[prefix_tag, suffix_tag])
+    )
+
+
+_INKLING_MESSAGE_MODEL_MARKER = "<|message_model|>"
+_INKLING_TOOL_CALL_JSON_MARKER = "<|content_invoke_tool_json|>"
+_INKLING_END_MESSAGE_MARKER = "<|end_message|>"
+_INKLING_THINKING_MARKER = "<|content_thinking|>"
+_INKLING_TEXT_MARKER = "<|content_text|>"
+
+
+def _inkling_message(content_marker: str, content: Format) -> TagFormat:
+    """One Inkling message: a content marker, a body, then ``<|end_message|>``.
+
+    The opening ``<|message_model|>`` is excluded, since a turn's first message
+    inherits the one the generation prompt ends with.
+    """
+    return TagFormat(
+        begin=TokenFormat(token=content_marker),
+        content=content,
+        end=TokenFormat(token=_INKLING_END_MESSAGE_MARKER),
+    )
+
+
+def get_inkling_response_format_branch(json_branch: Format) -> Format:
+    """Frames a ``response_format`` JSON answer as a well-formed Inkling turn.
+
+    The JSON becomes the body of a ``<|content_text|>`` message, optionally
+    preceded by a thinking message so the model can still reason first.
+    """
+    return SequenceFormat(
+        elements=[
+            OptionalFormat(
+                content=SequenceFormat(
+                    elements=[
+                        _inkling_message(_INKLING_THINKING_MARKER, AnyTextFormat()),
+                        TokenFormat(token=_INKLING_MESSAGE_MODEL_MARKER),
+                    ]
+                )
+            ),
+            _inkling_message(_INKLING_TEXT_MARKER, json_branch),
+        ]
+    )
+
+
+_INKLING_MAX_SCHEMA_DEPTH = 32
+
+# Keywords whose values are literal instance data, not subschemas: recursing
+# would reorder an object the model has to emit verbatim.
+_INKLING_INSTANCE_KEYS = frozenset({"const", "default", "enum", "examples"})
+
+
+def _inkling_sorted_properties(
+    node: Any, depth: int = 0
+) -> Any:
+    """Re-inserts every ``properties`` mapping in sorted key order.
+
+    The model emits argument keys alphabetically while the JSON schema
+    converter enforces declaration order; sorting makes the two agree.
+    """
+    if depth >= _INKLING_MAX_SCHEMA_DEPTH:
+        return node
+    if isinstance(node, list):
+        return [_inkling_sorted_properties(item, depth + 1) for item in node]
+    if not isinstance(node, dict):
+        return node
+
+    result: Dict[str, Any] = {}
+    for key, value in node.items():
+        if key in _INKLING_INSTANCE_KEYS:
+            result[key] = value
+        elif key == "properties" and isinstance(value, dict):
+            result[key] = {
+                name: _inkling_sorted_properties(value[name], depth + 1)
+                for name in sorted(value)
+            }
+        else:
+            result[key] = _inkling_sorted_properties(value, depth + 1)
+    return result
+
+
+@register_model_structural_tag("inkling")
+def get_inkling_structural_tag(
+    tools: Optional[List[FunctionToolParam]] = None,
+    builtin_tools: Optional[List[BuiltinToolParam]] = None,
+    tool_choice: Literal["auto", "required", "forced"] = "auto",
+    reasoning: bool = True,
+    **kwargs: Any,
+) -> StructuralTag:
+    """Get Inkling style structural tag format.
+
+    Inkling splits an assistant turn into messages, each opened by
+    ``<|message_model|>`` and closed by ``<|end_message|>``:
+
+    - Thinking: ``<|message_model|><|content_thinking|>...<|end_message|>``
+    - Text: ``<|message_model|><|content_text|>...<|end_message|>``
+    - Tool call: ``<|message_model|>NAME<|content_invoke_tool_json|>``
+      ``{"name":"NAME","args":{...}}<|end_message|>``
+
+    Corresponding model key: ``"inkling"``.
+
+    The generation prompt ends at a bare ``<|message_model|>``, so the first
+    generated call omits it and every later one emits it. The turn ends with
+    ``<|content_model_end_sampling|>``, the model's EOS.
+
+    The function name appears twice per call, bare ahead of the marker and
+    again inside the payload. Under ``auto`` only the payload name is
+    constrained, and that is the one the parser reports, so tool selection
+    still holds.
+
+    Under ``required`` and a named tool the grammar also admits the model's
+    canonical preamble -- a thinking message, then optionally a text message --
+    since ``<|end_message|>`` closes every message type and so leaves no
+    reasoning end token to suspend enforcement on. ``reasoning`` is therefore
+    inert: the preamble is admitted either way.
+
+    Builtin tools have no Inkling wire format and are ignored.
+
+    Returns
+    -------
+    StructuralTag
+        A structural tag for Inkling function calling format.
+    """
+    # Every marker is a special token, emittable only where the grammar names
+    # it by token id, so boundaries use TokenFormat rather than literals.
+    CALL_NAME_PREFIX = '{"name":"'
+    ARGS_FIELD_PREFIX = '","args":'
+    JSON_CONFIG: dict[str, Any] = {
+        "style": "json",
+        # Bounded rather than forbidden: forbidding whitespace also drops the
+        # repetition an object with more than one undeclared key needs.
+        "max_whitespace_cnt": 1,
+        # additionalProperties defaults to true in JSON Schema, so strict mode
+        # would mask keys the schema meant to allow.
+        "strict_mode": False,
+        # require_object_root and reject_unsupported stay off: both turn a
+        # schema the converter cannot fully express into a rejected request.
+    }
+
+    def _call_tag(name: str, parameters: Union[Dict[str, Any], bool]) -> TagFormat:
+        return TagFormat(
+            begin=TokenFormat(token=_INKLING_TOOL_CALL_JSON_MARKER),
+            content=SequenceFormat(
+                elements=[
+                    ConstStringFormat(value=CALL_NAME_PREFIX + name + ARGS_FIELD_PREFIX),
+                    JSONSchemaFormat(
+                        json_schema=_inkling_sorted_properties(parameters),
+                        **JSON_CONFIG,
+                    ),
+                    ConstStringFormat(value="}"),
+                ]
+            ),
+            end=TokenFormat(token=_INKLING_END_MESSAGE_MARKER),
+        )
+
+    def _call_unit(name: str, parameters: Union[Dict[str, Any], bool]) -> SequenceFormat:
+        # Pins the bare name ahead of the marker to the tool's own name, so it
+        # cannot disagree with the payload name.
+        return SequenceFormat(
+            elements=[
+                ConstStringFormat(value=name),
+                _call_tag(name, parameters),
+            ]
+        )
+
+    tools = tools or []
+    if tool_choice == "auto":
+        tags = [
+            _call_tag(tool.function.name, _get_function_parameters(tool.function))
+            for tool in tools
+        ]
+        if not tags:
+            return StructuralTag(format=AnyTokensFormat())
+        # Nothing is excluded from the region between calls: enforcement never
+        # disarms, so that region has to pass the markers framing the
+        # surrounding messages.
+        return StructuralTag(
+            format=TokenTriggeredTagsFormat(
+                trigger_tokens=[_INKLING_TOOL_CALL_JSON_MARKER],
+                tags=tags,
+                exclude_tokens=[],
+            )
+        )
+
+    if not tools:
+        raise ValueError(
+            f"Tool choice {tool_choice!r} requires at least one function tool."
+        )
+
+    units = [
+        _call_unit(tool.function.name, _get_function_parameters(tool.function))
+        for tool in tools
+    ]
+    unit = OrFormat(elements=units)
+
+    # A thinking message, then optionally a text message, or a lone text
+    # message. Two is the cap: a repeatable preamble would let the model talk
+    # until the token budget ran out without ever calling.
+    text_message = _inkling_message(_INKLING_TEXT_MARKER, AnyTextFormat())
+    preamble = OrFormat(
+        elements=[
+            SequenceFormat(
+                elements=[
+                    _inkling_message(_INKLING_THINKING_MARKER, AnyTextFormat()),
+                    OptionalFormat(
+                        content=SequenceFormat(
+                            elements=[
+                                TokenFormat(token=_INKLING_MESSAGE_MODEL_MARKER),
+                                text_message,
+                            ]
+                        )
+                    ),
+                ]
+            ),
+            text_message,
+        ]
+    )
+    start = OrFormat(
+        elements=[
+            unit,
+            SequenceFormat(
+                elements=[
+                    preamble,
+                    TokenFormat(token=_INKLING_MESSAGE_MODEL_MARKER),
+                    unit,
+                ]
+            ),
+        ]
+    )
+
+    if tool_choice == "forced":
+        return StructuralTag(format=start)
+
+    return StructuralTag(
+        format=SequenceFormat(
+            elements=[
+                start,
+                StarFormat(
+                    content=SequenceFormat(
+                        elements=[TokenFormat(token=_INKLING_MESSAGE_MODEL_MARKER), unit]
+                    )
+                ),
+            ]
+        )
     )
 
 

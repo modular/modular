@@ -109,6 +109,8 @@ class Step3p5Config(Llama3Config):
         devices: list[DeviceRef],
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
+        *,
+        allow_kv_head_replication: bool = False,
     ) -> KVCacheParams:
         """Construct KV cache parameters for Step-3.5.
 
@@ -141,6 +143,7 @@ class Step3p5Config(Llama3Config):
         max_kv_heads = max(num_kv_heads_full, num_kv_heads_sliding)
 
         return kv_cache_config.to_params(
+            allow_kv_head_replication=allow_kv_head_replication,
             dtype=cache_dtype,
             n_kv_heads=max_kv_heads,
             head_dim=head_dim,
@@ -170,6 +173,8 @@ class Step3p5Config(Llama3Config):
         cls,
         pipeline_config: PipelineConfig,
         model_config: MAXModelConfig | None = None,
+        *,
+        max_seq_len: int,
     ) -> Self:
         """Initializes a Step3p5Config instance from pipeline configuration.
 
@@ -189,7 +194,10 @@ class Step3p5Config(Llama3Config):
                 "Please ensure the model repository contains a valid config.json file."
             )
         return cls.initialize_from_config(
-            pipeline_config, huggingface_config, model_config
+            pipeline_config,
+            huggingface_config,
+            model_config,
+            max_seq_len=max_seq_len,
         )
 
     @staticmethod
@@ -250,6 +258,8 @@ class Step3p5Config(Llama3Config):
         pipeline_config: PipelineConfig,
         huggingface_config: AutoConfig,
         model_config: MAXModelConfig | None = None,
+        *,
+        max_seq_len: int,
     ) -> Self:
         """Initializes a Step3p5Config instance from pipeline and HuggingFace configs.
 
@@ -266,7 +276,10 @@ class Step3p5Config(Llama3Config):
         )
 
         base_config = Llama3Config.initialize_from_config(
-            pipeline_config, huggingface_config, model_config
+            pipeline_config,
+            huggingface_config,
+            model_config,
+            max_seq_len=max_seq_len,
         )
 
         kv_cache_config = pipeline_config.model.kv_cache

@@ -539,7 +539,7 @@ static LogicalResult convertLLVMMetadata(LLVM::LLVMFuncOp func, FuncType sig,
     case ArgConvention::DeinitMem:
       list.set(ids.noalias, b.getUnitAttr());
       [[fallthrough]];
-    case ArgConvention::ReadMem:
+    case ArgConvention::ImmMem:
       if (needsByVal)
         addByValAttribute(list, type, func);
       list.set(ids.nonnull, b.getUnitAttr());
@@ -559,7 +559,7 @@ static LogicalResult convertLLVMMetadata(LLVM::LLVMFuncOp func, FuncType sig,
       list.set(ids.nonnull, b.getUnitAttr());
       [[fallthrough]];
 
-    case ArgConvention::ReadReg:
+    case ArgConvention::ImmReg:
     case ArgConvention::OwnedReg:
       // The only thing we can say about values passed in-register is `noundef`,
       // which is equivalent to saying that they are known initialized. This

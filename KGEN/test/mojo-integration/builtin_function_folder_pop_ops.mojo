@@ -146,7 +146,7 @@ def pop_dtype_from_ui8(ui8: __mlir_type.ui8) -> DType:
 
 
 # CHECK-LABEL: lit.fn @"fold_pop_dtype_from_ui8
-def fold_pop_dtype_from_ui8() -> DTypeT[DType.int32]:
+def fold_pop_dtype_from_ui8() -> DTypeT[.int32]:
     # CHECK: %a = lit.var.decl "a" var : {{.*}} si32}>>,
     var a = DTypeT[pop_dtype_from_ui8(MLIR_UI8_139)]()
     # CHECK: %b = lit.var.decl "b" var : {{.*}} f8e5m2}>>,
@@ -498,7 +498,7 @@ def fold_pop_simd_cmp() -> POPBoolx4T[POP_Boolx4_EQ_Fold]:
 @always_inline("builtin")
 def pop_unresolved_simd_cmp_sge[
     dt: DType, n: Int, m: Int
-](x: SIMD[dt, n + m], y: SIMD[dt, n + m]) -> SIMD[DType.bool, n + m]._mlir_type:
+](x: SIMD[dt, n + m], y: SIMD[dt, n + m]) -> SIMD[.bool, n + m]._mlir_type:
     return __mlir_op.`pop.cmp`[pred=__mlir_attr.`#kgen<cmp_pred ge>`](
         x._mlir_value, y._mlir_value
     )
@@ -513,9 +513,7 @@ def var_decls[dtype: DType](value: IntLiteral) -> Scalar[dtype]._mlir_type:
     # Convert !kgen.simd<si32> to !kgen.simd<X>
     var s = __mlir_op.`pop.cast`[_type=Scalar[dtype]._mlir_type](si32)
     # Convert !kgen.simd<X> to !kgen.simd<ui8>
-    var pop_ui8 = __mlir_op.`pop.cast`[_type=Scalar[DType.uint8]._mlir_type](
-        si32
-    )
+    var pop_ui8 = __mlir_op.`pop.cast`[_type=UInt8._mlir_type](si32)
     # Convert !kgen.simd<ui8> to ui8
     var ui8 = __mlir_op.`pop.cast_to_builtin`[_type=__mlir_type.ui8](pop_ui8)
     # Convert ui8 to dtype
@@ -523,9 +521,9 @@ def var_decls[dtype: DType](value: IntLiteral) -> Scalar[dtype]._mlir_type:
     # Convert dtype to ui8
     var dt_ui8 = __mlir_op.`pop.dtype.to_ui8`(dt)
     # Convert the ui8 back to !kgen.simd<ui8>
-    var pop_ui8_2 = __mlir_op.`pop.cast_from_builtin`[
-        _type=Scalar[DType.uint8]._mlir_type
-    ](dt_ui8)
+    var pop_ui8_2 = __mlir_op.`pop.cast_from_builtin`[_type=UInt8._mlir_type](
+        dt_ui8
+    )
     # Convert !kgen.simd<ui8> back to !kgen.simd<X>
     var t = __mlir_op.`pop.cast`[_type=Scalar[dtype]._mlir_type](pop_ui8_2)
     # Combine the two
@@ -538,9 +536,9 @@ def fold_var_decls() -> (
     BuiltinSI32T[__mlir_attr.`#kgen.simd<0> : !kgen.scalar<si32>`]
 ):
     # CHECK: %a = lit.var.decl "a" var : {{.*}} 0)>>
-    var a = BuiltinSI32T[var_decls[DType.int32](42)]()
+    var a = BuiltinSI32T[var_decls[.int32](42)]()
     # CHECK: %b = lit.var.decl "b" var : {{.*}} -256)>>
-    var b = BuiltinSI32T[var_decls[DType.int32](-1)]()
+    var b = BuiltinSI32T[var_decls[.int32](-1)]()
     return a
 
 

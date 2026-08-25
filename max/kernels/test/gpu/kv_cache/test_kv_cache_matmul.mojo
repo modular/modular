@@ -134,7 +134,7 @@ def execute_fused_qkv_matmul[
 
     # Initialize our KVCache
     var is_context_encoding = True
-    var cache_lengths = ManagedLayoutTensor[DType.uint32, cache_len_layout](
+    var cache_lengths = ManagedLayoutTensor[.uint32, cache_len_layout](
         RuntimeLayout[cache_len_layout].row_major(IndexList[1](batch_size)),
         ctx,
     )
@@ -149,7 +149,7 @@ def execute_fused_qkv_matmul[
     )
     var kv_block_host = kv_block.tensor()
 
-    var lookup_table = ManagedLayoutTensor[DType.uint32, cache_len_layout](
+    var lookup_table = ManagedLayoutTensor[.uint32, cache_len_layout](
         RuntimeLayout[cache_len_layout].row_major(IndexList[1](batch_size)),
         ctx,
     )
@@ -180,7 +180,7 @@ def execute_fused_qkv_matmul[
 
     # Create valid_lengths - all sequences have full prompt_len valid
     var valid_lengths = ManagedLayoutTensor[
-        DType.uint32, Layout.row_major(UNKNOWN_VALUE)
+        .uint32, Layout.row_major(UNKNOWN_VALUE)
     ](
         RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
             IndexList[1](batch_size)

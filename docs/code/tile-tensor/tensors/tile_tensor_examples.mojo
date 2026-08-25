@@ -53,7 +53,7 @@ def accessing_tensor_elements_example() raises:
 
 
 # start-scalar-tensor-example
-def takes_scalar_tensor(tensor: TileTensor[DType.int32, ...]) -> Int:
+def takes_scalar_tensor(tensor: TileTensor[.int32, ...]) -> Int:
     comptime assert tensor.flat_rank == 2
     return Int(tensor[1, 1])
 

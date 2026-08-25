@@ -30,7 +30,7 @@ from max.experimental.nn.linear import Linear
 from max.experimental.nn.norm import RMSNorm
 from max.experimental.nn.sequential import ModuleList
 from max.experimental.tensor import Tensor
-from max.graph import TensorValue, ops
+from max.graph import ops
 from max.nn.kernels import scatter_nd_skip_oob_indices as _scatter_nd
 from max.nn.kv_cache import (
     KVCacheInputs,
@@ -237,7 +237,7 @@ class Idefics3TextModel(
             logits = self._compute_logits(self.norm(last_tokens))
             offsets = ops.range(
                 0,
-                TensorValue(last_indices.shape[0]) + return_n_logits[0],
+                last_indices.shape[0] + return_n_logits[0],
                 return_n_logits[0],
                 out_dim="logit_offsets",
                 device=h.device,

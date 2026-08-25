@@ -88,6 +88,12 @@ FnTypeGeneratorType specializeSignature(FnOp traitFn, ASTType newSelfType,
 FailureOr<TypedAttr> getUniqueWitnessForTypeIfConforms(
     SharedState &shared, ASTType type, TraitType trait, StringRef entryName,
     ArrayRef<ConstraintAttr> callerAssumptions, SMLoc errorLoc);
+
+/// Populate a ParameterEvaluator with the bindings from a trait symbol. Returns
+/// std::nullopt if the trait symbol has no param values (the common case before
+/// we expose parametric trait support to users).
+std::optional<ParameterEvaluator>
+populateTraitBindingEvaluator(TraitSymbolAttr traitSymbol, SharedState &shared);
 } // namespace M::KGEN::LIT
 
 #endif // KGEN_MOJOPARSER_TRAITS_H

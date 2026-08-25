@@ -31,6 +31,7 @@ from max.pipelines.lib import (
     PipelineConfig,
 )
 from max.pipelines.lib.log_probabilities import LogProbabilitiesMixin
+from max.pipelines.lib.memory_estimation import MemoryPlan
 from max.pipelines.lora import LoRATargetModule
 
 from .batch_processor import Llama3ModuleV3BatchProcessor
@@ -98,6 +99,8 @@ class Llama3Model(
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
         weights: Weights,
+        *,
+        memory_plan: MemoryPlan,
         adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
         return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
@@ -109,15 +112,18 @@ class Llama3Model(
             devices,
             kv_cache_config,
             weights,
-            adapter,
-            return_logits,
-            return_hidden_states,
+            adapter=adapter,
+            return_logits=return_logits,
+            return_hidden_states=return_hidden_states,
             max_batch_size=max_batch_size,
+            memory_plan=memory_plan,
         )
         self.model = self.load_model()
 
     def _create_model_config(self, state_dict: dict[str, Any]) -> Any:
-        model_config = self.config_class.initialize(self.pipeline_config)
+        model_config = self.config_class.initialize(
+            self.pipeline_config, max_seq_len=self.max_seq_len
+        )
         model_config.finalize(
             huggingface_config=self.huggingface_config,
             state_dict=state_dict,

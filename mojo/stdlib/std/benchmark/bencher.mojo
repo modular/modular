@@ -786,45 +786,7 @@ struct Bench(Writable):
 
     @always_inline
     def bench_function[
-        bench_fn: def() raises capturing[_] -> None,
-    ](
-        mut self,
-        bench_id: BenchId,
-        measures: List[ThroughputMeasure] = {},
-        fixed_iterations: Optional[Int] = None,
-    ) raises:
-        """Benchmarks or Tests an input function.
-
-        Parameters:
-            bench_fn: The function to be benchmarked.
-
-        Args:
-            bench_id: The benchmark Id object used for identification.
-            measures: Optional arg used to represent a list of ThroughputMeasure's.
-            fixed_iterations: Just run a fixed number of iterations.
-
-        Raises:
-            If the operation fails.
-        """
-
-        @__parameter
-        @always_inline
-        def bench_iter(mut b: Bencher):
-            @__parameter
-            @always_inline
-            def call_func():
-                try:
-                    bench_fn()
-                except e:
-                    abort(String(e))
-
-            b.iter[call_func]()
-
-        self.bench_function[bench_iter](bench_id, measures=measures)
-
-    @always_inline
-    def bench_function[
-        FuncType: def() -> None,
+        FuncType: def() raises -> None,
     ](
         mut self,
         func: FuncType,
@@ -850,7 +812,7 @@ struct Bench(Writable):
         @always_inline
         def bench_iter(
             mut b: Bencher,
-        ) {imm func,}:
+        ) raises {imm func,}:
             b.iter(func)
 
         self.bench_function(bench_iter, bench_id, measures=measures)

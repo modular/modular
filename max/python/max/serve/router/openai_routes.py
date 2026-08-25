@@ -3148,7 +3148,10 @@ def _resolve_max_model_len(request: Request) -> int | None:
     Returns the smallest length the tokenizer and model can handle, so clients
     can avoid overflowing the model's context.
     """
-    max_model_len = get_app_pipeline_config(request.app).model.max_length
+    memory_plan = request.app.state.memory_plan
+    max_model_len = (
+        memory_plan.planned_max_length if memory_plan is not None else None
+    )
     if max_model_len is None:
         return None
 

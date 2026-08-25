@@ -42,6 +42,15 @@ from max.benchmark.benchmark_shared.percentile_metrics import (
     compute_confidence_info,
 )
 from max.benchmark.benchmark_shared.request import ServerTokenStats
+from max.benchmark.benchmark_shared.result_groups import (
+    BenchmarkResultGroups,
+    CacheStatsGroup,
+    DiagnosticsGroup,
+    GpuStatsGroup,
+    LatencyStatsGroup,
+    SummaryGroup,
+    ThroughputStatsGroup,
+)
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 __all__ = [
@@ -49,6 +58,7 @@ __all__ = [
     "ConfidenceLevel",
     "Metrics",
     "PercentileMetrics",
+    "build_result_groups",
 ]
 
 if TYPE_CHECKING:
@@ -804,6 +814,17 @@ class BenchmarkResult(BaseModel):
     # (bounded by the request count). See build_text_generation_result.
     num_outliers_rejected: int | None = None
 
+    # Namespaced presentation groups (summary / gpu / latency / …). Part of
+    # the stored result — console, local JSON, and BigQuery all serialize
+    # this field directly. Auto-filled when omitted so constructors and
+    # historical blobs without the key still validate. ``csv_mode=opaque``
+    # keeps type-driven CSV from expanding groups into duplicate columns
+    # alongside ``text_data`` / ``pixel_data``.
+    result_groups: BenchmarkResultGroups | None = Field(
+        default=None,
+        json_schema_extra={"csv_mode": "opaque"},
+    )
+
     @model_validator(mode="after")
     def _check_data_matches_task_type(self) -> BenchmarkResult:
         if self.text_data is not None and self.task_type != "text":
@@ -886,6 +907,15 @@ class BenchmarkResult(BaseModel):
                 input_tokens=input_tokens_tg,
                 prompt_throughput_tokens_per_second=prompt_throughput_tokens_per_second_tg,
             )
+        return self
+
+    @model_validator(mode="after")
+    def _ensure_result_groups(self) -> BenchmarkResult:
+        """Populate ``result_groups`` once when the caller omitted them."""
+        if self.result_groups is None:
+            # Assign in place: returning ``model_copy`` from an ``after``
+            # validator is ignored for ``__init__`` construction in pydantic.
+            self.result_groups = build_result_groups(self)
         return self
 
     @property
@@ -1012,6 +1042,10 @@ class BenchmarkResult(BaseModel):
             d["aggregate_server_stats"] = [
                 dataclasses.asdict(s) for s in self.aggregate_server_stats
             ]
+        # Namespaced presentation view — same object BigQuery embeds via
+        # ``model_dump_json`` and the local ``--result-filename`` JSON carries.
+        if self.result_groups is not None:
+            d["result_groups"] = self.result_groups.model_dump(mode="json")
         return d
 
     def validate_metrics(self) -> tuple[bool, list[str]]:
@@ -1035,6 +1069,114 @@ class BenchmarkResult(BaseModel):
         if agg is None:
             return []
         return agg.confidence_warnings()
+
+
+def build_result_groups(result: BenchmarkResult) -> BenchmarkResultGroups:
+    """Builds the namespaced groups for a :class:`BenchmarkResult`.
+
+    Used by ``BenchmarkResult``'s model validator when ``result_groups`` is
+    omitted. Pure projection: reads whichever of ``text_data`` /
+    ``pixel_data`` is populated and reshapes already-present fields into
+    named groups. Adds no new data. Schema types live in the lightweight
+    ``:result_groups`` target; the factory stays here beside the concrete
+    result type.
+    """
+    text_data = result.text_data
+    pixel_data = result.pixel_data
+    agg = text_data or pixel_data
+
+    summary = SummaryGroup(
+        task_type=result.task_type,
+        max_concurrency=result.max_concurrency,
+        duration=agg.duration if agg else None,
+        completed=agg.completed if agg else None,
+        failures=agg.failures if agg else None,
+        request_throughput=agg.request_throughput if agg else None,
+        aggregate_tokens_per_minute=(
+            text_data.aggregate_tokens_per_minute if text_data else None
+        ),
+        mean_ttft_ms=(
+            text_data.ttft_ms.mean if text_data and text_data.ttft_ms else None
+        ),
+        mean_tpot_ms=(
+            text_data.tpot_ms.mean if text_data and text_data.tpot_ms else None
+        ),
+        mean_itl_ms=(
+            text_data.itl_ms.mean if text_data and text_data.itl_ms else None
+        ),
+        total_generated_outputs=(
+            pixel_data.total_generated_outputs if pixel_data else None
+        ),
+    )
+
+    gpu_stats = (
+        GpuStatsGroup(
+            peak_gpu_memory_mib=result.peak_gpu_memory_mib,
+            available_gpu_memory_mib=result.available_gpu_memory_mib,
+            gpu_utilization=result.gpu_utilization,
+        )
+        if (
+            result.peak_gpu_memory_mib
+            or result.available_gpu_memory_mib
+            or result.gpu_utilization
+        )
+        else None
+    )
+
+    latency_stats: LatencyStatsGroup | None = None
+    throughput_stats: ThroughputStatsGroup | None = None
+    cache_stats: CacheStatsGroup | None = None
+    if text_data is not None:
+        latency_stats = LatencyStatsGroup(
+            latency_ms=text_data.latency_ms,
+            ttft_ms=text_data.ttft_ms,
+            tpot_ms=text_data.tpot_ms,
+            itl_ms=text_data.itl_ms,
+            step_tpot_ms=text_data.step_tpot_ms,
+        )
+        throughput_stats = ThroughputStatsGroup(
+            input_throughput=text_data.input_throughput,
+            output_throughput=text_data.output_throughput,
+        )
+        cache_stats = CacheStatsGroup(
+            global_cached_token_rate=text_data.global_cached_token_rate,
+            per_turn_cached_token_rate=text_data.per_turn_cached_token_rate,
+            per_turn_cache_retention=text_data.per_turn_cache_retention,
+        )
+    elif pixel_data is not None:
+        latency_stats = LatencyStatsGroup(latency_ms=pixel_data.latency_ms)
+
+    # ``agg.errors`` is one entry per request (empty string on success);
+    # keep only real messages, matching the dashboard aggregates mirror.
+    real_errors = [e for e in (agg.errors if agg else []) if e]
+    diagnostics: DiagnosticsGroup | None = None
+    if (
+        result.server_startup_time is not None
+        or result.steady_state_detected is not None
+        or result.steady_state_window_count is not None
+        or result.steady_state_mode is not None
+        or result.steady_state_warning is not None
+        or result.num_outliers_rejected is not None
+        or real_errors
+    ):
+        diagnostics = DiagnosticsGroup(
+            server_startup_time=result.server_startup_time,
+            steady_state_detected=result.steady_state_detected,
+            steady_state_window_count=result.steady_state_window_count,
+            steady_state_mode=result.steady_state_mode,
+            steady_state_warning=result.steady_state_warning,
+            num_outliers_rejected=result.num_outliers_rejected,
+            errors=real_errors,
+        )
+
+    return BenchmarkResultGroups(
+        summary=summary,
+        gpu_stats=gpu_stats,
+        latency_stats=latency_stats,
+        throughput_stats=throughput_stats,
+        cache_stats=cache_stats,
+        diagnostics=diagnostics,
+    )
 
 
 # ---------------------------------------------------------------------------

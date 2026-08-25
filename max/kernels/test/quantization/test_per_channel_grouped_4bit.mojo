@@ -22,7 +22,7 @@ from std.utils import IndexList
 
 
 def _run_test_quant[group_size: Int, tolerance: Float32]() -> Bool:
-    var uniform = SIMD[DType.float32, group_size]()
+    var uniform = SIMD[.float32, group_size]()
     for i in range(group_size):
         uniform[i] = Float32(i)
     uniform -= Float32(group_size // 2)
@@ -32,10 +32,10 @@ def _run_test_quant[group_size: Int, tolerance: Float32]() -> Bool:
     var skew_slightly_pos = uniform + 1.842
     var skew_slightly_neg = uniform - 1.842
     var big_range = uniform * 1000
-    var unitary = SIMD[DType.float32, group_size](1.0)
+    var unitary = SIMD[.float32, group_size](1.0)
 
-    def run_fake_quant(input_vec: SIMD[DType.float32, group_size]) -> Bool:
-        var packed_result = Q4sym[group_size, DType.float32](input_vec)
+    def run_fake_quant(input_vec: SIMD[.float32, group_size]) -> Bool:
+        var packed_result = Q4sym[group_size, .float32](input_vec)
         var decoded_result = packed_result.decode_fully()
         print("input_vec        :", input_vec)
         print("fakeq_result     :", decoded_result)
@@ -175,21 +175,19 @@ def _read_write_to_tensors[
         out_data_matrix[i] = Float32(0)
 
     Q4sym[group_size, DType.float32].quantize_and_write_to_tensor(
-        data_matrix.make_dynamic[DType.int64]().to_layout_tensor(),
-        packed_blob.make_dynamic[DType.int64]().to_layout_tensor(),
+        data_matrix.make_dynamic[.int64]().to_layout_tensor(),
+        packed_blob.make_dynamic[.int64]().to_layout_tensor(),
         IndexList[
-            type_of(
-                data_matrix.make_dynamic[DType.int64]().to_layout_tensor()
-            ).rank
+            type_of(data_matrix.make_dynamic[.int64]().to_layout_tensor()).rank
         ](num_elements),
     )
 
     Q4sym[group_size, DType.float32].dequantize_and_write_to_tensor(
-        packed_blob.make_dynamic[DType.int64]().to_layout_tensor(),
-        out_data_matrix.make_dynamic[DType.int64]().to_layout_tensor(),
+        packed_blob.make_dynamic[.int64]().to_layout_tensor(),
+        out_data_matrix.make_dynamic[.int64]().to_layout_tensor(),
         IndexList[
             type_of(
-                out_data_matrix.make_dynamic[DType.int64]().to_layout_tensor()
+                out_data_matrix.make_dynamic[.int64]().to_layout_tensor()
             ).rank
         ](num_elements),
     )

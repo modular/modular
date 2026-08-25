@@ -43,9 +43,7 @@ def kernel[
 def kernel_lds[
     dtype: DType, width: Int
 ](a: UnsafePointer[Scalar[dtype], MutAnyOrigin]):
-    var a_shared = unsafe_stack_allocation[
-        size, dtype, address_space=AddressSpace.SHARED
-    ]()
+    var a_shared = unsafe_stack_allocation[size, dtype, address_space=.SHARED]()
 
     var aligned_size = align_down(size, width)
     var buffer = AMDBufferResource(a, size_clip)
@@ -68,12 +66,8 @@ def cache_policy_kernel_always():
     var dummy_ptr = UnsafePointer[Float32, MutAnyOrigin].unsafe_dangling()
     var buffer = AMDBufferResource(dummy_ptr, 1024)
     var offset = Int32(thread_idx.x)  # Use dynamic offset to force offen mode
-    var v = buffer.load[DType.float32, 4, cache_policy=CacheOperation.ALWAYS](
-        offset
-    )
-    buffer.store[DType.float32, 4, cache_policy=CacheOperation.ALWAYS](
-        offset, v
-    )
+    var v = buffer.load[.float32, 4, cache_policy=CacheOperation.ALWAYS](offset)
+    buffer.store[.float32, 4, cache_policy=CacheOperation.ALWAYS](offset, v)
 
 
 def cache_policy_kernel_streaming():
@@ -83,33 +77,25 @@ def cache_policy_kernel_streaming():
     var v = buffer.load[
         DType.float32, 4, cache_policy=CacheOperation.STREAMING
     ](offset)
-    buffer.store[DType.float32, 4, cache_policy=CacheOperation.STREAMING](
-        offset, v
-    )
+    buffer.store[.float32, 4, cache_policy=CacheOperation.STREAMING](offset, v)
 
 
 def cache_policy_kernel_global():
     var dummy_ptr = UnsafePointer[Float32, MutAnyOrigin].unsafe_dangling()
     var buffer = AMDBufferResource(dummy_ptr, 1024)
     var offset = Int32(thread_idx.x)  # Use dynamic offset to force offen mode
-    var v = buffer.load[DType.float32, 4, cache_policy=CacheOperation.GLOBAL](
-        offset
-    )
-    buffer.store[DType.float32, 4, cache_policy=CacheOperation.GLOBAL](
-        offset, v
-    )
+    var v = buffer.load[.float32, 4, cache_policy=CacheOperation.GLOBAL](offset)
+    buffer.store[.float32, 4, cache_policy=CacheOperation.GLOBAL](offset, v)
 
 
 def cache_policy_kernel_volatile():
     var dummy_ptr = UnsafePointer[Float32, MutAnyOrigin].unsafe_dangling()
     var buffer = AMDBufferResource(dummy_ptr, 1024)
     var offset = Int32(thread_idx.x)  # Use dynamic offset to force offen mode
-    var v = buffer.load[DType.float32, 4, cache_policy=CacheOperation.VOLATILE](
+    var v = buffer.load[.float32, 4, cache_policy=CacheOperation.VOLATILE](
         offset
     )
-    buffer.store[DType.float32, 4, cache_policy=CacheOperation.VOLATILE](
-        offset, v
-    )
+    buffer.store[.float32, 4, cache_policy=CacheOperation.VOLATILE](offset, v)
 
 
 @always_inline
@@ -241,12 +227,12 @@ def main() raises:
     # Test functional behavior
     with DeviceContext() as ctx:
         comptime for width in [1, 2, 4, 8]:
-            test_buffer[DType.bfloat16, width](ctx)
+            test_buffer[.bfloat16, width](ctx)
 
         comptime for width in [1, 2, 4, 8, 16]:
-            test_buffer[DType.int8, width](ctx)
+            test_buffer[.int8, width](ctx)
 
-        test_buffer_lds[DType.float32, 1](ctx)
+        test_buffer_lds[.float32, 1](ctx)
 
         comptime if ctx.default_device_info == MI355X:
-            test_buffer_lds[DType.bfloat16, 8](ctx)
+            test_buffer_lds[.bfloat16, 8](ctx)

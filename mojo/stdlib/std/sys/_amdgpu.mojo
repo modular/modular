@@ -58,23 +58,19 @@ struct amd_signal_t(Copyable):
 @always_inline
 def update_mbox(sig: ImmPointer[amd_signal_t, ...]):
     var mb = sig[].event_mailbox_ptr
-    if Int(mb) != Int(_Null[address_space=AddressSpace.GLOBAL]()):
+    if Int(mb) != Int(_Null[address_space=.GLOBAL]()):
         var mb_ptr = Pointer[
-            UInt64, UntrackedOrigin[mut=True], address_space=AddressSpace.GLOBAL
+            UInt64, UntrackedOrigin[mut=True], address_space=.GLOBAL
         ](unsafe_from_address=Int(mb))
-        var id = sig[].event_id.cast[DType.uint64]()
+        var id = sig[].event_id.cast[.uint64]()
         Atomic.store[ordering=Ordering.RELEASE](mb_ptr, id)
-        sendmsg(1 | (0 << 4), readfirstlane(id.cast[DType.int32]()) & 0xFF)
+        sendmsg(1 | (0 << 4), readfirstlane(id.cast[.int32]()) & 0xFF)
 
 
 @always_inline
 def hsa_signal_add(sig: UInt64, value: UInt64):
     var s = Pointer(to=sig).unsafe_bitcast[
-        Pointer[
-            amd_signal_t,
-            MutUntrackedOrigin,
-            address_space=AddressSpace.GLOBAL,
-        ]
+        Pointer[amd_signal_t, MutUntrackedOrigin, address_space=.GLOBAL]
     ]()[]
     _ = Atomic.fetch_add[ordering=Ordering.RELEASE](
         Pointer(to=s[].value), value
@@ -123,9 +119,7 @@ def msg_set_len(pd: UInt64, len: UInt32) -> UInt64:
     var reset_mask = ~(
         ((UInt64(1) << DescriptorWidth.len) - 1) << DescriptorOffset.len
     )
-    return (pd & reset_mask) | (
-        len.cast[DType.uint64]() << DescriptorOffset.len
-    )
+    return (pd & reset_mask) | (len.cast[.uint64]() << DescriptorOffset.len)
 
 
 @always_inline
@@ -169,7 +163,7 @@ def append_bytes(
         else:
             var ii = 0
             for byte in data:
-                arg |= byte.cast[DType.uint64]() << UInt64(ii * 8)
+                arg |= byte.cast[.uint64]() << UInt64(ii * 8)
                 ii += 1
             data = data[0:0]
         return arg
@@ -317,7 +311,7 @@ def begin_fprintf(flags: UInt32) -> UInt64:
     # using the lowest bits in the control qword. For now, all other
     # bits are required to be zero.
     var msg_desc = msg_set_begin_flag(0)
-    var control = flags.cast[DType.uint64]()
+    var control = flags.cast[.uint64]()
 
     var retval = message_append_args(
         ServiceId.fprintf,
@@ -523,9 +517,7 @@ def printf_append_string_n(
 
 @fieldwise_init
 struct Header(TrivialRegisterPassable):
-    var _handle: Pointer[
-        header_t, MutUntrackedOrigin, address_space=AddressSpace.GLOBAL
-    ]
+    var _handle: Pointer[header_t, MutUntrackedOrigin, address_space=.GLOBAL]
 
     def fill_packet(
         mut self,
@@ -542,7 +534,7 @@ struct Header(TrivialRegisterPassable):
         me: UInt32,
         low: UInt32,
     ):
-        var active = ballot[DType.int64](True).cast[DType.uint64]()
+        var active = ballot[.int64](True).cast[.uint64]()
         if me == low:
             var control = set_ready_flag(0)
             self._handle[].control = control
@@ -638,9 +630,7 @@ struct payload_t(Copyable):
 
 @fieldwise_init
 struct Buffer(TrivialRegisterPassable):
-    var _handle: Pointer[
-        buffer_t, MutUntrackedOrigin, address_space=AddressSpace.GLOBAL
-    ]
+    var _handle: Pointer[buffer_t, MutUntrackedOrigin, address_space=.GLOBAL]
 
     @always_inline
     def get_header(self, ptr: UInt64) -> Header:
@@ -730,9 +720,7 @@ struct Buffer(TrivialRegisterPassable):
 # this code tries to access.
 @fieldwise_init
 struct buffer_t(Copyable, TrivialRegisterPassable):
-    var headers: Pointer[
-        header_t, MutUntrackedOrigin, address_space=AddressSpace.GLOBAL
-    ]
+    var headers: Pointer[header_t, MutUntrackedOrigin, address_space=.GLOBAL]
     var payloads: Pointer[payload_t, MutUntrackedOrigin]
     var doorbell: UInt64
     var free_stack: UInt64
@@ -870,11 +858,7 @@ def hostcall(
     """
     var buffer = Buffer(
         implicitarg_ptr().unsafe_bitcast[
-            Pointer[
-                buffer_t,
-                MutUntrackedOrigin,
-                address_space=AddressSpace.GLOBAL,
-            ]
+            Pointer[buffer_t, MutUntrackedOrigin, address_space=.GLOBAL]
         ]()[unsafe_offset=10]
     )
 

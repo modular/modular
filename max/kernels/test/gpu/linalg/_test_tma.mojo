@@ -74,7 +74,7 @@ def calculate_coordinate[
         prev = prev * dimension
 
     var current_coordinate = linear_index
-    comptime tile_dims = to_index_list[rank, DType.uint32](coalesced_tile)
+    comptime tile_dims = to_index_list[rank, .uint32](coalesced_tile)
 
     comptime for index in range(rank):
         indices[index], current_coordinate = divmod(
@@ -90,7 +90,7 @@ def shared_to_global_2D[
 ](
     smem_tile: LayoutTensor,
     dst: LayoutTensor,
-    tiled_coordinate: IndexList[2, element_type=DType.uint32],
+    tiled_coordinate: IndexList[2, element_type=.uint32],
 ):
     comptime smem_dim0 = product(smem_tile.layout.shape[0])
     comptime smem_dim1 = product(smem_tile.layout.shape[1])
@@ -132,7 +132,7 @@ def shared_to_global_3D[
 ](
     smem_tile: LayoutTensor,
     dst: LayoutTensor,
-    tiled_coordinate: IndexList[3, element_type=DType.uint32],
+    tiled_coordinate: IndexList[3, element_type=.uint32],
 ):
     comptime smem_dim0 = product(smem_tile.layout.shape[0])
     comptime smem_dim1 = product(smem_tile.layout.shape[1])
@@ -194,14 +194,14 @@ def test_tma_load_kernel[
         dtype,
         smem_layout,
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
     ].stack_allocation()
 
     var mbar_ptr = unsafe_stack_allocation[
         1,
         SharedMemBarrier,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=8,
     ]()
 
@@ -225,7 +225,7 @@ def test_tma_load_kernel[
 
     mbar_ptr[0].wait()
 
-    comptime smem_indices = to_index_list[coordinate.size, DType.uint32](
+    comptime smem_indices = to_index_list[coordinate.size, .uint32](
         smem_layout.shape
     )
     var tiled_coordinate = coordinate
@@ -450,9 +450,9 @@ def main() raises:
 
         test_tma_load[
             IntTuple(8, 512),
-            TMALoad[DType.bfloat16, desc_shape].get_2D_smem_layout[2, 4](),
+            TMALoad[.bfloat16, desc_shape].get_2D_smem_layout[2, 4](),
             desc_shape,
-            DType.bfloat16,
+            .bfloat16,
         ](ctx)
 
         print("Test TMA No Swizzle")
@@ -461,27 +461,27 @@ def main() raises:
             IntTuple(64, 64),
             Layout.row_major(32, 32),
             IntTuple(32, 32),
-            DType.bfloat16,
+            .bfloat16,
         ](ctx)
 
         test_tma_load[
             IntTuple(4, 128, 128),
             Layout.row_major(2, 128, 64),
             IntTuple(2, 128, 64),
-            DType.bfloat16,
+            .bfloat16,
         ](ctx)
 
         test_tma_load[
             IntTuple(4, 128, 128),
             Layout.row_major(2, 128, 64),
             IntTuple(1, 64, 64),
-            DType.bfloat16,
+            .bfloat16,
         ](ctx)
 
         comptime load_tile_shape[
             swizzle_mode: SwizzleMode, major: Major
         ] = max_contiguous_tile_shape[
-            DType.bfloat16,
+            .bfloat16,
             IndexList[2](128, 128),
             major=major,
             swizzle_mode=swizzle_mode,
@@ -513,7 +513,7 @@ def main() raises:
             gmem_shape,
             smem_layout[SwizzleMode._32B, Major.K],
             load_tile_shape_32B_K,
-            DType.bfloat16,
+            .bfloat16,
             swizzle_mode=SwizzleMode._32B,
         ](ctx)
 
@@ -521,7 +521,7 @@ def main() raises:
             gmem_shape,
             smem_layout[SwizzleMode._64B, Major.K],
             load_tile_shape_64B_K,
-            DType.bfloat16,
+            .bfloat16,
             swizzle_mode=SwizzleMode._64B,
         ](ctx)
 
@@ -529,7 +529,7 @@ def main() raises:
             gmem_shape,
             smem_layout[SwizzleMode._128B, Major.K],
             load_tile_shape_128B_K,
-            DType.bfloat16,
+            .bfloat16,
             swizzle_mode=SwizzleMode._128B,
         ](ctx)
 
@@ -539,7 +539,7 @@ def main() raises:
             gmem_shape,
             smem_layout[SwizzleMode._128B, Major.K],
             load_tile_shape_128B_MN,
-            DType.bfloat16,
+            .bfloat16,
             swizzle_mode=SwizzleMode._128B,
         ](ctx)
 
@@ -549,7 +549,7 @@ def main() raises:
             IntTuple(64, 128),
             Layout.row_major(48, 128),
             IntTuple(48, 128),
-            DType.bfloat16,
+            .bfloat16,
             OOB_access=True,
         ](ctx)
 
@@ -557,6 +557,6 @@ def main() raises:
             IntTuple(3, 16, 64),
             Layout.row_major(2, 16, 64),
             IntTuple(2, 16, 64),
-            DType.bfloat16,
+            .bfloat16,
             OOB_access=True,
         ](ctx)

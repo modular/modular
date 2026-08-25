@@ -76,7 +76,7 @@ def test_copy_to_numpy_array_float16() raises:
 def test_from_numpy_array_float64() raises:
     var np = Python.import_module("numpy")
     var array = np.arange(5, dtype="float64")
-    var span = from_numpy_array[DType.float64](array)
+    var span = from_numpy_array[.float64](array)
 
     assert_equal(len(span), 5)
     var total = Float64(0)
@@ -90,7 +90,7 @@ def test_from_numpy_array_aliases() raises:
     # A borrow must observe NumPy-side writes, and vice versa.
     var np = Python.import_module("numpy")
     var array = np.zeros(3, dtype="int64")
-    var span = from_numpy_array[DType.int64](array)
+    var span = from_numpy_array[.int64](array)
     array[1] = 7
     assert_equal(Int(span[1]), 7)
     span[2] = 9
@@ -102,7 +102,7 @@ def test_from_numpy_array_dtype_mismatch_raises() raises:
     var np = Python.import_module("numpy")
     var array = np.arange(4, dtype="float64")
     with assert_raises(contains="dtype mismatch"):
-        _ = from_numpy_array[DType.int32](array)
+        _ = from_numpy_array[.int32](array)
     _ = array
 
 
@@ -111,7 +111,7 @@ def test_from_numpy_array_non_contiguous_raises() raises:
     # A strided slice is not C-contiguous.
     var array = np.arange(10, dtype="float64")[::2]
     with assert_raises(contains="C-contiguous"):
-        _ = from_numpy_array[DType.float64](array)
+        _ = from_numpy_array[.float64](array)
     _ = array
 
 
@@ -119,7 +119,7 @@ def test_from_numpy_array_wrong_ndim_raises() raises:
     var np = Python.import_module("numpy")
     var array = np.ones(Python.tuple(2, 3), dtype="float64")
     with assert_raises(contains="1-D"):
-        _ = from_numpy_array[DType.float64](array)
+        _ = from_numpy_array[.float64](array)
     _ = array
 
 
@@ -132,7 +132,7 @@ def test_roundtrip_int64_signed() raises:
         9223372036854775807,
     ]
     var arr = copy_to_numpy_array(values)
-    var span = from_numpy_array[DType.int64](arr)
+    var span = from_numpy_array[.int64](arr)
     assert_equal(len(span), len(values))
     for i in range(len(values)):
         assert_equal(span[i], values[i])
@@ -142,7 +142,7 @@ def test_roundtrip_int64_signed() raises:
 def test_from_numpy_array_empty() raises:
     var np = Python.import_module("numpy")
     var array = np.empty(0, dtype="float64")
-    var span = from_numpy_array[DType.float64](array)
+    var span = from_numpy_array[.float64](array)
     assert_equal(len(span), 0)
     _ = array
 
@@ -152,7 +152,7 @@ def test_from_numpy_array_read_only_raises() raises:
     var array = np.arange(4, dtype="float64")
     _ = array.setflags(write=False)
     with assert_raises(contains="writable"):
-        _ = from_numpy_array[DType.float64](array)
+        _ = from_numpy_array[.float64](array)
     _ = array
 
 
@@ -163,17 +163,17 @@ def _assert_dtype_name[dtype: DType](expected: StaticString) raises:
 
 
 def test_copy_to_numpy_array_dtype_names() raises:
-    _assert_dtype_name[DType.int8]("int8")
-    _assert_dtype_name[DType.int16]("int16")
-    _assert_dtype_name[DType.int32]("int32")
-    _assert_dtype_name[DType.int64]("int64")
-    _assert_dtype_name[DType.uint8]("uint8")
-    _assert_dtype_name[DType.uint16]("uint16")
-    _assert_dtype_name[DType.uint32]("uint32")
-    _assert_dtype_name[DType.uint64]("uint64")
-    _assert_dtype_name[DType.float16]("float16")
-    _assert_dtype_name[DType.float32]("float32")
-    _assert_dtype_name[DType.float64]("float64")
+    _assert_dtype_name[.int8]("int8")
+    _assert_dtype_name[.int16]("int16")
+    _assert_dtype_name[.int32]("int32")
+    _assert_dtype_name[.int64]("int64")
+    _assert_dtype_name[.uint8]("uint8")
+    _assert_dtype_name[.uint16]("uint16")
+    _assert_dtype_name[.uint32]("uint32")
+    _assert_dtype_name[.uint64]("uint64")
+    _assert_dtype_name[.float16]("float16")
+    _assert_dtype_name[.float32]("float32")
+    _assert_dtype_name[.float64]("float64")
 
 
 def _first_via_read_borrow[
@@ -187,7 +187,7 @@ def test_from_numpy_array_read_only_borrow() raises:
     var np = Python.import_module("numpy")
     var array = np.arange(4, dtype="float64")
     _ = array.setflags(write=False)
-    var first = _first_via_read_borrow[DType.float64](array)
+    var first = _first_via_read_borrow[.float64](array)
     assert_almost_equal(first, 0.0)
     _ = array
 
@@ -200,7 +200,7 @@ def _iota[dtype: DType](count: Int) -> List[Scalar[dtype]]:
 
 
 def test_copy_to_numpy_tensor_shape_and_order() raises:
-    var values = _iota[DType.float64](6)
+    var values = _iota[.float64](6)
     var arr = copy_to_numpy_tensor(Span(values), Coord(Idx[2], Idx[3]))
 
     assert_equal(Int(py=arr.ndim), 2)
@@ -214,7 +214,7 @@ def test_copy_to_numpy_tensor_shape_and_order() raises:
 
 
 def test_copy_to_numpy_tensor_dynamic_dim() raises:
-    var values = _iota[DType.float32](6)
+    var values = _iota[.float32](6)
     var arr = copy_to_numpy_tensor(Span(values), Coord(Idx[3], Int(2)))
     assert_equal(Int(py=arr.shape[0]), 3)
     assert_equal(Int(py=arr.shape[1]), 2)
@@ -222,7 +222,7 @@ def test_copy_to_numpy_tensor_dynamic_dim() raises:
 
 
 def test_copy_to_numpy_tensor_rank3() raises:
-    var values = _iota[DType.int64](8)
+    var values = _iota[.int64](8)
     var arr = copy_to_numpy_tensor(Span(values), Coord(Idx[2], Idx[2], Idx[2]))
     assert_equal(Int(py=arr.ndim), 3)
     assert_equal(Int(py=arr.size), 8)
@@ -230,14 +230,14 @@ def test_copy_to_numpy_tensor_rank3() raises:
 
 
 def test_copy_to_numpy_tensor_is_independent() raises:
-    var values = _iota[DType.float64](4)
+    var values = _iota[.float64](4)
     var arr = copy_to_numpy_tensor(Span(values), Coord(Idx[2], Idx[2]))
     values[0] = 99.0
     assert_almost_equal(Float64(py=arr[0][0]), 0.0)
 
 
 def test_copy_to_numpy_tensor_size_mismatch_raises() raises:
-    var values = _iota[DType.float64](6)
+    var values = _iota[.float64](6)
     with assert_raises(contains="shape describes 4 elements"):
         _ = copy_to_numpy_tensor(Span(values), Coord(Idx[2], Idx[2]))
 
@@ -253,7 +253,7 @@ def test_copy_to_numpy_tensor_zero_extent() raises:
 def test_from_numpy_tensor_float64() raises:
     var np = Python.import_module("numpy")
     var array = np.arange(6, dtype="float64").reshape(2, 3)
-    var view = from_numpy_tensor[DType.float64, 2](array)
+    var view = from_numpy_tensor[.float64, 2](array)
 
     assert_equal(len(view.data), 6)
     assert_equal(view.shape[0], 2)
@@ -269,7 +269,7 @@ def test_from_numpy_tensor_float64() raises:
 def test_from_numpy_tensor_aliases() raises:
     var np = Python.import_module("numpy")
     var array = np.zeros(Python.tuple(2, 2), dtype="float64")
-    var view = from_numpy_tensor[DType.float64, 2](array)
+    var view = from_numpy_tensor[.float64, 2](array)
     view[1, 1] = 5.0
     assert_almost_equal(Float64(py=array[1][1]), 5.0)
     _ = array
@@ -279,7 +279,7 @@ def test_from_numpy_tensor_wrong_rank_raises() raises:
     var np = Python.import_module("numpy")
     var array = np.arange(6, dtype="float64").reshape(2, 3)
     with assert_raises(contains="expected a 3-D array"):
-        _ = from_numpy_tensor[DType.float64, 3](array)
+        _ = from_numpy_tensor[.float64, 3](array)
     _ = array
 
 
@@ -287,7 +287,7 @@ def test_from_numpy_tensor_non_contiguous_raises() raises:
     var np = Python.import_module("numpy")
     var array = np.arange(12, dtype="float64").reshape(3, 4)[:, ::2]
     with assert_raises(contains="C-contiguous"):
-        _ = from_numpy_tensor[DType.float64, 2](array)
+        _ = from_numpy_tensor[.float64, 2](array)
     _ = array
 
 
@@ -295,14 +295,14 @@ def test_from_numpy_tensor_dtype_mismatch_raises() raises:
     var np = Python.import_module("numpy")
     var array = np.arange(6, dtype="float64").reshape(2, 3)
     with assert_raises(contains="dtype mismatch"):
-        _ = from_numpy_tensor[DType.int32, 2](array)
+        _ = from_numpy_tensor[.int32, 2](array)
     _ = array
 
 
 def test_numpy_tensor_roundtrip() raises:
-    var values = _iota[DType.int32](12)
+    var values = _iota[.int32](12)
     var arr = copy_to_numpy_tensor(Span(values), Coord(Idx[3], Int(4)))
-    var view = from_numpy_tensor[DType.int32, 2](arr)
+    var view = from_numpy_tensor[.int32, 2](arr)
     assert_equal(view.shape[0], 3)
     assert_equal(view.shape[1], 4)
     assert_equal(len(view.data), len(values))
@@ -324,7 +324,7 @@ def test_numpy_view_passes_by_borrow() raises:
     # The view crosses a function boundary without a copy or a `ref` rebind.
     var np = Python.import_module("numpy")
     var array = np.arange(6, dtype="float64").reshape(2, 3)
-    var view = from_numpy_tensor[DType.float64, 2](array)
+    var view = from_numpy_tensor[.float64, 2](array)
     assert_almost_equal(_sum_view(view), 15.0)
     # The view is still usable after being borrowed.
     assert_almost_equal(view[1, 2], 5.0)
@@ -334,7 +334,7 @@ def test_numpy_view_passes_by_borrow() raises:
 def test_numpy_view_rank3_indexing() raises:
     var np = Python.import_module("numpy")
     var array = np.arange(24, dtype="int64").reshape(2, 3, 4)
-    var view = from_numpy_tensor[DType.int64, 3](array)
+    var view = from_numpy_tensor[.int64, 3](array)
     assert_equal(len(view.data), 24)
     for i in range(2):
         for j in range(3):
@@ -347,7 +347,7 @@ def test_numpy_view_shape_feeds_copy() raises:
     # A view's shape is a `Coord`, so it needs no conversion to go back.
     var np = Python.import_module("numpy")
     var array = np.arange(6, dtype="float64").reshape(2, 3)
-    var view = from_numpy_tensor[DType.float64, 2](array)
+    var view = from_numpy_tensor[.float64, 2](array)
     var copy = copy_to_numpy_tensor(view.data, view.shape)
     assert_equal(Int(py=copy.shape[0]), 2)
     assert_equal(Int(py=copy.shape[1]), 3)
@@ -360,7 +360,7 @@ def test_from_numpy_array_equivalent_dtype() raises:
     # the borrow must accept it.
     var np = Python.import_module("numpy")
     var array = np.arange(4, dtype="longlong")
-    var span = from_numpy_array[DType.int64](array)
+    var span = from_numpy_array[.int64](array)
     assert_equal(len(span), 4)
     assert_equal(span[3], 3)
     _ = array

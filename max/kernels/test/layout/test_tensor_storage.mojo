@@ -55,7 +55,7 @@ def test_load_store_simd() raises:
     var buf = Array[Float32, 8](fill=0.0)
     var storage = buf.unsafe_ptr()
 
-    var value = SIMD[DType.float32, 4](1.0, 2.0, 3.0, 4.0)
+    var value = SIMD[.float32, 4](1.0, 2.0, 3.0, 4.0)
     PointerStorage[element_width=1].store[alignment=ALIGN_F32](storage, value)
 
     assert_equal(
@@ -70,7 +70,7 @@ def test_load_store_non_float_dtype() raises:
     var buf = Array[Int32, 4](fill=0)
     var storage = buf.unsafe_ptr()
 
-    var value = SIMD[DType.int32, 4](-1, 2, -3, 4)
+    var value = SIMD[.int32, 4](-1, 2, -3, 4)
     PointerStorage[element_width=1].store[alignment=ALIGN_I32](storage, value)
 
     assert_equal(
@@ -87,7 +87,7 @@ def test_offset() raises:
 
     # Clear the buffer, then write `9.0` two elements in via an offset handle.
     PointerStorage[element_width=1].store[alignment=ALIGN_F32](
-        storage, SIMD[DType.float32, 4](0.0, 0.0, 0.0, 0.0)
+        storage, SIMD[.float32, 4](0.0, 0.0, 0.0, 0.0)
     )
     var offset_storage = PointerStorage[element_width=1].offset(
         storage, Coord(Int(2))
@@ -113,7 +113,7 @@ def test_load_store_offset_overload() raises:
 
     # Zero the buffer, then write at element 3 via the offset-taking store.
     PointerStorage[element_width=1].store[alignment=ALIGN_F32](
-        storage, SIMD[DType.float32, 4](0.0, 0.0, 0.0, 0.0)
+        storage, SIMD[.float32, 4](0.0, 0.0, 0.0, 0.0)
     )
     PointerStorage[element_width=1].store[alignment=ALIGN_F32](
         storage, 3, Float32(7.0)
@@ -174,7 +174,7 @@ def test_unsafe_cast() raises:
 
     # An independent pointer bitcast lands at the same address (distance 0)
     # and observes the same raw bits.
-    var expected = storage.bitcast[Scalar[DType.uint32]]()
+    var expected = storage.bitcast[UInt32]()
     assert_equal(PointerStorage[element_width=1].distance(as_u32, expected), 0)
     assert_equal(
         PointerStorage[element_width=1].load[width=1, alignment=ALIGN_U32](
@@ -188,13 +188,13 @@ def test_unsafe_ptr() raises:
     var buf = Array[Float32, 4](fill=0.0)
     var storage: UnsafePointer[Float32, origin_of(buf)] = buf.unsafe_ptr()
     PointerStorage[element_width=1].store[alignment=ALIGN_F32](
-        storage, SIMD[DType.float32, 4](1.0, 2.0, 3.0, 4.0)
+        storage, SIMD[.float32, 4](1.0, 2.0, 3.0, 4.0)
     )
 
     # `unsafe_ptr` yields the scalar base pointer of the storage. It lands at
     # the same address as an independent bitcast and reads the same elements.
     var raw = PointerStorage[element_width=1].unsafe_ptr(storage)
-    var expected = storage.bitcast[Scalar[DType.float32]]()
+    var expected = storage.bitcast[Float32]()
     assert_equal(Int(raw), Int(expected))
     assert_equal(
         raw.load[width=4, alignment=ALIGN_F32](),
@@ -206,7 +206,7 @@ def test_unsafe_ptr_vectorized() raises:
     var buf = Array[Float32, 4](fill=0.0)
     # A vectorized (element_width=2) storage handle over the same buffer.
     var buf_ptr: UnsafePointer[Float32, origin_of(buf)] = buf.unsafe_ptr()
-    var storage = buf_ptr.bitcast[SIMD[DType.float32, 2]]()
+    var storage = buf_ptr.bitcast[SIMD[.float32, 2]]()
 
     # `unsafe_ptr` bitcasts the SIMD-typed handle down to the scalar base,
     # which coincides with the buffer's own base address.

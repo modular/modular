@@ -103,6 +103,11 @@ LLVMDataLayout::getTypeABIAlignAndType(Type type) const {
       if (cur.first >= strictestPair.first)
         strictestPair = cur;
     }
+
+    // Aggregates/structs can be ABI-aligned as a whole, as per the DL.
+    strictestPair.first = std::max(
+        strictestPair.first,
+        static_cast<int64_t>(target.getDataLayout().getStructABIAlign()));
     return strictestPair;
   }
   llvm::report_fatal_error("unsupported LLVM dialect type");
@@ -325,7 +330,26 @@ POPToLLVMTypeConverter::POPToLLVMTypeConverter(TargetInfoAttr target)
       offset = kgenOffset + *kgenAllocSize;
     }
 
-    return LLVM::LLVMStructType::getLiteral(&getContext(), llvmTypes);
+    auto llvmStructType =
+        LLVM::LLVMStructType::getLiteral(&getContext(), llvmTypes);
+
+    // Pad the struct up to its required alignment, if LLVM's data layout
+    // wouldn't implicitly do it for us.
+    std::optional<int64_t> kgenTotalAlign =
+        DataLayoutInterface::getTypeABIAlign(getTarget(), structType);
+    if (!kgenTotalAlign)
+      return {};
+
+    int64_t llvmOffset = llvm::alignTo(offset, getTypeABIAlign(llvmStructType));
+    int64_t kgenOffset = llvm::alignTo(offset, *kgenTotalAlign);
+    if (kgenOffset > llvmOffset) {
+      llvmTypes.push_back(
+          LLVM::LLVMArrayType::get(i8Type, kgenOffset - offset));
+      llvmStructType =
+          LLVM::LLVMStructType::getLiteral(&getContext(), llvmTypes);
+    }
+
+    return llvmStructType;
   });
 
   // Convert SIMD types to vector types.

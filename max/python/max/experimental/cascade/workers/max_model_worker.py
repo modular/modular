@@ -94,8 +94,9 @@ class MAXModelWorker(Worker):
         self.pipeline_config = pipeline_config
 
         retrieved = PIPELINE_REGISTRY.retrieve_factory(pipeline_config)
-        # ``max_length`` is read off the resolved config in open().
+        # ``max_length`` is populated from the memory plan in open().
         self.max_length: int | None = None
+        self._memory_plan = retrieved.memory_plan
         self._eos_token_ids: set[int] = set(retrieved.tokenizer.eos_token_ids)
         self._model_factory = retrieved.factory
 
@@ -141,8 +142,10 @@ class MAXModelWorker(Worker):
             "MAXModelWorker needs a model_factory to deploy; construct it via "
             "build_pipeline, which resolves the config and builds the factory."
         )
-        max_length = self.pipeline_config.model.max_length
-        assert max_length is not None, "pipeline_config must be resolved"
+        max_length = self._memory_plan.planned_max_length
+        assert max_length is not None, (
+            "memory plan must carry a planned_max_length"
+        )
         self.max_length = max_length
         t0 = time.monotonic()
         register_all_models()
@@ -179,6 +182,7 @@ class MAXModelWorker(Worker):
                     metric_client=metric_client,
                     model_worker_interface=model_worker_interface,
                     zmq_endpoint_base=generate_zmq_ipc_path(),
+                    memory_plan=self._memory_plan,
                 )
             )
             logger.info("MAXModelWorker ready in %.1fs", time.monotonic() - t0)

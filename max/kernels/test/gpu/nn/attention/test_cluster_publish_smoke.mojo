@@ -77,11 +77,11 @@ def publish_smoke_kernel[
     # Static shared scratch, identically offset in every CTA — `mapa` rebases it
     # onto a peer's window.
     var smem = unsafe_stack_allocation[
-        W, DType.uint32, address_space=AddressSpace.SHARED, alignment=16
+        W, DType.uint32, address_space=.SHARED, alignment=16
     ]()
     # The publish mbarrier (one SharedMemBarrier = one 8-byte slot).
     var mbar = unsafe_stack_allocation[
-        1, DType.int64, address_space=AddressSpace.SHARED, alignment=8
+        1, DType.int64, address_space=.SHARED, alignment=8
     ]().bitcast[SharedMemBarrier]()
 
     var me = block_rank_in_cluster()
@@ -123,7 +123,7 @@ def publish_smoke_kernel[
         if tid == 0:
             var me_i = Int(me)
             comptime for r in range(P):
-                var v = load_cluster_smem[DType.uint32, W](smem, UInt32(r))
+                var v = load_cluster_smem[.uint32, W](smem, UInt32(r))
                 comptime for w in range(W):
                     output[(me_i * P + r) * W + w] = v[w]
 
@@ -135,7 +135,7 @@ def publish_smoke_kernel[
 
 def run_publish_test[P: Int](ctx: DeviceContext) raises:
     var n = P * P * W
-    var out_dev = ctx.enqueue_create_buffer[DType.uint32](n)
+    var out_dev = ctx.enqueue_create_buffer[.uint32](n)
 
     with out_dev.map_to_host() as h:
         for i in range(n):

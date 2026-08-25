@@ -188,8 +188,8 @@ def cpu_qk_naive(
             var acc: Float32 = 0.0
             for d in range(D):
                 acc += (
-                    Q.ptr.load(m * D + d).cast[DType.float32]()
-                    * K.ptr.load(n * D + d).cast[DType.float32]()
+                    Q.ptr.load(m * D + d).cast[.float32]()
+                    * K.ptr.load(n * D + d).cast[.float32]()
                 )
             O.ptr.store(m * N + n, acc.cast[O.dtype]())
 
@@ -243,14 +243,12 @@ def qk_mma_kernel[
 
     var q_smem = rebind[
         UnsafePointer[
-            Scalar[ab_type],
-            address_space=AddressSpace.SHARED,
-            UntrackedOrigin[mut=True],
+            Scalar[ab_type], address_space=.SHARED, UntrackedOrigin[mut=True]
         ]
     ](
         external_memory[
             Scalar[ab_type],
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
             alignment=128,
             name="qk_spike_dynamic_smem",
         ]()
@@ -259,14 +257,14 @@ def qk_mma_kernel[
         ab_type,
         q_smem_layout,
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
     ]
     comptime k_smem_tile_t = LayoutTensor[
         ab_type,
         k_smem_layout,
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
     ]
 
@@ -498,7 +496,7 @@ def run_qk_spike[
             DeviceBuffer(
                 ctx,
                 k_dev.ptr.unsafe_mut_cast[True]().address_space_cast[
-                    AddressSpace.GENERIC
+                    .GENERIC
                 ](),
                 1,
                 owning=False,
@@ -635,8 +633,8 @@ def _print_layouts[mn: Int, k: Int]():
     comptime base = tile_layout_k_major[
         DType.bfloat16, mn, k, swizzle_mode=sw
     ]()
-    comptime pdns = _tile_layout_k_major_pagedense[DType.bfloat16, mn, k, sw]()
-    comptime cinr = _tile_layout_k_major_chunkinner[DType.bfloat16, mn, k, sw]()
+    comptime pdns = _tile_layout_k_major_pagedense[.bfloat16, mn, k, sw]()
+    comptime cinr = _tile_layout_k_major_chunkinner[.bfloat16, mn, k, sw]()
     comptime base_can = tile_to_descriptor[
         DType.bfloat16, base, is_k_major=True
     ]()

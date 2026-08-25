@@ -146,15 +146,15 @@ def bench_flash[
 
     if bench:
 
-        @__parameter
         @always_inline
-        def bench_func(mut b: Bencher) raises:
+        def bench_func(mut b: Bencher) raises {imm}:
             bencher_iter_custom(b, _kernel_launch, ctx)
 
         def compute_flops() {imm} -> Int:
             return 4 * batch_size * num_heads * seq_len * num_keys * depth
 
-        m.bench_function[bench_func](
+        m.bench_function(
+            bench_func,
             BenchId(
                 "flash_attention",
                 # fmt: off
@@ -297,15 +297,15 @@ def bench_naive[
 
     if bench:
 
-        @__parameter
         @always_inline
-        def bench_func(mut b: Bencher) raises:
+        def bench_func(mut b: Bencher) raises {imm}:
             bencher_iter_custom(b, _kernel_launch, ctx)
 
         def compute_flops() {imm} -> Int:
             return 4 * batch_size * num_heads * seq_len * num_keys * depth
 
-        m.bench_function[bench_func](
+        m.bench_function(
+            bench_func,
             BenchId(
                 "mha_gpu_naive",
                 # fmt: off
@@ -486,15 +486,15 @@ def bench_manual[
 
     if bench:
 
-        @__parameter
         @always_inline
-        def bench_func(mut b: Bencher) raises:
+        def bench_func(mut b: Bencher) raises {imm}:
             bencher_iter_custom(b, _kernel_launch, ctx)
 
         def compute_flops() {imm} -> Int:
             return 4 * batch_size * num_heads * seq_len * num_keys * depth
 
-        m.bench_function[bench_func](
+        m.bench_function(
+            bench_func,
             BenchId(
                 "manual_matmul",
                 # fmt: off
@@ -533,7 +533,7 @@ def bench_manual[
 # main
 # ---------------------------------------------------------------------------
 def main() raises:
-    comptime qkv_type = get_defined_dtype["qkv_type", DType.bfloat16]()
+    comptime qkv_type = get_defined_dtype["qkv_type", .bfloat16]()
     comptime depth = get_defined_int["depth", 512]()
     comptime num_heads = get_defined_int["num_heads", 8]()
     comptime group = get_defined_int["group", 1]()

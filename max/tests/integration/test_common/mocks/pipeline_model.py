@@ -36,8 +36,13 @@ from max.pipelines.lib import (
     PipelineConfig,
     PipelineModelWithKVCache,
 )
+from max.pipelines.lib.memory_estimation import MemoryPlan
 from max.pipelines.lora import LoRAManagerV3
 from transformers import AutoConfig
+
+# The mock model's sequence-length clamp; plan builders use it to populate
+# mock plans the way the estimator would.
+MOCK_MODEL_MAX_SEQ_LEN = 1200
 
 
 class MockModelInputs(ModelInputs):
@@ -85,6 +90,8 @@ class MockPipelineModel(PipelineModelWithKVCache):  # type: ignore[type-arg]
         session: InferenceSession,
         kv_cache_config: KVCacheConfig,
         weights: Weights,
+        *,
+        memory_plan: MemoryPlan,
         devices: list[Device] = [],  # noqa: B006
         adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
@@ -92,6 +99,7 @@ class MockPipelineModel(PipelineModelWithKVCache):  # type: ignore[type-arg]
         max_batch_size: int = 1,
     ) -> None:
         self.pipeline_config = pipeline_config
+        self.memory_plan = memory_plan
         self.max_batch_size = max_batch_size
         self.vocab_size = pipeline_config.vocab_size  # type: ignore
         self.eos_token = pipeline_config.eos_token  # type: ignore
@@ -113,9 +121,6 @@ class MockPipelineModel(PipelineModelWithKVCache):  # type: ignore[type-arg]
         # These mypy ignores, are needed to smuggle in these settings without
         # reworking these globally.
         self.eos_prob = pipeline_config.eos_prob  # type: ignore
-        self.max_seq_len = self.calculate_max_seq_len(
-            pipeline_config, self.huggingface_config
-        )
         self._lora_manager = (
             LoRAManagerV3(
                 config=self.pipeline_config.lora,
@@ -141,16 +146,6 @@ class MockPipelineModel(PipelineModelWithKVCache):  # type: ignore[type-arg]
                 f"model '{self.pipeline_config.model.model_path}'."
             )
         return config
-
-    @classmethod
-    def calculate_max_seq_len(
-        cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
-    ) -> int:
-        MAX_LENGTH = 1200
-        if pipeline_config.model.max_length:
-            return min(MAX_LENGTH, pipeline_config.model.max_length)
-
-        return MAX_LENGTH
 
     @classmethod
     def get_kv_params(

@@ -263,6 +263,9 @@ CValue IREmitter::emitCValue(ASTExprAnd<AnyValue> value, ExprDest &dest) {
   if (auto initValue = value.ir.getIfInitializer())
     return initValue->emitAsCValue(*this, dest);
 
+  if (auto inferredAttr = value.ir.getIfInferredBaseAttrRef())
+    return inferredAttr.emitAsCValue(*this, dest);
+
   llvm_unreachable("unknown UValue in emitCValue");
 }
 
@@ -1906,28 +1909,66 @@ ASTDecl *IREmitter::createParametricClosureTrait(SharedState &shared) {
       shared.declResolver->addSelfTypeToTrait(closureTrait, traitDecl, parents,
                                               immediateParents, decls,
                                               passingKinds);
-  assert(succeeded(result));
+
+  // This need to built a full signature with Self prepended properly.
+
+  auto prependParamList = [](TypedAttr toPrepend,
+                             TypedAttr paramList) -> TypedAttr {
+    return ParamListConcatAttr::get(
+        {ParamListAttr::get({toPrepend},
+                            cast<ParamListType>(paramList.getType())),
+         paramList});
+  };
+
+  // An extra _Self parameter.
+  ASTType declSelf = traitDecl.getTypeDeclSelf();
+  auto selfParam =
+      FnGenBuilderParamDeclAttr::get("_Self`", declSelf.extractMetaType());
+
+  // An extra `mut self` argument: we don't have two trait for FnMut/FnImm, use
+  // mut self for better generality.
+  auto selfOriginType = OriginType::get(shared.getContext(), true);
+  auto mutSelfRef = LIT::RefType::get(
+      declSelf,
+      FnGenBuilderParamDeclRefAttr::get("_self_origin`", selfOriginType));
+  auto mutSelf = TypeParamAttr::get(mutSelfRef, TypeType::get(ctx));
+
+  // An extra implicit origin for `_Self` parameter.
+  auto selfOrigin = StringAttr::get("_self_origin`", StringType::get(ctx));
 
   ImplicitLocOpBuilder builder = ImplicitLocOpBuilder::atBlockEnd(
       closureTrait.getLoc(), &closureTrait.getFields().front());
-  AliasDeclOp::create(
-      builder, ParamDeclAttr::get(builder.getStringAttr("__call_method__"),
-                                  KGEN::FuncGeneratorTypeBuilderType::get(
-                                      ctx, ParamDeclRefAttr::get(decls[0]),
-                                      ParamDeclRefAttr::get(decls[1]),
-                                      ParamDeclRefAttr::get(decls[2]),
-                                      ParamDeclRefAttr::get(decls[3]),
-                                      ParamDeclRefAttr::get(decls[4]))));
+
+  auto params = prependParamList(selfParam, ParamDeclRefAttr::get(decls[0]));
+  auto args = prependParamList(mutSelf, ParamDeclRefAttr::get(decls[1]));
+  auto retTy = ParamDeclRefAttr::get(decls[2]);
+  auto metadata = ParamDeclRefAttr::get(decls[3]);
+  auto origins = prependParamList(selfOrigin, ParamDeclRefAttr::get(decls[4]));
+
+  auto aliasOp = AliasDeclOp::create(
+      builder,
+      ParamDeclAttr::get(builder.getStringAttr("__call__"),
+                         KGEN::FuncGeneratorTypeBuilderType::get(
+                             ctx, params, args, retTy, metadata, origins)));
+
+  (void)shared.declResolver->addFullyResolvedDecl(aliasOp, "__call__", SMLoc(),
+                                                  &traitDecl);
   return &traitDecl;
 }
 
 TraitType IREmitter::bindParamsToClosureTraitFromSig(const ExprNode *expr,
                                                      FnTypeGeneratorType sig) {
-  // We don't have scope for the FnGenBuilderParamDeclAttr, just make sure every
-  // name we created is unique.
-  // FIXME: use a demangler here for a deterministic name.
-  static size_t uniqueIdx = 0;
-  std::string uniqueIdxStr = llvm::utostr(uniqueIdx++);
+  // We don't have scope for the FnGenBuilderParamDeclAttr, just use the number
+  // of pre existing closure trait symbols as the unique index (we just need to
+  // ensure the name is unique for all the nested closure traits that are
+  // "dominated" by the current trait).
+  size_t uniqueIdx = 0;
+  sig.walk([&](TraitSymbolAttr symbol) {
+    if (symbol.getSymbol() ==
+        shared.getUniversalParametricClosureTrait()->getSymbolRef())
+      uniqueIdx++;
+  });
+  std::string uniqueIdxStr = llvm::utostr(uniqueIdx);
 
   MLIRContext *ctx = shared.getContext();
   ASTDecl *closureTraitDecl = shared.getUniversalParametricClosureTrait();
@@ -1979,7 +2020,24 @@ TraitType IREmitter::bindParamsToClosureTraitFromSig(const ExprNode *expr,
   evaluator.setDeclBinding(traitSig.getParamName(2), resultType);
 
   // 4th, the metadata.
-  TypedAttr metadata = sig.getFnMetadata();
+  //
+  // Need to adjust the metadata for the extra self argument, we can only do it
+  // here since we can not build parameter expression on the metadata when
+  // constructing the alias decl op in the closure trait.
+  auto originData = FnMetaOriginDataAttr::get(
+      shared.getContext(),
+      sig.getFnMetaOriginData().getNumImplicitOriginDecls() + 1,
+      sig.getFnMetaOriginData().getCaptureOrigins(),
+      sig.getFnMetaOriginData().getIsNestedOriginsReadOnly(),
+      sig.getFnMetaOriginData().getDefinesInteriorOrigins());
+  SmallVector<ArgConvention> argConventions;
+  argConventions.push_back(ArgConvention::Mut);
+  llvm::append_range(argConventions, sig.getFnMetadata().getArgConventions());
+
+  TypedAttr metadata =
+      FnMetadataAttr::get(shared.getContext(), argConventions,
+                          sig.getFnMetadata().getFnEffects(), originData);
+
   evaluator.setDeclBinding(traitSig.getParamName(3), metadata);
 
   // 5th, the implicit origin decl list.

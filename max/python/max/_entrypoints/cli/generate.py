@@ -90,7 +90,11 @@ async def stream_text_to_console(
     # prompt so the tokenizer encodes it directly instead of trying to apply a
     # chat template. Chat models (with a template) and multimodal requests
     # still go through the messages path.
-    has_chat_template = bool(getattr(tokenizer.delegate, "chat_template", None))
+    # Custom tokenizers (--custom-architectures) may have no HF delegate at
+    # all; treat them like template-less tokenizers.
+    has_chat_template = bool(
+        getattr(getattr(tokenizer, "delegate", None), "chat_template", None)
+    )
     if images or has_chat_template:
         request = TextGenerationRequest(
             request_id=RequestID(),
@@ -121,7 +125,7 @@ async def stream_text_to_console(
         assert isinstance(pipeline, GenerateMixin)
         async for outputs in pipeline.generate_async(request):
             if print_tokens:
-                decoded = tokenizer.delegate.decode(
+                decoded = await tokenizer.decode(
                     outputs[0].tokens, skip_special_tokens=True
                 )
                 print(decoded, end="", flush=True)
@@ -149,7 +153,7 @@ def generate_text_for_pipeline(
     tokenizer = retrieved.tokenizer
     pipeline = retrieved.factory()
     assert isinstance(pipeline, Pipeline)
-    log_basic_config(pipeline_config)
+    log_basic_config(pipeline_config, memory_plan=retrieved.memory_plan)
     logger.info("max_batch_size: %d", pipeline.max_batch_size)
 
     capture = OneShotCapture(top_n=profile_top_n) if profile else None

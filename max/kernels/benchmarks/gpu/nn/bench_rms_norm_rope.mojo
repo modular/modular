@@ -122,7 +122,7 @@ def bench_rms_norm_rope_gpu[
                 sin_fn,
                 output_fn,
                 Coord(shape),
-                Scalar[DType.int](cols),
+                Int(cols),
                 gamma,
                 epsilon,
                 weight_offset,
@@ -153,7 +153,7 @@ def bench_rms_norm_rope_gpu[
 
 
 def main() raises:
-    comptime dtype = get_defined_dtype["dtype", DType.bfloat16]()
+    comptime dtype = get_defined_dtype["dtype", .bfloat16]()
     comptime shape = int_list_to_tuple[
         get_defined_shape["shape", "32x2048x12x128"]()
     ]()

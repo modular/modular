@@ -90,7 +90,7 @@ from std.utils.static_tuple import StaticTuple
 from .smem import SM100AttentionSMem
 
 
-comptime f32x2 = SIMD[DType.float32, 2]
+comptime f32x2 = SIMD[.float32, 2]
 
 
 @always_inline
@@ -190,7 +190,7 @@ def fa4_scale_write_output[
             )
             var o_inner = Int(local_row) * o_sw_K
             (o_smem_arg + blk * BM * o_sw_K + o_swizzle(o_inner)).bitcast[
-                Scalar[DType.uint32]
+                UInt32
             ]().store(packed)
         else:
             var o_vals = tcgen05_ld[
@@ -209,7 +209,7 @@ def fa4_scale_write_output[
             # Block `blk` is one k-block [BM, o_sw_K]; col % o_sw_K == 0.
             var o_inner = Int(local_row) * o_sw_K
             (o_smem_arg + blk * BM * o_sw_K + o_swizzle(o_inner)).bitcast[
-                Scalar[DType.uint32]
+                UInt32
             ]().store(packed)
 
     comptime if batched:
@@ -287,8 +287,8 @@ def fa4_lse_combine_write[
     final_scale_local: Float32,
     final_scale_peer: Float32,
     o_smem_arg: SharedMemPointer[Scalar[output_type]],
-    own_o_tmem: TMemTile[DType.float32, config.BM, config.padded_ov_depth],
-    peer_o_tmem: TMemTile[DType.float32, config.BM, config.padded_ov_depth],
+    own_o_tmem: TMemTile[.float32, config.BM, config.padded_ov_depth],
+    peer_o_tmem: TMemTile[.float32, config.BM, config.padded_ov_depth],
     ragged_tma_store: RaggedTMA3DTile[
         output_type,
         output_swizzle_mode,
@@ -410,7 +410,7 @@ def fa4_lse_combine_write[
         # Block `j` is one k-block [BM, o_sw_K]; col % o_sw_K == 0.
         var o_inner = Int(local_row) * o_sw_K
         (o_smem_arg + j * BM * o_sw_K + o_swizzle(o_inner)).bitcast[
-            Scalar[DType.uint32]
+            UInt32
         ]().store(packed)
 
     # Sync all WARPGROUP_SIZE threads before the TMA store.
@@ -461,8 +461,8 @@ def fa4_ws_intracta_combine[
     own_sum: Float32,
     scale_log2e: Float32,
     o_tmem: UInt32,
-    stage_smem: SharedMemPointer[Scalar[DType.float32]],
-    maxsum_smem: SharedMemPointer[Scalar[DType.float32]],
+    stage_smem: SharedMemPointer[Float32],
+    maxsum_smem: SharedMemPointer[Float32],
     o_smem: SharedMemPointer[Scalar[output_type]],
 ) -> Tuple[Float32, Float32]:
     """Intra-CTA `m_pack`-way LSE combine for the `.ws` MMA_M=32 datapath.
@@ -651,7 +651,7 @@ def fa4_ws_intracta_combine[
     var col0 = g * own_cols
     comptime for ob in range(own_oblocks):
         var oblk = (col0 // o_sw_K) + ob  # global output-block index
-        var packed = SIMD[DType.uint32, 4]()
+        var packed = SIMD[.uint32, 4]()
         comptime for sb in range(sub):
             var sblk = oblk * sub + sb  # global stage-block index
             comptime for hc in range(2):  # two f32x2 halves per stage-block
@@ -679,14 +679,12 @@ def fa4_ws_intracta_combine[
                 comptime cc = sb * 2 + hc  # f32x2 chunk within the output block
                 comptime if size_of[output_type]() == 4:
                     # f32 output: each f32x2 chunk is two u32 store lanes.
-                    var u2 = bitcast[DType.uint32, 2](acc)
+                    var u2 = bitcast[.uint32, 2](acc)
                     packed[2 * cc] = u2[0]
                     packed[2 * cc + 1] = u2[1]
                 else:
                     # bf16/f16 output: each f32x2 chunk packs into one u32 lane.
-                    packed[cc] = bitcast[DType.uint32, 1](
-                        acc.cast[output_type]()
-                    )
+                    packed[cc] = bitcast[.uint32, 1](acc.cast[output_type]())
         st_shared_v4_b32(o_smem, oblk * rows * o_sw_K + r * o_sw_K, packed)
 
     # Per-row fully-reduced (M_cta, L_cta) (raw max, base-2 denominator),
@@ -709,9 +707,9 @@ def fa4_ws_level1_combine[
     own_sum: Float32,
     scale_log2e: Float32,
     o_tmem: UInt32,
-    stage_smem: SharedMemPointer[Scalar[DType.float32]],
-    maxsum_smem: SharedMemPointer[Scalar[DType.float32]],
-    mut o_band: Array[Scalar[DType.float32], ov_depth // m_pack],
+    stage_smem: SharedMemPointer[Float32],
+    maxsum_smem: SharedMemPointer[Float32],
+    mut o_band: Array[Float32, ov_depth // m_pack],
 ) -> Tuple[Float32, Float32]:
     """Level 1 of the two-level WS combine: per-warpgroup `m_pack`-way merge of
     the packed-TMEM datapath quarters into an UNNORMALIZED partial.
@@ -885,9 +883,9 @@ def fa4_ws_level2_reduce_scatter_write[
     own_max: Float32,
     own_sum: Float32,
     scale_log2e: Float32,
-    o_band: Array[Scalar[DType.float32], ov_depth // m_pack],
-    l2_stage_smem: SharedMemPointer[Scalar[DType.float32]],
-    l2_maxsum_smem: SharedMemPointer[Scalar[DType.float32]],
+    o_band: Array[Float32, ov_depth // m_pack],
+    l2_stage_smem: SharedMemPointer[Float32],
+    l2_maxsum_smem: SharedMemPointer[Float32],
     o_smem: SharedMemPointer[Scalar[output_type]],
 ) -> Tuple[Float32, Float32]:
     """Level 2 of the two-level WS combine: intra-CTA cross-warpgroup
@@ -995,7 +993,7 @@ def fa4_ws_level2_reduce_scatter_write[
         var col0 = g * own_cols
         comptime for ob in range(own_oblocks):
             var oblk = (col0 // o_sw_K) + ob  # global output-block index
-            var packed = SIMD[DType.uint32, 4]()
+            var packed = SIMD[.uint32, 4]()
             comptime for sb in range(sub):
                 comptime lsblk = ob * sub + sb  # local stage-block within band
                 var sblk = g * own_sblocks + lsblk  # global stage-block
@@ -1014,12 +1012,12 @@ def fa4_ws_level2_reduce_scatter_write[
                     comptime cc = sb * 2 + hc  # f32x2 chunk within output block
                     comptime if size_of[output_type]() == 4:
                         # f32 output: each f32x2 chunk is two u32 store lanes.
-                        var u2 = bitcast[DType.uint32, 2](acc)
+                        var u2 = bitcast[.uint32, 2](acc)
                         packed[2 * cc] = u2[0]
                         packed[2 * cc + 1] = u2[1]
                     else:
                         # bf16/f16 output: each f32x2 chunk packs into one u32.
-                        packed[cc] = bitcast[DType.uint32, 1](
+                        packed[cc] = bitcast[.uint32, 1](
                             acc.cast[output_type]()
                         )
             st_shared_v4_b32(o_smem, oblk * rows * o_sw_K + r * o_sw_K, packed)
@@ -1041,9 +1039,9 @@ def fa4_ws_intracta_combine_partial[
     own_sum: Float32,
     scale_log2e: Float32,
     o_tmem: UInt32,
-    stage_smem: SharedMemPointer[Scalar[DType.float32]],
-    maxsum_smem: SharedMemPointer[Scalar[DType.float32]],
-    mut o_band_norm: Array[Scalar[DType.float32], ov_depth // m_pack],
+    stage_smem: SharedMemPointer[Float32],
+    maxsum_smem: SharedMemPointer[Float32],
+    mut o_band_norm: Array[Float32, ov_depth // m_pack],
 ) -> Tuple[Float32, Float32]:
     """T==1 cross-CTA (split-K) partial: the 4-way intra-CTA combine emitting the
     NORMALIZED per-CTA band into `o_band_norm` (registers) + returning
@@ -1090,10 +1088,10 @@ def fa4_ws_level2_combine_partial[
     own_max: Float32,
     own_sum: Float32,
     scale_log2e: Float32,
-    o_band: Array[Scalar[DType.float32], ov_depth // m_pack],
-    l2_stage_smem: SharedMemPointer[Scalar[DType.float32]],
-    l2_maxsum_smem: SharedMemPointer[Scalar[DType.float32]],
-    mut o_band_norm: Array[Scalar[DType.float32], ov_depth // m_pack],
+    o_band: Array[Float32, ov_depth // m_pack],
+    l2_stage_smem: SharedMemPointer[Float32],
+    l2_maxsum_smem: SharedMemPointer[Float32],
+    mut o_band_norm: Array[Float32, ov_depth // m_pack],
 ) -> Tuple[Float32, Float32]:
     """T>=2 cross-CTA (split-K) partial: a fork of
     `fa4_ws_level2_reduce_scatter_write` that emits the NORMALIZED per-CTA band
@@ -1191,9 +1189,9 @@ def fa4_ws_splitk_reduce_scatter_write[
     own_max: Float32,
     own_sum: Float32,
     scale_log2e: Float32,
-    o_band_norm: Array[Scalar[DType.float32], ov_depth // m_pack],
-    stage_smem: SharedMemPointer[Scalar[DType.float32]],
-    maxsum_smem: SharedMemPointer[Scalar[DType.float32]],
+    o_band_norm: Array[Float32, ov_depth // m_pack],
+    stage_smem: SharedMemPointer[Float32],
+    maxsum_smem: SharedMemPointer[Float32],
     o_smem: SharedMemPointer[Scalar[output_type]],
     publish_mbar: MBarType,
     ragged_tma_store: RaggedTMA3DTile[
@@ -1327,7 +1325,7 @@ def fa4_ws_splitk_reduce_scatter_write[
                         psum[0] = own_sum
                         comptime for pp in range(P_static - 1):
                             var rr = pp if pp < b_rank else pp + 1
-                            var ms = load_cluster_smem[DType.float32, 2](
+                            var ms = load_cluster_smem[.float32, 2](
                                 maxsum_smem + local_row * 2, UInt32(rr)
                             )
                             pmax[pp + 1] = ms[0]
@@ -1388,7 +1386,7 @@ def fa4_ws_splitk_reduce_scatter_write[
                         comptime col0 = gg * own_cols
                         comptime for ob in range(own_oblocks):
                             comptime oblk = (col0 // o_sw_K) + ob
-                            var packed = SIMD[DType.uint32, 4]()
+                            var packed = SIMD[.uint32, 4]()
                             comptime for sb in range(sub):
                                 comptime lsblk = ob * sub + sb
                                 comptime for hc in range(2):
@@ -1398,11 +1396,11 @@ def fa4_ws_splitk_reduce_scatter_write[
                                     )
                                     comptime cc = sb * 2 + hc
                                     comptime if size_of[output_type]() == 4:
-                                        var u2 = bitcast[DType.uint32, 2](acc)
+                                        var u2 = bitcast[.uint32, 2](acc)
                                         packed[2 * cc] = u2[0]
                                         packed[2 * cc + 1] = u2[1]
                                     else:
-                                        packed[cc] = bitcast[DType.uint32, 1](
+                                        packed[cc] = bitcast[.uint32, 1](
                                             acc.cast[output_type]()
                                         )
                             st_shared_v4_b32(
@@ -1517,10 +1515,10 @@ def fa4_splitk_stage_partial[
     local_row: UInt32,
     final_scale_local: Float32,
     final_scale_peer: Float32,
-    stage_smem: SharedMemPointer[Scalar[DType.float32]],
-    own_o_tmem: TMemTile[DType.float32, config.BM, config.padded_ov_depth],
-    peer_o_tmem: TMemTile[DType.float32, config.BM, config.padded_ov_depth],
-    mut o_final: Array[Scalar[DType.float32], band_cols],
+    stage_smem: SharedMemPointer[Float32],
+    own_o_tmem: TMemTile[.float32, config.BM, config.padded_ov_depth],
+    peer_o_tmem: TMemTile[.float32, config.BM, config.padded_ov_depth],
+    mut o_final: Array[Float32, band_cols],
 ):
     """Split-K pass 1: LSE-combine the two WG O fragments into this partition's
     NORMALIZED `O_cta` (f32) over the FULL `[0, iters)` depth range, routing each
@@ -1697,8 +1695,8 @@ def fa4_splitk_combine_write[
     own_max: Float32,
     own_sum: Float32,
     scale_log2e: Float32,
-    stage_smem: SharedMemPointer[Scalar[DType.float32]],
-    maxsum_smem: SharedMemPointer[Scalar[DType.float32]],
+    stage_smem: SharedMemPointer[Float32],
+    maxsum_smem: SharedMemPointer[Float32],
     o_smem_arg: SharedMemPointer[Scalar[output_type]],
     publish_mbar: MBarType,
     ragged_tma_store: RaggedTMA3DTile[
@@ -1713,7 +1711,7 @@ def fa4_splitk_combine_write[
     num_output_rows: Int32,
     out_head_idx: UInt32,
     out_row_idx: UInt32,
-    mut o_final: Array[Scalar[DType.float32], band_cols],
+    mut o_final: Array[Float32, band_cols],
 ):
     """Split-K pass 2 (reduce-scatter): EVERY partition's WG0 owns the
     depth-column band `[wg_j_offset, wg_j_offset+iters_per_wg)` (output blocks).
@@ -1799,7 +1797,7 @@ def fa4_splitk_combine_write[
     psum[0] = own_sum
     comptime for p in range(P - 1):
         var r = p if p < b else p + 1
-        var ms = load_cluster_smem[DType.float32, 2](
+        var ms = load_cluster_smem[.float32, 2](
             maxsum_smem + tid * 2, UInt32(r)
         )
         pmax[p + 1] = ms[0]
@@ -1824,7 +1822,7 @@ def fa4_splitk_combine_write[
         gsum = gsum + w[p]
     var inv_gsum = recip(gsum)
     comptime for p in range(0, P, 2):
-        var wp = SIMD[DType.float32, 2](w[p], w[p + 1]) * inv_gsum
+        var wp = SIMD[.float32, 2](w[p], w[p + 1]) * inv_gsum
         w[p] = wp[0]
         w[p + 1] = wp[1]
 
@@ -1954,12 +1952,12 @@ def fa4_splitk_reduce_scatter_write[
     scale_log2e: Float32,
     final_scale_local: Float32,
     final_scale_peer: Float32,
-    stage_smem: SharedMemPointer[Scalar[DType.float32]],
-    maxsum_smem: SharedMemPointer[Scalar[DType.float32]],
+    stage_smem: SharedMemPointer[Float32],
+    maxsum_smem: SharedMemPointer[Float32],
     o_smem_arg: SharedMemPointer[Scalar[output_type]],
     publish_mbar: MBarType,
-    own_o_tmem: TMemTile[DType.float32, config.BM, config.padded_ov_depth],
-    peer_o_tmem: TMemTile[DType.float32, config.BM, config.padded_ov_depth],
+    own_o_tmem: TMemTile[.float32, config.BM, config.padded_ov_depth],
+    peer_o_tmem: TMemTile[.float32, config.BM, config.padded_ov_depth],
     ragged_tma_store: RaggedTMA3DTile[
         output_type,
         output_swizzle_mode,
@@ -2024,9 +2022,7 @@ def fa4_splitk_reduce_scatter_write[
             if partition_idx == UInt32(p_static):
                 comptime if ipw > 0:
                     comptime band_cols = ipw * o_sw_K
-                    var o_final = Array[Scalar[DType.float32], band_cols](
-                        uninitialized=True
-                    )
+                    var o_final = Array[Float32, band_cols](uninitialized=True)
                     if warp_group_idx == UInt32(0):
                         # 1. Stage PEER bands -> smem (own band skipped).
                         fa4_splitk_stage_partial[
@@ -2109,9 +2105,7 @@ def fa4_splitk_reduce_scatter_write[
                     # and publish (round-1). No bf16 write here -> no
                     # round-2 needed; the staged O_cta stays alive for
                     # peers via the kernel's terminal `cluster_sync()`.
-                    var o_final_empty = Array[Scalar[DType.float32], 0](
-                        uninitialized=True
-                    )
+                    var o_final_empty = Array[Float32, 0](uninitialized=True)
                     if warp_group_idx == UInt32(0):
                         fa4_splitk_stage_partial[
                             output_type,
@@ -2204,8 +2198,8 @@ def fa4_softmax[
         tma_blocks_per_op=_,
     ],
     sink_weights: SinkType,
-    q_scale: QScaleType = NullPointer[DType.float32, AddressSpace.SHARED](),
-    k_scale: KScaleType = NullPointer[DType.float32, AddressSpace.SHARED](),
+    q_scale: QScaleType = NullPointer[.float32, AddressSpace.SHARED](),
+    k_scale: KScaleType = NullPointer[.float32, AddressSpace.SHARED](),
     # Workspace (traditional/unfused) split-K egress. A non-null `ws_lse_ptr` is
     # what turns the egress on: the KV is windowed by `ws_num_partitions`, the O
     # store is redirected into this partition's slice of the workspace
@@ -2215,7 +2209,7 @@ def fa4_softmax[
     # Defaulting the pointer to null keeps every non-workspace caller (2Q, MLA)
     # byte-identical without them naming any of these.
     ws_num_partitions: UInt32 = 1,
-    ws_lse_ptr: WSLSEType = NullPointer[DType.float32](),
+    ws_lse_ptr: WSLSEType = NullPointer[.float32](),
     ws_num_rows_q: UInt32 = 0,
 ):
     # Local aliases matching SM100MHA2Q comptime members
@@ -2235,7 +2229,7 @@ def fa4_softmax[
     # the flag cannot disagree with the pointer.
     comptime workspace_split = not WSLSEType.is_null
     comptime assert (
-        WSLSEType.is_null or WSLSEType.dtype == DType.float32
+        WSLSEType.is_null or WSLSEType.dtype == .float32
     ), "the workspace split-K LSE buffer is f32"
     # Warp-specialized packed-TMEM (1x4 / Layout-G) per-quarter score geometry.
     # `score_cols` is the physical S/P column extent one warp reads/writes;
@@ -3261,16 +3255,16 @@ def fa4_softmax[
                     comptime WS_ML = config.m_pack * config.BM * 2
                     comptime WS_L2STAGE = config.ov_depth * config.BM
                     comptime WS_L2MS = config.BM * 2
-                    var ws_f32e = smem.o_smem[DType.float32]()
+                    var ws_f32e = smem.o_smem[.float32]()
                     var ws_maxsum1e = ws_f32e + (2 * WS_STAGE + WS_ML)
                     var ws_l2_stagee = ws_f32e + (2 * WS_STAGE + 2 * WS_ML)
                     var ws_o_e = (
                         ws_l2_stagee + (WS_L2STAGE + WS_L2MS)
                     ).bitcast[Scalar[output_type]]()
                     var o_band_zero = Array[
-                        Scalar[DType.float32],
+                        Float32,
                         config.ov_depth // config.m_pack,
-                    ](fill=Scalar[DType.float32](0))
+                    ](fill=Float32(0))
                     fa4_ws_splitk_reduce_scatter_write[
                         config,
                         config.m_pack,
@@ -3284,7 +3278,7 @@ def fa4_softmax[
                         warp_group_idx,
                         UInt32(config.splitk_partitions),
                         splitk_partition_idx(UInt32(config.splitk_partitions)),
-                        min_or_neg_inf[DType.float32](),
+                        min_or_neg_inf[.float32](),
                         Float32(0),
                         scale_log2e,
                         o_band_zero,
@@ -3298,11 +3292,11 @@ def fa4_softmax[
                         gmem_row + cta_q_offset,
                     )
                 elif splitk_combine_active:
-                    var stage = smem.o_smem[DType.float32]()
+                    var stage = smem.o_smem[.float32]()
                     var maxsum = stage + (config.BM * padded_ov_depth)
                     # Neutral (max,sum): -inf never wins the cluster Gmax, and
                     # sum 0 zeroes this partition's combine weight regardless.
-                    maxsum[row * 2] = min_or_neg_inf[DType.float32]()
+                    maxsum[row * 2] = min_or_neg_inf[.float32]()
                     maxsum[row * 2 + 1] = Float32(0)
                     # Zero-fill all depth columns (WG0 covers the full range at
                     # 1Q) so peers' weight-0 DSMEM read of this partition is a
@@ -3326,7 +3320,7 @@ def fa4_softmax[
                         warp_idx & 3,
                         warp_group_idx,
                         splitk_partition_idx(UInt32(config.splitk_partitions)),
-                        min_or_neg_inf[DType.float32](),
+                        min_or_neg_inf[.float32](),
                         Float32(0),
                         scale_log2e,
                         Float32(0),
@@ -3938,7 +3932,7 @@ def fa4_softmax[
             ).kv_bytes, (
                 "WS two-level combine staging must fit the dead Q+KV span"
             )
-            var ws_f32 = smem.o_smem[DType.float32]()
+            var ws_f32 = smem.o_smem[.float32]()
             var ws_stage0 = ws_f32
             var ws_stage1 = ws_stage0 + WS_STAGE
             var ws_maxsum0 = ws_stage1 + WS_STAGE
@@ -3961,7 +3955,7 @@ def fa4_softmax[
                     # `ws_l2_stage`/`ws_maxsum1` for the cross-CTA staging (the
                     # intra-CTA `ws_stage0`/`ws_maxsum0` are consumed above).
                     var o_band_norm_t1 = Array[
-                        Scalar[DType.float32],
+                        Float32,
                         config.ov_depth // config.m_pack,
                     ](uninitialized=True)
                     var m_cta_t1, l_cta_t1 = fa4_ws_intracta_combine_partial[
@@ -4071,9 +4065,9 @@ def fa4_softmax[
                 var ws_maxsum = (
                     ws_maxsum0 if warp_group_idx == UInt32(0) else ws_maxsum1
                 )
-                var o_band = Array[
-                    Scalar[DType.float32], config.ov_depth // config.m_pack
-                ](uninitialized=True)
+                var o_band = Array[Float32, config.ov_depth // config.m_pack](
+                    uninitialized=True
+                )
                 var m_wg, l_wg = fa4_ws_level1_combine[
                     config.m_pack, config.BM, config.ov_depth, use_fma=use_fma
                 ](
@@ -4100,7 +4094,7 @@ def fa4_softmax[
                     # dead Level-1 maxsum, ordered by Level 2's barrier 3) holds
                     # the per-CTA (M,L).
                     var o_band_norm = Array[
-                        Scalar[DType.float32],
+                        Float32,
                         config.ov_depth // config.m_pack,
                     ](uninitialized=True)
                     var m_cta, l_cta = fa4_ws_level2_combine_partial[
@@ -4217,7 +4211,7 @@ def fa4_softmax[
                 # its OWN depth band from all peers and writes it. (The non-empty
                 # partition here carries the data; trailing empty partitions take
                 # the empty-partition path above and combine their bands from it.)
-                var stage = smem.o_smem[DType.float32]()
+                var stage = smem.o_smem[.float32]()
                 var maxsum = stage + (config.BM * padded_ov_depth)
                 # o0 tile typed with `config.BM` exactly — `o_tile`'s
                 # `BM // config.num_q` does not fold to `config.BM` at parse
@@ -4443,7 +4437,7 @@ def fa4_softmax[
                 config.BM * config.padded_ov_depth * 4 + 2 * 256 * 4
                 <= type_of(smem).q_bytes + type_of(smem).kv_bytes
             ), "split-K f32 O+(max,sum) staging must fit in the dead Q+KV span"
-            var stage = smem.o_smem[DType.float32]()
+            var stage = smem.o_smem[.float32]()
             var maxsum = stage + (config.BM * config.padded_ov_depth)
 
             # --- Publish (max,sum) for both WGs, then stage + reduce-scatter. ---

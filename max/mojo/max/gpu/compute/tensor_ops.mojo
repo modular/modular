@@ -61,7 +61,7 @@ def tc_reduce_gevm_8x[
     """
 
     comptime assert (
-        out_type == DType.float32 and in_type == DType.bfloat16
+        out_type == .float32 and in_type == .bfloat16
     ), "unsupported input/output type"
 
     var d_reg = SIMD[out_type, simd_width]()
@@ -96,7 +96,7 @@ def tc_reduce_gevm_4x[
     """
 
     comptime assert (
-        out_type == DType.float32 and in_type == DType.bfloat16
+        out_type == .float32 and in_type == .bfloat16
     ), "unsupported input/output type"
 
     var d_reg = SIMD[out_type, simd_width]()
@@ -157,7 +157,7 @@ def _tc_reduce_vector[
     """
 
     comptime assert (
-        out_type == DType.float32 and in_type == DType.bfloat16
+        out_type == .float32 and in_type == .bfloat16
     ), "unsupported input/output type"
 
     comptime if simd_width == 1:
@@ -255,9 +255,9 @@ def _tc_reduce_scalar[
         Uses matrix multiply-accumulate (MMA) operations for reduction.
     """
 
-    comptime assert out_type == DType.float32
+    comptime assert out_type == .float32
 
-    comptime if out_type == DType.float32 and in_type == DType.float16:
+    comptime if out_type == .float32 and in_type == .float16:
         var d_reg = SIMD[out_type, 2]()
         var a_reg = Scalar[in_type](1)
         var b_reg: Scalar[in_type] = val
@@ -271,7 +271,7 @@ def _tc_reduce_scalar[
 
         return d_reg[0]
 
-    elif out_type == DType.float32 and in_type == DType.bfloat16:
+    elif out_type == .float32 and in_type == .bfloat16:
         var d_reg = SIMD[out_type, 4]()
         var a_reg = SIMD[in_type, 4](1)
         var b_reg = SIMD[in_type, 2]()
@@ -285,7 +285,7 @@ def _tc_reduce_scalar[
 
         return d_reg[0]
 
-    elif out_type == DType.float32 and in_type == DType.float32:
+    elif out_type == .float32 and in_type == .float32:
         var d_reg = SIMD[out_type, 4]()
         var a_reg = SIMD[in_type, 2](1)
         var b_reg: Scalar[in_type] = val
@@ -300,7 +300,7 @@ def _tc_reduce_scalar[
 
     else:
         comptime assert (
-            in_type == DType.float16 and out_type == DType.float16
+            in_type == .float16 and out_type == .float16
         ), "unsupported dtype"
         var d_reg = SIMD[out_type, 2]()
         var a_reg = Scalar[in_type](1)

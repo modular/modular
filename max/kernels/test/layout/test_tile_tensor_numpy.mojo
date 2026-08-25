@@ -25,7 +25,7 @@ from std.testing import (
 def test_from_numpy_shape_and_values() raises:
     var np = Python.import_module("numpy")
     var array = np.arange(6, dtype="float64").reshape(2, 3)
-    var tensor = from_numpy[DType.float64, 2](array)
+    var tensor = from_numpy[.float64, 2](array)
 
     assert_equal(tensor.layout.size(), 6)
     for r in range(2):
@@ -37,7 +37,7 @@ def test_from_numpy_shape_and_values() raises:
 def test_from_numpy_rank3() raises:
     var np = Python.import_module("numpy")
     var array = np.arange(24, dtype="int64").reshape(2, 3, 4)
-    var tensor = from_numpy[DType.int64, 3](array)
+    var tensor = from_numpy[.int64, 3](array)
 
     assert_equal(tensor.layout.size(), 24)
     assert_equal(tensor[1, 2, 3], 23)
@@ -48,7 +48,7 @@ def test_from_numpy_aliases() raises:
     # The borrow is zero-copy, so writes are visible on both sides.
     var np = Python.import_module("numpy")
     var array = np.zeros(Python.tuple(2, 2), dtype="float64")
-    var tensor = from_numpy[DType.float64, 2](array)
+    var tensor = from_numpy[.float64, 2](array)
     tensor[1, 1] = 5.0
     assert_almost_equal(Float64(py=array[1][1]), 5.0)
     _ = array
@@ -58,7 +58,7 @@ def test_from_numpy_wrong_rank_raises() raises:
     var np = Python.import_module("numpy")
     var array = np.arange(6, dtype="float64").reshape(2, 3)
     with assert_raises(contains="expected a 3-D array"):
-        _ = from_numpy[DType.float64, 3](array)
+        _ = from_numpy[.float64, 3](array)
     _ = array
 
 
@@ -66,7 +66,7 @@ def test_from_numpy_non_contiguous_raises() raises:
     var np = Python.import_module("numpy")
     var array = np.arange(12, dtype="float64").reshape(3, 4)[:, ::2]
     with assert_raises(contains="C-contiguous"):
-        _ = from_numpy[DType.float64, 2](array)
+        _ = from_numpy[.float64, 2](array)
     _ = array
 
 
@@ -121,7 +121,7 @@ def test_to_numpy_gathers_non_contiguous() raises:
 def test_numpy_roundtrip() raises:
     var np = Python.import_module("numpy")
     var array = np.arange(12, dtype="int32").reshape(3, 4)
-    var tensor = from_numpy[DType.int32, 2](array)
+    var tensor = from_numpy[.int32, 2](array)
     var back = to_numpy(tensor)
 
     assert_equal(Int(py=back.shape[0]), 3)

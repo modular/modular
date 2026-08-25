@@ -42,7 +42,7 @@ comptime CARRY: UInt8 = TOO_SHORT | TOO_LONG | TWO_CONTS
 
 
 # fmt: off
-comptime shuf1 = SIMD[DType.uint8, 16](
+comptime shuf1 = SIMD[.uint8, 16](
     TOO_LONG, TOO_LONG, TOO_LONG, TOO_LONG,
     TOO_LONG, TOO_LONG, TOO_LONG, TOO_LONG,
     TWO_CONTS, TWO_CONTS, TWO_CONTS, TWO_CONTS,
@@ -52,7 +52,7 @@ comptime shuf1 = SIMD[DType.uint8, 16](
     TOO_SHORT | TOO_LARGE | TOO_LARGE_1000 | OVERLONG_4
 )
 
-comptime shuf2 = SIMD[DType.uint8, 16](
+comptime shuf2 = SIMD[.uint8, 16](
     CARRY | OVERLONG_3 | OVERLONG_2 | OVERLONG_4,
     CARRY | OVERLONG_2,
     CARRY,
@@ -70,7 +70,7 @@ comptime shuf2 = SIMD[DType.uint8, 16](
     CARRY | TOO_LARGE | TOO_LARGE_1000,
     CARRY | TOO_LARGE | TOO_LARGE_1000
 )
-comptime shuf3 = SIMD[DType.uint8, 16](
+comptime shuf3 = SIMD[.uint8, 16](
     TOO_SHORT, TOO_SHORT, TOO_SHORT, TOO_SHORT,
     TOO_SHORT, TOO_SHORT, TOO_SHORT, TOO_SHORT,
     TOO_LONG | OVERLONG_2 | TWO_CONTS | OVERLONG_3 | TOO_LARGE_1000 | OVERLONG_4,
@@ -110,9 +110,7 @@ def _utf8_char_width(b: Byte) -> Int:
 @always_inline
 def _extract_vector[
     width: SIMDLength, //, offset: Int
-](a: SIMD[DType.uint8, width], b: SIMD[DType.uint8, width]) -> SIMD[
-    DType.uint8, width
-]:
+](a: SIMD[.uint8, width], b: SIMD[.uint8, width]) -> SIMD[.uint8, width]:
     # generates a single `vpalignr` on x86 with AVX
     return a.join(b).slice[width, offset=offset]()
 
@@ -120,11 +118,11 @@ def _extract_vector[
 def validate_chunk[
     simd_size: Int
 ](
-    current_block: SIMD[DType.uint8, simd_size],
-    previous_input_block: SIMD[DType.uint8, simd_size],
-) -> SIMD[DType.uint8, simd_size]:
-    comptime v0f = SIMD[DType.uint8, simd_size](0x0F)
-    comptime v80 = SIMD[DType.uint8, simd_size](0x80)
+    current_block: SIMD[.uint8, simd_size],
+    previous_input_block: SIMD[.uint8, simd_size],
+) -> SIMD[.uint8, simd_size]:
+    comptime v0f = SIMD[.uint8, simd_size](0x0F)
+    comptime v80 = SIMD[.uint8, simd_size](0x80)
     comptime third_byte = 0b11100000 - 0x80
     comptime fourth_byte = 0b11110000 - 0x80
     var prev1 = _extract_vector[simd_size - 1](
@@ -167,7 +165,7 @@ def _is_valid_utf8_runtime(span: ImmSpan[Byte, _]) -> Bool:
     var length = len(span)
     comptime simd_size = simd_byte_width()
     var i: Int = 0
-    var previous = SIMD[DType.uint8, simd_size]()
+    var previous = SIMD[.uint8, simd_size]()
 
     while i + simd_size <= length:
         var current_bytes = ptr.unsafe_offset(i).unsafe_load[width=simd_size]()
@@ -177,16 +175,16 @@ def _is_valid_utf8_runtime(span: ImmSpan[Byte, _]) -> Bool:
             return False
         i += simd_size
 
-    var has_error: SIMD[DType.uint8, simd_size]
+    var has_error: SIMD[.uint8, simd_size]
     # last incomplete chunk
     if i != length:
-        var buffer = SIMD[DType.uint8, simd_size](0)
+        var buffer = SIMD[.uint8, simd_size](0)
         for j in range(i, length):
             buffer[j - i] = ptr.unsafe_offset(j)[]
         has_error = validate_chunk(buffer, previous)
     else:
         # Add a chunk of 0s to the end to validate continuations bytes
-        has_error = validate_chunk(SIMD[DType.uint8, simd_size](), previous)
+        has_error = validate_chunk(SIMD[.uint8, simd_size](), previous)
 
     return all(has_error.eq(0))
 
@@ -272,8 +270,8 @@ def _is_valid_utf8(span: ImmSpan[Byte, _]) -> Bool:
 @always_inline
 def _is_utf8_continuation_byte[
     w: SIMDLength
-](vec: SIMD[DType.uint8, w]) -> SIMD[DType.bool, w]:
-    return vec.cast[DType.int8]().lt(-(0b1000_0000 >> 1))
+](vec: SIMD[.uint8, w]) -> SIMD[.bool, w]:
+    return vec.cast[.int8]().lt(-(0b1000_0000 >> 1))
 
 
 @always_inline
@@ -300,10 +298,10 @@ def _utf8_first_byte_sequence_length(b: Byte) -> Int:
     assert not _is_utf8_continuation_byte(
         b
     ), "Function does not work correctly if given a continuation byte."
-    return Int(count_leading_zeros(~b) | b.lt(0b1000_0000).cast[DType.uint8]())
+    return Int(count_leading_zeros(~b) | b.lt(0b1000_0000).cast[.uint8]())
 
 
-def _utf8_byte_type(b: SIMD[DType.uint8, _], /) -> type_of(b):
+def _utf8_byte_type(b: SIMD[.uint8, _], /) -> type_of(b):
     """UTF-8 byte type.
 
     Returns:

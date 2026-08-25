@@ -223,7 +223,7 @@ def depth512_load[
         KVLUTType.dtype,
         type_of(tt_row_major[q_elems]()),
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]
 
     # kv_elems: per-stage SMEM element count, used for pipeline stage indexing.

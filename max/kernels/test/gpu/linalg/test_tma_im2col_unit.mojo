@@ -70,15 +70,15 @@ def im2col_load_kernel[
 
     var smem_ptr = external_memory[
         Scalar[dtype],
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
         name="im2col_smem",
     ]()
 
     var barrier_ptr = (
         external_memory[
-            Scalar[DType.uint8],
-            address_space=AddressSpace.SHARED,
+            UInt8,
+            address_space=.SHARED,
             alignment=128,
             name="im2col_smem",
         ]()
@@ -96,7 +96,7 @@ def im2col_load_kernel[
             dtype,
             smem_layout,
             MutAnyOrigin,
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
             alignment=128,
         ]
         var smem_tile = smem_tile_t(smem_ptr)

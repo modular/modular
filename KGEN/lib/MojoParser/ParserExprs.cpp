@@ -401,6 +401,7 @@ bool ParserBase::isPrimaryExprStart(Token::Kind tokKind) {
   case Token::kw_Self:
   case Token::kw__:
   case Token::dot_dot_dot:
+  case Token::dot:
   case Token::float_num:
   case Token::string:
   case Token::t_string:
@@ -550,6 +551,25 @@ ParseResult ExprParser::parsePrimaryExpr(ExprNode *&result) {
     result =
         alloc<SimpleLiteralNode>(ExprNode::kDiscardLiteral, startTok.getLoc());
     break;
+  case Token::dot: {
+    // Inferred attribute reference: `.member` (base type inferred from
+    // context), e.g. `foo(.f64)`.
+    SMLoc dotLoc = startTok.getLoc();
+    consumeToken(Token::dot);
+    Token nameTok = getToken();
+    StringRef spelling = nameTok.getSpelling();
+    if (parseIdentifier("expected name in inferred attribute reference",
+                        nullptr, /*forbidStartOfLine=*/false,
+                        /*allowKeyword=*/true)) {
+      // If we didn't get an identifier, recover by using an empty string.
+      // Reuse the spelling buffer to preserve the expected location of the
+      // identifier.
+      spelling = StringRef(spelling.data(), 0);
+    }
+    result = alloc<InferredAttributeRefNode>(
+        dotLoc, spelling, nameTok.is(Token::escaped_identifier));
+    break;
+  }
   case Token::dot_dot_dot:
     consumeToken(Token::dot_dot_dot);
     result =
@@ -701,7 +721,11 @@ ParseResult ExprParser::parsePrimaryExpr(ExprNode *&result) {
       auto loc = consumeToken(Token::caret).getLoc();
 
       // We know this is a binary ^ if there is a primary expression after it.
-      if (ParserBase::isPrimaryExprStart(getToken().getKind()) &&
+      // Leading-dot inferred attribute refs (`.member`) must not count:
+      // `a^.b` is postfix transfer followed by attribute access, not
+      // `a ^ (.b)`.
+      Token::Kind nextKind = getToken().getKind();
+      if (nextKind != Token::dot && ParserBase::isPrimaryExprStart(nextKind) &&
           isTokenInCurrentStatement()) {
         cursor.restore(lexer);
         break;

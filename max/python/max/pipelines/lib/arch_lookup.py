@@ -43,6 +43,7 @@ if TYPE_CHECKING:
         TextAndVisionContext,
         TextContext,
     )
+    from max.pipelines.diffusion.config import TaylorSeerDefaults
     from max.pipelines.kv_cache.memory_planner import MemoryPlanner
     from max.pipelines.modeling.config_enums import SupportedEncoding
     from max.pipelines.modeling.types import (
@@ -300,6 +301,9 @@ class SupportedArchitecture:
     If None, the global default (compact JSON) is used.
     """
 
+    denoising_cache_defaults: TaylorSeerDefaults | None = None
+    """TaylorSeer tuning for this architecture. User-set fields always win."""
+
     supports_overlap_scheduler: bool = True
     """Whether this architecture supports auto-enabling the overlap scheduler.
 
@@ -321,7 +325,7 @@ class SupportedArchitecture:
     this architecture.
 
     When set, ``PipelineConfig`` uses the planner to estimate weight size,
-    activation memory, signal-buffer memory, and vision cache entry bytes.
+    activation memory, and signal-buffer memory.
     Autoregressive text-generation models should set this to
     :class:`~max.pipelines.kv_cache.PagedMemoryPlanner` (or a subclass with
     architecture-specific overrides).
@@ -486,7 +490,20 @@ class ArchLookup:
             return
         for module, symbol, package in entries:
             imported = importlib.import_module(module, package)
-            self.register(getattr(imported, symbol))
+            architecture = getattr(imported, symbol)
+            existing = self.architectures.get(architecture.name)
+            if existing is not None and existing.task == architecture.task:
+                # An architecture registered eagerly under this name (e.g. via
+                # --custom-architectures) takes precedence over the deferred
+                # built-in.
+                logger.debug(
+                    "Skipping lazy registration of built-in architecture "
+                    "'%s': an architecture with that name is already "
+                    "registered.",
+                    architecture.name,
+                )
+                continue
+            self.register(architecture)
 
     def import_custom_architectures(
         self, custom_architectures: list[str]

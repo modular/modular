@@ -81,16 +81,12 @@ def generic_fused_qkv_matmul_kv_cache_bshd_continuous_batch[
     dtype: DType,
     target: StaticString = "cpu",
 ](
-    hidden_state: LayoutTensor[
-        mut=False, dtype, address_space=AddressSpace.GENERIC, ...
-    ],
-    weight: LayoutTensor[
-        mut=False, dtype, address_space=AddressSpace.GENERIC, ...
-    ],
+    hidden_state: LayoutTensor[mut=False, dtype, address_space=.GENERIC, ...],
+    weight: LayoutTensor[mut=False, dtype, address_space=.GENERIC, ...],
     kv_collection: ContinuousBatchingKVCacheCollection,
     layer_idx: UInt32,
     valid_lengths: LayoutTensor[
-        DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
+        .uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
     ],
     output: LayoutTensor[mut=True, dtype, ...],
     ctx: DeviceContext,
@@ -162,16 +158,12 @@ def generic_fused_qkv_matmul_kv_cache_bshd_paged[
     dtype: DType,
     target: StaticString = "cpu",
 ](
-    hidden_state: LayoutTensor[
-        mut=False, dtype, address_space=AddressSpace.GENERIC, ...
-    ],
-    weight: LayoutTensor[
-        mut=False, dtype, address_space=AddressSpace.GENERIC, ...
-    ],
+    hidden_state: LayoutTensor[mut=False, dtype, address_space=.GENERIC, ...],
+    weight: LayoutTensor[mut=False, dtype, address_space=.GENERIC, ...],
     kv_collection: PagedKVCacheCollection,
     layer_idx: UInt32,
     valid_lengths: LayoutTensor[
-        DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
+        .uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
     ],
     output: LayoutTensor[mut=True, dtype, ...],
     ctx: DeviceContext,
@@ -247,16 +239,12 @@ def _fused_qkv_matmul_kv_cache[
     *,
     target: StaticString,
 ](
-    hidden_state: LayoutTensor[
-        mut=False, dtype, address_space=AddressSpace.GENERIC, ...
-    ],
-    weight: LayoutTensor[
-        mut=False, dtype, address_space=AddressSpace.GENERIC, ...
-    ],
+    hidden_state: LayoutTensor[mut=False, dtype, address_space=.GENERIC, ...],
+    weight: LayoutTensor[mut=False, dtype, address_space=.GENERIC, ...],
     kv_collection: collection_t,
     layer_idx: UInt32,
     valid_lengths: LayoutTensor[
-        DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
+        .uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
     ],
     output: LayoutTensor[mut=True, dtype, ...],
     context: DeviceContext,
@@ -303,16 +291,12 @@ def _fused_qkv_matmul_kv_cache_impl[
     *,
     target: StaticString,
 ](
-    hidden_state: LayoutTensor[
-        mut=False, dtype, address_space=AddressSpace.GENERIC, ...
-    ],
-    weight: LayoutTensor[
-        mut=False, dtype, address_space=AddressSpace.GENERIC, ...
-    ],
+    hidden_state: LayoutTensor[mut=False, dtype, address_space=.GENERIC, ...],
+    weight: LayoutTensor[mut=False, dtype, address_space=.GENERIC, ...],
     kv_collection: collection_t,
     layer_idx: UInt32,
     valid_lengths: LayoutTensor[
-        DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
+        .uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
     ],
     output: LayoutTensor[mut=True, dtype, ...],
     context: Optional[DeviceContext],
@@ -415,12 +399,8 @@ def _matmul_common[
     target: StaticString,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
-    hidden_state: LayoutTensor[
-        mut=False, dtype, address_space=AddressSpace.GENERIC, ...
-    ],
-    weight: LayoutTensor[
-        mut=False, dtype, address_space=AddressSpace.GENERIC, ...
-    ],
+    hidden_state: LayoutTensor[mut=False, dtype, address_space=.GENERIC, ...],
+    weight: LayoutTensor[mut=False, dtype, address_space=.GENERIC, ...],
     context: Optional[DeviceContext],
 ) raises:
     var BS = hidden_state.dim[0]()
@@ -499,7 +479,7 @@ def generic_fused_qk_rope_bshd_continuous_batch[
     kv_collection: ContinuousBatchingKVCacheCollection,
     freqs_cis: TileTensor[mut=False, dtype, ...],
     layer_idx: UInt32,
-    valid_lengths: TileTensor[mut=False, DType.uint32, ...],
+    valid_lengths: TileTensor[mut=False, .uint32, ...],
     output: TileTensor[mut=True, dtype, ...],
     context: DeviceContext,
 ) raises:
@@ -588,7 +568,7 @@ def generic_fused_qk_rope_bshd_paged[
     kv_collection: PagedKVCacheCollection,
     freqs_cis: TileTensor[mut=False, dtype, ...],
     layer_idx: UInt32,
-    valid_lengths: TileTensor[mut=False, DType.uint32, ...],
+    valid_lengths: TileTensor[mut=False, .uint32, ...],
     output: TileTensor[mut=True, dtype, ...],
     context: DeviceContext,
 ) raises:
@@ -676,16 +656,14 @@ def generic_flash_attention_kv_cache_padded[
     local_window_size: Int = -1,
     num_heads: Int = -1,
 ](
-    q: LayoutTensor[mut=False, dtype, address_space=AddressSpace.GENERIC, ...],
+    q: LayoutTensor[mut=False, dtype, address_space=.GENERIC, ...],
     kv_collection: collection_t,
     layer_idx: UInt32,
     valid_lengths: LayoutTensor[
-        DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
+        .uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
     ],
     scale: Float32,
-    output: LayoutTensor[
-        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
-    ],
+    output: LayoutTensor[mut=True, dtype, address_space=.GENERIC, ...],
     context: DeviceContext,
     sink_weights: OptionalReg[
         LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
@@ -748,19 +726,15 @@ def generic_flash_attention_kv_cache_padded_materialized_mask[
     local_window_size: Int = -1,
     num_heads: Int = -1,
 ](
-    q: LayoutTensor[mut=False, dtype, address_space=AddressSpace.GENERIC, ...],
+    q: LayoutTensor[mut=False, dtype, address_space=.GENERIC, ...],
     kv_collection: collection_t,
     layer_idx: UInt32,
-    mask: LayoutTensor[
-        mut=False, dtype, address_space=AddressSpace.GENERIC, ...
-    ],
+    mask: LayoutTensor[mut=False, dtype, address_space=.GENERIC, ...],
     valid_lengths: LayoutTensor[
-        DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
+        .uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
     ],
     scale: Float32,
-    output: LayoutTensor[
-        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
-    ],
+    output: LayoutTensor[mut=True, dtype, address_space=.GENERIC, ...],
     context: DeviceContext,
     sink_weights: OptionalReg[
         LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
@@ -820,13 +794,11 @@ def _flash_attention_dispatch[
     mask_str: StaticString,
     local_window_size: Int = -1,
 ](
-    q: LayoutTensor[
-        dtype, _, q_origin, address_space=AddressSpace.GENERIC, ...
-    ],
+    q: LayoutTensor[dtype, _, q_origin, address_space=.GENERIC, ...],
     kv_cache: collection_t,
     layer_idx: UInt32,
     valid_lengths: LayoutTensor[
-        mut=False, DType.uint32, Layout.row_major(UNKNOWN_VALUE), _
+        mut=False, .uint32, Layout.row_major(UNKNOWN_VALUE), _
     ],
     scale: Float32,
     output: LayoutTensor[
@@ -834,7 +806,7 @@ def _flash_attention_dispatch[
         dtype,
         _,
         output_origin,
-        address_space=AddressSpace.GENERIC,
+        address_space=.GENERIC,
         ...,
     ],
     context: DeviceContext,
@@ -875,19 +847,15 @@ def _flash_attention_dispatch_materialized_mask[
     target: StaticString,
     local_window_size: Int = -1,
 ](
-    q: LayoutTensor[mut=False, dtype, address_space=AddressSpace.GENERIC, ...],
+    q: LayoutTensor[mut=False, dtype, address_space=.GENERIC, ...],
     kv_cache: collection_t,
     layer_idx: UInt32,
-    mask_nd: LayoutTensor[
-        mut=False, dtype, address_space=AddressSpace.GENERIC, ...
-    ],
+    mask_nd: LayoutTensor[mut=False, dtype, address_space=.GENERIC, ...],
     valid_lengths: LayoutTensor[
-        DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
+        .uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
     ],
     scale: Float32,
-    output: LayoutTensor[
-        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
-    ],
+    output: LayoutTensor[mut=True, dtype, address_space=.GENERIC, ...],
     context: DeviceContext,
     sink_weights: OptionalReg[
         LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
@@ -979,7 +947,7 @@ def _fused_qk_rms_norm_ragged_paged_gpu[
     weight_offset: Float32,
     total_seq_len: UInt32,
     input_row_offsets: TileTensor[
-        DType.uint32, offsets_layout, offsets_origin, Storage=offsets_storage
+        .uint32, offsets_layout, offsets_origin, Storage=offsets_storage
     ],
     q_num_heads: Int32,
     num_cols: Int32,
@@ -1093,7 +1061,7 @@ def fused_qk_rms_norm_ragged_paged[
     epsilon: Float32,
     weight_offset: Scalar[dtype],
     layer_idx: UInt32,
-    input_row_offsets: TileTensor[mut=False, DType.uint32, ...],
+    input_row_offsets: TileTensor[mut=False, .uint32, ...],
     q_output: TileTensor[mut=True, dtype, ...],
     context: DeviceContext,
 ) raises:
@@ -1201,7 +1169,7 @@ def fused_qk_rms_norm_ragged_paged[
             q_gamma,
             k_gamma,
             epsilon,
-            weight_offset.cast[DType.float32](),
+            weight_offset.cast[.float32](),
             total_seq_len,
             input_row_offsets,
             Int32(q_num_heads),
@@ -1267,7 +1235,7 @@ def _fused_qk_rms_norm_rope_process_row[
     epsilon: Float32,
     weight_offset: Scalar[dtype],
     input_row_offsets: TileTensor[
-        DType.uint32, offsets_layout, offsets_origin, Storage=offsets_storage
+        .uint32, offsets_layout, offsets_origin, Storage=offsets_storage
     ],
     num_cols: Int,
 ):
@@ -1336,7 +1304,7 @@ def _fused_qk_rms_norm_rope_process_row[
     comptime smem_align = align_of[SIMD[accum_type, simd_width]]()
     var s_norm = stack_allocation[
         accum_type,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=smem_align,
     ](row_major[head_dim]())
     if idx < num_cols:
@@ -1493,7 +1461,7 @@ def _fused_qk_rms_norm_rope_ragged_paged_gpu[
     weight_offset: Float32,
     total_seq_len: UInt32,
     input_row_offsets: TileTensor[
-        DType.uint32, offsets_layout, offsets_origin, Storage=offsets_storage
+        .uint32, offsets_layout, offsets_origin, Storage=offsets_storage
     ],
     q_num_heads: Int32,
     num_cols: Int32,
@@ -1573,7 +1541,7 @@ def fused_qk_rms_norm_rope_ragged_paged[
     epsilon: Float32,
     weight_offset: Scalar[dtype],
     layer_idx: UInt32,
-    input_row_offsets: TileTensor[mut=False, DType.uint32, ...],
+    input_row_offsets: TileTensor[mut=False, .uint32, ...],
     q_output: TileTensor[mut=True, q_out_dtype, ...],
     context: DeviceContext,
 ) raises:
@@ -1727,7 +1695,7 @@ def fused_qk_rms_norm_rope_ragged_paged[
             k_gamma,
             freqs_cis,
             epsilon,
-            weight_offset.cast[DType.float32](),
+            weight_offset.cast[.float32](),
             total_seq_len,
             input_row_offsets,
             Int32(q_num_heads),
@@ -1831,7 +1799,7 @@ def _fused_dual_qk_rms_norm_rope_ragged_paged_gpu[
     weight_offset: Float32,
     total_seq_len: UInt32,
     input_row_offsets: TileTensor[
-        DType.uint32, offsets_layout, offsets_origin, Storage=offsets_storage
+        .uint32, offsets_layout, offsets_origin, Storage=offsets_storage
     ],
     q_main_num_heads_dev: Int32,
     q_index_num_heads_dev: Int32,
@@ -1965,7 +1933,7 @@ def fused_dual_qk_rms_norm_rope_ragged_paged[
     index_epsilon: Float32,
     weight_offset: Scalar[dtype],
     layer_idx: UInt32,
-    input_row_offsets: TileTensor[mut=False, DType.uint32, ...],
+    input_row_offsets: TileTensor[mut=False, .uint32, ...],
     q_main_output: TileTensor[mut=True, q_main_out_dtype, ...],
     q_index_output: TileTensor[mut=True, q_index_out_dtype, ...],
     context: DeviceContext,
@@ -2176,7 +2144,7 @@ def fused_dual_qk_rms_norm_rope_ragged_paged[
             freqs_cis,
             main_epsilon,
             index_epsilon,
-            weight_offset.cast[DType.float32](),
+            weight_offset.cast[.float32](),
             total_seq_len,
             input_row_offsets,
             Int32(q_main_num_heads),
@@ -2208,7 +2176,7 @@ def rms_norm_kv_cache_ragged_paged[
     weight_offset: Scalar[dtype],
     layer_idx: UInt32,
     total_seq_len: UInt32,
-    input_row_offsets: TileTensor[mut=False, DType.uint32, ...],
+    input_row_offsets: TileTensor[mut=False, .uint32, ...],
     context: DeviceContext,
 ) raises:
     """Performs RMSNorm in place on new entries in the key cache.
@@ -2400,7 +2368,7 @@ def rms_norm_value_cache_ragged_paged[
     weight_offset: Scalar[dtype],
     layer_idx: UInt32,
     total_seq_len: UInt32,
-    input_row_offsets: TileTensor[mut=False, DType.uint32, ...],
+    input_row_offsets: TileTensor[mut=False, .uint32, ...],
     context: DeviceContext,
 ) raises:
     """Performs RMSNorm in place on new entries in the value cache.
@@ -2568,7 +2536,7 @@ def _print_cache[
 ](
     cache: collection_t.CacheType,
     kv_collection: collection_t,
-    valid_lengths: LayoutTensor[mut=False, DType.uint32, ...],
+    valid_lengths: LayoutTensor[mut=False, .uint32, ...],
     is_print_compact: Bool,
 ) raises -> None:
     """Prints a cache buffer, abbreviating output with ellipses."""
@@ -2607,7 +2575,7 @@ def _print_cache[
 def print_kv_cache_cont_batch_generic_cpu[
     target: StaticString, dtype: DType, kv_params: KVCacheStaticParams
 ](
-    valid_lengths: LayoutTensor[mut=False, DType.uint32, ...],
+    valid_lengths: LayoutTensor[mut=False, .uint32, ...],
     kv_collection: ContinuousBatchingKVCacheCollection[dtype, kv_params, ...],
     layer_idx: UInt32,
     is_print_compact: Bool,
@@ -2639,7 +2607,7 @@ def print_kv_cache_paged_generic_cpu[
     kv_params: KVCacheStaticParams,
     page_size: Int,
 ](
-    valid_lengths: LayoutTensor[mut=False, DType.uint32, ...],
+    valid_lengths: LayoutTensor[mut=False, .uint32, ...],
     kv_collection: PagedKVCacheCollection[
         dtype,
         kv_params,
@@ -2674,7 +2642,7 @@ def print_kv_cache_cont_batch_generic_gpu[
     target: StaticString, dtype: DType, kv_params: KVCacheStaticParams
 ](
     valid_lengths: LayoutTensor[
-        mut=False, DType.uint32, address_space=AddressSpace.GENERIC, ...
+        mut=False, .uint32, address_space=.GENERIC, ...
     ],
     kv_collection: ContinuousBatchingKVCacheCollection[dtype, kv_params, ...],
     layer_idx: UInt32,
@@ -2802,7 +2770,7 @@ def print_kv_cache_paged_generic_gpu[
     page_size: Int,
 ](
     valid_lengths: LayoutTensor[
-        mut=False, DType.uint32, address_space=AddressSpace.GENERIC, ...
+        mut=False, .uint32, address_space=.GENERIC, ...
     ],
     kv_collection: PagedKVCacheCollection[
         dtype,
@@ -2944,17 +2912,13 @@ def _continuous_batch_kv_cache_collection[
     dtype: DType, //, kv_params: KVCacheStaticParams
 ](
     blocks: LayoutTensor[mut=True, dtype, Layout.row_major[6](), _],
-    cache_lengths: LayoutTensor[
-        mut=False, DType.uint32, Layout(UNKNOWN_VALUE), _
-    ],
-    lookup_table: LayoutTensor[
-        mut=False, DType.uint32, Layout(UNKNOWN_VALUE), _
-    ],
+    cache_lengths: LayoutTensor[mut=False, .uint32, Layout(UNKNOWN_VALUE), _],
+    lookup_table: LayoutTensor[mut=False, .uint32, Layout(UNKNOWN_VALUE), _],
     max_prompt_length: LayoutTensor[
-        mut=False, DType.uint32, Layout.row_major[1](), _
+        mut=False, .uint32, Layout.row_major[1](), _
     ],
     max_cache_length: LayoutTensor[
-        mut=False, DType.uint32, Layout.row_major[1](), _
+        mut=False, .uint32, Layout.row_major[1](), _
     ],
     out result: ContinuousBatchingKVCacheCollection[
         dtype,
@@ -2983,17 +2947,13 @@ def generic_get_continuous_cache[
     dtype: DType, kv_params: KVCacheStaticParams
 ](
     blocks: LayoutTensor[mut=True, dtype, Layout.row_major[6](), _],
-    cache_lengths: LayoutTensor[
-        mut=False, DType.uint32, Layout(UNKNOWN_VALUE), _
-    ],
-    lookup_table: LayoutTensor[
-        mut=False, DType.uint32, Layout(UNKNOWN_VALUE), _
-    ],
+    cache_lengths: LayoutTensor[mut=False, .uint32, Layout(UNKNOWN_VALUE), _],
+    lookup_table: LayoutTensor[mut=False, .uint32, Layout(UNKNOWN_VALUE), _],
     max_prompt_length: LayoutTensor[
-        mut=False, DType.uint32, Layout.row_major[1](), _
+        mut=False, .uint32, Layout.row_major[1](), _
     ],
     max_cache_length: LayoutTensor[
-        mut=False, DType.uint32, Layout.row_major[1](), _
+        mut=False, .uint32, Layout.row_major[1](), _
     ],
 ) -> ContinuousBatchingKVCacheCollection[
     dtype,
@@ -3015,10 +2975,10 @@ def generic_get_paged_cache[
     dtype: DType,
 ](
     blocks: MutableInputTensor[dtype=dtype, rank=6, ...],
-    cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
-    lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
-    max_prompt_length: InputTensor[dtype=DType.uint32, rank=1, ...],
-    max_cache_length: InputTensor[dtype=DType.uint32, rank=1, ...],
+    cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
+    lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
+    max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
+    max_cache_length: InputTensor[dtype=.uint32, rank=1, ...],
     out result: PagedKVCacheCollection[
         dtype,
         KVCacheStaticParams(
@@ -3089,17 +3049,13 @@ def generic_get_paged_cache[
     page_size: Int,
 ](
     blocks: LayoutTensor[mut=True, dtype, Layout.row_major[6](), _],
-    cache_lengths: LayoutTensor[
-        mut=False, DType.uint32, Layout(UNKNOWN_VALUE), _
-    ],
-    lookup_table: LayoutTensor[
-        mut=False, DType.uint32, Layout.row_major[2](), _
-    ],
+    cache_lengths: LayoutTensor[mut=False, .uint32, Layout(UNKNOWN_VALUE), _],
+    lookup_table: LayoutTensor[mut=False, .uint32, Layout.row_major[2](), _],
     max_prompt_length: LayoutTensor[
-        mut=False, DType.uint32, Layout.row_major[1](), _
+        mut=False, .uint32, Layout.row_major[1](), _
     ],
     max_cache_length: LayoutTensor[
-        mut=False, DType.uint32, Layout.row_major[1](), _
+        mut=False, .uint32, Layout.row_major[1](), _
     ],
     out result: PagedKVCacheCollection[
         dtype,
@@ -3132,22 +3088,18 @@ def generic_get_paged_cache_with_scales[
     quantization_granularity: Int,
 ](
     blocks: LayoutTensor[mut=True, dtype, Layout.row_major[6](), _],
-    cache_lengths: LayoutTensor[
-        mut=False, DType.uint32, Layout(UNKNOWN_VALUE), _
-    ],
-    lookup_table: LayoutTensor[
-        mut=False, DType.uint32, Layout.row_major[2](), _
-    ],
+    cache_lengths: LayoutTensor[mut=False, .uint32, Layout(UNKNOWN_VALUE), _],
+    lookup_table: LayoutTensor[mut=False, .uint32, Layout.row_major[2](), _],
     max_prompt_length: LayoutTensor[
-        mut=False, DType.uint32, Layout.row_major[1](), _
+        mut=False, .uint32, Layout.row_major[1](), _
     ],
     max_cache_length: LayoutTensor[
-        mut=False, DType.uint32, Layout.row_major[1](), _
+        mut=False, .uint32, Layout.row_major[1](), _
     ],
     scales: LayoutTensor[mut=True, scale_dtype, Layout.row_major[6](), _],
     scales_lookup_table: OptionalReg[
         LayoutTensor[
-            mut=False, DType.uint32, Layout.row_major[2](), lookup_table.origin
+            mut=False, .uint32, Layout.row_major[2](), lookup_table.origin
         ]
     ] = None,
     out result: PagedKVCacheCollection[
@@ -3200,8 +3152,8 @@ def copy_kv_pages_d2h[
 ](
     device_kv_blocks: LayoutTensor[mut=True, dtype, Layout.row_major[6](), _],
     host_kv_blocks: LayoutTensor[mut=True, dtype, Layout.row_major[6](), _],
-    src_page_ids: LayoutTensor[DType.int64, Layout.row_major[1](), _],
-    dst_page_ids: LayoutTensor[DType.int64, Layout.row_major[1](), _],
+    src_page_ids: LayoutTensor[.int64, Layout.row_major[1](), _],
+    dst_page_ids: LayoutTensor[.int64, Layout.row_major[1](), _],
     layer_idx: Int,
     ctx: DeviceContext,
 ) raises:

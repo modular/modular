@@ -31,9 +31,7 @@ def _test_rope_ragged_gpu_impl[
 ](ctx: DeviceContext) raises -> None:
     """Verifies rope_ragged GPU kernel against golden values computed with PyTorch.
     """
-    comptime assert (
-        dtype == DType.float32
-    ), "goldens only for float32, currently"
+    comptime assert dtype == .float32, "goldens only for float32, currently"
 
     # Set up test hyperparameters - same as CPU test
     comptime batch_size = 2
@@ -68,10 +66,10 @@ def _test_rope_ragged_gpu_impl[
     ](input_row_offsets_layout.static_product)
 
     # Start position buffers
-    var start_pos_host_buffer = ctx.enqueue_create_host_buffer[DType.uint32](
+    var start_pos_host_buffer = ctx.enqueue_create_host_buffer[.uint32](
         start_pos_layout.static_product
     )
-    var start_pos_device_buffer = ctx.enqueue_create_buffer[DType.uint32](
+    var start_pos_device_buffer = ctx.enqueue_create_buffer[.uint32](
         start_pos_layout.static_product
     )
 
@@ -84,10 +82,10 @@ def _test_rope_ragged_gpu_impl[
     )
 
     # Position ids buffers
-    var position_ids_host_buffer = ctx.enqueue_create_host_buffer[DType.uint32](
+    var position_ids_host_buffer = ctx.enqueue_create_host_buffer[.uint32](
         position_ids_layout.static_product
     )
-    var position_ids_device_buffer = ctx.enqueue_create_buffer[DType.uint32](
+    var position_ids_device_buffer = ctx.enqueue_create_buffer[.uint32](
         position_ids_layout.static_product
     )
 
@@ -130,7 +128,7 @@ def _test_rope_ragged_gpu_impl[
             ] = freqs_cis_table_buffer[buffer_offset]
 
     # Fill explicit position ids
-    var position_ids_buffer = position_ids_input[DType.uint32]()
+    var position_ids_buffer = position_ids_input[.uint32]()
     for i in range(len(position_ids_buffer)):
         position_ids_host_buffer[i] = position_ids_buffer[i]
 
@@ -161,7 +159,7 @@ def _test_rope_ragged_gpu_impl[
         position_ids_device_buffer, position_ids_layout
     )
     var position_ids_device_tensor = TileTensor[
-        DType.uint32,
+        .uint32,
         type_of(position_ids_device_tensor_static).LayoutType,
         ImmutAnyOrigin,
     ](
@@ -333,7 +331,7 @@ def test_rope_ragged_gpu_rope_first[
     var input_row_offsets_host_buffer = ctx.enqueue_create_host_buffer[
         DType.uint32
     ](input_row_offsets_layout.static_product)
-    var start_pos_host_buffer = ctx.enqueue_create_host_buffer[DType.uint32](
+    var start_pos_host_buffer = ctx.enqueue_create_host_buffer[.uint32](
         start_pos_layout.static_product
     )
     var full_out_host_buffer = ctx.enqueue_create_host_buffer[dtype](
@@ -355,7 +353,7 @@ def test_rope_ragged_gpu_rope_first[
     var input_row_offsets_device_buffer = ctx.enqueue_create_buffer[
         DType.uint32
     ](input_row_offsets_layout.static_product)
-    var start_pos_device_buffer = ctx.enqueue_create_buffer[DType.uint32](
+    var start_pos_device_buffer = ctx.enqueue_create_buffer[.uint32](
         start_pos_layout.static_product
     )
     var full_out_device_buffer = ctx.enqueue_create_buffer[dtype](

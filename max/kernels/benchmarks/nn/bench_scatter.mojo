@@ -45,7 +45,7 @@ def bench_scatter(mut bencher: Bencher, spec: ScatterSpec) raises:
         {count = input_shape.flattened_length()}
     ).into_managed()
     rand(data_alloc.unsafe_span())
-    var data_tensor = DynamicTensor[DType.float32, 2](
+    var data_tensor = DynamicTensor[.float32, 2](
         data_alloc.unsafe_ptr(), input_shape
     )
 
@@ -57,7 +57,7 @@ def bench_scatter(mut bencher: Bencher, spec: ScatterSpec) raises:
         index_rand_min,
         index_rand_max,
     )
-    var indices_tensor = DynamicTensor[DType.int32, 2](
+    var indices_tensor = DynamicTensor[.int32, 2](
         indices_alloc.unsafe_ptr(), indices_shape
     )
 
@@ -65,14 +65,14 @@ def bench_scatter(mut bencher: Bencher, spec: ScatterSpec) raises:
         {count = indices_shape.flattened_length()}
     ).into_managed()
     rand(updates_alloc.unsafe_span())
-    var updates_tensor = DynamicTensor[DType.float32, 2](
+    var updates_tensor = DynamicTensor[.float32, 2](
         updates_alloc.unsafe_ptr(), indices_shape
     )
 
     var output_alloc = alloc[Float32](
         {count = input_shape.flattened_length()}
     ).into_managed()
-    var output_tensor = DynamicTensor[DType.float32, 2](
+    var output_tensor = DynamicTensor[.float32, 2](
         output_alloc.unsafe_ptr(), input_shape
     )
 

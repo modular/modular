@@ -49,7 +49,7 @@ def _pack_e8m0_scale_word(value: Float32) -> Int32:
     byte we ask for.
     """
     var scale = _convert_f32_to_float8_ue8m0[target=DType.float8_e8m0fnu](value)
-    var scale_byte = bitcast[DType.uint8](scale)
+    var scale_byte = bitcast[.uint8](scale)
     return Int32(
         UInt32(scale_byte)
         | (UInt32(scale_byte) << 8)
@@ -65,23 +65,23 @@ def _mfma_32x32x64_kernel[
     BaselineLayout: TensorLayout,
     ScaledLayout: TensorLayout,
 ](
-    baseline_out: TileTensor[DType.float32, BaselineLayout, MutAnyOrigin],
-    scaled_out: TileTensor[DType.float32, ScaledLayout, MutAnyOrigin],
+    baseline_out: TileTensor[.float32, BaselineLayout, MutAnyOrigin],
+    scaled_out: TileTensor[.float32, ScaledLayout, MutAnyOrigin],
 ):
     """Single-warp kernel that runs the 32x32x64 MFMA twice and writes both
     accumulators to global memory, one lane per row of each output buffer."""
     var lane = Int(lane_id())
 
     # FP4 byte 0x22 = two nibbles of E2M1 +1.0. Every byte of A and B is +1.0.
-    var a_frag = SIMD[DType.uint8, 16](UInt8(0x22))
-    var b_frag = SIMD[DType.uint8, 16](UInt8(0x22))
+    var a_frag = SIMD[.uint8, 16](UInt8(0x22))
+    var b_frag = SIMD[.uint8, 16](UInt8(0x22))
 
     var one = _pack_e8m0_scale_word(Float32(1.0))
     var two = _pack_e8m0_scale_word(Float32(2.0))
 
     # Accumulator width 16 -> wrapper dispatches the 32x32x64 instruction.
-    var baseline_acc = SIMD[DType.float32, 16](0.0)
-    var scaled_acc = SIMD[DType.float32, 16](0.0)
+    var baseline_acc = SIMD[.float32, 16](0.0)
+    var scaled_acc = SIMD[.float32, 16](0.0)
 
     cdna4_block_scaled_mfma[
         0,
@@ -112,8 +112,8 @@ def _run_mfma_32x32x64_smoke(ctx: DeviceContext) raises:
     comptime accum_width = 16
     comptime num_values = WARP_SIZE * accum_width  # 64 lanes * 16 floats = 1024
 
-    var baseline_device = ctx.enqueue_create_buffer[DType.float32](num_values)
-    var scaled_device = ctx.enqueue_create_buffer[DType.float32](num_values)
+    var baseline_device = ctx.enqueue_create_buffer[.float32](num_values)
+    var scaled_device = ctx.enqueue_create_buffer[.float32](num_values)
 
     var baseline_tt = TileTensor(
         baseline_device,
@@ -137,10 +137,8 @@ def _run_mfma_32x32x64_smoke(ctx: DeviceContext) raises:
     )
     ctx.synchronize()
 
-    var baseline_host = ctx.enqueue_create_host_buffer[DType.float32](
-        num_values
-    )
-    var scaled_host = ctx.enqueue_create_host_buffer[DType.float32](num_values)
+    var baseline_host = ctx.enqueue_create_host_buffer[.float32](num_values)
+    var scaled_host = ctx.enqueue_create_host_buffer[.float32](num_values)
     ctx.enqueue_copy(baseline_host, baseline_device)
     ctx.enqueue_copy(scaled_host, scaled_device)
     ctx.synchronize()

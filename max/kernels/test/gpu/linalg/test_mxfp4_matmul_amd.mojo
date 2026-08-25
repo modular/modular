@@ -42,11 +42,11 @@ from linalg.matmul.gpu.amd.block_scaled_matmul_amd import (
 
 
 def block_scaled_matmul_ref(
-    a_ptr: UnsafePointer[Scalar[DType.uint8], ImmutAnyOrigin],
-    b_ptr: UnsafePointer[Scalar[DType.uint8], ImmutAnyOrigin],
-    a_scales_ptr: UnsafePointer[Scalar[DType.float8_e8m0fnu], ImmutAnyOrigin],
-    b_scales_ptr: UnsafePointer[Scalar[DType.float8_e8m0fnu], ImmutAnyOrigin],
-    c_ptr: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
+    a_ptr: UnsafePointer[UInt8, ImmutAnyOrigin],
+    b_ptr: UnsafePointer[UInt8, ImmutAnyOrigin],
+    a_scales_ptr: UnsafePointer[Float8_e8m0fnu, ImmutAnyOrigin],
+    b_scales_ptr: UnsafePointer[Float8_e8m0fnu, ImmutAnyOrigin],
+    c_ptr: UnsafePointer[Float32, MutAnyOrigin],
     M_dev: Int32,
     N_dev: Int32,
     K_dev: Int32,
@@ -64,10 +64,10 @@ def block_scaled_matmul_ref(
     @always_inline
     def cast_fp4x2_to_fp32x2[
         byte_select: Int
-    ](packed: Int32, scale: Float32) -> SIMD[DType.float32, 2]:
+    ](packed: Int32, scale: Float32) -> SIMD[.float32, 2]:
         return llvm_intrinsic[
             "llvm.amdgcn.cvt.scalef32.pk.f32.fp4",
-            SIMD[DType.float32, 2],
+            SIMD[.float32, 2],
         ](packed, scale, Int32(byte_select))
 
     var m = global_idx.x
@@ -84,15 +84,15 @@ def block_scaled_matmul_ref(
     var am_ptr = a_ptr + m * (K // 2)
     var bn_ptr = b_ptr + n * (K // 2)
 
-    var accum = SIMD[DType.float32, 2](0)
+    var accum = SIMD[.float32, 2](0)
 
     for ko in range(k_groups):
-        var a_scale = am_scales_ptr[ko].cast[DType.float32]()
-        var b_scale = bn_scales_ptr[ko].cast[DType.float32]()
+        var a_scale = am_scales_ptr[ko].cast[.float32]()
+        var b_scale = bn_scales_ptr[ko].cast[.float32]()
 
         for ki in range(0, MXFP4_SF_VECTOR_SIZE // 2, 4):
-            var a_data = bitcast[DType.int32, 1](am_ptr.load[width=4](ki))
-            var b_data = bitcast[DType.int32, 1](bn_ptr.load[width=4](ki))
+            var a_data = bitcast[.int32, 1](am_ptr.load[width=4](ki))
+            var b_data = bitcast[.int32, 1](bn_ptr.load[width=4](ki))
 
             comptime for byte_select in range(4):
                 accum += cast_fp4x2_to_fp32x2[byte_select](
@@ -246,7 +246,7 @@ def test_mxfp4_matmul[
         MMA_K=MMA_K,
     ]
     comptime kernel = Kernel.run[
-        DType.float32,
+        .float32,
         type_of(c_tt).LayoutType,
         type_of(a_tt).LayoutType,
         type_of(b_tt).LayoutType,

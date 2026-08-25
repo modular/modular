@@ -138,9 +138,22 @@ def build_spec_decode_input_types(
         )
         all_input_types.extend(ep_input_types)
 
-    all_input_types.append(
+    all_input_types.extend(spec_decode_tail_input_types(spec, device_ref))
+
+    return tuple(all_input_types)
+
+
+def spec_decode_tail_input_types(
+    spec: SpecDecodeInputTypeSpec, device_ref: DeviceRef
+) -> tuple[TensorType | BufferType, ...]:
+    """The input-type tail every unified spec-decode graph ends with.
+
+    Must stay ordered in lockstep with
+    ``UnifiedSpecDecodeInputs._spec_decode_tail_buffers``.
+    """
+    all_input_types: list[TensorType | BufferType] = [
         TensorType(DType.int64, ["batch_size", "num_steps"], device=device_ref)
-    )
+    ]
 
     if spec.enable_sampled_draft_proposal:
         if spec.vocab_size is None:
@@ -201,5 +214,4 @@ def build_spec_decode_input_types(
                 ),
             ]
         )
-
     return tuple(all_input_types)

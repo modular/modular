@@ -118,8 +118,8 @@ struct Rng(Movable):
         if min == max:
             return min
 
-        comptime if dtype == DType.bool:
-            return rebind[Scalar[dtype]](Scalar[DType.bool](self.rand_bool()))
+        comptime if dtype == .bool:
+            return rebind[Scalar[dtype]](Scalar[.bool](self.rand_bool()))
         elif dtype.is_integral():
             var offset = UInt64(0) - UInt64(Scalar[dtype].MIN)
             var a = UInt64(min) + offset
@@ -177,8 +177,8 @@ struct Rng(Movable):
             If the underlying random number generator raises an error.
         """
         return Int(
-            self.rand_scalar[DType.int](
-                min=Scalar[DType.int](min),
-                max=Scalar[DType.int](max),
+            self.rand_scalar[.int](
+                min=Int(min),
+                max=Int(max),
             )
         )

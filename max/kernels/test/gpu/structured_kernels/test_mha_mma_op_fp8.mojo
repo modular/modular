@@ -93,7 +93,7 @@ def test_comptime_constants[
     )
 
     # FP8 path constants.
-    comptime _OpFP8 = MhaMmaOp[DType.float8_e4m3fn, CFG]
+    comptime _OpFP8 = MhaMmaOp[.float8_e4m3fn, CFG]
     comptime assert (
         _OpFP8.MMA_K == 64
     ), "FP8 MhaMmaOp.MMA_K must be 64 (v_mfma_scale_f32_32x32x64_f8f6f4)"
@@ -154,7 +154,7 @@ def test_comptime_constants[
     ), "FP8 ATT_LAYOUT dim 2 must be 16 FP32 acc elts per lane"
 
     # BF16 regression guard — the original BF16 kernel values must not move.
-    comptime _OpBF16 = MhaMmaOp[DType.bfloat16, CFG]
+    comptime _OpBF16 = MhaMmaOp[.bfloat16, CFG]
     comptime assert (
         _OpBF16.MMA_K == 16
     ), "BF16 MhaMmaOp.MMA_K must stay 16 (v_mfma_f32_32x32x16_bf16)"
@@ -194,7 +194,7 @@ def test_swizzle_round_trip_fp8() raises:
     comptime CFG = MhaConfigV2(
         q_block_size=32, kv_block=64, depth=128, num_heads=1, num_kv_heads=1
     )
-    comptime _Op = MhaMmaOp[DType.float8_e4m3fn, CFG]
+    comptime _Op = MhaMmaOp[.float8_e4m3fn, CFG]
 
     comptime sub_bytes = _Op.K_SUB_ROWS * _Op.K_SUB_COLS * 1  # FP8 size=1
     var max_seen: Int = 0
@@ -234,7 +234,7 @@ def test_swizzle_round_trip_bf16() raises:
     comptime CFG = MhaConfigV2(
         q_block_size=32, kv_block=64, depth=128, num_heads=1, num_kv_heads=1
     )
-    comptime _Op = MhaMmaOp[DType.bfloat16, CFG]
+    comptime _Op = MhaMmaOp[.bfloat16, CFG]
 
     comptime sub_bytes = (_Op.K_SUB_ROWS * _Op.K_SUB_COLS * 2)  # BF16 size=2
 
@@ -284,8 +284,8 @@ def kernel_load_K_fp8[
     cfg: MhaConfigV2,
     depth: Int,
 ](
-    src_swz_ptr: UnsafePointer[Scalar[DType.float8_e4m3fn], MutAnyOrigin],
-    dump_ptr: UnsafePointer[Scalar[DType.float8_e4m3fn], MutAnyOrigin],
+    src_swz_ptr: UnsafePointer[Float8_e4m3fn, MutAnyOrigin],
+    dump_ptr: UnsafePointer[Float8_e4m3fn, MutAnyOrigin],
 ):
     """Loads K SMEM from `src_swz_ptr` (already swizzled), calls
     `MhaMmaOp.load_K`, and dumps each lane's fragment to `dump_ptr`.
@@ -295,7 +295,7 @@ def kernel_load_K_fp8[
     Lane lid's base-tile (rr, rc) fragment lives at
     `lid * total_per_lane + (rr * width + rc) * FRAG_ELTS`.
     """
-    comptime _Op = MhaMmaOp[DType.float8_e4m3fn, cfg]
+    comptime _Op = MhaMmaOp[.float8_e4m3fn, cfg]
     comptime _KV_BLOCK = cfg.kv_block
     comptime _DEPTH = depth
     comptime _K_SUB_COLS = _Op.K_SUB_COLS
@@ -303,7 +303,7 @@ def kernel_load_K_fp8[
     comptime _K_SLOT_ROWS = _KV_BLOCK * _NUM_BLOCK_COLS_K
     comptime smem_layout_k = row_major[_K_SLOT_ROWS, _K_SUB_COLS]()
 
-    var k_smem = tt_stack_allocation[DType.float8_e4m3fn, AddressSpace.SHARED](
+    var k_smem = tt_stack_allocation[.float8_e4m3fn, address_space=.SHARED](
         smem_layout_k
     )
 
@@ -319,7 +319,7 @@ def kernel_load_K_fp8[
     barrier()
 
     # Allocate register tile and call load_K.
-    var k_reg = tt_stack_allocation[DType.float8_e4m3fn, AddressSpace.LOCAL](
+    var k_reg = tt_stack_allocation[.float8_e4m3fn, address_space=.LOCAL](
         _Op.K_LAYOUT
     )
     _Op.load_K(k_reg, k_smem)
@@ -338,7 +338,7 @@ def kernel_load_K_fp8[
             var frag = k_reg_v[rr, rc, 0]
             comptime for f in range(_F):
                 var idx = lid * _total_per_lane + (rr * _W + rc) * _F + f
-                dump_ptr[idx] = rebind[Scalar[DType.float8_e4m3fn]](frag[f])
+                dump_ptr[idx] = rebind[Float8_e4m3fn](frag[f])
 
 
 def test_load_K_fp8[
@@ -354,7 +354,7 @@ def test_load_K_fp8[
         num_heads=1,
         num_kv_heads=1,
     )
-    comptime _Op = MhaMmaOp[DType.float8_e4m3fn, CFG]
+    comptime _Op = MhaMmaOp[.float8_e4m3fn, CFG]
     comptime _K_SUB_ROWS = _Op.K_SUB_ROWS
     comptime _K_SUB_COLS = _Op.K_SUB_COLS
     comptime _NUM_BLOCK_COLS_K = depth // _K_SUB_COLS
@@ -368,8 +368,8 @@ def test_load_K_fp8[
     comptime _total_per_lane = _H * _W * _FRAG_ELTS
     comptime _DUMP_SIZE = 64 * _total_per_lane
 
-    var dev_init = ctx.enqueue_create_buffer[DType.float8_e4m3fn](_SMEM_SIZE)
-    var dev_dump = ctx.enqueue_create_buffer[DType.float8_e4m3fn](_DUMP_SIZE)
+    var dev_init = ctx.enqueue_create_buffer[.float8_e4m3fn](_SMEM_SIZE)
+    var dev_dump = ctx.enqueue_create_buffer[.float8_e4m3fn](_DUMP_SIZE)
 
     # Build the pre-swizzled K SMEM init image on host.
     # For each logical (r, c) in (0..KV_BLOCK, 0..DEPTH):
@@ -418,8 +418,8 @@ def test_load_K_fp8[
                             + (rr * _W + rc) * _FRAG_ELTS
                             + f
                         )
-                        var got_f32 = host_dump[idx].cast[DType.float32]()
-                        var exp_f32 = expected.cast[DType.float32]()
+                        var got_f32 = host_dump[idx].cast[.float32]()
+                        var exp_f32 = expected.cast[.float32]()
                         if got_f32 != exp_f32:
                             if mismatches < 5:
                                 print(
@@ -508,8 +508,8 @@ def kernel_load_V_fp8[
     cfg: MhaConfigV2,
     depth: Int,
 ](
-    src_ptr: UnsafePointer[Scalar[DType.float8_e4m3fn], MutAnyOrigin],
-    dump_ptr: UnsafePointer[Scalar[DType.float8_e4m3fn], MutAnyOrigin],
+    src_ptr: UnsafePointer[Float8_e4m3fn, MutAnyOrigin],
+    dump_ptr: UnsafePointer[Float8_e4m3fn, MutAnyOrigin],
 ):
     """Fills V SMEM from `src_ptr` (no swizzle), calls
     `MhaMmaOp.load_V`, and dumps each lane's fragment to `dump_ptr`.
@@ -522,7 +522,7 @@ def kernel_load_V_fp8[
     a contiguous (BN×BK) depth-block slab. The host fill in
     `test_load_V_fp8` writes the same sub-tile-major byte offsets.
     """
-    comptime _Op = MhaMmaOp[DType.float8_e4m3fn, cfg]
+    comptime _Op = MhaMmaOp[.float8_e4m3fn, cfg]
     comptime _KV_BLOCK = cfg.kv_block
     comptime _DEPTH = depth
     comptime _V_SUB_COLS = _Op.V_SUB_COLS
@@ -530,7 +530,7 @@ def kernel_load_V_fp8[
     comptime _V_SLOT_ROWS = _KV_BLOCK * _NUM_BLOCK_COLS_V
     comptime smem_layout_v = row_major[_V_SLOT_ROWS, _V_SUB_COLS]()
 
-    var v_smem = tt_stack_allocation[DType.float8_e4m3fn, AddressSpace.SHARED](
+    var v_smem = tt_stack_allocation[.float8_e4m3fn, address_space=.SHARED](
         smem_layout_v
     )
 
@@ -544,7 +544,7 @@ def kernel_load_V_fp8[
     barrier()
 
     # Allocate register tile and call load_V.
-    var v_reg = tt_stack_allocation[DType.float8_e4m3fn, AddressSpace.LOCAL](
+    var v_reg = tt_stack_allocation[.float8_e4m3fn, address_space=.LOCAL](
         _Op.V_LAYOUT
     )
     _Op.load_V(v_reg, v_smem)
@@ -562,7 +562,7 @@ def kernel_load_V_fp8[
             var frag = v_reg_v[rr, rc, 0]
             comptime for f in range(_F):
                 var idx = lid * _total_per_lane + (rr * _W + rc) * _F + f
-                dump_ptr[idx] = rebind[Scalar[DType.float8_e4m3fn]](frag[f])
+                dump_ptr[idx] = rebind[Float8_e4m3fn](frag[f])
 
 
 def test_load_V_fp8[
@@ -578,7 +578,7 @@ def test_load_V_fp8[
         num_heads=1,
         num_kv_heads=1,
     )
-    comptime _Op = MhaMmaOp[DType.float8_e4m3fn, CFG]
+    comptime _Op = MhaMmaOp[.float8_e4m3fn, CFG]
     comptime _V_SUB_COLS = _Op.V_SUB_COLS
     comptime _NUM_BLOCK_COLS_V = depth // _V_SUB_COLS
     comptime _V_SLOT_ROWS = KV_BLOCK * _NUM_BLOCK_COLS_V
@@ -591,8 +591,8 @@ def test_load_V_fp8[
     comptime _total_per_lane = _H * _W * _FRAG_ELTS
     comptime _DUMP_SIZE = 64 * _total_per_lane
 
-    var dev_init = ctx.enqueue_create_buffer[DType.float8_e4m3fn](_SMEM_SIZE)
-    var dev_dump = ctx.enqueue_create_buffer[DType.float8_e4m3fn](_DUMP_SIZE)
+    var dev_init = ctx.enqueue_create_buffer[.float8_e4m3fn](_SMEM_SIZE)
+    var dev_dump = ctx.enqueue_create_buffer[.float8_e4m3fn](_DUMP_SIZE)
 
     # Fill V SMEM image on host in the sub-tile-major layout the FP8 V
     # loader actually reads (the `SubTileLoaderLDS_st_8x32` DMA
@@ -693,8 +693,8 @@ def test_load_V_fp8[
                                 + (rr * _W + rc) * _FRAG_ELTS
                                 + (8 * k + f)
                             )
-                            var got_f32 = host_dump[idx].cast[DType.float32]()
-                            var exp_f32 = expected.cast[DType.float32]()
+                            var got_f32 = host_dump[idx].cast[.float32]()
+                            var exp_f32 = expected.cast[.float32]()
                             if got_f32 != exp_f32:
                                 if mismatches < 5:
                                     print(

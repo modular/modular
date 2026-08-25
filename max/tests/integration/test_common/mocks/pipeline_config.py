@@ -16,6 +16,7 @@ import os
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from functools import wraps
+from pathlib import Path
 from typing import Any, TypeVar
 from unittest.mock import MagicMock, patch
 
@@ -63,7 +64,9 @@ class DummyMAXModelConfig(MAXModelConfig):
     def weights_size(self) -> int:
         return 1000
 
-    def _validate_final_architecture_model_path_weight_path(self) -> None:
+    def _validate_final_architecture_model_path_weight_path(
+        self, weight_path: list[Path]
+    ) -> None:
         pass
 
 
@@ -101,8 +104,11 @@ class DummyPipelineConfig(PipelineConfig):
             quantization_encoding=quantization_encoding,
             max_length=max_length,
             weight_path=[],
+            kv_cache=KVCacheConfig(),
         )
-        model_config.kv_cache = KVCacheConfig()
+        # model_construct bypasses __init__, where user intent for max_length
+        # is captured; mirror the capture so planning sees the same bit.
+        model_config._max_length_user_provided = max_length is not None
 
         # `ArchConfig.initialize` resolves the encoding via
         # `_select_quantization_encoding`, which reads the HF weight repo's
@@ -404,9 +410,9 @@ def mock_pipeline_config_resolve(func: Callable[_P, _R]) -> Callable[_P, _R]:
             patch(
                 "max.pipelines.lib.memory_estimation.MemoryEstimator.plan",
                 side_effect=lambda config, *a, **kw: MemoryPlan(
-                    max_batch_size=1,
+                    planned_max_batch_size=1,
                     footprint=0,
-                    max_length=config.model.max_length,
+                    planned_max_length=config.model.max_length,
                     device_specs=tuple(config.model.device_specs),
                 ),
             ),

@@ -52,7 +52,7 @@ struct _PhiloxWrapper(Copyable):
 
     comptime _cache_length = 4
 
-    var _cache: SIMD[DType.uint32, Self._cache_length]
+    var _cache: SIMD[.uint32, Self._cache_length]
     """Cache of generated random values."""
 
     var _cache_index: Int
@@ -65,7 +65,7 @@ struct _PhiloxWrapper(Copyable):
             seed: The seed value for the generator.
         """
         self._rng = PhiloxRandom(seed=seed)
-        self._cache = SIMD[DType.uint32, Self._cache_length](0)
+        self._cache = SIMD[.uint32, Self._cache_length](0)
         self._cache_index = (
             Self._cache_length
         )  # Start empty to trigger generation
@@ -208,7 +208,7 @@ struct _RandomState(Copyable):
         # Handle edge cases: inf, nan, or very large ranges
         if isnan(range):
             return min
-        if range > max_finite[DType.float64]():
+        if range > max_finite[.float64]():
             # For very large ranges (e.g., -inf to +inf), direct multiplication
             # unit * range would overflow. Factor the calculation to avoid
             # intermediate overflow: min + unit * (max - min) becomes

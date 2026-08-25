@@ -188,38 +188,36 @@ def run_one_case(
     var c_device_ref = ctx.enqueue_create_buffer[out_dtype](c_size)
     var c_ref_tensor = TileTensor(c_device_ref, c_shape)
 
-    var a_offsets_device = ctx.enqueue_create_buffer[DType.uint32](
+    var a_offsets_device = ctx.enqueue_create_buffer[.uint32](
         num_active_experts + 1
     )
     var a_offsets_tensor = TileTensor(
         a_offsets_device, row_major(Coord(num_active_experts + 1))
     )
-    var a_scale_offsets_device = ctx.enqueue_create_buffer[DType.uint32](
+    var a_scale_offsets_device = ctx.enqueue_create_buffer[.uint32](
         num_active_experts
     )
     var a_scale_offsets_tensor = TileTensor(
         a_scale_offsets_device, row_major(Coord(num_active_experts))
     )
-    var expert_ids_device = ctx.enqueue_create_buffer[DType.int32](
+    var expert_ids_device = ctx.enqueue_create_buffer[.int32](
         num_active_experts
     )
     var expert_ids_tensor = TileTensor(
         expert_ids_device, row_major(Coord(num_active_experts))
     )
-    var expert_scales_device = ctx.enqueue_create_buffer[DType.float32](
-        num_experts
-    )
+    var expert_scales_device = ctx.enqueue_create_buffer[.float32](num_experts)
 
-    var a_offsets_host_ptr = ctx.enqueue_create_host_buffer[DType.uint32](
+    var a_offsets_host_ptr = ctx.enqueue_create_host_buffer[.uint32](
         num_active_experts + 1
     )
-    var a_scale_offsets_ptr = ctx.enqueue_create_host_buffer[DType.uint32](
+    var a_scale_offsets_ptr = ctx.enqueue_create_host_buffer[.uint32](
         num_active_experts
     )
-    var expert_ids_host_ptr = ctx.enqueue_create_host_buffer[DType.int32](
+    var expert_ids_host_ptr = ctx.enqueue_create_host_buffer[.int32](
         num_active_experts
     )
-    var expert_scales_host_ptr = ctx.enqueue_create_host_buffer[DType.float32](
+    var expert_scales_host_ptr = ctx.enqueue_create_host_buffer[.float32](
         num_experts
     )
     for i in range(num_experts):
@@ -294,7 +292,7 @@ def run_one_case(
             ):
                 if idx1 < K:
                     var sv = _convert_f32_to_float8_ue8m0[scales_dtype](
-                        (1 << random_ui64(0, 2)).cast[DType.float32]()
+                        (1 << random_ui64(0, 2)).cast[.float32]()
                     )
                     set_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
                         a_scales_host, idx0, idx1, sv
@@ -323,7 +321,7 @@ def run_one_case(
             ):
                 if idx0 < N and idx1 < K:
                     var sv = _convert_f32_to_float8_ue8m0[scales_dtype](
-                        (1 << random_ui64(0, 2)).cast[DType.float32]()
+                        (1 << random_ui64(0, 2)).cast[.float32]()
                     )
                     set_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
                         b_slice, idx0, idx1, sv
@@ -446,18 +444,18 @@ def run_one_case(
             var expert_id = Int(expert_ids_host_ptr[i])
 
             var c_slice = TileTensor(
-                c_ref_tensor._storage + start * N,
+                c_ref_tensor.ptr + start * N,
                 row_major((end - start, Idx[N])),
             )
             var a_slice = TileTensor(
-                a_tensor._storage + start * K, row_major((end - start, Idx[K]))
+                a_tensor.ptr + start * K, row_major((end - start, Idx[K]))
             )
             var b_slice = TileTensor(
-                b_tensor._storage + expert_id * b_expert_stride,
+                b_tensor.ptr + expert_id * b_expert_stride,
                 row_major((Idx[N], Idx[K])),
             )
             var b_scales_slice = TileTensor(
-                b_scales_tensor._storage + expert_id * b_expert_scale_count,
+                b_scales_tensor.ptr + expert_id * b_expert_scale_count,
                 row_major(
                     Coord(
                         Idx[n_groups],
@@ -472,7 +470,7 @@ def run_one_case(
                 a_scale_offsets_ptr[i]
             )
             var a_scales_slice = TileTensor(
-                a_scales_tensor._storage + a_scales_start * a_scales_row_stride,
+                a_scales_tensor.ptr + a_scales_start * a_scales_row_stride,
                 row_major(
                     Coord(
                         ceildiv(end - start, SF_MN_GROUP_SIZE),
@@ -601,38 +599,36 @@ def _run_batch_composition(
     var c_device = ctx.enqueue_create_buffer[out_dtype](c_size)
     var c_tensor = TileTensor(c_device, c_shape)
 
-    var a_offsets_device = ctx.enqueue_create_buffer[DType.uint32](
+    var a_offsets_device = ctx.enqueue_create_buffer[.uint32](
         num_active_experts + 1
     )
     var a_offsets_tensor = TileTensor(
         a_offsets_device, row_major(Coord(num_active_experts + 1))
     )
-    var a_scale_offsets_device = ctx.enqueue_create_buffer[DType.uint32](
+    var a_scale_offsets_device = ctx.enqueue_create_buffer[.uint32](
         num_active_experts
     )
     var a_scale_offsets_tensor = TileTensor(
         a_scale_offsets_device, row_major(Coord(num_active_experts))
     )
-    var expert_ids_device = ctx.enqueue_create_buffer[DType.int32](
+    var expert_ids_device = ctx.enqueue_create_buffer[.int32](
         num_active_experts
     )
     var expert_ids_tensor = TileTensor(
         expert_ids_device, row_major(Coord(num_active_experts))
     )
-    var expert_scales_device = ctx.enqueue_create_buffer[DType.float32](
-        num_experts
-    )
+    var expert_scales_device = ctx.enqueue_create_buffer[.float32](num_experts)
 
-    var a_offsets_host_ptr = ctx.enqueue_create_host_buffer[DType.uint32](
+    var a_offsets_host_ptr = ctx.enqueue_create_host_buffer[.uint32](
         num_active_experts + 1
     )
-    var a_scale_offsets_ptr = ctx.enqueue_create_host_buffer[DType.uint32](
+    var a_scale_offsets_ptr = ctx.enqueue_create_host_buffer[.uint32](
         num_active_experts
     )
-    var expert_ids_host_ptr = ctx.enqueue_create_host_buffer[DType.int32](
+    var expert_ids_host_ptr = ctx.enqueue_create_host_buffer[.int32](
         num_active_experts
     )
-    var expert_scales_host_ptr = ctx.enqueue_create_host_buffer[DType.float32](
+    var expert_scales_host_ptr = ctx.enqueue_create_host_buffer[.float32](
         num_experts
     )
     for i in range(num_experts):
@@ -712,7 +708,7 @@ def _run_batch_composition(
             ):
                 if idx0 < N and idx1 < K:
                     var sv = _convert_f32_to_float8_ue8m0[scales_dtype](
-                        (1 << random_ui64(0, 2)).cast[DType.float32]()
+                        (1 << random_ui64(0, 2)).cast[.float32]()
                     )
                     set_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
                         b_slice, idx0, idx1, sv
@@ -748,7 +744,7 @@ def _run_batch_composition(
             ):
                 if idx1 < K:
                     var sv = _convert_f32_to_float8_ue8m0[scales_dtype](
-                        (1 << random_ui64(0, 2)).cast[DType.float32]()
+                        (1 << random_ui64(0, 2)).cast[.float32]()
                     )
                     set_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
                         a_scales_host, idx0, idx1, sv
@@ -763,7 +759,7 @@ def _run_batch_composition(
         ):
             if idx1 < K:
                 var sv = _convert_f32_to_float8_ue8m0[scales_dtype](
-                    (1 << random_ui64(0, 2)).cast[DType.float32]()
+                    (1 << random_ui64(0, 2)).cast[.float32]()
                 )
                 set_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
                     a_scales_host, idx0, idx1, sv

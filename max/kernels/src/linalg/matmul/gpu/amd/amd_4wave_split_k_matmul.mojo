@@ -114,7 +114,7 @@ struct SplitKWorkspace[num_splits: Int](ImplicitlyCopyable, Movable):
         num_splits: Number of K-splits the workspace must hold.
     """
 
-    var scratch: DeviceBuffer[DType.float32]
+    var scratch: DeviceBuffer[.float32]
     """Backing float32 device buffer of size `num_splits * elems_per_split`."""
 
     def __init__(
@@ -132,7 +132,7 @@ struct SplitKWorkspace[num_splits: Int](ImplicitlyCopyable, Movable):
         Raises:
             An error if device allocation fails.
         """
-        self.scratch = ctx.enqueue_create_buffer[DType.float32](
+        self.scratch = ctx.enqueue_create_buffer[.float32](
             Self.num_splits * elems_per_split
         )
 
@@ -221,9 +221,7 @@ def amd_4wave_split_k_matmul[
     """
     comptime assert a_type == b_type, "A and B must have the same type"
     comptime assert (
-        a_type.is_float8()
-        or a_type == DType.bfloat16
-        or a_type == DType.float16
+        a_type.is_float8() or a_type == .bfloat16 or a_type == .float16
     ), "split-K 4-wave supports float8_e4m3fn, bfloat16, or float16"
     comptime assert num_splits >= 1, "num_splits must be >= 1"
     comptime assert block_m_override == 0 or block_m_override in (

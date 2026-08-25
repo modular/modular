@@ -134,7 +134,7 @@ def test_distribute_with_swizzle() raises:
 
     comptime data_layout_shape = Coord[ComptimeInt[4], ComptimeInt[4]]
     comptime data_layout_stride = Coord[ComptimeInt[4], ComptimeInt[1]]
-    var layout_tensor = TileTensor[dtype=DType.uint32](
+    var layout_tensor = TileTensor[.uint32](
         ptr=ptr,
         layout=TileLayout(
             shape=data_layout_shape(Idx[4], Idx[4]),
@@ -196,7 +196,7 @@ def test_distribute_swizzle_vs_no_swizzle() raises:
     comptime data_layout_shape = Coord[ComptimeInt[4], ComptimeInt[4]]
     comptime data_layout_stride = Coord[ComptimeInt[4], ComptimeInt[1]]
 
-    var tensor_no_swizzle = TileTensor[dtype=DType.uint32](
+    var tensor_no_swizzle = TileTensor[.uint32](
         ptr=ptr_no_swizzle,
         layout=TileLayout(
             shape=data_layout_shape(Idx[4], Idx[4]),
@@ -204,7 +204,7 @@ def test_distribute_swizzle_vs_no_swizzle() raises:
         ),
     )
 
-    var tensor_with_swizzle = TileTensor[dtype=DType.uint32](
+    var tensor_with_swizzle = TileTensor[.uint32](
         ptr=ptr_with_swizzle,
         layout=TileLayout(
             shape=data_layout_shape(Idx[4], Idx[4]),
@@ -875,11 +875,11 @@ def test_load_store_linear_row_major() raises:
     assert_equal(Int(vec[1]), 50)
 
     # Verify store_linear.
-    tensor.store_linear(IndexList[2](0, 1), SIMD[DType.int32, 1](999))
+    tensor.store_linear(IndexList[2](0, 1), Int32(999))
     assert_equal(Int(tensor.load_linear[1](IndexList[2](0, 1))), 999)
 
     # Verify vectorized store (width=2).
-    tensor.store_linear(IndexList[2](2, 0), SIMD[DType.int32, 2](77, 88))
+    tensor.store_linear(IndexList[2](2, 0), SIMD[.int32, 2](77, 88))
     assert_equal(Int(tensor.load_linear[1](IndexList[2](2, 0))), 77)
     assert_equal(Int(tensor.load_linear[1](IndexList[2](2, 1))), 88)
 
@@ -918,7 +918,7 @@ def test_load_store_linear_non_trivial_stride() raises:
     assert_equal(Int(tensor.load_linear[1](IndexList[2](1, 2))), 5)
 
     # Store and verify.
-    tensor.store_linear(IndexList[2](1, 1), SIMD[DType.int32, 1](42))
+    tensor.store_linear(IndexList[2](1, 1), Int32(42))
     assert_equal(Int(tensor.load_linear[1](IndexList[2](1, 1))), 42)
     # Verify underlying data: offset 3 should be 42.
     assert_equal(Int(data[3]), 42)
@@ -928,33 +928,29 @@ def test_linear_idx_type_small_static_layout() raises:
     """Small fully-static layouts use int32 for linear_idx_type."""
     # Cosize = (4-1)*4 + (4-1)*1 + 1 = 16, fits in int32
     comptime TensorType = TileTensor[
-        DType.float32,
-        RowMajorLayout[ComptimeInt[4], ComptimeInt[4]],
-        MutAnyOrigin,
+        .float32, RowMajorLayout[ComptimeInt[4], ComptimeInt[4]], MutAnyOrigin
     ]
-    comptime assert TensorType.linear_idx_type == DType.int32
+    comptime assert TensorType.linear_idx_type == .int32
 
 
 def test_linear_idx_type_dynamic_layout_generic() raises:
     """Dynamic layouts in GENERIC address space use int64."""
     comptime TensorType = TileTensor[
-        DType.float32,
-        RowMajorLayout[Scalar[DType.int], ComptimeInt[4]],
-        MutAnyOrigin,
+        .float32, RowMajorLayout[Int, ComptimeInt[4]], MutAnyOrigin
     ]
     # Not all dims known -> falls through to address_space check -> GENERIC -> int64
-    comptime assert TensorType.linear_idx_type == DType.int64
+    comptime assert TensorType.linear_idx_type == .int64
 
 
 def test_linear_idx_type_shared_address_space() raises:
     """Shared memory address space always uses int32."""
     comptime TensorType = TileTensor[
-        DType.float32,
+        .float32,
         RowMajorLayout[ComptimeInt[4], ComptimeInt[4]],
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]
-    comptime assert TensorType.linear_idx_type == DType.int32
+    comptime assert TensorType.linear_idx_type == .int32
 
 
 def test_linear_idx_type_recomputed_after_tile() raises:

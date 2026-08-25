@@ -33,13 +33,13 @@ from std.collections import Span
 
 from std.utils import IndexList
 
-comptime Bytes = SIMD[DType.uint8, _]
+comptime Bytes = SIMD[.uint8, _]
 
 
 def _base64_simd_mask[
     simd_width: Int
-](nb_value_to_load: Int) -> SIMD[DType.bool, simd_width]:
-    comptime mask = iota[DType.uint8, simd_width]()
+](nb_value_to_load: Int) -> SIMD[.bool, simd_width]:
+    comptime mask = iota[.uint8, simd_width]()
     return mask.lt(UInt8(nb_value_to_load))
 
 
@@ -126,14 +126,14 @@ def _to_b64_ascii[width: SIMDLength, //](input: Bytes[width]) -> Bytes[width]:
 
 def _get_table_number_of_bytes_to_store_from_number_of_bytes_to_load[
     width: Int
-]() -> SIMD[DType.uint8, width]:
+]() -> SIMD[.uint8, width]:
     """This is a lookup table to know how many bytes we need to store in the output buffer
     for a given number of bytes to encode in base64. Including the '=' sign.
 
     This table lookup is smaller than the simd size, because we only use it for the last chunk.
     This should be called at compile time, otherwise it's quite slow.
     """
-    var result = SIMD[DType.uint8, width](0)
+    var result = SIMD[.uint8, width](0)
     for i in range(1, width):
         # We have "i" bytes to encode in base64, how many bytes do
         # we need to store in the output buffer? Including the '=' sign.
@@ -158,14 +158,14 @@ def _get_number_of_bytes_to_store_from_number_of_bytes_to_load[
 
 def _get_table_number_of_bytes_to_store_from_number_of_bytes_to_load_without_equal_sign[
     width: Int
-]() -> SIMD[DType.uint8, width]:
+]() -> SIMD[.uint8, width]:
     """This is a lookup table to know how many bytes we need to store in the output buffer
     for a given number of bytes to encode in base64. This is **not** including the '=' sign.
 
     This table lookup is smaller than the simd size, because we only use it for the last chunk.
     This should be called at compile time, otherwise it's quite slow.
     """
-    var result = SIMD[DType.uint8, width]()
+    var result = SIMD[.uint8, width]()
     for i in range(width):
         # We have "i" bytes to encode in base64, how many bytes do
         # we need to store in the output buffer? NOT including the '=' sign.
@@ -198,7 +198,7 @@ def load_incomplete_simd[
 ](pointer: ImmPointer[UInt8, _], nb_of_elements_to_load: Int) -> SIMD[
     DType.uint8, width
 ]:
-    var result = SIMD[DType.uint8, width](0)
+    var result = SIMD[.uint8, width](0)
     var tmp_buffer_pointer = Pointer(to=result).unsafe_bitcast[UInt8]()
     unsafe_memcpy(
         dest=tmp_buffer_pointer, src=pointer, count=nb_of_elements_to_load
@@ -210,7 +210,7 @@ def load_incomplete_simd[
 def _b64encode(input_bytes: ImmSpan[Byte, _], mut result: String):
     comptime simd_width = simd_byte_width()
     comptime input_simd_width = simd_width * 3 // 4
-    comptime equal_vector = SIMD[DType.uint8, simd_width](ord("="))
+    comptime equal_vector = SIMD[.uint8, simd_width](ord("="))
 
     # 4 character bytes for each 3 bytes (or less) block
     result.resize(unsafe_uninit_length=4 * ceildiv(len(input_bytes), 3))
@@ -291,16 +291,14 @@ def _repeat_until[width: Int](v: SIMD) -> SIMD[v.dtype, width]:
 
 
 def _rshift_bits_in_u16[shift: Int](input: Bytes) -> type_of(input):
-    var u16 = bitcast[DType.uint16, input.length // 2](input)
+    var u16 = bitcast[.uint16, input.length // 2](input)
     var res = rotate_bits_right[shift](u16)
-    return bitcast[DType.uint8, input.length](res)
+    return bitcast[.uint8, input.length](res)
 
 
 @always_inline
 def _sub_with_saturation[
     width: SIMDLength, //
-](a: SIMD[DType.uint8, width], b: SIMD[DType.uint8, width]) -> SIMD[
-    DType.uint8, width
-]:
+](a: SIMD[.uint8, width], b: SIMD[.uint8, width]) -> SIMD[.uint8, width]:
     # generates a single `vpsubusb` on x86 with AVX
     return llvm_intrinsic["llvm.usub.sat", type_of(a)](a, b)

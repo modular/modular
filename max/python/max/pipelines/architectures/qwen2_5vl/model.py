@@ -44,6 +44,7 @@ from max.pipelines.lib import (
     MultiGraphPipelineModelWithKVCache,
     PipelineConfig,
 )
+from max.pipelines.lib.memory_estimation import MemoryPlan
 from max.profiler import traced
 
 from .batch_processor import Qwen2_5VLBatchProcessor
@@ -147,6 +148,8 @@ class Qwen2_5VLModel(
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
         weights: Weights,
+        *,
+        memory_plan: MemoryPlan,
         adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
         max_batch_size: int = 1,
@@ -157,9 +160,10 @@ class Qwen2_5VLModel(
             devices,
             kv_cache_config,
             weights,
-            adapter,
-            return_logits,
+            adapter=adapter,
+            return_logits=return_logits,
             max_batch_size=max_batch_size,
+            memory_plan=memory_plan,
         )
 
         self.model_config = None
@@ -210,6 +214,7 @@ class Qwen2_5VLModel(
         qwen2_5vl_config = Qwen2_5VLConfig.initialize_from_config(
             pipeline_config=self.pipeline_config,
             huggingface_config=self.huggingface_config,
+            max_seq_len=self.max_seq_len,
         )
         qwen2_5vl_config.finalize(
             huggingface_config=self.huggingface_config,

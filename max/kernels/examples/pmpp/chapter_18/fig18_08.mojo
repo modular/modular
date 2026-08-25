@@ -86,10 +86,10 @@ def main() raises:
     var start_vertex = 0
     h_level[start_vertex] = 0
 
-    var d_dst_ptrs = ctx.enqueue_create_buffer[DType.uint32](NUM_VERTICES + 1)
-    var d_src = ctx.enqueue_create_buffer[DType.uint32](num_edges)
-    var d_level = ctx.enqueue_create_buffer[DType.uint32](NUM_VERTICES)
-    var d_new_vertex_visited = ctx.enqueue_create_buffer[DType.uint32](1)
+    var d_dst_ptrs = ctx.enqueue_create_buffer[.uint32](NUM_VERTICES + 1)
+    var d_src = ctx.enqueue_create_buffer[.uint32](num_edges)
+    var d_level = ctx.enqueue_create_buffer[.uint32](NUM_VERTICES)
+    var d_new_vertex_visited = ctx.enqueue_create_buffer[.uint32](1)
 
     var h_dst_ptrs = alloc[UInt32](NUM_VERTICES + 1)
     var h_src = alloc[UInt32](num_edges)

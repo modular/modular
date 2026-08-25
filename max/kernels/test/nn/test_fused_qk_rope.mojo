@@ -42,9 +42,7 @@ from std.utils import IndexList
 
 def test_fused_qk_rope[dtype: DType](ctx: DeviceContext) raises -> None:
     """Verifies fused_qk_rope against golden values computed with PyTorch."""
-    comptime assert (
-        dtype == DType.float32
-    ), "goldens only for float32, currently"
+    comptime assert dtype == .float32, "goldens only for float32, currently"
 
     # Set up test hyperparameters.
     comptime batch_size = 2
@@ -64,7 +62,7 @@ def test_fused_qk_rope[dtype: DType](ctx: DeviceContext) raises -> None:
         return max_item
 
     comptime assert max_seq_len > (
-        seq_len + Int(_max[DType.uint32, items=start_positions]())
+        seq_len + Int(_max[.uint32, items=start_positions]())
     ), "KV cache size smaller than sum of sequence length and start pos"
     comptime num_heads = 2
     comptime dim = 16
@@ -113,17 +111,13 @@ def test_fused_qk_rope[dtype: DType](ctx: DeviceContext) raises -> None:
     # Create the actual KV cache type.
     var kv_collection = ContinuousBatchingKVCacheCollection[dtype, kv_params](
         blocks=kv_cache_block,
-        cache_lengths=LayoutTensor[
-            mut=False, DType.uint32, Layout(UNKNOWN_VALUE)
-        ](
+        cache_lengths=LayoutTensor[mut=False, .uint32, Layout(UNKNOWN_VALUE)](
             start_positions_dyn.unsafe_ptr(),
             RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(
                 IndexList[1](len(start_positions_dyn))
             ),
         ),
-        lookup_table=LayoutTensor[
-            mut=False, DType.uint32, Layout(UNKNOWN_VALUE)
-        ](
+        lookup_table=LayoutTensor[mut=False, .uint32, Layout(UNKNOWN_VALUE)](
             lookup_table.unsafe_ptr(),
             RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(
                 IndexList[1](len(lookup_table)),
@@ -167,7 +161,7 @@ def test_fused_qk_rope[dtype: DType](ctx: DeviceContext) raises -> None:
 
     # Create output buffer.
     var q_out_buffer = List[Scalar[dtype]](length=len(q_buffer), fill=0)
-    var q_out = TileTensor(q_out_buffer, q.layout).make_dynamic[DType.int64]()
+    var q_out = TileTensor(q_out_buffer, q.layout).make_dynamic[.int64]()
 
     # Create valid_lengths buffer - all sequences have full seq_len valid
     var valid_lengths_buffer = List[UInt32](
@@ -222,4 +216,4 @@ def test_fused_qk_rope[dtype: DType](ctx: DeviceContext) raises -> None:
 
 def main() raises -> None:
     with DeviceContext(api="cpu") as ctx:
-        test_fused_qk_rope[DType.float32](ctx)
+        test_fused_qk_rope[.float32](ctx)

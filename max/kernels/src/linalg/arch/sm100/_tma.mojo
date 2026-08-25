@@ -62,7 +62,7 @@ def create_tma_descriptor[
     *,
     swizzle_mode: SwizzleMode = SwizzleMode.NONE,
 ](
-    gmem_tensor: LayoutTensor[dtype, address_space=AddressSpace.GENERIC, ...],
+    gmem_tensor: LayoutTensor[dtype, address_space=.GENERIC, ...],
     ctx: DeviceContext,
 ) raises -> TMADescriptor[dtype, tile_shape, swizzle_mode]:
     """
@@ -96,7 +96,7 @@ def create_tma_descriptor[
         create_tensormap(
             DeviceBuffer(
                 ctx,
-                gmem_tensor.ptr.address_space_cast[AddressSpace.GENERIC](),
+                gmem_tensor.ptr.address_space_cast[.GENERIC](),
                 1,
                 owning=False,
             ),
@@ -156,7 +156,7 @@ struct TMALoad[
             "type mismatch: expected ", Self.dtype, " passed in ", dst.dtype
         )
 
-        comptime assert dst.address_space == AddressSpace.SHARED, String(
+        comptime assert dst.address_space == .SHARED, String(
             "address space mismatch: expected ",
             AddressSpace.SHARED,
             " passed in ",
@@ -172,7 +172,7 @@ struct TMALoad[
 
     @staticmethod
     def verify_source_tensor(src: LayoutTensor):
-        comptime assert src.address_space == AddressSpace.GLOBAL, String(
+        comptime assert src.address_space == .GLOBAL, String(
             "address space mismatch: expected ",
             AddressSpace.GLOBAL,
             " passed in ",
@@ -228,10 +228,8 @@ struct TMALoad[
         return materialize[repeat_pattern]()
 
 
-comptime UInt32Indices[rank: Int] = IndexList[rank, element_type=DType.uint32]
-comptime MBarPtr = UnsafePointer[
-    SharedMemBarrier, _, address_space=AddressSpace.SHARED
-]
+comptime UInt32Indices[rank: Int] = IndexList[rank, element_type=.uint32]
+comptime MBarPtr = UnsafePointer[SharedMemBarrier, _, address_space=.SHARED]
 
 
 def copy[
@@ -240,7 +238,7 @@ def copy[
     cta_group: Int = 1,
 ](
     policy: TMALoad[...],
-    dst: LayoutTensor[_, _, address_space=AddressSpace.SHARED, ...],
+    dst: LayoutTensor[_, _, address_space=.SHARED, ...],
     mbar_ptr: MBarPtr,
     coords: UInt32Indices[rank],
 ):
@@ -361,7 +359,7 @@ def copy[
             dst.ptr.unsafe_mut_cast[True]() + dst_copy_offset,
             UnsafePointer(to=policy.descriptor).bitcast[NoneType](),
             mbar_ptr,
-            copy_tile_coords.cast[DType.int64](),
+            copy_tile_coords.cast[.int64](),
         )
 
 

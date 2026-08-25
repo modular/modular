@@ -29,10 +29,10 @@ from max.pipelines.lib.config.model_config import _select_quantization_encoding
 from max.pipelines.lib.interfaces.arch_config import (
     ArchConfigWithKVCache,
     ArchConfigWithStoredKVParams,
+    ArchConfigWithVisionCache,
     ArchVLConfigWithTextSubconfig,
 )
 from max.pipelines.lib.pipeline_variants.utils import get_rope_theta
-from max.pipelines.lib.utils import upper_bounded_default
 from max.pipelines.modeling.config_enums import (
     SupportedEncoding,
     supported_encoding_dtype,
@@ -66,8 +66,87 @@ def _extract_eagle_aux_layer_ids(
     return list(raw) or None
 
 
-@dataclass(kw_only=True)
-class KimiK2_5TextConfig(DeepseekV3Config):
+class _KimiK2_5VisionCacheConfig:
+    """Vision-cache facts shared by both registered Kimi K2.5 arch configs."""
+
+    @classmethod
+    def estimate_vision_cache_entry_bytes(
+        cls,
+        huggingface_config: AutoConfig,
+    ) -> int:
+        """Estimates per-entry bytes for the Kimi K2.5 vision encoder cache.
+
+        Max tokens per image = pos_emb_height * pos_emb_width / merge_sq,
+        multiplied by the text hidden size and 2 bytes (bfloat16).
+
+        Args:
+            huggingface_config: HuggingFace model configuration.
+
+        Returns:
+            Estimated bytes per vision cache entry.
+
+        Raises:
+            ValueError: If required vision or text config fields are absent or
+                invalid.
+        """
+        vision_config = getattr(huggingface_config, "vision_config", None)
+        if vision_config is None:
+            raise ValueError(
+                "KimiK2.5 requires a vision_config in the HuggingFace config"
+            )
+        text_config = getattr(huggingface_config, "text_config", None)
+        if text_config is None:
+            raise ValueError(
+                "KimiK2.5 requires a text_config in the HuggingFace config"
+            )
+        hidden = getattr(text_config, "hidden_size", 0)
+        if hidden <= 0:
+            raise ValueError(
+                "KimiK2.5 text_config.hidden_size must be positive"
+            )
+        merge_kernel_size = getattr(vision_config, "merge_kernel_size", [2, 2])
+        merge_sq = 1
+        for k in (
+            merge_kernel_size
+            if isinstance(merge_kernel_size, (list, tuple))
+            else [merge_kernel_size]
+        ):
+            merge_sq *= k
+        pos_h = getattr(vision_config, "init_pos_emb_height", 0)
+        pos_w = getattr(vision_config, "init_pos_emb_width", 0)
+        if pos_h <= 0 or pos_w <= 0:
+            raise ValueError(
+                "KimiK2.5 vision_config must provide "
+                "init_pos_emb_height and init_pos_emb_width"
+            )
+        max_tokens = (pos_h * pos_w) // merge_sq
+        spec = cls.get_vision_cache_row_spec(huggingface_config)
+        assert spec is not None
+        row_hidden, dtype = spec
+        return max_tokens * row_hidden * dtype.size_in_bytes
+
+    @classmethod
+    def get_vision_cache_row_spec(
+        cls,
+        huggingface_config: AutoConfig,
+    ) -> tuple[int, DType] | None:
+        """One embedding row per merged vision token: text hidden, bfloat16."""
+        text_config = getattr(huggingface_config, "text_config", None)
+        if text_config is None:
+            raise ValueError(
+                "KimiK2.5 requires a text_config in the HuggingFace config"
+            )
+        hidden = getattr(text_config, "hidden_size", 0)
+        if hidden <= 0:
+            raise ValueError(
+                "KimiK2.5 text_config.hidden_size must be positive"
+            )
+        return (hidden, DType.bfloat16)
+
+
+class KimiK2_5TextConfig(
+    _KimiK2_5VisionCacheConfig, DeepseekV3Config, ArchConfigWithVisionCache
+):
     DEFAULT_ENCODING: ClassVar[SupportedEncoding] = "bfloat16"
     SUPPORTED_ENCODINGS: ClassVar[set[SupportedEncoding]] = {
         "bfloat16",
@@ -81,6 +160,8 @@ class KimiK2_5TextConfig(DeepseekV3Config):
         cls,
         pipeline_config: PipelineConfig,
         model_config: MAXModelConfig | None = None,
+        *,
+        max_seq_len: int,
     ) -> Self:
         """Initializes a DeepseekV3Config instance from pipeline configuration.
 
@@ -125,11 +206,6 @@ class KimiK2_5TextConfig(DeepseekV3Config):
             devices=device_refs,
             kv_cache_config=kv_cache_config,
             cache_dtype=cache_dtype,
-        )
-
-        max_seq_len = upper_bounded_default(
-            upper_bound=config.max_position_embeddings,
-            default=model_config.max_length,
         )
 
         eagle_aux_hidden_state_layer_ids = _extract_eagle_aux_layer_ids(
@@ -183,14 +259,18 @@ class KimiK2_5TextConfig(DeepseekV3Config):
     @classmethod
     def calculate_max_seq_len(
         cls,
-        pipeline_config: PipelineConfig,
         huggingface_config: AutoConfig,
-        model_config: MAXModelConfig | None = None,
+        model_config: MAXModelConfig,
     ) -> int:
         # DeepseekV3Config does not inherit ArchConfigWithStoredKVParams, so the
         # VLM mixin cannot delegate max_seq_len to this class directly.
+        #
+        # Reached two ways: the mixin passes the already-unwrapped text config,
+        # while a direct arch registration (arch.py) passes the top-level one,
+        # which on a VL checkpoint carries the text params under text_config.
         return ArchConfigWithStoredKVParams.calculate_max_seq_len(
-            pipeline_config, huggingface_config, model_config
+            getattr(huggingface_config, "text_config", huggingface_config),
+            model_config,
         )
 
 
@@ -340,7 +420,12 @@ class VisionConfig:
 
 
 @dataclass(kw_only=True)
-class KimiK2_5Config(ArchVLConfigWithTextSubconfig, ArchConfigWithKVCache):
+class KimiK2_5Config(
+    _KimiK2_5VisionCacheConfig,
+    ArchVLConfigWithTextSubconfig,
+    ArchConfigWithKVCache,
+    ArchConfigWithVisionCache,
+):
     """Configuration for Kimi-K2.5 models."""
 
     DEFAULT_ENCODING: ClassVar[SupportedEncoding] = "bfloat16"
@@ -408,6 +493,8 @@ class KimiK2_5Config(ArchVLConfigWithTextSubconfig, ArchConfigWithKVCache):
         cls,
         pipeline_config: PipelineConfig,
         model_config: MAXModelConfig | None = None,
+        *,
+        max_seq_len: int,
     ) -> Self:
         """Initializes a Qwen3VLConfig instance from pipeline configuration.
 
@@ -425,7 +512,9 @@ class KimiK2_5Config(ArchVLConfigWithTextSubconfig, ArchConfigWithKVCache):
                 "but config could not be loaded. "
                 "Please ensure the model repository contains a valid config.json file."
             )
-        return cls.initialize_from_config(pipeline_config, huggingface_config)
+        return cls.initialize_from_config(
+            pipeline_config, huggingface_config, max_seq_len=max_seq_len
+        )
 
     @classmethod
     def initialize_from_config(
@@ -433,6 +522,8 @@ class KimiK2_5Config(ArchVLConfigWithTextSubconfig, ArchConfigWithKVCache):
         pipeline_config: PipelineConfig,
         huggingface_config: AutoConfig,
         llm_config: KimiK2_5TextConfig | None = None,
+        *,
+        max_seq_len: int,
     ) -> Self:
         """Initializes a KimiK2_5Config from pipeline and HuggingFace configs.
 
@@ -497,7 +588,9 @@ class KimiK2_5Config(ArchVLConfigWithTextSubconfig, ArchConfigWithKVCache):
             )
 
         if llm_config is None:
-            llm_config = KimiK2_5TextConfig.initialize(pipeline_config)
+            llm_config = KimiK2_5TextConfig.initialize(
+                pipeline_config, max_seq_len=max_seq_len
+            )
 
         return cls(
             dtype=dtype,

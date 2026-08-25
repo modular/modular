@@ -134,7 +134,7 @@ struct RMSNormFusedResidual:
                 multiply_before_cast=multiply_before_cast,
             ](
                 input.shape(),
-                gamma.to_tile_tensor[DType.int64](),
+                gamma.to_tile_tensor[.int64](),
                 epsilon,
                 weight_offset,
                 ctx,
@@ -195,7 +195,7 @@ struct RMSNormFusedResidual:
                 output_fn_cpu,
                 residual_output_fn_cpu,
                 input.shape(),
-                gamma.to_tile_tensor[DType.int64](),
+                gamma.to_tile_tensor[.int64](),
                 epsilon,
                 weight_offset,
                 dropout_p,

@@ -45,7 +45,7 @@ def is_negative[dtype: DType, //](value: SIMD[dtype, _]) -> type_of(value):
 @always_inline
 def splat[
     size: SIMDLength, //, dtype: DType
-](value: SIMD[DType.bool, size]) -> SIMD[dtype, size]:
+](value: SIMD[.bool, size]) -> SIMD[dtype, size]:
     """Elementwise splat the boolean value of each element in the SIMD vector
     into all bits of the corresponding element in a new SIMD vector.
 
@@ -61,7 +61,7 @@ def splat[
         corresponding element in `value` is `True`, or filled with `0` bits
         otherwise.
     """
-    return (-(value.cast[DType.int8]())).cast[dtype]()
+    return (-(value.cast[.int8]())).cast[dtype]()
 
 
 @always_inline
@@ -75,4 +75,4 @@ def splat(value: Bool) -> Int:
         A bitmask filled with `1` if the value is `True`, filled with `0`
         otherwise.
     """
-    return Int(splat[DType.int](Scalar[DType.bool](value)))
+    return Int(splat[.int](Scalar[.bool](value)))
