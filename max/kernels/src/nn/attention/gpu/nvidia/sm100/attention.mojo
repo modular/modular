@@ -127,6 +127,15 @@ struct FA4Config[
     # byte-identical layout.
     var use_ws: Bool
     var m_pack: Int
+    # When True, all `m_pack` warps of a softmax warpgroup share ONE key band:
+    # the packed-TMEM accumulator quarters become DEPTH bands, so the per-WG O
+    # accumulator occupies `padded_ov_depth / m_pack` physical columns instead
+    # of `padded_ov_depth`. Requires `use_ws`, `num_q == 1`, and -- so that the
+    # BN budget's `_o_cols` is unambiguously an O-column count rather than also
+    # a KV-tile-width proxy -- MHA geometry (`not is_mla`, `nope == ov`).
+    # False -- the default and every config today -- means `o_phys_cols()` is
+    # literally `padded_ov_depth`, i.e. every existing config is byte-identical.
+    var ws_shared_key: Bool
 
     # Concrete scale/rope dtypes for `Scalar[...]`/pointer reads. When the
     # optional param is unset, fall back to `qkv_dtype` so the type is always
@@ -226,9 +235,8 @@ struct FA4Config[
         FULL depth (`v_e_box_cols()`). Sibling of `v_box_cols()`, kept as a
         SEPARATE method (not folded into `v_box_cols()`) so Layout-G's
         `v_row_major()` / `kv_tma_fold_chunks` derivation -- which reads
-        `v_box_cols()` -- stays byte-identical; see
-        docs/plans/sm100-fa4-layout-e-mma64.md "the reduction-split
-        geometry". Meaningful only for `m_pack == 2`; a harmless (unused)
+        `v_box_cols()` -- stays byte-identical under the reduction-split
+        geometry. Meaningful only for `m_pack == 2`; a harmless (unused)
         value otherwise.
         """
         return (self.BN // self.m_pack) // self.num_qk_stages
@@ -269,7 +277,20 @@ struct FA4Config[
         `expect_tx` accounting. `kv_sub_tile_rows` is the identity whenever
         `page_size >= rows`, so Layout-G / non-WS stay byte-identical to the
         historical inline expression.
+
+        **Shared-key is a THIRD row source, and it is Layout-E's shape without
+        the partition split.** V is cut along its own *reduction* axis (keys),
+        never along depth: one slot is then exactly one P@V MMA's B operand, so
+        V liveness is 1 in-flight slot instead of the `pv_mma_n() /
+        kv_sub_depth()` depth slices Layout-G must hold simultaneously. That is
+        what makes the deep bf16 cells fit -- see `ring_slots_needed()`. The row
+        count is `pv_key_chunk()`, which already computes exactly this quantity
+        (`(BN * BK0) / pv_mma_n()`), so the ring's K/V byte-equality is
+        definitional here rather than an algebraic coincidence to be checked:
+        `pv_key_chunk() * pv_mma_n() == BN * BK0` by construction.
         """
+        if self.ws_shared_key:
+            return kv_sub_tile_rows(self.pv_key_chunk(), page_size)
         var rows = self.v_e_chunk_rows() if self.m_pack == 2 else self.BN
         return kv_sub_tile_rows(rows, page_size)
 
@@ -280,10 +301,37 @@ struct FA4Config[
         Sibling of `v_tma_box_rows()`: Layout-E (`m_pack == 2`) uses the
         full-depth `v_e_box_cols()`, Layout-G / non-WS the depth-split
         `v_box_cols()`.
+
+        Shared-key uses `pv_mma_n()`, NOT `v_e_box_cols()`'s
+        `padded_ov_depth`. The two coincide at depth 256 and differ at 512,
+        where `pv_mma_n()` saturates at 256 and the warpgroup walks
+        `num_o_tiles()` output depth tiles: the box must be ONE tile's depth,
+        because a box spanning both tiles would make a slot hold V for an
+        accumulator the current MMA is not writing -- reinstating exactly the
+        multi-slot liveness this layout exists to remove. Spelling it
+        `padded_ov_depth` would be right at d256 and silently wrong at d512.
         """
+        if self.ws_shared_key:
+            return self.pv_mma_n()
         if self.m_pack == 2:
             return self.v_e_box_cols()
         return self.v_box_cols()
+
+    @always_inline
+    def v_tma_tile_rows(self) -> Int:
+        """V TMA *tile* row stride at the issue site (`BN // num_v_sub_tiles`),
+        NOT the box row count -- feeding the fold's `box_rows == tile_rows`
+        test the box rows makes it vacuously true; feeding it `BN` pinned the
+        shared-key fold to 1.
+
+        Shared-key: `pv_key_chunk()`. Layout-E: `v_e_chunk_rows()`. Layout-G /
+        non-WS: `BN`.
+        """
+        if self.ws_shared_key:
+            return self.pv_key_chunk()
+        if self.m_pack == 2:
+            return self.v_e_chunk_rows()
+        return self.BN
 
     @always_inline
     def nope_cols_per_cta(self) -> Int:
@@ -306,6 +354,560 @@ struct FA4Config[
         Equals `padded_ov_depth` for MHA / DeepSeek (nope == ov).
         """
         return max(self.padded_nope_depth, self.padded_ov_depth)
+
+    @always_inline
+    def pv_partitions(self) -> Int:
+        """Independent key partitions the P@V accumulator of one warpgroup holds.
+
+        Default (`ws_shared_key == False`): each of the `m_pack` packed-TMEM
+        warps is its own key partition carrying a full-depth O partial, so this
+        is `m_pack` (and 1 on the non-WS path, where `m_pack == 1`). Under
+        shared-key mode the whole warpgroup walks one key band, so there is a
+        single partition and the quarters become depth bands instead.
+        """
+        return 1 if self.ws_shared_key else self.m_pack
+
+    @staticmethod
+    @always_inline
+    def _o_phys_cols(
+        padded_ov_depth: Int, m_pack: Int, ws_shared_key: Bool
+    ) -> Int:
+        """Physical TMEM columns one O accumulator occupies.
+
+        A `@staticmethod` on purpose: `__init__` needs this quantity while
+        `self` is still partially initialized, and a *method* call there would
+        borrow all of `self` and be rejected. Because this borrows nothing,
+        `__init__` and `o_phys_cols()` can share ONE spelling instead of
+        maintaining two that a test has to bind together.
+
+        Spelled with an explicit mode-off branch rather than as
+        `pv_partitions() * (padded_ov_depth // m_pack)` so the identity is
+        *syntactic*: the mode-off arm is literally `padded_ov_depth` and folds
+        without the compiler having to prove `m_pack * (x // m_pack) == x`.
+        That algebraic form is also silently wrong for any `padded_ov_depth`
+        that is not a multiple of `m_pack`.
+        """
+        if ws_shared_key:
+            return padded_ov_depth // m_pack
+        return padded_ov_depth
+
+    @always_inline
+    def o_phys_cols(self) -> Int:
+        """Physical TMEM columns one O accumulator occupies.
+
+        Thin forward to `_o_phys_cols`, which `__init__` also calls -- the two
+        cannot drift.
+        """
+        return Self._o_phys_cols(
+            self.padded_ov_depth, self.m_pack, self.ws_shared_key
+        )
+
+    @always_inline
+    def ws_epilogue_stage_f32(self) -> Int:
+        """Per-warpgroup Level-1 raw-O staging, in f32 slots.
+
+        `m_pack * BM * ov_depth` is **128 KiB per warpgroup** at Layout-G /
+        depth 256, and both warpgroups carve one. That, plus the L2 staging and
+        the output, is ~305 KiB against a 232 KiB carveout -- i.e. today's
+        epilogue cannot run at these depths at all, and the budget assert in
+        `fa4_softmax` says so.
+
+        Shared-key mode removes it entirely: with one key band and one shared
+        accumulator there is no `m_pack`-way fold, so there is nothing to
+        stage. `fa4_ws_level0_band` reads each warp's band straight out of TMEM
+        into registers. That is what makes the epilogue fit at depth 256/512.
+
+        On the config rather than at the carve because the offsets are computed
+        INDEPENDENTLY in two places (the T>=2 epilogue and the empty-partition
+        split-K path), which must keep their DSMEM offsets aligned across
+        partitions. Mode-independent duplicates agree by inspection; mode-dependent
+        ones would not.
+        """
+        if self.ws_shared_key:
+            return 0
+        return self.m_pack * self.BM * self.ov_depth
+
+    @always_inline
+    def ws_epilogue_ml_f32(self) -> Int:
+        """Per-warpgroup Level-1 `(m, l)` staging, in f32 slots.
+
+        Zero under shared-key for the same reason as the O staging: the row max
+        is already agreed by the per-iteration exchange and the row sum goes
+        through the dedicated `ws_exchange` region, so no `(m, l)` ever transits
+        this one.
+        """
+        if self.ws_shared_key:
+            return 0
+        return self.m_pack * self.BM * 2
+
+    @always_inline
+    def ws_epilogue_f32_slots(self) -> Int:
+        """Total f32 slots the WS epilogue carves from the dead Q+KV span.
+
+        `2 * (stage + ml)` for the two warpgroups' Level 1, plus the single
+        cross-WG L2 staging and its `(m_1, l_1)`. The output tile is NOT
+        included -- it is `output_type`, not f32, and the caller adds it.
+
+        The L2 terms are mode-independent: `ov_depth * BM` covers all
+        `num_o_tiles()` per-tile windows exactly, because the windows partition
+        the depth. So the tiled shared-key epilogue needs no more L2 staging
+        than the single-call one, only a different subdivision of it.
+
+        "Exactly" is conditional, and the condition is enforced elsewhere. The
+        windows sum to `num_o_tiles() * pv_mma_n() * BM`, which is
+        `padded_ov_depth * BM` by `num_o_tiles()`'s defining invariant -- the
+        PADDED depth, while this term is the unpadded one. `supported()`
+        conjunct (5) rejects shared-key whenever the two differ, so do not read
+        this docstring as proof that any `ov_depth` works.
+        """
+        return (
+            2 * self.ws_epilogue_stage_f32()
+            + 2 * self.ws_epilogue_ml_f32()
+            + self.ov_depth * self.BM
+            + self.BM * 2
+        )
+
+    @always_inline
+    def correction_o_cols(self) -> Int:
+        """TMEM columns `correction_warp._rescale_o` must walk per accumulator.
+
+        NOT a synonym for `o_phys_cols()`, and deliberately not spelled as one:
+        the mode-off arm is the **unpadded** `ov_depth`, which is what
+        `_rescale_o` has always used and is narrower than `padded_ov_depth`
+        wherever the swizzle pads (the `test_mla_prefill_vhead_repro_ps*`
+        shapes). Substituting the padded width would rescale columns the
+        producer never wrote.
+
+        Mode-on the accumulator is packed `m_pack` ways into depth bands, so
+        the region really is `o_phys_cols()` columns wide. Walking the logical
+        `ov_depth` instead would run 4x past it at d256 -- over `TMEM_O1` and
+        the `S` windows, then past the CTA's TMEM allocation entirely. That
+        fault is silent: wrong answers, no trap.
+
+        `supported()` gates on this so the `comptime assert load_iters > 1`
+        inside `_rescale_o` can never be violated by a geometry the dispatcher
+        accepted -- one spelling, checked once.
+        """
+        if self.ws_shared_key:
+            return self.o_phys_cols()
+        return self.ov_depth  # mode-off arm stays LITERAL (unpadded)
+
+    @always_inline
+    def pv_mma_n(self) -> Int:
+        """`MMA_N` of the P@V MMA.
+
+        The mode-off arms reproduce `mma_warp.mojo`'s three-way ladder
+        *verbatim*, deliberately not unified: Layout-E's
+        `m_pack * padded_ov_depth` and Layout-G's `m_pack * (256 // m_pack)`
+        are different expressions that merely coincide at some shapes, and the
+        non-WS arm is a third. A "simplification" here is a silent geometry
+        change on a shipping path.
+
+        This is also the exit for the two *inert* duplicate declarations of the
+        same MMA (`softmax_warp.mojo`, `kernel.mojo`), which spell `MMA_N` as
+        `padded_ov_depth` and disagree with `mma_warp` on both WS layouts.
+        """
+        if self.ws_shared_key:
+            # One MMA per output depth tile; tcgen05's N is capped at 256.
+            return min(self.padded_ov_depth, 256)
+        if self.use_ws and self.m_pack == 2:  # Layout-E, reduction split
+            return self.m_pack * self.padded_ov_depth
+        if self.use_ws:  # Layout-G, depth scatter
+            return self.m_pack * (256 // self.m_pack)
+        return self.padded_ov_depth  # non-WS
+
+    @always_inline
+    def num_o_tiles(self) -> Int:
+        """Output depth tiles the P@V walks -- `mma_warp`'s C-stride count.
+
+        `TMEM_O0`/`TMEM_O1` are the two Q-stage pipelines, not two tiles of one
+        warpgroup. Mode-off this counts the depth tiles a Layout-G P@V scatters
+        O across (2 at shipping d128); mode-on it is the number of
+        accumulators, because `pv_mma_n()` saturates at 256 and a depth beyond
+        that needs a second one. Both readings are the same division, which is
+        why one accessor serves them.
+
+        Spelled against `pv_mma_n()` rather than a literal 256. The two are equal
+        at every value this derives today (64/128/256/512), but they are
+        *different quantities* -- the tile count vs. the tile width -- and the
+        shared-key epilogue walks `num_o_tiles()` tiles of
+        `pv_mma_n() // m_pack` columns each, so a disagreement scatters O to the
+        wrong depth columns silently. The binding invariant is now the
+        DEFINITION, not a separate claim a test has to bind:
+        `num_o_tiles() * (pv_mma_n() // m_pack) == o_phys_cols()`. The
+        `pv_mma_n() // m_pack` factor is the per-warp band width
+        (`softmax_warp`'s `band_cols`) and is also exactly `depth_tile` in every
+        mode (Layout-G `256/4`, Layout-E `256/2`, non-WS `padded_ov_depth`),
+        so one expression serves the mode-off depth-tile count and the mode-on
+        accumulator count.
+
+        `ceildiv`, not floor: mode-on this must stay equal to
+        `ceildiv(padded_ov_depth, pv_mma_n())`, which floor division would break
+        at any depth that is not a multiple of the band (a padded 384 gives 2;
+        floor would give 1 and drop a tile).
+
+        NOTE: `mma_warp`'s local `num_d_tiles` is `num_qk_stages` (2) there,
+        because it counts REDUCTION chunks, not depth tiles -- a different
+        quantity wearing the same name (see U3). Do not "fix" one row to match
+        the other.
+        """
+        return ceildiv(self.o_phys_cols(), self.pv_mma_n() // self.m_pack)
+
+    @always_inline
+    def pv_key_chunk(self) -> Int:
+        """Keys contracted by ONE P@V MMA.
+
+        Mode-on this is forced by the ring geometry, not chosen: the B operand
+        of one MMA must exactly fill one KV ring slot, which is the byte
+        identity `mma_warp.mojo:480-486` already asserts for Layout-E. With
+        `sub_depth == BK0` (MHA, which the shared-key guard requires) that
+        reduces to `BN * BK0 / pv_mma_n`.
+
+        Mode-off keeps the literal ladder. The unified formula is NOT valid
+        there: on the non-WS arm it needs `BK0 == padded_ov_depth`, which
+        fails for every config with `num_qk_stages > 1`.
+        """
+        if self.ws_shared_key:
+            return (self.BN * self.BK0) // self.pv_mma_n()
+        if self.use_ws and self.m_pack == 2:  # Layout-E
+            return self.v_e_chunk_rows()
+        if self.use_ws:  # Layout-G
+            return self.BN // self.m_pack
+        return self.BN  # non-WS
+
+    @always_inline
+    def pv_reduction_chunks(self) -> Int:
+        """Chunks the shared-key P@V **reduction** axis is cut into.
+
+            pv_reduction_chunks() * pv_key_chunk() == BN      # 4 * 64 == 256
+
+        P@V has two INDEPENDENT splits, and the names must keep them apart:
+
+            depth      the MMA's N axis   `num_o_tiles()`   1 @ d256, 2 @ d512
+            reduction  the MMA's K axis   this accessor     4 @ d256, 4 @ d512
+
+        Their product is `v_ring_positions_per_tile()`, the ring positions one
+        V tile occupies. Named for the AXIS rather than as a "per tile" count:
+        "tile" is ambiguous here, since the chunk set is per KV tile and repeats
+        identically for each of the `num_o_tiles()` depth tiles.
+
+        The OUTER axis of the 2-D shared-key V walk, and the axis a short final
+        tile truncates. Both warps derive their trip count from this one
+        accessor: the producer emits chunks `[0, live)` and the consumer
+        contracts the same `[0, live)`, so a divergence here is a hang rather
+        than a wrong answer.
+
+        Chunk-outer / depth-tile-inner is deliberate. A dead chunk then removes
+        a CONTIGUOUS run of `num_o_tiles()` positions from the END of the walk,
+        which keeps the live set a prefix; the transposed order would interleave
+        the skips and force both sides to reconstruct a non-contiguous pattern.
+        It also lets the producer hoist its per-chunk `populate` out of the
+        depth-tile loop, since all `num_o_tiles()` tiles of a chunk read the
+        SAME key rows.
+
+        `supported()` requires `BN % pv_key_chunk() == 0`, so this is exact --
+        a ragged last chunk would desynchronize the two sides' `c * KC`
+        arithmetic from `BN` silently.
+        """
+        return self.BN // self.pv_key_chunk()
+
+    @always_inline
+    def v_ring_positions_per_tile(self) -> Int:
+        """KV ring positions ONE V tile occupies under the shared-key walk.
+
+        The walk is 2-D -- `num_o_tiles()` output depth tiles x
+        `pv_reduction_chunks()` key chunks -- and this is their product. It is
+        the consumer-side twin of the producer's `_emit_v` trip count
+        (`load_warp.mojo`, `comptime for stage in range(config.num_qk_stages)`),
+        so the two agreeing is what keeps the ring in step.
+
+        **They agree by ALGEBRA, not by coincidence.** Substituting
+        `pv_key_chunk() == BN*BK0 / pv_mma_n()` and
+        `num_o_tiles() == padded_ov_depth / pv_mma_n()`:
+
+            num_o_tiles * (BN / pv_key_chunk)
+              = (padded_ov / pv_mma_n) * (BN * pv_mma_n) / (BN * BK0)
+              = padded_ov / BK0
+              = num_qk_stages
+
+        so the identity holds for every shared-key geometry, not just the two we
+        ship. That is why `supported()` asserts THIS rather than the older
+        `num_o_tiles() == num_qk_stages`, which is the same statement only when
+        there is exactly one key chunk and is simply false at BN=256 (d256 gives
+        1 != 4, d512 gives 2 != 8).
+
+        Meaningless off the shared-key walk -- Layout-G's V positions are depth
+        tiles and Layout-E's are reduction chunks, neither of which is a product
+        of these two factors. Guard call sites on `ws_shared_key`.
+        """
+        return self.num_o_tiles() * self.pv_reduction_chunks()
+
+    @always_inline
+    def v_pages_per_chunk(self, page_size: Int) -> Int:
+        """Page slots one shared-key V key chunk's TMA box spans.
+
+        1 whenever `page_size >= pv_key_chunk()` (64), because
+        `kv_sub_tile_rows` is the identity there -- so at the production paged
+        shapes {64, 128} a key chunk is exactly ONE TMA issue and `valid_pages`
+        is binary: either the chunk is fully issued or it is the fully-empty TMA
+        the walk skips. It only exceeds 1 at `page_size < 64`.
+        """
+        return self.pv_key_chunk() // kv_sub_tile_rows(
+            self.pv_key_chunk(), page_size
+        )
+
+    @always_inline
+    def v_oob_fill_needed(self, page_size: Int) -> Bool:
+        """Whether a partial V sub-tile must OOB-zero-fill its dead page slots.
+
+        Zero-fill exists to make an UNCONDITIONALLY-ISSUED P@V read finite data.
+        It is needed for either of two independent reasons:
+
+        1. **The position cannot be dropped** -- `pv_partitions() > 1`. When one
+           ring position serves several independent key partitions, one
+           partition's chunk can be dead while another's is live, so every pack
+           takes the same cut and the position must be filled rather than
+           skipped. This is Layout-E's case, argued at `load_warp.mojo`'s
+           `_produce_v_e`, and Layout-G's (its V positions are depth slices
+           spanning all BN keys, so only their tail pages are dead).
+        2. **A LIVE position has dead page slots inside it** --
+           `v_pages_per_chunk() > 1`. Only reachable at `page_size < 64`.
+
+        Under shared-key at the production page sizes neither holds: there is
+        one partition, so a dead key chunk is dead for every consumer of that
+        position and producer and consumer skip it in lockstep; and a live chunk
+        is one whole TMA issue with nothing dead inside it. Nothing is left to
+        fill -- which is the point, since filling it would mean writing a slot
+        of zeros so the MMA warp can multiply by them.
+
+        Spelled on `pv_partitions()` rather than `not ws_shared_key` because the
+        partition count is the actual reason, and stays right if another
+        multi-partition layout appears. Reproduces today's `partial and use_ws`
+        selector exactly off the shared-key path: `m_pack == 1` iff not
+        `use_ws`, so `pv_partitions() > 1` is precisely `use_ws` there.
+        """
+        return self.pv_partitions() > 1 or (
+            self.ws_shared_key and self.v_pages_per_chunk(page_size) > 1
+        )
+
+    @always_inline
+    def kv_sub_depth(self) -> Int:
+        """Depth covered by one KV ring sub-tile.
+
+        The `sub_depth` local `__init__` uses to size `bytes_per_subtile`.
+        """
+        return self.shared_kv_cols() // self.num_qk_stages
+
+    @always_inline
+    def v_residency(self) -> Int:
+        """`R_V`: the most V ring positions the consumer holds at once.
+
+        The only non-zero term of `ring_slots_needed()`'s span decomposition on
+        the co-rotated schedule -- see there for why `H_K` and `W_K` vanish.
+        Split out so the two release disciplines are visibly different
+        quantities rather than one expression that happens to cover both.
+
+        **Key-split (mode off): the whole V tile.** `_pv_ws`'s legacy arm waits
+        every sub-slot up front (`_v_wait_rest`), MMAs them all, then releases the
+        group (`_v_release_first` + `_v_release_rest`). The residency is the
+        sub-tile count a V tile occupies, which equals `num_qk_stages` wherever
+        `mma_warp`'s `v_subslots == num_qk_stages` assert holds. Keep the
+        `padded_ov_depth // kv_sub_depth()` spelling -- the quantity the
+        derivation bounds, reporting truth rather than a coincidence on a
+        layout that breaks that assert.
+
+        **Shared-key: ONE.** The key-chunk walk releases each position the
+        instant its MMAs are issued (`mma_warp`'s `_commit` at the foot of the
+        `(chunk, depth tile)` body). `_commit` lowers to `tcgen05.commit`, so
+        the arrival is ordered BEHIND every MMA the warp issued and the release
+        cannot outrun the operand read. That is the whole reason the key-chunk
+        layout exists, and what makes bf16 d512 expressible at all: a whole K
+        tile there is `8 * 32768 B`, more than the 232448 B carveout, so no
+        whole-tile residency can fit.
+
+        **A claim about the CONSUMER, true only while every KV-slot reader is
+        an async MMA.** Give a slot a non-MMA reader -- LDSM, `ld.shared`,
+        `cp.async` -- and release-after-issue stops being ordered by
+        `tcgen05.commit`: the producer may refill a slot the reader has not
+        drained. Silent corruption, not a hang. P is staged through `p_smem`,
+        carved and charged separately, precisely so this stays true.
+        """
+        if self.ws_shared_key:
+            return 1
+        return self.padded_ov_depth // self.kv_sub_depth()
+
+    @always_inline
+    def ring_slots_needed(self) -> Int:
+        """KV ring slots the P@V schedule must have to make progress.
+
+        Deadlock-freedom bound consumed by `supported()`, not a performance
+        target. Under-tightening does not fail to compile and gives no wrong
+        answer -- it HANGS, consumer blocked in `consumer_wait()` (`mma_warp`)
+        and producer in `producer_acquire()` (`load_warp`).
+
+        A SPAN over ring positions, not a count of live slots.
+        `producer_acquire` waits on `consumer_mbar()` keyed by the producer's
+        own `state.index()`, and both warps walk one cursor one step at a
+        time, so the producer may fill position `q` only after the consumer
+        released `q - N`. A released-but-not-yet-recycled position still costs
+        a slot:
+
+            N_min = max over consumer waits at q of
+                      (q - oldest_unreleased(q) + 1)
+
+        Under WS every K and V depth sub-tile is its OWN ring position, so
+
+            N_min = R_V + H_K + W_K
+
+        with `R_V` the most V positions held at once, `H_K` one if the
+        preceding K tile's last sub-slot is still unreleased when the V walk
+        blocks on its d0, `W_K` a whole K group if a V group stays held across
+        the K traversal. On the co-rotated 1Q schedule both K terms vanish:
+        `W_K = 0` (rotation consumes in emission order, so no V group spans a
+        K traversal) and `H_K = 0` (three sites in `mma_warp`'s `_body_1q`
+        retire the preceding K tile's LAST sub-slot before the next V d0 wait;
+        remove any one and `H_K` becomes 1, returning the floor to `S + 1`). K's
+        own `num_qk_stages` extent is a DISTANCE TRAVERSED, not residency.
+
+        Spelled `v_residency()` not `num_qk_stages` so the two release
+        disciplines stay two quantities (key-split holds a whole V tile,
+        shared-key one position).
+
+        Must be EXACTLY the deadlock bound, with no slack: bf16 d512 carries 4
+        slots and cannot get a fifth, so a `+1` -- inert on every other cell --
+        would silently reject it. Slack is a pipelining concern
+        (`run_ahead = num_kv_stages - N_min`), not correctness.
+
+        This accessor and the schedule are ONE unit: this bound against an
+        unrotated producer/consumer hangs any config with `num_kv_stages` in
+        [S, 2*S), so the rotation cannot be disabled.
+        """
+        if not self.use_ws:
+            # Non-WS: `num_qk_stages` is forced to 1 (`__init__`'s shared arm)
+            # and one slot holds a whole tile, so K and V contribute one
+            # position each. Matches `supported()`'s base `>= 2` conjunct.
+            return 2
+        # Rotated schedule: `R_V` alone (see the decomposition above).
+        return self.v_residency()
+
+    @always_inline
+    def ws_arena_slots_needed(self) -> Int:
+        """The OTHER floor on `num_kv_stages`: the WS combine epilogue's arena.
+
+        `num_kv_stages` is not only a ring depth. The WS two-level combine
+        carves its f32 staging out of the dead Q+KV span and requires
+        (`softmax_warp.mojo`)
+
+            ws_epilogue_f32_slots()*4 + BM*ov_depth*2  <=  q_bytes + kv_bytes
+
+        and on the WS path `kv_bytes == num_kv_stages * subtile_bytes`. So that
+        is a lower bound on the stage count, independent of
+        `ring_slots_needed()` -- and the LARGER of the two on every cell, so
+        the ring is nowhere the binding constraint.
+
+        Which one binds flips with the mode: shared-key drives
+        `ws_epilogue_stage_f32()`/`ws_epilogue_ml_f32()` to 0, and that collapse
+        is what makes depth 256/512 fit at all.
+
+        **Why this is a `supported()` conjunct and not left as the assert.**
+        Every other admission constraint reaches dispatch as a graceful
+        `comptime if` fall-through (`dispatch.mojo`), but the epilogue assert is
+        a `comptime assert` deep inside `fa4_softmax`, so violating it is a
+        **build error, not a reroute** -- and `bm64` d128 sits EXACTLY on its
+        floor, so any new fixed SMEM region trips it. That assert stays as a
+        redundant backstop. The layout here is duplicated from `smem.mojo`
+        (importing it would be circular); `test_fa4_config_scaffold` binds the
+        two spellings with an equality assert.
+
+        The `2` is `size_of[output_type]()`, which `supported()` cannot see (a
+        kernel param). WS requires a 2-byte output, so 2 is exact on every
+        config that can reach the epilogue; a wider output would make the real
+        arena larger than this estimate, caught by the backstop assert.
+        """
+        if not self.use_ws:
+            # Non-WS prunes the whole epilogue block, so it imposes no floor.
+            return 0
+        var subtile_bytes = (
+            self.BN
+            * (self.shared_kv_cols() // self.num_qk_stages)
+            * Self.qkv_dtype_size
+        )
+        if subtile_bytes <= 0:
+            # Degenerate cell (BN solves to 0 or negative at depths this layout
+            # cannot host). Impose nothing and let the conjuncts that actually
+            # describe the failure do the rejecting, rather than masking them
+            # behind a bound computed from nonsense.
+            return 0
+        var arena_bytes = (
+            self.ws_epilogue_f32_slots() * size_of[DType.float32]()
+            + self.BM * self.ov_depth * 2
+        )
+        var q_bytes = (
+            self.BM * self.padded_nope_depth * Self.qkv_dtype_size
+            + self.BM * self.rope_depth() * Self.rope_dtype_size
+        )
+        if arena_bytes <= q_bytes:
+            return 0
+        return ceildiv(arena_bytes - q_bytes, subtile_bytes)
+
+    @staticmethod
+    @always_inline
+    def _ws_exchange_bytes(ws_shared_key: Bool) -> Int:
+        """Bytes of the shared-key cross-warp row-max exchange region.
+
+        `2 (parity) * 2 (warpgroup) * WARPGROUP_SIZE` Float32 slots = 2 KiB.
+
+        Fixed by the number of *softmax threads*, not by `BM` or `m_pack`:
+        every one of a warpgroup's 128 threads deposits one partial then re-reads
+        all `m_pack` of them. `m_pack * BM == WARPGROUP_SIZE` makes the slot map
+        work (thread `t` owns row `t % BM` of warp `t / BM`), and `supported()`
+        REJECTS a shared-key config that breaks it rather than leaving it a
+        coincidence -- the correction region carries the same warning for the
+        same reason.
+
+        Double-buffered on iteration parity so ONE `named_barrier` per exchange
+        suffices (see `fa4_ws_exchange4` for the race argument). A dedicated
+        region, not a slice of `correction_smem`, precisely because the
+        read-vs-correction-write overlap there is what forces the depth512
+        ancestor's second barrier.
+
+        A `@staticmethod` so `__init__` (partially-initialized `self`) and
+        `SM100AttentionSMem` share ONE spelling -- the two *must* agree exactly,
+        and `mla_prefill_blockscale.mojo` asserts `smem_size() == smem_used`.
+        """
+        if ws_shared_key:
+            return 2 * 2 * WARPGROUP_SIZE * size_of[DType.float32]()
+        return 0
+
+    @always_inline
+    def ws_exchange_bytes(self) -> Int:
+        """Bytes of the shared-key cross-warp exchange region (0 when off)."""
+        return Self._ws_exchange_bytes(self.ws_shared_key)
+
+    @staticmethod
+    @always_inline
+    def _p_smem_bytes(BM: Int, BN: Int, ws_shared_key: Bool) -> Int:
+        """Bytes of the shared-key P staging region.
+
+        Under shared-key mode the P@V MMA becomes an SS MMA whose A operand is
+        the full `BM x BN` P tile spanning all `m_pack` warps, so P can no
+        longer live in each warp's own packed-TMEM S window. One tile per
+        softmax warpgroup: both warpgroups are concurrently live (only
+        `single_o` / `total_iters <= 1` parks WG1, and reserving the second
+        buffer there is merely unused, never wrong).
+
+        Single-buffered per warpgroup on purpose: RAW is covered by
+        `consumer_s`, WAR by the existing `pipeline_s` producer barrier via
+        UMMA issue order (see the `fa4_ws_exchange4` docstring).
+        """
+        if ws_shared_key:
+            return 2 * BM * BN * Self.qkv_dtype_size
+        return 0
+
+    @always_inline
+    def p_smem_bytes(self) -> Int:
+        """Bytes of the shared-key P staging region (0 when off)."""
+        return Self._p_smem_bytes(self.BM, self.BN, self.ws_shared_key)
 
     @always_inline
     def k_rows_per_cta(self) -> Int:
@@ -573,6 +1175,7 @@ struct FA4Config[
         nope_depth: Int = -1,
         single_o: Bool = False,
         bn_cap: Int = 0,
+        ws_shared_key: Bool = False,
     ):
         # num_qk_stages == 0 (default) derives the optimal Q@K' staging.
         # A nonzero value pins it (used by the in-kernel 1Q/2Q switch, which
@@ -652,7 +1255,36 @@ struct FA4Config[
         # the config instead of re-deriving the expression above.
         self.use_ws = use_ws
         self.m_pack = m_pack
-        var _o_cols = max(self.padded_nope_depth, self.padded_ov_depth)
+        # Shared-key mode is only meaningful for the warp-specialized 1Q
+        # datapath. Guard against an inconsistent caller the way `single_o`
+        # does; `ws_shared_key=False` is the default and leaves every existing
+        # config untouched.
+        #
+        # `not is_mla and nope == ov` is NOT redundant belt-and-braces: it is
+        # what makes `_o_cols` below unambiguous. `_o_cols` serves two masters
+        # -- the O accumulator's TMEM columns AND a proxy for the KV tile width
+        # (which must hold the nope-wide K_nope as well as the v-wide V). Those
+        # two coincide only when `nope == ov`, so the shared-key arm may
+        # substitute the O footprint for the whole `max` only under that
+        # premise. WS already requires `not is_mla` in `supported()`; this
+        # makes the invariant local and self-guarding instead of remote.
+        self.ws_shared_key = (
+            ws_shared_key
+            and use_ws
+            and self.num_q == 1
+            and not is_mla
+            and self.padded_nope_depth == self.padded_ov_depth
+        )
+        # Physical TMEM columns charged to the O term of the BN budget. Mode-off
+        # this is `max(nope, ov)` verbatim. Mode-on the accumulator is packed
+        # `m_pack`-ways into depth bands, so it really occupies
+        # `padded_ov / m_pack` columns -- and charging the un-divided width is
+        # what drives `_bn_budget` to 0 at depth 256 and negative at 512.
+        var _o_cols = Self._o_phys_cols(
+            max(self.padded_nope_depth, self.padded_ov_depth),
+            m_pack,
+            self.ws_shared_key,
+        )
         # Packing multiplies the achievable BN by m_pack: the two S accumulators
         # occupy 2*(BN/m_pack) columns instead of 2*BN, so BN may be m_pack larger.
         var _bn_budget = (
@@ -689,7 +1321,8 @@ struct FA4Config[
         self.row_major_k_atoms = page_dense_default
         # S/P score accumulators occupy BN/m_pack physical TMEM columns under
         # the packed WS datapath (m_pack=1 => full BN, byte-identical). The O
-        # term is unchanged: the packed P@V O still spans `padded_ov` columns.
+        # term used to be unconditionally `padded_ov`; it is now
+        # `_o_phys_cols` below, which divides by `m_pack` under shared-key.
         var s_cols = self.BN // m_pack
         self.TMEM_S1 = Self.TMEM_S0 + s_cols
         # Cross-stage: P0 in S1's window, P1 in S0's window, at the region
@@ -709,14 +1342,21 @@ struct FA4Config[
             self.TMEM_P0 = Self.TMEM_S0
             self.TMEM_P1 = self.TMEM_S1
         self.TMEM_O0 = self.TMEM_S1 + s_cols
+        # Physical TMEM columns one O accumulator occupies. `_o_phys_cols` is a
+        # `@staticmethod` precisely so this call is legal here (a method would
+        # borrow the partially initialized `self`) -- so the constructor and
+        # `o_phys_cols()` are ONE spelling, not two kept in sync by hand.
+        var o_phys = Self._o_phys_cols(
+            self.padded_ov_depth, m_pack, self.ws_shared_key
+        )
         # single-O: alias O1 onto O0 (the 1Q body reuses one O accumulator) and
         # reserve a single O region -> tmem_used = 2*BN + padded_ov. Default
         # (2-O) is unchanged: two distinct O regions, tmem_used = 2*BN + 2*ov.
         if self.single_o:
             self.TMEM_O1 = self.TMEM_O0
         else:
-            self.TMEM_O1 = self.TMEM_O0 + self.padded_ov_depth
-        self.tmem_used = self.TMEM_O1 + self.padded_ov_depth
+            self.TMEM_O1 = self.TMEM_O0 + o_phys
+        self.tmem_used = self.TMEM_O1 + o_phys
 
         # We have the following resources that need smem barriers:
         # KV: num_kv_stages
@@ -837,6 +1477,21 @@ struct FA4Config[
             * Self.num_correction_cols
             * size_of[DType.float32]()
         )
+
+        # Shared-key regions. BOTH fold to 0 for every config that ships
+        # today, so `smem_used` and every derived `num_kv_stages` are
+        # byte-identical off-mode.
+        #
+        # These MUST be charged HERE, before `var remaining = ...` below:
+        # `remaining` is the numerator of `kv_slots = remaining //
+        # bytes_per_subtile`, so bytes added after it come out of nothing and
+        # over-subscribe the ring. The `smem_used >= smem_size()` check in the
+        # kernel is one-directional and would NOT catch that -- it only
+        # catches under-reservation. Charging them here instead costs the ring
+        # `ceildiv(bytes, bytes_per_subtile)` slots honestly, which
+        # `supported()`'s `num_kv_stages >= ring_slots_needed()` then judges.
+        smem_use += Self._p_smem_bytes(self.BM, self.BN, self.ws_shared_key)
+        smem_use += Self._ws_exchange_bytes(self.ws_shared_key)
 
         # We use one of two strategies:
         #  - non-shared kv: more efficient/neater to track smem separately.
@@ -1028,12 +1683,19 @@ struct FA4Config[
                     and not self.is_mla
                     and self.rope_depth() == 0
                     and Self.scale_dtype_size == 0
-                    # WS shared sub-tile ring: the P@V deferred-2-slot-V-hold
-                    # needs >= 4 free-slot headroom (release precedes reuse), so
-                    # a shape whose budget only fits < 4 sub-tile slots would
-                    # deadlock the ring. `num_kv_stages >= 2` (base) is not
-                    # enough for WS.
-                    and self.num_kv_stages >= 4
+                    # WS shared sub-tile ring, from the schedule's own span
+                    # model rather than a literal. Load-bearing on the
+                    # shared-key arm: an under-tight floor admits `fp8 d512`
+                    # with 11 slots against a true floor of 16, which HANGS
+                    # rather than answering wrongly.
+                    and self.num_kv_stages >= self.ring_slots_needed()
+                    # The SECOND floor on the same number, usually the larger:
+                    # `num_kv_stages` also sizes the SMEM arena the combine
+                    # epilogue carves from the dead Q+KV span. As a conjunct an
+                    # inadmissible config REROUTES to the 1Q/split-K carve; the
+                    # `comptime assert` in `fa4_softmax` alone would make it a
+                    # build error. Layout-E d128 sits exactly on the floor.
+                    and self.num_kv_stages >= self.ws_arena_slots_needed()
                     # Uniform shared-ring sub-tile premise: a ring slot holds
                     # EITHER a K depth-half OR a V sub-tile, so the two must be
                     # byte-equal. K is always a [BN x BK0] depth-half. V differs
@@ -1047,13 +1709,123 @@ struct FA4Config[
                     #     [BN x BK0] K sub-tile is algebraic once the key axis
                     #     divides evenly: (BN//m_pack//nqs)*(m_pack*D)
                     #     == BN*(D//nqs) == the K sub-tile bytes.
+                    #   Shared-key: V is neither depth-scattered per warp nor
+                    #     reduction-split per partition -- the warpgroup walks
+                    #     ONE key band and the quarters are depth bands, so a V
+                    #     sub-tile is just [BN x sub_depth], byte-equal to the K
+                    #     sub-tile by construction. What must hold instead is
+                    #     that an output depth tile (`pv_mma_n()` wide) is a
+                    #     whole number of V sub-tiles, and that one MMA's key
+                    #     chunk is a whole number of P sub-stage k-blocks --
+                    #     under-satisfying the latter makes `k_batch_end`'s
+                    #     `min` silently DROP the last k-block rather than fail.
                     # Reject shapes that break this uniform-sub-tile premise.
                     and (
-                        (self.m_pack == 4 and (256 // self.m_pack) == self.BK0)
-                        or (
-                            self.m_pack == 2
-                            and (self.BN // self.m_pack) % self.num_qk_stages
+                        (
+                            self.padded_ov_depth % self.kv_sub_depth() == 0
+                            and self.pv_mma_n() % self.kv_sub_depth() == 0
+                            and self.pv_key_chunk()
+                            % (Self.MMA_K * self.num_pv_stages)
                             == 0
+                        ) if self.ws_shared_key else (
+                            (
+                                self.m_pack == 4
+                                and (256 // self.m_pack) == self.BK0
+                            )
+                            or (
+                                self.m_pack == 2
+                                and (self.BN // self.m_pack)
+                                % self.num_qk_stages
+                                == 0
+                            )
+                        )
+                    )
+                    # Two shared-key premises that are otherwise enforced only
+                    # by a `comptime assert` deep inside a warp -- i.e. as a
+                    # BUILD FAILURE on a config the dispatcher already accepted,
+                    # rather than as a route rejection. Both are vacuously true
+                    # off-mode, so `not ws_shared_key` short-circuits first and
+                    # no shipping config re-evaluates them.
+                    #
+                    # (1) `fa4_ws_exchange4`'s slot map is a bijection from the
+                    #     warpgroup's 128 threads onto 128 f32 slots only when
+                    #     `m_pack * BM == WARPGROUP_SIZE` (thread `t` owns row
+                    #     `t % BM` of warp `t / BM`). Violate it and two warps
+                    #     alias one slot: a plausible-but-wrong row max, no
+                    #     fault. It must stay guarded -- BM=256 breaks it, and
+                    #     BM=256 is a shipping config.
+                    # (2) `correction_warp._rescale_o`'s software-pipelined
+                    #     prologue asserts `load_iters > 1`, where `load_iters
+                    #     = cols // (2 * batch_size)` and `batch_size` is 16 for
+                    #     any 16-divisible width. `cols >= 64 and cols % 32 ==
+                    #     0` is a SUFFICIENT (not identical) condition for that
+                    #     ladder -- deliberately simpler than reproducing it,
+                    #     since a second copy of the derivation is exactly the
+                    #     drift this guard exists to prevent. The warp's own
+                    #     asserts remain the ground truth: if this guard is ever
+                    #     weakened past them, they fire loudly at compile time.
+                    #     In practice it rejects shared-key below depth 256,
+                    #     which is the only depth range the mode exists for.
+                    #
+                    # (3) Producer/consumer must walk the SAME number of ring
+                    #     positions per V tile, or the shared cursor desyncs and
+                    #     the CTA hangs. The producer's `_emit_v` trip count is
+                    #     `num_qk_stages`; the consumer's key-chunked walk is
+                    #     `num_o_tiles()` depth tiles x `BN // pv_key_chunk()`
+                    #     key chunks. `v_ring_positions_per_tile()` is that
+                    #     product, and its docstring shows the two are equal by
+                    #     algebra for every shared-key geometry.
+                    #
+                    #     Asserting the product -- not the older
+                    #     `num_o_tiles() == num_qk_stages` -- is the point. That
+                    #     older form is the same statement ONLY when there is
+                    #     exactly one key chunk; at BN=256 it is plain false (1
+                    #     vs 4 at d256, 2 vs 8 at d512) and it was serving as a
+                    #     blanket refusal while the walk did not exist. Now that
+                    #     it does, the honest conjunct is the frame equality.
+                    #
+                    #     `BN % pv_key_chunk() == 0` is not decoration: a ragged
+                    #     final chunk would make the two sides' `c * KC`
+                    #     arithmetic disagree with `BN`, which is a silent
+                    #     wrong-answer rather than a hang.
+                    #
+                    # (4) FUSED cross-CTA split-K is not merely unwired under the
+                    #     mode, it is BROKEN. Its two arms stage the per-CTA
+                    #     (M, L) in `ws_maxsum1` and the bands in `ws_l2_stage`,
+                    #     and those are `2*WS_STAGE + WS_ML` and
+                    #     `2*WS_STAGE + 2*WS_ML` off the same base -- which
+                    #     COLLAPSE onto one pointer when `ws_epilogue_ml_f32()`
+                    #     is 0, as it is here. Rejecting is the honest answer
+                    #     until someone re-carves them (there is room; nobody has
+                    #     needed it). Note this does NOT touch the UNFUSED
+                    #     (workspace) split-K egress -- `ws_o_row_off` plus
+                    #     `_ws_write_lse` ride the plain arm, and that is the one
+                    #     production decode actually routes through.
+                    # (5) The shared-key epilogue walks `num_o_tiles()` windows of
+                    #     `pv_mma_n() * BM` f32 inside `ws_l2_stage`, summing to
+                    #     `padded_ov_depth * BM`; the carve provides
+                    #     `ov_depth * BM` (`ws_epilogue_f32_slots()`). Those are
+                    #     equal only when the swizzle does not pad, and nothing
+                    #     above forces that -- the constructor guard requires
+                    #     `not is_mla` and `padded_nope == padded_ov`, neither of
+                    #     which implies `padded_ov == ov_depth`. A padded shape
+                    #     would run the last window over `ws_l2_maxsum` and the
+                    #     output tile, silently. Rejecting beats widening the
+                    #     carve: widening moves `ws_epilogue_f32_slots()` ->
+                    #     `ws_arena_slots_needed()` -> possibly `num_kv_stages`,
+                    #     and it buys nothing, since every depth the mode admits
+                    #     (256, 512) is already a multiple of `swizzle_elems`.
+                    and (
+                        not self.ws_shared_key
+                        or (
+                            self.m_pack * self.BM == WARPGROUP_SIZE
+                            and self.correction_o_cols() >= 64
+                            and self.correction_o_cols() % 32 == 0
+                            and self.BN % self.pv_key_chunk() == 0
+                            and self.v_ring_positions_per_tile()
+                            == self.num_qk_stages
+                            and self.splitk_partitions == 1
+                            and self.padded_ov_depth == self.ov_depth
                         )
                     )
                 )
@@ -1068,7 +1840,11 @@ struct FA4Config[
             return (
                 base
                 and self.qk_depth >= 64
-                and self.qk_depth <= 256
+                # Shared-key mode exists precisely to reach 256/512: it shrinks
+                # the per-WG O accumulator by `m_pack`, which is what keeps
+                # `tmem_used` at 256/384 instead of overflowing. The 256 cap
+                # stays for every other 1Q config, whose O is un-packed.
+                and self.qk_depth <= (512 if self.ws_shared_key else 256)
                 and not self.pair_cta
                 # Split-K cluster size P. P need NOT be a power of two: the
                 # scheduler tile recovery (block_idx.x // P) and the depth-band
@@ -1138,6 +1914,7 @@ struct FA4Config[
             # The existing prefer_1q short-seq path calls with_num_q(1) on a
             # single_o=False 2Q config -> stays single_o=False (byte-identical).
             single_o=self.single_o and num_q == 1,
+            ws_shared_key=self.ws_shared_key,
         )
 
     @always_inline
@@ -1174,10 +1951,11 @@ struct FA4Config[
             dynamic_cluster_dim=self.dynamic_cluster_dim,
             nope_depth=self.nope_depth,
             single_o=self.single_o,
+            ws_shared_key=self.ws_shared_key,
         )
 
     @always_inline
-    def with_bm(self, bm: Int) -> Self:
+    def with_bm(self, bm: Int, *, ws_shared_key: Bool = False) -> Self:
         """Reconstruct this config with an explicit `BM` (single-CTA).
 
         Used by dispatch to force a warp-specialized packed-TMEM datapath
@@ -1187,9 +1965,15 @@ struct FA4Config[
         `num_qk_stages`/`splitk_partitions`/`single_o` are left at their
         constructor defaults (derive staging, no split-K, 2-O) so the
         reconstruction is byte-identical to a direct `FA4Config(..., BM=bm)`
-        build (see `test_fa4_config_ws_bm64_probe`); `use_ws`/`m_pack` are
-        derived from the new `BM`. `nope_depth` is re-passed so a GLM-style shape
-        survives (byte-identical for MHA where nope == ov).
+        build; `use_ws`/`m_pack` are derived from the new `BM`. `nope_depth` is
+        re-passed so a GLM-style shape survives (byte-identical for MHA where
+        nope == ov).
+
+        `ws_shared_key` is an explicit parameter rather than inherited: this
+        method deliberately resets the derived knobs, and shared-key mode is
+        *selected* here (a `BM=32`/`BM=64` reconstruction is exactly where it
+        becomes legal). It defaults to False, so every existing call is
+        unchanged.
         """
         return Self(
             num_q_heads=self.num_q_heads,
@@ -1202,7 +1986,22 @@ struct FA4Config[
             pair_cta=False,
             BM=bm,
             nope_depth=self.nope_depth,
+            ws_shared_key=ws_shared_key,
         )
+
+    @always_inline
+    def ws_shared_key_vehicle(self) -> Self:
+        """The shared-key config the deep (d256/d512) decode route instantiates.
+
+        A named accessor rather than an expression spelled at each site,
+        because one site is a *check on the other*:
+        `test_fa4_config_scaffold`'s `_check_deep_target` asserts `supported()`
+        on this spelling while dispatch instantiates it. Spelled twice, the
+        check could drift off the thing checked and keep passing -- and the
+        dispatch guard's false arm is SILENT, so the failure mode is a green
+        build that compiled no shared-key body at all.
+        """
+        return self.with_bm(32, ws_shared_key=True)
 
     @always_inline
     def switch_1q_config(self) -> Self:

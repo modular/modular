@@ -322,15 +322,8 @@ _EXTRA_CONSTRAINTS = {
         "//:b200_gpu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    "attention/test_mha_sm100_qkv_fp8_d128_decode.mojo": select({
-        "//:b200_gpu": [],
-        "//conditions:default": ["@platforms//:incompatible"],
-    }),
-    "attention/test_mha_sm100_qkv_fp8_d256_decode.mojo": select({
-        "//:b200_gpu": [],
-        "//conditions:default": ["@platforms//:incompatible"],
-    }),
-    "attention/test_mha_sm100_qkv_fp8_d512_decode.mojo": select({
+    # TEMPORARY (sub_rows gate): restored from a3b3414cd32^.
+    "attention/test_mha_sm100_qkv_bf16_fp16_d256_d512_decode.mojo": select({
         "//:b200_gpu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
@@ -516,6 +509,9 @@ _FILECHECK_TESTS = [
             # and fail to COMPILE on non-B200 GPUs -- its default config reaches
             # clusters_per_wave(), whose comptime LUT models B200/B300 only.
             "attention/test_mha_sm100_1q_splitk_lse.mojo",
+            # SM100 FA4 fp8 decode test: parameterized by `-D MHA_FP8_HEAD_DIM`
+            # via the explicit b200-gated targets below. Exclude the catch-all.
+            "attention/test_mha_sm100_qkv_fp8_decode.mojo",
             # Dtype-parameterized 4-wave conv test (explicit per-dtype
             # targets are declared below).
             "test_amd_4wave_conv_dtypes.mojo",
@@ -531,6 +527,9 @@ _FILECHECK_TESTS = [
             # PagedKVCacheCollection (//max:kv_cache) and is B200-only;
             # declared explicitly below.
             "attention/test_mha_sm100_ws_layout_e_v_alignment.mojo",
+            # TEMPORARY (sub_rows gate): restored from a3b3414cd32^.
+            "attention/test_mha_sm100_ws_shared_key_build.mojo",
+            "attention/test_mha_sm100_ws_shared_key.mojo",
             # Apple-only decode-attention correctness gate (needs the
             # //max:kv_cache dep and an Apple-GPU-only constraint; declared
             # explicitly below).
@@ -602,10 +601,10 @@ mojo_test(
 # SM100 FA4 Layout-E V-PRODUCER PAGED-LUT ALIGNMENT. Regression for the
 # `_produce_v_e` `populate()` fast-arm bug at `page_size == config.BN` (256):
 # partition 1's V load silently reused partition 0's page (see the file's
-# module docstring). Auto-routes to Layout-E with no `-D FA4_FORCE_CONFIG`
-# copt (`num_q_heads=64`/`group=8` fails Layout-G's tile-fit gate at
-# `valid_length=8`, matching `test_mha_sm100_ws_bm32.mojo`'s documented
-# fallthrough). `enable_assertions = True` to match what the glob
+# module docstring). Auto-routes to Layout-E (`num_q_heads=64`/`group=8` fails
+# Layout-G's tile-fit gate at `valid_length=8`, matching
+# `test_mha_sm100_ws_bm32.mojo`'s documented fallthrough).
+# `enable_assertions = True` to match what the glob
 # comprehension gives every other sibling on non-AMD (this file is not in
 # either exclusion list) and so `PagedRowIndices.populate`'s
 # `base_kv_row % page_size == 0` debug_assert fires as a second signal
@@ -634,56 +633,18 @@ mojo_test(
     ],
 )
 
-# SM100 FA4 WS BM=32 MULTI-TILE (Phase C2): forces WS via `-D FA4_FORCE_CONFIG=1`
-# so prompts with valid_length > 32 -- which the auto dispatch route does NOT yet
-# send to WS -- exercise the multi-tile query path (many BM=32 tiles selected via
-# each CTA's prompt_offset) plus the shared-ring main loop, compared vs
-# mha_gpu_naive at the bf16 floor. Reuses the ws_bm32 source; its multi-tile cells
-# are guarded `FA4_FORCE_CONFIG == 1` so this target runs them (the default
-# `attention/test_mha_sm100_ws_bm32.mojo.test` glob target stays byte-identical).
-# B200-only.
-mojo_test(
-    name = "attention/test_mha_sm100_ws_bm32_multitile.mojo.test",
-    size = "large",
-    srcs = ["attention/test_mha_sm100_ws_bm32.mojo"],
-    copts = IGNORED_POINTER_DEPRECATIONS_COPTS + [
-        "-D",
-        "FA4_FORCE_CONFIG=1",
-    ],
-    exec_properties = {
-        "test.resources:gpu-memory": "4",
-    },
-    tags = ["gpu"],
-    target_compatible_with = ["//:has_gpu"] + select({
-        "//:b200_gpu": [],
-        "//conditions:default": ["@platforms//:incompatible"],
-    }),
-    deps = [
-        "//max:internal_utils",
-        "//max:kv_cache",
-        "//max:linalg",
-        "//max:nn",
-        "//max:testdata",
-        "@mojo//:std",
-    ],
-)
-
-# SM100 FA4 WS BM=32 CROSS-CTA SPLIT-K (Phase D): pins the WS split-K cluster to
-# P=2 via `-D FA4_WS_SPLITK_FORCE=2` so a long-cache / tiny-prompt shape routes
-# the WS BM=32 config through a 2-CTA cluster (each CTA owns half the KV and
-# DSMEM-combines its own depth band -- the THIRD split-K level, on top of the
-# 8-way intra-CTA split). Reuses the ws_bm32 source; its split-K cells are guarded
-# `FA4_WS_SPLITK_FORCE >= 2` and exit early, so the default
-# `attention/test_mha_sm100_ws_bm32.mojo.test` glob target stays single-CTA WS and
-# byte-identical. B200-only.
+# SM100 FA4 WS BM=32: drives the ws_bm32 source; `num_partitions=2` pins the
+# single cross-CTA cluster value B200 honors (`CLUSTER_SPLITK_CANDIDATES = [2]`
+# at 148 SMs). Declared explicitly (not via the glob comprehension) for the
+# `//max:kv_cache` dep the source imports (`PagedKVCacheCollection`); the glob
+# default omits it. `enable_assertions = True` keeps dispatch's debug_asserts
+# live. B200-only.
 mojo_test(
     name = "attention/test_mha_sm100_ws_bm32_splitk.mojo.test",
     size = "large",
     srcs = ["attention/test_mha_sm100_ws_bm32.mojo"],
-    copts = IGNORED_POINTER_DEPRECATIONS_COPTS + [
-        "-D",
-        "FA4_WS_SPLITK_FORCE=2",
-    ],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
+    enable_assertions = True,
     exec_properties = {
         "test.resources:gpu-memory": "4",
     },
@@ -702,96 +663,41 @@ mojo_test(
     ],
 )
 
-# SM100 FA4 WS BM=32 CROSS-CTA SPLIT-K P=4 (Phase D): same source pinned to a P=4
-# cluster via `-D FA4_WS_SPLITK_FORCE=4` (the kernel is compiled once at P_MAX=4;
-# only the launch cluster size differs from the P=2 target). Runs the P=4 cells --
-# re-banding 1:1 (one warp-band per partition) with all partitions non-empty
-# (T=5), plus the EMPTY-trailing-partition case (T=3 < P, so partition 3 gets 0
-# tiles and exercises the L3 neutral element + empty-partition publish). B200-only.
-mojo_test(
-    name = "attention/test_mha_sm100_ws_bm32_splitk_p4.mojo.test",
-    size = "large",
-    srcs = ["attention/test_mha_sm100_ws_bm32.mojo"],
-    copts = IGNORED_POINTER_DEPRECATIONS_COPTS + [
-        "-D",
-        "FA4_WS_SPLITK_FORCE=4",
-    ],
-    exec_properties = {
-        "test.resources:gpu-memory": "4",
-    },
-    tags = ["gpu"],
-    target_compatible_with = ["//:has_gpu"] + select({
-        "//:b200_gpu": [],
-        "//conditions:default": ["@platforms//:incompatible"],
-    }),
-    deps = [
-        "//max:internal_utils",
-        "//max:kv_cache",
-        "//max:linalg",
-        "//max:nn",
-        "//max:testdata",
-        "@mojo//:std",
-    ],
-)
-
-# SM100 FA4 WS BM=32 CROSS-CTA SPLIT-K P=8 and P=16 (#92167 candidate widening):
-# the WS route now reuses the shared `SPLITK_CANDIDATES` (16,10,8,6,4,2) instead of
-# a WS-only {4,2}. For P > m_pack (== 4) only the first `m_pack` partitions own a
-# depth band, but all P partition the KV and are reduced into the owning bands.
-# P=8 (first pow2 past the old cap) and P=16 (ceiling; T=3/T=5 leave 13/11 empty
-# trailing partitions -- max empty-neutral-element + re-banding stress). Same
-# source, cells guarded `FA4_WS_SPLITK_FORCE >= 4`. B200-only.
-mojo_test(
-    name = "attention/test_mha_sm100_ws_bm32_splitk_p8.mojo.test",
-    size = "large",
-    srcs = ["attention/test_mha_sm100_ws_bm32.mojo"],
-    copts = IGNORED_POINTER_DEPRECATIONS_COPTS + [
-        "-D",
-        "FA4_WS_SPLITK_FORCE=8",
-    ],
-    exec_properties = {
-        "test.resources:gpu-memory": "4",
-    },
-    tags = ["gpu"],
-    target_compatible_with = ["//:has_gpu"] + select({
-        "//:b200_gpu": [],
-        "//conditions:default": ["@platforms//:incompatible"],
-    }),
-    deps = [
-        "//max:internal_utils",
-        "//max:kv_cache",
-        "//max:linalg",
-        "//max:nn",
-        "//max:testdata",
-        "@mojo//:std",
-    ],
-)
-
-mojo_test(
-    name = "attention/test_mha_sm100_ws_bm32_splitk_p16.mojo.test",
-    size = "large",
-    srcs = ["attention/test_mha_sm100_ws_bm32.mojo"],
-    copts = IGNORED_POINTER_DEPRECATIONS_COPTS + [
-        "-D",
-        "FA4_WS_SPLITK_FORCE=16",
-    ],
-    exec_properties = {
-        "test.resources:gpu-memory": "4",
-    },
-    tags = ["gpu"],
-    target_compatible_with = ["//:has_gpu"] + select({
-        "//:b200_gpu": [],
-        "//conditions:default": ["@platforms//:incompatible"],
-    }),
-    deps = [
-        "//max:internal_utils",
-        "//max:kv_cache",
-        "//max:linalg",
-        "//max:nn",
-        "//max:testdata",
-        "@mojo//:std",
-    ],
-)
+# SM100 FA4 fp8 QKV decode test: one source parameterized by `-D MHA_FP8_HEAD_DIM`
+# (128/256/512); each depth is a separate target. Decode cases differ per depth
+# (d256 adds a group=2 case), so the case list is a `comptime if head_dim` chain
+# in `main()`. SM100-only (B200).
+[
+    mojo_test(
+        name = "attention/test_mha_sm100_qkv_fp8_d{}_decode.mojo.test".format(d),
+        size = "large",
+        srcs = ["attention/test_mha_sm100_qkv_fp8_decode.mojo"],
+        copts = IGNORED_POINTER_DEPRECATIONS_COPTS + [
+            "-D",
+            "MHA_FP8_HEAD_DIM={}".format(d),
+        ],
+        exec_properties = {
+            "test.resources:gpu-memory": "4",
+        },
+        tags = ["gpu"],
+        target_compatible_with = ["//:has_gpu"] + select({
+            "//:b200_gpu": [],
+            "//conditions:default": ["@platforms//:incompatible"],
+        }),
+        deps = [
+            "//max:internal_utils",
+            "//max:linalg",
+            "//max:nn",
+            "//max:testdata",
+            "@mojo//:std",
+        ],
+    )
+    for d in [
+        128,
+        256,
+        512,
+    ]
+]
 
 # SM100 FA4 num_q==1 split-K (M4.3 + M4.4): writer-combines-all cross-CTA O
 # combine, swept over (mask, depth, P). The in-cluster DSMEM combine is

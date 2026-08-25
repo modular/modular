@@ -44,9 +44,9 @@ divergence from naive.
 `flash_attention[ragged=True]` on a paged cache sets
 `is_token_generation = (max_prompt_len == 1) and not empty_cache()`
 (`mha.mojo` ~L424). A true decode (`valid_length == 1` with a non-empty cache)
-routes to the SM100 *decode* kernel (`mha_1q.mojo`), NOT to `fa4_softmax`. To
-exercise the FA4 1Q path we therefore use a prefill with `max_prompt_len` in
-`(32, 128]`:
+takes the SM100 FA4 `fa4_route` (`mha.mojo`) → `mha_sm100_2q_dispatch`, which
+runs `fa4_softmax` for the 1Q sink path. To exercise that 1Q path we therefore
+use a prefill with `max_prompt_len` in `(32, 128]`:
 
   * lower bound `> 32`: `max_prompt_len <= 32` now routes to the WS BM=32
     packed-TMEM datapath (`fa4_config_ws` -- also `fa4_softmax`, but the 8-way

@@ -91,7 +91,6 @@ carrier in an otherwise-fully-masked WG.
 from std.collections import Set
 from std.math import ceildiv, isnan, rsqrt
 from std.random import rand, random_ui64, seed
-from std.sys import get_defined_int
 from std.utils.numerics import nan
 
 from max.gpu.host import DeviceContext
@@ -128,6 +127,11 @@ def execute_ws_bm32_test[
     use_sink: Bool = False,
     large_sink: Bool = False,
     raise_on_fail: Bool = True,
+    # Comptime split-K partition-count override threaded into `flash_attention`.
+    # `0` => auto (the dispatch ladder picks `P`); a named `P` is honored verbatim
+    # and pins the WS single-CTA / cluster / workspace split-K mechanism -- the
+    # coverage replacement for the retired `FA4_WS_SPLITK_FORCE` define.
+    num_partitions: Int = 0,
 ](
     mask: mask_t, cache_length: Int, valid_length: Int, ctx: DeviceContext
 ) raises:
@@ -143,17 +147,6 @@ def execute_ws_bm32_test[
     comptime layer_idx = 0
     # WS KV tile is BN=256 (even -> WG0, odd -> WG1). Diagnostic only.
     comptime WS_BN = 256
-
-    # `valid_length > 32` reaches WS only when the config is force-selected
-    # (`-D FA4_FORCE_CONFIG=1`, the Phase C2 multi-tile target); under the auto
-    # route (<=32) it would silently fall to the baseline path, so this would no
-    # longer be a WS test. Keep the guard active for the default (auto) target.
-    comptime _force_config = get_defined_int["FA4_FORCE_CONFIG", 0]()
-    if valid_length > 32 and _force_config != 1:
-        raise Error(
-            "WS BM=32 route requires valid_length <= 32 (or -D"
-            " FA4_FORCE_CONFIG=1 to force WS)"
-        )
 
     var num_keys = cache_length + valid_length
     var total_length = valid_length
@@ -195,6 +188,16 @@ def execute_ws_bm32_test[
     comptime sink_layout = Layout.row_major(UNKNOWN_VALUE)
 
     var scale = rsqrt(Float32(head_size))
+
+    # `num_partitions` reaches FA4 as an EXACT partition count via
+    # `mha.mojo`'s `num_partitions_override`. Only P=2 is honored on B200 (the
+    # sole `CLUSTER_SPLITK_CANDIDATES` entry at 148 SMs); a larger P silently
+    # reroutes to the workspace fallback, so the test uses P=2 only. The naive
+    # oracle is invariant in `P`, so it cannot confirm `P` was honored; the
+    # only signal is the candidate match itself.
+    var np_opt = (
+        Optional[Int](num_partitions) if num_partitions > 0 else Optional[Int]()
+    )
 
     seed(0x5151)
 
@@ -393,6 +396,7 @@ def execute_ws_bm32_test[
             scale,
             ctx,
             sink_weights=sinks_lt,
+            num_partitions=np_opt,
         )
     else:
         flash_attention[ragged=True](
@@ -404,6 +408,7 @@ def execute_ws_bm32_test[
             input_row_offsets_lt,
             scale,
             ctx,
+            num_partitions=np_opt,
         )
 
     # ============ Run 2: naive over the full key range [0, num_keys) ======
@@ -570,139 +575,79 @@ def main() raises:
     # {1,2,3,5}, including the T==5 shape at the end that first exercised the
     # shared-ring main loop.
     with DeviceContext() as ctx:
-        # ---- Cross-CTA cluster split-K (P pinned by FA4_WS_SPLITK_FORCE) -------
-        # The `-D FA4_WS_SPLITK_FORCE=P` targets route the WS BM=32 config through
-        # a P-CTA cluster: each CTA owns 1/P of the KV, runs the 8-way intra-CTA
-        # split over its slice, then DSMEM-combines its OWN depth band (the THIRD
-        # split-K level). These cells exit early so the default (force-unset)
-        # matrix below stays single-CTA WS. All depth-128, vl=8, compared vs
-        # mha_gpu_naive over the full [0, num_keys) range at the bf16 floor.
-        # FSK is clamped to a power of two <= P_MAX (4) by dispatch, so `>= 4`
-        # selects the P=4 cells and `2..3` the P=2 cells.
-        comptime FSK = get_defined_int["FA4_WS_SPLITK_FORCE", 0]()
-        comptime if FSK >= 2:
-            comptime if FSK >= 4:
-                # ===== P >= 4 (cross-CTA cluster split-K, m_pack == 4 owning
-                # bands) ===== The force knob pins P in {4,6,8,10,16}; for P > 4
-                # only the first `m_pack` (== 4) partitions own a depth band, while
-                # partitions >= 4 still partition the KV, stage a normalized
-                # partial, and are reduced into the owning bands (many empty at
-                # high P: cache=1024 -> T=5 leaves P-5 empty for P>5; cache=640 ->
-                # T=3 leaves P-3 empty). All compared vs mha_gpu_naive over the
-                # full [0, num_keys) range at the bf16 floor.
-                # (a) all-live-at-P4 / mostly-empty-at-high-P: cache=1024 -> T=5.
-                execute_ws_bm32_test[NullMask, 128](
-                    NullMask(), cache_length=1024, valid_length=8, ctx=ctx
-                )
-                execute_ws_bm32_test[CausalMask, 128](
-                    CausalMask(), cache_length=1024, valid_length=8, ctx=ctx
-                )
-                # (b) window x split composition: the per-partition splitk_window
-                #     offset composes with the per-quarter mask column offset.
-                #     cache=640 -> T=3; the window/chunk spans the partition
-                #     boundary so live partitions see visible keys.
-                execute_ws_bm32_test[ChunkedMask[384], 128](
-                    ChunkedMask[384](),
-                    cache_length=640,
-                    valid_length=8,
-                    ctx=ctx,
-                )
-                execute_ws_bm32_test[SlidingWindowCausalMask[512], 128](
-                    SlidingWindowCausalMask[512](),
-                    cache_length=640,
-                    valid_length=8,
-                    ctx=ctx,
-                )
-                # (c) EMPTY trailing partition (L3 neutral element): cache=640 ->
-                #     num_keys=648 -> T=3, T < P so trailing partitions get 0 tiles
-                #     and must take the neutral element (M=-inf, L=0, finite-0 O ->
-                #     w_p=0) yet still publish + write their band.
-                execute_ws_bm32_test[NullMask, 128](
-                    NullMask(), cache_length=640, valid_length=8, ctx=ctx
-                )
-                execute_ws_bm32_test[CausalMask, 128](
-                    CausalMask(), cache_length=640, valid_length=8, ctx=ctx
-                )
-                # (d) depth-64 (num_d_tiles=1, own_cols=16): confirm no depth-128
-                #     hardcode in the L3 band math -- Null/Causal (T=5) plus both
-                #     window masks (T=3 window x split on the narrow depth).
-                execute_ws_bm32_test[NullMask, 64](
-                    NullMask(), cache_length=1024, valid_length=8, ctx=ctx
-                )
-                execute_ws_bm32_test[CausalMask, 64](
-                    CausalMask(), cache_length=1024, valid_length=8, ctx=ctx
-                )
-                execute_ws_bm32_test[ChunkedMask[384], 64](
-                    ChunkedMask[384](),
-                    cache_length=640,
-                    valid_length=8,
-                    ctx=ctx,
-                )
-                execute_ws_bm32_test[SlidingWindowCausalMask[512], 64](
-                    SlidingWindowCausalMask[512](),
-                    cache_length=640,
-                    valid_length=8,
-                    ctx=ctx,
-                )
-            else:
-                # ===== P=2 (re-banding 2:1: two warp-bands per partition) =====
-                # Null + Causal: cache=1024 -> num_keys=1032 -> T=5,
-                # splitk_window(5,2) = {3,2} tiles (both non-empty).
-                execute_ws_bm32_test[NullMask, 128](
-                    NullMask(), cache_length=1024, valid_length=8, ctx=ctx
-                )
-                execute_ws_bm32_test[CausalMask, 128](
-                    CausalMask(), cache_length=1024, valid_length=8, ctx=ctx
-                )
-                # (b) window x split composition: the per-partition splitk_window
-                # offset composes with the per-quarter mask column offset. cache
-                # =640 -> num_keys=648; the window/chunk spans the partition
-                # boundary (both partitions see visible keys).
-                execute_ws_bm32_test[ChunkedMask[384], 128](
-                    ChunkedMask[384](),
-                    cache_length=640,
-                    valid_length=8,
-                    ctx=ctx,
-                )
-                execute_ws_bm32_test[SlidingWindowCausalMask[512], 128](
-                    SlidingWindowCausalMask[512](),
-                    cache_length=640,
-                    valid_length=8,
-                    ctx=ctx,
-                )
-                # (d) depth-64 P=2 (num_d_tiles=1, own_cols=16): re-banding 2:1 on
-                #     the narrow depth. cache=1024 -> T=5, both partitions non-empty.
-                execute_ws_bm32_test[NullMask, 64](
-                    NullMask(), cache_length=1024, valid_length=8, ctx=ctx
-                )
-                execute_ws_bm32_test[CausalMask, 64](
-                    CausalMask(), cache_length=1024, valid_length=8, ctx=ctx
-                )
-                # (e) sink, P=2: the sink mass must be folded EXACTLY ONCE across
-                #     the P partitions -- the `fold_sink` partition-0 refinement
-                #     (splitk_partition_idx==0) composes with the WS WG0-quarter-0
-                #     gate (warp_idx==0) so ONLY partition 0's WG0-q0 folds it. A
-                #     residual per-partition (Px) or per-quarter (4x) over-count
-                #     inflates the denominator far above the floor. Moderate spread
-                #     [-2,6) straddles the scores so the denominator is sensitive.
-                execute_ws_bm32_test[CausalMask, 128, use_sink=True](
-                    CausalMask(), cache_length=1024, valid_length=8, ctx=ctx
-                )
-                execute_ws_bm32_test[
-                    SlidingWindowCausalMask[512], 128, use_sink=True
-                ](
-                    SlidingWindowCausalMask[512](),
-                    cache_length=1024,
-                    valid_length=8,
-                    ctx=ctx,
-                )
-                # large-sink (~+10) clamp-stress x Causal (Phase B Risk 5 under the
-                # finer split): Gmax is pinned to the sink, so every quarter /
-                # partition must rescale to ~0 and only WG0-q0 may carry the sink.
-                execute_ws_bm32_test[
-                    CausalMask, 128, use_sink=True, large_sink=True
-                ](CausalMask(), cache_length=1024, valid_length=8, ctx=ctx)
-            return
+        # ---- Cross-CTA cluster split-K at P=2 (pinned by `num_partitions=2`) -
+        # `num_partitions=2` routes the WS BM=32 config through a 2-CTA cluster:
+        # each CTA owns half the KV and DSMEM-combines its own depth band (the
+        # THIRD split-K level on top of the 8-way intra-CTA split). P=2 is the
+        # ONLY value this honors on B200: `CLUSTER_SPLITK_CANDIDATES = [2]` at
+        # 148 SMs, and a larger `num_partitions` with no candidate match
+        # silently reroutes to the `launch_workspace` fallback (a DIFFERENT
+        # mechanism, not the static cluster kernel), so the retired
+        # `FA4_WS_SPLITK_FORCE=P in {4,8,16}` cluster coverage (re-banding at
+        # wider P, the empty-band stress) is NOT reproducible via the runtime
+        # override and is dropped with the define. The naive oracle is
+        # P-invariant so it cannot detect that reroute -- the only signal a
+        # forced P=2 was honored is the candidate match itself. All depth-128 or
+        # depth-64, vl=8, vs mha_gpu_naive over the full [0, num_keys) range at
+        # the bf16 floor.
+        # Null + Causal: cache=1024 -> num_keys=1032 -> T=5, splitk_window(5,2)
+        # = {3,2} tiles (both non-empty).
+        execute_ws_bm32_test[NullMask, 128, num_partitions=2](
+            NullMask(), cache_length=1024, valid_length=8, ctx=ctx
+        )
+        execute_ws_bm32_test[CausalMask, 128, num_partitions=2](
+            CausalMask(), cache_length=1024, valid_length=8, ctx=ctx
+        )
+        # window x split composition: the per-partition splitk_window offset
+        # composes with the per-quarter mask column offset. cache=640 ->
+        # num_keys=648; the window/chunk spans the partition boundary (both
+        # partitions see visible keys).
+        execute_ws_bm32_test[ChunkedMask[384], 128, num_partitions=2](
+            ChunkedMask[384](),
+            cache_length=640,
+            valid_length=8,
+            ctx=ctx,
+        )
+        execute_ws_bm32_test[
+            SlidingWindowCausalMask[512], 128, num_partitions=2
+        ](
+            SlidingWindowCausalMask[512](),
+            cache_length=640,
+            valid_length=8,
+            ctx=ctx,
+        )
+        # depth-64 P=2 (num_d_tiles=1, own_cols=16): re-banding 2:1 on the
+        # narrow depth. cache=1024 -> T=5, both partitions non-empty.
+        execute_ws_bm32_test[NullMask, 64, num_partitions=2](
+            NullMask(), cache_length=1024, valid_length=8, ctx=ctx
+        )
+        execute_ws_bm32_test[CausalMask, 64, num_partitions=2](
+            CausalMask(), cache_length=1024, valid_length=8, ctx=ctx
+        )
+        # sink, P=2: the sink mass must be folded EXACTLY ONCE across the P
+        # partitions -- the `fold_sink` partition-0 refinement
+        # (splitk_partition_idx==0) composes with the WS WG0-quarter-0 gate
+        # (warp_idx==0) so ONLY partition 0's WG0-q0 folds it. A residual
+        # per-partition (Px) or per-quarter (4x) over-count inflates the
+        # denominator far above the floor. Moderate spread [-2,6) straddles the
+        # scores so the denominator is sensitive.
+        execute_ws_bm32_test[CausalMask, 128, use_sink=True, num_partitions=2](
+            CausalMask(), cache_length=1024, valid_length=8, ctx=ctx
+        )
+        execute_ws_bm32_test[
+            SlidingWindowCausalMask[512], 128, use_sink=True, num_partitions=2
+        ](
+            SlidingWindowCausalMask[512](),
+            cache_length=1024,
+            valid_length=8,
+            ctx=ctx,
+        )
+        # large-sink (~+10) clamp-stress x Causal (Phase B Risk 5 under the
+        # finer split): Gmax is pinned to the sink, so every quarter /
+        # partition must rescale to ~0 and only WG0-q0 may carry the sink.
+        execute_ws_bm32_test[
+            CausalMask, 128, use_sink=True, large_sink=True, num_partitions=2
+        ](CausalMask(), cache_length=1024, valid_length=8, ctx=ctx)
 
         # ---- Null + Causal x depth{64,128} x T{1,3} -------------------------
         comptime for depth in [128, 64]:
@@ -856,34 +801,3 @@ def main() raises:
         execute_ws_bm32_test[CausalMask, 128](
             CausalMask(), cache_length=1272, valid_length=8, ctx=ctx
         )
-
-        # ---- Phase C2: multi-tile prompts (vl > 32), forced onto WS -----------
-        # The auto route only sends max_prompt_len <= 32 to WS today; the widened
-        # rule (C4) admits larger prompts. These cells force WS via
-        # `-D FA4_FORCE_CONFIG=1` (the multi-tile variant target) and drive
-        # prompts that span many BM=32 query tiles (PairBM_eff = 32//group = 4 at
-        # group=8, so vl=64 -> 16 tiles, vl=128 -> 32, vl=200 -> 50) via each
-        # CTA's `prompt_offset`, vs mha_gpu_naive at the bf16 floor. This proves
-        # the widened envelope is CORRECT before the route admits it. Guarded
-        # `== 1` so the default (auto) target is byte-identical.
-        comptime if get_defined_int["FA4_FORCE_CONFIG", 0]() == 1:
-            comptime for depth in [128, 64]:
-                # vl=64 (16 query tiles): T=1 (num_keys=256) and T=3 (704).
-                execute_ws_bm32_test[CausalMask, depth](
-                    CausalMask(), cache_length=192, valid_length=64, ctx=ctx
-                )
-                execute_ws_bm32_test[CausalMask, depth](
-                    CausalMask(), cache_length=640, valid_length=64, ctx=ctx
-                )
-                # vl=128 (32 query tiles), windowed, T=3 (num_keys=768).
-                execute_ws_bm32_test[SlidingWindowCausalMask[512], depth](
-                    SlidingWindowCausalMask[512](),
-                    cache_length=640,
-                    valid_length=128,
-                    ctx=ctx,
-                )
-            # vl=200 (50 tiles) + T=4 (num_keys=840): multi-tile prompt AND the
-            # shared-ring main loop (main_iters>=1) together.
-            execute_ws_bm32_test[CausalMask, 128](
-                CausalMask(), cache_length=640, valid_length=200, ctx=ctx
-            )

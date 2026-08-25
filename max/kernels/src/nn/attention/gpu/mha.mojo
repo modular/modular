@@ -27,6 +27,7 @@ from std.sys import (
     CompilationTarget,
     align_of,
     get_defined_bool,
+    get_defined_int,
     has_amd_gpu_accelerator,
     has_amd_rdna_gpu_accelerator,
     has_apple_gpu_accelerator,
@@ -147,15 +148,13 @@ from nn.attention.gpu.mha_decode_partition_heuristic import (
 )
 from nn.attention.gpu.nvidia.sm90.mha import mha_sm90_dispatch
 from nn.attention.gpu.nvidia.sm90.attention import _optional_lt_to_tt
-from nn.attention.gpu.nvidia.sm100.mha_1q import (
-    mha_sm100_dispatch as mha_sm100_1q_dispatch,
-)
 from nn.attention.gpu.nvidia.sm100.dispatch import (
     mha_sm100_dispatch as mha_sm100_2q_dispatch,
 )
 from nn.attention.gpu.nvidia.sm100.mha_depth512 import (
     mha_sm100_depth512_dispatch,
 )
+from nn.attention.gpu.nvidia.sm100.fa4_splitk_combine import P_MAX
 from nn.attention.mha_utils import (
     DynamicInt,
     FlashAttentionAlgorithm,
@@ -998,68 +997,77 @@ def flash_attention_dispatch[
     comptime if _is_flash_attention_applicable:
         comptime is_sm90 = ctx.default_device_info == H100
         comptime is_sm100 = _is_sm10x_gpu(ctx.default_device_info)
-        # ---- SM100 FA4: one route for prefill AND decode ----
-        # `sm100/dispatch.mojo` owns tile choice (warp-specialized BM=32/64 at
-        # depth 64/128, else the BM=128 1Q carve) and split-K (cluster/DSMEM, or
-        # workspace + `fa4_splitk_combine`) internally, so the kernel decision
-        # happens BEFORE the prefill/decode split and `mha.mojo` never computes
-        # a partition count for these shapes. A single-token prompt is just the
-        # shortest prefill: it arrives as a dynamic `max_prompt_len` and lands
-        # on the smallest tile that single-tiles it.
-        #
-        # `mask_safe_out_of_bounds` here is NOT an out-of-bounds-safety
-        # requirement -- FA4 masks OOB keys itself via `MHAMask.mask_bits()`. It
-        # is a split-K availability proxy: `MaterializedMask` is the only mask
-        # that declares it `False`, and it also reports `UNKNOWN_MASK`, so
-        # split-K is comptime-pruned for it inside FA4 (`ws_mask_ok` /
-        # `ws1q_mask_ok`). Excluding it here leaves it on the tree below, which
-        # keeps its prefill on FA4 and its decode on the FA2 `mha_decoding`
-        # kernel -- where it still gets split-K instead of being pinned to P == 1.
-        #
-        # The proxy is one-way, not an equivalence: `AndMask` reports
-        # `UNKNOWN_MASK` unconditionally (AND visibility is a union, so its
-        # non-full region can be discontiguous) yet inherits
-        # `mask_safe_out_of_bounds` from its children, so an `AndMask` of two
-        # geometric masks PASSES this gate, reaches FA4, and runs at P == 1.
-        # That is correct, just unaccelerated -- and an explicit
-        # `num_partitions` on such a mask is unsatisfiable and asserts in
-        # `sm100/dispatch.mojo` rather than silently degrading.
-        comptime fa4_route = (
-            is_sm100
-            and depth <= 128
-            and mask_t.mask_safe_out_of_bounds
-            and (
-                (
-                    q_half_float
-                    and (ragged or not _use_valid_length)
-                    and config.algorithm == FlashAttentionAlgorithm(3)
-                )
-                or q_fp8_2q
-            )
+        # The half-float arm needs `(ragged or not _use_valid_length)` because
+        # FA4 DROPS `valid_length` when `ragged` is False, so a padded caller
+        # would attend over its pad rows and read uninitialized KV. fp8 is not
+        # gated on it: the prefill fallthrough below re-admits fp8 with no such
+        # conjunct onto the same dispatch, so the gate would only move fp8
+        # non-ragged decode, and production fp8 callers are ragged.
+        comptime fa4_route = is_sm100 and mask_t.mask_safe_out_of_bounds and (
+            dtype.is_float8()
+            or (q_half_float and (ragged or not _use_valid_length))
         )
         comptime if fa4_route:
             # Decode callers supply a graph-computed cache length; prefill does
-            # not. This mirrors what the decode path below consumed
-            # (`dispatch_metadata.max_cache_valid_length`) while leaving prefill
-            # on the raw argument. The `is_token_generation` guard is what keeps
-            # prefill byte-identical: `kv_cache_ragged.mojo` passes
-            # `decode_dispatch_metadata` unconditionally.
+            # not, and `kv_cache_ragged.mojo` passes `decode_dispatch_metadata`
+            # unconditionally -- so the `is_token_generation` guard is what
+            # keeps prefill on the raw argument.
             var fa4_max_cache_len = max_cache_valid_length
             if is_token_generation:
                 if decode_dispatch_metadata:
                     fa4_max_cache_len = (
                         decode_dispatch_metadata.value().max_cache_valid_length
                     )
-            # An explicit `num_partitions` is forwarded as FA4's exact partition
-            # count (`0` == auto). FA4 honors it verbatim rather than snapping it
-            # to its `_bucket_ws` ladder, and honoring it also forces a BM < 256
-            # route, because the 2Q config has no split-K mechanism at all. Note
-            # this does NOT flow through `dispatch_metadata.num_partitions`: that
-            # field stays unused on this route (FA4 sizes its own auto P), only
-            # the caller's explicit override is honored.
+            # An explicit `num_partitions` is forwarded verbatim as FA4's exact
+            # partition count (`0` == auto), not snapped to the `_bucket_ws`
+            # ladder; honoring it forces a BM < 256 route, since the 2Q config
+            # has no split-K mechanism. `dispatch_metadata.num_partitions` is
+            # unused here -- FA4 sizes its own auto P.
             var fa4_num_partitions: Int = 0
             if num_partitions:
                 fa4_num_partitions = num_partitions.value()
+            # d256/d512 large-prefill carveout: a long prompt goes to the
+            # pair-CTA `mha_sm100_depth512_dispatch`; short prefill and all
+            # decode fall through to FA4 below. The `comptime if` is
+            # load-bearing, not stylistic -- it stops the depth512 call from
+            # ELABORATING at depth {64,72,80,96,128}, where its config is
+            # degenerate (`mha_operand.mojo`'s `nonfull_sets` fails at d64),
+            # even though the runtime branch never executes there.
+            comptime if depth == 256 or depth == 512:
+                if not is_token_generation and max_prompt_len * group > 32:
+                    mha_sm100_depth512_dispatch[
+                        config=config,
+                        group=group,
+                        ragged=ragged,
+                        _is_cache_length_accurate=_is_cache_length_accurate,
+                    ](
+                        output.to_device_buffer(ctx),
+                        q.to_device_buffer(ctx).unsafe_ptr(),
+                        k,
+                        rebind[k_t](v),
+                        q_num_matrix_view_rows(q),
+                        mask_functor,
+                        valid_length.value().to_device_buffer(ctx).unsafe_ptr(),
+                        DynamicInt(max_prompt_len),
+                        max_cache_valid_length,
+                        scale,
+                        _optional_lt_to_tt(kv_input_row_offsets),
+                        batch_size,
+                        NoPartition[get_accum_type[q.dtype]()](),
+                        ctx,
+                    )
+                    return
+                # Only the deep arm runs the workspace split-K combine, so its
+                # `P_MAX` ceiling is checked here. DIAGNOSTIC, not the
+                # correctness bound -- the combine's own `debug_assert` protects
+                # the reduction but compiles out with assertions off, and this
+                # raise keeps a failure a negative control can see.
+                if fa4_num_partitions > P_MAX:
+                    raise Error(
+                        "ws_shared_key deep route cannot serve num_partitions"
+                        " above fa4_splitk_combine's P_MAX; raise it with"
+                        " -D FA4_COMBINE_P_MAX=<N>"
+                    )
             mha_sm100_2q_dispatch[
                 config=config,
                 group=group,
@@ -1131,6 +1139,12 @@ def flash_attention_dispatch[
                 else:
                     comptime assert is_sm100
 
+                    # Both arms below are the mask-not-safe residual:
+                    # `fa4_route` excluded `MaterializedMask` by mask and
+                    # returned every geometric-mask shape above. Padded
+                    # non-ragged half-float reaches neither (both gates carry
+                    # `(ragged or not _use_valid_length)`) and falls to the FA2
+                    # `else:` branch.
                     comptime if depth == 512 or depth == 256:
                         mha_sm100_depth512_dispatch[
                             config=config,
@@ -1156,10 +1170,6 @@ def flash_attention_dispatch[
                             ctx,
                         )
                     else:
-                        # Only reachable for a `depth <= 128` mask that the
-                        # `fa4_route` gate above excluded, i.e.
-                        # `MaterializedMask`; every other `depth <= 128`
-                        # half-float/fp8 shape returned there.
                         mha_sm100_2q_dispatch[
                             config=config,
                             group=group,
@@ -1603,11 +1613,11 @@ def flash_attention_dispatch[
                     "max_num_partitions must be >= num_partitions",
                 )
 
-                # On SM100 this now admits only depth 256/512 -- every
-                # `depth <= 128` half-float/fp8 shape with an FA4-eligible
-                # mask returned via the `fa4_route` branch above.
-                # `MaterializedMask` is excluded by `mask_safe_out_of_bounds`,
-                # so it keeps the FA2 `mha_decoding` split-K path below.
+                # `fa4_route` above claimed every FA4-eligible SM100 shape and
+                # returned, so this gates only the residual it excluded
+                # (`MaterializedMask`, Float32, padded non-ragged half-float)
+                # plus the sm90 half-float decode. `MaterializedMask` keeps the
+                # FA2 `mha_decoding` split-K path below.
                 comptime use_fa3_kernel = (
                     (is_sm90 or is_sm100)
                     and mask_t.mask_safe_out_of_bounds
@@ -1810,30 +1820,6 @@ def flash_attention_dispatch[
                                     ctx,
                                     sink_weights,
                                 )
-                            else:
-                                mha_sm100_1q_dispatch[
-                                    config=config,
-                                    group=group,
-                                    ragged=ragged,
-                                    sink=sink,
-                                    _is_cache_length_accurate=_is_cache_length_accurate,
-                                ](
-                                    output.to_device_buffer(ctx),
-                                    q.to_device_buffer(ctx),
-                                    k,
-                                    rebind[k_t](v),
-                                    num_rows_q,
-                                    mask_functor,
-                                    valid_length.value().to_device_buffer(ctx),
-                                    StaticInt[1](),
-                                    max_cache_valid_length_value,
-                                    scale,
-                                    _optional_lt_to_tt(kv_input_row_offsets),
-                                    batch_size,
-                                    NoPartition[accum_type](),
-                                    ctx,
-                                    _optional_lt_to_tt(sink_weights),
-                                )
                         else:
                             var nullptr_device = DeviceBuffer[accum_type].empty(
                                 ctx
@@ -1854,6 +1840,13 @@ def flash_attention_dispatch[
                         return
 
                     else:
+                        # This `num_partitions_value > 1` split-K branch still
+                        # elaborates, but `fa4_route` now claims decode at
+                        # d256/d512 far above (the `ws_shared_key` deep route),
+                        # so for the residual shapes that reach here the runtime
+                        # `FA4_COMBINE_P_MAX` ceiling lives in the `fa4_route`
+                        # block, scoped to that deep arm. This split launches the
+                        # 1Q / `mha_decoding` fall-back and reduces.
                         # We split partitions and then reduce
                         # allocate memory for intermediate results
                         # q # [B, S, H, D]
@@ -1953,34 +1946,6 @@ def flash_attention_dispatch[
                                     ),
                                     ctx,
                                     sink_weights,
-                                )
-                            else:
-                                mha_sm100_1q_dispatch[
-                                    config=config,
-                                    group=group,
-                                    ragged=ragged,
-                                    sink=sink,
-                                    _is_cache_length_accurate=_is_cache_length_accurate,
-                                ](
-                                    output_intermediate.to_device_buffer(ctx),
-                                    q.to_device_buffer(ctx),
-                                    k,
-                                    rebind[k_t](v),
-                                    num_rows_q,
-                                    mask_functor,
-                                    valid_length.value().to_device_buffer(ctx),
-                                    StaticInt[1](),
-                                    max_cache_valid_length_value,
-                                    scale,
-                                    _optional_lt_to_tt(kv_input_row_offsets),
-                                    batch_size,
-                                    SplitKPartition(
-                                        exp_sum_qk_max_data.unsafe_ptr().as_unsafe_any_origin(),
-                                        UInt32(num_partitions_value),
-                                        UInt32(max_num_partitions_value),
-                                    ),
-                                    ctx,
-                                    _optional_lt_to_tt(sink_weights),
                                 )
                         else:
                             # Same ladder, on the intermediate dtype and writing

@@ -441,6 +441,7 @@ struct PagedRowIndices[
 
         For sub-tile loads: `get_row(sub_tile_idx * eff_page)`.
         For depth-512 V: `get_row(pv_stage * BK1)` avoids re-reading the LUT.
+        To carve a whole sub-range LUT rather than one row, use `sub_rows`.
         Requires the base `kv_row` that was passed to `populate` to be
         page-aligned (guaranteed by mask alignment).
 
@@ -450,9 +451,65 @@ struct PagedRowIndices[
         comptime if Self.num_pages == 1:
             return self.rows[0] + offset
         else:
-            return self.rows[Int(offset) // Self.eff_page] + UInt32(
-                Int(offset) % Self.eff_page
-            )
+            # Select with a comptime-indexed chain rather than
+            # `self.rows[<runtime>]`. A dynamic index into the inline array
+            # forces it to addressable memory, which in a warp-specialized
+            # kernel materializes as a `.local` stack frame in the load warp
+            # (measured: a 32-byte `__local_depot` with 16 `st.local` in the
+            # SM100 FA4 shared-key kernels). `num_pages` is `BN / page_size`
+            # -- 2 at the shipping `page_size=128` -- so the chain is a couple
+            # of `selp`s, and it folds away entirely when the caller's offset
+            # is comptime, which every sub-tile call site's is.
+            var page = offset // UInt32(Self.eff_page)
+            var row = self.rows[0]
+            comptime for i in range(1, Self.num_pages):
+                row = self.rows[i] if page == UInt32(i) else row
+            return row + (offset % UInt32(Self.eff_page))
+
+    @always_inline
+    def sub_rows[
+        SubBN: Int
+    ](self, offset: UInt32) -> PagedRowIndices[
+        SubBN, Self.page_size, False, True
+    ]:
+        """A `SubBN`-row sub-range LUT carved from this tile's rows.
+
+        Replaces a second `populate` for any sub-tile the caller already
+        covered with one: a global lookup-table read plus, when the sub-range
+        base is not page-aligned, the `row_idx` divmod that `populate`'s
+        general arm carries.
+
+        The sub-range base need NOT be page-aligned -- `get_row` supplies the
+        intra-page `tok_in_block` term itself. The only requirement is the one
+        the parent `populate` already ran under: its own base must be
+        `eff_page`-aligned, which `base_alignment` promises. That is what makes
+        this safe where a fresh `populate` at a `SubBN`-strided base is not:
+        such a base inherits no alignment promise from the tile, so it needs a
+        `gcd(base_alignment, SubBN)` walk-alignment to stay off `populate`'s
+        page-aligned fast arm.
+
+        The result is always single-CTA (`pair_cta=False`): a sub-range is a
+        V-side object, and `pair_cta`'s K-half selection belongs to the parent,
+        whose `rows[]` already spans V's full `BN` range either way.
+
+        Parameters:
+            SubBN: Row count of the sub-range; must divide `BN`.
+
+        Args:
+            offset: Row offset of the sub-range within the `BN`-row tile.
+        """
+        comptime assert (
+            Self.BN % SubBN == 0
+        ), "sub_rows: SubBN must divide the parent tile's BN"
+        comptime Sub = PagedRowIndices[SubBN, Self.page_size, False, True]
+        debug_assert(
+            Int(offset) + SubBN <= Self.BN,
+            "sub_rows: sub-range runs past the parent tile's BN rows",
+        )
+        var out = Sub()
+        comptime for p in range(Sub.num_pages):
+            out.rows[p] = self.get_row(offset + UInt32(p * Sub.eff_page))
+        return out^
 
     @always_inline
     def _tma_copy_kv_impl[

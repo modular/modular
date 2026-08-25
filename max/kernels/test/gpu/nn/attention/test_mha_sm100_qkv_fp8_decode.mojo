@@ -11,30 +11,34 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Correctness test for SM100 MHA with native FP8 Q, K, V — DECODE (head_dim=256).
+"""Correctness test for SM100 MHA with native FP8 Q, K, V — DECODE.
 
-Sibling of `test_mha_sm100_qkv_fp8_d128_decode.mojo` at the production
-Gemma-shape head_dim=256. `flash_attention` lands in `mha_1q.mojo` for
-seq_len=1; the kernel runs native fp8 UMMA (`KIND_F8F6F4`, MMA_K=32) for
-both Q@K^T and P@V. P is cast to fp8 inside the softmax warp, then
-redistributed via warp shuffles in `TMemOperand.copy_from` so the SS-D
-fragment layout maps correctly onto the TS A operand layout expected by
-`tcgen05.mma.kind::f8f6f4` (verified by the `tmem_lane_probe` diagnostic
-in `test/gpu/linalg/test_tma_mma_sm100.mojo`).
+One source, parameterized by `-D MHA_FP8_HEAD_DIM={128,256,512}` (see BUILD);
+each depth is a separate bazel target, so a regression in one arm fails
+independently. At decode (seq_len=1) `flash_attention` takes the SM100 FA4
+2Q dispatch. Q, K, V are all fp8 e4m3fn; the kernel runs native fp8 UMMA
+(`KIND_F8F6F4`, MMA_K=32) for both Q@K^T and P@V, and P is cast to fp8 inside
+the softmax warp. The depth selects where P lives for the P@V MMA: at
+head_dim=128 P stays in TMEM; for head_dim >= 256 P is written to SMEM
+instead of TMEM (the deep arm).
 
-Each config runs in two modes:
+Each config also runs in two modes:
 
 * `bf16_to_fp8=False` (kernel-correctness): generate Q, K, V as fp8 with
-  `randn`, then cast fp8 → bf16 (lossless) for the reference. Both
-  kernels see identical numerical values. Bar: cosine ≥ 0.9997.
-* `bf16_to_fp8=True` (production-realism): generate Q, K, V as bf16
-  with `randn`, then cast bf16 → fp8 (lossy) for the kernel inputs.
-  Bundles quantization error + kernel error. Bar: cosine ≥ 0.998.
+  `randn`, then cast fp8 → bf16 (lossless) for the reference inputs. Both
+  kernels see identical numerical values, so the cosine isolates the fp8
+  MMA's compute correctness. Bar: cosine ≥ 0.9997.
+* `bf16_to_fp8=True` (production-realism): generate Q, K, V as bf16 with
+  `randn`, then cast bf16 → fp8 (lossy) for the kernel inputs. The bf16
+  reference sees the originals; the fp8 kernel sees the quantized values.
+  Bundles quantization error + kernel error into a single cosine.
+  Bar: cosine ≥ 0.998.
 
 Target hardware family: NVIDIA SM100 (B200).
 """
 
 from std.math import sqrt
+from std.sys import get_defined_int
 
 from max.gpu.host import DeviceContext
 from layout import (
@@ -94,6 +98,9 @@ def host_cast_bf16_to_fp8[
 # Core test
 # ===-----------------------------------------------------------------------===#
 
+comptime head_dim = get_defined_int["MHA_FP8_HEAD_DIM", 128]()
+comptime label = "test_mha_sm100_qkv_fp8_d{}_decode".format(head_dim)
+
 
 def execute_pure_fp8_decode_test[
     MaskType: MHAMask,
@@ -118,7 +125,8 @@ def execute_pure_fp8_decode_test[
     comptime cosine_bar = Float64(0.998) if bf16_to_fp8 else Float64(0.9997)
 
     print(
-        "test_mha_sm100_qkv_fp8_d256_decode: ",
+        label,
+        ": ",
         "mode=",
         mode_name,
         " mask=",
@@ -255,6 +263,7 @@ def execute_pure_fp8_decode_test[
     var num_compared = 0
     var num_nan_actual = 0
     var num_nan_expect = 0
+    # Cosine similarity over the whole output (vs bf16 reference).
     var dot: Float64 = 0.0
     var aa: Float64 = 0.0
     var bb: Float64 = 0.0
@@ -322,6 +331,8 @@ def execute_pure_fp8_decode_test[
         " cosine=",
         cos,
     )
+    # Bar depends on the input flow: kernel-correctness (lossless inputs)
+    # uses 0.9997; production-realism (lossy quantization) uses 0.998.
     assert_true(cos >= cosine_bar, "cosine below bar for current mode")
 
     if num_mismatches > 0:
@@ -334,7 +345,7 @@ def execute_pure_fp8_decode_test[
 
 
 # ===-----------------------------------------------------------------------===#
-# Entry point — decode cases at d=256 (the production Gemma decode shape)
+# Entry point — decode cases (seq_len == 1) only
 # ===-----------------------------------------------------------------------===#
 
 
@@ -346,66 +357,157 @@ def main() raises:
         comptime for i in range(2):
             comptime bf16_to_fp8 = i == 1
 
-            # Simplest case: 1 kv head, single kv tile.
-            execute_pure_fp8_decode_test[
-                CausalMask,
-                bf16_to_fp8=bf16_to_fp8,
-                head_dim=256,
-                num_q_heads=8,
-                group=8,
-                num_keys=128,
-                mask_name="CAUSAL_g8_decode_k128_simple",
-            ](causal, ctx)
+            comptime if head_dim == 128:
+                # Simplest case: 1 head, no GQA, 1 kv tile.
+                execute_pure_fp8_decode_test[
+                    CausalMask,
+                    bf16_to_fp8=bf16_to_fp8,
+                    head_dim=head_dim,
+                    num_q_heads=8,
+                    group=8,
+                    num_keys=128,
+                    mask_name="CAUSAL_g8_decode_k128_simple",
+                ](causal, ctx)
+                # Small + large kv-cache cases at the most common decode head_dim.
+                execute_pure_fp8_decode_test[
+                    CausalMask,
+                    bf16_to_fp8=bf16_to_fp8,
+                    head_dim=head_dim,
+                    num_q_heads=32,
+                    group=8,
+                    num_keys=256,
+                    mask_name="CAUSAL_g8_decode_k256",
+                ](causal, ctx)
+                execute_pure_fp8_decode_test[
+                    CausalMask,
+                    bf16_to_fp8=bf16_to_fp8,
+                    head_dim=head_dim,
+                    num_q_heads=32,
+                    group=8,
+                    num_keys=1024,
+                    mask_name="CAUSAL_g8_decode_k1024",
+                ](causal, ctx)
+                execute_pure_fp8_decode_test[
+                    CausalMask,
+                    bf16_to_fp8=bf16_to_fp8,
+                    head_dim=head_dim,
+                    num_q_heads=32,
+                    group=8,
+                    num_keys=4096,
+                    mask_name="CAUSAL_g8_decode_k4096",
+                ](causal, ctx)
 
-            # Production Gemma decode shape: n_q_heads=32, group=8.
-            execute_pure_fp8_decode_test[
-                CausalMask,
-                bf16_to_fp8=bf16_to_fp8,
-                head_dim=256,
-                num_q_heads=32,
-                group=8,
-                num_keys=256,
-                mask_name="CAUSAL_g8_decode_k256",
-            ](causal, ctx)
-            execute_pure_fp8_decode_test[
-                CausalMask,
-                bf16_to_fp8=bf16_to_fp8,
-                head_dim=256,
-                num_q_heads=32,
-                group=8,
-                num_keys=1024,
-                mask_name="CAUSAL_g8_decode_k1024",
-            ](causal, ctx)
-            execute_pure_fp8_decode_test[
-                CausalMask,
-                bf16_to_fp8=bf16_to_fp8,
-                head_dim=256,
-                num_q_heads=32,
-                group=8,
-                num_keys=4096,
-                mask_name="CAUSAL_g8_decode_k4096",
-            ](causal, ctx)
+                # Sliding-window decode.
+                execute_pure_fp8_decode_test[
+                    SlidingWindowCausalMask[1024],
+                    bf16_to_fp8=bf16_to_fp8,
+                    head_dim=head_dim,
+                    num_q_heads=32,
+                    group=8,
+                    num_keys=4096,
+                    mask_name="SW1024_g8_decode_k4096",
+                ](sw_1024, ctx)
+            elif head_dim == 256:
+                # Simplest case: 1 kv head, single kv tile.
+                execute_pure_fp8_decode_test[
+                    CausalMask,
+                    bf16_to_fp8=bf16_to_fp8,
+                    head_dim=head_dim,
+                    num_q_heads=8,
+                    group=8,
+                    num_keys=128,
+                    mask_name="CAUSAL_g8_decode_k128_simple",
+                ](causal, ctx)
 
-            # Gemma4-sliding decode shape: n_kv_heads=16 (group=2).
-            execute_pure_fp8_decode_test[
-                CausalMask,
-                bf16_to_fp8=bf16_to_fp8,
-                head_dim=256,
-                num_q_heads=32,
-                group=2,
-                num_keys=4096,
-                mask_name="CAUSAL_g2_decode_k4096",
-            ](causal, ctx)
+                # Production Gemma decode shape: n_q_heads=32, group=8.
+                execute_pure_fp8_decode_test[
+                    CausalMask,
+                    bf16_to_fp8=bf16_to_fp8,
+                    head_dim=head_dim,
+                    num_q_heads=32,
+                    group=8,
+                    num_keys=256,
+                    mask_name="CAUSAL_g8_decode_k256",
+                ](causal, ctx)
+                execute_pure_fp8_decode_test[
+                    CausalMask,
+                    bf16_to_fp8=bf16_to_fp8,
+                    head_dim=head_dim,
+                    num_q_heads=32,
+                    group=8,
+                    num_keys=1024,
+                    mask_name="CAUSAL_g8_decode_k1024",
+                ](causal, ctx)
+                execute_pure_fp8_decode_test[
+                    CausalMask,
+                    bf16_to_fp8=bf16_to_fp8,
+                    head_dim=head_dim,
+                    num_q_heads=32,
+                    group=8,
+                    num_keys=4096,
+                    mask_name="CAUSAL_g8_decode_k4096",
+                ](causal, ctx)
 
-            # Sliding-window decode at the production shape.
-            execute_pure_fp8_decode_test[
-                SlidingWindowCausalMask[1024],
-                bf16_to_fp8=bf16_to_fp8,
-                head_dim=256,
-                num_q_heads=32,
-                group=8,
-                num_keys=4096,
-                mask_name="SW1024_g8_decode_k4096",
-            ](sw_1024, ctx)
+                # Gemma4-sliding decode shape: n_kv_heads=16 (group=2).
+                execute_pure_fp8_decode_test[
+                    CausalMask,
+                    bf16_to_fp8=bf16_to_fp8,
+                    head_dim=head_dim,
+                    num_q_heads=32,
+                    group=2,
+                    num_keys=4096,
+                    mask_name="CAUSAL_g2_decode_k4096",
+                ](causal, ctx)
 
-        print("test_mha_sm100_qkv_fp8_d256_decode: ALL PASSED")
+                # Sliding-window decode at the production shape.
+                execute_pure_fp8_decode_test[
+                    SlidingWindowCausalMask[1024],
+                    bf16_to_fp8=bf16_to_fp8,
+                    head_dim=head_dim,
+                    num_q_heads=32,
+                    group=8,
+                    num_keys=4096,
+                    mask_name="SW1024_g8_decode_k4096",
+                ](sw_1024, ctx)
+            else:
+                # d512: production Gemma4-global decode shape, group=8.
+                execute_pure_fp8_decode_test[
+                    CausalMask,
+                    bf16_to_fp8=bf16_to_fp8,
+                    head_dim=head_dim,
+                    num_q_heads=32,
+                    group=8,
+                    num_keys=256,
+                    mask_name="CAUSAL_g8_decode_k256",
+                ](causal, ctx)
+                execute_pure_fp8_decode_test[
+                    CausalMask,
+                    bf16_to_fp8=bf16_to_fp8,
+                    head_dim=head_dim,
+                    num_q_heads=32,
+                    group=8,
+                    num_keys=1024,
+                    mask_name="CAUSAL_g8_decode_k1024",
+                ](causal, ctx)
+                execute_pure_fp8_decode_test[
+                    CausalMask,
+                    bf16_to_fp8=bf16_to_fp8,
+                    head_dim=head_dim,
+                    num_q_heads=32,
+                    group=8,
+                    num_keys=4096,
+                    mask_name="CAUSAL_g8_decode_k4096",
+                ](causal, ctx)
+
+                # Sliding-window decode.
+                execute_pure_fp8_decode_test[
+                    SlidingWindowCausalMask[1024],
+                    bf16_to_fp8=bf16_to_fp8,
+                    head_dim=head_dim,
+                    num_q_heads=32,
+                    group=8,
+                    num_keys=4096,
+                    mask_name="SW1024_g8_decode_k4096",
+                ](sw_1024, ctx)
+
+        print(label, ": ALL PASSED")
