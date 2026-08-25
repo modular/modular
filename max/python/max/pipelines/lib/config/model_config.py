@@ -18,7 +18,7 @@ import json
 import logging
 import os
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, TypeVar
 
 from huggingface_hub import constants as hf_hub_constants
 from max.config import ConfigFileModel
@@ -141,6 +141,53 @@ def _parse_weight_and_model_paths(
         model_path = weights_repo_id
 
     return weight_path, model_path, weights_repo_id
+
+
+_MODEL_PATH_ADAPTER = TypeAdapter(str)
+_WEIGHT_PATH_ADAPTER = TypeAdapter(list[Path])
+_SUBFOLDER_ADAPTER: TypeAdapter[str | None] = TypeAdapter(str | None)
+
+_ModelConfigT = TypeVar("_ModelConfigT", bound="MAXModelConfig")
+
+
+def _build_model_config(
+    config_cls: type[_ModelConfigT], **data: Any
+) -> _ModelConfigT:
+    """Constructs a model config carrying its resolved values.
+
+    The weight and model paths derive from each other and the subfolder,
+    so they are computed first -- from inputs validated with the same
+    types as the fields -- and the config is constructed once with the
+    results. The already-loaded HuggingFace state may be seeded through
+    ``_huggingface_config`` and ``_weights_repo_id``; whatever is not
+    seeded is loaded here, so the result is fully specified.
+
+    Plain construction (``MAXModelConfig(...)``) validates the given
+    fields and nothing more; the config layer builds models through this
+    function.
+    """
+    seeded_huggingface_config = data.pop("_huggingface_config", None)
+    seeded_weights_repo_id = data.pop("_weights_repo_id", None)
+    weight_path, model_path, weights_repo_id = _parse_weight_and_model_paths(
+        model_path=_MODEL_PATH_ADAPTER.validate_python(
+            data.get("model_path") or ""
+        ),
+        weight_path=_WEIGHT_PATH_ADAPTER.validate_python(
+            data.get("weight_path") or []
+        ),
+        subfolder=_SUBFOLDER_ADAPTER.validate_python(data.get("subfolder")),
+        weights_repo_id=seeded_weights_repo_id,
+    )
+    model = config_cls(
+        **{**data, "weight_path": weight_path, "model_path": model_path}
+    )
+    if seeded_huggingface_config is not None:
+        model._huggingface_config = seeded_huggingface_config
+    model._weights_repo_id = weights_repo_id
+    model._populate_repo_handles()
+    model._populate_hf_config()
+    model._populate_generation_config()
+    return model
 
 
 def _resolve_dtype_cast(
@@ -920,49 +967,6 @@ class MAXModelConfig(MAXModelConfigBase):
     This is used to differentiate between different config sections in a single
     MAXConfig file."""
 
-    # TODO(SERVSYS-1083): This should just be a temporary fix until we can figure out a
-    # better way to inject custom PrivateAttrs without relying on a custom
-    # constructor.
-    # NOTE: We intentionally hide this constructor override from static type
-    # checkers so we preserve pydantic's generated `__init__` signature (or the
-    # project's mypy plugin behavior) for normal call sites.
-    if not TYPE_CHECKING:
-
-        def __init__(self, **data: Any) -> None:
-            """Initialize, seeding private attrs and resolving the weight path.
-
-            Private attributes (``PrivateAttr``) aren't accepted as constructor
-            kwargs by default, so we pop the seeded ones
-            (``_huggingface_config``, ``_weights_repo_id``) here, then resolve
-            the weight-path identity eagerly.
-            """
-            seeded_huggingface_config = data.pop("_huggingface_config", None)
-            seeded_weights_repo_id = data.pop("_weights_repo_id", None)
-            super().__init__(**data)
-            if seeded_huggingface_config is not None:
-                self._huggingface_config = seeded_huggingface_config
-            if seeded_weights_repo_id is not None:
-                self._weights_repo_id = seeded_weights_repo_id
-
-            # Resolve weight-path identity eagerly so the config is fully
-            # specified once constructed.
-            self.weight_path, self.model_path, self._weights_repo_id = (
-                _parse_weight_and_model_paths(
-                    model_path=self.model_path,
-                    weight_path=self.weight_path,
-                    subfolder=self.subfolder,
-                    weights_repo_id=self._weights_repo_id,
-                )
-            )
-
-            # Build the HuggingFace repo handles once, here, so all repo
-            # setup (and the access check under ``HF_HUB_OFFLINE`` / local
-            # paths) is consolidated at construction rather than sprinkled
-            # across lazy property accesses.
-            self._populate_repo_handles()
-            self._populate_hf_config()
-            self._populate_generation_config()
-
     # TODO(SERVSYS-1085): Figure out a better way to avoid having to roll our
     # own custom __getstate__/__setstate__ methods.
     def __getstate__(self) -> dict[str, Any]:
@@ -1128,9 +1132,6 @@ class MAXModelConfig(MAXModelConfigBase):
         a subsequent call with the same ``args``. Set the corresponding field
         on ``args`` itself instead.
         """
-        # Seed ``_weights_repo_id`` (a PrivateAttr) so __init__'s weight-path
-        # resolution sees it. Passed via a kwargs dict because the
-        # private-attr-seeding __init__ is hidden from type checkers.
         init_kwargs: dict[str, Any] = dict(
             model_path=args.model_path,
             served_model_name=args.served_model_name,
@@ -1154,7 +1155,7 @@ class MAXModelConfig(MAXModelConfigBase):
             kv_cache=args.kv_cache.model_copy(deep=True),
             _weights_repo_id=args._weights_repo_id,
         )
-        return cls(**init_kwargs)
+        return _build_model_config(cls, **init_kwargs)
 
     def validate_repo_access(self) -> None:
         """Validates that the model's Hugging Face repo is accessible.
