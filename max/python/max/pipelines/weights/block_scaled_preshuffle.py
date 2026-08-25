@@ -37,6 +37,7 @@ from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
 
 import numpy as np
+from max.driver import is_virtual_device_mode
 from max.dtype import DType
 from max.graph.weights import WeightData
 
@@ -273,6 +274,8 @@ def preshuffle_block_scaled_b_experts(
 
     t0 = time.perf_counter()
     n_total = 0
+    # Under virtual devices skip the byte copy; the group check still runs.
+    permute = not is_virtual_device_mode()
     with ThreadPoolExecutor(max_workers=8) as pool:
         for names in groups.values():
             shuffleable = [
@@ -299,6 +302,9 @@ def preshuffle_block_scaled_b_experts(
                 )
 
             kept_names, srcs = zip(*shuffleable, strict=True)
+            n_total += len(srcs)
+            if not permute:
+                continue
             N, K_BYTES = srcs[0].shape
             buf = np.empty((len(srcs), N, K_BYTES), dtype=np.uint8)
             list(pool.map(shuffle, srcs, buf))
@@ -309,10 +315,10 @@ def preshuffle_block_scaled_b_experts(
                     WeightData.from_numpy(slot, name=state_dict[name].name),
                     dtype=state_dict[name].dtype,
                 )
-            n_total += len(srcs)
 
     logger.info(
-        "MXFP4 B preshuffle: %d experts across %d groups in %.1fs",
+        "MXFP4 B preshuffle%s: %d experts across %d groups in %.1fs",
+        "" if permute else " (dummy op under virtual compilation)",
         n_total,
         len(groups),
         time.perf_counter() - t0,
@@ -353,6 +359,8 @@ def preshuffle_block_scaled_b_scales(
 
     t0 = time.perf_counter()
     n_total = 0
+    # Under virtual devices skip the byte copy; the group check still runs.
+    permute = not is_virtual_device_mode()
     with ThreadPoolExecutor(max_workers=8) as pool:
         for names in groups.values():
             shuffleable = [
@@ -375,6 +383,9 @@ def preshuffle_block_scaled_b_scales(
                 )
 
             kept_names, srcs = zip(*shuffleable, strict=True)
+            n_total += len(srcs)
+            if not permute:
+                continue
             MN, K_SCALES = srcs[0].shape
             buf = np.empty((len(srcs), MN, K_SCALES), dtype=np.uint8)
             list(pool.map(_shuffle_scale_4d, srcs, buf))
@@ -386,10 +397,10 @@ def preshuffle_block_scaled_b_scales(
                     WeightData.from_numpy(slot, name=state_dict[name].name),
                     dtype=DType.float8_e8m0fnu,
                 )
-            n_total += len(srcs)
 
     logger.info(
-        "MXFP4 B-scale preshuffle: %d experts across %d groups in %.1fs",
+        "MXFP4 B-scale preshuffle%s: %d experts across %d groups in %.1fs",
+        "" if permute else " (dummy op under virtual compilation)",
         n_total,
         len(groups),
         time.perf_counter() - t0,
