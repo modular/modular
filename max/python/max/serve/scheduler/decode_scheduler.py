@@ -772,16 +772,23 @@ class DecodeScheduler(Scheduler):
         elif self.scheduler_config.decode_stall_timeout_s is not None:
             stall_duration = time.monotonic() - self._last_batch_activity
             if stall_duration > self.scheduler_config.decode_stall_timeout_s:
+                awaiting_prefill = sum(
+                    1
+                    for p in self.requests.values()
+                    if p.phase is DecodeRequestPhase.AWAITING_PREFILL
+                )
+                transferring = len(self.requests) - awaiting_prefill
                 logger.error(
                     "Decode stall detected: no batch activity for %.1fs"
                     " with %d pending requests (%d queued, %d onloading,"
-                    " %d in prefill). Terminating worker to trigger"
-                    " restart.",
+                    " %d awaiting prefill, %d transferring). Terminating"
+                    " worker to trigger restart.",
                     stall_duration,
                     total_pending,
                     len(self.pending_reqs),
                     len(self._onloading_reqs),
-                    len(self.requests),
+                    awaiting_prefill,
+                    transferring,
                 )
                 # SystemExit bypasses except Exception handlers in the
                 # scheduler loop, guaranteeing the process exits and
