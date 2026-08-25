@@ -601,7 +601,16 @@ Here are all the available metrics:
   prefix cache coverage (cached prefix tokens over prompt tokens).
 - `maxserve_cache_preemption_count_total`: Total number of preemptions.
 - `maxserve_cache_hits_tokens_total`: Cumulative KV cache hit tokens (prompt
-  tokens served from the prefix cache).
+  tokens served from the prefix cache). Carries a `tier` label naming what
+  served each token: `g0` for the on-device prefix cache (including
+  cross-replica device-to-device copies), `external` for the KV connector.
+  The per-tier series sum to the untagged total, so a single-series query that
+  doesn't group by `tier` is unaffected. A query that *pairs* this counter with
+  a differently-labelled one does need updating: PromQL binary operations match
+  on identical label sets, so a hit-rate expression against
+  `maxserve_cache_misses_tokens_total` (which carries no `tier`) returns empty
+  until you add `ignoring(tier)` or wrap the hits side in
+  `sum without(tier) (...)`.
 - `maxserve_cache_misses_tokens_total`: Cumulative KV cache miss tokens
   (prompt tokens actually prefilled by the model).
 - `maxserve_cache_used_kv_pct_percent`: Histogram of device KV cache blocks
@@ -631,6 +640,15 @@ Here are all the available metrics:
   per data-parallel replica.
 - `maxserve_dkv_reconnect_attempts`: Cumulative dKV reconnect attempts across
   all clients.
+- `maxserve_dkv_read_blocks_total`: Cumulative KV blocks that landed in device
+  memory from the dKV tier. Only confirmed-complete transfers count, so this is
+  delivered reuse rather than an upper bound on it. Emitted only on dKV
+  deployments: other connectors stamp
+  `maxserve_cache_hits_tokens_total{tier="external"}` without reporting this
+  counter, so don't read a missing series as blocks failing to land. On a dKV
+  deployment the two are proportional for every load that lands, and comparing
+  them needs the server's `--kv-cache-page-size`, since this counter is in
+  blocks and that one is in tokens.
 - `maxserve_dkv_rpc_read_latency_milliseconds`: Histogram of dKV
   `read_blocks` RPC latency, in milliseconds.
 - `maxserve_dkv_rpc_acquire_latency_milliseconds`: Histogram of dKV

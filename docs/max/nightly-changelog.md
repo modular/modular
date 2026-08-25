@@ -592,6 +592,30 @@ This version is still a work in progress.
 
 ### Server metrics
 
+- `maxserve_cache_hits_tokens_total` now carries a `tier` label naming what
+  served each token: `g0` for the on-device prefix cache (including
+  cross-replica device-to-device copies), `external` for the KV connector.
+  The per-tier series sum to the untagged total, so an existing single-series
+  query that doesn't group by `tier` returns the same numbers as before. Misses
+  stay unlabeled, which means a PromQL binary operation pairing hits against
+  misses (a hit-rate expression) now matches on mismatched label sets and
+  returns empty: add `ignoring(tier)`, or wrap the hits side in
+  `sum without(tier) (...)`. The in-tree Datadog dashboard aggregates the tag
+  away and is unaffected; external Prometheus consumers are the exposure.
+  Previously the on-device share could only be derived by subtracting the
+  external tier's own server-side counters, which measure what that tier holds
+  rather than what a request could use and so overstate reuse. Note that the
+  untagged series is replaced rather than extended, so a `rate()` window
+  spanning the upgrade sees the old series go stale and the labeled ones start
+  from zero.
+- Added `maxserve_dkv_read_blocks_total`, the count of KV blocks that landed in
+  device memory from the dKV tier. Only confirmed-complete transfers count, so
+  it measures delivered reuse. It is emitted only on dKV deployments, while
+  `maxserve_cache_hits_tokens_total{tier="external"}` is stamped for any KV
+  connector, so a missing counter means "not dKV" rather than "nothing landed".
+  On a dKV deployment the two track each other for every load that lands, and
+  comparing them needs the server's `--kv-cache-page-size`, since one is in
+  blocks and the other in tokens.
 - Fixed the speculative-decoding per-position acceptance-rate histogram
   (`maxserve_spec_decode_acceptance_rate_per_position`) understating
   acceptance: decode batches that performed zero verifications published a

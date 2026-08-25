@@ -607,8 +607,9 @@ def test_publish_metrics_default_path() -> None:
     # Device KV cluster.
     mock_metrics.cache_num_total_blocks.assert_called_once_with(16)
     mock_metrics.cache_used_kv_pct.assert_called_once_with(15.0)
-    # Cache-hit clause (CE + num_new_admissions=1).
-    mock_metrics.cache_hits.assert_called_once_with(18)
+    # Cache-hit clause (CE + num_new_admissions=1). No connector in this
+    # fixture, so every hit token is tagged to the device tier.
+    mock_metrics.cache_hits.assert_called_once_with(18, tier="g0")
     mock_metrics.cache_misses.assert_called_once_with(19)
     # Host KV clause (total_host_kv_blocks=21).
     mock_metrics.cache_used_host_kv_pct.assert_called_once_with(20.0)
@@ -1577,3 +1578,153 @@ def test_dp_context_occupancy_in_log_line_and_extra() -> None:
     plain = _make_metrics(batch_type=BatchType.TG)
     assert "DP Occupancy" not in plain.pretty_format()
     assert "dp_context_token_occupancy_pct" not in plain.to_log_extra()
+
+
+def test_cache_hit_tiers_sum_to_the_untagged_total() -> None:
+    """CLIN-1785: ``maxserve.cache.hits`` carries a ``tier`` attribute.
+
+    The whole design rests on one invariant: the per-tier points SUM to the
+    counter's untagged total. That is what lets the dashboard replace a
+    cross-service subtraction (which went negative) with a direct grouped query
+    while every ungrouped query keeps reading the same number.
+
+    MAX resolves two tiers: ``g0`` for the device prefix cache and ``external``
+    for the KV connector, whose host/disk split does not cross the connector
+    boundary. Reporting those as ``g1`` would charge tokens to a tier that may
+    not have served them.
+    """
+    metrics = _make_metrics(
+        cache_hit_tokens=100,
+        cache_hit_external_tokens=30,
+        cache_miss_tokens=20,
+    )
+    with patch("max.serve.scheduler.utils.METRICS") as mock_metrics:
+        metrics.publish_metrics()
+
+    tiered = {
+        call.kwargs["tier"]: call.args[0]
+        for call in mock_metrics.cache_hits.call_args_list
+    }
+    assert tiered == {"g0": 70, "external": 30}
+    # THE invariant: the tiers partition the hit total exactly.
+    assert sum(tiered.values()) == metrics.cache_hit_tokens
+    # Every point carries a tier; an untagged one would double any ungrouped
+    # query's total.
+    assert all(
+        "tier" in call.kwargs for call in mock_metrics.cache_hits.call_args_list
+    )
+    # Misses stay untagged: a missed token was served by no tier.
+    mock_metrics.cache_misses.assert_called_once_with(20)
+
+
+def test_cache_hits_without_a_connector_emit_device_tier_only() -> None:
+    """No connector means no external tokens, and no idle ``external`` series.
+
+    A zero-token tier is skipped rather than stamped, so a deployment with no
+    dKV tier never mints a flat-zero series the dashboard would have to filter.
+    """
+    metrics = _make_metrics(
+        cache_hit_tokens=64,
+        cache_hit_external_tokens=0,
+        cache_miss_tokens=0,
+    )
+    with patch("max.serve.scheduler.utils.METRICS") as mock_metrics:
+        metrics.publish_metrics()
+
+    mock_metrics.cache_hits.assert_called_once_with(64, tier="g0")
+    mock_metrics.dkv_read_blocks.assert_not_called()
+
+
+def test_cold_cache_still_stamps_the_device_tier() -> None:
+    """A CE batch that admitted requests but hit nothing still emits g0=0.
+
+    Before the tier label this recorded ``cache_hits(0)``, which creates and
+    keeps the series alive. Skipping every empty tier would leave
+    ``maxserve_cache_hits_tokens_total`` absent on a cold server, and
+    ``rate()``/``sum()`` over an absent series returns no data rather than
+    zero, which reads as a broken panel instead of a cold cache.
+    """
+    metrics = _make_metrics(
+        cache_hit_tokens=0,
+        cache_hit_external_tokens=0,
+        cache_miss_tokens=512,
+    )
+    with patch("max.serve.scheduler.utils.METRICS") as mock_metrics:
+        metrics.publish_metrics()
+
+    mock_metrics.cache_hits.assert_called_once_with(0, tier="g0")
+    mock_metrics.cache_misses.assert_called_once_with(512)
+
+
+def test_dkv_read_blocks_publishes_outside_the_cache_hit_clause() -> None:
+    """``dkv_read_blocks`` must not be gated on new admissions.
+
+    It is a per-window delta that ``reset_metrics`` clears after every batch,
+    so a window published under any other batch type would lose its count for
+    good. That matters because a load posted on a CE iteration can have its
+    blocks accounted on a later ``wait_for_loads``, which also runs on TG
+    iterations: under the old placement those blocks were dropped, letting the
+    counter read *below* ``cache.hits{tier=external}`` despite being
+    documented as an upper bound on it.
+    """
+    metrics = _make_metrics(
+        batch_type=BatchType.TG,
+        num_new_admissions=0,
+        dkv_read_blocks=7,
+    )
+    with patch("max.serve.scheduler.utils.METRICS") as mock_metrics:
+        metrics.publish_metrics()
+
+    mock_metrics.dkv_read_blocks.assert_called_once_with(7)
+    # The cache-hit clause is genuinely skipped on a TG batch, so this proves
+    # the counter is published from outside it rather than alongside it.
+    mock_metrics.cache_hits.assert_not_called()
+
+
+def test_create_sums_the_external_share_across_admissions() -> None:
+    """CLIN-1785: ``BatchMetrics.create`` carries the per-tier split through.
+
+    The other ``create`` tests build contexts with bare ``MagicMock``s, whose
+    auto-created ``_cache_metrics_emitted`` attribute is truthy, so the
+    admission loop skips every one and its body never runs. That leaves the
+    accumulation of ``cached_prefix_external_length`` unexercised: drop it and
+    ``g0`` silently absorbs the connector's tokens, which is the pre-change
+    reading this metric exists to replace.
+
+    Two admitted requests, each with half its cached prefix served externally,
+    so the batch total must be the sum and the device remainder the complement.
+    """
+    contexts = []
+    for _ in range(2):
+        ctx = MagicMock()
+        ctx._is_padding_ctx = False
+        # Explicit False: the auto-created attribute is truthy and would make
+        # the admission loop skip this context entirely.
+        ctx._cache_metrics_emitted = False
+        ctx.tokens.active_length = 8
+        ctx.tokens.processed_length = 0
+        ctx.tokens.generated_length = 0
+        ctx.tokens.prompt_length = 100
+        ctx.cached_prefix_length = 40
+        ctx.cached_prefix_external_length = 15
+        contexts.append(ctx)
+
+    inputs: TextGenerationInputs[Any] = TextGenerationInputs(batches=[contexts])
+    object.__setattr__(inputs, "batch_type", BatchType.CE)
+
+    metrics = BatchMetrics.create(
+        sch_config=_mock_sch_config(),
+        inputs=inputs,
+        kv_cache=None,
+        batch_creation_time_s=0.001,
+        batch_execution_time_s=0.1,
+        num_pending_reqs=0,
+        num_terminated_reqs=0,
+        total_preemption_count=0,
+    )
+
+    assert metrics.num_new_admissions == 2
+    assert metrics.cache_hit_tokens == 80
+    assert metrics.cache_hit_external_tokens == 30
+    # The device share is the complement, and the two partition the hit total.
+    assert metrics.cache_hit_tokens - metrics.cache_hit_external_tokens == 50
