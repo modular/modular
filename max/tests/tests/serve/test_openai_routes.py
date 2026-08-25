@@ -1101,7 +1101,6 @@ def _make_disconnect_request(
             pipeline=pipeline,
             pipeline_config=pipeline_config,
             settings=Settings(api_types=[APIType.OPENAI], use_heartbeat=False),
-            grammar_validator=None,
         )
     )
     request.body = AsyncMock(return_value=body)
@@ -2547,17 +2546,20 @@ def test_create_response_format_absent_is_unconstrained() -> None:
 
 def test_create_response_format_boolean_schema_false() -> None:
     """A boolean schema ``false`` (matches nothing) de-sugars to the
-    unsatisfiable ``{"anyOf": [False]}`` and is rejected as a clean 400 -- no
-    output can satisfy it. (``{"anyOf": [False]}`` is used over ``{"not": {}}``
-    because llguidance lacks ``not`` and reports a misleading error.)"""
-    with pytest.raises(InputError, match="grammar"):
-        _create_response_format(
-            {
-                "type": "json_schema",
-                "json_schema": {"name": "t", "schema": False},
-            },
-            enable_response_format_schema=True,
-        )
+    unsatisfiable ``{"anyOf": [False]}``, which the worker rejects as a 400 --
+    no output can satisfy it. (``{"anyOf": [False]}`` is used over
+    ``{"not": {}}`` because llguidance lacks ``not`` and reports a misleading
+    error.)"""
+    result = _create_response_format(
+        {
+            "type": "json_schema",
+            "json_schema": {"name": "t", "schema": False},
+        },
+        enable_response_format_schema=True,
+    )
+
+    assert result is not None
+    assert result.json_schema == {"anyOf": [False]}
 
 
 def test_create_response_format_text() -> None:

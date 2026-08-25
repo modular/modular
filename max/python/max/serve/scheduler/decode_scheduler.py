@@ -52,6 +52,7 @@ from max.serve.queue import (
 )
 from max.serve.scheduler.base import (
     CancelRequest,
+    PrefillFailure,
     PrefillProgressPing,
     PrefillRequest,
     PrefillResponse,
@@ -183,6 +184,22 @@ class DecodeScheduler(Scheduler):
     ) -> None:
         logger.debug(f"connecting to remote transfer engine: {message.name}")
         self.transfer_engine.connect(message)
+
+    def handle_prefill_failure(self, message: PrefillFailure) -> None:
+        """Terminates a request the prefill node rejected.
+
+        No KV transfer was started, so the blocks are released immediately,
+        mirroring the pre-transfer cancellation path.
+        """
+        pending = self.requests.pop(message.id, None)
+        if pending is None:
+            return
+        self.prefill_reqs_per_replica[pending.replica_idx] -= 1
+        self.kv_cache.release(pending.context)
+        self.pipeline.release(message.id)
+        self.response_queue.put_nowait(
+            {message.id: SchedulerResult.failed(message.error)}
+        )
 
     def handle_prefill_response(self, message: PrefillResponse) -> None:
         """Handles a prefill response from the dispatcher."""
@@ -641,6 +658,8 @@ class DecodeScheduler(Scheduler):
                 self.handle_prefill_response(reply)
             elif isinstance(reply, PrefillProgressPing):
                 self.handle_prefill_progress_ping(reply)
+            elif isinstance(reply, PrefillFailure):
+                self.handle_prefill_failure(reply)
             else:
                 raise ValueError(f"Invalid reply type: {reply}")
 

@@ -11,9 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-
-import json
-
 from max.pipelines.context.exceptions import InputError
 from max.serve.config import Settings
 from max.serve.router.openai_routes import (
@@ -587,33 +584,10 @@ def test_openai_response_format_accepts_boolean_schema(schema: bool) -> None:
     assert response_format["json_schema"]["schema"] is schema
 
 
-def test_create_response_format_probes_normalized_schema() -> None:
-    """``_create_response_format`` validates the *normalized* schema against
-    the active backend (via the injected validator), so an uncompilable schema
-    is a 400 here rather than a worker crash later."""
-    probed: list[str] = []
-
-    class _RecordingValidator:
-        """GrammarValidator that records the schema it is asked to check."""
-
-        def check_tool_grammar(self, grammar: str) -> None:
-            return None
-
-        def check_json_schema(self, json_schema: str) -> None:
-            probed.append(json_schema)
-
-    class _RaisingValidator:
-        """GrammarValidator that rejects everything, as an uncompilable
-        schema would."""
-
-        def check_tool_grammar(self, grammar: str) -> None:
-            raise InputError("cannot compile")
-
-        def check_json_schema(self, json_schema: str) -> None:
-            raise InputError("cannot compile")
-
-    # A schema with no root ``type`` — normalization defaults it to "object",
-    # and that normalized form is what the validator (and worker) must compile.
+def test_create_response_format_normalizes_schema() -> None:
+    """The worker compiles what this returns, so it must carry the
+    *normalized* schema: an untyped root defaults to "object", which is what
+    keeps a looping model from running to max_length."""
     response_format = cast(
         Any,
         {
@@ -622,19 +596,30 @@ def test_create_response_format_probes_normalized_schema() -> None:
         },
     )
 
-    _create_response_format(
-        response_format,
-        enable_response_format_schema=True,
-        grammar_validator=_RecordingValidator(),
+    result = _create_response_format(
+        response_format, enable_response_format_schema=True
     )
-    assert len(probed) == 1
-    assert json.loads(probed[0])["type"] == "object"
+
+    assert result is not None
+    assert result.json_schema is not None
+    assert result.json_schema["type"] == "object"
+
+
+def test_create_response_format_rejects_schema_without_the_flag() -> None:
+    """The flag check stays at the route: the worker's grammar gate skips
+    requests ``update_context`` would reject, so one reaching the worker
+    would raise from inside ``execute()``."""
+    response_format = cast(
+        Any,
+        {
+            "type": "json_schema",
+            "json_schema": {"name": "t", "schema": {"type": "object"}},
+        },
+    )
 
     with pytest.raises(InputError):
         _create_response_format(
-            response_format,
-            enable_response_format_schema=True,
-            grammar_validator=_RaisingValidator(),
+            response_format, enable_response_format_schema=False
         )
 
 

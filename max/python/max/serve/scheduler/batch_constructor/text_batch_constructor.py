@@ -614,7 +614,7 @@ class TextBatchConstructor:
                 return
             error = self._grammar_gate.install_ready(ctx)
             if error is not None:
-                self._fail_grammar_request(ctx.request_id, error)
+                self._fail_grammar_request(ctx, error)
                 return
 
         self._admit_request(ctx, replica_idx)
@@ -769,17 +769,20 @@ class TextBatchConstructor:
             if error is None:
                 self._admit_request(pending.ctx, pending.replica_idx)
             else:
-                self._fail_grammar_request(req_id, error)
+                self._fail_grammar_request(pending.ctx, error)
 
-    def _fail_grammar_request(self, request_id: RequestID, error: str) -> None:
+    def _fail_grammar_request(self, ctx: TextContext, error: str) -> None:
         """Fails a request whose grammar build errored, without admitting it.
 
         Nothing was claimed for the request (it was never bound), so only the
         pipeline needs releasing; the owning scheduler drains
         :meth:`take_grammar_failed` to terminate it client-side.
         """
-        self.pipeline.release(request_id)
-        self._grammar_failed.append((request_id, error))
+        METRICS.structured_output_grammar_rejection(
+            "tool_grammar" if ctx.grammar else "json_schema"
+        )
+        self.pipeline.release(ctx.request_id)
+        self._grammar_failed.append((ctx.request_id, error))
 
     def take_grammar_failed(self) -> list[tuple[RequestID, str]]:
         """Returns and clears requests failed by the grammar gate."""

@@ -535,6 +535,9 @@ class StructuredOutputHelper:
             return self.backend.create_matcher(grammar)
         assert json_schema is not None
         compiled = self.backend.compile_json_schema(json_schema)
+        # No-op on xgrammar, which rejects unsatisfiable schemas at compile
+        # time; llguidance fails open without it.
+        self.backend.validate_grammar(compiled)
         return self.backend.create_matcher(compiled)
 
     def install_matcher(
