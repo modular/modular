@@ -130,7 +130,6 @@ def _preb_grid_kernel[
     b_cache_policy: CacheOperation,
     cluster_drain_sched: Bool,
     mfma_cluster: Int,
-    deep_prime: Bool,
     out_dtype: DType,
     LayoutC: TensorLayout,
     LayoutA: TensorLayout,
@@ -156,7 +155,6 @@ def _preb_grid_kernel[
         dram_to_lds=dram_to_lds,
         cluster_drain_sched=cluster_drain_sched,
         mfma_cluster=mfma_cluster,
-        deep_prime=deep_prime,
     ].run[
         out_dtype,
         LayoutC,
@@ -189,7 +187,6 @@ def _test_case[
     b_cache_policy: CacheOperation = CacheOperation.ALWAYS,
     cluster_drain_sched: Bool = False,
     mfma_cluster: Int = 4,
-    deep_prime: Bool = False,
     DUMP_ASM: Bool = False,
 ](name: String, ctx: DeviceContext) raises:
     """One direct-launch correctness case for the preb kernel."""
@@ -341,7 +338,6 @@ def _test_case[
         b_cache_policy,
         cluster_drain_sched,
         mfma_cluster,
-        deep_prime,
         .float32,
         type_of(c_tt).LayoutType,
         type_of(a_tt).LayoutType,
@@ -584,66 +580,5 @@ def main() raises:
         b_prefetch=True,
         cluster_drain_sched=True,
     ]("OOB test on M, cluster_drain_sched", ctx)
-
-    # deep_prime=True (b_prefetch only) — 2-tiles-ahead A prime. Covers the
-    # default prod tile (num_tiles=4), composition with cluster_drain_sched, a
-    # decode WN=16 shape, OOB-on-M, the num_tiles=2 boundary, and the
-    # num_tiles=1 fallback to the 1-deep path.
-    _test_case[
-        256,
-        1024,
-        2048,
-        BM=64,
-        BN=128,
-        WN=64,
-        BK_ELEMS=512,
-        b_prefetch=True,
-        deep_prime=True,
-    ]("default prod tile, deep_prime (num_tiles=4)", ctx)
-    _test_case[
-        256,
-        1024,
-        2048,
-        BM=64,
-        BN=128,
-        WN=64,
-        BK_ELEMS=512,
-        b_prefetch=True,
-        cluster_drain_sched=True,
-        deep_prime=True,
-    ]("default prod tile, deep_prime + cluster_drain_sched", ctx)
-    _test_case[
-        3,
-        1024,
-        2048,
-        BM=16,
-        BN=64,
-        WN=16,
-        BK_ELEMS=256,
-        b_prefetch=True,
-        deep_prime=True,
-    ]("decode-shape, WN=16, deep_prime", ctx)
-    _test_case[
-        234,
-        1024,
-        512,
-        BM=64,
-        BN=128,
-        WN=64,
-        BK_ELEMS=256,
-        b_prefetch=True,
-        deep_prime=True,
-    ]("OOB test on M, deep_prime (num_tiles=2)", ctx)
-    _test_case[
-        256,
-        256,
-        256,
-        BM=64,
-        BN=64,
-        WN=64,
-        BK_ELEMS=256,
-        b_prefetch=True,
-        deep_prime=True,
-    ]("deep_prime fallback (num_tiles=1)", ctx)
 
     print("==== all preb direct kernel tests passed ====")

@@ -19,6 +19,9 @@ footprint as 512 on the FP4 path. The reference is a per-element dequant + scala
 accumulate through `.float8_e4m3fn` — no MFMA and no code shared with the
 kernel, so a fragment-layout bug cannot cancel out.
 
+Also a determinism gate (`_probe_grouped_determinism`) at M3 shapes: a race can
+be finite and stable after launch 0, so only relaunch + byte-diff catches it.
+
 Usage:
   br test_mxfp8_matmul_amd_preb.mojo.test
 """
@@ -27,9 +30,10 @@ from std.gpu import MAX_THREADS_PER_BLOCK_METADATA, block_idx, global_idx
 from max.gpu.host import DeviceContext, HostBuffer
 from std.gpu.host.info import MI355X
 from max.gpu.memory import CacheOperation
-from std.math import align_up, ceildiv
+from std.math import align_up, ceildiv, isnan
 from std.memory import bitcast
 from std.random import random_ui64, seed
+from std.sys import size_of
 from std.utils import StaticTuple
 
 from internal_utils import assert_almost_equal
@@ -43,6 +47,10 @@ from linalg.matmul.gpu.amd import (
 )
 
 comptime FP8_LANE_BYTES = 32
+
+# Must be >= 3: the target failure is run 0 disagreeing with a
+# self-consistent run 1..N-1.
+comptime DET_RUNS = 8
 
 
 # ===----------------------------------------------------------------------=== #
@@ -175,6 +183,23 @@ def _rand_e4m3_byte() -> UInt8:
     A uniform byte fill is unusable: 0x7F/0xFF are NaN and 0x7E is 448.
     """
     return _e4m3_byte(Float32(Int(random_ui64(0, 2000))) / 1000.0 - 1.0)
+
+
+def _fnv1a64[dtype: DType](buf: HostBuffer[dtype], n: Int) -> UInt64:
+    """FNV-1a over the buffer's raw bytes."""
+    var ptr = buf.unsafe_ptr().bitcast[UInt8]()
+    var h = UInt64(0xCBF29CE484222325)
+    for i in range(n * size_of[dtype]()):
+        h = (h ^ UInt64(Int(ptr[i]))) * UInt64(0x100000001B3)
+    return h
+
+
+def _count_nans[dtype: DType](buf: HostBuffer[dtype], n: Int) -> Int:
+    var count = 0
+    for i in range(n):
+        if isnan(buf[i]):
+            count += 1
+    return count
 
 
 def _test_case[
@@ -589,6 +614,251 @@ def _test_grouped_case[
     _ = c_ref_d^
 
 
+def _probe_grouped_determinism[
+    num_experts: Int,
+    N: Int,
+    K: Int,
+](
+    name: String,
+    num_tokens_by_expert: List[Int],
+    estimated_total_m: Int,
+    ctx: DeviceContext,
+) raises -> Bool:
+    """Relaunch `DET_RUNS` times; require byte-identity, no NaNs, and a ref match.
+
+    Stale kernel-filled reads are self-consistent; pair with `--runs_per_test`.
+    """
+    comptime K_BYTES = K
+    comptime scale_K = K // MXFP8_SF_VECTOR_SIZE
+
+    var num_active = len(num_tokens_by_expert)
+    var total_tokens = 0
+    var max_tokens = 0
+    for i in range(num_active):
+        total_tokens += num_tokens_by_expert[i]
+        max_tokens = max(max_tokens, num_tokens_by_expert[i])
+    var max_padded_M = align_up(max_tokens, 32)
+    var n_elem = total_tokens * N
+
+    print(
+        "  ",
+        name,
+        " etm=",
+        estimated_total_m,
+        " tokens=",
+        total_tokens,
+        " experts=",
+        num_active,
+        " N=",
+        N,
+        " K=",
+        K,
+    )
+
+    var a_h = ctx.enqueue_create_host_buffer[.uint8](total_tokens * K_BYTES)
+    var b_h = ctx.enqueue_create_host_buffer[.uint8](num_experts * N * K_BYTES)
+    var sfa_h = ctx.enqueue_create_host_buffer[.uint8](total_tokens * scale_K)
+    var sfb_h = ctx.enqueue_create_host_buffer[.uint8](
+        num_experts * N * scale_K
+    )
+    var sfb_pre_h = ctx.enqueue_create_host_buffer[.uint8](
+        num_experts * N * scale_K
+    )
+    var a_off_h = ctx.enqueue_create_host_buffer[.uint32](num_active + 1)
+    var eid_h = ctx.enqueue_create_host_buffer[.int32](num_active)
+    ctx.synchronize()
+
+    for i in range(total_tokens * K_BYTES):
+        a_h[i] = _rand_e4m3_byte()
+    for i in range(num_experts * N * K_BYTES):
+        b_h[i] = _rand_e4m3_byte()
+    for i in range(total_tokens * scale_K):
+        sfa_h[i] = UInt8(random_ui64(125, 129))
+    for i in range(num_experts * N * scale_K):
+        sfb_h[i] = UInt8(random_ui64(125, 129))
+
+    a_off_h[0] = UInt32(0)
+    for i in range(num_active):
+        a_off_h[i + 1] = a_off_h[i] + UInt32(num_tokens_by_expert[i])
+        eid_h[i] = Int32(i)
+
+    var a_d = ctx.enqueue_create_buffer[.uint8](total_tokens * K_BYTES)
+    var b_d = ctx.enqueue_create_buffer[.uint8](num_experts * N * K_BYTES)
+    var b_pre_d = ctx.enqueue_create_buffer[.uint8](num_experts * N * K_BYTES)
+    var sfa_d = ctx.enqueue_create_buffer[.uint8](total_tokens * scale_K)
+    var sfb_d = ctx.enqueue_create_buffer[.uint8](num_experts * N * scale_K)
+    var sfa_pre_d = ctx.enqueue_create_buffer[.uint8](
+        num_experts * max_padded_M * scale_K
+    )
+    var sfb_pre_d = ctx.enqueue_create_buffer[.uint8](num_experts * N * scale_K)
+    var a_off_d = ctx.enqueue_create_buffer[.uint32](num_active + 1)
+    var eid_d = ctx.enqueue_create_buffer[.int32](num_active)
+    var c_d = ctx.enqueue_create_buffer[.float32](n_elem)
+    var c_ref_d = ctx.enqueue_create_buffer[.float32](n_elem)
+    c_ref_d.enqueue_fill(Float32(0.0))
+
+    ctx.enqueue_copy(a_d, a_h)
+    ctx.enqueue_copy(b_d, b_h)
+    ctx.enqueue_copy(sfa_d, sfa_h)
+    ctx.enqueue_copy(sfb_d, sfb_h)
+    ctx.enqueue_copy(a_off_d, a_off_h)
+    ctx.enqueue_copy(eid_d, eid_h)
+
+    var b_raw_tt = TileTensor[mut=False](
+        b_d, row_major[num_experts, N, K_BYTES]()
+    )
+    var b_pre_dst_tt = TileTensor[mut=True](
+        b_pre_d,
+        Shuffler[num_experts].b_5d_grouped_layout[N=N, K_BYTES=K_BYTES],
+    )
+    Shuffler[num_experts].preshuffle_b_5d[N=N, K_BYTES=K_BYTES](
+        b_raw_tt, b_pre_dst_tt, ctx
+    )
+    var sfb_raw_tt = TileTensor(
+        sfb_h, row_major(Coord(Idx[num_experts], Idx[N], Idx[scale_K]))
+    )
+    _ = Shuffler[num_experts].preshuffle_scale_4d[MN=N, K_SCALES=scale_K](
+        sfb_raw_tt, sfb_pre_h
+    )
+    ctx.enqueue_copy(sfb_pre_d, sfb_pre_h)
+
+    var sfa_raw_tt = TileTensor[mut=False](
+        sfa_d, row_major(Coord(total_tokens, Idx[scale_K]))
+    )
+    var sfa_pre_tt = TileTensor[mut=True](
+        sfa_pre_d, row_major(Coord(num_experts * max_padded_M, Idx[scale_K]))
+    )
+    var a_off_pre_tt = TileTensor[mut=False](
+        a_off_d, row_major(Coord(num_active + 1))
+    )
+    Shuffler[1].preshuffle_grouped_scale_4d_gpu[K_SCALES=scale_K](
+        sfa_raw_tt,
+        sfa_pre_tt,
+        a_off_pre_tt,
+        num_active,
+        max_tokens,
+        ctx.default_device_info.sm_count * 2,
+        ctx,
+    )
+
+    # Reference: one ungrouped per-element matmul per active expert slot.
+    comptime BLOCK_DIM = 32
+    for slot in range(num_active):
+        var tok_start = Int(a_off_h[slot])
+        var m_slot = Int(a_off_h[slot + 1]) - tok_start
+        if m_slot == 0:
+            continue
+        var eid = Int(eid_h[slot])
+        ctx.enqueue_function[block_scaled_matmul_fp8_ref](
+            (a_d.unsafe_ptr() + tok_start * K_BYTES).as_imm(),
+            (b_d.unsafe_ptr() + eid * N * K_BYTES).as_imm(),
+            (sfa_d.unsafe_ptr() + tok_start * scale_K)
+            .bitcast[Float8_e8m0fnu]()
+            .as_imm(),
+            (sfb_d.unsafe_ptr() + eid * N * scale_K)
+            .bitcast[Float8_e8m0fnu]()
+            .as_imm(),
+            c_ref_d.unsafe_ptr() + tok_start * N,
+            Int32(m_slot),
+            Int32(N),
+            Int32(K),
+            grid_dim=(ceildiv(m_slot, BLOCK_DIM), ceildiv(N, BLOCK_DIM)),
+            block_dim=(BLOCK_DIM, BLOCK_DIM),
+        )
+
+    var c_tt = TileTensor[mut=True](c_d, row_major(Coord(total_tokens, Idx[N])))
+    var a_tt = TileTensor[mut=False](
+        a_d, row_major(Coord(total_tokens, Idx[K_BYTES]))
+    )
+    var b_pre_flat = TileTensor[mut=False](
+        b_pre_d, row_major[num_experts, N * K_BYTES]()
+    )
+    var sfa_tt = TileTensor[mut=False](
+        sfa_pre_d.unsafe_ptr().unsafe_bitcast[Float8_e8m0fnu](),
+        row_major(Coord(num_experts * max_padded_M, Idx[scale_K])),
+    )
+    var sfb_tt = TileTensor[mut=False](
+        sfb_pre_d.unsafe_ptr().unsafe_bitcast[Float8_e8m0fnu](),
+        row_major[num_experts * N, scale_K](),
+    )
+    var a_off_tt = TileTensor[mut=False](
+        a_off_d, row_major(Coord(num_active + 1))
+    )
+    var eid_tt = TileTensor[mut=False](eid_d, row_major(Coord(num_active)))
+
+    var c_h = ctx.enqueue_create_host_buffer[.float32](n_elem)
+    var c_ref_h = ctx.enqueue_create_host_buffer[.float32](n_elem)
+    ctx.synchronize()
+    ctx.enqueue_copy(c_ref_h, c_ref_d)
+    ctx.synchronize()
+
+    var hashes = List[UInt64]()
+    var max_err = Float32(0)
+    var nans = 0
+
+    for _run in range(DET_RUNS):
+        # Zero every launch so a skipped store cannot inherit the previous
+        # output.
+        c_d.enqueue_fill(Float32(0.0))
+        block_scaled_grouped_matmul_amd_preb[lane_bytes=FP8_LANE_BYTES](
+            c_tt,
+            a_tt,
+            b_pre_flat,
+            sfa_tt,
+            sfb_tt,
+            a_off_tt,
+            eid_tt,
+            max_tokens,
+            num_active,
+            ctx,
+            estimated_total_m,
+        )
+        ctx.synchronize()
+        ctx.enqueue_copy(c_h, c_d)
+        ctx.synchronize()
+        hashes.append(_fnv1a64(c_h, n_elem))
+        nans += _count_nans(c_h, n_elem)
+        for i in range(n_elem):
+            var d = abs(c_h[i] - c_ref_h[i])
+            if d > max_err:
+                max_err = d
+
+    var all_equal = True
+    for r in range(len(hashes)):
+        if hashes[r] != hashes[0]:
+            all_equal = False
+    if not all_equal:
+        for r in range(len(hashes)):
+            print("      run", r, "hash", hashes[r])
+
+    # Loose absolute bound: catch a wrong-but-stable result, not fp8 rounding.
+    var ref_ok = max_err <= 0.5
+    print(
+        "     byte-identical:",
+        all_equal,
+        "| nans:",
+        nans,
+        "| max_err_vs_ref:",
+        max_err,
+    )
+    var ok = all_equal and nans == 0 and ref_ok
+    print("     PASS" if ok else "     FAIL")
+
+    _ = a_d^
+    _ = b_d^
+    _ = b_pre_d^
+    _ = sfa_d^
+    _ = sfb_d^
+    _ = sfa_pre_d^
+    _ = sfb_pre_d^
+    _ = a_off_d^
+    _ = eid_d^
+    _ = c_d^
+    _ = c_ref_d^
+
+    return ok
+
+
 def main() raises:
     seed(0)
     var ctx = DeviceContext()
@@ -637,3 +907,28 @@ def main() raises:
     _test_grouped_case[num_experts=2, N=6144, K=3072](
         "grouped-m3-down", [24, 8], ctx
     )
+
+    print(
+        "===> grouped dispatcher run-to-run determinism (MiniMax-M3 MXFP8"
+        " shapes)"
+    )
+    # M3 projections, just above the etm=256 edge and one higher band
+    # (etm = M/2 at topk=4, ep=8).
+    var det_ok = True
+    det_ok &= _probe_grouped_determinism[1, 6144, 6144](
+        "m3-gate_up etm=264", [264], 264, ctx
+    )
+    det_ok &= _probe_grouped_determinism[2, 6144, 6144](
+        "m3-gate_up etm=512", [256, 256], 512, ctx
+    )
+    det_ok &= _probe_grouped_determinism[1, 6144, 3072](
+        "m3-down etm=264", [264], 264, ctx
+    )
+    det_ok &= _probe_grouped_determinism[2, 6144, 3072](
+        "m3-down etm=1024", [512, 512], 1024, ctx
+    )
+    if not det_ok:
+        raise Error(
+            "grouped MXFP8 dispatcher is run-to-run nondeterministic or"
+            " disagrees with the reference; see the per-run hashes above"
+        )

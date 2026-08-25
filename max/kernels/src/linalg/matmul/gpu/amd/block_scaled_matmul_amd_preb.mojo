@@ -675,7 +675,6 @@ struct BlockScaledMatmulAMD_PreB[
     dram_to_lds: Bool = False,
     cluster_drain_sched: Bool = False,
     mfma_cluster: Int = 4,
-    deep_prime: Bool = False,
     pipeline_depth: Int = 2,
     matrix_format: CDNA4F8F6F4MatrixFormat = CDNA4F8F6F4MatrixFormat.FLOAT4_E2M1,
 ]:
@@ -696,18 +695,9 @@ struct BlockScaledMatmulAMD_PreB[
     per-k *between* the current tile's MFMA phases (not front-loaded), each phase
     pinned by `sched_barrier(0)` + bracketed by `s_setprio`, and the
     end-of-tile sync is a bare `s_barrier` + `lgkmcnt`-only drain so in-flight
-    B DMAs cross it. (deep_prime / the epilogue still use the per-cluster
-    `vmcnt` staircase, `mma_chain_scheduled`.) Default off: callers
-    bit-identical unless opted in.
-
-    `deep_prime` (b_prefetch only, num_tiles >= 2) deepens the A pipeline to
-    2-tiles-ahead: the prologue stages BOTH tile0 -> slot0 and tile1 -> slot1
-    into LDS so each steady iter reads an A tile that has had a full extra
-    iteration of MFMA shadow to land. Iter i reads slot[i%2] and issues the
-    A DMA for tile i+2 into that same (just-freed) slot. Reuses the existing
-    `num_a_slots=2` LDS buffers: no extra LDS/VGPR. Composes with cluster_drain_sched/mfma_cluster
-    (the MFMA chain is unchanged). Falls back to the 1-deep path when num_tiles < 2.
-    Default off: existing callers are bit-identical.
+    B DMAs cross it. (The epilogue still uses the per-cluster `vmcnt`
+    staircase, `mma_chain_scheduled`.) Default off: callers bit-identical
+    unless opted in.
 
     `pipeline_depth` sizes the B-fragment register ring (`num_b_slots`) and,
     when > 2, switches the b_prefetch steady loop's end-of-iter sync to the
@@ -743,9 +733,6 @@ struct BlockScaledMatmulAMD_PreB[
             and a partial-`vmcnt` staircase (defaults to `False`).
         mfma_cluster: Number of MFMAs per cluster in the scheduled
             MFMA chain used by `cluster_drain_sched` (defaults to 4).
-        deep_prime: Deepens the A pipeline to 2-tiles-ahead on the
-            prefetch path, staging two A tiles in the prologue
-            (defaults to `False`).
         pipeline_depth: Depth of the B-fragment register ring
             (`num_b_slots`) on the prefetch path (defaults to 2). When
             `> 2` it also switches the steady loop's end-of-iter sync to
@@ -1162,60 +1149,6 @@ struct BlockScaledMatmulAMD_PreB[
                     copy_a_tile_to_smem[reg_slot=(i + 1) % S]((i + 1) % 2)
                     s_waitcnt[lgkmcnt=0]()
                     _s_barrier_raw()
-            barrier()
-        elif Self.b_prefetch and Self.deep_prime and num_tiles >= 2:
-            # Depth-2 outer-K pipeline with a 2-tiles-ahead A stream.
-            #
-            # Prologue: stage BOTH tile0 -> slot0 and tile1 -> slot1 into LDS
-            # so the steady loop always reads an A tile that landed a full
-            # extra iteration ago. Prime B + scales for tile0 as in the
-            # 1-deep path (B prefetch stays 1-ahead). One barrier publishes
-            # both A tiles cross-wave before any read.
-            load_a_tile_from_dram()
-            copy_a_tile_to_smem(0)
-            load_a_tile_from_dram()
-            copy_a_tile_to_smem(1)
-            comptime for k in range(Self.num_k_mmas):
-                mma_op.load_b_frag_preshuffled[k, slot=0](
-                    b_loader, warp_n_off_global, 0
-                )
-            load_scales_for_iter(0)
-            barrier()
-
-            # Steady state: for each i in [0, num_tiles-1) read slot[i%2]
-            # (tile i, resident since prologue or a prior iter), prefetch B
-            # for tile i+1 into nxt_slot, MFMA, then issue tile i+2's A into
-            # slot[i%2] (the slot just freed). The A DMA for tile i+2 is thus
-            # issued at iter i and consumed at iter i+2 = two iterations of
-            # MFMA shadow.
-            comptime for i in range(num_tiles - 1):
-                comptime cur_slot = i % 2
-                comptime nxt_slot = (i + 1) % 2
-                var nxt_k_byte_base = (i + 1) * Self.B_BK_BYTES
-
-                comptime for k in range(Self.num_k_mmas):
-                    mma_op.load_b_frag_preshuffled[k, slot=nxt_slot](
-                        b_loader, warp_n_off_global, nxt_k_byte_base
-                    )
-
-                mma_chain[cur_slot]()
-
-                # Issue tile i+2's A into the freed cur_slot once it exists.
-                # cur_slot held tile i (just read) so WAR is covered by the
-                # read above; tile i+1 lives in nxt_slot and is untouched.
-                comptime if i + 2 < num_tiles:
-                    load_a_tile_from_dram()
-                    copy_a_tile_to_smem(cur_slot)
-                load_scales_for_iter((i + 1) * mma_k_pair_per_tile)
-                # Publishes tile i+2's write (RAW for iter i+2) and tile i+1's
-                # B/scales; covers WAR on cur_slot's overwrite.
-                barrier()
-
-            # Epilogue: steady MFMA'd tiles [0, num_tiles-2]; tile num_tiles-1
-            # is resident in last_slot (staged in the prologue when
-            # num_tiles==2, else by the steady i+2 issue). MFMA it.
-            comptime last_slot = (num_tiles - 1) % 2
-            mma_chain_epilogue[last_slot]()
             barrier()
         elif Self.b_prefetch:
             # Depth-2 outer-K software pipeline (1-deep A prime).

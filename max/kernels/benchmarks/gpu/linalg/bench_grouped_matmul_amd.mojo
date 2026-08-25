@@ -10,15 +10,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""AMD MXFP4 grouped matmul bench with workload-driven routing.
+"""AMD block-scaled grouped matmul bench with workload-driven routing.
 
 Inputs describe the workload (total experts, active experts, batch M,
 topk, expert skew, optional shared experts) instead of a hand-built
 per-slot token list. The bench builds the routing tables (a_offsets,
 expert_ids) so we can sweep one knob at a time.
 
-Runs the MXFP4 preshuffled-B grouped matmul (block_scaled_grouped_matmul_amd_preb:
+Runs the preshuffled-B grouped matmul (block_scaled_grouped_matmul_amd_preb:
 preshuffled B, direct VGPR loads).
+
+`lane_bytes` selects the format: 16 (MXFP4, default), 24 (MXFP6), or 32 (MXFP8).
+A's K byte extent is `K * lane_bytes // 32`; the E8M0 scale extent is `K // 32`.
 """
 
 from std.math import align_up, ceildiv
@@ -72,8 +75,17 @@ def _parse_csv_ints(s: String) raises -> List[Int]:
 # ===----------------------------------------------------------------------=== #
 
 
+def _format_name(lane_bytes: Int) -> String:
+    if lane_bytes == 32:
+        return "mxfp8"
+    if lane_bytes == 24:
+        return "mxfp6"
+    return "mxfp4"
+
+
 def _run_name(
     tag: String,
+    lane_bytes: Int,
     num_experts: Int,
     num_active_experts: Int,
     M: Int,
@@ -84,6 +96,8 @@ def _run_name(
 ) -> String:
     return String(
         tag,
+        " ",
+        _format_name(lane_bytes),
         " : E=",
         num_experts,
         " A=",
@@ -112,6 +126,7 @@ def bench_preb[
     K: Int,
     num_shared_experts: Int,
     topk: Int,
+    lane_bytes: Int,
 ](
     ctx: DeviceContext,
     mut bench: Bench,
@@ -126,7 +141,8 @@ def bench_preb[
     max_tokens_capacity: Int = 0,
     estimated_total_m: Int = 0,
 ) raises:
-    comptime packed_K = K // 2
+    # A's K byte extent per format: K/2 (MXFP4), K*3/4 (MXFP6), K (MXFP8).
+    comptime packed_K = (K * lane_bytes) // 32
     comptime scale_K = K // 32
 
     # Workload is driven by the explicit per-expert token counts (matches the
@@ -245,7 +261,9 @@ def bench_preb[
         var c_tt = TileTensor[mut=True](
             cb_c.offset_ptr(iteration), row_major(Coord(total_routes, Idx[N]))
         )
-        block_scaled_grouped_matmul_amd_preb(
+        # Pass lane_bytes explicitly: every format is uint8, and (N, packed_K)
+        # is not unique across formats.
+        block_scaled_grouped_matmul_amd_preb[lane_bytes=lane_bytes](
             c_tt,
             a_tt,
             b_pre_tt,
@@ -268,6 +286,7 @@ def bench_preb[
         BenchId(
             _run_name(
                 "gmm_amd_preb (uint8 -> float32)",
+                lane_bytes,
                 num_experts,
                 num_active_experts,
                 M,
@@ -301,8 +320,20 @@ def main() raises:
     comptime topk = get_defined_int["topk", 1]()
     comptime num_shared_experts = get_defined_int["num_shared_experts", 0]()
     comptime algo = get_defined_string["algo", "preb"]()
+    # 16 = MXFP4 (default), 24 = MXFP6, 32 = MXFP8.
+    comptime lane_bytes = get_defined_int["lane_bytes", 16]()
 
     comptime assert K % 128 == 0, "K must be a multiple of 128 (MFMA K dim)"
+    comptime assert (
+        lane_bytes == 16 or lane_bytes == 24 or lane_bytes == 32
+    ), "lane_bytes must be 16 (MXFP4), 24 (MXFP6) or 32 (MXFP8)"
+    # Preb K granule is 256 at MXFP8 and 512 at MXFP4/MXFP6; smaller K uses
+    # the non-preb entry.
+    comptime _k_granule = 256 if lane_bytes == 32 else 512
+    comptime assert K >= _k_granule and K % _k_granule == 0, (
+        "K must be a nonzero multiple of 256 (MXFP8) or 512 (MXFP4/MXFP6) for"
+        " the preb path"
+    )
     comptime assert (
         num_shared_experts <= topk
     ), "num_shared_experts cannot exceed topk"
@@ -428,6 +459,8 @@ def main() raises:
     print(
         "Config: algo=",
         algo,
+        " lane_bytes=",
+        lane_bytes,
         " num_experts=",
         num_experts,
         " num_active_experts=",
@@ -471,6 +504,7 @@ def main() raises:
             K=K,
             num_shared_experts=num_shared_experts,
             topk=topk,
+            lane_bytes=lane_bytes,
         ](
             ctx,
             bench,
