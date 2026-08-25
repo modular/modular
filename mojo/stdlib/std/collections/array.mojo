@@ -821,7 +821,6 @@ struct Array[T: AnyType, length: Int](
         """
         return Self.length
 
-    @always_inline
     @stable(since="1.0")
     def __eq__(self, other: Self) -> Bool where conforms_to(Self.T, Equatable):
         """Compares two arrays for equality.
@@ -832,12 +831,14 @@ struct Array[T: AnyType, length: Int](
         Returns:
             True if all elements are equal, False otherwise.
         """
-        comptime for i in range(Self.length):
+        # Not a `comptime for` as we can just rely on LLVM unrolling to its
+        # own budget. `comptime for` forces large arrays to be fully
+        # unrolled, which can be a performance hit.
+        for i in range(Self.length):
             if self.unsafe_get(i) != other.unsafe_get(i):
                 return False
         return True
 
-    @always_inline
     @stable(since="1.0")
     def __ne__(self, other: Self) -> Bool where conforms_to(Self.T, Equatable):
         """Compares two arrays for inequality.
@@ -848,7 +849,7 @@ struct Array[T: AnyType, length: Int](
         Returns:
             True if any elements are not equal, False otherwise.
         """
-        comptime for i in range(Self.length):
+        for i in range(Self.length):
             if self.unsafe_get(i) != other.unsafe_get(i):
                 return True
         return False
@@ -940,7 +941,7 @@ struct Array[T: AnyType, length: Int](
         Args:
             hasher: The hasher instance.
         """
-        comptime for i in range(Self.length):
+        for i in range(Self.length):
             self.unsafe_get(i).__hash__(hasher)
 
     # ===------------------------------------------------------------------===#
@@ -1048,7 +1049,7 @@ struct Array[T: AnyType, length: Int](
             element for equality with the given value. The element type must
             implement the `Equatable` trait to support equality comparison.
         """
-        comptime for i in range(Self.length):
+        for i in range(Self.length):
             if self[i] == value:
                 return True
         return False
