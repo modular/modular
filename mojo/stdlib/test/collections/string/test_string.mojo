@@ -370,6 +370,26 @@ def test_atol() raises:
         _ = atol("  _01", base=2)
 
     with assert_raises(
+        contains="String is not convertible to integer with base 0: '   '"
+    ):
+        _ = atol("   ", 0)
+
+    with assert_raises(
+        contains="String is not convertible to integer with base 10: '   '"
+    ):
+        _ = atol("   ")
+
+    with assert_raises(
+        contains="String is not convertible to integer with base 0: '   +'"
+    ):
+        _ = atol("   +", 0)
+
+    with assert_raises(
+        contains="String is not convertible to integer with base 0: '-'"
+    ):
+        _ = atol("-", 0)
+
+    with assert_raises(
         contains="String is not convertible to integer with base 10: '0x_ff'"
     ):
         _ = atol("0x_ff")
