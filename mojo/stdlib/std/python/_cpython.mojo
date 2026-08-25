@@ -1216,6 +1216,11 @@ comptime PyLong_AsSsize_t = ExternalFunction[
     # Py_ssize_t PyLong_AsSsize_t(PyObject *pylong)
     def(PyObjectPtr) thin abi("C") -> Py_ssize_t,
 ]
+comptime PyLong_AsSize_t = ExternalFunction[
+    "PyLong_AsSize_t",
+    # size_t PyLong_AsSize_t(PyObject *pylong)
+    def(PyObjectPtr) thin abi("C") -> c_size_t,
+]
 
 # Boolean Objects
 comptime PyBool_FromLong = ExternalFunction[
@@ -1659,6 +1664,7 @@ struct CPython(Defaultable, Movable):
     var _PyLong_FromSsize_t: PyLong_FromSsize_t.type
     var _PyLong_FromSize_t: PyLong_FromSize_t.type
     var _PyLong_AsSsize_t: PyLong_AsSsize_t.type
+    var _PyLong_AsSize_t: PyLong_AsSize_t.type
     # Boolean Objects
     var _PyBool_Type: PyTypeObjectPtr
     var _PyBool_FromLong: PyBool_FromLong.type
@@ -1910,6 +1916,7 @@ struct CPython(Defaultable, Movable):
         self._PyLong_FromSsize_t = PyLong_FromSsize_t.load(self.lib.borrow())
         self._PyLong_FromSize_t = PyLong_FromSize_t.load(self.lib.borrow())
         self._PyLong_AsSsize_t = PyLong_AsSsize_t.load(self.lib.borrow())
+        self._PyLong_AsSize_t = PyLong_AsSize_t.load(self.lib.borrow())
         # Boolean Objects
         # PyTypeObject PyBool_Type
         self._PyBool_Type = _untracked_symbol[PyTypeObject](
@@ -3243,6 +3250,19 @@ struct CPython(Defaultable, Movable):
         - https://docs.python.org/3/c-api/long.html#c.PyLong_AsSsize_t
         """
         return self._PyLong_AsSsize_t(pylong)
+
+    def PyLong_AsSize_t(self, pylong: PyObjectPtr) -> c_size_t:
+        """Return a C `size_t` representation of `pylong`.
+
+        Raise `OverflowError` if the value of `pylong` is out of range for
+        a `size_t`, including when `pylong` is negative.
+
+        Returns `(size_t)-1` on error. Use `PyErr_Occurred()` to disambiguate.
+
+        References:
+        - https://docs.python.org/3/c-api/long.html#c.PyLong_AsSize_t
+        """
+        return self._PyLong_AsSize_t(pylong)
 
     # ===-------------------------------------------------------------------===#
     # Boolean Objects
