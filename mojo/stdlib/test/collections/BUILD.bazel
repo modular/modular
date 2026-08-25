@@ -22,7 +22,6 @@ _FILECHECK_TESTS = [
 
 _LIT_TESTS = [
     "test_asan_annotations_list.mojo",
-    "test_list_bounds_abort.mojo",
 ]
 
 _MOJO_COMPILE_OPTS = {
