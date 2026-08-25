@@ -238,7 +238,13 @@ def _resolve_config(config: PipelineConfig) -> None:
     resolved_encoding = _select_quantization_encoding(
         _model(config), arch.default_encoding
     )
-    _model(config).quantization_encoding = resolved_encoding
+    if _model(config).quantization_encoding != resolved_encoding:
+        # Only directly-constructed configs (a few tests below) reach here:
+        # from_args configs already carry the resolved encoding, and their
+        # manifest is frozen by resolve().
+        config.models["main"] = _model(config).model_copy(
+            update={"quantization_encoding": resolved_encoding}
+        )
     MemoryEstimator.plan(config, arch)
 
 

@@ -164,10 +164,14 @@ def _set_kv_connector(
     cfg: DummyPipelineConfig, kv_connector: KVConnectorType
 ) -> None:
     kv = cfg.model.kv_cache
-    cfg.model.kv_cache = kv.model_copy(
+    cfg.models["main"] = cfg.model.model_copy(
         update={
-            "kv_connector_config": kv.kv_connector_config.model_copy(
-                update={"type": kv_connector}
+            "kv_cache": kv.model_copy(
+                update={
+                    "kv_connector_config": kv.kv_connector_config.model_copy(
+                        update={"type": kv_connector}
+                    )
+                }
             )
         }
     )
@@ -275,7 +279,9 @@ def _overcommitted_llama_config(
     reach the shrink-to-fit branch of ``plan_from_sizes``.
     """
     config = _dummy_llama_config(max_length=max_length)
-    config.model.kv_cache = KVCacheConfig(device_memory_utilization=1.5)
+    config.models["main"] = config.model.model_copy(
+        update={"kv_cache": KVCacheConfig(device_memory_utilization=1.5)}
+    )
     return config
 
 
@@ -291,7 +297,7 @@ def test_shrink_to_fit__runs_for_resolved_default_max_length(
     # Mirror PipelineConfig._resolve_max_length: intent was captured at
     # construction (None -> not user provided); the policy value is then
     # stored on the config.
-    config.model.max_length = 4096
+    config.models["main"] = config.model.model_copy(update={"max_length": 4096})
 
     with patch(
         "max.driver.Device.stats", new_callable=PropertyMock

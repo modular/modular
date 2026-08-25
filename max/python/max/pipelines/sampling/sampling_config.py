@@ -20,7 +20,7 @@ from typing import Annotated, Any
 from max.config import ConfigFileModel
 from max.dtype import DType
 from max.pipelines.context import SamplingParamsGenerationConfigDefaults
-from pydantic import BeforeValidator, Field, PrivateAttr
+from pydantic import BeforeValidator, ConfigDict, Field, PrivateAttr
 
 _logger = logging.getLogger("max.pipelines")
 
@@ -59,6 +59,8 @@ DEFAULT_STRUCTURED_OUTPUT_ANY_WHITESPACE = False
 
 class SamplingConfig(ConfigFileModel):
     """Configuration for the sampling stage of token generation."""
+
+    model_config = ConfigDict(frozen=True)
 
     in_dtype: _CoercedDType = Field(
         default=DType.float32,

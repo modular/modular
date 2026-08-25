@@ -42,8 +42,8 @@ def _make_pipeline_config(max_length: int | None) -> PipelineConfig:
         model_path="modularai/Llama-3.1-8B-Instruct-GGUF",
         device_specs=[DeviceSpec.cpu()],
         max_length=max_length,
+        kv_cache=KVCacheConfig(),
     )
-    model_config.kv_cache = KVCacheConfig()
     model_config._huggingface_config = MagicMock()
 
     runtime = PipelineRuntimeConfig.model_construct()
