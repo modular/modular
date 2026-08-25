@@ -255,7 +255,7 @@ def _get_bounds(tensor: TileTensor) -> Int:
 
 @always_inline
 def make_amd_buffer_resource(
-    tensor: TileTensor[Storage=PointerStorage[], ...],
+    tensor: TileTensor,
 ) -> AMDBufferResource:
     """Creates an AMD buffer resource descriptor from a TileTensor.
 
@@ -264,9 +264,7 @@ def make_amd_buffer_resource(
     runtime register cost.
     """
     var size = _get_bounds(tensor)
-    return AMDBufferResource(
-        readfirstlane(tensor._storage), readfirstlane(size)
-    )
+    return AMDBufferResource(readfirstlane(tensor.ptr), readfirstlane(size))
 
 
 @always_inline

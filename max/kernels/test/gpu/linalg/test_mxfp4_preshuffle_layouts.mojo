@@ -321,13 +321,13 @@ def test_preshuffle_grouped_scale_gpu[
     ctx.enqueue_copy(a_off_db, a_off_hb)
     ctx.enqueue_copy(dst_db, dst_hb)
 
-    var src_tt = TileTensor[mut=False](
+    var src_tt = TileTensor[mut=False, ...](
         src_db, row_major(Coord(total_tokens, Idx[K_SCALES]))
     )
-    var dst_tt = TileTensor[mut=True](
+    var dst_tt = TileTensor[mut=True, ...](
         dst_db, row_major(Coord(num_active * max_padded_M, Idx[K_SCALES]))
     )
-    var a_off_tt = TileTensor[mut=False](
+    var a_off_tt = TileTensor[mut=False, ...](
         a_off_db, row_major(Coord(num_active + 1))
     )
 

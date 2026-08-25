@@ -44,7 +44,13 @@ from std.memory import AddressSpace
 from std.sys import simd_width_of
 from std.utils import StaticTuple
 
-from layout import Coord, Idx, TensorLayout, TileTensor, PointerStorage
+from layout import (
+    Coord,
+    Idx,
+    TensorLayout,
+    TensorStorage,
+    TileTensor,
+)
 from layout._utils import make_amd_buffer_resource
 from layout.tile_tensor import stack_allocation
 from layout.tile_layout import col_major, row_major
@@ -188,13 +194,13 @@ struct MXFP4MoERoutedMatmul[
         N: Int,
         N_padded_scale: Int,
     ](
-        c: TileTensor[mut=True, Storage=PointerStorage[], ...],
-        a_tt: TileTensor[.uint8, Storage=PointerStorage[], ...],
-        b_pre_tt: TileTensor[.uint8, Storage=PointerStorage[], ...],
-        sfa_pre_tt: TileTensor[.uint8, Storage=PointerStorage[], ...],
-        sfb_pre_tt: TileTensor[.uint8, Storage=PointerStorage[], ...],
-        sorted_token_ids: TileTensor[.uint32, Storage=PointerStorage[], ...],
-        expert_ids: TileTensor[.int32, Storage=PointerStorage[], ...],
+        c: TileTensor[mut=True, ...],
+        a_tt: TileTensor[.uint8, ...],
+        b_pre_tt: TileTensor[.uint8, ...],
+        sfa_pre_tt: TileTensor[.uint8, ...],
+        sfb_pre_tt: TileTensor[.uint8, ...],
+        sorted_token_ids: TileTensor[.uint32, ...],
+        expert_ids: TileTensor[.int32, ...],
         num_tokens: Int32,
         size_expert_ids: Int32,
     ):
@@ -257,40 +263,26 @@ struct MXFP4MoERoutedMatmul[
         comptime sfb_per_expert_bytes = N_padded_scale * K_SCALES
         comptime sfa_per_block_bytes = Self.sort_block_m * K_SCALES
 
-        var b_pre_expert = TileTensor[mut=False, .uint8, origin=ImmutAnyOrigin](
-            (b_pre_tt.ptr + expert_id * b_per_expert_bytes)
-            .as_imm()
-            .unsafe_origin_cast[ImmutAnyOrigin]()
-            .address_space_cast[.GENERIC](),
-            row_major(Coord(Idx[1], Idx[b_per_expert_bytes])),
+        var b_pre_expert = b_pre_tt.tile[1, b_per_expert_bytes](
+            Coord(0, expert_id)
         )
-        var sfb_pre_expert = TileTensor[
-            mut=False, .uint8, origin=ImmutAnyOrigin
-        ](
-            (sfb_pre_tt.ptr + expert_id * sfb_per_expert_bytes)
-            .as_imm()
-            .unsafe_origin_cast[ImmutAnyOrigin]()
-            .address_space_cast[.GENERIC](),
-            row_major(Coord(Idx[1], Idx[sfb_per_expert_bytes])),
+        var sfb_pre_expert = sfb_pre_tt.tile[1, sfb_per_expert_bytes](
+            Coord(0, expert_id)
         )
-        var sfa_pre_block = TileTensor[
-            mut=False, .uint8, origin=ImmutAnyOrigin
-        ](
-            (sfa_pre_tt.ptr + bx * sfa_per_block_bytes)
-            .as_imm()
-            .unsafe_origin_cast[ImmutAnyOrigin]()
-            .address_space_cast[.GENERIC](),
-            row_major(Coord(Idx[1], Idx[sfa_per_block_bytes])),
+        var sfa_pre_block = sfa_pre_tt.tile[1, sfa_per_block_bytes](
+            Coord(0, bx)
         )
 
         # ---- Loaders ----
-        var b_loader = PreshuffledBLoader[N=N, K_BYTES=K_BYTES](b_pre_expert)
+        var b_loader = PreshuffledBLoader[N=N, K_BYTES=K_BYTES](
+            TileTensor(b_pre_expert.ptr, b_pre_expert.layout)
+        )
         var sfa_loader = PreshuffledScaleLoader[
             MN_padded=Self.sort_block_m, K_SCALES=K_SCALES
-        ](sfa_pre_block)
+        ](TileTensor(sfa_pre_block.ptr, sfa_pre_block.layout))
         var sfb_loader = PreshuffledScaleLoader[
             MN_padded=N_padded_scale, K_SCALES=K_SCALES
-        ](sfb_pre_expert)
+        ](TileTensor(sfb_pre_expert.ptr, sfb_pre_expert.layout))
         var a_bc = make_amd_buffer_resource(a_tt)
 
         # ---- SMEM for A ----
@@ -507,14 +499,23 @@ def _mxfp4_moe_matmul_routed_kernel[
     BK_ELEMS: Int,
     num_warps_m: Int,
     num_warps_n: Int,
+    CStorage: TensorStorage,
+    AStorage: TensorStorage,
+    BStorage: TensorStorage,
+    SFAStorage: TensorStorage,
+    SFBStorage: TensorStorage,
+    STIStorage: TensorStorage,
+    EIStorage: TensorStorage,
 ](
-    c: TileTensor[mut=True, out_dtype, CLayout, MutAnyOrigin],
-    a: TileTensor[.uint8, ALayout, ImmutAnyOrigin],
-    b_pre: TileTensor[.uint8, BLayout, ImmutAnyOrigin],
-    sfa_pre: TileTensor[.uint8, SFALayout, ImmutAnyOrigin],
-    sfb_pre: TileTensor[.uint8, SFBLayout, ImmutAnyOrigin],
-    sorted_token_ids: TileTensor[.uint32, STILayout, ImmutAnyOrigin],
-    expert_ids: TileTensor[.int32, EILayout, ImmutAnyOrigin],
+    c: TileTensor[mut=True, out_dtype, CLayout, MutAnyOrigin, Storage=CStorage],
+    a: TileTensor[.uint8, ALayout, ImmutAnyOrigin, Storage=AStorage],
+    b_pre: TileTensor[.uint8, BLayout, ImmutAnyOrigin, Storage=BStorage],
+    sfa_pre: TileTensor[.uint8, SFALayout, ImmutAnyOrigin, Storage=SFAStorage],
+    sfb_pre: TileTensor[.uint8, SFBLayout, ImmutAnyOrigin, Storage=SFBStorage],
+    sorted_token_ids: TileTensor[
+        .uint32, STILayout, ImmutAnyOrigin, Storage=STIStorage
+    ],
+    expert_ids: TileTensor[.int32, EILayout, ImmutAnyOrigin, Storage=EIStorage],
     num_tokens: Int32,
     size_expert_ids: Int32,
 ):
@@ -634,6 +635,13 @@ def mxfp4_moe_matmul_amd_routed[
         BK_ELEMS,
         num_warps_m,
         num_warps_n,
+        type_of(c).Storage,
+        type_of(a).Storage,
+        type_of(b_pre).Storage,
+        type_of(sfa_pre).Storage,
+        type_of(sfb_pre).Storage,
+        type_of(sorted_token_ids).Storage,
+        type_of(expert_ids).Storage,
     ]
     ctx.enqueue_function[kernel](
         c,
