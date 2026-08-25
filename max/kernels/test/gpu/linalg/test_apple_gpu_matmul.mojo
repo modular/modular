@@ -76,8 +76,8 @@ from linalg.utils import elementwise_epilogue_type
 def _host_matmul_nn[
     a_type: DType, b_type: DType
 ](
-    a_ptr: UnsafePointer[Scalar[a_type], ...],
-    b_ptr: UnsafePointer[Scalar[b_type], ...],
+    a_ptr: ImmPointer[Scalar[a_type], ...],
+    b_ptr: ImmPointer[Scalar[b_type], ...],
     M: Int,
     N: Int,
     K: Int,
@@ -769,8 +769,8 @@ def test_kernel_256x256x16_nn_fp16(ctx: DeviceContext) raises:
 def _host_matmul_nt[
     a_type: DType, b_type: DType
 ](
-    a_ptr: UnsafePointer[Scalar[a_type], ...],
-    b_ptr: UnsafePointer[Scalar[b_type], ...],
+    a_ptr: ImmPointer[Scalar[a_type], ...],
+    b_ptr: ImmPointer[Scalar[b_type], ...],
     M: Int,
     N: Int,
     K: Int,

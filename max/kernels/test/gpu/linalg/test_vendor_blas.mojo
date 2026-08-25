@@ -68,20 +68,19 @@ def test_vendor_blas[
     # Create TileTensors for the naive kernel.
     # a/b are constructed as immutable to match the ImmutAnyOrigin
     # parameters that matmul_kernel_naive expects.
-    from std.memory import UnsafePointer
 
     var c_ref_tt = TileTensor(
         c_device_ref,
         row_major(Coord(M, N)),
     )
     var a_tt = TileTensor(
-        UnsafePointer[Scalar[dtype], ImmutAnyOrigin](
+        ImmPointer[Scalar[dtype], ImmutAnyOrigin](
             unsafe_from_address=Int(a_device.unsafe_ptr())
         ),
         row_major(Coord(M, K)),
     )
     var b_tt = TileTensor(
-        UnsafePointer[Scalar[dtype], ImmutAnyOrigin](
+        ImmPointer[Scalar[dtype], ImmutAnyOrigin](
             unsafe_from_address=Int(b_device.unsafe_ptr())
         ),
         row_major(Coord(N, K)) if transpose_b else row_major(Coord(K, N)),

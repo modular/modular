@@ -46,8 +46,8 @@ from std.sys import get_defined_int
 def consumer_kernel[
     dtype: DType,
 ](
-    input: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    output: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    input: MutPointer[Scalar[dtype], MutAnyOrigin],
+    output: MutPointer[Scalar[dtype], MutAnyOrigin],
     length_dev: Int32,
 ):
     """Consumer kernel that reads matmul output after PDL wait.

@@ -42,11 +42,11 @@ from linalg.matmul.gpu.amd.block_scaled_matmul_amd import (
 
 
 def block_scaled_matmul_ref(
-    a_ptr: UnsafePointer[UInt8, ImmutAnyOrigin],
-    b_ptr: UnsafePointer[UInt8, ImmutAnyOrigin],
-    a_scales_ptr: UnsafePointer[Float8_e8m0fnu, ImmutAnyOrigin],
-    b_scales_ptr: UnsafePointer[Float8_e8m0fnu, ImmutAnyOrigin],
-    c_ptr: UnsafePointer[Float32, MutAnyOrigin],
+    a_ptr: ImmPointer[UInt8, ImmutAnyOrigin],
+    b_ptr: ImmPointer[UInt8, ImmutAnyOrigin],
+    a_scales_ptr: ImmPointer[Float8_e8m0fnu, ImmutAnyOrigin],
+    b_scales_ptr: ImmPointer[Float8_e8m0fnu, ImmutAnyOrigin],
+    c_ptr: MutPointer[Float32, MutAnyOrigin],
     M_dev: Int32,
     N_dev: Int32,
     K_dev: Int32,

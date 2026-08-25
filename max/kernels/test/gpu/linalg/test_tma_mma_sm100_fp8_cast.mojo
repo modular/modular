@@ -161,9 +161,7 @@ def tma_umma_kernel_sgs[
     ]()
 
     var a_smem = rebind[
-        UnsafePointer[
-            Scalar[a_type], address_space=.SHARED, UntrackedOrigin[mut=True]
-        ]
+        MutPointer[Scalar[a_type], address_space=.SHARED, MutUntrackedOrigin]
     ](
         external_memory[
             Scalar[a_type],

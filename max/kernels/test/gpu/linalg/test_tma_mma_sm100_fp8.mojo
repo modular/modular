@@ -147,9 +147,7 @@ def tma_umma_kernel_ss[
     ]()
 
     var a_smem = rebind[
-        UnsafePointer[
-            Scalar[a_type], address_space=.SHARED, UntrackedOrigin[mut=True]
-        ]
+        MutPointer[Scalar[a_type], address_space=.SHARED, MutUntrackedOrigin]
     ](
         external_memory[
             Scalar[a_type],
@@ -409,9 +407,7 @@ def tma_umma_kernel_ts_fp8[
     ]()
 
     var b_smem = rebind[
-        UnsafePointer[
-            Scalar[b_type], address_space=.SHARED, UntrackedOrigin[mut=True]
-        ]
+        MutPointer[Scalar[b_type], address_space=.SHARED, MutUntrackedOrigin]
     ](
         external_memory[
             Scalar[b_type],

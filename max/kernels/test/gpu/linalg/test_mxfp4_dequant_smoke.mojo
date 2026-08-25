@@ -40,9 +40,9 @@ def _e8m0_to_float32(bits: UInt8) -> Float32:
 def _cpu_dequant_mxfp4[
     out_dtype: DType = .bfloat16
 ](
-    expected: UnsafePointer[mut=True, Scalar[out_dtype], _],
-    input_data: UnsafePointer[mut=False, UInt8, _],
-    scales_data: UnsafePointer[mut=False, UInt8, _],
+    expected: MutPointer[Scalar[out_dtype], _],
+    input_data: ImmPointer[UInt8, _],
+    scales_data: ImmPointer[UInt8, _],
     num_rows: Int,
     num_cols: Int,
 ):

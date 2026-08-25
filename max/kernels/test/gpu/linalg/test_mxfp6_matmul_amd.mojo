@@ -87,7 +87,7 @@ comptime SENTINEL = Float32(-98765.0)
 
 
 def _fill_codes(
-    codes: UnsafePointer[mut=True, UInt8, _],
+    codes: MutPointer[UInt8, _],
     count: Int,
     pattern: Int,
     salt: Int,
@@ -114,7 +114,7 @@ def _fill_codes(
 
 
 def _fill_scales(
-    scales: UnsafePointer[mut=True, UInt8, _],
+    scales: MutPointer[UInt8, _],
     rows: Int,
     scale_cols: Int,
     pattern: Int,
@@ -136,8 +136,8 @@ def _fill_scales(
 
 
 def _pack_fp6(
-    codes: UnsafePointer[mut=False, UInt8, _],
-    packed: UnsafePointer[mut=True, UInt8, _],
+    codes: ImmPointer[UInt8, _],
+    packed: MutPointer[UInt8, _],
     rows: Int,
     K: Int,
 ):
@@ -172,7 +172,7 @@ def _e8m0(bits: UInt8) -> Float64:
 
 
 def _fill_packed_random(
-    packed: UnsafePointer[mut=True, UInt8, _],
+    packed: MutPointer[UInt8, _],
     nbytes: Int,
     salt: Int,
 ):
@@ -195,12 +195,12 @@ def _fill_packed_random(
 def _mxfp6_matmul_ref[
     fmt: FP6Format
 ](
-    a_ptr: UnsafePointer[UInt8, ImmutAnyOrigin],
-    b_ptr: UnsafePointer[UInt8, ImmutAnyOrigin],
-    a_sf_ptr: UnsafePointer[Float8_e8m0fnu, ImmutAnyOrigin],
-    b_sf_ptr: UnsafePointer[Float8_e8m0fnu, ImmutAnyOrigin],
-    c_ptr: UnsafePointer[Float32, MutAnyOrigin],
-    mag_ptr: UnsafePointer[Float32, MutAnyOrigin],
+    a_ptr: ImmPointer[UInt8, ImmutAnyOrigin],
+    b_ptr: ImmPointer[UInt8, ImmutAnyOrigin],
+    a_sf_ptr: ImmPointer[Float8_e8m0fnu, ImmutAnyOrigin],
+    b_sf_ptr: ImmPointer[Float8_e8m0fnu, ImmutAnyOrigin],
+    c_ptr: MutPointer[Float32, MutAnyOrigin],
+    mag_ptr: MutPointer[Float32, MutAnyOrigin],
     M_dev: Int32,
     N_dev: Int32,
     K_dev: Int32,

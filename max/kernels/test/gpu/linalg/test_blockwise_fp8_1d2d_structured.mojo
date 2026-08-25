@@ -227,7 +227,6 @@ def test_blockwise_fp8_1d2d_structured[
         b_scales_device_buffer,
         row_major[num_experts, N // BLOCK_SCALE_K, K // BLOCK_SCALE_K](),
     )
-    from std.memory import UnsafePointer as NewPtr
 
     var a_offsets_tt = TileTensor(
         a_offsets_device_buffer,

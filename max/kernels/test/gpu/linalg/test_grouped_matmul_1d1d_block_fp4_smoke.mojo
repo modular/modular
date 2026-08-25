@@ -268,7 +268,7 @@ def _test_grouped_1d1d_mixed_experts[
 ](
     ctx: DeviceContext,
     num_active_experts: Int,
-    tokens_per_expert_ptr: UnsafePointer[Int, _],
+    tokens_per_expert_ptr: ImmPointer[Int, _],
 ) raises:
     """Test with non-uniform runtime tokens per expert (dynamic switching).
 

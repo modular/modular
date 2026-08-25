@@ -55,7 +55,7 @@ def im2col_load_kernel[
     BK: Int,
 ](
     act_tma_op: TMATensorTileIm2col[dtype, tile_rank, tile_shape, desc_shape],
-    output_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    output_ptr: MutPointer[Scalar[dtype], MutAnyOrigin],
     k_coord: Int,
     m_coord: Int,
 ):
@@ -128,8 +128,8 @@ def im2col_load_kernel[
 def im2col_reference[
     dtype: DType,
 ](
-    output: UnsafePointer[mut=True, Scalar[dtype], _],
-    input: UnsafePointer[Scalar[dtype], _],  # NHWC (flat pointer)
+    output: MutPointer[Scalar[dtype], _],
+    input: ImmPointer[Scalar[dtype], _],  # NHWC (flat pointer)
     batch: Int,
     in_height: Int,
     in_width: Int,

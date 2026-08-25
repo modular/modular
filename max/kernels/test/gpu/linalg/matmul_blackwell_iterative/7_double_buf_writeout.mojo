@@ -149,12 +149,8 @@ def load_AB[
         alignment=128,
         circular=False,
     ],
-    mma_mbar: UnsafePointer[
-        mut=True, SharedMemBarrier, address_space=.SHARED, _
-    ],
-    tma_mbar: UnsafePointer[
-        mut=True, SharedMemBarrier, address_space=.SHARED, _
-    ],
+    mma_mbar: MutPointer[SharedMemBarrier, address_space=.SHARED, _],
+    tma_mbar: MutPointer[SharedMemBarrier, address_space=.SHARED, _],
     producer_phase: PipelineState[num_pipeline_stages],
     peer_cta_coord: Tuple[Int, Int, Int],
     work_tile_coord: Tuple[Int, Int],
@@ -257,12 +253,8 @@ def consumer_main_loop[
         alignment=128,
         circular=False,
     ],
-    mma_mbar: UnsafePointer[
-        mut=True, SharedMemBarrier, address_space=.SHARED, _
-    ],
-    tma_mbar: UnsafePointer[
-        mut=True, SharedMemBarrier, address_space=.SHARED, _
-    ],
+    mma_mbar: MutPointer[SharedMemBarrier, address_space=.SHARED, _],
+    tma_mbar: MutPointer[SharedMemBarrier, address_space=.SHARED, _],
     consumer_phase: PipelineState[pipeline_stages],
     mma_op: MmaOpSM100_SS[
         c_type,
@@ -546,9 +538,7 @@ def kernel_7[
     ]()
 
     var base_ptr_smem = rebind[
-        UnsafePointer[
-            Scalar[a_type], address_space=.SHARED, UntrackedOrigin[mut=True]
-        ]
+        MutPointer[Scalar[a_type], address_space=.SHARED, MutUntrackedOrigin]
     ](
         external_memory[
             Scalar[a_type],

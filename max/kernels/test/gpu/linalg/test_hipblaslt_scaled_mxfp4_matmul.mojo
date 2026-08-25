@@ -37,11 +37,11 @@ from linalg.fp4_utils import MXFP4_SF_VECTOR_SIZE
 def block_scaled_matmul_ref[
     output_dtype: DType
 ](
-    a_ptr: UnsafePointer[UInt8, ImmutAnyOrigin],
-    b_ptr: UnsafePointer[UInt8, ImmutAnyOrigin],
-    a_scales_ptr: UnsafePointer[Float8_e8m0fnu, ImmutAnyOrigin],
-    b_scales_ptr: UnsafePointer[Float8_e8m0fnu, ImmutAnyOrigin],
-    c_ptr: UnsafePointer[Scalar[output_dtype], MutAnyOrigin],
+    a_ptr: ImmPointer[UInt8, ImmutAnyOrigin],
+    b_ptr: ImmPointer[UInt8, ImmutAnyOrigin],
+    a_scales_ptr: ImmPointer[Float8_e8m0fnu, ImmutAnyOrigin],
+    b_scales_ptr: ImmPointer[Float8_e8m0fnu, ImmutAnyOrigin],
+    c_ptr: MutPointer[Scalar[output_dtype], MutAnyOrigin],
     M_dev: Int32,
     N_dev: Int32,
     K_dev: Int32,
@@ -189,7 +189,7 @@ def test_block_scaled_mxfp4_hipblaslt[
     var a_scales_lt = LayoutTensor[
         scales_dtype, a_scales_layout, ImmutAnyOrigin
     ](
-        rebind[UnsafePointer[Scalar[scales_dtype], ImmutAnyOrigin]](
+        rebind[ImmPointer[Scalar[scales_dtype], ImmutAnyOrigin]](
             a_scales_device_nd._storage
         ),
         RuntimeLayout[a_scales_layout].row_major(
@@ -202,7 +202,7 @@ def test_block_scaled_mxfp4_hipblaslt[
     var b_scales_lt = LayoutTensor[
         scales_dtype, b_scales_layout, ImmutAnyOrigin
     ](
-        rebind[UnsafePointer[Scalar[scales_dtype], ImmutAnyOrigin]](
+        rebind[ImmPointer[Scalar[scales_dtype], ImmutAnyOrigin]](
             b_scales_device_nd._storage
         ),
         RuntimeLayout[b_scales_layout].row_major(

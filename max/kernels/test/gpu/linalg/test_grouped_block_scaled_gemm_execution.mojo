@@ -81,11 +81,11 @@ def launch_grouped_gemm_with_templates[
     total_tiles: Int,
     k_array_val: Int,
     k_sf_val: Int,
-    a_ptr: UnsafePointer[Scalar[a_type], ...],
-    b_ptr: UnsafePointer[Scalar[b_type], ...],
-    c_ptr: UnsafePointer[Scalar[c_type], ...],
-    sfa_ptr: UnsafePointer[Scalar[scales_dtype], ...],
-    sfb_ptr: UnsafePointer[Scalar[scales_dtype], ...],
+    a_ptr: ImmPointer[Scalar[a_type], ...],
+    b_ptr: ImmPointer[Scalar[b_type], ...],
+    c_ptr: ImmPointer[Scalar[c_type], ...],
+    sfa_ptr: ImmPointer[Scalar[scales_dtype], ...],
+    sfb_ptr: ImmPointer[Scalar[scales_dtype], ...],
     ctx: DeviceContext,
 ) raises:
     """Create template TileTensors and launch grouped block-scaled GEMM."""
@@ -701,7 +701,7 @@ def test_grouped_kernel_single_group[
         raise Error("Grouped kernel output does not match cuBLAS")
 
     # FIXME(MSTDL-2742): HostBuffer is origin incorrect.
-    _ = UnsafePointer(to=a_ptrs_host).as_unsafe_any_origin()[]
+    _ = Pointer(to=a_ptrs_host).as_unsafe_any_origin()[]
 
 
 def test_grouped_kernel_multi_group_same_ptr[
@@ -1012,7 +1012,7 @@ def test_grouped_kernel_multi_group_same_ptr[
         )
 
     # FIXME(MSTDL-2742): HostBuffer is origin incorrect.
-    _ = UnsafePointer(to=avg_diff).as_unsafe_any_origin()[]
+    _ = Pointer(to=avg_diff).as_unsafe_any_origin()[]
 
 
 def test_grouped_kernel_two_groups_different_ptrs[
@@ -1398,7 +1398,7 @@ def test_grouped_kernel_two_groups_different_ptrs[
         raise Error("Multi-group different pointers test failed")
 
     # FIXME(MSTDL-2742): HostBuffer is origin incorrect.
-    _ = UnsafePointer(to=passed).as_unsafe_any_origin()[]
+    _ = Pointer(to=passed).as_unsafe_any_origin()[]
 
 
 def main() raises:
