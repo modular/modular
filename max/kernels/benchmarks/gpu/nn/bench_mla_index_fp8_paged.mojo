@@ -296,9 +296,12 @@ def execute_mla_indexer_paged[
 
 
 def main() raises:
-    # GLM 5.2 on 8 GPUs runs 32 indexer heads / 8 = 4 local heads; DeepSeek
-    # V3.2 runs 64 / 8 = 8. depth/top_k are shared by both.
-    comptime num_heads = get_defined_int["num_heads", 4]()
+    # The indexer is REPLICATED per tensor-parallel rank, not sharded: the
+    # `Indexer` layer computes an `n_local_heads` but never uses it, reshaping
+    # to the full `index_n_heads` instead. So GLM 5.2 puts 32 heads through this
+    # kernel on every rank and DeepSeek V3.2 puts 64, whatever the TP degree.
+    # 4 and 8 are reachable only where a caller shards the heads itself.
+    comptime num_heads = get_defined_int["num_heads", 32]()
     comptime depth = get_defined_int["depth", 128]()
     comptime page_size = get_defined_int["page_size", 128]()
     comptime top_k = get_defined_int["top_k", 2048]()

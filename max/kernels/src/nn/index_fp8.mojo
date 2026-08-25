@@ -541,6 +541,7 @@ def _index_matmul_max[
     ],
     k_lut: k_type,
     max_seq_len: Int32,
+    max_num_keys: Int32,
 ):
     comptime num_heads = q_layout.shape[1].value()
     comptime depth = q_layout.shape[2].value()
@@ -575,8 +576,12 @@ def _index_matmul_max[
         k_ptr, k_runtime_layout
     )
 
+    # The logits buffer is one dense `[., max_num_keys, num_heads]` allocation, so
+    # its row stride is `max_num_keys` and NOT this entry's own key count. On a
+    # ragged batch those differ, and striding by `num_keys` aliases every entry
+    # after the first onto the wrong rows.
     var o_runtime_layout = RuntimeLayout[output_layout].row_major(
-        Index(seq_len, num_keys, num_heads)
+        Index(seq_len, Int(max_num_keys), num_heads)
     )
     var o_batch = LayoutTensor[.float32, output_layout, MutAnyOrigin](
         o_ptr, o_runtime_layout
@@ -608,6 +613,7 @@ def _reduce_logits[
         .uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
     ],
     k_lut: k_type,
+    max_num_keys: Int32,
 ):
     comptime num_heads = logits_layout.shape[2].value()
     var batch_idx = block_idx.z
@@ -628,8 +634,12 @@ def _reduce_logits[
     var logits_ptr = logits.ptr_at_offset(Index(start_of_seq, 0, 0))
     var k_s_ptr = k_s.ptr_at_offset(Index(k_row_offset))
 
+    # Both the score buffer and the logits buffer are dense over `max_num_keys`,
+    # so both stride by it rather than by this entry's own key count -- see the
+    # matmul kernel above. `k_s` is the exception: it is already offset to this
+    # entry's rows, so it stays keyed on `num_keys`.
     var o_runtime_layout = RuntimeLayout[output_layout].row_major(
-        Index(seq_len, num_keys)
+        Index(seq_len, Int(max_num_keys))
     )
     var o_batch = LayoutTensor[.float32, output_layout, MutAnyOrigin](
         o_ptr, o_runtime_layout
@@ -637,7 +647,7 @@ def _reduce_logits[
     var k_s_runtime_layout = RuntimeLayout[ks_layout].row_major(Index(num_keys))
 
     var logits_runtime_layout = RuntimeLayout[logits_layout].row_major(
-        Index(seq_len, num_keys, num_heads)
+        Index(seq_len, Int(max_num_keys), num_heads)
     )
     var logits_batch = LayoutTensor[.float32, logits_layout, MutAnyOrigin](
         logits_ptr, logits_runtime_layout
@@ -789,6 +799,7 @@ def fp8_index_naive[
         valid_length_lt,
         k_operand,
         Int32(max_seq_len),
+        Int32(max_num_keys),
         grid_dim=(
             ceildiv(max_seq_len, 16),
             ceildiv(max_num_keys, 16),
@@ -810,6 +821,7 @@ def fp8_index_naive[
         k_s_lt,
         valid_length_lt,
         k_operand,
+        Int32(max_num_keys),
         grid_dim=(
             ceildiv(max_seq_len, 16),
             ceildiv(max_num_keys, 16),
