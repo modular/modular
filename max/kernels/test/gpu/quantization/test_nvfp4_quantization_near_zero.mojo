@@ -32,7 +32,7 @@
 # same finite-guard as the FP8 dynamic-quant reciprocal.
 
 from std.math import ceildiv
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.testing import assert_equal
 from std.utils.numerics import isinf, isnan
 from layout import CoordLike, Coord, Idx, TileTensor, row_major
@@ -44,7 +44,7 @@ from linalg.fp4_utils import (
     NVFP4_SF_VECTOR_SIZE,
     cast_uint_to_fp4e2m1,
 )
-from linalg.fp4_quantization import quantize_dynamic_scaled_fp4_async
+from linalg.block_scaled_quantization import quantize_dynamic_scaled_fp4_async
 
 
 def test_nvfp4_quant_near_zero[
@@ -143,7 +143,7 @@ def test_nvfp4_quant_near_zero[
     # Scan the raw stored scales for non-finite (defense in depth: an e4m3 NaN
     # scale would propagate through any downstream dequant as NaN).
     for i in range(scales_total):
-        var s = scales_host.ptr.load(i).cast[DType.float32]()
+        var s = scales_host._storage.load(i).cast[.float32]()
         if isnan(s) or isinf(s):
             num_nonfinite_scales += 1
 

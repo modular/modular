@@ -51,7 +51,7 @@ def bin(num: Scalar, /, *, prefix: StaticString = "0b") -> String:
 
 # Need this until we have constraints to stop the compiler from matching this
 # directly to bin[dtype: DType](num: Scalar[dtype]).
-def bin(b: Scalar[DType.bool], /, *, prefix: StaticString = "0b") -> String:
+def bin(b: Scalar[.bool], /, *, prefix: StaticString = "0b") -> String:
     """Returns the binary representation of a scalar bool.
 
     Args:
@@ -61,7 +61,7 @@ def bin(b: Scalar[DType.bool], /, *, prefix: StaticString = "0b") -> String:
     Returns:
         The binary string representation of b.
     """
-    return bin(b.cast[DType.int8](), prefix=prefix)
+    return bin(b.cast[.int8](), prefix=prefix)
 
 
 def bin[T: Intable, //](num: T, /, *, prefix: StaticString = "0b") -> String:
@@ -77,7 +77,7 @@ def bin[T: Intable, //](num: T, /, *, prefix: StaticString = "0b") -> String:
     Returns:
         The binary string representation of num.
     """
-    return bin(Scalar[DType.int](Int(num)), prefix=prefix)
+    return bin(Int(Int(num)), prefix=prefix)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -121,10 +121,10 @@ def hex[T: Intable, //](value: T, /, *, prefix: StaticString = "0x") -> String:
     Returns:
         A string containing the hex representation of the given integer.
     """
-    return hex(Scalar[DType.int](Int(value)), prefix=prefix)
+    return hex(Int(Int(value)), prefix=prefix)
 
 
-def hex(value: Scalar[DType.bool], /, *, prefix: StaticString = "0x") -> String:
+def hex(value: Scalar[.bool], /, *, prefix: StaticString = "0x") -> String:
     """Returns the hex string representation of the given scalar bool.
 
     The hexadecimal representation is a base-16 encoding of the bool.
@@ -139,7 +139,7 @@ def hex(value: Scalar[DType.bool], /, *, prefix: StaticString = "0x") -> String:
     Returns:
         A string containing the hex representation of the given bool.
     """
-    return hex(value.cast[DType.int8](), prefix=prefix)
+    return hex(value.cast[.int8](), prefix=prefix)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -183,10 +183,10 @@ def oct[T: Intable, //](value: T, /, *, prefix: StaticString = "0o") -> String:
     Returns:
         A string containing the octal representation of the given integer.
     """
-    return oct(Scalar[DType.int](Int(value)), prefix=prefix)
+    return oct(Int(Int(value)), prefix=prefix)
 
 
-def oct(value: Scalar[DType.bool], /, *, prefix: StaticString = "0o") -> String:
+def oct(value: Scalar[.bool], /, *, prefix: StaticString = "0o") -> String:
     """Returns the octal string representation of the given scalar bool.
 
     The octal representation is a base-8 encoding of the bool.
@@ -201,7 +201,7 @@ def oct(value: Scalar[DType.bool], /, *, prefix: StaticString = "0o") -> String:
     Returns:
         A string containing the octal representation of the given bool.
     """
-    return oct(value.cast[DType.int8](), prefix=prefix)
+    return oct(value.cast[.int8](), prefix=prefix)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -256,7 +256,7 @@ def _write_int[
 
     # Prefix a '-' if the original int was negative and make positive.
     if value < 0:
-        writer.write("-")
+        writer.write_string("-")
 
     # Add the custom number prefix, e.g. "0x" commonly used for hex numbers.
     # This comes *after* the minus sign, if present.
@@ -270,7 +270,7 @@ def _write_int[
         var zero_char = digit_chars_array.unsafe_ptr()[]
 
         # Construct a null-terminated buffer of single-byte char.
-        var zero_buf: InlineArray[UInt8, 2] = [zero_char, 0]
+        var zero_buf: Array[UInt8, 2] = [zero_char, 0]
 
         # TODO(MSTDL-720):
         #   Support printing non-null-terminated strings on GPU and switch
@@ -278,7 +278,9 @@ def _write_int[
         # ptr=digit_chars_array,
         writer.write(
             StringSlice(
-                unsafe_from_utf8=Span(ptr=zero_buf.unsafe_ptr(), length=1)
+                unsafe_from_utf8=Span(
+                    unsafe_ptr=zero_buf.unsafe_ptr(), length=1
+                )
             )
         )
 
@@ -291,14 +293,14 @@ def _write_int[
     # +1 for storing NUL terminator.
     comptime CAPACITY: Int = max(64, bit_width_of[dtype]()) + 1
 
-    var buf = InlineArray[UInt8, CAPACITY](uninitialized=True)
+    var buf = Array[UInt8, CAPACITY](uninitialized=True)
 
     # Start the buf pointer at the end. We will write the least-significant
     # digits later in the buffer, and then decrement the pointer to move
     # earlier in the buffer as we write the more-significant digits.
     var offset = CAPACITY - 1
 
-    (buf.unsafe_ptr() + offset).init_pointee_copy(
+    buf.unsafe_ptr().unsafe_offset(offset).write(
         0
     )  # Write NUL terminator at the end
 
@@ -309,18 +311,17 @@ def _write_int[
     # Write the digits of the number
     var remaining_int = value
 
-    @parameter
     def process_digits[
         get_digit_value: def(Scalar[dtype]) thin -> Scalar[dtype],
         div_fn: def(Scalar[dtype]) thin -> Scalar[dtype],
-    ]():
+    ]() {mut}:
         while remaining_int:
             var digit_value = get_digit_value(remaining_int)
 
             # Write the char representing the value of the least significant
             # digit.
-            (buf.unsafe_ptr() + offset).init_pointee_copy(
-                digit_chars_array.unsafe_ptr()[Int(digit_value)]
+            buf.unsafe_ptr().unsafe_offset(offset).write(
+                digit_chars_array.unsafe_ptr()[unsafe_offset=Int(digit_value)]
             )
 
             # Position the offset to write the next digit.
@@ -358,5 +359,11 @@ def _write_int[
 
     # Create a span to only those bytes in `buf` that have been initialized.
     # -1 because NUL terminator
-    var bytes = Span(buf)[offset : len(buf) - 1]
-    writer.write_string(StringSlice(unsafe_from_utf8=bytes))
+    writer.write_string(
+        StringSlice(
+            unsafe_from_utf8=Span(
+                unsafe_ptr=buf.unsafe_ptr().unsafe_offset(offset),
+                length=len(buf) - offset - 1,
+            )
+        )
+    )

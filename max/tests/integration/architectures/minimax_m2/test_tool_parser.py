@@ -354,6 +354,41 @@ def test_special_characters_in_arguments() -> None:
     assert parsed_args["unicode"] == "\u4e16\u754c"
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="TODO(CENG-769): the section scan takes the first SECTION_END, so a "
+    "lookalike inside a string argument strands its call and drops later ones",
+)
+def test_section_end_lookalike_in_parameter_value() -> None:
+    """Test a parameter value that contains the section-end text verbatim.
+
+    With tool-call constrained decoding off the model can emit
+    ``</minimax:tool_call>`` inside a free-form string argument. Treating
+    that as the real section end strands the call it sits in and drops
+    every later call in the response.
+    """
+    parser = MinimaxM2ToolParser()
+
+    response = """<minimax:tool_call>
+<invoke name="write_file">
+<parameter name="content">close the block with </minimax:tool_call> at the end</parameter>
+</invoke>
+<invoke name="get_weather">
+<parameter name="location">Paris</parameter>
+</invoke>
+</minimax:tool_call>"""
+
+    result = parser.parse_complete(response)
+
+    assert len(result.tool_calls) == 2
+    assert result.tool_calls[0].name == "write_file"
+    assert json.loads(result.tool_calls[0].arguments) == {
+        "content": "close the block with </minimax:tool_call> at the end"
+    }
+    assert result.tool_calls[1].name == "get_weather"
+    assert json.loads(result.tool_calls[1].arguments) == {"location": "Paris"}
+
+
 def test_multiple_tool_calls_same_function() -> None:
     """Test parsing multiple calls to the same function."""
     parser = MinimaxM2ToolParser()
@@ -428,9 +463,9 @@ def test_parse_delta_accumulates() -> None:
     """Test that parse_delta accumulates tokens in buffer."""
     parser = MinimaxM2ToolParser()
 
-    # Before the section marker fully lands, the result is None.
+    # parse_delta should accumulate tokens; return [] to indicate parser is actively buffering and raw tokens shouldn't be used yet.
     result1 = parser.parse_delta("<minimax:")
-    assert result1 is None
+    assert result1 == []
 
     # Once the marker completes, returns [] (not None) so the streaming
     # path knows to suppress raw structural tokens even with no deltas yet.
@@ -661,6 +696,54 @@ def test_parse_delta_mid_token_splits() -> None:
             d.arguments for d in arg_deltas if d.arguments is not None
         )
         assert json.loads(full_args) == {"location": "New York"}
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="TODO(CENG-769): the section scan takes the first SECTION_END, so a "
+    "lookalike inside a string argument strands its call and drops later ones",
+)
+@pytest.mark.parametrize("chunk_size", [1, 7, 64])
+def test_parse_delta_section_end_lookalike_in_parameter_value(
+    chunk_size: int,
+) -> None:
+    """Test streaming a parameter value containing the section-end text.
+
+    The section-end lookalike must not freeze the call it sits in or drop
+    the calls after it, at any chunk boundary.
+    """
+    parser = MinimaxM2ToolParser()
+
+    response = (
+        "<minimax:tool_call>"
+        '<invoke name="write_file">'
+        '<parameter name="content">close the block with '
+        "</minimax:tool_call> at the end</parameter>"
+        "</invoke>"
+        '<invoke name="get_weather">'
+        '<parameter name="location">Paris</parameter>'
+        "</invoke>"
+        "</minimax:tool_call>"
+    )
+
+    names: dict[int, str] = {}
+    arguments: dict[int, str] = {}
+    for start in range(0, len(response), chunk_size):
+        for delta in (
+            parser.parse_delta(response[start : start + chunk_size]) or []
+        ):
+            if delta.name:
+                names[delta.index] = delta.name
+            if delta.arguments:
+                arguments[delta.index] = (
+                    arguments.get(delta.index, "") + delta.arguments
+                )
+
+    assert names == {0: "write_file", 1: "get_weather"}
+    assert json.loads(arguments[0]) == {
+        "content": "close the block with </minimax:tool_call> at the end"
+    }
+    assert json.loads(arguments[1]) == {"location": "Paris"}
 
 
 def test_parse_delta_ignores_invoke_after_end_tag() -> None:

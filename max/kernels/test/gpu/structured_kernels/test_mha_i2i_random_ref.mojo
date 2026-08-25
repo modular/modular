@@ -31,7 +31,7 @@ aligned control. Calls `mha_prefill_v2` DIRECTLY (bypasses the dispatcher
 NullMask+partial-K gate) so it gates the kernel, not the dispatcher.
 """
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.math import exp2 as math_exp2
 from std.testing import assert_true
 
@@ -99,11 +99,11 @@ def run_case[depth: Int, seq_q: Int, num_keys: Int](ctx: DeviceContext) raises:
         ") ---",
     )
 
-    var dev_q = ctx.enqueue_create_buffer[DType.bfloat16](SIZE_Q)
-    var dev_k = ctx.enqueue_create_buffer[DType.bfloat16](SIZE_KV)
-    var dev_v = ctx.enqueue_create_buffer[DType.bfloat16](SIZE_KV)
-    var dev_out = ctx.enqueue_create_buffer[DType.float32](SIZE_OUT)
-    var dev_ref = ctx.enqueue_create_buffer[DType.float32](SIZE_OUT)
+    var dev_q = ctx.enqueue_create_buffer[.bfloat16](SIZE_Q)
+    var dev_k = ctx.enqueue_create_buffer[.bfloat16](SIZE_KV)
+    var dev_v = ctx.enqueue_create_buffer[.bfloat16](SIZE_KV)
+    var dev_out = ctx.enqueue_create_buffer[.float32](SIZE_OUT)
+    var dev_ref = ctx.enqueue_create_buffer[.float32](SIZE_OUT)
 
     var st: UInt64 = 0x1234567
     with dev_q.map_to_host() as hq, dev_k.map_to_host() as hk, dev_v.map_to_host() as hv, dev_ref.map_to_host() as href:

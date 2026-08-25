@@ -18,23 +18,24 @@ from std.memory import bitcast
 from std.sys import argv, size_of
 
 import linalg.matmul.vendor.blas as vendor_blas
-from std.gpu import WARP_SIZE, barrier
-from std.gpu.primitives.cluster import (
+from std.gpu import WARP_SIZE
+from max.gpu.sync import barrier
+from max.gpu.primitives.cluster import (
     block_rank_in_cluster,
     cluster_sync,
     elect_one_sync,
     elect_one_sync_with_mask,
 )
-from std.gpu.host import DeviceContext, FuncAttribute
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.gpu.host.info import B200
+from max.gpu.host import DeviceContext, FuncAttribute
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.host.info import B200
 from std.gpu import block_id_in_cluster, block_idx, lane_id
 from std.gpu import warp_id as get_warp_id
-from std.gpu.memory import fence_async_view_proxy, external_memory
-from std.gpu.compute.mma import st_matrix
-from std.gpu.compute.arch.mma_nvidia_sm100 import *
-from std.gpu.sync import named_barrier
-from std.gpu.compute.arch.tcgen05 import *
+from max.gpu.memory import fence_async_view_proxy, external_memory
+from max.gpu.compute.mma import st_matrix
+from max.gpu.compute.arch.mma_nvidia_sm100 import *
+from max.gpu.sync import named_barrier
+from max.gpu.compute.arch.tcgen05 import *
 from internal_utils import assert_almost_equal
 from layout import (
     CoordLike,
@@ -136,7 +137,7 @@ def load_AB[
         a_type,
         a_smem_layout,
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
         circular=False,
     ],
@@ -144,15 +145,15 @@ def load_AB[
         b_type,
         b_smem_layout,
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
         circular=False,
     ],
     mma_mbar: UnsafePointer[
-        mut=True, SharedMemBarrier, address_space=AddressSpace.SHARED, _
+        mut=True, SharedMemBarrier, address_space=.SHARED, _
     ],
     tma_mbar: UnsafePointer[
-        mut=True, SharedMemBarrier, address_space=AddressSpace.SHARED, _
+        mut=True, SharedMemBarrier, address_space=.SHARED, _
     ],
     producer_phase: PipelineState[num_pipeline_stages],
     peer_cta_coord: Tuple[Int, Int, Int],
@@ -244,7 +245,7 @@ def consumer_main_loop[
         a_type,
         a_smem_layout,
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
         circular=False,
     ],
@@ -252,15 +253,15 @@ def consumer_main_loop[
         b_type,
         b_smem_layout,
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
         circular=False,
     ],
     mma_mbar: UnsafePointer[
-        mut=True, SharedMemBarrier, address_space=AddressSpace.SHARED, _
+        mut=True, SharedMemBarrier, address_space=.SHARED, _
     ],
     tma_mbar: UnsafePointer[
-        mut=True, SharedMemBarrier, address_space=AddressSpace.SHARED, _
+        mut=True, SharedMemBarrier, address_space=.SHARED, _
     ],
     consumer_phase: PipelineState[pipeline_stages],
     mma_op: MmaOpSM100_SS[
@@ -308,8 +309,8 @@ def stsm_helper[
     vec_dtype: DType,
     vec_size: Int,
 ](
-    vec: InlineArray[Scalar[vec_dtype], vec_size],
-    dst: LayoutTensor[mut=True, _, _, address_space=AddressSpace.SHARED, ...],
+    vec: Array[Scalar[vec_dtype], vec_size],
+    dst: LayoutTensor[mut=True, _, _, address_space=.SHARED, ...],
 ):
     # Number of elements in one row per stsmx4 tile, a row is 32B.
     comptime stsmx4_row_size = 32 // size_of[dst.dtype]()
@@ -339,7 +340,7 @@ def stsm_helper[
             var casted = pair.cast[dst.dtype]()
             v[2 * k] = casted[0]
             v[2 * k + 1] = casted[1]
-        st_matrix[simd_width=4](dst.ptr + offset, bitcast[DType.float32, 4](v))
+        st_matrix[simd_width=4](dst.ptr + offset, bitcast[.float32, 4](v))
 
 
 @always_inline
@@ -363,7 +364,7 @@ def multi_stage_store_C[
         c_type,
         c_smem_layout,
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
     ],
     c_tma_op: TMATensorTile[c_type, c_tma_rank, c_tile_shape, c_desc_shape],
@@ -436,11 +437,11 @@ def multi_stage_store_C[
         # Pack the upper frag to shared memory
         comptime frag_width = rep * data_paths * (bits // 32) // WARP_SIZE
         stsm_helper[swizzle](
-            rebind[InlineArray[Scalar[accum_type], frag_width]](upper_frag),
+            rebind[Array[Scalar[accum_type], frag_width]](upper_frag),
             c_smem_warp_tile.tile[16, stageN](0, 0),
         )
         stsm_helper[swizzle](
-            rebind[InlineArray[Scalar[accum_type], frag_width]](lower_frag),
+            rebind[Array[Scalar[accum_type], frag_width]](lower_frag),
             c_smem_warp_tile.tile[16, stageN](1, 0),
         )
 
@@ -509,8 +510,9 @@ def kernel_7[
     a_tma_op: TMATensorTile[a_type, a_tma_rank, a_tile_shape, a_desc_shape],
     b_tma_op: TMATensorTile[b_type, b_tma_rank, b_tile_shape, b_desc_shape],
     c_tma_op: TMATensorTile[c_type, c_tma_rank, c_tile_shape, c_desc_shape],
-    num_iters: Int,
+    num_iters_dev: Int32,
 ):
+    var num_iters = Int(num_iters_dev)
     comptime BM = block_tile_shape[0]
     comptime BN = block_tile_shape[1]
     comptime BK = block_tile_shape[2]
@@ -543,16 +545,14 @@ def kernel_7[
         b_type, BN, BK, swizzle_mode=b_swizzle
     ]()
 
-    base_ptr_smem = rebind[
+    var base_ptr_smem = rebind[
         UnsafePointer[
-            Scalar[a_type],
-            address_space=AddressSpace.SHARED,
-            UntrackedOrigin[mut=True],
+            Scalar[a_type], address_space=.SHARED, UntrackedOrigin[mut=True]
         ]
     ](
         external_memory[
             Scalar[a_type],
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
             alignment=128,
         ]()
     )  # pointer to first byte of scratchpad
@@ -571,7 +571,7 @@ def kernel_7[
     var a_smem = LayoutTensorIter[
         a_type,
         a_smem_layout,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
         circular=False,
     ](
@@ -582,7 +582,7 @@ def kernel_7[
     var b_smem = LayoutTensorIter[
         b_type,
         b_smem_layout,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
         circular=False,
     ](
@@ -596,7 +596,7 @@ def kernel_7[
     var c_smem_iter = LayoutTensorIter[
         c_type,
         Layout.row_major(output_tile_shape[0], output_tile_shape[1]),
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
     ](c_smem_base, c_smem_size)
 
@@ -613,9 +613,9 @@ def kernel_7[
     var compute_barrier_base = mma_mbar_ptr + num_pipeline_stages
     var ptr_tmem_addr = (compute_barrier_base + 1).bitcast[UInt32]()
 
-    tma_mbar = tma_mbar_ptr.bitcast[SharedMemBarrier]()
-    mma_mbar = mma_mbar_ptr.bitcast[SharedMemBarrier]()
-    compute_barrier = compute_barrier_base.bitcast[SharedMemBarrier]()
+    var tma_mbar = tma_mbar_ptr.bitcast[SharedMemBarrier]()
+    var mma_mbar = mma_mbar_ptr.bitcast[SharedMemBarrier]()
+    var compute_barrier = compute_barrier_base.bitcast[SharedMemBarrier]()
 
     var warp_id = get_warp_id()
     var elect_one_warp = warp_id == 0
@@ -648,7 +648,7 @@ def kernel_7[
     var consumer_phase = PipelineState[num_pipeline_stages]()
     var producer_phase = PipelineState[num_pipeline_stages](0, 1, 0)
 
-    tmem_addr = ptr_tmem_addr[0]
+    var tmem_addr = ptr_tmem_addr[0]
 
     var mma_op = MmaOpSM100_SS[
         c_type,
@@ -802,11 +802,11 @@ def blackwell_kernel_7[
     comptime MMA_N = umma_shape[1]
     comptime MMA_K = umma_shape[2]
 
-    a_tma_op = create_tensor_tile[
+    var a_tma_op = create_tensor_tile[
         Index(Int32(BM) // cluster_shape[1], BK), swizzle_mode=a_swizzle
     ](ctx, a)
 
-    b_tma_op = create_tensor_tile[
+    var b_tma_op = create_tensor_tile[
         Index(
             Int32(BN) // (cluster_shape[0] // Int32(cta_group)), BK
         ) if transpose_b else Index(
@@ -878,7 +878,7 @@ def blackwell_kernel_7[
         a_tma_op,
         b_tma_op,
         c_tma_op,
-        K // BK,
+        Int32(K // BK),
         grid_dim=(
             align_up(ceildiv(M, BM), Int(cluster_shape[0])),
             align_up(ceildiv(N, MMA_N), Int(cluster_shape[1])),
@@ -991,8 +991,7 @@ def test_blackwell_kernel_7[
         comptime num_warmup = 100
 
         @always_inline
-        @parameter
-        def run_kernel(ctx: DeviceContext) raises:
+        def run_kernel(ctx: DeviceContext) raises {imm}:
             blackwell_kernel_7[
                 transpose_b=transpose_b,
                 umma_shape=mma_shape,
@@ -1014,7 +1013,7 @@ def test_blackwell_kernel_7[
         ctx.synchronize()
 
         var nstime = (
-            Float64(ctx.execution_time[run_kernel](num_runs)) / num_runs
+            Float64(ctx.execution_time(run_kernel, num_runs)) / num_runs
         )
         var sectime = nstime * 1e-9
         var TFlop = 2.0 * Float64(M) * Float64(N) * Float64(K) * 1e-12
@@ -1111,9 +1110,9 @@ def main() raises:
         comptime umma_shape = Index(256, 128, 16)
 
         test_blackwell_kernel_7[
-            DType.bfloat16,
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
+            .bfloat16,
             block_tile_shape,
             umma_shape,
             cluster_shape=StaticTuple[Int32, 3](2, 1, 1),

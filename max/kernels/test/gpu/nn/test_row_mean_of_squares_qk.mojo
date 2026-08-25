@@ -13,7 +13,7 @@
 
 from std.random import rand
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import Coord, TileTensor, row_major
 from nn.normalization import row_mean_of_squares_qk
 from std.testing import assert_almost_equal
@@ -70,7 +70,7 @@ def run_row_mean_of_squares_qk_gpu[
     for r in range(rows):
         var accq = Float64(0)
         for c in range(q_cols):
-            var v = q_h[r * q_cols + c].cast[DType.float64]()
+            var v = q_h[r * q_cols + c].cast[.float64]()
             accq += v * v
         assert_almost_equal(
             Float64(out_h[r * 2 + 0]),
@@ -81,7 +81,7 @@ def run_row_mean_of_squares_qk_gpu[
 
         var acck = Float64(0)
         for c in range(k_cols):
-            var v = k_h[r * k_cols + c].cast[DType.float64]()
+            var v = k_h[r * k_cols + c].cast[.float64]()
             acck += v * v
         assert_almost_equal(
             Float64(out_h[r * 2 + 1]),
@@ -100,18 +100,25 @@ def main() raises:
         # bfloat16 (primary): q/k with different widths (the TP case where
         # q_dim = n_heads*head_dim, k_dim = n_kv_heads*head_dim), decode +
         # prefill row counts, plus an odd k tail and a wide grid-stride case.
-        run_row_mean_of_squares_qk_gpu[DType.bfloat16](ctx, 16, 1536, 256)
-        run_row_mean_of_squares_qk_gpu[DType.bfloat16](ctx, 512, 1536, 256)
-        run_row_mean_of_squares_qk_gpu[DType.bfloat16](ctx, 2048, 4096, 512)
-        run_row_mean_of_squares_qk_gpu[DType.bfloat16](ctx, 16, 1536, 257)
-        run_row_mean_of_squares_qk_gpu[DType.bfloat16](ctx, 4, 8192, 8192)
+        run_row_mean_of_squares_qk_gpu[.bfloat16](ctx, 16, 1536, 256)
+        run_row_mean_of_squares_qk_gpu[.bfloat16](ctx, 512, 1536, 256)
+        run_row_mean_of_squares_qk_gpu[.bfloat16](ctx, 2048, 4096, 512)
+        run_row_mean_of_squares_qk_gpu[.bfloat16](ctx, 16, 1536, 257)
+        run_row_mean_of_squares_qk_gpu[.bfloat16](ctx, 4, 8192, 8192)
         # Equal widths must also work.
-        run_row_mean_of_squares_qk_gpu[DType.bfloat16](ctx, 16, 512, 512)
+        run_row_mean_of_squares_qk_gpu[.bfloat16](ctx, 16, 512, 512)
 
         # float32 must also be accepted (tighter tolerance).
-        run_row_mean_of_squares_qk_gpu[DType.float32](
+        run_row_mean_of_squares_qk_gpu[.float32](
             ctx, 16, 1536, 256, rtol=1e-6, atol=1e-6
         )
-        run_row_mean_of_squares_qk_gpu[DType.float32](
+        run_row_mean_of_squares_qk_gpu[.float32](
             ctx, 16, 1537, 257, rtol=1e-6, atol=1e-6
+        )
+        # Few rows + a row size past `_SPLITK_MIN_ROW` (32768) at float32's
+        # SIMD width (clears `_SPLITK_MAX_SIMD`): exercises the split-K
+        # kernel for both the q and k `row_mean_of_squares` calls, writing
+        # back through the stride-2 `q_out`/`k_out` closures.
+        run_row_mean_of_squares_qk_gpu[.float32](
+            ctx, 4, 65536, 40000, rtol=1e-6, atol=1e-6
         )

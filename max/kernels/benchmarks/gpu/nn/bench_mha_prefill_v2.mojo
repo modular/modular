@@ -26,6 +26,7 @@ from std.math import isclose
 from std.random import seed
 from std.sys import get_defined_bool, get_defined_dtype, get_defined_int
 
+from max.benchmark import bencher_iter_custom
 from std.benchmark import (
     Bench,
     Bencher,
@@ -34,7 +35,7 @@ from std.benchmark import (
     ThroughputMeasure,
 )
 from std.gpu import *
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.utils import StaticTuple
 from std.utils.numerics import min_or_neg_inf
 
@@ -97,7 +98,7 @@ def run_mha_prefill_v2[
         v_size, simd_size, ctx, cache_busting
     )
     # Output is FP32 per MhaPrefillV2.attend_ker signature.
-    var cb_o = CacheBustingBuffer[DType.float32](
+    var cb_o = CacheBustingBuffer[.float32](
         o_size, simd_size, ctx, cache_busting
     )
 
@@ -113,7 +114,7 @@ def run_mha_prefill_v2[
     cb_k.init_on_device(random_distribution, ctx)
     cb_v.init_on_device(random_distribution, ctx)
 
-    comptime assert qkv_type == DType.bfloat16, "MhaPrefillV2 is BF16-only"
+    comptime assert qkv_type == .bfloat16, "MhaPrefillV2 is BF16-only"
 
     comptime _config = MhaConfigV2(
         q_block_size=_Q_BLOCK_SIZE,
@@ -137,29 +138,28 @@ def run_mha_prefill_v2[
 
     if bench:
 
-        @parameter
         @always_inline
-        @__copy_capture(cb_q, cb_k, cb_v, cb_o)
-        def bench_func(mut b: Bencher):
-            @parameter
+        def bench_func(
+            mut b: Bencher,
+        ) raises {var cb_q, var cb_k, var cb_v, var cb_o, imm}:
             @always_inline
-            def _kernel_launch(ctx: DeviceContext, iteration: Int) raises:
+            def _kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
                 var q_ptr = (
                     cb_q.offset_ptr(iteration)
-                    .bitcast[Scalar[DType.bfloat16]]()
-                    .as_immutable()
+                    .bitcast[BFloat16]()
+                    .as_imm()
                     .as_unsafe_any_origin()
                 )
                 var k_ptr = (
                     cb_k.offset_ptr(iteration)
-                    .bitcast[Scalar[DType.bfloat16]]()
-                    .as_immutable()
+                    .bitcast[BFloat16]()
+                    .as_imm()
                     .as_unsafe_any_origin()
                 )
                 var v_ptr = (
                     cb_v.offset_ptr(iteration)
-                    .bitcast[Scalar[DType.bfloat16]]()
-                    .as_immutable()
+                    .bitcast[BFloat16]()
+                    .as_imm()
                     .as_unsafe_any_origin()
                 )
                 var q_tt = TileTensor(
@@ -196,7 +196,7 @@ def run_mha_prefill_v2[
                     ),
                 )
                 var o_tt = TileTensor(
-                    cb_o.offset_ptr(iteration).bitcast[Scalar[DType.float32]](),
+                    cb_o.offset_ptr(iteration).bitcast[Float32](),
                     row_major(
                         Coord(
                             Int32(batch_size),
@@ -215,13 +215,13 @@ def run_mha_prefill_v2[
                 comptime if sink:
                     # Launcher infers `sink_weights_ptr`'s dtype from
                     # `q.dtype` (literal BF16 here), so the cast must
-                    # land on `Scalar[DType.bfloat16]` — generic
+                    # land on `BFloat16` — generic
                     # `Scalar[qkv_type]` won't unify even when equal.
                     var sw_ptr = (
                         sw_buf.unsafe_ptr()
-                        .bitcast[Scalar[DType.bfloat16]]()
+                        .bitcast[BFloat16]()
                         .as_unsafe_any_origin()
-                        .as_immutable()
+                        .as_imm()
                     )
                     mha_prefill_v2[
                         _config,
@@ -252,14 +252,15 @@ def run_mha_prefill_v2[
                         ctx,
                     )
 
-            b.iter_custom[_kernel_launch](ctx)
+            bencher_iter_custom(b, _kernel_launch, ctx)
 
-        def compute_flops() {read} -> Int:
+        def compute_flops() {imm} -> Int:
             # Causal-mask: half the tiles. Matches bench_hk_mha_exact's
             # formula (`2 * B * H * N * NK * D`).
             return 2 * batch_size * num_heads * seq_len * num_keys * depth
 
-        m.bench_function[bench_func](
+        m.bench_function(
+            bench_func,
             BenchId(
                 "mha_prefill_v2",
                 # fmt: off
@@ -306,8 +307,8 @@ def main() raises:
     # Fixed seed so random Q/K/V fills are reproducible across runs.
     seed(0)
 
-    comptime qkv_type = get_defined_dtype["qkv_type", DType.bfloat16]()
-    comptime mask_type = get_defined_dtype["mask_type", DType.bfloat16]()
+    comptime qkv_type = get_defined_dtype["qkv_type", .bfloat16]()
+    comptime mask_type = get_defined_dtype["mask_type", .bfloat16]()
     comptime depth = get_defined_int["depth", 128]()
     comptime num_heads = get_defined_int["num_heads", 16]()
     comptime kv_block = get_defined_int["kv_block", 64]()

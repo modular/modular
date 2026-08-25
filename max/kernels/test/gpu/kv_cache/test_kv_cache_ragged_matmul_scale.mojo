@@ -15,7 +15,7 @@ from std.math import ceildiv
 from std.math.uutils import udivmod
 from std.random import random_ui64, seed
 
-from std.gpu.host import DeviceBuffer, DeviceContext
+from max.gpu.host import DeviceBuffer, DeviceContext
 from kv_cache.types import (
     KVCacheStaticParams,
     PagedKVCacheCollection,
@@ -33,7 +33,7 @@ from layout import (
 from layout._fillers import random
 from layout._utils import ManagedLayoutTensor
 from linalg.fp8_quantization import naive_blockwise_scaled_fp8_matmul
-from std.memory import memcpy
+from std.memory import unsafe_memcpy
 from nn.kv_cache_ragged import (
     _matmul_k_cache_ragged_scale_impl,
 )
@@ -53,14 +53,12 @@ comptime block_scale = 128
 def _initialize_ragged_inputs[
     dtype: DType, hidden_size: Int
 ](
-    input_row_offsets_host_ptr: UnsafePointer[
-        mut=True, Scalar[DType.uint32], _
-    ],
+    input_row_offsets_host_ptr: UnsafePointer[mut=True, UInt32, _],
     batch_size: Int,
     prompt_lens: List[Int],
     ctx: DeviceContext,
 ) raises -> Tuple[
-    DeviceBuffer[DType.uint32],
+    DeviceBuffer[.uint32],
     DeviceBuffer[dtype],
     DeviceBuffer[dtype],
     Int,  # total_length
@@ -78,7 +76,7 @@ def _initialize_ragged_inputs[
             max_seq_length_batch = curr_len
 
     input_row_offsets_host_ptr[batch_size] = UInt32(total_length)
-    var input_row_offsets_device = ctx.enqueue_create_buffer[DType.uint32](
+    var input_row_offsets_device = ctx.enqueue_create_buffer[.uint32](
         batch_size + 1
     )
     ctx.enqueue_copy(input_row_offsets_device, input_row_offsets_host_ptr)
@@ -124,7 +122,7 @@ def _initialize_ragged_inputs[
                 hidden_state_ragged_host_ptr.unsafe_ptr()
                 + (ragged_start_idx + s) * hidden_size
             )
-            memcpy(dest=padded_ptr, src=ragged_ptr, count=hidden_size)
+            unsafe_memcpy(dest=padded_ptr, src=ragged_ptr, count=hidden_size)
 
     var hidden_state_padded_device = ctx.enqueue_create_buffer[dtype](
         padded_size
@@ -170,7 +168,7 @@ def execute_matmul_k_cache_ragged_scale[
     comptime num_paged_blocks = 32
     comptime page_size = 512
     comptime CollectionType = PagedKVCacheCollection[
-        dtype, kv_params, page_size
+        dtype, kv_params, page_size, ...
     ]
     comptime layout_1d = Layout(UNKNOWN_VALUE)
     comptime kv_block_layout = Layout.row_major[6]()
@@ -312,7 +310,7 @@ def execute_matmul_k_cache_ragged_scale[
     )
     var input_row_offsets_tensor = LayoutTensor[
         mut=False,
-        DType.uint32,
+        .uint32,
         layout_1d,
     ](
         input_row_offsets_device,

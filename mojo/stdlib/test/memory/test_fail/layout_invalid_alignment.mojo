@@ -14,6 +14,8 @@
 # RUN: not %mojo -D ALLOC_TEST=1 %s 2>&1 | FileCheck %s --check-prefix=CHECK-TEST1
 # RUN: not %mojo -D ALLOC_TEST=2 %s 2>&1 | FileCheck %s --check-prefix=CHECK-TEST2
 
+import std.sys
+
 from std.memory import Layout
 
 

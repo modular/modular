@@ -19,11 +19,11 @@ Q output and KV cache contents against the unfused reference path.
 
 from internal_utils.fp8_utils import cast_saturating
 from std.collections import Set
-from std.memory import memcpy
+from std.memory import unsafe_memcpy
 from std.math import ceildiv
 from std.random import random_ui64, seed
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 from layout import (
     Idx,
@@ -146,17 +146,13 @@ def execute_test[
         row_offsets_host_ptr[i] = UInt32(offset)
         offset += prompt_lens[i]
     row_offsets_host_ptr[batch_size] = UInt32(offset)
-    var row_offsets_device = ctx.enqueue_create_buffer[DType.uint32](
-        batch_size + 1
-    )
+    var row_offsets_device = ctx.enqueue_create_buffer[.uint32](batch_size + 1)
     ctx.enqueue_copy(row_offsets_device, row_offsets_host_ptr)
 
     var cache_lengths_host_ptr = alloc[UInt32](batch_size)
     for i in range(batch_size):
         cache_lengths_host_ptr[i] = UInt32(cache_lens[i])
-    var cache_lengths_device = ctx.enqueue_create_buffer[DType.uint32](
-        batch_size
-    )
+    var cache_lengths_device = ctx.enqueue_create_buffer[.uint32](batch_size)
     ctx.enqueue_copy(cache_lengths_device, cache_lengths_host_ptr)
 
     var paged_lut_total = paged_lut_shape.flattened_length()
@@ -173,9 +169,7 @@ def execute_test[
             paged_lut_host_ptr[bs * paged_lut_col_count + block_idx] = UInt32(
                 randval
             )
-    var paged_lut_device = ctx.enqueue_create_buffer[DType.uint32](
-        paged_lut_total
-    )
+    var paged_lut_device = ctx.enqueue_create_buffer[.uint32](paged_lut_total)
     ctx.enqueue_copy(paged_lut_device, paged_lut_host_ptr)
 
     var freqs_size = max_seq_len * head_dim
@@ -193,15 +187,13 @@ def execute_test[
 
     # --- Build KV collections ---
     var cache_lengths_immut = LayoutTensor[
-        mut=False, DType.uint32, cache_lengths_layout
+        mut=False, .uint32, cache_lengths_layout
     ](
         cache_lengths_device,
         RuntimeLayout[cache_lengths_layout].row_major(Index(batch_size)),
     )
     comptime paged_lut_kv_layout = Layout.row_major[2]()
-    var paged_lut_immut = LayoutTensor[
-        mut=False, DType.uint32, paged_lut_kv_layout
-    ](
+    var paged_lut_immut = LayoutTensor[mut=False, .uint32, paged_lut_kv_layout](
         paged_lut_device,
         RuntimeLayout[paged_lut_kv_layout].row_major(paged_lut_shape),
     )
@@ -286,7 +278,7 @@ def execute_test[
     var unfused_k_cache = unfused_kv_collection.get_key_cache(layer_idx)
     var unfused_v_cache = unfused_kv_collection.get_value_cache(layer_idx)
     var row_offsets_lt = LayoutTensor[
-        DType.uint32,
+        .uint32,
         Layout(UNKNOWN_VALUE),
     ](
         row_offsets_device,
@@ -295,7 +287,7 @@ def execute_test[
         ),
     )
 
-    @parameter
+    @__parameter
     @__copy_capture(k_ptr, k_stride0)
     def k_load_fn[
         width: Int, alignment: Int = 1
@@ -303,7 +295,7 @@ def execute_test[
         var flat = idx[0] * k_stride0 + idx[1] * head_dim + idx[2]
         return (k_ptr + flat).load[width=width]()
 
-    @parameter
+    @__parameter
     @__copy_capture(v_ptr, v_stride0)
     def v_load_fn[
         width: Int, alignment: Int = 1
@@ -331,7 +323,7 @@ def execute_test[
     var q_contig_size = total_length * num_q_heads * head_dim
     var q_contig_host_ptr = alloc[Scalar[dtype]](q_contig_size)
     for t in range(total_length):
-        memcpy(
+        unsafe_memcpy(
             dest=q_contig_host_ptr + t * q_dim_val,
             src=qkv_host_ptr + t * combined_dim,
             count=q_dim_val,
@@ -541,17 +533,13 @@ def execute_test_with_position_ids[
         row_offsets_host_ptr[i] = UInt32(offset)
         offset += prompt_lens[i]
     row_offsets_host_ptr[batch_size] = UInt32(offset)
-    var row_offsets_device = ctx.enqueue_create_buffer[DType.uint32](
-        batch_size + 1
-    )
+    var row_offsets_device = ctx.enqueue_create_buffer[.uint32](batch_size + 1)
     ctx.enqueue_copy(row_offsets_device, row_offsets_host_ptr)
 
     var cache_lengths_host_ptr = alloc[UInt32](batch_size)
     for i in range(batch_size):
         cache_lengths_host_ptr[i] = UInt32(cache_lens[i])
-    var cache_lengths_device = ctx.enqueue_create_buffer[DType.uint32](
-        batch_size
-    )
+    var cache_lengths_device = ctx.enqueue_create_buffer[.uint32](batch_size)
     ctx.enqueue_copy(cache_lengths_device, cache_lengths_host_ptr)
 
     var paged_lut_total = paged_lut_shape.flattened_length()
@@ -568,9 +556,7 @@ def execute_test_with_position_ids[
             paged_lut_host_ptr[bs * paged_lut_col_count + block_idx] = UInt32(
                 randval
             )
-    var paged_lut_device = ctx.enqueue_create_buffer[DType.uint32](
-        paged_lut_total
-    )
+    var paged_lut_device = ctx.enqueue_create_buffer[.uint32](paged_lut_total)
     ctx.enqueue_copy(paged_lut_device, paged_lut_host_ptr)
 
     var freqs_size = max_seq_len * head_dim
@@ -599,7 +585,7 @@ def execute_test_with_position_ids[
                     pos
                 )
         tok_offset += prompt_lens[b]
-    var pos_ids_device = ctx.enqueue_create_buffer[DType.uint32](pos_ids_total)
+    var pos_ids_device = ctx.enqueue_create_buffer[.uint32](pos_ids_total)
     ctx.enqueue_copy(pos_ids_device, pos_ids_host_ptr)
 
     ctx.synchronize()
@@ -607,7 +593,7 @@ def execute_test_with_position_ids[
     # --- Build KV collections ---
     var cache_lengths_immut = LayoutTensor[
         mut=False,
-        DType.uint32,
+        .uint32,
         cache_lengths_layout,
     ](
         cache_lengths_device,
@@ -616,7 +602,7 @@ def execute_test_with_position_ids[
     comptime paged_lut_kv_layout = Layout.row_major[2]()
     var paged_lut_immut = LayoutTensor[
         mut=False,
-        DType.uint32,
+        .uint32,
         paged_lut_kv_layout,
     ](
         paged_lut_device,
@@ -709,7 +695,7 @@ def execute_test_with_position_ids[
     var unfused_k_cache = unfused_kv_collection.get_key_cache(layer_idx)
     var unfused_v_cache = unfused_kv_collection.get_value_cache(layer_idx)
     var row_offsets_lt = LayoutTensor[
-        DType.uint32,
+        .uint32,
         Layout(UNKNOWN_VALUE),
     ](
         row_offsets_device,
@@ -718,7 +704,7 @@ def execute_test_with_position_ids[
         ),
     )
 
-    @parameter
+    @__parameter
     @__copy_capture(k_ptr, k_stride0)
     def k_load_fn[
         width: Int, alignment: Int = 1
@@ -726,7 +712,7 @@ def execute_test_with_position_ids[
         var flat = idx[0] * k_stride0 + idx[1] * head_dim + idx[2]
         return (k_ptr + flat).load[width=width]()
 
-    @parameter
+    @__parameter
     @__copy_capture(v_ptr, v_stride0)
     def v_load_fn[
         width: Int, alignment: Int = 1
@@ -751,7 +737,7 @@ def execute_test_with_position_ids[
     var q_contig_size = total_length * num_q_heads * head_dim
     var q_contig_host_ptr = alloc[Scalar[dtype]](q_contig_size)
     for t in range(total_length):
-        memcpy(
+        unsafe_memcpy(
             dest=q_contig_host_ptr + t * q_dim_val,
             src=qkv_host_ptr + t * combined_dim,
             count=q_dim_val,
@@ -770,7 +756,7 @@ def execute_test_with_position_ids[
     )
 
     var pos_ids_immut = TileTensor(
-        pos_ids_tile.ptr.mut_cast[True]().as_unsafe_any_origin(),
+        pos_ids_tile._storage.as_unsafe_any_origin(),
         pos_ids_tile.layout,
     ).as_immut()
     fused_qk_rope_ragged[
@@ -963,17 +949,13 @@ def execute_test_fp8[
         row_offsets_host_ptr[i] = UInt32(offset)
         offset += prompt_lens[i]
     row_offsets_host_ptr[batch_size] = UInt32(offset)
-    var row_offsets_device = ctx.enqueue_create_buffer[DType.uint32](
-        batch_size + 1
-    )
+    var row_offsets_device = ctx.enqueue_create_buffer[.uint32](batch_size + 1)
     ctx.enqueue_copy(row_offsets_device, row_offsets_host_ptr)
 
     var cache_lengths_host_ptr = alloc[UInt32](batch_size)
     for i in range(batch_size):
         cache_lengths_host_ptr[i] = UInt32(cache_lens[i])
-    var cache_lengths_device = ctx.enqueue_create_buffer[DType.uint32](
-        batch_size
-    )
+    var cache_lengths_device = ctx.enqueue_create_buffer[.uint32](batch_size)
     ctx.enqueue_copy(cache_lengths_device, cache_lengths_host_ptr)
 
     var paged_lut_total = paged_lut_shape.flattened_length()
@@ -990,9 +972,7 @@ def execute_test_fp8[
             paged_lut_host_ptr[bs * paged_lut_col_count + block_idx] = UInt32(
                 randval
             )
-    var paged_lut_device = ctx.enqueue_create_buffer[DType.uint32](
-        paged_lut_total
-    )
+    var paged_lut_device = ctx.enqueue_create_buffer[.uint32](paged_lut_total)
     ctx.enqueue_copy(paged_lut_device, paged_lut_host_ptr)
 
     var freqs_size = max_seq_len * head_dim
@@ -1011,7 +991,7 @@ def execute_test_fp8[
     # --- Build KV collections ---
     var cache_lengths_immut = LayoutTensor[
         mut=False,
-        DType.uint32,
+        .uint32,
         cache_lengths_layout,
     ](
         cache_lengths_device,
@@ -1020,7 +1000,7 @@ def execute_test_fp8[
     comptime paged_lut_kv_layout = Layout.row_major[2]()
     var paged_lut_immut = LayoutTensor[
         mut=False,
-        DType.uint32,
+        .uint32,
         paged_lut_kv_layout,
     ](
         paged_lut_device,
@@ -1131,7 +1111,7 @@ def execute_test_fp8[
         var expected = cast_saturating[fp8_dtype](bf16_q_host[i]).cast[
             DType.float32
         ]()
-        var actual = fp8_q_host[i].cast[DType.float32]()
+        var actual = fp8_q_host[i].cast[.float32]()
         assert_almost_equal(
             actual,
             expected,
@@ -1156,7 +1136,7 @@ def execute_test_fp8[
         var expected = cast_saturating[fp8_dtype](bf16_kv_result[i]).cast[
             DType.float32
         ]()
-        var actual = fp8_kv_result[i].cast[DType.float32]()
+        var actual = fp8_kv_result[i].cast[.float32]()
         assert_almost_equal(
             actual,
             expected,

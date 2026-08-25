@@ -14,7 +14,6 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
-from max.dtype import DType
 from max.graph import DeviceRef, ShardingStrategy, TensorValue
 from max.nn import MLP
 from max.nn.layer import LayerList, Module
@@ -43,7 +42,7 @@ class Gemma4VisionEncoderLayer(Module):
         self.config = config
         vision_config = config.vision_config
         assert vision_config is not None
-        vision_dtype = DType.bfloat16
+        vision_dtype = config.unquantized_dtype
 
         self.device = device if device is not None else config.devices[0]
         self.hidden_size = vision_config.hidden_size

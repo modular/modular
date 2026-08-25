@@ -34,14 +34,14 @@ from std.math import ceildiv, rsqrt
 from std.random import seed
 from std.sys.defines import get_defined_int
 from layout._utils import ManagedLayoutTensor
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from kv_cache.types import (
     KVCacheStaticParams,
     PagedKVCacheCollection,
 )
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from layout._fillers import random
-from std.memory import memset_zero
+from std.memory import unsafe_memset_zero
 from kv_cache_test_utils import (
     assert_no_nan_inf,
     padded_lut_cols,
@@ -115,11 +115,11 @@ def execute_ragged_paged_flash_attention[
         output_shape
     )
 
-    var input_row_offsets = ManagedLayoutTensor[
-        DType.uint32, row_offsets_layout
-    ](row_offsets_runtime_layout, ctx)
+    var input_row_offsets = ManagedLayoutTensor[.uint32, row_offsets_layout](
+        row_offsets_runtime_layout, ctx
+    )
     var cache_lengths_managed = ManagedLayoutTensor[
-        DType.uint32, cache_lengths_layout
+        .uint32, cache_lengths_layout
     ](cache_lengths_runtime_layout, ctx)
     var q_ragged = ManagedLayoutTensor[dtype, q_ragged_layout](
         q_ragged_runtime_layout, ctx
@@ -172,7 +172,7 @@ def execute_ragged_paged_flash_attention[
     var kv_block_paged = ManagedLayoutTensor[dtype, kv_block_6d_layout](
         kv_block_paged_runtime_layout, ctx
     )
-    var paged_lut = ManagedLayoutTensor[DType.uint32, paged_lut_layout](
+    var paged_lut = ManagedLayoutTensor[.uint32, paged_lut_layout](
         paged_lut_runtime_layout, ctx
     )
 
@@ -201,7 +201,7 @@ def execute_ragged_paged_flash_attention[
     var kv_block_paged_lt = kv_block_paged.device_tensor()
     var paged_lut_lt = paged_lut.device_tensor()
 
-    kv_collection_paged_device = PagedKVCacheCollection[
+    var kv_collection_paged_device = PagedKVCacheCollection[
         dtype, kv_params, page_size
     ](
         kv_block_paged_lt,
@@ -237,8 +237,8 @@ def run_gemma4_suite[
     # Gemma4 local (sliding) attention: layer_idx=0.
     # num_q_heads=32, num_kv_heads=16, head_dim=256, seq_len=11 prefill.
     print("Gemma4 local: q_heads=32 kv_heads=16 head_dim=256 seq_len=11")
-    var ce_seq_lens_local = [11]
-    var ce_cache_sizes_local = [0]
+    var ce_seq_lens_local: List = [11]
+    var ce_cache_sizes_local: List = [0]
     execute_ragged_paged_flash_attention[
         32,
         DType.bfloat16,
@@ -256,8 +256,8 @@ def run_gemma4_suite[
     # Gemma4 global (full) attention: layer_idx=5.
     # num_q_heads=32, num_kv_heads=4, head_dim=512, seq_len=11 prefill.
     print("Gemma4 global: q_heads=32 kv_heads=4 head_dim=512 seq_len=11")
-    var ce_seq_lens_global = [11]
-    var ce_cache_sizes_global = [0]
+    var ce_seq_lens_global: List = [11]
+    var ce_cache_sizes_global: List = [0]
     execute_ragged_paged_flash_attention[
         32,
         DType.bfloat16,
@@ -274,8 +274,8 @@ def run_gemma4_suite[
 
     # Also try batch_size=4 to mirror a realistic serving scenario.
     print("Gemma4 local bs=4")
-    var ce_seq_lens_local_bs4 = [11, 11, 11, 11]
-    var ce_cache_sizes_local_bs4 = [0, 0, 0, 0]
+    var ce_seq_lens_local_bs4: List = [11, 11, 11, 11]
+    var ce_cache_sizes_local_bs4: List = [0, 0, 0, 0]
     execute_ragged_paged_flash_attention[
         32,
         DType.bfloat16,
@@ -291,8 +291,8 @@ def run_gemma4_suite[
     )
 
     print("Gemma4 global bs=4")
-    var ce_seq_lens_global_bs4 = [11, 11, 11, 11]
-    var ce_cache_sizes_global_bs4 = [0, 0, 0, 0]
+    var ce_seq_lens_global_bs4: List = [11, 11, 11, 11]
+    var ce_cache_sizes_global_bs4: List = [0, 0, 0, 0]
     execute_ragged_paged_flash_attention[
         32,
         DType.bfloat16,
@@ -311,8 +311,8 @@ def run_gemma4_suite[
     # CE and TG kernels; the LLVM crash was bisected to the decode
     # scaffolding commit so exercise these here too.
     print("Gemma4 local decode: seq_len=1 cache_len=512")
-    var tg_seq_lens_local = [1]
-    var tg_cache_sizes_local = [512]
+    var tg_seq_lens_local: List = [1]
+    var tg_cache_sizes_local: List = [512]
     execute_ragged_paged_flash_attention[
         32,
         DType.bfloat16,
@@ -328,8 +328,8 @@ def run_gemma4_suite[
     )
 
     print("Gemma4 global decode: seq_len=1 cache_len=512")
-    var tg_seq_lens_global = [1]
-    var tg_cache_sizes_global = [512]
+    var tg_seq_lens_global: List = [1]
+    var tg_cache_sizes_global: List = [512]
     execute_ragged_paged_flash_attention[
         32,
         DType.bfloat16,

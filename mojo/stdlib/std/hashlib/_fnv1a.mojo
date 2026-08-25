@@ -13,7 +13,7 @@
 
 """Implements the [Fnv1a 64 bit variant](https://en.wikipedia.org/wiki/Fowler–Noll–Vo_hash_function) algorithm as a Hasher type."""
 
-from std.memory import Span
+from std.collections import Span
 from std.sys import size_of
 
 from .hasher import Hasher
@@ -41,7 +41,7 @@ struct Fnv1a(Defaultable, Hasher):
             data: Span of bytes to hash.
         """
         for i in range(len(data)):
-            self._value ^= data[i].cast[DType.uint64]()
+            self._value ^= data[i].cast[.uint64]()
             self._value *= 0x100000001B3
 
     def _update_with_simd(mut self, value: SIMD[_, _]):
@@ -58,11 +58,11 @@ struct Fnv1a(Defaultable, Hasher):
         comptime rounds = max(1, size_of[value.dtype]() // 8)
         var bits = value.to_bits()
 
-        comptime for i in range(value.size):
+        comptime for i in range(value.length):
             var v = bits[i]
 
             comptime for r in range(rounds):
-                self._value ^= (v >> type_of(v)(r * 64)).cast[DType.uint64]()
+                self._value ^= (v >> type_of(v)(r * 64)).cast[.uint64]()
                 self._value *= 0x100000001B3
 
     def update(mut self, value: Some[Hashable]):

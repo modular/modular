@@ -11,13 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.collections.string.string_slice import _memchr, _memmem
+from std.collections.string.string_span import _memchr, _memmem
 from std.math import align_down
 from std.sys import simd_width_of
 
 from std.benchmark import Bench, BenchConfig, Bencher, BenchId
 from std.bit import count_trailing_zeros
-from std.memory import memcmp, pack_bits
+from std.memory import unsafe_memcmp, pack_bits
 
 # ===-----------------------------------------------------------------------===#
 # Benchmark Data
@@ -149,9 +149,9 @@ from std.benchmark import black_box, keep
 def _memmem_baseline[
     dtype: DType
 ](
-    haystack: Span[mut=False, Scalar[dtype], _],
-    needle: Span[mut=False, Scalar[dtype], _],
-) -> Optional[UnsafePointer[Scalar[dtype], haystack.origin]]:
+    haystack: ImmSpan[Scalar[dtype], _],
+    needle: ImmSpan[Scalar[dtype], _],
+) -> Optional[Pointer[Scalar[dtype], haystack.origin]]:
     if not needle:
         return haystack.unsafe_ptr()
     if len(needle) > len(haystack):
@@ -167,21 +167,21 @@ def _memmem_baseline[
     for i in range(0, vectorized_end, bool_mask_width):
         var bool_mask = (
             haystack.unsafe_ptr()
-            .load[width=bool_mask_width](i)
+            .unsafe_load[width=bool_mask_width](i)
             .eq(first_needle)
         )
         var mask = pack_bits(bool_mask)
         while mask:
             var offset = Int(type_of(mask)(i) + count_trailing_zeros(mask))
             if (
-                memcmp(
-                    haystack.unsafe_ptr() + offset + 1,
-                    needle.unsafe_ptr() + 1,
+                unsafe_memcmp(
+                    haystack.unsafe_ptr().unsafe_offset(offset + 1),
+                    needle.unsafe_ptr().unsafe_offset(1),
                     len(needle) - 1,
                 )
                 == 0
             ):
-                return haystack.unsafe_ptr() + offset
+                return haystack.unsafe_ptr().unsafe_offset(offset)
             mask = mask & (mask - 1)
 
     for i in range(vectorized_end, len(haystack) - len(needle) + 1):
@@ -189,29 +189,27 @@ def _memmem_baseline[
             continue
 
         if (
-            memcmp(
-                haystack.unsafe_ptr() + i + 1,
-                needle.unsafe_ptr() + 1,
+            unsafe_memcmp(
+                haystack.unsafe_ptr().unsafe_offset(i + 1),
+                needle.unsafe_ptr().unsafe_offset(1),
                 len(needle) - 1,
             )
             == 0
         ):
-            return haystack.unsafe_ptr() + i
+            return haystack.unsafe_ptr().unsafe_offset(i)
     return {}
 
 
 # ===-----------------------------------------------------------------------===#
 # Benchmarks
 # ===-----------------------------------------------------------------------===#
-@parameter
 def bench_find_baseline(mut b: Bencher) raises:
     # Make sure comptime materialization happens before the benchmark starts.
     var local_haystack = haystack
     var local_needle = needle
 
     @always_inline
-    @parameter
-    def call_fn():
+    def call_fn() {imm}:
         keep(
             _memmem_baseline(
                 black_box(local_haystack.as_bytes()),
@@ -219,18 +217,16 @@ def bench_find_baseline(mut b: Bencher) raises:
             )
         )
 
-    b.iter[call_fn]()
+    b.iter(call_fn)
 
 
-@parameter
 def bench_find_optimized(mut b: Bencher) raises:
     # Make sure comptime materialization happens before the benchmark starts.
     var local_haystack = haystack
     var local_needle = needle
 
     @always_inline
-    @parameter
-    def call_fn():
+    def call_fn() {imm}:
         keep(
             _memmem(
                 black_box(local_haystack.as_bytes()),
@@ -238,7 +234,7 @@ def bench_find_optimized(mut b: Bencher) raises:
             )
         )
 
-    b.iter[call_fn]()
+    b.iter(call_fn)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -246,6 +242,6 @@ def bench_find_optimized(mut b: Bencher) raises:
 # ===-----------------------------------------------------------------------===#
 def main() raises:
     var m = Bench(BenchConfig(num_repetitions=1))
-    m.bench_function[bench_find_baseline](BenchId("find_baseline"))
-    m.bench_function[bench_find_optimized](BenchId("find_optimized"))
+    m.bench_function(bench_find_baseline, BenchId("find_baseline"))
+    m.bench_function(bench_find_optimized, BenchId("find_optimized"))
     m.dump_report()

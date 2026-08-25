@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import Idx, TileTensor, row_major
 from nn.spatial_merge import spatial_merge
 from std.testing import assert_equal
@@ -38,7 +38,7 @@ def test_spatial_merge(ctx: DeviceContext) raises:
     # Create device buffers
     var input_device = ctx.enqueue_create_buffer[dtype](input_size)
     var output_device = ctx.enqueue_create_buffer[dtype](output_size)
-    var grid_thw_device = ctx.enqueue_create_buffer[DType.int64](grid_thw_size)
+    var grid_thw_device = ctx.enqueue_create_buffer[.int64](grid_thw_size)
 
     # Initialize input data on host
     with input_device.map_to_host() as input_host:
@@ -115,7 +115,9 @@ def test_spatial_merge(ctx: DeviceContext) raises:
         14,
         15,
     ]
-    var batch0_expected = batch0_expected_list.unsafe_ptr()
+    var batch0_expected: UnsafePointer[
+        batch0_expected_list.T, origin_of(batch0_expected_list)
+    ] = batch0_expected_list.unsafe_ptr()
 
     # Verify results
     with output_device.map_to_host() as output_host:
@@ -159,7 +161,9 @@ def test_spatial_merge(ctx: DeviceContext) raises:
             18,
             19,  # Frame 0 and Frame 1 (repeated)
         ]
-        var batch1_expected = batch1_expected_list.unsafe_ptr()
+        var batch1_expected: UnsafePointer[
+            batch1_expected_list.T, origin_of(batch1_expected_list)
+        ] = batch1_expected_list.unsafe_ptr()
 
         var batch1_start = 4 * C_out  # Batch 0 had 4 output patches
 
@@ -221,7 +225,7 @@ def test_spatial_merge_no_out_of_bounds(ctx: DeviceContext) raises:
     var output_device = ctx.enqueue_create_buffer[dtype](
         output_size + canary_size
     )
-    var grid_thw_device = ctx.enqueue_create_buffer[DType.int64](grid_thw_size)
+    var grid_thw_device = ctx.enqueue_create_buffer[.int64](grid_thw_size)
 
     with input_device.map_to_host() as input_host:
         var input_host_tensor = TileTensor(
@@ -276,7 +280,9 @@ def test_spatial_merge_no_out_of_bounds(ctx: DeviceContext) raises:
     # merged patch 0 (wo=0) contains input patches [0, 1, 4, 5]
     # merged patch 1 (wo=1) contains input patches [2, 3, 6, 7]
     var expected_list: List[Int] = [0, 1, 4, 5, 2, 3, 6, 7]
-    var expected = expected_list.unsafe_ptr()
+    var expected: UnsafePointer[
+        expected_list.T, origin_of(expected_list)
+    ] = expected_list.unsafe_ptr()
 
     with output_device.map_to_host() as output_host:
         for patch in range(num_merged_patches):

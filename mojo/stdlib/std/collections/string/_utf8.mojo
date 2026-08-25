@@ -14,11 +14,11 @@
 """Implement UTF-8 utils."""
 
 from std.base64._b64encode import _sub_with_saturation
-from std.sys import simd_width_of
+from std.sys import simd_width_of, simd_byte_width
 from std.sys.intrinsics import likely
 
 from std.bit import count_leading_zeros
-from std.memory import Span
+from std.collections import Span
 
 # ===-----------------------------------------------------------------------===#
 # Validate UTF-8
@@ -42,7 +42,7 @@ comptime CARRY: UInt8 = TOO_SHORT | TOO_LONG | TWO_CONTS
 
 
 # fmt: off
-comptime shuf1 = SIMD[DType.uint8, 16](
+comptime shuf1 = SIMD[.uint8, 16](
     TOO_LONG, TOO_LONG, TOO_LONG, TOO_LONG,
     TOO_LONG, TOO_LONG, TOO_LONG, TOO_LONG,
     TWO_CONTS, TWO_CONTS, TWO_CONTS, TWO_CONTS,
@@ -52,7 +52,7 @@ comptime shuf1 = SIMD[DType.uint8, 16](
     TOO_SHORT | TOO_LARGE | TOO_LARGE_1000 | OVERLONG_4
 )
 
-comptime shuf2 = SIMD[DType.uint8, 16](
+comptime shuf2 = SIMD[.uint8, 16](
     CARRY | OVERLONG_3 | OVERLONG_2 | OVERLONG_4,
     CARRY | OVERLONG_2,
     CARRY,
@@ -70,7 +70,7 @@ comptime shuf2 = SIMD[DType.uint8, 16](
     CARRY | TOO_LARGE | TOO_LARGE_1000,
     CARRY | TOO_LARGE | TOO_LARGE_1000
 )
-comptime shuf3 = SIMD[DType.uint8, 16](
+comptime shuf3 = SIMD[.uint8, 16](
     TOO_SHORT, TOO_SHORT, TOO_SHORT, TOO_SHORT,
     TOO_SHORT, TOO_SHORT, TOO_SHORT, TOO_SHORT,
     TOO_LONG | OVERLONG_2 | TWO_CONTS | OVERLONG_3 | TOO_LARGE_1000 | OVERLONG_4,
@@ -80,7 +80,7 @@ comptime shuf3 = SIMD[DType.uint8, 16](
     TOO_SHORT, TOO_SHORT, TOO_SHORT, TOO_SHORT
 )
 
-comptime UTF8_CHAR_WIDTHS: InlineArray[Byte, 256] = [
+comptime UTF8_CHAR_WIDTHS: Array[Byte, 256] = [
     #  1  2  3  4  5  6  7  8  9  A  B  C  D  E  F
     1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, # 0
     1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, # 1
@@ -109,10 +109,8 @@ def _utf8_char_width(b: Byte) -> Int:
 
 @always_inline
 def _extract_vector[
-    width: SIMDSize, //, offset: Int
-](a: SIMD[DType.uint8, width], b: SIMD[DType.uint8, width]) -> SIMD[
-    DType.uint8, width
-]:
+    width: SIMDLength, //, offset: Int
+](a: SIMD[.uint8, width], b: SIMD[.uint8, width]) -> SIMD[.uint8, width]:
     # generates a single `vpalignr` on x86 with AVX
     return a.join(b).slice[width, offset=offset]()
 
@@ -120,11 +118,11 @@ def _extract_vector[
 def validate_chunk[
     simd_size: Int
 ](
-    current_block: SIMD[DType.uint8, simd_size],
-    previous_input_block: SIMD[DType.uint8, simd_size],
-) -> SIMD[DType.uint8, simd_size]:
-    comptime v0f = SIMD[DType.uint8, simd_size](0x0F)
-    comptime v80 = SIMD[DType.uint8, simd_size](0x80)
+    current_block: SIMD[.uint8, simd_size],
+    previous_input_block: SIMD[.uint8, simd_size],
+) -> SIMD[.uint8, simd_size]:
+    comptime v0f = SIMD[.uint8, simd_size](0x0F)
+    comptime v80 = SIMD[.uint8, simd_size](0x80)
     comptime third_byte = 0b11100000 - 0x80
     comptime fourth_byte = 0b11110000 - 0x80
     var prev1 = _extract_vector[simd_size - 1](
@@ -148,7 +146,7 @@ def validate_chunk[
     return must23_as_80 ^ sc
 
 
-def _is_valid_utf8_runtime(span: Span[mut=False, Byte, ...]) -> Bool:
+def _is_valid_utf8_runtime(span: ImmSpan[Byte, _]) -> Bool:
     """Fast utf-8 validation using SIMD instructions.
 
     References for this algorithm:
@@ -163,41 +161,41 @@ def _is_valid_utf8_runtime(span: Span[mut=False, Byte, ...]) -> Bool:
     https://github.com/simdutf/SimdUnicode/blob/main/src/UTF8.cs
     """
 
-    ptr = span.unsafe_ptr()
-    length = len(span)
-    comptime simd_size = sys.simd_byte_width()
+    var ptr = span.unsafe_ptr()
+    var length = len(span)
+    comptime simd_size = simd_byte_width()
     var i: Int = 0
-    var previous = SIMD[DType.uint8, simd_size]()
+    var previous = SIMD[.uint8, simd_size]()
 
     while i + simd_size <= length:
-        var current_bytes = (ptr + i).load[width=simd_size]()
+        var current_bytes = ptr.unsafe_offset(i).unsafe_load[width=simd_size]()
         var has_error = validate_chunk(current_bytes, previous)
         previous = current_bytes
         if any(has_error.ne(0)):
             return False
         i += simd_size
 
-    var has_error: SIMD[DType.uint8, simd_size]
+    var has_error: SIMD[.uint8, simd_size]
     # last incomplete chunk
     if i != length:
-        var buffer = SIMD[DType.uint8, simd_size](0)
+        var buffer = SIMD[.uint8, simd_size](0)
         for j in range(i, length):
-            buffer[j - i] = (ptr + j)[]
+            buffer[j - i] = ptr.unsafe_offset(j)[]
         has_error = validate_chunk(buffer, previous)
     else:
         # Add a chunk of 0s to the end to validate continuations bytes
-        has_error = validate_chunk(SIMD[DType.uint8, simd_size](), previous)
+        has_error = validate_chunk(SIMD[.uint8, simd_size](), previous)
 
     return all(has_error.eq(0))
 
 
-def _is_valid_utf8_comptime(span: Span[mut=False, Byte, ...]) -> Bool:
+def _is_valid_utf8_comptime(span: ImmSpan[Byte, _]) -> Bool:
     var ptr = span.unsafe_ptr()
-    var length = UInt(len(span))
-    var offset = UInt(0)
+    var length = Int(len(span))
+    var offset = 0
 
     while offset < length:
-        var b0 = ptr[offset]
+        var b0 = ptr[unsafe_offset=offset]
         if b0 > BIGGEST_UTF8_FIRST_BYTE:
             return False
         var byte_type = _utf8_byte_type(b0)
@@ -208,12 +206,14 @@ def _is_valid_utf8_comptime(span: Span[mut=False, Byte, ...]) -> Bool:
             return False
 
         for i in range(1, Int(byte_type)):
-            var idx = offset + UInt(i)
-            if idx >= length or not _is_utf8_continuation_byte(ptr[idx]):
+            var idx = offset + i
+            if idx >= length or not _is_utf8_continuation_byte(
+                ptr[unsafe_offset=idx]
+            ):
                 return False
 
         # special unicode ranges
-        var b1 = ptr[offset + 1]
+        var b1 = ptr[unsafe_offset=offset + 1]
         if byte_type == 2 and b0 < 0b1100_0010:
             return False
         elif b0 == 0xE0 and b1 < 0xA0:
@@ -225,13 +225,13 @@ def _is_valid_utf8_comptime(span: Span[mut=False, Byte, ...]) -> Bool:
         elif b0 == 0xF4 and b1 > 0x8F:
             return False
 
-        offset += UInt(byte_type)
+        offset += Int(byte_type)
 
     return True
 
 
 @always_inline("nodebug")
-def _is_valid_utf8(span: Span[mut=False, Byte, ...]) -> Bool:
+def _is_valid_utf8(span: ImmSpan[Byte, _]) -> Bool:
     """Verify that the bytes are valid UTF-8.
 
     Args:
@@ -267,12 +267,11 @@ def _is_valid_utf8(span: Span[mut=False, Byte, ...]) -> Bool:
 # ===-----------------------------------------------------------------------===#
 
 
-@parameter
 @always_inline
 def _is_utf8_continuation_byte[
-    w: SIMDSize
-](vec: SIMD[DType.uint8, w]) -> SIMD[DType.bool, w]:
-    return vec.cast[DType.int8]().lt(-(0b1000_0000 >> 1))
+    w: SIMDLength
+](vec: SIMD[.uint8, w]) -> SIMD[.bool, w]:
+    return vec.cast[.int8]().lt(-(0b1000_0000 >> 1))
 
 
 @always_inline
@@ -299,10 +298,10 @@ def _utf8_first_byte_sequence_length(b: Byte) -> Int:
     assert not _is_utf8_continuation_byte(
         b
     ), "Function does not work correctly if given a continuation byte."
-    return Int(count_leading_zeros(~b) | b.lt(0b1000_0000).cast[DType.uint8]())
+    return Int(count_leading_zeros(~b) | b.lt(0b1000_0000).cast[.uint8]())
 
 
-def _utf8_byte_type(b: SIMD[DType.uint8, _], /) -> type_of(b):
+def _utf8_byte_type(b: SIMD[.uint8, _], /) -> type_of(b):
     """UTF-8 byte type.
 
     Returns:
@@ -323,12 +322,7 @@ def _utf8_byte_type(b: SIMD[DType.uint8, _], /) -> type_of(b):
 @always_inline
 def _is_newline_char_utf8[
     include_r_n: Bool = False
-](
-    p: UnsafePointer[mut=False, Byte, ...],
-    eol_start: UInt,
-    b0: Byte,
-    char_len: UInt,
-) -> Bool:
+](p: ImmPointer[Byte, ...], eol_start: Int, b0: Byte, char_len: Int,) -> Bool:
     """Returns whether the char is a newline char.
 
     Safety:
@@ -352,7 +346,7 @@ def _is_newline_char_utf8[
     elif char_len == 4:
         return False
 
-    var b1 = p[eol_start + 1]
+    var b1 = p[unsafe_offset=eol_start + 1]
     if char_len == 2:
         var is_next_line = b0 == 0xC2 and b1 == 0x85  # unicode next line \x85
 
@@ -362,11 +356,11 @@ def _is_newline_char_utf8[
             return is_next_line
     else:  # unicode line sep or paragraph sep: \u2028 , \u2029
         assert char_len == 3, "invalid UTF-8 byte length"
-        var b2 = p[eol_start + 2]
+        var b2 = p[unsafe_offset=eol_start + 2]
         return b0 == 0xE2 and b1 == 0x80 and (b2 == 0xA8 or b2 == 0xA9)
 
 
-struct UTF8Chunk[origin: ImmutOrigin](ImplicitlyCopyable):
+struct UTF8Chunk[origin: ImmOrigin](ImplicitlyCopyable):
     var valid: StringSlice[Self.origin]
     """The valid UTF-8 bytes."""
 
@@ -386,7 +380,7 @@ struct UTF8Chunk[origin: ImmutOrigin](ImplicitlyCopyable):
 
 # This is an implementation of Rust's `UTF8Chunk` iterator.
 # https://doc.rust-lang.org/src/core/str/lossy.rs.html#194
-struct UTF8Chunks[origin: ImmutOrigin](ImplicitlyCopyable, Iterable, Iterator):
+struct UTF8Chunks[origin: ImmOrigin](ImplicitlyCopyable, Iterable, Iterator):
     """An iterator over valid and invalid UTF-8 chunks."""
 
     comptime IteratorType[
@@ -408,7 +402,7 @@ struct UTF8Chunks[origin: ImmutOrigin](ImplicitlyCopyable, Iterable, Iterator):
             raise StopIteration()
 
         @always_inline
-        def safe_get(i: Int) {read self} -> Byte:
+        def safe_get(i: Int) {imm self} -> Byte:
             return self._bytes[i] if i < len(self._bytes) else Byte(0)
 
         @always_inline

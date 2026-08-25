@@ -11,21 +11,21 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.memory import UnsafePointer
-from std.gpu.host import DeviceContext
+from std.memory import Pointer
+from max.gpu.host import DeviceContext
 
 comptime `✅`: Int32 = 1
 comptime `❌`: Int32 = 0
 
 
-def kernel(value: UnsafePointer[Scalar[DType.int32], MutAnyOrigin]):
-    value[0] = `✅`
+def kernel(value: Pointer[Scalar[.int32], MutAnyOrigin]):
+    value[unsafe_offset=0] = `✅`
 
 
 def main() raises:
     with DeviceContext() as ctx:
         # Build it
-        var out = ctx.enqueue_create_buffer[DType.int32](1)
+        var out = ctx.enqueue_create_buffer[.int32](1)
         out.enqueue_fill(`❌`)
 
         # Run it

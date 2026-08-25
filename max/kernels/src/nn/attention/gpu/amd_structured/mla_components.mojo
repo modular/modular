@@ -37,7 +37,7 @@ reused primitive exercises the codegen `MlaPrefillV2` ships.
 from std.gpu import WARP_SIZE, lane_id
 from std.sys.intrinsics import llvm_intrinsic
 
-from layout import TensorLayout, TileTensor
+from layout import TensorLayout, TileTensor, PointerStorage
 from layout._utils import make_amd_buffer_resource
 from layout.coord import Coord
 from layout.swizzle import Swizzle
@@ -81,7 +81,7 @@ def _s_setprio[priority: Int16]():
 
 @always_inline
 def _sched_barrier_zero():
-    """`sched_barrier(0)` — hard reordering barrier."""
+    """`sched_barrier(0)`: hard reordering barrier."""
     llvm_intrinsic["llvm.amdgcn.sched.barrier", NoneType](Int32(0))
 
 
@@ -109,7 +109,7 @@ struct MlaPrefillV2Core[config: MlaConfigV2]:
     comptime KV_BLOCK = Self.config.kv_block
     comptime DEPTH = Self.config.depth
     """V / O head depth (`d_pv`). For DeepSeek-V3 MLA: 128. Identical
-    semantics to `MhaPrefillV2.DEPTH` — `MhaMmaOp` is specialized on
+    semantics to `MhaPrefillV2.DEPTH`: `MhaMmaOp` is specialized on
     this via `config.mha()` so the V and PV machinery shares verbatim."""
 
     comptime NUM_HEADS = Self.config.num_heads
@@ -122,7 +122,7 @@ struct MlaPrefillV2Core[config: MlaConfigV2]:
 
     comptime D_NOPE = Self.config.depth
     """Alias for `DEPTH` exposing the nope-segment semantic name.
-    `D_NOPE == DEPTH == d_pv` — DeepSeek-V3 MLA does not RoPE V."""
+    `D_NOPE == DEPTH == d_pv`: DeepSeek-V3 MLA does not RoPE V."""
 
     comptime D_ROPE = Self.config.d_rope
     """RoPE-applied segment depth on Q and K. For DeepSeek-V3 MLA: 64."""
@@ -220,14 +220,14 @@ struct MlaPrefillV2Core[config: MlaConfigV2]:
         and not Self._FP32_SOFTMAX_SCORES else DType.float32
     )
     """Softmax accumulator dtype. FP32 for BF16 and FP8 KV<128; FP16
-    for FP8 KV>=128 (gfx950 has no packed BF16 element-wise — FP16 is
+    for FP8 KV>=128 (gfx950 has no packed BF16 element-wise; FP16 is
     the right narrowing); FP32 again at FP8 KV>=128 when
     `_FP32_SOFTMAX_SCORES` (in-place FP32)."""
 
     comptime prescale_q = not Self.config.dtype.is_float8()
     """Q prescale at load time. True for BF16 (single FP32 multiply
     per Q element at load); False for FP8 (avoids FP32→FP8 precision
-    loss — post-QK scale is applied on `att_block` instead)."""
+    loss; post-QK scale is applied on `att_block` instead)."""
 
     # ---- Streamed-K-band gate --------------------------------------
     # Gates the "stream K from SMEM inside the QK consumer cluster" path.
@@ -246,7 +246,7 @@ struct MlaPrefillV2Core[config: MlaConfigV2]:
     comptime _CADENCE = Self._FP8_KV128_32x64
     """Streamed-K-band gate. On for the FP8 / KV>=128 / 32x32x64 shape
     (the shape `MlaPrefillV2` serves). No effect on other shapes
-    (BF16, KV=64, FP8 16x16x128) — the comptime condition gates it off
+    (BF16, KV=64, FP8 16x16x128): the comptime condition gates it off
     there."""
 
     # ---- Register-tile layouts -------------------------------------
@@ -413,7 +413,7 @@ struct MlaPrefillV2Core[config: MlaConfigV2]:
     the unified slot. Equals `D_NOPE / D_ROPE`. For DeepSeek-V3 MLA:
     2 (nope is 2x the depth of rope). The struct-level integer
     division above is exact iff `_K_NOPE_SLOT_ROWS` is a multiple of
-    `_K_ROPE_SLOT_ROWS` — true for DeepSeek-V3 MLA where the col
+    `_K_ROPE_SLOT_ROWS`: true for DeepSeek-V3 MLA where the col
     sub-block counts share `K_SUB_COLS`."""
 
     comptime _NUM_BLOCK_COLS_V = Self.DEPTH // Self._MmaOp.V_SUB_COLS
@@ -455,9 +455,7 @@ struct MlaPrefillV2Core[config: MlaConfigV2]:
         ), "MlaPrefillV2Core: k op dtype must equal `config.dtype`"
         return rebind[
             TileTensor[
-                Self.config.dtype,
-                Self._KFullPerTileLayoutT,
-                ImmutAnyOrigin,
+                Self.config.dtype, Self._KFullPerTileLayoutT, ImmutAnyOrigin
             ]
         ](
             k_op.block_paged_tile[Self.KV_BLOCK](
@@ -486,7 +484,7 @@ struct MlaPrefillV2Core[config: MlaConfigV2]:
         Self.config.dtype, Self._VPerTileLayoutT, ImmutAnyOrigin
     ]:
         """Builds the per-tile V gmem TileTensor. V at MLA is the nope
-        segment of the latent cache row (columns `[0, D_NOPE)`) — same
+        segment of the latent cache row (columns `[0, D_NOPE)`): same
         anchor as the nope cols of `_make_k_full_tile` but consumed for the
         PV matmul instead of the QK matmul. Row stride matches the latent
         cache.
@@ -495,11 +493,7 @@ struct MlaPrefillV2Core[config: MlaConfigV2]:
             v_t.dtype == Self.config.dtype
         ), "MlaPrefillV2Core: V dtype must equal `config.dtype`"
         return rebind[
-            TileTensor[
-                Self.config.dtype,
-                Self._VPerTileLayoutT,
-                ImmutAnyOrigin,
-            ]
+            TileTensor[Self.config.dtype, Self._VPerTileLayoutT, ImmutAnyOrigin]
         ](
             v_op.block_paged_tile[Self.KV_BLOCK](
                 batch_idx,
@@ -604,10 +598,10 @@ struct MlaPrefillV2Core[config: MlaConfigV2]:
     def load_q[
         layout: TensorLayout
     ](
-        q_warp_2d: TileTensor[Self.config.dtype, layout, ...],
-    ) -> RegTile[
-        Self.config.dtype, Self._Q_LAYOUT_MLA_T, MutUntrackedOrigin
-    ]:
+        q_warp_2d: TileTensor[
+            Self.config.dtype, layout, Storage=PointerStorage[], ...
+        ],
+    ) -> RegTile[Self.config.dtype, Self._Q_LAYOUT_MLA_T, MutUntrackedOrigin]:
         """Loads the warp's Q sub-tile at d_qk from gmem into the row_l
         register tile. Mirrors `MhaPrefillV2.load_q` but iterates
         `_NUM_Q_K_TILES = D_QK // MMA_K` K-dim base tiles instead of
@@ -617,7 +611,15 @@ struct MlaPrefillV2Core[config: MlaConfigV2]:
         iterations cover the nope half (col 0..127) and one covers the
         rope half (col 128..191). Q is stored in gmem as `q_nope ∥
         q_rope` contiguously, so the underlying buffer_load_lds reads
-        are uniform across the 3 tiles — no nope/rope branching here."""
+        are uniform across the 3 tiles: no nope/rope branching here.
+
+        Parameters:
+            layout: `TensorLayout` of the `q_warp_2d` gmem tile.
+
+        Args:
+            q_warp_2d: The warp's Q sub-tile in gmem at `d_qk` width,
+                storing `q_nope` and `q_rope` contiguously.
+        """
         comptime _BK = Self._MmaOp.MMA_K
         comptime _num_k_tiles = Self.D_QK // _BK
         comptime _q_thread_layout = col_major[
@@ -629,7 +631,7 @@ struct MlaPrefillV2Core[config: MlaConfigV2]:
             Self.config.dtype, _q_thread_layout, warp_scope=True
         ](q_warp_2d)
 
-        comptime if Self.config.dtype == DType.float8_e4m3fn:
+        comptime if Self.config.dtype == .float8_e4m3fn:
             # FP8: per-lane fragment = 32 FP8 = 32 B. To match the MFMA's
             # B-operand lane layout (which is the same convention as the
             # A-operand K loader in `MhaMmaOp.load_K` FP8 32x32x64 path),
@@ -674,7 +676,9 @@ struct MlaPrefillV2Core[config: MlaConfigV2]:
     def _load_q_and_scale_mla[
         layout: TensorLayout
     ](
-        q_warp_2d: TileTensor[Self.config.dtype, layout, ...],
+        q_warp_2d: TileTensor[
+            Self.config.dtype, layout, Storage=PointerStorage[], ...
+        ],
         scale_log2e: Float32,
     ) -> RegTile[Self.config.dtype, Self._Q_LAYOUT_MLA_T, MutUntrackedOrigin]:
         """Loads Q (d_qk wide) and (when `Self.prescale_q` is True)
@@ -687,7 +691,7 @@ struct MlaPrefillV2Core[config: MlaConfigV2]:
 
         The prescale applies uniformly to BOTH q_nope and q_rope
         fragments since Q is stored as `q_nope ∥ q_rope` at the
-        operand boundary — there is no need for a nope/rope-specific
+        operand boundary; there is no need for a nope/rope-specific
         scale, and matmul-linear-in-K means the two-segment QK still
         sums to the correct prescaled QK^T."""
         var q_reg = Self.load_q(q_warp_2d)
@@ -701,7 +705,7 @@ struct MlaPrefillV2Core[config: MlaConfigV2]:
             comptime for h in range(_H):
                 comptime for w in range(_W):
                     q_v[h, w, 0] = (
-                        q_v[h, w, 0].cast[DType.float32]() * scale_log2e
+                        q_v[h, w, 0].cast[.float32]() * scale_log2e
                     ).cast[Self.config.dtype]()
 
         return q_reg
@@ -757,7 +761,7 @@ struct MlaPrefillV2Core[config: MlaConfigV2]:
         `PRegisterBuffer.mma_tile` lazy-cast safety analysis.
         """
         var src_v = att_block.vectorize[1, 1, 16]()
-        comptime if Self.config.dtype == DType.float8_e4m3fn:
+        comptime if Self.config.dtype == .float8_e4m3fn:
             # FP8 path: 2 source strips (16 FP32/lane each) → 1 sub-tile
             # (32 FP8/lane), `_NUM_PV_SUBTILES=1` at MLA-FP8 KV=64,
             # or 2 sub-tiles at KV=128.
@@ -768,8 +772,8 @@ struct MlaPrefillV2Core[config: MlaConfigV2]:
             # the full argument.
             var dst_v = dst.vectorize[1, 1, 32]()
             comptime for sub in range(Self._NUM_PV_SUBTILES):
-                var fp32_lo = src_v[2 * sub, 0, 0].cast[DType.float32]()
-                var fp32_hi = src_v[2 * sub + 1, 0, 0].cast[DType.float32]()
+                var fp32_lo = src_v[2 * sub, 0, 0].cast[.float32]()
+                var fp32_hi = src_v[2 * sub + 1, 0, 0].cast[.float32]()
                 var fp8_lo = _cast_f32_to_fp8_raw[Self.config.dtype](fp32_lo)
                 var fp8_hi = _cast_f32_to_fp8_raw[Self.config.dtype](fp32_hi)
                 dst_v[sub, 0, 0] = fp8_lo.join(fp8_hi)
@@ -794,7 +798,7 @@ struct MlaPrefillV2Core[config: MlaConfigV2]:
         Self.config.dtype, Self._ATT_BF16_FULL_LAYOUT_T, MutUntrackedOrigin
     ]:
         """Collapse the post-softmax FP32 score tile 4:1 to FP8 IN PLACE,
-        into `att_block`'s OWN low quarter — the `v_cvt_pk_fp8_f32`
+        into `att_block`'s OWN low quarter: the `v_cvt_pk_fp8_f32`
         / `op_sel:[0,0,1]` telescope. Returns an FP8 view that
         ALIASES `att_block`'s storage (its low `_ATT_BF16_FULL_LAYOUT`
         worth of dwords = the FP8 P), so NO separate FP8 P tile is
@@ -807,14 +811,14 @@ struct MlaPrefillV2Core[config: MlaConfigV2]:
         `MlaPrefillV2._attend_exact`. The borrow checker tracks
         bindings, not
         physical storage, so `p_view` and `att_block` are separate
-        bindings — `_att_bf16_full(p_view, att_block)` is NOT a
+        bindings: `_att_bf16_full(p_view, att_block)` is NOT a
         self-aliased mut+read.
 
         Why the aliased store is safe: `_att_bf16_full`'s FP8 branch reads
         each FP32 source strip into a SIMD value register (`fp32_lo`/
         `fp32_hi`) BEFORE the (now-aliasing) store of that sub-tile, and
         the per-sub-tile dest dwords never overlap a source dword that a
-        LATER sub-tile still reads (the cast is layout-monotone — sub `i`
+        LATER sub-tile still reads (the cast is layout-monotone; sub `i`
         writes the low `[8i, 8i+8)` dwords while consuming the `[32i,
         32i+32)` source dwords). This mirrors the reference's
         read-v60,v61-then-write-v60 ordering.
@@ -841,7 +845,7 @@ struct MlaPrefillV2Core[config: MlaConfigV2]:
         output_dtype: DType,
         epilogue_chunk_width: Int = 1,
     ](
-        o_reg_t: RegTile[DType.float32, Self._O_T_LAYOUT_T, MutUntrackedOrigin],
+        o_reg_t: RegTile[.float32, Self._O_T_LAYOUT_T, MutUntrackedOrigin],
         epilogue_writer: RegTileEpilogue[output_dtype, epilogue_chunk_width],
         l_id: Int,
         valid_q_rows_in_warp: Int,
@@ -862,9 +866,9 @@ struct MlaPrefillV2Core[config: MlaConfigV2]:
             comptime k_in_base = k_local % 16
             comptime d_within_4 = (k_in_base // 4) * 8 + (k_in_base % 4)
             var output_col = i * 32 + d_within_4 + d_extra
-            var v_fp32 = SIMD[DType.float32, 1](o_reg_t.ptr[k_local])
+            var v_fp32 = Float32(o_reg_t.ptr[k_local])
             if q_in_bounds:
-                comptime if output_dtype == DType.float32:
+                comptime if output_dtype == .float32:
                     epilogue_writer.store(
                         rebind[SIMD[output_dtype, 1]](v_fp32),
                         m=q_in_tile,
@@ -888,7 +892,7 @@ struct _MlaKDmaPair[
     //,
     config: MlaConfigV2,
 ](TrivialRegisterPassable):
-    """One buffer-resource pair for both K-segments — mirrors the
+    """One buffer-resource pair for both K-segments: mirrors the
     reference's single-base K pattern.
 
     A single `KTileLoader` instance bound to the full latent cache row
@@ -911,7 +915,7 @@ struct _MlaKDmaPair[
     per K[t]).
 
     Buffer-resource bounds: `(KV_BLOCK - 1) * _KV_ROW_STRIDE_MLA +
-    CACHE_DEPTH` bytes — for DeepSeek-V3 FP8 with KV_BLOCK=128 that's
+    CACHE_DEPTH` bytes: for DeepSeek-V3 FP8 with KV_BLOCK=128 that's
     ~73 KiB, well under the `num_records` 32-bit cap.
     """
 
@@ -930,6 +934,7 @@ struct _MlaKDmaPair[
     # SGPR base across both sub-DMAs.
     comptime _HOIST = Self._P.KV_BLOCK >= 128
 
+    @__allow_legacy_any_origin_fields
     var k_full_gmem_tile: TileTensor[
         Self.config.dtype, Self._P._KFullPerTileLayoutT, ImmutAnyOrigin
     ]
@@ -940,7 +945,7 @@ struct _MlaKDmaPair[
 
     var k_loader: Self._P.KTileLoader
     """One buffer resource for the full K row. Reused across
-    `dma_nope` and `dma_rope` — `SubTileLoaderLDS.load()` takes an
+    `dma_nope` and `dma_rope`: `SubTileLoaderLDS.load()` takes an
     explicit `scalar_offset`, computed inline at KV=64 (per-call,
     legacy codegen) and hoisted once at KV>=128 (single SGPR base
     across both sub-DMAs)."""
@@ -1145,7 +1150,7 @@ struct _MlaKDmaPair[
     ):
         """Issues both nope and rope K segment DMAs into `k_smem_slot`,
         reusing the shared `KTileLoader`. Mirrors the reference's
-        single-base K load — externally one call, internally two
+        single-base K load: externally one call, internally two
         `buffer_load_lds` operations (DRAM has a 384-col gap between nope
         at [0, D_NOPE) and rope at [ROPE_CACHE_OFFSET, ROPE_CACHE_OFFSET
         + D_ROPE) that prevents a single contiguous DMA).

@@ -31,11 +31,16 @@ from max.nn.kernels import (
     matmul_k_cache_ragged,
     matmul_kv_cache_ragged,
 )
-from max.nn.kv_cache import KVCacheBuffer, KVCacheParams, PagedCacheValues
+from max.nn.kv_cache import (
+    KVCacheBuffer,
+    KVCacheParams,
+    MHAKVCacheParams,
+    PagedCacheValues,
+)
 from max.pipelines.context import TextContext
 from max.pipelines.kv_cache import PagedKVCacheManager
-from modular_graph_test import modular_graph_test
 from test_common.context_utils import create_text_context
+from test_common.modular_graph_test import modular_graph_test
 from torch.utils.dlpack import from_dlpack
 
 
@@ -81,7 +86,7 @@ def _dump_k_or_v_cache_to_torch_tensor(
 
     This should only be used for testing purposes.
     """
-    req_blocks = cache.get_req_blocks(ctx.request_id, replica_idx=0)
+    req_blocks = cache.get_req_blocks(ctx)
 
     params = cache.params
     assert isinstance(params, KVCacheParams)
@@ -127,7 +132,7 @@ def _dump_k_or_v_cache_to_torch_tensor(
 
 def test_fused_qkv_ragged_matmul(session: InferenceSession) -> None:
     num_q_heads = 32
-    kv_params = KVCacheParams(
+    kv_params = MHAKVCacheParams(
         dtype=DType.float32,
         n_kv_heads=8,
         head_dim=128,
@@ -183,7 +188,8 @@ def test_fused_qkv_ragged_matmul(session: InferenceSession) -> None:
                 blocks,
                 cache_lengths,
                 lookup_table,
-                is_cache_empty,
+                max_prompt_length,
+                max_cache_length,
                 _attention_dispatch_metadata,
             ) = g.inputs
             layer_idx = ops.constant(0, DType.uint32, device=DeviceRef.CPU())
@@ -192,7 +198,8 @@ def test_fused_qkv_ragged_matmul(session: InferenceSession) -> None:
                 blocks.buffer,
                 cache_lengths.tensor,
                 lookup_table.tensor,
-                is_cache_empty.tensor,
+                max_prompt_length.tensor,
+                max_cache_length.tensor,
             )
             result = fused_qkv_ragged_matmul(
                 kv_params,
@@ -212,8 +219,8 @@ def test_fused_qkv_ragged_matmul(session: InferenceSession) -> None:
     batch = []
     for i in range(batch_size):
         context = create_text_context(np.empty(prompt_lens[i]))
-        kv_manager.claim(context.request_id, replica_idx=0)
-        kv_manager.alloc(context, replica_idx=0, num_steps=1)
+        kv_manager.claim(context)
+        kv_manager.alloc(context)
         batch.append(context)
 
     input_row_offsets = Buffer(
@@ -240,8 +247,9 @@ def test_fused_qkv_ragged_matmul(session: InferenceSession) -> None:
             3: kv_runtime_inputs.kv_blocks,
             4: kv_runtime_inputs.cache_lengths,
             5: kv_runtime_inputs.lookup_table,
-            6: kv_runtime_inputs.max_lengths,
-            7: kv_runtime_inputs.attention_dispatch_metadata,
+            6: kv_runtime_inputs.max_prompt_length,
+            7: kv_runtime_inputs.max_cache_length,
+            8: kv_runtime_inputs.attention_dispatch_metadata,
         },
     )
     def test_runs_without_nan(
@@ -285,7 +293,8 @@ class MatmulKVRaggedModel:
                 kv_blocks=kv_inputs[0].buffer,
                 cache_lengths=kv_inputs[1].tensor,
                 lookup_table=kv_inputs[2].tensor,
-                max_lengths=kv_inputs[3].tensor,
+                max_prompt_length=kv_inputs[3].tensor,
+                max_cache_length=kv_inputs[4].tensor,
             ),
             layer_idx=ops.constant(
                 self.layer_idx, DType.uint32, device=DeviceRef.CPU()
@@ -310,7 +319,7 @@ def test_matmul_kv_ragged(session: InferenceSession, dtype: DType) -> None:
         DType.bfloat16: torch.bfloat16,
     }[dtype]
     num_q_heads = 32
-    kv_params = KVCacheParams(
+    kv_params = MHAKVCacheParams(
         dtype=dtype,
         n_kv_heads=8,
         head_dim=128,
@@ -368,8 +377,8 @@ def test_matmul_kv_ragged(session: InferenceSession, dtype: DType) -> None:
     batch = []
     for i in range(batch_size):
         context = create_text_context(np.empty(prompt_lens[i]))
-        kv_manager.claim(context.request_id, replica_idx=0)
-        kv_manager.alloc(context, replica_idx=0, num_steps=1)
+        kv_manager.claim(context)
+        kv_manager.alloc(context)
         batch.append(context)
 
     # Compute input row offsets for ragged tensors.
@@ -426,7 +435,8 @@ class MatmulKRaggedModel:
                 kv_blocks=kv_inputs[0].buffer,
                 cache_lengths=kv_inputs[1].tensor,
                 lookup_table=kv_inputs[2].tensor,
-                max_lengths=kv_inputs[3].tensor,
+                max_prompt_length=kv_inputs[3].tensor,
+                max_cache_length=kv_inputs[4].tensor,
             ),
             layer_idx=ops.constant(
                 self.layer_idx, DType.uint32, device=DeviceRef.CPU()
@@ -444,7 +454,7 @@ def test_matmul_k_ragged(session: InferenceSession, dtype: DType) -> None:
         DType.bfloat16: torch.bfloat16,
     }[dtype]
     num_q_heads = 32
-    kv_params = KVCacheParams(
+    kv_params = MHAKVCacheParams(
         dtype=dtype,
         n_kv_heads=8,
         head_dim=128,
@@ -500,8 +510,8 @@ def test_matmul_k_ragged(session: InferenceSession, dtype: DType) -> None:
     batch = []
     for i in range(batch_size):
         context = create_text_context(np.empty(prompt_lens[i]))
-        kv_manager.claim(context.request_id, replica_idx=0)
-        kv_manager.alloc(context, replica_idx=0, num_steps=1)
+        kv_manager.claim(context)
+        kv_manager.alloc(context)
         batch.append(context)
 
     # Compute input row offsets for ragged tensors.
@@ -550,7 +560,7 @@ def test_matmul_kv_cache_ragged_chains(dtype: DType) -> None:
     """Tests that staging matmul_kv_cache_ragged threads chains."""
     # Set up hyperparameters for the test.
     num_q_heads = 32
-    kv_params = KVCacheParams(
+    kv_params = MHAKVCacheParams(
         dtype=dtype,
         n_kv_heads=8,
         head_dim=128,

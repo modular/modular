@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 
 
 def kernel_with_list(res: UnsafePointer[Float32, MutAnyOrigin]):
@@ -23,7 +23,7 @@ def kernel_with_list(res: UnsafePointer[Float32, MutAnyOrigin]):
 
 def test_kernel_with_list(ctx: DeviceContext) raises:
     print("== test_kernel_with_list")
-    var res_device = ctx.enqueue_create_buffer[DType.float32](1)
+    var res_device = ctx.enqueue_create_buffer[.float32](1)
     res_device.enqueue_fill(0)
     # CHECK: call.uni
     # CHECK: malloc,

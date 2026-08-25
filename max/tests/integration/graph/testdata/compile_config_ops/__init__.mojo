@@ -13,8 +13,8 @@
 
 from std.sys import get_defined_int
 
-import compiler
-from std.gpu.host import DeviceContext
+import extensibility
+from max.gpu.host import DeviceContext
 from std.logger import Logger
 from extensibility import foreach, OutputTensor, InputTensor
 
@@ -25,11 +25,11 @@ from std.utils.index import IndexList
 comptime logger = Logger()
 
 
-@compiler.register("use_splitk_reduction_scheme")
+@extensibility.register("use_splitk_reduction_scheme")
 struct UseSplitkReductionScheme:
     @staticmethod
     def execute(
-        output: OutputTensor[dtype=DType.int32, rank=1, ...],
+        output: OutputTensor[dtype=.int32, rank=1, ...],
     ):
         comptime split_k_reduction_scheme = get_defined_int[
             "SPLITK_REDUCTION_SCHEME", 2
@@ -37,17 +37,17 @@ struct UseSplitkReductionScheme:
         output[0] = Int32(split_k_reduction_scheme)
 
 
-@compiler.register("use_logger")
+@extensibility.register("use_logger")
 struct UseLogger:
     @staticmethod
     def execute(
-        output: OutputTensor[dtype=DType.int32, rank=1, ...],
+        output: OutputTensor[dtype=.int32, rank=1, ...],
     ):
         logger.error("I'm a custom Mojo function!")
         output[0] = Int32(logger.level._value)
 
 
-@compiler.register("add_one_custom")
+@extensibility.register("add_one_custom")
 struct AddOneCustom:
     @staticmethod
     def execute[
@@ -57,14 +57,14 @@ struct AddOneCustom:
         x: InputTensor[dtype=output.dtype, rank=output.rank, ...],
         ctx: DeviceContext,
     ) raises:
-        @parameter
+        @__parameter
         def add_one[width: Int](idx: Coord) -> SIMD[x.dtype, width]:
             return x.load[width](idx) + 1
 
         foreach[add_one, target=target](output, ctx)
 
 
-@compiler.register_shape_function("add_one_custom")
+@extensibility.register_shape_function("add_one_custom")
 def add_one_custom_shape(
     x: InputTensor,
 ) raises -> IndexList[x.rank]:

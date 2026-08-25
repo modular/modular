@@ -13,8 +13,11 @@
 from __future__ import annotations
 
 import contextlib
+import logging
 from collections.abc import AsyncGenerator
 from typing import Any, cast
+
+_logger = logging.getLogger("max.pipelines")
 
 from max.pipelines.context import (
     BaseContextType,
@@ -28,6 +31,7 @@ from max.pipelines.diffusion.pipeline import (
 )
 from max.pipelines.lib import (
     EmbeddingsPipelineType,
+    MemoryPlan,
     PipelineConfig,
     TextGenerationPipeline,
 )
@@ -71,10 +75,13 @@ def load_scheduler(
     pipeline_config: PipelineConfig,
     settings: Settings,
     worker_queues: WorkerQueues[BaseContextType, PipelineOutputType],
+    memory_plan: MemoryPlan | None,
 ) -> Scheduler:
     request_queue = worker_queues.request_queue
     response_queue = worker_queues.response_queue
     cancel_queue = worker_queues.cancel_queue
+
+    _logger.info("max_batch_size: %d", pipeline.max_batch_size)
 
     if pipeline.__class__.__name__ == "PixelGenerationPipeline":
         pixel_pipeline = cast(PixelGenerationPipeline[Any], pipeline)
@@ -101,15 +108,10 @@ def load_scheduler(
                 response_queue,
             ),
             cancel_queue=cancel_queue,
-            max_batch_size=pipeline_config.runtime.max_batch_size
-            if pipeline_config.runtime.max_batch_size is not None
-            else 1,
         )
     elif pipeline.__class__.__name__ == "EmbeddingsPipeline":
         embeddings_scheduler_config = EmbeddingsSchedulerConfig(
-            max_batch_size=pipeline_config.runtime.max_batch_size
-            if pipeline_config.runtime.max_batch_size is not None
-            else 1
+            max_batch_size=pipeline.max_batch_size
         )
         emb_pipeline = cast(EmbeddingsPipelineType, pipeline)
         return EmbeddingsScheduler(
@@ -140,6 +142,8 @@ def load_scheduler(
                 response_queue,
             ),
             cancel_queue=cancel_queue,
+            memory_plan=memory_plan,
+            max_pending_requests=settings.max_pending_requests,
         )
     elif pipeline_config.runtime.pipeline_role == "decode_only":
         text_pipeline = cast(TextGenerationPipeline[TextContext], pipeline)
@@ -155,10 +159,13 @@ def load_scheduler(
             ),
             cancel_queue=cancel_queue,
             settings=settings,
+            memory_plan=memory_plan,
         )
     elif pipeline_config.runtime.pipeline_role == "prefill_only":
         text_pipeline = cast(TextGenerationPipeline[TextContext], pipeline)
-        return load_prefill_scheduler(text_pipeline, pipeline_config, settings)
+        return load_prefill_scheduler(
+            text_pipeline, pipeline_config, settings, memory_plan
+        )
     else:
         raise ValueError(
             f"No scheduler support for pipeline_role ({pipeline_config.runtime.pipeline_role})."

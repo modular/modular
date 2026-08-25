@@ -9,7 +9,6 @@ load(
 
 package(default_visibility = [
     "//:__pkg__",
-    "//SDK/integration-test:__subpackages__",
     "//max/tests:__subpackages__",
     "//oss/modular/max/tests:__subpackages__",
 ])
@@ -17,6 +16,20 @@ package(default_visibility = [
 filegroup(
     name = "qwen2_5vl_3b_config",
     srcs = ["configs/qwen2_5vl_3b/config.json"],
+)
+
+modular_py_test(
+    name = "test_preprocess_cache",
+    srcs = ["test_preprocess_cache.py"],
+    deps = [
+        "//max/python/max/pipelines/architectures/qwen2_5vl",
+        "//max/python/max/pipelines/context",
+        "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/modeling",
+        "//max/python/max/support",
+        requirement("numpy"),
+        requirement("pillow"),
+    ],
 )
 
 modular_py_test(
@@ -48,7 +61,7 @@ modular_py_test(
         "MODULAR_TORCH_MEMORY_PERCENT": "0.5",
     },
     exec_properties = {
-        "test.resources:gpu-memory": "2",
+        "test.resources:gpu-memory": "3",
     },
     gpu_constraints = ["//:has_gpu"] + select({
         "//:apple_gpu": ["@platforms//:incompatible"],

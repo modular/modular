@@ -59,15 +59,14 @@ def vectorize[
 
     def main():
         var allocation = alloc(Layout[Int32](count=size))
-        var p = allocation.unsafe_ptr()
 
         def closure[width: Int](i: Int) {mut}:
             print("storing", width, "els at pos", i)
-            p.store[width=width](i, Int32(i))
+            allocation.unsafe_ptr().store[width=width](i, Int32(i))
 
         vectorize[simd_width](size, closure)
-        print(p.load[width=simd_width]())
-        print(p.load[width=simd_width](simd_width))
+        print(allocation.unsafe_ptr().load[width=simd_width]())
+        print(allocation.unsafe_ptr().load[width=simd_width](simd_width))
 
         dealloc(allocation^)
     ```
@@ -177,25 +176,24 @@ def vectorize[
 
     def main():
         var allocation = alloc(Layout[Int32](count=size))
-        var p = allocation.unsafe_ptr()
 
         def closure[width: Int](i: Int, evl: Int) {mut}:
             print("storing", evl, "of", width, "els at pos", i)
-            var val = SIMD[DType.int32, width](i)
+            var val = SIMD[.int32, width](i)
 
             # Optimization: Constant propagation eliminates this check in the main loop
             if evl == width:
-                p.store[width=width](i, val)
+                allocation.unsafe_ptr().store[width=width](i, val)
             else:
                 # Tail loop: Generate mask from EVL to prevent OOB
-                var mask = iota[DType.int32, width]().lt(evl)
-                masked_store[width](val, p + i, mask)
+                var mask = iota[.int32, width]().lt(Int32(evl))
+                masked_store[width](val, allocation.unsafe_ptr() + i, mask)
 
         vectorize[simd_width](size, closure)
 
-        print(p.load[width=simd_width]())
-        print(p.load[width=simd_width](simd_width))
-        print(p.load[width=2](2 * simd_width))
+        print(allocation.unsafe_ptr().load[width=simd_width]())
+        print(allocation.unsafe_ptr().load[width=simd_width](simd_width))
+        print(allocation.unsafe_ptr().load[width=2](2 * simd_width))
         dealloc(allocation^)
     ```
 
@@ -265,7 +263,7 @@ def vectorize[
     /,
     *,
     size: Int,
-    unroll_factor: Int = size if std.sys.is_gpu() else 1,
+    unroll_factor: Int = 1,
 ](closure: func):
     """Simplifies SIMD optimized loops by mapping a function across a range from
     0 to `size`, incrementing by `simd_width` at each step. The remainder of
@@ -297,16 +295,14 @@ def vectorize[
 
     def main():
         var allocation = alloc(Layout[Int32](count=size))
-        var p = allocation.unsafe_ptr()
 
-        # The closure can capture the `p` pointer with {mut}
         def closure[width: Int](i: Int) {mut}:
             print("storing", width, "els at pos", i)
-            p.store[width=width](i, i)
+            allocation.unsafe_ptr().store[width=width](i, Int32(i))
 
         vectorize[simd_width](size, closure)
-        print(p.load[width=simd_width]())
-        print(p.load[width=simd_width](simd_width))
+        print(allocation.unsafe_ptr().load[width=simd_width]())
+        print(allocation.unsafe_ptr().load[width=simd_width](simd_width))
 
         dealloc(allocation^)
     ```

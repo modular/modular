@@ -13,10 +13,10 @@
 
 from std.sys import size_of
 
-from std.gpu import thread_idx, block_dim, barrier, warp_id
-from std.gpu.host import DeviceContext
-from std.gpu.memory import (
-    AddressSpace,
+from std.gpu import thread_idx, block_dim, warp_id
+from max.gpu.sync import barrier
+from max.gpu.host import DeviceContext
+from max.gpu.memory import (
     cp_async_bulk_global_shared_cta,
     cp_async_bulk_reduce_global_shared_cta,
     cp_async_bulk_shared_cluster_global,
@@ -24,12 +24,12 @@ from std.gpu.memory import (
     fence_mbarrier_init,
     ReduceOp,
 )
-from std.gpu.primitives import elect_one_sync
-from std.gpu.sync import (
+from max.gpu.primitives.cluster import elect_one_sync
+from max.gpu.sync import (
     cp_async_bulk_commit_group,
     cp_async_bulk_wait_group,
 )
-from std.memory import stack_allocation
+from std.memory import unsafe_stack_allocation
 from std.testing import assert_equal
 
 from layout.tma_async import SharedMemBarrier
@@ -48,11 +48,11 @@ def kernel_bulk_g2s[
 ):
     comptime BYTES = NUM_ELEMS * size_of[Float32]()
 
-    var smem = stack_allocation[
-        NUM_ELEMS, Float32, address_space=AddressSpace.SHARED
+    var smem = unsafe_stack_allocation[
+        NUM_ELEMS, Float32, address_space=.SHARED
     ]()
-    var mbar = stack_allocation[
-        1, SharedMemBarrier, address_space=AddressSpace.SHARED
+    var mbar = unsafe_stack_allocation[
+        1, SharedMemBarrier, address_space=.SHARED
     ]()
 
     var tid = thread_idx.x
@@ -81,8 +81,8 @@ def test_bulk_g2s[NUM_ELEMS: Int](ctx: DeviceContext) raises:
         in_host[i] = Float32(i + 1)
         out_host[i] = 0
 
-    var in_dev = ctx.enqueue_create_buffer[DType.float32](NUM_ELEMS)
-    var out_dev = ctx.enqueue_create_buffer[DType.float32](NUM_ELEMS)
+    var in_dev = ctx.enqueue_create_buffer[.float32](NUM_ELEMS)
+    var out_dev = ctx.enqueue_create_buffer[.float32](NUM_ELEMS)
 
     ctx.enqueue_copy(in_dev, in_host)
     ctx.enqueue_copy(out_dev, out_host)
@@ -114,8 +114,8 @@ def kernel_bulk_s2g[
 ](dst: UnsafePointer[Float32, MutAnyOrigin],):
     comptime BYTES = NUM_ELEMS * size_of[Float32]()
 
-    var smem = stack_allocation[
-        NUM_ELEMS, Float32, address_space=AddressSpace.SHARED
+    var smem = unsafe_stack_allocation[
+        NUM_ELEMS, Float32, address_space=.SHARED
     ]()
 
     var tid = thread_idx.x
@@ -134,7 +134,7 @@ def test_bulk_s2g[NUM_ELEMS: Int](ctx: DeviceContext) raises:
     for i in range(NUM_ELEMS):
         out_host[i] = 0
 
-    var out_dev = ctx.enqueue_create_buffer[DType.float32](NUM_ELEMS)
+    var out_dev = ctx.enqueue_create_buffer[.float32](NUM_ELEMS)
     ctx.enqueue_copy(out_dev, out_host)
 
     ctx.enqueue_function[kernel_bulk_s2g[NUM_ELEMS]](
@@ -162,8 +162,8 @@ def kernel_bulk_reduce_s2g[
 ](dst: UnsafePointer[Float32, MutAnyOrigin],):
     comptime BYTES = NUM_ELEMS * size_of[Float32]()
 
-    var smem = stack_allocation[
-        NUM_ELEMS, Float32, address_space=AddressSpace.SHARED
+    var smem = unsafe_stack_allocation[
+        NUM_ELEMS, Float32, address_space=.SHARED
     ]()
 
     var tid = thread_idx.x
@@ -188,7 +188,7 @@ def test_bulk_reduce_s2g[NUM_ELEMS: Int](ctx: DeviceContext) raises:
     for i in range(NUM_ELEMS):
         out_host[i] = init
 
-    var out_dev = ctx.enqueue_create_buffer[DType.float32](NUM_ELEMS)
+    var out_dev = ctx.enqueue_create_buffer[.float32](NUM_ELEMS)
     ctx.enqueue_copy(out_dev, out_host)
 
     ctx.enqueue_function[kernel_bulk_reduce_s2g[NUM_ELEMS]](

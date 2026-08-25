@@ -10,13 +10,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Implements grouped (batched expert) GEMM for SM90 (Hopper) GPUs.
+
+Provides the `grouped_matmul_sm90` entry point, which dispatches a
+variable-length batched matmul across MoE expert weight matrices using
+TMA-based warp-specialized pipelining via `HopperMatmulSM90Kernel`.
+"""
 from std.collections import Optional
 from std.math import ceildiv
 from std.sys import size_of
 
 from std.gpu.globals import WARPGROUP_SIZE
-from std.gpu.host import DeviceContext, FuncAttribute
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.host import DeviceContext, FuncAttribute
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from layout import (
     Layout,
     TileTensor,
@@ -42,6 +48,23 @@ def default_config_sm90[
     transpose_b: Bool,
     wgmma_shape: IndexList[3],
 ]() -> MatmulConfig[a_type, b_type, c_type, transpose_b]:
+    """Returns the default SM90 matmul config for the given WGMMA shape.
+
+    Sets BM=128, BN from the WGMMA N dimension, BK to the maximum TMA-aligned
+    value, 4 pipeline stages, 2 consumer warp groups, and no multicast.
+
+    Parameters:
+        a_type: A-matrix (activations) element type; drives BK via TMA
+            alignment.
+        b_type: B-matrix (expert weights) element type.
+        c_type: Output element type.
+        transpose_b: Whether B is stored transposed.
+        wgmma_shape: WGMMA instruction shape `(M, N, K)`; `N` sets the
+            block tile `BN`.
+
+    Returns:
+        A `MatmulConfig` suitable for use as the default grouped matmul config.
+    """
     comptime BN = wgmma_shape[1]
     comptime BK = 128 // size_of[a_type]()
     return MatmulConfig[a_type, b_type, c_type, transpose_b](
@@ -67,19 +90,41 @@ def grouped_matmul_sm90[
     ] = default_config_sm90[a_type, b_type, c_type, transpose_b, wgmma_shape](),
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
-    c: TileTensor[mut=True, c_type, address_space=AddressSpace.GENERIC, ...],
-    a: TileTensor[a_type, address_space=AddressSpace.GENERIC, ...],
-    a_offsets: TileTensor[
-        mut=False, DType.uint32, address_space=AddressSpace.GENERIC, ...
-    ],
+    c: TileTensor[mut=True, c_type, address_space=.GENERIC, ...],
+    a: TileTensor[a_type, address_space=.GENERIC, ...],
+    a_offsets: TileTensor[mut=False, .uint32, address_space=.GENERIC, ...],
     max_num_tokens_per_expert: Int,
-    b: TileTensor[b_type, address_space=AddressSpace.GENERIC, ...],
-    expert_ids: TileTensor[
-        mut=False, DType.int32, address_space=AddressSpace.GENERIC, ...
-    ],
+    b: TileTensor[b_type, address_space=.GENERIC, ...],
+    expert_ids: TileTensor[mut=False, .int32, address_space=.GENERIC, ...],
     num_active_experts: Int,
     ctx: DeviceContext,
 ) raises:
+    """Performs grouped GEMM for MoE routing on SM90 (Hopper) GPUs.
+
+    Dispatches a batched expert matmul where each expert has a variable
+    number of tokens, stored contiguously in `a` at offsets given by
+    `a_offsets`. Expert weight matrices are stacked along axis 0 in `b`.
+    Uses TMA-based warp-specialized pipelining via `HopperMatmulSM90Kernel`.
+
+    Parameters:
+        c_type: Output element type.
+        a_type: A-matrix (activations) element type.
+        b_type: B-matrix (expert weights) element type.
+        transpose_b: Whether B is stored transposed (must be True).
+        wgmma_shape: WGMMA instruction shape (M, N, K).
+        config: Full SM90 kernel configuration.
+        elementwise_lambda_fn: Optional epilogue applied to each output tile.
+
+    Args:
+        c: Output matrix `[total_tokens, N]`.
+        a: Activation matrix `[total_tokens, K]`.
+        a_offsets: Per-expert token start offsets into `a`.
+        max_num_tokens_per_expert: Maximum tokens for any single expert.
+        b: Expert weight tensor `[num_experts, N, K]`.
+        expert_ids: Active expert indices `[num_active_experts]`.
+        num_active_experts: Number of experts with non-zero token count.
+        ctx: Device context for kernel launch.
+    """
     # Early-exit for empty inputs to avoid creating invalid TMA descriptors.
     if num_active_experts == 0 or Int(a.dim[0]()) == 0 or Int(c.dim[0]()) == 0:
         return
@@ -114,16 +159,20 @@ def grouped_matmul_sm90[
     comptime BK = config.block_tile_shape[2]
 
     # Create TMA op for the entire A tensor including all tokens.
-    a_tma_op = create_tensor_tile[Index(BM, BK), swizzle_mode=a_swizzle](ctx, a)
+    var a_tma_op = create_tensor_tile[Index(BM, BK), swizzle_mode=a_swizzle](
+        ctx, a
+    )
 
     # Flatten B tensor into a 2D TileTensor for easier TMA support.
-    b_flat = flatten_leading(b)
-    b_tma_op = create_tensor_tile[Index(BN, BK), swizzle_mode=b_swizzle](
+    var b_flat = flatten_leading(b)
+    var b_tma_op = create_tensor_tile[Index(BN, BK), swizzle_mode=b_swizzle](
         ctx, b_flat
     )
 
     # Create a dummy TMA op for C, we don't support TMA store for output.
-    c_tma_op = create_tensor_tile[Index(BM, BK), swizzle_mode=c_swizzle](ctx, c)
+    var c_tma_op = create_tensor_tile[Index(BM, BK), swizzle_mode=c_swizzle](
+        ctx, c
+    )
 
     comptime num_threads = WARPGROUP_SIZE * config.num_consumer + WARPGROUP_SIZE
     comptime smem_size = config.num_pipeline_stages * (

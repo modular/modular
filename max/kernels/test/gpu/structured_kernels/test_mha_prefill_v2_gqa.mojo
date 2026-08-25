@@ -33,7 +33,7 @@ If `head_idx` or `kv_head_idx` is wrong, output positions will hold
 the wrong kv value (or 0 from uninitialized output) and the test fails.
 """
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.testing import assert_almost_equal
 
 from layout import LayoutTensor, TileTensor
@@ -94,10 +94,10 @@ def test_gqa[
         ") ---",
     )
 
-    var dev_q = ctx.enqueue_create_buffer[DType.bfloat16](SIZE_Q)
-    var dev_k = ctx.enqueue_create_buffer[DType.bfloat16](SIZE_KV)
-    var dev_v = ctx.enqueue_create_buffer[DType.bfloat16](SIZE_KV)
-    var dev_out = ctx.enqueue_create_buffer[DType.float32](SIZE_OUT)
+    var dev_q = ctx.enqueue_create_buffer[.bfloat16](SIZE_Q)
+    var dev_k = ctx.enqueue_create_buffer[.bfloat16](SIZE_KV)
+    var dev_v = ctx.enqueue_create_buffer[.bfloat16](SIZE_KV)
+    var dev_out = ctx.enqueue_create_buffer[.float32](SIZE_OUT)
 
     # Zero-init output so any unwritten position reads as 0 (and an
     # `h // GROUP > 0` expected value would catch it).

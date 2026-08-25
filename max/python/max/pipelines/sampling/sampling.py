@@ -15,7 +15,9 @@
 
 from __future__ import annotations
 
-from typing import Protocol
+from collections.abc import Iterable
+from pathlib import Path
+from typing import Literal, Protocol
 
 import numpy as np
 from max.driver import Buffer
@@ -30,6 +32,7 @@ from max.graph import (
     ops,
 )
 from max.nn.kernels import (
+    apply_packed_bitmask,
     apply_penalties_to_logits,
     scatter_set_constant,
     topk_fused_sampling,
@@ -114,10 +117,15 @@ def _sampling_input_types(
 
     # If constrained decoding can fire, wire in the bitmask input.
     if needs_bitmask_input:
-        # Use separate symbolic dimension to avoid conflicts with logits' vocab_size
-        # since llguidance creates 32-bit aligned bitmasks.
+        # Packed int32 bitmask: 1 bit per token, 32 tokens per word, so the
+        # inner dim is ceil(vocab_size / 32). A separate symbolic dimension
+        # avoids conflicts with logits' vocab_size. The packed mask is unpacked
+        # and applied to logits in a single fused GPU pass (apply_packed_bitmask),
+        # replacing a CPU unpack + ops.where.
         bitmask_type = TensorType(
-            DType.bool, ["batch", "vocab_size_structured"], device=device
+            DType.int32,
+            ["batch", "packed_vocab_size_structured"],
+            device=device,
         )
         inputs["bitmask"] = bitmask_type
 
@@ -161,6 +169,7 @@ def token_sampler(
     device: DeviceRef,
     return_logits: bool = False,
     needs_bitmask_input: bool | None = None,
+    custom_extensions: Iterable[Path] = (),
 ) -> Graph:
     """Builds a sampling graph that samples tokens from logits.
 
@@ -173,6 +182,8 @@ def token_sampler(
             ``sampling_config.enable_structured_output``. Callers should
             pass ``True`` explicitly when tool-call grammars can fire even
             though ``--enable-structured-output`` is off.
+        custom_extensions: Custom-op extension paths to compile the graph
+            with. Empty by default.
 
     Returns:
         A graph that takes logits (and optional penalty inputs) and outputs tokens.
@@ -185,7 +196,11 @@ def token_sampler(
         device=device,
         needs_bitmask_input=needs_bitmask_input,
     )
-    with Graph("top_k_sampler", input_types=_input_dict.values()) as graph:
+    with Graph(
+        "top_k_sampler",
+        input_types=_input_dict.values(),
+        custom_extensions=custom_extensions,
+    ) as graph:
         # Deconstruct inputs
         # TODO: Explore better ways of indexing into these input values
         # tightly coupling the input order with element indices feels
@@ -266,15 +281,10 @@ def token_sampler(
         if "bitmask" in _input_dict:
             bitmask = graph.inputs[list(_input_dict).index("bitmask")].tensor
 
-            # Remove extra padding provided by llguidance.
-            if logits.shape[1] != bitmask.shape[1]:
-                bitmask = bitmask[:, : logits.shape[1]]
-
-            logits = ops.where(
-                bitmask,
-                logits,
-                ops.constant(-10000, dtype=DType.float32, device=device),
-            )
+            # Unpack the packed int32 bitmask and mask the logits in one fused
+            # pass. The kernel reads only words covering ``logits``' vocab dim,
+            # so llguidance's 32-bit alignment padding needs no explicit slice.
+            logits = apply_packed_bitmask(logits, bitmask, fill_val=-10000.0)
 
         # Apply top_k sampling
         temperature = graph.inputs[
@@ -639,24 +649,44 @@ def build_synthetic_acceptance_sampler_graph(
 
 def build_stochastic_acceptance_sampler_graph(
     device: DeviceRef,
+    *,
+    draft_proposal: Literal["argmax", "sampled"] = "argmax",
+    vocab_size: int | None = None,
 ) -> Graph:
     """Builds a target-only stochastic rejection sampler for speculative decoding.
 
-    Accepts draft tokens based on ``coin < p_target(draft_token)`` where
-    p_target is computed after applying temperature, top-k, and top-p
-    filtering.  No draft probabilities are needed.
+    Accepts a draft token on ``coin < p_target / q_draft``. How ``p_target`` is
+    filtered depends on the proposal mode: ``"argmax"`` applies temperature
+    only, while ``"sampled"`` applies temperature, top-k and top-p.
+
+    ``draft_proposal="argmax"`` (the default) means the draft proposed
+    deterministically, so its one-hot ``q`` needs no input and recovered
+    tokens are sampled from the
+    target distribution. ``"sampled"`` means the draft sampled its own token,
+    and the graph takes one more input: the distribution it drew from, which
+    rejection recovers from via ``max(p_target - q_draft, 0)``. That mode also
+    needs a concrete ``vocab_size``, since the distribution's trailing dim has
+    to be static.
 
     The sampling RNG seed is bound as a graph input — callers refresh it
     per execution so RNG varies across calls.
 
     Args:
         device: Device for the graph.
+        draft_proposal: Proposal distribution used to produce
+            ``draft_tokens``; defaults to ``"argmax"``.
+        vocab_size: Static vocabulary size. Required iff
+            ``draft_proposal="sampled"``.
 
     Returns:
-        A graph that takes draft tokens, target logits, target logit
-        offsets, sampling parameters, and a per-execute seed, and outputs
-        the first rejected index, recovered tokens, and a bonus token.
+        A graph that takes draft tokens, target logits, target logit offsets,
+        sampling parameters, a per-execute seed, and in ``"sampled"`` mode the
+        draft distributions, and outputs the first rejected index, recovered
+        tokens, and a bonus token.
     """
+    if draft_proposal == "sampled" and vocab_size is None:
+        raise ValueError("vocab_size is required when draft_proposal='sampled'")
+
     graph_inputs = [
         TensorType(DType.int64, ["batch_size", "num_steps"], device=device),
         TensorType(
@@ -669,17 +699,41 @@ def build_stochastic_acceptance_sampler_graph(
         TensorType(DType.float32, [], device=DeviceRef.CPU()),
         ops.random.SeedType(device),
     ]
+    if draft_proposal == "sampled":
+        assert vocab_size is not None
+        graph_inputs.append(
+            TensorType(
+                DType.float32,
+                ["batch_size", "num_steps", vocab_size],
+                device=device,
+            )
+        )
+
     with Graph("typical_acceptance_sampler", input_types=graph_inputs) as graph:
-        (
-            draft_tokens,
-            target_logits,
-            temperature,
-            top_k,
-            max_k,
-            top_p,
-            min_top_p,
-            seed,
-        ) = graph.inputs
+        draft_probs_full = None
+        if draft_proposal == "sampled":
+            (
+                draft_tokens,
+                target_logits,
+                temperature,
+                top_k,
+                max_k,
+                top_p,
+                min_top_p,
+                seed,
+                draft_probs_full,
+            ) = graph.inputs
+        else:
+            (
+                draft_tokens,
+                target_logits,
+                temperature,
+                top_k,
+                max_k,
+                top_p,
+                min_top_p,
+                seed,
+            ) = graph.inputs
 
         first_rejected_idx, recovered_tokens, bonus_tokens = (
             stochastic_acceptance_sampler(
@@ -691,6 +745,11 @@ def build_stochastic_acceptance_sampler_graph(
                 top_p=top_p.tensor,
                 min_top_p=min_top_p.tensor,
                 seed=seed.tensor,
+                draft_proposal=draft_proposal,
+                draft_probs_full=draft_probs_full.tensor
+                if draft_probs_full is not None
+                else None,
+                vocab_size=vocab_size,
             )
         )
         graph.output(first_rejected_idx, recovered_tokens, bonus_tokens)

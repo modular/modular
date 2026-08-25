@@ -20,12 +20,12 @@ This module registers the following ops:
 
 from std.math import ceildiv
 
-import extensibility as compiler
-from std.gpu.host import DeviceContext, Dim
-from std.gpu.host.info import is_cpu, is_gpu
+import extensibility
+from max.gpu.host import DeviceContext, Dim
+from max.gpu.host.info import is_cpu, is_gpu
 
 from extensibility import InputTensor, OutputTensor
-from layout import TensorLayout, TileTensor
+from layout import TensorLayout, TensorStorage, TileTensor
 from std.utils.index import IndexList
 
 from state_space.selective_scan import (
@@ -124,6 +124,7 @@ struct SelectiveScanFwdArgs[
     D_LT: TensorLayout,
     z_LT: TensorLayout,
     delta_bias_LT: TensorLayout,
+    Storage: TensorStorage,
 ]:
     var ctx: DeviceContext
     var total_batch_dim: Int
@@ -133,27 +134,55 @@ struct SelectiveScanFwdArgs[
     var group_size: Int
     var delta_softplus_int8: Int8
     var output_tt: TileTensor[
-        mut=True, Self.dtype, Self.output_LT, MutUntrackedOrigin
+        mut=True,
+        Self.dtype,
+        Self.output_LT,
+        MutUntrackedOrigin,
+        Storage=Self.Storage,
     ]
-    var x_tt: TileTensor[mut=True, Self.dtype, Self.x_LT, MutUntrackedOrigin]
+    var x_tt: TileTensor[
+        mut=True,
+        Self.dtype,
+        Self.x_LT,
+        MutUntrackedOrigin,
+        Storage=Self.Storage,
+    ]
     var out_z_tt: TileTensor[
-        mut=True, Self.dtype, Self.out_z_LT, MutUntrackedOrigin
+        mut=True,
+        Self.dtype,
+        Self.out_z_LT,
+        MutUntrackedOrigin,
+        Storage=Self.Storage,
     ]
-    var u_tt: TileTensor[Self.dtype, Self.u_LT, MutUntrackedOrigin]
-    var delta_tt: TileTensor[Self.dtype, Self.delta_LT, MutUntrackedOrigin]
-    var A_tt: TileTensor[Self.dtype, Self.A_LT, MutUntrackedOrigin]
-    var B_tt: TileTensor[Self.dtype, Self.B_LT, MutUntrackedOrigin]
-    var C_tt: TileTensor[Self.dtype, Self.C_LT, MutUntrackedOrigin]
-    var D_tt: TileTensor[Self.dtype, Self.D_LT, MutUntrackedOrigin]
-    var z_tt: TileTensor[Self.dtype, Self.z_LT, MutUntrackedOrigin]
+    var u_tt: TileTensor[
+        Self.dtype, Self.u_LT, MutUntrackedOrigin, Storage=Self.Storage
+    ]
+    var delta_tt: TileTensor[
+        Self.dtype, Self.delta_LT, MutUntrackedOrigin, Storage=Self.Storage
+    ]
+    var A_tt: TileTensor[
+        Self.dtype, Self.A_LT, MutUntrackedOrigin, Storage=Self.Storage
+    ]
+    var B_tt: TileTensor[
+        Self.dtype, Self.B_LT, MutUntrackedOrigin, Storage=Self.Storage
+    ]
+    var C_tt: TileTensor[
+        Self.dtype, Self.C_LT, MutUntrackedOrigin, Storage=Self.Storage
+    ]
+    var D_tt: TileTensor[
+        Self.dtype, Self.D_LT, MutUntrackedOrigin, Storage=Self.Storage
+    ]
+    var z_tt: TileTensor[
+        Self.dtype, Self.z_LT, MutUntrackedOrigin, Storage=Self.Storage
+    ]
     var delta_bias_tt: TileTensor[
-        Self.dtype, Self.delta_bias_LT, MutUntrackedOrigin
+        Self.dtype, Self.delta_bias_LT, MutUntrackedOrigin, Storage=Self.Storage
     ]
     var strides: SelectiveScanFwdStrides
     var grid_dim: Dim
     var block_dim: Dim
 
-    @parameter
+    @__parameter
     def launch_gpu[d_state_val: Int](self) capturing raises:
         comptime kernel = selective_scan_fwd_gpu[
             Self.dtype,
@@ -169,15 +198,16 @@ struct SelectiveScanFwdArgs[
             Self.D_LT,
             Self.z_LT,
             Self.delta_bias_LT,
+            Self.Storage,
         ]
         var compiled_kernel = self.ctx.compile_function[kernel]()
         self.ctx.enqueue_function(
             compiled_kernel,
-            self.total_batch_dim,
-            self.batch,
-            self.dim,
-            self.seqlen,
-            self.group_size,
+            Int32(self.total_batch_dim),
+            Int32(self.batch),
+            Int32(self.dim),
+            Int32(self.seqlen),
+            Int32(self.group_size),
             self.delta_softplus_int8,
             self.output_tt,
             self.x_tt,
@@ -205,7 +235,7 @@ struct SelectiveScanFwdArgs[
             block_dim=self.block_dim,
         )
 
-    @parameter
+    @__parameter
     def run_cpu[d_state_val: Int](self) capturing raises:
         selective_scan_fwd_cpu[
             Self.dtype,
@@ -270,6 +300,7 @@ struct SelectiveScanFwdMinimalArgs[
     A_LT: TensorLayout,
     B_LT: TensorLayout,
     C_LT: TensorLayout,
+    Storage: TensorStorage,
 ]:
     var ctx: DeviceContext
     var total_batch_dim: Int
@@ -279,19 +310,39 @@ struct SelectiveScanFwdMinimalArgs[
     var group_size: Int
     var delta_softplus_int8: Int8
     var output_tt: TileTensor[
-        mut=True, Self.dtype, Self.output_LT, MutUntrackedOrigin
+        mut=True,
+        Self.dtype,
+        Self.output_LT,
+        MutUntrackedOrigin,
+        Storage=Self.Storage,
     ]
-    var x_tt: TileTensor[mut=True, Self.dtype, Self.x_LT, MutUntrackedOrigin]
-    var u_tt: TileTensor[Self.dtype, Self.u_LT, MutUntrackedOrigin]
-    var delta_tt: TileTensor[Self.dtype, Self.delta_LT, MutUntrackedOrigin]
-    var A_tt: TileTensor[Self.dtype, Self.A_LT, MutUntrackedOrigin]
-    var B_tt: TileTensor[Self.dtype, Self.B_LT, MutUntrackedOrigin]
-    var C_tt: TileTensor[Self.dtype, Self.C_LT, MutUntrackedOrigin]
+    var x_tt: TileTensor[
+        mut=True,
+        Self.dtype,
+        Self.x_LT,
+        MutUntrackedOrigin,
+        Storage=Self.Storage,
+    ]
+    var u_tt: TileTensor[
+        Self.dtype, Self.u_LT, MutUntrackedOrigin, Storage=Self.Storage
+    ]
+    var delta_tt: TileTensor[
+        Self.dtype, Self.delta_LT, MutUntrackedOrigin, Storage=Self.Storage
+    ]
+    var A_tt: TileTensor[
+        Self.dtype, Self.A_LT, MutUntrackedOrigin, Storage=Self.Storage
+    ]
+    var B_tt: TileTensor[
+        Self.dtype, Self.B_LT, MutUntrackedOrigin, Storage=Self.Storage
+    ]
+    var C_tt: TileTensor[
+        Self.dtype, Self.C_LT, MutUntrackedOrigin, Storage=Self.Storage
+    ]
     var strides: SelectiveScanFwdMinimalStrides
     var grid_dim: Dim
     var block_dim: Dim
 
-    @parameter
+    @__parameter
     def launch_gpu[d_state_val: Int](self) capturing raises:
         comptime kernel = selective_scan_fwd_gpu_minimal[
             Self.dtype,
@@ -303,15 +354,16 @@ struct SelectiveScanFwdMinimalArgs[
             Self.A_LT,
             Self.B_LT,
             Self.C_LT,
+            Self.Storage,
         ]
         var compiled_kernel = self.ctx.compile_function[kernel]()
         self.ctx.enqueue_function(
             compiled_kernel,
-            self.total_batch_dim,
-            self.batch,
-            self.dim,
-            self.seqlen,
-            self.group_size,
+            Int32(self.total_batch_dim),
+            Int32(self.batch),
+            Int32(self.dim),
+            Int32(self.seqlen),
+            Int32(self.group_size),
             self.delta_softplus_int8,
             self.output_tt,
             self.x_tt,
@@ -331,7 +383,7 @@ struct SelectiveScanFwdMinimalArgs[
             block_dim=self.block_dim,
         )
 
-    @parameter
+    @__parameter
     def run_cpu[d_state_val: Int](self) capturing raises:
         selective_scan_fwd_cpu_minimal[
             Self.dtype,
@@ -392,6 +444,7 @@ struct SelectiveScanUpdateArgs[
     D_LT: TensorLayout,
     z_LT: TensorLayout,
     dt_bias_LT: TensorLayout,
+    Storage: TensorStorage,
 ]:
     var ctx: DeviceContext
     var total_batch_dim: Int
@@ -400,27 +453,51 @@ struct SelectiveScanUpdateArgs[
     var group_size: Int
     var delta_softplus_int8: Int8
     var state_out_tt: TileTensor[
-        mut=True, Self.dtype, Self.state_out_LT, MutUntrackedOrigin
+        mut=True,
+        Self.dtype,
+        Self.state_out_LT,
+        MutUntrackedOrigin,
+        Storage=Self.Storage,
     ]
     var output_tt: TileTensor[
-        mut=True, Self.dtype, Self.output_LT, MutUntrackedOrigin
+        mut=True,
+        Self.dtype,
+        Self.output_LT,
+        MutUntrackedOrigin,
+        Storage=Self.Storage,
     ]
     var state_in_tt: TileTensor[
-        Self.dtype, Self.state_in_LT, MutUntrackedOrigin
+        Self.dtype, Self.state_in_LT, MutUntrackedOrigin, Storage=Self.Storage
     ]
-    var x_tt: TileTensor[Self.dtype, Self.x_LT, MutUntrackedOrigin]
-    var dt_tt: TileTensor[Self.dtype, Self.dt_LT, MutUntrackedOrigin]
-    var A_tt: TileTensor[Self.dtype, Self.A_LT, MutUntrackedOrigin]
-    var B_tt: TileTensor[Self.dtype, Self.B_LT, MutUntrackedOrigin]
-    var C_tt: TileTensor[Self.dtype, Self.C_LT, MutUntrackedOrigin]
-    var D_tt: TileTensor[Self.dtype, Self.D_LT, MutUntrackedOrigin]
-    var z_tt: TileTensor[Self.dtype, Self.z_LT, MutUntrackedOrigin]
-    var dt_bias_tt: TileTensor[Self.dtype, Self.dt_bias_LT, MutUntrackedOrigin]
+    var x_tt: TileTensor[
+        Self.dtype, Self.x_LT, MutUntrackedOrigin, Storage=Self.Storage
+    ]
+    var dt_tt: TileTensor[
+        Self.dtype, Self.dt_LT, MutUntrackedOrigin, Storage=Self.Storage
+    ]
+    var A_tt: TileTensor[
+        Self.dtype, Self.A_LT, MutUntrackedOrigin, Storage=Self.Storage
+    ]
+    var B_tt: TileTensor[
+        Self.dtype, Self.B_LT, MutUntrackedOrigin, Storage=Self.Storage
+    ]
+    var C_tt: TileTensor[
+        Self.dtype, Self.C_LT, MutUntrackedOrigin, Storage=Self.Storage
+    ]
+    var D_tt: TileTensor[
+        Self.dtype, Self.D_LT, MutUntrackedOrigin, Storage=Self.Storage
+    ]
+    var z_tt: TileTensor[
+        Self.dtype, Self.z_LT, MutUntrackedOrigin, Storage=Self.Storage
+    ]
+    var dt_bias_tt: TileTensor[
+        Self.dtype, Self.dt_bias_LT, MutUntrackedOrigin, Storage=Self.Storage
+    ]
     var strides: SelectiveScanUpdateStrides
     var grid_dim: Dim
     var block_dim: Dim
 
-    @parameter
+    @__parameter
     def launch_gpu[d_state_val: Int](self) capturing raises:
         comptime kernel = selective_scan_update_gpu[
             Self.dtype,
@@ -436,14 +513,15 @@ struct SelectiveScanUpdateArgs[
             Self.D_LT,
             Self.z_LT,
             Self.dt_bias_LT,
+            Self.Storage,
         ]
         var compiled_kernel = self.ctx.compile_function[kernel]()
         self.ctx.enqueue_function(
             compiled_kernel,
-            self.total_batch_dim,
-            self.batch,
-            self.dim,
-            self.group_size,
+            Int32(self.total_batch_dim),
+            Int32(self.batch),
+            Int32(self.dim),
+            Int32(self.group_size),
             self.delta_softplus_int8,
             self.state_out_tt,
             self.output_tt,
@@ -471,7 +549,7 @@ struct SelectiveScanUpdateArgs[
             block_dim=self.block_dim,
         )
 
-    @parameter
+    @__parameter
     def run_cpu[d_state_val: Int](self) capturing raises:
         selective_scan_update_cpu[
             Self.dtype,
@@ -525,7 +603,7 @@ struct SelectiveScanUpdateArgs[
             raise Error("Unsupported target: " + target)
 
 
-@compiler.register("selective_scan_fwd")
+@extensibility.register("selective_scan_fwd")
 struct SelectiveScanFwd[delta_softplus: Bool = False]:
     """Selective scan forward pass operation for Mamba SSM.
 
@@ -577,17 +655,17 @@ struct SelectiveScanFwd[delta_softplus: Bool = False]:
         var n_groups = B.dim_size(1)
         var group_size = dim // n_groups
 
-        var output_tt = output.to_tile_tensor()
-        var x_tt = x.to_tile_tensor()
-        var out_z_tt = out_z.to_tile_tensor()
-        var u_tt = u.to_tile_tensor()
-        var delta_tt = delta.to_tile_tensor()
-        var A_tt = A.to_tile_tensor()
-        var B_tt = B.to_tile_tensor()
-        var C_tt = C.to_tile_tensor()
-        var D_tt = D.to_tile_tensor()
-        var z_tt = z.to_tile_tensor()
-        var delta_bias_tt = delta_bias.to_tile_tensor()
+        var output_tt = output.to_tile_tensor[.int32]()
+        var x_tt = x.to_tile_tensor[.int32]()
+        var out_z_tt = out_z.to_tile_tensor[.int32]()
+        var u_tt = u.to_tile_tensor[.int32]()
+        var delta_tt = delta.to_tile_tensor[.int32]()
+        var A_tt = A.to_tile_tensor[.int32]()
+        var B_tt = B.to_tile_tensor[.int32]()
+        var C_tt = C.to_tile_tensor[.int32]()
+        var D_tt = D.to_tile_tensor[.int32]()
+        var z_tt = z.to_tile_tensor[.int32]()
+        var delta_bias_tt = delta_bias.to_tile_tensor[.int32]()
 
         var strides = SelectiveScanFwdStrides(
             output=output.strides(),
@@ -635,6 +713,7 @@ struct SelectiveScanFwd[delta_softplus: Bool = False]:
             D_tt.LayoutType,
             z_tt.LayoutType,
             delta_bias_tt.LayoutType,
+            output_tt.Storage,
         ](
             ctx=ctx,
             total_batch_dim=total_batch_dim,
@@ -662,7 +741,7 @@ struct SelectiveScanFwd[delta_softplus: Bool = False]:
         args.dispatch_for_d_state[target](d_state)
 
 
-@compiler.register_shape_function("selective_scan_fwd")
+@extensibility.register_shape_function("selective_scan_fwd")
 def selective_scan_fwd_shape[
     dtype: DType,
 ](
@@ -675,10 +754,31 @@ def selective_scan_fwd_shape[
     z: InputTensor[dtype=dtype, rank=3, ...],
     delta_bias: InputTensor[dtype=dtype, rank=1, ...],
 ) -> IndexList[3]:
+    """Returns the output shape for the `selective_scan_fwd` op.
+
+    The output of a selective scan forward pass has the same shape as the
+    input sequence `u`: `(batch, dim, seqlen)`.
+
+    Parameters:
+        dtype: Element type of the input tensors (inferred).
+
+    Args:
+        u: Input sequence tensor with shape `(batch, dim, seqlen)`.
+        delta: Time-step tensor with shape `(batch, dim, seqlen)`.
+        A: State transition matrix with shape `(dim, d_state)`.
+        B: Input projection with shape `(batch, n_groups, d_state, seqlen)`.
+        C: Output projection with shape `(batch, n_groups, d_state, seqlen)`.
+        D: Skip connection with shape `(dim,)`.
+        z: Gating tensor with shape `(batch, dim, seqlen)`.
+        delta_bias: Delta bias with shape `(dim,)`.
+
+    Returns:
+        The shape of the output tensor `(batch, dim, seqlen)`.
+    """
     return u.shape()
 
 
-@compiler.register("selective_scan_fwd_minimal")
+@extensibility.register("selective_scan_fwd_minimal")
 struct SelectiveScanFwdMinimal[delta_softplus: Bool = False]:
     """Minimal selective scan forward pass - no optional D, z, or delta_bias.
 
@@ -722,13 +822,13 @@ struct SelectiveScanFwdMinimal[delta_softplus: Bool = False]:
         var n_groups = B.dim_size(1)
         var group_size = dim // n_groups
 
-        var output_tt = output.to_tile_tensor()
-        var x_tt = x.to_tile_tensor()
-        var u_tt = u.to_tile_tensor()
-        var delta_tt = delta.to_tile_tensor()
-        var A_tt = A.to_tile_tensor()
-        var B_tt = B.to_tile_tensor()
-        var C_tt = C.to_tile_tensor()
+        var output_tt = output.to_tile_tensor[.int32]()
+        var x_tt = x.to_tile_tensor[.int32]()
+        var u_tt = u.to_tile_tensor[.int32]()
+        var delta_tt = delta.to_tile_tensor[.int32]()
+        var A_tt = A.to_tile_tensor[.int32]()
+        var B_tt = B.to_tile_tensor[.int32]()
+        var C_tt = C.to_tile_tensor[.int32]()
 
         var strides = SelectiveScanFwdMinimalStrides(
             output=output.strides(),
@@ -768,6 +868,7 @@ struct SelectiveScanFwdMinimal[delta_softplus: Bool = False]:
             A_tt.LayoutType,
             B_tt.LayoutType,
             C_tt.LayoutType,
+            output_tt.Storage,
         ](
             ctx=ctx,
             total_batch_dim=total_batch_dim,
@@ -791,7 +892,7 @@ struct SelectiveScanFwdMinimal[delta_softplus: Bool = False]:
         args.dispatch_for_d_state[target](d_state)
 
 
-@compiler.register_shape_function("selective_scan_fwd_minimal")
+@extensibility.register_shape_function("selective_scan_fwd_minimal")
 def selective_scan_fwd_minimal_shape[
     dtype: DType,
 ](
@@ -801,10 +902,25 @@ def selective_scan_fwd_minimal_shape[
     B: InputTensor[dtype=dtype, rank=4, ...],
     C: InputTensor[dtype=dtype, rank=4, ...],
 ) -> IndexList[3]:
+    """Returns the output shape for the `selective_scan_fwd_minimal` op.
+
+    The output of the minimal selective scan forward pass has the same shape
+    as the input sequence `u`: `(batch, dim, seqlen)`.
+
+    Args:
+        u: Input sequence tensor with shape `(batch, dim, seqlen)`.
+        delta: Time-step tensor with shape `(batch, dim, seqlen)`.
+        A: State transition matrix with shape `(dim, d_state)`.
+        B: Input projection with shape `(batch, n_groups, d_state, seqlen)`.
+        C: Output projection with shape `(batch, n_groups, d_state, seqlen)`.
+
+    Returns:
+        The shape of the output tensor `(batch, dim, seqlen)`.
+    """
     return u.shape()
 
 
-@compiler.register("selective_scan_update")
+@extensibility.register("selective_scan_update")
 struct SelectiveScanUpdate[delta_softplus: Bool = False]:
     """Selective scan update operation for autoregressive inference.
 
@@ -851,17 +967,17 @@ struct SelectiveScanUpdate[delta_softplus: Bool = False]:
         var n_groups = B.dim_size(1)
         var group_size = dim // n_groups
 
-        var state_out_tt = state_out.to_tile_tensor()
-        var output_tt = output.to_tile_tensor()
-        var state_in_tt = state_in.to_tile_tensor()
-        var x_tt = x.to_tile_tensor()
-        var dt_tt = dt.to_tile_tensor()
-        var A_tt = A.to_tile_tensor()
-        var B_tt = B.to_tile_tensor()
-        var C_tt = C.to_tile_tensor()
-        var D_tt = D.to_tile_tensor()
-        var z_tt = z.to_tile_tensor()
-        var dt_bias_tt = dt_bias.to_tile_tensor()
+        var state_out_tt = state_out.to_tile_tensor[.int32]()
+        var output_tt = output.to_tile_tensor[.int32]()
+        var state_in_tt = state_in.to_tile_tensor[.int32]()
+        var x_tt = x.to_tile_tensor[.int32]()
+        var dt_tt = dt.to_tile_tensor[.int32]()
+        var A_tt = A.to_tile_tensor[.int32]()
+        var B_tt = B.to_tile_tensor[.int32]()
+        var C_tt = C.to_tile_tensor[.int32]()
+        var D_tt = D.to_tile_tensor[.int32]()
+        var z_tt = z.to_tile_tensor[.int32]()
+        var dt_bias_tt = dt_bias.to_tile_tensor[.int32]()
 
         var strides = SelectiveScanUpdateStrides(
             state_out=state_out.strides(),
@@ -909,6 +1025,7 @@ struct SelectiveScanUpdate[delta_softplus: Bool = False]:
             D_tt.LayoutType,
             z_tt.LayoutType,
             dt_bias_tt.LayoutType,
+            state_out_tt.Storage,
         ](
             ctx=ctx,
             total_batch_dim=total_batch_dim,
@@ -935,7 +1052,7 @@ struct SelectiveScanUpdate[delta_softplus: Bool = False]:
         args.dispatch_for_d_state[target](d_state)
 
 
-@compiler.register_shape_function("selective_scan_update")
+@extensibility.register_shape_function("selective_scan_update")
 def selective_scan_update_shape[
     dtype: DType,
 ](
@@ -949,4 +1066,24 @@ def selective_scan_update_shape[
     z: InputTensor[dtype=dtype, rank=2, ...],
     dt_bias: InputTensor[dtype=dtype, rank=1, ...],
 ) -> Tuple[IndexList[3], IndexList[2]]:
+    """Returns the output shapes for the `selective_scan_update` op.
+
+    The update step produces two tensors: the updated SSM state and the
+    single-step output for the new token.
+
+    Args:
+        state_in: Input SSM state with shape `(batch, dim, d_state)`.
+        x: Input token with shape `(batch, dim)`.
+        dt: Time-delta tensor with shape `(batch, dim)`.
+        A: State transition matrix with shape `(dim, d_state)`.
+        B: Input matrix with shape `(batch, n_groups, d_state)`.
+        C: Output matrix with shape `(batch, n_groups, d_state)`.
+        D: Skip connection with shape `(dim,)`.
+        z: Gating tensor with shape `(batch, dim)`.
+        dt_bias: Time-delta bias with shape `(dim,)`.
+
+    Returns:
+        A tuple of `(state_out_shape, output_shape)` where `state_out_shape`
+        matches `state_in.shape()` and `output_shape` matches `x.shape()`.
+    """
     return (state_in.shape(), x.shape())

@@ -788,9 +788,7 @@ class _Pad:
 
     def _skip_if_gpu(self) -> None:
         if not isinstance(self.MESH_2.devices[0], CPU):
-            pytest.skip(
-                "PadConstant Mojo kernel GPU has InlineArray capture bug"
-            )
+            pytest.skip("PadConstant Mojo kernel GPU has Array capture bug")
 
     def test_pad_replicated(self) -> None:
         """Pad a replicated tensor — placement preserved."""
@@ -1235,5 +1233,3 @@ class ShapeTests(
     _SliceStore,
 ):
     """Aggregates all shape test classes for thin subclassing."""
-
-    pass

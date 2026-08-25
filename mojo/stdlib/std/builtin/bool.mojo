@@ -62,6 +62,7 @@ trait Boolable:
 # ===----------------------------------------------------------------------=== #
 
 
+@stable(since="1.0")
 @lldb_formatter_wrapping_type
 struct Bool(
     Boolable,
@@ -158,7 +159,7 @@ struct Bool(
 
     @always_inline("nodebug")
     @implicit
-    def __init__(out self, value: Scalar[DType.bool]):
+    def __init__(out self, value: Scalar[.bool]):
         """Convert a scalar SIMD value to a Bool.
 
         Args:
@@ -211,7 +212,13 @@ struct Bool(
             writer: The object to write to.
         """
 
-        writer.write("True" if self else "False")
+        # `write_string` rather than `write` so the literal reaches the writer
+        # without becoming a `String`. The arms name `StaticString` because the
+        # two literals have distinct types, and a conditional over the bare
+        # literals unifies them through `String`.
+        writer.write_string(
+            StaticString("True") if self else StaticString("False")
+        )
 
     @no_inline
     def write_repr_to(self, mut writer: Some[Writer]):
@@ -233,16 +240,6 @@ struct Bool(
             1 if the Bool is True, 0 otherwise.
         """
         return select[Int](self, 1, 0)
-
-    @always_inline("builtin")
-    def __as_int__(self) -> Int:
-        """Implicitly convert to an integral representation of the value,
-        wherever an `Int` is expected.
-
-        Returns:
-            The integral representation of the value.
-        """
-        return self.__int__()
 
     @always_inline("nodebug")
     def __float__(self) -> Float64:
@@ -469,7 +466,7 @@ struct Bool(
         Args:
             hasher: The hasher instance.
         """
-        hasher._update_with_simd(Scalar[DType.bool](self))
+        hasher._update_with_simd(Scalar[.bool](self))
 
     @doc_hidden
     def __init__(out self, *, py: PythonObject) raises:
@@ -494,7 +491,7 @@ def any[
     IterableType: Iterable
 ](iterable: IterableType) -> Bool where conforms_to(
     IterableType.IteratorType[origin_of(iterable)].Element,
-    Boolable & ImplicitlyDeletable,
+    Boolable & Deinitable,
 ):
     """Checks if **all** elements in the list are truthy.
 
@@ -525,7 +522,7 @@ def any(value: SIMD) -> Bool:
         `True` if **any** element in the simd vector is truthy, `False`
         otherwise.
     """
-    return value.cast[DType.bool]().reduce_or()
+    return value.cast[.bool]().reduce_or()
 
 
 # ===----------------------------------------------------------------------=== #
@@ -537,7 +534,7 @@ def all[
     IterableType: Iterable
 ](iterable: IterableType) -> Bool where conforms_to(
     IterableType.IteratorType[origin_of(iterable)].Element,
-    Boolable & ImplicitlyDeletable,
+    Boolable & Deinitable,
 ):
     """Checks if **all** elements in the list are truthy.
 
@@ -567,4 +564,4 @@ def all(value: SIMD) -> Bool:
         `True` if **all** elements in the simd vector are truthy, `False`
         otherwise.
     """
-    return value.cast[DType.bool]().reduce_and()
+    return value.cast[.bool]().reduce_and()

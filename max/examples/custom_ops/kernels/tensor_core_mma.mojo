@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import compiler
+import extensibility
 
 from std.math import ceildiv
 from std.math.uutils import udivmod
@@ -25,24 +25,23 @@ from extensibility import register
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
-    barrier,
     block_idx,
     lane_id,
     warp_id,
 )
-from std.gpu.host import DeviceBuffer, DeviceContext
-from std.gpu.memory import (
-    AddressSpace,
+from max.gpu.sync import barrier
+from max.gpu.host import DeviceBuffer, DeviceContext
+from max.gpu.memory import (
     async_copy_commit_group,
     async_copy_wait_all,
 )
-from std.gpu.sync import AMDScheduleBarrierMask
-from std.gpu.sync import schedule_barrier as amd_schedule_barrier
-from std.gpu.sync import schedule_group_barrier
+from max.gpu.sync import AMDScheduleBarrierMask
+from max.gpu.sync import schedule_barrier as amd_schedule_barrier
+from max.gpu.sync import schedule_group_barrier
 
 # Import AMD helper functions and structs from the kernels subdirectory
 
-from kernels.amd_helpers import (
+from .amd_helpers import (
     AMD_MMA,
     MMATileBuffers,
     amd_scheduling_hints,
@@ -68,7 +67,7 @@ from std.utils import StaticTuple
 from std.utils.index import Index, IndexList
 
 
-@compiler.register("tensor_core_mma")
+@extensibility.register("tensor_core_mma")
 struct TensorCoreMMA[algorithm: StaticString]:
     """
     The central custom operation that dispatches to multiple different
@@ -84,9 +83,9 @@ struct TensorCoreMMA[algorithm: StaticString]:
         N: Int,
         K: Int,
     ](
-        output: OutputTensor[dtype=DType.float32, rank=2, ...],
-        a: InputTensor[dtype=DType.float16, rank=2, ...],
-        b: InputTensor[dtype=DType.float16, rank=2, ...],
+        output: OutputTensor[dtype=.float32, rank=2, ...],
+        a: InputTensor[dtype=.float16, rank=2, ...],
+        b: InputTensor[dtype=.float16, rank=2, ...],
         perform_validation: Bool,
         # the context is needed for some GPU calls
         ctx: DeviceContext,
@@ -94,12 +93,12 @@ struct TensorCoreMMA[algorithm: StaticString]:
         # At graph compilation time, we will know what device we are compiling
         # this operation for, so we can specialize it for the target hardware.
         comptime if target == "gpu":
-            a_tt = a.to_tile_tensor().as_unsafe_any_origin()
-            b_tt = b.to_tile_tensor().as_unsafe_any_origin()
+            var a_tt = a.to_tile_tensor().as_unsafe_any_origin()
+            var b_tt = b.to_tile_tensor().as_unsafe_any_origin()
 
-            gpu_ctx = ctx
+            var gpu_ctx = ctx
 
-            var b_ptr_to_use: UnsafePointer[Float16, MutAnyOrigin]
+            var b_ptr_to_use: Pointer[Float16, MutAnyOrigin]
 
             # Only transpose the B matrix if we are validating the results,
             # otherwise we can pretend the matrix is already transposed
@@ -114,7 +113,9 @@ struct TensorCoreMMA[algorithm: StaticString]:
                 # Copy with transpose: element at (i,j) in original KxN goes to (j,i) in transposed NxK
                 for i in range(K):  # rows of original KxN matrix
                     for j in range(N):  # cols of original KxN matrix
-                        b_transposed_ptr[j * K + i] = b_tt.ptr[i * N + j]
+                        b_transposed_ptr[
+                            unsafe_offset=j * K + i
+                        ] = b_tt._storage[unsafe_offset=i * N + j]
 
                 b_ptr_to_use = b_transposed_ptr.as_unsafe_any_origin()
             else:
@@ -125,10 +126,10 @@ struct TensorCoreMMA[algorithm: StaticString]:
             # `comptime stride` stays compile-time). The other algorithms use the
             # `TileTensor` views (`a_tt`/`b_tt`/`out_tt`) directly.
             var b_transposed_tt = TileTensor(
-                Span(ptr=b_ptr_to_use, length=N * K), row_major[N, K]()
+                Span(unsafe_ptr=b_ptr_to_use, length=N * K), row_major[N, K]()
             ).as_unsafe_any_origin()
 
-            out_tt = output.to_tile_tensor().as_unsafe_any_origin()
+            var out_tt = output.to_tile_tensor().as_unsafe_any_origin()
 
             gpu_ctx.synchronize()
 
@@ -136,7 +137,7 @@ struct TensorCoreMMA[algorithm: StaticString]:
             gpu_ctx.enqueue_memset(
                 DeviceBuffer[output.dtype](
                     gpu_ctx,
-                    out_tt.ptr,
+                    out_tt._storage,
                     M * N,
                     owning=False,
                 ),
@@ -415,7 +416,7 @@ struct TensorCoreMMA[algorithm: StaticString]:
 
                 # `compare_equal` takes `TileTensor`; pass the reference and
                 # computed views directly.
-                print_results = True
+                var print_results = True
                 compare_equal[output.dtype, type_of(reference).LayoutType](
                     reference, out_tt, print_results
                 )
@@ -481,24 +482,26 @@ def naive_tensor[
     comptime simd_width = simd_width_of[input_type]()
 
     # Calculate warp tile coordinates within the block
-    warp_y, warp_x = divmod(warp_id(), BN // MMA_N)
+    var warp_y, warp_x = divmod(warp_id(), BN // MMA_N)
 
     # Get the warp tile of the output matrix C
-    C_warp_tile = C.tile[BM, BN](block_idx.y, block_idx.x).tile[MMA_M, MMA_N](
-        warp_y, warp_x
-    )
+    var C_warp_tile = C.tile[BM, BN](block_idx.y, block_idx.x).tile[
+        MMA_M, MMA_N
+    ](warp_y, warp_x)
 
     # Create tensor core operation object with mixed precision: f16 input, f32 accumulator
-    mma_op = TensorCore[output_type, input_type, Index(MMA_M, MMA_N, MMA_K)]()
+    var mma_op = TensorCore[
+        output_type, input_type, Index(MMA_M, MMA_N, MMA_K)
+    ]()
 
     # Calculate correct accumulator fragment size based on MMA configuration
     # AMD 32x32x8 MFMA requires 16 f32 accumulator values per thread (with WARP_SIZE=64)
     comptime frag_size = MMA_M * MMA_N // WARP_SIZE
 
     # Allocate only small register tile for accumulating partial results
-    c_reg = stack_allocation[
-        dtype=output_type, address_space=AddressSpace.LOCAL
-    ](row_major[1, frag_size]()).fill(0)
+    var c_reg = stack_allocation[dtype=output_type, address_space=.LOCAL](
+        row_major[1, frag_size]()
+    ).fill(0)
 
     # `TensorCore` operates on `LayoutTensor`, so bridge the register tile to a
     # `LayoutTensor` view (aliasing the same storage) for the MMA fragment ops.
@@ -508,19 +511,19 @@ def naive_tensor[
     # No intermediate tile caching - simpler but less efficient
     for k_i in range(ceildiv(K, BK)):
         # Get the tiles of A and B for the current iteration
-        A_block_tile = A.tile[BM, BK](block_idx.y, k_i)
-        B_block_tile = B.tile[BK, BN](k_i, block_idx.x)
+        var A_block_tile = A.tile[BM, BK](block_idx.y, k_i)
+        var B_block_tile = B.tile[BK, BN](k_i, block_idx.x)
 
         # Get the warp tiles directly from global memory (naive approach)
-        A_warp_tile = A_block_tile.tile[MMA_M, MMA_K](warp_y, 0)
-        B_warp_tile = B_block_tile.tile[MMA_K, MMA_N](0, warp_x)
+        var A_warp_tile = A_block_tile.tile[MMA_M, MMA_K](warp_y, 0)
+        var B_warp_tile = B_block_tile.tile[MMA_K, MMA_N](0, warp_x)
 
         # Load fragments directly from global memory
-        a_reg = mma_op.load_a(A_warp_tile.to_layout_tensor())
-        b_reg = mma_op.load_b(B_warp_tile.to_layout_tensor())
+        var a_reg = mma_op.load_a(A_warp_tile.to_layout_tensor())
+        var b_reg = mma_op.load_b(B_warp_tile.to_layout_tensor())
 
         # Perform MMA operation using f32 accumulator
-        d_reg = mma_op.mma_op(a_reg, b_reg, c_reg_lt)
+        var d_reg = mma_op.mma_op(a_reg, b_reg, c_reg_lt)
 
         # Manual accumulation: bypass TensorCore store_d
         # Copy result directly to register tile
@@ -594,32 +597,34 @@ def basic_shared_mem[
     comptime simd_width = simd_width_of[input_type]()
 
     # Calculate warp tile coordinates within the block
-    warp_y, warp_x = divmod(warp_id(), BN // MMA_N)
+    var warp_y, warp_x = divmod(warp_id(), BN // MMA_N)
 
     # Get the warp tile of the output matrix C
-    C_warp_tile = C.tile[BM, BN](block_idx.y, block_idx.x).tile[MMA_M, MMA_N](
-        warp_y, warp_x
-    )
+    var C_warp_tile = C.tile[BM, BN](block_idx.y, block_idx.x).tile[
+        MMA_M, MMA_N
+    ](warp_y, warp_x)
 
     # Create tensor core operation object with mixed precision: f16 input, f32 accumulator
-    mma_op = TensorCore[output_type, input_type, Index(MMA_M, MMA_N, MMA_K)]()
+    var mma_op = TensorCore[
+        output_type, input_type, Index(MMA_M, MMA_N, MMA_K)
+    ]()
 
     # Allocate shared memory for tiles of A and B
-    A_sram_tile = stack_allocation[
-        dtype=input_type, address_space=AddressSpace.SHARED
-    ](row_major[BM, BK]())
-    B_sram_tile = stack_allocation[
-        dtype=input_type, address_space=AddressSpace.SHARED
-    ](row_major[BK, BN]())
+    var A_sram_tile = stack_allocation[dtype=input_type, address_space=.SHARED](
+        row_major[BM, BK]()
+    )
+    var B_sram_tile = stack_allocation[dtype=input_type, address_space=.SHARED](
+        row_major[BK, BN]()
+    )
 
     # Calculate correct accumulator fragment size based on MMA configuration
     # AMD 32x32x8 MFMA requires 16 f32 accumulator values per thread (with WARP_SIZE=64)
     comptime frag_size = MMA_M * MMA_N // WARP_SIZE
 
     # Allocate register tile for accumulating partial results
-    c_reg = stack_allocation[
-        dtype=output_type, address_space=AddressSpace.LOCAL
-    ](row_major[1, frag_size]()).fill(0)
+    var c_reg = stack_allocation[dtype=output_type, address_space=.LOCAL](
+        row_major[1, frag_size]()
+    ).fill(0)
 
     # `TensorCore` operates on `LayoutTensor`, so bridge the register tile to a
     # `LayoutTensor` view (aliasing the same storage) for the MMA fragment ops.
@@ -634,8 +639,8 @@ def basic_shared_mem[
         comptime load_b_layout = row_major[BK, NUM_THREADS // BK]()  # 8x32
 
         # Get the tiles of A and B for the current iteration
-        A_dram_tile = A.tile[BM, BK](block_idx.y, k_i)
-        B_dram_tile = B.tile[BK, BN](k_i, block_idx.x)
+        var A_dram_tile = A.tile[BM, BK](block_idx.y, k_i)
+        var B_dram_tile = B.tile[BK, BN](k_i, block_idx.x)
 
         # Load tiles using properly sized thread layouts to avoid out-of-bounds access
         copy_dram_to_sram[thread_layout=load_a_layout](A_sram_tile, A_dram_tile)
@@ -643,15 +648,15 @@ def basic_shared_mem[
         barrier()  # Synchronize after loading tiles
 
         # Get the warp tiles of A and B from shared memory
-        A_warp_tile = A_sram_tile.tile[MMA_M, MMA_K](warp_y, 0)
-        B_warp_tile = B_sram_tile.tile[MMA_K, MMA_N](0, warp_x)
+        var A_warp_tile = A_sram_tile.tile[MMA_M, MMA_K](warp_y, 0)
+        var B_warp_tile = B_sram_tile.tile[MMA_K, MMA_N](0, warp_x)
 
         # Load fragments
-        a_reg = mma_op.load_a(A_warp_tile.to_layout_tensor())
-        b_reg = mma_op.load_b(B_warp_tile.to_layout_tensor())
+        var a_reg = mma_op.load_a(A_warp_tile.to_layout_tensor())
+        var b_reg = mma_op.load_b(B_warp_tile.to_layout_tensor())
 
         # Perform MMA operation using f32 accumulator
-        d_reg = mma_op.mma_op(a_reg, b_reg, c_reg_lt)
+        var d_reg = mma_op.mma_op(a_reg, b_reg, c_reg_lt)
 
         # Manual accumulation: bypass TensorCore store_d
         # Copy result directly to register tile
@@ -729,10 +734,10 @@ def multi_block_tiled[
     comptime simd_width = simd_width_of[input_type]()
 
     # Calculate warp tile coordinates within the block
-    warp_y, warp_x = divmod(warp_id(), BN // MMA_N)
+    var warp_y, warp_x = divmod(warp_id(), BN // MMA_N)
 
     # Get the warp tile of the output matrix C
-    C_warp_tile = C.tile[BM, BN](block_idx.y, block_idx.x).tile[WM, WN](
+    var C_warp_tile = C.tile[BM, BN](block_idx.y, block_idx.x).tile[WM, WN](
         warp_y, warp_x
     )
 
@@ -742,24 +747,26 @@ def multi_block_tiled[
     ), "Warp tile should be an integer multiple of instruction shape"
 
     # Create tensor core operation object with mixed precision: f16 input, f32 accumulator
-    mma_op = TensorCore[output_type, input_type, Index(MMA_M, MMA_N, MMA_K)]()
+    var mma_op = TensorCore[
+        output_type, input_type, Index(MMA_M, MMA_N, MMA_K)
+    ]()
 
     # Allocate shared memory for tiles of A and B
-    A_sram_tile = stack_allocation[
-        dtype=input_type, address_space=AddressSpace.SHARED
-    ](row_major[BM, BK]())
-    B_sram_tile = stack_allocation[
-        dtype=input_type, address_space=AddressSpace.SHARED
-    ](row_major[BK, BN]())
+    var A_sram_tile = stack_allocation[dtype=input_type, address_space=.SHARED](
+        row_major[BM, BK]()
+    )
+    var B_sram_tile = stack_allocation[dtype=input_type, address_space=.SHARED](
+        row_major[BK, BN]()
+    )
 
     # Calculate correct accumulator fragment size based on MMA configuration
     # AMD 32x32x8 MFMA requires 16 f32 accumulator values per thread (with WARP_SIZE=64)
     comptime frag_size = MMA_M * MMA_N // WARP_SIZE
 
     # Allocate register tile for accumulating partial results
-    c_reg = stack_allocation[
-        dtype=output_type, address_space=AddressSpace.LOCAL
-    ](row_major[WM // MMA_M, (WN * frag_size) // MMA_N]()).fill(0)
+    var c_reg = stack_allocation[dtype=output_type, address_space=.LOCAL](
+        row_major[WM // MMA_M, (WN * frag_size) // MMA_N]()
+    ).fill(0)
 
     # Thread layout for memory transfers
     comptime load_layout = row_major[16, 16]()  # 256 threads - full utilization
@@ -767,8 +774,8 @@ def multi_block_tiled[
     # Iterate over tiles of A and B in the K dimension
     for k_i in range(ceildiv(K, BK)):
         # Get the tiles of A and B for the current iteration
-        A_dram_tile = A.tile[BM, BK](block_idx.y, k_i)
-        B_dram_tile = B.tile[BK, BN](k_i, block_idx.x)
+        var A_dram_tile = A.tile[BM, BK](block_idx.y, k_i)
+        var B_dram_tile = B.tile[BK, BN](k_i, block_idx.x)
 
         # Load tiles using non-vectorized synchronous copy (working version)
         copy_dram_to_sram[thread_layout=load_layout](A_sram_tile, A_dram_tile)
@@ -776,28 +783,32 @@ def multi_block_tiled[
         barrier()  # Synchronize after loading tiles
 
         # Get the warp tiles of A and B from shared memory
-        A_warp_tile = A_sram_tile.tile[WM, BK](warp_y, 0)
-        B_warp_tile = B_sram_tile.tile[BK, WN](0, warp_x)
+        var A_warp_tile = A_sram_tile.tile[WM, BK](warp_y, 0)
+        var B_warp_tile = B_sram_tile.tile[BK, WN](0, warp_x)
 
         # Iterate over the elements in the K dimension within the tiles
         comptime for mma_k in range(BK // MMA_K):
             comptime for mma_m in range(WM // MMA_M):
                 comptime for mma_n in range(WN // MMA_N):
                     # Get the MMA tiles directly from shared memory
-                    A_mma_tile = A_warp_tile.tile[MMA_M, MMA_K](mma_m, mma_k)
-                    B_mma_tile = B_warp_tile.tile[MMA_K, MMA_N](mma_k, mma_n)
+                    var A_mma_tile = A_warp_tile.tile[MMA_M, MMA_K](
+                        mma_m, mma_k
+                    )
+                    var B_mma_tile = B_warp_tile.tile[MMA_K, MMA_N](
+                        mma_k, mma_n
+                    )
 
                     # Get the register tile for the current MMA operation, bridged
                     # to a `LayoutTensor` view for the MMA fragment ops.
-                    c_reg_m_n = c_reg.tile[1, frag_size](mma_m, mma_n)
+                    var c_reg_m_n = c_reg.tile[1, frag_size](mma_m, mma_n)
                     var c_reg_m_n_lt = c_reg_m_n.to_layout_tensor()
 
                     # Load fragments
-                    a_reg = mma_op.load_a(A_mma_tile.to_layout_tensor())
-                    b_reg = mma_op.load_b(B_mma_tile.to_layout_tensor())
+                    var a_reg = mma_op.load_a(A_mma_tile.to_layout_tensor())
+                    var b_reg = mma_op.load_b(B_mma_tile.to_layout_tensor())
 
                     # Perform MMA operation using f32 accumulator
-                    d_reg = mma_op.mma_op(a_reg, b_reg, c_reg_m_n_lt)
+                    var d_reg = mma_op.mma_op(a_reg, b_reg, c_reg_m_n_lt)
 
                     # Manual accumulation: bypass TensorCore store_d
                     # Copy result directly to register tile
@@ -882,10 +893,10 @@ def scheduler_hints[
     comptime simd_width = simd_width_of[input_type]()
 
     # Calculate warp tile coordinates within the block
-    warp_y, warp_x = divmod(warp_id(), BN // MMA_N)
+    var warp_y, warp_x = divmod(warp_id(), BN // MMA_N)
 
     # Get the warp tile of the output matrix C
-    C_warp_tile = C.tile[BM, BN](block_idx.y, block_idx.x).tile[WM, WN](
+    var C_warp_tile = C.tile[BM, BN](block_idx.y, block_idx.x).tile[WM, WN](
         warp_y, warp_x
     )
 
@@ -895,15 +906,17 @@ def scheduler_hints[
     ), "Warp tile should be an integer multiple of instruction shape"
 
     # Create tensor core operation object with mixed precision: f16 input, f32 accumulator
-    mma_op = TensorCore[output_type, input_type, Index(MMA_M, MMA_N, MMA_K)]()
+    var mma_op = TensorCore[
+        output_type, input_type, Index(MMA_M, MMA_N, MMA_K)
+    ]()
 
     # Allocate single set of shared memory buffers (single buffering to fit memory limit)
-    A_sram_tile = stack_allocation[
-        dtype=input_type, address_space=AddressSpace.SHARED
-    ](row_major[BM, BK]())
-    B_sram_tile = stack_allocation[
-        dtype=input_type, address_space=AddressSpace.SHARED
-    ](row_major[BK, BN]())
+    var A_sram_tile = stack_allocation[dtype=input_type, address_space=.SHARED](
+        row_major[BM, BK]()
+    )
+    var B_sram_tile = stack_allocation[dtype=input_type, address_space=.SHARED](
+        row_major[BK, BN]()
+    )
 
     # Calculate correct accumulator fragment size based on MMA configuration
     # AMD 32x32x8 MFMA requires 16 f32 accumulator values per thread (with WARP_SIZE=64)
@@ -911,9 +924,9 @@ def scheduler_hints[
 
     # Allocate register tile for accumulating partial results
     # AMD 32x32x8 MFMA requires 16 f32 accumulator values per thread (with WARP_SIZE=64)
-    c_reg = stack_allocation[
-        dtype=output_type, address_space=AddressSpace.LOCAL
-    ](row_major[WM // MMA_M, (WN * frag_size) // MMA_N]()).fill(0)
+    var c_reg = stack_allocation[dtype=output_type, address_space=.LOCAL](
+        row_major[WM // MMA_M, (WN * frag_size) // MMA_N]()
+    ).fill(0)
 
     # Thread layout for memory transfers
     comptime load_layout = row_major[16, 16]()  # 256 threads - full utilization
@@ -921,8 +934,8 @@ def scheduler_hints[
     # Simplified single-buffer pipeline (similar to basic_shared_mem but with AMD scheduling)
     for k_i in range(ceildiv(K, BK)):
         # Get the tiles of A and B for the current iteration
-        A_dram_tile = A.tile[BM, BK](block_idx.y, k_i)
-        B_dram_tile = B.tile[BK, BN](k_i, block_idx.x)
+        var A_dram_tile = A.tile[BM, BK](block_idx.y, k_i)
+        var B_dram_tile = B.tile[BK, BN](k_i, block_idx.x)
 
         # Load tiles using synchronous copy (single buffering)
         copy_dram_to_sram[thread_layout=load_layout](A_sram_tile, A_dram_tile)
@@ -934,26 +947,30 @@ def scheduler_hints[
             amd_schedule_barrier()
 
         # Get the warp tiles from shared memory
-        A_warp_tile = A_sram_tile.tile[WM, BK](warp_y, 0)
-        B_warp_tile = B_sram_tile.tile[BK, WN](0, warp_x)
+        var A_warp_tile = A_sram_tile.tile[WM, BK](warp_y, 0)
+        var B_warp_tile = B_sram_tile.tile[BK, WN](0, warp_x)
 
         # Perform MMA operations on current tile with AMD scheduling hints
         comptime for mma_k in range(BK // MMA_K):
             comptime for mma_m in range(WM // MMA_M):
                 comptime for mma_n in range(WN // MMA_N):
                     # Get the MMA tiles from shared memory
-                    A_mma_tile = A_warp_tile.tile[MMA_M, MMA_K](mma_m, mma_k)
-                    B_mma_tile = B_warp_tile.tile[MMA_K, MMA_N](mma_k, mma_n)
+                    var A_mma_tile = A_warp_tile.tile[MMA_M, MMA_K](
+                        mma_m, mma_k
+                    )
+                    var B_mma_tile = B_warp_tile.tile[MMA_K, MMA_N](
+                        mma_k, mma_n
+                    )
 
                     # Get the register tile for the current MMA operation, bridged
                     # to a `LayoutTensor` view for the MMA fragment ops.
-                    c_reg_m_n = c_reg.tile[1, frag_size](mma_m, mma_n)
+                    var c_reg_m_n = c_reg.tile[1, frag_size](mma_m, mma_n)
                     var c_reg_m_n_lt = c_reg_m_n.to_layout_tensor()
 
                     # Load fragments and perform MMA
-                    a_reg = mma_op.load_a(A_mma_tile.to_layout_tensor())
-                    b_reg = mma_op.load_b(B_mma_tile.to_layout_tensor())
-                    d_reg = mma_op.mma_op(a_reg, b_reg, c_reg_m_n_lt)
+                    var a_reg = mma_op.load_a(A_mma_tile.to_layout_tensor())
+                    var b_reg = mma_op.load_b(B_mma_tile.to_layout_tensor())
+                    var d_reg = mma_op.mma_op(a_reg, b_reg, c_reg_m_n_lt)
 
                     # Manual accumulation for 32x32x8
                     c_reg_m_n_lt.copy_from(d_reg)
@@ -1056,10 +1073,10 @@ def double_buffer[
     comptime simd_width = simd_width_of[input_type]()
 
     # Calculate warp tile coordinates within the block
-    warp_y, warp_x = divmod(warp_id(), BN // MMA_N)
+    var warp_y, warp_x = divmod(warp_id(), BN // MMA_N)
 
     # Get the warp tile of the output matrix C
-    C_warp_tile = C.tile[BM, BN](block_idx.y, block_idx.x).tile[WM, WN](
+    var C_warp_tile = C.tile[BM, BN](block_idx.y, block_idx.x).tile[WM, WN](
         warp_y, warp_x
     )
 
@@ -1069,20 +1086,22 @@ def double_buffer[
     ), "Warp tile should be an integer multiple of instruction shape"
 
     # Create tensor core operation object with mixed precision: f16 input, f32 accumulator
-    mma_op = TensorCore[output_type, input_type, Index(MMA_M, MMA_N, MMA_K)]()
+    var mma_op = TensorCore[
+        output_type, input_type, Index(MMA_M, MMA_N, MMA_K)
+    ]()
 
     # Allocate two sets of shared memory buffers for double buffering
-    A_sram_buffer_0 = stack_allocation[
-        dtype=input_type, address_space=AddressSpace.SHARED
+    var A_sram_buffer_0 = stack_allocation[
+        dtype=input_type, address_space=.SHARED
     ](row_major[BM, BK]())
-    A_sram_buffer_1 = stack_allocation[
-        dtype=input_type, address_space=AddressSpace.SHARED
+    var A_sram_buffer_1 = stack_allocation[
+        dtype=input_type, address_space=.SHARED
     ](row_major[BM, BK]())
-    B_sram_buffer_0 = stack_allocation[
-        dtype=input_type, address_space=AddressSpace.SHARED
+    var B_sram_buffer_0 = stack_allocation[
+        dtype=input_type, address_space=.SHARED
     ](row_major[BK, BN]())
-    B_sram_buffer_1 = stack_allocation[
-        dtype=input_type, address_space=AddressSpace.SHARED
+    var B_sram_buffer_1 = stack_allocation[
+        dtype=input_type, address_space=.SHARED
     ](row_major[BK, BN]())
 
     # Calculate correct accumulator fragment size based on MMA configuration
@@ -1091,9 +1110,9 @@ def double_buffer[
 
     # Allocate register tile for accumulating partial results
     # AMD 32x32x8 MFMA requires 16 f32 accumulator values per thread (with WARP_SIZE=64)
-    c_reg = stack_allocation[
-        dtype=output_type, address_space=AddressSpace.LOCAL
-    ](row_major[WM // MMA_M, (WN * frag_size) // MMA_N]()).fill(0)
+    var c_reg = stack_allocation[dtype=output_type, address_space=.LOCAL](
+        row_major[WM // MMA_M, (WN * frag_size) // MMA_N]()
+    ).fill(0)
     # Thread layout for memory transfers
     comptime load_layout = row_major[32, 8]()  # 256 threads - full utilization
 
@@ -1164,26 +1183,30 @@ def double_buffer[
 
         # === COMPUTE PHASE: Use current buffers for computation ===
         # Get the warp tiles from the current compute buffers
-        A_warp_tile = A_compute_buffer.tile[WM, BK](warp_y, 0)
-        B_warp_tile = B_compute_buffer.tile[BK, WN](0, warp_x)
+        var A_warp_tile = A_compute_buffer.tile[WM, BK](warp_y, 0)
+        var B_warp_tile = B_compute_buffer.tile[BK, WN](0, warp_x)
 
         # Perform MMA operations on current tile
         comptime for mma_k in range(BK // MMA_K):
             comptime for mma_m in range(WM // MMA_M):
                 comptime for mma_n in range(WN // MMA_N):
                     # Get the MMA tiles from shared memory
-                    A_mma_tile = A_warp_tile.tile[MMA_M, MMA_K](mma_m, mma_k)
-                    B_mma_tile = B_warp_tile.tile[MMA_K, MMA_N](mma_k, mma_n)
+                    var A_mma_tile = A_warp_tile.tile[MMA_M, MMA_K](
+                        mma_m, mma_k
+                    )
+                    var B_mma_tile = B_warp_tile.tile[MMA_K, MMA_N](
+                        mma_k, mma_n
+                    )
 
                     # Get the register tile for the current MMA operation, bridged
                     # to a `LayoutTensor` view for the MMA fragment ops.
-                    c_reg_m_n = c_reg.tile[1, frag_size](mma_m, mma_n)
+                    var c_reg_m_n = c_reg.tile[1, frag_size](mma_m, mma_n)
                     var c_reg_m_n_lt = c_reg_m_n.to_layout_tensor()
 
                     # Load fragments and perform MMA
-                    a_reg = mma_op.load_a(A_mma_tile.to_layout_tensor())
-                    b_reg = mma_op.load_b(B_mma_tile.to_layout_tensor())
-                    d_reg = mma_op.mma_op(a_reg, b_reg, c_reg_m_n_lt)
+                    var a_reg = mma_op.load_a(A_mma_tile.to_layout_tensor())
+                    var b_reg = mma_op.load_b(B_mma_tile.to_layout_tensor())
+                    var d_reg = mma_op.mma_op(a_reg, b_reg, c_reg_m_n_lt)
 
                     # Manual accumulation: bypass TensorCore store_d
                     # Copy result directly to register tile
@@ -1300,7 +1323,7 @@ def mma_tile_buffers[
     var warp_k, warp_m = udivmod(warp_km, num_warps_m)
 
     # Helper function for thread layout
-    @parameter
+    @__parameter
     def get_thread_layout() -> Layout:
         # TODO: Document the logic behind this layout
         # Define a layout that corresponds to the below pattern:
@@ -1334,7 +1357,7 @@ def mma_tile_buffers[
         return materialize[blocked_product(base_layout, tiler_layout)]()
 
     # Helper function for shared memory layout
-    @parameter
+    @__parameter
     def get_smem_layout[block_rows: Int]() -> Layout:
         # Shared memory layout
         #
@@ -1412,25 +1435,25 @@ def mma_tile_buffers[
     # AMD 32x32x8 MFMA requires 16 f32 accumulator values per thread (with WARP_SIZE=64)
     comptime frag_size = (MMA_M * MMA_N) // WARP_SIZE
 
-    var c_reg_tile = stack_allocation[
-        dtype=accum_type, address_space=AddressSpace.LOCAL
-    ](row_major[num_m_mmas * num_n_mmas, frag_size]()).fill(0)
+    var c_reg_tile = stack_allocation[dtype=accum_type, address_space=.LOCAL](
+        row_major[num_m_mmas * num_n_mmas, frag_size]()
+    ).fill(0)
 
     # Helper functions for matrix operations
     @always_inline
-    @parameter
+    @__parameter
     def load_tiles_from_dram():
         a_tiles.load_from_dram()
         b_tiles.load_from_dram()
 
     @always_inline
-    @parameter
+    @__parameter
     def copy_tiles_to_shared():
         a_tiles.copy_to_shared()
         b_tiles.copy_to_shared()
 
     @always_inline
-    @parameter
+    @__parameter
     def load_tiles_from_shared[k_tile_idx: Int]():
         a_tiles.load_tile_from_shared[k_tile_idx, is_a=True]()
         b_tiles.load_tile_from_shared[k_tile_idx, is_a=True]()

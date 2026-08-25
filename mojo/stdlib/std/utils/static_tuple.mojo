@@ -21,19 +21,18 @@ from std.utils import StaticTuple
 
 from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 from std.builtin.rebind import downcast
-from std.memory import (
-    is_trivially_copyable,
-    is_trivially_destructible,
-    is_trivially_movable,
-)
 from std.reflection import reflect
-from std.utils.type_functions import ConditionalType
+from std.traits import (
+    IsTriviallyCopyable,
+    IsTriviallyDeinitable,
+    IsTriviallyMovable,
+)
 
 # ===-----------------------------------------------------------------------===#
 # StaticTuple
 # ===-----------------------------------------------------------------------===#
 
-comptime _StaticTupleTraits = ImplicitlyCopyable & ImplicitlyDeletable & RegisterPassable
+comptime _StaticTupleTraits = ImplicitlyCopyable & Deinitable & RegisterPassable
 """The required trait conformances for a StaticTuple's element type."""
 
 
@@ -47,9 +46,9 @@ def _static_tuple_construction_checks[T: _StaticTupleTraits, size: Int]():
       size: The number of elements.
     """
     comptime assert (
-        is_trivially_movable[T]()
-        and is_trivially_copyable[T]()
-        and is_trivially_destructible[T]()
+        IsTriviallyMovable[T]
+        and IsTriviallyCopyable[T]
+        and IsTriviallyDeinitable[T]
     ), String(
         (
             "`StaticTuple` element type must have a trivial move/copy"
@@ -73,18 +72,13 @@ struct StaticTuple[element_type: _StaticTupleTraits, size: Int](
     """
 
     comptime _mlir_type = __mlir_type[
-        `!pop.array<`, Self.size._int_mlir_index(), `, `, Self.element_type, `>`
+        `!pop.array<`, Self.size.__mlir_index__(), `, `, Self.element_type, `>`
     ]
 
-    comptime _DeviceElementType: _StaticTupleTraits = ConditionalType[
-        Trait=_StaticTupleTraits,
-        If=conforms_to(Self.element_type, DevicePassable),
-        Then=downcast[
-            downcast[Self.element_type, DevicePassable].device_type,
-            _StaticTupleTraits,
-        ],
-        Else=Self.element_type,
-    ]
+    comptime _DeviceElementType: _StaticTupleTraits = downcast[
+        Self.element_type.device_type,
+        _StaticTupleTraits,
+    ] if conforms_to(Self.element_type, DevicePassable) else Self.element_type
     """The device-side element type: the element's `device_type` when it is
     `DevicePassable`, otherwise the element type itself."""
 
@@ -149,7 +143,7 @@ struct StaticTuple[element_type: _StaticTupleTraits, size: Int](
         self._mlir_value = __mlir_op.`pop.array.repeat`[
             _type=__mlir_type[
                 `!pop.array<`,
-                Self.size._int_mlir_index(),
+                Self.size.__mlir_index__(),
                 `, `,
                 Self.element_type,
                 `>`,
@@ -244,16 +238,17 @@ struct StaticTuple[element_type: _StaticTupleTraits, size: Int](
         comptime assert index < Self.size
         var val = __mlir_op.`pop.array.get`[
             _type=Self.element_type,
-            index=index._int_mlir_index(),
+            index=index.__mlir_index__(),
         ](self._mlir_value)
         return val
 
     @always_inline("nodebug")
     def _unsafe_ref(ref self, idx: Int) -> ref[self] Self.element_type:
         var ptr = __mlir_op.`pop.array.gep`(
-            UnsafePointer(to=self._mlir_value).address, idx._int_mlir_index()
+            Pointer(to=self._mlir_value)._get_kgen_pointer(),
+            idx.__mlir_index__(),
         )
-        return UnsafePointer[origin=origin_of(self)](ptr)[]
+        return Pointer[origin=origin_of(self)](_mlir_value=ptr)[]
 
     @always_inline("nodebug")
     def _replace[idx: Int](self, val: Self.element_type) -> Self:
@@ -273,27 +268,23 @@ struct StaticTuple[element_type: _StaticTupleTraits, size: Int](
         var array = __mlir_op.`pop.array.replace`[
             _type=__mlir_type[
                 `!pop.array<`,
-                Self.size._int_mlir_index(),
+                Self.size.__mlir_index__(),
                 `, `,
                 Self.element_type,
                 `>`,
             ],
-            index=idx._int_mlir_index(),
+            index=idx.__mlir_index__(),
         ](val, self._mlir_value)
 
         return Self(mlir_value=array)
 
     @always_inline
-    def __eq__[
-        _E: Equatable & TrivialRegisterPassable, //
-    ](
-        self: StaticTuple[_E, Self.size], other: StaticTuple[_E, Self.size]
-    ) -> Bool:
+    def __eq__(
+        self, other: Self
+    ) -> Bool where conforms_to(
+        Self.element_type, Equatable & TrivialRegisterPassable
+    ):
         """Returns `True` if all elements are equal.
-
-        Parameters:
-            _E: The element type, must be `Equatable` and
-                `TrivialRegisterPassable`.
 
         Args:
             other: The tuple to compare with.
@@ -301,22 +292,22 @@ struct StaticTuple[element_type: _StaticTupleTraits, size: Int](
         Returns:
             True if all corresponding elements are equal.
         """
+        # TODO(MOCO-4667): Compare `self[i] != other[i]` directly once a
+        # subscript result used as an operand keeps the `where` refinement.
         comptime for i in range(Self.size):
-            if self[i] != other[i]:
+            var lhs = self[i]
+            var rhs = other[i]
+            if lhs != rhs:
                 return False
         return True
 
     @always_inline
-    def __ne__[
-        _E: Equatable & TrivialRegisterPassable, //
-    ](
-        self: StaticTuple[_E, Self.size], other: StaticTuple[_E, Self.size]
-    ) -> Bool:
+    def __ne__(
+        self, other: Self
+    ) -> Bool where conforms_to(
+        Self.element_type, Equatable & TrivialRegisterPassable
+    ):
         """Returns `True` if any element differs.
-
-        Parameters:
-            _E: The element type, must be `Equatable` and
-                `TrivialRegisterPassable`.
 
         Args:
             other: The tuple to compare with.
@@ -327,16 +318,12 @@ struct StaticTuple[element_type: _StaticTupleTraits, size: Int](
         return not (self == other)
 
     @always_inline
-    def __lt__[
-        _E: Comparable & TrivialRegisterPassable, //
-    ](
-        self: StaticTuple[_E, Self.size], other: StaticTuple[_E, Self.size]
-    ) -> Bool:
+    def __lt__(
+        self, other: Self
+    ) -> Bool where conforms_to(
+        Self.element_type, Comparable & TrivialRegisterPassable
+    ):
         """Returns `True` if `self` is lexicographically less than `other`.
-
-        Parameters:
-            _E: The element type, must be `Comparable` and
-                `TrivialRegisterPassable`.
 
         Args:
             other: The tuple to compare with.
@@ -344,25 +331,25 @@ struct StaticTuple[element_type: _StaticTupleTraits, size: Int](
         Returns:
             True if `self` is lexicographically less than `other`.
         """
+        # TODO(MOCO-4667): Compare `self[i] < other[i]` directly once a
+        # subscript result used as an operand keeps the `where` refinement.
         comptime for i in range(Self.size):
-            if self[i] < other[i]:
+            var lhs = self[i]
+            var rhs = other[i]
+            if lhs < rhs:
                 return True
-            if self[i] != other[i]:
+            if lhs != rhs:
                 return False
         return False
 
     @always_inline
-    def __le__[
-        _E: Comparable & TrivialRegisterPassable, //
-    ](
-        self: StaticTuple[_E, Self.size], other: StaticTuple[_E, Self.size]
-    ) -> Bool:
+    def __le__(
+        self, other: Self
+    ) -> Bool where conforms_to(
+        Self.element_type, Comparable & TrivialRegisterPassable
+    ):
         """Returns `True` if `self` is lexicographically less than or equal to
         `other`.
-
-        Parameters:
-            _E: The element type, must be `Comparable` and
-                `TrivialRegisterPassable`.
 
         Args:
             other: The tuple to compare with.
@@ -373,16 +360,12 @@ struct StaticTuple[element_type: _StaticTupleTraits, size: Int](
         return not (other < self)
 
     @always_inline
-    def __gt__[
-        _E: Comparable & TrivialRegisterPassable, //
-    ](
-        self: StaticTuple[_E, Self.size], other: StaticTuple[_E, Self.size]
-    ) -> Bool:
+    def __gt__(
+        self, other: Self
+    ) -> Bool where conforms_to(
+        Self.element_type, Comparable & TrivialRegisterPassable
+    ):
         """Returns `True` if `self` is lexicographically greater than `other`.
-
-        Parameters:
-            _E: The element type, must be `Comparable` and
-                `TrivialRegisterPassable`.
 
         Args:
             other: The tuple to compare with.
@@ -393,17 +376,13 @@ struct StaticTuple[element_type: _StaticTupleTraits, size: Int](
         return other < self
 
     @always_inline
-    def __ge__[
-        _E: Comparable & TrivialRegisterPassable, //
-    ](
-        self: StaticTuple[_E, Self.size], other: StaticTuple[_E, Self.size]
-    ) -> Bool:
+    def __ge__(
+        self, other: Self
+    ) -> Bool where conforms_to(
+        Self.element_type, Comparable & TrivialRegisterPassable
+    ):
         """Returns `True` if `self` is lexicographically greater than or equal
         to `other`.
-
-        Parameters:
-            _E: The element type, must be `Comparable` and
-                `TrivialRegisterPassable`.
 
         Args:
             other: The tuple to compare with.

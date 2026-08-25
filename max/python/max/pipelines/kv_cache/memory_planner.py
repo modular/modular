@@ -56,8 +56,8 @@ class MemoryPlanner:
     override the methods that require architecture-specific logic:
 
     - Estimating KV cache memory requirements.
-    - Estimating activation, weight, signal-buffer, and vision-cache memory
-      overheads specific to the model.
+    - Estimating activation, weight, and signal-buffer memory overheads
+      specific to the model.
 
     A ``MemoryPlanner`` is constructed from a ``ModelConfig`` alone (not from a
     full ``PipelineConfig``) so that it can be used independently of the
@@ -118,6 +118,32 @@ class MemoryPlanner:
         """
         return 0
 
+    def infer_max_batch_size(
+        self,
+        pipeline_config: Any,
+        devices: list[Device],
+        weights_size: int,
+    ) -> int | None:
+        """Infers an architecture-specific default ``max_batch_size``.
+
+        Memory planning calls this when the user did not set
+        ``max_batch_size``, before :meth:`estimate_activation_memory` runs.
+        The default returns ``None``, deferring to the framework-wide
+        inference in memory estimation.  Override in planners for
+        architectures with per-request device memory beyond the KV cache
+        (e.g. recurrent-state pools) that need a tighter default.
+
+        Args:
+            pipeline_config: Pipeline configuration.
+            devices: Loaded devices the model will run on.
+            weights_size: Estimated model weights size in bytes.
+
+        Returns:
+            The inferred ``max_batch_size``, or ``None`` to use the
+            framework default.
+        """
+        return None
+
     def estimate_signal_buffer_memory(
         self,
         pipeline_config: Any,
@@ -136,9 +162,8 @@ class MemoryPlanner:
 
         Args:
             pipeline_config: Pipeline configuration.
-            arch_config: Optional architecture config; when provided, tightens
-                the BlockOffloadEngine term using the actual
-                ``replicates_kv_across_tp`` flag.
+            arch_config: Unused; kept for interface parity with
+                :meth:`PipelineConfig.estimate_signal_buffer_memory`.
 
         Returns:
             Estimated signal-buffer memory in bytes across all devices.
@@ -152,25 +177,6 @@ class MemoryPlanner:
 
             return Signals.NUM_BYTES
         return pipeline_config.estimate_signal_buffer_memory(arch_config)
-
-    def estimate_vision_cache_entry_bytes(
-        self,
-        huggingface_config: Any,
-    ) -> int:
-        """Estimates bytes for one vision encoder cache entry.
-
-        The default implementation returns ``0``.  Override in VLM planners to
-        return the worst-case memory for a single max-resolution image after the
-        vision encoder's spatial merge / patch merge step.
-
-        Args:
-            huggingface_config: HuggingFace model configuration.
-
-        Returns:
-            Estimated bytes per vision cache entry, or ``0`` for text-only
-            models.
-        """
-        return 0
 
 
 class PagedMemoryPlanner(MemoryPlanner):

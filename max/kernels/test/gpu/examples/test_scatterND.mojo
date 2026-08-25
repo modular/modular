@@ -14,7 +14,7 @@
 from std.math import ceildiv
 
 from std.gpu import block_dim, global_idx
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import Idx, TileTensor, row_major
 from layout.tile_tensor import stack_allocation
 from std.testing import assert_false
@@ -98,10 +98,10 @@ def scatter_nd[
     indices_rank: Int,
     updates_rank: Int,
 ](
-    data: TileTensor[dtype=dtype, ...],
-    indices: TileTensor[dtype=indices_type, ...],
-    updates: TileTensor[dtype=dtype, ...],
-    output: TileTensor[mut=True, dtype=dtype, ...],
+    data: TileTensor[dtype, ...],
+    indices: TileTensor[indices_type, ...],
+    updates: TileTensor[dtype, ...],
+    output: TileTensor[mut=True, dtype, ...],
     ctx: DeviceContext,
 ) raises:
     """
@@ -188,15 +188,13 @@ def scatter_nd[
 
     # Buffer below will store both input_strides and data dimensions.
     # (combine both in one to reduce number of memcpy from H->D).
-    var ptr = ctx.enqueue_create_host_buffer[DType.int64](
-        last_shape_of_indices * 2
-    )
+    var ptr = ctx.enqueue_create_host_buffer[.int64](last_shape_of_indices * 2)
     ctx.synchronize()
 
     # input_strides
     # e.g., for a shape of 2, 3, 4, 5
     #       input_strides --> [3*4*5, 4*5, 5, 1]
-    var input_strides = InlineArray[Int64, data_rank](uninitialized=True)
+    var input_strides = Array[Int64, data_rank](uninitialized=True)
     for i in range(data_rank):
         var total_stride = 1
         for j in range(i + 1, data_rank):
@@ -256,7 +254,7 @@ def scatter_nd[
 
 def linear_fill[
     dtype: DType
-](buf: TileTensor[mut=True, dtype=dtype, ...], elems: Span[Scalar[dtype], _]):
+](buf: TileTensor[mut=True, dtype, ...], elems: Span[Scalar[dtype], _]):
     assert buf.num_elements() == len(elems), "must fill all elements of tensor"
 
     for i in range(buf.num_elements()):

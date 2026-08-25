@@ -14,10 +14,13 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Iterator
 from types import SimpleNamespace
 from typing import Any, cast
+from unittest.mock import patch
 
 import numpy as np
+import pytest
 from max.driver import Buffer, DeviceSpec
 from max.dtype import DType
 from max.pipelines import PipelineConfig
@@ -39,6 +42,25 @@ from max.pipelines.request.provider_options import (
     ImageProviderOptions,
     VideoProviderOptions,
 )
+
+
+@pytest.fixture(autouse=True)
+def _offline_hf_construction() -> Iterator[None]:
+    """Keep ``MAXModelConfig`` construction offline (CI runs
+    ``HF_HUB_OFFLINE=1``): ``__init__`` eagerly builds the HuggingFace repo
+    handles. Real cached repos resolve normally; uncached/placeholder repos
+    get a fake path.
+    """
+
+    with (
+        patch("max.pipelines.lib.config.model_config.validate_hf_repo_access"),
+        patch("max.pipelines.weights.hf_utils.validate_hf_repo_access"),
+        patch(
+            "max.pipelines.weights.hf_utils.generate_local_model_path",
+            side_effect=lambda repo_id, revision=None: f"/fake/cache/{repo_id}",
+        ),
+    ):
+        yield
 
 
 def test_cfg_batched_detection_guards_1d_i2v_tokens() -> None:
@@ -74,7 +96,10 @@ def test_wan_arch_config_initialize_uses_transformer_component() -> None:
         ),
     )
 
-    config = WanArchConfig.initialize(pipeline_config=pipeline_config)
+    # WanArchConfig ignores the received length (metadata-only policy).
+    config = WanArchConfig.initialize(
+        pipeline_config=pipeline_config, max_seq_len=512
+    )
 
     assert config.pipeline_config is pipeline_config
 
@@ -165,8 +190,7 @@ def test_wan_tokenizer_uses_single_frame_video_latents_for_images(
     tokenizer._scheduler = SimpleNamespace(
         use_flow_sigmas=False,
         order=1,
-        retrieve_timesteps_and_sigmas=lambda image_seq_len,
-        num_inference_steps: (
+        retrieve_timesteps_and_sigmas=lambda image_seq_len, num_inference_steps: (
             np.array([1.0, 0.0], dtype=np.float32),
             np.array([1.0, 0.0], dtype=np.float32),
         ),

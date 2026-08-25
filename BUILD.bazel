@@ -89,13 +89,13 @@ config_setting(
 
 string_flag(
     name = "max_base_version",
-    build_setting_default = "26.5.0",
+    build_setting_default = "26.6.0",
     make_variable = "MAX_BASE_VERSION",
 )
 
 string_flag(
     name = "mojo_base_version",
-    build_setting_default = "1.0.0",
+    build_setting_default = "1.1.0",
     make_variable = "MOJO_BASE_VERSION",
 )
 
@@ -116,6 +116,48 @@ string_flag(
     name = "modular_version_sha",
     build_setting_default = "deadbeef",
 )
+
+bool_flag(
+    name = "use_prebuilt_mojo_toolchain",
+    build_setting_default = True,
+    tags = [ALLOW_UNUSED_TAG],
+)
+
+config_setting(
+    name = "use_prebuilt_mojo_toolchain_disabled",
+    flag_values = {":use_prebuilt_mojo_toolchain": "false"},
+    tags = [ALLOW_UNUSED_TAG],
+)
+
+[
+    config_setting(
+        name = name + "_prebuilt_mojo_toolchain_enabled",
+        constraint_values = constraints,
+        flag_values = {":use_prebuilt_mojo_toolchain": "true"},
+        # Only used in OSS build
+        tags = ["maybe-unused"],
+    )
+    for name, constraints in [
+        (
+            "linux_x86_64",
+            [
+                "@platforms//cpu:x86_64",
+                "@platforms//os:linux",
+            ],
+        ),
+        (
+            "linux_aarch64",
+            [
+                "@platforms//cpu:aarch64",
+                "@platforms//os:linux",
+            ],
+        ),
+        (
+            "macos",
+            ["@platforms//os:macos"],
+        ),
+    ]
+]
 
 config_setting(
     name = "linux_x86_64",
@@ -166,7 +208,7 @@ platform(
     exec_properties = {
         "Pool": "m7i-large-executors",
         "OSFamily": "Linux",
-        "container-image": "docker://466483404629.dkr.ecr.us-east-1.amazonaws.com/modular-build-env:ubuntu2204",
+        "container-image": "docker://381491890578.dkr.ecr.us-east-1.amazonaws.com/modular-build-env:ubuntu2204",
         "dockerNetwork": "off",
     },
 )

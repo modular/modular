@@ -16,15 +16,15 @@
 mask functor with the comptime block sizes and exposes a single
 `apply()` entry that comptime-dispatches over the mask type:
 
-- `NullMask` — comptime-elided no-op. The mask trait would always
+- `NullMask`: comptime-elided no-op. The mask trait would always
   report `NO_MASK`, so the entry is statically dead.
-- `CausalMask` — 16-wide SIMD fast path (one `v_cmp` + one
+- `CausalMask`: 16-wide SIMD fast path (one `v_cmp` + one
   `v_cndmask` per stripe), generalized for `start_pos` so the causal
   cap moves with the cache start position. Gated on the runtime
   `q_start_pos < kv_end_pos` shortcut so fully-unmasked tiles bypass
   the work entirely.
 - Anything else (`SlidingWindowCausalMask`, `ChunkedCausalMask`,
-  `MaterializedMask`, fused combinations) — runtime
+  `MaterializedMask`, fused combinations): runtime
   `mask_functor.status(...)` dispatch over `NO_MASK` (return),
   `FULL_MASK` (fill `-inf`), `PARTIAL` (per-element loop calling
   `mask_functor.mask(coord, score)` over the 16 fragment slots).
@@ -34,7 +34,7 @@ Per-element row-within-tile mapping comes from the
 `MhaMmaOp.ACC_ROW_OFFSETS_32x32`.
 """
 
-from std.sys.intrinsics import _type_is_eq, unlikely
+from std.sys.intrinsics import unlikely
 from std.utils.index import IndexList
 
 from layout import TensorLayout
@@ -93,7 +93,7 @@ def _apply_causal_mask_fast[
         # `rel < _ROW_OFFSETS[p]` is the per-element form of `k_pos > q_pos`
         # once the per-element row offset is folded in.
         var rel = q_pos - (k_base + Int32(i * 32) + row_extra)
-        var mask = SIMD[DType.int32, 16](rel).lt(_ROW_OFFSETS)
+        var mask = SIMD[.int32, 16](rel).lt(_ROW_OFFSETS)
         comptime for j in range(dst_width):
             dst_vec[i, j, 0] = mask.select(_NEG_INF_VEC, dst_vec[i, j, 0])
 
@@ -115,8 +115,8 @@ def _apply_kbound_mask_fast[
     Used by `NullMask` to exclude a partial last K tile's OOB columns
     AND the phantom even-parity padding tile (see the `MhaPrefillV2`
     main loop's `max_num_tiles_local` even round-up). Both carry score
-    `Q@0 = 0` from the SRD-clamp-zeroed K — competitive for normalized
-    inputs — and would steal softmax denominator mass with a zero
+    `Q@0 = 0` from the SRD-clamp-zeroed K (competitive for normalized
+    inputs) and would steal softmax denominator mass with a zero
     numerator. This sends them to `-inf` so the subsequent `exp2` zeros
     them.
 
@@ -150,7 +150,7 @@ def _apply_kbound_mask_fast[
         # `bound <= _ROW_OFFSETS[p]` is the per-element form of
         # `k_pos >= num_keys` once the per-element row offset is folded in.
         var bound = num_keys - (k_base + Int32(i * 32) + row_extra)
-        var mask = SIMD[DType.int32, 16](bound).le(_ROW_OFFSETS)
+        var mask = SIMD[.int32, 16](bound).le(_ROW_OFFSETS)
         comptime for j in range(dst_width):
             dst_vec[i, j, 0] = mask.select(_NEG_INF_VEC, dst_vec[i, j, 0])
 
@@ -224,11 +224,9 @@ def _apply_mask_generic[
                     + row_extra
                     + Int32(ACC_ROW_OFFSETS_32x32[k_local])
                 )
-                var score = SIMD[DType.float32, 1](
-                    frag[k_local].cast[DType.float32]()
-                )
+                var score = Float32(frag[k_local].cast[.float32]())
                 var masked = mask_functor.mask(
-                    IndexList[4, element_type=DType.uint32](
+                    IndexList[4, element_type=.uint32](
                         Int(batch_idx),
                         Int(head_idx),
                         Int(q_pos),
@@ -275,7 +273,12 @@ struct MaskApplier[
     @always_inline
     def __init__(out self, mask_functor: Self.mask_t):
         """Bundle the mask functor. Comptime block sizes come from the
-        struct's parameters."""
+        struct's parameters.
+
+        Args:
+            mask_functor: Mask functor instance to bundle; its type
+                drives the comptime dispatch in `apply`.
+        """
         self.mask_functor = mask_functor
 
     @always_inline
@@ -314,6 +317,13 @@ struct MaskApplier[
           masks without a comptime-specialized fast path. Production
           callers: Gemma-3 (sliding window), Gemma-4 (chunked).
 
+        Parameters:
+            T_dst: Destination dtype of the `att_block` tile; FP32 for
+                the BF16 attention path and BF16 for the FP8 path's
+                BF16 softmax.
+            layout: `TensorLayout` of the `att_block` register tile;
+                its static shape drives the per-stripe unroll counts.
+
         Args:
             att_block: Attention block tile (mutated in place).
             q_tile_idx: Absolute Q tile index (this warp's first row /
@@ -325,10 +335,10 @@ struct MaskApplier[
             batch_idx: Batch index (`block_idx.z` in the kernel).
             lane: `lane_id()` cast to `Int`.
             num_keys: Runtime K/V sequence length for the NullMask
-                kbound; `-1` (the default) disables it — MLA callers
+                kbound; `-1` (the default) disables it; MLA callers
                 whose masks don't need the bound omit it.
         """
-        comptime if _type_is_eq[Self.mask_t, NullMask]():
+        comptime if Self.mask_t == NullMask:
             # #87603: exclude any tile whose K range extends past
             # `num_keys` — a partial last tile (`num_keys % KV_BLOCK !=
             # 0`) AND the phantom even-parity padding tile (see the main
@@ -344,7 +354,7 @@ struct MaskApplier[
                     Int32(num_keys),
                     Int32(lane),
                 )
-        elif _type_is_eq[Self.mask_t, CausalMask]():
+        elif Self.mask_t == CausalMask:
             var q_start_pos = q_tile_idx * Self.Q_BLOCK_SIZE + start_pos
             var kv_end_pos = (k_tile_idx + 1) * Self.KV_BLOCK_SIZE
             if unlikely(q_start_pos < kv_end_pos):
@@ -361,11 +371,11 @@ struct MaskApplier[
         else:
             var status = self.mask_functor.status(
                 batch_idx,
-                IndexList[2, element_type=DType.uint32](
+                IndexList[2, element_type=.uint32](
                     Int(q_tile_idx * Self.Q_BLOCK_SIZE + start_pos),
                     Int(k_tile_idx * Self.KV_BLOCK_SIZE),
                 ),
-                IndexList[2, element_type=DType.uint32](
+                IndexList[2, element_type=.uint32](
                     Int(Self.Q_BLOCK_SIZE), Int(Self.KV_BLOCK_SIZE)
                 ),
             )

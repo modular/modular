@@ -14,7 +14,7 @@
 from std.math import rsqrt
 from std.random import seed
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from kv_cache_test_utils import random_distinct
 from kv_cache.types import (
     ContinuousBatchingKVCacheCollection,
@@ -39,17 +39,14 @@ def execute_flash_attention[
     num_q_heads: Int, dtype: DType, kv_params: KVCacheStaticParams
 ](
     batch_size: Int,
-    valid_length: LayoutTensor[DType.uint32, Layout(UNKNOWN_VALUE), _],
+    valid_length: LayoutTensor[.uint32, Layout(UNKNOWN_VALUE), _],
     max_seq_len: Int,
     num_layers: Int,
     layer_idx: Int,
-    cache_valid_length: LayoutTensor[DType.uint32, Layout(UNKNOWN_VALUE), _],
+    cache_valid_length: LayoutTensor[.uint32, Layout(UNKNOWN_VALUE), _],
     ctx: DeviceContext,
 ) raises:
     comptime num_blocks = 32
-    comptime CollectionType = ContinuousBatchingKVCacheCollection[
-        dtype, kv_params
-    ]
 
     debug_assert(
         batch_size < num_blocks,
@@ -60,8 +57,8 @@ def execute_flash_attention[
         ")",
     )
 
-    max_prompt_len = 0
-    max_context_len = 0
+    var max_prompt_len = 0
+    var max_context_len = 0
 
     for i in range(batch_size):
         max_prompt_len = max(max_prompt_len, Int(valid_length[i]))
@@ -82,7 +79,7 @@ def execute_flash_attention[
     random(q.tensor())
 
     var valid_lengths = ManagedLayoutTensor[
-        DType.uint32, Layout.row_major(UNKNOWN_VALUE)
+        .uint32, Layout.row_major(UNKNOWN_VALUE)
     ](
         RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
             Index(batch_size)
@@ -113,7 +110,7 @@ def execute_flash_attention[
 
     # initialize our KVCache
     var cache_lengths_managed = ManagedLayoutTensor[
-        DType.uint32, Layout(UNKNOWN_VALUE)
+        .uint32, Layout(UNKNOWN_VALUE)
     ](
         RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(Index(batch_size)),
         ctx,
@@ -147,7 +144,7 @@ def execute_flash_attention[
     random(kv_block_host_tensor)
 
     # Create lookup table
-    var lookup_table = ManagedLayoutTensor[DType.uint32, Layout(UNKNOWN_VALUE)](
+    var lookup_table = ManagedLayoutTensor[.uint32, Layout(UNKNOWN_VALUE)](
         RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(Index(batch_size)),
         ctx,
     )
@@ -169,7 +166,9 @@ def execute_flash_attention[
     var kv_block_tensor = kv_block.device_tensor()
     var lookup_table_tensor = lookup_table.device_tensor()
 
-    var kv_collection_device = CollectionType(
+    var kv_collection_device = ContinuousBatchingKVCacheCollection[
+        dtype, kv_params
+    ](
         kv_block_tensor,
         cache_lengths_device,
         lookup_table_tensor,
@@ -228,7 +227,7 @@ def execute_flash_attention_suite(ctx: DeviceContext) raises:
     comptime dtypes = (DType.float32, DType.bfloat16)
     var bs = 2
     var valid_length_managed = ManagedLayoutTensor[
-        DType.uint32, Layout(UNKNOWN_VALUE)
+        .uint32, Layout(UNKNOWN_VALUE)
     ](
         RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(Index(bs)),
         ctx,
@@ -236,7 +235,7 @@ def execute_flash_attention_suite(ctx: DeviceContext) raises:
     var valid_length = valid_length_managed.tensor[update=False]()
 
     var cache_valid_length_managed = ManagedLayoutTensor[
-        DType.uint32, Layout(UNKNOWN_VALUE)
+        .uint32, Layout(UNKNOWN_VALUE)
     ](
         RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(Index(bs)),
         ctx,
@@ -244,7 +243,7 @@ def execute_flash_attention_suite(ctx: DeviceContext) raises:
     var cache_valid_length = cache_valid_length_managed.tensor[update=False]()
 
     comptime for dtype_idx in range(len(dtypes)):
-        comptime dtype = dtypes[dtype_idx]
+        comptime dtype = rebind[DType](dtypes[dtype_idx])
 
         print("Replit context encoding")
         # Replit context encoding [testing even query valid lengths].

@@ -38,9 +38,9 @@ def test_umod_scalar() raises:
 
 
 def test_umod_simd() raises:
-    var a = SIMD[DType.int32, 4](0, 7, 9, 123)
-    var b = SIMD[DType.int32, 4](3, 3, 3, 100)
-    var expected = SIMD[DType.int32, 4](0, 1, 0, 23)
+    var a = SIMD[.int32, 4](0, 7, 9, 123)
+    var b = SIMD[.int32, 4](3, 3, 3, 100)
+    var expected = SIMD[.int32, 4](0, 1, 0, 23)
     assert_equal(umod(a, b), expected)
 
 

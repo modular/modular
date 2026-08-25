@@ -13,7 +13,7 @@
 
 from std.math import ceildiv
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from kv_cache_test_utils import random_distinct
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 from layout import (
@@ -43,17 +43,19 @@ def _create_kv_collection_from_host[
         mut=True, dtype, Layout.row_major[6](), _
     ],
     cache_lengths_host: LayoutTensor[
-        mut=False, DType.uint32, Layout(UNKNOWN_VALUE), _
+        mut=False, .uint32, Layout(UNKNOWN_VALUE), _
     ],
-    paged_lut_host: LayoutTensor[
-        mut=False, DType.uint32, Layout.row_major[2](), _
-    ],
+    paged_lut_host: LayoutTensor[mut=False, .uint32, Layout.row_major[2](), _],
     max_prompt_length: Int,
     max_full_context_length: Int,
 ) -> PagedKVCacheCollection[
     dtype,
     KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
     page_size,
+    kv_block_paged_host.origin,
+    cache_lengths_host.origin,
+    paged_lut_host.origin,
+    MutUntrackedOrigin,
 ]:
     return PagedKVCacheCollection[
         dtype,
@@ -79,11 +81,9 @@ def _verify_kv_cache[
         mut=True, dtype, Layout.row_major[6](), _
     ],
     cache_lengths_host: LayoutTensor[
-        mut=False, DType.uint32, Layout(UNKNOWN_VALUE), _
+        mut=False, .uint32, Layout(UNKNOWN_VALUE), _
     ],
-    paged_lut_host: LayoutTensor[
-        mut=False, DType.uint32, Layout.row_major[2](), _
-    ],
+    paged_lut_host: LayoutTensor[mut=False, .uint32, Layout.row_major[2](), _],
     prompt_lens: IndexList[batch_size],
     cache_lens: IndexList[batch_size],
     num_active_loras: Int,
@@ -208,18 +208,14 @@ def test_kv_cache_2m_iadd_gpu[
     assert (
         num_active_loras <= batch_size
     ), "num_active_loras must be less than or equal to batch_size"
-    var input_row_offsets = ManagedLayoutTensor[
-        DType.uint32, Layout(UNKNOWN_VALUE)
-    ](
+    var input_row_offsets = ManagedLayoutTensor[.uint32, Layout(UNKNOWN_VALUE)](
         RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(
             IndexList[1](batch_size + 1)
         ),
         ctx,
     )
     var input_row_offsets_host = input_row_offsets.tensor[update=False]()
-    var cache_lengths = ManagedLayoutTensor[
-        DType.uint32, Layout(UNKNOWN_VALUE)
-    ](
+    var cache_lengths = ManagedLayoutTensor[.uint32, Layout(UNKNOWN_VALUE)](
         RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(
             IndexList[1](batch_size)
         ),
@@ -230,7 +226,7 @@ def test_kv_cache_2m_iadd_gpu[
     )
 
     var input_row_offsets_slice = ManagedLayoutTensor[
-        DType.uint32, Layout(UNKNOWN_VALUE)
+        .uint32, Layout(UNKNOWN_VALUE)
     ](
         RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(
             IndexList[1](num_active_loras + 1)
@@ -261,12 +257,12 @@ def test_kv_cache_2m_iadd_gpu[
     input_row_offsets_host[batch_size] = UInt32(total_length)
     input_row_offsets_slice_host[num_active_loras] = UInt32(total_slice_length)
 
-    num_paged_blocks = ceildiv(
+    var num_paged_blocks = ceildiv(
         batch_size * max_full_context_length * 2, page_size
     )
 
-    var lora_end_idx_host_ptr = ctx.enqueue_create_host_buffer[DType.int64](1)
-    var batch_seq_len_host_ptr = ctx.enqueue_create_host_buffer[DType.int64](1)
+    var lora_end_idx_host_ptr = ctx.enqueue_create_host_buffer[.int64](1)
+    var batch_seq_len_host_ptr = ctx.enqueue_create_host_buffer[.int64](1)
     ctx.synchronize()
     var lora_end_idx_host = TileTensor(lora_end_idx_host_ptr, row_major(Int(1)))
     lora_end_idx_host[0] = Int64(total_slice_length)
@@ -296,7 +292,7 @@ def test_kv_cache_2m_iadd_gpu[
     var paged_lut_shape = IndexList[2](
         batch_size, ceildiv(max_full_context_length, page_size)
     )
-    var paged_lut = ManagedLayoutTensor[DType.uint32, Layout.row_major[2]()](
+    var paged_lut = ManagedLayoutTensor[.uint32, Layout.row_major[2]()](
         RuntimeLayout[Layout.row_major[2]()].row_major(paged_lut_shape), ctx
     )
     var paged_lut_host = TileTensor(
@@ -312,7 +308,7 @@ def test_kv_cache_2m_iadd_gpu[
 
     var page_pos = 0
     for bs in range(batch_size):
-        seq_len = cache_lens[bs] + prompt_lens[bs]
+        var seq_len = cache_lens[bs] + prompt_lens[bs]
 
         for block_idx in range(0, ceildiv(seq_len, page_size)):
             paged_lut_host[bs, block_idx] = UInt32(paged_blocks[page_pos])
@@ -324,7 +320,7 @@ def test_kv_cache_2m_iadd_gpu[
         page_size,
     ](
         kv_block_paged.device_tensor(),
-        LayoutTensor[DType.uint32, Layout(UNKNOWN_VALUE), ImmutAnyOrigin](
+        LayoutTensor[.uint32, Layout(UNKNOWN_VALUE), ImmutAnyOrigin](
             cache_lengths.device_tensor().ptr,
             cache_lengths.device_tensor().runtime_layout,
         ),
@@ -353,7 +349,7 @@ def test_kv_cache_2m_iadd_gpu[
     kv_cache_2m_iadd_dispatch[target="gpu"](
         a.device_tensor(),
         kv_collection_device,
-        LayoutTensor[DType.uint32, Layout(UNKNOWN_VALUE)](
+        LayoutTensor[.uint32, Layout(UNKNOWN_VALUE)](
             input_row_offsets_slice.device_tensor().ptr,
             input_row_offsets_slice.device_tensor().runtime_layout,
         ),
@@ -366,13 +362,13 @@ def test_kv_cache_2m_iadd_gpu[
         kv_block_paged.tensor().ptr, row_major(Coord(kv_block_paged_shape))
     )
     var cache_lengths_host_tensor = LayoutTensor[
-        DType.uint32, Layout(UNKNOWN_VALUE), ImmutAnyOrigin
+        .uint32, Layout(UNKNOWN_VALUE), ImmutAnyOrigin
     ](
         cache_lengths.tensor().ptr,
         cache_lengths.tensor().runtime_layout,
     )
     var paged_lut_host_tensor = LayoutTensor[
-        DType.uint32, Layout.row_major[2](), ImmutAnyOrigin
+        .uint32, Layout.row_major[2](), ImmutAnyOrigin
     ](
         paged_lut.tensor().ptr,
         paged_lut.tensor().runtime_layout,
@@ -409,21 +405,17 @@ def test_kv_cache_2m_iadd_cpu[
     assert (
         num_active_loras <= batch_size
     ), "num_active_loras must be less than or equal to batch_size"
-    var input_row_offsets_host_ptr = List(
-        length=batch_size + 1, fill=Scalar[DType.uint32](0)
-    )
+    var input_row_offsets_host_ptr = List(length=batch_size + 1, fill=UInt32(0))
     var input_row_offsets_host = TileTensor(
         input_row_offsets_host_ptr, row_major(batch_size + 1)
     )
-    var cache_lengths_host_ptr = List(
-        length=batch_size, fill=Scalar[DType.uint32](0)
-    )
+    var cache_lengths_host_ptr = List(length=batch_size, fill=UInt32(0))
     var cache_lengths_host = TileTensor(
         cache_lengths_host_ptr, row_major(batch_size)
     )
 
     var input_row_offsets_slice_host_ptr = List(
-        length=num_active_loras + 1, fill=Scalar[DType.uint32](0)
+        length=num_active_loras + 1, fill=UInt32(0)
     )
     var input_row_offsets_slice_host = TileTensor(
         input_row_offsets_slice_host_ptr, row_major(num_active_loras + 1)
@@ -449,15 +441,15 @@ def test_kv_cache_2m_iadd_cpu[
     input_row_offsets_host[batch_size] = UInt32(total_length)
     input_row_offsets_slice_host[num_active_loras] = UInt32(total_slice_length)
 
-    num_paged_blocks = ceildiv(
+    var num_paged_blocks = ceildiv(
         batch_size * max_full_context_length * 2, page_size
     )
 
-    var lora_end_idx_host_ptr = List(length=1, fill=Scalar[DType.int64](0))
+    var lora_end_idx_host_ptr = List(length=1, fill=Int64(0))
     var lora_end_idx_host = TileTensor(lora_end_idx_host_ptr, row_major(Idx[1]))
     lora_end_idx_host[0] = Int64(total_slice_length)
 
-    var batch_seq_len_host_ptr = List(length=1, fill=Scalar[DType.int64](0))
+    var batch_seq_len_host_ptr = List(length=1, fill=Int64(0))
     var batch_seq_len_host = TileTensor(
         batch_seq_len_host_ptr, row_major(Idx[1])
     )
@@ -487,9 +479,7 @@ def test_kv_cache_2m_iadd_cpu[
     var paged_lut_size = batch_size * ceildiv(
         max_full_context_length, page_size
     )
-    var paged_lut_host_ptr = List(
-        length=paged_lut_size, fill=Scalar[DType.uint32](0)
-    )
+    var paged_lut_host_ptr = List(length=paged_lut_size, fill=UInt32(0))
     var paged_lut_host = TileTensor(
         paged_lut_host_ptr, row_major(Coord(paged_lut_shape))
     )
@@ -503,7 +493,7 @@ def test_kv_cache_2m_iadd_cpu[
 
     var page_pos = 0
     for bs in range(batch_size):
-        seq_len = cache_lens[bs] + prompt_lens[bs]
+        var seq_len = cache_lens[bs] + prompt_lens[bs]
 
         for block_idx in range(0, ceildiv(seq_len, page_size)):
             paged_lut_host[bs, block_idx] = UInt32(paged_blocks[page_pos])
@@ -513,19 +503,19 @@ def test_kv_cache_2m_iadd_cpu[
         dtype, num_heads, head_dim, page_size
     ](
         LayoutTensor[dtype, Layout.row_major[6]()](
-            kv_block_paged_host.ptr,
+            kv_block_paged_host._storage,
             RuntimeLayout[Layout.row_major[6]()].row_major(
                 kv_block_paged_shape
             ),
         ),
-        LayoutTensor[mut=False, DType.uint32, Layout(UNKNOWN_VALUE)](
-            cache_lengths_host.ptr,
+        LayoutTensor[mut=False, .uint32, Layout(UNKNOWN_VALUE)](
+            cache_lengths_host._storage,
             RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(
                 IndexList[1](batch_size)
             ),
         ),
-        LayoutTensor[mut=False, DType.uint32, Layout.row_major[2]()](
-            paged_lut_host.ptr,
+        LayoutTensor[mut=False, .uint32, Layout.row_major[2]()](
+            paged_lut_host._storage,
             RuntimeLayout[Layout.row_major[2]()].row_major(paged_lut_shape),
         ),
         max_prompt_length,
@@ -548,30 +538,30 @@ def test_kv_cache_2m_iadd_cpu[
             dtype,
             Layout.row_major(UNKNOWN_VALUE, num_heads * head_dim),
         ](
-            a_host.ptr,
+            a_host._storage,
             RuntimeLayout[
                 Layout.row_major(UNKNOWN_VALUE, num_heads * head_dim)
             ].row_major(a_shape),
         ),
         kv_collection_host,
-        LayoutTensor[mut=False, DType.uint32, Layout(UNKNOWN_VALUE)](
-            input_row_offsets_slice_host.ptr,
+        LayoutTensor[mut=False, .uint32, Layout(UNKNOWN_VALUE)](
+            input_row_offsets_slice_host._storage,
             RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(
                 coord_to_index_list(
                     input_row_offsets_slice_host.layout.shape_coord(),
                 )
             ),
         ),
-        LayoutTensor[mut=False, DType.int64, Layout(UNKNOWN_VALUE)](
-            lora_end_idx_host.ptr,
+        LayoutTensor[mut=False, .int64, Layout(UNKNOWN_VALUE)](
+            lora_end_idx_host._storage,
             RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(
                 coord_to_index_list(
                     lora_end_idx_host.layout.shape_coord(),
                 )
             ),
         ),
-        LayoutTensor[mut=False, DType.int64, Layout(UNKNOWN_VALUE)](
-            batch_seq_len_host.ptr,
+        LayoutTensor[mut=False, .int64, Layout(UNKNOWN_VALUE)](
+            batch_seq_len_host._storage,
             RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(
                 coord_to_index_list(
                     batch_seq_len_host.layout.shape_coord(),
@@ -584,19 +574,19 @@ def test_kv_cache_2m_iadd_cpu[
 
     _verify_kv_cache[dtype, num_heads, head_dim, page_size, batch_size](
         LayoutTensor[dtype, Layout.row_major[6]()](
-            kv_block_paged_host.ptr,
+            kv_block_paged_host._storage,
             RuntimeLayout[Layout.row_major[6]()].row_major(
                 kv_block_paged_shape
             ),
         ),
-        LayoutTensor[mut=False, DType.uint32, Layout(UNKNOWN_VALUE)](
-            cache_lengths_host.ptr,
+        LayoutTensor[mut=False, .uint32, Layout(UNKNOWN_VALUE)](
+            cache_lengths_host._storage,
             RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(
                 IndexList[1](batch_size)
             ),
         ),
-        LayoutTensor[mut=False, DType.uint32, Layout.row_major[2]()](
-            paged_lut_host.ptr,
+        LayoutTensor[mut=False, .uint32, Layout.row_major[2]()](
+            paged_lut_host._storage,
             RuntimeLayout[Layout.row_major[2]()].row_major(paged_lut_shape),
         ),
         prompt_lens,
@@ -612,25 +602,25 @@ def test_kv_cache_2m_iadd_cpu[
 def main() raises:
     # CPU tests
     with DeviceContext(api="cpu") as cpu_ctx:
-        test_kv_cache_2m_iadd_cpu[DType.float32, 8, 128, 128, 4](
+        test_kv_cache_2m_iadd_cpu[.float32, 8, 128, 128, 4](
             IndexList[4](10, 20, 30, 40),
             IndexList[4](40, 30, 20, 10),
             2,
             cpu_ctx,
         )
-        test_kv_cache_2m_iadd_cpu[DType.float32, 8, 128, 128, 4](
+        test_kv_cache_2m_iadd_cpu[.float32, 8, 128, 128, 4](
             IndexList[4](10, 20, 30, 40),
             IndexList[4](40, 30, 20, 10),
             4,
             cpu_ctx,
         )
-        test_kv_cache_2m_iadd_cpu[DType.float32, 8, 128, 128, 4](
+        test_kv_cache_2m_iadd_cpu[.float32, 8, 128, 128, 4](
             IndexList[4](10, 20, 30, 40),
             IndexList[4](40, 30, 20, 10),
             0,
             cpu_ctx,
         )
-        test_kv_cache_2m_iadd_cpu[DType.float32, 8, 128, 128, 1](
+        test_kv_cache_2m_iadd_cpu[.float32, 8, 128, 128, 1](
             IndexList[1](10),
             IndexList[1](40),
             1,
@@ -639,25 +629,25 @@ def main() raises:
 
     # GPU tests
     with DeviceContext() as ctx:
-        test_kv_cache_2m_iadd_gpu[DType.float32, 8, 128, 128, 4](
+        test_kv_cache_2m_iadd_gpu[.float32, 8, 128, 128, 4](
             IndexList[4](10, 20, 30, 40),
             IndexList[4](40, 30, 20, 10),
             2,
             ctx,
         )
-        test_kv_cache_2m_iadd_gpu[DType.float32, 8, 128, 128, 4](
+        test_kv_cache_2m_iadd_gpu[.float32, 8, 128, 128, 4](
             IndexList[4](10, 20, 30, 40),
             IndexList[4](40, 30, 20, 10),
             4,
             ctx,
         )
-        test_kv_cache_2m_iadd_gpu[DType.float32, 8, 128, 128, 4](
+        test_kv_cache_2m_iadd_gpu[.float32, 8, 128, 128, 4](
             IndexList[4](10, 20, 30, 40),
             IndexList[4](40, 30, 20, 10),
             0,
             ctx,
         )
-        test_kv_cache_2m_iadd_gpu[DType.float32, 8, 128, 128, 1](
+        test_kv_cache_2m_iadd_gpu[.float32, 8, 128, 128, 1](
             IndexList[1](10),
             IndexList[1](40),
             1,

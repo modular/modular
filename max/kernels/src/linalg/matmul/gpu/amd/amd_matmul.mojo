@@ -22,7 +22,6 @@ Entry point: AMDMatmul.run()
 from std.bit import log2_floor
 from std.collections import Optional
 from std.sys import align_of, simd_width_of
-from std.memory import stack_allocation
 
 from .._multistage_gemm_gpu import (
     warp_split_k_reduction,
@@ -32,13 +31,13 @@ from .._multistage_gemm_gpu import (
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
-    barrier,
     block_idx,
     lane_id,
     thread_idx,
     warp_id,
 )
-from std.gpu.sync import (
+from max.gpu.sync import barrier
+from max.gpu.sync import (
     AMDScheduleBarrierMask,
     schedule_barrier,
     schedule_group_barrier,
@@ -87,7 +86,18 @@ struct AMDMatmul[
     """Pure TileTensor structured matmul for AMD GPUs.
 
     Schedule-driven single-buffer pipeline. All data movement uses
-    TileTensor — no LayoutTensor anywhere.
+    TileTensor: no LayoutTensor anywhere.
+
+    Parameters:
+        a_type: Element type of the A input matrix.
+        b_type: Element type of the B input matrix.
+        c_type: Element type of the C output matrix.
+        transpose_b: Whether B is stored transposed as `[N, K]`; must be
+            `True`.
+        config: Tile and warp shapes, MMA shape, and thread count for the
+            kernel.
+        elementwise_lambda_fn: Optional epilogue applied elementwise to the
+            output (defaults to `None`).
     """
 
     comptime accum_type = get_accum_type[Self.a_type]()
@@ -146,6 +156,9 @@ struct AMDMatmul[
             Int32(Self.config.num_threads())
         )
     )
+    @__name(
+        t"amd_matmul_{Self.a_type}_{Self.b_type}_{Self.c_type}_BM{Self.BM}_BN{Self.BN}_BK{Self.BK}_WM{Self.WM}_WN{Self.WN}"
+    )
     @staticmethod
     def run[
         c_layout: TensorLayout,
@@ -160,6 +173,18 @@ struct AMDMatmul[
 
         Uses StructuredMmaOp with per-k-tile load_frag/mma dispatch,
         original warp index order, and schedule-driven pipeline.
+
+        Parameters:
+            c_layout: Tensor layout of the output C tile.
+            a_layout: Tensor layout of the input A tile.
+            b_layout: Tensor layout of the input B tile.
+
+        Args:
+            c: Output tile of shape `[M, N]` accumulating the matmul
+                result.
+            a: Input A tile of shape `[M, K]` in row-major block layout.
+            b: Input B tile of shape `[N, K]` (transposed, `transpose_b`
+                is `True`).
         """
         comptime assert Self.transpose_b, "transpose_b must be True"
         comptime assert Self.a_type == Self.b_type, "a/b must match"
@@ -196,10 +221,10 @@ struct AMDMatmul[
         # === SMEM: row_major tiles for the full BK-wide block ===
         comptime k_tile_size = Self.MMA_K * Self.k_group_size
 
-        var a_smem = stack_allocation[Self.a_type, AddressSpace.SHARED](
+        var a_smem = stack_allocation[Self.a_type, address_space=.SHARED](
             row_major[BM, BK]()
         )
-        var b_smem = stack_allocation[Self.a_type, AddressSpace.SHARED](
+        var b_smem = stack_allocation[Self.a_type, address_space=.SHARED](
             row_major[BN, BK]()
         )
 
@@ -208,10 +233,10 @@ struct AMDMatmul[
         comptime load_thread_rows = num_threads // load_thread_cols
         comptime a_reg_elems = BM * BK // num_threads
         comptime b_reg_elems = BN * BK // num_threads
-        var a_load_reg = stack_allocation[Self.a_type, AddressSpace.LOCAL](
+        var a_load_reg = stack_allocation[Self.a_type, address_space=.LOCAL](
             row_major[1, a_reg_elems]()
         )
-        var b_load_reg = stack_allocation[Self.a_type, AddressSpace.LOCAL](
+        var b_load_reg = stack_allocation[Self.a_type, address_space=.LOCAL](
             row_major[1, b_reg_elems]()
         )
 
@@ -248,7 +273,7 @@ struct AMDMatmul[
         var k_counter = 0
 
         @always_inline
-        @parameter
+        @__parameter
         def load_tiles_from_dram():
             var a_block = a_blockrow.tile[BM, BK](0, k_counter)
             var b_block = b_blockrow.tile[BN, BK](0, k_counter)
@@ -257,7 +282,7 @@ struct AMDMatmul[
             k_counter += 1
 
         @always_inline
-        @parameter
+        @__parameter
         def copy_tiles_to_smem():
             comptime thread_layout = row_major[
                 load_thread_rows, load_thread_cols
@@ -296,7 +321,7 @@ struct AMDMatmul[
             b_loads_per_thread=b_loads_per_thread,
         ]()
 
-        @parameter
+        @__parameter
         @always_inline
         def _bind[entry: ScheduleEntry]():
             comptime if entry.op.tag == LOAD_DRAM:

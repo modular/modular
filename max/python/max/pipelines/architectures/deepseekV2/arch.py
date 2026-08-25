@@ -11,6 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from max.experimental.cascade.pipelines.common_textgen import (
+    CommonTextGenPipeline,
+)
 from max.graph.weights import WeightsFormat
 from max.pipelines.context import TextContext
 from max.pipelines.kv_cache.memory_planner import PagedMemoryPlanner
@@ -21,6 +24,7 @@ from max.pipelines.lib import (
 from max.pipelines.modeling.types import PipelineTask
 
 from . import weight_adapters
+from .batch_processor import DeepseekV2BatchProcessor
 from .model import DeepseekV2Model
 from .model_config import DeepseekV2Config
 
@@ -30,12 +34,11 @@ deepseekV2_arch = SupportedArchitecture(
     example_repo_ids=[
         "deepseek-ai/DeepSeek-V2-Lite-Chat",
     ],
-    default_encoding="bfloat16",
-    supported_encodings={
-        "bfloat16",
-    },
+    default_encoding=DeepseekV2Config.DEFAULT_ENCODING,
+    supported_encodings=DeepseekV2Config.SUPPORTED_ENCODINGS,
     multi_gpu_supported=True,
     pipeline_model=DeepseekV2Model,
+    batching=DeepseekV2BatchProcessor,
     tokenizer=TextTokenizer,
     context_type=TextContext,
     default_weights_format=WeightsFormat.safetensors,
@@ -45,4 +48,7 @@ deepseekV2_arch = SupportedArchitecture(
     requires_max_batch_context_length=True,
     config=DeepseekV2Config,
     memory_planner=PagedMemoryPlanner,
+    supports_overlap_scheduler=False,
+    supports_device_graph_capture=False,
+    cascade_pipeline_factory=CommonTextGenPipeline,
 )

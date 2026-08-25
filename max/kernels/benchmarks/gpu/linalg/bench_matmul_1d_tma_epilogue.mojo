@@ -26,6 +26,7 @@ from std.sys import (
 )
 
 import linalg.matmul.vendor.blas as vendor_blas
+from max.benchmark import bencher_iter_custom
 from std.benchmark import (
     Bench,
     Bencher,
@@ -34,10 +35,10 @@ from std.benchmark import (
     ThroughputMeasure,
 )
 from std.gpu import global_idx, grid_dim, block_dim, thread_idx, block_idx
-from std.gpu.host import DeviceBuffer, DeviceContext
-from std.gpu.host.info import _is_sm10x_gpu
-from std.gpu.primitives import block
-from std.memory import alloc
+from max.gpu.host import DeviceBuffer, DeviceContext
+from max.gpu.host.info import _is_sm10x_gpu
+from max.gpu.primitives import block
+from std.memory import alloc, dealloc
 from internal_utils import (
     CacheBustingBuffer,
     arg_parse,
@@ -68,10 +69,10 @@ def _verify_buffers_gpu[
 ](
     output: UnsafePointer[Scalar[c_type], ImmutAnyOrigin],
     reference: UnsafePointer[Scalar[c_type], ImmutAnyOrigin],
-    length: Int,
+    length: Int32,
     atol: Float32,
     rtol: Float32,
-    result: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
+    result: UnsafePointer[Float32, MutAnyOrigin],
 ):
     var abs_diff_sum: Float32 = 0
     var abs_ref_sum: Float32 = 0
@@ -81,9 +82,9 @@ def _verify_buffers_gpu[
 
     var i = global_idx.x
     var stride = grid_dim.x * block_dim.x
-    while i < length:
-        var x = output[i].cast[DType.float32]()
-        var y = reference[i].cast[DType.float32]()
+    while i < Int(length):
+        var x = output[i].cast[.float32]()
+        var y = reference[i].cast[.float32]()
         abs_diff_sum += abs(x - y)
         abs_ref_sum += abs(y)
         max_violation = max(max_violation, abs(x - y) - (atol + rtol * abs(y)))
@@ -121,17 +122,17 @@ def _check_verification_result[
 ) raises:
     var rtol64: Float64
     var atol64: Float64
-    rtol64, atol64 = pytorch_like_tolerances_for[DType.bfloat16]()
+    rtol64, atol64 = pytorch_like_tolerances_for[.bfloat16]()
     var rtol = Float32(rtol64)
     var atol = Float32(atol64)
 
-    var result_device = ctx.enqueue_create_buffer[DType.float32](NUM_BLOCKS * 5)
+    var result_device = ctx.enqueue_create_buffer[.float32](NUM_BLOCKS * 5)
 
     comptime kernel = _verify_buffers_gpu[c_type, BLOCK_SIZE]
     ctx.enqueue_function[kernel](
         c_device,
         c_device_ref,
-        c_size,
+        Int32(c_size),
         atol,
         rtol,
         result_device,
@@ -139,7 +140,10 @@ def _check_verification_result[
         block_dim=BLOCK_SIZE,
     )
 
-    var result_host = alloc[Scalar[DType.float32]](NUM_BLOCKS * 5)
+    var result_host_alloc = alloc[Float32](
+        {count = NUM_BLOCKS * 5}
+    ).into_managed()
+    var result_host = result_host_alloc.unsafe_ptr()
     ctx.enqueue_copy(result_host, result_device)
     ctx.synchronize()
 
@@ -157,7 +161,7 @@ def _check_verification_result[
         any_out_nz = max(any_out_nz, result_host[base + 3])
         any_ref_nz = max(any_ref_nz, result_host[base + 4])
 
-    result_host.free()
+    dealloc(result_host_alloc^)
 
     if any_out_nz == 0:
         raise String(label, ": kernel output is all zeros")
@@ -227,9 +231,8 @@ def bench_matmul_1d_tma_epilogue[
     cb_bias.init_on_device(init_type, ctx)
 
     @__copy_capture(cb_a, cb_b, cb_c, cb_bias)
-    @parameter
     @always_inline
-    def kernel_launch(ctx: DeviceContext, iteration: Int) raises:
+    def kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
         var tensor_a = TileTensor(
             cb_a.offset_ptr(iteration), row_major(shape_a)
         )
@@ -249,12 +252,12 @@ def bench_matmul_1d_tma_epilogue[
 
         elif variant == "compute_lambda_bias":
 
-            @parameter
+            @__parameter
             @always_inline
             @__copy_capture(tensor_c, bias_tile)
             def epilogue_lambda[
                 _dtype: DType,
-                width: SIMDSize,
+                width: SIMDLength,
                 *,
                 alignment: Int = align_of[SIMD[_dtype, width]](),
             ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> SIMD[
@@ -292,10 +295,9 @@ def bench_matmul_1d_tma_epilogue[
                 ctx,
             )
 
-    @parameter
     @always_inline
-    def bench_func(mut b: Bencher) raises:
-        b.iter_custom[kernel_launch](ctx)
+    def bench_func(mut b: Bencher) raises {imm}:
+        bencher_iter_custom(b, kernel_launch, ctx)
 
     var flops = ThroughputMeasure(
         BenchMetric.flops,
@@ -315,7 +317,8 @@ def bench_matmul_1d_tma_epilogue[
     )
 
     if run_benchmark:
-        b.bench_function[bench_func](
+        b.bench_function(
+            bench_func,
             BenchId(bench_name),
             [flops],
         )
@@ -361,12 +364,12 @@ def bench_matmul_1d_tma_epilogue[
 
         elif variant == "compute_lambda_bias":
 
-            @parameter
+            @__parameter
             @always_inline
             @__copy_capture(bias_ver_nd)
             def ver_epilogue_lambda[
                 _dtype: DType,
-                width: SIMDSize,
+                width: SIMDLength,
                 *,
                 alignment: Int = align_of[SIMD[_dtype, width]](),
             ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> SIMD[
@@ -403,8 +406,14 @@ def bench_matmul_1d_tma_epilogue[
 
         # Add 1D bias to reference output (broadcast across M rows).
         comptime if variant != "plain":
-            var bias_host = alloc[Scalar[dtype]](N)
-            var c_ref_host = alloc[Scalar[dtype]](c_size)
+            var bias_host_alloc = alloc[Scalar[dtype]](
+                {count = N}
+            ).into_managed()
+            var bias_host = bias_host_alloc.unsafe_ptr()
+            var c_ref_host_alloc = alloc[Scalar[dtype]](
+                {count = c_size}
+            ).into_managed()
+            var c_ref_host = c_ref_host_alloc.unsafe_ptr()
             ctx.enqueue_copy(bias_host, bias_ver_dev)
             ctx.enqueue_copy(c_ref_host, c_ref_dev)
             ctx.synchronize()
@@ -413,14 +422,14 @@ def bench_matmul_1d_tma_epilogue[
                 for j in range(N):
                     var ref_idx = i * N + j
                     c_ref_host[ref_idx] = (
-                        c_ref_host[ref_idx].cast[DType.float32]()
-                        + bias_host[j].cast[DType.float32]()
+                        c_ref_host[ref_idx].cast[.float32]()
+                        + bias_host[j].cast[.float32]()
                     ).cast[dtype]()
 
             ctx.enqueue_copy(c_ref_dev, c_ref_host)
             ctx.synchronize()
-            bias_host.free()
-            c_ref_host.free()
+            dealloc(bias_host_alloc^)
+            dealloc(c_ref_host_alloc^)
 
         comptime NUM_BLOCKS = 32
         comptime BLOCK_SIZE = 256
@@ -488,7 +497,7 @@ def create_1d_tma_epilogue_benches[
 
 
 def main() raises:
-    comptime dtype = get_defined_dtype["dtype", DType.bfloat16]()
+    comptime dtype = get_defined_dtype["dtype", .bfloat16]()
 
     var M = Int(arg_parse("M", 2048))
     comptime N = get_defined_int["N", 1536]()

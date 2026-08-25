@@ -12,14 +12,13 @@
 # ===----------------------------------------------------------------------=== #
 """8x8 `simdgroup_matrix` GEMM kernel for Apple Silicon GPUs (M1-M4)."""
 
-from std.sys import llvm_intrinsic
-
 from std.gpu import (
     block_idx,
     lane_id,
     warp_id,
 )
-from layout import TensorLayout, TileTensor
+from max.gpu.compute.arch.mma_apple import _mma_apple_8x8
+from layout import TensorLayout, TensorStorage, TileTensor
 from std.utils import Index
 from std.utils.numerics import get_accum_type
 
@@ -27,7 +26,7 @@ from ....utils import elementwise_epilogue_type
 
 
 # ===----------------------------------------------------------------------=== #
-# M1-M4: 8x8 simdgroup_matrix MMA (uses Kolya's #87917 intrinsic)
+# M1-M4: 8x8 simdgroup_matrix MMA (uses stdlib `_mma_apple_8x8`)
 # ===----------------------------------------------------------------------=== #
 
 comptime MMA8_DIM = 8
@@ -42,21 +41,6 @@ def _frag8_layout(lane: Int) -> Tuple[Int, Int]:
         ((lane & 6) >> 1) + ((lane & 16) >> 2),
         ((lane & 1) << 1) + ((lane & 8) >> 1),
     )
-
-
-@always_inline
-def _mma8x8[
-    a_type: DType, b_type: DType
-](
-    a: SIMD[a_type, FRAG8],
-    b: SIMD[b_type, FRAG8],
-    c: SIMD[DType.float32, FRAG8],
-) -> SIMD[DType.float32, FRAG8]:
-    """One 8x8x8 simdgroup-matrix multiply-accumulate: D = A @ B + C."""
-    return llvm_intrinsic[
-        "llvm.air.simdgroup_matrix_8x8_multiply_accumulate",
-        SIMD[DType.float32, FRAG8],
-    ](a, b, c)
 
 
 @always_inline
@@ -75,9 +59,9 @@ def _simdgroup8x8_matmul_kernel[
     BLOCK_K: Int,
     NUM_SIMDGROUPS: Int,
 ](
-    c: TileTensor[c_type, c_layout, MutAnyOrigin],
-    a: TileTensor[a_type, a_layout, ImmutAnyOrigin],
-    b: TileTensor[b_type, b_layout, ImmutAnyOrigin],
+    c: TileTensor[c_type, c_layout, MutAnyOrigin, Storage=_],
+    a: TileTensor[a_type, a_layout, ImmutAnyOrigin, Storage=_],
+    b: TileTensor[b_type, b_layout, ImmutAnyOrigin, Storage=_],
     m: Int,
     n: Int,
     k: Int,
@@ -111,8 +95,8 @@ def _simdgroup8x8_matmul_kernel[
     # Fully-interior simdgroup subtile -> unguarded loads (the common case).
     var interior = (row_base + SG_M <= m) and (col_base + SG_N <= n)
 
-    var accum = InlineArray[SIMD[DType.float32, FRAG8], NT_M * NT_N](
-        fill=SIMD[DType.float32, FRAG8](0)
+    var accum = Array[SIMD[.float32, FRAG8], NT_M * NT_N](
+        fill=SIMD[.float32, FRAG8](0)
     )
 
     var a_ptr = a.ptr
@@ -122,7 +106,7 @@ def _simdgroup8x8_matmul_kernel[
         var kk = ks * MMA8_DIM
         # A (M,K) row-major: lane's 2 frag elems are consecutive K cols (K is
         # always in-bounds); only the row needs a bound for ragged M.
-        var afrag = InlineArray[SIMD[a_type, FRAG8], NT_M](uninitialized=True)
+        var afrag = Array[SIMD[a_type, FRAG8], NT_M](uninitialized=True)
         comptime for mi in range(NT_M):
             var grow = row_base + mi * MMA8_DIM + frow
             if interior or grow < m:
@@ -130,7 +114,7 @@ def _simdgroup8x8_matmul_kernel[
             else:
                 afrag[mi] = SIMD[a_type, FRAG8](0)
         # B holds B[k_idx, j]: row=k_idx (always in-bounds), col=j (bound for n).
-        var bfrag = InlineArray[SIMD[b_type, FRAG8], NT_N](uninitialized=True)
+        var bfrag = Array[SIMD[b_type, FRAG8], NT_N](uninitialized=True)
         comptime for ni in range(NT_N):
             comptime if transpose_b:
                 # B stored (N,K): B[k,j]=b_ptr[j*k+k_idx]; slots differ in j.
@@ -158,8 +142,9 @@ def _simdgroup8x8_matmul_kernel[
                     bfrag[ni] = bf
         comptime for mi in range(NT_M):
             comptime for ni in range(NT_N):
-                accum[mi * NT_N + ni] = _mma8x8[a_type, b_type](
-                    afrag[mi], bfrag[ni], accum[mi * NT_N + ni]
+                var c_frag = accum[mi * NT_N + ni]
+                _mma_apple_8x8(
+                    accum[mi * NT_N + ni], afrag[mi], bfrag[ni], c_frag
                 )
 
     comptime for mi in range(NT_M):
@@ -184,6 +169,9 @@ def gemm_kernel_apple_8x8[
     c_layout: TensorLayout,
     a_layout: TensorLayout,
     b_layout: TensorLayout,
+    c_storage: TensorStorage,
+    a_storage: TensorStorage,
+    b_storage: TensorStorage,
     transpose_b: Bool = False,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     s_type: DType = get_accum_type[c_type](),
@@ -192,14 +180,17 @@ def gemm_kernel_apple_8x8[
     BLOCK_K: Int = 16,
     NUM_SIMDGROUPS: Int = 4,
 ](
-    c: TileTensor[c_type, c_layout, MutAnyOrigin],
-    a: TileTensor[a_type, a_layout, ImmutAnyOrigin],
-    b: TileTensor[b_type, b_layout, ImmutAnyOrigin],
-    m: Int,
-    n: Int,
-    k: Int,
+    c: TileTensor[c_type, c_layout, MutAnyOrigin, Storage=c_storage],
+    a: TileTensor[a_type, a_layout, ImmutAnyOrigin, Storage=a_storage],
+    b: TileTensor[b_type, b_layout, ImmutAnyOrigin, Storage=b_storage],
+    m: Int32,
+    n: Int32,
+    k: Int32,
 ):
     """Launchable wrapper for the 8x8 simdgroup-matrix GEMM (bench/test)."""
+    var _m = Int(m)
+    var _n = Int(n)
+    var _k = Int(k)
     _simdgroup8x8_matmul_kernel[
         c_type,
         a_type,
@@ -214,4 +205,4 @@ def gemm_kernel_apple_8x8[
         BLOCK_N,
         BLOCK_K,
         NUM_SIMDGROUPS,
-    ](c, a, b, m, n, k)
+    ](c, a, b, _m, _n, _k)

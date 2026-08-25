@@ -45,11 +45,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-import torch
+# torch is a caller-supplied dep, see BUILD.bazel
+import torch  # type: ignore[import-not-found]
 from max.driver import DLPackArray
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, TensorType
-from max.nn.kv_cache import KVCacheParams
+from max.nn.kv_cache import MHAKVCacheParams
 from max.nn.rotary_embedding import YarnRotaryEmbedding, YarnScalingParams
 from max.pipelines.architectures.gpt_oss.layers.attention import GptOssAttention
 from transformers.models.gpt_oss.configuration_gpt_oss import GptOssConfig
@@ -122,7 +123,7 @@ class GptOssAttentionHarness(
         layer_type = p.layer_type
         local_window_size = p.local_window_size
 
-        kv_params = KVCacheParams(
+        kv_params = MHAKVCacheParams(
             dtype=DType.bfloat16,
             n_kv_heads=n_kv_heads,
             head_dim=head_dim,

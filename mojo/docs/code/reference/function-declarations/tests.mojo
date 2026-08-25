@@ -18,7 +18,7 @@
 #        error, mut default error, out + return type error,
 #        variadic default error, out variadic error, __init__
 #        without out error, where on runtime arg error,
-#        Resource/__del__ (undefined _release), parse/parse_strict
+#        Resource/__deinit__ (undefined _release), parse/parse_strict
 #        (signature-only stubs), copy/move constructor snippets
 #        (no enclosing struct), configure keyword-only (pass-only
 #        body), overload-set import-shadowing snippet (fictional
@@ -75,7 +75,7 @@ def test_backtick_name():
     `import`()  # In `import`
 
 
-# --- Generic function with parameters ---
+# --- Parameterized function ---
 
 
 def clamp[
@@ -143,7 +143,7 @@ def test_positional_only() raises:
 
 def sum_kw(*values: Int, name: String) -> Int:
     print(name, end=": ")
-    total = 0
+    var total = 0
     for value in values:
         total += value
     return total
@@ -186,7 +186,7 @@ def test_defaults_return() raises:
 
 def process[
     n: Int
-](data: SIMD[DType.float32, n]) -> Float32 where (
+](data: SIMD[.float32, n]) -> Float32 where (
     n == 1 or n == 2 or n == 4 or n == 8 or n == 16 or n == 32
 ):
     var sum: Float32 = 0.0
@@ -196,7 +196,7 @@ def process[
 
 
 def test_where_clause() raises:
-    var data = SIMD[DType.float32, 16](255.0)
+    var data = SIMD[.float32, 16](255.0)
     var sum = process[n=16](data)
     assert_equal(sum, 4080.0)
 
@@ -271,14 +271,12 @@ def test_out() raises:
 # --- ref convention ---
 
 
-def get_first[
-    T: Copyable
-](ref data: List[T],) -> ref[origin_of(data)] T:
+def get_first[T: Copyable](ref data: List[T]) -> ref[data[0]] T:
     return data[0]
 
 
 def test_ref() raises:
-    var data = ["one", "two", "three"]
+    var data: List = ["one", "two", "three"]
     ref first = get_first(data)
     assert_equal(first, "one")
     first = "Первый"
@@ -363,7 +361,7 @@ def test_square() raises:
 
 
 def outer(x: Int) -> Int:
-    def inner() {read} -> Int:
+    def inner() {imm} -> Int:
         return x + 1
 
     return inner()

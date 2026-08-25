@@ -122,21 +122,21 @@ from std.memory import UnsafePointer, alloc, bitcast
 from std.random import randn, seed
 from std.sys import size_of
 
-from std.gpu import barrier, thread_idx, warp_id as get_warp_id
-from std.gpu.host import DeviceBuffer, DeviceContext, FuncAttribute
-from std.gpu.host.info import _is_sm10x_gpu
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.gpu.memory import (
-    AddressSpace,
+from std.gpu import thread_idx, warp_id as get_warp_id
+from max.gpu.sync import barrier
+from max.gpu.host import DeviceBuffer, DeviceContext, FuncAttribute
+from max.gpu.host.info import _is_sm10x_gpu
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.memory import (
     external_memory,
 )
-from std.gpu.compute.arch.mma_nvidia_sm100 import (
+from max.gpu.compute.arch.mma_nvidia_sm100 import (
     MMASmemDescriptor,
     UMMAInsDescriptor,
     UMMAKind,
     mma_arrive,
 )
-from std.gpu.compute.arch.tcgen05 import (
+from max.gpu.compute.arch.tcgen05 import (
     tcgen05_alloc,
     tcgen05_cp,
     tcgen05_dealloc,
@@ -254,7 +254,7 @@ def ss_qk_partial_kernel[
 
     # ---- Dynamic SMEM ----
     var smem_base = external_memory[
-        UInt8, address_space=AddressSpace.SHARED, alignment=128
+        UInt8, address_space=.SHARED, alignment=128
     ]()
     var a_smem_ptr = (smem_base + QK_A_OFFSET).bitcast[Scalar[FP8_TYPE]]()
     var b_smem_ptr = (smem_base + QK_B_OFFSET).bitcast[Scalar[FP8_TYPE]]()
@@ -262,13 +262,13 @@ def ss_qk_partial_kernel[
     var a_smem_tile = LayoutTensor[
         FP8_TYPE,
         Layout.row_major(QK_M, QK_K),
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
     ](a_smem_ptr.as_unsafe_any_origin())
     var b_smem_tile = LayoutTensor[
         FP8_TYPE,
         Layout.row_major(QK_N, QK_K),
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
     ](b_smem_ptr.as_unsafe_any_origin())
 
@@ -324,7 +324,7 @@ def ss_qk_partial_kernel[
         ACC_TYPE,
         FP8_TYPE,
         FP8_TYPE,
-        Index[dtype=DType.uint32](QK_M, QK_N),
+        Index[dtype=.uint32](QK_M, QK_N),
         transpose_b=True,
     ]()
 
@@ -470,7 +470,7 @@ def ss_qk_multistage_kernel[
     with k_start>0.
     """
     var smem_base = external_memory[
-        UInt8, address_space=AddressSpace.SHARED, alignment=128
+        UInt8, address_space=.SHARED, alignment=128
     ]()
     var a_smem_ptr = (smem_base + QK_A_OFFSET).bitcast[Scalar[FP8_TYPE]]()
     var b_smem_ptr = (smem_base + QK_B_OFFSET).bitcast[Scalar[FP8_TYPE]]()
@@ -478,13 +478,13 @@ def ss_qk_multistage_kernel[
     var a_smem_tile = LayoutTensor[
         FP8_TYPE,
         Layout.row_major(QK_M, QK_K),
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
     ](a_smem_ptr.as_unsafe_any_origin())
     var b_smem_tile = LayoutTensor[
         FP8_TYPE,
         Layout.row_major(QK_N, QK_K),
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
     ](b_smem_ptr.as_unsafe_any_origin())
 
@@ -538,7 +538,7 @@ def ss_qk_multistage_kernel[
         ACC_TYPE,
         FP8_TYPE,
         FP8_TYPE,
-        Index[dtype=DType.uint32](QK_M, QK_N),
+        Index[dtype=.uint32](QK_M, QK_N),
         transpose_b=True,
     ]()
 
@@ -631,7 +631,7 @@ def fill_random_fp8[
     """Generates random FP8 values via float32 RNG -> cast (matches the
     model smoke test)."""
     var f32_buf = alloc[Float32](n)
-    randn[DType.float32](f32_buf, n)
+    randn[.float32](f32_buf, n)
     for i in range(n):
         var v = f32_buf[i] * 0.5
         if v > 2.0:
@@ -707,9 +707,9 @@ def _ss_naive_ref[
         c_ref_tt,
         a_tt,
         b_tt,
-        M,
-        QK_N,
-        k_valid,
+        Int32(M),
+        Int32(QK_N),
+        Int32(k_valid),
         grid_dim=(
             ceildiv(M, NAIVE_BLOCK_DIM),
             ceildiv(QK_N, NAIVE_BLOCK_DIM),
@@ -731,7 +731,7 @@ def _ss_compare[
     """Compares the GPU output against the host reference within FP8 tol.
 
     Generic over the pointer origins so the caller can pass a LayoutTensor's
-    `.ptr` (MutAnyOrigin) and an `alloc`'d host buffer (MutExternalOrigin)
+    `.ptr` (MutAnyOrigin) and an `alloc`'d host buffer (MutUntrackedOrigin)
     without an origin mismatch.
 
     When `require_finite` is True (the NaN-safety variant), additionally
@@ -1319,7 +1319,7 @@ def ss_nonws_partial_kernel[
 
     # ---- Dynamic SMEM ----
     var smem_base = external_memory[
-        UInt8, address_space=AddressSpace.SHARED, alignment=128
+        UInt8, address_space=.SHARED, alignment=128
     ]()
     var a_smem_ptr = (smem_base + NW_A_OFFSET).bitcast[Scalar[FP8_TYPE]]()
     var b_smem_ptr = (smem_base + NW_B_OFFSET).bitcast[Scalar[FP8_TYPE]]()
@@ -1327,13 +1327,13 @@ def ss_nonws_partial_kernel[
     var a_smem_tile = LayoutTensor[
         FP8_TYPE,
         Layout.row_major(NW_M, QK_K),
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
     ](a_smem_ptr.as_unsafe_any_origin())
     var b_smem_tile = LayoutTensor[
         FP8_TYPE,
         Layout.row_major(QK_N, QK_K),
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
     ](b_smem_ptr.as_unsafe_any_origin())
 
@@ -1389,7 +1389,7 @@ def ss_nonws_partial_kernel[
         ACC_TYPE,
         FP8_TYPE,
         FP8_TYPE,
-        Index[dtype=DType.uint32](NW_M, QK_N),
+        Index[dtype=.uint32](NW_M, QK_N),
         transpose_b=True,
     ]()
 
@@ -1924,14 +1924,14 @@ def ts_partial_kernel[
     `dense_mma_ws_ts_kernel`; only the MMA call differs.
     """
     var smem_base = external_memory[
-        UInt8, address_space=AddressSpace.SHARED, alignment=128
+        UInt8, address_space=.SHARED, alignment=128
     ]()
 
     var q_smem_ptr = smem_base.bitcast[Scalar[TS_OP_TYPE]]()
     var q_smem_tile = LayoutTensor[
         TS_OP_TYPE,
         TS_Q_SMEM_LAYOUT,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
     ](q_smem_ptr.as_unsafe_any_origin())
 
@@ -1941,7 +1941,7 @@ def ts_partial_kernel[
     var k_smem_tile = LayoutTensor[
         TS_OP_TYPE,
         TS_K_SMEM_LAYOUT,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
     ](k_smem_ptr.as_unsafe_any_origin())
 
@@ -2011,7 +2011,7 @@ def ts_partial_kernel[
         TS_ACCUM_TYPE,
         TS_OP_TYPE,
         TS_OP_TYPE,
-        Index[dtype=DType.uint32](TS_MMA_M, TS_MMA_N),
+        Index[dtype=.uint32](TS_MMA_M, TS_MMA_N),
         transpose_b=True,
     ]()
 
@@ -2122,12 +2122,14 @@ def _ts_launch[
     NUM_STAGES: Int = 1,
 ](
     ctx: DeviceContext,
-    q_inp: ManagedLayoutTensor[TS_OP_TYPE, Layout.row_major(TS_ROWS, TS_COLS)],
-    k_inp: ManagedLayoutTensor[
+    mut q_inp: ManagedLayoutTensor[
+        TS_OP_TYPE, Layout.row_major(TS_ROWS, TS_COLS)
+    ],
+    mut k_inp: ManagedLayoutTensor[
         TS_OP_TYPE, Layout.row_major(TS_K_ROWS, TS_K_COLS)
     ],
     valid: UInt32,
-    p_out_buf: ManagedLayoutTensor[
+    mut p_out_buf: ManagedLayoutTensor[
         TS_ACCUM_TYPE, Layout.row_major(TS_P_ROWS, TS_P_COLS)
     ],
 ) raises:
@@ -2173,16 +2175,16 @@ def _ts_foldsum_compare[
 ](
     label: String,
     p_ptr: UnsafePointer[Scalar[TS_ACCUM_TYPE], out_origin],
-    ref_ptr: UnsafePointer[Scalar[DType.float32], ref_origin],
+    ref_ptr: UnsafePointer[Float32, ref_origin],
 ) raises:
     """Fold-sum comparison: P_gpu[:, c] + P_gpu[:, c+64] vs P_ref[64,64]."""
     var max_err: Float32 = 0.0
     for r in range(TS_P_REF_ROWS):
         for c in range(TS_P_REF_COLS):
             var ref_val = ref_ptr[r * TS_P_REF_COLS + c]
-            var gpu_val = Scalar[DType.float32](
-                p_ptr[r * TS_P_COLS + c]
-            ) + Scalar[DType.float32](p_ptr[r * TS_P_COLS + c + TS_P_ROWS])
+            var gpu_val = Float32(p_ptr[r * TS_P_COLS + c]) + Float32(
+                p_ptr[r * TS_P_COLS + c + TS_P_ROWS]
+            )
             var err = abs(gpu_val - ref_val) / max(abs(ref_val), Float32(1.0))
             if err > max_err:
                 max_err = err
@@ -2224,7 +2226,7 @@ def test_ts_partial(ctx: DeviceContext) raises:
     )
 
     # Fold-sum naive reference: P_ref[64,64] = Q x K^T (transpose_b=True).
-    var p_ref_dev = ctx.enqueue_create_buffer[DType.float32](
+    var p_ref_dev = ctx.enqueue_create_buffer[.float32](
         TS_P_REF_ROWS * TS_P_REF_COLS
     )
     var q_dev_ptr = q_inp.device_data.value().unsafe_ptr()
@@ -2245,7 +2247,7 @@ def test_ts_partial(ctx: DeviceContext) raises:
         row_major(Coord(TS_K_ROWS, TS_K_COLS)),
     )
     comptime gemm_naive = matmul_kernel_naive[
-        DType.float32,
+        .float32,
         TS_OP_TYPE,
         TS_OP_TYPE,
         type_of(c_ref_tt).LayoutType,
@@ -2258,9 +2260,9 @@ def test_ts_partial(ctx: DeviceContext) raises:
         c_ref_tt,
         a_tt,
         b_tt,
-        TS_P_REF_ROWS,
-        TS_P_REF_COLS,
-        TS_COLS,
+        Int32(TS_P_REF_ROWS),
+        Int32(TS_P_REF_COLS),
+        Int32(TS_COLS),
         grid_dim=(
             ceildiv(TS_P_REF_ROWS, NAIVE_BLOCK_DIM),
             ceildiv(TS_P_REF_COLS, NAIVE_BLOCK_DIM),
@@ -2268,7 +2270,7 @@ def test_ts_partial(ctx: DeviceContext) raises:
         ),
         block_dim=(NAIVE_BLOCK_DIM, NAIVE_BLOCK_DIM, 1),
     )
-    var p_ref_host = ctx.enqueue_create_host_buffer[DType.float32](
+    var p_ref_host = ctx.enqueue_create_host_buffer[.float32](
         TS_P_REF_ROWS * TS_P_REF_COLS
     )
     ctx.enqueue_copy(p_ref_host, p_ref_dev)
@@ -2279,9 +2281,9 @@ def test_ts_partial(ctx: DeviceContext) raises:
     for r in range(TS_P_REF_ROWS):
         for c in range(TS_P_REF_COLS):
             var ref_val = p_ref_host[r * TS_P_REF_COLS + c]
-            var gpu_val = Scalar[DType.float32](
-                p_full_ptr[r * TS_P_COLS + c]
-            ) + Scalar[DType.float32](p_full_ptr[r * TS_P_COLS + c + TS_P_ROWS])
+            var gpu_val = Float32(p_full_ptr[r * TS_P_COLS + c]) + Float32(
+                p_full_ptr[r * TS_P_COLS + c + TS_P_ROWS]
+            )
             var err = abs(gpu_val - ref_val) / max(abs(ref_val), Float32(1.0))
             if err > max_err_full:
                 max_err_full = err
@@ -2302,9 +2304,9 @@ def test_ts_partial(ctx: DeviceContext) raises:
     for r in range(TS_P_REF_ROWS):
         for c in range(TS_P_REF_COLS):
             var ref_val = p_ref_host[r * TS_P_REF_COLS + c]
-            var gpu_val = Scalar[DType.float32](
-                p_deg_ptr[r * TS_P_COLS + c]
-            ) + Scalar[DType.float32](p_deg_ptr[r * TS_P_COLS + c + TS_P_ROWS])
+            var gpu_val = Float32(p_deg_ptr[r * TS_P_COLS + c]) + Float32(
+                p_deg_ptr[r * TS_P_COLS + c + TS_P_ROWS]
+            )
             var err = abs(gpu_val - ref_val) / max(abs(ref_val), Float32(1.0))
             if err > max_err_deg:
                 max_err_deg = err

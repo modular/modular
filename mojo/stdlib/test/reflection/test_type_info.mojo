@@ -36,16 +36,15 @@ def test_get_linkage_name() raises:
 
 
 def test_get_linkage_name_nested() raises:
-    @parameter
-    def nested_func(x: Int) -> Int:
+    def _nested_func(x: Int) {var} -> Int:
         return x
 
-    var name = get_linkage_name[nested_func]()
+    var name = get_linkage_name[type_of(_nested_func).__call__]()
     assert_equal(
         name,
         (
-            "test_type_info::test_get_linkage_name_nested()_nested_func(::SIMD[::DType(int),"
-            " ::SIMDSize(1)])"
+            "test_type_info::test_get_linkage_name_nested()::_nested_func::__storage::_nested_func(::SIMD[DType.int,"
+            " 1])`"
         ),
     )
 
@@ -58,7 +57,7 @@ def test_get_linkage_name_parameterized() raises:
     var name = get_linkage_name[your_func[7]]()
     assert_equal(
         name,
-        "test_type_info::your_func[::SIMD[::DType(int), ::SIMDSize(1)]](),x=7",
+        "test_type_info::your_func[::SIMD[DType.int, 1]](),x=7",
     )
 
 
@@ -144,7 +143,7 @@ def test_get_type_name_simd() raises:
     var name = reflect[Float32].name()
     assert_equal(name, "SIMD[DType.float32, 1]")
 
-    name = reflect[SIMD[DType.uint16, 4]].name[qualified_builtins=True]()
+    name = reflect[SIMD[.uint16, 4]].name[qualified_builtins=True]()
     assert_equal(
         name, "std.builtin.simd.SIMD[std.builtin.dtype.DType.uint16, 4]"
     )
@@ -167,9 +166,7 @@ struct Foo[
 
 
 def test_get_type_name_non_scalar_simd_value() raises:
-    var name = reflect[
-        Foo[SIMD[DType.float32, 4](1.0, 2.0, 3.0, 4.0), True]
-    ].name()
+    var name = reflect[Foo[SIMD[.float32, 4](1.0, 2.0, 3.0, 4.0), True]].name()
     assert_equal(
         name,
         (
@@ -179,9 +176,7 @@ def test_get_type_name_non_scalar_simd_value() raises:
         ),
     )
 
-    name = reflect[
-        Foo[SIMD[DType.bool, 4](True, False, True, False), True]
-    ].name()
+    name = reflect[Foo[SIMD[.bool, 4](True, False, True, False), True]].name()
     assert_equal(
         name,
         (
@@ -279,11 +274,11 @@ def test_get_type_name_through_generic() raises:
     assert_equal(_get_type_name_generic[String](), "String")
 
 
-struct UIndexParam[value: Scalar[DType.uint]]:
+struct UIndexParam[value: UInt]:
     pass
 
 
-struct IndexParam[value: Scalar[DType.int]]:
+struct IndexParam[value: Int]:
     pass
 
 
@@ -291,7 +286,7 @@ def test_get_type_name_uint_int_simd_value() raises:
     """Test that DType.uint and DType.int SIMD values are printed correctly."""
 
     # Test unsigned uindex value - should print as large positive number
-    comptime uint_max: Scalar[DType.uint] = Scalar[DType.uint].MAX
+    comptime uint_max: UInt = UInt.MAX
     var name = reflect[UIndexParam[uint_max]].name()
     if is_64bit():
         assert_equal(
@@ -308,7 +303,7 @@ def test_get_type_name_uint_int_simd_value() raises:
         )
 
     # Test signed index value for comparison - should print as -1
-    comptime neg_one: Scalar[DType.int] = -1
+    comptime neg_one: Int = -1
     name = reflect[IndexParam[neg_one]].name()
     assert_equal(
         name,

@@ -14,20 +14,22 @@
 from std.math import exp
 
 from std.gpu import (
-    AMDScheduleBarrierMask,
-    barrier,
     thread_idx,
     block_dim,
     grid_dim,
     lane_id,
+)
+from max.gpu.sync import (
+    AMDScheduleBarrierMask,
+    barrier,
     schedule_barrier,
     schedule_group_barrier,
     s_waitcnt,
     s_waitcnt_barrier,
 )
 from std.gpu.globals import WARP_SIZE
-from std.gpu.host import get_gpu_target
-from std.gpu.host.compile import _compile_code
+from max.gpu.host import get_gpu_target
+from max.gpu.host.compile import _compile_code
 from std.gpu.intrinsics import (
     ds_read_tr8_b64,
     ds_read_tr16_b64,
@@ -190,7 +192,7 @@ def test_cast_fp32_bf16_compile() raises:
     # CHECK: tail call i32 asm "v_cndmask_b32 $0, $1, $2, $3"
     print(
         _compile_code[
-            kernel_cast[DType.float32, DType.bfloat16],
+            kernel_cast[.float32, DType.bfloat16],
             target=MI300X_TARGET,
             emission_kind="llvm-opt",
         ]()
@@ -204,7 +206,7 @@ def test_exp_f32_compile() raises:
     # CHECK: tail call float @llvm.amdgcn.exp2.f32(float %4)
     print(
         _compile_code[
-            kernel_exp[DType.float32],
+            kernel_exp[.float32],
             target=MI300X_TARGET,
             emission_kind="llvm-opt",
         ]()
@@ -218,7 +220,7 @@ def test_exp_f16_compile() raises:
     # CHECK: tail call half @llvm.amdgcn.exp2.f16(half %4)
     print(
         _compile_code[
-            kernel_exp[DType.float16],
+            kernel_exp[.float16],
             target=MI300X_TARGET,
             emission_kind="llvm-opt",
         ]()
@@ -254,10 +256,10 @@ def test_barrier_compile() raises:
 def test_threadid_compile() raises:
     print("== test_threadid_compile")
 
-    # CHECK: .amdgcn_target "amdgcn-amd-amdhsa--gfx942"
+    # CHECK: .amdgcn_target "amdgcn-amd-amdhsa-unknown-gfx942"
     # CHECK: s_waitcnt lgkmcnt
     print(_compile_code[kernel, target=MI300X_TARGET]())
-    # CHECK: .amdgcn_target "amdgcn-amd-amdhsa--gfx942"
+    # CHECK: .amdgcn_target "amdgcn-amd-amdhsa-unknown-gfx942"
     # CHECK: s_waitcnt lgkmcnt
     print(_compile_code[parametric[kernel], target=MI300X_TARGET]())
     # CHECK: ; ModuleID =
@@ -347,7 +349,7 @@ def test_ds_read_tr16_b64_compile() raises:
 
     def test_kernel[dtype: DType]():
         var x = UnsafePointer[
-            Scalar[dtype], MutAnyOrigin, address_space=AddressSpace.SHARED
+            Scalar[dtype], MutAnyOrigin, address_space=.SHARED
         ].unsafe_dangling()
         var y = ds_read_tr16_b64(x)
         y[0] = y[0] + 1
@@ -356,28 +358,28 @@ def test_ds_read_tr16_b64_compile() raises:
     # CHECK: ds_read_b64_tr_b16 v[0:1], v2
     print(
         _compile_code[
-            test_kernel[DType.float16],
+            test_kernel[.float16],
             target=MI355X_TARGET,
         ]()
     )
     # CHECK: ds_read_b64_tr_b16 v[0:1], v2
     print(
         _compile_code[
-            test_kernel[DType.bfloat16],
+            test_kernel[.bfloat16],
             target=MI355X_TARGET,
         ]()
     )
     # CHECK: ds_read_b64_tr_b16 v[0:1], v2
     print(
         _compile_code[
-            test_kernel[DType.int16],
+            test_kernel[.int16],
             target=MI355X_TARGET,
         ]()
     )
     # CHECK: ds_read_b64_tr_b16 v[0:1], v2
     print(
         _compile_code[
-            test_kernel[DType.uint16],
+            test_kernel[.uint16],
             target=MI355X_TARGET,
         ]()
     )
@@ -389,7 +391,7 @@ def test_ds_read_tr8_b64_compile() raises:
 
     def test_kernel[dtype: DType]():
         var x = UnsafePointer[
-            Scalar[dtype], MutAnyOrigin, address_space=AddressSpace.SHARED
+            Scalar[dtype], MutAnyOrigin, address_space=.SHARED
         ].unsafe_dangling()
         var y = ds_read_tr8_b64(x)
         y[0] = y[0] + 1
@@ -398,14 +400,14 @@ def test_ds_read_tr8_b64_compile() raises:
     # CHECK: ds_read_b64_tr_b8 v[0:1], v2
     print(
         _compile_code[
-            test_kernel[DType.uint8],
+            test_kernel[.uint8],
             target=MI355X_TARGET,
         ]()
     )
     # CHECK: ds_read_b64_tr_b8 v[0:1], v2
     print(
         _compile_code[
-            test_kernel[DType.int8],
+            test_kernel[.int8],
             target=MI355X_TARGET,
         ]()
     )
@@ -432,7 +434,7 @@ def test_permlane_compile() raises:
     # CHECK: v_permlane32_swap_b32_e32 v{{.*}} v{{.*}}
     print(
         _compile_code[
-            test_kernel[DType.float32],
+            test_kernel[.float32],
             target=MI355X_TARGET,
         ]()
     )

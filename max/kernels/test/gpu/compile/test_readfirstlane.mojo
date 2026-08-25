@@ -12,8 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.gpu import thread_idx, WARP_SIZE
-from std.gpu.host import get_gpu_target
-from std.gpu.host.compile import _compile_code
+from max.gpu.host import get_gpu_target
+from max.gpu.host.compile import _compile_code
 from std.math.uutils import ufloordiv
 from std.memory import UnsafePointer
 from std.sys.intrinsics import readfirstlane
@@ -33,7 +33,7 @@ def test_readfirstlane_scalar_types() raises:
     scalar type."""
 
     var ir_f32 = _compile_code[
-        readfirstlane_kernel[DType.float32],
+        readfirstlane_kernel[.float32],
         target=MI355X_TARGET,
         emission_kind="llvm",
     ]().asm
@@ -43,7 +43,7 @@ def test_readfirstlane_scalar_types() raises:
     )
 
     var ir_u32 = _compile_code[
-        readfirstlane_kernel[DType.uint32],
+        readfirstlane_kernel[.uint32],
         target=MI355X_TARGET,
         emission_kind="llvm",
     ]().asm
@@ -53,7 +53,7 @@ def test_readfirstlane_scalar_types() raises:
     )
 
     var ir_f16 = _compile_code[
-        readfirstlane_kernel[DType.float16],
+        readfirstlane_kernel[.float16],
         target=MI355X_TARGET,
         emission_kind="llvm",
     ]().asm
@@ -63,7 +63,7 @@ def test_readfirstlane_scalar_types() raises:
     )
 
     var ir_f64 = _compile_code[
-        readfirstlane_kernel[DType.float64],
+        readfirstlane_kernel[.float64],
         target=MI355X_TARGET,
         emission_kind="llvm",
     ]().asm
