@@ -53,6 +53,18 @@ _EXTRA_CONSTRAINTS = {
         "//:b200_gpu": ["//:b200_gpu"],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
+    "test_kda_gpu.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    "test_kda_chunk_fwd.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    "test_kda_decode_batch_independence.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
 }
 
 _GPU_MEMORY = {
