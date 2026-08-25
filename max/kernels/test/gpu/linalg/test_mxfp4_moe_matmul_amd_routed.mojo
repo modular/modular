@@ -417,10 +417,10 @@ def run_routed_test_case[
     ctx.enqueue_copy(ei_dev, ei_h)
 
     # GPU-side preshuffle b_raw_dev → b_pre_dev.
-    var b_raw_dev_tt = TileTensor[mut=False](
+    var b_raw_dev_tt = TileTensor[mut=False, ...](
         b_raw_dev, row_major[num_experts, N, k_bytes]()
     )
-    var b_pre_dev_tt = TileTensor[mut=True](
+    var b_pre_dev_tt = TileTensor[mut=True, ...](
         b_pre_dev,
         Shuffler[num_experts].b_5d_grouped_layout[N=N, K_BYTES=k_bytes],
     )
@@ -432,26 +432,28 @@ def run_routed_test_case[
     c_dev.enqueue_fill(Float32(0.0))
 
     # ---- TileTensors ----
-    var a_tt = TileTensor[mut=False](
+    var a_tt = TileTensor[mut=False, ...](
         a_dev, row_major(Coord(num_input_rows, Idx[k_bytes]))
     )
-    var b_pre_tt = TileTensor[mut=False](
+    var b_pre_tt = TileTensor[mut=False, ...](
         b_pre_dev,
         row_major(Coord(Idx[1], Idx[num_experts * N * k_bytes])),
     )
-    var sfa_pre_tt = TileTensor[mut=False](
+    var sfa_pre_tt = TileTensor[mut=False, ...](
         sfa_pre_dev,
         row_major(Coord(Idx[1], size_expert_ids * sfa_per_block_bytes)),
     )
-    var sfb_pre_tt = TileTensor[mut=False](
+    var sfb_pre_tt = TileTensor[mut=False, ...](
         sfb_pre_dev,
         row_major(Coord(Idx[1], Idx[num_experts * sfb_per_expert_bytes])),
     )
-    var sti_tt = TileTensor[mut=False](
+    var sti_tt = TileTensor[mut=False, ...](
         sti_dev, row_major(Coord(size_expert_ids * sort_block_m))
     )
-    var ei_tt = TileTensor[mut=False](ei_dev, row_major(Coord(size_expert_ids)))
-    var c_tt = TileTensor[mut=True](
+    var ei_tt = TileTensor[mut=False, ...](
+        ei_dev, row_major(Coord(size_expert_ids))
+    )
+    var c_tt = TileTensor[mut=True, ...](
         c_dev, row_major(Coord(num_tokens * topk, Idx[N]))
     )
 
