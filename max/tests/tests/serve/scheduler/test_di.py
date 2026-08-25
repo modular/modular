@@ -873,6 +873,88 @@ def test_cancel_after_prefill_response_defers_release_until_transfer_completes()
     )
 
 
+def test_cancel_before_prefill_response_with_onload_in_flight_defers_release() -> (
+    None
+):
+    """Cancelling while ``AWAITING_PREFILL`` with the onload in flight,
+    then receiving the ``PrefillResponse``, must not emit a second
+    (generation) result, and block release must wait for both the onload
+    and the transfer to land.
+
+    Drives the real ``DecodeScheduler``, KV cache manager, and batch
+    constructor through the full lifecycle -- the sibling mocked-self unit
+    test only covers the immediate no-second-result effect.
+
+    Injects the response directly via ``handle_prefill_response`` rather
+    than through a real ``PrefillScheduler``: prefill's own
+    cancel-vs-respond race (``initiate_transfer_and_send_reply``'s
+    ``outstanding_cancelled_requests`` check) is a separate,
+    timing-dependent concern, not reliably reproducible via deterministic
+    ``run_iteration()`` calls.
+    """
+    decode, _prefill, server_addr, q = create_di_scheduler()
+    ctx = create_text_context(
+        target_endpoint=server_addr, prompt_len=100, output_len=5
+    )
+    req_id = ctx.request_id
+    pages_before = decode.kv_cache.block_count(replica_idx=0).used
+
+    q.request_queue.put(ctx)
+    decode.run_iteration()  # allocs (onload_event) and sends to prefill
+    assert req_id in decode.requests
+    pending = decode.requests[req_id]
+    assert pending.phase is DecodeRequestPhase.AWAITING_PREFILL
+
+    q.cancel_queue.put([req_id])
+    with patch.object(pending.onload_event, "is_complete", return_value=False):
+        decode.run_iteration()  # cancellation: deferred, onload in flight
+        assert req_id in decode.requests
+        assert is_cancelled(decode, req_id)
+        pages_while_deferred = decode.kv_cache.block_count(replica_idx=0).used
+        assert pages_while_deferred > pages_before, (
+            "Blocks must not be released while the onload is still in flight"
+        )
+
+        transfer_metadata = MagicMock()
+        decode.handle_prefill_response(
+            PrefillResponse(
+                id=req_id,
+                generated_token_id=5,
+                transfer_metadata=transfer_metadata,
+            )
+        )
+
+        assert in_transfer(decode, req_id)
+        assert is_cancelled(decode, req_id)
+        assert decode.requests[req_id].transfer is transfer_metadata
+        assert response_count(q, req_id) == 1, (
+            "Expected only the original cancelled() result, got a second "
+            "response after the PrefillResponse landed"
+        )
+
+    # Onload now reports complete again. The synthetic transfer_metadata
+    # isn't a real NIXL transfer the engine knows about, so drive its
+    # completion the same way the sibling TRANSFERRING-cancel test drives
+    # the onload: patch is_complete/cleanup_transfer directly.
+    with (
+        patch.object(decode.transfer_engine, "is_complete", return_value=True),
+        patch.object(decode.transfer_engine, "cleanup_transfer"),
+    ):
+        decode.check_for_completed_transfers()
+
+    assert req_id not in decode.requests
+    assert not decode.batch_constructor.contains(req_id)
+    pages_after_completion = decode.kv_cache.block_count(replica_idx=0).used
+    assert pages_after_completion == pages_before, (
+        f"KV blocks leaked after deferred cancel cleanup: had "
+        f"{pages_before} before, {pages_after_completion} after "
+        f"(expected {pages_before})."
+    )
+    assert response_count(q, req_id) == 1, (
+        "Expected exactly one response for the whole lifecycle"
+    )
+
+
 def test_stale_prefill_response_after_cancel_does_not_crash() -> None:
     """A PrefillResponse arriving after the request was cancelled must be
     silently discarded, not raise KeyError.
@@ -943,6 +1025,60 @@ def test_prefix_caching_marks_cached_blocks_in_prefill_request() -> None:
     assert dst_ids[:num_cached] == [-1] * num_cached
     # Remaining entries must be valid non-negative block indices
     assert all(idx >= 0 for idx in dst_ids[num_cached:])
+
+
+def test_prefix_caching_marks_cached_blocks_independent_of_decode_dp() -> None:
+    """The number of blocks marked -1 for a cached prefix must not depend
+    on decode's data-parallel degree.
+
+    Regression: the marking loop divided by ``data_parallel_degree``, but
+    no block-count computation in the KV cache manager scales by DP
+    degree. Under-counting the cached prefix at DP>1 let prefill's
+    transfer overwrite blocks decode's own onload was concurrently
+    populating.
+
+    Compares ``decode_dp=1`` against ``decode_dp=2`` instead of asserting
+    an absolute count, since prefix caching doesn't commit every full
+    prompt page to the cache immediately (unrelated to this bug).
+    """
+
+    def num_cached_blocks(decode_dp: int) -> int:
+        page_size = 32
+        prompt_len = 256  # 8 full pages
+        decode, prefill, server_addr, q = create_di_scheduler(
+            page_size=page_size,
+            enable_prefix_caching=True,
+            decode_dp=decode_dp,
+        )
+
+        ctx1 = create_text_context(
+            target_endpoint=server_addr, prompt_len=prompt_len, output_len=5
+        )
+        q.request_queue.put(ctx1)
+        decode.run_iteration()
+        prefill.run_iteration()
+        run_until(
+            lambda: ctx1.request_id in done_request_ids(q), decode, prefill
+        )
+
+        ctx2 = create_text_context(
+            target_endpoint=server_addr, prompt_len=prompt_len, output_len=5
+        )
+        q.request_queue.put(ctx2)
+        decode.reserve_memory_and_send_to_prefill()
+
+        while True:
+            msg, _ = prefill.dispatcher.recv_request_nowait()
+            if isinstance(msg, PrefillRequest):
+                break
+
+        return msg.dst_block_ids.count(-1)
+
+    baseline = num_cached_blocks(decode_dp=1)
+    assert baseline > 0, "Expected some blocks to be prefix-cached"
+    assert num_cached_blocks(decode_dp=2) == baseline, (
+        "Cached-block count must not depend on decode_dp"
+    )
 
 
 def test_prefix_caching_prefill_skips_cached_blocks_in_transfer() -> None:

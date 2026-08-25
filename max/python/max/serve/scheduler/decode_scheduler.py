@@ -99,6 +99,10 @@ class PendingDecodeRequest:
     context: TextContext
     replica_idx: int
     phase: DecodeRequestPhase
+    # The admission-time KV onload (a reused-prefix H2D copy). Release
+    # and TG-enqueue sites must wait for this too, not just the prefill
+    # transfer.
+    onload_event: KVConnectorTransfer
     phase_entered_at: float = field(default_factory=time.monotonic)
     transfer: TransferReqData | None = None
     # Decode-clock receipt times for prefill's ping-back events, used to
@@ -107,29 +111,10 @@ class PendingDecodeRequest:
     # prefill).
     arrived_ping_at: float | None = None
     ce_done_ping_at: float | None = None
-    # Cancelled while TRANSFERRING: releasing blocks immediately would free
-    # memory the transfer is still writing into, racing a future allocation
-    # that reuses the same blocks. Cleanup defers to
-    # check_for_completed_transfers, once the transfer engine confirms the
-    # write actually landed.
+    # Cancelled while onload and/or prefill's transfer may still be
+    # writing into these blocks. Release defers to
+    # check_for_completed_transfers until both are confirmed landed.
     cancelled: bool = False
-
-
-@dataclass
-class _OnloadingDecodeRequest:
-    """A newly-claimed decode request cordoned out of the send-to-prefill
-    path while its KV onload (a reused-prefix H2D copy) is in flight.
-
-    Blocks are already claimed and allocated (pinned by ``event``); the
-    request is held here until ``event`` polls complete, then sent to
-    prefill like any other freshly-admitted request. Mirrors
-    ``TextBatchConstructor``'s CE-side onload cordon
-    (``_OnloadingRequest``/``_readmit_completed_onloads``).
-    """
-
-    context: TextContext
-    replica_idx: int
-    event: KVConnectorTransfer
 
 
 class DecodeScheduler(Scheduler):
@@ -164,9 +149,6 @@ class DecodeScheduler(Scheduler):
         # Initialize Scheduler state.
         self.pending_reqs: OrderedDict[RequestID, TextContext] = OrderedDict()
         self.requests: dict[RequestID, PendingDecodeRequest] = {}
-        self._onloading_reqs: OrderedDict[
-            RequestID, _OnloadingDecodeRequest
-        ] = OrderedDict()
         self.prefill_reqs_per_replica: list[int] = [
             0 for _ in range(scheduler_config.data_parallel_degree)
         ]
@@ -230,6 +212,16 @@ class DecodeScheduler(Scheduler):
         # was in-flight over ZMQ.  Discard the stale response
         pending = self.requests.get(request_id)
         if pending is None:
+            return
+
+        if pending.cancelled:
+            # Client already got SchedulerResult.cancelled() -- don't
+            # also emit a generation result. Still record the transfer
+            # so check_for_completed_transfers waits for it before
+            # releasing these blocks.
+            pending.phase = DecodeRequestPhase.TRANSFERRING
+            pending.phase_entered_at = time.monotonic()
+            pending.transfer = message.transfer_metadata
             return
 
         postprocess_start = time.monotonic()
@@ -339,13 +331,13 @@ class DecodeScheduler(Scheduler):
             f"Invalid Context: Expected needs_ce to be True. Found: {data}"
         )
 
-        # Set dst_idx to -1 to denote pages which the decode already has due to
-        # prefix caching. processed_length is in tokens; divide by page_size to
-        # convert to blocks before accounting for data-parallel degree.
+        # Set dst_idx to -1 to denote pages which the decode already has due
+        # to prefix caching. processed_length is in tokens; divide by
+        # page_size to convert to blocks. dst_idxs is already per-replica
+        # (get_req_blocks returns blocks on the replica the request was
+        # claimed on), so no further scaling by data-parallel degree.
         for i in range(
-            data.tokens.processed_length
-            // self.kv_cache.params.page_size
-            // self.scheduler_config.data_parallel_degree
+            data.tokens.processed_length // self.kv_cache.params.page_size
         ):
             dst_idxs[i] = -1
 
@@ -365,41 +357,33 @@ class DecodeScheduler(Scheduler):
         METRICS.di_decode_send_time((time.monotonic() - send_start) * 1000)
 
     def _send_admitted_request_to_prefill(
-        self, req_id: RequestID, context: TextContext, replica_idx: int
+        self,
+        req_id: RequestID,
+        context: TextContext,
+        replica_idx: int,
+        onload_event: KVConnectorTransfer,
     ) -> None:
-        """Sends a claimed, fully-onloaded request to the prefill node."""
+        """Sends a claimed request to the prefill node.
+
+        Does not wait for ``onload_event`` (the admission-time KV onload)
+        to complete first -- prefill only ever writes blocks beyond the
+        request's already-cached prefix, so its own KV transfer and our
+        onload never target the same memory. ``onload_event`` still has
+        to complete before this request can join a TG batch or release
+        its blocks; see ``check_for_completed_transfers``.
+        """
         dst_idxs = self.kv_cache.get_req_blocks(context)
         self.requests[req_id] = PendingDecodeRequest(
             context=context,
             replica_idx=replica_idx,
             phase=DecodeRequestPhase.AWAITING_PREFILL,
+            onload_event=onload_event,
             phase_entered_at=time.monotonic(),
         )
         self.send_prefill_request(req_id, context, dst_idxs, replica_idx)
 
-    def _send_completed_onloads_to_prefill(self) -> None:
-        """Sends cordoned requests whose KV onload has completed to prefill.
-
-        Runs once per iteration, before admitting new requests, so a
-        request that's been waiting on its onload doesn't wait an extra
-        cycle once the copy lands. Mirrors
-        ``TextBatchConstructor._readmit_completed_onloads``.
-        """
-        completed = [
-            req_id
-            for req_id, onloading in self._onloading_reqs.items()
-            if onloading.event.is_complete()
-        ]
-        for req_id in completed:
-            onloading = self._onloading_reqs.pop(req_id)
-            self._send_admitted_request_to_prefill(
-                req_id, onloading.context, onloading.replica_idx
-            )
-
     def reserve_memory_and_send_to_prefill(self) -> None:
         """Continuously pulls requests from the request queue and forwards them to the prefill node."""
-        self._send_completed_onloads_to_prefill()
-
         # max_batch_size is a per-replica limit (see TextBatchConstructor's
         # docstring), but the in-flight counts below sum every replica --
         # scale by DP degree so admission isn't capped at one replica's share.
@@ -420,11 +404,7 @@ class DecodeScheduler(Scheduler):
 
         while (
             self.pending_reqs
-            and (
-                len(self.batch_constructor.all_tg_reqs)
-                + len(self.requests)
-                + len(self._onloading_reqs)
-            )
+            and (len(self.batch_constructor.all_tg_reqs) + len(self.requests))
             < total_max_batch_size
             and (
                 self.kv_cache is None
@@ -468,20 +448,9 @@ class DecodeScheduler(Scheduler):
                     (admitted_at - enqueued_at) * 1000
                 )
             self.prefill_reqs_per_replica[replica_idx] += 1
-
-            # Cordon the request if its KV onload (a reused-prefix H2D
-            # copy) has not landed yet: hold it out of the send-to-prefill
-            # path so the scheduler keeps admitting/dispatching other work
-            # while the copy completes, instead of blocking this thread on
-            # it. Checked again next iteration by
-            # _send_completed_onloads_to_prefill.
-            if not load_event.is_complete():
-                self._onloading_reqs[req_id] = _OnloadingDecodeRequest(
-                    context=context, replica_idx=replica_idx, event=load_event
-                )
-                continue
-
-            self._send_admitted_request_to_prefill(req_id, context, replica_idx)
+            self._send_admitted_request_to_prefill(
+                req_id, context, replica_idx, load_event
+            )
 
     def _handle_cancelled_requests(self) -> None:
         for req_id in get_cancelled_reqs(self.cancel_queue):
@@ -489,20 +458,6 @@ class DecodeScheduler(Scheduler):
                 # Remove it from the active batch.
                 self.batch_constructor.release_request(req_id)
                 # Send the cancelled result back to the response q
-                self.response_queue.put_nowait(
-                    {req_id: SchedulerResult.cancelled()}
-                )
-                continue
-
-            onloading = self._onloading_reqs.pop(req_id, None)
-            if onloading is not None:
-                # Never sent to prefill -- nothing there to cancel. Its
-                # pending onload keeps the blocks pinned until it
-                # completes; release() is safe to call regardless (mirrors
-                # the CE batch constructor's cordon cleanup in
-                # release_request).
-                self.prefill_reqs_per_replica[onloading.replica_idx] -= 1
-                self.kv_cache.release(onloading.context)
                 self.response_queue.put_nowait(
                     {req_id: SchedulerResult.cancelled()}
                 )
@@ -518,16 +473,21 @@ class DecodeScheduler(Scheduler):
             data = pending.context
             dst_replica_idx = pending.replica_idx
 
-            if pending.phase is DecodeRequestPhase.TRANSFERRING:
-                # A PrefillResponse already landed and the KV transfer is
-                # running -- releasing these blocks now would free memory
-                # that transfer is still writing into. Defer the block
-                # release to check_for_completed_transfers, once the
-                # transfer engine confirms the write actually landed.
+            if (
+                pending.phase is DecodeRequestPhase.TRANSFERRING
+                or not pending.onload_event.is_complete()
+            ):
+                # A PrefillResponse's KV transfer may be running, or --
+                # since this request was sent to prefill without waiting
+                # for its own admission-time onload -- that onload copy
+                # may still be writing into these blocks. Defer the
+                # release to check_for_completed_transfers, which waits
+                # for whichever of the two is still outstanding.
                 pending.cancelled = True
             else:
-                # No transfer in flight yet, so nothing is writing to
-                # these blocks -- safe to release immediately.
+                # Onload landed and no transfer is in flight yet, so
+                # nothing is writing to these blocks -- safe to release
+                # immediately.
                 del self.requests[req_id]
                 self.prefill_reqs_per_replica[dst_replica_idx] -= 1
                 self.kv_cache.release(data)
@@ -627,35 +587,39 @@ class DecodeScheduler(Scheduler):
         )
 
     def check_for_completed_transfers(self) -> None:
-        """Marks completed transfers ready for TG, or -- for ones cancelled
-        mid-flight -- releases their KV blocks now that the write landed.
+        """Settles requests once every write still targeting their blocks
+        has landed: the admission-time onload always, and -- once a
+        ``PrefillResponse`` arrives -- prefill's own KV transfer too.
+        Ready requests join a TG batch, or, if cancelled, release their
+        blocks.
 
         Must run after ``_handle_cancelled_requests`` within the same
         iteration, so a same-tick cancellation is already flagged on its
         record before this checks it.
         """
-
-        transferring_ids = [
-            req_id
-            for req_id, pending in self.requests.items()
-            if pending.phase is DecodeRequestPhase.TRANSFERRING
-        ]
-        for request_id in transferring_ids:
-            pending = self.requests[request_id]
-            assert pending.transfer is not None
-
-            # Transfer is not complete, skip.
-            if not self.transfer_engine.is_complete(pending.transfer):
+        ready_ids = []
+        for req_id, pending in self.requests.items():
+            if not pending.onload_event.is_complete():
                 continue
+            if pending.phase is DecodeRequestPhase.TRANSFERRING:
+                assert pending.transfer is not None
+                if not self.transfer_engine.is_complete(pending.transfer):
+                    continue
+            elif not pending.cancelled:
+                # AWAITING_PREFILL and not cancelled: still waiting on a
+                # PrefillResponse, unrelated to the onload above.
+                continue
+            ready_ids.append(req_id)
 
-            del self.requests[request_id]
+        for request_id in ready_ids:
+            pending = self.requests.pop(request_id)
             self.prefill_reqs_per_replica[pending.replica_idx] -= 1
-            self.transfer_engine.cleanup_transfer(pending.transfer)
+
+            if pending.phase is DecodeRequestPhase.TRANSFERRING:
+                assert pending.transfer is not None
+                self.transfer_engine.cleanup_transfer(pending.transfer)
 
             if pending.cancelled:
-                # Cancelled while the transfer was in flight (see
-                # _handle_cancelled_requests): the write has now actually
-                # landed, so it's finally safe to release the blocks.
                 self.kv_cache.release(pending.context)
                 continue
 
@@ -671,10 +635,6 @@ class DecodeScheduler(Scheduler):
             1
             for pending in self.requests.values()
             if pending.replica_idx == replica_idx
-        ) + sum(
-            1
-            for onloading in self._onloading_reqs.values()
-            if onloading.replica_idx == replica_idx
         )
 
     @traced
@@ -762,11 +722,7 @@ class DecodeScheduler(Scheduler):
         t1 = time.monotonic()
         batch_creation_time_s = t1 - t0
 
-        total_pending = (
-            len(self.pending_reqs)
-            + len(self.requests)
-            + len(self._onloading_reqs)
-        )
+        total_pending = len(self.pending_reqs) + len(self.requests)
         if inputs or total_pending == 0:
             self._last_batch_activity = time.monotonic()
         elif self.scheduler_config.decode_stall_timeout_s is not None:
@@ -780,13 +736,12 @@ class DecodeScheduler(Scheduler):
                 transferring = len(self.requests) - awaiting_prefill
                 logger.error(
                     "Decode stall detected: no batch activity for %.1fs"
-                    " with %d pending requests (%d queued, %d onloading,"
-                    " %d awaiting prefill, %d transferring). Terminating"
-                    " worker to trigger restart.",
+                    " with %d pending requests (%d queued, %d awaiting"
+                    " prefill, %d transferring). Terminating worker to"
+                    " trigger restart.",
                     stall_duration,
                     total_pending,
                     len(self.pending_reqs),
-                    len(self._onloading_reqs),
                     awaiting_prefill,
                     transferring,
                 )
