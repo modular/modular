@@ -117,6 +117,8 @@ class HYV3Config(Llama3Config):
         devices: list[DeviceRef],
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
+        *,
+        allow_kv_head_replication: bool = False,
     ) -> KVCacheParams:
         """Construct KV cache params using the explicit head_dim.
 
@@ -139,6 +141,7 @@ class HYV3Config(Llama3Config):
         )
         data_parallel_degree = max(1, int(configured_dp))
         return kv_cache_config.to_params(
+            allow_kv_head_replication=allow_kv_head_replication,
             dtype=cache_dtype,
             n_kv_heads=huggingface_config.num_key_value_heads,
             head_dim=huggingface_config.head_dim,

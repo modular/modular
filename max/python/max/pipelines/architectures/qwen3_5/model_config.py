@@ -250,6 +250,8 @@ class Qwen3_5Config(Llama3Config):
         devices: list[DeviceRef],
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
+        *,
+        allow_kv_head_replication: bool = False,
     ) -> KVCacheParams:
         """Construct KV cache parameters for full attention layers only.
 
@@ -274,6 +276,7 @@ class Qwen3_5Config(Llama3Config):
         if text_config.head_dim > 128:
             page_size = max(page_size, text_config.head_dim)
         return kv_cache_config.to_params(
+            allow_kv_head_replication=allow_kv_head_replication,
             dtype=cache_dtype,
             n_kv_heads=text_config.num_key_value_heads,
             head_dim=text_config.head_dim,

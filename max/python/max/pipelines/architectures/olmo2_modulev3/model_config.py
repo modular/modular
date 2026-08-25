@@ -132,6 +132,8 @@ class Olmo2Config(
         devices: list[DeviceRef],
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
+        *,
+        allow_kv_head_replication: bool = False,
     ) -> KVCacheParams:
         """Olmo2 does not support data parallelism; use default grouped KV (no EAGLE)."""
         if pipeline_config.model.data_parallel_degree > 1:
@@ -144,6 +146,7 @@ class Olmo2Config(
             devices,
             kv_cache_config,
             cache_dtype,
+            allow_kv_head_replication=allow_kv_head_replication,
         )
 
     @staticmethod

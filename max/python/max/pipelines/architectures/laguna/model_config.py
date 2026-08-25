@@ -136,6 +136,8 @@ class LagunaConfig(Llama3Config):
         devices: list[DeviceRef],
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
+        *,
+        allow_kv_head_replication: bool = False,
     ) -> KVCacheParams:
         """Constructs KV cache parameters using explicit head_dim from config.
 
@@ -179,6 +181,7 @@ class LagunaConfig(Llama3Config):
                 scale_dtype=DType.int8, quantization_granularity=32
             )
         return kv_cache_config.to_params(
+            allow_kv_head_replication=allow_kv_head_replication,
             dtype=cache_dtype,
             n_kv_heads=huggingface_config.num_key_value_heads,
             head_dim=huggingface_config.head_dim,

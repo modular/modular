@@ -109,6 +109,8 @@ class Step3p5Config(Llama3Config):
         devices: list[DeviceRef],
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
+        *,
+        allow_kv_head_replication: bool = False,
     ) -> KVCacheParams:
         """Construct KV cache parameters for Step-3.5.
 
@@ -141,6 +143,7 @@ class Step3p5Config(Llama3Config):
         max_kv_heads = max(num_kv_heads_full, num_kv_heads_sliding)
 
         return kv_cache_config.to_params(
+            allow_kv_head_replication=allow_kv_head_replication,
             dtype=cache_dtype,
             n_kv_heads=max_kv_heads,
             head_dim=head_dim,

@@ -188,10 +188,18 @@ class Llama3Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
         devices: list[DeviceRef],
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
+        *,
+        allow_kv_head_replication: bool = False,
     ) -> KVCacheParams:
-        """Grouped-attention KV with EAGLE draft-token count when speculative is on."""
+        """Grouped-attention KV with EAGLE draft-token count when speculative is on.
+
+        ``allow_kv_head_replication`` lets subclasses with fewer KV heads
+        than the tensor-parallel width replicate each head across a device
+        group.
+        """
         return kv_cache_config.to_params(
             dtype=cache_dtype,
+            allow_kv_head_replication=allow_kv_head_replication,
             n_kv_heads=huggingface_config.num_key_value_heads,
             head_dim=cls.get_head_dim(huggingface_config),
             num_layers=cls.get_num_layers(huggingface_config),
