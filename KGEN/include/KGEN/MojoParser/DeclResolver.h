@@ -207,7 +207,8 @@ public:
   /// using a wild-card import. Only non-internal decls (those whose names don't
   /// start with an `_`) are imported.
   LogicalResult importWildcardDeclsFromModule(
-      ASTDecl &context, const UnresolvedWildcardImport &unresolvedImport);
+      ASTDecl &context, const UnresolvedWildcardImport &unresolvedImport,
+      StringAttr onlyName = {});
 
   //===--------------------------------------------------------------------===//
   // Decl Resolution
@@ -276,9 +277,14 @@ public:
   /// were not referenced at all during parsing are erased.
   void resolveAllReferencedFrom(ASTDecl &decl, bool eraseUnparsedDecls = true);
 
-  /// Resolve the pending wildcard imports in the decl if it represents a
-  /// module.
-  LogicalResult resolveAllWildcardImports(ASTDecl &module);
+  /// Resolve the pending wildcard imports in the scope.
+  LogicalResult resolveAllWildcardImports(ASTDecl &scope);
+
+  /// Expand `scope`'s pending wildcard imports for `name` alone, leaving them
+  /// pending so later names can still be found through them. Wildcards already
+  /// searched for `name` are skipped.
+  void expandWildcardsForName(ASTDecl &scope, StringAttr name,
+                              bool stopOnFirstHit = false);
 
   ArrayRef<ASTDecl *> getParsedDeclList() const { return parsedDeclList; }
 

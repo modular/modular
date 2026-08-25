@@ -263,6 +263,12 @@ bool ASTDecl::hasRecursivelyStableType(const ASTDecl *typeDecl) const {
   return false;
 }
 
+bool UnresolvedWildcardImport::markSearched(StringRef name) {
+  if (!searchedNames)
+    searchedNames.reset(new llvm::StringSet<>());
+  return searchedNames->insert(name).second;
+}
+
 /// Add an unresolved wild card import into this scope.
 void ASTDecl::addUnresolvedWildcardImport(
     UnresolvedWildcardImport unresolvedImport) {
@@ -270,36 +276,16 @@ void ASTDecl::addUnresolvedWildcardImport(
   if (!unresolvedWildcardImports)
     unresolvedWildcardImports.reset(new UnresolvedWildcardImportsType());
   else {
-    // If we are already tracking this entity, remove it so we can place it
-    // last. The last unresolved wildcard statement always wins:
+    // If we are already tracking this entity, mark it as superseded so we can
+    // place it last. The last unresolved wildcard statement always wins:
     //   from a import *
     //   from b import *
     //   from a import *
-    auto it = llvm::find_if(
-        *unresolvedWildcardImports,
-        [&unresolvedImport](const UnresolvedWildcardImport &import) {
-          return import.moduleName == unresolvedImport.moduleName;
-        });
-    if (it != unresolvedWildcardImports->end())
-      unresolvedWildcardImports->erase(it);
+    for (UnresolvedWildcardImport &import : *unresolvedWildcardImports)
+      if (import.moduleName == unresolvedImport.moduleName)
+        import.isSuperseded = true;
   }
   unresolvedWildcardImports->emplace_back(std::move(unresolvedImport));
-}
-
-std::optional<UnresolvedWildcardImport>
-ASTDecl::popLatestUnresolvedWildcardImport(StringRef lookupName) {
-  if (!unresolvedWildcardImports || unresolvedWildcardImports->empty())
-    return std::nullopt;
-
-  // Only an internal-name lookup filters anything: non-full imports never
-  // provide underscore names, so they stay pending for other lookups. An
-  // empty lookupName takes the newest unconditionally.
-  if (!lookupName.empty() && isInternalName(lookupName))
-    return std::nullopt;
-
-  auto unresolvedImport = unresolvedWildcardImports->pop_back_val();
-
-  return unresolvedImport;
 }
 
 /// Mangle a parameter name for the given parameter scope and scope depth. Due
