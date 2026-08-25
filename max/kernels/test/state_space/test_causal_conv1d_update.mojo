@@ -23,10 +23,7 @@ from layout import (
     row_major,
 )
 from layout._fillers import random
-from state_space.causal_conv1d import (
-    causal_conv1d_update_cpu,
-    causal_conv1d_update_cpu_no_bias,
-)
+from state_space.causal_conv1d import causal_conv1d_update_cpu
 from std.testing import TestSuite, assert_almost_equal
 
 from std.utils.index import Index
@@ -171,67 +168,39 @@ def run_causal_conv1d_update[
 
     var silu_activation = activation == "silu"
 
-    # Test fused kernel
-    if has_bias:
-        causal_conv1d_update_cpu[
-            dtype,
-            dtype,
-            dtype,
-            dtype,
-            dtype,
-        ](
-            batch,
-            dim,
-            seqlen,
-            width,
-            state_len,
-            input_tt,
-            conv_state_tt,
-            weight_tt,
-            result_fused_tt,
-            bias_tt,
-            x_batch_stride,
-            x_c_stride,
-            x_l_stride,
-            conv_state_batch_stride,
-            conv_state_c_stride,
-            conv_state_l_stride,
-            weight_c_stride,
-            weight_width_stride,
-            out_batch_stride,
-            out_c_stride,
-            out_l_stride,
-            silu_activation,
-        )
-    else:
-        causal_conv1d_update_cpu_no_bias[
-            dtype,
-            dtype,
-            dtype,
-            dtype,
-        ](
-            batch,
-            dim,
-            seqlen,
-            width,
-            state_len,
-            input_tt,
-            conv_state_tt,
-            weight_tt,
-            result_fused_tt,
-            x_batch_stride,
-            x_c_stride,
-            x_l_stride,
-            conv_state_batch_stride,
-            conv_state_c_stride,
-            conv_state_l_stride,
-            weight_c_stride,
-            weight_width_stride,
-            out_batch_stride,
-            out_c_stride,
-            out_l_stride,
-            silu_activation,
-        )
+    # Test fused kernel (bias presence selected by the has_bias parameter;
+    # bias_tt is always supplied but only read when has_bias is True).
+    causal_conv1d_update_cpu[
+        dtype,
+        dtype,
+        dtype,
+        dtype,
+        dtype,
+        has_bias,
+    ](
+        batch,
+        dim,
+        seqlen,
+        width,
+        state_len,
+        input_tt,
+        conv_state_tt,
+        weight_tt,
+        result_fused_tt,
+        bias_tt,
+        x_batch_stride,
+        x_c_stride,
+        x_l_stride,
+        conv_state_batch_stride,
+        conv_state_c_stride,
+        conv_state_l_stride,
+        weight_c_stride,
+        weight_width_stride,
+        out_batch_stride,
+        out_c_stride,
+        out_l_stride,
+        silu_activation,
+    )
 
     # Reference implementation
     var width_minus_1: Int = width - 1
