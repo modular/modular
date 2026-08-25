@@ -134,8 +134,7 @@ def causal_conv1d_channel_first_fwd_cpu[
     var total_bc = batch * dim
 
     # Parallelize across batch*channel combinations
-    @__parameter
-    def process_bc(bc_idx: Int):
+    def process_bc(bc_idx: Int) {imm}:
         var b, c = divmod(bc_idx, dim)
 
         # Bounds checking
@@ -215,7 +214,7 @@ def causal_conv1d_channel_first_fwd_cpu[
                     ]()
             output.raw_store(out_offset, out_val)
 
-    sync_parallelize[process_bc](total_bc, ctx)
+    sync_parallelize(process_bc, total_bc, ctx)
 
 
 def causal_conv1d_channel_first_fwd_cpu_no_bias[
@@ -275,8 +274,7 @@ def causal_conv1d_channel_first_fwd_cpu_no_bias[
     var total_bc = batch * dim
 
     # Parallelize across batch*channel combinations
-    @__parameter
-    def process_bc(bc_idx: Int):
+    def process_bc(bc_idx: Int) {imm}:
         var b, c = divmod(bc_idx, dim)
 
         var weight_c_base_offset = UInt32(UInt32(c) * weight_c_stride)
@@ -342,7 +340,7 @@ def causal_conv1d_channel_first_fwd_cpu_no_bias[
                     ]()
             output.raw_store(out_offset, out_val)
 
-    sync_parallelize[process_bc](total_bc, ctx)
+    sync_parallelize(process_bc, total_bc, ctx)
 
 
 def causal_conv1d_channel_last_fwd_cpu[

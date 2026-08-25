@@ -487,9 +487,7 @@ def reference_gemm[
     var total_work = M * N
     var num_workers = ceildiv(total_work, grain_size)
 
-    @__copy_capture(total_work, N, K)
-    @__parameter
-    def task_func(task_id: Int):
+    def task_func(task_id: Int) {var total_work, var N, var K, imm}:
         var task_start = task_id * grain_size
         var task_count = min(total_work - task_start, grain_size)
 
@@ -503,7 +501,7 @@ def reference_gemm[
 
             c.store(Index(m, n), result)
 
-    sync_parallelize[task_func](num_workers)
+    sync_parallelize(task_func, num_workers)
 
 
 struct GemmContext[qgemm: QuantizedGemm]:

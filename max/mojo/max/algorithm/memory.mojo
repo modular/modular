@@ -53,9 +53,8 @@ def unsafe_parallel_memcpy[
     if count == 0:
         return
 
-    @__parameter
     @always_inline
-    def _parallel_copy(thread_id: Int):
+    def _parallel_copy(thread_id: Int) {imm}:
         var begin = count_per_task * thread_id
         var end = min(
             count_per_task * (thread_id + 1),
@@ -73,7 +72,7 @@ def unsafe_parallel_memcpy[
             count=to_copy,
         )
 
-    sync_parallelize[_parallel_copy](num_tasks)
+    sync_parallelize(_parallel_copy, num_tasks)
 
 
 def unsafe_parallel_memcpy[

@@ -533,8 +533,7 @@ def varlen_selective_state_update_cpu[
     var dt_softplus_bool = Bool(Int(dt_softplus) != 0)
     var has_state_batch_indices_bool = Bool(Int(has_state_batch_indices) != 0)
 
-    @__parameter
-    def worker(idx: Int):
+    def worker(idx: Int) {imm}:
         var b, remaining = divmod(idx, nheads * dim)
         var h, m = divmod(remaining, dim)
 
@@ -660,7 +659,7 @@ def varlen_selective_state_update_cpu[
             out_offset, Scalar[kernel_dtype](out_val.cast[kernel_dtype]())
         )
 
-    sync_parallelize[worker](batch * nheads * dim, ctx)
+    sync_parallelize(worker, batch * nheads * dim, ctx)
 
 
 def varlen_selective_scan_fwd_cpu[
@@ -708,8 +707,7 @@ def varlen_selective_scan_fwd_cpu[
     var delta_softplus_bool = Bool(Int(delta_softplus) != 0)
     var group_size = dim // ngroups
 
-    @__parameter
-    def worker(d: Int):
+    def worker(d: Int) {imm}:
         # Pre-load D and delta_bias for this dim
         var D_val = Float32(0.0)
         if has_D:
@@ -863,4 +861,4 @@ def varlen_selective_scan_fwd_cpu[
                     Scalar[kernel_dtype](state[n].cast[kernel_dtype]()),
                 )
 
-    sync_parallelize[worker](dim, ctx)
+    sync_parallelize(worker, dim, ctx)

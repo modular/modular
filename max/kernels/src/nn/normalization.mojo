@@ -1372,11 +1372,16 @@ def rms_norm_cpu[
     var num_workers = min(parallelism_level(ctx), prod_all_but_last_dim)
     var chunk_size = ceildiv(prod_all_but_last_dim, num_workers)
 
-    @__copy_capture(
-        chunk_size, prod_all_but_last_dim, last_dim, epsilon, weight_offset
-    )
-    @__parameter
-    def task_func(thread_id: Int):
+    def task_func(
+        thread_id: Int,
+    ) {
+        var chunk_size,
+        var prod_all_but_last_dim,
+        var last_dim,
+        var epsilon,
+        var weight_offset,
+        imm,
+    }:
         var num_rows = min(
             chunk_size, prod_all_but_last_dim - thread_id * chunk_size
         )
@@ -1419,7 +1424,7 @@ def rms_norm_cpu[
             out_shape=IndexList[2](num_rows, last_dim),
         )
 
-    sync_parallelize[task_func](num_workers, ctx)
+    sync_parallelize(task_func, num_workers, ctx)
 
 
 @always_inline
@@ -2691,9 +2696,16 @@ def group_norm_cpu[
     var num_workers = min(parallelism_level(ctx), num_rows)
     var chunk_size = ceildiv(num_rows, num_workers)
 
-    @__copy_capture(shape, num_groups, channels_per_group, spatial, epsilon)
-    @__parameter
-    def task_func(thread_id: Int) raises:
+    def task_func(
+        thread_id: Int,
+    ) raises {
+        var shape,
+        var num_groups,
+        var channels_per_group,
+        var spatial,
+        var epsilon,
+        imm,
+    }:
         var row_start = thread_id * chunk_size
         var row_end = min(row_start + chunk_size, num_rows)
 
@@ -2732,7 +2744,7 @@ def group_norm_cpu[
                 var norm_val = (val - mean) * norm_factor * gamma_val + beta_val
                 output.store(Coord(idx), norm_val.cast[dtype]())
 
-    sync_parallelize[task_func](num_workers, ctx)
+    sync_parallelize(task_func, num_workers, ctx)
 
 
 @always_inline

@@ -403,16 +403,15 @@ def _reduce_output[
     var buf_size = num_rows * F
 
     # Reduce from the output scratch buffer to the actual output.
-    @__parameter
     @always_inline
-    def reduce_task(tid: Int):
+    def reduce_task(tid: Int) {imm}:
         # Use all threads in reduction.
         var reduce_range = partition_work(tid, num_threads, num_rows, 1)
 
         @always_inline
         def sum[
             width: Int
-        ](offset: Int) {F, scratch, num_partitions, output, mut}:
+        ](offset: Int) {F, scratch, num_partitions, output, imm buf_size, mut}:
             var tid_output_offset = reduce_range[0] * F + offset
             var vec = scratch.load[width=width](tid_output_offset)
             # The number of partitions here is typically small.
@@ -435,7 +434,7 @@ def _reduce_output[
                 epilogue(Index(nhowo[0], nhowo[1], nhowo[2], 0), F)
 
     # NOTE: _synchronous, so use of locally allocated output_ptr is safe.
-    sync_parallelize[reduce_task](num_threads, ctx)
+    sync_parallelize(reduce_task, num_threads, ctx)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -595,12 +594,16 @@ struct ConvDirectNHWC[
             ),
         )
 
-        @__copy_capture(
-            num_partitions, cf_tile_size, output_scratch, output_size
-        )
-        @__parameter
         @always_inline
-        def task_func(task_id: Int):
+        def task_func(
+            task_id: Int,
+        ) {
+            var num_partitions,
+            var cf_tile_size,
+            var output_scratch,
+            var output_size,
+            imm,
+        }:
             var partition = get_partition(
                 task_id,
                 num_partitions,
@@ -648,7 +651,7 @@ struct ConvDirectNHWC[
             instance._batch_group_loop()
 
         if num_partitions[1] > 1:
-            sync_parallelize[task_func](num_tasks, ctx)
+            sync_parallelize(task_func, num_tasks, ctx)
 
             # Reduce from the output scratch buffer to the actual output.
             _reduce_output[
@@ -673,7 +676,7 @@ struct ConvDirectNHWC[
             )
         else:
             # Use sync to work around #12624
-            sync_parallelize[task_func](num_tasks, ctx)
+            sync_parallelize(task_func, num_tasks, ctx)
 
     def _batch_group_loop(self):
         """Loop over the batch and group dimensions. The two dimension are

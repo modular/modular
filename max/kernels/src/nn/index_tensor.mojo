@@ -243,9 +243,9 @@ def _index_tensor_1d[
     )
     var work_per_thread = ceildiv(batch_volume, num_tasks)
 
-    @__copy_capture(work_per_thread, batch_volume, last_index_dim)
-    @__parameter
-    def calc_batch_dim(task_id: Int):
+    def calc_batch_dim(
+        task_id: Int,
+    ) {var work_per_thread, var batch_volume, var last_index_dim, imm}:
         # each thread gets a chunk of output embedding vectors to avoid inter-thread reduction
         var work_start = task_id * work_per_thread
         var work_end = min((task_id + 1) * work_per_thread, batch_volume)
@@ -263,7 +263,7 @@ def _index_tensor_1d[
                     reshaped_data.load[width=1](rd_coord),
                 )
 
-    sync_parallelize[calc_batch_dim](num_tasks, ctx)
+    sync_parallelize(calc_batch_dim, num_tasks, ctx)
 
 
 def _index_tensor_impl[

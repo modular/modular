@@ -94,11 +94,16 @@ def _argn[
         )
         chunk_size = ceildiv(parallel_size, num_workers)
 
-    @__copy_capture(
-        axis_size, chunk_size, output_stride, input_stride, parallel_size
-    )
-    @__parameter
-    def task_func(task_id: Int):
+    def task_func(
+        task_id: Int,
+    ) {
+        var axis_size,
+        var chunk_size,
+        var output_stride,
+        var input_stride,
+        var parallel_size,
+        imm,
+    }:
         @__parameter
         @always_inline
         def cmpeq[
@@ -182,7 +187,7 @@ def _argn[
                 idx = min_indices.reduce_min()
             output_dim_ptr[] = idx
 
-    sync_parallelize[task_func](parallel_size, ctx)
+    sync_parallelize(task_func, parallel_size, ctx)
 
 
 # ===-----------------------------------------------------------------------===#

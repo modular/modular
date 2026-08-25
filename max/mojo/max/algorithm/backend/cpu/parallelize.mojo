@@ -31,44 +31,13 @@ from max.gpu.host import DeviceContext
 
 @always_inline
 def sync_parallelize[
-    origins: OriginSet,
-    //,
-    func: def(Int) raises capturing[origins] -> None,
-](num_work_items: Int, ctx: Optional[DeviceContext] = None):
-    """Executes func(0) ... func(num_work_items-1) as parallel sub-tasks,
-    and returns when all are complete.
-
-    TODO: Currently exceptions raised by func will cause a trap rather than
-          be propagated back to the caller.
-
-    Parameters:
-        origins: The capture origins.
-        func: The function to invoke.
-
-    Args:
-        num_work_items: Number of parallel tasks.
-        ctx: Optional CPU DeviceContext to execute the tasks on.
-    """
-
-    # The try/except here is required to satisfy the non-raising
-    # ` -> None` signature. The overload's
-    # inner `func_wrapped` has its own try/except for the same reason, but
-    # that outer catch is unreachable since abort() here terminates first.
-    def func_unified(i: Int):
-        try:
-            func(i)
-        except e:
-            abort(String(e))
-
-    sync_parallelize(func_unified, num_work_items, ctx)
-
-
-@always_inline
-def sync_parallelize[
-    FuncType: def(Int) -> None,
+    FuncType: def(Int) raises -> None,
 ](func: FuncType, num_work_items: Int, ctx: Optional[DeviceContext] = None):
     """Executes func(0) ... func(num_work_items-1) as parallel sub-tasks,
     and returns when all are complete.
+
+    Non-raising closures still bind this signature. Exceptions raised by
+    `func` abort rather than propagating to the caller.
 
     Parameters:
         FuncType: The body function type.
