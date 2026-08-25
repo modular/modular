@@ -32,7 +32,6 @@ Results
    :template: autosummary/class.rst
 
    CompiledCallable
-   Signature
    StagedGraph
 
 Specs
