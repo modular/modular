@@ -36,6 +36,13 @@ from max.pipelines.lib import (
     PipelineRuntimeConfig,
     SamplingConfig,
 )
+from max.pipelines.lib.config.config import (
+    _apply_speculative_target_architecture,
+    _resolve_default_reasoning_parser,
+    _resolve_default_structured_output_backend,
+    _resolve_default_tool_parser,
+    _resolve_overlap_and_device_graph_capture,
+)
 from max.pipelines.lib.config.model_config import (
     _infer_weight_path,
     _select_dtype_cast,
@@ -413,15 +420,15 @@ class TestSpeculativeArchitectureOverride:
             if speculative
             else None
         )
-        return SimpleNamespace(
-            speculative=spec, model=model, draft_model=draft_model
-        )
+        manifest = {"main": model}
+        if draft_model is not None:
+            manifest["draft"] = draft_model
+        return SimpleNamespace(speculative=spec, manifest=manifest)
 
     @staticmethod
     def _resolved_arch(cfg: SimpleNamespace) -> str:
-        # Invoke the method unbound on the lightweight stand-in.
-        PipelineConfig._apply_speculative_target_architecture(cfg)  # type: ignore[arg-type]
-        return cfg.model.huggingface_config.architectures[0]
+        _apply_speculative_target_architecture(cfg.speculative, cfg.manifest)
+        return cfg.manifest["main"].huggingface_config.architectures[0]
 
     def test_deepseek_mtp_no_draft(self) -> None:
         """DeepseekV3 + no draft (NextN baked in) -> unified MTP arch."""
@@ -475,7 +482,7 @@ class TestSpeculativeArchitectureOverride:
         cfg = self._make_config(
             "InklingForConditionalGeneration", draft_arch=None
         )
-        cfg.model.huggingface_config.mtp_config = SimpleNamespace(
+        cfg.manifest["main"].huggingface_config.mtp_config = SimpleNamespace(
             num_nextn_predict_layers=8
         )
         assert (
@@ -493,7 +500,7 @@ class TestSpeculativeArchitectureOverride:
         cfg = self._make_config(
             "InklingForConditionalGeneration", draft_arch=None
         )
-        cfg.model.huggingface_config.mtp_config = {
+        cfg.manifest["main"].huggingface_config.mtp_config = {
             "num_nextn_predict_layers": 8
         }
         assert (
@@ -1671,11 +1678,15 @@ def test_validate_and_resolve_overlap_scheduler__auto_enable_device_graph_captur
             max_batch_size=max_batch_size,
         ),
     )
-    config._validate_and_resolve_overlap_scheduler(arch=arch)
+    device_graph_capture, enable_overlap_scheduler = (
+        _resolve_overlap_and_device_graph_capture(
+            config.runtime, config.sampling, config.lora, config.model, arch
+        )
+    )
 
-    assert config.runtime.device_graph_capture is expected_device_graph_capture
+    assert device_graph_capture is expected_device_graph_capture
     if expected_device_graph_capture:
-        assert config.runtime.enable_overlap_scheduler is True
+        assert enable_overlap_scheduler is True
 
 
 @mock_pipeline_config_resolve
@@ -1716,10 +1727,14 @@ def test_validate_and_resolve_overlap_scheduler__no_auto_enable_for_non_text_gen
         ),
         runtime=PipelineRuntimeConfig(max_batch_size=16),
     )
-    config._validate_and_resolve_overlap_scheduler(arch=arch)
+    device_graph_capture, enable_overlap_scheduler = (
+        _resolve_overlap_and_device_graph_capture(
+            config.runtime, config.sampling, config.lora, config.model, arch
+        )
+    )
 
-    assert config.runtime.device_graph_capture is False
-    assert config.runtime.enable_overlap_scheduler is False
+    assert device_graph_capture is False
+    assert enable_overlap_scheduler is False
 
 
 @mock_pipeline_config_resolve
@@ -1751,12 +1766,16 @@ def test_validate_and_resolve_overlap_scheduler__no_device_graph_capture_for_pre
             pipeline_role="prefill_only",
         ),
     )
-    config._validate_and_resolve_overlap_scheduler(arch=arch)
+    device_graph_capture, enable_overlap_scheduler = (
+        _resolve_overlap_and_device_graph_capture(
+            config.runtime, config.sampling, config.lora, config.model, arch
+        )
+    )
 
     # Overlap scheduling should be auto-enabled for prefill_only.
-    assert config.runtime.enable_overlap_scheduler is True
+    assert enable_overlap_scheduler is True
     # But device graph capture should NOT be auto-enabled.
-    assert config.runtime.device_graph_capture is False
+    assert device_graph_capture is False
 
 
 @mock_pipeline_config_resolve
@@ -1782,8 +1801,12 @@ def test_validate_and_resolve_overlap_scheduler__auto_override(
             ),
             runtime=PipelineRuntimeConfig(),
         )
-        config._validate_and_resolve_overlap_scheduler(arch=arch)
-        assert config.runtime.enable_overlap_scheduler is True
+        _device_graph_capture, enable_overlap_scheduler = (
+            _resolve_overlap_and_device_graph_capture(
+                config.runtime, config.sampling, config.lora, config.model, arch
+            )
+        )
+        assert enable_overlap_scheduler is True
 
     # Architectures that opt out of overlap scheduler are not auto-enabled.
     deepseek_v2 = _serve_optimization_arch(
@@ -1802,8 +1825,16 @@ def test_validate_and_resolve_overlap_scheduler__auto_override(
         ),
         runtime=PipelineRuntimeConfig(),
     )
-    config._validate_and_resolve_overlap_scheduler(arch=deepseek_v2)
-    assert config.runtime.enable_overlap_scheduler is False
+    _device_graph_capture, enable_overlap_scheduler = (
+        _resolve_overlap_and_device_graph_capture(
+            config.runtime,
+            config.sampling,
+            config.lora,
+            config.model,
+            deepseek_v2,
+        )
+    )
+    assert enable_overlap_scheduler is False
 
     # Don't override if the device is CPU
     llama_arch = _serve_optimization_arch("LlamaForCausalLM")
@@ -1817,8 +1848,16 @@ def test_validate_and_resolve_overlap_scheduler__auto_override(
             }
         ),
     )
-    config._validate_and_resolve_overlap_scheduler(arch=llama_arch)
-    assert config.runtime.enable_overlap_scheduler is False
+    _device_graph_capture, enable_overlap_scheduler = (
+        _resolve_overlap_and_device_graph_capture(
+            config.runtime,
+            config.sampling,
+            config.lora,
+            config.model,
+            llama_arch,
+        )
+    )
+    assert enable_overlap_scheduler is False
 
     # Don't override if variable logits are enabled
     config = PipelineConfig(
@@ -1832,8 +1871,16 @@ def test_validate_and_resolve_overlap_scheduler__auto_override(
         ),
         sampling=SamplingConfig(enable_variable_logits=True),
     )
-    config._validate_and_resolve_overlap_scheduler(arch=llama_arch)
-    assert config.runtime.enable_overlap_scheduler is False
+    _device_graph_capture, enable_overlap_scheduler = (
+        _resolve_overlap_and_device_graph_capture(
+            config.runtime,
+            config.sampling,
+            config.lora,
+            config.model,
+            llama_arch,
+        )
+    )
+    assert enable_overlap_scheduler is False
 
     # Auto-enable for DI pipeline roles (prefill_only, decode_only)
     for role in ("prefill_only", "decode_only"):
@@ -1848,8 +1895,16 @@ def test_validate_and_resolve_overlap_scheduler__auto_override(
             ),
             runtime=PipelineRuntimeConfig(pipeline_role=role),
         )
-        config._validate_and_resolve_overlap_scheduler(arch=llama_arch)
-        assert config.runtime.enable_overlap_scheduler is True
+        _device_graph_capture, enable_overlap_scheduler = (
+            _resolve_overlap_and_device_graph_capture(
+                config.runtime,
+                config.sampling,
+                config.lora,
+                config.model,
+                llama_arch,
+            )
+        )
+        assert enable_overlap_scheduler is True
 
     # Don't auto-enable for unknown architectures that keep default support.
     other_arch = _serve_optimization_arch("SomeOtherArchitecture")
@@ -1863,8 +1918,16 @@ def test_validate_and_resolve_overlap_scheduler__auto_override(
             }
         ),
     )
-    config._validate_and_resolve_overlap_scheduler(arch=other_arch)
-    assert config.runtime.enable_overlap_scheduler is True
+    _device_graph_capture, enable_overlap_scheduler = (
+        _resolve_overlap_and_device_graph_capture(
+            config.runtime,
+            config.sampling,
+            config.lora,
+            config.model,
+            other_arch,
+        )
+    )
+    assert enable_overlap_scheduler is True
 
     # Explicitly opt-out architectures stay disabled.
     disabled_arch = SimpleNamespace(
@@ -1883,8 +1946,16 @@ def test_validate_and_resolve_overlap_scheduler__auto_override(
             }
         ),
     )
-    config._validate_and_resolve_overlap_scheduler(arch=disabled_arch)
-    assert config.runtime.enable_overlap_scheduler is False
+    _device_graph_capture, enable_overlap_scheduler = (
+        _resolve_overlap_and_device_graph_capture(
+            config.runtime,
+            config.sampling,
+            config.lora,
+            config.model,
+            disabled_arch,
+        )
+    )
+    assert enable_overlap_scheduler is False
 
 
 @mock_pipeline_config_resolve
@@ -1910,8 +1981,12 @@ def test_validate_and_resolve_overlap_scheduler__validate(
         ),
         runtime=PipelineRuntimeConfig(enable_overlap_scheduler=True),
     )
-    config._validate_and_resolve_overlap_scheduler()
-    assert config.runtime.enable_overlap_scheduler is True
+    _device_graph_capture, enable_overlap_scheduler = (
+        _resolve_overlap_and_device_graph_capture(
+            config.runtime, config.sampling, config.lora, config.model, None
+        )
+    )
+    assert enable_overlap_scheduler is True
 
     # Error out if user tries to enable overlap scheduler on CPU
     config = PipelineConfig(
@@ -1926,7 +2001,9 @@ def test_validate_and_resolve_overlap_scheduler__validate(
         runtime=PipelineRuntimeConfig(enable_overlap_scheduler=True),
     )
     with pytest.raises(ValueError):
-        config._validate_and_resolve_overlap_scheduler()
+        _resolve_overlap_and_device_graph_capture(
+            config.runtime, config.sampling, config.lora, config.model, None
+        )
 
     # prefill_only with overlap scheduler is now allowed (experimental).
     config = PipelineConfig(
@@ -1943,8 +2020,12 @@ def test_validate_and_resolve_overlap_scheduler__validate(
             enable_overlap_scheduler=True,
         ),
     )
-    config._validate_and_resolve_overlap_scheduler()
-    assert config.runtime.enable_overlap_scheduler is True
+    _device_graph_capture, enable_overlap_scheduler = (
+        _resolve_overlap_and_device_graph_capture(
+            config.runtime, config.sampling, config.lora, config.model, None
+        )
+    )
+    assert enable_overlap_scheduler is True
 
     # Error out if user tries to enable overlap scheduler with variable logits
     config = PipelineConfig(
@@ -1960,7 +2041,9 @@ def test_validate_and_resolve_overlap_scheduler__validate(
         runtime=PipelineRuntimeConfig(enable_overlap_scheduler=True),
     )
     with pytest.raises(ValueError):
-        config._validate_and_resolve_overlap_scheduler()
+        _resolve_overlap_and_device_graph_capture(
+            config.runtime, config.sampling, config.lora, config.model, None
+        )
 
 
 @prepare_registry
@@ -2006,9 +2089,13 @@ def test_auto_device_graph_capture_eagle_gating(
         ),
         runtime=PipelineRuntimeConfig(max_batch_size=16),
     )
-    config._validate_and_resolve_overlap_scheduler(arch=arch)
+    device_graph_capture, _enable_overlap_scheduler = (
+        _resolve_overlap_and_device_graph_capture(
+            config.runtime, config.sampling, config.lora, config.model, arch
+        )
+    )
 
-    assert config.runtime.device_graph_capture is True
+    assert device_graph_capture is True
 
 
 @prepare_registry
@@ -2029,9 +2116,7 @@ def test_resolve_default_reasoning_parser__applies_arch_default(
     )
     assert config.runtime.reasoning_parser is None
 
-    config._resolve_default_reasoning_parser(arch=arch)
-
-    assert config.runtime.reasoning_parser == "kimik2_5"
+    assert _resolve_default_reasoning_parser(config.runtime, arch) == "kimik2_5"
 
 
 @prepare_registry
@@ -2051,9 +2136,9 @@ def test_resolve_default_reasoning_parser__user_value_preserved(
         runtime=PipelineRuntimeConfig(reasoning_parser="user_choice"),
     )
 
-    config._resolve_default_reasoning_parser(arch=arch)
-
-    assert config.runtime.reasoning_parser == "user_choice"
+    assert (
+        _resolve_default_reasoning_parser(config.runtime, arch) == "user_choice"
+    )
 
 
 @prepare_registry
@@ -2073,11 +2158,11 @@ def test_resolve_default_reasoning_parser__no_arch_default_is_noop(
         runtime=PipelineRuntimeConfig(),
     )
 
-    config._resolve_default_reasoning_parser(arch=arch_without_default)
-    assert config.runtime.reasoning_parser is None
-
-    config._resolve_default_reasoning_parser(arch=None)
-    assert config.runtime.reasoning_parser is None
+    assert (
+        _resolve_default_reasoning_parser(config.runtime, arch_without_default)
+        is None
+    )
+    assert _resolve_default_reasoning_parser(config.runtime, None) is None
 
 
 @prepare_registry
@@ -2098,9 +2183,10 @@ def test_resolve_default_tool_parser__applies_arch_default(
     )
     assert config.runtime.tool_parser is None
 
-    config._resolve_default_tool_parser(arch=arch)
-
-    assert config.runtime.tool_parser == "kimik2_5"
+    assert (
+        _resolve_default_tool_parser(config.runtime, config.model, arch)
+        == "kimik2_5"
+    )
 
 
 @prepare_registry
@@ -2119,9 +2205,10 @@ def test_resolve_default_tool_parser__user_value_preserved(
         runtime=PipelineRuntimeConfig(tool_parser="user_choice"),
     )
 
-    config._resolve_default_tool_parser(arch=arch)
-
-    assert config.runtime.tool_parser == "user_choice"
+    assert (
+        _resolve_default_tool_parser(config.runtime, config.model, arch)
+        == "user_choice"
+    )
 
 
 @prepare_registry
@@ -2140,11 +2227,15 @@ def test_resolve_default_tool_parser__no_arch_default_is_noop(
         runtime=PipelineRuntimeConfig(),
     )
 
-    config._resolve_default_tool_parser(arch=arch_without_default)
-    assert config.runtime.tool_parser is None
-
-    config._resolve_default_tool_parser(arch=None)
-    assert config.runtime.tool_parser is None
+    assert (
+        _resolve_default_tool_parser(
+            config.runtime, config.model, arch_without_default
+        )
+        is None
+    )
+    assert (
+        _resolve_default_tool_parser(config.runtime, config.model, None) is None
+    )
 
 
 @pytest.mark.parametrize("sentinel", ["none", "None", "NONE", "nOnE"])
@@ -2167,9 +2258,7 @@ def test_resolve_default_reasoning_parser__none_sentinel_disables(
         runtime=PipelineRuntimeConfig(reasoning_parser=sentinel),
     )
 
-    config._resolve_default_reasoning_parser(arch=arch)
-
-    assert config.runtime.reasoning_parser is None
+    assert _resolve_default_reasoning_parser(config.runtime, arch) is None
 
 
 @pytest.mark.parametrize("sentinel", ["none", "None", "NONE", "nOnE"])
@@ -2192,9 +2281,9 @@ def test_resolve_default_tool_parser__none_sentinel_disables(
         runtime=PipelineRuntimeConfig(tool_parser=sentinel),
     )
 
-    config._resolve_default_tool_parser(arch=arch)
-
-    assert config.runtime.tool_parser is None
+    assert (
+        _resolve_default_tool_parser(config.runtime, config.model, arch) is None
+    )
 
 
 # ===----------------------------------------------------------------------=== #
@@ -2218,11 +2307,12 @@ def test_resolve_backend__unset_normal_arch_defaults_to_xgrammar() -> None:
     )
     assert config.sampling.structured_output_backend is None  # unset sentinel
 
-    config._resolve_default_structured_output_backend(
-        arch=_backend_arch(default=None)
+    assert (
+        _resolve_default_structured_output_backend(
+            config.sampling, _backend_arch(default=None)
+        )
+        == "xgrammar"
     )
-
-    assert config.sampling.structured_output_backend == "xgrammar"
 
 
 @mock_hf_repo_access
@@ -2233,11 +2323,12 @@ def test_resolve_backend__unset_pinned_arch_uses_arch_default() -> None:
         models=ModelManifest({"main": MAXModelConfig(model_path="test/model")}),
     )
 
-    config._resolve_default_structured_output_backend(
-        arch=_backend_arch(default="llguidance")
+    assert (
+        _resolve_default_structured_output_backend(
+            config.sampling, _backend_arch(default="llguidance")
+        )
+        == "llguidance"
     )
-
-    assert config.sampling.structured_output_backend == "llguidance"
 
 
 @mock_hf_repo_access
@@ -2250,11 +2341,12 @@ def test_resolve_backend__explicit_xgrammar_overrides_pinned_arch() -> None:
         sampling=SamplingConfig(structured_output_backend="xgrammar"),
     )
 
-    config._resolve_default_structured_output_backend(
-        arch=_backend_arch(default="llguidance")
+    assert (
+        _resolve_default_structured_output_backend(
+            config.sampling, _backend_arch(default="llguidance")
+        )
+        == "xgrammar"
     )
-
-    assert config.sampling.structured_output_backend == "xgrammar"
 
 
 @mock_hf_repo_access
@@ -2268,11 +2360,12 @@ def test_resolve_backend__explicit_llguidance_on_normal_arch_is_honored() -> (
         sampling=SamplingConfig(structured_output_backend="llguidance"),
     )
 
-    config._resolve_default_structured_output_backend(
-        arch=_backend_arch(default=None)
+    assert (
+        _resolve_default_structured_output_backend(
+            config.sampling, _backend_arch(default=None)
+        )
+        == "llguidance"
     )
-
-    assert config.sampling.structured_output_backend == "llguidance"
 
 
 @mock_hf_repo_access
@@ -2282,9 +2375,10 @@ def test_resolve_backend__unset_no_arch_defaults_to_xgrammar() -> None:
         models=ModelManifest({"main": MAXModelConfig(model_path="test/model")}),
     )
 
-    config._resolve_default_structured_output_backend(arch=None)
-
-    assert config.sampling.structured_output_backend == "xgrammar"
+    assert (
+        _resolve_default_structured_output_backend(config.sampling, None)
+        == "xgrammar"
+    )
 
 
 @mock_hf_repo_access
@@ -2315,11 +2409,12 @@ def test_from_args__unset_backend_resolves_to_xgrammar() -> None:
 
     with patch("max.pipelines.lib.config.model_config.validate_hf_repo_access"):
         config = PipelineConfig.from_args(args)
-    config._resolve_default_structured_output_backend(
-        arch=_backend_arch(default=None)
+    assert (
+        _resolve_default_structured_output_backend(
+            config.sampling, _backend_arch(default=None)
+        )
+        == "xgrammar"
     )
-
-    assert config.sampling.structured_output_backend == "xgrammar"
 
 
 @mock_hf_repo_access
@@ -2335,8 +2430,9 @@ def test_from_args__explicit_backend_is_preserved() -> None:
         config = PipelineConfig.from_args(args)
     assert config.sampling.structured_output_backend == "llguidance"
 
-    config._resolve_default_structured_output_backend(
-        arch=_backend_arch(default=None)
+    assert (
+        _resolve_default_structured_output_backend(
+            config.sampling, _backend_arch(default=None)
+        )
+        == "llguidance"
     )
-
-    assert config.sampling.structured_output_backend == "llguidance"

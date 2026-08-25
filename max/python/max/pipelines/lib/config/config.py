@@ -64,7 +64,7 @@ from typing_extensions import Self
 from .model_config import (
     MAXModelConfig,
     _parse_component_overrides,
-    _populate_weights_and_encoding,
+    _resolve_weights_and_encoding,
     _select_quantization_encoding,
 )
 from .profiling_config import ProfilingConfig
@@ -118,6 +118,21 @@ def _construct_from_user_fields(
     return type(sub)(**fields)
 
 
+def _resolved_field_changes(
+    sub: ConfigFileModel, **resolved: Any
+) -> dict[str, Any]:
+    """Returns the resolved values that differ from the sub-config's fields.
+
+    Keeps the rebuild in :func:`_construct_from_user_fields` from marking a
+    field as set when resolution left it at the value it already had.
+    """
+    return {
+        name: value
+        for name, value in resolved.items()
+        if value != getattr(sub, name)
+    }
+
+
 def _is_disable_parser_sentinel(value: str | None) -> bool:
     """Return ``True`` if ``value`` is the case-insensitive disable sentinel.
 
@@ -126,6 +141,716 @@ def _is_disable_parser_sentinel(value: str | None) -> bool:
     disable the parser, overriding any architecture-declared default.
     """
     return isinstance(value, str) and value.lower() == DISABLE_PARSER_SENTINEL
+
+
+def _resolve_default_reasoning_parser(
+    runtime: PipelineRuntimeConfig, arch: Any
+) -> str | None:
+    """Returns the resolved reasoning parser.
+
+    The user's ``runtime.reasoning_parser`` wins when set; otherwise the
+    resolved ``SupportedArchitecture``'s default ``reasoning_parser``
+    applies. The case-insensitive sentinel ``"none"`` explicitly disables
+    the parser: it resolves to ``None`` and skips the architecture
+    default.
+    """
+    if _is_disable_parser_sentinel(runtime.reasoning_parser):
+        logger.info(
+            "Reasoning parser explicitly disabled, skipping architecture default."
+        )
+        return None
+
+    if runtime.reasoning_parser is not None:
+        return runtime.reasoning_parser
+
+    if arch is None or arch.reasoning_parser is None:
+        return None
+
+    logger.info(
+        "Defaulting reasoning parser to %r for architecture %s. "
+        "Override with --reasoning-parser, or pass "
+        "--reasoning-parser=none to disable.",
+        arch.reasoning_parser,
+        arch.name,
+    )
+    return arch.reasoning_parser
+
+
+def _resolve_default_tool_parser(
+    runtime: PipelineRuntimeConfig, model: MAXModelConfig, arch: Any
+) -> str | None:
+    """Returns the resolved tool parser.
+
+    The user's ``runtime.tool_parser`` wins when set; otherwise the
+    resolved ``SupportedArchitecture``'s default ``tool_parser`` applies.
+    The case-insensitive sentinel ``"none"`` explicitly disables the
+    parser: it resolves to ``None`` and skips the architecture default.
+    """
+    if _is_disable_parser_sentinel(runtime.tool_parser):
+        logger.info(
+            "Tool parser explicitly disabled, skipping architecture default.",
+        )
+        return None
+
+    if runtime.tool_parser is not None:
+        return runtime.tool_parser
+
+    if arch is None or arch.tool_parser is None:
+        return None
+
+    if callable(arch.tool_parser):
+        parser_name = arch.tool_parser(model.huggingface_model_repo)
+    else:
+        parser_name = arch.tool_parser
+
+    logger.info(
+        "Defaulting tool parser to %r for architecture %s. "
+        "Override with --tool-parser, or pass --tool-parser=none "
+        "to disable.",
+        parser_name,
+        arch.name,
+    )
+    return parser_name
+
+
+def _resolve_default_structured_output_backend(
+    sampling: SamplingConfig, arch: Any
+) -> str:
+    """Resolve the structured output backend to a concrete value.
+
+    Resolution order (highest precedence first):
+
+    1. An explicit user choice (``sampling.structured_output_backend`` is
+       not ``None``) always wins -- including an explicit ``"xgrammar"`` on
+       an architecture that pins ``"llguidance"``.
+    2. Otherwise, if the resolved ``SupportedArchitecture`` declares a
+       ``default_structured_output_backend`` (e.g. Gemma 3 / MiniMax-M2 pin
+       ``"llguidance"``), use it.
+    3. Otherwise, fall back to the global default ``"xgrammar"``.
+
+    Runs whenever construction resolves an architecture, so the field is
+    a concrete ``str`` on any config with a registered architecture. The
+    ``None`` sentinel (unset) is what distinguishes an explicit user
+    value from the default -- mirroring the reasoning/tool parser
+    resolvers above.
+    """
+    if sampling.structured_output_backend is not None:
+        # Explicit user configuration always wins.
+        return sampling.structured_output_backend
+
+    if arch is not None and arch.default_structured_output_backend is not None:
+        logger.info(
+            "Defaulting structured output backend to %r for architecture "
+            "%s. Override with --structured-output-backend.",
+            arch.default_structured_output_backend,
+            arch.name,
+        )
+        return arch.default_structured_output_backend
+
+    logger.info(
+        "Defaulting structured output backend to the global default %r "
+        "(architecture %s declares no default). Override with "
+        "--structured-output-backend.",
+        DEFAULT_STRUCTURED_OUTPUT_BACKEND,
+        arch.name if arch is not None else None,
+    )
+    return DEFAULT_STRUCTURED_OUTPUT_BACKEND
+
+
+def _resolve_default_structured_output_any_whitespace(
+    sampling: SamplingConfig, arch: Any
+) -> bool:
+    """Returns the resolved structured-output whitespace mode."""
+    if sampling.structured_output_any_whitespace is not None:
+        # Explicit user configuration always wins.
+        return sampling.structured_output_any_whitespace
+
+    if (
+        arch is not None
+        and arch.default_structured_output_any_whitespace is not None
+    ):
+        logger.info(
+            "Using architecture default structured output any_whitespace %r"
+            " (%s).",
+            arch.default_structured_output_any_whitespace,
+            arch.name,
+        )
+        return arch.default_structured_output_any_whitespace
+
+    return DEFAULT_STRUCTURED_OUTPUT_ANY_WHITESPACE
+
+
+def _is_eligible_for_overlap_serve_optimizations(
+    sampling: SamplingConfig,
+    lora: LoRAConfig | None,
+    model: MAXModelConfig,
+    arch: Any,
+) -> bool:
+    # Overlap scheduling and device graph capture are only supported for
+    # text generation. Auto-enabling them for other tasks (e.g. embeddings)
+    # would fail downstream pipeline construction. See
+    # `get_pipeline_for_task` in registry.py.
+    return (
+        arch.task == PipelineTask.TEXT_GENERATION
+        and not sampling.enable_variable_logits
+        and not lora
+        and model.default_device_spec.device_type != "cpu"
+    )
+
+
+def _resolve_overlap_and_device_graph_capture(
+    runtime: PipelineRuntimeConfig,
+    sampling: SamplingConfig,
+    lora: LoRAConfig | None,
+    model: MAXModelConfig,
+    arch: Any,
+) -> tuple[bool, bool]:
+    """Returns the resolved (device_graph_capture, enable_overlap_scheduler).
+
+    Device graph capture requires the overlap scheduler, so the two
+    resolve together. ``--force`` skips the auto-enables and the
+    overlap-compatibility validation, matching its meaning everywhere
+    else in construction.
+    """
+    device_graph_capture = runtime.device_graph_capture
+    if not runtime.force:
+        if (
+            device_graph_capture is None
+            and arch is not None
+            and arch.supports_device_graph_capture
+            and accelerator_api() in ("cuda", "hip")
+            and _is_eligible_for_overlap_serve_optimizations(
+                sampling, lora, model, arch
+            )
+            # Device graph capture is not supported for prefill-only workers.
+            and runtime.pipeline_role != "prefill_only"
+        ):
+            device_graph_capture = True
+            logger.info(
+                "Automatically enabling device graph capture for %s. "
+                "You can manually disable this by setting --no-device-graph-capture.",
+                arch.name,
+            )
+
+    if device_graph_capture is None:
+        device_graph_capture = False
+
+    enable_overlap_scheduler = runtime.enable_overlap_scheduler
+    if device_graph_capture:
+        if not enable_overlap_scheduler:
+            logger.info("Enabling overlap scheduling for device graph capture.")
+        enable_overlap_scheduler = True
+
+    if runtime.force:
+        return device_graph_capture, enable_overlap_scheduler
+
+    # Automatically enable overlap scheduling for architectures that declare
+    # support. New architectures opt out by setting ``supports_overlap_scheduler=False``.
+    if not enable_overlap_scheduler:
+        if (
+            arch is not None
+            and arch.supports_overlap_scheduler
+            and _is_eligible_for_overlap_serve_optimizations(
+                sampling, lora, model, arch
+            )
+        ):
+            enable_overlap_scheduler = True
+            logger.info(
+                f"Automatically enabling overlap scheduling for {arch.name}. "
+                "You can manually disable this by setting --no-enable-overlap-scheduler --force."
+            )
+
+    # Raise errors when we detect features that are not compatible with the overlap scheduler.
+    if enable_overlap_scheduler:
+        if runtime.pipeline_role in ("decode_only", "prefill_only"):
+            logger.info(
+                "Overlap scheduling enabled for %s worker "
+                "(Disaggregated Inference). THIS IS EXPERIMENTAL.",
+                runtime.pipeline_role,
+            )
+        if sampling.enable_variable_logits:
+            raise ValueError(
+                "Variable logits are not supported with the Overlap scheduler. "
+            )
+        if lora:
+            raise ValueError(
+                "LoRA is not supported with the Overlap scheduler."
+            )
+        if model.default_device_spec.device_type == "cpu":
+            raise ValueError(
+                "Overlap scheduler is not supported with CPU models."
+            )
+    return device_graph_capture, enable_overlap_scheduler
+
+
+def _resolve_preprocess_cache_budgets(
+    runtime: PipelineRuntimeConfig, model: MAXModelConfig, arch: Any
+) -> tuple[int, int]:
+    """Returns the image and video preprocess budgets capped to host memory.
+
+    Reduces the image and video budgets proportionally when their sum
+    exceeds :data:`_PREPROCESS_CACHE_MAX_FRACTION_OF_HOST_MEMORY` of what
+    this process may use, by scaling both by a common factor so the split
+    the caller chose survives (exactly, up to integer truncation).
+    Proportionally, rather than clamping each in turn, so that raising one
+    budget cannot silently starve the other.
+
+    Leaves the budgets alone for architectures with no vision tower, which
+    never construct the caches, and when host memory cannot be determined --
+    an unbounded guess would be worse than the configured ceiling.
+
+    Runs at construction so every consumer -- including tokenizers built
+    without a memory plan -- sees the bounded values.
+    """
+    configured = (
+        runtime.max_vision_preprocess_cache_bytes,
+        runtime.max_video_preprocess_cache_bytes,
+    )
+    image_bytes = max(0, runtime.max_vision_preprocess_cache_bytes)
+    video_bytes = max(0, runtime.max_video_preprocess_cache_bytes)
+    requested = image_bytes + video_bytes
+    if requested == 0:
+        return configured
+
+    if arch is None or not arch_has_vision_tower(
+        arch.config, model.huggingface_config
+    ):
+        return configured
+
+    host_bytes = _host_memory_limit()
+    if host_bytes is None:
+        logger.debug(
+            "Could not determine host memory; leaving the preprocessed-"
+            "media cache ceiling at %s.",
+            to_human_readable_bytes(requested),
+        )
+        return configured
+
+    cap = int(host_bytes * _PREPROCESS_CACHE_MAX_FRACTION_OF_HOST_MEMORY)
+    if requested <= cap:
+        logger.info(
+            "Preprocessed-media cache: %s ceiling (%s images, %s video).",
+            to_human_readable_bytes(requested),
+            to_human_readable_bytes(image_bytes),
+            to_human_readable_bytes(video_bytes),
+        )
+        return configured
+
+    scale = cap / requested
+    capped_image = int(image_bytes * scale)
+    capped_video = int(video_bytes * scale)
+    logger.warning(
+        "Reduced the preprocessed-media cache from %s to %s (%s images, %s "
+        "video): the configured ceiling exceeded %.0f%% of the %s this "
+        "process may use.",
+        to_human_readable_bytes(requested),
+        to_human_readable_bytes(capped_image + capped_video),
+        to_human_readable_bytes(capped_image),
+        to_human_readable_bytes(capped_video),
+        _PREPROCESS_CACHE_MAX_FRACTION_OF_HOST_MEMORY * 100,
+        to_human_readable_bytes(host_bytes),
+    )
+    return capped_image, capped_video
+
+
+def _resolve_vision_cache_utilization(
+    runtime: PipelineRuntimeConfig, model: MAXModelConfig, arch: Any
+) -> float:
+    """Returns the vision cache utilization, zeroed when unusable.
+
+    An arch config that reports a per-entry size but no row spec cannot
+    back the block cache, so the cache is disabled at construction and
+    the tokenizers and memory planning agree on the resolved value.
+    """
+    utilization = runtime.vision_cache_utilization
+    if utilization == 0:
+        return utilization
+    hf_config = model.huggingface_config
+    if arch is None or not arch_has_vision_tower(arch.config, hf_config):
+        return utilization
+    if arch.config.get_vision_cache_row_spec(hf_config) is None:
+        logger.warning(
+            "Disabling vision encoder cache: %s's arch config reports "
+            "a per-entry estimate but no row spec "
+            "(get_vision_cache_row_spec); images will be re-encoded on "
+            "every request.",
+            arch.name,
+        )
+        return 0.0
+    return utilization
+
+
+def _resolved_runtime_and_sampling(
+    runtime: PipelineRuntimeConfig,
+    sampling: SamplingConfig,
+    lora: LoRAConfig | None,
+    model: MAXModelConfig,
+    arch: Any,
+) -> tuple[PipelineRuntimeConfig, SamplingConfig]:
+    """Returns ``runtime`` and ``sampling`` carrying their resolved values.
+
+    Each resolver is a pure computation; the sub-configs are rebuilt once
+    with the results. Only values that resolution changed are passed, so
+    the rebuilt configs keep the caller's set-fields tracking.
+    """
+    sampling_changes = _resolved_field_changes(
+        sampling,
+        structured_output_backend=(
+            _resolve_default_structured_output_backend(sampling, arch)
+        ),
+        structured_output_any_whitespace=(
+            _resolve_default_structured_output_any_whitespace(sampling, arch)
+        ),
+    )
+    if sampling_changes:
+        sampling = _construct_from_user_fields(sampling, **sampling_changes)
+
+    device_graph_capture, enable_overlap_scheduler = (
+        _resolve_overlap_and_device_graph_capture(
+            runtime, sampling, lora, model, arch
+        )
+    )
+    capped_image_bytes, capped_video_bytes = _resolve_preprocess_cache_budgets(
+        runtime, model, arch
+    )
+    runtime_changes = _resolved_field_changes(
+        runtime,
+        reasoning_parser=_resolve_default_reasoning_parser(runtime, arch),
+        tool_parser=_resolve_default_tool_parser(runtime, model, arch),
+        device_graph_capture=device_graph_capture,
+        enable_overlap_scheduler=enable_overlap_scheduler,
+        max_vision_preprocess_cache_bytes=capped_image_bytes,
+        max_video_preprocess_cache_bytes=capped_video_bytes,
+        vision_cache_utilization=(
+            _resolve_vision_cache_utilization(runtime, model, arch)
+        ),
+    )
+    if runtime_changes:
+        runtime = _construct_from_user_fields(runtime, **runtime_changes)
+    return runtime, sampling
+
+
+def _apply_speculative_draft_architecture(
+    speculative: SpeculativeConfig | None, draft_model: MAXModelConfig | None
+) -> None:
+    """Rewrite the draft model's HuggingFace architecture for the method.
+
+    Runs after the models are built, since it edits the draft's loaded
+    HuggingFace config rather than any MAX config field.
+    """
+    if speculative is None:
+        return
+    # We need to set the architecture to LlamaForCausalLMEagle for Eagle speculative decoding
+    if speculative.is_eagle() and draft_model is not None:
+        if len(draft_model.huggingface_config.architectures) != 1:
+            raise ValueError(
+                f"Expected exactly 1 architecture in draft model config, "
+                f"got {len(draft_model.huggingface_config.architectures)}"
+            )
+        hf_arch = draft_model.huggingface_config.architectures[0]
+        if hf_arch == "LlamaForCausalLM":
+            draft_model.huggingface_config.architectures[0] = (
+                "LlamaForCausalLMEagle"
+            )
+    # DFlash drafts ship with architectures: ["DFlashDraftModel"],
+    # which isn't registered as a standalone MAX architecture (the draft
+    # is only ever invoked through UnifiedDflashLlama3). Override to
+    # LlamaForCausalLM.
+    if speculative.is_dflash() and draft_model is not None:
+        if len(draft_model.huggingface_config.architectures) != 1:
+            raise ValueError(
+                f"Expected exactly 1 architecture in draft model config, "
+                f"got {len(draft_model.huggingface_config.architectures)}"
+            )
+        hf_arch = draft_model.huggingface_config.architectures[0]
+        if hf_arch == "DFlashDraftModel":
+            draft_model.huggingface_config.architectures[0] = "LlamaForCausalLM"
+
+
+def _apply_speculative_target_architecture(
+    speculative: SpeculativeConfig | None, manifest: ModelManifest
+) -> None:
+    """Override the target architecture for unified spec-decode pipelines.
+
+    Unified EAGLE / DFlash / MTP pipelines fold the draft into a dedicated
+    target architecture (e.g. ``DeepseekV3ForCausalLM`` →
+    ``UnifiedMTPDeepseekV3ForCausalLM``). This mutates
+    ``model.huggingface_config.architectures[0]`` in place.
+
+    This must run *before* the architecture is resolved from
+    ``models.main_architecture_name``, so that the resolved ``arch`` —
+    consumed by memory estimation, the overlap scheduler, parser
+    resolution, and ``pipeline_model`` construction — reflects the
+    override. ``from_args`` invokes it before construction-time
+    resolution. It is a no-op when speculative decoding is disabled.
+    """
+    if not speculative:
+        return
+
+    draft_model = manifest.get("draft")
+    target_archs = manifest["main"].huggingface_config.architectures
+    if target_archs[0] == "LlamaForCausalLM":
+        if speculative.is_dflash():
+            target_archs[0] = "UnifiedDflashLlama3ForCausalLM"
+        else:
+            target_archs[0] = "UnifiedEagleLlama3ForCausalLM"
+    if target_archs[0] == "DeepseekV3ForCausalLM":
+        # Choose between MTP (NextN layer baked into target ckpt) and
+        # Eagle3 (separate draft ckpt with arch
+        # ``Eagle3DeepseekV2ForCausalLM``) based on the draft arch.
+        draft_archs = (
+            draft_model.huggingface_config.architectures
+            if draft_model is not None
+            else None
+        )
+        if draft_archs is None:
+            target_archs[0] = "UnifiedMTPDeepseekV3ForCausalLM"
+        elif draft_archs and draft_archs[0] == "Eagle3DeepseekV2ForCausalLM":
+            target_archs[0] = "Eagle3DeepseekV3ForCausalLM"
+        elif draft_archs and draft_archs[0] == "LlamaForCausalLMEagle3":
+            target_archs[0] = "Eagle3MHADeepseekV3ForCausalLM"
+        else:
+            if not draft_archs:
+                raise ValueError(
+                    "Draft model HF config has empty"
+                    " ``architectures=[]``. Expected"
+                    " 'Eagle3DeepseekV2ForCausalLM' (Eagle3 draft),"
+                    " 'LlamaForCausalLMEagle3' (Llama MHA Eagle3"
+                    " draft), or no draft model (MTP path)."
+                )
+            raise ValueError(
+                "Unrecognized draft architecture for DeepseekV3"
+                f" target: {draft_archs[0]!r}. Expected"
+                " 'Eagle3DeepseekV2ForCausalLM' (Eagle3 draft),"
+                " 'LlamaForCausalLMEagle3' (Llama MHA Eagle3 draft),"
+                " or no draft model (MTP path)."
+            )
+    if target_archs[0] == "KimiK25ForConditionalGeneration":
+        draft_archs = (
+            draft_model.huggingface_config.architectures
+            if draft_model is not None
+            else None
+        )
+        if speculative.is_dflash():
+            target_archs[0] = "UnifiedDflashKimiK25ForCausalLM"
+        elif draft_archs and draft_archs[0] == "LlamaForCausalLMEagle3":
+            # MLA target + MHA (Llama-style) Eagle3 draft.
+            target_archs[0] = "Eagle3MHAKimiK25ForCausalLM"
+        else:
+            # MLA target + MLA Eagle3 draft (existing path).
+            target_archs[0] = "Eagle3DeepseekV2ForCausalLM"
+    if target_archs[0] == "Gemma4ForConditionalGeneration":
+        draft_archs = (
+            draft_model.huggingface_config.architectures
+            if draft_model is not None
+            else None
+        )
+        if draft_archs and draft_archs[0] == "Gemma4AssistantForCausalLM":
+            target_archs[0] = "UnifiedMTPGemma4ForCausalLM"
+        elif draft_archs and draft_archs[0] == "DSparkDraftModel":
+            # Speculators-format DSpark drafters (e.g.
+            # RedHatAI/gemma-4-31B-it-speculator.dspark) declare the
+            # generic architectures: ["DSparkDraftModel"].
+            target_archs[0] = "UnifiedDSparkGemma4_31BForCausalLM"
+        elif (
+            speculative.is_dflash()
+            and draft_archs
+            # z-lab DFlash drafters (e.g. z-lab/gemma-4-31B-it-DFlash)
+            # declare architectures: ["DFlashDraftModel"], which
+            # ``_create_speculative_config_if_needed`` rewrites to
+            # "LlamaForCausalLM" on the CLI-kwargs path (but not the
+            # recipe path) before this runs. Accept both spellings.
+            and draft_archs[0] in ("DFlashDraftModel", "LlamaForCausalLM")
+        ):
+            target_archs[0] = "UnifiedDflashGemma4_31BForCausalLM"
+    # Gemma 4 12B ships as the "gemma4_unified" model line; its DSpark
+    # block drafter declares architectures: ["Gemma4DSparkModel"].
+    if target_archs[0] == "Gemma4UnifiedForConditionalGeneration":
+        draft_archs = (
+            draft_model.huggingface_config.architectures
+            if draft_model is not None
+            else None
+        )
+        if draft_archs and draft_archs[0] == "Gemma4DSparkModel":
+            target_archs[0] = "UnifiedDSparkGemma4_12BForCausalLM"
+    if target_archs[0] == "MiniMaxM3SparseForConditionalGeneration":
+        draft_archs = (
+            draft_model.huggingface_config.architectures
+            if draft_model is not None
+            else None
+        )
+        if speculative.is_mtp() and manifest.get("draft") is None:
+            target_archs[0] = (
+                "UnifiedMTPMiniMaxM3SparseForConditionalGeneration"
+            )
+        elif draft_archs and draft_archs[0] == "LlamaForCausalLMEagle3":
+            # M3 target + MHA (Llama-style) Eagle3 draft. The v0 Eagle3
+            # path forbids block-sparse attention.
+            target_archs[0] = "Eagle3MHAMiniMaxM3SparseForConditionalGeneration"
+    if target_archs[0] == "Qwen3_5ForConditionalGeneration":
+        # Qwen3.8 bakes a NextN MTP head into the target checkpoint, so
+        # there is no separate draft model. Qwen3.5 shares the arch name
+        # but ships no head; only override when the head exists. Unlike
+        # the other in-checkpoint MTP overrides this one also waits for an
+        # explicit `--speculative-method mtp`: the fused graph it selects
+        # is served by Mach rather than MAX, so a plain `max serve` of a
+        # Qwen3.8 checkpoint must keep landing on the base architecture.
+        text_config = getattr(
+            manifest["main"].huggingface_config,
+            "text_config",
+            manifest["main"].huggingface_config,
+        )
+        has_mtp = (getattr(text_config, "mtp_num_hidden_layers", 0) or 0) > 0
+        if speculative.is_mtp() and manifest.get("draft") is None and has_mtp:
+            target_archs[0] = "UnifiedMTPQwen3_5ForConditionalGeneration"
+    if target_archs[0] == "GlmMoeDsaForCausalLM":
+        # GLM-5.2 bakes a NextN MTP layer into the target checkpoint, so
+        # there is no separate draft model. GLM-5.1 shares the arch name
+        # but has no MTP layer; only override when MTP weights exist.
+        has_mtp = (
+            getattr(
+                manifest["main"].huggingface_config,
+                "num_nextn_predict_layers",
+                0,
+            )
+            or 0
+        ) > 0
+        if manifest.get("draft") is None and has_mtp:
+            target_archs[0] = "UnifiedMTPGlmMoeDsaForCausalLM"
+    if target_archs[0] == "InklingForConditionalGeneration":
+        # Inkling bakes chained MTP depths into the target checkpoint.
+        mtp_config = getattr(
+            manifest["main"].huggingface_config, "mtp_config", None
+        )
+        n_mtp = (
+            mtp_config.get("num_nextn_predict_layers")
+            if isinstance(mtp_config, dict)
+            else getattr(mtp_config, "num_nextn_predict_layers", None)
+        )
+        if manifest.get("draft") is None and (n_mtp or 0) > 0:
+            target_archs[0] = "UnifiedMTPInklingForConditionalGeneration"
+
+
+def _required_argument_changes(
+    architecture: Any, config_name: str, sub: Any
+) -> dict[str, Any]:
+    """The values the architecture mandates for this receiver but it lacks."""
+    changes: dict[str, Any] = {}
+    for arg_name, required_value in architecture.required_arguments.items():
+        if arg_name not in type(sub).model_fields:
+            continue
+        current_value = getattr(sub, arg_name)
+        if current_value != required_value:
+            logger.warning(
+                f"Architecture '{architecture.name}' requires {config_name}.{arg_name}={required_value}, "
+                f"overriding current value {current_value}"
+            )
+            changes[arg_name] = required_value
+    return changes
+
+
+def _apply_required_arguments(
+    architecture: Any,
+    manifest: ModelManifest,
+    runtime: PipelineRuntimeConfig,
+    sampling: SamplingConfig,
+    top_level: dict[str, Any],
+) -> tuple[PipelineRuntimeConfig, SamplingConfig]:
+    """Applies the architecture's required arguments to every receiver.
+
+    Model and KV-cache changes land in the manifest, runtime and sampling
+    come back rebuilt, and PipelineConfig's own fields land in
+    ``top_level``, joining the final construction.
+    """
+    if not architecture.required_arguments:
+        return runtime, sampling
+
+    for arg_name, required_value in architecture.required_arguments.items():
+        field = PipelineConfig.model_fields.get(arg_name)
+        if field is None:
+            continue
+        current_value = top_level.get(
+            arg_name, field.get_default(call_default_factory=True)
+        )
+        if current_value != required_value:
+            logger.warning(
+                f"Architecture '{architecture.name}' requires PipelineConfig.{arg_name}={required_value}, "
+                f"overriding current value {current_value}"
+            )
+            top_level[arg_name] = required_value
+
+    if runtime_changes := _required_argument_changes(
+        architecture, "PipelineRuntimeConfig", runtime
+    ):
+        runtime = _construct_from_user_fields(runtime, **runtime_changes)
+    if sampling_changes := _required_argument_changes(
+        architecture, "SamplingConfig", sampling
+    ):
+        sampling = _construct_from_user_fields(sampling, **sampling_changes)
+
+    for role, model_name, kv_name in (
+        ("main", "MAXModelConfig", "KVCacheConfig"),
+        ("draft", "Draft_MAXModelConfig", "Draft_KVCacheConfig"),
+    ):
+        model = manifest.get(role)
+        if model is None:
+            continue
+        model_changes = _required_argument_changes(
+            architecture, model_name, model
+        )
+        if kv_changes := _required_argument_changes(
+            architecture, kv_name, model.kv_cache
+        ):
+            model_changes["kv_cache"] = _construct_from_user_fields(
+                model.kv_cache, **kv_changes
+            )
+        if model_changes:
+            # A copy, not a reconstruction: the model constructor re-probes
+            # the network, while a copy keeps the already-loaded state.
+            manifest[role] = model.model_copy(update=model_changes)
+    return runtime, sampling
+
+
+def _resolve_models_max_length(
+    manifest: ModelManifest, arch: Any, draft_arch: Any
+) -> None:
+    """Replaces each model with a copy carrying its resolved ``max_length``.
+
+    The architecture owns the rule -- whether the checkpoint's length is a
+    hard cap or just a default -- and it runs here, once. Memory planning
+    may lower the result to fit the device, but only on the plan.
+    """
+    for role, model_arch in (("main", arch), ("draft", draft_arch)):
+        model = manifest.get(role)
+        if model is None or model_arch is None:
+            continue
+        # Capture intent before resolving: anything that set max_length
+        # since __init__ counts as user-provided.
+        user_provided = model.max_length is not None
+        resolved = model_arch.config.calculate_max_seq_len(
+            model.huggingface_config, model
+        )
+        replaced = model.model_copy(update={"max_length": resolved})
+        replaced._max_length_user_provided = user_provided
+        manifest[role] = replaced
+
+
+def _apply_arch_kv_head_replication(
+    manifest: ModelManifest, arch: Any, draft_arch: Any
+) -> None:
+    """Sets ``allow_kv_head_replication`` when the architecture requires it."""
+    for role, model_arch in (("main", arch), ("draft", draft_arch)):
+        model = manifest.get(role)
+        if model is None or model_arch is None:
+            continue
+        if not model_arch.requires_kv_head_replication:
+            continue
+        if model.kv_cache.allow_kv_head_replication:
+            continue
+        kv_cache = _construct_from_user_fields(
+            model.kv_cache, allow_kv_head_replication=True
+        )
+        manifest[role] = model.model_copy(update={"kv_cache": kv_cache})
 
 
 class PipelineConfig(ConfigFileModel):
@@ -435,42 +1160,6 @@ class PipelineConfig(ConfigFileModel):
             return 0
         return Signals.NUM_BYTES * ngpus
 
-    def _apply_speculative_draft_architecture(self) -> None:
-        """Rewrite the draft model's HuggingFace architecture for the method.
-
-        Runs after the models are built, since it edits the draft's loaded
-        HuggingFace config rather than any MAX config field.
-        """
-        if self.speculative is None:
-            return
-        # We need to set the architecture to LlamaForCausalLMEagle for Eagle speculative decoding
-        if self.speculative.is_eagle() and self.draft_model is not None:
-            if len(self.draft_model.huggingface_config.architectures) != 1:
-                raise ValueError(
-                    f"Expected exactly 1 architecture in draft model config, "
-                    f"got {len(self.draft_model.huggingface_config.architectures)}"
-                )
-            hf_arch = self.draft_model.huggingface_config.architectures[0]
-            if hf_arch == "LlamaForCausalLM":
-                self.draft_model.huggingface_config.architectures[0] = (
-                    "LlamaForCausalLMEagle"
-                )
-        # DFlash drafts ship with architectures: ["DFlashDraftModel"],
-        # which isn't registered as a standalone MAX architecture (the draft
-        # is only ever invoked through UnifiedDflashLlama3). Override to
-        # LlamaForCausalLM.
-        if self.speculative.is_dflash() and self.draft_model is not None:
-            if len(self.draft_model.huggingface_config.architectures) != 1:
-                raise ValueError(
-                    f"Expected exactly 1 architecture in draft model config, "
-                    f"got {len(self.draft_model.huggingface_config.architectures)}"
-                )
-            hf_arch = self.draft_model.huggingface_config.architectures[0]
-            if hf_arch == "DFlashDraftModel":
-                self.draft_model.huggingface_config.architectures[0] = (
-                    "LlamaForCausalLM"
-                )
-
     def _validate_repo_access(self) -> None:
         """Validates that every model's repo was provided and is accessible.
 
@@ -479,229 +1168,6 @@ class PipelineConfig(ConfigFileModel):
         """
         for model in self.models.values():
             model.validate_repo_access()
-
-    def _validate_required_arguments_against_architecture(
-        self, architecture: Any
-    ) -> None:
-        """Validates and overrides config from architecture required_arguments.
-
-        Checks the required_arguments dictionary from the architecture
-        and automatically overrides any config values that don't match, logging warnings
-        when changes are made.
-
-        Args:
-            architecture: The SupportedArchitecture containing required_arguments dictionary
-        """
-        if not architecture.required_arguments:
-            return
-
-        config_objects = [
-            ("PipelineConfig", self),
-            ("PipelineRuntimeConfig", self.runtime),
-            ("MAXModelConfig", self.model),
-            ("SamplingConfig", self.sampling),
-        ]
-        kv_cache_owners = [("KVCacheConfig", self.model)]
-
-        # Add draft model configurations if present
-        if self.draft_model is not None:
-            config_objects.append(("Draft_MAXModelConfig", self.draft_model))
-            kv_cache_owners.append(("Draft_KVCacheConfig", self.draft_model))
-
-        for arg_name, required_value in architecture.required_arguments.items():
-            # Skip config objects that do not declare this field.
-            for config_name, config_obj in config_objects:
-                if arg_name not in type(config_obj).model_fields:
-                    continue
-                current_value = getattr(config_obj, arg_name)
-                if current_value != required_value:
-                    logger.warning(
-                        f"Architecture '{architecture.name}' requires {config_name}.{arg_name}={required_value}, "
-                        f"overriding current value {current_value}"
-                    )
-                    setattr(config_obj, arg_name, required_value)
-            for config_name, owner in kv_cache_owners:
-                if arg_name not in type(owner.kv_cache).model_fields:
-                    continue
-                current_value = getattr(owner.kv_cache, arg_name)
-                if current_value != required_value:
-                    logger.warning(
-                        f"Architecture '{architecture.name}' requires {config_name}.{arg_name}={required_value}, "
-                        f"overriding current value {current_value}"
-                    )
-                    owner.kv_cache = _construct_from_user_fields(
-                        owner.kv_cache, **{arg_name: required_value}
-                    )
-
-    def _apply_speculative_target_architecture(self) -> None:
-        """Override the target architecture for unified spec-decode pipelines.
-
-        Unified EAGLE / DFlash / MTP pipelines fold the draft into a dedicated
-        target architecture (e.g. ``DeepseekV3ForCausalLM`` →
-        ``UnifiedMTPDeepseekV3ForCausalLM``). This mutates
-        ``model.huggingface_config.architectures[0]`` in place.
-
-        This must run *before* the architecture is resolved from
-        ``models.main_architecture_name``, so that the resolved ``arch`` —
-        consumed by memory estimation, the overlap scheduler, parser
-        resolution, and ``pipeline_model`` construction — reflects the
-        override. ``from_args`` invokes it before construction-time
-        resolution. It is a no-op when speculative decoding is disabled.
-        """
-        if not self.speculative:
-            return
-
-        target_archs = self.model.huggingface_config.architectures
-        if target_archs[0] == "LlamaForCausalLM":
-            if self.speculative.is_dflash():
-                target_archs[0] = "UnifiedDflashLlama3ForCausalLM"
-            else:
-                target_archs[0] = "UnifiedEagleLlama3ForCausalLM"
-        if target_archs[0] == "DeepseekV3ForCausalLM":
-            # Choose between MTP (NextN layer baked into target ckpt) and
-            # Eagle3 (separate draft ckpt with arch
-            # ``Eagle3DeepseekV2ForCausalLM``) based on the draft arch.
-            draft_archs = (
-                self.draft_model.huggingface_config.architectures
-                if self.draft_model is not None
-                else None
-            )
-            if draft_archs is None:
-                target_archs[0] = "UnifiedMTPDeepseekV3ForCausalLM"
-            elif (
-                draft_archs and draft_archs[0] == "Eagle3DeepseekV2ForCausalLM"
-            ):
-                target_archs[0] = "Eagle3DeepseekV3ForCausalLM"
-            elif draft_archs and draft_archs[0] == "LlamaForCausalLMEagle3":
-                target_archs[0] = "Eagle3MHADeepseekV3ForCausalLM"
-            else:
-                if not draft_archs:
-                    raise ValueError(
-                        "Draft model HF config has empty"
-                        " ``architectures=[]``. Expected"
-                        " 'Eagle3DeepseekV2ForCausalLM' (Eagle3 draft),"
-                        " 'LlamaForCausalLMEagle3' (Llama MHA Eagle3"
-                        " draft), or no draft model (MTP path)."
-                    )
-                raise ValueError(
-                    "Unrecognized draft architecture for DeepseekV3"
-                    f" target: {draft_archs[0]!r}. Expected"
-                    " 'Eagle3DeepseekV2ForCausalLM' (Eagle3 draft),"
-                    " 'LlamaForCausalLMEagle3' (Llama MHA Eagle3 draft),"
-                    " or no draft model (MTP path)."
-                )
-        if target_archs[0] == "KimiK25ForConditionalGeneration":
-            draft_archs = (
-                self.draft_model.huggingface_config.architectures
-                if self.draft_model is not None
-                else None
-            )
-            if self.speculative.is_dflash():
-                target_archs[0] = "UnifiedDflashKimiK25ForCausalLM"
-            elif draft_archs and draft_archs[0] == "LlamaForCausalLMEagle3":
-                # MLA target + MHA (Llama-style) Eagle3 draft.
-                target_archs[0] = "Eagle3MHAKimiK25ForCausalLM"
-            else:
-                # MLA target + MLA Eagle3 draft (existing path).
-                target_archs[0] = "Eagle3DeepseekV2ForCausalLM"
-        if target_archs[0] == "Gemma4ForConditionalGeneration":
-            draft_archs = (
-                self.draft_model.huggingface_config.architectures
-                if self.draft_model is not None
-                else None
-            )
-            if draft_archs and draft_archs[0] == "Gemma4AssistantForCausalLM":
-                target_archs[0] = "UnifiedMTPGemma4ForCausalLM"
-            elif draft_archs and draft_archs[0] == "DSparkDraftModel":
-                # Speculators-format DSpark drafters (e.g.
-                # RedHatAI/gemma-4-31B-it-speculator.dspark) declare the
-                # generic architectures: ["DSparkDraftModel"].
-                target_archs[0] = "UnifiedDSparkGemma4_31BForCausalLM"
-            elif (
-                self.speculative.is_dflash()
-                and draft_archs
-                # z-lab DFlash drafters (e.g. z-lab/gemma-4-31B-it-DFlash)
-                # declare architectures: ["DFlashDraftModel"], which
-                # ``_create_speculative_config_if_needed`` rewrites to
-                # "LlamaForCausalLM" on the CLI-kwargs path (but not the
-                # recipe path) before this runs. Accept both spellings.
-                and draft_archs[0] in ("DFlashDraftModel", "LlamaForCausalLM")
-            ):
-                target_archs[0] = "UnifiedDflashGemma4_31BForCausalLM"
-        # Gemma 4 12B ships as the "gemma4_unified" model line; its DSpark
-        # block drafter declares architectures: ["Gemma4DSparkModel"].
-        if target_archs[0] == "Gemma4UnifiedForConditionalGeneration":
-            draft_archs = (
-                self.draft_model.huggingface_config.architectures
-                if self.draft_model is not None
-                else None
-            )
-            if draft_archs and draft_archs[0] == "Gemma4DSparkModel":
-                target_archs[0] = "UnifiedDSparkGemma4_12BForCausalLM"
-        if target_archs[0] == "MiniMaxM3SparseForConditionalGeneration":
-            draft_archs = (
-                self.draft_model.huggingface_config.architectures
-                if self.draft_model is not None
-                else None
-            )
-            if self.speculative.is_mtp() and self.draft_model is None:
-                target_archs[0] = (
-                    "UnifiedMTPMiniMaxM3SparseForConditionalGeneration"
-                )
-            elif draft_archs and draft_archs[0] == "LlamaForCausalLMEagle3":
-                # M3 target + MHA (Llama-style) Eagle3 draft. The v0 Eagle3
-                # path forbids block-sparse attention.
-                target_archs[0] = (
-                    "Eagle3MHAMiniMaxM3SparseForConditionalGeneration"
-                )
-        if target_archs[0] == "Qwen3_5ForConditionalGeneration":
-            # Qwen3.8 bakes a NextN MTP head into the target checkpoint, so
-            # there is no separate draft model. Qwen3.5 shares the arch name
-            # but ships no head; only override when the head exists. Unlike
-            # the other in-checkpoint MTP overrides this one also waits for an
-            # explicit `--speculative-method mtp`: the fused graph it selects
-            # is served by Mach rather than MAX, so a plain `max serve` of a
-            # Qwen3.8 checkpoint must keep landing on the base architecture.
-            text_config = getattr(
-                self.model.huggingface_config,
-                "text_config",
-                self.model.huggingface_config,
-            )
-            has_mtp = (
-                getattr(text_config, "mtp_num_hidden_layers", 0) or 0
-            ) > 0
-            if (
-                self.speculative.is_mtp()
-                and self.draft_model is None
-                and has_mtp
-            ):
-                target_archs[0] = "UnifiedMTPQwen3_5ForConditionalGeneration"
-        if target_archs[0] == "GlmMoeDsaForCausalLM":
-            # GLM-5.2 bakes a NextN MTP layer into the target checkpoint, so
-            # there is no separate draft model. GLM-5.1 shares the arch name
-            # but has no MTP layer; only override when MTP weights exist.
-            has_mtp = (
-                getattr(
-                    self.model.huggingface_config,
-                    "num_nextn_predict_layers",
-                    0,
-                )
-                or 0
-            ) > 0
-            if self.draft_model is None and has_mtp:
-                target_archs[0] = "UnifiedMTPGlmMoeDsaForCausalLM"
-        if target_archs[0] == "InklingForConditionalGeneration":
-            # Inkling bakes chained MTP depths into the target checkpoint.
-            mtp_config = getattr(
-                self.model.huggingface_config, "mtp_config", None
-            )
-            n_mtp = (
-                mtp_config.get("num_nextn_predict_layers")
-                if isinstance(mtp_config, dict)
-                else getattr(mtp_config, "num_nextn_predict_layers", None)
-            )
-            if self.draft_model is None and (n_mtp or 0) > 0:
-                target_archs[0] = "UnifiedMTPInklingForConditionalGeneration"
 
     def _validate_synthetic_acceptance_with_constrained_decoding(self) -> None:
         """Rejects synthetic acceptance when constrained decoding can fire.
@@ -729,364 +1195,32 @@ class PipelineConfig(ConfigFileModel):
             " --enable-structured-output off."
         )
 
-    def _resolve_default_reasoning_parser(self, arch: Any = None) -> None:
-        """Apply the architecture's default reasoning parser when unset.
+    @staticmethod
+    def _model_with_resolved_weights(
+        model: MAXModelConfig, arch: Any
+    ) -> MAXModelConfig:
+        """Returns the model config with its architecture-resolved weights.
 
-        If the user did not configure ``runtime.reasoning_parser`` and the
-        resolved ``SupportedArchitecture`` declares a default
-        ``reasoning_parser``, use it. Explicit user configuration always wins.
-
-        Passing the case-insensitive sentinel ``"none"`` explicitly disables
-        the reasoning parser; the value is normalized to ``None`` and the
-        architecture default is skipped.
+        A copy, not a reconstruction: the model constructor re-probes the
+        network, while a copy keeps the already-loaded state.
         """
-        if _is_disable_parser_sentinel(self.runtime.reasoning_parser):
-            self.runtime.reasoning_parser = None
-            logger.info(
-                "Reasoning parser explicitly disabled, skipping architecture default."
+        encoding, dtype_cast, weight_path, device_specs = (
+            _resolve_weights_and_encoding(
+                model,
+                default_encoding=arch.default_encoding,
+                supported_encodings=arch.supported_encodings,
+                default_weights_format=arch.default_weights_format,
             )
-            return
-
-        if self.runtime.reasoning_parser is not None:
-            return
-
-        if arch is None or arch.reasoning_parser is None:
-            return
-
-        self.runtime.reasoning_parser = arch.reasoning_parser
-        logger.info(
-            "Defaulting reasoning parser to %r for architecture %s. "
-            "Override with --reasoning-parser, or pass "
-            "--reasoning-parser=none to disable.",
-            arch.reasoning_parser,
-            arch.name,
         )
-
-    def _resolve_default_tool_parser(self, arch: Any = None) -> None:
-        """Apply the architecture's default tool parser when unset.
-
-        If the user did not configure ``runtime.tool_parser`` and the
-        resolved ``SupportedArchitecture`` declares a default
-        ``tool_parser``, use it. Explicit user configuration always wins.
-
-        Passing the case-insensitive sentinel ``"none"`` explicitly disables
-        the tool parser; the value is normalized to ``None`` and the
-        architecture default is skipped.
-        """
-        if _is_disable_parser_sentinel(self.runtime.tool_parser):
-            self.runtime.tool_parser = None
-            logger.info(
-                "Tool parser explicitly disabled, skipping architecture default.",
-            )
-            return
-
-        if self.runtime.tool_parser is not None:
-            return
-
-        if arch is None or arch.tool_parser is None:
-            return
-
-        if callable(arch.tool_parser):
-            parser_name = arch.tool_parser(self.model.huggingface_model_repo)
-        else:
-            parser_name = arch.tool_parser
-
-        self.runtime.tool_parser = parser_name
-        logger.info(
-            "Defaulting tool parser to %r for architecture %s. "
-            "Override with --tool-parser, or pass --tool-parser=none "
-            "to disable.",
-            parser_name,
-            arch.name,
-        )
-
-    def _resolve_default_structured_output_backend(
-        self, arch: Any = None
-    ) -> None:
-        """Resolve the structured output backend to a concrete value.
-
-        Resolution order (highest precedence first):
-
-        1. An explicit user choice (``sampling.structured_output_backend`` is
-           not ``None``) always wins -- including an explicit ``"xgrammar"`` on
-           an architecture that pins ``"llguidance"``.
-        2. Otherwise, if the resolved ``SupportedArchitecture`` declares a
-           ``default_structured_output_backend`` (e.g. Gemma 3 / MiniMax-M2 pin
-           ``"llguidance"``), use it.
-        3. Otherwise, fall back to the global default ``"xgrammar"``.
-
-        Runs whenever construction resolves an architecture, so the field is
-        a concrete ``str`` on any config with a registered architecture. The
-        ``None`` sentinel (unset) is what distinguishes an explicit user
-        value from the default -- mirroring the reasoning/tool parser
-        resolvers above.
-        """
-        if self.sampling.structured_output_backend is not None:
-            # Explicit user configuration always wins.
-            return
-
-        if (
-            arch is not None
-            and arch.default_structured_output_backend is not None
-        ):
-            self.sampling.structured_output_backend = (
-                arch.default_structured_output_backend
-            )
-            logger.info(
-                "Defaulting structured output backend to %r for architecture "
-                "%s. Override with --structured-output-backend.",
-                arch.default_structured_output_backend,
-                arch.name,
-            )
-            return
-
-        self.sampling.structured_output_backend = (
-            DEFAULT_STRUCTURED_OUTPUT_BACKEND
-        )
-        logger.info(
-            "Defaulting structured output backend to the global default %r "
-            "(architecture %s declares no default). Override with "
-            "--structured-output-backend.",
-            DEFAULT_STRUCTURED_OUTPUT_BACKEND,
-            arch.name if arch is not None else None,
-        )
-
-    def _resolve_default_structured_output_any_whitespace(
-        self, arch: Any = None
-    ) -> None:
-        """Resolve structured-output whitespace mode based on architecture."""
-        if self.sampling.structured_output_any_whitespace is not None:
-            # Explicit user configuration always wins.
-            return
-
-        if (
-            arch is not None
-            and arch.default_structured_output_any_whitespace is not None
-        ):
-            self.sampling.structured_output_any_whitespace = (
-                arch.default_structured_output_any_whitespace
-            )
-            logger.info(
-                "Using architecture default structured output any_whitespace %r"
-                " (%s).",
-                arch.default_structured_output_any_whitespace,
-                arch.name,
-            )
-            return
-
-        self.sampling.structured_output_any_whitespace = (
-            DEFAULT_STRUCTURED_OUTPUT_ANY_WHITESPACE
-        )
-
-    def _resolve_max_length(self, arch: Any, draft_arch: Any = None) -> None:
-        """Resolves each model's ``max_length`` through its architecture.
-
-        The architecture owns the rule — whether the checkpoint's length is a
-        hard cap or just a default — and it runs here, once. Memory planning
-        may lower the result to fit the device, but only on the plan.
-        """
-        # Capture intent before overwriting: anything that set max_length
-        # since __init__ counts as user-provided.
-        self.model._max_length_user_provided = self.model.max_length is not None
-        self.model.max_length = arch.config.calculate_max_seq_len(
-            self.model.huggingface_config, self.model
-        )
-        if draft_arch is not None and self.draft_model is not None:
-            self.draft_model._max_length_user_provided = (
-                self.draft_model.max_length is not None
-            )
-            self.draft_model.max_length = (
-                draft_arch.config.calculate_max_seq_len(
-                    self.draft_model.huggingface_config,
-                    self.draft_model,
-                )
-            )
-
-    def _apply_arch_kv_head_replication(
-        self, arch: Any, draft_arch: Any = None
-    ) -> None:
-        """Set ``allow_kv_head_replication`` when the architecture requires it."""
-        models = [(self.model, arch)]
-        if self.draft_model is not None and draft_arch is not None:
-            models.append((self.draft_model, draft_arch))
-        for model, model_arch in models:
-            if not model_arch.requires_kv_head_replication:
-                continue
-            if model.kv_cache.allow_kv_head_replication:
-                continue
-            model.kv_cache = _construct_from_user_fields(
-                model.kv_cache, allow_kv_head_replication=True
-            )
-
-    def _resolve_preprocess_cache_budgets(self, arch: Any) -> None:
-        """Caps the preprocessed-media cache budgets against host memory.
-
-        Reduces the image and video budgets proportionally when their sum
-        exceeds :data:`_PREPROCESS_CACHE_MAX_FRACTION_OF_HOST_MEMORY` of what
-        this process may use, by scaling both by a common factor so the split
-        the caller chose survives (exactly, up to integer truncation).
-        Proportionally, rather than clamping each in turn, so that raising one
-        budget cannot silently starve the other.
-
-        Leaves the budgets alone for architectures with no vision tower, which
-        never construct the caches, and when host memory cannot be determined --
-        an unbounded guess would be worse than the configured ceiling.
-
-        Runs at construction so every consumer -- including tokenizers built
-        without a memory plan -- sees the bounded values.
-        """
-        runtime = self.runtime
-        image_bytes = max(0, runtime.max_vision_preprocess_cache_bytes)
-        video_bytes = max(0, runtime.max_video_preprocess_cache_bytes)
-        requested = image_bytes + video_bytes
-        if requested == 0:
-            return
-
-        if arch is None or not arch_has_vision_tower(
-            arch.config, self.model.huggingface_config
-        ):
-            return
-
-        host_bytes = _host_memory_limit()
-        if host_bytes is None:
-            logger.debug(
-                "Could not determine host memory; leaving the preprocessed-"
-                "media cache ceiling at %s.",
-                to_human_readable_bytes(requested),
-            )
-            return
-
-        cap = int(host_bytes * _PREPROCESS_CACHE_MAX_FRACTION_OF_HOST_MEMORY)
-        if requested <= cap:
-            logger.info(
-                "Preprocessed-media cache: %s ceiling (%s images, %s video).",
-                to_human_readable_bytes(requested),
-                to_human_readable_bytes(image_bytes),
-                to_human_readable_bytes(video_bytes),
-            )
-            return
-
-        scale = cap / requested
-        runtime.max_vision_preprocess_cache_bytes = int(image_bytes * scale)
-        runtime.max_video_preprocess_cache_bytes = int(video_bytes * scale)
-        logger.warning(
-            "Reduced the preprocessed-media cache from %s to %s (%s images, %s "
-            "video): the configured ceiling exceeded %.0f%% of the %s this "
-            "process may use.",
-            to_human_readable_bytes(requested),
-            to_human_readable_bytes(
-                runtime.max_vision_preprocess_cache_bytes
-                + runtime.max_video_preprocess_cache_bytes
-            ),
-            to_human_readable_bytes(runtime.max_vision_preprocess_cache_bytes),
-            to_human_readable_bytes(runtime.max_video_preprocess_cache_bytes),
-            _PREPROCESS_CACHE_MAX_FRACTION_OF_HOST_MEMORY * 100,
-            to_human_readable_bytes(host_bytes),
-        )
-
-    def _resolve_vision_cache_utilization(self, arch: Any) -> None:
-        """Disables the vision encoder cache when the planner cannot shape it.
-
-        An arch config that reports a per-entry size but no row spec cannot back
-        the block cache. Zeroing the utilization here, at construction, lets
-        the tokenizers and memory planning agree without planning writing
-        back to the config.
-        """
-        if self.runtime.vision_cache_utilization == 0:
-            return
-        hf_config = self.model.huggingface_config
-        if arch is None or not arch_has_vision_tower(arch.config, hf_config):
-            return
-        if arch.config.get_vision_cache_row_spec(hf_config) is None:
-            logger.warning(
-                "Disabling vision encoder cache: %s's arch config reports "
-                "a per-entry estimate but no row spec "
-                "(get_vision_cache_row_spec); images will be re-encoded on "
-                "every request.",
-                arch.name,
-            )
-            self.runtime.vision_cache_utilization = 0.0
-
-    def _validate_and_resolve_overlap_scheduler(self, arch: Any = None) -> None:
-        if not self.runtime.force:
-            if (
-                self.runtime.device_graph_capture is None
-                and arch is not None
-                and arch.supports_device_graph_capture
-                and accelerator_api() in ("cuda", "hip")
-                and self._is_eligible_for_overlap_serve_optimizations(arch)
-                # Device graph capture is not supported for prefill-only workers.
-                and self.runtime.pipeline_role != "prefill_only"
-            ):
-                self.runtime.device_graph_capture = True
-                logger.info(
-                    "Automatically enabling device graph capture for %s. "
-                    "You can manually disable this by setting --no-device-graph-capture.",
-                    arch.name,
-                )
-
-        if self.runtime.device_graph_capture is None:
-            self.runtime.device_graph_capture = False
-
-        self._validate_and_resolve_device_graph_capture()
-
-        if self.runtime.force:
-            return
-
-        # Automatically enable overlap scheduling for architectures that declare
-        # support. New architectures opt out by setting ``supports_overlap_scheduler=False``.
-        if not self.runtime.enable_overlap_scheduler:
-            if (
-                arch is not None
-                and arch.supports_overlap_scheduler
-                and self._is_eligible_for_overlap_serve_optimizations(arch)
-            ):
-                self.runtime.enable_overlap_scheduler = True
-                logger.info(
-                    f"Automatically enabling overlap scheduling for {arch.name}. "
-                    "You can manually disable this by setting --no-enable-overlap-scheduler --force."
-                )
-
-        # Raise errors when we detect features that are not compatible with the overlap scheduler.
-        if self.runtime.enable_overlap_scheduler:
-            if self.runtime.pipeline_role in ("decode_only", "prefill_only"):
-                logger.info(
-                    "Overlap scheduling enabled for %s worker "
-                    "(Disaggregated Inference). THIS IS EXPERIMENTAL.",
-                    self.runtime.pipeline_role,
-                )
-            if self.sampling.enable_variable_logits:
-                raise ValueError(
-                    "Variable logits are not supported with the Overlap scheduler. "
-                )
-            if self.lora:
-                raise ValueError(
-                    "LoRA is not supported with the Overlap scheduler."
-                )
-            if self.model.default_device_spec.device_type == "cpu":
-                raise ValueError(
-                    "Overlap scheduler is not supported with CPU models."
-                )
-
-    def _is_eligible_for_overlap_serve_optimizations(self, arch: Any) -> bool:
-        # Overlap scheduling and device graph capture are only supported for
-        # text generation. Auto-enabling them for other tasks (e.g. embeddings)
-        # would fail downstream pipeline construction. See
-        # `get_pipeline_for_task` in registry.py.
-        return (
-            arch.task == PipelineTask.TEXT_GENERATION
-            and not self.sampling.enable_variable_logits
-            and not self.lora
-            and self.model.default_device_spec.device_type != "cpu"
-        )
-
-    def _validate_and_resolve_device_graph_capture(self) -> None:
-        if not self.runtime.device_graph_capture:
-            return
-
-        if not self.runtime.enable_overlap_scheduler:
-            logger.info("Enabling overlap scheduling for device graph capture.")
-        self.runtime.enable_overlap_scheduler = True
+        update: dict[str, Any] = {
+            "quantization_encoding": encoding,
+            "device_specs": device_specs,
+        }
+        if not model.weight_path:
+            update["weight_path"] = weight_path
+        replaced = model.model_copy(update=update)
+        replaced._resolved_dtype_cast = dtype_cast
+        return replaced
 
     def _validate_pipeline_config_for_speculative_decoding(
         self,
@@ -1183,136 +1317,15 @@ class PipelineConfig(ConfigFileModel):
         self._validate_model_config_against_arch(self.draft_model, draft_arch)
         self._validate_model_config_against_arch(self.model, target_arch)
 
-    def _populate_model_configs_from_archs(self) -> None:
-        """Assigns each model's encoding, weight paths, and devices, then validates.
-
-        A CPU-only encoding downcasts all-GPU ``device_specs`` to CPU,
-        warning once per model. Also applies the arch-declared defaults and
-        runs the arch-dependent validations.
-        Must use the same architecture-selection inputs as the registry.
-        A determinable architecture name with no registered architecture is
-        an error; models whose architecture name cannot be determined keep
-        their raw fields and are reported downstream.
-        """
-        if "main" not in self.models:
-            return
-        try:
-            arch_name: str | None = self.models.main_architecture_name
-        except Exception:
-            logger.debug(
-                "Could not determine the main architecture name at "
-                "construction; skipping construction-time resolution.",
-                exc_info=True,
-            )
-            arch_name = None
-        task = (
-            self.task
-            if self.task != PipelineTask.UNDEFINED
-            else PipelineTask.TEXT_GENERATION
-        )
-        arch = find_architecture(
-            arch_name,
-            prefer_module_v3=self.runtime.prefer_module_v3,
-            task=task,
-        )
-        if arch_name is not None and arch is None:
-            # Custom architectures are imported before this lookup, so an
-            # unregistered name is a hard error here. Only an undeterminable
-            # name (a repo/metadata problem) defers to the downstream path.
-            raise ValueError(f"No architecture found for {arch_name}")
-        if arch is not None:
-            _populate_weights_and_encoding(
-                self.model,
-                default_encoding=arch.default_encoding,
-                supported_encodings=arch.supported_encodings,
-                default_weights_format=arch.default_weights_format,
-            )
-        draft_arch = None
-        if self.draft_model is not None:
-            try:
-                draft_arch_name: str | None = self.draft_model.architecture_name
-            except Exception:
-                logger.debug(
-                    "Could not determine the draft architecture name at "
-                    "construction; skipping construction-time resolution.",
-                    exc_info=True,
-                )
-                draft_arch_name = None
-            # Mirrors the registry's draft lookup, which passes no task.
-            draft_arch = find_architecture(
-                draft_arch_name,
-                prefer_module_v3=self.runtime.prefer_module_v3,
-            )
-            if draft_arch_name is not None and draft_arch is None:
-                raise ValueError(
-                    "MAX-Optimized architecture not found for `draft_model`"
-                )
-            if draft_arch is not None:
-                _populate_weights_and_encoding(
-                    self.draft_model,
-                    default_encoding=draft_arch.default_encoding,
-                    supported_encodings=draft_arch.supported_encodings,
-                    default_weights_format=draft_arch.default_weights_format,
-                )
-
-        if arch is None:
-            return
-        if not self.runtime.force:
-            # Draft first so the target architecture wins conflicting keys,
-            # matching the order resolve() historically applied them in.
-            if draft_arch is not None:
-                self._validate_required_arguments_against_architecture(
-                    draft_arch
-                )
-            self._validate_required_arguments_against_architecture(arch)
-        self._resolve_default_reasoning_parser(arch=arch)
-        self._resolve_default_tool_parser(arch=arch)
-        self._resolve_default_structured_output_backend(arch=arch)
-        self._resolve_default_structured_output_any_whitespace(arch=arch)
-        self._resolve_max_length(arch=arch, draft_arch=draft_arch)
-        self._apply_arch_kv_head_replication(arch=arch, draft_arch=draft_arch)
-        self._resolve_preprocess_cache_budgets(arch=arch)
-        self._resolve_vision_cache_utilization(arch=arch)
-        self._validate_synthetic_acceptance_with_constrained_decoding()
-
-        if (
-            self.sampling.enable_structured_output
-            and self.model.default_device_spec.device_type == "cpu"
-        ):
-            raise ValueError(
-                "enable_structured_output is not currently supported on CPU."
-            )
-
-        if self.draft_model is not None:
-            # draft_arch is only None here when the draft's architecture
-            # name could not be determined; the registry reports that.
-            if draft_arch is not None:
-                self._validate_speculative_model_configs(
-                    target_arch=arch, draft_arch=draft_arch
-                )
-                self._validate_pipeline_config_for_speculative_decoding(
-                    target_arch=arch,
-                    draft_arch=draft_arch,
-                )
-        else:
-            self._validate_model_config_against_arch(self.model, arch)
-
-        self._validate_and_resolve_overlap_scheduler(arch=arch)
-
-    # NOTE: Do not override `__getstate__` / `__setstate__` on Pydantic models.
-    #
-    # Pydantic's BaseModel implements a pickling protocol that expects a specific
-    # state shape. Overriding `__getstate__` without also providing a compatible
-    # `__setstate__` breaks unpickling (e.g. restores an "empty" model with
-    # defaults).
-    #
-    # We still avoid pickling `transformers` objects via `MAXModelConfig`'s
-    # custom pickling hooks (it drops `_huggingface_config`), so `PipelineConfig`
-    # should rely on the BaseModel implementation.
-
     @classmethod
     def from_args(cls, args: PipelineArgs) -> Self:
         """Construct a :class:`PipelineConfig` from a :class:`PipelineArgs`.
+
+        Resolution runs before construction: the architecture is looked up
+        from the args' models, every architecture-dependent value is
+        computed as plain data, and the config is constructed exactly once,
+        already carrying its final values. ``args`` is the read-only input
+        record throughout.
 
         Args:
             args: Flat user-facing pipeline arguments.
@@ -1356,7 +1369,7 @@ class PipelineConfig(ConfigFileModel):
         else:
             sampling = _construct_from_user_fields(args.sampling)
 
-        # Apply --model-override entries to the manifest before construction
+        # Apply --model-override entries to the manifest before resolution
         # (with_override returns a new manifest). Idempotent for "main"/
         # "draft" fields that from_flat_kwargs already folded into the flat
         # fields; this is the only application path for pre-built manifests
@@ -1398,44 +1411,167 @@ class PipelineConfig(ConfigFileModel):
             arch_name=denoising_arch_name,
         )
 
-        config = cls(
-            models=manifest,
-            model_override=list(args.model_override),
-            sampling=sampling,
-            runtime=_construct_from_user_fields(
-                args.runtime, denoising_cache=denoising_cache
-            ),
-            profiling=_construct_from_user_fields(args.profiling),
-            lora=args.lora.model_copy(deep=True) if args.lora else None,
-            speculative=args.speculative.model_copy(deep=True)
-            if args.speculative
-            else None,
-            task=args.task,
-            debug_verify_replay=args.debug_verify_replay,
+        runtime = _construct_from_user_fields(
+            args.runtime, denoising_cache=denoising_cache
+        )
+        lora = args.lora.model_copy(deep=True) if args.lora else None
+        speculative = (
+            args.speculative.model_copy(deep=True) if args.speculative else None
         )
 
-        config._apply_speculative_draft_architecture()
+        _apply_speculative_draft_architecture(
+            speculative, manifest.get("draft")
+        )
         # Must precede the arch lookups so every consumer resolves the
         # overridden arch (#88511). Best-effort: repos whose HF config
         # cannot load fail downstream instead.
         try:
-            config._apply_speculative_target_architecture()
+            _apply_speculative_target_architecture(speculative, manifest)
         except Exception:
             logger.debug(
                 "Could not apply the speculative target-architecture "
                 "override at construction.",
                 exc_info=True,
             )
-        config._validate_repo_access()
-        config._populate_model_configs_from_archs()
+        for model in manifest.values():
+            model.validate_repo_access()
+
+        # Architecture lookup. Must use the same selection inputs as the
+        # registry. A determinable architecture name with no registered
+        # architecture is an error; models whose architecture name cannot
+        # be determined keep user-provided values (fake/test repos).
+        # Multi-component manifests (diffusion) have no "main" model and
+        # skip this resolution entirely.
+        arch = None
+        arch_name: str | None = None
+        if "main" in manifest:
+            try:
+                arch_name = manifest.main_architecture_name
+            except Exception:
+                logger.debug(
+                    "Could not determine the architecture name at "
+                    "construction; skipping construction-time resolution.",
+                    exc_info=True,
+                )
+            task = (
+                args.task
+                if args.task != PipelineTask.UNDEFINED
+                else PipelineTask.TEXT_GENERATION
+            )
+            arch = find_architecture(
+                arch_name,
+                prefer_module_v3=runtime.prefer_module_v3,
+                task=task,
+            )
+            if arch_name is not None and arch is None:
+                raise ValueError(f"No architecture found for {arch_name}")
+
+        draft_arch = None
+        if manifest.get("draft") is not None:
+            try:
+                draft_arch_name: str | None = manifest[
+                    "draft"
+                ].architecture_name
+            except Exception:
+                logger.debug(
+                    "Could not determine the draft architecture name at "
+                    "construction; skipping construction-time resolution.",
+                    exc_info=True,
+                )
+                draft_arch_name = None
+            # Mirrors the registry's draft lookup, which passes no task.
+            draft_arch = find_architecture(
+                draft_arch_name,
+                prefer_module_v3=runtime.prefer_module_v3,
+            )
+            if draft_arch_name is not None and draft_arch is None:
+                raise ValueError(
+                    "MAX-Optimized architecture not found for `draft_model`"
+                )
+
+        top_level: dict[str, Any] = {}
+        if arch is not None:
+            manifest["main"] = cls._model_with_resolved_weights(
+                manifest["main"], arch
+            )
+            if draft_arch is not None:
+                manifest["draft"] = cls._model_with_resolved_weights(
+                    manifest["draft"], draft_arch
+                )
+            if not runtime.force:
+                # Draft first so the target architecture wins conflicting
+                # keys, matching the order resolve() historically applied
+                # them in.
+                if draft_arch is not None:
+                    runtime, sampling = _apply_required_arguments(
+                        draft_arch, manifest, runtime, sampling, top_level
+                    )
+                runtime, sampling = _apply_required_arguments(
+                    arch, manifest, runtime, sampling, top_level
+                )
+            _resolve_models_max_length(manifest, arch, draft_arch)
+            _apply_arch_kv_head_replication(manifest, arch, draft_arch)
+            runtime, sampling = _resolved_runtime_and_sampling(
+                runtime, sampling, lora, manifest["main"], arch
+            )
+        elif runtime.device_graph_capture is None:
+            # Overlap/DGC resolution is arch-gated; configs without a
+            # registered architecture still end with a concrete bool.
+            runtime = _construct_from_user_fields(
+                runtime, device_graph_capture=False
+            )
+
+        config = cls(
+            models=manifest,
+            model_override=list(args.model_override),
+            sampling=sampling,
+            runtime=runtime,
+            profiling=_construct_from_user_fields(args.profiling),
+            lora=lora,
+            speculative=speculative,
+            task=args.task,
+            debug_verify_replay=args.debug_verify_replay,
+            **top_level,
+        )
+
+        # Read-only validations over the final values.
+        if arch is not None:
+            config._validate_synthetic_acceptance_with_constrained_decoding()
+            if (
+                config.sampling.enable_structured_output
+                and config.model.default_device_spec.device_type == "cpu"
+            ):
+                raise ValueError(
+                    "enable_structured_output is not currently supported on CPU."
+                )
+            if config.draft_model is not None:
+                # draft_arch is only None here when the draft's architecture
+                # name could not be determined; the registry reports that.
+                if draft_arch is not None:
+                    config._validate_speculative_model_configs(
+                        target_arch=arch, draft_arch=draft_arch
+                    )
+                    config._validate_pipeline_config_for_speculative_decoding(
+                        target_arch=arch,
+                        draft_arch=draft_arch,
+                    )
+            else:
+                config._validate_model_config_against_arch(config.model, arch)
         # Freeze the manifest: construction is complete, so any later dict
         # mutation must go through with_override() on a new manifest.
         config.models.resolve()
-        # Overlap/DGC resolution above is arch-gated; configs without a
-        # registered architecture still end with a concrete bool.
-        if config.runtime.device_graph_capture is None:
-            config.runtime.device_graph_capture = False
         return config
+
+    # NOTE: Do not override `__getstate__` / `__setstate__` on Pydantic models.
+    #
+    # Pydantic's BaseModel implements a pickling protocol that expects a specific
+    # state shape. Overriding `__getstate__` without also providing a compatible
+    # `__setstate__` breaks unpickling (e.g. restores an "empty" model with
+    # defaults).
+    #
+    # We still avoid pickling `transformers` objects via `MAXModelConfig`'s
+    # custom pickling hooks (it drops `_huggingface_config`), so `PipelineConfig`
+    # should rely on the BaseModel implementation.
 
 
 def _parse_flag_bool(value: str, flag_name: str) -> bool:

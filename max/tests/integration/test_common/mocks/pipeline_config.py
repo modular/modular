@@ -16,6 +16,7 @@ import os
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from functools import wraps
+from pathlib import Path
 from typing import Any, TypeVar
 from unittest.mock import MagicMock, patch
 
@@ -63,7 +64,9 @@ class DummyMAXModelConfig(MAXModelConfig):
     def weights_size(self) -> int:
         return 1000
 
-    def _validate_final_architecture_model_path_weight_path(self) -> None:
+    def _validate_final_architecture_model_path_weight_path(
+        self, weight_path: list[Path]
+    ) -> None:
         pass
 
 

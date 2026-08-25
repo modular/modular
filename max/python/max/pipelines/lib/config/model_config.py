@@ -235,7 +235,7 @@ def _infer_quantization_encoding(
     # yet — the filename/repo branches above otherwise disagree with the
     # supported-encodings branch on which encoding to pick. Scoped to the CPU
     # target only: a CPU-only encoding on a GPU target is handled by the CPU
-    # override in _populate_weights_and_encoding, and an explicit user
+    # override in _resolve_weights_and_encoding, and an explicit user
     # encoding is validated separately.
     if (
         config.quantization_encoding is None
@@ -547,7 +547,7 @@ def _device_specs_for_encoding(
     check). Read-only.
 
     Set *warn* only where the downcast is applied
-    (:func:`_populate_weights_and_encoding`) so it fires once per model.
+    (:func:`_resolve_weights_and_encoding`) so it fires once per model.
     """
     if supported_encoding_supported_devices(quantization_encoding) == (
         "cpu",
@@ -596,19 +596,27 @@ def _discover_default_weight_paths(
     return []
 
 
-def _populate_weights_and_encoding(
+def _resolve_weights_and_encoding(
     config: MAXModelConfig,
     *,
     default_encoding: SupportedEncoding,
     supported_encodings: set[SupportedEncoding],
     default_weights_format: WeightsFormat,
-) -> None:
-    """Assigns encoding, weight paths, and devices for an architecture.
+) -> tuple[
+    SupportedEncoding,
+    tuple[SupportedEncoding | None, SupportedEncoding | None],
+    list[Path],
+    list[DeviceSpec],
+]:
+    """Resolves encoding, weight paths, and devices for an architecture.
 
     Discovers default weight files when no explicit ``weight_path`` was
-    given, and records any load-time dtype cast on the config. Assigns the
-    effective ``device_specs`` (a CPU-only encoding downcasts all-GPU
-    devices to CPU, warning once per model).
+    given, and resolves any load-time dtype cast. The effective
+    ``device_specs`` downcast all-GPU devices to CPU for a CPU-only
+    encoding, warning once per model. Reads the config without writing it.
+
+    Returns:
+        An ``(encoding, dtype_cast, weight_path, device_specs)`` tuple.
 
     Raises:
         ValueError: If the resolved encoding is unsupported by the
@@ -622,25 +630,23 @@ def _populate_weights_and_encoding(
         raise ValueError(
             f"quantization_encoding of '{encoding}' not supported by MAX engine."
         )
-    config.quantization_encoding = encoding
-    config._resolved_dtype_cast = (cast_from, cast_to)
-    if not config.weight_path:
-        discovered = _discover_default_weight_paths(
+    weight_path = config.weight_path
+    if not weight_path:
+        weight_path = _discover_default_weight_paths(
             config.huggingface_weight_repo,
             encoding,
             cast_from,
             default_weights_format,
         )
-        if not discovered:
+        if not weight_path:
             raise ValueError(
                 f"compatible weights cannot be found for '{encoding}', in the provided repo: '{config.huggingface_weight_repo.repo_id}'"
             )
-        config.weight_path = discovered
-    config._validate_final_architecture_model_path_weight_path()
-    config.device_specs = _device_specs_for_encoding(
+    config._validate_final_architecture_model_path_weight_path(weight_path)
+    device_specs = _device_specs_for_encoding(
         config.device_specs, encoding, warn=True
     )
-    for spec in config.device_specs:
+    for spec in device_specs:
         if not supported_encoding_supported_on(encoding, spec):
             raise ValueError(
                 f"The encoding '{encoding}' is not compatible with the selected device type '{spec.device_type}'.\n\n"
@@ -649,6 +655,7 @@ def _populate_weights_and_encoding(
                 f"2. Use a different encoding (encodings available for this model: {', '.join(sorted(str(e) for e in supported_encodings))})\n\n"
                 f"Please use the --help flag for more information."
             )
+    return encoding, (cast_from, cast_to), weight_path, device_specs
 
 
 class MAXModelConfigBase(ConfigFileModel):
@@ -1385,12 +1392,14 @@ class MAXModelConfig(MAXModelConfigBase):
                 f"Multiple GPU inference is currently not supported for {self.model_path}."
             )
 
-    def _validate_final_architecture_model_path_weight_path(self) -> None:
+    def _validate_final_architecture_model_path_weight_path(
+        self, weight_path: list[Path]
+    ) -> None:
         # Assume at this point, an architecture,
         # a model_path and weight_paths are available.
-        assert self.weight_path, "weight_path must be provided."
+        assert weight_path, "weight_path must be provided."
         repo = self.huggingface_weight_repo
-        for path in self.weight_path:
+        for path in weight_path:
             path_str = str(path)
             # Check if file exists locally (direct, local repo, or cache).
             if self._local_weight_path(path):
