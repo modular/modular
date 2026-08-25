@@ -51,6 +51,7 @@ from std.math import ceildiv
 from std.random import random_ui64, seed
 from std.sys import get_defined_bool, get_defined_dtype, get_defined_int
 
+from max.benchmark import bencher_iter_custom
 from std.benchmark import (
     Bench,
     Bencher,
@@ -59,7 +60,7 @@ from std.benchmark import (
     ThroughputMeasure,
 )
 from std.gpu import *
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.utils import IndexList, StaticTuple
 
 from internal_utils import CacheBustingBuffer, arg_parse
@@ -121,7 +122,7 @@ def run_mha_prefill_v2_paged[
     comptime num_layers = 1
     comptime layer_idx = 0
 
-    comptime assert qkv_type == DType.bfloat16, "MhaPrefillV2 is BF16-only"
+    comptime assert qkv_type == .bfloat16, "MhaPrefillV2 is BF16-only"
     comptime assert (
         page_size >= _KV_BLOCK
     ), "page_size must be >= the kernel's KV_BLOCK (64)"
@@ -141,28 +142,24 @@ def run_mha_prefill_v2_paged[
 
     comptime simd_size = 4
     var cb_q = CacheBustingBuffer[qkv_type](q_size, simd_size, ctx)
-    var cb_o = CacheBustingBuffer[DType.float32](o_size, simd_size, ctx)
+    var cb_o = CacheBustingBuffer[.float32](o_size, simd_size, ctx)
 
     comptime random_distribution = InitializationType.uniform_distribution
     cb_q.init_on_device(random_distribution, ctx)
 
     # -------- K / V (paged, single allocation, fixed LUT) -------------------
     # Host-side: cache_lengths = 0 for every batch (fresh prefill).
-    var cache_lengths_host = List(
-        length=batch_size, fill=Scalar[DType.uint32](0)
-    )
+    var cache_lengths_host = List(length=batch_size, fill=UInt32(0))
     var max_seq_length: UInt32 = UInt32(seq_len)
     var max_context_length: UInt32 = UInt32(seq_len)
 
-    var cache_lengths_dev = ctx.enqueue_create_buffer[DType.uint32](batch_size)
+    var cache_lengths_dev = ctx.enqueue_create_buffer[.uint32](batch_size)
     ctx.enqueue_copy(cache_lengths_dev, cache_lengths_host)
 
     # Paged LUT: random unique page index per (batch, block).
     var paged_lut_cols = pages_per_seq
     var paged_lut_size = batch_size * paged_lut_cols
-    var paged_lut_host = List(
-        length=paged_lut_size, fill=Scalar[DType.uint32](0)
-    )
+    var paged_lut_host = List(length=paged_lut_size, fill=UInt32(0))
     var paged_lut_view = TileTensor(
         paged_lut_host,
         row_major(
@@ -181,7 +178,7 @@ def run_mha_prefill_v2_paged[
             seen.add(p)
             paged_lut_view[bs, block_idx] = UInt32(p)
 
-    var paged_lut_dev = ctx.enqueue_create_buffer[DType.uint32](paged_lut_size)
+    var paged_lut_dev = ctx.enqueue_create_buffer[.uint32](paged_lut_size)
     ctx.enqueue_copy(paged_lut_dev, paged_lut_host)
 
     # KV block tensor: (num_pages, 2 [K|V], num_layers, page_size, kv_num_heads, depth)
@@ -216,7 +213,7 @@ def run_mha_prefill_v2_paged[
     comptime cache_lengths_layout = Layout(UNKNOWN_VALUE)
     var cache_lengths_tensor = LayoutTensor[
         mut=False,
-        DType.uint32,
+        .uint32,
         cache_lengths_layout,
     ](
         cache_lengths_dev,
@@ -226,7 +223,7 @@ def run_mha_prefill_v2_paged[
     comptime paged_lut_layout = Layout.row_major[2]()
     var paged_lut_tensor = LayoutTensor[
         mut=False,
-        DType.uint32,
+        .uint32,
         paged_lut_layout,
     ](
         paged_lut_dev,
@@ -235,13 +232,16 @@ def run_mha_prefill_v2_paged[
         ),
     )
 
-    comptime CollectionType = PagedKVCacheCollection[
+    var kv_collection = PagedKVCacheCollection[
         qkv_type,
         KVCacheStaticParams(num_heads=kv_num_heads, head_size=depth),
         page_size,
-    ]
-    var kv_collection = CollectionType(
-        kv_block_tensor,
+    ](
+        # `mha_prefill_v2` reads both the `k` and `v` cache views, which are disjoint
+        # kv_idx halves of one `blocks` buffer sharing its origin, so the
+        # nested-origin exclusivity check rejects passing both. Declare the
+        # kv_block_tensor origins as UnsafeAnyOrigin to opt out of exclusivity checking.
+        kv_block_tensor.as_unsafe_any_origin(),
         cache_lengths_tensor,
         paged_lut_tensor,
         max_seq_length,
@@ -264,13 +264,12 @@ def run_mha_prefill_v2_paged[
 
     if bench:
 
-        @parameter
         @always_inline
-        @__copy_capture(cb_q, cb_o, k_operand, v_operand)
-        def bench_func(mut b: Bencher):
-            @parameter
+        def bench_func(
+            mut b: Bencher,
+        ) raises {var cb_q, var cb_o, var k_operand, var v_operand, imm}:
             @always_inline
-            def _kernel_launch(ctx: DeviceContext, iteration: Int) raises:
+            def _kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
                 var q_ptr = cb_q.offset_ptr(iteration).bitcast[
                     Scalar[qkv_type]
                 ]()
@@ -286,7 +285,7 @@ def run_mha_prefill_v2_paged[
                     ),
                 )
                 var o_tt = TileTensor(
-                    cb_o.offset_ptr(iteration).bitcast[Scalar[DType.float32]](),
+                    cb_o.offset_ptr(iteration).bitcast[Float32](),
                     row_major(
                         Coord(
                             Int32(batch_size),
@@ -308,14 +307,15 @@ def run_mha_prefill_v2_paged[
                     ctx,
                 )
 
-            b.iter_custom[_kernel_launch](ctx)
+            bencher_iter_custom(b, _kernel_launch, ctx)
 
-        def compute_flops() {read} -> Int:
+        def compute_flops() {imm} -> Int:
             # Causal: half the tiles. Matches `bench_mha_prefill_v2`'s
             # formula (`2 * B * H * N * NK * D`).
             return 2 * batch_size * num_heads * seq_len * num_keys * depth
 
-        m.bench_function[bench_func](
+        m.bench_function(
+            bench_func,
             BenchId(
                 "mha_prefill_v2_paged",
                 # fmt: off
@@ -347,7 +347,7 @@ def run_mha_prefill_v2_paged[
 def main() raises:
     seed(0)
 
-    comptime qkv_type = get_defined_dtype["qkv_type", DType.bfloat16]()
+    comptime qkv_type = get_defined_dtype["qkv_type", .bfloat16]()
     comptime depth = get_defined_int["depth", 128]()
     comptime num_heads = get_defined_int["num_heads", 16]()
     comptime group = get_defined_int["group", 1]()

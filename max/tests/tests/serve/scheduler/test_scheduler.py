@@ -23,10 +23,7 @@ from max.pipelines.context import (
     TokenBuffer,
 )
 from max.pipelines.kv_cache import DummyKVCache
-from max.pipelines.modeling.types import (
-    RequestID,
-    TextGenerationInputs,
-)
+from max.pipelines.modeling.types import RequestID, TextGenerationInputs
 from max.serve.queue import MAXPullQueue, MAXPushQueue
 from max.serve.scheduler.config import TokenGenerationSchedulerConfig
 from max.serve.scheduler.text_generation_scheduler import (
@@ -68,7 +65,6 @@ def create_scheduler(
     dp: int = 1,
     max_batch_size: int = 4,
     target_tokens_per_batch_ce: int = 32,
-    kvcache_ce_watermark: float = 0.95,
     enable_chunked_prefill: bool = False,
 ) -> tuple[
     TokenGenerationScheduler,
@@ -80,7 +76,6 @@ def create_scheduler(
         max_batch_size=max_batch_size,
         target_tokens_per_batch_ce=target_tokens_per_batch_ce,
         data_parallel_degree=dp,
-        kvcache_ce_watermark=kvcache_ce_watermark,
         enable_chunked_prefill=enable_chunked_prefill,
     )
 
@@ -178,7 +173,7 @@ def test_scheduler_handle_terminated_responses() -> None:
     }
 
     batch_constructor.advance_requests(
-        TextGenerationInputs(batches=[[mock_1, mock_2]], num_steps=1)
+        TextGenerationInputs(batches=[[mock_1, mock_2]])
     )
 
     # Release terminated requests
@@ -208,7 +203,7 @@ def test_scheduler_handle_chunked_requests() -> None:
     batch_constructor.enqueue_new_request(req_2)
 
     batch_constructor.advance_requests(
-        TextGenerationInputs(batches=[[req_1, req_2]], num_steps=1)
+        TextGenerationInputs(batches=[[req_1, req_2]])
     )
     assert req_2.request_id not in batch_responses
     assert batch_constructor.all_ce_reqs
@@ -239,7 +234,6 @@ def test_schedule_ce() -> None:
 
     inputs: TextGenerationInputs[TextContext] = TextGenerationInputs(
         batches=[[mock_request]],
-        num_steps=1,
     )
 
     scheduler._schedule(inputs)
@@ -266,7 +260,6 @@ def test_schedule_ce_with_chunked_prefill() -> None:
 
     inputs: TextGenerationInputs[TextContext] = TextGenerationInputs(
         batches=[batch_to_execute],
-        num_steps=1,
     )
 
     scheduler._schedule(inputs)
@@ -312,7 +305,6 @@ def test_schedule_tg() -> None:
     mock_request = create_mock_request()
     inputs: TextGenerationInputs[TextContext] = TextGenerationInputs(
         batches=[[mock_request]],
-        num_steps=1,
     )
 
     scheduler._schedule(inputs)
@@ -351,7 +343,6 @@ def test_scheduler_dp(dp: int) -> None:
             assert len(inputs.batches[i]) == bs_low
 
     # Num steps is 1 since we are running CE
-    assert inputs.num_steps == 1
 
     # Generate new tokens for the requests.
     for batch in inputs.batches:
@@ -369,7 +360,6 @@ def test_scheduler_empty_batch() -> None:
     inputs = scheduler.batch_constructor.construct_batch()
     assert len(inputs.batches) == 100
     assert len(inputs.flat_batch) == 0
-    assert inputs.num_steps == 0
 
 
 def _create_lora_scheduler(adapter_name: str) -> TokenGenerationScheduler:
@@ -389,7 +379,6 @@ def _create_lora_scheduler(adapter_name: str) -> TokenGenerationScheduler:
             max_batch_size=4,
             target_tokens_per_batch_ce=32,
             data_parallel_degree=1,
-            kvcache_ce_watermark=0.95,
         ),
         pipeline=pipeline,
         request_queue=queue.Queue(),

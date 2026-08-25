@@ -14,7 +14,6 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
-from max.dtype import DType
 from max.graph import (
     DeviceRef,
     ShardingStrategy,
@@ -44,7 +43,7 @@ class Gemma4MultiModalProjector(Module, Shardable):
         assert config.vision_config is not None
         self.device = device if device is not None else config.devices[0]
 
-        vision_dtype = DType.bfloat16
+        vision_dtype = config.unquantized_dtype
 
         self.mm_input_projection_weight = Weight(
             "mm_input_projection_weight",

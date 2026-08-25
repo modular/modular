@@ -22,7 +22,7 @@ from kv_cache.types import (
 )
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from layout._fillers import random
-from std.memory import memcpy
+from std.memory import unsafe_memcpy
 from nn.attention.cpu.mha import flash_attention_kv_cache
 from nn.attention.mha_mask import CausalMask
 from std.testing import assert_almost_equal
@@ -63,17 +63,13 @@ def execute_ragged_flash_attention[
     ), "expected valid_lengths and cache_lengths size to be equal"
 
     comptime layout_1d = Layout(UNKNOWN_VALUE)
-    var input_row_offsets_heap = List(
-        length=batch_size + 1, fill=Scalar[DType.uint32](0)
-    )
-    var input_row_offsets = LayoutTensor[DType.uint32, layout_1d](
+    var input_row_offsets_heap = List(length=batch_size + 1, fill=UInt32(0))
+    var input_row_offsets = LayoutTensor[.uint32, layout_1d](
         input_row_offsets_heap,
         RuntimeLayout[layout_1d].row_major(IndexList[1](batch_size + 1)),
     )
-    var cache_lengths_nd_heap = List(
-        length=batch_size, fill=Scalar[DType.uint32](0)
-    )
-    var cache_lengths_nd = LayoutTensor[DType.uint32, layout_1d](
+    var cache_lengths_nd_heap = List(length=batch_size, fill=UInt32(0))
+    var cache_lengths_nd = LayoutTensor[.uint32, layout_1d](
         cache_lengths_nd_heap,
         RuntimeLayout[layout_1d].row_major(IndexList[1](batch_size)),
     )
@@ -138,16 +134,14 @@ def execute_ragged_flash_attention[
     var block_heap = List(
         length=block_shape.flattened_length(), fill=Scalar[dtype](0)
     )
-    kv_block_continuous = LayoutTensor[dtype, Layout.row_major[6]()](
+    var kv_block_continuous = LayoutTensor[dtype, Layout.row_major[6]()](
         block_heap, RuntimeLayout[Layout.row_major[6]()].row_major(block_shape)
     )
 
     random(kv_block_continuous)
 
-    var lookup_table_continuous_heap = List(
-        length=batch_size, fill=Scalar[DType.uint32](0)
-    )
-    var lookup_table_continuous = LayoutTensor[DType.uint32, layout_1d](
+    var lookup_table_continuous_heap = List(length=batch_size, fill=UInt32(0))
+    var lookup_table_continuous = LayoutTensor[.uint32, layout_1d](
         lookup_table_continuous_heap,
         RuntimeLayout[layout_1d].row_major(
             IndexList[1](
@@ -168,7 +162,7 @@ def execute_ragged_flash_attention[
         lookup_table_continuous[idx] = UInt32(randval)
         idx += 1
 
-    kv_collection_continuous = ContinuousBatchingKVCacheCollection[
+    var kv_collection_continuous = ContinuousBatchingKVCacheCollection[
         dtype, kv_params
     ](
         LayoutTensor[kv_block_continuous.dtype, Layout.row_major[6]()](
@@ -198,7 +192,7 @@ def execute_ragged_flash_attention[
         UInt32(max_full_context_length),
     )
 
-    kv_block_paged_heap = List(
+    var kv_block_paged_heap = List(
         length=num_paged_blocks
         * 2
         * num_layers
@@ -221,11 +215,11 @@ def execute_ragged_flash_attention[
         ),
     )
 
-    paged_lut_heap = List(
+    var paged_lut_heap = List(
         length=batch_size * ceildiv(max_full_context_length, page_size),
-        fill=Scalar[DType.uint32](0),
+        fill=UInt32(0),
     )
-    paged_lut = LayoutTensor[DType.uint32, Layout.row_major[2]()](
+    var paged_lut = LayoutTensor[.uint32, Layout.row_major[2]()](
         paged_lut_heap,
         RuntimeLayout[Layout.row_major[2]()].row_major(
             IndexList[2](
@@ -233,10 +227,10 @@ def execute_ragged_flash_attention[
             )
         ),
     )
-    paged_lut_set = Set[Int]()
+    var paged_lut_set = Set[Int]()
     for bs in range(batch_size):
-        seq_len = cache_lengths[bs] + valid_lengths[bs]
-        continuous_idx = Int(lookup_table_continuous[bs])
+        var seq_len = cache_lengths[bs] + valid_lengths[bs]
+        var continuous_idx = Int(lookup_table_continuous[bs])
 
         for block_idx in range(0, ceildiv(seq_len, page_size)):
             var randval = Int(random_ui64(0, num_paged_blocks - 1))
@@ -267,17 +261,19 @@ def execute_ragged_flash_attention[
                     - dest_byte_offset
                 )
                 var src_len = kv_block_continuous.size() - src_byte_offset
-                memcpy(
+                unsafe_memcpy(
                     dest=dest,
                     src=src,
                     count=min(
-                        dest_len // size_of[dest.type](),
-                        src_len // size_of[src.type](),
+                        dest_len // size_of[dest.T](),
+                        src_len // size_of[src.T](),
                         page_size * kv_params.num_heads * kv_params.head_size,
                     ),
                 )
 
-    kv_collection_paged = PagedKVCacheCollection[dtype, kv_params, page_size](
+    var kv_collection_paged = PagedKVCacheCollection[
+        dtype, kv_params, page_size
+    ](
         LayoutTensor[kv_block_paged.dtype, Layout.row_major[6]()](
             kv_block_paged.ptr,
             RuntimeLayout[Layout.row_major[6]()](
@@ -329,11 +325,11 @@ def execute_ragged_flash_attention[
         test_output,
     )
 
-    ref_out = ref_output
-    test_out = test_output
+    var ref_out = ref_output
+    var test_out = test_output
     for bs in range(batch_size):
-        prompt_len = valid_lengths[bs]
-        ragged_offset = Int(input_row_offsets[bs])
+        var prompt_len = valid_lengths[bs]
+        var ragged_offset = Int(input_row_offsets[bs])
         for s in range(prompt_len):
             for h in range(num_q_heads):
                 for hd in range(kv_params.head_size):
@@ -368,10 +364,10 @@ comptime dtype = DType.float32
 
 def execute_flash_attention_suite() raises:
     for bs in [1, 16]:
-        ce_cache_sizes = List[Int]()
-        ce_seq_lens = List[Int]()
-        tg_cache_sizes = List[Int]()
-        tg_seq_lens = List[Int]()
+        var ce_cache_sizes = List[Int]()
+        var ce_seq_lens = List[Int]()
+        var tg_cache_sizes = List[Int]()
+        var tg_seq_lens = List[Int]()
         for _ in range(bs):
             tg_seq_lens.append(1)
             tg_cache_sizes.append(Int(random_ui64(1, 100)))
@@ -389,8 +385,8 @@ def execute_flash_attention_suite() raises:
         ](tg_seq_lens, 110, tg_cache_sizes, 2, 0)
 
     # edge cases
-    var short_ce_seq_len = [2]
-    var short_ce_cache_size = [0]
+    var short_ce_seq_len: List = [2]
+    var short_ce_cache_size: List = [0]
     execute_ragged_flash_attention[llama_num_q_heads, dtype, kv_params_llama3](
         short_ce_seq_len, 110, short_ce_cache_size, 2, 1
     )

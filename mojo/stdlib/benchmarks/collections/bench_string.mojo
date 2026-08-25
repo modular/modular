@@ -13,7 +13,7 @@
 
 from std.collections import Optional
 from std.collections.string._utf8 import _is_valid_utf8
-from std.collections.string.string_slice import _split
+from std.collections.string.string_span import _split
 from std.os import abort
 from std.pathlib import _dir_of_current_file
 from std.random import seed
@@ -39,15 +39,19 @@ def make_string[
     """
 
     try:
-        directory = _dir_of_current_file() / "data"
+        var directory = _dir_of_current_file() / "data"
         var f = open(directory / filename, "r")
 
         comptime if length > 0:
             var items = f.read_bytes(length)
-            i = 0
+            var i = 0
             while length > len(items):
                 items.append(items[i])
                 i = i + 1 if i < len(items) - 1 else 0
+            # `length` can truncate mid-codepoint; drop trailing bytes until
+            # the buffer ends on a valid UTF-8 boundary again.
+            while len(items) > 0 and not _is_valid_utf8(Span(items)):
+                _ = items.pop()
             return String(unsafe_from_utf8=items)
         else:
             return String(unsafe_from_utf8=f.read_bytes())
@@ -59,7 +63,6 @@ def make_string[
 # ===-----------------------------------------------------------------------===#
 # Benchmark string init
 # ===-----------------------------------------------------------------------===#
-@parameter
 def bench_string_init(mut b: Bencher) raises:
     @always_inline
     def call_fn():
@@ -73,7 +76,6 @@ def bench_string_init(mut b: Bencher) raises:
 # ===-----------------------------------------------------------------------===#
 # Benchmark string count
 # ===-----------------------------------------------------------------------===#
-@parameter
 def bench_string_count[
     length: Int = 0,
     filename: StaticString = "UN_charter_EN",
@@ -82,7 +84,7 @@ def bench_string_count[
     var items = make_string[length](filename + ".txt")
 
     @always_inline
-    def call_fn() {read}:
+    def call_fn() {imm}:
         var amnt = black_box(items).count(black_box(sequence))
         keep(amnt)
 
@@ -92,18 +94,15 @@ def bench_string_count[
 # ===-----------------------------------------------------------------------===#
 # Benchmark string split
 # ===-----------------------------------------------------------------------===#
-@parameter
 def bench_string_split[
     length: Int = 0,
     filename: StaticString = "UN_charter_EN",
     sequence: Optional[StaticString] = None,
 ](mut b: Bencher) raises:
-    var items = StringSlice(
-        make_string[length](filename + ".txt")
-    ).get_immutable()
+    var items = StringSlice(make_string[length](filename + ".txt")).as_imm()
 
     @always_inline
-    def call_fn() {read}:
+    def call_fn() {imm}:
         var res: List[type_of(items)]
 
         comptime if sequence:
@@ -122,8 +121,8 @@ def bench_string_split[
 # ===-----------------------------------------------------------------------===#
 # Benchmark string join
 # ===-----------------------------------------------------------------------===#
-@parameter
 def bench_string_join[short: Bool](mut b: Bencher) raises:
+    var count: Int
     comptime if short:
         count = 100
     else:
@@ -136,7 +135,7 @@ def bench_string_join[short: Bool](mut b: Bencher) raises:
     var separator = String(",")
 
     @always_inline
-    def call_fn() {read}:
+    def call_fn() {imm}:
         for _ in range(1_000):
             var res = black_box(separator).join(black_box(word_list))
             keep(res)
@@ -147,14 +146,13 @@ def bench_string_join[short: Bool](mut b: Bencher) raises:
 # ===-----------------------------------------------------------------------===#
 # Benchmark string splitlines
 # ===-----------------------------------------------------------------------===#
-@parameter
 def bench_string_splitlines[
     length: Int = 0, filename: StaticString = "UN_charter_EN"
 ](mut b: Bencher) raises:
     var items = StringSlice(make_string[length](filename + ".txt"))
 
     @always_inline
-    def call_fn() {read}:
+    def call_fn() {imm}:
         for _ in range(1_000_000 // length):
             var res = black_box(items).splitlines()
             keep(res)
@@ -165,14 +163,13 @@ def bench_string_splitlines[
 # ===-----------------------------------------------------------------------===#
 # Benchmark string lower
 # ===-----------------------------------------------------------------------===#
-@parameter
 def bench_string_lower[
     length: Int = 0, filename: StaticString = "UN_charter_EN"
 ](mut b: Bencher) raises:
     var items = make_string[length](filename + ".txt")
 
     @always_inline
-    def call_fn() {read}:
+    def call_fn() {imm}:
         var res = black_box(items).lower()
         keep(res)
 
@@ -182,14 +179,13 @@ def bench_string_lower[
 # ===-----------------------------------------------------------------------===#
 # Benchmark string upper
 # ===-----------------------------------------------------------------------===#
-@parameter
 def bench_string_upper[
     length: Int = 0, filename: StaticString = "UN_charter_EN"
 ](mut b: Bencher) raises:
     var items = make_string[length](filename + ".txt")
 
     @always_inline
-    def call_fn() {read}:
+    def call_fn() {imm}:
         var res = black_box(items).upper()
         keep(res)
 
@@ -199,7 +195,6 @@ def bench_string_upper[
 # ===-----------------------------------------------------------------------===#
 # Benchmark string replace
 # ===-----------------------------------------------------------------------===#
-@parameter
 def bench_string_replace[
     length: Int = 0,
     filename: StaticString = "UN_charter_EN",
@@ -209,7 +204,7 @@ def bench_string_replace[
     var items = make_string[length](filename + ".txt")
 
     @always_inline
-    def call_fn() {read}:
+    def call_fn() {imm}:
         var res = black_box(items).replace(black_box(old), black_box(new))
         keep(res)
 
@@ -219,14 +214,13 @@ def bench_string_replace[
 # ===-----------------------------------------------------------------------===#
 # Benchmark string count_codepoints
 # ===-----------------------------------------------------------------------===#
-@parameter
 def bench_string_count_codepoints[
     length: Int = 0, filename: StaticString = "UN_charter_EN"
 ](mut b: Bencher) raises:
     var items = make_string[length](filename + ".txt")
 
     @always_inline
-    def call_fn() {read}:
+    def call_fn() {imm}:
         var res = black_box(items).count_codepoints()
         keep(res)
 
@@ -236,14 +230,13 @@ def bench_string_count_codepoints[
 # ===-----------------------------------------------------------------------===#
 # Benchmark string find single
 # ===-----------------------------------------------------------------------===#
-@parameter
 def bench_string_find_single[
     length: Int = 0, filename: StaticString = "UN_charter_EN"
 ](mut b: Bencher) raises:
     var items = make_string[length](filename + ".txt")
 
     @always_inline
-    def call_fn() {read}:
+    def call_fn() {imm}:
         # this is to help with instability when measuring small strings
         for _ in range(10**6 // length):
             var res = black_box(items).find(
@@ -257,7 +250,6 @@ def bench_string_find_single[
 # ===-----------------------------------------------------------------------===#
 # Benchmark string find multiple
 # ===-----------------------------------------------------------------------===#
-@parameter
 def bench_string_find_multiple[
     length: Int = 0, filename: StaticString = "UN_charter_EN"
 ](mut b: Bencher) raises:
@@ -265,7 +257,7 @@ def bench_string_find_multiple[
     var sequence = "ZZZZ"  # something that probably won't be there
 
     @always_inline
-    def call_fn() {read}:
+    def call_fn() {imm}:
         # this is to help with instability when measuring small strings
         for _ in range(10**6 // length):
             var res = black_box(items).find(black_box(sequence))
@@ -277,14 +269,13 @@ def bench_string_find_multiple[
 # ===-----------------------------------------------------------------------===#
 # Benchmark string _is_valid_utf8
 # ===-----------------------------------------------------------------------===#
-@parameter
 def bench_string_is_valid_utf8[
     length: Int = 0, filename: StaticString = "UN_charter_EN"
 ](mut b: Bencher) raises:
     var items = make_string[length](filename + ".html")
 
     @always_inline
-    def call_fn() {read}:
+    def call_fn() {imm}:
         var res = _is_valid_utf8(black_box(items).as_bytes())
         keep(res)
 
@@ -294,7 +285,6 @@ def bench_string_is_valid_utf8[
 # ===-----------------------------------------------------------------------===#
 # Benchmark write_utf8
 # ===-----------------------------------------------------------------------===#
-@parameter
 def bench_write_utf8[
     length: Int = 0, filename: StaticString = "UN_charter_EN"
 ](mut b: Bencher) raises:
@@ -306,8 +296,8 @@ def bench_write_utf8[
         codepoints.append(c)
 
     @always_inline
-    def call_fn() {read}:
-        var data = InlineArray[Byte, 4](uninitialized=True)
+    def call_fn() {imm}:
+        var data = Array[Byte, 4](uninitialized=True)
         # this is to help with instability when measuring small strings
         for _ in range(10**6 // length):
             for i in range(len(codepoints)):
@@ -322,7 +312,6 @@ def bench_write_utf8[
 # ===-----------------------------------------------------------------------===#
 # Benchmark string write
 # ===-----------------------------------------------------------------------===#
-@parameter
 def bench_string_write[short: Bool](mut b: Bencher) raises:
     var items = make_string[1000]("UN_charter_EN.txt")
     # workaround for "allows writing to mem location ..."
@@ -333,19 +322,19 @@ def bench_string_write[short: Bool](mut b: Bencher) raises:
     var items_5 = items.copy()
 
     @always_inline
-    def call_fn() {read}:
+    def call_fn() {imm}:
         for _ in range(1_000_000):
             var res: String
 
             comptime if short:  # less than 24 bytes
-                res = String.write(
+                res = String(
                     black_box(0),
                     black_box(" is "),
                     black_box("a"),
                     black_box(String(" number")),
                 )
             else:  # 5001 bytes long
-                res = String.write(
+                res = String(
                     black_box(0),
                     black_box(items),
                     black_box(items_2),
@@ -369,14 +358,13 @@ struct NullWriter(ImplicitlyCopyable, Writer):
         keep(string)
 
 
-@parameter
 def bench_string_repr[
     length: Int = 0, filename: StaticString = "UN_charter_EN"
 ](mut b: Bencher):
     var items = make_string[length](filename + ".txt")
 
     @always_inline
-    def call_fn() {read}:
+    def call_fn() {imm}:
         # this is to help with instability when measuring small strings
         for _ in range(10**6 // length):
             var writer = NullWriter()
@@ -428,67 +416,82 @@ def main() raises:
     - 1_000_000: ~ 667 pages (200k words)
     """
 
-    m.bench_function[bench_string_init](BenchId("bench_string_init"))
-    m.bench_function[bench_string_write[True]](
-        BenchId(String("bench_string_write_short"))
+    m.bench_function(bench_string_init, BenchId("bench_string_init"))
+    m.bench_function(
+        bench_string_write[True], BenchId(String("bench_string_write_short"))
     )
-    m.bench_function[bench_string_write[False]](
-        BenchId(String("bench_string_write_long"))
+    m.bench_function(
+        bench_string_write[False], BenchId(String("bench_string_write_long"))
     )
 
     comptime for i in range(len(lengths)):
-        comptime length = lengths[i]
+        comptime length = rebind[Int](lengths[i])
 
         comptime for j in range(len(filenames)):
-            comptime fname = filenames[j]
-            comptime old = StaticString(old_chars[j])
-            comptime new = new_chars[j]
+            comptime fname = rebind[StaticString](filenames[j])
+            comptime old = rebind[StaticString](old_chars[j])
+            comptime new = rebind[StaticString](new_chars[j])
             comptime suffix = String("[", length, "]")  # "(" + fname + ")"
-            m.bench_function[bench_string_count[length, fname, old]](
-                BenchId(String("bench_string_count", suffix))
+            m.bench_function(
+                bench_string_count[length, fname, old],
+                BenchId(String("bench_string_count", suffix)),
             )
-            m.bench_function[bench_string_split[length, fname, old]](
-                BenchId(String("bench_string_split", suffix))
+            m.bench_function(
+                bench_string_split[length, fname, old],
+                BenchId(String("bench_string_split", suffix)),
             )
-            m.bench_function[bench_string_split[length, fname]](
-                BenchId(String("bench_string_split_none", suffix))
+            m.bench_function(
+                bench_string_split[length, fname],
+                BenchId(String("bench_string_split_none", suffix)),
             )
-            m.bench_function[bench_string_splitlines[length, fname]](
-                BenchId(String("bench_string_splitlines", suffix))
+            m.bench_function(
+                bench_string_splitlines[length, fname],
+                BenchId(String("bench_string_splitlines", suffix)),
             )
-            m.bench_function[bench_string_lower[length, fname]](
-                BenchId(String("bench_string_lower", suffix))
+            m.bench_function(
+                bench_string_lower[length, fname],
+                BenchId(String("bench_string_lower", suffix)),
             )
-            m.bench_function[bench_string_upper[length, fname]](
-                BenchId(String("bench_string_upper", suffix))
+            m.bench_function(
+                bench_string_upper[length, fname],
+                BenchId(String("bench_string_upper", suffix)),
             )
-            m.bench_function[bench_string_replace[length, fname, old, new]](
-                BenchId(String("bench_string_replace", suffix))
+            m.bench_function(
+                bench_string_replace[length, fname, old, new],
+                BenchId(String("bench_string_replace", suffix)),
             )
-            m.bench_function[bench_string_count_codepoints[length, fname]](
-                BenchId(String("bench_string_count_codepoints", suffix))
+            m.bench_function(
+                bench_string_count_codepoints[length, fname],
+                BenchId(String("bench_string_count_codepoints", suffix)),
             )
-            m.bench_function[bench_string_find_single[length, fname]](
-                BenchId(String("bench_string_find_single", suffix))
+            m.bench_function(
+                bench_string_find_single[length, fname],
+                BenchId(String("bench_string_find_single", suffix)),
             )
-            m.bench_function[bench_string_find_multiple[length, fname]](
-                BenchId(String("bench_string_find_multiple", suffix))
+            m.bench_function(
+                bench_string_find_multiple[length, fname],
+                BenchId(String("bench_string_find_multiple", suffix)),
             )
-            m.bench_function[bench_string_is_valid_utf8[length, fname]](
-                BenchId(String("bench_string_is_valid_utf8", suffix))
+            m.bench_function(
+                bench_string_is_valid_utf8[length, fname],
+                BenchId(String("bench_string_is_valid_utf8", suffix)),
             )
-            m.bench_function[bench_write_utf8[length, fname]](
-                BenchId(String("bench_write_utf8", suffix))
+            m.bench_function(
+                bench_write_utf8[length, fname],
+                BenchId(String("bench_write_utf8", suffix)),
             )
-            m.bench_function[bench_string_repr[length, fname]](
-                BenchId(String("bench_string_repr", suffix))
+            m.bench_function(
+                bench_string_repr[length, fname],
+                BenchId(String("bench_string_repr", suffix)),
             )
 
-    m.bench_function[bench_string_join[True]](
-        BenchId(String("bench_string_join_short"))
+    m.bench_function(
+        bench_string_join[True],
+        BenchId(String("bench_string_join_short")),
     )
-    m.bench_function[bench_string_join[False]](
-        BenchId(String("bench_string_join_long"))
+    m.bench_function(
+        bench_string_join[False],
+        BenchId(String("bench_string_join_long")),
     )
 
     # NOTE: do not delete this. This is supposed to measure the average for

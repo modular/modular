@@ -17,7 +17,7 @@ from std.sys import has_accelerator
 
 from std.complex import ComplexSIMD, ComplexScalar
 from std.gpu import global_idx
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import Layout, LayoutTensor
 from std.python import PythonObject
 from std.python.bindings import PythonModuleBuilder
@@ -104,7 +104,7 @@ def mandelbrot(
     var z = ComplexScalar[float_dtype](0, 0)
     var iters = Scalar[int_dtype](0)
 
-    var in_set_mask = Scalar[DType.bool](True)
+    var in_set_mask = Scalar[.bool](True)
     for _ in range(iterations):
         if not any(in_set_mask):
             break
@@ -126,7 +126,7 @@ def draw_mandelbrot(
         for col in range(GRID_WIDTH):
             var v = tensor[row, col]
             if v < iterations:
-                var idx = Int(Int(v) % len(sr))
+                var idx = Int(Int(v) % len(sr.bytes()))
                 var p = sr[byte=idx]
                 buffer += p
             else:

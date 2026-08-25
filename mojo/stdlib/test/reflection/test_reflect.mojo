@@ -85,6 +85,12 @@ struct ContainerWithNonCopyable:
         self.count = count
 
 
+# Struct with a wrapped (`Optional[T]`) field, for inner-type peeling by index.
+struct WrappedFields:
+    var a: Int64
+    var b: Optional[Int64]
+
+
 # ===----------------------------------------------------------------------=== #
 # `reflect` and `Reflected.T`
 # ===----------------------------------------------------------------------=== #
@@ -216,7 +222,7 @@ def test_field_count_through_generic() raises:
 
 
 # ===----------------------------------------------------------------------=== #
-# `field_index` / `field_type` (lookup by name)
+# `field_index` / `field` (lookup by name)
 # ===----------------------------------------------------------------------=== #
 
 
@@ -233,37 +239,98 @@ def test_field_index_nested() raises:
     assert_equal(r.field_index["count"](), 2)
 
 
-def test_field_type_by_name_simple() raises:
+def test_field_by_name_simple() raises:
     comptime r = reflect[SimpleStruct]
-    comptime x_type = r.field_type["x"]
+    comptime x_type = r.field["x"]
     assert_equal(x_type.name(), "SIMD[DType.int, 1]")
 
-    comptime y_type = r.field_type["y"]
+    comptime y_type = r.field["y"]
     assert_equal(y_type.name(), "SIMD[DType.float64, 1]")
 
 
-def test_field_type_returns_reflected_handle() raises:
-    """`field_type[name]()` returns a `Reflected[FieldT]`, fully composable."""
+def test_field_returns_reflected_handle() raises:
+    """`field[name]` returns a `Reflected[FieldT]`, fully composable."""
     comptime r = reflect[Outer]
-    comptime inner_handle = r.field_type["inner"]
+    comptime inner_handle = r.field["inner"]
     # The returned handle is itself a Reflected, with its own field_count etc.
     assert_equal(inner_handle.field_count(), 2)
     assert_equal(inner_handle.field_names()[0], "a")
     assert_equal(inner_handle.field_names()[1], "b")
 
 
-def test_field_type_usable_as_type_annotation() raises:
-    comptime y_type = reflect[SimpleStruct].field_type["y"]
+def test_field_usable_as_type_annotation() raises:
+    comptime y_type = reflect[SimpleStruct].field["y"]
     var v: y_type.T = 3.14
     assert_true(v > 3.0)
 
 
-def test_field_type_matches_field_types_by_index() raises:
+def test_field_matches_field_types_by_index() raises:
     comptime r = reflect[SimpleStruct]
     comptime idx = r.field_index["x"]()
-    comptime by_name = r.field_type["x"]
+    comptime by_name = r.field["x"]
     comptime by_idx = r.field_types()[idx]
     assert_equal(by_name.name(), reflect[by_idx].name())
+
+
+def test_field_at_simple() raises:
+    comptime r = reflect[SimpleStruct]
+    comptime x_type = r.field_at[0]
+    assert_equal(x_type.name(), "SIMD[DType.int, 1]")
+
+    comptime y_type = r.field_at[1]
+    assert_equal(y_type.name(), "SIMD[DType.float64, 1]")
+
+
+def test_field_at_matches_by_name() raises:
+    comptime r = reflect[SimpleStruct]
+    comptime by_name = r.field["y"]
+    comptime by_idx = r.field_at[r.field_index["y"]()]
+    assert_equal(by_idx.name(), by_name.name())
+
+
+def test_field_at_returns_reflected_handle() raises:
+    """`field_at[idx]` returns a `Reflected[FieldT]`, fully composable."""
+    comptime r = reflect[Outer]
+    comptime inner_handle = r.field_at[1]
+    assert_equal(inner_handle.field_count(), 2)
+    assert_equal(inner_handle.field_names()[0], "a")
+    assert_equal(inner_handle.field_names()[1], "b")
+
+
+def test_field_at_usable_as_type_annotation() raises:
+    comptime y_type = reflect[SimpleStruct].field_at[1]
+    var v: y_type.T = 3.14
+    assert_true(v > 3.0)
+
+
+def _field_base_names_generic[T: AnyType]() -> String:
+    """Recover each field's concrete type by index through a generic `T`."""
+    comptime r = reflect[T]
+    var seen = String("")
+    comptime for i in range(r.field_count()):
+        comptime FT = r.field_at[i]
+        seen += FT.base_name()
+        seen += ","
+    return seen^
+
+
+def test_field_at_through_generic() raises:
+    # `Int` is `SIMD[DType.int, 1]`, so its base name is `SIMD`.
+    assert_equal(_field_base_names_generic[Outer](), "String,Inner,SIMD,")
+
+
+def test_field_at_peels_wrapper() raises:
+    """Find a wrapped field by index and peel its inner concrete type."""
+    comptime opt = reflect[WrappedFields].field_at[1]
+    assert_equal(opt.base_name(), "Optional")
+    # `opt.T` is `Optional[Int64]`; peel its inner type to `Int64`.
+    comptime Inner = opt.T.T
+    assert_equal(reflect[Inner].name(), "SIMD[DType.int64, 1]")
+
+
+def test_field_at_first_index() raises:
+    comptime first = reflect[Outer].field_at[0]
+    assert_equal(first.name(), "String")
 
 
 # ===----------------------------------------------------------------------=== #
@@ -354,7 +421,7 @@ def test_field_offset_by_index_matches_by_name() raises:
 
 
 def test_field_offset_iteration() raises:
-    var offsets = InlineArray[Int, 4](uninitialized=True)
+    var offsets = Array[Int, 4](uninitialized=True)
     comptime r = reflect[OffsetTestStruct]
     comptime for i in range(r.field_count()):
         offsets[i] = r.field_offset[index=i]()
@@ -391,8 +458,8 @@ def test_closure_capture_struct_reflection() raises:
 
     closure()
 
-    # field_types()[0] of the wrapper struct is the capture struct.
-    comptime captures = reflect[reflect[type_of(closure)].field_types()[0]]
+    # The closure type is the storage struct; its fields are the captures.
+    comptime captures = reflect[type_of(closure)]
     # closure captures s — one field.
     assert_equal(captures.field_count(), 1)
 
@@ -400,6 +467,29 @@ def test_closure_capture_struct_reflection() raises:
     comptime s_type = captures.field_types()[0]
     assert_true(reflect[s_type].is_struct())
     assert_equal(reflect[s_type].field_count(), 2)
+
+
+def test_imm_capture_field_type_name() raises:
+    """`{imm}`/`{mut}` capture fields are refs; `name()` prints the pointee."""
+    var a: Int = 0
+    var b: Int = 1
+    var s = String("x")
+
+    def closure() {imm a, imm b, mut s}:
+        _ = a
+        _ = b
+        s += "!"
+
+    closure()
+
+    comptime captures = reflect[type_of(closure)]
+    assert_equal(captures.field_count(), 3)
+    comptime a_type = captures.field_types()[0]
+    assert_false(reflect[a_type].is_struct())
+    assert_equal(reflect[a_type].name(), "ref[SIMD[DType.int, 1]]")
+    comptime s_type = captures.field_types()[2]
+    assert_false(reflect[s_type].is_struct())
+    assert_equal(reflect[s_type].name(), "ref[String]")
 
 
 def test_nested_closure_capture_reflection() raises:
@@ -416,8 +506,8 @@ def test_nested_closure_capture_reflection() raises:
 
     outer()
 
-    # field_types()[0] of the wrapper struct is the capture struct.
-    comptime outer_captures = reflect[reflect[type_of(outer)].field_types()[0]]
+    # The outer closure type is its storage struct.
+    comptime outer_captures = reflect[type_of(outer)]
     # outer captures y, z, inner — three fields.
     assert_equal(outer_captures.field_count(), 3)
 
@@ -425,14 +515,10 @@ def test_nested_closure_capture_reflection() raises:
     comptime inner_type = outer_captures.field_types()[2]
     assert_true(reflect[inner_type].is_struct())
 
-    # inner's wrapper struct has one field: its capture struct.
+    # inner's storage has one capture field: x (UInt32).
     comptime inner_r = reflect[inner_type]
     assert_equal(inner_r.field_count(), 1)
-
-    # inner's capture struct is itself a struct containing x (UInt32).
-    comptime inner_captures = inner_r.field_types()[0]
-    assert_true(reflect[inner_captures].is_struct())
-    assert_equal(reflect[inner_captures].field_count(), 1)
+    assert_true(reflect[inner_r.field_types()[0]].is_struct())
 
 
 def test_deeply_nested_closure_capture_reflection() raises:
@@ -453,30 +539,23 @@ def test_deeply_nested_closure_capture_reflection() raises:
 
     c()
 
-    # Navigate into c's capture struct.
-    comptime c_captures = reflect[reflect[type_of(c)].field_types()[0]]
+    # Navigate into c's storage struct.
+    comptime c_captures = reflect[type_of(c)]
     # c captures z, w, b — three fields.
     assert_equal(c_captures.field_count(), 3)
 
     # b is c's third capture.
     comptime b_type = reflect[c_captures.field_types()[2]]
     assert_true(b_type.is_struct())
-    assert_equal(b_type.field_count(), 1)
-
-    # b's capture struct is itself a struct containing y and a.
-    comptime b_captures = reflect[b_type.field_types()[0]]
-    assert_true(b_captures.is_struct())
-    assert_equal(b_captures.field_count(), 2)
+    # b's storage has two capture fields: y and a.
+    assert_equal(b_type.field_count(), 2)
 
     # a is b's second capture and is a struct.
-    comptime a_type = reflect[b_captures.field_types()[1]]
+    comptime a_type = reflect[b_type.field_types()[1]]
     assert_true(a_type.is_struct())
+    # a's storage has one capture field: x.
     assert_equal(a_type.field_count(), 1)
-
-    # a's capture struct is itself a struct containing x.
-    comptime a_captures = reflect[a_type.field_types()[0]]
-    assert_true(a_captures.is_struct())
-    assert_equal(a_captures.field_count(), 1)
+    assert_true(reflect[a_type.field_types()[0]].is_struct())
 
 
 def main() raises:

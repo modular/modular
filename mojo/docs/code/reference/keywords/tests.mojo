@@ -86,7 +86,7 @@ def test_var_and_ref() raises:
     count += 1
     assert_equal(count, 1)
 
-    var data = [1, 2, 3]
+    var data: List[Int] = [1, 2, 3]
     ref view = data
     assert_equal(view[0], 1)
     assert_equal(view[2], 3)

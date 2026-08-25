@@ -33,7 +33,7 @@ from layout import (
 )
 from nn.attention.gpu.mha import flash_attention, mha_gpu_naive
 from nn.attention.mha_mask import CausalMask
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.testing import assert_almost_equal
 from std.utils.index import Index
 from std.utils.numerics import min_or_neg_inf
@@ -167,8 +167,8 @@ def test_gemma4_global_decode(
     for h in range(num_heads):
         for d in range(depth):
             var idx = d + depth * h
-            var actual = actual_ptr[idx].cast[DType.float64]()
-            var expect = expect_ptr[idx].cast[DType.float64]()
+            var actual = actual_ptr[idx].cast[.float64]()
+            var expect = expect_ptr[idx].cast[.float64]()
             if not isclose(actual, expect, atol=1e-5, rtol=3e-2):
                 print("MISMATCH:", h, d, actual, expect)
             assert_almost_equal(actual, expect, atol=1e-5, rtol=3e-2)

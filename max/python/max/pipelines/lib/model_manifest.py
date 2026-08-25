@@ -20,13 +20,20 @@ import logging
 import os
 from typing import Any
 
-from max.pipelines.lib.config.model_config import MAXModelConfig
+from max.pipelines.lib.config.model_config import (
+    MAXModelConfig,
+    _build_model_config,
+)
 from max.pipelines.lib.weight_loader import WeightLoader, _role_prefixed_loader
 from max.pipelines.weights.hf_utils import HuggingFaceRepo
 from pydantic import GetCoreSchemaHandler
 from pydantic_core import CoreSchema, core_schema
 
 logger = logging.getLogger(__name__)
+
+# Overriding these feeds weight-path identity resolution in __init__, so
+# with_override() rebuilds through the constructor rather than model_copy.
+_WEIGHT_IDENTITY_FIELDS = frozenset({"model_path", "weight_path"})
 
 
 class ModelManifest(dict[str, MAXModelConfig]):
@@ -295,12 +302,13 @@ class ModelManifest(dict[str, MAXModelConfig]):
     # ------------------------------------------------------------------
 
     def resolve(self) -> None:
-        """Validates and resolves every config in the manifest.
+        """Freezes the manifest against further mutation.
 
-        Delegates to ``MAXModelConfig.resolve()`` for each component.
+        Per-component weight-path identity is resolved in
+        ``MAXModelConfig.__init__`` and repo access is validated at
+        ``PipelineConfig`` construction, so this only flips the freeze flag
+        (use ``with_override()`` to change the manifest afterward).
         """
-        for config in self.values():
-            config.resolve()
         self._resolved = True
 
     # ------------------------------------------------------------------
@@ -342,8 +350,10 @@ class ModelManifest(dict[str, MAXModelConfig]):
             config: A complete ``MAXModelConfig`` to use as the base.
                 When ``None``, the existing config for *role* is used
                 (the role must already exist).
-            **field_overrides: Individual field values to set on the
-                config via ``model_copy(update=...)``.
+            **field_overrides: Individual field values to override on the
+                config. Overriding ``model_path``/``weight_path`` rebuilds the
+                config through its constructor so weight-path identity
+                resolution re-runs; other overrides use ``model_copy``.
 
         Returns:
             A new ``ModelManifest`` — the original is not modified.
@@ -369,9 +379,25 @@ class ModelManifest(dict[str, MAXModelConfig]):
         else:
             base = config
 
-        updated_config = (
-            base.model_copy(update=field_overrides) if field_overrides else base
-        )
+        if not field_overrides:
+            updated_config = base
+        elif _WEIGHT_IDENTITY_FIELDS.isdisjoint(field_overrides):
+            updated_config = base.model_copy(update=field_overrides)
+        else:
+            # model_copy would keep the stale derived identity (an external
+            # org/repo/file path would 404), so rebuild through the factory
+            # to re-resolve it, carrying each loaded seed unless its source
+            # field changed.
+            data = {**base.__dict__, **field_overrides}
+            if "model_path" not in field_overrides:
+                data["_huggingface_config"] = getattr(
+                    base, "_huggingface_config", None
+                )
+            if "weight_path" not in field_overrides:
+                data["_weights_repo_id"] = getattr(
+                    base, "_weights_repo_id", None
+                )
+            updated_config = _build_model_config(type(base), **data)
         new_models = {**self, role: updated_config}
         return ModelManifest(new_models, metadata=self._metadata)
 
@@ -425,7 +451,7 @@ class ModelManifest(dict[str, MAXModelConfig]):
         config_kwargs: dict[str, Any] = {"model_path": model_path, **kwargs}
         if revision is not None:
             config_kwargs["huggingface_model_revision"] = revision
-        model = MAXModelConfig(**config_kwargs)
+        model = _build_model_config(MAXModelConfig, **config_kwargs)
         return cls({"main": model})
 
     # ------------------------------------------------------------------
@@ -443,7 +469,7 @@ class ModelManifest(dict[str, MAXModelConfig]):
         exist.
         """
         if repo.repo_type == "local":
-            index_path = os.path.join(repo.repo_id, "model_index.json")
+            index_path = os.path.join(repo.local_path, "model_index.json")
             if not os.path.isfile(index_path):
                 return None
             with open(index_path) as f:
@@ -521,7 +547,9 @@ class ModelManifest(dict[str, MAXModelConfig]):
                 }
                 if revision is not None:
                     config_kwargs["huggingface_model_revision"] = revision
-                components[key] = MAXModelConfig(**config_kwargs)
+                components[key] = _build_model_config(
+                    MAXModelConfig, **config_kwargs
+                )
             else:
                 metadata[key] = value
 

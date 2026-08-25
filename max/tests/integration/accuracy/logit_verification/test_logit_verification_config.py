@@ -10,7 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-
 from max.tests.integration.accuracy.logit_verification.logit_verification_config import (
     LOGIT_VERIFICATION_CONFIG,
 )

@@ -13,8 +13,8 @@
 
 from std.format import Writable, Writer
 from std.format._utils import _hex_digits_to_hex_chars, _write_hex
-from std.memory import Span
-from std.memory.memory import memset_zero
+from std.collections import Span
+from std.memory.memory import unsafe_memset_zero
 from std.testing import assert_equal, TestSuite
 
 
@@ -44,15 +44,12 @@ def test_writer_of_string() raises:
     assert_equal(s2, "Point(3, 8)")
 
 
-def test_string_write_seq() raises:
-    var s1 = String.write("Hello, ", "World!")
+def test_string_ctor_seq() raises:
+    var s1 = String("Hello, ", "World!")
     assert_equal(s1, "Hello, World!")
 
-    var s2 = String.write("point = ", Point(2, 7))
+    var s2 = String("point = ", Point(2, 7))
     assert_equal(s2, "point = Point(2, 7)")
-
-    var s3 = String.write()
-    assert_equal(s3, "")
 
 
 def test_stringable_based_on_format() raises:
@@ -139,61 +136,61 @@ def test_write_simd_padded() raises:
     # ----------------------------------
 
     var s3 = String()
-    SIMD[DType.int32, 2](12345).write_padded(s3, width=3)
+    SIMD[.int32, 2](12345).write_padded(s3, width=3)
     assert_equal(s3, "[12345,12345]")
 
     s3 = String()
-    SIMD[DType.int32, 2](12345).write_padded(s3, width=5)
+    SIMD[.int32, 2](12345).write_padded(s3, width=5)
     assert_equal(s3, "[12345,12345]")
 
     s3 = String()
-    SIMD[DType.int32, 2](12345).write_padded(s3, width=6)
+    SIMD[.int32, 2](12345).write_padded(s3, width=6)
     assert_equal(s3, "[ 12345, 12345]")
 
     s3 = String()
-    SIMD[DType.int32, 2](-12345).write_padded(s3, width=7)
+    SIMD[.int32, 2](-12345).write_padded(s3, width=7)
     assert_equal(s3, "[ -12345, -12345]")
 
     s3 = String()
-    SIMD[DType.int8, 4](127, 1, 10, 0).write_padded(s3, width=6)
+    SIMD[.int8, 4](127, 1, 10, 0).write_padded(s3, width=6)
     assert_equal(s3, "[   127,     1,    10,     0]")
 
 
 def test_hex_digits_to_hex_chars() raises:
-    items: List[Byte] = [0, 0, 0, 0, 0, 0, 0, 0, 0]
+    var items: List[Byte] = [0, 0, 0, 0, 0, 0, 0, 0, 0]
     comptime S = StringSlice[origin_of(items)]
-    ptr = items.unsafe_ptr()
-    ptr.store(_hex_digits_to_hex_chars(UInt32(ord("🔥"))))
-    assert_equal("0001f525", S(unsafe_from_utf8=Span(ptr=ptr, length=8)))
-    memset_zero(ptr, len(items))
-    ptr.store(_hex_digits_to_hex_chars(UInt16(ord("你"))))
-    assert_equal("4f60", S(unsafe_from_utf8=Span(ptr=ptr, length=4)))
-    memset_zero(ptr, len(items))
-    ptr.store(_hex_digits_to_hex_chars(UInt8(ord("Ö"))))
-    assert_equal("d6", S(unsafe_from_utf8=Span(ptr=ptr, length=2)))
-    ptr.store(_hex_digits_to_hex_chars(UInt8(0)))
-    assert_equal("00", S(unsafe_from_utf8=Span(ptr=ptr, length=2)))
-    ptr.store(_hex_digits_to_hex_chars(UInt16(0)))
-    assert_equal("0000", S(unsafe_from_utf8=Span(ptr=ptr, length=4)))
-    ptr.store(_hex_digits_to_hex_chars(UInt32(0)))
-    assert_equal("00000000", S(unsafe_from_utf8=Span(ptr=ptr, length=8)))
-    ptr.store(_hex_digits_to_hex_chars(~UInt8(0)))
-    assert_equal("ff", S(unsafe_from_utf8=Span(ptr=ptr, length=2)))
-    ptr.store(_hex_digits_to_hex_chars(~UInt16(0)))
-    assert_equal("ffff", S(unsafe_from_utf8=Span(ptr=ptr, length=4)))
-    ptr.store(_hex_digits_to_hex_chars(~UInt32(0)))
-    assert_equal("ffffffff", S(unsafe_from_utf8=Span(ptr=ptr, length=8)))
+    var ptr = items.unsafe_ptr()
+    ptr.unsafe_store(_hex_digits_to_hex_chars(UInt32(ord("🔥"))))
+    assert_equal("0001f525", S(unsafe_from_utf8=Span(unsafe_ptr=ptr, length=8)))
+    unsafe_memset_zero(ptr, len(items))
+    ptr.unsafe_store(_hex_digits_to_hex_chars(UInt16(ord("你"))))
+    assert_equal("4f60", S(unsafe_from_utf8=Span(unsafe_ptr=ptr, length=4)))
+    unsafe_memset_zero(ptr, len(items))
+    ptr.unsafe_store(_hex_digits_to_hex_chars(UInt8(ord("Ö"))))
+    assert_equal("d6", S(unsafe_from_utf8=Span(unsafe_ptr=ptr, length=2)))
+    ptr.unsafe_store(_hex_digits_to_hex_chars(UInt8(0)))
+    assert_equal("00", S(unsafe_from_utf8=Span(unsafe_ptr=ptr, length=2)))
+    ptr.unsafe_store(_hex_digits_to_hex_chars(UInt16(0)))
+    assert_equal("0000", S(unsafe_from_utf8=Span(unsafe_ptr=ptr, length=4)))
+    ptr.unsafe_store(_hex_digits_to_hex_chars(UInt32(0)))
+    assert_equal("00000000", S(unsafe_from_utf8=Span(unsafe_ptr=ptr, length=8)))
+    ptr.unsafe_store(_hex_digits_to_hex_chars(~UInt8(0)))
+    assert_equal("ff", S(unsafe_from_utf8=Span(unsafe_ptr=ptr, length=2)))
+    ptr.unsafe_store(_hex_digits_to_hex_chars(~UInt16(0)))
+    assert_equal("ffff", S(unsafe_from_utf8=Span(unsafe_ptr=ptr, length=4)))
+    ptr.unsafe_store(_hex_digits_to_hex_chars(~UInt32(0)))
+    assert_equal("ffffffff", S(unsafe_from_utf8=Span(unsafe_ptr=ptr, length=8)))
 
 
 def test_write_hex() raises:
     var s = String()
-    _write_hex[amnt_hex_bytes=8](s, Scalar[DType.int](ord("🔥")))
+    _write_hex[amnt_hex_bytes=8](s, Int(ord("🔥")))
     assert_equal(r"\U0001f525", s)
     s = ""
-    _write_hex[amnt_hex_bytes=4](s, Scalar[DType.int](ord("你")))
+    _write_hex[amnt_hex_bytes=4](s, Int(ord("你")))
     assert_equal(r"\u4f60", s)
     s = ""
-    _write_hex[amnt_hex_bytes=2](s, Scalar[DType.int](ord("Ö")))
+    _write_hex[amnt_hex_bytes=2](s, Int(ord("Ö")))
     assert_equal(r"\xd6", s)
 
 

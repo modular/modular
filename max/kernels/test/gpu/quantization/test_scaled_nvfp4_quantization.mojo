@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import (
     Layout,
     LayoutTensor,
@@ -20,7 +20,7 @@ from layout import (
     lt_to_tt,
 )
 from layout._fillers import random
-from linalg.fp4_quantization import quantize_dynamic_scaled_fp4fp8
+from linalg.block_scaled_quantization import quantize_dynamic_scaled_fp4fp8
 from std.testing import assert_almost_equal
 from std.math import ceildiv, recip
 from linalg.fp4_utils import (
@@ -159,18 +159,14 @@ def test_dynamic_fp4_quant[
                                 SF_VECTOR_SIZE // 2
                             ](row_idx, col_idx)
                             vec_max = (
-                                abs(input_vector)
-                                .reduce_max()
-                                .cast[DType.float32]()
+                                abs(input_vector).reduce_max().cast[.float32]()
                             )
                         else:
                             var input_vector = input_tensor_host.load[
                                 SF_VECTOR_SIZE
                             ](row_idx, col_idx)
                             vec_max = (
-                                abs(input_vector)
-                                .reduce_max()
-                                .cast[DType.float32]()
+                                abs(input_vector).reduce_max().cast[.float32]()
                             )
 
                         var sf_value = tensor_sf * (
@@ -188,8 +184,8 @@ def test_dynamic_fp4_quant[
 
                         # verify the scale factors
                         assert_almost_equal(
-                            ref_fp8_sf.cast[DType.float64](),
-                            fp8_sf.cast[DType.float64](),
+                            ref_fp8_sf.cast[.float64](),
+                            fp8_sf.cast[.float64](),
                             rtol=1e-1,
                             atol=1e-1,
                         )
@@ -197,8 +193,7 @@ def test_dynamic_fp4_quant[
                         var output_scale = Float32(0.0)
                         if vec_max != 0:
                             output_scale = recip(
-                                ref_fp8_sf.cast[DType.float32]()
-                                * recip(tensor_sf)
+                                ref_fp8_sf.cast[.float32]() * recip(tensor_sf)
                             )
 
                         # verify the output values
@@ -208,7 +203,7 @@ def test_dynamic_fp4_quant[
                             var input_f32 = (
                                 input_tensor_host.load[SF_VECTOR_SIZE // 2](
                                     row_idx, col_idx
-                                ).cast[DType.float32]()
+                                ).cast[.float32]()
                                 * output_scale
                             )
                             var ref_output_e2m1 = cast_fp_to_fp4e2m1(input_f32)
@@ -230,7 +225,7 @@ def test_dynamic_fp4_quant[
                             var input_f32 = (
                                 input_tensor_host.load[SF_VECTOR_SIZE](
                                     row_idx, col_idx
-                                ).cast[DType.float32]()
+                                ).cast[.float32]()
                                 * output_scale
                             )
                             var ref_output_e2m1 = cast_fp_to_fp4e2m1(input_f32)

@@ -45,21 +45,17 @@ for num, letter in zip(numbers, letters):
     print(num, letter)
 
 # Map a function over an iterable
-def square(x: Int) -> Int:
-    return x * x
 var values = [1, 2, 3, 4]
-for squared in map[square](values):
+for squared in map[lambda (x: Int) -> Int: x * x](values):
     print(squared)
 ```
 """
 
-from std.builtin.constrained import _constrained_conforms_to
+import std.memory
 from std.builtin.rebind import downcast
-from std.sys.intrinsics import _type_is_eq_parse_time
 
 
 from std.builtin.variadics import TypeList
-from std.reflection.traits import AllImplicitlyDestructible, AllCopyable
 
 
 # ===-----------------------------------------------------------------------===#
@@ -135,7 +131,7 @@ struct StopIteration(TrivialRegisterPassable, Writable):
         writer.write("StopIteration")
 
 
-trait Iterator(ImplicitlyDeletable, Movable):
+trait Iterator(Deinitable, Movable):
     """The `Iterator` trait describes a type that can be used as an
     iterator, e.g. in a `for` loop.
     """
@@ -195,7 +191,7 @@ trait Iterator(ImplicitlyDeletable, Movable):
             `n + 1` remaining elements.
 
         Constraints:
-            `Self.Element` must conform to `ImplicitlyDeletable` so the
+            `Self.Element` must conform to `Deinitable` so the
             intermediate elements can be discarded.
 
         Examples:
@@ -207,19 +203,16 @@ trait Iterator(ImplicitlyDeletable, Movable):
         var missing = iter(l).nth(10)   # None
         ```
         """
-        comptime assert conforms_to(Self.Element, ImplicitlyDeletable)
+        # `Self.Element` is only declared `Movable` on the trait, so a
+        # bare `_ = self.__next__()` won't type-check without this assertion.
+        # Drop this workaround once MOCO-3947 lets us put the bound in a
+        # `where` clause on the method.
+        comptime assert conforms_to(Self.Element, Deinitable)
+
         debug_assert[assert_mode="safe"](n.ge(0), "nth: n must be non-negative")
         try:
             for _ in range(n):
-                # `Self.Element` is only declared `Movable` on the trait, so a
-                # bare `_ = self.__next__()` won't type-check. Funnel the
-                # discard through the conformance we asserted above. Drop
-                # this workaround once MOCO-3947 lets us put the bound in a
-                # `where` clause on the method.
-                var elem = self.__next__()
-                _ = rebind_var[
-                    downcast[Self.Element, Movable & ImplicitlyDeletable]
-                ](elem^)
+                _ = self.__next__()
             return self.__next__()
         except StopIteration:
             return None
@@ -291,7 +284,6 @@ struct _Empty[T: Movable](
     IterableOwned,
     Iterator,
 ):
-
     """Iterator that yields nothing."""
 
     comptime Element = Self.T
@@ -329,6 +321,66 @@ def empty[T: Movable]() -> _Empty[T]:
 
 
 # ===-----------------------------------------------------------------------===#
+# once
+# ===-----------------------------------------------------------------------===#
+
+
+@fieldwise_init
+struct _Once[T: Movable & Deinitable](
+    Copyable where conforms_to(T, Copyable),
+    Iterable where conforms_to(T, Copyable),
+    IterableOwned,
+    Iterator,
+    Movable,
+):
+    """An iterator that yields an element exactly once."""
+
+    comptime Element = Self.T
+
+    comptime IteratorType[
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
+    ]: Iterator = Self
+
+    comptime IteratorOwnedType: Iterator = Self
+
+    var _inner: Optional[Self.T]
+
+    def __iter__(var self) -> Self.IteratorOwnedType:
+        return self^
+
+    def __iter__(
+        ref self,
+    ) -> Self.IteratorType[origin_of(self)] where conforms_to(
+        Self.Element, Copyable
+    ):
+        return self.copy()
+
+    def __next__(mut self) raises StopIteration -> Self.Element:
+        if not self._inner:
+            raise StopIteration()
+        return self._inner.unsafe_take()
+
+    def bounds(self) -> Tuple[Int, Optional[Int]]:
+        return self._inner.bounds()
+
+
+@always_inline
+def once[T: Movable & Deinitable, //](var element: T, /) -> _Once[T]:
+    """Creates an iterator that yields an element exactly once.
+
+    Parameters:
+        T: The type of the element to be yielded exactly once.
+
+    Args:
+        element: The element to be yielded exactly once.
+
+    Returns:
+        An iterator that yields the specified element exactly once.
+    """
+    return _Once(Optional(element^))
+
+
+# ===-----------------------------------------------------------------------===#
 # enumerate
 # ===-----------------------------------------------------------------------===#
 
@@ -356,14 +408,6 @@ struct _Enumerate[InnerIteratorType: Iterator](
     ):
         self._inner = iterator^
         self._count = start
-
-    def __init__(
-        out self, *, copy: Self
-    ) where conforms_to(Self.InnerIteratorType, Copyable):
-        self._inner = rebind_var[Self.InnerIteratorType](
-            trait_downcast[Copyable](copy._inner).copy()
-        )
-        self._count = copy._count
 
     def __iter__(
         ref self,
@@ -440,8 +484,8 @@ def enumerate(
 
 
 struct _ZipIterator[origin: Origin, *Ts: Iterator](
-    Copyable where AllCopyable[*Ts],
-    Iterable where AllCopyable[*Ts],
+    Copyable where conforms_to(Tuple[*Ts], Copyable),
+    Iterable where conforms_to(Tuple[*Ts], Copyable),
     IterableOwned,
     Iterator,
 ):
@@ -450,7 +494,7 @@ struct _ZipIterator[origin: Origin, *Ts: Iterator](
     Iteration stops as soon as any inner iterator raises `StopIteration`.
     When that happens mid-tuple, any elements already produced for the
     current tuple are destroyed before propagating the exception, which is
-    why each element type in `Ts` must be `ImplicitlyDeletable`.
+    why each element type in `Ts` must be `Deinitable`.
 
     Parameters:
         origin: The origin from which the inner iterators were produced.
@@ -459,7 +503,7 @@ struct _ZipIterator[origin: Origin, *Ts: Iterator](
             `MutUntrackedOrigin` by the owning overload since its iterators
             own their data.
         Ts: The inner iterator types being zipped. Each must conform to
-            `Iterator` and its `Element` must be `ImplicitlyDeletable`.
+            `Iterator` and its `Element` must be `Deinitable`.
     """
 
     comptime _InjectedValues = Tuple[*Self.Ts]
@@ -477,7 +521,9 @@ struct _ZipIterator[origin: Origin, *Ts: Iterator](
     @always_inline
     def __iter__(
         ref self,
-    ) -> Self.IteratorType[origin_of(self)] where AllCopyable[*Self.Ts]:
+    ) -> Self.IteratorType[origin_of(self)] where conforms_to(
+        Tuple[*Self.Ts], Copyable
+    ):
         return self.copy()
 
     @always_inline
@@ -490,18 +536,16 @@ struct _ZipIterator[origin: Origin, *Ts: Iterator](
         __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(res))
         try:
             comptime for i in range(Self._InjectedValues.__len__()):
-                UnsafePointer(to=res[i]).init_pointee_move(
+                Pointer(to=res[i]).unsafe_write(
                     rebind_var[type_of(res[i])](next(self._values[i]))
                 )
                 initialized += 1
             return res^
         except StopIteration:
             comptime for i in range(Self._InjectedValues.__len__()):
-                comptime assert conforms_to(
-                    type_of(res[i]), ImplicitlyDeletable
-                )
+                comptime assert conforms_to(type_of(res[i]), Deinitable)
                 if i < initialized:
-                    UnsafePointer(to=res[i]).destroy_pointee()
+                    Pointer(to=res[i]).unsafe_deinit_pointee()
 
             std.memory.forget_deinit(res^)
             raise StopIteration
@@ -525,7 +569,7 @@ def zip[
     out res: _ZipIterator[
         iterables.origin, *_iterable_to_iterator[iterables.origin, *Ts]
     ],
-) where AllImplicitlyDestructible[*res.Ts]:
+) where res.Ts.all_conforms_to[Deinitable]():
     """Returns an iterator that yields tuples of the elements of the original
     iterables.
 
@@ -550,7 +594,7 @@ def zip[
     __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(res))
 
     comptime for i in range(res._InjectedValues.__len__()):
-        UnsafePointer(to=res._values[i]).init_pointee_move(
+        Pointer(to=res._values[i]).unsafe_write(
             rebind_var[type_of(res._values[i])](iter(iterables[i]))
         )
 
@@ -562,7 +606,7 @@ def zip[
     out res: _ZipIterator[
         MutUntrackedOrigin, *_iterable_owned_to_iterator[*Ts]
     ],
-) where AllImplicitlyDestructible[*res.Ts]:
+) where res.Ts.all_conforms_to[Deinitable]():
     """Returns an iterator that yields tuples of the elements of the original
     iterables.
 
@@ -584,9 +628,9 @@ def zip[
     """
     __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(res))
 
-    @parameter
-    def init_elt[idx: Int](var elt: iterables.element_types[idx]):
-        UnsafePointer(to=res._values[idx]).init_pointee_move(
+    @__parameter
+    def init_elt[idx: Int](var elt: iterables.Ts[idx]):
+        Pointer(to=res._values[idx]).unsafe_write(
             rebind_var[type_of(res._values[idx])](iter(elt^))
         )
 
@@ -618,13 +662,6 @@ struct _MapIterator[
 
     var _inner: Self.InnerIteratorType
 
-    def __init__(
-        out self, *, copy: Self
-    ) where conforms_to(Self.InnerIteratorType, Copyable):
-        self._inner = rebind_var[Self.InnerIteratorType](
-            trait_downcast[Copyable](copy._inner).copy()
-        )
-
     def __iter__(
         ref self,
     ) -> Self.IteratorType[origin_of(self)] where conforms_to(
@@ -645,7 +682,7 @@ struct _MapIterator[
 
 @always_inline
 def map[
-    origin: ImmutOrigin,
+    origin: ImmOrigin,
     IterableType: Iterable,
     ResultType: Copyable,
     //,
@@ -673,9 +710,7 @@ def map[
 
     ```mojo
     var l = [1, 2, 3]
-    def add_one(x: Int) -> Int:
-        return x + 1
-    var m = map[add_one](l)
+    var m = map[lambda (x: Int) -> Int: x + 1](l)
 
     # outputs:
     # 2
@@ -738,7 +773,7 @@ struct _PeekableIterator[InnerIterator: Iterator](
     ),
     IterableOwned,
     Iterator,
-):
+) where conforms_to(InnerIterator.Element, Deinitable):
     comptime Element = Self.InnerIterator.Element
     comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
@@ -751,18 +786,6 @@ struct _PeekableIterator[InnerIterator: Iterator](
     def __init__(out self, var inner: Self.InnerIterator):
         self._inner = inner^
         self._next = None
-
-    def __init__(
-        out self, *, copy: Self
-    ) where conforms_to(Self.InnerIterator, Copyable) and conforms_to(
-        Self.InnerIterator.Element, Copyable
-    ):
-        self._inner = rebind_var[Self.InnerIterator](
-            trait_downcast[Copyable](copy._inner).copy()
-        )
-
-        comptime assert conforms_to(Self.Element, Copyable)
-        self._next = copy._next.copy()
 
     def __iter__(
         ref self,
@@ -790,18 +813,23 @@ struct _PeekableIterator[InnerIterator: Iterator](
 
     def peek(
         mut self,
-    ) -> Optional[Pointer[Self.Element, ImmutOrigin(origin_of(self._next[]))]]:
+    ) -> Optional[Pointer[Self.Element, ImmOrigin(origin_of(self._next[]))]]:
         if not self._next:
             try:
                 self._next = next(self._inner)
             except:
                 return None
-        return Pointer(to=self._next.unsafe_value()).get_immutable()
+        return ImmPointer[Self.Element](to=self._next.unsafe_value())
 
 
 def peekable(
     ref iterable: Some[Iterable],
-) -> _PeekableIterator[type_of(iterable).IteratorType[origin_of(iterable)]]:
+) -> _PeekableIterator[
+    type_of(iterable).IteratorType[origin_of(iterable)]
+] where conforms_to(
+    type_of(iterable).IteratorType[origin_of(iterable)].Element,
+    Deinitable,
+):
     """Returns a peekable iterator that can use the `peek` method to look ahead
     at the next element without advancing the iterator.
 
@@ -816,7 +844,10 @@ def peekable(
 
 def peekable(
     var iterable: Some[IterableOwned],
-) -> _PeekableIterator[type_of(iterable).IteratorOwnedType]:
+) -> _PeekableIterator[type_of(iterable).IteratorOwnedType] where conforms_to(
+    type_of(iterable).IteratorOwnedType.Element,
+    Deinitable,
+):
     """Returns a peekable iterator that can use the `peek` method to look ahead
     at the next element without advancing the iterator, consuming the iterable.
 
@@ -835,26 +866,24 @@ def peekable(
 
 comptime _all_yield_same_ref_condition[
     T0: Movable, origin: Origin, T: Iterable
-] = _type_is_eq_parse_time[T.IteratorType[origin].Element, T0]()
+] = T.IteratorType[origin].Element == T0
 
-comptime _all_yield_same_ref[
-    origin: Origin, *Ts: Iterable
-]: Bool = Ts.all_satisfies[
+comptime _all_yield_same_ref[origin: Origin, *Ts: Iterable]: Bool = Ts.all[
     _all_yield_same_ref_condition[Ts[0].IteratorType[origin].Element, origin, _]
 ]()
 
 comptime _all_yield_same_owned_condition[
     T0: Movable, T: IterableOwned
-] = _type_is_eq_parse_time[T.IteratorOwnedType.Element, T0]()
+] = T.IteratorOwnedType.Element == T0
 
-comptime _all_yield_same_owned[*Ts: IterableOwned]: Bool = Ts.all_satisfies[
+comptime _all_yield_same_owned[*Ts: IterableOwned]: Bool = Ts.all[
     _all_yield_same_owned_condition[Ts[0].IteratorOwnedType.Element, _]
 ]()
 
 
 struct _ChainedIterator[*Ts: Iterator](
-    Copyable where AllCopyable[*Ts],
-    Iterable where AllCopyable[*Ts],
+    Copyable where conforms_to(Tuple[*Ts], Copyable),
+    Iterable where conforms_to(Tuple[*Ts], Copyable),
     IterableOwned,
     Iterator,
 ):
@@ -870,7 +899,9 @@ struct _ChainedIterator[*Ts: Iterator](
 
     def __iter__(
         ref self,
-    ) -> Self.IteratorType[origin_of(self)] where AllCopyable[*Self.Ts]:
+    ) -> Self.IteratorType[origin_of(self)] where conforms_to(
+        Tuple[*Self.Ts], Copyable
+    ):
         return self.copy()
 
     def __iter__(var self) -> Self.IteratorOwnedType:
@@ -925,7 +956,7 @@ def chain[
     res._idx = 0
 
     comptime for i in range(res._Iterators.__len__()):
-        UnsafePointer(to=res._iterators[i]).init_pointee_move(
+        Pointer(to=res._iterators[i]).unsafe_write(
             rebind_var[type_of(res._iterators[i])](iter(iterables[i]))
         )
 
@@ -950,9 +981,9 @@ def chain[
     __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(res))
     res._idx = 0
 
-    @parameter
-    def init_elt[idx: Int](var elt: iterables.element_types[idx]):
-        UnsafePointer(to=res._iterators[idx]).init_pointee_move(
+    @__parameter
+    def init_elt[idx: Int](var elt: iterables.Ts[idx]):
+        Pointer(to=res._iterators[idx]).unsafe_write(
             rebind_var[type_of(res._iterators[idx])](iter(elt^))
         )
 

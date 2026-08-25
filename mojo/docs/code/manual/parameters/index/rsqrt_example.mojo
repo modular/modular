@@ -20,7 +20,7 @@ def rsqrt[dt: DType](x: Scalar[dt]) -> Scalar[dt]:
 
 
 def main() raises:
-    var v = Scalar[DType.float16](42)
+    var v = Scalar[.float16](42)
     print(rsqrt(v))
 
 

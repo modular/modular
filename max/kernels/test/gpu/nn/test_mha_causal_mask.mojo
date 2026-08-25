@@ -17,8 +17,8 @@ from std.sys import argv, size_of
 from std.sys.defines import get_defined_int
 
 from std.gpu import *
-from std.gpu.host import DeviceContext
-from std.gpu.host.info import A100, H100, _is_sm10x_gpu
+from max.gpu.host import DeviceContext
+from max.gpu.host.info import A100, H100, _is_sm10x_gpu
 from layout import (
     Idx,
     TileTensor,
@@ -133,10 +133,10 @@ def test[
         row_major((batch_size, seq_len, Idx[num_heads], Idx[depth])),
     )
 
-    @parameter
     @always_inline
-    @__copy_capture(q_device, k_device, v_device, output_device)
-    def kernel_launch(ctx: DeviceContext) raises:
+    def kernel_launch(
+        ctx: DeviceContext,
+    ) raises {var q_device, var k_device, var v_device, var output_device, imm}:
         flash_attention(
             output_device,
             q_device,
@@ -154,7 +154,7 @@ def test[
         # Warmup
         kernel_launch(ctx)
 
-        var nstime = Float64(ctx.execution_time[kernel_launch](nrun)) / Float64(
+        var nstime = Float64(ctx.execution_time(kernel_launch, nrun)) / Float64(
             nrun
         )
         var sectime = nstime / 1000000
@@ -202,17 +202,17 @@ def test[
                 ]()
                 var actual = flash_output_ptr[
                     d + depth * (h + s * num_heads)
-                ].cast[DType.float64]()
+                ].cast[.float64]()
                 if not isclose(actual, expect, atol=1e-5, rtol=rtol):
                     var next_expect = 0 * expect
                     var next_actual = 0 * actual
                     if h < num_heads and s < seq_len and d < depth - 1:
                         next_expect = output_ptr[
                             d + depth * (h + s * num_heads) + 1
-                        ].cast[DType.float64]()
+                        ].cast[.float64]()
                         next_actual = flash_output_ptr[
                             d + depth * (h + s * num_heads) + 1
-                        ].cast[DType.float64]()
+                        ].cast[.float64]()
                     var rerr = abs((actual - expect) / expect)
                     print(
                         "s, h, d = ",
@@ -250,8 +250,8 @@ def test[
         for s in range(seq_len):
             for h in range(num_heads):
                 for d in range(depth):
-                    orig = flash_output_ptr[d + depth * (h + s * num_heads)]
-                    rep = output_ptr[d + depth * (h + s * num_heads)]
+                    var orig = flash_output_ptr[d + depth * (h + s * num_heads)]
+                    var rep = output_ptr[d + depth * (h + s * num_heads)]
                     if rep != orig:
                         print("repeat s h d =", repeat, s, h, d)
                     assert_equal(rep, orig)
@@ -270,7 +270,7 @@ def main() raises:
 
         comptime if depth <= 128:
             # fp32 tf32-fp32 mma
-            test[DType.float32, depth, 1](
+            test[.float32, depth, 1](
                 128, 128, CausalMask(), ctx, is_benchmark=is_benchmark()
             )
 
@@ -502,15 +502,20 @@ def main() raises:
             ](1, 1025, SlidingWindowCausalMask[512](), ctx)
 
         # CausalPaddingMask tests: allocate valid_lengths on device.
-        @parameter
+        @__parameter
         def make_vl(
             val: UInt32, ctx: DeviceContext
         ) raises -> LayoutTensor[
-            DType.uint32, Layout.row_major(1), MutUntrackedOrigin
+            .uint32, Layout.row_major(1), MutUntrackedOrigin
         ]:
-            var dev_buf = ctx.enqueue_create_buffer[DType.uint32](1)
+            var dev_buf = ctx.enqueue_create_buffer[.uint32](1)
             ctx.enqueue_memset(dev_buf, val)
-            return {dev_buf.unsafe_ptr()}
+            # TODO(KERN-3155): This is a bug!
+            # The returned device buffer will have its deleter run
+            # before the return potentially causing a read/writer-after-free.
+            return {
+                dev_buf.unsafe_ptr().unsafe_origin_cast[MutUntrackedOrigin]()
+            }
 
         # valid_length == num_keys (equivalent to CausalMask).
         var vl_128_t = make_vl(128, ctx)

@@ -10,11 +10,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Direct kernel-level tests for `MXFP4MatmulAMD_PreB`.
+"""Direct kernel-level tests for `BlockScaledMatmulAMD_PreB`.
 
 Bypasses the grouped dispatcher (which still passes row-major scales until
 the Phase-2 wiring lands) and exercises the kernel against a per-element
-GPU reference (`mxfp4_block_scaled_matmul_amd`). Scales are preshuffled
+GPU reference (`block_scaled_matmul_amd`). Scales are preshuffled
 host-side via `_preshuffle_scales_host`, mirroring `PreshuffledScaleLoader`'s
 address math.
 
@@ -23,9 +23,9 @@ Usage:
 """
 
 from std.gpu import MAX_THREADS_PER_BLOCK_METADATA, block_idx, global_idx
-from std.gpu.host import DeviceContext, HostBuffer
-from std.gpu.memory import CacheOperation
-from std.gpu.host.info import MI355X
+from max.gpu.host import DeviceContext, HostBuffer
+from max.gpu.memory import CacheOperation
+from max.gpu.host.info import MI355X
 from std.math import ceildiv
 from std.memory import bitcast
 from std.random import random_ui64, seed
@@ -35,7 +35,7 @@ from std.utils import StaticTuple
 from internal_utils import assert_almost_equal
 from layout import Coord, Idx, TensorLayout, TileTensor, row_major
 from linalg.fp4_utils import MXFP4_SF_VECTOR_SIZE
-from linalg.matmul.gpu.amd import MXFP4MatmulAMD_PreB, Shuffler
+from linalg.matmul.gpu.amd import BlockScaledMatmulAMD_PreB, Shuffler
 
 
 # ===----------------------------------------------------------------------=== #
@@ -46,24 +46,27 @@ from linalg.matmul.gpu.amd import MXFP4MatmulAMD_PreB, Shuffler
 
 
 def block_scaled_matmul_ref(
-    a_ptr: UnsafePointer[Scalar[DType.uint8], ImmutAnyOrigin],
-    b_ptr: UnsafePointer[Scalar[DType.uint8], ImmutAnyOrigin],
-    a_scales_ptr: UnsafePointer[Scalar[DType.float8_e8m0fnu], ImmutAnyOrigin],
-    b_scales_ptr: UnsafePointer[Scalar[DType.float8_e8m0fnu], ImmutAnyOrigin],
-    c_ptr: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
-    M: Int,
-    N: Int,
-    K: Int,
+    a_ptr: UnsafePointer[UInt8, ImmutAnyOrigin],
+    b_ptr: UnsafePointer[UInt8, ImmutAnyOrigin],
+    a_scales_ptr: UnsafePointer[Float8_e8m0fnu, ImmutAnyOrigin],
+    b_scales_ptr: UnsafePointer[Float8_e8m0fnu, ImmutAnyOrigin],
+    c_ptr: UnsafePointer[Float32, MutAnyOrigin],
+    M_dev: Int32,
+    N_dev: Int32,
+    K_dev: Int32,
 ):
     """Per-element GPU reference for MXFP4 block-scaled matmul."""
+    var M = Int(M_dev)
+    var N = Int(N_dev)
+    var K = Int(K_dev)
 
     @always_inline
     def cast_fp4x2_to_fp32x2[
         byte_select: Int
-    ](packed: Int32, scale: Float32) -> SIMD[DType.float32, 2]:
+    ](packed: Int32, scale: Float32) -> SIMD[.float32, 2]:
         return llvm_intrinsic[
             "llvm.amdgcn.cvt.scalef32.pk.f32.fp4",
-            SIMD[DType.float32, 2],
+            SIMD[.float32, 2],
         ](packed, scale, Int32(byte_select))
 
     var m = global_idx.x
@@ -80,15 +83,15 @@ def block_scaled_matmul_ref(
     var am_ptr = a_ptr + m * (K // 2)
     var bn_ptr = b_ptr + n * (K // 2)
 
-    var accum = SIMD[DType.float32, 2](0)
+    var accum = SIMD[.float32, 2](0)
 
     for ko in range(k_groups):
-        var a_scale = am_scales_ptr[ko].cast[DType.float32]()
-        var b_scale = bn_scales_ptr[ko].cast[DType.float32]()
+        var a_scale = am_scales_ptr[ko].cast[.float32]()
+        var b_scale = bn_scales_ptr[ko].cast[.float32]()
 
         for ki in range(0, MXFP4_SF_VECTOR_SIZE // 2, 4):
-            var a_data = bitcast[DType.int32, 1](am_ptr.load[width=4](ki))
-            var b_data = bitcast[DType.int32, 1](bn_ptr.load[width=4](ki))
+            var a_data = bitcast[.int32, 1](am_ptr.load[width=4](ki))
+            var b_data = bitcast[.int32, 1](bn_ptr.load[width=4](ki))
 
             comptime for byte_select in range(4):
                 accum += cast_fp4x2_to_fp32x2[byte_select](
@@ -102,7 +105,7 @@ def block_scaled_matmul_ref(
 
 
 # ===----------------------------------------------------------------------=== #
-# Grid wrapper kernel: drives MXFP4MatmulAMD_PreB.run with a 2D grid where
+# Grid wrapper kernel: drives BlockScaledMatmulAMD_PreB.run with a 2D grid where
 # block_idx.x = n_tile and block_idx.y = m_tile (mirrors the dispatcher's
 # direct-mode launch).
 # ===----------------------------------------------------------------------=== #
@@ -111,7 +114,7 @@ def block_scaled_matmul_ref(
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](
         Int32(
-            MXFP4MatmulAMD_PreB[
+            BlockScaledMatmulAMD_PreB[
                 BM=BM, BN=BN, BK_ELEMS=BK_ELEMS, WN=WN, b_prefetch=b_prefetch
             ].num_threads
         )
@@ -138,12 +141,12 @@ def _preb_grid_kernel[
     K_BYTES: Int,
 ](
     c: TileTensor[mut=True, out_dtype, LayoutC, MutAnyOrigin],
-    a: TileTensor[DType.uint8, LayoutA, ImmutAnyOrigin],
-    b_pre: TileTensor[DType.uint8, LayoutBPre, ImmutAnyOrigin],
-    sfa: TileTensor[DType.float8_e8m0fnu, LayoutSFA, ImmutAnyOrigin],
-    sfb: TileTensor[DType.float8_e8m0fnu, LayoutSFB, ImmutAnyOrigin],
+    a: TileTensor[.uint8, LayoutA, ImmutAnyOrigin],
+    b_pre: TileTensor[.uint8, LayoutBPre, ImmutAnyOrigin],
+    sfa: TileTensor[.float8_e8m0fnu, LayoutSFA, ImmutAnyOrigin],
+    sfb: TileTensor[.float8_e8m0fnu, LayoutSFB, ImmutAnyOrigin],
 ):
-    MXFP4MatmulAMD_PreB[
+    BlockScaledMatmulAMD_PreB[
         BM=BM,
         BN=BN,
         BK_ELEMS=BK_ELEMS,
@@ -228,16 +231,12 @@ def _test_case[
     # Scale buffers held as uint8 throughout (E8M0 is byte-equivalent) so
     # we can call `Shuffler[1].preshuffle_scale_4d` directly; we bitcast
     # back to float8_e8m0fnu at the reference / preb kernel call sites.
-    var a_h = ctx.enqueue_create_host_buffer[DType.uint8](M_static * packed_K)
-    var b_h = ctx.enqueue_create_host_buffer[DType.uint8](N_static * packed_K)
-    var sfa_h = ctx.enqueue_create_host_buffer[DType.uint8](M_static * scale_K)
-    var sfb_h = ctx.enqueue_create_host_buffer[DType.uint8](N_static * scale_K)
-    var sfa_pre_h = ctx.enqueue_create_host_buffer[DType.uint8](
-        padded_M * scale_K
-    )
-    var sfb_pre_h = ctx.enqueue_create_host_buffer[DType.uint8](
-        N_static * scale_K
-    )
+    var a_h = ctx.enqueue_create_host_buffer[.uint8](M_static * packed_K)
+    var b_h = ctx.enqueue_create_host_buffer[.uint8](N_static * packed_K)
+    var sfa_h = ctx.enqueue_create_host_buffer[.uint8](M_static * scale_K)
+    var sfb_h = ctx.enqueue_create_host_buffer[.uint8](N_static * scale_K)
+    var sfa_pre_h = ctx.enqueue_create_host_buffer[.uint8](padded_M * scale_K)
+    var sfb_pre_h = ctx.enqueue_create_host_buffer[.uint8](N_static * scale_K)
     ctx.synchronize()
 
     for i in range(M_static * packed_K):
@@ -264,15 +263,15 @@ def _test_case[
     )
 
     # ---- Device buffers + upload ----
-    var a_d = ctx.enqueue_create_buffer[DType.uint8](M_static * packed_K)
-    var b_d = ctx.enqueue_create_buffer[DType.uint8](N_static * packed_K)
-    var b_pre_d = ctx.enqueue_create_buffer[DType.uint8](N_static * packed_K)
-    var sfa_d = ctx.enqueue_create_buffer[DType.uint8](M_static * scale_K)
-    var sfb_d = ctx.enqueue_create_buffer[DType.uint8](N_static * scale_K)
-    var sfa_pre_d = ctx.enqueue_create_buffer[DType.uint8](padded_M * scale_K)
-    var sfb_pre_d = ctx.enqueue_create_buffer[DType.uint8](N_static * scale_K)
-    var c_d = ctx.enqueue_create_buffer[DType.float32](M_static * N_static)
-    var c_ref_d = ctx.enqueue_create_buffer[DType.float32](M_static * N_static)
+    var a_d = ctx.enqueue_create_buffer[.uint8](M_static * packed_K)
+    var b_d = ctx.enqueue_create_buffer[.uint8](N_static * packed_K)
+    var b_pre_d = ctx.enqueue_create_buffer[.uint8](N_static * packed_K)
+    var sfa_d = ctx.enqueue_create_buffer[.uint8](M_static * scale_K)
+    var sfb_d = ctx.enqueue_create_buffer[.uint8](N_static * scale_K)
+    var sfa_pre_d = ctx.enqueue_create_buffer[.uint8](padded_M * scale_K)
+    var sfb_pre_d = ctx.enqueue_create_buffer[.uint8](N_static * scale_K)
+    var c_d = ctx.enqueue_create_buffer[.float32](M_static * N_static)
+    var c_ref_d = ctx.enqueue_create_buffer[.float32](M_static * N_static)
     c_d.enqueue_fill(Float32(0.0))
     c_ref_d.enqueue_fill(Float32(0.0))
 
@@ -302,12 +301,12 @@ def _test_case[
     ctx.enqueue_function[block_scaled_matmul_ref](
         a_d,
         b_d,
-        sfa_d.unsafe_ptr().bitcast[Scalar[DType.float8_e8m0fnu]](),
-        sfb_d.unsafe_ptr().bitcast[Scalar[DType.float8_e8m0fnu]](),
+        sfa_d.unsafe_ptr().bitcast[Float8_e8m0fnu](),
+        sfb_d.unsafe_ptr().bitcast[Float8_e8m0fnu](),
         c_ref_d,
-        M_static,
-        N_static,
-        K_static,
+        Int32(M_static),
+        Int32(N_static),
+        Int32(K_static),
         grid_dim=(ceildiv(M_static, BLOCK_DIM), ceildiv(N_static, BLOCK_DIM)),
         block_dim=(BLOCK_DIM, BLOCK_DIM),
     )
@@ -323,11 +322,11 @@ def _test_case[
     # layout — the kernel uses the underlying bytes through
     # `PreshuffledScaleLoader`, the TileTensor layout is unused.
     var sfa_tt = TileTensor[mut=False](
-        sfa_pre_d.unsafe_ptr().bitcast[Scalar[DType.float8_e8m0fnu]](),
+        sfa_pre_d.unsafe_ptr().bitcast[Float8_e8m0fnu](),
         row_major[padded_M, scale_K](),
     )
     var sfb_tt = TileTensor[mut=False](
-        sfb_pre_d.unsafe_ptr().bitcast[Scalar[DType.float8_e8m0fnu]](),
+        sfb_pre_d.unsafe_ptr().bitcast[Float8_e8m0fnu](),
         row_major[N_static, scale_K](),
     )
     var c_tt = TileTensor[mut=True](c_d, row_major[M_static, N_static]())
@@ -343,7 +342,7 @@ def _test_case[
         cluster_drain_sched,
         mfma_cluster,
         deep_prime,
-        DType.float32,
+        .float32,
         type_of(c_tt).LayoutType,
         type_of(a_tt).LayoutType,
         type_of(b_pre_tt).LayoutType,
@@ -359,17 +358,15 @@ def _test_case[
         sfa_tt,
         sfb_tt,
         grid_dim=(N_static // BN, ceildiv(M_static, BM)),
-        block_dim=MXFP4MatmulAMD_PreB[
+        block_dim=BlockScaledMatmulAMD_PreB[
             BM=BM, BN=BN, BK_ELEMS=BK_ELEMS, WN=WN, b_prefetch=b_prefetch
         ].num_threads,
     )
     ctx.synchronize()
 
     # ---- Compare ----
-    var c_h = ctx.enqueue_create_host_buffer[DType.float32](M_static * N_static)
-    var c_ref_h = ctx.enqueue_create_host_buffer[DType.float32](
-        M_static * N_static
-    )
+    var c_h = ctx.enqueue_create_host_buffer[.float32](M_static * N_static)
+    var c_ref_h = ctx.enqueue_create_host_buffer[.float32](M_static * N_static)
     ctx.enqueue_copy(c_h, c_d)
     ctx.enqueue_copy(c_ref_h, c_ref_d)
     ctx.synchronize()
@@ -406,7 +403,7 @@ def main() raises:
         ctx.default_device_info == MI355X
     ), "test_mxfp4_matmul_amd_preb requires MI355X"
 
-    print("===> MXFP4MatmulAMD_PreB — direct kernel correctness")
+    print("===> BlockScaledMatmulAMD_PreB — direct kernel correctness")
 
     # flydsl stage1 champion config: tile_m=32/n=128/k=256, 4 waves (WN=32),
     # b_nt=2 (STREAMING), 2-stage pipeline, K=7168 (28 K-steps). Set

@@ -11,12 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.collections import OwnedKwargsDict
 from std.os import abort
 
 from std.python import Python, PythonObject
 from std.python._cpython import PyObjectPtr, Py_ssize_t
-from std.python.bindings import PythonModuleBuilder
+from std.python.bindings import PythonModuleBuilder, raise_python_exception
 
 
 @export
@@ -217,9 +216,7 @@ def takes_three(list_obj: PythonObject, obj: PythonObject, obj2: PythonObject):
 # ===----------------------------------------------------------------------=== #
 
 
-def sum_kwargs_ints(
-    kwargs: OwnedKwargsDict[PythonObject],
-) raises -> PythonObject:
+def sum_kwargs_ints(var **kwargs: PythonObject) raises -> PythonObject:
     """Test function that takes kwargs, converts them to Ints, adds them together and returns the sum.
     """
     var total = 0
@@ -231,14 +228,14 @@ def sum_kwargs_ints(
 
 
 def sum_pos_arg_and_kwargs(
-    arg1: PythonObject, kwargs: OwnedKwargsDict[PythonObject]
+    arg1: PythonObject, var **kwargs: PythonObject
 ) raises -> PythonObject:
-    return PythonObject(Int(py=arg1) + Int(py=sum_kwargs_ints(kwargs)))
+    return PythonObject(Int(py=arg1) + Int(py=sum_kwargs_ints(**kwargs^)))
 
 
 def fastcall_concat(
     py_self: PyObjectPtr,
-    args: UnsafePointer[PyObjectPtr, MutUntrackedOrigin],
+    args: Pointer[PyObjectPtr, MutUntrackedOrigin],
     nargs: Py_ssize_t,
 ) abi("C") -> PyObjectPtr:
     """Hand-written METH_FASTCALL wrapper that concatenates `nargs` strings.
@@ -249,14 +246,10 @@ def fastcall_concat(
     """
     try:
         var result = PythonObject("")
+        # `args` is non-null per the vectorcall protocol (PEP 590), even when
+        # `nargs == 0`; read each argument straight out of the borrowed array.
         for i in range(Int(nargs)):
-            result = result + PythonObject(from_borrowed=args[i])
+            result = result + PythonObject(from_borrowed=args[unsafe_offset=i])
         return result.steal_data()
     except e:
-        ref cpy = Python().cpython()
-        var error_message = String(e)
-        var error_type = cpy.get_error_global("PyExc_Exception")
-        cpy.PyErr_SetString(
-            error_type, error_message.as_c_string_slice().unsafe_ptr()
-        )
-        return PyObjectPtr()
+        return raise_python_exception(e)

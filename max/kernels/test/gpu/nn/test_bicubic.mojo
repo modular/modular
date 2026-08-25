@@ -13,7 +13,7 @@
 
 from std.math import isclose
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import Coord, TileTensor, coord, row_major
 
 from nn.bicubic import cpu_bicubic_kernel, gpu_bicubic_kernel, resize_bicubic
@@ -679,7 +679,7 @@ def test_large_image_gpu_launch[dtype: DType](ctx: DeviceContext) raises:
         dtype,
         output_origin=output_dev_nd.origin,
         OutputLayoutType=output_dev_nd.LayoutType,
-        input_origin=ImmutOrigin(input_dev_nd.origin),
+        input_origin=ImmOrigin(input_dev_nd.origin),
         InputLayoutType=input_dev_nd.LayoutType,
     ]
 
@@ -718,10 +718,10 @@ def test_large_image_gpu_launch[dtype: DType](ctx: DeviceContext) raises:
 
 def main() raises:
     with DeviceContext() as ctx:
-        test_bicubic_kernel[DType.float32,](  # data_type
-            coord[1, 3, 5, 5](),  # input  (NCHW)
-            coord[1, 3, 10, 10](),  # output (NCHW)
+        test_bicubic_kernel[.float32,](  # data_type
+            coord[1, 3, 5, 5],  # input  (NCHW)
+            coord[1, 3, 10, 10],  # output (NCHW)
             ctx,
         )
 
-        test_large_image_gpu_launch[DType.float32](ctx)
+        test_large_image_gpu_launch[.float32](ctx)

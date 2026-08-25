@@ -27,10 +27,9 @@ from layout.tile_layout import (
 from layout.tile_io import copy_dram_to_sram_async
 from layout.coord import ComptimeInt, Coord, Idx
 from std.gpu import block_idx, thread_idx
-from std.gpu.host import DeviceContext
-from std.gpu.sync import barrier
-from std.gpu.memory import (
-    AddressSpace,
+from max.gpu.host import DeviceContext
+from max.gpu.sync import barrier
+from max.gpu.memory import (
     async_copy_commit_group,
     async_copy_wait_all,
     external_memory,
@@ -57,12 +56,10 @@ def _make_view[
         stride_types=ResultLayout._stride_types,
     ],
     ImmutAnyOrigin,
-    linear_idx_type=DType.int64,
+    linear_idx_type=.int64,
 ]:
     var immut_ptr = (
-        ptr.address_space_cast[AddressSpace.GENERIC]()
-        .as_immutable()
-        .as_unsafe_any_origin()
+        ptr.address_space_cast[.GENERIC]().as_imm().as_unsafe_any_origin()
     )
     comptime ConcLayout = InternalLayout[
         shape_types=ResultLayout._shape_types,
@@ -72,15 +69,11 @@ def _make_view[
     var stride_c = Coord[*ConcLayout.stride_types]()
     comptime for i in range(rank):
         comptime if not shape_c.element_types[i].is_static_value:
-            shape_c[i] = rebind[shape_c.element_types[i]](
-                Scalar[DType.int64](shape[i])
-            )
+            shape_c[i] = rebind[shape_c.element_types[i]](Int64(shape[i]))
         comptime if not stride_c.element_types[i].is_static_value:
-            stride_c[i] = rebind[stride_c.element_types[i]](
-                Scalar[DType.int64](strides[i])
-            )
+            stride_c[i] = rebind[stride_c.element_types[i]](Int64(strides[i]))
     return TileTensor[
-        dtype, ConcLayout, ImmutAnyOrigin, linear_idx_type=DType.int64
+        dtype, ConcLayout, ImmutAnyOrigin, linear_idx_type=.int64
     ](ptr=immut_ptr, layout=ConcLayout(shape_c, stride_c))
 
 
@@ -115,15 +108,15 @@ comptime copy_layout = tt_row_major[
 
 @__name(t"scout_bounded")
 def scout_bounded(
-    q_tt: TileTensor[
-        dtype, QTTLayout, ImmutAnyOrigin, linear_idx_type=DType.int64
-    ],
+    q_tt: TileTensor[dtype, QTTLayout, ImmutAnyOrigin, linear_idx_type=.int64],
     out_buf: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    valid_rows: Int,
+    valid_rows_dev: Int32,
 ):
+    # `Int` is not device-passable; widen the fixed-width arg.
+    var valid_rows = Int(valid_rows_dev)
     # SMEM dst: [BM, depth] row-major.
     var smem = external_memory[
-        Scalar[dtype], address_space=AddressSpace.SHARED, alignment=16
+        Scalar[dtype], address_space=.SHARED, alignment=16
     ]()
     var q_smem = TileTensor(smem, tt_row_major[BM, depth]())
 
@@ -177,7 +170,7 @@ def main() raises:
         ctx.enqueue_function[scout_bounded](
             q_view,
             out.unsafe_ptr(),
-            valid_rows,
+            Int32(valid_rows),
             grid_dim=1,
             block_dim=num_threads,
             shared_mem_bytes=BM * depth * size_of[dtype](),

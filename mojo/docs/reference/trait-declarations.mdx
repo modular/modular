@@ -73,6 +73,8 @@ about a type's properties, supporting compile-time optimizations.
 
 A trait body can contain these elements:
 
+<!-- markdownlint-disable MD013 -->
+
 | Element                           | Syntax                  | Role                                     |
 |-----------------------------------|-------------------------|------------------------------------------|
 | Required method                   | `...` body              | Conforming types must implement          |
@@ -80,6 +82,8 @@ A trait body can contain these elements:
 | Comptime member - associated type | `comptime Name: Trait`  | Conforming types provide a concrete type |
 | Comptime member - required value  | `comptime name: Type`   | Conforming types provide a value         |
 | Comptime member - constant        | `comptime name = value` | Shared across all conforming types       |
+
+<!-- markdownlint-enable MD013 -->
 
 ## Trait and member names
 
@@ -90,6 +94,8 @@ describe a capability: `Writable`, `Hashable`, `Copyable`.
 
 ### Naming conventions
 
+<!-- markdownlint-disable MD013 -->
+
 | Element            | Naming                                                             | Notes                                                                    |
 |--------------------|--------------------------------------------------------------------|--------------------------------------------------------------------------|
 | Trait name         | `PascalCase`                                                       | Capabilities gained by conformance: `Equatable`, `Copyable`, `PathLike`. |
@@ -98,7 +104,10 @@ describe a capability: `Writable`, `Hashable`, `Copyable`.
 | `comptime` members | Trait compositions are `PascalCase`. Values are `lower_snake_case` | Describes use: `KeyElement`, `element_bitwidth`                          |
 | Associated type    | `PascalCase`                                                       | Describes use: `Element`, `Iterator`                                     |
 
+<!-- markdownlint-enable MD013 -->
+
 :::caution
+
 When defining traits, avoid private member names with single or double
 underscore prefixes. It may cause required members to be hidden in
 generated documentation from trait users. For similar reasons, don't use
@@ -106,6 +115,7 @@ generated documentation from trait users. For similar reasons, don't use
 
 The standard library has a small number of exceptions for required trait
 elements known to the compiler.
+
 :::
 
 ## Methods
@@ -222,7 +232,7 @@ type `Associated`:
 
 ```mojo
 trait Boxable:
-    comptime Associated: Writable & Copyable & ImplicitlyDeletable
+    comptime Associated: Writable & Copyable & Deinitable
 
     def unbox(self) -> Self.Associated:
         ...
@@ -239,14 +249,14 @@ def main():
     var box = ConcreteBox(value="Hello")
     var unboxed = box.unbox()  # Known to be Copyable
     print(unboxed)             # Known to be Writable
-    _ = unboxed^               # Known to be ImplicitlyDeletable
+    _ = unboxed^               # Known to be Deinitable
 ```
 
-An associated type can also be assigned from call sites with a generic
-parameter. This lets the trait work across a family of types:
+Associated types can be assigned from call sites. This lets a trait work
+across type families:
 
 ```mojo
-comptime Base = Copyable & ImplicitlyDeletable & Writable
+comptime Base = Copyable & Deinitable & Writable
 
 @fieldwise_init
 struct Box[T: Base](Boxable):
@@ -293,7 +303,7 @@ the `Element` associated type and a named trait composition:
 ```mojo
 from std.sys.info import bit_width_of
 
-comptime BaseElement = Copyable & ImplicitlyDeletable & Writable
+comptime BaseElement = Copyable & Deinitable & Writable
 
 trait Test:
     comptime Element: RegisterPassable
@@ -378,7 +388,7 @@ trait PrettyPrintable(Printable):
         ...
 
 @fieldwise_init
-struct Box[T: Copyable & Writable & ImplicitlyDeletable](PrettyPrintable):
+struct Box[T: Copyable & Writable & Deinitable](PrettyPrintable):
     var value: Self.T
 
     def to_string(self) -> String:
@@ -421,6 +431,45 @@ requirements.
 Every trait implicitly refines `AnyType`.
 :::
 
+## `Some[]` as constraint sugar
+
+`Some[Trait(s)]` is shorthand for a type parameter constrained to that
+trait or composition. It's syntax sugar, not a new mechanism. It moves
+the constraint onto the argument instead of declaring a parameter in one
+place and using it in another. The compiler infers the concrete type at
+the call site, just as it does for an explicit parameter. If inference
+fails, the compiler asks for an explicit parameter instead.
+
+<!-- markdownlint-disable MD013 -->
+
+| Context             | With a parameter                                 | With `Some`                                   |
+|---------------------|--------------------------------------------------|-----------------------------------------------|
+| Argument            | `def foo[T: Intable, //](x: T)`                  | `def foo(x: Some[Intable])`                   |
+| Function type       | `def f[F: def(Int) -> None](func: F)`            | `def f(func: Some[def(Int) -> None])`         |
+| Variadic            | `def show[*Ts: Writable](*pack: *Ts)`            | `def show(*pack: *SomeTypeList[Writable])`    |
+| Operator overload   | `def __getitem__[I: Indexer, //](self, idx: I)`  | `def __getitem__(self, idx: Some[Indexer])`   |
+
+<!-- markdownlint-enable MD013 -->
+
+### Where `Some` doesn't work
+
+The compiler can't infer a concrete type for a struct field:
+
+```mojo
+@fieldwise_init
+struct Struct(Writable):
+    var x: Some[Copyable & Deinitable & Writable]
+    # Error: a `Some` struct field has no concrete type to infer
+```
+
+Use an explicit type parameter instead:
+
+```mojo
+@fieldwise_init
+struct Struct[T: Copyable & Deinitable & Writable](Writable):
+    var x: Self.T
+```
+
 ## Trait restrictions
 
 Traits don't support parameter lists:
@@ -460,9 +509,7 @@ trait Sized:
 struct SizedStruct[T: Copyable](Sized):
     var backing_store: List[Self.T]
 
-# Error: 'SizedStruct[T]' does not implement all requirements
-# for 'Sized'
-# Note: required function '__len__' is not implemented
+# Error about missing a trait's required function '__len__'.
 ```
 
 ### Missing required members
@@ -487,9 +534,8 @@ trait Taggable:
 
 @fieldwise_init
 struct Widget(Taggable):
-    comptime Tag = Int
-    # Note: comptime member 'Tag' type Int does not conform
-    # to trait's required type Sized
+    comptime Tag = Bool
+    # Error since Bool is not Sized
 ```
 
 ### Provided method conflicts
@@ -510,7 +556,7 @@ trait Welcomer:
 @fieldwise_init
 struct Host(Greeter, Welcomer):
     pass
-    # Error: trait method requirement greet has conflicting
-    # default implementations in Greeter and Welcomer; you
-    # must implement it manually
+    # Error about a trait method requirement greet having conflicting
+    # default implementations in Greeter and Welcomer; you must
+    # implement it manually
 ```

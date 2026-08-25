@@ -23,7 +23,7 @@ This file tests various code paths in nn/concat.mojo:
 6. Edge cases: empty outer dims, single element inputs, etc.
 """
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import Coord, TensorLayout, TileTensor, row_major
 from nn.concat import (
     _concat_inner,
@@ -70,9 +70,9 @@ def test_concat_inner_all_outer_dims_singleton() raises:
     comptime l2 = row_major[1, 1, 5, 4]()
     comptime out_layout = row_major[1, 1, 8, 4]()
 
-    var x1_stack = InlineArray[Scalar[dtype], l1.product()](uninitialized=True)
-    var x2_stack = InlineArray[Scalar[dtype], l2.product()](uninitialized=True)
-    var out_stack = InlineArray[Scalar[dtype], out_layout.product()](
+    var x1_stack = Array[Scalar[dtype], l1.product()](uninitialized=True)
+    var x2_stack = Array[Scalar[dtype], l2.product()](uninitialized=True)
+    var out_stack = Array[Scalar[dtype], out_layout.product()](
         uninitialized=True
     )
 
@@ -85,8 +85,8 @@ def test_concat_inner_all_outer_dims_singleton() raises:
     for i in range(l2.product()):
         x2.raw_store(i, Float32(i + 400))
 
-    var x1_dyn = x1.make_dynamic[DType.int64]()
-    var x2_dyn = x2.make_dynamic[DType.int64]()
+    var x1_dyn = x1.make_dynamic[.int64]()
+    var x2_dyn = x2.make_dynamic[.int64]()
 
     var input_vec = List[TileTensor[dtype, x1_dyn.LayoutType, ImmutAnyOrigin]](
         capacity=2
@@ -94,7 +94,7 @@ def test_concat_inner_all_outer_dims_singleton() raises:
     input_vec.append(x1_dyn.as_unsafe_any_origin().as_immut())
     input_vec.append(x2_dyn.as_unsafe_any_origin().as_immut())
 
-    _concat_inner[dtype, None](output.make_dynamic[DType.int64](), input_vec)
+    _concat_inner[dtype, None](output.make_dynamic[.int64](), input_vec)
 
     # Verify contiguous concatenation
     for i in range(l1.product()):
@@ -124,10 +124,10 @@ def test_concat_serial_general_case() raises:
     comptime l3 = row_major[4, 4, 5]()
     comptime out_layout = row_major[4, 9, 5]()
 
-    var x1_stack = InlineArray[Scalar[dtype], l1.product()](uninitialized=True)
-    var x2_stack = InlineArray[Scalar[dtype], l2.product()](uninitialized=True)
-    var x3_stack = InlineArray[Scalar[dtype], l3.product()](uninitialized=True)
-    var out_stack = InlineArray[Scalar[dtype], out_layout.product()](
+    var x1_stack = Array[Scalar[dtype], l1.product()](uninitialized=True)
+    var x2_stack = Array[Scalar[dtype], l2.product()](uninitialized=True)
+    var x3_stack = Array[Scalar[dtype], l3.product()](uninitialized=True)
+    var out_stack = Array[Scalar[dtype], out_layout.product()](
         uninitialized=True
     )
 
@@ -143,9 +143,9 @@ def test_concat_serial_general_case() raises:
     for i in range(l3.product()):
         x3.raw_store(i, Float32(i + 600))
 
-    var x1_dyn = x1.make_dynamic[DType.int64]()
-    var x2_dyn = x2.make_dynamic[DType.int64]()
-    var x3_dyn = x3.make_dynamic[DType.int64]()
+    var x1_dyn = x1.make_dynamic[.int64]()
+    var x2_dyn = x2.make_dynamic[.int64]()
+    var x3_dyn = x3.make_dynamic[.int64]()
 
     var input_vec = List[TileTensor[dtype, x1_dyn.LayoutType, ImmutAnyOrigin]](
         capacity=3
@@ -154,9 +154,7 @@ def test_concat_serial_general_case() raises:
     input_vec.append(x2_dyn.as_unsafe_any_origin().as_immut())
     input_vec.append(x3_dyn.as_unsafe_any_origin().as_immut())
 
-    _concat_serial[dtype, None](
-        output.make_dynamic[DType.int64](), axis, input_vec
-    )
+    _concat_serial[dtype, None](output.make_dynamic[.int64](), axis, input_vec)
 
     # Verify concatenation
     for i in range(4):
@@ -192,9 +190,9 @@ def test_concat_parallel_large() raises:
     comptime l2 = row_major[256, 512]()
     comptime out_layout = row_major[512, 512]()
 
-    var x1_stack = InlineArray[Scalar[dtype], l1.product()](uninitialized=True)
-    var x2_stack = InlineArray[Scalar[dtype], l2.product()](uninitialized=True)
-    var out_stack = InlineArray[Scalar[dtype], out_layout.product()](
+    var x1_stack = Array[Scalar[dtype], l1.product()](uninitialized=True)
+    var x2_stack = Array[Scalar[dtype], l2.product()](uninitialized=True)
+    var out_stack = Array[Scalar[dtype], out_layout.product()](
         uninitialized=True
     )
 
@@ -208,8 +206,8 @@ def test_concat_parallel_large() raises:
             x1[i, j] = Float32(i)
             x2[i, j] = Float32(i + 256)
 
-    var x1_dyn = x1.make_dynamic[DType.int64]()
-    var x2_dyn = x2.make_dynamic[DType.int64]()
+    var x1_dyn = x1.make_dynamic[.int64]()
+    var x2_dyn = x2.make_dynamic[.int64]()
 
     var input_vec = List[TileTensor[dtype, x1_dyn.LayoutType, ImmutAnyOrigin]](
         capacity=2
@@ -218,7 +216,7 @@ def test_concat_parallel_large() raises:
     input_vec.append(x2_dyn.as_unsafe_any_origin().as_immut())
 
     _concat_parallel[dtype, None](
-        output.make_dynamic[DType.int64](), axis, input_vec
+        output.make_dynamic[.int64](), axis, input_vec
     )
 
     # Sample verification (checking all elements would be too slow)
@@ -244,7 +242,7 @@ def test_fused_concat_cpu() raises:
     comptime input_shape_1 = IndexList[rank](2, 5, 4)
     comptime output_shape = IndexList[rank](2, 8, 4)
 
-    var out_stack = InlineArray[Scalar[dtype], product(output_shape, rank)](
+    var out_stack = Array[Scalar[dtype], product(output_shape, rank)](
         uninitialized=True
     )
     var output = TileTensor(out_stack, row_major(Coord(output_shape))).fill(
@@ -252,7 +250,7 @@ def test_fused_concat_cpu() raises:
     )
 
     # Input lambda: generates data based on input index
-    @parameter
+    @__parameter
     @always_inline
     def input_fn[
         input_index: Int, width: Int, _rank: Int, alignment: Int = 1
@@ -267,17 +265,17 @@ def test_fused_concat_cpu() raises:
             )
 
     # Output epilogue: multiply by 2
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(output)
     def output_fn[
-        c_type: DType, _rank: Int, width: SIMDSize, *, alignment: Int
+        c_type: DType, _rank: Int, width: SIMDLength, *, alignment: Int
     ](indices: IndexList[_rank], val: SIMD[c_type, width]):
         var coord = Coord(indices)
         comptime assert output.flat_rank >= coord.flat_rank
         output.store[width=width](coord, rebind[SIMD[dtype, width]](val * 2))
 
-    var output_dyn = output.make_dynamic[DType.int64]()
+    var output_dyn = output.make_dynamic[.int64]()
 
     fused_concat[
         dtype,
@@ -326,14 +324,14 @@ def test_concat_shape() raises:
     comptime l1 = row_major[2, 3, 4]()
     comptime l2 = row_major[2, 5, 4]()
 
-    var x1_stack = InlineArray[Scalar[dtype], l1.product()](uninitialized=True)
-    var x2_stack = InlineArray[Scalar[dtype], l2.product()](uninitialized=True)
+    var x1_stack = Array[Scalar[dtype], l1.product()](uninitialized=True)
+    var x2_stack = Array[Scalar[dtype], l2.product()](uninitialized=True)
 
     var x1 = TileTensor(x1_stack, l1)
     var x2 = TileTensor(x2_stack, l2)
 
-    var x1_dyn = x1.make_dynamic[DType.int64]()
-    var x2_dyn = x2.make_dynamic[DType.int64]()
+    var x1_dyn = x1.make_dynamic[.int64]()
+    var x2_dyn = x2.make_dynamic[.int64]()
 
     var input_vec = List[TileTensor[dtype, x1_dyn.LayoutType, ImmutAnyOrigin]](
         capacity=2
@@ -362,9 +360,9 @@ def test_concat_with_epilogue() raises:
     comptime l2 = row_major[5, 8]()
     comptime out_layout = row_major[8, 8]()
 
-    var x1_stack = InlineArray[Scalar[dtype], l1.product()](uninitialized=True)
-    var x2_stack = InlineArray[Scalar[dtype], l2.product()](uninitialized=True)
-    var out_stack = InlineArray[Scalar[dtype], out_layout.product()](
+    var x1_stack = Array[Scalar[dtype], l1.product()](uninitialized=True)
+    var x2_stack = Array[Scalar[dtype], l2.product()](uninitialized=True)
+    var out_stack = Array[Scalar[dtype], out_layout.product()](
         uninitialized=True
     )
 
@@ -377,8 +375,8 @@ def test_concat_with_epilogue() raises:
     for i in range(l2.product()):
         x2.raw_store(i, Float32(i + 100))
 
-    var x1_dyn = x1.make_dynamic[DType.int64]()
-    var x2_dyn = x2.make_dynamic[DType.int64]()
+    var x1_dyn = x1.make_dynamic[.int64]()
+    var x2_dyn = x2.make_dynamic[.int64]()
 
     var input_tuple = StaticTuple[
         TileTensor[dtype, x1_dyn.LayoutType, ImmutAnyOrigin],
@@ -388,18 +386,18 @@ def test_concat_with_epilogue() raises:
         x2_dyn.as_unsafe_any_origin().as_immut(),
     )
 
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(output)
     def epilogue_add_10[
-        c_type: DType, _rank: Int, width: SIMDSize, *, alignment: Int
+        c_type: DType, _rank: Int, width: SIMDLength, *, alignment: Int
     ](indices: IndexList[_rank], val: SIMD[c_type, width]):
         var coord = Coord(indices)
         comptime assert output.flat_rank >= coord.flat_rank
         output.store[width=width](coord, rebind[SIMD[dtype, width]](val + 10))
 
     concat[dtype, epilogue_fn=epilogue_add_10](
-        output.make_dynamic[DType.int64](),
+        output.make_dynamic[.int64](),
         axis,
         input_tuple,
         DeviceContext(api="cpu"),
@@ -437,12 +435,12 @@ def test_concat_many_inputs() raises:
     comptime l5 = row_major[4, 5]()
     comptime out_layout = row_major[4, 15]()
 
-    var x1_stack = InlineArray[Scalar[dtype], l1.product()](uninitialized=True)
-    var x2_stack = InlineArray[Scalar[dtype], l2.product()](uninitialized=True)
-    var x3_stack = InlineArray[Scalar[dtype], l3.product()](uninitialized=True)
-    var x4_stack = InlineArray[Scalar[dtype], l4.product()](uninitialized=True)
-    var x5_stack = InlineArray[Scalar[dtype], l5.product()](uninitialized=True)
-    var out_stack = InlineArray[Scalar[dtype], out_layout.product()](
+    var x1_stack = Array[Scalar[dtype], l1.product()](uninitialized=True)
+    var x2_stack = Array[Scalar[dtype], l2.product()](uninitialized=True)
+    var x3_stack = Array[Scalar[dtype], l3.product()](uninitialized=True)
+    var x4_stack = Array[Scalar[dtype], l4.product()](uninitialized=True)
+    var x5_stack = Array[Scalar[dtype], l5.product()](uninitialized=True)
+    var out_stack = Array[Scalar[dtype], out_layout.product()](
         uninitialized=True
     )
 
@@ -453,21 +451,21 @@ def test_concat_many_inputs() raises:
     var x5 = TileTensor(x5_stack, l5).fill(5)
     var output = TileTensor(out_stack, out_layout).fill(-1)
 
-    var x1_dyn = x1.make_dynamic[DType.int64]()
+    var x1_dyn = x1.make_dynamic[.int64]()
 
     var input_tuple = StaticTuple[
         TileTensor[dtype, x1_dyn.LayoutType, ImmutAnyOrigin],
         5,
     ](
         x1_dyn.as_unsafe_any_origin().as_immut(),
-        x2.make_dynamic[DType.int64]().as_unsafe_any_origin().as_immut(),
-        x3.make_dynamic[DType.int64]().as_unsafe_any_origin().as_immut(),
-        x4.make_dynamic[DType.int64]().as_unsafe_any_origin().as_immut(),
-        x5.make_dynamic[DType.int64]().as_unsafe_any_origin().as_immut(),
+        x2.make_dynamic[.int64]().as_unsafe_any_origin().as_immut(),
+        x3.make_dynamic[.int64]().as_unsafe_any_origin().as_immut(),
+        x4.make_dynamic[.int64]().as_unsafe_any_origin().as_immut(),
+        x5.make_dynamic[.int64]().as_unsafe_any_origin().as_immut(),
     )
 
     concat[dtype](
-        output.make_dynamic[DType.int64](),
+        output.make_dynamic[.int64](),
         axis,
         input_tuple,
         DeviceContext(api="cpu"),

@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import (
     Coord,
     Layout,
@@ -50,8 +50,8 @@ def matrix_band_part[
         cond_type, Layout.row_major(1), MutAnyOrigin
     ].stack_allocation()
 
-    num_lower_buf[0] = Scalar[DType.int](num_lower)
-    num_upper_buf[0] = Scalar[DType.int](num_upper)
+    num_lower_buf[0] = Int(num_lower)
+    num_upper_buf[0] = Int(num_upper)
     exclude_buf[0] = exclude
     comptime rank = input.rank
     var input_shape: IndexList[rank] = to_index_list[rank](input.layout.shape)
@@ -111,7 +111,7 @@ def test_matrix_band_part() raises:
     input[2, 2] = 9
 
     matrix_band_part(
-        input.get_immutable(),
+        input.as_imm(),
         output,
         num_lower=0,
         num_upper=-1,
@@ -129,7 +129,7 @@ def test_matrix_band_part() raises:
     assert_equal(output[2, 2], 9)
 
     matrix_band_part(
-        input.get_immutable(),
+        input.as_imm(),
         output,
         num_lower=0,
         num_upper=-1,

@@ -18,6 +18,7 @@ automatically handles `Bencher` setup and the `keep()` calls needed to prevent
 optimization, supporting functions with 0-10 arguments.
 """
 
+from .compiler import keep
 from .bencher import Bench, Bencher, BenchId, ThroughputMeasure
 
 
@@ -71,18 +72,16 @@ struct QuickBench:
             If the operation fails.
         """
 
-        @parameter
         @always_inline
-        def bench_iter(mut b: Bencher):
-            @parameter
+        def bench_iter(mut b: Bencher) {imm}:
             @always_inline
-            def call_func():
+            def call_func() {imm}:
                 var x = func()
                 keep(x)
 
-            b.iter[call_func]()
+            b.iter(call_func)
 
-        self.m.bench_function[bench_iter](bench_id, measures=measures)
+        self.m.bench_function(bench_iter, bench_id, measures=measures)
 
     @always_inline
     def run[
@@ -112,18 +111,16 @@ struct QuickBench:
             If the operation fails.
         """
 
-        @parameter
         @always_inline
-        def bench_iter(mut b: Bencher):
-            @parameter
+        def bench_iter(mut b: Bencher) {imm}:
             @always_inline
-            def call_func():
+            def call_func() {imm}:
                 var x = func(x0)
                 keep(x)
 
-            b.iter[call_func]()
+            b.iter(call_func)
 
-        self.m.bench_function[bench_iter](bench_id, measures=measures)
+        self.m.bench_function(bench_iter, bench_id, measures=measures)
 
     @always_inline
     def run[
@@ -159,18 +156,16 @@ struct QuickBench:
             If the operation fails.
         """
 
-        @parameter
         @always_inline
-        def bench_iter(mut b: Bencher):
-            @parameter
+        def bench_iter(mut b: Bencher) {imm}:
             @always_inline
-            def call_func():
+            def call_func() {imm}:
                 var x = func(x0, x1)
                 keep(x)
 
-            b.iter[call_func]()
+            b.iter(call_func)
 
-        self.m.bench_function[bench_iter](bench_id, measures=measures)
+        self.m.bench_function(bench_iter, bench_id, measures=measures)
 
     @always_inline
     def run[
@@ -210,18 +205,16 @@ struct QuickBench:
             If the operation fails.
         """
 
-        @parameter
         @always_inline
-        def bench_iter(mut b: Bencher):
-            @parameter
+        def bench_iter(mut b: Bencher) {imm}:
             @always_inline
-            def call_func():
+            def call_func() {imm}:
                 var x = func(x0, x1, x2)
                 keep(x)
 
-            b.iter[call_func]()
+            b.iter(call_func)
 
-        self.m.bench_function[bench_iter](bench_id, measures=measures)
+        self.m.bench_function(bench_iter, bench_id, measures=measures)
 
     @always_inline
     def run[
@@ -265,18 +258,16 @@ struct QuickBench:
             If the operation fails.
         """
 
-        @parameter
         @always_inline
-        def bench_iter(mut b: Bencher):
-            @parameter
+        def bench_iter(mut b: Bencher) {imm}:
             @always_inline
-            def call_func():
+            def call_func() {imm}:
                 var x = func(x0, x1, x2, x3)
                 keep(x)
 
-            b.iter[call_func]()
+            b.iter(call_func)
 
-        self.m.bench_function[bench_iter](bench_id, measures=measures)
+        self.m.bench_function(bench_iter, bench_id, measures=measures)
 
     @always_inline
     def run[
@@ -324,18 +315,16 @@ struct QuickBench:
             If the operation fails.
         """
 
-        @parameter
         @always_inline
-        def bench_iter(mut b: Bencher):
-            @parameter
+        def bench_iter(mut b: Bencher) {imm}:
             @always_inline
-            def call_func():
+            def call_func() {imm}:
                 var x = func(x0, x1, x2, x3, x4)
                 keep(x)
 
-            b.iter[call_func]()
+            b.iter(call_func)
 
-        self.m.bench_function[bench_iter](bench_id, measures=measures)
+        self.m.bench_function(bench_iter, bench_id, measures=measures)
 
     @always_inline
     def run[
@@ -387,18 +376,16 @@ struct QuickBench:
             If the operation fails.
         """
 
-        @parameter
         @always_inline
-        def bench_iter(mut b: Bencher):
-            @parameter
+        def bench_iter(mut b: Bencher) {imm}:
             @always_inline
-            def call_func():
+            def call_func() {imm}:
                 var x = func(x0, x1, x2, x3, x4, x5)
                 keep(x)
 
-            b.iter[call_func]()
+            b.iter(call_func)
 
-        self.m.bench_function[bench_iter](bench_id, measures=measures)
+        self.m.bench_function(bench_iter, bench_id, measures=measures)
 
     @always_inline
     def run[
@@ -454,18 +441,16 @@ struct QuickBench:
             If the operation fails.
         """
 
-        @parameter
         @always_inline
-        def bench_iter(mut b: Bencher):
-            @parameter
+        def bench_iter(mut b: Bencher) {imm}:
             @always_inline
-            def call_func():
+            def call_func() {imm}:
                 var x = func(x0, x1, x2, x3, x4, x5, x6)
                 keep(x)
 
-            b.iter[call_func]()
+            b.iter(call_func)
 
-        self.m.bench_function[bench_iter](bench_id, measures=measures)
+        self.m.bench_function(bench_iter, bench_id, measures=measures)
 
     @always_inline
     def run[
@@ -525,18 +510,16 @@ struct QuickBench:
             If the operation fails.
         """
 
-        @parameter
         @always_inline
-        def bench_iter(mut b: Bencher):
-            @parameter
+        def bench_iter(mut b: Bencher) {imm}:
             @always_inline
-            def call_func():
+            def call_func() {imm}:
                 var x = func(x0, x1, x2, x3, x4, x5, x6, x7)
                 keep(x)
 
-            b.iter[call_func]()
+            b.iter(call_func)
 
-        self.m.bench_function[bench_iter](bench_id, measures=measures)
+        self.m.bench_function(bench_iter, bench_id, measures=measures)
 
     @always_inline
     def run[
@@ -600,18 +583,16 @@ struct QuickBench:
             If the operation fails.
         """
 
-        @parameter
         @always_inline
-        def bench_iter(mut b: Bencher):
-            @parameter
+        def bench_iter(mut b: Bencher) {imm}:
             @always_inline
-            def call_func():
+            def call_func() {imm}:
                 var x = func(x0, x1, x2, x3, x4, x5, x6, x7, x8)
                 keep(x)
 
-            b.iter[call_func]()
+            b.iter(call_func)
 
-        self.m.bench_function[bench_iter](bench_id, measures=measures)
+        self.m.bench_function(bench_iter, bench_id, measures=measures)
 
     @always_inline
     def run[
@@ -679,15 +660,13 @@ struct QuickBench:
             If the operation fails.
         """
 
-        @parameter
         @always_inline
-        def bench_iter(mut b: Bencher):
-            @parameter
+        def bench_iter(mut b: Bencher) {imm}:
             @always_inline
-            def call_func():
+            def call_func() {imm}:
                 var x = func(x0, x1, x2, x3, x4, x5, x6, x7, x8, x9)
                 keep(x)
 
-            b.iter[call_func]()
+            b.iter(call_func)
 
-        self.m.bench_function[bench_iter](bench_id, measures=measures)
+        self.m.bench_function(bench_iter, bench_id, measures=measures)

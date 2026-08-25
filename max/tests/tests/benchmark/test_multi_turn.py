@@ -29,6 +29,7 @@ from max.benchmark.benchmark_shared.datasets.types import (
 )
 from max.benchmark.benchmark_shared.multi_turn import (
     ConcurrentTurnsRequestDriver,
+    chat_judge_session_driver,
     chat_session_driver,
     prerun_warmup_turns,
     run_chat_judge_benchmark,
@@ -354,6 +355,38 @@ def test_prerun_warmup_turns_one_request_per_session_with_prefix() -> None:
     assert all(call.ignore_eos is True for call in driver.calls)
 
 
+def test_prerun_warmup_turns_raises_on_failed_request() -> None:
+    """A failed warmup request fails the benchmark instead of being silently
+    ignored (matches the check `prime_shared_contexts` has for single-turn).
+    """
+    sessions = [_make_session_with_id(0, prefix_turns=2)]
+
+    class _FailingDriver(RequestDriver):
+        async def request(
+            self, request_func_input: BaseRequestFuncInput
+        ) -> RequestFuncOutput:
+            assert isinstance(request_func_input, RequestFuncInput)
+            return RequestFuncOutput(
+                success=False,
+                error="simulated timeout",
+                prompt_len=request_func_input.prompt_len,
+            )
+
+    async def run() -> None:
+        await prerun_warmup_turns(
+            sessions=sessions,
+            request_driver=_FailingDriver(),
+            model_id="test",
+            api_url="http://localhost:8000/v1/chat/completions",
+            max_chat_len=4096,
+            sampling=SamplingConfig(),
+            max_concurrency=128,
+        )
+
+    with pytest.raises(ValueError, match="simulated timeout"):
+        asyncio.run(run())
+
+
 def test_prerun_warmup_turns_request_prompt_is_last_turn_prefix() -> None:
     """For prefix_turns=N, the one request's prompt = dataset messages[0:2N-1]."""
     session = _make_session_with_id(0, prefix_turns=3)
@@ -530,6 +563,84 @@ async def test_run_chat_judge_benchmark_smoke_with_system_role() -> None:
         assert call.prompt[0].role == "system"
         assert call.prompt[1].role == "user"
         assert call.prompt_len == 4 + 5  # system + user tokens
+
+
+def test_chat_judge_driver_sleeps_between_turns() -> None:
+    """The driver sleeps each user message's delay between turns and skips
+    the sleep after the final turn (which carries no delay)."""
+    session = ChatSession(
+        id=0,
+        messages=[
+            SessionMessage(source="system", content="judge", num_tokens=4),
+            SessionMessage(
+                source="user",
+                content="i0",
+                num_tokens=5,
+                delay_until_next_message=250.0,
+            ),
+            SessionMessage(
+                source="user",
+                content="i1",
+                num_tokens=5,
+                delay_until_next_message=750.0,
+            ),
+            SessionMessage(source="user", content="i2", num_tokens=5),
+        ],
+    )
+    sleep_calls: list[float] = []
+
+    async def mock_sleep(seconds: float) -> None:
+        sleep_calls.append(seconds)
+
+    async def run_test() -> list[RequestFuncOutput]:
+        with patch("asyncio.sleep", side_effect=mock_sleep):
+            return await chat_judge_session_driver(
+                model_id="test",
+                api_url="http://localhost:8000/v1/chat/completions",
+                request_driver=_CapturingDriver(),
+                request_counter=RequestCounter(max_requests=100),
+                chat_session=session,
+                max_output_tokens=16,
+                sampling=SamplingConfig(),
+                benchmark_should_end_time=None,
+            )
+
+    outputs = asyncio.run(run_test())
+    assert len(outputs) == 3
+    # Inter-turn delays (seconds) fire between turns only, not after the last.
+    assert sleep_calls == pytest.approx([0.25, 0.75])
+
+
+def test_chat_judge_driver_interturn_sleep_deadline_skip() -> None:
+    """An inter-turn delay that would exceed the deadline returns early."""
+    session = ChatSession(
+        id=0,
+        messages=[
+            SessionMessage(
+                source="user",
+                content="i0",
+                num_tokens=5,
+                delay_until_next_message=60_000,  # 60 s
+            ),
+            SessionMessage(source="user", content="i1", num_tokens=5),
+        ],
+    )
+
+    async def run_test() -> list[RequestFuncOutput]:
+        deadline = time.perf_counter_ns() + 1_000_000  # 1 ms from now
+        return await chat_judge_session_driver(
+            model_id="test",
+            api_url="http://localhost:8000/v1/chat/completions",
+            request_driver=_CapturingDriver(),
+            request_counter=RequestCounter(max_requests=100),
+            chat_session=session,
+            max_output_tokens=16,
+            sampling=SamplingConfig(),
+            benchmark_should_end_time=deadline,
+        )
+
+    outputs = asyncio.run(run_test())
+    assert len(outputs) == 1  # only turn 1 completed before the deadline
 
 
 def test_concurrent_turns_driver_expired_deadline_cancels_without_calling_base() -> (

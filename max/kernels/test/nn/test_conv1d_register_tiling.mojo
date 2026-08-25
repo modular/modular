@@ -15,7 +15,7 @@
 
 from std.sys import simd_width_of
 
-from layout import TileTensor, Idx, row_major
+from layout import Coord, TileTensor, Idx, row_major
 from nn.conv.conv import conv1d_update_wo_tile
 from nn.conv.conv_utils import ConvShape
 from std.testing import assert_equal
@@ -66,16 +66,16 @@ def conv1d_register_tiling(
 ) abi("C"):
     var conv_shape = ConvShape[2](
         n=N,
-        input_dims=Index(H, W),
-        output_dims=Index(HO, WO),
-        filter_dims=Index(R, S),
+        input_dims=Coord(Index(H, W)),
+        output_dims=Coord(Index(HO, WO)),
+        filter_dims=Coord(Index(R, S)),
         c=C,
         f=F,
-        stride=Index(stride_h, stride_w),
-        dilation=Index(dilation_h, dilation_w),
-        pad_d=Index(0, 0),
-        pad_h=Index(pad_bottom, pad_top),
-        pad_w=Index(pad_left, pad_right),
+        stride=Coord(Index(stride_h, stride_w)),
+        dilation=Coord(Index(dilation_h, dilation_w)),
+        pad_d=Coord(Index(0, 0)),
+        pad_h=Coord(Index(pad_bottom, pad_top)),
+        pad_w=Coord(Index(pad_left, pad_right)),
         num_groups=1,
     )
 
@@ -102,15 +102,15 @@ def conv1d_register_tiling(
 
 
 def test_conv1d_register_tiling() raises:
-    var output_stack = InlineArray[Scalar[type], Int(output_shape.product())](
+    var output_stack = Array[Scalar[type], Int(output_shape.product())](
         uninitialized=True
     )
     var output = TileTensor(output_stack, output_shape)
-    var input_stack = InlineArray[Scalar[type], Int(input_shape.product())](
+    var input_stack = Array[Scalar[type], Int(input_shape.product())](
         uninitialized=True
     )
     var input = TileTensor(input_stack, input_shape)
-    var filter_stack = InlineArray[Scalar[type], Int(filter_shape.product())](
+    var filter_stack = Array[Scalar[type], Int(filter_shape.product())](
         uninitialized=True
     )
     var filter = TileTensor(filter_stack, filter_shape)
@@ -127,10 +127,10 @@ def test_conv1d_register_tiling() raises:
     var w = wo * stride_w - pad_left
 
     # FRSCf
-    var filter_ptr = filter.ptr + f_tile_offset * R * S * C
+    var filter_ptr = filter._storage + f_tile_offset * R * S * C
     # NHWC
-    var input_ptr = input.ptr + c_tile_offset + C * w
-    var output_ptr = output.ptr + f_tile_offset + F * (wo)
+    var input_ptr = input._storage + c_tile_offset + C * w
+    var output_ptr = output._storage + f_tile_offset + F * (wo)
 
     conv1d_register_tiling(
         output_ptr,

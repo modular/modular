@@ -25,10 +25,8 @@ directly to hardware instructions and require understanding of the
 underlying GPU architecture.
 """
 
-from std.collections.string.string_slice import get_static_string
 from std.atomic import Ordering
 from std.ffi import external_call
-from std.gpu._utils import to_i32
 from std.sys import (
     is_amd_gpu,
     is_gpu,
@@ -51,13 +49,135 @@ from std.sys.info import (
     _is_amd_rdna4,
 )
 from std.sys.intrinsics import llvm_intrinsic, readfirstlane
-from std.gpu import lane_id
 from std.math.uutils import ufloordiv, umod
 
-from std.memory.unsafe import bitcast
-from std.memory._poison import _check_not_poison
+from std.gpu._utils import to_i32
+from std.gpu import lane_id
 
-from .memory.memory import CacheOperation, _int_to_str
+from std.memory.unsafe import bitcast
+
+# ===-----------------------------------------------------------------------===#
+# CacheOperation
+# ===-----------------------------------------------------------------------===#
+
+
+@fieldwise_init
+struct CacheOperation(Equatable, TrivialRegisterPassable):
+    """Represents different GPU cache operation policies.
+
+    This struct defines various caching behaviors for GPU memory operations,
+    controlling how data is cached and evicted at different cache levels.
+    The policies affect performance and memory coherency.
+    """
+
+    var _value: Int
+
+    comptime ALWAYS = Self(0)
+    """Cache at all levels. This will be accessed again.
+
+    Best for data that will be frequently reused across multiple threads.
+    Provides fastest subsequent access but uses the most cache space.
+    """
+
+    comptime GLOBAL = Self(1)
+    """Cache at global level.
+
+    Caches data only in the L2 cache, bypassing L1.
+    Good for data shared between different thread blocks.
+    """
+
+    comptime STREAMING = Self(2)
+    """Streaming, this is likely to be accessed once.
+
+    Optimizes for streaming access patterns where data is only read once.
+    May bypass certain cache levels for better throughput.
+    """
+
+    comptime LAST_USE = Self(4)
+    """Indicates the cache line will not be used again.
+
+    Hints to the cache that this data can be evicted after this access.
+    Helps optimize cache utilization.
+    """
+
+    comptime VOLATILE = Self(8)
+    """Don't cache, and fetch again.
+
+    Forces reads/writes to bypass cache and go directly to memory.
+    Useful for memory-mapped I/O or when cache coherency is required.
+    """
+
+    comptime WRITE_BACK = Self(16)
+    """Write back at all coherent levels.
+
+    Updates all cache levels and eventually writes to memory.
+    Most efficient for multiple writes to same location.
+    """
+
+    comptime WRITE_THROUGH = Self(32)
+    """Write through to system memory.
+
+    Immediately writes updates to memory while updating cache.
+    Provides stronger consistency but lower performance than write-back.
+    """
+
+    comptime WORKGROUP = Self(64)
+    """Workgroup level coherency.
+
+    Caches data in the L1 cache and streams it to the wave.
+    """
+
+    def __eq__(self, other: Self) -> Bool:
+        """Tests if two `CacheOperation` instances are equal.
+
+        Args:
+            other: The `CacheOperation` to compare against.
+
+        Returns:
+            True if the operations are equal, False otherwise.
+        """
+        return self._value == other._value
+
+    def __or__(self, other: Self) -> Self:
+        """Returns the bitwise OR of two `CacheOperation` instances.
+
+        Args:
+            other: The other `CacheOperation` to OR with.
+
+        Returns:
+            A new `CacheOperation` representing the bitwise OR of the two values.
+        """
+        return Self(self._value | other._value)
+
+    @always_inline
+    def mnemonic(self) -> StaticString:
+        """Returns the PTX mnemonic string for this cache operation.
+
+        Converts the cache operation into its corresponding PTX assembly
+        mnemonic string used in GPU instructions.
+
+        Returns:
+            A string literal containing the PTX mnemonic for this operation.
+        """
+        if self == Self.ALWAYS:
+            return "ca"
+        if self == Self.GLOBAL:
+            return "cg"
+        if self == Self.STREAMING:
+            return "cs"
+        if self == Self.LAST_USE:
+            return "lu"
+        if self == Self.VOLATILE:
+            return "cv"
+        if self == Self.WRITE_BACK:
+            return "wb"
+        if self == Self.WRITE_THROUGH:
+            return "wt"
+        if self == Self.WORKGROUP:
+            return "wg"
+
+        return "unknown cache operation"
+
 
 # ===-----------------------------------------------------------------------===#
 # ldg
@@ -71,7 +191,7 @@ def ldg[
     width: Int = 1,
     *,
     alignment: Int = align_of[SIMD[dtype, width]](),
-](x: UnsafePointer[mut=False, Scalar[dtype], _]) -> SIMD[
+](x: Pointer[Scalar[dtype], address_space=.GENERIC, ...]) -> SIMD[
     dtype, width
 ] where dtype.is_numeric():
     """Load data from global memory through the non-coherent cache.
@@ -97,7 +217,7 @@ def ldg[
         - Particularly beneficial for read-only texture-like access patterns.
         - May improve performance on memory-bound kernels.
     """
-    return x.load[width=width, alignment=alignment, invariant=True]()
+    return x.unsafe_load[width=width, alignment=alignment, invariant=True]()
 
 
 # ===-----------------------------------------------------------------------===#
@@ -292,8 +412,8 @@ def mulhi(a: UInt16, b: UInt16) -> UInt32:
             "llvm.nvvm.mulhi.us", UInt32, has_side_effect=False
         ](a, b)
 
-    var au32 = a.cast[DType.uint32]()
-    var bu32 = b.cast[DType.uint32]()
+    var au32 = a.cast[.uint32]()
+    var bu32 = b.cast[.uint32]()
     return au32 * bu32
 
 
@@ -322,8 +442,8 @@ def mulhi(a: Int16, b: Int16) -> Int32:
             "llvm.nvvm.mulhi.s", Int32, has_side_effect=False
         ](a, b)
 
-    var ai32 = a.cast[DType.int32]()
-    var bi32 = b.cast[DType.int32]()
+    var ai32 = a.cast[.int32]()
+    var bi32 = b.cast[.int32]()
     return ai32 * bi32
 
 
@@ -352,9 +472,9 @@ def mulhi(a: UInt32, b: UInt32) -> UInt32:
             "llvm.nvvm.mulhi.ui", UInt32, has_side_effect=False
         ](a, b)
 
-    var au64 = a.cast[DType.uint64]()
-    var bu64 = b.cast[DType.uint64]()
-    return ((au64 * bu64) >> 32).cast[DType.uint32]()
+    var au64 = a.cast[.uint64]()
+    var bu64 = b.cast[.uint64]()
+    return ((au64 * bu64) >> 32).cast[.uint32]()
 
 
 @always_inline
@@ -382,9 +502,9 @@ def mulhi(a: Int32, b: Int32) -> Int32:
             "llvm.nvvm.mulhi.i", Int32, has_side_effect=False
         ](a, b)
 
-    var ai64 = a.cast[DType.int64]()
-    var bi64 = b.cast[DType.int64]()
-    return ((ai64 * bi64) >> 32).cast[DType.int32]()
+    var ai64 = a.cast[.int64]()
+    var bi64 = b.cast[.int64]()
+    return ((ai64 * bi64) >> 32).cast[.int32]()
 
 
 @always_inline
@@ -412,9 +532,9 @@ def mulhi(a: UInt64, b: UInt64) -> UInt64:
             "llvm.nvvm.mulhi.ull", UInt64, has_side_effect=False
         ](a, b)
 
-    var au128 = a.cast[DType.uint128]()
-    var bu128 = b.cast[DType.uint128]()
-    return ((au128 * bu128) >> 64).cast[DType.uint64]()
+    var au128 = a.cast[.uint128]()
+    var bu128 = b.cast[.uint128]()
+    return ((au128 * bu128) >> 64).cast[.uint64]()
 
 
 @always_inline
@@ -442,9 +562,9 @@ def mulhi(a: Int64, b: Int64) -> Int64:
             "llvm.nvvm.mulhi.ll", Int64, has_side_effect=False
         ](a, b)
 
-    var ai128 = a.cast[DType.int128]()
-    var bi128 = b.cast[DType.int128]()
-    return ((ai128 * bi128) >> 64).cast[DType.int64]()
+    var ai128 = a.cast[.int128]()
+    var bi128 = b.cast[.int128]()
+    return ((ai128 * bi128) >> 64).cast[.int64]()
 
 
 # ===-----------------------------------------------------------------------===#
@@ -479,8 +599,8 @@ def mulwide(a: UInt32, b: UInt32) -> UInt64:
             has_side_effect=False,
         ](a, b)
 
-    var au64 = a.cast[DType.uint64]()
-    var bu64 = b.cast[DType.uint64]()
+    var au64 = a.cast[.uint64]()
+    var bu64 = b.cast[.uint64]()
     return au64 * bu64
 
 
@@ -511,8 +631,8 @@ def mulwide(a: Int32, b: Int32) -> Int64:
             has_side_effect=False,
         ](a, b)
 
-    var ai64 = a.cast[DType.int64]()
-    var bi64 = b.cast[DType.int64]()
+    var ai64 = a.cast[.int64]()
+    var bi64 = b.cast[.int64]()
     return ai64 * bi64
 
 
@@ -680,19 +800,12 @@ def threadfence[scope: Scope = Scope.GPU]():
 # ===-----------------------------------------------------------------------===#
 
 
-def _get_type_suffix[dtype: DType]() -> StaticString:
-    comptime str = get_static_string[
-        "u", _int_to_str[bit_width_of[dtype]()]()
-    ]()
-    return str
-
-
 def _get_nvtx_register_constraint[dtype: DType]() -> StaticString:
     comptime assert is_nvidia_gpu(), (
         "the _get_nvtx_register_constraint function is currently restricted"
         " to only be defined on NVIDIA GPUs"
     )
-    if dtype == DType.bool:
+    if dtype == .bool:
         return "b"
     if dtype.is_half_float():
         return "h"
@@ -704,101 +817,12 @@ def _get_nvtx_register_constraint[dtype: DType]() -> StaticString:
             return "r"
         if width == 64:
             return "l"
-    if dtype == DType.float32:
+    if dtype == .float32:
         return "f"
-    if dtype == DType.float64:
+    if dtype == .float64:
         return "d"
 
     return "<<unknown_register_constraint>>"
-
-
-def _get_nvtx_pointer_constraint() -> StaticString:
-    comptime assert is_nvidia_gpu(), (
-        "the _get_nvtx_pointer_constraint function is currently restricted"
-        " to only be defined on NVIDIA GPUs"
-    )
-    return _get_nvtx_register_constraint[DType.int]()
-
-
-@always_inline
-def store_volatile[
-    dtype: DType, //, memory: Bool = True
-](ptr: UnsafePointer[mut=True, Scalar[dtype], ...], value: Scalar[dtype]):
-    """Performs a volatile store operation that cannot be optimized away.
-
-    This function guarantees that the store operation will be performed exactly as
-    specified, without being reordered or optimized away by the compiler.
-
-    Parameters:
-        dtype: The data type to store.
-        memory: Whether to include memory side effects in constraints (default: True).
-
-    Args:
-        ptr: Pointer to the memory location to store to.
-        value: Value to store.
-
-    Note:
-        - Only supported on NVIDIA GPUs.
-        - Maps directly to PTX st.volatile instruction.
-        - Prevents compiler optimization of the store operation.
-        - Useful for memory-mapped I/O or synchronization primitives.
-        - May have performance implications compared to regular stores.
-    """
-    comptime assert (
-        is_nvidia_gpu()
-    ), "store_volatile is not currently supported on AMD GPUs"
-    comptime mem_constraint = StaticString(",~{memory}") if memory else ""
-    comptime constraints = _get_nvtx_register_constraint[
-        dtype
-    ]() + "," + _get_nvtx_pointer_constraint() + mem_constraint
-    inlined_assembly[
-        "st.volatile.global." + _get_type_suffix[dtype]() + " [$1], $0;",
-        NoneType,
-        constraints=constraints,
-    ](value, ptr.address_space_cast[AddressSpace.GENERIC]())
-
-
-@always_inline
-def load_volatile[
-    dtype: DType, //, memory: Bool = True
-](ptr: UnsafePointer[mut=False, Scalar[dtype], ...]) -> Scalar[dtype]:
-    """Performs a volatile load operation that cannot be optimized away.
-
-    This function guarantees that the load operation will be performed exactly as
-    specified, without being reordered or optimized away by the compiler.
-
-    Parameters:
-        dtype: The data type to load.
-        memory: Whether to include memory side effects in constraints (default: True).
-
-    Args:
-        ptr: Pointer to the memory location to load from.
-
-    Returns:
-        The loaded value.
-
-    Note:
-        - Only supported on NVIDIA GPUs.
-        - Maps directly to PTX ld.volatile instruction.
-        - Prevents compiler optimization of the load operation.
-        - Useful for memory-mapped I/O or synchronization primitives.
-        - May have performance implications compared to regular loads.
-    """
-    comptime assert (
-        is_nvidia_gpu()
-    ), "load_volatile is not currently supported on AMD GPUs"
-    comptime mem_constraint = StaticString(",~{memory}") if memory else ""
-    comptime constraints = "=" + _get_nvtx_register_constraint[
-        dtype
-    ]() + "," + _get_nvtx_pointer_constraint() + mem_constraint
-    var result = inlined_assembly[
-        "ld.volatile.global." + _get_type_suffix[dtype]() + " $0, [$1];",
-        Scalar[dtype],
-        constraints=constraints,
-    ](ptr.address_space_cast[AddressSpace.GENERIC]())
-    comptime if dtype.is_floating_point():
-        _check_not_poison[dtype, 1](result)
-    return result
 
 
 struct AMDBufferResource(TrivialRegisterPassable):
@@ -807,7 +831,7 @@ struct AMDBufferResource(TrivialRegisterPassable):
     Used for buffer_load/buffer_store instructions.
     """
 
-    var desc: SIMD[DType.uint32, 4]
+    var desc: SIMD[.uint32, 4]
     """The 128-bit buffer descriptor encoded as four 32-bit values."""
 
     @always_inline("nodebug")
@@ -817,7 +841,7 @@ struct AMDBufferResource(TrivialRegisterPassable):
         out self,
         # TODO: This should propagate mutability correctly.
         # E.g. only allow AMDBufferResource.store when mutable.
-        gds_ptr: UnsafePointer[Scalar[dtype], ...],
+        gds_ptr: Pointer[Scalar[dtype], ...],
         num_records: Int = Int(UInt32.MAX),
     ):
         """Constructs an AMD buffer resource descriptor.
@@ -833,8 +857,8 @@ struct AMDBufferResource(TrivialRegisterPassable):
             is_amd_gpu()
         ), "The AMDBufferResource struct is only applicable on AMDGPU hardware."
 
-        self.desc = SIMD[DType.uint32, 4](0)
-        var address = bitcast[DType.uint32, 2](UInt64(Int(gds_ptr)))
+        self.desc = SIMD[.uint32, 4](0)
+        var address = bitcast[.uint32, 2](UInt64(Int(gds_ptr)))
         self.desc[0] = address[0]
         # assuming 0 stride currently
         self.desc[1] = address[1]
@@ -872,9 +896,7 @@ struct AMDBufferResource(TrivialRegisterPassable):
             The base pointer address as an integer.
         """
         return Int(
-            bitcast[DType.int64, 1](
-                SIMD[DType.uint32, 2](self.desc[0], self.desc[1])
-            )
+            bitcast[.int64, 1](SIMD[.uint32, 2](self.desc[0], self.desc[1]))
         )
 
     @always_inline("nodebug")
@@ -936,9 +958,7 @@ struct AMDBufferResource(TrivialRegisterPassable):
     ](
         self,
         vector_offset: Int32,
-        shared_ptr: UnsafePointer[
-            mut=True, Scalar[dtype], _, address_space=AddressSpace.SHARED
-        ],
+        shared_ptr: Pointer[Scalar[dtype], address_space=.SHARED, ...],
         *,
         scalar_offset: Int32 = 0,
     ):
@@ -994,20 +1014,14 @@ struct AMDBufferResource(TrivialRegisterPassable):
 
         # Convert the SIMD[uint32, 4] descriptor to a `ptr addrspace(8)`
         # so the `.ptr.` form of the intrinsic accepts it.
-        var desc_ptr = UnsafePointer[
-            Scalar[DType.bfloat16],
-            MutAnyOrigin,
-            address_space=AddressSpace.BUFFER_RESOURCE,
+        var desc_ptr = Pointer[
+            BFloat16, MutAnyOrigin, address_space=.BUFFER_RESOURCE
         ].unsafe_dangling()
-        var ptr_to_ptr = UnsafePointer(to=desc_ptr)
-        var ptr_to_simd = UnsafePointer(to=self.desc)
-        ptr_to_ptr[0] = ptr_to_simd.bitcast[
-            UnsafePointer[
-                Scalar[DType.bfloat16],
-                MutAnyOrigin,
-                address_space=AddressSpace.BUFFER_RESOURCE,
-            ]
-        ]()[0]
+        var ptr_to_ptr = Pointer(to=desc_ptr)
+        var ptr_to_simd = Pointer(to=self.desc)
+        ptr_to_ptr[] = ptr_to_simd.unsafe_bitcast[
+            Pointer[BFloat16, MutAnyOrigin, address_space=.BUFFER_RESOURCE]
+        ]()[]
 
         comptime if not async_copies:
             # No alias-scope metadata — clean `llvm_intrinsic` call path.
@@ -1047,7 +1061,7 @@ struct AMDBufferResource(TrivialRegisterPassable):
     @always_inline("nodebug")
     def store[
         dtype: DType,
-        width: SIMDSize,
+        width: SIMDLength,
         *,
         cache_policy: CacheOperation = CacheOperation.ALWAYS,
     ](
@@ -1105,7 +1119,6 @@ struct AMDBufferResource(TrivialRegisterPassable):
         )
 
 
-@parameter
 def _cache_operation_to_amd_aux[cache_policy: CacheOperation]() -> Int32:
     """Converts CacheOperation to AMD auxiliary parameter at compile time.
 
@@ -1169,7 +1182,7 @@ def _raw_ptr_buffer_load_lds[
     ), "unsupported AMD buffer cache-policy aux bitmask"
     __mlir_op.`rocdl.raw.ptr.buffer.load.lds`[
         alias_scopes=scopes,
-        aux=__mlir_attr[aux._int_mlir_index(), `: i32`],
+        aux=__mlir_attr[aux.__mlir_index__(), `: i32`],
         _type=None,
     ](desc_ptr_llvm, shared_ptr3, size, voffset, soffset, offset)
 
@@ -1184,7 +1197,6 @@ def _get_buffer_intrinsic_simd_dtype[bytes: Int]() -> DType:
         return DType.uint32
 
 
-@parameter
 def _get_buffer_intrinsic_simd_width[bytes: Int]() -> Int:
     return bytes // size_of[DType.uint32]() if bytes >= 4 else 1
 
@@ -1198,11 +1210,9 @@ def _get_buffer_intrinsic_simd_width[bytes: Int]() -> Int:
 def ds_read_tr16_b64[
     dtype: DType,
     //,
-](
-    shared_ptr: UnsafePointer[
-        mut=False, Scalar[dtype], _, address_space=AddressSpace.SHARED
-    ]
-) -> SIMD[dtype, 4]:
+](shared_ptr: Pointer[Scalar[dtype], address_space=.SHARED, ...]) -> SIMD[
+    dtype, 4
+]:
     """Reads a 64-bit LDS transpose block using TR16 layout and returns SIMD[dtype, 4] of 16-bit types.
 
     Parameters:
@@ -1241,11 +1251,9 @@ def ds_read_tr16_b64[
 def ds_read_tr8_b64[
     dtype: DType,
     //,
-](
-    shared_ptr: UnsafePointer[
-        mut=False, Scalar[dtype], _, address_space=AddressSpace.SHARED
-    ]
-) -> SIMD[dtype, 8]:
+](shared_ptr: Pointer[Scalar[dtype], address_space=.SHARED, ...]) -> SIMD[
+    dtype, 8
+]:
     """Reads a 64-bit LDS transpose block using TR8 layout and returns SIMD[dtype, 8] of 8-bit types.
 
     Each 16-lane row reads 16x8 bytes from LDS and performs two interleaved
@@ -1281,7 +1289,7 @@ def ds_read_tr8_b64[
     # Must use v2i32 return type; v8i8 crashes LLVM type legalizer.
     var raw = llvm_intrinsic[
         "llvm.amdgcn.ds.read.tr8.b64",
-        SIMD[DType.uint32, 2],
+        SIMD[.uint32, 2],
         has_side_effect=True,
     ](shared_ptr)
     return bitcast[dtype, 8](raw)
@@ -1295,7 +1303,7 @@ def ds_read_tr8_b64[
 @always_inline
 def cvt_pk_fp8_f32_raw[
     dtype: DType,
-](src: SIMD[DType.float32, 4]) -> SIMD[dtype, 4]:
+](src: SIMD[.float32, 4]) -> SIMD[dtype, 4]:
     """Packs 4 f32 into 4 fp8 via 2 chained `v_cvt_pk_fp8_f32` ops.
 
     Unlike `SIMD.cast[fp8]()`, this bypasses the compiler's clamp + NaN
@@ -1327,12 +1335,12 @@ def cvt_pk_fp8_f32_raw[
         _cdna_4_or_newer()
     ), "cvt_pk_fp8_f32_raw is only supported on CDNA4+"
     comptime assert (
-        dtype == DType.float8_e4m3fn or dtype == DType.float8_e5m2
+        dtype == .float8_e4m3fn or dtype == .float8_e5m2
     ), "cvt_pk_fp8_f32_raw requires E4M3FN or E5M2 destination dtype."
 
     comptime intrinsic_name = (
         "llvm.amdgcn.cvt.pk.fp8.f32" if dtype
-        == DType.float8_e4m3fn else "llvm.amdgcn.cvt.pk.bf8.f32"
+        == .float8_e4m3fn else "llvm.amdgcn.cvt.pk.bf8.f32"
     )
 
     var lo = llvm_intrinsic[intrinsic_name, UInt32, has_side_effect=False](
@@ -1381,8 +1389,8 @@ def permlane_swap[
         _RegisterPackType[Int32, Int32],
         has_side_effect=False,
     ](
-        bitcast[DType.int32, 1](val1),
-        bitcast[DType.int32, 1](val2),
+        bitcast[.int32, 1](val1),
+        bitcast[.int32, 1](val2),
         False,
         False,
     )
@@ -1392,7 +1400,7 @@ def permlane_swap[
 
 
 def permlane_shuffle[
-    dtype: DType, simd_width: SIMDSize, //, stride: Int
+    dtype: DType, simd_width: SIMDLength, //, stride: Int
 ](val: SIMD[dtype, simd_width], out res: type_of(val)):
     """Shuffles SIMD values across lanes using AMD permlane operations.
 

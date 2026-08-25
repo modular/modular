@@ -27,10 +27,10 @@ which keeps it usable inside a CUDA-graph capture region. A register-heap fast
 path is a possible future optimization.
 """
 
-from std.gpu import barrier, block_dim, thread_idx
-from std.gpu.memory import AddressSpace
+from std.gpu import block_dim, thread_idx
+from max.gpu.sync import barrier
 from std.math import min
-from std.memory import stack_allocation
+from std.memory import unsafe_stack_allocation
 
 from nn.topk import TopK_2, _block_reduce_topk, _topk_dead_val
 
@@ -86,9 +86,7 @@ def block_select_topk[
 
     # 1-element shared scratch to broadcast the winner index so every thread
     # reaches the same control-flow decision (and thus the same barriers).
-    var winner_sram = stack_allocation[
-        1, Int, address_space=AddressSpace.SHARED
-    ]()
+    var winner_sram = unsafe_stack_allocation[1, Int, address_space=.SHARED]()
 
     var n_written = k_batch
     for kk in range(k_batch):
@@ -118,7 +116,7 @@ def block_select_topk[
             break
 
         if tid == 0:
-            out_idxs[kk] = Scalar[DType.int](winner_p).cast[out_idx_type]()
+            out_idxs[kk] = Int(winner_p).cast[out_idx_type]()
             # Evict the winner so the next iteration cannot reselect it.
             scores[winner_p] = _topk_dead_val[T, largest]()
         # Make the eviction visible before any thread re-reads `scores`.

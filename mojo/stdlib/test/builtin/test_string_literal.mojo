@@ -163,8 +163,8 @@ def test_comparison_operators() raises:
     assert_true(StringLiteral.__ge__("", ""))
 
     # Test less than and greater than
-    def_slice = StringSlice("def")
-    abcd_slice = StringSlice("abc")
+    var def_slice = StringSlice("def")
+    var abcd_slice = StringSlice("abc")
     assert_true(StringLiteral.__lt__("abc", def_slice))
     assert_false(StringLiteral.__lt__("def", abcd_slice[byte=0:3]))
     assert_false(StringLiteral.__lt__("abc", abcd_slice[byte=0:3]))
@@ -180,12 +180,12 @@ def test_comparison_operators() raises:
     assert_false(StringLiteral.__ge__("ab", abcd_slice[byte=0:3]))
     assert_true(StringLiteral.__ge__("abcd", abcd_slice[byte=0:3]))
 
-    abc_upper_slice = StringSlice("ABC")
+    var abc_upper_slice = StringSlice("ABC")
     # Test case sensitivity in comparison (assuming ASCII order)
     assert_true(StringLiteral.__gt__("abc", abc_upper_slice))
     assert_false(StringLiteral.__le__("abc", abc_upper_slice))
 
-    empty_slice = StringSlice("")
+    var empty_slice = StringSlice("")
     # Test comparisons involving empty strings
     assert_true(StringLiteral.__lt__("", abcd_slice[byte=0:3]))
     assert_false(StringLiteral.__lt__("abc", empty_slice))
@@ -256,20 +256,20 @@ def test_iter() raises:
 
 def test_layout() raises:
     # Test empty StringLiteral contents
-    var empty = "".unsafe_ptr()
+    var empty = "".ptr()
     # An empty string literal is stored as just the NUL terminator.
     assert_true(Int(empty) != 0)
     # TODO(MSTDL-596): This seems to hang?
     # assert_equal(empty[0], 0)
 
     # Test non-empty StringLiteral C string
-    var ptr = "hello".as_c_string_slice().unsafe_ptr()
-    assert_equal(ptr[0], Int8(ord("h")))
-    assert_equal(ptr[1], Int8(ord("e")))
-    assert_equal(ptr[2], Int8(ord("l")))
-    assert_equal(ptr[3], Int8(ord("l")))
-    assert_equal(ptr[4], Int8(ord("o")))
-    assert_equal(ptr[5], 0)  # Verify NUL terminated
+    var ptr = "hello".as_c_string_slice().ptr()
+    assert_equal(ptr[unsafe_offset=0], Int8(ord("h")))
+    assert_equal(ptr[unsafe_offset=1], Int8(ord("e")))
+    assert_equal(ptr[unsafe_offset=2], Int8(ord("l")))
+    assert_equal(ptr[unsafe_offset=3], Int8(ord("l")))
+    assert_equal(ptr[unsafe_offset=4], Int8(ord("o")))
+    assert_equal(ptr[unsafe_offset=5], 0)  # Verify NUL terminated
 
 
 def test_lower_upper() raises:
@@ -298,6 +298,14 @@ def test_strip() raises:
     assert_equal(
         "_wrap_hello world_wrap_".rstrip("_wrap_"), "_wrap_hello world"
     )
+
+
+def test_strip_mutable_chars() raises:
+    # `chars` is read-only, so a mutable argument must not be borrowed mutably.
+    var chars = String("_wrap_")
+    assert_equal("_wrap_hello world_wrap_".lstrip(chars), "hello world_wrap_")
+    assert_equal("_wrap_hello world_wrap_".rstrip(chars), "_wrap_hello world")
+    assert_equal("_wrap_hello world_wrap_".strip(chars), "hello world")
 
 
 def test_count() raises:

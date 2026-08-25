@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Implements comparison and equality traits for Mojo types."""
 
-from std.builtin.constrained import _constrained_field_conforms_to
+from std.builtin.constrained import _field_conforms_to_error
 from std.builtin.range import _ZeroStartingRange
 from std.reflection import reflect
 
@@ -51,7 +51,7 @@ trait Equatable:
     """
 
     @always_inline
-    def __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self, /) -> Bool:
         """Define whether two instances of the object are equal to each other.
 
         The default implementation uses reflection to compare all fields for
@@ -70,22 +70,19 @@ trait Equatable:
         comptime names = r.field_names()
         comptime types = r.field_types()
 
-        comptime for i in range(names.size):
+        comptime for i in range(names.length):
             comptime T = types[i]
-            _constrained_field_conforms_to[
-                conforms_to(T, Equatable),
+            comptime assert conforms_to(T, Equatable), _field_conforms_to_error[
                 Parent=Self,
                 FieldIndex=i,
                 ParentConformsTo="Equatable",
             ]()
-            if trait_downcast[Equatable](
-                r.field_ref[i](self)
-            ) != trait_downcast[Equatable](r.field_ref[i](other)):
+            if r.field_ref[i](self) != r.field_ref[i](other):
                 return False
         return True
 
     @always_inline
-    def __ne__(self, other: Self) -> Bool:
+    def __ne__(self, other: Self, /) -> Bool:
         """Define whether two instances of the object are not equal to each
         other.
 

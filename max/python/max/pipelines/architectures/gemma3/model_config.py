@@ -14,21 +14,30 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import ClassVar
 
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.graph.weights import WeightData, WeightsFormat, weights_format
+from max.graph.weights import WeightData
 from max.nn.kv_cache import KVCacheParams
 from max.nn.quant_config import QuantConfig
 from max.nn.rotary_embedding import LinearScalingParams
 from max.nn.transformer import ReturnLogits
+from max.pipelines.kv_cache import cache_dtype_for_encoding
 from max.pipelines.lib import MAXModelConfig, PipelineConfig
+from max.pipelines.lib.config.model_config import (
+    _interleaved_rope_weights,
+    _select_quantization_encoding,
+)
 from max.pipelines.lib.interfaces.arch_config import (
     ArchConfigWithKVCache,
     ArchConfigWithPermissiveMaxSeqLen,
     ArchConfigWithStoredKVParams,
 )
-from max.pipelines.modeling.config_enums import supported_encoding_dtype
+from max.pipelines.modeling.config_enums import (
+    SupportedEncoding,
+    supported_encoding_dtype,
+)
 from transformers import AutoConfig
 from typing_extensions import Self, override
 
@@ -44,6 +53,9 @@ class Gemma3Config(
     Contains parameters specific to the Gemma 3 architecture (typically extracted
     from HuggingFace configs), plus MAX-specific runtime settings and helpers.
     """
+
+    DEFAULT_ENCODING: ClassVar[SupportedEncoding] = "bfloat16"
+    SUPPORTED_ENCODINGS: ClassVar[set[SupportedEncoding]] = {"bfloat16"}
 
     # Gemma 3 specific parameters (taken from Transformer's `configuration_gemma3.py`)
     vocab_size: int
@@ -132,6 +144,9 @@ class Gemma3Config(
     quant_config: QuantConfig | None = None
     """Scaled quantization configuration."""
 
+    quantization_encoding: SupportedEncoding | None = None
+    """The resolved quantization encoding the model runs with."""
+
     @staticmethod
     def get_num_layers(huggingface_config: AutoConfig) -> int:
         """Retrieves the number of hidden layers from the HuggingFace configuration.
@@ -150,6 +165,8 @@ class Gemma3Config(
         cls,
         pipeline_config: PipelineConfig,
         model_config: MAXModelConfig | None = None,
+        *,
+        max_seq_len: int,
     ) -> Self:
         model_config = model_config or pipeline_config.model
         huggingface_config = model_config.huggingface_config
@@ -163,11 +180,17 @@ class Gemma3Config(
         # for text-only Gemma3Config initialization
         if hasattr(huggingface_config, "text_config"):
             huggingface_config = huggingface_config.text_config
-        return cls.initialize_from_config(pipeline_config, huggingface_config)
+        return cls.initialize_from_config(
+            pipeline_config, huggingface_config, max_seq_len=max_seq_len
+        )
 
     @classmethod
     def initialize_from_config(
-        cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
+        cls,
+        pipeline_config: PipelineConfig,
+        huggingface_config: AutoConfig,
+        *,
+        max_seq_len: int,
     ) -> Self:
         """Initializes a Gemma3Config instance from pipeline and HuggingFace configuration.
 
@@ -184,16 +207,17 @@ class Gemma3Config(
             An initialized :obj:`Gemma3Config` instance.
         """
         kv_cache_config = pipeline_config.model.kv_cache
-        quantization_encoding = pipeline_config.model.quantization_encoding
-        if quantization_encoding is None:
-            raise ValueError("quantization_encoding must not be None")
+        quantization_encoding = _select_quantization_encoding(
+            pipeline_config.model, cls.DEFAULT_ENCODING
+        )
         dtype = supported_encoding_dtype(quantization_encoding)
-        cache_dtype = pipeline_config.model.kv_cache.cache_dtype
+        cache_dtype = cache_dtype_for_encoding(
+            quantization_encoding,
+            pipeline_config.model.kv_cache.kv_cache_format,
+        )
 
-        _weights_format = weights_format(pipeline_config.model.weight_path)
-        interleaved_rope_weights = (
-            _weights_format == WeightsFormat.gguf
-            and pipeline_config.model.rope_type == "normal"
+        interleaved_rope_weights = _interleaved_rope_weights(
+            pipeline_config.model
         )
         device_refs = [
             DeviceRef(spec.device_type, spec.id)
@@ -251,9 +275,7 @@ class Gemma3Config(
             num_key_value_heads=huggingface_config.num_key_value_heads,
             head_dim=huggingface_config.head_dim,
             hidden_activation=hidden_activation,
-            max_position_embeddings=Gemma3Config.calculate_max_seq_len(
-                pipeline_config, huggingface_config=huggingface_config
-            ),
+            max_position_embeddings=max_seq_len,
             rms_norm_eps=huggingface_config.rms_norm_eps,
             rope_theta=rope_theta,
             attention_bias=huggingface_config.attention_bias,
@@ -274,6 +296,7 @@ class Gemma3Config(
                 kv_cache_config=kv_cache_config,
                 cache_dtype=cache_dtype,
             ),
+            quantization_encoding=quantization_encoding,
         )
 
     def finalize(

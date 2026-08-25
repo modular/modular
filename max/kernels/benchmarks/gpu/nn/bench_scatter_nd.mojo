@@ -25,6 +25,7 @@ so the achievable ceiling is the device-to-device memcpy bandwidth.
 
 from std.sys import get_defined_dtype, get_defined_int, size_of
 
+from max.benchmark import bencher_iter_custom
 from std.benchmark import (
     Bench,
     BenchId,
@@ -32,7 +33,7 @@ from std.benchmark import (
     Bencher,
     ThroughputMeasure,
 )
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from internal_utils import arg_parse
 from layout import TileTensor, row_major
 from nn.gather_scatter import scatter_nd_generator
@@ -62,24 +63,24 @@ def run_row_scatter[
     var upd_tt = TileTensor(upd_dev, row_major[num_idx, cols]())
     var idx_tt = TileTensor(idx_dev, row_major[num_idx, 1]())
 
-    @parameter
     @always_inline
-    @__copy_capture(data_tt, out_tt, upd_tt, idx_tt)
-    def bench_func(mut b: Bencher) raises:
-        @parameter
+    def bench_func(
+        mut b: Bencher,
+    ) raises {var data_tt, var out_tt, var upd_tt, var idx_tt, imm}:
         @always_inline
-        def kernel_launch(ctx: DeviceContext) raises:
+        def kernel_launch(ctx: DeviceContext) raises {imm}:
             scatter_nd_generator[target="gpu"](
                 data_tt, idx_tt, upd_tt, out_tt, ctx
             )
 
-        b.iter_custom[kernel_launch](ctx)
+        bencher_iter_custom(b, kernel_launch, ctx)
 
     comptime data_bytes = rows * cols * size_of[dtype]()
     comptime upd_bytes = num_idx * cols * size_of[dtype]()
     comptime idx_bytes = num_idx * size_of[itype]()
     comptime num_bytes = 2 * data_bytes + 2 * upd_bytes + idx_bytes
-    m.bench_function[bench_func](
+    m.bench_function(
+        bench_func,
         BenchId(
             "scatter_nd",
             input_id=String(
@@ -119,24 +120,24 @@ def run_elem_scatter[
     var upd_tt = TileTensor(upd_dev, row_major[num_idx]())
     var idx_tt = TileTensor(idx_dev, row_major[num_idx, 2]())
 
-    @parameter
     @always_inline
-    @__copy_capture(data_tt, out_tt, upd_tt, idx_tt)
-    def bench_func(mut b: Bencher) raises:
-        @parameter
+    def bench_func(
+        mut b: Bencher,
+    ) raises {var data_tt, var out_tt, var upd_tt, var idx_tt, imm}:
         @always_inline
-        def kernel_launch(ctx: DeviceContext) raises:
+        def kernel_launch(ctx: DeviceContext) raises {imm}:
             scatter_nd_generator[target="gpu"](
                 data_tt, idx_tt, upd_tt, out_tt, ctx
             )
 
-        b.iter_custom[kernel_launch](ctx)
+        bencher_iter_custom(b, kernel_launch, ctx)
 
     comptime data_bytes = rows * cols * size_of[dtype]()
     comptime upd_bytes = num_idx * size_of[dtype]()
     comptime idx_bytes = num_idx * 2 * size_of[itype]()
     comptime num_bytes = 2 * data_bytes + 2 * upd_bytes + idx_bytes
-    m.bench_function[bench_func](
+    m.bench_function(
+        bench_func,
         BenchId(
             "scatter_nd",
             input_id=String(
@@ -156,7 +157,7 @@ def run_elem_scatter[
 
 def main() raises:
     var mode = arg_parse("mode", "row")
-    comptime dtype = get_defined_dtype["dtype", DType.float32]()
+    comptime dtype = get_defined_dtype["dtype", .float32]()
     comptime rows = get_defined_int["rows", 131072]()
     comptime cols = get_defined_int["cols", 1024]()
     comptime num_idx = get_defined_int["num_idx", 4096]()

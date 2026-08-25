@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import (
     Layout,
     LayoutTensor,
@@ -261,7 +261,7 @@ def run_ssd_combined_gpu[
     )
     var gamma_gpu_lt = TileTensor(gamma_gpu, row_major(dim))
 
-    var epsilon = Scalar[dtype](0.001)
+    var epsilon = Float32(0.001)
     var weight_offset = Scalar[dtype](0.0)
 
     # Run CPU kernel with host tensors
@@ -300,7 +300,7 @@ def run_ssd_combined_gpu[
         z_cpu_lt,
         delta_bias_cpu_lt,
         gamma_cpu_lt,
-        epsilon,
+        epsilon.cast[dtype](),
         weight_offset,
     )
 
@@ -333,11 +333,11 @@ def run_ssd_combined_gpu[
 
     ctx.enqueue_function(
         compiled_kernel,
-        total_batch_dim,
-        batch,
-        dim,
-        seqlen,
-        group_size,
+        Int32(total_batch_dim),
+        Int32(batch),
+        Int32(dim),
+        Int32(seqlen),
+        Int32(group_size),
         Int8(1) if delta_softplus else Int8(0),
         output_gpu_lt,
         x_gpu_lt,
@@ -352,7 +352,7 @@ def run_ssd_combined_gpu[
         z_gpu_lt,
         delta_bias_gpu_lt,
         gamma_gpu_lt,
-        epsilon,
+        epsilon.cast[dtype](),
         weight_offset,
         grid_dim=(num_blocks,),
         block_dim=(BLOCK_SIZE,),
@@ -396,7 +396,7 @@ def run_ssd_combined_gpu[
             var group_id = d_idx // group_size
 
             # Pre-load A values with LOG2E scaling (matches kernel)
-            var A_ref = SIMD[DType.float32, MAX_DSTATE](0.0)
+            var A_ref = SIMD[.float32, MAX_DSTATE](0.0)
             for n in range(dstate):
                 A_ref[n] = Float32(A_h[d_idx * dstate + n]) * LOG2E
 
@@ -411,7 +411,7 @@ def run_ssd_combined_gpu[
             var weight_offset_val = Float32(weight_offset)
 
             # Initialize state to zero
-            var state_ref = SIMD[DType.float32, MAX_DSTATE](0.0)
+            var state_ref = SIMD[.float32, MAX_DSTATE](0.0)
 
             for t in range(seqlen):
                 var off_3d = b_idx * dim * seqlen + d_idx * seqlen + t
@@ -427,8 +427,8 @@ def run_ssd_combined_gpu[
                 var delta_u = delta_val * u_val
 
                 # Load B, C values
-                var B_vals = SIMD[DType.float32, MAX_DSTATE](0.0)
-                var C_vals = SIMD[DType.float32, MAX_DSTATE](0.0)
+                var B_vals = SIMD[.float32, MAX_DSTATE](0.0)
+                var C_vals = SIMD[.float32, MAX_DSTATE](0.0)
                 for n in range(dstate):
                     var bc_offset = (
                         b_idx * n_groups * dstate * seqlen

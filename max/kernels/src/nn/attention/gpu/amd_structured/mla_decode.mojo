@@ -39,11 +39,11 @@ re-converged behind a shared helper.
 """
 
 from std.sys import get_defined_bool
-from std.math import ceildiv
+from std.math import align_up, ceildiv
 from std.math.uutils import umod, ufloordiv
 from std.gpu import block_idx
 from std.gpu import warp_id as get_warp_id
-from std.gpu.sync import s_waitcnt
+from max.gpu.sync import s_waitcnt
 from std.utils.numerics import get_accum_type, min_or_neg_inf
 
 from nn.attention.mha_mask import TileMaskStatus
@@ -98,7 +98,7 @@ __extension Attention:
         var warp_id = UInt32(get_warp_id[broadcast=True]())
 
         # Split-K: compute this partition's key range.
-        start, end = get_start_and_end_for_partitions[Self.BN](
+        var start, end = get_start_and_end_for_partitions[Self.BN](
             self.num_keys, num_partitions, block_idx.x
         )
 
@@ -118,10 +118,10 @@ __extension Attention:
         # K: full BN × depth SMEM, per-warp DMA cooperation, transpose read.
         # smem_depth is padded to a multiple of `_bk_smem` so every block
         # is exactly `_bk_smem`-wide.  When `_bk_smem == BK` the formula
-        # simplifies to `ceildiv(depth, BK) * BK`; when `_bk_smem < BK`
+        # simplifies to `align_up(depth, BK)`; when `_bk_smem < BK`
         # (MLA decode rope tail) it equals `depth`, since the depth%64==0
         # gate ensures depth is a multiple of `_bk_smem`.
-        comptime _k_smem_depth = ceildiv(Self.depth, _bk_smem) * _bk_smem
+        comptime _k_smem_depth = align_up(Self.depth, _bk_smem)
         comptime KBufT = KVBuffer[
             kv_t=Self.k_t,
             mma_shape=Self.mma_shape,
@@ -152,6 +152,15 @@ __extension Attention:
         # per-warp V reader; no V DMA buffer.  MHA: output_depth == depth.
         # MLA: output_depth < depth (V-nope only; rope tail consumed in QK).
         comptime depth_per_warp = Self.output_depth // Self.num_warps_n
+        # `num_warps_n` must evenly split `output_depth`, and each slice must be
+        # `_bk_smem`-aligned (or smaller than one block) so `v_warp_smem_offset`
+        # lands on the K writer's block boundaries rather than aliasing wrong K
+        # bytes. Holds for num_warps_n in {1,2,4} (depth_per_warp {512,256,128},
+        # all 64-aligned); S=1 is num_warps_n=4.
+        comptime assert Self.output_depth % Self.num_warps_n == 0
+        comptime assert (depth_per_warp % _bk_smem == 0) or (
+            depth_per_warp < _bk_smem
+        )
         # SMEM block width seen by each warp.  Must be >= _bk_smem so the
         # blocked product layout has at least one repeat.
         comptime smem_depth_per_warp = max(depth_per_warp, _bk_smem)
@@ -232,7 +241,7 @@ __extension Attention:
         ]
 
         @always_inline
-        @parameter
+        @__parameter
         def mma_qk():
             self.zero_p_buffer[0]()
             # ceildiv (not floor): when depth % BK != 0 (Kimi MLA: 576 %
@@ -250,7 +259,7 @@ __extension Attention:
                     )
 
         @always_inline
-        @parameter
+        @__parameter
         def mma_pv():
             # Each warp's v_buffer holds only depth_per_warp tiles
             # (loaded from the warp's LDS depth offset), so mma_subtile
@@ -272,7 +281,7 @@ __extension Attention:
         )
 
         @always_inline
-        @parameter
+        @__parameter
         def prefetch_next():
             """Prefetch next K after current LDS reads have drained.
 
@@ -285,7 +294,7 @@ __extension Attention:
             _ = k_buffer.load_from_dram[0]()
 
         @always_inline
-        @parameter
+        @__parameter
         def process_tile[has_next: Bool]():
             """Process one KV tile.
 

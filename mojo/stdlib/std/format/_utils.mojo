@@ -17,7 +17,6 @@ standard library for formatting and writing data. These utilities are not
 intended for public use and may change without notice.
 """
 
-from std.builtin.constrained import _constrained_conforms_to
 from std.io.io import _printf
 from std.os import abort
 from std.reflection.type_info import _unqualified_type_name
@@ -27,19 +26,8 @@ from std.sys.defines import get_defined_int
 from std.ffi import CStringSlice
 
 from std.bit import byte_swap
-from std.memory import Span, bitcast, memcpy
-from std.reflection.traits import AllWritable
-
-
-def constrained_conforms_to_writable[*Ts: AnyType, Parent: AnyType]():
-    comptime for i in range(Ts.size):
-        comptime T = Ts[i]
-        _constrained_conforms_to[
-            conforms_to(T, Writable),
-            Parent=Parent,
-            Element=T,
-            ParentConformsTo="Writable",
-        ]()
+from std.memory import bitcast, unsafe_memcpy
+from std.collections import Span
 
 
 struct _SequenceWriter[W: Writer, origin: MutOrigin](Movable, Writer):
@@ -81,19 +69,19 @@ struct _SequenceWriter[W: Writer, origin: MutOrigin](Movable, Writer):
             args[i].write_to(self.writer[])
 
 
-# TODO (MOCO-2367): Use unified closures once they correctly capture parameters.
 @always_inline
 def write_sequence_to[
-    W: Writer, ElementFn: def[T: Writer](mut T) raises StopIteration capturing
+    W: Writer
 ](
     mut writer: W,
+    element_fn: Some[def[T: Writer](mut T) raises StopIteration],
     start: StaticString = "[",
     end: StaticString = "]",
     sep: StaticString = ", ",
 ):
     """Writes a sequence of elements to a writer using a callback function.
 
-    This function writes elements by repeatedly calling the provided `ElementFn`
+    This function writes elements by repeatedly calling the provided `element_fn`
     callback until it raises `StopIteration`. Each element is separated by the
     specified separator, and the sequence is enclosed by opening and closing
     delimiters.
@@ -103,12 +91,12 @@ def write_sequence_to[
 
     Parameters:
         W: The writer type. Must conform to `Writer`.
-        ElementFn: A callback function that writes a single element. It receives
-            a mutable writer and should raise `StopIteration` when the sequence
-            is exhausted.
 
     Args:
         writer: The writer to write to.
+        element_fn: A callback closure that writes a single element. It receives
+            a mutable writer and should raise `StopIteration` when the sequence
+            is exhausted.
         start: The starting delimiter (default: `"["`).
         end: The ending delimiter (default: `"]"`).
         sep: The separator between elements (default: `", "`).
@@ -119,7 +107,7 @@ def write_sequence_to[
 
     while True:
         try:
-            ElementFn(sequence_writer)
+            element_fn(sequence_writer)
             sequence_writer.next_element()
         except:
             break
@@ -151,17 +139,16 @@ def write_sequence_to[
         end: The ending delimiter.
         sep: The separator between items (default: `", "`).
     """
-    comptime assert AllWritable[*Ts]  # satisfy where clause.
+    comptime assert Ts.all_conforms_to[Writable]()  # satisfy where clause.
     args._write_to(writer, start=start, end=end, sep=sep)
 
 
-# TODO (MOCO-2367): Use unified closures once they correctly capture parameters.
 @always_inline
 def write_sequence_to[
     size: Int,
-    ElementFn: def[i: Int](mut Some[Writer]) capturing,
 ](
     mut writer: Some[Writer],
+    element_fn: Some[def[i: Int](mut Some[Writer])],
     open: StaticString = "[",
     close: StaticString = "]",
     sep: StaticString = ", ",
@@ -178,11 +165,12 @@ def write_sequence_to[
 
     Parameters:
         size: The number of elements in the sequence (must be known at compile time).
-        ElementFn: A callback function that writes a single element given its index.
-            It receives a mutable writer and the index as a compile-time parameter.
 
     Args:
         writer: The writer to write to.
+        element_fn: A callback closure that writes a single element given its
+            index. It receives a mutable writer and the index as a compile-time
+            parameter.
         open: The opening delimiter (default: `"["`).
         close: The closing delimiter (default: `"]"`).
         sep: The separator between elements (default: `", "`).
@@ -192,40 +180,38 @@ def write_sequence_to[
     comptime for i in range(size):
         comptime if i != 0:
             writer.write_string(sep)
-        ElementFn[i=i](writer)
+        element_fn[i=i](writer)
 
     writer.write_string(close)
 
 
 @fieldwise_init
-struct TypeNames[*Types: AnyType](ImplicitlyCopyable, Writable):
+struct TypeNames[*Ts: AnyType](ImplicitlyCopyable, Writable):
     """A wrapper type that writes a comma-separated list of type names."""
 
     @always_inline
     def write_to(self, mut writer: Some[Writer]):
-        @parameter
-        def elements[i: Int](mut writer: Some[Writer]):
-            writer.write_string(_unqualified_type_name[Self.Types[i]]())
+        def elements[i: Int](mut writer: Some[Writer]) {}:
+            writer.write_string(_unqualified_type_name[Self.Ts[i]]())
 
-        write_sequence_to[
-            size=Self.Types.size,
-            ElementFn=elements,
-        ](writer, open="", close="")
+        write_sequence_to[size=Self.Ts.length](
+            writer, elements, open="", close=""
+        )
 
 
 @always_inline
 def write_repr_to[T: AnyType](t: T, mut writer: Some[Writer]):
     comptime assert conforms_to(T, Writable), "T must be Writable"
-    trait_downcast[Writable](t).write_repr_to(writer)
+    t.write_repr_to(writer)
 
 
 @always_inline
 def write_to[T: AnyType](t: T, mut writer: Some[Writer]):
     comptime assert conforms_to(T, Writable), "T must be Writable"
-    trait_downcast[Writable](t).write_to(writer)
+    t.write_to(writer)
 
 
-struct Repr[T: Writable, o: ImmutOrigin](ImplicitlyCopyable, Writable):
+struct Repr[T: Writable, o: ImmOrigin](ImplicitlyCopyable, Writable):
     """A wrapper type that writes the repr representation of a value.
 
     This struct wraps a reference to a `Writable` value and ensures that when
@@ -262,7 +248,7 @@ struct Repr[T: Writable, o: ImmutOrigin](ImplicitlyCopyable, Writable):
         self._value[].write_repr_to(writer)
 
 
-struct Named[T: Writable, o: ImmutOrigin](ImplicitlyCopyable, Writable):
+struct Named[T: Writable, o: ImmOrigin](ImplicitlyCopyable, Writable):
     """A wrapper type that writes a named field in the format `name=value`.
 
     This struct is useful for formatting struct fields or named parameters,
@@ -345,7 +331,7 @@ struct FormatStruct[T: Writer, o: MutOrigin](Movable):
         Returns:
             A reference to this `FormatStruct` instance for method chaining.
         """
-        comptime assert AllWritable[*Ts]  # satisfy where clause.
+        comptime assert Ts.all_conforms_to[Writable]()  # satisfy where clause.
         args._write_to(self._writer[], start="[", end="]")
         return self
 
@@ -363,12 +349,11 @@ struct FormatStruct[T: Writer, o: MutOrigin](Movable):
         Args:
             args: The field values to write.
         """
-        comptime assert AllWritable[*Ts]  # satisfy where clause.
+        comptime assert Ts.all_conforms_to[Writable]()  # satisfy where clause.
         args._write_to(self._writer[], start="(", end=")")
 
-    # TODO (MOCO-2367): Use unified closures once they correctly capture parameters.
     @always_inline
-    def fields[FieldsFn: def[T: Writer](mut T) capturing](self):
+    def fields(self, fields_fn: Some[def[T: Writer](mut T)]):
         """Writes field values in parentheses using a callback function.
 
         This overload is used when field values need to be generated dynamically
@@ -380,47 +365,51 @@ struct FormatStruct[T: Writer, o: MutOrigin](Movable):
         fields isn't known at compile time or where you need custom control over
         field formatting.
 
-        Parameters:
-            FieldsFn: A callback function that writes the field content. It
+        Args:
+            fields_fn: A callback closure that writes the field content. It
                 receives a mutable writer.
         """
         self._writer[].write_string("(")
-        FieldsFn(self._writer[])
+        fields_fn(self._writer[])
         self._writer[].write_string(")")
 
 
 comptime HEAP_BUFFER_BYTES = get_defined_int["HEAP_BUFFER_BYTES", 2048]()
 """How much memory to pre-allocate for the heap buffer, will abort if exceeded."""
 
-comptime STACK_BUFFER_BYTES = UInt(
-    get_defined_int["STACK_BUFFER_BYTES", 4096]()
-)
+comptime STACK_BUFFER_BYTES = get_defined_int["STACK_BUFFER_BYTES", 4096]()
 """The size of the stack buffer for IO operations from CPU."""
 
 
+@no_inline
+def _heap_buffer_exceeded() -> Never:
+    """Reports the heap buffer overflow and aborts.
+
+    Kept separate from its `@always_inline` callers (and shared between them)
+    so this rarely-taken path doesn't duplicate its `_printf`/`abort` sequence
+    at every `_WriteBufferHeap` write site.
+    """
+    _printf[
+        "HEAP_BUFFER_BYTES exceeded, increase with: `mojo -D"
+        " HEAP_BUFFER_BYTES=4096`\n"
+    ]()
+    abort()
+
+
 struct _WriteBufferHeap(Writable, Writer):
-    var _data: UnsafePointer[Byte, MutUntrackedOrigin]
+    var _data: Pointer[Byte, MutUntrackedOrigin]
     var _pos: Int
 
     def __init__(out self):
         comptime alignment: Int = align_of[Byte]()
-        self._data = __mlir_op.`pop.stack_allocation`[
-            count=HEAP_BUFFER_BYTES._int_mlir_index(),
-            _type=type_of(self._data)._mlir_type,
-            alignment=alignment._int_mlir_index(),
-        ]()
+        self._data = {
+            _mlir_value = __mlir_op.`pop.stack_allocation`[
+                count=HEAP_BUFFER_BYTES.__mlir_index__(),
+                _type=type_of(self._data)._mlir_type,
+                alignment=alignment.__mlir_index__(),
+            ]()
+        }
         self._pos = 0
-
-    def write_list[
-        T: Copyable & Writable, //
-    ](mut self, values: List[T, ...], *, sep: StaticString = StaticString()):
-        var length = len(values)
-        if length == 0:
-            return
-        self.write(values[0])
-        if length > 1:
-            for i in range(1, length):
-                self.write(sep, values[i])
 
     # TODO: Removing @always_inline causes some AMD tests to fail.
     # This is likely because not inlining causes _WriteBufferHeap to
@@ -431,38 +420,32 @@ struct _WriteBufferHeap(Writable, Writer):
     def write_string(mut self, string: StringSlice):
         var len_bytes = string.byte_length()
         if len_bytes + self._pos > HEAP_BUFFER_BYTES:
-            _printf[
-                "HEAP_BUFFER_BYTES exceeded, increase with: `mojo -D"
-                " HEAP_BUFFER_BYTES=4096`\n"
-            ]()
-            abort()
-        memcpy(
-            dest=self._data + self._pos,
-            src=string.unsafe_ptr(),
+            _heap_buffer_exceeded()
+        unsafe_memcpy(
+            dest=self._data.unsafe_offset(self._pos),
+            src=string.as_bytes().unsafe_ptr(),
             count=len_bytes,
         )
         self._pos += len_bytes
 
     def write_to(self, mut writer: Some[Writer]):
         writer.write_string(
-            StringSlice(unsafe_from_utf8=Span(ptr=self._data, length=self._pos))
+            StringSlice(
+                unsafe_from_utf8=Span(unsafe_ptr=self._data, length=self._pos)
+            )
         )
 
     def nul_terminate(
         mut self,
     ) -> CStringSlice[origin_of(self).unsafe_mut_cast[False]()]:
         if self._pos + 1 > HEAP_BUFFER_BYTES:
-            _printf[
-                "HEAP_BUFFER_BYTES exceeded, increase with: `mojo -D"
-                " HEAP_BUFFER_BYTES=4096`\n"
-            ]()
-            abort()
-        self._data[self._pos] = 0
+            _heap_buffer_exceeded()
+        self._data[unsafe_offset=self._pos] = 0
         self._pos += 1
 
         return CStringSlice(
-            unsafe_from_ptr=self._data.bitcast[Int8]()
-            .as_immutable()
+            unsafe_from_ptr=self._data.unsafe_bitcast[Int8]()
+            .as_imm()
             .unsafe_origin_cast[origin_of(self).unsafe_mut_cast[False]()]()
         )
 
@@ -470,8 +453,12 @@ struct _WriteBufferHeap(Writable, Writer):
         mut: Bool, origin: Origin[mut=mut], //
     ](ref[origin] self) -> StringSlice[origin]:
         return StringSlice(
-            unsafe_from_utf8=Span(
-                ptr=self._data.mut_cast[mut]().unsafe_origin_cast[origin](),
+            unsafe_from_utf8=Span[Byte, origin](
+                # `_data` is untracked, so handing it out under `origin` takes
+                # an explicit cast; untracked-to-named is never implicit.
+                unsafe_ptr=self._data.unsafe_mut_cast[mut]().unsafe_origin_cast[
+                    origin
+                ](),
                 length=self._pos,
             )
         )
@@ -481,42 +468,31 @@ struct _WriteBufferStack[
     origin: MutOrigin,
     W: Writer,
     //,
-    stack_buffer_bytes: UInt = STACK_BUFFER_BYTES,
+    stack_buffer_bytes: Int = STACK_BUFFER_BYTES,
 ](Writer):
-    var data: InlineArray[UInt8, Int(Self.stack_buffer_bytes)]
+    var data: Array[UInt8, Int(Self.stack_buffer_bytes)]
     var pos: Int
     var writer: Pointer[Self.W, Self.origin]
 
     def __init__(out self, ref[Self.origin] writer: Self.W):
-        self.data = InlineArray[UInt8, Int(Self.stack_buffer_bytes)](
+        self.data = Array[UInt8, Int(Self.stack_buffer_bytes)](
             uninitialized=True
         )
         self.pos = 0
         self.writer = Pointer(to=writer)
 
-    def write_list[
-        T: Copyable & Writable, //
-    ](mut self, values: List[T, ...], *, sep: String = String()):
-        var length = len(values)
-        if length == 0:
-            return
-        self.write(values[0])
-        if length > 1:
-            for i in range(1, length):
-                self.write(sep, values[i])
-
     def flush(mut self):
         self.writer[].write_string(
             StringSlice(
                 unsafe_from_utf8=Span(
-                    ptr=self.data.unsafe_ptr(), length=self.pos
+                    unsafe_ptr=self.data.unsafe_ptr(), length=self.pos
                 )
             )
         )
         self.pos = 0
 
     def write_string(mut self, string: StringSlice):
-        len_bytes = string.byte_length()
+        var len_bytes = string.byte_length()
         # If span is too large to fit in buffer, write directly and return
         if len_bytes > Int(Self.stack_buffer_bytes):
             self.flush()
@@ -526,9 +502,9 @@ struct _WriteBufferStack[
         elif self.pos + len_bytes > Int(Self.stack_buffer_bytes):
             self.flush()
         # Continue writing to buffer
-        memcpy(
-            dest=self.data.unsafe_ptr() + self.pos,
-            src=string.unsafe_ptr(),
+        unsafe_memcpy(
+            dest=self.data.unsafe_ptr().unsafe_offset(self.pos),
+            src=string.as_bytes().unsafe_ptr(),
             count=len_bytes,
         )
         self.pos += len_bytes
@@ -543,10 +519,10 @@ struct _TotalWritableBytes(Writer):
     def __init__[
         T: Copyable & Writable,
         //,
-        origin: ImmutOrigin,
+        origin: ImmOrigin,
     ](
         out self,
-        values: Span[T, ...],
+        values: Span[T, _],
         sep: StringSlice[origin] = StringSlice[origin](),
     ):
         self.size = 0
@@ -567,7 +543,7 @@ def _ord_ascii(s: StringSlice) -> UInt8:
 
 
 # fmt: off
-comptime _hex_table = SIMD[DType.uint8, 16](
+comptime _hex_table = SIMD[.uint8, 16](
     _ord_ascii("0"), _ord_ascii("1"), _ord_ascii("2"), _ord_ascii("3"), _ord_ascii("4"),
     _ord_ascii("5"), _ord_ascii("6"), _ord_ascii("7"), _ord_ascii("8"), _ord_ascii("9"),
     _ord_ascii("a"), _ord_ascii("b"), _ord_ascii("c"), _ord_ascii("d"), _ord_ascii("e"), _ord_ascii("f"),
@@ -578,13 +554,13 @@ comptime _hex_table = SIMD[DType.uint8, 16](
 @always_inline
 def _hex_digits_to_hex_chars(
     decimal: Scalar,
-) -> SIMD[DType.uint8, size_of[decimal.dtype]() * 2]:
+) -> SIMD[.uint8, size_of[decimal.dtype]() * 2]:
     """Return a fixed width hexadecimal value according to the scalar dtype.
 
     Examples:
 
     ```mojo
-    from std.memory import memset_zero
+    from std.memory import unsafe_memset_zero
     from std.testing import assert_equal
     from std.utils import StringSlice
     from std.format._utils import _hex_digits_to_hex_chars
@@ -594,17 +570,17 @@ def _hex_digits_to_hex_chars(
         comptime S = StringSlice[origin_of(items)]
         var ptr = items.unsafe_ptr()
         ptr.store(_hex_digits_to_hex_chars(UInt32(ord("🔥"))))
-        assert_equal("0001f525", S(unsafe_from_utf8=Span(ptr=ptr, length=8)))
+        assert_equal("0001f525", S(unsafe_from_utf8=Span(unsafe_ptr=ptr, length=8)))
         ptr.store(_hex_digits_to_hex_chars(UInt16(ord("你"))))
-        assert_equal("4f60", S(unsafe_from_utf8=Span(ptr=ptr, length=4)))
+        assert_equal("4f60", S(unsafe_from_utf8=Span(unsafe_ptr=ptr, length=4)))
         ptr.store(_hex_digits_to_hex_chars(UInt8(ord("Ö"))))
-        assert_equal("d6", S(unsafe_from_utf8=Span(ptr=ptr, length=2)))
+        assert_equal("d6", S(unsafe_from_utf8=Span(unsafe_ptr=ptr, length=2)))
     ```
     """
     comptime size = size_of[decimal.dtype]()
-    var bytes = bitcast[DType.uint8, size](byte_swap(decimal))
+    var bytes = bitcast[.uint8, size](byte_swap(decimal))
     var nibbles = (bytes >> 4).interleave(bytes & 0xF)
-    return SIMD[DType.uint8, size_of[decimal.dtype]() * 2](
+    return SIMD[.uint8, size_of[decimal.dtype]() * 2](
         _hex_table._dynamic_shuffle(nibbles)
     )
 
@@ -618,7 +594,7 @@ def _write_hex[
     Examples:
 
     ```mojo
-    from std.memory import memset_zero
+    from std.memory import unsafe_memset_zero
     from std.testing import assert_equal
     from std.utils import StringSlice
     from std.format._utils import _write_hex
@@ -643,22 +619,22 @@ def _write_hex[
 
     comptime if amnt_hex_bytes == 2:
         var chars = _hex_digits_to_hex_chars(UInt8(decimal))
-        var buf = InlineArray[Byte, 4](uninitialized=True)
+        var buf = Array[Byte, 4](uninitialized=True)
         buf[0] = `\\`
         buf[1] = `x`
-        (buf.unsafe_ptr() + 2).store(chars)
+        buf.unsafe_ptr().unsafe_offset(2).unsafe_store(chars)
         writer.write_string(StringSlice(unsafe_from_utf8=Span(buf)))
     elif amnt_hex_bytes == 4:
         var chars = _hex_digits_to_hex_chars(UInt16(decimal))
-        var buf = InlineArray[Byte, 6](uninitialized=True)
+        var buf = Array[Byte, 6](uninitialized=True)
         buf[0] = `\\`
         buf[1] = `u`
-        (buf.unsafe_ptr() + 2).store(chars)
+        buf.unsafe_ptr().unsafe_offset(2).unsafe_store(chars)
         writer.write_string(StringSlice(unsafe_from_utf8=Span(buf)))
     else:
         var chars = _hex_digits_to_hex_chars(UInt32(decimal))
-        var buf = InlineArray[Byte, 10](uninitialized=True)
+        var buf = Array[Byte, 10](uninitialized=True)
         buf[0] = `\\`
         buf[1] = `U`
-        (buf.unsafe_ptr() + 2).store(chars)
+        buf.unsafe_ptr().unsafe_offset(2).unsafe_store(chars)
         writer.write_string(StringSlice(unsafe_from_utf8=Span(buf)))

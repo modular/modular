@@ -14,7 +14,6 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any, ClassVar, cast
 
@@ -26,19 +25,19 @@ from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType
 from max.graph.weights import Weights, WeightsAdapter
 from max.nn.comm import Signals
-from max.nn.kv_cache import KVCacheInputsInterface
 from max.nn.transformer import ReturnLogits
 from max.pipelines.context import TextContext
 from max.pipelines.lib import (
     AlwaysSignalBuffersMixin,
-    CompilationTimer,
+    GraphPipelineModelWithKVCache,
     KVCacheConfig,
     ModelInputs,
     ModelOutputs,
     PipelineConfig,
-    PipelineModelWithKVCache,
 )
+from max.pipelines.lib.memory_estimation import MemoryPlan
 
+from .batch_processor import GptOssBatchProcessor
 from .gpt_oss import GptOss
 from .model_config import GptOssConfig
 
@@ -69,7 +68,7 @@ class GptOssInputs(ModelInputs):
 
 
 class GptOssModel(
-    AlwaysSignalBuffersMixin, PipelineModelWithKVCache[TextContext]
+    AlwaysSignalBuffersMixin, GraphPipelineModelWithKVCache[TextContext]
 ):
     """A GPT OSS pipeline model for text generation.
 
@@ -79,9 +78,15 @@ class GptOssModel(
     """
 
     model_config_cls: ClassVar[type[Any]] = GptOssConfig
+    batch_processor_cls: ClassVar[type[GptOssBatchProcessor]] = (
+        GptOssBatchProcessor
+    )
 
     model: Model
     """The compiled and initialized MAX Engine model ready for inference."""
+
+    # For text-only models, we should be using all the weights.
+    _strict_state_dict_loading = True
 
     def __init__(
         self,
@@ -90,8 +95,11 @@ class GptOssModel(
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
         weights: Weights,
+        *,
+        memory_plan: MemoryPlan,
         adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
+        max_batch_size: int = 1,
     ) -> None:
         """
         Args:
@@ -113,43 +121,32 @@ class GptOssModel(
             devices,
             kv_cache_config,
             weights,
-            adapter,
-            return_logits,
+            adapter=adapter,
+            return_logits=return_logits,
+            max_batch_size=max_batch_size,
+            memory_plan=memory_plan,
         )
 
         self.model = self.load_model(session)
 
-    def load_model(self, session: InferenceSession) -> Model:
-        """Loads the compiled GPT OSS model into the MAX Engine session.
-
-        Args:
-            session: The MAX Engine inference session.
-
-        Returns:
-            The loaded MAX Engine model object.
-        """
-
-        assert self.pipeline_config.runtime.max_batch_size, (
-            "Expected max_batch_size to be set"
+    def _create_model_config(self, state_dict: dict[str, Any]) -> GptOssConfig:
+        model_config = GptOssConfig.initialize(
+            self.pipeline_config, max_seq_len=self.max_seq_len
         )
-        self._input_row_offsets_prealloc = Buffer.from_numpy(
-            np.arange(
-                self.pipeline_config.runtime.max_batch_size + 1,
-                dtype=np.uint32,
-            )
-        ).to(self.devices[0])
+        model_config.finalize(
+            huggingface_config=self.huggingface_config,
+            state_dict=state_dict,
+            return_logits=self.return_logits,
+        )
+        return model_config
 
-        with CompilationTimer("model") as timer:
-            graph = self._build_graph()
-            timer.mark_build_complete()
-            model = session.load(graph, weights_registry=self.state_dict)
-
-        return model
-
-    # For text-only models, we should be using all the weights.
-    _strict_state_dict_loading = True
-
-    def _build_graph(self):  # noqa: ANN202
+    def _build_graph_for_compile(
+        self,
+        session: InferenceSession,
+        state_dict: dict[str, Any],
+        model_config: GptOssConfig,
+    ) -> tuple[Graph, dict[str, Any]]:
+        del session
         device0 = self.devices[0]
         device_ref = DeviceRef(device0.label, device0.id)
         tokens_type = TensorType(
@@ -172,35 +169,13 @@ class GptOssModel(
             devices=(DeviceRef(d.label, d.id) for d in self.devices)
         )
 
-        huggingface_config = self.huggingface_config
-        if self.adapter:
-            state_dict = self.adapter(
-                dict(self.weights.items()),
-                huggingface_config=huggingface_config,
-                pipeline_config=self.pipeline_config,
-            )
-        else:
-            state_dict = {
-                key: value.data() for key, value in self.weights.items()
-            }
-        model_config = GptOssConfig.initialize(self.pipeline_config)
-        model_config.finalize(
-            huggingface_config=huggingface_config,
-            state_dict=state_dict,
-            return_logits=self.return_logits,
-        )
         nn_model = GptOss(model_config)
         nn_model.load_state_dict(
             state_dict,
             weight_alignment=1,
             strict=self._strict_state_dict_loading,
         )
-        self.state_dict = nn_model.state_dict(auto_initialize=False)
-
-        # Create signal types for distributed communication
-        signals = Signals(
-            devices=(DeviceRef(d.label, d.id) for d in self.devices)
-        )
+        weights_registry = nn_model.state_dict(auto_initialize=False)
 
         kv_inputs = self.kv_params.get_symbolic_inputs()
         flattened_kv_types = kv_inputs.flatten()
@@ -241,7 +216,7 @@ class GptOssModel(
                 input_row_offsets=input_row_offsets,
             )
             graph.output(*outputs)
-        return graph
+        return graph, weights_registry
 
     def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
         """Executes the GPT OSS model with the prepared inputs.
@@ -293,52 +268,3 @@ class GptOssModel(
                 logits=cast(Buffer, model_outputs[0]),
                 next_token_logits=cast(Buffer, model_outputs[0]),
             )
-
-    def prepare_initial_token_inputs(
-        self,
-        replica_batches: Sequence[Sequence[TextContext]],
-        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
-        return_n_logits: int = 1,
-    ) -> ModelInputs:
-        """Prepares the initial inputs for the first execution pass of the GPT OSS model.
-
-        Args:
-            context_batch: A sequence of :obj:`TextContext` objects representing
-                the input prompts.
-            kv_cache_inputs: Optional inputs required by the KV cache manager.
-
-        Returns:
-            The prepared :obj:`ModelInputs` object for the initial execution step.
-        """
-        if len(replica_batches) > 1:
-            raise ValueError("Model does not support DP>1")
-
-        context_batch = replica_batches[0]
-        assert kv_cache_inputs is not None
-
-        # This needs to be replaced with actual input preparation
-        # Get input_row_offsets: start and end position of each batch in the
-        # combined total_seq_len dimension.
-        input_row_offsets = np.cumsum(
-            [0] + [ctx.tokens.active_length for ctx in context_batch],
-            dtype=np.uint32,
-        )
-
-        # Create a ragged token vector of length: sum(len(t) for t in tokens).
-        tokens = np.concatenate([ctx.tokens.active for ctx in context_batch])
-
-        # Create input_row_offsets for each device
-        input_row_offsets_tensors = [
-            Buffer.from_numpy(input_row_offsets).to(device)
-            for device in self.devices
-        ]
-
-        return GptOssInputs(
-            tokens=Buffer.from_numpy(tokens).to(self.devices[0]),
-            input_row_offsets=input_row_offsets_tensors,
-            return_n_logits=Buffer.from_numpy(
-                np.array([return_n_logits], dtype=np.int64)
-            ),
-            signal_buffers=self.signal_buffers,
-            kv_cache_inputs=kv_cache_inputs,
-        )

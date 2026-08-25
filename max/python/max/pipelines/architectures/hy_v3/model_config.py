@@ -16,13 +16,16 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
+from typing import ClassVar
 
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.nn.comm.ep import EPConfig
 from max.nn.kv_cache import KVCacheParams
 from max.pipelines.architectures.llama3.model_config import Llama3Config
+from max.pipelines.kv_cache import cache_dtype_for_encoding
 from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
+from max.pipelines.modeling.config_enums import SupportedEncoding
 from transformers.models.auto.configuration_auto import AutoConfig
 from typing_extensions import Self, override
 
@@ -87,6 +90,9 @@ def _required_config_bool(huggingface_config: AutoConfig, name: str) -> bool:
 class HYV3Config(Llama3Config):
     """Hy3-preview decoder-only MoE config."""
 
+    DEFAULT_ENCODING: ClassVar[SupportedEncoding] = "bfloat16"
+    SUPPORTED_ENCODINGS: ClassVar[set[SupportedEncoding]] = {"bfloat16"}
+
     # MoE
     num_local_experts: int = 192
     num_experts_per_tok: int = 8
@@ -111,6 +117,8 @@ class HYV3Config(Llama3Config):
         devices: list[DeviceRef],
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
+        *,
+        allow_kv_head_replication: bool = False,
     ) -> KVCacheParams:
         """Construct KV cache params using the explicit head_dim.
 
@@ -133,6 +141,7 @@ class HYV3Config(Llama3Config):
         )
         data_parallel_degree = max(1, int(configured_dp))
         return kv_cache_config.to_params(
+            allow_kv_head_replication=allow_kv_head_replication,
             dtype=cache_dtype,
             n_kv_heads=huggingface_config.num_key_value_heads,
             head_dim=huggingface_config.head_dim,
@@ -162,10 +171,14 @@ class HYV3Config(Llama3Config):
         cls,
         pipeline_config: PipelineConfig,
         model_config: MAXModelConfig | None = None,
+        *,
+        max_seq_len: int,
     ) -> Self:
         model_config = model_config or pipeline_config.model
         return cls.initialize_from_config(
-            pipeline_config, model_config.huggingface_config
+            pipeline_config,
+            model_config.huggingface_config,
+            max_seq_len=max_seq_len,
         )
 
     @override
@@ -175,6 +188,8 @@ class HYV3Config(Llama3Config):
         pipeline_config: PipelineConfig,
         huggingface_config: AutoConfig,
         model_config: MAXModelConfig | None = None,
+        *,
+        max_seq_len: int,
     ) -> Self:
         # Hy3 stores RoPE under ``rope_parameters`` (a flat dict).
         # Llama3Config reads ``rope_theta`` / ``rope_scaling`` directly,
@@ -190,7 +205,10 @@ class HYV3Config(Llama3Config):
         )
         try:
             base_config = Llama3Config.initialize_from_config(
-                pipeline_config, huggingface_config, model_config
+                pipeline_config,
+                huggingface_config,
+                model_config,
+                max_seq_len=max_seq_len,
             )
         finally:
             huggingface_config.rope_scaling = _orig_rope_scaling
@@ -204,7 +222,10 @@ class HYV3Config(Llama3Config):
         base_config.use_subgraphs = True
 
         kv_cache_config = pipeline_config.model.kv_cache
-        cache_dtype = pipeline_config.model.kv_cache.cache_dtype
+        cache_dtype = cache_dtype_for_encoding(
+            base_config.quantization_encoding,
+            pipeline_config.model.kv_cache.kv_cache_format,
+        )
         n_devices = len(pipeline_config.model.device_specs)
         device_refs = [
             DeviceRef(spec.device_type, spec.id)
@@ -267,6 +288,7 @@ class HYV3Config(Llama3Config):
             clip_qkv=base_config.clip_qkv,
             use_subgraphs=base_config.use_subgraphs,
             data_parallel_degree=base_config.data_parallel_degree,
+            quantization_encoding=base_config.quantization_encoding,
             # MoE
             num_local_experts=num_local_experts,
             num_experts_per_tok=num_experts_per_tok,

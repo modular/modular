@@ -202,7 +202,7 @@ fn write_pointer(ptr: UnsafePointer[mut=True, Int]):
 
 Returning a pointer requires specifying its origin, which tells the compiler
 where the pointer came from and who manages its lifetime. [Read more about
-lifetimes here](https://docs.modular.com/mojo/manual/values/lifetimes/).
+lifetimes here](https://mojolang.org/docs/manual/values/lifetimes/).
 
 ```mojo
 fn pointer_to(

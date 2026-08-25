@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from std.collections.string.string_slice import (
+from std.collections.string.string_span import (
     _get_kgen_string,
     get_static_string,
 )
@@ -28,7 +28,7 @@ from std.utils import StaticTuple
 def to_llvm_shared_cluster_mem_ptr[
     type: AnyType
 ](
-    ptr: UnsafePointer[type, address_space=AddressSpace.SHARED_CLUSTER, ...]
+    ptr: Pointer[type, address_space=.SHARED_CLUSTER, ...]
 ) -> __mlir_type.`!llvm.ptr<7>`:
     """Cast shared cluster memory pointer to LLVMPointer Type.
 
@@ -43,9 +43,7 @@ def to_llvm_shared_cluster_mem_ptr[
 @always_inline
 def to_llvm_global_mem_ptr[
     type: AnyType
-](
-    ptr: UnsafePointer[type, address_space=AddressSpace.GLOBAL, ...]
-) -> __mlir_type.`!llvm.ptr<1>`:
+](ptr: Pointer[type, address_space=.GLOBAL, ...]) -> __mlir_type.`!llvm.ptr<1>`:
     """Cast global memory pointer to LLVMPointer Type.
 
     Args:
@@ -62,9 +60,7 @@ def to_llvm_global_mem_ptr[
 @always_inline
 def to_llvm_shared_mem_ptr[
     type: AnyType
-](
-    ptr: UnsafePointer[type, address_space=AddressSpace.SHARED, ...]
-) -> __mlir_type.`!llvm.ptr<3>`:
+](ptr: Pointer[type, address_space=.SHARED, ...]) -> __mlir_type.`!llvm.ptr<3>`:
     """Cast shared memory pointer to LLVMPointer Type.
 
     Args:
@@ -81,7 +77,7 @@ def to_llvm_shared_mem_ptr[
 @always_inline
 def to_llvm_ptr[
     type: AnyType
-](ptr: UnsafePointer[type, ...]) -> __mlir_type.`!llvm.ptr`:
+](ptr: Pointer[type, ...]) -> __mlir_type.`!llvm.ptr`:
     """Cast a pointer to LLVMPointer Type.
 
     Args:
@@ -151,27 +147,19 @@ comptime _dtype_to_llvm_type_f8[dtype: DType] = __mlir_type.`i8` if dtype in (
 
 comptime _dtype_to_llvm_type_bf16[
     dtype: DType
-] = __mlir_type.`bf16` if dtype == DType.bfloat16 else _dtype_to_llvm_type_f8[
-    dtype
-]
+] = __mlir_type.`bf16` if dtype == .bfloat16 else _dtype_to_llvm_type_f8[dtype]
 
 comptime _dtype_to_llvm_type_f16[
     dtype: DType
-] = __mlir_type.`f16` if dtype == DType.float16 else _dtype_to_llvm_type_bf16[
-    dtype
-]
+] = __mlir_type.`f16` if dtype == .float16 else _dtype_to_llvm_type_bf16[dtype]
 
 comptime _dtype_to_llvm_type_f32[
     dtype: DType
-] = __mlir_type.`f32` if dtype == DType.float32 else _dtype_to_llvm_type_f16[
-    dtype
-]
+] = __mlir_type.`f32` if dtype == .float32 else _dtype_to_llvm_type_f16[dtype]
 
 comptime _dtype_to_llvm_type_f64[
     dtype: DType
-] = __mlir_type.`f64` if dtype == DType.float64 else _dtype_to_llvm_type_f32[
-    dtype
-]
+] = __mlir_type.`f64` if dtype == .float64 else _dtype_to_llvm_type_f32[dtype]
 
 comptime _dtype_to_llvm_type_i32[dtype: DType] = __mlir_type.`i32` if dtype in (
     DType.int32,
@@ -188,21 +176,21 @@ comptime dtype_to_llvm_type[dtype: DType] = _dtype_to_llvm_type_i64[dtype]
 
 @always_inline("nodebug")
 def _dtype_to_llvm_type_str[dtype: DType]() -> StaticString:
-    comptime if dtype == DType.float32:
+    comptime if dtype == .float32:
         return "f32"
-    elif dtype == DType.float16:
+    elif dtype == .float16:
         return "f16"
-    elif dtype == DType.bfloat16:
+    elif dtype == .bfloat16:
         return "bf16"
-    elif dtype == DType.float64:
+    elif dtype == .float64:
         return "f64"
-    elif dtype == DType.int32:
+    elif dtype == .int32:
         return "i32"
-    elif dtype == DType.uint32:
+    elif dtype == .uint32:
         return "i32"
-    elif dtype == DType.int64:
+    elif dtype == .int64:
         return "i64"
-    elif dtype == DType.uint64:
+    elif dtype == .uint64:
         return "i64"
     else:
         return "i8"  # float8 variants
@@ -264,7 +252,7 @@ def simd_to_llvm_struct[
                 +_get_kgen_string[_get_kgen_struct_fields[n, dtype]()](),
                 `)>`,
             ],
-            index=__mlir_attr[i._int_mlir_index(), `:index`],
+            index=__mlir_attr[i.__mlir_index__(), `:index`],
         ](e, st)
 
     return rebind[llvm_struct_dtype_splat_type[dtype, n]](
@@ -280,43 +268,43 @@ def simd_to_llvm_struct[
 
 @always_inline("nodebug")
 def _dtype_to_pop_scalar_str[dtype: DType]() -> StaticString:
-    comptime if dtype == DType.bool:
+    comptime if dtype == .bool:
         return "!kgen.scalar<bool>"
-    elif dtype == DType.int8:
+    elif dtype == .int8:
         return "!kgen.scalar<si8>"
-    elif dtype == DType.uint8:
+    elif dtype == .uint8:
         return "!kgen.scalar<ui8>"
-    elif dtype == DType.int16:
+    elif dtype == .int16:
         return "!kgen.scalar<si16>"
-    elif dtype == DType.uint16:
+    elif dtype == .uint16:
         return "!kgen.scalar<ui16>"
-    elif dtype == DType.int32:
+    elif dtype == .int32:
         return "!kgen.scalar<si32>"
-    elif dtype == DType.uint32:
+    elif dtype == .uint32:
         return "!kgen.scalar<ui32>"
-    elif dtype == DType.int64:
+    elif dtype == .int64:
         return "!kgen.scalar<si64>"
-    elif dtype == DType.uint64:
+    elif dtype == .uint64:
         return "!kgen.scalar<ui64>"
-    elif dtype == DType.float16:
+    elif dtype == .float16:
         return "!kgen.scalar<f16>"
-    elif dtype == DType.bfloat16:
+    elif dtype == .bfloat16:
         return "!kgen.scalar<bf16>"
-    elif dtype == DType.float32:
+    elif dtype == .float32:
         return "!kgen.scalar<f32>"
-    elif dtype == DType.float64:
+    elif dtype == .float64:
         return "!kgen.scalar<f64>"
-    elif dtype == DType.float8_e5m2:
+    elif dtype == .float8_e5m2:
         return "!kgen.scalar<f8E5M2>"
-    elif dtype == DType.float8_e5m2fnuz:
+    elif dtype == .float8_e5m2fnuz:
         return "!kgen.scalar<f8E5M2FNUZ>"
-    elif dtype == DType.float8_e4m3fn:
+    elif dtype == .float8_e4m3fn:
         return "!kgen.scalar<f8E4M3>"
-    elif dtype == DType.float8_e4m3fnuz:
+    elif dtype == .float8_e4m3fnuz:
         return "!kgen.scalar<f8E4M3FNUZ>"
-    elif dtype == DType.float8_e3m4:
+    elif dtype == .float8_e3m4:
         return "!kgen.scalar<f8E3M4>"
-    elif dtype == DType.float8_e8m0fnu:
+    elif dtype == .float8_e8m0fnu:
         return "!kgen.scalar<f8E8M0FNU>"
     else:
         comptime assert False, "unsupported dtype for !kgen.scalar"
@@ -367,7 +355,7 @@ def llvm_struct_to_simd[
         # unrealized_conversion_cast retypes it to `!kgen.scalar<dtype>`.
         var e = __mlir_op.`builtin.unrealized_conversion_cast`[
             _type=Scalar[dtype]._mlir_type
-        ](__mlir_op.`kgen.struct.extract`[index=i._int_mlir_index()](pack))
+        ](__mlir_op.`kgen.struct.extract`[index=i.__mlir_index__()](pack))
         simd[i] = Scalar[dtype](mlir_value=e)
     return simd
 
@@ -410,7 +398,7 @@ def array_to_llvm_struct[
                 +_get_kgen_string[_get_kgen_struct_fields[n, dtype]()](),
                 `)>`,
             ],
-            index=__mlir_attr[i._int_mlir_index(), `:index`],
+            index=__mlir_attr[i.__mlir_index__(), `:index`],
         ](e, st)
 
     return rebind[llvm_struct_dtype_splat_type[dtype, n]](
@@ -446,6 +434,6 @@ def llvm_struct_to_array[
     comptime for i in range(n):
         var e = __mlir_op.`builtin.unrealized_conversion_cast`[
             _type=Scalar[dtype]._mlir_type
-        ](__mlir_op.`kgen.struct.extract`[index=i._int_mlir_index()](pack))
+        ](__mlir_op.`kgen.struct.extract`[index=i.__mlir_index__()](pack))
         array[i] = Scalar[dtype](mlir_value=e)
     return array

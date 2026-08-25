@@ -2,7 +2,6 @@ load("//bazel:api.bzl", "modular_py_test", "requirement")
 
 package(default_visibility = [
     "//:__pkg__",
-    "//SDK/integration-test:__subpackages__",
     "//max/tests:__subpackages__",
     "//oss/modular/max/tests:__subpackages__",
 ])
@@ -20,6 +19,10 @@ modular_py_test(
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
+    ignore_extra_deps = [
+        # Unsure why, this test slows down if this doesn't exist.
+        "//max/python/max/_interpreter_ops",
+    ],
     tags = ["gpu"],
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],  # FIXME: MOCO-2411
@@ -27,12 +30,14 @@ modular_py_test(
         "//conditions:default": [],
     }),
     deps = [
+        "//max/python/max/_interpreter_ops",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/experimental",
         "//max/python/max/experimental/nn",
         "//max/python/max/graph",
         "//max/python/max/pipelines/architectures/flux_modulev3",
+        "//max/python/max/pipelines/lib",
         requirement("numpy"),
     ],
 )

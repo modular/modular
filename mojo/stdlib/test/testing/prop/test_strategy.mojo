@@ -21,7 +21,6 @@ from std.testing.prop import Rng, Strategy
 from std.testing.prop.strategy.simd_strategy import *
 from std.testing.prop.strategy.string_strategy import *
 from std.testing.prop.strategy.list_strategy import *
-from std.sys.intrinsics import _type_is_eq
 from std.collections.string._utf8 import _is_valid_utf8
 
 
@@ -56,7 +55,7 @@ def test_strategy_returns_correct_value() raises:
 def test_simd_strategy() raises:
     var min = Int64(-10)
     var max = Int64(30)
-    var strat = SIMD[DType.int64, 8].strategy(min=min, max=max)
+    var strat = SIMD[.int64, 8].strategy(min=min, max=max)
     var rng = Rng(seed=1234)
     for _ in range(10):
         var v = strat.value(rng)

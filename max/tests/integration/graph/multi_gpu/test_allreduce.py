@@ -260,7 +260,9 @@ def test_allreduce_signal_buffer_too_small_error_message(
     ]
 
     # Execute and expect error.
-    error_regex = r"Expected signal buffer to be at least \d+ bytes, but got \d+\. This error can appear when running large requests through MAX serve without chunked prefill\. If so, try enabling chunked prefill with --enable-chunked-prefill\. Otherwise, consider increasing the signal buffer size\."
+    error_regex = (
+        r"Expected signal buffer to be at least \d+ bytes, but got \d+\."
+    )
 
     with pytest.raises(ValueError, match=error_regex):
         compiled.execute(*input_tensors, *signals.buffers())
@@ -607,14 +609,7 @@ def test_transfer_to_subgraph_with_allreduce(num_gpus: int) -> None:
         h = [input_tensor.to(DeviceRef.GPU(i)) for i in range(num_gpus)]
 
         # Build and invoke transformer block as a subgraph
-        subgraph_input_types = [
-            TensorType(DType.float32, shape=[M, N], device=graph_devices[i])
-            for i in range(num_gpus)
-        ] + list(signals.input_types())
-
-        subgraph = model.build_subgraph(
-            "transformer_block", subgraph_input_types
-        )
+        subgraph = model.build_subgraph("transformer_block", [*h, *signal_bufs])
 
         results = ops.call(subgraph, *h, *signal_bufs)
         graph.output(*[r.tensor for r in results])

@@ -21,6 +21,7 @@ from max.pipelines.lib import (
 from max.pipelines.modeling.types import PipelineTask
 
 from . import weight_adapters
+from .batch_processor import MistralBatchProcessor
 from .model import MistralModel
 from .model_config import MistralConfig
 
@@ -28,8 +29,8 @@ mistral_arch = SupportedArchitecture(
     name="MistralForCausalLM",
     task=PipelineTask.TEXT_GENERATION,
     example_repo_ids=["mistralai/Mistral-Nemo-Instruct-2407"],
-    default_encoding="bfloat16",
-    supported_encodings={"bfloat16"},
+    default_encoding=MistralConfig.DEFAULT_ENCODING,
+    supported_encodings=MistralConfig.SUPPORTED_ENCODINGS,
     multi_gpu_supported=True,
     pipeline_model=MistralModel,
     tokenizer=TextTokenizer,
@@ -39,5 +40,8 @@ mistral_arch = SupportedArchitecture(
         WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
     },
     config=MistralConfig,
+    batching=MistralBatchProcessor,
     memory_planner=PagedMemoryPlanner,
+    supports_overlap_scheduler=False,
+    supports_device_graph_capture=False,
 )

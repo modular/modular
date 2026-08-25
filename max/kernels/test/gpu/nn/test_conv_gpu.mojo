@@ -24,7 +24,7 @@ from layout import (
     TileTensor,
     row_major,
 )
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from nn.conv.conv import (
     Naive2dConvolution,
     conv3d_gpu_naive_ndhwc_qrscf,
@@ -158,7 +158,7 @@ def test_conv3d_gpu[
         stride,
         dilation,
         pad,
-        Int(1),  # num_groups
+        Int32(1),  # num_groups
         grid_dim=(grid_dim_x, grid_dim_y, grid_dim_z),
         block_dim=(block_size, block_size, 1),
     )
@@ -281,13 +281,13 @@ def test_conv3d_gpu_dispatch[
         output_dev.unsafe_ptr(), LTToTTLayout[output_layout_]()
     )
 
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(output_lt)
     def scale_epilogue[
-        _dtype: DType, _rank: Int, _width: SIMDSize, _alignment: Int = 1
+        _dtype: DType, _rank: Int, _width: SIMDLength, _alignment: Int = 1
     ](coords: IndexList[_rank], val: SIMD[_dtype, _width]):
-        var scaled = (val.cast[DType.float32]() * 2.0).cast[dtype]()
+        var scaled = (val.cast[.float32]() * 2.0).cast[dtype]()
         output_lt.store[
             width=_width, store_alignment=align_of[dtype]() * _alignment
         ](
@@ -438,13 +438,13 @@ def test_conv3d_im2col_multi_tile[
 
     comptime if with_epilogue:
 
-        @parameter
+        @__parameter
         @always_inline
         @__copy_capture(output_lt)
         def scale_epilogue[
-            _dtype: DType, _rank: Int, _width: SIMDSize, _alignment: Int = 1
+            _dtype: DType, _rank: Int, _width: SIMDLength, _alignment: Int = 1
         ](coords: IndexList[_rank], val: SIMD[_dtype, _width]):
-            var scaled = (val.cast[DType.float32]() * 2.0).cast[dtype]()
+            var scaled = (val.cast[.float32]() * 2.0).cast[dtype]()
             output_lt.store[
                 width=_width, store_alignment=align_of[dtype]() * _alignment
             ](
@@ -615,13 +615,13 @@ def test_conv2d_im2col_multi_tile[
     var handled: Bool
     comptime if with_epilogue:
 
-        @parameter
+        @__parameter
         @always_inline
         @__copy_capture(output_lt)
         def scale_epilogue[
-            _dtype: DType, _rank: Int, _width: SIMDSize, _alignment: Int = 1
+            _dtype: DType, _rank: Int, _width: SIMDLength, _alignment: Int = 1
         ](coords: IndexList[_rank], val: SIMD[_dtype, _width]):
-            var scaled = (val.cast[DType.float32]() * 2.0).cast[dtype]()
+            var scaled = (val.cast[.float32]() * 2.0).cast[dtype]()
             output_lt.store[
                 width=_width, store_alignment=align_of[dtype]() * _alignment
             ](
@@ -774,13 +774,13 @@ def test_conv3d_1x1x1_matmul_direct[
 
     comptime if with_epilogue:
 
-        @parameter
+        @__parameter
         @always_inline
         @__copy_capture(output_lt)
         def scale_epilogue[
-            _dtype: DType, _rank: Int, _width: SIMDSize, _alignment: Int = 1
+            _dtype: DType, _rank: Int, _width: SIMDLength, _alignment: Int = 1
         ](coords: IndexList[_rank], val: SIMD[_dtype, _width]):
-            var scaled = (val.cast[DType.float32]() * 2.0).cast[dtype]()
+            var scaled = (val.cast[.float32]() * 2.0).cast[dtype]()
             output_lt.store[
                 width=_width, store_alignment=align_of[dtype]() * _alignment
             ](

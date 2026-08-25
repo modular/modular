@@ -52,7 +52,7 @@ def test_exp_float64() raises:
 
 @always_inline
 def exp_libm[
-    dtype: DType, simd_width: SIMDSize
+    dtype: DType, simd_width: SIMDLength
 ](arg: SIMD[dtype, simd_width]) raises -> SIMD[dtype, simd_width]:
     return libm_call["expf", "exp"](arg)
 
@@ -68,8 +68,8 @@ def _test_exp_libm[dtype: DType]() raises where dtype.is_floating_point():
 
 
 def test_exp_libm() raises:
-    _test_exp_libm[DType.float32]()
-    _test_exp_libm[DType.float64]()
+    _test_exp_libm[.float32]()
+    _test_exp_libm[.float64]()
 
 
 @fieldwise_init

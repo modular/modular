@@ -16,8 +16,8 @@ from std.python import Python
 
 
 def main() raises:
-    py_list = Python.list("cat", 2, 3.14159, 4)
-    n = py_list[2]
+    var py_list = Python.list("cat", 2, 3.14159, 4)
+    var n = py_list[2]
     print("n =", n)
     py_list.append(5)
     py_list[0] = "aardvark"

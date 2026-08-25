@@ -14,11 +14,11 @@ from std.python import Python
 
 
 def main() raises:
-    states = [String("California"), "Hawaii", "Oregon"]
+    var states: List = [String("California"), "Hawaii", "Oregon"]
     for state in states:
         print(state)
 
-    numbers = {42, 0}
+    var numbers = {42, 0}
     for number in numbers:
         print(number)
 
@@ -61,13 +61,13 @@ def main() raises:
 
     print()
 
-    empty = List[Int]()
+    var empty = List[Int]()
     for i in empty:
         print(i)
     else:
         print("Finished executing 'for' loop")
 
-    animals = ["cat", "aardvark", "hippopotamus", "dog"]
+    var animals: List = ["cat", "aardvark", "hippopotamus", "dog"]
     for animal in animals:
         if animal == "dog":
             print("Found a dog")
@@ -76,7 +76,7 @@ def main() raises:
         print("No dog found")
 
     # Using references to modify a list item in a loop
-    var values = [1, 4, 7, 3, 6, 11]
+    var values: List = [1, 4, 7, 3, 6, 11]
     for ref value in values:
         if value % 2 != 0:
             value -= 1
@@ -85,7 +85,7 @@ def main() raises:
     # from python import Python
 
     # Iterate over a mixed-type Python dictionary
-    py_dict = Python.evaluate("{'a': 1, 'b': 2.71828, 'c': 'sushi'}")
+    var py_dict = Python.evaluate("{'a': 1, 'b': 2.71828, 'c': 'sushi'}")
     for py_key in py_dict:  # Each key is of type "PythonObject"
         print(py_key, py_dict[py_key])
 

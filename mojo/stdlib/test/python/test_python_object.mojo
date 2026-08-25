@@ -157,6 +157,16 @@ def _test_inplace_dunder_methods(mut python: Python) raises:
     a += 1
     assert_equal_pyobj(a, 1)
 
+    # Both operands the same object: the mutating case must not read the
+    # operand after rebinding the target.
+    var self_aliased: PythonObject = [1, 2]
+    self_aliased += self_aliased
+    assert_equal(String(py=self_aliased), "[1, 2, 1, 2]")
+
+    var immutable = PythonObject(21)
+    immutable += immutable
+    assert_equal_pyobj(immutable, 42)
+
 
 def test_num_conversion() raises:
     comptime n = UInt64(0xFEDC_BA09_8765_4321)
@@ -342,9 +352,9 @@ def test_dict() raises:
     var val: PyObjectPtr = {}
     _ = cpy.PyDict_Next(
         d._obj_ptr,
-        UnsafePointer(to=_pos),
-        UnsafePointer(to=key),
-        UnsafePointer(to=val),
+        Pointer(to=_pos).as_unsafe_any_origin(),
+        Pointer(to=key).as_unsafe_any_origin(),
+        Pointer(to=val).as_unsafe_any_origin(),
     )
 
     assert_equal(cpy._Py_REFCNT(key), 1)
@@ -404,7 +414,7 @@ def test_none_implicit_conversion() raises:
 
 
 def test_getitem_raises() raises:
-    custom_indexable = Python.import_module("custom_indexable")
+    var custom_indexable = Python.import_module("custom_indexable")
 
     var a = PythonObject(2)
     with assert_raises(contains="'int' object is not subscriptable"):
@@ -430,7 +440,7 @@ def test_getitem_raises() raises:
     with assert_raises(contains="'NoneType' object is not subscriptable"):
         _ = d[0, 0]
 
-    with_get = custom_indexable.WithGetItem()
+    var with_get = custom_indexable.WithGetItem()
     assert_equal("Key: 0", String(py=with_get[0]))
     assert_equal("Keys: 0, 0", String(py=with_get[0, 0]))
     assert_equal("Keys: 0, 0, 0", String(py=with_get[0, 0, 0]))
@@ -446,7 +456,7 @@ def test_getitem_raises() raises:
     with assert_raises(contains="Custom error"):
         _ = with_get_exception[1]
 
-    with_2d = custom_indexable.With2DGetItem()
+    var with_2d = custom_indexable.With2DGetItem()
     assert_equal("[1, 2, 3]", String(py=with_2d[0]))
     assert_equal(2, Int(py=with_2d[0, 1]))
     assert_equal(6, Int(py=with_2d[1, 2]))
@@ -462,36 +472,36 @@ def test_getitem_raises() raises:
 
 
 def test_setitem_raises() raises:
-    custom_indexable = Python.import_module("custom_indexable")
-    t = Python.evaluate("(1,2,3)")
+    var custom_indexable = Python.import_module("custom_indexable")
+    var t = Python.evaluate("(1,2,3)")
     with assert_raises(
         contains="'tuple' object does not support item assignment"
     ):
         t[0] = 0
 
-    lst = Python.evaluate("[1, 2, 3]")
+    var lst = Python.evaluate("[1, 2, 3]")
     with assert_raises(contains="list assignment index out of range"):
         lst[10] = 4
 
-    s = Python.evaluate('"hello"')
+    var s = Python.evaluate('"hello"')
     with assert_raises(
         contains="'str' object does not support item assignment"
     ):
         s[3] = "xy"
 
-    with_out = custom_indexable.Simple()
+    var with_out = custom_indexable.Simple()
     with assert_raises(
         contains="'Simple' object does not support item assignment"
     ):
         with_out[0] = 0
 
-    d = Python.evaluate("{}")
+    var d = Python.evaluate("{}")
     with assert_raises(contains="unhashable type: 'list'"):
         d[Python.list(1, 2, 3)] = 5
 
 
 def test_py_slice() raises:
-    custom_indexable = Python.import_module("custom_indexable")
+    var custom_indexable = Python.import_module("custom_indexable")
     var a: PythonObject = [1, 2, 3, 4, 5]
     assert_equal("[2, 3]", String(py=a[1:3]))
     assert_equal("[1, 2, 3, 4, 5]", String(py=a[:]))
@@ -545,7 +555,7 @@ def test_py_slice() raises:
     with assert_raises(contains="'int' object is not subscriptable"):
         _ = i[0:1]
 
-    with_2d = custom_indexable.With2DGetItem()
+    var with_2d = custom_indexable.With2DGetItem()
     assert_equal("[1, 2]", String(py=with_2d[0, PythonObject(Slice(0, 2))]))
     assert_equal("[1, 2]", String(py=with_2d[0][0:2]))
 
@@ -570,7 +580,10 @@ def test_py_slice() raises:
 
 
 def test_contains_dunder() raises:
-    with assert_raises(contains="'int' object is not iterable"):
+    # `in` now routes through CPython's `PySequence_Contains`, which raises the
+    # standard membership-test message (wording varies across Python versions,
+    # e.g. "... is not iterable" vs "... is not a container or iterable").
+    with assert_raises(contains="argument of type 'int' is not"):
         var z = PythonObject(0)
         _ = 5 in z
 
@@ -589,6 +602,16 @@ def test_contains_dunder() raises:
     assert_true("A" in y)
     assert_false("C" in y)
     assert_true("B" in y)
+
+    # An object that is iterable but defines no `__contains__` is searched by
+    # iteration.
+    var p = Python()
+    _ = p.eval(
+        "class OnlyIter:\n  def __iter__(self):\n    return iter([7, 8])"
+    )
+    var only_iter = p.evaluate("OnlyIter()")
+    assert_true(7 in only_iter)
+    assert_false(9 in only_iter)
 
 
 @fieldwise_init
@@ -790,6 +813,114 @@ def test_with_python_dunder_methods() raises:
 def test_with_python_inplace_dunder_methods() raises:
     var python = Python()
     _test_inplace_dunder_methods(python)
+
+
+def test_reflected_operand_fallback() raises:
+    # A left operand that returns `NotImplemented` must fall back to the right
+    # operand's reflected dunder. Each dunder returns its own name, so these
+    # also pin which operator maps to which protocol function.
+    var mod = Python.import_module("custom_operators")
+    var r = mod.OnlyReflected()
+    var i = PythonObject(1)
+
+    # Reached through this object's forward operators.
+    assert_equal_pyobj(i + r, "radd")
+    assert_equal_pyobj(i - r, "rsub")
+    assert_equal_pyobj(i * r, "rmul")
+    assert_equal_pyobj(i / r, "rtruediv")
+    assert_equal_pyobj(i // r, "rfloordiv")
+    assert_equal_pyobj(i % r, "rmod")
+    assert_equal_pyobj(i**r, "rpow")
+    assert_equal_pyobj(i << r, "rlshift")
+    assert_equal_pyobj(i >> r, "rrshift")
+    assert_equal_pyobj(i & r, "rand")
+    assert_equal_pyobj(i | r, "ror")
+    assert_equal_pyobj(i ^ r, "rxor")
+
+    # Reached through this object's reverse operators, which evaluate the whole
+    # operation with the operands swapped.
+    assert_equal_pyobj(1 + r, "radd")
+    assert_equal_pyobj(1 - r, "rsub")
+    assert_equal_pyobj(1 * r, "rmul")
+    assert_equal_pyobj(1 / r, "rtruediv")
+    assert_equal_pyobj(1 // r, "rfloordiv")
+    assert_equal_pyobj(1 % r, "rmod")
+    assert_equal_pyobj(1**r, "rpow")
+    assert_equal_pyobj(1 << r, "rlshift")
+    assert_equal_pyobj(1 >> r, "rrshift")
+    assert_equal_pyobj(1 & r, "rand")
+    assert_equal_pyobj(1 | r, "ror")
+    assert_equal_pyobj(1 ^ r, "rxor")
+
+
+def test_inplace_operator_fallback() raises:
+    # An augmented assignment on a type with no in-place dunder falls back to
+    # the plain operator. A fresh operand per case, since each assignment
+    # rebinds the name to the result.
+    var mod = Python.import_module("custom_operators")
+
+    var add = mod.OnlyForward()
+    add += 1
+    assert_equal_pyobj(add, "add")
+
+    var sub = mod.OnlyForward()
+    sub -= 1
+    assert_equal_pyobj(sub, "sub")
+
+    var mul = mod.OnlyForward()
+    mul *= 1
+    assert_equal_pyobj(mul, "mul")
+
+    var truediv = mod.OnlyForward()
+    truediv /= 1
+    assert_equal_pyobj(truediv, "truediv")
+
+    var floordiv = mod.OnlyForward()
+    floordiv //= 1
+    assert_equal_pyobj(floordiv, "floordiv")
+
+    var mod_ = mod.OnlyForward()
+    mod_ %= 1
+    assert_equal_pyobj(mod_, "mod")
+
+    var pow_ = mod.OnlyForward()
+    pow_ **= 1
+    assert_equal_pyobj(pow_, "pow")
+
+    var lshift = mod.OnlyForward()
+    lshift <<= 1
+    assert_equal_pyobj(lshift, "lshift")
+
+    var rshift = mod.OnlyForward()
+    rshift >>= 1
+    assert_equal_pyobj(rshift, "rshift")
+
+    var and_ = mod.OnlyForward()
+    and_ &= 1
+    assert_equal_pyobj(and_, "and")
+
+    var or_ = mod.OnlyForward()
+    or_ |= 1
+    assert_equal_pyobj(or_, "or")
+
+    var xor = mod.OnlyForward()
+    xor ^= 1
+    assert_equal_pyobj(xor, "xor")
+
+
+def test_unsupported_operands() raises:
+    # An operation that no operand supports raises, rather than yielding the
+    # `NotImplemented` object as a value.
+    with assert_raises(contains="unsupported operand type(s) for +"):
+        _ = PythonObject(1) + PythonObject("two")
+
+    with assert_raises(contains="not supported between instances"):
+        _ = PythonObject(1) < PythonObject("two")
+
+    # Equality is the exception: mismatched types compare unequal rather than
+    # raising, so this must be `False`, not a truthy `NotImplemented`.
+    assert_false(PythonObject(1) == PythonObject("two"))
+    assert_true(PythonObject(1) != PythonObject("two"))
 
 
 def test_with_python_string_conversions() raises:

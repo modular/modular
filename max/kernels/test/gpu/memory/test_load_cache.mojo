@@ -12,14 +12,14 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from std.gpu.host.compile import _compile_code
-from std.gpu.memory import CacheEviction, CacheOperation, load
+from max.gpu.host.compile import _compile_code
+from max.gpu.memory import CacheEviction, CacheOperation, load
 from std.testing import assert_equal, assert_true
 
 
 def load_value[
     *,
-    dtype: DType = DType.uint32,
+    dtype: DType = .uint32,
     width: Int = 1,
     read_only: Bool = False,
     prefetch_size: Optional[Int] = None,

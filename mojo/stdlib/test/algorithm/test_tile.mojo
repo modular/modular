@@ -24,7 +24,6 @@ from std.utils.index import Index, IndexList
 
 # Helper workgroup function to test dynamic workgroup tiling.
 @always_inline
-@parameter
 def print_number_dynamic(data_idx: Int, tile_size: Int):
     # Print out the range of workload that this launched instance is
     #  processing, in (begin, end).
@@ -33,14 +32,12 @@ def print_number_dynamic(data_idx: Int, tile_size: Int):
 
 # Helper workgroup function to test static workgroup tiling.
 @always_inline
-@parameter
 def print_number_static[tile_size: Int](data_idx: Int):
     print_number_dynamic(data_idx, tile_size)
 
 
 # Helper workgroup function to test static workgroup tiling.
 @always_inline
-@parameter
 def print_tile2d_static[
     tile_size_x: Int, tile_size_y: Int
 ](offset_x: Int, offset_y: Int):
@@ -52,13 +49,13 @@ def test_static_tile() raises:
     print("test_static_tile")
     # CHECK: (0, 4)
     # CHECK: (4, 6)
-    tile[print_number_static, [4, 3, 2, 1]](0, 6)
+    tile[[4, 3, 2, 1]](0, 6, print_number_static)
     # CHECK: (0, 4)
     # CHECK: (4, 8)
-    tile[print_number_static, [4, 3, 2, 1]](0, 8)
+    tile[[4, 3, 2, 1]](0, 8, print_number_static)
     # CHECK: (1, 5)
     # CHECK: (5, 6)
-    tile[print_number_static, [4, 3, 2, 1]](1, 6)
+    tile[[4, 3, 2, 1]](1, 6, print_number_static)
 
 
 # CHECK-LABEL: test_static_tile2d
@@ -74,7 +71,7 @@ def test_static_tile2d() raises:
     # CHECK: (2, 2, 2, 4)
     # CHECK: (2, 2, 4, 4)
     # CHECK: ========
-    tile[print_tile2d_static, [2], [2]](0, 0, 6, 6)
+    tile[[2], [2]](0, 0, 6, 6, print_tile2d_static)
     print("========")
     # CHECK: (4, 4, 4, 4)
     # CHECK: (4, 4, 8, 4)
@@ -86,7 +83,7 @@ def test_static_tile2d() raises:
     # CHECK: (4, 4, 8, 12)
     # CHECK: (4, 4, 12, 12)
     # CHECK: ========
-    tile[print_tile2d_static, [4], [4]](4, 4, 16, 16)
+    tile[[4], [4]](4, 4, 16, 16, print_tile2d_static)
     print("========")
     # CHECK: (3, 4, 1, 1)
     # CHECK: (3, 4, 4, 1)
@@ -103,7 +100,7 @@ def test_static_tile2d() raises:
     # CHECK: (3, 1, 7, 6)
     # CHECK: (1, 1, 10, 6)
     # CHECK: (1, 1, 11, 6)
-    tile[print_tile2d_static, [3, 1], [4, 1]](1, 1, 12, 7)
+    tile[[3, 1], [4, 1]](1, 1, 12, 7, print_tile2d_static)
 
 
 # CHECK-LABEL: test_dynamic_tile
@@ -111,16 +108,16 @@ def test_dynamic_tile() raises:
     print("test_dynamic_tile")
     # CHECK: (1, 4)
     # CHECK: (4, 5)
-    tile[print_number_dynamic](1, 5, 3, 2)
+    tile(1, 5, 3, 2, workgroup_function=print_number_dynamic)
     # CHECK: (0, 4)
     # CHECK: (4, 5)
     # CHECK: (5, 6)
-    tile[print_number_dynamic](0, 6, 4, 1)
+    tile(0, 6, 4, 1, workgroup_function=print_number_dynamic)
     # CHECK: (2, 7)
     # CHECK: (7, 12)
     # CHECK: (12, 15)
     # CHECK: (15, 16)
-    tile[print_number_dynamic](2, 16, 5, 3)
+    tile(2, 16, 5, 3, workgroup_function=print_number_dynamic)
 
 
 # CHECK-LABEL: test_unswitched_tile
@@ -129,19 +126,17 @@ def test_unswitched_tile() raises:
 
     # A tiled function that takes a start and a dynamic boundary.
     @always_inline
-    @parameter
     def switched_tile[tile_size: Int](start: Int, bound: Int):
         # Inside each unit there's either a per-element check or a unswitched
         #  tile level check.
         @always_inline
-        @parameter
-        def switched_tile_unit[static_switch: Bool]():
+        def switched_tile_unit[static_switch: Bool]() {imm}:
             for i in range(start, start + tile_size):
                 if static_switch or i < bound:
                     print(i)
 
         # Use unswitch on the tiled unit.
-        unswitch[switched_tile_unit](start + tile_size <= bound)
+        unswitch(start + tile_size <= bound, switched_tile_unit)
 
     # CHECK: 5
     # CHECK: 6
@@ -158,7 +153,6 @@ def test_unswitched_2d_tile() raises:
     print("test_unswitched_2d_tile")
 
     # A tiled function that takes a start and a dynamic boundary.
-    @parameter
     @always_inline
     def switched_tile[
         tile_size_x: Int, tile_size_y: Int
@@ -168,9 +162,9 @@ def test_unswitched_2d_tile() raises:
         # Inside each unit there's either a per-element check or a unswitched
         #  tile level check.
         @always_inline
-        @__copy_capture(tile_size)
-        @parameter
-        def switched_tile_unit[static_switch0: Bool, static_switch1: Bool]():
+        def switched_tile_unit[
+            static_switch0: Bool, static_switch1: Bool
+        ]() {var tile_size, imm}:
             for i in range(start[0], start[0] + tile_size[0]):
                 for j in range(start[1], start[1] + tile_size[1]):
                     if static_switch0 or i < bound[0]:
@@ -179,8 +173,10 @@ def test_unswitched_2d_tile() raises:
 
         # Use unswitch on the tiled unit.
         var tile_end_point = start + tile_size
-        unswitch[switched_tile_unit](
-            tile_end_point[0] <= bound[0], tile_end_point[1] <= bound[1]
+        unswitch(
+            tile_end_point[0] <= bound[0],
+            tile_end_point[1] <= bound[1],
+            switched_tile_unit,
         )
 
     # CHECK: (1, 2)
@@ -198,7 +194,6 @@ def test_unswitched_2d_tile() raises:
 def test_tile_and_unswitch() raises:
     print("test_tile_and_unswitch")
 
-    @parameter
     # Helper workgroup function to test static workgroup tiling.
     @always_inline
     def print_number_static_unswitched[
@@ -211,26 +206,25 @@ def test_tile_and_unswitch() raises:
     # CHECK: Unswitched: True
     # CHECK: (4, 2, 6)
     # CHECK: Unswitched: True
-    tile_and_unswitch[print_number_static_unswitched, [4, 3, 2]](0, 6)
+    tile_and_unswitch[[4, 3, 2]](0, 6, print_number_static_unswitched)
     # CHECK: (0, 4, 8)
     # CHECK: Unswitched: True
     # CHECK: (4, 4, 8)
     # CHECK: Unswitched: True
-    tile_and_unswitch[print_number_static_unswitched, [4, 3, 2]](0, 8)
+    tile_and_unswitch[[4, 3, 2]](0, 8, print_number_static_unswitched)
     # CHECK: (1, 4, 6)
     # CHECK: Unswitched: True
     # CHECK: (5, 2, 6)
     # CHECK: Unswitched: False
-    tile_and_unswitch[print_number_static_unswitched, [4, 3, 2]](1, 6)
+    tile_and_unswitch[[4, 3, 2]](1, 6, print_number_static_unswitched)
     # CHECK: (4, 4, 8)
     # CHECK: Unswitched: True
-    tile_and_unswitch[print_number_static_unswitched, [4, 1]](4, 8)
+    tile_and_unswitch[[4, 1]](4, 8, print_number_static_unswitched)
 
 
 def test_tile_middle_unswitch_boundaries() raises:
     print("test_tile_middle_unswitch_boundaries")
 
-    @parameter
     @always_inline
     def print_wrapper[tile_size: Int, switch: Bool](offset: Int):
         print(offset, tile_size, switch)
@@ -239,20 +233,14 @@ def test_tile_middle_unswitch_boundaries() raises:
     # CHECK: 1 4 False
     # CHECK: 5 2 False
     # CHECK: 7 1 True
-    tile_middle_unswitch_boundaries[
-        print_wrapper,
-        [4, 3, 2, 1],
-    ](0, 1, 7, 8)
+    tile_middle_unswitch_boundaries[[4, 3, 2, 1]](0, 1, 7, 8, print_wrapper)
 
     # CHECK: 1 1 True
     # CHECK: 2 1 True
     # CHECK: 3 3 False
     # CHECK: 6 1 True
     # CHECK: 7 1 True
-    tile_middle_unswitch_boundaries[
-        print_wrapper,
-        [4, 3, 1],
-    ](1, 3, 6, 8)
+    tile_middle_unswitch_boundaries[[4, 3, 1]](1, 3, 6, 8, print_wrapper)
 
     # CHECK: 0 2 True
     # CHECK: 2 6 False
@@ -260,33 +248,31 @@ def test_tile_middle_unswitch_boundaries() raises:
     # CHECK: 10 2 True
     # CHECK: 12 2 True
     tile_middle_unswitch_boundaries[
-        print_wrapper,
         [6, 4, 2, 1],
         left_tile_size=2,
         right_tile_size=2,
-    ](0, 2, 10, 14)
+    ](0, 2, 10, 14, print_wrapper)
 
 
 def test_tile_middle_unswitch_boundaries_static() raises:
     print("test_tile_middle_unswitch_boundaries_static")
 
-    @parameter
     @always_inline
     def print_wrapper[tile_size: Int, lflag: Bool, rflag: Bool](offset: Int):
         print(offset, tile_size, lflag, rflag)
 
     # CHECK: 0 2 True True
-    tile_middle_unswitch_boundaries[print_wrapper, 2, 2]()
+    tile_middle_unswitch_boundaries[2, 2](print_wrapper)
 
     # CHECK: 0 2 True False
     # CHECK: 2 3 False True
-    tile_middle_unswitch_boundaries[print_wrapper, 4, 5]()
+    tile_middle_unswitch_boundaries[4, 5](print_wrapper)
 
     # CHECK: 0 3 True False
     # CHECK: 3 3 False False
     # CHECK: 6 2 False False
     # CHECK: 8 3 False True
-    tile_middle_unswitch_boundaries[print_wrapper, 3, 11]()
+    tile_middle_unswitch_boundaries[3, 11](print_wrapper)
 
 
 def main() raises:

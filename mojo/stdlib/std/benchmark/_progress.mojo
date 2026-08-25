@@ -71,7 +71,7 @@ struct Progress(ImplicitlyCopyable):
     ```
     """
 
-    var _range: _StridedRange
+    var _range: _StridedRange[.int]
     var _percentage: Float64
     var _term_dims: Tuple[Int, Int]
 

@@ -19,6 +19,7 @@ from std.sys import (
 )
 
 import linalg.matmul.vendor.blas as vendor_blas
+from max.benchmark import bencher_iter_custom
 from std.benchmark import (
     Bench,
     Bencher,
@@ -27,8 +28,8 @@ from std.benchmark import (
     ThroughputMeasure,
 )
 from std.gpu import global_idx, grid_dim, block_dim, thread_idx, block_idx
-from std.gpu.host import DeviceContext
-from std.gpu.primitives import block
+from max.gpu.host import DeviceContext
+from max.gpu.primitives import block
 from internal_utils import (
     CacheBustingBuffer,
     arg_parse,
@@ -56,10 +57,10 @@ def _verify_buffers_gpu[
 ](
     output: UnsafePointer[Scalar[c_type], ImmutAnyOrigin],
     reference: UnsafePointer[Scalar[c_type], ImmutAnyOrigin],
-    length: Int,
+    length: Int32,
     atol: Float32,
     rtol: Float32,
-    result: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
+    result: UnsafePointer[Float32, MutAnyOrigin],
 ):
     """GPU kernel that computes verification metrics in one pass.
 
@@ -80,9 +81,9 @@ def _verify_buffers_gpu[
     # Grid-stride loop
     var i = global_idx.x
     var stride = grid_dim.x * block_dim.x
-    while i < length:
-        var x = output[i].cast[DType.float32]()
-        var y = reference[i].cast[DType.float32]()
+    while i < Int(length):
+        var x = output[i].cast[.float32]()
+        var y = reference[i].cast[.float32]()
         abs_diff_sum += abs(x - y)
         abs_ref_sum += abs(y)
         max_violation = max(max_violation, abs(x - y) - (atol + rtol * abs(y)))
@@ -194,17 +195,17 @@ def verify_matmul[
     else:
         var rtol64: Float64
         var atol64: Float64
-        rtol64, atol64 = pytorch_like_tolerances_for[DType.bfloat16]()
+        rtol64, atol64 = pytorch_like_tolerances_for[.bfloat16]()
         rtol = Float32(rtol64)
         atol = Float32(atol64)
 
-    var result_device = ctx.enqueue_create_buffer[DType.float32](NUM_BLOCKS * 5)
+    var result_device = ctx.enqueue_create_buffer[.float32](NUM_BLOCKS * 5)
 
     comptime kernel = _verify_buffers_gpu[c_type, BLOCK_SIZE]
     ctx.enqueue_function[kernel](
         c_device,
         c_device_ref,
-        c_size,
+        Int32(c_size),
         atol,
         rtol,
         result_device,
@@ -213,7 +214,7 @@ def verify_matmul[
     )
 
     # Copy back only NUM_BLOCKS * 5 Float32 values
-    var result_host = List(length=NUM_BLOCKS * 5, fill=Scalar[DType.float32](0))
+    var result_host = List(length=NUM_BLOCKS * 5, fill=Float32(0))
     ctx.enqueue_copy(result_host, result_device)
     ctx.synchronize()
 
@@ -278,7 +279,7 @@ def _get_run_name[
     transpose_b: Bool,
     cache_busting: Bool,
     use_vendor_blas: Bool,
-](shape_c: Coord, shape_a: Coord, shape_b: Coord,) -> String:
+](shape_c: Coord, shape_a: Coord, shape_b: Coord) -> String:
     var vendor_str = "vendor_matmul" if use_vendor_blas else "matmul"
     var type_str = String(
         "(in=", String(a_type), ",out=", String(c_type), ") : "
@@ -405,9 +406,8 @@ def bench_matmul[
         cb_b,
         cb_c,
     )
-    @parameter
     @always_inline
-    def kernel_launch(ctx: DeviceContext, iteration: Int) raises:
+    def kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
         var tensor_a = TileTensor(
             cb_a.offset_ptr(iteration), row_major(shape_a)
         )
@@ -419,12 +419,12 @@ def bench_matmul[
         )
         comptime assert tensor_c.flat_rank >= 2
 
-        @parameter
+        @__parameter
         @always_inline
         @__copy_capture(tensor_c)
         def test_lambda_add_coords_prod[
             _dtype: DType,
-            width: SIMDSize,
+            width: SIMDLength,
             *,
             alignment: Int = align_of[SIMD[_dtype, width]](),
         ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> SIMD[
@@ -441,17 +441,15 @@ def bench_matmul[
         # create a dummy buffer to force using the mojo the matmul kernel to output values
         # in the correct c_type
         var c_dummy = TileTensor(
-            UnsafePointer[
-                Scalar[DType.bfloat16], MutUntrackedOrigin
-            ].unsafe_dangling(),
+            UnsafePointer[BFloat16, MutUntrackedOrigin].unsafe_dangling(),
             row_major(shape_c),
         )
 
         @always_inline
-        @parameter
+        @__parameter
         @__copy_capture(tensor_c)
         def normal_elementwise_epilogue[
-            dtype: DType, width: SIMDSize, *, alignment: Int = 1
+            dtype: DType, width: SIMDLength, *, alignment: Int = 1
         ](idx: IndexList[2], val: SIMD[dtype, width]) capturing -> None:
             tensor_c.store[width=width]((idx[0], idx[1]), val.cast[c_type]())
 
@@ -475,10 +473,9 @@ def bench_matmul[
                     elementwise_compute_lambda_fn=optional_compute_lambda_fn,
                 ](tensor_c, tensor_a, tensor_b, ctx)
 
-    @parameter
     @always_inline
-    def bench_func(mut b: Bencher) raises:
-        b.iter_custom[kernel_launch](ctx)
+    def bench_func(mut b: Bencher) raises {imm}:
+        bencher_iter_custom(b, kernel_launch, ctx)
 
     var flops = ThroughputMeasure(
         BenchMetric.flops,
@@ -489,7 +486,8 @@ def bench_matmul[
         * Int(shape_a[1].value()),
     )
     if run_benchmark:
-        b.bench_function[bench_func](
+        b.bench_function(
+            bench_func,
             BenchId(
                 _get_run_name[
                     c_type,
@@ -567,8 +565,8 @@ def create_matmul_bench[
 
 
 def main() raises:
-    comptime a_type = get_defined_dtype["dtype", DType.bfloat16]()
-    comptime c_type = get_defined_dtype["ctype", DType.bfloat16]()
+    comptime a_type = get_defined_dtype["dtype", .bfloat16]()
+    comptime c_type = get_defined_dtype["ctype", .bfloat16]()
 
     var M = Int(arg_parse("M", 1024))
     comptime N = get_defined_int["N", 16384]()

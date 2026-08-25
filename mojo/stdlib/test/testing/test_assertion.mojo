@@ -27,8 +27,8 @@ from std.utils.numerics import inf, nan
 
 
 def test_assert_messages() raises:
-    assertion = "test_assertion.mojo:"
-    assertion_error = ": AssertionError:"
+    var assertion = "test_assertion.mojo:"
+    var assertion_error = ": AssertionError:"
     try:
         assert_true(False)
     except e:
@@ -74,21 +74,21 @@ def test_assert_not_equal_is_generic() raises:
 
 
 def test_assert_equal_with_simd() raises:
-    assert_equal(SIMD[DType.uint8, 2](1, 1), SIMD[DType.uint8, 2](1, 1))
+    assert_equal(SIMD[.uint8, 2](1, 1), SIMD[.uint8, 2](1, 1))
 
     with assert_raises():
-        assert_equal(SIMD[DType.uint8, 2](1, 1), SIMD[DType.uint8, 2](1, 2))
+        assert_equal(SIMD[.uint8, 2](1, 1), SIMD[.uint8, 2](1, 2))
 
 
 def test_assert_equal_with_list() raises:
     assert_equal(
-        ["This", "is", "Mojo"],
+        List(["This", "is", "Mojo"]),
         List[String](["This", "is", "Mojo"]),
     )
 
     with assert_raises():
         assert_equal(
-            ["This", "is", "Mojo"],
+            List(["This", "is", "Mojo"]),
             List[String](["This", "is", "mojo"]),
         )
 
@@ -105,9 +105,8 @@ def test_assert_almost_equal() raises:
     comptime _inf = inf[float_type]()
     comptime _nan = nan[float_type]()
 
-    @parameter
     def _should_succeed[
-        dtype: DType, size: SIMDSize
+        dtype: DType, size: SIMDLength
     ](
         lhs: SIMD[dtype, size],
         rhs: SIMD[dtype, size],
@@ -140,9 +139,8 @@ def test_assert_almost_equal() raises:
         rtol=0.10,
     )
 
-    @parameter
     def _should_fail[
-        dtype: DType, size: SIMDSize
+        dtype: DType, size: SIMDLength
     ](
         lhs: SIMD[dtype, size],
         rhs: SIMD[dtype, size],
@@ -220,31 +218,31 @@ def test_assert_custom_location() raises:
 
 
 def test_assert_equal_stringslice() raises:
-    str1 = StaticString("This is Mojo")
-    str2 = "This is Mojo"
-    str3 = StaticString("This is mojo")
+    var str1 = StaticString("This is Mojo")
+    var str2 = "This is Mojo"
+    var str3 = StaticString("This is mojo")
 
     def _build(value: StaticString, start: Int, end: Int) -> StaticString:
         return StaticString(
-            unsafe_from_utf8=Span(
-                ptr=value.unsafe_ptr() + start,
+            unsafe_from_utf8=Span[Byte, ImmStaticOrigin](
+                unsafe_ptr=value.as_bytes().unsafe_ptr().unsafe_offset(start),
                 length=end - start,
             )
         )
 
     def _build(
-        read value: String, start: Int, end: Int
-    ) -> StringSlice[origin_of(value)]:
-        return StringSlice[origin_of(value)](
+        imm value: String, start: Int, end: Int
+    ) -> StringSlice[origin_of(value)._get_owned_interior["bytes"]]:
+        return StringSlice(
             unsafe_from_utf8=Span(
-                ptr=value.unsafe_ptr() + start,
+                unsafe_ptr=value.as_bytes().unsafe_ptr().unsafe_offset(start),
                 length=end - start,
             )
         )
 
-    l1 = [_build(str1, 0, 4), _build(str1, 5, 7), _build(str1, 8, 12)]
-    l2 = [_build(str2, 0, 4), _build(str2, 5, 7), _build(str2, 8, 12)]
-    l3 = [_build(str3, 0, 4), _build(str3, 5, 7), _build(str3, 8, 12)]
+    var l1: List = [_build(str1, 0, 4), _build(str1, 5, 7), _build(str1, 8, 12)]
+    var l2: List = [_build(str2, 0, 4), _build(str2, 5, 7), _build(str2, 8, 12)]
+    var l3: List = [_build(str3, 0, 4), _build(str3, 5, 7), _build(str3, 8, 12)]
     assert_equal(l1, l1)
     assert_equal(l2, l2)
     assert_equal(l1, l2)

@@ -18,13 +18,21 @@ import pytest
 from max.driver import CPU
 from max.nn.kv_cache import KVConnectorType
 from max.pipelines.kv_cache import InsufficientBlocksError
+from max.pipelines.kv_cache.config import KVConnectorConfig
 from max.pipelines.modeling.types import BatchType
+from max.serve.scheduler.batch_constructor.text_batch_constructor import (
+    TG_PRIORITY_KV_PERCENTAGE_ENV_VAR,
+)
+from max.serve.scheduler.text_generation_scheduler import (
+    TokenGenerationScheduler,
+)
 from max.support.math import ceildiv
 from tests.serve.scheduler.common import (
     CE,
     TG,
     BatchInfo,
     assert_batch_info_equal,
+    create_batch_and_execute,
     create_paged_scheduler,
     enqueue_request,
     rand,
@@ -42,8 +50,6 @@ def test_paged_scheduler_tg_request_exceed_max_seq_len() -> None:
         max_batch_size=100,
         num_blocks=num_blocks,
         page_size=page_size,
-        # For now, I am going to ignore kvcache watermark, and make its own test.
-        kvcache_ce_watermark=1.0,
     )
 
     # Check that we would exceed max_seq_len during TG step
@@ -66,40 +72,46 @@ def test_paged_scheduler_tg_request_exceed_max_seq_len() -> None:
     assert_batch_info_equal(actual, expected)
 
 
-def test_paged_scheduler_tg_request_exceed_max_seq_len_with_watermark() -> None:
-    max_seq_len = 2048
-    page_size = 128
-    num_reqs = 3
-    num_blocks = int(max_seq_len / page_size * num_reqs)
+def create_scheduler_under_kv_pressure() -> TokenGenerationScheduler:
+    """Prefill one long request so the device cache sits above 90% used.
+
+    The returned scheduler holds one in-flight TG request and one pending CE
+    request, which is the tie ``_identify_priority`` has to break.
+    """
     scheduler, request_queue = create_paged_scheduler(
-        max_seq_len=max_seq_len,
-        max_batch_size=100,
-        num_blocks=num_blocks,
-        page_size=page_size,
-        kvcache_ce_watermark=0.95,
+        max_seq_len=100,
+        num_blocks=100,
+        page_size=1,
+        enable_chunked_prefill=False,
     )
 
-    # Check that we would exceed max_seq_len during TG step
-    prompt_len = 2045
+    enqueue_request(request_queue, prompt_len=92, max_seq_len=95)
+    assert create_batch_and_execute(scheduler).batch_type == CE
 
-    # Create a few requests with 2045 tokens
-    for _ in range(num_reqs):
-        enqueue_request(request_queue, prompt_len, max_seq_len=max_seq_len)
+    kv_cache = scheduler.batch_constructor.kv_cache
+    assert kv_cache.block_count().used_pct > 90
 
-    # fmt: off
-    expected = [
-        BatchInfo(CE, batch_size=2, terminated=0, steps=1, preempted=0, input_toks=4090, cached_toks=0),
-        BatchInfo(TG, batch_size=2, terminated=0, steps=1, preempted=0, input_toks=2, cached_toks=4090),
-        BatchInfo(TG, batch_size=2, terminated=2, steps=1, preempted=0, input_toks=2, cached_toks=4092),
-        BatchInfo(CE, batch_size=1, terminated=0, steps=1, preempted=0, input_toks=2045, cached_toks=0),
-        BatchInfo(TG, batch_size=1, terminated=0, steps=1, preempted=0, input_toks=1, cached_toks=2045),
-        BatchInfo(TG, batch_size=1, terminated=1, steps=1, preempted=0, input_toks=1, cached_toks=2046),
-        BatchInfo(TG, batch_size=0, terminated=0, steps=0, preempted=0, input_toks=0, cached_toks=0),
-    ]
-    # fmt: on
+    enqueue_request(request_queue, prompt_len=2, max_seq_len=4)
+    return scheduler
 
-    actual = run_until_completion(scheduler)
-    assert_batch_info_equal(actual, expected)
+
+def test_paged_scheduler_prioritizes_tg_under_kv_pressure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv(TG_PRIORITY_KV_PERCENTAGE_ENV_VAR, raising=False)
+    scheduler = create_scheduler_under_kv_pressure()
+
+    assert create_batch_and_execute(scheduler).batch_type == TG
+
+
+def test_paged_scheduler_tg_priority_kv_percentage_env_var(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A threshold above 100% is unreachable, restoring CE-first scheduling."""
+    monkeypatch.setenv(TG_PRIORITY_KV_PERCENTAGE_ENV_VAR, "101")
+    scheduler = create_scheduler_under_kv_pressure()
+
+    assert create_batch_and_execute(scheduler).batch_type == CE
 
 
 def test_paged_scheduler_basic_chunked_prefill() -> None:
@@ -146,6 +158,34 @@ def test_paged_scheduler_basic_chunked_prefill() -> None:
     assert_batch_info_equal(actual, expected)
 
 
+def test_paged_scheduler_max_pending_requests_caps_drain() -> None:
+    """The M cap (max_pending_requests) bounds how many requests the scheduler
+    pulls into its pending CE queue, leaving the rest in the request queue so it
+    backs up and exerts backpressure."""
+    scheduler, request_queue = create_paged_scheduler(
+        max_batch_size=999,
+        max_pending_requests=2,
+    )
+
+    for _ in range(5):
+        enqueue_request(request_queue, prompt_len=10, max_seq_len=15)
+
+    # First drain pulls at most M=2 into the pending CE queue; the other 3 stay
+    # queued in the request queue.
+    scheduler._retrieve_pending_requests()
+    assert len(scheduler.batch_constructor.all_ce_reqs) == 2
+
+    # Still at capacity: a second drain pulls nothing more.
+    scheduler._retrieve_pending_requests()
+    assert len(scheduler.batch_constructor.all_ce_reqs) == 2
+
+    # Raising the cap lets the 3 still-queued requests drain in, proving they
+    # had been held in the request queue rather than dropped.
+    scheduler.max_pending_requests = 5
+    scheduler._retrieve_pending_requests()
+    assert len(scheduler.batch_constructor.all_ce_reqs) == 5
+
+
 def test_basic_ce_scheduling() -> None:
     num_prompts = 3
     prompt_len = 10
@@ -158,7 +198,6 @@ def test_basic_ce_scheduling() -> None:
         num_blocks=num_blocks,
         max_batch_size=999,
         page_size=page_size,
-        kvcache_ce_watermark=0.95,
     )
 
     for _ in range(num_prompts):
@@ -170,16 +209,11 @@ def test_basic_ce_scheduling() -> None:
 
     # fmt: off
     expected = [
-        BatchInfo(CE, batch_size=2, terminated=0, steps=1, preempted=0, input_toks=20, cached_toks=0),
-        BatchInfo(TG, batch_size=2, terminated=0, steps=1, preempted=0, input_toks=2, cached_toks=20),
-        BatchInfo(TG, batch_size=2, terminated=0, steps=1, preempted=0, input_toks=2, cached_toks=22),
-        BatchInfo(TG, batch_size=2, terminated=0, steps=1, preempted=0, input_toks=2, cached_toks=24),
-        BatchInfo(TG, batch_size=2, terminated=2, steps=1, preempted=0, input_toks=2, cached_toks=26),
-        BatchInfo(CE, batch_size=1, terminated=0, steps=1, preempted=0, input_toks=10, cached_toks=0),
-        BatchInfo(TG, batch_size=1, terminated=0, steps=1, preempted=0, input_toks=1, cached_toks=10),
-        BatchInfo(TG, batch_size=1, terminated=0, steps=1, preempted=0, input_toks=1, cached_toks=11),
-        BatchInfo(TG, batch_size=1, terminated=0, steps=1, preempted=0, input_toks=1, cached_toks=12),
-        BatchInfo(TG, batch_size=1, terminated=1, steps=1, preempted=0, input_toks=1, cached_toks=13),
+        BatchInfo(CE, batch_size=3, terminated=0, steps=1, preempted=0, input_toks=30, cached_toks=0),
+        BatchInfo(TG, batch_size=3, terminated=0, steps=1, preempted=0, input_toks=3, cached_toks=30),
+        BatchInfo(TG, batch_size=3, terminated=0, steps=1, preempted=0, input_toks=3, cached_toks=33),
+        BatchInfo(TG, batch_size=3, terminated=0, steps=1, preempted=0, input_toks=3, cached_toks=36),
+        BatchInfo(TG, batch_size=3, terminated=3, steps=1, preempted=0, input_toks=3, cached_toks=39),
         BatchInfo(TG, batch_size=0, terminated=0, steps=0, preempted=0, input_toks=0, cached_toks=0),
     ]
     # fmt: on
@@ -512,7 +546,6 @@ def test_paged_scheduler__num_prompts_10_prompt_len_100_output_tokens_100_prefix
         enable_chunked_prefill=False,
         enable_in_flight_batching=False,
         enable_prefix_caching=False,
-        kvcache_ce_watermark=0.95,
     )
 
     # set seed for reproducibility
@@ -529,8 +562,8 @@ def test_paged_scheduler__num_prompts_10_prompt_len_100_output_tokens_100_prefix
 
     # fmt: off
     expected = [
-        BatchInfo(CE, batch_size=4, terminated=0, steps=1, preempted=0, input_toks=400, cached_toks=0),
-        BatchInfo(TG, batch_size=4, terminated=0, steps=1, preempted=0, input_toks=4, cached_toks=400),
+        BatchInfo(CE, batch_size=5, terminated=0, steps=1, preempted=0, input_toks=500, cached_toks=0),
+        BatchInfo(TG, batch_size=4, terminated=0, steps=1, preempted=1, input_toks=4, cached_toks=400),
         BatchInfo(TG, batch_size=4, terminated=0, steps=1, preempted=0, input_toks=4, cached_toks=404),
         BatchInfo(TG, batch_size=4, terminated=0, steps=1, preempted=0, input_toks=4, cached_toks=408),
         BatchInfo(TG, batch_size=4, terminated=0, steps=1, preempted=0, input_toks=4, cached_toks=412),
@@ -566,7 +599,6 @@ def test_num_prompts_10_prompt_len_100_output_tokens_100_prefix_len_64_low_mem_p
         enable_chunked_prefill=True,
         enable_in_flight_batching=False,
         enable_prefix_caching=True,
-        kvcache_ce_watermark=0.95,
     )
 
     # set seed for reproducibility
@@ -582,8 +614,8 @@ def test_num_prompts_10_prompt_len_100_output_tokens_100_prefix_len_64_low_mem_p
         )
     # fmt: off
     expected = [
-        BatchInfo(CE, batch_size=4, terminated=0, steps=1, preempted=0, input_toks=400, cached_toks=0),
-        BatchInfo(CE, batch_size=6, terminated=0, steps=1, preempted=0, input_toks=240, cached_toks=360),
+        BatchInfo(CE, batch_size=5, terminated=0, steps=1, preempted=0, input_toks=500, cached_toks=0),
+        BatchInfo(CE, batch_size=5, terminated=0, steps=1, preempted=0, input_toks=200, cached_toks=300),
         BatchInfo(TG, batch_size=8, terminated=0, steps=1, preempted=1, input_toks=8, cached_toks=800),
         BatchInfo(TG, batch_size=8, terminated=0, steps=1, preempted=0, input_toks=8, cached_toks=808),
         BatchInfo(TG, batch_size=8, terminated=0, steps=1, preempted=0, input_toks=8, cached_toks=816),
@@ -701,7 +733,6 @@ def test_paged_scheduler_tg_preemption_basic() -> None:
         num_blocks=num_blocks,
         max_batch_size=999,
         page_size=page_size,
-        kvcache_ce_watermark=0.95,
         max_seq_len=110,
     )
 
@@ -930,14 +961,11 @@ def test_paged_scheduler_dp8() -> None:
 def test_paged_scheduler_paging_to_host_on_cpu_raises() -> None:
     with pytest.raises(ValueError) as e:
         create_paged_scheduler(
-            kv_connector=KVConnectorType.local,
+            kv_connector_config=KVConnectorConfig(type=KVConnectorType.tiered),
             enable_prefix_caching=True,
             device=CPU(),
         )
-    assert (
-        "KVCacheMemory is on the CPU. Unable to allocate host offload buffer for already-on-CPU buffers."
-        in str(e.value)
-    )
+    assert "KVCacheMemory is on the CPU; cannot offload" in str(e.value)
 
 
 def test_paged_scheduler_speculative_tokens_allocates_extra_pages() -> None:

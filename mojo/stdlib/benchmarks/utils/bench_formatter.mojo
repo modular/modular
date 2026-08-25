@@ -23,28 +23,24 @@ from std.benchmark import Bench, BenchConfig, Bencher, BenchId
 # ===-----------------------------------------------------------------------===#
 # Benchmarks
 # ===-----------------------------------------------------------------------===#
-@parameter
 def bench_writer_int[n: Int](mut b: Bencher) raises:
     @always_inline
-    @parameter
     def call_fn():
         var s1 = String()
         s1.write(n)
         _ = s1^
 
-    b.iter[call_fn]()
+    b.iter(call_fn)
 
 
-@parameter
 def bench_writer_simd[n: Int](mut b: Bencher) raises:
     @always_inline
-    @parameter
     def call_fn():
         var s1 = String()
-        s1.write(SIMD[DType.int32, simd_width_of[DType.int32]()](n))
+        s1.write(SIMD[.int32, simd_width_of[DType.int32]()](n))
         _ = s1^
 
-    b.iter[call_fn]()
+    b.iter(call_fn)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -52,12 +48,12 @@ def bench_writer_simd[n: Int](mut b: Bencher) raises:
 # ===-----------------------------------------------------------------------===#
 def main() raises:
     var m = Bench(BenchConfig(num_repetitions=1))
-    m.bench_function[bench_writer_int[42]](BenchId("bench_writer_int_42"))
-    m.bench_function[bench_writer_int[2**64]](
-        BenchId("bench_writer_int_2**64")
+    m.bench_function(bench_writer_int[42], BenchId("bench_writer_int_42"))
+    m.bench_function(
+        bench_writer_int[2**64], BenchId("bench_writer_int_2**64")
     )
-    m.bench_function[bench_writer_simd[42]](BenchId("bench_writer_simd"))
-    m.bench_function[bench_writer_simd[2**16]](
-        BenchId("bench_writer_simd_2**16")
+    m.bench_function(bench_writer_simd[42], BenchId("bench_writer_simd"))
+    m.bench_function(
+        bench_writer_simd[2**16], BenchId("bench_writer_simd_2**16")
     )
     m.dump_report()

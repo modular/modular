@@ -42,8 +42,8 @@ in-place register epilogue; prefill cases take the cooperative
 config as well.
 """
 from std.math import align_up, ceildiv
-from std.gpu.host import DeviceBuffer, DeviceContext
-from std.gpu.primitives.grid_controls import PDLLevel, pdl_launch_attributes
+from max.gpu.host import DeviceBuffer, DeviceContext
+from max.gpu.primitives.grid_controls import PDLLevel, pdl_launch_attributes
 from std.memory import alloc
 from std.memory.unsafe import bitcast
 from std.random import seed, rand
@@ -71,9 +71,9 @@ from shmem.ep_comm import fused_silu_mxfp8_interleaved_kernel
 
 
 @always_inline
-def e8m0(x: Float32) -> Scalar[DType.float8_e8m0fnu]:
+def e8m0(x: Float32) -> Float8_e8m0fnu:
     """Construct an E8M0 scalar from a Float32 via cast."""
-    return x.cast[DType.float8_e8m0fnu]()
+    return x.cast[.float8_e8m0fnu]()
 
 
 def _make_uniform(value: Int, count: Int) -> List[Int]:
@@ -105,15 +105,15 @@ struct _SharedB(Movable):
     per-expert N-axis sigma permutation run only once.
     """
 
-    var b_perm: DeviceBuffer[DType.float8_e4m3fn]
+    var b_perm: DeviceBuffer[.float8_e4m3fn]
     var b_scales_perm: DeviceBuffer[MXFP8_SF_DTYPE]
-    var expert_scales: DeviceBuffer[DType.float32]
+    var expert_scales: DeviceBuffer[.float32]
 
     def __init__(
         out self,
-        var b_perm: DeviceBuffer[DType.float8_e4m3fn],
+        var b_perm: DeviceBuffer[.float8_e4m3fn],
         var b_scales_perm: DeviceBuffer[MXFP8_SF_DTYPE],
-        var expert_scales: DeviceBuffer[DType.float32],
+        var expert_scales: DeviceBuffer[.float32],
     ):
         self.b_perm = b_perm^
         self.b_scales_perm = b_scales_perm^
@@ -159,7 +159,7 @@ def _build_shared_b[
     var b_scales_host = TileTensor(b_scales_host_ptr, b_scales_shape)
     var b_scales_perm_host = TileTensor(b_scales_perm_host_ptr, b_scales_shape)
 
-    var expert_scales_host_ptr = alloc[Scalar[DType.float32]](num_experts)
+    var expert_scales_host_ptr = alloc[Float32](num_experts)
     for i in range(num_experts):
         expert_scales_host_ptr[i] = 1.0 + Float32(i + 1) / Float32(num_experts)
 
@@ -173,7 +173,7 @@ def _build_shared_b[
     for i in range(b_scales_total):
         b_scales_host_ptr[i] = sf_small
     for i in range(b_scales_perm_host.num_elements()):
-        b_scales_perm_host.ptr[i] = sf_zero
+        b_scales_perm_host._storage[i] = sf_zero
 
     # sigma-permute W on the N axis: W_perm[e, 2i, :] = W[e, i, :],
     # W_perm[e, 2i+1, :] = W[e, H + i, :].
@@ -240,9 +240,7 @@ def _build_shared_b[
     var b_scales_perm_device = ctx.enqueue_create_buffer[scales_dtype](
         b_scales_total
     )
-    var expert_scales_device = ctx.enqueue_create_buffer[DType.float32](
-        num_experts
-    )
+    var expert_scales_device = ctx.enqueue_create_buffer[.float32](num_experts)
 
     ctx.enqueue_copy(b_perm_device, b_perm_host_ptr)
     ctx.enqueue_copy(b_scales_perm_device, b_scales_perm_host_ptr)
@@ -276,6 +274,7 @@ def _test_swiglu_mxfp8_dispatch[
     ctx: DeviceContext,
     alpha: Float32 = Float32(1.702),
     limit: Float32 = Float32(7.0),
+    est_m_override: Int = -1,
 ) raises:
     """End-to-end byte-exact compare: fused MXFP8 dispatch vs chain.
 
@@ -307,6 +306,10 @@ def _test_swiglu_mxfp8_dispatch[
     for i in range(num_active_experts):
         num_tokens += num_tokens_by_expert[i]
     var M = num_tokens
+    # `estimated_total_m` is a tuning/buffer-sizing hint, not the true token
+    # count. Default to the honest M; a test may override it (e.g. 0) to
+    # exercise the floored-estimate EP-decode path (S*top_k//n_gpus == 0).
+    var est_m = est_m_override if est_m_override >= 0 else M
     print(
         "  N=",
         N,
@@ -316,6 +319,8 @@ def _test_swiglu_mxfp8_dispatch[
         H,
         " M=",
         M,
+        " est_m=",
+        est_m,
         " active=",
         num_active_experts,
         "/",
@@ -351,23 +356,19 @@ def _test_swiglu_mxfp8_dispatch[
     # ---- Per-expert offsets / IDs sized at comptime upper bound
     # `num_experts`. Tail slots [num_active_experts, num_experts) are
     # padded (0 tokens, -1 id); the kernel skips expert_id < 0.
-    var a_offsets_host_ptr = alloc[Scalar[DType.uint32]](num_experts + 1)
-    var a_scale_offsets_ptr = alloc[Scalar[DType.uint32]](num_experts)
-    var expert_ids_host_ptr = alloc[Scalar[DType.int32]](num_experts)
+    var a_offsets_host_ptr = alloc[UInt32](num_experts + 1)
+    var a_scale_offsets_ptr = alloc[UInt32](num_experts)
+    var expert_ids_host_ptr = alloc[Int32](num_experts)
 
-    var a_offsets_device = ctx.enqueue_create_buffer[DType.uint32](
-        num_experts + 1
-    )
+    var a_offsets_device = ctx.enqueue_create_buffer[.uint32](num_experts + 1)
     var a_offsets_tensor = TileTensor(
         a_offsets_device, row_major(Coord(Idx[num_experts + 1]))
     )
-    var a_scale_offsets_device = ctx.enqueue_create_buffer[DType.uint32](
-        num_experts
-    )
+    var a_scale_offsets_device = ctx.enqueue_create_buffer[.uint32](num_experts)
     var a_scale_offsets_tensor = TileTensor(
         a_scale_offsets_device, row_major(Coord(Idx[num_experts]))
     )
-    var expert_ids_device = ctx.enqueue_create_buffer[DType.int32](num_experts)
+    var expert_ids_device = ctx.enqueue_create_buffer[.int32](num_experts)
     var expert_ids_tensor = TileTensor(
         expert_ids_device, row_major(Coord(Idx[num_experts]))
     )
@@ -554,7 +555,7 @@ def _test_swiglu_mxfp8_dispatch[
         expert_ids_tensor,
         expert_scales_tt,
         num_active_experts,
-        M,
+        est_m,
         ctx,
         alpha,
         limit,
@@ -571,12 +572,10 @@ def _test_swiglu_mxfp8_dispatch[
     var O_mismatch = 0
     var first_bad_O = -1
     for i in range(O_size):
-        var ref_b = bitcast[DType.uint8, 1](
-            SIMD[fp8_dtype, 1](O_ref_host_ptr[i])
-        )[0]
-        var test_b = bitcast[DType.uint8, 1](
-            SIMD[fp8_dtype, 1](O_test_host_ptr[i])
-        )[0]
+        var ref_b = bitcast[.uint8, 1](SIMD[fp8_dtype, 1](O_ref_host_ptr[i]))[0]
+        var test_b = bitcast[.uint8, 1](SIMD[fp8_dtype, 1](O_test_host_ptr[i]))[
+            0
+        ]
         if ref_b != test_b:
             if first_bad_O < 0:
                 first_bad_O = i
@@ -585,10 +584,10 @@ def _test_swiglu_mxfp8_dispatch[
     var S_mismatch = 0
     var first_bad_S = -1
     for i in range(S_size):
-        var ref_b = bitcast[DType.uint8, 1](
+        var ref_b = bitcast[.uint8, 1](
             SIMD[scales_dtype, 1](S_ref_host_ptr[i])
         )[0]
-        var test_b = bitcast[DType.uint8, 1](
+        var test_b = bitcast[.uint8, 1](
             SIMD[scales_dtype, 1](S_test_host_ptr[i])
         )[0]
         if ref_b != test_b:
@@ -648,6 +647,21 @@ def main() raises:
             [0],
             shared,
             ctx,
+        )
+
+        # A.est0: same single-token-decode layout as A, but with
+        # estimated_total_m = 0 -- the value expert_parallel.py computes for an
+        # EP8 decode step (S=1, top_k=4, n_gpus=8 -> 1*4//8 == 0). Pre-fix this
+        # sized the unused fused-path C buffer as [0, N] and the launcher
+        # encoded a zero-dim C TMA descriptor, crashing at tma.mojo:404. Output
+        # must still be byte-exact to the reference.
+        print("  A.est0: 1 active, [2] tokens, estimated_total_m=0")
+        _test_swiglu_mxfp8_dispatch[NUM_E, N, K](
+            [2],
+            [0],
+            shared,
+            ctx,
+            est_m_override=0,
         )
 
         # B: decode 8 experts, uniform.
