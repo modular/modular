@@ -383,6 +383,8 @@ static FnOp generateConversionThunk(Attribute key, ASTDecl &moduleDecl,
 
   std::optional<size_t> thunkVariadicArgIndexOpt =
       thunkSignature.findPackVarArgIndex();
+  std::optional<size_t> actualVariadicArgIndexOpt =
+      actualSignature.findPackVarArgIndex();
 
   ArrayRef<Type> actualArgTypes = actualSignature.getArguments().drop_back(
       actualSignature.hasMemoryOnlyResult() + actualSignature.isThrows());
@@ -403,6 +405,10 @@ static FnOp generateConversionThunk(Attribute key, ASTDecl &moduleDecl,
        actualArgIndex++) {
     bool actualArgIsKwVarArg =
         actualKwVarArgIndex && actualArgIndex == *actualKwVarArgIndex;
+    bool actualArgIsVariadicPack =
+        actualVariadicArgIndexOpt && thunkVariadicArgIndexOpt &&
+        actualVariadicArgIndexOpt == thunkVariadicArgIndexOpt &&
+        actualArgIndex == *actualVariadicArgIndexOpt;
     bool actualArgIsForVariadic =
         !actualArgIsKwVarArg && thunkVariadicArgIndexOpt.has_value() &&
         actualArgIndex >= thunkVariadicArgIndexOpt.value();
@@ -412,6 +418,10 @@ static FnOp generateConversionThunk(Attribute key, ASTDecl &moduleDecl,
     if (actualArgIsKwVarArg) {
       argForActual = thunk.getArgument(*thunkKwVarArgIndex);
       convForActual = thunkSignature.getArgConvention(*thunkKwVarArgIndex);
+    } else if (actualArgIsVariadicPack) {
+      argForActual = thunk.getArgument(*thunkVariadicArgIndexOpt);
+      convForActual =
+          thunkSignature.getArgConvention(*thunkVariadicArgIndexOpt);
     } else if (actualArgIsForVariadic) {
       size_t thunkVariadicArgIndex = thunkVariadicArgIndexOpt.value();
       size_t indexInVariadic = actualArgIndex - thunkVariadicArgIndex;
@@ -470,6 +480,10 @@ static FnOp generateConversionThunk(Attribute key, ASTDecl &moduleDecl,
 
     if (actualArgIsKwVarArg) {
       operands.add({value, &node}, ArgUnpackStyle::kStarStar);
+      continue;
+    }
+    if (actualArgIsVariadicPack) {
+      operands.add({value, &node}, ArgUnpackStyle::kStar);
       continue;
     }
 
