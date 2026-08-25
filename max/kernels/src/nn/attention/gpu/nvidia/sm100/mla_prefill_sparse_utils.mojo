@@ -309,9 +309,7 @@ struct QKMMAOp[dtype: DType, accum_dtype: DType, config: MLASparseConfig]:
     @staticmethod
     @always_inline
     def smem_descriptor_q(
-        q_smem: UnsafePointer[
-            Scalar[Self.dtype], address_space=AddressSpace.SHARED, ...
-        ],
+        q_smem: UnsafePointer[Scalar[Self.dtype], address_space=.SHARED, ...],
     ) -> MMASmemDescriptorPair:
         return smem_descriptor[
             BMN=Self.config.padded_num_q_heads // Self.config.cta_group,
@@ -323,9 +321,7 @@ struct QKMMAOp[dtype: DType, accum_dtype: DType, config: MLASparseConfig]:
     @staticmethod
     @always_inline
     def tmem_descriptor_q(
-        q_smem: UnsafePointer[
-            Scalar[Self.dtype], address_space=AddressSpace.SHARED, ...
-        ],
+        q_smem: UnsafePointer[Scalar[Self.dtype], address_space=.SHARED, ...],
     ) -> MMASmemDescriptorPair:
         return smem_descriptor[
             BMN=Self.config.padded_num_q_heads // Self.config.cta_group,
@@ -337,9 +333,7 @@ struct QKMMAOp[dtype: DType, accum_dtype: DType, config: MLASparseConfig]:
     @staticmethod
     @always_inline
     def descriptor_k_p0(
-        k_smem: UnsafePointer[
-            Scalar[Self.dtype], address_space=AddressSpace.SHARED, ...
-        ],
+        k_smem: UnsafePointer[Scalar[Self.dtype], address_space=.SHARED, ...],
     ) -> MMASmemDescriptorPair:
         return smem_descriptor[
             BMN=Self.config.B_TOPK // Self.config.cta_group,
@@ -351,9 +345,7 @@ struct QKMMAOp[dtype: DType, accum_dtype: DType, config: MLASparseConfig]:
     @staticmethod
     @always_inline
     def descriptor_k_p1(
-        k_smem: UnsafePointer[
-            Scalar[Self.dtype], address_space=AddressSpace.SHARED, ...
-        ],
+        k_smem: UnsafePointer[Scalar[Self.dtype], address_space=.SHARED, ...],
     ) -> MMASmemDescriptorPair:
         return smem_descriptor[
             BMN=Self.config.B_TOPK // Self.config.cta_group,
@@ -413,9 +405,7 @@ struct SVMMAType[dtype: DType, accum_dtype: DType, config: MLASparseConfig]:
     @staticmethod
     @always_inline
     def descriptor_s(
-        s_smem: UnsafePointer[
-            Scalar[Self.dtype], address_space=AddressSpace.SHARED, ...
-        ],
+        s_smem: UnsafePointer[Scalar[Self.dtype], address_space=.SHARED, ...],
     ) -> MMASmemDescriptorPair:
         return smem_descriptor[
             BMN=Self.config.padded_num_q_heads // Self.config.cta_group,
@@ -433,9 +423,7 @@ struct SVMMAType[dtype: DType, accum_dtype: DType, config: MLASparseConfig]:
     @staticmethod
     @always_inline
     def descriptor_v(
-        v_smem: UnsafePointer[
-            Scalar[Self.dtype], address_space=AddressSpace.SHARED, ...
-        ],
+        v_smem: UnsafePointer[Scalar[Self.dtype], address_space=.SHARED, ...],
     ) -> MMASmemDescriptorPair:
         return smem_descriptor[
             BMN=(Self.config.v_depth // 2) // Self.config.cta_group,
@@ -585,10 +573,7 @@ struct MLAPrefillSparseCommon[
     @staticmethod
     def _load_q_prologue(
         full_q_ptr: UnsafePointer[
-            mut=True,
-            Scalar[Self.config.qkv_dtype],
-            address_space=AddressSpace.SHARED,
-            ...,
+            mut=True, Scalar[Self.config.qkv_dtype], address_space=.SHARED, ...
         ],
         q_tma_op: TMATensorTile[
             Self.qkv_dtype,
@@ -597,10 +582,7 @@ struct MLAPrefillSparseCommon[
             Self.q_desc_shape,
         ],
         prologue_q_ptr: UnsafePointer[
-            mut=True,
-            SharedMemBarrier,
-            address_space=AddressSpace.SHARED,
-            ...,
+            mut=True, SharedMemBarrier, address_space=.SHARED, ...
         ],
         cta_id: UInt32,
         seq_idx: UInt32,
@@ -709,46 +691,46 @@ struct MLAPrefillSparseCommon[
         fp8_active: Bool = False,
     ](
         q_smem_ptr: UnsafePointer[
-            Scalar[Self.qkv_dtype], address_space=AddressSpace.SHARED, ...
+            Scalar[Self.qkv_dtype], address_space=.SHARED, ...
         ],
         k_smem_ptr: UnsafePointer[
-            Scalar[Self.qkv_dtype], address_space=AddressSpace.SHARED, ...
+            Scalar[Self.qkv_dtype], address_space=.SHARED, ...
         ],
         s_smem_ptr: UnsafePointer[
-            Scalar[Self.qkv_dtype], address_space=AddressSpace.SHARED, ...
+            Scalar[Self.qkv_dtype], address_space=.SHARED, ...
         ],
         v_smem_ptr: UnsafePointer[
-            Scalar[Self.qkv_dtype], address_space=AddressSpace.SHARED, ...
+            Scalar[Self.qkv_dtype], address_space=.SHARED, ...
         ],
         k_p0_ready: UnsafePointer[
-            mut=True, SharedMemBarrier, address_space=AddressSpace.SHARED, ...
+            mut=True, SharedMemBarrier, address_space=.SHARED, ...
         ],
         k_p1_ready: UnsafePointer[
-            mut=True, SharedMemBarrier, address_space=AddressSpace.SHARED, ...
+            mut=True, SharedMemBarrier, address_space=.SHARED, ...
         ],
         v_p0_ready: UnsafePointer[
-            mut=True, SharedMemBarrier, address_space=AddressSpace.SHARED, ...
+            mut=True, SharedMemBarrier, address_space=.SHARED, ...
         ],
         v_p1_ready: UnsafePointer[
-            mut=True, SharedMemBarrier, address_space=AddressSpace.SHARED, ...
+            mut=True, SharedMemBarrier, address_space=.SHARED, ...
         ],
         sv_p0_done: UnsafePointer[
-            mut=True, SharedMemBarrier, address_space=AddressSpace.SHARED, ...
+            mut=True, SharedMemBarrier, address_space=.SHARED, ...
         ],
         sv_p1_done: UnsafePointer[
-            mut=True, SharedMemBarrier, address_space=AddressSpace.SHARED, ...
+            mut=True, SharedMemBarrier, address_space=.SHARED, ...
         ],
         so_ready: UnsafePointer[
-            mut=True, SharedMemBarrier, address_space=AddressSpace.SHARED, ...
+            mut=True, SharedMemBarrier, address_space=.SHARED, ...
         ],
         p_free: UnsafePointer[
-            mut=True, SharedMemBarrier, address_space=AddressSpace.SHARED, ...
+            mut=True, SharedMemBarrier, address_space=.SHARED, ...
         ],
         qk_ss_done: UnsafePointer[
-            mut=True, SharedMemBarrier, address_space=AddressSpace.SHARED, ...
+            mut=True, SharedMemBarrier, address_space=.SHARED, ...
         ],
         qk_ts_done: UnsafePointer[
-            mut=True, SharedMemBarrier, address_space=AddressSpace.SHARED, ...
+            mut=True, SharedMemBarrier, address_space=.SHARED, ...
         ],
         k: UInt32,
         num_k_blocks: UInt32,
@@ -991,8 +973,8 @@ struct MLAPrefillSparseCommon[
     @always_inline
     @staticmethod
     def _raw_indices_to_tma_rows(
-        kv_lut: Self.KVLUTType, raw: SIMD[DType.int32, 4]
-    ) -> SIMD[DType.int32, 4]:
+        kv_lut: Self.KVLUTType, raw: SIMD[.int32, 4]
+    ) -> SIMD[.int32, 4]:
         """Map raw sparse `indices` entries to physical gather4 TMA rows.
 
         The sparse `indices` buffer stores encoded positions
@@ -1008,7 +990,7 @@ struct MLAPrefillSparseCommon[
         (`mla_decode_sparse_kv_bf16.mojo`), including preserving the `-1`
         padding sentinel so invalid lanes stay invalid.
         """
-        var rows = SIMD[DType.int32, 4]()
+        var rows = SIMD[.int32, 4]()
         comptime for i in range(4):
             rows[i] = raw[i] if raw[i] < Int32(0) else kv_lut.get_tma_row(
                 raw[i]
@@ -1018,17 +1000,15 @@ struct MLAPrefillSparseCommon[
     @always_inline
     @staticmethod
     def kv_valid_producer(
-        indices: TileTensor[
-            DType.uint32, address_space=AddressSpace.GENERIC, ...
-        ],
+        indices: TileTensor[.uint32, address_space=.GENERIC, ...],
         is_k_valid_ptr: UnsafePointer[
-            mut=True, UInt8, address_space=AddressSpace.SHARED, ...
+            mut=True, UInt8, address_space=.SHARED, ...
         ],
         k_valid_ready_ptr: UnsafePointer[
-            mut=True, SharedMemBarrier, address_space=AddressSpace.SHARED, ...
+            mut=True, SharedMemBarrier, address_space=.SHARED, ...
         ],
         k_valid_free_ptr: UnsafePointer[
-            mut=True, SharedMemBarrier, address_space=AddressSpace.SHARED, ...
+            mut=True, SharedMemBarrier, address_space=.SHARED, ...
         ],
         lane_idx: UInt32,
         indices_base: UInt32,
@@ -1068,7 +1048,7 @@ struct MLAPrefillSparseCommon[
             # realistic deployment.
             var idx_v8 = indices.load[width=INDICES_PER_LANE](
                 Coord(gidx_offset)
-            ).cast[DType.int32]()
+            ).cast[.int32]()
 
             var abs_pos_base = Int32(k_block) * Int32(
                 Self.config.B_TOPK

@@ -16,6 +16,37 @@ This version is still a work in progress.
 
 ## Language enhancements
 
+- Mojo now supports contextually inferred member references: a leading-dot form
+  such as `.red` or `.float64` resolves against the expected type of the
+  expression, so you can omit a redundant type name when context already
+  supplies it. Static methods, parametric static methods, parentheses, attribute
+  chains, and typed collection literals all work:
+
+  ```mojo
+  struct Color(ImplicitlyCopyable):
+      comptime red = Color(...)
+      comptime green = Color(...)
+
+      @staticmethod
+      def hsb_to_rgb(h: Int, s: Int, b: Int) -> Color:
+          return Color(...)
+
+      def opacity(self, amount: Float64) -> Color:
+          return Color(...)
+      def __init__(out self, ...):
+
+  def takes_color(c: Color):
+  def takes_colors(colors: List[Color]):
+
+  takes_color(.green)
+  takes_color(.hsb_to_rgb(120, 100, 50))
+  takes_color(.red.opacity(0.5))
+  var x: Color = .red
+  takes_colors([.red, .green])
+  ```
+
+  Without a contextual type, `.member` is an error.
+
 - A `thin` function type can now carry trailing `where` clauses, constraining
   the parameters it declares. This lets a generic algorithm state what it
   promises the function it is handed, instead of leaving the constraint to be
@@ -78,6 +109,9 @@ This version is still a work in progress.
   - Intra-package accesses without explicit `import`s are now an error,
     following a period of deprecation.
 
+- Use of the `read` argument convention is now a hard error, following a period
+  of deprecation; use `imm` instead.
+
 ## Library stabilizations
 
 - String
@@ -108,11 +142,50 @@ This version is still a work in progress.
 
 - `Bencher.bench_function()` now takes a raising closure.
 
+- The zero-argument `Bench.bench_function()` overload now takes a raising
+  closure as a runtime argument. The compile-time parameter form
+  `bench_function[fn]()` for a raising zero-argument body has been removed.
+
 - `Bencher.iter_preproc()` now takes its closures as runtime arguments instead
   of compile-time parameters, along with an explicit state value that is passed
   mutably to both: the preprocessing function prepares the state before each
   timed call of the benchmarked function, so state no longer has to be shuttled
   through mutable captures.
+
+- `Bencher.bench_with_input()` now takes its benchmark closure as a runtime
+  argument. Its register-passable overload accepts both non-raising and raising
+  closures.
+
+- `Bencher.iter_custom()` now only takes its closure as a runtime argument. The
+  compile-time parameter form has been removed.
+
+- `std.python.numpy` now handles multi-dimensional NumPy arrays, not just 1-D:
+
+  - `copy_to_numpy_tensor()` copies a `Span` into a new NumPy array of a given
+    shape. The shape is a `Coord`, so extents may be compile-time (`Idx[N]`) or
+    runtime (`Int`) in any mix.
+
+  - `from_numpy_tensor()` borrows an N-D C-contiguous array as a `NumPyView`,
+    which holds the buffer and its shape together and indexes as
+    `view[i, j]`.
+
+  ```mojo
+  from std.python.numpy import copy_to_numpy_tensor, from_numpy_tensor
+  from std.utils.coord import Coord, Idx
+
+  var values: List[Float64] = [0, 1, 2, 3, 4, 5]
+  var arr = copy_to_numpy_tensor(values, Coord(Idx[2], Idx[3]))
+
+  var view = from_numpy_tensor[DType.float64, 2](arr)
+  var value = view[1, 2]
+  ```
+
+  The existing 1-D `copy_to_numpy_array()` and `from_numpy_array()` are
+  unchanged.
+
+- `Array` now conforms to `Comparable` when its element type does, adding `<`,
+  `<=`, `>`, and `>=`. The ordering is **lexicographic**: the first differing
+  element decides, so `[1, 5] < [2, 3]` is `True`.
 
 - `StringDict` now conforms to `Writable` when its value type is `Writable`,
   matching the existing behavior of `Dict`. This lets you `print()` a
@@ -144,8 +217,8 @@ This version is still a work in progress.
 
 - `Array` now conforms to `Defaultable` when its type `T` is also `Defaultable`.
 
-- `Array` now supports concatenation with the `+` operator when its type `T` is
-  `Movable`. Both operands are consumed and their elements are moved into the
+- `Array` now supports concatenation with the `concat` method when its type `T`
+  is `Movable`. Both operands are consumed and their elements are moved into the
   new array, whose length is the sum of the operands' lengths.
 
 - `Array` now supports repetition with the `repeat` method when its type `T` is
@@ -315,6 +388,12 @@ This release completes the removal of APIs deprecated during the v1.0 cycle.
   `where Ts.contains[T]()` with such a `T` failed with `lacking evidence to
   prove correctness`, even though `T` was plainly in `Ts`.
 
+- `hash()` on a floating-point `SIMD` value now normalizes the sign of zero, so
+  `hash(-0.0) == hash(0.0)`. Hashing the raw bit pattern broke the `Hashable`
+  contract that equal values hash equally: a `Dict` or `Set` could hold both
+  `-0.0` and `0.0` as separate keys even though they compare equal, and a
+  lookup could then return a value stored under the other key.
+
 - `mojo build` can cross-compile to RISC-V again. Emitting LLVM IR, assembly,
   or an object for a `riscv32` or `riscv64` triple failed with `target '...'
   is not supported by this build`.
@@ -382,3 +461,7 @@ This release completes the removal of APIs deprecated during the v1.0 cycle.
   the `Int` range. Values just past `Int.MAX` (such as `Int.MAX + 1`) no
   longer wrap silently, and `Int.MIN` parses correctly by design rather than
   by wraparound.
+
+- Every value of a struct type whose `@align(N)` exceeds its natural
+  alignment is now aligned to `N`, including every element of an array or a
+  `List` of that type.

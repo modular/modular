@@ -111,6 +111,17 @@ _TARGETS: dict[str, FuzzTarget] = {
         description="softmax _softmax_gpu boundary fuzz (memory-safety oracle)",
         default_oracle="memcheck",
     ),
+    "reductions": FuzzTarget(
+        name="reductions",
+        bazel_target="//max/kernels/test/gpu/fuzz:fuzz_reductions.mojo.test",
+        binary="bazel-bin/max/kernels/test/gpu/fuzz/fuzz_reductions.mojo.test",
+        description=(
+            "algorithm.reductions sum/max/min/mean/argmax/argmin over the"
+            " rowwise GPU scaffolder; reduced axis drawn from 0, outputs"
+            " sentinel-checked for a missing write (ref oracle)"
+        ),
+        default_oracle="ref",
+    ),
     "rms_norm": FuzzTarget(
         name="rms_norm",
         bazel_target="//max/kernels/test/gpu/fuzz:fuzz_rms_norm.mojo.test",
@@ -414,6 +425,38 @@ _TARGETS: dict[str, FuzzTarget] = {
             " (per-row top_k==0); initcheck/poison/memcheck"
         ),
         default_oracle="initcheck",
+    ),
+    "topk_topp_masked_probs": FuzzTarget(
+        name="topk_topp_masked_probs",
+        bazel_target=(
+            "//max/kernels/test/gpu/fuzz:fuzz_topk_topp_masked_probs.mojo.test"
+        ),
+        binary=(
+            "bazel-bin/max/kernels/test/gpu/fuzz/"
+            "fuzz_topk_topp_masked_probs.mojo.test"
+        ),
+        description=(
+            "topk_topp_masked_probs: spec-decode target-side masked softmax"
+            " (cluster + single-block dispatch); ref validates the"
+            " tie-tolerant accept-predicate contract vs an f64 recompute"
+        ),
+        default_oracle="ref",
+    ),
+    "topk_topp_sampling_dist": FuzzTarget(
+        name="topk_topp_sampling_dist",
+        bazel_target=(
+            "//max/kernels/test/gpu/fuzz:fuzz_topk_topp_sampling_dist.mojo.test"
+        ),
+        binary=(
+            "bazel-bin/max/kernels/test/gpu/fuzz/"
+            "fuzz_topk_topp_sampling_dist.mojo.test"
+        ),
+        description=(
+            "topk_topp_sampling_from_prob + emit_dist: spec-decode draft"
+            " sampler; token-in-nucleus / degenerate-row / emit-inertness"
+            " contracts, dist vs the accept predicate"
+        ),
+        default_oracle="ref",
     ),
     "ep_combine": FuzzTarget(
         name="ep_combine",

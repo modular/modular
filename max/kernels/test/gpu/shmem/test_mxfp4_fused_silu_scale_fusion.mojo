@@ -68,7 +68,7 @@ from std.testing import assert_equal
 
 
 def _fill_random_bf16(
-    buf: HostBuffer[DType.bfloat16],
+    buf: HostBuffer[.bfloat16],
     n: Int,
     lo: Float64 = -4.0,
     hi: Float64 = 4.0,
@@ -81,7 +81,7 @@ def _fill_random_bf16(
 
 
 def _build_routing(
-    a_offsets_host: HostBuffer[DType.uint32],
+    a_offsets_host: HostBuffer[.uint32],
     num_tokens_by_expert: List[Int],
 ):
     """Ragged per-expert prefix sums: row_offsets[0]=0, row_offsets[e+1]=sum."""
@@ -152,19 +152,17 @@ def _run_fusion_check[
     comptime hw = ctx.default_device_info
 
     # --- Host inputs: synthesized ragged BF16 activation + ragged routing. ---
-    var input_h = ctx.enqueue_create_host_buffer[DType.bfloat16](
+    var input_h = ctx.enqueue_create_host_buffer[.bfloat16](
         total_tokens * input_dim
     )
-    var a_off_h = ctx.enqueue_create_host_buffer[DType.uint32](n_off)
+    var a_off_h = ctx.enqueue_create_host_buffer[.uint32](n_off)
     ctx.synchronize()
     _fill_random_bf16(input_h, total_tokens * input_dim)
     _build_routing(a_off_h, num_tokens_by_expert)
 
     # --- Device buffers. ---
-    var input_d = ctx.enqueue_create_buffer[DType.bfloat16](
-        total_tokens * input_dim
-    )
-    var a_off_d = ctx.enqueue_create_buffer[DType.uint32](n_off)
+    var input_d = ctx.enqueue_create_buffer[.bfloat16](total_tokens * input_dim)
+    var a_off_d = ctx.enqueue_create_buffer[.uint32](n_off)
     ctx.enqueue_copy(input_d, input_h)
     ctx.enqueue_copy(a_off_d, a_off_h)
 
@@ -222,13 +220,11 @@ def _run_fusion_check[
 
     # ---- Path A (reference): fused_silu writes raw [tokens, scale_K], then
     #      the standalone preshuffle kernel rearranges into slots. ----
-    var raw_out_d = ctx.enqueue_create_buffer[DType.uint8](
-        total_tokens * output_dim
-    )
-    var raw_scales_d = ctx.enqueue_create_buffer[DType.float8_e8m0fnu](
+    var raw_out_d = ctx.enqueue_create_buffer[.uint8](total_tokens * output_dim)
+    var raw_scales_d = ctx.enqueue_create_buffer[.float8_e8m0fnu](
         total_tokens * scale_K
     )
-    var ref_d = ctx.enqueue_create_buffer[DType.uint8](slot_bytes)
+    var ref_d = ctx.enqueue_create_buffer[.uint8](slot_bytes)
     ref_d.enqueue_fill(UInt8(0))
 
     ctx.enqueue_function[kernel_ref](
@@ -270,13 +266,11 @@ def _run_fusion_check[
     )
 
     # ---- Path B (fused): fused_silu writes the slot layout directly. ----
-    var fused_out_d = ctx.enqueue_create_buffer[DType.uint8](
+    var fused_out_d = ctx.enqueue_create_buffer[.uint8](
         total_tokens * output_dim
     )
-    var fused_scales_d = ctx.enqueue_create_buffer[DType.float8_e8m0fnu](
-        slot_bytes
-    )
-    fused_scales_d.enqueue_fill(Scalar[DType.float8_e8m0fnu](0))
+    var fused_scales_d = ctx.enqueue_create_buffer[.float8_e8m0fnu](slot_bytes)
+    fused_scales_d.enqueue_fill(Float8_e8m0fnu(0))
 
     ctx.enqueue_function[kernel_fused](
         TileTensor[origin=MutAnyOrigin](
@@ -299,8 +293,8 @@ def _run_fusion_check[
     )
 
     # --- Compare byte for byte over the full slot region. ---
-    var ref_host = ctx.enqueue_create_host_buffer[DType.uint8](slot_bytes)
-    var fused_host = ctx.enqueue_create_host_buffer[DType.uint8](slot_bytes)
+    var ref_host = ctx.enqueue_create_host_buffer[.uint8](slot_bytes)
+    var fused_host = ctx.enqueue_create_host_buffer[.uint8](slot_bytes)
     ctx.enqueue_copy(ref_host, ref_d)
     ctx.enqueue_copy(fused_host, fused_scales_d.unsafe_ptr().bitcast[UInt8]())
     ctx.synchronize()
@@ -363,10 +357,10 @@ def _run_activation_probe[
     comptime hw = ctx.default_device_info
 
     # One expert over all tokens (activation is per-element).
-    var input_h = ctx.enqueue_create_host_buffer[DType.bfloat16](
+    var input_h = ctx.enqueue_create_host_buffer[.bfloat16](
         num_tokens * input_dim
     )
-    var a_off_h = ctx.enqueue_create_host_buffer[DType.uint32](n_off)
+    var a_off_h = ctx.enqueue_create_host_buffer[.uint32](n_off)
     ctx.synchronize()
     # > limit so both clamps fire.
     _fill_random_bf16(input_h, num_tokens * input_dim, -12.0, 12.0)
@@ -376,10 +370,8 @@ def _run_activation_probe[
     a_off_h[0] = UInt32(0)
     a_off_h[1] = UInt32(num_tokens)
 
-    var input_d = ctx.enqueue_create_buffer[DType.bfloat16](
-        num_tokens * input_dim
-    )
-    var a_off_d = ctx.enqueue_create_buffer[DType.uint32](n_off)
+    var input_d = ctx.enqueue_create_buffer[.bfloat16](num_tokens * input_dim)
+    var a_off_d = ctx.enqueue_create_buffer[.uint32](n_off)
     ctx.enqueue_copy(input_d, input_h)
     ctx.enqueue_copy(a_off_d, a_off_h)
 
@@ -415,12 +407,12 @@ def _run_activation_probe[
         clamp_activation=True,
     ]
 
-    var out_d = ctx.enqueue_create_buffer[DType.uint8](num_tokens * output_dim)
-    var scales_d = ctx.enqueue_create_buffer[DType.float8_e8m0fnu](
+    var out_d = ctx.enqueue_create_buffer[.uint8](num_tokens * output_dim)
+    var scales_d = ctx.enqueue_create_buffer[.float8_e8m0fnu](
         num_tokens * scale_K
     )
     out_d.enqueue_fill(UInt8(0))
-    scales_d.enqueue_fill(Scalar[DType.float8_e8m0fnu](0))
+    scales_d.enqueue_fill(Float8_e8m0fnu(0))
 
     ctx.enqueue_function[kernel](
         TileTensor[origin=MutAnyOrigin](
@@ -438,10 +430,10 @@ def _run_activation_probe[
         block_dim=hw.max_thread_block_size,
     )
 
-    var out_host = ctx.enqueue_create_host_buffer[DType.uint8](
+    var out_host = ctx.enqueue_create_host_buffer[.uint8](
         num_tokens * output_dim
     )
-    var scales_host = ctx.enqueue_create_host_buffer[DType.float8_e8m0fnu](
+    var scales_host = ctx.enqueue_create_host_buffer[.float8_e8m0fnu](
         num_tokens * scale_K
     )
     ctx.enqueue_copy(out_host, out_d)
@@ -453,7 +445,7 @@ def _run_activation_probe[
     var max_ratio = Float32(0.0)
     for m in range(num_tokens):
         for h in range(hidden_size):
-            var gate = input_h[m * input_dim + h].cast[DType.float32]()
+            var gate = input_h[m * input_dim + h].cast[.float32]()
             var up = input_h[m * input_dim + h + hidden_size].cast[
                 DType.float32
             ]()

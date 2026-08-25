@@ -190,6 +190,11 @@ def register_all_models() -> None:
         _LazyArch(
             "InklingForConditionalGeneration", ".inkling", "inkling_arch"
         ),
+        _LazyArch(
+            "UnifiedMTPInklingForConditionalGeneration",
+            ".unified_mtp_inkling",
+            "unified_mtp_inkling_arch",
+        ),
         _LazyArch("InternVLChatModel", ".internvl", "internvl_arch"),
         _LazyArch(
             "Eagle3DeepseekV2ForCausalLM", ".kimik2_5", "eagle3_kimik25_arch"
@@ -342,6 +347,11 @@ def register_all_models() -> None:
             "UnifiedMTPGlmMoeDsaForCausalLM",
             ".unified_mtp_glm5_2",
             "unified_mtp_glm5_2_arch",
+        ),
+        _LazyArch(
+            "UnifiedMTPQwen3_5ForConditionalGeneration",
+            ".unified_mtp_qwen3_5",
+            "unified_mtp_qwen3_5_arch",
         ),
         _LazyArch("WanPipeline", ".wan", "wan_arch"),
         _LazyArch("WanImageToVideoPipeline", ".wan", "wan_i2v_arch"),

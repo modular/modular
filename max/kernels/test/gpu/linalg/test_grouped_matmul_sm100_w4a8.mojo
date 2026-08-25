@@ -61,9 +61,7 @@ from linalg.matmul.gpu.sm100_structured.grouped_block_scaled_1d1d import (
 comptime SF_VECTOR_SIZE = MXFP8_SF_VECTOR_SIZE
 
 # Exact in E4M3 and small enough that every partial sum stays exact in FP32.
-comptime A_VALUES = SIMD[DType.float32, 8](
-    0.0, 0.5, 1.0, 2.0, -0.5, -1.0, -2.0, 1.5
-)
+comptime A_VALUES = SIMD[.float32, 8](0.0, 0.5, 1.0, 2.0, -0.5, -1.0, -2.0, 1.5)
 
 # One BF16 ulp. The kernel accumulates in FP32 and the host reference is exact,
 # so rounding the result to BF16 on the store is the whole error budget.
@@ -79,7 +77,7 @@ def _test_w4a8_grouped[
     N: Int,
     K: Int,
     num_experts: Int,
-    c_type: DType = DType.bfloat16,
+    c_type: DType = .bfloat16,
 ](
     num_tokens_by_expert: List[Int],
     expert_ids: List[Int],
@@ -117,16 +115,16 @@ def _test_w4a8_grouped[
     var c_host_ptr = ctx.enqueue_create_host_buffer[c_type](M * N)
     var c_host = TileTensor(c_host_ptr, row_major(Coord(M, Idx[N])))
 
-    var a_offsets_host = ctx.enqueue_create_host_buffer[DType.uint32](
+    var a_offsets_host = ctx.enqueue_create_host_buffer[.uint32](
         num_active_experts + 1
     )
-    var a_scale_offsets_host = ctx.enqueue_create_host_buffer[DType.uint32](
+    var a_scale_offsets_host = ctx.enqueue_create_host_buffer[.uint32](
         num_active_experts
     )
-    var expert_ids_host = ctx.enqueue_create_host_buffer[DType.int32](
+    var expert_ids_host = ctx.enqueue_create_host_buffer[.int32](
         num_active_experts
     )
-    var expert_scales_host = ctx.enqueue_create_host_buffer[DType.float32](
+    var expert_scales_host = ctx.enqueue_create_host_buffer[.float32](
         num_experts
     )
 
@@ -241,18 +239,16 @@ def _test_w4a8_grouped[
         a_scales_shape.product()
     )
     var b_scales_dev = ctx.enqueue_create_buffer[MXFP8_SF_DTYPE](b_scale_elems)
-    var a_offsets_dev = ctx.enqueue_create_buffer[DType.uint32](
+    var a_offsets_dev = ctx.enqueue_create_buffer[.uint32](
         num_active_experts + 1
     )
-    var a_scale_offsets_dev = ctx.enqueue_create_buffer[DType.uint32](
+    var a_scale_offsets_dev = ctx.enqueue_create_buffer[.uint32](
         max(num_active_experts, 1)
     )
-    var expert_ids_dev = ctx.enqueue_create_buffer[DType.int32](
+    var expert_ids_dev = ctx.enqueue_create_buffer[.int32](
         max(num_active_experts, 1)
     )
-    var expert_scales_dev = ctx.enqueue_create_buffer[DType.float32](
-        num_experts
-    )
+    var expert_scales_dev = ctx.enqueue_create_buffer[.float32](num_experts)
 
     ctx.enqueue_copy(a_dev, a_host_ptr)
     ctx.enqueue_copy(b_dev, b_host_ptr)
@@ -341,19 +337,19 @@ def _test_w4a8_grouped[
                 for kb in range(0, K, SF_VECTOR_SIZE):
                     var sfa = get_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
                         a_scales_host, a_scale_row, kb
-                    ).cast[DType.float32]()
+                    ).cast[.float32]()
                     var sfb = get_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
                         b_scale_slice, n, kb
-                    ).cast[DType.float32]()
+                    ).cast[.float32]()
                     var block = Float32(0.0)
                     for k in range(kb, kb + SF_VECTOR_SIZE):
-                        var av = a_host[m, k].cast[DType.float32]()
+                        var av = a_host[m, k].cast[.float32]()
                         var packed = Int(b_host[expert_id, n, k // 2])
                         var nibble = (packed >> 4) if k % 2 else (packed & 0xF)
                         block += av * E2M1_TO_FLOAT32[nibble]
                     acc += block * sfa * sfb
                 assert_almost_equal(
-                    c_host[m, n].cast[DType.float32](),
+                    c_host[m, n].cast[.float32](),
                     acc * expert_scale,
                     atol=0.0,
                     rtol=BF16_RTOL,

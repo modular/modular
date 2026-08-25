@@ -1024,7 +1024,7 @@ struct List[T: AnyType, /](
         from std.collections import List
 
         var numbers: List[Int64] = [1, 2]
-        var more = SIMD[DType.int64, 2](3, 4)
+        var more = SIMD[.int64, 2](3, 4)
         numbers.extend(more)
         print(numbers) # [SIMD[DType.int64, 1](1), SIMD[DType.int64, 1](2),
                        #  SIMD[DType.int64, 1](3), SIMD[DType.int64, 1](4)]
@@ -1058,7 +1058,7 @@ struct List[T: AnyType, /](
         from std.collections import List
 
         var numbers: List[Int64] = [1, 2]
-        var more = SIMD[DType.int64, 4](3, 4, 5, 6)
+        var more = SIMD[.int64, 4](3, 4, 5, 6)
         numbers.extend(more, count=2)
         print(numbers) # [SIMD[DType.int64, 1](1), SIMD[DType.int64, 1](2),
                        #  SIMD[DType.int64, 1](3), SIMD[DType.int64, 1](4)]

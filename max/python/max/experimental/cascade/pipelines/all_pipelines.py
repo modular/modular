@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Top-level pipeline dispatch helpers for cascade.
 
-Selects and builds the correct :class:`CascadePipeline` for a
+Selects and builds the correct :class:`GenAIPipeline` for a
 :class:`PipelineArgs` by constructing a :class:`PipelineConfig` via
 :meth:`PipelineConfig.from_args`, resolving the model's architecture against
 the MAX :obj:`~max.pipelines.PIPELINE_REGISTRY`, and building the cascade
@@ -31,7 +31,10 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 
-from max.experimental.cascade.interfaces.pipeline import CascadePipeline
+from max.experimental.cascade.interfaces.pipeline import GenAIPipeline
+from max.experimental.cascade.pipelines.common_textgen import (
+    CommonTextGenPipeline,
+)
 from max.experimental.cascade.pipelines.dummy_imgen import (
     build_dummy_imgen_pipeline,
 )
@@ -46,7 +49,7 @@ from max.pipelines.lib.registry import SupportedArchitecture
 
 # Dummy pipelines are in-process test fixtures selected by an exact model-path
 # sentinel; they have no Hugging Face config and never hit the registry.
-_DUMMY_BUILDERS: dict[str, Callable[[], Awaitable[CascadePipeline]]] = {
+_DUMMY_BUILDERS: dict[str, Callable[[], Awaitable[GenAIPipeline]]] = {
     "dummy_textgen": build_dummy_textgen_pipeline,
     "dummy_imgen": build_dummy_imgen_pipeline,
 }
@@ -99,7 +102,6 @@ def _resolve_architecture(config: PipelineConfig) -> SupportedArchitecture:
     Raises:
         ValueError: If the architecture is unknown to the MAX registry.
     """
-    register_all_models()
     architecture_name = config.models.main_architecture_name
     arch = PIPELINE_REGISTRY.retrieve_architecture(
         architecture_name=architecture_name,
@@ -112,9 +114,7 @@ def _resolve_architecture(config: PipelineConfig) -> SupportedArchitecture:
     return arch
 
 
-async def build_pipeline(
-    args: PipelineArgs,
-) -> CascadePipeline:
+async def build_pipeline(args: PipelineArgs) -> GenAIPipeline:
     """Build the cascade pipeline described by *args*.
 
     Selection is driven entirely by the model path, read from the raw
@@ -144,7 +144,10 @@ async def build_pipeline(
 
     Args:
         args: The flat pipeline arguments, typically constructed by cyclopts
-            from the serve CLI flags.
+            from the serve CLI flags. ``args.tokenizer_impl`` names the
+            ``TokenizerWorker`` subclass the text-gen pipelines use, as
+            ``"module.path:ClassName"``; ``None`` (the default) uses the
+            HuggingFace tokenizer.
 
     Raises:
         ValueError: If no model is specified.
@@ -160,7 +163,14 @@ async def build_pipeline(
         return await dummy_builder()
 
     if model_path.startswith(_ECHO_PREFIX):
-        return EchoTextGenPipeline(model_path.removeprefix(_ECHO_PREFIX))
+        return EchoTextGenPipeline(
+            model_path.removeprefix(_ECHO_PREFIX), args.tokenizer_impl
+        )
+
+    # We need to call register models explicitly instead of having it run when
+    # importing max.pipelines.architectures, because we have cascade as a library
+    # to be able to be exported to multiple Bazel targets.
+    register_all_models()
 
     config = PipelineConfig.from_args(args)
 
@@ -173,6 +183,14 @@ async def build_pipeline(
             "SupportedArchitecture to enable cascade serving."
         )
 
+    if factory is CommonTextGenPipeline:
+        return CommonTextGenPipeline(config, args.tokenizer_impl)
+    if args.tokenizer_impl is not None:
+        raise ValueError(
+            f"--tokenizer-impl {args.tokenizer_impl!r} is only supported for "
+            f"the common text-generation pipeline, not {arch.name!r}."
+        )
+
     pipeline = factory(config)
-    assert isinstance(pipeline, CascadePipeline)
+    assert isinstance(pipeline, GenAIPipeline)
     return pipeline

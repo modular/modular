@@ -89,7 +89,7 @@ def _accum_bf16_to_fp32_kernel[
     dtype: DType,
     output_simd_width: Int,
 ](
-    accum_fp32_ptr: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
+    accum_fp32_ptr: UnsafePointer[Float32, MutAnyOrigin],
     src_bf16_ptr: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
     per_batch_elems: Int32,
 ):
@@ -99,14 +99,14 @@ def _accum_bf16_to_fp32_kernel[
     """
     var _per_batch_elems = Int(per_batch_elems)
     comptime bf16_alignment = align_of[SIMD[dtype, output_simd_width]]()
-    comptime fp32_alignment = align_of[SIMD[DType.float32, output_simd_width]]()
+    comptime fp32_alignment = align_of[SIMD[.float32, output_simd_width]]()
 
     var accum_idx = global_idx.x * output_simd_width
     if accum_idx >= _per_batch_elems:
         return
     var src_val = src_bf16_ptr.load[
         width=output_simd_width, alignment=bf16_alignment
-    ](accum_idx).cast[DType.float32]()
+    ](accum_idx).cast[.float32]()
     var accum_val = accum_fp32_ptr.load[
         width=output_simd_width, alignment=fp32_alignment
     ](accum_idx)
@@ -121,7 +121,7 @@ def _fp32_to_dtype_plain_kernel[
     output_simd_width: Int,
 ](
     dst_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    src_fp32_ptr: UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin],
+    src_fp32_ptr: UnsafePointer[Float32, ImmutAnyOrigin],
     output_elems: Int32,
 ):
     """Elementwise cast fp32 → `dtype` with no epilogue."""
@@ -133,7 +133,7 @@ def _fp32_to_dtype_plain_kernel[
         output_idx,
         src_fp32_ptr.load[
             width=output_simd_width,
-            alignment=align_of[SIMD[DType.float32, output_simd_width]](),
+            alignment=align_of[SIMD[.float32, output_simd_width]](),
         ](output_idx).cast[dtype](),
     )
 
@@ -145,7 +145,7 @@ def _fp32_to_dtype_epilogue_kernel[
     epilogue: elementwise_simd_epilogue_type,
     output_simd_width: Int,
 ](
-    src_fp32_ptr: UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin],
+    src_fp32_ptr: UnsafePointer[Float32, ImmutAnyOrigin],
     batch: Int32,
     D_out: Int32,
     H_out: Int32,
@@ -176,7 +176,7 @@ def _fp32_to_dtype_epilogue_kernel[
     w, c = udivmod(rem, C_out)
     var val = src_fp32_ptr.load[
         width=output_simd_width,
-        alignment=align_of[SIMD[DType.float32, output_simd_width]](),
+        alignment=align_of[SIMD[.float32, output_simd_width]](),
     ](output_idx).cast[dtype]()
     epilogue[alignment=output_simd_width](IndexList[5](b, d, h, w, c), val)
 
@@ -194,9 +194,7 @@ def dispatch_qslice_conv3d_sm100[
     filter_is_fcrs: Bool = False,
     maybe_epilogue_func: Optional[elementwise_simd_epilogue_type] = None,
 ](
-    input: TileTensor[
-        mut=True, input_type, address_space=AddressSpace.GENERIC, ...
-    ],
+    input: TileTensor[mut=True, input_type, address_space=.GENERIC, ...],
     filter: TileTensor[filter_type, ...],
     output: TileTensor[mut=True, output_type, ...],
     stride: IndexList[3],
@@ -244,9 +242,9 @@ def dispatch_qslice_conv3d_sm100[
     comptime if not filter.shape_known:
         return False
 
-    comptime if input_type != DType.bfloat16:
+    comptime if input_type != .bfloat16:
         return False
-    comptime if output_type != DType.bfloat16:
+    comptime if output_type != .bfloat16:
         return False
 
     # FCQRS slab extraction would need a dedicated kernel (a fixed-q
@@ -318,8 +316,8 @@ def dispatch_qslice_conv3d_sm100[
     var output_elems = batch * per_batch_elems
 
     # --- 1. Allocate fp32 accumulator (zeroed) + reusable bf16 temp. ---
-    var accum_fp32_buf = ctx.enqueue_create_buffer[DType.float32](output_elems)
-    accum_fp32_buf.enqueue_fill(Scalar[DType.float32](0.0))
+    var accum_fp32_buf = ctx.enqueue_create_buffer[.float32](output_elems)
+    accum_fp32_buf.enqueue_fill(Float32(0.0))
     var accum_fp32_ptr = accum_fp32_buf.unsafe_ptr()
 
     var temp_bf16_buf = ctx.enqueue_create_buffer[output_type](per_batch_elems)

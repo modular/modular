@@ -18,7 +18,7 @@
 # RUN:   | kgen-opt --kgen-print-inline-type-values | FileCheck %s
 
 
-comptime SIMDInt = Scalar[DType.int]
+comptime SIMDInt = Int
 
 
 @always_inline("builtin")

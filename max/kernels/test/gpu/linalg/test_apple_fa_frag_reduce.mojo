@@ -45,7 +45,7 @@ comptime MMA_DIM = 16  # one 16x16 score sub-tile
 
 
 @always_inline
-def _frag_row_max(frag: SIMD[DType.float32, 8]) -> SIMD[DType.float32, 2]:
+def _frag_row_max(frag: SIMD[.float32, 8]) -> SIMD[.float32, 2]:
     """Full-row max over a 16x16 score fragment, for the lane's two rows.
 
     Returns `(max over row_lo, max over row_lo+8)`; after the butterfly every
@@ -58,11 +58,11 @@ def _frag_row_max(frag: SIMD[DType.float32, 8]) -> SIMD[DType.float32, 2]:
     r0 = max(r0, shuffle_xor(r0, UInt32(8)))
     r1 = max(r1, shuffle_xor(r1, UInt32(1)))
     r1 = max(r1, shuffle_xor(r1, UInt32(8)))
-    return SIMD[DType.float32, 2](r0, r1)
+    return SIMD[.float32, 2](r0, r1)
 
 
 @always_inline
-def _frag_row_sum(frag: SIMD[DType.float32, 8]) -> SIMD[DType.float32, 2]:
+def _frag_row_sum(frag: SIMD[.float32, 8]) -> SIMD[.float32, 2]:
     """Full-row sum over a 16x16 score fragment, for the lane's two rows."""
     var r0 = frag[0] + frag[1] + frag[2] + frag[3]
     var r1 = frag[4] + frag[5] + frag[6] + frag[7]
@@ -70,13 +70,13 @@ def _frag_row_sum(frag: SIMD[DType.float32, 8]) -> SIMD[DType.float32, 2]:
     r0 = r0 + shuffle_xor(r0, UInt32(8))
     r1 = r1 + shuffle_xor(r1, UInt32(1))
     r1 = r1 + shuffle_xor(r1, UInt32(8))
-    return SIMD[DType.float32, 2](r0, r1)
+    return SIMD[.float32, 2](r0, r1)
 
 
 def _frag_reduce_kernel(
-    d_ptr: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
-    out_max: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
-    out_sum: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
+    d_ptr: UnsafePointer[Float32, MutAnyOrigin],
+    out_max: UnsafePointer[Float32, MutAnyOrigin],
+    out_sum: UnsafePointer[Float32, MutAnyOrigin],
 ):
     """One simdgroup loads a 16x16 fp32 tile into the MMA fragment layout, row-
     reduces, and writes the 16 per-row max/sum results."""
@@ -84,7 +84,7 @@ def _frag_reduce_kernel(
     var row_lo = ((lane & 7) // 2) + ((lane & 16) >> 2)
     var col_base = ((lane & 1) << 2) + (lane & 8)
 
-    var frag = SIMD[DType.float32, 8](0)
+    var frag = SIMD[.float32, 8](0)
 
     comptime for el in range(8):
         var row = row_lo + (8 if el > 3 else 0)
@@ -107,7 +107,7 @@ def test_frag_row_reduce(ctx: DeviceContext) raises:
     print("== test_frag_row_reduce (16x16 score-fragment row max/sum)")
     comptime N = MMA_DIM * MMA_DIM
 
-    var d_host = ctx.enqueue_create_host_buffer[DType.float32](N)
+    var d_host = ctx.enqueue_create_host_buffer[.float32](N)
     # Deterministic, non-monotonic per row (so the max is not trivially the last
     # column), values in roughly [-125, 125].
     for r in range(MMA_DIM):
@@ -115,9 +115,9 @@ def test_frag_row_reduce(ctx: DeviceContext) raises:
             var v = ((r * 131 + c * 977) % 251) - 125
             d_host[r * MMA_DIM + c] = Float32(v)
 
-    var d_dev = ctx.enqueue_create_buffer[DType.float32](N)
-    var max_dev = ctx.enqueue_create_buffer[DType.float32](MMA_DIM)
-    var sum_dev = ctx.enqueue_create_buffer[DType.float32](MMA_DIM)
+    var d_dev = ctx.enqueue_create_buffer[.float32](N)
+    var max_dev = ctx.enqueue_create_buffer[.float32](MMA_DIM)
+    var sum_dev = ctx.enqueue_create_buffer[.float32](MMA_DIM)
     ctx.enqueue_copy(d_dev, d_host)
 
     ctx.enqueue_function[_frag_reduce_kernel](
@@ -128,8 +128,8 @@ def test_frag_row_reduce(ctx: DeviceContext) raises:
         block_dim=WARP_SIZE,
     )
 
-    var max_host = ctx.enqueue_create_host_buffer[DType.float32](MMA_DIM)
-    var sum_host = ctx.enqueue_create_host_buffer[DType.float32](MMA_DIM)
+    var max_host = ctx.enqueue_create_host_buffer[.float32](MMA_DIM)
+    var sum_host = ctx.enqueue_create_host_buffer[.float32](MMA_DIM)
     ctx.enqueue_copy(max_host, max_dev)
     ctx.enqueue_copy(sum_host, sum_dev)
     ctx.synchronize()

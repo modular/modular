@@ -47,6 +47,7 @@ from layout import (
     Coord,
     Layout,
     TensorLayout,
+    TensorStorage,
     TileTensor,
     row_major,
     stack_allocation,
@@ -328,16 +329,16 @@ def multi_stage_reg_epilogue[
 ](
     c_upper_main_tile: TileTensor[
         mut=True,
-        dtype=accum_type,
+        accum_type,
         LayoutType=accum_layout,
-        address_space=AddressSpace.LOCAL,
+        address_space=.LOCAL,
         ...,
     ],
     c_lower_main_tile: TileTensor[
         mut=True,
-        dtype=accum_type,
+        accum_type,
         LayoutType=accum_layout,
-        address_space=AddressSpace.LOCAL,
+        address_space=.LOCAL,
         ...,
     ],
     c_tiles: SMemTileArray2DRowMajor[c_type, ...],
@@ -537,16 +538,16 @@ def promote_accumulators[
     a_scales_smem_tiles: SMemTileArray2DRowMajor[a_scales_type, ...],
     c_upper_main_tile: TileTensor[
         mut=True,
-        dtype=accum_type,
+        accum_type,
         LayoutType=accum_layout,
-        address_space=AddressSpace.LOCAL,
+        address_space=.LOCAL,
         ...,
     ],
     c_lower_main_tile: TileTensor[
         mut=True,
-        dtype=accum_type,
+        accum_type,
         LayoutType=accum_layout,
-        address_space=AddressSpace.LOCAL,
+        address_space=.LOCAL,
         ...,
     ],
     mma_output_pipeline: ProducerConsumerPipeline[num_accum_pipeline_stages],
@@ -615,7 +616,7 @@ def promote_accumulators[
     comptime assert num_m_mmas == 1 and num_n_mmas == 1
 
     comptime assert (
-        a_scales_type == b_scales_type and accum_type == DType.float32
+        a_scales_type == b_scales_type and accum_type == .float32
     ), "Only support float32 for a_scales, b_scales, and accum_type"
     # Rows each warp is responsible for:
     # warp_id 0 -> 0-15 upper, 16-31 lower
@@ -913,6 +914,7 @@ def blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
     a_scales_type: DType,
     b_scales_type: DType,
     b_scales_layout: TensorLayout,
+    b_scales_storage: TensorStorage,
     transpose_b: Bool,
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
     num_pipeline_stages: Int,
@@ -926,7 +928,9 @@ def blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
     ],
     cluster_dim: StaticTuple[Int32, 3],
     num_iters: Int32,
-    b_scales: TileTensor[b_scales_type, b_scales_layout, ImmutAnyOrigin],
+    b_scales: TileTensor[
+        b_scales_type, b_scales_layout, ImmutAnyOrigin, Storage=b_scales_storage
+    ],
     problem_shape: StaticTuple[Int32, 3],
 ):
     """Implements the warp-specialized blockwise FP8 GEMM kernel for SM100 using TMA loads, UMMA tensor-core MMA, and a CLC tile scheduler.
@@ -952,6 +956,7 @@ def blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
         a_scales_type: Element type of the A blockwise scales (`float32`).
         b_scales_type: Element type of the B blockwise scales (`float32`).
         b_scales_layout: Memory layout of the B scales `TileTensor`.
+        b_scales_storage: Storage policy of the B scales `TileTensor`.
         transpose_b: Whether B is k-major (transposed); must be `True`.
         config: Static GEMM configuration holding tile, MMA, cluster,
             pipeline, and swizzle parameters.
@@ -979,7 +984,7 @@ def blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
     comptime accum_type = get_accum_type[a_type]()
 
     comptime assert (
-        b_scales_type == a_scales_type and accum_type == DType.float32
+        b_scales_type == a_scales_type and accum_type == .float32
     ), "Only support float32 for a_scales and b_scales"
     comptime assert transpose_b, "only support k-major B"
 
@@ -1035,7 +1040,7 @@ def blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
 
     var base_ptr_smem = external_memory[
         Scalar[a_type],
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
     ]()
 
@@ -1415,11 +1420,11 @@ def blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
             )
             # final results accumulator regs for C
             var c_upper_main_tile = stack_allocation[
-                dtype=accum_type, address_space=AddressSpace.LOCAL
+                dtype=accum_type, address_space=.LOCAL
             ](row_major[reg_info[0], reg_info[1]]())
 
             var c_lower_main_tile = stack_allocation[
-                dtype=accum_type, address_space=AddressSpace.LOCAL
+                dtype=accum_type, address_space=.LOCAL
             ](row_major[reg_info[0], reg_info[1]]())
 
             _ = c_upper_main_tile.fill(0.0)
@@ -1508,7 +1513,7 @@ def sm100_warp_specialized_blockwise_fp8[
     comptime assert transpose_b, "Only support transposed B"
 
     comptime assert (
-        a_type == b_type and a_type == DType.float8_e4m3fn
+        a_type == b_type and a_type == .float8_e4m3fn
     ), "Only support float8_e4m3fn"
 
     comptime assert (
@@ -1652,6 +1657,7 @@ def sm100_warp_specialized_blockwise_fp8[
         a_scales_type,
         b_scales_type,
         type_of(b_scales).LayoutType,
+        type_of(b_scales).Storage,
         transpose_b=transpose_b,
         config=config,
         num_pipeline_stages=max_pipeline_stages,

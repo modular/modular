@@ -18,14 +18,14 @@
 
 @fieldwise_init
 struct ScalarMembers(TrivialRegisterPassable):
-    var int_scalar: SIMD[DType.int, 1]
-    var bool_scalar: SIMD[DType.bool, 1]
-    var uint8_scalar: SIMD[DType.uint8, 1]
+    var int_scalar: Int
+    var bool_scalar: SIMD[.bool, 1]
+    var uint8_scalar: UInt8
 
     def __init__(out self):
-        self.int_scalar = SIMD[DType.int, 1](42)
-        self.bool_scalar = SIMD[DType.bool, 1](True)
-        self.uint8_scalar = SIMD[DType.uint8, 1](255)
+        self.int_scalar = Int(42)
+        self.bool_scalar = SIMD[.bool, 1](True)
+        self.uint8_scalar = UInt8(255)
 
 
 def keep_alive[*Ts: AnyType](*args: *Ts):

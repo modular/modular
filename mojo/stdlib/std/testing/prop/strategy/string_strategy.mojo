@@ -166,7 +166,7 @@ struct _CodepointStrategy:
             while True:
                 # TODO: Better unicode coverage
                 # TODO: Have an option for generating invalid codepoints
-                var code_point = rng.rand_scalar[DType.uint32](
+                var code_point = rng.rand_scalar[.uint32](
                     min=UInt32(0x0020), max=UInt32(0xFFFF)
                 )
                 # Skip surrogate range
@@ -179,7 +179,7 @@ struct _CodepointStrategy:
             var start: UInt32 = UInt32(32) if self.only_printable else UInt32(0)
             var end: UInt32 = UInt32(126) + UInt32(not self.only_printable)
             return Codepoint(
-                unsafe_unchecked_codepoint=rng.rand_scalar[DType.uint32](
+                unsafe_unchecked_codepoint=rng.rand_scalar[.uint32](
                     min=start, max=end
                 )
             )

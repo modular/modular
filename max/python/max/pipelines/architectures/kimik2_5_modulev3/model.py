@@ -66,6 +66,7 @@ from max.pipelines.lib import (
 from max.pipelines.lib.interfaces.batch_processor import (
     modulev3_ragged_kv_symbolic_inputs,
 )
+from max.pipelines.lib.memory_estimation import MemoryPlan
 from max.pipelines.lib.vision_encoder_cache import VisionEncodeResult
 from max.pipelines.weights.quant import parse_quant_config
 from transformers import AutoConfig
@@ -152,6 +153,8 @@ class KimiK2_5Model(
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
         weights: Weights,
+        *,
+        memory_plan: MemoryPlan,
         adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
         max_batch_size: int = 1,
@@ -168,9 +171,10 @@ class KimiK2_5Model(
             devices,
             kv_cache_config,
             weights,
-            adapter,
-            return_logits,
+            adapter=adapter,
+            return_logits=return_logits,
             max_batch_size=max_batch_size,
+            memory_plan=memory_plan,
         )
 
         # The base hook is typed loosely (``Callable``); both towers here come
@@ -221,14 +225,6 @@ class KimiK2_5Model(
         )
 
     @classmethod
-    def calculate_max_seq_len(
-        cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
-    ) -> int:
-        return KimiK2_5TextConfig.calculate_max_seq_len(
-            pipeline_config, huggingface_config.text_config
-        )
-
-    @classmethod
     def get_num_layers(cls, huggingface_config: AutoConfig) -> int:
         return KimiK2_5Config.get_num_layers(huggingface_config)
 
@@ -264,7 +260,10 @@ class KimiK2_5Model(
         model_config = KimiK2_5Config.initialize_from_config(
             pipeline_config=self.pipeline_config,
             huggingface_config=self.huggingface_config,
-            llm_config=KimiK2_5TextConfig.initialize(self.pipeline_config),
+            max_seq_len=self.max_seq_len,
+            llm_config=KimiK2_5TextConfig.initialize(
+                self.pipeline_config, max_seq_len=self.max_seq_len
+            ),
         )
         llm = model_config.llm_config
 
@@ -302,8 +301,7 @@ class KimiK2_5Model(
         llm.mla_o_proj_quantized = False
 
         llm.max_batch_context_length = (
-            self.pipeline_config.runtime.max_batch_total_tokens
-            or llm.max_batch_context_length
+            self.planned_max_batch_total_tokens or llm.max_batch_context_length
         )
 
         if llm.topk_method == "noaux_tc":

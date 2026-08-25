@@ -573,8 +573,8 @@ struct Test[dtype: DType]:
     comptime SquareMatrixType[size: Int] = Matrix2D[Self.dtype, size, size]
 
 def main():
-    print(Test[DType.int32].default_size) # 1024
+    print(Test[.int32].default_size) # 1024
 ```
 
 Access these constants on the instance or the type. For example,
-`Test[DType.int32]().default_size` and `Test[DType.int32].default_size`.
+`Test[.int32]().default_size` and `Test[.int32].default_size`.

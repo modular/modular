@@ -108,15 +108,16 @@ def app(
         pipeline_task = PipelineTask.EMBEDDINGS_GENERATION
 
     pipeline_cfg = PipelineConfig.from_args(pipeline_config)
-    tokenizer, pipeline_factory = PIPELINE_REGISTRY.retrieve_factory(
+    retrieved = PIPELINE_REGISTRY.retrieve_factory(
         pipeline_cfg, task=pipeline_task
     )
 
     serving_settings = ServingTokenGeneratorSettings(
-        model_factory=pipeline_factory,
+        model_factory=retrieved.factory,
         pipeline_config=pipeline_cfg,
-        tokenizer=tokenizer,
+        tokenizer=retrieved.tokenizer,
         task=pipeline_task,
+        memory_plan=retrieved.memory_plan,
     )
 
     settings = Settings(**settings_config)

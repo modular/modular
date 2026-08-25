@@ -373,7 +373,7 @@ def run_one_case(
         blocks_host[i] = Scalar[kv_dtype](0)
 
     # --- cache_lengths + paged lookup table ----------------------------------
-    var cache_lengths_host = ctx.enqueue_create_host_buffer[DType.uint32](
+    var cache_lengths_host = ctx.enqueue_create_host_buffer[.uint32](
         max(1, batch_size)
     )
     for i in range(batch_size):
@@ -381,9 +381,7 @@ def run_one_case(
 
     var max_pages_per_batch = align_up(ceildiv(max_full, PAGE_SIZE), 1)
     var lut_size = max(1, batch_size * max_pages_per_batch)
-    var lookup_table_host = ctx.enqueue_create_host_buffer[DType.uint32](
-        lut_size
-    )
+    var lookup_table_host = ctx.enqueue_create_host_buffer[.uint32](lut_size)
     for i in range(lut_size):
         lookup_table_host[i] = UInt32(0)
     var page_offset = 0
@@ -398,7 +396,7 @@ def run_one_case(
         page_offset += num_pages_i
 
     # --- input_row_offsets (ragged prefix sum) -------------------------------
-    var row_offsets_host = ctx.enqueue_create_host_buffer[DType.uint32](
+    var row_offsets_host = ctx.enqueue_create_host_buffer[.uint32](
         batch_size + 1
     )
     row_offsets_host[0] = UInt32(0)
@@ -421,15 +419,13 @@ def run_one_case(
     var blocks_device = ctx.enqueue_create_buffer[kv_dtype](block_elems)
     ctx.enqueue_copy(blocks_device, blocks_host)
     var output_device = ctx.enqueue_create_buffer[out_dtype](max(1, M * Q_DIM))
-    var cache_lengths_device = ctx.enqueue_create_buffer[DType.uint32](
+    var cache_lengths_device = ctx.enqueue_create_buffer[.uint32](
         max(1, batch_size)
     )
     ctx.enqueue_copy(cache_lengths_device, cache_lengths_host)
-    var lookup_table_device = ctx.enqueue_create_buffer[DType.uint32](lut_size)
+    var lookup_table_device = ctx.enqueue_create_buffer[.uint32](lut_size)
     ctx.enqueue_copy(lookup_table_device, lookup_table_host)
-    var row_offsets_device = ctx.enqueue_create_buffer[DType.uint32](
-        batch_size + 1
-    )
+    var row_offsets_device = ctx.enqueue_create_buffer[.uint32](batch_size + 1)
     ctx.enqueue_copy(row_offsets_device, row_offsets_host)
     ctx.synchronize()
 
@@ -458,7 +454,7 @@ def run_one_case(
         RuntimeLayout[out_layout].row_major(IndexList[2](M, Q_DIM)),
     )
     comptime ro_layout = Layout(UNKNOWN_VALUE)
-    var row_offsets_lt = LayoutTensor[DType.uint32, ro_layout](
+    var row_offsets_lt = LayoutTensor[.uint32, ro_layout](
         row_offsets_device.unsafe_ptr(),
         RuntimeLayout[ro_layout].row_major(IndexList[1](batch_size + 1)),
     )
@@ -469,12 +465,12 @@ def run_one_case(
         RuntimeLayout[Layout.row_major[6]()].row_major(block_shape),
     )
     comptime cl_layout = Layout(UNKNOWN_VALUE)
-    var cache_lengths_lt = LayoutTensor[DType.uint32, cl_layout](
+    var cache_lengths_lt = LayoutTensor[.uint32, cl_layout](
         cache_lengths_device.unsafe_ptr(),
         RuntimeLayout[cl_layout].row_major(IndexList[1](batch_size)),
     )
     comptime lt_layout_2d = Layout.row_major[2]()
-    var lookup_table_lt = LayoutTensor[DType.uint32, lt_layout_2d](
+    var lookup_table_lt = LayoutTensor[.uint32, lt_layout_2d](
         lookup_table_device.unsafe_ptr(),
         RuntimeLayout[lt_layout_2d].row_major(
             IndexList[2](batch_size, max_pages_per_batch)
@@ -489,14 +485,14 @@ def run_one_case(
                 blocks_lt.runtime_layout.stride.value,
             ),
         ).as_unsafe_any_origin(),
-        LayoutTensor[mut=False, DType.uint32, cl_layout](
+        LayoutTensor[mut=False, .uint32, cl_layout](
             cache_lengths_lt.ptr,
             RuntimeLayout[cl_layout](
                 cache_lengths_lt.runtime_layout.shape.value,
                 cache_lengths_lt.runtime_layout.stride.value,
             ),
         ).as_unsafe_any_origin(),
-        LayoutTensor[mut=False, DType.uint32, lt_layout_2d](
+        LayoutTensor[mut=False, .uint32, lt_layout_2d](
             lookup_table_lt.ptr,
             RuntimeLayout[lt_layout_2d](
                 lookup_table_lt.runtime_layout.shape.value,
@@ -614,14 +610,14 @@ def _verify_ref(
         for n in range(N_TOTAL):
             var acc = Float32(0)
             for k in range(HIDDEN):
-                var a = hs_host[m * HIDDEN + k].cast[DType.float32]()
-                var b = w_host[n * HIDDEN + k].cast[DType.float32]()
+                var a = hs_host[m * HIDDEN + k].cast[.float32]()
+                var b = w_host[n * HIDDEN + k].cast[.float32]()
                 var sa = get_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
                     input_scale_lt, m, k
-                ).cast[DType.float32]()
+                ).cast[.float32]()
                 var sb = get_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
                     weight_scale_lt, n, k
-                ).cast[DType.float32]()
+                ).cast[.float32]()
                 acc += (a * sa) * (b * sb)
             full[m * N_TOTAL + n] = acc
 

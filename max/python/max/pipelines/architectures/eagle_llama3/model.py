@@ -27,6 +27,7 @@ from max.pipelines.lib import (
     ModelOutputs,
     PipelineConfig,
 )
+from max.pipelines.lib.memory_estimation import MemoryPlan
 from max.pipelines.lib.utils import parse_state_dict_from_weights
 from typing_extensions import override
 
@@ -47,6 +48,8 @@ class EagleLlama3Model(LlamaModelBase):
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
         weights: Weights,
+        *,
+        memory_plan: MemoryPlan,
         adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
         return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.LAST,
@@ -58,10 +61,11 @@ class EagleLlama3Model(LlamaModelBase):
             devices,
             kv_cache_config,
             weights,
-            adapter,
-            return_logits,
-            return_hidden_states,
+            adapter=adapter,
+            return_logits=return_logits,
+            return_hidden_states=return_hidden_states,
             max_batch_size=max_batch_size,
+            memory_plan=memory_plan,
         )
 
     def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
@@ -89,8 +93,7 @@ class EagleLlama3Model(LlamaModelBase):
         draft_hf_config = draft_model.huggingface_config
         assert draft_hf_config is not None
         model_config = Llama3Config.initialize_from_config(
-            self.pipeline_config,
-            draft_hf_config,
+            self.pipeline_config, draft_hf_config, max_seq_len=self.max_seq_len
         )
         model_config.finalize(
             huggingface_config=draft_hf_config,

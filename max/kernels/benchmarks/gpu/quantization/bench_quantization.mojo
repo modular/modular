@@ -123,9 +123,9 @@ def bench_1d1d_quantization[
         random(in_host_tensor)
 
     @always_inline
-    @__copy_capture(input_tensor, output_tensor, scales_tensor)
-    @__parameter
-    def bench_fn(mut b: Bencher) raises:
+    def bench_fn(
+        mut b: Bencher,
+    ) raises {var input_tensor, var output_tensor, var scales_tensor, imm,}:
         @always_inline
         def kernel_launch(ctx: DeviceContext) raises {imm}:
             # Run the quantization kernel
@@ -162,7 +162,8 @@ def bench_1d1d_quantization[
         * size_of[scales_dtype](),
     )
 
-    b.bench_function[bench_fn](
+    b.bench_function(
+        bench_fn,
         BenchId(
             "1d1d_quantization",
             input_id=String(
@@ -184,7 +185,7 @@ def bench_1d1d_quantization[
 
 
 def main() raises:
-    comptime in_dtype = get_defined_dtype["dtype", DType.bfloat16]()
+    comptime in_dtype = get_defined_dtype["dtype", .bfloat16]()
 
     var rows = Int(arg_parse("M", 1))
     comptime cols = get_defined_int["N", 1024]()

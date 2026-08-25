@@ -29,9 +29,9 @@ comptime TILE_SZ_RATIO = TILE_SZ_A // TILE_SZ_B
 
 
 def matmul(
-    a_ptr: UnsafePointer[Scalar[DType.int], MutAnyOrigin],
-    b_ptr: UnsafePointer[Scalar[DType.int], MutAnyOrigin],
-    c_ptr: UnsafePointer[Scalar[DType.int], MutAnyOrigin],
+    a_ptr: UnsafePointer[Int, MutAnyOrigin],
+    b_ptr: UnsafePointer[Int, MutAnyOrigin],
+    c_ptr: UnsafePointer[Int, MutAnyOrigin],
     m_dev: Int32,
     n_dev: Int32,
     k_dev: Int32,
@@ -57,7 +57,7 @@ def matmul(
     var b_shared = unsafe_stack_allocation[
         TILE_SZ_RATIO * TILE_SZ_B,
         DType.int,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
 
     # Thread indexing offsets.
@@ -75,7 +75,7 @@ def matmul(
 
         # Load the B matrix into shared memory.
         var b_val = Int(b[tile_idx * TILE_SZ_RATIO + i, col + j])
-        b_shared[i * TILE_SZ_B + j] = Scalar[DType.int](b_val)
+        b_shared[i * TILE_SZ_B + j] = Int(b_val)
 
         barrier()
 
@@ -91,8 +91,7 @@ def matmul(
             # Compute the output element for each thread.
             for out_idx in range(TILE_SZ_B):
                 c_reg[out_idx] += (
-                    Scalar[DType.int](a_reg)
-                    * b_shared[idx * TILE_SZ_RATIO + out_idx]
+                    Int(a_reg) * b_shared[idx * TILE_SZ_RATIO + out_idx]
                 )
         barrier()
 
@@ -109,9 +108,9 @@ def run_matmul(ctx: DeviceContext) raises:
     comptime n = 512
     comptime k = 512
 
-    var a_host_ptr = alloc[Scalar[DType.int]](m * k)
-    var b_host_ptr = alloc[Scalar[DType.int]](k * n)
-    var c_host_ptr = alloc[Scalar[DType.int]](m * n)
+    var a_host_ptr = alloc[Int](m * k)
+    var b_host_ptr = alloc[Int](k * n)
+    var c_host_ptr = alloc[Int](m * n)
 
     var a_host = TileTensor(a_host_ptr, row_major[m, k]())
     var b_host = TileTensor(b_host_ptr, row_major[k, n]())
@@ -129,9 +128,9 @@ def run_matmul(ctx: DeviceContext) raises:
         for j in range(n):
             c_host[i, j] = 0
 
-    var a_device = ctx.enqueue_create_buffer[DType.int](m * k)
-    var b_device = ctx.enqueue_create_buffer[DType.int](k * n)
-    var c_device = ctx.enqueue_create_buffer[DType.int](m * n)
+    var a_device = ctx.enqueue_create_buffer[.int](m * k)
+    var b_device = ctx.enqueue_create_buffer[.int](k * n)
+    var c_device = ctx.enqueue_create_buffer[.int](m * n)
 
     ctx.enqueue_copy(a_device, a_host_ptr)
     ctx.enqueue_copy(b_device, b_host_ptr)

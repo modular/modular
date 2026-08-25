@@ -84,4 +84,4 @@ def test_barrier[dtype: DType](ctx: DeviceContext) raises:
 
 def main() raises:
     with DeviceContext() as ctx:
-        test_barrier[DType.float32](ctx)
+        test_barrier[.float32](ctx)

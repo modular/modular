@@ -60,7 +60,7 @@ def test_splat() raises:
 
         comptime for j in range(len(widths)):
             comptime w = rebind[Int](widths[j])
-            comptime B = SIMD[DType.bool, w]
+            comptime B = SIMD[.bool, w]
             assert_equal(SIMD[D, w](-1), splat[D](B(fill=True)))
             assert_equal(SIMD[D, w](0), splat[D](B(fill=False)))
 

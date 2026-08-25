@@ -29,8 +29,8 @@ comptime myIntAdd[x: Int, y: Int] = x + y
 # expected-note @+1 {{use a trailing 'where' clause after the signature instead}}
 comptime inlineWhereIsError[x: Int where x > 0] = x
 
-# expected-error @below {{cannot implicitly convert 'SIMD[DType.int, x]' value to 'SIMD[DType.int, (x * Int(20))]'}}
-comptime ComptimeWithParametricType2[x: Int]: SIMD[DType.int, x*20] = SIMD[DType.int, x]()
+# expected-error @below {{cannot implicitly convert 'SIMD[.int, x]' value to 'SIMD[.int, (x * Int(20))]'}}
+comptime ComptimeWithParametricType2[x: Int]: SIMD[.int, x*20] = SIMD[.int, x]()
 
 def implicit_generator_constraint_drop_error[cond: Bool]():
     comptime constrained[x: Int]: AnyType where cond = Int

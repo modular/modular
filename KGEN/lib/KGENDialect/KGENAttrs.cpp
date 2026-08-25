@@ -151,11 +151,7 @@ EmitAs EmitAsAttr::getValue() const { return (EmitAs)getInt(); }
 // FnGenBuilder-related attr
 //===----------------------------------------------------------------------===//
 
-Type FnGenBuilderParamDeclArrayAttr::getType() const {
-  // See the TODO on `ParamDeclArrayAttr::getType`.
-  return NonStructTypeType::get(getContext());
-}
-
+bool FnGenBuilderParamDeclAttr::isConstant() const { return false; }
 bool FnGenBuilderParamDeclRefAttr::isConstant() const { return false; }
 
 //===----------------------------------------------------------------------===//
@@ -454,6 +450,30 @@ TypedAttr ParamListConcatAttr::getChecked(
   return get(type, variadics);
 }
 
+TypedAttr ParamListConcatAttr::get(ArrayRef<TypedAttr> paramLists) {
+  assert(!paramLists.empty());
+  auto retType = cast<ParamListType>(paramLists.front().getType());
+  return ParamListConcatAttr::get(
+      retType, ParamListAttr::get(paramLists, ParamListType::get(retType)));
+}
+
+TypedAttr
+ParamListConcatAttr::getChecked(function_ref<InFlightDiagnostic()> emitError,
+                                ArrayRef<TypedAttr> paramLists) {
+  if (paramLists.empty()) {
+    emitError() << "expected to concat a non-empty array of paramLists";
+    return {};
+  }
+  auto paramListsType = paramLists.front().getType();
+  if (isa<ParamListType>(paramListsType) &&
+      llvm::all_of(paramLists, [&](TypedAttr paramList) {
+        return paramListsType == paramList.getType();
+      })) {
+    return get(paramLists);
+  }
+  emitError() << "expected to concat param list with the same type";
+  return {};
+}
 //===----------------------------------------------------------------------===//
 // UnknownAttr
 //===----------------------------------------------------------------------===//
@@ -806,6 +826,16 @@ TypeConformsToTraitAttr::verify(function_ref<InFlightDiagnostic()> emitError,
 
 FnTypeIsCABIAttr FnTypeIsCABIAttr::get(MLIRContext *ctx, TypedAttr typeValue) {
   return Base::get(ctx, typeValue, getResultType(ctx));
+}
+
+//===----------------------------------------------------------------------===//
+// TraitSymbolAttr
+//===----------------------------------------------------------------------===//
+
+bool TraitSymbolAttr::isFullyResolved() const {
+  return llvm::all_of(getParamValues(), [](TypedAttr paramValue) {
+    return ParameterAttr::isSimpleConstant(paramValue);
+  });
 }
 
 //===----------------------------------------------------------------------===//

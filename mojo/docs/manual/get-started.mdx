@@ -5,6 +5,18 @@ github_url: https://github.com/modular/modular/tree/main/mojo/examples/life
 image: /images/artwork/mojo-get-started.jpg
 ---
 
+import ConditionalVersionDocs from '@site/src/components/ConditionalVersionDocs'
+import Tooltip from '@site/src/components/Tooltip/tooltip';
+
+export const tooltipNightly = (<Tooltip
+  parent="nightly build"
+  content="To get the stable build, change the version in the website header."
+/>);
+export const tooltipStable = (<Tooltip
+  parent="stable build"
+  content="To get the nightly build, change the version in the website header."
+/>);
+
 <!-- markdownlint-disable MD033 -->
 
 Get ready to learn Mojo! This tutorial gives you a tour of Mojo by building a
@@ -47,6 +59,18 @@ npx skills add modular/skills
 To install Mojo, we recommend using [`pixi`](https://pixi.sh/latest/) (for
 other options, see the [install guide](/install/)).
 
+<ConditionalVersionDocs version="nightly">
+
+These steps install the {tooltipNightly}.
+
+</ConditionalVersionDocs>
+
+<ConditionalVersionDocs version="stable">
+
+These steps install the {tooltipStable}.
+
+</ConditionalVersionDocs>
+
 1. If you don't have `pixi`, you can install it with this command:
 
     ```sh
@@ -55,11 +79,27 @@ other options, see the [install guide](/install/)).
 
 2. Navigate to the directory where you want to create the project and execute:
 
+   <ConditionalVersionDocs version="nightly">
+
     ```bash
     pixi init life \
-      -c https://conda.modular.com/max/ -c conda-forge \
-      && cd life
+       -c https://conda.modular.com/max-nightly/ \
+       -c conda-forge
+    cd life
     ```
+
+   </ConditionalVersionDocs>
+
+   <ConditionalVersionDocs version="stable">
+
+    ```bash
+    pixi init life \
+       -c https://conda.modular.com/max/ \
+       -c conda-forge
+    cd life
+    ```
+
+   </ConditionalVersionDocs>
 
    This creates a project directory named `life`, adds the Modular conda package
    channel, and navigates into the directory.
@@ -561,7 +601,7 @@ field, but you cannot assign a value as part of the field declaration.
 The [initializer](/docs/manual/lifecycle/life/#constructor) is responsible for
 initializing the value of all fields, as well as allocating additional resources
 and performing any other configuration required by a new instance of the struct.
-You implement a initializer by defining a method named `__init__()` in the
+You implement an initializer by defining a method named `__init__()` in the
 struct definition. Here's an example of how we *could* implement the
 initializer for `Grid`:
 
@@ -572,18 +612,18 @@ initializer for `Grid`:
         self.data = data^
 ```
 
-The first argument of a initializer is the newly created instance of the struct,
-which by convention is named `self`. The Mojo compiler automatically passes the
-instance to the initializer when you create a new instance of the struct. Note
-that in a initializer, you must include the `out` [argument
-convention](/docs/manual/values/ownership#argument-conventions) for the `self`
-argument. The values of the remaining arguments are assigned to the
+The first argument of an initializer is the newly created instance of the
+struct, which by convention is named `self`. The Mojo compiler automatically
+passes the instance to the initializer when you create a new instance of the
+struct. Note that in an initializer, you must include the `out`
+[argument convention](/docs/manual/values/ownership#argument-conventions) for
+the `self` argument. The values of the remaining arguments are assigned to the
 corresponding fields of the new instance. (Don't worry about the `var` keyword
 and `^` character for now. We'll discuss both of them in more detail later.)
 
 To reduce the amount of boilerplate code you need to write, Mojo provides a
 decorator called [`@fieldwise_init`](/docs/reference/decorators/fieldwise-init/)
-that automatically generates a initializer for you that performs "field-wise"
+that automatically generates an initializer for you that performs "field-wise"
 initialization. The initializer's arguments have the same names and types as the
 struct's fields and appear in the same order. This means that given our original
 definition of `Grid`, we can create an instance of `Grid` like this:

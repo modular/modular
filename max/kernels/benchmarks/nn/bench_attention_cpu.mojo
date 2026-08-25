@@ -88,35 +88,30 @@ def bench_attention[dtype: DType](mut m: Bench, spec: AttentionSpec) raises:
         output_alloc.unsafe_ptr(), RuntimeLayout[layout].row_major(q_shape)
     )
 
-    @__parameter
     @always_inline
     def input_k_fn[
         simd_width: Int, _rank: Int
-    ](idx: IndexList[_rank]) -> SIMD[dtype, simd_width]:
+    ](idx: IndexList[_rank]) capturing -> SIMD[dtype, simd_width]:
         return k.load[width=simd_width](rebind[IndexList[3]](idx))
 
-    @__parameter
     @always_inline
     def input_v_fn[
         simd_width: Int, _rank: Int
-    ](idx: IndexList[_rank]) -> SIMD[dtype, simd_width]:
+    ](idx: IndexList[_rank]) capturing -> SIMD[dtype, simd_width]:
         return v.load[width=simd_width](rebind[IndexList[3]](idx))
 
-    @__parameter
     @always_inline
     def mask_fn[
         simd_width: Int, _rank: Int
-    ](idx: IndexList[_rank]) -> SIMD[dtype, simd_width]:
+    ](idx: IndexList[_rank]) capturing -> SIMD[dtype, simd_width]:
         return mask.load[width=simd_width](rebind[IndexList[3]](idx))
 
     comptime scale = 0.25
 
     @always_inline
-    @__parameter
-    def flash_bench_fn(mut b: Bencher):
+    def flash_bench_fn(mut b: Bencher) {imm}:
         @always_inline
-        @__parameter
-        def iter_fn[depth_static_dim: Int]():
+        def iter_fn[depth_static_dim: Int]() {imm}:
             comptime output_static_shape = IndexList[3](
                 UNKNOWN_VALUE, UNKNOWN_VALUE, depth_static_dim
             )
@@ -134,13 +129,24 @@ def bench_attention[dtype: DType](mut m: Bench, spec: AttentionSpec) raises:
         comptime for idx in range(len(depth_static_dims)):
             comptime dim = depth_static_dims[idx]
             if dim == spec.depth_dim:
-                b.iter[iter_fn[dim]]()
+                # `iter` takes a closure value, and a parametric closure only
+                # names an overload set, so instantiate it behind a
+                # non-parametric one.
+                @always_inline
+                def iter_static() {imm}:
+                    iter_fn[dim]()
+
+                b.iter(iter_static)
                 return
 
         # Fallback to dispatch with a dynamic shape.
-        b.iter[iter_fn[UNKNOWN_VALUE]]()
+        @always_inline
+        def iter_dynamic() {imm}:
+            iter_fn[UNKNOWN_VALUE]()
 
-    m.bench_function[flash_bench_fn](BenchId("flash", String(spec)))
+        b.iter(iter_dynamic)
+
+    m.bench_function(flash_bench_fn, BenchId("flash", String(spec)))
 
     dealloc(q_alloc^)
     dealloc(k_alloc^)
@@ -326,5 +332,5 @@ def main() raises:
 
     var m = Bench()
     for i in range(len(specs)):
-        bench_attention[DType.float32](m, specs[i])
+        bench_attention[.float32](m, specs[i])
     m.dump_report()

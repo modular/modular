@@ -111,7 +111,7 @@ struct Softmax[
         Self.dtype,
         type_of(Self.row_layout),
         MutUntrackedOrigin,
-        address_space=AddressSpace.LOCAL,
+        address_space=.LOCAL,
     ]
 
     comptime RowSumTensorType = Self.RowMaxTensorType
@@ -127,7 +127,7 @@ struct Softmax[
         Self.dtype,
         type_of(Self.score_frag_layout),
         MutUntrackedOrigin,
-        address_space=AddressSpace.LOCAL,
+        address_space=.LOCAL,
     ]
 
     var score_frag_rowmax: Self.ScoreFragTensorType
@@ -137,19 +137,19 @@ struct Softmax[
     @always_inline
     def __init__(out self):
         self.rowmax_tensor = stack_allocation[
-            dtype=Self.dtype, address_space=AddressSpace.LOCAL
+            dtype=Self.dtype, address_space=.LOCAL
         ](Self.row_layout)
         self.rowsum_tensor = stack_allocation[
-            dtype=Self.dtype, address_space=AddressSpace.LOCAL
+            dtype=Self.dtype, address_space=.LOCAL
         ](Self.row_layout)
         self.score_frag_rowmax = stack_allocation[
-            dtype=Self.dtype, address_space=AddressSpace.LOCAL
+            dtype=Self.dtype, address_space=.LOCAL
         ](Self.score_frag_layout)
         self.score_frag_rowsum = stack_allocation[
-            dtype=Self.dtype, address_space=AddressSpace.LOCAL
+            dtype=Self.dtype, address_space=.LOCAL
         ](Self.score_frag_layout).fill(0)
         self.correction = stack_allocation[
-            dtype=Self.dtype, address_space=AddressSpace.LOCAL
+            dtype=Self.dtype, address_space=.LOCAL
         ](Self.score_frag_layout).fill(1)
 
     @always_inline

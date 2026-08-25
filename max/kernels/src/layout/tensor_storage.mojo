@@ -3610,7 +3610,7 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
 def _device_leaf_ptr[
     dtype: DType, //
 ](storage: DevicePointer[dtype, _]) -> UnsafePointer[
-    Scalar[dtype], MutAnyOrigin, address_space=AddressSpace.GLOBAL
+    Scalar[dtype], MutAnyOrigin, address_space=.GLOBAL
 ]:
     """Returns the encoded device-leaf pointer held in `storage`'s first bytes.
 
@@ -3646,9 +3646,7 @@ def _device_leaf_ptr[
         # The leaf must be `GLOBAL` (device), not `GENERIC` — see the docstring:
         # a `GENERIC` leaf silently misses device memory on Metal.
         return UnsafePointer(to=storage).bitcast[
-            UnsafePointer[
-                Scalar[dtype], MutAnyOrigin, address_space=AddressSpace.GLOBAL
-            ]
+            UnsafePointer[Scalar[dtype], MutAnyOrigin, address_space=.GLOBAL]
         ]()[]
     else:
         abort("DevicePointerStorage operations are not supported on host")

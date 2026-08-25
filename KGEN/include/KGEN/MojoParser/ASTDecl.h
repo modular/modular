@@ -339,6 +339,7 @@ public:
 
 private:
   friend class DeclResolver;
+  friend class ModuleLoader;
   friend class SharedState;
   ASTDecl(SharedState &shared, DeclIRValue irValue, llvm::SMLoc loc,
           ASTDecl *parentDecl, LexerCursor cursor, LexerCursor endCursor,

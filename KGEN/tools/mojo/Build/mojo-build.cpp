@@ -498,12 +498,11 @@ createOutputFile(const State &state, const llvm::opt::InputArgList &args,
 /// Given a module representing a Mojo program, compile the program to a static
 /// archive. Returns an unsuccessful exit code if the archive could not be
 /// created successfully, and nullopt otherwise.
-static std::optional<int>
-compileModuleToArchive(const State &state, AsyncRT::CPUDevice &cpuDevice,
-                       MLIRContext &context, const CompilationOptions &options,
-                       OwningOpRef<ModuleOp> module, TargetInfoAttr target,
-                       BufferRef &archive, OutputType outputType,
-                       const llvm::opt::InputArgList &args) {
+static std::optional<int> compileModuleToArchive(
+    const State &state, AsyncRT::CPUDevice &cpuDevice, MLIRContext &context,
+    const CompilationOptions &options, OwningOpRef<ModuleOp> module,
+    TargetInfoAttr target, BufferRef &archive, OutputType outputType,
+    const llvm::opt::InputArgList &args, PassManagerConfigOptions pmOptions) {
   // For --emit=asm and --emit=llvm, set offloadOutputPrefix so
   // compileOffloads() writes offload kernel files alongside the host output.
   // These two modes are mutually exclusive; offloadOutputKind selects which
@@ -519,13 +518,13 @@ compileModuleToArchive(const State &state, AsyncRT::CPUDevice &cpuDevice,
         outputType == OutputType::llvm ? EmitAs::LLVM : EmitAs::ASM;
   }
 
-  KGENCompiler compiler(context, effectiveOptions);
+  KGENCompiler compiler(context, effectiveOptions, pmOptions);
 
   // Compile the moduleOp down to the post-elaboration phase, because before
   // that phase we don't have flat symbols.
   ErrorOr<std::unique_ptr<ObjectCompiler>> objectCompilerOr =
       ObjectCompiler::create(kMojoCacheBaseDirName, effectiveOptions,
-                             /*isJIT=*/false, context);
+                             /*isJIT=*/false, context, pmOptions);
 
   if (objectCompilerOr.isError())
     return state.reportError(objectCompilerOr.getError());
@@ -909,6 +908,12 @@ static int build(const State &subcommandState) {
 
   warnBuildingForDebugWithDebugBuiltCompiler(state, options.debugLevel);
 
+  // Comes before the CPU device, because the option sets the thread count to
+  // one. Comes before the MLIR timing, so that the program deletes it later
+  // and the MLIR report is the first report.
+  LLVMPassTiming llvmTiming;
+  llvmTiming.configure(args, options::OPT_llvm_timing, options);
+
   AsyncRT::CPUDeviceOptions cpuDeviceOptions;
   configureCPUDeviceOptions(cpuDeviceOptions, options);
 
@@ -951,12 +956,19 @@ static int build(const State &subcommandState) {
   ScopedMLIRWarningHandler warningHandler(&mlirCtx, options.disableWarnings,
                                           options.warningsAsErrors);
 
+  // The timing shows the parse, the passes, and the code generation. The
+  // manager prints the report at the end of this function.
+  MLIRPassTiming timing;
+  if (ErrorOrSuccess err = timing.configure(args, options::OPT_mlir_timing,
+                                            options::OPT_mlir_timing_display))
+    return state.reportError(err.getError());
+
   ErrorOr<OwningOpRef<ModuleOp>> moduleOp = invokeMojoParser(
       state, args, options, &mlirCtx, cpuDevice,
       options::OPT_diagnose_missing_doc_strings, options::OPT_max_notes,
       options::OPT_D, options::OPT_strip_file_prefix,
       options::OPT_disable_builtins, options::OPT_mojo_search_paths,
-      options::OPT_fixit, options::OPT_export_fixit,
+      options::OPT_fixit, options::OPT_export_fixit, &timing.rootScope(),
       [&](LIT::ParserConfig &parserConfig, mlir::TimingScope &ts) {
         return LIT::importMojoFile(ctx, sourceMgr, parserConfig, ts, nullptr);
       });
@@ -975,7 +987,7 @@ static int build(const State &subcommandState) {
   BufferRef archive;
   if (std::optional<int> exitCode = compileModuleToArchive(
           state, cpuDevice, mlirCtx, options, moduleOp.takeValue(), target,
-          archive, outputType, args))
+          archive, outputType, args, timing.passManagerOptions()))
     return *exitCode;
 
   // Check if any warnings were promoted to errors via -Werror.

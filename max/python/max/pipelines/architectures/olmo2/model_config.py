@@ -57,6 +57,8 @@ class Olmo2Config(Llama3Config):
         devices: list[DeviceRef],
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
+        *,
+        allow_kv_head_replication: bool = False,
     ) -> KVCacheParams:
         """Olmo2 does not support data parallelism; delegate to grouped-attention default."""
         if pipeline_config.model.data_parallel_degree > 1:
@@ -69,6 +71,7 @@ class Olmo2Config(Llama3Config):
             devices,
             kv_cache_config,
             cache_dtype,
+            allow_kv_head_replication=allow_kv_head_replication,
         )
 
     @staticmethod
@@ -94,6 +97,8 @@ class Olmo2Config(Llama3Config):
         cls,
         pipeline_config: PipelineConfig,
         model_config: MAXModelConfig | None = None,
+        *,
+        max_seq_len: int,
     ) -> Self:
         model_config = model_config or pipeline_config.model
         huggingface_config = model_config.huggingface_config
@@ -103,7 +108,9 @@ class Olmo2Config(Llama3Config):
                 "but config could not be loaded. "
                 "Please ensure the model repository contains a valid config.json file."
             )
-        return cls.initialize_from_config(pipeline_config, huggingface_config)
+        return cls.initialize_from_config(
+            pipeline_config, huggingface_config, max_seq_len=max_seq_len
+        )
 
     @classmethod
     def initialize_from_config(
@@ -111,6 +118,8 @@ class Olmo2Config(Llama3Config):
         pipeline_config: PipelineConfig,
         huggingface_config: AutoConfig,
         model_config: MAXModelConfig | None = None,
+        *,
+        max_seq_len: int,
     ) -> Self:
         """Initializes an Olmo2Config instance from pipeline and HuggingFace configuration.
 
@@ -132,7 +141,10 @@ class Olmo2Config(Llama3Config):
         """
         # Get the base config from Llama3Config
         base_config = Llama3Config.initialize_from_config(
-            pipeline_config, huggingface_config, model_config
+            pipeline_config,
+            huggingface_config,
+            model_config,
+            max_seq_len=max_seq_len,
         )
 
         kv_cache_config = pipeline_config.model.kv_cache

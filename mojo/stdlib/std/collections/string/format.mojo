@@ -435,7 +435,7 @@ struct _FormatCurlyEntry[origin: ImmOrigin](ImplicitlyCopyable):
     var conversion_flag: UInt8
     """The type of conversion for the entry: {ord("s"), ord("r")}."""
     # TODO: ord("a") conversion flag not supported yet
-    comptime supported_conversion_flags = SIMD[DType.uint8, 2](
+    comptime supported_conversion_flags = SIMD[.uint8, 2](
         UInt8(ord("s")), UInt8(ord("r"))
     )
     """Currently supported conversion flags: `__str__` and `__repr__`."""

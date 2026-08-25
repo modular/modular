@@ -68,7 +68,7 @@ def function():
 Init documentation.
 
 #### Args:
-&nbsp;&nbsp;borrowed_input: A read argument.
+&nbsp;&nbsp;borrowed_input: An imm argument.
 \\
 &nbsp;&nbsp;init_arg: An Int argument.
 \\
@@ -400,7 +400,7 @@ Summary of a_field.
 ---
 
 ###
-A read argument.
+An imm argument.
 
 `,
         },

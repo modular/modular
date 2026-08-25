@@ -30,6 +30,7 @@ def test_custom_models_defined_in_model_aliases() -> None:
         k
         for k in smoke_test_github_matrix.CUSTOM_MODELS
         if k not in smoke_test.MODEL_RECIPES
+        and k not in smoke_test_github_matrix.PRIVATE_RECIPE_MODELS
     ]
     assert not missing, (
         f"CUSTOM_MODELS keys must have a corresponding entry in "
@@ -57,7 +58,10 @@ def test_8xmi355_stays_opt_in() -> None:
     when a model is meant to run on it.
     """
     expected = {
-        "max-ci": {"MiniMaxAI/MiniMax-M3-MXFP8"},
+        "max-ci": {
+            "MiniMaxAI/MiniMax-M3-MXFP8",
+            "modularai/MiniMax-M3-MXFP6",
+        },
         "max": set(),
         "vllm": set(),
         "sglang": set(),

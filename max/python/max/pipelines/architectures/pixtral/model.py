@@ -37,12 +37,9 @@ from max.pipelines.lib import (
     MultiGraphPipelineModelWithKVCache,
     PipelineConfig,
 )
-from max.pipelines.lib.utils import (
-    parse_state_dict_from_weights,
-    upper_bounded_default,
-)
+from max.pipelines.lib.memory_estimation import MemoryPlan
+from max.pipelines.lib.utils import parse_state_dict_from_weights
 from max.profiler import traced
-from transformers import AutoConfig
 
 from .batch_processor import PixtralBatchProcessor
 from .model_config import PixtralConfig
@@ -78,26 +75,6 @@ class PixtralModel(MultiGraphPipelineModelWithKVCache[TextAndVisionContext]):
         PixtralBatchProcessor
     )
 
-    @classmethod
-    def calculate_max_seq_len(
-        cls,
-        pipeline_config: PipelineConfig,
-        huggingface_config: AutoConfig,
-    ) -> int:
-        """Bounds ``max_length`` by ``text_config.max_position_embeddings`` (config is permissive)."""
-        upper_bound = huggingface_config.text_config.max_position_embeddings
-        try:
-            return upper_bounded_default(
-                upper_bound=upper_bound,
-                default=pipeline_config.model.max_length,
-            )
-        except ValueError as e:
-            raise ValueError(
-                f"Unable to infer max_length for {cls.__qualname__}, "
-                f"the provided max_length ({pipeline_config.model.max_length}) "
-                f"exceeds the model's max_position_embeddings ({upper_bound})."
-            ) from e
-
     vision_model: Model | None
     language_model: Model
 
@@ -108,6 +85,8 @@ class PixtralModel(MultiGraphPipelineModelWithKVCache[TextAndVisionContext]):
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
         weights: Weights,
+        *,
+        memory_plan: MemoryPlan,
         adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
         max_batch_size: int = 1,
@@ -119,8 +98,9 @@ class PixtralModel(MultiGraphPipelineModelWithKVCache[TextAndVisionContext]):
             devices,
             kv_cache_config,
             weights,
-            adapter,
-            return_logits,
+            adapter=adapter,
+            return_logits=return_logits,
+            memory_plan=memory_plan,
         )
 
         if self.pipeline_config.model.enable_echo:
@@ -347,6 +327,8 @@ class PixtralModel(MultiGraphPipelineModelWithKVCache[TextAndVisionContext]):
             * vision_config.patch_size
         )
 
-        model_config = PixtralConfig.initialize(self.pipeline_config)
+        model_config = PixtralConfig.initialize(
+            self.pipeline_config, max_seq_len=self.max_seq_len
+        )
         model_config.return_logits = self.return_logits
         return model_config

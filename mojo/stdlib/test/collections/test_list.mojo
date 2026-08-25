@@ -232,7 +232,7 @@ def test_list_resize() raises:
 
 # TODO: Rework to use property testing framework.
 def test_list_reverse_property_test() raises:
-    def properties(forward: List[Scalar[DType.int]]) raises:
+    def properties(forward: List[Int]) raises:
         var rev = forward.copy()
         rev.reverse()
 
@@ -240,9 +240,7 @@ def test_list_reverse_property_test() raises:
         for a, b in zip(forward, reversed(rev)):
             assert_equal(a, b)
 
-    PropTest().test[properties](
-        List[Scalar[DType.int]].strategy(Scalar[DType.int].strategy())
-    )
+    PropTest().test[properties](List[Int].strategy(Int.strategy()))
 
 
 def test_list_reverse() raises:
@@ -522,11 +520,11 @@ def test_list_extend() raises:
 
     # Extend with whole SIMD
     items: List[UInt32] = [1, 2, 3]
-    items.extend(SIMD[DType.uint32, 4](1, 2, 3, 4))
+    items.extend(SIMD[.uint32, 4](1, 2, 3, 4))
     assert_equal(items, [UInt32(1), 2, 3, 1, 2, 3, 4])
     # Extend with part of SIMD
     items: List[UInt32] = [1, 2, 3]
-    items.extend(SIMD[DType.uint32, 4](1, 2, 3, 4), count=3)
+    items.extend(SIMD[.uint32, 4](1, 2, 3, 4), count=3)
     assert_equal(items, [UInt32(1), 2, 3, 1, 2, 3])
 
 

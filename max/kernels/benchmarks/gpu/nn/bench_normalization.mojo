@@ -123,7 +123,7 @@ def bench_layer_norm_gpu[
                 input_fn,
                 output_fn,
                 shape_coord,
-                Scalar[DType.int](cols),
+                Int(cols),
                 gamma,
                 beta,
                 epsilon,
@@ -131,16 +131,16 @@ def bench_layer_norm_gpu[
             )
 
     @always_inline
-    @__parameter
-    def bench_fn(mut b: Bencher) raises:
+    def bench_fn(mut b: Bencher) raises {imm}:
         bencher_iter_custom(b, kernel_launch, ctx)
 
     comptime shape_tag = "static" if static_shape else "dynamic"
-    b.bench_function[bench_fn](
+    b.bench_function(
+        bench_fn,
         BenchId(
             "layer_norm",
             input_id=String(fn_name, shape_tag, dtype, shape, sep="/"),
-        )
+        ),
     )
 
     ctx.synchronize()
@@ -219,11 +219,11 @@ def bench_rms_norm_gpu[
         )
 
     @always_inline
-    @__parameter
-    def bench_fn(mut b: Bencher) raises:
+    def bench_fn(mut b: Bencher) raises {imm}:
         bencher_iter_custom(b, kernel_launch, ctx)
 
-    b.bench_function[bench_fn](
+    b.bench_function(
+        bench_fn,
         BenchId("rms_norm", input_id=String(fn_name, "/", dtype, "/", shape)),
     )
 
@@ -236,7 +236,7 @@ def bench_rms_norm_gpu[
 
 
 def main() raises:
-    comptime dtype = get_defined_dtype["dtype", DType.bfloat16]()
+    comptime dtype = get_defined_dtype["dtype", .bfloat16]()
     comptime shape = int_list_to_tuple[
         get_defined_shape["shape", "256x256"]()
     ]()

@@ -38,6 +38,7 @@ from max.pipelines.lib import (
     ModelOutputs,
     PipelineConfig,
 )
+from max.pipelines.lib.memory_estimation import MemoryPlan
 from max.pipelines.weights.quant import parse_quant_config
 from transformers import AutoConfig
 from typing_extensions import override
@@ -96,6 +97,8 @@ class DeepseekV3Model(DeepseekV2Model):
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
         weights: Weights,
+        *,
+        memory_plan: MemoryPlan,
         adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
         max_batch_size: int = 1,
@@ -109,9 +112,10 @@ class DeepseekV3Model(DeepseekV2Model):
             devices,
             kv_cache_config,
             weights,
-            adapter,
-            return_logits,
+            adapter=adapter,
+            return_logits=return_logits,
             max_batch_size=max_batch_size,
+            memory_plan=memory_plan,
         )
 
     def _build_ep_config(
@@ -184,9 +188,11 @@ class DeepseekV3Model(DeepseekV2Model):
 
     @override
     def _create_model_config(self, state_dict: dict[str, Any]) -> Any:
-        model_config = DeepseekV3Config.initialize(self.pipeline_config)
+        model_config = DeepseekV3Config.initialize(
+            self.pipeline_config, max_seq_len=self.max_seq_len
+        )
         model_config.max_batch_context_length = (
-            self.pipeline_config.runtime.max_batch_total_tokens
+            self.planned_max_batch_total_tokens
             or model_config.max_batch_context_length
         )
 

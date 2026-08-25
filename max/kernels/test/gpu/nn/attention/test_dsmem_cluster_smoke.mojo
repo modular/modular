@@ -47,7 +47,7 @@ from std.memory import unsafe_stack_allocation
 from std.testing import assert_equal
 from std.utils.static_tuple import StaticTuple
 
-from nn.attention.gpu.nvidia.sm100.attention_utils import load_cluster_smem
+from max.gpu.primitives.cluster import load_cluster_smem
 
 
 # Rank-distinct value written by CTA `me` at word `i`: distinct across both rank
@@ -65,7 +65,7 @@ def dsmem_smoke_kernel[
     # Static shared scratch, identically offset in every CTA — `mapa` rebases it
     # onto a peer's window.
     var smem = unsafe_stack_allocation[
-        W, DType.uint32, address_space=AddressSpace.SHARED, alignment=16
+        W, DType.uint32, address_space=.SHARED, alignment=16
     ]()
 
     var me = block_rank_in_cluster()
@@ -82,7 +82,7 @@ def dsmem_smoke_kernel[
     if thread_idx.x == 0:
         var me_i = Int(me)
         comptime for r in range(P):
-            var v = load_cluster_smem[DType.uint32, W](smem, UInt32(r))
+            var v = load_cluster_smem[.uint32, W](smem, UInt32(r))
             comptime for w in range(W):
                 output[(me_i * P + r) * W + w] = v[w]
 
@@ -92,7 +92,7 @@ def dsmem_smoke_kernel[
 
 def run_dsmem_test[P: Int](ctx: DeviceContext) raises:
     var n = P * P * W
-    var out_dev = ctx.enqueue_create_buffer[DType.uint32](n)
+    var out_dev = ctx.enqueue_create_buffer[.uint32](n)
 
     # Sentinel-fill so a missing write is caught (not mistaken for a valid 0).
     with out_dev.map_to_host() as h:

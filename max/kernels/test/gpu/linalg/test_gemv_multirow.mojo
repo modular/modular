@@ -258,8 +258,8 @@ def test_matches_host_reference[
         var acc = Float32(0)
         for i in range(K):
             acc += (
-                w_host[row * K + i].cast[DType.float32]()
-                * act_host[i].cast[DType.float32]()
+                w_host[row * K + i].cast[.float32]()
+                * act_host[i].cast[.float32]()
             )
         if c_host[row] != acc.cast[c_type]():
             mismatches += 1
@@ -272,23 +272,17 @@ def main() raises:
     with DeviceContext() as ctx:
         # Production shape of the wide-N shallow-K path (bf16 in, bf16 out).
         for seed in [1, 7, 24301]:
-            test_matches_one_row_kernel[
-                DType.bfloat16, DType.bfloat16, 262144, 256
-            ](ctx, seed)
+            test_matches_one_row_kernel[.bfloat16, .bfloat16, 262144, 256](
+                ctx, seed
+            )
 
         test_matches_one_row_kernel[
-            DType.bfloat16, DType.bfloat16, 262144, 256, with_epilogue=True
+            .bfloat16, .bfloat16, 262144, 256, with_epilogue=True
         ](ctx, 1)
 
         # f32 output, and a K deep enough to halve the row tile.
-        test_matches_one_row_kernel[DType.float32, DType.bfloat16, 262144, 512](
-            ctx, 1
-        )
+        test_matches_one_row_kernel[.float32, .bfloat16, 262144, 512](ctx, 1)
 
         # N divides neither the row tile nor the warp.
-        test_matches_one_row_kernel[
-            DType.bfloat16, DType.bfloat16, 100003, 256
-        ](ctx, 1)
-        test_matches_host_reference[
-            DType.bfloat16, DType.bfloat16, 100003, 256
-        ](ctx)
+        test_matches_one_row_kernel[.bfloat16, .bfloat16, 100003, 256](ctx, 1)
+        test_matches_host_reference[.bfloat16, .bfloat16, 100003, 256](ctx)

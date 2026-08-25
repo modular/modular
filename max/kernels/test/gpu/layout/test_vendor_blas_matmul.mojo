@@ -31,16 +31,16 @@ def test_matmul[
 
     var a_host_ptr = ctx.enqueue_create_host_buffer[input_type](M * K)
     var b_host_ptr = ctx.enqueue_create_host_buffer[input_type](N * K)
-    var c_host_ptr = ctx.enqueue_create_host_buffer[DType.float32](M * N)
-    var c_host_ref_ptr = ctx.enqueue_create_host_buffer[DType.float32](M * N)
+    var c_host_ptr = ctx.enqueue_create_host_buffer[.float32](M * N)
+    var c_host_ref_ptr = ctx.enqueue_create_host_buffer[.float32](M * N)
 
     rand(a_host_ptr.unsafe_ptr(), M * K)
     rand(b_host_ptr.unsafe_ptr(), N * K)
 
     var a_device = ctx.enqueue_create_buffer[input_type](M * K)
     var b_device = ctx.enqueue_create_buffer[input_type](N * K)
-    var c_device = ctx.enqueue_create_buffer[DType.float32](M * N)
-    var c_device_ref = ctx.enqueue_create_buffer[DType.float32](M * N)
+    var c_device = ctx.enqueue_create_buffer[.float32](M * N)
+    var c_device_ref = ctx.enqueue_create_buffer[.float32](M * N)
 
     ctx.enqueue_copy(a_device, a_host_ptr)
     ctx.enqueue_copy(b_device, b_host_ptr)

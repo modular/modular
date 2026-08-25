@@ -128,7 +128,7 @@ struct ProducerConsumerPipeline[
         ptr: UnsafePointer[
             Self.Backend.BarrierStorage,
             MutUntrackedOrigin,
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
         ],
     ):
         """Initialize the producer-consumer pipeline with default phases.

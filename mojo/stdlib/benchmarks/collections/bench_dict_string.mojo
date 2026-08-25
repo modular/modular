@@ -83,9 +83,7 @@ def make_long_keys(filename: String = "UN_charter_EN.txt") -> List[String]:
 from std.bit import bit_width, pop_count
 
 
-struct KeysContainer[KeyEndType: DType = DType.uint32](
-    ImplicitlyCopyable, Sized
-):
+struct KeysContainer[KeyEndType: DType = .uint32](ImplicitlyCopyable, Sized):
     var keys: Pointer[UInt8, MutUntrackedOrigin]
     var allocated_bytes: Int
     var keys_end: Pointer[Scalar[Self.KeyEndType], MutUntrackedOrigin]
@@ -94,10 +92,10 @@ struct KeysContainer[KeyEndType: DType = DType.uint32](
 
     def __init__(out self, capacity: Int):
         comptime assert (
-            Self.KeyEndType == DType.uint8
-            or Self.KeyEndType == DType.uint16
-            or Self.KeyEndType == DType.uint32
-            or Self.KeyEndType == DType.uint64
+            Self.KeyEndType == .uint8
+            or Self.KeyEndType == .uint16
+            or Self.KeyEndType == .uint32
+            or Self.KeyEndType == .uint64
         ), "KeyEndType needs to be an unsigned integer"
         self.allocated_bytes = capacity << 3
         self.keys = alloc[UInt8]({count = self.allocated_bytes}).unsafe_leak()
@@ -232,8 +230,8 @@ struct KeysContainer[KeyEndType: DType = DType.uint32](
 
 struct StringDict[
     V: Copyable & Deinitable,
-    KeyCountType: DType = DType.uint32,
-    KeyOffsetType: DType = DType.uint32,
+    KeyCountType: DType = .uint32,
+    KeyOffsetType: DType = .uint32,
     destructive: Bool = True,
     caching_hashes: Bool = True,
 ](Sized):
@@ -247,10 +245,10 @@ struct StringDict[
 
     def __init__(out self, capacity: Int = 16):
         comptime assert (
-            Self.KeyCountType == DType.uint8
-            or Self.KeyCountType == DType.uint16
-            or Self.KeyCountType == DType.uint32
-            or Self.KeyCountType == DType.uint64
+            Self.KeyCountType == .uint8
+            or Self.KeyCountType == .uint16
+            or Self.KeyCountType == .uint32
+            or Self.KeyCountType == .uint64
         ), "KeyCountType needs to be an unsigned integer"
         self.count = 0
         if capacity <= 8:

@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from std.builtin._closure import __ownership_keepalive
 from std.hashlib import default_comp_time_hasher
 from std.math import align_up
 from std.math.uutils import umod, ufloordiv, udivmod
@@ -146,7 +147,7 @@ def load_AB[
         a_type,
         a_smem_layout,
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
         circular=False,
     ],
@@ -154,15 +155,15 @@ def load_AB[
         b_type,
         b_smem_layout,
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
         circular=False,
     ],
     mma_mbar: UnsafePointer[
-        mut=True, SharedMemBarrier, address_space=AddressSpace.SHARED, _
+        mut=True, SharedMemBarrier, address_space=.SHARED, _
     ],
     tma_mbar: UnsafePointer[
-        mut=True, SharedMemBarrier, address_space=AddressSpace.SHARED, _
+        mut=True, SharedMemBarrier, address_space=.SHARED, _
     ],
     producer_phase: PipelineState[num_pipeline_stages],
     peer_cta_coord: Tuple[Int, Int, Int],
@@ -254,7 +255,7 @@ def consumer_main_loop[
         a_type,
         a_smem_layout,
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
         circular=False,
     ],
@@ -262,15 +263,15 @@ def consumer_main_loop[
         b_type,
         b_smem_layout,
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
         circular=False,
     ],
     mma_mbar: UnsafePointer[
-        mut=True, SharedMemBarrier, address_space=AddressSpace.SHARED, _
+        mut=True, SharedMemBarrier, address_space=.SHARED, _
     ],
     tma_mbar: UnsafePointer[
-        mut=True, SharedMemBarrier, address_space=AddressSpace.SHARED, _
+        mut=True, SharedMemBarrier, address_space=.SHARED, _
     ],
     consumer_phase: PipelineState[pipeline_stages],
     mma_op: MmaOpSM100_SS[
@@ -333,7 +334,7 @@ def store_C[
         c_type,
         c_smem_layout,
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
     ],
     c_tma_op: TMATensorTile[c_type, c_tma_rank, c_tile_shape, c_desc_shape],
@@ -458,8 +459,8 @@ def store_C[
     # Create a layout for everything
     var st_matrix_rt_layout = RuntimeLayout[
         st_matrix_n_layout[c_type, TMA_BN, num_m_mmas, 1](),
-        element_type=DType.int32,
-        linear_idx_type=DType.int32,
+        element_type=.int32,
+        linear_idx_type=.int32,
     ]()
 
     # For 32-column tiles, we need a different swizzle pattern
@@ -487,8 +488,8 @@ def store_C[
         var upper = c_smem_warp_tile.tile[16, TMA_BN](0, 0)
         var lower = c_smem_warp_tile.tile[16, TMA_BN](1, 0)
 
-        var d_reg_upper = SIMD[DType.bfloat16, 8]()
-        var d_reg_lower = SIMD[DType.bfloat16, 8]()
+        var d_reg_upper = SIMD[.bfloat16, 8]()
+        var d_reg_lower = SIMD[.bfloat16, 8]()
 
         comptime for m_mma in range(num_m_mmas):
             comptime for i in range((TMA_BN // 16)):
@@ -504,8 +505,8 @@ def store_C[
                 ](lane_id(), i, m_mma, 0)
                 # i,0,0
 
-                var d_reg_upper = SIMD[DType.bfloat16, 8]()
-                var d_reg_lower = SIMD[DType.bfloat16, 8]()
+                var d_reg_upper = SIMD[.bfloat16, 8]()
+                var d_reg_lower = SIMD[.bfloat16, 8]()
 
                 # if MMA_N is a power of 2, then just use the main load for all iterations
                 # if it's not a power of 2, then go till NUM_ST_MATRIX -1 using the main regists
@@ -536,8 +537,8 @@ def store_C[
                                 c_lower_pow_2_main[_src_offset + 1]
                             ),
                         )
-                        var upper_casted = upper_pair.cast[DType.bfloat16]()
-                        var lower_casted = lower_pair.cast[DType.bfloat16]()
+                        var upper_casted = upper_pair.cast[.bfloat16]()
+                        var lower_casted = lower_pair.cast[.bfloat16]()
                         d_reg_upper[2 * _ei] = upper_casted[0]
                         d_reg_upper[2 * _ei + 1] = upper_casted[1]
                         d_reg_lower[2 * _ei] = lower_casted[0]
@@ -561,15 +562,15 @@ def store_C[
                                 c_lower_pow_2_rem[_src_offset + 1]
                             ),
                         )
-                        var upper_casted = upper_pair.cast[DType.bfloat16]()
-                        var lower_casted = lower_pair.cast[DType.bfloat16]()
+                        var upper_casted = upper_pair.cast[.bfloat16]()
+                        var lower_casted = lower_pair.cast[.bfloat16]()
                         d_reg_upper[2 * _ei] = upper_casted[0]
                         d_reg_upper[2 * _ei + 1] = upper_casted[1]
                         d_reg_lower[2 * _ei] = lower_casted[0]
                         d_reg_lower[2 * _ei + 1] = lower_casted[1]
 
-                var d_reg_upper_packed = bitcast[DType.float32, 4](d_reg_upper)
-                var d_reg_lower_packed = bitcast[DType.float32, 4](d_reg_lower)
+                var d_reg_upper_packed = bitcast[.float32, 4](d_reg_upper)
+                var d_reg_lower_packed = bitcast[.float32, 4](d_reg_lower)
 
                 st_matrix[simd_width=4](
                     upper.ptr
@@ -599,7 +600,7 @@ def store_C[
             c_type,
             Layout.row_major(c_tile_shape[0], c_tile_shape[1]),
             MutAnyOrigin,
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
             alignment=128,
         ](c_smem_offset)
 
@@ -681,20 +682,18 @@ def kernel_6[
         c_type,
         c_smem_layout,
         _,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
     ]
 
     var base_ptr_smem = rebind[
         UnsafePointer[
-            Scalar[a_type],
-            address_space=AddressSpace.SHARED,
-            UntrackedOrigin[mut=True],
+            Scalar[a_type], address_space=.SHARED, UntrackedOrigin[mut=True]
         ]
     ](
         external_memory[
             Scalar[a_type],
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
             alignment=128,
         ]()
     )  # pointer to first byte of scratchpad
@@ -714,7 +713,7 @@ def kernel_6[
     var a_smem = LayoutTensorIter[
         a_type,
         a_smem_layout,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
         circular=False,
     ](
@@ -725,7 +724,7 @@ def kernel_6[
     var b_smem = LayoutTensorIter[
         b_type,
         b_smem_layout,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
         circular=False,
     ](
@@ -1124,8 +1123,7 @@ def test_blackwell_kernel_6[
         comptime num_warmup = 20
 
         @always_inline
-        @__parameter
-        def run_kernel(ctx: DeviceContext) raises:
+        def run_kernel(ctx: DeviceContext) raises {imm}:
             blackwell_kernel_6[
                 transpose_b=transpose_b,
                 umma_shape=mma_shape,
@@ -1148,7 +1146,7 @@ def test_blackwell_kernel_6[
         # print("finished warmup")
 
         var nstime = (
-            Float64(ctx.execution_time[run_kernel](num_runs)) / num_runs
+            Float64(ctx.execution_time(run_kernel, num_runs)) / num_runs
         )
         var sectime = nstime * 1e-9
         var TFlop = 2.0 * Float64(M) * Float64(N) * Float64(K) * 1e-12
@@ -1184,6 +1182,10 @@ def test_blackwell_kernel_6[
             rtol=rtol,
         )
         print("\n=== TEST PASSED ===\n")
+
+    # `a_device_lt` / `b_device_lt` are raw pointer views, so past the copies
+    # above nothing else refers to the buffers backing them.
+    __ownership_keepalive(a_device, b_device)
 
 
 def get_dic_of_shapes(
@@ -1252,9 +1254,9 @@ def main() raises:
             block_tile_shape[0] * 2, block_tile_shape[1] * 2, 16
         )
         test_blackwell_kernel_6[
-            DType.bfloat16,
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
+            .bfloat16,
             block_tile_shape,
             umma_shape,
             cluster_shape=StaticTuple[Int32, 3](2, 1, 1),

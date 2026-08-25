@@ -103,11 +103,11 @@ def execute_oob_canary[
     var q_ragged_rt = RuntimeLayout[q_ragged_layout].row_major(q_ragged_shape)
     var output_rt = RuntimeLayout[output_layout].row_major(output_shape)
 
-    var input_row_offsets = ManagedLayoutTensor[
-        DType.uint32, row_offsets_layout
-    ](row_offsets_rt, ctx)
+    var input_row_offsets = ManagedLayoutTensor[.uint32, row_offsets_layout](
+        row_offsets_rt, ctx
+    )
     var cache_lengths_managed = ManagedLayoutTensor[
-        DType.uint32, cache_lengths_layout
+        .uint32, cache_lengths_layout
     ](cache_lengths_rt, ctx)
     var q_ragged = ManagedLayoutTensor[dtype, q_ragged_layout](q_ragged_rt, ctx)
     var test_output = ManagedLayoutTensor[dtype, output_layout](output_rt, ctx)
@@ -158,7 +158,7 @@ def execute_oob_canary[
     var kv_block_paged = ManagedLayoutTensor[dtype, kv_block_6d_layout](
         kv_block_paged_rt, ctx
     )
-    var paged_lut = ManagedLayoutTensor[DType.uint32, paged_lut_layout](
+    var paged_lut = ManagedLayoutTensor[.uint32, paged_lut_layout](
         paged_lut_rt, ctx
     )
 

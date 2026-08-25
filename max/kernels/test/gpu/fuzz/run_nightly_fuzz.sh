@@ -97,20 +97,20 @@ mkdir -p "$RESULTS"
 # SM100-only, so there is nothing AMD-safe to run under that oracle yet.
 default_targets() {
   case "$1" in
-    memcheck)    echo softmax rms_norm layer_norm matmul mha_nullmask block_scaled_fp4 block_scaled_mxfp8 grouped_matmul_mxfp8 grouped_matmul_sm100_w4a8 mla_decode fused_rope_rmsnorm fused_qkv_matmul_mxfp8 fused_qkv_index_matmul_mxfp8 attn_res_mix ;;
+    memcheck)    echo softmax rms_norm layer_norm reductions matmul mha_nullmask block_scaled_fp4 block_scaled_mxfp8 grouped_matmul_mxfp8 grouped_matmul_sm100_w4a8 mla_decode fused_rope_rmsnorm fused_qkv_matmul_mxfp8 fused_qkv_index_matmul_mxfp8 attn_res_mix ;;
     initcheck)   echo moe_indices topk_sampling ;;
     redzone)
       if [ "$FUZZ_VENDOR" = "amd" ]; then
-        echo softmax rms_norm layer_norm mha_nullmask
+        echo softmax rms_norm layer_norm reductions mha_nullmask
       else
-        echo softmax rms_norm layer_norm matmul mha_nullmask block_scaled_fp4 attn_res_mix
+        echo softmax rms_norm layer_norm reductions matmul mha_nullmask block_scaled_fp4 attn_res_mix
       fi
       ;;
     ref)
       if [ "$FUZZ_VENDOR" = "amd" ]; then
-        echo moe_router msa_decode msa_prefill sparse_indexer sparse_indexer_decode sparse_indexer_prefill fused_qk_rms_norm fused_qk_rope
+        echo reductions moe_router msa_decode msa_prefill sparse_indexer sparse_indexer_decode sparse_indexer_prefill fused_qk_rms_norm fused_qk_rope
       else
-        echo block_scaled_mxfp8 grouped_matmul_mxfp8 grouped_matmul_sm100_w4a8 moe_router fused_swiglu_mxfp8 fused_swiglu_dispatch msa_decode msa_prefill sparse_indexer sparse_indexer_decode sparse_indexer_prefill fused_qk_rms_norm fused_qk_rope attn_res_mix
+        echo reductions block_scaled_mxfp8 grouped_matmul_mxfp8 grouped_matmul_sm100_w4a8 moe_router fused_swiglu_mxfp8 fused_swiglu_dispatch msa_decode msa_prefill sparse_indexer sparse_indexer_decode sparse_indexer_prefill fused_qk_rms_norm fused_qk_rope attn_res_mix topk_topp_masked_probs topk_topp_sampling_dist
       fi
       ;;
     # Held out until their live findings are fixed (else the notify lane is

@@ -501,9 +501,9 @@ def test_all_types(
     ],
 ) raises:
     print("\n=== Testing Float32 ===")
-    test_all_out_idx_types[DType.float32](ctx, fill_fn)
+    test_all_out_idx_types[.float32](ctx, fill_fn)
     print("\n=== Testing BFloat16 ===")
-    test_all_out_idx_types[DType.bfloat16](ctx, fill_fn)
+    test_all_out_idx_types[.bfloat16](ctx, fill_fn)
 
 
 def main() raises:

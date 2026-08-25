@@ -57,7 +57,7 @@ def mma_kernel_fp32_fp32(
     comptime mma_n = 16
     comptime mma_k = 4
 
-    var d_reg: SIMD[DType.float32, 4] = 0
+    var d_reg: SIMD[.float32, 4] = 0
     var tile_loops = k // (4 * mma_k)
 
     for l in range(tile_loops):
@@ -98,7 +98,7 @@ def mma_kernel_fp32_fp16[
     comptime mma_n = 4 if mma_n_blocks == 16 else 16
     comptime mma_k = 4 if mma_n_blocks == 16 else 16
 
-    var d_reg: SIMD[DType.float32, 4] = 0
+    var d_reg: SIMD[.float32, 4] = 0
     var tile_loops = k // mma_k
 
     for l in range(tile_loops):
@@ -139,7 +139,7 @@ def mma_kernel_fp32_bf16[
     comptime mma_n = 4 if mma_n_blocks == 16 else 16
     comptime mma_k = 4 if mma_n_blocks == 16 else 16
 
-    var d_reg: SIMD[DType.float32, 4] = 0
+    var d_reg: SIMD[.float32, 4] = 0
     var tile_loops = k // mma_k
 
     for l in range(tile_loops):
@@ -173,10 +173,10 @@ def run_mma_fp32_fp32(
 ) raises:
     print("== run_matmul fp32.fp32 matrix core kernel")
 
-    var a_host = ctx.enqueue_create_host_buffer[DType.float32](M * K)
-    var b_host = ctx.enqueue_create_host_buffer[DType.float32](K * N)
-    var c_host = ctx.enqueue_create_host_buffer[DType.float32](M * N)
-    var c_host_ref = ctx.enqueue_create_host_buffer[DType.float32](M * N)
+    var a_host = ctx.enqueue_create_host_buffer[.float32](M * K)
+    var b_host = ctx.enqueue_create_host_buffer[.float32](K * N)
+    var c_host = ctx.enqueue_create_host_buffer[.float32](M * N)
+    var c_host_ref = ctx.enqueue_create_host_buffer[.float32](M * N)
     # Zero-init c_host (copied to device) and c_host_ref (matmul accumulator).
     for i in range(M * N):
         c_host[i] = 0
@@ -184,15 +184,15 @@ def run_mma_fp32_fp32(
 
     for i in range(M * K):
         var val = random_si64(rand_min, rand_max)
-        a_host[i] = val.cast[DType.float32]()
+        a_host[i] = val.cast[.float32]()
 
     for i in range(K * N):
         var val = random_si64(rand_min, rand_max)
-        b_host[i] = val.cast[DType.float32]()
+        b_host[i] = val.cast[.float32]()
 
-    var a_device = ctx.enqueue_create_buffer[DType.float32](M * K)
-    var b_device = ctx.enqueue_create_buffer[DType.float32](K * N)
-    var c_device = ctx.enqueue_create_buffer[DType.float32](M * N)
+    var a_device = ctx.enqueue_create_buffer[.float32](M * K)
+    var b_device = ctx.enqueue_create_buffer[.float32](K * N)
+    var c_device = ctx.enqueue_create_buffer[.float32](M * N)
 
     ctx.enqueue_copy(a_device, a_host)
     ctx.enqueue_copy(b_device, b_host)
@@ -253,43 +253,31 @@ def run_mma_fp32_fp16[
 ) raises:
     print("== run_matmul fp32.fp16 matrix core kernel")
 
-    var a_host = ctx.enqueue_create_host_buffer[DType.float16](
-        M * K * mma_n_blocks
-    )
-    var b_host = ctx.enqueue_create_host_buffer[DType.float16](
-        K * N * mma_n_blocks
-    )
-    var c_host = ctx.enqueue_create_host_buffer[DType.float32](
-        M * N * mma_n_blocks
-    )
-    var c_host_ref = ctx.enqueue_create_host_buffer[DType.float32](
+    var a_host = ctx.enqueue_create_host_buffer[.float16](M * K * mma_n_blocks)
+    var b_host = ctx.enqueue_create_host_buffer[.float16](K * N * mma_n_blocks)
+    var c_host = ctx.enqueue_create_host_buffer[.float32](M * N * mma_n_blocks)
+    var c_host_ref = ctx.enqueue_create_host_buffer[.float32](
         M * N * mma_n_blocks
     )
 
     for b in range(mma_n_blocks):
         for i in range(M * K):
             var val = random_si64(rand_min, rand_max)
-            a_host[b * M * K + i] = val.cast[DType.float16]()
+            a_host[b * M * K + i] = val.cast[.float16]()
 
     for b in range(mma_n_blocks):
         for i in range(K * N):
             var val = random_si64(rand_min, rand_max)
-            b_host[b * K * N + i] = val.cast[DType.float16]()
+            b_host[b * K * N + i] = val.cast[.float16]()
 
     for b in range(mma_n_blocks):
         for i in range(M * N):
             c_host[b * M * N + i] = 0
             c_host_ref[b * M * N + i] = 0
 
-    var a_device = ctx.enqueue_create_buffer[DType.float16](
-        M * K * mma_n_blocks
-    )
-    var b_device = ctx.enqueue_create_buffer[DType.float16](
-        K * N * mma_n_blocks
-    )
-    var c_device = ctx.enqueue_create_buffer[DType.float32](
-        M * N * mma_n_blocks
-    )
+    var a_device = ctx.enqueue_create_buffer[.float16](M * K * mma_n_blocks)
+    var b_device = ctx.enqueue_create_buffer[.float16](K * N * mma_n_blocks)
+    var c_device = ctx.enqueue_create_buffer[.float32](M * N * mma_n_blocks)
 
     ctx.enqueue_copy(a_device, a_host)
     ctx.enqueue_copy(b_device, b_host)
@@ -356,43 +344,31 @@ def run_mma_fp32_bf16[
 ) raises:
     print("== run_matmul fp32.bf16 matrix core kernel")
 
-    var a_host = ctx.enqueue_create_host_buffer[DType.bfloat16](
-        M * K * mma_n_blocks
-    )
-    var b_host = ctx.enqueue_create_host_buffer[DType.bfloat16](
-        K * N * mma_n_blocks
-    )
-    var c_host = ctx.enqueue_create_host_buffer[DType.float32](
-        M * N * mma_n_blocks
-    )
-    var c_host_ref = ctx.enqueue_create_host_buffer[DType.float32](
+    var a_host = ctx.enqueue_create_host_buffer[.bfloat16](M * K * mma_n_blocks)
+    var b_host = ctx.enqueue_create_host_buffer[.bfloat16](K * N * mma_n_blocks)
+    var c_host = ctx.enqueue_create_host_buffer[.float32](M * N * mma_n_blocks)
+    var c_host_ref = ctx.enqueue_create_host_buffer[.float32](
         M * N * mma_n_blocks
     )
 
     for b in range(mma_n_blocks):
         for i in range(M * K):
             var val = random_si64(rand_min, rand_max)
-            a_host[b * M * K + i] = val.cast[DType.bfloat16]()
+            a_host[b * M * K + i] = val.cast[.bfloat16]()
 
     for b in range(mma_n_blocks):
         for i in range(K * N):
             var val = random_si64(rand_min, rand_max)
-            b_host[b * K * N + i] = val.cast[DType.bfloat16]()
+            b_host[b * K * N + i] = val.cast[.bfloat16]()
 
     for b in range(mma_n_blocks):
         for i in range(M * N):
             c_host[b * M * N + i] = 0
             c_host_ref[b * M * N + i] = 0
 
-    var a_device = ctx.enqueue_create_buffer[DType.bfloat16](
-        M * K * mma_n_blocks
-    )
-    var b_device = ctx.enqueue_create_buffer[DType.bfloat16](
-        K * N * mma_n_blocks
-    )
-    var c_device = ctx.enqueue_create_buffer[DType.float32](
-        M * N * mma_n_blocks
-    )
+    var a_device = ctx.enqueue_create_buffer[.bfloat16](M * K * mma_n_blocks)
+    var b_device = ctx.enqueue_create_buffer[.bfloat16](K * N * mma_n_blocks)
+    var c_device = ctx.enqueue_create_buffer[.float32](M * N * mma_n_blocks)
 
     ctx.enqueue_copy(a_device, a_host)
     ctx.enqueue_copy(b_device, b_host)

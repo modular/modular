@@ -338,11 +338,11 @@ trait MHAOperand(DevicePassable, TrivialRegisterPassable):
         2,
         tile_shape=IndexList[2](
             tile_height,
-            _gather4_box_width[DType.bfloat16, tile_width, swizzle_mode](),
+            _gather4_box_width[.bfloat16, tile_width, swizzle_mode](),
         ),
         desc_shape=IndexList[2](
             1,
-            _gather4_box_width[DType.bfloat16, tile_width, swizzle_mode](),
+            _gather4_box_width[.bfloat16, tile_width, swizzle_mode](),
         ),
     ]:
         """Creates a BF16 gather4 TMA descriptor for the rope portion of the
@@ -372,7 +372,7 @@ trait MHAOperand(DevicePassable, TrivialRegisterPassable):
     @always_inline
     def scales_raw_ptr(
         self,
-    ) -> UnsafePointer[Scalar[DType.float32], MutAnyOrigin]:
+    ) -> UnsafePointer[Float32, MutAnyOrigin]:
         """Returns the base pointer to the quantization scales tensor.
 
         Returns a null pointer for operands without quantization support.
@@ -698,11 +698,11 @@ struct KVCacheMHAOperand[
             2,
             tile_shape=IndexList[2](
                 tile_height,
-                _gather4_box_width[DType.bfloat16, tile_width, swizzle_mode](),
+                _gather4_box_width[.bfloat16, tile_width, swizzle_mode](),
             ),
             desc_shape=IndexList[2](
                 1,
-                _gather4_box_width[DType.bfloat16, tile_width, swizzle_mode](),
+                _gather4_box_width[.bfloat16, tile_width, swizzle_mode](),
             ),
         ],
     ) raises:
@@ -739,9 +739,9 @@ struct KVCacheMHAOperand[
     @always_inline
     def scales_raw_ptr(
         self,
-    ) -> UnsafePointer[Scalar[DType.float32], MutAnyOrigin]:
+    ) -> UnsafePointer[Float32, MutAnyOrigin]:
         """Returns the base pointer to the quantization scales tensor."""
-        return rebind[UnsafePointer[Scalar[DType.float32], MutAnyOrigin]](
+        return rebind[UnsafePointer[Float32, MutAnyOrigin]](
             self.cache.scales_raw_ptr()
         )
 
@@ -965,11 +965,11 @@ struct KVCacheScalesMHAOperand[
             2,
             tile_shape=IndexList[2](
                 tile_height,
-                _gather4_box_width[DType.bfloat16, tile_width, swizzle_mode](),
+                _gather4_box_width[.bfloat16, tile_width, swizzle_mode](),
             ),
             desc_shape=IndexList[2](
                 1,
-                _gather4_box_width[DType.bfloat16, tile_width, swizzle_mode](),
+                _gather4_box_width[.bfloat16, tile_width, swizzle_mode](),
             ),
         ],
     ) raises:
@@ -982,14 +982,12 @@ struct KVCacheScalesMHAOperand[
     @always_inline
     def scales_raw_ptr(
         self,
-    ) -> UnsafePointer[Scalar[DType.float32], MutAnyOrigin]:
+    ) -> UnsafePointer[Float32, MutAnyOrigin]:
         """Returns a dangling pointer. KVCacheScalesMHAOperand already points to the
         scales pointer."""
         # SAFETY: Callers access scales through the operand's own pointer, not
         # this raw_ptr; only used behind comptime quantization guards.
-        return UnsafePointer[
-            Scalar[DType.float32], MutAnyOrigin
-        ].unsafe_dangling()
+        return UnsafePointer[Float32, MutAnyOrigin].unsafe_dangling()
 
 
 @always_inline
@@ -1024,7 +1022,7 @@ struct LayoutTensorMHAOperand[
     //,
     dtype_: DType,
     buffer_layout: TensorLayout,
-    scale_dtype_: DType = DType.float32,
+    scale_dtype_: DType = .float32,
     scale_buffer_layout: TensorLayout = MixedLayout[
         shape_types=Coord[].element_types,
         stride_types=Coord[].element_types,
@@ -1375,11 +1373,11 @@ struct LayoutTensorMHAOperand[
             2,
             tile_shape=IndexList[2](
                 tile_height,
-                _gather4_box_width[DType.bfloat16, tile_width, swizzle_mode](),
+                _gather4_box_width[.bfloat16, tile_width, swizzle_mode](),
             ),
             desc_shape=IndexList[2](
                 1,
-                _gather4_box_width[DType.bfloat16, tile_width, swizzle_mode](),
+                _gather4_box_width[.bfloat16, tile_width, swizzle_mode](),
             ),
         ],
     ) raises:
@@ -1409,14 +1407,12 @@ struct LayoutTensorMHAOperand[
     @always_inline
     def scales_raw_ptr(
         self,
-    ) -> UnsafePointer[Scalar[DType.float32], MutAnyOrigin]:
+    ) -> UnsafePointer[Float32, MutAnyOrigin]:
         """Returns a dangling pointer. Contiguous operands do not support
         quantization."""
         # SAFETY: LayoutTensor operands are never quantized; callers only
         # dereference behind comptime quantization guards.
-        return UnsafePointer[
-            Scalar[DType.float32], MutAnyOrigin
-        ].unsafe_dangling()
+        return UnsafePointer[Float32, MutAnyOrigin].unsafe_dangling()
 
 
 struct RaggedMHAOperand[
@@ -1445,7 +1441,7 @@ struct RaggedMHAOperand[
         Self.scale_dtype, Self.scale_layout, ImmutAnyOrigin
     ]
     var cache_row_offsets: TileTensor[
-        DType.uint32, Self.cache_layout, Self.cache_origin
+        .uint32, Self.cache_layout, Self.cache_origin
     ]
 
     comptime device_type: AnyType = Self
@@ -1463,7 +1459,7 @@ struct RaggedMHAOperand[
         out self,
         buffer: TileTensor[Self.dtype, Self.layout, Self.origin],
         cache_row_offsets: TileTensor[
-            DType.uint32, Self.cache_layout, Self.cache_origin
+            .uint32, Self.cache_layout, Self.cache_origin
         ],
     ):
         comptime assert (
@@ -1499,7 +1495,7 @@ struct RaggedMHAOperand[
             Self.scale_dtype, Self.scale_layout, ImmutAnyOrigin
         ],
         cache_row_offsets: TileTensor[
-            DType.uint32, Self.cache_layout, Self.cache_origin
+            .uint32, Self.cache_layout, Self.cache_origin
         ],
     ):
         self.buffer = buffer
@@ -1754,11 +1750,11 @@ struct RaggedMHAOperand[
             2,
             tile_shape=IndexList[2](
                 tile_height,
-                _gather4_box_width[DType.bfloat16, tile_width, swizzle_mode](),
+                _gather4_box_width[.bfloat16, tile_width, swizzle_mode](),
             ),
             desc_shape=IndexList[2](
                 1,
-                _gather4_box_width[DType.bfloat16, tile_width, swizzle_mode](),
+                _gather4_box_width[.bfloat16, tile_width, swizzle_mode](),
             ),
         ],
     ) raises:
@@ -1770,11 +1766,9 @@ struct RaggedMHAOperand[
     @always_inline
     def scales_raw_ptr(
         self,
-    ) -> UnsafePointer[Scalar[DType.float32], MutAnyOrigin]:
+    ) -> UnsafePointer[Float32, MutAnyOrigin]:
         """Returns a dangling pointer. Ragged operands do not support
         quantization."""
         # SAFETY: Ragged operands don't support quantization; callers only
         # dereference behind comptime quantization guards.
-        return UnsafePointer[
-            Scalar[DType.float32], MutAnyOrigin
-        ].unsafe_dangling()
+        return UnsafePointer[Float32, MutAnyOrigin].unsafe_dangling()

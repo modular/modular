@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import ClassVar, Literal
 
@@ -187,10 +188,18 @@ class Llama3Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
         devices: list[DeviceRef],
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
+        *,
+        allow_kv_head_replication: bool = False,
     ) -> KVCacheParams:
-        """Grouped-attention KV with EAGLE draft-token count when speculative is on."""
+        """Grouped-attention KV with EAGLE draft-token count when speculative is on.
+
+        ``allow_kv_head_replication`` lets subclasses with fewer KV heads
+        than the tensor-parallel width replicate each head across a device
+        group.
+        """
         return kv_cache_config.to_params(
             dtype=cache_dtype,
+            allow_kv_head_replication=allow_kv_head_replication,
             n_kv_heads=huggingface_config.num_key_value_heads,
             head_dim=cls.get_head_dim(huggingface_config),
             num_layers=cls.get_num_layers(huggingface_config),
@@ -216,6 +225,8 @@ class Llama3Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
         cls,
         pipeline_config: PipelineConfig,
         model_config: MAXModelConfig | None = None,
+        *,
+        max_seq_len: int,
     ) -> Self:
         model_config = model_config or pipeline_config.model
         huggingface_config = model_config.huggingface_config
@@ -226,7 +237,10 @@ class Llama3Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
                 "Please ensure the model repository contains a valid config.json file."
             )
         return cls.initialize_from_config(
-            pipeline_config, huggingface_config, model_config
+            pipeline_config,
+            huggingface_config,
+            model_config,
+            max_seq_len=max_seq_len,
         )
 
     @classmethod
@@ -235,6 +249,8 @@ class Llama3Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
         pipeline_config: PipelineConfig,
         huggingface_config: AutoConfig,
         model_config: MAXModelConfig | None = None,
+        *,
+        max_seq_len: int,
     ) -> Self:
         model_config = model_config or pipeline_config.model
         kv_cache_config = model_config.kv_cache
@@ -317,11 +333,7 @@ class Llama3Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
                 hidden_size=huggingface_config.hidden_size,
                 num_attention_heads=huggingface_config.num_attention_heads,
                 rope_theta=get_rope_theta(huggingface_config),
-                max_seq_len=Llama3Config.calculate_max_seq_len(
-                    pipeline_config,
-                    huggingface_config=huggingface_config,
-                    model_config=model_config,
-                ),
+                max_seq_len=max_seq_len,
                 interleaved_rope_weights=interleaved_rope_weights,
                 rope_scaling_params=rope_scaling_params,
                 longrope_scaling_params=longrope_scaling_params,
@@ -337,6 +349,7 @@ class Llama3Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
             rope_theta=get_rope_theta(huggingface_config),
             rope_scaling_params=rope_scaling_params,
             longrope_scaling_params=longrope_scaling_params,
+            max_seq_len=max_seq_len,
             intermediate_size=huggingface_config.intermediate_size,
             interleaved_rope_weights=interleaved_rope_weights,
             vocab_size=huggingface_config.vocab_size,
@@ -347,11 +360,6 @@ class Llama3Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
             quantization_config=gptq_quant_config(
                 quantization_encoding,
                 pipeline_config.model.huggingface_config,
-            ),
-            max_seq_len=Llama3Config.calculate_max_seq_len(
-                pipeline_config,
-                huggingface_config=huggingface_config,
-                model_config=model_config,
             ),
             kv_params=Llama3Config.construct_kv_params(
                 huggingface_config=huggingface_config,
@@ -370,6 +378,21 @@ class Llama3Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
             data_parallel_degree=pipeline_config.model.data_parallel_degree,
             quantization_encoding=quantization_encoding,
         )
+
+    def _parse_quant_config(
+        self,
+        huggingface_config: AutoConfig,
+        state_dict: Mapping[str, WeightData],
+    ) -> QuantConfig | None:
+        """Parses the checkpoint's quantization config during ``finalize``.
+
+        An extension point for architectures whose quantization metadata
+        ``parse_quant_config`` cannot read: it is a single uniform format keyed
+        off one ``quant_algo``, resolved against the config object handed to
+        ``finalize``. Qwen3.5 overrides this because its checkpoint mixes NVFP4
+        and FP8 and keeps ``quantization_config`` beside ``text_config``.
+        """
+        return parse_quant_config(huggingface_config, state_dict, self.dtype)
 
     def finalize(
         self,
@@ -406,9 +429,8 @@ class Llama3Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
         else:
             normalized_state_dict = dict(state_dict)
 
-        # Parse the float8 config from compressed-tensors or FBGEMM.
-        quant_config = parse_quant_config(
-            huggingface_config, normalized_state_dict, self.dtype
+        quant_config = self._parse_quant_config(
+            huggingface_config, normalized_state_dict
         )
 
         # Determine norm_dtype.

@@ -123,8 +123,8 @@ def _verify_results[
 ](
     num_rows: Int,
     list_of_ctx: List[DeviceContext],
-    sigs_ar: List[DeviceBuffer[DType.uint8]],
-    sigs_fused: List[DeviceBuffer[DType.uint8]],
+    sigs_ar: List[DeviceBuffer[.uint8]],
+    sigs_fused: List[DeviceBuffer[.uint8]],
     cb_inputs: List[CacheBustingBuffer[dtype]],
     rank_sigs_ar: Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     rank_sigs_fused: Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
@@ -182,7 +182,7 @@ def _verify_results[
         ),
         num_rows,
         num_cols,
-        epsilon.cast[DType.float32](),
+        epsilon.cast[.float32](),
         ctx0,
     )
     ctx0.synchronize()
@@ -228,8 +228,8 @@ def _verify_results[
     var unfused_f32 = List[Float32](length=length, fill=Float32(0))
     var fused_f32 = List[Float32](length=length, fill=Float32(0))
     for i in range(length):
-        unfused_f32[i] = unfused_h[i].cast[DType.float32]()
-        fused_f32[i] = fused_h[i].cast[DType.float32]()
+        unfused_f32[i] = unfused_h[i].cast[.float32]()
+        fused_f32[i] = fused_h[i].cast[.float32]()
     assert_almost_equal(
         fused_f32.unsafe_ptr(),
         unfused_f32.unsafe_ptr(),
@@ -270,8 +270,8 @@ def bench_fused_lamport_allreduce_rmsnorm[
     # (Lamport-routed under the hood) and one for the fused kernel. They
     # share the Signal layout but rotate their own generation flag, so
     # interleaving the two paths on the same buffer would confuse the state.
-    var sigs_ar = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
-    var sigs_fused = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
+    var sigs_ar = List[DeviceBuffer[.uint8]](capacity=ngpus)
+    var sigs_fused = List[DeviceBuffer[.uint8]](capacity=ngpus)
     var rank_sigs_ar = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
         uninitialized=True
     )
@@ -308,12 +308,12 @@ def bench_fused_lamport_allreduce_rmsnorm[
         host_bufs.append(h^)
 
         sigs_ar.append(
-            list_of_ctx[i].create_buffer_sync[DType.uint8](
+            list_of_ctx[i].create_buffer_sync[.uint8](
                 size_of[Signal]() + temp_bytes
             )
         )
         sigs_fused.append(
-            list_of_ctx[i].create_buffer_sync[DType.uint8](size_of[Signal]())
+            list_of_ctx[i].create_buffer_sync[.uint8](size_of[Signal]())
         )
         init_signal_buffer(sigs_ar[i], list_of_ctx[i])
         init_signal_buffer(sigs_fused[i], list_of_ctx[i])
@@ -401,11 +401,10 @@ def bench_fused_lamport_allreduce_rmsnorm[
     )
 
     # ===== Benchmark 1: fused `lamport_allreduce_rmsnorm` (1 kernel) =====
-    @__parameter
     @always_inline
     def bench_fused_iter(
         mut bench: Bencher, ctx: DeviceContext, ctx_idx: Int
-    ) raises:
+    ) raises {imm}:
         @always_inline
         def call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises {imm}:
             lamport_allreduce_rmsnorm[dtype, ngpus, pdl=False](
@@ -428,19 +427,19 @@ def bench_fused_lamport_allreduce_rmsnorm[
 
         bencher_iter_custom(bench, call_fn, ctx)
 
-    bench_multicontext[bench_fused_iter](
+    bench_multicontext(
         b,
+        bench_fused_iter,
         list_of_ctx,
         BenchId("fused_lamport_allreduce_rmsnorm", input_id=bench_name_prefix),
         [ThroughputMeasure(BenchMetric.bytes, total_bytes)],
     )
 
     # ===== Benchmark 2: unfused `allreduce` + `rms_norm_gpu` (2 kernels) =====
-    @__parameter
     @always_inline
     def bench_unfused_iter(
         mut bench: Bencher, ctx: DeviceContext, ctx_idx: Int
-    ) raises:
+    ) raises {mut in_tensors, imm}:
         @always_inline
         def call_fn(
             ctx_inner: DeviceContext, cache_iter: Int
@@ -471,14 +470,15 @@ def bench_fused_lamport_allreduce_rmsnorm[
                 ),
                 num_rows,
                 num_cols,
-                epsilon.cast[DType.float32](),
+                epsilon.cast[.float32](),
                 ctx_inner,
             )
 
         bencher_iter_custom(bench, call_fn, ctx)
 
-    bench_multicontext[bench_unfused_iter](
+    bench_multicontext(
         b,
+        bench_unfused_iter,
         list_of_ctx,
         BenchId(
             "unfused_allreduce_then_rms_norm",
@@ -507,7 +507,7 @@ def bench_fused_lamport_allreduce_rmsnorm[
 
 
 def main() raises:
-    comptime dtype = get_defined_dtype["in_dtype", DType.bfloat16]()
+    comptime dtype = get_defined_dtype["in_dtype", .bfloat16]()
     comptime num_gpus = get_defined_int["num_gpus", 2]()
     var num_rows = Int(arg_parse("num_rows", 8))
     comptime num_cols = get_defined_int["num_cols", 7168]()

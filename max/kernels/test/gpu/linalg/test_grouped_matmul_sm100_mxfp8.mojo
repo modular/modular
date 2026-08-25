@@ -128,7 +128,7 @@ def _test_kernel_impl[
 
     var a_device = ctx.enqueue_create_buffer[a_type](a_size)
     var a_tensor = TileTensor(a_device, a_shape)
-    var a_offsets_device = ctx.enqueue_create_buffer[DType.uint32](
+    var a_offsets_device = ctx.enqueue_create_buffer[.uint32](
         num_active_experts + 1
     )
     var a_offsets_tensor = TileTensor(
@@ -141,7 +141,7 @@ def _test_kernel_impl[
     )
     var b_device = ctx.enqueue_create_buffer[b_type](b_size)
     var b_tensor = TileTensor(b_device, b_shape)
-    var expert_ids_device = ctx.enqueue_create_buffer[DType.int32](
+    var expert_ids_device = ctx.enqueue_create_buffer[.int32](
         num_active_experts
     )
     var expert_ids_tensor = TileTensor(
@@ -152,7 +152,7 @@ def _test_kernel_impl[
             )
         ),
     )
-    var a_scale_offsets_device = ctx.enqueue_create_buffer[DType.uint32](
+    var a_scale_offsets_device = ctx.enqueue_create_buffer[.uint32](
         num_active_experts
     )
     var a_scale_offsets_tensor = TileTensor(
@@ -167,9 +167,7 @@ def _test_kernel_impl[
     var c_tensor = TileTensor(c_device, c_shape)
     var c_device_ref = ctx.enqueue_create_buffer[c_type](c_size)
     var c_ref_tensor = TileTensor(c_device_ref, c_shape)
-    var expert_scales_device = ctx.enqueue_create_buffer[DType.float32](
-        num_experts
-    )
+    var expert_scales_device = ctx.enqueue_create_buffer[.float32](num_experts)
     var expert_scales_tensor = TileTensor(
         expert_scales_device,
         row_major(
@@ -179,16 +177,16 @@ def _test_kernel_impl[
         ),
     )
 
-    var a_offsets_host_ptr = ctx.enqueue_create_host_buffer[DType.uint32](
+    var a_offsets_host_ptr = ctx.enqueue_create_host_buffer[.uint32](
         num_active_experts + 1
     )
-    var a_scale_offsets_ptr = ctx.enqueue_create_host_buffer[DType.uint32](
+    var a_scale_offsets_ptr = ctx.enqueue_create_host_buffer[.uint32](
         num_active_experts
     )
-    var expert_ids_host_ptr = ctx.enqueue_create_host_buffer[DType.int32](
+    var expert_ids_host_ptr = ctx.enqueue_create_host_buffer[.int32](
         num_experts
     )
-    var expert_scales_host_ptr = ctx.enqueue_create_host_buffer[DType.float32](
+    var expert_scales_host_ptr = ctx.enqueue_create_host_buffer[.float32](
         num_experts
     )
     for i in range(num_experts):
@@ -286,7 +284,7 @@ def _test_kernel_impl[
                 if idx1 < effective_k:
                     var scale_value = _convert_f32_to_float8_ue8m0[
                         scales_dtype
-                    ]((1 << random_ui64(0, 2)).cast[DType.float32]())
+                    ]((1 << random_ui64(0, 2)).cast[.float32]())
                     set_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
                         a_scales_tensor_host, idx0, idx1, scale_value
                     )
@@ -322,7 +320,7 @@ def _test_kernel_impl[
                 if idx0 < effective_n and idx1 < effective_k:
                     var scale_value = _convert_f32_to_float8_ue8m0[
                         scales_dtype
-                    ]((1 << random_ui64(0, 2)).cast[DType.float32]())
+                    ]((1 << random_ui64(0, 2)).cast[.float32]())
                     set_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
                         b_scales_tensor_expert_slice, idx0, idx1, scale_value
                     )
@@ -457,7 +455,7 @@ def _test_kernel_impl[
         comptime assert False, "kernel_type must be 'old' or 'new'"
         pass
 
-    comptime assert a_type != DType.float8_e4m3fn or transpose_b, (
+    comptime assert a_type != .float8_e4m3fn or transpose_b, (
         "Testing is only supported for transposed_b==True when"
         " a_type==float8_e4m3fn. Add the non-transposed case if needed."
     )
@@ -478,22 +476,22 @@ def _test_kernel_impl[
         var expert_id = expert_ids_host_ptr[i]
 
         var c_slice = TileTensor(
-            c_ref_tensor._storage + start * c_row_stride,
+            c_ref_tensor.ptr + start * c_row_stride,
             row_major((end - start, Idx[expert_shape[0]])),
         )
 
         var new_a_tensor = TileTensor(
-            a_tensor._storage + start * a_row_stride,
+            a_tensor.ptr + start * a_row_stride,
             row_major((end - start, Idx[expert_shape[1]])),
         )
 
         var new_b_tensor = TileTensor(
-            b_tensor._storage + Int(expert_id) * b_expert_stride,
+            b_tensor.ptr + Int(expert_id) * b_expert_stride,
             row_major((Idx[expert_shape[0]], Idx[expert_shape[1]])),
         )
 
         var new_b_scales_tensor = TileTensor(
-            b_scales_tensor._storage + Int(expert_id) * b_scales_expert_stride,
+            b_scales_tensor.ptr + Int(expert_id) * b_scales_expert_stride,
             row_major(
                 Coord(
                     Idx[n_groups],
@@ -509,7 +507,7 @@ def _test_kernel_impl[
             a_scale_offsets_ptr[i]
         )
         var new_a_scales_tensor = TileTensor(
-            a_scales_tensor._storage + a_scales_start * a_scales_row_stride,
+            a_scales_tensor.ptr + a_scales_start * a_scales_row_stride,
             row_major(
                 Coord(
                     ceildiv(end - start, SF_MN_GROUP_SIZE),

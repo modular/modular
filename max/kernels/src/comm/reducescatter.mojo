@@ -92,7 +92,7 @@ def _load_reduce[
             accum_type=accum_type,
         ](
             (in_tiles[0].ptr_at_offset(Coord(elem_idx))).address_space_cast[
-                AddressSpace.GLOBAL
+                .GLOBAL
             ]()
         )
     else:

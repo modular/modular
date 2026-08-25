@@ -112,7 +112,7 @@ def shared_memory_alloc_example() raises:
             dtype,
             tile_layout,
             MutAnyOrigin,
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
         ].stack_allocation()
         # end-shared-memory-alloc-example
 
@@ -203,10 +203,8 @@ def layout_tensor_distribute_example():
 
     try:
         var ctx = DeviceContext()
-        var dev_buf = ctx.enqueue_create_buffer[DType.int32](rows * columns)
-        var host_buf = ctx.enqueue_create_host_buffer[DType.int32](
-            rows * columns
-        )
+        var dev_buf = ctx.enqueue_create_buffer[.int32](rows * columns)
+        var host_buf = ctx.enqueue_create_host_buffer[.int32](rows * columns)
         for i in range(rows * columns):
             host_buf[i] = Int32(i)
         var tensor = LayoutTensor[dtype, layout](dev_buf)
@@ -240,7 +238,7 @@ def simple_copy_example():
             dtype,
             tile_layout,
             MutAnyOrigin,
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
         ].stack_allocation()
 
         if global_idx.y < rows and global_idx.x < cols:
@@ -310,7 +308,7 @@ def copy_from_async_example():
                 dtype,
                 tile_layout,
                 MutAnyOrigin,
-                address_space=AddressSpace.SHARED,
+                address_space=.SHARED,
             ].stack_allocation()
 
             # Create thread layouts for copying

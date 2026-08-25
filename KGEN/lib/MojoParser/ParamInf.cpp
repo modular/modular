@@ -213,6 +213,20 @@ ParamInf::inferCValue(ASTExprAnd<AnyValue> operand, size_t argIdx,
     return failure();
   }
 
+  if (auto inferredAttr = operand.ir.getIfInferredBaseAttrRef()) {
+    // Resolve `.member` against the expected parameter type, e.g.
+    // `takes_dtype(.float32)` with `dtype: DType` becomes `DType.float32`.
+    IREmitter emitter(getDeclScope(), ExprContext::EC_CallArgValue);
+    ExprDest dest(expectedType, ExprContext::EC_CallArgValue);
+    if (auto cValue = inferredAttr.emitAsCValue(emitter, dest))
+      return SmartVariant<CValue, ASTType>(cValue);
+    // emitAsCValue diagnoses into the shared engine; also record on the
+    // ParamInf diag so overload fitness failure reporting stays consistent.
+    getMojoDiag(operand.expr->getLoc())
+        << "cannot resolve inferred attribute reference";
+    return failure();
+  }
+
   auto orValue = operand.ir.getIfOverloadSet();
   assert(orValue && "Unknown UValue!");
 
@@ -1559,8 +1573,8 @@ LogicalResult CallParamInf::inferOneOperand(ASTExprAnd<AnyValue> operand,
   }
   case ArgConvention::OwnedMem:
   case ArgConvention::DeinitMem:
-  case ArgConvention::ReadMem:
-  case ArgConvention::ReadReg:
+  case ArgConvention::ImmMem:
+  case ArgConvention::ImmReg:
     break;
   }
 
@@ -1596,7 +1610,7 @@ LogicalResult CallParamInf::inferOneOperand(ASTExprAnd<AnyValue> operand,
         {operandIdx, argIdx, expectedRVType, calleeSignature});
 
   // If a register-passable type is being passed in-memory, remember this.
-  if (expectedConvention != ArgConvention::ReadReg &&
+  if (expectedConvention != ArgConvention::ImmReg &&
       expectedRVType.isRegisterPassable(operand.expr->getLoc(), getShared()))
     ++numMismatchedConventions;
 

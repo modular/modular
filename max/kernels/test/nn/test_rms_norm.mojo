@@ -24,13 +24,11 @@ from std.utils.index import Index, IndexList
 
 def compute_rms[
     dtype: DType
-](data: TileTensor[dtype, ...], size: Int, eps: Float32) -> Scalar[
-    DType.float32
-]:
+](data: TileTensor[dtype, ...], size: Int, eps: Float32) -> Scalar[.float32]:
     comptime assert data.rank == 1, "data.rank must be 1"
     var sum_of_squares = Float32()
     for i in range(size):
-        var d = data.raw_load(i).cast[DType.float32]()
+        var d = data.raw_load(i).cast[.float32]()
         sum_of_squares += d * d
     return sqrt((sum_of_squares / Float32(data.num_elements())) + eps)
 
@@ -99,9 +97,9 @@ def run_rms_norm_cpu[
         var idx = r * cols + c
         # PyTorch converts the input to float32 before computing the RMS norm
         # https://github.com/meta-llama/llama/blob/689c7f261b9c5514636ecc3c5fefefcbb3e6eed7/llama/model.py#L76
-        var val = (input_ptr[idx].cast[DType.float32]() / rms_ref).cast[
-            dtype
-        ]() * (gamma_ptr[c] + weight_offset)
+        var val = (input_ptr[idx].cast[.float32]() / rms_ref).cast[dtype]() * (
+            gamma_ptr[c] + weight_offset
+        )
         assert_almost_equal(val, output_ptr[idx], rtol=rtol)
 
 
@@ -123,7 +121,7 @@ def run_rms_norm_tests[dtype: DType](rtol: Float64 = 0.001) raises:
 
 
 def main() raises:
-    run_rms_norm_tests[DType.float32]()
+    run_rms_norm_tests[.float32]()
 
     comptime if not CompilationTarget.has_neon():
-        run_rms_norm_tests[DType.bfloat16](rtol=1e-2)
+        run_rms_norm_tests[.bfloat16](rtol=1e-2)

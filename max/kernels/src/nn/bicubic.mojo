@@ -178,7 +178,7 @@ def cpu_bicubic_kernel(
             # now that i have the weight y and x of said pixel, i multiply it by its weight and add it to the sum
             var pixel_value = Float32(
                 input_host.load[width=1](
-                    dyn_coord[DType.int64]((b, c, y_pos, x_pos))
+                    dyn_coord[.int64]((b, c, y_pos, x_pos))
                 )
             )
             sum_value += pixel_value * weight
@@ -186,7 +186,7 @@ def cpu_bicubic_kernel(
 
         # store the result in the output tensor
         output_host.store[width=1](
-            dyn_coord[DType.int64]((b, c, y_out, x_out)),
+            dyn_coord[.int64]((b, c, y_out, x_out)),
             sum_value.cast[output_host.dtype](),
         )
 
@@ -260,8 +260,8 @@ def gpu_bicubic_kernel[
         var sum_weights: Float32 = 0.0
 
         # Pre-compute cubic weights for better performance
-        var weights_y = cubic_kernel(SIMD[DType.float32, 4](-1, 0, 1, 2) - dy)
-        var weights_x = cubic_kernel(SIMD[DType.float32, 4](-1, 0, 1, 2) - dx)
+        var weights_y = cubic_kernel(SIMD[.float32, 4](-1, 0, 1, 2) - dy)
+        var weights_x = cubic_kernel(SIMD[.float32, 4](-1, 0, 1, 2) - dx)
 
         # get the 4x4 surrounding pixels, and assign weights to them
         comptime for i, j in product(range(4), range(4)):
@@ -275,7 +275,7 @@ def gpu_bicubic_kernel[
             # now that i have the weight y and x of said pixel, i multiply it by its weight and add it to the sum
             var pixel_value = input.load[width=1](
                 Coord(b, c, y_pos, x_pos)
-            ).cast[DType.float32]()
+            ).cast[.float32]()
             sum_value += pixel_value * weight
             sum_weights += weight
 
@@ -290,10 +290,8 @@ def resize_bicubic[
     //,
     target: StaticString,
 ](
-    output: TileTensor[
-        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
-    ],
-    input: TileTensor[dtype, address_space=AddressSpace.GENERIC, ...],
+    output: TileTensor[mut=True, dtype, address_space=.GENERIC, ...],
+    input: TileTensor[dtype, address_space=.GENERIC, ...],
     ctx: DeviceContext,
 ) raises:
     """Perform bicubic interpolation.

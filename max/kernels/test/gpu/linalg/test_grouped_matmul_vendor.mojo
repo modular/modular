@@ -79,8 +79,8 @@ def test_vendor[
     var b_host_ptr = alloc[Scalar[b_type]](b_size)
     var c_host_ptr = alloc[Scalar[c_type]](c_size)
     var c_ref_host_ptr = alloc[Scalar[c_type]](c_size)
-    var a_offsets_host_ptr = alloc[Scalar[DType.uint32]](num_active_experts + 1)
-    var expert_ids_host_ptr = alloc[Scalar[DType.int32]](num_active_experts)
+    var a_offsets_host_ptr = alloc[UInt32](num_active_experts + 1)
+    var expert_ids_host_ptr = alloc[Int32](num_active_experts)
 
     var a_host = TileTensor(
         a_host_ptr,
@@ -126,10 +126,10 @@ def test_vendor[
     var b_dev_buffer = ctx.enqueue_create_buffer[b_type](b_size)
     var c_dev_buffer = ctx.enqueue_create_buffer[c_type](c_size)
     var c_ref_dev_buffer = ctx.enqueue_create_buffer[c_type](c_size)
-    var a_offsets_dev_buffer = ctx.enqueue_create_buffer[DType.uint32](
+    var a_offsets_dev_buffer = ctx.enqueue_create_buffer[.uint32](
         num_active_experts + 1
     )
-    var expert_ids_dev_buffer = ctx.enqueue_create_buffer[DType.int32](
+    var expert_ids_dev_buffer = ctx.enqueue_create_buffer[.int32](
         num_active_experts
     )
 
@@ -272,8 +272,8 @@ def test_negative_lora_id_vendor[
     var a_host_ptr = alloc[Scalar[a_type]](a_size)
     var b_host_ptr = alloc[Scalar[b_type]](b_size)
     var c_host_ptr = alloc[Scalar[c_type]](c_size)
-    var a_offsets_host_ptr = alloc[Scalar[DType.uint32]](num_active_experts + 1)
-    var expert_ids_host_ptr = alloc[Scalar[DType.int32]](num_active_experts)
+    var a_offsets_host_ptr = alloc[UInt32](num_active_experts + 1)
+    var expert_ids_host_ptr = alloc[Int32](num_active_experts)
 
     var a_host = TileTensor(
         a_host_ptr,
@@ -314,10 +314,10 @@ def test_negative_lora_id_vendor[
     var a_dev_buffer = ctx.enqueue_create_buffer[a_type](a_size)
     var b_dev_buffer = ctx.enqueue_create_buffer[b_type](b_size)
     var c_dev_buffer = ctx.enqueue_create_buffer[c_type](c_size)
-    var a_offsets_dev_buffer = ctx.enqueue_create_buffer[DType.uint32](
+    var a_offsets_dev_buffer = ctx.enqueue_create_buffer[.uint32](
         num_active_experts + 1
     )
-    var expert_ids_dev_buffer = ctx.enqueue_create_buffer[DType.int32](
+    var expert_ids_dev_buffer = ctx.enqueue_create_buffer[.int32](
         num_active_experts
     )
 
@@ -428,23 +428,23 @@ def main() raises:
     with DeviceContext() as ctx:
         # Single matmul
         test_vendor[
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
             num_experts=1,
             expert_shape=Index(256, 256),
         ](1, [128], [0], ctx)
 
         test_vendor[
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
             num_experts=1,
             expert_shape=Index(512, 1024),
         ](1, [256], [0], ctx)
 
         # Multiple matmuls selecting part of experts
         test_vendor[
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
             num_experts=4,
             expert_shape=Index(768, 1024),
         ](2, [128, 256], [0, 2], ctx)
@@ -452,8 +452,8 @@ def main() raises:
         # Multiple matmuls selecting part of experts
         # num_tokens not multiple of tile size
         test_vendor[
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
             num_experts=6,
             expert_shape=Index(1280, 1024),
         ](4, [27, 1500, 300, 150], [0, 3, 2, 4], ctx)
@@ -462,40 +462,40 @@ def main() raises:
         # num_tokens not multiple of tile size
         # expert N dimension not multiple of 256
         test_vendor[
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
             num_experts=6,
             expert_shape=Index(192, 1024),
         ](4, [27, 1500, 300, 150], [0, 3, 2, 4], ctx)
 
         # Test that expert id of -1 results in 0s in the output
         test_vendor[
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
             num_experts=2,
             expert_shape=Index(256, 512),
         ](2, [64, 128], [0, -1], ctx)
 
         # Test negative lora_id behavior with vendor matmul
         test_negative_lora_id_vendor[
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
             num_experts=2,
             expert_shape=Index(256, 512),
         ](2, [64, 128], [0, -1], ctx)
 
         # Additional test cases for different data types
         test_vendor[
-            DType.float32,
-            DType.float32,
+            .float32,
+            .float32,
             num_experts=3,
             expert_shape=Index(384, 768),
         ](2, [100, 200], [1, 2], ctx)
 
         # Test with mixed valid and invalid expert ids
         test_vendor[
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
             num_experts=4,
             expert_shape=Index(512, 512),
         ](3, [50, 100, 75], [0, -1, 2], ctx)

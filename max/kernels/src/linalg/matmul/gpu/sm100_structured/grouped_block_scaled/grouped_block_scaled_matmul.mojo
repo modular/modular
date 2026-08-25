@@ -28,11 +28,11 @@ Callers must provide template tensors in the correct shapes:
   SF_ATOM_M[1] * SF_ATOM_K)
 
 Usage:
-    # Per-group pointers as TileTensor[DType.uint64, ...]
+    # Per-group pointers as TileTensor[.uint64, ...]
     var a_ptrs = TileTensor(ptr, tile_row_major[num_groups, 1]())
     ...
 
-    # Problem sizes as TileTensor[DType.int32, ...]
+    # Problem sizes as TileTensor[.int32, ...]
     var problem_sizes = TileTensor(ptr, tile_row_major[num_groups, 4]())
 
     # 3D template TileTensors for TMA descriptor creation
@@ -149,13 +149,13 @@ def grouped_block_scaled_matmul[
     ] = None,
 ](
     # Per-group tensor pointers (max_groups, 1) TileTensors
-    a_ptrs: TileTensor[DType.uint64, ...],
-    b_ptrs: TileTensor[DType.uint64, ...],
-    c_ptrs: TileTensor[DType.uint64, ...],
-    sfa_ptrs: TileTensor[DType.uint64, ...],
-    sfb_ptrs: TileTensor[DType.uint64, ...],
+    a_ptrs: TileTensor[.uint64, ...],
+    b_ptrs: TileTensor[.uint64, ...],
+    c_ptrs: TileTensor[.uint64, ...],
+    sfa_ptrs: TileTensor[.uint64, ...],
+    sfb_ptrs: TileTensor[.uint64, ...],
     # Per-group problem sizes: (max_groups, 4) with [M, N, K, L]
-    problem_sizes: TileTensor[DType.int32, ...],
+    problem_sizes: TileTensor[.int32, ...],
     # Number of active groups (runtime)
     num_groups: Int,
     # Total tiles across all groups (computed by caller on host)
@@ -313,19 +313,19 @@ def grouped_block_scaled_matmul[
     # For 2SM, grid size = total_tiles * cluster_shape[0] (each cluster = 1 tile)
     comptime TMA_DESC_SIZE = 128
     var num_blocks = total_tiles * cluster_shape[0]  # Actual grid size
-    var device_tensormaps_a = ctx.enqueue_create_buffer[DType.uint8](
+    var device_tensormaps_a = ctx.enqueue_create_buffer[.uint8](
         TMA_DESC_SIZE * num_blocks
     )
-    var device_tensormaps_b = ctx.enqueue_create_buffer[DType.uint8](
+    var device_tensormaps_b = ctx.enqueue_create_buffer[.uint8](
         TMA_DESC_SIZE * num_blocks
     )
-    var device_tensormaps_sfa = ctx.enqueue_create_buffer[DType.uint8](
+    var device_tensormaps_sfa = ctx.enqueue_create_buffer[.uint8](
         TMA_DESC_SIZE * num_blocks
     )
-    var device_tensormaps_sfb = ctx.enqueue_create_buffer[DType.uint8](
+    var device_tensormaps_sfb = ctx.enqueue_create_buffer[.uint8](
         TMA_DESC_SIZE * num_blocks
     )
-    var device_tensormaps_c = ctx.enqueue_create_buffer[DType.uint8](
+    var device_tensormaps_c = ctx.enqueue_create_buffer[.uint8](
         TMA_DESC_SIZE * num_blocks
     )
 
@@ -345,19 +345,19 @@ def grouped_block_scaled_matmul[
     # We copy the template descriptor to all block slots, then copy to device.
 
     # Create host buffers for tensormap initialization
-    var host_buf_a = ctx.enqueue_create_host_buffer[DType.uint8](
+    var host_buf_a = ctx.enqueue_create_host_buffer[.uint8](
         TMA_DESC_SIZE * num_blocks
     )
-    var host_buf_b = ctx.enqueue_create_host_buffer[DType.uint8](
+    var host_buf_b = ctx.enqueue_create_host_buffer[.uint8](
         TMA_DESC_SIZE * num_blocks
     )
-    var host_buf_sfa = ctx.enqueue_create_host_buffer[DType.uint8](
+    var host_buf_sfa = ctx.enqueue_create_host_buffer[.uint8](
         TMA_DESC_SIZE * num_blocks
     )
-    var host_buf_sfb = ctx.enqueue_create_host_buffer[DType.uint8](
+    var host_buf_sfb = ctx.enqueue_create_host_buffer[.uint8](
         TMA_DESC_SIZE * num_blocks
     )
-    var host_buf_c = ctx.enqueue_create_host_buffer[DType.uint8](
+    var host_buf_c = ctx.enqueue_create_host_buffer[.uint8](
         TMA_DESC_SIZE * num_blocks
     )
 

@@ -130,10 +130,10 @@ def sgemm_warp_tiling_kernel[
     # Use 4 to comply with f4 alignment used in accumulation.
     comptime sram_bank_padding_size = 4
     comptime BM_padded = BM + sram_bank_padding_size
-    var a_sram = stack_allocation[a_type, address_space=AddressSpace.SHARED](
+    var a_sram = stack_allocation[a_type, address_space=.SHARED](
         row_major[BK * BM_padded]()
     )
-    var b_sram = stack_allocation[b_type, address_space=AddressSpace.SHARED](
+    var b_sram = stack_allocation[b_type, address_space=.SHARED](
         row_major[BK * BN]()
     )
 
@@ -393,9 +393,9 @@ def bench_matmuls(mut m: Bench, ctx: DeviceContext) raises:
     for i in range(M * N):
         c_host_naive[i] = 0
 
-    var a_device = ctx.enqueue_create_buffer[DType.float32](M * K)
-    var b_device = ctx.enqueue_create_buffer[DType.float32](K * N)
-    var c_device = ctx.enqueue_create_buffer[DType.float32](M * N)
+    var a_device = ctx.enqueue_create_buffer[.float32](M * K)
+    var b_device = ctx.enqueue_create_buffer[.float32](K * N)
+    var c_device = ctx.enqueue_create_buffer[.float32](M * N)
 
     ctx.enqueue_copy(a_device, a_host)
     ctx.enqueue_copy(b_device, b_host)
@@ -428,9 +428,8 @@ def bench_matmuls(mut m: Bench, ctx: DeviceContext) raises:
         NUM_THREADS=K10_NUM_THREADS,
     ]
 
-    @__parameter
     @always_inline
-    def bench_matmul_10(mut b: Bencher):
+    def bench_matmul_10(mut b: Bencher) {imm}:
         @always_inline
         def run_func(ctx: DeviceContext) raises {imm}:
             ctx.enqueue_function[sgemm_type](
@@ -445,7 +444,8 @@ def bench_matmuls(mut m: Bench, ctx: DeviceContext) raises:
 
         bencher_iter_custom(b, run_func, ctx)
 
-    m.bench_function[bench_matmul_10](
+    m.bench_function(
+        bench_matmul_10,
         BenchId("matmul_sgemm_10"),
         [ThroughputMeasure(BenchMetric.elements, 2 * M * N * K)],
     )
@@ -458,9 +458,8 @@ def bench_matmuls(mut m: Bench, ctx: DeviceContext) raises:
     ctx.enqueue_copy(b_device, b_host)
     ctx.enqueue_copy(c_device, c_host_naive)
 
-    @__parameter
     @always_inline
-    def bench_naive(mut b: Bencher):
+    def bench_naive(mut b: Bencher) {imm}:
         @always_inline
         def run_func_naive(ctx: DeviceContext) raises {imm}:
             ctx.enqueue_function[matmul_naive](
@@ -476,7 +475,8 @@ def bench_matmuls(mut m: Bench, ctx: DeviceContext) raises:
 
         bencher_iter_custom(b, run_func_naive, ctx)
 
-    m.bench_function[bench_naive](
+    m.bench_function(
+        bench_naive,
         BenchId("matmul_naive"),
         # TODO: Pick relevant benchmetric
         [ThroughputMeasure(BenchMetric.elements, 2 * M * N * K)],

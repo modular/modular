@@ -115,11 +115,11 @@ def execute_ragged_paged_flash_attention[
         output_shape
     )
 
-    var input_row_offsets = ManagedLayoutTensor[
-        DType.uint32, row_offsets_layout
-    ](row_offsets_runtime_layout, ctx)
+    var input_row_offsets = ManagedLayoutTensor[.uint32, row_offsets_layout](
+        row_offsets_runtime_layout, ctx
+    )
     var cache_lengths_managed = ManagedLayoutTensor[
-        DType.uint32, cache_lengths_layout
+        .uint32, cache_lengths_layout
     ](cache_lengths_runtime_layout, ctx)
     var q_ragged = ManagedLayoutTensor[dtype, q_ragged_layout](
         q_ragged_runtime_layout, ctx
@@ -172,7 +172,7 @@ def execute_ragged_paged_flash_attention[
     var kv_block_paged = ManagedLayoutTensor[dtype, kv_block_6d_layout](
         kv_block_paged_runtime_layout, ctx
     )
-    var paged_lut = ManagedLayoutTensor[DType.uint32, paged_lut_layout](
+    var paged_lut = ManagedLayoutTensor[.uint32, paged_lut_layout](
         paged_lut_runtime_layout, ctx
     )
 

@@ -39,16 +39,16 @@ def _draw(
     seeds: List[UInt64],
 ) raises -> List[Int]:
     """Runs one launch and returns the drawn token per row."""
-    var probs_host = ctx.enqueue_create_host_buffer[DType.float32](rows * d)
-    var seeds_host = ctx.enqueue_create_host_buffer[DType.uint64](rows)
+    var probs_host = ctx.enqueue_create_host_buffer[.float32](rows * d)
+    var seeds_host = ctx.enqueue_create_host_buffer[.uint64](rows)
     for row in range(rows):
         for col in range(d):
             probs_host[row * d + col] = Float32(probs[row * d + col])
         seeds_host[row] = seeds[row]
 
-    var probs_dev = ctx.enqueue_create_buffer[DType.float32](rows * d)
-    var seeds_dev = ctx.enqueue_create_buffer[DType.uint64](rows)
-    var out_dev = ctx.enqueue_create_buffer[DType.int64](rows)
+    var probs_dev = ctx.enqueue_create_buffer[.float32](rows * d)
+    var seeds_dev = ctx.enqueue_create_buffer[.uint64](rows)
+    var out_dev = ctx.enqueue_create_buffer[.int64](rows)
     ctx.enqueue_copy(probs_dev, probs_host)
     ctx.enqueue_copy(seeds_dev, seeds_host)
 
@@ -61,7 +61,7 @@ def _draw(
         .as_immut(),
     )
 
-    var out_host = ctx.enqueue_create_host_buffer[DType.int64](rows)
+    var out_host = ctx.enqueue_create_host_buffer[.int64](rows)
     ctx.enqueue_copy(out_host, out_dev)
     ctx.synchronize()
 
@@ -188,8 +188,8 @@ def test_empty_batch(ctx: DeviceContext) raises:
     to verify, so the empty batch is a normal input.
     """
     comptime d = 1024
-    var probs_dev = ctx.enqueue_create_buffer[DType.float32](0)
-    var out_dev = ctx.enqueue_create_buffer[DType.int64](0)
+    var probs_dev = ctx.enqueue_create_buffer[.float32](0)
+    var out_dev = ctx.enqueue_create_buffer[.int64](0)
     gumbel_sampling_fused_gpu[from_probs=True](
         ctx,
         TileTensor(probs_dev, row_major(0, d)),

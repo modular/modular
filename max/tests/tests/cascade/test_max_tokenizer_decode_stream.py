@@ -25,9 +25,9 @@ from typing import cast
 
 import numpy as np
 import pytest
-from max.experimental.cascade.workers.max_tokenizer import (
+from max.experimental.cascade.workers.max_tokenizer import MAXTokenizer
+from max.experimental.cascade.workers.tokenizer_worker import (
     _REPLACEMENT_CHAR,
-    MAXTokenizer,
 )
 from transformers import PreTrainedTokenizerBase
 
@@ -72,7 +72,7 @@ async def _decode_stream(
 
     # A streaming worker_method returns the async iterator when called directly
     # on the instance (the proxy path returns a ResultIter handle instead).
-    stream = cast("AsyncIterator[str]", tok.decode_stream(token_iter()))
+    stream = cast("AsyncIterator[str]", tok.decode_stream(token_iter(), True))
     return [text async for text in stream]
 
 

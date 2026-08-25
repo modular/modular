@@ -48,7 +48,7 @@ comptime MutSpan[
     T: AnyType,
     origin: MutOrigin,
     *,
-    address_space: AddressSpace = AddressSpace.GENERIC,
+    address_space: AddressSpace = .GENERIC,
 ] = Span[T, origin, address_space=address_space]
 """A span providing mutable access to its elements.
 
@@ -62,7 +62,7 @@ comptime ImmSpan[
     T: AnyType,
     origin: ImmOrigin,
     *,
-    address_space: AddressSpace = AddressSpace.GENERIC,
+    address_space: AddressSpace = .GENERIC,
 ] = Span[T, origin, address_space=address_space]
 """A span providing read-only access to its elements.
 
@@ -164,24 +164,18 @@ struct Span[
     T: AnyType,
     origin: Origin[mut=mut],
     *,
-    address_space: AddressSpace = AddressSpace.GENERIC,
+    address_space: AddressSpace = .GENERIC,
 ](
     Boolable,
     Defaultable,
-    DevicePassable where address_space == AddressSpace.GENERIC,
-    Hashable where (
-        conforms_to(T, Hashable) and address_space == AddressSpace.GENERIC
-    ),
+    DevicePassable where address_space == .GENERIC,
+    Hashable where conforms_to(T, Hashable) and address_space == .GENERIC,
     ImplicitlyCopyable,
-    Iterable where address_space == AddressSpace.GENERIC,
-    IterableOwned where (
-        conforms_to(T, Copyable) and address_space == AddressSpace.GENERIC
-    ),
+    Iterable where address_space == .GENERIC,
+    IterableOwned where conforms_to(T, Copyable) and address_space == .GENERIC,
     Sized,
     TrivialRegisterPassable,
-    Writable where (
-        conforms_to(T, Writable) and address_space == AddressSpace.GENERIC
-    ),
+    Writable where conforms_to(T, Writable) and address_space == .GENERIC,
 ):
     """A non-owning view of contiguous data.
 
@@ -198,9 +192,7 @@ struct Span[
     ]
     """The immutable version of the `Span`."""
     comptime _PointerType = Pointer[
-        Self.T,
-        Self.origin,
-        address_space=Self.address_space,
+        Self.T, Self.origin, address_space=Self.address_space
     ]
     """The (safe) pointer type for this `Span`."""
     comptime IteratorType[
@@ -217,7 +209,7 @@ struct Span[
     ]
     """The owned iterator type for this `Span`."""
 
-    comptime _is_generic_as = Self.address_space == AddressSpace.GENERIC
+    comptime _is_generic_as = Self.address_space == .GENERIC
     """Whether this `Span` views the default (generic) address space.
 
     Most element-copying operations are only available on
@@ -937,7 +929,7 @@ struct Span[
         self: MutSpan[Scalar[dtype], _],
         func: Some[def[w: SIMDLength](SIMD[dtype, w]) -> SIMD[dtype, w]],
         *,
-        cond: Some[def[w: SIMDLength](SIMD[dtype, w]) -> SIMD[DType.bool, w]],
+        cond: Some[def[w: SIMDLength](SIMD[dtype, w]) -> SIMD[.bool, w]],
     ):
         """Apply the function to the `Span` inplace where the condition is
         `True`.
@@ -974,7 +966,7 @@ struct Span[
     def count[
         dtype: DType,
         //,
-        F: def[w: SIMDLength](v: SIMD[dtype, w]) -> SIMD[DType.bool, w],
+        F: def[w: SIMDLength](v: SIMD[dtype, w]) -> SIMD[.bool, w],
     ](self: Span[Scalar[dtype], _, address_space=_], func: F) -> Int:
         """Count the amount of times the function returns `True`.
 

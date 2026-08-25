@@ -25,7 +25,7 @@ from std.utils.numerics import get_accum_type
 @always_inline("nodebug")
 def _is_neg[
     dtype: DType, simd_width: SIMDLength
-](val: SIMD[dtype, simd_width]) -> SIMD[DType.bool, simd_width]:
+](val: SIMD[dtype, simd_width]) -> SIMD[.bool, simd_width]:
     """Returns True if the input value is negative.
 
     The value is computed separately for each element in the SIMD vector. For
@@ -44,7 +44,7 @@ def _is_neg[
     """
 
     comptime if dtype.is_unsigned():
-        return SIMD[DType.bool, simd_width](fill=False)
+        return SIMD[.bool, simd_width](fill=False)
     return val.lt(0)
 
 

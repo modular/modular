@@ -132,6 +132,8 @@ class Olmo2Config(
         devices: list[DeviceRef],
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
+        *,
+        allow_kv_head_replication: bool = False,
     ) -> KVCacheParams:
         """Olmo2 does not support data parallelism; use default grouped KV (no EAGLE)."""
         if pipeline_config.model.data_parallel_degree > 1:
@@ -144,6 +146,7 @@ class Olmo2Config(
             devices,
             kv_cache_config,
             cache_dtype,
+            allow_kv_head_replication=allow_kv_head_replication,
         )
 
     @staticmethod
@@ -166,6 +169,8 @@ class Olmo2Config(
         cls,
         pipeline_config: PipelineConfig,
         model_config: MAXModelConfig | None = None,
+        *,
+        max_seq_len: int,
     ) -> Self:
         model_config = model_config or pipeline_config.model
         huggingface_config = model_config.huggingface_config
@@ -201,9 +206,7 @@ class Olmo2Config(
             num_attention_heads=huggingface_config.num_attention_heads,
             num_key_value_heads=huggingface_config.num_key_value_heads,
             head_dim=Olmo2Config.get_head_dim(huggingface_config),
-            max_position_embeddings=cls.calculate_max_seq_len(
-                pipeline_config, huggingface_config, model_config
-            ),
+            max_position_embeddings=max_seq_len,
             rms_norm_eps=huggingface_config.rms_norm_eps,
             rope_theta=get_rope_theta(huggingface_config),
             attention_bias=getattr(huggingface_config, "attention_bias", False),

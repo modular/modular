@@ -50,7 +50,7 @@ def test_size_of() raises:
 
     assert_equal(size_of[DType.uint16](), 2)
 
-    assert_equal(size_of[SIMD[DType.int16, 2]](), 4)
+    assert_equal(size_of[SIMD[.int16, 2]](), 4)
 
 
 def test_align_of() raises:
@@ -62,7 +62,7 @@ def test_align_of() raises:
 
     assert_true(align_of[DType.uint16]() > 0)
 
-    assert_true(align_of[SIMD[DType.int16, 2]]() > 0)
+    assert_true(align_of[SIMD[.int16, 2]]() > 0)
 
 
 def test_cores() raises:

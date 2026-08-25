@@ -13,7 +13,7 @@
 
 
 def main():
-    var vector = SIMD[DType.int16, 4](1, 2, 3, 4)
+    var vector = SIMD[.int16, 4](1, 2, 3, 4)
     vector = vector * vector
     for i in range(4):
         print(vector[i], end=" ")
@@ -23,13 +23,13 @@ def main():
 
     # start-simd-usage-example
     # Make a vector of 4 floats.
-    var small_vec = SIMD[DType.float32, 4](1.0, 2.0, 3.0, 4.0)
+    var small_vec = SIMD[.float32, 4](1.0, 2.0, 3.0, 4.0)
 
     # Make a big vector containing 1.0 in float16 format.
-    var big_vec = SIMD[DType.float16, 32](1.0)
+    var big_vec = SIMD[.float16, 32](1.0)
 
     # Do some math and convert the elements to float32.
-    var bigger_vec = (big_vec + big_vec).cast[DType.float32]()
+    var bigger_vec = (big_vec + big_vec).cast[.float32]()
 
     # You can write types out explicitly if you want of course.
     var bigger_vec2: SIMD[DType.float32, 32] = bigger_vec
@@ -52,7 +52,7 @@ def main():
     ](x: SIMD[dt, width]) -> SIMD[dt, width]:
         return 1 / sqrt(x)
 
-    var v = SIMD[DType.float16, 4](42)
+    var v = SIMD[.float16, 4](42)
     print(rsqrt(v))
 
     _ = small_vec

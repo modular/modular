@@ -397,12 +397,9 @@ struct MLAPrefillSparseQKVFP8[
         n: Int
     ](
         p_smem: UnsafePointer[
-            mut=True,
-            Scalar[FP8_TYPE],
-            address_space=AddressSpace.SHARED,
-            ...,
+            mut=True, Scalar[FP8_TYPE], address_space=.SHARED, ...
         ],
-        nums: Array[Scalar[DType.float32], n],
+        nums: Array[Float32, n],
         query: UInt32,
         key_base: UInt32,
     ):
@@ -418,15 +415,15 @@ struct MLAPrefillSparseQKVFP8[
                 query * UInt32(Self.PV_BK) + local_key_base + UInt32(col_offset)
             )
             var phys = P_SW(logical)
-            var packed = SIMD[DType.uint32, 4](0)
+            var packed = SIMD[.uint32, 4](0)
             comptime for sub in range(4):
-                var f4 = SIMD[DType.float32, 4](
+                var f4 = SIMD[.float32, 4](
                     nums[g * 16 + sub * 4 + 0],
                     nums[g * 16 + sub * 4 + 1],
                     nums[g * 16 + sub * 4 + 2],
                     nums[g * 16 + sub * 4 + 3],
                 )
-                packed[sub] = bitcast[DType.uint32, 1](f4.cast[FP8_TYPE]())
+                packed[sub] = bitcast[.uint32, 1](f4.cast[FP8_TYPE]())
             st_shared_v4_b32(p_half_smem, phys, packed)
 
     # ------------------------------------------------------------------
@@ -439,18 +436,16 @@ struct MLAPrefillSparseQKVFP8[
         kv_tma_op: TMATensorTile[
             FP8_TYPE, 2, Self.kv_tile_shape, Self.kv_desc_shape
         ],
-        indices: TileTensor[
-            DType.uint32, address_space=AddressSpace.GENERIC, ...
-        ],
+        indices: TileTensor[.uint32, address_space=.GENERIC, ...],
         kv_lut: Self.KVLUTType,
         kv_smem_buf: UnsafePointer[
-            mut=True, Scalar[FP8_TYPE], address_space=AddressSpace.SHARED, ...
+            mut=True, Scalar[FP8_TYPE], address_space=.SHARED, ...
         ],
         d_indices_buf: UnsafePointer[
-            mut=True, Int32, address_space=AddressSpace.SHARED, ...
+            mut=True, Int32, address_space=.SHARED, ...
         ],
         kv_ready: UnsafePointer[
-            mut=True, SharedMemBarrier, address_space=AddressSpace.SHARED, ...
+            mut=True, SharedMemBarrier, address_space=.SHARED, ...
         ],
         k: UInt32,
         indices_base: UInt32,
@@ -529,18 +524,16 @@ struct MLAPrefillSparseQKVFP8[
         kv_tma_op: TMATensorTile[
             FP8_TYPE, 2, Self.kv_tile_shape, Self.kv_desc_shape
         ],
-        indices: TileTensor[
-            DType.uint32, address_space=AddressSpace.GENERIC, ...
-        ],
+        indices: TileTensor[.uint32, address_space=.GENERIC, ...],
         kv_lut: Self.KVLUTType,
         v_smem_buf: UnsafePointer[
-            mut=True, Scalar[FP8_TYPE], address_space=AddressSpace.SHARED, ...
+            mut=True, Scalar[FP8_TYPE], address_space=.SHARED, ...
         ],
         d_indices_buf: UnsafePointer[
-            mut=True, Int32, address_space=AddressSpace.SHARED, ...
+            mut=True, Int32, address_space=.SHARED, ...
         ],
         v_tma_done: UnsafePointer[
-            mut=True, SharedMemBarrier, address_space=AddressSpace.SHARED, ...
+            mut=True, SharedMemBarrier, address_space=.SHARED, ...
         ],
         k: UInt32,
         indices_base: UInt32,
@@ -635,13 +628,13 @@ struct MLAPrefillSparseQKVFP8[
     @staticmethod
     def _load_q_fp8(
         q_smem: UnsafePointer[
-            mut=True, Scalar[FP8_TYPE], address_space=AddressSpace.SHARED, ...
+            mut=True, Scalar[FP8_TYPE], address_space=.SHARED, ...
         ],
         q_tma_op: TMATensorTile[
             FP8_TYPE, 3, Self.q_tile_shape, Self.q_desc_shape
         ],
         prologue_q: UnsafePointer[
-            mut=True, SharedMemBarrier, address_space=AddressSpace.SHARED, ...
+            mut=True, SharedMemBarrier, address_space=.SHARED, ...
         ],
         seq_idx: UInt32,
         cta_id: UInt32,
@@ -731,8 +724,8 @@ struct MLAPrefillSparseQKVFP8[
         o_tma_op: TMATensorTile[
             Self.output_dtype, 2, Self.o_tile_shape, Self.o_desc_shape
         ],
-        topk_lengths: TileTensor[DType.uint32, TopKLengthLayout, MutAnyOrigin],
-        indices: TileTensor[DType.uint32, IndicesLayout, MutAnyOrigin],
+        topk_lengths: TileTensor[.uint32, TopKLengthLayout, MutAnyOrigin],
+        indices: TileTensor[.uint32, IndicesLayout, MutAnyOrigin],
         kv_lut: Self.KVLUTType,
         scale: Float32,
         attn_sink_ptr: Optional[UnsafePointer[Float32, ImmutAnyOrigin]],
@@ -755,101 +748,69 @@ struct MLAPrefillSparseQKVFP8[
             kv_tma_op.prefetch_descriptor()
 
         ref smem = external_memory[
-            UInt8, address_space=AddressSpace.SHARED, alignment=128
+            UInt8, address_space=.SHARED, alignment=128
         ]().bitcast[Self.SMemType]()[]
 
         var q_ptr = smem.q.unsafe_ptr()
         var kv_ptr: UnsafePointer[
-            Scalar[FP8_TYPE],
-            origin_of(smem.kv),
-            address_space=AddressSpace.SHARED,
+            Scalar[FP8_TYPE], origin_of(smem.kv), address_space=.SHARED
         ] = smem.kv.unsafe_ptr()
         var v_ptr: UnsafePointer[
-            Scalar[FP8_TYPE],
-            origin_of(smem.v),
-            address_space=AddressSpace.SHARED,
+            Scalar[FP8_TYPE], origin_of(smem.v), address_space=.SHARED
         ] = smem.v.unsafe_ptr()
         var p_ptr: UnsafePointer[
-            Scalar[FP8_TYPE],
-            origin_of(smem.p),
-            address_space=AddressSpace.SHARED,
+            Scalar[FP8_TYPE], origin_of(smem.p), address_space=.SHARED
         ] = smem.p.unsafe_ptr()
         var d_indices_ptr: UnsafePointer[
-            Int32,
-            origin_of(smem.d_indices),
-            address_space=AddressSpace.SHARED,
+            Int32, origin_of(smem.d_indices), address_space=.SHARED
         ] = smem.d_indices.unsafe_ptr()
         var d_indices_v_ptr: UnsafePointer[
-            Int32,
-            origin_of(smem.d_indices_v),
-            address_space=AddressSpace.SHARED,
+            Int32, origin_of(smem.d_indices_v), address_space=.SHARED
         ] = smem.d_indices_v.unsafe_ptr()
         var rowwise_max_ptr: UnsafePointer[
-            Float32,
-            origin_of(smem.rowwise_max),
-            address_space=AddressSpace.SHARED,
+            Float32, origin_of(smem.rowwise_max), address_space=.SHARED
         ] = smem.rowwise_max.unsafe_ptr()
         var rowwise_sum_ptr: UnsafePointer[
-            Float32,
-            origin_of(smem.rowwise_sum),
-            address_space=AddressSpace.SHARED,
+            Float32, origin_of(smem.rowwise_sum), address_space=.SHARED
         ] = smem.rowwise_sum.unsafe_ptr()
         var is_k_valid_ptr: UnsafePointer[
-            UInt8,
-            origin_of(smem.is_k_valid),
-            address_space=AddressSpace.SHARED,
+            UInt8, origin_of(smem.is_k_valid), address_space=.SHARED
         ] = smem.is_k_valid.unsafe_ptr()
         var tmem_addr_ptr = smem.tmem_addr.unsafe_ptr()
         var prologue_q_ptr = smem.prologue_q.unsafe_ptr()
         var qk_done_ptr: UnsafePointer[
-            SharedMemBarrier,
-            origin_of(smem.qk_done),
-            address_space=AddressSpace.SHARED,
+            SharedMemBarrier, origin_of(smem.qk_done), address_space=.SHARED
         ] = smem.qk_done.unsafe_ptr()
         var sv_done_ptr: UnsafePointer[
-            SharedMemBarrier,
-            origin_of(smem.sv_done),
-            address_space=AddressSpace.SHARED,
+            SharedMemBarrier, origin_of(smem.sv_done), address_space=.SHARED
         ] = smem.sv_done.unsafe_ptr()
         var kv_ready_ptr: UnsafePointer[
-            SharedMemBarrier,
-            origin_of(smem.kv_ready),
-            address_space=AddressSpace.SHARED,
+            SharedMemBarrier, origin_of(smem.kv_ready), address_space=.SHARED
         ] = smem.kv_ready.unsafe_ptr()
         var p_free_ptr: UnsafePointer[
-            SharedMemBarrier,
-            origin_of(smem.p_free),
-            address_space=AddressSpace.SHARED,
+            SharedMemBarrier, origin_of(smem.p_free), address_space=.SHARED
         ] = smem.p_free.unsafe_ptr()
         var so_ready_ptr: UnsafePointer[
-            SharedMemBarrier,
-            origin_of(smem.so_ready),
-            address_space=AddressSpace.SHARED,
+            SharedMemBarrier, origin_of(smem.so_ready), address_space=.SHARED
         ] = smem.so_ready.unsafe_ptr()
         var k_valid_ready_ptr: UnsafePointer[
             SharedMemBarrier,
             origin_of(smem.k_valid_ready),
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
         ] = smem.k_valid_ready.unsafe_ptr()
         var k_valid_free_ptr: UnsafePointer[
             SharedMemBarrier,
             origin_of(smem.k_valid_free),
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
         ] = smem.k_valid_free.unsafe_ptr()
         var k_ready_ptr: UnsafePointer[
-            SharedMemBarrier,
-            origin_of(smem.k_ready),
-            address_space=AddressSpace.SHARED,
+            SharedMemBarrier, origin_of(smem.k_ready), address_space=.SHARED
         ] = smem.k_ready.unsafe_ptr()
         var v_ready_ptr: UnsafePointer[
-            SharedMemBarrier,
-            origin_of(smem.v_ready),
-            address_space=AddressSpace.SHARED,
+            SharedMemBarrier, origin_of(smem.v_ready), address_space=.SHARED
         ] = smem.v_ready.unsafe_ptr()
         var v_tma_done_ptr: UnsafePointer[
-            SharedMemBarrier,
-            origin_of(smem.v_tma_done),
-            address_space=AddressSpace.SHARED,
+            SharedMemBarrier, origin_of(smem.v_tma_done), address_space=.SHARED
         ] = smem.v_tma_done.unsafe_ptr()
 
         if warp_idx == 0:
@@ -1052,40 +1013,40 @@ struct MLAPrefillSparseQKVFP8[
     @staticmethod
     def _mma(
         q_ptr: UnsafePointer[
-            mut=True, Scalar[FP8_TYPE], address_space=AddressSpace.SHARED, ...
+            mut=True, Scalar[FP8_TYPE], address_space=.SHARED, ...
         ],
         kv_ptr: UnsafePointer[
-            mut=True, Scalar[FP8_TYPE], address_space=AddressSpace.SHARED, ...
+            mut=True, Scalar[FP8_TYPE], address_space=.SHARED, ...
         ],
         p_ptr: UnsafePointer[
-            mut=True, Scalar[FP8_TYPE], address_space=AddressSpace.SHARED, ...
+            mut=True, Scalar[FP8_TYPE], address_space=.SHARED, ...
         ],
         prologue_q: UnsafePointer[
-            mut=True, SharedMemBarrier, address_space=AddressSpace.SHARED, ...
+            mut=True, SharedMemBarrier, address_space=.SHARED, ...
         ],
         kv_ready: UnsafePointer[
-            mut=True, SharedMemBarrier, address_space=AddressSpace.SHARED, ...
+            mut=True, SharedMemBarrier, address_space=.SHARED, ...
         ],
         v_ptr: UnsafePointer[
-            mut=True, Scalar[FP8_TYPE], address_space=AddressSpace.SHARED, ...
+            mut=True, Scalar[FP8_TYPE], address_space=.SHARED, ...
         ],
         k_ready: UnsafePointer[
-            mut=True, SharedMemBarrier, address_space=AddressSpace.SHARED, ...
+            mut=True, SharedMemBarrier, address_space=.SHARED, ...
         ],
         v_ready: UnsafePointer[
-            mut=True, SharedMemBarrier, address_space=AddressSpace.SHARED, ...
+            mut=True, SharedMemBarrier, address_space=.SHARED, ...
         ],
         qk_done: UnsafePointer[
-            mut=True, SharedMemBarrier, address_space=AddressSpace.SHARED, ...
+            mut=True, SharedMemBarrier, address_space=.SHARED, ...
         ],
         sv_done: UnsafePointer[
-            mut=True, SharedMemBarrier, address_space=AddressSpace.SHARED, ...
+            mut=True, SharedMemBarrier, address_space=.SHARED, ...
         ],
         so_ready: UnsafePointer[
-            mut=True, SharedMemBarrier, address_space=AddressSpace.SHARED, ...
+            mut=True, SharedMemBarrier, address_space=.SHARED, ...
         ],
         p_free: UnsafePointer[
-            mut=True, SharedMemBarrier, address_space=AddressSpace.SHARED, ...
+            mut=True, SharedMemBarrier, address_space=.SHARED, ...
         ],
         num_k_blocks: UInt32,
     ):
@@ -1217,40 +1178,40 @@ struct MLAPrefillSparseQKVFP8[
     @staticmethod
     def _softmax_epilogue(
         p_ptr: UnsafePointer[
-            mut=True, Scalar[FP8_TYPE], address_space=AddressSpace.SHARED, ...
+            mut=True, Scalar[FP8_TYPE], address_space=.SHARED, ...
         ],
         kv_ptr: UnsafePointer[
-            mut=True, Scalar[FP8_TYPE], address_space=AddressSpace.SHARED, ...
+            mut=True, Scalar[FP8_TYPE], address_space=.SHARED, ...
         ],
         rowwise_max_ptr: UnsafePointer[
-            mut=True, Float32, address_space=AddressSpace.SHARED, ...
+            mut=True, Float32, address_space=.SHARED, ...
         ],
         rowwise_sum_ptr: UnsafePointer[
-            mut=True, Float32, address_space=AddressSpace.SHARED, ...
+            mut=True, Float32, address_space=.SHARED, ...
         ],
         is_k_valid_ptr: UnsafePointer[
-            mut=True, UInt8, address_space=AddressSpace.SHARED, ...
+            mut=True, UInt8, address_space=.SHARED, ...
         ],
         sv_done_ptr: UnsafePointer[
-            mut=True, SharedMemBarrier, address_space=AddressSpace.SHARED, ...
+            mut=True, SharedMemBarrier, address_space=.SHARED, ...
         ],
         qk_done_ptr: UnsafePointer[
-            mut=True, SharedMemBarrier, address_space=AddressSpace.SHARED, ...
+            mut=True, SharedMemBarrier, address_space=.SHARED, ...
         ],
         p_free_ptr: UnsafePointer[
-            mut=True, SharedMemBarrier, address_space=AddressSpace.SHARED, ...
+            mut=True, SharedMemBarrier, address_space=.SHARED, ...
         ],
         so_ready_ptr: UnsafePointer[
-            mut=True, SharedMemBarrier, address_space=AddressSpace.SHARED, ...
+            mut=True, SharedMemBarrier, address_space=.SHARED, ...
         ],
         k_valid_ready_ptr: UnsafePointer[
-            mut=True, SharedMemBarrier, address_space=AddressSpace.SHARED, ...
+            mut=True, SharedMemBarrier, address_space=.SHARED, ...
         ],
         k_valid_free_ptr: UnsafePointer[
-            mut=True, SharedMemBarrier, address_space=AddressSpace.SHARED, ...
+            mut=True, SharedMemBarrier, address_space=.SHARED, ...
         ],
         tmem_addr_ptr: UnsafePointer[
-            mut=True, UInt32, address_space=AddressSpace.SHARED, ...
+            mut=True, UInt32, address_space=.SHARED, ...
         ],
         o_tma_op: TMATensorTile[
             Self.output_dtype, 2, Self.o_tile_shape, Self.o_desc_shape
@@ -1268,7 +1229,7 @@ struct MLAPrefillSparseQKVFP8[
         comptime MAX_INIT_VAL = Float32(-1e30)
         var mi: Float32 = MAX_INIT_VAL
         var li: Float32 = 0.0
-        var real_mi: Float32 = Float32(min_or_neg_inf[DType.float32]())
+        var real_mi: Float32 = Float32(min_or_neg_inf[.float32]())
 
         var scale_log2e = scale * Float32(log2e)
         comptime P_PER_THREAD = Self.B_TOPK // 2
@@ -1318,10 +1279,10 @@ struct MLAPrefillSparseQKVFP8[
                 comptime bit_idx = i % 8
                 var mask_byte = is_k_valid_ptr[mask_byte_base + byte_offset]
                 if ((mask_byte >> UInt8(bit_idx)) & UInt8(1)) == UInt8(0):
-                    p[i] = Float32(min_or_neg_inf[DType.float32]())
+                    p[i] = Float32(min_or_neg_inf[.float32]())
             _ = k_valid_free_ptr[cur_buf].arrive()
 
-            var cur_pi_max: Float32 = Float32(min_or_neg_inf[DType.float32]())
+            var cur_pi_max: Float32 = Float32(min_or_neg_inf[.float32]())
             comptime for i in range(P_PER_THREAD):
                 cur_pi_max = max(cur_pi_max, p[i])
             cur_pi_max = mul_ftz(cur_pi_max, scale_log2e)
@@ -1334,7 +1295,7 @@ struct MLAPrefillSparseQKVFP8[
             )
             real_mi = max(real_mi, cur_pi_max)
 
-            var should_scale_o = warp.vote[DType.uint32](
+            var should_scale_o = warp.vote[.uint32](
                 cur_pi_max - mi > Float32(-Self.RESCALE_THRESHOLD)
             ) != UInt32(0)
 
@@ -1349,9 +1310,7 @@ struct MLAPrefillSparseQKVFP8[
             mi = new_max
             li = mul_ftz(li, scale_for_old)
 
-            var nums = Array[Scalar[DType.float32], P_PER_THREAD](
-                uninitialized=True
-            )
+            var nums = Array[Float32, P_PER_THREAD](uninitialized=True)
             # +P_FP8_BIAS lifts P out of the e4m3 subnormal floor; it scales
             # `li` and every P uniformly and cancels in O/li (and in the biased
             # sink term below).  Overflow-safe: max P = exp2(|RESCALE_THRESHOLD|
@@ -1370,9 +1329,9 @@ struct MLAPrefillSparseQKVFP8[
                 var prev_phase = ((k - 1) / UInt32(Self.config.num_mbars)) & 1
                 sv_done_ptr[prev_buf].wait(prev_phase)
 
-            var o_chunk_prefetch = Array[
-                Scalar[DType.float32], O_RESCALE_CHUNK
-            ](uninitialized=True)
+            var o_chunk_prefetch = Array[Float32, O_RESCALE_CHUNK](
+                uninitialized=True
+            )
             if k > 0 and should_scale_o:
                 tcgen05_fence_after()
                 o_chunk_prefetch = tcgen05_ld[
@@ -1395,7 +1354,7 @@ struct MLAPrefillSparseQKVFP8[
 
             if k > 0 and should_scale_o:
                 tcgen05_load_wait()
-                var o_scaled_0 = Array[Scalar[DType.float32], O_RESCALE_CHUNK](
+                var o_scaled_0 = Array[Float32, O_RESCALE_CHUNK](
                     uninitialized=True
                 )
                 comptime for j in range(O_RESCALE_CHUNK):
@@ -1416,9 +1375,9 @@ struct MLAPrefillSparseQKVFP8[
                         + UInt32(chunk_idx * O_RESCALE_CHUNK)
                     )
                     tcgen05_load_wait()
-                    var o_scaled = Array[
-                        Scalar[DType.float32], O_RESCALE_CHUNK
-                    ](uninitialized=True)
+                    var o_scaled = Array[Float32, O_RESCALE_CHUNK](
+                        uninitialized=True
+                    )
                     comptime for j in range(O_RESCALE_CHUNK):
                         o_scaled[j] = mul_ftz(o_chunk[j], scale_for_old)
                     tcgen05_st[
@@ -1440,9 +1399,9 @@ struct MLAPrefillSparseQKVFP8[
             else:
                 _ = so_ready_ptr[cur_buf].arrive()
 
-        if real_mi == Float32(min_or_neg_inf[DType.float32]()):
+        if real_mi == Float32(min_or_neg_inf[.float32]()):
             li = 0.0
-            mi = Float32(min_or_neg_inf[DType.float32]())
+            mi = Float32(min_or_neg_inf[.float32]())
 
         rowwise_sum_ptr[idx_in_wg] = li
         named_barrier[Int32(WARPGROUP_SIZE)](Int32(0))
@@ -1474,7 +1433,7 @@ struct MLAPrefillSparseQKVFP8[
         else:
             output_scale = 1.0 / li
 
-        var have_valid_indices = warp.vote[DType.uint32](
+        var have_valid_indices = warp.vote[.uint32](
             li != Float32(0.0)
         ) != UInt32(0)
         if not have_valid_indices:
@@ -1562,13 +1521,11 @@ def mla_prefill_sparse_qkv_fp8[
     q_depth: Int,
     scale_block_size: Int,
 ](
-    output: TileTensor[output_dtype, address_space=AddressSpace.GENERIC, ...],
-    q: TileTensor[q_type, address_space=AddressSpace.GENERIC, ...],
+    output: TileTensor[output_dtype, address_space=.GENERIC, ...],
+    q: TileTensor[q_type, address_space=.GENERIC, ...],
     kv_cache: cache_t,
-    indices: TileTensor[DType.uint32, address_space=AddressSpace.GENERIC, ...],
-    topk_lengths: TileTensor[
-        DType.uint32, address_space=AddressSpace.GENERIC, ...
-    ],
+    indices: TileTensor[.uint32, address_space=.GENERIC, ...],
+    topk_lengths: TileTensor[.uint32, address_space=.GENERIC, ...],
     attn_sink_ptr: Optional[UnsafePointer[Float32, ImmutAnyOrigin]],
     scale: Float32,
     indices_stride: Int32,

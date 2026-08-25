@@ -23,32 +23,30 @@ def pool[
     count_boundary: Bool = False
 ](
     pool_method: PoolMethod,
-    output_tensor: TileTensor[mut=True, DType.float32, ...],
+    output_tensor: TileTensor[mut=True, .float32, ...],
 ) raises:
-    var in_stack = Array[Scalar[DType.float32], 2 * 5 * 7 * 2](
-        uninitialized=True
-    )
+    var in_stack = Array[Float32, 2 * 5 * 7 * 2](uninitialized=True)
     var input_tensor = TileTensor(in_stack, row_major[2, 5, 7, 2]())
     arange(input_tensor)
 
-    var paddings_stack = Array[Scalar[DType.int32], 4](uninitialized=True)
+    var paddings_stack = Array[Int32, 4](uninitialized=True)
     var paddings_tensor = TileTensor(paddings_stack, row_major[4]())
     paddings_tensor[0] = 0
     paddings_tensor[1] = 0
     paddings_tensor[2] = 0
     paddings_tensor[3] = 0
 
-    var filter_stack = Array[Scalar[DType.int32], 2](uninitialized=True)
+    var filter_stack = Array[Int32, 2](uninitialized=True)
     var filter_tensor = TileTensor(filter_stack, row_major[2]())
     filter_tensor[0] = 3
     filter_tensor[1] = 2
 
-    var stride_stack = Array[Scalar[DType.int32], 2](uninitialized=True)
+    var stride_stack = Array[Int32, 2](uninitialized=True)
     var stride_tensor = TileTensor(stride_stack, row_major[2]())
     stride_tensor[0] = 2
     stride_tensor[1] = 3
 
-    var dilation_stack = Array[Scalar[DType.int32], 2](uninitialized=True)
+    var dilation_stack = Array[Int32, 2](uninitialized=True)
     var dilation_tensor = TileTensor(dilation_stack, row_major[2]())
     dilation_tensor[0] = 1
     dilation_tensor[1] = 1
@@ -56,7 +54,7 @@ def pool[
     comptime simd_width = simd_width_of[DType.float32]()
 
     if pool_method == PoolMethod.MAX:
-        max_pool[int_type=DType.int32](
+        max_pool[int_type=.int32](
             input_tensor,
             filter_tensor,
             stride_tensor,
@@ -65,7 +63,7 @@ def pool[
             output_tensor,
         )
     else:
-        avg_pool[int_type=DType.int32, count_boundary=count_boundary](
+        avg_pool[int_type=.int32, count_boundary=count_boundary](
             input_tensor,
             filter_tensor,
             stride_tensor,
@@ -89,9 +87,7 @@ def test_max_pool_2d() raises:
     #   [[128., 129.],
     #    [134., 135.]]]])
 
-    var out_stack = Array[Scalar[DType.float32], 2 * 2 * 2 * 2](
-        uninitialized=True
-    )
+    var out_stack = Array[Float32, 2 * 2 * 2 * 2](uninitialized=True)
     var output_tensor = TileTensor(out_stack, row_major[2, 2, 2, 2]()).fill(0)
     pool(PoolMethod.MAX, output_tensor)
 
@@ -127,9 +123,7 @@ def test_avg_pool_2d() raises:
     #   [[113.0, 114.0],
     #    [119.0, 120.0]]]])
 
-    var out_stack = Array[Scalar[DType.float32], 2 * 2 * 2 * 2](
-        uninitialized=True
-    )
+    var out_stack = Array[Float32, 2 * 2 * 2 * 2](uninitialized=True)
     var output_tensor = TileTensor(out_stack, row_major[2, 2, 2, 2]()).fill(0)
     pool(PoolMethod.AVG, output_tensor)
 
@@ -153,38 +147,36 @@ def test_avg_pool_2d() raises:
 
 def test_avg_pool_2d_with_padding[
     count_boundary: Bool = False
-](output_tensor: TileTensor[mut=True, DType.float32, ...]) raises:
-    var in_stack = Array[Scalar[DType.float32], 1 * 7 * 7 * 1](
-        uninitialized=True
-    )
+](output_tensor: TileTensor[mut=True, .float32, ...]) raises:
+    var in_stack = Array[Float32, 1 * 7 * 7 * 1](uninitialized=True)
     var input_tensor = TileTensor(in_stack, row_major[1, 7, 7, 1]())
     arange(input_tensor)
 
-    var paddings_stack = Array[Scalar[DType.int32], 4](uninitialized=True)
+    var paddings_stack = Array[Int32, 4](uninitialized=True)
     var paddings_tensor = TileTensor(paddings_stack, row_major[4]())
     paddings_tensor[0] = 1
     paddings_tensor[1] = 1
     paddings_tensor[2] = 1
     paddings_tensor[3] = 1
 
-    var filter_stack = Array[Scalar[DType.int32], 2](uninitialized=True)
+    var filter_stack = Array[Int32, 2](uninitialized=True)
     var filter_tensor = TileTensor(filter_stack, row_major[2]())
     filter_tensor[0] = 3
     filter_tensor[1] = 3
 
-    var stride_stack = Array[Scalar[DType.int32], 2](uninitialized=True)
+    var stride_stack = Array[Int32, 2](uninitialized=True)
     var stride_tensor = TileTensor(stride_stack, row_major[2]())
     stride_tensor[0] = 1
     stride_tensor[1] = 1
 
-    var dilation_stack = Array[Scalar[DType.int32], 2](uninitialized=True)
+    var dilation_stack = Array[Int32, 2](uninitialized=True)
     var dilation_tensor = TileTensor(dilation_stack, row_major[2]())
     dilation_tensor[0] = 1
     dilation_tensor[1] = 1
 
     comptime simd_width = simd_width_of[DType.float32]()
 
-    avg_pool[int_type=DType.int32, count_boundary=count_boundary](
+    avg_pool[int_type=.int32, count_boundary=count_boundary](
         input_tensor,
         filter_tensor,
         stride_tensor,
@@ -197,9 +189,7 @@ def test_avg_pool_2d_with_padding[
 # CHECK-LABEL: test_avg_pool_2d_count_boundary: True
 def test_avg_pool_2d_with_padding_true() raises:
     print("== test_avg_pool_2d_count_boundary: True")
-    var out_stack = Array[Scalar[DType.float32], 1 * 7 * 7 * 1](
-        uninitialized=True
-    )
+    var out_stack = Array[Float32, 1 * 7 * 7 * 1](uninitialized=True)
     var output_tensor = TileTensor(out_stack, row_major[1, 7, 7, 1]()).fill(0)
     test_avg_pool_2d_with_padding[True](output_tensor)
 
@@ -257,9 +247,7 @@ def test_avg_pool_2d_with_padding_true() raises:
 # CHECK-LABEL: test_avg_pool_2d_count_boundary: False
 def test_avg_pool_2d_with_padding_false() raises:
     print("== test_avg_pool_2d_count_boundary: False")
-    var out_stack = Array[Scalar[DType.float32], 1 * 7 * 7 * 1](
-        uninitialized=True
-    )
+    var out_stack = Array[Float32, 1 * 7 * 7 * 1](uninitialized=True)
     var output_tensor = TileTensor(out_stack, row_major[1, 7, 7, 1]()).fill(0)
     test_avg_pool_2d_with_padding[False](output_tensor)
 
@@ -319,32 +307,30 @@ def pool_ceil_test[
     count_boundary: Bool = False, ceil_mode: Bool = True
 ](
     pool_method: PoolMethod,
-    output_tensor: TileTensor[mut=True, DType.float32, ...],
+    output_tensor: TileTensor[mut=True, .float32, ...],
 ) raises:
-    var in_stack = Array[Scalar[DType.float32], 1 * 4 * 4 * 1](
-        uninitialized=True
-    )
+    var in_stack = Array[Float32, 1 * 4 * 4 * 1](uninitialized=True)
     var input_tensor = TileTensor(in_stack, row_major[1, 4, 4, 1]())
     arange(input_tensor)
 
-    var paddings_stack = Array[Scalar[DType.int32], 4](uninitialized=True)
+    var paddings_stack = Array[Int32, 4](uninitialized=True)
     var paddings_tensor = TileTensor(paddings_stack, row_major[4]())
     paddings_tensor[0] = 0
     paddings_tensor[1] = 0
     paddings_tensor[2] = 0
     paddings_tensor[3] = 0
 
-    var filter_stack = Array[Scalar[DType.int32], 2](uninitialized=True)
+    var filter_stack = Array[Int32, 2](uninitialized=True)
     var filter_tensor = TileTensor(filter_stack, row_major[2]())
     filter_tensor[0] = 3
     filter_tensor[1] = 3
 
-    var stride_stack = Array[Scalar[DType.int32], 2](uninitialized=True)
+    var stride_stack = Array[Int32, 2](uninitialized=True)
     var stride_tensor = TileTensor(stride_stack, row_major[2]())
     stride_tensor[0] = 2
     stride_tensor[1] = 2
 
-    var dilation_stack = Array[Scalar[DType.int32], 2](uninitialized=True)
+    var dilation_stack = Array[Int32, 2](uninitialized=True)
     var dilation_tensor = TileTensor(dilation_stack, row_major[2]())
     dilation_tensor[0] = 1
     dilation_tensor[1] = 1
@@ -352,11 +338,11 @@ def pool_ceil_test[
     comptime simd_width = simd_width_of[DType.float32]()
 
     var output_shape = pool_shape_impl[
-        DType.float32,
-        DType.int32,
-        DType.int32,
-        DType.int32,
-        DType.int32,
+        .float32,
+        .int32,
+        .int32,
+        .int32,
+        .int32,
         ceil_mode,
     ](
         input_tensor,
@@ -367,7 +353,7 @@ def pool_ceil_test[
     )
 
     if pool_method == PoolMethod.MAX:
-        max_pool[int_type=DType.int32](
+        max_pool[int_type=.int32](
             input_tensor,
             filter_tensor,
             stride_tensor,
@@ -377,7 +363,7 @@ def pool_ceil_test[
             ceil_mode,
         )
     else:
-        avg_pool[int_type=DType.int32, count_boundary=count_boundary](
+        avg_pool[int_type=.int32, count_boundary=count_boundary](
             input_tensor,
             filter_tensor,
             stride_tensor,
@@ -391,9 +377,7 @@ def pool_ceil_test[
 # CHECK-LABEL: test_max_pool_2d_ceil
 def test_maxpool_2d_ceil() raises:
     print("== test_max_pool_2d_ceil")
-    var out_stack = Array[Scalar[DType.float32], 1 * 2 * 2 * 1](
-        uninitialized=True
-    )
+    var out_stack = Array[Float32, 1 * 2 * 2 * 1](uninitialized=True)
     var output_tensor = TileTensor(out_stack, row_major[1, 2, 2, 1]()).fill(0)
     pool_ceil_test(PoolMethod.MAX, output_tensor)
     assert_almost_equal(output_tensor[0, 0, 0, 0], 10.0000, atol=1e-4)
@@ -405,9 +389,7 @@ def test_maxpool_2d_ceil() raises:
 # CHECK-LABEL: test_average_pool_2d_ceil_exclude_bound
 def test_average_pool_2d_ceil_exclude_bound() raises:
     print("== test_average_pool_2d_ceil_exclude_bound")
-    var out_stack = Array[Scalar[DType.float32], 1 * 2 * 2 * 1](
-        uninitialized=True
-    )
+    var out_stack = Array[Float32, 1 * 2 * 2 * 1](uninitialized=True)
     var output_tensor = TileTensor(out_stack, row_major[1, 2, 2, 1]()).fill(0)
     pool_ceil_test(PoolMethod.AVG, output_tensor)
     assert_almost_equal(output_tensor[0, 0, 0, 0], 5.0000, atol=1e-4)
@@ -419,9 +401,7 @@ def test_average_pool_2d_ceil_exclude_bound() raises:
 # CHECK-LABEL: test_average_pool_2d_ceil_include_bound
 def test_average_pool_2d_ceil_include_bound() raises:
     print("== test_average_pool_2d_ceil_include_bound")
-    var out_stack = Array[Scalar[DType.float32], 1 * 2 * 2 * 1](
-        uninitialized=True
-    )
+    var out_stack = Array[Float32, 1 * 2 * 2 * 1](uninitialized=True)
     var output_tensor = TileTensor(out_stack, row_major[1, 2, 2, 1]()).fill(0)
     pool_ceil_test[True, True](PoolMethod.AVG, output_tensor)
     assert_almost_equal(output_tensor[0, 0, 0, 0], 5.0000, atol=1e-4)
@@ -434,42 +414,38 @@ def test_average_pool_2d_ceil_include_bound() raises:
 def test_max_pool_pad_dilation_2d() raises:
     print("== test_max_pool_pad_dilation_2d")
 
-    var in_stack = Array[Scalar[DType.float32], 1 * 4 * 4 * 1](
-        uninitialized=True
-    )
+    var in_stack = Array[Float32, 1 * 4 * 4 * 1](uninitialized=True)
     var input_tensor = TileTensor(in_stack, row_major[1, 4, 4, 1]())
     arange(input_tensor)
 
-    var out_stack = Array[Scalar[DType.float32], 1 * 1 * 3 * 1](
-        uninitialized=True
-    )
+    var out_stack = Array[Float32, 1 * 1 * 3 * 1](uninitialized=True)
     var output_tensor = TileTensor(out_stack, row_major[1, 1, 3, 1]()).fill(0)
 
-    var paddings_stack = Array[Scalar[DType.int32], 4](uninitialized=True)
+    var paddings_stack = Array[Int32, 4](uninitialized=True)
     var paddings_tensor = TileTensor(paddings_stack, row_major[4]())
     paddings_tensor[0] = 0
     paddings_tensor[1] = 0
     paddings_tensor[2] = 2
     paddings_tensor[3] = 0
 
-    var filter_stack = Array[Scalar[DType.int32], 2](uninitialized=True)
+    var filter_stack = Array[Int32, 2](uninitialized=True)
     var filter_tensor = TileTensor(filter_stack, row_major[2]())
     filter_tensor[0] = 2
     filter_tensor[1] = 2
 
-    var stride_stack = Array[Scalar[DType.int32], 2](uninitialized=True)
+    var stride_stack = Array[Int32, 2](uninitialized=True)
     var stride_tensor = TileTensor(stride_stack, row_major[2]())
     stride_tensor[0] = 1
     stride_tensor[1] = 1
 
-    var dilation_stack = Array[Scalar[DType.int32], 2](uninitialized=True)
+    var dilation_stack = Array[Int32, 2](uninitialized=True)
     var dilation_tensor = TileTensor(dilation_stack, row_major[2]())
     dilation_tensor[0] = 3
     dilation_tensor[1] = 3
 
     comptime simd_width = simd_width_of[DType.float32]()
 
-    max_pool[int_type=DType.int32](
+    max_pool[int_type=.int32](
         input_tensor,
         filter_tensor,
         stride_tensor,

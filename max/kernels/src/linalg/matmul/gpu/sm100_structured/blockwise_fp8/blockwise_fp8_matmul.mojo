@@ -99,7 +99,7 @@ def blockwise_fp8_matmul[
 
     comptime assert transpose_b, "Only support transposed B"
     comptime assert (
-        a_type == b_type and a_type == DType.float8_e4m3fn
+        a_type == b_type and a_type == .float8_e4m3fn
     ), "Only support float8_e4m3fn"
     comptime assert (
         a_scales_type == b_scales_type
@@ -176,6 +176,7 @@ def blockwise_fp8_matmul[
             Int32(corrected_config.cluster_shape[2]),
         ),
         n_scale_granularity=n_scale_granularity,
+        b_scales_storage=type_of(b_scales).Storage,
     ]
 
     # Create TMA descriptors using kernel's layout types

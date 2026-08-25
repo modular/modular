@@ -169,8 +169,8 @@ class TextGenerationPipeline(
                 requested without a valid tokenizer delegate.
         """
         self._pipeline_config = pipeline_config
-        self._max_batch_size = memory_plan.max_batch_size
-        max_batch_size = memory_plan.max_batch_size
+        self._max_batch_size = memory_plan.planned_max_batch_size
+        max_batch_size = memory_plan.planned_max_batch_size
         model_config: MAXModelConfig = pipeline_config.model
         huggingface_config = model_config.huggingface_config
         if huggingface_config is None:
@@ -234,6 +234,7 @@ class TextGenerationPipeline(
             if self._pipeline_config.model.enable_echo
             else ReturnLogits.LAST_TOKEN,
             max_batch_size=max_batch_size,
+            memory_plan=memory_plan,
         )
 
         available_cache_memory = memory_plan.available_cache_memory

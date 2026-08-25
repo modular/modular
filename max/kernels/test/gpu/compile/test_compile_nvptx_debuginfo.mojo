@@ -17,7 +17,7 @@ from max.gpu.host.compile import _compile_code
 
 def outer[y: Int]():
     @__parameter
-    def param[x: Int](y: SIMD[DType.float32, y], /):
+    def param[x: Int](y: SIMD[.float32, y], /):
         pass
 
     print(

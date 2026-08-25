@@ -51,12 +51,12 @@ def do_test[
     )
 
     var blocks_ptr = List(length=shape.flattened_length(), fill=Float32(0))
-    var blocks = LayoutTensor[DType.float32, Layout.row_major[6]()](
+    var blocks = LayoutTensor[.float32, Layout.row_major[6]()](
         blocks_ptr, RuntimeLayout[Layout.row_major[6]()].row_major(shape)
     )
     comptime layout_1d = Layout(UNKNOWN_VALUE)
     var cache_lengths_ptr = List(length=batch_size, fill=UInt32(0))
-    var cache_lengths = LayoutTensor[DType.uint32, layout_1d](
+    var cache_lengths = LayoutTensor[.uint32, layout_1d](
         cache_lengths_ptr,
         RuntimeLayout[layout_1d].row_major(IndexList[1](batch_size)),
     )
@@ -64,7 +64,7 @@ def do_test[
     var lookup_table_ptr = List(
         length=batch_size * max_num_blocks, fill=UInt32(0)
     )
-    var lookup_table = LayoutTensor[DType.uint32, layout_2d](
+    var lookup_table = LayoutTensor[.uint32, layout_2d](
         lookup_table_ptr,
         RuntimeLayout[layout_2d].row_major(
             IndexList[2](batch_size, max_num_blocks)
@@ -232,7 +232,7 @@ def test_paged_kv_cache_offset_correctness() raises:
     for i in range(total_elems):
         blocks_ptr[i] = Float32(i)
 
-    var blocks = LayoutTensor[DType.float32, Layout.row_major[6]()](
+    var blocks = LayoutTensor[.float32, Layout.row_major[6]()](
         blocks_ptr, RuntimeLayout[Layout.row_major[6]()].row_major(shape_6d)
     )
 
@@ -240,7 +240,7 @@ def test_paged_kv_cache_offset_correctness() raises:
     comptime batch_size = 1
     var cache_lengths_ptr = List(length=batch_size, fill=UInt32(0))
     comptime layout_1d = Layout(UNKNOWN_VALUE)
-    var cache_lengths = LayoutTensor[DType.uint32, layout_1d](
+    var cache_lengths = LayoutTensor[.uint32, layout_1d](
         cache_lengths_ptr,
         RuntimeLayout[layout_1d].row_major(IndexList[1](batch_size)),
     )
@@ -249,7 +249,7 @@ def test_paged_kv_cache_offset_correctness() raises:
     var lookup_table_ptr = List(length=batch_size * num_blocks, fill=UInt32(0))
     for i in range(num_blocks):
         lookup_table_ptr[i] = UInt32(i)  # Identity mapping
-    var lookup_table = LayoutTensor[DType.uint32, layout_2d](
+    var lookup_table = LayoutTensor[.uint32, layout_2d](
         lookup_table_ptr,
         RuntimeLayout[layout_2d].row_major(
             IndexList[2](batch_size, num_blocks)
@@ -260,21 +260,21 @@ def test_paged_kv_cache_offset_correctness() raises:
     var collection = PagedKVCacheCollection[
         DType.float32, kv_params_small, page_size
     ](
-        LayoutTensor[DType.float32, Layout.row_major[6]()](
+        LayoutTensor[.float32, Layout.row_major[6]()](
             blocks.ptr,
             RuntimeLayout[Layout.row_major[6]()](
                 blocks.runtime_layout.shape.value,
                 blocks.runtime_layout.stride.value,
             ),
         ),
-        LayoutTensor[mut=False, DType.uint32, Layout(UNKNOWN_VALUE)](
+        LayoutTensor[mut=False, .uint32, Layout(UNKNOWN_VALUE)](
             cache_lengths.ptr,
             RuntimeLayout[Layout(UNKNOWN_VALUE)](
                 cache_lengths.runtime_layout.shape.value,
                 cache_lengths.runtime_layout.stride.value,
             ),
         ),
-        LayoutTensor[mut=False, DType.uint32, Layout.row_major[2]()](
+        LayoutTensor[mut=False, .uint32, Layout.row_major[2]()](
             lookup_table.ptr,
             RuntimeLayout[Layout.row_major[2]()](
                 lookup_table.runtime_layout.shape.value,
@@ -316,7 +316,7 @@ def test_paged_kv_cache_offset_correctness() raises:
     # we'd compute wrong offset: 1*16 + 0*8 + 1*4 + 2 = 22 (wrong!)
 
     # Access via the blocks TileTensor - this tests the layout offset computation
-    var idx = dyn_coord[DType.int64]((1, 0, 1, 2))
+    var idx = dyn_coord[.int64]((1, 0, 1, 2))
     var value = key_cache.blocks.raw_load[width=1](key_cache.blocks.layout(idx))
     var expected_value = Float32(expected_6d_offset)
 
@@ -373,14 +373,14 @@ def test_scales_resolve_through_their_own_lookup_table() raises:
     var blocks_ptr = List(
         length=blocks_shape.flattened_length(), fill=Float32(0)
     )
-    var blocks = LayoutTensor[DType.float32, Layout.row_major[6]()](
+    var blocks = LayoutTensor[.float32, Layout.row_major[6]()](
         blocks_ptr,
         RuntimeLayout[Layout.row_major[6]()].row_major(blocks_shape),
     )
 
     comptime layout_1d = Layout(UNKNOWN_VALUE)
     var cache_lengths_ptr = List(length=batch_size, fill=UInt32(1))
-    var cache_lengths = LayoutTensor[DType.uint32, layout_1d](
+    var cache_lengths = LayoutTensor[.uint32, layout_1d](
         cache_lengths_ptr,
         RuntimeLayout[layout_1d].row_major(IndexList[1](batch_size)),
     )
@@ -397,7 +397,7 @@ def test_scales_resolve_through_their_own_lookup_table() raises:
     # Values resolve through block 0.
     var lookup_table_ptr = alloc[UInt32](batch_size)
     lookup_table_ptr[0] = UInt32(0)
-    var lookup_table = LayoutTensor[mut=False, DType.uint32, layout_2d](
+    var lookup_table = LayoutTensor[mut=False, .uint32, layout_2d](
         lookup_table_ptr,
         RuntimeLayout[layout_2d].row_major(IndexList[2](batch_size, 1)),
     )
@@ -407,8 +407,8 @@ def test_scales_resolve_through_their_own_lookup_table() raises:
     var scales_lookup_table_ptr = alloc[UInt32](batch_size)
     scales_lookup_table_ptr[0] = UInt32(2)
     var scales_lookup_table_opt: OptionalReg[
-        LayoutTensor[mut=False, DType.uint32, layout_2d, MutUntrackedOrigin]
-    ] = LayoutTensor[mut=False, DType.uint32, layout_2d](
+        LayoutTensor[mut=False, .uint32, layout_2d, MutUntrackedOrigin]
+    ] = LayoutTensor[mut=False, .uint32, layout_2d](
         scales_lookup_table_ptr,
         RuntimeLayout[layout_2d].row_major(IndexList[2](batch_size, 1)),
     )
@@ -417,7 +417,7 @@ def test_scales_resolve_through_their_own_lookup_table() raises:
         num_scale_blocks, 2, 1, page_size, kv_params_small.num_heads, 1
     )
     var scales_ptr = alloc[Float32](scales_shape.flattened_length())
-    var scales = LayoutTensor[DType.float32, Layout.row_major[6]()](
+    var scales = LayoutTensor[.float32, Layout.row_major[6]()](
         scales_ptr,
         RuntimeLayout[Layout.row_major[6]()].row_major(scales_shape),
     ).fill(Float32(-1.0))
@@ -428,7 +428,7 @@ def test_scales_resolve_through_their_own_lookup_table() raises:
     scales[2, 0, 0, 0, 0, 0] = Float32(222.0)
 
     var scales_opt: OptionalReg[
-        LayoutTensor[DType.float32, Layout.row_major[6](), MutUntrackedOrigin]
+        LayoutTensor[.float32, Layout.row_major[6](), MutUntrackedOrigin]
     ] = scales
 
     var collection = PagedKVCacheCollection[

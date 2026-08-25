@@ -27,11 +27,10 @@ def test_initialize_runtime_idempotent() raises:
     comptime N = 64
     var results = List[Int](length=N, fill=0)
 
-    @__parameter
-    def fill(i: Int):
+    def fill(i: Int) {mut results}:
         results[i] = i
 
-    parallelize[fill](N)
+    parallelize(fill, N)
 
     for i in range(N):
         assert_equal(results[i], i)

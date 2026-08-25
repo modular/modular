@@ -25,7 +25,7 @@ from std.utils import IndexList
 
 @always_inline
 def get_batch_from_row_offsets(
-    row_offsets: LayoutTensor[mut=False, DType.uint32, ...], tok_idx: Int
+    row_offsets: LayoutTensor[mut=False, .uint32, ...], tok_idx: Int
 ) -> Int:
     """Calculate the batch_idx for the given flattened token_idx using row_offsets.
     """
@@ -50,7 +50,7 @@ def get_batch_from_row_offsets(
 
 @always_inline
 def get_batch_from_row_offsets(
-    row_offsets: TileTensor[mut=False, DType.uint32, ...], tok_idx: Int
+    row_offsets: TileTensor[mut=False, .uint32, ...], tok_idx: Int
 ) -> Int:
     """Calculate the batch_idx for the given flattened token_idx using row_offsets.
     """
@@ -77,7 +77,7 @@ def get_batch_from_row_offsets(
 
 @always_inline
 def get_batch_and_token_idx_from_row_offsets(
-    row_offsets: TileTensor[mut=False, DType.uint32, ...], tok_idx: Int
+    row_offsets: TileTensor[mut=False, .uint32, ...], tok_idx: Int
 ) -> Tuple[Int, Int]:
     """Calculate the batch_idx for the given flattened token_idx using row_offsets.
     """
@@ -94,11 +94,11 @@ def merge_ragged_tensors[
     target: StaticString = "cpu",
 ](
     c: TileTensor[mut=True, dtype, ...],
-    c_row_offsets: TileTensor[mut=True, DType.uint32, ...],
+    c_row_offsets: TileTensor[mut=True, .uint32, ...],
     a: TileTensor[mut=False, dtype, ...],
-    a_row_offsets: TileTensor[mut=False, DType.uint32, ...],
+    a_row_offsets: TileTensor[mut=False, .uint32, ...],
     b: TileTensor[mut=False, dtype, ...],
-    b_row_offsets: TileTensor[mut=False, DType.uint32, ...],
+    b_row_offsets: TileTensor[mut=False, .uint32, ...],
     ctx: DeviceContext,
 ) raises:
     comptime assert c.flat_rank == rank, "c.flat_rank must equal rank"
@@ -202,7 +202,7 @@ def eagle_prefill_shift_tokens[
 ](
     output: TileTensor[mut=True, dtype, ...],
     tokens: TileTensor[mut=False, dtype, ...],
-    offsets: TileTensor[mut=False, DType.uint32, ...],
+    offsets: TileTensor[mut=False, .uint32, ...],
     shift_next_tokens: TileTensor[mut=False, dtype, ...],
     ctx: DeviceContext,
 ) raises:

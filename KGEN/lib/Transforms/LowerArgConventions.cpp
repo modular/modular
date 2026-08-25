@@ -235,7 +235,7 @@ insertAndUpdateConventions(SmallVectorImpl<ArgConvention> &conventions,
                            unsigned argConventionIndex, ArrayRef<Type> types,
                            int depth) {
   if (types.size() == 0) {
-    conventions[argConventionIndex] = ArgConvention::ReadReg;
+    conventions[argConventionIndex] = ArgConvention::ImmReg;
     return;
   }
   unsigned packSize = types.size();
@@ -244,14 +244,14 @@ insertAndUpdateConventions(SmallVectorImpl<ArgConvention> &conventions,
        i--)
     conventions[i] = conventions[i - (packSize - 1)];
   for (unsigned i = 0; i < packSize; ++i) {
-    ArgConvention newConvention = ArgConvention::ReadReg;
+    ArgConvention newConvention = ArgConvention::ImmReg;
     if (auto ptr = dyn_cast<PointerType>(types[i])) {
       // if the depth is 0 then this is a top level kgen.pack and we do not know
       // if it holds an address that is potentially written to.
       if (depth == 0)
         newConvention = ArgConvention::Mut;
       else if (!isa<KGEN::NoneType>(ptr.getElementType()))
-        newConvention = ArgConvention::ReadMem;
+        newConvention = ArgConvention::ImmMem;
     }
     conventions[argConventionIndex + i] = newConvention;
   }
@@ -276,12 +276,12 @@ static void transformNonResultValue(Transform *transform, unsigned operandIndex,
     if (Type indirected =
             lowering->getKernelArgIndirectionType(type, convention)) {
       transform->applyValueTransform(operandIndex, indirected);
-      conventions[argConventionIndex] = ArgConvention::ReadMem;
+      conventions[argConventionIndex] = ArgConvention::ImmMem;
     }
   }
 
   /// LOWER PTR
-  if (isa<PointerType>(type) && !(convention == ArgConvention::ReadMem ||
+  if (isa<PointerType>(type) && !(convention == ArgConvention::ImmMem ||
                                   convention == ArgConvention::OwnedMem ||
                                   convention == ArgConvention::DeinitMem))
     return;
@@ -293,7 +293,7 @@ static void transformNonResultValue(Transform *transform, unsigned operandIndex,
         (conventions[argConventionIndex] == ArgConvention::OwnedMem ||
          conventions[argConventionIndex] == ArgConvention::DeinitMem)
             ? ArgConvention::OwnedReg
-            : ArgConvention::ReadReg;
+            : ArgConvention::ImmReg;
     transformNonResultValue(transform, operandIndex, conventions,
                             argConventionIndex, isCABI, ++depth);
   }
@@ -301,7 +301,7 @@ static void transformNonResultValue(Transform *transform, unsigned operandIndex,
   /// LOWER PACK. Look for a kgen.struct with the "isParamPack" attribute.
   if (auto packStruct = getIfParamPack(type)) {
     if (convention != ArgConvention::OwnedReg &&
-        convention != ArgConvention::ReadReg)
+        convention != ArgConvention::ImmReg)
       return;
 
     auto variadic =
@@ -326,7 +326,7 @@ static void transformNonResultValue(Transform *transform, unsigned operandIndex,
     return;
   if (Type newArgTy = lowering->lowerKernelArgToMemory(type)) {
     transform->applyValueTransform(operandIndex, newArgTy);
-    conventions[argConventionIndex] = ArgConvention::ReadMem;
+    conventions[argConventionIndex] = ArgConvention::ImmMem;
   }
 }
 

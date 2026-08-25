@@ -72,7 +72,7 @@ class EmbeddingsPipeline(EmbeddingsPipelineType):
     ) -> None:
         del tokenizer  # Unused.
         self._pipeline_config = pipeline_config
-        self._max_batch_size = memory_plan.max_batch_size
+        self._max_batch_size = memory_plan.planned_max_batch_size
         self._weight_adapters = weight_adapters
         devices = load_devices(list(memory_plan.require_device_specs()))
         session = InferenceSession(devices=[*devices])
@@ -100,6 +100,7 @@ class EmbeddingsPipeline(EmbeddingsPipelineType):
                 weights_format(weight_paths), None
             ),
             return_logits=ReturnLogits.ALL,
+            memory_plan=memory_plan,
         )
 
     @property

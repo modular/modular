@@ -29,6 +29,7 @@ import numpy as np
 import pytest
 from max import _xgrammar as xgr
 from max._xgrammar.structural_tag import (
+    AnyTextFormat,
     ConstStringFormat,
     JSONSchemaFormat,
     OrFormat,
@@ -369,14 +370,17 @@ def test_oneof_two_branches_rejected() -> None:
         )
 
 
-def test_allof_two_nontrivial_branches_rejected() -> None:
-    # Two enforceable allOf members cannot be merged into one grammar.
-    with pytest.raises(Exception):
-        _compiler().compile_json_schema(
-            '{"allOf": [{"type": "string", "minLength": 1}, '
-            '{"type": "string", "maxLength": 10}]}',
-            reject_unsupported=True,
-        )
+def test_allof_two_nontrivial_branches_merged() -> None:
+    # Two enforceable members conjoin into one schema: the length bound each
+    # contributes is enforced, not just the first.
+    compiled = _compiler().compile_json_schema(
+        '{"allOf": [{"type": "string", "minLength": 2}, '
+        '{"type": "string", "maxLength": 3}]}',
+        reject_unsupported=True,
+    )
+    assert _accepts(compiled, '"ab"')
+    assert not _accepts(compiled, '"a"')
+    assert not _accepts(compiled, '"abab"')
 
 
 def test_allof_with_only_empty_branch_compiles() -> None:
@@ -400,11 +404,11 @@ def test_allof_with_false_member_rejected() -> None:
         _compiler().compile_json_schema('{"allOf": [false]}')
 
 
-def test_allof_with_additional_properties_rejected() -> None:
-    # Any additionalProperties sibling of an enforceable allOf is dropped by the
-    # exclusive dispatch and cannot be merged; reject it regardless of value
-    # (bool or schema) rather than emit a grammar looser than the schema.
-    for value in ("false", "true", '{"type": "string"}'):
+def test_allof_with_restricting_additional_properties_rejected() -> None:
+    # additionalProperties governs the keys ITS OWN object leaves unnamed. The
+    # base here names none, so it accepts only {}; folding the member's "a" in
+    # would make the merged schema accept an object the base forbids.
+    for value in ("false", '{"type": "string"}'):
         with pytest.raises(Exception):
             _compiler().compile_json_schema(
                 '{"type": "object", "allOf": [{"properties": {"a": {"type": '
@@ -413,15 +417,28 @@ def test_allof_with_additional_properties_rejected() -> None:
             )
 
 
-def test_allof_with_sibling_object_keyword_rejected() -> None:
-    # A non-additionalProperties object applicator (here required) sibling of an
-    # enforceable allOf is silently dropped by dispatch; reject the combination.
-    with pytest.raises(Exception):
-        _compiler().compile_json_schema(
-            '{"type": "object", "allOf": [{"properties": {"a": {"type": '
-            '"string"}}}], "required": ["a"]}',
-            reject_unsupported=True,
-        )
+def test_allof_with_open_additional_properties_merged() -> None:
+    # additionalProperties: true restricts nothing, so nothing is lost by
+    # folding the member's declared property in beside it.
+    compiled = _compiler().compile_json_schema(
+        '{"type": "object", "allOf": [{"properties": {"a": {"type": '
+        '"string"}}}], "additionalProperties": true}',
+        reject_unsupported=True,
+    )
+    assert _accepts(compiled, '{"a": "b"}')
+    assert not _accepts(compiled, '{"a": 1}')
+
+
+def test_allof_with_sibling_object_keyword_merged() -> None:
+    # A required sibling of an allOf binds the member's declared property: the
+    # merge is what makes the two visible to one ObjectSpec.
+    compiled = _compiler().compile_json_schema(
+        '{"type": "object", "allOf": [{"properties": {"a": {"type": '
+        '"string"}}}], "required": ["a"]}',
+        reject_unsupported=True,
+    )
+    assert _accepts(compiled, '{"a": "b"}')
+    assert not _accepts(compiled, "{}")
 
 
 def test_if_then_rejected() -> None:
@@ -1179,19 +1196,35 @@ def test_required_undeclared_key_open_object_compiles() -> None:
 
 
 def test_allof_other_sibling_keywords_rejected() -> None:
+    # Key-language siblings survive the merge only to be refused downstream:
+    # patternProperties and propertyNames would each need their key language
+    # intersected with the member's declared names, and unevaluatedProperties
+    # closes the base to keys the member declares.
     base = '{"type":"object","allOf":[{"properties":{"a":{"type":"string"}}}],'
     for sibling in (
-        '"properties":{"b":{"type":"string"}}',
         '"patternProperties":{"x.*":{"type":"string"}}',
         '"propertyNames":{"pattern":"a"}',
-        '"minProperties":1',
-        '"maxProperties":3',
         '"unevaluatedProperties":false',
     ):
         with pytest.raises(Exception):
             _compiler().compile_json_schema(
                 base + sibling + "}", reject_unsupported=True
             )
+
+
+def test_allof_countable_sibling_keywords_merged() -> None:
+    # A sibling that only counts or names properties composes with the member's
+    # declared set, so it merges.
+    base = '{"type":"object","allOf":[{"properties":{"a":{"type":"string"}}}],'
+    for sibling in (
+        '"properties":{"b":{"type":"string"}}',
+        '"minProperties":1',
+        '"maxProperties":3',
+    ):
+        compiled = _compiler().compile_json_schema(
+            base + sibling + "}", reject_unsupported=True
+        )
+        assert isinstance(compiled, xgr.CompiledGrammar)
 
 
 def test_allof_single_enforceable_branch_enforced() -> None:
@@ -1236,6 +1269,164 @@ def test_allof_active_conditional_member_rejected() -> None:
             '{"if": {"minLength": 5}, "then": {"pattern": "a"}}]}',
             reject_unsupported=True,
         )
+
+
+def test_allof_three_members_merged() -> None:
+    # Three object members, each contributing one required property: the fold
+    # has to union all three, not stop once it has merged a pair.
+    compiled = _compiler().compile_json_schema(
+        '{"allOf": ['
+        '{"type": "object", "properties": {"a": {"type": "integer"}}, '
+        '"required": ["a"]}, '
+        '{"type": "object", "properties": {"b": {"type": "integer"}}, '
+        '"required": ["b"]}, '
+        '{"type": "object", "properties": {"c": {"type": "integer"}}, '
+        '"required": ["c"]}]}',
+        reject_unsupported=True,
+    )
+    assert _accepts(compiled, '{"a": 1, "b": 1, "c": 1}')
+    assert not _accepts(compiled, '{"a": 1, "b": 1}')
+
+
+def test_allof_property_declared_by_two_members_intersected() -> None:
+    # A property both members declare must satisfy both declarations. The
+    # declarations become an allOf on that property, merged one level down.
+    compiled = _compiler().compile_json_schema(
+        '{"allOf": [{"type": "object", "properties": {"a": {"type": '
+        '"string"}}}, {"type": "object", "properties": {"a": {"minLength": '
+        '2}}}], "required": ["a"]}',
+        reject_unsupported=True,
+    )
+    assert _accepts(compiled, '{"a": "ab"}')
+    assert not _accepts(compiled, '{"a": "b"}')
+    assert not _accepts(compiled, '{"a": 11}')
+
+
+def test_allof_conflicting_type_rejected() -> None:
+    # No single "type" expresses the intersection, and this IR has no type
+    # intersection to fall back on.
+    with pytest.raises(Exception):
+        _compiler().compile_json_schema(
+            '{"allOf": [{"type": "string"}, {"type": "integer"}]}',
+            reject_unsupported=True,
+        )
+
+
+def test_allof_two_additional_properties_schemas_intersected() -> None:
+    # An unnamed key must satisfy both members' value schemas. The two become
+    # an allOf on that value, merged one level down, so both still bind. The
+    # boundary check is what makes this well defined: it has already refused
+    # any member whose declared names differ, so both govern the same keys.
+    compiled = _compiler().compile_json_schema(
+        '{"allOf": [{"type": "object", "additionalProperties": {"type": '
+        '"string"}}, {"type": "object", "additionalProperties": '
+        '{"minLength": 2}}]}',
+        reject_unsupported=True,
+    )
+    assert _accepts(compiled, '{"k": "ab"}')
+    assert not _accepts(compiled, '{"k": "a"}')
+    assert not _accepts(compiled, '{"k": 1}')
+
+
+def test_allof_additional_properties_false_closes_the_object() -> None:
+    # false accepts no value, so however the other member describes the unnamed
+    # keys the conjunction admits none: the merged object is closed.
+    for schema in (
+        '{"allOf": [{"type": "object", "additionalProperties": false}, '
+        '{"type": "object", "additionalProperties": {"type": "string"}}]}',
+        '{"allOf": [{"type": "object", "additionalProperties": {"type": '
+        '"string"}}, {"type": "object", "additionalProperties": false}]}',
+    ):
+        compiled = _compiler().compile_json_schema(
+            schema, reject_unsupported=True
+        )
+        assert _accepts(compiled, "{}")
+        assert not _accepts(compiled, '{"k": "ab"}')
+
+
+def test_allof_additional_properties_asymmetric_names_still_refused() -> None:
+    # The intersection above is only sound while both members govern the same
+    # keys, so a member that declares a name the other does not stays refused.
+    with pytest.raises(Exception, match="forbids unlisted properties"):
+        _compiler().compile_json_schema(
+            '{"allOf": [{"type": "object", "properties": {"x": {"type": '
+            '"string"}, "y": {"type": "string"}}, "additionalProperties": '
+            '{"type": "string"}}, {"type": "object", "properties": {"x": '
+            '{"type": "string"}}, "additionalProperties": {"minLength": 2}}]}',
+            reject_unsupported=True,
+        )
+
+
+def test_allof_property_forbidden_by_one_member_forbidden_in_merge() -> None:
+    # false accepts nothing, so a property one member forbids stays forbidden
+    # however the other declares it -- and required makes that unsatisfiable.
+    compiled = _compiler().compile_json_schema(
+        '{"allOf": [{"type": "object", "properties": {"a": {"type": '
+        '"string"}, "b": {"type": "string"}}}, {"type": "object", '
+        '"properties": {"a": false}}], "required": ["b"]}',
+        reject_unsupported=True,
+    )
+    assert _accepts(compiled, '{"b": "1"}')
+    assert not _accepts(compiled, '{"a": "1", "b": "1"}')
+
+    with pytest.raises(Exception):
+        _compiler().compile_json_schema(
+            '{"allOf": [{"type": "object", "properties": {"a": {"type": '
+            '"string"}}}, {"type": "object", "properties": {"a": false}}], '
+            '"required": ["a"]}',
+            reject_unsupported=True,
+        )
+
+
+def test_allof_under_restricting_unevaluated_properties_rejected() -> None:
+    # unevaluatedProperties is defined over what every applicator evaluated; a
+    # flat object no longer carries that, so the conjunction is not merged.
+    with pytest.raises(Exception):
+        _compiler().compile_json_schema(
+            '{"type": "object", "unevaluatedProperties": false, '
+            '"allOf": [{"required": ["b"]}]}',
+            reject_unsupported=True,
+        )
+
+
+def test_allof_pattern_and_length_from_two_members_rejected() -> None:
+    # The generator emits a string's pattern OR its length bounds, never both,
+    # so a merge that gathers them from two members would drop one silently.
+    with pytest.raises(Exception):
+        _compiler().compile_json_schema(
+            '{"allOf": [{"type": "string", "pattern": "a+"}, '
+            '{"type": "string", "minLength": 2}]}',
+            reject_unsupported=True,
+        )
+
+
+def test_allof_lone_ref_member_still_compiles() -> None:
+    # The pydantic wrapper shape, bare and with the annotation pydantic adds.
+    # $defs and description beside the $ref are bookkeeping, not competing
+    # constraints, so the merge leaves the ref alone and its target still binds.
+    defs = '{"$defs": {"s": {"type": "string", "minLength": 2}}, '
+    for tail in (
+        '"allOf": [{"$ref": "#/$defs/s"}]}',
+        '"allOf": [{"$ref": "#/$defs/s"}], "description": "wrapped"}',
+    ):
+        compiled = _compiler().compile_json_schema(
+            defs + tail, reject_unsupported=True
+        )
+        assert _accepts(compiled, '"ab"')
+        assert not _accepts(compiled, '"a"')
+
+
+def test_allof_ref_member_beside_other_constraint_enforced() -> None:
+    # Inlining the target removes the $ref before dispatch sees it, so the other
+    # member's constraint survives instead of being dropped.
+    compiled = _compiler().compile_json_schema(
+        '{"$defs": {"s": {"type": "string"}}, '
+        '"allOf": [{"$ref": "#/$defs/s"}, {"minLength": 2}]}',
+        reject_unsupported=True,
+    )
+    assert _accepts(compiled, '"ab"')
+    assert not _accepts(compiled, '"a"')
+    assert not _accepts(compiled, "1")
 
 
 def test_allof_zero_enforceable_with_object_sibling_compiles() -> None:
@@ -3117,3 +3308,269 @@ def test_gemma_4_property_names_with_additional_properties_false_rejects_key() -
     assert not _accept_ids(
         bad, _gemma_encode("<|tool_call>call:f{queryParams:{abc:")
     )
+
+
+def _excludes_vocab_compiler() -> xgr.GrammarCompiler:
+    # The shared _VOCAB has no c/d/e, and the exclude tries below need them.
+    # Insert before "<eos>" so it stays the last entry, as stop_token_ids below
+    # assumes.
+    vocab = [*_VOCAB[:-1], "c", "d", "e", "x", _VOCAB[-1]]
+    return xgr.GrammarCompiler(
+        xgr.TokenizerInfo(
+            vocab,
+            vocab_type=xgr.VocabType.RAW,
+            stop_token_ids=[len(vocab) - 1],
+        )
+    )
+
+
+def test_excludes_overlapping_prefixes() -> None:
+    # Back edges used to fall back only to the start state and its depth-one
+    # children, losing any suffix of length >= 2. Following "abc" down the "abce"
+    # branch forgot it had just read "bc", so "abcd" slipped past an exclude of
+    # "bcd" -- letting the model emit exactly what the grammar forbids.
+    tag = xgr.StructuralTag(format=AnyTextFormat(excludes=["bcd", "abce"]))
+    compiled = _excludes_vocab_compiler().compile_structural_tag(tag)
+
+    # "abcd" contains "bcd", so it must be rejected. This is the regression.
+    assert not _accepts(compiled, "abcd")
+    # The pattern that owns the branch is still excluded.
+    assert not _accepts(compiled, "abce")
+    # And a string containing neither is still accepted.
+    assert _accepts(compiled, "abxe")
+
+
+def test_excludes_match_beginning_inside_another_branch() -> None:
+    # The output-link half, a different defect from the failure-link one above:
+    # failure links decide where matching RESUMES, output links whether a pattern
+    # ENDED. With excludes {"ab", "xaby"}, "xab" walks the "xaby" branch and never
+    # lands on "ab"'s end state.
+    tag = xgr.StructuralTag(format=AnyTextFormat(excludes=["ab", "xaby"]))
+    compiled = _excludes_vocab_compiler().compile_structural_tag(tag)
+
+    assert not _accepts(compiled, "xab")
+    assert not _accepts(compiled, "ab")
+    # A string containing neither excluded pattern is still accepted.
+    assert _accepts(compiled, "xy")
+
+
+def test_excludes_output_links_are_transitive() -> None:
+    # The failure chain can pass through several states before reaching the
+    # excluded end, so the propagation has to close over itself: "zxab" fails
+    # to "xab", which is only a match because it fails to "ab".
+    tag = xgr.StructuralTag(
+        format=AnyTextFormat(excludes=["ab", "xaby", "zxabyy"])
+    )
+    compiled = _excludes_vocab_compiler().compile_structural_tag(tag)
+
+    assert not _accepts(compiled, "zxab")
+    assert not _accepts(compiled, "xab")
+    assert _accepts(compiled, "zxy")
+
+
+def test_allof_bare_ref_with_base_keyword_compiles() -> None:
+    # Unlike the lone-ref case above, the base here carries a real keyword, so
+    # the target and the base both become contributors. That is the conjunction
+    # the merge used to refuse rather than inline.
+    compiled = _compiler().compile_json_schema(
+        '{"type": "object", "definitions": {"addr": {"type": "object",'
+        ' "properties": {"street": {"type": "string"}},'
+        ' "required": ["street"]}},'
+        ' "allOf": [{"$ref": "#/definitions/addr"}]}',
+        reject_unsupported=True,
+    )
+    assert _accepts(compiled, '{"street": "a"}')
+    assert not _accepts(compiled, "{}")
+
+
+def test_allof_ref_plus_extension_unions_required() -> None:
+    # The OpenAPI inheritance idiom. Both members name a required key, so the
+    # merge has to union them rather than let one win.
+    compiled = _compiler().compile_json_schema(
+        '{"definitions": {"addr": {"type": "object", "properties":'
+        ' {"street": {"type": "string"}}, "required": ["street"]}},'
+        ' "allOf": [{"$ref": "#/definitions/addr"},'
+        ' {"properties": {"zip": {"type": "string"}}, "required": ["zip"]}]}',
+        reject_unsupported=True,
+    )
+    assert _accepts(compiled, '{"street": "a", "zip": "1"}')
+    assert not _accepts(compiled, '{"street": "a"}')
+    assert not _accepts(compiled, '{"zip": "1"}')
+
+
+def test_allof_nested_and_flat_spellings_agree() -> None:
+    # Wrapping a member in its own allOf says nothing new, so the grammar must not
+    # change. The flatten is one pass for this reason: a second pass merges the
+    # nested member into an already-merged object, and since the object grammar
+    # fixes one key order, the two spellings would demand different orders.
+    flat = (
+        '{"type": "object", "allOf": ['
+        '{"properties": {"a": {"type": "string"}}, "required": ["a"]},'
+        '{"properties": {"b": {"type": "string"}}, "required": ["b"]}]}'
+    )
+    nested = (
+        '{"type": "object", "allOf": ['
+        '{"allOf": [{"properties": {"a": {"type": "string"}},'
+        ' "required": ["a"]}]},'
+        '{"properties": {"b": {"type": "string"}}, "required": ["b"]}]}'
+    )
+    doc = '{"a": "x", "b": "y"}'
+    for schema in (flat, nested):
+        compiled = _compiler().compile_json_schema(
+            schema, reject_unsupported=True
+        )
+        assert _accepts(compiled, doc)
+
+
+def test_allof_recursive_ref_refused() -> None:
+    # Inlining a definition that reaches itself does not terminate.
+    with pytest.raises(Exception, match="reaches itself"):
+        _compiler().compile_json_schema(
+            '{"definitions": {"node": {"type": "object",'
+            ' "allOf": [{"$ref": "#/definitions/node"}]}},'
+            ' "allOf": [{"$ref": "#/definitions/node"}]}',
+            reject_unsupported=True,
+        )
+
+
+def test_allof_ref_with_sibling_constraint_still_refused() -> None:
+    # Only a BARE $ref inlines. A $ref carrying a sibling constraint is the shape
+    # where draft 7 ignores the sibling and 2019-09 conjoins it.
+    with pytest.raises(Exception, match='combines "\\$ref"'):
+        _compiler().compile_json_schema(
+            '{"definitions": {"addr": {"type": "object", "properties":'
+            ' {"street": {"type": "string"}}}},'
+            ' "allOf": [{"$ref": "#/definitions/addr", "minProperties": 2},'
+            ' {"properties": {"zip": {"type": "string"}}}]}',
+            reject_unsupported=True,
+        )
+
+
+# Two definitions whose names collide unless RFC 6901 escapes are decoded: the
+# pointer "#/$defs/a~1b" names "a/b", and "#/$defs/a~01b" names "a~1b".
+_ESCAPED_KEY_DEFS = (
+    '"$defs": {"a/b": {"type": "object",'
+    ' "properties": {"x": {"type": "string"}}, "required": ["x"]},'
+    ' "a~1b": {"type": "object",'
+    ' "properties": {"y": {"type": "string"}}, "required": ["y"]}}'
+)
+
+
+def test_allof_ref_pointer_decodes_escaped_slash() -> None:
+    # "~1" is "/", so the inlined target is the "a/b" definition. Comparing the
+    # token literally would inline "a~1b" and enforce the wrong schema.
+    compiled = _compiler().compile_json_schema(
+        '{"type": "object", '
+        + _ESCAPED_KEY_DEFS
+        + ', "allOf": [{"$ref": "#/$defs/a~1b"}]}',
+        reject_unsupported=True,
+    )
+    assert _accepts(compiled, '{"x": "a"}')
+    assert not _accepts(compiled, '{"y": "a"}')
+
+
+def test_allof_ref_pointer_decodes_escaped_tilde() -> None:
+    # The decoy of the test above: "~0" is "~", so "a~01b" names the literal
+    # "a~1b" definition, the one the undecoded comparison would have picked.
+    compiled = _compiler().compile_json_schema(
+        '{"type": "object", '
+        + _ESCAPED_KEY_DEFS
+        + ', "allOf": [{"$ref": "#/$defs/a~01b"}]}',
+        reject_unsupported=True,
+    )
+    assert _accepts(compiled, '{"y": "a"}')
+    assert not _accepts(compiled, '{"x": "a"}')
+
+
+def test_allof_ref_pointer_empty_token_names_empty_key() -> None:
+    # An empty reference token names the "" member, so "#/$defs/" is a pointer
+    # two levels deep, not a one-level pointer with a stray separator.
+    compiled = _compiler().compile_json_schema(
+        '{"type": "object", "$defs": {"": {"type": "object",'
+        ' "properties": {"x": {"type": "string"}}, "required": ["x"]}},'
+        ' "allOf": [{"$ref": "#/$defs/"}]}',
+        reject_unsupported=True,
+    )
+    assert _accepts(compiled, '{"x": "a"}')
+
+
+def test_allof_ref_pointer_malformed_escape_refused() -> None:
+    # A "~" carries "0" or "1" and nothing else, so "a~2b" resolves to no
+    # target and the $ref survives the merge for the dispatch check to refuse.
+    with pytest.raises(Exception, match='combines "\\$ref"'):
+        _compiler().compile_json_schema(
+            '{"type": "object", '
+            + _ESCAPED_KEY_DEFS
+            + ', "allOf": [{"$ref": "#/$defs/a~2b"}]}',
+            reject_unsupported=True,
+        )
+
+
+def test_allof_ref_pointer_through_array_refused() -> None:
+    # The walk traverses object members only, so a pointer that indexes an array
+    # resolves to no target rather than to a guessed element.
+    with pytest.raises(Exception, match='combines "\\$ref"'):
+        _compiler().compile_json_schema(
+            '{"type": "object", "$defs": {"list": [{"type": "object",'
+            ' "properties": {"x": {"type": "string"}}, "required": ["x"]}]},'
+            ' "allOf": [{"$ref": "#/$defs/list/0"}]}',
+            reject_unsupported=True,
+        )
+
+
+def test_allof_ref_under_nested_id_refused() -> None:
+    # An "$id" below the root starts a new base URI, and a "#/..." $ref then
+    # points into that resource rather than into the document. The merge does
+    # not track base URIs, so it refuses instead of resolving against the root.
+    with pytest.raises(Exception, match='resolves against an "\\$id"'):
+        _compiler().compile_json_schema(
+            '{"type": "object", "$defs": {"s": {"$id": "https://example.com/s",'
+            ' "type": "object", "properties": {"x": {"type": "string"}},'
+            ' "required": ["x"]}},'
+            ' "allOf": [{"$ref": "#/$defs/s"}]}',
+            reject_unsupported=True,
+        )
+
+
+def test_allof_ref_beside_id_refused() -> None:
+    # "$id" on the member holding the $ref rebases that $ref itself, which the
+    # bare-ref test would otherwise wave through as a mere annotation.
+    with pytest.raises(Exception, match='resolves against an "\\$id"'):
+        _compiler().compile_json_schema(
+            '{"type": "object", "$defs": {"s": {"type": "object",'
+            ' "properties": {"x": {"type": "string"}}, "required": ["x"]}},'
+            ' "allOf": [{"$ref": "#/$defs/s",'
+            ' "$id": "https://example.com/other"}]}',
+            reject_unsupported=True,
+        )
+
+
+def test_allof_ref_under_root_id_still_inlines() -> None:
+    # The root's own "$id" names the document, so a "#/..." $ref still points
+    # into it. Refusing this shape would reject the common annotated schema.
+    compiled = _compiler().compile_json_schema(
+        '{"$id": "https://example.com/root", "type": "object",'
+        ' "$defs": {"s": {"type": "object",'
+        ' "properties": {"x": {"type": "string"}}, "required": ["x"]}},'
+        ' "allOf": [{"$ref": "#/$defs/s"}]}',
+        reject_unsupported=True,
+    )
+    assert _accepts(compiled, '{"x": "a"}')
+    assert not _accepts(compiled, "{}")
+
+
+def test_allof_empty_schema_does_not_close_the_object() -> None:
+    # `additionalProperties: {}` imposes nothing, so it does not close the object
+    # and the merge may proceed. Only `false` closes it.
+    compiled = _compiler().compile_json_schema(
+        '{"type": "object", "additionalProperties": {},'
+        ' "allOf": [{"properties": {"a": {"type": "string"}}}]}',
+        reject_unsupported=True,
+    )
+    assert _accepts(compiled, '{"a": "x"}')
+    with pytest.raises(Exception, match="forbids unlisted properties"):
+        _compiler().compile_json_schema(
+            '{"type": "object", "additionalProperties": false,'
+            ' "allOf": [{"properties": {"a": {"type": "string"}}}]}',
+            reject_unsupported=True,
+        )

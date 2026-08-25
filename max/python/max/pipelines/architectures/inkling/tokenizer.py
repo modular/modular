@@ -16,6 +16,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+import numpy as np
+import numpy.typing as npt
 from max.pipelines.lib import TextAndVisionTokenizer
 from max.pipelines.lib.tokenizer import resolve_single_special_token
 from transformers import AutoTokenizer
@@ -29,6 +31,10 @@ if TYPE_CHECKING:
 _THINKING_START_TOKEN = "<|content_thinking|>"
 _END_MESSAGE_TOKEN = "<|end_message|>"
 
+# Opens the JSON payload of a tool call. The tool parser matches this exact
+# string, so it has to survive detokenization.
+TOOL_CALL_JSON_MARKER = "<|content_invoke_tool_json|>"
+
 
 class InklingTokenizer(TextAndVisionTokenizer):
     """Tokenizer for Inkling, whose own ``AutoProcessor`` class is not shipped
@@ -38,6 +44,11 @@ class InklingTokenizer(TextAndVisionTokenizer):
     ``ReasoningPipelineTokenizer`` protocol that
     ``OverlapTextGenerationPipeline`` requires of any architecture that names a
     reasoning parser.
+
+    ``skipped_special_token_ids`` opts the streaming detokenizer into a per-id
+    filter so ``<|content_invoke_tool_json|>`` survives decode for the tool
+    parser. Only that marker: a request without ``tools`` runs no tool parser,
+    so anything else kept here leaks verbatim into ``message.content``.
     """
 
     def __init__(
@@ -87,6 +98,13 @@ class InklingTokenizer(TextAndVisionTokenizer):
             self.delegate, _END_MESSAGE_TOKEN
         )
 
+        tool_call_json_id = resolve_single_special_token(
+            self.delegate, TOOL_CALL_JSON_MARKER
+        )
+        self.skipped_special_token_ids: set[int] = set(
+            self.delegate.all_special_ids
+        ) - {tool_call_json_id}
+
     @property
     def reasoning_start_token_id(self) -> int:
         """Token id of ``<|content_thinking|>``."""
@@ -96,3 +114,27 @@ class InklingTokenizer(TextAndVisionTokenizer):
     def reasoning_end_token_id(self) -> int:
         """Token id of ``<|end_message|>``."""
         return self._reasoning_end_token_id
+
+    async def decode(
+        self, encoded: npt.NDArray[np.integer[Any]] | int, **kwargs
+    ) -> str:
+        """Decodes tokens, dropping every special id except the tool-call marker.
+
+        ``skip_special_tokens=True`` would drop the marker too, so filter by id
+        here and decode with the flag off.
+        """
+        # Log-probability responses decode a single token id (a plain int).
+        token_ids = np.atleast_1d(np.asarray(encoded))
+
+        if not kwargs.get("skip_special_tokens", True):
+            return await super().decode(token_ids, **kwargs)
+
+        filtered_ids = [
+            token_id
+            for token_id in token_ids.tolist()
+            if token_id not in self.skipped_special_token_ids
+        ]
+        return await super().decode(
+            np.array(filtered_ids, dtype=np.int64),
+            **{**kwargs, "skip_special_tokens": False},
+        )

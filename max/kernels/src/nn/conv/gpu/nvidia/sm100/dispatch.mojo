@@ -130,9 +130,7 @@ def dispatch_sm100_conv2d[
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     has_residual: Bool = False,
 ](
-    input: TileTensor[
-        mut=True, input_type, address_space=AddressSpace.GENERIC, ...
-    ],
+    input: TileTensor[mut=True, input_type, address_space=.GENERIC, ...],
     filter: TileTensor[filter_type, ...],
     output: TileTensor[mut=True, output_type, ...],
     symmetric_padding: IndexList[2],
@@ -173,7 +171,7 @@ def dispatch_sm100_conv2d[
     comptime assert filter.flat_rank == 4, "filter must be rank 4"
     comptime assert output.flat_rank == 4, "output must be rank 4 (NHWC)"
 
-    comptime if input_type == DType.bfloat16:
+    comptime if input_type == .bfloat16:
         from .conv2d import conv2d_fprop, conv2d_fprop_with_residual
         from .conv_config import Conv2dConfig, Conv2dProblemShape
 

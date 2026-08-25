@@ -55,7 +55,7 @@ from linalg.matmul.gpu.apple.matmul2d_fp8 import enqueue_matmul2d_fp8
 
 
 def _fill_random_fp8_weight(
-    weight: HostBuffer[DType.float8_e4m3fn],
+    weight: HostBuffer[.float8_e4m3fn],
     N: Int,
     K: Int,
 ):
@@ -66,15 +66,15 @@ def _fill_random_fp8_weight(
     the matmul output magnitude is sane for the bf16 MMA path.
     """
     for i in range(N * K):
-        weight[i] = (random_float64() * 8.0 - 4.0).cast[DType.float8_e4m3fn]()
+        weight[i] = (random_float64() * 8.0 - 4.0).cast[.float8_e4m3fn]()
 
 
 def _check_vs_host_ref[
     c_type: DType
 ](
     out_host: HostBuffer[c_type],
-    act_host: HostBuffer[DType.bfloat16],
-    weight_host: HostBuffer[DType.float8_e4m3fn],
+    act_host: HostBuffer[.bfloat16],
+    weight_host: HostBuffer[.float8_e4m3fn],
     M: Int,
     N: Int,
     K: Int,
@@ -94,7 +94,7 @@ def _check_vs_host_ref[
             var acc = Float32(0)
             for k in range(K):
                 var av = Float32(act_host[i * K + k])
-                var wv = weight_host[j * K + k].cast[DType.float32]()
+                var wv = weight_host[j * K + k].cast[.float32]()
                 acc += av * wv
             var got = Float32(out_host[i * N + j])
             if abs(got - acc) > Float32(1e-2) + Float32(1.6e-2) * abs(acc):
@@ -117,15 +117,15 @@ def _run_fp8_matmul[
     print("== fp8-matmul", name, M, "x", N, "x", K, "c_type", c_type)
 
     # Host inputs.
-    var act_host = ctx.enqueue_create_host_buffer[DType.bfloat16](M * K)
-    var weight_host = ctx.enqueue_create_host_buffer[DType.float8_e4m3fn](N * K)
+    var act_host = ctx.enqueue_create_host_buffer[.bfloat16](M * K)
+    var weight_host = ctx.enqueue_create_host_buffer[.float8_e4m3fn](N * K)
     for i in range(M * K):
-        act_host[i] = random_si64(Int64(-2), Int64(2)).cast[DType.bfloat16]()
+        act_host[i] = random_si64(Int64(-2), Int64(2)).cast[.bfloat16]()
     _fill_random_fp8_weight(weight_host, N, K)
 
     # Device buffers.
-    var act_dev = ctx.enqueue_create_buffer[DType.bfloat16](M * K)
-    var weight_dev = ctx.enqueue_create_buffer[DType.float8_e4m3fn](N * K)
+    var act_dev = ctx.enqueue_create_buffer[.bfloat16](M * K)
+    var weight_dev = ctx.enqueue_create_buffer[.float8_e4m3fn](N * K)
     var out_dev = ctx.enqueue_create_buffer[c_type](M * N)
     ctx.enqueue_copy(act_dev, act_host)
     ctx.enqueue_copy(weight_dev, weight_host)
@@ -162,14 +162,14 @@ def _run_fp8_gemv_direct[
     """
     print("== fp8-gemv", name, "1 x", N, "x", K, "c_type", c_type)
 
-    var act_host = ctx.enqueue_create_host_buffer[DType.bfloat16](K)
-    var weight_host = ctx.enqueue_create_host_buffer[DType.float8_e4m3fn](N * K)
+    var act_host = ctx.enqueue_create_host_buffer[.bfloat16](K)
+    var weight_host = ctx.enqueue_create_host_buffer[.float8_e4m3fn](N * K)
     for i in range(K):
-        act_host[i] = random_si64(Int64(-2), Int64(2)).cast[DType.bfloat16]()
+        act_host[i] = random_si64(Int64(-2), Int64(2)).cast[.bfloat16]()
     _fill_random_fp8_weight(weight_host, N, K)
 
-    var act_dev = ctx.enqueue_create_buffer[DType.bfloat16](K)
-    var weight_dev = ctx.enqueue_create_buffer[DType.float8_e4m3fn](N * K)
+    var act_dev = ctx.enqueue_create_buffer[.bfloat16](K)
+    var weight_dev = ctx.enqueue_create_buffer[.float8_e4m3fn](N * K)
     var out_dev = ctx.enqueue_create_buffer[c_type](N)
     ctx.enqueue_copy(act_dev, act_host)
     ctx.enqueue_copy(weight_dev, weight_host)
@@ -224,14 +224,14 @@ def _run_tiled_fp8[
         c_type,
     )
 
-    var act_host = ctx.enqueue_create_host_buffer[DType.bfloat16](M * K)
-    var weight_host = ctx.enqueue_create_host_buffer[DType.float8_e4m3fn](N * K)
+    var act_host = ctx.enqueue_create_host_buffer[.bfloat16](M * K)
+    var weight_host = ctx.enqueue_create_host_buffer[.float8_e4m3fn](N * K)
     for i in range(M * K):
-        act_host[i] = random_si64(Int64(-2), Int64(2)).cast[DType.bfloat16]()
+        act_host[i] = random_si64(Int64(-2), Int64(2)).cast[.bfloat16]()
     _fill_random_fp8_weight(weight_host, N, K)
 
-    var act_dev = ctx.enqueue_create_buffer[DType.bfloat16](M * K)
-    var weight_dev = ctx.enqueue_create_buffer[DType.float8_e4m3fn](N * K)
+    var act_dev = ctx.enqueue_create_buffer[.bfloat16](M * K)
+    var weight_dev = ctx.enqueue_create_buffer[.float8_e4m3fn](N * K)
     var out_dev = ctx.enqueue_create_buffer[c_type](M * N)
     ctx.enqueue_copy(act_dev, act_host)
     ctx.enqueue_copy(weight_dev, weight_host)
@@ -259,13 +259,13 @@ def _run_tiled_fp8[
     else:
         # Parity vs the materialize -> dense bf16 oracle (GPU-only; host loop is
         # too slow at production N*K). Reduction-order diff only.
-        var wdense_dev = ctx.enqueue_create_buffer[DType.bfloat16](N * K)
+        var wdense_dev = ctx.enqueue_create_buffer[.bfloat16](N * K)
         var oracle_dev = ctx.enqueue_create_buffer[c_type](M * N)
         var wdense_tt = TileTensor(wdense_dev.unsafe_ptr(), row_major(N, K))
-        enqueue_fp8_materialize[DType.bfloat16](wdense_tt, weight_tt, ctx)
+        enqueue_fp8_materialize[.bfloat16](wdense_tt, weight_tt, ctx)
         var oracle_tt = TileTensor(oracle_dev.unsafe_ptr(), row_major(M, N))
         enqueue_apple_matmul[
-            in_type=DType.bfloat16, c_type=c_type, transpose_b=True
+            in_type=.bfloat16, c_type=c_type, transpose_b=True
         ](oracle_tt, act_tt, wdense_tt.as_immut(), ctx)
         var oracle_host = ctx.enqueue_create_host_buffer[c_type](M * N)
         ctx.enqueue_copy(oracle_host, oracle_dev)
@@ -307,16 +307,16 @@ def test_decode_gemv(ctx: DeviceContext) raises:
     """
     seed(0)
     # Direct GEMV entry point, K a multiple of TILE_K=16.
-    _run_fp8_gemv_direct[DType.float32](ctx, 64, 256, "gemv-tiny")
-    _run_fp8_gemv_direct[DType.bfloat16](ctx, 64, 256, "gemv-tiny-bf16")
+    _run_fp8_gemv_direct[.float32](ctx, 64, 256, "gemv-tiny")
+    _run_fp8_gemv_direct[.bfloat16](ctx, 64, 256, "gemv-tiny-bf16")
     # Ragged N (per-warp N guard), K % 16 == 0.
-    _run_fp8_gemv_direct[DType.float32](ctx, 200, 128, "gemv-ragged-n")
+    _run_fp8_gemv_direct[.float32](ctx, 200, 128, "gemv-ragged-n")
     # Wider N / deeper K (1 x hidden decode magnitudes).
-    _run_fp8_gemv_direct[DType.float32](ctx, 512, 256, "gemv-flux-ish")
-    _run_fp8_gemv_direct[DType.bfloat16](ctx, 1024, 512, "gemv-wide-bf16")
+    _run_fp8_gemv_direct[.float32](ctx, 512, 256, "gemv-flux-ish")
+    _run_fp8_gemv_direct[.bfloat16](ctx, 1024, 512, "gemv-wide-bf16")
     # Via the production launcher (m == 1 route) -- same shapes, both dtypes.
-    _run_fp8_matmul[DType.float32](ctx, 1, 512, 256, "launch-gemv-f32")
-    _run_fp8_matmul[DType.bfloat16](ctx, 1, 512, 256, "launch-gemv-bf16")
+    _run_fp8_matmul[.float32](ctx, 1, 512, 256, "launch-gemv-f32")
+    _run_fp8_matmul[.bfloat16](ctx, 1, 512, 256, "launch-gemv-bf16")
 
 
 def test_multi_row_launcher(ctx: DeviceContext) raises:
@@ -328,26 +328,26 @@ def test_multi_row_launcher(ctx: DeviceContext) raises:
     """
     seed(1)
     # Wide-N (n > k).
-    _run_fp8_matmul[DType.float32](ctx, 16, 128, 64, "multi-row-f32")
-    _run_fp8_matmul[DType.bfloat16](ctx, 16, 128, 64, "multi-row-bf16")
+    _run_fp8_matmul[.float32](ctx, 16, 128, 64, "multi-row-f32")
+    _run_fp8_matmul[.bfloat16](ctx, 16, 128, 64, "multi-row-bf16")
     # Ragged M and N (tile edge logic).
-    _run_fp8_matmul[DType.float32](ctx, 100, 200, 64, "multi-row-ragged")
+    _run_fp8_matmul[.float32](ctx, 100, 200, 64, "multi-row-ragged")
     # Narrow-N (n <= k) at co-batched M=32 -- the dispatch fix routes this to
     # tiled (was materialize -> dense). Reduced N*K for the host-ref check.
-    _run_fp8_matmul[DType.float32](ctx, 32, 64, 256, "multi-row-narrow-n-m32")
-    _run_fp8_matmul[DType.bfloat16](ctx, 32, 96, 288, "multi-row-narrow-n-bf16")
+    _run_fp8_matmul[.float32](ctx, 32, 64, 256, "multi-row-narrow-n-m32")
+    _run_fp8_matmul[.bfloat16](ctx, 32, 96, 288, "multi-row-narrow-n-bf16")
 
 
 def test_k_tail_edge(ctx: DeviceContext) raises:
     """K not a multiple of TILE_K=16: exercises the GEMV width-1 scalar tail."""
     seed(2)
     # M == 1 GEMV tail (one full 16-chunk + partial, and sub-16 K).
-    _run_fp8_gemv_direct[DType.float32](ctx, 64, 80, "gemv-k80")
-    _run_fp8_gemv_direct[DType.float32](ctx, 64, 48, "gemv-k48")
-    _run_fp8_gemv_direct[DType.float32](ctx, 64, 24, "gemv-k24")
-    _run_fp8_gemv_direct[DType.bfloat16](ctx, 200, 40, "gemv-k40-bf16")
+    _run_fp8_gemv_direct[.float32](ctx, 64, 80, "gemv-k80")
+    _run_fp8_gemv_direct[.float32](ctx, 64, 48, "gemv-k48")
+    _run_fp8_gemv_direct[.float32](ctx, 64, 24, "gemv-k24")
+    _run_fp8_gemv_direct[.bfloat16](ctx, 200, 40, "gemv-k40-bf16")
     # M > 1 with ragged K (materialize handles any K per-thread bounds).
-    _run_fp8_matmul[DType.float32](ctx, 16, 64, 48, "multi-row-k48")
+    _run_fp8_matmul[.float32](ctx, 16, 64, 48, "multi-row-k48")
 
 
 def test_tiled_matmul2d(ctx: DeviceContext) raises:
@@ -360,33 +360,33 @@ def test_tiled_matmul2d(ctx: DeviceContext) raises:
     """
     seed(3)
     # M=1 decode (the star path), reduced N*K, independent fp32 host ref.
-    _run_tiled_fp8[DType.float32](ctx, 1, 64, 64, "decode-tiny")
-    _run_tiled_fp8[DType.float32](ctx, 1, 256, 128, "decode-multistrip")
-    _run_tiled_fp8[DType.bfloat16](ctx, 1, 256, 128, "decode-bf16-out")
-    _run_tiled_fp8[DType.float32](ctx, 1, 544, 64, "decode-ragged-n")
-    _run_tiled_fp8[DType.float32](ctx, 1, 128, 72, "decode-k-tail")
+    _run_tiled_fp8[.float32](ctx, 1, 64, 64, "decode-tiny")
+    _run_tiled_fp8[.float32](ctx, 1, 256, 128, "decode-multistrip")
+    _run_tiled_fp8[.bfloat16](ctx, 1, 256, 128, "decode-bf16-out")
+    _run_tiled_fp8[.float32](ctx, 1, 544, 64, "decode-ragged-n")
+    _run_tiled_fp8[.float32](ctx, 1, 128, 72, "decode-k-tail")
     # Small M>1 + partial-M/N tiles (store guard + bounded MMA).
-    _run_tiled_fp8[DType.float32](ctx, 16, 128, 192, "small-m")
-    _run_tiled_fp8[DType.bfloat16](ctx, 40, 96, 128, "partial-m-ragged-n-bf16")
-    _run_tiled_fp8[DType.float32](ctx, 100, 256, 64, "partial-m-multi-tile")
+    _run_tiled_fp8[.float32](ctx, 16, 128, 192, "small-m")
+    _run_tiled_fp8[.bfloat16](ctx, 40, 96, 128, "partial-m-ragged-n-bf16")
+    _run_tiled_fp8[.float32](ctx, 100, 256, 64, "partial-m-multi-tile")
     # Narrow-N (n < k) at co-batched M=32 -- the regime the dispatch fix newly
     # routes here. Reduced N*K asserts vs the independent fp32 host reference.
-    _run_tiled_fp8[DType.float32](ctx, 32, 96, 256, "narrow-n-m32")
-    _run_tiled_fp8[DType.bfloat16](ctx, 32, 128, 320, "narrow-n-m32-bf16")
+    _run_tiled_fp8[.float32](ctx, 32, 96, 256, "narrow-n-m32")
+    _run_tiled_fp8[.bfloat16](ctx, 32, 128, 320, "narrow-n-m32-bf16")
     # Real Nemotron decode Linears (dispatch-routed + bench targets): parity vs
     # materialize -> dense (the O(M*N*K) host loop is too slow at production N*K).
     # Wide-N at M=1 (the star decode path) and narrow-N at co-batched M=32 (the
     # shapes the dispatch fix moves off the ~5-9x-slower materialize route).
-    _run_tiled_fp8[DType.float32, check_host=False](
+    _run_tiled_fp8[.float32, check_host=False](
         ctx, 1, 17504, 3136, "in_proj-real"
     )
-    _run_tiled_fp8[DType.float32, check_host=False](
+    _run_tiled_fp8[.float32, check_host=False](
         ctx, 1, 12544, 3136, "mlp_up-real"
     )
-    _run_tiled_fp8[DType.float32, check_host=False](
+    _run_tiled_fp8[.float32, check_host=False](
         ctx, 32, 3136, 7680, "out_proj-m32-real"
     )
-    _run_tiled_fp8[DType.float32, check_host=False](
+    _run_tiled_fp8[.float32, check_host=False](
         ctx, 32, 3136, 12544, "mlp_down-m32-real"
     )
 

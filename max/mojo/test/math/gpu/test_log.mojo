@@ -72,15 +72,15 @@ def run_elementwise[
 
 def test_log() raises:
     with DeviceContext() as ctx:
-        run_elementwise[DType.float32, log](ctx)
-        run_elementwise[DType.float32, log10](ctx)
-        run_elementwise[DType.float32, log2](ctx)
-        run_elementwise[DType.float16, log](ctx)
-        run_elementwise[DType.float16, log10](ctx)
-        run_elementwise[DType.float16, log2](ctx)
-        run_elementwise[DType.bfloat16, log](ctx)
-        run_elementwise[DType.bfloat16, log10](ctx)
-        run_elementwise[DType.bfloat16, log2](ctx)
+        run_elementwise[.float32, log](ctx)
+        run_elementwise[.float32, log10](ctx)
+        run_elementwise[.float32, log2](ctx)
+        run_elementwise[.float16, log](ctx)
+        run_elementwise[.float16, log10](ctx)
+        run_elementwise[.float16, log2](ctx)
+        run_elementwise[.bfloat16, log](ctx)
+        run_elementwise[.bfloat16, log10](ctx)
+        run_elementwise[.bfloat16, log2](ctx)
 
 
 def main() raises:

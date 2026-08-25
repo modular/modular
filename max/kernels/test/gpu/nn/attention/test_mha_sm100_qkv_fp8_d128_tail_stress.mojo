@@ -290,8 +290,8 @@ def execute_tail_stress_test[
                         + head_dim * (h + s * num_q_heads)
                         + b * head_dim * num_q_heads * seq_len
                     )
-                    var expect = out_ref_host[idx].cast[DType.float64]()
-                    var actual = out_fp8_host[idx].cast[DType.float64]()
+                    var expect = out_ref_host[idx].cast[.float64]()
+                    var actual = out_fp8_host[idx].cast[.float64]()
                     var diff = abs(actual - expect)
                     total_abs_diff += diff
                     if diff > max_abs_diff:

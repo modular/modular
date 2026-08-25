@@ -42,7 +42,7 @@ from max.pipelines.lib import MAXModelConfig, MemoryEstimator
 from max.pipelines.lib.config import SpeculativeConfig
 from max.pipelines.lib.config.model_config import (
     _device_specs_for_encoding,
-    _populate_weights_and_encoding,
+    _resolve_weights_and_encoding,
     _select_dtype_cast,
     _select_quantization_encoding,
 )
@@ -180,11 +180,11 @@ def _pipeline_resolve_mocks(
             "plan_from_sizes",
             side_effect=lambda pipeline_config, model_config, *a, **kw: (
                 MemoryPlan(
-                    max_batch_size=1,
+                    planned_max_batch_size=1,
                     footprint=0,
-                    max_length=model_config.max_length,
+                    planned_max_length=model_config.max_length,
                     device_specs=tuple(model_config.device_specs),
-                    max_batch_total_tokens=pipeline_config.runtime.max_batch_total_tokens,
+                    planned_max_batch_total_tokens=pipeline_config.runtime.max_batch_total_tokens,
                 )
             ),
         ),
@@ -238,7 +238,13 @@ def _resolve_config(config: PipelineConfig) -> None:
     resolved_encoding = _select_quantization_encoding(
         _model(config), arch.default_encoding
     )
-    _model(config).quantization_encoding = resolved_encoding
+    if _model(config).quantization_encoding != resolved_encoding:
+        # Only directly-constructed configs (a few tests below) reach here:
+        # from_args configs already carry the resolved encoding, and their
+        # manifest is frozen by resolve().
+        config.models["main"] = _model(config).model_copy(
+            update={"quantization_encoding": resolved_encoding}
+        )
     MemoryEstimator.plan(config, arch)
 
 
@@ -1097,7 +1103,7 @@ def test_construction_downcast_warns_once(
 
         caplog.clear()
         with caplog.at_level(logging.WARNING, logger="max.pipelines"):
-            _populate_weights_and_encoding(
+            _resolve_weights_and_encoding(
                 _model(config),
                 default_encoding=DUMMY_LLAMA_ARCH.default_encoding,
                 supported_encodings=DUMMY_LLAMA_ARCH.supported_encodings,
@@ -1383,6 +1389,58 @@ class TestConstructionResolution:
             assert draft.quantization_encoding == "q4_0"
             assert draft.device_specs == [DeviceSpec.cpu()]
             assert _model(config).device_specs == [GPU_DEVICE_SPEC]
+
+    @prepare_registry
+    def test_max_length_resolved_at_construction(self) -> None:
+        """With --max-length unset, construction runs each architecture's
+        sequence-length policy once: the main config carries its own
+        checkpoint bound, the draft carries the draft's, and the args keep
+        recording the raw user intent. The draft clamp is planning-only, so
+        the main value is not lowered here."""
+        PIPELINE_REGISTRY.register(DUMMY_GEMMA_ARCH)
+        PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH)
+        with (
+            tempfile.TemporaryDirectory() as target_dir,
+            tempfile.TemporaryDirectory() as draft_dir,
+        ):
+            _make_local_repo(
+                target_dir,
+                hf_config=_GEMMA_CONFIG,
+                safetensors_files={"model.safetensors": {"w": "BF16"}},
+            )
+            _make_local_repo(
+                draft_dir,
+                hf_config={**_LLAMA_CONFIG, "max_position_embeddings": 1024},
+                safetensors_files={"model.safetensors": {"w": "BF16"}},
+            )
+            args = PipelineArgs(
+                model_path=target_dir,
+                device_specs=[GPU_DEVICE_SPEC],
+                draft_model=MAXModelConfig(
+                    model_path=draft_dir, device_specs=[GPU_DEVICE_SPEC]
+                ),
+                speculative=SpeculativeConfig(speculative_method="mtp"),
+            )
+            config = PipelineConfig.from_args(args)
+            assert args.max_length is None
+            assert _model(config).max_length == 2048
+            draft = config.draft_model
+            assert draft is not None
+            assert draft.max_length == 1024
+
+    @prepare_registry
+    def test_max_length_over_checkpoint_bound_rejected(self) -> None:
+        """A user max_length above a bounded architecture's checkpoint limit
+        is rejected at construction, where the policy now runs."""
+        PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            _make_local_repo(
+                tmpdir,
+                safetensors_files={"model.safetensors": {"w": "BF16"}},
+            )
+            # _LLAMA_CONFIG caps max_position_embeddings at 2048.
+            with pytest.raises(ValueError, match="exceeds the upper bound"):
+                self._from_args(tmpdir, max_length=4096)
 
     @prepare_registry
     def test_unknown_arch_rejected_at_construction(self) -> None:

@@ -45,7 +45,7 @@ onto their substrate:
 from layout.tma_async import SharedMemBarrier
 
 comptime MbarPtr = UnsafePointer[
-    SharedMemBarrier, MutUntrackedOrigin, address_space=AddressSpace.SHARED
+    SharedMemBarrier, MutUntrackedOrigin, address_space=.SHARED
 ]
 
 
@@ -78,9 +78,7 @@ trait PipelineBackend(TrivialRegisterPassable):
     ](
         out self,
         ptr: UnsafePointer[
-            Self.BarrierStorage,
-            MutUntrackedOrigin,
-            address_space=AddressSpace.SHARED,
+            Self.BarrierStorage, MutUntrackedOrigin, address_space=.SHARED
         ],
     ):
         """Construct from the base pointer of the backing storage array.

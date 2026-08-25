@@ -20,7 +20,7 @@ from std.utils.index import Index
 
 def test_kernel[
     swizzle: Bool, layout: Layout
-](group_offsets: LayoutTensor[DType.uint32, layout, MutAnyOrigin]):
+](group_offsets: LayoutTensor[.uint32, layout, MutAnyOrigin]):
     var scheduler = TileScheduler[
         static_MN=20,
         tile_shape=Index(4, 8, 16),
@@ -39,7 +39,7 @@ def test(ctx: DeviceContext) raises:
     comptime group_len = 3
 
     # Host allocation
-    var host_group_offsets_ptr = ctx.enqueue_create_host_buffer[DType.uint32](
+    var host_group_offsets_ptr = ctx.enqueue_create_host_buffer[.uint32](
         group_len + 1
     )
     host_group_offsets_ptr[0] = 0
@@ -48,12 +48,12 @@ def test(ctx: DeviceContext) raises:
     host_group_offsets_ptr[3] = 30
 
     # Device allocation
-    var dev_group_offsets_buffer = ctx.enqueue_create_buffer[DType.uint32](
+    var dev_group_offsets_buffer = ctx.enqueue_create_buffer[.uint32](
         group_len + 1
     )
     comptime offset_layout = Layout(group_len + 1)
     var dev_group_offsets = LayoutTensor[
-        DType.uint32,
+        .uint32,
         offset_layout,
     ](dev_group_offsets_buffer)
 

@@ -70,7 +70,7 @@ from layout.tma_async import SharedMemBarrier
 def _smem_ptr[
     BYTES_PER_COPY: Int, S: Int
 ](
-    base: UnsafePointer[UInt8, _, address_space=AddressSpace.SHARED],
+    base: UnsafePointer[UInt8, _, address_space=.SHARED],
     warp: Int,
     slot: Int,
 ) -> type_of(base):
@@ -81,7 +81,7 @@ def _smem_ptr[
 def _mbar_ref[
     S: Int
 ](
-    base: UnsafePointer[SharedMemBarrier, _, address_space=AddressSpace.SHARED],
+    base: UnsafePointer[SharedMemBarrier, _, address_space=.SHARED],
     warp: Int,
     slot: Int,
 ) -> type_of(base):
@@ -99,7 +99,7 @@ def bulk_memcpy_kernel[
     comptime DATA_BYTES = NUM_WARPS * S * BYTES_PER_COPY
 
     var smem_base = external_memory[
-        UInt8, address_space=AddressSpace.SHARED, alignment=128
+        UInt8, address_space=.SHARED, alignment=128
     ]()
     var mbar_base = (smem_base + DATA_BYTES).bitcast[SharedMemBarrier]()
 
@@ -112,8 +112,8 @@ def bulk_memcpy_kernel[
     fence_mbarrier_init()
     barrier()
 
-    var src_g = src.address_space_cast[AddressSpace.GLOBAL]()
-    var dst_g = dst.address_space_cast[AddressSpace.GLOBAL]()
+    var src_g = src.address_space_cast[.GLOBAL]()
+    var dst_g = dst.address_space_cast[.GLOBAL]()
 
     var first = Int(block_idx.x) * NUM_WARPS + w
     var stride = Int(gpu_grid_dim.x) * NUM_WARPS
@@ -226,8 +226,8 @@ def main() raises:
     var m = Bench()
 
     with DeviceContext() as ctx:
-        var src_dev = ctx.enqueue_create_buffer[DType.uint8](total_bytes)
-        var dst_dev = ctx.enqueue_create_buffer[DType.uint8](total_bytes)
+        var src_dev = ctx.enqueue_create_buffer[.uint8](total_bytes)
+        var dst_dev = ctx.enqueue_create_buffer[.uint8](total_bytes)
 
         @always_inline
         def bench_func(mut b: Bencher) {imm}:

@@ -133,7 +133,7 @@ directly to an `Int`.
 
 ```mojo
 def takes_scalar_tensor(
-    tensor: TileTensor[DType.int32, Storage=PointerStorage[element_width=1], ...]
+    tensor: TileTensor[.int32, Storage=PointerStorage[element_width=1], ...]
 ) -> Int:
     comptime assert tensor.flat_rank == 2
     return Int(tensor[1, 1])
@@ -359,7 +359,7 @@ reduce memory access time.
 ```mojo
 comptime tile_layout = row_major[block_size, block_size]()
 var shared_tile = stack_allocation[
-    dtype, address_space=AddressSpace.SHARED
+    dtype, address_space=.SHARED
 ](tile_layout)
 ```
 
@@ -778,7 +778,7 @@ def tile_copier_example() raises:
         )
         comptime tile_layout = row_major[block_size, block_size]()
         var shared_tile = stack_allocation[
-            dtype, address_space=AddressSpace.SHARED
+            dtype, address_space=.SHARED
         ](tile_layout)
 
         comptime thread_layout = row_major[WARP_SIZE // simd_width, simd_width]()

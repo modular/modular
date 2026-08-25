@@ -90,7 +90,7 @@ comptime CFG = MhaConfigV2(
     fp8_mma_k_128=False,  # 32x32x64 — the v227 path (NOT the 16x16x128 path).
 )
 
-comptime _Op = MlaMmaOp[DType.float8_e4m3fn, CFG]
+comptime _Op = MlaMmaOp[.float8_e4m3fn, CFG]
 comptime _BK = _Op.MMA_K  # 64 (FP8 32x32x64)
 comptime _V_SUB_COLS = _Op.V_SUB_COLS  # 64
 comptime _H = _Op.V_LAYOUT.static_shape[0]  # 2
@@ -140,9 +140,9 @@ def _pattern_fp8(key: Int, depth: Int) -> Float8_e4m3fn:
 # they are bit-identical: `W∘R == (W_ours ∘ R_ours)` over the slot.
 # --------------------------------------------------------------------------- #
 def kernel_v227_round_trip(
-    v_src_ptr: UnsafePointer[Scalar[DType.float8_e4m3fn], MutAnyOrigin],
-    dump_v227_ptr: UnsafePointer[Scalar[DType.float8_e4m3fn], MutAnyOrigin],
-    dump_ref_ptr: UnsafePointer[Scalar[DType.float8_e4m3fn], MutAnyOrigin],
+    v_src_ptr: UnsafePointer[Float8_e4m3fn, MutAnyOrigin],
+    dump_v227_ptr: UnsafePointer[Float8_e4m3fn, MutAnyOrigin],
+    dump_ref_ptr: UnsafePointer[Float8_e4m3fn, MutAnyOrigin],
 ):
     # DRAM V tile: tight (KV_BLOCK, DEPTH) row-major, stride (DEPTH, 1).
     # Matches the canonical v227 closed-form case (key = global_row,
@@ -151,18 +151,16 @@ def kernel_v227_round_trip(
         Coord[ComptimeInt[KV_BLOCK], ComptimeInt[DEPTH]].element_types,
         Coord[ComptimeInt[DEPTH], ComptimeInt[1]].element_types,
     ]
-    var v_src = TileTensor[
-        DType.float8_e4m3fn,
-        v_src_layout,
-        MutAnyOrigin,
-    ](v_src_ptr, v_src_layout())
+    var v_src = TileTensor[.float8_e4m3fn, v_src_layout, MutAnyOrigin](
+        v_src_ptr, v_src_layout()
+    )
 
     # Two LDS slots: v227 (padded) + reference (contiguous).
     var v_smem_v227 = tt_stack_allocation[
-        DType.float8_e4m3fn, AddressSpace.SHARED
+        DType.float8_e4m3fn, address_space=.SHARED
     ](row_major[_V_SLOT_ROWS_V227, _V_SUB_COLS]())
     var v_smem_ref = tt_stack_allocation[
-        DType.float8_e4m3fn, AddressSpace.SHARED
+        DType.float8_e4m3fn, address_space=.SHARED
     ](row_major[_V_SLOT_ROWS, _V_SUB_COLS]())
 
     var w_id = Int(readfirstlane(warp_id()))
@@ -215,12 +213,8 @@ def kernel_v227_round_trip(
             var frag_ref = _Op.load_V_frag[i, j, v_full_v227=False](base_ref)
             comptime for f in range(_FRAG_ELTS):
                 var idx = lid * _PER_LANE + (i * _W + j) * _FRAG_ELTS + f
-                dump_v227_ptr[idx] = rebind[Scalar[DType.float8_e4m3fn]](
-                    frag_v227[f]
-                )
-                dump_ref_ptr[idx] = rebind[Scalar[DType.float8_e4m3fn]](
-                    frag_ref[f]
-                )
+                dump_v227_ptr[idx] = rebind[Float8_e4m3fn](frag_v227[f])
+                dump_ref_ptr[idx] = rebind[Float8_e4m3fn](frag_ref[f])
 
 
 # --------------------------------------------------------------------------- #
@@ -231,13 +225,9 @@ def test_v227_round_trip(ctx: DeviceContext) raises:
 
     comptime _DUMP_SIZE = 64 * _PER_LANE  # 64 lanes x 256 elts/lane.
 
-    var dev_src = ctx.enqueue_create_buffer[DType.float8_e4m3fn](_V_TILE_ELTS)
-    var dev_dump_v227 = ctx.enqueue_create_buffer[DType.float8_e4m3fn](
-        _DUMP_SIZE
-    )
-    var dev_dump_ref = ctx.enqueue_create_buffer[DType.float8_e4m3fn](
-        _DUMP_SIZE
-    )
+    var dev_src = ctx.enqueue_create_buffer[.float8_e4m3fn](_V_TILE_ELTS)
+    var dev_dump_v227 = ctx.enqueue_create_buffer[.float8_e4m3fn](_DUMP_SIZE)
+    var dev_dump_ref = ctx.enqueue_create_buffer[.float8_e4m3fn](_DUMP_SIZE)
 
     # Fill the DRAM V tile with the 2D pattern, row-major V[key, depth].
     with dev_src.map_to_host() as host_src:
@@ -261,8 +251,8 @@ def test_v227_round_trip(ctx: DeviceContext) raises:
     with dev_dump_v227.map_to_host() as host_v227:
         with dev_dump_ref.map_to_host() as host_ref:
             for idx in range(_DUMP_SIZE):
-                var v227_f32 = host_v227[idx].cast[DType.float32]()
-                var ref_f32 = host_ref[idx].cast[DType.float32]()
+                var v227_f32 = host_v227[idx].cast[.float32]()
+                var ref_f32 = host_ref[idx].cast[.float32]()
                 if ref_f32 != Float32(0.0):
                     nonzero_seen += 1
                 if v227_f32 != ref_f32:

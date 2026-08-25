@@ -82,10 +82,10 @@ struct AttnResMix:
             "attn_res_mix: norm_weight width must match hidden",
         )
 
-        var output_tt = output.to_tile_tensor[DType.int64]()
-        var candidates_tt = candidates.to_tile_tensor[DType.int64]()
-        var proj_tt = proj_weight.to_tile_tensor[DType.int64]()
-        var norm_tt = norm_weight.to_tile_tensor[DType.int64]()
+        var output_tt = output.to_tile_tensor[.int64]()
+        var candidates_tt = candidates.to_tile_tensor[.int64]()
+        var proj_tt = proj_weight.to_tile_tensor[.int64]()
+        var norm_tt = norm_weight.to_tile_tensor[.int64]()
 
         comptime BLOCK_SIZE = 256
 
@@ -102,9 +102,13 @@ struct AttnResMix:
                     attn_res_mix_gpu[
                         dtype,
                         output_tt.LayoutType,
+                        output_tt.Storage,
                         candidates_tt.LayoutType,
+                        candidates_tt.Storage,
                         proj_tt.LayoutType,
+                        proj_tt.Storage,
                         norm_tt.LayoutType,
+                        norm_tt.Storage,
                         c,
                         BLOCK_SIZE,
                     ]

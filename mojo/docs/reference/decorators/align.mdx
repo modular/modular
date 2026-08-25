@@ -37,8 +37,9 @@ value begins at an aligned address, it fits cleanly within those chunks. When
 it doesn't, hardware may need extra memory accesses, or may reject the access
 entirely.
 
-Alignment affects where a value begins in memory, not how large the value
-is.
+Alignment affects where a value begins in memory, and it also affects how
+large the value is: Mojo rounds a struct's size up to a multiple of its
+alignment.
 
 ## Basic usage
 
@@ -201,7 +202,7 @@ struct AlignedTrivial(RegisterPassable):
 
 def main():
     print(align_of[AlignedTrivial]())  # 32
-    print(size_of[AlignedTrivial]())  # 8
+    print(size_of[AlignedTrivial]())  # 32
 ```
 
 ## Requirements and errors

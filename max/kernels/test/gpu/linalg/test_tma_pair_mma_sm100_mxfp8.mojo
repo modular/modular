@@ -133,7 +133,7 @@ def blockscaled_pair_cta_mxfp8[
 ):
     var num_iters = Int(num_iters_dev)
     comptime assert (
-        a_type == b_type == DType.float8_e4m3fn
+        a_type == b_type == .float8_e4m3fn
     ), "a_type and b_type must be the same and either float8_e4m3fn"
 
     comptime BM = block_tile_shape[0]
@@ -170,9 +170,7 @@ def blockscaled_pair_cta_mxfp8[
         MMA_N, BK, MXFP8_SF_VECTOR_SIZE
     ]()
 
-    var smem = external_memory[
-        UInt8, address_space=AddressSpace.SHARED, alignment=8
-    ]()
+    var smem = external_memory[UInt8, address_space=.SHARED, alignment=8]()
 
     comptime a_smem_bytes = a_smem_layout.size() * size_of[a_type]()
     comptime b_smem_bytes = b_smem_layout.size() * size_of[b_type]()
@@ -200,7 +198,7 @@ def blockscaled_pair_cta_mxfp8[
         a_type,
         a_smem_layout,
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
     ](a_smem.as_unsafe_any_origin())
 
@@ -208,7 +206,7 @@ def blockscaled_pair_cta_mxfp8[
         b_type,
         b_smem_layout,
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
     ](b_smem.as_unsafe_any_origin())
 
@@ -216,7 +214,7 @@ def blockscaled_pair_cta_mxfp8[
         a_scales_type,
         a_scales_smem_layout,
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
     ](a_scales_smem.as_unsafe_any_origin())
 
@@ -224,7 +222,7 @@ def blockscaled_pair_cta_mxfp8[
         b_scales_type,
         b_scales_smem_layout,
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
     ](b_scales_smem.as_unsafe_any_origin())
 
@@ -309,7 +307,7 @@ def blockscaled_pair_cta_mxfp8[
         a_type,
         b_type,
         a_scales_type,
-        Index[dtype=DType.uint32](mma_shape[0], mma_shape[1]),
+        Index[dtype=.uint32](mma_shape[0], mma_shape[1]),
         transpose_b=transpose_b,
     ]()
 
@@ -588,7 +586,7 @@ def sm100_blockscaled_mxfp8_cta_pair[
     comptime assert transpose_b, "Only support transposed B"
 
     comptime assert (
-        a_type == b_type and a_type == DType.float8_e4m3fn
+        a_type == b_type and a_type == .float8_e4m3fn
     ), "Only support float8_e4m3fn"
 
     var M = c.dim(0)
@@ -1026,7 +1024,7 @@ def main() raises:
         test_blockscaled_pair_cta_mxfp8[
             dtype,
             dtype,
-            DType.bfloat16,
+            .bfloat16,
             Index(128, 64, BK),
             Index(256, 128, MMA_K),
             cluster_shape=StaticTuple[Int32, 3](2, 1, 1),
@@ -1039,7 +1037,7 @@ def main() raises:
         test_blockscaled_pair_cta_mxfp8[
             dtype,
             dtype,
-            DType.bfloat16,
+            .bfloat16,
             Index(128, 64, BK),
             Index(256, 128, MMA_K),
             cluster_shape=StaticTuple[Int32, 3](2, 2, 1),
@@ -1052,7 +1050,7 @@ def main() raises:
         test_blockscaled_pair_cta_mxfp8[
             dtype,
             dtype,
-            DType.bfloat16,
+            .bfloat16,
             Index(128, 64, BK),
             Index(256, 128, MMA_K),
             cluster_shape=StaticTuple[Int32, 3](4, 4, 1),

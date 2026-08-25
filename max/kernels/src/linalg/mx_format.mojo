@@ -60,15 +60,15 @@ struct MXFormat(Equatable, TrivialRegisterPassable):
         Returns:
             The corresponding MX element format.
         """
-        if dtype == DType.float6_e2m3fn:
+        if dtype == .float6_e2m3fn:
             return Self.FP6_E2M3
-        if dtype == DType.float6_e3m2fn:
+        if dtype == .float6_e3m2fn:
             return Self.FP6_E3M2
-        if dtype == DType.float8_e4m3fn:
+        if dtype == .float8_e4m3fn:
             return Self.FP8_E4M3
-        if dtype == DType.float8_e5m2:
+        if dtype == .float8_e5m2:
             return Self.FP8_E5M2
-        if dtype == DType.uint8:
+        if dtype == .uint8:
             return Self.FP4_E2M1
         abort("dtype does not denote an MX element format")
 

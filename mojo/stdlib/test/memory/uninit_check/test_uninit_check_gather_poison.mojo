@@ -32,8 +32,8 @@ def main():
     )
 
     # Gather with offsets [0,1,2,3] — lane 2 is unmasked and poisoned.
-    var offset = SIMD[DType.int64, 4](0, 1, 2, 3)
-    var mask = SIMD[DType.bool, 4](True, True, True, False)
+    var offset = SIMD[.int64, 4](0, 1, 2, 3)
+    var mask = SIMD[.bool, 4](True, True, True, False)
     _ = ptr.unsafe_gather(offset=offset, mask=mask)
 
     # Should not reach here.

@@ -156,47 +156,37 @@ def main() raises:
         # === Warp-Tiling Kernel Dispatch (SIMD-aligned, fits warp strategy) ===
 
         # Small, SIMD-aligned groups
-        run_group_norm_gpu[DType.float32](ctx, Index(2, 8, 2, 2), num_groups=4)
-        run_group_norm_gpu[DType.float32](ctx, Index(2, 8, 4), num_groups=4)
+        run_group_norm_gpu[.float32](ctx, Index(2, 8, 2, 2), num_groups=4)
+        run_group_norm_gpu[.float32](ctx, Index(2, 8, 4), num_groups=4)
 
         # Larger, but still small enough for warp tiling
-        run_group_norm_gpu[DType.float32](ctx, Index(2, 32, 2, 2), num_groups=8)
-        run_group_norm_gpu[DType.float32](ctx, Index(2, 32, 4), num_groups=8)
+        run_group_norm_gpu[.float32](ctx, Index(2, 32, 2, 2), num_groups=8)
+        run_group_norm_gpu[.float32](ctx, Index(2, 32, 4), num_groups=8)
 
         # SIMD aligned with group boundary, but not aligned with channel boundary
-        run_group_norm_gpu[DType.float32](
-            ctx, Index(2, 32, 1, 10), num_groups=8
-        )
+        run_group_norm_gpu[.float32](ctx, Index(2, 32, 1, 10), num_groups=8)
 
         # === Block Kernel Dispatch (too wide for warp or not divisible by SIMD width) ===
 
         # Large column count (too wide for warp)
-        run_group_norm_gpu[DType.float32](
-            ctx, Index(1, 128, 1, 64), num_groups=8
-        )
-        run_group_norm_gpu[DType.float32](ctx, Index(1, 128, 64), num_groups=8)
+        run_group_norm_gpu[.float32](ctx, Index(1, 128, 1, 64), num_groups=8)
+        run_group_norm_gpu[.float32](ctx, Index(1, 128, 64), num_groups=8)
 
         # Aligned, but still too large for warp strategy
-        run_group_norm_gpu[DType.float32](
-            ctx, Index(1, 64, 1, 64), num_groups=8
-        )
-        run_group_norm_gpu[DType.float32](ctx, Index(1, 64, 64), num_groups=8)
+        run_group_norm_gpu[.float32](ctx, Index(1, 64, 1, 64), num_groups=8)
+        run_group_norm_gpu[.float32](ctx, Index(1, 64, 64), num_groups=8)
 
         # === Invalid Case: cols < simd_width → triggers safety assertion ===
 
         # Misaligned shape
         try:
-            run_group_norm_gpu[DType.float32](
-                ctx, Index(1, 33, 1, 1), num_groups=11
-            )
+            run_group_norm_gpu[.float32](ctx, Index(1, 33, 1, 1), num_groups=11)
         except e:
             assert_true(
                 "group_norm_gpu requires num_cols >= simd_width" in String(e)
             )
         try:
-            run_group_norm_gpu[DType.float32](
-                ctx, Index(1, 33, 1), num_groups=11
-            )
+            run_group_norm_gpu[.float32](ctx, Index(1, 33, 1), num_groups=11)
         except e:
             assert_true(
                 "group_norm_gpu requires num_cols >= simd_width" in String(e)
@@ -204,17 +194,13 @@ def main() raises:
 
         # Small group sizes result in too few columns
         try:
-            run_group_norm_gpu[DType.float32](
-                ctx, Index(1, 12, 1, 1), num_groups=6
-            )
+            run_group_norm_gpu[.float32](ctx, Index(1, 12, 1, 1), num_groups=6)
         except e:
             assert_true(
                 "group_norm_gpu requires num_cols >= simd_width" in String(e)
             )
         try:
-            run_group_norm_gpu[DType.float32](
-                ctx, Index(1, 12, 1), num_groups=6
-            )
+            run_group_norm_gpu[.float32](ctx, Index(1, 12, 1), num_groups=6)
         except e:
             assert_true(
                 "group_norm_gpu requires num_cols >= simd_width" in String(e)
@@ -223,22 +209,20 @@ def main() raises:
         # === Edge Cases ===
 
         # Trivial spatial=1 (all channels collapsed to one dimension)
-        run_group_norm_gpu[DType.float32](
-            ctx, Index(2, 128, 1, 1), num_groups=1
-        )
-        run_group_norm_gpu[DType.float32](ctx, Index(2, 128, 1), num_groups=1)
+        run_group_norm_gpu[.float32](ctx, Index(2, 128, 1, 1), num_groups=1)
+        run_group_norm_gpu[.float32](ctx, Index(2, 128, 1), num_groups=1)
 
         # Non-multiple of simd_width → scalar fallback block path
-        run_group_norm_gpu[DType.float32](ctx, Index(2, 33, 1, 1), num_groups=1)
-        run_group_norm_gpu[DType.float32](ctx, Index(2, 33, 1), num_groups=1)
+        run_group_norm_gpu[.float32](ctx, Index(2, 33, 1, 1), num_groups=1)
+        run_group_norm_gpu[.float32](ctx, Index(2, 33, 1), num_groups=1)
 
         # One-channel, one-group (channel_per_group=1)
-        run_group_norm_gpu[DType.float32](ctx, Index(2, 1, 4, 8), num_groups=1)
-        run_group_norm_gpu[DType.float32](ctx, Index(2, 1, 32), num_groups=1)
+        run_group_norm_gpu[.float32](ctx, Index(2, 1, 4, 8), num_groups=1)
+        run_group_norm_gpu[.float32](ctx, Index(2, 1, 32), num_groups=1)
 
         # Edge case from group norm layer tests
-        run_group_norm_gpu[DType.float32](ctx, Index(2, 2, 4, 4), num_groups=1)
-        run_group_norm_gpu[DType.float32](ctx, Index(2, 2, 16), num_groups=1)
+        run_group_norm_gpu[.float32](ctx, Index(2, 2, 4, 4), num_groups=1)
+        run_group_norm_gpu[.float32](ctx, Index(2, 2, 16), num_groups=1)
 
         # Zero-spatial input: the FLUX.2 VAE encoder is invoked
         # unconditionally on a ``(0, 0, 3)`` placeholder image for
@@ -246,18 +230,10 @@ def main() raises:
         # a ``(B, C, 0, 0)`` tensor.  The kernel must early-return rather
         # than dispatching with ``num_cols=0`` (which previously failed
         # the ``num_cols >= simd_width`` check).
-        run_group_norm_gpu[DType.float32](
-            ctx, Index(1, 128, 0, 0), num_groups=32
-        )
-        run_group_norm_gpu[DType.float32](
-            ctx, Index(1, 512, 0, 0), num_groups=32
-        )
-        run_group_norm_gpu[DType.bfloat16](
-            ctx, Index(1, 128, 0, 0), num_groups=32
-        )
-        run_group_norm_gpu[DType.bfloat16](
-            ctx, Index(1, 512, 0, 0), num_groups=32
-        )
+        run_group_norm_gpu[.float32](ctx, Index(1, 128, 0, 0), num_groups=32)
+        run_group_norm_gpu[.float32](ctx, Index(1, 512, 0, 0), num_groups=32)
+        run_group_norm_gpu[.bfloat16](ctx, Index(1, 128, 0, 0), num_groups=32)
+        run_group_norm_gpu[.bfloat16](ctx, Index(1, 512, 0, 0), num_groups=32)
 
         # === Multi-Block Kernel Dispatch (large group_size, few groups) ===
 
@@ -270,40 +246,38 @@ def main() raises:
         # which diverge more at large group sizes.
 
         # bfloat16 tests matching FLUX2 VAE decoder dtype
-        run_group_norm_gpu[DType.bfloat16](
+        run_group_norm_gpu[.bfloat16](
             ctx, Index(1, 128, 64, 64), num_groups=32, rtol=2e-3, atol=5e-4
         )
-        run_group_norm_gpu[DType.bfloat16](
+        run_group_norm_gpu[.bfloat16](
             ctx, Index(1, 256, 64, 64), num_groups=32, rtol=2e-3, atol=5e-4
         )
-        run_group_norm_gpu[DType.bfloat16](
+        run_group_norm_gpu[.bfloat16](
             ctx, Index(1, 512, 32, 32), num_groups=32, rtol=2e-3, atol=5e-4
         )
         # Batch > 1 with multi-block
-        run_group_norm_gpu[DType.bfloat16](
+        run_group_norm_gpu[.bfloat16](
             ctx, Index(2, 256, 32, 32), num_groups=32, rtol=2e-3, atol=5e-4
         )
         # 3D multi-block
-        run_group_norm_gpu[DType.bfloat16](
+        run_group_norm_gpu[.bfloat16](
             ctx, Index(1, 128, 16384), num_groups=32, rtol=2e-3, atol=5e-4
         )
 
         # float32 multi-block tests for coverage
-        run_group_norm_gpu[DType.float32](
+        run_group_norm_gpu[.float32](
             ctx, Index(1, 128, 64, 64), num_groups=32, rtol=2e-3, atol=5e-4
         )
-        run_group_norm_gpu[DType.float32](
+        run_group_norm_gpu[.float32](
             ctx, Index(1, 512, 32, 32), num_groups=32, rtol=2e-3, atol=5e-4
         )
 
         # Mismatched channels/groups → top-level init error
         try:
-            run_group_norm_gpu[DType.float32](
-                ctx, Index(2, 7, 3, 3), num_groups=3
-            )
+            run_group_norm_gpu[.float32](ctx, Index(2, 7, 3, 3), num_groups=3)
         except e:
             assert_true("Invalid num_groups" in String(e))
         try:
-            run_group_norm_gpu[DType.float32](ctx, Index(2, 7, 9), num_groups=3)
+            run_group_norm_gpu[.float32](ctx, Index(2, 7, 9), num_groups=3)
         except e:
             assert_true("Invalid num_groups" in String(e))

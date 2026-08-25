@@ -204,9 +204,9 @@ def main() raises:
     var ctx = DeviceContext()
 
     # Allocate device memory
-    var d_A = ctx.enqueue_create_buffer[DType.int32](m)
-    var d_B = ctx.enqueue_create_buffer[DType.int32](n)
-    var d_C = ctx.enqueue_create_buffer[DType.int32](total)
+    var d_A = ctx.enqueue_create_buffer[.int32](m)
+    var d_B = ctx.enqueue_create_buffer[.int32](n)
+    var d_C = ctx.enqueue_create_buffer[.int32](total)
 
     # Copy to device
     ctx.enqueue_copy(d_A, h_A)

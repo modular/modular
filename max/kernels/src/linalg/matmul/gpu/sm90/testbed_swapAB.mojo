@@ -321,8 +321,8 @@ def test_matmul_sm90_swapAB_comparison[
 
     for i in range(M):
         for j in range(N):
-            var val_swapAB = c_swapAB_host_ptr[i * N + j].cast[DType.float64]()
-            var val_normal = c_normal_host_ptr[i * N + j].cast[DType.float64]()
+            var val_swapAB = c_swapAB_host_ptr[i * N + j].cast[.float64]()
+            var val_normal = c_normal_host_ptr[i * N + j].cast[.float64]()
             var diff = abs(val_swapAB - val_normal)
 
             if diff > 0.01:  # Threshold for counting mismatches
@@ -828,8 +828,8 @@ def test_matmul_sm90_swapAB_comparison_v2[
 
     for i in range(M):
         for j in range(N):
-            var val_swapAB = c_swapAB_host_ptr[i * N + j].cast[DType.float64]()
-            var val_ref = c_normal_host_ptr[i * N + j].cast[DType.float64]()
+            var val_swapAB = c_swapAB_host_ptr[i * N + j].cast[.float64]()
+            var val_ref = c_normal_host_ptr[i * N + j].cast[.float64]()
             var diff = abs(val_swapAB - val_ref)
 
             if diff > 0.01:  # Threshold for counting mismatches

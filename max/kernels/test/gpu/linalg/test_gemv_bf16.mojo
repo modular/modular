@@ -49,22 +49,21 @@ def run_matvec(M: Int, N: Int, K: Int, *, ctx: DeviceContext) raises:
     for i in range(M * N):
         c_host_n[i] = 0
 
-    var a_device = ctx.enqueue_create_buffer[DType.bfloat16](M * K)
-    var b_device = ctx.enqueue_create_buffer[DType.bfloat16](K * N)
-    var c_device = ctx.enqueue_create_buffer[DType.float32](M * N)
-    var a_device_n = ctx.enqueue_create_buffer[DType.float32](M * K)
-    var b_device_n = ctx.enqueue_create_buffer[DType.float32](K * N)
-    var c_device_n = ctx.enqueue_create_buffer[DType.float32](M * N)
+    var a_device = ctx.enqueue_create_buffer[.bfloat16](M * K)
+    var b_device = ctx.enqueue_create_buffer[.bfloat16](K * N)
+    var c_device = ctx.enqueue_create_buffer[.float32](M * N)
+    var a_device_n = ctx.enqueue_create_buffer[.float32](M * K)
+    var b_device_n = ctx.enqueue_create_buffer[.float32](K * N)
+    var c_device_n = ctx.enqueue_create_buffer[.float32](M * N)
 
     ctx.enqueue_copy(a_device, a_host)
     ctx.enqueue_copy(b_device, b_host)
 
     comptime WARPS_PER_BLOCK = 32
-    comptime kernel = gemv_kernel[DType.float32, DType.bfloat16, DType.bfloat16]
+    comptime kernel = gemv_kernel[.float32, .bfloat16, .bfloat16]
 
     @always_inline
-    @__parameter
-    def run_func_gemv(ctx: DeviceContext) raises:
+    def run_func_gemv(ctx: DeviceContext) raises {imm}:
         ctx.enqueue_function[kernel](
             c_device,
             a_device,
@@ -77,7 +76,7 @@ def run_matvec(M: Int, N: Int, K: Int, *, ctx: DeviceContext) raises:
         )
 
     var kernelType = "GEMV"
-    var nstime = ctx.execution_time[run_func_gemv](iterations)
+    var nstime = ctx.execution_time(run_func_gemv, iterations)
     var flops = 2 * M * N * K
     var sectime = Float64(nstime) / Float64(iterations) / 1000000000
     print(kernelType, "KERNEL:")
@@ -104,25 +103,24 @@ def run_matvec(M: Int, N: Int, K: Int, *, ctx: DeviceContext) raises:
         row_major(Coord(M, N)),
     )
     var a_tt = TileTensor(
-        UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin](
+        UnsafePointer[Float32, ImmutAnyOrigin](
             unsafe_from_address=Int(a_device_n.unsafe_ptr())
         ),
         row_major(Coord(M, K)),
     )
     var b_tt = TileTensor(
-        UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin](
+        UnsafePointer[Float32, ImmutAnyOrigin](
             unsafe_from_address=Int(b_device_n.unsafe_ptr())
         ),
         row_major(Coord(K, N)),
     )
 
     @always_inline
-    @__parameter
-    def run_func_naive(ctx: DeviceContext) raises:
+    def run_func_naive(ctx: DeviceContext) raises {imm}:
         comptime kernel = matmul_kernel_naive[
-            DType.float32,
-            DType.float32,
-            DType.float32,
+            .float32,
+            .float32,
+            .float32,
             type_of(c_tt).LayoutType,
             type_of(a_tt).LayoutType,
             type_of(b_tt).LayoutType,
@@ -140,7 +138,7 @@ def run_matvec(M: Int, N: Int, K: Int, *, ctx: DeviceContext) raises:
             block_dim=(BLOCK_DIM, BLOCK_DIM),
         )
 
-    nstime = ctx.execution_time[run_func_naive](iterations)
+    nstime = ctx.execution_time(run_func_naive, iterations)
     var sectime2 = Float64(nstime) / Float64(iterations) / 1000000000
     print("SHMEM MATMUL:")
     print(sectime2, "sec")

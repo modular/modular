@@ -125,6 +125,7 @@ from nn.attention.gpu.nvidia.sm100.mla_decode_utils import (
     MLA_SM100_Decode_Config,
     MLA_SM100_Decode_Common,
     QOTMATile,
+    ORaggedTMATile,
     MLA_Decode_Pack,
     OffsetPosition,
     KVPipelineGeneric,
@@ -257,7 +258,7 @@ struct MLA_SM100_Decode_Sparse_QKV_FP8[
             tile_shape=IndexList[2](Self.config.BK_PV, Self.kv_gather4_box_w),
             desc_shape=IndexList[2](1, Self.kv_gather4_box_w),
         ],
-        o_tma: QOTMATile[
+        o_tma: ORaggedTMATile[
             dtype=Self.output_type,
             BM=Self.config.out_rows,
             BK=Self.config.BN_PV // 4,
@@ -276,10 +277,8 @@ struct MLA_SM100_Decode_Sparse_QKV_FP8[
         # position-based causal masking. See mla_decode_utils.mojo.
         logical_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]],
         topk_lengths: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]],
-        scales_ptr: UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin],
-        attn_sink_ptr: OptionalReg[
-            UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin]
-        ],
+        scales_ptr: UnsafePointer[Float32, origin=MutAnyOrigin],
+        attn_sink_ptr: OptionalReg[UnsafePointer[Float32, origin=MutAnyOrigin]],
         extra_k_tma: TMATensorTile[
             DType.int64,
             2,
@@ -290,11 +289,9 @@ struct MLA_SM100_Decode_Sparse_QKV_FP8[
         extra_d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]],
         extra_topk_lengths: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]],
         extra_indices_stride_dev: Int32,
-        extra_scales_ptr: OptionalReg[
-            UnsafePointer[Scalar[DType.float32], MutAnyOrigin]
-        ],
+        extra_scales_ptr: OptionalReg[UnsafePointer[Float32, MutAnyOrigin]],
         scalar_args: TileTensor[
-            DType.int64, RowMajorLayout[ComptimeInt[3]], MutAnyOrigin
+            .int64, RowMajorLayout[ComptimeInt[3]], MutAnyOrigin
         ],
     ):
         comptime _mask_type_name: String = Self.MaskType.get_type_name()
@@ -342,7 +339,7 @@ struct MLA_SM100_Decode_Sparse_QKV_FP8[
                 UnsafePointer[
                     Scalar[Self.ValidLengthType.dtype],
                     ImmutAnyOrigin,
-                    address_space=AddressSpace.GENERIC,
+                    address_space=.GENERIC,
                 ]
             ](valid_length.value()),
             q_max_seq_len,
@@ -414,7 +411,7 @@ struct MLA_SM100_Decode_Sparse_QKV_FP8[
 
         var q_smem = external_memory[
             Scalar[Self.fp8_type],
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
             alignment=128,
             name="mha_dynamic_shared_memory",
         ]()
@@ -553,9 +550,7 @@ struct MLA_SM100_Decode_Sparse_QKV_FP8[
         if warp_idx < 4:
             warpgroup_reg_alloc[num_reg_softmax]()
 
-            var attn_sink_log2 = Scalar[DType.float32](
-                min_or_neg_inf[DType.float32]()
-            )
+            var attn_sink_log2 = Float32(min_or_neg_inf[.float32]())
             comptime if Self.has_attn_sink:
                 var lane_idx = Int(lane_id())
                 var row = lane_idx & 0x3F
@@ -563,7 +558,7 @@ struct MLA_SM100_Decode_Sparse_QKV_FP8[
                 if head_idx_local < Self.config.num_q_heads:
                     attn_sink_log2 = attn_sink_ptr.unsafe_value()[
                         head_idx_local
-                    ] * Scalar[DType.float32](log2e)
+                    ] * Float32(log2e)
 
             Self.Common_MLA_Op.Softmax[
                 native_fp8=True,
@@ -938,7 +933,7 @@ struct MLA_SM100_Decode_Sparse_QKV_FP8[
                 Self.fp8_type,
                 type_of(q_tt_layout),
                 MutAnyOrigin,
-                address_space=AddressSpace.SHARED,
+                address_space=.SHARED,
             ](q_smem.bitcast[Scalar[Self.fp8_type]](), q_tt_layout)
             q_tma.async_copy(q_smem_tensor, mbar_q[], (0, row))
 
@@ -1031,7 +1026,7 @@ struct MLA_SM100_Decode_Sparse_QKV_FP8[
                 tile_width=Self.config.padded_q_depth // 8,
                 eviction_policy=CacheEviction.EVICT_LAST,
             ](
-                kv_stage_ptr.bitcast[Scalar[DType.int64]](),
+                kv_stage_ptr.bitcast[Int64](),
                 k_mbar[],
                 idx_smem,
                 start_idx=0,
@@ -1082,7 +1077,7 @@ struct MLA_SM100_Decode_Sparse_QKV_FP8[
                     tile_width=Self.config.padded_q_depth // 8,
                     eviction_policy=CacheEviction.EVICT_LAST,
                 ](
-                    kv_stage_ptr.bitcast[Scalar[DType.int64]](),
+                    kv_stage_ptr.bitcast[Int64](),
                     k_mbar[],
                     idx_smem,
                     start_idx=0,
@@ -1185,9 +1180,7 @@ struct MLA_SM100_Decode_Sparse_QKV_FP8[
             kv_gather_cons.wait()
             kv_mma_prod.acquire()
 
-            var src_u8 = kv_gather_cons.stage_base_ptr().bitcast[
-                Scalar[DType.uint8]
-            ]()
+            var src_u8 = kv_gather_cons.stage_base_ptr().bitcast[UInt8]()
             var dst = kv_mma_prod.stage_base_ptr()
 
             comptime for c in range(COLS_PER_GROUP):

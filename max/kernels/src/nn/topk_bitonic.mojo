@@ -67,17 +67,17 @@ comptime _TILE: Int = _PTOPK_TOTAL
 # `_V4_ALIGN` (= 16 B) is the alignment of a width-4 f32/i32 SIMD; the `alignment`
 # argument on the width-4 loads/stores below is REQUIRED — the default (element
 # alignment) makes LLVM legalize the vector op back into 4 scalar accesses.
-comptime _V4_ALIGN: Int = align_of[SIMD[DType.float32, _PTOPK_ITEMS]]()
+comptime _V4_ALIGN: Int = align_of[SIMD[.float32, _PTOPK_ITEMS]]()
 
 
 @always_inline
 def _load4_scores(
-    in_scores: UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin],
+    in_scores: UnsafePointer[Float32, ImmutAnyOrigin],
     base: Int,
     index_base: Int,
     local0: Int,
     count: Int,
-) -> Tuple[SIMD[DType.float32, _PTOPK_ITEMS], SIMD[DType.int32, _PTOPK_ITEMS]]:
+) -> Tuple[SIMD[.float32, _PTOPK_ITEMS], SIMD[.int32, _PTOPK_ITEMS]]:
     """Load the 4 contiguous scores a thread owns, plus their column indices.
 
     Reads `in_scores[base + index_base + local0 + j]` for `j` in `0..3`, storing
@@ -98,13 +98,13 @@ def _load4_scores(
     var off = base + col0
     if local0 + _PTOPK_ITEMS <= count and (off & (_PTOPK_ITEMS - 1)) == 0:
         var v = in_scores.load[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](off)
-        var idx = SIMD[DType.int32, _PTOPK_ITEMS](Int32(col0)) + SIMD[
+        var idx = SIMD[.int32, _PTOPK_ITEMS](Int32(col0)) + SIMD[
             DType.int32, _PTOPK_ITEMS
         ](0, 1, 2, 3)
         return (v, idx)
 
-    var vv = SIMD[DType.float32, _PTOPK_ITEMS](min_or_neg_inf[DType.float32]())
-    var ii = SIMD[DType.int32, _PTOPK_ITEMS](Int32(-1))
+    var vv = SIMD[.float32, _PTOPK_ITEMS](min_or_neg_inf[.float32]())
+    var ii = SIMD[.int32, _PTOPK_ITEMS](Int32(-1))
     comptime for j in range(_PTOPK_ITEMS):
         if local0 + j < count:
             vv[j] = in_scores[off + j]
@@ -117,20 +117,12 @@ def _halfclean4[
     cv_origin: MutOrigin,
     sv_origin: MutOrigin,
 ](
-    champ_v: UnsafePointer[
-        Scalar[DType.float32], cv_origin, address_space=AddressSpace.SHARED
-    ],
-    champ_i: UnsafePointer[
-        Scalar[DType.int32], cv_origin, address_space=AddressSpace.SHARED
-    ],
-    scratch_v: UnsafePointer[
-        Scalar[DType.float32], sv_origin, address_space=AddressSpace.SHARED
-    ],
-    scratch_i: UnsafePointer[
-        Scalar[DType.int32], sv_origin, address_space=AddressSpace.SHARED
-    ],
+    champ_v: UnsafePointer[Float32, cv_origin, address_space=.SHARED],
+    champ_i: UnsafePointer[Int32, cv_origin, address_space=.SHARED],
+    scratch_v: UnsafePointer[Float32, sv_origin, address_space=.SHARED],
+    scratch_i: UnsafePointer[Int32, sv_origin, address_space=.SHARED],
     tid: Int,
-) -> Tuple[SIMD[DType.float32, _PTOPK_ITEMS], SIMD[DType.int32, _PTOPK_ITEMS]]:
+) -> Tuple[SIMD[.float32, _PTOPK_ITEMS], SIMD[.int32, _PTOPK_ITEMS]]:
     """Batcher half-cleaner: element-wise max of the champion and reversed tile.
 
     Reads the 4 canonical champion slots `champ[e0..e3]` and the mirrored
@@ -157,12 +149,7 @@ def _halfclean4[
 @always_inline
 def _ranks_below[
     tiebreak: Bool
-](
-    v0: Scalar[DType.float32],
-    i0: Scalar[DType.int32],
-    v1: Scalar[DType.float32],
-    i1: Scalar[DType.int32],
-) -> Bool:
+](v0: Float32, i0: Int32, v1: Float32, i1: Int32,) -> Bool:
     """Whether `(v0, i0)` belongs after `(v1, i1)` in the sorted output.
 
     With `tiebreak` the order is `(descending value, ascending index)`, a total
@@ -180,13 +167,13 @@ def _ranks_below[
 def _select_lane_after_xor[
     tiebreak: Bool = False
 ](
-    v: Scalar[DType.float32],
-    i: Scalar[DType.int32],
-    pv: Scalar[DType.float32],
-    pi: Scalar[DType.int32],
+    v: Float32,
+    i: Int32,
+    pv: Float32,
+    pi: Int32,
     want_d: Bool,
     is_lo: Bool,
-) -> Tuple[Scalar[DType.float32], Scalar[DType.int32]]:
+) -> Tuple[Float32, Int32]:
     var do_swap: Bool
     if is_lo:
         do_swap = _ranks_below[tiebreak](v, i, pv, pi) == want_d
@@ -201,16 +188,16 @@ def _select_lane_after_xor[
 def _swap_pair_if[
     tiebreak: Bool = False
 ](
-    v0: Scalar[DType.float32],
-    i0: Scalar[DType.int32],
-    v1: Scalar[DType.float32],
-    i1: Scalar[DType.int32],
+    v0: Float32,
+    i0: Int32,
+    v1: Float32,
+    i1: Int32,
     want_d: Bool,
 ) -> Tuple[
-    Scalar[DType.float32],
-    Scalar[DType.int32],
-    Scalar[DType.float32],
-    Scalar[DType.int32],
+    Float32,
+    Int32,
+    Float32,
+    Int32,
 ]:
     if _ranks_below[tiebreak](v0, i0, v1, i1) == want_d:
         return (v1, i1, v0, i0)
@@ -228,20 +215,16 @@ def _bitonic_sort_desc[
     si_origin: MutOrigin,
     tiebreak: Bool = False,
 ](
-    mut v0: Scalar[DType.float32],
-    mut v1: Scalar[DType.float32],
-    mut v2: Scalar[DType.float32],
-    mut v3: Scalar[DType.float32],
-    mut i0: Scalar[DType.int32],
-    mut i1: Scalar[DType.int32],
-    mut i2: Scalar[DType.int32],
-    mut i3: Scalar[DType.int32],
-    smem_v: UnsafePointer[
-        Scalar[DType.float32], sv_origin, address_space=AddressSpace.SHARED
-    ],
-    smem_i: UnsafePointer[
-        Scalar[DType.int32], si_origin, address_space=AddressSpace.SHARED
-    ],
+    mut v0: Float32,
+    mut v1: Float32,
+    mut v2: Float32,
+    mut v3: Float32,
+    mut i0: Int32,
+    mut i1: Int32,
+    mut i2: Int32,
+    mut i3: Int32,
+    smem_v: UnsafePointer[Float32, sv_origin, address_space=.SHARED],
+    smem_i: UnsafePointer[Int32, si_origin, address_space=.SHARED],
     tid: Int,
 ):
     """Full descending bitonic sort of `_PTOPK_TOTAL` elements in place.
@@ -415,20 +398,16 @@ def _bitonic_merge_desc[
     sv_origin: MutOrigin,
     si_origin: MutOrigin,
 ](
-    mut v0: Scalar[DType.float32],
-    mut v1: Scalar[DType.float32],
-    mut v2: Scalar[DType.float32],
-    mut v3: Scalar[DType.float32],
-    mut i0: Scalar[DType.int32],
-    mut i1: Scalar[DType.int32],
-    mut i2: Scalar[DType.int32],
-    mut i3: Scalar[DType.int32],
-    smem_v: UnsafePointer[
-        Scalar[DType.float32], sv_origin, address_space=AddressSpace.SHARED
-    ],
-    smem_i: UnsafePointer[
-        Scalar[DType.int32], si_origin, address_space=AddressSpace.SHARED
-    ],
+    mut v0: Float32,
+    mut v1: Float32,
+    mut v2: Float32,
+    mut v3: Float32,
+    mut i0: Int32,
+    mut i1: Int32,
+    mut i2: Int32,
+    mut i3: Int32,
+    smem_v: UnsafePointer[Float32, sv_origin, address_space=.SHARED],
+    smem_i: UnsafePointer[Int32, si_origin, address_space=.SHARED],
     tid: Int,
 ):
     """Descending bitonic *merge* of a `_PTOPK_TOTAL`-element bitonic sequence.
@@ -529,8 +508,8 @@ def _bitonic_merge_desc[
 
 @__name(t"persistent_topk_2048")
 def _persistent_topk_2048_kernel(
-    in_scores: UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin],
-    out_idxs: UnsafePointer[Scalar[DType.int32], MutAnyOrigin],
+    in_scores: UnsafePointer[Float32, ImmutAnyOrigin],
+    out_idxs: UnsafePointer[Int32, MutAnyOrigin],
     N: Int32,
     K: Int32,
 ):
@@ -540,11 +519,11 @@ def _persistent_topk_2048_kernel(
 
 @__name(t"persistent_topk_2048_bounded")
 def _persistent_topk_2048_bounded_kernel(
-    in_scores: UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin],
-    out_idxs: UnsafePointer[Scalar[DType.int32], MutAnyOrigin],
+    in_scores: UnsafePointer[Float32, ImmutAnyOrigin],
+    out_idxs: UnsafePointer[Int32, MutAnyOrigin],
     N: Int32,
     K: Int32,
-    row_bounds: UnsafePointer[Scalar[DType.int32], ImmutAnyOrigin],
+    row_bounds: UnsafePointer[Int32, ImmutAnyOrigin],
 ):
     """`_persistent_topk_2048_kernel` with a per-row live-column bound.
 
@@ -561,8 +540,8 @@ def _persistent_topk_2048_bounded_kernel(
 
 @always_inline
 def _persistent_topk_2048_impl(
-    in_scores: UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin],
-    out_idxs: UnsafePointer[Scalar[DType.int32], MutAnyOrigin],
+    in_scores: UnsafePointer[Float32, ImmutAnyOrigin],
+    out_idxs: UnsafePointer[Int32, MutAnyOrigin],
     N: Int32,
     K: Int32,
     count: Int,
@@ -572,11 +551,11 @@ def _persistent_topk_2048_impl(
 
     var smem_v = unsafe_stack_allocation[
         _PTOPK_TOTAL,
-        Scalar[DType.float32],
-        address_space=AddressSpace.SHARED,
+        Float32,
+        address_space=.SHARED,
     ]()
     var smem_i = unsafe_stack_allocation[
-        _PTOPK_TOTAL, Scalar[DType.int32], address_space=AddressSpace.SHARED
+        _PTOPK_TOTAL, Int32, address_space=.SHARED
     ]()
 
     var _N = Int(N)
@@ -587,14 +566,14 @@ def _persistent_topk_2048_impl(
     var e2 = tid * 4 + 2
     var e3 = tid * 4 + 3
 
-    var v0: Scalar[DType.float32]
-    var v1: Scalar[DType.float32]
-    var v2: Scalar[DType.float32]
-    var v3: Scalar[DType.float32]
-    var i0: Scalar[DType.int32]
-    var i1: Scalar[DType.int32]
-    var i2: Scalar[DType.int32]
-    var i3: Scalar[DType.int32]
+    var v0: Float32
+    var v1: Float32
+    var v2: Float32
+    var v3: Float32
+    var i0: Int32
+    var i1: Int32
+    var i2: Int32
+    var i3: Int32
 
     var lv, li = _load4_scores(in_scores, row, 0, e0, count)
     v0 = lv[0]
@@ -621,8 +600,8 @@ def _persistent_topk_2048_impl(
 
 @__name(t"streaming_topk")
 def _streaming_topk_kernel(
-    in_scores: UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin],
-    out_idxs: UnsafePointer[Scalar[DType.int32], MutAnyOrigin],
+    in_scores: UnsafePointer[Float32, ImmutAnyOrigin],
+    out_idxs: UnsafePointer[Int32, MutAnyOrigin],
     N: Int32,
     K: Int32,
 ):
@@ -639,27 +618,27 @@ def _streaming_topk_kernel(
     # LDS/STS (the swizzled sort/merge accesses stay scalar).
     var champ_v = unsafe_stack_allocation[
         _TILE,
-        Scalar[DType.float32],
+        Float32,
         alignment=_V4_ALIGN,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
     var champ_i = unsafe_stack_allocation[
         _TILE,
-        Scalar[DType.int32],
+        Int32,
         alignment=_V4_ALIGN,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
     var scratch_v = unsafe_stack_allocation[
         _TILE,
-        Scalar[DType.float32],
+        Float32,
         alignment=_V4_ALIGN,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
     var scratch_i = unsafe_stack_allocation[
         _TILE,
-        Scalar[DType.int32],
+        Int32,
         alignment=_V4_ALIGN,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
 
     var _N = Int(N)
@@ -670,23 +649,23 @@ def _streaming_topk_kernel(
     var e2 = tid * 4 + 2
     var e3 = tid * 4 + 3
 
-    var neg_inf = min_or_neg_inf[DType.float32]()
+    var neg_inf = min_or_neg_inf[.float32]()
     champ_v.store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
-        e0, SIMD[DType.float32, _PTOPK_ITEMS](neg_inf)
+        e0, SIMD[.float32, _PTOPK_ITEMS](neg_inf)
     )
     champ_i.store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
-        e0, SIMD[DType.int32, _PTOPK_ITEMS](Int32(-1))
+        e0, SIMD[.int32, _PTOPK_ITEMS](Int32(-1))
     )
     barrier()
 
-    var v0: Scalar[DType.float32]
-    var v1: Scalar[DType.float32]
-    var v2: Scalar[DType.float32]
-    var v3: Scalar[DType.float32]
-    var i0: Scalar[DType.int32]
-    var i1: Scalar[DType.int32]
-    var i2: Scalar[DType.int32]
-    var i3: Scalar[DType.int32]
+    var v0: Float32
+    var v1: Float32
+    var v2: Float32
+    var v3: Float32
+    var i0: Int32
+    var i1: Int32
+    var i2: Int32
+    var i3: Int32
 
     var num_tiles = ceildiv(_N, _TILE)
     for t in range(num_tiles):
@@ -710,10 +689,10 @@ def _streaming_topk_kernel(
         barrier()
 
         scratch_v.store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
-            e0, SIMD[DType.float32, _PTOPK_ITEMS](v0, v1, v2, v3)
+            e0, SIMD[.float32, _PTOPK_ITEMS](v0, v1, v2, v3)
         )
         scratch_i.store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
-            e0, SIMD[DType.int32, _PTOPK_ITEMS](i0, i1, i2, i3)
+            e0, SIMD[.int32, _PTOPK_ITEMS](i0, i1, i2, i3)
         )
         barrier()
 
@@ -740,10 +719,10 @@ def _streaming_topk_kernel(
         )
 
         champ_v.store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
-            e0, SIMD[DType.float32, _PTOPK_ITEMS](v0, v1, v2, v3)
+            e0, SIMD[.float32, _PTOPK_ITEMS](v0, v1, v2, v3)
         )
         champ_i.store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
-            e0, SIMD[DType.int32, _PTOPK_ITEMS](i0, i1, i2, i3)
+            e0, SIMD[.int32, _PTOPK_ITEMS](i0, i1, i2, i3)
         )
         barrier()
 
@@ -882,31 +861,31 @@ comptime HSEL_TRACE_EVENTS: Int = 32
 
 
 @always_inline
-def _phi(v: Scalar[DType.float32]) -> UInt32:
+def _phi(v: Float32) -> UInt32:
     """The monotone float-to-uint32 bijection: flip the sign bit of a positive,
     every bit of a negative. Comparing the results as unsigned orders the
     scores, so a radix digit of one is a range of scores.
     """
-    var bits = bitcast[DType.uint32, 1](v)
+    var bits = bitcast[.uint32, 1](v)
     return bits ^ ((-(bits >> 31)) | UInt32(0x80000000))
 
 
 @always_inline
 def _phi_group(
-    v: SIMD[DType.float32, _HSEL_SCAN_ITEMS]
-) -> SIMD[DType.uint32, _HSEL_SCAN_ITEMS]:
+    v: SIMD[.float32, _HSEL_SCAN_ITEMS]
+) -> SIMD[.uint32, _HSEL_SCAN_ITEMS]:
     """`_phi` over a thread's whole scan group."""
-    var bits = bitcast[DType.uint32, _HSEL_SCAN_ITEMS](v)
+    var bits = bitcast[.uint32, _HSEL_SCAN_ITEMS](v)
     return bits ^ ((-(bits >> 31)) | UInt32(0x80000000))
 
 
 @always_inline
 def _load_scan_group(
-    in_scores: UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin],
+    in_scores: UnsafePointer[Float32, ImmutAnyOrigin],
     off: Int,
     local0: Int,
     count: Int,
-) -> SIMD[DType.float32, _HSEL_SCAN_ITEMS]:
+) -> SIMD[.float32, _HSEL_SCAN_ITEMS]:
     """The contiguous scores a thread owns, as back-to-back 128-bit loads.
 
     Positions past `count` pad with the bit pattern whose `_phi` image is 0,
@@ -919,20 +898,20 @@ def _load_scan_group(
     if local0 + _HSEL_SCAN_ITEMS <= count and (off & (_PTOPK_ITEMS - 1)) == 0:
         return in_scores.load[width=_HSEL_SCAN_ITEMS, alignment=_V4_ALIGN](off)
 
-    var bits = SIMD[DType.uint32, _HSEL_SCAN_ITEMS](UInt32(0xFFFFFFFF))
+    var bits = SIMD[.uint32, _HSEL_SCAN_ITEMS](UInt32(0xFFFFFFFF))
     comptime for j in range(_HSEL_SCAN_ITEMS):
         if local0 + j < count:
-            bits[j] = bitcast[DType.uint32, 1](in_scores[off + j])
-    return bitcast[DType.float32, _HSEL_SCAN_ITEMS](bits)
+            bits[j] = bitcast[.uint32, 1](in_scores[off + j])
+    return bitcast[.float32, _HSEL_SCAN_ITEMS](bits)
 
 
 @always_inline
 def _phi4(
-    in_scores: UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin],
+    in_scores: UnsafePointer[Float32, ImmutAnyOrigin],
     off: Int,
     local0: Int,
     count: Int,
-) -> SIMD[DType.uint32, _PTOPK_ITEMS]:
+) -> SIMD[.uint32, _PTOPK_ITEMS]:
     """`_phi` of the four contiguous scores a resident group owns.
 
     Converting at the load is what keeps the resident payload at one register
@@ -944,15 +923,15 @@ def _phi4(
     takes the third branch and touches no memory at all, which is what makes a
     payload wider than the row cost only its registers.
     """
-    var bits = SIMD[DType.uint32, _PTOPK_ITEMS](UInt32(0xFFFFFFFF))
+    var bits = SIMD[.uint32, _PTOPK_ITEMS](UInt32(0xFFFFFFFF))
     if local0 + _PTOPK_ITEMS <= count and (off & (_PTOPK_ITEMS - 1)) == 0:
-        bits = bitcast[DType.uint32, _PTOPK_ITEMS](
+        bits = bitcast[.uint32, _PTOPK_ITEMS](
             in_scores.load[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](off)
         )
     elif local0 < count:
         comptime for j in range(_PTOPK_ITEMS):
             if local0 + j < count:
-                bits[j] = bitcast[DType.uint32, 1](in_scores[off + j])
+                bits[j] = bitcast[.uint32, 1](in_scores[off + j])
     return bits ^ ((-(bits >> 31)) | UInt32(0x80000000))
 
 
@@ -980,9 +959,7 @@ def _hsel_block_scan[
     block_size: Int, mut_origin: MutOrigin
 ](
     val: UInt32,
-    wsum: UnsafePointer[
-        Scalar[DType.uint32], mut_origin, address_space=AddressSpace.SHARED
-    ],
+    wsum: UnsafePointer[UInt32, mut_origin, address_space=.SHARED],
 ) -> UInt32:
     """Block-wide inclusive prefix sum across `block_size` threads, one barrier.
 
@@ -1015,9 +992,7 @@ def _hsel_split_scan[
     block_size: Int, one_barrier: Bool, mut_origin: MutOrigin
 ](
     val: UInt32,
-    wsum: UnsafePointer[
-        Scalar[DType.uint32], mut_origin, address_space=AddressSpace.SHARED
-    ],
+    wsum: UnsafePointer[UInt32, mut_origin, address_space=.SHARED],
 ) -> UInt32:
     """The round split's block-wide inclusive prefix sum, whichever is faster here.
 
@@ -1086,8 +1061,8 @@ def _histsel_topk_kernel[
     ordered: Bool = True,
     deterministic: Bool = True,
 ](
-    in_scores: UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin],
-    out_idxs: UnsafePointer[Scalar[DType.int32], MutAnyOrigin],
+    in_scores: UnsafePointer[Float32, ImmutAnyOrigin],
+    out_idxs: UnsafePointer[Int32, MutAnyOrigin],
     N: Int32,
     K: Int32,
     trace_buf: TraceBufT,
@@ -1118,11 +1093,11 @@ def _histsel_topk_bounded_kernel[
     ordered: Bool = True,
     deterministic: Bool = True,
 ](
-    in_scores: UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin],
-    out_idxs: UnsafePointer[Scalar[DType.int32], MutAnyOrigin],
+    in_scores: UnsafePointer[Float32, ImmutAnyOrigin],
+    out_idxs: UnsafePointer[Int32, MutAnyOrigin],
     N: Int32,
     K: Int32,
-    row_bounds: UnsafePointer[Scalar[DType.int32], ImmutAnyOrigin],
+    row_bounds: UnsafePointer[Int32, ImmutAnyOrigin],
     trace_buf: TraceBufT,
 ):
     """`_histsel_topk_impl` with a per-row live-column bound.
@@ -1160,8 +1135,8 @@ def _histsel_topk_impl[
     ordered: Bool = True,
     deterministic: Bool = True,
 ](
-    in_scores: UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin],
-    out_idxs: UnsafePointer[Scalar[DType.int32], MutAnyOrigin],
+    in_scores: UnsafePointer[Float32, ImmutAnyOrigin],
+    out_idxs: UnsafePointer[Int32, MutAnyOrigin],
     N: Int32,
     K: Int32,
     count: Int,
@@ -1201,30 +1176,28 @@ def _histsel_topk_impl[
     var token = Int(block_idx.x)
 
     var hist = unsafe_stack_allocation[
-        _HSEL_BINS + 1, Scalar[DType.uint32], address_space=AddressSpace.SHARED
+        _HSEL_BINS + 1, UInt32, address_space=.SHARED
     ]()
     var sel_k = unsafe_stack_allocation[
         sel_cap,
-        Scalar[DType.uint64],
+        UInt64,
         alignment=_V4_ALIGN,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
     # [0] split bin, [1] keys strictly above it, [2] keys at or above it,
     # [3] append cursor into `sel`, [4] collect cursor into `cand`.
-    var ctl = unsafe_stack_allocation[
-        8, Scalar[DType.uint32], address_space=AddressSpace.SHARED
-    ]()
+    var ctl = unsafe_stack_allocation[8, UInt32, address_space=.SHARED]()
     var wcur = unsafe_stack_allocation[
-        _HSEL_WARPS, Scalar[DType.uint32], address_space=AddressSpace.SHARED
+        _HSEL_WARPS, UInt32, address_space=.SHARED
     ]()
     var wor = unsafe_stack_allocation[
         2 * _HSEL_WARPS + 2,
-        Scalar[DType.uint64],
-        address_space=AddressSpace.SHARED,
+        UInt64,
+        address_space=.SHARED,
     ]()
     var cand = external_memory[
-        Scalar[DType.int32],
-        address_space=AddressSpace.SHARED,
+        Int32,
+        address_space=.SHARED,
         alignment=align_of[Int32](),
     ]()
 
@@ -1307,7 +1280,7 @@ def _histsel_topk_impl[
                         # hit, for less than a divergent branch would cost.
                         var i = lane
                         var col = 0
-                        var sc = Scalar[DType.float32](0)
+                        var sc = Float32(0)
                         if i < wn:
                             col = Int(cand[wbase + i])
                             sc = in_scores[row + col]
@@ -1330,7 +1303,7 @@ def _histsel_topk_impl[
                             i = ni
                     else:
                         var base = tid * _HSEL_SCAN_ITEMS
-                        var cur = SIMD[DType.float32, _HSEL_SCAN_ITEMS](0)
+                        var cur = SIMD[.float32, _HSEL_SCAN_ITEMS](0)
                         comptime if prefetch:
                             cur = _load_scan_group(
                                 in_scores, row + base, base, count
@@ -1498,7 +1471,7 @@ def _histsel_topk_impl[
         # One candidate's score ahead, as in the refine rounds above.
         var i = lane
         var col = 0
-        var sc = Scalar[DType.float32](0)
+        var sc = Float32(0)
         if i < wn:
             col = Int(cand[wbase + i])
             sc = in_scores[row + col]
@@ -1615,7 +1588,7 @@ def _histsel_topk_impl[
     ](
         sel_k,
         hist,
-        cand.bitcast[Scalar[DType.uint32]](),
+        cand.bitcast[UInt32](),
         wor,
         hist,
         sel_k,
@@ -1669,7 +1642,7 @@ def _histsel_topk_impl[
 
 
 @always_inline
-def _hsel_vary_positions[rank_bits: Int](vary: UInt64) -> SIMD[DType.uint64, 2]:
+def _hsel_vary_positions[rank_bits: Int](vary: UInt64) -> SIMD[.uint64, 2]:
     """The `rank_bits` most significant set bits of `vary`, as positions.
 
     Packed six bits each so the block shares them through a shared-memory
@@ -1682,7 +1655,7 @@ def _hsel_vary_positions[rank_bits: Int](vary: UInt64) -> SIMD[DType.uint64, 2]:
     Positions past the last set bit stay at 0, which adds the same constant to
     every key's digit and so cannot change the order.
     """
-    var packed = SIMD[DType.uint64, 2](0)
+    var packed = SIMD[.uint64, 2](0)
     var m = vary
     comptime for i in range(rank_bits):
         if m != 0:
@@ -1727,7 +1700,7 @@ def _hsel_bin_shifts(nocc: Int, nbins: Int, rank_bits: Int) -> Tuple[Int, Int]:
 @always_inline
 def _hsel_rank_digit[
     rank_bits: Int
-](key: UInt64, packed: SIMD[DType.uint64, 2]) -> Int:
+](key: UInt64, packed: SIMD[.uint64, 2]) -> Int:
     """Gather the key's varying bits, most significant first."""
     var d = UInt32(0)
     comptime for i in range(rank_bits):
@@ -1744,10 +1717,8 @@ def _hsel_digit_of[
     rank_bits: Int, bin_digit: Bool, d_origin: MutOrigin
 ](
     key: UInt64,
-    packed: SIMD[DType.uint64, 2],
-    dmap: UnsafePointer[
-        Scalar[DType.uint32], d_origin, address_space=AddressSpace.SHARED
-    ],
+    packed: SIMD[.uint64, 2],
+    dmap: UnsafePointer[UInt32, d_origin, address_space=.SHARED],
     left: Int,
     right: Int,
     use_bin: Bool,
@@ -1785,25 +1756,13 @@ def _hsel_rank_write[
     c_origin: MutOrigin,
     d_origin: MutOrigin,
 ](
-    sel_k: UnsafePointer[
-        Scalar[DType.uint64], sk_origin, address_space=AddressSpace.SHARED
-    ],
-    hist: UnsafePointer[
-        Scalar[DType.uint32], h_origin, address_space=AddressSpace.SHARED
-    ],
-    cur: UnsafePointer[
-        Scalar[DType.uint32], c_origin, address_space=AddressSpace.SHARED
-    ],
-    wor: UnsafePointer[
-        Scalar[DType.uint64], sk_origin, address_space=AddressSpace.SHARED
-    ],
-    dmap: UnsafePointer[
-        Scalar[DType.uint32], d_origin, address_space=AddressSpace.SHARED
-    ],
-    banchor: UnsafePointer[
-        Scalar[DType.uint64], d_origin, address_space=AddressSpace.SHARED
-    ],
-    out_idxs: UnsafePointer[Scalar[DType.int32], MutAnyOrigin],
+    sel_k: UnsafePointer[UInt64, sk_origin, address_space=.SHARED],
+    hist: UnsafePointer[UInt32, h_origin, address_space=.SHARED],
+    cur: UnsafePointer[UInt32, c_origin, address_space=.SHARED],
+    wor: UnsafePointer[UInt64, sk_origin, address_space=.SHARED],
+    dmap: UnsafePointer[UInt32, d_origin, address_space=.SHARED],
+    banchor: UnsafePointer[UInt64, d_origin, address_space=.SHARED],
+    out_idxs: UnsafePointer[Int32, MutAnyOrigin],
     out_base: Int,
     M: Int,
     K: Int,
@@ -1841,7 +1800,7 @@ def _hsel_rank_write[
     comptime assert run * nthreads >= nbins, "every rank bin needs an owner"
 
     var p0 = tid * items
-    var mine = SIMD[DType.uint64, items](0)
+    var mine = SIMD[.uint64, items](0)
     comptime for i in range(items):
         if p0 + i < M:
             mine[i] = sel_k[p0 + i]
@@ -1920,7 +1879,7 @@ def _hsel_rank_write[
         # Turn round 0's occupancy flags into dense numbers in place.
         comptime brun = _HSEL_BINS // nthreads
         var b0 = tid * brun
-        var flag = SIMD[DType.uint32, brun](0)
+        var flag = SIMD[.uint32, brun](0)
         var nloc = UInt32(0)
         comptime for j in range(brun):
             flag[j] = dmap[b0 + j]
@@ -1941,11 +1900,11 @@ def _hsel_rank_write[
         wor[nwarps + 1] = pk[1]
     barrier()
 
-    var packed = SIMD[DType.uint64, 2](wor[nwarps], wor[nwarps + 1])
+    var packed = SIMD[.uint64, 2](wor[nwarps], wor[nwarps + 1])
     var sh = (0, 0)
     comptime if bin_digit:
         sh = _hsel_bin_shifts(nocc, nbins, rank_bits)
-    var dig = SIMD[DType.int32, items](0)
+    var dig = SIMD[.int32, items](0)
     comptime for i in range(items):
         dig[i] = Int32(
             _hsel_digit_of[rank_bits, bin_digit](
@@ -1985,7 +1944,7 @@ def _hsel_rank_write[
     # bins. Afterwards `hist[b]` counts the keys in bins at or above `b`, so bin
     # `b` owns output slots `[hist[b+1], hist[b])`.
     var top = nbins - 1 - tid * run
-    var cnt = SIMD[DType.uint32, run](0)
+    var cnt = SIMD[.uint32, run](0)
     var local = UInt32(0)
     if top >= 0:
         comptime for j in range(run):
@@ -2121,8 +2080,8 @@ def _histsel_resident_kernel[
     deterministic: Bool = True,
     res_vecs: Int = _HSEL_RES_VECS,
 ](
-    in_scores: UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin],
-    out_idxs: UnsafePointer[Scalar[DType.int32], MutAnyOrigin],
+    in_scores: UnsafePointer[Float32, ImmutAnyOrigin],
+    out_idxs: UnsafePointer[Int32, MutAnyOrigin],
     N: Int32,
     K: Int32,
     trace_buf: TraceBufT,
@@ -2154,11 +2113,11 @@ def _histsel_resident_bounded_kernel[
     deterministic: Bool = True,
     res_vecs: Int = _HSEL_RES_VECS,
 ](
-    in_scores: UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin],
-    out_idxs: UnsafePointer[Scalar[DType.int32], MutAnyOrigin],
+    in_scores: UnsafePointer[Float32, ImmutAnyOrigin],
+    out_idxs: UnsafePointer[Int32, MutAnyOrigin],
     N: Int32,
     K: Int32,
-    row_bounds: UnsafePointer[Scalar[DType.int32], ImmutAnyOrigin],
+    row_bounds: UnsafePointer[Int32, ImmutAnyOrigin],
     trace_buf: TraceBufT,
 ):
     """`_histsel_resident_impl` with a per-row live-column bound.
@@ -2189,8 +2148,8 @@ def _histsel_resident_impl[
     deterministic: Bool = True,
     res_vecs: Int = _HSEL_RES_VECS,
 ](
-    in_scores: UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin],
-    out_idxs: UnsafePointer[Scalar[DType.int32], MutAnyOrigin],
+    in_scores: UnsafePointer[Float32, ImmutAnyOrigin],
+    out_idxs: UnsafePointer[Int32, MutAnyOrigin],
     N: Int32,
     K: Int32,
     count: Int,
@@ -2229,7 +2188,7 @@ def _histsel_resident_impl[
     var token = Int(block_idx.x)
 
     var hist = unsafe_stack_allocation[
-        _HSEL_BINS + 1, Scalar[DType.uint32], address_space=AddressSpace.SHARED
+        _HSEL_BINS + 1, UInt32, address_space=.SHARED
     ]()
     # Everything the rank needs is dead weight under the cheap contract, which
     # compacts straight from registers to the output and never packs a key.
@@ -2238,9 +2197,9 @@ def _histsel_resident_impl[
     comptime wor_n = (2 * (_HSEL_RES_BLOCK // WARP_SIZE) + 2) if ordered else 1
     var sel_k = unsafe_stack_allocation[
         selk_n,
-        Scalar[DType.uint64],
+        UInt64,
         alignment=_V4_ALIGN,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
     # The leading slots are `_histsel_topk_kernel`'s: [0] split bin, [1] keys
     # strictly above it, [2] keys at or above it, [3] append cursor. Past those
@@ -2252,21 +2211,21 @@ def _histsel_resident_impl[
     comptime ctl_tail: Int = 8
     var ctl = unsafe_stack_allocation[
         ctl_tail + res_vecs,
-        Scalar[DType.uint32],
-        address_space=AddressSpace.SHARED,
+        UInt32,
+        address_space=.SHARED,
     ]()
     # The rank's per-bin cursor and its staged output. The streaming path folds
     # these into its dead candidate list; with no candidate list there is nothing
     # to fold into.
     var cur = unsafe_stack_allocation[
         cur_n,
-        Scalar[DType.uint32],
-        address_space=AddressSpace.SHARED,
+        UInt32,
+        address_space=.SHARED,
     ]()
     var wor = unsafe_stack_allocation[
         wor_n,
-        Scalar[DType.uint64],
-        address_space=AddressSpace.SHARED,
+        UInt64,
+        address_space=.SHARED,
     ]()
     # The one-barrier block scan is taken wherever it measured faster, which is
     # every instantiation except the ordered per-bin digit -- there it loses to the
@@ -2282,17 +2241,17 @@ def _histsel_resident_impl[
     ) else (wscan_warps if one_barrier_scan else 1)
     var wscan = unsafe_stack_allocation[
         wscan_n,
-        Scalar[DType.uint32],
-        address_space=AddressSpace.SHARED,
+        UInt32,
+        address_space=.SHARED,
     ]()
     # Round 0's occupied bins, numbered densely, and one representative key per
     # bin -- both only for the instantiation whose digit uses them.
     comptime nbin_aux = _HSEL_BINS if (bin_digit and ordered) else 1
     var dmap = unsafe_stack_allocation[
-        nbin_aux, Scalar[DType.uint32], address_space=AddressSpace.SHARED
+        nbin_aux, UInt32, address_space=.SHARED
     ]()
     var banchor = unsafe_stack_allocation[
-        nbin_aux, Scalar[DType.uint64], address_space=AddressSpace.SHARED
+        nbin_aux, UInt64, address_space=.SHARED
     ]()
 
     var _N = Int(N)
@@ -2323,7 +2282,7 @@ def _histsel_resident_impl[
     # transaction per group -- and all `vecs` groups are in flight at once. The
     # streaming path reaches two outstanding loads per thread by carrying one
     # group ahead; here the whole row is the prefetch.
-    var ph = SIMD[DType.uint32, items](0)
+    var ph = SIMD[.uint32, items](0)
     comptime for v in range(res_vecs):
         var c0 = tid * _PTOPK_ITEMS + v * res_step
         var g = _phi4(in_scores, row + c0, c0, count)
@@ -2505,7 +2464,7 @@ def _histsel_resident_impl[
                         comptime if bin_digit and half == 0 and r == 0:
                             comptime orun = nbins // _HSEL_RES_BLOCK
                             var b0 = tid * orun
-                            var occ = SIMD[DType.uint32, orun](0)
+                            var occ = SIMD[.uint32, orun](0)
                             var nloc = UInt32(0)
                             comptime for j in range(orun):
                                 if hist[b0 + j] > 0:
@@ -2613,7 +2572,7 @@ def _histsel_resident_impl[
             # a claim at or beyond `K` is simply dropped -- exactly `K - n_above`
             # survive, which is the cut.
             var obase = token * _K
-            var emask = SIMD[DType.uint32, res_vecs](0)
+            var emask = SIMD[.uint32, res_vecs](0)
             var ec_all = UInt32(0)
             comptime for v in range(res_vecs):
                 var c0 = tid * _PTOPK_ITEMS + v * res_step
@@ -2676,9 +2635,9 @@ def _histsel_resident_impl[
                     )
             return
 
-        var gmask = SIMD[DType.uint32, res_vecs](0)
-        var emask = SIMD[DType.uint32, res_vecs](0)
-        var pref = SIMD[DType.uint32, res_vecs](0)
+        var gmask = SIMD[.uint32, res_vecs](0)
+        var emask = SIMD[.uint32, res_vecs](0)
+        var pref = SIMD[.uint32, res_vecs](0)
         comptime for v in range(res_vecs):
             var gc = UInt32(0)
             var ec = UInt32(0)
@@ -2715,8 +2674,8 @@ def _histsel_resident_impl[
         # earlier group's totals. Accumulating them is what keeps that right at any
         # payload width; getting it wrong overlays an earlier group's slots and
         # writes past the row.
-        var g_before = SIMD[DType.uint32, res_vecs](0)
-        var e_before = SIMD[DType.uint32, res_vecs](0)
+        var g_before = SIMD[.uint32, res_vecs](0)
+        var e_before = SIMD[.uint32, res_vecs](0)
         var g_acc = UInt32(0)
         var e_acc = UInt32(0)
         comptime for v in range(res_vecs):
@@ -2846,9 +2805,9 @@ def _histsel_resident_impl[
 
 @__name(t"split_partial_topk")
 def _split_partial_kernel(
-    in_scores: UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin],
-    part_v: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
-    part_i: UnsafePointer[Scalar[DType.int32], MutAnyOrigin],
+    in_scores: UnsafePointer[Float32, ImmutAnyOrigin],
+    part_v: UnsafePointer[Float32, MutAnyOrigin],
+    part_i: UnsafePointer[Int32, MutAnyOrigin],
     N_dev: Int32,
     slice_len_dev: Int32,
     S_dev: Int32,
@@ -2875,27 +2834,27 @@ def _split_partial_kernel(
     # LDS/STS (the swizzled sort/merge accesses stay scalar).
     var champ_v = unsafe_stack_allocation[
         _TILE,
-        Scalar[DType.float32],
+        Float32,
         alignment=_V4_ALIGN,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
     var champ_i = unsafe_stack_allocation[
         _TILE,
-        Scalar[DType.int32],
+        Int32,
         alignment=_V4_ALIGN,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
     var scratch_v = unsafe_stack_allocation[
         _TILE,
-        Scalar[DType.float32],
+        Float32,
         alignment=_V4_ALIGN,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
     var scratch_i = unsafe_stack_allocation[
         _TILE,
-        Scalar[DType.int32],
+        Int32,
         alignment=_V4_ALIGN,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
 
     var e0 = tid * 4
@@ -2903,12 +2862,12 @@ def _split_partial_kernel(
     var e2 = tid * 4 + 2
     var e3 = tid * 4 + 3
 
-    var neg_inf = min_or_neg_inf[DType.float32]()
+    var neg_inf = min_or_neg_inf[.float32]()
     champ_v.store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
-        e0, SIMD[DType.float32, _PTOPK_ITEMS](neg_inf)
+        e0, SIMD[.float32, _PTOPK_ITEMS](neg_inf)
     )
     champ_i.store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
-        e0, SIMD[DType.int32, _PTOPK_ITEMS](Int32(-1))
+        e0, SIMD[.int32, _PTOPK_ITEMS](Int32(-1))
     )
     barrier()
 
@@ -2918,14 +2877,14 @@ def _split_partial_kernel(
     if slice_base < N:
         slice_count = min(slice_len, N - slice_base)
 
-    var v0: Scalar[DType.float32]
-    var v1: Scalar[DType.float32]
-    var v2: Scalar[DType.float32]
-    var v3: Scalar[DType.float32]
-    var i0: Scalar[DType.int32]
-    var i1: Scalar[DType.int32]
-    var i2: Scalar[DType.int32]
-    var i3: Scalar[DType.int32]
+    var v0: Float32
+    var v1: Float32
+    var v2: Float32
+    var v3: Float32
+    var i0: Int32
+    var i1: Int32
+    var i2: Int32
+    var i3: Int32
 
     var num_tiles = ceildiv(slice_count, _TILE)
     for t in range(num_tiles):
@@ -2951,10 +2910,10 @@ def _split_partial_kernel(
         barrier()
 
         scratch_v.store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
-            e0, SIMD[DType.float32, _PTOPK_ITEMS](v0, v1, v2, v3)
+            e0, SIMD[.float32, _PTOPK_ITEMS](v0, v1, v2, v3)
         )
         scratch_i.store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
-            e0, SIMD[DType.int32, _PTOPK_ITEMS](i0, i1, i2, i3)
+            e0, SIMD[.int32, _PTOPK_ITEMS](i0, i1, i2, i3)
         )
         barrier()
 
@@ -2974,10 +2933,10 @@ def _split_partial_kernel(
         )
 
         champ_v.store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
-            e0, SIMD[DType.float32, _PTOPK_ITEMS](v0, v1, v2, v3)
+            e0, SIMD[.float32, _PTOPK_ITEMS](v0, v1, v2, v3)
         )
         champ_i.store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
-            e0, SIMD[DType.int32, _PTOPK_ITEMS](i0, i1, i2, i3)
+            e0, SIMD[.int32, _PTOPK_ITEMS](i0, i1, i2, i3)
         )
         barrier()
 
@@ -2994,10 +2953,10 @@ def _split_partial_kernel(
 
 @__name(t"reduce_partials_topk")
 def _reduce_partials_kernel(
-    in_v: UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin],
-    in_i: UnsafePointer[Scalar[DType.int32], ImmutAnyOrigin],
-    out_v: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
-    out_i: UnsafePointer[Scalar[DType.int32], MutAnyOrigin],
+    in_v: UnsafePointer[Float32, ImmutAnyOrigin],
+    in_i: UnsafePointer[Int32, ImmutAnyOrigin],
+    out_v: UnsafePointer[Float32, MutAnyOrigin],
+    out_i: UnsafePointer[Int32, MutAnyOrigin],
     count_in_dev: Int32,
     count_out_dev: Int32,
     g_dev: Int32,
@@ -3025,27 +2984,27 @@ def _reduce_partials_kernel(
     # LDS/STS (the swizzled sort/merge accesses stay scalar).
     var champ_v = unsafe_stack_allocation[
         _TILE,
-        Scalar[DType.float32],
+        Float32,
         alignment=_V4_ALIGN,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
     var champ_i = unsafe_stack_allocation[
         _TILE,
-        Scalar[DType.int32],
+        Int32,
         alignment=_V4_ALIGN,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
     var scratch_v = unsafe_stack_allocation[
         _TILE,
-        Scalar[DType.float32],
+        Float32,
         alignment=_V4_ALIGN,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
     var scratch_i = unsafe_stack_allocation[
         _TILE,
-        Scalar[DType.int32],
+        Int32,
         alignment=_V4_ALIGN,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
 
     var e0 = tid * 4
@@ -3068,7 +3027,7 @@ def _reduce_partials_kernel(
 
     # Seeded to keep definite-assignment happy; the half-cleaner overwrites all
     # four before the merge reads them.
-    var neg_inf = min_or_neg_inf[DType.float32]()
+    var neg_inf = min_or_neg_inf[.float32]()
     var v0 = neg_inf
     var v1 = neg_inf
     var v2 = neg_inf
@@ -3105,10 +3064,10 @@ def _reduce_partials_kernel(
         )
 
         champ_v.store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
-            e0, SIMD[DType.float32, _PTOPK_ITEMS](v0, v1, v2, v3)
+            e0, SIMD[.float32, _PTOPK_ITEMS](v0, v1, v2, v3)
         )
         champ_i.store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
-            e0, SIMD[DType.int32, _PTOPK_ITEMS](i0, i1, i2, i3)
+            e0, SIMD[.int32, _PTOPK_ITEMS](i0, i1, i2, i3)
         )
         barrier()
 
@@ -3125,9 +3084,9 @@ def _reduce_partials_kernel(
 
 @__name(t"merge_partials_topk")
 def _merge_partials_kernel(
-    part_v: UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin],
-    part_i: UnsafePointer[Scalar[DType.int32], ImmutAnyOrigin],
-    out_idxs: UnsafePointer[Scalar[DType.int32], MutAnyOrigin],
+    part_v: UnsafePointer[Float32, ImmutAnyOrigin],
+    part_i: UnsafePointer[Int32, ImmutAnyOrigin],
+    out_idxs: UnsafePointer[Int32, MutAnyOrigin],
     count_dev: Int32,
     K_dev: Int32,
 ):
@@ -3150,27 +3109,27 @@ def _merge_partials_kernel(
     # LDS/STS (the swizzled sort/merge accesses stay scalar).
     var champ_v = unsafe_stack_allocation[
         _TILE,
-        Scalar[DType.float32],
+        Float32,
         alignment=_V4_ALIGN,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
     var champ_i = unsafe_stack_allocation[
         _TILE,
-        Scalar[DType.int32],
+        Int32,
         alignment=_V4_ALIGN,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
     var scratch_v = unsafe_stack_allocation[
         _TILE,
-        Scalar[DType.float32],
+        Float32,
         alignment=_V4_ALIGN,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
     var scratch_i = unsafe_stack_allocation[
         _TILE,
-        Scalar[DType.int32],
+        Int32,
         alignment=_V4_ALIGN,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
 
     var e0 = tid * 4
@@ -3190,7 +3149,7 @@ def _merge_partials_kernel(
 
     # Seeded to keep definite-assignment happy; the half-cleaner below
     # overwrites all four before the merge reads them.
-    var neg_inf = min_or_neg_inf[DType.float32]()
+    var neg_inf = min_or_neg_inf[.float32]()
     var v0 = neg_inf
     var v1 = neg_inf
     var v2 = neg_inf
@@ -3227,10 +3186,10 @@ def _merge_partials_kernel(
         )
 
         champ_v.store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
-            e0, SIMD[DType.float32, _PTOPK_ITEMS](v0, v1, v2, v3)
+            e0, SIMD[.float32, _PTOPK_ITEMS](v0, v1, v2, v3)
         )
         champ_i.store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
-            e0, SIMD[DType.int32, _PTOPK_ITEMS](i0, i1, i2, i3)
+            e0, SIMD[.int32, _PTOPK_ITEMS](i0, i1, i2, i3)
         )
         barrier()
 
@@ -3254,14 +3213,12 @@ def _merge_partials_kernel(
 
 def persistent_topk_block(
     ctx: DeviceContext,
-    in_scores: UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin],
-    out_idxs: UnsafePointer[Scalar[DType.int32], MutAnyOrigin],
+    in_scores: UnsafePointer[Float32, ImmutAnyOrigin],
+    out_idxs: UnsafePointer[Int32, MutAnyOrigin],
     N: Int,
     K: Int,
     total_seq_len: Int,
-    row_bounds: Optional[
-        UnsafePointer[Scalar[DType.int32], ImmutAnyOrigin]
-    ] = None,
+    row_bounds: Optional[UnsafePointer[Int32, ImmutAnyOrigin]] = None,
 ) raises:
     """Launch block-wide bitonic top-k for `total_seq_len` score rows.
 
@@ -3349,14 +3306,12 @@ def persistent_topk_block_split[
     ordered: Bool = False, deterministic: Bool = False
 ](
     ctx: DeviceContext,
-    in_scores: UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin],
-    out_idxs: UnsafePointer[Scalar[DType.int32], MutAnyOrigin],
+    in_scores: UnsafePointer[Float32, ImmutAnyOrigin],
+    out_idxs: UnsafePointer[Int32, MutAnyOrigin],
     N: Int,
     K: Int,
     total_seq_len: Int,
-    row_bounds: Optional[
-        UnsafePointer[Scalar[DType.int32], ImmutAnyOrigin]
-    ] = None,
+    row_bounds: Optional[UnsafePointer[Int32, ImmutAnyOrigin]] = None,
 ) raises:
     """Launch bitonic top-k, splitting the N dimension when rows under-fill GPU.
 
@@ -3712,14 +3667,10 @@ def persistent_topk_block_split[
     var part_count = total_seq_len * S * _TILE
 
     # Phase 1: fan the streaming fold across `rows * S` blocks into buffer A.
-    var buf_a_v = ctx.enqueue_create_buffer[DType.float32](part_count)
-    var buf_a_i = ctx.enqueue_create_buffer[DType.int32](part_count)
-    var a_v = rebind[UnsafePointer[Scalar[DType.float32], MutAnyOrigin]](
-        buf_a_v.unsafe_ptr()
-    )
-    var a_i = rebind[UnsafePointer[Scalar[DType.int32], MutAnyOrigin]](
-        buf_a_i.unsafe_ptr()
-    )
+    var buf_a_v = ctx.enqueue_create_buffer[.float32](part_count)
+    var buf_a_i = ctx.enqueue_create_buffer[.int32](part_count)
+    var a_v = rebind[UnsafePointer[Float32, MutAnyOrigin]](buf_a_v.unsafe_ptr())
+    var a_i = rebind[UnsafePointer[Int32, MutAnyOrigin]](buf_a_i.unsafe_ptr())
 
     ctx.enqueue_function[_split_partial_kernel](
         in_scores,
@@ -3746,24 +3697,22 @@ def persistent_topk_block_split[
     var src_v = a_v
     var src_i = a_i
     var do_reduce = S > _MERGE_FANIN
-    var buf_b_v = ctx.enqueue_create_buffer[DType.float32](
+    var buf_b_v = ctx.enqueue_create_buffer[.float32](
         part_count if do_reduce else 1
     )
-    var buf_b_i = ctx.enqueue_create_buffer[DType.int32](
+    var buf_b_i = ctx.enqueue_create_buffer[.int32](
         part_count if do_reduce else 1
     )
-    var dst_v = rebind[UnsafePointer[Scalar[DType.float32], MutAnyOrigin]](
+    var dst_v = rebind[UnsafePointer[Float32, MutAnyOrigin]](
         buf_b_v.unsafe_ptr()
     )
-    var dst_i = rebind[UnsafePointer[Scalar[DType.int32], MutAnyOrigin]](
-        buf_b_i.unsafe_ptr()
-    )
+    var dst_i = rebind[UnsafePointer[Int32, MutAnyOrigin]](buf_b_i.unsafe_ptr())
 
     while count > _MERGE_FANIN:
         var count_out = ceildiv(count, _MERGE_FANIN)
         ctx.enqueue_function[_reduce_partials_kernel](
-            rebind[UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin]](src_v),
-            rebind[UnsafePointer[Scalar[DType.int32], ImmutAnyOrigin]](src_i),
+            rebind[UnsafePointer[Float32, ImmutAnyOrigin]](src_v),
+            rebind[UnsafePointer[Int32, ImmutAnyOrigin]](src_i),
             dst_v,
             dst_i,
             Int32(count),
@@ -3781,8 +3730,8 @@ def persistent_topk_block_split[
         count = count_out
 
     ctx.enqueue_function[_merge_partials_kernel](
-        rebind[UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin]](src_v),
-        rebind[UnsafePointer[Scalar[DType.int32], ImmutAnyOrigin]](src_i),
+        rebind[UnsafePointer[Float32, ImmutAnyOrigin]](src_v),
+        rebind[UnsafePointer[Int32, ImmutAnyOrigin]](src_i),
         out_idxs,
         Int32(count),
         Int32(K),

@@ -33,13 +33,9 @@ def test_async_copy_asm():
     print("== test_async_copy_asm")
 
     def test_async_copy_kernel(
-        dst_mem: UnsafePointer[
-            Float32, MutAnyOrigin, address_space=AddressSpace.SHARED
-        ],
+        dst_mem: UnsafePointer[Float32, MutAnyOrigin, address_space=.SHARED],
         tma_descriptor: OpaquePointer,
-        mem_bar: UnsafePointer[
-            Float32, MutAnyOrigin, address_space=AddressSpace.SHARED
-        ],
+        mem_bar: UnsafePointer[Float32, MutAnyOrigin, address_space=.SHARED],
         *coords: Int32,
     ):
         # CHECK: cp.async.bulk.tensor.2d.shared::cluster.global.tile.mbarrier::complete_tx::bytes
@@ -64,9 +60,7 @@ def test_async_store_asm():
     print("== test_async_store_asm")
 
     def test_async_store_kernel(
-        src_mem: UnsafePointer[
-            Float32, ImmutAnyOrigin, address_space=AddressSpace.SHARED
-        ],
+        src_mem: UnsafePointer[Float32, ImmutAnyOrigin, address_space=.SHARED],
         tma_descriptor: OpaquePointer,
         *coords: Int32,
     ):
@@ -100,9 +94,7 @@ def test_async_bulk_tensor_reduce_asm():
     print("== test_async_bulk_tensor_reduce_asm")
 
     def test_async_bulk_tensor_reduce_asm(
-        src_mem: UnsafePointer[
-            Float32, ImmutAnyOrigin, address_space=AddressSpace.SHARED
-        ],
+        src_mem: UnsafePointer[Float32, ImmutAnyOrigin, address_space=.SHARED],
         tma_descriptor: OpaquePointer,
         *coords: Int32,
     ):

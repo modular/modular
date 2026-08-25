@@ -83,13 +83,16 @@ def serve_api_server_and_model_worker(
 
     # Load tokenizer and pipeline from PIPELINE_REGISTRY.
     pipeline_config = PipelineConfig.from_args(pipeline_args)
-    tokenizer, pipeline_factory = PIPELINE_REGISTRY.retrieve_factory(
+    retrieved = PIPELINE_REGISTRY.retrieve_factory(
         pipeline_config,
         task=pipeline_args.task,
         override_architecture=override_architecture,
     )
-    log_basic_config(pipeline_config)
-    log_pipeline_info(pipeline_config)
+    tokenizer = retrieved.tokenizer
+    pipeline_factory = retrieved.factory
+    memory_plan = retrieved.memory_plan
+    log_basic_config(pipeline_config, memory_plan=memory_plan)
+    log_pipeline_info(pipeline_config, memory_plan=memory_plan)
 
     # Dummy model is for diagnostics and overhead benchmarking
     if os.getenv("MAX_SERVE_DUMMY_MODEL"):
@@ -107,6 +110,7 @@ def serve_api_server_and_model_worker(
         reasoning_parser_name=pipeline_config.runtime.reasoning_parser,
         temperature=pipeline_config.runtime.temperature,
         thinking_temperature=pipeline_config.runtime.thinking_temperature,
+        memory_plan=memory_plan,
     )
 
     # Initialize and serve webserver.

@@ -25,6 +25,7 @@ from max.pipelines.context import (
 from max.pipelines.kv_cache import PagedKVCacheManagerInterface
 from max.pipelines.lib import (
     PIPELINE_REGISTRY,
+    MemoryPlan,
     OverlapTextGenerationPipeline,
     PipelineConfig,
     TextGenerationPipeline,
@@ -394,11 +395,12 @@ def load_text_generation_scheduler(
         dict[RequestID, SchedulerResult[TextGenerationOutput]]
     ],
     cancel_queue: MAXPullQueue[list[RequestID]],
+    memory_plan: MemoryPlan | None,
     max_pending_requests: int | None = None,
 ) -> TokenGenerationScheduler:
     # Create Scheduler Config.
     scheduler_config = TokenGenerationSchedulerConfig.from_pipeline_config(
-        pipeline_config, pipeline.max_batch_size
+        pipeline_config, pipeline.max_batch_size, memory_plan
     )
 
     # Build DP batch padder when DP > 1 with device graph capture.
@@ -415,10 +417,14 @@ def load_text_generation_scheduler(
         # the first padded batch.
         context_type = PIPELINE_REGISTRY.retrieve_context_type(pipeline_config)
         assert issubclass(context_type, TextContext)
+        assert (
+            memory_plan is not None
+            and memory_plan.planned_max_length is not None
+        ), "DP batch padding requires a memory plan with a max length"
         dp_padder = DPBatchPadder(
             dp_size=scheduler_config.data_parallel_degree,
             kv_manager=kv_manager,
-            max_length=pipeline._pipeline_model.max_seq_len,
+            max_length=memory_plan.planned_max_length,
             model_name=pipeline_config.model.model_name,
             pipeline=pipeline,
             context_type=context_type,

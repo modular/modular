@@ -42,6 +42,7 @@ from .bfloat16_utils import (
 )
 from .config import (
     DenoisingCacheConfig,
+    DenoisingCacheSettings,
     KVCacheConfig,
     KVConnectorConfig,
     LoRAConfig,
@@ -95,6 +96,7 @@ from .pixel_tokenizer import PixelGenerationTokenizer
 from .registry import (
     PIPELINE_REGISTRY,
     PipelineModelType,
+    RetrievedPipeline,
     SupportedArchitecture,
 )
 from .tokenizer import (
@@ -114,6 +116,7 @@ __all__ = [
     "BatchProcessorRuntime",
     "CompilationTimer",
     "DenoisingCacheConfig",
+    "DenoisingCacheSettings",
     "EmbeddingsPipeline",
     "EmbeddingsPipelineType",
     "GraphPipelineModel",
@@ -148,6 +151,7 @@ __all__ = [
     "ProfilingConfig",
     "RaggedBatchProcessor",
     "RepoType",
+    "RetrievedPipeline",
     "RopeType",
     "SamplingConfig",
     "SpeculativeConfig",

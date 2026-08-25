@@ -42,17 +42,17 @@ from shmem.ep_comm import fused_silu_mx_kernel
 
 
 def _fill_random_bf16(
-    mut buf: HostBuffer[DType.bfloat16],
+    mut buf: HostBuffer[.bfloat16],
     n: Int,
     lo: Float64 = -4.0,
     hi: Float64 = 4.0,
 ):
     for i in range(n):
-        buf[i] = Scalar[DType.bfloat16](random_float64(lo, hi))
+        buf[i] = BFloat16(random_float64(lo, hi))
 
 
 def _build_routing(
-    mut a_off: HostBuffer[DType.uint32], num_tokens_by_expert: List[Int]
+    mut a_off: HostBuffer[.uint32], num_tokens_by_expert: List[Int]
 ):
     a_off[0] = UInt32(0)
     for i in range(len(num_tokens_by_expert)):
@@ -107,18 +107,16 @@ def _run_check[
 
     comptime hw = ctx.default_device_info
 
-    var input_h = ctx.enqueue_create_host_buffer[DType.bfloat16](
+    var input_h = ctx.enqueue_create_host_buffer[.bfloat16](
         total_tokens * input_dim
     )
-    var a_off_h = ctx.enqueue_create_host_buffer[DType.uint32](n_off)
+    var a_off_h = ctx.enqueue_create_host_buffer[.uint32](n_off)
     ctx.synchronize()
     _fill_random_bf16(input_h, total_tokens * input_dim)
     _build_routing(a_off_h, num_tokens_by_expert)
 
-    var input_d = ctx.enqueue_create_buffer[DType.bfloat16](
-        total_tokens * input_dim
-    )
-    var a_off_d = ctx.enqueue_create_buffer[DType.uint32](n_off)
+    var input_d = ctx.enqueue_create_buffer[.bfloat16](total_tokens * input_dim)
+    var a_off_d = ctx.enqueue_create_buffer[.uint32](n_off)
     ctx.enqueue_copy(input_d, input_h)
     ctx.enqueue_copy(a_off_d, a_off_h)
 
@@ -173,13 +171,13 @@ def _run_check[
     ]
 
     # ---- Path A: raw scales, then the standalone preshuffle. ----
-    var raw_out_d = ctx.enqueue_create_buffer[DType.float8_e4m3fn](
+    var raw_out_d = ctx.enqueue_create_buffer[.float8_e4m3fn](
         total_tokens * output_dim
     )
-    var raw_scales_d = ctx.enqueue_create_buffer[DType.float8_e8m0fnu](
+    var raw_scales_d = ctx.enqueue_create_buffer[.float8_e8m0fnu](
         total_tokens * scale_K
     )
-    var ref_d = ctx.enqueue_create_buffer[DType.uint8](slot_bytes)
+    var ref_d = ctx.enqueue_create_buffer[.uint8](slot_bytes)
     ref_d.enqueue_fill(UInt8(0))
 
     ctx.enqueue_function[kernel_ref](
@@ -219,13 +217,11 @@ def _run_check[
     )
 
     # ---- Path B: direct slot write. ----
-    var fused_out_d = ctx.enqueue_create_buffer[DType.float8_e4m3fn](
+    var fused_out_d = ctx.enqueue_create_buffer[.float8_e4m3fn](
         total_tokens * output_dim
     )
-    var fused_scales_d = ctx.enqueue_create_buffer[DType.float8_e8m0fnu](
-        slot_bytes
-    )
-    fused_scales_d.enqueue_fill(Scalar[DType.float8_e8m0fnu](0))
+    var fused_scales_d = ctx.enqueue_create_buffer[.float8_e8m0fnu](slot_bytes)
+    fused_scales_d.enqueue_fill(Float8_e8m0fnu(0))
 
     ctx.enqueue_function[kernel_fused](
         TileTensor[origin=MutAnyOrigin](
@@ -244,8 +240,8 @@ def _run_check[
         block_dim=hw.max_thread_block_size,
     )
 
-    var ref_host = ctx.enqueue_create_host_buffer[DType.uint8](slot_bytes)
-    var fused_host = ctx.enqueue_create_host_buffer[DType.uint8](slot_bytes)
+    var ref_host = ctx.enqueue_create_host_buffer[.uint8](slot_bytes)
+    var fused_host = ctx.enqueue_create_host_buffer[.uint8](slot_bytes)
     ctx.enqueue_copy(ref_host, ref_d)
     ctx.enqueue_copy(
         fused_host, fused_scales_d.unsafe_ptr().unsafe_bitcast[UInt8]()
@@ -262,10 +258,10 @@ def _run_check[
     # SwiGLU reference. Independent of the fold, so it catches a `k_scale`
     # derived from the wrong hidden size — which gate 1 cancels out.
     comptime if not clamp_activation:
-        var out_h = ctx.enqueue_create_host_buffer[DType.float8_e4m3fn](
+        var out_h = ctx.enqueue_create_host_buffer[.float8_e4m3fn](
             total_tokens * output_dim
         )
-        var sc_h = ctx.enqueue_create_host_buffer[DType.float8_e8m0fnu](
+        var sc_h = ctx.enqueue_create_host_buffer[.float8_e8m0fnu](
             total_tokens * scale_K
         )
         ctx.enqueue_copy(out_h, raw_out_d)
@@ -274,7 +270,7 @@ def _run_check[
 
         for m in range(total_tokens):
             for k in range(output_dim):
-                var g = input_h[m * input_dim + k].cast[DType.float32]()
+                var g = input_h[m * input_dim + k].cast[.float32]()
                 var u = input_h[m * input_dim + hidden_size + k].cast[
                     DType.float32
                 ]()
@@ -282,9 +278,7 @@ def _run_check[
                 var scale = sc_h[m * scale_K + k // MXFP8_SF_VECTOR_SIZE].cast[
                     DType.float32
                 ]()
-                var got = (
-                    out_h[m * output_dim + k].cast[DType.float32]() * scale
-                )
+                var got = out_h[m * output_dim + k].cast[.float32]() * scale
                 assert_true(isfinite(got), "dequantized output must be finite")
                 # One E4M3 step at block scale; only a real mis-pairing fails.
                 var tol = max(Float32(0.35) * abs(want), scale * Float32(0.75))

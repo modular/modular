@@ -39,7 +39,7 @@ struct MyRegType(PackageTrait, RegisterPassable):
         pass
 
     # CHECK: kgen.conformance {{.*}}::@PackageTrait
-    # CHECK: kgen.witness "method{{.*}}" : !lit.generator<[1]("self": !lit.ref<!MyRegType, imm *[0,0]> read_mem) -> !kgen.none> = {{.*}}::@MyRegType::@"method
+    # CHECK: kgen.witness "method{{.*}}" : !lit.generator<[1]("self": !lit.ref<!MyRegType, imm *[0,0]> imm_mem) -> !kgen.none> = {{.*}}::@MyRegType::@"method
 
 
 def bind_trait[T: PackageTrait]():
@@ -93,4 +93,4 @@ def my_test():
 
 # CHECK-LABEL: lit.struct.decl @UseTraitReg
 # CHECK: kgen.conformance {{.*}}::@UsedInPackageTrait
-# CHECK: kgen.witness "method{{.*}}" : !lit.generator<[1]("self": !lit.ref<!UseTraitReg, imm *[0,0]> read_mem) -> !kgen.none> = {{.*}}::@UseTraitReg::@"method
+# CHECK: kgen.witness "method{{.*}}" : !lit.generator<[1]("self": !lit.ref<!UseTraitReg, imm *[0,0]> imm_mem) -> !kgen.none> = {{.*}}::@UseTraitReg::@"method

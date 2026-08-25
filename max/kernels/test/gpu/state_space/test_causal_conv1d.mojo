@@ -40,10 +40,10 @@ def main() raises:
 @always_inline
 def silu_ref[dtype: DType](x: Scalar[dtype]) -> Scalar[dtype]:
     """Reference SiLU implementation: x * sigmoid(x) = x / (1 + exp(-x))."""
-    var x_f32 = x.cast[DType.float32]()
+    var x_f32 = x.cast[.float32]()
     var neg_x = -x_f32
     var exp_neg_x = exp(neg_x)
-    var one = Scalar[DType.float32](1.0)
+    var one = Float32(1.0)
     var sigmoid_x = one / (one + exp_neg_x)
     return (x_f32 * sigmoid_x).cast[dtype]()
 
@@ -385,7 +385,7 @@ def test_basic_gpu_causal_conv1d() raises:
     var ctx = DeviceContext()
     if not ctx.is_compatible():
         return
-    run_causal_conv1d_gpu[DType.float32, "none"](2, 4, 8, 3, ctx=ctx)
+    run_causal_conv1d_gpu[.float32, "none"](2, 4, 8, 3, ctx=ctx)
 
 
 def test_gpu_causal_conv1d_with_silu() raises:
@@ -393,7 +393,7 @@ def test_gpu_causal_conv1d_with_silu() raises:
     var ctx = DeviceContext()
     if not ctx.is_compatible():
         return
-    run_causal_conv1d_gpu[DType.float32, "silu"](2, 4, 8, 3, ctx=ctx)
+    run_causal_conv1d_gpu[.float32, "silu"](2, 4, 8, 3, ctx=ctx)
 
 
 def test_gpu_causal_conv1d_width_1() raises:
@@ -401,7 +401,7 @@ def test_gpu_causal_conv1d_width_1() raises:
     var ctx = DeviceContext()
     if not ctx.is_compatible():
         return
-    run_causal_conv1d_gpu[DType.float32, "none"](2, 8, 16, 1, ctx=ctx)
+    run_causal_conv1d_gpu[.float32, "none"](2, 8, 16, 1, ctx=ctx)
 
 
 def test_gpu_causal_conv1d_width_2() raises:
@@ -409,7 +409,7 @@ def test_gpu_causal_conv1d_width_2() raises:
     var ctx = DeviceContext()
     if not ctx.is_compatible():
         return
-    run_causal_conv1d_gpu[DType.float32, "none"](2, 8, 16, 2, ctx=ctx)
+    run_causal_conv1d_gpu[.float32, "none"](2, 8, 16, 2, ctx=ctx)
 
 
 def test_gpu_causal_conv1d_width_3() raises:
@@ -417,7 +417,7 @@ def test_gpu_causal_conv1d_width_3() raises:
     var ctx = DeviceContext()
     if not ctx.is_compatible():
         return
-    run_causal_conv1d_gpu[DType.float32, "none"](2, 8, 16, 3, ctx=ctx)
+    run_causal_conv1d_gpu[.float32, "none"](2, 8, 16, 3, ctx=ctx)
 
 
 def test_gpu_causal_conv1d_width_4() raises:
@@ -425,7 +425,7 @@ def test_gpu_causal_conv1d_width_4() raises:
     var ctx = DeviceContext()
     if not ctx.is_compatible():
         return
-    run_causal_conv1d_gpu[DType.float32, "none"](2, 8, 16, 4, ctx=ctx)
+    run_causal_conv1d_gpu[.float32, "none"](2, 8, 16, 4, ctx=ctx)
 
 
 def test_gpu_causal_conv1d_large_sequence() raises:
@@ -433,7 +433,7 @@ def test_gpu_causal_conv1d_large_sequence() raises:
     var ctx = DeviceContext()
     if not ctx.is_compatible():
         return
-    run_causal_conv1d_gpu[DType.float32, "none"](2, 16, 128, 3, ctx=ctx)
+    run_causal_conv1d_gpu[.float32, "none"](2, 16, 128, 3, ctx=ctx)
 
 
 def test_gpu_causal_conv1d_mamba_dimensions() raises:
@@ -443,9 +443,7 @@ def test_gpu_causal_conv1d_mamba_dimensions() raises:
         return
     # dim=1536, width=4 (conv_kernel)
     for seqlen in [5, 6, 7]:
-        run_causal_conv1d_gpu[DType.float32, "silu"](
-            1, 1536, seqlen, 4, ctx=ctx
-        )
+        run_causal_conv1d_gpu[.float32, "silu"](1, 1536, seqlen, 4, ctx=ctx)
 
 
 def test_gpu_causal_conv1d_strict_tolerance() raises:
@@ -453,6 +451,4 @@ def test_gpu_causal_conv1d_strict_tolerance() raises:
     var ctx = DeviceContext()
     if not ctx.is_compatible():
         return
-    run_causal_conv1d_gpu[DType.float32, "silu"](
-        1, 1536, 7, 4, ctx=ctx, rtol=0.0001
-    )
+    run_causal_conv1d_gpu[.float32, "silu"](1, 1536, 7, 4, ctx=ctx, rtol=0.0001)

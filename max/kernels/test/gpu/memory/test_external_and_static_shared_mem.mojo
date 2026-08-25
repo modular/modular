@@ -26,11 +26,11 @@ def test_external_shared_mem(ctx: DeviceContext) raises:
         var sram = unsafe_stack_allocation[
             16,
             Float32,
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
         ]()
         var dynamic_sram = external_memory[
             Float32,
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
             alignment=align_of[Float32](),
         ]()
         dynamic_sram[thread_idx.x] = Float32(thread_idx.x)
@@ -39,7 +39,7 @@ def test_external_shared_mem(ctx: DeviceContext) raises:
         data[thread_idx.x] = dynamic_sram[thread_idx.x] + sram[thread_idx.x]
 
     var res_host_ptr = alloc[Float32](16)
-    var res_device = ctx.enqueue_create_buffer[DType.float32](16)
+    var res_device = ctx.enqueue_create_buffer[.float32](16)
 
     for i in range(16):
         res_host_ptr[i] = 0

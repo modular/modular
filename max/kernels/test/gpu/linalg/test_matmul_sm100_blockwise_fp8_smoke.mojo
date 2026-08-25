@@ -60,7 +60,7 @@ def test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
     mma_shape: IndexList[3],
     cluster_shape: StaticTuple[Int32, 3],
     cta_group: Int,
-    scales_type: DType = DType.float32,
+    scales_type: DType = .float32,
     transpose_b: Bool = True,
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,

@@ -21,7 +21,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from functools import cached_property
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, ClassVar, Generic, cast
+from typing import TYPE_CHECKING, Any, ClassVar, Generic, TypeVar, cast
 
 from max.driver import Buffer, Device
 from max.dtype import DType
@@ -63,9 +63,14 @@ from transformers import AutoConfig
 if TYPE_CHECKING:
     from max.pipelines.lib.config import PipelineConfig
 
+    # TODO(MXF-517): Remove the interfaces/memory_estimation import cycle.
+    from max.pipelines.lib.memory_estimation import MemoryPlan
+
     from .batch_processor import BatchProcessor
 
 logger = logging.getLogger("max.pipelines")
+
+ArchConfigT = TypeVar("ArchConfigT")
 
 
 class AlwaysSignalBuffersMixin:
@@ -352,7 +357,7 @@ class PipelineModel(ABC, Generic[BaseContextType]):
 
     #: Optional batch processor class for input/output handling.
     batch_processor_cls: ClassVar[type[BatchProcessor[Any, Any]] | None] = None
-    #: Config class used to delegate ``calculate_max_seq_len`` and KV params.
+    #: Config class used to build the arch config and delegate KV params.
     model_config_cls: ClassVar[type[Any] | None] = None
     #: Whether this arch serves LoRA via the ModuleV3 adapters-as-inputs path
     #: (``LoRAManagerV3``). Non-ModuleV3 archs cannot serve LoRA.
@@ -370,10 +375,13 @@ class PipelineModel(ABC, Generic[BaseContextType]):
         weights: Weights,
         adapter: WeightsAdapter | None,
         return_logits: ReturnLogits,
+        *,
+        memory_plan: MemoryPlan,
         return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
         max_batch_size: int = 1,
     ) -> None:
         self.pipeline_config = pipeline_config
+        self.memory_plan = memory_plan
         self.max_batch_size = max_batch_size
         self.devices = devices
         self.device_refs = [DeviceRef.from_device(d) for d in devices]
@@ -383,9 +391,14 @@ class PipelineModel(ABC, Generic[BaseContextType]):
         self.return_logits = return_logits
         self.return_hidden_states = return_hidden_states
 
-        # Initialize `max_seq_len` here to avoid repeated HF config access.
-        self.max_seq_len = self.calculate_max_seq_len(
-            pipeline_config, self.huggingface_config
+        # Graph modules read the length off this config.
+        model_config_cls = type(self).model_config_cls
+        self.arch_config: Any = (
+            model_config_cls.initialize(
+                pipeline_config, max_seq_len=self.max_seq_len
+            )
+            if model_config_cls is not None
+            else None
         )
 
         if pipeline_config.lora and kv_cache_config.enable_prefix_caching:
@@ -429,16 +442,14 @@ class PipelineModel(ABC, Generic[BaseContextType]):
         if batch_processor_cls is not None:
             from .batch_processor import BatchProcessorRuntime
 
-            model_config_cls = getattr(type(self), "model_config_cls", None)
-            if model_config_cls is None:
+            if self.arch_config is None:
                 raise ValueError(
                     f"{type(self).__qualname__} sets batch_processor_cls but "
                     "does not define model_config_cls."
                 )
-            arch_config = model_config_cls.initialize(pipeline_config)
             pad_token_id = getattr(self.huggingface_config, "pad_token_id", 0)
             self._batch_processor = batch_processor_cls(
-                arch_config,
+                self.arch_config,
                 BatchProcessorRuntime(
                     pipeline_config=pipeline_config,
                     devices=devices,
@@ -455,6 +466,33 @@ class PipelineModel(ABC, Generic[BaseContextType]):
     def batch_processor(self) -> BatchProcessor[Any, Any] | None:
         """Returns the batch processor when configured."""
         return self._batch_processor
+
+    def arch_config_as(self, cls: type[ArchConfigT]) -> ArchConfigT:
+        """Returns the built-once arch config, narrowed to ``cls``."""
+        assert isinstance(self.arch_config, cls), (
+            f"{type(self).__qualname__} built "
+            f"{type(self.arch_config).__name__}, expected {cls.__name__}"
+        )
+        return self.arch_config
+
+    @property
+    def max_seq_len(self) -> int:
+        """The effective maximum sequence length, read from the memory plan.
+
+        A view of the plan's ``planned_max_length`` — the model stores no
+        copy of it.
+        """
+        max_length = self.memory_plan.planned_max_length
+        assert max_length is not None, (
+            f"{type(self).__qualname__} requires a memory plan with a max "
+            "length; only multi-component plans carry none"
+        )
+        return max_length
+
+    @property
+    def planned_max_batch_total_tokens(self) -> int | None:
+        """The plan's batch token budget."""
+        return self.memory_plan.planned_max_batch_total_tokens
 
     def _maybe_release_host_weights(self, *models: Any) -> None:
         """Releases the host copies of the weights after the model is loaded.
@@ -583,45 +621,6 @@ class PipelineModel(ABC, Generic[BaseContextType]):
         the architecture.
         """
         return False
-
-    @classmethod
-    def _calculate_max_seq_len_from_config(
-        cls,
-        pipeline_config: PipelineConfig,
-        huggingface_config: AutoConfig,
-    ) -> int:
-        """Delegates to ``model_config_cls.calculate_max_seq_len`` or ``initialize().get_max_seq_len()``."""
-        model_config_cls = cls.model_config_cls
-        if model_config_cls is None:
-            raise NotImplementedError(
-                f"{cls.__qualname__} must set `model_config_cls` "
-                "or override `calculate_max_seq_len()`."
-            )
-        calculate = getattr(model_config_cls, "calculate_max_seq_len", None)
-        if calculate is not None:
-            return calculate(pipeline_config, huggingface_config)
-        return model_config_cls.initialize(pipeline_config).get_max_seq_len()
-
-    @classmethod
-    def calculate_max_seq_len(
-        cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
-    ) -> int:
-        """Calculates the optimal max sequence length for the model.
-
-        Default implementation delegates to ``model_config_cls``. Override when
-        pipeline-model semantics differ from the config (for example, bounding
-        ``max_length`` where the config is permissive).
-
-        Args:
-            pipeline_config: Configuration for the pipeline.
-            huggingface_config: Hugging Face model configuration.
-
-        Returns:
-            int: The maximum sequence length to use.
-        """
-        return cls._calculate_max_seq_len_from_config(
-            pipeline_config, huggingface_config
-        )
 
     @abstractmethod
     def execute(
@@ -857,6 +856,8 @@ class PipelineModelWithKVCache(PipelineModel[BaseContextType]):
         weights: Weights,
         adapter: WeightsAdapter | None,
         return_logits: ReturnLogits,
+        *,
+        memory_plan: MemoryPlan,
         return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
         max_batch_size: int = 1,
     ) -> None:
@@ -870,6 +871,7 @@ class PipelineModelWithKVCache(PipelineModel[BaseContextType]):
             return_logits=return_logits,
             return_hidden_states=return_hidden_states,
             max_batch_size=max_batch_size,
+            memory_plan=memory_plan,
         )
         self.kv_params = type(self).get_kv_params(
             huggingface_config=self.huggingface_config,

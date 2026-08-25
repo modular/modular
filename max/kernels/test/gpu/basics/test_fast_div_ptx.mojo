@@ -64,8 +64,8 @@ def main() raises:
     comptime layout = Layout(IntTuple(1))
 
     # Test uint32 FastDiv.
-    comptime kernel_u32_pow2 = fast_div_kernel[DType.uint32, layout, 4]
-    comptime kernel_u32_div = fast_div_kernel[DType.uint32, layout, 3]
+    comptime kernel_u32_pow2 = fast_div_kernel[.uint32, layout, 4]
+    comptime kernel_u32_div = fast_div_kernel[.uint32, layout, 3]
 
     var asm = _compile_code[
         kernel_u32_pow2,
@@ -80,8 +80,8 @@ def main() raises:
     assert_true(contains_fastdiv_div_sequence(asm))
 
     # Test uint64 FastDiv.
-    comptime kernel_u64_pow2 = fast_div_kernel[DType.uint64, layout, 4]
-    comptime kernel_u64_div = fast_div_kernel[DType.uint64, layout, 3]
+    comptime kernel_u64_pow2 = fast_div_kernel[.uint64, layout, 4]
+    comptime kernel_u64_div = fast_div_kernel[.uint64, layout, 3]
 
     asm = _compile_code[
         kernel_u64_pow2,

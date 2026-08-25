@@ -136,7 +136,7 @@ def _dpp_move[
         The value from the source lane specified by dpp_ctrl.
     """
     comptime if size_of[SIMD[dtype, simd_width]]() == 4:
-        var src = bitcast[DType.int32, 1](val)
+        var src = bitcast[.int32, 1](val)
         var neighbor = _dpp_update_i32[dpp_ctrl](Int32(0), src)
         return bitcast[dtype, simd_width](neighbor)
     elif bit_width_of[dtype]() == 16 and simd_width == 1:
@@ -144,10 +144,10 @@ def _dpp_move[
         var result = _dpp_move[dpp_ctrl](splatted)
         return result[0]
     elif bit_width_of[dtype]() == 64 and simd_width == 1:
-        var parts = bitcast[DType.int32, 2](val)
+        var parts = bitcast[.int32, 2](val)
         var lo = _dpp_update_i32[dpp_ctrl](Int32(0), parts[0])
         var hi = _dpp_update_i32[dpp_ctrl](Int32(0), parts[1])
-        return bitcast[dtype, 1](SIMD[DType.int32, 2](lo, hi))
+        return bitcast[dtype, 1](SIMD[.int32, 2](lo, hi))
     else:
         comptime assert False, "unsupported type for DPP move"
 
@@ -316,7 +316,7 @@ def _shuffle[
         dtype.is_half_float() or simd_width == 1
     ), "Unsupported simd_width"
 
-    comptime if dtype == DType.float32:
+    comptime if dtype == .float32:
         return llvm_intrinsic[
             "llvm.nvvm.shfl.sync." + mnemonic + ".f32", Scalar[dtype]
         ](Int32(mask), val, offset, WIDTH_MASK)
@@ -325,7 +325,7 @@ def _shuffle[
             "llvm.nvvm.shfl.sync." + mnemonic + ".i32", Scalar[dtype]
         ](Int32(mask), val, offset, WIDTH_MASK)
     elif dtype.is_integral() and bit_width_of[dtype]() == 64:
-        var val_bitcast = bitcast[DType.uint32, simd_width * 2](val)
+        var val_bitcast = bitcast[.uint32, simd_width * 2](val)
         var val_half1, val_half2 = val_bitcast.deinterleave()
         var shuffle1 = _shuffle[mnemonic, WIDTH_MASK=WIDTH_MASK](
             mask, val_half1, offset
@@ -345,15 +345,15 @@ def _shuffle[
         else:
             # bitcast and recurse to use i32 intrinsic. Two half values fit
             # into an int32.
-            var packed_val = bitcast[DType.int32, simd_width // 2](val)
+            var packed_val = bitcast[.int32, simd_width // 2](val)
             var result_packed = _shuffle[mnemonic, WIDTH_MASK=WIDTH_MASK](
                 mask, packed_val, offset
             )
             return bitcast[dtype, simd_width](result_packed)
-    elif dtype == DType.bool:
+    elif dtype == .bool:
         comptime assert simd_width == 1, "unhandled simd width"
         return _shuffle[mnemonic, WIDTH_MASK=WIDTH_MASK](
-            mask, val.cast[DType.int32](), offset
+            mask, val.cast[.int32](), offset
         ).cast[dtype]()
 
     else:
@@ -367,21 +367,21 @@ def _shuffle_amd_helper[
     comptime if size_of[SIMD[dtype, simd_width]]() == 4:
         # Handle int32, float32, float16x2, etc.
         var result_packed = llvm_intrinsic["llvm.amdgcn.ds.bpermute", Int32](
-            dst_lane * 4, bitcast[DType.int32, 1](val)
+            dst_lane * 4, bitcast[.int32, 1](val)
         )
         return bitcast[dtype, simd_width](result_packed)
     else:
         comptime assert simd_width == 1, "Unsupported simd width"
 
-        comptime if dtype == DType.bool:
-            return _shuffle_amd_helper(dst_lane, val.cast[DType.int32]()).cast[
+        comptime if dtype == .bool:
+            return _shuffle_amd_helper(dst_lane, val.cast[.int32]()).cast[
                 dtype
             ]()
         elif bit_width_of[dtype]() == 16:
             var val_splatted = SIMD[dtype, 2](val._refine[new_size=1]())
             return _shuffle_amd_helper(dst_lane, val_splatted)[0]
         elif bit_width_of[dtype]() == 64:
-            var val_bitcast = bitcast[DType.uint32, simd_width * 2](val)
+            var val_bitcast = bitcast[.uint32, simd_width * 2](val)
             var val_half1, val_half2 = val_bitcast.deinterleave()
             var shuffle1 = _shuffle_amd_helper(dst_lane, val_half1)
             var shuffle2 = _shuffle_amd_helper(dst_lane, val_half2)
@@ -416,11 +416,11 @@ def _shuffle_apple_helper[
     var arg = UInt16(offset)  # AIR intrinsics use 16-bit offsets
 
     comptime if dtype.is_integral() and bit_width_of[dtype]() == 64:
-        var bits = bitcast[DType.uint32, simd_width * 2](val)
+        var bits = bitcast[.uint32, simd_width * 2](val)
         var half1, half2 = bits.deinterleave()
 
-        var half1_n = rebind[SIMD[DType.uint32, simd_width]](half1)
-        var half2_n = rebind[SIMD[DType.uint32, simd_width]](half2)
+        var half1_n = rebind[SIMD[.uint32, simd_width]](half1)
+        var half2_n = rebind[SIMD[.uint32, simd_width]](half2)
         var s1 = _shuffle_apple_helper[op, DType.uint32, simd_width](
             mask, half1_n, offset
         )
@@ -430,22 +430,22 @@ def _shuffle_apple_helper[
 
         var merged = s1.interleave(s2)
         return bitcast[dtype, simd_width](merged)
-    elif dtype == DType.bool:
-        var val1 = rebind[SIMD[DType.int32, 1]](val.cast[DType.int32]())
+    elif dtype == .bool:
+        var val1 = rebind[Int32](val.cast[.int32]())
         var tmp = _shuffle_apple_helper[op, DType.int32, 1](mask, val1, offset)
         return tmp.cast[dtype]()
     elif (
-        dtype == DType.bfloat16
+        dtype == .bfloat16
     ):  # bfloat16 is declared in MSL but actually causes a backend error.
         comptime if simd_width == 1:
             var pair = SIMD[dtype, 2](val._refine[new_size=1]())
-            var pair_i32 = bitcast[DType.int32, 1](pair)
+            var pair_i32 = bitcast[.int32, 1](pair)
             var y_i32 = _shuffle_apple_helper[op, DType.int32, 1](
                 mask, pair_i32, offset
             )
             return bitcast[dtype, 2](y_i32)[0]
         else:
-            var packed = bitcast[DType.int32, simd_width // 2](val)
+            var packed = bitcast[.int32, simd_width // 2](val)
             var packed_shuf = _shuffle_apple_helper[
                 op, DType.int32, simd_width // 2
             ](mask, packed, offset)
@@ -488,7 +488,7 @@ def shuffle_idx[
         ```mojo
             from std.gpu.primitives.warp import shuffle_idx
 
-            val = SIMD[DType.float32, 16](1.0)
+            val = SIMD[.float32, 16](1.0)
 
             # Broadcast value from lane 0 to all lanes
             result = shuffle_idx(val, 0)
@@ -513,7 +513,7 @@ def _shuffle_idx_amd[
     # The lane should not be > 64 so the upper 2 bits should always be zero.
     # Use -64 for now.
     var t0 = lane & Int32(-WARP_SIZE)
-    var dst_lane = t0 | offset.cast[DType.int32]()
+    var dst_lane = t0 | offset.cast[.int32]()
     return _shuffle_amd_helper(UInt32(dst_lane), val)
 
 
@@ -549,7 +549,7 @@ def shuffle_idx[
 
             # Only broadcast to first 16 lanes
             var mask: UInt = 0xFFFF  # 16 ones
-            var val = SIMD[DType.float32, 32](1.0)
+            var val = SIMD[.float32, 32](1.0)
             var result = shuffle_idx(mask, val, 5)
         ```
     """
@@ -613,7 +613,7 @@ def _shuffle_up_amd[
 ]:
     # FIXME: Set the EXECute mask register to the mask
     var lane = Int32(lane_id())
-    var t0 = lane - offset.cast[DType.int32]()
+    var t0 = lane - offset.cast[.int32]()
     var t1 = lane & Int32(-WARP_SIZE)
     var dst_lane = t0.lt(t1).select(lane, t0)
     return _shuffle_amd_helper(UInt32(dst_lane), val)
@@ -846,7 +846,7 @@ def shuffle_xor[
 
             # Exchange values between even-numbered threads 4 lanes apart
             var mask: UInt = 0xAAAAAAAA  # Even threads only
-            var val = SIMD[DType.float32, 16](42.0)  # Example value
+            var val = SIMD[.float32, 16](42.0)  # Example value
             var result = shuffle_xor(mask, val, 4)
         ```
     """
@@ -915,7 +915,7 @@ def lane_group_reduce[
             @__parameter
             def add[dtype: DType, width: SIMDLength](x: SIMD[dtype, width], y: SIMD[dtype, width]) -> SIMD[dtype, width]:
                 return x + y
-            var val = SIMD[DType.float32, 16](42.0)
+            var val = SIMD[.float32, 16](42.0)
             var result = lane_group_reduce[shuffle_down, add, num_lanes=16](val)
         ```
     """
@@ -969,7 +969,7 @@ def reduce[
         def add[dtype: DType, width: SIMDLength](x: SIMD[dtype, width], y: SIMD[dtype, width]) capturing -> SIMD[dtype, width]:
             return x + y
 
-        val = SIMD[DType.float32, 4](2.0, 4.0, 6.0, 8.0)
+        val = SIMD[.float32, 4](2.0, 4.0, 6.0, 8.0)
         result = reduce[shuffle_down, add](val)
     ```
     """
@@ -1152,7 +1152,7 @@ def prefix_sum[
 def _has_redux_f32_support[dtype: DType, simd_width: Int]() -> Bool:
     return (
         (is_nvidia_gpu["sm_100a"]() or is_nvidia_gpu["sm_101a"]())
-        and dtype == DType.float32
+        and dtype == .float32
         and simd_width == 1
     )
 
@@ -1364,7 +1364,7 @@ def _vote_nvidia_helper(vote: Bool) -> UInt32:
         UInt32,
         Bool,
         has_side_effect=False,
-    ](0xFFFFFFFF, vote).cast[DType.uint32]()
+    ](0xFFFFFFFF, vote).cast[.uint32]()
 
 
 @always_inline
@@ -1420,7 +1420,7 @@ def vote[ret_type: DType](val: Bool) -> Scalar[ret_type]:
     """
 
     comptime if is_nvidia_gpu():
-        comptime assert ret_type == DType.uint32, "Unsupported return type"
+        comptime assert ret_type == .uint32, "Unsupported return type"
         return rebind[Scalar[ret_type]](_vote_nvidia_helper(val))
     elif is_amd_gpu():
         return _vote_amd_helper[ret_type](val)
@@ -1496,7 +1496,7 @@ def match_any[
 
     comptime if is_nvidia_gpu():
         comptime assert (
-            mask_type == DType.uint32
+            mask_type == .uint32
         ), "NVIDIA match_any returns a 32-bit mask (mask_type == DType.uint32)"
         comptime if size_of[dtype]() == 4:
             return rebind[Scalar[mask_type]](
@@ -1614,7 +1614,7 @@ def match_all[
 
     comptime if is_nvidia_gpu():
         comptime assert (
-            mask_type == DType.uint32
+            mask_type == .uint32
         ), "NVIDIA match_all returns a 32-bit mask (mask_type == DType.uint32)"
         # `match.all.sync` writes the membermask (all agree) or 0 into `$0` and
         # the agreement into a predicate `p` we do not need (the mask already

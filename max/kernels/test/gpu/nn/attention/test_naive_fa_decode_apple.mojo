@@ -48,7 +48,7 @@ from std.utils import Index, IndexList
 def execute_decode_compare[
     num_q_heads: Int,
     kv_params: KVCacheStaticParams,
-    dtype: DType = DType.bfloat16,
+    dtype: DType = .bfloat16,
 ](
     cache_lengths: List[Int],
     max_seq_len_cache: Int,
@@ -89,7 +89,7 @@ def execute_decode_compare[
 
     # ---- valid_length: one query token per sequence ([1, 1, ...]) -------- #
     var valid_lengths = ManagedLayoutTensor[
-        DType.uint32, Layout.row_major(UNKNOWN_VALUE)
+        .uint32, Layout.row_major(UNKNOWN_VALUE)
     ](
         RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
             Index(batch_size)
@@ -116,7 +116,7 @@ def execute_decode_compare[
 
     # ---- per-sequence cache lengths (varied) ----------------------------- #
     var cache_lengths_managed = ManagedLayoutTensor[
-        DType.uint32, Layout(UNKNOWN_VALUE)
+        .uint32, Layout(UNKNOWN_VALUE)
     ](
         RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(Index(batch_size)),
         ctx,
@@ -145,7 +145,7 @@ def execute_decode_compare[
     random(kv_block.tensor())
 
     # ---- lookup table: distinct random block index per sequence ---------- #
-    var lookup_table = ManagedLayoutTensor[DType.uint32, Layout(UNKNOWN_VALUE)](
+    var lookup_table = ManagedLayoutTensor[.uint32, Layout(UNKNOWN_VALUE)](
         RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(Index(batch_size)),
         ctx,
     )
@@ -248,8 +248,8 @@ def execute_decode_compare[
             for hd in range(depth):
                 var ref_val = ref_out[bs, 0, h, hd]
                 var test_val = test_out[bs, 0, h, hd]
-                var rv = ref_val.cast[DType.float64]()[0]
-                var tv = test_val.cast[DType.float64]()[0]
+                var rv = ref_val.cast[.float64]()[0]
+                var tv = test_val.cast[.float64]()[0]
                 var err = abs(rv - tv)
                 max_abs_err = max(max_abs_err, err)
                 assert_almost_equal(

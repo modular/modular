@@ -29,6 +29,7 @@ Configuration
    :template: autosummary/class.rst
 
    DenoisingCacheConfig
+   DenoisingCacheSettings
    KVConnectorConfig
    MAXConfig
    MAXModelConfigBase
@@ -80,6 +81,7 @@ Utilities
    HuggingFaceRepo
    MemoryPlan
    ModelManifest
+   RetrievedPipeline
    VisionPreprocessCache
    WeightPathParser
 

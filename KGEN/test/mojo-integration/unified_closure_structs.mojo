@@ -97,10 +97,10 @@ struct ParametricClosureField[
 
 
 def testParametricClosureField():
-    def impl[w: Int]() {} -> SIMD[DType.int32, w]:
-        return SIMD[DType.int32, w](7)
+    def impl[w: Int]() {} -> SIMD[.int32, w]:
+        return SIMD[.int32, w](7)
 
-    var h = ParametricClosureField[DType.int32, type_of(impl)](impl)
+    var h = ParametricClosureField[.int32, type_of(impl)](impl)
     print(h.call[4]()[0])
 
 
@@ -118,8 +118,8 @@ struct InferredClosureField[
 
 
 def testInferredClosureField():
-    def impl[w: Int]() {} -> SIMD[DType.int32, w]:
-        return SIMD[DType.int32, w](8)
+    def impl[w: Int]() {} -> SIMD[.int32, w]:
+        return SIMD[.int32, w](8)
 
     var h = InferredClosureField(impl)
     print(h.call[4]()[0])
@@ -146,10 +146,10 @@ struct ExplicitAuxClosureField[
 
 
 def testExplicitAuxClosureField():
-    def impl[w: Int]() {} -> SIMD[DType.int32, w]:
-        return SIMD[DType.int32, w](9)
+    def impl[w: Int]() {} -> SIMD[.int32, w]:
+        return SIMD[.int32, w](9)
 
-    var h = ExplicitAuxClosureField[DType.int32, type_of(impl)](impl)
+    var h = ExplicitAuxClosureField[.int32, type_of(impl)](impl)
     print(h.call[4]()[0])
 
 
@@ -168,8 +168,8 @@ struct InferredAliasClosureField[
 
 
 def testInferredAliasClosureField():
-    def impl[w: Int]() {} -> SIMD[DType.int32, w]:
-        return SIMD[DType.int32, w](10)
+    def impl[w: Int]() {} -> SIMD[.int32, w]:
+        return SIMD[.int32, w](10)
 
     var h = InferredAliasClosureField(impl)
     print(h.call[4]()[0])
@@ -196,8 +196,8 @@ struct ChainedAliasClosureField[
 
 
 def testChainedAliasClosureField():
-    def impl() -> SIMD[DType.int32, 4]:
-        return SIMD[DType.int32, 4](11)
+    def impl() -> SIMD[.int32, 4]:
+        return SIMD[.int32, 4](11)
 
     var h = ChainedAliasClosureField(impl)
     print(h.call()[0])
@@ -222,10 +222,10 @@ def nestedClosureParamCapture[
 
 
 def testNestedClosureParamCapture():
-    def impl[w: Int]() -> SIMD[DType.int32, w]:
-        return SIMD[DType.int32, w](12)
+    def impl[w: Int]() -> SIMD[.int32, w]:
+        return SIMD[.int32, w](12)
 
-    print(nestedClosureParamCapture[DType.int32, type_of(impl)](impl))
+    print(nestedClosureParamCapture[.int32, type_of(impl)](impl))
 
 
 # COM: Nested `load_fn[simd_width, dtype]` shadows enclosing `dtype`, by-value-
@@ -261,7 +261,7 @@ def outerShadowingLoad[
 
 
 def testShadowingNestedClosureParam():
-    var buf = ShadowingLoadBuf[DType.int32](SIMD[DType.int32, 1](13))
+    var buf = ShadowingLoadBuf[.int32](Int32(13))
     print(outerShadowingLoad(buf)[0])
 
 

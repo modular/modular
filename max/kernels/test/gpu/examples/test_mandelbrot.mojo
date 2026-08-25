@@ -46,7 +46,7 @@ def mandelbrot_kernel[
     var z = ComplexSIMD[float_type, simd_width](0, 0)
     var iters = SIMD[int_type, simd_width](0)
 
-    var in_set_mask = SIMD[DType.bool, simd_width](fill=True)
+    var in_set_mask = SIMD[.bool, simd_width](fill=True)
     for _ in range(MAX_ITERS):
         if not in_set_mask.reduce_or():
             break
@@ -97,8 +97,7 @@ def run_mandelbrot(ctx: DeviceContext) raises:
     var out_device = ctx.enqueue_create_buffer[int_type](width * height)
 
     @always_inline
-    @__parameter
-    def run_mandelbrot(ctx: DeviceContext) raises:
+    def run_mandelbrot(ctx: DeviceContext) raises {imm}:
         ctx.enqueue_function[mandelbrot](
             out_device,
             grid_dim=(ceildiv(height, BLOCK_SIZE),),
@@ -108,7 +107,7 @@ def run_mandelbrot(ctx: DeviceContext) raises:
     run_mandelbrot(ctx)  # Warmup
     print(
         "Computation took:",
-        Float64(ctx.execution_time[run_mandelbrot](1)) / 1_000_000_000.0,
+        Float64(ctx.execution_time(run_mandelbrot, 1)) / 1_000_000_000.0,
     )
 
     ctx.enqueue_copy(out_host, out_device)

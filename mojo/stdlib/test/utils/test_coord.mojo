@@ -199,7 +199,7 @@ def test_idx2crd_result_types_runtime_idx() raises:
     """No shape-1 dims with runtime idx: all Scalar."""
     comptime shape = TypeList.of[ComptimeInt[3], ComptimeInt[4]]()
     comptime stride = TypeList.of[ComptimeInt[4], ComptimeInt[1]]()
-    comptime types = _Idx2CrdResultTypes[DType.int64, Int64, stride, shape]
+    comptime types = _Idx2CrdResultTypes[.int64, Int64, stride, shape]
     assert_true(types[0] == Int64)
     assert_true(types[1] == Int64)
 
@@ -208,7 +208,7 @@ def test_idx2crd_result_types_shape_1() raises:
     """Shape dim of 1 produces ComptimeInt[0], others Scalar."""
     comptime shape = TypeList.of[ComptimeInt[1], ComptimeInt[4]]()
     comptime stride = TypeList.of[ComptimeInt[4], ComptimeInt[1]]()
-    comptime types = _Idx2CrdResultTypes[DType.int64, Int64, stride, shape]
+    comptime types = _Idx2CrdResultTypes[.int64, Int64, stride, shape]
     assert_true(types[0] == ComptimeInt[0])
     assert_true(types[1] == Int64)
 
@@ -217,16 +217,16 @@ def test_idx2crd_result_types_all_shape_1() raises:
     """All shape dims are 1: all ComptimeInt[0]."""
     comptime shape = TypeList.of[ComptimeInt[1], ComptimeInt[1]]()
     comptime stride = TypeList.of[ComptimeInt[1], ComptimeInt[1]]()
-    comptime types = _Idx2CrdResultTypes[DType.int64, Int64, stride, shape]
+    comptime types = _Idx2CrdResultTypes[.int64, Int64, stride, shape]
     assert_true(types[0] == ComptimeInt[0])
     assert_true(types[1] == ComptimeInt[0])
 
 
 def test_idx2crd_result_types_runtime_shape() raises:
     """Scalar shape dims always produce Scalar result."""
-    comptime shape = TypeList.of[Scalar[DType.int], Scalar[DType.int]]()
-    comptime stride = TypeList.of[Scalar[DType.int], Scalar[DType.int]]()
-    comptime types = _Idx2CrdResultTypes[DType.int64, Int64, stride, shape]
+    comptime shape = TypeList.of[Int, Int]()
+    comptime stride = TypeList.of[Int, Int]()
+    comptime types = _Idx2CrdResultTypes[.int64, Int64, stride, shape]
     assert_true(types[0] == Int64)
     assert_true(types[1] == Int64)
 
@@ -557,7 +557,7 @@ def test_cast_preserves_static_dims() raises:
         Int64,
     ](Idx[5], Int32(7), Idx[3], Int64(11))
 
-    var casted = c.cast[DType.uint32]()
+    var casted = c.cast[.uint32]()
     assert_equal(casted[0].value(), 5)
     assert_equal(casted[1].value(), 7)
     assert_equal(casted[2].value(), 3)

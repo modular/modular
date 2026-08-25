@@ -580,7 +580,7 @@ lit.fn @callThing[mut lt](%__result__: !lit.ref<!Mem, mut lt> byref_result, |) -
 
 // CHECK-LABEL: kgen.generator @testLifetimeOf2
 // Verify that we remap the returns as well as the operands.
-lit.fn @testLifetimeOf2[imm *"a`"](%a: !lit.ref<!Mem, imm *"a`"> read_mem) -> !lit.ref<!Mem, imm *"a`">{
+lit.fn @testLifetimeOf2[imm *"a`"](%a: !lit.ref<!Mem, imm *"a`"> imm_mem) -> !lit.ref<!Mem, imm *"a`">{
   // CHECK-NEXT: kgen.return %arg0
   kgen.return %a : !lit.ref<!Mem, imm *"a`">
 }
@@ -752,7 +752,7 @@ lit.struct.decl @TestStruct1 {
 
 lit.extension.decl @"extension:TestStruct1" attributes {targetStruct = @TestStruct1} {
   // CHECK-LABEL: kgen.generator @"extension:TestStruct1::extension_method"
-  lit.fn @extension_method[mut O](%self: !lit.ref<!lit.struct<@TestStruct1>, mut O> read_mem) -> index {
+  lit.fn @extension_method[mut O](%self: !lit.ref<!lit.struct<@TestStruct1>, mut O> imm_mem) -> index {
     %result = kgen.param.constant: index = <42>
     kgen.return %result : index
   }
@@ -765,7 +765,7 @@ lit.extension.decl @"extension:TestStruct1" attributes {targetStruct = @TestStru
 
 // CHECK-LABEL: kgen.struct.generator @TestStruct2
 lit.extension.decl @"extension:TestStruct2" attributes {targetStruct = @TestStruct2} {
-  lit.fn @extension_method[mut O](%self: !lit.ref<!lit.struct<@TestStruct2>, mut O> read_mem) -> index {
+  lit.fn @extension_method[mut O](%self: !lit.ref<!lit.struct<@TestStruct2>, mut O> imm_mem) -> index {
     %result = kgen.param.constant: index = <1>
     kgen.return %result : index
   }

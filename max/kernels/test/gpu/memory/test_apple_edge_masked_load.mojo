@@ -33,8 +33,8 @@ comptime OUT_COLS = 4
 
 
 def _gmem_kernel(
-    in_ptr: UnsafePointer[Scalar[DType.bfloat16], MutAnyOrigin],
-    out_ptr: UnsafePointer[Scalar[DType.bfloat16], MutAnyOrigin],
+    in_ptr: UnsafePointer[BFloat16, MutAnyOrigin],
+    out_ptr: UnsafePointer[BFloat16, MutAnyOrigin],
 ):
     var lane = Int(thread_idx.x)
     var base = lane * IN_COLS
@@ -44,18 +44,18 @@ def _gmem_kernel(
 
 
 def _general_kernel(
-    in_ptr: UnsafePointer[Scalar[DType.bfloat16], MutAnyOrigin],
-    out_ptr: UnsafePointer[Scalar[DType.bfloat16], MutAnyOrigin],
+    in_ptr: UnsafePointer[BFloat16, MutAnyOrigin],
+    out_ptr: UnsafePointer[BFloat16, MutAnyOrigin],
 ):
     var lane = Int(thread_idx.x)
     var base = lane * IN_COLS
     var mask = build_edge_mask(Int32(base), Int32(0), Int32(base + IN_COLS))
-    var src = (in_ptr + base).address_space_cast[AddressSpace.GLOBAL]()
+    var src = (in_ptr + base).address_space_cast[.GLOBAL]()
     var v = edge_masked_load[4](src, mask)
     (out_ptr + lane * OUT_COLS).store(v)
 
 
-def _check(buf: HostBuffer[DType.bfloat16]) raises:
+def _check(buf: HostBuffer[.bfloat16]) raises:
     # Skip rows 0-1: a separate known M5 first-rows blit->compute hazard, not emask.
     for l in range(2, ROWS):
         assert_equal(Float32(buf[l * OUT_COLS + 0]), Float32(3 * l))
@@ -70,19 +70,17 @@ def main() raises:
         print("SKIP: Apple M5 (compute_capability == 5) required")
         return
 
-    var in_host = ctx.enqueue_create_host_buffer[DType.bfloat16](ROWS * IN_COLS)
-    var out_host = ctx.enqueue_create_host_buffer[DType.bfloat16](
-        ROWS * OUT_COLS
-    )
-    var in_dev = ctx.enqueue_create_buffer[DType.bfloat16](ROWS * IN_COLS)
-    var out_dev = ctx.enqueue_create_buffer[DType.bfloat16](ROWS * OUT_COLS)
+    var in_host = ctx.enqueue_create_host_buffer[.bfloat16](ROWS * IN_COLS)
+    var out_host = ctx.enqueue_create_host_buffer[.bfloat16](ROWS * OUT_COLS)
+    var in_dev = ctx.enqueue_create_buffer[.bfloat16](ROWS * IN_COLS)
+    var out_dev = ctx.enqueue_create_buffer[.bfloat16](ROWS * OUT_COLS)
     for i in range(ROWS * IN_COLS):
-        in_host[i] = Scalar[DType.bfloat16](i)  # row-major counting
+        in_host[i] = BFloat16(i)  # row-major counting
     ctx.enqueue_copy(in_dev, in_host)
     ctx.synchronize()
 
     for i in range(ROWS * OUT_COLS):
-        out_host[i] = Scalar[DType.bfloat16](-1)
+        out_host[i] = BFloat16(-1)
     ctx.enqueue_copy(out_dev, out_host)
     ctx.enqueue_function[_gmem_kernel](
         in_dev.unsafe_ptr(), out_dev.unsafe_ptr(), grid_dim=1, block_dim=ROWS
@@ -92,7 +90,7 @@ def main() raises:
     _check(out_host)
 
     for i in range(ROWS * OUT_COLS):
-        out_host[i] = Scalar[DType.bfloat16](-1)
+        out_host[i] = BFloat16(-1)
     ctx.enqueue_copy(out_dev, out_host)
     ctx.enqueue_function[_general_kernel](
         in_dev.unsafe_ptr(), out_dev.unsafe_ptr(), grid_dim=1, block_dim=ROWS

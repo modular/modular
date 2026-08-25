@@ -50,7 +50,7 @@ struct Ship:
     def __init__(out self: Ship):
         pass
 
-def read_ship(read s: Ship):
+def read_ship(imm s: Ship):
     pass
 
 def test_1():
@@ -66,7 +66,7 @@ Notice in the line
 
 we’re trying to hand in `read_ship` which is a
 
-`def(read Ship)->None`
+`def(imm Ship)->None`
 
 into an alias which expects something of type
 
@@ -96,11 +96,11 @@ struct Ship:
     def __init__(out self: Ship):
         pass
 
-def read_ship(read s: Ship):
+def read_ship(imm s: Ship):
     pass
 
 def read_ship_wrapper(mut s: Ship):
-    read_ship(s) # <-- implicit cast to `read Ship` here
+    read_ship(s) # <-- implicit cast to `imm Ship` here
 
 def test_1():
     alias accepts_mut_ship: def(mut Ship) -> None = read_ship_wrapper
@@ -129,17 +129,17 @@ struct Ship:
     def __init__(out self: Ship):
         pass
 
-def read_ship_1(read s: Ship):
+def read_ship_1(imm s: Ship):
     pass
 
 def read_ship_1_wrapper(mut s: Ship):
-    read_ship_1(s) # <-- implicit cast to `read Ship` here
+    read_ship_1(s) # <-- implicit cast to `imm Ship` here
 
-def read_ship_2(read s: Ship):
+def read_ship_2(imm s: Ship):
     pass
 
 def read_ship_2_wrapper(mut s: Ship):
-    read_ship_2(s) # <-- implicit cast to `read Ship` here
+    read_ship_2(s) # <-- implicit cast to `imm Ship` here
 
 def test_1():
     alias accepts_mut_ship: def(mut Ship) -> None = read_ship_1_wrapper
@@ -155,10 +155,10 @@ struct Ship:
     def __init__(out self: Ship):
         pass
 
-def read_ship_1(read s: Ship):
+def read_ship_1(imm s: Ship):
     pass
 
-def read_ship_2(read s: Ship):
+def read_ship_2(imm s: Ship):
     pass
 
 def test_1():
@@ -168,13 +168,13 @@ def test_1():
     # z = Ship()
     # accepts_mut_ship(z)
 
-def generic_ship_func_wrapper[callee: def(read Ship)->None](mut s: Ship):
-    callee(s) # <-- implicit cast to `read Ship` here
+def generic_ship_func_wrapper[callee: def(imm Ship)->None](mut s: Ship):
+    callee(s) # <-- implicit cast to `imm Ship` here
 ```
 
 Now, whenever we want to cast a
 
-`def(read Ship)->None`
+`def(imm Ship)->None`
 
 to a
 
@@ -193,7 +193,7 @@ struct Ship:
     def __init__(out self: Ship):
         pass
 
-def read_ship(read s: Ship):
+def read_ship(imm s: Ship):
     pass
 
 def test_1():
@@ -213,10 +213,10 @@ struct Ship:
     def __init__(out self: Ship):
         pass
 
-def read_ship_1(read s: Ship):
+def read_ship_1(imm s: Ship):
     pass
 
-def read_ship_2(read s: Ship):
+def read_ship_2(imm s: Ship):
     pass
 
 def test_1():
@@ -226,8 +226,8 @@ def test_1():
     # z = Ship()
     # accepts_mut_ship(z)
 
-def generic_ship_func_wrapper[callee: def(read Ship)->None](mut s: Ship):
-    callee(s) # <-- implicit cast to `read Ship` here
+def generic_ship_func_wrapper[callee: def(imm Ship)->None](mut s: Ship):
+    callee(s) # <-- implicit cast to `imm Ship` here
 ```
 
 ## Param Refs Don’t Cause Thunks
@@ -266,7 +266,7 @@ struct Ship[ZA: int]:
     def __init__(out self: Ship[ZA]):
         pass
 
-def read_ship[T: AnyType](read s: T):
+def read_ship[T: AnyType](imm s: T):
     pass
 
 def foo[ZC: int](mut z: Ship[ZC]):
@@ -277,7 +277,7 @@ def foo[ZC: int](mut z: Ship[ZC]):
 
 Because `read_ship[ZC]` now has type:
 
-`def(read Ship[ZC])->None`
+`def(imm Ship[ZC])->None`
 
 and we’re passing it into an alias that now accepts a
 
@@ -292,7 +292,7 @@ struct Ship[ZA: int]:
     def __init__(out self: Ship[ZA]):
         pass
 
-def read_ship_1[ZB: Int](read s: Ship[ZB]):
+def read_ship_1[ZB: Int](imm s: Ship[ZB]):
     pass
 
 def foo[ZC: int]():
@@ -303,7 +303,7 @@ def foo[ZC: int]():
     # my_func_alias(z)
 
 def generic_ship_func_wrapper[
-    callee: def(read Ship)->None
+    callee: def(imm Ship)->None
 ](mut s: Ship[ZC]): # <-- THERE IS A PROBLEM HERE
     callee(s) # implicit cast to imm
 ```
@@ -327,7 +327,7 @@ struct Ship[ZA: Int]:
     def __init__(out self: Ship[ZA]):
         pass
 
-def read_ship[ZB: Int](read s: Ship[ZB]):
+def read_ship[ZB: Int](imm s: Ship[ZB]):
     pass
 
 def foo[ZC: Int]():
@@ -339,7 +339,7 @@ def foo[ZC: Int]():
 
 def generic_ship_func_wrapper[
     ZC: Int, # <-- Added this too
-    callee: def(read Ship[ZC])->None
+    callee: def(imm Ship[ZC])->None
 ](mut s: Ship[ZC]):
     callee(s) # implicit cast to imm
 ```
@@ -482,7 +482,7 @@ unbound input-parameters".
 struct Ship[X: int, Y: Bool]:
     pass
 
-def read_ship[X: int, Y: Bool](read s: Ship[X, Y]):
+def read_ship[X: int, Y: Bool](imm s: Ship[X, Y]):
     pass
 
 def test_1():
@@ -490,14 +490,14 @@ def test_1():
         read_ship[42]
 ```
 
-When we generate the thunk for this (because of that `mut`/`read` mismatch),
+When we generate the thunk for this (because of that `mut`/`imm` mismatch),
 it’ll look something like this:
 
 ```mojo
 struct Ship[X: int, Y: Bool]:
     pass
 
-def read_ship[X: int, Y: Bool](read s: Ship[X, Y]):
+def read_ship[X: int, Y: Bool](imm s: Ship[X, Y]):
     pass
 
 def test_1():
@@ -506,7 +506,7 @@ def test_1():
 
 def generic_ship_func_wrapper[
     Y: Bool,
-    callee: fn[Y: Bool](read Ship)->None
+    callee: fn[Y: Bool](imm Ship)->None
 ](mut s: Ship[ZC, Y]):
     callee[Y](s) # implicit cast to imm
 ```
@@ -523,7 +523,7 @@ If you understand this example, you’ve won.
 struct Ship[X: int, Y: Bool]:
     pass
 
-def read_ship[X: int, Y: Bool](read s: Ship[X, Y]):
+def read_ship[X: int, Y: Bool](imm s: Ship[X, Y]):
     pass
 
 def foo():
@@ -538,7 +538,7 @@ It should generate a thunk that looks like this:
 struct Ship[X: int, Y: Bool]:
     pass
 
-def read_ship[X: int, Y: Bool](read s: Ship[X, Y]):
+def read_ship[X: int, Y: Bool](imm s: Ship[X, Y]):
     pass
 
 def foo():
@@ -549,7 +549,7 @@ def foo():
 def ship_func_thunk[
     Z: int,
     Y: Bool,
-    callee: fn[Y: Bool](read Ship[Z])->None
+    callee: fn[Y: Bool](imm Ship[Z])->None
 ](mut s: Ship[Z, Y]):
     callee[Y](s) # implicit cast to imm
 ```
@@ -587,14 +587,14 @@ In other words, these thunks let the user automatically convert one kind of
 function to something that’s semantically equivalent.
 
 In other other words, these thunks enable **"function subtyping"**: function
-type A ("actual") (like `def(read Ship)->None`) is a "subtype" of function type
+type A ("actual") (like `def(imm Ship)->None`) is a "subtype" of function type
 E ("expected") (like `def(mut Ship)->None`) if an A can be used wherever an E is
 expected.
 
 Of course, this only works if the differences aren’t too much: we can easily
-cast a `mut Ship` to a `read Ship`, but we can’t:
+cast a `mut Ship` to a `imm Ship`, but we can’t:
 
-- Do the opposite (`read Ship` to `mut Ship`)
+- Do the opposite (`imm Ship` to `mut Ship`)
 - Cast a `Ship` to a `Shovel`.
 - Cast a `float` to an `int` (technically possible, but it loses too much
   information so we shouldn’t).

@@ -20,7 +20,7 @@ element, so `K_BYTES == K` and a lane's operand is TWO 16-byte halves
 loaders tile K per half so the geometry stays identical to MXFP4.
 
 The reference is a per-element dequant + scalar accumulate through
-`DType.float8_e4m3fn`: no MFMA and no code shared with the kernel, so a
+`.float8_e4m3fn`: no MFMA and no code shared with the kernel, so a
 fragment-layout error cannot cancel out. `data-only` and `scales-only` phases
 split a data-layout bug from a scale-index bug, which uniform fills cannot.
 """
@@ -47,11 +47,11 @@ comptime FP8_LANE_BYTES = 32
 
 
 def block_scaled_matmul_fp8_ref(
-    a_ptr: UnsafePointer[Scalar[DType.uint8], ImmutAnyOrigin],
-    b_ptr: UnsafePointer[Scalar[DType.uint8], ImmutAnyOrigin],
-    a_scales_ptr: UnsafePointer[Scalar[DType.float8_e8m0fnu], ImmutAnyOrigin],
-    b_scales_ptr: UnsafePointer[Scalar[DType.float8_e8m0fnu], ImmutAnyOrigin],
-    c_ptr: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
+    a_ptr: UnsafePointer[UInt8, ImmutAnyOrigin],
+    b_ptr: UnsafePointer[UInt8, ImmutAnyOrigin],
+    a_scales_ptr: UnsafePointer[Float8_e8m0fnu, ImmutAnyOrigin],
+    b_scales_ptr: UnsafePointer[Float8_e8m0fnu, ImmutAnyOrigin],
+    c_ptr: UnsafePointer[Float32, MutAnyOrigin],
     M_arg: Int32,
     N_arg: Int32,
     K_arg: Int32,
@@ -70,17 +70,17 @@ def block_scaled_matmul_fp8_ref(
     var am_scales = a_scales_ptr + m * k_groups
     var bn_scales = b_scales_ptr + n * k_groups
     # One byte per element at MXFP8, so the row stride is K (not K // 2).
-    var am = (a_ptr + m * K).bitcast[Scalar[DType.float8_e4m3fn]]()
-    var bn = (b_ptr + n * K).bitcast[Scalar[DType.float8_e4m3fn]]()
+    var am = (a_ptr + m * K).bitcast[Float8_e4m3fn]()
+    var bn = (b_ptr + n * K).bitcast[Float8_e4m3fn]()
 
     var accum = Float32(0)
     for ko in range(k_groups):
-        var a_scale = am_scales[ko].cast[DType.float32]()
-        var b_scale = bn_scales[ko].cast[DType.float32]()
+        var a_scale = am_scales[ko].cast[.float32]()
+        var b_scale = bn_scales[ko].cast[.float32]()
         # E8M0 scales are exact powers of two, so hoisting them is bit-exact.
         var part = Float32(0)
         for ki in range(MXFP8_SF_VECTOR_SIZE):
-            part += am[ki].cast[DType.float32]() * bn[ki].cast[DType.float32]()
+            part += am[ki].cast[.float32]() * bn[ki].cast[.float32]()
         accum += part * a_scale * b_scale
         am += MXFP8_SF_VECTOR_SIZE
         bn += MXFP8_SF_VECTOR_SIZE
@@ -90,9 +90,7 @@ def block_scaled_matmul_fp8_ref(
 
 def _e4m3_byte(f: Float32) -> UInt8:
     """Byte encoding of `f` as E4M3."""
-    return bitcast[DType.uint8, 1](
-        SIMD[DType.float8_e4m3fn, 1](f.cast[DType.float8_e4m3fn]())
-    )[0]
+    return bitcast[.uint8, 1](Float8_e4m3fn(f.cast[.float8_e4m3fn]()))[0]
 
 
 def _rand_e4m3_byte() -> UInt8:
@@ -125,10 +123,10 @@ def _test_case[
 
     print("  ", name, " ", M_static, "x", N_static, "x", K_static)
 
-    var a_h = ctx.enqueue_create_host_buffer[DType.uint8](M_static * K_BYTES)
-    var b_h = ctx.enqueue_create_host_buffer[DType.uint8](N_static * K_BYTES)
-    var sfa_h = ctx.enqueue_create_host_buffer[DType.uint8](M_static * K_SCALES)
-    var sfb_h = ctx.enqueue_create_host_buffer[DType.uint8](N_static * K_SCALES)
+    var a_h = ctx.enqueue_create_host_buffer[.uint8](M_static * K_BYTES)
+    var b_h = ctx.enqueue_create_host_buffer[.uint8](N_static * K_BYTES)
+    var sfa_h = ctx.enqueue_create_host_buffer[.uint8](M_static * K_SCALES)
+    var sfb_h = ctx.enqueue_create_host_buffer[.uint8](N_static * K_SCALES)
     ctx.synchronize()
 
     var one = _e4m3_byte(Float32(1.0))
@@ -143,12 +141,12 @@ def _test_case[
     for i in range(N_static * K_SCALES):
         sfb_h[i] = 127 if unit_scales else UInt8(Int(random_ui64(124, 130)))
 
-    var a_d = ctx.enqueue_create_buffer[DType.uint8](M_static * K_BYTES)
-    var b_d = ctx.enqueue_create_buffer[DType.uint8](N_static * K_BYTES)
-    var sfa_d = ctx.enqueue_create_buffer[DType.uint8](M_static * K_SCALES)
-    var sfb_d = ctx.enqueue_create_buffer[DType.uint8](N_static * K_SCALES)
-    var c_d = ctx.enqueue_create_buffer[DType.float32](M_static * N_static)
-    var c_ref_d = ctx.enqueue_create_buffer[DType.float32](M_static * N_static)
+    var a_d = ctx.enqueue_create_buffer[.uint8](M_static * K_BYTES)
+    var b_d = ctx.enqueue_create_buffer[.uint8](N_static * K_BYTES)
+    var sfa_d = ctx.enqueue_create_buffer[.uint8](M_static * K_SCALES)
+    var sfb_d = ctx.enqueue_create_buffer[.uint8](N_static * K_SCALES)
+    var c_d = ctx.enqueue_create_buffer[.float32](M_static * N_static)
+    var c_ref_d = ctx.enqueue_create_buffer[.float32](M_static * N_static)
     ctx.enqueue_copy(a_d, a_h)
     ctx.enqueue_copy(b_d, b_h)
     ctx.enqueue_copy(sfa_d, sfa_h)
@@ -158,11 +156,11 @@ def _test_case[
     var a_tt = TileTensor[mut=False](a_d, row_major[M_static, K_BYTES]())
     var b_tt = TileTensor[mut=False](b_d, row_major[N_static, K_BYTES]())
     var sfa_tt = TileTensor[mut=False](
-        sfa_d.unsafe_ptr().unsafe_bitcast[Scalar[DType.float8_e8m0fnu]](),
+        sfa_d.unsafe_ptr().unsafe_bitcast[Float8_e8m0fnu](),
         row_major[M_static, K_SCALES](),
     )
     var sfb_tt = TileTensor[mut=False](
-        sfb_d.unsafe_ptr().unsafe_bitcast[Scalar[DType.float8_e8m0fnu]](),
+        sfb_d.unsafe_ptr().unsafe_bitcast[Float8_e8m0fnu](),
         row_major[N_static, K_SCALES](),
     )
 
@@ -175,7 +173,7 @@ def _test_case[
         matrix_format=CDNA4F8F6F4MatrixFormat.FLOAT8_E4M3,
     ]
     comptime kernel = Kernel.run[
-        DType.float32,
+        .float32,
         type_of(c_tt).LayoutType,
         type_of(a_tt).LayoutType,
         type_of(b_tt).LayoutType,
@@ -196,12 +194,8 @@ def _test_case[
     ctx.enqueue_function[block_scaled_matmul_fp8_ref](
         a_d.unsafe_ptr().as_imm(),
         b_d.unsafe_ptr().as_imm(),
-        sfa_d.unsafe_ptr()
-        .unsafe_bitcast[Scalar[DType.float8_e8m0fnu]]()
-        .as_imm(),
-        sfb_d.unsafe_ptr()
-        .unsafe_bitcast[Scalar[DType.float8_e8m0fnu]]()
-        .as_imm(),
+        sfa_d.unsafe_ptr().unsafe_bitcast[Float8_e8m0fnu]().as_imm(),
+        sfb_d.unsafe_ptr().unsafe_bitcast[Float8_e8m0fnu]().as_imm(),
         c_ref_d.unsafe_ptr(),
         Int32(M_static),
         Int32(N_static),
@@ -210,10 +204,8 @@ def _test_case[
         block_dim=(BLOCK_DIM, BLOCK_DIM),
     )
 
-    var c_h = ctx.enqueue_create_host_buffer[DType.float32](M_static * N_static)
-    var c_ref_h = ctx.enqueue_create_host_buffer[DType.float32](
-        M_static * N_static
-    )
+    var c_h = ctx.enqueue_create_host_buffer[.float32](M_static * N_static)
+    var c_ref_h = ctx.enqueue_create_host_buffer[.float32](M_static * N_static)
     ctx.enqueue_copy(c_h, c_d)
     ctx.enqueue_copy(c_ref_h, c_ref_d)
     ctx.synchronize()
@@ -272,10 +264,10 @@ def test_mxfp8_matmul_split_k[
     comptime K_BYTES = K_static
     comptime K_SCALES = K_static // MXFP8_SF_VECTOR_SIZE
 
-    var a_h = ctx.enqueue_create_host_buffer[DType.uint8](M_static * K_BYTES)
-    var b_h = ctx.enqueue_create_host_buffer[DType.uint8](N_static * K_BYTES)
-    var sfa_h = ctx.enqueue_create_host_buffer[DType.uint8](M_static * K_SCALES)
-    var sfb_h = ctx.enqueue_create_host_buffer[DType.uint8](N_static * K_SCALES)
+    var a_h = ctx.enqueue_create_host_buffer[.uint8](M_static * K_BYTES)
+    var b_h = ctx.enqueue_create_host_buffer[.uint8](N_static * K_BYTES)
+    var sfa_h = ctx.enqueue_create_host_buffer[.uint8](M_static * K_SCALES)
+    var sfb_h = ctx.enqueue_create_host_buffer[.uint8](N_static * K_SCALES)
     ctx.synchronize()
 
     for i in range(M_static * K_BYTES):
@@ -287,12 +279,12 @@ def test_mxfp8_matmul_split_k[
     for i in range(N_static * K_SCALES):
         sfb_h[i] = UInt8(Int(random_ui64(124, 130)))
 
-    var a_d = ctx.enqueue_create_buffer[DType.uint8](M_static * K_BYTES)
-    var b_d = ctx.enqueue_create_buffer[DType.uint8](N_static * K_BYTES)
-    var sfa_d = ctx.enqueue_create_buffer[DType.uint8](M_static * K_SCALES)
-    var sfb_d = ctx.enqueue_create_buffer[DType.uint8](N_static * K_SCALES)
-    var c_d = ctx.enqueue_create_buffer[DType.float32](M_static * N_static)
-    var c_ref_d = ctx.enqueue_create_buffer[DType.float32](M_static * N_static)
+    var a_d = ctx.enqueue_create_buffer[.uint8](M_static * K_BYTES)
+    var b_d = ctx.enqueue_create_buffer[.uint8](N_static * K_BYTES)
+    var sfa_d = ctx.enqueue_create_buffer[.uint8](M_static * K_SCALES)
+    var sfb_d = ctx.enqueue_create_buffer[.uint8](N_static * K_SCALES)
+    var c_d = ctx.enqueue_create_buffer[.float32](M_static * N_static)
+    var c_ref_d = ctx.enqueue_create_buffer[.float32](M_static * N_static)
     ctx.enqueue_copy(a_d, a_h)
     ctx.enqueue_copy(b_d, b_h)
     ctx.enqueue_copy(sfa_d, sfa_h)
@@ -302,11 +294,11 @@ def test_mxfp8_matmul_split_k[
     var a_tt = TileTensor[mut=False](a_d, row_major[M_static, K_BYTES]())
     var b_tt = TileTensor[mut=False](b_d, row_major[N_static, K_BYTES]())
     var sfa_tt = TileTensor[mut=False](
-        sfa_d.unsafe_ptr().unsafe_bitcast[Scalar[DType.float8_e8m0fnu]](),
+        sfa_d.unsafe_ptr().unsafe_bitcast[Float8_e8m0fnu](),
         row_major[M_static, K_SCALES](),
     )
     var sfb_tt = TileTensor[mut=False](
-        sfb_d.unsafe_ptr().unsafe_bitcast[Scalar[DType.float8_e8m0fnu]](),
+        sfb_d.unsafe_ptr().unsafe_bitcast[Float8_e8m0fnu](),
         row_major[N_static, K_SCALES](),
     )
 
@@ -324,12 +316,8 @@ def test_mxfp8_matmul_split_k[
     ctx.enqueue_function[block_scaled_matmul_fp8_ref](
         a_d.unsafe_ptr().as_imm(),
         b_d.unsafe_ptr().as_imm(),
-        sfa_d.unsafe_ptr()
-        .unsafe_bitcast[Scalar[DType.float8_e8m0fnu]]()
-        .as_imm(),
-        sfb_d.unsafe_ptr()
-        .unsafe_bitcast[Scalar[DType.float8_e8m0fnu]]()
-        .as_imm(),
+        sfa_d.unsafe_ptr().unsafe_bitcast[Float8_e8m0fnu]().as_imm(),
+        sfb_d.unsafe_ptr().unsafe_bitcast[Float8_e8m0fnu]().as_imm(),
         c_ref_d.unsafe_ptr(),
         Int32(M_static),
         Int32(N_static),
@@ -338,10 +326,8 @@ def test_mxfp8_matmul_split_k[
         block_dim=(BLOCK_DIM, BLOCK_DIM),
     )
 
-    var c_h = ctx.enqueue_create_host_buffer[DType.float32](M_static * N_static)
-    var c_ref_h = ctx.enqueue_create_host_buffer[DType.float32](
-        M_static * N_static
-    )
+    var c_h = ctx.enqueue_create_host_buffer[.float32](M_static * N_static)
+    var c_ref_h = ctx.enqueue_create_host_buffer[.float32](M_static * N_static)
     ctx.enqueue_copy(c_h, c_d)
     ctx.enqueue_copy(c_ref_h, c_ref_d)
     ctx.synchronize()
@@ -375,10 +361,10 @@ def _test_dispatch[
 
     print("  ", name, " ", M_static, "x", N_static, "x", K_static)
 
-    var a_h = ctx.enqueue_create_host_buffer[DType.uint8](M_static * K_BYTES)
-    var b_h = ctx.enqueue_create_host_buffer[DType.uint8](N_static * K_BYTES)
-    var sfa_h = ctx.enqueue_create_host_buffer[DType.uint8](M_static * K_SCALES)
-    var sfb_h = ctx.enqueue_create_host_buffer[DType.uint8](N_static * K_SCALES)
+    var a_h = ctx.enqueue_create_host_buffer[.uint8](M_static * K_BYTES)
+    var b_h = ctx.enqueue_create_host_buffer[.uint8](N_static * K_BYTES)
+    var sfa_h = ctx.enqueue_create_host_buffer[.uint8](M_static * K_SCALES)
+    var sfb_h = ctx.enqueue_create_host_buffer[.uint8](N_static * K_SCALES)
     ctx.synchronize()
 
     for i in range(M_static * K_BYTES):
@@ -390,12 +376,12 @@ def _test_dispatch[
     for i in range(N_static * K_SCALES):
         sfb_h[i] = UInt8(Int(random_ui64(124, 130)))
 
-    var a_d = ctx.enqueue_create_buffer[DType.uint8](M_static * K_BYTES)
-    var b_d = ctx.enqueue_create_buffer[DType.uint8](N_static * K_BYTES)
-    var sfa_d = ctx.enqueue_create_buffer[DType.uint8](M_static * K_SCALES)
-    var sfb_d = ctx.enqueue_create_buffer[DType.uint8](N_static * K_SCALES)
-    var c_d = ctx.enqueue_create_buffer[DType.float32](M_static * N_static)
-    var c_ref_d = ctx.enqueue_create_buffer[DType.float32](M_static * N_static)
+    var a_d = ctx.enqueue_create_buffer[.uint8](M_static * K_BYTES)
+    var b_d = ctx.enqueue_create_buffer[.uint8](N_static * K_BYTES)
+    var sfa_d = ctx.enqueue_create_buffer[.uint8](M_static * K_SCALES)
+    var sfb_d = ctx.enqueue_create_buffer[.uint8](N_static * K_SCALES)
+    var c_d = ctx.enqueue_create_buffer[.float32](M_static * N_static)
+    var c_ref_d = ctx.enqueue_create_buffer[.float32](M_static * N_static)
     ctx.enqueue_copy(a_d, a_h)
     ctx.enqueue_copy(b_d, b_h)
     ctx.enqueue_copy(sfa_d, sfa_h)
@@ -405,11 +391,11 @@ def _test_dispatch[
     var a_tt = TileTensor[mut=False](a_d, row_major[M_static, K_BYTES]())
     var b_tt = TileTensor[mut=False](b_d, row_major[N_static, K_BYTES]())
     var sfa_tt = TileTensor[mut=False](
-        sfa_d.unsafe_ptr().unsafe_bitcast[Scalar[DType.float8_e8m0fnu]](),
+        sfa_d.unsafe_ptr().unsafe_bitcast[Float8_e8m0fnu](),
         row_major[M_static, K_SCALES](),
     )
     var sfb_tt = TileTensor[mut=False](
-        sfb_d.unsafe_ptr().unsafe_bitcast[Scalar[DType.float8_e8m0fnu]](),
+        sfb_d.unsafe_ptr().unsafe_bitcast[Float8_e8m0fnu](),
         row_major[N_static, K_SCALES](),
     )
 
@@ -421,12 +407,8 @@ def _test_dispatch[
     ctx.enqueue_function[block_scaled_matmul_fp8_ref](
         a_d.unsafe_ptr().as_imm(),
         b_d.unsafe_ptr().as_imm(),
-        sfa_d.unsafe_ptr()
-        .unsafe_bitcast[Scalar[DType.float8_e8m0fnu]]()
-        .as_imm(),
-        sfb_d.unsafe_ptr()
-        .unsafe_bitcast[Scalar[DType.float8_e8m0fnu]]()
-        .as_imm(),
+        sfa_d.unsafe_ptr().unsafe_bitcast[Float8_e8m0fnu]().as_imm(),
+        sfb_d.unsafe_ptr().unsafe_bitcast[Float8_e8m0fnu]().as_imm(),
         c_ref_d.unsafe_ptr(),
         Int32(M_static),
         Int32(N_static),
@@ -435,10 +417,8 @@ def _test_dispatch[
         block_dim=(BLOCK_DIM, BLOCK_DIM),
     )
 
-    var c_h = ctx.enqueue_create_host_buffer[DType.float32](M_static * N_static)
-    var c_ref_h = ctx.enqueue_create_host_buffer[DType.float32](
-        M_static * N_static
-    )
+    var c_h = ctx.enqueue_create_host_buffer[.float32](M_static * N_static)
+    var c_ref_h = ctx.enqueue_create_host_buffer[.float32](M_static * N_static)
     ctx.enqueue_copy(c_h, c_d)
     ctx.enqueue_copy(c_ref_h, c_ref_d)
     ctx.synchronize()

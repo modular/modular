@@ -139,12 +139,8 @@ def execute_kv_cache_ragged_flash_attention[
     )
 
     # Host allocations for row offsets and cache lengths
-    var input_row_offsets_host_ptr = List(
-        length=batch_size + 1, fill=Scalar[DType.uint32](0)
-    )
-    var cache_lengths_host_ptr = List(
-        length=batch_size, fill=Scalar[DType.uint32](0)
-    )
+    var input_row_offsets_host_ptr = List(length=batch_size + 1, fill=UInt32(0))
+    var cache_lengths_host_ptr = List(length=batch_size, fill=UInt32(0))
     var max_context_length = 0
     var max_seq_length: UInt32 = 0
     var total_seq_len: UInt32 = 0
@@ -180,13 +176,13 @@ def execute_kv_cache_ragged_flash_attention[
     input_row_offsets_host_ptr[batch_size] = total_seq_len
 
     # Device allocations and copies for row offsets
-    var input_row_offsets_dev_buffer = ctx.enqueue_create_buffer[DType.uint32](
+    var input_row_offsets_dev_buffer = ctx.enqueue_create_buffer[.uint32](
         batch_size + 1
     )
     ctx.enqueue_copy(input_row_offsets_dev_buffer, input_row_offsets_host_ptr)
 
     # Device allocation and copy for cache lengths
-    var cache_lengths_dev_buffer = ctx.enqueue_create_buffer[DType.uint32](
+    var cache_lengths_dev_buffer = ctx.enqueue_create_buffer[.uint32](
         batch_size
     )
     ctx.enqueue_copy(cache_lengths_dev_buffer, cache_lengths_host_ptr)
@@ -235,9 +231,7 @@ def execute_kv_cache_ragged_flash_attention[
     def _ri(v: Int) -> Int64:
         return Int64(v)
 
-    var paged_lut_host_ptr = List(
-        length=paged_lut_size, fill=Scalar[DType.uint32](0)
-    )
+    var paged_lut_host_ptr = List(length=paged_lut_size, fill=UInt32(0))
     var paged_lut_host = TileTensor(
         paged_lut_host_ptr,
         row_major(Coord(_ri(batch_size), _ri(paged_lut_cols))),
@@ -253,7 +247,7 @@ def execute_kv_cache_ragged_flash_attention[
             paged_lut_set.add(randval)
             paged_lut_host[bs, block_idx] = UInt32(randval)
 
-    var paged_lut_dev_buffer = ctx.enqueue_create_buffer[DType.uint32](
+    var paged_lut_dev_buffer = ctx.enqueue_create_buffer[.uint32](
         paged_lut_size
     )
     ctx.enqueue_copy(paged_lut_dev_buffer, paged_lut_host_ptr)
@@ -293,7 +287,7 @@ def execute_kv_cache_ragged_flash_attention[
 
     comptime cache_lengths_layout = Layout(UNKNOWN_VALUE)
     var cache_lengths_layout_tensor = LayoutTensor[
-        mut=False, DType.uint32, cache_lengths_layout
+        mut=False, .uint32, cache_lengths_layout
     ](
         cache_lengths_dev_buffer.unsafe_ptr(),
         RuntimeLayout[cache_lengths_layout].row_major(IndexList[1](batch_size)),
@@ -301,7 +295,7 @@ def execute_kv_cache_ragged_flash_attention[
 
     comptime paged_lut_layout = Layout.row_major[2]()
     var paged_lut_layout_tensor = LayoutTensor[
-        mut=False, DType.uint32, paged_lut_layout
+        mut=False, .uint32, paged_lut_layout
     ](
         paged_lut_dev_buffer.unsafe_ptr(),
         RuntimeLayout[paged_lut_layout].row_major(
@@ -353,7 +347,7 @@ def execute_kv_cache_ragged_flash_attention[
         )
 
     var kv_input_row_offsets_view = LayoutTensor[
-        mut=False, DType.uint32, Layout.row_major(UNKNOWN_VALUE)
+        mut=False, .uint32, Layout.row_major(UNKNOWN_VALUE)
     ](
         kv_input_row_offsets_dev_buffer.unsafe_ptr(),
         RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
@@ -382,18 +376,19 @@ def execute_kv_cache_ragged_flash_attention[
 
     if run_benchmark:
 
-        @__parameter
-        @__copy_capture(
-            q_device_tensor,
-            k_cache_device,
-            v_cache_device,
-            output_device_tensor,
-            input_row_offsets_tensor,
-            kv_input_row_offsets_view,
-            sink_weights_view,
-        )
         @always_inline
-        def bench_func(mut b: Bencher):
+        def bench_func(
+            mut b: Bencher,
+        ) raises {
+            var q_device_tensor,
+            var k_cache_device,
+            var v_cache_device,
+            var output_device_tensor,
+            var input_row_offsets_tensor,
+            var kv_input_row_offsets_view,
+            var sink_weights_view,
+            imm,
+        }:
             @always_inline
             def kernel_launch(ctx: DeviceContext) raises {imm}:
                 comptime if local_window_size > 0:
@@ -478,7 +473,8 @@ def execute_kv_cache_ragged_flash_attention[
             cache_len + seq_len,
             head_dim,
         )
-        m.bench_function[bench_func](
+        m.bench_function(
+            bench_func,
             BenchId(
                 _get_run_name[
                     dtype,
@@ -543,7 +539,7 @@ def execute_kv_cache_ragged_flash_attention[
 
 
 def main() raises:
-    comptime dtype = get_defined_dtype["dtype", DType.bfloat16]()
+    comptime dtype = get_defined_dtype["dtype", .bfloat16]()
 
     comptime head_dim = get_defined_int["head_dim", 128]()
     comptime num_q_heads = get_defined_int["num_q_heads", 32]()

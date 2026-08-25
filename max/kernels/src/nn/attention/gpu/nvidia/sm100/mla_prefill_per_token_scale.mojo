@@ -135,10 +135,10 @@ struct MLASmemStorage[
 
     comptime correction_smem_size = Self.config.correction_smem_elements()
 
-    var q_smem: Array[Scalar[DType.uint8], Self.q_bytes]
-    var kv_smem: Array[Scalar[DType.uint8], Self.kv_bytes]
-    var q_scale_smem: Array[Scalar[DType.uint8], Self.q_scale_bytes]
-    var k_scale_smem: Array[Scalar[DType.uint8], Self.k_scale_bytes]
+    var q_smem: Array[UInt8, Self.q_bytes]
+    var kv_smem: Array[UInt8, Self.kv_bytes]
+    var q_scale_smem: Array[UInt8, Self.q_scale_bytes]
+    var k_scale_smem: Array[UInt8, Self.k_scale_bytes]
     var correction_smem: Array[Float32, Self.correction_smem_size]
     var mbar_base: Array[SharedMemBarrier, Self.num_mbars]
     var tmem_addr: Array[UInt32, 1]
@@ -589,7 +589,7 @@ __extension SM100MLA:
                         UnsafePointer[
                             Scalar[config.scale_dtype],
                             ImmutAnyOrigin,
-                            address_space=AddressSpace.SHARED,
+                            address_space=.SHARED,
                         ]
                     ](q_scale_smem)
                 ),
@@ -598,7 +598,7 @@ __extension SM100MLA:
                         UnsafePointer[
                             Scalar[config.scale_dtype],
                             ImmutAnyOrigin,
-                            address_space=AddressSpace.SHARED,
+                            address_space=.SHARED,
                         ]
                     ](k_scale_smem)
                 ),
@@ -776,13 +776,13 @@ __extension SM100MLA:
             Self.KVLUTType.dtype,
             type_of(tt_row_major[elems]()),
             MutAnyOrigin,
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
         ]
         comptime RopeMemTensorLT[elems: Int] = TileTensor[
             config.rope_gmem_dtype,
             type_of(tt_row_major[elems]()),
             MutAnyOrigin,
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
         ]
         comptime q_nope_elems = type_of(q_nope_tma_op).tile_shape[0] * type_of(
             q_nope_tma_op
@@ -796,7 +796,7 @@ __extension SM100MLA:
             config.scale_dtype,
             type_of(tt_row_major[elems]()),
             MutAnyOrigin,
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
         ]
         comptime q_scale_elems_tma = type_of(q_scale_tma_op).tile_shape[
             0
@@ -950,7 +950,7 @@ __extension SM100MLA:
             Self.KRopeType.dtype,
             type_of(tt_row_major[k_rope_sub_elems]()),
             MutAnyOrigin,
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
         ]
 
         # K_rope shared closure. Bytes are accounted by the caller on
@@ -1195,10 +1195,9 @@ __extension SM100MLA:
                     )
                     q_rope_tma_op.async_copy_elect(
                         QRopeType(
-                            (
-                                q_smem.bitcast[Scalar[DType.uint8]]()
-                                + q_nope_bytes
-                            ).bitcast[Scalar[config.rope_gmem_dtype]](),
+                            (q_smem.bitcast[UInt8]() + q_nope_bytes).bitcast[
+                                Scalar[config.rope_gmem_dtype]
+                            ](),
                             tt_row_major[q_rope_elems](),
                         ),
                         mbar[],
@@ -1474,7 +1473,7 @@ __extension SM100MLA:
                 q_nope_tma_op.async_copy_elect(
                     QNopeType(
                         (
-                            q_smem.bitcast[Scalar[DType.uint8]]()
+                            q_smem.bitcast[UInt8]()
                             + q_nope_bytes
                             + q_rope_bytes
                         ).bitcast[Scalar[Self.qkv_dtype]](),
@@ -1490,7 +1489,7 @@ __extension SM100MLA:
                 q_rope_tma_op.async_copy_elect(
                     QRopeType(
                         (
-                            q_smem.bitcast[Scalar[DType.uint8]]()
+                            q_smem.bitcast[UInt8]()
                             + q_nope_bytes
                             + q_rope_bytes
                             + q_nope_bytes
@@ -1722,10 +1721,9 @@ __extension SM100MLA:
                     )
                     q_rope_tma_op.async_copy_elect(
                         QRopeType(
-                            (
-                                q_smem.bitcast[Scalar[DType.uint8]]()
-                                + q_nope_bytes
-                            ).bitcast[Scalar[config.rope_gmem_dtype]](),
+                            (q_smem.bitcast[UInt8]() + q_nope_bytes).bitcast[
+                                Scalar[config.rope_gmem_dtype]
+                            ](),
                             tt_row_major[q_rope_elems](),
                         ),
                         mbar[],
@@ -1812,7 +1810,7 @@ __extension SM100MLA:
                 q_nope_tma_op.async_copy_elect(
                     QNopeType(
                         (
-                            q_smem.bitcast[Scalar[DType.uint8]]()
+                            q_smem.bitcast[UInt8]()
                             + q_nope_bytes
                             + q_rope_bytes
                         ).bitcast[Scalar[Self.qkv_dtype]](),
@@ -1828,7 +1826,7 @@ __extension SM100MLA:
                 q_rope_tma_op.async_copy_elect(
                     QRopeType(
                         (
-                            q_smem.bitcast[Scalar[DType.uint8]]()
+                            q_smem.bitcast[UInt8]()
                             + q_nope_bytes
                             + q_rope_bytes
                             + q_nope_bytes
@@ -2007,23 +2005,15 @@ def mla_sm100_prefill_per_token_scale[
     _ndbuffer_mha_operand: Bool,
     v_depth: Int = -1,
 ](
-    output: TileTensor[
-        mut=True, output_dtype, address_space=AddressSpace.GENERIC, ...
-    ],
-    q_nope: TileTensor[q_dtype, address_space=AddressSpace.GENERIC, ...],
-    q_rope: LayoutTensor[
-        rope_dtype, _, address_space=AddressSpace.GENERIC, ...
-    ],
-    q_scale: LayoutTensor[
-        scale_dtype, _, address_space=AddressSpace.GENERIC, ...
-    ],
+    output: TileTensor[mut=True, output_dtype, address_space=.GENERIC, ...],
+    q_nope: TileTensor[q_dtype, address_space=.GENERIC, ...],
+    q_rope: LayoutTensor[rope_dtype, _, address_space=.GENERIC, ...],
+    q_scale: LayoutTensor[scale_dtype, _, address_space=.GENERIC, ...],
     k_nope: KType,
     k_rope: KRopeType,
     v: VType,
     mask_functor: MaskType,
-    valid_length: TileTensor[
-        DType.uint32, address_space=AddressSpace.GENERIC, ...
-    ],
+    valid_length: TileTensor[.uint32, address_space=.GENERIC, ...],
     max_prompt_len: MaxPromptLenType,
     scale: Float32,
     batch_size: Int,
@@ -2180,10 +2170,10 @@ def mla_sm100_prefill_per_token_scale[
         depth=ov_depth,
     ](ctx)
 
-    comptime ValidLengthType = NonNullPointer[DType.uint32]
+    comptime ValidLengthType = NonNullPointer[.uint32]
     comptime SinkType = NullPointer[output_dtype]
-    comptime KVRowOffsetsType = NullPointer[DType.uint32]
-    comptime PartitionType = NoPartition[DType.float32]
+    comptime KVRowOffsetsType = NullPointer[.uint32]
+    comptime PartitionType = NoPartition[.float32]
     var valid_len: ValidLengthType = {
         rebind[UnsafePointer[UInt32, ImmutAnyOrigin]](valid_length.ptr)
     }

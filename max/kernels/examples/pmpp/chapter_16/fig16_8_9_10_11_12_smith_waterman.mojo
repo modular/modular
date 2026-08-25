@@ -82,8 +82,8 @@ def sw_kernel_square(
     # Allocate shared memory for tile
     var swTile = unsafe_stack_allocation[
         MAX_TILE_WIDTH * MAX_TILE_WIDTH,
-        Scalar[DType.int32],
-        address_space=AddressSpace.SHARED,
+        Int32,
+        address_space=.SHARED,
     ]()
 
     var numTiles_x = ceildiv(L - 1, tile_width)
@@ -141,9 +141,7 @@ def sw_kernel_square(
                     Int(w) + DELETION,
                     Int(n) + INSERTION,
                 )
-                swTile[r_tile * tile_width + q_tile] = Scalar[DType.int32](
-                    score
-                )
+                swTile[r_tile * tile_width + q_tile] = Int32(score)
 
             barrier()  # Thread block synchronization
 
@@ -349,9 +347,9 @@ def main() raises:
     # GPU computation
     with DeviceContext() as ctx:
         # Allocate device memory
-        var d_rea = ctx.enqueue_create_buffer[DType.uint8](L_seq)
-        var d_ref = ctx.enqueue_create_buffer[DType.uint8](L_seq)
-        var d_sw = ctx.enqueue_create_buffer[DType.int32](L * L)
+        var d_rea = ctx.enqueue_create_buffer[.uint8](L_seq)
+        var d_ref = ctx.enqueue_create_buffer[.uint8](L_seq)
+        var d_sw = ctx.enqueue_create_buffer[.int32](L * L)
 
         # Copy sequences to device
         ctx.enqueue_copy(d_rea, h_rea)

@@ -152,6 +152,8 @@ void printUValueTypeInfo(const AnyValue &value, MojoInflightDiag &diag) {
       diag << "initializer list or set literal";
       break;
     }
+  } else if (value.getIfInferredBaseAttrRef()) {
+    diag << "inferred attribute reference";
   } else
     diag << "unknown overload";
 }

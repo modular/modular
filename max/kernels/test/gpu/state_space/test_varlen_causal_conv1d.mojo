@@ -41,10 +41,10 @@ comptime PAD_SLOT_ID: Int32 = -1
 @always_inline
 def silu_ref[dtype: DType](x: Scalar[dtype]) -> Scalar[dtype]:
     """Reference SiLU implementation: x * sigmoid(x) = x / (1 + exp(-x))."""
-    var x_f32 = x.cast[DType.float32]()
+    var x_f32 = x.cast[.float32]()
     var neg_x = -x_f32
     var exp_neg_x = exp(neg_x)
-    var one = Scalar[DType.float32](1.0)
+    var one = Float32(1.0)
     var sigmoid_x = one / (one + exp_neg_x)
     return (x_f32 * sigmoid_x).cast[dtype]()
 
@@ -91,9 +91,7 @@ def run_varlen_causal_conv1d_fwd_gpu[
     )
 
     # query_start_loc: (batch + 1,) - cumulative sequence lengths
-    var query_start_loc_heap = List(
-        length=batch + 1, fill=Scalar[DType.int32](0)
-    )
+    var query_start_loc_heap = List(length=batch + 1, fill=Int32(0))
     var query_start_loc_h = TileTensor(
         query_start_loc_heap,
         row_major(
@@ -101,13 +99,13 @@ def run_varlen_causal_conv1d_fwd_gpu[
         ),
     )
     var cumsum = 0
-    query_start_loc_h.raw_store(0, Scalar[DType.int32](0))
+    query_start_loc_h.raw_store(0, Int32(0))
     for i in range(batch):
         cumsum += seq_lengths[i]
-        query_start_loc_h.raw_store(i + 1, Scalar[DType.int32](cumsum))
+        query_start_loc_h.raw_store(i + 1, Int32(cumsum))
 
     # cache_indices: (batch,) - identity mapping
-    var cache_indices_heap = List(length=batch, fill=Scalar[DType.int32](0))
+    var cache_indices_heap = List(length=batch, fill=Int32(0))
     var cache_indices_h = TileTensor(
         cache_indices_heap,
         row_major(
@@ -115,12 +113,10 @@ def run_varlen_causal_conv1d_fwd_gpu[
         ),
     )
     for i in range(batch):
-        cache_indices_h.raw_store(i, Scalar[DType.int32](i))
+        cache_indices_h.raw_store(i, Int32(i))
 
     # has_initial_state: (batch,) - all False
-    var has_initial_state_heap = List(
-        length=batch, fill=Scalar[DType.bool](False)
-    )
+    var has_initial_state_heap = List(length=batch, fill=Scalar[.bool](False))
     var has_initial_state_h = TileTensor(
         has_initial_state_heap,
         row_major(
@@ -128,9 +124,7 @@ def run_varlen_causal_conv1d_fwd_gpu[
         ),
     )
     for i in range(batch):
-        has_initial_state_h.raw_store(
-            i, Scalar[DType.bool](nonzero_initial_state)
-        )
+        has_initial_state_h.raw_store(i, Scalar[.bool](nonzero_initial_state))
 
     # conv_states: (batch, dim, width - 1)
     var state_len = width - 1
@@ -197,11 +191,9 @@ def run_varlen_causal_conv1d_fwd_gpu[
     var x_device = ctx.enqueue_create_buffer[dtype](dim * total_seqlen)
     var weight_device = ctx.enqueue_create_buffer[dtype](dim * width)
     var bias_device = ctx.enqueue_create_buffer[dtype](dim)
-    var query_start_loc_device = ctx.enqueue_create_buffer[DType.int32](
-        batch + 1
-    )
-    var cache_indices_device = ctx.enqueue_create_buffer[DType.int32](batch)
-    var has_initial_state_device = ctx.enqueue_create_buffer[DType.bool](batch)
+    var query_start_loc_device = ctx.enqueue_create_buffer[.int32](batch + 1)
+    var cache_indices_device = ctx.enqueue_create_buffer[.int32](batch)
+    var has_initial_state_device = ctx.enqueue_create_buffer[.bool](batch)
     var conv_states_device = ctx.enqueue_create_buffer[dtype](
         batch * dim * state_len
     )
@@ -816,7 +808,7 @@ def run_varlen_causal_conv1d_update_gpu[
     )
 
     # cache_seqlens: (batch,) - all zeros
-    var cache_seqlens_heap = List(length=batch, fill=Scalar[DType.int32](0))
+    var cache_seqlens_heap = List(length=batch, fill=Int32(0))
     var cache_seqlens_h = TileTensor(
         cache_seqlens_heap,
         row_major(
@@ -824,12 +816,10 @@ def run_varlen_causal_conv1d_update_gpu[
         ),
     )
     for i in range(batch):
-        cache_seqlens_h.raw_store(i, Scalar[DType.int32](0))
+        cache_seqlens_h.raw_store(i, Int32(0))
 
     # conv_state_indices: (batch,) - identity mapping
-    var conv_state_indices_heap = List(
-        length=batch, fill=Scalar[DType.int32](0)
-    )
+    var conv_state_indices_heap = List(length=batch, fill=Int32(0))
     var conv_state_indices_h = TileTensor(
         conv_state_indices_heap,
         row_major(
@@ -837,7 +827,7 @@ def run_varlen_causal_conv1d_update_gpu[
         ),
     )
     for i in range(batch):
-        conv_state_indices_h.raw_store(i, Scalar[DType.int32](i))
+        conv_state_indices_h.raw_store(i, Int32(i))
 
     # output: (batch, dim, seqlen)
     var output_gpu_heap = List(
@@ -915,10 +905,8 @@ def run_varlen_causal_conv1d_update_gpu[
     var conv_state_device = ctx.enqueue_create_buffer[dtype](
         batch * dim * state_len
     )
-    var cache_seqlens_device = ctx.enqueue_create_buffer[DType.int32](batch)
-    var conv_state_indices_device = ctx.enqueue_create_buffer[DType.int32](
-        batch
-    )
+    var cache_seqlens_device = ctx.enqueue_create_buffer[.int32](batch)
+    var conv_state_indices_device = ctx.enqueue_create_buffer[.int32](batch)
     var output_device = ctx.enqueue_create_buffer[dtype](batch * dim * seqlen)
 
     # Copy data to device
@@ -1309,7 +1297,7 @@ def test_varlen_causal_conv1d_fwd_gpu_equal_lengths() raises:
     var ctx = DeviceContext()
     if not ctx.is_compatible():
         return
-    run_varlen_causal_conv1d_fwd_gpu[DType.float32, "none"](
+    run_varlen_causal_conv1d_fwd_gpu[.float32, "none"](
         batch=2, dim=4, seq_lengths=Index(8, 8), width=3, ctx=ctx
     )
 
@@ -1319,7 +1307,7 @@ def test_varlen_causal_conv1d_fwd_gpu_variable_lengths() raises:
     var ctx = DeviceContext()
     if not ctx.is_compatible():
         return
-    run_varlen_causal_conv1d_fwd_gpu[DType.float32, "none"](
+    run_varlen_causal_conv1d_fwd_gpu[.float32, "none"](
         batch=3, dim=4, seq_lengths=Index(10, 6, 1), width=3, ctx=ctx
     )
 
@@ -1329,7 +1317,7 @@ def test_varlen_causal_conv1d_fwd_gpu_with_silu() raises:
     var ctx = DeviceContext()
     if not ctx.is_compatible():
         return
-    run_varlen_causal_conv1d_fwd_gpu[DType.float32, "silu"](
+    run_varlen_causal_conv1d_fwd_gpu[.float32, "silu"](
         batch=2, dim=4, seq_lengths=Index(8, 8), width=3, ctx=ctx
     )
 
@@ -1339,10 +1327,10 @@ def test_varlen_causal_conv1d_fwd_gpu_various_widths() raises:
     var ctx = DeviceContext()
     if not ctx.is_compatible():
         return
-    run_varlen_causal_conv1d_fwd_gpu[DType.float32, "none"](
+    run_varlen_causal_conv1d_fwd_gpu[.float32, "none"](
         batch=2, dim=4, seq_lengths=Index(8, 8), width=2, ctx=ctx
     )
-    run_varlen_causal_conv1d_fwd_gpu[DType.float32, "none"](
+    run_varlen_causal_conv1d_fwd_gpu[.float32, "none"](
         batch=2, dim=4, seq_lengths=Index(8, 8), width=4, ctx=ctx
     )
 
@@ -1366,7 +1354,7 @@ def test_varlen_causal_conv1d_fwd_gpu_seqparallel_prefill_shapes() raises:
     var widths: List[Int] = [2, 3, 4]
     for seqlen in seqlens:
         for width in widths:
-            run_varlen_causal_conv1d_fwd_gpu[DType.float32, "none"](
+            run_varlen_causal_conv1d_fwd_gpu[.float32, "none"](
                 batch=1,
                 dim=8,
                 seq_lengths=Index(seqlen),
@@ -1384,7 +1372,7 @@ def test_varlen_causal_conv1d_fwd_gpu_seqparallel_ragged_batch() raises:
     var ctx = DeviceContext()
     if not ctx.is_compatible():
         return
-    run_varlen_causal_conv1d_fwd_gpu[DType.float32, "none"](
+    run_varlen_causal_conv1d_fwd_gpu[.float32, "none"](
         batch=4,
         dim=8,
         seq_lengths=Index(1024, 512, 4032, 1),
@@ -1399,7 +1387,7 @@ def test_varlen_causal_conv1d_fwd_gpu_seqparallel_nonzero_initial_state() raises
     var ctx = DeviceContext()
     if not ctx.is_compatible():
         return
-    run_varlen_causal_conv1d_fwd_gpu[DType.float32, "none"](
+    run_varlen_causal_conv1d_fwd_gpu[.float32, "none"](
         batch=2,
         dim=8,
         seq_lengths=Index(1024, 257),
@@ -1407,7 +1395,7 @@ def test_varlen_causal_conv1d_fwd_gpu_seqparallel_nonzero_initial_state() raises
         ctx=ctx,
         nonzero_initial_state=True,
     )
-    run_varlen_causal_conv1d_fwd_gpu[DType.float32, "none"](
+    run_varlen_causal_conv1d_fwd_gpu[.float32, "none"](
         batch=2,
         dim=8,
         seq_lengths=Index(4032, 256),
@@ -1430,7 +1418,7 @@ def test_varlen_causal_conv1d_fwd_gpu_chunk_shorter_than_width() raises:
     var ctx = DeviceContext()
     if not ctx.is_compatible():
         return
-    run_varlen_causal_conv1d_fwd_gpu[DType.float32, "none"](
+    run_varlen_causal_conv1d_fwd_gpu[.float32, "none"](
         batch=2,
         dim=8,
         seq_lengths=Index(1, 1),
@@ -1438,7 +1426,7 @@ def test_varlen_causal_conv1d_fwd_gpu_chunk_shorter_than_width() raises:
         ctx=ctx,
         nonzero_initial_state=True,
     )
-    run_varlen_causal_conv1d_fwd_gpu[DType.float32, "none"](
+    run_varlen_causal_conv1d_fwd_gpu[.float32, "none"](
         batch=2,
         dim=8,
         seq_lengths=Index(2, 2),
@@ -1446,7 +1434,7 @@ def test_varlen_causal_conv1d_fwd_gpu_chunk_shorter_than_width() raises:
         ctx=ctx,
         nonzero_initial_state=True,
     )
-    run_varlen_causal_conv1d_fwd_gpu[DType.float32, "none"](
+    run_varlen_causal_conv1d_fwd_gpu[.float32, "none"](
         batch=3,
         dim=8,
         seq_lengths=Index(1, 1, 1),
@@ -1463,7 +1451,7 @@ def test_varlen_causal_conv1d_fwd_gpu_seqparallel_zero_length_sequence() raises:
     var ctx = DeviceContext()
     if not ctx.is_compatible():
         return
-    run_varlen_causal_conv1d_fwd_gpu[DType.float32, "none"](
+    run_varlen_causal_conv1d_fwd_gpu[.float32, "none"](
         batch=3,
         dim=8,
         seq_lengths=Index(0, 1024, 0),
@@ -1482,7 +1470,7 @@ def test_varlen_causal_conv1d_update_gpu_basic() raises:
     var ctx = DeviceContext()
     if not ctx.is_compatible():
         return
-    run_varlen_causal_conv1d_update_gpu[DType.float32, "none"](
+    run_varlen_causal_conv1d_update_gpu[.float32, "none"](
         batch=2, dim=4, seqlen=1, width=3, state_len=4, ctx=ctx
     )
 
@@ -1492,7 +1480,7 @@ def test_varlen_causal_conv1d_update_gpu_with_silu() raises:
     var ctx = DeviceContext()
     if not ctx.is_compatible():
         return
-    run_varlen_causal_conv1d_update_gpu[DType.float32, "silu"](
+    run_varlen_causal_conv1d_update_gpu[.float32, "silu"](
         batch=2, dim=4, seqlen=1, width=3, state_len=4, ctx=ctx
     )
 
@@ -1502,7 +1490,7 @@ def test_varlen_causal_conv1d_update_gpu_seqlen_gt_1() raises:
     var ctx = DeviceContext()
     if not ctx.is_compatible():
         return
-    run_varlen_causal_conv1d_update_gpu[DType.float32, "none"](
+    run_varlen_causal_conv1d_update_gpu[.float32, "none"](
         batch=2, dim=4, seqlen=4, width=3, state_len=4, ctx=ctx
     )
 
@@ -1512,10 +1500,10 @@ def test_varlen_causal_conv1d_update_gpu_various_widths() raises:
     var ctx = DeviceContext()
     if not ctx.is_compatible():
         return
-    run_varlen_causal_conv1d_update_gpu[DType.float32, "none"](
+    run_varlen_causal_conv1d_update_gpu[.float32, "none"](
         batch=2, dim=4, seqlen=1, width=2, state_len=3, ctx=ctx
     )
-    run_varlen_causal_conv1d_update_gpu[DType.float32, "none"](
+    run_varlen_causal_conv1d_update_gpu[.float32, "none"](
         batch=2, dim=4, seqlen=1, width=4, state_len=5, ctx=ctx
     )
 

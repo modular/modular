@@ -39,11 +39,11 @@ def execute_flash_attention[
     num_q_heads: Int, dtype: DType, kv_params: KVCacheStaticParams
 ](
     batch_size: Int,
-    valid_length: LayoutTensor[DType.uint32, Layout(UNKNOWN_VALUE), _],
+    valid_length: LayoutTensor[.uint32, Layout(UNKNOWN_VALUE), _],
     max_seq_len: Int,
     num_layers: Int,
     layer_idx: Int,
-    cache_valid_length: LayoutTensor[DType.uint32, Layout(UNKNOWN_VALUE), _],
+    cache_valid_length: LayoutTensor[.uint32, Layout(UNKNOWN_VALUE), _],
     ctx: DeviceContext,
 ) raises:
     comptime num_blocks = 32
@@ -79,7 +79,7 @@ def execute_flash_attention[
     random(q.tensor())
 
     var valid_lengths = ManagedLayoutTensor[
-        DType.uint32, Layout.row_major(UNKNOWN_VALUE)
+        .uint32, Layout.row_major(UNKNOWN_VALUE)
     ](
         RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
             Index(batch_size)
@@ -110,7 +110,7 @@ def execute_flash_attention[
 
     # initialize our KVCache
     var cache_lengths_managed = ManagedLayoutTensor[
-        DType.uint32, Layout(UNKNOWN_VALUE)
+        .uint32, Layout(UNKNOWN_VALUE)
     ](
         RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(Index(batch_size)),
         ctx,
@@ -144,7 +144,7 @@ def execute_flash_attention[
     random(kv_block_host_tensor)
 
     # Create lookup table
-    var lookup_table = ManagedLayoutTensor[DType.uint32, Layout(UNKNOWN_VALUE)](
+    var lookup_table = ManagedLayoutTensor[.uint32, Layout(UNKNOWN_VALUE)](
         RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(Index(batch_size)),
         ctx,
     )
@@ -228,7 +228,7 @@ def execute_flash_attention_suite(ctx: DeviceContext) raises:
     comptime dtypes = (DType.bfloat16,)
     var bs = 2
     var valid_length_managed = ManagedLayoutTensor[
-        DType.uint32, Layout(UNKNOWN_VALUE)
+        .uint32, Layout(UNKNOWN_VALUE)
     ](
         RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(Index(bs)),
         ctx,
@@ -236,7 +236,7 @@ def execute_flash_attention_suite(ctx: DeviceContext) raises:
     var valid_length = valid_length_managed.tensor[update=False]()
 
     var cache_valid_length_managed = ManagedLayoutTensor[
-        DType.uint32, Layout(UNKNOWN_VALUE)
+        .uint32, Layout(UNKNOWN_VALUE)
     ](
         RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(Index(bs)),
         ctx,

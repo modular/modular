@@ -32,11 +32,9 @@ from std.utils.index import Index
 @__llvm_arg_metadata(descriptor, `nvvm.grid_constant`)
 def kernel_copy_async_tma(descriptor: TMADescriptor):
     var shmem = unsafe_stack_allocation[
-        16, DType.float32, alignment=16, address_space=AddressSpace.SHARED
+        16, DType.float32, alignment=16, address_space=.SHARED
     ]()
-    var mbar = unsafe_stack_allocation[
-        1, Int64, address_space=AddressSpace.SHARED
-    ]()
+    var mbar = unsafe_stack_allocation[1, Int64, address_space=.SHARED]()
     var descriptor_ptr = UnsafePointer(to=descriptor).bitcast[NoneType]()
     mbarrier_init(mbar, 1)
 
@@ -51,22 +49,22 @@ def kernel_copy_async_tma(descriptor: TMADescriptor):
     ](
         block_idx.x,
         block_idx.y,
-        shmem[0].cast[DType.float64](),
-        shmem[1].cast[DType.float64](),
-        shmem[2].cast[DType.float64](),
-        shmem[3].cast[DType.float64](),
-        shmem[4].cast[DType.float64](),
-        shmem[5].cast[DType.float64](),
-        shmem[6].cast[DType.float64](),
-        shmem[7].cast[DType.float64](),
-        shmem[8].cast[DType.float64](),
-        shmem[9].cast[DType.float64](),
-        shmem[10].cast[DType.float64](),
-        shmem[11].cast[DType.float64](),
-        shmem[12].cast[DType.float64](),
-        shmem[13].cast[DType.float64](),
-        shmem[14].cast[DType.float64](),
-        shmem[15].cast[DType.float64](),
+        shmem[0].cast[.float64](),
+        shmem[1].cast[.float64](),
+        shmem[2].cast[.float64](),
+        shmem[3].cast[.float64](),
+        shmem[4].cast[.float64](),
+        shmem[5].cast[.float64](),
+        shmem[6].cast[.float64](),
+        shmem[7].cast[.float64](),
+        shmem[8].cast[.float64](),
+        shmem[9].cast[.float64](),
+        shmem[10].cast[.float64](),
+        shmem[11].cast[.float64](),
+        shmem[12].cast[.float64](),
+        shmem[13].cast[.float64](),
+        shmem[14].cast[.float64](),
+        shmem[15].cast[.float64](),
     )
 
 
@@ -81,11 +79,11 @@ def test_tma_tile_copy(ctx: DeviceContext) raises:
     for i in range(64):
         gmem_host[i] = Float32(i)
 
-    var gmem_dev = ctx.enqueue_create_buffer[DType.float32](8 * 8)
+    var gmem_dev = ctx.enqueue_create_buffer[.float32](8 * 8)
 
     ctx.enqueue_copy(gmem_dev, gmem_host)
 
-    var descriptor = create_tma_descriptor[DType.float32, 2](
+    var descriptor = create_tma_descriptor[.float32, 2](
         gmem_dev, (8, 8), (8, 1), (4, 4)
     )
 

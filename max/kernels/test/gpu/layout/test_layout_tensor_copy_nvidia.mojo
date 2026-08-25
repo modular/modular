@@ -46,11 +46,11 @@ def async_dynamic_copy_kernel[
     BN: Int,
     num_rows: Int,
 ](
-    input: LayoutTensor[DType.float32, input_layout, MutAnyOrigin],
-    output: LayoutTensor[DType.float32, output_layout, MutAnyOrigin],
+    input: LayoutTensor[.float32, input_layout, MutAnyOrigin],
+    output: LayoutTensor[.float32, output_layout, MutAnyOrigin],
 ):
     var masked_input = LayoutTensor[
-        DType.float32,
+        .float32,
         input_layout,
         MutAnyOrigin,
         masked=True,
@@ -66,10 +66,10 @@ def async_dynamic_copy_kernel[
     var output_tile = output.tile[BM, BN](block_idx.x, block_idx.y)
 
     var smem_tile = LayoutTensor[
-        DType.float32,
+        .float32,
         Layout(IntTuple(BM, BN)),
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ].stack_allocation()
 
     smem_tile.copy_from_async[is_masked=True](input_tile)
@@ -87,24 +87,24 @@ def test_dynamic_async_copy[
 
     comptime input_runtime_layout = RuntimeLayout[
         unknown_layout,
-        element_type=DType.int64,
-        linear_idx_type=DType.int64,
-    ].row_major(IndexList[2, element_type=DType.int64](M, N))
+        element_type=.int64,
+        linear_idx_type=.int64,
+    ].row_major(IndexList[2, element_type=.int64](M, N))
 
     comptime output_runtime_layout = RuntimeLayout[
         unknown_layout,
-        element_type=DType.int64,
-        linear_idx_type=DType.int64,
-    ].row_major(IndexList[2, element_type=DType.int64](num_rows, N))
+        element_type=.int64,
+        linear_idx_type=.int64,
+    ].row_major(IndexList[2, element_type=.int64](num_rows, N))
 
     var input = ManagedLayoutTensor[
-        DType.float32,
+        .float32,
         unknown_layout,
     ](input_runtime_layout, ctx)
     arange(input.tensor())
 
     var output = ManagedLayoutTensor[
-        DType.float32,
+        .float32,
         unknown_layout,
     ](output_runtime_layout, ctx)
 
@@ -167,7 +167,7 @@ def swizzle_copy[
             dtype,
             Layout.row_major(BM, BK),
             MutAnyOrigin,
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
         ]
         .stack_allocation()
         .fill(0)
@@ -208,7 +208,7 @@ def test_swizzle_copy[
     print("=== test_swizzle_copy")
 
     comptime managed_layout_tensor_type = ManagedLayoutTensor[
-        DType.float32,
+        .float32,
         layout,
     ]
 
@@ -224,13 +224,13 @@ def test_swizzle_copy[
     ].row_major(IndexList[2, element_type=element_type](M, K))
 
     var a_tensor = ManagedLayoutTensor[
-        DType.float32,
+        .float32,
         layout,
     ](a_runtime_layout, ctx)
     arange(a_tensor.tensor())
 
     var b_tensor = ManagedLayoutTensor[
-        DType.float32,
+        .float32,
         layout,
     ](b_runtime_layout, ctx)
 
@@ -282,11 +282,11 @@ def run_swizzle_copy_tests(ctx: DeviceContext) raises:
 @always_inline
 def masked_async_copy_kernel[
     layout: Layout, num_rows: Int
-](input: LayoutTensor[DType.float32, layout, MutAnyOrigin]):
+](input: LayoutTensor[.float32, layout, MutAnyOrigin]):
     comptime thread_layout = Layout.row_major(4, 2)
 
     var masked_input = LayoutTensor[
-        DType.float32,
+        .float32,
         layout,
         MutAnyOrigin,
         masked=True,
@@ -300,10 +300,10 @@ def masked_async_copy_kernel[
 
     var smem_tile = (
         LayoutTensor[
-            DType.float32,
+            .float32,
             layout,
             MutAnyOrigin,
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
         ]
         .stack_allocation()
         .fill(-1.0)
@@ -328,7 +328,7 @@ def test_masked_async_copy[
     print("=== test_masked_async_copy")
 
     comptime managed_layout_tensor_type = ManagedLayoutTensor[
-        DType.float32,
+        .float32,
         layout,
     ]
 
@@ -340,14 +340,14 @@ def test_masked_async_copy[
     ].row_major(IndexList[2, element_type=element_type](M, N))
 
     var input = ManagedLayoutTensor[
-        DType.float32,
+        .float32,
         layout,
     ](runtime_layout, ctx)
 
     arange(input.tensor())
 
     var input_tensor = LayoutTensor[
-        DType.float32,
+        .float32,
         Layout.row_major(M, N),
         MutAnyOrigin,
     ](input.device_tensor().ptr)
@@ -409,11 +409,11 @@ def run_masked_async_copy_tests(ctx: DeviceContext) raises:
 @always_inline
 def masked_copy_kernel[
     layout: Layout, num_rows: Int
-](input: LayoutTensor[DType.float32, layout, MutAnyOrigin]):
+](input: LayoutTensor[.float32, layout, MutAnyOrigin]):
     comptime thread_layout = Layout.row_major(4, 2)
 
     var masked_input = LayoutTensor[
-        DType.float32,
+        .float32,
         layout,
         MutAnyOrigin,
         masked=True,
@@ -427,10 +427,10 @@ def masked_copy_kernel[
 
     var smem_tile = (
         LayoutTensor[
-            DType.float32,
+            .float32,
             layout,
             MutAnyOrigin,
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
         ]
         .stack_allocation()
         .fill(0)
@@ -454,7 +454,7 @@ def test_masked_copy[
     print("=== test_masked_copy")
 
     comptime managed_layout_tensor_type = ManagedLayoutTensor[
-        DType.float32,
+        .float32,
         layout,
     ]
 
@@ -466,14 +466,14 @@ def test_masked_copy[
     ].row_major(IndexList[2, element_type=element_type](M, N))
 
     var input = ManagedLayoutTensor[
-        DType.float32,
+        .float32,
         layout,
     ](runtime_layout, ctx)
 
     arange(input.tensor())
 
     var input_tensor = LayoutTensor[
-        DType.float32,
+        .float32,
         Layout.row_major(M, N),
         MutAnyOrigin,
     ](input.device_tensor().ptr)
@@ -528,15 +528,15 @@ def run_masked_copy_tests(ctx: DeviceContext) raises:
 def masked_copy_dram_to_local_kernel[
     layout: Layout, num_rows: Int
 ](
-    input: LayoutTensor[DType.float32, layout, MutAnyOrigin],
-    output: LayoutTensor[DType.float32, layout, MutAnyOrigin],
+    input: LayoutTensor[.float32, layout, MutAnyOrigin],
+    output: LayoutTensor[.float32, layout, MutAnyOrigin],
 ):
     comptime thread_layout = Layout.row_major(4, 2)
     comptime num_threads = thread_layout.size()
     comptime simd_width = 2
 
     var masked_input = LayoutTensor[
-        DType.float32,
+        .float32,
         layout,
         MutAnyOrigin,
         masked=True,
@@ -550,12 +550,12 @@ def masked_copy_dram_to_local_kernel[
 
     var reg_tile = (
         LayoutTensor[
-            DType.float32,
+            .float32,
             Layout.row_major(
                 layout.size() // num_threads // simd_width, simd_width
             ),
             MutAnyOrigin,
-            address_space=AddressSpace.LOCAL,
+            address_space=.LOCAL,
         ]
         .stack_allocation()
         .fill(-1.0)
@@ -582,14 +582,14 @@ def test_masked_copy_dram_to_local[
     comptime M = layout.shape[0].value()
 
     var input = ManagedLayoutTensor[
-        DType.float32,
+        .float32,
         layout,
     ](ctx)
 
     arange(input.tensor())
 
     var output = ManagedLayoutTensor[
-        DType.float32,
+        .float32,
         layout,
     ](ctx)
 

@@ -77,9 +77,9 @@ def run_varlen_selective_scan_fwd_gpu[
     var z_gpu_h = alloc[Scalar[dtype]](max(z_size, 1))
     var delta_bias_size = dim if has_delta_bias else 0
     var delta_bias_h = alloc[Scalar[dtype]](max(delta_bias_size, 1))
-    var query_start_loc_h = alloc[Scalar[DType.int32]](batch + 1)
-    var cache_indices_h = alloc[Scalar[DType.int32]](batch)
-    var has_initial_state_h = alloc[Scalar[DType.bool]](batch)
+    var query_start_loc_h = alloc[Int32](batch + 1)
+    var cache_indices_h = alloc[Int32](batch)
+    var has_initial_state_h = alloc[Scalar[.bool]](batch)
 
     # Create LayoutTensors for initialization
     var u_init = LayoutTensor[dtype, layout_2d](
@@ -141,18 +141,18 @@ def run_varlen_selective_scan_fwd_gpu[
 
     # Initialize query_start_loc (cumulative lengths)
     var cumsum = 0
-    query_start_loc_h.store(0, Scalar[DType.int32](0))
+    query_start_loc_h.store(0, Int32(0))
     for i in range(batch):
         cumsum += seq_lengths[i]
-        query_start_loc_h.store(i + 1, Scalar[DType.int32](cumsum))
+        query_start_loc_h.store(i + 1, Int32(cumsum))
 
     # Initialize cache_indices (identity mapping)
     for i in range(batch):
-        cache_indices_h.store(i, Scalar[DType.int32](i))
+        cache_indices_h.store(i, Int32(i))
 
     # Initialize has_initial_state (all False)
     for i in range(batch):
-        has_initial_state_h.store(i, Scalar[DType.bool](False))
+        has_initial_state_h.store(i, Scalar[.bool](False))
 
     # Copy z for GPU
     if has_z:
@@ -210,15 +210,15 @@ def run_varlen_selective_scan_fwd_gpu[
         delta_bias_h,
         RuntimeLayout[layout_1d].row_major(Index(delta_bias_size)),
     )
-    var query_start_loc_cpu = LayoutTensor[DType.int32, layout_1d](
+    var query_start_loc_cpu = LayoutTensor[.int32, layout_1d](
         query_start_loc_h,
         RuntimeLayout[layout_1d].row_major(Index(batch + 1)),
     )
-    var cache_indices_cpu = LayoutTensor[DType.int32, layout_1d](
+    var cache_indices_cpu = LayoutTensor[.int32, layout_1d](
         cache_indices_h,
         RuntimeLayout[layout_1d].row_major(Index(batch)),
     )
-    var has_initial_state_cpu = LayoutTensor[DType.bool, layout_1d](
+    var has_initial_state_cpu = LayoutTensor[.bool, layout_1d](
         has_initial_state_h,
         RuntimeLayout[layout_1d].row_major(Index(batch)),
     )
@@ -333,9 +333,9 @@ def run_varlen_selective_scan_fwd_gpu[
     var D_d = ctx.enqueue_create_buffer[dtype](max(D_size, 1))
     var z_d = ctx.enqueue_create_buffer[dtype](max(z_size, 1))
     var delta_bias_d = ctx.enqueue_create_buffer[dtype](max(delta_bias_size, 1))
-    var query_start_loc_d = ctx.enqueue_create_buffer[DType.int32](batch + 1)
-    var cache_indices_d = ctx.enqueue_create_buffer[DType.int32](batch)
-    var has_initial_state_d = ctx.enqueue_create_buffer[DType.bool](batch)
+    var query_start_loc_d = ctx.enqueue_create_buffer[.int32](batch + 1)
+    var cache_indices_d = ctx.enqueue_create_buffer[.int32](batch)
+    var has_initial_state_d = ctx.enqueue_create_buffer[.bool](batch)
 
     # Copy to device
     ctx.enqueue_copy(u_d, u_h)
@@ -396,14 +396,14 @@ def run_varlen_selective_scan_fwd_gpu[
     var delta_bias_gpu_lt = LayoutTensor[dtype, layout_1d, MutAnyOrigin](
         delta_bias_d, RuntimeLayout[layout_1d].row_major(Index(delta_bias_size))
     )
-    var query_start_loc_gpu_lt = LayoutTensor[
-        DType.int32, layout_1d, MutAnyOrigin
-    ](query_start_loc_d, RuntimeLayout[layout_1d].row_major(Index(batch + 1)))
-    var cache_indices_gpu_lt = LayoutTensor[
-        DType.int32, layout_1d, MutAnyOrigin
-    ](cache_indices_d, RuntimeLayout[layout_1d].row_major(Index(batch)))
+    var query_start_loc_gpu_lt = LayoutTensor[.int32, layout_1d, MutAnyOrigin](
+        query_start_loc_d, RuntimeLayout[layout_1d].row_major(Index(batch + 1))
+    )
+    var cache_indices_gpu_lt = LayoutTensor[.int32, layout_1d, MutAnyOrigin](
+        cache_indices_d, RuntimeLayout[layout_1d].row_major(Index(batch))
+    )
     var _has_initial_state_gpu_lt = LayoutTensor[
-        DType.bool, layout_1d, MutAnyOrigin
+        .bool, layout_1d, MutAnyOrigin
     ](has_initial_state_d, RuntimeLayout[layout_1d].row_major(Index(batch)))
 
     # Create TileTensors for GPU kernel

@@ -157,10 +157,17 @@ def bench_cublas_per_group[
         2 * Int(m.value()) * Int(n.value()) * Int(k.value()) * num_groups
     )
 
-    @__parameter
-    @__copy_capture(a_tensor, b_tensor, c_tensor, sfa_tensor, sfb_tensor)
     @always_inline
-    def bench_func(mut bencher: Bencher):
+    def bench_func(
+        mut bencher: Bencher,
+    ) {
+        var a_tensor,
+        var b_tensor,
+        var c_tensor,
+        var sfa_tensor,
+        var sfb_tensor,
+        imm,
+    }:
         @always_inline
         def kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
             # Call cuBLAS once per group (sequential)
@@ -180,7 +187,8 @@ def bench_cublas_per_group[
 
     var fmt = String("NVFP4") if is_fp4 else String("MXFP8")
 
-    bench.bench_function[bench_func](
+    bench.bench_function(
+        bench_func,
         BenchId(
             String(
                 "cuBLAS(",
@@ -338,11 +346,11 @@ def bench_structured_kernel[
         length=max_groups, fill=UInt64(Int(sfb_device.unsafe_ptr()))
     )
 
-    var a_ptrs_device = ctx.enqueue_create_buffer[DType.uint64](max_groups)
-    var b_ptrs_device = ctx.enqueue_create_buffer[DType.uint64](max_groups)
-    var c_ptrs_device = ctx.enqueue_create_buffer[DType.uint64](max_groups)
-    var sfa_ptrs_device = ctx.enqueue_create_buffer[DType.uint64](max_groups)
-    var sfb_ptrs_device = ctx.enqueue_create_buffer[DType.uint64](max_groups)
+    var a_ptrs_device = ctx.enqueue_create_buffer[.uint64](max_groups)
+    var b_ptrs_device = ctx.enqueue_create_buffer[.uint64](max_groups)
+    var c_ptrs_device = ctx.enqueue_create_buffer[.uint64](max_groups)
+    var sfa_ptrs_device = ctx.enqueue_create_buffer[.uint64](max_groups)
+    var sfb_ptrs_device = ctx.enqueue_create_buffer[.uint64](max_groups)
 
     ctx.enqueue_copy(a_ptrs_device, a_ptrs_host)
     ctx.enqueue_copy(b_ptrs_device, b_ptrs_host)
@@ -402,23 +410,24 @@ def bench_structured_kernel[
         2 * Int(m.value()) * Int(n.value()) * Int(k.value()) * num_groups
     )
 
-    @__parameter
-    @__copy_capture(
-        a_ptrs_tensor,
-        b_ptrs_tensor,
-        c_ptrs_tensor,
-        sfa_ptrs_tensor,
-        sfb_ptrs_tensor,
-        problem_sizes_tensor,
-        a_template,
-        b_template,
-        c_template,
-        sfa_template,
-        sfb_template,
-        total_tiles,
-    )
     @always_inline
-    def bench_func(mut bencher: Bencher):
+    def bench_func(
+        mut bencher: Bencher,
+    ) {
+        var a_ptrs_tensor,
+        var b_ptrs_tensor,
+        var c_ptrs_tensor,
+        var sfa_ptrs_tensor,
+        var sfb_ptrs_tensor,
+        var problem_sizes_tensor,
+        var a_template,
+        var b_template,
+        var c_template,
+        var sfa_template,
+        var sfb_template,
+        var total_tiles,
+        imm,
+    }:
         @always_inline
         def kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
             grouped_block_scaled_matmul[
@@ -446,7 +455,8 @@ def bench_structured_kernel[
 
     var fmt = String("NVFP4") if is_fp4 else String("MXFP8")
 
-    bench.bench_function[bench_func](
+    bench.bench_function(
+        bench_func,
         BenchId(
             String(
                 "STRUCTURED(",

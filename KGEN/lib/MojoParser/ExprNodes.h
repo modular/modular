@@ -278,6 +278,28 @@ struct AttributeRefNode final : public LValueCapableExprNode, Identifier {
                                    ExprDest &dest, IREmitter &emitter);
 };
 
+/// An attribute reference with no explicit base, e.g. `.f64` in `foo(.f64)`.
+/// The base type is inferred from context (like Swift's leading-dot syntax).
+struct InferredAttributeRefNode final : public LValueCapableExprNode,
+                                        Identifier {
+  InferredAttributeRefNode(SMLoc dotLoc, StringRef spelling,
+                           bool isEscapedIdentifier = false)
+      : LValueCapableExprNode(kInferredAttributeRef),
+        Identifier(spelling, isEscapedIdentifier), dotLoc(dotLoc) {}
+
+  const SMLoc dotLoc;
+
+  static bool classof(const ExprNode *node) {
+    return node->kind == kInferredAttributeRef;
+  }
+  SMLoc getLoc() const override { return dotLoc; }
+  SourceRange getAttributeNameRange() const { return getIdentifierRange(); }
+  SourceRange getRange() const override { return {dotLoc, getIdentifierLoc()}; }
+  ELVIITResult emitLCVIR(ExprDest &dest, IREmitter &emitter,
+                         bool isSpeculative) const override;
+  void print(mlir::raw_indented_ostream &os) const override;
+};
+
 /// Struct to represent a parsed expression passed as a parameter or argument
 /// operand, along with metadata to help overload resolution and call emission.
 struct Operand {
@@ -683,12 +705,14 @@ struct FunctionTypeNode final : public ExprNode {
   FunctionTypeNode(SMLoc baseLoc, ArrayRef<ParsedArgument> parsedParams,
                    ArrayRef<ParsedArgument> parsedArgs,
                    const ParsedArgument &resultArg, FnEffects effects,
-                   bool isThin, const ExprNode *thrownTypeExpr,
-                   const ExprNode *originExpr,
+                   bool isThin, bool isExperimentalParamTrait,
+                   const ExprNode *thrownTypeExpr, const ExprNode *originExpr,
+
                    ArrayRef<ParsedConstraint> parsedConstraints, SMLoc endLoc)
       : ExprNode(kFunctionType), baseLoc(baseLoc), parsedParams(parsedParams),
         parsedArgs(parsedArgs), resultArg(resultArg), effects(effects),
-        isThin(isThin), thrownTypeExpr(thrownTypeExpr), originExpr(originExpr),
+        isThin(isThin), isExperimentalParamTrait(isExperimentalParamTrait),
+        thrownTypeExpr(thrownTypeExpr), originExpr(originExpr),
         parsedConstraints(parsedConstraints), endLoc(endLoc) {}
 
   SMLoc baseLoc;
@@ -697,6 +721,7 @@ struct FunctionTypeNode final : public ExprNode {
   const ParsedArgument &resultArg;       // Result argument
   FnEffects effects;
   bool isThin;
+  bool isExperimentalParamTrait;
   const ExprNode *thrownTypeExpr;
   const ExprNode *originExpr;
   ArrayRef<ParsedConstraint> parsedConstraints; // Trailing body constraints

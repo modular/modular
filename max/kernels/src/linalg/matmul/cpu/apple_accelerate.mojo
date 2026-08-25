@@ -160,8 +160,7 @@ def use_apple_accelerate_lib[
         `True` if the Accelerate library is available and the dtype combination is supported.
     """
     return (
-        CompilationTarget.is_macos()
-        and a_type == b_type == c_type == DType.float32
+        CompilationTarget.is_macos() and a_type == b_type == c_type == .float32
     )
 
 
@@ -270,9 +269,9 @@ def apple_gemv[
     transpose_b: Bool = False,
     elementwise_lambda_fn: Optional[matmul_elementwise_epilogue_type] = None,
 ](
-    c: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
-    a: TileTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
-    b: TileTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
+    c: TileTensor[mut=True, address_space=.GENERIC, ...],
+    a: TileTensor[mut=False, address_space=.GENERIC, ...],
+    b: TileTensor[mut=False, address_space=.GENERIC, ...],
     ctx: Optional[DeviceContext] = None,
 ) raises:
     """Performs a parallelized and vectorized GEMV for the M=1 case on Apple CPUs.
@@ -341,15 +340,15 @@ def apple_gemv[
     comptime simd_width = simd_width_of[c.dtype]()
 
     @always_inline
-    @__copy_capture(c, a, b, K)
-    @__parameter
-    def process_rows(start_row: Int, end_row: Int):
+    def process_rows(
+        start_row: Int, end_row: Int
+    ) {var c, var a, var b, var K, imm}:
         for var n in range(start_row, end_row):
             var acc_vector = SIMD[c.dtype, simd_width]()
             var acc_scalar = Scalar[c.dtype]()
 
             @always_inline
-            def compute_fn[width: Int](k: Int) {a, b, c, mut}:
+            def compute_fn[width: Int](k: Int) {a, b, c, transposed_b, mut}:
                 var a_val = a.load[width=width](Coord(Idx[0], k)).cast[
                     c.dtype
                 ]()
@@ -385,8 +384,8 @@ def apple_gemv[
 
     # TODO: Experiment with this.
     comptime parallelism_grain_size = 16
-    parallelize_over_rows[process_rows](
-        IndexList[2](N, K), 1, parallelism_grain_size, ctx
+    parallelize_over_rows(
+        process_rows, IndexList[2](N, K), 1, parallelism_grain_size, ctx
     )
 
     _ = transposed_b_alloc^
@@ -429,7 +428,7 @@ def apple_matmul[
     comptime assert a.flat_rank >= 2
     comptime assert b.flat_rank >= 2
     comptime assert (
-        a.dtype == b.dtype == c.dtype == DType.float32
+        a.dtype == b.dtype == c.dtype == .float32
     ), "unsupported type in apple accelerate"
     var m = Int32(Int(a.dim[0]()))
     var n = Int32(Int(b.dim[0]()) if transpose_b else Int(b.dim[1]()))
@@ -506,7 +505,7 @@ def apple_matmul[
         b: Input B matrix tile.
     """
     comptime assert (
-        a.dtype == b.dtype == c.dtype == DType.float32
+        a.dtype == b.dtype == c.dtype == .float32
     ), "unsupported type in apple accelerate"
     var cblas_gemm = get_cblas_f32_function()
 

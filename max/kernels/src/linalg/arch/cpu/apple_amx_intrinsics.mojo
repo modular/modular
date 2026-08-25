@@ -487,7 +487,7 @@ def transpose_z_to_x_or_y[
     # The destination must be either "X" or "Y".
     comptime assert destination == "X" or destination == "Y"
     # The type must be Float32.
-    comptime assert dtype == DType.float32
+    comptime assert dtype == .float32
 
     # make the y offset field
     #  shift left by 6 to make this an offset in rows,
@@ -549,7 +549,7 @@ def fma[
     # The mode must be either "TILE" or "ROW".
     comptime assert mode == "TILE" or mode == "ROW"
     # The type must be Float32.
-    comptime assert dtype == DType.float32
+    comptime assert dtype == .float32
 
     comptime is_row_mode = mode == "ROW"
 
@@ -566,7 +566,7 @@ def fma[
 
 @always_inline
 def dot_at_b(
-    c: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
+    c: TileTensor[mut=True, address_space=.GENERIC, ...],
     a: type_of(c),
     b: type_of(c),
 ):
@@ -582,7 +582,7 @@ def dot_at_b(
         b: Input matrix B in row-major order; same shape and dtype as c.
     """
     comptime assert (
-        c.dtype == DType.float32 or c.dtype == DType.float16
+        c.dtype == .float32 or c.dtype == .float16
     ), "the buffer dtype must be float32 or float16"
 
     var a_pointer = a.ptr
@@ -615,7 +615,7 @@ def dot_at_b(
 
     comptime dim0 = c.static_shape[0]
 
-    comptime if c.dtype == DType.float32:
+    comptime if c.dtype == .float32:
         comptime assert (
             c.static_shape[0] == 16 and c.static_shape[1] == 16
         ), "f32 AMX matmul requires 16x16 tiles"
@@ -629,7 +629,7 @@ def dot_at_b(
 
         comptime for i in range(0, 64, 4):
             stz((i << 56) | Int(c_buffer + (i >> 2) * dim0))
-    elif c.dtype == DType.float16:
+    elif c.dtype == .float16:
         comptime assert (
             c.static_shape[0] == 32 and c.static_shape[1] == 32
         ), "f16 AMX matmul requires 32x32 tiles"

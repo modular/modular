@@ -144,9 +144,10 @@ def test_pipelines_cli__set_kv_cache_dtype(
             ]
         )
     captured = capsys.readouterr()
-    assert "cache_memory" in captured.err and ": 8.00 KiB" in captured.err
+    # One 128-token page: 4 KiB of fp8 K/V data plus 2 KiB of float32 scales.
+    assert "cache_memory" in captured.err and ": 6.00 KiB" in captured.err
 
-    # Expect 2x the cache memory needed for Bfloat16 dtype.
+    # Bfloat16 stores 2 bytes per K/V element and needs no scales.
     with pytest.raises(SystemExit):
         pipelines.main(
             [
@@ -165,4 +166,4 @@ def test_pipelines_cli__set_kv_cache_dtype(
             ]
         )
     captured = capsys.readouterr()
-    assert "cache_memory" in captured.err and ": 16.00 KiB" in captured.err
+    assert "cache_memory" in captured.err and ": 8.00 KiB" in captured.err

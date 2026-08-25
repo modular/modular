@@ -57,10 +57,10 @@ def test_split_k_reduce_rank3[
     # Naive host reduction. The accumulation is in FP32 since CPU may not have
     # native BF16 instructions.
     for i in range(M * N):
-        var sum = work_space_host[i].cast[DType.float32]()
+        var sum = work_space_host[i].cast[.float32]()
         for j in range(1, num_partitions):
-            sum += work_space_host[i + j * M * N].cast[DType.float32]()
-        sum += epilogue_data_host[i].cast[DType.float32]()
+            sum += work_space_host[i + j * M * N].cast[.float32]()
+        sum += epilogue_data_host[i].cast[.float32]()
         c_host_ref[i] = sum.cast[c_type]()
 
     var work_space_device = ctx.enqueue_create_buffer[work_space_type](
@@ -120,8 +120,6 @@ def test_split_k_reduce_rank3[
 def main() raises:
     with DeviceContext() as ctx:
         # Rank-3 work space.
-        test_split_k_reduce_rank3[DType.bfloat16, DType.bfloat16](
-            64, 64, 2, ctx
-        )
-        test_split_k_reduce_rank3[DType.bfloat16, DType.float32](32, 32, 5, ctx)
-        test_split_k_reduce_rank3[DType.float32, DType.float32](32, 64, 3, ctx)
+        test_split_k_reduce_rank3[.bfloat16, .bfloat16](64, 64, 2, ctx)
+        test_split_k_reduce_rank3[.bfloat16, .float32](32, 32, 5, ctx)
+        test_split_k_reduce_rank3[.float32, .float32](32, 64, 3, ctx)

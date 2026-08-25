@@ -64,11 +64,7 @@ def unsafe_cast[
     address_space: AddressSpace = from_address_space,
 ](
     pointer: OptionalReg[
-        Pointer[
-            from_type,
-            from_origin,
-            address_space=from_address_space,
-        ]
+        Pointer[from_type, from_origin, address_space=from_address_space]
     ],
     out result: OptionalReg[Pointer[Type, origin, address_space=address_space]],
 ):
@@ -93,7 +89,7 @@ comptime UnsafePointer[
     T: AnyType,
     origin: Origin[mut=mut],
     *,
-    address_space: AddressSpace = AddressSpace.GENERIC,
+    address_space: AddressSpace = .GENERIC,
 ] = Pointer[T, origin, address_space=address_space]
 """An indirect reference to one or more values of `T` consecutively in
 memory, and can refer to uninitialized memory.

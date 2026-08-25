@@ -71,7 +71,7 @@ def run_layer_norm_cpu[
         input_fn,
         output_fn,
         Coord(shape),
-        Scalar[DType.int](cols),
+        Int(cols),
         gamma,
         beta,
         epsilon,
@@ -97,32 +97,32 @@ def run_layer_norm_cpu[
 
 def main() raises:
     print("0")
-    run_layer_norm_cpu[DType.float32](Index(3, 5))
+    run_layer_norm_cpu[.float32](Index(3, 5))
     print("1")
-    run_layer_norm_cpu[DType.float32](Index(3, 8))
+    run_layer_norm_cpu[.float32](Index(3, 8))
     print("2")
-    run_layer_norm_cpu[DType.float32](Index(7, 33))
+    run_layer_norm_cpu[.float32](Index(7, 33))
     print("3")
-    run_layer_norm_cpu[DType.float32](Index(1, 1024))
+    run_layer_norm_cpu[.float32](Index(1, 1024))
     print("4")
-    run_layer_norm_cpu[DType.float32](Index(1, 8192))
+    run_layer_norm_cpu[.float32](Index(1, 8192))
 
     # variable rank
     print("5")
-    run_layer_norm_cpu[DType.float32](Index(0))
+    run_layer_norm_cpu[.float32](Index(0))
     print("6")
-    run_layer_norm_cpu[DType.float32](Index(5))
+    run_layer_norm_cpu[.float32](Index(5))
     print("7")
-    run_layer_norm_cpu[DType.float32](Index(3, 4, 10, 20, 8))
+    run_layer_norm_cpu[.float32](Index(3, 4, 10, 20, 8))
     print("8")
-    run_layer_norm_cpu[DType.float32](Index(1, 5, 6, 10, 128))
+    run_layer_norm_cpu[.float32](Index(1, 5, 6, 10, 128))
 
     # float64 regression for KERN-3270: simd_width is 4 on AVX2, so
     # num_cols=5 hits the vector loop plus a scalar tail, the shape that
     # segfaulted.
     print("9")
-    run_layer_norm_cpu[DType.float64](Index(4, 5))
+    run_layer_norm_cpu[.float64](Index(4, 5))
     print("10")
-    run_layer_norm_cpu[DType.float64](Index(3, 5))
+    run_layer_norm_cpu[.float64](Index(3, 5))
     print("11")
-    run_layer_norm_cpu[DType.float64](Index(7, 33))
+    run_layer_norm_cpu[.float64](Index(7, 33))

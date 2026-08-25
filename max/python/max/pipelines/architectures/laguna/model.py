@@ -138,7 +138,9 @@ class LagunaModel(AlwaysSignalBuffersMixin, LlamaModelBase):
     @override
     def _create_model_config(self, state_dict: dict[str, Any]) -> LagunaConfig:
         model_config = LagunaConfig.initialize_from_config(
-            self.pipeline_config, self.huggingface_config
+            self.pipeline_config,
+            self.huggingface_config,
+            max_seq_len=self.max_seq_len,
         )
         model_config.finalize(
             huggingface_config=self.huggingface_config,

@@ -90,6 +90,15 @@ static raw_ostream &printStorage(raw_ostream &os,
       break;
     }
     os << cast<InitializerUValue>(storage).get();
+  } else if (auto val = dyn_cast<InferredBaseAttrRefUValue>(storage)) {
+    if (isDump)
+      os << "InferredBaseAttrRefUValue: ";
+    if (!val)
+      os << "<<NULL>>";
+    else {
+      // Print the inferred attribute expression (e.g. `.f64`).
+      val.getExpr()->print(os);
+    }
   } else if (auto val = dyn_cast<MLValue>(storage)) {
     if (isDump)
       os << "ML: ";
@@ -126,6 +135,9 @@ raw_ostream &LIT::operator<<(raw_ostream &os, OverloadSetUValue value) {
   return printStorage(os, value);
 }
 raw_ostream &LIT::operator<<(raw_ostream &os, InitializerUValue value) {
+  return printStorage(os, value);
+}
+raw_ostream &LIT::operator<<(raw_ostream &os, InferredBaseAttrRefUValue value) {
   return printStorage(os, value);
 }
 raw_ostream &LIT::operator<<(raw_ostream &os, UValue value) {
@@ -207,6 +219,8 @@ static ASTType getTypeFrom(AnyValue::Storage storage) {
   if (auto value = dyn_cast<DLValue>(storage))
     return value->elementType;
   assert(!isa<OverloadSetUValue>(storage) && "overloaded rvalue has no type");
+  assert(!isa<InferredBaseAttrRefUValue>(storage) &&
+         "inferred base attr ref has no type");
   llvm_unreachable("unknown IRValue");
 }
 
@@ -712,4 +726,86 @@ CValue InitializerUValue::emitAsCValue(IREmitter &emitter, ExprDest &dest) {
   }
   }
   return {};
+}
+
+//===----------------------------------------------------------------------===//
+// InferredBaseAttrRefUValue
+//===----------------------------------------------------------------------===//
+
+/// Rewrite an inferred-base attribute expression (e.g. `.float64` or
+/// `.hsb_to_rgb(...)`) into a concrete expression whose attribute base is a
+/// `SyntheticNode` holding `expectedType` (e.g. `Color.hsb_to_rgb(...)`).
+static const ExprNode *resolveInferredBaseAttrRef(const ExprNode *expr,
+                                                  ASTType expectedType,
+                                                  SharedState &shared) {
+
+  // Note: the type checker has a fixed grammar of nodes that can be converted
+  // into an InferredBaseAttrRefUValue.  This does not (and should not) cover
+  // all theoretical nodes, basically just those that form attribute references
+  // and static method calls.
+  switch (expr->kind) {
+  case ExprNode::kInferredAttributeRef: {
+    auto &inferred = *cast<InferredAttributeRefNode>(expr);
+    // Materialize the contextual type as a synthetic base expression so
+    // attribute lookup can resolve against it.
+    auto *base = shared.allocPersistent<SyntheticNode>(
+        inferred.getLoc(), AnyValue(PValue(expectedType)));
+    return shared.allocPersistent<AttributeRefNode>(
+        base, inferred.dotLoc, inferred.spelling, inferred.isEscaped);
+  }
+  case ExprNode::kCall: {
+    // Resolve the callee (e.g. `.hsb_to_rgb`) against the expected result type,
+    // then rebuild the call with that concrete callee.
+    auto &call = *cast<CallNode>(expr);
+    auto *newCallee =
+        resolveInferredBaseAttrRef(call.callee, expectedType, shared);
+    return shared.allocPersistent<CallNode>(newCallee, call.lparenLoc,
+                                            call.operands, call.rparenLoc);
+  }
+  case ExprNode::kAttributeRef: {
+    // Resolve the base (e.g. `.red` in `.red.opacity`), then rebuild the
+    // attribute reference with that concrete base.
+    auto &attr = *cast<AttributeRefNode>(expr);
+    auto *newBase = const_cast<ExprNode *>(
+        resolveInferredBaseAttrRef(attr.base, expectedType, shared));
+    return shared.allocPersistent<AttributeRefNode>(
+        newBase, attr.dotLoc, attr.spelling, attr.isEscaped);
+  }
+  case ExprNode::kSubscript: {
+    // Resolve the base (e.g. `.alpha_blended` in `.alpha_blended[42]`).
+    auto &subscript = *cast<SubscriptNode>(expr);
+    auto *newBase =
+        resolveInferredBaseAttrRef(subscript.base, expectedType, shared);
+    return shared.allocPersistent<SubscriptNode>(newBase, subscript.lsquareLoc,
+                                                 subscript.operands,
+                                                 subscript.rsquareLoc);
+  }
+  case ExprNode::kParen: {
+    // Peel parentheses, e.g. `(.green)` or `(.hsb_to_rgb)(...)`.
+    auto &paren = *cast<ParenNode>(expr);
+    auto *newSub = const_cast<ExprNode *>(
+        resolveInferredBaseAttrRef(paren.subExpr, expectedType, shared));
+    return shared.allocPersistent<ParenNode>(paren.lparenLoc, newSub,
+                                             paren.rparenLoc);
+  }
+  default:
+    llvm_unreachable("unexpected expression in resolveInferredBaseAttrRef");
+  }
+}
+
+CValue InferredBaseAttrRefUValue::emitAsCValue(IREmitter &emitter,
+                                               ExprDest &dest) {
+  // If we have the inferred contextual type, resolve this expression.
+  ASTType expectedType = dest.getExpectedTypeIfSpecified();
+  if (!expectedType) {
+    emitter.emitError(expr->getLoc(), "cannot resolve inferred member "
+                                      "without a contextual type");
+    return {};
+  }
+
+  // Resolve the inferred base to a new concrete expression tree and emit it.
+  auto *newExpr =
+      resolveInferredBaseAttrRef(expr, expectedType, emitter.shared);
+  auto result = emitter.emitExpr(newExpr, dest);
+  return result.getIfCValue();
 }

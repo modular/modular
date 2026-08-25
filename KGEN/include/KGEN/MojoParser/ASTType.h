@@ -309,9 +309,13 @@ public:
   /// print the type.
   void print(raw_ostream &os, ASTTypePrinterContext ctx) const;
 
-  /// Print the specified parameter like we would in AST type printing.
+  /// Print the specified parameter like we would in AST type printing.  When
+  /// hasContextualType=true, this is being emitted into a context with a known
+  /// contextual type, allowing us to elide implicit conversions and other
+  /// noise.
   static void printParam(raw_ostream &os, TypedAttr param,
-                         ASTTypePrinterContext ctx);
+                         ASTTypePrinterContext ctx,
+                         bool hasContextualType = false);
 
   /// Print the specified parameter like we would in an origin expression, works
   /// in an `origin_of(x)` body.  When `elideOriginOf` is true, the `origin_of(`
@@ -322,12 +326,6 @@ public:
   /// result type, e.g. expanding origin sets.
   static void printRefOriginParam(raw_ostream &os, TypedAttr param,
                                   SharedState *diagShared);
-
-  /// This is the same as printParam, but is only used user pretty printing
-  /// circumstances (not mangling) after emitting a type annotation.  This
-  /// avoids printing obvious implicit conversion calls.
-  static void printParamAfterType(raw_ostream &os, TypedAttr param,
-                                  SharedState &shared);
 
   /// Get the specified parameter as a string.
   static std::string getParamAsString(TypedAttr param, SharedState *diagShared);

@@ -297,13 +297,24 @@ CABICallPrep CABICallHelper::prepareCall(TypeRange argTypes,
           sretPtr,      usesSRet};
 }
 
+/// Return the number of operands `call` passes to its callee, including the
+/// variadic arguments of a call to a variadic callee.
+///
+/// Note this is *not* `getArgOperands().size()`: llvm/llvm-project#214724,
+/// changes `CallOpInterface::getArgOperands` to report only the operands
+/// corresponding to the callee's declared parameters (excluding the variadic
+/// tail).
+static size_t getNumCallArgs(CallOp call) {
+  // The callee is operand 0 for indirect calls (no callee symbol attribute).
+  size_t numConsumed = call.getCallee().has_value() ? 0 : 1;
+  return call.getCalleeOperands().size() - numConsumed;
+}
+
 void CABICallHelper::applySRetAttrIfNeeded(CallOp call, Type origRetTy,
                                            bool usesSRet, OpBuilder &builder) {
   if (!usesSRet)
     return;
-  // getArgOperands() excludes the callee pointer for indirect calls, so
-  // this size is correct for both direct and indirect llvm.call ops.
-  size_t numArgAttrs = call.getArgOperands().size();
+  size_t numArgAttrs = getNumCallArgs(call);
   SmallVector<Attribute> argAttrs(numArgAttrs, builder.getDictionaryAttr({}));
   argAttrs[0] = builder.getDictionaryAttr({builder.getNamedAttr(
       LLVMDialect::getStructRetAttrName(), TypeAttr::get(origRetTy))});
@@ -326,9 +337,7 @@ void CABICallHelper::applyByvalAttrsToCall(CallOp call,
     return;
 
   // Retrieve or create the per-argument attribute array.
-  // getArgOperands() excludes the callee for indirect calls, giving the
-  // correct length for both direct and indirect llvm.call ops.
-  size_t numArgAttrs = call.getArgOperands().size();
+  size_t numArgAttrs = getNumCallArgs(call);
   SmallVector<Attribute> attrs;
   if (auto existing = call.getArgAttrsAttr())
     attrs.assign(existing.begin(), existing.end());

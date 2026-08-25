@@ -34,7 +34,7 @@ from std.utils._select import _select_register_value as select
 # ===----------------------------------------------------------------------=== #
 
 
-struct _ZeroStartingRange[dtype: DType = DType.int](
+struct _ZeroStartingRange[dtype: DType = .int](
     ImplicitlyCopyable,
     Iterable,
     Iterator,
@@ -52,8 +52,8 @@ struct _ZeroStartingRange[dtype: DType = DType.int](
 
     @always_inline
     def __init__(out self, end: Scalar[Self.dtype]):
-        self.curr = max(end, 0)
-        self.end = self.curr
+        self.curr = 0
+        self.end = max(end, 0)
 
     @always_inline
     def __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
@@ -62,10 +62,10 @@ struct _ZeroStartingRange[dtype: DType = DType.int](
     @always_inline
     def __next__(mut self) raises StopIteration -> Scalar[Self.dtype]:
         var curr = self.curr
-        if curr == 0:
+        if curr == self.end:
             raise StopIteration()
-        self.curr = curr - 1
-        return self.end - curr
+        self.curr = curr + 1
+        return curr
 
     @always_inline
     def __has_next__(self) -> Bool:
@@ -73,7 +73,7 @@ struct _ZeroStartingRange[dtype: DType = DType.int](
 
     @always_inline
     def __len__(self) -> Int:
-        return _len_as_int(self.curr)
+        return _len_as_int(self.end - self.curr)
 
     @always_inline
     def __getitem__[I: Indexer](self, idx: I) -> Scalar[Self.dtype]:
@@ -97,10 +97,10 @@ struct _ZeroStartingRange[dtype: DType = DType.int](
 
     @always_inline
     def bounds(self) -> Tuple[Int, Optional[Int]]:
-        return _scalar_range_bounds(self.curr)
+        return _scalar_range_bounds(self.end - self.curr)
 
 
-struct _SequentialRange[dtype: DType = DType.int](
+struct _SequentialRange[dtype: DType = .int](
     ImplicitlyCopyable,
     Iterable,
     Iterator,
@@ -189,7 +189,7 @@ def _fp_range_count[
 # drift, with `idx` as the element cursor. Reverse iteration mirrors forward
 # bit for bit, counting `idx` down from -1 (which `__next__` maps to
 # `count - 1`).
-struct _StridedRange[dtype: DType = DType.int, forward: Bool = True](
+struct _StridedRange[dtype: DType = .int, forward: Bool = True](
     ImplicitlyCopyable,
     Iterable,
     Iterator,
@@ -206,8 +206,13 @@ struct _StridedRange[dtype: DType = DType.int, forward: Bool = True](
     var end: Scalar[Self.dtype]
     var step: Scalar[Self.dtype]
     var idx: Int
-    """Floating-point: the element cursor. Integer reverse: nonzero once
-    exhausted. Integer forward: unused, so it stays dead in the loop."""
+    """Floating-point: the element cursor. Integer forward: nonzero once a step
+    has wrapped out of the dtype — not a general exhausted flag, since a range
+    that ends normally leaves it zero. Integer reverse: nonzero once exhausted.
+
+    Only a `__reversed__` ever passes this non-zero at construction: an integer
+    one to hand back an iterator that is already exhausted, a floating-point one
+    to seat the cursor."""
 
     @always_inline
     def __init__(
@@ -263,15 +268,19 @@ struct _StridedRange[dtype: DType = DType.int, forward: Bool = True](
                 self.idx -= 1
                 return result
         elif Self.forward:
+            # `|` and not `or`: short-circuiting would put a second branch in
+            # the loop, which stops it from rotating.
+            var exhausted = self.idx != 0
+
             # If the type is unsigned, then 'step' cannot be negative.
             comptime if Self.dtype.is_unsigned():
-                if self.start >= self.end:
+                if exhausted | (self.start >= self.end):
                     raise StopIteration()
             else:
                 if self.step > 0:
-                    if self.start >= self.end:
+                    if exhausted | (self.start >= self.end):
                         raise StopIteration()
-                elif self.end >= self.start:
+                elif exhausted | (self.end >= self.start):
                     raise StopIteration()
 
             var result = self.start
@@ -280,19 +289,24 @@ struct _StridedRange[dtype: DType = DType.int, forward: Bool = True](
             # `end`, which the bound test above reads as "keep going", so the
             # loop would restart near the opposite limit and never finish.
             # Wrapping is the only way a step can move the cursor against its
-            # own direction, so detect it that way and park the cursor on
-            # `end`, which stops the next call for either step direction.
+            # own direction, so detect it that way and record it, which stops
+            # the next call for either step direction.
             #
-            # The step's direction is loop-invariant and hoists out of the
-            # loop, leaving a single compare per iteration. Picking between
-            # two comparisons on `step > 0` instead leaves two, in every
-            # strided loop in every GPU kernel.
+            # Recording the wrap beside the cursor rather than correcting the
+            # cursor or the bound is what keeps this affordable. `start` stays
+            # a plain `start + k * step` recurrence and `end` stays
+            # loop-invariant, so derived addresses still strength-reduce to
+            # pointer bumps and a bound the caller wrote as a literal still
+            # proves the wrap away entirely. Correcting either one is a
+            # `select`, which is neither, and every strided loop in every GPU
+            # kernel pays for it.
             var next = self.start + self.step
             var wrapped = next < self.start
             comptime if not Self.dtype.is_unsigned():
                 # A negative step moves the cursor down without wrapping.
                 wrapped = wrapped != (self.step < 0)
-            self.start = select(wrapped, self.end, next)
+            self.idx = Int(wrapped)
+            self.start = next
             return result
         else:
             if self.idx != 0:
@@ -323,8 +337,10 @@ struct _StridedRange[dtype: DType = DType.int, forward: Bool = True](
         comptime assert Self.dtype.is_unsigned(), "dtype must be unsigned"
 
         comptime if Self.forward:
+            # A wrapped cursor sits back inside `[start, end)` and would count
+            # as elements still to come, so `idx` settles it first.
             return select(
-                self.start < self.end,
+                (self.idx == 0) & (self.start < self.end),
                 ceildiv(self.end - self.start, self.step),
                 0,
             )
@@ -355,7 +371,9 @@ struct _StridedRange[dtype: DType = DType.int, forward: Bool = True](
             # the reverse. We break this into selects to avoid branches.
             var c1 = (step > 0) & (start > end)
             var c2 = (step < 0) & (start < end)
-            var cnd = c1 | c2
+            # A wrapped cursor sits back inside the range and would count as
+            # elements still to come, so `idx` joins the emptiness test.
+            var cnd = c1 | c2 | (self.idx != 0)
             var numerator = abs(start - end)
             var denominator = abs(step)
             return ceildiv(
@@ -446,7 +464,7 @@ struct _StridedRange[dtype: DType = DType.int, forward: Bool = True](
 
 
 @always_inline
-def range[T: Indexer, //](end: T) -> _ZeroStartingRange[DType.int]:
+def range[T: Indexer, //](end: T) -> _ZeroStartingRange[.int]:
     """Returns the integer sequence `[0, end)`.
 
     Integer ranges are values. They support `len()`, O(1) indexing, and
@@ -483,7 +501,7 @@ def range[T: Indexer, //](end: T) -> _ZeroStartingRange[DType.int]:
 
 
 @always_inline
-def range[T: Indexer, //](start: T, end: T) -> _SequentialRange[DType.int]:
+def range[T: Indexer, //](start: T, end: T) -> _SequentialRange[.int]:
     """Returns the integer sequence `[start, end)`.
 
     **The two-argument form never counts down.** `range(7, 3)` is empty,
@@ -520,9 +538,7 @@ def range[T: Indexer, //](start: T, end: T) -> _SequentialRange[DType.int]:
 
 
 @always_inline
-def range[
-    T: Indexer, //
-](start: T, end: T, step: T) -> _StridedRange[DType.int]:
+def range[T: Indexer, //](start: T, end: T, step: T) -> _StridedRange[.int]:
     """Returns the integer sequence `[start, end)` with a given step.
 
     When you don't know which bound is larger, choose the direction with an

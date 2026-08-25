@@ -51,7 +51,7 @@ def execute_ragged_flash_attention[
     ctx: DeviceContext,
 ) raises:
     # TODO(KERN-2666): float32 + depth=256 exceeds shared memory on H100/B200.
-    comptime if dtype == DType.float32 and kv_params.head_size == 256:
+    comptime if dtype == .float32 and kv_params.head_size == 256:
         return
 
     comptime page_size = get_defined_int["page_size", 256]()
@@ -113,14 +113,12 @@ def execute_ragged_flash_attention[
     ].row_major(cache_lengths_shape)
 
     # Create device buffers
-    var input_row_offsets = ManagedLayoutTensor[
-        DType.uint32, row_offsets_layout
-    ](
+    var input_row_offsets = ManagedLayoutTensor[.uint32, row_offsets_layout](
         row_offsets_runtime_layout,
         ctx,
     )
     var cache_lengths_managed = ManagedLayoutTensor[
-        DType.uint32, cache_lengths_layout
+        .uint32, cache_lengths_layout
     ](
         cache_lengths_runtime_layout,
         ctx,
@@ -197,11 +195,11 @@ def execute_ragged_flash_attention[
     var kv_block_paged = ManagedLayoutTensor[dtype, kv_block_6d_layout](
         kv_block_paged_runtime_layout, ctx
     )
-    var lookup_table = ManagedLayoutTensor[DType.uint32, lookup_table_layout](
+    var lookup_table = ManagedLayoutTensor[.uint32, lookup_table_layout](
         lookup_table_runtime_layout,
         ctx,
     )
-    var paged_lut = ManagedLayoutTensor[DType.uint32, paged_lut_layout](
+    var paged_lut = ManagedLayoutTensor[.uint32, paged_lut_layout](
         paged_lut_runtime_layout,
         ctx,
     )

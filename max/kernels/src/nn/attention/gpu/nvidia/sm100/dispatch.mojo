@@ -318,7 +318,7 @@ def mha_sm100_dispatch[
     max_prompt_len_arg: MaxPromptLenType,
     max_cache_valid_length_arg: Int,
     scale: Float32,
-    kv_input_row_offsets: OptionalReg[ImmutTileTensor1D[DType.uint32]],
+    kv_input_row_offsets: OptionalReg[ImmutTileTensor1D[.uint32]],
     batch_size_arg: Int,
     ctx: DeviceContext,
     sink_weights: OptionalReg[ImmutTileTensor1D[q_type]],
@@ -786,19 +786,19 @@ def mha_sm100_dispatch[
 
                 # --- ragged dispatch ---
                 comptime if ragged:
-                    with_valid_length[NonNullPointer[DType.uint32]](
+                    with_valid_length[NonNullPointer[.uint32]](
                         {valid_length.as_imm().as_unsafe_any_origin()}
                     )
                 else:
-                    with_valid_length[NullPointer[DType.uint32]]({})
+                    with_valid_length[NullPointer[.uint32]]({})
 
             # --- kv_input_row_offsets dispatch ---
             if kv_input_row_offsets:
-                with_kv_offsets[NonNullPointer[DType.uint32]](
+                with_kv_offsets[NonNullPointer[.uint32]](
                     {kv_input_row_offsets.value().ptr}
                 )
             else:
-                with_kv_offsets[NullPointer[DType.uint32]]({})
+                with_kv_offsets[NullPointer[.uint32]]({})
 
         # --- sink dispatch ---
         comptime if sink:
@@ -843,13 +843,13 @@ def mha_sm100_dispatch[
         # row, q-head), `[p, num_rows_q, num_q_heads]` -- matching the O-store
         # TMA row extent.
         var rows_x_heads = num_rows_q * fa4_config.num_q_heads
-        var lse_partial = ctx.enqueue_create_buffer[DType.float32](
+        var lse_partial = ctx.enqueue_create_buffer[.float32](
             Int(p) * rows_x_heads
         )
         var o_partial = ctx.enqueue_create_buffer[output_type](
             Int(p) * rows_x_heads * fa4_config.ov_depth
         )
-        var partition = SplitKPartition[DType.float32](
+        var partition = SplitKPartition[.float32](
             lse_partial.unsafe_ptr().as_unsafe_any_origin(),
             p,
             p,
@@ -1015,11 +1015,11 @@ def mha_sm100_dispatch[
                         ), fa4_config_ws_e_splitk.description()
                         with_fa4_config[fa4_config_ws_e_splitk](
                             StaticInt[ws_e_P_force](),
-                            NoPartition[DType.float32](),
+                            NoPartition[.float32](),
                         )
                     else:
                         with_fa4_config[fa4_config_ws_e](
-                            StaticInt[1](), NoPartition[DType.float32]()
+                            StaticInt[1](), NoPartition[.float32]()
                         )
                     return
             comptime fa4_config_ws = fa4_config_2q.with_bm(32)
@@ -1092,11 +1092,11 @@ def mha_sm100_dispatch[
                         ), fa4_config_ws_splitk.description()
                         with_fa4_config[fa4_config_ws_splitk](
                             StaticInt[ws_P_force](),
-                            NoPartition[DType.float32](),
+                            NoPartition[.float32](),
                         )
                     else:
                         with_fa4_config[fa4_config_ws](
-                            StaticInt[1](), NoPartition[DType.float32]()
+                            StaticInt[1](), NoPartition[.float32]()
                         )
                     return
                 else:
@@ -1174,13 +1174,13 @@ def mha_sm100_dispatch[
                                 if p_bucket_ws == UInt32(C):
                                     with_fa4_config[ws_splitk_cfg](
                                         StaticInt[C](),
-                                        NoPartition[DType.float32](),
+                                        NoPartition[.float32](),
                                     )
                                     return
                             launch_workspace[fa4_config_ws](p_bucket_ws)
                             return
                         with_fa4_config[fa4_config_ws](
-                            StaticInt[1](), NoPartition[DType.float32]()
+                            StaticInt[1](), NoPartition[.float32]()
                         )
                         return
             # ---- Layout-E (BM=64, m_pack=2) production auto route (Phase 4) ----
@@ -1279,7 +1279,7 @@ def mha_sm100_dispatch[
                             if p_bucket_ws_e == UInt32(C):
                                 with_fa4_config[ws_e_splitk_cfg](
                                     StaticInt[C](),
-                                    NoPartition[DType.float32](),
+                                    NoPartition[.float32](),
                                 )
                                 return
                         # An explicit override bypasses both measured perf
@@ -1313,7 +1313,7 @@ def mha_sm100_dispatch[
                         ),
                     )
                     with_fa4_config[fa4_config_ws_e](
-                        StaticInt[1](), NoPartition[DType.float32]()
+                        StaticInt[1](), NoPartition[.float32]()
                     )
                     return
         # An explicit `num_partitions` forces BM < 256. The 2Q arms below launch
@@ -1439,7 +1439,7 @@ def mha_sm100_dispatch[
                         ), splitk_cfg.description()
                         if p_bucket == UInt32(C):
                             with_fa4_config[splitk_cfg](
-                                StaticInt[C](), NoPartition[DType.float32]()
+                                StaticInt[C](), NoPartition[.float32]()
                             )
                             return
                     comptime if config.depth >= 64 and config.depth <= 128:
@@ -1463,13 +1463,13 @@ def mha_sm100_dispatch[
                 ),
             )
             with_fa4_config[fa4_config_1q](
-                StaticInt[1](), NoPartition[DType.float32]()
+                StaticInt[1](), NoPartition[.float32]()
             )
         else:
             # Not reachable with an override: the gate above forces the 1Q carve
             # whenever `num_partitions_override > 0`.
             with_fa4_config[fa4_config_2q](
-                StaticInt[1](), NoPartition[DType.float32]()
+                StaticInt[1](), NoPartition[.float32]()
             )
     else:
         # `not can_use_1q` (pair-CTA, or depth outside [64, 256]): 2Q is the only
@@ -1482,6 +1482,4 @@ def mha_sm100_dispatch[
                 " has the 2Q (BM=256) config, which has no split-K"
             ),
         )
-        with_fa4_config[fa4_config_2q](
-            StaticInt[1](), NoPartition[DType.float32]()
-        )
+        with_fa4_config[fa4_config_2q](StaticInt[1](), NoPartition[.float32]())

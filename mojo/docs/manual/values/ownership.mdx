@@ -130,7 +130,7 @@ def print_list(list: List[Int]):
     print(list.__str__())
 
 def main():
-    var values = [1, 2, 3, 4]
+    var values: List[Int] = [1, 2, 3, 4]
     print_list(values)
 ```
 
@@ -183,7 +183,7 @@ def mutate(mut l: List[Int]):
     l.append(5)
 
 def main():
-    var values = [1, 2, 3, 4]
+    var values: List[Int] = [1, 2, 3, 4]
 
     mutate(values)
     print_list(values)
@@ -205,7 +205,7 @@ def mutate_copy(l: List[Int]) -> List[Int]:
     return l
 
 def main():
-    var values = [1, 2, 3, 4]
+    var values: List[Int] = [1, 2, 3, 4]
 
     values = mutate_copy(values)
     print_list(values)

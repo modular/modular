@@ -188,7 +188,7 @@ struct TileScheduler[
     var prob_shape: IndexList[3]  # M x N x K
     var num_waves_m: UInt32
     var num_waves_n: UInt32
-    var log_num_waves_n: FastDiv[DType.uint32]
+    var log_num_waves_n: FastDiv[.uint32]
 
     # Member variables for DeepSeek Scheduler
     var current_iter: Int  # Tracks the scheduler's progress across kernel launches
@@ -219,7 +219,7 @@ struct TileScheduler[
         self.num_waves_n = UInt32(
             ceildiv(self.prob_shape[1], Self.wave_shape[1])
         )
-        self.log_num_waves_n = FastDiv[DType.uint32](Int(self.num_waves_n))
+        self.log_num_waves_n = FastDiv[.uint32](Int(self.num_waves_n))
 
         self.current_iter = -1
         self.num_aligned_m_blocks = UInt32(
@@ -305,10 +305,10 @@ struct TileScheduler[
     @always_inline
     def _index_to_mn_tile2d(self) -> Tuple[Int, Int]:
         # We consider a sweep on busy SMs a wave, not all SMs
-        comptime log_num_grids = FastDiv[DType.uint32](Int(Self.num_grids))
-        comptime log_grid_shape = FastDiv[DType.uint32](Self.grid_shape[0])
+        comptime log_num_grids = FastDiv[.uint32](Int(Self.num_grids))
+        comptime log_grid_shape = FastDiv[.uint32](Self.grid_shape[0])
 
-        comptime FastUInt = Scalar[FastDiv[DType.uint32].uint_type]
+        comptime FastUInt = Scalar[FastDiv[.uint32].uint_type]
 
         var num_waves_executed = FastUInt(self.idx) / log_num_grids
         var idx_in_wave = FastUInt(self.idx) % log_num_grids

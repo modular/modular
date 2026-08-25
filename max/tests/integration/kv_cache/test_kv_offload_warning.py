@@ -16,11 +16,14 @@ from __future__ import annotations
 
 import logging
 import os
+import shutil
 from pathlib import Path
 
 import pytest
+from max.pipelines.kv_cache.config import KVConnectorConfig
 from max.pipelines.kv_cache.connectors import (
     KV_OFFLOAD_DIR_PREFIX,
+    _resolve_disk_offload_dir,
     warn_stale_offload_dirs,
 )
 
@@ -76,3 +79,22 @@ def test_missing_parent_is_silent(
         warn_stale_offload_dirs(missing)
 
     assert "leftover" not in caplog.text.lower()
+
+
+def test_resolve_disk_offload_dir_does_not_mutate_frozen_config() -> None:
+    cfg = KVConnectorConfig()
+    assert cfg.disk_offload_dir is None
+    resolved = _resolve_disk_offload_dir(cfg)
+    try:
+        assert Path(resolved).is_dir()
+        assert cfg.disk_offload_dir is None
+    finally:
+        shutil.rmtree(resolved, ignore_errors=True)
+
+
+def test_resolve_disk_offload_dir_keeps_explicit_path(tmp_path: Path) -> None:
+    explicit = str(tmp_path / "kv-offload")
+    os.makedirs(explicit)
+    cfg = KVConnectorConfig(disk_offload_dir=explicit)
+    assert _resolve_disk_offload_dir(cfg) == explicit
+    assert cfg.disk_offload_dir == explicit

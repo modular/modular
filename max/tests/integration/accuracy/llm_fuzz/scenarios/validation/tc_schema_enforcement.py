@@ -295,6 +295,9 @@ class TCSchemaEnforcement(BaseScenario):
         }
         # Enforcement is a per-step mask property, so greedy (temperature=0)
         # decoding is the deterministic probe; only set it when a case opts in.
+        # A case asserting the model VOLUNTEERS something must pin this, or it
+        # measures the server's default rather than the schema. Better still,
+        # put the requirement in the schema, as additional_properties_true does.
         if temperature is not None:
             chat_kwargs["temperature"] = temperature
         try:
@@ -306,17 +309,23 @@ class TCSchemaEnforcement(BaseScenario):
                     **chat_kwargs,
                 ),
             )
-            if budget_exhausted(resp):
-                return [
-                    self.make_result(
-                        self.name,
-                        test_name,
-                        Verdict.INTERESTING,
-                        detail="Budget exhausted",
-                    )
-                ]
+            # Judge the payload before the budget: a backend may report
+            # finish_reason="length" beside a call it did finish, and only
+            # non-MAX-Serve backends hit that -- the wrong way round for a
+            # suite that compares them.
             args, err = _extract_tc_args(resp)
             if err:
+                # No call to judge. If the response was truncated, that is the
+                # explanation, and it is not a verdict on the grammar.
+                if budget_exhausted(resp):
+                    return [
+                        self.make_result(
+                            self.name,
+                            test_name,
+                            Verdict.INTERESTING,
+                            detail="Budget exhausted",
+                        )
+                    ]
                 if self._nocall_ok(err):
                     return [
                         self.make_result(
@@ -338,6 +347,17 @@ class TCSchemaEnforcement(BaseScenario):
                 errors = _validate_args(args, schema)
                 verdict = Verdict.PASS if not errors else Verdict.FAIL
                 detail = "; ".join(errors) or f"OK: {json.dumps(args)}"
+            # A truncated payload is trusted only when it passes: a cut-off
+            # object looks exactly like a missing required key.
+            if verdict is Verdict.FAIL and budget_exhausted(resp):
+                return [
+                    self.make_result(
+                        self.name,
+                        test_name,
+                        Verdict.INTERESTING,
+                        detail=f"Budget exhausted, payload incomplete: {detail}",
+                    )
+                ]
             return [
                 self.make_result(self.name, test_name, verdict, detail=detail)
             ]
@@ -413,18 +433,18 @@ class TCSchemaEnforcement(BaseScenario):
                     ],
                     [tool],
                 )
-                if budget_exhausted(resp):
-                    continue
                 args, err = _extract_tc_args(resp)
                 if err:
-                    if not self._nocall_ok(err):
+                    # Truncation explains a missing call, so skip the sample
+                    # rather than charge it to the grammar.
+                    if not budget_exhausted(resp) and not self._nocall_ok(err):
                         enum_fail_details.append(f"run {i}: {err}")
                     continue
                 assert args is not None
                 unit = args.get("unit")
                 if unit in ("celsius", "fahrenheit"):
                     enum_pass += 1
-                else:
+                elif not budget_exhausted(resp):
                     enum_fail_details.append(f"run {i}: unit={unit!r}")
             except Exception as e:
                 enum_fail_details.append(f"run {i}: {e}")
@@ -436,6 +456,17 @@ class TCSchemaEnforcement(BaseScenario):
                     "enum_string_enforcement",
                     Verdict.FAIL,
                     detail=f"{enum_pass}/5 valid; {'; '.join(enum_fail_details[:3])}",
+                )
+            )
+        elif enum_pass == 0:
+            # Every run was unjudgeable (budget exhausted or no call), so
+            # there is nothing to charge to the grammar either way.
+            results.append(
+                self.make_result(
+                    self.name,
+                    "enum_string_enforcement",
+                    Verdict.INTERESTING,
+                    detail="All 5 runs unjudgeable (budget exhausted or no call)",
                 )
             )
         else:
@@ -478,7 +509,8 @@ class TCSchemaEnforcement(BaseScenario):
                 ],
                 [int_tool],
             )
-            if budget_exhausted(resp):
+            args, err = _extract_tc_args(resp)
+            if err and budget_exhausted(resp):
                 results.append(
                     self.make_result(
                         self.name,
@@ -488,7 +520,6 @@ class TCSchemaEnforcement(BaseScenario):
                     )
                 )
             else:
-                args, err = _extract_tc_args(resp)
                 if err and self._nocall_ok(err):
                     verdict = Verdict.PASS
                     detail = "auto: model declined to call a tool"
@@ -501,6 +532,12 @@ class TCSchemaEnforcement(BaseScenario):
                     if sc in (200, 404, 500):
                         verdict = Verdict.PASS
                         detail = f"status_code={sc}"
+                    elif budget_exhausted(resp):
+                        verdict = Verdict.INTERESTING
+                        detail = (
+                            "Budget exhausted, payload incomplete: "
+                            f"status_code={sc!r} not in enum [200, 404, 500]"
+                        )
                     else:
                         verdict = Verdict.FAIL
                         detail = (
@@ -727,17 +764,16 @@ class TCSchemaEnforcement(BaseScenario):
                     ],
                     [tool],
                 )
-                if budget_exhausted(resp):
-                    continue
                 args, err = _extract_tc_args(resp)
                 if err:
-                    if not self._nocall_ok(err):
+                    if not budget_exhausted(resp) and not self._nocall_ok(err):
                         fail_details.append(f"run {i}: {err}")
                     continue
                 assert args is not None
                 errors = _validate_args(args, schema)
                 if errors:
-                    fail_details.append(f"run {i}: {'; '.join(errors)}")
+                    if not budget_exhausted(resp):
+                        fail_details.append(f"run {i}: {'; '.join(errors)}")
                 else:
                     passes += 1
             except Exception as e:
@@ -750,6 +786,17 @@ class TCSchemaEnforcement(BaseScenario):
                     "required_consistency_5_runs",
                     Verdict.FAIL,
                     detail=f"{passes}/{n_runs} valid; {'; '.join(fail_details[:3])}",
+                )
+            )
+        elif passes == 0:
+            # Every run was unjudgeable (budget exhausted or no call), so
+            # there is nothing to charge to the grammar either way.
+            results.append(
+                self.make_result(
+                    self.name,
+                    "required_consistency_5_runs",
+                    Verdict.INTERESTING,
+                    detail=f"All {n_runs} runs unjudgeable (budget exhausted or no call)",
                 )
             )
         else:
@@ -1503,21 +1550,26 @@ class TCSchemaEnforcement(BaseScenario):
         self, v: Any, loop: Any
     ) -> list[ScenarioResult]:
         """When additionalProperties is not set (defaults to true in JSON
-        Schema), the grammar should not reject undeclared properties.
+        Schema), the grammar must not reject undeclared properties.
+
+        ``minProperties`` is what makes this an assertion about the grammar
+        rather than about the server's default temperature: with three required
+        and one declared, a grammar that admits undeclared keys must produce
+        them, and one that forbids them cannot compile at all.
         """
 
         def validate(args: dict[str, Any]) -> tuple[Verdict, str]:
             if "name" not in args:
                 return Verdict.FAIL, "missing required field: name"
             extra_keys = set(args.keys()) - {"name"}
-            if extra_keys:
+            if len(extra_keys) >= 2:
                 return Verdict.PASS, (
-                    f"OK: extra properties accepted: {sorted(extra_keys)}"
+                    f"OK: undeclared properties accepted: {sorted(extra_keys)}"
                 )
             return Verdict.FAIL, (
-                "grammar likely over-constrained: only 'name' "
-                "returned, no additional properties despite "
-                "additionalProperties defaulting to true"
+                f"minProperties=3 requires two undeclared properties beside "
+                f"'name', got {sorted(extra_keys)} -- the grammar admitted "
+                f"fewer keys than the schema demands"
             )
 
         return await self._run_tc_test(
@@ -1530,6 +1582,7 @@ class TCSchemaEnforcement(BaseScenario):
                     "name": {"type": "string"},
                 },
                 "required": ["name"],
+                "minProperties": 3,
             },
             tool_name="flexible_input",
             tool_desc=(
@@ -1541,6 +1594,8 @@ class TCSchemaEnforcement(BaseScenario):
                 "email='alice@example.com'. Include all three fields."
             ),
             validate=validate,
+            # The schema forces the outcome, so nothing is left to sampling.
+            temperature=0,
         )
 
     # ------------------------------------------------------------------

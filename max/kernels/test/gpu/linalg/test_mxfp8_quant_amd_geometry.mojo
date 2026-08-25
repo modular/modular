@@ -50,8 +50,8 @@ def _fill_input(mut values: List[Float32], M: Int, K: Int):
     for _ in range(M):
         for col in range(K):
             var mag = _block_magnitude(col // MXFP8_SF_VECTOR_SIZE)
-            var v = (random_float64(-4.0, 4.0) * mag).cast[DType.bfloat16]()
-            values.append(v.cast[DType.float32]())
+            var v = (random_float64(-4.0, 4.0) * mag).cast[.bfloat16]()
+            values.append(v.cast[.float32]())
 
 
 def _quantize_mxfp8[
@@ -64,15 +64,13 @@ def _quantize_mxfp8[
 ) raises:
     comptime scale_K = ceildiv(K, MXFP8_SF_VECTOR_SIZE)
 
-    var input_dev = ctx.enqueue_create_buffer[DType.bfloat16](M * K)
+    var input_dev = ctx.enqueue_create_buffer[.bfloat16](M * K)
     with input_dev.map_to_host() as h:
         for i in range(M * K):
-            h[i] = values[i].cast[DType.bfloat16]()
+            h[i] = values[i].cast[.bfloat16]()
 
-    var data_dev = ctx.enqueue_create_buffer[DType.float8_e4m3fn](M * K)
-    var scales_dev = ctx.enqueue_create_buffer[DType.float8_e8m0fnu](
-        M * scale_K
-    )
+    var data_dev = ctx.enqueue_create_buffer[.float8_e4m3fn](M * K)
+    var scales_dev = ctx.enqueue_create_buffer[.float8_e8m0fnu](M * scale_K)
     var input_tt = TileTensor(input_dev, row_major((Idx[M], Idx[K])))
     var data_tt = TileTensor(data_dev, row_major((Idx[M], Idx[K])))
     var scales_tt = TileTensor(scales_dev, row_major((Idx[M], Idx[scale_K])))
@@ -80,8 +78,8 @@ def _quantize_mxfp8[
         ctx, data_tt, scales_tt, input_tt
     )
 
-    var data_host = ctx.enqueue_create_host_buffer[DType.float8_e4m3fn](M * K)
-    var scales_host = ctx.enqueue_create_host_buffer[DType.float8_e8m0fnu](
+    var data_host = ctx.enqueue_create_host_buffer[.float8_e4m3fn](M * K)
+    var scales_host = ctx.enqueue_create_host_buffer[.float8_e8m0fnu](
         M * scale_K
     )
     ctx.enqueue_copy(data_host, data_dev)
@@ -90,10 +88,10 @@ def _quantize_mxfp8[
 
     data.clear()
     for i in range(M * K):
-        data.append(bitcast[DType.uint8](data_host[i]))
+        data.append(bitcast[.uint8](data_host[i]))
     scales.clear()
     for i in range(M * scale_K):
-        scales.append(bitcast[DType.uint8](scales_host[i]))
+        scales.append(bitcast[.uint8](scales_host[i]))
 
 
 def test_mxfp8_matches_host_oracle[M: Int, K: Int](ctx: DeviceContext) raises:
@@ -115,11 +113,11 @@ def test_mxfp8_matches_host_oracle[M: Int, K: Int](ctx: DeviceContext) raises:
             for e in range(MXFP8_SF_VECTOR_SIZE):
                 group_max = max(group_max, abs(values[base + e]))
 
-            var want_scale: Scalar[DType.float8_e8m0fnu]
+            var want_scale: Float8_e8m0fnu
             var multiplier: Float32
             var block_is_dead: Bool
             want_scale, multiplier, block_is_dead = compute_mxfp8_block_scale[
-                DType.float8_e8m0fnu
+                .float8_e8m0fnu
             ](group_max)
             # Host and device `recip` disagree at E8M0's subnormal floor, so an
             # oracle over a dead block would compare two different functions.
@@ -131,7 +129,7 @@ def test_mxfp8_matches_host_oracle[M: Int, K: Int](ctx: DeviceContext) raises:
                 ),
             )
 
-            var want_bits = bitcast[DType.uint8](want_scale)
+            var want_bits = bitcast[.uint8](want_scale)
             assert_equal(
                 scales[row * scale_K + block],
                 want_bits,
@@ -145,12 +143,12 @@ def test_mxfp8_matches_host_oracle[M: Int, K: Int](ctx: DeviceContext) raises:
 
             for e in range(MXFP8_SF_VECTOR_SIZE):
                 var want = (values[base + e] * multiplier).cast[
-                    DType.float8_e4m3fn
+                    .float8_e4m3fn
                 ]()
                 var got = data[base + e]
                 assert_equal(
                     got,
-                    bitcast[DType.uint8](want),
+                    bitcast[.uint8](want),
                     String("data mismatch at row ")
                     + String(row)
                     + " col "
@@ -220,17 +218,15 @@ def test_mxfp4_geometry_invariant[M: Int, K: Int](ctx: DeviceContext) raises:
     var values = List[Float32]()
     _fill_input(values, M, K)
 
-    var input_dev = ctx.enqueue_create_buffer[DType.bfloat16](M * K)
+    var input_dev = ctx.enqueue_create_buffer[.bfloat16](M * K)
     with input_dev.map_to_host() as h:
         for i in range(M * K):
-            h[i] = values[i].cast[DType.bfloat16]()
+            h[i] = values[i].cast[.bfloat16]()
 
     var reference = List[UInt8]()
     comptime for threads in [512, 256, 64]:
-        var data_dev = ctx.enqueue_create_buffer[DType.uint8](M * packed_K)
-        var scales_dev = ctx.enqueue_create_buffer[DType.float8_e8m0fnu](
-            M * scale_K
-        )
+        var data_dev = ctx.enqueue_create_buffer[.uint8](M * packed_K)
+        var scales_dev = ctx.enqueue_create_buffer[.float8_e8m0fnu](M * scale_K)
         var input_tt = TileTensor(input_dev, row_major((Idx[M], Idx[K])))
         var data_tt = TileTensor(data_dev, row_major((Idx[M], Idx[packed_K])))
         var scales_tt = TileTensor(
@@ -240,10 +236,8 @@ def test_mxfp4_geometry_invariant[M: Int, K: Int](ctx: DeviceContext) raises:
             ctx, data_tt, scales_tt, input_tt
         )
 
-        var data_host = ctx.enqueue_create_host_buffer[DType.uint8](
-            M * packed_K
-        )
-        var scales_host = ctx.enqueue_create_host_buffer[DType.float8_e8m0fnu](
+        var data_host = ctx.enqueue_create_host_buffer[.uint8](M * packed_K)
+        var scales_host = ctx.enqueue_create_host_buffer[.float8_e8m0fnu](
             M * scale_K
         )
         ctx.enqueue_copy(data_host, data_dev)
@@ -254,7 +248,7 @@ def test_mxfp4_geometry_invariant[M: Int, K: Int](ctx: DeviceContext) raises:
         for i in range(M * packed_K):
             flat.append(data_host[i])
         for i in range(M * scale_K):
-            flat.append(bitcast[DType.uint8](scales_host[i]))
+            flat.append(bitcast[.uint8](scales_host[i]))
 
         if len(reference) == 0:
             reference = flat^

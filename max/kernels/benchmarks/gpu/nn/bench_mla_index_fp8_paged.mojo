@@ -130,25 +130,23 @@ def execute_mla_indexer_paged[
     var num_blocks = batch_size * real_pages_per_seq + 1
 
     var q_size = total_seq_len * num_heads * depth
-    var q_device = ctx.enqueue_create_buffer[DType.float8_e4m3fn](q_size)
+    var q_device = ctx.enqueue_create_buffer[.float8_e4m3fn](q_size)
     with q_device.map_to_host() as q_host:
         rand(q_host.as_span())
 
     var qs_size = total_seq_len * num_heads
-    var qs_device = ctx.enqueue_create_buffer[DType.float32](qs_size)
+    var qs_device = ctx.enqueue_create_buffer[.float32](qs_size)
     with qs_device.map_to_host() as qs_host:
         rand(qs_host.as_span())
 
-    var input_row_offsets_device = ctx.enqueue_create_buffer[DType.uint32](
+    var input_row_offsets_device = ctx.enqueue_create_buffer[.uint32](
         batch_size + 1
     )
     with input_row_offsets_device.map_to_host() as iro_host:
         for i in range(batch_size + 1):
             iro_host[i] = UInt32(i * seq_len)
 
-    var cache_lengths_device = ctx.enqueue_create_buffer[DType.uint32](
-        batch_size
-    )
+    var cache_lengths_device = ctx.enqueue_create_buffer[.uint32](batch_size)
     with cache_lengths_device.map_to_host() as cl_host:
         for i in range(batch_size):
             cl_host[i] = UInt32(cache_len)
@@ -165,7 +163,7 @@ def execute_mla_indexer_paged[
     var k_block_runtime_layout = RuntimeLayout[k_block_layout].row_major(
         k_shape
     )
-    var k_block_device = ctx.enqueue_create_buffer[DType.float8_e4m3fn](
+    var k_block_device = ctx.enqueue_create_buffer[.float8_e4m3fn](
         k_shape.flattened_length()
     )
     with k_block_device.map_to_host() as k_block_host:
@@ -184,7 +182,7 @@ def execute_mla_indexer_paged[
     var ks_block_runtime_layout = RuntimeLayout[ks_block_layout].row_major(
         ks_shape
     )
-    var ks_block_device = ctx.enqueue_create_buffer[DType.float32](
+    var ks_block_device = ctx.enqueue_create_buffer[.float32](
         ks_shape.flattened_length()
     )
     with ks_block_device.map_to_host() as ks_block_host:
@@ -195,7 +193,7 @@ def execute_mla_indexer_paged[
     var paged_lut_runtime_layout = RuntimeLayout[paged_lut_layout].row_major(
         paged_lut_shape
     )
-    var k_lut_device = ctx.enqueue_create_buffer[DType.uint32](
+    var k_lut_device = ctx.enqueue_create_buffer[.uint32](
         paged_lut_shape.flattened_length()
     )
     with k_lut_device.map_to_host() as k_lut_host:
@@ -221,27 +219,27 @@ def execute_mla_indexer_paged[
         scale_dtype_=DType.float32,
         quantization_granularity_=128,
     ](
-        LayoutTensor[DType.float8_e4m3fn, k_block_layout](
+        LayoutTensor[.float8_e4m3fn, k_block_layout](
             k_block_device,
             k_block_runtime_layout,
         ),
-        LayoutTensor[mut=False, DType.uint32, cache_lengths_layout](
+        LayoutTensor[mut=False, .uint32, cache_lengths_layout](
             cache_lengths_device,
             cache_lengths_runtime_layout,
         ),
-        LayoutTensor[mut=False, DType.uint32, paged_lut_layout](
+        LayoutTensor[mut=False, .uint32, paged_lut_layout](
             k_lut_device,
             paged_lut_runtime_layout,
         ),
         UInt32(seq_len),
         UInt32(frozen_cache_len),
-        LayoutTensor[DType.float32, ks_block_layout](
+        LayoutTensor[.float32, ks_block_layout](
             ks_block_device,
             ks_block_runtime_layout,
         ),
     )
 
-    var o_device = ctx.enqueue_create_buffer[DType.int32](total_seq_len * top_k)
+    var o_device = ctx.enqueue_create_buffer[.int32](total_seq_len * top_k)
 
     var q_tile = TileTensor(
         q_device, row_major(total_seq_len, num_heads, depth)
@@ -274,17 +272,17 @@ def execute_mla_indexer_paged[
             launch_ctx,
         )
 
-    @__parameter
     @always_inline
-    def bench_func(mut b: Bencher) raises:
+    def bench_func(mut b: Bencher) raises {imm}:
         bencher_iter_custom(b, kernel_launch, ctx)
 
-    m.bench_function[bench_func](
+    m.bench_function(
+        bench_func,
         BenchId(
             _run_name[num_heads, depth, page_size, top_k, scores_budget_bytes](
                 batch_size, seq_len, cache_len, frozen_cache_len
             )
-        )
+        ),
     )
 
     _ = q_device

@@ -46,14 +46,14 @@ comptime OUT_N = DEPTH_MMAS * 16
 
 def _softmax_unit_kernel(
     # Two score tiles (SQ x SK each), row-major, fp32.
-    s0_ptr: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
-    s1_ptr: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
+    s0_ptr: UnsafePointer[Float32, MutAnyOrigin],
+    s1_ptr: UnsafePointer[Float32, MutAnyOrigin],
     # Per-tile synthetic "attention output" contribution (SQ x OUT_N) injected
     # directly so the test isolates the softmax; the host reference applies the
     # same recurrence.
-    o0_ptr: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
-    o1_ptr: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
-    out_ptr: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
+    o0_ptr: UnsafePointer[Float32, MutAnyOrigin],
+    o1_ptr: UnsafePointer[Float32, MutAnyOrigin],
+    out_ptr: UnsafePointer[Float32, MutAnyOrigin],
 ):
     """One simdgroup: load 2 score tiles + 2 PV-output tiles into the MMA accum
     layout, run `_softmax_update` twice + `_softmax_normalize`, and write the
@@ -62,8 +62,8 @@ def _softmax_unit_kernel(
     var rb = ((lane & 7) >> 1) + ((lane & 16) >> 2)
     var cb = ((lane & 1) << 2) + (lane & 8)
 
-    comptime ScoreMma = MmaOpApple[DType.float32, DType.float32, 1, NUM_N_MMAS]
-    comptime OutMma = MmaOpApple[DType.float32, DType.float32, 1, DEPTH_MMAS]
+    comptime ScoreMma = MmaOpApple[.float32, .float32, 1, NUM_N_MMAS]
+    comptime OutMma = MmaOpApple[.float32, .float32, 1, DEPTH_MMAS]
 
     # Online-softmax state as the kernel declares it (no-sink), seeded m=-inf, l=0.
     var sm_m = Array[Float32, _SOFTMAX_FRAG_ROWS](fill=Float32(-3.0e38))
@@ -73,11 +73,11 @@ def _softmax_unit_kernel(
 
     @__parameter
     def load_scores(
-        src: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
+        src: UnsafePointer[Float32, MutAnyOrigin],
     ) -> ScoreMma.AccumType:
         var acc = ScoreMma.zero_accum()
         comptime for ni in range(NUM_N_MMAS):
-            var frag = SIMD[DType.float32, 8](0)
+            var frag = SIMD[.float32, 8](0)
             comptime for el in range(8):
                 var row = rb + (8 if el > 3 else 0)
                 var col = ni * 16 + cb + (el & 3)
@@ -88,7 +88,7 @@ def _softmax_unit_kernel(
     @__parameter
     def add_output(
         mut acc: OutMma.AccumType,
-        src: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
+        src: UnsafePointer[Float32, MutAnyOrigin],
     ):
         comptime for ni in range(DEPTH_MMAS):
             var frag = acc[ni]
@@ -125,10 +125,10 @@ def test_apple_fa_softmax_unit(ctx: DeviceContext) raises:
     comptime n_s = SQ * SK
     comptime n_o = SQ * OUT_N
 
-    var s0_h = ctx.enqueue_create_host_buffer[DType.float32](n_s)
-    var s1_h = ctx.enqueue_create_host_buffer[DType.float32](n_s)
-    var o0_h = ctx.enqueue_create_host_buffer[DType.float32](n_o)
-    var o1_h = ctx.enqueue_create_host_buffer[DType.float32](n_o)
+    var s0_h = ctx.enqueue_create_host_buffer[.float32](n_s)
+    var s1_h = ctx.enqueue_create_host_buffer[.float32](n_s)
+    var o0_h = ctx.enqueue_create_host_buffer[.float32](n_o)
+    var o1_h = ctx.enqueue_create_host_buffer[.float32](n_o)
 
     # Deterministic, non-monotonic scores so the max is not the last column and
     # tile-1's max exceeds tile-0's for some rows (exercising the correction).
@@ -143,11 +143,11 @@ def test_apple_fa_softmax_unit(ctx: DeviceContext) raises:
             o0_h[r * OUT_N + c] = Float32(((r * 13 + c * 7) % 100)) * 0.1
             o1_h[r * OUT_N + c] = Float32(((r * 29 + c * 3) % 100)) * 0.1 - 5.0
 
-    var s0_d = ctx.enqueue_create_buffer[DType.float32](n_s)
-    var s1_d = ctx.enqueue_create_buffer[DType.float32](n_s)
-    var o0_d = ctx.enqueue_create_buffer[DType.float32](n_o)
-    var o1_d = ctx.enqueue_create_buffer[DType.float32](n_o)
-    var out_d = ctx.enqueue_create_buffer[DType.float32](n_o)
+    var s0_d = ctx.enqueue_create_buffer[.float32](n_s)
+    var s1_d = ctx.enqueue_create_buffer[.float32](n_s)
+    var o0_d = ctx.enqueue_create_buffer[.float32](n_o)
+    var o1_d = ctx.enqueue_create_buffer[.float32](n_o)
+    var out_d = ctx.enqueue_create_buffer[.float32](n_o)
     ctx.enqueue_copy(s0_d, s0_h)
     ctx.enqueue_copy(s1_d, s1_h)
     ctx.enqueue_copy(o0_d, o0_h)
@@ -163,7 +163,7 @@ def test_apple_fa_softmax_unit(ctx: DeviceContext) raises:
         block_dim=WARP_SIZE,
     )
 
-    var out_h = ctx.enqueue_create_host_buffer[DType.float32](n_o)
+    var out_h = ctx.enqueue_create_host_buffer[.float32](n_o)
     ctx.enqueue_copy(out_h, out_d)
     ctx.synchronize()
 

@@ -127,9 +127,7 @@ def bench_shape(
     # ---- ragged offsets + (empty) cache lengths ----
     var total_seq = 0
     var max_seq = 0
-    var iro_host = List[Scalar[DType.uint32]](
-        length=batch_size + 1, fill=Scalar[DType.uint32](0)
-    )
+    var iro_host = List[UInt32](length=batch_size + 1, fill=UInt32(0))
     for i in range(batch_size):
         iro_host[i] = UInt32(total_seq)
         total_seq += prompt_lens[i]
@@ -137,10 +135,10 @@ def bench_shape(
     iro_host[batch_size] = UInt32(total_seq)
     var max_ctx = max_seq  # cache_lengths are all 0 here
 
-    var iro_dev = ctx.enqueue_create_buffer[DType.uint32](batch_size + 1)
+    var iro_dev = ctx.enqueue_create_buffer[.uint32](batch_size + 1)
     ctx.enqueue_copy(iro_dev, iro_host)
     var iro_tensor = LayoutTensor[
-        mut=False, DType.uint32, Layout.row_major(UNKNOWN_VALUE)
+        mut=False, .uint32, Layout.row_major(UNKNOWN_VALUE)
     ](
         iro_dev.unsafe_ptr(),
         RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
@@ -148,13 +146,11 @@ def bench_shape(
         ),
     )
 
-    var cache_lengths_host = List[Scalar[DType.uint32]](
-        length=batch_size, fill=Scalar[DType.uint32](0)
-    )
-    var cache_lengths_dev = ctx.enqueue_create_buffer[DType.uint32](batch_size)
+    var cache_lengths_host = List[UInt32](length=batch_size, fill=UInt32(0))
+    var cache_lengths_dev = ctx.enqueue_create_buffer[.uint32](batch_size)
     ctx.enqueue_copy(cache_lengths_dev, cache_lengths_host)
     var cache_lengths_tensor = LayoutTensor[
-        mut=False, DType.uint32, Layout(UNKNOWN_VALUE)
+        mut=False, .uint32, Layout(UNKNOWN_VALUE)
     ](
         cache_lengths_dev.unsafe_ptr(),
         RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(
@@ -165,20 +161,16 @@ def bench_shape(
     # ---- paged lookup table (sequential distinct blocks; shared by both
     # caches since main/index blocks are separate allocations) ----
     var lut_cols = ((ceildiv(max_ctx, page_size) + 7) // 8) * 8 + 16
-    var lut_host = List[Scalar[DType.uint32]](
-        length=batch_size * lut_cols, fill=Scalar[DType.uint32](0)
-    )
+    var lut_host = List[UInt32](length=batch_size * lut_cols, fill=UInt32(0))
     var block_counter = 0
     for b in range(batch_size):
         var pages = ceildiv(prompt_lens[b], page_size)
         for p in range(pages):
             lut_host[b * lut_cols + p] = UInt32(block_counter)
             block_counter += 1
-    var lut_dev = ctx.enqueue_create_buffer[DType.uint32](batch_size * lut_cols)
+    var lut_dev = ctx.enqueue_create_buffer[.uint32](batch_size * lut_cols)
     ctx.enqueue_copy(lut_dev, lut_host)
-    var lut_tensor = LayoutTensor[
-        mut=False, DType.uint32, Layout.row_major[2]()
-    ](
+    var lut_tensor = LayoutTensor[mut=False, .uint32, Layout.row_major[2]()](
         lut_dev.unsafe_ptr(),
         RuntimeLayout[Layout.row_major[2]()].row_major(
             IndexList[2](batch_size, lut_cols)
@@ -322,12 +314,12 @@ def bench_shape(
             ctx,
         )
 
-    @__parameter
     @always_inline
-    def fused_bench(mut b: Bencher) raises:
+    def fused_bench(mut b: Bencher) raises {imm}:
         bencher_iter_custom(b, fused_launch, ctx)
 
-    m.bench_function[fused_bench](
+    m.bench_function(
+        fused_bench,
         BenchId("fused   " + regime + " total_seq=" + String(total_seq)),
         [
             ThroughputMeasure(BenchMetric.flops, flops),
@@ -383,12 +375,12 @@ def bench_shape(
             ctx,
         )
 
-    @__parameter
     @always_inline
-    def unfused_bench(mut b: Bencher) raises:
+    def unfused_bench(mut b: Bencher) raises {imm}:
         bencher_iter_custom(b, unfused_launch, ctx)
 
-    m.bench_function[unfused_bench](
+    m.bench_function(
+        unfused_bench,
         BenchId("unfused " + regime + " total_seq=" + String(total_seq)),
         [
             ThroughputMeasure(BenchMetric.flops, flops),

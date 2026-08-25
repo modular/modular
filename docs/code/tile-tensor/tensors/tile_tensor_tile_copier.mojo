@@ -44,9 +44,9 @@ def tile_copier_example() raises:
             Int(block_idx.y), Int(block_idx.x)
         )
         comptime tile_layout = row_major[block_size, block_size]()
-        var shared_tile = stack_allocation[
-            dtype, address_space=AddressSpace.SHARED
-        ](tile_layout)
+        var shared_tile = stack_allocation[dtype, address_space=.SHARED](
+            tile_layout
+        )
 
         comptime thread_layout = row_major[
             WARP_SIZE // simd_width, simd_width

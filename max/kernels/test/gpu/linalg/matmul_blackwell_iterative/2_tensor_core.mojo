@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from std.builtin._closure import __ownership_keepalive
 from std.math import ceildiv
 from std.sys import argv, size_of
 
@@ -113,14 +114,12 @@ def kernel_3[
 
     var a_smem = rebind[
         UnsafePointer[
-            Scalar[a_type],
-            address_space=AddressSpace.SHARED,
-            UntrackedOrigin[mut=True],
+            Scalar[a_type], address_space=.SHARED, UntrackedOrigin[mut=True]
         ]
     ](
         external_memory[
             Scalar[a_type],
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
             alignment=128,
             name="tmem_test_dynamic_shared_memory",
         ]()
@@ -131,28 +130,28 @@ def kernel_3[
         a_type,
         a_smem_layout,
         _,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
     ]
     comptime b_smem_tile_t = LayoutTensor[
         b_type,
         b_smem_layout,
         _,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
     ]
     comptime sub_a_smem_tile_t = LayoutTensor[
         a_type,
         sub_a_smem_layout,
         _,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
     ]
     comptime sub_b_smem_tile_t = LayoutTensor[
         b_type,
         sub_b_smem_layout,
         _,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
     ]
     comptime a_size = a_smem_layout.size()
@@ -231,7 +230,7 @@ def kernel_3[
         accum_type,
         a_type,
         b_type,
-        Index[dtype=DType.uint32](mma_shape[0], mma_shape[1]),
+        Index[dtype=.uint32](mma_shape[0], mma_shape[1]),
         transpose_b=transpose_b,
     ]()
 
@@ -574,8 +573,7 @@ def test_kernel_2[
         comptime num_warmup = 10
 
         @always_inline
-        @__parameter
-        def run_kernel(ctx: DeviceContext) raises:
+        def run_kernel(ctx: DeviceContext) raises {imm}:
             kernel_2[
                 transpose_b=transpose_b,
                 umma_shape=umma_shape,  # 64, 128, 16
@@ -594,7 +592,7 @@ def test_kernel_2[
         print("finished warmup")
 
         var nstime = (
-            Float64(ctx.execution_time[run_kernel](num_runs)) / num_runs
+            Float64(ctx.execution_time(run_kernel, num_runs)) / num_runs
         )
         var sectime = nstime * 1e-9
         var TFlop = 2.0 * Float64(M) * Float64(N) * Float64(K) * 1e-12
@@ -626,6 +624,10 @@ def test_kernel_2[
             rtol=rtol,
         )
 
+    # `a_device_lt` / `b_device_lt` are raw pointer views, so past the copies
+    # above nothing else refers to the buffers backing them.
+    __ownership_keepalive(a_device, b_device)
+
 
 def main() raises:
     with DeviceContext() as ctx:
@@ -636,9 +638,9 @@ def main() raises:
             return
 
         test_kernel_2[
-            DType.bfloat16,
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
+            .bfloat16,
             umma_shape=Index(64, 256, 16),
             transpose_b=True,
             BK=64,

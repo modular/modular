@@ -467,7 +467,7 @@ void LIT::printFnType(AsmPrinter &p, FuncType signature) {
     VariadicKind variadicness = argListAttr.getVariadicKind(i);
     if (variadicness == VariadicKind::PosVarArg ||
         variadicness == VariadicKind::PackVarArg) {
-      assert(argConv == ArgConvention::ReadMem ||
+      assert(argConv == ArgConvention::ImmMem ||
              argConv == ArgConvention::Mut ||
              argConv == ArgConvention::OwnedMem ||
              argConv == ArgConvention::OwnedReg);
@@ -685,9 +685,43 @@ void LIT::sortAndDeduplicateTraitSymbols(
       if (aSeg != bSeg)
         return aSeg.getValue() < bSeg.getValue();
     }
-    return aSegments.size() < bSegments.size();
+    if (aSegments.size() != bSegments.size())
+      return aSegments.size() < bSegments.size();
+
+    // Same symbol, then must have the same number of parameter value, compare
+    // each parameter lexicographically.
+    assert(ta.getParamValues().size() == tb.getParamValues().size());
+    for (auto [aVal, bVal] :
+         llvm::zip_equal(ta.getParamValues(), tb.getParamValues())) {
+      if (aVal != bVal)
+        return ParameterAttr::compare(aVal, bVal);
+    }
+    return false;
   });
   symbols.erase(std::unique(symbols.begin(), symbols.end()), symbols.end());
+}
+
+std::optional<ParameterEvaluator>
+LIT::populateTraitBindingEvaluator(TraitSymbolAttr traitSymbol,
+                                   TraitDeclOp traitDecl) {
+  // No need to populate the evaluator if the trait symbol has no param values.
+  // This should be the common case before we expose parametric trait support to
+  // users.
+  // NOTE: Normally the signature should have at least one param for Self, but
+  // could be empty when the function is called when signature resolving the
+  // trait.
+  if (traitDecl.getSignature().getParamTypes().size() <= 1)
+    return std::nullopt;
+
+  // The decl has an extra Self type parameter.
+  assert(traitSymbol.getParamValues().size() + 1 ==
+         traitDecl.getSignature().getParamTypes().size());
+  ParameterEvaluator evaluator;
+  for (size_t i = 0; i < traitSymbol.getParamValues().size(); i++) {
+    evaluator.setDeclBinding(traitDecl.getSignature().getParamName(i),
+                             traitSymbol.getParamValues()[i]);
+  }
+  return evaluator;
 }
 
 void LIT::canonicalizeTraitCompositionSymbols(
@@ -701,10 +735,15 @@ void LIT::canonicalizeTraitCompositionSymbols(
       continue;
 
     TraitDeclOp traitOp = traitDeclResolver(symbol.getSymbol());
+    auto paramEvaluator = populateTraitBindingEvaluator(symbol, traitOp);
+
+    TraitType canonTrait = traitOp.getCanonicalTrait();
+    if (paramEvaluator)
+      canonTrait = paramEvaluator->replace(canonTrait);
+
     // Only one level of parent lookup is needed because parentTypes always
     // include their entire ancestor chain.
-    ArrayRef<TraitSymbolAttr> parentSymbols =
-        traitOp.getCanonicalTrait().getSymbols();
+    ArrayRef<TraitSymbolAttr> parentSymbols = canonTrait.getSymbols();
     seen.insert(parentSymbols.begin(), parentSymbols.end());
   }
   symbols.assign(seen.begin(), seen.end());
@@ -883,7 +922,9 @@ Attribute IndexToDeclRefRemapper::tryReplace(Attribute attr, size_t depth) {
 // ImplicitOriginRefAttrReplacer
 //===----------------------------------------------------------------------===//
 
-Attribute ImplicitOriginToNameRefAttrReplacer::tryReplace(Attribute attr,
+template <typename NameRefT>
+Attribute
+ImplicitOriginToNameRefAttrReplacer<NameRefT>::tryReplace(Attribute attr,
                                                           size_t depth) {
   auto implicitOriginRef = dyn_cast<ImplicitOriginRefAttr>(attr);
   if (!implicitOriginRef || implicitOriginRef.getDepth() != depth)
@@ -893,30 +934,45 @@ Attribute ImplicitOriginToNameRefAttrReplacer::tryReplace(Attribute attr,
   if (it != implicitOriginToNewParamRef.end())
     return it->second;
 
-  auto newOriginName = StringAttr::get(
-      ctx, llvm::utostr(newOriginParamDecls.size()) + "_unnamed`");
-  newOriginParamDecls.push_back(
-      ParamDeclAttr::get(newOriginName, implicitOriginRef.getType()));
-  auto originParamRef =
-      ParamDeclRefAttr::get(newOriginName, implicitOriginRef.getType());
+  auto originName = StringAttr::get(ctx, llvm::utostr(originDecls.size()) +
+                                             "_unnamed`" + namePostfix);
+  originDecls.push_back(
+      ParamDeclAttr::get(originName, implicitOriginRef.getType()));
+  auto originParamRef = NameRefT::get(originName, implicitOriginRef.getType());
   implicitOriginToNewParamRef.insert({implicitOriginRef, originParamRef});
   return originParamRef;
 }
+
+// Explicit instantiation, these are the only two variants.
+template class M::KGEN::LIT::ImplicitOriginToNameRefAttrReplacer<
+    ParamDeclRefAttr>;
+template class M::KGEN::LIT::ImplicitOriginToNameRefAttrReplacer<
+    FnGenBuilderParamDeclRefAttr>;
 
 //===----------------------------------------------------------------------===//
 // OriginDeclRemapper
 //===----------------------------------------------------------------------===//
 
-NameToImplicitOriginRefRemapper::NameToImplicitOriginRefRemapper(
+template <typename NameRefT>
+NameToImplicitOriginRefRemapper<NameRefT>::NameToImplicitOriginRefRemapper(
     ArrayRef<ParamDeclAttr> originDecls, size_t depthOffset)
     : depthOffset(depthOffset) {
   for (auto [index, decl] : llvm::enumerate(originDecls))
-    mapping.try_emplace(decl.getName(), index);
+    mapping.try_emplace(decl.getName().strref(), index);
 }
 
-Attribute NameToImplicitOriginRefRemapper::tryReplace(Attribute attr,
-                                                      size_t depth) {
-  auto ref = dyn_cast<ParamDeclRefAttr>(attr);
+template <typename NameRefT>
+NameToImplicitOriginRefRemapper<NameRefT>::NameToImplicitOriginRefRemapper(
+    ArrayRef<StringAttr> originDecls, size_t depthOffset)
+    : depthOffset(depthOffset) {
+  for (auto [index, decl] : llvm::enumerate(originDecls))
+    mapping.try_emplace(decl.strref(), index);
+}
+
+template <typename NameRefT>
+Attribute NameToImplicitOriginRefRemapper<NameRefT>::tryReplace(Attribute attr,
+                                                                size_t depth) {
+  auto ref = dyn_cast<NameRefT>(attr);
   if (!ref)
     return nullptr;
   // If it's in the mapping, then we know it's an *origin* param ref, so no
@@ -927,6 +983,11 @@ Attribute NameToImplicitOriginRefRemapper::tryReplace(Attribute attr,
   return ImplicitOriginRefAttr::get(depth - depthOffset, it->second,
                                     ref.getType());
 }
+
+// Explicit instantiation, these are the only two variants.
+template class M::KGEN::LIT::NameToImplicitOriginRefRemapper<ParamDeclRefAttr>;
+template class M::KGEN::LIT::NameToImplicitOriginRefRemapper<
+    FnGenBuilderParamDeclRefAttr>;
 
 //===----------------------------------------------------------------------===//
 // Constraint Implication

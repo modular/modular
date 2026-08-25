@@ -49,10 +49,10 @@ def kernel_bulk_g2s[
     comptime BYTES = NUM_ELEMS * size_of[Float32]()
 
     var smem = unsafe_stack_allocation[
-        NUM_ELEMS, Float32, address_space=AddressSpace.SHARED
+        NUM_ELEMS, Float32, address_space=.SHARED
     ]()
     var mbar = unsafe_stack_allocation[
-        1, SharedMemBarrier, address_space=AddressSpace.SHARED
+        1, SharedMemBarrier, address_space=.SHARED
     ]()
 
     var tid = thread_idx.x
@@ -81,8 +81,8 @@ def test_bulk_g2s[NUM_ELEMS: Int](ctx: DeviceContext) raises:
         in_host[i] = Float32(i + 1)
         out_host[i] = 0
 
-    var in_dev = ctx.enqueue_create_buffer[DType.float32](NUM_ELEMS)
-    var out_dev = ctx.enqueue_create_buffer[DType.float32](NUM_ELEMS)
+    var in_dev = ctx.enqueue_create_buffer[.float32](NUM_ELEMS)
+    var out_dev = ctx.enqueue_create_buffer[.float32](NUM_ELEMS)
 
     ctx.enqueue_copy(in_dev, in_host)
     ctx.enqueue_copy(out_dev, out_host)
@@ -115,7 +115,7 @@ def kernel_bulk_s2g[
     comptime BYTES = NUM_ELEMS * size_of[Float32]()
 
     var smem = unsafe_stack_allocation[
-        NUM_ELEMS, Float32, address_space=AddressSpace.SHARED
+        NUM_ELEMS, Float32, address_space=.SHARED
     ]()
 
     var tid = thread_idx.x
@@ -134,7 +134,7 @@ def test_bulk_s2g[NUM_ELEMS: Int](ctx: DeviceContext) raises:
     for i in range(NUM_ELEMS):
         out_host[i] = 0
 
-    var out_dev = ctx.enqueue_create_buffer[DType.float32](NUM_ELEMS)
+    var out_dev = ctx.enqueue_create_buffer[.float32](NUM_ELEMS)
     ctx.enqueue_copy(out_dev, out_host)
 
     ctx.enqueue_function[kernel_bulk_s2g[NUM_ELEMS]](
@@ -163,7 +163,7 @@ def kernel_bulk_reduce_s2g[
     comptime BYTES = NUM_ELEMS * size_of[Float32]()
 
     var smem = unsafe_stack_allocation[
-        NUM_ELEMS, Float32, address_space=AddressSpace.SHARED
+        NUM_ELEMS, Float32, address_space=.SHARED
     ]()
 
     var tid = thread_idx.x
@@ -188,7 +188,7 @@ def test_bulk_reduce_s2g[NUM_ELEMS: Int](ctx: DeviceContext) raises:
     for i in range(NUM_ELEMS):
         out_host[i] = init
 
-    var out_dev = ctx.enqueue_create_buffer[DType.float32](NUM_ELEMS)
+    var out_dev = ctx.enqueue_create_buffer[.float32](NUM_ELEMS)
     ctx.enqueue_copy(out_dev, out_host)
 
     ctx.enqueue_function[kernel_bulk_reduce_s2g[NUM_ELEMS]](

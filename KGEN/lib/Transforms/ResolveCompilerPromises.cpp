@@ -277,7 +277,7 @@ bool CallGraph::doAnalysis(CallGraphNode *node) {
   // TODO: What conventions do we use for captures.
   SmallVector<ArgConvention> convs(sig.getArgConventions());
   convs.insert(std::prev(convs.end(), numResultArgs), newTypes.size(),
-               ArgConvention::ReadReg);
+               ArgConvention::ImmReg);
   assert(body->getNumArguments() == convs.size());
 
   // Update the function signature.

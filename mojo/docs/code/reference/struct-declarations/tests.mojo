@@ -253,14 +253,14 @@ struct CompTest[dtype: DType]:
 
 def test_comptime_members() raises:
     # Access constants on the type and on an instance.
-    assert_equal(CompTest[DType.int32].default_size, 1024)
-    assert_equal(CompTest[DType.int32]().default_size, 1024)
+    assert_equal(CompTest[.int32].default_size, 1024)
+    assert_equal(CompTest[.int32]().default_size, 1024)
     # Type aliases via comptime resolve to concrete types.
-    var _default: CompTest[DType.int32].DefaultMatrixType = Matrix2D[
+    var _default: CompTest[.int32].DefaultMatrixType = Matrix2D[
         DType.int32, 1024, 1024
     ]()
     # Parameterized comptime members specialize at use site.
-    var _square: CompTest[DType.int32].SquareMatrixType[10] = Matrix2D[
+    var _square: CompTest[.int32].SquareMatrixType[10] = Matrix2D[
         DType.int32, 10, 10
     ]()
 

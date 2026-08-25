@@ -43,13 +43,13 @@ def _check[
 ](ctx: DeviceContext, name: String, values: List[Scalar[dtype]]) raises:
     var n = len(values)
     var v_host = ctx.enqueue_create_host_buffer[dtype](n)
-    var out_host = ctx.enqueue_create_host_buffer[DType.uint64](n)
+    var out_host = ctx.enqueue_create_host_buffer[.uint64](n)
     ctx.synchronize()
     for i in range(n):
         v_host[i] = values[i]
 
     var v_dev = ctx.enqueue_create_buffer[dtype](n)
-    var out_dev = ctx.enqueue_create_buffer[DType.uint64](n)
+    var out_dev = ctx.enqueue_create_buffer[.uint64](n)
     ctx.enqueue_copy(v_dev, v_host)
     ctx.enqueue_function[_match_any_probe[dtype]](
         v_dev, out_dev, grid_dim=1, block_dim=n

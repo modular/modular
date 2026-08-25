@@ -317,7 +317,7 @@ The `max-full` container includes the following:
 
 - Ubuntu 22.04
 - Python 3.12
-- MAX 25.4
+- MAX
 - PyTorch (GPU) 2.6.0
 - ROCm
 - cuDNN
@@ -502,30 +502,83 @@ Here are all the available metrics:
   so far.
 - `maxserve_num_output_tokens_total`: Total number of output tokens processed
   so far.
-- `maxserve_input_tokens_per_request`: Histogram of input tokens per request.
-- `maxserve_output_tokens_per_request`: Histogram of output tokens per request.
+- `maxserve_input_tokens_per_request_tokens`: Histogram of input tokens per
+  request.
+- `maxserve_output_tokens_per_request_tokens`: Histogram of output tokens per
+  request.
 - `maxserve_request_count_total`: Total requests since start.
 - `maxserve_num_requests_running`: Number of requests currently running.
+- `maxserve_num_requests_queued`: Current depth of the scheduler's prefill
+  queue, sampled once per scheduler iteration.
+- `maxserve_num_requests_awaiting_admission`: Requests received by the API
+  server but not yet handed off to the model worker. A persistently high
+  value indicates a backlog stuck on the API side.
+- `maxserve_requests_awaiting_admission`: Histogram of the ingress backlog
+  distribution over time.
+- `maxserve_num_responses_buffered`: Egress backlog: model-worker responses
+  received by the API server but not yet streamed to clients.
+- `maxserve_responses_buffered`: Histogram of the egress backlog
+  distribution over time.
+- `maxserve_response_queue_time_milliseconds`: Histogram of the time a
+  response waits in the API server's output queue before streaming.
+- `maxserve_itl_milliseconds`: Histogram of inter-token latency (ITL), in
+  milliseconds.
+- `maxserve_num_input_characters_total`: Total number of input characters
+  processed so far.
+- `maxserve_pipeline_load_total`: Count of pipelines loaded for each model.
 - `maxserve_model_load_time_milliseconds`: Histogram of model-worker startup
   duration, in milliseconds.
-- `maxserve_dp_active_token_occupancy`: Histogram of per-batch data-parallel
-  balance, measured as the mean/max of per-rank active-token load as a
-  percentage. 100% means perfectly balanced ranks. Recorded only when
+- `maxserve_batch_size`: Histogram of batch sizes (number of requests),
+  split by `batch_type` label (CE prefill or TG decode).
+- `maxserve_batch_execution_time_milliseconds`: Histogram of batch execution
+  time, in milliseconds.
+- `maxserve_batch_input_tokens`: Histogram of input tokens per scheduler
+  batch.
+- `maxserve_batch_context_tokens`: Histogram of accumulated context tokens
+  per scheduler batch.
+- `maxserve_batch_creation_time_milliseconds`: Histogram of scheduler batch
+  creation time, in milliseconds.
+- `maxserve_batch_prompt_throughput_tokens_per_second`: Histogram of
+  per-batch prompt-side throughput, in tokens per second.
+- `maxserve_batch_generation_throughput_tokens_per_second`: Histogram of
+  per-batch generation-side throughput, in tokens per second.
+- `maxserve_batch_terminated_reqs`: Histogram of requests terminated per
+  scheduler batch.
+- `maxserve_batch_pending_reqs`: Histogram of requests pending in the queue,
+  sampled once per scheduler batch.
+- `maxserve_dp_active_token_occupancy_percent`: Histogram of per-batch
+  data-parallel balance, measured as the mean/max of per-rank active-token
+  load as a percentage. 100% means perfectly balanced ranks. Recorded only
+  when `data_parallel_degree > 1`.
+- `maxserve_dp_context_token_occupancy_percent`: Histogram of per-batch
+  data-parallel balance, measured as the mean/max of per-rank context-token
+  (KV/attention) load as a percentage. 100% means perfectly balanced ranks.
+  Recorded only when `data_parallel_degree > 1`.
+- `maxserve_dp_active_tokens_total`: Cumulative active tokens scheduled
+  across all data-parallel replicas, excluding padding. Recorded only when
   `data_parallel_degree > 1`.
-- `maxserve_dp_context_token_occupancy`: Histogram of per-batch data-parallel
-  balance, measured as the mean/max of per-rank context-token (KV/attention)
-  load as a percentage. 100% means perfectly balanced ranks. Recorded only when
-  `data_parallel_degree > 1`.
-- `maxserve_vision_images_encoded_total`: Total images run through the vision
-  encoder (cache misses).
-- `maxserve_vision_images_cached_total`: Total images served from the vision
-  encoder cache (cache hits).
-- `maxserve_vision_patches_encoded_total`: Total image patches fed to the
-  vision encoder.
-- `maxserve_vision_tokens_encoded_total`: Total merged vision tokens produced
-  by the vision encoder.
-- `maxserve_vision_cache_hit_rate`: Histogram of per-batch vision encoder cache
-  hit rate (0–100%).
+- `maxserve_dp_step_capacity_tokens_total`: Cumulative synchronized step
+  capacity in tokens across data-parallel replicas. Divide
+  `maxserve_dp_active_tokens_total` by this over the same window for
+  token-weighted DP occupancy. Recorded only when `data_parallel_degree > 1`.
+- `maxserve_vision_images_encoded_images_total`: Total images run through
+  the vision encoder (cache misses).
+- `maxserve_vision_images_cached_images_total`: Total images served from the
+  vision encoder cache (cache hits).
+- `maxserve_vision_patches_encoded_patches_total`: Total image patches fed to
+  the vision encoder.
+- `maxserve_vision_tokens_encoded_tokens_total`: Total merged vision tokens
+  produced by the vision encoder.
+- `maxserve_vision_cache_hit_rate_percent`: Histogram of per-batch vision
+  encoder cache hit rate (0–100%).
+- `maxserve_video_clips_encoded_clips_total`: Total video clips run through
+  the video encoder (cache misses).
+- `maxserve_video_tokens_encoded_tokens_total`: Total merged video tokens
+  produced by the video encoder.
+- `maxserve_video_encoding_time_milliseconds`: Histogram of per-batch video
+  encoder wall-clock time, in milliseconds.
+- `maxserve_video_frames_per_clip_frames`: Histogram of the sampled frame
+  count per newly encoded video clip.
 - `maxserve_tool_call_conformance_errors_total`: Count of generated tool calls
   that failed the observability-only schema-conformance check, split by
   `outcome` label (`invalid_json`, `unknown_tool`, `schema_mismatch`).
@@ -533,6 +586,63 @@ Here are all the available metrics:
   structured-output requests rejected at admission (HTTP 400) because the
   grammar backend couldn't compile the schema, split by `kind` label
   (`tool_grammar`, `json_schema`).
+- `maxserve_response_format_conformance_errors_total`: Count of
+  `response_format` (`json_schema`/`json_object`) responses whose final
+  content failed the observability-only schema-conformance check, split by
+  `outcome` label (`invalid_json`, `schema_mismatch`).
+- `maxserve_spec_decode_acceptance_rate_per_position_percent`: Histogram of
+  the draft-token acceptance rate per position (0–100%).
+- `maxserve_spec_decode_avg_acceptance_length_tokens`: Histogram of the mean
+  draft-token acceptance length per speculative decoding batch.
+- `maxserve_cache_num_used_blocks`: Number of KV cache blocks currently in
+  use.
+- `maxserve_cache_num_total_blocks`: Total number of KV cache blocks.
+- `maxserve_cache_request_prefix_coverage_percent`: Histogram of per-request
+  prefix cache coverage (cached prefix tokens over prompt tokens).
+- `maxserve_cache_preemption_count_total`: Total number of preemptions.
+- `maxserve_cache_hits_tokens_total`: Cumulative KV cache hit tokens (prompt
+  tokens served from the prefix cache).
+- `maxserve_cache_misses_tokens_total`: Cumulative KV cache miss tokens
+  (prompt tokens actually prefilled by the model).
+- `maxserve_cache_used_kv_pct_percent`: Histogram of device KV cache blocks
+  in use (0–100%), sampled once per scheduler batch.
+- `maxserve_cache_used_host_kv_pct_percent`: Histogram of host KV cache
+  blocks in use (0–100%), sampled when host paging is enabled.
+- `maxserve_cache_used_disk_kv_pct_percent`: Histogram of disk KV cache
+  blocks in use (0–100%), sampled when disk paging is enabled.
+- `maxserve_cache_device_blocks_served_blocks_total`: Cumulative KV blocks
+  served directly from the local device prefix cache.
+- `maxserve_cache_h2d_blocks_copied_blocks_total`: Cumulative host-to-device
+  KV block copies.
+- `maxserve_cache_d2h_blocks_copied_blocks_total`: Cumulative device-to-host
+  KV block copies.
+- `maxserve_cache_cross_replica_blocks_copied_blocks_total`: Cumulative KV
+  blocks copied device-to-device across data-parallel replicas to reuse a
+  prefix-cache hit resident on another replica.
+- `maxserve_cache_cross_replica_bytes_copied_bytes_total`: Cumulative bytes
+  moved by cross-replica device-to-device KV copies.
+- `maxserve_cache_disk_blocks_read_blocks_total`: Cumulative KV blocks read
+  from the disk cache tier.
+- `maxserve_cache_disk_blocks_written_blocks_total`: Cumulative KV blocks
+  written to the disk cache tier.
+- `maxserve_dkv_connected_clients`: Number of dKV connector clients currently
+  connected to the external KV tier.
+- `maxserve_dkv_total_clients`: Total number of dKV connector clients, one
+  per data-parallel replica.
+- `maxserve_dkv_reconnect_attempts`: Cumulative dKV reconnect attempts across
+  all clients.
+- `maxserve_dkv_rpc_read_latency_milliseconds`: Histogram of dKV
+  `read_blocks` RPC latency, in milliseconds.
+- `maxserve_dkv_rpc_acquire_latency_milliseconds`: Histogram of dKV
+  `acquire_blocks` RPC latency, in milliseconds.
+- `maxserve_dkv_nixl_read_latency_milliseconds`: Histogram of NIXL read
+  transfer latency, in milliseconds.
+- `maxserve_dkv_nixl_write_latency_milliseconds`: Histogram of NIXL write
+  transfer latency, in milliseconds.
+- `maxserve_dkv_nixl_read_gib_per_s_GiB_per_second`: Histogram of NIXL read
+  throughput, in GiB/s.
+- `maxserve_dkv_nixl_write_gib_per_s_GiB_per_second`: Histogram of NIXL write
+  throughput, in GiB/s.
 
 ### Telemetry
 

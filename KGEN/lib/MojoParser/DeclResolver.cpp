@@ -1897,7 +1897,8 @@ Operation *DeclResolver::finalizeFuncSignature(FnOp funcOp, ASTDecl &decl) {
 ASTDecl *DeclResolver::getTraitDecl(TraitType trait) {
   SmallVector<TraitSymbolAttr> symbols =
       LIT::reduceTraitCompositionSymbols(shared, trait.getSymbols());
-  if (symbols.size() == 1)
+  // If the trait type is a simple non-parametric trait, return the trait decl.
+  if (symbols.size() == 1 && symbols.front().getParamValues().empty())
     return &getDeclForTypeSymbol(symbols.front().getSymbol());
 
   assert(getCanonicalTrait(trait) == trait &&
@@ -2179,7 +2180,7 @@ StringAttr DeclResolver::getMangledName(StringAttr baseName, ASTDecl &container,
       continue;
     } else if (fullSig.isKwVarArg(argNo)) {
       // TODO: Propagate convention correctly.
-      convention = ArgConvention::ReadReg;
+      convention = ArgConvention::ImmReg;
       argType = argType.getKwargsDictRefValueType();
       numStars = 2;
     } else {
@@ -2195,8 +2196,8 @@ StringAttr DeclResolver::getMangledName(StringAttr baseName, ASTDecl &container,
     case ArgConvention::DeinitMem:
       mangledName += '$';
       break;
-    case ArgConvention::ReadReg:
-    case ArgConvention::ReadMem:
+    case ArgConvention::ImmReg:
+    case ArgConvention::ImmMem:
     case ArgConvention::Mut:
       break;
     case ArgConvention::Ref:

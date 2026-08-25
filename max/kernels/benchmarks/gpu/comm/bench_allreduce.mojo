@@ -95,7 +95,7 @@ def bench_reduce[
     comptime num_buffers = 1 if use_multimem else ngpus
 
     # Create signal buffers for synchronization
-    var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
+    var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
     var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
         uninitialized=True
     )
@@ -148,7 +148,7 @@ def bench_reduce[
 
         # Create and initialize signal buffers
         signal_buffers.append(
-            list_of_ctx[gpu_idx].create_buffer_sync[DType.uint8](
+            list_of_ctx[gpu_idx].create_buffer_sync[.uint8](
                 size_of[Signal]() + temp_buffer_num_bytes
             )
         )
@@ -227,9 +227,10 @@ def bench_reduce[
             raise "Vendor CCL not available; skipping vendor path."
         vendor_ccl.init_comms(ngpus)
 
-    @__parameter
     @always_inline
-    def bench_iter(mut b: Bencher, ctx: DeviceContext, ctx_idx: Int) raises:
+    def bench_iter(
+        mut b: Bencher, ctx: DeviceContext, ctx_idx: Int
+    ) raises {mut in_tensors, imm}:
         @always_inline
         def call_fn(
             ctx_inner: DeviceContext, cache_iter: Int
@@ -277,8 +278,9 @@ def bench_reduce[
 
         bencher_iter_custom(b, call_fn, ctx)
 
-    bench_multicontext[bench_iter](
+    bench_multicontext(
         b,
+        bench_iter,
         list_of_ctx,
         BenchId(name),
         [ThroughputMeasure(BenchMetric.bytes, num_bytes)],
@@ -368,7 +370,7 @@ def _get_test_str[
 def main() raises:
     var num_bytes = arg_parse("num_bytes", 16 * 1024)
 
-    comptime dtype = get_defined_dtype["dtype", DType.bfloat16]()
+    comptime dtype = get_defined_dtype["dtype", .bfloat16]()
     comptime num_gpus = get_defined_int["num_gpus", 2]()
     comptime ragged = get_defined_bool["ragged", False]()
     # Force passing `max_num_blocks` explicitly.

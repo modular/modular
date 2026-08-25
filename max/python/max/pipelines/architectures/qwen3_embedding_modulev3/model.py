@@ -37,6 +37,7 @@ from max.pipelines.lib import (
     ModuleV3PipelineModel,
     PipelineConfig,
 )
+from max.pipelines.lib.memory_estimation import MemoryPlan
 from max.pipelines.lib.utils import parse_state_dict_from_weights
 from typing_extensions import override
 
@@ -91,6 +92,8 @@ class Qwen3EmbeddingModel(ModuleV3PipelineModel[TextContext]):
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
         weights: Weights,
+        *,
+        memory_plan: MemoryPlan,
         adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.ALL,
         max_batch_size: int = 1,
@@ -101,8 +104,9 @@ class Qwen3EmbeddingModel(ModuleV3PipelineModel[TextContext]):
             devices,
             kv_cache_config,
             weights,
-            adapter,
-            return_logits,
+            adapter=adapter,
+            return_logits=return_logits,
+            memory_plan=memory_plan,
         )
         self.model = self.load_model()
 
@@ -142,7 +146,6 @@ class Qwen3EmbeddingModel(ModuleV3PipelineModel[TextContext]):
         huggingface_config = self.huggingface_config
 
         head_dim = huggingface_config.head_dim
-        max_seq_len = self.pipeline_config.model.max_length or 32768
         norm_eps = getattr(huggingface_config, "rms_norm_eps", 1e-6)
         attention_multiplier = getattr(
             huggingface_config,
@@ -154,7 +157,7 @@ class Qwen3EmbeddingModel(ModuleV3PipelineModel[TextContext]):
             dim=huggingface_config.hidden_size,
             n_heads=huggingface_config.num_attention_heads,
             theta=huggingface_config.rope_theta,
-            max_seq_len=max_seq_len,
+            max_seq_len=self.max_seq_len,
             device=self.devices[0],
             head_dim=head_dim,
             interleaved=False,

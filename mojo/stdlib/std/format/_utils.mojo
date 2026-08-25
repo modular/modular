@@ -543,7 +543,7 @@ def _ord_ascii(s: StringSlice) -> UInt8:
 
 
 # fmt: off
-comptime _hex_table = SIMD[DType.uint8, 16](
+comptime _hex_table = SIMD[.uint8, 16](
     _ord_ascii("0"), _ord_ascii("1"), _ord_ascii("2"), _ord_ascii("3"), _ord_ascii("4"),
     _ord_ascii("5"), _ord_ascii("6"), _ord_ascii("7"), _ord_ascii("8"), _ord_ascii("9"),
     _ord_ascii("a"), _ord_ascii("b"), _ord_ascii("c"), _ord_ascii("d"), _ord_ascii("e"), _ord_ascii("f"),
@@ -554,7 +554,7 @@ comptime _hex_table = SIMD[DType.uint8, 16](
 @always_inline
 def _hex_digits_to_hex_chars(
     decimal: Scalar,
-) -> SIMD[DType.uint8, size_of[decimal.dtype]() * 2]:
+) -> SIMD[.uint8, size_of[decimal.dtype]() * 2]:
     """Return a fixed width hexadecimal value according to the scalar dtype.
 
     Examples:
@@ -578,9 +578,9 @@ def _hex_digits_to_hex_chars(
     ```
     """
     comptime size = size_of[decimal.dtype]()
-    var bytes = bitcast[DType.uint8, size](byte_swap(decimal))
+    var bytes = bitcast[.uint8, size](byte_swap(decimal))
     var nibbles = (bytes >> 4).interleave(bytes & 0xF)
-    return SIMD[DType.uint8, size_of[decimal.dtype]() * 2](
+    return SIMD[.uint8, size_of[decimal.dtype]() * 2](
         _hex_table._dynamic_shuffle(nibbles)
     )
 

@@ -133,7 +133,7 @@ def test_mxfp8_dispatch[
             if idx0 < M and idx1 < K:
                 var scale_value = (
                     (1 << random_ui64(0, 3))
-                    .cast[DType.float32]()
+                    .cast[.float32]()
                     .cast[scales_type]()
                 )
                 set_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
@@ -152,7 +152,7 @@ def test_mxfp8_dispatch[
             if idx0 < N and idx1 < K:
                 var scale_value = (
                     (1 << random_ui64(0, 3))
-                    .cast[DType.float32]()
+                    .cast[.float32]()
                     .cast[scales_type]()
                 )
                 set_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
@@ -220,14 +220,14 @@ def main() raises:
     with DeviceContext() as ctx:
         # Heuristic-covered shape (M <= 8192): exercises the Mojo block-scaled
         # kernel path and guards against a regression there.
-        test_mxfp8_dispatch[DType.float8_e4m3fn, DType.bfloat16](
+        test_mxfp8_dispatch[.float8_e4m3fn, .bfloat16](
             ctx, 4096, Idx[128], Idx[6144]
         )
 
         # KERN-3024: 30k-token prefill. The heuristic has no config for this
         # M, so the dispatcher must fall back to the vendor (cuBLASLt) MXFP8
         # block-scaled matmul instead of raising.
-        test_mxfp8_dispatch[DType.float8_e4m3fn, DType.bfloat16](
+        test_mxfp8_dispatch[.float8_e4m3fn, .bfloat16](
             ctx, 30000, Idx[128], Idx[6144]
         )
 

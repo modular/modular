@@ -67,18 +67,18 @@ def _layer_norm_ref(
         var base = r * cols
         var mean = Float64(0)
         for c in range(cols):
-            mean += src[base + c].cast[DType.float64]()
+            mean += src[base + c].cast[.float64]()
         mean /= Float64(cols)
         var var_ = Float64(0)
         for c in range(cols):
-            var d = src[base + c].cast[DType.float64]() - mean
+            var d = src[base + c].cast[.float64]() - mean
             var_ += d * d
         var_ /= Float64(cols)
         var norm = 1.0 / sqrt(var_ + eps)
         for c in range(cols):
-            var x = src[base + c].cast[DType.float64]()
-            var g = gamma[c].cast[DType.float64]()
-            var b = beta[c].cast[DType.float64]()
+            var x = src[base + c].cast[.float64]()
+            var g = gamma[c].cast[.float64]()
+            var b = beta[c].cast[.float64]()
             dst[base + c] = (((x - mean) * norm) * g + b).cast[ln_type]()
 
 
@@ -135,7 +135,7 @@ def run_one_case(
         input_fn,
         output_fn,
         Coord(shape),
-        Scalar[DType.int](cols),
+        Int(cols),
         gamma,
         beta,
         epsilon.cast[ln_type](),
@@ -155,7 +155,7 @@ def run_one_case(
             ref_h.as_span(),
             rows,
             cols,
-            epsilon.cast[DType.float64](),
+            epsilon.cast[.float64](),
         )
         if not numeric_check(out_h.as_span(), ref_h.as_span()):
             raise Error("layer_norm numeric mismatch")

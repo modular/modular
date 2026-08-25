@@ -43,8 +43,7 @@ def parallel_wrapper(array: PythonObject) raises -> PythonObject:
     var num_cores = num_physical_cores()
     var chunk_size, remainder = divmod(array_len, num_cores)
 
-    @__parameter
-    def calc_max(i: Int) -> None:
+    def calc_max(i: Int) {imm} -> None:
         ref cpython = Python().cpython()
         # Each worker needs to hold the GIL to access python objects.
         # It is more efficient to only use Mojo native data structures in worker threads.
@@ -73,7 +72,7 @@ def parallel_wrapper(array: PythonObject) raises -> PythonObject:
     comptime if do_parallelize:
         # Save the current thread state to avoid holding the GIL for the parallel loop.
         with GILReleased(Python(cpython)):
-            parallelize[calc_max](num_cores)
+            parallelize(calc_max, num_cores)
     else:
         for i in range(0, num_cores):
             calc_max(i)

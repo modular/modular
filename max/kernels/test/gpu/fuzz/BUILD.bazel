@@ -46,12 +46,15 @@ build_test(
         ":fuzz_mxfp8_quantize.mojo.test",
         ":fuzz_numeric_canary.mojo.test",
         ":fuzz_oob_canary.mojo.test",
+        ":fuzz_reductions.mojo.test",
         ":fuzz_rms_norm.mojo.test",
         ":fuzz_softmax.mojo.test",
         ":fuzz_sparse_indexer.mojo.test",
         ":fuzz_sparse_indexer_decode.mojo.test",
         ":fuzz_sparse_indexer_prefill.mojo.test",
         ":fuzz_topk_sampling.mojo.test",
+        ":fuzz_topk_topp_masked_probs.mojo.test",
+        ":fuzz_topk_topp_sampling_dist.mojo.test",
         ":repro_decode_hang.mojo.test",
     ],
 )
@@ -504,6 +507,33 @@ mojo_test(
     deps = [
         "//max:internal_utils",
         "//max:nn",
+        "@mojo//:std",
+    ],
+)
+
+# Target: the algorithm.reductions entry points over the rowwise GPU scaffolder
+# (written-contract + numerical ref oracle). The reduced axis is drawn from 0 —
+# an empty axis is in the contract and must still write the monoid identity.
+mojo_test(
+    name = "fuzz_reductions.mojo.test",
+    size = "large",
+    srcs = [
+        "_fuzz.mojo",
+        "fuzz_reductions.mojo",
+    ],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
+    exec_properties = {
+        "test.resources:gpu-memory": "4",
+    },
+    main = "fuzz_reductions.mojo",
+    tags = [
+        "gpu",
+        "manual",
+    ],
+    target_compatible_with = ["//:has_gpu"],
+    deps = [
+        "//max:algorithm",
+        "//max:layout",
         "@mojo//:std",
     ],
 )
@@ -995,6 +1025,61 @@ mojo_test(
     target_compatible_with = ["//:has_gpu"],
     deps = [
         "//max:internal_utils",
+        "//max:nn",
+        "@mojo//:std",
+    ],
+)
+
+# Fuzz target: nn.sampling.topk_topp_masked_probs (the spec-decode target-side
+# masked softmax; cluster + single-block dispatch). ref oracle validates the
+# tie-tolerant top-k/top-p accept-predicate contract against an f64 host
+# recompute.
+mojo_test(
+    name = "fuzz_topk_topp_masked_probs.mojo.test",
+    size = "large",
+    srcs = [
+        "_fuzz.mojo",
+        "fuzz_topk_topp_masked_probs.mojo",
+    ],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
+    exec_properties = {
+        "test.resources:gpu-memory": "4",
+    },
+    main = "fuzz_topk_topp_masked_probs.mojo",
+    tags = [
+        "gpu",
+        "manual",
+    ],
+    target_compatible_with = ["//:has_gpu"],
+    deps = [
+        "//max:nn",
+        "@mojo//:std",
+    ],
+)
+
+# Fuzz target: nn.sampling.topk_topp_sampling_from_prob with from_logits +
+# emit_dist (the spec-decode draft-side sampler; cluster + single-block
+# dispatch). Contracts: token in range, sampled token has positive mass in the
+# emitted distribution, the distribution satisfies the accept predicate,
+# NaN/Inf rows degenerate to token 0 + zero row, and emit_dist is inert.
+mojo_test(
+    name = "fuzz_topk_topp_sampling_dist.mojo.test",
+    size = "large",
+    srcs = [
+        "_fuzz.mojo",
+        "fuzz_topk_topp_sampling_dist.mojo",
+    ],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
+    exec_properties = {
+        "test.resources:gpu-memory": "4",
+    },
+    main = "fuzz_topk_topp_sampling_dist.mojo",
+    tags = [
+        "gpu",
+        "manual",
+    ],
+    target_compatible_with = ["//:has_gpu"],
+    deps = [
         "//max:nn",
         "@mojo//:std",
     ],

@@ -185,10 +185,10 @@ def bench_bmm[
             update_val,
         )
 
-    @__parameter
-    @__copy_capture(a_device, b_device, c_device)
     @always_inline
-    def bench_func(mut bench: Bencher):
+    def bench_func(
+        mut bench: Bencher,
+    ) {var a_device, var b_device, var c_device, imm}:
         @always_inline
         def kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
             comptime if use_vendor_blas:
@@ -289,7 +289,8 @@ def bench_bmm[
 
         bencher_iter_custom(bench, kernel_launch, ctx)
 
-    bench.bench_function[bench_func](
+    bench.bench_function(
+        bench_func,
         BenchId(
             _get_run_name[
                 c_type,
@@ -357,8 +358,8 @@ def create_bmm_bench[
 
 
 def main() raises:
-    comptime a_type = get_defined_dtype["atype", DType.bfloat16]()
-    comptime c_type = get_defined_dtype["ctype", DType.bfloat16]()
+    comptime a_type = get_defined_dtype["atype", .bfloat16]()
+    comptime c_type = get_defined_dtype["ctype", .bfloat16]()
 
     var b = Int(arg_parse("B", 1))
     var m = Int(arg_parse("M", 1))

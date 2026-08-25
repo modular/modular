@@ -497,11 +497,10 @@ def parallel_sum(n: Int64) abi("C") -> Int64:
     var count = Int(n)
     var results = List[Int64](length=count, fill=0)
 
-    @__parameter
-    def fill(i: Int):
+    def fill(i: Int) {mut results}:
         results[i] = Int64(i)
 
-    parallelize[fill](count)
+    parallelize(fill, count)
 
     var total = Int64(0)
     for r in results:

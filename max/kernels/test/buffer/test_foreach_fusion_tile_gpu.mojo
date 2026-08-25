@@ -51,8 +51,8 @@ comptime FullLayout = RowMajorLayout[ComptimeInt[M], ComptimeInt[N]]
 # manufactures `a + b` for the requested output tile.
 @fieldwise_init
 struct AddFusionTile(ElementwiseFusionTile):
-    var a: TileTensor[DType.float32, FullLayout, MutUntrackedOrigin]
-    var b: TileTensor[DType.float32, FullLayout, MutUntrackedOrigin]
+    var a: TileTensor[.float32, FullLayout, MutUntrackedOrigin]
+    var b: TileTensor[.float32, FullLayout, MutUntrackedOrigin]
 
     @always_inline
     def compute[
@@ -94,9 +94,9 @@ struct AddFusionTile(ElementwiseFusionTile):
         # already one, so only `rhs` needs a generic view. Add writes into `dst`
         # in place and returns it.
         var rhs_g = TileTensor(
-            rhs._storage.address_space_cast[
-                AddressSpace.GENERIC
-            ]().unsafe_origin_cast[MutAnyOrigin](),
+            rhs._storage.address_space_cast[.GENERIC]().unsafe_origin_cast[
+                MutAnyOrigin
+            ](),
             dst.layout,
         )
         return Add.elementwise[dtype, LayoutType](dst, rhs_g)
@@ -104,16 +104,16 @@ struct AddFusionTile(ElementwiseFusionTile):
 
 def test_foreach_fusion_tile_add(ctx: DeviceContext) raises:
     """`foreach_fusion_tile` computes `out = a + b` tile-by-tile on GPU."""
-    var a_host = ctx.enqueue_create_host_buffer[DType.float32](NUM)
-    var b_host = ctx.enqueue_create_host_buffer[DType.float32](NUM)
+    var a_host = ctx.enqueue_create_host_buffer[.float32](NUM)
+    var b_host = ctx.enqueue_create_host_buffer[.float32](NUM)
     ctx.synchronize()
     for i in range(NUM):
         a_host[i] = Float32(i)
         b_host[i] = Float32(1000 + i)
 
-    var a_dev = ctx.enqueue_create_buffer[DType.float32](NUM)
-    var b_dev = ctx.enqueue_create_buffer[DType.float32](NUM)
-    var out_dev = ctx.enqueue_create_buffer[DType.float32](NUM)
+    var a_dev = ctx.enqueue_create_buffer[.float32](NUM)
+    var b_dev = ctx.enqueue_create_buffer[.float32](NUM)
+    var out_dev = ctx.enqueue_create_buffer[.float32](NUM)
     ctx.enqueue_copy(a_dev, a_host)
     ctx.enqueue_copy(b_dev, b_host)
 
@@ -127,7 +127,7 @@ def test_foreach_fusion_tile_add(ctx: DeviceContext) raises:
     )
     var elem = AddFusionTile(a_tt, b_tt)
 
-    comptime spec = get_row_major_tensor_spec_static[DType.float32, 2, M, N]()
+    comptime spec = get_row_major_tensor_spec_static[.float32, 2, M, N]()
     var out_mts = ManagedTensorSlice[
         mut=True, io_spec=IOSpec.Unknown, static_spec=spec
     ](out_dev.unsafe_ptr(), IndexList[2](M, N))
@@ -136,7 +136,7 @@ def test_foreach_fusion_tile_add(ctx: DeviceContext) raises:
         out_mts, elem, ctx
     )
 
-    var out_host = ctx.enqueue_create_host_buffer[DType.float32](NUM)
+    var out_host = ctx.enqueue_create_host_buffer[.float32](NUM)
     ctx.enqueue_copy(out_host, out_dev)
     ctx.synchronize()
 

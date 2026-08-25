@@ -98,10 +98,10 @@ def _is_finite(v: Float32) -> Bool:
 
 
 def _mla_naive_fp32_ref_chunked(
-    host_q_src: UnsafePointer[mut=False, Scalar[DType.bfloat16], _],
-    host_knope_src: UnsafePointer[mut=False, Scalar[DType.bfloat16], _],
-    host_krope_src: UnsafePointer[mut=False, Scalar[DType.bfloat16], _],
-    host_out_ref_fp32: UnsafePointer[mut=True, Scalar[DType.float32], _],
+    host_q_src: UnsafePointer[mut=False, BFloat16, _],
+    host_knope_src: UnsafePointer[mut=False, BFloat16, _],
+    host_krope_src: UnsafePointer[mut=False, BFloat16, _],
+    host_out_ref_fp32: UnsafePointer[mut=True, Float32, _],
     batch: Int,
     seq_len: Int,
     num_keys: Int,
@@ -122,7 +122,7 @@ def _mla_naive_fp32_ref_chunked(
     K_nope segment (DeepSeek-V3 convention).
     """
     var heads_per_kv = num_heads // num_kv_heads
-    var score_buf = alloc[Scalar[DType.float32]](chunk_size * num_keys)
+    var score_buf = alloc[Float32](chunk_size * num_keys)
 
     for b in range(batch):
         for h in range(num_heads):
@@ -262,12 +262,8 @@ def _mla_prefill_v2_launch[
     # must pass EVERY kernel arg explicitly (defaults are not applied at the
     # launch boundary). The static-grid (non-persistent) path this test
     # drives uses the dangling-pointer / zero defaults.
-    var _work_indptr = UnsafePointer[
-        Scalar[DType.int32], ImmutAnyOrigin
-    ].unsafe_dangling()
-    var _work_info = UnsafePointer[
-        Scalar[DType.int32], ImmutAnyOrigin
-    ].unsafe_dangling()
+    var _work_indptr = UnsafePointer[Int32, ImmutAnyOrigin].unsafe_dangling()
+    var _work_info = UnsafePointer[Int32, ImmutAnyOrigin].unsafe_dangling()
     ctx.enqueue_function(
         compiled,
         q,
@@ -353,11 +349,11 @@ def test_mla_vs_fp32_ref[
     comptime SIZE_OUT = BATCH * SEQ_LEN * NUM_HEADS * D_NOPE
 
     # ---- BF16 source buffers + FP8 round-trip --------------------------
-    var host_q_src = ctx.enqueue_create_host_buffer[DType.bfloat16](SIZE_Q)
-    var host_knope_src = ctx.enqueue_create_host_buffer[DType.bfloat16](
+    var host_q_src = ctx.enqueue_create_host_buffer[.bfloat16](SIZE_Q)
+    var host_knope_src = ctx.enqueue_create_host_buffer[.bfloat16](
         BATCH * NUM_KEYS * NUM_KV_HEADS * D_NOPE
     )
-    var host_krope_src = ctx.enqueue_create_host_buffer[DType.bfloat16](
+    var host_krope_src = ctx.enqueue_create_host_buffer[.bfloat16](
         BATCH * NUM_KEYS * NUM_KV_HEADS * D_ROPE
     )
     ctx.synchronize()
@@ -374,7 +370,7 @@ def test_mla_vs_fp32_ref[
         var q_bf16 = host_q_src[i] * scale_factor
         var q_t = q_bf16.cast[qkv_type]()
         host_q[i] = q_t
-        host_q_src[i] = q_t.cast[DType.bfloat16]()
+        host_q_src[i] = q_t.cast[.bfloat16]()
 
     var host_knope = ctx.enqueue_create_host_buffer[qkv_type](
         BATCH * NUM_KEYS * NUM_KV_HEADS * D_NOPE
@@ -383,7 +379,7 @@ def test_mla_vs_fp32_ref[
         var k_bf16 = host_knope_src[i] * scale_factor
         var k_t = k_bf16.cast[qkv_type]()
         host_knope[i] = k_t
-        host_knope_src[i] = k_t.cast[DType.bfloat16]()
+        host_knope_src[i] = k_t.cast[.bfloat16]()
 
     var host_krope = ctx.enqueue_create_host_buffer[qkv_type](
         BATCH * NUM_KEYS * NUM_KV_HEADS * D_ROPE
@@ -392,7 +388,7 @@ def test_mla_vs_fp32_ref[
         var k_bf16 = host_krope_src[i] * scale_factor
         var k_t = k_bf16.cast[qkv_type]()
         host_krope[i] = k_t
-        host_krope_src[i] = k_t.cast[DType.bfloat16]()
+        host_krope_src[i] = k_t.cast[.bfloat16]()
 
     # ---- Latent K cache build ------------------------------------------
     var host_k_latent = ctx.enqueue_create_host_buffer[qkv_type](SIZE_K_LATENT)
@@ -485,7 +481,7 @@ def test_mla_vs_fp32_ref[
 
     # ---- FP32 host reference (full sweep) -----------------------------
     var size_ref = BATCH * SEQ_LEN * NUM_HEADS * D_NOPE
-    var host_out_ref_fp32 = alloc[Scalar[DType.float32]](size_ref)
+    var host_out_ref_fp32 = alloc[Float32](size_ref)
     comptime CHUNK_SIZE = 64
     _mla_naive_fp32_ref_chunked(
         host_q_src.unsafe_ptr(),
@@ -518,7 +514,7 @@ def test_mla_vs_fp32_ref[
             for h in range(NUM_HEADS):
                 for d in range(D_NOPE):
                     var idx = ((b * SEQ_LEN + s) * NUM_HEADS + h) * D_NOPE + d
-                    var a_val = host_out[idx].cast[DType.float32]()
+                    var a_val = host_out[idx].cast[.float32]()
                     var r_val = host_out_ref_fp32[idx]
                     if not _is_finite(a_val):
                         num_nonfinite += 1

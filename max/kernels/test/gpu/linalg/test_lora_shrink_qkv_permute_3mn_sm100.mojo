@@ -87,10 +87,10 @@ def test[
     var b_host_ptr = ctx.enqueue_create_host_buffer[b_type](b_size)
     var c_host_ptr = ctx.enqueue_create_host_buffer[c_type](lora_c_size)
     var c_ref_host_ptr = ctx.enqueue_create_host_buffer[c_type](c_ref_size)
-    var a_offsets_host_ptr = ctx.enqueue_create_host_buffer[DType.uint32](
+    var a_offsets_host_ptr = ctx.enqueue_create_host_buffer[.uint32](
         num_experts + 1
     )
-    var expert_ids_host_ptr = ctx.enqueue_create_host_buffer[DType.int32](
+    var expert_ids_host_ptr = ctx.enqueue_create_host_buffer[.int32](
         num_experts
     )
 
@@ -128,12 +128,10 @@ def test[
     var b_dev_buffer = ctx.enqueue_create_buffer[b_type](b_size)
     var c_dev_buffer = ctx.enqueue_create_buffer[c_type](lora_c_size)
     var c_ref_dev_buffer = ctx.enqueue_create_buffer[c_type](c_ref_size)
-    var a_offsets_dev_buffer = ctx.enqueue_create_buffer[DType.uint32](
+    var a_offsets_dev_buffer = ctx.enqueue_create_buffer[.uint32](
         num_experts + 1
     )
-    var expert_ids_dev_buffer = ctx.enqueue_create_buffer[DType.int32](
-        num_experts
-    )
+    var expert_ids_dev_buffer = ctx.enqueue_create_buffer[.int32](num_experts)
 
     var a_dev = TileTensor(
         a_dev_buffer,
@@ -242,83 +240,83 @@ def main() raises:
             return
 
         test[
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
             num_experts=6,
             expert_shape=Index(192, 1024),
         ](4, [27, 1500, 300, 150], [0, 3, 2, 4], ctx)
 
         test[
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
             num_experts=1,
             expert_shape=Index(256, 256),
         ](1, [128], [0], ctx)
 
         test[
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
             num_experts=1,
             expert_shape=Index(16, 256),
         ](1, [128], [0], ctx)
 
         # unaligned matmul
         test[
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
             num_experts=1,
             expert_shape=Index(1024, 256),
         ](1, [200], [0], ctx)
 
         test[
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
             num_experts=1,
             expert_shape=Index(512, 1024),
         ](1, [256], [0], ctx)
 
         # simple expert routing
         test[
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
             num_experts=4,
             expert_shape=Index(256, 64),
         ](1, [128], [2], ctx)
 
         # simple aligned group routing
         test[
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
             num_experts=4,
             expert_shape=Index(256, 64),
         ](3, [32, 32 * 3, 32 * 7], [2, 0, 1], ctx)
 
         # simple unaligned group routing
         test[
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
             num_experts=4,
             expert_shape=Index(256, 64),
         ](2, [10, 60], [2, 0], ctx)
 
         test[
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
             num_experts=4,
             expert_shape=Index(2880, 512),
         ](2, [10, 60], [2, 0], ctx)
 
         test[
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
             num_experts=4,
             expert_shape=Index(5760, 512),
         ](2, [10, 60], [2, 0], ctx)
 
         # Multiple matmuls selecting part of experts
         test[
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
             num_experts=4,
             expert_shape=Index(768, 1024),
         ](2, [128, 256], [0, 2], ctx)
@@ -326,8 +324,8 @@ def main() raises:
         # Multiple matmuls selecting part of experts
         # num_tokens not multiple of tile size
         test[
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
             num_experts=6,
             expert_shape=Index(1280, 1024),
         ](4, [27, 1500, 300, 150], [0, 3, 2, 4], ctx)
@@ -336,30 +334,30 @@ def main() raises:
         # num_tokens not multiple of tile size
         # expert N dimension not multiple of 256
         test[
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
             num_experts=6,
             expert_shape=Index(192, 1024),
         ](4, [27, 1500, 300, 150], [0, 3, 2, 4], ctx)
 
         test[
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
             num_experts=6,
             expert_shape=Index(1280, 16),
         ](4, [27, 1500, 300, 150], [0, 3, 2, 4], ctx)
 
         test[
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
             num_experts=6,
             expert_shape=Index(16, 1024),
         ](4, [27, 1500, 300, 150], [0, 3, 2, 4], ctx)
 
         # Multiple matmuls selecting part of experts with epilogue
         test[
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
             num_experts=4,
             expert_shape=Index(768, 1024),
         ](2, [128, 256], [0, 2], ctx)

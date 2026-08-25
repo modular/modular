@@ -144,17 +144,17 @@ def _blackwell_matmul_tma_umma_warp_specialized[
             MMA_M == 128 or MMA_M == 64
         ), "Only support MMA_M == 128 or 64 when cta_group == 1"
 
-    comptime if c_type == DType.float32:
+    comptime if c_type == .float32:
         comptime assert (
-            a_type == b_type == DType.float32
+            a_type == b_type == .float32
         ), "Only support float32 input types is tested for float32 output dtype"
         comptime assert (
             register_based_epilogue
         ), "only register-based epilogue is supported for float32 output dtype"
 
     # requirements for float8_e4m3fn output dtype
-    comptime if c_type == DType.float8_e4m3fn:
-        comptime assert a_type == b_type == DType.bfloat16, (
+    comptime if c_type == .float8_e4m3fn:
+        comptime assert a_type == b_type == .bfloat16, (
             "Only support bfloat16 input types is tested for float8_e4m3fn"
             " output dtype"
         )
@@ -275,8 +275,7 @@ def _blackwell_matmul_tma_umma_warp_specialized[
     # fmt: on
 
     comptime assert (not config.use_tma_epilogue_load) or (
-        c_type == DType.bfloat16
-        or (config.epilogue_is_1d and c_type == DType.float32)
+        c_type == .bfloat16 or (config.epilogue_is_1d and c_type == .float32)
     ), "TMA epilogue load is only supported for bfloat16 (2D) or float32 (1D)"
 
     # Epilogue tensor TMA descriptor (2D only; 1D uses cp.async.bulk).
@@ -683,9 +682,7 @@ def _blackwell_matmul_tma_umma_warp_specialized_split_k[
         Index(cluster_shape[0], cluster_shape[1]),
     )
 
-    var locks_buffer = ctx.enqueue_create_buffer[DType.uint8](
-        lock_buffer_size_bytes
-    )
+    var locks_buffer = ctx.enqueue_create_buffer[.uint8](lock_buffer_size_bytes)
     var reduction_workspace = ctx.enqueue_create_buffer[config.accum_type](
         num_output_tiles * BM * MMA_N
     )

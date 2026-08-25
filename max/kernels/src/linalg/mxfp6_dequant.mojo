@@ -91,11 +91,11 @@ def _dequant_mxfp6_kernel[
                     continue
 
                 var packed_byte_col = (global_col_idx * 6) // 8
-                var fragment = SIMD[DType.uint8, 32](0)
+                var fragment = SIMD[.uint8, 32](0)
 
                 comptime for chunk in range(BYTES_PER_THREAD // 8):
                     fragment = fragment.insert[offset=chunk * 8](
-                        rebind[SIMD[DType.uint8, 8]](
+                        rebind[SIMD[.uint8, 8]](
                             input.load[8](
                                 Coord(
                                     global_row_idx, packed_byte_col + chunk * 8
@@ -112,7 +112,7 @@ def _dequant_mxfp6_kernel[
                 var scale_e8m0 = rebind[Scalar[scales_dtype]](
                     scales.load(Coord(global_row_idx, scale_col))
                 )
-                var scale_f32 = scale_e8m0.cast[DType.float32]()
+                var scale_f32 = scale_e8m0.cast[.float32]()
 
                 output.store[width=ELEMENTS_PER_THREAD](
                     Coord(global_row_idx, global_col_idx),
@@ -159,9 +159,9 @@ def dequant_mxfp6[
         DType.bfloat16,
     ), "output must be float8_e4m3fn or bfloat16"
     comptime assert (
-        scales_dtype == DType.float8_e8m0fnu
+        scales_dtype == .float8_e8m0fnu
     ), "scales must be float8_e8m0fnu"
-    comptime assert in_dtype == DType.uint8, "input must be uint8 (packed FP6)"
+    comptime assert in_dtype == .uint8, "input must be uint8 (packed FP6)"
     comptime assert (
         SF_VECTOR_SIZE == MXFP6_SF_VECTOR_SIZE
     ), "SF_VECTOR_SIZE must be 32 for MXFP6"

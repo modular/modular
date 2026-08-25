@@ -156,11 +156,11 @@ def _run_ragged_at[
         lookup_table_layout
     ].row_major(cache_lengths_shape)
 
-    var input_row_offsets = ManagedLayoutTensor[
-        DType.uint32, row_offsets_layout
-    ](row_offsets_runtime_layout, ctx)
+    var input_row_offsets = ManagedLayoutTensor[.uint32, row_offsets_layout](
+        row_offsets_runtime_layout, ctx
+    )
     var cache_lengths_managed = ManagedLayoutTensor[
-        DType.uint32, cache_lengths_layout
+        .uint32, cache_lengths_layout
     ](cache_lengths_runtime_layout, ctx)
     var q_ragged = ManagedLayoutTensor[dtype, q_ragged_layout](
         q_ragged_runtime_layout, ctx
@@ -227,10 +227,10 @@ def _run_ragged_at[
     var kv_block_paged = ManagedLayoutTensor[dtype, kv_block_6d_layout](
         kv_block_paged_runtime_layout, ctx
     )
-    var lookup_table = ManagedLayoutTensor[DType.uint32, lookup_table_layout](
+    var lookup_table = ManagedLayoutTensor[.uint32, lookup_table_layout](
         lookup_table_runtime_layout, ctx
     )
-    var paged_lut = ManagedLayoutTensor[DType.uint32, paged_lut_layout](
+    var paged_lut = ManagedLayoutTensor[.uint32, paged_lut_layout](
         paged_lut_runtime_layout, ctx
     )
 
@@ -376,7 +376,7 @@ def _run_ragged_at[
     # `kv_cache_ragged.mojo:3492-3501`).
     var input_row_offsets_dt = input_row_offsets.device_tensor()
     var kv_input_row_offsets_view = LayoutTensor[
-        DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
+        .uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
     ](
         input_row_offsets_dt.ptr,
         RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(

@@ -49,10 +49,12 @@ modular_py_test(
         "//max/python/max/pipelines/weights",
         "//max/python/max/serve/parser",
         requirement("click"),
+        requirement("cyclopts"),
         requirement("numpy"),
         requirement("pydantic"),
         requirement("pytest-mock"),
         requirement("pyyaml"),
+        requirement("transformers"),
     ],
 )
 

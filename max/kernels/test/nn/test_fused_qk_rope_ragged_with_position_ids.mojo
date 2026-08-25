@@ -48,9 +48,7 @@ def test_fused_qk_rope[
 ](ctx: DeviceContext) raises -> None:
     """Verifies fused_qk_rope_ragged with explicit position_ids against golden values computed with PyTorch.
     """
-    comptime assert (
-        dtype == DType.float32
-    ), "goldens only for float32, currently"
+    comptime assert dtype == .float32, "goldens only for float32, currently"
 
     # Set up test hyperparameters.
     comptime batch_size = 2
@@ -70,7 +68,7 @@ def test_fused_qk_rope[
         return max_item
 
     comptime assert max_seq_len > (
-        seq_len + Int(_max[DType.uint32, items=start_positions]())
+        seq_len + Int(_max[.uint32, items=start_positions]())
     ), "KV cache size smaller than sum of sequence length and start pos"
     comptime num_heads = 2
     comptime dim = 16
@@ -121,17 +119,13 @@ def test_fused_qk_rope[
     # Create the actual KV cache type (uses LayoutTensor).
     var kv_collection = ContinuousBatchingKVCacheCollection[dtype, kv_params](
         blocks=kv_cache_block,
-        cache_lengths=LayoutTensor[
-            mut=False, DType.uint32, Layout(UNKNOWN_VALUE)
-        ](
+        cache_lengths=LayoutTensor[mut=False, .uint32, Layout(UNKNOWN_VALUE)](
             start_positions_dyn.unsafe_ptr(),
             RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(
                 IndexList[1](len(start_positions_dyn)),
             ),
         ),
-        lookup_table=LayoutTensor[
-            mut=False, DType.uint32, Layout(UNKNOWN_VALUE)
-        ](
+        lookup_table=LayoutTensor[mut=False, .uint32, Layout(UNKNOWN_VALUE)](
             lookup_table.unsafe_ptr(),
             RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(
                 IndexList[1](len(lookup_table))
@@ -166,21 +160,19 @@ def test_fused_qk_rope[
 
     # Create position_ids tensor for testing explicit position encoding using TileTensor.
     # The function expects TileTensor with Scalar layout and ImmutAnyOrigin.
-    var position_ids_input_buffer = position_ids_input[DType.uint32]()
+    var position_ids_input_buffer = position_ids_input[.uint32]()
     var position_ids_static = TileTensor(
         position_ids_input_buffer, position_ids_layout
     )
     var position_ids = TileTensor[
-        DType.uint32,
-        type_of(position_ids_static).LayoutType,
-        ImmutAnyOrigin,
+        .uint32, type_of(position_ids_static).LayoutType, ImmutAnyOrigin
     ](
         position_ids_static._storage.as_imm().unsafe_origin_cast[
             ImmutAnyOrigin
         ](),
         position_ids_static.layout,
     ).make_dynamic[
-        DType.int64
+        .int64
     ]()
 
     # Create and init rotary matrix (frequencies as cos(x) + i*sin(x)).
@@ -310,6 +302,6 @@ def test_fused_qk_rope[
 def main() raises -> None:
     with DeviceContext(api="cpu") as ctx:
         # Full head RoPE
-        test_fused_qk_rope[8, DType.float32](ctx)
+        test_fused_qk_rope[8, .float32](ctx)
         # Partial RoPE (last 4 elements of each head)
-        test_fused_qk_rope[4, DType.float32](ctx)
+        test_fused_qk_rope[4, .float32](ctx)

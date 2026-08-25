@@ -58,8 +58,8 @@ def _select_test_kernel[
     ScoresLT: TensorLayout,
     OutLT: TensorLayout,
 ](
-    scores: TileTensor[DType.float32, ScoresLT, MutAnyOrigin],
-    out_idxs: TileTensor[DType.int32, OutLT, MutAnyOrigin],
+    scores: TileTensor[.float32, ScoresLT, MutAnyOrigin],
+    out_idxs: TileTensor[.int32, OutLT, MutAnyOrigin],
     num_blocks_dev: Int32,
     k_dev: Int32,
 ):
@@ -69,19 +69,17 @@ def _select_test_kernel[
     var row = block_idx.x
     var s_lt = scores.to_layout_tensor()
     var o_lt = out_idxs.to_layout_tensor()
-    var scores_row = rebind[UnsafePointer[Scalar[DType.float32], MutAnyOrigin]](
+    var scores_row = rebind[UnsafePointer[Float32, MutAnyOrigin]](
         s_lt.ptr_at_offset(Index(row, 0))
     )
-    var out_row = rebind[UnsafePointer[Scalar[DType.int32], MutAnyOrigin]](
+    var out_row = rebind[UnsafePointer[Int32, MutAnyOrigin]](
         o_lt.ptr_at_offset(Index(row, 0))
     )
-    block_select_topk[DType.float32, DType.int32](
-        scores_row, num_blocks, k, out_row
-    )
+    block_select_topk[.float32, DType.int32](scores_row, num_blocks, k, out_row)
 
 
 def _host_topk_set(
-    scores: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
+    scores: UnsafePointer[Float32, MutAnyOrigin],
     num_blocks: Int,
     k: Int,
 ) -> Set[Int]:
@@ -104,7 +102,7 @@ def _host_topk_set(
 
 
 def _fill_row(
-    row_ptr: UnsafePointer[mut=True, Scalar[DType.float32], _],
+    row_ptr: UnsafePointer[mut=True, Float32, _],
     num_blocks: Int,
     k: Int,
     mode: Int,
@@ -121,10 +119,10 @@ def _fill_row(
             row_ptr[j] = Float32(1000.0 + Float32(k - 1 - j))
     elif mode == MODE_ALL_DEAD:
         for j in range(num_blocks):
-            row_ptr[j] = min_or_neg_inf[DType.float32]()
+            row_ptr[j] = min_or_neg_inf[.float32]()
     elif mode == MODE_ALL_NAN:
         for j in range(num_blocks):
-            row_ptr[j] = nan[DType.float32]()
+            row_ptr[j] = nan[.float32]()
 
 
 def _run_case(
@@ -150,8 +148,8 @@ def _run_case(
     var n_scores = num_rows * num_blocks
     var n_out = num_rows * k
 
-    var scores_host = ctx.enqueue_create_host_buffer[DType.float32](n_scores)
-    var out_host = ctx.enqueue_create_host_buffer[DType.int32](n_out)
+    var scores_host = ctx.enqueue_create_host_buffer[.float32](n_scores)
+    var out_host = ctx.enqueue_create_host_buffer[.int32](n_out)
 
     if mode == MODE_RANDOM:
         rand(scores_host.as_span())
@@ -170,17 +168,17 @@ def _run_case(
     # write to scores[-1] for row 0 (the pre-guard OOB) would land on this
     # canary, so the readback below detects it.
     var canary = Float32(13371337.0)
-    var scores_dev = ctx.enqueue_create_buffer[DType.float32](n_scores + 1)
-    var stage = ctx.enqueue_create_host_buffer[DType.float32](n_scores + 1)
+    var scores_dev = ctx.enqueue_create_buffer[.float32](n_scores + 1)
+    var stage = ctx.enqueue_create_host_buffer[.float32](n_scores + 1)
     stage[0] = canary
     for j in range(n_scores):
         stage[1 + j] = scores_host[j]
     ctx.enqueue_copy(dst_buf=scores_dev, src_buf=stage)
 
-    var out_dev = ctx.enqueue_create_buffer[DType.int32](n_out)
+    var out_dev = ctx.enqueue_create_buffer[.int32](n_out)
     out_dev.enqueue_fill(Int32(-2))  # poison: must be overwritten
 
-    var data_buf = DeviceBuffer[DType.float32](
+    var data_buf = DeviceBuffer[.float32](
         ctx, scores_dev.unsafe_ptr() + 1, n_scores, owning=False
     )
     var scores_t = TileTensor(data_buf, row_major((num_rows, num_blocks)))
@@ -201,12 +199,12 @@ def _run_case(
 
     # Read back the buffer (with its leading canary) and confirm the guard
     # element was not overwritten -- i.e. no `scores[-1]` write occurred.
-    var full_host = ctx.enqueue_create_host_buffer[DType.float32](n_scores + 1)
+    var full_host = ctx.enqueue_create_host_buffer[.float32](n_scores + 1)
     ctx.enqueue_copy(dst_buf=full_host, src_buf=scores_dev)
     ctx.synchronize()
     assert_equal(full_host[0], canary, "OOB write to scores[-1] before row 0")
 
-    var host_ptr = rebind[UnsafePointer[Scalar[DType.float32], MutAnyOrigin]](
+    var host_ptr = rebind[UnsafePointer[Float32, MutAnyOrigin]](
         scores_host.unsafe_ptr()
     )
     var no_winner = mode == MODE_ALL_DEAD or mode == MODE_ALL_NAN
@@ -281,7 +279,7 @@ def _launch_select(
     num_rows: Int,
     num_blocks: Int,
     k: Int,
-    scores_host: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
+    scores_host: UnsafePointer[Float32, MutAnyOrigin],
     block_dim: Int,
     ctx: DeviceContext,
 ) raises -> List[Int32]:
@@ -294,13 +292,13 @@ def _launch_select(
     var n_scores = num_rows * num_blocks
     var n_out = num_rows * k
 
-    var stage = ctx.enqueue_create_host_buffer[DType.float32](n_scores)
+    var stage = ctx.enqueue_create_host_buffer[.float32](n_scores)
     for j in range(n_scores):
         stage[j] = scores_host[j]
-    var scores_dev = ctx.enqueue_create_buffer[DType.float32](n_scores)
+    var scores_dev = ctx.enqueue_create_buffer[.float32](n_scores)
     ctx.enqueue_copy(dst_buf=scores_dev, src_buf=stage)
 
-    var out_dev = ctx.enqueue_create_buffer[DType.int32](n_out)
+    var out_dev = ctx.enqueue_create_buffer[.int32](n_out)
     out_dev.enqueue_fill(Int32(-2))  # poison: must be overwritten
 
     var scores_t = TileTensor(scores_dev, row_major((num_rows, num_blocks)))
@@ -317,7 +315,7 @@ def _launch_select(
         block_dim=block_dim,
     )
 
-    var out_host = ctx.enqueue_create_host_buffer[DType.int32](n_out)
+    var out_host = ctx.enqueue_create_host_buffer[.int32](n_out)
     ctx.enqueue_copy(dst_buf=out_host, src_buf=out_dev)
     ctx.synchronize()
     var out = List[Int32](capacity=n_out)
@@ -358,7 +356,7 @@ def _run_block_dim_invariance(
         mode,
     )
     var n_scores = num_rows * num_blocks
-    var scores_host = ctx.enqueue_create_host_buffer[DType.float32](n_scores)
+    var scores_host = ctx.enqueue_create_host_buffer[.float32](n_scores)
     if mode == MODE_RANDOM:
         rand(scores_host.as_span())
     else:
@@ -367,7 +365,7 @@ def _run_block_dim_invariance(
                 scores_host.unsafe_ptr() + r * num_blocks, num_blocks, k, mode
             )
     ctx.synchronize()
-    var host_ptr = rebind[UnsafePointer[Scalar[DType.float32], MutAnyOrigin]](
+    var host_ptr = rebind[UnsafePointer[Float32, MutAnyOrigin]](
         scores_host.unsafe_ptr()
     )
 

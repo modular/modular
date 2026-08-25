@@ -49,15 +49,15 @@ def test(x: SomeStruct[1, 2, 3]):
     # Make sure we handle call binding correctly without requiring:
     # foo[d=1, ...] or foo[_, _, _, d=1]
 
-    # CHECK: lit.call tail @parameter_binding::@"foo[::SIMD[::DType(int), ::SIMDLength(1)],::SIMD[::DType(int), ::SIMDLength(1)],::SIMD[::DType(int), ::SIMDLength(1)],::SIMD[::DType(int), ::SIMDLength(1)]]
+    # CHECK: lit.call tail @parameter_binding::@"foo[::SIMD[DType.int, 1],::SIMD[DType.int, 1],::SIMD[DType.int, 1],::SIMD[DType.int, 1]]
     foo[d=1](x)
 
     # Although they are all valid syntax ofc.
 
-    # CHECK: lit.call tail @parameter_binding::@"foo[::SIMD[::DType(int), ::SIMDLength(1)],::SIMD[::DType(int), ::SIMDLength(1)],::SIMD[::DType(int), ::SIMDLength(1)],::SIMD[::DType(int), ::SIMDLength(1)]]
+    # CHECK: lit.call tail @parameter_binding::@"foo[::SIMD[DType.int, 1],::SIMD[DType.int, 1],::SIMD[DType.int, 1],::SIMD[DType.int, 1]]
     foo[d=1, ...](x)
 
-    # CHECK: lit.call tail @parameter_binding::@"foo[::SIMD[::DType(int), ::SIMDLength(1)],::SIMD[::DType(int), ::SIMDLength(1)],::SIMD[::DType(int), ::SIMDLength(1)],::SIMD[::DType(int), ::SIMDLength(1)]]
+    # CHECK: lit.call tail @parameter_binding::@"foo[::SIMD[DType.int, 1],::SIMD[DType.int, 1],::SIMD[DType.int, 1],::SIMD[DType.int, 1]]
     foo[_, _, _, d=1](x)
 
     # CHECK: lit.call @parameter_binding::@SomeStruct::@"foo({{.*}})"{{.*}}<:!Int {:scalar<index> 1}, :!Int {:scalar<index> 4}, :!Int {:scalar<index> 2}>

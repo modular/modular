@@ -35,13 +35,11 @@ from std.utils.index import Index
 def reference_attention_bshd[
     dtype: DType
 ](
-    q_nd: LayoutTensor[dtype, address_space=AddressSpace.GENERIC, ...],
-    k_nd: LayoutTensor[dtype, address_space=AddressSpace.GENERIC, ...],
-    v_nd: LayoutTensor[dtype, address_space=AddressSpace.GENERIC, ...],
-    mask_nd: LayoutTensor[dtype, address_space=AddressSpace.GENERIC, ...],
-    output_nd: LayoutTensor[
-        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
-    ],
+    q_nd: LayoutTensor[dtype, address_space=.GENERIC, ...],
+    k_nd: LayoutTensor[dtype, address_space=.GENERIC, ...],
+    v_nd: LayoutTensor[dtype, address_space=.GENERIC, ...],
+    mask_nd: LayoutTensor[dtype, address_space=.GENERIC, ...],
+    output_nd: LayoutTensor[mut=True, dtype, address_space=.GENERIC, ...],
     scale: Float32,
 ) raises:
     comptime assert dtype.is_floating_point(), "dtype must be floating point"
@@ -946,6 +944,6 @@ def test_flash_attention_with_sinks[dtype: DType]() raises:
 
 
 def main() raises:
-    test_flash_attention[DType.float32]()
-    test_flash_attention_split_kv[DType.float32]()
-    test_flash_attention_with_sinks[DType.float32]()
+    test_flash_attention[.float32]()
+    test_flash_attention_split_kv[.float32]()
+    test_flash_attention_with_sinks[.float32]()

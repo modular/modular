@@ -567,9 +567,7 @@ struct Set[
         _ = rebind[
             Pointer[
                 Dict[
-                    downcast[Self.T, KeyElement & Deinitable],
-                    NoneType,
-                    Self.H,
+                    downcast[Self.T, KeyElement & Deinitable], NoneType, Self.H
                 ],
                 origin_of(self._data),
             ]

@@ -442,13 +442,16 @@ ParseResult KGEN::parseTypeParamValues(AsmParser &p,
 
 void KGEN::printTraitSymbol(AsmPrinter &p, TraitSymbolAttr trait) {
   p.printAttribute(trait.getSymbol());
+  printParameterValues(p, trait.getParamValues());
 }
 
 ParseResult KGEN::parseTraitSymbol(AsmParser &p, TraitSymbolAttr &trait) {
   SymbolRefAttr symbol;
-  if (p.parseAttribute(symbol))
+  SmallVector<TypedAttr> paramValues;
+  if (p.parseAttribute(symbol) || parseParameterValues(p, paramValues))
     return failure();
-  trait = TraitSymbolAttr::get(symbol);
+
+  trait = TraitSymbolAttr::get(symbol, paramValues);
   return success();
 }
 
@@ -1913,7 +1916,7 @@ ParseResult KGEN::parseArgConvention(AsmParser &p, ArgConvention &convention) {
   StringRef effectStr;
   llvm::SMLoc loc = p.getCurrentLocation();
   // Parse an optional input convention specifier.
-  convention = ArgConvention::ReadReg;
+  convention = ArgConvention::ImmReg;
   if (succeeded(p.parseOptionalKeyword(&effectStr))) {
     if (std::optional<ArgConvention> conv = symbolizeArgConvention(effectStr)) {
       convention = *conv;
@@ -1925,7 +1928,7 @@ ParseResult KGEN::parseArgConvention(AsmParser &p, ArgConvention &convention) {
 }
 
 void KGEN::printArgConvention(AsmPrinter &p, ArgConvention convention) {
-  if (convention != ArgConvention::ReadReg)
+  if (convention != ArgConvention::ImmReg)
     p << ' ' << stringifyArgConvention(convention);
 }
 

@@ -117,6 +117,8 @@ class HYV3Config(Llama3Config):
         devices: list[DeviceRef],
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
+        *,
+        allow_kv_head_replication: bool = False,
     ) -> KVCacheParams:
         """Construct KV cache params using the explicit head_dim.
 
@@ -139,6 +141,7 @@ class HYV3Config(Llama3Config):
         )
         data_parallel_degree = max(1, int(configured_dp))
         return kv_cache_config.to_params(
+            allow_kv_head_replication=allow_kv_head_replication,
             dtype=cache_dtype,
             n_kv_heads=huggingface_config.num_key_value_heads,
             head_dim=huggingface_config.head_dim,
@@ -168,10 +171,14 @@ class HYV3Config(Llama3Config):
         cls,
         pipeline_config: PipelineConfig,
         model_config: MAXModelConfig | None = None,
+        *,
+        max_seq_len: int,
     ) -> Self:
         model_config = model_config or pipeline_config.model
         return cls.initialize_from_config(
-            pipeline_config, model_config.huggingface_config
+            pipeline_config,
+            model_config.huggingface_config,
+            max_seq_len=max_seq_len,
         )
 
     @override
@@ -181,6 +188,8 @@ class HYV3Config(Llama3Config):
         pipeline_config: PipelineConfig,
         huggingface_config: AutoConfig,
         model_config: MAXModelConfig | None = None,
+        *,
+        max_seq_len: int,
     ) -> Self:
         # Hy3 stores RoPE under ``rope_parameters`` (a flat dict).
         # Llama3Config reads ``rope_theta`` / ``rope_scaling`` directly,
@@ -196,7 +205,10 @@ class HYV3Config(Llama3Config):
         )
         try:
             base_config = Llama3Config.initialize_from_config(
-                pipeline_config, huggingface_config, model_config
+                pipeline_config,
+                huggingface_config,
+                model_config,
+                max_seq_len=max_seq_len,
             )
         finally:
             huggingface_config.rope_scaling = _orig_rope_scaling

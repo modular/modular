@@ -16,7 +16,6 @@
 from __future__ import annotations
 
 import logging
-import os
 from dataclasses import dataclass
 from io import StringIO
 from typing import TYPE_CHECKING, cast
@@ -39,6 +38,8 @@ from .config.model_config import MAXModelConfig
 from .interfaces import (
     ArchConfig,
     ArchConfigWithKVCache,
+    ArchConfigWithVisionCache,
+    arch_has_vision_tower,
 )
 from .vision_encoder_cache import (
     DEFAULT_VISION_CACHE_BLOCK_TOKENS,
@@ -92,17 +93,20 @@ class MemoryPlan:
     :meth:`MemoryEstimator.plan`.
     """
 
-    max_batch_size: int
-    """The maximum number of requests scheduled together in one batch."""
+    planned_max_batch_size: int
+    """The maximum number of requests scheduled together in one batch: the
+    user's ``runtime.max_batch_size``, or the value planning inferred when
+    the user left it unset."""
 
     footprint: int
     """The estimated total device memory the pipeline uses, in bytes."""
 
-    max_length: int | None
-    """The effective maximum sequence length: the user's setting or the
-    architecture default, clamped to what the KV cache and any draft model
-    can hold. ``None`` for pipelines with no main language model, such as
-    diffusion pipelines."""
+    planned_max_length: int | None
+    """The resolved maximum sequence length after memory planning lowered
+    it to fit device memory: the construction-resolved
+    ``config.model.max_length``, clamped to what the KV cache and any
+    draft model can hold. ``None`` for pipelines with no main language
+    model, such as diffusion pipelines."""
 
     available_cache_memory: int | None = None
     """The device memory committed to the KV cache, in bytes. ``None`` when
@@ -115,10 +119,10 @@ class MemoryPlan:
     ``None`` for plans that never load devices, such as diffusion
     pipelines."""
 
-    max_batch_total_tokens: int | None = None
+    planned_max_batch_total_tokens: int | None = None
     """Cap on the total context tokens resident across a batch: the user's
-    setting, or ``max_length`` for architectures that require a cap.
-    ``None`` means no cap is configured."""
+    ``runtime.max_batch_total_tokens``, or ``planned_max_length`` for
+    architectures that require a cap. ``None`` means no cap is configured."""
 
     vision_cache_plan: VisionCachePlan | None = None
     """Block-mode vision cache reservation; ``None`` means entry-count mode."""
@@ -136,89 +140,6 @@ class MemoryPlan:
         return self.device_specs
 
 
-# The preprocessed-media caches hold host tensors in the API server process, so
-# unlike everything else this module sizes they never touch the device and are
-# invisible to the accounting above. They still have to fit somewhere: the image
-# and video budgets default to several GiB each, which is a fine ceiling on a
-# serving host and enough to OOM a small container.
-_PREPROCESS_CACHE_MAX_FRACTION_OF_HOST_MEMORY = 0.25
-
-
-def _cgroup_memory_limit_paths() -> list[str]:
-    """Returns candidate memory-limit files for *this process's* cgroup.
-
-    In a container the cgroup mount is namespaced, so the well-known paths are
-    already this process's own. On a host they are the *root* cgroup's, which
-    says nothing about a unit-level limit -- a systemd service with
-    ``MemoryMax=`` sits several levels down. Reading only the root there would
-    report no limit and overcommit by exactly the amount the unit was capped to.
-
-    ``/proc/self/cgroup`` names this process's cgroup relative to the mount, so
-    it resolves both cases.
-    """
-    paths = [
-        "/sys/fs/cgroup/memory.max",  # cgroup v2, namespaced
-        "/sys/fs/cgroup/memory/memory.limit_in_bytes",  # cgroup v1, namespaced
-    ]
-    try:
-        with open("/proc/self/cgroup") as cgroup_file:
-            entries = cgroup_file.readlines()
-    except OSError:
-        return paths
-
-    for entry in entries:
-        fields = entry.strip().split(":", 2)
-        if len(fields) != 3:
-            continue
-        hierarchy, controllers, cgroup_path = fields
-        relative = cgroup_path.lstrip("/")
-        if not relative:
-            # Already the root cgroup; the well-known paths cover it.
-            continue
-        if hierarchy == "0":  # the v2 unified hierarchy
-            paths.append(f"/sys/fs/cgroup/{relative}/memory.max")
-        elif "memory" in controllers.split(","):
-            paths.append(
-                f"/sys/fs/cgroup/memory/{relative}/memory.limit_in_bytes"
-            )
-    return paths
-
-
-def _host_memory_limit() -> int | None:
-    """Returns the host memory this process may use, or ``None`` if unknown.
-
-    Prefers a cgroup limit over physical RAM. A container is typically granted a
-    fraction of its host, and it is that grant the OOM killer enforces, so
-    sizing a host cache off ``SC_PHYS_PAGES`` alone would overcommit by exactly
-    the ratio between the two. Takes the smallest limit found, since a nested
-    cgroup is bounded by every ancestor as well as by itself.
-    """
-    limits: list[int] = []
-
-    for path in _cgroup_memory_limit_paths():
-        try:
-            with open(path) as limit_file:
-                raw = limit_file.read().strip()
-        except OSError:
-            continue
-        try:
-            limit = int(raw)
-        except ValueError:
-            # cgroup v2 writes the literal "max" when unlimited.
-            continue
-        # cgroup v1 has no such keyword and reports a near-2**63 sentinel.
-        if 0 < limit < (1 << 62):
-            limits.append(limit)
-
-    try:
-        limits.append(os.sysconf("SC_PHYS_PAGES") * os.sysconf("SC_PAGE_SIZE"))
-    except (AttributeError, OSError, ValueError):
-        # Not POSIX, or the platform does not publish these names.
-        pass
-
-    return min(limits) if limits else None
-
-
 class MemoryEstimator:
     """Plans device memory for a pipeline and estimates what it will use."""
 
@@ -233,19 +154,20 @@ class MemoryEstimator:
 
         Called by the registry's ``retrieve_factory`` after the config is
         constructed. Gathers the sizes and the draft-model bound that
-        :meth:`plan_from_sizes` needs, runs it, and publishes the
-        resulting values onto the config for readers that have not yet
-        migrated to the plan.
+        :meth:`plan_from_sizes` needs and runs it. Nothing is written back
+        to ``pipeline_config``, which keeps carrying the
+        construction-resolved values unchanged.
         """
         # Multi-component pipelines (diffusion models) have no "main" model entry
         # — they store per-component configs (transformer, vae, text_encoder, etc.)
         # and don't use a KV cache, so skip memory estimation entirely.
         if "main" not in pipeline_config.models:
             return MemoryPlan(
-                max_batch_size=pipeline_config.runtime.max_batch_size or 1,
+                planned_max_batch_size=pipeline_config.runtime.max_batch_size
+                or 1,
                 footprint=0,
-                max_length=None,
-                max_batch_total_tokens=pipeline_config.runtime.max_batch_total_tokens,
+                planned_max_length=None,
+                planned_max_batch_total_tokens=pipeline_config.runtime.max_batch_total_tokens,
             )
 
         model_config = pipeline_config.model
@@ -256,8 +178,18 @@ class MemoryEstimator:
             ", ".join(f"{d.device_type}[{d.id}]" for d in effective_specs),
         )
         devices = load_devices(effective_specs)
+        # No plan exists yet, so this config gets the resolved length; the
+        # pipeline model's config later gets the clamped one.
+        if model_config.max_length is None:
+            raise ValueError(
+                "max_length is unresolved. Construct the config through "
+                "PipelineConfig.from_args, which runs the architecture's "
+                "sequence-length policy, or set max_length explicitly."
+            )
         arch_config = arch.config.initialize(
-            pipeline_config, model_config=model_config
+            pipeline_config,
+            model_config=model_config,
+            max_seq_len=model_config.max_length,
         )
 
         max_batch_size = pipeline_config.runtime.max_batch_size
@@ -285,15 +217,18 @@ class MemoryEstimator:
                 arch_config
             )
 
-        # Under speculative decoding the draft shares the target's KV cache, so
-        # its own limit bounds the pipeline's. Resolved here because the
-        # estimator never sees the draft architecture.
+        # Under speculative decoding the draft shares the target's KV cache,
+        # so its own limit bounds the pipeline's.
         draft_max_seq_len = None
         if draft_arch is not None and pipeline_config.draft_model is not None:
-            draft_arch_config = draft_arch.config.initialize(
-                pipeline_config, model_config=pipeline_config.draft_model
-            )
-            draft_max_seq_len = draft_arch_config.get_max_seq_len()
+            draft_max_seq_len = pipeline_config.draft_model.max_length
+            if draft_max_seq_len is None:
+                raise ValueError(
+                    "The draft model's max_length is unresolved. Construct "
+                    "the config through PipelineConfig.from_args, which runs "
+                    "the draft architecture's sequence-length policy, or set "
+                    "max_length on the draft model config explicitly."
+                )
 
         plan = cls.plan_from_sizes(
             pipeline_config,
@@ -306,14 +241,6 @@ class MemoryEstimator:
             arch=arch,
             max_batch_size=max_batch_size,
             draft_max_seq_len=draft_max_seq_len,
-        )
-
-        # The only place planning output is written onto the config. Readers still
-        # consume both fields from the config; follow-up changes repoint them at
-        # the plan, after which this publish step goes away.
-        model_config.max_length = plan.max_length
-        pipeline_config.runtime.max_batch_total_tokens = (
-            plan.max_batch_total_tokens
         )
 
         # TODO(MXF-517): Fold this into a consolidated startup logger that reports
@@ -483,6 +410,16 @@ class MemoryEstimator:
         """
         device_specs = tuple(model_config.device_specs)
 
+        # Construction already applied the architecture's policy; the clamps
+        # below only lower it.
+        resolved_max_seq_len = model_config.max_length
+        if resolved_max_seq_len is None:
+            raise ValueError(
+                "max_length is unresolved. Construct the config through "
+                "PipelineConfig.from_args, which runs the architecture's "
+                "sequence-length policy, or set max_length explicitly."
+            )
+
         # In virtual device mode (cross-compilation), skip memory estimation
         # since we're only compiling and not actually running the model.
         # Use model defaults for max_batch_size and max_length.
@@ -493,19 +430,19 @@ class MemoryEstimator:
             )
             max_batch_size = max_batch_size or 1
             max_length = cls._bounded_by_draft(
-                model_config.max_length or arch_config.get_max_seq_len(),
+                resolved_max_seq_len,
                 draft_max_seq_len,
             )
             # Report a large cache budget since we're only cross-compiling, not
             # allocating memory. 1TB works for any model.
             virtual_cache_memory = 1024 * 1024 * 1024 * 1024  # 1TB
             return MemoryPlan(
-                max_batch_size=max_batch_size,
+                planned_max_batch_size=max_batch_size,
                 footprint=0,
-                max_length=max_length,
+                planned_max_length=max_length,
                 available_cache_memory=virtual_cache_memory,
                 device_specs=device_specs,
-                max_batch_total_tokens=cls._resolve_max_batch_total_tokens(
+                planned_max_batch_total_tokens=cls._resolve_max_batch_total_tokens(
                     pipeline_config, arch, max_length
                 ),
             )
@@ -522,15 +459,15 @@ class MemoryEstimator:
             if isinstance(arch_config, ArchConfigWithKVCache):
                 raise
             max_length = cls._bounded_by_draft(
-                model_config.max_length or arch_config.get_max_seq_len(),
+                resolved_max_seq_len,
                 draft_max_seq_len,
             )
             return MemoryPlan(
-                max_batch_size=max_batch_size or 1,
+                planned_max_batch_size=max_batch_size or 1,
                 footprint=0,
-                max_length=max_length,
+                planned_max_length=max_length,
                 device_specs=device_specs,
-                max_batch_total_tokens=cls._resolve_max_batch_total_tokens(
+                planned_max_batch_total_tokens=cls._resolve_max_batch_total_tokens(
                     pipeline_config, arch, max_length
                 ),
             )
@@ -582,28 +519,18 @@ class MemoryEstimator:
                 model_config,
                 available_kv_cache_memory,
                 devices,
-                arch_config,
                 arch=arch,
             )
         )
         available_kv_cache_memory -= vision_cache_bytes
         total_size += vision_cache_bytes
 
-        # Host memory, so it neither comes out of the KV pool nor counts toward
-        # the device footprint -- but it is still worth bounding here, where the
-        # rest of the model's memory is decided.
-        cls._clamp_preprocess_cache_budgets(
-            pipeline_config, model_config, arch_config, arch
-        )
-
-        user_provided_max_length = model_config.max_length is not None
+        # The field is set for every config after construction, so intent
+        # comes from the bit captured before it was resolved.
+        user_provided_max_length = model_config.max_length_is_user_provided
         user_provided_max_batch_size = max_batch_size is not None
 
-        max_length = (
-            model_config.max_length
-            if model_config.max_length is not None
-            else arch_config.get_max_seq_len()
-        )
+        max_length = resolved_max_seq_len
 
         if user_provided_max_batch_size:
             assert max_batch_size is not None
@@ -619,6 +546,7 @@ class MemoryEstimator:
             arch_config=arch_config,
             max_batch_size=max_batch_size,
             available_kv_cache_memory=available_kv_cache_memory,
+            max_seq_len=resolved_max_seq_len,
         )
 
         # Committed KV byte budget (captured before the OOM-fit search below may
@@ -655,6 +583,7 @@ class MemoryEstimator:
                 arch_config=arch_config,
                 max_batch_size=max_batch_size,
                 available_kv_cache_memory=available_kv_cache_memory,
+                max_seq_len=resolved_max_seq_len,
             )
             total_size = model_weights_size + actual_kv_cache_size
 
@@ -701,12 +630,12 @@ class MemoryEstimator:
         max_length = cls._bounded_by_draft(max_length, draft_max_seq_len)
 
         return MemoryPlan(
-            max_batch_size=max_batch_size,
+            planned_max_batch_size=max_batch_size,
             footprint=int(total_size),
-            max_length=max_length,
+            planned_max_length=max_length,
             available_cache_memory=available_cache_memory,
             device_specs=device_specs,
-            max_batch_total_tokens=cls._resolve_max_batch_total_tokens(
+            planned_max_batch_total_tokens=cls._resolve_max_batch_total_tokens(
                 pipeline_config, arch, max_length
             ),
             vision_cache_plan=vision_cache_plan,
@@ -793,7 +722,7 @@ class MemoryEstimator:
                 arch_config=arch_config,
                 max_batch_size=max_batch_size,
                 available_kv_cache_memory=available_kv_cache_memory,
-                max_seq_len_override=inferred_max_length,
+                max_seq_len=inferred_max_length,
             )
 
             if lower > upper:
@@ -845,7 +774,7 @@ class MemoryEstimator:
                 arch_config=arch_config,
                 max_batch_size=inferred_max_batch_size,
                 available_kv_cache_memory=available_kv_cache_memory,
-                max_seq_len_override=original_max_length,
+                max_seq_len=original_max_length,
             )
 
             if lower > upper:
@@ -868,7 +797,7 @@ class MemoryEstimator:
         arch_config: ArchConfig,
         max_batch_size: int,
         available_kv_cache_memory: int,
-        max_seq_len_override: int | None = None,
+        max_seq_len: int,
     ) -> int:
         """Calculate the KV cache size for the current configuration.
 
@@ -877,17 +806,13 @@ class MemoryEstimator:
                 parameters.
             max_batch_size: The maximum batch size.
             available_kv_cache_memory: Available memory for KV cache in bytes.
-            max_seq_len_override: Optional override for max sequence length.
-                If provided, this value is used instead of querying arch_config.
-                Useful during binary search over max_length.
+            max_seq_len: The per-sequence length to size the cache for,
+                normally the architecture's policy value
+                (:meth:`ArchConfig.calculate_max_seq_len`); binary searches
+                pass their candidate value.
         """
         if isinstance(arch_config, ArchConfigWithKVCache):
             params = arch_config.get_kv_params()
-            max_seq_len = (
-                max_seq_len_override
-                if max_seq_len_override is not None
-                else arch_config.get_max_seq_len()
-            )
             return estimated_memory_size(
                 params=params,
                 max_batch_size=max_batch_size,
@@ -1128,112 +1053,20 @@ class MemoryEstimator:
                 )
 
     @classmethod
-    def _has_vision_tower(
-        cls,
-        model_config: MAXModelConfig,
-        arch_config: ArchConfig,
-        arch: SupportedArchitecture | None,
-    ) -> bool:
-        """Whether this architecture encodes images at all.
-
-        Uses the same signal as :meth:`_reserve_vision_cache_memory`: a memory
-        planner that sizes a vision cache entry above zero.
-        """
-        if arch is None or arch.memory_planner is None:
-            return False
-        planner = arch.memory_planner(arch_config)
-        return (
-            planner.estimate_vision_cache_entry_bytes(
-                model_config.huggingface_config
-            )
-            > 0
-        )
-
-    @classmethod
-    def _clamp_preprocess_cache_budgets(
-        cls,
-        pipeline_config: PipelineConfig,
-        model_config: MAXModelConfig,
-        arch_config: ArchConfig,
-        arch: SupportedArchitecture | None,
-    ) -> None:
-        """Caps the preprocessed-media cache budgets against host memory.
-
-        Reduces the image and video budgets proportionally when their sum
-        exceeds :data:`_PREPROCESS_CACHE_MAX_FRACTION_OF_HOST_MEMORY` of what
-        this process may use, by scaling both by a common factor so the split
-        the caller chose survives (exactly, up to integer truncation).
-        Proportionally, rather than clamping each in turn, so that raising one
-        budget cannot silently starve the other.
-
-        Leaves the budgets alone for architectures with no vision tower, which
-        never construct the caches, and when host memory cannot be determined --
-        an unbounded guess would be worse than the configured ceiling.
-        """
-        runtime = pipeline_config.runtime
-        image_bytes = max(0, runtime.max_vision_preprocess_cache_bytes)
-        video_bytes = max(0, runtime.max_video_preprocess_cache_bytes)
-        requested = image_bytes + video_bytes
-        if requested == 0:
-            return
-
-        if not cls._has_vision_tower(model_config, arch_config, arch):
-            return
-
-        host_bytes = _host_memory_limit()
-        if host_bytes is None:
-            logger.debug(
-                "Could not determine host memory; leaving the preprocessed-"
-                "media cache ceiling at %s.",
-                to_human_readable_bytes(requested),
-            )
-            return
-
-        cap = int(host_bytes * _PREPROCESS_CACHE_MAX_FRACTION_OF_HOST_MEMORY)
-        if requested <= cap:
-            logger.info(
-                "Preprocessed-media cache: %s ceiling (%s images, %s video).",
-                to_human_readable_bytes(requested),
-                to_human_readable_bytes(image_bytes),
-                to_human_readable_bytes(video_bytes),
-            )
-            return
-
-        scale = cap / requested
-        runtime.max_vision_preprocess_cache_bytes = int(image_bytes * scale)
-        runtime.max_video_preprocess_cache_bytes = int(video_bytes * scale)
-        logger.warning(
-            "Reduced the preprocessed-media cache from %s to %s (%s images, %s "
-            "video): the configured ceiling exceeded %.0f%% of the %s this "
-            "process may use.",
-            to_human_readable_bytes(requested),
-            to_human_readable_bytes(
-                runtime.max_vision_preprocess_cache_bytes
-                + runtime.max_video_preprocess_cache_bytes
-            ),
-            to_human_readable_bytes(runtime.max_vision_preprocess_cache_bytes),
-            to_human_readable_bytes(runtime.max_video_preprocess_cache_bytes),
-            _PREPROCESS_CACHE_MAX_FRACTION_OF_HOST_MEMORY * 100,
-            to_human_readable_bytes(host_bytes),
-        )
-
-    @classmethod
     def _reserve_vision_cache_memory(
         cls,
         pipeline_config: PipelineConfig,
         model_config: MAXModelConfig,
         available_memory: int,
         devices: list[Device],
-        arch_config: ArchConfig,
         arch: SupportedArchitecture | None = None,
     ) -> tuple[int, VisionCachePlan | None]:
         """Estimate and reserve memory for the vision encoder cache.
 
-        Delegates to the arch's memory planner:
+        Delegates to the arch config's vision-cache facts:
         ``estimate_vision_cache_entry_bytes()`` sizes the requested budget and
         ``get_vision_cache_row_spec()`` sets the block row shape.
-        Non-VLM architectures whose planner returns ``0`` reserve no vision
-        cache memory.
+        Non-VLM architectures reserve no vision cache memory.
 
         Returns:
             Bytes to reserve for the vision encoder cache (0 for non-VLM
@@ -1243,24 +1076,23 @@ class MemoryEstimator:
         if pipeline_config.runtime.vision_cache_utilization == 0:
             return 0, None
 
-        if not cls._has_vision_tower(model_config, arch_config, arch):
+        hf_config = model_config.huggingface_config
+        if arch is None or not arch_has_vision_tower(arch.config, hf_config):
             return 0, None
 
-        # Guaranteed by _has_vision_tower above.
-        assert arch is not None
-        assert arch.memory_planner is not None
-        hf_config = model_config.huggingface_config
-        planner = arch.memory_planner(arch_config)
-        row_spec = planner.get_vision_cache_row_spec(hf_config)
+        # Guaranteed by arch_has_vision_tower above.
+        assert issubclass(arch.config, ArchConfigWithVisionCache)
+        row_spec = arch.config.get_vision_cache_row_spec(hf_config)
         if row_spec is None:
+            # Unreachable for configs built through from_args, which zero
+            # vision_cache_utilization at construction when the row spec is
+            # missing; tolerated for hand-built configs.
             logger.warning(
-                "Disabling vision encoder cache: %s's memory planner reports "
-                "a per-entry estimate but no row spec "
-                "(get_vision_cache_row_spec); images will be re-encoded on "
-                "every request.",
+                "%s's arch config reports a per-entry estimate but no row "
+                "spec (get_vision_cache_row_spec); no vision encoder cache "
+                "will be reserved.",
                 arch.name,
             )
-            pipeline_config.runtime.vision_cache_utilization = 0.0
             return 0, None
 
         return cls._reserve_vision_cache_blocks(

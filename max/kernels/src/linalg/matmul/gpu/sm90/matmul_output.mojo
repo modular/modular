@@ -125,11 +125,11 @@ struct MatmulTileWriter[
 
     comptime CTensorType = TileTensor[
         mut=True,
-        dtype=Self.dtype,
+        Self.dtype,
         LayoutType=Self.tensor_layout,
         origin=MutAnyOrigin,
         Storage=Self.tensor_storage,
-        address_space=AddressSpace.GENERIC,
+        address_space=.GENERIC,
         linear_idx_type=Self.linear_idx_type,
     ]
     comptime lambda_type = def[
@@ -143,10 +143,10 @@ struct MatmulTileWriter[
     @__allow_legacy_any_origin_fields
     var smem_tile: TileTensor[
         mut=True,
-        dtype=Self.dtype,
+        Self.dtype,
         LayoutType=Self.smem_tile_layout,
         origin=MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]
     var warp_group_thread_idx: Int
     var local_warp_group_idx: Int
@@ -160,10 +160,10 @@ struct MatmulTileWriter[
         tensor: Self.CTensorType,
         smem_tile: TileTensor[
             mut=True,
-            dtype=Self.dtype,
+            Self.dtype,
             LayoutType=Self.smem_tile_layout,
             origin=MutAnyOrigin,
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
         ],
         warp_group_thread_idx: Int,
         local_warp_group_idx: Int,
@@ -461,10 +461,10 @@ struct MatmulTileWriter[
                         ]()
                         var tma_tile = TileTensor[
                             mut=True,
-                            dtype=Self.dtype,
+                            Self.dtype,
                             LayoutType=type_of(tma_smem_layout),
                             origin=MutAnyOrigin,
-                            address_space=AddressSpace.SHARED,
+                            address_space=.SHARED,
                         ](smem_offset, tma_smem_layout)
 
                         var tma_coords = (
@@ -488,9 +488,7 @@ struct MatmulTileWriter[
                         half_tile=is_partial_tile,
                         swapAB=Self.swapAB,
                     ](
-                        workgroup_tile.address_space_cast[
-                            AddressSpace.GENERIC
-                        ](),
+                        workgroup_tile.address_space_cast[.GENERIC](),
                         self.local_thread_idx,
                     )
 
@@ -553,7 +551,7 @@ struct MatmulTileWriter[
         # Check if st.matrix optimization can be used
         # fmt: off
         comptime can_use_stmatrix_normal = (
-            accum_type == DType.float32 and Self.dtype == DType.bfloat16  # F32→BF16
+            accum_type == .float32 and Self.dtype == .bfloat16  # F32→BF16
             and Self.frag_size % 4 == 0                               # Register count
             and Self.BM % Self.wgmma_shape[0] == 0                              # M alignment
             and Self.WG_BN % 16 == 0                                  # Shared memory
@@ -564,7 +562,7 @@ struct MatmulTileWriter[
         )
 
         comptime can_use_stmatrix_swapAB = (
-            accum_type == DType.float32 and Self.dtype == DType.bfloat16             # F32→BF16
+            accum_type == .float32 and Self.dtype == .bfloat16             # F32→BF16
             and Self.frag_size % 4 == 0                                              # Register count (at least stmatrix x2 can be used)
             and Self.BM % Self.wgmma_shape[0] == 0                                   # each consumer should get one wgmma tile
             and Self.WG_BM % 8 == 0                                                  # Shared memory, must have at least 8 rows for swapAB

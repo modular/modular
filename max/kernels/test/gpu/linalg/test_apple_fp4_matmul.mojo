@@ -79,19 +79,19 @@ from linalg.matmul.gpu.apple.matmul2d_fp4 import (
 
 
 def _host_dequant_weight(
-    byte: UInt8, nibble_hi: Bool, scale: Scalar[DType.float8_e4m3fn]
+    byte: UInt8, nibble_hi: Bool, scale: Float8_e4m3fn
 ) -> Float32:
     """Host mirror of the device dequant: `E2M1_TO_FLOAT32[nibble] * |scale|`.
     """
     var shift = UInt8(4) if nibble_hi else UInt8(0)
     var nibble = Int((byte >> shift) & UInt8(0xF))
-    var scale_abs = abs(scale.cast[DType.float32]())
+    var scale_abs = abs(scale.cast[.float32]())
     return E2M1_TO_FLOAT32[nibble] * scale_abs
 
 
 def _fill_random_fp4_weight(
-    packed: HostBuffer[DType.uint8],
-    scales: HostBuffer[DType.float8_e4m3fn],
+    packed: HostBuffer[.uint8],
+    scales: HostBuffer[.float8_e4m3fn],
     N: Int,
     K: Int,
 ):
@@ -106,20 +106,20 @@ def _fill_random_fp4_weight(
     var scale_k = (K + NVFP4_SF_VECTOR_SIZE - 1) // NVFP4_SF_VECTOR_SIZE
     for i in range(N * packed_k):
         # Two random nibbles packed into one byte.
-        var lo = UInt8(random_si64(Int64(0), Int64(15)).cast[DType.uint8]())
-        var hi = UInt8(random_si64(Int64(0), Int64(15)).cast[DType.uint8]())
+        var lo = UInt8(random_si64(Int64(0), Int64(15)).cast[.uint8]())
+        var hi = UInt8(random_si64(Int64(0), Int64(15)).cast[.uint8]())
         packed[i] = lo | (hi << 4)
     for i in range(N * scale_k):
         # Positive scales in {0.5, 1.0, 1.5, 2.0} to keep magnitudes bounded.
-        var pick = random_si64(Int64(1), Int64(4)).cast[DType.float32]()
-        scales[i] = (pick * Float32(0.5)).cast[DType.float8_e4m3fn]()
+        var pick = random_si64(Int64(1), Int64(4)).cast[.float32]()
+        scales[i] = (pick * Float32(0.5)).cast[.float8_e4m3fn]()
 
 
 def _check_vs_host_ref(
-    out_host: HostBuffer[DType.float32],
-    act_host: HostBuffer[DType.bfloat16],
-    packed_host: HostBuffer[DType.uint8],
-    scale_host: HostBuffer[DType.float8_e4m3fn],
+    out_host: HostBuffer[.float32],
+    act_host: HostBuffer[.bfloat16],
+    packed_host: HostBuffer[.uint8],
+    scale_host: HostBuffer[.float8_e4m3fn],
     M: Int,
     N: Int,
     K: Int,
@@ -171,21 +171,19 @@ def _run_stage1_oracle(
     var scale_k = (K + NVFP4_SF_VECTOR_SIZE - 1) // NVFP4_SF_VECTOR_SIZE
 
     # Host inputs.
-    var act_host = ctx.enqueue_create_host_buffer[DType.bfloat16](M * K)
-    var packed_host = ctx.enqueue_create_host_buffer[DType.uint8](N * packed_k)
-    var scale_host = ctx.enqueue_create_host_buffer[DType.float8_e4m3fn](
-        N * scale_k
-    )
+    var act_host = ctx.enqueue_create_host_buffer[.bfloat16](M * K)
+    var packed_host = ctx.enqueue_create_host_buffer[.uint8](N * packed_k)
+    var scale_host = ctx.enqueue_create_host_buffer[.float8_e4m3fn](N * scale_k)
     for i in range(M * K):
-        act_host[i] = random_si64(Int64(-2), Int64(2)).cast[DType.bfloat16]()
+        act_host[i] = random_si64(Int64(-2), Int64(2)).cast[.bfloat16]()
     _fill_random_fp4_weight(packed_host, scale_host, N, K)
 
     # Device buffers.
-    var act_dev = ctx.enqueue_create_buffer[DType.bfloat16](M * K)
-    var packed_dev = ctx.enqueue_create_buffer[DType.uint8](N * packed_k)
-    var scale_dev = ctx.enqueue_create_buffer[DType.float8_e4m3fn](N * scale_k)
-    var wdense_dev = ctx.enqueue_create_buffer[DType.bfloat16](N * K)
-    var out_dev = ctx.enqueue_create_buffer[DType.float32](M * N)
+    var act_dev = ctx.enqueue_create_buffer[.bfloat16](M * K)
+    var packed_dev = ctx.enqueue_create_buffer[.uint8](N * packed_k)
+    var scale_dev = ctx.enqueue_create_buffer[.float8_e4m3fn](N * scale_k)
+    var wdense_dev = ctx.enqueue_create_buffer[.bfloat16](N * K)
+    var out_dev = ctx.enqueue_create_buffer[.float32](M * N)
     ctx.enqueue_copy(act_dev, act_host)
     ctx.enqueue_copy(packed_dev, packed_host)
     ctx.enqueue_copy(scale_dev, scale_host)
@@ -198,16 +196,16 @@ def _run_stage1_oracle(
         scale_dev.unsafe_ptr(), row_major(N, scale_k)
     ).as_immut()
     var wdense_tt = TileTensor(wdense_dev.unsafe_ptr(), row_major(N, K))
-    enqueue_fp4_materialize[DType.bfloat16](wdense_tt, packed_tt, scale_tt, ctx)
+    enqueue_fp4_materialize[.bfloat16](wdense_tt, packed_tt, scale_tt, ctx)
 
     # Existing bf16 matmul: out = act @ wdense^T.
     var act_tt = TileTensor(act_dev.unsafe_ptr(), row_major(M, K)).as_immut()
     var out_tt = TileTensor(out_dev.unsafe_ptr(), row_major(M, N))
-    enqueue_apple_matmul[
-        in_type=DType.bfloat16, c_type=DType.float32, transpose_b=True
-    ](out_tt, act_tt, wdense_tt.as_immut(), ctx)
+    enqueue_apple_matmul[in_type=.bfloat16, c_type=.float32, transpose_b=True](
+        out_tt, act_tt, wdense_tt.as_immut(), ctx
+    )
 
-    var out_host = ctx.enqueue_create_host_buffer[DType.float32](M * N)
+    var out_host = ctx.enqueue_create_host_buffer[.float32](M * N)
     ctx.enqueue_copy(out_host, out_dev)
     ctx.synchronize()
 
@@ -257,21 +255,19 @@ def _run_stage2_fused(
     var packed_k = K // 2
     var scale_k = (K + NVFP4_SF_VECTOR_SIZE - 1) // NVFP4_SF_VECTOR_SIZE
 
-    var act_host = ctx.enqueue_create_host_buffer[DType.bfloat16](M * K)
-    var packed_host = ctx.enqueue_create_host_buffer[DType.uint8](N * packed_k)
-    var scale_host = ctx.enqueue_create_host_buffer[DType.float8_e4m3fn](
-        N * scale_k
-    )
+    var act_host = ctx.enqueue_create_host_buffer[.bfloat16](M * K)
+    var packed_host = ctx.enqueue_create_host_buffer[.uint8](N * packed_k)
+    var scale_host = ctx.enqueue_create_host_buffer[.float8_e4m3fn](N * scale_k)
     for i in range(M * K):
-        act_host[i] = random_si64(Int64(-2), Int64(2)).cast[DType.bfloat16]()
+        act_host[i] = random_si64(Int64(-2), Int64(2)).cast[.bfloat16]()
     _fill_random_fp4_weight(packed_host, scale_host, N, K)
 
-    var act_dev = ctx.enqueue_create_buffer[DType.bfloat16](M * K)
-    var packed_dev = ctx.enqueue_create_buffer[DType.uint8](N * packed_k)
-    var scale_dev = ctx.enqueue_create_buffer[DType.float8_e4m3fn](N * scale_k)
-    var wdense_dev = ctx.enqueue_create_buffer[DType.bfloat16](N * K)
-    var out_ref_dev = ctx.enqueue_create_buffer[DType.float32](M * N)
-    var out_fused_dev = ctx.enqueue_create_buffer[DType.float32](M * N)
+    var act_dev = ctx.enqueue_create_buffer[.bfloat16](M * K)
+    var packed_dev = ctx.enqueue_create_buffer[.uint8](N * packed_k)
+    var scale_dev = ctx.enqueue_create_buffer[.float8_e4m3fn](N * scale_k)
+    var wdense_dev = ctx.enqueue_create_buffer[.bfloat16](N * K)
+    var out_ref_dev = ctx.enqueue_create_buffer[.float32](M * N)
+    var out_fused_dev = ctx.enqueue_create_buffer[.float32](M * N)
     ctx.enqueue_copy(act_dev, act_host)
     ctx.enqueue_copy(packed_dev, packed_host)
     ctx.enqueue_copy(scale_dev, scale_host)
@@ -286,20 +282,20 @@ def _run_stage2_fused(
 
     # Reference: materialize then run the stock bf16 matmul.
     var wdense_tt = TileTensor(wdense_dev.unsafe_ptr(), row_major(N, K))
-    enqueue_fp4_materialize[DType.bfloat16](wdense_tt, packed_tt, scale_tt, ctx)
+    enqueue_fp4_materialize[.bfloat16](wdense_tt, packed_tt, scale_tt, ctx)
     var out_ref_tt = TileTensor(out_ref_dev.unsafe_ptr(), row_major(M, N))
-    enqueue_apple_matmul[
-        in_type=DType.bfloat16, c_type=DType.float32, transpose_b=True
-    ](out_ref_tt, act_tt, wdense_tt.as_immut(), ctx)
+    enqueue_apple_matmul[in_type=.bfloat16, c_type=.float32, transpose_b=True](
+        out_ref_tt, act_tt, wdense_tt.as_immut(), ctx
+    )
 
     # Fused: FP4 weight stays packed; dequant at the loader seam.
     var out_fused_tt = TileTensor(out_fused_dev.unsafe_ptr(), row_major(M, N))
-    enqueue_apple_fp4_matmul[c_type=DType.float32](
+    enqueue_apple_fp4_matmul[c_type=.float32](
         out_fused_tt, act_tt, packed_tt, scale_tt, ctx
     )
 
-    var out_ref_host = ctx.enqueue_create_host_buffer[DType.float32](M * N)
-    var out_fused_host = ctx.enqueue_create_host_buffer[DType.float32](M * N)
+    var out_ref_host = ctx.enqueue_create_host_buffer[.float32](M * N)
+    var out_fused_host = ctx.enqueue_create_host_buffer[.float32](M * N)
     ctx.enqueue_copy(out_ref_host, out_ref_dev)
     ctx.enqueue_copy(out_fused_host, out_fused_dev)
     ctx.synchronize()
@@ -348,19 +344,17 @@ def _run_stage3_global_scale(
     var packed_k = K // 2
     var scale_k = (K + NVFP4_SF_VECTOR_SIZE - 1) // NVFP4_SF_VECTOR_SIZE
 
-    var act_host = ctx.enqueue_create_host_buffer[DType.bfloat16](M * K)
-    var packed_host = ctx.enqueue_create_host_buffer[DType.uint8](N * packed_k)
-    var scale_host = ctx.enqueue_create_host_buffer[DType.float8_e4m3fn](
-        N * scale_k
-    )
+    var act_host = ctx.enqueue_create_host_buffer[.bfloat16](M * K)
+    var packed_host = ctx.enqueue_create_host_buffer[.uint8](N * packed_k)
+    var scale_host = ctx.enqueue_create_host_buffer[.float8_e4m3fn](N * scale_k)
     for i in range(M * K):
-        act_host[i] = random_si64(Int64(-2), Int64(2)).cast[DType.bfloat16]()
+        act_host[i] = random_si64(Int64(-2), Int64(2)).cast[.bfloat16]()
     _fill_random_fp4_weight(packed_host, scale_host, N, K)
 
-    var act_dev = ctx.enqueue_create_buffer[DType.bfloat16](M * K)
-    var packed_dev = ctx.enqueue_create_buffer[DType.uint8](N * packed_k)
-    var scale_dev = ctx.enqueue_create_buffer[DType.float8_e4m3fn](N * scale_k)
-    var out_dev = ctx.enqueue_create_buffer[DType.float32](M * N)
+    var act_dev = ctx.enqueue_create_buffer[.bfloat16](M * K)
+    var packed_dev = ctx.enqueue_create_buffer[.uint8](N * packed_k)
+    var scale_dev = ctx.enqueue_create_buffer[.float8_e4m3fn](N * scale_k)
+    var out_dev = ctx.enqueue_create_buffer[.float32](M * N)
     ctx.enqueue_copy(act_dev, act_host)
     ctx.enqueue_copy(packed_dev, packed_host)
     ctx.enqueue_copy(scale_dev, scale_host)
@@ -375,11 +369,11 @@ def _run_stage3_global_scale(
     var out_tt = TileTensor(out_dev.unsafe_ptr(), row_major(M, N))
 
     # Kernel applies block scales only (no global scalar).
-    enqueue_apple_fp4_matmul[c_type=DType.float32](
+    enqueue_apple_fp4_matmul[c_type=.float32](
         out_tt, act_tt, packed_tt, scale_tt, ctx
     )
 
-    var out_host = ctx.enqueue_create_host_buffer[DType.float32](M * N)
+    var out_host = ctx.enqueue_create_host_buffer[.float32](M * N)
     ctx.enqueue_copy(out_host, out_dev)
     ctx.synchronize()
 
@@ -445,20 +439,18 @@ def _run_stage4_dispatch_paths(
     var packed_k = K // 2
     var scale_k = (K + NVFP4_SF_VECTOR_SIZE - 1) // NVFP4_SF_VECTOR_SIZE
 
-    var act_host = ctx.enqueue_create_host_buffer[DType.bfloat16](M * K)
-    var packed_host = ctx.enqueue_create_host_buffer[DType.uint8](N * packed_k)
-    var scale_host = ctx.enqueue_create_host_buffer[DType.float8_e4m3fn](
-        N * scale_k
-    )
+    var act_host = ctx.enqueue_create_host_buffer[.bfloat16](M * K)
+    var packed_host = ctx.enqueue_create_host_buffer[.uint8](N * packed_k)
+    var scale_host = ctx.enqueue_create_host_buffer[.float8_e4m3fn](N * scale_k)
     for i in range(M * K):
-        act_host[i] = random_si64(Int64(-2), Int64(2)).cast[DType.bfloat16]()
+        act_host[i] = random_si64(Int64(-2), Int64(2)).cast[.bfloat16]()
     _fill_random_fp4_weight(packed_host, scale_host, N, K)
 
-    var act_dev = ctx.enqueue_create_buffer[DType.bfloat16](M * K)
-    var packed_dev = ctx.enqueue_create_buffer[DType.uint8](N * packed_k)
-    var scale_dev = ctx.enqueue_create_buffer[DType.float8_e4m3fn](N * scale_k)
-    var out_disp_dev = ctx.enqueue_create_buffer[DType.float32](M * N)
-    var out_fused_dev = ctx.enqueue_create_buffer[DType.float32](M * N)
+    var act_dev = ctx.enqueue_create_buffer[.bfloat16](M * K)
+    var packed_dev = ctx.enqueue_create_buffer[.uint8](N * packed_k)
+    var scale_dev = ctx.enqueue_create_buffer[.float8_e4m3fn](N * scale_k)
+    var out_disp_dev = ctx.enqueue_create_buffer[.float32](M * N)
+    var out_fused_dev = ctx.enqueue_create_buffer[.float32](M * N)
     ctx.enqueue_copy(act_dev, act_host)
     ctx.enqueue_copy(packed_dev, packed_host)
     ctx.enqueue_copy(scale_dev, scale_host)
@@ -473,7 +465,7 @@ def _run_stage4_dispatch_paths(
 
     # (1) Production dispatch (materialize->dense for this M).
     var out_disp_tt = TileTensor(out_disp_dev.unsafe_ptr(), row_major(M, N))
-    enqueue_apple_fp4_matmul[c_type=DType.float32](
+    enqueue_apple_fp4_matmul[c_type=.float32](
         out_disp_tt, act_tt, packed_tt, scale_tt, ctx
     )
 
@@ -483,15 +475,15 @@ def _run_stage4_dispatch_paths(
     # dispatch geometry (the BK=64 deep-K-strip win).
     var out_fused_tt = TileTensor(out_fused_dev.unsafe_ptr(), row_major(M, N))
     _launch_apple_fp4_matmul[
-        c_type=DType.float32,
+        c_type=.float32,
         elementwise_lambda_fn=None,
         BM=128,
         BK=64,
         coalesce_scales=True,
     ](out_fused_tt, act_tt, packed_tt, scale_tt, M, N, ctx)
 
-    var out_disp_host = ctx.enqueue_create_host_buffer[DType.float32](M * N)
-    var out_fused_host = ctx.enqueue_create_host_buffer[DType.float32](M * N)
+    var out_disp_host = ctx.enqueue_create_host_buffer[.float32](M * N)
+    var out_fused_host = ctx.enqueue_create_host_buffer[.float32](M * N)
     ctx.enqueue_copy(out_disp_host, out_disp_dev)
     ctx.enqueue_copy(out_fused_host, out_fused_dev)
     ctx.synchronize()
@@ -550,10 +542,8 @@ def _parity_and_hostref[
     var scale_k = (K + NVFP4_SF_VECTOR_SIZE - 1) // NVFP4_SF_VECTOR_SIZE
 
     var a_host = ctx.enqueue_create_host_buffer[a_type](M * K)
-    var packed_host = ctx.enqueue_create_host_buffer[DType.uint8](N * packed_k)
-    var scale_host = ctx.enqueue_create_host_buffer[DType.float8_e4m3fn](
-        N * scale_k
-    )
+    var packed_host = ctx.enqueue_create_host_buffer[.uint8](N * packed_k)
+    var scale_host = ctx.enqueue_create_host_buffer[.float8_e4m3fn](N * scale_k)
     ctx.synchronize()
 
     seed(0xF4F4)
@@ -562,8 +552,8 @@ def _parity_and_hostref[
     _fill_random_fp4_weight(packed_host, scale_host, N, K)
 
     var a_dev = ctx.enqueue_create_buffer[a_type](M * K)
-    var packed_dev = ctx.enqueue_create_buffer[DType.uint8](N * packed_k)
-    var scale_dev = ctx.enqueue_create_buffer[DType.float8_e4m3fn](N * scale_k)
+    var packed_dev = ctx.enqueue_create_buffer[.uint8](N * packed_k)
+    var scale_dev = ctx.enqueue_create_buffer[.float8_e4m3fn](N * scale_k)
     var c_fused = ctx.enqueue_create_buffer[c_type](M * N)
     var c_oracle = ctx.enqueue_create_buffer[c_type](M * N)
     var wdense = ctx.enqueue_create_buffer[a_type](N * K)

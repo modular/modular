@@ -43,6 +43,7 @@ from max.pipelines.lib import (
 )
 from max.pipelines.lib.config.model_config import _select_quantization_encoding
 from max.pipelines.lib.log_probabilities import LogProbabilitiesMixin
+from max.pipelines.lib.memory_estimation import MemoryPlan
 from typing_extensions import override
 
 from .batch_processor import DeepseekV2BatchProcessor
@@ -89,6 +90,8 @@ class DeepseekV2Model(
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
         weights: Weights,
+        *,
+        memory_plan: MemoryPlan,
         adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.ALL,
         return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
@@ -103,10 +106,11 @@ class DeepseekV2Model(
             devices,
             kv_cache_config,
             weights,
-            adapter,
-            return_logits,
-            return_hidden_states,
+            adapter=adapter,
+            return_logits=return_logits,
+            return_hidden_states=return_hidden_states,
             max_batch_size=max_batch_size,
+            memory_plan=memory_plan,
         )
 
         self.model = self.load_model(session)
@@ -210,9 +214,11 @@ class DeepseekV2Model(
     @override
     def _create_model_config(self, state_dict: dict[str, Any]) -> Any:
         del state_dict
-        model_config = DeepseekV2Config.initialize(self.pipeline_config)
+        model_config = DeepseekV2Config.initialize(
+            self.pipeline_config, max_seq_len=self.max_seq_len
+        )
         model_config.max_batch_context_length = (
-            self.pipeline_config.runtime.max_batch_total_tokens
+            self.planned_max_batch_total_tokens
             or model_config.max_batch_context_length
         )
         return model_config

@@ -19,8 +19,14 @@ import functools
 import json
 import logging
 from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, TypeAlias, cast
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    TypeAlias,
+    cast,
+)
 
 import numpy as np
 import numpy.typing as npt
@@ -59,7 +65,7 @@ from .arch_lookup import (
 # keep working after their move to the arch_lookup leaf module.
 from .arch_lookup import PipelineModelType as PipelineModelType
 from .embeddings_pipeline import EmbeddingsPipeline
-from .interfaces import ArchConfigWithKVCache, PipelineModel
+from .interfaces import PipelineModel
 from .pipeline_variants.overlap_text_generation import (
     OverlapTextGenerationPipeline,
 )
@@ -69,7 +75,27 @@ from .tokenizer import TextTokenizer
 
 logger = logging.getLogger("max.pipelines")
 
+
 PipelineTypes: TypeAlias = Pipeline[Any, Any]
+
+
+@dataclass(frozen=True)
+class RetrievedPipeline:
+    """Everything :meth:`PipelineRegistry.retrieve_factory` resolves.
+
+    Carries the tokenizer, a factory that constructs the pipeline, and the
+    memory plan the pipeline was sized against.
+    """
+
+    tokenizer: PipelineTokenizer[Any, Any, Any]
+    """Tokenizer paired with the pipeline."""
+
+    factory: Callable[[], PipelineTypes]
+    """Zero-argument callable that constructs the pipeline instance."""
+
+    memory_plan: MemoryPlan
+    """Memory plan (batch size, sequence length, and cache budgets) the
+    pipeline was sized against."""
 
 
 def get_pipeline_for_task(
@@ -566,19 +592,15 @@ class PipelineRegistry:
                 "but config could not be loaded. "
                 "Please ensure the model repository contains a valid config.json file."
             )
-        # Use ArchConfigWithKVCache if available for max_seq_len
-        if issubclass(arch.config, ArchConfigWithKVCache):
-            arch_config = arch.config.initialize(pipeline_config)
-            max_length = arch_config.get_max_seq_len()
-        else:
-            if not issubclass(arch.pipeline_model, PipelineModel):
-                raise TypeError(
-                    f"Architecture '{arch.name}' must implement "
-                    "ArchConfigWithKVCache or use a PipelineModel "
-                    "to calculate max_seq_len."
-                )
-            max_length = arch.pipeline_model.calculate_max_seq_len(
-                pipeline_config, huggingface_config=huggingface_config
+        # Construction already applied the architecture's policy.
+        max_length = pipeline_config.model.max_length
+        if max_length is None:
+            raise ValueError(
+                f"max_length is unresolved for "
+                f"'{pipeline_config.model.model_path}'. Construct the config "
+                "through PipelineConfig.from_args, which runs the "
+                "architecture's sequence-length policy, or set max_length "
+                "explicitly."
             )
 
         tokenizer: PipelineTokenizer[Any, Any, Any]
@@ -629,11 +651,8 @@ class PipelineRegistry:
         pipeline_config: PipelineConfig,
         task: PipelineTask = PipelineTask.TEXT_GENERATION,
         override_architecture: str | None = None,
-    ) -> tuple[
-        PipelineTokenizer[Any, Any, Any],
-        Callable[[], PipelineTypes],
-    ]:
-        """Retrieves the tokenizer and a factory that creates the pipeline instance."""
+    ) -> RetrievedPipeline:
+        """Retrieves the tokenizer, pipeline factory, and memory plan for the config."""
         tokenizer: PipelineTokenizer[Any, Any, Any]
         pipeline_factory: Callable[[], PipelineTypes]
 
@@ -702,11 +721,12 @@ class PipelineRegistry:
             arch.pipeline_model, PipelineModel
         ):
             memory_plan = MemoryPlan(
-                max_batch_size=pipeline_config.runtime.max_batch_size or 1,
+                planned_max_batch_size=pipeline_config.runtime.max_batch_size
+                or 1,
                 footprint=0,
-                max_length=pipeline_config.model.max_length,
+                planned_max_length=pipeline_config.model.max_length,
                 device_specs=tuple(pipeline_config.model.device_specs),
-                max_batch_total_tokens=pipeline_config.runtime.max_batch_total_tokens,
+                planned_max_batch_total_tokens=pipeline_config.runtime.max_batch_total_tokens,
             )
         else:
             memory_plan = MemoryEstimator.plan(
@@ -721,17 +741,28 @@ class PipelineRegistry:
         if arch.pipeline_cls is not None:
             pipeline_class = arch.pipeline_cls
 
-        arch_config = arch.config.initialize(pipeline_config)
-        max_length = arch_config.get_max_seq_len()
+        # The tokenizer bound is the memory plan's planned_max_length; pixel
+        # generation resolves its own per-arch bounds below.
+        max_length = memory_plan.planned_max_length
 
         # For pixel generation (diffusion models), we don't need HuggingFace transformers config
         if task == PipelineTask.PIXEL_GENERATION:
+            # Use the first component's config for model_path and revision.
+            first_config = next(iter(pipeline_config.models.values()))
+
+            # Diffusion configs derive their padding length from metadata;
+            # their policy classmethod supplies the required max_seq_len,
+            # since multi-component manifests resolve no "main" max_length.
+            arch_config = arch.config.initialize(
+                pipeline_config,
+                max_seq_len=arch.config.calculate_max_seq_len(
+                    first_config.huggingface_config, first_config
+                ),
+            )
+            max_length = arch_config.get_max_seq_len()
             # Pixel generation pipelines use a different tokenizer with subfolder parameters
             # Check if there's a secondary tokenizer (tokenizer_2) in the manifest
             has_tokenizer_2 = "tokenizer_2" in pipeline_config.models
-
-            # Use the first component's config for model_path and revision.
-            first_config = next(iter(pipeline_config.models.values()))
 
             # Determine tokenizer max_length based on pipeline type.
             # Default to arch_config.get_max_seq_len(); override per-arch as needed.
@@ -790,7 +821,11 @@ class PipelineRegistry:
                 tokenizer,
             )
 
-            return typed_tokenizer, pipeline_factory
+            return RetrievedPipeline(
+                tokenizer=typed_tokenizer,
+                factory=pipeline_factory,
+                memory_plan=memory_plan,
+            )
 
         # Load HuggingFace Config for text generation and other tasks
         huggingface_config = pipeline_config.model.huggingface_config
@@ -872,7 +907,11 @@ class PipelineRegistry:
                 "tokenizer.eos_token_ids is empty, tokenizer configuration is incomplete."
             )
 
-        return tokenizer, pipeline_factory
+        return RetrievedPipeline(
+            tokenizer=tokenizer,
+            factory=pipeline_factory,
+            memory_plan=memory_plan,
+        )
 
     def retrieve_context_type(
         self,
@@ -984,10 +1023,10 @@ class PipelineRegistry:
         override_architecture: str | None = None,
     ) -> tuple[PipelineTokenizer[Any, Any, Any], PipelineTypes]:
         """Retrieves the tokenizer and an instantiated pipeline for the args."""
-        tokenizer, pipeline_factory = self.retrieve_factory(
+        retrieved = self.retrieve_factory(
             pipeline_config, task, override_architecture
         )
-        return tokenizer, pipeline_factory()
+        return retrieved.tokenizer, retrieved.factory()
 
     def reset(self) -> None:
         """Clears all registered architectures (mainly for tests)."""

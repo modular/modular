@@ -141,10 +141,10 @@ def test_copysign() raises:
 
     assert_equal(Float32(1.0), copysign(Float32(1.0), Float32(2.0)))
     assert_equal(Float32(-1.0), copysign(Float32(1.0), Float32(-2.0)))
-    assert_equal(neg_inf[DType.float32](), copysign(inf[DType.float32](), -2.0))
+    assert_equal(neg_inf[.float32](), copysign(inf[.float32](), -2.0))
     assert_equal(
-        String(-nan[DType.float32]()),
-        String(copysign(nan[DType.float32](), -2.0)),
+        String(-nan[.float32]()),
+        String(copysign(nan[.float32](), -2.0)),
     )
 
     # Test some cases with 0 and signed zero
@@ -319,8 +319,8 @@ def test_iota() raises:
         assert_equal(vector2[i], offset + i)
 
 
-comptime F32x4 = SIMD[DType.float32, 4]
-comptime F64x4 = SIMD[DType.float64, 4]
+comptime F32x4 = SIMD[.float32, 4]
+comptime F64x4 = SIMD[.float64, 4]
 
 
 def test_sqrt() raises:
@@ -334,7 +334,7 @@ def test_sqrt() raises:
     assert_equal(sqrt(10**16), 10**8)
     assert_equal(sqrt(Int.MAX), 3037000499)
 
-    var i = SIMD[DType.int, 4](0, 1, 2, 3)
+    var i = SIMD[.int, 4](0, 1, 2, 3)
     assert_equal(sqrt(i**2), i)
 
     var f32x4 = 0.5 * F32x4(0.0, 1.0, 2.0, 3.0)
@@ -401,38 +401,28 @@ def _test_frexp_impl[
 ](*, atol: Float64, rtol: Float64) raises where dtype.is_floating_point():
     var res0 = frexp(Scalar[dtype](123.45))
     assert_almost_equal(
-        res0[0].cast[DType.float32](), 0.964453, atol=atol, rtol=rtol
+        res0[0].cast[.float32](), 0.964453, atol=atol, rtol=rtol
     )
-    assert_almost_equal(
-        res0[1].cast[DType.float32](), 7.0, atol=atol, rtol=rtol
-    )
+    assert_almost_equal(res0[1].cast[.float32](), 7.0, atol=atol, rtol=rtol)
 
     var res1 = frexp(Scalar[dtype](0.1))
-    assert_almost_equal(
-        res1[0].cast[DType.float32](), 0.8, atol=atol, rtol=rtol
-    )
-    assert_almost_equal(
-        res1[1].cast[DType.float32](), -3.0, atol=atol, rtol=rtol
-    )
+    assert_almost_equal(res1[0].cast[.float32](), 0.8, atol=atol, rtol=rtol)
+    assert_almost_equal(res1[1].cast[.float32](), -3.0, atol=atol, rtol=rtol)
 
     var res2 = frexp(Scalar[dtype](-0.1))
-    assert_almost_equal(
-        res2[0].cast[DType.float32](), -0.8, atol=atol, rtol=rtol
-    )
-    assert_almost_equal(
-        res2[1].cast[DType.float32](), -3.0, atol=atol, rtol=rtol
-    )
+    assert_almost_equal(res2[0].cast[.float32](), -0.8, atol=atol, rtol=rtol)
+    assert_almost_equal(res2[1].cast[.float32](), -3.0, atol=atol, rtol=rtol)
 
     var res3 = frexp(SIMD[dtype, 4](0, 2, 4, 5))
     assert_almost_equal(
-        res3[0].cast[DType.float32](),
-        SIMD[DType.float32, 4](0.0, 0.5, 0.5, 0.625),
+        res3[0].cast[.float32](),
+        SIMD[.float32, 4](0.0, 0.5, 0.5, 0.625),
         atol=atol,
         rtol=rtol,
     )
     assert_almost_equal(
-        res3[1].cast[DType.float32](),
-        SIMD[DType.float32, 4](-0.0, 2.0, 3.0, 3.0),
+        res3[1].cast[.float32](),
+        SIMD[.float32, 4](-0.0, 2.0, 3.0, 3.0),
         atol=atol,
         rtol=rtol,
     )
@@ -442,47 +432,39 @@ def _test_log_impl[
     dtype: DType
 ](*, atol: Float64, rtol: Float64) raises where dtype.is_floating_point():
     var res0 = log(Scalar[dtype](123.45))
-    assert_almost_equal(
-        res0.cast[DType.float32](), 4.8158, atol=atol, rtol=rtol
-    )
+    assert_almost_equal(res0.cast[.float32](), 4.8158, atol=atol, rtol=rtol)
 
     var res1 = log(Scalar[dtype](0.1))
-    assert_almost_equal(
-        res1.cast[DType.float32](), -2.3025, atol=atol, rtol=rtol
-    )
+    assert_almost_equal(res1.cast[.float32](), -2.3025, atol=atol, rtol=rtol)
 
     var res2 = log(SIMD[dtype, 4](1, 2, 4, 5))
     assert_almost_equal(
-        res2.cast[DType.float32](),
-        SIMD[DType.float32, 4](0.0, 0.693147, 1.38629, 1.6094),
+        res2.cast[.float32](),
+        SIMD[.float32, 4](0.0, 0.693147, 1.38629, 1.6094),
         atol=atol,
         rtol=rtol,
     )
 
     var res3 = log(Scalar[dtype](2.7182818284590452353602874713526624977572))
-    assert_almost_equal(res3.cast[DType.float32](), 1.0, atol=atol, rtol=rtol)
+    assert_almost_equal(res3.cast[.float32](), 1.0, atol=atol, rtol=rtol)
 
     var res4 = isinf(log(SIMD[dtype, 4](0, 1, 0, 0)))
-    assert_equal(res4, SIMD[DType.bool, 4](True, False, True, True))
+    assert_equal(res4, SIMD[.bool, 4](True, False, True, True))
 
 
 def _test_log2_impl[
     dtype: DType
 ](*, atol: Float64, rtol: Float64) raises where dtype.is_floating_point():
     var res0 = log2(Scalar[dtype](123.45))
-    assert_almost_equal(
-        res0.cast[DType.float32](), 6.9477, atol=atol, rtol=rtol
-    )
+    assert_almost_equal(res0.cast[.float32](), 6.9477, atol=atol, rtol=rtol)
 
     var res1 = log2(Scalar[dtype](0.1))
-    assert_almost_equal(
-        res1.cast[DType.float32](), -3.3219, atol=atol, rtol=rtol
-    )
+    assert_almost_equal(res1.cast[.float32](), -3.3219, atol=atol, rtol=rtol)
 
     var res2 = log2(SIMD[dtype, 4](1, 2, 4, 5))
     assert_almost_equal(
-        res2.cast[DType.float32](),
-        SIMD[DType.float32, 4](0.0, 1.0, 2.0, 2.3219),
+        res2.cast[.float32](),
+        SIMD[.float32, 4](0.0, 1.0, 2.0, 2.3219),
         atol=atol,
         rtol=rtol,
     )
@@ -492,67 +474,63 @@ def _test_log1p_impl[
     dtype: DType
 ](*, atol: Float64, rtol: Float64) raises where dtype.is_floating_point():
     var res0 = log1p(Scalar[dtype](123.45))
-    assert_almost_equal(
-        res0.cast[DType.float32](), 4.8239, atol=atol, rtol=rtol
-    )
+    assert_almost_equal(res0.cast[.float32](), 4.8239, atol=atol, rtol=rtol)
 
     var res1 = log1p(Scalar[dtype](0.1))
-    assert_almost_equal(
-        res1.cast[DType.float32](), 0.0953102, atol=atol, rtol=rtol
-    )
+    assert_almost_equal(res1.cast[.float32](), 0.0953102, atol=atol, rtol=rtol)
 
     var res2 = log1p(SIMD[dtype, 4](1, 2, 4, 5))
     assert_almost_equal(
-        res2.cast[DType.float32](),
-        SIMD[DType.float32, 4](0.693147, 1.09861, 1.60944, 1.79176),
+        res2.cast[.float32](),
+        SIMD[.float32, 4](0.693147, 1.09861, 1.60944, 1.79176),
         atol=atol,
         rtol=rtol,
     )
 
     var res3 = log1p(SIMD[dtype, 4](0.00001, 0.000002, 0.000004, 0.00005))
     assert_almost_equal(
-        res3.cast[DType.float32](),
-        SIMD[DType.float32, 4](9.99995e-6, 2.0e-6, 3.99999e-6, 0.0000499988),
+        res3.cast[.float32](),
+        SIMD[.float32, 4](9.99995e-6, 2.0e-6, 3.99999e-6, 0.0000499988),
         atol=atol,
         rtol=rtol,
     )
 
     var res4 = log1p(SIMD[dtype, 4](0.707107, 0.807107, 0.9, 1))
     assert_almost_equal(
-        res4.cast[DType.float32](),
-        SIMD[DType.float32, 4](0.5348, 0.591727, 0.641854, 0.693147),
+        res4.cast[.float32](),
+        SIMD[.float32, 4](0.5348, 0.591727, 0.641854, 0.693147),
         atol=atol,
         rtol=rtol,
     )
 
 
 def test_frexp() raises:
-    _test_frexp_impl[DType.float32](atol=1e-4, rtol=1e-5)
-    _test_frexp_impl[DType.float16](atol=1e-2, rtol=1e-5)
+    _test_frexp_impl[.float32](atol=1e-4, rtol=1e-5)
+    _test_frexp_impl[.float16](atol=1e-2, rtol=1e-5)
 
-    _test_frexp_impl[DType.bfloat16](atol=1e-1, rtol=1e-5)
+    _test_frexp_impl[.bfloat16](atol=1e-1, rtol=1e-5)
 
 
 def test_log() raises:
-    _test_log_impl[DType.float32](atol=1e-4, rtol=1e-5)
-    _test_log_impl[DType.float16](atol=1e-2, rtol=1e-5)
+    _test_log_impl[.float32](atol=1e-4, rtol=1e-5)
+    _test_log_impl[.float16](atol=1e-2, rtol=1e-5)
 
-    _test_log_impl[DType.bfloat16](atol=1e-1, rtol=1e-5)
+    _test_log_impl[.bfloat16](atol=1e-1, rtol=1e-5)
 
 
 def test_log2() raises:
-    _test_log2_impl[DType.float32](atol=1e-4, rtol=1e-5)
-    _test_log2_impl[DType.float16](atol=1e-2, rtol=1e-5)
+    _test_log2_impl[.float32](atol=1e-4, rtol=1e-5)
+    _test_log2_impl[.float16](atol=1e-2, rtol=1e-5)
 
-    _test_log2_impl[DType.bfloat16](atol=1e-1, rtol=1e-5)
+    _test_log2_impl[.bfloat16](atol=1e-1, rtol=1e-5)
 
 
 def test_log1p() raises:
-    _test_log1p_impl[DType.float64](atol=1e-4, rtol=1e-5)
-    _test_log1p_impl[DType.float32](atol=1e-4, rtol=1e-5)
-    _test_log1p_impl[DType.float16](atol=1e-2, rtol=1e-5)
+    _test_log1p_impl[.float64](atol=1e-4, rtol=1e-5)
+    _test_log1p_impl[.float32](atol=1e-4, rtol=1e-5)
+    _test_log1p_impl[.float16](atol=1e-2, rtol=1e-5)
 
-    _test_log1p_impl[DType.bfloat16](atol=1e-1, rtol=1e-5)
+    _test_log1p_impl[.bfloat16](atol=1e-1, rtol=1e-5)
 
 
 def test_log1p_accuracy() raises:
@@ -624,7 +602,7 @@ def test_log1p_accuracy() raises:
         )
 
     # Edge cases.
-    assert_true(isnan(log1p(nan[DType.float64]())))
+    assert_true(isnan(log1p(nan[.float64]())))
     assert_equal(log1p(Float64(0)), Float64(0))
     assert_true(isinf(log1p(Float64(-1))))
     assert_true(isnan(log1p(Float64(-2))))
@@ -670,9 +648,9 @@ def test_lcm() raises:
 
 
 def test_ulp() raises:
-    assert_true(isnan(ulp(nan[DType.float32]())))
-    assert_true(isinf(ulp(inf[DType.float32]())))
-    assert_true(isinf(ulp(-inf[DType.float32]())))
+    assert_true(isnan(ulp(nan[.float32]())))
+    assert_true(isinf(ulp(inf[.float32]())))
+    assert_true(isinf(ulp(-inf[.float32]())))
     assert_almost_equal(ulp(Float64(0)), 5e-324)
     assert_equal(ulp(Float64.MAX_FINITE), 1.99584030953472e292)
     assert_equal(ulp(Float64(5)), 8.881784197001252e-16)
@@ -735,11 +713,11 @@ def test_ceildiv_unsigned_overflow() raises:
 
     # SIMD vector width > 1, near the type max in every lane.
     comptime max8 = UInt8.MAX
-    var lanes = SIMD[DType.uint8, 4](max8, max8 - 1, 8, 7)
-    var divisors = SIMD[DType.uint8, 4](2, 2, 4, 2)
+    var lanes = SIMD[.uint8, 4](max8, max8 - 1, 8, 7)
+    var divisors = SIMD[.uint8, 4](2, 2, 4, 2)
     assert_equal(
         ceildiv(lanes, divisors),
-        SIMD[DType.uint8, 4](128, 127, 2, 4),
+        SIMD[.uint8, 4](128, 127, 2, 4),
     )
 
 
@@ -770,10 +748,10 @@ def test_align_down() raises:
     # Test SIMD vector (width > 1).
     assert_equal(
         align_down(
-            SIMD[DType.uint32, 4](385, 512, 63, 0),
-            SIMD[DType.uint32, 4](64, 64, 64, 64),
+            SIMD[.uint32, 4](385, 512, 63, 0),
+            SIMD[.uint32, 4](64, 64, 64, 64),
         ),
-        SIMD[DType.uint32, 4](384, 512, 0, 0),
+        SIMD[.uint32, 4](384, 512, 0, 0),
     )
 
 
@@ -804,10 +782,10 @@ def test_align_up() raises:
     # Test SIMD vector (width > 1).
     assert_equal(
         align_up(
-            SIMD[DType.uint32, 4](385, 512, 63, 0),
-            SIMD[DType.uint32, 4](64, 64, 64, 64),
+            SIMD[.uint32, 4](385, 512, 63, 0),
+            SIMD[.uint32, 4](64, 64, 64, 64),
         ),
-        SIMD[DType.uint32, 4](448, 512, 64, 0),
+        SIMD[.uint32, 4](448, 512, 64, 0),
     )
 
 
@@ -830,8 +808,8 @@ def test_clamp() raises:
     )
 
     assert_equal(
-        clamp(SIMD[DType.float32, 4](0, 1, 3, 4), 0, 1),
-        SIMD[DType.float32, 4](0, 1, 1, 1),
+        clamp(SIMD[.float32, 4](0, 1, 3, 4), 0, 1),
+        SIMD[.float32, 4](0, 1, 1, 1),
     )
 
 
@@ -867,24 +845,22 @@ def test_fma() raises:
     assert_almost_equal(fma(Float32(2.5), Float32(4.0), Float32(1.5)), 11.5)
     assert_almost_equal(
         fma(
-            SIMD[DType.float32, 4](1, 2, 3, 4),
-            SIMD[DType.float32, 4](2, 2, 2, 2),
-            SIMD[DType.float32, 4](1, 1, 1, 1),
+            SIMD[.float32, 4](1, 2, 3, 4),
+            SIMD[.float32, 4](2, 2, 2, 2),
+            SIMD[.float32, 4](1, 1, 1, 1),
         ),
-        SIMD[DType.float32, 4](3, 5, 7, 9),
+        SIMD[.float32, 4](3, 5, 7, 9),
     )
 
 
 def test_atanh() raises:
-    assert_equal(atanh(Float32(1)), inf[DType.float32]())
-    assert_equal(atanh(Float32(-1)), -inf[DType.float32]())
+    assert_equal(atanh(Float32(1)), inf[.float32]())
+    assert_equal(atanh(Float32(-1)), -inf[.float32]())
     assert_true(isnan(atanh(Float32(2))))
     assert_true(isnan(atanh(Float32(-2))))
     assert_almost_equal(
-        atanh(SIMD[DType.float32, 4](0.5, 0.15, 0.9, 0.0)),
-        atanh(SIMD[DType.float64, 4](0.5, 0.15, 0.9, 0.0)).cast[
-            DType.float32
-        ](),
+        atanh(SIMD[.float32, 4](0.5, 0.15, 0.9, 0.0)),
+        atanh(SIMD[.float64, 4](0.5, 0.15, 0.9, 0.0)).cast[.float32](),
     )
 
     assert_equal(atanh(Float32(0)), Float32(0), msg="atanh(0)")
@@ -986,7 +962,7 @@ def test_asin() raises:
     assert_equal(asin(Float64(0)), Float64(0))
     assert_almost_equal(asin(Float64(1)), pi / 2.0)
     assert_almost_equal(asin(Float64(-1)), -(pi / 2.0))
-    assert_true(isnan(asin(nan[DType.float64]())))
+    assert_true(isnan(asin(nan[.float64]())))
 
 
 def test_erfc() raises:
@@ -1033,7 +1009,7 @@ def test_acos() raises:
     assert_almost_equal(acos(Float64(1)), Float64(0))
     assert_almost_equal(acos(Float64(-1)), pi)
     assert_almost_equal(acos(Float64(0)), pi / 2.0)
-    assert_true(isnan(acos(nan[DType.float64]())))
+    assert_true(isnan(acos(nan[.float64]())))
 
 
 def main() raises:

@@ -38,20 +38,16 @@ from std.utils.numerics import nan
 
 
 def _argmax_index(values: List[Float32]) -> Int:
-    var acc = ArgMax[DType.float32, 1]()
+    var acc = ArgMax[.float32, 1]()
     for i in range(len(values)):
-        acc.accumulate[DType.float32, 1](
-            SIMD[DType.float32, 1](values[i]), SIMD[DType.int64, 1](i)
-        )
+        acc.accumulate[.float32, 1](Float32(values[i]), Int64(i))
     return Int(acc.reduce().acc_indices[0])
 
 
 def _argmin_index(values: List[Float32]) -> Int:
-    var acc = ArgMin[DType.float32, 1]()
+    var acc = ArgMin[.float32, 1]()
     for i in range(len(values)):
-        acc.accumulate[DType.float32, 1](
-            SIMD[DType.float32, 1](values[i]), SIMD[DType.int64, 1](i)
-        )
+        acc.accumulate[.float32, 1](Float32(values[i]), Int64(i))
     return Int(acc.reduce().acc_indices[0])
 
 
@@ -97,21 +93,21 @@ def _run_splitk_arg[is_max: Bool](mut row: List[Float32]) raises -> Int:
     @always_inline
     def input_fn[
         width: Int, alignment: Int, rank: Int
-    ](coords: IndexList[rank]) {input_ptr} -> SIMD[DType.float32, width]:
+    ](coords: IndexList[rank]) {input_ptr} -> SIMD[.float32, width]:
         return input_ptr.unsafe_load[width=width](coords[1])
 
     @always_inline
     def output_fn[
         width: SIMDLength, rank: Int
-    ](coords: IndexList[rank], val: SIMD[DType.int64, width]) {output_ptr}:
+    ](coords: IndexList[rank], val: SIMD[.int64, width]) {output_ptr}:
         output_ptr.unsafe_store[width=width](val)
 
     comptime if is_max:
-        reduce_argmax[DType.float32, target="cpu", reduce_dim=1](
+        reduce_argmax[.float32, target="cpu", reduce_dim=1](
             input_fn, output_fn, Coord(_SPLITK_ROW_SHAPE)
         )
     else:
-        reduce_argmin[DType.float32, target="cpu", reduce_dim=1](
+        reduce_argmin[.float32, target="cpu", reduce_dim=1](
             input_fn, output_fn, Coord(_SPLITK_ROW_SHAPE)
         )
     return Int(output_row[0])
@@ -129,12 +125,12 @@ def test_argmax_skips_trailing_nan() raises:
     # The NaN arrives after the winner, so it must not displace it. Before the
     # fix the `le` compare took the NaN, and the `eq` in `reduce` then matched
     # no lane, emitting the `Int64.MAX` identity.
-    var nan_f32 = nan[DType.float32]()
+    var nan_f32 = nan[.float32]()
     assert_equal(_argmax_index([1.0, 2.0, nan_f32]), 1)
 
 
 def test_argmax_all_nan_reports_zero() raises:
-    var nan_f32 = nan[DType.float32]()
+    var nan_f32 = nan[.float32]()
     assert_equal(_argmax_index([nan_f32, nan_f32, nan_f32]), 0)
 
 
@@ -143,12 +139,12 @@ def test_argmin_plain() raises:
 
 
 def test_argmin_skips_trailing_nan() raises:
-    var nan_f32 = nan[DType.float32]()
+    var nan_f32 = nan[.float32]()
     assert_equal(_argmin_index([2.0, 1.0, nan_f32]), 1)
 
 
 def test_argmin_all_nan_reports_zero() raises:
-    var nan_f32 = nan[DType.float32]()
+    var nan_f32 = nan[.float32]()
     assert_equal(_argmin_index([nan_f32, nan_f32, nan_f32]), 0)
 
 

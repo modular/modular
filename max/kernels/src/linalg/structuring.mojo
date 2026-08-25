@@ -56,9 +56,7 @@ struct ScatterGatherAmd[
     @always_inline
     def copy(
         self,
-        dst_reg_tile: LayoutTensor[
-            mut=True, address_space=AddressSpace.LOCAL, ...
-        ],
+        dst_reg_tile: LayoutTensor[mut=True, address_space=.LOCAL, ...],
         src_gmem_tile: LayoutTensor,
         offset: Optional[Int] = None,
     ):
@@ -80,7 +78,7 @@ struct ScatterGatherAmd[
     def copy(
         self,
         dst_gmem_tile: LayoutTensor[mut=True, ...],
-        src_reg_tile: LayoutTensor[address_space=AddressSpace.LOCAL, ...],
+        src_reg_tile: LayoutTensor[address_space=.LOCAL, ...],
     ):
         """Copy registers to DRAM.
 
@@ -171,11 +169,7 @@ trait SharedMemoryBasePtr:
 
     @always_inline
     @staticmethod
-    def ptr() -> (
-        UnsafePointer[
-            Int8, MutUntrackedOrigin, address_space=AddressSpace.SHARED
-        ]
-    ):
+    def ptr() -> UnsafePointer[Int8, MutUntrackedOrigin, address_space=.SHARED]:
         ...
 
 
@@ -198,14 +192,10 @@ struct NVIDIASharedMemoryBasePtr[
 
     @always_inline
     @staticmethod
-    def ptr() -> (
-        UnsafePointer[
-            Int8, MutUntrackedOrigin, address_space=AddressSpace.SHARED
-        ]
-    ):
+    def ptr() -> UnsafePointer[Int8, MutUntrackedOrigin, address_space=.SHARED]:
         return external_memory[
             Int8,
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
             alignment=Self.memory_alignment,
             name=Self.name,
         ]()
@@ -234,9 +224,7 @@ struct SharedMemoryManager[SMBP: SharedMemoryBasePtr]:
         type, size
     ]
 
-    var base_ptr: UnsafePointer[
-        Int8, MutUntrackedOrigin, address_space=AddressSpace.SHARED
-    ]
+    var base_ptr: UnsafePointer[Int8, MutUntrackedOrigin, address_space=.SHARED]
     var offset: Int
 
     @always_inline

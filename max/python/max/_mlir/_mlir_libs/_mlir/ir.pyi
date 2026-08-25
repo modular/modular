@@ -26,6 +26,22 @@ class WalkOrder(enum.Enum):
 
     POST_ORDER = 1
 
+class OperationEquivalenceFlags(enum.IntFlag):
+    __str__ = __repr__
+
+    def __repr__(self, /):
+        """Return repr(self)."""
+
+    NONE = 0
+
+    IGNORE_LOCATIONS = 1
+
+    IGNORE_DISCARDABLE_ATTRS = 2
+
+    IGNORE_PROPERTIES = 4
+
+    IGNORE_COMMUTATIVITY = 8
+
 class WalkResult(enum.Enum):
     ADVANCE = 0
 
@@ -208,6 +224,30 @@ class Context:
         This eagerly loads all dialects that have been registered, making them
         immediately available for use.
         """
+
+    def begin_transient_scope(self) -> None:
+        """
+        Begins a transient scope on the context, freezing the base layer.
+
+        All subsequently allocated types, attributes, and unregistered operations
+        are treated as transient and will be deallocated with end_transient_scope().
+        Raises a ValueError if the context is already in a transient scope.
+        """
+
+    def end_transient_scope(self) -> None:
+        """
+        Ends the transient scope and resets the context to the base state.
+
+        Prunes all transient types, attributes, affine expressions, distinct
+        attributes, and unregistered operations added during the transient scope.
+
+        Note: Any Python objects referencing transient IR entities become invalid
+        after this call and must not be accessed.
+        """
+
+    @property
+    def is_in_transient_scope(self) -> bool:
+        """Returns whether the context is currently in a transient scope."""
 
 class DialectDescriptor:
     @property
@@ -2763,6 +2803,9 @@ class Speculatability(enum.Enum):
 class MemoryEffect:
     """A memory effect."""
 
+    def __eq__(self, arg: MemoryEffect, /) -> bool:
+        """Compares two memory effects for equality."""
+
     Allocate: ClassVar[Final[MemoryEffect]] = ...
     """(arg: object, /) -> max._mlir._mlir_libs._mlir.ir.MemoryEffect"""
 
@@ -2781,16 +2824,17 @@ class SideEffectResource:
     Default: ClassVar[Final[SideEffectResource]] = ...
     """(arg: object, /) -> max._mlir._mlir_libs._mlir.ir.SideEffectResource"""
 
-class MemoryEffectInstancesList:
-    """A memory effect list that is valid only during get_effects."""
+class MemoryEffectInstance:
+    """A concrete instance of a memory effect."""
 
-    def append(
+    def __init__(
         self,
         effect: MemoryEffect,
         target: OpOperand
         | OpResult
         | BlockArgument
         | SymbolRefAttr
+        | FlatSymbolRefAttr
         | None = None,
         *,
         parameters: Attribute | None = None,
@@ -2799,8 +2843,36 @@ class MemoryEffectInstancesList:
         resource: SideEffectResource = ...,
     ) -> None:
         """
-        Append a memory effect instance. The target may be an OpOperand, OpResult, BlockArgument, SymbolRefAttr, or None.
+        Creates a memory effect instance. The target may be an OpOperand, OpResult, BlockArgument, SymbolRefAttr, or None.
         """
+
+    @property
+    def effect(self) -> MemoryEffect:
+        """Returns the kind of memory effect."""
+
+    @property
+    def resource(self) -> SideEffectResource:
+        """Returns the affected side effect resource."""
+
+    @property
+    def stage(self) -> int:
+        """Returns the stage at which the effect occurs."""
+
+    @property
+    def effect_on_full_region(self) -> bool:
+        """Returns whether the effect applies to the full resource."""
+
+    @property
+    def parameters(self) -> Attribute | None:
+        """Returns the effect parameters, if any."""
+
+    @property
+    def value(self) -> OpResult | BlockArgument | None:
+        """Returns the affected value, if any."""
+
+    @property
+    def symbol_ref(self) -> SymbolRefAttr | FlatSymbolRefAttr | None:
+        """Returns the affected symbol reference, if any."""
 
 class ConditionallySpeculatable:
     def __init__(
@@ -2914,6 +2986,9 @@ class MemoryEffectsOpInterface:
         """
         Returns an OpView subclass _instance_ for which the interface was constructed
         """
+
+    def get_effects(self) -> list[MemoryEffectInstance]:
+        """Returns the memory effects of the operation."""
 
     @classmethod
     def attach(

@@ -199,15 +199,10 @@ def test[
     ](batch_size, num_keys, seq_len, ctx)
     var scalar_args_buf_tt = mla_args.gpu_tile_tensor()
 
-    @__parameter
     @always_inline
-    @__copy_capture(
-        q_tt,
-        k_tt,
-        out_tt,
-        scalar_args_buf_tt,
-    )
-    def kernel_launch(ctx: DeviceContext) raises:
+    def kernel_launch(
+        ctx: DeviceContext,
+    ) raises {var q_tt, var k_tt, var out_tt, var scalar_args_buf_tt, imm}:
         comptime if mla_mask_type == MLAMaskType.CAUSAL:
             flare_mla_decoding[
                 config=MHAConfig[q_type](num_heads, depth),
@@ -243,7 +238,7 @@ def test[
         # Warmup
         kernel_launch(ctx)
 
-        var nstime = Float64(ctx.execution_time[kernel_launch](nrun)) / Float64(
+        var nstime = Float64(ctx.execution_time(kernel_launch, nrun)) / Float64(
             nrun
         )
         var sectime = nstime / 1000000
@@ -282,7 +277,7 @@ def test[
         comptime if mla_mask_type == MLAMaskType.CAUSAL:
             var k_operand = LayoutTensorMHAOperand(lt_to_tt(k_ref_device))
             var null_valid_length = LayoutTensor[
-                DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
+                .uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
             ](
                 None,
                 RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
@@ -344,12 +339,12 @@ def test[
                         d
                         + depth * (h + s * num_heads)
                         + b * depth * num_heads * seq_len
-                    ].cast[DType.float64]()
+                    ].cast[.float64]()
                     var actual = flash_output_ptr[
                         d
                         + (depth - 64) * (h + s * num_heads)
                         + b * (depth - 64) * num_heads * seq_len
-                    ].cast[DType.float64]()
+                    ].cast[.float64]()
                     # if not isclose(actual, expect, atol=1e-3, rtol=rtol):
                     #     var rerr = abs((actual - expect) / expect)
                     #     print(h, s, d, actual, expect, rerr)
@@ -412,6 +407,36 @@ def test_decoding[
     ](seq_len, num_keys, ctx, use_index_input=use_index_input)
 
 
+def test_decoding_partial_head_group[
+    batch_size: Int,
+    mla_mask_type: MLAMaskType,
+    split_k: Bool = False,
+    num_partitions: Optional[Int] = 1,
+    against_gpu_naive: Bool = True,
+](
+    ctx: DeviceContext, use_index_input: Bool, seq_len: Int, num_keys: Int
+) raises:
+    """Covers head counts whose last head group is partial, with a
+    full-multiple control at the same shape so a failure is attributable to
+    the head count alone. The smallest count leaves a tail narrower than the
+    output swizzle atom, which checks that the store bounds rows at element
+    granularity rather than atom granularity.
+    """
+    comptime for num_heads in [128, 96, 72, 68]:
+        test[
+            mla_mask_type,
+            DType.bfloat16,  # q_type
+            DType.float8_e4m3fn,  # kv_type  (fp8 KV)
+            576,
+            num_heads,
+            group=num_heads,
+            against_gpu_naive=against_gpu_naive,
+            batch_size=batch_size,
+            num_partitions=num_partitions,
+            decoding_warp_split_k=split_k,
+        ](seq_len, num_keys, ctx, use_index_input=use_index_input)
+
+
 def main() raises:
     with DeviceContext() as ctx:
         comptime if has_nvidia_gpu_accelerator() and _is_sm10x_gpu(
@@ -429,5 +454,16 @@ def main() raises:
             test_decoding[27, MLAMaskType.CAUSAL](ctx, False, 5, 50)
             test_decoding[64, MLAMaskType.CAUSAL](ctx, False, 6, 517)
             test_decoding[1, MLAMaskType.NO_MASK](ctx, False, 1, 32768 * 2)
+            test_decoding_partial_head_group[1, MLAMaskType.NO_MASK](
+                ctx, False, 1, 1024
+            )
+            test_decoding_partial_head_group[2, MLAMaskType.CAUSAL](
+                ctx, False, 2, 4096
+            )
+            # Under split-K a tail overrun would corrupt the next split's
+            # partials, which the combine kernel then folds into the output.
+            test_decoding_partial_head_group[1, MLAMaskType.NO_MASK, True, 2](
+                ctx, False, 1, 1024
+            )
         else:
             pass

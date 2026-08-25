@@ -129,10 +129,8 @@ def run_layer_norm_rope_ragged_gpu[
     var data_h = ctx.enqueue_create_host_buffer[dtype](rows * cols)
     var gamma_h = ctx.enqueue_create_host_buffer[dtype](cols)
     var beta_h = ctx.enqueue_create_host_buffer[dtype](cols)
-    var row_offsets_h = ctx.enqueue_create_host_buffer[DType.uint32](
-        num_batches + 1
-    )
-    var start_pos_h = ctx.enqueue_create_host_buffer[DType.uint32](num_batches)
+    var row_offsets_h = ctx.enqueue_create_host_buffer[.uint32](num_batches + 1)
+    var start_pos_h = ctx.enqueue_create_host_buffer[.uint32](num_batches)
     var freqs_h = ctx.enqueue_create_host_buffer[freq_dtype](
         max_seq_len * rope_dim
     )
@@ -174,8 +172,8 @@ def run_layer_norm_rope_ragged_gpu[
     var data_d = ctx.enqueue_create_buffer[dtype](rows * cols)
     var gamma_d = ctx.enqueue_create_buffer[dtype](cols)
     var beta_d = ctx.enqueue_create_buffer[dtype](cols)
-    var row_offsets_d = ctx.enqueue_create_buffer[DType.uint32](num_batches + 1)
-    var start_pos_d = ctx.enqueue_create_buffer[DType.uint32](num_batches)
+    var row_offsets_d = ctx.enqueue_create_buffer[.uint32](num_batches + 1)
+    var start_pos_d = ctx.enqueue_create_buffer[.uint32](num_batches)
     var freqs_d = ctx.enqueue_create_buffer[freq_dtype](max_seq_len * rope_dim)
     var output_d = ctx.enqueue_create_buffer[output_dtype](rows * cols)
 
@@ -225,7 +223,7 @@ def run_layer_norm_rope_ragged_gpu[
         input_fn,
         output_fn,
         Coord(shape),
-        Scalar[DType.int](cols),
+        Int(cols),
         gamma,
         beta,
         epsilon.cast[dtype](),

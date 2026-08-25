@@ -63,7 +63,7 @@ def test_owned(var x: RegPassable, var y: MemOnly):
     owned_generic(y^)
 
 
-# CHECK-LABEL: lit.fn @"test_borrowed{{.*}}(%x: !lit.ref<!RegPassable, imm *"x`"> read_mem, %y: !lit.ref<!MemOnly, imm *"y`1"> read_mem)
+# CHECK-LABEL: lit.fn @"test_borrowed{{.*}}(%x: !lit.ref<!RegPassable, imm *"x`"> imm_mem, %y: !lit.ref<!MemOnly, imm *"y`1"> imm_mem)
 def test_borrowed(x: RegPassable, y: MemOnly):
     # CHECK-NEXT: lit.call {{.*}}::@"borrowed_generic{{.*}}<{{.*}}>(%x)
     borrowed_generic(x)

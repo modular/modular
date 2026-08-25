@@ -32,7 +32,7 @@ def bar(x: Int):
 # correctly resolves signatures that are declared after the call.
 
 # CHECK: lit.alias.decl {{.*}}#Tuple <:param_list<!AnyType_Movable> [[[TYPE1]], [[TYPE2]], [[TYPE3]], [[TYPE4]], [[TYPE5]]]
-# CHECK-SAME: <store_to_mem(@functions_in_module::@"foo()"), store_to_mem(@functions_in_module::@"bar(::SIMD[::DType(int), ::SIMDLength(1)])"), store_to_mem(@functions_in_module::@"bar(::SIMD[::DType(int), ::SIMDLength(1)],::SIMD[::DType(int), ::SIMDLength(1)])"), store_to_mem(@functions_in_module::@"baz()"), store_to_mem(@functions_in_module::@"take[::AnyType & ::Movable,$0]()"{{.*}})>))
+# CHECK-SAME: <store_to_mem(@functions_in_module::@"foo()"), store_to_mem(@functions_in_module::@"bar(::SIMD[DType.int, 1])"), store_to_mem(@functions_in_module::@"bar(::SIMD[DType.int, 1],::SIMD[DType.int, 1])"), store_to_mem(@functions_in_module::@"baz()"), store_to_mem(@functions_in_module::@"take[::AnyType & ::Movable,$0]()"{{.*}})>))
 comptime funcs = __functions_in_module()
 
 

@@ -114,17 +114,13 @@ struct CombineParams[
     # Input row offsets for ragged mode (cumulative token counts per batch)
     # In ragged mode: input_row_offsets[i] = start token index for batch i
     @__allow_legacy_any_origin_fields
-    var input_row_offsets_ptr: UnsafePointer[
-        Scalar[DType.uint32], origin=MutAnyOrigin
-    ]
+    var input_row_offsets_ptr: UnsafePointer[UInt32, origin=MutAnyOrigin]
 
     # Per-head attn_sink values: shape [num_heads_q], float32, nullable.
     # Contains log-sum-exp of non-selected tokens' attention scores (natural log).
     # Only used when has_attn_sink is True at compile time.
     @__allow_legacy_any_origin_fields
-    var attn_sink_ptr: OptionalReg[
-        UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin]
-    ]
+    var attn_sink_ptr: OptionalReg[UnsafePointer[Float32, origin=MutAnyOrigin]]
     var batch_size: Int
     var seq_len: Int
     var num_heads: Int
@@ -165,12 +161,8 @@ struct CombineParams[
         output_ptr: UnsafePointer[
             Scalar[Self.output_type], origin=MutAnyOrigin
         ],
-        input_row_offsets_ptr: UnsafePointer[
-            Scalar[DType.uint32], origin=MutAnyOrigin
-        ],
-        attn_sink_ptr: OptionalReg[
-            UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin]
-        ],
+        input_row_offsets_ptr: UnsafePointer[UInt32, origin=MutAnyOrigin],
+        attn_sink_ptr: OptionalReg[UnsafePointer[Float32, origin=MutAnyOrigin]],
         batch_size: Int,
         seq_len: Int,
         num_heads: Int,
@@ -355,7 +347,7 @@ def mla_combine_kernel[
     # and track whether any split is empty (LSE=-inf) for the fast-path
     # check.
     var local_lse = Array[Float32, num_lse_per_thread](
-        fill=min_or_neg_inf[DType.float32]()
+        fill=min_or_neg_inf[.float32]()
     )
 
     comptime for k in range(num_lse_per_thread):
@@ -376,7 +368,7 @@ def mla_combine_kernel[
     var max_lse = warp.max(thread_max)
 
     # set max_lse to 0 if all LSEs are -inf
-    if max_lse == min_or_neg_inf[DType.float32]():
+    if max_lse == min_or_neg_inf[.float32]():
         max_lse = 0.0
 
     # Compute sum of exp2(lse - max_lse) with thread-local accumulation
@@ -414,7 +406,7 @@ def mla_combine_kernel[
             # No tokens attended (all splits empty): output depends on
             # attn_sink alone. If attn_sink is -inf, output is zero
             # (global_lse = +inf makes all scales 0).
-            if attn_sink_val == min_or_neg_inf[DType.float32]():
+            if attn_sink_val == min_or_neg_inf[.float32]():
                 global_lse = Float32.MAX  # +inf => output = 0
             else:
                 global_lse = attn_sink_log2_val
@@ -430,21 +422,21 @@ def mla_combine_kernel[
     # =========================================================================
     # Step 3: Weighted accumulation with prefetching (compile-time unrolled)
     # =========================================================================
-    var result = Array[SIMD[DType.float32, vec_size], elems_per_thread](
-        fill=SIMD[DType.float32, vec_size](0.0)
+    var result = Array[SIMD[.float32, vec_size], elems_per_thread](
+        fill=SIMD[.float32, vec_size](0.0)
     )
 
     comptime for split_idx in range(num_splits):
         # Broadcast scale from the owning lane via register shuffle (no smem).
         comptime k, src_lane = divmod(split_idx, WARP_SIZE)
         var lse_scale = warp.shuffle_idx(local_lse[k], UInt32(src_lane))
-        var is_valid = SIMD[DType.bool, vec_size](fill=lse_scale != Float32(0))
+        var is_valid = SIMD[.bool, vec_size](fill=lse_scale != Float32(0))
 
         comptime for i in range(elems_per_thread):
-            var data_f32 = datas[i].cast[DType.float32]()
+            var data_f32 = datas[i].cast[.float32]()
             var clean_data = is_valid.select(
                 data_f32,
-                SIMD[DType.float32, vec_size](0),
+                SIMD[.float32, vec_size](0),
             )
             result[i] = result[i] + lse_scale * clean_data
 
@@ -553,15 +545,11 @@ struct SplitParallelCombineParams[
 
     # Input row offsets for ragged mode (cumulative token counts per batch)
     @__allow_legacy_any_origin_fields
-    var input_row_offsets_ptr: UnsafePointer[
-        Scalar[DType.uint32], origin=MutAnyOrigin
-    ]
+    var input_row_offsets_ptr: UnsafePointer[UInt32, origin=MutAnyOrigin]
 
     # Per-head attn_sink values: shape [num_heads_q], float32, nullable.
     @__allow_legacy_any_origin_fields
-    var attn_sink_ptr: OptionalReg[
-        UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin]
-    ]
+    var attn_sink_ptr: OptionalReg[UnsafePointer[Float32, origin=MutAnyOrigin]]
     var batch_size: Int
     var seq_len: Int
     var num_heads: Int
@@ -602,12 +590,8 @@ struct SplitParallelCombineParams[
         output_ptr: UnsafePointer[
             Scalar[Self.output_type], origin=MutAnyOrigin
         ],
-        input_row_offsets_ptr: UnsafePointer[
-            Scalar[DType.uint32], origin=MutAnyOrigin
-        ],
-        attn_sink_ptr: OptionalReg[
-            UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin]
-        ],
+        input_row_offsets_ptr: UnsafePointer[UInt32, origin=MutAnyOrigin],
+        attn_sink_ptr: OptionalReg[UnsafePointer[Float32, origin=MutAnyOrigin]],
         batch_size: Int,
         seq_len: Int,
         num_heads: Int,
@@ -686,7 +670,7 @@ def mla_combine_kernel_split_parallel[
     wait_on_dependent_grids()
 
     comptime NUM_WARPS = 8
-    comptime NEG_INF = min_or_neg_inf[DType.float32]()
+    comptime NEG_INF = min_or_neg_inf[.float32]()
 
     # Each warp covers the full head_dim.
     # 32 lanes * vec_size * elems_per_thread = head_dim
@@ -722,17 +706,17 @@ def mla_combine_kernel_split_parallel[
     var smem_result = unsafe_stack_allocation[
         NUM_WARPS * head_dim,
         DType.float32,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
     var smem_m = unsafe_stack_allocation[
         NUM_WARPS,
         DType.float32,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
     var smem_l = unsafe_stack_allocation[
         NUM_WARPS,
         DType.float32,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
 
     # =========================================================================
@@ -771,8 +755,8 @@ def mla_combine_kernel_split_parallel[
     #   warp_l = sum_over_seen_splits(exp2(lse_i - warp_m))
     # Final output = result / warp_l
     # =========================================================================
-    var result = Array[SIMD[DType.float32, vec_size], elems_per_thread](
-        fill=SIMD[DType.float32, vec_size](0.0)
+    var result = Array[SIMD[.float32, vec_size], elems_per_thread](
+        fill=SIMD[.float32, vec_size](0.0)
     )
     var warp_m = Float32(NEG_INF)
     var warp_l = Float32(0.0)
@@ -957,19 +941,11 @@ def launch_mla_combine_kernel_split_parallel[
     ragged: Bool = False,
     has_attn_sink: Bool = False,
 ](
-    out_accum_split: TileTensor[
-        output_type, address_space=AddressSpace.GENERIC, ...
-    ],
-    lse_accum_split: TileTensor[
-        accum_type, address_space=AddressSpace.GENERIC, ...
-    ],
-    output: TileTensor[output_type, address_space=AddressSpace.GENERIC, ...],
-    input_row_offsets_ptr: UnsafePointer[
-        Scalar[DType.uint32], origin=MutAnyOrigin
-    ],
-    attn_sink_ptr: OptionalReg[
-        UnsafePointer[Scalar[DType.float32], MutAnyOrigin]
-    ],
+    out_accum_split: TileTensor[output_type, address_space=.GENERIC, ...],
+    lse_accum_split: TileTensor[accum_type, address_space=.GENERIC, ...],
+    output: TileTensor[output_type, address_space=.GENERIC, ...],
+    input_row_offsets_ptr: UnsafePointer[UInt32, origin=MutAnyOrigin],
+    attn_sink_ptr: OptionalReg[UnsafePointer[Float32, MutAnyOrigin]],
     batch_size: Int,
     seq_len: Int,
     num_heads: Int,
@@ -1082,19 +1058,11 @@ def launch_mla_combine_kernel[
     warps_per_head: Int = 2,
     has_attn_sink: Bool = False,
 ](
-    out_accum_split: TileTensor[
-        output_type, address_space=AddressSpace.GENERIC, ...
-    ],
-    lse_accum_split: TileTensor[
-        accum_type, address_space=AddressSpace.GENERIC, ...
-    ],
-    output: TileTensor[output_type, address_space=AddressSpace.GENERIC, ...],
-    input_row_offsets_ptr: UnsafePointer[
-        Scalar[DType.uint32], origin=MutAnyOrigin
-    ],
-    attn_sink_ptr: OptionalReg[
-        UnsafePointer[Scalar[DType.float32], MutAnyOrigin]
-    ],
+    out_accum_split: TileTensor[output_type, address_space=.GENERIC, ...],
+    lse_accum_split: TileTensor[accum_type, address_space=.GENERIC, ...],
+    output: TileTensor[output_type, address_space=.GENERIC, ...],
+    input_row_offsets_ptr: UnsafePointer[UInt32, origin=MutAnyOrigin],
+    attn_sink_ptr: OptionalReg[UnsafePointer[Float32, MutAnyOrigin]],
     batch_size: Int,
     seq_len: Int,
     num_heads: Int,
@@ -1213,19 +1181,11 @@ def mla_decode_combine_partial_outputs[
     has_attn_sink: Bool = False,
     split_parallel: Bool = False,
 ](
-    out_accum_split: TileTensor[
-        output_type, address_space=AddressSpace.GENERIC, ...
-    ],
-    lse_accum_split: TileTensor[
-        accum_type, address_space=AddressSpace.GENERIC, ...
-    ],
-    output: TileTensor[output_type, address_space=AddressSpace.GENERIC, ...],
-    input_row_offsets_ptr: UnsafePointer[
-        Scalar[DType.uint32], origin=MutAnyOrigin
-    ],
-    attn_sink_ptr: OptionalReg[
-        UnsafePointer[Scalar[DType.float32], MutAnyOrigin]
-    ],
+    out_accum_split: TileTensor[output_type, address_space=.GENERIC, ...],
+    lse_accum_split: TileTensor[accum_type, address_space=.GENERIC, ...],
+    output: TileTensor[output_type, address_space=.GENERIC, ...],
+    input_row_offsets_ptr: UnsafePointer[UInt32, origin=MutAnyOrigin],
+    attn_sink_ptr: OptionalReg[UnsafePointer[Float32, MutAnyOrigin]],
     batch_size: Int,
     seq_len: Int,
     num_heads: Int,

@@ -261,11 +261,11 @@ def _mma_apple_transposable(
         and b.dtype in (DType.int8, DType.uint8)
     )
 
-    comptime if _valid_float_input and d.dtype == DType.float32:
+    comptime if _valid_float_input and d.dtype == .float32:
         d = rebind[type_of(d)](
             llvm_intrinsic[
                 "llvm.air.simdgroup_matrix_16x16x16_multiply_accumulate",
-                SIMD[DType.float32, 8],
+                SIMD[.float32, 8],
             ](a, transpose_a, b, transpose_b, c)
         )
 
@@ -294,7 +294,7 @@ def _mma_apple_8x8(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
     ), "Apple 8x8 MMA requires 2-element fragments (8x8 / 32 threads)"
 
     comptime assert (
-        c.dtype == DType.float32 and d.dtype == DType.float32
+        c.dtype == .float32 and d.dtype == .float32
     ), "Apple 8x8 MMA accumulator (C and D) must be F32"
 
     comptime _valid_float_input = (
@@ -310,16 +310,16 @@ def _mma_apple_8x8(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
         # sparse `<64x>` back to the per-lane fragment, so this is perf-neutral.
         var a_wide = SIMD[a.dtype, 64](0)
         var b_wide = SIMD[b.dtype, 64](0)
-        var c_wide = SIMD[DType.float32, 64](0)
+        var c_wide = SIMD[.float32, 64](0)
 
         comptime for s in range(2):
             a_wide[s] = a[s]
             b_wide[s] = b[s]
-            c_wide[s] = rebind[Scalar[DType.float32]](c[s])
+            c_wide[s] = rebind[Float32](c[s])
 
         var d_wide = llvm_intrinsic[
             "llvm.air.simdgroup_matrix_8x8_multiply_accumulate",
-            SIMD[DType.float32, 64],
+            SIMD[.float32, 64],
         ](a_wide, b_wide, c_wide)
 
         comptime for s in range(2):

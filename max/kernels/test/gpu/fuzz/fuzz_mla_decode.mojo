@@ -342,7 +342,7 @@ def run_one_case(
             cur_page += 1
 
     # --- cache_lengths + lookup table ---------------------------------------
-    var cache_lengths_host = ctx.enqueue_create_host_buffer[DType.uint32](
+    var cache_lengths_host = ctx.enqueue_create_host_buffer[.uint32](
         max(1, batch_size)
     )
     for i in range(batch_size):
@@ -358,9 +358,7 @@ def run_one_case(
         ceildiv(max_num_keys_any_batch, PAGE_SIZE), 8
     )
     var lut_size = max(1, batch_size * max_pages_per_batch)
-    var lookup_table_host = ctx.enqueue_create_host_buffer[DType.uint32](
-        lut_size
-    )
+    var lookup_table_host = ctx.enqueue_create_host_buffer[.uint32](lut_size)
     for i in range(lut_size):
         lookup_table_host[i] = UInt32(0)
     var page_offset = 0
@@ -377,7 +375,7 @@ def run_one_case(
     var q_host = ctx.enqueue_create_host_buffer[q_type](q_size)
     fill_stable(q_host.as_span(), spec.dist)
 
-    var row_offsets_host = ctx.enqueue_create_host_buffer[DType.uint32](
+    var row_offsets_host = ctx.enqueue_create_host_buffer[.uint32](
         batch_size + 1
     )
     row_offsets_host[0] = UInt32(0)
@@ -389,17 +387,15 @@ def run_one_case(
     # --- copy to device ------------------------------------------------------
     var blocks_device = ctx.enqueue_create_buffer[kv_type](block_elems)
     ctx.enqueue_copy(blocks_device, blocks_host)
-    var cache_lengths_device = ctx.enqueue_create_buffer[DType.uint32](
+    var cache_lengths_device = ctx.enqueue_create_buffer[.uint32](
         max(1, batch_size)
     )
     ctx.enqueue_copy(cache_lengths_device, cache_lengths_host)
-    var lookup_table_device = ctx.enqueue_create_buffer[DType.uint32](lut_size)
+    var lookup_table_device = ctx.enqueue_create_buffer[.uint32](lut_size)
     ctx.enqueue_copy(lookup_table_device, lookup_table_host)
     var q_device = ctx.enqueue_create_buffer[q_type](q_size)
     ctx.enqueue_copy(q_device, q_host)
-    var row_offsets_device = ctx.enqueue_create_buffer[DType.uint32](
-        batch_size + 1
-    )
+    var row_offsets_device = ctx.enqueue_create_buffer[.uint32](batch_size + 1)
     ctx.enqueue_copy(row_offsets_device, row_offsets_host)
     var out_device = ctx.enqueue_create_buffer[q_type](out_size)
     ctx.synchronize()
@@ -410,12 +406,12 @@ def run_one_case(
         RuntimeLayout[Layout.row_major[6]()].row_major(block_shape),
     )
     comptime cl_layout = Layout(UNKNOWN_VALUE)
-    var cache_lengths_lt = LayoutTensor[DType.uint32, cl_layout](
+    var cache_lengths_lt = LayoutTensor[.uint32, cl_layout](
         cache_lengths_device.unsafe_ptr(),
         RuntimeLayout[cl_layout].row_major(IndexList[1](batch_size)),
     )
     comptime lt_layout_2d = Layout.row_major[2]()
-    var lookup_table_lt = LayoutTensor[DType.uint32, lt_layout_2d](
+    var lookup_table_lt = LayoutTensor[.uint32, lt_layout_2d](
         lookup_table_device.unsafe_ptr(),
         RuntimeLayout[lt_layout_2d].row_major(
             IndexList[2](batch_size, max_pages_per_batch)
@@ -430,14 +426,14 @@ def run_one_case(
                 blocks_lt.runtime_layout.stride.value,
             ),
         ).as_unsafe_any_origin(),
-        LayoutTensor[mut=False, DType.uint32, cl_layout](
+        LayoutTensor[mut=False, .uint32, cl_layout](
             cache_lengths_lt.ptr,
             RuntimeLayout[cl_layout](
                 cache_lengths_lt.runtime_layout.shape.value,
                 cache_lengths_lt.runtime_layout.stride.value,
             ),
         ).as_unsafe_any_origin(),
-        LayoutTensor[mut=False, DType.uint32, lt_layout_2d](
+        LayoutTensor[mut=False, .uint32, lt_layout_2d](
             lookup_table_lt.ptr,
             RuntimeLayout[lt_layout_2d](
                 lookup_table_lt.runtime_layout.shape.value,
@@ -689,16 +685,12 @@ def run_schedule_case(
     var blocks_host = ctx.enqueue_create_host_buffer[kv_type](block_elems)
     randn(blocks_host.as_span(), mean=0.0, standard_deviation=0.5)
 
-    var cache_lengths_host = ctx.enqueue_create_host_buffer[DType.uint32](
-        batch_size
-    )
+    var cache_lengths_host = ctx.enqueue_create_host_buffer[.uint32](batch_size)
     for i in range(batch_size):
         cache_lengths_host[i] = UInt32(cache_lengths[i])
     var max_pages_per_batch = align_up(ceildiv(max_cache_len + 1, PAGE_SIZE), 8)
     var lut_size = batch_size * max_pages_per_batch
-    var lookup_table_host = ctx.enqueue_create_host_buffer[DType.uint32](
-        lut_size
-    )
+    var lookup_table_host = ctx.enqueue_create_host_buffer[.uint32](lut_size)
     for i in range(lut_size):
         lookup_table_host[i] = UInt32(0)
     var page_offset = 0
@@ -713,7 +705,7 @@ def run_schedule_case(
     var q_size = total_q_tokens * num_heads * DEPTH
     var q_host = ctx.enqueue_create_host_buffer[q_type](q_size)
     randn(q_host.as_span(), mean=0.0, standard_deviation=0.5)
-    var row_offsets_host = ctx.enqueue_create_host_buffer[DType.uint32](
+    var row_offsets_host = ctx.enqueue_create_host_buffer[.uint32](
         batch_size + 1
     )
     row_offsets_host[0] = UInt32(0)
@@ -723,17 +715,13 @@ def run_schedule_case(
 
     var blocks_device = ctx.enqueue_create_buffer[kv_type](block_elems)
     ctx.enqueue_copy(blocks_device, blocks_host)
-    var cache_lengths_device = ctx.enqueue_create_buffer[DType.uint32](
-        batch_size
-    )
+    var cache_lengths_device = ctx.enqueue_create_buffer[.uint32](batch_size)
     ctx.enqueue_copy(cache_lengths_device, cache_lengths_host)
-    var lookup_table_device = ctx.enqueue_create_buffer[DType.uint32](lut_size)
+    var lookup_table_device = ctx.enqueue_create_buffer[.uint32](lut_size)
     ctx.enqueue_copy(lookup_table_device, lookup_table_host)
     var q_device = ctx.enqueue_create_buffer[q_type](q_size)
     ctx.enqueue_copy(q_device, q_host)
-    var row_offsets_device = ctx.enqueue_create_buffer[DType.uint32](
-        batch_size + 1
-    )
+    var row_offsets_device = ctx.enqueue_create_buffer[.uint32](batch_size + 1)
     ctx.enqueue_copy(row_offsets_device, row_offsets_host)
     var out_device = ctx.enqueue_create_buffer[q_type](out_size)
     ctx.synchronize()
@@ -746,12 +734,12 @@ def run_schedule_case(
         RuntimeLayout[Layout.row_major[6]()].row_major(block_shape),
     )
     comptime cl_layout = Layout(UNKNOWN_VALUE)
-    var cache_lengths_lt = LayoutTensor[DType.uint32, cl_layout](
+    var cache_lengths_lt = LayoutTensor[.uint32, cl_layout](
         cache_lengths_device.unsafe_ptr(),
         RuntimeLayout[cl_layout].row_major(IndexList[1](batch_size)),
     )
     comptime lt_layout_2d = Layout.row_major[2]()
-    var lookup_table_lt = LayoutTensor[DType.uint32, lt_layout_2d](
+    var lookup_table_lt = LayoutTensor[.uint32, lt_layout_2d](
         lookup_table_device.unsafe_ptr(),
         RuntimeLayout[lt_layout_2d].row_major(
             IndexList[2](batch_size, max_pages_per_batch)
@@ -765,14 +753,14 @@ def run_schedule_case(
                 blocks_lt.runtime_layout.stride.value,
             ),
         ).as_unsafe_any_origin(),
-        LayoutTensor[mut=False, DType.uint32, cl_layout](
+        LayoutTensor[mut=False, .uint32, cl_layout](
             cache_lengths_lt.ptr,
             RuntimeLayout[cl_layout](
                 cache_lengths_lt.runtime_layout.shape.value,
                 cache_lengths_lt.runtime_layout.stride.value,
             ),
         ).as_unsafe_any_origin(),
-        LayoutTensor[mut=False, DType.uint32, lt_layout_2d](
+        LayoutTensor[mut=False, .uint32, lt_layout_2d](
             lookup_table_lt.ptr,
             RuntimeLayout[lt_layout_2d](
                 lookup_table_lt.runtime_layout.shape.value,

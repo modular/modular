@@ -113,7 +113,7 @@ def _dequant_mxfp4_to_fp8_kernel[
                 # On SM100+ this uses PTX cvt.rn.bf16x2.ue8m0x2; on SM90
                 # it falls back to the bitcast approach with correct
                 # special-case handling for 0x00 and 0xFF.
-                var scale_f32 = scale_e8m0.cast[DType.float32]()
+                var scale_f32 = scale_e8m0.cast[.float32]()
 
                 # Apply scale and cast to output dtype
                 var scaled_values = fp32_values * scale_f32
@@ -161,9 +161,9 @@ def dequant_mxfp4[
         DType.bfloat16,
     ), "output must be float8_e4m3fn or bfloat16"
     comptime assert (
-        scales_dtype == DType.float8_e8m0fnu
+        scales_dtype == .float8_e8m0fnu
     ), "scales must be float8_e8m0fnu"
-    comptime assert in_dtype == DType.uint8, "input must be uint8 (packed FP4)"
+    comptime assert in_dtype == .uint8, "input must be uint8 (packed FP4)"
     comptime assert (
         SF_VECTOR_SIZE == MXFP4_SF_VECTOR_SIZE
     ), "SF_VECTOR_SIZE must be 32 for MXFP4"
