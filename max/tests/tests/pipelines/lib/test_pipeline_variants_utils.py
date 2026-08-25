@@ -14,7 +14,6 @@
 
 from __future__ import annotations
 
-import json
 from typing import Any
 from unittest.mock import MagicMock
 
@@ -33,7 +32,6 @@ from max.pipelines.context import (
 from max.pipelines.context.exceptions import InputError
 from max.pipelines.lib.pipeline_variants.structured_output_backend import (
     GrammarBackend,
-    GrammarValidator,
     XgrammarBackend,
 )
 from max.pipelines.lib.pipeline_variants.utils import (
@@ -43,7 +41,6 @@ from max.pipelines.lib.pipeline_variants.utils import (
 )
 from max.pipelines.lib.tool_parsing import StructuralTagToolParser, register
 from max.pipelines.modeling.types import ParsedToolCall, RequestID
-from max.pipelines.sampling import DEFAULT_STRUCTURED_OUTPUT_BACKEND
 
 
 class _RecordingMatcher(GrammarMatcher):
@@ -642,48 +639,47 @@ class _RaisingBackend(GrammarBackend[Any]):
         raise NotImplementedError
 
 
-class TestGrammarValidation:
-    """A backend's GrammarValidator checks turn a compile failure into an
-    InputError (400)."""
+class TestGrammarCompileFailure:
+    """The worker owns the only compile, so it is what turns a compile
+    failure into the InputError the API server returns as a 400."""
 
-    def test_tool_grammar_ok_does_not_raise(self) -> None:
-        _NoopBackend().check_tool_grammar("<grammar>")
+    def _helper(self, backend: GrammarBackend[Any]) -> StructuredOutputHelper:
+        return StructuredOutputHelper(
+            enabled=True,
+            enable_response_format_schema=True,
+            vocab_size=128,
+            backend=backend,
+        )
 
-    def test_tool_grammar_uncompilable_raises_input_error(self) -> None:
+    def test_uncompilable_schema_raises_input_error(self) -> None:
+        ctx = create_text_context(prompt_len=4, max_length=100)
+        ctx.json_schema = '{"type": "object"}'
+        bitmask = np.zeros((1, 4), dtype=np.int32)
         with pytest.raises(InputError, match="boom"):
-            _RaisingBackend().check_tool_grammar("<grammar>")
+            self._helper(_RaisingBackend()).update_context(ctx, bitmask, 0)
 
-    def test_json_schema_ok_does_not_raise(self) -> None:
-        _NoopBackend().check_json_schema('{"type": "object"}')
-
-    def test_json_schema_uncompilable_raises_input_error(self) -> None:
+    def test_uncompilable_tool_grammar_raises_input_error(self) -> None:
+        ctx = create_text_context(prompt_len=4, max_length=100)
+        ctx.grammar = "<grammar>"
+        bitmask = np.zeros((1, 4), dtype=np.int32)
         with pytest.raises(InputError, match="boom"):
-            _RaisingBackend().check_json_schema('{"type": "object"}')
+            self._helper(_RaisingBackend()).update_context(ctx, bitmask, 0)
 
-    def test_make_validator_none_falls_back_to_default(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """A None backend_name (unresolved config) builds the validator with
-        the default backend -- mirroring StructuredOutputHelper.from_tokenizer
-        -- so admission still fires when the worker would otherwise silently
-        fall back to xgrammar on an unresolved config and crash."""
-        captured: dict[str, Any] = {}
+    def test_unsatisfiable_schema_is_rejected(self) -> None:
+        """llguidance's matcher fails open on unsatisfiable schemas, so
+        build_matcher's validate_grammar call is what rejects them."""
 
-        def fake_make(
-            name: Any,
-            delegate: Any,
-            vocab_size: Any,
-            *,
-            tool_parser_name: str | None = None,
-            stop_token_ids: Any = None,
-            any_whitespace: bool | None = None,
-        ) -> GrammarBackend[Any]:
-            captured["name"] = name
-            return _NoopBackend()
+        class _UnsatisfiableBackend(_NoopBackend):
+            def validate_grammar(self, grammar: Any) -> None:
+                raise ValueError("Unsatisfiable schema")
 
-        monkeypatch.setattr(_sob, "make_grammar_backend", fake_make)
-        _sob.make_grammar_validator(None, object(), 128)
-        assert captured["name"] == DEFAULT_STRUCTURED_OUTPUT_BACKEND
+        ctx = create_text_context(prompt_len=4, max_length=100)
+        ctx.json_schema = '{"anyOf": [false]}'
+        bitmask = np.zeros((1, 4), dtype=np.int32)
+        with pytest.raises(InputError, match="Unsatisfiable"):
+            self._helper(_UnsatisfiableBackend()).update_context(
+                ctx, bitmask, 0
+            )
 
 
 class TestSpecialTokenIdsForMarkers:
@@ -767,98 +763,6 @@ class TestXgrammarBackendRejectUnsupported:
             {"type": "object", "properties": {"x": {"type": "string"}}}
         )
         assert isinstance(compiled, xgrammar.CompiledGrammar)
-
-
-class TestMakeValidatorRejectUnsupported:
-    """make_grammar_validator forwards tool_parser_name to make_grammar_backend,
-    which derives reject_unsupported so admission matches the worker (which sets
-    it True for Gemma/GLM). Without it, an unenforceable response_format slips
-    admission and crashes the worker."""
-
-    def _validator_over_real_xgrammar(
-        self, monkeypatch: pytest.MonkeyPatch, tool_parser_name: str | None
-    ) -> GrammarValidator:
-        def fake_make(
-            name: Any,
-            delegate: Any,
-            vocab_size: Any,
-            *,
-            tool_parser_name: str | None = None,
-            stop_token_ids: Any = None,
-            any_whitespace: bool | None = None,
-        ) -> GrammarBackend[Any]:
-            return _xgrammar_backend(
-                reject_unsupported=tool_parser_name in ("gemma4", "glm45")
-            )
-
-        monkeypatch.setattr(_sob, "make_grammar_backend", fake_make)
-        return _sob.make_grammar_validator(
-            "xgrammar",
-            object(),
-            len([chr(c) for c in range(32, 127)]) + 1,
-            tool_parser_name=tool_parser_name,
-        )
-
-    def test_fail_closed_parser_rejects_unenforceable_schema(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        validator = self._validator_over_real_xgrammar(
-            monkeypatch, tool_parser_name="glm45"
-        )
-        with pytest.raises(InputError):
-            validator.check_json_schema(json.dumps(_UNSUPPORTED_SCHEMA))
-
-    def test_default_permits_unenforceable_schema(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        validator = self._validator_over_real_xgrammar(
-            monkeypatch, tool_parser_name=None
-        )
-        validator.check_json_schema(json.dumps(_UNSUPPORTED_SCHEMA))
-
-    def test_forwards_tool_parser_name_to_backend(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        captured: dict[str, Any] = {}
-
-        def fake_make(
-            name: Any,
-            delegate: Any,
-            vocab_size: Any,
-            *,
-            tool_parser_name: str | None = None,
-            stop_token_ids: Any = None,
-            any_whitespace: bool | None = None,
-        ) -> GrammarBackend[Any]:
-            captured["tool_parser_name"] = tool_parser_name
-            return _NoopBackend()
-
-        monkeypatch.setattr(_sob, "make_grammar_backend", fake_make)
-        _sob.make_grammar_validator(
-            "xgrammar", object(), 128, tool_parser_name="glm45"
-        )
-        assert captured["tool_parser_name"] == "glm45"
-
-    def test_default_forwards_none_to_backend(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        captured: dict[str, Any] = {}
-
-        def fake_make(
-            name: Any,
-            delegate: Any,
-            vocab_size: Any,
-            *,
-            tool_parser_name: str | None = None,
-            stop_token_ids: Any = None,
-            any_whitespace: bool | None = None,
-        ) -> GrammarBackend[Any]:
-            captured["tool_parser_name"] = tool_parser_name
-            return _NoopBackend()
-
-        monkeypatch.setattr(_sob, "make_grammar_backend", fake_make)
-        _sob.make_grammar_validator("xgrammar", object(), 128)
-        assert captured["tool_parser_name"] is None
 
 
 class _FillRecordingBackend(_NoopBackend):

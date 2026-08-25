@@ -29,9 +29,6 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from max.pipelines.context import BaseContext
 from max.pipelines.lib import PIPELINE_REGISTRY, MemoryPlan, PipelineConfig
-from max.pipelines.lib.pipeline_variants.structured_output_backend import (
-    make_grammar_validator,
-)
 from max.pipelines.modeling.types import (
     PipelineOutput,
     PipelinesFactory,
@@ -220,22 +217,6 @@ async def lifespan(
         app.state.pipeline = pipeline
         app.state.pipeline_config = serving_settings.pipeline_config
         app.state.memory_plan = serving_settings.memory_plan
-
-        # Admission-time grammar validator (text generation only). Rejects a
-        # response_format / tool schema the active backend cannot compile with a
-        # 400 up front.
-        app.state.grammar_validator = None
-        if serving_settings.task == PipelineTask.TEXT_GENERATION and hasattr(
-            serving_settings.tokenizer, "delegate"
-        ):
-            delegate = serving_settings.tokenizer.delegate
-            app.state.grammar_validator = make_grammar_validator(
-                serving_settings.pipeline_config.sampling.structured_output_backend,
-                delegate,
-                len(delegate),
-                tool_parser_name=serving_settings.pipeline_config.runtime.tool_parser,
-                any_whitespace=serving_settings.pipeline_config.sampling.structured_output_any_whitespace,
-            )
 
         # Also store as handler for OpenResponses API route compatibility
         # For pixel generation, this is the same as pipeline

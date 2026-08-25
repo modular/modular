@@ -41,6 +41,7 @@ from max.profiler import Tracer, traced
 from max.serve.config import Settings
 from max.serve.scheduler.base import (
     CancelRequest,
+    PrefillFailure,
     PrefillProgressPing,
     PrefillRequest,
     PrefillResponse,
@@ -438,15 +439,18 @@ class PrefillScheduler(Scheduler):
         t1 = time.monotonic()
         batch_creation_time_s = t1 - t0
 
-        # The DI protocol has no failure reply, so the decode node is not
-        # notified; route-side validation makes this unreachable in practice.
         for failed_id, error in self.batch_constructor.take_grammar_failed():
-            self.request_id_to_reply_context.pop(failed_id, None)
-            logger.error(
-                "Dropping prefill request %s: grammar build failed after "
-                "route-side validation passed: %s",
-                failed_id,
-                error,
+            # Never reaches an executed CE batch, so drop its queue-wait
+            # entry here rather than leaving it to accumulate.
+            self._enqueue_time.pop(failed_id, None)
+            reply_context = self.request_id_to_reply_context.pop(
+                failed_id, None
+            )
+            if reply_context is None:
+                continue
+            identity, _ = reply_context
+            self.dispatcher.send_reply_nowait(
+                PrefillFailure(id=failed_id, error=error), identity
             )
 
         # With the overlap pipeline, a pending _prev_batch must be drained

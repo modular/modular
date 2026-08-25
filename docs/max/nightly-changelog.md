@@ -517,6 +517,17 @@ This version is still a work in progress.
   and content that is not a decodable image is rejected with a 400 rather than
   inlined as an image.
 
+- Structured-output grammars are now compiled once, in the model worker.
+  The API server used to compile a `response_format` schema or tool-call
+  grammar just to validate it, throw the result away, and leave the worker
+  to compile the same grammar again against a cache it does not share.
+  Removing the duplicate lowers time to first token for structured
+  requests by 12-22% (Gemma 4 31B, concurrency 32); decode latency and
+  requests without structured output are unchanged. An uncompilable
+  grammar is still rejected with the same HTTP 400, streaming requests
+  included, and a disaggregated prefill node now reports the failure to
+  the decode node instead of leaving the request to time out.
+
 - GLM models now map `reasoning_effort` onto the two thinking levels their
   chat template can express, instead of forwarding it verbatim. The template
   reads only `high` as a distinct level and treats every other value as

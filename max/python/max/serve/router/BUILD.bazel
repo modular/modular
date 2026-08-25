@@ -25,7 +25,6 @@ modular_py_library(
         requirement("opentelemetry-api"),
         requirement("httpx"),
         requirement("jinja2"),
-        requirement("llguidance"),
         requirement("openai"),
         requirement("pillow"),
         requirement("pydantic"),
