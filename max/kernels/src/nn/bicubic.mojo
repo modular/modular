@@ -25,6 +25,7 @@ from layout import (
     Coord,
     Idx,
     TensorLayout,
+    TensorStorage,
     TileTensor,
     coord,
     coord_to_index_list,
@@ -198,9 +199,15 @@ def gpu_bicubic_kernel[
     output_origin: MutOrigin,
     InputLayoutType: TensorLayout,
     input_origin: ImmOrigin,
+    OutputStorage: TensorStorage,
+    InputStorage: TensorStorage,
 ](
-    output: TileTensor[dtype, OutputLayoutType, output_origin],
-    input: TileTensor[dtype, InputLayoutType, input_origin],
+    output: TileTensor[
+        dtype, OutputLayoutType, output_origin, Storage=OutputStorage
+    ],
+    input: TileTensor[
+        dtype, InputLayoutType, input_origin, Storage=InputStorage
+    ],
 ) -> None:
     """Perform bicubic interpolation using GPU.
 
@@ -210,6 +217,8 @@ def gpu_bicubic_kernel[
         output_origin: Mutable `Origin` of the output tensor.
         InputLayoutType: `TensorLayout` of the input tensor.
         input_origin: Immutable `Origin` of the input tensor.
+        OutputStorage: Storage policy of the output tensor.
+        InputStorage: Storage policy of the input tensor.
 
     Args:
         output: Output tensor with desired dimensions on the device.
@@ -221,6 +230,8 @@ def gpu_bicubic_kernel[
     # Provide evidence that flat_rank >= 4 for the Coord(..., ...) loads/stores below.
     comptime assert input.flat_rank >= 4
     comptime assert output.flat_rank >= 4
+    comptime assert output.element_size == 1
+    comptime assert input.element_size == 1
 
     var b = block_idx.x
     var c = block_idx.y
@@ -321,8 +332,10 @@ def resize_bicubic[
             output.dtype,
             output_origin=output.origin,
             OutputLayoutType=output.LayoutType,
+            OutputStorage=output.Storage,
             input_origin=ImmOrigin(input.origin),
             InputLayoutType=input.LayoutType,
+            InputStorage=input.Storage,
         ]
         ctx.enqueue_function[kernel](
             output,

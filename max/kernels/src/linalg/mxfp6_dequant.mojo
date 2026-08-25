@@ -64,9 +64,15 @@ def _dequant_mxfp6_kernel[
     fmt: FP6Format,
     SF_VECTOR_SIZE: Int = 32,
 ](
-    output: TileTensor[out_dtype, output_layout, MutAnyOrigin],
-    input: TileTensor[in_dtype, input_layout, MutAnyOrigin],
-    scales: TileTensor[scales_dtype, scales_layout, MutAnyOrigin],
+    output: TileTensor[
+        out_dtype, output_layout, MutAnyOrigin, Storage=output_storage
+    ],
+    input: TileTensor[
+        in_dtype, input_layout, MutAnyOrigin, Storage=input_storage
+    ],
+    scales: TileTensor[
+        scales_dtype, scales_layout, MutAnyOrigin, Storage=scales_storage
+    ],
     num_rows: Int32,
     num_cols: Int32,
 ):
@@ -77,6 +83,9 @@ def _dequant_mxfp6_kernel[
     comptime assert output.flat_rank >= 2
     comptime assert input.flat_rank >= 2
     comptime assert scales.flat_rank >= 2
+    comptime assert output.element_size == 1
+    comptime assert input.element_size == 1
+    comptime assert scales.element_size == 1
 
     with PDL():
         for global_row_idx in range(block_idx.x, _num_rows, grid_dim.x):
