@@ -509,3 +509,40 @@ def test_wait_for_server_ready_live_liveness_does_not_interfere(
     # Checked once after the first failed poll; the second poll returned 200.
     liveness.assert_called_once_with()
     sleep.assert_called_once_with(5.0)
+
+
+def test_wait_for_server_ready_base_url_uses_url_and_bearer_auth(
+    mocker: MockerFixture, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    urlopen = mocker.patch(
+        "urllib.request.urlopen", return_value=_mock_response(200)
+    )
+    mocker.patch("time.monotonic", side_effect=[100.0, 101.0])
+
+    wait_for_server_ready(
+        "localhost",
+        8000,
+        timeout_s=60,
+        backend="modular",
+        base_url="https://example.com/",
+    )
+
+    request = urlopen.call_args.args[0]
+    assert request.full_url == "https://example.com/health"
+    assert request.get_header("Authorization") == "Bearer test-key"
+
+
+def test_wait_for_server_ready_no_base_url_sends_no_auth(
+    mocker: MockerFixture,
+) -> None:
+    urlopen = mocker.patch(
+        "urllib.request.urlopen", return_value=_mock_response(200)
+    )
+    mocker.patch("time.monotonic", side_effect=[100.0, 101.0])
+
+    wait_for_server_ready("localhost", 8000, timeout_s=60, backend="modular")
+
+    request = urlopen.call_args.args[0]
+    assert request.full_url == "http://localhost:8000/health"
+    assert request.get_header("Authorization") is None

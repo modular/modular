@@ -18,11 +18,12 @@ from __future__ import annotations
 import contextlib
 import json
 import logging
+import os
 import resource
 import time
 import urllib.error
 import urllib.request
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Mapping
 from typing import Any, TypeVar
 
 import numpy as np
@@ -85,6 +86,16 @@ def deadline_passed(end_time_ns: int | None) -> bool:
     return end_time_ns is not None and time.perf_counter_ns() >= end_time_ns
 
 
+def openai_bearer_auth_headers() -> Mapping[str, str]:
+    """Authorization header carrying ``$OPENAI_API_KEY`` as a bearer token.
+
+    The shared auth shape for every request the benchmark sends to an
+    OpenAI-compatible endpoint. Local unauthenticated servers ignore it,
+    so callers only need to branch when the header must be absent.
+    """
+    return {"Authorization": f"Bearer {os.environ.get('OPENAI_API_KEY')}"}
+
+
 def wait_for_server_ready(
     host: str,
     port: int,
@@ -94,6 +105,7 @@ def wait_for_server_ready(
     interval_s: float = 5.0,
     backend: str,
     liveness_check: Callable[[], bool] | None = None,
+    base_url: str | None = None,
 ) -> float:
     """Polls ``http://<host>:<port>/<path>`` until it responds with HTTP 200.
 
@@ -112,16 +124,28 @@ def wait_for_server_ready(
     *timeout_s*. This lets an orchestrator that launched the server abort
     promptly on a crashed/failed bring-up instead of hanging for the full
     timeout.
+
+    When *base_url* is provided (a remote endpoint, e.g. ``--base-url``), it
+    replaces the ``http://<host>:<port>`` prefix and the request carries an
+    ``Authorization: Bearer $OPENAI_API_KEY`` header, matching the auth the
+    benchmark requests themselves send. Local servers (no *base_url*) are
+    polled unauthenticated as before.
     """
     # TODO: remove once BENTO-168 is fixed
     if backend == "mcloud":
         return 0.0
-    url = f"http://{host}:{port}/{path}"
+    headers: Mapping[str, str] = {}
+    if base_url is not None:
+        url = f"{base_url.rstrip('/')}/{path}"
+        headers = openai_bearer_auth_headers()
+    else:
+        url = f"http://{host}:{port}/{path}"
     start = time.monotonic()
     deadline = start + timeout_s
     while True:
         try:
-            with urllib.request.urlopen(url, timeout=5) as resp:
+            request = urllib.request.Request(url, headers=dict(headers))
+            with urllib.request.urlopen(request, timeout=5) as resp:
                 if resp.status == 200:
                     return time.monotonic() - start
         except (urllib.error.URLError, ConnectionError, OSError):

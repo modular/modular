@@ -49,7 +49,7 @@ from .datasets.types import (
     PixelGenerationImageOptions,
 )
 from .sse import iter_events
-from .utils import deadline_passed
+from .utils import deadline_passed, openai_bearer_auth_headers
 
 # 30 minute timeout per request session
 AIOHTTP_TIMEOUT = aiohttp.ClientTimeout(total=30 * 60)
@@ -545,7 +545,7 @@ async def _run_openai_stream_request(
     *,
     api_url: str,
     payload: dict[str, Any],
-    headers: dict[str, str],
+    headers: Mapping[str, str],
     prompt_len: int,
     chunk_type: type[_ChunkT],
     content_extractor: Callable[[_ChunkT], str],
@@ -684,9 +684,7 @@ class OpenAICompletionsRequestDriver(RequestDriver):
         )
         payload = _build_final_payload(base_payload, self.extra_body)
 
-        headers = {
-            "Authorization": f"Bearer {os.environ.get('OPENAI_API_KEY')}"
-        }
+        headers = openai_bearer_auth_headers()
 
         return await _run_openai_stream_request(
             api_url=api_url,
@@ -703,7 +701,7 @@ async def _run_atom_nonstream_chat_request(
     *,
     api_url: str,
     payload: dict[str, Any],
-    headers: dict[str, str],
+    headers: Mapping[str, str],
     prompt_len: int,
 ) -> RequestFuncOutput:
     """ATOM workaround: non-streaming chat request using server-reported timing.
@@ -846,7 +844,7 @@ class OpenAIChatCompletionsRequestDriver(RequestDriver):
 
         headers = {
             "Content-Type": "application/json",
-            "Authorization": f"Bearer {os.environ.get('OPENAI_API_KEY')}",
+            **openai_bearer_auth_headers(),
         }
         if request_func_input.session_id:
             headers["X-Session-ID"] = request_func_input.session_id
@@ -999,7 +997,7 @@ class OpenResponsesRequestDriver(RequestDriver):
 
         headers = {
             "Content-Type": "application/json",
-            "Authorization": f"Bearer {os.environ.get('OPENAI_API_KEY')}",
+            **openai_bearer_auth_headers(),
         }
 
         output = PixelGenerationRequestFuncOutput()
@@ -1090,7 +1088,7 @@ class SglangPixelGenerationRequestDriver(RequestDriver):
 
         headers = {
             "Content-Type": "application/json",
-            "Authorization": f"Bearer {os.environ.get('OPENAI_API_KEY')}",
+            **openai_bearer_auth_headers(),
         }
 
         output = PixelGenerationRequestFuncOutput()
@@ -1261,9 +1259,7 @@ class SglangVideoRequestDriver(RequestDriver):
         # image-to-video uploads the conditioning image, which requires
         # multipart/form-data; text-to-video stays JSON. Let aiohttp set the
         # multipart Content-Type (with boundary) for the form path.
-        headers = {
-            "Authorization": f"Bearer {os.environ.get('OPENAI_API_KEY')}"
-        }
+        headers = dict(openai_bearer_auth_headers())
         if request_func_input.input_image_paths:
             post_kwargs: dict[str, Any] = {
                 "data": _build_sglang_video_form(request_func_input)
@@ -1410,7 +1406,7 @@ class VllmOmniPixelGenerationRequestDriver(RequestDriver):
 
         headers = {
             "Content-Type": "application/json",
-            "Authorization": f"Bearer {os.environ.get('OPENAI_API_KEY')}",
+            **openai_bearer_auth_headers(),
         }
 
         output = PixelGenerationRequestFuncOutput()
@@ -1527,9 +1523,7 @@ class VllmOmniVideoRequestDriver(RequestDriver):
         else:
             post_data = payload
 
-        headers = {
-            "Authorization": f"Bearer {os.environ.get('OPENAI_API_KEY')}",
-        }
+        headers = openai_bearer_auth_headers()
 
         output = PixelGenerationRequestFuncOutput()
         start = time.perf_counter()
