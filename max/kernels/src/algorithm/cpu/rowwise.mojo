@@ -638,9 +638,15 @@ def launch[
             unsafe_memset_zero(counters_buf, num_outputs)
 
             @always_inline
-            @__parameter
-            @__copy_capture(partials_buf, counters_buf, num_splits, body)
-            def split_worker(w: Int):
+            def split_worker(
+                w: Int,
+            ) {
+                var partials_buf,
+                var counters_buf,
+                var num_splits,
+                var body,
+                imm,
+            }:
                 var row_idx = w // num_splits
                 var split_idx = w % num_splits
                 var row_coords = _get_nd_indices_from_flat_index(
@@ -656,7 +662,7 @@ def launch[
                 )
                 body[params_splitk](Coord(row_coords.canonicalize()), ctx)
 
-            sync_parallelize[split_worker](total_workers)
+            sync_parallelize(split_worker, total_workers)
             partials_buf.free()
             counters_buf.free()
         else:
@@ -671,12 +677,9 @@ def launch[
             var chunk = ceildiv(num_outputs, actual_workers)
 
             @always_inline
-            @__parameter
-            def run_coop[params: ContextParams]():
+            def run_coop[params: ContextParams]() {imm}:
                 @always_inline
-                @__parameter
-                @__copy_capture(body)
-                def row_worker(w: Int):
+                def row_worker(w: Int) {var body, imm}:
                     var start = w * chunk
                     var end = _min((w + 1) * chunk, num_outputs)
                     if start >= end:
@@ -688,7 +691,7 @@ def launch[
                         )
                         body[params](Coord(row_coords.canonicalize()), ctx)
 
-                sync_parallelize[row_worker](actual_workers)
+                sync_parallelize(row_worker, actual_workers)
 
             # Opt-in wide-bf16-accumulator path for large rows (`associative`,
             # sum/mean only): a `_CPU_ILP_ACCUMULATORS * simd_width`-wide monoid
@@ -752,9 +755,7 @@ def launch[
         )
 
         @always_inline
-        @__parameter
-        @__copy_capture(body)
-        def slice_worker(w: Int):
+        def slice_worker(w: Int) {var body, imm}:
             var s_start = w * chunk
             var s_end = _min((w + 1) * chunk, slice_size)
             if s_start >= s_end:
@@ -784,4 +785,4 @@ def launch[
                     body[params_scalar_strided](Coord(slice_coords), ctx_scalar)
                     k += 1
 
-        sync_parallelize[slice_worker](num_workers)
+        sync_parallelize(slice_worker, num_workers)

@@ -1083,8 +1083,7 @@ def selective_scan_update_cpu[
     var has_z = Int(z.dim[0]()) > 0
     var delta_softplus_bool = Bool(Int(delta_softplus) != 0)
 
-    @__parameter
-    def worker(idx: Int):
+    def worker(idx: Int) {imm}:
         var b, d = divmod(idx, dim)
 
         # Compute group_id for this dimension
@@ -1204,7 +1203,7 @@ def selective_scan_update_cpu[
             out_offset, Scalar[kernel_dtype](out_val.cast[kernel_dtype]())
         )
 
-    sync_parallelize[worker](batch * dim, ctx)
+    sync_parallelize(worker, batch * dim, ctx)
 
 
 def selective_scan_fwd_cpu[
@@ -1242,8 +1241,7 @@ def selective_scan_fwd_cpu[
 ):
     """CPU kernel for selective scan forward pass."""
 
-    @__parameter
-    def worker(idx: Int):
+    def worker(idx: Int) {imm}:
         var b, d = divmod(idx, dim)
 
         # Bounds checking
@@ -1529,7 +1527,7 @@ def selective_scan_fwd_cpu[
                     t_in_chunk = 0
             t += 1
 
-    sync_parallelize[worker](batch * dim, ctx)
+    sync_parallelize(worker, batch * dim, ctx)
 
 
 def selective_scan_fwd_cpu_minimal[
@@ -1599,8 +1597,7 @@ def selective_scan_fwd_cpu_minimal[
         ctx: Device context for parallel execution (defaults to `None`).
     """
 
-    @__parameter
-    def worker(idx: Int):
+    def worker(idx: Int) {imm}:
         var b, d = divmod(idx, dim)
 
         if b >= batch or d >= dim:
@@ -1709,7 +1706,7 @@ def selective_scan_fwd_cpu_minimal[
                     chunk_idx += 1
                     t_in_chunk = 0
 
-    sync_parallelize[worker](batch * dim, ctx)
+    sync_parallelize(worker, batch * dim, ctx)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -2373,8 +2370,7 @@ def ssd_combined_cpu[
     var delta_bias_stride = UInt32(1)
     var gamma_stride = UInt32(1)
 
-    @__parameter
-    def worker(idx: Int):
+    def worker(idx: Int) {imm}:
         var b, d = divmod(idx, dim)
 
         var group_id = d // group_size
@@ -2702,7 +2698,7 @@ def ssd_combined_cpu[
                     t_in_chunk = 0
             t += 1
 
-    sync_parallelize[worker](batch * dim, ctx)
+    sync_parallelize(worker, batch * dim, ctx)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -2870,8 +2866,7 @@ def mamba_split_conv1d_scan_combined_cpu[
     var xBC_start = dim
     var dt_start = 2 * dim + 2 * ngroups * DSTATE
 
-    @__parameter
-    def worker(idx: Int) raises:
+    def worker(idx: Int) raises {imm}:
         var b, d = divmod(idx, dim)
         var h, p = divmod(d, headdim)
         var group_id = h // ngroups if ngroups > 1 else 0
@@ -3235,7 +3230,7 @@ def mamba_split_conv1d_scan_combined_cpu[
                     chunk_idx += 1
                     t_in_chunk = 0
 
-    sync_parallelize[worker](batch * dim, ctx)
+    sync_parallelize(worker, batch * dim, ctx)
 
 
 def mamba_split_conv1d_scan_combined_gpu[

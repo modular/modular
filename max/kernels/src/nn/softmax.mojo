@@ -763,10 +763,10 @@ def _softmax_cpu[
     var num_workers = min(parallelism_level(ctx), outer_dim)
     var chunk_size = ceildiv(outer_dim, num_workers)
 
-    @__copy_capture(chunk_size, inner_dim, outer_dim)
-    @__parameter
     @always_inline
-    def task_func(task_id: Int) raises:
+    def task_func(
+        task_id: Int,
+    ) raises {var chunk_size, var inner_dim, var outer_dim, imm}:
         var start_offset = task_id * chunk_size
         var end_offset = min((task_id + 1) * chunk_size, outer_dim)
         for i in range(start_offset, end_offset):
@@ -795,7 +795,7 @@ def _softmax_cpu[
             ](output_buffer_view)
             _ = indices
 
-    sync_parallelize[task_func](num_workers, ctx)
+    sync_parallelize(task_func, num_workers, ctx)
 
 
 # Softmax (no input lambda)

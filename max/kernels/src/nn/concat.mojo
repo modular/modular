@@ -242,16 +242,26 @@ def _concat_parallel[
     var output_data = output_canon.data
 
     var total_output_bytes = output_h * output_wc
+    var output_shape = rebind[IndexList[output.rank]](
+        coord_to_index_list(output.layout.shape_coord())
+    )
 
     comptime KB = 1024
     comptime parallel_chunk_size = 64 * KB  # TODO autotune
     var num_chunks = ceildiv(total_output_bytes, parallel_chunk_size)
 
-    @__copy_capture(
-        total_output_bytes, output_h, output_c, output_data, output_wc
-    )
-    @__parameter
-    def do_chunk(chunk_index: Int) raises:
+    def do_chunk(
+        chunk_index: Int,
+    ) raises {
+        var total_output_bytes,
+        var output_h,
+        var output_c,
+        var output_data,
+        var output_wc,
+        var output_shape,
+        imm inputs,
+        imm axis,
+    }:
         # "Amount" refers to byte-offsets into logical copy order, not into
         # output buffer.
         var chunk_start_amount = chunk_index * parallel_chunk_size
@@ -302,9 +312,7 @@ def _concat_parallel[
                         + overlap_rel_start % input_wc,
                         input_data.unsafe_offset(overlap_rel_start),
                         overlap_rel_end - overlap_rel_start,
-                        rebind[IndexList[output.rank]](
-                            coord_to_index_list(output.layout.shape_coord())
-                        ),
+                        output_shape,
                     )
                 else:
                     # OK, we have maybe stragglers on the start and end, and a
@@ -318,9 +326,7 @@ def _concat_parallel[
                         + overlap_rel_start % input_wc,
                         input_data.unsafe_offset(overlap_rel_start),
                         overlap_full_rel_start - overlap_rel_start,
-                        rebind[IndexList[output.rank]](
-                            coord_to_index_list(output.layout.shape_coord())
-                        ),
+                        output_shape,
                     )
                     # Now, fully-aligned sections:
                     var in_ptr = input_data.unsafe_offset(
@@ -340,9 +346,7 @@ def _concat_parallel[
                             out_ptr_offset,
                             in_ptr,
                             input_wc,
-                            rebind[IndexList[output.rank]](
-                                coord_to_index_list(output.layout.shape_coord())
-                            ),
+                            output_shape,
                         )
                         in_ptr = in_ptr.unsafe_offset(input_wc)
                         out_ptr_offset += output_wc
@@ -352,9 +356,7 @@ def _concat_parallel[
                         out_ptr_offset,
                         in_ptr,
                         overlap_rel_end - overlap_full_rel_end,
-                        rebind[IndexList[output.rank]](
-                            coord_to_index_list(output.layout.shape_coord())
-                        ),
+                        output_shape,
                     )
 
             amount_traversed += input_byte_size
@@ -366,7 +368,7 @@ def _concat_parallel[
 
     # The do_chunk closure captures the stack allocated Buffer,
     # so this kernel must be run synchronously.
-    sync_parallelize[do_chunk](num_chunks, ctx)
+    sync_parallelize(do_chunk, num_chunks, ctx)
 
 
 @always_inline
@@ -520,8 +522,7 @@ def _concat_cpu[
     _check_input_consistency[dtype](axis, inputs)
 
     @always_inline
-    @__parameter
-    def dispatch_serial(unused_thread_idx: Int) raises:
+    def dispatch_serial(unused_thread_idx: Int) raises {imm}:
         _concat_serial[dtype, epilogue_fn](output, axis, inputs)
 
     comptime KB = 1024
@@ -532,7 +533,7 @@ def _concat_cpu[
     if output_bytes < min_work_for_parallel:
         # The dispatch_serial closure captures the stack allocated
         # Buffer, so this kernel must be run synchronously.
-        sync_parallelize[dispatch_serial](1, ctx)
+        sync_parallelize(dispatch_serial, 1, ctx)
     else:
         _concat_parallel[epilogue_fn=epilogue_fn](output, axis, inputs, ctx=ctx)
 

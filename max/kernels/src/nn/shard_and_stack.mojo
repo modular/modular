@@ -137,8 +137,7 @@ def _shard_and_stack_multi_device[
     var output_elements_per_input = outer_dims * segment_elements
 
     @no_inline
-    @__parameter
-    def transfer(tp_index: Int) raises:
+    def transfer(tp_index: Int) raises {imm}:
         # Device context for this output (index 0 is CPU, so +1)
         var gpu_ctx = dev_ctxs_input[tp_index + 1]
         var output_tensor = dyn_outputs[tp_index]
@@ -179,7 +178,7 @@ def _shard_and_stack_multi_device[
                 )
 
     # Enqueue transfers in parallel, one thread per device.
-    sync_parallelize[transfer](outputs.size)
+    sync_parallelize(transfer, outputs.size)
 
 
 def _shard_and_stack_single_device[

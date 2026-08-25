@@ -555,9 +555,7 @@ struct ConvTransposedPacked[
         ](num_threads, conv_shape)
         var num_tasks = num_partitions.flattened_length()
 
-        @__copy_capture(num_partitions, cf_tile_size)
-        @__parameter
-        def task_func(task_id: Int):
+        def task_func(task_id: Int) {var num_partitions, var cf_tile_size, imm}:
             var partition = get_partition(
                 task_id,
                 num_partitions,
@@ -592,7 +590,7 @@ struct ConvTransposedPacked[
             )
             instance._batch_group_loop()
 
-        sync_parallelize[task_func](num_tasks, ctx)
+        sync_parallelize(task_func, num_tasks, ctx)
 
     @always_inline
     def _zero_output(self, n: Int, g: Int):

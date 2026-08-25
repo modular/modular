@@ -39,9 +39,7 @@ def test_sync_parallelize() raises:
     var chunk_size = ceildiv(len(vector), num_work_items)
 
     @always_inline
-    @__copy_capture(vector, chunk_size)
-    @__parameter
-    def parallel_fn(thread_id: Int):
+    def parallel_fn(thread_id: Int) {var vector, var chunk_size}:
         var start = thread_id * chunk_size
         var end = min(start + chunk_size, len(vector))
 
@@ -51,7 +49,7 @@ def test_sync_parallelize() raises:
 
         map(end - start, add_two)
 
-    sync_parallelize[parallel_fn](num_work_items)
+    sync_parallelize(parallel_fn, num_work_items)
 
     for i in range(len(vector)):
         assert_equal(vector[i], Int(i + 2))

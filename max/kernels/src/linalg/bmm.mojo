@@ -335,9 +335,19 @@ def _batched_matmul_cpu[
     var num_tasks = num_tasks_batch * num_tasks_matmul
 
     @always_inline
-    @__copy_capture(a, b, c, num_tasks_batch, num_tasks_matmul, m, n, k)
-    @__parameter
-    def task_func(task_id: Int):
+    def task_func(
+        task_id: Int,
+    ) {
+        var a,
+        var b,
+        var c,
+        var num_tasks_batch,
+        var num_tasks_matmul,
+        var m,
+        var n,
+        var k,
+        imm,
+    }:
         var a_stride_between_batches = a.num_elements() // Int(a.dim[0]())
         var b_stride_between_batches = b.num_elements() // Int(b.dim[0]())
         var c_stride_between_batches = c.num_elements() // Int(c.dim[0]())
@@ -457,7 +467,7 @@ def _batched_matmul_cpu[
                 )
             _ = batch_coords
 
-    sync_parallelize[task_func](num_tasks, ctx)
+    sync_parallelize(task_func, num_tasks, ctx)
 
 
 @__name(

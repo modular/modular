@@ -568,9 +568,9 @@ def _matmul_cpu_impl[
             )
 
         @always_inline
-        @__copy_capture(m, k, num_tasks)
-        @__parameter
-        def pack_task_func(task_id: Int):
+        def pack_task_func(
+            task_id: Int,
+        ) {mut a_packed_alloc, var m, var k, var num_tasks, imm}:
             var sub_matmul_config = get_partitioned_matmul[
                 a.dtype,
                 b.dtype,
@@ -590,9 +590,9 @@ def _matmul_cpu_impl[
             )
 
         @always_inline
-        @__copy_capture(m, k, num_tasks, n, mh, kh)
-        @__parameter
-        def task_func(task_id: Int):
+        def task_func(
+            task_id: Int,
+        ) {var m, var k, var num_tasks, var n, var mh, var kh, imm}:
             var sub_matmul_config = get_partitioned_matmul[
                 a.dtype,
                 b.dtype,
@@ -650,11 +650,11 @@ def _matmul_cpu_impl[
         # Also parallelize currently is slower than asyn_parallelize which is depreciated now.
         # See issue 27734
         comptime if use_i8mm:
-            sync_parallelize[pack_task_func](num_tasks, ctx)
+            sync_parallelize(pack_task_func, num_tasks, ctx)
 
         # TODO (#12624): Closure captures some state on the stack so this needs
         # to be synchronous in order to keep that state alive
-        sync_parallelize[task_func](num_tasks, ctx)
+        sync_parallelize(task_func, num_tasks, ctx)
 
         a_packed_alloc^.deinit_with(dealloc[Scalar[a.dtype]])
 
