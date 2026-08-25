@@ -200,6 +200,19 @@ This version is still a work in progress.
 
 ## MAX framework
 
+- Greedy speculative acceptance (`greedy_acceptance_sampler`,
+  `AcceptanceSampler` in greedy mode) now applies the structured-output
+  grammar bitmask to the target logits (with a `-inf` fill) before the
+  argmax, so a grammar-invalid draft is always rejected and recovered and
+  bonus tokens always satisfy the constraint — matching the stochastic
+  path. Unconstrained batches are unchanged.
+- `stochastic_acceptance_sampler` and `AcceptanceSampler` also accept a
+  rank-1 `[batch_size]` per-row seed tensor in stochastic argmax mode: each
+  row's acceptance sampling is then keyed off its own seed instead of row
+  0's, so a row samples independently of its co-residents. A single-row
+  batch is bit-identical to the scalar-seed behavior. The gemma4 and
+  qwen3.5 unified MTP graphs now pass their per-row seed tensors through.
+
 - Added `max.pipelines.lib.MemoryPlan`, the result of memory planning when a
   pipeline is loaded: the effective `planned_max_length`, `max_batch_size`,
   `max_batch_total_tokens`, KV-cache budget, and device specs the pipeline
