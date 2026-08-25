@@ -242,7 +242,17 @@
             "id": "api/python/experimental"
           },
           "items": [
-            "api/python/experimental.compilation",
+            {
+              "type": "category",
+              "label": "compilation",
+              "link": {
+                "type": "doc",
+                "id": "api/python/experimental.compilation"
+              },
+              "items": [
+                "__AUTOGEN:max.experimental.compilation__"
+              ]
+            },
             "api/python/experimental.functional",
             {
               "type": "category",

@@ -31,7 +31,7 @@ from max.dtype import DType
 from max.experimental import compilation
 from max.experimental import functional as F
 from max.experimental.compilation import (
-    SPEC_TYPES,
+    _SPEC_TYPES,
     StagedGraph,
     as_layout,
     as_subgraph,
@@ -144,8 +144,8 @@ class TestStage:
     def test_a_call_is_traced_as_written(self) -> None:
         staged = stage(lambda x: x * 2)(_spec(4))
         assert staged.graph.name == "lambda"
-        assert staged.signature.out_structure.num_leaves == 1
-        assert staged.signal_device_ids == ()
+        assert staged._signature.out_structure.num_leaves == 1
+        assert staged._signal_device_ids == ()
 
     def test_an_example_tensor_serves_as_a_spec(self) -> None:
         staged = stage(lambda x: x * 2)(_tensor(1.0, 2.0))
@@ -168,7 +168,7 @@ class TestStage:
     def test_a_distributed_spec_threads_one_input_per_device(self) -> None:
         staged = stage(lambda x: x * 2)(_sharded_spec(4))
         assert len(staged.graph.inputs) == 2
-        assert staged.signature.out_structure.num_leaves == 2
+        assert staged._signature.out_structure.num_leaves == 2
 
     def test_options_bind_to_the_transform_not_the_call(self) -> None:
         staged = stage(lambda x: x * 2, name="explicit")(_spec(2))
@@ -258,7 +258,7 @@ class TestCompiled:
         path = tmp_path / "model.mef"
         run.export_mef(path)
         assert path.stat().st_size > 0
-        assert "engine_model" not in vars(run), "exporting must not initialize"
+        assert "_engine_model" not in vars(run), "exporting must not initialize"
 
     def test_tracing_yields_a_graph_that_cannot_run(self) -> None:
         staged = stage(lambda x: x * 2)(_spec(2))
@@ -271,9 +271,9 @@ class TestCompiled:
 
     def test_compiling_does_not_initialize(self) -> None:
         run = compile(lambda x: x * 2)(_spec(2))
-        assert "engine_model" not in vars(run)
+        assert "_engine_model" not in vars(run)
         run(_tensor(1.0, 2.0))
-        assert "engine_model" in vars(run), "the first call initializes"
+        assert "_engine_model" in vars(run), "the first call initializes"
 
     def test_a_distributed_call_round_trips(self) -> None:
         run = compile(lambda x: x * 2)(_sharded_spec(2))
@@ -635,7 +635,7 @@ class TestTheHardestSignature:
         args, kwargs = _gnarly_specs(_spec)
         staged = stage(_gnarly)(*args, **kwargs)
         assert len(staged.graph.inputs) == 8
-        assert staged.signature.out_structure.num_leaves == 1, (
+        assert staged._signature.out_structure.num_leaves == 1, (
             "arity and tags are static"
         )
 
@@ -643,7 +643,7 @@ class TestTheHardestSignature:
         args, kwargs = _gnarly_specs(_spec)
         staged = stage(_gnarly)(*args, **kwargs)
         assert (
-            list(tree_paths(staged.signature.in_specs, leaf=SPEC_TYPES))
+            list(tree_paths(staged._signature.in_specs, leaf=_SPEC_TYPES))
             == _GNARLY_ROUTES
         )
 
@@ -825,7 +825,7 @@ class TestARecordArgumentSurvivesTheRoundTrip:
     """A pytree record as an argument, all the way through execution.
 
     Tracing one was already covered; *calling* the result was not, and the two
-    walks are different -- specs flatten under ``leaf=SPEC_TYPES`` and a call
+    walks are different -- specs flatten under ``leaf=_SPEC_TYPES`` and a call
     flattens under ``_one_slot``. When those disagreed about a record the
     symptom was not a mismatch error: the record became one static slot, and
     checking it against its own spec ran ``Tensor.__eq__`` against a

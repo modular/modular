@@ -10,13 +10,35 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Transforms over callables on tensors: stage, compile and as_subgraph.
+"""APIs to trace and compile callables.
 
-:func:`stage` records a callable into a :class:`StagedGraph`, and
-:func:`compile` goes one step further to a :class:`CompiledCallable`, which
-initializes only when first called, so exporting a MEF never builds a model.
-:func:`as_subgraph` lowers a callable to one shared subgraph body per distinct
-stage. Options bind at the transform and specs at the call.
+:func:`compile` turns a function over tensors into a compiled one in two
+calls: first pass a spec (dtype, shape, device) for each tensor argument,
+then call the result on real tensors. Arguments that are not tensors are
+fixed while tracing, so pass them the same way both times. :func:`stage`
+stops after tracing, for inspecting the graph.
+
+.. code-block:: python
+
+    from max.driver import CPU
+    from max.dtype import DType
+    from max.experimental import compilation
+    from max.experimental.tensor import Tensor
+    from max.graph import DeviceRef, TensorType
+
+    def step(x: Tensor, *, gain: float) -> Tensor:
+        return x * gain
+
+    x_spec = TensorType(DType.float32, ["batch", 2], device=DeviceRef.CPU())
+
+    run = compilation.compile(step)(x_spec, gain=3.0)
+    out = run(Tensor.ones([4, 2], device=CPU()), gain=3.0)  # "batch" accepts 4
+
+.. invisible-code-block: python
+
+    import numpy as np
+
+    np.testing.assert_allclose(out.to_numpy(), np.full((4, 2), 3.0))
 """
 
 from __future__ import annotations
@@ -75,10 +97,10 @@ NormalizedSpec: TypeAlias = TensorLayout | BufferType | DistributedBufferType
 """A :data:`Spec` that :func:`as_layout` has normalized, and so what the graph
 reads."""
 
-#: The types accepted as one input spec, and so the leaves of a spec tree.
-SPEC_TYPES: tuple[type, ...] = get_args(Spec)
-#: The types a graph boundary carries, and so the leaves of a staged result.
-GRAPH_VALUE_TYPES = (BufferValue, TensorValue)
+# The types accepted as one input spec, and so the leaves of a spec tree.
+_SPEC_TYPES: tuple[type, ...] = get_args(Spec)
+# The types a graph boundary carries, and so the leaves of a staged result.
+_GRAPH_VALUE_TYPES = (BufferValue, TensorValue)
 
 
 def _sanitized_graph_name(fn: Callable[..., object]) -> str:
@@ -89,6 +111,24 @@ def _sanitized_graph_name(fn: Callable[..., object]) -> str:
 
 def as_layout(spec: Spec) -> NormalizedSpec:
     """Normalizes a tensor spec into a layout.
+
+    Applied to every tensor argument, which is what lets a real tensor stand
+    in for a spec.
+
+    .. code-block:: python
+
+        from max.dtype import DType
+        from max.experimental.compilation import as_layout
+        from max.graph import DeviceRef, TensorType
+
+        layout = as_layout(
+            TensorType(DType.float32, [4], device=DeviceRef.CPU())
+        )
+
+    .. invisible-code-block: python
+
+        assert layout.dtype == DType.float32
+        assert layout.mesh.num_devices == 1
 
     Args:
         spec: A :class:`~max.experimental.sharding.TensorLayout`, a
@@ -136,19 +176,15 @@ def _graph_input_types(
 def _fills_one_slot(value: object) -> bool:
     """Whether ``value`` fills one argument slot rather than nesting further."""
     # Deferring to ``tree.is_node`` keeps this agreeing with ``_record_graph``'s walk.
-    return isinstance(value, SPEC_TYPES) or not tree.is_node(value)
+    return isinstance(value, _SPEC_TYPES) or not tree.is_node(value)
 
 
 @dataclasses.dataclass(frozen=True)
-class Signature:
-    """How a flat graph boundary maps onto a Python call.
+class _Signature:
+    """How a flat graph boundary maps onto a Python call."""
 
-    The trees here are :obj:`~typing.Any` because a call carries whatever the
-    caller passed -- specs beside floats, strings and records -- and they cross
-    this boundary rather than being inspected, so no union closes them and
-    :class:`object` would not survive the round trip.
-    """
-
+    # ``Any`` because a call carries whatever the caller passed, uninspected;
+    # no union closes it and ``object`` would not survive the round trip.
     in_specs: Any
     """One layout per tensor argument, nested as the staged call passed them."""
 
@@ -195,7 +231,7 @@ class Signature:
         buffers: list[Buffer] = []
         for path, layout in wanted.items():
             arg, name = given[path], path.partition(".")[2]
-            if not isinstance(layout, SPEC_TYPES):
+            if not isinstance(layout, _SPEC_TYPES):
                 # __eq__ may be elementwise, so only a clean True counts.
                 try:
                     matches = arg is layout or bool(arg == layout)
@@ -258,33 +294,58 @@ class Signature:
         return tree.unflatten(self.out_structure, list(buffers))
 
 
-@dataclasses.dataclass(frozen=True, repr=False)
 class StagedGraph(Generic[_P, _R]):
-    """A graph and the calling convention it was staged from.
+    """A traced graph, ready to inspect or compile.
 
-    What :func:`stage` returns; printing one renders the MLIR of the whole
-    module, subgraph bodies included. It cannot run: :meth:`compile` it first.
+    Returned by :func:`stage`. Printing one renders the MLIR of the whole
+    module, subgraph bodies included. Call :meth:`compile` to make it
+    runnable.
 
     .. code-block:: python
 
-        print(compilation.stage(attend)(x_spec, mask=mask_spec))
+        from max.dtype import DType
+        from max.experimental import compilation
+        from max.experimental.tensor import Tensor
+        from max.graph import DeviceRef, TensorType
+
+        def scale(x: Tensor) -> Tensor:
+            return x * 2
+
+        spec = TensorType(DType.float32, [4], device=DeviceRef.CPU())
+        staged = compilation.stage(scale)(spec)
+
+    .. invisible-code-block: python
+
+        assert "mo.mul" in str(staged)
     """
 
     graph: Graph
     """The recorded graph."""
 
-    signature: Signature
-    """How a call crosses the graph's boundary."""
+    # Internal state, and so kept out of a constructor: how a call crosses the
+    # graph's boundary, and the accelerators whose collectives need signals.
+    _signature: _Signature
+    _signal_device_ids: tuple[int, ...]
 
-    signal_device_ids: tuple[int, ...] = ()
-    """The accelerators whose collectives need signal buffers."""
+    @classmethod
+    def _new(
+        cls,
+        graph: Graph,
+        signature: _Signature,
+        signal_device_ids: tuple[int, ...] = (),
+    ) -> StagedGraph[_P, _R]:
+        self = cls()
+        self.graph = graph
+        self._signature = signature
+        self._signal_device_ids = signal_device_ids
+        return self
 
     def __str__(self) -> str:
         """Returns the whole module's MLIR, shared subgraph bodies included.
 
         The graph's own op names the bodies it calls but does not contain
-        them, so rendering only that would hide them -- and would quietly
-        weaken any check that an op is *absent*.
+        them; rendering only that would quietly weaken any check that an op
+        is absent.
         """
         return str(self.graph._module)
 
@@ -294,66 +355,97 @@ class StagedGraph(Generic[_P, _R]):
     def compile(
         self, *, weights: Mapping[str, DLPackArray] | None = None
     ) -> CompiledCallable[_P, _R]:
-        """Compiles the graph, binding neither weights nor device memory.
+        """Compiles the graph into a :class:`CompiledCallable`.
 
         Args:
             weights: Data for the external constants the graph declares, keyed
                 as the graph names them, one entry per shard of a distributed
-                weight. Bound when the model initializes, not here.
+                weight.
 
         Returns:
-            The :class:`CompiledCallable`, which initializes on its first call.
+            The compiled function, called on real tensors.
         """
-        return CompiledCallable(
-            self.signature,
+        return CompiledCallable._new(
+            self._signature,
             _session().compile(self.graph),
-            self.signal_device_ids,
+            self._signal_device_ids,
             dict(weights or {}),
         )
 
 
-@dataclasses.dataclass(frozen=True, eq=False)
 class CompiledCallable(Generic[_P, _R]):
-    """Calls a compiled graph, initializing its model once, on first call.
+    """A compiled function over tensors.
 
-    What :func:`compile` returns. It holds no graph: :attr:`signature` is all
-    that a call needs, and :meth:`export_mef` writes :attr:`artifact` without
-    ever initializing a model.
+    Returned by :func:`compile`. Call it like the original function, with a
+    real tensor in each spec's place. The first call also binds
+    :attr:`weights` and allocates device memory; :meth:`export_mef` needs
+    neither, so it works before any call.
 
     .. code-block:: python
 
-        compiled = compilation.compile(scale)(spec)
-        result = compiled(Tensor.ones([3]))
+        from max.driver import CPU
+        from max.dtype import DType
+        from max.experimental import compilation
+        from max.experimental.tensor import Tensor
+        from max.graph import DeviceRef, TensorType
+
+        def scale(x: Tensor) -> Tensor:
+            return x * 2
+
+        spec = TensorType(DType.float32, [3], device=DeviceRef.CPU())
+
+        run = compilation.compile(scale)(spec)  # compiles here
+        run.export_mef("scale.mef")             # no weights, no device memory
+        out = run(Tensor.ones([3], device=CPU()))  # [2.0, 2.0, 2.0]
+
+    .. invisible-code-block: python
+
+        import numpy as np
+
+        np.testing.assert_allclose(out.to_numpy(), [2.0, 2.0, 2.0])
     """
 
-    signature: Signature
-    """How a call crosses the graph's boundary."""
-
-    artifact: CompiledModel
-    """The compiled graph, binding neither weights nor device memory."""
-
-    signal_device_ids: tuple[int, ...] = ()
-    """The accelerators whose collectives need signal buffers."""
-
-    weights: Mapping[str, DLPackArray] = dataclasses.field(default_factory=dict)
+    weights: Mapping[str, DLPackArray]
     """Data for the external constants the graph declares, keyed as the graph
     names them, one entry per shard of a distributed weight."""
 
+    # Internal state, and so kept out of a constructor: how a call crosses the
+    # graph's boundary, the compiled graph, and the accelerators whose
+    # collectives need signals.
+    _signature: _Signature
+    _artifact: CompiledModel
+    _signal_device_ids: tuple[int, ...]
+
+    @classmethod
+    def _new(
+        cls,
+        signature: _Signature,
+        artifact: CompiledModel,
+        signal_device_ids: tuple[int, ...] = (),
+        weights: Mapping[str, DLPackArray] | None = None,
+    ) -> CompiledCallable[_P, _R]:
+        self = cls()
+        self._signature = signature
+        self._artifact = artifact
+        self._signal_device_ids = signal_device_ids
+        self.weights = dict(weights or {})
+        return self
+
     @functools.cached_property
-    def engine_model(self) -> Model:
+    def _engine_model(self) -> Model:
         """The initialized model this calls, with :attr:`weights` bound in."""
         return _session().init(
-            self.artifact, weights_registry=dict(self.weights)
+            self._artifact, weights_registry=dict(self.weights)
         )
 
     @property
-    def signal_buffers(self) -> list[Buffer]:
+    def _signal_buffers(self) -> list[Buffer]:
         """Buffers for multi-device collectives, allocated once, not per call."""
-        ids = self.signal_device_ids
+        ids = self._signal_device_ids
         return _cached_signal_buffers(ids)[0] if ids else []
 
     def __call__(self, *args: _P.args, **kwargs: _P.kwargs) -> _R:
-        """Runs the graph on ``args``, rebuilding the result's tree.
+        """Runs the compiled function on real tensors.
 
         Args:
             args: One :class:`~max.experimental.tensor.Tensor` per tensor
@@ -368,8 +460,8 @@ class CompiledCallable(Generic[_P, _R]):
                 :class:`~max.experimental.tensor.Tensor` where one belongs.
             ValueError: If the arguments do not match what was staged.
         """
-        buffers = self.signature.flatten(args, kwargs)
-        return self.signature.unflatten(self.execute_raw(*buffers))
+        buffers = self._signature.flatten(args, kwargs)
+        return self._signature.unflatten(self.execute_raw(*buffers))
 
     def execute_raw(self, *buffers: Buffer) -> list[Buffer]:
         """Executes the graph on raw buffers, appending the signal buffers.
@@ -381,17 +473,20 @@ class CompiledCallable(Generic[_P, _R]):
         Returns:
             The result buffers, flat and in graph order.
         """
-        return list(self.engine_model(*buffers, *self.signal_buffers))
+        return list(self._engine_model(*buffers, *self._signal_buffers))
 
     def export_mef(self, path: str | Path) -> None:
         """Writes the compiled graph to a MEF file at ``path``.
 
-        Compiling is all this needs, so it never initializes the model.
+        MEF is the binary format the runtime executes. Writing one serializes
+        the compiled graph directly, without binding :attr:`weights` or
+        allocating device memory. Read it back with :func:`max.engine.read` to
+        skip compiling again.
 
         Args:
             path: Where to write the file.
         """
-        self.artifact.export_mef(path)
+        self._artifact.export_mef(path)
 
 
 def _signal_device_ids(
@@ -460,11 +555,37 @@ def stage(
     signal_devices: Iterable[Device] = (),
     is_device_graph: bool = False,
 ) -> Callable[..., StagedGraph[_P, _R]]:
-    """Returns a stager that records ``fn`` into a graph, without compiling it.
+    """Traces ``fn`` into a graph, without compiling it.
+
+    Call the returned function with one spec per tensor argument of ``fn``
+    to get the :class:`StagedGraph`, which prints as MLIR. Use
+    :func:`compile` to run ``fn`` instead.
+
+    Tensor arguments are given as specs: a :class:`~max.graph.TensorType`, a
+    :class:`~max.experimental.sharding.TensorLayout`, or a buffer type. A real
+    :class:`~max.experimental.tensor.Tensor` also works, converted by
+    :func:`as_layout`, which fixes every dimension. Pass a type to keep one
+    symbolic.
 
     .. code-block:: python
 
-        print(compilation.stage(attend)(x_spec, mask=mask_spec))
+        from max.dtype import DType
+        from max.experimental import compilation
+        from max.experimental.tensor import Tensor
+        from max.graph import DeviceRef, TensorType
+
+        def combine(kv: dict[str, Tensor], alpha: float) -> Tensor:
+            return (kv["a"] + kv["b"]) * alpha
+
+        spec = TensorType(DType.float32, [2], device=DeviceRef.CPU())
+
+        # Each tensor in the container is an input; alpha is baked in.
+        staged = compilation.stage(combine)({"a": spec, "b": spec}, 2.0)
+        print(staged)
+
+    .. invisible-code-block: python
+
+        assert len(staged.graph.inputs) == 2
 
     Args:
         fn: The callable to record, over
@@ -484,9 +605,9 @@ def stage(
     """
 
     def record(*args: Any, **kwargs: Any) -> StagedGraph[_P, _R]:
-        # Positional, like Signature.flatten: one graph input per argument slot.
-        in_specs = tree.map(as_layout, (args, dict(kwargs)), leaf=SPEC_TYPES)
-        layouts, structure = tree.flatten(in_specs, leaf=SPEC_TYPES)
+        # Positional, like _Signature.flatten: one graph input per argument slot.
+        in_specs = tree.map(as_layout, (args, dict(kwargs)), leaf=_SPEC_TYPES)
+        layouts, structure = tree.flatten(in_specs, leaf=_SPEC_TYPES)
         types = [t for spec in layouts for t in _graph_input_types(spec)]
         ids = _signal_device_ids(layouts, signal_devices)
         graph = Graph(
@@ -514,10 +635,10 @@ def stage(
             )
             # Also positional on the way out: ``return x, x`` is two results.
             flat, out_structure = tree.flatten(
-                fn(*in_args, **in_kwargs), leaf=GRAPH_VALUE_TYPES
+                fn(*in_args, **in_kwargs), leaf=_GRAPH_VALUE_TYPES
             )
             graph.output(*flat)
-        return StagedGraph(graph, Signature(in_specs, out_structure), ids)
+        return StagedGraph._new(graph, _Signature(in_specs, out_structure), ids)
 
     return record
 
@@ -532,27 +653,60 @@ def compile(
     signal_devices: Iterable[Device] = (),
     is_device_graph: bool = False,
 ) -> Callable[..., CompiledCallable[_P, _R]]:
-    """Returns a compiler that records ``fn`` and compiles it.
+    """Traces and compiles ``fn``.
 
-    Like :func:`stage`, plus the compile. Initializing a model is what waits
-    for the first call, so exporting a MEF needs nothing more than this.
+    Call the returned function with one spec per tensor argument of ``fn``
+    to get the :class:`CompiledCallable`; call that on real tensors.
+
+    Tensor arguments are given as specs: a :class:`~max.graph.TensorType`, a
+    :class:`~max.experimental.sharding.TensorLayout`, or a buffer type. A real
+    :class:`~max.experimental.tensor.Tensor` also works, converted by
+    :func:`as_layout`, which fixes every dimension. Pass a type to keep one
+    symbolic.
 
     .. code-block:: python
 
-        compiled = compilation.compile(scale)(spec)
+        from max.driver import CPU
+        from max.dtype import DType
+        from max.experimental import compilation
+        from max.experimental import functional as F
+        from max.experimental.tensor import Tensor
+        from max.graph import DeviceRef, TensorType
+
+        w_type = TensorType(DType.float32, [2], device=DeviceRef.CPU())
+
+        def layer(x: Tensor) -> Tensor:
+            return x * F.constant_external("w", w_type)
+
+        x_spec = TensorType(DType.float32, ["batch", 2], device=DeviceRef.CPU())
+        w = Tensor.ones([2], device=CPU()) * 3
+
+        run = compilation.compile(layer, weights={"w": w})(x_spec)
+        out = run(Tensor.ones([4, 2], device=CPU()))  # 4 rows of 3.0
+
+    .. invisible-code-block: python
+
+        import numpy as np
+
+        np.testing.assert_allclose(out.to_numpy(), np.full((4, 2), 3.0))
 
     Args:
-        fn: The callable to compile.
-        weights: As :meth:`StagedGraph.compile` takes them.
-        name: As :func:`stage` takes it.
-        custom_extensions: As :func:`stage` takes them.
-        allow_subgraphs: As :func:`stage` takes it.
-        signal_devices: As :func:`stage` takes them.
-        is_device_graph: As :func:`stage` takes it.
+        fn: The callable to compile, over
+            :class:`~max.experimental.tensor.Tensor` values or containers of
+            them.
+        weights: Data for the external constants the graph declares, keyed as
+            the graph names them, one entry per shard of a distributed weight.
+        name: The graph's name. Defaults to ``fn``'s own name.
+        custom_extensions: Paths to custom Mojo kernel libraries.
+        allow_subgraphs: Whether :func:`as_subgraph` bodies become shared
+            subgraphs rather than inlining into the caller.
+        signal_devices: Devices taking part in collectives beyond what the
+            specs span.
+        is_device_graph: Whether to record a device graph.
 
     Returns:
         A callable taking one spec per argument of ``fn`` and returning the
-        compiled :class:`CompiledCallable`.
+        :class:`CompiledCallable`.
     """
 
     def stage_and_compile(
@@ -573,8 +727,12 @@ def compile(
 class _InferKey:
     """Sentinel for "no key given", which a caller's own ``None`` is not."""
 
+    def __repr__(self) -> str:
+        return "<inferred>"
 
-_INFER_KEY = _InferKey()
+
+# ``Any``-typed so ``key`` below renders as the ``str | None`` callers pass.
+_INFER_KEY: Any = _InferKey()
 
 
 def _inferred_key(fn: Callable[..., Any]) -> str | None:
@@ -597,19 +755,65 @@ def as_subgraph(
     *,
     name: str | None = None,
     prefix: str = "",
-    key: str | _InferKey | None = _INFER_KEY,
+    key: str | None = _INFER_KEY,
 ) -> Callable[_P, _R]:
-    """Returns ``fn`` lowered to one shared subgraph body per distinct stage.
+    """Lowers ``fn`` to one shared subgraph body per distinct stage.
 
     Usable as a decorator or at the call site.
 
     .. code-block:: python
 
-        @compilation.as_subgraph
-        def block(x: Tensor, w: Tensor) -> Tensor:
-            return F.relu(x * w)
+        from max.dtype import DType
+        from max.experimental import compilation
+        from max.experimental.tensor import Tensor
+        from max.graph import DeviceRef, TensorType
 
-        y = compilation.as_subgraph(block, prefix="layers.0")(x, w)
+        @compilation.as_subgraph
+        def block(x: Tensor) -> Tensor:
+            return x * 2
+
+        spec = TensorType(DType.float32, [4], device=DeviceRef.CPU())
+        staged = compilation.stage(lambda x: block(block(block(x))))(spec)
+
+    .. invisible-code-block: python
+
+        # One body definition, called three times.
+        assert str(staged).count("mo.graph @block") == 1
+        assert str(staged).count("mo.call @block") == 3
+
+    A shared body also shares the weights it declares. At the call site,
+    ``prefix`` gives each site its own weights out of the one body:
+
+    .. code-block:: python
+
+        from max.driver import CPU
+        from max.dtype import DType
+        from max.experimental import compilation
+        from max.experimental import functional as F
+        from max.experimental.tensor import Tensor
+        from max.graph import DeviceRef, TensorType
+
+        w_type = TensorType(DType.float32, [1], device=DeviceRef.CPU())
+
+        def block(x: Tensor) -> Tensor:
+            return x * F.constant_external("w", w_type, is_placeholder=True)
+
+        def model(x: Tensor) -> Tensor:
+            for layer in ("layers.0.", "layers.1."):
+                x = compilation.as_subgraph(block, prefix=layer)(x)
+            return x
+
+        one = Tensor.ones([1], device=CPU())
+        weights = {"layers.0.w": one * 2, "layers.1.w": one * 10}
+
+        run = compilation.compile(model, weights=weights)(w_type)
+        out = run(one)  # [20.0]
+
+    .. invisible-code-block: python
+
+        import numpy as np
+
+        np.testing.assert_allclose(out.to_numpy(), [20.0])
 
     Args:
         fn: The callable to lower.
@@ -629,7 +833,8 @@ def as_subgraph(
             eagerly.
     """
     name = name or _sanitized_graph_name(fn)
-    key = _inferred_key(fn) if isinstance(key, _InferKey) else key
+    if key is _INFER_KEY:
+        key = _inferred_key(fn)
 
     @functools.wraps(fn)
     def emit_subgraph_call(*args: _P.args, **kwargs: _P.kwargs) -> Any:
@@ -641,9 +846,9 @@ def as_subgraph(
         ctx = subgraph_context()
         if ctx is None:
             return fn(*args, **kwargs)
-        # Positional, like Signature.flatten: one operand per argument slot.
+        # Positional, like _Signature.flatten: one operand per argument slot.
         operands, structure = tree.flatten(
-            (args, kwargs), leaf=GRAPH_VALUE_TYPES
+            (args, kwargs), leaf=_GRAPH_VALUE_TYPES
         )
         # Completed here, where the operands are flat and the prefix is known.
         types = [operand.type for operand in operands]
@@ -663,7 +868,7 @@ def as_subgraph(
                 )
                 # Also positional out: ``return x, x`` is two results.
                 outputs, out_structure = tree.flatten(
-                    fn(*in_args, **in_kwargs), leaf=GRAPH_VALUE_TYPES
+                    fn(*in_args, **in_kwargs), leaf=_GRAPH_VALUE_TYPES
                 )
                 body.output(*outputs)
             found = share_subgraph(ctx, body, out_structure, key=full_key)
