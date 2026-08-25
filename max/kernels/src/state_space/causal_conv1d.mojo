@@ -361,11 +361,11 @@ def causal_conv1d_channel_first_fwd_gpu[
 
     var out_vals: SIMD[output_dtype, kNElts] = 0
 
-    # Load this channel's weights, lane w = weight[channel, w]. Used as a
-    # per-tap scalar (W[w]); a single width-generic dot product serves every
-    # supported width.
+    # Load this channel's weights, W[w] = weight[channel, w]. kWidth may be 3,
+    # which is not a valid SIMD length, so the taps live in an Array and a
+    # single width-generic dot product serves every supported width.
     var weight_c_base: UInt32 = UInt32(channel_id) * weight_c_stride
-    var W: SIMD[x_dtype, kWidth] = 0
+    var W = Array[Scalar[x_dtype], kWidth](fill=0)
 
     comptime for w in range(kWidth):
         W[w] = Scalar[x_dtype](
@@ -479,8 +479,8 @@ def causal_conv1d_channel_last_fwd_gpu[
 
     Each block handles a chunk of `kNElts` channels (coalesced along the
     contiguous C axis) and a chunk of sequence positions. The per-channel weight
-    row is loaded in a single `load[width=kWidth]`. `has_bias` / `has_seq_idx`
-    gate the bias add and packed-sequence masking.
+    row is preloaded into registers. `has_bias` / `has_seq_idx` gate the bias
+    add and packed-sequence masking.
 
     Grid: (ceildiv(seqlen, kNThreads * kNElts), ceildiv(dim, kNElts), batch).
     Block: kNThreads.
@@ -536,9 +536,14 @@ def causal_conv1d_channel_last_fwd_gpu[
                 bias.raw_load(UInt32(c_idx) * bias_stride)
             )
 
-        var W = (weight._storage + c_idx * Int(weight_c_stride)).load[
-            width=kWidth
-        ]()
+        # kWidth may be 3 (not a valid SIMD length), so load the taps one at
+        # a time into an Array.
+        var weight_c_base: UInt32 = UInt32(c_idx) * weight_c_stride
+        var W = Array[Scalar[x_dtype], kWidth](fill=0)
+        comptime for w in range(kWidth):
+            W[w] = Scalar[x_dtype](
+                weight.raw_load(weight_c_base + UInt32(w) * weight_width_stride)
+            )
 
         var out_vals_channel: SIMD[output_dtype, kNElts] = 0
 
