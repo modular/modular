@@ -30,11 +30,20 @@ def takes_one(arg: Memory):
     print("yes")
 
 
+def takes_one_with_kwargs(arg: Memory, var **kwargs: Int):
+    print(len(kwargs))
+
+
 def main():
     var f1: def(Memory) thin = takes_one
     var f2: def(* args: * TypeList.splat[1, Memory]()) thin = takes_one
+    var f3: def(
+        * args: * TypeList.splat[1, Memory](), var ** kwargs: Int
+    ) thin = takes_one_with_kwargs
 
     # CHECK: yes
     f1(Memory())
     # CHECK: yes
     f2(Memory())
+    # CHECK: 1
+    f3(Memory(), value=1)

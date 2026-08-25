@@ -384,19 +384,35 @@ static FnOp generateConversionThunk(Attribute key, ASTDecl &moduleDecl,
   std::optional<size_t> thunkVariadicArgIndexOpt =
       thunkSignature.findPackVarArgIndex();
 
-  bool actualMemResult = actualSignature.hasMemoryOnlyResult();
-  ArrayRef<Type> actualArgTypes =
-      actualSignature.getArguments().drop_back(actualMemResult);
+  ArrayRef<Type> actualArgTypes = actualSignature.getArguments().drop_back(
+      actualSignature.hasMemoryOnlyResult() + actualSignature.isThrows());
+  ArrayRef<Type> thunkArgTypes = thunkSignature.getArguments().drop_back(
+      thunkSignature.hasMemoryOnlyResult() + thunkSignature.isThrows());
+  std::optional<size_t> actualKwVarArgIndex;
+  std::optional<size_t> thunkKwVarArgIndex;
+  if (!actualArgTypes.empty() &&
+      actualSignature.isKwVarArg(actualArgTypes.size() - 1))
+    actualKwVarArgIndex = actualArgTypes.size() - 1;
+  if (!thunkArgTypes.empty() &&
+      thunkSignature.isKwVarArg(thunkArgTypes.size() - 1))
+    thunkKwVarArgIndex = thunkArgTypes.size() - 1;
+  assert(actualKwVarArgIndex.has_value() == thunkKwVarArgIndex.has_value() &&
+         "function conversion must preserve kwargs");
 
   for (size_t actualArgIndex = 0; actualArgIndex < actualArgTypes.size();
        actualArgIndex++) {
+    bool actualArgIsKwVarArg =
+        actualKwVarArgIndex && actualArgIndex == *actualKwVarArgIndex;
     bool actualArgIsForVariadic =
-        thunkVariadicArgIndexOpt.has_value() &&
+        !actualArgIsKwVarArg && thunkVariadicArgIndexOpt.has_value() &&
         actualArgIndex >= thunkVariadicArgIndexOpt.value();
 
     Value argForActual;
     KGEN::ArgConvention convForActual;
-    if (actualArgIsForVariadic) {
+    if (actualArgIsKwVarArg) {
+      argForActual = thunk.getArgument(*thunkKwVarArgIndex);
+      convForActual = thunkSignature.getArgConvention(*thunkKwVarArgIndex);
+    } else if (actualArgIsForVariadic) {
       size_t thunkVariadicArgIndex = thunkVariadicArgIndexOpt.value();
       size_t indexInVariadic = actualArgIndex - thunkVariadicArgIndex;
 
@@ -450,6 +466,11 @@ static FnOp generateConversionThunk(Attribute key, ASTDecl &moduleDecl,
     case ArgConvention::Ref:
       value = MBPValue(argForActual);
       break;
+    }
+
+    if (actualArgIsKwVarArg) {
+      operands.add({value, &node}, ArgUnpackStyle::kStarStar);
+      continue;
     }
 
     // Pass any required-keyword args with a name.

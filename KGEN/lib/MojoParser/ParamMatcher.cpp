@@ -263,12 +263,34 @@ LogicalResult ParamMatcher::matchFunctionTypes(FnTypeGeneratorType actual,
 
   // Otherwise, either we allow implicit conversion, or we already ensured
   // zeroCostConversion above.
-  bool actualMemResult = actualFnTp.hasMemoryOnlyResult();
-  ArrayRef<Type> actualArgTypes =
-      actualFnTp.getArguments().drop_back(actualMemResult);
-  bool expectedMemResult = expectedFnTp.hasMemoryOnlyResult();
-  ArrayRef<Type> expectedArgTypes =
-      expectedFnTp.getArguments().drop_back(expectedMemResult);
+  ArrayRef<Type> actualArgTypes = actualFnTp.getArguments().drop_back(
+      actualFnTp.hasMemoryOnlyResult() + actualFnTp.isThrows());
+  ArrayRef<Type> expectedArgTypes = expectedFnTp.getArguments().drop_back(
+      expectedFnTp.hasMemoryOnlyResult() + expectedFnTp.isThrows());
+
+  auto findKwVarArgIndex =
+      [](FuncType fnType, ArrayRef<Type> argTypes) -> std::optional<size_t> {
+    if (!argTypes.empty() && fnType.isKwVarArg(argTypes.size() - 1))
+      return argTypes.size() - 1;
+    return std::nullopt;
+  };
+  std::optional<size_t> actualKwVarArgIndex =
+      findKwVarArgIndex(actualFnTp, actualArgTypes);
+  std::optional<size_t> expectedKwVarArgIndex =
+      findKwVarArgIndex(expectedFnTp, expectedArgTypes);
+
+  // A kwargs argument is always the last user argument. Keep it out of the
+  // positional arity and variadic-pack matching below.
+  size_t actualPositionalArgCount =
+      actualKwVarArgIndex.value_or(actualArgTypes.size());
+  size_t expectedPositionalArgCount =
+      expectedKwVarArgIndex.value_or(expectedArgTypes.size());
+  assert((!actualKwVarArgIndex ||
+          *actualKwVarArgIndex + 1 == actualArgTypes.size()) &&
+         "kwargs must be the last user argument");
+  assert((!expectedKwVarArgIndex ||
+          *expectedKwVarArgIndex + 1 == expectedArgTypes.size()) &&
+         "kwargs must be the last user argument");
 
   // If the actual function is not throwing, and the expected function is,
   // then we can infer the Error type to be Never.
@@ -281,9 +303,14 @@ LogicalResult ParamMatcher::matchFunctionTypes(FnTypeGeneratorType actual,
                           expectedFnTp.getUserThrownType()))) {
       failableScope.revert();
     }
-    expectedArgTypes = expectedArgTypes.drop_back();
     actualEffects.setThrows(true);
   }
+
+  // Error arguments are excluded from argument matching, so compare their
+  // user-facing types explicitly when both functions throw.
+  if (actualFnTp.isThrows() && expectedFnTp.isThrows())
+    PROP(matchTypes(actualFnTp.getUserThrownType(),
+                    expectedFnTp.getUserThrownType()));
 
   // If the actual result type returns a ref result and the expected returns a
   // value, then we can copy the value to the ref result.  Otherwise, the
@@ -332,6 +359,21 @@ LogicalResult ParamMatcher::matchFunctionTypes(FnTypeGeneratorType actual,
   PROP(matchParams(actualFnTp.getCaptureOrigins(),
                    expectedFnTp.getCaptureOrigins()));
 
+  if (actualKwVarArgIndex.has_value() != expectedKwVarArgIndex.has_value())
+    return error(MatchFailure::Unclassified{});
+  if (actualKwVarArgIndex) {
+    size_t actualIndex = *actualKwVarArgIndex;
+    size_t expectedIndex = *expectedKwVarArgIndex;
+    if (!checkConventionsConvertible(
+            expectedFnTp.getArgConvention(expectedIndex),
+            actualFnTp.getArgConvention(actualIndex)))
+      return error(MatchFailure::Unclassified{});
+
+    PROP(matchTypes(
+        ASTType(actualArgTypes[actualIndex]).getKwargsDictRefValueType(),
+        ASTType(expectedArgTypes[expectedIndex]).getKwargsDictRefValueType()));
+  }
+
   // Functions with an incompatible number of arguments cannot be converted
   // between each other. The number of arguments should be equal, unless the
   // expected function is variadic.
@@ -340,12 +382,12 @@ LogicalResult ParamMatcher::matchFunctionTypes(FnTypeGeneratorType actual,
       expectedFnTp.findPackVarArgIndex();
   if (expectedVariadicArgIndexOpt.has_value()) {
     size_t expectedVariadicArgIndex = expectedVariadicArgIndexOpt.value();
-    if (actualArgTypes.size() < expectedVariadicArgIndex) {
+    if (actualPositionalArgCount < expectedVariadicArgIndex) {
       // Caller didn't supply enough arguments.
       return error(MatchFailure::Unclassified{});
     }
   } else { // No variadic
-    if (actualArgTypes.size() != expectedArgTypes.size()) {
+    if (actualPositionalArgCount != expectedPositionalArgCount) {
       // Caller didn't supply the expected number of arguments.
       return error(MatchFailure::Unclassified{});
     }
@@ -359,7 +401,7 @@ LogicalResult ParamMatcher::matchFunctionTypes(FnTypeGeneratorType actual,
 
   // "Normal" here means it won't be received by a variadic arg in the expected
   // function.
-  size_t numNormalArgs = actualArgTypes.size();
+  size_t numNormalArgs = actualPositionalArgCount;
   if (collectIntoVariadic) {
     numNormalArgs = expectedVariadicArgIndexOpt.value();
   }
@@ -412,7 +454,7 @@ LogicalResult ParamMatcher::matchFunctionTypes(FnTypeGeneratorType actual,
     // As we do our checks, we'll also be calculating the actual kgen.variadic
     // parameter value.
     SmallVector<TypedAttr> elements;
-    for (size_t actualArgIndex = numNormalArgs, e = actualArgTypes.size();
+    for (size_t actualArgIndex = numNormalArgs, e = actualPositionalArgCount;
          actualArgIndex < e; ++actualArgIndex) {
       auto actualConv = actualFnTp.getArgConvention(actualArgIndex);
       ASTType actualAstType = actualArgTypes[actualArgIndex];
