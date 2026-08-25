@@ -55,6 +55,79 @@ def bench_copy[
     )
 
 
+def bench_fill[
+    T: Copyable & Defaultable & Deinitable, size: Int
+](mut b: Bencher) raises:
+    @always_inline
+    def call_fn():
+        var array = Array[T, size](fill=T())
+        keep(array)
+
+    b.iter(call_fn)
+
+
+def bench_default_init[
+    T: Copyable & Defaultable & Deinitable, size: Int
+](mut b: Bencher) raises:
+    @always_inline
+    def call_fn():
+        var array = Array[T, size]()
+        keep(array)
+
+    b.iter(call_fn)
+
+
+def bench_eq[size: Int](mut b: Bencher) raises:
+    """Compares equal arrays, which never short-circuit."""
+    var lhs = Array[Int, size](fill=0)
+    var rhs = Array[Int, size](fill=0)
+
+    @always_inline
+    def call_fn() {imm lhs, imm rhs}:
+        var res = black_box(lhs) == black_box(rhs)
+        keep(res)
+
+    b.iter(call_fn)
+
+
+def bench_lt[size: Int](mut b: Bencher) raises:
+    """Orders equal arrays, which never short-circuit."""
+    var lhs = Array[Int, size](fill=0)
+    var rhs = Array[Int, size](fill=0)
+
+    @always_inline
+    def call_fn() {imm lhs, imm rhs}:
+        var res = black_box(lhs) < black_box(rhs)
+        keep(res)
+
+    b.iter(call_fn)
+
+
+def bench_contains_miss[size: Int](mut b: Bencher) raises:
+    """Searches for an absent value, which never short-circuits."""
+    var array = Array[Int, size](fill=0)
+
+    @always_inline
+    def call_fn() {imm array}:
+        var res = black_box(1) in black_box(array)
+        keep(res)
+
+    b.iter(call_fn)
+
+
+def bench_iter[size: Int](mut b: Bencher) raises:
+    var array = Array[Int, size](fill=1)
+
+    @always_inline
+    def call_fn() {imm array}:
+        var total = 0
+        for el in black_box(array):
+            total += el
+        keep(total)
+
+    b.iter(call_fn)
+
+
 def main() raises:
     var m = Bench(
         BenchConfig(
@@ -64,18 +137,54 @@ def main() raises:
     comptime for size in SIZES:
         m.bench_function(
             bench_move[Int, size],
-            BenchId("array_move/trivial/" + String(size)),
+            BenchId(String(t"array_move/trivial/{size}")),
         )
         m.bench_function(
             bench_move[NonTrivial, size],
-            BenchId("array_move/nontrivial/" + String(size)),
+            BenchId(String(t"array_move/nontrivial/{size}")),
         )
         m.bench_function(
             bench_copy[Int, size],
-            BenchId("array_copy/trivial/" + String(size)),
+            BenchId(String(t"array_copy/trivial/{size}")),
         )
         m.bench_function(
             bench_copy[NonTrivial, size],
-            BenchId("array_copy/nontrivial/" + String(size)),
+            BenchId(String(t"array_copy/nontrivial/{size}")),
+        )
+        m.bench_function(
+            bench_fill[Byte, size],
+            BenchId(String(t"array_fill/byte/{size}")),
+        )
+        m.bench_function(
+            bench_fill[Int, size],
+            BenchId(String(t"array_fill/trivial/{size}")),
+        )
+        m.bench_function(
+            bench_fill[NonTrivial, size],
+            BenchId(String(t"array_fill/nontrivial/{size}")),
+        )
+        m.bench_function(
+            bench_default_init[Byte, size],
+            BenchId(String(t"array_default_init/byte/{size}")),
+        )
+        m.bench_function(
+            bench_default_init[Int, size],
+            BenchId(String(t"array_default_init/trivial/{size}")),
+        )
+        m.bench_function(
+            bench_eq[size],
+            BenchId(String(t"array_eq/trivial/{size}")),
+        )
+        m.bench_function(
+            bench_lt[size],
+            BenchId(String(t"array_lt/trivial/{size}")),
+        )
+        m.bench_function(
+            bench_contains_miss[size],
+            BenchId(String(t"array_contains_miss/trivial/{size}")),
+        )
+        m.bench_function(
+            bench_iter[size],
+            BenchId(String(t"array_iter/trivial/{size}")),
         )
     m.dump_report()
