@@ -1389,8 +1389,7 @@ def LIT_UnresolvedWildcardImportOp : LITOp<"unresolved_wildcard_import"> {
   let summary = "Lexical unresolved wildcard import.";
   let description = [{
     The `lit.unresolved_wildcard_import` operation represents a wildcard module
-    import that is yet to be resolved. If `fullImport` is set, all symbols are
-    considered from import, not just public symbols.
+    import that is yet to be resolved.
 
     Example:
 
@@ -1400,7 +1399,7 @@ def LIT_UnresolvedWildcardImportOp : LITOp<"unresolved_wildcard_import"> {
     ```
   }];
 
-  let arguments = (ins LIT_ImportPathAttr:$modulePath, UnitAttr:$fullImport);
+  let arguments = (ins LIT_ImportPathAttr:$modulePath);
   let assemblyFormat = "`from` $modulePath attr-dict";
 }
 
