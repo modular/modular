@@ -395,7 +395,7 @@ def _resize[
 
     var in_ptr = input.ptr.unsafe_origin_cast[MutUntrackedOrigin]()
     # SAFETY: Placeholder; always overwritten below.
-    var out_ptr = Pointer[Scalar[dtype], MutAnyOrigin].unsafe_dangling()
+    var out_ptr = UnsafePointer[Scalar[dtype], MutAnyOrigin].unsafe_dangling()
 
     var using_tmp1 = False
     var tmp_buffer1 = List[Scalar[dtype]]()
