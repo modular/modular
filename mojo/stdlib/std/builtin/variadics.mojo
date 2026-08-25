@@ -1685,10 +1685,12 @@ struct VariadicPack[
 @always_inline
 def _call_with_dynamic_pack_pointers[
     Args: TypeList[Trait=AnyType, ...],
+    RetType: AnyType,
+    RaiseType: AnyType,
     MakeElemPtr: def[idx: Int]() -> Pointer[Args[idx], MutUnsafeAnyOrigin],
     //,
-    user_func: def(* args: * Args) thin,
-](make_elem_ptr: MakeElemPtr):
+    user_func: def(* args: * Args) thin raises RaiseType -> RetType,
+](make_elem_ptr: MakeElemPtr) raises RaiseType -> RetType:
     """Call `user_func` using a `VariadicPack` whose elements are initialized
     by per-index calls to `make_elem_ptr`.
 
@@ -1744,4 +1746,4 @@ def _call_with_dynamic_pack_pointers[
     )
 
     # Call the user primary function
-    user_func(*borrowed)
+    return user_func(*borrowed)
