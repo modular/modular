@@ -188,8 +188,9 @@ struct List[T: AnyType, /](
     # With initial size and fill value
     var filled = List[Float64](length=10, fill=0.0)
 
-    # With initial values and inferred type (Int)
-    var numbers = [1, 2, 3, 4, 5]
+    # With initial values and inferred type (Int).
+    # The `List` annotation is needed otherwise this creates a fixed-size `Array`.
+    var numbers: List = [1, 2, 3, 4, 5]
     ```
 
     Be aware of the following characteristics:
@@ -199,9 +200,9 @@ struct List[T: AnyType, /](
       improves performance:
 
       ```mojo
-      var int_list = [1, 2, 3]        # List[Int]
-      var str_list = ["a", "b", "c"]  # List[String]
-      # var mixed = [1, "hello"]      # Error! All elements must be same type
+      var int_list: List = [1, 2, 3]        # List[Int]
+      var str_list: List = ["a", "b", "c"]  # List[String]
+      # var mixed: List = [1, "hello"]      # Error! All elements must be same type
       ```
 
       However, you can get around this by defining your list type as
@@ -213,7 +214,7 @@ struct List[T: AnyType, /](
       assignment creates a deep copy of all elements:
 
       ```mojo
-      var list1 = [1, 2, 3]
+      var list1: List = [1, 2, 3]
       var list2 = list1.copy()        # Deep copy
       list2.append(4)
       print(list1)   # => [1, 2, 3]
@@ -229,7 +230,7 @@ struct List[T: AnyType, /](
       you specify `ref`:
 
       ```mojo
-      var numbers = [10, 20, 30]
+      var numbers: List = [10, 20, 30]
 
       # Default behavior creates immutable (read-only) references:
       # for num in numbers:
@@ -246,10 +247,10 @@ struct List[T: AnyType, /](
       original list is no longer accessible after the loop:
 
       ```mojo
-      var names = ["alice", "bob"]
+      var names: List = ["alice", "bob"]
       for x in names^:
           # `x` is an owned `String` value.
-          print(x^)
+          print(x)
       # `names` is consumed and can no longer be used here
       ```
 
@@ -257,7 +258,7 @@ struct List[T: AnyType, /](
       abort:
 
       ```mojo
-      var my_list = [1, 2, 3]
+      var my_list: List = [1, 2, 3]
       print(my_list[5])  # Aborts with an Assert Error: index 5 is
                          # out of bounds, valid range is 0 to 2
       ```
@@ -266,7 +267,7 @@ struct List[T: AnyType, /](
       handle errors gracefully:
 
       ```mojo
-      var my_list = [1, 2, 3]
+      var my_list: List = [1, 2, 3]
       if 5 < len(my_list):
           print(my_list[5])  # Safe: check bounds first
       else:
@@ -283,7 +284,7 @@ struct List[T: AnyType, /](
     Examples:
 
     ```mojo
-    var my_list = [10, 20, 30]
+    var my_list: List = [10, 20, 30]
 
     # Add elements
     my_list.append(40)           # [10, 20, 30, 40]
@@ -304,11 +305,12 @@ struct List[T: AnyType, /](
     print('cap:', my_list.capacity())    # Current allocated capacity
 
     # Multiply a list
-    var repeated = [1, 2] * 3
+    var pair: List = [1, 2]
+    var repeated = pair * 3
     print(repeated)    # [1, 2, 1, 2, 1, 2]
 
     # Iterate over a list:
-    var fruits = ["apple", "banana", "orange"]
+    var fruits: List = ["apple", "banana", "orange"]
 
     # Iterate by reference (immutable)
     for fruit in fruits:
@@ -323,9 +325,9 @@ struct List[T: AnyType, /](
         print(i, fruits[i])
 
     # Iterate by ownership (consumes the list)
-    var temps = ["a", "b", "c"]
+    var temps: List = ["a", "b", "c"]
     for x in temps^:
-        print(x^)
+        print(x)
     # `temps` is no longer accessible here
 
     # Concatenate with + and +=
@@ -665,7 +667,7 @@ struct List[T: AnyType, /](
         x is <= 0.
 
         ```mojo
-        var a = [1, 2]
+        var a: List = [1, 2]
         a *= 2 # a = [1, 2, 1, 2]
         ```
 
@@ -840,7 +842,7 @@ struct List[T: AnyType, /](
         Examples:
 
         ```mojo
-        var my_list = [1, 2, 3]
+        var my_list: List = [1, 2, 3]
         print(my_list.capacity())  # Current allocated capacity
         ```
         """
@@ -883,7 +885,7 @@ struct List[T: AnyType, /](
         Examples:
 
         ```mojo
-        var list = [1, 2, 3, 4, 5]
+        var list: List = [1, 2, 3, 4, 5]
         list.append(6)
         print(list) # [1, 2, 3, 4, 5, 6]
         ```
@@ -908,7 +910,7 @@ struct List[T: AnyType, /](
         Examples:
 
         ```mojo
-        var list = ["one", "three"]
+        var list: List = ["one", "three"]
         list.insert(1, "two")
         print(list) # ['one', 'two', 'three']
         ```
@@ -942,8 +944,8 @@ struct List[T: AnyType, /](
         Examples:
 
         ```mojo
-        var list = ["one", "two", "three"]
-        var more = ["four", "five"]
+        var list: List = ["one", "two", "three"]
+        var more: List = ["four", "five"]
         list.extend(more^) # more's values are consumed
         # print(more)      # Error: use of initialized value
         print(list)        # ['one', 'two', 'three', 'four', 'five']
@@ -981,8 +983,8 @@ struct List[T: AnyType, /](
         Examples:
 
         ```mojo
-        var numbers = [1, 2, 3]
-        var more = [4, 5, 6]
+        var numbers: List = [1, 2, 3]
+        var more: List = [4, 5, 6]
         numbers.extend(Span(more))
         print(numbers)   # [1, 2, 3, 4, 5, 6]
         ```
@@ -1082,7 +1084,7 @@ struct List[T: AnyType, /](
         Examples:
 
         ```mojo
-        var numbers = ["1", "2", "3", "4", "5"]
+        var numbers: List = ["1", "2", "3", "4", "5"]
         var value = numbers.pop(); print(value)   # 5
         print("length", len(numbers))             # length 4
         ```
@@ -1102,7 +1104,7 @@ struct List[T: AnyType, /](
         Examples:
 
         ```mojo
-        var numbers = ["1", "2", "3", "4", "5"]
+        var numbers: List = ["1", "2", "3", "4", "5"]
         var value = numbers.pop(2); print(value)  # 3
         print(numbers)                            # ['1', '2', '4', '5']
         ```
@@ -1151,7 +1153,7 @@ struct List[T: AnyType, /](
         Examples:
 
         ```mojo
-        var list = ["z", "y", "x", "w"]
+        var list: List = ["z", "y", "x", "w"]
         list.resize(3, "v")
         print(list)                  # ['z', 'y', 'x']
         list.resize(6, "v")
@@ -1190,7 +1192,7 @@ struct List[T: AnyType, /](
         Examples:
 
         ```mojo
-        var list = [1, 2, 3]
+        var list: List = [1, 2, 3]
         list.resize(unsafe_uninit_length=5) # Indices 3 and 4 are uninitialized memory
         print(len(list))                    # 5
         list[3] = 10; list[4] = 20
@@ -1219,7 +1221,7 @@ struct List[T: AnyType, /](
         Examples:
 
         ```mojo
-        var numbers = [1, 2, 3, 4, 5, 6]
+        var numbers: List = [1, 2, 3, 4, 5, 6]
         numbers.shrink(2); print(numbers) # [1, 2]
         # numbers.shrink(8)               # Error: new size is bigger than current
         ```
@@ -1247,7 +1249,7 @@ struct List[T: AnyType, /](
         Examples:
 
         ```mojo
-        var list = ["o", "l", "l", "e", "H"]
+        var list: List = ["o", "l", "l", "e", "H"]
         list.reverse()
         print("".join(list)) # Hello
         ```
@@ -1292,7 +1294,7 @@ struct List[T: AnyType, /](
         Examples:
 
         ```mojo
-        var my_list = [1, 2, 3]
+        var my_list: List = [1, 2, 3]
         print(my_list.index(2)) # prints `1`
         ```
         """
@@ -1343,7 +1345,7 @@ struct List[T: AnyType, /](
         Examples:
 
         ```mojo
-        var my_list = [1, 2, 3]
+        var my_list: List = [1, 2, 3]
         print(my_list.index(2)) # prints `1`
         ```
         """
@@ -1360,7 +1362,7 @@ struct List[T: AnyType, /](
         Examples:
 
         ```mojo
-        var list = ["o", "l", "l", "e", "H"]
+        var list: List = ["o", "l", "l", "e", "H"]
         print(len(list))  # 5
         list.clear()
         print(len(list))  # 0
@@ -1600,7 +1602,7 @@ struct List[T: AnyType, /](
         Examples:
 
         ```mojo
-        var list = ["a", "b", "c", "b", "b", "a", "c"]
+        var list: List = ["a", "b", "c", "b", "b", "a", "c"]
         print(list.count("b")) # 3
         ```
         """
@@ -1622,7 +1624,7 @@ struct List[T: AnyType, /](
         Examples:
 
         ```mojo
-        var my_list = [1, 2, 3]
+        var my_list: List = [1, 2, 3]
         my_list.swap_elements(0, 2)
         print(my_list) # 3, 2, 1
         ```
