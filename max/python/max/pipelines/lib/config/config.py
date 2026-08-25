@@ -845,7 +845,7 @@ class PipelineConfig(ConfigFileModel):
     variables, or internal defaults.
     """
 
-    model_config = ConfigDict(arbitrary_types_allowed=True)
+    model_config = ConfigDict(arbitrary_types_allowed=True, frozen=True)
 
     debug_verify_replay: bool = Field(
         default=False,

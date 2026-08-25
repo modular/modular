@@ -663,10 +663,10 @@ class TestStructuredOutputBackendResolution:
                 hf_config=_GEMMA_CONFIG,
                 safetensors_files={"model.safetensors": {"w": "BF16"}},
             )
-            config = _make_pipeline_config(tmpdir)
             # Constructing with the field set records it in model_fields_set.
-            config.sampling = SamplingConfig(
-                structured_output_backend="llguidance"
+            config = _make_pipeline_config(
+                tmpdir,
+                sampling=SamplingConfig(structured_output_backend="llguidance"),
             )
             with _pipeline_resolve_mocks():
                 _resolve_config(config)
@@ -707,9 +707,9 @@ class TestStructuredOutputAnyWhitespaceResolution:
                 hf_config=_GEMMA_CONFIG,
                 safetensors_files={"model.safetensors": {"w": "BF16"}},
             )
-            config = _make_pipeline_config(tmpdir)
-            config.sampling = SamplingConfig(
-                structured_output_any_whitespace=False
+            config = _make_pipeline_config(
+                tmpdir,
+                sampling=SamplingConfig(structured_output_any_whitespace=False),
             )
             with _pipeline_resolve_mocks():
                 _resolve_config(config)
