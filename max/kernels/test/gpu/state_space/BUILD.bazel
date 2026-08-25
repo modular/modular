@@ -45,10 +45,26 @@ _EXTRA_CONSTRAINTS = {
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
+    "test_kda_chunk_parallel.mojo": select({
+        "//:b200_gpu": ["//:b200_gpu"],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    "test_kda_chunk_computebound.mojo": select({
+        "//:b200_gpu": ["//:b200_gpu"],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
 }
 
 _GPU_MEMORY = {
     "test_gated_delta.mojo": "3",
+}
+
+_KDA_DEPS = {
+    "test_kda_chunk_computebound.mojo": ["//Kernels/lib/kda"],
+    "test_kda_chunk_fwd.mojo": ["//Kernels/lib/kda"],
+    "test_kda_chunk_parallel.mojo": ["//Kernels/lib/kda"],
+    "test_kda_decode_batch_independence.mojo": ["//Kernels/lib/kda"],
+    "test_kda_gpu.mojo": ["//Kernels/lib/kda"],
 }
 
 [
@@ -62,9 +78,10 @@ _GPU_MEMORY = {
         },
         tags = ["gpu"],
         target_compatible_with = ["//:has_gpu"] + _EXTRA_CONSTRAINTS.get(src, []),
-        deps = [
+        deps = _KDA_DEPS.get(src, []) + [
             "//max:internal_utils",
             "//max:linalg",
+            "//max:testdata",
             "//max/kernels/src/state_space",
             "@mojo//:std",
         ],
