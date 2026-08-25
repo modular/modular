@@ -25,13 +25,25 @@ def _shared_library_impl(ctx):
     for copt in ctx.attr.copts:
         expanded_copts.append(ctx.expand_make_variables("copts", copt, {}))
 
+    # Assumes the default repository layout; rules_cc's equivalent handles
+    # --experimental_sibling_repository_layout, but the accessor for it is
+    # private API.
+    # https://github.com/bazelbuild/rules_cc/blob/99a85777cfdb897e3ea2de51ecd78774f6cfadab/cc/common/cc_helper.bzl#L804-L833
+    if ctx.label.workspace_name:
+        package_path = paths.join("external", ctx.label.workspace_name, ctx.label.package)
+    else:
+        package_path = ctx.label.package
+
     includes = []
     for include in ctx.attr.includes:
-        # https://github.com/bazelbuild/rules_cc/blob/99a85777cfdb897e3ea2de51ecd78774f6cfadab/cc/common/cc_helper_internal.bzl#L244-L260
-        if ctx.label.workspace_name:
-            includes.append(paths.join("external", ctx.label.workspace_name, ctx.label.package, include))
-        else:
-            includes.append(paths.join(ctx.label.package, include))
+        include_path = paths.join(package_path, include)
+        includes.append(include_path)
+
+        # Generated headers (tablegen output, for example) live under the
+        # output tree, so each include dir needs its output-tree twin too.
+        if ctx.genfiles_dir.path != ctx.bin_dir.path:
+            includes.append(paths.join(ctx.genfiles_dir.path, include_path))
+        includes.append(paths.join(ctx.bin_dir.path, include_path))
 
     expanded_local_defines = []
     for opt in ctx.attr.local_defines:
