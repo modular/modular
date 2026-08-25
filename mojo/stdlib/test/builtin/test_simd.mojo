@@ -2501,6 +2501,17 @@ def test_hash() raises:
     # Hash should be consistent for same values
     assert_equal(hash(float_simd), float_hash)
 
+    # Signed zero must hash equally to positive zero: `-0.0 == 0.0` is `True`,
+    # so the `Hashable`/`Equatable` contract requires equal hashes even though
+    # the two have different bit patterns (regression test for #6851).
+    assert_equal(hash(Float64(-0.0)), hash(Float64(0.0)))
+    assert_equal(hash(Float32(-0.0)), hash(Float32(0.0)))
+    assert_equal(hash(Float16(-0.0)), hash(Float16(0.0)))
+    assert_equal(hash(BFloat16(-0.0)), hash(BFloat16(0.0)))
+    assert_equal(
+        hash(SIMD[.float64, 2](-0.0, 0.0)), hash(SIMD[.float64, 2](0.0, -0.0))
+    )
+
 
 def test_reduce_bitwise_ops() raises:
     # Test reduce_and

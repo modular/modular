@@ -2120,7 +2120,18 @@ struct SIMD[dtype: DType, length: SIMDLength](
         Args:
             hasher: The hasher instance.
         """
-        hasher._update_with_simd(self)
+
+        comptime if Self.dtype.is_floating_point():
+            # `-0.0 == 0.0` is `True`, but the two have different bit patterns,
+            # so hashing the raw bits would break the `Hashable`/`Equatable`
+            # contract (equal values must hash equally) and let a `Dict` hold
+            # both signed zeros as distinct keys. Adding `+0.0` normalizes
+            # `-0.0` to `+0.0` while leaving every finite value, infinity, and
+            # NaN unchanged. (NaN never compares equal to itself, so it does not
+            # constrain the contract regardless.)
+            hasher._update_with_simd(self + 0)
+        else:
+            hasher._update_with_simd(self)
 
     @always_inline
     def __ceildiv__(self, denominator: Self) -> Self:
