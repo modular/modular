@@ -16,7 +16,7 @@ from std.math import ceildiv
 from std.random import shuffle
 from std.utils.numerics import isinf, isnan
 
-from std.gpu.host import DeviceBuffer, DeviceContext
+from max.gpu.host import DeviceBuffer, DeviceContext
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from layout._utils import ManagedLayoutTensor
 
@@ -113,7 +113,7 @@ def assert_no_nan_inf[
     var host = output.tensor[update=True]()
     var n = host.runtime_layout.size()
     for i in range(n):
-        var v = host.ptr[i].cast[DType.float32]()
+        var v = host.ptr[i].cast[.float32]()
         if isnan(v):
             raise Error(
                 String("NaN at element ")
@@ -148,7 +148,7 @@ struct _KVCacheTestTensor[dtype: DType, layout: Layout, rank: Int](Copyable):
         self.host_ptr = alloc[Scalar[Self.dtype]](shape.flattened_length())
         self.device_buf = None
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         self.host_ptr.free()
 
     def copy_to_device(mut self, ctx: DeviceContext) raises:
@@ -170,7 +170,7 @@ struct _KVCacheTestTensor[dtype: DType, layout: Layout, rank: Int](Copyable):
         self, ptr: UnsafePointer[Scalar[Self.dtype], _]
     ) -> Self.tensor_type:
         return Self.tensor_type(
-            ptr.as_immutable().as_unsafe_any_origin(), self._runtime_layout()
+            ptr.as_imm().as_unsafe_any_origin(), self._runtime_layout()
         )
 
 
@@ -245,7 +245,7 @@ struct CacheLengthsTable(Copyable):
 
 
 struct PagedLookupTable[page_size: Int](Copyable):
-    var paged_lut: _KVCacheTestTensor[DType.uint32, Layout.row_major[2](), 2]
+    var paged_lut: _KVCacheTestTensor[.uint32, Layout.row_major[2](), 2]
 
     def __init__(
         out self, batch_size: Int, max_full_context_length: Int
@@ -270,9 +270,7 @@ struct PagedLookupTable[page_size: Int](Copyable):
     ) raises:
         var batch_size = len(prompt_lens)
 
-        var host_tensor = LayoutTensor[
-            DType.uint32, type_of(self.paged_lut).layout
-        ](
+        var host_tensor = LayoutTensor[.uint32, type_of(self.paged_lut).layout](
             self.paged_lut.host_ptr,
             self.paged_lut._runtime_layout(),
         )
@@ -320,7 +318,7 @@ struct PagedLookupTable[page_size: Int](Copyable):
         num_paged_blocks: Int,
         ctx: DeviceContext,
     ) raises -> Self:
-        @parameter
+        @__parameter
         def _to_list(idx_list: IndexList) -> List[Int]:
             var list = List[Int](capacity=idx_list.size)
             for i in range(idx_list.size):

@@ -10,13 +10,21 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Implements the temporal-pool patch-merger kernel that reduces vision token sequences via average pooling."""
 
 from std.math import ceildiv, divmod
 from std.sys.info import simd_width_of
 
 from std.gpu import block_idx, thread_idx
-from std.gpu.host import DeviceContext
-from layout import Coord, Idx, TensorLayout, TileTensor
+from max.gpu.host import DeviceContext
+from layout import (
+    Coord,
+    Idx,
+    PointerStorage,
+    TensorLayout,
+    TensorStorage,
+    TileTensor,
+)
 
 
 # ------------------------------------------------------------------------------
@@ -28,26 +36,31 @@ from layout import Coord, Idx, TensorLayout, TileTensor
 def tpool_patch_merger_kernel[
     dtype: DType,
     XLayout: TensorLayout,
-    x_origin: ImmutOrigin,
+    x_origin: ImmOrigin,
+    XStorage: TensorStorage,
     OutLayout: TensorLayout,
     out_origin: MutOrigin,
+    OutStorage: TensorStorage,
     GridThwLayout: TensorLayout,
-    grid_thw_origin: ImmutOrigin,
+    grid_thw_origin: ImmOrigin,
+    GridThwStorage: TensorStorage,
     vec_width: Int,
     num_threads: Int,
 ](
-    x_tile: TileTensor[dtype, XLayout, x_origin],
-    out_tile: TileTensor[dtype, OutLayout, out_origin],
-    grid_thws: TileTensor[DType.int64, GridThwLayout, grid_thw_origin],
-    kH: Int,
-    kW: Int,
-    D: Int,
-    n_vids: Int,
+    x_tile: TileTensor[dtype, XLayout, x_origin, Storage=XStorage],
+    out_tile: TileTensor[dtype, OutLayout, out_origin, Storage=OutStorage],
+    grid_thws: TileTensor[
+        .int64, GridThwLayout, grid_thw_origin, Storage=GridThwStorage
+    ],
+    kH: Int32,
+    kW: Int32,
+    D: Int32,
+    n_vids: Int32,
 ):
     """Temporal pooling patch merger kernel.
 
     Averages x across the temporal dimension for each video, rearranging
-    spatially according to the (kH, kW) merge kernel.  Each video's output
+    spatially according to the (kH, kW) merge kernel. Each video's output
     occupies H_i * W_i contiguous rows in the flat output tensor.
 
     Grid mapping:
@@ -55,6 +68,23 @@ def tpool_patch_merger_kernel[
         block_idx.y  = patch index within the video (max_pat upper bound)
         block_idx.x  = tile index along D
         thread_idx.x = lane within D tile
+
+    Parameters:
+        dtype: Element type of the input and output tensors.
+        XLayout: Memory layout of the input tensor `x_tile`.
+        x_origin: Immutable origin of the input tensor `x_tile`.
+        XStorage: Storage policy of the input tensor `x_tile`.
+        OutLayout: Memory layout of the output tensor `out_tile`.
+        out_origin: Mutable origin of the output tensor `out_tile`.
+        OutStorage: Storage policy of the output tensor `out_tile`.
+        GridThwLayout: Memory layout of the grid dimensions tensor `grid_thws`.
+        grid_thw_origin: Immutable origin of the grid dimensions tensor
+            `grid_thws`.
+        GridThwStorage: Storage policy of the grid dimensions tensor
+            `grid_thws`.
+        vec_width: SIMD vector width for loads and stores along the hidden
+            dimension.
+        num_threads: Number of threads per block.
 
     Args:
         x_tile: Input tensor [n_tokens, D].
@@ -67,28 +97,35 @@ def tpool_patch_merger_kernel[
     """
     comptime assert x_tile.flat_rank == 2, "x_tile must be rank 2"
     comptime assert out_tile.flat_rank == 2, "out_tile must be rank 2"
+    var _kH = Int(kH)
+    var _kW = Int(kW)
+    var _D = Int(D)
+    var _n_vids = Int(n_vids)
     comptime assert grid_thws.flat_rank == 2, "grid_thws must be rank 2"
     # Provide evidence that flat_rank >= 2 for the Coord(..., ...) accesses below.
     comptime assert grid_thws.flat_rank >= 2
     comptime assert x_tile.flat_rank >= 2
     comptime assert out_tile.flat_rank >= 2
+    comptime assert x_tile.element_size == 1
+    comptime assert out_tile.element_size == 1
+    comptime assert grid_thws.element_size == 1
 
     var vid = block_idx.z
     var pat_idx = block_idx.y
     var d_tile = block_idx.x
     var tid = thread_idx.x
 
-    if vid >= n_vids:
+    if vid >= _n_vids:
         return
 
     var t = Int(grid_thws[Coord(vid, Idx[0])])
     var h = Int(grid_thws[Coord(vid, Idx[1])])
     var w = Int(grid_thws[Coord(vid, Idx[2])])
 
-    var new_H = h // kH
-    var new_W = w // kW
+    var new_H = h // _kH
+    var new_W = w // _kW
     var n_patches = new_H * new_W
-    var n_kernel = kH * kW
+    var n_kernel = _kH * _kW
     var n_pat_total = n_patches * n_kernel
 
     if pat_idx >= n_pat_total:
@@ -106,24 +143,24 @@ def tpool_patch_merger_kernel[
 
     var sp_idx, ker_idx = divmod(pat_idx, n_kernel)
     var nh, nw = divmod(sp_idx, new_W)
-    var ph, pw = divmod(ker_idx, kW)
-    var h_src = nh * kH + ph
-    var w_src = nw * kW + pw
+    var ph, pw = divmod(ker_idx, _kW)
+    var h_src = nh * _kH + ph
+    var w_src = nw * _kW + pw
     var spatial_flat = h_src * w + w_src
 
     comptime if vec_width == 1:
         var d = d_tile * num_threads + tid
-        if d >= D:
+        if d >= _D:
             return
         var acc = Scalar[dtype](0)
         for t_i in range(t):
             var row = in_offset + t_i * (h * w) + spatial_flat
-            acc += x_tile[Coord(row, d)]
+            acc += x_tile[Coord(row, d)][0]
         acc /= Scalar[dtype](t)
         out_tile.store(Coord(out_offset + pat_idx, d), acc)
     else:
         var d_start = (d_tile * num_threads + tid) * vec_width
-        if d_start >= D:
+        if d_start >= _D:
             return
         var acc = SIMD[dtype, vec_width](0)
         for t_i in range(t):
@@ -145,10 +182,17 @@ def tpool_patch_merger[
     output_layout: TensorLayout,
     x_layout: TensorLayout,
     bounds_layout: TensorLayout,
+    OutputStorage: TensorStorage = PointerStorage[element_width=1],
+    XStorage: TensorStorage = PointerStorage[element_width=1],
+    BoundsStorage: TensorStorage = PointerStorage[element_width=1],
 ](
-    output: TileTensor[dtype, output_layout, MutAnyOrigin],
-    x: TileTensor[dtype, x_layout, ImmutAnyOrigin],
-    bounds: TileTensor[DType.int64, bounds_layout, ImmutAnyOrigin],
+    output: TileTensor[
+        dtype, output_layout, MutAnyOrigin, Storage=OutputStorage
+    ],
+    x: TileTensor[dtype, x_layout, ImmutAnyOrigin, Storage=XStorage],
+    bounds: TileTensor[
+        .int64, bounds_layout, ImmutAnyOrigin, Storage=BoundsStorage
+    ],
     kH: Int,
     kW: Int,
     max_h: Int,
@@ -156,6 +200,15 @@ def tpool_patch_merger[
     ctx: DeviceContext,
 ) raises:
     """Temporal pooling patch merger entry point.
+
+    Parameters:
+        dtype: Element type of the input and output tensors.
+        output_layout: Memory layout of the output tensor.
+        x_layout: Memory layout of the input tensor.
+        bounds_layout: Memory layout of the bounds tensor.
+        OutputStorage: Storage policy of the output tensor.
+        XStorage: Storage policy of the input tensor.
+        BoundsStorage: Storage policy of the bounds tensor.
 
     Args:
         output: Contiguous output tensor [total_output_patches, D].
@@ -181,11 +234,14 @@ def tpool_patch_merger[
         comptime kernel = tpool_patch_merger_kernel[
             dtype,
             x.LayoutType,
-            ImmutOrigin(x.origin),
+            ImmOrigin(x.origin),
+            x.Storage,
             output.LayoutType,
             output.origin,
+            output.Storage,
             bounds.LayoutType,
-            ImmutOrigin(bounds.origin),
+            ImmOrigin(bounds.origin),
+            bounds.Storage,
             simd_width,
             num_threads,
         ]
@@ -193,10 +249,10 @@ def tpool_patch_merger[
             x.as_immut(),
             output,
             bounds.as_immut(),
-            kH,
-            kW,
-            D,
-            n_vids,
+            Int32(kH),
+            Int32(kW),
+            Int32(D),
+            Int32(n_vids),
             grid_dim=(grid_x, max_pat, n_vids),
             block_dim=(num_threads, 1, 1),
         )
@@ -205,11 +261,14 @@ def tpool_patch_merger[
         comptime kernel = tpool_patch_merger_kernel[
             dtype,
             x.LayoutType,
-            ImmutOrigin(x.origin),
+            ImmOrigin(x.origin),
+            x.Storage,
             output.LayoutType,
             output.origin,
+            output.Storage,
             bounds.LayoutType,
-            ImmutOrigin(bounds.origin),
+            ImmOrigin(bounds.origin),
+            bounds.Storage,
             1,
             num_threads,
         ]
@@ -217,10 +276,10 @@ def tpool_patch_merger[
             x.as_immut(),
             output,
             bounds.as_immut(),
-            kH,
-            kW,
-            D,
-            n_vids,
+            Int32(kH),
+            Int32(kW),
+            Int32(D),
+            Int32(n_vids),
             grid_dim=(grid_x, max_pat, n_vids),
             block_dim=(num_threads, 1, 1),
         )

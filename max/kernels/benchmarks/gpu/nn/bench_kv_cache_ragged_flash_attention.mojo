@@ -16,6 +16,7 @@ from std.math import rsqrt
 from std.random import random_ui64, seed
 from std.sys import get_defined_dtype, get_defined_int
 
+from max.benchmark import bencher_iter_custom
 from std.benchmark import (
     Bench,
     Bencher,
@@ -23,7 +24,7 @@ from std.benchmark import (
     BenchMetric,
     ThroughputMeasure,
 )
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from internal_utils import arg_parse
 from kv_cache.types import (
     ContinuousBatchingKVCacheCollection,
@@ -96,6 +97,7 @@ def execute_kv_cache_ragged_flash_attention[
     comptime CollectionType = ContinuousBatchingKVCacheCollection[
         dtype,
         KVCacheStaticParams(num_heads=num_kv_heads, head_size=head_dim),
+        ...,
     ]
 
     debug_assert(
@@ -108,12 +110,10 @@ def execute_kv_cache_ragged_flash_attention[
     )
 
     # Create device buffers for row offsets and cache lengths
-    var input_row_offsets_device = ctx.enqueue_create_buffer[DType.uint32](
+    var input_row_offsets_device = ctx.enqueue_create_buffer[.uint32](
         batch_size + 1
     )
-    var cache_lengths_device = ctx.enqueue_create_buffer[DType.uint32](
-        batch_size
-    )
+    var cache_lengths_device = ctx.enqueue_create_buffer[.uint32](batch_size)
 
     var max_context_length: UInt32 = 0
     var max_seq_length: UInt32 = 0
@@ -149,11 +149,12 @@ def execute_kv_cache_ragged_flash_attention[
                 cache_lengths_host[i] = curr_cache_length
                 total_seq_len += curr_seq_length
 
-                flop_count += Int(
-                    UInt32(4 * num_q_heads)
-                    * (curr_cache_length + curr_seq_length)
-                    * curr_seq_length
-                    * UInt32(head_dim)
+                flop_count += (
+                    4
+                    * num_q_heads
+                    * Int(curr_cache_length + curr_seq_length)
+                    * Int(curr_seq_length)
+                    * head_dim
                 )
 
             row_offsets_host[batch_size] = total_seq_len
@@ -226,7 +227,7 @@ def execute_kv_cache_ragged_flash_attention[
     var lookup_shape = IndexList[1](batch_size)
     var lookup_runtime = RuntimeLayout[lookup_layout].row_major(lookup_shape)
 
-    var lookup_table_device = ctx.enqueue_create_buffer[DType.uint32](
+    var lookup_table_device = ctx.enqueue_create_buffer[.uint32](
         lookup_shape.flattened_length()
     )
 
@@ -249,15 +250,13 @@ def execute_kv_cache_ragged_flash_attention[
     )
 
     comptime cache_lengths_lt_layout = Layout(UNKNOWN_VALUE)
-    var cache_lengths_tensor = LayoutTensor[
-        DType.uint32, cache_lengths_lt_layout
-    ](
+    var cache_lengths_tensor = LayoutTensor[.uint32, cache_lengths_lt_layout](
         cache_lengths_device,
         RuntimeLayout[cache_lengths_lt_layout].row_major(
             IndexList[1](batch_size)
         ),
     )
-    var lookup_table_tensor = LayoutTensor[DType.uint32, lookup_layout](
+    var lookup_table_tensor = LayoutTensor[.uint32, lookup_layout](
         lookup_table_device, lookup_runtime
     )
 
@@ -269,15 +268,15 @@ def execute_kv_cache_ragged_flash_attention[
                 kv_block_tensor.runtime_layout.stride.value,
             ),
         ),
-        LayoutTensor[DType.uint32, Layout(UNKNOWN_VALUE), ImmutAnyOrigin](
-            cache_lengths_tensor.ptr.as_immutable().as_unsafe_any_origin(),
+        LayoutTensor[.uint32, Layout(UNKNOWN_VALUE), ImmutAnyOrigin](
+            cache_lengths_tensor.ptr.as_imm().as_unsafe_any_origin(),
             RuntimeLayout[Layout(UNKNOWN_VALUE)](
                 cache_lengths_tensor.runtime_layout.shape.value,
                 cache_lengths_tensor.runtime_layout.stride.value,
             ),
         ),
-        LayoutTensor[DType.uint32, Layout(UNKNOWN_VALUE), ImmutAnyOrigin](
-            lookup_table_tensor.ptr.as_immutable().as_unsafe_any_origin(),
+        LayoutTensor[.uint32, Layout(UNKNOWN_VALUE), ImmutAnyOrigin](
+            lookup_table_tensor.ptr.as_imm().as_unsafe_any_origin(),
             RuntimeLayout[Layout(UNKNOWN_VALUE)](
                 lookup_table_tensor.runtime_layout.shape.value,
                 lookup_table_tensor.runtime_layout.stride.value,
@@ -290,19 +289,19 @@ def execute_kv_cache_ragged_flash_attention[
     var k_cache_device = kv_collection_device.get_key_cache(layer_idx)
     var v_cache_device = kv_collection_device.get_value_cache(layer_idx)
 
-    @parameter
-    @__copy_capture(
-        q_tensor,
-        k_cache_device,
-        v_cache_device,
-        output_device_tensor,
-        input_row_offsets_tensor,
-    )
     @always_inline
-    def bench_func(mut b: Bencher):
-        @parameter
+    def bench_func(
+        mut b: Bencher,
+    ) raises {
+        var q_tensor,
+        var k_cache_device,
+        var v_cache_device,
+        var output_device_tensor,
+        var input_row_offsets_tensor,
+        imm,
+    }:
         @always_inline
-        def kernel_launch(ctx: DeviceContext) raises:
+        def kernel_launch(ctx: DeviceContext) raises {imm}:
             flash_attention[ragged=True](
                 output_device_tensor.to_layout_tensor().as_unsafe_any_origin(),
                 q_tensor.to_layout_tensor(),
@@ -314,9 +313,10 @@ def execute_kv_cache_ragged_flash_attention[
                 ctx,
             )
 
-        b.iter_custom[kernel_launch](ctx)
+        bencher_iter_custom(b, kernel_launch, ctx)
 
-    m.bench_function[bench_func](
+    m.bench_function(
+        bench_func,
         BenchId(
             _get_run_name[dtype, num_q_heads, num_kv_heads, head_dim](
                 batch_size,
@@ -331,7 +331,7 @@ def execute_kv_cache_ragged_flash_attention[
 
 
 def main() raises:
-    comptime dtype = get_defined_dtype["dtype", DType.bfloat16]()
+    comptime dtype = get_defined_dtype["dtype", .bfloat16]()
 
     comptime head_dim = get_defined_int["head_dim", 128]()
     comptime num_q_heads = get_defined_int["num_q_heads", 32]()

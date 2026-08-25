@@ -23,11 +23,12 @@ Test cases from CUTLASS (simplest first):
 
 from std.sys import size_of
 from layout import Layout, LayoutTensor
-from std.gpu import barrier, thread_idx
-from std.gpu.host import DeviceContext, FuncAttribute
+from std.gpu import thread_idx
+from max.gpu.sync import barrier
+from max.gpu.host import DeviceContext, FuncAttribute
 from std.testing import assert_false
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.gpu.memory import AddressSpace, external_memory
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.memory import external_memory
 from layout import Layout, LayoutTensor
 
 from layout.tma_async import (
@@ -69,15 +70,15 @@ def im2col_load_kernel[
 
     var smem_ptr = external_memory[
         Scalar[dtype],
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
         name="im2col_smem",
     ]()
 
     var barrier_ptr = (
         external_memory[
-            Scalar[DType.uint8],
-            address_space=AddressSpace.SHARED,
+            UInt8,
+            address_space=.SHARED,
             alignment=128,
             name="im2col_smem",
         ]()
@@ -95,7 +96,7 @@ def im2col_load_kernel[
             dtype,
             smem_layout,
             MutAnyOrigin,
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
             alignment=128,
         ]
         var smem_tile = smem_tile_t(smem_ptr)

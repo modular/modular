@@ -10,10 +10,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from std.collections.string.string_slice import get_static_string
-from std.ffi import _CPointer
-from std.gpu.host import DeviceContext
-from std.gpu.host._amdgpu_hip import hipStream_t, HIP
+from std.collections.string.string_span import get_static_string
+from max.gpu.host import DeviceContext
+from max.gpu.host._amdgpu_hip import hipStream_t, HIP
 from std.os import abort, getenv
 from std.pathlib import Path
 from std.sys import size_of
@@ -57,7 +56,8 @@ def _init_rocshmem_dylib() -> OwnedDLHandle:
     #   export MODULAR_SHMEM_LIB_DIR="/path/to/venv/lib"
     # will dlopen the library from:
     #   /path/to/venv/lib/librocshmem.so
-    if dir_name := getenv("MODULAR_SHMEM_LIB_DIR"):
+    var dir_name = getenv("MODULAR_SHMEM_LIB_DIR")
+    if dir_name:
         lib = String(Path(dir_name) / lib)
     try:
         return OwnedDLHandle(
@@ -168,7 +168,8 @@ struct ROCSHMEMInitAttr(ImplicitlyCopyable):
     var rank: Int32
     var nranks: Int32
     var uid: SHMEMUniqueID
-    var mpi_comm: Optional[UnsafePointer[NoneType, ImmutAnyOrigin]]
+
+    var mpi_comm: Optional[UnsafePointer[NoneType, ImmUntrackedOrigin]]
 
     def __init__(out self):
         comptime assert (
@@ -227,29 +228,29 @@ def _dtype_to_rocshmem_type[
     ptrdiff_t            ptrdiff       64
     """
 
-    comptime if dtype == DType.float16:
+    comptime if dtype == .float16:
         return get_static_string[prefix, "half", suffix]()
-    elif dtype == DType.float32:
+    elif dtype == .float32:
         return get_static_string[prefix, "float", suffix]()
-    elif dtype == DType.float64:
+    elif dtype == .float64:
         return get_static_string[prefix, "double", suffix]()
-    elif dtype == DType.int8:
+    elif dtype == .int8:
         return get_static_string[prefix, "schar", suffix]()
-    elif dtype == DType.uint8:
+    elif dtype == .uint8:
         return get_static_string[prefix, "char", suffix]()
-    elif dtype == DType.int16:
+    elif dtype == .int16:
         return get_static_string[prefix, "short", suffix]()
-    elif dtype == DType.uint16:
+    elif dtype == .uint16:
         return get_static_string[prefix, "ushort", suffix]()
-    elif dtype == DType.int32:
+    elif dtype == .int32:
         return get_static_string[prefix, "int", suffix]()
-    elif dtype == DType.uint32:
+    elif dtype == .uint32:
         return get_static_string[prefix, "uint", suffix]()
-    elif dtype == DType.int64:
+    elif dtype == .int64:
         return get_static_string[prefix, "long", suffix]()
-    elif dtype == DType.uint64:
+    elif dtype == .uint64:
         return get_static_string[prefix, "ulong", suffix]()
-    elif dtype == DType.int:
+    elif dtype == .int:
         return get_static_string[prefix, "longlong", suffix]()
     else:
         CompilationTarget.unsupported_target_error[
@@ -468,7 +469,9 @@ def rocshmem_malloc[
 ](size: c_size_t) raises -> UnsafePointer[Scalar[dtype], MutUntrackedOrigin]:
     var ptr = _get_rocshmem_function[
         "rocshmem_malloc",
-        def(c_size_t) thin -> _CPointer[Scalar[dtype], MutUntrackedOrigin],
+        def(
+            c_size_t,
+        ) thin -> OptionalPointer[Scalar[dtype], MutUntrackedOrigin],
     ]()(size)
 
     return _check_rocshmem_allocation(ptr, "rochsmem_malloc", size)
@@ -483,7 +486,7 @@ def rocshmem_calloc[
         "rocshmem_calloc",
         def(
             c_size_t, c_size_t
-        ) thin -> _CPointer[Scalar[dtype], MutUntrackedOrigin],
+        ) thin -> OptionalPointer[Scalar[dtype], MutUntrackedOrigin],
     ]()(count, size)
 
     return _check_rocshmem_allocation(ptr, "rochsmem_calloc", count * size)
@@ -492,7 +495,7 @@ def rocshmem_calloc[
 def _check_rocshmem_allocation[
     dtype: DType
 ](
-    ptr: _CPointer[Scalar[dtype], MutUntrackedOrigin],
+    ptr: OptionalPointer[Scalar[dtype], MutUntrackedOrigin],
     func_name: StaticString,
     requested_bytes: c_size_t,
 ) raises -> UnsafePointer[Scalar[dtype], MutUntrackedOrigin]:

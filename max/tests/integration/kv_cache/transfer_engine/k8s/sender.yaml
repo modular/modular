@@ -68,7 +68,7 @@ spec:
       containers:
         - name: sender
           image: ENGINE_IMAGE_PLACEHOLDER
-          imagePullPolicy: IfNotPresent
+          imagePullPolicy: Always
           command: ["/bin/bash", "-c"]
           args:
             - >-
@@ -83,8 +83,10 @@ spec:
               value: libfabric
             - name: FI_EFA_USE_DEVICE_RDMA
               value: "1"
-            - name: MODULAR_NIXL_PLUGIN_DIR
-              value: /opt/venv/lib/nixl
+            # Surface libfabric provider warnings (e.g. EFA MR registration
+            # detail) in pod logs so smoke failures are diagnosable from CI.
+            - name: FI_LOG_LEVEL
+              value: warn
             - name: MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_SIZE_PERCENT
               value: "90"
           resources:

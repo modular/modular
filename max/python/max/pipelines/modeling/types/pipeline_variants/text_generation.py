@@ -17,6 +17,7 @@ from __future__ import annotations
 
 __all__ = [
     "BatchType",
+    "CompletedBatchStats",
     "ImageContentPart",
     "MessageContent",
     "TextContentPart",
@@ -33,11 +34,15 @@ from dataclasses import dataclass, field
 from enum import Enum
 from functools import cached_property
 from typing import (
+    TYPE_CHECKING,
     Any,
     Generic,
     Literal,
     TypedDict,
 )
+
+if TYPE_CHECKING:
+    from PIL.Image import Image as PILImage
 
 from max.pipelines.context import (
     SamplingParams,
@@ -101,6 +106,18 @@ class ImageContentPart(_MessageContentPart):
         default="image", description="Content type identifier"
     )
 
+    # Optional vendor sizing hints; ``None`` means unset and models may ignore
+    # them. ``detail`` is the OpenAI quality tier; models that honor it map the
+    # tier to a resolution.
+    detail: str | None = Field(
+        default=None,
+        description="Detail/quality tier hint for image preprocessing",
+    )
+    max_long_side_pixel: int | None = Field(
+        default=None,
+        description="Max long-side length in pixels for image preprocessing",
+    )
+
 
 class VideoContentPart(_MessageContentPart):
     """A video content part of a message."""
@@ -109,10 +126,32 @@ class VideoContentPart(_MessageContentPart):
         default="video", description="Content type identifier"
     )
 
+    # Optional vendor sampling/sizing hints; ``None`` means unset and models
+    # may ignore them.
+    fps: float | None = Field(
+        default=None,
+        description="Frames-per-second to sample the video at",
+    )
+    max_frames: int | None = Field(
+        default=None,
+        description="Maximum number of frames to sample from the video",
+    )
+    detail: str | None = Field(
+        default=None,
+        description="Detail/quality tier hint for video preprocessing",
+    )
+    max_long_side_pixel: int | None = Field(
+        default=None,
+        description="Max long-side length in pixels for video preprocessing",
+    )
+
 
 MessageContent = TextContentPart | ImageContentPart | VideoContentPart
 
-_MessageRole = Literal["system", "user", "assistant", "tool", "function"]
+# ``root`` is a vendor role; supporting chat templates order it above ``system``.
+_MessageRole = Literal[
+    "system", "user", "assistant", "tool", "function", "root"
+]
 
 
 class TextGenerationRequestMessage(BaseModel):
@@ -320,6 +359,16 @@ class TextGenerationRequest:
     A list of video byte arrays that can be included as part of the request.
     Each video is decoded into frames during preprocessing.
     """
+    decoded_images: list[PILImage] = field(default_factory=list)
+    """
+    Decoded ``PIL.Image`` objects corresponding 1:1 to :attr:`images`, decoded
+    once at request admission (the API server validates images by fully
+    decoding them, so the decoded result is carried here to avoid a second
+    decode in the tokenizer). API-process-only: this is never serialized across
+    the worker boundary, so it must stay populated only for the in-process
+    tokenization step. Empty when images were not pre-decoded (offline/test
+    callers); tokenizers fall back to decoding :attr:`images` in that case.
+    """
     tools: list[TextGenerationRequestTool] | None = None
     """
     A list of tools that can be invoked during the generation process. This
@@ -376,9 +425,29 @@ class TextGenerationRequest:
     ``TextContext.external_block_metadata`` so the DKVConnector can
     fetch cached blocks before the forward pass.
     """
+    cache_salt: str | None = None
+    """Optional per-request salt that isolates this prompt's prefix-cache
+    entries from other requests sharing the same tokens.
+
+    Combined with ``kv_cache_hash_seed`` via XOR to seed the block hash.
+    Works under any ``kv_cache_hash_algo``: a cryptographic guarantee
+    under ``sha256``/``sha256_64``, best-effort under ``ahash64``. Capped
+    at 512 chars at the OpenAI schema layer.
+    """
 
     def __str__(self) -> str:
         return str(self.request_id)
+
+    def images_for_processing(self) -> list[bytes | PILImage]:
+        """Return the images for tokenizer preprocessing, decoded once.
+
+        Prefers the pre-decoded :attr:`decoded_images` (decoded and validated
+        once at the API server) and falls back to the raw :attr:`images` bytes
+        for offline and test callers. Tokenizers consume images through this so
+        the decode-once policy lives in one place rather than being repeated at
+        every per-model decode site.
+        """
+        return self.decoded_images or self.images
 
     def __post_init__(self) -> None:
         """Validates mutual exclusivity, image-messaging constraints, and message-image consistency after object initialization."""
@@ -458,14 +527,74 @@ class BatchType(Enum):
     """Token generation batch."""
 
 
+@dataclass
+class CompletedBatchStats:
+    """Execution stats for a batch whose outputs have been synchronized."""
+
+    batch_type: BatchType
+    """Type of the completed batch."""
+
+    batch_size: int
+    """Number of requests in the completed batch."""
+
+    num_input_tokens: int
+    """Number of input tokens in the completed batch."""
+
+    num_context_tokens: int
+    """Number of context tokens in the completed batch."""
+
+    execution_time_s: float
+    """Execution time of the completed batch, in seconds."""
+
+    num_output_tokens: int | None = None
+    """Output tokens produced by the completed batch, when known (currently
+    only reported by speculative decoding). ``None`` otherwise."""
+
+    draft_tokens_generated: int = 0
+    """Draft tokens generated by the completed batch (speculative decoding)."""
+
+    draft_tokens_accepted: int = 0
+    """Draft tokens accepted by the completed batch (speculative decoding)."""
+
+    avg_acceptance_length: float = 0.0
+    """Average acceptance length for the completed batch (speculative
+    decoding)."""
+
+    max_acceptance_length: int = 0
+    """Maximum possible acceptance length, i.e. the configured number of
+    speculative tokens (speculative decoding)."""
+
+    acceptance_rate_per_position: list[float] = field(default_factory=list)
+    """Per-position draft acceptance rates for the completed batch
+    (speculative decoding)."""
+
+    @property
+    def prompt_throughput(self) -> float:
+        """Prompt-side throughput of the completed batch in tokens/second."""
+        if self.execution_time_s <= 0.0:
+            return 0.0
+        return self.num_input_tokens / self.execution_time_s
+
+    @property
+    def generation_throughput(self) -> float:
+        """Generation throughput of the completed batch in tokens/second.
+
+        Uses the known output-token count when available (speculative
+        decoding, TG batches); otherwise counts one token per request.
+        """
+        if self.execution_time_s <= 0.0:
+            return 0.0
+        if (
+            self.num_output_tokens is not None
+            and self.batch_type == BatchType.TG
+        ):
+            return self.num_output_tokens / self.execution_time_s
+        return self.batch_size / self.execution_time_s
+
+
 @dataclass(eq=True)
 class TextGenerationInputs(PipelineInputs, Generic[TextGenerationContextType]):
-    """Input parameters for text generation pipeline operations.
-
-    This class encapsulates the batch of contexts and number of steps required
-    for token generation in a single input object, replacing the previous
-    pattern of passing batch and num_steps as separate parameters.
-    """
+    """Input parameters for text generation pipeline operations."""
 
     batches: list[list[TextGenerationContextType]]
     """Variable list of batches, with each batch being a list of contexts.
@@ -474,14 +603,20 @@ class TextGenerationInputs(PipelineInputs, Generic[TextGenerationContextType]):
     batch is mapped to a different device replica.
     """
 
-    num_steps: int
-    """Number of steps to run for."""
-
     input_tokens: int = -1
     """Number of input tokens."""
 
     batch_type: BatchType = BatchType.TG
     """Type of batch."""
+
+    per_replica_input_tokens: list[int] = field(default_factory=list)
+    """Per-replica active-token sums, excluding DP padding dummies. Frozen at
+    construction: token windows mutate during scheduling, so later reads of
+    ``active_length`` no longer describe this batch."""
+
+    per_replica_context_tokens: list[int] = field(default_factory=list)
+    """Per-replica processed-token (context) sums, excluding DP padding
+    dummies. Frozen at construction like ``per_replica_input_tokens``."""
 
     def __post_init__(self) -> None:
         self.input_tokens = sum(
@@ -490,6 +625,22 @@ class TextGenerationInputs(PipelineInputs, Generic[TextGenerationContextType]):
         self.context_tokens = sum(
             ctx.tokens.processed_length for ctx in self.flat_batch
         )
+        self.per_replica_input_tokens = [
+            sum(
+                ctx.tokens.active_length
+                for ctx in batch
+                if not getattr(ctx, "_is_padding_ctx", False)
+            )
+            for batch in self.batches
+        ]
+        self.per_replica_context_tokens = [
+            sum(
+                ctx.tokens.processed_length
+                for ctx in batch
+                if not getattr(ctx, "_is_padding_ctx", False)
+            )
+            for batch in self.batches
+        ]
         self.batch_type = BatchType.TG
         for context in self.flat_batch:
             if context.tokens.generated_length == 0:
@@ -501,6 +652,13 @@ class TextGenerationInputs(PipelineInputs, Generic[TextGenerationContextType]):
         """Flattened list of contexts across all replicas."""
         return [context for batch in self.batches for context in batch]
 
+    @property
+    def batch_size(self) -> int:
+        """Number of requests in the batch."""
+        return sum(
+            1 for context in self.flat_batch if not context._is_padding_ctx
+        )
+
     def __bool__(self) -> bool:
         return len(self.flat_batch) > 0
 
@@ -508,7 +666,6 @@ class TextGenerationInputs(PipelineInputs, Generic[TextGenerationContextType]):
         return (
             "TextGenerationInputs("
             f"batch_size={len(self.flat_batch)}, "
-            f"num_steps={self.num_steps}, "
             f"batch_type={self.batch_type.value}"
             ")"
         )

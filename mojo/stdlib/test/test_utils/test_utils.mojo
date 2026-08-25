@@ -64,7 +64,7 @@ def check_write_to(
 @always_inline
 def libm_call[
     dtype: DType,
-    width: SIMDSize,
+    width: SIMDLength,
     //,
     fn_fp32: StaticString,
     fn_fp64: StaticString,
@@ -85,14 +85,12 @@ def libm_call[
     """
 
     @always_inline("nodebug")
-    @parameter
     def _float32_dispatch[
         input_type: DType, result_type: DType
     ](arg: Scalar[input_type]) -> Scalar[result_type]:
         return external_call[fn_fp32, Scalar[result_type]](arg)
 
     @always_inline("nodebug")
-    @parameter
     def _float64_dispatch[
         input_type: DType, result_type: DType
     ](arg: Scalar[input_type]) -> Scalar[result_type]:
@@ -103,7 +101,7 @@ def libm_call[
         DType.float64,
     ], "input dtype must be float32 or float64"
 
-    comptime if dtype == DType.float32:
+    comptime if dtype == .float32:
         return _simd_apply[_float32_dispatch, result_dtype=dtype](arg)
     else:
         return _simd_apply[_float64_dispatch, result_dtype=dtype](arg)

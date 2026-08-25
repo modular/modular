@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import Coord, CoordLike, Idx, MixedLayout, TileTensor, row_major
 from layout._fillers import random
 from linalg.fp8_quantization import (
@@ -67,7 +67,7 @@ def test_static_scaled_fp8_quant[
         for j in range(n):
             var in_val_scaled_f32: Float32
 
-            in_val_scaled_f32 = in_host[i, j][0].cast[DType.float32]() * (
+            in_val_scaled_f32 = in_host[i, j][0].cast[.float32]() * (
                 1.0 / scale
             )
 
@@ -77,10 +77,8 @@ def test_static_scaled_fp8_quant[
             )
 
             assert_equal(
-                in_val_scaled_f32.cast[DType.float8_e4m3fn]().cast[
-                    DType.float64
-                ](),
-                out_host[i, j][0].cast[DType.float64](),
+                in_val_scaled_f32.cast[.float8_e4m3fn]().cast[DType.float64](),
+                out_host[i, j][0].cast[.float64](),
             )
 
     in_host_ptr.free()
@@ -124,15 +122,18 @@ def test_dynamic_scaled_fp8_quant[
     var out_tensor = TileTensor(out_device, shape)
     var scales_tensor = TileTensor(scales_device, scales_shape)
 
-    @__copy_capture(in_tensor)
     @always_inline
-    @parameter
     def input_fn[
         width: Int, alignment: Int
-    ](row: Int, col: Int) -> SIMD[in_dtype, width]:
+    ](row: Int, col: Int) {var in_tensor} -> SIMD[in_dtype, width]:
         return in_tensor.load[width=width, alignment=alignment]((row, col))
 
-    quantize_tensor_dynamic_scaled_fp8[input_fn, -1, in_tensor.static_shape[1]](
+    quantize_tensor_dynamic_scaled_fp8[
+        in_dtype=in_dtype,
+        group_size_or_per_token=-1,
+        num_cols=in_tensor.static_shape[1],
+    ](
+        input_fn,
         out_tensor,
         scales_tensor,
         1200.0,
@@ -167,8 +168,8 @@ def test_dynamic_scaled_fp8_quant[
     var scale_factor_recip = 1.0 / scale_factor.cast[accum_dtype]()
 
     assert_equal(
-        scales_host[0, 0].cast[DType.float32](),
-        scale_factor.cast[DType.float32](),
+        scales_host[0, 0].cast[.float32](),
+        scale_factor.cast[.float32](),
     )
 
     for i in range(Int(m.value())):
@@ -176,10 +177,10 @@ def test_dynamic_scaled_fp8_quant[
             var in_val = in_host[i, j]
             var out_val = out_host[i, j]
             assert_equal(
-                out_val.cast[DType.float32](),
+                out_val.cast[.float32](),
                 (in_val.cast[accum_dtype]() * scale_factor_recip)
                 .cast[out_dtype]()
-                .cast[DType.float32](),
+                .cast[.float32](),
                 msg="At [" + String(i) + ", " + String(j) + "]",
             )
 
@@ -226,17 +227,18 @@ def test_dynamic_fp8_quant[
     var out_tensor = TileTensor(out_device, shape)
     var scales_tensor = TileTensor(scales_device, scales_shape)
 
-    @__copy_capture(in_tensor)
     @always_inline
-    @parameter
     def input_fn[
         width: Int, alignment: Int
-    ](row: Int, col: Int) -> SIMD[in_dtype, width]:
+    ](row: Int, col: Int) {var in_tensor} -> SIMD[in_dtype, width]:
         return in_tensor.load[width=width, alignment=alignment]((row, col))
 
     quantize_dynamic_scaled_fp8[
-        input_fn, group_size_or_per_token, in_tensor.static_shape[1]
+        in_dtype=in_dtype,
+        group_size_or_per_token=group_size_or_per_token,
+        num_cols=in_tensor.static_shape[1],
     ](
+        input_fn,
         out_tensor,
         scales_tensor,
         1200.0,
@@ -261,7 +263,7 @@ def test_dynamic_fp8_quant[
 
             var scale_factor: Scalar[scales_dtype]
 
-            comptime if scales_dtype == DType.float8_e8m0fnu:
+            comptime if scales_dtype == .float8_e8m0fnu:
                 scale_factor = max(
                     group_max.cast[accum_dtype]()
                     / Scalar[out_dtype].MAX_FINITE.cast[accum_dtype](),
@@ -275,18 +277,18 @@ def test_dynamic_fp8_quant[
             var scale_factor_recip = 1.0 / scale_factor.cast[accum_dtype]()
 
             assert_equal(
-                scales_host[group_idx, i].cast[DType.float32](),
-                scale_factor.cast[DType.float32](),
+                scales_host[group_idx, i].cast[.float32](),
+                scale_factor.cast[.float32](),
             )
 
             for j in range(group_size):
                 var in_val = in_host[i, j + group_idx * group_size]
                 var out_val = out_host[i, j + group_idx * group_size]
                 assert_equal(
-                    out_val.cast[DType.float32](),
+                    out_val.cast[.float32](),
                     (in_val.cast[accum_dtype]() * scale_factor_recip)
                     .cast[out_dtype]()
-                    .cast[DType.float32](),
+                    .cast[.float32](),
                     msg="At ["
                     + String(i)
                     + ", "
@@ -340,21 +342,20 @@ def test_batched_dynamic_fp8_quant[
     var out_tensor = TileTensor(out_device, shape)
     var scales_tensor = TileTensor(scales_device, scales_shape)
 
-    @parameter
-    @__copy_capture(in_tensor)
     @always_inline
     def input_fn[
         width: Int, alignment: Int
-    ](batch: Int, row: Int, col: Int) capturing -> SIMD[in_dtype, width]:
+    ](batch: Int, row: Int, col: Int) {var in_tensor} -> SIMD[in_dtype, width]:
         return in_tensor.load[width=width, alignment=alignment](
             (batch, row, col)
         )
 
     batched_quantize_dynamic_scaled_fp8[
-        input_fn=input_fn,
+        in_dtype=in_dtype,
         group_size_or_per_token=group_size_or_per_token,
         num_cols=in_tensor.static_shape[2],
     ](
+        input_fn,
         out_tensor,
         scales_tensor,
         1200.0,
@@ -386,8 +387,8 @@ def test_batched_dynamic_fp8_quant[
                 var scale_factor_recip = 1.0 / scale_factor.cast[accum_dtype]()
 
                 assert_equal(
-                    scales_host[batch_idx, group_idx, i].cast[DType.float64](),
-                    scale_factor.cast[DType.float64](),
+                    scales_host[batch_idx, group_idx, i].cast[.float64](),
+                    scale_factor.cast[.float64](),
                 )
 
                 for j in range(group_size):
@@ -399,10 +400,10 @@ def test_batched_dynamic_fp8_quant[
                     ]
 
                     assert_equal(
-                        out_val.cast[DType.float32](),
+                        out_val.cast[.float32](),
                         (in_val.cast[accum_dtype]() * scale_factor_recip)
                         .cast[out_dtype]()
-                        .cast[DType.float32](),
+                        .cast[.float32](),
                         msg="At ["
                         + String(i)
                         + ", "
@@ -443,7 +444,6 @@ def test_dynamic_fp8_quant_near_zero[
     var in_host_ptr = alloc[Scalar[in_dtype]](total_size)
     var out_host_ptr = alloc[Scalar[out_dtype]](total_size)
     var scales_host_ptr = alloc[Scalar[scales_dtype]](scales_size)
-    var in_host = TileTensor(in_host_ptr, shape)
 
     # Fill the whole input with a near-zero magnitude (~1e-38) and a zero lane
     # at the start of each group — so every group's max-abs is a tiny denormal
@@ -468,17 +468,17 @@ def test_dynamic_fp8_quant_near_zero[
     var out_tensor = TileTensor(out_device, shape)
     var scales_tensor = TileTensor(scales_device, scales_shape)
 
-    @__copy_capture(in_tensor)
     @always_inline
-    @parameter
     def input_fn[
         width: Int, alignment: Int
-    ](row: Int, col: Int) -> SIMD[in_dtype, width]:
+    ](row: Int, col: Int) {var in_tensor} -> SIMD[in_dtype, width]:
         return in_tensor.load[width=width, alignment=alignment]((row, col))
 
     quantize_dynamic_scaled_fp8[
-        input_fn, group_size, in_tensor.static_shape[1]
-    ](out_tensor, scales_tensor, 1200.0, ctx, Int(in_tensor.dim[0]()))
+        in_dtype=in_dtype,
+        group_size_or_per_token=group_size,
+        num_cols=in_tensor.static_shape[1],
+    ](input_fn, out_tensor, scales_tensor, 1200.0, ctx, Int(in_tensor.dim[0]()))
 
     ctx.enqueue_copy(out_host_ptr, out_device)
     ctx.synchronize()
@@ -491,7 +491,7 @@ def test_dynamic_fp8_quant_near_zero[
     var n_nonfinite = 0
     var n_nonzero = 0
     for i in range(total_size):
-        var v = out_host_ptr[i].cast[DType.float32]()
+        var v = out_host_ptr[i].cast[.float32]()
         if isnan(v) or isinf(v):
             n_nonfinite += 1
         if v != 0.0:
@@ -538,7 +538,6 @@ def test_dynamic_tensor_fp8_quant_near_zero[
     var in_host_ptr = alloc[Scalar[in_dtype]](total_size)
     var out_host_ptr = alloc[Scalar[out_dtype]](total_size)
     var scales_host_ptr = alloc[Scalar[scales_dtype]](scales_size)
-    var in_host = TileTensor(in_host_ptr, shape)
 
     # Every group's max-abs is a tiny f32 denormal (~1e-38) with an exactly-zero
     # lane at each group start (the 0*Inf lane). With num_rows > 1 the per-tensor
@@ -563,17 +562,17 @@ def test_dynamic_tensor_fp8_quant_near_zero[
     var out_tensor = TileTensor(out_device, shape)
     var scales_tensor = TileTensor(scales_device, scales_shape)
 
-    @__copy_capture(in_tensor)
     @always_inline
-    @parameter
     def input_fn[
         width: Int, alignment: Int
-    ](row: Int, col: Int) -> SIMD[in_dtype, width]:
+    ](row: Int, col: Int) {var in_tensor} -> SIMD[in_dtype, width]:
         return in_tensor.load[width=width, alignment=alignment]((row, col))
 
     quantize_tensor_dynamic_scaled_fp8[
-        input_fn, group_size, in_tensor.static_shape[1]
-    ](out_tensor, scales_tensor, 1200.0, ctx, Int(in_tensor.dim[0]()))
+        in_dtype=in_dtype,
+        group_size_or_per_token=group_size,
+        num_cols=in_tensor.static_shape[1],
+    ](input_fn, out_tensor, scales_tensor, 1200.0, ctx, Int(in_tensor.dim[0]()))
 
     ctx.enqueue_copy(out_host_ptr, out_device)
     ctx.synchronize()
@@ -586,7 +585,7 @@ def test_dynamic_tensor_fp8_quant_near_zero[
     var n_nonfinite = 0
     var n_nonzero = 0
     for i in range(total_size):
-        var v = out_host_ptr[i].cast[DType.float32]()
+        var v = out_host_ptr[i].cast[.float32]()
         if isnan(v) or isinf(v):
             n_nonfinite += 1
         if v != 0.0:

@@ -160,7 +160,7 @@ def _type_of_width[bitwidth: Int, unsigned: Bool]() -> DType:
         return _int_type_of_width[bitwidth]()
 
 
-struct IndexList[size: Int, *, element_type: DType = DType.int64](
+struct IndexList[size: Int, *, element_type: DType = .int64](
     Comparable,
     Defaultable,
     DevicePassable,
@@ -327,13 +327,13 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
             res[i] = self.get[i]()
         return res
 
-    def as_index_tuple(self) -> StaticTuple[SIMDSize, Self.size]:
+    def as_index_tuple(self) -> StaticTuple[SIMDLength, Self.size]:
         """Converts this IndexList to a static tuple of mlir indexes.
 
         Returns:
             The corresponding StaticTuple object.
         """
-        var res = StaticTuple[SIMDSize, Self.size]()
+        var res = StaticTuple[SIMDLength, Self.size]()
 
         comptime for i in range(Self.size):
             res[i] = self.get[i]()
@@ -343,14 +343,14 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
     @always_inline("nodebug")
     def canonicalize(
         self,
-        out result: IndexList[Self.size, element_type=DType.int64],
+        out result: IndexList[Self.size, element_type=.int64],
     ):
         """Canonicalizes the IndexList.
 
         Returns:
             Canonicalizes the object.
         """
-        return self.cast[DType.int64]()
+        return self.cast[.int64]()
 
     @always_inline
     def reverse(self) -> Self:
@@ -654,14 +654,15 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
             writer: The object to write to.
         """
 
-        @parameter
-        def write_fields(mut w: Some[Writer]):
-            self.write_to(w)
+        var self_ptr = Pointer(to=self)
+
+        def write_fields(mut w: Some[Writer]) {self_ptr}:
+            self_ptr[].write_to(w)
 
         fmt.FormatStruct(writer, "IndexList").params(
             Self.size,
             Self.element_type,
-        ).fields[FieldsFn=write_fields]()
+        ).fields(write_fields)
 
     @always_inline
     def cast[
@@ -710,7 +711,7 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
     def get_type_name() -> String:
         """
         Gets the name of the host type (the one implementing this trait).
-        For example, Int would return "Int", DeviceBuffer[DType.float32] would
+        For example, Int would return "Int", DeviceBuffer[.float32] would
         return "DeviceBuffer[DType.float32]". This is used for error messages
         when passing types to the device.
         TODO: This method will be retired soon when better kernel call error
@@ -730,7 +731,7 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
 @always_inline
 def Index[
     *Ts: Intable,
-    dtype: DType = DType.int64,
+    dtype: DType = .int64,
 ](*args: *Ts, out result: IndexList[args.__len__(), element_type=dtype]):
     """Constructs an N-D Index from the given values.
 
@@ -755,7 +756,9 @@ def Index[
 
 
 @always_inline
-def product[size: Int](tuple: IndexList[size, ...], end_idx: Int = size) -> Int:
+def product[
+    size: Int
+](tuple: IndexList[size, element_type=_], end_idx: Int = size) -> Int:
     """Computes a product of values in the tuple up to the given index.
 
     Parameters:
@@ -774,7 +777,7 @@ def product[size: Int](tuple: IndexList[size, ...], end_idx: Int = size) -> Int:
 @always_inline
 def product[
     size: Int
-](tuple: IndexList[size, ...], start_idx: Int, end_idx: Int) -> Int:
+](tuple: IndexList[size, element_type=_], start_idx: Int, end_idx: Int) -> Int:
     """Computes a product of values in the tuple in the given index range.
 
     Parameters:

@@ -98,7 +98,7 @@ def fp8_quantize[
     *,
     use_clamp: Bool = True,
 ](values: SIMD, scale_recip: Scalar[values.dtype]) -> SIMD[
-    out_dtype, values.size
+    out_dtype, values.length
 ]:
     """Quantize values to FP8, clamping to the representable range.
 
@@ -132,10 +132,10 @@ def fp8_quantize[
     var result = values * scale_recip
 
     comptime if use_clamp:
-        comptime min_val = SIMD[values.dtype, values.size](
+        comptime min_val = SIMD[values.dtype, values.length](
             min_finite[out_dtype]()
         )
-        comptime max_val = SIMD[values.dtype, values.size](
+        comptime max_val = SIMD[values.dtype, values.length](
             max_finite[out_dtype]()
         )
         return clamp(result, min_val, max_val).cast[out_dtype]()
@@ -146,7 +146,7 @@ def fp8_quantize[
 @always_inline
 def cast_saturating[
     in_dtype: DType,
-    width: SIMDSize,
+    width: SIMDLength,
     //,
     out_dtype: DType,
 ](values: SIMD[in_dtype, width]) -> SIMD[out_dtype, width]:
@@ -156,7 +156,7 @@ def cast_saturating[
     on NVIDIA (the `cvt` is not `satfinite`); FP8 stores must SATURATE instead.
     This helper clamps to [min_finite, max_finite] before the cast when
     `out_dtype` is FP8, and is a plain cast otherwise (no-op clamp for
-    bf16/f16). Use it for direct stores to a (possibly-FP8) destination — e.g.
+    bf16/f16). Use it for direct stores to a (possibly-FP8) destination, e.g.
     the MLA RoPE / RMSNorm KV-cache writes where the cache dtype is generic.
 
     Parameters:
@@ -171,6 +171,10 @@ def cast_saturating[
     comptime if in_dtype == out_dtype or not out_dtype.is_float8():
         return values.cast[out_dtype]()
 
-    comptime min_val = SIMD[values.dtype, values.size](min_finite[out_dtype]())
-    comptime max_val = SIMD[values.dtype, values.size](max_finite[out_dtype]())
+    comptime min_val = SIMD[values.dtype, values.length](
+        min_finite[out_dtype]()
+    )
+    comptime max_val = SIMD[values.dtype, values.length](
+        max_finite[out_dtype]()
+    )
     return clamp(values, min_val, max_val).cast[out_dtype]()

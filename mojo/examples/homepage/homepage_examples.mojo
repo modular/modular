@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -15,8 +15,8 @@
 
 from std.algorithm import vectorize
 from std.gpu import global_idx
-from std.gpu.host import DeviceContext
-from std.gpu.host.info import is_cpu, is_gpu
+from max.gpu.host import DeviceContext
+from max.gpu.host.info import is_cpu, is_gpu
 from std.math import ceildiv
 from std.python import Python, PythonObject
 from std.reflection import reflect
@@ -24,6 +24,7 @@ from std.reflection import reflect
 from std.sys import has_accelerator, simd_width_of
 
 from layout import TileTensor
+from layout.tensor_storage import PointerStorage
 from layout.tile_layout import Layout, row_major
 from extensibility import InputTensor, OutputTensor
 
@@ -41,10 +42,24 @@ comptime layout = row_major[size]()
 
 
 def vector_add(
-    a: TileTensor[float_dtype, type_of(layout), element_size=1, ...],
-    b: TileTensor[float_dtype, type_of(layout), element_size=1, ...],
+    a: TileTensor[
+        float_dtype,
+        type_of(layout),
+        Storage=PointerStorage[element_width=1],
+        ...,
+    ],
+    b: TileTensor[
+        float_dtype,
+        type_of(layout),
+        Storage=PointerStorage[element_width=1],
+        ...,
+    ],
     result: TileTensor[
-        mut=True, float_dtype, type_of(layout), element_size=1, ...
+        mut=True,
+        float_dtype,
+        type_of(layout),
+        Storage=PointerStorage[element_width=1],
+        ...,
     ],
 ):
     var i = global_idx.x
@@ -106,20 +121,20 @@ def run_gpu_programming_example() raises:
 
 def mojo_square_array(array_obj: PythonObject) raises:
     comptime simd_width = simd_width_of[DType.int64]()
-    var ptr = array_obj.ctypes.data.unsafe_get_as_pointer[DType.int64]()
+    var ptr = array_obj.ctypes.data.unsafe_get_as_pointer[.int64]()
 
     def pow[width: Int](i: Int) {mut ptr}:
-        var elem = ptr.load[width=width](i)
-        ptr.store[width=width](i, elem * elem)
+        var elem = ptr.unsafe_load[width=width](i)
+        ptr.unsafe_store[width=width](i, elem * elem)
 
     vectorize[simd_width](len(array_obj), pow)
 
 
 def run_python_interop_example() raises:
-    np = Python.import_module("numpy")
+    var np = Python.import_module("numpy")
     # values: List[Int64] = [1, 3, 5, 7, 11]
-    pylist = Python.list(1, 3, 5, 7, 11)
-    nparray = np.array(pylist, np.int64)
+    var pylist = Python.list(1, 3, 5, 7, 11)
+    var nparray = np.array(pylist, np.int64)
     mojo_square_array(nparray)
     print(nparray)
 
@@ -127,12 +142,12 @@ def run_python_interop_example() raises:
 # Metaprogramming example
 
 
-trait FauxEquatable(ImplicitlyDeletable):
+trait FauxEquatable(Deinitable):
     # Generic implementation using reflection: compare all fields
     def __eq__(self, other: Self) -> Bool:
         comptime r = reflect[Self]
 
-        comptime for i in range(r.field_names().size):
+        comptime for i in range(r.field_names().length):
             comptime assert conforms_to(r.field_types()[i], Equatable)
             if r.field_ref[i](self) != r.field_ref[i](other):
                 return False
@@ -146,9 +161,9 @@ struct EqTest(Copyable, FauxEquatable):
 
 
 def run_metaprogramming_example():
-    v1 = EqTest(1, "Lucy")
-    v2 = EqTest(1, "Lucy")
-    v3 = EqTest(2, "Linus")
+    var v1 = EqTest(1, "Lucy")
+    var v2 = EqTest(1, "Lucy")
+    var v3 = EqTest(2, "Linus")
     print(v1 == v2)
     print(v1 == v3)
 

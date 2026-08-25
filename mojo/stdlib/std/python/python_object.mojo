@@ -19,9 +19,10 @@ from std.python import PythonObject
 ```
 """
 
+from . import ConvertibleToPython
 from std.os import abort
 from std.sys import bit_width_of
-from std.ffi import _CPointer, c_double, c_long, c_size_t, c_ssize_t
+from std.ffi import c_double, c_int, c_long, c_size_t, c_ssize_t
 import std.format._utils as fmt
 
 from std.reflection import reflect
@@ -29,6 +30,12 @@ from std.reflection import reflect
 from ._cpython import (
     CPython,
     GILAcquired,
+    Py_EQ,
+    Py_GE,
+    Py_GT,
+    Py_LE,
+    Py_LT,
+    Py_NE,
     PyObject,
     PyObjectPtr,
     PyTypeObject,
@@ -171,9 +178,7 @@ struct PythonObject(
         self = source^.to_python_object()
 
     @always_inline
-    def __init__[
-        T: Movable & ImplicitlyDeletable
-    ](out self, *, var alloc: T) raises:
+    def __init__[T: Movable & Deinitable](out self, *, var alloc: T) raises:
         """Allocate a new `PythonObject` and store a Mojo value in it.
 
         The newly allocated Python object will contain the provided Mojo `T`
@@ -249,17 +254,17 @@ struct PythonObject(
         """
         ref cpy = Python().cpython()
 
-        comptime if dtype == DType.bool:
+        comptime if dtype == .bool:
             var val = c_long(Int(value))
             self = Self(from_owned=cpy.PyBool_FromLong(val))
         elif dtype.is_unsigned():
-            var val = c_size_t(value.cast[DType.uint]())
+            var val = c_size_t(value.cast[.uint]())
             self = Self(from_owned=cpy.PyLong_FromSize_t(val))
         elif dtype.is_integral():
-            var val = c_ssize_t(value.cast[DType.int]())
+            var val = c_ssize_t(value.cast[.int]())
             self = Self(from_owned=cpy.PyLong_FromSsize_t(val))
         else:
-            var val = c_double(value.cast[DType.float64]())
+            var val = c_double(value.cast[.float64]())
             self = Self(from_owned=cpy.PyFloat_FromDouble(val))
 
     @implicit
@@ -351,7 +356,10 @@ struct PythonObject(
         var set_ptr = cpy.PySet_New({})
 
         for i in range(len(values)):
-            var errno = cpy.PySet_Add(set_ptr, values[i].steal_data())
+            # PySet_Add doesn't steal the value reference.
+            var value_ptr = values[i].steal_data()
+            var errno = cpy.PySet_Add(set_ptr, value_ptr)
+            cpy.Py_DecRef(value_ptr)
             if errno == -1:
                 raise cpy.unsafe_get_error()
         return PythonObject(from_owned=set_ptr)
@@ -390,7 +398,7 @@ struct PythonObject(
         """
         self = Self(from_borrowed=copy._obj_ptr)
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         """Destroy the object.
 
         Decrements the underlying refcount of the pointed-to object.
@@ -458,9 +466,10 @@ struct PythonObject(
             If setting the attribute fails.
         """
         ref cpy = Python().cpython()
-        var errno = cpy.PyObject_SetAttrString(
-            self._obj_ptr, name^, value.steal_data()
-        )
+        # PyObject_SetAttrString doesn't steal the value reference.
+        var value_ptr = value^.steal_data()
+        var errno = cpy.PyObject_SetAttrString(self._obj_ptr, name^, value_ptr)
+        cpy.Py_DecRef(value_ptr)
         if errno == -1:
             raise cpy.unsafe_get_error()
 
@@ -560,40 +569,28 @@ struct PythonObject(
         var size = len(args)
         var key_ptr: PyObjectPtr
         if size == 1:
-            key_ptr = cpy.Py_NewRef(args[0].steal_data())
+            key_ptr = cpy.Py_NewRef(args[0]._obj_ptr)
         else:
             key_ptr = cpy.PyTuple_New(size)
 
             for i in range(size):
                 _ = cpy.PyTuple_SetItem(
-                    key_ptr, i, cpy.Py_NewRef(args[i].steal_data())
+                    key_ptr, i, cpy.Py_NewRef(args[i]._obj_ptr)
                 )
 
-        var errno = cpy.PyObject_SetItem(
-            self._obj_ptr, key_ptr, value.steal_data()
-        )
+        # PyObject_SetItem doesn't steal the value reference.
+        var value_ptr = value^.steal_data()
+        var errno = cpy.PyObject_SetItem(self._obj_ptr, key_ptr, value_ptr)
         cpy.Py_DecRef(key_ptr)
+        cpy.Py_DecRef(value_ptr)
         if errno == -1:
             raise cpy.unsafe_get_error()
 
-    @doc_hidden
-    def __call_single_arg_inplace_method__(
-        mut self, var method_name: String, rhs: PythonObject
-    ) raises:
-        var callable_obj: PythonObject
-        try:
-            callable_obj = self.__getattr__(
-                String(t"__i{method_name[byte=2:]}")
-            )
-        except:
-            self = self.__getattr__(method_name^)(rhs)
-        else:
-            self = callable_obj(rhs)
-
-    def __mul__(self, var rhs: PythonObject) raises -> PythonObject:
+    def __mul__(self, rhs: PythonObject) raises -> PythonObject:
         """Multiplication.
 
-        Calls the underlying object's `__mul__` method.
+        Calls the underlying object's `__mul__` method, falling back to
+        `rhs.__rmul__` if it is not implemented.
 
         Args:
             rhs: Right hand value.
@@ -604,12 +601,13 @@ struct PythonObject(
         Raises:
             If the operation is not supported.
         """
-        return self.__getattr__("__mul__")(rhs^)
+        return _binary_op[CPython.PyNumber_Multiply](self, rhs)
 
-    def __rmul__(self, var lhs: PythonObject) raises -> PythonObject:
+    def __rmul__(self, lhs: PythonObject) raises -> PythonObject:
         """Reverse multiplication.
 
-        Calls the underlying object's `__rmul__` method.
+        Evaluates `lhs * self`, which calls `lhs.__mul__` and falls back to
+        this object's `__rmul__` if that is not implemented.
 
         Args:
             lhs: The left-hand-side value that is multiplied by this object.
@@ -620,12 +618,16 @@ struct PythonObject(
         Raises:
             If the operation is not supported.
         """
-        return self.__getattr__("__rmul__")(lhs^)
+        return _binary_op[CPython.PyNumber_Multiply](lhs, self)
 
+    # The in-place operators below take `rhs` owned, unlike their non-mutating
+    # counterparts, which only borrow it. Their `mut self` would otherwise alias
+    # an immutably-borrowed `rhs` and reject `x *= x`; the copy breaks the alias.
     def __imul__(mut self, var rhs: PythonObject) raises:
         """In-place multiplication.
 
-        Calls the underlying object's `__imul__` method.
+        Calls the underlying object's `__imul__` method, falling back to
+        `__mul__` if it is not implemented.
 
         Args:
             rhs: The right-hand-side value by which this object is multiplied.
@@ -633,12 +635,13 @@ struct PythonObject(
         Raises:
             If the operation is not supported.
         """
-        return self.__call_single_arg_inplace_method__("__mul__", rhs^)
+        self = _binary_op[CPython.PyNumber_InPlaceMultiply](self, rhs)
 
-    def __add__(self, var rhs: PythonObject) raises -> PythonObject:
+    def __add__(self, rhs: PythonObject) raises -> PythonObject:
         """Addition and concatenation.
 
-        Calls the underlying object's `__add__` method.
+        Calls the underlying object's `__add__` method, falling back to
+        `rhs.__radd__` if it is not implemented.
 
         Args:
             rhs: Right hand value.
@@ -649,12 +652,13 @@ struct PythonObject(
         Raises:
             If the operation is not supported.
         """
-        return self.__getattr__("__add__")(rhs^)
+        return _binary_op[CPython.PyNumber_Add](self, rhs)
 
-    def __radd__(self, var lhs: PythonObject) raises -> PythonObject:
+    def __radd__(self, lhs: PythonObject) raises -> PythonObject:
         """Reverse addition and concatenation.
 
-        Calls the underlying object's `__radd__` method.
+        Evaluates `lhs + self`, which calls `lhs.__add__` and falls back to
+        this object's `__radd__` if that is not implemented.
 
         Args:
             lhs: The left-hand-side value to which this object is added or
@@ -666,7 +670,7 @@ struct PythonObject(
         Raises:
             If the operation is not supported.
         """
-        return self.__getattr__("__radd__")(lhs^)
+        return _binary_op[CPython.PyNumber_Add](lhs, self)
 
     def __iadd__(mut self, var rhs: PythonObject) raises:
         """Immediate addition and concatenation.
@@ -677,12 +681,13 @@ struct PythonObject(
         Raises:
             If the operation is not supported.
         """
-        return self.__call_single_arg_inplace_method__("__add__", rhs^)
+        self = _binary_op[CPython.PyNumber_InPlaceAdd](self, rhs)
 
-    def __sub__(self, var rhs: PythonObject) raises -> PythonObject:
+    def __sub__(self, rhs: PythonObject) raises -> PythonObject:
         """Subtraction.
 
-        Calls the underlying object's `__sub__` method.
+        Calls the underlying object's `__sub__` method, falling back to
+        `rhs.__rsub__` if it is not implemented.
 
         Args:
             rhs: Right hand value.
@@ -693,12 +698,13 @@ struct PythonObject(
         Raises:
             If the operation is not supported.
         """
-        return self.__getattr__("__sub__")(rhs^)
+        return _binary_op[CPython.PyNumber_Subtract](self, rhs)
 
-    def __rsub__(self, var lhs: PythonObject) raises -> PythonObject:
+    def __rsub__(self, lhs: PythonObject) raises -> PythonObject:
         """Reverse subtraction.
 
-        Calls the underlying object's `__rsub__` method.
+        Evaluates `lhs - self`, which calls `lhs.__sub__` and falls back to
+        this object's `__rsub__` if that is not implemented.
 
         Args:
             lhs: The left-hand-side value from which this object is subtracted.
@@ -709,7 +715,7 @@ struct PythonObject(
         Raises:
             If the operation is not supported.
         """
-        return self.__getattr__("__rsub__")(lhs^)
+        return _binary_op[CPython.PyNumber_Subtract](lhs, self)
 
     def __isub__(mut self, var rhs: PythonObject) raises:
         """Immediate subtraction.
@@ -720,13 +726,14 @@ struct PythonObject(
         Raises:
             If the operation is not supported.
         """
-        return self.__call_single_arg_inplace_method__("__sub__", rhs^)
+        self = _binary_op[CPython.PyNumber_InPlaceSubtract](self, rhs)
 
-    def __floordiv__(self, var rhs: PythonObject) raises -> PythonObject:
+    def __floordiv__(self, rhs: PythonObject) raises -> PythonObject:
         """Return the division of self and rhs rounded down to the nearest
         integer.
 
-        Calls the underlying object's `__floordiv__` method.
+        Calls the underlying object's `__floordiv__` method, falling back to
+        `rhs.__rfloordiv__` if it is not implemented.
 
         Args:
             rhs: The right-hand-side value by which this object is divided.
@@ -738,12 +745,13 @@ struct PythonObject(
         Raises:
             If the operation fails.
         """
-        return self.__getattr__("__floordiv__")(rhs^)
+        return _binary_op[CPython.PyNumber_FloorDivide](self, rhs)
 
-    def __rfloordiv__(self, var lhs: PythonObject) raises -> PythonObject:
+    def __rfloordiv__(self, lhs: PythonObject) raises -> PythonObject:
         """Reverse floor division.
 
-        Calls the underlying object's `__rfloordiv__` method.
+        Evaluates `lhs // self`, which calls `lhs.__floordiv__` and falls back to
+        this object's `__rfloordiv__` if that is not implemented.
 
         Args:
             lhs: The left-hand-side value that is divided by this object.
@@ -755,7 +763,7 @@ struct PythonObject(
         Raises:
             If the operation fails.
         """
-        return self.__getattr__("__rfloordiv__")(lhs^)
+        return _binary_op[CPython.PyNumber_FloorDivide](lhs, self)
 
     def __ifloordiv__(mut self, var rhs: PythonObject) raises:
         """Immediate floor division.
@@ -766,12 +774,13 @@ struct PythonObject(
         Raises:
             If the operation fails.
         """
-        return self.__call_single_arg_inplace_method__("__floordiv__", rhs^)
+        self = _binary_op[CPython.PyNumber_InPlaceFloorDivide](self, rhs)
 
-    def __truediv__(self, var rhs: PythonObject) raises -> PythonObject:
+    def __truediv__(self, rhs: PythonObject) raises -> PythonObject:
         """Division.
 
-        Calls the underlying object's `__truediv__` method.
+        Calls the underlying object's `__truediv__` method, falling back to
+        `rhs.__rtruediv__` if it is not implemented.
 
         Args:
             rhs: The right-hand-side value by which this object is divided.
@@ -782,12 +791,13 @@ struct PythonObject(
         Raises:
             If the operation fails.
         """
-        return self.__getattr__("__truediv__")(rhs^)
+        return _binary_op[CPython.PyNumber_TrueDivide](self, rhs)
 
-    def __rtruediv__(self, var lhs: PythonObject) raises -> PythonObject:
+    def __rtruediv__(self, lhs: PythonObject) raises -> PythonObject:
         """Reverse division.
 
-        Calls the underlying object's `__rtruediv__` method.
+        Evaluates `lhs / self`, which calls `lhs.__truediv__` and falls back to
+        this object's `__rtruediv__` if that is not implemented.
 
         Args:
             lhs: The left-hand-side value that is divided by this object.
@@ -798,7 +808,7 @@ struct PythonObject(
         Raises:
             If the operation fails.
         """
-        return self.__getattr__("__rtruediv__")(lhs^)
+        return _binary_op[CPython.PyNumber_TrueDivide](lhs, self)
 
     def __itruediv__(mut self, var rhs: PythonObject) raises:
         """Immediate division.
@@ -809,12 +819,13 @@ struct PythonObject(
         Raises:
             If the operation fails.
         """
-        return self.__call_single_arg_inplace_method__("__truediv__", rhs^)
+        self = _binary_op[CPython.PyNumber_InPlaceTrueDivide](self, rhs)
 
-    def __mod__(self, var rhs: PythonObject) raises -> PythonObject:
+    def __mod__(self, rhs: PythonObject) raises -> PythonObject:
         """Return the remainder of self divided by rhs.
 
-        Calls the underlying object's `__mod__` method.
+        Calls the underlying object's `__mod__` method, falling back to
+        `rhs.__rmod__` if it is not implemented.
 
         Args:
             rhs: The value to divide on.
@@ -825,12 +836,13 @@ struct PythonObject(
         Raises:
             If the operation fails.
         """
-        return self.__getattr__("__mod__")(rhs^)
+        return _binary_op[CPython.PyNumber_Remainder](self, rhs)
 
-    def __rmod__(self, var lhs: PythonObject) raises -> PythonObject:
+    def __rmod__(self, lhs: PythonObject) raises -> PythonObject:
         """Reverse modulo.
 
-        Calls the underlying object's `__rmod__` method.
+        Evaluates `lhs % self`, which calls `lhs.__mod__` and falls back to
+        this object's `__rmod__` if that is not implemented.
 
         Args:
             lhs: The left-hand-side value that is divided by this object.
@@ -841,7 +853,7 @@ struct PythonObject(
         Raises:
             If the operation fails.
         """
-        return self.__getattr__("__rmod__")(lhs^)
+        return _binary_op[CPython.PyNumber_Remainder](lhs, self)
 
     def __imod__(mut self, var rhs: PythonObject) raises:
         """Immediate modulo.
@@ -852,9 +864,9 @@ struct PythonObject(
         Raises:
             If the operation fails.
         """
-        return self.__call_single_arg_inplace_method__("__mod__", rhs^)
+        self = _binary_op[CPython.PyNumber_InPlaceRemainder](self, rhs)
 
-    def __xor__(self, var rhs: PythonObject) raises -> PythonObject:
+    def __xor__(self, rhs: PythonObject) raises -> PythonObject:
         """Exclusive OR.
 
         Args:
@@ -867,9 +879,9 @@ struct PythonObject(
         Raises:
             If the operation fails.
         """
-        return self.__getattr__("__xor__")(rhs^)
+        return _binary_op[CPython.PyNumber_Xor](self, rhs)
 
-    def __rxor__(self, var lhs: PythonObject) raises -> PythonObject:
+    def __rxor__(self, lhs: PythonObject) raises -> PythonObject:
         """Reverse exclusive OR.
 
         Args:
@@ -882,7 +894,7 @@ struct PythonObject(
         Raises:
             If the operation fails.
         """
-        return self.__getattr__("__rxor__")(lhs^)
+        return _binary_op[CPython.PyNumber_Xor](lhs, self)
 
     def __ixor__(mut self, var rhs: PythonObject) raises:
         """Immediate exclusive OR.
@@ -894,9 +906,9 @@ struct PythonObject(
         Raises:
             If the operation fails.
         """
-        return self.__call_single_arg_inplace_method__("__xor__", rhs^)
+        self = _binary_op[CPython.PyNumber_InPlaceXor](self, rhs)
 
-    def __or__(self, var rhs: PythonObject) raises -> PythonObject:
+    def __or__(self, rhs: PythonObject) raises -> PythonObject:
         """Bitwise OR.
 
         Args:
@@ -909,9 +921,9 @@ struct PythonObject(
         Raises:
             If the operation fails.
         """
-        return self.__getattr__("__or__")(rhs^)
+        return _binary_op[CPython.PyNumber_Or](self, rhs)
 
-    def __ror__(self, var lhs: PythonObject) raises -> PythonObject:
+    def __ror__(self, lhs: PythonObject) raises -> PythonObject:
         """Reverse bitwise OR.
 
         Args:
@@ -924,7 +936,7 @@ struct PythonObject(
         Raises:
             If the operation fails.
         """
-        return self.__getattr__("__ror__")(lhs^)
+        return _binary_op[CPython.PyNumber_Or](lhs, self)
 
     def __ior__(mut self, var rhs: PythonObject) raises:
         """Immediate bitwise OR.
@@ -936,9 +948,9 @@ struct PythonObject(
         Raises:
             If the operation fails.
         """
-        return self.__call_single_arg_inplace_method__("__or__", rhs^)
+        self = _binary_op[CPython.PyNumber_InPlaceOr](self, rhs)
 
-    def __and__(self, var rhs: PythonObject) raises -> PythonObject:
+    def __and__(self, rhs: PythonObject) raises -> PythonObject:
         """Bitwise AND.
 
         Args:
@@ -951,9 +963,9 @@ struct PythonObject(
         Raises:
             If the operation fails.
         """
-        return self.__getattr__("__and__")(rhs^)
+        return _binary_op[CPython.PyNumber_And](self, rhs)
 
-    def __rand__(self, var lhs: PythonObject) raises -> PythonObject:
+    def __rand__(self, lhs: PythonObject) raises -> PythonObject:
         """Reverse bitwise and.
 
         Args:
@@ -966,7 +978,7 @@ struct PythonObject(
         Raises:
             If the operation fails.
         """
-        return self.__getattr__("__rand__")(lhs^)
+        return _binary_op[CPython.PyNumber_And](lhs, self)
 
     def __iand__(mut self, var rhs: PythonObject) raises:
         """Immediate bitwise AND.
@@ -978,9 +990,9 @@ struct PythonObject(
         Raises:
             If the operation fails.
         """
-        return self.__call_single_arg_inplace_method__("__and__", rhs^)
+        self = _binary_op[CPython.PyNumber_InPlaceAnd](self, rhs)
 
-    def __rshift__(self, var rhs: PythonObject) raises -> PythonObject:
+    def __rshift__(self, rhs: PythonObject) raises -> PythonObject:
         """Bitwise right shift.
 
         Args:
@@ -993,9 +1005,9 @@ struct PythonObject(
         Raises:
             If the operation fails.
         """
-        return self.__getattr__("__rshift__")(rhs^)
+        return _binary_op[CPython.PyNumber_Rshift](self, rhs)
 
-    def __rrshift__(self, var lhs: PythonObject) raises -> PythonObject:
+    def __rrshift__(self, lhs: PythonObject) raises -> PythonObject:
         """Reverse bitwise right shift.
 
         Args:
@@ -1008,7 +1020,7 @@ struct PythonObject(
         Raises:
             If the operation fails.
         """
-        return self.__getattr__("__rrshift__")(lhs^)
+        return _binary_op[CPython.PyNumber_Rshift](lhs, self)
 
     def __irshift__(mut self, var rhs: PythonObject) raises:
         """Immediate bitwise right shift.
@@ -1020,9 +1032,9 @@ struct PythonObject(
         Raises:
             If the operation fails.
         """
-        return self.__call_single_arg_inplace_method__("__rshift__", rhs^)
+        self = _binary_op[CPython.PyNumber_InPlaceRshift](self, rhs)
 
-    def __lshift__(self, var rhs: PythonObject) raises -> PythonObject:
+    def __lshift__(self, rhs: PythonObject) raises -> PythonObject:
         """Bitwise left shift.
 
         Args:
@@ -1035,9 +1047,9 @@ struct PythonObject(
         Raises:
             If the operation fails.
         """
-        return self.__getattr__("__lshift__")(rhs^)
+        return _binary_op[CPython.PyNumber_Lshift](self, rhs)
 
-    def __rlshift__(self, var lhs: PythonObject) raises -> PythonObject:
+    def __rlshift__(self, lhs: PythonObject) raises -> PythonObject:
         """Reverse bitwise left shift.
 
         Args:
@@ -1050,7 +1062,7 @@ struct PythonObject(
         Raises:
             If the operation fails.
         """
-        return self.__getattr__("__rlshift__")(lhs^)
+        return _binary_op[CPython.PyNumber_Lshift](lhs, self)
 
     def __ilshift__(mut self, var rhs: PythonObject) raises:
         """Immediate bitwise left shift.
@@ -1062,9 +1074,9 @@ struct PythonObject(
         Raises:
             If the operation fails.
         """
-        return self.__call_single_arg_inplace_method__("__lshift__", rhs^)
+        self = _binary_op[CPython.PyNumber_InPlaceLshift](self, rhs)
 
-    def __pow__(self, var exp: PythonObject) raises -> PythonObject:
+    def __pow__(self, exp: PythonObject) raises -> PythonObject:
         """Raises this object to the power of the given value.
 
         Args:
@@ -1076,9 +1088,9 @@ struct PythonObject(
         Raises:
             If the operation fails.
         """
-        return self.__getattr__("__pow__")(exp^)
+        return _power_op[CPython.PyNumber_Power](self, exp)
 
-    def __rpow__(self, var lhs: PythonObject) raises -> PythonObject:
+    def __rpow__(self, lhs: PythonObject) raises -> PythonObject:
         """Reverse power of.
 
         Args:
@@ -1090,7 +1102,7 @@ struct PythonObject(
         Raises:
             If the operation fails.
         """
-        return self.__getattr__("__rpow__")(lhs^)
+        return _power_op[CPython.PyNumber_Power](lhs, self)
 
     def __ipow__(mut self, var rhs: PythonObject) raises:
         """Immediate power of.
@@ -1101,9 +1113,9 @@ struct PythonObject(
         Raises:
             If the operation fails.
         """
-        return self.__call_single_arg_inplace_method__("__pow__", rhs^)
+        self = _power_op[CPython.PyNumber_InPlacePower](self, rhs)
 
-    def __lt__(self, var rhs: PythonObject) raises -> PythonObject:
+    def __lt__(self, rhs: PythonObject) raises -> PythonObject:
         """Less than (rich) comparison operator.
 
         Args:
@@ -1113,11 +1125,11 @@ struct PythonObject(
             The result of the comparison, not necessarily a boolean.
 
         Raises:
-            If the object doesn't implement the `__lt__` method, or if it fails.
+            If neither operand supports `<`, or if the comparison fails.
         """
-        return self.__getattr__("__lt__")(rhs^)
+        return _rich_compare[Py_LT](self, rhs)
 
-    def __le__(self, var rhs: PythonObject) raises -> PythonObject:
+    def __le__(self, rhs: PythonObject) raises -> PythonObject:
         """Less than or equal (rich) comparison operator.
 
         Args:
@@ -1127,11 +1139,11 @@ struct PythonObject(
             The result of the comparison, not necessarily a boolean.
 
         Raises:
-            If the object doesn't implement the `__le__` method, or if it fails.
+            If neither operand supports `<=`, or if the comparison fails.
         """
-        return self.__getattr__("__le__")(rhs^)
+        return _rich_compare[Py_LE](self, rhs)
 
-    def __gt__(self, var rhs: PythonObject) raises -> PythonObject:
+    def __gt__(self, rhs: PythonObject) raises -> PythonObject:
         """Greater than (rich) comparison operator.
 
         Args:
@@ -1141,11 +1153,11 @@ struct PythonObject(
             The result of the comparison, not necessarily a boolean.
 
         Raises:
-            If the object doesn't implement the `__gt__` method, or if it fails.
+            If neither operand supports `>`, or if the comparison fails.
         """
-        return self.__getattr__("__gt__")(rhs^)
+        return _rich_compare[Py_GT](self, rhs)
 
-    def __ge__(self, var rhs: PythonObject) raises -> PythonObject:
+    def __ge__(self, rhs: PythonObject) raises -> PythonObject:
         """Greater than or equal (rich) comparison operator.
 
         Args:
@@ -1155,13 +1167,16 @@ struct PythonObject(
             The result of the comparison, not necessarily a boolean.
 
         Raises:
-            If the object doesn't implement the `__ge__` method, or if it fails.
+            If neither operand supports `>=`, or if the comparison fails.
         """
-        return self.__getattr__("__ge__")(rhs^)
+        return _rich_compare[Py_GE](self, rhs)
 
-    def __eq__(self, var rhs: PythonObject) raises -> PythonObject:
+    def __eq__(self, rhs: PythonObject) raises -> PythonObject:
         """Equality (rich) comparison operator.
 
+        Operands that do not implement the comparison fall back to an identity
+        check and compare unequal, rather than raising.
+
         Args:
             rhs: The value of the right hand side of the comparison.
 
@@ -1169,13 +1184,16 @@ struct PythonObject(
             The result of the comparison, not necessarily a boolean.
 
         Raises:
-            If the object doesn't implement the `__eq__` method, or if it fails.
+            If the comparison fails.
         """
-        return self.__getattr__("__eq__")(rhs^)
+        return _rich_compare[Py_EQ](self, rhs)
 
-    def __ne__(self, var rhs: PythonObject) raises -> PythonObject:
+    def __ne__(self, rhs: PythonObject) raises -> PythonObject:
         """Inequality (rich) comparison operator.
 
+        Operands that do not implement the comparison fall back to an identity
+        check and compare unequal, rather than raising.
+
         Args:
             rhs: The value of the right hand side of the comparison.
 
@@ -1183,9 +1201,9 @@ struct PythonObject(
             The result of the comparison, not necessarily a boolean.
 
         Raises:
-            If the object doesn't implement the `__ne__` method, or if it fails.
+            If the comparison fails.
         """
-        return self.__getattr__("__ne__")(rhs^)
+        return _rich_compare[Py_NE](self, rhs)
 
     def __pos__(self) raises -> PythonObject:
         """Positive.
@@ -1199,7 +1217,7 @@ struct PythonObject(
         Raises:
             If the operation fails.
         """
-        return self.__getattr__("__pos__")()
+        return _unary_op[CPython.PyNumber_Positive](self)
 
     def __neg__(self) raises -> PythonObject:
         """Negative.
@@ -1211,9 +1229,9 @@ struct PythonObject(
             numerical objects, this returns the negative.
 
         Raises:
-            If the call fails.
+            If the operation fails.
         """
-        return self.__getattr__("__neg__")()
+        return _unary_op[CPython.PyNumber_Negative](self)
 
     def __invert__(self) raises -> PythonObject:
         """Inversion.
@@ -1225,14 +1243,15 @@ struct PythonObject(
             all bits are flipped, from zero to one, and from one to zero.
 
         Raises:
-            If the call fails.
+            If the operation fails.
         """
-        return self.__getattr__("__invert__")()
+        return _unary_op[CPython.PyNumber_Invert](self)
 
-    def __contains__(self, var rhs: PythonObject) raises -> Bool:
+    def __contains__(self, rhs: PythonObject) raises -> Bool:
         """Contains dunder.
 
-        Calls the underlying object's `__contains__` method.
+        Calls the underlying object's `__contains__` method, falling back to a
+        search by iteration if it is not implemented.
 
         Args:
             rhs: Right hand value.
@@ -1243,20 +1262,16 @@ struct PythonObject(
         Raises:
             If the operation fails.
         """
-        # TODO: replace/optimize with c-python function.
-        # TODO: implement __getitem__ step for cpython membership test operator.
         ref cpy = Python().cpython()
-        if cpy.PyObject_HasAttrString(self._obj_ptr, "__contains__"):
-            return self.__getattr__("__contains__")(rhs^).__bool__()
-        for v in self:
-            if v == rhs:
-                return True
-        return False
+        var result = cpy.PySequence_Contains(self._obj_ptr, rhs._obj_ptr)
+        if result == -1:
+            raise cpy.unsafe_get_error()
+        return result == 1
 
     # see https://github.com/python/cpython/blob/main/Objects/call.c
     # for decrement rules
     def __call__(
-        self, *args: PythonObject, **kwargs: PythonObject
+        self, *args: PythonObject, var **kwargs: PythonObject
     ) raises -> PythonObject:
         """Call the underlying object as if it were a function.
 
@@ -1276,7 +1291,7 @@ struct PythonObject(
 
         for i in range(size):
             _ = cpy.PyTuple_SetItem(
-                args_ptr, i, cpy.Py_NewRef(args[i].steal_data())
+                args_ptr, i, cpy.Py_NewRef(args[i]._obj_ptr)
             )
         var kwargs_ptr = Python.dict(**kwargs^).steal_data()
         var res_ptr = cpy.PyObject_Call(self._obj_ptr, args_ptr, kwargs_ptr)
@@ -1404,7 +1419,7 @@ struct PythonObject(
 
     def unsafe_get_as_pointer[
         dtype: DType
-    ](self) raises -> UnsafePointer[Scalar[dtype], MutAnyOrigin]:
+    ](self) raises -> Pointer[Scalar[dtype], MutAnyOrigin]:
         """Reinterpret a Python integer as a Mojo pointer.
 
         Warning: converting from an integer to a pointer is unsafe! The
@@ -1416,18 +1431,18 @@ struct PythonObject(
             dtype: The desired DType of the pointer.
 
         Returns:
-            An `UnsafePointer` for the underlying Python data.
+            A pointer for the underlying Python data.
 
         Raises:
             If the operation fails.
         """
-        return UnsafePointer[Scalar[dtype], MutAnyOrigin](
+        return Pointer[Scalar[dtype], MutAnyOrigin](
             unsafe_from_address=Int(py=self)
         )
 
     def downcast_value_ptr[
-        T: ImplicitlyDeletable
-    ](self, *, func: Optional[StaticString] = None) raises -> UnsafePointer[
+        T: Deinitable
+    ](self, *, func: Optional[StaticString] = None) raises -> Pointer[
         T, MutAnyOrigin
     ]:
         """Get a pointer to the expected contained Mojo value of type `T`.
@@ -1453,7 +1468,8 @@ struct PythonObject(
             If the Python object does not contain an instance of the Mojo `T`
             type.
         """
-        if opt := self._try_downcast_value[T]():
+        var opt = self._try_downcast_value[T]()
+        if opt:
             return opt.unsafe_take()
 
         if func:
@@ -1478,8 +1494,8 @@ struct PythonObject(
             )
 
     def _try_downcast_value[
-        T: ImplicitlyDeletable
-    ](var self) raises -> Optional[UnsafePointer[T, MutAnyOrigin]]:
+        T: Deinitable
+    ](var self) raises -> Optional[Pointer[T, MutAnyOrigin]]:
         """Try to get a pointer to the expected contained Mojo value of type `T`.
 
         None will be returned if the type of this object does not match the
@@ -1501,14 +1517,12 @@ struct PythonObject(
         if type == expected_type:
             ref mojo_obj = self._obj_ptr.bitcast[PyMojoObject[T]]().value()[]
             if mojo_obj.is_initialized:
-                return UnsafePointer(
-                    to=mojo_obj.mojo_value
-                ).as_unsafe_any_origin()
+                return Pointer(to=mojo_obj.mojo_value).as_unsafe_any_origin()
         return None
 
     def unchecked_downcast_value_ptr[
-        mut: Bool, origin: Origin[mut=mut], //, T: ImplicitlyDeletable
-    ](ref[origin] self) -> UnsafePointer[T, origin]:
+        mut: Bool, origin: Origin[mut=mut], //, T: Deinitable
+    ](ref[origin] self) -> Pointer[T, origin]:
         """Get a pointer to the expected Mojo value of type `T`.
 
         This function assumes that this Python object was allocated as an
@@ -1531,9 +1545,9 @@ struct PythonObject(
         ref mojo_obj = self._obj_ptr.bitcast[PyMojoObject[T]]().value()[]
         # TODO(MSTDL-950): Should use something like `addr_of!`
         # Safety: The mutability matches that of `self`.
-        return UnsafePointer[mut=mut](
-            to=mojo_obj.mojo_value
-        ).unsafe_origin_cast[origin]()
+        return Pointer[mut=mut](to=mojo_obj.mojo_value).unsafe_origin_cast[
+            origin
+        ]()
 
 
 # ===-----------------------------------------------------------------------===#
@@ -1566,7 +1580,7 @@ def _unsafe_alloc[
 
 
 def _unsafe_init[
-    T: Movable & ImplicitlyDeletable,
+    T: Movable & Deinitable,
     //,
 ](obj_ptr: PyObjectPtr, var mojo_value: T) raises:
     """Initialize a Python object pointer with a Mojo value.
@@ -1584,12 +1598,12 @@ def _unsafe_init[
      type object. Use of any other pointer is invalid.
     """
     ref mojo_obj = obj_ptr.bitcast[PyMojoObject[T]]().value()[]
-    UnsafePointer(to=mojo_obj.mojo_value).init_pointee_move(mojo_value^)
+    Pointer(to=mojo_obj.mojo_value).unsafe_write(mojo_value^)
     mojo_obj.is_initialized = True
 
 
 def _unsafe_alloc_init[
-    T: Movable & ImplicitlyDeletable,
+    T: Movable & Deinitable,
     //,
 ](type_obj_ptr: PyTypeObjectPtr, var mojo_value: T) raises -> PythonObject:
     """Allocate a Python object pointer and initialize it with a Mojo value.
@@ -1619,6 +1633,109 @@ def _unsafe_alloc_init[
 # ===-----------------------------------------------------------------------===#
 # Helper functions
 # ===-----------------------------------------------------------------------===#
+
+
+@always_inline
+def _unary_op[
+    op: def(CPython, PyObjectPtr) thin -> PyObjectPtr
+](obj: PythonObject) raises -> PythonObject:
+    """Apply a CPython unary protocol function, such as `PyNumber_Negative`.
+
+    Parameters:
+        op: The `CPython` wrapper for the protocol function to apply.
+
+    Args:
+        obj: The operand.
+
+    Returns:
+        The result of the operation.
+
+    Raises:
+        If the operation is not supported, or if it fails.
+    """
+    ref cpy = Python().cpython()
+    var result = op(cpy, obj._obj_ptr)
+    if not result:
+        raise cpy.unsafe_get_error()
+    return PythonObject(from_owned=result)
+
+
+@always_inline
+def _binary_op[
+    op: def(CPython, PyObjectPtr, PyObjectPtr) thin -> PyObjectPtr
+](lhs: PythonObject, rhs: PythonObject) raises -> PythonObject:
+    """Apply a CPython binary protocol function, such as `PyNumber_Add`.
+
+    Parameters:
+        op: The `CPython` wrapper for the protocol function to apply.
+
+    Args:
+        lhs: The left-hand-side operand.
+        rhs: The right-hand-side operand.
+
+    Returns:
+        The result of the operation.
+
+    Raises:
+        If the operation is not supported, or if it fails.
+    """
+    ref cpy = Python().cpython()
+    var result = op(cpy, lhs._obj_ptr, rhs._obj_ptr)
+    if not result:
+        raise cpy.unsafe_get_error()
+    return PythonObject(from_owned=result)
+
+
+@always_inline
+def _power_op[
+    op: def(CPython, PyObjectPtr, PyObjectPtr, PyObjectPtr) thin -> PyObjectPtr
+](base: PythonObject, exp: PythonObject) raises -> PythonObject:
+    """Apply a CPython power protocol function with no modulus.
+
+    Parameters:
+        op: The `CPython` wrapper for the protocol function to apply.
+
+    Args:
+        base: The base.
+        exp: The exponent.
+
+    Returns:
+        `base` raised to the power `exp`.
+
+    Raises:
+        If the operation is not supported, or if it fails.
+    """
+    ref cpy = Python().cpython()
+    var result = op(cpy, base._obj_ptr, exp._obj_ptr, cpy.Py_None())
+    if not result:
+        raise cpy.unsafe_get_error()
+    return PythonObject(from_owned=result)
+
+
+@always_inline
+def _rich_compare[
+    opid: c_int
+](lhs: PythonObject, rhs: PythonObject) raises -> PythonObject:
+    """Compare two objects with CPython's rich-comparison protocol.
+
+    Parameters:
+        opid: The comparison to perform, such as `Py_LT`.
+
+    Args:
+        lhs: The left-hand-side operand.
+        rhs: The right-hand-side operand.
+
+    Returns:
+        The result of the comparison.
+
+    Raises:
+        If the comparison is not supported, or if it fails.
+    """
+    ref cpy = Python().cpython()
+    var result = cpy.PyObject_RichCompare(lhs._obj_ptr, rhs._obj_ptr, opid)
+    if not result:
+        raise cpy.unsafe_get_error()
+    return PythonObject(from_owned=result)
 
 
 def _slice_to_py_object_ptr(slice: Slice) -> PyObjectPtr:

@@ -38,7 +38,6 @@ phi3_modulev3_arch = SupportedArchitecture(
     pipeline_model=Phi3Model,
     tokenizer=TextTokenizer,
     context_type=TextContext,
-    rope_type="longrope",
     multi_gpu_supported=False,
     weight_adapters={
         WeightsFormat.safetensors: convert_safetensor_state_dict,
@@ -46,4 +45,6 @@ phi3_modulev3_arch = SupportedArchitecture(
     },
     config=Llama3Config,
     memory_planner=PagedMemoryPlanner,
+    supports_overlap_scheduler=False,
+    supports_device_graph_capture=False,
 )

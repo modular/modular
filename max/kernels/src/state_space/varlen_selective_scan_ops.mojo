@@ -19,9 +19,9 @@ This module registers operations for variable-length selective scan:
 
 from std.math import ceildiv
 
-import extensibility as compiler
-from std.gpu.host import DeviceContext, Dim
-from std.gpu.host.info import is_cpu, is_gpu
+import extensibility
+from max.gpu.host import DeviceContext, Dim
+from max.gpu.host.info import is_cpu, is_gpu
 
 from extensibility import InputTensor, OutputTensor
 from layout import TensorLayout, TileTensor
@@ -147,7 +147,7 @@ struct VarlenSelectiveScanFwdArgs[
     var grid_dim: Dim
     var block_dim: Dim
 
-    @parameter
+    @__parameter
     def launch_gpu[d_state_val: Int](self) capturing raises:
         comptime kernel = varlen_selective_scan_fwd_gpu[
             Self.dtype,
@@ -169,9 +169,9 @@ struct VarlenSelectiveScanFwdArgs[
         var compiled_kernel = self.ctx.compile_function[kernel]()
         self.ctx.enqueue_function(
             compiled_kernel,
-            self.dim,
-            self.ngroups,
-            self.batch,
+            Int32(self.dim),
+            Int32(self.ngroups),
+            Int32(self.batch),
             self.pad_slot_id,
             self.delta_softplus_int8,
             self.u_tt,
@@ -201,7 +201,7 @@ struct VarlenSelectiveScanFwdArgs[
             block_dim=self.block_dim,
         )
 
-    @parameter
+    @__parameter
     def run_cpu[d_state_val: Int](self) capturing raises:
         varlen_selective_scan_fwd_cpu[
             Self.dtype,
@@ -302,7 +302,7 @@ struct VarlenSelectiveStateUpdateArgs[
     var grid_dim: Dim
     var block_dim: Dim
 
-    @parameter
+    @__parameter
     def launch_gpu[d_state_val: Int](self) capturing raises:
         comptime kernel = varlen_selective_state_update_gpu[
             Self.dtype,
@@ -322,11 +322,11 @@ struct VarlenSelectiveStateUpdateArgs[
         var compiled_kernel = self.ctx.compile_function[kernel]()
         self.ctx.enqueue_function(
             compiled_kernel,
-            self.total_threads,
-            self.batch,
-            self.nheads,
-            self.dim,
-            self.nheads_ngroups_ratio,
+            Int32(self.total_threads),
+            Int32(self.batch),
+            Int32(self.nheads),
+            Int32(self.dim),
+            Int32(self.nheads_ngroups_ratio),
             self.pad_slot_id,
             self.dt_softplus_int8,
             self.has_state_batch_indices_int8,
@@ -355,7 +355,7 @@ struct VarlenSelectiveStateUpdateArgs[
             block_dim=self.block_dim,
         )
 
-    @parameter
+    @__parameter
     def run_cpu[d_state_val: Int](self) capturing raises:
         varlen_selective_state_update_cpu[
             Self.dtype,
@@ -411,7 +411,7 @@ struct VarlenSelectiveStateUpdateArgs[
             raise Error("Unsupported target: " + target)
 
 
-@compiler.register("varlen_selective_scan_fwd")
+@extensibility.register("varlen_selective_scan_fwd")
 struct VarlenSelectiveScanFwd[delta_softplus: Bool = False]:
     """Variable-length selective scan forward pass.
 
@@ -453,9 +453,9 @@ struct VarlenSelectiveScanFwd[delta_softplus: Bool = False]:
         C: InputTensor[dtype=dtype, rank=3, ...],
         D: InputTensor[dtype=dtype, rank=1, ...],
         delta_bias: InputTensor[dtype=dtype, rank=1, ...],
-        query_start_loc: InputTensor[dtype=DType.int32, rank=1, ...],
-        cache_indices: InputTensor[dtype=DType.int32, rank=1, ...],
-        has_initial_state: InputTensor[dtype=DType.bool, rank=1, ...],
+        query_start_loc: InputTensor[dtype=.int32, rank=1, ...],
+        cache_indices: InputTensor[dtype=.int32, rank=1, ...],
+        has_initial_state: InputTensor[dtype=.bool, rank=1, ...],
         ctx: DeviceContext,
     ) capturing raises:
         var dim = u.dim_size(0)
@@ -463,19 +463,19 @@ struct VarlenSelectiveScanFwd[delta_softplus: Bool = False]:
         var ngroups = B.dim_size(0)
         var batch = query_start_loc.dim_size(0) - 1
 
-        var output_tt = output.to_tile_tensor()
-        var ssm_states_tt = ssm_states.to_tile_tensor()
-        var z_tt = z.to_tile_tensor()
-        var u_tt = u.to_tile_tensor()
-        var delta_tt = delta.to_tile_tensor()
-        var A_tt = A.to_tile_tensor()
-        var B_tt = B.to_tile_tensor()
-        var C_tt = C.to_tile_tensor()
-        var D_tt = D.to_tile_tensor()
-        var delta_bias_tt = delta_bias.to_tile_tensor()
-        var query_start_loc_tt = query_start_loc.to_tile_tensor()
-        var cache_indices_tt = cache_indices.to_tile_tensor()
-        var has_initial_state_tt = has_initial_state.to_tile_tensor()
+        var output_tt = output.to_tile_tensor[.int32]()
+        var ssm_states_tt = ssm_states.to_tile_tensor[.int32]()
+        var z_tt = z.to_tile_tensor[.int32]()
+        var u_tt = u.to_tile_tensor[.int32]()
+        var delta_tt = delta.to_tile_tensor[.int32]()
+        var A_tt = A.to_tile_tensor[.int32]()
+        var B_tt = B.to_tile_tensor[.int32]()
+        var C_tt = C.to_tile_tensor[.int32]()
+        var D_tt = D.to_tile_tensor[.int32]()
+        var delta_bias_tt = delta_bias.to_tile_tensor[.int32]()
+        var query_start_loc_tt = query_start_loc.to_tile_tensor[.int32]()
+        var cache_indices_tt = cache_indices.to_tile_tensor[.int32]()
+        var has_initial_state_tt = has_initial_state.to_tile_tensor[.int32]()
 
         var strides = VarlenSelectiveScanFwdStrides(
             u=Strides2D(u.strides()[0], u.strides()[1]),
@@ -558,7 +558,7 @@ struct VarlenSelectiveScanFwd[delta_softplus: Bool = False]:
         args.dispatch_for_d_state[target](d_state)
 
 
-@compiler.register_shape_function("varlen_selective_scan_fwd")
+@extensibility.register_shape_function("varlen_selective_scan_fwd")
 def varlen_selective_scan_fwd_shape[
     dtype: DType,
 ](
@@ -569,14 +569,37 @@ def varlen_selective_scan_fwd_shape[
     C: InputTensor[dtype=dtype, rank=3, ...],
     D: InputTensor[dtype=dtype, rank=1, ...],
     delta_bias: InputTensor[dtype=dtype, rank=1, ...],
-    query_start_loc: InputTensor[dtype=DType.int32, rank=1, ...],
-    cache_indices: InputTensor[dtype=DType.int32, rank=1, ...],
-    has_initial_state: InputTensor[dtype=DType.bool, rank=1, ...],
+    query_start_loc: InputTensor[dtype=.int32, rank=1, ...],
+    cache_indices: InputTensor[dtype=.int32, rank=1, ...],
+    has_initial_state: InputTensor[dtype=.bool, rank=1, ...],
 ) -> IndexList[2]:
+    """Returns the output shape for the `varlen_selective_scan_fwd` op.
+
+    The variable-length selective scan output has the same shape as the
+    packed input `u`: `(dim, total_length)`.
+
+    Parameters:
+        dtype: Element type of the scan input and output tensors.
+
+    Args:
+        u: Packed input tensor with shape `(dim, total_length)`.
+        delta: Time-step tensor with shape `(dim, total_length)`.
+        A: State transition matrix with shape `(dim, dstate)`.
+        B: Input projection with shape `(ngroups, dstate, total_length)`.
+        C: Output projection with shape `(ngroups, dstate, total_length)`.
+        D: Skip connection with shape `(dim,)`.
+        delta_bias: Delta bias with shape `(dim,)`.
+        query_start_loc: Cumulative sequence lengths with shape `(batch + 1,)`.
+        cache_indices: Indices into SSM states with shape `(batch,)`.
+        has_initial_state: Boolean mask with shape `(batch,)`.
+
+    Returns:
+        The output tensor shape `(dim, total_length)`.
+    """
     return u.shape()
 
 
-@compiler.register("varlen_selective_state_update")
+@extensibility.register("varlen_selective_state_update")
 struct VarlenSelectiveStateUpdate[dt_softplus: Bool = False]:
     """Varlen selective state update for autoregressive inference.
 
@@ -615,7 +638,7 @@ struct VarlenSelectiveStateUpdate[dt_softplus: Bool = False]:
         D: InputTensor[dtype=dtype, rank=2, ...],
         z: InputTensor[dtype=dtype, rank=3, ...],
         dt_bias: InputTensor[dtype=dtype, rank=2, ...],
-        state_batch_indices: InputTensor[dtype=DType.int32, rank=1, ...],
+        state_batch_indices: InputTensor[dtype=.int32, rank=1, ...],
         ctx: DeviceContext,
     ) capturing raises:
         var batch = x.dim_size(0)
@@ -625,17 +648,19 @@ struct VarlenSelectiveStateUpdate[dt_softplus: Bool = False]:
         var ngroups = B.dim_size(1)
         var nheads_ngroups_ratio = nheads // ngroups
 
-        var state_tt = state.to_tile_tensor()
-        var output_tt = output.to_tile_tensor()
-        var x_tt = x.to_tile_tensor()
-        var dt_tt = dt.to_tile_tensor()
-        var A_tt = A.to_tile_tensor()
-        var B_tt = B.to_tile_tensor()
-        var C_tt = C.to_tile_tensor()
-        var D_tt = D.to_tile_tensor()
-        var z_tt = z.to_tile_tensor()
-        var dt_bias_tt = dt_bias.to_tile_tensor()
-        var state_batch_indices_tt = state_batch_indices.to_tile_tensor()
+        var state_tt = state.to_tile_tensor[.int32]()
+        var output_tt = output.to_tile_tensor[.int32]()
+        var x_tt = x.to_tile_tensor[.int32]()
+        var dt_tt = dt.to_tile_tensor[.int32]()
+        var A_tt = A.to_tile_tensor[.int32]()
+        var B_tt = B.to_tile_tensor[.int32]()
+        var C_tt = C.to_tile_tensor[.int32]()
+        var D_tt = D.to_tile_tensor[.int32]()
+        var z_tt = z.to_tile_tensor[.int32]()
+        var dt_bias_tt = dt_bias.to_tile_tensor[.int32]()
+        var state_batch_indices_tt = state_batch_indices.to_tile_tensor[
+            .int32
+        ]()
 
         var strides = VarlenSelectiveStateUpdateStrides(
             state=Strides4D(
@@ -734,7 +759,7 @@ struct VarlenSelectiveStateUpdate[dt_softplus: Bool = False]:
         args.dispatch_for_d_state[target](d_state)
 
 
-@compiler.register_shape_function("varlen_selective_state_update")
+@extensibility.register_shape_function("varlen_selective_state_update")
 def varlen_selective_state_update_shape[
     dtype: DType,
 ](
@@ -746,8 +771,31 @@ def varlen_selective_state_update_shape[
     D: InputTensor[dtype=dtype, rank=2, ...],
     z: InputTensor[dtype=dtype, rank=3, ...],
     dt_bias: InputTensor[dtype=dtype, rank=2, ...],
-    state_batch_indices: InputTensor[dtype=DType.int32, rank=1, ...],
+    state_batch_indices: InputTensor[dtype=.int32, rank=1, ...],
 ) -> Tuple[IndexList[4], IndexList[3]]:
+    """Returns the output shapes for the `varlen_selective_state_update` op.
+
+    The update produces the updated SSM state and the single-step output.
+
+    Parameters:
+        dtype: Element type of the state update input and output tensors.
+
+    Args:
+        x: Input tensor with shape `(batch, nheads, dim)`.
+        dt: Time-delta tensor with shape `(batch, nheads, dim)`.
+        A: State transition matrix with shape `(nheads, dim, dstate)`.
+        B: Input matrix with shape `(batch, ngroups, dstate)`.
+        C: Output matrix with shape `(batch, ngroups, dstate)`.
+        D: Skip connection with shape `(nheads, dim)`.
+        z: Gating tensor with shape `(batch, nheads, dim)`.
+        dt_bias: Time-delta bias with shape `(nheads, dim)`.
+        state_batch_indices: Batch indices into the state buffer with shape
+            `(batch,)`.
+
+    Returns:
+        A tuple `(state_shape, output_shape)` where `state_shape` is
+        `(batch, nheads, dim, dstate)` and `output_shape` matches `x.shape()`.
+    """
     var batch = x.dim_size(0)
     var nheads = x.dim_size(1)
     var dim = x.dim_size(2)

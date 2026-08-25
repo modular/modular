@@ -67,6 +67,10 @@ _COMPLETION_TOKEN_METRICS = (
     "sglang:generation_tokens_total",  # sglang
 )
 
+_SPEC_DECODE_ACCEPTANCE_LENGTH_METRIC = (
+    "maxserve_spec_decode_avg_acceptance_length"
+)
+
 
 def _inside_bazel() -> bool:
     return os.getenv("BUILD_WORKSPACE_DIRECTORY") is not None
@@ -111,16 +115,17 @@ def get_gpu_name_and_count() -> tuple[str, int]:
                     del env[k]
         result = check_output(amd, text=True, stderr=DEVNULL, env=env)
         data = json.loads(result.strip())["gpu_data"]
-        return data[0]["asic"]["market_name"], len(data)
+        name, count = data[0]["asic"]["market_name"], len(data)
     except Exception:
         try:  # Nvidia path
             lines = (
                 check_output(nv, text=True, stderr=DEVNULL).strip().split("\n")
             )
-            return lines[0].strip(), len(lines)
+            name, count = lines[0].strip(), len(lines)
         except Exception:
             logger.warning("nvidia-smi and amd-smi both failed")
             return "N/A", 0
+    return name, count
 
 
 def safe_model_name(model: str) -> str:
@@ -164,6 +169,7 @@ def call_eval(
     disable_timeouts: bool,
     metrics_url: str | None = None,
     model_alias: str | None = None,
+    lm_eval_metadata: str | None = None,
 ) -> tuple[EvalResults, EvalSamples]:
     extra_gen_kwargs = ""
     # model_alias carries the original recipe key (e.g. "nvidia/Kimi-K2.5-NVFP4__internal")
@@ -177,11 +183,15 @@ def call_eval(
             "deepseek-v3",
             "gemma-4",
             "gpt-oss",
+            "inkling",
             "internvl3_5",
             "qwen3",
             "kimi-k2",
             "minimax-m2",
+            "minimax-m3",
+            "nemotron",
             "step-3.5",
+            "glm-5",
         )
     )
     # Reasoning models needs extra tokens for .. reasoning
@@ -220,11 +230,21 @@ def call_eval(
             "--fewshot_as_multiturn",
         ]
 
+        # Passed verbatim to lm-eval; merged into each task's config metadata to
+        # parameterize it at runtime (e.g. babilong context length).
+        if lm_eval_metadata is not None:
+            eval_cmd.append(f"--metadata={lm_eval_metadata}")
+
         args = [interpreter, "-m", *eval_cmd]
         logger.info(f"Running eval with:\n {' '.join(args)}")
         eval_timeout = None if disable_timeouts else 600
         tokens_before = (
             get_num_tokens_generated(metrics_url) if metrics_url else None
+        )
+        spec_decode_totals_before = (
+            get_spec_decode_acceptance_totals(metrics_url)
+            if metrics_url
+            else None
         )
         try:
             check_call(args, timeout=eval_timeout)
@@ -236,12 +256,22 @@ def call_eval(
         tokens_after = (
             get_num_tokens_generated(metrics_url) if metrics_url else None
         )
+        spec_decode_totals_after = (
+            get_spec_decode_acceptance_totals(metrics_url)
+            if metrics_url
+            else None
+        )
 
         results, samples = parse_eval_results(Path(tempdir))
         results["num_tokens_generated"] = (
             tokens_after - tokens_before
             if tokens_before is not None and tokens_after is not None
             else None
+        )
+        results["spec_decode_acceptance_length"] = (
+            _spec_decode_acceptance_length_delta(
+                spec_decode_totals_before, spec_decode_totals_after
+            )
         )
         return results, samples
 
@@ -272,6 +302,52 @@ def get_num_tokens_generated(metrics_url: str) -> int | None:
     return None
 
 
+def get_spec_decode_acceptance_totals(
+    metrics_url: str,
+) -> tuple[float, float] | None:
+    """Reads the cumulative (sum, count) of the spec-decode acceptance-length
+    histogram from Prometheus."""
+    try:
+        r = requests.get(metrics_url, timeout=(5, 30))
+        r.raise_for_status()
+    except requests.RequestException:
+        return None
+
+    total_sum = 0.0
+    total_count = 0.0
+    for line in r.text.splitlines():
+        if not line or line.startswith("#"):
+            continue
+        # A sample line is ``name{labels} value`` or ``name value``.
+        name = line.split("{", 1)[0].split(" ", 1)[0]
+        if not name.startswith(_SPEC_DECODE_ACCEPTANCE_LENGTH_METRIC):
+            continue
+        # Skips the ``_bucket`` rows of the same family.
+        if name.endswith("_sum"):
+            total_sum += float(line.rsplit(" ", 1)[1])
+        elif name.endswith("_count"):
+            total_count += float(line.rsplit(" ", 1)[1])
+
+    return total_sum, total_count
+
+
+def _spec_decode_acceptance_length_delta(
+    before: tuple[float, float] | None,
+    after: tuple[float, float] | None,
+) -> float | None:
+    """Computes the windowed acceptance length from two cumulative
+    (sum, count) snapshots, or None if either snapshot is missing or the
+    count didn't advance (guards the division)."""
+    if before is None or after is None:
+        return None
+    sum_before, count_before = before
+    sum_after, count_after = after
+    count_delta = count_after - count_before
+    if count_delta <= 0:
+        return None
+    return (sum_after - sum_before) / count_delta
+
+
 def parse_eval_results(loc: Path) -> tuple[EvalResults, EvalSamples]:
     samples = []
     for line in open(next(loc.glob("**/samples*.jsonl")), encoding="utf-8"):
@@ -294,6 +370,7 @@ class EvalSummary:
     total_evaluation_time_seconds: float
     task_hash: str
     num_tokens_generated: int | None = None
+    spec_decode_acceptance_length: float | None = None
 
 
 def build_eval_summary(
@@ -318,6 +395,10 @@ def build_eval_summary(
             accuracy = metrics["exact_match,flexible-extract"]
             accuracy_stderr = metrics["exact_match_stderr,flexible-extract"]
             task_type = "text"
+        elif "babilong" in task:
+            accuracy = metrics["acc,none"]
+            accuracy_stderr = metrics["acc_stderr,none"]
+            task_type = "long-context"
         else:
             raise ValueError(f"Unknown task: {task}")
 
@@ -334,6 +415,9 @@ def build_eval_summary(
                 total_evaluation_time_seconds=total_secs,
                 task_hash=result["task_hashes"][task],
                 num_tokens_generated=result.get("num_tokens_generated"),
+                spec_decode_acceptance_length=result.get(
+                    "spec_decode_acceptance_length"
+                ),
             )
         )
 

@@ -11,13 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.ffi import c_char, external_call, _CPointer
+from std.ffi import c_char, external_call
 
 from .pwd import Passwd
 
 comptime uid_t = Int32
 comptime gid_t = Int32
-comptime char = UnsafePointer[c_char, MutUntrackedOrigin]
+comptime char = Pointer[c_char, MutUntrackedOrigin]
 
 
 struct _C_Passwd(TrivialRegisterPassable):
@@ -30,9 +30,7 @@ struct _C_Passwd(TrivialRegisterPassable):
     var pw_shell: char
 
 
-def _build_pw_struct(
-    passwd_ptr: UnsafePointer[mut=False, _C_Passwd, _]
-) -> Passwd:
+def _build_pw_struct(passwd_ptr: ImmPointer[_C_Passwd, _]) -> Passwd:
     var c_pwuid = passwd_ptr[]
     return Passwd(
         pw_name=String(unsafe_from_utf8_ptr=c_pwuid.pw_name),
@@ -47,7 +45,7 @@ def _build_pw_struct(
 
 def _getpw_linux(uid: UInt32) raises -> Passwd:
     var passwd_ptr = external_call[
-        "getpwuid", _CPointer[_C_Passwd, UntrackedOrigin[mut=True]]
+        "getpwuid", OptionalPointer[_C_Passwd, UntrackedOrigin[mut=True]]
     ](uid)
     try:
         return _build_pw_struct(passwd_ptr[])
@@ -57,8 +55,8 @@ def _getpw_linux(uid: UInt32) raises -> Passwd:
 
 def _getpw_linux(var name: String) raises -> Passwd:
     var passwd_ptr = external_call[
-        "getpwnam", _CPointer[_C_Passwd, UntrackedOrigin[mut=True]]
-    ](name.as_c_string_slice().unsafe_ptr())
+        "getpwnam", OptionalPointer[_C_Passwd, UntrackedOrigin[mut=True]]
+    ](name.as_c_string_slice())
     try:
         return _build_pw_struct(passwd_ptr[])
     except:

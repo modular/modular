@@ -4,6 +4,8 @@ load("//bazel:config.bzl", "TOP_LEVEL_TAG")
 
 # gazelle:default_visibility //max:consumers
 
+load("//max/python/max:all_deps.bzl", "ALL_MAX_PYTHON_DEPS")
+
 package(default_visibility = ["//max:consumers"])
 
 package_group(
@@ -13,7 +15,6 @@ package_group(
         "//Faux/...",
         "//GraphCompiler/...",
         "//Kernels/...",
-        "//SDK/...",
         "//bazel/...",
         "//docs/...",
         "//examples/...",  # OSS only
@@ -22,6 +23,7 @@ package_group(
         "//max_private/...",  # private-only entrypoints + tool parsers
         "//oss/...",
         "//oss/modular/max/...",
+        "//plugins/...",
         "//utils/...",
     ],
 )
@@ -30,16 +32,14 @@ max_aliases()
 
 alias(
     name = "max",
-    actual = "//max/python/max/entrypoints:pipelines",
+    actual = "//max/python/max/_entrypoints:pipelines",
     tags = [TOP_LEVEL_TAG],
 )
 
 py_repl(
     name = "repl",
-    deps = [
-        "//max/python/max",
+    deps = ALL_MAX_PYTHON_DEPS + [
         requirement("hypothesis"),
-        requirement("notebook"),
         requirement("nvitop"),
         requirement("rich"),
         requirement("pytest"),

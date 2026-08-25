@@ -44,17 +44,17 @@ NVFP4 routing (B200-tuned via ablation):
 
 from std.collections import Optional
 
-from std.gpu.host import DeviceContext
-from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
-from std.gpu.primitives.grid_controls import PDLLevel
+from max.gpu.host import DeviceContext
+from max.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
+from max.gpu.primitives.grid_controls import PDLLevel
 from std.utils.index import Index
 from layout import TileTensor
 
 from linalg.fp4_utils import (
-    MXFP4_SF_DTYPE,
     MXFP8_SF_DTYPE,
     MXFP8_SF_VECTOR_SIZE,
-    NVFP4_SF_DTYPE,
+    block_scaled_umma_kind,
+    is_w4a8_operand_pair,
 )
 from structured_kernels.trace_buf import NullTrace, TraceBuf
 from ..structured_kernels.config import BlockScaledMatmulConfig, GEMMKind
@@ -71,19 +71,6 @@ from .grouped_1d1d_matmul_kernel import (
 # prefill. Tuned on B200 NVFP4 traffic; don't change without a new ablation.
 comptime DECODE_AVG_M = 8
 comptime SMALL_PREFILL_AVG_M = 64
-
-
-def _scaling_kind[a_type: DType, scales_dtype: DType]() -> UMMAKind:
-    """Infer UMMAKind from input and scale dtypes."""
-    comptime if a_type == DType.uint8 and scales_dtype == NVFP4_SF_DTYPE:
-        return UMMAKind.KIND_MXF4NVF4
-    elif a_type == DType.uint8 and scales_dtype == MXFP4_SF_DTYPE:
-        return UMMAKind.KIND_MXF4
-    else:
-        comptime assert (
-            a_type == DType.float8_e4m3fn and scales_dtype == MXFP8_SF_DTYPE
-        ), "unsupported a_type/scales_dtype for grouped block-scaled matmul"
-        return UMMAKind.KIND_MXF8F6F4
 
 
 def _launch_grouped_block_scaled[
@@ -146,8 +133,11 @@ def _launch_grouped_block_scaled[
             in-place register path (no SMEM scratch) on decode shapes.
             Default False keeps the cooperative path.
     """
-    comptime a_type = a.dtype
-    comptime b_type = b.dtype
+    # `grouped_matmul_block_scaled` feeds the weights into the kernel's A slot
+    # when `AB_swapped`, so the config's per-operand dtypes have to follow the
+    # tensors. Invisible until the two dtypes differ, which is W4A8.
+    comptime a_type = b.dtype if AB_swapped else a.dtype
+    comptime b_type = a.dtype if AB_swapped else b.dtype
     comptime c_type = c.dtype
     comptime sfa_dtype = a_scales.dtype
     comptime sfb_dtype = b_scales.dtype
@@ -408,172 +398,137 @@ def grouped_matmul_nvfp4_dispatch[
         comptime packed_K = type_of(a).static_shape[1]
         comptime K = packed_K * 2  # NVFP4: 2 values per byte
 
+        # Nested forwarder: every regime threads the SAME 13 runtime args
+        # and the SAME forwarding comptime params (pdl_level, fuse_swiglu,
+        # the swiglu knobs, the trace knobs) to `_dispatch_regime`; only
+        # (mma_bn, cta_group, stages) vary. Factoring the call here keeps
+        # the regime selection below a one-liner per regime.
+        @always_inline
+        @__parameter
+        def _regime[
+            mma_bn: Int,
+            cta_group: Int,
+            stages_4096_7168: Optional[Int],
+            stages_7168_2048: Optional[Int],
+            stages_7168_256: Optional[Int],
+        ]() raises:
+            _dispatch_regime[
+                transpose_b,
+                N,
+                K,
+                mma_bn=mma_bn,
+                cta_group=cta_group,
+                stages_4096_7168=stages_4096_7168,
+                stages_7168_2048=stages_7168_2048,
+                stages_7168_256=stages_7168_256,
+                pdl_level=pdl_level,
+                fuse_swiglu=fuse_swiglu,
+                SwiGLUOutputT=SwiGLUOutputT,
+                swiglu_match_bf16=swiglu_match_bf16,
+                swiglu_disable_compute=swiglu_disable_compute,
+                swiglu_enable_trace=swiglu_enable_trace,
+                TraceBufT=TraceBufT,
+                swiglu_use_inplace=swiglu_use_inplace,
+            ](
+                c,
+                a,
+                b,
+                a_scales,
+                b_scales,
+                a_offsets,
+                a_scale_offsets,
+                expert_ids,
+                expert_scales,
+                num_active_experts,
+                ctx,
+                swiglu_out,
+                trace_buf,
+            )
+
         # Kimi K2.5 TP=8 up-proj: (N=512, K=7168) has an unusually small N
         # dimension, so the global-ablation winner for both (mma_bn, cta_group)
         # and stages differs from the regime-default classifier. All three
         # regimes converge on cta_group=2, stages=6; only mma_bn changes with
-        # decode vs prefill.
+        # decode vs prefill. This path goes straight to
+        # `_launch_grouped_block_scaled` with an explicit stages=6 (NOT via
+        # `_regime`/`_dispatch_regime`, whose (N, K) stage table has no (512,
+        # 7168) row and would fall through to stages=auto).
+        @always_inline
+        @__parameter
+        def _launch512[mma_bn: Int, cta_group: Int]() raises:
+            _launch_grouped_block_scaled[
+                transpose_b,
+                True,
+                mma_bn,
+                cta_group,
+                num_pipeline_stages=6,
+                pdl_level=pdl_level,
+                fuse_swiglu=fuse_swiglu,
+                SwiGLUOutputT=SwiGLUOutputT,
+                swiglu_match_bf16=swiglu_match_bf16,
+                swiglu_disable_compute=swiglu_disable_compute,
+                swiglu_enable_trace=swiglu_enable_trace,
+                TraceBufT=TraceBufT,
+                swiglu_use_inplace=swiglu_use_inplace,
+            ](
+                c,
+                a,
+                b,
+                a_scales,
+                b_scales,
+                a_offsets,
+                a_scale_offsets,
+                expert_ids,
+                expert_scales,
+                num_active_experts,
+                ctx,
+                swiglu_out,
+                trace_buf,
+            )
+
         comptime if N == 512 and K == 7168:
             if estimated_total_m <= num_active_experts * DECODE_AVG_M:
-                _launch_grouped_block_scaled[
-                    transpose_b,
-                    True,
-                    64,
-                    2,
-                    num_pipeline_stages=6,
-                    pdl_level=pdl_level,
-                    fuse_swiglu=fuse_swiglu,
-                    SwiGLUOutputT=SwiGLUOutputT,
-                    swiglu_match_bf16=swiglu_match_bf16,
-                    swiglu_disable_compute=swiglu_disable_compute,
-                    swiglu_enable_trace=swiglu_enable_trace,
-                    TraceBufT=TraceBufT,
-                    swiglu_use_inplace=swiglu_use_inplace,
-                ](
-                    c,
-                    a,
-                    b,
-                    a_scales,
-                    b_scales,
-                    a_offsets,
-                    a_scale_offsets,
-                    expert_ids,
-                    expert_scales,
-                    num_active_experts,
-                    ctx,
-                    swiglu_out,
-                    trace_buf,
-                )
+                _launch512[64, 2]()
             else:
-                _launch_grouped_block_scaled[
-                    transpose_b,
-                    True,
-                    128,
-                    2,
-                    num_pipeline_stages=6,
-                    pdl_level=pdl_level,
-                    fuse_swiglu=fuse_swiglu,
-                    SwiGLUOutputT=SwiGLUOutputT,
-                    swiglu_match_bf16=swiglu_match_bf16,
-                    swiglu_disable_compute=swiglu_disable_compute,
-                    swiglu_enable_trace=swiglu_enable_trace,
-                    TraceBufT=TraceBufT,
-                    swiglu_use_inplace=swiglu_use_inplace,
-                ](
-                    c,
-                    a,
-                    b,
-                    a_scales,
-                    b_scales,
-                    a_offsets,
-                    a_scale_offsets,
-                    expert_ids,
-                    expert_scales,
-                    num_active_experts,
-                    ctx,
-                    swiglu_out,
-                    trace_buf,
-                )
+                _launch512[128, 2]()
         else:
-            if estimated_total_m <= num_active_experts * DECODE_AVG_M:
-                _dispatch_regime[
-                    transpose_b,
-                    N,
-                    K,
-                    mma_bn=8,
-                    cta_group=1,
-                    stages_4096_7168=6,
-                    stages_7168_2048=4,
-                    stages_7168_256=None,
-                    pdl_level=pdl_level,
-                    fuse_swiglu=fuse_swiglu,
-                    SwiGLUOutputT=SwiGLUOutputT,
-                    swiglu_match_bf16=swiglu_match_bf16,
-                    swiglu_disable_compute=swiglu_disable_compute,
-                    swiglu_enable_trace=swiglu_enable_trace,
-                    TraceBufT=TraceBufT,
-                    swiglu_use_inplace=swiglu_use_inplace,
-                ](
-                    c,
-                    a,
-                    b,
-                    a_scales,
-                    b_scales,
-                    a_offsets,
-                    a_scale_offsets,
-                    expert_ids,
-                    expert_scales,
-                    num_active_experts,
-                    ctx,
-                    swiglu_out,
-                    trace_buf,
-                )
-            elif estimated_total_m <= num_active_experts * SMALL_PREFILL_AVG_M:
-                _dispatch_regime[
-                    transpose_b,
-                    N,
-                    K,
-                    mma_bn=64,
-                    cta_group=2,
-                    stages_4096_7168=6,
-                    stages_7168_2048=6,
-                    stages_7168_256=None,
-                    pdl_level=pdl_level,
-                    fuse_swiglu=fuse_swiglu,
-                    SwiGLUOutputT=SwiGLUOutputT,
-                    swiglu_match_bf16=swiglu_match_bf16,
-                    swiglu_disable_compute=swiglu_disable_compute,
-                    swiglu_enable_trace=swiglu_enable_trace,
-                    TraceBufT=TraceBufT,
-                    swiglu_use_inplace=swiglu_use_inplace,
-                ](
-                    c,
-                    a,
-                    b,
-                    a_scales,
-                    b_scales,
-                    a_offsets,
-                    a_scale_offsets,
-                    expert_ids,
-                    expert_scales,
-                    num_active_experts,
-                    ctx,
-                    swiglu_out,
-                    trace_buf,
-                )
-            else:
-                _dispatch_regime[
-                    transpose_b,
-                    N,
-                    K,
-                    mma_bn=128,
-                    cta_group=2,
-                    stages_4096_7168=7,
-                    stages_7168_2048=6,
-                    stages_7168_256=6,
-                    pdl_level=pdl_level,
-                    fuse_swiglu=fuse_swiglu,
-                    SwiGLUOutputT=SwiGLUOutputT,
-                    swiglu_match_bf16=swiglu_match_bf16,
-                    swiglu_disable_compute=swiglu_disable_compute,
-                    swiglu_enable_trace=swiglu_enable_trace,
-                    TraceBufT=TraceBufT,
-                    swiglu_use_inplace=swiglu_use_inplace,
-                ](
-                    c,
-                    a,
-                    b,
-                    a_scales,
-                    b_scales,
-                    a_offsets,
-                    a_scale_offsets,
-                    expert_ids,
-                    expert_scales,
-                    num_active_experts,
-                    ctx,
-                    swiglu_out,
-                    trace_buf,
-                )
+            # Three-regime classifier on avg_m = estimated_total_m /
+            # num_active_experts, iterated as an ordered (upper-bound,
+            # config) table. First-match-and-return reproduces the original
+            # `if avg <= D / elif avg <= S / else` cascade exactly: the
+            # decode row (upper=DECODE_AVG_M) wins first, else small-prefill
+            # (upper=SMALL_PREFILL_AVG_M), else the unbounded large-prefill
+            # row. Per-(N, K) tuned stages travel in each row, identical to
+            # the prior explicit arms.
+            #
+            # (N=7168, K=2048) down-proj decode (mma_bn=8, cta_group=1):
+            # B200 ablation (bench_grouped_matmul) shows stages 4->6 is a
+            # no-regret win that grows with the active expert count: ~0%
+            # at 8 active experts (grid too small to benefit), +11% at 12,
+            # +5% at 16. The down-proj has only 8 K-iters (K=2048), so the
+            # deeper pipeline overlaps cold-weight loads under more
+            # concurrent CTAs as the grid widens; up-proj (s_4096_7168) is
+            # already optimal at 6.
+            comptime regimes = [
+                # (upper_avg_m, mma_bn, cta_group, s_4096_7168, s_7168_2048,
+                #  s_7168_256). upper_avg_m < 0 = unbounded (large prefill).
+                (DECODE_AVG_M, 8, 1, 6, 6, -1),
+                (SMALL_PREFILL_AVG_M, 64, 2, 6, 6, -1),
+                (-1, 128, 2, 7, 6, 6),
+            ]
+            comptime for r in regimes:
+                comptime _s0 = Optional[Int](r[3]) if r[3] >= 0 else Optional[
+                    Int
+                ](None)
+                comptime _s1 = Optional[Int](r[4]) if r[4] >= 0 else Optional[
+                    Int
+                ](None)
+                comptime _s2 = Optional[Int](r[5]) if r[5] >= 0 else Optional[
+                    Int
+                ](None)
+                if r[0] < 0 or estimated_total_m <= num_active_experts * r[0]:
+                    _regime[r[1], r[2], _s0, _s1, _s2]()
+                    return
 
 
 def grouped_matmul_mxfp8_dispatch[
@@ -665,12 +620,40 @@ def grouped_matmul_mxfp8_dispatch[
             [MXFP8_SF_DTYPE, MXFP8_SF_VECTOR_SIZE]()` otherwise.
         trace_buf: Per-CTA timestamp buffer when trace is on.
     """
-    if estimated_total_m <= num_active_experts * DECODE_AVG_M:
+    # Per-(N, K) decode pipeline-stage override. The stage auto-maximizer
+    # picks 12 stages for the (mma_bn=8, cta_group=1) decode tile, but this
+    # thin, weight-load-BW-bound decode regime runs ~5-7% faster at 6 stages
+    # (better weight-TMA cadence; numerically identical -- stages is pipeline
+    # depth only). Scoped per-(N, K) so only the measured shapes change and
+    # all others keep auto; decode regime only (the prefill rows below keep
+    # the classifier's pick); non-fused only, matching what was measured.
+    # Measured on B200 for an MXFP8 MoE thin-decode workload (EP8), stages=6
+    # vs auto across M in {1, 8, 16, 32}:
+    #   gate_up N=6144 K=6144: -5.3% (M16: 110.6 -> 104.7 us)
+    #   down    N=6144 K=3072: -7.3% (M16:  59.8 ->  55.4 us)
+    comptime _decode_N = type_of(c).static_shape[1]
+    comptime _decode_K = type_of(a).static_shape[1]
+    comptime _decode_stages = 6 if (
+        not fuse_swiglu
+        and _decode_N == 6144
+        and (_decode_K == 6144 or _decode_K == 3072)
+    ) else -1
+
+    # Nested forwarder: the MXFP8 regimes differ in (mma_bn, cta_group) and
+    # -- decode only -- pipeline stages; AB_swapped, scaling_kind, and all the
+    # other forwarding comptime params + the 13 runtime args are identical.
+    # Factor the call here and select via the same ordered (upper-bound,
+    # config) table as the NVFP4 path. Stages travel per-row as an Int with
+    # -1 = auto (the classifier's pick), mirroring the NVFP4 table sentinel.
+    @always_inline
+    @__parameter
+    def _go[mma_bn: Int, cta_group: Int, stages: Optional[Int]]() raises:
         _launch_grouped_block_scaled[
             transpose_b,
             AB_swapped=True,
-            mma_bn=8,
-            cta_group=1,
+            mma_bn=mma_bn,
+            cta_group=cta_group,
+            num_pipeline_stages=stages,
             scaling_kind=UMMAKind.KIND_MXF8F6F4,
             pdl_level=pdl_level,
             fuse_swiglu=fuse_swiglu,
@@ -695,66 +678,21 @@ def grouped_matmul_mxfp8_dispatch[
             swiglu_out,
             trace_buf,
         )
-    elif estimated_total_m <= num_active_experts * SMALL_PREFILL_AVG_M:
-        _launch_grouped_block_scaled[
-            transpose_b,
-            AB_swapped=True,
-            mma_bn=64,
-            cta_group=2,
-            scaling_kind=UMMAKind.KIND_MXF8F6F4,
-            pdl_level=pdl_level,
-            fuse_swiglu=fuse_swiglu,
-            SwiGLUOutputT=SwiGLUOutputT,
-            swiglu_match_bf16=swiglu_match_bf16,
-            swiglu_disable_compute=swiglu_disable_compute,
-            swiglu_enable_trace=swiglu_enable_trace,
-            TraceBufT=TraceBufT,
-            swiglu_use_inplace=swiglu_use_inplace,
-        ](
-            c,
-            a,
-            b,
-            a_scales,
-            b_scales,
-            a_offsets,
-            a_scale_offsets,
-            expert_ids,
-            expert_scales,
-            num_active_experts,
-            ctx,
-            swiglu_out,
-            trace_buf,
-        )
-    else:
-        _launch_grouped_block_scaled[
-            transpose_b,
-            AB_swapped=True,
-            mma_bn=128,
-            cta_group=2,
-            scaling_kind=UMMAKind.KIND_MXF8F6F4,
-            pdl_level=pdl_level,
-            fuse_swiglu=fuse_swiglu,
-            SwiGLUOutputT=SwiGLUOutputT,
-            swiglu_match_bf16=swiglu_match_bf16,
-            swiglu_disable_compute=swiglu_disable_compute,
-            swiglu_enable_trace=swiglu_enable_trace,
-            TraceBufT=TraceBufT,
-            swiglu_use_inplace=swiglu_use_inplace,
-        ](
-            c,
-            a,
-            b,
-            a_scales,
-            b_scales,
-            a_offsets,
-            a_scale_offsets,
-            expert_ids,
-            expert_scales,
-            num_active_experts,
-            ctx,
-            swiglu_out,
-            trace_buf,
-        )
+
+    # (upper_avg_m, mma_bn, cta_group, stages_int). upper_avg_m < 0 =
+    # unbounded (large prefill). Only the decode row carries a stage override;
+    # prefill rows use -1 (= auto). First-match-and-return reproduces the
+    # original decode / small-prefill / large-prefill cascade exactly.
+    comptime regimes = [
+        (DECODE_AVG_M, 8, 1, _decode_stages),
+        (SMALL_PREFILL_AVG_M, 64, 2, -1),
+        (-1, 128, 2, -1),
+    ]
+    comptime for r in regimes:
+        comptime _s = Optional[Int](r[3]) if r[3] >= 0 else Optional[Int](None)
+        if r[0] < 0 or estimated_total_m <= num_active_experts * r[0]:
+            _go[r[1], r[2], _s]()
+            return
 
 
 def grouped_matmul_block_scaled_sm100_dispatch[
@@ -799,9 +737,29 @@ def grouped_matmul_block_scaled_sm100_dispatch[
         estimated_total_m: Estimated number of total non-padded tokens.
         ctx: Device context.
     """
-    comptime scaling_kind = _scaling_kind[a.dtype, a_scales.dtype]()
+    comptime scaling_kind = block_scaled_umma_kind[
+        a.dtype, b.dtype, a_scales.dtype
+    ]()
 
-    comptime if scaling_kind == UMMAKind.KIND_MXF4NVF4:
+    # W4A8 lands in shared memory with the same byte geometry as MXFP8 -- the
+    # FP4 TMA copy pads the weights on the way in -- so it takes the same
+    # regime-tuned launcher.
+    comptime if is_w4a8_operand_pair[a.dtype, b.dtype]():
+        grouped_matmul_mxfp8_dispatch[transpose_b, target, pdl_level=pdl_level](
+            c,
+            a,
+            b,
+            a_scales,
+            b_scales,
+            a_offsets,
+            a_scale_offsets,
+            expert_ids,
+            expert_scales,
+            num_active_experts,
+            estimated_total_m,
+            ctx,
+        )
+    elif scaling_kind == UMMAKind.KIND_MXF4NVF4:
         grouped_matmul_nvfp4_dispatch[transpose_b, target, pdl_level=pdl_level](
             c,
             a,

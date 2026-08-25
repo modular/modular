@@ -22,21 +22,21 @@ from std.testing import TestSuite
 
 def vec_reduce[
     N: Int, dtype: DType
-](x: UnsafePointer[Scalar[dtype], ImmutAnyOrigin]) -> Scalar[dtype]:
+](x: Pointer[Scalar[dtype], ImmutAnyOrigin]) -> Scalar[dtype]:
     var total: Scalar[dtype] = 0
     for i in range(N):
-        total += x[i]
+        total += x[unsafe_offset=i]
     return total
 
 
 def vec_add[
     N: Int, dtype: DType
 ](
-    x: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    y: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-) -> UnsafePointer[Scalar[dtype], MutAnyOrigin]:
+    x: Pointer[Scalar[dtype], MutAnyOrigin],
+    y: Pointer[Scalar[dtype], ImmutAnyOrigin],
+) -> Pointer[Scalar[dtype], MutAnyOrigin]:
     for i in range(N):
-        x[i] += y[i]
+        x[unsafe_offset=i] += y[unsafe_offset=i]
     return x
 
 
@@ -258,12 +258,12 @@ def test_overloaded() raises:
 
 
 @always_inline
-def exp(x: SIMD[DType.float32, 4]) -> type_of(x):
+def exp(x: SIMD[.float32, 4]) -> type_of(x):
     return std.math.exp(x)
 
 
 @always_inline
-def tanh(x: SIMD[DType.float32, 4]) -> type_of(x):
+def tanh(x: SIMD[.float32, 4]) -> type_of(x):
     return std.math.tanh(x)
 
 
@@ -318,12 +318,8 @@ def test_custom() raises:
     )
 
     qb.dump_report()
-    dealloc(
-        ThinAllocation(unsafe_assume_ownership=x).unsafe_with_layout(xy_layout)
-    )
-    dealloc(
-        ThinAllocation(unsafe_assume_ownership=y).unsafe_with_layout(xy_layout)
-    )
+    dealloc(ThinAllocation(unsafe_owned_ptr=x).unsafe_with_layout(xy_layout))
+    dealloc(ThinAllocation(unsafe_owned_ptr=y).unsafe_with_layout(xy_layout))
 
 
 def test_all() raises:

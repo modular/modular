@@ -26,27 +26,24 @@ from std.benchmark import (
 from std.testing import TestSuite
 
 
-@parameter
 def bench1(mut b: Bencher):
-    @parameter
     def to_bench():
         print("hello")
 
-    b.iter[to_bench]()
+    b.iter(to_bench)
 
 
-@parameter
 def bench2(mut b: Bencher, mystr: String) raises:
-    @parameter
-    def to_bench():
+    def to_bench() {imm}:
         print(mystr)
 
-    b.iter[to_bench]()
+    b.iter(to_bench)
 
 
 def test_mojobench() raises:
     var m = Bench(BenchConfig(max_iters=10_000))
-    m.bench_function[bench1](
+    m.bench_function(
+        bench1,
         BenchId("bench1"),
         [
             ThroughputMeasure(BenchMetric.elements, 0),
@@ -58,7 +55,8 @@ def test_mojobench() raises:
     inputs.append("input1")
     inputs.append("input2")
     for i, input_val in enumerate(inputs):
-        m.bench_with_input[String, bench2](
+        m.bench_with_input(
+            bench2,
             BenchId("bench2", String(i)),
             input_val,
             [

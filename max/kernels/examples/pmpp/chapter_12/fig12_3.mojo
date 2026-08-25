@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.gpu import block_idx, thread_idx
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.gpu.primitives.warp import vote, shuffle_idx
 from std.gpu.primitives.id import lane_id
 from std.bit import pop_count, count_trailing_zeros
@@ -60,7 +60,7 @@ def filter_kernel(
         passes = cond(val)
 
     # Get active threads mask (only threads passing the filter vote True)
-    var active_threads = vote[DType.uint32](passes)
+    var active_threads = vote[.uint32](passes)
 
     if passes:
         var j: UInt32 = 0

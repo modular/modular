@@ -10,9 +10,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Generates tensors filled with values drawn from a normal (Gaussian) distribution for CPU and GPU."""
 
-from std.algorithm.functional import elementwise
-from std.gpu.host import DeviceContext
+from max.algorithm.functional import elementwise
+from max.gpu.host import DeviceContext
+from std.math import ceildiv
 from std.random import NormalRandom
 from extensibility import _dot_prod
 
@@ -24,16 +26,19 @@ def random_normal[
     dtype: DType,
     rank: Int,
     //,
-    output_fn: def[width: SIMDSize, _rank: Int](
-        idx: IndexList[_rank], val: SIMD[dtype, width]
-    ) capturing[_],
     target: StaticString,
+    OutputFn: ImplicitlyCopyable
+    & RegisterPassable
+    & def[width: SIMDLength, _rank: Int](
+        idx: IndexList[_rank], val: SIMD[dtype, width]
+    ),
 ](
     shape: IndexList[rank],
     mean: Float32,
     stddev: Float32,
-    seed_ptr: UnsafePointer[Scalar[DType.uint64], ImmutAnyOrigin],
+    seed_ptr: UnsafePointer[UInt64, ImmutAnyOrigin],
     ctx: DeviceContext,
+    output_fn: OutputFn,
 ) raises:
     """Call `output_fn` with values from a normal distribution, matching
     PyTorch CUDA's `torch.randn` element-to-counter mapping.
@@ -54,8 +59,8 @@ def random_normal[
     Parameters:
         dtype: The data type to generate.
         rank: The rank of the underlying buffer.
-        output_fn: The function which stores the generated values.
         target: The target to run on.
+        OutputFn: The type of the function which stores the generated values.
 
     Args:
         shape: The shape of the output being stored into by output_fn.
@@ -64,6 +69,7 @@ def random_normal[
         seed_ptr: Pointer to a single uint64 in device memory containing
             the Philox seed.
         ctx: The device context.
+        output_fn: The function which stores the generated values.
     """
 
     if stddev <= 0:
@@ -88,16 +94,14 @@ def random_normal[
         comptime MAX_GRID = (
             info.sm_count * (info.threads_per_multiprocessor // BLOCK_SIZE)
         )
-        var nblocks = (numel + BLOCK_SIZE - 1) // BLOCK_SIZE
-        var grid_x = MAX_GRID if nblocks > MAX_GRID else nblocks
+        var nblocks = ceildiv(numel, BLOCK_SIZE)
+        var grid_x = min(nblocks, MAX_GRID)
         grid_block = grid_x * BLOCK_SIZE
     else:
         grid_block = numel
 
-    @parameter
     @always_inline
-    @__copy_capture(strides, seed_ptr, grid_block)
-    def generate[width: Int, alignment: Int = 1](idx: Coord):
+    def generate[width: Int, alignment: Int = 1](idx: Coord) {var}:
         comptime assert (
             width == 1
         ), "PyTorch-compat normal kernel uses scalar lanes"
@@ -112,4 +116,4 @@ def random_normal[
         var value = four[within_thread].cast[dtype]()
         output_fn[width=1](coord_to_index_list(idx), SIMD[dtype, 1](value))
 
-    elementwise[generate, simd_width=1, target=target](Coord(shape), ctx)
+    elementwise[simd_width=1, target=target](generate, Coord(shape), ctx)

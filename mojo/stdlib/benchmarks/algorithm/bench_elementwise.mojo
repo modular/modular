@@ -13,9 +13,9 @@
 
 from std.sys import simd_width_of
 
-from std.algorithm import elementwise
+from max.algorithm import elementwise
 from std.benchmark import Bench, BenchConfig, Bencher, BenchId
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 
 from std.utils.coord import Coord
 from std.utils.index import IndexList
@@ -24,15 +24,13 @@ from std.utils.index import IndexList
 # ===-----------------------------------------------------------------------===#
 # Benchmark elementwise
 # ===-----------------------------------------------------------------------===#
-@parameter
 def bench_elementwise[n: Int](mut b: Bencher) raises:
-    var vector = InlineArray[Scalar[DType.int], n](fill=-1)
+    var vector = Array[Int, n](fill=-1)
 
     @always_inline
-    @parameter
-    def call_fn() raises:
+    def call_fn() raises {mut vector}:
         @always_inline
-        @parameter
+        @__parameter
         def func[simd_width: Int, alignment: Int = 1](idx: Coord):
             vector[Int(idx[0].value())] = 42
 
@@ -40,20 +38,19 @@ def bench_elementwise[n: Int](mut b: Bencher) raises:
             Coord(IndexList[1](n)), DeviceContext(api="cpu")
         )
 
-    b.iter[call_fn]()
-    _ = vector
+    b.iter(call_fn)
 
 
 def main() raises:
     var m = Bench(BenchConfig(num_repetitions=1))
-    m.bench_function[bench_elementwise[32]](BenchId("bench_elementwise_32"))
-    m.bench_function[bench_elementwise[128]](BenchId("bench_elementwise_128"))
-    m.bench_function[bench_elementwise[1024]](BenchId("bench_elementwise_1024"))
-    m.bench_function[bench_elementwise[8192]](BenchId("bench_elementwise_8192"))
-    m.bench_function[bench_elementwise[32768]](
-        BenchId("bench_elementwise_32768")
+    m.bench_function(bench_elementwise[32], BenchId("bench_elementwise_32"))
+    m.bench_function(bench_elementwise[128], BenchId("bench_elementwise_128"))
+    m.bench_function(bench_elementwise[1024], BenchId("bench_elementwise_1024"))
+    m.bench_function(bench_elementwise[8192], BenchId("bench_elementwise_8192"))
+    m.bench_function(
+        bench_elementwise[32768], BenchId("bench_elementwise_32768")
     )
-    m.bench_function[bench_elementwise[131072]](
-        BenchId("bench_elementwise_131072")
+    m.bench_function(
+        bench_elementwise[131072], BenchId("bench_elementwise_131072")
     )
     m.dump_report()

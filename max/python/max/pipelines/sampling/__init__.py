@@ -24,7 +24,11 @@ from .sampling import (
     rejection_sampler_with_residuals,
     token_sampler,
 )
-from .sampling_config import SamplingConfig
+from .sampling_config import (
+    DEFAULT_STRUCTURED_OUTPUT_ANY_WHITESPACE,
+    DEFAULT_STRUCTURED_OUTPUT_BACKEND,
+    SamplingConfig,
+)
 from .sampling_logits_processor import (
     FrequencyData,
     FusedSamplingProcessor,
@@ -33,6 +37,8 @@ from .sampling_logits_processor import (
 )
 
 __all__ = [
+    "DEFAULT_STRUCTURED_OUTPUT_ANY_WHITESPACE",
+    "DEFAULT_STRUCTURED_OUTPUT_BACKEND",
     "FrequencyData",
     "FusedSamplingProcessor",
     "PenaltyInputs",

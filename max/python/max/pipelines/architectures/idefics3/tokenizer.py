@@ -15,7 +15,6 @@
 
 from __future__ import annotations
 
-import io
 import json
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any
@@ -29,6 +28,7 @@ from max.pipelines.context import (
 )
 from max.pipelines.context.exceptions import PromptTooLongError
 from max.pipelines.lib import TextAndVisionTokenizer
+from max.pipelines.lib.tokenizer import open_image
 from max.pipelines.modeling.types import (
     ImageContentPart,
     TextContentPart,
@@ -37,7 +37,6 @@ from max.pipelines.modeling.types import (
     TextGenerationRequestTool,
 )
 from max.support.image import find_contiguous_ranges, hash_image
-from PIL import Image
 from PIL.Image import Image as ImageType
 from transformers import AutoProcessor, AutoTokenizer
 
@@ -93,7 +92,10 @@ class Idefics3Tokenizer(TextAndVisionTokenizer):
         )
 
         # Initialize default EOS token IDs (required by parent class new_context method)
-        self._default_eos_token_ids = set([self.eos])
+        eos_token_id = self.delegate.eos_token_id
+        self._eos_token_ids = (
+            {eos_token_id} if eos_token_id is not None else set()
+        )
 
     async def decode(
         self, encoded: npt.NDArray[np.integer[Any]] | int, **kwargs
@@ -190,12 +192,13 @@ class Idefics3Tokenizer(TextAndVisionTokenizer):
         else:
             raise ValueError(f"{request} does not provide messages or prompt.")
 
-        # Convert image bytes to PIL Image objects.
+        # Convert image bytes to PIL Image objects (open_image reuses the
+        # API server's decode-once result, or decodes raw bytes as a fallback).
         if request.images:
             images = []
-            for image_bytes in request.images:
+            for image in request.images_for_processing():
                 try:
-                    img: ImageType = Image.open(io.BytesIO(image_bytes))
+                    img: ImageType = open_image(image)
                     # Ensure image is in RGB format to avoid channel format issues
                     if img.mode != "RGB":
                         img = img.convert("RGB")
@@ -271,7 +274,8 @@ class Idefics3Tokenizer(TextAndVisionTokenizer):
 
         json_schema = (
             json.dumps(request.response_format.json_schema)
-            if request.response_format and request.response_format.json_schema
+            if request.response_format
+            and request.response_format.json_schema is not None
             else None
         )
 
@@ -318,6 +322,7 @@ class Idefics3Tokenizer(TextAndVisionTokenizer):
             ],
             vision_token_ids=self.vision_token_ids,
             vocab_size=self.tokenizer_vocab_size,
+            cache_salt=request.cache_salt,
         )
         return context
 

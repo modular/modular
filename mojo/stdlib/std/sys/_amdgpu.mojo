@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.collections import InlineArray
+from std.collections import Array
 from std.atomic import Atomic, Ordering
 from std.sys.intrinsics import (
     ballot,
@@ -22,8 +22,8 @@ from std.sys.intrinsics import (
 )
 
 from std.gpu.primitives.id import lane_id
-from std.memory import Span
-from std.memory.unsafe_pointer import _Null
+from std.collections import Span
+from std.memory.pointer import _Null
 from std.os import abort
 
 # NOTE: MOST OF THE CODE HERE IS ADAPTED FROM
@@ -52,32 +52,28 @@ struct amd_signal_t(Copyable):
     var start_ts: UInt64
     var end_ts: UInt64
     var reserved2: UInt64
-    var reserved3: InlineArray[UInt32, 2]
+    var reserved3: Array[UInt32, 2]
 
 
 @always_inline
-def update_mbox(sig: UnsafePointer[mut=False, amd_signal_t, ...]):
+def update_mbox(sig: ImmPointer[amd_signal_t, ...]):
     var mb = sig[].event_mailbox_ptr
-    if Int(mb) != Int(_Null[address_space=AddressSpace.GLOBAL]()):
-        var mb_ptr = UnsafePointer[
-            UInt64, UntrackedOrigin[mut=True], address_space=AddressSpace.GLOBAL
+    if Int(mb) != Int(_Null[address_space=.GLOBAL]()):
+        var mb_ptr = Pointer[
+            UInt64, UntrackedOrigin[mut=True], address_space=.GLOBAL
         ](unsafe_from_address=Int(mb))
-        var id = sig[].event_id.cast[DType.uint64]()
+        var id = sig[].event_id.cast[.uint64]()
         Atomic.store[ordering=Ordering.RELEASE](mb_ptr, id)
-        sendmsg(1 | (0 << 4), readfirstlane(id.cast[DType.int32]()) & 0xFF)
+        sendmsg(1 | (0 << 4), readfirstlane(id.cast[.int32]()) & 0xFF)
 
 
 @always_inline
 def hsa_signal_add(sig: UInt64, value: UInt64):
-    var s = UnsafePointer(to=sig).bitcast[
-        UnsafePointer[
-            amd_signal_t,
-            MutUntrackedOrigin,
-            address_space=AddressSpace.GLOBAL,
-        ]
+    var s = Pointer(to=sig).unsafe_bitcast[
+        Pointer[amd_signal_t, MutUntrackedOrigin, address_space=.GLOBAL]
     ]()[]
     _ = Atomic.fetch_add[ordering=Ordering.RELEASE](
-        UnsafePointer(to=s[].value), value
+        Pointer(to=s[].value), value
     )
     update_mbox(s)
 
@@ -123,9 +119,7 @@ def msg_set_len(pd: UInt64, len: UInt32) -> UInt64:
     var reset_mask = ~(
         ((UInt64(1) << DescriptorWidth.len) - 1) << DescriptorOffset.len
     )
-    return (pd & reset_mask) | (
-        len.cast[DType.uint64]() << DescriptorOffset.len
-    )
+    return (pd & reset_mask) | (len.cast[.uint64]() << DescriptorOffset.len)
 
 
 @always_inline
@@ -160,17 +154,16 @@ def append_bytes(
 ) -> Tuple[UInt64, UInt64]:
     var msg_desc_ = msg_set_len(msg_desc, UInt32((len(data) + 7) // 8))
 
-    @parameter
     @always_inline
-    def pack_uint64() -> UInt64:
+    def pack_uint64() {mut} -> UInt64:
         var arg = UInt64(0)
         if len(data) >= 8:
-            arg = data.unsafe_ptr().bitcast[UInt64]()[]
+            arg = data.unsafe_ptr().unsafe_bitcast[UInt64]()[]
             data = data[8:]
         else:
             var ii = 0
             for byte in data:
-                arg |= byte.cast[DType.uint64]() << UInt64(ii * 8)
+                arg |= byte.cast[.uint64]() << UInt64(ii * 8)
                 ii += 1
             data = data[0:0]
         return arg
@@ -318,7 +311,7 @@ def begin_fprintf(flags: UInt32) -> UInt64:
     # using the lowest bits in the control qword. For now, all other
     # bits are required to be zero.
     var msg_desc = msg_set_begin_flag(0)
-    var control = flags.cast[DType.uint64]()
+    var control = flags.cast[.uint64]()
 
     var retval = message_append_args(
         ServiceId.fprintf,
@@ -524,9 +517,7 @@ def printf_append_string_n(
 
 @fieldwise_init
 struct Header(TrivialRegisterPassable):
-    var _handle: UnsafePointer[
-        header_t, MutUntrackedOrigin, address_space=AddressSpace.GLOBAL
-    ]
+    var _handle: Pointer[header_t, MutUntrackedOrigin, address_space=.GLOBAL]
 
     def fill_packet(
         mut self,
@@ -543,7 +534,7 @@ struct Header(TrivialRegisterPassable):
         me: UInt32,
         low: UInt32,
     ):
-        var active = ballot[DType.int64](True).cast[DType.uint64]()
+        var active = ballot[.int64](True).cast[.uint64]()
         if me == low:
             var control = set_ready_flag(0)
             self._handle[].control = control
@@ -587,7 +578,7 @@ struct Header(TrivialRegisterPassable):
         while True:
             var ready_flag = UInt32(1)
             if me == low:
-                var ptr = UnsafePointer(to=self._handle[].control)
+                var ptr = Pointer(to=self._handle[].control)
                 var control = Atomic.load[ordering=Ordering.ACQUIRE](ptr)
                 ready_flag = get_ready_flag(control)
 
@@ -618,7 +609,7 @@ struct header_t(TrivialRegisterPassable):
 
 @fieldwise_init
 struct Payload(TrivialRegisterPassable):
-    var _handle: UnsafePointer[payload_t, MutUntrackedOrigin]
+    var _handle: Pointer[payload_t, MutUntrackedOrigin]
 
     def __getitem__(self, idx0: Int, idx1: Int) -> UInt64:
         abort("shouldn't load from this")
@@ -634,28 +625,30 @@ struct Payload(TrivialRegisterPassable):
 # https://github.com/ROCm/clr/blob/f5b2516f5d8a44b06ad1907594db1be25a9fe57b/rocclr/device/devhostcall.hpp#L99
 @fieldwise_init
 struct payload_t(Copyable):
-    var slots: InlineArray[InlineArray[UInt64, 8], 64]
+    var slots: Array[Array[UInt64, 8], 64]
 
 
 @fieldwise_init
 struct Buffer(TrivialRegisterPassable):
-    var _handle: UnsafePointer[
-        buffer_t, MutUntrackedOrigin, address_space=AddressSpace.GLOBAL
-    ]
+    var _handle: Pointer[buffer_t, MutUntrackedOrigin, address_space=.GLOBAL]
 
     @always_inline
     def get_header(self, ptr: UInt64) -> Header:
         return Header(
-            self._handle[].headers + (ptr & self._handle[].index_mask)
+            self._handle[].headers.unsafe_offset(
+                ptr & self._handle[].index_mask
+            )
         )
 
     @always_inline
     def get_payload(self, ptr: UInt64) -> Payload:
         return Payload(
-            self._handle[].payloads + (ptr & self._handle[].index_mask)
+            self._handle[].payloads.unsafe_offset(
+                ptr & self._handle[].index_mask
+            )
         )
 
-    def pop(mut self, top: UnsafePointer[mut=True, UInt64, ...]) -> UInt64:
+    def pop(mut self, top: MutPointer[UInt64, ...]) -> UInt64:
         var f = Atomic.load[ordering=Ordering.ACQUIRE](top)
         # F is guaranteed to be non-zero, since there are at least as
         # many packets as there are waves, and each wave can hold at most
@@ -663,7 +656,7 @@ struct Buffer(TrivialRegisterPassable):
         while True:
             var p = self.get_header(f)
             var n = Atomic.load[ordering=Ordering.RELAXED](
-                UnsafePointer(to=p._handle[].next)
+                Pointer(to=p._handle[].next)
             )
             if Atomic.compare_exchange[
                 success_ordering=Ordering.ACQUIRE,
@@ -682,12 +675,12 @@ struct Buffer(TrivialRegisterPassable):
         if me == low:
             packet_ptr = Self.pop(
                 self,
-                UnsafePointer(to=self._handle[].free_stack),
+                Pointer(to=self._handle[].free_stack),
             )
 
         return readfirstlane(packet_ptr)
 
-    def push(mut self, top: UnsafePointer[mut=True, UInt64, ...], ptr: UInt64):
+    def push(mut self, top: MutPointer[UInt64, ...], ptr: UInt64):
         var f = Atomic.load[ordering=Ordering.RELAXED](top)
         var p = self.get_header(ptr)
         while True:
@@ -705,7 +698,7 @@ struct Buffer(TrivialRegisterPassable):
         packet and signal the host.
         """
         if me == low:
-            self.push(UnsafePointer(to=self._handle[].ready_stack), ptr)
+            self.push(Pointer(to=self._handle[].ready_stack), ptr)
             send_signal(self._handle[].doorbell)
 
     def return_free_packet(mut self, ptr: UInt64, me: UInt32, low: UInt32):
@@ -714,7 +707,7 @@ struct Buffer(TrivialRegisterPassable):
         """
         if me == low:
             var ptr = inc_ptr_tag(ptr, self._handle[].index_mask)
-            self.push(UnsafePointer(to=self._handle[].free_stack), ptr)
+            self.push(Pointer(to=self._handle[].free_stack), ptr)
 
 
 # Must match the ABI of:
@@ -727,10 +720,8 @@ struct Buffer(TrivialRegisterPassable):
 # this code tries to access.
 @fieldwise_init
 struct buffer_t(Copyable, TrivialRegisterPassable):
-    var headers: UnsafePointer[
-        header_t, MutUntrackedOrigin, address_space=AddressSpace.GLOBAL
-    ]
-    var payloads: UnsafePointer[payload_t, MutUntrackedOrigin]
+    var headers: Pointer[header_t, MutUntrackedOrigin, address_space=.GLOBAL]
+    var payloads: Pointer[payload_t, MutUntrackedOrigin]
     var doorbell: UInt64
     var free_stack: UInt64
     var ready_stack: UInt64
@@ -866,13 +857,9 @@ def hostcall(
     compiled for, otherwise behaviour is undefined.
     """
     var buffer = Buffer(
-        implicitarg_ptr().bitcast[
-            UnsafePointer[
-                buffer_t,
-                MutUntrackedOrigin,
-                address_space=AddressSpace.GLOBAL,
-            ]
-        ]()[10]
+        implicitarg_ptr().unsafe_bitcast[
+            Pointer[buffer_t, MutUntrackedOrigin, address_space=.GLOBAL]
+        ]()[unsafe_offset=10]
     )
 
     var me = UInt32(lane_id())

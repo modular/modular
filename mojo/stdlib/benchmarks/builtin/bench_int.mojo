@@ -17,16 +17,14 @@ from std.benchmark import Bench, BenchConfig, Bencher, BenchId, keep
 # ===-----------------------------------------------------------------------===#
 # Benchmarks
 # ===-----------------------------------------------------------------------===#
-@parameter
 def bench_stringify_small_integers(mut b: Bencher) raises:
     @always_inline
-    @parameter
     def call_fn():
         for i in range(1_000):
             var a = String(i)
             keep(Bool(a))
 
-    b.iter[call_fn]()
+    b.iter(call_fn)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -34,7 +32,8 @@ def bench_stringify_small_integers(mut b: Bencher) raises:
 # ===-----------------------------------------------------------------------===#
 def main() raises:
     var m = Bench(BenchConfig(num_repetitions=1))
-    m.bench_function[bench_stringify_small_integers](
-        BenchId("bench_stringify_small_integers")
+    m.bench_function(
+        bench_stringify_small_integers,
+        BenchId("bench_stringify_small_integers"),
     )
     m.dump_report()

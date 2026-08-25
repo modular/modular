@@ -21,6 +21,7 @@ from max.pipelines.lib import (
 from max.pipelines.modeling.types import PipelineTask
 
 from ..llama3 import weight_adapters
+from ..llama3.batch_processor import Llama3BatchProcessor
 from .model import Qwen2Model
 from .model_config import Qwen2Config
 
@@ -29,20 +30,17 @@ qwen2_arch = SupportedArchitecture(
     task=PipelineTask.TEXT_GENERATION,
     example_repo_ids=["Qwen/Qwen2.5-7B-Instruct", "Qwen/QwQ-32B"],
     default_weights_format=WeightsFormat.safetensors,
-    default_encoding="bfloat16",
-    supported_encodings={
-        "float32",
-        "bfloat16",
-    },
+    default_encoding=Qwen2Config.DEFAULT_ENCODING,
+    supported_encodings=Qwen2Config.SUPPORTED_ENCODINGS,
     pipeline_model=Qwen2Model,
     tokenizer=TextTokenizer,
     context_type=TextContext,
-    rope_type="normal",
     multi_gpu_supported=True,
     weight_adapters={
         WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
         WeightsFormat.gguf: weight_adapters.convert_gguf_state_dict,
     },
     config=Qwen2Config,
+    batching=Llama3BatchProcessor,
     memory_planner=PagedMemoryPlanner,
 )

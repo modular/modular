@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 # ===----------------------------------------------------------------------=== #
 # Copyright (c) 2026, Modular Inc. All rights reserved.
 #
@@ -18,6 +17,7 @@
 import os
 import re
 import subprocess
+import sys
 from typing import Any
 
 import yaml
@@ -34,7 +34,7 @@ def _get_files() -> list[str]:
         file
         for file in all_files
         if (".github/workflows/" in file or ".github/actions/" in file)
-        and (file.endswith(".yaml") or file.endswith(".yml"))
+        and (file.endswith((".yaml", ".yml")))
     ]
 
     return action_files
@@ -88,4 +88,4 @@ def main() -> int:
 if __name__ == "__main__":
     if path := os.getenv("BUILD_WORKSPACE_DIRECTORY"):
         os.chdir(path)
-    exit(main())
+    sys.exit(main())

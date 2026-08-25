@@ -19,8 +19,10 @@ from std.python import ConvertibleToPython
 ```
 """
 
+from . import PythonObject
 
-trait ConvertibleToPython(ImplicitlyDeletable):
+
+trait ConvertibleToPython(Deinitable):
     """A trait that indicates a type can be converted to a PythonObject, and
     that specifies the behavior with a `to_python_object` method."""
 
@@ -36,7 +38,7 @@ trait ConvertibleToPython(ImplicitlyDeletable):
         ...
 
 
-trait ConvertibleFromPython(Copyable, ImplicitlyDeletable):
+trait ConvertibleFromPython(Copyable, Deinitable):
     """Denotes a type that can attempt construction from a read-only Python
     object.
     """

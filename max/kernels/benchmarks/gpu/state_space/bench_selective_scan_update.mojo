@@ -24,7 +24,7 @@ spans <0.2 s and the 10 kHz sampler misses the kernels (see
 """
 
 from layout import TileTensor, row_major
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.time import perf_counter_ns
 
 from state_space.selective_scan import (
@@ -112,10 +112,10 @@ def time_one[
     for _ in range(warmups):
         ctx.enqueue_function(
             compiled,
-            total_batch_dim,
-            batch,
-            dim,
-            group_size,
+            Int32(total_batch_dim),
+            Int32(batch),
+            Int32(dim),
+            Int32(group_size),
             Int8(1),  # delta_softplus
             state_out_tt,
             output_tt,
@@ -151,10 +151,10 @@ def time_one[
         var t0 = perf_counter_ns()
         ctx.enqueue_function(
             compiled,
-            total_batch_dim,
-            batch,
-            dim,
-            group_size,
+            Int32(total_batch_dim),
+            Int32(batch),
+            Int32(dim),
+            Int32(group_size),
             Int8(1),  # delta_softplus
             state_out_tt,
             output_tt,
@@ -193,10 +193,10 @@ def time_one[
     for _ in range(iters):
         ctx.enqueue_function(
             compiled,
-            total_batch_dim,
-            batch,
-            dim,
-            group_size,
+            Int32(total_batch_dim),
+            Int32(batch),
+            Int32(dim),
+            Int32(group_size),
             Int8(1),  # delta_softplus
             state_out_tt,
             output_tt,

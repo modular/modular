@@ -20,7 +20,7 @@ from std.memory import bitcast
 """
 
 from std.sys import bit_width_of, is_amd_gpu, is_nvidia_gpu
-from std.builtin.simd_size import SIMDSize
+from std.builtin.simd_length import SIMDLength
 from std.builtin.dtype import _uint_type_of_width
 
 
@@ -32,15 +32,15 @@ from std.builtin.dtype import _uint_type_of_width
 @always_inline("nodebug")
 def bitcast[
     src_dtype: DType,
-    src_width: SIMDSize,
+    src_width: SIMDLength,
     //,
     dtype: DType,
-    width: SIMDSize = src_width,
+    width: SIMDLength = src_width,
 ](val: SIMD[src_dtype, src_width]) -> SIMD[dtype, width]:
     """Bitcasts a SIMD value to another SIMD value.
 
     For a discussion of byte order, see
-    [Converting data: bitcasting and byte order](/docs/manual/pointers/unsafe-pointers/#converting-data-bitcasting-and-byte-order)
+    [Converting data: bitcasting and byte order](/docs/manual/pointers/using-pointers/#converting-data-bitcasting-and-byte-order)
     in the Mojo Manual.
 
     Examples:
@@ -52,7 +52,7 @@ def bitcast[
     from std.memory import bitcast
 
     u32 = UInt32(4631)
-    u8x4 = bitcast[DType.uint8, 4](u32)
+    u8x4 = bitcast[.uint8, 4](u32)
     print(u32, u8x4) # 4631 [23, 18, 0, 0]
     ```
 
@@ -81,27 +81,27 @@ def bitcast[
     comptime if not is_nvidia_gpu() and not is_amd_gpu():
         # Arm doesn't support casting between float16 and two ints.
         comptime assert not (
-            src_dtype == DType.float16
+            src_dtype == .float16
             and src_width == 1
-            and dtype == DType.int8
+            and dtype == .int8
             and width == 2
         ), "Can't cast a float16 directly to a 2 x i8"
         comptime assert not (
-            src_dtype == DType.float16
+            src_dtype == .float16
             and src_width == 1
-            and dtype == DType.uint8
+            and dtype == .uint8
             and width == 2
         ), "Can't cast a float16 directly to a 2 x ui8"
         comptime assert not (
-            src_dtype == DType.int8
+            src_dtype == .int8
             and src_width == 2
-            and dtype == DType.float16
+            and dtype == .float16
             and width == 1
         ), "Can't cast a 2 x i8 directly to a float16"
         comptime assert not (
-            src_dtype == DType.uint8
+            src_dtype == .uint8
             and src_width == 2
-            and dtype == DType.float16
+            and dtype == .float16
             and width == 1
         ), "Can't cast a 2 x ui8 directly to a float16"
 
@@ -116,15 +116,15 @@ def bitcast[
 def _llvm_bitwidth(dtype: DType) -> Int:
     # fmt: off
     return (
-        1 if dtype == DType._uint1 else
-        2 if dtype == DType._uint2 else
-        4 if dtype == DType._uint4 else
-        8 if dtype == DType.uint8 else
-        16 if dtype == DType.uint16 else
-        32 if dtype == DType.uint32 else
-        64 if dtype == DType.uint64 else
-        128 if dtype == DType.uint128 else
-        256 if dtype == DType.uint256 else
+        1 if dtype == ._uint1 else
+        2 if dtype == ._uint2 else
+        4 if dtype == ._uint4 else
+        8 if dtype == .uint8 else
+        16 if dtype == .uint16 else
+        32 if dtype == .uint32 else
+        64 if dtype == .uint64 else
+        128 if dtype == .uint128 else
+        256 if dtype == .uint256 else
         -1
     )
     # fmt: on
@@ -132,11 +132,11 @@ def _llvm_bitwidth(dtype: DType) -> Int:
 
 @always_inline("nodebug")
 def pack_bits[
-    src_width: SIMDSize,
+    src_width: SIMDLength,
     //,
     dtype: DType = _uint_type_of_width[src_width](),
-    width: SIMDSize = 1,
-](val: SIMD[DType.bool, src_width]) -> SIMD[dtype, width]:
+    width: SIMDLength = 1,
+](val: SIMD[.bool, src_width]) -> SIMD[dtype, width]:
     """Packs a SIMD vector of `bool` values into an integer.
 
     Examples:
@@ -146,8 +146,8 @@ def pack_bits[
     ```mojo
     from std.memory import pack_bits
 
-    bits = SIMD[DType.bool, 8](1, 1, 0, 1, 0, 0, 0, 0)
-    u8 = pack_bits[DType.uint8](bits)
+    bits = SIMD[.bool, 8](1, 1, 0, 1, 0, 0, 0, 0)
+    u8 = pack_bits[.uint8](bits)
     print(bits, u8) # [True, True, False, True, False, False, False, False] 11
     ```
 

@@ -13,7 +13,7 @@
 
 from std.math import ceildiv, exp, exp2, log, rsqrt
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import Layout, LayoutTensor, RuntimeLayout, TileTensor, row_major
 from layout._fillers import random
 from state_space.selective_scan import (
@@ -295,7 +295,7 @@ def run_mamba_split_conv1d_scan_combined_gpu[
         row_major(batch, seqlen, out_dim if has_outproj else dim),
     )
 
-    var epsilon = Scalar[dtype](0.001)
+    var epsilon = Float32(0.001)
 
     # Run CPU kernel
     mamba_split_conv1d_scan_combined_cpu[
@@ -346,7 +346,7 @@ def run_mamba_split_conv1d_scan_combined_gpu[
         outproj_weight_cpu_lt.as_unsafe_any_origin(),
         outproj_bias_cpu_lt.as_unsafe_any_origin(),
         output_cpu_cpu_lt.as_unsafe_any_origin(),
-        epsilon,
+        epsilon.cast[dtype](),
     )
 
     # Run GPU kernel
@@ -379,15 +379,15 @@ def run_mamba_split_conv1d_scan_combined_gpu[
 
     ctx.enqueue_function(
         compiled_kernel,
-        total_batch_dim,
-        batch,
-        seqlen,
-        dim,
-        nheads,
-        headdim,
-        ngroups,
-        width,
-        chunk_size,
+        Int32(total_batch_dim),
+        Int32(batch),
+        Int32(seqlen),
+        Int32(dim),
+        Int32(nheads),
+        Int32(headdim),
+        Int32(ngroups),
+        Int32(width),
+        Int32(chunk_size),
         Int8(1) if delta_softplus else Int8(0),
         Int8(1) if norm_before_gate else Int8(0),
         Int8(1) if has_rmsnorm else Int8(0),
@@ -408,7 +408,7 @@ def run_mamba_split_conv1d_scan_combined_gpu[
         outproj_weight_gpu_lt,
         outproj_bias_gpu_lt,
         output_gpu_gpu_lt,
-        epsilon,
+        epsilon.cast[dtype](),
         grid_dim=(num_blocks,),
         block_dim=(BLOCK_SIZE,),
     )
@@ -451,7 +451,7 @@ def run_mamba_split_conv1d_scan_combined_gpu[
 
             # Pre-load A value (same for all DSTATE entries within a head)
             var A_val_raw = Float32(A_h[h])
-            var A_ref = SIMD[DType.float32, MAX_DSTATE](0.0)
+            var A_ref = SIMD[.float32, MAX_DSTATE](0.0)
             for n in range(dstate):
                 A_ref[n] = A_val_raw * LOG2E
 
@@ -469,7 +469,7 @@ def run_mamba_split_conv1d_scan_combined_gpu[
                 rmsnorm_w = Float32(rmsnorm_weight_h[d_idx])
 
             # Initialize state for selective scan
-            var state_ref = SIMD[DType.float32, MAX_DSTATE](0.0)
+            var state_ref = SIMD[.float32, MAX_DSTATE](0.0)
 
             for t in range(seqlen):
                 # --- Step 1: Load z from zxbcdt ---
@@ -509,8 +509,8 @@ def run_mamba_split_conv1d_scan_combined_gpu[
                 var x_val = silu_ref(conv_sum_x)
 
                 # --- Step 4: Causal conv1d for B and C channels ---
-                var B_vals = SIMD[DType.float32, MAX_DSTATE](0.0)
-                var C_vals = SIMD[DType.float32, MAX_DSTATE](0.0)
+                var B_vals = SIMD[.float32, MAX_DSTATE](0.0)
+                var C_vals = SIMD[.float32, MAX_DSTATE](0.0)
                 for n in range(dstate):
                     # B channel: dim + group_id * dstate + n (in xBC space)
                     var B_ch = dim + group_id * dstate + n

@@ -18,6 +18,7 @@ from max.pipelines.lib import SupportedArchitecture
 from max.pipelines.modeling.types import PipelineTask
 
 from . import weight_adapters
+from .batch_processor import BertBatchProcessor
 from .model import BertPipelineModel
 from .model_config import BertModelConfig
 from .tokenizer import BertTokenizer
@@ -29,11 +30,8 @@ bert_arch = SupportedArchitecture(
         "sentence-transformers/all-MiniLM-L6-v2",
         "sentence-transformers/all-MiniLM-L12-v2",
     ],
-    default_encoding="bfloat16",
-    supported_encodings={
-        "float32",
-        "bfloat16",
-    },
+    default_encoding=BertModelConfig.DEFAULT_ENCODING,
+    supported_encodings=BertModelConfig.SUPPORTED_ENCODINGS,
     pipeline_model=BertPipelineModel,
     tokenizer=BertTokenizer,
     context_type=TextContext,
@@ -43,4 +41,5 @@ bert_arch = SupportedArchitecture(
     },
     required_arguments={"enable_prefix_caching": False},
     config=BertModelConfig,
+    batching=BertBatchProcessor,
 )

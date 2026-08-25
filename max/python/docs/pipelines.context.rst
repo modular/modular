@@ -102,6 +102,7 @@ Token management
    TokenBuffer
    ImageMetadata
    Range
+   TokenHashOverride
 
 .. autosummary::
    :nosignatures:
@@ -120,6 +121,7 @@ Grammar and structured output
 
    GrammarEnforcementState
    GrammarEnforcementSnapshot
+   GrammarMatcher
    StructuredOutputRegionDelimiters
 
 Speculative decoding

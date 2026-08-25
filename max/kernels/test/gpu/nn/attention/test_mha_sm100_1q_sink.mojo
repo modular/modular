@@ -45,11 +45,17 @@ divergence from naive.
 `is_token_generation = (max_prompt_len == 1) and not empty_cache()`
 (`mha.mojo` ~L424). A true decode (`valid_length == 1` with a non-empty cache)
 routes to the SM100 *decode* kernel (`mha_1q.mojo`), NOT to `fa4_softmax`. To
-exercise the FA4 1Q path we therefore use a SHORT prefill:
+exercise the FA4 1Q path we therefore use a prefill with `max_prompt_len` in
+`(32, 128]`:
 
-  * `valid_length` in `[2, 128]`  -> `is_token_generation == False` (prefill),
+  * lower bound `> 32`: `max_prompt_len <= 32` now routes to the WS BM=32
+    packed-TMEM datapath (`fa4_config_ws` -- also `fa4_softmax`, but the 8-way
+    split + two-level combine, NOT the 1Q BM=128 peer-WG combine this cell
+    guards). The `not sink` gate that used to keep sink shapes off WS was lifted
+    in Phase B, so a short-prompt sink shape would otherwise land on WS.
+  * `valid_length` in `(32, 128]` -> `is_token_generation == False` (prefill),
     and `max_prompt_len <= 128` so the FA4 dispatch heuristic
-    (`sm100/dispatch.mojo` ~L334) selects `fa4_config_1q` (BM = 128).
+    (`sm100/dispatch.mojo`) selects `fa4_config_1q` (BM = 128).
   * a long cache (`cache_length` >> `2*BN`) so the per-WG K-tile count
     `T = ceil(num_keys / (2*BN)) >= 2`, i.e. both WGs are active and the
     LSE-combine actually runs. For depth=64/page_size=128, BN=128, so a cache
@@ -58,16 +64,19 @@ exercise the FA4 1Q path we therefore use a SHORT prefill:
   * `valid_length >= 256` -> `max_prompt_len > 128` selects `fa4_config_2q`
     (BM = 256), the disjoint-rows path that is correct with or without the fix.
 
-If a future change reroutes these shapes away from `fa4_softmax`, the sink-on +
-1Q cell stops being a regression test for this bug; the docstring above is the
-contract.
+If a future change reroutes these shapes to a different config -- the WS BM=32
+route (`max_prompt_len <= 32`), the decode kernel (`max_prompt_len == 1`), or
+`fa4_config_2q` (`max_prompt_len > 128`) -- the sink-on + 1Q cell stops being a
+regression test for the 1Q BM=128 peer-WG combine; the bounds above are the
+contract. (Phase C widens the WS route past 32 under a grid rule; C3 must
+re-audit that this cell still lands on 1Q.)
 """
 
 from std.collections import Set
 from std.math import ceildiv, rsqrt
 from std.random import rand, random_ui64, seed
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from layout._fillers import random
 from kv_cache.types import (
@@ -165,12 +174,10 @@ def execute_1q_sink_test[
     comptime sink_layout = Layout.row_major(UNKNOWN_VALUE)
 
     # --- Host metadata: row offsets + cache lengths ---
-    var input_row_offsets = ctx.enqueue_create_host_buffer[DType.uint32](
+    var input_row_offsets = ctx.enqueue_create_host_buffer[.uint32](
         batch_size + 1
     )
-    var cache_lengths_host = ctx.enqueue_create_host_buffer[DType.uint32](
-        batch_size
-    )
+    var cache_lengths_host = ctx.enqueue_create_host_buffer[.uint32](batch_size)
     var running_offset: UInt32 = 0
     for i in range(batch_size):
         input_row_offsets[i] = running_offset
@@ -178,10 +185,10 @@ def execute_1q_sink_test[
         running_offset += UInt32(valid_lengths[i])
     input_row_offsets[batch_size] = running_offset
 
-    var input_row_offsets_dev = ctx.enqueue_create_buffer[DType.uint32](
+    var input_row_offsets_dev = ctx.enqueue_create_buffer[.uint32](
         batch_size + 1
     )
-    var cache_lengths_dev = ctx.enqueue_create_buffer[DType.uint32](batch_size)
+    var cache_lengths_dev = ctx.enqueue_create_buffer[.uint32](batch_size)
     ctx.enqueue_copy(input_row_offsets_dev, input_row_offsets)
     ctx.enqueue_copy(cache_lengths_dev, cache_lengths_host)
 
@@ -230,7 +237,7 @@ def execute_1q_sink_test[
     # --- Paged lookup table (unique random physical blocks per (bs, blk)) ---
     var lut_cols = padded_lut_cols(ceildiv(max_full_context_length, page_size))
     var paged_lut_shape = IndexList[2](batch_size, lut_cols)
-    var paged_lut_host = ctx.enqueue_create_host_buffer[DType.uint32](
+    var paged_lut_host = ctx.enqueue_create_host_buffer[.uint32](
         batch_size * lut_cols
     )
     var paged_lut_set = Set[Int]()
@@ -242,7 +249,7 @@ def execute_1q_sink_test[
                 randval = Int(random_ui64(0, UInt64(num_paged_blocks - 1)))
             paged_lut_set.add(randval)
             paged_lut_host[bs * lut_cols + block_idx] = UInt32(randval)
-    var paged_lut_dev = ctx.enqueue_create_buffer[DType.uint32](
+    var paged_lut_dev = ctx.enqueue_create_buffer[.uint32](
         batch_size * lut_cols
     )
     ctx.enqueue_copy(paged_lut_dev, paged_lut_host)
@@ -258,8 +265,7 @@ def execute_1q_sink_test[
         rand(sinks_host.as_span())
         for h in range(num_q_heads):
             sinks_host[h] = (
-                sinks_host[h].cast[DType.float32]() * Float32(8.0)
-                - Float32(2.0)
+                sinks_host[h].cast[.float32]() * Float32(8.0) - Float32(2.0)
             ).cast[dtype]()
     else:
         sinks_host.as_span().fill(Scalar[dtype](0))
@@ -270,7 +276,7 @@ def execute_1q_sink_test[
     # `cache_lengths`/`lookup_table` at ImmutAnyOrigin; the ragged FA4 path
     # wants `input_row_offsets` immutable. Bake the origins into the types.
     var input_row_offsets_lt = LayoutTensor[
-        mut=False, DType.uint32, row_offsets_layout
+        mut=False, .uint32, row_offsets_layout
     ](
         input_row_offsets_dev,
         RuntimeLayout[row_offsets_layout].row_major(
@@ -278,12 +284,12 @@ def execute_1q_sink_test[
         ),
     )
     var cache_lengths_lt = LayoutTensor[
-        mut=False, DType.uint32, cache_lengths_layout
+        mut=False, .uint32, cache_lengths_layout
     ](
         cache_lengths_dev,
         RuntimeLayout[cache_lengths_layout].row_major(IndexList[1](batch_size)),
     )
-    var paged_lut_lt = LayoutTensor[mut=False, DType.uint32, paged_lut_layout](
+    var paged_lut_lt = LayoutTensor[mut=False, .uint32, paged_lut_layout](
         paged_lut_dev,
         RuntimeLayout[paged_lut_layout].row_major(paged_lut_shape),
     )
@@ -305,8 +311,16 @@ def execute_1q_sink_test[
         RuntimeLayout[sink_layout].row_major(IndexList[1](num_q_heads)),
     )
 
-    var kv_collection = PagedKVCacheCollection[dtype, kv_params, page_size](
-        kv_block_paged_lt,
+    var kv_collection = PagedKVCacheCollection[
+        dtype,
+        kv_params,
+        page_size,
+    ](
+        # `flash_attention`/`mha_gpu_naive` read both the `k` and `v` cache views,
+        # which are disjoint kv_idx halves of one `blocks` buffer sharing its origin,
+        # so the nested-origin exclusivity check rejects passing both. Declare the
+        # kv_block_paged_lt origin as UnsafeAnyOrigin to opt the out of exclusivity checking.
+        kv_block_paged_lt.as_unsafe_any_origin(),
         cache_lengths_lt,
         paged_lut_lt,
         UInt32(max_prompt_length),
@@ -408,8 +422,8 @@ def execute_1q_sink_test[
     var max_abs_diff: Float32 = 0.0
     var argmax_idx = 0
     for i in range(test_out_size):
-        var a = test_out_host[i].cast[DType.float32]()
-        var b = ref_out_host[i].cast[DType.float32]()
+        var a = test_out_host[i].cast[.float32]()
+        var b = ref_out_host[i].cast[.float32]()
         var d = abs(a - b)
         if d > max_abs_diff:
             max_abs_diff = d
@@ -453,13 +467,15 @@ def main() raises:
         # cache), 2Q (long prefill)}. The sink-on + 1Q cell is the one that
         # regressed; the other three must pass with or without the fix.
         #
-        # 1Q: valid in [2,128] (prefill, max_prompt_len<=128 -> fa4_config_1q),
-        #     long cache (512 >> 2*BN=256) so T>=2 and both WGs are active.
-        var valid_1q = [2]
-        var cache_1q = [512]
+        # 1Q: valid in (32,128] (prefill, 32 < max_prompt_len <= 128 ->
+        #     fa4_config_1q, BM=128; the `> 32` keeps it OFF the WS BM=32 route
+        #     that now accepts sink after Phase B), long cache (512 >> 2*BN=256)
+        #     so T>=2 and both WGs run the peer-WG LSE combine this cell guards.
+        var valid_1q: List = [96]
+        var cache_1q: List = [512]
         # 2Q: valid >= 256 (max_prompt_len>128 -> fa4_config_2q, BM=256).
-        var valid_2q = [320]
-        var cache_2q = [0]
+        var valid_2q: List = [320]
+        var cache_2q: List = [0]
 
         # Run all four cells before asserting so the bisection table is always
         # complete (one failing cell does not hide the other three).

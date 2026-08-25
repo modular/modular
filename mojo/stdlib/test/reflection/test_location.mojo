@@ -18,7 +18,7 @@ from std.reflection import (
     source_location,
     SourceLocation,
 )
-from std.memory import UnsafeMaybeUninit
+from std.memory import MaybeUninit
 from std.sys import size_of
 from std.testing import assert_equal, assert_false, assert_true, TestSuite
 
@@ -236,7 +236,7 @@ def source_loc_with_debug() -> SourceLocation:
     var col: __mlir_type.index
     var file_name: __mlir_type.`!kgen.string`
     line, col, file_name = __mlir_op.`kgen.source_loc`[
-        inlineCount=Int(0)._int_mlir_index(),
+        inlineCount=Int(0).__mlir_index__(),
         _type=Tuple[
             __mlir_type.index,
             __mlir_type.index,
@@ -245,8 +245,8 @@ def source_loc_with_debug() -> SourceLocation:
     ]()
 
     return SourceLocation(
-        SIMDSize(mlir_value=line),
-        SIMDSize(mlir_value=col),
+        SIMDLength(mlir_value=line),
+        SIMDLength(mlir_value=col),
         StaticString(file_name),
     )
 
@@ -260,13 +260,13 @@ def test_source_location_niche() raises:
     assert_equal(SourceLocation.niche_count(), 1)
     assert_equal(size_of[SourceLocation](), size_of[Optional[SourceLocation]]())
 
-    var storage = UnsafeMaybeUninit[SourceLocation]()
+    var storage = MaybeUninit[SourceLocation]()
 
-    SourceLocation.write_niche(UnsafePointer(to=storage))
-    assert_true(SourceLocation.isa_niche(UnsafePointer(to=storage)))
+    SourceLocation.write_niche(Pointer(to=storage))
+    assert_true(SourceLocation.isa_niche(Pointer(to=storage)))
 
-    storage.init_from(SourceLocation(50, 60, "/path/to/some_file.mojo"))
-    assert_false(SourceLocation.isa_niche(UnsafePointer(to=storage)))
+    storage.unsafe_write(SourceLocation(50, 60, "/path/to/some_file.mojo"))
+    assert_false(SourceLocation.isa_niche(Pointer(to=storage)))
 
 
 def main() raises:

@@ -36,7 +36,7 @@ def test_is() raises:
 
 def test_deleter_not_called_until_no_references() raises:
     var deleted = False
-    var p = ArcPointer(ObservableDel(UnsafePointer(to=deleted)))
+    var p = ArcPointer(ObservableDel(Pointer(to=deleted)))
     var p2 = p
     _ = p^
     assert_false(deleted)
@@ -51,7 +51,7 @@ def test_deleter_not_called_until_no_references() raises:
 
 def test_deleter_not_called_until_no_references_explicit_copy() raises:
     var deleted = False
-    var p = ArcPointer(ObservableDel(UnsafePointer(to=deleted)))
+    var p = ArcPointer(ObservableDel(Pointer(to=deleted)))
     var p2 = p.copy()
     _ = p^
     assert_false(deleted)
@@ -75,11 +75,24 @@ def test_count() raises:
     assert_equal(UInt64(1), a.count())
 
 
-def test_steal_data_and_construct_from_raw_ptr() raises:
-    var deleted = False
-    var leaked = ArcPointer(ObservableDel(UnsafePointer(to=deleted)))
+def test_ptr() raises:
+    var p = ArcPointer(42)
+    assert_equal(42, p.ptr()[])
 
-    var raw = leaked^.steal_data()
+    # `ptr()` observes mutations made through `[]`.
+    p[] = 99
+    assert_equal(99, p.ptr()[])
+
+    # Copies share the same allocation, so `ptr()` returns the same address.
+    var p2 = p
+    assert_equal(Int(p.ptr()), Int(p2.ptr()))
+
+
+def test_unsafe_take_allocation_and_construct_from_raw_ptr() raises:
+    var deleted = False
+    var leaked = ArcPointer(ObservableDel(Pointer(to=deleted)))
+
+    var raw = leaked^.unsafe_take_allocation().unsafe_leak()
     assert_false(deleted)
 
     var p = ArcPointer(unsafe_from_raw_pointer=raw)
@@ -87,12 +100,12 @@ def test_steal_data_and_construct_from_raw_ptr() raises:
     assert_true(deleted)
 
 
-def test_steal_data_does_not_decrement_refcount() raises:
+def test_unsafe_take_allocation_does_not_decrement_refcount() raises:
     var leaked = ArcPointer(42)
     var copy = leaked.copy()
 
     assert_equal(UInt64(2), copy.count())
-    var raw = leaked^.steal_data()
+    var raw = leaked^.unsafe_take_allocation().unsafe_leak()
 
     # since we leaked the data, the refcount was not decremented
     assert_equal(UInt64(2), copy.count())
@@ -232,7 +245,7 @@ def test_upgrade_fails_after_last_strong_dropped() raises:
 
 def test_upgrade_returns_none_after_strong_drop() raises:
     var deleted = False
-    var p = ArcPointer(ObservableDel(UnsafePointer(to=deleted)))
+    var p = ArcPointer(ObservableDel(Pointer(to=deleted)))
     var w = WeakPointer(downgrade=p)
     _ = p^
     var observed = deleted  # snapshot before any further use of `w`
@@ -245,7 +258,7 @@ def test_upgrade_returns_none_after_strong_drop() raises:
 
 def test_payload_destroyed_when_strong_zero_even_with_weak() raises:
     var deleted = False
-    var p = ArcPointer(ObservableDel(UnsafePointer(to=deleted)))
+    var p = ArcPointer(ObservableDel(Pointer(to=deleted)))
     var w = WeakPointer(downgrade=p)
     _ = p^
     _ = w^
@@ -285,7 +298,7 @@ def test_weak_clone_increments_weak_count() raises:
 
 def test_weak_upgraded_arc_keeps_payload_alive() raises:
     var deleted = False
-    var p = ArcPointer(ObservableDel(UnsafePointer(to=deleted)))
+    var p = ArcPointer(ObservableDel(Pointer(to=deleted)))
     var w = WeakPointer(downgrade=p)
 
     var up = w.try_upgrade()
@@ -335,7 +348,7 @@ def test_only_weak_no_strong_then_free() raises:
     # promptly when the last strong drops; weaks remain valid handles whose
     # try_upgrade() returns None.
     var deleted = False
-    var p = ArcPointer(ObservableDel(UnsafePointer(to=deleted)))
+    var p = ArcPointer(ObservableDel(Pointer(to=deleted)))
     var w1 = WeakPointer(downgrade=p)
     var w2 = WeakPointer(downgrade=p)
     var w3 = WeakPointer(downgrade=p)
@@ -349,7 +362,7 @@ def test_only_weak_no_strong_then_free() raises:
 
 def test_lifetime_probe_arc_drop_with_weak_in_scope() raises:
     var deleted = False
-    var p = ArcPointer(ObservableDel(UnsafePointer(to=deleted)))
+    var p = ArcPointer(ObservableDel(Pointer(to=deleted)))
     var w = WeakPointer(downgrade=p)
     _ = p^
     var observed = deleted

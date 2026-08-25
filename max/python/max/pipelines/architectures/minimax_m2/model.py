@@ -14,30 +14,21 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any, ClassVar, Literal
 
-import numpy as np
 from max._core.engine import Model
-from max.driver import Buffer, DevicePinnedBuffer
+from max.driver import Buffer, is_virtual_device_mode
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import Graph
-from max.graph.weights import Weights, WeightsAdapter
 from max.nn.comm.ep import EPCommInitializer, EPConfig
 from max.nn.comm.ep.ep_config import calculate_ep_max_tokens_per_rank
-from max.pipelines.context import TextContext
-from max.pipelines.lib import CompilationTimer
 from max.pipelines.lib.interfaces import AlwaysSignalBuffersMixin
-from max.pipelines.lib.utils import (
-    compute_data_parallel_splits,
-    parse_state_dict_from_weights,
-)
-from max.support.algorithm import flatten2d
 from typing_extensions import override
 
 from ..llama3.model import Llama3Inputs, LlamaModelBase
+from .batch_processor import MiniMaxM2BatchProcessor
 from .minimax_m2 import MiniMaxM2
 from .model_config import MiniMaxM2Config
 
@@ -91,152 +82,21 @@ class MiniMaxM2Model(AlwaysSignalBuffersMixin, LlamaModelBase):
     """
 
     model_config_cls: ClassVar[type[Any]] = MiniMaxM2Config
+    batch_processor_cls: ClassVar[type[MiniMaxM2BatchProcessor]] = (
+        MiniMaxM2BatchProcessor
+    )
 
     model: Model
-    norm_method: Literal["rms_norm"] | Literal["layer_norm"] = "rms_norm"
+    norm_method: Literal["rms_norm", "layer_norm"] = "rms_norm"
     attention_bias: bool = False
     state_dict: dict[str, Any]
 
     @override
-    def prepare_initial_token_inputs(
-        self,
-        replica_batches: Sequence[Sequence[TextContext]],
-        kv_cache_inputs: Any = None,
-        return_n_logits: int = 1,
-    ) -> MiniMaxM2Inputs:
-        dp = self.pipeline_config.model.data_parallel_degree
-        if len(replica_batches) != dp:
-            raise ValueError(
-                "Number of replica batches must match data parallel degree"
-            )
-
-        context_batch = flatten2d(replica_batches)
-        device0 = self.devices[0]
-        pinned = not device0.is_host
-
-        batch_size = len(context_batch)
-        total_seq_len = sum(ctx.tokens.active_length for ctx in context_batch)
-        buffer_key = (batch_size, total_seq_len)
-        buffers = self._execution_input_buffers.get(buffer_key)
-        if buffers is None:
-            host_tokens: Buffer
-            if pinned:
-                host_tokens = DevicePinnedBuffer(
-                    dtype=DType.int64,
-                    shape=(total_seq_len,),
-                    device=device0,
-                )
-            else:
-                host_tokens = Buffer(
-                    shape=(total_seq_len,),
-                    dtype=DType.int64,
-                    device=device0,
-                )
-
-            host_row_offsets: Buffer
-            if pinned:
-                host_row_offsets = DevicePinnedBuffer(
-                    dtype=DType.uint32,
-                    shape=(batch_size + 1,),
-                    device=device0,
-                )
-            else:
-                host_row_offsets = Buffer(
-                    shape=(batch_size + 1,),
-                    dtype=DType.uint32,
-                    device=device0,
-                )
-
-            device_tokens = host_tokens.to(device0)
-            device_row_offsets = host_row_offsets.to(device0)
-            buffers = (
-                host_tokens,
-                host_row_offsets,
-                device_tokens,
-                device_row_offsets,
-            )
-            self._execution_input_buffers[buffer_key] = buffers
-        (
-            host_tokens,
-            host_row_offsets,
-            device_tokens,
-            device_row_offsets,
-        ) = buffers
-
-        np.cumsum(
-            [0] + [ctx.tokens.active_length for ctx in context_batch],
-            dtype=np.uint32,
-            out=host_row_offsets.to_numpy(),
-        )
-
-        return_n_logits_tensor = Buffer.from_numpy(
-            np.array([return_n_logits], dtype=np.int64)
-        )
-
-        tokens_np = host_tokens.to_numpy()
-        if context_batch:
-            np.concatenate(
-                [ctx.tokens.active for ctx in context_batch],
-                out=tokens_np,
-            )
-        device_tokens.inplace_copy_from(host_tokens)
-        device_row_offsets.inplace_copy_from(host_row_offsets)
-
-        # host_input_row_offsets / data_parallel_splits are only needed for DP
-        # attention (data_parallel_degree > 1). TP / single-GPU omit them.
-        if dp > 1:
-            data_parallel_splits = Buffer.from_numpy(
-                compute_data_parallel_splits(replica_batches)
-            )
-        else:
-            data_parallel_splits = None
-
-        ep_inputs = (
-            ()
-            if self.ep_comm_initializer is None
-            else tuple(self.ep_comm_initializer.model_inputs())
-        )
-
-        return MiniMaxM2Inputs(
-            tokens=device_tokens,
-            input_row_offsets=device_row_offsets,
-            signal_buffers=self.signal_buffers,
-            kv_cache_inputs=kv_cache_inputs,
-            return_n_logits=return_n_logits_tensor,
-            data_parallel_splits=data_parallel_splits,
-            ep_inputs=ep_inputs,
-            host_input_row_offsets=host_row_offsets if dp > 1 else None,
-        )
-
-    @override
-    def load_model(self, session: InferenceSession) -> Model:
-        assert self.pipeline_config.runtime.max_batch_size, (
-            "Expected max_batch_size to be set"
-        )
-        self._input_row_offsets_prealloc = Buffer.from_numpy(
-            np.arange(
-                self.pipeline_config.runtime.max_batch_size + 1,
-                dtype=np.uint32,
-            )
-        ).to(self.devices[0])
-
-        with CompilationTimer("model") as timer:
-            graph = self._build_graph(self.weights, self.adapter, session)
-            timer.mark_build_complete()
-            model = session.load(graph, weights_registry=self.state_dict)
-        return model
-
-    def _build_graph(
-        self,
-        weights: Weights,
-        adapter: WeightsAdapter | None = None,
-        session: InferenceSession | None = None,
-    ) -> Graph:
-        state_dict = parse_state_dict_from_weights(
-            self.pipeline_config, weights, adapter
-        )
+    def _create_model_config(self, state_dict: dict[str, Any]) -> Any:
         model_config = MiniMaxM2Config.initialize_from_config(
-            self.pipeline_config, self.huggingface_config
+            self.pipeline_config,
+            self.huggingface_config,
+            max_seq_len=self.max_seq_len,
         )
         model_config.finalize(
             huggingface_config=self.huggingface_config,
@@ -271,7 +131,6 @@ class MiniMaxM2Model(AlwaysSignalBuffersMixin, LlamaModelBase):
         # data_parallel_degree (==1 -> TP attention, ==num_devices -> DP).
         ep_enabled = num_devices > 1 and ep_size > 1
 
-        self.ep_comm_initializer: EPCommInitializer | None = None
         if ep_enabled:
             if ep_size % num_devices != 0:
                 raise ValueError(
@@ -303,26 +162,58 @@ class MiniMaxM2Model(AlwaysSignalBuffersMixin, LlamaModelBase):
                 dispatch_quant_config=model_config.quant_config,
                 use_allreduce=ep_use_allreduce,
             )
-            assert session is not None
-            self.ep_comm_initializer = EPCommInitializer(model_config.ep_config)
-            self.ep_comm_initializer.ep_init(session)
-            attn_strategy = "TP" if data_parallel_degree == 1 else "DP"
-            logger.info(
-                "MiniMax-M2 EP initialized (%s-attention + EP-MoE,"
-                " use_allreduce=%s): node_id=%s, n_gpus=%s, n_nodes=%s, "
-                "n_experts=%s, max_tokens_per_rank=%s",
-                attn_strategy,
-                ep_use_allreduce,
-                model_config.ep_config.node_id,
-                model_config.ep_config.n_gpus_per_node,
-                model_config.ep_config.n_nodes,
-                model_config.ep_config.n_experts,
-                model_config.ep_config.max_tokens_per_rank,
-            )
+        else:
+            model_config.ep_config = None
 
+        return model_config
+
+    @override
+    def _init_distributed_runtime(
+        self,
+        session: InferenceSession,
+        model_config: Any,
+    ) -> None:
+        assert isinstance(model_config, MiniMaxM2Config)
+        self.ep_comm_initializer = None
+        # Skip the EP comm allocation under a virtual device (compile-only graph
+        # dumps, e.g. the kernel-model-map sweep): ep_init allocates NVSHMEM
+        # buffers the virtual device can't service. ep_config still shapes the
+        # graph, and execution never runs in virtual mode.
+        if model_config.ep_config is None or is_virtual_device_mode():
+            return
+        self.ep_comm_initializer = EPCommInitializer(model_config.ep_config)
+        self.ep_comm_initializer.ep_init(session)
+        attn_strategy = (
+            "TP"
+            if self.pipeline_config.model.data_parallel_degree == 1
+            else "DP"
+        )
+        logger.info(
+            "MiniMax-M2 EP initialized (%s-attention + EP-MoE,"
+            " use_allreduce=%s): node_id=%s, n_gpus=%s, n_nodes=%s, "
+            "n_experts=%s, max_tokens_per_rank=%s",
+            attn_strategy,
+            model_config.ep_config.use_allreduce,
+            model_config.ep_config.node_id,
+            model_config.ep_config.n_gpus_per_node,
+            model_config.ep_config.n_nodes,
+            model_config.ep_config.n_experts,
+            model_config.ep_config.max_tokens_per_rank,
+        )
+
+    @override
+    def _build_graph_for_compile(
+        self,
+        session: InferenceSession,
+        state_dict: dict[str, Any],
+        model_config: Any,
+    ) -> tuple[Graph, dict[str, Any]]:
+        del session
+        assert isinstance(model_config, MiniMaxM2Config)
         nn_model = MiniMaxM2(model_config)
-
         graph_inputs = nn_model.input_types(self.kv_params)
+        num_devices = len(self.devices)
+        ep_enabled = model_config.ep_config is not None
 
         nn_model.load_state_dict(
             state_dict,
@@ -334,8 +225,7 @@ class MiniMaxM2Model(AlwaysSignalBuffersMixin, LlamaModelBase):
                 )
             ),
         )
-
-        self.state_dict = nn_model.state_dict()
+        weights_registry = nn_model.state_dict()
 
         with Graph("minimax_m2", input_types=graph_inputs) as graph:
             # Unpack inputs in the exact order declared by
@@ -385,4 +275,4 @@ class MiniMaxM2Model(AlwaysSignalBuffersMixin, LlamaModelBase):
             )
 
             graph.output(*outputs)
-            return graph
+            return graph, weights_registry

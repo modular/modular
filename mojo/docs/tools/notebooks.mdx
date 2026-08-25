@@ -32,16 +32,21 @@ Both options use the same notebook model and the same Mojo cell magic.
 
 2. Install Mojo:
 
+   For most notebook work, the `mojo` package is all you need. This page
+   installs `max` instead, because it includes the Mojo compiler—so `%%mojo`
+   cells behave exactly the same—and it adds the MAX accelerator library that
+   the [GPU examples](#using-mojo-with-gpu-support) later on this page import.
+
    For the nightly release:
 
     ```python
-    !pip install --pre mojo --extra-index-url https://whl.modular.com/nightly/simple/
+    !pip install --pre max --extra-index-url https://whl.modular.com/nightly/simple/
     ```
 
    For the stable release:
 
     ```python
-    !pip install mojo
+    !pip install max
     ```
 
    Wait for the "Successfully installed" message.
@@ -79,11 +84,12 @@ Jupyter and Mojo.
 2. Install required tools:
 
     ```shell
-    pixi add mojo jupyterlab ipykernel
+    pixi add max jupyterlab ipykernel
     ```
 
     This installs:
-   - Mojo
+   - Mojo, by way of `max` — see [the note above](#using-mojo-on-google-colab)
+     on why this page installs `max` rather than `mojo`
    - JupyterLab
    - The Python kernel required for notebook execution
 
@@ -174,7 +180,7 @@ _Runtime > Change runtime type > [GPU]_.
 ```mojo
 %%mojo
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 
 def kernel():
     print("Hello from the GPU")
@@ -198,19 +204,19 @@ This example writes a value to device memory and reads it back on the host:
 
 ```mojo
 %%mojo
-from std.memory import UnsafePointer
-from std.gpu.host import DeviceContext
+from std.memory import Pointer
+from max.gpu.host import DeviceContext
 
 comptime `✅`: Int32 = 1
 comptime `❌`: Int32 = 0
 
-def kernel(value: UnsafePointer[Scalar[DType.int32], MutAnyOrigin]):
-    value[0] = `✅`
+def kernel(value: Pointer[Scalar[.int32], MutAnyOrigin]):
+    value[unsafe_offset=0] = `✅`
 
 def main() raises:
     with DeviceContext() as ctx:
         # Build it
-        var out = ctx.enqueue_create_buffer[DType.int32](1)
+        var out = ctx.enqueue_create_buffer[.int32](1)
         out.enqueue_fill(`❌`)
 
         # Run it
@@ -225,7 +231,7 @@ def main() raises:
 Output:
 
 ```output
-👋, 🔥
+GPU responded: 👋, 🔥
 ```
 
 ### Example: GPU vector addition
@@ -237,7 +243,7 @@ Each GPU thread updates one element.
 %%mojo
 
 from std.gpu import thread_idx
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import TileTensor, row_major
 from std.sys import has_accelerator
 

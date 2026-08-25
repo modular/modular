@@ -17,6 +17,7 @@ from max.pipelines.lib import SupportedArchitecture
 from max.pipelines.modeling.types import PipelineTask
 
 from . import weight_adapters
+from .batch_processor import MiniMaxM2BatchProcessor
 from .memory_planner import MiniMaxM2MemoryPlanner
 from .model import MiniMaxM2Model
 from .model_config import MiniMaxM2Config
@@ -32,20 +33,17 @@ minimax_m2_arch = SupportedArchitecture(
         "amd/MiniMax-M2.7-MXFP4",
     ],
     default_weights_format=WeightsFormat.safetensors,
-    default_encoding="float8_e4m3fn",
-    supported_encodings={
-        "float8_e4m3fn",
-        "float4_e2m1fnx2",
-    },
+    default_encoding=MiniMaxM2Config.DEFAULT_ENCODING,
+    supported_encodings=MiniMaxM2Config.SUPPORTED_ENCODINGS,
     pipeline_model=MiniMaxM2Model,
     tokenizer=MiniMaxM2Tokenizer,
     context_type=TextContext,
-    rope_type="normal",
     weight_adapters={
         WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
     },
     config=MiniMaxM2Config,
     multi_gpu_supported=True,
+    batching=MiniMaxM2BatchProcessor,
     tool_parser="minimax_m2",
     reasoning_parser="minimax_m2",
     memory_planner=MiniMaxM2MemoryPlanner,

@@ -15,15 +15,22 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import ClassVar
 
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.pipelines.lib import MAXModelConfig, PipelineConfig
+from max.pipelines.lib.config.model_config import (
+    _select_quantization_encoding,
+)
 from max.pipelines.lib.interfaces.arch_config import (
     ArchConfig,
     ArchConfigWithBoundedMaxSeqLen,
 )
-from max.pipelines.modeling.config_enums import supported_encoding_dtype
+from max.pipelines.modeling.config_enums import (
+    SupportedEncoding,
+    supported_encoding_dtype,
+)
 from transformers import AutoConfig
 from typing_extensions import Self, override
 
@@ -32,11 +39,18 @@ from typing_extensions import Self, override
 class BertModelConfig(ArchConfigWithBoundedMaxSeqLen, ArchConfig):
     """Configuration for Bert models."""
 
+    DEFAULT_ENCODING: ClassVar[SupportedEncoding] = "bfloat16"
+    SUPPORTED_ENCODINGS: ClassVar[set[SupportedEncoding]] = {
+        "float32",
+        "bfloat16",
+    }
+
     dtype: DType
     device: DeviceRef
     pool_embeddings: bool
     huggingface_config: AutoConfig
     max_seq_len: int
+    quantization_encoding: SupportedEncoding | None = None
 
     @override
     @classmethod
@@ -44,6 +58,8 @@ class BertModelConfig(ArchConfigWithBoundedMaxSeqLen, ArchConfig):
         cls,
         pipeline_config: PipelineConfig,
         model_config: MAXModelConfig | None = None,
+        *,
+        max_seq_len: int,
     ) -> Self:
         """Initializes a BertModelConfig instance from pipeline configuration.
 
@@ -54,9 +70,9 @@ class BertModelConfig(ArchConfigWithBoundedMaxSeqLen, ArchConfig):
             An initialized BertModelConfig instance.
         """
         model_config = model_config or pipeline_config.model
-        quantization_encoding = model_config.quantization_encoding
-        if quantization_encoding is None:
-            raise ValueError("quantization_encoding must not be None")
+        quantization_encoding = _select_quantization_encoding(
+            model_config, cls.DEFAULT_ENCODING
+        )
         if len(model_config.device_specs) != 1:
             raise ValueError("BERT model is only supported on a single device")
         device_spec = model_config.device_specs[0]
@@ -74,7 +90,6 @@ class BertModelConfig(ArchConfigWithBoundedMaxSeqLen, ArchConfig):
             ),
             pool_embeddings=model_config.pool_embeddings,
             huggingface_config=huggingface_config,
-            max_seq_len=cls.calculate_max_seq_len(
-                pipeline_config, huggingface_config, model_config
-            ),
+            max_seq_len=max_seq_len,
+            quantization_encoding=quantization_encoding,
         )

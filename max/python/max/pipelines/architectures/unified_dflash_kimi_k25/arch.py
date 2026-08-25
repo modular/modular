@@ -19,6 +19,7 @@ from ..kimik2_5 import weight_adapters
 from ..kimik2_5.context import KimiK2_5TextAndVisionContext
 from ..kimik2_5.memory_planner import KimiK25MemoryPlanner
 from ..kimik2_5.tokenizer import KimiK2_5VLTokenizer
+from .batch_processor import UnifiedDflashKimiK25BatchProcessor
 from .model import UnifiedDflashKimiK25Model
 from .model_config import UnifiedDflashKimiK25Config
 
@@ -28,15 +29,12 @@ unified_dflash_kimi_k25_arch = SupportedArchitecture(
     example_repo_ids=[
         "nvidia/Kimi-K2.5-NVFP4",
     ],
-    default_encoding="bfloat16",
-    supported_encodings={
-        "bfloat16",
-        "float8_e4m3fn",
-        "float4_e2m1fnx2",
-    },
+    default_encoding=UnifiedDflashKimiK25Config.DEFAULT_ENCODING,
+    supported_encodings=UnifiedDflashKimiK25Config.SUPPORTED_ENCODINGS,
     multi_gpu_supported=True,
     input_modalities={InputModality.TEXT, InputModality.IMAGE},
     pipeline_model=UnifiedDflashKimiK25Model,
+    batching=UnifiedDflashKimiK25BatchProcessor,
     tokenizer=KimiK2_5VLTokenizer,
     context_type=KimiK2_5TextAndVisionContext,
     default_weights_format=WeightsFormat.safetensors,
@@ -49,4 +47,5 @@ unified_dflash_kimi_k25_arch = SupportedArchitecture(
     tool_parser="kimik2_5",
     reasoning_parser="kimik2_5",
     memory_planner=KimiK25MemoryPlanner,
+    supports_device_graph_capture=False,
 )

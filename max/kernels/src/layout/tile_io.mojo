@@ -15,8 +15,9 @@
 from std.bit import log2_floor
 from std.collections import Optional, OptionalReg
 from std.gpu import block_dim, lane_id, thread_idx
-from std.gpu.memory import AddressSpace, CacheEviction, async_copy
+from max.gpu.memory import CacheEviction, async_copy
 from std.math.uutils import umod
+from std.os import abort
 from std.sys import align_of, size_of
 
 from layout import Idx
@@ -71,29 +72,15 @@ trait TileCopier:
     comptime dst_address_space: AddressSpace
     """Destination `AddressSpace` the copier writes to."""
 
-    def copy[
-        element_size: Int
-    ](
+    def copy(
         self,
-        dst: TileTensor[
-            mut=True,
-            address_space=Self.dst_address_space,
-            element_size=element_size,
-            ...,
-        ],
-        src: TileTensor[
-            address_space=Self.src_address_space,
-            element_size=element_size,
-            ...,
-        ],
+        dst: TileTensor[mut=True, address_space=Self.dst_address_space, ...],
+        src: TileTensor[address_space=Self.src_address_space, ...],
     ):
         """Copies `src` into `dst`.
 
         Both tensors must share the same `element_size` so the copy
         operates on matching logical element widths.
-
-        Parameters:
-            element_size: Number of scalar elements per logical element.
 
         Args:
             dst: Destination tile in `dst_address_space`.
@@ -123,29 +110,15 @@ trait AsyncTileCopier:
     comptime dst_address_space: AddressSpace
     """Destination `AddressSpace` the copier writes to."""
 
-    def copy[
-        element_size: Int
-    ](
+    def copy(
         self,
-        dst: TileTensor[
-            mut=True,
-            address_space=Self.dst_address_space,
-            element_size=element_size,
-            ...,
-        ],
-        src: TileTensor[
-            address_space=Self.src_address_space,
-            element_size=element_size,
-            ...,
-        ],
+        dst: TileTensor[mut=True, address_space=Self.dst_address_space, ...],
+        src: TileTensor[address_space=Self.src_address_space, ...],
     ):
         """Asynchronously copies `src` into `dst`.
 
         The copy may not be complete when this call returns; callers
         must commit and synchronize before reading `dst`.
-
-        Parameters:
-            element_size: Number of scalar elements per logical element.
 
         Args:
             dst: Destination tile in `dst_address_space`.
@@ -181,28 +154,14 @@ struct GenericToSharedTileCopier[
     """Destination `AddressSpace` this copier writes to."""
 
     @always_inline("nodebug")
-    def copy[
-        element_size: Int
-    ](
+    def copy(
         self,
-        dst: TileTensor[
-            mut=True,
-            address_space=Self.dst_address_space,
-            element_size=element_size,
-            ...,
-        ],
-        src: TileTensor[
-            address_space=Self.src_address_space,
-            element_size=element_size,
-            ...,
-        ],
+        dst: TileTensor[mut=True, address_space=Self.dst_address_space, ...],
+        src: TileTensor[address_space=Self.src_address_space, ...],
     ):
         """Copies `src` in generic memory into `dst` in shared memory.
 
         Masked bounds checking is not supported.
-
-        Parameters:
-            element_size: Number of scalar elements per logical element.
 
         Args:
             dst: Destination tile in shared memory.
@@ -224,6 +183,7 @@ struct GenericToSharedTileCopier[
             Self.thread_layout, swizzle=Self.swizzle
         ](worker_idx)
 
+        comptime assert src.element_size == dst.element_size
         dst_fragments.copy_from(src_fragments.bitcast[dst_fragments.dtype]())
 
 
@@ -254,21 +214,10 @@ struct SharedToGenericTileCopier[
     """Destination `AddressSpace` this copier writes to."""
 
     @always_inline("nodebug")
-    def copy[
-        element_size: Int
-    ](
+    def copy(
         self,
-        dst: TileTensor[
-            mut=True,
-            address_space=Self.dst_address_space,
-            element_size=element_size,
-            ...,
-        ],
-        src: TileTensor[
-            address_space=Self.src_address_space,
-            element_size=element_size,
-            ...,
-        ],
+        dst: TileTensor[mut=True, address_space=Self.dst_address_space, ...],
+        src: TileTensor[address_space=Self.src_address_space, ...],
     ):
         """Copies `src` in shared memory into `dst` in generic memory.
 
@@ -280,14 +229,12 @@ struct SharedToGenericTileCopier[
         Masked bounds checking, fp32 -> half precision downcast, and
         `binary_op` fusion are not supported.
 
-        Parameters:
-            element_size: Number of scalar elements per logical element.
-
         Args:
             dst: Destination tile in generic memory.
             src: Source tile in shared memory.
         """
         comptime assert dst.dtype == src.dtype, "src and dst dtype must match."
+        comptime assert src.element_size == dst.element_size
 
         comptime num_busy_threads = Self.thread_layout.size()
         var worker_idx = _get_worker_idx[ThreadScope.BLOCK]()
@@ -310,7 +257,7 @@ struct SharedToGenericTileCopier[
             comptime swizzle_fn = Self.swizzle.value()
 
             var src_frag_offset = Scalar[src.linear_idx_type](
-                src_fragments._distance(src.ptr)
+                src_fragments._distance(src)
             )
             comptime num_stores_per_thread = (
                 src_fragments.LayoutType.static_product // simd_size
@@ -330,12 +277,10 @@ struct SharedToGenericTileCopier[
                     src_frag_offset + src_idx_base
                 ) + Scalar[src.linear_idx_type](src_idx_diff)
 
-                var src_vec = src.ptr.load[
+                var src_vec = src.raw_load[
                     width=simd_size, alignment=src_align
                 ](swizzled_idx).cast[dst.dtype]()
-                dst_fragments.ptr.mut_cast[True]().store[alignment=dst_align](
-                    dst_idx, src_vec
-                )
+                dst_fragments.raw_store[alignment=dst_align](dst_idx, src_vec)
 
 
 @fieldwise_init
@@ -361,28 +306,14 @@ struct GenericToLocalTileCopier[
     """Destination `AddressSpace` this copier writes to."""
 
     @always_inline("nodebug")
-    def copy[
-        element_size: Int
-    ](
+    def copy(
         self,
-        dst: TileTensor[
-            mut=True,
-            address_space=Self.dst_address_space,
-            element_size=element_size,
-            ...,
-        ],
-        src: TileTensor[
-            address_space=Self.src_address_space,
-            element_size=element_size,
-            ...,
-        ],
+        dst: TileTensor[mut=True, address_space=Self.dst_address_space, ...],
+        src: TileTensor[address_space=Self.src_address_space, ...],
     ):
         """Copies `src` in generic memory into `dst` in local memory.
 
         Masked bounds checking is not supported.
-
-        Parameters:
-            element_size: Number of scalar elements per logical element.
 
         Args:
             dst: Destination tile in local memory.
@@ -399,6 +330,7 @@ struct GenericToLocalTileCopier[
             if worker_idx >= num_busy_threads:
                 return
 
+        comptime assert src.element_size == dst.element_size
         var src_fragments = src.distribute[Self.thread_layout](worker_idx)
         dst.copy_from(src_fragments.bitcast[dst.dtype]())
 
@@ -426,28 +358,14 @@ struct LocalToGenericTileCopier[
     """Destination `AddressSpace` this copier writes to."""
 
     @always_inline("nodebug")
-    def copy[
-        element_size: Int
-    ](
+    def copy(
         self,
-        dst: TileTensor[
-            mut=True,
-            address_space=Self.dst_address_space,
-            element_size=element_size,
-            ...,
-        ],
-        src: TileTensor[
-            address_space=Self.src_address_space,
-            element_size=element_size,
-            ...,
-        ],
+        dst: TileTensor[mut=True, address_space=Self.dst_address_space, ...],
+        src: TileTensor[address_space=Self.src_address_space, ...],
     ):
         """Copies `src` in local memory into `dst` in generic memory.
 
         Masked bounds checking is not supported.
-
-        Parameters:
-            element_size: Number of scalar elements per logical element.
 
         Args:
             dst: Destination tile in generic memory.
@@ -464,6 +382,7 @@ struct LocalToGenericTileCopier[
             if worker_idx >= num_busy_threads:
                 return
 
+        comptime assert src.element_size == dst.element_size
         var dst_fragments = dst.distribute[Self.thread_layout](worker_idx)
         dst_fragments.copy_from(src.bitcast[dst_fragments.dtype]())
 
@@ -493,26 +412,12 @@ struct SharedToLocalTileCopier[
     """Destination `AddressSpace` this copier writes to."""
 
     @always_inline("nodebug")
-    def copy[
-        element_size: Int
-    ](
+    def copy(
         self,
-        dst: TileTensor[
-            mut=True,
-            address_space=Self.dst_address_space,
-            element_size=element_size,
-            ...,
-        ],
-        src: TileTensor[
-            address_space=Self.src_address_space,
-            element_size=element_size,
-            ...,
-        ],
+        dst: TileTensor[mut=True, address_space=Self.dst_address_space, ...],
+        src: TileTensor[address_space=Self.src_address_space, ...],
     ):
         """Copies `src` in shared memory into `dst` in local memory.
-
-        Parameters:
-            element_size: Number of scalar elements per logical element.
 
         Args:
             dst: Destination tile in local memory.
@@ -524,6 +429,8 @@ struct SharedToLocalTileCopier[
 
         var worker_idx = _get_worker_idx[Self.thread_scope]()
         var src_fragments = src.distribute[Self.thread_layout](worker_idx)
+
+        comptime assert src.element_size == dst.element_size
         dst.copy_from(src_fragments.bitcast[dst.dtype]())
 
 
@@ -557,32 +464,19 @@ struct LocalToSharedTileCopier[
     """Destination `AddressSpace` this copier writes to."""
 
     @always_inline("nodebug")
-    def copy[
-        element_size: Int
-    ](
+    def copy(
         self,
-        dst: TileTensor[
-            mut=True,
-            address_space=Self.dst_address_space,
-            element_size=element_size,
-            ...,
-        ],
-        src: TileTensor[
-            address_space=Self.src_address_space,
-            element_size=element_size,
-            ...,
-        ],
+        dst: TileTensor[mut=True, address_space=Self.dst_address_space, ...],
+        src: TileTensor[address_space=Self.src_address_space, ...],
     ):
         """Copies `src` in local memory into `dst` in shared memory.
-
-        Parameters:
-            element_size: Number of scalar elements per logical element.
 
         Args:
             dst: Destination tile in shared memory.
             src: Source tile in local memory.
         """
         comptime assert src.dtype == dst.dtype, "src and dst dtype must match."
+        comptime assert src.element_size == dst.element_size
 
         comptime num_busy_threads = Self.thread_layout.size()
         var worker_idx = _get_worker_idx[Self.thread_scope]()
@@ -602,7 +496,7 @@ struct LocalToSharedTileCopier[
             comptime swizzle_fn = Self.swizzle.value()
 
             var dst_frag_offset = Scalar[dst.linear_idx_type](
-                dst_fragments._distance(dst.ptr)
+                dst_fragments._distance(dst)
             )
             comptime num_vecs = src.LayoutType.static_product // simd_size
 
@@ -619,12 +513,10 @@ struct LocalToSharedTileCopier[
                 var swizzled_idx = swizzle_fn(
                     dst_frag_offset + dst_idx_base
                 ) + Scalar[dst.linear_idx_type](dst_idx_diff)
-                var src_vec = src.ptr.load[
+                var src_vec = src.raw_load[
                     width=simd_size, alignment=src_align
                 ](src_idx).cast[dst.dtype]()
-                dst.ptr.mut_cast[True]().store[alignment=dst_align](
-                    swizzled_idx, src_vec
-                )
+                dst.raw_store[alignment=dst_align](swizzled_idx, src_vec)
 
 
 @fieldwise_init
@@ -677,21 +569,10 @@ struct GenericToSharedAsyncTileCopier[
     """Destination `AddressSpace` this copier writes to."""
 
     @always_inline("nodebug")
-    def copy[
-        element_size: Int
-    ](
+    def copy(
         self,
-        dst: TileTensor[
-            mut=True,
-            address_space=Self.dst_address_space,
-            element_size=element_size,
-            ...,
-        ],
-        src: TileTensor[
-            address_space=Self.src_address_space,
-            element_size=element_size,
-            ...,
-        ],
+        dst: TileTensor[mut=True, address_space=Self.dst_address_space, ...],
+        src: TileTensor[address_space=Self.src_address_space, ...],
     ):
         """Asynchronously copies `src` in generic memory into `dst` in shared
         memory.
@@ -703,9 +584,6 @@ struct GenericToSharedAsyncTileCopier[
         derived from `src.dim[0]()`. For an explicit-bound copy (a `src`
         whose row dim is static), call `copy_bounded` directly.
 
-        Parameters:
-            element_size: Number of scalar elements per logical element.
-
         Args:
             dst: Destination tile in shared memory.
             src: Source tile in generic memory.
@@ -713,21 +591,10 @@ struct GenericToSharedAsyncTileCopier[
         self.copy_bounded(dst, src, None)
 
     @always_inline("nodebug")
-    def copy_bounded[
-        element_size: Int
-    ](
+    def copy_bounded(
         self,
-        dst: TileTensor[
-            mut=True,
-            address_space=Self.dst_address_space,
-            element_size=element_size,
-            ...,
-        ],
-        src: TileTensor[
-            address_space=Self.src_address_space,
-            element_size=element_size,
-            ...,
-        ],
+        dst: TileTensor[mut=True, address_space=Self.dst_address_space, ...],
+        src: TileTensor[address_space=Self.src_address_space, ...],
         src_num_valid_rows: OptionalReg[Int],
     ):
         """Asynchronously copies `src` into `dst` with an optional explicit
@@ -736,9 +603,6 @@ struct GenericToSharedAsyncTileCopier[
         Identical to `copy` except for the masked-bound source. This is NOT a
         trait method (the `AsyncTileCopier` trait fixes the `copy` signature);
         it is the explicit-bound entry point.
-
-        Parameters:
-            element_size: Number of scalar elements per logical element.
 
         Args:
             dst: Destination tile in shared memory.
@@ -757,7 +621,9 @@ struct GenericToSharedAsyncTileCopier[
         comptime assert (
             src.dtype == dst.dtype
         ), "src dtype and dst dtype must be the same."
+        comptime assert src.element_size == dst.element_size
 
+        comptime element_size = src.element_size
         comptime element_size_bytes = size_of[src.dtype]() * element_size
         comptime assert element_size_bytes in (
             4,
@@ -799,19 +665,36 @@ struct GenericToSharedAsyncTileCopier[
         # `Scalar[src.dtype]` so `async_copy`'s `dtype` parameter infers
         # cleanly; without it the inferred dtype is a comptime expression
         # that fails to unify across the two pointer arguments.
+        # `TensorStorage.unsafe_ptr` is a raising trait method (it aborts for
+        # storage that cannot expose a raw pointer); this copier runs in a
+        # non-raising context, so mirror the old `TileTensor.ptr` accessor by
+        # trapping any failure here.
         comptime dtype = src.dtype
-        var src_global_ptr = (
-            src_fragments.ptr.address_space_cast[AddressSpace.GLOBAL]()
-            .mut_cast[False]()
-            .unsafe_origin_cast[ImmutAnyOrigin]()
-            .bitcast[Scalar[dtype]]()
-        )
-        var dst_shared_ptr = (
-            dst_fragments.ptr.mut_cast[True]()
-            .address_space_cast[AddressSpace.SHARED]()
-            .unsafe_origin_cast[MutAnyOrigin]()
-            .bitcast[Scalar[dtype]]()
-        )
+        var src_global_ptr: UnsafePointer[
+            Scalar[dtype], ImmutAnyOrigin, address_space=.GLOBAL
+        ]
+        var dst_shared_ptr: UnsafePointer[
+            Scalar[dtype], MutAnyOrigin, address_space=.SHARED
+        ]
+        try:
+            src_global_ptr = (
+                type_of(src_fragments)
+                .Storage.unsafe_ptr(src_fragments._storage)
+                .address_space_cast[.GLOBAL]()
+                .unsafe_mut_cast[False]()
+                .unsafe_origin_cast[ImmutAnyOrigin]()
+                .bitcast[Scalar[dtype]]()
+            )
+            dst_shared_ptr = (
+                type_of(dst_fragments)
+                .Storage.unsafe_ptr(dst_fragments._storage)
+                .unsafe_mut_cast[True]()
+                .address_space_cast[.SHARED]()
+                .unsafe_origin_cast[MutAnyOrigin]()
+                .bitcast[Scalar[dtype]]()
+            )
+        except e:
+            abort(t"tile_io async copy storage pointer access failed: {e}")
 
         # Per-thread fragments are sized in logical (post-vectorize) elements,
         # so `static_product` already counts cp.async issues, not scalars: each
@@ -826,7 +709,7 @@ struct GenericToSharedAsyncTileCopier[
         # equals the column count. The bound is computed in `Int` to keep
         # the comparison free of scalar-dtype unification fights.
         comptime row_stride_static = src.LayoutType.static_stride[0]
-        var src_frag_offset = Int(src_fragments._distance(src.ptr))
+        var src_frag_offset = Int(src_fragments._distance(src))
         # The valid-row count drives the masked zero-fill bound. By default it
         # is `src.dim[0]()` (legacy behavior). A caller may override it with an
         # explicit runtime value when `src`'s own dim0 is static (e.g. a
@@ -847,7 +730,7 @@ struct GenericToSharedAsyncTileCopier[
         # the per-fragment offset directly.
         comptime if Self.swizzle:
             comptime swizzle_fn = Self.swizzle.value()
-            var dst_frag_offset = dst_fragments._distance(dst.ptr)
+            var dst_frag_offset = dst_fragments._distance(dst)
             var dst_frag_offset_typed = Scalar[dst.linear_idx_type](
                 dst_frag_offset
             )
@@ -951,17 +834,9 @@ def copy_dram_to_sram[
     swizzle: Optional[Swizzle] = None,
     num_threads: Int = thread_layout.size(),
     thread_scope: ThreadScope = ThreadScope.BLOCK,
-    element_size: Int,
 ](
-    dst: TileTensor[
-        mut=True,
-        address_space=AddressSpace.SHARED,
-        element_size=element_size,
-        ...,
-    ],
-    src: TileTensor[
-        address_space=AddressSpace.GENERIC, element_size=element_size, ...
-    ],
+    dst: TileTensor[mut=True, address_space=.SHARED, ...],
+    src: TileTensor[address_space=.GENERIC, ...],
 ):
     """Synchronously copies a tile from DRAM (generic memory) to SRAM (shared).
 
@@ -975,8 +850,6 @@ def copy_dram_to_sram[
         num_threads: Total number of threads in the thread block. Threads
             beyond `thread_layout.size()` do not participate.
         thread_scope: Scope at which thread operations are performed.
-        element_size: Number of scalar elements per logical element; inferred
-            from the source and destination tiles.
 
     Args:
         dst: Destination tile in shared memory.
@@ -996,17 +869,9 @@ def copy_sram_to_dram[
     *,
     swizzle: Optional[Swizzle] = None,
     num_threads: Int = thread_layout.size(),
-    element_size: Int,
 ](
-    dst: TileTensor[
-        mut=True,
-        address_space=AddressSpace.GENERIC,
-        element_size=element_size,
-        ...,
-    ],
-    src: TileTensor[
-        address_space=AddressSpace.SHARED, element_size=element_size, ...
-    ],
+    dst: TileTensor[mut=True, address_space=.GENERIC, ...],
+    src: TileTensor[address_space=.SHARED, ...],
 ):
     """Synchronously copies a tile from SRAM (shared memory) to DRAM (generic).
 
@@ -1021,8 +886,6 @@ def copy_sram_to_dram[
             the swizzle used when the tile was written.
         num_threads: Total number of threads in the thread block. Threads
             beyond `thread_layout.size()` do not participate.
-        element_size: Number of scalar elements per logical element; inferred
-            from the source and destination tiles.
 
     Args:
         dst: Destination tile in generic memory.
@@ -1041,17 +904,9 @@ def copy_local_to_dram[
     *,
     num_threads: Int = thread_layout.size(),
     thread_scope: ThreadScope = ThreadScope.BLOCK,
-    element_size: Int,
 ](
-    dst: TileTensor[
-        mut=True,
-        address_space=AddressSpace.GENERIC,
-        element_size=element_size,
-        ...,
-    ],
-    src: TileTensor[
-        address_space=AddressSpace.LOCAL, element_size=element_size, ...
-    ],
+    dst: TileTensor[mut=True, address_space=.GENERIC, ...],
+    src: TileTensor[address_space=.LOCAL, ...],
 ):
     """Synchronously copies a tile from registers (LOCAL) to DRAM (generic).
 
@@ -1064,8 +919,6 @@ def copy_local_to_dram[
         num_threads: Total number of threads in the thread block. Threads
             beyond `thread_layout.size()` do not participate.
         thread_scope: Scope at which thread operations are performed.
-        element_size: Number of scalar elements per logical element; inferred
-            from the source and destination tiles.
 
     Args:
         dst: Destination tile in generic memory.
@@ -1084,17 +937,9 @@ def copy_dram_to_local[
     *,
     num_threads: Int = thread_layout.size(),
     thread_scope: ThreadScope = ThreadScope.BLOCK,
-    element_size: Int,
 ](
-    dst: TileTensor[
-        mut=True,
-        address_space=AddressSpace.LOCAL,
-        element_size=element_size,
-        ...,
-    ],
-    src: TileTensor[
-        address_space=AddressSpace.GENERIC, element_size=element_size, ...
-    ],
+    dst: TileTensor[mut=True, address_space=.LOCAL, ...],
+    src: TileTensor[address_space=.GENERIC, ...],
 ):
     """Synchronously copies a tile from DRAM (generic memory) to registers.
 
@@ -1107,8 +952,6 @@ def copy_dram_to_local[
         num_threads: Total number of threads in the thread block. Threads
             beyond `thread_layout.size()` do not participate.
         thread_scope: Scope at which thread operations are performed.
-        element_size: Number of scalar elements per logical element; inferred
-            from the source and destination tiles.
 
     Args:
         dst: Destination tile in local memory.
@@ -1128,17 +971,9 @@ def copy_local_to_shared[
     swizzle: Optional[Swizzle] = None,
     num_threads: Int = thread_layout.size(),
     thread_scope: ThreadScope = ThreadScope.BLOCK,
-    element_size: Int,
 ](
-    dst: TileTensor[
-        mut=True,
-        address_space=AddressSpace.SHARED,
-        element_size=element_size,
-        ...,
-    ],
-    src: TileTensor[
-        address_space=AddressSpace.LOCAL, element_size=element_size, ...
-    ],
+    dst: TileTensor[mut=True, address_space=.SHARED, ...],
+    src: TileTensor[address_space=.LOCAL, ...],
 ):
     """Synchronously copies a tile from registers (LOCAL) to SRAM (shared).
 
@@ -1154,8 +989,6 @@ def copy_local_to_shared[
         num_threads: Total number of threads in the thread block. Threads
             beyond `thread_layout.size()` do not participate.
         thread_scope: Scope at which thread operations are performed.
-        element_size: Number of scalar elements per logical element; inferred
-            from the source and destination tiles.
 
     Args:
         dst: Destination tile in shared memory.
@@ -1174,17 +1007,9 @@ def copy_sram_to_local[
     thread_layout: Layout,
     *,
     thread_scope: ThreadScope = ThreadScope.BLOCK,
-    element_size: Int,
 ](
-    dst: TileTensor[
-        mut=True,
-        address_space=AddressSpace.LOCAL,
-        element_size=element_size,
-        ...,
-    ],
-    src: TileTensor[
-        address_space=AddressSpace.SHARED, element_size=element_size, ...
-    ],
+    dst: TileTensor[mut=True, address_space=.LOCAL, ...],
+    src: TileTensor[address_space=.SHARED, ...],
 ):
     """Synchronously copies a tile from SRAM (shared memory) to registers.
 
@@ -1195,8 +1020,6 @@ def copy_sram_to_local[
         thread_layout: Warp layout describing how threads are organized over
             the copy.
         thread_scope: Scope at which thread operations are performed.
-        element_size: Number of scalar elements per logical element; inferred
-            from the source and destination tiles.
 
     Args:
         dst: Destination tile in local memory.
@@ -1217,17 +1040,9 @@ def copy_dram_to_sram_async[
     eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
     num_threads: Int = thread_layout.size(),
     thread_scope: ThreadScope = ThreadScope.BLOCK,
-    element_size: Int,
 ](
-    dst: TileTensor[
-        mut=True,
-        address_space=AddressSpace.SHARED,
-        element_size=element_size,
-        ...,
-    ],
-    src: TileTensor[
-        address_space=AddressSpace.GENERIC, element_size=element_size, ...
-    ],
+    dst: TileTensor[mut=True, address_space=.SHARED, ...],
+    src: TileTensor[address_space=.GENERIC, ...],
     src_num_valid_rows: OptionalReg[Int] = None,
 ):
     """Asynchronously copies a tile from DRAM (generic memory) to SRAM (shared).
@@ -1256,8 +1071,6 @@ def copy_dram_to_sram_async[
         num_threads: Total number of threads in the thread block. Threads
             beyond `thread_layout.size()` do not participate.
         thread_scope: Scope at which thread operations are performed.
-        element_size: Number of scalar elements per logical element; inferred
-            from the source and destination tiles.
 
     Args:
         dst: Destination tile in shared memory.

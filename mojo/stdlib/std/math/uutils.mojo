@@ -19,6 +19,7 @@ handling negative values requires additional instructions.
 """
 
 from std.builtin.dtype import _unsigned_integral_type_of
+from std.math import align_up, align_down
 
 
 @always_inline
@@ -82,7 +83,7 @@ def umod(a: Int, b: Int) -> Int:
 
 @always_inline
 def umod[
-    dtype: DType, width: SIMDSize, //
+    dtype: DType, width: SIMDLength, //
 ](a: SIMD[dtype, width], b: SIMD[dtype, width]) -> SIMD[dtype, width]:
     """Perform unsigned modulo (`%`) on `SIMD` arguments.
 

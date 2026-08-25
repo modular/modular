@@ -48,7 +48,9 @@ Weight loading
    :template: autosummary/function.rst
 
    auto_cast_weights_from_env
+   gptq_quant_config
    parse_quant_config
+   resolve_hf_quant_config
 
 .. autosummary::
    :nosignatures:

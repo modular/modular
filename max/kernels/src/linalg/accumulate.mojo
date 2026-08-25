@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Provides register-file accumulator structures used by the matmul inner loop."""
+
 from std.collections.optional import Optional
 from layout import TileTensor
 from std.math import fma
@@ -23,7 +25,7 @@ from linalg.utils import (
     partial_simd_load,
     partial_simd_store,
 )
-from std.memory import stack_allocation
+from std.memory import unsafe_stack_allocation
 
 from std.utils.index import IndexList
 
@@ -62,7 +64,7 @@ struct _Accumulator[
             and (Self.simd_width > 0)
         )
         comptime alignment = align_of[SIMD[Self.dtype, Self.simd_width]]()
-        self._storage = stack_allocation[
+        self._storage = unsafe_stack_allocation[
             Self._size, Self.dtype, alignment=alignment
         ]()
 
@@ -107,7 +109,7 @@ struct _Accumulator[
 
     @always_inline
     def _partial_set[
-        partial_width: SIMDSize
+        partial_width: SIMDLength
     ](mut self, offset: Int, value: SIMD[Self.dtype, partial_width]):
         self._storage.store[width=partial_width](offset, value)
 
@@ -134,15 +136,21 @@ struct _Accumulator[
         )
 
     @always_inline
+    @staticmethod
     def _transfer[
-        func: def(
+        FuncType: ImplicitlyCopyable
+        & def(
             # TODO: Ideally `ptr` should have same origin as `base_ptr`, but I cannot
             # get it to compile successfully.
             m: Int,
             n: Int,
             ptr: UnsafePointer[Scalar[Self.dtype], MutAnyOrigin],
-        ) capturing -> None
-    ](mut self, base_ptr: UnsafePointer[Scalar[Self.dtype], _], stride: Int):
+        ) -> None,
+    ](
+        func: FuncType,
+        base_ptr: UnsafePointer[Scalar[Self.dtype], _],
+        stride: Int,
+    ):
         var row_ptr = base_ptr
 
         comptime for m in range(Self.num_rows):
@@ -163,15 +171,14 @@ struct _Accumulator[
         base_ptr: UnsafePointer[mut=False, Scalar[Self.dtype], _],
         stride: Int,
     ):
-        @parameter
         @always_inline
         def do_transfer(
             m: Int, n: Int, ptr: UnsafePointer[Scalar[Self.dtype], MutAnyOrigin]
-        ):
+        ) {mut self}:
             # TODO: Ideally `ptr` should be immutable, but origins aren't inferring correctly.
             self[m, n] = ptr.load[width=Self.simd_width]()
 
-        self._transfer[do_transfer](base_ptr, stride)
+        Self._transfer(do_transfer, base_ptr, stride)
 
     @always_inline
     def load(
@@ -222,7 +229,7 @@ struct _Accumulator[
             var transfer_count = min(
                 c_bound[1] - tile_n_idx, Self.num_cols * Self.simd_width
             )
-            var row_ptrs = InlineArray[
+            var row_ptrs = Array[
                 UnsafePointer[Scalar[Self.dtype], AnyOrigin[mut=c_ptr.mut]],
                 Self.num_rows,
             ](uninitialized=True)
@@ -253,7 +260,7 @@ struct _Accumulator[
         comptime assert is_load or origin.mut, "ahhh"
         comptime column_step = min(column_count, Self.simd_width)
 
-        @parameter
+        @__parameter
         @always_inline
         def body(row: Int, col: Int):
             comptime if is_load:
@@ -392,14 +399,13 @@ struct _Accumulator[
         base_ptr: UnsafePointer[mut=True, Scalar[Self.dtype], _],
         stride: Int,
     ):
-        @parameter
         @always_inline
         def do_transfer(
             m: Int, n: Int, ptr: UnsafePointer[Scalar[Self.dtype], MutAnyOrigin]
-        ):
+        ) {mut self}:
             ptr.store(self[m, n])
 
-        self._transfer[do_transfer](base_ptr, stride)
+        Self._transfer(do_transfer, base_ptr, stride)
 
     # ===-------------------------------------------------------------------===#
     # Init/Load/Store register tiles
@@ -437,7 +443,7 @@ struct _Accumulator[
             partial_load: Whether load input partially.
 
         Args:
-            input: UnsafePointer to input buffer.
+            input: Pointer to input buffer.
             input_stride: Stride between input segments of size `num_cols * simd_width`.
             partial_load_size: Size of partial load for input.
         """
@@ -473,7 +479,7 @@ struct _Accumulator[
             partial_store: Whether store output partially.
 
         Args:
-            output: UnsafePointer to output buffer.
+            output: Pointer to output buffer.
             output_stride: Stride between output segments of size `num_cols * simd_width`.
             partial_store_size: Size of partial store to the output.
         """
@@ -565,7 +571,7 @@ struct _Accumulator[
         mut self,
         length: Int,
         a: UnsafePointer[mut=False, Scalar[a_type], ...],
-        a_base_offsets: TileTensor[mut=False, DType.int32, ...],
+        a_base_offsets: TileTensor[mut=False, .int32, ...],
         a_offset: Int,
         b: UnsafePointer[mut=False, Scalar[b_type], ...],
         b_stride: Int,
@@ -741,7 +747,7 @@ struct _Accumulator[
         mut self,
         length: Int,
         a: UnsafePointer[mut=False, Scalar[a_type], ...],
-        a_base_offsets: TileTensor[mut=False, DType.int32, ...],
+        a_base_offsets: TileTensor[mut=False, .int32, ...],
         a_offset: Int,
         b: UnsafePointer[mut=False, Scalar[b_type], ...],
         b_stride: Int,
@@ -851,10 +857,9 @@ struct _Accumulator[
         """Accumulation optimized for NEON."""
         comptime assert CompilationTarget.has_neon()
 
-        @parameter
         @always_inline
-        def micro_kernel[num_lanes: Int](offset: Int):
-            var a_vecs = InlineArray[SIMD[a_type, num_lanes], Self.num_rows](
+        def micro_kernel[num_lanes: Int](offset: Int) {mut self, imm}:
+            var a_vecs = Array[SIMD[a_type, num_lanes], Self.num_rows](
                 uninitialized=True
             )
 
@@ -885,7 +890,7 @@ struct _Accumulator[
                 b_ptr = b_ptr + b_stride
 
         # Load vectors from A first. The remainder is handled one element at a time.
-        tile[micro_kernel, [Self.simd_width, 1]](0, length)
+        tile[[Self.simd_width, 1]](0, length, micro_kernel)
 
     @always_inline
     def _accumulate_neon[
@@ -898,7 +903,7 @@ struct _Accumulator[
         mut self,
         length: Int,
         a: UnsafePointer[mut=False, Scalar[a_type], ...],
-        a_base_offsets: TileTensor[mut=False, DType.int32, ...],
+        a_base_offsets: TileTensor[mut=False, .int32, ...],
         a_offset: Int,
         b: UnsafePointer[mut=False, Scalar[b_type], ...],
         b_stride: Int,
@@ -910,10 +915,9 @@ struct _Accumulator[
             a_base_offsets.flat_rank == 1
         ), "a_base_offsets must be rank 1"
 
-        @parameter
         @always_inline
-        def micro_kernel[num_lanes: Int](offset: Int):
-            var a_vecs = InlineArray[SIMD[a_type, num_lanes], Self.num_rows](
+        def micro_kernel[num_lanes: Int](offset: Int) {mut self, imm}:
+            var a_vecs = Array[SIMD[a_type, num_lanes], Self.num_rows](
                 uninitialized=True
             )
 
@@ -945,7 +949,7 @@ struct _Accumulator[
                 b_ptr += b_stride
 
         # Load vectors from A first. The remainder is handled one element at a time.
-        tile[micro_kernel, [Self.simd_width, 1]](0, length)
+        tile[[Self.simd_width, 1]](0, length, micro_kernel)
 
 
 @always_inline
@@ -976,7 +980,7 @@ def _simd_load_maybe_partial[
 
 @always_inline
 def _simd_store_maybe_partial[
-    dt: DType, //, simd_width: SIMDSize, partial_store: Bool
+    dt: DType, //, simd_width: SIMDLength, partial_store: Bool
 ](
     ptr: UnsafePointer[mut=True, Scalar[dt], ...],
     offset: Int,

@@ -27,7 +27,7 @@ def make_string[
     length: Int = 0
 ](filename: String = "UN_charter_EN.txt") -> String:
     try:
-        directory = _dir_of_current_file() / "data"
+        var directory = _dir_of_current_file() / "data"
         var f = open(directory / filename, "r")
 
         comptime if length == 0:
@@ -48,14 +48,13 @@ def make_string[
     abort(String())
 
 
-@parameter
 def bench_grapheme_iter_forward[
     length: Int, filename: StaticString
 ](mut b: Bencher) raises:
     var items = make_string[length](filename + ".txt")
 
     @always_inline
-    def call_fn() {read}:
+    def call_fn() {imm}:
         var count = 0
         for _ in black_box(items).graphemes():
             count += 1
@@ -64,14 +63,13 @@ def bench_grapheme_iter_forward[
     b.iter(call_fn)
 
 
-@parameter
 def bench_grapheme_iter_reversed[
     length: Int, filename: StaticString
 ](mut b: Bencher) raises:
     var items = make_string[length](filename + ".txt")
 
     @always_inline
-    def call_fn() {read}:
+    def call_fn() {imm}:
         var count = 0
         for _ in black_box(items).graphemes_reversed():
             count += 1
@@ -80,14 +78,13 @@ def bench_grapheme_iter_reversed[
     b.iter(call_fn)
 
 
-@parameter
 def bench_grapheme_iter_alternating[
     length: Int, filename: StaticString
 ](mut b: Bencher) raises:
     var items = make_string[length](filename + ".txt")
 
     @always_inline
-    def call_fn() {read}:
+    def call_fn() {imm}:
         var count = 0
         var iter = black_box(items).graphemes()
         while True:
@@ -115,19 +112,22 @@ def main() raises:
     comptime lengths = (1_000, 10_000, 100_000)
 
     comptime for i in range(len(lengths)):
-        comptime length = lengths[i]
+        comptime length = rebind[Int](lengths[i])
 
         comptime for j in range(len(filenames)):
-            comptime fname = filenames[j]
+            comptime fname = rebind[StaticString](filenames[j])
             comptime suffix = String("[", length, ",", fname, "]")
-            m.bench_function[bench_grapheme_iter_forward[length, fname]](
-                BenchId(String("forward", suffix))
+            m.bench_function(
+                bench_grapheme_iter_forward[length, fname],
+                BenchId(String("forward", suffix)),
             )
-            m.bench_function[bench_grapheme_iter_reversed[length, fname]](
-                BenchId(String("reversed", suffix))
+            m.bench_function(
+                bench_grapheme_iter_reversed[length, fname],
+                BenchId(String("reversed", suffix)),
             )
-            m.bench_function[bench_grapheme_iter_alternating[length, fname]](
-                BenchId(String("alternating", suffix))
+            m.bench_function(
+                bench_grapheme_iter_alternating[length, fname],
+                BenchId(String("alternating", suffix)),
             )
 
     print("")

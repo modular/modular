@@ -53,6 +53,7 @@ from max.serve.pipelines.llm import (
     TokenGeneratorOutput,
     TokenGeneratorPipeline,
 )
+from max.serve.telemetry.stopwatch import StopWatch
 
 logger = logging.getLogger(__name__)
 
@@ -255,9 +256,14 @@ async def test_ttft_recorded_once_per_chunk() -> None:
 
     async def mock_stream(
         request_id: str, context: Any
-    ) -> AsyncGenerator[list[TextGenerationOutput], None]:
-        for response in scheduler_responses:
-            yield [response]
+    ) -> AsyncGenerator[tuple[list[TextGenerationOutput], int | None], None]:
+        async def _gen() -> AsyncGenerator[
+            tuple[list[TextGenerationOutput], int | None], None
+        ]:
+            for response in scheduler_responses:
+                yield [response], None
+
+        return _gen()
 
     # Mock context returned by tokenizer
     mock_tokens = Mock()
@@ -266,7 +272,7 @@ async def test_ttft_recorded_once_per_chunk() -> None:
     mock_context = Mock(request_id=test_request_id, tokens=mock_tokens)
 
     # Mock request
-    mock_request = Mock(request_id=test_request_id, tools=None)
+    mock_request = Mock(request_id=test_request_id, tools=None, timestamp_ns=0)
     mock_request.sampling_params.stop = []
 
     # Create pipeline mock - Mock() auto-generates nested attributes
@@ -276,6 +282,8 @@ async def test_ttft_recorded_once_per_chunk() -> None:
     pipeline.tokenizer.decode = AsyncMock(return_value="chunk_text")
     pipeline.model_worker.stream = mock_stream
     pipeline.debug_logging = False
+    # Match the real ctor contract: coalescing is off by default (floor == 1).
+    pipeline._min_chunk_tokens = 1
     pipeline._reasoning_parser = AsyncMock(return_value=None)
 
     # Patch METRICS and call the real next_token_chunk method.
@@ -284,7 +292,7 @@ async def test_ttft_recorded_once_per_chunk() -> None:
         bound_method = TokenGeneratorPipeline.next_token_chunk.__get__(
             pipeline, type(pipeline)
         )
-        chunks = [chunk async for chunk in bound_method(mock_request)]
+        chunks = [chunk async for chunk in await bound_method(mock_request)]
 
     # Verify TTFT called exactly once, ITL called for remaining 2 chunks
     assert mock_metrics.ttft.call_count == 1
@@ -321,6 +329,84 @@ async def test_ttft_recorded_once_per_chunk() -> None:
     mock_metrics.input_tokens.assert_not_called()
 
 
+async def _recorded_ttft_ms(timestamp_ns: int) -> float:
+    """Run a one-chunk pipeline for a request that arrived at ``timestamp_ns``."""
+    mock_metrics = MagicMock()
+    test_request_id = RequestID(value="test-request")
+
+    async def mock_stream(
+        request_id: str, context: Any
+    ) -> AsyncGenerator[tuple[list[TextGenerationOutput], int | None], None]:
+        async def _gen() -> AsyncGenerator[
+            tuple[list[TextGenerationOutput], int | None], None
+        ]:
+            yield (
+                [
+                    TextGenerationOutput(
+                        request_id=test_request_id,
+                        tokens=[101],
+                        final_status=GenerationStatus.END_OF_SEQUENCE,
+                    )
+                ],
+                0,
+            )
+
+        return _gen()
+
+    mock_tokens = Mock()
+    mock_tokens.prompt_length = 10
+    mock_request = Mock(
+        request_id=test_request_id, tools=None, timestamp_ns=timestamp_ns
+    )
+    mock_request.sampling_params.stop = []
+
+    pipeline = Mock()
+    pipeline.tokenizer.new_context = AsyncMock(
+        return_value=Mock(request_id=test_request_id, tokens=mock_tokens)
+    )
+    pipeline.tokenizer.decode = AsyncMock(return_value="chunk_text")
+    pipeline.model_worker.stream = mock_stream
+    pipeline.debug_logging = False
+    pipeline._min_chunk_tokens = 1
+    pipeline._reasoning_parser = AsyncMock(return_value=None)
+
+    with patch("max.serve.pipelines.llm.METRICS", mock_metrics):
+        bound = TokenGeneratorPipeline.next_token_chunk.__get__(
+            pipeline, type(pipeline)
+        )
+        _ = [chunk async for chunk in await bound(mock_request)]
+
+    (ttft_value,) = mock_metrics.ttft.call_args.args
+    assert isinstance(ttft_value, float)
+    return ttft_value
+
+
+@pytest.mark.asyncio
+async def test_ttft_measured_from_request_arrival() -> None:
+    """TTFT covers the pre-pipeline work the HTTP layer did (MXSERV-336).
+
+    ``timestamp_ns`` is stamped by the request middleware before the body is
+    parsed, so time spent in parsing, validation and media resolution belongs
+    in TTFT rather than being dropped by starting the clock at pipeline entry.
+    """
+    pre_pipeline_ms = 500.0
+    ttft_ms = await _recorded_ttft_ms(
+        StopWatch.time_ns() - int(pre_pipeline_ms * 1e6)
+    )
+    assert ttft_ms >= pre_pipeline_ms
+
+
+@pytest.mark.asyncio
+async def test_ttft_falls_back_to_pipeline_entry_without_arrival_time() -> None:
+    """Offline callers leave ``timestamp_ns`` at 0, so TTFT starts at entry.
+
+    ``StopWatch`` treats a zero start as "not started" and raises, so the
+    unset default must not reach it.
+    """
+    ttft_ms = await _recorded_ttft_ms(0)
+    assert 0.0 <= ttft_ms < 1000.0
+
+
 @pytest.mark.asyncio
 async def test_tpot_not_recorded_for_single_token() -> None:
     """TPOT is skipped when only one token is generated (no decode span).
@@ -341,14 +427,19 @@ async def test_tpot_not_recorded_for_single_token() -> None:
 
     async def mock_stream(
         request_id: str, context: Any
-    ) -> AsyncGenerator[list[TextGenerationOutput], None]:
-        for response in scheduler_responses:
-            yield [response]
+    ) -> AsyncGenerator[tuple[list[TextGenerationOutput], int | None], None]:
+        async def _gen() -> AsyncGenerator[
+            tuple[list[TextGenerationOutput], int | None], None
+        ]:
+            for response in scheduler_responses:
+                yield [response], None
+
+        return _gen()
 
     mock_tokens = Mock()
     mock_tokens.prompt_length = 10
     mock_context = Mock(request_id=test_request_id, tokens=mock_tokens)
-    mock_request = Mock(request_id=test_request_id, tools=None)
+    mock_request = Mock(request_id=test_request_id, tools=None, timestamp_ns=0)
     mock_request.sampling_params.stop = []
 
     pipeline = Mock()
@@ -356,13 +447,15 @@ async def test_tpot_not_recorded_for_single_token() -> None:
     pipeline.tokenizer.decode = AsyncMock(return_value="chunk_text")
     pipeline.model_worker.stream = mock_stream
     pipeline.debug_logging = False
+    # Match the real ctor contract: coalescing is off by default (floor == 1).
+    pipeline._min_chunk_tokens = 1
     pipeline._reasoning_parser = AsyncMock(return_value=None)
 
     with patch("max.serve.pipelines.llm.METRICS", mock_metrics):
         bound_method = TokenGeneratorPipeline.next_token_chunk.__get__(
             pipeline, type(pipeline)
         )
-        chunks = [chunk async for chunk in bound_method(mock_request)]
+        chunks = [chunk async for chunk in await bound_method(mock_request)]
 
     assert len(chunks) == 1
     # One token generated -> no inter-token span, so TPOT is not emitted.
@@ -371,6 +464,7 @@ async def test_tpot_not_recorded_for_single_token() -> None:
 
 THINK_START_TOKEN_ID = 1
 THINK_END_TOKEN_ID = 2
+TOOL_SECTION_START_TOKEN_ID = 3
 
 
 async def _run_reasoning_pipeline(
@@ -390,9 +484,14 @@ async def _run_reasoning_pipeline(
 
     async def mock_stream(
         request_id: str, context: Any
-    ) -> AsyncGenerator[list[TextGenerationOutput], None]:
-        for response in scheduler_responses:
-            yield [response]
+    ) -> AsyncGenerator[tuple[list[TextGenerationOutput], int | None], None]:
+        async def _gen() -> AsyncGenerator[
+            tuple[list[TextGenerationOutput], int | None], None
+        ]:
+            for response in scheduler_responses:
+                yield [response], None
+
+        return _gen()
 
     mock_tokens = Mock()
     mock_tokens.prompt = (
@@ -400,7 +499,7 @@ async def _run_reasoning_pipeline(
     )
     mock_tokens.prompt_length = 10
 
-    mock_request = Mock(request_id=test_request_id, tools=None)
+    mock_request = Mock(request_id=test_request_id, tools=None, timestamp_ns=0)
     mock_request.sampling_params.stop = stop or []
 
     pipeline = Mock()
@@ -412,10 +511,13 @@ async def _run_reasoning_pipeline(
     pipeline.tokenizer.decode = decode or AsyncMock(return_value="decoded_text")
     pipeline.model_worker.stream = mock_stream
     pipeline.debug_logging = False
+    # Match the real ctor contract: coalescing is off by default (floor == 1).
+    pipeline._min_chunk_tokens = 1
     pipeline._reasoning_parser = AsyncMock(
         return_value=KimiK2_5ReasoningParser(
             think_start_token_id=THINK_START_TOKEN_ID,
             think_end_token_id=THINK_END_TOKEN_ID,
+            tool_section_start_token_id=TOOL_SECTION_START_TOKEN_ID,
         )
     )
     if top_log_probs is not None:
@@ -425,7 +527,7 @@ async def _run_reasoning_pipeline(
         bound = TokenGeneratorPipeline.next_token_chunk.__get__(
             pipeline, type(pipeline)
         )
-        return [chunk async for chunk in bound(mock_request)]
+        return [chunk async for chunk in await bound(mock_request)]
 
 
 def _make_responses(
@@ -522,6 +624,37 @@ async def test_next_token_chunk_reasoning(
 
 
 @pytest.mark.asyncio
+async def test_delimiter_only_generation_reports_prompt_and_cached_tokens() -> (
+    None
+):
+    """A generation whose only token is a stripped reasoning delimiter must
+    still carry the prompt and cached token counts on its terminal chunk, and
+    must still bill for the delimiter token itself.
+
+    With max_tokens=1 a reasoning model's single generated token is often the
+    think-start delimiter; the parser strips it, so the terminal chunk is the
+    only one the streaming route ever sees. Without prompt_token_count on it,
+    the final usage chunk reports prompt_tokens=0 (CLIN-1523); without
+    cached_token_count the prefix-cache hits never surface either. Because
+    this terminal chunk is the first chunk, it carries num_cached_tokens the
+    same way the regular first-chunk path does.
+
+    The delimiter token was still generated and spent the max_tokens budget,
+    so it must count toward completion_tokens as a reasoning token -- reporting
+    token_count=0 with no reasoning_token_count under-bills the request
+    (CENG-932).
+    """
+    chunks = await _run_reasoning_pipeline(
+        _make_responses([[THINK_START_TOKEN_ID]], num_cached_tokens=7)
+    )
+    assert len(chunks) == 1
+    assert chunks[0].token_count == 0
+    assert chunks[0].reasoning_token_count == 1
+    assert chunks[0].prompt_token_count == 10
+    assert chunks[0].cached_token_count == 7
+
+
+@pytest.mark.asyncio
 async def test_next_token_chunk_reasoning_partitions_logprobs() -> None:
     """Test that logprobs are correctly partitioned between reasoning and content."""
     logprob_content = Mock()
@@ -576,6 +709,48 @@ async def test_next_token_chunk_stop_sequence_ignores_reasoning() -> None:
 
 
 @pytest.mark.asyncio
+async def test_next_token_chunk_tool_section_without_think_end_to_content() -> (
+    None
+):
+    """Kimi K2.5 can open a tool-call section from inside ``<think>`` with no
+    closing ``</think>``. The tool section must route to *content* (where the
+    tool parser runs), not leak into the reasoning channel.
+
+    Regression for the intermittent OpenRouter ``tool-choice-auto`` failure:
+    the tool-call payload landed in ``reasoning`` and ``content`` was empty,
+    so no tool call was ever emitted. Sampling-dependent, hence flaky.
+    """
+
+    async def mock_decode(token_array: Any, **kwargs: Any) -> str:
+        tokens = token_array.tolist()
+        if tokens == [10]:
+            return "thinking"
+        if tokens == [TOOL_SECTION_START_TOKEN_ID, 40]:
+            # The tool markers are non-special tokens, so they survive
+            # detokenization and reach the tool parser verbatim.
+            return "<|tool_calls_section_begin|>...args..."
+        return "unknown"
+
+    chunks = await _run_reasoning_pipeline(
+        _make_responses(
+            [[THINK_START_TOKEN_ID, 10], [TOOL_SECTION_START_TOKEN_ID, 40]]
+        ),
+        decode=mock_decode,
+    )
+
+    assert len(chunks) == 2
+    # First chunk is pure reasoning (still inside <think>).
+    assert chunks[0].decoded_reasoning_tokens == "thinking"
+    assert chunks[0].decoded_tokens is None
+    # Second chunk: the tool section ends reasoning and routes to content,
+    # NOT reasoning — so the tool parser downstream actually sees it.
+    assert chunks[1].decoded_reasoning_tokens is None
+    assert chunks[1].reasoning_token_count == 0
+    assert chunks[1].decoded_tokens == "<|tool_calls_section_begin|>...args..."
+    assert chunks[1].token_count == 2
+
+
+@pytest.mark.asyncio
 async def test_next_token_chunk_stop_sequence_sets_eos_status() -> None:
     """Status is END_OF_SEQUENCE when a stop sequence matches, even if the
     model response itself is still ACTIVE."""
@@ -583,14 +758,22 @@ async def test_next_token_chunk_stop_sequence_sets_eos_status() -> None:
 
     async def mock_stream(
         request_id: str, context: Any
-    ) -> AsyncGenerator[list[TextGenerationOutput], None]:
-        yield [
-            TextGenerationOutput(
-                request_id=test_request_id,
-                tokens=[10],
-                final_status=GenerationStatus.ACTIVE,
+    ) -> AsyncGenerator[tuple[list[TextGenerationOutput], int | None], None]:
+        async def _gen() -> AsyncGenerator[
+            tuple[list[TextGenerationOutput], int | None], None
+        ]:
+            yield (
+                [
+                    TextGenerationOutput(
+                        request_id=test_request_id,
+                        tokens=[10],
+                        final_status=GenerationStatus.ACTIVE,
+                    )
+                ],
+                None,
             )
-        ]
+
+        return _gen()
 
     mock_context = Mock(
         request_id=test_request_id,
@@ -604,11 +787,14 @@ async def test_next_token_chunk_stop_sequence_sets_eos_status() -> None:
     pipeline.tokenizer.decode = AsyncMock(return_value="stop_word")
     pipeline.model_worker.stream = mock_stream
     pipeline.debug_logging = False
+    # Match the real ctor contract: coalescing is off by default (floor == 1).
+    pipeline._min_chunk_tokens = 1
     pipeline._reasoning_parser = AsyncMock(return_value=None)
 
     mock_request = Mock(
         request_id=test_request_id,
         tools=None,
+        timestamp_ns=0,
         sampling_params=Mock(stop=["stop_word"]),
     )
 
@@ -616,7 +802,7 @@ async def test_next_token_chunk_stop_sequence_sets_eos_status() -> None:
         bound = TokenGeneratorPipeline.next_token_chunk.__get__(
             pipeline, type(pipeline)
         )
-        chunks = [chunk async for chunk in bound(mock_request)]
+        chunks = [chunk async for chunk in await bound(mock_request)]
 
     assert len(chunks) == 1
     assert chunks[0].status == GenerationStatus.END_OF_SEQUENCE

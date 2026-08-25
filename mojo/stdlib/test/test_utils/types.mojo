@@ -30,7 +30,7 @@
 """
 
 from std.hashlib import Hasher
-from std.memory import UnsafeMaybeUninit
+from std.memory import MaybeUninit
 from std.os import abort
 from std.reflection import call_location
 from std.utils._nicheable import UnsafeNicheable, NicheIndex
@@ -40,9 +40,9 @@ from std.utils._nicheable import UnsafeNicheable, NicheIndex
 # ===----------------------------------------------------------------------=== #
 
 
-@explicit_destroy("You must use .destroy() to consume `ExplicitDestroy`")
+@explicit_destroy("Use .destroy() to consume `ExplicitDestroy`")
 @fieldwise_init
-struct ExplicitDestroy(Movable):
+struct ExplicitDestroy(Deinitable where False, Movable):
     """Test type that is explicitly-destroyed."""
 
     var value: Int
@@ -54,11 +54,100 @@ struct ExplicitDestroy(Movable):
 
 
 # ===----------------------------------------------------------------------=== #
+# ExplicitDestroyKey
+# ===----------------------------------------------------------------------=== #
+
+
+@explicit_destroy("Use .destroy() to consume `ExplicitDestroyKey`")
+@fieldwise_init
+struct ExplicitDestroyKey(Deinitable where False, Equatable, Hashable, Movable):
+    """Linear key type for testing linear-keyed containers: `Movable`,
+    `Hashable`, and `Equatable`, but explicitly-destroyed (not
+    `Deinitable`)."""
+
+    var value: Int
+    """Int data."""
+
+    def __eq__(self, other: Self) -> Bool:
+        """Compare two keys on their payload.
+
+        Args:
+            other: The other key to compare against.
+
+        Returns:
+            `True` if the payloads are equal, `False` otherwise.
+        """
+        return self.value == other.value
+
+    def __hash__[H: Hasher](self, mut hasher: H):
+        """Hash the payload using the given hasher.
+
+        Parameters:
+            H: The hasher type.
+
+        Args:
+            hasher: The hasher instance.
+        """
+        self.value.__hash__(hasher)
+
+    def destroy(deinit self):
+        """Destroys self."""
+        pass
+
+
+# ===----------------------------------------------------------------------=== #
+# CopyableExplicitDestroyKey
+# ===----------------------------------------------------------------------=== #
+
+
+@explicit_destroy("Use .destroy() to consume `CopyableExplicitDestroyKey`")
+@fieldwise_init
+struct CopyableExplicitDestroyKey(
+    Copyable, Deinitable where False, Equatable, Hashable
+):
+    """Linear key type that is nonetheless `Copyable`: `Copyable`, `Hashable`,
+    and `Equatable`, but explicitly-destroyed (not `Deinitable`).
+
+    Separates bounds that genuinely need `Deinitable` from those that
+    only need `Copyable`, which `ExplicitDestroyKey` cannot distinguish because
+    it is move-only."""
+
+    var value: Int
+    """Int data."""
+
+    def __eq__(self, other: Self) -> Bool:
+        """Compare two keys on their payload.
+
+        Args:
+            other: The other key to compare against.
+
+        Returns:
+            `True` if the payloads are equal, `False` otherwise.
+        """
+        return self.value == other.value
+
+    def __hash__[H: Hasher](self, mut hasher: H):
+        """Hash the payload using the given hasher.
+
+        Parameters:
+            H: The hasher type.
+
+        Args:
+            hasher: The hasher instance.
+        """
+        self.value.__hash__(hasher)
+
+    def destroy(deinit self):
+        """Destroys self."""
+        pass
+
+
+# ===----------------------------------------------------------------------=== #
 # MoveOnly
 # ===----------------------------------------------------------------------=== #
 
 
-struct MoveOnly[T: Movable & ImplicitlyDeletable](
+struct MoveOnly[T: Movable & Deinitable](
     Equatable where conforms_to(T, Equatable),
     Hashable where conforms_to(T, Hashable),
     Movable,
@@ -122,14 +211,14 @@ struct MoveOnly[T: Movable & ImplicitlyDeletable](
 # ===----------------------------------------------------------------------=== #
 
 
-struct ObservableMoveOnly[actions_origin: ImmutOrigin](Movable):
+struct ObservableMoveOnly[actions_origin: ImmOrigin](Movable):
     """Type for observing move and destruction operations during testing.
 
     Parameters:
         actions_origin: Origin of the actions list for tracking operations.
     """
 
-    comptime _U = UnsafePointer[List[String], Self.actions_origin]
+    comptime _U = Pointer[List[String], Self.actions_origin]
     var actions: Self._U
     """Pointer to list tracking lifecycle operations."""
     var value: Int
@@ -144,7 +233,7 @@ struct ObservableMoveOnly[actions_origin: ImmutOrigin](Movable):
         """
         self.actions = actions
         self.value = value
-        self.actions.unsafe_mut_cast[True]()[0].append("__init__")
+        self.actions.unsafe_mut_cast[True]()[].append("__init__")
 
     def __init__(out self, *, deinit move: Self):
         """Moves from an existing instance and records the operation.
@@ -154,11 +243,11 @@ struct ObservableMoveOnly[actions_origin: ImmutOrigin](Movable):
         """
         self.actions = move.actions
         self.value = move.value
-        self.actions.unsafe_mut_cast[True]()[0].append("move ctor")
+        self.actions.unsafe_mut_cast[True]()[].append("move ctor")
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         """Destroys the instance and records the operation."""
-        self.actions.unsafe_mut_cast[True]()[0].append("__del__")
+        self.actions.unsafe_mut_cast[True]()[].append("__deinit__")
 
 
 # ===----------------------------------------------------------------------=== #
@@ -233,13 +322,10 @@ struct ImplicitCopyOnly(ImplicitlyCopyable):
 
 
 struct CopyCounter[
-    T: ImplicitlyCopyable
-    & ImplicitlyDeletable
-    & Writable
-    & Defaultable = NoneType,
+    T: ImplicitlyCopyable & Deinitable & Writable & Defaultable = NoneType,
     *,
     trivial_copy: Bool = False,
-](ImplicitlyCopyable, ImplicitlyDeletable, Writable):
+](Deinitable, ImplicitlyCopyable, Writable):
     """Counts the number of copies performed on a value.
 
     Parameters:
@@ -298,9 +384,9 @@ struct CopyCounter[
 
 # TODO: This type should not be Copyable, but has to be to satisfy
 #       Copyable at the moment.
-struct MoveCounter[
-    T: Copyable & ImplicitlyDeletable, *, trivial_move: Bool = False
-](Copyable):
+struct MoveCounter[T: Copyable & Deinitable, *, trivial_move: Bool = False](
+    Copyable
+):
     """Counts the number of moves performed on a value.
 
     Parameters:
@@ -413,7 +499,7 @@ struct TriviallyCopyableMoveCounter(Copyable):
 
 
 @fieldwise_init
-struct DelRecorder[recorder_origin: ImmutOrigin](ImplicitlyCopyable):
+struct DelRecorder[recorder_origin: ImmOrigin](ImplicitlyCopyable):
     """Records destructor calls for testing.
 
     Parameters:
@@ -422,10 +508,10 @@ struct DelRecorder[recorder_origin: ImmutOrigin](ImplicitlyCopyable):
 
     var value: Int
     """Value to record when destroyed."""
-    var destructor_recorder: UnsafePointer[List[Int], Self.recorder_origin]
+    var destructor_recorder: Pointer[List[Int], Self.recorder_origin]
     """Pointer to list for recording destructor calls."""
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         """Records this instance's value when destroyed."""
         self.destructor_recorder.unsafe_mut_cast[True]()[].append(self.value)
 
@@ -443,12 +529,12 @@ struct ObservableDel[origin: MutOrigin = MutAnyOrigin](ImplicitlyCopyable):
         origin: Origin of the target pointer.
     """
 
-    var target: UnsafePointer[Bool, Self.origin]
+    var target: Pointer[Bool, Self.origin]
     """Pointer to boolean flag set on destruction."""
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         """Sets the target flag to True when destroyed."""
-        self.target.init_pointee_move(True)
+        self.target.unsafe_write(True)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -456,10 +542,28 @@ struct ObservableDel[origin: MutOrigin = MutAnyOrigin](ImplicitlyCopyable):
 # ===----------------------------------------------------------------------=== #
 
 
-@explicit_destroy
 @fieldwise_init
-struct ExplicitDelOnly(Movable):
+struct ExplicitDelOnly(Deinitable where False, Movable):
     """Utility for testing container support for linear types."""
+
+    var data: Int
+    """Test data payload."""
+
+    def destroy(deinit self):
+        """Explicitly destroy this linear type."""
+
+        pass
+
+
+# ===----------------------------------------------------------------------=== #
+# PinnedExplicitDelOnly
+# ===----------------------------------------------------------------------=== #
+
+
+@fieldwise_init
+struct PinnedExplicitDelOnly(Deinitable where False, Movable where False):
+    """Utility for testing container support for linear types that also
+    cannot be moved."""
 
     var data: Int
     """Test data payload."""
@@ -476,7 +580,7 @@ struct ExplicitDelOnly(Movable):
 
 
 @fieldwise_init
-struct DelCounter[counter_origin: ImmutOrigin, *, trivial_del: Bool = False](
+struct DelCounter[counter_origin: ImmOrigin, *, trivial_del: Bool = False](
     ImplicitlyCopyable, Writable
 ):
     """Counts the number of times instances are destroyed.
@@ -488,10 +592,10 @@ struct DelCounter[counter_origin: ImmutOrigin, *, trivial_del: Bool = False](
 
     comptime __del__is_trivial = Self.trivial_del
 
-    var counter: UnsafePointer[Int, Self.counter_origin]
+    var counter: Pointer[Int, Self.counter_origin]
     """Pointer to counter incremented on destruction."""
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         """Increments the counter when destroyed."""
         self.counter.unsafe_mut_cast[True]()[] += 1
 
@@ -520,7 +624,7 @@ struct AbortOnDel(Copyable):
     """Test value payload."""
 
     @always_inline
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         """Aborts the program if called."""
         abort(
             "We should never call the destructor of AbortOnDel",
@@ -645,8 +749,8 @@ struct Observable[
         if self._moves:
             self._moves.value()[] += 1
 
-    def __del__(deinit self):
-        """Destroy the Observable and increment the del count."""
+    def __deinit__(deinit self):
+        """Destroy the Observable and increment the deinit count."""
         if self._dels:
             self._dels.value()[] += 1
 
@@ -666,7 +770,7 @@ struct Observable[
     def write_niche[
         index: Int
     ](
-        memory: UnsafePointer[mut=True, UnsafeMaybeUninit[Self], _]
+        memory: MutPointer[MaybeUninit[Self], _]
     ) where Self.opt_into_unsafe_niche:
         """Writes niche bit pattern `index` into storage.
 
@@ -679,11 +783,13 @@ struct Observable[
         comptime niche_offset = reflect[Self].field_offset[
             name="_always_zero"
         ]()
-        (memory.bitcast[Byte]() + niche_offset).store(Byte(index + 1))
+        memory.unsafe_bitcast[Byte]().unsafe_offset(niche_offset).unsafe_store(
+            Byte(index + 1)
+        )
 
     @staticmethod
     def classify_niche(
-        memory: UnsafePointer[mut=False, UnsafeMaybeUninit[Self], _]
+        memory: ImmPointer[MaybeUninit[Self], _]
     ) -> NicheIndex where Self.opt_into_unsafe_niche:
         """Classifies the bit pattern at `memory` as a niche or a live value.
 
@@ -697,7 +803,11 @@ struct Observable[
         comptime niche_offset = reflect[Self].field_offset[
             name="_always_zero"
         ]()
-        var value = (memory.bitcast[Byte]() + niche_offset).load()
+        var value = (
+            memory.unsafe_bitcast[Byte]()
+            .unsafe_offset(niche_offset)
+            .unsafe_load()
+        )
         if value == 0:
             return NicheIndex.NotANiche
         else:

@@ -16,7 +16,7 @@ When compiled with `-D MOJO_STDLIB_SIMD_UNINIT_CHECK=true`, the helpers in
 this module check loaded float values against the bit pattern written by
 the debug allocator (`MODULAR_DEBUG_DEVICE_ALLOCATOR=uninitialized-poison`).
 A match prints a diagnostic identifying the load site and the offending
-lane, then triggers `abort()`. When disabled (the default), `@parameter
+lane, then triggers `abort()`. When disabled (the default), `@__parameter
 if` / `comptime if` eliminates all checking code at compile time with zero
 runtime overhead.
 
@@ -53,10 +53,10 @@ comptime _UNINIT_CHECK_ENABLED = (
 @always_inline
 def _is_poison_checked_dtype[dtype: DType]() -> Bool:
     return (
-        dtype == DType.float16
-        or dtype == DType.bfloat16
-        or dtype == DType.float32
-        or dtype == DType.float64
+        dtype == .float16
+        or dtype == .bfloat16
+        or dtype == .float32
+        or dtype == .float64
     )
 
 
@@ -146,7 +146,7 @@ def _check_not_poison[dtype: DType, width: Int](val: SIMD[dtype, width]):
 @always_inline
 def _check_not_poison_masked[
     dtype: DType, width: Int
-](val: SIMD[dtype, width], mask: SIMD[DType.bool, width]):
+](val: SIMD[dtype, width], mask: SIMD[.bool, width]):
     """Checks unmasked lanes of a SIMD value for debug allocator poison.
 
     Only active when compiled with `-D MOJO_STDLIB_SIMD_UNINIT_CHECK=true`. Zero cost otherwise.

@@ -39,7 +39,7 @@ from std.math import ceildiv, rsqrt
 from std.random import seed
 from std.collections import OptionalReg
 from layout._utils import ManagedLayoutTensor
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 
 from kv_cache_test_utils import random_distinct
 from kv_cache.types import (
@@ -110,11 +110,11 @@ def execute_sink_prefill_repro[
     var q_ragged_rt = RuntimeLayout[q_ragged_layout].row_major(q_ragged_shape)
     var output_rt = RuntimeLayout[output_layout].row_major(output_shape)
 
-    var input_row_offsets = ManagedLayoutTensor[
-        DType.uint32, row_offsets_layout
-    ](row_offsets_rt, ctx)
+    var input_row_offsets = ManagedLayoutTensor[.uint32, row_offsets_layout](
+        row_offsets_rt, ctx
+    )
     var cache_lengths_managed = ManagedLayoutTensor[
-        DType.uint32, cache_lengths_layout
+        .uint32, cache_lengths_layout
     ](cache_lengths_rt, ctx)
     var q_ragged = ManagedLayoutTensor[dtype, q_ragged_layout](q_ragged_rt, ctx)
     var test_output = ManagedLayoutTensor[dtype, output_layout](output_rt, ctx)
@@ -157,7 +157,7 @@ def execute_sink_prefill_repro[
     var kv_block_paged = ManagedLayoutTensor[dtype, kv_block_6d_layout](
         kv_block_paged_rt, ctx
     )
-    var paged_lut = ManagedLayoutTensor[DType.uint32, paged_lut_layout](
+    var paged_lut = ManagedLayoutTensor[.uint32, paged_lut_layout](
         paged_lut_rt, ctx
     )
 
@@ -196,7 +196,7 @@ def execute_sink_prefill_repro[
     var kv_block_paged_lt = kv_block_paged.device_tensor()
     var paged_lut_lt = paged_lut.device_tensor()
 
-    kv_collection_paged_device = PagedKVCacheCollection[
+    var kv_collection_paged_device = PagedKVCacheCollection[
         dtype, kv_params, page_size
     ](
         kv_block_paged_lt,
@@ -210,7 +210,7 @@ def execute_sink_prefill_repro[
     var test_output_lt = test_output.device_tensor()
     var input_row_offsets_dev = input_row_offsets.device_tensor()
     var input_row_offsets_lt = LayoutTensor[
-        DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
+        .uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
     ](
         input_row_offsets_dev.ptr,
         input_row_offsets_dev.runtime_layout,
@@ -256,8 +256,8 @@ def main() raises:
         # seq_len=11 prefill, CausalMask, bf16, paged, ragged — this is the
         # exact specialization that crashes during AMDGPURewriteAGPRCopyMFMA.
         print("Gemma4 global sink=True prefill repro")
-        var seq_lens = [11]
-        var cache_sizes = [0]
+        var seq_lens: List = [11]
+        var cache_sizes: List = [0]
         execute_sink_prefill_repro[
             32,
             DType.bfloat16,
