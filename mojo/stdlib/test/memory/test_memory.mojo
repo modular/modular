@@ -544,6 +544,83 @@ def test_memcmp_simd_zero_bytes() raises:
         )
 
 
+@fieldwise_init
+struct TwelveByteStruct(TrivialRegisterPassable):
+    var a: UInt32
+    var b: UInt32
+    var c: UInt32
+
+
+@fieldwise_init
+struct SixteenByteStruct(TrivialRegisterPassable):
+    var a: UInt64
+    var b: UInt64
+
+
+def test_memcmp_high_bit_and_multiples_of_4() raises:
+    # 4-byte element: high bit set should compare as unsigned
+    var a4 = List[UInt32](length=1, fill=0x8000_0001)
+    var b4 = List[UInt32](length=1, fill=0x0000_0001)
+    var res4_chunked = unsafe_memcmp(a4.unsafe_ptr(), b4.unsafe_ptr(), 1)
+    var res4_bytewise = unsafe_memcmp(
+        a4.unsafe_ptr().unsafe_bitcast[Byte](),
+        b4.unsafe_ptr().unsafe_bitcast[Byte](),
+        4,
+    )
+    assert_equal(res4_chunked, 1)
+    assert_equal(res4_chunked, res4_bytewise)
+    assert_equal(unsafe_memcmp(b4.unsafe_ptr(), a4.unsafe_ptr(), 1), -1)
+
+    # 8-byte element: high bit set should compare as unsigned
+    var a8 = List[UInt64](length=1, fill=0x8000_0000_0000_0001)
+    var b8 = List[UInt64](length=1, fill=0x0000_0000_0000_0001)
+    var res8_chunked = unsafe_memcmp(a8.unsafe_ptr(), b8.unsafe_ptr(), 1)
+    var res8_bytewise = unsafe_memcmp(
+        a8.unsafe_ptr().unsafe_bitcast[Byte](),
+        b8.unsafe_ptr().unsafe_bitcast[Byte](),
+        8,
+    )
+    assert_equal(res8_chunked, 1)
+    assert_equal(res8_chunked, res8_bytewise)
+    assert_equal(unsafe_memcmp(b8.unsafe_ptr(), a8.unsafe_ptr(), 1), -1)
+
+    # 12-byte element: high bit in middle chunk
+    var a12 = List[TwelveByteStruct](
+        length=1, fill=TwelveByteStruct(0, 0x8000_0000, 0)
+    )
+    var b12 = List[TwelveByteStruct](
+        length=1, fill=TwelveByteStruct(0, 0x0000_0000, 0)
+    )
+    var res12_chunked = unsafe_memcmp(a12.unsafe_ptr(), b12.unsafe_ptr(), 1)
+    var res12_bytewise = unsafe_memcmp(
+        a12.unsafe_ptr().unsafe_bitcast[Byte](),
+        b12.unsafe_ptr().unsafe_bitcast[Byte](),
+        12,
+    )
+    assert_equal(res12_chunked, 1)
+    assert_equal(res12_chunked, res12_bytewise)
+    assert_equal(unsafe_memcmp(b12.unsafe_ptr(), a12.unsafe_ptr(), 1), -1)
+
+    # 16-byte element: high bit in first 8-byte field
+    var a16 = List[SixteenByteStruct](
+        length=1,
+        fill=SixteenByteStruct(0x8000_0000_0000_0000, 0),
+    )
+    var b16 = List[SixteenByteStruct](
+        length=1,
+        fill=SixteenByteStruct(0x0000_0000_0000_0000, 0),
+    )
+    var res16_chunked = unsafe_memcmp(a16.unsafe_ptr(), b16.unsafe_ptr(), 1)
+    var res16_bytewise = unsafe_memcmp(
+        a16.unsafe_ptr().unsafe_bitcast[Byte](),
+        b16.unsafe_ptr().unsafe_bitcast[Byte](),
+        16,
+    )
+    assert_equal(res16_chunked, 1)
+    assert_equal(res16_chunked, res16_bytewise)
+    assert_equal(unsafe_memcmp(b16.unsafe_ptr(), a16.unsafe_ptr(), 1), -1)
+
+
 def test_memset() raises:
     var pair = Pair(1, 2)
 
