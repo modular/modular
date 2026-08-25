@@ -23,7 +23,7 @@ from max.pipelines.diffusion.config import (
     DenoisingCacheConfig,
 )
 from max.pipelines.modeling.config_enums import PipelineRole
-from pydantic import Field, PrivateAttr
+from pydantic import ConfigDict, Field, PrivateAttr
 
 # Default max batch input tokens for chunked prefill and memory estimation.
 DEFAULT_MAX_BATCH_INPUT_TOKENS = 8192
@@ -40,6 +40,8 @@ class PipelineRuntimeConfig(ConfigFileModel):
     Contains batching, scheduling, and execution configuration that is
     independent of any particular model architecture.
     """
+
+    model_config = ConfigDict(frozen=True)
 
     pipeline_role: PipelineRole = Field(
         default="prefill_and_decode",

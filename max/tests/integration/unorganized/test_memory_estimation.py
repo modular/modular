@@ -143,7 +143,9 @@ def test_memory_estimation__infer_optimal_batch_size() -> None:
     assert inferred_batch_size == 1
 
 
-def _dummy_llama_config(max_length: int | None) -> DummyPipelineConfig:
+def _dummy_llama_config(
+    max_length: int | None, max_batch_total_tokens: int | None = None
+) -> DummyPipelineConfig:
     """A dummy config whose mocked HF config carries concrete KV-sizing ints."""
     config = DummyPipelineConfig(
         model_path="modularai/Llama-3.1-8B-Instruct-GGUF",
@@ -151,6 +153,7 @@ def _dummy_llama_config(max_length: int | None) -> DummyPipelineConfig:
         max_length=max_length,
         device_specs=[DeviceSpec.cpu()],
         quantization_encoding=DUMMY_LLAMA_ARCH.default_encoding,
+        max_batch_total_tokens=max_batch_total_tokens,
     )
     hf_config = config.model.huggingface_config
     hf_config.max_position_embeddings = 4096
@@ -238,8 +241,9 @@ def test_for_pipeline__defaults_max_batch_total_tokens_when_arch_requires() -> (
             == 512
         )
         # The plan carries a user-set cap unchanged instead.
-        config = _dummy_llama_config(max_length=512)
-        config.runtime.max_batch_total_tokens = 2048
+        config = _dummy_llama_config(
+            max_length=512, max_batch_total_tokens=2048
+        )
         plan = MemoryEstimator.plan(config, arch)
         assert plan.planned_max_batch_total_tokens == 2048
 
