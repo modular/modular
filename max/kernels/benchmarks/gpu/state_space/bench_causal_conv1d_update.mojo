@@ -18,7 +18,7 @@ cover single-stream decode (B=1) and datacenter batched decode (B=128).
 """
 
 from std.math import ceildiv
-from std.sys import get_defined_int, get_defined_string
+from std.sys import get_defined_dtype, get_defined_int
 
 from std.benchmark import (
     Bench,
@@ -27,16 +27,15 @@ from std.benchmark import (
     BenchMetric,
     ThroughputMeasure,
 )
-from std.gpu.host import DeviceContext
+from max.benchmark import bencher_iter_custom
+from max.gpu.host import DeviceContext
 from std.random import rand
 from layout import TileTensor, row_major
 from state_space.causal_conv1d import causal_conv1d_update_gpu
 
 
 def main() raises:
-    comptime dtype = DType._from_str(
-        get_defined_string["dtype", "DType.float32"]()
-    )
+    comptime dtype = get_defined_dtype["dtype", .float32]()
     comptime batch = get_defined_int["batch", 1]()
     comptime dim = get_defined_int["dim", 1536]()
     comptime kWidth = get_defined_int["width", 4]()
@@ -82,7 +81,7 @@ def main() raises:
         var o_batch_stride = UInt32(dim * seqlen)
         var o_c_stride = UInt32(seqlen)
 
-        @parameter
+        @__parameter
         @always_inline
         def bench_cfg[kNThreads: Int]() raises:
             var compiled = ctx.compile_function[
@@ -102,19 +101,17 @@ def main() raises:
             ]()
             var grid = (batch, ceildiv(dim, kNThreads))
 
-            @parameter
             @always_inline
-            def run(mut bn: Bencher):
-                @parameter
+            def run(mut bn: Bencher) raises {imm}:
                 @always_inline
-                def launch(c: DeviceContext, i: Int) raises:
+                def launch(c: DeviceContext) raises {imm}:
                     c.enqueue_function(
                         compiled,
-                        batch,
-                        dim,
-                        seqlen,
-                        kWidth,
-                        state_len,
+                        Int32(batch),
+                        Int32(dim),
+                        Int32(seqlen),
+                        Int32(kWidth),
+                        Int32(state_len),
                         x,
                         cs,
                         w,
@@ -137,9 +134,10 @@ def main() raises:
                         block_dim=(kNThreads),
                     )
 
-                bn.iter_custom[launch](ctx)
+                bencher_iter_custom(bn, launch, ctx)
 
-            m.bench_function[run](
+            m.bench_function(
+                run,
                 BenchId(
                     "update",
                     input_id=String("nthreads=", kNThreads, "/batch=", batch),

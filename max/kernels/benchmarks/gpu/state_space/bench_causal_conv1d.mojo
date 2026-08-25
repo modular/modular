@@ -20,7 +20,7 @@ the best occupancy/tiling for the workload. Benchmarks the kernel directly via
 """
 
 from std.math import ceildiv
-from std.sys import get_defined_int, get_defined_string
+from std.sys import get_defined_dtype, get_defined_int
 
 from std.benchmark import (
     Bench,
@@ -29,7 +29,8 @@ from std.benchmark import (
     BenchMetric,
     ThroughputMeasure,
 )
-from std.gpu.host import DeviceContext
+from max.benchmark import bencher_iter_custom
+from max.gpu.host import DeviceContext
 from std.random import rand
 from layout import TileTensor, row_major
 from state_space.causal_conv1d import (
@@ -39,9 +40,7 @@ from state_space.causal_conv1d import (
 
 
 def main() raises:
-    comptime dtype = DType._from_str(
-        get_defined_string["dtype", "DType.float32"]()
-    )
+    comptime dtype = get_defined_dtype["dtype", .float32]()
     comptime batch = get_defined_int["batch", 1]()
     comptime dim = get_defined_int["dim", 1536]()
     comptime seqlen = get_defined_int["seqlen", 256]()
@@ -76,7 +75,7 @@ def main() raises:
         var x_c_stride: UInt32 = UInt32(seqlen)
         var x_l_stride: UInt32 = 1
 
-        @parameter
+        @__parameter
         @always_inline
         def bench_cfg[kNThreads: Int, kNElts: Int, kCPB: Int = 1]() raises:
             # kCPB = channels folded per block (block_dim.y). >1 raises warps/
@@ -104,18 +103,16 @@ def main() raises:
                 batch,
             )
 
-            @parameter
             @always_inline
-            def run(mut bn: Bencher):
-                @parameter
+            def run(mut bn: Bencher) raises {imm}:
                 @always_inline
-                def launch(c: DeviceContext, i: Int) raises:
+                def launch(c: DeviceContext) raises {imm}:
                     c.enqueue_function(
                         compiled,
-                        batch,
-                        dim,
-                        seqlen,
-                        kWidth,
+                        Int32(batch),
+                        Int32(dim),
+                        Int32(seqlen),
+                        Int32(kWidth),
                         x.as_immut(),
                         w.as_immut(),
                         o,
@@ -139,9 +136,10 @@ def main() raises:
                         block_dim=(kNThreads, kCPB),
                     )
 
-                bn.iter_custom[launch](ctx)
+                bencher_iter_custom(bn, launch, ctx)
 
-            m.bench_function[run](
+            m.bench_function(
+                run,
                 BenchId(
                     "cf",
                     input_id=String(
@@ -170,7 +168,7 @@ def main() raises:
         var cl_l_stride: UInt32 = UInt32(dim)
         var cl_c_stride: UInt32 = 1
 
-        @parameter
+        @__parameter
         @always_inline
         def bench_cl[kNThreads: Int, kNElts: Int]() raises:
             var compiled = ctx.compile_function[
@@ -196,18 +194,16 @@ def main() raises:
                 batch,
             )
 
-            @parameter
             @always_inline
-            def run(mut bn: Bencher):
-                @parameter
+            def run(mut bn: Bencher) raises {imm}:
                 @always_inline
-                def launch(c: DeviceContext, i: Int) raises:
+                def launch(c: DeviceContext) raises {imm}:
                     c.enqueue_function(
                         compiled,
-                        batch,
-                        dim,
-                        seqlen,
-                        kWidth,
+                        Int32(batch),
+                        Int32(dim),
+                        Int32(seqlen),
+                        Int32(kWidth),
                         xcl.as_immut(),
                         w.as_immut(),
                         ocl,
@@ -231,9 +227,10 @@ def main() raises:
                         block_dim=(kNThreads),
                     )
 
-                bn.iter_custom[launch](ctx)
+                bencher_iter_custom(bn, launch, ctx)
 
-            m.bench_function[run](
+            m.bench_function(
+                run,
                 BenchId(
                     "cl",
                     input_id=String("nthreads=", kNThreads, "/nelts=", kNElts),

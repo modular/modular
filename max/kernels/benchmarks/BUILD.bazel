@@ -321,6 +321,7 @@ mojo_binary(
     deps = [
         "//max:internal_utils",
         "//max:layout",
+        "//max:max_mojo",
         "//max:nn",
         "//max:state_space",
         "@mojo//:std",
@@ -344,6 +345,7 @@ mojo_binary(
     deps = [
         "//max:internal_utils",
         "//max:layout",
+        "//max:max_mojo",
         "//max:nn",
         "//max:state_space",
         "@mojo//:std",
