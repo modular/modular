@@ -159,12 +159,8 @@ def load_AB[
         address_space=.SHARED,
         alignment=128,
     ],
-    mma_mbar: UnsafePointer[
-        mut=True, SharedMemBarrier, address_space=.SHARED, _
-    ],
-    tma_mbar: UnsafePointer[
-        mut=True, SharedMemBarrier, address_space=.SHARED, _
-    ],
+    mma_mbar: MutPointer[SharedMemBarrier, address_space=.SHARED, _],
+    tma_mbar: MutPointer[SharedMemBarrier, address_space=.SHARED, _],
     producer_phase: PipelineState[num_pipeline_stages],
     peer_cta_coord: Tuple[Int, Int, Int],
     work_tile_coord: Tuple[Int, Int],
@@ -266,12 +262,8 @@ def consumer_main_loop[
         address_space=.SHARED,
         alignment=128,
     ],
-    mma_mbar: UnsafePointer[
-        mut=True, SharedMemBarrier, address_space=.SHARED, _
-    ],
-    tma_mbar: UnsafePointer[
-        mut=True, SharedMemBarrier, address_space=.SHARED, _
-    ],
+    mma_mbar: MutPointer[SharedMemBarrier, address_space=.SHARED, _],
+    tma_mbar: MutPointer[SharedMemBarrier, address_space=.SHARED, _],
     consumer_phase: PipelineState[pipeline_stages],
     mma_op: MmaOpSM100_SS[
         c_type,
@@ -376,12 +368,8 @@ def multi_stage_store_C[
     ],
     c_tma_op: TMATensorTile[c_type, c_tma_rank, c_tile_shape, c_desc_shape],
     accum_pipeline_consumer_state: PipelineState[num_accum_pipeline_stages],
-    accum_full_mbar: UnsafePointer[
-        mut=True, SharedMemBarrier, address_space=.SHARED, _
-    ],
-    accum_empty_mbar: UnsafePointer[
-        mut=True, SharedMemBarrier, address_space=.SHARED, _
-    ],
+    accum_full_mbar: MutPointer[SharedMemBarrier, address_space=.SHARED, _],
+    accum_empty_mbar: MutPointer[SharedMemBarrier, address_space=.SHARED, _],
     tmem_addr: UInt32,
     work_tile_coord: Tuple[Int, Int],
     elect_one_warp: Bool,

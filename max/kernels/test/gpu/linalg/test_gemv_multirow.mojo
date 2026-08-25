@@ -35,7 +35,7 @@ from std.utils import IndexList
 
 def _fill[
     dtype: DType, integral: Bool
-](x: UnsafePointer[Scalar[dtype], MutAnyOrigin], length: Int32, seed: Int32,):
+](x: MutPointer[Scalar[dtype], MutAnyOrigin], length: Int32, seed: Int32,):
     var i = Int(global_idx.x)
     if i >= Int(length):
         return

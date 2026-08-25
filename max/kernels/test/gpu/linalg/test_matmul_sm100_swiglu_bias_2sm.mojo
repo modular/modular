@@ -52,9 +52,9 @@ from std.utils.index import Index
 
 
 def swiglu_bias_reference(
-    full_ptr: UnsafePointer[Float32, _],
-    bias_ptr: UnsafePointer[BFloat16, _],
-    ref_ptr: UnsafePointer[BFloat16, MutAnyOrigin],
+    full_ptr: ImmPointer[Float32, _],
+    bias_ptr: ImmPointer[BFloat16, _],
+    ref_ptr: MutPointer[BFloat16, MutAnyOrigin],
     M: Int,
     N: Int,
 ):
@@ -184,7 +184,7 @@ def test_swiglu_bias[
     )
 
     var c_tensor = TileTensor(c_device, c_shape)
-    var bias_immut_ptr = rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
+    var bias_immut_ptr = rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](
         bias_tensor._storage
     )
     matmul_swiglu_dispatch_sm100[config](

@@ -67,20 +67,19 @@ def run_matmul_naive(ctx: DeviceContext, M: Int, N: Int, K: Int) raises:
     # Create TileTensors for bf16 kernel.
     # a/b are constructed as immutable to match the ImmutAnyOrigin
     # parameters that matmul_kernel_naive expects.
-    from std.memory import UnsafePointer
 
     var c_tt_bf16 = TileTensor(
         c_device,
         row_major(Coord(M, N)),
     )
     var a_tt_bf16 = TileTensor(
-        UnsafePointer[BFloat16, ImmutAnyOrigin](
+        ImmPointer[BFloat16, ImmutAnyOrigin](
             unsafe_from_address=Int(a_device.unsafe_ptr())
         ),
         row_major(Coord(M, K)),
     )
     var b_tt_bf16 = TileTensor(
-        UnsafePointer[BFloat16, ImmutAnyOrigin](
+        ImmPointer[BFloat16, ImmutAnyOrigin](
             unsafe_from_address=Int(b_device.unsafe_ptr())
         ),
         row_major(Coord(K, N)),
@@ -123,13 +122,13 @@ def run_matmul_naive(ctx: DeviceContext, M: Int, N: Int, K: Int) raises:
         row_major(Coord(M, N)),
     )
     var a_tt_fp32 = TileTensor(
-        UnsafePointer[Float32, ImmutAnyOrigin](
+        ImmPointer[Float32, ImmutAnyOrigin](
             unsafe_from_address=Int(a_device_n.unsafe_ptr())
         ),
         row_major(Coord(M, K)),
     )
     var b_tt_fp32 = TileTensor(
-        UnsafePointer[Float32, ImmutAnyOrigin](
+        ImmPointer[Float32, ImmutAnyOrigin](
             unsafe_from_address=Int(b_device_n.unsafe_ptr())
         ),
         row_major(Coord(K, N)),
@@ -250,20 +249,19 @@ def run_matmul[
     # Create TileTensors for naive kernel.
     # a/b are constructed as immutable to match the ImmutAnyOrigin
     # parameters that matmul_kernel_naive expects.
-    from std.memory import UnsafePointer
 
     var c_tt = TileTensor(
         c_device_n,
         row_major(Coord(M, N)),
     )
     var a_tt = TileTensor(
-        UnsafePointer[Scalar[dtype], ImmutAnyOrigin](
+        ImmPointer[Scalar[dtype], ImmutAnyOrigin](
             unsafe_from_address=Int(a_device_n.unsafe_ptr())
         ),
         row_major(Coord(M, K)),
     )
     var b_tt = TileTensor(
-        UnsafePointer[Scalar[dtype], ImmutAnyOrigin](
+        ImmPointer[Scalar[dtype], ImmutAnyOrigin](
             unsafe_from_address=Int(b_device_n.unsafe_ptr())
         ),
         row_major(Coord(K, N)),
@@ -400,20 +398,19 @@ def run_matmul_split_k[
     # Create TileTensors for naive kernel.
     # a/b are constructed as immutable to match the ImmutAnyOrigin
     # parameters that matmul_kernel_naive expects.
-    from std.memory import UnsafePointer
 
     var c_tt = TileTensor(
         c_device_n,
         row_major(Coord(M, N)),
     )
     var a_tt = TileTensor(
-        UnsafePointer[Scalar[dtype], ImmutAnyOrigin](
+        ImmPointer[Scalar[dtype], ImmutAnyOrigin](
             unsafe_from_address=Int(a_device_n.unsafe_ptr())
         ),
         row_major(Coord(M, K)),
     )
     var b_tt = TileTensor(
-        UnsafePointer[Scalar[dtype], ImmutAnyOrigin](
+        ImmPointer[Scalar[dtype], ImmutAnyOrigin](
             unsafe_from_address=Int(b_device_n.unsafe_ptr())
         ),
         row_major(Coord(K, N)),
@@ -533,20 +530,19 @@ def run_matmul_transpose[
     # Create TileTensors for naive kernel.
     # a/b are constructed as immutable to match the ImmutAnyOrigin
     # parameters that matmul_kernel_naive expects.
-    from std.memory import UnsafePointer
 
     var c_tt = TileTensor(
         c_device_n,
         row_major(Coord(M, N)),
     )
     var a_tt = TileTensor(
-        UnsafePointer[Scalar[dtype], ImmutAnyOrigin](
+        ImmPointer[Scalar[dtype], ImmutAnyOrigin](
             unsafe_from_address=Int(a_device_n.unsafe_ptr())
         ),
         row_major(Coord(M, K)),
     )
     var b_tt = TileTensor(
-        UnsafePointer[Scalar[dtype], ImmutAnyOrigin](
+        ImmPointer[Scalar[dtype], ImmutAnyOrigin](
             unsafe_from_address=Int(b_device_n.unsafe_ptr())
         ),
         row_major(Coord(N, K)),

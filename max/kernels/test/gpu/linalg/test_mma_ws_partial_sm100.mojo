@@ -118,7 +118,7 @@ Run via:
 """
 
 from std.math import ceildiv, isfinite
-from std.memory import UnsafePointer, alloc, bitcast
+from std.memory import alloc, bitcast
 from std.random import randn, seed
 from std.sys import size_of
 
@@ -627,7 +627,7 @@ def ss_qk_multistage_kernel[
 # ---------------------------------------------------------------------------
 def fill_random_fp8[
     dtype: DType
-](ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin], n: Int):
+](ptr: MutPointer[Scalar[dtype], MutAnyOrigin], n: Int):
     """Generates random FP8 values via float32 RNG -> cast (matches the
     model smoke test)."""
     var f32_buf = alloc[Float32](n)
@@ -645,8 +645,8 @@ def fill_random_fp8[
 def dequant_fp8_to_bf16[
     src_dtype: DType, dst_dtype: DType
 ](
-    src: UnsafePointer[mut=False, Scalar[src_dtype], _],
-    dst: UnsafePointer[mut=True, Scalar[dst_dtype], _],
+    src: ImmPointer[Scalar[src_dtype], _],
+    dst: MutPointer[Scalar[dst_dtype], _],
     n: Int,
 ):
     for i in range(n):
@@ -680,13 +680,13 @@ def _ss_naive_ref[
     # the kernel (k_valid) changes, so the naive reference reads cols
     # [0, k_valid) of each row.
     var a_tt = TileTensor(
-        UnsafePointer[Scalar[REF_TYPE], ImmutAnyOrigin](
+        ImmPointer[Scalar[REF_TYPE], ImmutAnyOrigin](
             unsafe_from_address=Int(a_ref_dev.unsafe_ptr())
         ),
         row_major(Coord(M, QK_K)),
     )
     var b_tt = TileTensor(
-        UnsafePointer[Scalar[REF_TYPE], ImmutAnyOrigin](
+        ImmPointer[Scalar[REF_TYPE], ImmutAnyOrigin](
             unsafe_from_address=Int(b_ref_dev.unsafe_ptr())
         ),
         row_major(Coord(QK_N, QK_K)),
@@ -721,11 +721,11 @@ def _ss_naive_ref[
 
 
 def _ss_compare[
-    out_origin: Origin, ref_origin: Origin, M: Int = QK_M
+    M: Int = QK_M
 ](
     label: String,
-    c_out_ptr: UnsafePointer[Scalar[ACC_TYPE], out_origin],
-    c_ref_host: UnsafePointer[Float32, ref_origin],
+    c_out_ptr: ImmPointer[Scalar[ACC_TYPE], _],
+    c_ref_host: ImmPointer[Float32, _],
     require_finite: Bool,
 ) raises:
     """Compares the GPU output against the host reference within FP8 tol.
@@ -2170,12 +2170,10 @@ def _ts_launch[
     ctx.synchronize()
 
 
-def _ts_foldsum_compare[
-    out_origin: Origin, ref_origin: Origin
-](
+def _ts_foldsum_compare(
     label: String,
-    p_ptr: UnsafePointer[Scalar[TS_ACCUM_TYPE], out_origin],
-    ref_ptr: UnsafePointer[Float32, ref_origin],
+    p_ptr: ImmPointer[Scalar[TS_ACCUM_TYPE], _],
+    ref_ptr: ImmPointer[Float32, _],
 ) raises:
     """Fold-sum comparison: P_gpu[:, c] + P_gpu[:, c+64] vs P_ref[64,64]."""
     var max_err: Float32 = 0.0
@@ -2235,13 +2233,13 @@ def test_ts_partial(ctx: DeviceContext) raises:
         p_ref_dev, row_major(Coord(TS_P_REF_ROWS, TS_P_REF_COLS))
     )
     var a_tt = TileTensor(
-        UnsafePointer[Scalar[TS_OP_TYPE], ImmutAnyOrigin](
+        ImmPointer[Scalar[TS_OP_TYPE], ImmutAnyOrigin](
             unsafe_from_address=Int(q_dev_ptr)
         ),
         row_major(Coord(TS_ROWS, TS_COLS)),
     )
     var b_tt = TileTensor(
-        UnsafePointer[Scalar[TS_OP_TYPE], ImmutAnyOrigin](
+        ImmPointer[Scalar[TS_OP_TYPE], ImmutAnyOrigin](
             unsafe_from_address=Int(k_dev_ptr)
         ),
         row_major(Coord(TS_K_ROWS, TS_K_COLS)),

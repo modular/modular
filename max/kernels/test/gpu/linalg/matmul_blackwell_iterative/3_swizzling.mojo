@@ -113,9 +113,7 @@ def kernel_3[
     ]()
 
     var a_smem = rebind[
-        UnsafePointer[
-            Scalar[a_type], address_space=.SHARED, UntrackedOrigin[mut=True]
-        ]
+        MutPointer[Scalar[a_type], address_space=.SHARED, MutUntrackedOrigin]
     ](
         external_memory[
             Scalar[a_type],

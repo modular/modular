@@ -87,13 +87,11 @@ def gemv_tma_kernel[
 
     comptime b_smem_layout = Layout.row_major(BLOCK_SIZE_K)
 
-    var descriptor_a_ptr = UnsafePointer(to=descriptor_a).bitcast[NoneType]()
-    var descriptor_b_ptr = UnsafePointer(to=descriptor_b).bitcast[NoneType]()
+    var descriptor_a_ptr = Pointer(to=descriptor_a).bitcast[NoneType]()
+    var descriptor_b_ptr = Pointer(to=descriptor_b).bitcast[NoneType]()
 
     var a_smem_base = rebind[
-        UnsafePointer[
-            Scalar[dtype], address_space=.SHARED, UntrackedOrigin[mut=True]
-        ]
+        MutPointer[Scalar[dtype], address_space=.SHARED, MutUntrackedOrigin]
     ](
         external_memory[
             Scalar[dtype],
@@ -170,7 +168,7 @@ def gemv_tma_kernel[
             ](
                 a_smem.next(stage)[].ptr,
                 descriptor_a_ptr,
-                UnsafePointer(to=tma_mbar[stage]),
+                Pointer(to=tma_mbar[stage]),
                 Index(col_offset, block_row),
             )
             cp_async_bulk_tensor_shared_cluster_global[
@@ -180,7 +178,7 @@ def gemv_tma_kernel[
             ](
                 b_smem.next(stage)[].ptr,
                 descriptor_b_ptr,
-                UnsafePointer(to=tma_mbar[stage]),
+                Pointer(to=tma_mbar[stage]),
                 Index(col_offset),
             )
             producer_phase.step()

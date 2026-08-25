@@ -58,8 +58,8 @@ from std.utils.static_tuple import StaticTuple
 
 
 def swiglu_reference(
-    full_ptr: UnsafePointer[Float32, _],
-    ref_ptr: UnsafePointer[BFloat16, MutAnyOrigin],
+    full_ptr: ImmPointer[Float32, _],
+    ref_ptr: MutPointer[BFloat16, MutAnyOrigin],
     M: Int,
     N: Int,
 ):

@@ -129,9 +129,7 @@ def kernel_4[
     comptime c_smem_layout = Layout.row_major(BM, BN)
 
     var a_smem = rebind[
-        UnsafePointer[
-            Scalar[a_type], address_space=.SHARED, UntrackedOrigin[mut=True]
-        ]
+        MutPointer[Scalar[a_type], address_space=.SHARED, MutUntrackedOrigin]
     ](
         external_memory[
             Scalar[a_type],

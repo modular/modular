@@ -228,20 +228,19 @@ def test_gemm_kernel_dynamic(ctx: DeviceContext) raises:
     # a/b are constructed as immutable to match the ImmutAnyOrigin
     # parameters that matmul_kernel_naive expects (enqueue_function
     # requires exact type matches).
-    from std.memory import UnsafePointer
 
     var c_ref_tt = TileTensor(
         c_device_ref,
         row_major(Coord(M, N)),
     )
     var a_tt = TileTensor(
-        UnsafePointer[Float32, ImmutAnyOrigin](
+        ImmPointer[Float32, ImmutAnyOrigin](
             unsafe_from_address=Int(a_device.unsafe_ptr())
         ),
         row_major(Coord(M, K)),
     )
     var b_tt = TileTensor(
-        UnsafePointer[Float32, ImmutAnyOrigin](
+        ImmPointer[Float32, ImmutAnyOrigin](
             unsafe_from_address=Int(b_device.unsafe_ptr())
         ),
         row_major(Coord(K, M)),

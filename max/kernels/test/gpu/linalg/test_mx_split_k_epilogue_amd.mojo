@@ -60,10 +60,10 @@ def _rand_operand_byte[lane_bytes: Int]() -> UInt8:
 
 
 def _assert_epilogue_arm(
-    epi: UnsafePointer[Float32, _],
-    reduced: UnsafePointer[Float32, _],
-    fire: UnsafePointer[Int32, _],
-    c: UnsafePointer[Float32, _],
+    epi: ImmPointer[Float32, _],
+    reduced: ImmPointer[Float32, _],
+    fire: ImmPointer[Int32, _],
+    c: ImmPointer[Float32, _],
     saw_wide: Int,
     n_elems: Int,
     arm: String,
