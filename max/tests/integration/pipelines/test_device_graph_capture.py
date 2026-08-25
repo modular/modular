@@ -196,8 +196,8 @@ def capture_model() -> CapturePipelineModel:
         quantization_encoding=MagicMock(),
         max_batch_size=4,
         max_length=128,
+        device_graph_capture=True,
     )
-    pipeline_config.runtime.device_graph_capture = True
     return CapturePipelineModel(
         pipeline_config=pipeline_config,
         session=MagicMock(),

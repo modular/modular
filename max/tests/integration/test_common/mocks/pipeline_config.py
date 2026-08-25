@@ -78,6 +78,8 @@ class DummyPipelineConfig(PipelineConfig):
         max_batch_size: int | None,
         max_length: int | None,
         device_specs: list[DeviceSpec] | None = None,
+        max_batch_total_tokens: int | None = None,
+        device_graph_capture: bool | None = None,
         # TODO(AITLIB-328): These values do not belong in PipelineConfig,
         # but are somehow used by MockPipelineModel in pipeline_model.py.
         eos_prob: float | None = None,
@@ -135,6 +137,8 @@ class DummyPipelineConfig(PipelineConfig):
         manifest = ModelManifest({"main": model_config})
         runtime = PipelineRuntimeConfig.model_construct(
             max_batch_size=max_batch_size,
+            max_batch_total_tokens=max_batch_total_tokens,
+            device_graph_capture=device_graph_capture,
         )
         base = PipelineConfig.model_construct(
             runtime=runtime,

@@ -280,10 +280,12 @@ def test_openai_chat_completion_concurrent(app) -> None:  # noqa: ANN001
         assert received_response == expected_response
 
 
+@pytest.mark.parametrize(
+    "runtime_overrides", [{"tool_parser": "kimik2_5"}], indirect=True
+)
 def test_get_tool_parser_uses_runtime_override(
     mock_pipeline_config: PipelineConfig,
 ) -> None:
-    mock_pipeline_config.runtime.tool_parser = "kimik2_5"
     app = FastAPI()
     app.state.pipeline_config = mock_pipeline_config
 
@@ -292,20 +294,24 @@ def test_get_tool_parser_uses_runtime_override(
     assert isinstance(parser, KimiToolParser)
 
 
+@pytest.mark.parametrize(
+    "runtime_overrides", [{"tool_parser": None}], indirect=True
+)
 def test_get_tool_parser_returns_none_when_unset(
     mock_pipeline_config: PipelineConfig,
 ) -> None:
-    mock_pipeline_config.runtime.tool_parser = None
     app = FastAPI()
     app.state.pipeline_config = mock_pipeline_config
 
     assert get_tool_parser(app) is None
 
 
+@pytest.mark.parametrize(
+    "runtime_overrides", [{"tool_parser": "does_not_exist"}], indirect=True
+)
 def test_get_tool_parser_unknown_parser_raises(
     mock_pipeline_config: PipelineConfig,
 ) -> None:
-    mock_pipeline_config.runtime.tool_parser = "does_not_exist"
     app = FastAPI()
     app.state.pipeline_config = mock_pipeline_config
 
@@ -2981,14 +2987,16 @@ def test_pipeline_runtime_config_allow_extra_request_fields_default_false() -> (
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "runtime_overrides",
+    [{"enable_overlap_scheduler": True, "allow_unsupported_logprobs": False}],
+    indirect=True,
+)
 async def test_chat_completion_logprobs_with_overlap_scheduler_rejected_by_default(
     app,  # noqa: ANN001
 ) -> None:
     """With the overlap scheduler on and the flag off, logprobs is a 400."""
     async with AsyncTestClient(app) as client:
-        app.state.pipeline_config.runtime.enable_overlap_scheduler = True
-        app.state.pipeline_config.runtime.allow_unsupported_logprobs = False
-
         body = simple_openai_request(model_name="echo", content="hi")
         body["logprobs"] = True
         response = await client.post("/v1/chat/completions", json=body)
@@ -2998,14 +3006,16 @@ async def test_chat_completion_logprobs_with_overlap_scheduler_rejected_by_defau
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "runtime_overrides",
+    [{"enable_overlap_scheduler": True, "allow_unsupported_logprobs": True}],
+    indirect=True,
+)
 async def test_chat_completion_logprobs_with_overlap_scheduler_dropped_when_flag_set(
     app,  # noqa: ANN001
 ) -> None:
     """With the flag on, logprobs requests succeed and return ``logprobs: null``."""
     async with AsyncTestClient(app) as client:
-        app.state.pipeline_config.runtime.enable_overlap_scheduler = True
-        app.state.pipeline_config.runtime.allow_unsupported_logprobs = True
-
         body = simple_openai_request(
             model_name="echo", content="logprobs please"
         )
@@ -3023,13 +3033,16 @@ async def test_chat_completion_logprobs_with_overlap_scheduler_dropped_when_flag
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "runtime_overrides",
+    [{"allow_extra_request_fields": False}],
+    indirect=True,
+)
 async def test_chat_completion_extra_field_rejected_by_default(
     app,  # noqa: ANN001
 ) -> None:
     """With the flag off, an unknown top-level field returns a 400."""
     async with AsyncTestClient(app) as client:
-        app.state.pipeline_config.runtime.allow_extra_request_fields = False
-
         body = simple_openai_request(model_name="echo", content="hello")
         body["dynamic_temperature"] = {"</think>": 0}
         response = await client.post("/v1/chat/completions", json=body)
@@ -3039,13 +3052,16 @@ async def test_chat_completion_extra_field_rejected_by_default(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "runtime_overrides",
+    [{"allow_extra_request_fields": True}],
+    indirect=True,
+)
 async def test_chat_completion_extra_field_dropped_when_flag_set(
     app,  # noqa: ANN001
 ) -> None:
     """With the flag on, an unknown top-level field is dropped and the request succeeds."""
     async with AsyncTestClient(app) as client:
-        app.state.pipeline_config.runtime.allow_extra_request_fields = True
-
         body = simple_openai_request(model_name="echo", content="hello")
         body["dynamic_temperature"] = {"</think>": 0}
         body["some_other_vendor_field"] = "ignored"
@@ -3057,14 +3073,16 @@ async def test_chat_completion_extra_field_dropped_when_flag_set(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "runtime_overrides",
+    [{"enable_overlap_scheduler": True, "allow_unsupported_logprobs": False}],
+    indirect=True,
+)
 async def test_completion_logprobs_with_overlap_scheduler_rejected_by_default(
     app,  # noqa: ANN001
 ) -> None:
     """Legacy /v1/completions also rejects logprobs under the overlap scheduler."""
     async with AsyncTestClient(app) as client:
-        app.state.pipeline_config.runtime.enable_overlap_scheduler = True
-        app.state.pipeline_config.runtime.allow_unsupported_logprobs = False
-
         response = await client.post(
             "/v1/completions",
             json={
@@ -3079,14 +3097,16 @@ async def test_completion_logprobs_with_overlap_scheduler_rejected_by_default(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "runtime_overrides",
+    [{"enable_overlap_scheduler": True, "allow_unsupported_logprobs": True}],
+    indirect=True,
+)
 async def test_completion_logprobs_with_overlap_scheduler_dropped_when_flag_set(
     app,  # noqa: ANN001
 ) -> None:
     """Legacy /v1/completions silently drops logprobs when the flag is on."""
     async with AsyncTestClient(app) as client:
-        app.state.pipeline_config.runtime.enable_overlap_scheduler = True
-        app.state.pipeline_config.runtime.allow_unsupported_logprobs = True
-
         response = await client.post(
             "/v1/completions",
             json={
@@ -3106,13 +3126,16 @@ async def test_completion_logprobs_with_overlap_scheduler_dropped_when_flag_set(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "runtime_overrides",
+    [{"allow_extra_request_fields": False}],
+    indirect=True,
+)
 async def test_completion_extra_field_rejected_by_default(
     app,  # noqa: ANN001
 ) -> None:
     """Legacy /v1/completions rejects unknown fields by default."""
     async with AsyncTestClient(app) as client:
-        app.state.pipeline_config.runtime.allow_extra_request_fields = False
-
         response = await client.post(
             "/v1/completions",
             json={
@@ -3127,13 +3150,16 @@ async def test_completion_extra_field_rejected_by_default(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "runtime_overrides",
+    [{"allow_extra_request_fields": True}],
+    indirect=True,
+)
 async def test_completion_extra_field_dropped_when_flag_set(
     app,  # noqa: ANN001
 ) -> None:
     """Legacy /v1/completions drops unknown fields when the flag is on."""
     async with AsyncTestClient(app) as client:
-        app.state.pipeline_config.runtime.allow_extra_request_fields = True
-
         response = await client.post(
             "/v1/completions",
             json={

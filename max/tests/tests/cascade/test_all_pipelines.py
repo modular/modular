@@ -40,7 +40,11 @@ from max.experimental.cascade.pipelines.dummy_textgen import (
 from max.experimental.cascade.pipelines.echo_textgen import EchoTextGenPipeline
 from max.experimental.cascade.workers.max_tokenizer import MAXTokenizer
 from max.pipelines.architectures import register_all_models
-from max.pipelines.lib import PIPELINE_REGISTRY, PipelineArgs
+from max.pipelines.lib import (
+    PIPELINE_REGISTRY,
+    PipelineArgs,
+    PipelineRuntimeConfig,
+)
 from max.pipelines.lib.config import PipelineConfig
 from max.pipelines.lib.reasoning import get_parser_cls as reasoning_parser_cls
 from max.pipelines.lib.reasoning import register as register_reasoning_parser
@@ -210,8 +214,10 @@ def test_every_arch_reasoning_parser_declares_text_delimiters() -> None:
 
 
 def _config_using_reasoning_parser(name: str) -> PipelineConfig:
-    args = _args("some-org/some-llm")
-    args.runtime.reasoning_parser = name
+    args = PipelineArgs(
+        model_path="some-org/some-llm",
+        runtime=PipelineRuntimeConfig(reasoning_parser=name),
+    )
     return PipelineConfig.from_args(args)
 
 
