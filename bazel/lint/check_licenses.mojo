@@ -73,8 +73,9 @@ def get_git_files() raises -> Set[String]:
 
 
 def check_path(path: Path, mut files_without_license: List[Path]) raises:
-    file_text = path.read_text()
+    var file_text = path.read_text()
 
+    var has_license: Bool
     # Ignore #! in scripts
     if file_text.startswith("#!"):
         has_license = "\n".join(List(file_text.splitlines()[1:])).startswith(
@@ -93,15 +94,14 @@ def main() raises:
     # must be loaded while the current directory is still the runfiles root.
     var lint_helpers = Python.import_module("lint_helpers")
 
-    if workspace := os.getenv("BUILD_WORKSPACE_DIRECTORY"):
+    var workspace = os.getenv("BUILD_WORKSPACE_DIRECTORY")
+    if workspace:
         # TODO: this should be in stdlib
-        _ = external_call["chdir", Int32](
-            workspace.as_c_string_slice().unsafe_ptr()
-        )
+        _ = external_call["chdir", Int32](workspace.as_c_string_slice())
 
-    target_paths = std.sys.argv()
+    var target_paths = std.sys.argv()
 
-    fix = False
+    var fix = False
     for arg in target_paths:
         if arg == "--fix":
             fix = True
@@ -109,7 +109,7 @@ def main() raises:
     if os.getenv("CHECK"):
         fix = not Bool(py=lint_helpers.is_check())
 
-    files_without_license = List[Path]()
+    var files_without_license = List[Path]()
     if (
         len(target_paths) < 2
         or len(target_paths) == 2
@@ -131,7 +131,7 @@ def main() raises:
             print("Appending copyright notices to the following files:")
             for file in files_without_license:
                 print(file)
-                content = file.read_text()
+                var content = file.read_text()
                 file.write_text(LICENSE_TO_ADD + content)
         else:
             print("The following files have missing licences 💥 💔 💥")

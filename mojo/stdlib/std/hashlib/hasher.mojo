@@ -18,12 +18,12 @@ for runtime hashing, while `default_comp_time_hasher` uses FNV-1a for
 compile-time hashing.
 """
 
-from std.memory import Span
+from std.collections import Span
 
 from ._ahash import AHasher
 from ._fnv1a import Fnv1a
 
-comptime default_hasher = AHasher[SIMD[DType.uint64, 4](0)]
+comptime default_hasher = AHasher[SIMD[.uint64, 4](0)]
 """The default hasher for runtime hashing."""
 
 comptime default_comp_time_hasher = Fnv1a

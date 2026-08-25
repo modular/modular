@@ -23,7 +23,7 @@
 # is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
 # KIND, either express or implied.
 # ===----------------------------------------------------------------------=== #
-from std.collections import InlineArray
+from std.collections import Array
 from std.sys.info import size_of
 
 from std.memory import bitcast
@@ -41,12 +41,12 @@ def _UInt128(hi: UInt64, lo: UInt64) -> UInt128:
 
 @always_inline
 def _uint128_high(x: UInt128) -> UInt64:
-    return (x >> 64).cast[DType.uint64]()
+    return (x >> 64).cast[.uint64]()
 
 
 @always_inline
 def _uint128_low(x: UInt128) -> UInt64:
-    return x.cast[DType.uint64]()
+    return x.cast[.uint64]()
 
 
 @fieldwise_init
@@ -72,10 +72,10 @@ struct FP[dtype: DType, CarrierDType: DType = FPUtils[dtype].uint_type](
     comptime exp_bits = FPUtils[Self.dtype].exponent_width()
     comptime neg_exp_bias = -FPUtils[Self.dtype].exponent_bias()
     comptime min_normal_exp = Self.neg_exp_bias + 1
-    comptime cache_bits = 64 if Self.CarrierDType == DType.uint32 else 128
-    comptime min_k = -31 if Self.CarrierDType == DType.uint32 else -292
-    comptime max_k = 46 if Self.CarrierDType == DType.uint32 else 326
-    comptime divide_magic_number: InlineArray[UInt32, 2] = [6554, 656]
+    comptime cache_bits = 64 if Self.CarrierDType == .uint32 else 128
+    comptime min_k = -31 if Self.CarrierDType == .uint32 else -292
+    comptime max_k = 46 if Self.CarrierDType == .uint32 else 326
+    comptime divide_magic_number: Array[UInt32, 2] = [6554, 656]
     comptime n_max = (
         (
             Scalar[Self.CarrierDType](2)
@@ -110,32 +110,26 @@ def _write_float[
         value: The float to write into the Writer.
     """
 
-    comptime if dtype == DType.float8_e5m2:
+    comptime if dtype == .float8_e5m2:
         return writer.write(
-            materialize[float8_e5m2_to_str]()[Int(bitcast[DType.uint8](value))]
+            materialize[float8_e5m2_to_str]()[Int(bitcast[.uint8](value))]
         )
-    elif dtype == DType.float8_e4m3fn:
+    elif dtype == .float8_e4m3fn:
         return writer.write(
-            materialize[float8_e4m3fn_to_str]()[
-                Int(bitcast[DType.uint8](value))
-            ]
+            materialize[float8_e4m3fn_to_str]()[Int(bitcast[.uint8](value))]
         )
-    elif dtype == DType.float8_e5m2fnuz:
+    elif dtype == .float8_e5m2fnuz:
         return writer.write(
-            materialize[float8_e5m2fnuz_to_str]()[
-                Int(bitcast[DType.uint8](value))
-            ]
+            materialize[float8_e5m2fnuz_to_str]()[Int(bitcast[.uint8](value))]
         )
-    elif dtype == DType.float8_e4m3fnuz:
+    elif dtype == .float8_e4m3fnuz:
         return writer.write(
-            materialize[float8_e4m3fnuz_to_str]()[
-                Int(bitcast[DType.uint8](value))
-            ]
+            materialize[float8_e4m3fnuz_to_str]()[Int(bitcast[.uint8](value))]
         )
-    elif dtype == DType.float8_e8m0fnu:
+    elif dtype == .float8_e8m0fnu:
         if isnan(value):
             return writer.write("nan")
-        return writer.write("2**", Int(bitcast[DType.uint8](value)) - 127)
+        return writer.write("2**", Int(bitcast[.uint8](value)) - 127)
 
     else:
         # Apple GPU: use a simple float formatter that avoids i128
@@ -143,8 +137,8 @@ def _write_float[
         # (needed by dragonbox) or double→uint64 conversions.
         # Use float32 arithmetic only.
         comptime if is_apple_gpu():
-            var f32 = value.cast[DType.float32]()
-            var bits = bitcast[DType.uint32](f32)
+            var f32 = value.cast[.float32]()
+            var bits = bitcast[.uint32](f32)
             var is_neg = (bits >> 31) != 0
 
             # Check special values using bit patterns.
@@ -167,11 +161,11 @@ def _write_float[
 
             # Format as integer.fractional with up to 6 decimal digits.
             # Use float32→uint32 cast (supported on Apple GPU).
-            var int_part = f32.cast[DType.uint32]()
-            var frac = f32 - int_part.cast[DType.float32]()
+            var int_part = f32.cast[.uint32]()
+            var frac = f32 - int_part.cast[.float32]()
 
             # Write integer part.
-            var digits = InlineArray[Byte, 12](fill=0)
+            var digits = Array[Byte, 12](fill=0)
             var pos = 11
             if int_part == 0:
                 pos = 10
@@ -185,7 +179,7 @@ def _write_float[
             writer.write_string(
                 StringSlice(
                     unsafe_from_utf8=Span(
-                        ptr=digits.unsafe_ptr() + pos + 1,
+                        unsafe_ptr=digits.unsafe_ptr().unsafe_offset(pos + 1),
                         length=11 - pos,
                     )
                 )
@@ -194,7 +188,7 @@ def _write_float[
             writer.write(".")
 
             # Write fractional part (up to 6 digits).
-            var frac_digits = InlineArray[Byte, 7](fill=0)
+            var frac_digits = Array[Byte, 7](fill=0)
             var frac_len = 0
             if frac < 1e-7:
                 frac_digits[0] = Byte(ord("0"))
@@ -202,8 +196,8 @@ def _write_float[
             else:
                 for i in range(6):
                     frac *= 10.0
-                    var d = frac.cast[DType.uint32]()
-                    frac -= d.cast[DType.float32]()
+                    var d = frac.cast[.uint32]()
+                    frac -= d.cast[.float32]()
                     frac_digits[i] = Byte(ord("0") + Int(d))
                     frac_len = i + 1
                     if frac < 1e-7:
@@ -211,7 +205,7 @@ def _write_float[
             writer.write_string(
                 StringSlice(
                     unsafe_from_utf8=Span(
-                        ptr=frac_digits.unsafe_ptr(),
+                        unsafe_ptr=frac_digits.unsafe_ptr(),
                         length=frac_len,
                     )
                 )
@@ -219,8 +213,8 @@ def _write_float[
             return
 
         # Upcast the float16 types to float32
-        casted = value.cast[
-            DType.float64 if dtype == DType.float64 else DType.float32
+        var casted = value.cast[
+            DType.float64 if dtype == .float64 else DType.float32
         ]()
 
         # Bitcast the float and separate the sig and exp, to enable manipulating
@@ -257,10 +251,10 @@ def _write_float[
         # overhead here compared to snprintf.
         var orig_sig = sig
         var abs_exp = abs(exp)
-        var digits = InlineArray[Byte, 21](uninitialized=True)
+        var digits = Array[Byte, 21](uninitialized=True)
         var idx = 0
         while sig > 0:
-            digits[idx] = (sig % 10).cast[DType.uint8]()
+            digits[idx] = (sig % 10).cast[.uint8]()
             sig //= 10
             idx += 1
             if sig > 0:
@@ -288,7 +282,7 @@ def _write_float[
             # Pad exponent with a 0 if less than two digits
             if exp < 10:
                 writer.write("0")
-            var exp_digits = InlineArray[Byte, 10](uninitialized=True)
+            var exp_digits = Array[Byte, 10](uninitialized=True)
             var exp_idx = 0
             while exp > 0:
                 exp_digits[exp_idx] = Byte(exp % 10)
@@ -426,7 +420,7 @@ def _to_decimal[
     # compare fractional parts if r == deltai
     if r == deltai:
         var x_result = _compute_mul_parity(
-            (two_fc - 1).cast[DType.uint64](), cache_index, beta
+            (two_fc - 1).cast[.uint64](), cache_index, beta
         )
         if x_result.parity | x_result.is_integer:
             exp = minus_k + FP[dtype].kappa + 1
@@ -461,7 +455,7 @@ def _to_decimal[
         # parity. Also, zi and r should have the same parity since the divisor
         # is an even number.
         var y_result = _compute_mul_parity(
-            two_fc.cast[DType.uint64](), cache_index, beta
+            two_fc.cast[.uint64](), cache_index, beta
         )
         if y_result.parity != approx_y_parity:
             sig -= 1
@@ -473,7 +467,7 @@ def _to_decimal[
 def _compute_endpoint[
     CarrierDType: DType, sig_bits: Int, total_bits: Int, cache_bits: Int
 ](cache_index: Int, beta: Int, left_endpoint: Bool) -> Scalar[CarrierDType]:
-    comptime if CarrierDType == DType.uint64:
+    comptime if CarrierDType == .uint64:
         var cache = global_constant[cache_f64]()[cache_index]
         var cache_high = _uint128_high(cache)
         if left_endpoint:
@@ -510,9 +504,9 @@ def _print_bits[dtype: DType](x: Scalar[dtype]) -> String:
             if i % 8 == 0:
                 output.write(" ")
     else:
-        comptime sig_bits = 23 if dtype == DType.float32 else 52
-        comptime exp_bits = 8 if dtype == DType.float32 else 11
-        comptime cast_type = DType.uint32 if dtype == DType.float32 else DType.uint64
+        comptime sig_bits = 23 if dtype == .float32 else 52
+        comptime exp_bits = 8 if dtype == .float32 else 11
+        comptime cast_type = DType.uint32 if dtype == .float32 else DType.uint64
         var casted = bitcast[cast_type](x)
         for i in reversed(range(total_bits)):
             output.write((casted >> Scalar[cast_type](i)) & 1)
@@ -537,7 +531,7 @@ def _print_bits[dtype: DType](x: Scalar[dtype]) -> String:
 def _rotr[
     CarrierDType: DType
 ](n: Scalar[CarrierDType], r: Scalar[CarrierDType]) -> Scalar[CarrierDType]:
-    comptime if CarrierDType == DType.uint32:
+    comptime if CarrierDType == .uint32:
         var r_masked = r & 31
         return (n >> r_masked) | (
             n << ((Scalar[CarrierDType](32) - r_masked) & 31)
@@ -567,16 +561,16 @@ def _floor_log2_pow10(e: Int) -> Int:
 
 
 def _umul64(x: UInt32, y: UInt32) -> UInt64:
-    return x.cast[DType.uint64]() * y.cast[DType.uint64]()
+    return x.cast[.uint64]() * y.cast[.uint64]()
 
 
 def _umul128[
     CarrierDType: DType
 ](x: Scalar[CarrierDType], y: UInt64) -> UInt128:
-    var a = (x >> 32).cast[DType.uint32]()
-    var b = x.cast[DType.uint32]()
-    var c = (y >> 32).cast[DType.uint32]()
-    var d = y.cast[DType.uint32]()
+    var a = (x >> 32).cast[.uint32]()
+    var b = x.cast[.uint32]()
+    var c = (y >> 32).cast[.uint32]()
+    var d = y.cast[.uint32]()
 
     var ac = _umul64(a, c)
     var bc = _umul64(b, c)
@@ -584,12 +578,12 @@ def _umul128[
     var bd = _umul64(b, d)
 
     var intermediate = (
-        (bd >> 32) + _truncate[DType.uint32](ad) + _truncate[DType.uint32](bc)
+        (bd >> 32) + _truncate[.uint32](ad) + _truncate[.uint32](bc)
     )
 
     return _UInt128(
         ac + (intermediate >> 32) + (ad >> 32) + (bc >> 32),
-        (intermediate << 32) + _truncate[DType.uint32](bd),
+        (intermediate << 32) + _truncate[.uint32](bd),
     )
 
 
@@ -600,7 +594,7 @@ def _remove_trailing_zeros[
     https://github.com/jk-jeon/rtz_benchmark.
     """
 
-    comptime if CarrierDType == DType.uint64:
+    comptime if CarrierDType == .uint64:
         var r = _rotr(sig * 28999941890838049, 8)
         var b = r < 184467440738
         var s = Int(b)
@@ -651,7 +645,7 @@ def _remove_trailing_zeros[
 def _divide_by_pow10[
     CarrierDType: DType, //, N: Int, n_max: Scalar[CarrierDType]
 ](n: Scalar[CarrierDType]) -> Scalar[CarrierDType]:
-    comptime if CarrierDType == DType.uint64:
+    comptime if CarrierDType == .uint64:
         comptime if N == 1 and n_max <= 4611686018427387908:
             return _umul128_upper64(n, 1844674407370955162)
         elif N == 3 and n_max <= 15534100272597517998:
@@ -660,11 +654,11 @@ def _divide_by_pow10[
             return n / Scalar[CarrierDType](pow(10, N))
     else:
         comptime if N == 1 and n_max <= 1073741828:
-            return (_umul64(n.cast[DType.uint32](), 429496730) >> 32).cast[
+            return (_umul64(n.cast[.uint32](), 429496730) >> 32).cast[
                 CarrierDType
             ]()
         elif N == 2:
-            return (_umul64(n.cast[DType.uint32](), 1374389535) >> 37).cast[
+            return (_umul64(n.cast[.uint32](), 1374389535) >> 37).cast[
                 CarrierDType
             ]()
         else:
@@ -686,10 +680,10 @@ def _umul192_lower128(x: UInt64, y: UInt128) -> UInt128:
 def _compute_mul_parity[
     CarrierDType: DType
 ](two_f: Scalar[CarrierDType], cache_index: Int, beta: Int) -> _MulParity:
-    if CarrierDType == DType.uint64:
+    if CarrierDType == .uint64:
         assert 1 <= beta < 64, "beta must be between 1 and 64"
         var r = _umul192_lower128(
-            two_f.cast[DType.uint64](),
+            two_f.cast[.uint64](),
             global_constant[cache_f64]()[cache_index],
         )
         var r_high = _uint128_high(r)
@@ -707,31 +701,31 @@ def _compute_mul_parity[
             1 <= beta < 32
         ), "beta for float types 32bits must be between 1 and 32"
         var r = _umul96_lower64(
-            two_f.cast[DType.uint32](),
+            two_f.cast[.uint32](),
             global_constant[cache_f32]()[cache_index],
         )
         return _MulParity(
             ((r >> UInt64(64 - beta)) & 1) != 0,
-            (UInt32(0xFFFFFFFF).cast[DType.uint64]() & (r >> UInt64(32 - beta)))
+            (UInt32(0xFFFFFFFF).cast[.uint64]() & (r >> UInt64(32 - beta)))
             == 0,
         )
 
 
 def _umul96_lower64(x: UInt32, y: UInt64) -> UInt64:
-    return (x.cast[DType.uint64]() * y) & UInt64(0xFFFFFFFFFFFFFFFF)
+    return (x.cast[.uint64]() * y) & UInt64(0xFFFFFFFFFFFFFFFF)
 
 
 def _check_divisibility_and_divide_by_pow10[
     CarrierDType: DType,
     //,
     carrier_bits: Int,
-    divide_magic_number: InlineArray[UInt32, 2],
+    divide_magic_number: Array[UInt32, 2],
 ](mut n: Scalar[CarrierDType], N: Int) -> Bool:
     # Make sure the computation for max_n does not overflow.
     assert N + 1 <= _floor_log10_pow2(carrier_bits)
 
     var magic_number = materialize[divide_magic_number]()[N - 1]
-    var prod = (n * magic_number.cast[CarrierDType]()).cast[DType.uint32]()
+    var prod = (n * magic_number.cast[CarrierDType]()).cast[.uint32]()
 
     var mask = (UInt32(1) << 16) - 1
     var result = (prod & mask) < magic_number
@@ -742,7 +736,7 @@ def _check_divisibility_and_divide_by_pow10[
 
 @always_inline
 def _truncate[
-    dtype: DType, S: SIMDSize, //, TruncateType: DType
+    dtype: DType, S: SIMDLength, //, TruncateType: DType
 ](u: SIMD[dtype, S]) -> SIMD[dtype, S]:
     """Cast to DType to truncate to the width of that type, then cast back to
     original DType.
@@ -753,18 +747,18 @@ def _truncate[
 def _umul96_upper64[
     CarrierDType: DType
 ](x: Scalar[CarrierDType], y: UInt64) -> UInt64:
-    var yh = (y >> 32).cast[DType.uint32]()
-    var yl = y.cast[DType.uint32]()
+    var yh = (y >> 32).cast[.uint32]()
+    var yl = y.cast[.uint32]()
 
-    var xyh = _umul64(x.cast[DType.uint32](), yh)
-    var xyl = _umul64(x.cast[DType.uint32](), yl)
+    var xyh = _umul64(x.cast[.uint32](), yh)
+    var xyl = _umul64(x.cast[.uint32](), yl)
     return xyh + (xyl >> 32)
 
 
 def _compute_mul[
     CarrierDType: DType
 ](u: Scalar[CarrierDType], cache_index: Int) -> _MulResult[CarrierDType]:
-    if CarrierDType == DType.uint64:
+    if CarrierDType == .uint64:
         var r = _umul192_upper128(u, global_constant[cache_f64]()[cache_index])
         var r_high = _uint128_high(r)
         var r_low = _uint128_low(r)
@@ -780,7 +774,7 @@ def _compute_mul[
 def _compute_delta[
     CarrierDType: DType, total_bits: Int, cache_bits: Int
 ](cache_index: Int, beta: Int) -> Scalar[CarrierDType]:
-    if CarrierDType == DType.uint64:
+    if CarrierDType == .uint64:
         var cache = global_constant[cache_f64]()[cache_index]
         return (_uint128_high(cache) >> UInt64(total_bits - 1 - beta)).cast[
             CarrierDType
@@ -794,17 +788,17 @@ def _umul192_upper128[
     CarrierDType: DType
 ](x: Scalar[CarrierDType], y: UInt128) -> UInt128:
     var r = _umul128(x, _uint128_high(y))
-    r += _umul128_upper64(x, _uint128_low(y)).cast[DType.uint128]()
+    r += _umul128_upper64(x, _uint128_low(y)).cast[.uint128]()
     return r
 
 
 def _umul128_upper64[
     CarrierDType: DType
 ](x: Scalar[CarrierDType], y: UInt64) -> Scalar[CarrierDType]:
-    var a = (x >> 32).cast[DType.uint32]()
-    var b = x.cast[DType.uint32]()
-    var c = (y >> 32).cast[DType.uint32]()
-    var d = y.cast[DType.uint32]()
+    var a = (x >> 32).cast[.uint32]()
+    var b = x.cast[.uint32]()
+    var c = (y >> 32).cast[.uint32]()
+    var d = y.cast[.uint32]()
 
     var ac = _umul64(a, c)
     var bc = _umul64(b, c)
@@ -812,7 +806,7 @@ def _umul128_upper64[
     var bd = _umul64(b, d)
 
     var intermediate = (
-        (bd >> 32) + _truncate[DType.uint32](ad) + _truncate[DType.uint32](bc)
+        (bd >> 32) + _truncate[.uint32](ad) + _truncate[.uint32](bc)
     )
     return (ac + (intermediate >> 32) + (ad >> 32) + (bc >> 32)).cast[
         CarrierDType
@@ -837,7 +831,7 @@ def _count_factors[
 def _compute_round_up_for_shorter_interval_case[
     CarrierDType: DType, total_bits: Int, sig_bits: Int, cache_bits: Int
 ](cache_index: Int, beta: Int) -> Scalar[CarrierDType]:
-    if CarrierDType == DType.uint64:
+    if CarrierDType == .uint64:
         var cache = global_constant[cache_f64]()[cache_index]
         var cache_high = _uint128_high(cache)
         return (
@@ -884,7 +878,7 @@ def _is_left_endpoint_integer_shorter_interval[
 
 
 # fmt: off
-comptime cache_f32: InlineArray[UInt64, 78] = [
+comptime cache_f32: Array[UInt64, 78] = [
     0x81CEB32C4B43FCF5, 0xA2425FF75E14FC32,
     0xCAD2F7F5359A3B3F, 0xFD87B5F28300CA0E,
     0x9E74D1B791E07E49, 0xC612062576589DDB,
@@ -927,7 +921,7 @@ comptime cache_f32: InlineArray[UInt64, 78] = [
 ]
 # fmt: on
 
-comptime cache_f64: InlineArray[UInt128, 619] = [
+comptime cache_f64: Array[UInt128, 619] = [
     _UInt128(0xFF77B1FCBEBCDC4F, 0x25E8E89C13BB0F7B),
     _UInt128(0x9FAACF3DF73609B1, 0x77B191618C54E9AD),
     _UInt128(0xC795830D75038C1D, 0xD59DF5B9EF6A2418),
@@ -1549,7 +1543,7 @@ comptime cache_f64: InlineArray[UInt128, 619] = [
     _UInt128(0xF70867153AA2DB38, 0xB8CBEE4FC66D1EA8),
 ]
 
-comptime float8_e5m2_to_str: InlineArray[StaticString, 256] = [
+comptime float8_e5m2_to_str: Array[StaticString, 256] = [
     "0.0",
     "1.52587890625e-05",
     "3.0517578125e-05",
@@ -1808,7 +1802,7 @@ comptime float8_e5m2_to_str: InlineArray[StaticString, 256] = [
     "nan",
 ]
 
-comptime float8_e4m3fn_to_str: InlineArray[StaticString, 256] = [
+comptime float8_e4m3fn_to_str: Array[StaticString, 256] = [
     "0.0",
     "0.001953125",
     "0.00390625",
@@ -2067,7 +2061,7 @@ comptime float8_e4m3fn_to_str: InlineArray[StaticString, 256] = [
     "nan",
 ]
 
-comptime float8_e5m2fnuz_to_str: InlineArray[StaticString, 256] = [
+comptime float8_e5m2fnuz_to_str: Array[StaticString, 256] = [
     "0.0",
     "7.62939453125e-06",
     "1.52587890625e-05",
@@ -2326,7 +2320,7 @@ comptime float8_e5m2fnuz_to_str: InlineArray[StaticString, 256] = [
     "-57344.0",
 ]
 
-comptime float8_e4m3fnuz_to_str: InlineArray[StaticString, 256] = [
+comptime float8_e4m3fnuz_to_str: Array[StaticString, 256] = [
     "0.0",
     "0.0009765625",
     "0.001953125",

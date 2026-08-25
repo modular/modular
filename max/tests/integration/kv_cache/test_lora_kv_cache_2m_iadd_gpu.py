@@ -21,7 +21,12 @@ from max.engine import InferenceSession
 from max.experimental.torch import max_dtype_to_torch
 from max.graph import DeviceRef, Graph, TensorType, ops
 from max.nn.kernels import kv_cache_ragged_2m_iadd
-from max.nn.kv_cache import KVCacheBuffer, KVCacheParams, PagedCacheValues
+from max.nn.kv_cache import (
+    KVCacheBuffer,
+    KVCacheParams,
+    MHAKVCacheParams,
+    PagedCacheValues,
+)
 from max.pipelines.context import TextContext
 from max.pipelines.kv_cache import PagedKVCacheManager
 from test_common.context_utils import create_text_context
@@ -84,7 +89,7 @@ def dump_kv_cache_to_torch(
 
     results = []
     for ctx in batch:
-        req_blocks = cache.get_req_blocks(ctx.request_id, replica_idx=0)
+        req_blocks = cache.get_req_blocks(ctx)
         seq_len = ctx.tokens.processed_length
 
         result = torch.empty(
@@ -137,7 +142,7 @@ def run_kv_cache_2m_iadd(
     total_seq_len = sum(prompt_lens)
     kv_dim = n_kv_heads * head_dim
 
-    kv_params = KVCacheParams(
+    kv_params = MHAKVCacheParams(
         dtype=DTYPE,
         n_kv_heads=n_kv_heads,
         head_dim=head_dim,
@@ -156,8 +161,8 @@ def run_kv_cache_2m_iadd(
     batch = []
     for prompt_len in prompt_lens:
         context = create_text_context(np.empty(prompt_len))
-        kv_manager.claim(context.request_id, replica_idx=0)
-        kv_manager.alloc(context, replica_idx=0, num_steps=1)
+        kv_manager.claim(context)
+        kv_manager.alloc(context)
         batch.append(context)
 
     # Zero the KV cache before iadd test (since iadd adds to existing values)
@@ -187,7 +192,8 @@ def run_kv_cache_2m_iadd(
             kv_blocks=kv_inputs[0].buffer,
             cache_lengths=kv_inputs[1].tensor,
             lookup_table=kv_inputs[2].tensor,
-            max_lengths=kv_inputs[3].tensor,
+            max_prompt_length=kv_inputs[3].tensor,
+            max_cache_length=kv_inputs[4].tensor,
         )
 
         kv_cache_ragged_2m_iadd(

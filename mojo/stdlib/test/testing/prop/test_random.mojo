@@ -38,7 +38,6 @@ def test_rng_rand_bool() raises:
 
 
 def test_rng_rand_scalar() raises:
-    @parameter
     def test_dtype[dtype: DType](min: Scalar[dtype], max: Scalar[dtype]) raises:
         var rng = Rng(seed=1234)
         for _ in range(100):
@@ -74,7 +73,7 @@ def test_rng_rand_scalar() raises:
 def test_rng_rand_scalar_raises() raises:
     with assert_raises(contains="invalid min/max"):
         var rng = Rng(seed=1234)
-        var _ = rng.rand_scalar[DType.int32](min=10, max=5)
+        var _ = rng.rand_scalar[.int32](min=10, max=5)
 
 
 def main() raises:

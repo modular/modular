@@ -22,13 +22,25 @@ from __future__ import annotations
 from typing import Literal
 
 from max.config import ConfigFileModel
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
+from typing_extensions import Self
 
 __all__ = [
+    "MAGIC_DRAFT_TOKEN_ID",
     "RejectionSamplingStrategy",
     "SpeculativeConfig",
     "SpeculativeMethod",
 ]
+
+MAGIC_DRAFT_TOKEN_ID = 42
+"""Sentinel draft-token id for prefill / dummy-draft graph-capture steps.
+
+A row of ``draft_tokens`` whose every position equals this value means "no
+real draft prediction to verify": the unified DFlash graphs detect it to zero
+out acceptance during prefill, and the overlap pipeline writes it when seeding
+draft slots before any real draft exists. Defined here so the graph side
+(``architectures``) and the runtime side (``lib``) agree on a single value.
+"""
 
 SpeculativeMethod = Literal["eagle", "mtp", "dflash"]
 """The supported methods for speculative decoding."""
@@ -68,7 +80,7 @@ class SpeculativeConfig(ConfigFileModel):
 
     .. code-block:: python
 
-        from max.pipelines import SpeculativeConfig
+        from max.pipelines.speculative import SpeculativeConfig
 
         spec = SpeculativeConfig(
             speculative_method="eagle",
@@ -85,16 +97,35 @@ class SpeculativeConfig(ConfigFileModel):
     speculative decoding is disabled.
     """
 
-    num_speculative_tokens: int = Field(
-        default=2, description="The number of speculative tokens."
+    num_speculative_tokens: int | None = Field(
+        default=None,
+        description=(
+            "The number of speculative tokens. Unset selects a per-method "
+            "default: 2 for ``eagle``/``mtp``, and the draft checkpoint's "
+            "trained width for ``dflash``."
+        ),
     )
     """The number of tokens the draft proposes per verification pass.
 
-    Defaults to ``2``. Larger values can raise the average draft
-    acceptance length and peak speedup, but they may hurt acceptance
-    rates at later positions and increase kernel latencies from the
-    additional tokens.
+    ``None`` means unset: ``eagle`` and ``mtp`` resolve it to ``2`` at
+    construction, while ``dflash``-style block drafts leave it for the
+    architecture to resolve from the draft checkpoint's trained width.
+    Larger values can raise the average draft acceptance length and peak
+    speedup, but they may hurt acceptance rates at later positions and
+    increase kernel latencies from the additional tokens.
     """
+
+    @model_validator(mode="after")
+    def _resolve_autoregressive_draft_width(self) -> Self:
+        # Eagle/MTP draft one token per autoregressive step and keep their
+        # longstanding default of 2. DFlash-style block drafts derive the
+        # width from the draft checkpoint's trained block size, so unset
+        # stays None until the architecture resolves it.
+        if self.num_speculative_tokens is None and (
+            self.is_eagle() or self.is_mtp()
+        ):
+            self.num_speculative_tokens = 2
+        return self
 
     rejection_sampling_strategy: RejectionSamplingStrategy | None = Field(
         default=None,
@@ -150,7 +181,8 @@ class SpeculativeConfig(ConfigFileModel):
             "threshold ``top1_prob - relaxed_delta``) are compared "
             "against the draft token; matching any candidate accepts "
             "the draft. Outside the thinking span, the existing strict "
-            "acceptance rule still applies."
+            "acceptance rule still applies. Requires "
+            "``draft_proposal='argmax'``."
         ),
     )
 
@@ -174,6 +206,44 @@ class SpeculativeConfig(ConfigFileModel):
             "``False``."
         ),
     )
+
+    use_greedy_acceptance: bool = Field(
+        default=False,
+        description=(
+            "Use greedy (argmax) draft acceptance instead of the stochastic "
+            "sampler. The greedy path has no mid-graph allocation, so the "
+            "fused speculative graph can be CUDA-graph captured. Valid only "
+            "for greedy serving (temperature 0, top_k 1); incompatible with "
+            "relaxed and synthetic acceptance."
+        ),
+    )
+
+    draft_proposal: Literal["argmax", "sampled"] = Field(
+        default="argmax",
+        description=(
+            "How the draft model proposes tokens. 'argmax' (default) "
+            "proposes deterministically. 'sampled' makes the draft sample "
+            "its own proposal and keep the distribution it drew from, so "
+            "verification runs true speculative sampling instead of "
+            "typical acceptance. Incompatible with "
+            "``use_relaxed_acceptance_for_thinking``. Inert unless the "
+            "serving architecture supports it."
+        ),
+    )
+
+    @model_validator(mode="after")
+    def _validate_draft_proposal(self) -> Self:
+        if (
+            self.draft_proposal == "sampled"
+            and self.use_relaxed_acceptance_for_thinking
+        ):
+            raise ValueError(
+                "draft_proposal='sampled' cannot be combined with"
+                " use_relaxed_acceptance_for_thinking: relaxed acceptance"
+                " takes the drafted token to be the draft's argmax, which a"
+                " sampled proposal does not guarantee"
+            )
+        return self
 
     @field_validator("relaxed_topk")
     @classmethod

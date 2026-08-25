@@ -19,10 +19,18 @@ All operations are no-ops that return immediately.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 from max.nn.kv_cache.metrics import KVCacheMetrics
+from max.pipelines.kv_cache.kv_connector import (
+    CompletedTransfer,
+    KVConnector,
+    KVConnectorTransfer,
+    TransferDirection,
+)
 
 
-class NullConnector:
+class NullConnector(KVConnector):
     """No-op connector for when external caching is disabled."""
 
     @property
@@ -32,48 +40,18 @@ class NullConnector:
     def load(
         self,
         device_block_ids: list[int],
-        block_hashes: list[int],
-    ) -> int:
-        return 0
+        block_hashes: Sequence[bytes],
+        replica_idx: int = 0,
+    ) -> KVConnectorTransfer:
+        return CompletedTransfer(TransferDirection.LOAD)
 
     def offload(
         self,
         block_ids: list[int],
-        block_hashes: list[int],
-        parent_seq_hash: int = 0,
-    ) -> None:
-        pass
-
-    def sync(self) -> None:
-        pass
-
-    def wait_for_loads(self) -> None:
-        pass
-
-    def wait_for_offloads(self) -> None:
-        pass
-
-    def shutdown(self) -> None:
-        pass
-
-    @property
-    def num_host_blocks(self) -> int:
-        return 0
-
-    @property
-    def num_used_host_blocks(self) -> int:
-        return 0
-
-    @property
-    def num_disk_blocks(self) -> int:
-        return 0
-
-    @property
-    def num_used_disk_blocks(self) -> int:
-        return 0
-
-    def reset_prefix_cache(self) -> None:
-        pass
+        block_hashes: Sequence[bytes],
+        replica_idx: int = 0,
+    ) -> KVConnectorTransfer:
+        return CompletedTransfer(TransferDirection.OFFLOAD)
 
     @property
     def metrics(self) -> KVCacheMetrics:

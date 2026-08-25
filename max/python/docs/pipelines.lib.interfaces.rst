@@ -27,12 +27,14 @@ Architecture config
    ArchConfigWithStoredKVParams
    ArchVLConfigWithTextSubconfig
 
-Diffusion
----------
+Batch processing
+----------------
 
 .. autosummary::
    :nosignatures:
    :toctree: generated
    :template: autosummary/class.rst
 
-   DiffusionPipeline
+   BatchProcessor
+   BatchProcessorRuntime
+   RaggedBatchProcessor

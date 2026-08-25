@@ -35,7 +35,7 @@ from std.utils.numerics import max_or_inf
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from layout._fillers import random
 from layout._utils import ManagedLayoutTensor
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 
 from kv_cache.types import (
     KVCacheStaticParams,
@@ -103,11 +103,11 @@ def execute_oob_canary[
     var q_ragged_rt = RuntimeLayout[q_ragged_layout].row_major(q_ragged_shape)
     var output_rt = RuntimeLayout[output_layout].row_major(output_shape)
 
-    var input_row_offsets = ManagedLayoutTensor[
-        DType.uint32, row_offsets_layout
-    ](row_offsets_rt, ctx)
+    var input_row_offsets = ManagedLayoutTensor[.uint32, row_offsets_layout](
+        row_offsets_rt, ctx
+    )
     var cache_lengths_managed = ManagedLayoutTensor[
-        DType.uint32, cache_lengths_layout
+        .uint32, cache_lengths_layout
     ](cache_lengths_rt, ctx)
     var q_ragged = ManagedLayoutTensor[dtype, q_ragged_layout](q_ragged_rt, ctx)
     var test_output = ManagedLayoutTensor[dtype, output_layout](output_rt, ctx)
@@ -158,7 +158,7 @@ def execute_oob_canary[
     var kv_block_paged = ManagedLayoutTensor[dtype, kv_block_6d_layout](
         kv_block_paged_rt, ctx
     )
-    var paged_lut = ManagedLayoutTensor[DType.uint32, paged_lut_layout](
+    var paged_lut = ManagedLayoutTensor[.uint32, paged_lut_layout](
         paged_lut_rt, ctx
     )
 
@@ -260,8 +260,8 @@ def run_canary_suite[
     """
     # Local prefill (small CE).
     print("OOB canary local CE bs=1")
-    var ce_lens = [11]
-    var ce_caches = [0]
+    var ce_lens: List = [11]
+    var ce_caches: List = [0]
     execute_oob_canary[
         32,
         DType.bfloat16,
@@ -270,8 +270,8 @@ def run_canary_suite[
 
     # Local prefill (bs=4) — exercises multi-batch LUT randomization.
     print("OOB canary local CE bs=4")
-    var ce_lens_bs4 = [11, 11, 11, 11]
-    var ce_caches_bs4 = [0, 0, 0, 0]
+    var ce_lens_bs4: List = [11, 11, 11, 11]
+    var ce_caches_bs4: List = [0, 0, 0, 0]
     execute_oob_canary[
         32,
         DType.bfloat16,
@@ -282,8 +282,8 @@ def run_canary_suite[
     # cache, so unassigned canary blocks are scarce — but this is exactly the
     # gemma4 production decode shape and the failure mode under KERN-2861.
     print("OOB canary local TG bs=1 cache_len=512")
-    var tg_lens = [1]
-    var tg_caches = [512]
+    var tg_lens: List = [1]
+    var tg_caches: List = [512]
     execute_oob_canary[
         32,
         DType.bfloat16,

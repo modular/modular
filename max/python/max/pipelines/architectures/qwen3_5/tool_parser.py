@@ -41,6 +41,8 @@ from __future__ import annotations
 import json
 import re
 import uuid
+from collections.abc import Mapping
+from typing import Any, ClassVar
 
 from max.pipelines.lib.tool_parsing import register
 from max.pipelines.modeling.types import (
@@ -132,6 +134,11 @@ def _max_holdback(buffer: str, sentinel: str) -> int:
 @register("qwen3_5")
 class Qwen3_5ToolParser:
     """Parser for Qwen 3.5 / 3.6 tool calls."""
+
+    # Structural start marker, exposed under the same name as
+    # ``StructuralTagToolParser.CALL_BEGIN`` so the serving layer's
+    # marker-leak guard covers this parser too.
+    CALL_BEGIN: ClassVar[str] = TOOL_CALL_OPEN
 
     def __init__(self) -> None:
         self._buffer: str = ""
@@ -337,8 +344,10 @@ class Qwen3_5ToolParser:
         # In INIT: once a tool call has started, any buffered text is an
         # inter-call separator or trailing token — return [] to suppress it
         # (the router passes raw tokens through as content on None). Only
-        # before the first call do we defer to that raw-content passthrough.
-        return [] if self._tool_index >= 0 else None
+        # before the first call do we defer to that raw-content passthrough —
+        # BUT if we're holding back bytes that partially match a sentinel,
+        # return [] to suppress the raw tokens so they don't leak as content.
+        return [] if self._tool_index >= 0 or self._buffer else None
 
     def reset(self) -> None:
         """Reset internal state for a new streaming session."""
@@ -347,3 +356,12 @@ class Qwen3_5ToolParser:
         self._tool_index = -1
         self._param_count_in_call = 0
         self._current_param_key = ""
+
+    def set_streaming_tool_schemas(
+        self, schemas: Mapping[str, dict[str, Any]]
+    ) -> None:
+        """No-op: this format does not need schema-driven streaming.
+
+        See ``ToolParser.set_streaming_tool_schemas``.
+        """
+        return

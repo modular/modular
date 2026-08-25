@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.sys import align_of
+from std.sys import align_of, size_of
 from std.testing import *
 
 
@@ -23,4 +23,6 @@ struct AlignedTrivial(RegisterPassable):
 
 def main() raises:
     # print(align_of[AlignedTrivial]())  # 32
+    # print(size_of[AlignedTrivial]())  # 32
     assert_equal(32, align_of[AlignedTrivial](), "align should be 32")
+    assert_equal(32, size_of[AlignedTrivial](), "size_of should be 32")

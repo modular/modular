@@ -3,11 +3,11 @@
 load(
     "//bazel:api.bzl",
     "modular_py_test",
+    "requirement",
 )
 
 package(default_visibility = [
     "//:__pkg__",
-    "//SDK/integration-test:__subpackages__",
     "//max/tests:__subpackages__",
     "//oss/modular/max/tests:__subpackages__",
 ])
@@ -30,9 +30,13 @@ modular_py_test(
         "manual",  # TODO (MODELS-1354): This is timing out, re-enable after investigation
     ],
     deps = [
+        "//max/python/max/graph",
+        "//max/python/max/pipelines/architectures/gemma4_modulev3",
         "//max/python/max/pipelines/architectures/llama3_modulev3",
         "//max/python/max/pipelines/architectures/olmo_modulev3",
         "//max/python/max/pipelines/architectures/phi3_modulev3",
         "//max/tests/integration/test_common:load_model_helpers",
+        requirement("torch"),
+        requirement("transformers"),
     ],
 )

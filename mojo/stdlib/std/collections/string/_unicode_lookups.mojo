@@ -14,7 +14,7 @@
 UnicodeData.txt and SpecialCasing.txt files, which can be found at
 https://www.unicode.org/Public/16.0.0/"""
 
-comptime has_uppercase_mapping: List[UInt32] = [
+comptime has_uppercase_mapping: Array[UInt32, 1450] = [
     0x0061,  # LATIN SMALL LETTER A a
     0x0062,  # LATIN SMALL LETTER B b
     0x0063,  # LATIN SMALL LETTER C c
@@ -1466,7 +1466,7 @@ comptime has_uppercase_mapping: List[UInt32] = [
     0x1E942,  # ADLAM SMALL LETTER KPO 𞥂
     0x1E943,  # ADLAM SMALL LETTER SHA 𞥃
 ]
-comptime has_lowercase_mapping: List[UInt32] = [
+comptime has_lowercase_mapping: Array[UInt32, 1433] = [
     0x0041,  # LATIN CAPITAL LETTER A A
     0x0042,  # LATIN CAPITAL LETTER B B
     0x0043,  # LATIN CAPITAL LETTER C C
@@ -2901,7 +2901,7 @@ comptime has_lowercase_mapping: List[UInt32] = [
     0x1E920,  # ADLAM CAPITAL LETTER KPO 𞤠
     0x1E921,  # ADLAM CAPITAL LETTER SHA 𞤡
 ]
-comptime uppercase_mapping: List[UInt32] = [
+comptime uppercase_mapping: Array[UInt32, 1450] = [
     0x0041,  # a -> A
     0x0042,  # b -> B
     0x0043,  # c -> C
@@ -4353,7 +4353,7 @@ comptime uppercase_mapping: List[UInt32] = [
     0x1E920,  # 𞥂 -> 𞤠
     0x1E921,  # 𞥃 -> 𞤡
 ]
-comptime lowercase_mapping: List[UInt32] = [
+comptime lowercase_mapping: Array[UInt32, 1433] = [
     0x0061,  # A -> a
     0x0062,  # B -> b
     0x0063,  # C -> c
@@ -5788,7 +5788,7 @@ comptime lowercase_mapping: List[UInt32] = [
     0x1E942,  # 𞤠 -> 𞥂
     0x1E943,  # 𞤡 -> 𞥃
 ]
-comptime has_uppercase_mapping2: List[UInt32] = [
+comptime has_uppercase_mapping2: Array[UInt32, 26] = [
     0xDF,  #  # LATIN SMALL LETTER SHARP S ß
     0x149,  #  # LATIN SMALL LETTER N PRECEDED BY APOSTROPHE ŉ
     0x1F0,  #  # LATIN SMALL LETTER J WITH CARON ǰ
@@ -5816,35 +5816,35 @@ comptime has_uppercase_mapping2: List[UInt32] = [
     0xFB16,  #  # ARMENIAN SMALL LIGATURE VEW NOW ﬖ
     0xFB17,  #  # ARMENIAN SMALL LIGATURE MEN XEH ﬗ
 ]
-comptime uppercase_mapping2: List[SIMD[DType.uint32, 2]] = [
-    SIMD[DType.uint32, 2](0x0053, 0x0053),  #  ß -> SS
-    SIMD[DType.uint32, 2](0x02BC, 0x004E),  #  ŉ -> ʼN
-    SIMD[DType.uint32, 2](0x004A, 0x030C),  #  ǰ -> J̌
-    SIMD[DType.uint32, 2](0x0535, 0x0552),  #  և -> ԵՒ
-    SIMD[DType.uint32, 2](0x0048, 0x0331),  #  ẖ -> H̱
-    SIMD[DType.uint32, 2](0x0054, 0x0308),  #  ẗ -> T̈
-    SIMD[DType.uint32, 2](0x0057, 0x030A),  #  ẘ -> W̊
-    SIMD[DType.uint32, 2](0x0059, 0x030A),  #  ẙ -> Y̊
-    SIMD[DType.uint32, 2](0x0041, 0x02BE),  #  ẚ -> Aʾ
-    SIMD[DType.uint32, 2](0x03A5, 0x0313),  #  ὐ -> Υ̓
-    SIMD[DType.uint32, 2](0x0391, 0x0342),  #  ᾶ -> Α͂
-    SIMD[DType.uint32, 2](0x0397, 0x0342),  #  ῆ -> Η͂
-    SIMD[DType.uint32, 2](0x0399, 0x0342),  #  ῖ -> Ι͂
-    SIMD[DType.uint32, 2](0x03A1, 0x0313),  #  ῤ -> Ρ̓
-    SIMD[DType.uint32, 2](0x03A5, 0x0342),  #  ῦ -> Υ͂
-    SIMD[DType.uint32, 2](0x03A9, 0x0342),  #  ῶ -> Ω͂
-    SIMD[DType.uint32, 2](0x0046, 0x0046),  #  ﬀ -> FF
-    SIMD[DType.uint32, 2](0x0046, 0x0049),  #  ﬁ -> FI
-    SIMD[DType.uint32, 2](0x0046, 0x004C),  #  ﬂ -> FL
-    SIMD[DType.uint32, 2](0x0053, 0x0054),  #  ﬅ -> ST
-    SIMD[DType.uint32, 2](0x0053, 0x0054),  #  ﬆ -> ST
-    SIMD[DType.uint32, 2](0x0544, 0x0546),  #  ﬓ -> ՄՆ
-    SIMD[DType.uint32, 2](0x0544, 0x0535),  #  ﬔ -> ՄԵ
-    SIMD[DType.uint32, 2](0x0544, 0x053B),  #  ﬕ -> ՄԻ
-    SIMD[DType.uint32, 2](0x054E, 0x0546),  #  ﬖ -> ՎՆ
-    SIMD[DType.uint32, 2](0x0544, 0x053D),  #  ﬗ -> ՄԽ
+comptime uppercase_mapping2: Array[SIMD[.uint32, 2], 26] = [
+    SIMD[.uint32, 2](0x0053, 0x0053),  #  ß -> SS
+    SIMD[.uint32, 2](0x02BC, 0x004E),  #  ŉ -> ʼN
+    SIMD[.uint32, 2](0x004A, 0x030C),  #  ǰ -> J̌
+    SIMD[.uint32, 2](0x0535, 0x0552),  #  և -> ԵՒ
+    SIMD[.uint32, 2](0x0048, 0x0331),  #  ẖ -> H̱
+    SIMD[.uint32, 2](0x0054, 0x0308),  #  ẗ -> T̈
+    SIMD[.uint32, 2](0x0057, 0x030A),  #  ẘ -> W̊
+    SIMD[.uint32, 2](0x0059, 0x030A),  #  ẙ -> Y̊
+    SIMD[.uint32, 2](0x0041, 0x02BE),  #  ẚ -> Aʾ
+    SIMD[.uint32, 2](0x03A5, 0x0313),  #  ὐ -> Υ̓
+    SIMD[.uint32, 2](0x0391, 0x0342),  #  ᾶ -> Α͂
+    SIMD[.uint32, 2](0x0397, 0x0342),  #  ῆ -> Η͂
+    SIMD[.uint32, 2](0x0399, 0x0342),  #  ῖ -> Ι͂
+    SIMD[.uint32, 2](0x03A1, 0x0313),  #  ῤ -> Ρ̓
+    SIMD[.uint32, 2](0x03A5, 0x0342),  #  ῦ -> Υ͂
+    SIMD[.uint32, 2](0x03A9, 0x0342),  #  ῶ -> Ω͂
+    SIMD[.uint32, 2](0x0046, 0x0046),  #  ﬀ -> FF
+    SIMD[.uint32, 2](0x0046, 0x0049),  #  ﬁ -> FI
+    SIMD[.uint32, 2](0x0046, 0x004C),  #  ﬂ -> FL
+    SIMD[.uint32, 2](0x0053, 0x0054),  #  ﬅ -> ST
+    SIMD[.uint32, 2](0x0053, 0x0054),  #  ﬆ -> ST
+    SIMD[.uint32, 2](0x0544, 0x0546),  #  ﬓ -> ՄՆ
+    SIMD[.uint32, 2](0x0544, 0x0535),  #  ﬔ -> ՄԵ
+    SIMD[.uint32, 2](0x0544, 0x053B),  #  ﬕ -> ՄԻ
+    SIMD[.uint32, 2](0x054E, 0x0546),  #  ﬖ -> ՎՆ
+    SIMD[.uint32, 2](0x0544, 0x053D),  #  ﬗ -> ՄԽ
 ]
-comptime has_uppercase_mapping3: List[UInt32] = [
+comptime has_uppercase_mapping3: Array[UInt32, 13] = [
     0x390,  #  # GREEK SMALL LETTER IOTA WITH DIALYTIKA AND TONOS ΐ
     0x3B0,  #  # GREEK SMALL LETTER UPSILON WITH DIALYTIKA AND TONOS ΰ
     0x1F52,  #  # GREEK SMALL LETTER UPSILON WITH PSILI AND VARIA ὒ
@@ -5859,18 +5859,18 @@ comptime has_uppercase_mapping3: List[UInt32] = [
     0xFB03,  #  # LATIN SMALL LIGATURE FFI ﬃ
     0xFB04,  #  # LATIN SMALL LIGATURE FFL ﬄ
 ]
-comptime uppercase_mapping3: List[SIMD[DType.uint32, 4]] = [
-    SIMD[DType.uint32, 4](0x0399, 0x0308, 0x0301, 0),  #  ΐ -> Ϊ́
-    SIMD[DType.uint32, 4](0x03A5, 0x0308, 0x0301, 0),  #  ΰ -> Ϋ́
-    SIMD[DType.uint32, 4](0x03A5, 0x0313, 0x0300, 0),  #  ὒ -> Υ̓̀
-    SIMD[DType.uint32, 4](0x03A5, 0x0313, 0x0301, 0),  #  ὔ -> Υ̓́
-    SIMD[DType.uint32, 4](0x03A5, 0x0313, 0x0342, 0),  #  ὖ -> Υ̓͂
-    SIMD[DType.uint32, 4](0x0399, 0x0308, 0x0300, 0),  #  ῒ -> Ϊ̀
-    SIMD[DType.uint32, 4](0x0399, 0x0308, 0x0301, 0),  #  ΐ -> Ϊ́
-    SIMD[DType.uint32, 4](0x0399, 0x0308, 0x0342, 0),  #  ῗ -> Ϊ͂
-    SIMD[DType.uint32, 4](0x03A5, 0x0308, 0x0300, 0),  #  ῢ -> Ϋ̀
-    SIMD[DType.uint32, 4](0x03A5, 0x0308, 0x0301, 0),  #  ΰ -> Ϋ́
-    SIMD[DType.uint32, 4](0x03A5, 0x0308, 0x0342, 0),  #  ῧ -> Ϋ͂
-    SIMD[DType.uint32, 4](0x0046, 0x0046, 0x0049, 0),  #  ﬃ -> FFI
-    SIMD[DType.uint32, 4](0x0046, 0x0046, 0x004C, 0),  #  ﬄ -> FFL
+comptime uppercase_mapping3: Array[SIMD[.uint32, 4], 13] = [
+    SIMD[.uint32, 4](0x0399, 0x0308, 0x0301, 0),  #  ΐ -> Ϊ́
+    SIMD[.uint32, 4](0x03A5, 0x0308, 0x0301, 0),  #  ΰ -> Ϋ́
+    SIMD[.uint32, 4](0x03A5, 0x0313, 0x0300, 0),  #  ὒ -> Υ̓̀
+    SIMD[.uint32, 4](0x03A5, 0x0313, 0x0301, 0),  #  ὔ -> Υ̓́
+    SIMD[.uint32, 4](0x03A5, 0x0313, 0x0342, 0),  #  ὖ -> Υ̓͂
+    SIMD[.uint32, 4](0x0399, 0x0308, 0x0300, 0),  #  ῒ -> Ϊ̀
+    SIMD[.uint32, 4](0x0399, 0x0308, 0x0301, 0),  #  ΐ -> Ϊ́
+    SIMD[.uint32, 4](0x0399, 0x0308, 0x0342, 0),  #  ῗ -> Ϊ͂
+    SIMD[.uint32, 4](0x03A5, 0x0308, 0x0300, 0),  #  ῢ -> Ϋ̀
+    SIMD[.uint32, 4](0x03A5, 0x0308, 0x0301, 0),  #  ΰ -> Ϋ́
+    SIMD[.uint32, 4](0x03A5, 0x0308, 0x0342, 0),  #  ῧ -> Ϋ͂
+    SIMD[.uint32, 4](0x0046, 0x0046, 0x0049, 0),  #  ﬃ -> FFI
+    SIMD[.uint32, 4](0x0046, 0x0046, 0x004C, 0),  #  ﬄ -> FFL
 ]

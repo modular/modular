@@ -1,9 +1,9 @@
 load("//bazel:api.bzl", "modular_py_binary", "modular_py_library", "modular_py_test", "modular_run_binary_test", "requirement")
+load("//max/python/max/pipelines/architectures:all_arches.bzl", "ALL_ARCHITECTURES")
 load(":precompile_pipeline.bzl", "modular_pipeline_target_name", "modular_precompile_pipeline")
 
 package(default_visibility = [
     "//:__pkg__",
-    "//SDK/integration-test:__subpackages__",
     "//max/tests:__subpackages__",
     "//oss/modular/max/tests:__subpackages__",
 ])
@@ -28,7 +28,6 @@ modular_py_library(
         "//max/python/max/experimental/nn",
         "//max/python/max/nn",
         "//max/python/max/pipelines/lib",
-        "//max/tests/integration:hf_repo_lock",
         requirement("transformers"),
     ],
 )
@@ -45,11 +44,10 @@ modular_py_library(
         ":create_pipelines",
         ":hf_config_overrides",
         ":run_models",
+        "//max/python/max/_entrypoints",
         "//max/python/max/driver",
-        "//max/python/max/entrypoints",
         "//max/python/max/pipelines/architectures",
         "//max/python/max/pipelines/lib",
-        "//max/tests/integration:hf_repo_lock",
         "//max/tests/integration/architectures/idefics3:torch_utils",
         "//max/tests/integration/architectures/internvl:torch_utils",
         "//max/tests/integration/architectures/qwen2_5vl:generate_utils",
@@ -98,7 +96,6 @@ modular_py_library(
         "//max/python/max/pipelines/diffusion",
         "//max/python/max/pipelines/lib",
         "//max/python/max/pipelines/modeling",
-        "//max/tests/integration:hf_repo_lock",
         "//max/tests/integration/architectures/idefics3:torch_utils",
         "//max/tests/integration/architectures/internvl:torch_utils",
         "//max/tests/integration/architectures/qwen2_5vl:generate_utils",
@@ -113,7 +110,6 @@ modular_py_library(
         requirement("timm"),  # Required by InternVL.
         requirement("torch"),
         requirement("transformers"),
-        requirement("typing-extensions"),
     ],
 )
 
@@ -149,7 +145,6 @@ modular_py_binary(
     imports = ["."],
     main = "download_models_for_testing.py",
     deps = [
-        "//max/tests/integration:hf_repo_lock",
         requirement("click"),
         requirement("huggingface-hub"),
     ],
@@ -177,10 +172,11 @@ modular_py_binary(
     deps = [
         ":create_pipelines",
         ":run_models",
-        "//max/python/max/entrypoints",
+        "//max/python/max/_entrypoints",
         "//max/python/max/pipelines/architectures",
+        "//max/python/max/pipelines/architectures/llama4",
+        "//max/python/max/pipelines/architectures/nemotron_h",
         "//max/python/max/pipelines/lib",
-        "//max/tests/integration:hf_repo_lock",
         "//max/tests/integration/architectures/idefics3:torch_utils",
         "//max/tests/integration/architectures/internvl:torch_utils",
         "//max/tests/integration/architectures/qwen2_5vl:generate_utils",
@@ -242,7 +238,7 @@ modular_py_binary(
         ":debugging_utils",
         ":hf_config_overrides",
         ":run_models",
-        "//max/python/max/entrypoints",
+        "//max/python/max/_entrypoints",
         "//max/python/max/pipelines",
         "//max/python/max/pipelines/lib",
         requirement("click"),
@@ -254,13 +250,13 @@ modular_py_binary(
     name = "precompile_all_pipelines",
     testonly = True,
     srcs = ["precompile_all_pipelines.py"],
-    ignore_extra_deps = [
+    ignore_extra_deps = ALL_ARCHITECTURES + [
         # Unsure if this is actually needed, but likely
         requirement("gguf"),
     ],
     imports = ["."],
     main = "precompile_all_pipelines.py",
-    deps = [
+    deps = ALL_ARCHITECTURES + [
         ":create_pipelines",
         ":tag_filters",
         "//max/python/max/driver",
@@ -329,8 +325,8 @@ modular_py_binary(
     imports = ["."],
     deps = [
         ":create_pipelines",
+        "//max/python/max/_entrypoints",
         "//max/python/max/driver",
-        "//max/python/max/entrypoints",
         "//max/python/max/pipelines/lib",
         "//max/python/max/pipelines/modeling",
         "//max/python/max/serve:config",

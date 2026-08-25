@@ -16,7 +16,9 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
+from typing import ClassVar
 
+from max.graph import DeviceRef
 from max.nn.kv_cache import (
     KVCacheParamInterface,
     KVCacheParams,
@@ -27,7 +29,11 @@ from max.pipelines.lib.config import (
     PipelineConfig,
     SpeculativeConfig,
 )
-from max.pipelines.lib.interfaces.arch_config import ArchConfigWithKVCache
+from max.pipelines.lib.interfaces.arch_config import (
+    ArchConfigWithKVCache,
+)
+from max.pipelines.modeling.config_enums import SupportedEncoding
+from transformers import AutoConfig
 from typing_extensions import Self
 
 from ..deepseekV3.model_config import DeepseekV3Config
@@ -36,12 +42,14 @@ from ..kimik2_5.model_config import KimiK2_5TextConfig
 from ..unified_dflash_llama3.model_config import (  # re-exported helpers
     DflashDraftHFConfig,
     parse_dflash_draft_hf_config,
+    resolve_dflash_num_speculative_tokens,
 )
 
 __all__ = [
     "DflashDraftHFConfig",
     "UnifiedDflashKimiK25Config",
     "parse_dflash_draft_hf_config",
+    "resolve_dflash_num_speculative_tokens",
 ]
 
 logger = logging.getLogger("max.pipelines")
@@ -56,12 +64,20 @@ class UnifiedDflashKimiK25Config(ArchConfigWithKVCache):
     (``DFlashKimiK25DraftConfig`` built from the draft HF config).
     """
 
+    DEFAULT_ENCODING: ClassVar[SupportedEncoding] = "bfloat16"
+    SUPPORTED_ENCODINGS: ClassVar[set[SupportedEncoding]] = {
+        "bfloat16",
+        "float8_e4m3fn",
+        "float4_e2m1fnx2",
+    }
+
     target: DeepseekV3Config
     draft: DFlashKimiK25DraftConfig
     speculative_config: SpeculativeConfig
     target_layer_ids: list[int] = field(default_factory=list)
     mask_token_id: int = 0
     block_size: int = 0
+    quantization_encoding: SupportedEncoding | None = None
 
     def __post_init__(self) -> None:
         if len(self.target.devices) != len(self.draft.devices):
@@ -99,7 +115,11 @@ class UnifiedDflashKimiK25Config(ArchConfigWithKVCache):
         if self.block_size > 0:
             expected_spec = self.block_size - 1
             actual_spec = self.speculative_config.num_speculative_tokens
-            if actual_spec != expected_spec:
+            if actual_spec is not None and actual_spec != expected_spec:
+                # Check only, never written back: the trained width is
+                # resolved as a plain int by
+                # :func:`resolve_dflash_num_speculative_tokens` and
+                # threaded by the model.
                 logger.warning(
                     "DFlash draft was trained at block_size=%d, so"
                     " num_speculative_tokens is being overridden from %d to"
@@ -109,14 +129,19 @@ class UnifiedDflashKimiK25Config(ArchConfigWithKVCache):
                     actual_spec,
                     expected_spec,
                 )
-                self.speculative_config.num_speculative_tokens = expected_spec
 
     def resolve_block_size(self, *, default: int | None = None) -> int:
         if self.block_size > 0:
             return self.block_size
         if default is not None:
             return default
-        return self.speculative_config.num_speculative_tokens + 1
+        num_spec = self.speculative_config.num_speculative_tokens
+        if num_spec is None:
+            raise ValueError(
+                "The DFlash draft checkpoint declares no block_size; set"
+                " --num-speculative-tokens explicitly."
+            )
+        return num_spec + 1
 
     def get_kv_params(self) -> KVCacheParamInterface:
         target_kv = self.target.get_kv_params()
@@ -125,11 +150,21 @@ class UnifiedDflashKimiK25Config(ArchConfigWithKVCache):
             {"target": target_kv, "draft": self.draft.kv_params}
         )
 
+    @property
+    def devices(self) -> list[DeviceRef]:
+        """Exposes the target's devices so this unified config satisfies the
+        ``ModelConfigWithKVCache`` protocol ``KimiK25MemoryPlanner`` requires
+        (target and draft share placement; ``__post_init__`` checks the device
+        count, and both are built from the target's devices)."""
+        return self.target.devices
+
     @classmethod
     def initialize(
         cls,
         pipeline_config: PipelineConfig,
         model_config: MAXModelConfig | None = None,
+        *,
+        max_seq_len: int,
     ) -> Self:
         """Build an early placeholder config for KV memory estimation.
 
@@ -145,7 +180,7 @@ class UnifiedDflashKimiK25Config(ArchConfigWithKVCache):
         assert pipeline_config.speculative is not None
 
         target_config = KimiK2_5TextConfig.initialize(
-            pipeline_config, model_config
+            pipeline_config, model_config, max_seq_len=max_seq_len
         )
         target_kv = target_config.kv_params
         assert isinstance(target_kv, KVCacheParams)
@@ -188,3 +223,14 @@ class UnifiedDflashKimiK25Config(ArchConfigWithKVCache):
 
     def get_max_seq_len(self) -> int:
         return self.target.get_max_seq_len()
+
+    @classmethod
+    def calculate_max_seq_len(
+        cls,
+        huggingface_config: AutoConfig,
+        model_config: MAXModelConfig,
+    ) -> int:
+        return KimiK2_5TextConfig.calculate_max_seq_len(
+            getattr(huggingface_config, "text_config", huggingface_config),
+            model_config,
+        )

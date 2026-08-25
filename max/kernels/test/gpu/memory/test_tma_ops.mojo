@@ -11,13 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.gpu.primitives.cluster import elect_one_sync
-from std.gpu.host import get_gpu_target
-from std.gpu.host.compile import _compile_code
-from std.gpu.memory import (
+from max.gpu.primitives.cluster import elect_one_sync
+from max.gpu.host import get_gpu_target
+from max.gpu.host.compile import _compile_code
+from max.gpu.memory import (
     CacheEviction,
     ReduceOp,
-    AddressSpace,
     cp_async_bulk_tensor_global_shared_cta,
     cp_async_bulk_tensor_reduce_global_shared_cta,
     cp_async_bulk_tensor_shared_cluster_global,
@@ -34,13 +33,9 @@ def test_async_copy_asm():
     print("== test_async_copy_asm")
 
     def test_async_copy_kernel(
-        dst_mem: UnsafePointer[
-            Float32, MutAnyOrigin, address_space=AddressSpace.SHARED
-        ],
+        dst_mem: UnsafePointer[Float32, MutAnyOrigin, address_space=.SHARED],
         tma_descriptor: OpaquePointer,
-        mem_bar: UnsafePointer[
-            Float32, MutAnyOrigin, address_space=AddressSpace.SHARED
-        ],
+        mem_bar: UnsafePointer[Float32, MutAnyOrigin, address_space=.SHARED],
         *coords: Int32,
     ):
         # CHECK: cp.async.bulk.tensor.2d.shared::cluster.global.tile.mbarrier::complete_tx::bytes
@@ -65,9 +60,7 @@ def test_async_store_asm():
     print("== test_async_store_asm")
 
     def test_async_store_kernel(
-        src_mem: UnsafePointer[
-            Float32, ImmutAnyOrigin, address_space=AddressSpace.SHARED
-        ],
+        src_mem: UnsafePointer[Float32, ImmutAnyOrigin, address_space=.SHARED],
         tma_descriptor: OpaquePointer,
         *coords: Int32,
     ):
@@ -101,9 +94,7 @@ def test_async_bulk_tensor_reduce_asm():
     print("== test_async_bulk_tensor_reduce_asm")
 
     def test_async_bulk_tensor_reduce_asm(
-        src_mem: UnsafePointer[
-            Float32, ImmutAnyOrigin, address_space=AddressSpace.SHARED
-        ],
+        src_mem: UnsafePointer[Float32, ImmutAnyOrigin, address_space=.SHARED],
         tma_descriptor: OpaquePointer,
         *coords: Int32,
     ):

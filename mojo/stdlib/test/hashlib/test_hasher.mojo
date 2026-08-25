@@ -13,7 +13,7 @@
 
 from std.hashlib._ahash import AHasher
 from std.hashlib.hasher import Hasher
-from std.memory import Span
+from std.collections import Span
 from std.pathlib import Path
 
 from std.testing import assert_equal
@@ -28,10 +28,10 @@ struct DummyHasher(Hasher):
 
     def _update_with_bytes(mut self, data: Span[Byte, _]):
         for i in range(len(data)):
-            self._dummy_value += data[i].cast[DType.uint64]()
+            self._dummy_value += data[i].cast[.uint64]()
 
     def _update_with_simd(mut self, value: SIMD[_, _]):
-        self._dummy_value += value.cast[DType.uint64]().reduce_add()
+        self._dummy_value += value.cast[.uint64]().reduce_add()
 
     def update(mut self, value: Some[Hashable]):
         value.__hash__(self)
@@ -95,7 +95,7 @@ struct ComplexHashableStructWithList(Hashable):
         # This is okay because self is passed as read-only so the pointer will
         # be valid until at least the end of the function
         hasher._update_with_bytes(
-            Span(ptr=self._value3.unsafe_ptr(), length=len(self._value3))
+            Span(unsafe_ptr=self._value3.unsafe_ptr(), length=len(self._value3))
         )
 
 
@@ -104,7 +104,7 @@ struct ComplexHashableStructWithListAndWideSIMD(Hashable):
     var _value1: SomeHashableStruct
     var _value2: SomeHashableStruct
     var _value3: List[UInt8]
-    var _value4: SIMD[DType.uint32, 4]
+    var _value4: SIMD[.uint32, 4]
 
     def __hash__[H: Hasher](self, mut hasher: H):
         hasher.update(self._value1)
@@ -112,7 +112,7 @@ struct ComplexHashableStructWithListAndWideSIMD(Hashable):
         # This is okay because self is passed as read-only so the pointer will
         # be valid until at least the end of the function
         hasher._update_with_bytes(
-            Span(ptr=self._value3.unsafe_ptr(), length=len(self._value3))
+            Span(unsafe_ptr=self._value3.unsafe_ptr(), length=len(self._value3))
         )
         hasher.update(self._value4)
 
@@ -127,7 +127,7 @@ def test_update_with_bytes() raises:
 
 
 comptime _hash_with_hasher = hash[
-    T=_, HasherType=AHasher[SIMD[DType.uint64, 4](0, 0, 0, 0)]
+    T=_, HasherType=AHasher[SIMD[.uint64, 4](0, 0, 0, 0)]
 ]
 
 
@@ -141,7 +141,7 @@ def test_with_ahasher() raises:
         SomeHashableStruct(42),
         SomeHashableStruct(10),
         [UInt8(1), 2, 3],
-        SIMD[DType.uint32, 4](1, 2, 3, 4),
+        SIMD[.uint32, 4](1, 2, 3, 4),
     )
     hash_value = _hash_with_hasher(hashable2)
     assert_equal(hash_value, 1754891767834419861)
@@ -155,7 +155,7 @@ def test_hash_hashable_with_hasher_types() raises:
     assert_equal(_hash_with_hasher(Int(-123)), 4720193641311814362)
     assert_equal(_hash_with_hasher(UInt(123)), 4498397628805512285)
     assert_equal(
-        _hash_with_hasher(SIMD[DType.float16, 4](0.1, -0.1, 12, 0)),
+        _hash_with_hasher(SIMD[.float16, 4](0.1, -0.1, 12, 0)),
         9316495345323385448,
     )
     assert_equal(_hash_with_hasher(Path("/tmp")), 16491058316913697698)

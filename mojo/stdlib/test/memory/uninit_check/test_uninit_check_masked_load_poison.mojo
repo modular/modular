@@ -12,28 +12,29 @@
 # ===----------------------------------------------------------------------=== #
 # Tests that masked_load with poison in an unmasked lane triggers abort.
 
-from std.memory import UnsafePointer, alloc
+from std.memory import alloc
 from std.sys.intrinsics import masked_load
 
 
 # CHECK: UNINIT_READ at {{.*}}: dtype={{.*}}: load matched debug allocator poison sentinel
 def main():
-    var ptr = alloc[Float32](4)
-
+    var allocation = alloc[Float32]({count = 4}).into_managed()
+    var ptr = allocation.unsafe_ptr()
     # Initialize elements.
-    ptr.store(0, Float32(1.0))
-    ptr.store(1, Float32(2.0))
-    ptr.store(2, Float32(3.0))
-    ptr.store(3, Float32(4.0))
+    ptr.unsafe_store(0, Float32(1.0))
+    ptr.unsafe_store(1, Float32(2.0))
+    ptr.unsafe_store(2, Float32(3.0))
+    ptr.unsafe_store(3, Float32(4.0))
 
     # Poison element at index 1 (which will be unmasked = True = loaded)
     # with the debug allocator poison pattern (FLT_MAX bits = 0x7F7FFFFF).
-    (ptr + 1).bitcast[UInt32]().store(UInt32(0x7F7FFFFF))
+    ptr.unsafe_offset(1).unsafe_bitcast[UInt32]().unsafe_store(
+        UInt32(0x7F7FFFFF)
+    )
 
     # mask=True means "load from memory" — lane 1 is unmasked and poisoned.
-    var mask = SIMD[DType.bool, 4](True, True, False, False)
-    var passthrough = SIMD[DType.float32, 4](0)
+    var mask = SIMD[.bool, 4](True, True, False, False)
+    var passthrough = SIMD[.float32, 4](0)
     _ = masked_load(ptr, mask, passthrough)
 
     # Should not reach here.
-    ptr.free()

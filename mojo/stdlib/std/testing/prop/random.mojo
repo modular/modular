@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Implements random number generation for property-based testing."""
 
-from std.random import random_ui64, seed
+from std.random import random_ui64, seed as seed_fn
 
 
 struct Rng(Movable):
@@ -26,7 +26,7 @@ struct Rng(Movable):
     def __init__(out self, *, seed: Int):
         # TODO: Figure out how to ensure this 'global' seed value is not
         # accidentally overwritten by the user in their test code.
-        random.seed(seed)
+        seed_fn(seed)
 
     # TODO: Add playback support.
     @doc_hidden
@@ -118,8 +118,8 @@ struct Rng(Movable):
         if min == max:
             return min
 
-        comptime if dtype == DType.bool:
-            return rebind[Scalar[dtype]](Scalar[DType.bool](self.rand_bool()))
+        comptime if dtype == .bool:
+            return rebind[Scalar[dtype]](Scalar[.bool](self.rand_bool()))
         elif dtype.is_integral():
             var offset = UInt64(0) - UInt64(Scalar[dtype].MIN)
             var a = UInt64(min) + offset
@@ -177,8 +177,8 @@ struct Rng(Movable):
             If the underlying random number generator raises an error.
         """
         return Int(
-            self.rand_scalar[DType.int](
-                min=Scalar[DType.int](min),
-                max=Scalar[DType.int](max),
+            self.rand_scalar[.int](
+                min=Int(min),
+                max=Int(max),
             )
         )

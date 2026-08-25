@@ -11,8 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.gpu import NamedBarrierSemaphore
-from std.gpu.host import DeviceContext
+from max.gpu.sync import NamedBarrierSemaphore
+from max.gpu.host import DeviceContext
 from std.gpu import block_idx, grid_dim, thread_idx
 from layout import Layout, RuntimeLayout, UNKNOWN_VALUE
 from layout._utils import ManagedLayoutTensor
@@ -42,10 +42,10 @@ def test_named_barrier_semaphore_equal_kernel(
 def test_named_barrier_semaphore_equal(ctx: DeviceContext) raises:
     print("== test_named_barrier_semaphore_equal")
 
-    var locks_data = ManagedLayoutTensor[DType.int32, Layout(UNKNOWN_VALUE)](
+    var locks_data = ManagedLayoutTensor[.int32, Layout(UNKNOWN_VALUE)](
         RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(IndexList[1](1)), ctx
     )
-    var shared_data = ManagedLayoutTensor[DType.int32, Layout(UNKNOWN_VALUE)](
+    var shared_data = ManagedLayoutTensor[.int32, Layout(UNKNOWN_VALUE)](
         RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(
             IndexList[1](NUM_BLOCKS)
         ),
@@ -89,10 +89,10 @@ def test_named_barrier_semaphore_less_than_kernel(
 def test_named_barrier_semaphore_less_than(ctx: DeviceContext) raises:
     print("== test_named_barrier_semaphore_less_than")
 
-    var locks_data = ManagedLayoutTensor[DType.int32, Layout(UNKNOWN_VALUE)](
+    var locks_data = ManagedLayoutTensor[.int32, Layout(UNKNOWN_VALUE)](
         RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(IndexList[1](1)), ctx
     )
-    var shared_data = ManagedLayoutTensor[DType.int32, Layout(UNKNOWN_VALUE)](
+    var shared_data = ManagedLayoutTensor[.int32, Layout(UNKNOWN_VALUE)](
         RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(
             IndexList[1](NUM_BLOCKS)
         ),

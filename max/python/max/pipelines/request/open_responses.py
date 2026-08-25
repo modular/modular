@@ -26,15 +26,12 @@ from __future__ import annotations
 
 import base64
 import json
-import logging
-import mimetypes
 import time
 from enum import Enum
 from io import BytesIO
 from typing import Annotated, Any, Literal, Protocol
 from urllib.parse import urlparse
 
-import httpx
 import numpy as np
 import numpy.typing as npt
 from max.pipelines.request.provider_options import (
@@ -60,6 +57,7 @@ __all__ = [
     "FunctionToolChoice",
     "FunctionToolParam",
     "ImageDetail",
+    "ImageGenerationDetails",
     "IncludeEnum",
     "IncompleteDetails",
     "InputContent",
@@ -75,6 +73,7 @@ __all__ = [
     "JsonSchemaField",
     "JsonSchemaParam",
     "LogProb",
+    "MediaDataUriFetcher",
     "Message",
     "MessageRole",
     "MessageStatus",
@@ -111,8 +110,6 @@ __all__ = [
     "UserMessage",
     "VerbosityEnum",
 ]
-
-_logger = logging.getLogger(__name__)
 
 
 # ============================================================================
@@ -721,7 +718,7 @@ class FunctionToolParam(BaseModel):
     name: str = Field(
         ...,
         description="The name of the function to be called. Must be a-z, A-Z, 0-9, "
-        "or contain underscores and dashes, with a maximum length of 64.",
+        "or contain underscores and dashes, with a maximum length of 1024.",
     )
     description: str | None = Field(
         None,
@@ -1083,8 +1080,74 @@ class OutputTokensDetails(BaseModel):
     )
 
 
+class ImageGenerationDetails(BaseModel):
+    """Image generation usage metadata.
+
+    Exposes the generated image dimensions, step count, and image count under
+    ``usage`` so downstream consumers can attribute usage from the response
+    instead of re-deriving it from request inputs.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    width: int = Field(
+        ..., description="The width of each generated image in pixels."
+    )
+    height: int = Field(
+        ..., description="The height of each generated image in pixels."
+    )
+    megapixels: float = Field(
+        ...,
+        description="The number of megapixels per image (width * height / 1e6).",
+    )
+    steps: int = Field(
+        ..., description="The number of denoising steps used to generate."
+    )
+    image_count: int = Field(
+        ..., description="The number of images generated for the request."
+    )
+
+    @classmethod
+    def from_images(
+        cls,
+        pixel_data: npt.NDArray[np.uint8],
+        *,
+        steps: int,
+    ) -> ImageGenerationDetails:
+        """Build image generation details from generated image data.
+
+        Args:
+            pixel_data: Generated images as a non-empty uint8 array of shape
+                ``(image_count, H, W, C)``.
+            steps: The number of denoising steps used to generate.
+
+        Returns:
+            An :obj:`ImageGenerationDetails` describing the generated images.
+
+        Raises:
+            ValueError: If ``pixel_data`` contains no images.
+        """
+        if len(pixel_data) == 0:
+            raise ValueError(
+                "Cannot build ImageGenerationDetails from empty pixel data."
+            )
+        height, width = int(pixel_data[0].shape[0]), int(pixel_data[0].shape[1])
+        return cls(
+            width=width,
+            height=height,
+            megapixels=round(width * height / 1e6, 6),
+            steps=steps,
+            image_count=len(pixel_data),
+        )
+
+
 class Usage(BaseModel):
-    """Token usage statistics."""
+    """Token usage statistics.
+
+    Image generation responses keep ``input_tokens``, ``output_tokens``, and
+    ``total_tokens`` at 0 and report billing-relevant metadata in
+    ``image_generation_details``.
+    """
 
     model_config = ConfigDict(frozen=True)
 
@@ -1104,6 +1167,11 @@ class Usage(BaseModel):
     output_tokens_details: OutputTokensDetails | None = Field(
         None,
         description="Detailed breakdown of output token counts.",
+    )
+    image_generation_details: ImageGenerationDetails | None = Field(
+        None,
+        description="Image generation usage metadata, when the response "
+        "contains generated images.",
     )
 
 
@@ -1611,7 +1679,7 @@ class ResponseResource(BaseModel):
             status="completed",
             model=model,
             output=[message],
-            usage=None,  # TODO: Populate token usage if available from generation_output
+            usage=generation_output.usage,
         )
 
 
@@ -1639,6 +1707,44 @@ class _RequestState(Protocol):
     request_id: str
 
 
+class MediaDataUriFetcher(Protocol):
+    """Fetches a web media URL and returns it as a base64 ``data:`` URI.
+
+    The serving layer supplies the implementation (see
+    ``max.serve.router._image_resolution.fetch_media_data_uri``), which is where
+    the byte caps and host validation for client-supplied URLs live. This
+    library cannot fetch on its own: it does not depend on ``max.serve``, and an
+    unvalidated downloader here would be a second SSRF surface to harden.
+    """
+
+    async def __call__(self, url: str) -> str:
+        """Fetches ``url`` and returns its content as a base64 ``data:`` URI.
+
+        Args:
+            url: An ``http`` or ``https`` media URL supplied by the client.
+
+        Returns:
+            A ``data:<mime>;base64,<payload>`` URI.
+
+        Raises:
+            ValueError: If the URL cannot be fetched, exceeds the configured
+                size cap, or does not resolve to a decodable image.
+        """
+        ...
+
+
+class _AppState(Protocol):
+    """Protocol for the app state carrying server-provided collaborators."""
+
+    media_data_uri_fetcher: MediaDataUriFetcher
+
+
+class _App(Protocol):
+    """Protocol for the FastAPI/Starlette app hanging off a request."""
+
+    state: _AppState
+
+
 class FastAPIRequestProtocol(Protocol):
     """Minimal protocol for FastAPI/Starlette Request objects.
 
@@ -1647,6 +1753,7 @@ class FastAPIRequestProtocol(Protocol):
     """
 
     state: _RequestState
+    app: _App
 
     async def body(self) -> bytes:
         """Return the request body as bytes."""
@@ -1666,58 +1773,29 @@ def _is_web_url(url: str) -> bool:
     return parsed.scheme in ("http", "https")
 
 
-async def _download_and_encode_image(url: str) -> str:
-    """Download an image from a URL and encode it as a base64 data URI.
-
-    Args:
-        url: The URL of the image to download.
-
-    Returns:
-        A data URI string containing the base64-encoded image.
-
-    Raises:
-        httpx.HTTPError: If the download fails due to HTTP errors.
-        httpx.RequestError: If the download fails due to network errors.
-    """
-    async with httpx.AsyncClient() as client:
-        response = await client.get(url, timeout=30.0, follow_redirects=True)
-        response.raise_for_status()
-
-        # Get image bytes
-        image_bytes = response.content
-
-        # Determine MIME type from Content-Type header or URL extension
-        content_type = response.headers.get("content-type")
-        if not content_type or not content_type.startswith("image/"):
-            # Fall back to guessing from URL
-            guessed_type, _ = mimetypes.guess_type(url)
-            content_type = guessed_type or "image/png"
-
-        # Encode as base64
-        base64_data = base64.b64encode(image_bytes).decode("utf-8")
-
-        # Return as data URI
-        return f"data:{content_type};base64,{base64_data}"
-
-
 async def _process_image_urls_in_dict(
     body_dict: dict[str, Any],
+    fetch_data_uri: MediaDataUriFetcher | None,
 ) -> dict[str, Any]:
-    """Process image URLs in raw dict before Pydantic validation.
+    """Inline web image URLs as base64 data URIs before Pydantic validation.
 
-    Downloads images from web URLs (http/https) and converts them to
-    base64-encoded data URIs. This ensures downstream processors don't
-    need to download images individually.
+    :class:`InputImageContent` accepts ``data:`` URIs only, so an ``http(s)``
+    image has to be fetched and inlined here for the body to validate at all.
 
     Args:
         body_dict: Raw request body as dict.
+        fetch_data_uri: Server-supplied fetcher, or ``None`` when the server
+            installed none. Without one a web URL is rejected rather than
+            fetched here: the byte caps and host validation live in the fetcher,
+            so fetching without it would be an unguarded download.
 
     Returns:
         Modified dict with web URLs replaced by base64 data URIs.
 
     Raises:
-        ValueError: If any image URL cannot be downloaded, with details
-            about which URL failed and why.
+        ValueError: If a web URL is supplied with no fetcher available. A failing
+            fetch raises through unchanged, so the fetcher's own sanitized
+            message is what reaches the client.
     """
     # Only process if input is a list
     input_value = body_dict.get("input")
@@ -1738,29 +1816,16 @@ async def _process_image_urls_in_dict(
                 continue
 
             image_url = content_item.get("image_url")
-            if image_url and _is_web_url(image_url):
-                _logger.info(f"Downloading image from URL: {image_url}")
-                try:
-                    # Download and convert to data URI
-                    data_uri = await _download_and_encode_image(image_url)
-                    content_item["image_url"] = data_uri
-                    _logger.info(
-                        "Successfully converted image URL to base64 data URI"
-                    )
-                except httpx.HTTPStatusError as e:
-                    raise ValueError(
-                        f"Failed to download image from '{image_url}': "
-                        f"HTTP {e.response.status_code} {e.response.reason_phrase}"
-                    ) from e
-                except httpx.RequestError as e:
-                    raise ValueError(
-                        f"Failed to download image from '{image_url}': "
-                        f"Network error - {str(e)}"
-                    ) from e
-                except Exception as e:
-                    raise ValueError(
-                        f"Failed to download image from '{image_url}': {str(e)}"
-                    ) from e
+            if not image_url or not _is_web_url(image_url):
+                continue
+            if fetch_data_uri is None:
+                raise ValueError(
+                    "fetching image_url over http(s) is unavailable on this "
+                    "server; supply the image as a data: URI instead"
+                )
+            # Deliberately not logged: request logging, which a media URL is
+            # part of, is not permitted.
+            content_item["image_url"] = await fetch_data_uri(image_url)
 
     return body_dict
 
@@ -1792,8 +1857,10 @@ class OpenResponsesRequest(BaseModel):
 
         Extracts the request_id from request.state.request_id and parses the
         request body as an OpenResponsesRequestBody. If the request contains
-        image URLs (http/https), they will be downloaded and converted to
-        base64 data URIs before validation.
+        image URLs (http/https), they are fetched and converted to base64 data
+        URIs before validation, using the fetcher the server installed at
+        ``app.state.media_data_uri_fetcher``. A web URL is rejected when no
+        fetcher is installed, so this library never fetches unguarded.
 
         Args:
             request: A request object with state.request_id and body() method.
@@ -1804,8 +1871,8 @@ class OpenResponsesRequest(BaseModel):
             to base64 data URIs.
 
         Raises:
-            ValueError: If request.state.request_id is not set, or if any
-                image URL cannot be downloaded.
+            ValueError: If request.state.request_id is not set, or if an image
+                URL cannot be fetched.
             pydantic.ValidationError: If the request body is invalid.
         """
         if not hasattr(request.state, "request_id"):
@@ -1822,9 +1889,13 @@ class OpenResponsesRequest(BaseModel):
         # Parse to dict (not validated yet)
         body_dict = json.loads(raw_body)
 
-        # Process image URLs in the dict BEFORE validation (async)
-        # This downloads images and converts to base64 data URIs
-        body_dict = await _process_image_urls_in_dict(body_dict)
+        # Inline web image URLs as data URIs before validation, since
+        # InputImageContent accepts data URIs only. The fetcher comes from the
+        # serving layer; absent it, web URLs are rejected rather than fetched.
+        fetch_data_uri = getattr(
+            request.app.state, "media_data_uri_fetcher", None
+        )
+        body_dict = await _process_image_urls_in_dict(body_dict, fetch_data_uri)
 
         # NOW validate and create immutable Pydantic model
         body = OpenResponsesRequestBody.model_validate(body_dict)

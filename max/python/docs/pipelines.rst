@@ -45,7 +45,9 @@ Configuration
 
    KVCacheConfig
    MAXModelConfig
+   PipelineArgs
    PipelineConfig
+   PipelineRuntimeConfig
    ProfilingConfig
    SamplingConfig
    SpeculativeConfig

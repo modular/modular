@@ -22,9 +22,10 @@ from max.dtype import DType
 from max.graph import BufferValue, ShardingStrategy, TensorValue, ops
 from max.nn.kv_cache import KVCacheParams, MultiKVCacheParams, PagedCacheValues
 from max.nn.layer import LayerList, Module
-from max.nn.linear import MLP, ColumnParallelLinear
+from max.nn.linear import MLP, ColumnParallelLinear, FusedMLP
 from max.nn.moe import MoE, MoEQuantized, make_concatenated_gated_activation_fn
 from max.nn.rotary_embedding import Llama3RotaryEmbedding
+from max.nn.transformer import ReturnHiddenStates
 from max.nn.transformer.distributed_transformer import (
     DistributedLogitsPostprocessMixin,
 )
@@ -39,6 +40,7 @@ from .layers.moe import Gemma4MoEGate
 from .layers.rms_norm import Gemma4RMSNorm
 from .layers.rotary_embedding import ProportionalRotaryEmbedding
 from .model_config import Gemma4ForConditionalGenerationConfig
+from .weight_adapters import gemma4_uses_fused_projections
 
 
 class Gemma4TextModel(DistributedLogitsPostprocessMixin, Module):
@@ -78,6 +80,13 @@ class Gemma4TextModel(DistributedLogitsPostprocessMixin, Module):
         if quant_config and quant_config.embedding_output_dtype:
             embedding_output_dtype = quant_config.embedding_output_dtype
 
+        # DISTINF-194: load projections pre-fused (single-device, bf16 only).
+        # The weight adapter concatenates the checkpoint projections; the graph
+        # consumes one constant, avoiding the in-graph concat that init would
+        # otherwise materialize as a second on-device weight copy. The shared
+        # predicate keeps layer selection and adapter key fusion in lockstep.
+        use_fused_projections = gemma4_uses_fused_projections(config)
+
         self.embed_tokens = ScaledWordEmbedding(
             text_config.vocab_size,
             text_config.hidden_size,
@@ -110,7 +119,7 @@ class Gemma4TextModel(DistributedLogitsPostprocessMixin, Module):
         # keyed by layer-type name ("sliding_attention" / "full_attention").
         assert isinstance(config.kv_params, MultiKVCacheParams)
         kv_params_by_layer_type: dict[str, KVCacheParams] = {}
-        for _k, _p in config.kv_params.params.items():
+        for _k, _p in config.kv_params.children.items():
             assert isinstance(_p, KVCacheParams)
             kv_params_by_layer_type[_k] = _p
 
@@ -206,8 +215,17 @@ class Gemma4TextModel(DistributedLogitsPostprocessMixin, Module):
                         quant_config=None
                         if (is_nvfp4 and not attn_quantized)
                         else quant_config,
+                        fused_qkv=use_fused_projections,
                     ),
-                    mlp=MLP(
+                    mlp=FusedMLP(
+                        dtype=config.dtype,
+                        hidden_dim=text_config.hidden_size,
+                        feed_forward_length=text_config.intermediate_size,
+                        devices=config.devices,
+                        activation_function=text_config.hidden_activation,
+                    )
+                    if use_fused_projections
+                    else MLP(
                         dtype=unquantized_dtype if moe_nvfp4 else config.dtype,
                         quantization_encoding=None,
                         hidden_dim=text_config.hidden_size,
@@ -238,6 +256,23 @@ class Gemma4TextModel(DistributedLogitsPostprocessMixin, Module):
         self.layers = LayerList(layers)
         self.kv_params = config.kv_params
         self.return_logits = text_config.return_logits
+        self.return_hidden_states = text_config.return_hidden_states
+        self.target_layer_ids: list[int] | None = (
+            list(text_config.target_layer_ids)
+            if text_config.target_layer_ids
+            else None
+        )
+        if self.target_layer_ids is not None:
+            n_layers = text_config.num_hidden_layers
+            for pos, layer_id in enumerate(self.target_layer_ids):
+                if not 0 <= layer_id < n_layers:
+                    raise ValueError(
+                        f"target_layer_ids[{pos}]={layer_id} is out of range "
+                        f"[0, {n_layers}) for a model with {n_layers} layers."
+                    )
+        # Final logit softcapping: matches the reference and bounds logits to
+        # (-cap, cap), keeping them finite under float16.
+        self.logit_softcapping = text_config.final_logit_softcapping
 
     def __call__(
         self,
@@ -269,6 +304,15 @@ class Gemma4TextModel(DistributedLogitsPostprocessMixin, Module):
             )
         ]
 
+        capture_layer_set: set[int] | None = None
+        capture_hidden_states: list[list[TensorValue]] | None = None
+        if (
+            self.target_layer_ids is not None
+            and self.return_hidden_states == ReturnHiddenStates.SELECTED_LAYERS
+        ):
+            capture_layer_set = set(self.target_layer_ids)
+            capture_hidden_states = []
+
         # Run through transformer layers
         for idx, layer in enumerate(self.layers):
             layer_idx_tensor = ops.constant(
@@ -283,7 +327,17 @@ class Gemma4TextModel(DistributedLogitsPostprocessMixin, Module):
                 input_row_offsets=input_row_offsets,
                 **kwargs,
             )
+            if (
+                capture_layer_set is not None
+                and capture_hidden_states is not None
+                and idx in capture_layer_set
+            ):
+                capture_hidden_states.append(list(h))
 
         return self._postprocess_logits(
-            h, input_row_offsets, return_n_logits, signal_buffers
+            h,
+            input_row_offsets,
+            return_n_logits,
+            signal_buffers,
+            capture_hidden_states=capture_hidden_states,
         )

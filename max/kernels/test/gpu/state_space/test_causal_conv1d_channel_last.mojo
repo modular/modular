@@ -19,7 +19,7 @@ strides. Covers widths 1-4 and SiLU on/off.
 
 from std.math import ceildiv
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import (
     Layout,
     LayoutTensor,
@@ -136,7 +136,7 @@ def run_causal_conv1d_channel_last_gpu[
     var silu_activation_int8 = Int8(silu_activation)
 
     # bias_device_tt stands in for the unused seq_idx argument (has_seq_idx=0).
-    @parameter
+    @__parameter
     @always_inline
     def launch[kWidth: Int]() raises:
         var compiled_func = ctx.compile_function[
@@ -159,10 +159,10 @@ def run_causal_conv1d_channel_last_gpu[
         with ctx.push_context():
             ctx.enqueue_function(
                 compiled_func,
-                batch,
-                dim,
-                seqlen,
-                width,
+                Int32(batch),
+                Int32(dim),
+                Int32(seqlen),
+                Int32(width),
                 input_device_tt.as_immut(),
                 weight_device_tt.as_immut(),
                 output_device_tt,

@@ -42,10 +42,12 @@ struct PyArrayObject[dtype: DType](ImplicitlyCopyable):
     See: https://numpy.org/doc/2.1/reference/c-api/types-and-structures.html#c.PyArrayObject
     """
 
-    var data: UnsafePointer[Scalar[Self.dtype], MutAnyOrigin]
+    var data: Pointer[Scalar[Self.dtype], MutUntrackedOrigin]
     var nd: Int
-    var dimensions: UnsafePointer[Int, MutAnyOrigin]
-    var strides: UnsafePointer[Int, MutAnyOrigin]
+
+    var dimensions: Pointer[Int, MutUntrackedOrigin]
+
+    var strides: Pointer[Int, MutUntrackedOrigin]
     var base: PyObjectPtr
     var descr: PyObjectPtr
     var flags: Int
@@ -62,7 +64,7 @@ def mojo_incr_np_array(
 
     print("Hello from mojo_incr_np_array")
 
-    var py_array_object_ptr = UnsafePointer[PyArrayObject[dtype], ...](
+    var py_array_object_ptr = Pointer[PyArrayObject[dtype], ...](
         unchecked_downcast_value=py_array_object
     )
 
@@ -76,11 +78,11 @@ def mojo_incr_np_array(
     print("  nd:", nd)
     print("  dimensions:", end=" ")
     for i in range(nd):
-        print(py_array_object_ptr[].dimensions[i], end=" ")
+        print(py_array_object_ptr[].dimensions[unsafe_offset=i], end=" ")
     print()
     print("  strides:", end=" ")
     for i in range(nd):
-        print(py_array_object_ptr[].strides[i], end=" ")
+        print(py_array_object_ptr[].strides[unsafe_offset=i], end=" ")
     print()
     print("  descr:", py_array_object_ptr[].descr)
     print("  flags:", hex(py_array_object_ptr[].flags))
@@ -92,11 +94,11 @@ def mojo_incr_np_array(
 
     var num_elts = 1
     for i in range(nd):
-        dim = py_array_object_ptr[].dimensions[i]
+        var dim = py_array_object_ptr[].dimensions[unsafe_offset=i]
         num_elts *= dim
 
     for i in range(num_elts):
-        data_ptr[i] += 1
+        data_ptr[unsafe_offset=i] += 1
 
     print("Goodbye from mojo_incr_np_array")
     return PythonObject(None)

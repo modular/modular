@@ -28,7 +28,7 @@ from std.collections import Set
 from std.math import rsqrt
 from std.random import random_ui64, seed
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.sys import has_apple_gpu_accelerator
 from kv_cache.types import (
     ContinuousBatchingKVCacheCollection,
@@ -48,7 +48,7 @@ from std.utils import Index, IndexList
 def execute_decode_compare[
     num_q_heads: Int,
     kv_params: KVCacheStaticParams,
-    dtype: DType = DType.bfloat16,
+    dtype: DType = .bfloat16,
 ](
     cache_lengths: List[Int],
     max_seq_len_cache: Int,
@@ -63,10 +63,6 @@ def execute_decode_compare[
     comptime group = num_q_heads // kv_params.num_heads
     comptime depth = kv_params.head_size
     comptime num_blocks = 32
-
-    comptime CollectionType = ContinuousBatchingKVCacheCollection[
-        dtype, kv_params
-    ]
 
     var batch_size = len(cache_lengths)
     debug_assert(
@@ -93,7 +89,7 @@ def execute_decode_compare[
 
     # ---- valid_length: one query token per sequence ([1, 1, ...]) -------- #
     var valid_lengths = ManagedLayoutTensor[
-        DType.uint32, Layout.row_major(UNKNOWN_VALUE)
+        .uint32, Layout.row_major(UNKNOWN_VALUE)
     ](
         RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
             Index(batch_size)
@@ -120,7 +116,7 @@ def execute_decode_compare[
 
     # ---- per-sequence cache lengths (varied) ----------------------------- #
     var cache_lengths_managed = ManagedLayoutTensor[
-        DType.uint32, Layout(UNKNOWN_VALUE)
+        .uint32, Layout(UNKNOWN_VALUE)
     ](
         RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(Index(batch_size)),
         ctx,
@@ -149,7 +145,7 @@ def execute_decode_compare[
     random(kv_block.tensor())
 
     # ---- lookup table: distinct random block index per sequence ---------- #
-    var lookup_table = ManagedLayoutTensor[DType.uint32, Layout(UNKNOWN_VALUE)](
+    var lookup_table = ManagedLayoutTensor[.uint32, Layout(UNKNOWN_VALUE)](
         RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(Index(batch_size)),
         ctx,
     )
@@ -172,8 +168,15 @@ def execute_decode_compare[
     var kv_block_tensor = kv_block.device_tensor()
     var lookup_table_tensor = lookup_table.device_tensor()
 
-    var kv_collection_device = CollectionType(
-        kv_block_tensor,
+    var kv_collection_device = ContinuousBatchingKVCacheCollection[
+        dtype,
+        kv_params,
+    ](
+        # `mha_gpu_naive`/`naive_fa_decode_apple` read both the `k` and `v` cache
+        # views, which are disjoint kv_idx halves of one `blocks` buffer sharing its
+        # origin, so the nested-origin exclusivity check rejects passing both.
+        # Declare kv_block_tensor origin as UnsafeAnyOrigin` to opt out of exclusivity checking.
+        kv_block_tensor.as_unsafe_any_origin(),
         cache_lengths_device,
         lookup_table_tensor,
         UInt32(max_prompt_len),
@@ -245,8 +248,8 @@ def execute_decode_compare[
             for hd in range(depth):
                 var ref_val = ref_out[bs, 0, h, hd]
                 var test_val = test_out[bs, 0, h, hd]
-                var rv = ref_val.cast[DType.float64]()[0]
-                var tv = test_val.cast[DType.float64]()[0]
+                var rv = ref_val.cast[.float64]()[0]
+                var tv = test_val.cast[.float64]()[0]
                 var err = abs(rv - tv)
                 max_abs_err = max(max_abs_err, err)
                 assert_almost_equal(

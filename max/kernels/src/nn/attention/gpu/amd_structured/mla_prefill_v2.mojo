@@ -10,17 +10,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""MlaPrefillV2 — fresh, from-scratch port of the reference MLA-prefill
+"""MlaPrefillV2: fresh, from-scratch port of the reference MLA-prefill
 INTEGRATED inner-loop architecture for AMD MI355X (gfx950).
 
 This is a NEW kernel struct (sibling of `MlaPrefillV2Core`, not a retrofit)
 that lays out the reference `mla_pfl_qh192_vh128_m32x8_n128x1` register
 structure directly:
 
-- **1 wave / EU** (`llvm.amdgpu-waves-per-eu = "1,1"`) — the 256-VGPR
+- **1 wave / EU** (`llvm.amdgpu-waves-per-eu = "1,1"`): the 256-VGPR
   budget is what makes the reference footprint fit; the default 2-wave cap
   (128 VGPR/wave) spills the FP32 score + O accumulators.
-- **Resident Q** — loaded once per work-tile, held in registers across
+- **Resident Q**: loaded once per work-tile, held in registers across
   every KV block (24 VGPR for FP8 d_qk=192).
 - **Single 64-VGPR FP32 score tile** = the QK MFMA accumulator; softmax
   runs in place on it; the FP8 P operand collapses 4:1 IN PLACE into the
@@ -31,26 +31,26 @@ structure directly:
 - **Streamed K band; streamed V band.** K is streamed from LDS into a
   function-local band, consumed by the QK MFMAs, then freed. V is then
   streamed fragment-at-a-time through the band K vacates (disjoint
-  lifetimes) — the reference lean layout — rather than materialized
+  lifetimes), the reference lean layout, rather than materialized
   as a whole register tile.
 
 ### The reference-exact inner loop
 
 `_attend_exact` lays each KV tile out as 6 barrier-delimited
 clusters (7 bare `_s_barrier_raw`) matching the reference's `label_01D6`
-boundaries —
+boundaries:
 C_QK -> C_V_PREFETCH -> C_SOFTMAX_MAX -> C_EXP/rescale -> C_FP8_PACK ->
-C_PV — and each cluster comment cites the reference asm line it mirrors.
+C_PV, and each cluster comment cites the reference asm line it mirrors.
 The two warp-groups (waves 0-3 / waves 4-7) run that body phase-shifted
 via an asymmetric +4 prologue `_s_barrier_raw()` stagger, with a
 work-split K/V DMA (waves 0-3 produce K, waves 4-7 produce V) into two
-disjoint LDS ring regions (K depth-2, V depth-4 — the reference V region
+disjoint LDS ring regions (K depth-2, V depth-4, the reference V region
 is the wider of the two). The shared math is reproduced in-file without
 editing any shared file.
 
 The prologue stagger (see the prologue keystone + tail-compensation
 comments in `_attend_exact`):
-  - `-D exact_stagger` (default = `persistent`) — the EXACT
+  - `-D exact_stagger` (default = `persistent`): the EXACT
     reference two-half-body discipline: the upper half pays +4 at the
     prologue and the lower half pays a matching +4 at the work-item TAIL
     (the reference `label_06B4` / `label_1A51`), EVERY work-item.
@@ -59,14 +59,14 @@ comments in `_attend_exact`):
     skew conserved across the CU's whole work stream. Off (the static-grid
     default) = the +4 fires only on wi0; work-items 1..N run in lockstep
     (a no-op at one work-item/CU).
-  - `-D v_qktail` (default = NOT `persistent`) — prefetch the
+  - `-D v_qktail` (default = NOT `persistent`): prefetch the
     first V band fragments into the QK-tail. A win where registers have
     headroom (static / batch>1); disabled under `persistent` because
     the held-across-softmax band spills at the 256-VGPR ceiling there.
 
 The cadence levers that reproduce the reference instruction schedule (all
 unconditional; each pinned by a mask-0 `schedule_barrier`, which fixes a
-hand-specified order at codegen — program order alone is re-clustered by
+hand-specified order at codegen; program order alone is re-clustered by
 the IGLP solver):
   - Non-materialized V band (lean ~210-VGPR layout): V is streamed
     fragment-at-a-time through the band K vacates (disjoint lifetimes).
@@ -78,7 +78,7 @@ the IGLP solver):
   - Next-tile K/V prefetch issued in C_QK (ref asm L356-410).
   - Resident Q staged DRAM->LDS->VGPR (the reference Q@0x0 region).
 
-### Correctness strategy — reuse the verified MLA-prefill math
+### Correctness strategy: reuse the verified MLA-prefill math
 
 The MLA-prefill MATH (QK with nope d=128 + rope d=64; FlashAttention-2
 online softmax with running max/sum + cross-tile rescale; in-place FP8
@@ -88,7 +88,7 @@ path), trimmed to exactly the closure this kernel consumes. Rather than
 re-deriving it, `_attend_exact` reuses those BARRIER-FREE numeric
 primitives (the `OnlineSoftmax` recurrence, `MhaMmaOp` MFMA/exp/cast
 helpers, `_qk_collapse_inplace`, the K/V LDS loaders, `_store_o_to_gmem`)
-and `_MlaKDmaPair` for the K DMA — but emits the cluster cadence + the
+and `_MlaKDmaPair` for the K DMA, but emits the cluster cadence + the
 QK/PV MFMA streams in-file, so the reference's bare `s_barrier` boundaries
 are NOT fragmented by the delegated helpers' own `lgkmcnt(0)` drains / IGLP
 fences. This file owns (a) the `waves_per_eu=1,1` kernel entry, (b) the
@@ -106,17 +106,17 @@ from std.gpu import (
     lane_id,
     warp_id,
 )
-from std.gpu.compute.mma import mma as gpu_mma
-from std.gpu.host import DeviceContext
-from std.gpu.host.compile import CompilationTarget
-from std.gpu.sync import s_waitcnt
+from max.gpu.compute.mma import mma as gpu_mma
+from max.gpu.host import DeviceContext
+from max.gpu.host.compile import CompilationTarget
+from max.gpu.sync import s_waitcnt
 from std.math import ceildiv
 from std.memory import AddressSpace
 from std.sys import get_defined_bool, get_defined_int, size_of
-from std.sys.intrinsics import readfirstlane, _type_is_eq
+from std.sys.intrinsics import readfirstlane
 from std.utils import StaticTuple
 
-from layout import TensorLayout, TileTensor
+from layout import TensorLayout, TileTensor, PointerStorage
 from layout.coord import Coord, Idx
 from layout.tile_layout import row_major
 from layout._utils import make_amd_buffer_resource
@@ -417,7 +417,9 @@ struct MlaPrefillV2[config: MlaConfigV2]:
     def _load_q_lds_exact[
         layout: TensorLayout,
     ](
-        q_warp_2d: TileTensor[Self.config.dtype, layout, ...],
+        q_warp_2d: TileTensor[
+            Self.config.dtype, layout, Storage=PointerStorage[], ...
+        ],
         q_lds: SMemTile[Self.config.dtype, _, MutUntrackedOrigin, ...],
         w_id: Int,
         scale_log2e: Float32,
@@ -428,14 +430,14 @@ struct MlaPrefillV2[config: MlaConfigV2]:
         direct DRAM->VGPR load (`_Core._load_q_and_scale_mla`) produces, so
         the QK-MFMA consumer is unchanged.
 
-        Steps (FP8 e4m3 only — the target shape):
+        Steps (FP8 e4m3 only, the target shape):
         1. Cooperative DMA: each warp DMAs its `q_warp_2d` row-block
            (Q_BLOCK_SIZE x D_QK) into its LDS slot
            `q_lds.tile[Q_BLOCK_SIZE, D_QK](w_id, 0)` via
            `buffer_load_*_lds`. Each lane issues the `D_QK`-wide row it
            will later read (`row = lid % Q_BLOCK_SIZE`), so the DMA +
            ds_read share the same per-lane row.
-        2. Hard drain (`s_waitcnt vmcnt(0)`) + workgroup `s_barrier` —
+        2. Hard drain (`s_waitcnt vmcnt(0)`) + workgroup `s_barrier`:
            Q is loaded ONCE in the prologue, so the hard drain is free
            (not in the KV hot loop), and it is the alias-scope-safe
            fence required for the un-scoped DMA -> ds_read handshake: a
@@ -445,7 +447,7 @@ struct MlaPrefillV2[config: MlaConfigV2]:
            `_Core.load_q`'s FP8 per-lane addressing (`row = lid % 32`,
            `col_base = (lid // 32) * 32`, two 16-B halves per K-tile)
            but with the contiguous LDS row stride `D_QK`.
-        4. Prescale (comptime-elided for FP8 — post-QK scale, matching
+        4. Prescale (comptime-elided for FP8, post-QK scale, matching
            `_Core._load_q_and_scale_mla`).
 
         Constraints:
@@ -453,7 +455,7 @@ struct MlaPrefillV2[config: MlaConfigV2]:
             the DRAM path at the call site.
         """
         comptime assert (
-            Self.config.dtype == DType.float8_e4m3fn
+            Self.config.dtype == .float8_e4m3fn
         ), "MlaPrefillV2._load_q_lds_exact: FP8 e4m3 only"
 
         comptime _BK = Self._MmaOp.MMA_K
@@ -499,7 +501,7 @@ struct MlaPrefillV2[config: MlaConfigV2]:
                     UnsafePointer[
                         Scalar[Self.config.dtype],
                         MutAnyOrigin,
-                        address_space=AddressSpace.SHARED,
+                        address_space=.SHARED,
                     ]
                 ](q_slot.tile[1, Self.D_QK](r, 0).ptr)
             )
@@ -559,7 +561,7 @@ struct MlaPrefillV2[config: MlaConfigV2]:
             comptime for h in range(_H):
                 comptime for w in range(_W):
                     q_v[h, w, 0] = (
-                        q_v[h, w, 0].cast[DType.float32]() * scale_log2e
+                        q_v[h, w, 0].cast[.float32]() * scale_log2e
                     ).cast[Self.config.dtype]()
 
         return q_reg
@@ -577,7 +579,7 @@ struct MlaPrefillV2[config: MlaConfigV2]:
         mut q_reg: RegTile[
             Self.config.dtype, Self._Q_LAYOUT_MLA_T, MutUntrackedOrigin
         ],
-        mut o_reg: RegTile[DType.float32, Self._O_LAYOUT_T, MutUntrackedOrigin],
+        mut o_reg: RegTile[.float32, Self._O_LAYOUT_T, MutUntrackedOrigin],
         mut softmax: OnlineSoftmax[Self._SOFTMAX_DTYPE],
         mask_functor: mask_t,
         mut att_block: RegTile[
@@ -611,7 +613,7 @@ struct MlaPrefillV2[config: MlaConfigV2]:
         rather than delegating to `Self._Core._softmax_tile_fp32` /
         `_pv_whole` / `_qk_with_kreg_mla_nope` (which carry their own drain
         walls). The cadence levers (non-materialized V, 4-slot V band,
-        4-ahead K ring, C_QK prefetch — all pinned by the mask-0 fence)
+        4-ahead K ring, C_QK prefetch, all pinned by the mask-0 fence)
         reproduce the reference instruction schedule. The masked tail +
         4-barrier resync epilogue are the remaining reference-structural
         follow-ons (see the loop-end note).
@@ -626,7 +628,7 @@ struct MlaPrefillV2[config: MlaConfigV2]:
         # cluster-boundary drains.)
         var w_remap = w_id & 3
 
-        @parameter
+        @__parameter
         @always_inline
         def _dma_k_into(slot: Int, t: Int):
             var kp = _MlaKDmaPair[Self.config](
@@ -638,7 +640,7 @@ struct MlaPrefillV2[config: MlaConfigV2]:
             kp.dma(k_slot, w_remap, l_id)
             kp.dma(k_slot, w_remap + 4, l_id)
 
-        @parameter
+        @__parameter
         @always_inline
         def _dma_v_into(slot: Int, t: Int):
             var v_slot = v_ring.tile[Self._V_SLOT_ROWS, Self._V_SUB_COLS](
@@ -657,7 +659,7 @@ struct MlaPrefillV2[config: MlaConfigV2]:
                 l_id,
             )
 
-        @parameter
+        @__parameter
         @always_inline
         def _dma_kv_split(k_slot_idx: Int, v_slot_idx: Int, t: Int):
             # Reference work-split: phase-lagged upper half (waves 4-7)
@@ -886,7 +888,7 @@ struct MlaPrefillV2[config: MlaConfigV2]:
         # reorder-fenced so the cadence survives codegen at the boundary, and
         # the cluster interior stays free of `lgkmcnt(0)` / `sched_barrier(0)`
         # walls.
-        @parameter
+        @__parameter
         @always_inline
         def _one_tile_exact[is_upper: Bool](t32_arg: Int32):
             # Reference-faithful non-materialized V (the lean band layout):
@@ -1039,7 +1041,7 @@ struct MlaPrefillV2[config: MlaConfigV2]:
             var f3 = _FRAG(0)
 
             # Load fragment `i` from SMEM (the rope sub-view for rope cols).
-            @parameter
+            @__parameter
             @always_inline
             def _load_frag[i: Int]() -> _FRAG:
                 comptime if _is_rope(i):
@@ -1049,7 +1051,7 @@ struct MlaPrefillV2[config: MlaConfigV2]:
 
             # Write fragment value into ring slot `s` (comptime dispatch to
             # one of the 4 distinct SSA values).
-            @parameter
+            @__parameter
             @always_inline
             def _put[s: Int](var v: _FRAG):
                 comptime if s == 0:
@@ -1062,7 +1064,7 @@ struct MlaPrefillV2[config: MlaConfigV2]:
                     f3 = v
 
             # Read ring slot `s`.
-            @parameter
+            @__parameter
             @always_inline
             def _get[s: Int]() -> _FRAG:
                 comptime if s == 0:
@@ -1111,13 +1113,13 @@ struct MlaPrefillV2[config: MlaConfigV2]:
             comptime _PF_K_AT = (2, 4, 6, 8)  # K sub-call -> MFMA iter
             comptime _PF_V_AT = (2, 6)  # V sub-call -> MFMA iter
 
-            @parameter
+            @__parameter
             @always_inline
             def _pf_spread_step[i_mfma: Int]():
                 comptime if is_upper:
                     # V producer: 2 halves at _PF_V_AT.
                     comptime for vj in range(len(_PF_V_AT)):
-                        comptime if _PF_V_AT[vj] == i_mfma:
+                        comptime if rebind[Int](_PF_V_AT[vj]) == i_mfma:
                             _sched_barrier_zero()
                             Self._Core._dma_v[v_full_v227=Self._V_FULL_V227,](
                                 v_ring.tile[
@@ -1135,7 +1137,7 @@ struct MlaPrefillV2[config: MlaConfigV2]:
                     # K producer: dma_nope/dma_rope x 2 warp-halves at
                     # _PF_K_AT (sub-call kj: half = kj // 2, rope = kj & 1).
                     comptime for kj in range(len(_PF_K_AT)):
-                        comptime if _PF_K_AT[kj] == i_mfma:
+                        comptime if rebind[Int](_PF_K_AT[kj]) == i_mfma:
                             _sched_barrier_zero()
                             var _kp = _MlaKDmaPair[Self.config](
                                 k_op, batch_idx_u32, kv_head_idx_u32, _pf_t
@@ -1276,7 +1278,7 @@ struct MlaPrefillV2[config: MlaConfigV2]:
             # `ds_read_b64_tr_b8` = 3 fragments × 4 reads; ref asm QK-tail
             # L2245-2272). Default (`_V_QKTAIL=False`) the prologue stays in
             # C_PV_MFMA below, so the hoist is SSA-neutral (the band vars are
-            # dead until C_PV; the `@parameter @always_inline` helpers emit
+            # dead until C_PV; the `@__parameter @always_inline` helpers emit
             # nothing until called). The hoist is the lean-V design's mirror:
             # lean-V reads ALL 32 V in C_PV; `v_qktail` moves 12 up to match
             # the reference 12/20 placement, at the cost of holding 24 VGPR
@@ -1293,12 +1295,12 @@ struct MlaPrefillV2[config: MlaConfigV2]:
             comptime _VRING = 4  # reference 4-slot rotating V band (v[28:59])
             comptime _VAHEAD = 3  # 3 slots in flight (see C_PV_MFMA notes)
 
-            @parameter
+            @__parameter
             @always_inline
             def _vstrip(i: Int) -> Int:
                 return i // _N_DEPTH
 
-            @parameter
+            @__parameter
             @always_inline
             def _vdepth(i: Int) -> Int:
                 return i % _N_DEPTH
@@ -1306,7 +1308,7 @@ struct MlaPrefillV2[config: MlaConfigV2]:
             # Load V fragment `i` from the per-lane V LDS base (4
             # `ds_read_tr8_b64` joined to one SIMD; `v_lane_base` CSEs to a
             # single base across the unrolled stream — the reference `v227`).
-            @parameter
+            @__parameter
             @always_inline
             def _vload[i: Int]() -> _VFRAG:
                 return rebind[_VFRAG](
@@ -1326,7 +1328,7 @@ struct MlaPrefillV2[config: MlaConfigV2]:
             var vf2 = _VFRAG(0)
             var vf3 = _VFRAG(0)
 
-            @parameter
+            @__parameter
             @always_inline
             def _vput[s: Int](var v: _VFRAG):
                 comptime if s == 0:
@@ -1338,7 +1340,7 @@ struct MlaPrefillV2[config: MlaConfigV2]:
                 else:
                     vf3 = v
 
-            @parameter
+            @__parameter
             @always_inline
             def _vget[s: Int]() -> _VFRAG:
                 comptime if s == 0:
@@ -1679,10 +1681,10 @@ struct MlaPrefillV2[config: MlaConfigV2]:
 
         comptime _o_view_layout = Self._MmaOp.O_T_LAYOUT
         var o_normalized_view = TileTensor[
-            DType.float32,
+            .float32,
             type_of(_o_view_layout),
             MutUntrackedOrigin,
-            address_space=AddressSpace.LOCAL,
+            address_space=.LOCAL,
         ](o_reg.ptr, _o_view_layout)
         var epilogue_writer = RegTileEpilogue[out_dtype, 1](o_warp_2d)
         # int32 clamp: `seq_len`/`block_tile_idx`/`w_id` originate as Int32
@@ -1759,6 +1761,9 @@ struct MlaPrefillV2[config: MlaConfigV2]:
             Int32(Self.NUM_THREADS)
         )
     )
+    @__name(
+        t"mla_prefill_v2_amd_{q_dtype}_{output_dtype}_BM{Self.BM}_KV{Self.KV_BLOCK}_D{Self.DEPTH}"
+    )
     @staticmethod
     def run[
         k_nope_t: MHAOperand,
@@ -1778,26 +1783,39 @@ struct MlaPrefillV2[config: MlaConfigV2]:
         o: TileTensor[output_dtype, o_layout, MutAnyOrigin],
         mask_functor: mask_t,
         scale: Float32,
-        num_keys: Int,
-        start_pos: Int,
-        work_indptr_ptr: UnsafePointer[
-            Scalar[DType.int32], ImmutAnyOrigin
-        ] = UnsafePointer[
-            Scalar[DType.int32], ImmutAnyOrigin
+        num_keys_dev: Int32,
+        start_pos_dev: Int32,
+        work_indptr_ptr: UnsafePointer[Int32, ImmutAnyOrigin] = UnsafePointer[
+            Int32, ImmutAnyOrigin
         ].unsafe_dangling(),
-        work_info_ptr: UnsafePointer[
-            Scalar[DType.int32], ImmutAnyOrigin
-        ] = UnsafePointer[
-            Scalar[DType.int32], ImmutAnyOrigin
+        work_info_ptr: UnsafePointer[Int32, ImmutAnyOrigin] = UnsafePointer[
+            Int32, ImmutAnyOrigin
         ].unsafe_dangling(),
-        num_works: Int = 0,
+        num_works_dev: Int32 = 0,
     ):
-        """Multi-block 8-warp MLA forward — reference integrated cadence.
+        """Multi-block 8-warp MLA forward: reference integrated cadence.
 
         Grid: `(NUM_HEADS, ceildiv(seq_len, BM), batch)`. Each block owns
         one `(batch, head, BM-tile)` slice; the 8 warps split the
         BM-tile's Q rows. Same grid/operand contract as
         `MlaPrefillV2Core.run`.
+
+        Parameters:
+            k_nope_t: Compile-time operand type for the K nope
+                segment.
+            k_rope_t: Compile-time operand type for the K rope
+                segment.
+            v_t: Compile-time operand type for the V segment.
+            mask_t: Compile-time mask predicate type (causal, null,
+                etc.).
+            q_dtype: Element type of the Q tensor; must equal
+                `config.dtype`.
+            output_dtype: Element type of the output tensor; must
+                equal `config.output_dtype`.
+            q_layout: Memory layout of the Q tile tensor.
+            o_layout: Memory layout of the output tile tensor.
+            ragged: Whether the batch uses ragged variable-length
+                sequences (defaults to `False`).
 
         Args:
             q: Q tile tensor at d_qk = d_nope + d_rope.
@@ -1805,7 +1823,7 @@ struct MlaPrefillV2[config: MlaConfigV2]:
                 serves as the single-base K loader source (the
                 `_MlaKDmaPair` reads both nope cols [0, D_NOPE) and rope
                 cols [ROPE_CACHE_OFFSET, +D_ROPE) from this one operand).
-            k_rope_op: K (rope segment) operand (unused here — the
+            k_rope_op: K (rope segment) operand (unused here, the
                 unified `_MlaKDmaPair` slices rope from `k_nope_op`'s
                 full latent-cache row; kept in the signature for
                 contract parity with `MlaPrefillV2Core.run` and the
@@ -1814,9 +1832,9 @@ struct MlaPrefillV2[config: MlaConfigV2]:
                 `head_dim_idx=0`.
             o: Output tile tensor at d_pv = depth.
             mask_functor: Per-tile mask predicate (causal / null / ...).
-            scale: Softmax scale (typically `1 / sqrt(d_qk)`).
-            num_keys: Runtime length of the K/V sequence.
-            start_pos: Position of the first Q row in the global
+            scale: Softmax scale (`1/sqrt(d_qk)`).
+            num_keys_dev: Runtime length of the K/V sequence.
+            start_pos_dev: Position of the first Q row in the global
                 sequence.
             work_indptr_ptr: Persistent-prefill work partition
                 prefix-sum `[num_cu+1]` (device). Threaded for the S2
@@ -1824,9 +1842,12 @@ struct MlaPrefillV2[config: MlaConfigV2]:
             work_info_ptr: Persistent-prefill flat `WorkInfo`
                 array `[num_works*8]` int32 (device). Threaded for S2;
                 unused by the current static grid.
-            num_works: Total number of work-tiles in `work_info_ptr`.
+            num_works_dev: Total number of work-tiles in `work_info_ptr`.
                 Threaded for S2; unused by the current static grid.
         """
+        var num_keys = Int(num_keys_dev)
+        var start_pos = Int(start_pos_dev)
+        var num_works = Int(num_works_dev)
         comptime assert Self._IS_DSV_MLA_SHAPE, (
             "MlaPrefillV2: only the FP8 / KV>=128 / 32x32x64 shape is"
             " supported in Phase 1 (the reference integrated cadence target)."
@@ -1851,9 +1872,7 @@ struct MlaPrefillV2[config: MlaConfigV2]:
 
         var seq_len = Int(readfirstlane(Int32(q.dim[1]())))
         var num_tiles = Int(
-            readfirstlane(
-                Int32((num_keys + Self.KV_BLOCK - 1) // Self.KV_BLOCK)
-            )
+            readfirstlane(Int32(ceildiv(num_keys, Self.KV_BLOCK)))
         )
         comptime assert (
             Self.NUM_HEADS % Self.NUM_KV_HEADS == 0
@@ -1907,7 +1926,7 @@ struct MlaPrefillV2[config: MlaConfigV2]:
         # x 16 head). The static grid and the reference persistent work-loop
         # drive this SAME body; they differ only in how (head_idx,
         # block_tile_idx, batch_idx) are sourced (block_idx vs WorkInfo).
-        @parameter
+        @__parameter
         @always_inline
         def _run_one_work(
             head_idx: Int,
@@ -1938,21 +1957,12 @@ struct MlaPrefillV2[config: MlaConfigV2]:
             var max_q_end_pos_i32 = (
                 max_tile_idx_local_i32 + 1
             ) * _QBS_I32 + Int32(start_pos)
-            var max_num_tiles_calc_i32 = (
-                max_q_end_pos_i32 + _KVB_I32 - 1
-            ) // _KVB_I32
+            var max_num_tiles_calc_i32 = ceildiv(max_q_end_pos_i32, _KVB_I32)
             var max_num_tiles_local: Int
-            comptime if _type_is_eq[mask_t, CausalMask]():
-                var capped_i32 = (
-                    max_num_tiles_calc_i32 if max_num_tiles_calc_i32
-                    < num_tiles_i32 else num_tiles_i32
-                )
-                var floor4_i32 = (
-                    Int32(4) if num_tiles_i32 >= 4 else num_tiles_i32
-                )
-                max_num_tiles_local = Int(
-                    floor4_i32 if capped_i32 < floor4_i32 else capped_i32
-                )
+            comptime if mask_t == CausalMask:
+                var capped_i32 = min(max_num_tiles_calc_i32, num_tiles_i32)
+                var floor4_i32 = min(Int32(4), num_tiles_i32)
+                max_num_tiles_local = Int(max(capped_i32, floor4_i32))
             else:
                 max_num_tiles_local = num_tiles
 
@@ -1998,7 +2008,7 @@ struct MlaPrefillV2[config: MlaConfigV2]:
 
             # ---- Per-work-item register state ----------------------------
             # The reference footprint: Q(24) + att(64 FP32) + o_reg(64 FP32).
-            var o_reg = reg_alloc[DType.float32](Self._MmaOp.O_LAYOUT)
+            var o_reg = reg_alloc[.float32](Self._MmaOp.O_LAYOUT)
             var softmax = OnlineSoftmax[Self._SOFTMAX_DTYPE]()
             _ = o_reg.fill(0)
             var att_block = reg_alloc[Self._SOFTMAX_DTYPE](
@@ -2102,6 +2112,9 @@ struct MlaPrefillV2[config: MlaConfigV2]:
             Int32(Self.NUM_THREADS)
         )
     )
+    @__name(
+        t"mla_prefill_v2_ragged_amd_{qkv_dtype}_{output_dtype}_BM{Self.BM}_KV{Self.KV_BLOCK}_D{Self.DEPTH}"
+    )
     @staticmethod
     def ragged_kernel[
         k_nope_t: MHAOperand,
@@ -2118,13 +2131,40 @@ struct MlaPrefillV2[config: MlaConfigV2]:
         output_ptr: UnsafePointer[Scalar[output_dtype], MutAnyOrigin],
         mask_functor: mask_t,
         scale: Float32,
-        input_row_offsets_ptr: UnsafePointer[
-            Scalar[DType.uint32], ImmutAnyOrigin
-        ],
+        input_row_offsets_ptr: UnsafePointer[UInt32, ImmutAnyOrigin],
     ):
         """Ragged-batch GPU kernel entry. Per-sequence setup mirrors
         `MlaPrefillV2Core.ragged_kernel` (self-attention; `num_keys =
-        start_pos + seq_len`)."""
+        start_pos + seq_len`).
+
+        Parameters:
+            k_nope_t: Compile-time operand type for the K nope
+                segment.
+            k_rope_t: Compile-time operand type for the K rope
+                segment.
+            v_t: Compile-time operand type for the V segment.
+            mask_t: Compile-time mask predicate type (causal, null,
+                etc.).
+            qkv_dtype: Element type of the Q, K, and V tensors; must
+                equal `config.dtype`.
+            output_dtype: Element type of the output tensor; must
+                equal `config.output_dtype`.
+
+        Args:
+            q_ptr: Pointer to the ragged-batch Q tensor data.
+            k_nope_op: K (nope segment) operand; also supplies
+                `cache_length` for `start_pos`.
+            k_rope_op: K (rope segment) operand (unused, kept for
+                contract parity).
+            v_op: V operand (= nope segment of the latent cache).
+            output_ptr: Pointer to the ragged-batch output tensor
+                data.
+            mask_functor: Per-tile mask predicate (causal / null /
+                ...).
+            scale: Softmax scale (`1/sqrt(d_qk)`).
+            input_row_offsets_ptr: Pointer to the per-sequence row
+                offset prefix-sum `[batch_size+1]` `uint32` array.
+        """
         var batch_idx = block_idx.z
         var start_of_seq = Int(input_row_offsets_ptr[batch_idx])
         var end_of_seq = Int(input_row_offsets_ptr[batch_idx + 1])
@@ -2170,8 +2210,8 @@ struct MlaPrefillV2[config: MlaConfigV2]:
             o_tt,
             mask_functor,
             scale,
-            num_keys,
-            start_pos,
+            Int32(num_keys),
+            Int32(start_pos),
         )
 
 
@@ -2196,7 +2236,7 @@ def mla_prefill_v2_ragged[
     output_ptr: UnsafePointer[Scalar[output_dtype], MutAnyOrigin],
     mask_functor: mask_t,
     scale: Float32,
-    input_row_offsets_ptr: UnsafePointer[Scalar[DType.uint32], ImmutAnyOrigin],
+    input_row_offsets_ptr: UnsafePointer[UInt32, ImmutAnyOrigin],
     max_prompt_len: Int,
     batch_size: Int,
     ctx: DeviceContext,
@@ -2206,6 +2246,39 @@ def mla_prefill_v2_ragged[
     Standard ragged-prefill signature/boilerplate (grid/block derivation,
     three operands, mask functor, scale, input row offsets).
     Grid: `(NUM_HEADS, ceildiv(max_prompt_len, BM), batch_size)`.
+
+    Parameters:
+        k_nope_t: Compile-time operand type for the K nope segment
+            (inferred).
+        k_rope_t: Compile-time operand type for the K rope segment
+            (inferred).
+        v_t: Compile-time operand type for the V segment (inferred).
+        mask_t: Compile-time mask predicate type (causal, null, etc.)
+            (inferred).
+        qkv_dtype: Element type of the Q, K, and V tensors; must equal
+            `config.dtype` (inferred).
+        output_dtype: Element type of the output tensor; must equal
+            `config.output_dtype` (inferred).
+        config: Shape configuration (`MlaConfigV2`).
+        compile_options: Compilation options for the kernel (defaults
+            to the device's default compile options).
+
+    Args:
+        q_ptr: Pointer to the ragged-batch Q tensor data.
+        k_nope: K nope-segment operand; supplies `cache_length` for
+            `start_pos`.
+        k_rope: K rope-segment operand (unused by the kernel; kept for
+            contract parity).
+        v: V operand (the nope segment of the latent cache).
+        output_ptr: Pointer to the ragged-batch output tensor data.
+        mask_functor: Per-tile mask predicate (causal / null / ...).
+        scale: Softmax scale (`1/sqrt(d_qk)`).
+        input_row_offsets_ptr: Pointer to the per-sequence row offset
+            prefix-sum `[batch_size+1]` `uint32` array.
+        max_prompt_len: Maximum prompt length in the batch; bounds the
+            grid's BM-tile dimension.
+        batch_size: Number of sequences in the ragged batch.
+        ctx: Device context used to compile and enqueue the kernel.
     """
     comptime assert (
         qkv_dtype == config.dtype

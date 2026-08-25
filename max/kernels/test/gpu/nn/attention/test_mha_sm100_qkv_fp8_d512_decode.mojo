@@ -34,7 +34,7 @@ Target hardware family: NVIDIA SM100 (B200).
 
 from std.math import sqrt
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import (
     Idx,
     TileTensor,
@@ -249,8 +249,8 @@ def execute_pure_fp8_decode_test[
                         + head_dim * (h + s * num_q_heads)
                         + b * head_dim * num_q_heads * seq_len
                     )
-                    var expect = out_ref_host[idx].cast[DType.float64]()
-                    var actual = out_fp8_host[idx].cast[DType.float64]()
+                    var expect = out_ref_host[idx].cast[.float64]()
+                    var actual = out_fp8_host[idx].cast[.float64]()
                     if actual != actual:
                         num_nan_actual += 1
                         if d == 0:

@@ -30,9 +30,7 @@ from test_common.pipeline_model_dummy import (
 )
 from test_common.registry import prepare_registry
 
-pytest.mark.skip(
-    reason="TODO MODELS-890: Reenable these tests when we do not call out to HuggingFace / move to HF workflow",
-)
+_HF_REPO_ID = "trl-internal-testing/tiny-random-LlamaForCausalLM"
 
 
 @prepare_registry
@@ -173,7 +171,7 @@ def test_config__prefer_module_v3_default_is_false() -> None:
         models=ModelManifest(
             {
                 "main": MAXModelConfig(
-                    model_path="trl-internal-testing/tiny-random-LlamaForCausalLM",
+                    model_path=_HF_REPO_ID,
                     quantization_encoding="float32",
                     max_length=128,
                 )
@@ -213,7 +211,7 @@ def test_config__prefer_module_v3_can_be_set_to_true() -> None:
         models=ModelManifest(
             {
                 "main": MAXModelConfig(
-                    model_path="trl-internal-testing/tiny-random-LlamaForCausalLM",
+                    model_path=_HF_REPO_ID,
                     quantization_encoding="float32",
                     max_length=128,
                 )
@@ -250,7 +248,7 @@ def test_config__prefer_module_v3_true_falls_back_to_v2_arch() -> None:
         models=ModelManifest(
             {
                 "main": MAXModelConfig(
-                    model_path="trl-internal-testing/tiny-random-LlamaForCausalLM",
+                    model_path=_HF_REPO_ID,
                     # Use only one GPU since this model does not support multi-GPU inference.
                     device_specs=[DeviceSpec.accelerator()],
                     quantization_encoding="float32",
@@ -320,7 +318,7 @@ def test_config__prefer_module_v3_with_draft_model() -> None:
         models=ModelManifest(
             {
                 "main": MAXModelConfig(
-                    model_path="trl-internal-testing/tiny-random-LlamaForCausalLM",
+                    model_path=_HF_REPO_ID,
                     quantization_encoding="float32",
                     max_length=128,
                 )

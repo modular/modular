@@ -24,6 +24,8 @@ from max.pipelines import PIPELINE_REGISTRY
 from max.pipelines.context import TextContext, TextGenerationOutput
 from max.pipelines.lib import (
     MAXModelConfig,
+    ModelManifest,
+    PipelineArgs,
     PipelineConfig,
     PipelineRuntimeConfig,
 )
@@ -61,13 +63,12 @@ def mock_pipeline_config() -> PipelineConfig:
     runtime = PipelineRuntimeConfig.model_construct(
         max_batch_size=1,
     )
-    pipeline_config = PipelineConfig.model_construct(
-        runtime=runtime,
-    )
 
     model_config = MAXModelConfig.model_construct(served_model_name="echo")
-    pipeline_config.model = model_config
-    return pipeline_config
+    return PipelineConfig.model_construct(
+        runtime=runtime,
+        models=ModelManifest({"main": model_config}),
+    )
 
 
 @pytest.fixture()
@@ -98,26 +99,25 @@ def settings_config(request: pytest.FixtureRequest):  # noqa: ANN201
 
 @pytest.fixture(scope="function")
 def app(
-    pipeline_config: PipelineConfig, settings_config: Mapping[str, Any]
+    pipeline_config: PipelineArgs, settings_config: Mapping[str, Any]
 ) -> FastAPI:
     """The FastAPI app used to serve the model."""
 
     pipeline_task = PipelineTask.TEXT_GENERATION
-    if (
-        pipeline_config.model.model_path
-        == "sentence-transformers/all-mpnet-base-v2"
-    ):
+    if pipeline_config.model_path == "sentence-transformers/all-mpnet-base-v2":
         pipeline_task = PipelineTask.EMBEDDINGS_GENERATION
 
-    tokenizer, pipeline_factory = PIPELINE_REGISTRY.retrieve_factory(
-        pipeline_config, task=pipeline_task
+    pipeline_cfg = PipelineConfig.from_args(pipeline_config)
+    retrieved = PIPELINE_REGISTRY.retrieve_factory(
+        pipeline_cfg, task=pipeline_task
     )
 
     serving_settings = ServingTokenGeneratorSettings(
-        model_factory=pipeline_factory,
-        pipeline_config=pipeline_config,
-        tokenizer=tokenizer,
+        model_factory=retrieved.factory,
+        pipeline_config=pipeline_cfg,
+        tokenizer=retrieved.tokenizer,
         task=pipeline_task,
+        memory_plan=retrieved.memory_plan,
     )
 
     settings = Settings(**settings_config)

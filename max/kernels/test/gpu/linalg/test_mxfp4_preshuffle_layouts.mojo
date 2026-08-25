@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.math import align_up
 from std.testing import assert_equal
 
@@ -23,11 +23,11 @@ from linalg.matmul.gpu.amd import Shuffler
 def test_preshuffle_b_round_trip[
     N: Int, K_BYTES: Int
 ](ctx: DeviceContext) raises:
-    var src_hb = ctx.enqueue_create_host_buffer[DType.uint8](N * K_BYTES)
-    var dst_hb = ctx.enqueue_create_host_buffer[DType.uint8](N * K_BYTES)
+    var src_hb = ctx.enqueue_create_host_buffer[.uint8](N * K_BYTES)
+    var dst_hb = ctx.enqueue_create_host_buffer[.uint8](N * K_BYTES)
 
-    var src_db = ctx.enqueue_create_buffer[DType.uint8](N * K_BYTES)
-    var dst_db = ctx.enqueue_create_buffer[DType.uint8](N * K_BYTES)
+    var src_db = ctx.enqueue_create_buffer[.uint8](N * K_BYTES)
+    var dst_db = ctx.enqueue_create_buffer[.uint8](N * K_BYTES)
     ctx.synchronize()
 
     for i in range(N * K_BYTES):
@@ -62,7 +62,7 @@ def test_preshuffle_b_round_trip[
             assert_equal(dst_hb[dst_idx], src_hb[src_idx])
 
     # Permutation, not duplication: every output position written exactly once.
-    var seen_hb = ctx.enqueue_create_host_buffer[DType.uint8](N * K_BYTES)
+    var seen_hb = ctx.enqueue_create_host_buffer[.uint8](N * K_BYTES)
     ctx.synchronize()
     for i in range(N * K_BYTES):
         seen_hb[i] = UInt8(0)
@@ -79,14 +79,71 @@ def test_preshuffle_b_round_trip[
         assert_equal(seen_hb[i], UInt8(1))
 
 
+def test_preshuffle_b_planes_round_trip[
+    N: Int, K_BYTES: Int, lane_bytes: Int
+](ctx: DeviceContext) raises:
+    """Round-trips the plane-split preshuffle for a non-power-of-two fragment.
+
+    The write kernel and the read path (`b_plane_byte_off`, used by
+    `PreshuffledBLoader`) must agree exactly: a permutation kernel that
+    disagrees with its reader produces wrong weights, not a crash. So this
+    checks the same two properties as the 16-byte round trip -- every source
+    byte lands where the reader will look for it, and every destination byte
+    is written exactly once.
+    """
+    var src_hb = ctx.enqueue_create_host_buffer[.uint8](N * K_BYTES)
+    var dst_hb = ctx.enqueue_create_host_buffer[.uint8](N * K_BYTES)
+    var src_db = ctx.enqueue_create_buffer[.uint8](N * K_BYTES)
+    var dst_db = ctx.enqueue_create_buffer[.uint8](N * K_BYTES)
+    ctx.synchronize()
+
+    for i in range(N * K_BYTES):
+        src_hb[i] = UInt8((i * 31 + 7) & 0xFF)
+    ctx.enqueue_copy(src_db, src_hb)
+
+    var src_tt = TileTensor(
+        src_db, row_major(Coord(Idx[1], Idx[N], Idx[K_BYTES]))
+    )
+    var dst_tt = TileTensor(
+        dst_db, row_major(Coord(Idx[1], Idx[N], Idx[K_BYTES]))
+    )
+    Shuffler[1].preshuffle_b_planes[
+        N=N, K_BYTES=K_BYTES, lane_bytes=lane_bytes
+    ](src_tt, dst_tt, ctx)
+
+    ctx.enqueue_copy(dst_hb, dst_db)
+    ctx.synchronize()
+
+    comptime num_planes = Shuffler[1].num_planes[lane_bytes]()
+    var seen_hb = ctx.enqueue_create_host_buffer[.uint8](N * K_BYTES)
+    ctx.synchronize()
+    for i in range(N * K_BYTES):
+        seen_hb[i] = UInt8(0)
+
+    for n in range(N):
+        for frag in range(K_BYTES // lane_bytes):
+            var k_byte = frag * lane_bytes
+            comptime for pl in range(num_planes):
+                comptime pb = Shuffler[1].plane_bytes[lane_bytes, pl]()
+                var dst_base = Shuffler[1].b_plane_byte_off[
+                    N=N, K_BYTES=K_BYTES, lane_bytes=lane_bytes, plane=pl
+                ](0, n, k_byte)
+                for b in range(pb):
+                    var src_idx = n * K_BYTES + k_byte + pl * 16 + b
+                    assert_equal(dst_hb[dst_base + b], src_hb[src_idx])
+                    assert_equal(seen_hb[dst_base + b], UInt8(0))
+                    seen_hb[dst_base + b] = UInt8(1)
+
+    for i in range(N * K_BYTES):
+        assert_equal(seen_hb[i], UInt8(1))
+
+
 def test_preshuffle_scale_round_trip[
     MN: Int, K_SCALES: Int
 ](ctx: DeviceContext) raises:
     comptime MN_padded = Shuffler[1].scale_padded_mn(MN)
-    var src_hb = ctx.enqueue_create_host_buffer[DType.uint8](MN * K_SCALES)
-    var dst_hb = ctx.enqueue_create_host_buffer[DType.uint8](
-        MN_padded * K_SCALES
-    )
+    var src_hb = ctx.enqueue_create_host_buffer[.uint8](MN * K_SCALES)
+    var dst_hb = ctx.enqueue_create_host_buffer[.uint8](MN_padded * K_SCALES)
     ctx.synchronize()
 
     for i in range(MN * K_SCALES):
@@ -231,13 +288,9 @@ def test_preshuffle_grouped_scale_gpu[
     )
 
     # ---- Host buffers + random-like init ----
-    var src_hb = ctx.enqueue_create_host_buffer[DType.uint8](
-        total_tokens * K_SCALES
-    )
-    var a_off_hb = ctx.enqueue_create_host_buffer[DType.uint32](num_active + 1)
-    var dst_hb = ctx.enqueue_create_host_buffer[DType.uint8](
-        num_active * slot_bytes
-    )
+    var src_hb = ctx.enqueue_create_host_buffer[.uint8](total_tokens * K_SCALES)
+    var a_off_hb = ctx.enqueue_create_host_buffer[.uint32](num_active + 1)
+    var dst_hb = ctx.enqueue_create_host_buffer[.uint8](num_active * slot_bytes)
     ctx.synchronize()
 
     # Deterministic per-token-per-scale fingerprint: byte = (token_idx * 7
@@ -261,9 +314,9 @@ def test_preshuffle_grouped_scale_gpu[
         dst_hb[i] = UInt8(0xAB)
 
     # ---- Device buffers + upload ----
-    var src_db = ctx.enqueue_create_buffer[DType.uint8](total_tokens * K_SCALES)
-    var a_off_db = ctx.enqueue_create_buffer[DType.uint32](num_active + 1)
-    var dst_db = ctx.enqueue_create_buffer[DType.uint8](num_active * slot_bytes)
+    var src_db = ctx.enqueue_create_buffer[.uint8](total_tokens * K_SCALES)
+    var a_off_db = ctx.enqueue_create_buffer[.uint32](num_active + 1)
+    var dst_db = ctx.enqueue_create_buffer[.uint8](num_active * slot_bytes)
     ctx.enqueue_copy(src_db, src_hb)
     ctx.enqueue_copy(a_off_db, a_off_hb)
     ctx.enqueue_copy(dst_db, dst_hb)
@@ -349,6 +402,13 @@ def main() raises:
     test_preshuffle_b_round_trip[N=16, K_BYTES=64](ctx)
     test_preshuffle_b_round_trip[N=32, K_BYTES=128](ctx)
     test_preshuffle_b_round_trip[N=128, K_BYTES=256](ctx)
+
+    # Plane-split (FP6): 24-byte fragments, K_BYTES a multiple of 96.
+    test_preshuffle_b_planes_round_trip[16, 96, 24](ctx)
+    test_preshuffle_b_planes_round_trip[32, 192, 24](ctx)
+    test_preshuffle_b_planes_round_trip[64, 384, 24](ctx)
+    # A 16-byte fragment must still round-trip through the same path.
+    test_preshuffle_b_planes_round_trip[32, 128, 16](ctx)
 
     test_preshuffle_scale_round_trip[MN=32, K_SCALES=8](ctx)
     test_preshuffle_scale_round_trip[MN=64, K_SCALES=16](ctx)

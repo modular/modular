@@ -29,7 +29,7 @@ Shape: BATCH=1, SEQ_LEN=256, NUM_KEYS=512, page_size=128, 4 pages.
 depth tested at {64, 128}.
 """
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.testing import assert_almost_equal
 from std.utils import IndexList, StaticTuple
 
@@ -106,11 +106,11 @@ def test_v2_causal_paged[depth: Int](ctx: DeviceContext) raises:
         ") ---",
     )
 
-    var dev_q = ctx.enqueue_create_buffer[DType.bfloat16](SIZE_Q)
-    var dev_out = ctx.enqueue_create_buffer[DType.float32](SIZE_OUT)
-    var dev_kv_block = ctx.enqueue_create_buffer[DType.bfloat16](SIZE_KV_BLOCK)
-    var dev_cache_lengths = ctx.enqueue_create_buffer[DType.uint32](BATCH)
-    var dev_paged_lut = ctx.enqueue_create_buffer[DType.uint32](
+    var dev_q = ctx.enqueue_create_buffer[.bfloat16](SIZE_Q)
+    var dev_out = ctx.enqueue_create_buffer[.float32](SIZE_OUT)
+    var dev_kv_block = ctx.enqueue_create_buffer[.bfloat16](SIZE_KV_BLOCK)
+    var dev_cache_lengths = ctx.enqueue_create_buffer[.uint32](BATCH)
+    var dev_paged_lut = ctx.enqueue_create_buffer[.uint32](
         BATCH * PAGES_PER_SEQ
     )
 
@@ -188,7 +188,7 @@ def test_v2_causal_paged[depth: Int](ctx: DeviceContext) raises:
     # PagedKVCacheCollection. LayoutTensor wrappers over the device buffers.
     comptime kv_block_layout = Layout.row_major[6]()
     var kv_block_tensor = LayoutTensor[
-        DType.bfloat16,
+        .bfloat16,
         kv_block_layout,
     ](
         dev_kv_block,
@@ -202,7 +202,7 @@ def test_v2_causal_paged[depth: Int](ctx: DeviceContext) raises:
     comptime cache_lengths_layout = Layout(UNKNOWN_VALUE)
     var cache_lengths_tensor = LayoutTensor[
         mut=False,
-        DType.uint32,
+        .uint32,
         cache_lengths_layout,
     ](
         dev_cache_lengths,
@@ -212,7 +212,7 @@ def test_v2_causal_paged[depth: Int](ctx: DeviceContext) raises:
     comptime paged_lut_layout = Layout.row_major[2]()
     var paged_lut_tensor = LayoutTensor[
         mut=False,
-        DType.uint32,
+        .uint32,
         paged_lut_layout,
     ](
         dev_paged_lut.unsafe_ptr(),
@@ -221,13 +221,16 @@ def test_v2_causal_paged[depth: Int](ctx: DeviceContext) raises:
         ),
     )
 
-    comptime CollectionType = PagedKVCacheCollection[
+    var kv_collection = PagedKVCacheCollection[
         DType.bfloat16,
         KVCacheStaticParams(num_heads=NUM_KV_HEADS, head_size=depth),
         PAGE_SIZE,
-    ]
-    var kv_collection = CollectionType(
-        kv_block_tensor,
+    ](
+        # `mha_prefill_v2` reads both the `k` and `v` cache views, which are disjoint
+        # kv_idx halves of one `blocks` buffer sharing its origin, so the
+        # nested-origin exclusivity check rejects passing both. Declare the
+        # kv_block_tensor origin as UnsafeAnyOrigin to opt out of exclusivity checking.
+        kv_block_tensor.as_unsafe_any_origin(),
         cache_lengths_tensor,
         paged_lut_tensor,
         UInt32(SEQ_LEN),  # max_seq_length

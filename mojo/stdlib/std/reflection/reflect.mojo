@@ -19,10 +19,11 @@ are spelled as `reflect[T].method()` (no parens after `[T]`).
 
 - `is_struct()` - whether `T` is a Mojo struct type.
 - `field_count()` - number of fields.
-- `field_names()` - `InlineArray[StaticString, N]` of field names.
+- `field_names()` - `Array[StaticString, N]` of field names.
 - `field_types()` - a `TypeList` of field types.
 - `field_index[name]()` - index of the named field.
-- `field_type[name]` - `Reflected[FieldT]` for the named field's type.
+- `field[name]` - `Reflected[FieldT]` for the named field's type.
+- `field_at[idx]` - `Reflected[FieldT]` for the field at index `idx`.
 - `field_offset[name=...]()` / `field_offset[index=...]()` - byte offset.
 - `field_ref[idx](s)` - reference to field at index `idx` in value `s`.
 
@@ -47,11 +48,11 @@ def main():
 ```
 
 The wrapped type is exposed as the `T` parameter, so the result of
-`field_type[name]` can be used as a type directly:
+`field[name]` can be used as a type directly:
 
 ```mojo
 def main():
-    comptime y_type = reflect[Point].field_type["y"]
+    comptime y_type = reflect[Point].field["y"]
     var v: y_type.T = 3.14  # y_type.T is Float64
 ```
 """
@@ -135,10 +136,11 @@ struct Reflected[T: AnyType]:
 
     - A member that returns a **type** (e.g. `Reflected[FieldT]`) is a
       `comptime` member alias and is spelled without `()`. This keeps it
-      composable in type position: `reflect[T].field_type["x"].T` reads as a
-      type. `field_type[name]` is the only such member today.
+      composable in type position: `reflect[T].field["x"].T` reads as a
+      type. `field[name]` and `field_at[idx]` are the type-returning
+      members today.
     - A member that returns a **value** (an `Int`, `StaticString`,
-      `InlineArray`, a `TypeList`, a typed `ref`, etc.) is an
+      `Array`, a `TypeList`, a typed `ref`, etc.) is an
       `@staticmethod` and is spelled with `()` — e.g.
       `reflect[T].field_count()`, `reflect[T].field_names()`,
       `reflect[T].field_index["x"]()`. The `()` at the call site signals
@@ -270,7 +272,7 @@ struct Reflected[T: AnyType]:
         Returns:
             The number of fields in the struct.
         """
-        return _field_types_of[Self.T]().size
+        return _field_types_of[Self.T]().length
 
     @staticmethod
     def field_types() -> _field_types_of[Self.T]:
@@ -300,23 +302,21 @@ struct Reflected[T: AnyType]:
         return {}
 
     @staticmethod
-    def field_names() -> (
-        InlineArray[StaticString, _field_types_of[Self.T]().size]
-    ):
+    def field_names() -> Array[StaticString, _field_types_of[Self.T]().length]:
         """Returns the names of all fields in struct `T`.
 
         Constraints:
             `T` must be a struct type.
 
         Returns:
-            An `InlineArray` of `StaticString`, one entry per field.
+            An `Array` of `StaticString`, one entry per field.
         """
-        comptime count = _field_types_of[Self.T]().size
+        comptime count = _field_types_of[Self.T]().length
         comptime raw = _field_names_of[Self.T]()
 
         # Safety: uninitialized=True is safe because the comptime for loop
         # below initializes every element.
-        var result = InlineArray[StaticString, count](uninitialized=True)
+        var result = Array[StaticString, count](uninitialized=True)
 
         comptime for i in range(raw.size):
             result[i] = comptime (StaticString(raw[i]))
@@ -347,11 +347,11 @@ struct Reflected[T: AnyType]:
             ]
         )
 
-    # `field_type` is a parametric `comptime` member alias rather than a
-    # static method, so callers spell `reflect[T].field_type["y"]` (no
+    # `field` is a parametric `comptime` member alias rather than a
+    # static method, so callers spell `reflect[T].field["y"]` (no
     # parens) and get back `Reflected[FieldT]` directly. The result is
     # itself a reflection handle type — fully composable.
-    comptime field_type[name: StringLiteral] = Reflected[
+    comptime field[name: StringLiteral] = Reflected[
         __mlir_attr[
             `#kgen.struct_field_type_by_name<`,
             Self.T,
@@ -363,7 +363,7 @@ struct Reflected[T: AnyType]:
     ]
     """A reflection handle type for the named field's type.
 
-    The result is `Reflected[FieldT]`, so `reflect[T].field_type["x"].T` can
+    The result is `Reflected[FieldT]`, so `reflect[T].field["x"].T` can
     be used in type position and `.name()`, `.field_count()`, etc. compose
     directly without an additional `()`.
 
@@ -380,7 +380,35 @@ struct Reflected[T: AnyType]:
             var y: Float64
 
         def main():
-            comptime y_type = reflect[Point].field_type["y"]
+            comptime y_type = reflect[Point].field["y"]
+            var v: y_type.T = 3.14  # y_type.T is Float64
+        ```
+    """
+
+    # A separate name (not an overload of `field`) because `comptime`
+    # member aliases cannot be overloaded on parameter type.
+    comptime field_at[idx: Int] = Reflected[_field_types_of[Self.T]()[idx]]
+    """A reflection handle type for the type of the field at the given index.
+
+    The by-index dual of `field[name]`. Unlike the by-name form, it works
+    when only the field index is available, such as inside a `comptime for` over
+    a struct's fields, and `T` may be a generic type parameter. The result is
+    `Reflected[FieldT]`, so `reflect[T].field_at[idx].T` reads as a type.
+
+    Parameters:
+        idx: The zero-based index of the field.
+
+    Constraints:
+        `T` must be a struct type. `idx` must be in range `[0, field_count())`.
+
+    Example:
+        ```mojo
+        struct Point:
+            var x: Int
+            var y: Float64
+
+        def main():
+            comptime y_type = reflect[Point].field_at[1]
             var v: y_type.T = 3.14  # y_type.T is Float64
         ```
     """
@@ -428,7 +456,7 @@ struct Reflected[T: AnyType]:
         # for concrete structs, generic type parameters, and closures alike.
         return __get_litref_as_mvalue(
             __mlir_op.`lit.ref.struct.ger`[
-                index=idx._int_mlir_index(),
+                index=idx.__mlir_index__(),
                 _type=__mlir_type[
                     `!lit.ref<`,
                     _field_types_of[Self.T]()[idx],
@@ -511,7 +539,7 @@ struct Reflected[T: AnyType]:
                 `#kgen.struct_field_offset_by_index<`,
                 Self.T,
                 `, `,
-                index._int_mlir_index(),
+                index.__mlir_index__(),
                 `, `,
                 target,
                 `> : index`,

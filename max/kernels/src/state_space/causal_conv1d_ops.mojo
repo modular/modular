@@ -24,10 +24,10 @@ and never a seq_idx mask, so they pass `has_bias = true`, `has_seq_idx = false`.
 
 from std.math import ceildiv
 
-import extensibility as compiler
-from std.gpu.host import DeviceContext
-from std.gpu.host.info import is_cpu, is_gpu
-from std.memory import memcpy
+import extensibility
+from max.gpu.host import DeviceContext
+from max.gpu.host.info import is_cpu, is_gpu
+from std.memory import unsafe_memcpy
 
 
 from state_space.causal_conv1d import (
@@ -47,7 +47,7 @@ from extensibility import InputTensor, OutputTensor
 # ============================================================================
 
 
-@compiler.register("causal_conv1d")
+@extensibility.register("causal_conv1d")
 struct CausalConv1D[activation: StaticString]:
     """Causal 1D convolution operation with bias (channel-first layout).
 
@@ -84,10 +84,10 @@ struct CausalConv1D[activation: StaticString]:
         if output.shape() != input.shape():
             raise Error("Output shape must match input shape")
 
-        var X = input.to_tile_tensor[DType.int32]()
-        var W = weight.to_tile_tensor[DType.int32]()
-        var O = output.to_tile_tensor[DType.int32]()
-        var B = bias.to_tile_tensor[DType.int32]()
+        var X = input.to_tile_tensor[.int32]()
+        var W = weight.to_tile_tensor[.int32]()
+        var O = output.to_tile_tensor[.int32]()
+        var B = bias.to_tile_tensor[.int32]()
 
         var batch_size: Int = input.dim_size(0)
         var dim: Int = input.dim_size(1)
@@ -149,7 +149,7 @@ struct CausalConv1D[activation: StaticString]:
                 Int(X.dim[0]()),
             )
 
-            @parameter
+            @__parameter
             @always_inline
             def launch[kWidth: Int]() raises:
                 var compiled_func = gpu_ctx.compile_function[
@@ -171,10 +171,10 @@ struct CausalConv1D[activation: StaticString]:
                 ]()
                 gpu_ctx.enqueue_function(
                     compiled_func,
-                    batch_size,
-                    dim,
-                    seqlen,
-                    width,
+                    Int32(batch_size),
+                    Int32(dim),
+                    Int32(seqlen),
+                    Int32(width),
                     X.as_immut(),
                     W.as_immut(),
                     O,
@@ -231,7 +231,7 @@ struct CausalConv1D[activation: StaticString]:
 # ============================================================================
 
 
-@compiler.register("causal_conv1d_channel_last")
+@extensibility.register("causal_conv1d_channel_last")
 struct CausalConv1DChannelLast[activation: StaticString]:
     """Causal 1D convolution operation with bias (channel-last layout).
 
@@ -241,7 +241,7 @@ struct CausalConv1DChannelLast[activation: StaticString]:
     contiguous channel axis.
 
     Parameters:
-        activation: "none" or "silu" - activation function to apply.
+        activation: Activation function to apply: `"none"` or `"silu"`.
 
     Tensor Shapes:
         - input: (batch, seqlen, channels) - Input sequence tensor.
@@ -267,10 +267,10 @@ struct CausalConv1DChannelLast[activation: StaticString]:
         if output.shape() != input.shape():
             raise Error("Output shape must match input shape")
 
-        var X = input.to_tile_tensor[DType.int32]()
-        var W = weight.to_tile_tensor[DType.int32]()
-        var O = output.to_tile_tensor[DType.int32]()
-        var B = bias.to_tile_tensor[DType.int32]()
+        var X = input.to_tile_tensor[.int32]()
+        var W = weight.to_tile_tensor[.int32]()
+        var O = output.to_tile_tensor[.int32]()
+        var B = bias.to_tile_tensor[.int32]()
 
         var batch_size: Int = input.dim_size(0)
         var seqlen: Int = input.dim_size(1)
@@ -331,7 +331,7 @@ struct CausalConv1DChannelLast[activation: StaticString]:
                 batch_size,
             )
 
-            @parameter
+            @__parameter
             @always_inline
             def launch[kWidth: Int]() raises:
                 var compiled_func = gpu_ctx.compile_function[
@@ -353,10 +353,10 @@ struct CausalConv1DChannelLast[activation: StaticString]:
                 ]()
                 gpu_ctx.enqueue_function(
                     compiled_func,
-                    batch_size,
-                    dim,
-                    seqlen,
-                    width,
+                    Int32(batch_size),
+                    Int32(dim),
+                    Int32(seqlen),
+                    Int32(width),
                     X.as_immut(),
                     W.as_immut(),
                     O,
@@ -397,7 +397,7 @@ struct CausalConv1DChannelLast[activation: StaticString]:
             raise Error("Unsupported target device")
 
 
-@compiler.register_shape_function("causal_conv1d")
+@extensibility.register_shape_function("causal_conv1d")
 def causal_conv1d_shape[
     dtype: DType,
     rank: Int,
@@ -406,6 +406,23 @@ def causal_conv1d_shape[
     weight: InputTensor[dtype=dtype, rank=2, ...],
     bias: InputTensor[dtype=dtype, rank=1, ...],
 ) -> IndexList[rank]:
+    """Returns the output shape for the `causal_conv1d` op.
+
+    Causal 1D convolution preserves the input shape: output has the same
+    `(batch, channels, seqlen)` as `input`.
+
+    Parameters:
+        dtype: Element type of the input, weight, and bias tensors.
+        rank: Tensor rank of the input and output, expected to be 3.
+
+    Args:
+        input: Input tensor with shape `(batch, channels, seqlen)`.
+        weight: Convolution weights with shape `(channels, width)`.
+        bias: Per-channel bias with shape `(channels,)`.
+
+    Returns:
+        The output tensor shape, equal to `input.shape()`.
+    """
     return input.shape()
 
 
@@ -414,7 +431,7 @@ def causal_conv1d_shape[
 # ===----------------------------------------------------------------------=== #
 
 
-@compiler.register("causal_conv1d_update")
+@extensibility.register("causal_conv1d_update")
 struct CausalConv1DUpdate[activation: StaticString]:
     """Incremental causal conv1d update for autoregressive decoding.
 
@@ -423,7 +440,7 @@ struct CausalConv1DUpdate[activation: StaticString]:
     graph semantics (no in-place mutation).
 
     Parameters:
-        activation: "none" or "silu" - activation function to apply.
+        activation: Activation function to apply: `"none"` or `"silu"`.
 
     Tensor Shapes:
         Outputs:
@@ -461,12 +478,12 @@ struct CausalConv1DUpdate[activation: StaticString]:
                 "conv_state batch and channel dimensions must match input"
             )
 
-        var X = input.to_tile_tensor[DType.int32]()
-        var CS = conv_state.to_tile_tensor[DType.int32]()
-        var CS_IN = conv_state_in.to_tile_tensor[DType.int32]()
-        var W = weight.to_tile_tensor[DType.int32]()
-        var O = output.to_tile_tensor[DType.int32]()
-        var B = bias.to_tile_tensor[DType.int32]()
+        var X = input.to_tile_tensor[.int32]()
+        var CS = conv_state.to_tile_tensor[.int32]()
+        var CS_IN = conv_state_in.to_tile_tensor[.int32]()
+        var W = weight.to_tile_tensor[.int32]()
+        var O = output.to_tile_tensor[.int32]()
+        var B = bias.to_tile_tensor[.int32]()
 
         var batch_size: Int = input.dim_size(0)
         var dim: Int = input.dim_size(1)
@@ -496,7 +513,9 @@ struct CausalConv1DUpdate[activation: StaticString]:
         var silu_activation = Self.activation == "silu"
 
         comptime if is_cpu[target]():
-            memcpy(dest=CS.ptr, src=CS_IN.ptr, count=total_state_elements)
+            unsafe_memcpy(
+                dest=CS._storage, src=CS_IN._storage, count=total_state_elements
+            )
             causal_conv1d_update_cpu[
                 X.dtype,
                 CS.dtype,
@@ -530,7 +549,9 @@ struct CausalConv1DUpdate[activation: StaticString]:
             )
         elif is_gpu[target]():
             var gpu_ctx: DeviceContext = ctx
-            gpu_ctx.enqueue_copy(CS.ptr, CS_IN.ptr, total_state_elements)
+            gpu_ctx.enqueue_copy(
+                CS._storage, CS_IN._storage, total_state_elements
+            )
             comptime kNThreads = 128
             var compiled_func = gpu_ctx.compile_function[
                 causal_conv1d_update_gpu[
@@ -550,11 +571,11 @@ struct CausalConv1DUpdate[activation: StaticString]:
             var silu_activation_int8 = Int8(silu_activation)
             gpu_ctx.enqueue_function(
                 compiled_func,
-                batch_size,
-                dim,
-                seqlen,
-                width,
-                state_len,
+                Int32(batch_size),
+                Int32(dim),
+                Int32(seqlen),
+                Int32(width),
+                Int32(state_len),
                 X.as_immut(),
                 CS,
                 W.as_immut(),
@@ -580,7 +601,7 @@ struct CausalConv1DUpdate[activation: StaticString]:
             raise Error("Unsupported target device")
 
 
-@compiler.register_shape_function("causal_conv1d_update")
+@extensibility.register_shape_function("causal_conv1d_update")
 def causal_conv1d_update_shape[
     dtype: DType,
     rank: Int,
@@ -590,4 +611,26 @@ def causal_conv1d_update_shape[
     weight: InputTensor[dtype=dtype, rank=2, ...],
     bias: InputTensor[dtype=dtype, rank=1, ...],
 ) -> Tuple[IndexList[rank], IndexList[rank]]:
+    """Returns the output shapes for the `causal_conv1d_update` op.
+
+    The update produces two tensors: the convolution output for the new
+    token(s) and the updated convolution state.
+
+    Parameters:
+        dtype: Element type of the input, conv state, weight, and bias
+            tensors.
+        rank: Tensor rank of the input and conv state, expected to be 3.
+
+    Args:
+        input: New input tokens with shape `(batch, channels, seqlen)`.
+        conv_state_in: Previous convolution state with shape
+            `(batch, channels, state_len)`.
+        weight: Convolution weights with shape `(channels, width)`.
+        bias: Per-channel bias with shape `(channels,)`.
+
+    Returns:
+        A tuple `(output_shape, conv_state_shape)` where `output_shape`
+        matches `input.shape()` and `conv_state_shape` matches
+        `conv_state_in.shape()`.
+    """
     return (input.shape(), conv_state_in.shape())

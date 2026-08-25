@@ -14,6 +14,7 @@
 # Meant to be run on an AVX512 system
 
 from std.math import align_up
+from std.memory import dealloc
 from std.sys import align_of, simd_width_of
 
 import std.benchmark
@@ -30,8 +31,8 @@ comptime alignment = align_of[SIMD[dtype, simd_size]]()
 def gemm_naive[
     layout_b: Layout, origin: Origin
 ](
-    c: TileTensor[mut=True, dtype=dtype, ...],  # M x N
-    a: TileTensor[dtype=dtype, ...],  # M x K
+    c: TileTensor[mut=True, dtype, ...],  # M x N
+    a: TileTensor[dtype, ...],  # M x K
     b: LayoutTensor[dtype, layout_b, MutAnyOrigin],  # N x K
 ):
     var M = Int(c.dim[0]())
@@ -109,8 +110,8 @@ def gemm[
     K: Int,
     layout_b: Layout,
 ](
-    c: TileTensor[mut=True, dtype=dtype, ...],  # M x N
-    a: TileTensor[dtype=dtype, ...],  # M x K
+    c: TileTensor[mut=True, dtype, ...],  # M x N
+    a: TileTensor[dtype, ...],  # M x K
     b_packed: LayoutTensor[layout_b, dtype],  # (N // NR) x (K * NR)
 ):
     var M = Int(c.dim[0]())
@@ -167,19 +168,23 @@ def main():
     print(K)
 
     # FIXME: Something causes sporadic crashes on intel with TensorBuilder.Build()
-    var a_ptr = alloc[Float32](M * K, alignment=alignment)
-    var b_ptr = alloc[Float32](K * N, alignment=alignment)
-    var b_packed_ptr = alloc[Float32](K * N, alignment=alignment)
-    var c_ptr = alloc[Float32](M * N, alignment=alignment)
-    var c2_ptr = alloc[Float32](M * N, alignment=alignment)
+    var a_alloc = alloc[Float32].aligned[alignment](count=M * K).into_managed()
+    var b_alloc = alloc[Float32].aligned[alignment](count=K * N).into_managed()
+    var b_packed_alloc = (
+        alloc[Float32].aligned[alignment](count=K * N).into_managed()
+    )
+    var c_alloc = alloc[Float32].aligned[alignment](count=M * N).into_managed()
+    var c2_alloc = alloc[Float32].aligned[alignment](count=M * N).into_managed()
 
-    var a = TileTensor(a_ptr, row_major[M, K]())
+    var a = TileTensor(a_alloc.unsafe_ptr(), row_major[M, K]())
 
-    var b = TensorBuilder[K, N, dtype].Wrap(b_ptr)
-    var b_packed = TensorBuilder[N // NR, K * NR, dtype].Wrap(b_packed_ptr)
+    var b = TensorBuilder[K, N, dtype].Wrap(b_alloc.unsafe_ptr())
+    var b_packed = TensorBuilder[N // NR, K * NR, dtype].Wrap(
+        b_packed_alloc.unsafe_ptr()
+    )
 
-    var c = TileTensor(c_ptr, row_major[M, N]())
-    var c2 = TileTensor(c2_ptr, row_major[M, N]())
+    var c = TileTensor(c_alloc.unsafe_ptr(), row_major[M, N]())
+    var c2 = TileTensor(c2_alloc.unsafe_ptr(), row_major[M, N]())
 
     for j in range(M):
         for i in range(K):
@@ -209,12 +214,11 @@ def main():
     print(M * N, end="")
     print(" errors")
 
-    @parameter
-    def bench_gemm():
+    def bench_gemm() {var}:
         gemm[N, K](c2, a, b_packed)
 
     var num_warmup: Int = 1
-    var time = std.benchmark.run[func3=bench_gemm](num_warmup).mean()
+    var time = std.benchmark.run(bench_gemm, num_warmup).mean()
     var flops = 2.0 * M * N * K / time / 1e9
     print(time, end="")
     print(" seconds")
@@ -226,8 +230,8 @@ def main():
     print(rpeak, end="")
     print(" measured/peak FLOPS assuming 2.9 GHz")
 
-    a_ptr.free()
-    b_ptr.free()
-    b_packed_ptr.free()
-    c_ptr.free()
-    c2_ptr.free()
+    dealloc(a_alloc^)
+    dealloc(b_alloc^)
+    dealloc(b_packed_alloc^)
+    dealloc(c_alloc^)
+    dealloc(c2_alloc^)

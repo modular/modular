@@ -19,13 +19,13 @@ struct Circle[radius: Float64]:
 
 # start-reference-parameter-on-type
 def on_type():
-    print(Int(SIMD[DType.float32, 2].size))  # prints 2
+    print(Int(SIMD[DType.float32, 2].length))  # prints 2
     # end-reference-parameter-on-type
 
 
 # start-reference-parameter-on-instance
 def on_instance():
-    var x = SIMD[DType.int32, 2](4, 8)
+    var x = SIMD[.int32, 2](4, 8)
     print(x.dtype)  # prints int32
     # end-reference-parameter-on-instance
     _ = x
@@ -33,7 +33,7 @@ def on_instance():
 
 def slice_example():
     # start-simd-slice-example
-    var m = SIMD[DType.int32, 4](1, 3, 5, 7)
+    var m = SIMD[.int32, 4](1, 3, 5, 7)
     var n = m.slice[2]()
     print(n)  # prints [1, 3]
     # end-simd-slice-example

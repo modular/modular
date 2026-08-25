@@ -21,40 +21,47 @@ from max.dtype import DType
 from max.graph import (
     BufferType,
     BufferValue,
-    DeviceRef,
     TensorType,
     TensorValue,
     Value,
     ops,
 )
-from max.nn.comm import Signals
 from max.nn.kv_cache import MultiKVCacheParams, PagedCacheValues
 from max.nn.layer import Module
 from max.nn.sampling.rejection_sampler import AcceptanceSampler
+from max.nn.transformer.transformer import (
+    captures_by_device,
+    fuse_captured_hidden_states,
+)
+from max.pipelines.lib.vlm_utils import merge_multimodal_embeddings
+from max.pipelines.speculative.config import MAGIC_DRAFT_TOKEN_ID
 from max.pipelines.speculative.ragged_token_merger import (
     RaggedTokenMerger,
     _shape_to_scalar,
+    compute_host_merged_offsets,
 )
+from max.pipelines.speculative.spec_input_types import (
+    SpecDecodeInputTypeSpec,
+    build_spec_decode_input_types,
+)
+from max.pipelines.speculative.unified_graph_ops import apply_overlap_bitmask
 
 from ..deepseekV3.deepseekV3 import DeepseekV3
 from ..dflash_kimi_k25 import DFlashKimiK25
-from ..unified_mtp_deepseekV3.unified_mtp_deepseekV3 import (
-    compute_host_merged_offsets,
-)
 from .model_config import UnifiedDflashKimiK25Config
-
-# Magic placeholder value used by graph capture for prefill / dummy-draft
-# steps; tokens equal to this in every position of a row mean "no real
-# draft prediction to verify".
-_MAGIC_DRAFT_TOKEN_ID = 42
 
 
 class UnifiedDflashKimiK25(Module):
     """Fused: merge -> target (MLA) -> reject -> materialize -> draft block."""
 
-    def __init__(self, config: UnifiedDflashKimiK25Config) -> None:
+    def __init__(
+        self,
+        config: UnifiedDflashKimiK25Config,
+        enable_structured_output: bool = False,
+    ) -> None:
         super().__init__()
         self.config = config
+        self.enable_structured_output = enable_structured_output
         self.block_size = config.resolve_block_size()
         self.num_speculative_tokens = self.block_size - 1
         self.target_layer_ids = list(config.target_layer_ids)
@@ -88,8 +95,13 @@ class UnifiedDflashKimiK25(Module):
         max_k: TensorValue,
         top_p: TensorValue,
         min_top_p: TensorValue,
+        image_embeddings: list[TensorValue],
+        image_token_indices: list[TensorValue],
         ep_inputs: list[Value[Any]] | None = None,
         draft_kv_collections: list[PagedCacheValues] | None = None,
+        pinned_bitmask: TensorValue | None = None,
+        wait_payload: BufferValue | None = None,
+        device_bitmask_scratch: BufferValue | None = None,
     ) -> tuple[TensorValue, ...]:
         assert draft_kv_collections is not None
 
@@ -116,19 +128,42 @@ class UnifiedDflashKimiK25(Module):
             merged_offsets, signal_buffers
         )
 
-        target_outputs = self.target(
-            merged_tokens,
+        h_per_dev = [
+            merge_multimodal_embeddings(
+                inputs_embeds=h_d,
+                multimodal_embeddings=img_emb_d,
+                image_token_indices=img_idx_d,
+            )
+            for h_d, img_emb_d, img_idx_d in zip(
+                self.target.embed_tokens(merged_tokens, signal_buffers),
+                image_embeddings,
+                image_token_indices,
+                strict=True,
+            )
+        ]
+        target_outputs = self.target._process_hidden_states(
+            h_per_dev,
             signal_buffers,
             kv_collections,
             return_n_logits,
-            merged_offsets_per_dev,
+            list(merged_offsets_per_dev),
             host_merged_offsets,
             data_parallel_splits,
             batch_context_lengths,
             ep_inputs,
         )
         target_logits = target_outputs[1]
-        target_hs_per_dev = list(target_outputs[3 : 3 + n_devs])
+        target_hs_per_dev = fuse_captured_hidden_states(
+            captures_by_device(target_outputs[3:], n_devs)
+        )
+
+        effective_bitmasks = apply_overlap_bitmask(
+            pinned_bitmask,
+            wait_payload,
+            device_bitmask_scratch,
+            num_steps=draft_tokens.shape[1],
+            device=device0,
+        )
 
         seed_scalar = seed[0]
         num_accepted, recovered, bonus = self.acceptance_sampler(
@@ -140,6 +175,7 @@ class UnifiedDflashKimiK25(Module):
             max_k=max_k,
             top_p=top_p,
             min_top_p=min_top_p,
+            token_bitmasks=effective_bitmasks,
         )
 
         num_steps_scalar_i32 = _shape_to_scalar(
@@ -153,7 +189,7 @@ class UnifiedDflashKimiK25(Module):
             ["batch_size"]
         )
         magic_token = ops.constant(
-            _MAGIC_DRAFT_TOKEN_ID, DType.int64, device=device0
+            MAGIC_DRAFT_TOKEN_ID, DType.int64, device=device0
         )
         num_magic_tokens = ops.squeeze(
             ops.sum(
@@ -360,96 +396,28 @@ class UnifiedDflashKimiK25(Module):
     ) -> tuple[TensorType | BufferType, ...]:
         """Input types mirror :class:`Eagle3MHAKimiK25Unified.input_types`.
 
-        ``kv_params`` is the unified ``{"target", "draft"}`` tree; the draft
-        leaf carries its own blocks and dispatch metadata.
-
-        Order:
-            tokens, device_offsets, host_offsets, return_n_logits,
-            data_parallel_splits, signal_buffers, kv_cache_tree (target then
-            draft, flattened), batch_context_lengths, target_ep_inputs,
-            draft_tokens, seed, temperature, top_k, max_k, top_p, min_top_p.
+        ``kv_params`` is the unified ``{"target", "draft"}`` tree; the target
+        leaf is MLA and the draft leaf is MHA, each carrying its own blocks
+        and dispatch metadata. Distributed (DP + signals + EP) MHA-draft graph
+        with vision (no in-thinking-phase) that appends the structured-output
+        bitmask triple when ``enable_structured_output`` is set. See
+        :func:`build_spec_decode_input_types` for the canonical ordering.
         """
-        devices = self.config.target.devices
-        device_ref = devices[0]
-
-        tokens_type = TensorType(
-            DType.int64, shape=["total_seq_len"], device=device_ref
+        spec = SpecDecodeInputTypeSpec(
+            distributed=True,
+            data_parallel_degree=self.config.target.data_parallel_degree,
+            enable_vision=True,
+            vision_hidden_size=self.config.target.hidden_size,
+            enable_structured_output=self.enable_structured_output,
         )
-        device_input_row_offsets_type = TensorType(
-            DType.uint32,
-            shape=["input_row_offsets_len"],
-            device=device_ref,
+        ep_input_types = (
+            self.target.ep_manager.input_types()
+            if self.target.ep_manager is not None
+            else ()
         )
-        host_input_row_offsets_type = TensorType(
-            DType.uint32,
-            shape=["input_row_offsets_len"],
-            device=DeviceRef.CPU(),
+        return build_spec_decode_input_types(
+            spec,
+            devices=self.config.target.devices,
+            kv_params=kv_params,
+            ep_input_types=ep_input_types,
         )
-        draft_tokens_type = TensorType(
-            DType.int64,
-            ["batch_size", "num_steps"],
-            device=device_ref,
-        )
-        return_n_logits_type = TensorType(
-            DType.int64, shape=["return_n_logits"], device=DeviceRef.CPU()
-        )
-        data_parallel_splits_type = TensorType(
-            DType.int64,
-            shape=[self.config.target.data_parallel_degree + 1],
-            device=DeviceRef.CPU(),
-        )
-
-        signals = Signals(devices=devices)
-        signal_buffer_types: list[BufferType] = signals.input_types()
-
-        all_input_types: list[TensorType | BufferType] = [
-            tokens_type,
-            device_input_row_offsets_type,
-            host_input_row_offsets_type,
-            return_n_logits_type,
-            data_parallel_splits_type,
-        ]
-        all_input_types.extend(signal_buffer_types)
-
-        all_input_types.extend(kv_params.flattened_kv_inputs())
-
-        batch_context_length_type = TensorType(
-            DType.int32, shape=[1], device=DeviceRef.CPU()
-        )
-        all_input_types.extend(
-            [batch_context_length_type for _ in range(len(devices))]
-        )
-
-        if self.target.ep_manager is not None:
-            all_input_types.extend(self.target.ep_manager.input_types())
-
-        all_input_types.append(draft_tokens_type)
-
-        seed_type = TensorType(
-            DType.uint64, shape=["batch_size"], device=device_ref
-        )
-        temperature_type = TensorType(
-            DType.float32, shape=["batch_size"], device=device_ref
-        )
-        top_k_type = TensorType(
-            DType.int64, shape=["batch_size"], device=device_ref
-        )
-        max_k_type = TensorType(DType.int64, shape=[], device=DeviceRef.CPU())
-        top_p_type = TensorType(
-            DType.float32, shape=["batch_size"], device=device_ref
-        )
-        min_top_p_type = TensorType(
-            DType.float32, shape=[], device=DeviceRef.CPU()
-        )
-        all_input_types.extend(
-            [
-                seed_type,
-                temperature_type,
-                top_k_type,
-                max_k_type,
-                top_p_type,
-                min_top_p_type,
-            ]
-        )
-
-        return tuple(all_input_types)

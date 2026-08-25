@@ -36,7 +36,7 @@
 # not by itself indict the kernel). The finding that matters for the Kimi NaN is
 # whether a *plausible* (denormal/zero) loaded scale can yield NaN: it must not.
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import (
     CoordLike,
     Coord,
@@ -153,7 +153,7 @@ def run_pathological_bscale[
     var inf_outside_large_col = 0
     for i in range(M):
         for j in range(N):
-            var val = c_host[i, j].cast[DType.float32]()
+            var val = c_host[i, j].cast[.float32]()
             if isnan(val):
                 num_nan += 1
             elif isinf(val):

@@ -97,7 +97,6 @@ def test_set_all() raises:
 
 
 def test_simd_any() raises:
-    @parameter
     def _test_dtype[dtype: DType]() raises:
         assert_true(any(Scalar[dtype](1)))
         assert_false(any(Scalar[dtype](0)))
@@ -108,22 +107,21 @@ def test_simd_any() raises:
         assert_true(any(SIMD[dtype, 4](1, 0, 0, 4)))
         assert_false(any(SIMD[dtype, 4](0, 0, 0, 0)))
 
-    _test_dtype[DType.bool]()
-    _test_dtype[DType.int8]()
-    _test_dtype[DType.int16]()
-    _test_dtype[DType.int32]()
-    _test_dtype[DType.int64]()
-    _test_dtype[DType.uint8]()
-    _test_dtype[DType.uint16]()
-    _test_dtype[DType.uint32]()
-    _test_dtype[DType.uint64]()
-    _test_dtype[DType.float16]()
-    _test_dtype[DType.float32]()
-    _test_dtype[DType.float64]()
+    _test_dtype[.bool]()
+    _test_dtype[.int8]()
+    _test_dtype[.int16]()
+    _test_dtype[.int32]()
+    _test_dtype[.int64]()
+    _test_dtype[.uint8]()
+    _test_dtype[.uint16]()
+    _test_dtype[.uint32]()
+    _test_dtype[.uint64]()
+    _test_dtype[.float16]()
+    _test_dtype[.float32]()
+    _test_dtype[.float64]()
 
 
 def test_simd_all() raises:
-    @parameter
     def _test_dtype[dtype: DType]() raises:
         assert_true(all(Scalar[dtype](1)))
         assert_false(all(Scalar[dtype](0)))
@@ -134,18 +132,18 @@ def test_simd_all() raises:
         assert_false(all(SIMD[dtype, 4](1, 0, 0, 4)))
         assert_false(all(SIMD[dtype, 4](0, 0, 0, 0)))
 
-    _test_dtype[DType.bool]()
-    _test_dtype[DType.int8]()
-    _test_dtype[DType.int16]()
-    _test_dtype[DType.int32]()
-    _test_dtype[DType.int64]()
-    _test_dtype[DType.uint8]()
-    _test_dtype[DType.uint16]()
-    _test_dtype[DType.uint32]()
-    _test_dtype[DType.uint64]()
-    _test_dtype[DType.float16]()
-    _test_dtype[DType.float32]()
-    _test_dtype[DType.float64]()
+    _test_dtype[.bool]()
+    _test_dtype[.int8]()
+    _test_dtype[.int16]()
+    _test_dtype[.int32]()
+    _test_dtype[.int64]()
+    _test_dtype[.uint8]()
+    _test_dtype[.uint16]()
+    _test_dtype[.uint32]()
+    _test_dtype[.uint64]()
+    _test_dtype[.float16]()
+    _test_dtype[.float32]()
+    _test_dtype[.float64]()
 
 
 def main() raises:

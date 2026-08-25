@@ -13,8 +13,8 @@
 
 from std.sys.intrinsics import prefetch
 
-from std.gpu.host import get_gpu_target
-from std.gpu.host.compile import _compile_code
+from max.gpu.host import get_gpu_target
+from max.gpu.host.compile import _compile_code
 from std.testing import assert_true
 
 
@@ -28,26 +28,26 @@ def test_prefetch_nvidia() raises:
     assert_true(
         "prefetch.global.L2 "
         in _compile_code[
-            do_prefetch[DType.float16], target=get_gpu_target["sm_80"]()
+            do_prefetch[.float16], target=get_gpu_target["sm_80"]()
         ]()
     )
     assert_true(
         "prefetch.global.L2 "
         in _compile_code[
-            do_prefetch[DType.float32], target=get_gpu_target["sm_80"]()
+            do_prefetch[.float32], target=get_gpu_target["sm_80"]()
         ]()
     )
     assert_true(
         "prefetch.global.L2 "
         in _compile_code[
-            do_prefetch[DType.int32], target=get_gpu_target["sm_80"]()
+            do_prefetch[.int32], target=get_gpu_target["sm_80"]()
         ]()
     )
 
     assert_true(
         "prefetch.global.L2 "
         in _compile_code[
-            do_prefetch[DType.int64, offset=42],
+            do_prefetch[.int64, offset=42],
             target=get_gpu_target["sm_80"](),
         ]()
     )
