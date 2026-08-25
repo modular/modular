@@ -42,7 +42,7 @@ from max.pipelines.lib import MAXModelConfig, MemoryEstimator
 from max.pipelines.lib.config import SpeculativeConfig
 from max.pipelines.lib.config.model_config import (
     _device_specs_for_encoding,
-    _populate_weights_and_encoding,
+    _resolve_weights_and_encoding,
     _select_dtype_cast,
     _select_quantization_encoding,
 )
@@ -1162,7 +1162,7 @@ def test_construction_downcast_warns_once(
 
         caplog.clear()
         with caplog.at_level(logging.WARNING, logger="max.pipelines"):
-            _populate_weights_and_encoding(
+            _resolve_weights_and_encoding(
                 _model(config),
                 default_encoding=DUMMY_LLAMA_ARCH.default_encoding,
                 supported_encodings=DUMMY_LLAMA_ARCH.supported_encodings,

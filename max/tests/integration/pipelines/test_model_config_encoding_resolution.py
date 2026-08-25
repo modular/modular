@@ -16,7 +16,7 @@
 All tests use fake local safetensors/GGUF repos with no network access.
 
 Encoding/weight-path resolution for LLM models happens at construction:
-``PipelineConfig.from_args`` calls ``_populate_weights_and_encoding()``
+``PipelineConfig.from_args`` calls ``_resolve_weights_and_encoding()``
 once the architecture is known, which selects the effective encoding and
 discovers weight files. Most tests below drive that resolver (or the pure
 ``_select_quantization_encoding()`` helper) directly rather than going
@@ -38,7 +38,7 @@ from max.driver import DeviceSpec
 from max.graph.weights import WeightsFormat
 from max.pipelines.lib import MAXModelConfig
 from max.pipelines.lib.config.model_config import (
-    _populate_weights_and_encoding,
+    _resolve_weights_and_encoding,
     _select_quantization_encoding,
 )
 from max.pipelines.modeling.config_enums import SupportedEncoding
@@ -152,17 +152,25 @@ def _resolve_encoding_and_weight_path(
     default_weights_format: WeightsFormat = WeightsFormat.safetensors,
 ) -> None:
     """Resolves both encoding and weight_path via
-    :func:`_populate_weights_and_encoding`, the resolver
-    ``PipelineConfig.from_args`` runs. Every encoding is treated as
-    architecture-supported so these tests exercise inference/discovery, not
-    the supported-encodings gate.
+    :func:`_resolve_weights_and_encoding`, the resolver
+    ``PipelineConfig.from_args`` runs, and applies the results the way
+    from_args does so the assertions below can read them off the config.
+    Every encoding is treated as architecture-supported so these tests
+    exercise inference/discovery, not the supported-encodings gate.
     """
-    _populate_weights_and_encoding(
-        config,
-        default_encoding=default_encoding,
-        supported_encodings=set(get_args(SupportedEncoding)),
-        default_weights_format=default_weights_format,
+    encoding, dtype_cast, weight_path, device_specs = (
+        _resolve_weights_and_encoding(
+            config,
+            default_encoding=default_encoding,
+            supported_encodings=set(get_args(SupportedEncoding)),
+            default_weights_format=default_weights_format,
+        )
     )
+    config.quantization_encoding = encoding
+    config._resolved_dtype_cast = dtype_cast
+    if not config.weight_path:
+        config.weight_path = weight_path
+    config.device_specs = device_specs
 
 
 # ---------------------------------------------------------------------------

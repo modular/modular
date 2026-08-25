@@ -17,7 +17,11 @@ from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
-from max.pipelines.lib import PipelineConfig, PipelineRuntimeConfig
+from max.pipelines.lib import PipelineRuntimeConfig
+from max.pipelines.lib.config.config import (
+    _resolve_preprocess_cache_budgets,
+    _resolve_vision_cache_utilization,
+)
 
 GIB = 1024**3
 _CONFIG = "max.pipelines.lib.config.config"
@@ -41,15 +45,11 @@ def _stub_arch(
     return SimpleNamespace(name="stub-arch", config=_VisionArchConfig)
 
 
-def _config_stub(runtime: PipelineRuntimeConfig) -> MagicMock:
-    """A stand-in ``self``: a real runtime config on a mock pipeline config.
-
-    The resolvers read only ``.runtime`` and the model's HF config, and the
-    real runtime model is what enforces the field types they write back.
-    """
-    stub = MagicMock()
-    stub.runtime = runtime
-    return stub
+def _model_stub() -> MagicMock:
+    """A model config stand-in: the resolvers read only its HF config."""
+    model = MagicMock()
+    model.huggingface_config = MagicMock()
+    return model
 
 
 def _clamp_budgets(
@@ -59,19 +59,15 @@ def _clamp_budgets(
     has_vision_tower: bool = True,
 ) -> tuple[int, int]:
     """Run the host-memory clamp and return the resulting budgets."""
-    runtime = PipelineRuntimeConfig()
-    runtime.max_vision_preprocess_cache_bytes = image_bytes
-    runtime.max_video_preprocess_cache_bytes = video_bytes
-    stub = _config_stub(runtime)
+    runtime = PipelineRuntimeConfig(
+        max_vision_preprocess_cache_bytes=image_bytes,
+        max_video_preprocess_cache_bytes=video_bytes,
+    )
+    model = _model_stub()
     arch = _stub_arch(entry_bytes=1 if has_vision_tower else 0)
 
     with patch(f"{_CONFIG}._host_memory_limit", return_value=host_bytes):
-        PipelineConfig._resolve_preprocess_cache_budgets(stub, arch)
-
-    return (
-        runtime.max_vision_preprocess_cache_bytes,
-        runtime.max_video_preprocess_cache_bytes,
-    )
+        return _resolve_preprocess_cache_budgets(runtime, model, arch)
 
 
 def test_preprocess_cache_budgets__left_alone_when_they_fit() -> None:
@@ -136,14 +132,13 @@ def test_vision_cache_utilization__disabled_when_no_row_spec(
 ) -> None:
     """An arch config with a per-entry size but no row spec cannot back the cache."""
     runtime = PipelineRuntimeConfig(vision_cache_utilization=0.05)
-    stub = _config_stub(runtime)
 
     with caplog.at_level("WARNING", logger="max.pipelines"):
-        PipelineConfig._resolve_vision_cache_utilization(
-            stub, _stub_arch(entry_bytes=64, row_spec=None)
+        resolved = _resolve_vision_cache_utilization(
+            runtime, _model_stub(), _stub_arch(entry_bytes=64, row_spec=None)
         )
 
-    assert runtime.vision_cache_utilization == 0.0
+    assert resolved == 0.0
     assert any(
         "Disabling vision encoder cache" in record.message
         for record in caplog.records
@@ -152,25 +147,25 @@ def test_vision_cache_utilization__disabled_when_no_row_spec(
 
 def test_vision_cache_utilization__kept_with_a_row_spec() -> None:
     runtime = PipelineRuntimeConfig(vision_cache_utilization=0.05)
-    stub = _config_stub(runtime)
 
-    PipelineConfig._resolve_vision_cache_utilization(
-        stub, _stub_arch(entry_bytes=64, row_spec=(1024, "bfloat16"))
+    resolved = _resolve_vision_cache_utilization(
+        runtime,
+        _model_stub(),
+        _stub_arch(entry_bytes=64, row_spec=(1024, "bfloat16")),
     )
 
-    assert runtime.vision_cache_utilization == 0.05
+    assert resolved == 0.05
 
 
 def test_vision_cache_utilization__kept_without_a_vision_tower() -> None:
     """Text-only architectures never consult the row spec."""
     runtime = PipelineRuntimeConfig(vision_cache_utilization=0.05)
-    stub = _config_stub(runtime)
 
-    PipelineConfig._resolve_vision_cache_utilization(
-        stub, _stub_arch(entry_bytes=0, row_spec=None)
+    resolved = _resolve_vision_cache_utilization(
+        runtime, _model_stub(), _stub_arch(entry_bytes=0, row_spec=None)
     )
 
-    assert runtime.vision_cache_utilization == 0.05
+    assert resolved == 0.05
 
 
 def test_vision_cache_utilization__zero_skips_the_arch_config() -> None:
@@ -190,9 +185,8 @@ def test_vision_cache_utilization__zero_skips_the_arch_config() -> None:
             )
 
     runtime = PipelineRuntimeConfig(vision_cache_utilization=0.0)
-    stub = _config_stub(runtime)
     arch = SimpleNamespace(name="stub-arch", config=_BoomArchConfig)
 
-    PipelineConfig._resolve_vision_cache_utilization(stub, arch)
-
-    assert runtime.vision_cache_utilization == 0.0
+    assert (
+        _resolve_vision_cache_utilization(runtime, _model_stub(), arch) == 0.0
+    )
