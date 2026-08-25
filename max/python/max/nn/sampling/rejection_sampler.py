@@ -233,8 +233,14 @@ def _reshape_target_logits(target_logits: TensorValue) -> TensorValue:
 def _compute_target_tokens(
     draft_tokens: TensorValue,
     target_logits: TensorValue,
+    token_bitmasks: TensorValue | None = None,
 ) -> tuple[TensorValue, TensorValue, DeviceRef]:
     """Computes target argmax tokens at draft and bonus positions.
+
+    When ``token_bitmasks`` is provided, masked-out logits are filled with
+    ``-inf`` before the argmax, so a grammar-invalid token can never win
+    regardless of how negative the valid logits are (a finite fill value
+    would not guarantee that).
 
     Returns ``(target_tokens_draft, bonus_tokens, device)``.
     """
@@ -244,6 +250,18 @@ def _compute_target_tokens(
         )
     device = draft_tokens.device
     target_logits_3d = _reshape_target_logits(target_logits)
+    if token_bitmasks is not None:
+        bitmask_rebound = ops.rebind(
+            token_bitmasks,
+            shape=[
+                Dim("batch_size"),
+                Dim("num_steps") + 1,
+                Dim("packed_vocab_size"),
+            ],
+        )
+        target_logits_3d = apply_packed_bitmask(
+            target_logits_3d, bitmask_rebound, fill_val=float("-inf")
+        )
     all_target_tokens = ops.squeeze(
         ops.argmax(target_logits_3d, axis=-1), axis=-1
     )
@@ -314,7 +332,8 @@ def synthetic_acceptance_sampler(
         target_logits: Verified target logits.
         base_acceptance_rate: Per-position acceptance probability.
         num_draft_steps: Number of speculative draft steps.
-        seed: Per-execute seed tensor.
+        seed: Per-execute seed tensor. A rank-1 per-row seed uses its row-0
+            value: synthetic acceptance is batch-level benchmarking noise.
 
     Returns ``(first_rejected_idx, recovered_tokens, bonus_tokens)``
     """
@@ -322,7 +341,7 @@ def synthetic_acceptance_sampler(
         draft_tokens, target_logits
     )
 
-    ops.random.set_seed(seed)
+    ops.random.set_seed(seed[0] if seed.rank == 1 else seed)
 
     float_type = TensorType(
         DType.float32, draft_tokens.type.shape, device=device
@@ -342,6 +361,7 @@ def synthetic_acceptance_sampler(
 def greedy_acceptance_sampler(
     draft_tokens: TensorValue,
     target_logits: TensorValue,
+    token_bitmasks: TensorValue | None = None,
 ) -> tuple[TensorValue, TensorValue, TensorValue]:
     """Target-only rejection sampler for speculative decoding.
 
@@ -350,10 +370,15 @@ def greedy_acceptance_sampler(
     draft position; the bonus token is the argmax at the final (+1)
     position.
 
+    When ``token_bitmasks`` is provided, grammar constraints mask the target
+    logits (fill ``-inf``) before the argmax, so a grammar-invalid draft is
+    always rejected and recovered and bonus tokens always satisfy
+    structured-output constraints — same contract as the stochastic path.
+
     Returns ``(first_rejected_idx, recovered_tokens, bonus_tokens)``
     """
     target_tokens_draft, bonus_tokens, device = _compute_target_tokens(
-        draft_tokens, target_logits
+        draft_tokens, target_logits, token_bitmasks
     )
 
     draft_tokens_rb = ops.rebind(
@@ -451,7 +476,14 @@ class AcceptanceSampler:
             draft_tokens: Draft token ids from the draft model.
             target_logits: Verified target logits.
             seed: Per-execute seed tensor. Required by the synthetic and
-                stochastic paths; ignored by greedy.
+                stochastic paths; ignored by greedy. Rank-0, or a rank-1
+                ``[batch_size]`` per-row seed tensor in stochastic argmax
+                mode -- each row's sampling is then keyed off its own seed
+                and never coupled to co-residents' draws (which member of
+                the seed family is drawn can still vary with batch position
+                and kernel route; the distribution cannot). A rank-1 ``[1]``
+                tensor is the graph-level :func:`~max.graph.ops.random.SeedType`
+                input and keeps its shared-seed (scalar) semantics.
             temperature, top_k, max_k, top_p, min_top_p: Per-row
                 sampling params. Required when the sampler was built
                 with ``use_stochastic=True`` and synthetic mode is off;
@@ -464,8 +496,9 @@ class AcceptanceSampler:
                 strict stochastic rule. Relaxed acceptance is available
                 only under ``draft_proposal="argmax"``.
             token_bitmasks: Optional packed int32 grammar constraint bitmask
-                ``[batch, num_steps+1, ceil(vocab_size/32)]``. Only used in
-                stochastic mode (not in synthetic and greedy modes).
+                ``[batch, num_steps+1, ceil(vocab_size/32)]``. Used in
+                stochastic and greedy modes (not in synthetic mode); masked
+                logits guarantee committed tokens satisfy the constraint.
             draft_probs_full: ``[batch, num_steps, vocab_size]`` distributions
                 the draft sampled from. Required when the sampler was built
                 with ``draft_proposal="sampled"``; forbidden otherwise.
@@ -503,7 +536,9 @@ class AcceptanceSampler:
                 draft_probs_full=draft_probs_full,
                 vocab_size=self._vocab_size,
             )
-        return greedy_acceptance_sampler(draft_tokens, target_logits)
+        return greedy_acceptance_sampler(
+            draft_tokens, target_logits, token_bitmasks
+        )
 
 
 def _sampled_draft_verdict(
@@ -694,19 +729,49 @@ def _argmax_draft_verdict(
     # correlation between their accept/reject decisions.
     # Here we use the golden seed gamma to ensure that each row gets a distinct
     # seed value.
-    row_iota = ops.range(
-        0,
-        flat_all_rows,
-        1,
-        out_dim=flat_all_rows,
-        device=device,
-        dtype=DType.uint64,
-    )
-    row_seeds = ops.broadcast_to(
-        seed, [flat_all_rows]
-    ) + row_iota * ops.constant(
-        _SEED_GOLDEN_GAMMA, dtype=DType.uint64, device=device
-    )
+    if seed.rank == 1:
+        # Per-row seeds: position p of row b keys off `seed[b] + p * gamma`,
+        # so a row's samples never depend on co-residents' seeds or draws.
+        # The sampling kernel may still mix the batch position into its RNG
+        # offset (route-dependent), so the drawn member of the seed family is
+        # position-variant; the distribution is not. At batch size 1 the keys
+        # reduce exactly to the rank-0 derivation.
+        #
+        # Rebind to the canonical batch dim first: the caller's seed input may
+        # carry a static or differently-named batch dim, and every other input
+        # here is rebound the same way (the flat reshape below cannot unify
+        # otherwise).
+        seed = ops.rebind(seed, [batch])
+        pos_iota = ops.range(
+            0,
+            all_positions,
+            1,
+            out_dim=all_positions,
+            device=device,
+            dtype=DType.uint64,
+        )
+        row_seeds = ops.reshape(
+            ops.unsqueeze(seed, axis=-1)
+            + ops.unsqueeze(pos_iota, axis=0)
+            * ops.constant(
+                _SEED_GOLDEN_GAMMA, dtype=DType.uint64, device=device
+            ),
+            shape=[flat_all_rows],
+        )
+    else:
+        row_iota = ops.range(
+            0,
+            flat_all_rows,
+            1,
+            out_dim=flat_all_rows,
+            device=device,
+            dtype=DType.uint64,
+        )
+        row_seeds = ops.broadcast_to(
+            seed, [flat_all_rows]
+        ) + row_iota * ops.constant(
+            _SEED_GOLDEN_GAMMA, dtype=DType.uint64, device=device
+        )
     sampled_flat = topk_fused_sampling(
         logits=flat_target_logits,
         top_k=repeat_per_draft_step(top_k, batch, all_positions),
@@ -893,7 +958,22 @@ def stochastic_acceptance_sampler(
         raise ValueError(
             "draft_probs_full must be None when draft_proposal='argmax'"
         )
-    ops.random.set_seed(seed)
+    if seed.rank == 1 and seed.shape[0] == 1:
+        # A rank-1 ``[1]`` tensor is the graph-level :func:`SeedType` input —
+        # ONE seed shared by the whole batch, whatever the batch size — not a
+        # per-row seed tensor. Normalize to the scalar path; at batch size 1
+        # the two interpretations coincide bit-for-bit.
+        seed = seed[0]
+    if seed.rank == 1 and draft_proposal == "sampled":
+        # The sampled verdict draws implicit stream uniforms seeded once for
+        # the whole batch; only the argmax verdict derives per-row keys.
+        raise ValueError(
+            "per-row seeds require draft_proposal='argmax'; the sampled "
+            "verdict consumes a single batch-level random stream"
+        )
+    # Seeds the implicit-RNG ops of the sampled verdict; the argmax verdict is
+    # explicitly keyed per flat row and never reads this stream.
+    ops.random.set_seed(seed[0] if seed.rank == 1 else seed)
 
     device = draft_tokens.device
 
