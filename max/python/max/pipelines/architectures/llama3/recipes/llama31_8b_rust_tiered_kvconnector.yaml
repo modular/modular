@@ -15,3 +15,5 @@ model:
   kv_cache:
     kv_connector_config:
       type: rust_tiered
+      host_offload_max_gb: 50
+      disk_offload_max_gb: 50
