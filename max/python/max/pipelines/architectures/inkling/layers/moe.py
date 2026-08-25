@@ -123,21 +123,18 @@ class InklingGate(MoEGate):
 
         # Softmax over log-sigmoids = sigmoid(z_i) / sum_j sigmoid(z_j),
         # stable where the sigmoids themselves would underflow.
-        selected_log = _log_sigmoid(selected)
-        sinks_log = _log_sigmoid(sinks)
-        shift = ops.max(
-            ops.max(selected_log, axis=-1), ops.max(sinks_log, axis=-1)
-        )
-        selected_exp = ops.exp(selected_log - shift)
-        sinks_exp = ops.exp(sinks_log - shift)
+        log_scores = _log_sigmoid(ops.concat([selected, sinks], axis=-1))
+        scores = ops.exp(log_scores - ops.max(log_scores, axis=-1))
         factor = (
             ops.constant(self.route_scale, _ROUTER_DTYPE, device=device)
             * self.global_scale.to(device)
-        ) / (ops.sum(selected_exp, axis=-1) + ops.sum(sinks_exp, axis=-1))
+        ) / ops.sum(scores, axis=-1)
+        weights = scores * factor
+        num_selected = self.num_experts_per_token
         return InklingRouting(
             expert_ids=expert_ids,
-            expert_weights=selected_exp * factor,
-            sink_weights=sinks_exp * factor,
+            expert_weights=weights[:, :num_selected],
+            sink_weights=weights[:, num_selected:],
         )
 
     @property
