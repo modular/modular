@@ -44,7 +44,6 @@ using DeclIRValue = SmartVariant<Operation *, CValue, std::nullopt_t>;
 struct UnresolvedWildcardImport {
   ImportPathAttr moduleName;
   SMLoc importLoc;
-  bool isFullImport;
 };
 
 /// This is the AST representation (as opposed to the MLIR representation) of a

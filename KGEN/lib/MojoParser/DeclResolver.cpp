@@ -1362,7 +1362,7 @@ LogicalResult DeclResolver::importDeclFromModule(
 
 LogicalResult DeclResolver::importWildcardDeclsFromModule(
     ASTDecl &context, const UnresolvedWildcardImport &unresolvedImport) {
-  auto [moduleName, loc, isFullImport] = unresolvedImport;
+  auto [moduleName, loc] = unresolvedImport;
   auto modulePath = SharedState::ImportPath::fromAttr(moduleName);
   PackageOp currentPackage =
       dyn_cast_or_null<PackageOp>(context.getIfOperation());
@@ -1399,7 +1399,7 @@ LogicalResult DeclResolver::importWildcardDeclsFromModule(
     // Ignore erroneous children, which have nothing in them.
     if (decls.empty())
       continue;
-    if (!isFullImport && isInternalName(name))
+    if (isInternalName(name))
       continue;
 
     SmallVector<ASTDecl *> filteredDecls;

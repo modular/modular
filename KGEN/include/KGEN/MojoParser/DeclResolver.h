@@ -204,8 +204,8 @@ public:
                                      SMLoc destNameLoc,
                                      bool resolveTarget = true);
   /// Import decls from the given module into the provided destination context
-  /// using a wild-card import. If `isFullImport` is true, all decls are
-  /// imported, otherwise only decls that don't start with an `_` are imported.
+  /// using a wild-card import. Only non-internal decls (those whose names don't
+  /// start with an `_`) are imported.
   LogicalResult importWildcardDeclsFromModule(
       ASTDecl &context, const UnresolvedWildcardImport &unresolvedImport);
 

@@ -1225,8 +1225,8 @@ void SharedState::importBuiltinModules(ASTDecl &moduleDecl) {
       translateLocation(moduleDecl.getLoc()));
 
   for (ImportPathAttr import : impl->implicitBuiltinImports) {
-    moduleDecl.addUnresolvedWildcardImport(UnresolvedWildcardImport{
-        import, moduleDecl.getLoc(), /*isFullImport=*/false});
+    moduleDecl.addUnresolvedWildcardImport(
+        UnresolvedWildcardImport{import, moduleDecl.getLoc()});
   }
 }
 
@@ -1609,7 +1609,7 @@ SharedState::resolveDeclFromBytecode(ASTDecl &decl,
           })
           .Case([&](UnresolvedWildcardImportOp op) {
             decl.addUnresolvedWildcardImport(UnresolvedWildcardImport{
-                op.getModulePathAttr(), decl.getLoc(), op.getFullImport()});
+                op.getModulePathAttr(), decl.getLoc()});
           })
           .Case([&](StructDeclOp op) {
             ASTDecl &structDecl = addDeclForOp(op, op.getSymNameAttr());

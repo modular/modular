@@ -294,18 +294,10 @@ ASTDecl::popLatestUnresolvedWildcardImport(StringRef lookupName) {
   // Only an internal-name lookup filters anything: non-full imports never
   // provide underscore names, so they stay pending for other lookups. An
   // empty lookupName takes the newest unconditionally.
-  size_t i = unresolvedWildcardImports->size();
   if (!lookupName.empty() && isInternalName(lookupName))
-    while (i > 0 && !(*unresolvedWildcardImports)[i - 1].isFullImport)
-      --i;
-
-  // Only skipped entries remain
-  if (i == 0)
     return std::nullopt;
 
-  auto it = unresolvedWildcardImports->begin() + (i - 1);
-  UnresolvedWildcardImport unresolvedImport = *it;
-  unresolvedWildcardImports->erase(it);
+  auto unresolvedImport = unresolvedWildcardImports->pop_back_val();
 
   return unresolvedImport;
 }
