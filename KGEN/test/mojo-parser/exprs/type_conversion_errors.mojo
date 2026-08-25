@@ -147,8 +147,20 @@ def infer_rp_trivial[T: TrivialRegisterPassable](val: T):
     pass
 
 
+struct ImplicitFromInt:
+    @implicit
+    def __init__(out self, value: Int):
+        pass
+
+
 def stripping_raises():
     def fn_raises() raises:
+        pass
+
+    def fn_raises_bool(arg: Int) raises Bool:
+        pass
+
+    def fn_raises_int(arg: Int) raises Int:
         pass
 
     # expected-error @+1 {{cannot implicitly convert 'def fn_raises() raises thin -> None' value to 'def() thin -> None'}}
@@ -157,6 +169,19 @@ def stripping_raises():
     # expected-error @+2 {{cannot implicitly convert 'def fn_raises() raises thin -> None' value to 'def() raises Int thin -> None'}}
     # expected-note @+1 {{error type of the first type is 'Error' but the second type is 'Int'}}
     var fp2: def() thin raises Int = fn_raises
+
+    # expected-error @+3 {{cannot implicitly convert 'def fn_raises_bool(arg: Int) raises Bool thin -> None' value to 'def(*args: **()) raises Int thin -> None' in 'var' initializer}}
+    var fp3: def(
+        *args: *TypeList.splat[1, Int]()
+    ) raises Int thin = fn_raises_bool
+
+    # Just because the RHS `raises` type is implicitly convertible to the LHS
+    # `raises`, that does not imply that the function types should be implicitly
+    # convertible. Maybe someday.
+    # expected-error @+3 {{cannot implicitly convert 'def fn_raises_int(arg: Int) raises Int thin -> None' value to 'def(*args: **()) raises ImplicitFromInt thin -> None' in 'var' initializer}}
+    var fp4: def(
+        *args: *TypeList.splat[1, Int]()
+    ) raises ImplicitFromInt thin = fn_raises_int
 
 struct SimplePair(Copyable):
     var left: Int
