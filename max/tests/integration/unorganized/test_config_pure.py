@@ -44,6 +44,7 @@ from max.pipelines.lib.config.config import (
     _resolve_overlap_and_device_graph_capture,
 )
 from max.pipelines.lib.config.model_config import (
+    _build_model_config,
     _infer_weight_path,
     _select_dtype_cast,
     _select_quantization_encoding,
@@ -835,22 +836,17 @@ class TestFloat32WeightFallbackScoping:
 @mock_plan_from_sizes
 def test_validate_model_path__bad_repo_provided() -> None:
     # This test requires a HF call to check that this repo is not valid.
+    # The config layer's model builder is what loads the repo; plain
+    # construction records the fields without touching the network.
     with pytest.raises(Exception):
-        _ = PipelineConfig(
-            models=ModelManifest(
-                {"main": MAXModelConfig(model_path="bert-base-asdfasdf")}
-            ),
-        )
+        _build_model_config(MAXModelConfig, model_path="bert-base-asdfasdf")
 
 
 def test_config_init__raises_with_no_model_path() -> None:
-    # We expect this to fail.
+    # A weight path with no model path and no derivable repo is an error
+    # when the config layer builds the model.
     with pytest.raises(ValueError):
-        _ = PipelineConfig(
-            models=ModelManifest(
-                {"main": MAXModelConfig(weight_path=[Path("file.gguf")])}
-            ),
-        )
+        _build_model_config(MAXModelConfig, weight_path=[Path("file.gguf")])
 
 
 @requires_hf_network
@@ -860,7 +856,8 @@ def test_config_post_init__with_weight_path_but_no_model_path() -> None:
     config = PipelineConfig(
         models=ModelManifest(
             {
-                "main": MAXModelConfig(
+                "main": _build_model_config(
+                    MAXModelConfig,
                     weight_path=[
                         Path(
                             "modularai/Llama-3.1-8B-Instruct-GGUF/llama-3.1-8b-instruct-q4_0.gguf"
@@ -888,7 +885,8 @@ def test_config_post_init__other_repo_weights(
     config = PipelineConfig(
         models=ModelManifest(
             {
-                "main": MAXModelConfig(
+                "main": _build_model_config(
+                    MAXModelConfig,
                     model_path=llama_3_1_8b_instruct_local_path,
                     weight_path=[
                         Path(

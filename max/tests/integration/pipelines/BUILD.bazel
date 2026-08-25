@@ -20,6 +20,7 @@ modular_py_test(
         "//max/tests/integration/test_common:fake_weights",
         "//max/tests/integration/test_common:mocks",
         requirement("huggingface-hub"),
+        requirement("pydantic"),
     ],
 )
 

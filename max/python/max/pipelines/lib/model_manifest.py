@@ -20,7 +20,10 @@ import logging
 import os
 from typing import Any
 
-from max.pipelines.lib.config.model_config import MAXModelConfig
+from max.pipelines.lib.config.model_config import (
+    MAXModelConfig,
+    _build_model_config,
+)
 from max.pipelines.lib.weight_loader import WeightLoader, _role_prefixed_loader
 from max.pipelines.weights.hf_utils import HuggingFaceRepo
 from pydantic import GetCoreSchemaHandler
@@ -381,10 +384,10 @@ class ModelManifest(dict[str, MAXModelConfig]):
         elif _WEIGHT_IDENTITY_FIELDS.isdisjoint(field_overrides):
             updated_config = base.model_copy(update=field_overrides)
         else:
-            # model_copy bypasses __init__, so overriding model_path/weight_path
-            # would keep the stale derived identity (an external org/repo/file
-            # path would 404). Rebuild via the constructor to re-resolve it,
-            # carrying each private seed unless its source field changed.
+            # model_copy would keep the stale derived identity (an external
+            # org/repo/file path would 404), so rebuild through the factory
+            # to re-resolve it, carrying each loaded seed unless its source
+            # field changed.
             data = {**base.__dict__, **field_overrides}
             if "model_path" not in field_overrides:
                 data["_huggingface_config"] = getattr(
@@ -394,7 +397,7 @@ class ModelManifest(dict[str, MAXModelConfig]):
                 data["_weights_repo_id"] = getattr(
                     base, "_weights_repo_id", None
                 )
-            updated_config = type(base)(**data)
+            updated_config = _build_model_config(type(base), **data)
         new_models = {**self, role: updated_config}
         return ModelManifest(new_models, metadata=self._metadata)
 
@@ -448,7 +451,7 @@ class ModelManifest(dict[str, MAXModelConfig]):
         config_kwargs: dict[str, Any] = {"model_path": model_path, **kwargs}
         if revision is not None:
             config_kwargs["huggingface_model_revision"] = revision
-        model = MAXModelConfig(**config_kwargs)
+        model = _build_model_config(MAXModelConfig, **config_kwargs)
         return cls({"main": model})
 
     # ------------------------------------------------------------------
@@ -544,7 +547,9 @@ class ModelManifest(dict[str, MAXModelConfig]):
                 }
                 if revision is not None:
                     config_kwargs["huggingface_model_revision"] = revision
-                components[key] = MAXModelConfig(**config_kwargs)
+                components[key] = _build_model_config(
+                    MAXModelConfig, **config_kwargs
+                )
             else:
                 metadata[key] = value
 

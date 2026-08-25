@@ -63,6 +63,7 @@ from typing_extensions import Self
 
 from .model_config import (
     MAXModelConfig,
+    _build_model_config,
     _parse_component_overrides,
     _resolve_weights_and_encoding,
     _select_quantization_encoding,
@@ -1326,7 +1327,15 @@ class PipelineConfig(ConfigFileModel):
                 "main": MAXModelConfig.from_pipeline_args(args)
             }
             if args.draft_model is not None:
-                models_dict["draft"] = args.draft_model.model_copy(deep=True)
+                # The args-side model is plain user input; the factory
+                # resolves its paths and loads its HuggingFace state.
+                models_dict["draft"] = _build_model_config(
+                    MAXModelConfig,
+                    **args.draft_model.model_dump(
+                        include=args.draft_model.model_fields_set
+                        - {"config_file", "section_name"}
+                    ),
+                )
             manifest = ModelManifest(models_dict)
 
         # The model's HF generation_config may declare default sampling
