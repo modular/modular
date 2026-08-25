@@ -24,6 +24,7 @@
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/IR/Builders.h"
 #include "llvm/ADT/MapVector.h"
+#include "llvm/ADT/StringSet.h"
 #include "llvm/ADT/TinyPtrVector.h"
 
 namespace M::KGEN {
@@ -44,6 +45,16 @@ using DeclIRValue = SmartVariant<Operation *, CValue, std::nullopt_t>;
 struct UnresolvedWildcardImport {
   ImportPathAttr moduleName;
   SMLoc importLoc;
+  /// Whether or not the wildcard import has been superseded by a later one (in
+  /// source order) or has been drained through resolution.
+  bool isSuperseded = false;
+
+  /// The names that this wildcard has already been searched for.
+  std::unique_ptr<llvm::StringSet<>> searchedNames = nullptr;
+
+  /// Mark this wildcard as searched for `name`, returning false if it already
+  /// was.
+  bool markSearched(StringRef name);
 };
 
 /// This is the AST representation (as opposed to the MLIR representation) of a
@@ -331,10 +342,12 @@ public:
   /// Dump the underlying IR value.
   void dump() const;
 
-  /// Remove and return the newest pending wildcard import that could provide
-  /// `lookupName`. An empty `lookupName` takes the newest unconditionally.
-  std::optional<UnresolvedWildcardImport>
-  popLatestUnresolvedWildcardImport(StringRef lookupName = "");
+  /// The pending wildcard imports into this scope.
+  MutableArrayRef<UnresolvedWildcardImport> getUnresolvedWildcardImports() {
+    if (!unresolvedWildcardImports)
+      return {};
+    return *unresolvedWildcardImports;
+  }
 
 private:
   friend class DeclResolver;
@@ -447,6 +460,9 @@ private:
 
   /// A set of modules with unresolved wildcard imports into this decl. This is
   /// lazily initialized because it is very rarely needed (~0.6% of all decls).
+  /// This list only ever grows; UnresolvedWildcardImports are instead flagged
+  /// as superseded once resolved or once a later import of the same module
+  /// replaces it.
   using UnresolvedWildcardImportsType =
       llvm::SmallVector<UnresolvedWildcardImport>;
   std::unique_ptr<UnresolvedWildcardImportsType> unresolvedWildcardImports;

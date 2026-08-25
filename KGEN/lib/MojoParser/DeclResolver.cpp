@@ -1311,7 +1311,8 @@ LogicalResult DeclResolver::importDeclFromModule(
   if (FailureOr<ASTDecl *> srcInit =
           bodyResolvePackageInit(module, sourceNameLoc);
       succeeded(srcInit)) {
-    (void)resolveAllWildcardImports(*srcInit ? **srcInit : module);
+    expandWildcardsForName(*srcInit ? **srcInit : module,
+                           shared.extensionsScopeMarker);
   }
   StringAttr extensionNameAttr = shared.extensionsScopeMarker;
   auto requestedModuleExts =
@@ -1361,8 +1362,12 @@ LogicalResult DeclResolver::importDeclFromModule(
 }
 
 LogicalResult DeclResolver::importWildcardDeclsFromModule(
-    ASTDecl &context, const UnresolvedWildcardImport &unresolvedImport) {
-  auto [moduleName, loc] = unresolvedImport;
+    ASTDecl &context, const UnresolvedWildcardImport &unresolvedImport,
+    StringAttr onlyName) {
+  assert((!onlyName || !isInternalName(onlyName)) &&
+         "callers must filter internal names; wildcards never provide them");
+  ImportPathAttr moduleName = unresolvedImport.moduleName;
+  SMLoc loc = unresolvedImport.importLoc;
   auto modulePath = SharedState::ImportPath::fromAttr(moduleName);
   PackageOp currentPackage =
       dyn_cast_or_null<PackageOp>(context.getIfOperation());
@@ -1382,35 +1387,59 @@ LogicalResult DeclResolver::importWildcardDeclsFromModule(
     return failure();
   ASTDecl &iterScope = *initOrFailure ? **initOrFailure : module;
 
-  // Resolve pending wildcard imports in the scope we are about to iterate.
-  if (failed(resolveAllWildcardImports(iterScope)))
-    return failure();
-
-  auto shouldImportWildcardDecl = [](ASTDecl *decl) {
-    auto structOp = dyn_cast_or_null<StructDeclOp>(decl->getIfOperation());
-    if (!structOp || !structOp.isSynthetic() || !structOp.getDefinesClosure())
-      return true;
-    return false;
-  };
-
-  // Wildcard imports don't import decls with a leading '_'.
-  LogicalResult result = success();
-  for (const auto &[name, decls] : iterScope.getDeclsInScope()) {
+  // Imports a wildcard decl into the current scope. Returns true on failure.
+  auto importWildcardDecl = [this, moduleName, &context,
+                             loc](StringAttr name,
+                                  ArrayRef<ASTDecl *> decls) -> LogicalResult {
     // Ignore erroneous children, which have nothing in them.
     if (decls.empty())
-      continue;
-    if (isInternalName(name))
-      continue;
+      return success();
+
+    auto shouldImportWildcardDecl = [](ASTDecl *decl) {
+      auto structOp = dyn_cast_or_null<StructDeclOp>(decl->getIfOperation());
+      if (!structOp || !structOp.isSynthetic() || !structOp.getDefinesClosure())
+        return true;
+      return false;
+    };
 
     SmallVector<ASTDecl *> filteredDecls;
     llvm::copy_if(decls, std::back_inserter(filteredDecls),
                   shouldImportWildcardDecl);
     if (filteredDecls.empty())
-      continue;
+      return success();
 
-    if (failed(aliasImportDecls(filteredDecls, name, name, moduleName, loc,
-                                context, false)))
-      result = failure();
+    return aliasImportDecls(filteredDecls, name, name, moduleName, loc, context,
+                            false);
+  };
+
+  // Resolve pending wildcard imports in the scope we are about to iterate
+  // (optionally only for the name we're interested in).
+  LogicalResult result = success();
+  if (onlyName) {
+    expandWildcardsForName(iterScope, onlyName);
+
+    auto decls = iterScope.lookupInCurrentScope(onlyName);
+
+    result = importWildcardDecl(onlyName, decls);
+  } else {
+    if (failed(resolveAllWildcardImports(iterScope)))
+      return failure();
+
+    for (const auto &[name, decls] : iterScope.getDeclsInScope()) {
+      // Wildcard imports don't import decls with a leading '_'.
+      if (isInternalName(name))
+        continue;
+
+      // A name whose decls are all disabled is a miss.
+      if (LLVM_UNLIKELY(iterScope.hasDisabledDecls) &&
+          llvm::all_of(decls,
+                       [](ASTDecl *decl) { return decl->isDisabled(); })) {
+        continue;
+      }
+
+      if (failed(importWildcardDecl(name, decls)))
+        result = failure();
+    }
   }
 
   // Also import all extensions from the source module, similar to what
@@ -1844,16 +1873,48 @@ void DeclResolver::resolveAllReferencedFrom(ASTDecl &decl,
   }
 }
 
-LogicalResult DeclResolver::resolveAllWildcardImports(ASTDecl &module) {
-  if (!module.unresolvedWildcardImports)
-    return success();
+void DeclResolver::expandWildcardsForName(ASTDecl &scope, StringAttr name,
+                                          bool stopOnFirstHit) {
+  // Wildcard imports don't import internal names.
+  if (name.empty() || isInternalName(name))
+    return;
+  // Newest first. Re-read the list each step: expanding one wildcard runs
+  // arbitrary resolution, which may grow it.
+  for (size_t i = scope.getUnresolvedWildcardImports().size(); i > 0; --i) {
+    UnresolvedWildcardImport &wildcard =
+        scope.getUnresolvedWildcardImports()[i - 1];
+    if (wildcard.isSuperseded || !wildcard.markSearched(name.getValue()))
+      continue;
+    // On failure keep going: another wildcard may still provide the name.
+    if (failed(importWildcardDeclsFromModule(scope, wildcard, name)))
+      continue;
+    if (stopOnFirstHit && !scope.lookupInCurrentScope(name).empty())
+      return;
+  }
+}
 
+LogicalResult DeclResolver::resolveAllWildcardImports(ASTDecl &scope) {
   // Resolve wildcard imports from last to first, thereby meaning the last one
   // "wins" in terms of shadowing; subsequent colliding decls won't be brought
-  // into scope.
-  while (auto unresolvedImport = module.popLatestUnresolvedWildcardImport()) {
-    if (failed(importWildcardDeclsFromModule(module, *unresolvedImport)))
+  // into scope. The list is append-only, so indices stay valid, but expanding a
+  // wildcard runs arbitrary resolution that may append to it and reallocate:
+  // re-read the list every step, and mark an entry drained before expanding it
+  // so a re-entrant call can't expand it twice.
+  size_t i = scope.getUnresolvedWildcardImports().size();
+  while (i-- > 0) {
+    UnresolvedWildcardImport &wildcard =
+        scope.getUnresolvedWildcardImports()[i];
+    if (wildcard.isSuperseded)
+      continue;
+    wildcard.isSuperseded = true;
+    UnresolvedWildcardImport drained{wildcard.moduleName, wildcard.importLoc};
+    size_t before = scope.getUnresolvedWildcardImports().size();
+    if (failed(importWildcardDeclsFromModule(scope, drained)))
       return failure();
+    // Anything appended is newer, so it must be expanded first.
+    if (size_t after = scope.getUnresolvedWildcardImports().size();
+        after != before)
+      i = after;
   }
   return success();
 }
