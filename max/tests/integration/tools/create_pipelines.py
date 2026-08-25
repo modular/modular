@@ -2273,19 +2273,6 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
     "Wan-AI/Wan2.1-T2V-14B-Diffusers": WanGenerationOracle(
         "Wan-AI/Wan2.1-T2V-14B-Diffusers",
     ),
-    "zai-org/GLM-5.1-FP8": GenericOracle(
-        model_path="zai-org/GLM-5.1-FP8",
-        config_params={
-            "max_length": 4096,
-            "kv_cache_format": "float8_e4m3fn",
-            "ep_size": 8,
-            "data_parallel_degree": 8,
-            "max_batch_input_tokens": 4096,
-            "device_memory_utilization": 0.7,
-        },
-        device_encoding_map={"gpu": ["float8_e4m3fn"]},
-        apply_chat_template=True,
-    ),
     "nvidia/NVIDIA-Nemotron-3-Nano-4B-FP8": NemotronHOracle(
         # A pre-dequantized local bf16 checkpoint can be substituted via
         # NEMOTRON_H_MODEL_PATH (there is no Apple FP8 matmul kernel, so on
