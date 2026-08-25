@@ -1,0 +1,254 @@
+# ===----------------------------------------------------------------------=== #
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ===----------------------------------------------------------------------=== #
+"""Graph-level tests for the KDA (Kimi Delta Attention) decode kernel.
+
+The kernel is exposed via ``ops.inplace_custom("kda_decode")`` and mutates a
+shared ``BufferType`` state pool at slot ``state_indices[batch_item]``,
+mirroring the slot-indexed Gated DeltaNet ops (`test_gated_delta_ops.py`).
+These tests exercise the graph-compiler registration end to end — dispatch
+across both compiled head dimensions, tensor binding, and the mutable-buffer
+binding — which the direct-launch Mojo tests under
+``max/kernels/test/gpu/state_space`` cannot catch. They verify:
+
+* per-token output against an fp64 NumPy oracle of the recurrence;
+* in-place mutation of the pool slots named in ``state_indices``, also
+  against the oracle;
+* untouched slots elsewhere in the pool remain byte-identical.
+"""
+
+from __future__ import annotations
+
+import max.driver as md
+import numpy as np
+import pytest
+import torch
+from max.driver import accelerator_count
+from max.dtype import DType
+from max.engine import InferenceSession
+from max.graph import BufferType, DeviceRef, Graph, TensorType, ops
+
+
+def _kda_decode_oracle(
+    q: np.ndarray,
+    k: np.ndarray,
+    v: np.ndarray,
+    raw_gate: np.ndarray,
+    beta_logits: np.ndarray,
+    a_log: np.ndarray,
+    dt_bias: np.ndarray,
+    cu_seqlens: np.ndarray,
+    pool: np.ndarray,
+    state_indices: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Computes the KDA decode recurrence in fp64 NumPy.
+
+    Mirrors ``Kernels/lib/kda/reference.mojo`` with the default axes
+    (gate_mode="original", beta_mode="logits", state_layout="K_FIRST").
+
+    Returns:
+        The per-token output ``[1, total_T, HV, V]`` and the updated pool,
+        both in fp64.
+    """
+    _, total_t, num_key_heads, key_head_dim = q.shape
+    num_value_heads = v.shape[2]
+    expansion = num_value_heads // num_key_heads
+    query_scale = 1.0 / np.sqrt(np.float64(key_head_dim))
+
+    q64 = q.astype(np.float64)
+    k64 = k.astype(np.float64)
+    v64 = v.astype(np.float64)
+    raw_gate64 = raw_gate.astype(np.float64)
+    beta64 = beta_logits.astype(np.float64)
+    a64 = a_log.astype(np.float64)
+    dt_bias64 = dt_bias.astype(np.float64)
+    pool64 = pool.astype(np.float64)
+    out = np.zeros((1, total_t, num_value_heads, v.shape[3]), dtype=np.float64)
+
+    for b in range(len(state_indices)):
+        slot = int(state_indices[b])
+        for vh in range(num_value_heads):
+            kh = vh // expansion
+            state = pool64[slot, vh].copy()  # [K, V]
+            for t in range(int(cu_seqlens[b]), int(cu_seqlens[b + 1])):
+                qv = q64[0, t, kh]
+                kv = k64[0, t, kh]
+                q_n = qv / np.sqrt((qv * qv).sum() + 1e-6) * query_scale
+                k_n = kv / np.sqrt((kv * kv).sum() + 1e-6)
+                pre = raw_gate64[0, t, vh] + dt_bias64[vh]
+                # gate_mode "original": -exp(a_log) * softplus(pre).
+                alpha = np.exp(-np.exp(a64[vh]) * np.logaddexp(0.0, pre))
+                beta = 1.0 / (1.0 + np.exp(-beta64[0, t, vh]))
+                state = alpha[:, None] * state
+                err = v64[0, t, vh] - k_n @ state
+                state = state + beta * np.outer(k_n, err)
+                out[0, t, vh] = q_n @ state
+            pool64[slot, vh] = state
+
+    return out, pool64
+
+
+# The (KEY_HEAD_DIM, VALUE_HEAD_DIM) pairs compiled into the `kda_decode`
+# registration; (32, 32) is Kimi-K3 and (128, 128) is Kimi-Linear. The
+# (32, 32) case uses GQA expansion (H < HV) to exercise the key-head mapping.
+@pytest.mark.skipif(accelerator_count() == 0, reason="Requires GPU")
+@pytest.mark.parametrize(
+    ("kd", "vd", "num_key_heads", "num_value_heads"),
+    [(32, 32, 1, 2), (128, 128, 2, 2)],
+)
+def test_kda_decode_output_and_slot_isolation(
+    session: InferenceSession,
+    kd: int,
+    vd: int,
+    num_key_heads: int,
+    num_value_heads: int,
+) -> None:
+    """kda_decode via the graph op: fp64-oracle output and slot isolation.
+
+    Two variable-length sequences map to slots 1 and 3 of a 4-slot pool.
+    After execute, the output and those two slots must match the fp64
+    oracle, and slots 0 and 2 must be byte-identical to the initial fill.
+    """
+    gpu = DeviceRef.GPU()
+    batch = 2
+    total_t = 8
+    max_slots = 4
+    referenced_slots = [1, 3]
+    untouched_slots = [s for s in range(max_slots) if s not in referenced_slots]
+    # Uneven lengths [3, 5] -> exclusive prefix offsets [0, 3, 8].
+    cu_seqlens_np = np.array([0, 3, total_t], dtype=np.int32)
+    state_indices_np = np.asarray(referenced_slots, dtype=np.int32)
+
+    with Graph(
+        f"kda_decode_test_k{kd}_v{vd}",
+        input_types=[
+            TensorType(
+                DType.float32, [1, total_t, num_key_heads, kd], device=gpu
+            ),
+            TensorType(
+                DType.float32, [1, total_t, num_key_heads, kd], device=gpu
+            ),
+            TensorType(
+                DType.float32, [1, total_t, num_value_heads, vd], device=gpu
+            ),
+            TensorType(
+                DType.float32, [1, total_t, num_value_heads, kd], device=gpu
+            ),
+            TensorType(
+                DType.float32, [1, total_t, num_value_heads], device=gpu
+            ),
+            TensorType(DType.float32, [num_value_heads], device=gpu),
+            TensorType(DType.float32, [num_value_heads, kd], device=gpu),
+            TensorType(DType.int32, [batch + 1], device=gpu),
+            BufferType(
+                DType.float32, [max_slots, num_value_heads, kd, vd], device=gpu
+            ),
+            TensorType(DType.int32, [batch], device=gpu),
+        ],
+    ) as graph:
+        values = [
+            inp.buffer if isinstance(inp.type, BufferType) else inp.tensor
+            for inp in graph.inputs
+        ]
+        results = ops.inplace_custom(
+            "kda_decode",
+            device=gpu,
+            values=values,
+            out_types=[
+                TensorType(
+                    DType.float32,
+                    [1, total_t, num_value_heads, vd],
+                    device=gpu,
+                )
+            ],
+        )
+        graph.output(results[0])
+
+    model = session.load(graph)
+    gpu_device = model.input_devices[0]
+
+    rng = np.random.default_rng(42)
+    q_np = rng.standard_normal((1, total_t, num_key_heads, kd)).astype(
+        np.float32
+    )
+    k_np = rng.standard_normal((1, total_t, num_key_heads, kd)).astype(
+        np.float32
+    )
+    v_np = rng.standard_normal((1, total_t, num_value_heads, vd)).astype(
+        np.float32
+    )
+    raw_gate_np = rng.standard_normal((1, total_t, num_value_heads, kd)).astype(
+        np.float32
+    )
+    beta_logits_np = rng.standard_normal((1, total_t, num_value_heads)).astype(
+        np.float32
+    )
+    # a_log in a moderate range so alpha stays away from hard saturation.
+    a_log_np = (rng.standard_normal(num_value_heads) * 0.5).astype(np.float32)
+    dt_bias_np = rng.standard_normal((num_value_heads, kd)).astype(np.float32)
+    pool_initial_np = rng.standard_normal(
+        (max_slots, num_value_heads, kd, vd)
+    ).astype(np.float32)
+
+    ref_out, ref_pool = _kda_decode_oracle(
+        q_np,
+        k_np,
+        v_np,
+        raw_gate_np,
+        beta_logits_np,
+        a_log_np,
+        dt_bias_np,
+        cu_seqlens_np,
+        pool_initial_np,
+        state_indices_np,
+    )
+
+    pool_buf = md.Buffer.from_numpy(pool_initial_np.copy()).to(gpu_device)
+    outputs = model.execute(
+        md.Buffer.from_numpy(q_np).to(gpu_device),
+        md.Buffer.from_numpy(k_np).to(gpu_device),
+        md.Buffer.from_numpy(v_np).to(gpu_device),
+        md.Buffer.from_numpy(raw_gate_np).to(gpu_device),
+        md.Buffer.from_numpy(beta_logits_np).to(gpu_device),
+        md.Buffer.from_numpy(a_log_np).to(gpu_device),
+        md.Buffer.from_numpy(dt_bias_np).to(gpu_device),
+        md.Buffer.from_numpy(cu_seqlens_np).to(gpu_device),
+        pool_buf,
+        md.Buffer.from_numpy(state_indices_np).to(gpu_device),
+    )
+
+    out_np = torch.from_dlpack(outputs[0]).cpu().numpy()
+    assert out_np.shape == (1, total_t, num_value_heads, vd)
+    assert np.all(np.isfinite(out_np))
+    np.testing.assert_allclose(
+        out_np,
+        ref_out,
+        rtol=1e-3,
+        atol=1e-4,
+        err_msg="kda_decode output diverges from the fp64 oracle",
+    )
+
+    pool_after_np = torch.from_dlpack(pool_buf).cpu().numpy()
+    for s in referenced_slots:
+        np.testing.assert_allclose(
+            pool_after_np[s],
+            ref_pool[s],
+            rtol=1e-3,
+            atol=1e-4,
+            err_msg=f"state_pool slot {s} diverges from the fp64 oracle",
+        )
+    for s in untouched_slots:
+        np.testing.assert_array_equal(
+            pool_after_np[s],
+            pool_initial_np[s],
+            err_msg=f"state_pool slot {s} must be untouched",
+        )

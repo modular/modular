@@ -40,6 +40,7 @@ _MAX_PACKAGES = {
 
 INTERNAL_PACKAGES = [
     "//Kernels/lib/attn_res",
+    "//Kernels/lib/kda",
     "//Kernels/lib/matmul_rs",
     "//Kernels/lib/msa",
     "//Kernels/src/mega_ffn",
