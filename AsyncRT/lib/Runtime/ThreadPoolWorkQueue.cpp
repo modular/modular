@@ -1025,10 +1025,11 @@ ThreadPoolWorkQueue::~ThreadPoolWorkQueue() {
   // Clear thread-local Runtime pointer.
   CompactCPUDevicePtr::setCurrentCPUDevice({});
 
-  // Destroy all the threads datastructures.
+  // Destroy all the threads datastructures. The array came from
+  // alignedAlloc, so it must be released with alignedFree.
   for (size_t i = 0; i < numWorkers; ++i)
     workers[i].~WorkQueueThread();
-  free(workers);
+  M::alignedFree(workers);
 }
 
 void ThreadPoolWorkQueue::shutdown() {
