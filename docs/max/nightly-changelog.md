@@ -783,7 +783,9 @@ the [container](/container) page now links to the new page.
   distribution. When top-k and top-p are disabled, the kernel now skips the
   cutoff search because every positive-probability token already survives.
   On AMD GPUs, it also caches exponentiated logits in the output buffer so
-  cutoff-search passes do not recompute them.
+  cutoff-search passes do not recompute them. Rows with top-k disabled also
+  omit positive-value counting from the initial mass reduction and cutoff
+  search.
 - The fused gumbel-argmax sampling kernel takes a `from_probs` parameter,
   exposed as `max.nn.kernels.gumbel_argmax_from_probs`: each row's score is
   `ln(p) + gumbel` over unnormalized probabilities, drawn with noise the
