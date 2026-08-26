@@ -301,7 +301,8 @@ static void printParamList(raw_ostream &os, PogListAttr paramInfo,
             paramsToPrint.push_back({StringAttr(), elt, VariadicKind::None});
           continue;
         }
-        if (sugarIsa<SingletonAttr>(paramValue)) {
+        if (auto structAttr = sugarDynCast<LITStructAttr>(paramValue);
+            structAttr && structAttr.getValues().empty()) {
           paramsToPrint.push_back(
               {StringAttr(), info.valueList, VariadicKind::PosVarArg});
           continue;
@@ -1242,6 +1243,27 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
   /// Elide it if we have the default type with a literal so we don't print
   /// Int(42), but print it if it is something weird like IntLiteral(42)
   if (auto structAttr = dyn_cast<LITStructAttr>(param)) {
+    // Special case for stateless structs.
+    if (diagShared && structAttr.getValues().empty()) {
+      auto structType = cast<LIT::StructType>(param.getType());
+      StringRef typeName = structType.getSymbol().getLeafReference().strref();
+      if (typeName == "IntLiteral" || typeName == "FloatLiteral" ||
+          typeName == "StringLiteral") {
+        assert(structType.getParamValues().size() == 1 &&
+               "Literal type should have one parameter");
+        printParam(os, structType.getParamValues()[0], ctx);
+        return;
+      }
+      if (typeName == "Origin") {
+        assert(structType.getParamValues().size() == 2 &&
+               isa<OriginType>(structType.getParamValues()[1].getType()) &&
+               "Origin type should have two parameters");
+        auto origin = structType.getParamValues()[1];
+        printOriginParam(os, origin, diagShared, /*elideOriginOf=*/false);
+        return;
+      }
+    }
+
     if (auto elt = getSingleElementStructAttr<TypedAttr>(structAttr)) {
       StringRef typeName;
       if (auto structType = sugarDynCast<StructType>(structAttr.getType()))
@@ -1357,31 +1379,6 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
       auto simdVal = cast<KGEN::SIMDAttr>(
           POP::FloatLiteralConvertAttr::get(ctx, f64Type, fpLit));
       os << simdVal.getValues()[0].getFloatVal();
-      return;
-    }
-  }
-
-  // IntLiteral/FloatLiteral/StringLiteral are stateless values that end up as
-  // SingletonAttr.
-  if (isa<SingletonAttr>(param) && diagShared) {
-    StringRef typeName;
-    if (auto structType = dyn_cast<StructType>(param.getType()))
-      typeName = structType.getSymbol().getLeafReference().strref();
-    if (typeName == "IntLiteral" || typeName == "FloatLiteral" ||
-        typeName == "StringLiteral") {
-      auto structType = cast<LIT::StructType>(param.getType());
-      assert(structType.getParamValues().size() == 1 &&
-             "Literal type should have one parameter");
-      printParam(os, structType.getParamValues()[0], ctx);
-      return;
-    }
-    if (typeName == "Origin") {
-      auto structType = cast<LIT::StructType>(param.getType());
-      assert(structType.getParamValues().size() == 2 &&
-             isa<OriginType>(structType.getParamValues()[1].getType()) &&
-             "Origin type should have two parameters");
-      auto origin = structType.getParamValues()[1];
-      printOriginParam(os, origin, diagShared, /*elideOriginOf=*/false);
       return;
     }
   }

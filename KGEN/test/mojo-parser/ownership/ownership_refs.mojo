@@ -232,7 +232,7 @@ def testSelfRef(a: SelfRefTest, mut b: SelfRefTest):
 
 # CHECK-LABEL: lit.fn @"testLifetimeOf1
 # CHECK-SAME: (%a: !lit.ref<!MemExample, imm *"a`"> imm_mem) ->
-# CHECK-SAME: !lit.struct<#Pointer <{{.*}}:origin<false> *"a`">> *(), :!AddressSpace {_value: !SIMDLength = {0}}>>
+# CHECK-SAME: !lit.struct<#Pointer <{{.*}}:origin<false> *"a`">> {}, :!AddressSpace {_value: !SIMDLength = {0}}>>
 def testLifetimeOf1(a: MemExample) -> Pointer[MemExample, origin_of(a)]:
   return Pointer(to=a)
 

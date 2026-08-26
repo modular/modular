@@ -1859,7 +1859,7 @@ PValue IREmitter::getStdlibOriginOf(TypedAttr litOrigin, SMLoc loc) {
 
   // There is no actual reason to construct the stateless Origin type here, just
   // directly make the same attribute the ctor will fold to.
-  return SingletonAttr::get(originType);
+  return LIT::getEmptyStructValue(originType);
 }
 
 //===--------------------------------------------------------------------===//

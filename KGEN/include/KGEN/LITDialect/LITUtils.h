@@ -79,6 +79,11 @@ bool isVariadicOfTypeExpr(TypedAttr attr);
 /// trait type).
 bool isFirstLevelTypeExpr(TypedAttr attr);
 
+/// Returns the value of a struct type with no fields, which is the sole
+/// inhabitant of that type. Returns null if `type` is not a lit struct type.
+/// The caller is responsible for the type having no fields.
+TypedAttr getEmptyStructValue(Type type);
+
 //===----------------------------------------------------------------------===//
 // Parsing and Printing
 //===----------------------------------------------------------------------===//

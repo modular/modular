@@ -195,9 +195,9 @@ struct ParamIndex(Movable where False):
 # CHECK-LABEL: lit.fn @"test_param_indexing
 def test_param_indexing(a: XYZ, b: ParamIndex) -> Int:
     # Issue #35662: Support parameter input to getattr
-    # CHECK: lit.call {{.*}}__getattr_param__{{.*}}!lit.struct<#StringLiteral <:string "x">> *()>(%a)
+    # CHECK: lit.call {{.*}}__getattr_param__{{.*}}!lit.struct<#StringLiteral <:string "x">> {}>(%a)
     _ = a.x
-    # CHECK: lit.call {{.*}}__getattr_param__{{.*}}!lit.struct<#StringLiteral <:string "y">> *()>(%a)
+    # CHECK: lit.call {{.*}}__getattr_param__{{.*}}!lit.struct<#StringLiteral <:string "y">> {}>(%a)
     _ = a.y
     # CHECK: lit.call {{.*}}__getitem_param__{{.*}}<:!Int {:scalar<index> 2}, :!Int {:scalar<index> 4}>(%b)
     _ = b[2, 4]

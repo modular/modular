@@ -1143,7 +1143,7 @@ def testTransferWarning():
 # Test nonmaterializable IntLiteral beyond Int bounds.
 ##===----------------------------------------------------------------------===##
 
-# CHECK: lit.alias.decl *"bigggNumber{{.*}}#IntLiteral <:!pop.int_literal 115792089237316195423570985008687907853269984665640564039457584007913129639936>> = <*()>
+# CHECK: lit.alias.decl *"bigggNumber{{.*}}#IntLiteral <:!pop.int_literal 115792089237316195423570985008687907853269984665640564039457584007913129639936>> = <{}>
 comptime bigggNumber = 2 << 255
 def useBigNumber() -> Int:
   # CHECK: [[VAR:%.*]] = kgen.param.constant: !alias_Int1 = <rebind(:!Int {:scalar<index> 512})>

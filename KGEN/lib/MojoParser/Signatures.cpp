@@ -1770,7 +1770,7 @@ static ASTType typeCheckVariadicPack(ParsedArgument &arg, size_t argIdx,
   if (!paramType.isEqualCanon(param.getRValueType())) {
     // If the type list is autoparameterized, rebuild the value so it binds with
     // the new parameter type correctly.
-    param = PValue(SingletonAttr::get(paramType)); // TypeList has no members.
+    param = PValue(LIT::getEmptyStructValue(paramType));
   }
 
   // Make sure the param value is a variadic list of types.

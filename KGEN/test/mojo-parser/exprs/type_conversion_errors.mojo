@@ -170,7 +170,7 @@ def stripping_raises():
     # expected-note @+1 {{error type of the first type is 'Error' but the second type is 'Int'}}
     var fp2: def() thin raises Int = fn_raises
 
-    # expected-error @+3 {{cannot implicitly convert 'def fn_raises_bool(arg: Int) raises Bool thin -> None' value to 'def(*args: **()) raises Int thin -> None' in 'var' initializer}}
+    # expected-error @+3 {{cannot implicitly convert 'def fn_raises_bool(arg: Int) raises Bool thin -> None' value to 'def(*args: *TypeList()) raises Int thin -> None' in 'var' initializer}}
     var fp3: def(
         *args: *TypeList.splat[1, Int]()
     ) raises Int thin = fn_raises_bool
@@ -178,7 +178,7 @@ def stripping_raises():
     # Just because the RHS `raises` type is implicitly convertible to the LHS
     # `raises`, that does not imply that the function types should be implicitly
     # convertible. Maybe someday.
-    # expected-error @+3 {{cannot implicitly convert 'def fn_raises_int(arg: Int) raises Int thin -> None' value to 'def(*args: **()) raises ImplicitFromInt thin -> None' in 'var' initializer}}
+    # expected-error @+3 {{cannot implicitly convert 'def fn_raises_int(arg: Int) raises Int thin -> None' value to 'def(*args: *TypeList()) raises ImplicitFromInt thin -> None' in 'var' initializer}}
     var fp4: def(
         *args: *TypeList.splat[1, Int]()
     ) raises ImplicitFromInt thin = fn_raises_int

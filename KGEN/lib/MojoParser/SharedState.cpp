@@ -2718,10 +2718,10 @@ FailureOr<TypedAttr> BuiltinFunctionFolder::fold(Operation &op) {
     if (decl &&
         ASTType(eltType).isTrivialRegisterType(decl->getLoc(), shared)) {
       // A struct with no fields never get initialized, so it has to start as a
-      // singleton value.
+      // pre-built value.
       auto structOp = dyn_cast_or_null<StructDeclOp>(decl->getIfOperation());
       if (structOp && structOp.getFieldDecls().empty())
-        varDeclSoFar[varDecl] = SingletonAttr::get(eltType);
+        varDeclSoFar[varDecl] = LIT::getEmptyStructValue(eltType);
       else
         varDeclSoFar[varDecl] = UninitMemAttr::get(eltType);
       return TypedAttr();

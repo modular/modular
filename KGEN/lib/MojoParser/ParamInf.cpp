@@ -908,7 +908,7 @@ LogicalResult ParamInf::inferFromParamList() {
           return failure();
         // The ParameterList now has a concrete type.
         auto listValue =
-            SingletonAttr::get(evaluator.getReboundType(expectedType));
+            LIT::getEmptyStructValue(evaluator.getReboundType(expectedType));
         setInferredValue(idx, listValue);
       }
       continue;
@@ -1149,8 +1149,8 @@ LogicalResult ParamInf::inferFromDefaults() {
 
       // The list itself doesn't have a value, so default it to {} now that it
       // has a concrete type.
-      auto listValue =
-          SingletonAttr::get(evaluator.getReboundType(declaredParamTypes[idx]));
+      auto listValue = LIT::getEmptyStructValue(
+          evaluator.getReboundType(declaredParamTypes[idx]));
       setInitialInferredValue(idx, listValue);
     }
   }
@@ -2197,7 +2197,7 @@ VerifiedParamBindings CallParamInf::inferForCall() {
       // value of the TypeList struct.
       auto typeListType =
           evaluator.getReboundType(expectedInfo.typeListStruct.getType());
-      auto typeListValue = SingletonAttr::get(typeListType);
+      auto typeListValue = LIT::getEmptyStructValue(typeListType);
       (void)matcher.matchParams(typeListValue, expectedInfo.typeListStruct);
       continue;
     }
@@ -2365,7 +2365,7 @@ VerifiedParamBindings CallParamInf::inferForCall() {
       // value of the TypeList struct.
       auto typeListType =
           evaluator.getReboundType(expectedInfo.typeListStruct.getType());
-      auto typeListValue = SingletonAttr::get(typeListType);
+      auto typeListValue = LIT::getEmptyStructValue(typeListType);
       (void)matcher.matchParams(typeListValue, expectedInfo.typeListStruct);
       continue;
     }

@@ -230,7 +230,7 @@ def my_constrained[cond: Bool, message: StringLiteral]():
 
 # CHECK-LABEL: lit.fn @"pass_str_param
 def pass_str_param():
-    # CHECK: lit.call {{.+}}my_constrained{{.*}}<:string "foo", :!Bool {:scalar<bool> true}, :!lit.struct<#StringLiteral <:string "foo">> *()>()
+    # CHECK: lit.call {{.+}}my_constrained{{.*}}<:string "foo", :!Bool {:scalar<bool> true}, :!lit.struct<#StringLiteral <:string "foo">> {}>()
     my_constrained[1==1, "foo"]()
 
 # CHECK-LABEL: lit.fn @"implicit_params
@@ -1134,11 +1134,11 @@ def test_origin_struct_inf[imm_data: Int](mut data: Int):
    immTest = OriginStructInferenceImm(data)
 
    # CHECK-NEXT: lit.call {{.*}}OriginStructInferencePar::@"__init__
-   # CHECK-SAME: :origin<true> *"data`">> *()>(%data, %parTest)
+   # CHECK-SAME: :origin<true> *"data`">> {}>(%data, %parTest)
    parTest = OriginStructInferencePar(data)
 
    # CHECK-NEXT: lit.call {{.*}}OriginStructInferenceParWrapped::@"__init__
-   # CHECK-SAME: :origin<true> *"data`">> *()>(%data, %parWrappedTest)
+   # CHECK-SAME: :origin<true> *"data`">> {}>(%data, %parWrappedTest)
    parWrappedTest = OriginStructInferenceParWrapped(data)
 
    # CHECK: %[[IMMUT:.+]] = lit.ref.immut {{.*}} : <!Int, mut [[IMMUT_REF:.+]]>

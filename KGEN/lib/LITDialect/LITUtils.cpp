@@ -76,6 +76,16 @@ bool LIT::isFirstLevelTypeExpr(TypedAttr typeExpr) {
   return false;
 }
 
+TypedAttr LIT::getEmptyStructValue(Type type) {
+  auto structType = sugarDynCast<StructType>(type);
+  if (!structType)
+    return {};
+
+  // LITStructAttr's type must be a StructType, so a sugared type comes back
+  // wrapped in a rebind.
+  return ParamOperatorAttr::getRebind(LITStructAttr::get({}, structType), type);
+}
+
 bool LIT::isTypeExpr(TypedAttr attr) { return isMetaType(attr.getType()); }
 bool LIT::isVariadicOfTypeExpr(TypedAttr attr) {
   auto va = sugarDynCast<ParamListAttr>(attr);
