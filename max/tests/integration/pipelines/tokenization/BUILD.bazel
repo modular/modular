@@ -143,6 +143,27 @@ modular_py_test(
     ],
 )
 
+# The prompt tokenizer is faked, so unlike test_pixel_tokenizer this needs
+# neither a checkpoint nor network access, and runs on CI.
+modular_py_test(
+    name = "test_audio_tokenizer",
+    size = "small",
+    srcs = [
+        "test_audio_tokenizer.py",
+    ],
+    env = {
+        "MODULAR_PATH": ".",
+    },
+    deps = [
+        "//max/python/max/pipelines/context",
+        "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/modeling",
+        "//max/python/max/pipelines/request",
+        requirement("numpy"),
+        requirement("pytest-asyncio"),
+    ],
+)
+
 modular_py_test(
     name = "test_pixel_tokenizer",
     size = "large",

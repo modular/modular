@@ -67,6 +67,7 @@ Tokenizers
    :toctree: generated
    :template: autosummary/class.rst
 
+   AudioGenerationTokenizer
    PixelGenerationTokenizer
 
 Utilities

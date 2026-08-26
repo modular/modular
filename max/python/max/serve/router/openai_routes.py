@@ -36,6 +36,8 @@ from typing import (
     overload,
 )
 
+import numpy as np
+import numpy.typing as npt
 import opentelemetry.trace as otel_trace
 from fastapi import APIRouter, FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, Response
@@ -47,6 +49,7 @@ from max.pipelines.context import (
     TextGenerationResponseFormat,
 )
 from max.pipelines.context.exceptions import InputError
+from max.pipelines.context.outputs import GenerationOutput
 from max.pipelines.lib import PipelineConfig
 from max.pipelines.lib.tool_parsing import create as create_tool_parser
 from max.pipelines.lib.tool_parsing import (
@@ -58,8 +61,11 @@ from max.pipelines.lora import LoRAOperation, LoRARequest, LoRAStatus
 from max.pipelines.modeling.types import (
     ImageContentPart,
     MessageContent,
+    OpenResponsesRequest,
     ParsedToolCallDelta,
     ParsedToolResponse,
+    PipelineOutput,
+    PipelineTask,
     PipelineTokenizer,
     RequestID,
     TextContentPart,
@@ -69,8 +75,11 @@ from max.pipelines.modeling.types import (
     TextGenerationRequestTool,
     VideoContentPart,
 )
+from max.pipelines.request import OpenResponsesRequestBody
+from max.pipelines.request.open_responses import OutputAudioContent
 from max.profiler import Tracer, traced
 from max.serve.config import Settings
+from max.serve.media import WAV_MEDIA_TYPE, encode_wav_bytes
 from max.serve.parser import (
     LlamaToolParser,
     ToolParser,
@@ -85,6 +94,7 @@ from max.serve.parser.tool_call_validation import (
     check_response_format_conformance,
     check_tool_call_conformance,
 )
+from max.serve.pipelines.general_handler import GeneralPipelineHandler
 from max.serve.pipelines.llm import (
     TokenGeneratorOutput,
     TokenGeneratorPipeline,
@@ -115,6 +125,7 @@ from max.serve.schemas.openai import (
     CreateCompletionResponse,
     CreateEmbeddingRequest,
     CreateEmbeddingResponse,
+    CreateSpeechRequest,
     Embedding,
     Error,
     ErrorResponse,
@@ -434,6 +445,38 @@ def get_pipeline(request: Request, model_name: str) -> TokenGeneratorPipeline:
             f"Tokenizer for '{model_name}' pipelines does not implement the PipelineTokenizer protocol."
         )
     return pipeline
+
+
+def _get_audio_handler(
+    request: Request, model_name: str
+) -> GeneralPipelineHandler:
+    """Returns the handler serving audio generation, or refuses the request.
+
+    The audio routes share ``app.state.handler`` with the OpenResponses API,
+    which every task populates -- so the served task, not the handler's
+    presence, is what says whether this endpoint means anything here.
+
+    Raises:
+        HTTPException: 404 if the served model is not an audio model.
+        ValueError: If ``model_name`` names a model this server is not serving.
+    """
+    app_state: State = request.app.state
+    if getattr(app_state, "task", None) != PipelineTask.AUDIO_GENERATION:
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                "This server is not serving an audio generation model, so "
+                "/v1/audio/speech is unavailable."
+            ),
+        )
+
+    handler: GeneralPipelineHandler = app_state.handler
+    if model_name and model_name != handler.model_name:
+        raise ValueError(
+            f"Unknown model '{model_name}', currently serving "
+            f"'{handler.model_name}'."
+        )
+    return handler
 
 
 def _content_before_tool_call_marker(parser: ToolParser, response: str) -> str:
@@ -2453,6 +2496,189 @@ async def openai_create_embeddings(
         ) from e
 
 
+def _speech_as_open_responses_request(
+    speech_request: CreateSpeechRequest, request_id: str
+) -> OpenResponsesRequest:
+    """Restates a speech request in the form audio tokenizers take.
+
+    Every audio checkpoint owns its prompt contract through
+    ``AudioGenerationTokenizer``, which reads an
+    :class:`OpenResponsesRequest`. Translating here rather than tokenizing in
+    the route keeps one path to a context, so this endpoint and
+    ``/v1/responses`` cannot disagree about what a prompt is.
+
+    Args:
+        speech_request: The validated request.
+        request_id: Id to carry through to the worker.
+
+    Returns:
+        The equivalent OpenResponses request.
+    """
+    body = OpenResponsesRequestBody.model_validate(
+        {
+            "model": speech_request.model,
+            # ``instructions`` describes the audio; ``input`` is the text the
+            # audio renders, which a singing model takes as lyrics.
+            "input": speech_request.instructions or "",
+            "seed": speech_request.seed,
+            "provider_options": {
+                "audio": {
+                    "lyrics": speech_request.input,
+                    "audio_duration": speech_request.audio_duration,
+                    "steps": speech_request.steps,
+                    "guidance_scale": speech_request.guidance_scale,
+                    "audio_format": "wav",
+                }
+            },
+        }
+    )
+    return OpenResponsesRequest(
+        request_id=RequestID(value=request_id), body=body
+    )
+
+
+def _validate_speech_request(speech_request: CreateSpeechRequest) -> None:
+    """Rejects a speech request this server cannot answer as asked.
+
+    Answering an unsupported option by ignoring it is worse than refusing it:
+    a client that asked for mp3 and got WAV bytes under an ``audio/wav``
+    header has no way to notice.
+
+    Raises:
+        ValueError: On a request that asks for something unsupported.
+    """
+    if speech_request.response_format not in (None, "wav"):
+        raise ValueError(
+            f"response_format '{speech_request.response_format}' is not "
+            "supported; this server returns WAV. Omit the field or pass 'wav'."
+        )
+    if speech_request.stream_format == "sse":
+        raise ValueError(
+            "Streaming is not supported for audio generation: the model "
+            "produces a whole waveform in one pass."
+        )
+    if speech_request.speed is not None and speech_request.speed != 1.0:
+        raise ValueError(
+            "'speed' is not supported; ask for a duration with "
+            "'audio_duration' instead."
+        )
+    if not speech_request.instructions:
+        raise ValueError(
+            "'instructions' must describe the audio to generate (style, "
+            "instrumentation, mood). A generative audio model has no default "
+            "voice to fall back on."
+        )
+
+
+def _waveform_from_output(
+    output: GenerationOutput,
+) -> tuple[npt.NDArray[np.float32], int]:
+    """Pulls the raw waveform and its rate out of a generation's output.
+
+    Returns:
+        The ``[channels, samples]`` waveform and its sample rate.
+
+    Raises:
+        ValueError: If the pipeline returned something other than one piece of
+            raw audio, which means the served model is not an audio model.
+    """
+    audio = [c for c in output.output if isinstance(c, OutputAudioContent)]
+    if len(audio) != 1:
+        raise ValueError(
+            f"Expected one audio output from the model, got {len(audio)}."
+        )
+    content = audio[0]
+    if content.samples is None or content.sample_rate is None:
+        raise ValueError(
+            "The model returned audio without raw samples, which this "
+            "endpoint needs in order to encode a WAV."
+        )
+    return content.samples, content.sample_rate
+
+
+@router.post("/audio/speech", response_model=None)
+async def openai_create_speech(request: Request) -> Response:
+    """Generates audio from text, returning a WAV body.
+
+    OpenAI's speech endpoint is a plain request/response with binary output,
+    which is also how a generative audio model works: one pass, one waveform,
+    no streaming.
+    """
+    request_id = request.state.request_id
+    request_trace_ctx.set(otel_propagate.extract(request.headers))
+
+    # Request parsing and validation (client fault -> 400).
+    try:
+        speech_request = CreateSpeechRequest.model_validate_json(
+            await request.body()
+        )
+        _validate_speech_request(speech_request)
+        handler = _get_audio_handler(request, speech_request.model)
+        logger.debug(
+            "Processing path, %s, req-id, %s, for model, %s.",
+            request.url.path,
+            request_id,
+            speech_request.model,
+        )
+        open_responses_request = _speech_as_open_responses_request(
+            speech_request, request_id
+        )
+    except JSONDecodeError as e:
+        logger.warning("JSONDecodeError in request %s: %s", request_id, e)
+        raise HTTPException(status_code=400, detail="Missing JSON.") from e
+    except ValidationError as e:
+        logger.warning(
+            "Request validation error in request %s: %s", request_id, e
+        )
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except InputError as e:
+        logger.warning(
+            "Input validation error in request %s: %s", request_id, str(e)
+        )
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except ValueError as e:
+        logger.warning("Value error in request %s: %s", request_id, str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+    # Generation (server fault -> 500), except for the input errors a
+    # checkpoint's own tokenizer raises when it reads the assembled prompt.
+    try:
+        final_output: PipelineOutput | None = None
+        async for chunk in handler.next(open_responses_request):
+            final_output = chunk
+            if chunk.is_done:
+                break
+        if not isinstance(final_output, GenerationOutput):
+            raise ValueError(
+                "Expected generated audio from the model, got "
+                f"{type(final_output).__name__}."
+            )
+        samples, sample_rate = _waveform_from_output(final_output)
+        payload = encode_wav_bytes(samples, sample_rate)
+    except InputError as e:
+        logger.warning(
+            "Input validation error in request %s: %s", request_id, str(e)
+        )
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except RequestQueueFull:
+        # Admission was rejected (full worker queue); the central handler maps
+        # this to HTTP 429 rather than the generic 500 below.
+        raise
+    except Exception as e:
+        logger.exception(
+            "Exception during response generation in request %s", request_id
+        )
+        raise HTTPException(
+            status_code=500, detail="Internal server error."
+        ) from e
+
+    return Response(
+        content=payload,
+        media_type=WAV_MEDIA_TYPE,
+        headers={"Content-Disposition": 'attachment; filename="speech.wav"'},
+    )
+
+
 class CompletionResponseStreamChoice(BaseModel):
     index: int
     text: str
@@ -3133,6 +3359,10 @@ def _resolve_max_model_len(request: Request) -> int | None:
 
     Returns the smallest length the tokenizer and model can handle, so clients
     can avoid overflowing the model's context.
+
+    A multi-component checkpoint (diffusion, audio) has no main model to ask
+    and no single context length to report either, so its memory plan carries
+    no planned length and this reports none.
     """
     memory_plan = request.app.state.memory_plan
     max_model_len = (

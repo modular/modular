@@ -38,6 +38,7 @@ from .pipeline import (
     PipelineOutputType,
 )
 from .pipeline_variants import (
+    AudioGenerationInputs,
     BatchType,
     CompletedBatchStats,
     EmbeddingsContext,
@@ -83,6 +84,7 @@ PipelinesFactory = Callable[
 
 __all__ = [
     "DUMMY_REQUEST_ID",
+    "AudioGenerationInputs",
     "BatchLogitsProcessor",
     "BatchProcessorInputs",
     "BatchType",

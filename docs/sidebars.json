@@ -493,6 +493,17 @@
             },
             {
               "type": "category",
+              "label": "audio",
+              "link": {
+                "type": "doc",
+                "id": "api/python/pipelines.audio"
+              },
+              "items": [
+                "__AUTOGEN:max.pipelines.audio__"
+              ]
+            },
+            {
+              "type": "category",
               "label": "context",
               "link": {
                 "type": "doc",
@@ -618,6 +629,17 @@
                   },
                   "items": [
                     "__AUTOGEN:max.pipelines.lib.registry__"
+                  ]
+                },
+                {
+                  "type": "category",
+                  "label": "request_text",
+                  "link": {
+                    "type": "doc",
+                    "id": "api/python/pipelines.lib.request_text"
+                  },
+                  "items": [
+                    "__AUTOGEN:max.pipelines.lib.request_text__"
                   ]
                 },
                 "__AUTOGEN:max.pipelines.lib__"

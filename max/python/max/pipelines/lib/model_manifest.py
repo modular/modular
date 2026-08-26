@@ -35,6 +35,49 @@ logger = logging.getLogger(__name__)
 # with_override() rebuilds through the constructor rather than model_copy.
 _WEIGHT_IDENTITY_FIELDS = frozenset({"model_path", "weight_path"})
 
+# In precedence order: a repo that ships both is a Modular Pipeline with a
+# plain diffusers one alongside it, and the plain one is the simpler
+# description.
+_MODEL_INDEX_FILENAMES = ("model_index.json", "modular_model_index.json")
+
+
+def _component_subfolder(key: str, value: Any) -> str | None:
+    """Returns the subfolder of one index entry, or None if it is metadata.
+
+    Both index formats describe a component as a list whose first two
+    elements are the library and class that load it. A ``model_index.json``
+    stops there, and the component's subfolder is its key. A
+    ``modular_model_index.json`` adds a third element, a dict of loading
+    arguments, which states the subfolder outright.
+
+    Only the subfolder is read from those arguments. They also carry a
+    ``pretrained_model_name_or_path``, but it is the checkpoint's canonical
+    repo id, so honoring it would redirect a local checkout back to the Hub;
+    the repo the caller asked for wins instead. Supporting a component that
+    genuinely lives in another repo would mean telling those two cases apart,
+    which this does not attempt.
+
+    Args:
+        key: The entry's key, which is the component's role.
+        value: The entry's value.
+
+    Returns:
+        The component's subfolder, or None if ``value`` is metadata rather
+        than a component.
+    """
+    if not isinstance(value, list) or len(value) not in (2, 3):
+        return None
+    if not all(isinstance(v, str) and v for v in value[:2]):
+        return None
+    if len(value) == 2:
+        return key
+
+    loading_args = value[2]
+    if not isinstance(loading_args, dict):
+        return None
+    subfolder = loading_args.get("subfolder")
+    return subfolder if isinstance(subfolder, str) and subfolder else key
+
 
 class ModelManifest(dict[str, MAXModelConfig]):
     """Registry mapping semantic role strings to MAXModelConfig instances.
@@ -460,35 +503,42 @@ class ModelManifest(dict[str, MAXModelConfig]):
 
     @staticmethod
     def _load_model_index(repo: HuggingFaceRepo) -> dict[str, Any] | None:
-        """Load ``model_index.json`` from a model repository.
+        """Load a component index from a model repository.
+
+        Tries ``model_index.json``, then ``modular_model_index.json``: the
+        latter is written by ``diffusers``' Modular Pipelines feature, whose
+        index describes each component as a 3-element entry rather than a
+        2-element one.
 
         Args:
             repo: A ``HuggingFaceRepo`` handle (local or remote).
 
-        Returns the parsed JSON dict, or ``None`` if the file does not
-        exist.
+        Returns the parsed JSON dict, or ``None`` if neither file exists.
         """
         if repo.repo_type == "local":
-            index_path = os.path.join(repo.local_path, "model_index.json")
-            if not os.path.isfile(index_path):
-                return None
-            with open(index_path) as f:
-                return json.load(f)
+            for filename in _MODEL_INDEX_FILENAMES:
+                index_path = os.path.join(repo.local_path, filename)
+                if os.path.isfile(index_path):
+                    with open(index_path) as f:
+                        return json.load(f)
+            return None
 
-        # Remote repo — single hf_hub_download call.
+        # Remote repo — one hf_hub_download call per candidate filename.
         from huggingface_hub import hf_hub_download
         from huggingface_hub.utils import EntryNotFoundError
 
-        try:
-            config_path = hf_hub_download(
-                repo_id=repo.repo_id,
-                filename="model_index.json",
-                revision=repo.revision,
-            )
-        except EntryNotFoundError:
-            return None
-        with open(config_path) as f:
-            return json.load(f)
+        for filename in _MODEL_INDEX_FILENAMES:
+            try:
+                config_path = hf_hub_download(
+                    repo_id=repo.repo_id,
+                    filename=filename,
+                    revision=repo.revision,
+                )
+            except EntryNotFoundError:
+                continue
+            with open(config_path) as f:
+                return json.load(f)
+        return None
 
     @staticmethod
     def _discover_diffusers_components(
@@ -498,10 +548,10 @@ class ModelManifest(dict[str, MAXModelConfig]):
     ) -> tuple[dict[str, MAXModelConfig], dict[str, Any]] | None:
         """Detect a diffusers repo and expand it into per-component configs.
 
-        Reads ``model_index.json`` from *repo*.  If the file exists, each
-        component listed in it gets its own ``MAXModelConfig`` with
-        ``subfolder`` set to the component name.  Non-component entries
-        are returned as metadata.
+        Reads the repo's component index (see :meth:`_load_model_index`). If
+        one exists, each component listed in it gets its own
+        ``MAXModelConfig`` pointed at that component's subfolder.
+        Non-component entries are returned as metadata.
 
         Args:
             repo: A ``HuggingFaceRepo`` handle (local or remote).
@@ -515,7 +565,7 @@ class ModelManifest(dict[str, MAXModelConfig]):
             A ``(components, metadata)`` tuple, or ``None`` if this is
             not a diffusion pipeline.  *components* maps role names to
             ``MAXModelConfig`` instances; *metadata* contains all
-            non-component entries from ``model_index.json``.
+            non-component entries from the index.
         """
         try:
             model_index = ModelManifest._load_model_index(repo)
@@ -523,7 +573,7 @@ class ModelManifest(dict[str, MAXModelConfig]):
             raise
         except Exception:
             logger.info(
-                "Could not load model_index.json for %s",
+                "Could not load a component index for %s",
                 repo.repo_id,
                 exc_info=True,
             )
@@ -534,24 +584,21 @@ class ModelManifest(dict[str, MAXModelConfig]):
         components: dict[str, MAXModelConfig] = {}
         metadata: dict[str, Any] = {}
         for key, value in model_index.items():
-            # A valid component is a 2-element list of non-empty strings.
-            if (
-                isinstance(value, list)
-                and len(value) == 2
-                and all(isinstance(v, str) and v for v in value)
-            ):
-                config_kwargs: dict[str, Any] = {
-                    **kwargs,
-                    "model_path": repo.repo_id,
-                    "subfolder": key,
-                }
-                if revision is not None:
-                    config_kwargs["huggingface_model_revision"] = revision
-                components[key] = _build_model_config(
-                    MAXModelConfig, **config_kwargs
-                )
-            else:
+            subfolder = _component_subfolder(key, value)
+            if subfolder is None:
                 metadata[key] = value
+                continue
+
+            config_kwargs: dict[str, Any] = {
+                **kwargs,
+                "model_path": repo.repo_id,
+                "subfolder": subfolder,
+            }
+            if revision is not None:
+                config_kwargs["huggingface_model_revision"] = revision
+            components[key] = _build_model_config(
+                MAXModelConfig, **config_kwargs
+            )
 
         if not components:
             return None

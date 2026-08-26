@@ -39,6 +39,7 @@ from .tokenizer import TextTokenizer
 if TYPE_CHECKING:
     from max.graph.weights import WeightsAdapter, WeightsFormat
     from max.pipelines.context import (
+        AudioContext,
         PixelContext,
         TextAndVisionContext,
         TextContext,
@@ -153,11 +154,16 @@ class SupportedArchitecture:
     default_weights_format: WeightsFormat
     """The weights format expected by the `pipeline_model`."""
 
-    context_type: type[TextContext | EmbeddingsContext]
+    context_type: type[
+        TextContext | EmbeddingsContext | PixelContext | AudioContext
+    ]
     """The context class type that this architecture uses for managing request state and inputs.
 
-    This should be a class (not an instance) that implements either the `TextContext`
-    or `EmbeddingsContext` protocol, defining how the pipeline processes and tracks requests.
+    This should be a class (not an instance) carrying the state and inputs of
+    one request, in whichever form the architecture's task calls for: a
+    `TextContext` or `EmbeddingsContext` protocol implementation for token and
+    embedding models, or a `PixelContext` or `AudioContext` subclass for the
+    media tasks.
     """
 
     config: type[ArchConfig]

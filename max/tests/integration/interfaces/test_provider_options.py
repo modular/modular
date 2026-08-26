@@ -16,6 +16,7 @@ import json
 
 import pytest
 from max.pipelines.request.provider_options import (
+    AudioProviderOptions,
     ImageProviderOptions,
     MaxProviderOptions,
     ProviderOptions,
@@ -304,3 +305,33 @@ class TestImageDimensionValidation:
         opts = ImageProviderOptions(width=4096, height=4096)
         assert opts.width == 4096
         assert opts.height == 4096
+
+
+class TestAudioFormatValidation:
+    """Tests for the container AudioProviderOptions accepts.
+
+    Only WAV can be encoded, and generating the audio comes before writing
+    it, so an unsupported container has to be caught here rather than after a
+    render has already been paid for.
+    """
+
+    def test_default_is_wav(self) -> None:
+        assert AudioProviderOptions().audio_format == "wav"
+
+    def test_wav_is_accepted(self) -> None:
+        assert AudioProviderOptions(audio_format="wav").audio_format == "wav"
+
+    def test_case_and_padding_are_normalized(self) -> None:
+        opts = AudioProviderOptions(audio_format=" WAV ")
+        assert opts.audio_format == "wav"
+
+    @pytest.mark.parametrize("audio_format", ["mp3", "flac", "opus", ""])
+    def test_an_unsupported_container_is_rejected(
+        self, audio_format: str
+    ) -> None:
+        with pytest.raises(ValidationError, match="is not supported"):
+            AudioProviderOptions(audio_format=audio_format)
+
+    def test_the_error_names_what_is_supported(self) -> None:
+        with pytest.raises(ValidationError, match="'wav'"):
+            AudioProviderOptions(audio_format="mp3")

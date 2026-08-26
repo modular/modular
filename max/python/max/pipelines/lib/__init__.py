@@ -36,6 +36,7 @@ from max.pipelines.weights.hf_utils import (
 from max.pipelines.weights.quant import parse_quant_config
 from max.pipelines.weights.weight_path_parser import WeightPathParser
 
+from .audio_tokenizer import AudioGenerationTokenizer
 from .bfloat16_utils import (
     float32_array_to_buffer,
     float32_to_bfloat16_as_uint16,
@@ -112,6 +113,7 @@ from .vision_preprocess_cache import VisionPreprocessCache
 __all__ = [
     "PIPELINE_REGISTRY",
     "AlwaysSignalBuffersMixin",
+    "AudioGenerationTokenizer",
     "BatchProcessor",
     "BatchProcessorRuntime",
     "CompilationTimer",

@@ -11,6 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from .audio_generation import (
+    AudioGenerationInputs,
+)
 from .embeddings_generation import (
     EmbeddingsContext,
     EmbeddingsGenerationContextType,
@@ -35,6 +38,7 @@ from .text_generation import (
 )
 
 __all__ = [
+    "AudioGenerationInputs",
     "BatchType",
     "CompletedBatchStats",
     "EmbeddingsContext",

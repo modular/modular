@@ -21,7 +21,9 @@ from collections.abc import AsyncGenerator
 from typing import Any, Generic
 
 from max.pipelines.context import (
+    AudioContext,
     BaseContextType,
+    PixelContext,
     TextContext,
 )
 from max.pipelines.context.exceptions import InputError
@@ -278,7 +280,10 @@ def _response_type_for_task(
         return dict[RequestID, SchedulerResult[TextGenerationOutput]]
     elif pipeline_task == PipelineTask.EMBEDDINGS_GENERATION:
         return dict[RequestID, SchedulerResult[EmbeddingsGenerationOutput]]
-    elif pipeline_task == PipelineTask.PIXEL_GENERATION:
+    elif pipeline_task in (
+        PipelineTask.PIXEL_GENERATION,
+        PipelineTask.AUDIO_GENERATION,
+    ):
         return dict[RequestID, SchedulerResult[GenerationOutput]]
     else:
         raise ValueError(
@@ -293,7 +298,9 @@ class ZmqModelWorkerInterface(
     def __init__(
         self,
         pipeline_task: PipelineTask,
-        context_type: type[TextContext | EmbeddingsContext],
+        context_type: type[
+            TextContext | EmbeddingsContext | PixelContext | AudioContext
+        ],
         request_queue_size: int | None = None,
     ) -> None:
         response_type = _response_type_for_task(pipeline_task)

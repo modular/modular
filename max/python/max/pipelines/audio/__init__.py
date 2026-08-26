@@ -10,20 +10,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Audio generation pipelines."""
 
-from .audio import WAV_MEDIA_TYPE, encode_wav_bytes
-from .generated_media import (
-    GeneratedMediaStorageLimitExceeded,
-    GeneratedMediaStore,
-    StoredMediaAsset,
-    encode_video_bytes_b64,
-)
+from .interface import AudioExecutor, AudioExecutorOutputs
+from .pipeline import AudioGenerationPipeline
 
 __all__ = [
-    "WAV_MEDIA_TYPE",
-    "GeneratedMediaStorageLimitExceeded",
-    "GeneratedMediaStore",
-    "StoredMediaAsset",
-    "encode_video_bytes_b64",
-    "encode_wav_bytes",
+    "AudioExecutor",
+    "AudioExecutorOutputs",
+    "AudioGenerationPipeline",
 ]

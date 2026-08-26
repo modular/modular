@@ -14,6 +14,15 @@ the [container](/container) page now links to the new page.
 
 ## MAX models
 
+- Added the `audio_generation` pipeline task, for models that render audio
+  rather than tokens or pixels. Its request options (lyrics, duration,
+  denoising steps, guidance scale, output format) arrive as the `audio`
+  provider options of an OpenResponses request, and an architecture on the
+  task serves over `/v1/audio/speech` and `/v1/responses`. Responses report
+  `usage` the way image generation does: token counts stay at 0 and a
+  `usage.audio_generation_details` block carries `duration_seconds`,
+  `sample_rate`, `channels`, `num_samples`, and `steps`, measured from the
+  audio actually produced rather than the duration that was asked for.
 - Fixed unbounded host-memory usage in Gemma 4 video pre-processing: the
   server now decodes only the sampled frames of a video instead of
   materializing every frame before sampling, bounding peak memory at the
@@ -991,6 +1000,14 @@ the [container](/container) page now links to the new page.
   GPUDirect RDMA support, such as GeForce cards. A
   `DeviceContext.enqueue_create_buffer()` create and destroy round trip on an
   affected device took roughly 67 us instead of 375 ns.
+
+- Fixed abandoned image, video, and audio generation requests still being
+  rendered. The scheduler these tasks share never read its cancellation
+  queue, so a request whose client had disconnected was executed in full
+  once it reached the front of the queue, and the cancellations themselves
+  accumulated. A request cancelled before it starts is now dropped and
+  answered as cancelled; one already in flight still runs to completion,
+  since a render is a single uninterruptible call.
 
 - Fixed reductions over a zero-extent axis — for example `ops.sum(x, axis=1)`
   where that axis has length `0` — leaving their output unwritten, along with

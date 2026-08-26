@@ -302,6 +302,140 @@ class TestDiffusersAutoExpansion:
 @patch(VALIDATE_HF_ACCESS_HFUTILS_TARGET)
 @patch(HF_OFFLINE_TARGET, False)
 @patch(VALIDATE_HF_ACCESS_TARGET)
+class TestModularModelIndex:
+    """Expansion of a ``modular_model_index.json``, whose components are
+    3-element entries carrying their own loading arguments."""
+
+    @staticmethod
+    def _entry(class_name: str, subfolder: str | None) -> list[object]:
+        """One 3-element entry, as MiniMax Music 3's index writes them."""
+        loading_args: dict[str, object] = {
+            "pretrained_model_name_or_path": "org/canonical-repo",
+            "revision": None,
+            "type_hint": ["diffusers", class_name],
+            "variant": None,
+        }
+        if subfolder is not None:
+            loading_args["subfolder"] = subfolder
+        return ["diffusers", class_name, loading_args]
+
+    @classmethod
+    def _fake_modular_index(cls) -> dict[str, object]:
+        return {
+            "_blocks_class_name": "MiniMaxMusic3Blocks",
+            "_class_name": "MiniMaxMusic3ModularPipeline",
+            "transformer": cls._entry(
+                "MiniMaxMusic3Transformer1DModel", "transformer"
+            ),
+            "vocoder": cls._entry("MiniMaxMusic3Vocoder", "vocoder"),
+        }
+
+    def test_expands_modular_components(
+        self, _mock_validate: Any, _mock_validate_hf: Any
+    ) -> None:
+        with patch(LOAD_INDEX_TARGET, return_value=self._fake_modular_index()):
+            registry = ModelManifest.from_model_path("org/music-model")
+
+        assert set(registry) == {"transformer", "vocoder"}
+        assert registry.metadata == {
+            "_blocks_class_name": "MiniMaxMusic3Blocks",
+            "_class_name": "MiniMaxMusic3ModularPipeline",
+        }
+
+    def test_reads_the_explicit_subfolder(
+        self, _mock_validate: Any, _mock_validate_hf: Any
+    ) -> None:
+        index: dict[str, object] = {
+            "transformer": self._entry("MiniMaxMusic3Transformer1DModel", "dit")
+        }
+        with patch(LOAD_INDEX_TARGET, return_value=index):
+            registry = ModelManifest.from_model_path("org/music-model")
+
+        assert registry["transformer"].subfolder == "dit"
+
+    def test_falls_back_to_the_role_without_a_subfolder(
+        self, _mock_validate: Any, _mock_validate_hf: Any
+    ) -> None:
+        index: dict[str, object] = {
+            "vocoder": self._entry("MiniMaxMusic3Vocoder", None)
+        }
+        with patch(LOAD_INDEX_TARGET, return_value=index):
+            registry = ModelManifest.from_model_path("org/music-model")
+
+        assert registry["vocoder"].subfolder == "vocoder"
+
+    def test_keeps_the_requested_repo_over_the_canonical_one(
+        self, _mock_validate: Any, _mock_validate_hf: Any
+    ) -> None:
+        # The index names the checkpoint's Hub id; a local checkout has to
+        # keep resolving locally rather than being sent back to the Hub.
+        with patch(LOAD_INDEX_TARGET, return_value=self._fake_modular_index()):
+            registry = ModelManifest.from_model_path("org/music-model")
+
+        for config in registry.values():
+            assert config.model_path == "org/music-model"
+
+    def test_entry_without_loading_args_is_metadata(
+        self, _mock_validate: Any, _mock_validate_hf: Any
+    ) -> None:
+        index: dict[str, object] = {
+            "transformer": ["diffusers", "MiniMaxMusic3Transformer1DModel"],
+            "_bogus": ["diffusers", "SomeClass", "not-a-dict"],
+        }
+        with patch(LOAD_INDEX_TARGET, return_value=index):
+            registry = ModelManifest.from_model_path("org/music-model")
+
+        assert set(registry) == {"transformer"}
+        assert registry.metadata == {
+            "_bogus": ["diffusers", "SomeClass", "not-a-dict"]
+        }
+
+
+class TestModelIndexDiscovery:
+    """Which index file ``_load_model_index`` reads, and from where."""
+
+    @staticmethod
+    def _local_repo(path: Path) -> Any:
+        repo = MagicMock()
+        repo.repo_type = "local"
+        repo.local_path = str(path)
+        return repo
+
+    def test_reads_a_plain_index(self, tmp_path: Path) -> None:
+        (tmp_path / "model_index.json").write_text('{"_class_name": "Flux"}')
+
+        index = ModelManifest._load_model_index(self._local_repo(tmp_path))
+
+        assert index == {"_class_name": "Flux"}
+
+    def test_reads_a_modular_index(self, tmp_path: Path) -> None:
+        (tmp_path / "modular_model_index.json").write_text(
+            '{"_class_name": "MiniMaxMusic3ModularPipeline"}'
+        )
+
+        index = ModelManifest._load_model_index(self._local_repo(tmp_path))
+
+        assert index == {"_class_name": "MiniMaxMusic3ModularPipeline"}
+
+    def test_prefers_the_plain_index(self, tmp_path: Path) -> None:
+        (tmp_path / "model_index.json").write_text('{"_class_name": "Plain"}')
+        (tmp_path / "modular_model_index.json").write_text(
+            '{"_class_name": "Modular"}'
+        )
+
+        index = ModelManifest._load_model_index(self._local_repo(tmp_path))
+
+        assert index == {"_class_name": "Plain"}
+
+    def test_returns_none_without_an_index(self, tmp_path: Path) -> None:
+        assert (
+            ModelManifest._load_model_index(self._local_repo(tmp_path)) is None
+        )
+
+
+@patch(VALIDATE_HF_ACCESS_HFUTILS_TARGET)
+@patch(HF_OFFLINE_TARGET, False)
+@patch(VALIDATE_HF_ACCESS_TARGET)
 class TestRevisionPropagation:
     """Verify that the revision parameter propagates to MAXModelConfig."""
 

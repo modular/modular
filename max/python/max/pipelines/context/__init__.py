@@ -13,6 +13,8 @@
 
 from .context import (
     FUTURE_TOKEN,
+    AudioContext,
+    AudioGenerationContextType,
     BaseContext,
     BaseContextType,
     GrammarEnforcementSnapshot,
@@ -68,6 +70,8 @@ from .video import open_video_container
 
 __all__ = [
     "FUTURE_TOKEN",
+    "AudioContext",
+    "AudioGenerationContextType",
     "BaseContext",
     "BaseContextType",
     "BatchLogitsProcessor",
