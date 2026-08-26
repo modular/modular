@@ -32,6 +32,7 @@ from collections.abc import Callable, Mapping, Sequence
 
 import msgspec
 from max.driver import Buffer, Device
+from max.nn.kv_cache import KVCacheGroupId
 from max.nn.kv_cache.cache_params import (
     KVCacheMemory,
     KVCacheParamInterface,
@@ -816,6 +817,10 @@ class DKVConnector(KVConnector):
             tenant_id,
         )
 
+    @property
+    def leaves(self) -> Mapping[str, KVCacheGroupId]:
+        return {"full": KVCacheGroupId.full()}
+
     @staticmethod
     def _make_client(
         client_cls: type,
@@ -905,7 +910,7 @@ class DKVConnector(KVConnector):
 
     def load(
         self,
-        device_block_ids: list[int],
+        block_ids: Mapping[str, Sequence[int]],
         block_hashes: Sequence[bytes],
         replica_idx: int = 0,
     ) -> KVConnectorTransfer:
@@ -924,22 +929,31 @@ class DKVConnector(KVConnector):
         freed-page ordering across its own GPUs, so there is no shard-client
         fan-out or cross-client drain at this layer.
         """
+        unique_block_ids = {tuple(bids) for bids in block_ids.values()}
+        if len(unique_block_ids) != 1:
+            raise ValueError(
+                f"DKVConnector.load expects identical block IDs across all leaves. Found {block_ids}"
+            )
+        leaf_block_ids = list(unique_block_ids.pop())
+
         dkv_hashes = [_to_dkv_u64(h) for h in block_hashes]
         num_loaded = self._clients[replica_idx].load(
             group_id=_DKV_GROUP_FULL_ATTENTION,
-            device_block_ids=device_block_ids,
+            block_ids=leaf_block_ids,
             block_hashes=dkv_hashes,
         )
         # dKV orders its posted READs before the forward in the deprecated
         # ``wait_for_loads`` barrier, so the manager treats the load as already
         # complete (no cordoning / deferred commit).
         return CompletedTransfer(
-            TransferDirection.LOAD, list(device_block_ids[:num_loaded])
+            TransferDirection.LOAD,
+            leaves=["full"],
+            g0_blocks=leaf_block_ids[:num_loaded],
         )
 
     def offload(
         self,
-        block_ids: list[int],
+        block_ids: Mapping[str, Sequence[int]],
         block_hashes: Sequence[bytes],
         replica_idx: int = 0,
     ) -> KVConnectorTransfer:
@@ -957,15 +971,26 @@ class DKVConnector(KVConnector):
         Routes to the processing replica's single client (backend dedup: one
         client per DP replica, registering that replica's full TP GPU set).
         """
+        unique_block_ids = {tuple(bids) for bids in block_ids.values()}
+        if len(unique_block_ids) != 1:
+            raise ValueError(
+                f"DKVConnector.offload expects identical block IDs across all leaves. Found {block_ids}"
+            )
+        leaf_block_ids = list(unique_block_ids.pop())
+
         dkv_hashes = [_to_dkv_u64(h) for h in block_hashes]
         self._clients[replica_idx].offload(
             group_id=_DKV_GROUP_FULL_ATTENTION,
-            block_ids=block_ids,
+            block_ids=leaf_block_ids,
             block_hashes=dkv_hashes,
         )
         # dKV registers its posted WRITEs in the deprecated ``wait_for_offloads``
         # barrier, so the manager keeps no pin on the source blocks.
-        return CompletedTransfer(TransferDirection.OFFLOAD, list(block_ids))
+        return CompletedTransfer(
+            TransferDirection.OFFLOAD,
+            leaves=["full"],
+            g0_blocks=leaf_block_ids,
+        )
 
     def touch(
         self,

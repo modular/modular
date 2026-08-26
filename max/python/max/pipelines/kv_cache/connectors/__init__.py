@@ -28,6 +28,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from max.driver import Device, accelerator_api
+from max.nn.kv_cache import KVCacheGroupId
 from max.nn.kv_cache.cache_params import (
     KVCacheMemory,
     KVCacheParamInterface,
@@ -135,6 +136,8 @@ def create_connector(
     cfg = params.kv_connector_config
     connector = cfg.type
 
+    leaves = {leaf_id: KVCacheGroupId.full() for leaf_id in params.leaves()}
+
     if connector == KVConnectorType.dkv:
         from .dkv import DKVConnector
 
@@ -195,6 +198,7 @@ def create_connector(
         # Both budgets may be None: the connector then sizes each tier from its
         # own device page pool.
         return RustTierConnector(
+            leaves=leaves,
             replica_kv_memory=replica_kv_memory,
             disk_cache_dir=disk_dir,
             host_offload_max_gb=cfg.host_offload_max_gb,

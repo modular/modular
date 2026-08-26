@@ -22,11 +22,12 @@ commit, multi-run ordering, and that the pending queue is drained.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from types import SimpleNamespace
 from typing import cast
 
 import pytest
+from max.nn.kv_cache import KVCacheGroupId
 from max.nn.kv_cache.cache_params import KVCacheMemory
 from max.nn.kv_cache.metrics import KVCacheMetrics
 from max.pipelines.context import TextContext
@@ -67,17 +68,24 @@ class RecordingConnector:
         self._d2h_blocks_copied = 0
 
     @property
+    def leaves(self) -> Mapping[str, KVCacheGroupId]:
+        return {"full": KVCacheGroupId.full()}
+
+    @property
     def name(self) -> str:
         return "recording"
 
     def offload(
         self,
-        block_ids: list[int],
+        block_ids: Mapping[str, Sequence[int]],
         block_hashes: Sequence[bytes],
         replica_idx: int = 0,
     ) -> KVConnectorTransfer:
-        self.offloads.append((block_ids, list(block_hashes)))
-        return CompletedTransfer(TransferDirection.OFFLOAD, list(block_ids))
+        bids = list(block_ids["full"])
+        self.offloads.append((bids, list(block_hashes)))
+        return CompletedTransfer(
+            TransferDirection.OFFLOAD, leaves=["full"], g0_blocks=bids
+        )
 
     def touch(
         self,
@@ -89,14 +97,15 @@ class RecordingConnector:
 
     def load(
         self,
-        device_block_ids: list[int],
+        block_ids: Mapping[str, Sequence[int]],
         block_hashes: Sequence[bytes],
         replica_idx: int = 0,
     ) -> KVConnectorTransfer:
         self.calls.append("load")
+        bids = list(block_ids["full"])
         num_loaded = min(len(block_hashes), self.num_blocks_to_load)
         return CompletedTransfer(
-            TransferDirection.LOAD, list(device_block_ids[:num_loaded])
+            TransferDirection.LOAD, leaves=["full"], g0_blocks=bids[:num_loaded]
         )
 
     def count_cached_prefix(

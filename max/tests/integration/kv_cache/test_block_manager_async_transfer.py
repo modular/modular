@@ -31,10 +31,11 @@ that the synchronous connectors never exercise:
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from types import SimpleNamespace
 from typing import cast
 
+from max.nn.kv_cache import KVCacheGroupId
 from max.nn.kv_cache.metrics import KVCacheMetrics
 from max.pipelines.context import TextContext
 from max.pipelines.kv_cache.kv_connector import (
@@ -65,7 +66,7 @@ class _ControllableTransfer:
         self, direction: TransferDirection, g0_blocks: list[int]
     ) -> None:
         self._direction = direction
-        self._g0_blocks = list(g0_blocks)
+        self._g0_blocks = {"full": list(g0_blocks)}
         self.complete = False
 
     @property
@@ -73,7 +74,7 @@ class _ControllableTransfer:
         return self._direction
 
     @property
-    def g0_blocks(self) -> list[int]:
+    def g0_blocks_per_leaf(self) -> Mapping[str, Sequence[int]]:
         return self._g0_blocks
 
     def is_complete(self) -> bool:
@@ -98,31 +99,33 @@ class _AsyncConnector:
         self.offload_events: list[_ControllableTransfer] = []
 
     @property
+    def leaves(self) -> Mapping[str, KVCacheGroupId]:
+        return {"full": KVCacheGroupId.full()}
+
+    @property
     def name(self) -> str:
         return "async-fake"
 
     def load(
         self,
-        device_block_ids: list[int],
+        block_ids: Mapping[str, Sequence[int]],
         block_hashes: Sequence[bytes],
         replica_idx: int = 0,
     ) -> KVConnectorTransfer:
+        bids = list(block_ids["full"])
         num_loaded = min(len(block_hashes), self.num_blocks_to_load)
-        event = _ControllableTransfer(
-            TransferDirection.LOAD, list(device_block_ids[:num_loaded])
-        )
+        event = _ControllableTransfer(TransferDirection.LOAD, bids[:num_loaded])
         self.loads.append(event)
         return event
 
     def offload(
         self,
-        block_ids: list[int],
+        block_ids: Mapping[str, Sequence[int]],
         block_hashes: Sequence[bytes],
         replica_idx: int = 0,
     ) -> KVConnectorTransfer:
-        event = _ControllableTransfer(
-            TransferDirection.OFFLOAD, list(block_ids)
-        )
+        bids = list(block_ids["full"])
+        event = _ControllableTransfer(TransferDirection.OFFLOAD, bids)
         self.offload_events.append(event)
         return event
 
@@ -279,7 +282,7 @@ def test_partial_onload_frees_surplus_blocks() -> None:
     blocks, event, _ = bm.get_full_blocks_from_prefix_cache(_make_ctx(bm, rid))
 
     assert len(blocks) == 1
-    assert len(event.g0_blocks) == 1
+    assert len(event.g0_blocks_per_leaf["full"]) == 1
     # Exactly one block is held for the transfer; the surplus was freed.
     assert pool.num_free_blocks == free_before - 1
     assert bm.pending_transfers_exist()
