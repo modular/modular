@@ -3815,7 +3815,7 @@ AnyValue BinOpNode::emitAssign(ExprDest &dest, IREmitter &emitter) const {
     // errors.
     //     var x = <bad>
     //     use(x)  # Don't warn here.
-    resultValue = SingletonAttr::get(emitter.shared.getTypeCheckErrorType());
+    resultValue = UnknownAttr::get(emitter.shared.getTypeCheckErrorType());
   }
 
   // To support the walrus operator and chained assignment like `x = y = 1`, the
