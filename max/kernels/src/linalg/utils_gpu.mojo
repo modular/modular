@@ -569,6 +569,13 @@ def _apple_m5_allow_lossy_f32_matmul() -> Bool:
     return getenv("MODULAR_APPLE_M5_ALLOW_LOSSY_F32_MATMUL", "1") != "0"
 
 
+def _apple_m5_allow_lossy_f32_attention() -> Bool:
+    """Whether fp32 q/k/v may use the M5 attention prefill, whose simdgroup MMA
+    truncates them to fp19. On by default; 0 selects the precise naive path.
+    """
+    return getenv("MODULAR_APPLE_M5_ALLOW_LOSSY_F32_ATTENTION", "1") != "0"
+
+
 def create_hilbert_lut(
     ctx: DeviceContext, grid_x: Int, grid_y: Int
 ) raises -> DeviceBuffer[.uint32]:

@@ -97,6 +97,7 @@ from layout.tensor_core import get_fragment_size, get_mma_shape
 from linalg.bmm import batched_matmul
 from linalg.matmul.gpu._multistage_gemm_gpu import multistage_mma
 from linalg.transpose import transpose
+from linalg.utils_gpu import _apple_m5_allow_lossy_f32_attention
 from std.memory import ThinAllocation, dealloc, unsafe_stack_allocation
 from std.memory.alloc import Layout as AllocLayout
 
@@ -2097,11 +2098,16 @@ def flash_attention_dispatch[
                     # K/V from DRAM (no staging, no barriers). It beat both the
                     # block_dim=32 base and the SMEM-staged variant at every
                     # shape measured (KB kernels/apple-m5-fa-prefill).
-                    # The 16x16 simdgroup MMA needs M5+.
+                    # The 16x16 simdgroup MMA needs M5+ and truncates fp32
+                    # operands to fp19.
+                    comptime f32_in = dtype == DType.float32
                     if (
                         not is_token_generation
                         and _apple_fa_prefill_enabled()
                         and ctx.compute_capability() >= 5
+                        and (
+                            not f32_in or _apple_m5_allow_lossy_f32_attention()
+                        )
                     ):
                         fa_prefill_apple[
                             ragged=ragged,

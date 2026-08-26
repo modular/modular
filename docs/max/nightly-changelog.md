@@ -728,6 +728,11 @@ the [container](/container) page now links to the new page.
 
 ## MAX kernels
 
+- Added `MODULAR_APPLE_M5_ALLOW_LOSSY_F32_ATTENTION`. Set it to `0` to keep
+  fp32 attention off the Apple M5 MMA, which truncates operands to fp19. It
+  defaults to the fast (lossy) path, matching
+  `MODULAR_APPLE_M5_ALLOW_LOSSY_F32_MATMUL`.
+
 - The MLA sparse-attention indexer (DeepSeek V3.2, GLM 5.x) now does work
   proportional to each row's actual key count instead of the batch's
   `max_cache_length` metadata. Inside captured decode device graphs that
