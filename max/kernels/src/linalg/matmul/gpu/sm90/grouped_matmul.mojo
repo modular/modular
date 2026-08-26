@@ -203,6 +203,11 @@ def grouped_matmul_sm90[
         promotion_frequency=1,
         pdl_level=config.pdl_level(),
         elementwise_lambda_fn=elementwise_lambda_fn,
+        a_storage=type_of(a).Storage,
+        b_storage=type_of(b_flat).Storage,
+        c_storage=type_of(c).Storage,
+        a_offsets_storage=type_of(a_offsets).Storage,
+        expert_ids_storage=type_of(expert_ids).Storage,
     ].run_grouped[
         type_of(a_tma_op).rank,
         type_of(b_tma_op).rank,

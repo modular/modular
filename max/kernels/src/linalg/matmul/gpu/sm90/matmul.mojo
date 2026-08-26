@@ -22,7 +22,13 @@ from max.gpu.primitives.grid_controls import pdl_launch_attributes
 from max.gpu.host import DeviceContext, FuncAttribute
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu.host.info import H100
-from layout import Layout, TensorLayout, TileTensor
+from layout import (
+    Layout,
+    PointerStorage,
+    TensorLayout,
+    TensorStorage,
+    TileTensor,
+)
 from layout.tma_async import create_tensor_tile, create_tma_tile_template
 from std.logger import Logger
 from std.bit import log2_floor
@@ -386,6 +392,9 @@ def _warp_specialize_gemm_with_multicasting_impl[
         a_swizzle: TensorMapSwizzle,
         b_swizzle: TensorMapSwizzle,
         c_swizzle: TensorMapSwizzle,
+        a_storage: TensorStorage = PointerStorage[element_width=1],
+        b_storage: TensorStorage = PointerStorage[element_width=1],
+        c_storage: TensorStorage = PointerStorage[element_width=1],
         swapAB: Bool = False,
         hilbert_swizzle: Bool = False,
     ] = HopperMatmulSM90Kernel[
@@ -414,6 +423,9 @@ def _warp_specialize_gemm_with_multicasting_impl[
         hilbert_swizzle=hilbert_swizzle,
         k_group_size=k_group_size,
         swapAB=swapAB,
+        a_storage=a_storage,
+        b_storage=b_storage,
+        c_storage=c_storage,
     ]
 
     comptime matmul_kernel_regular[
@@ -428,6 +440,9 @@ def _warp_specialize_gemm_with_multicasting_impl[
         a_swizzle=a_swizzle,
         b_swizzle=b_swizzle,
         c_swizzle=c_swizzle,
+        a_storage=type_of(a_device).Storage,
+        b_storage=type_of(b_device).Storage,
+        c_storage=type_of(c_device).Storage,
         swapAB=False,
         hilbert_swizzle=hilbert_swizzle,
     ]
@@ -442,6 +457,9 @@ def _warp_specialize_gemm_with_multicasting_impl[
         a_swizzle=b_swizzle,
         b_swizzle=a_swizzle,
         c_swizzle=c_swizzle,
+        a_storage=type_of(b_device).Storage,
+        b_storage=type_of(a_device).Storage,
+        c_storage=type_of(c_device).Storage,
         swapAB=True,
         hilbert_swizzle=False,
     ]
@@ -893,6 +911,9 @@ def warp_specialize_gemm_with_multicasting_splitk[
         pdl_level=config.pdl_level(),
         elementwise_lambda_fn=elementwise_lambda_fn,
         elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+        a_storage=type_of(a_device).Storage,
+        b_storage=type_of(b_device).Storage,
+        c_storage=type_of(c_device).Storage,
     ]
 
     comptime smem_size = matmul_kernel.SMem.storage_size()

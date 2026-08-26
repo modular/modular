@@ -68,7 +68,9 @@ __extension HopperMatmulSM90Kernel:
         a_tma_op: TMATensorTile[a_type, a_tma_rank, a_tile_shape, a_desc_shape],
         b_tma_op: TMATensorTile[b_type, b_tma_rank, b_tile_shape, b_desc_shape],
         c_tma_op: TMATensorTile[c_type, c_tma_rank, c_tile_shape, c_desc_shape],
-        c: TileTensor[c_type, c_tensor_layout, MutAnyOrigin],
+        c: TileTensor[
+            c_type, c_tensor_layout, MutAnyOrigin, Storage=Self.c_storage
+        ],
         problem_shape: IndexList[3],
     ):
         comptime K = b_layout.static_shape[1]
@@ -188,9 +190,9 @@ __extension HopperMatmulSM90Kernel:
         c_desc_shape: IndexList[c_tma_rank],
     ](
         c_tma_op: TMATensorTile[c_type, c_tma_rank, c_tile_shape, c_desc_shape],
-        a: TileTensor[a_type, a_layout, ImmutAnyOrigin],
-        b: TileTensor[b_type, b_layout, ImmutAnyOrigin],
-        c: TileTensor[c_type, c_layout, MutAnyOrigin],
+        a: TileTensor[a_type, a_layout, ImmutAnyOrigin, Storage=Self.a_storage],
+        b: TileTensor[b_type, b_layout, ImmutAnyOrigin, Storage=Self.b_storage],
+        c: TileTensor[c_type, c_layout, MutAnyOrigin, Storage=Self.c_storage],
     ):
         """Kernel using cp.async for A/B loading when K alignment doesn't meet TMA requirements.
         """

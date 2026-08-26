@@ -32,6 +32,7 @@ from layout import (
     MixedLayout,
     PointerStorage,
     TensorLayout,
+    TensorStorage,
     TileTensor,
 )
 from max.gpu.memory import (
@@ -333,6 +334,7 @@ struct TileLoaderCPAsync[
     thread_layout: MixedLayout,
     swizzle_mode: TensorMapSwizzle,
     vector_size: Int,
+    src_storage: TensorStorage = PointerStorage[element_width=1],
 ](TileLoader):
     """Software-based tile loader using cp.async instructions.
 
@@ -346,6 +348,8 @@ struct TileLoaderCPAsync[
         thread_layout: Thread arrangement for distributed copying.
         swizzle_mode: Swizzling pattern for shared memory access.
         vector_size: Number of elements loaded per thread.
+        src_storage: Storage policy of the source tensor (defaults to
+            `PointerStorage`).
     """
 
     comptime _dtype = Self.dtype
@@ -357,6 +361,7 @@ struct TileLoaderCPAsync[
         LayoutType=Self.src_layout,
         origin=ImmutAnyOrigin,
         address_space=.GENERIC,
+        Storage=Self.src_storage,
     ]
 
     @always_inline
@@ -368,6 +373,7 @@ struct TileLoaderCPAsync[
             LayoutType=Self.src_layout,
             origin=ImmutAnyOrigin,
             address_space=.GENERIC,
+            Storage=Self.src_storage,
         ],
     ):
         """Initialize the cp.async tile loader.
