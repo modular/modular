@@ -786,6 +786,10 @@ the [container](/container) page now links to the new page.
   cutoff-search passes do not recompute them. Rows with top-k disabled also
   omit positive-value counting from the initial mass reduction and cutoff
   search.
+- Top-p-only distribution kernels bias cutoff-search pivots toward lower
+  weights when the retained-mass budget is large relative to the mass still
+  above the search's low bound, so the gain follows the bracket state rather
+  than the requested `top_p`.
 - The fused gumbel-argmax sampling kernel takes a `from_probs` parameter,
   exposed as `max.nn.kernels.gumbel_argmax_from_probs`: each row's score is
   `ln(p) + gumbel` over unnormalized probabilities, drawn with noise the

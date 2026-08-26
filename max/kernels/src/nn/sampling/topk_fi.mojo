@@ -1438,8 +1438,20 @@ def _topk_topp_cutoff_search[
     var mass_above_low = mass_above_low_init
 
     for _ in range(_CUTOFF_SEARCH_MAX_ITERS):
-        var pivot_0 = (high + 2 * low) / 3
-        var pivot_1 = (2 * high + low) / 3
+        var pivot_0: Float32
+        var pivot_1: Float32
+        comptime if not track_count:
+            # A high top-p budget puts the cutoff near `low`; lower pivots
+            # shrink that side of the bracket without changing the predicate.
+            if 4 * p_eff > 3 * mass_above_low:
+                pivot_0 = (high + 3 * low) / 4
+                pivot_1 = (high + low) / 2
+            else:
+                pivot_0 = (high + 2 * low) / 3
+                pivot_1 = (2 * high + low) / 3
+        else:
+            pivot_0 = (high + 2 * low) / 3
+            pivot_1 = (2 * high + low) / 3
 
         # Accumulate thread-local counts/masses across all chunks.
         var thread_count_0: Int32 = 0
