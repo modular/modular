@@ -33,7 +33,7 @@ with open("my_file.txt", "r") as f:
 
 from std.format._utils import _WriteBufferStack
 from std.os import PathLike as stdPathLike, abort, makedirs, remove
-from std.os import SEEK_SET, SEEK_END
+from std.os import SEEK_SET, SEEK_END, SEEK_CUR
 from std.os.path import dirname
 from std.ffi import c_int, c_ssize_t, external_call
 from std.sys import size_of
@@ -445,7 +445,7 @@ struct FileHandle(Defaultable, Movable, Writer):
         ```
         """
         if self.handle < 0:
-            raise "invalid file handle"
+            raise Error("invalid file handle")
 
         assert (
             whence >= 0 and whence < 3
@@ -460,6 +460,29 @@ struct FileHandle(Defaultable, Movable, Writer):
             raise Error("Failed to seek in file: " + String(err))
 
         return UInt64(pos)
+
+    def tell(self) raises -> UInt64:
+        """Returns the current byte position in the file.
+
+        Returns the offset of the next byte to be read or written, measured
+        from the start of the file.
+
+        Raises:
+            An error if this file handle is invalid, or if querying the
+            position fails.
+
+        Returns:
+            The current byte offset from the start of the file.
+
+        Examples:
+
+        ```mojo
+        var f = open("/tmp/example.txt", "r")
+        _ = f.seek(10)
+        print(f.tell())  # 10
+        ```
+        """
+        return self.seek(0, SEEK_CUR)
 
     def write_once(mut self, bytes: Span[Byte, _]) raises -> Int:
         """Attempt to write bytes to the file, returning the number of bytes written.
