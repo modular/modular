@@ -124,9 +124,10 @@ struct Set[
             ts: Variadic of elements to add to the set.
             __set_literal__: Tell Mojo to use this method for set literals.
         """
-        # TODO: Reserve space in this set. Also, take the elements as 'owned'
-        # and transfer them into the set to eliminate copyability.
+        # TODO: Take the elements as 'owned' and transfer them into the set
+        # to eliminate copyability.
         self._data = Dict[Self.T, NoneType, Self.H]()
+        self.reserve(len(ts))
         for t in ts:
             self.add(t.copy())
 
@@ -140,6 +141,7 @@ struct Set[
             elements: A vector of elements to add to the set.
         """
         self = Self()
+        self.reserve(len(elements))
         for e in elements:
             self.add(e.copy())
 
@@ -826,6 +828,28 @@ struct Set[
             in place.
         """
         self._data.clear()
+
+    def reserve(mut self, min_capacity: Int):
+        """Reserve capacity for at least `min_capacity` elements without resizing.
+
+        If the current capacity already accommodates `min_capacity` elements,
+        this is a no-op. Otherwise, the internal table is grown so that at
+        least `min_capacity` elements can be inserted without triggering a
+        rehash.
+
+        Args:
+            min_capacity: The minimum number of elements to reserve space for.
+
+        Example:
+
+        ```mojo
+        var s = Set[Int]()
+        s.reserve(1000)
+        for i in range(1000):
+            s.add(i)  # No rehashing occurs
+        ```
+        """
+        self._data.reserve(min_capacity)
 
     def clear_with(mut self, destroy_func: Some[def(var Self.T)], /):
         """Remove all elements, disposing each with a closure.

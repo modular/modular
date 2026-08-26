@@ -40,6 +40,7 @@ fundamentally need to copy values (`copy`, `find`, `get`, `update`, `__or__`,
 See the `Dict` docs for more details.
 """
 
+from std.bit import next_power_of_two
 from std.builtin.rebind import downcast
 from std.hashlib import Hasher, default_comp_time_hasher, default_hasher
 import std.format._utils as fmt
@@ -1730,6 +1731,35 @@ struct Dict[
         self._table.clear_with(destroy_func)
         self._order.clear()
 
+    def reserve(mut self, min_capacity: Int):
+        """Reserve capacity for at least `min_capacity` entries without resizing.
+
+        If the current capacity already accommodates `min_capacity` entries,
+        this is a no-op. Otherwise, the internal table is grown to the next
+        power of two that can hold `min_capacity` entries (at 87.5% load).
+
+        Args:
+            min_capacity: The minimum number of entries to reserve space for.
+
+        Example:
+
+        ```mojo
+        var d = Dict[String, Int]()
+        d.reserve(1000)
+        for i in range(1000):
+            d[String(i)] = i  # No rehashing occurs
+        ```
+        """
+        # The table holds at most capacity * 7 // 8 entries before resizing,
+        # so we need capacity >= ceil(min_capacity * 8 / 7).
+        # The table holds at most capacity * 7 // 8 entries before resizing,
+        # so we need capacity >= ceil(min_capacity * 8 / 7).
+        var needed = max(
+            next_power_of_two((min_capacity * 8 + 6) // 7), INITIAL_CAPACITY
+        )
+        if needed > self._table._capacity:
+            self._resize_to(needed)
+
     def setdefault(
         mut self, var key: Self.K, var default: Self.V
     ) -> ref[
@@ -1895,11 +1925,24 @@ struct Dict[
             return
 
         # Double capacity and rehash
+        self._resize_to(self._table._capacity * 2)
+
+    def _resize_to(mut self, new_capacity: Int):
+        """Resize the table to `new_capacity` and rebuild `_order`.
+
+        Args:
+            new_capacity: The target capacity. Must be a power of two greater
+                than the current capacity.
+        """
         var old_capacity = self._table._capacity
-        var new_capacity = old_capacity * 2
         var old_order = self._order^
 
         var relocations = self._table.resize(new_capacity)
+
+        if old_capacity == 0:
+            # Lazy state: no entries to rehash; (re)initialize `_order`.
+            self._order = List[Int32](capacity=self._table._len)
+            return
 
         # Build old_slot -> new_slot mapping and a set of relocated old slots
         # so we can filter stale _order entries (DELETED slots won't appear
