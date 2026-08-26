@@ -34,7 +34,6 @@ from max.gpu.memory import (
     async_copy_wait_all,
     external_memory,
 )
-from std.memory import UnsafePointer
 from std.utils.index import IndexList
 from std.sys import simd_width_of, size_of
 
@@ -46,7 +45,7 @@ def _make_view[
     origin: Origin,
     address_space: AddressSpace,
 ](
-    ptr: UnsafePointer[Scalar[dtype], origin, address_space=address_space],
+    ptr: Pointer[Scalar[dtype], origin, address_space=address_space],
     shape: IndexList[rank],
     strides: IndexList[rank],
 ) -> TileTensor[
@@ -109,7 +108,7 @@ comptime copy_layout = tt_row_major[
 @__name(t"scout_bounded")
 def scout_bounded(
     q_tt: TileTensor[dtype, QTTLayout, ImmutAnyOrigin, linear_idx_type=.int64],
-    out_buf: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    out_buf: MutPointer[Scalar[dtype], MutAnyOrigin],
     valid_rows_dev: Int32,
 ):
     # `Int` is not device-passable; widen the fixed-width arg.

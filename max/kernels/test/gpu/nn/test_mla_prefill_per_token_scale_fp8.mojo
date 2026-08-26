@@ -394,7 +394,7 @@ def test_prefill[
     ctx.enqueue_copy(output_ptr, output_device_ptr)
 
     var dangling_valid_length = TileTensor(
-        UnsafePointer[UInt32, MutAnyOrigin].unsafe_dangling(),
+        MutPointer[UInt32, MutAnyOrigin].unsafe_dangling(),
         row_major(Coord(Idx[0])),
     )
 

@@ -33,7 +33,7 @@ Host reference (per query row):
 
 from std.math import ceildiv, exp2, sqrt
 from std.math.constants import log2e
-from std.memory import UnsafePointer, alloc
+from std.memory import alloc
 from std.random import randn
 from std.sys import has_nvidia_gpu_accelerator, size_of
 
@@ -121,9 +121,9 @@ def _coprime_multiplier(n: Int) -> Int:
 def host_reference[
     q_type: DType,
 ](
-    q_ptr: UnsafePointer[Scalar[q_type], _],
-    kv_sparse_ptr: UnsafePointer[Scalar[q_type], _],
-    output_ptr: UnsafePointer[mut=True, Scalar[q_type], _],
+    q_ptr: Pointer[Scalar[q_type], _],
+    kv_sparse_ptr: Pointer[Scalar[q_type], _],
+    output_ptr: MutPointer[Scalar[q_type], _],
     batch_size: Int,
     seq_len: Int,
     num_heads: Int,
@@ -638,7 +638,7 @@ def run_test_prefill_sparse[
     # `None` (kernel skips the `exp2(sink - mi)` softmax term). Non-empty ->
     # a device buffer of EXACTLY `num_heads` Float32 so a broken sub-64
     # padded-row guard reading sink[num_heads..63] is a real OOB.
-    var attn_sink_ptr = Optional[UnsafePointer[Float32, ImmutAnyOrigin]](None)
+    var attn_sink_ptr = Optional[ImmPointer[Float32, ImmutAnyOrigin]](None)
     var sink_len = len(sink_values) if len(sink_values) > 0 else 1
     var sink_device = ctx.enqueue_create_buffer[.float32](sink_len)
     if len(sink_values) > 0:
@@ -648,7 +648,7 @@ def run_test_prefill_sparse[
         ctx.enqueue_copy(sink_device, sink_host)
         ctx.synchronize()
         sink_host.free()
-        attn_sink_ptr = Optional[UnsafePointer[Float32, ImmutAnyOrigin]](
+        attn_sink_ptr = Optional[ImmPointer[Float32, ImmutAnyOrigin]](
             sink_device.unsafe_ptr().bitcast[Float32]().as_unsafe_any_origin()
         )
 

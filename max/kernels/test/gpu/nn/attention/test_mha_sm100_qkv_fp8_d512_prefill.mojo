@@ -68,8 +68,8 @@ def host_cast_fp8_to_bf16[
     fp8_t: DType,
     bf16_t: DType,
 ](
-    src: UnsafePointer[Scalar[fp8_t], _],
-    dst: UnsafePointer[mut=True, Scalar[bf16_t], _],
+    src: Pointer[Scalar[fp8_t], _],
+    dst: MutPointer[Scalar[bf16_t], _],
     size: Int,
 ):
     """Cast fp8 → bf16 element-by-element on the host. Lossless: every

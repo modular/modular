@@ -302,7 +302,7 @@ def run_bit_exact_vs_dense[
         scale,
         ctx,
         scalar_args_sparse_tt,
-        d_indices=rebind[UnsafePointer[Int32, MutAnyOrigin]](
+        d_indices=rebind[MutPointer[Int32, MutAnyOrigin]](
             d_indices_device.unsafe_ptr()
         ),
         indices_stride=topk,
@@ -386,9 +386,9 @@ def _coprime_multiplier(n: Int) -> Int:
 def host_reference_varkeys[
     q_type: DType,
 ](
-    q_ptr: UnsafePointer[Scalar[q_type], _],
-    k_ptr: UnsafePointer[Scalar[q_type], _],
-    output_ptr: UnsafePointer[mut=True, Scalar[q_type], _],
+    q_ptr: Pointer[Scalar[q_type], _],
+    k_ptr: Pointer[Scalar[q_type], _],
+    output_ptr: MutPointer[Scalar[q_type], _],
     batch_size: Int,
     num_heads: Int,
     num_keys_per_batch: List[Int],
@@ -443,10 +443,10 @@ def host_reference_varkeys[
 def host_reference_with_attn_sink[
     q_type: DType,
 ](
-    q_ptr: UnsafePointer[Scalar[q_type], _],
-    k_ptr: UnsafePointer[Scalar[q_type], _],
-    output_ptr: UnsafePointer[mut=True, Scalar[q_type], _],
-    attn_sink_host: UnsafePointer[Float32, _],
+    q_ptr: Pointer[Scalar[q_type], _],
+    k_ptr: Pointer[Scalar[q_type], _],
+    output_ptr: MutPointer[Scalar[q_type], _],
+    attn_sink_host: Pointer[Float32, _],
     batch_size: Int,
     num_heads: Int,
     num_keys: Int,
@@ -895,7 +895,7 @@ def run_test_sparse_kv_bf16[
             scale,
             ctx,
             scalar_args_buf_tt,
-            d_indices=rebind[UnsafePointer[Int32, MutAnyOrigin]](
+            d_indices=rebind[MutPointer[Int32, MutAnyOrigin]](
                 d_indices_device.unsafe_ptr()
             ),
             indices_stride=indices_stride,
@@ -915,7 +915,7 @@ def run_test_sparse_kv_bf16[
             scale,
             ctx,
             scalar_args_buf_tt,
-            d_indices=rebind[UnsafePointer[Int32, MutAnyOrigin]](
+            d_indices=rebind[MutPointer[Int32, MutAnyOrigin]](
                 d_indices_device.unsafe_ptr()
             ),
             indices_stride=indices_stride,
@@ -1322,11 +1322,11 @@ def run_test_sparse_kv_bf16_variable_topk[
         scale,
         ctx,
         scalar_args_buf_tt,
-        d_indices=rebind[UnsafePointer[Int32, MutAnyOrigin]](
+        d_indices=rebind[MutPointer[Int32, MutAnyOrigin]](
             d_indices_device.unsafe_ptr()
         ),
         indices_stride=max_topk,
-        topk_lengths=rebind[UnsafePointer[Int32, MutAnyOrigin]](
+        topk_lengths=rebind[MutPointer[Int32, MutAnyOrigin]](
             topk_lengths_device.unsafe_ptr()
         ),
     )
@@ -1632,11 +1632,11 @@ def run_test_sparse_kv_bf16_attn_sink[
         scale,
         ctx,
         scalar_args_buf_tt,
-        d_indices=rebind[UnsafePointer[Int32, MutAnyOrigin]](
+        d_indices=rebind[MutPointer[Int32, MutAnyOrigin]](
             d_indices_device.unsafe_ptr()
         ),
         indices_stride=topk,
-        attn_sink_ptr=rebind[UnsafePointer[Float32, origin=MutAnyOrigin]](
+        attn_sink_ptr=rebind[MutPointer[Float32, origin=MutAnyOrigin]](
             attn_sink_device.unsafe_ptr()
         ),
     )
@@ -2186,19 +2186,19 @@ def run_test_sparse_kv_bf16_extra_kv[
         scale,
         ctx,
         scalar_args_buf_tt,
-        d_indices=rebind[UnsafePointer[Int32, MutAnyOrigin]](
+        d_indices=rebind[MutPointer[Int32, MutAnyOrigin]](
             d_indices_device.unsafe_ptr()
         ),
         indices_stride=max_topk,
-        topk_lengths=rebind[UnsafePointer[Int32, MutAnyOrigin]](
+        topk_lengths=rebind[MutPointer[Int32, MutAnyOrigin]](
             topk_lengths_device.unsafe_ptr()
         ),
         extra_k=extra_kv_cache,
-        extra_d_indices=rebind[UnsafePointer[Int32, MutAnyOrigin]](
+        extra_d_indices=rebind[MutPointer[Int32, MutAnyOrigin]](
             extra_d_indices_device.unsafe_ptr()
         ),
         extra_indices_stride=max_extra_topk,
-        extra_topk_lengths=rebind[UnsafePointer[Int32, MutAnyOrigin]](
+        extra_topk_lengths=rebind[MutPointer[Int32, MutAnyOrigin]](
             extra_topk_lengths_device.unsafe_ptr()
         ),
     )
@@ -2595,11 +2595,11 @@ def run_test_sparse_kv_bf16_topk_clamping[
         scale,
         ctx,
         scalar_args_buf_tt,
-        d_indices=rebind[UnsafePointer[Int32, MutAnyOrigin]](
+        d_indices=rebind[MutPointer[Int32, MutAnyOrigin]](
             d_indices_device.unsafe_ptr()
         ),
         indices_stride=indices_stride,
-        topk_lengths=rebind[UnsafePointer[Int32, MutAnyOrigin]](
+        topk_lengths=rebind[MutPointer[Int32, MutAnyOrigin]](
             topk_lengths_device.unsafe_ptr()
         ),
     )

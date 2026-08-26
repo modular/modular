@@ -31,11 +31,11 @@ def _cpu_ref[
     tokens: Int,
     C: Int,
     hidden: Int,
-    v_h: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
-    proj_h: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
-    norm_h: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
+    v_h: MutPointer[Scalar[dtype], MutUntrackedOrigin],
+    proj_h: MutPointer[Scalar[dtype], MutUntrackedOrigin],
+    norm_h: MutPointer[Scalar[dtype], MutUntrackedOrigin],
     eps: Float32,
-    out_h: UnsafePointer[Float32, MutUntrackedOrigin],
+    out_h: MutPointer[Float32, MutUntrackedOrigin],
 ):
     for t in range(tokens):
         var scores = List[Float64]()
@@ -69,11 +69,11 @@ def _cpu_ref[
 
 
 def _producer_kernel(
-    dst: UnsafePointer[Float32, MutAnyOrigin],
-    src: UnsafePointer[Float32, ImmutAnyOrigin],
+    dst: MutPointer[Float32, MutAnyOrigin],
+    src: ImmPointer[Float32, ImmutAnyOrigin],
     n: Int32,
     spin: Int32,
-    sink: UnsafePointer[Float32, MutAnyOrigin],
+    sink: MutPointer[Float32, MutAnyOrigin],
 ):
     """Stand-in for the real graph's `concat`: a GPU grid that writes the
     exact buffer `attn_res_mix_gpu` reads next, immediately before it on the
@@ -111,8 +111,8 @@ def _producer_kernel(
 def _assert_finite_contract[
     dtype: DType
 ](
-    got: UnsafePointer[Scalar[dtype], MutUntrackedOrigin],
-    want: UnsafePointer[Float32, MutUntrackedOrigin],
+    got: MutPointer[Scalar[dtype], MutUntrackedOrigin],
+    want: MutPointer[Float32, MutUntrackedOrigin],
     n: Int,
     context: String,
 ) raises:

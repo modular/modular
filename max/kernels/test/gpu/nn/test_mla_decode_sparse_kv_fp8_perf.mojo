@@ -49,7 +49,6 @@ from layout import (
     UNKNOWN_VALUE,
     row_major,
 )
-from std.memory import UnsafePointer
 from std.utils import IndexList
 from nn.attention.mha_mask import NullMask
 from nn.attention.mha_utils import MHAConfig
@@ -303,7 +302,7 @@ def bench_sparse_kv_fp8[
             scale,
             ctx,
             scalar_args_buf_tt,
-            d_indices=rebind[UnsafePointer[Int32, MutAnyOrigin]](
+            d_indices=rebind[MutPointer[Int32, MutAnyOrigin]](
                 d_indices_device.unsafe_ptr()
             ),
             indices_stride=indices_stride,

@@ -70,8 +70,8 @@ def host_cast_fp8_to_bf16[
     fp8_t: DType,
     bf16_t: DType,
 ](
-    src: UnsafePointer[Scalar[fp8_t], _],
-    dst: UnsafePointer[mut=True, Scalar[bf16_t], _],
+    src: Pointer[Scalar[fp8_t], _],
+    dst: MutPointer[Scalar[bf16_t], _],
     size: Int,
 ):
     """Cast FP8 data to BF16 element-by-element on the host."""
@@ -84,8 +84,8 @@ def host_quantize_bf16_to_fp8[
     bf16_t: DType,
     fp8_t: DType,
 ](
-    src: UnsafePointer[Scalar[bf16_t], _],
-    dst: UnsafePointer[mut=True, Scalar[fp8_t], _],
+    src: Pointer[Scalar[bf16_t], _],
+    dst: MutPointer[Scalar[fp8_t], _],
     size: Int,
 ):
     """Quantize BF16 data to FP8 element-by-element on the host."""

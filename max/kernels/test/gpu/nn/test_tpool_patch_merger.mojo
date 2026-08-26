@@ -32,9 +32,9 @@ from std.testing import assert_almost_equal
 def cpu_reference_one_video[
     dtype: DType,
 ](
-    x: UnsafePointer[Scalar[dtype], _],
+    x: Pointer[Scalar[dtype], _],
     in_offset: Int,
-    out_base: UnsafePointer[mut=True, Scalar[dtype], _],
+    out_base: MutPointer[Scalar[dtype], _],
     t: Int,
     h: Int,
     w: Int,

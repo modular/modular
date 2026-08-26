@@ -40,7 +40,6 @@ from nn.attention.gpu.mla_graph import mla_decode_branch_fp8
 from nn.attention.gpu.nvidia.sm100.mla_decode_dispatch import (
     MLADispatchScalarArgs,
 )
-from std.memory import UnsafePointer
 from std.utils import IndexList
 from std.utils.numerics import isfinite
 
@@ -102,7 +101,7 @@ def _run_arm[
     cache_len: Int,
     q_len: Int,
     topk: Int,
-    out_host: UnsafePointer[BFloat16, MutAnyOrigin],
+    out_host: MutPointer[BFloat16, MutAnyOrigin],
     ctx: DeviceContext,
 ) raises:
     """Runs the fused decode branch once and copies its output to the host.
@@ -372,7 +371,7 @@ def _run_arm[
         w_uv_scale_tt,
         scalar_args_buf_tt,
         ctx,
-        d_indices=rebind[UnsafePointer[Int32, MutAnyOrigin]](
+        d_indices=rebind[MutPointer[Int32, MutAnyOrigin]](
             d_indices_device.unsafe_ptr()
         ),
         indices_stride=topk,

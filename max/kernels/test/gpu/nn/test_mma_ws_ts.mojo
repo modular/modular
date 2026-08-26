@@ -31,7 +31,7 @@ SMEM), so no separate readback verification is needed for either.
 """
 
 from std.math import ceildiv
-from std.memory import UnsafePointer, alloc
+from std.memory import alloc
 from std.random import rand, randn, seed
 from std.sys import size_of
 
@@ -443,7 +443,7 @@ def sparse_mma_ws_ts_kernel[
     k_gather4_tma: TMATensorTile[
         op_type, k_tile_rank, k_tile_shape, k_desc_shape
     ],
-    d_indices: UnsafePointer[Int32, MutAnyOrigin],
+    d_indices: MutPointer[Int32, MutAnyOrigin],
     p_output: LayoutTensor[
         .float32, Layout.row_major(rows, 2 * rows), MutAnyOrigin
     ],
@@ -552,7 +552,7 @@ def sparse_mma_ws_ts_kernel[
 
         # Prefetch K gather4 descriptor into constant cache.
         prefetch_tma_descriptor(
-            UnsafePointer(to=k_gather4_tma.descriptor).bitcast[NoneType]()
+            Pointer(to=k_gather4_tma.descriptor).bitcast[NoneType]()
         )
 
     barrier()
@@ -790,13 +790,13 @@ def test_dense_mma_ws_ts(ctx: DeviceContext) raises:
         row_major(Coord(P_REF_ROWS, P_REF_COLS)),
     )
     var a_tt = TileTensor(
-        UnsafePointer[Scalar[OP_TYPE], ImmutAnyOrigin](
+        ImmPointer[Scalar[OP_TYPE], ImmutAnyOrigin](
             unsafe_from_address=Int(q_device_ptr)
         ),
         row_major(Coord(ROWS, COLS)),
     )
     var b_tt = TileTensor(
-        UnsafePointer[Scalar[OP_TYPE], ImmutAnyOrigin](
+        ImmPointer[Scalar[OP_TYPE], ImmutAnyOrigin](
             unsafe_from_address=Int(k_device_ptr)
         ),
         row_major(Coord(K_ROWS, K_COLS)),
@@ -1035,13 +1035,13 @@ def test_sparse_mma_ws_ts[
         row_major(Coord(p_ref_rows, p_ref_cols)),
     )
     var a_tt = TileTensor(
-        UnsafePointer[Scalar[op_type], ImmutAnyOrigin](
+        ImmPointer[Scalar[op_type], ImmutAnyOrigin](
             unsafe_from_address=Int(q_device_ptr)
         ),
         row_major(Coord(rows, cols)),
     )
     var b_tt = TileTensor(
-        UnsafePointer[Scalar[op_type], ImmutAnyOrigin](
+        ImmPointer[Scalar[op_type], ImmutAnyOrigin](
             unsafe_from_address=Int(k_ref_device.unsafe_ptr())
         ),
         row_major(Coord(rows, cols)),
@@ -1355,13 +1355,13 @@ def test_sparse_paged_mma_ws_ts[
         row_major(Coord(p_ref_rows, p_ref_cols)),
     )
     var a_tt = TileTensor(
-        UnsafePointer[Scalar[op_type], ImmutAnyOrigin](
+        ImmPointer[Scalar[op_type], ImmutAnyOrigin](
             unsafe_from_address=Int(q_device_ptr)
         ),
         row_major(Coord(rows, cols)),
     )
     var b_tt = TileTensor(
-        UnsafePointer[Scalar[op_type], ImmutAnyOrigin](
+        ImmPointer[Scalar[op_type], ImmutAnyOrigin](
             unsafe_from_address=Int(k_ref_device.unsafe_ptr())
         ),
         row_major(Coord(topk, row_width)),

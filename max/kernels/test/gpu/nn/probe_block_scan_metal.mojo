@@ -37,10 +37,10 @@ from std.testing import assert_equal, assert_almost_equal, TestSuite
 def block_scan_kernel[
     block_size: Int
 ](
-    inp: UnsafePointer[Float32, MutAnyOrigin],
-    out_incl: UnsafePointer[Float32, MutAnyOrigin],
-    out_excl: UnsafePointer[Float32, MutAnyOrigin],
-    out_sum: UnsafePointer[Float32, MutAnyOrigin],
+    inp: MutPointer[Float32, MutAnyOrigin],
+    out_incl: MutPointer[Float32, MutAnyOrigin],
+    out_excl: MutPointer[Float32, MutAnyOrigin],
+    out_sum: MutPointer[Float32, MutAnyOrigin],
 ):
     """Per-thread: read input, run block.sum + block.prefix_sum, write results.
 

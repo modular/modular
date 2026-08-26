@@ -63,8 +63,8 @@ comptime SENTINEL = UInt32(0xFFFFFFFF)
 # size is supplied only at launch (`cluster_dim=`). NO `P` type parameter — the
 # count is the runtime arg `p_count`, so a single compiled kernel serves every P.
 def dyn_dsmem_kernel(
-    output: UnsafePointer[UInt32, MutAnyOrigin],
-    cdim_out: UnsafePointer[UInt32, MutAnyOrigin],
+    output: MutPointer[UInt32, MutAnyOrigin],
+    cdim_out: MutPointer[UInt32, MutAnyOrigin],
     p_count: UInt32,
 ):
     var smem = unsafe_stack_allocation[

@@ -99,8 +99,8 @@ def _run_and_check(
 
     persistent_topk_block(
         ctx,
-        rebind[UnsafePointer[Float32, ImmutAnyOrigin]](scores_dev.unsafe_ptr()),
-        rebind[UnsafePointer[Int32, MutAnyOrigin]](idxs_dev.unsafe_ptr()),
+        rebind[ImmPointer[Float32, ImmutAnyOrigin]](scores_dev.unsafe_ptr()),
+        rebind[MutPointer[Int32, MutAnyOrigin]](idxs_dev.unsafe_ptr()),
         N,
         K,
         total_seq_len=1,
@@ -331,8 +331,8 @@ def test_multi_batch(ctx: DeviceContext) raises:
 
     persistent_topk_block(
         ctx,
-        rebind[UnsafePointer[Float32, ImmutAnyOrigin]](scores_dev.unsafe_ptr()),
-        rebind[UnsafePointer[Int32, MutAnyOrigin]](idxs_dev.unsafe_ptr()),
+        rebind[ImmPointer[Float32, ImmutAnyOrigin]](scores_dev.unsafe_ptr()),
+        rebind[MutPointer[Int32, MutAnyOrigin]](idxs_dev.unsafe_ptr()),
         N,
         K,
         total_seq_len=BATCH,
@@ -572,8 +572,8 @@ def _run_and_check_split(
 
     persistent_topk_block_split[ordered=True, deterministic=True](
         ctx,
-        rebind[UnsafePointer[Float32, ImmutAnyOrigin]](scores_dev.unsafe_ptr()),
-        rebind[UnsafePointer[Int32, MutAnyOrigin]](idxs_dev.unsafe_ptr()),
+        rebind[ImmPointer[Float32, ImmutAnyOrigin]](scores_dev.unsafe_ptr()),
+        rebind[MutPointer[Int32, MutAnyOrigin]](idxs_dev.unsafe_ptr()),
         N,
         K,
         total_seq_len=B,
@@ -741,8 +741,8 @@ def _run_and_check_block_multirow(
 
     persistent_topk_block(
         ctx,
-        rebind[UnsafePointer[Float32, ImmutAnyOrigin]](scores_dev.unsafe_ptr()),
-        rebind[UnsafePointer[Int32, MutAnyOrigin]](idxs_dev.unsafe_ptr()),
+        rebind[ImmPointer[Float32, ImmutAnyOrigin]](scores_dev.unsafe_ptr()),
+        rebind[MutPointer[Int32, MutAnyOrigin]](idxs_dev.unsafe_ptr()),
         N,
         K,
         total_seq_len=B,
@@ -1012,8 +1012,8 @@ def _run_split[
 
     persistent_topk_block_split[ordered=ordered, deterministic=deterministic](
         ctx,
-        rebind[UnsafePointer[Float32, ImmutAnyOrigin]](scores_dev.unsafe_ptr()),
-        rebind[UnsafePointer[Int32, MutAnyOrigin]](idxs_dev.unsafe_ptr()),
+        rebind[ImmPointer[Float32, ImmutAnyOrigin]](scores_dev.unsafe_ptr()),
+        rebind[MutPointer[Int32, MutAnyOrigin]](idxs_dev.unsafe_ptr()),
         N,
         K,
         total_seq_len=B,
@@ -1556,15 +1556,13 @@ def _run_and_check_bounded(
 
     persistent_topk_block_split[ordered=True, deterministic=True](
         ctx,
-        rebind[UnsafePointer[Float32, ImmutAnyOrigin]](scores_dev.unsafe_ptr()),
-        rebind[UnsafePointer[Int32, MutAnyOrigin]](idxs_dev.unsafe_ptr()),
+        rebind[ImmPointer[Float32, ImmutAnyOrigin]](scores_dev.unsafe_ptr()),
+        rebind[MutPointer[Int32, MutAnyOrigin]](idxs_dev.unsafe_ptr()),
         N,
         K,
         total_seq_len=B,
         row_bounds=Optional(
-            rebind[UnsafePointer[Int32, ImmutAnyOrigin]](
-                bounds_dev.unsafe_ptr()
-            )
+            rebind[ImmPointer[Int32, ImmutAnyOrigin]](bounds_dev.unsafe_ptr())
         ),
     )
     ctx.synchronize()

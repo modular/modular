@@ -29,7 +29,7 @@ def test_kernel[schedule: MHASchedule]():
     var valid_length = NullPointer[.uint32]()
     var tile_summary = MHATileSummary(1, ceildiv(100, 32), valid_length, 0)
     var state = scheduler.initial_state(
-        UnsafePointer[
+        MutPointer[
             UInt32, MutAnyOrigin, address_space=.SHARED
         ].unsafe_dangling(),
         tile_summary,

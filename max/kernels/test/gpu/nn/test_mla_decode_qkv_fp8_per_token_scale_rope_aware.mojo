@@ -86,8 +86,8 @@ comptime KV_NUM_HEADS = 1  # MLA has 1 KV head
 
 
 def create_interleaved_q_data(
-    q_host_fp8: UnsafePointer[mut=True, Float8_e4m3fn, _],
-    q_ref_bf16: UnsafePointer[mut=True, BFloat16, _],
+    q_host_fp8: MutPointer[Float8_e4m3fn, _],
+    q_ref_bf16: MutPointer[BFloat16, _],
     total_q_tokens: Int,
     num_heads: Int,
 ) raises:
@@ -136,7 +136,7 @@ def create_interleaved_q_data(
 
 
 def create_interleaved_kv_block_data(
-    blocks_host: UnsafePointer[mut=True, Float8_e4m3fn, _],
+    blocks_host: MutPointer[Float8_e4m3fn, _],
     block_elems: Int,
     total_pages: Int,
     page_size: Int,
@@ -184,8 +184,8 @@ def create_interleaved_kv_block_data(
 
 
 def extract_bf16_kv_from_block(
-    blocks_host: UnsafePointer[mut=False, Float8_e4m3fn, _],
-    k_bf16_out: UnsafePointer[mut=True, BFloat16, _],
+    blocks_host: ImmPointer[Float8_e4m3fn, _],
+    k_bf16_out: MutPointer[BFloat16, _],
     physical_page: Int,
     tok_in_page: Int,
     kv_dim2: Int,
@@ -530,8 +530,8 @@ def run_test[
         row_major(batch_size + 1),
     )
 
-    # q_scale_ptr: reinterpret as UnsafePointer with MutAnyOrigin
-    var q_scale_ptr = rebind[UnsafePointer[mut=True, Float32, MutAnyOrigin]](
+    # q_scale_ptr: reinterpret as Pointer with MutAnyOrigin
+    var q_scale_ptr = rebind[MutPointer[Float32, MutAnyOrigin]](
         q_scales_device.unsafe_ptr()
     )
 
@@ -1188,8 +1188,8 @@ def run_test_with_scales[
         row_major(batch_size + 1),
     )
 
-    # q_scale_ptr: reinterpret as UnsafePointer with MutAnyOrigin
-    var q_scale_ptr = rebind[UnsafePointer[mut=True, Float32, MutAnyOrigin]](
+    # q_scale_ptr: reinterpret as Pointer with MutAnyOrigin
+    var q_scale_ptr = rebind[MutPointer[Float32, MutAnyOrigin]](
         q_scales_device.unsafe_ptr()
     )
 

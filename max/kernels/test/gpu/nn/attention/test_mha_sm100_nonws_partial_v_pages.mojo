@@ -69,7 +69,7 @@ comptime poison_blocks = 4 * DeviceContext.default_device_info.sm_count
 comptime reps = 10
 
 
-def poison_smem_kernel(sink: UnsafePointer[Float32, MutAnyOrigin]):
+def poison_smem_kernel(sink: MutPointer[Float32, MutAnyOrigin]):
     """Fills this block's whole dynamic SMEM allocation with bf16 NaN."""
     var smem = external_memory[
         Scalar[dtype],

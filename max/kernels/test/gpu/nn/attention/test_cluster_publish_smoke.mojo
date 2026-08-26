@@ -73,7 +73,7 @@ comptime BM = 128  # WG0 rows that each arrive (the production combine warpgroup
 @__llvm_metadata(`nvvm.cluster_dim`=cluster_shape)
 def publish_smoke_kernel[
     P: Int, cluster_shape: StaticTuple[Int32, 3]
-](output: UnsafePointer[UInt32, MutAnyOrigin]):
+](output: MutPointer[UInt32, MutAnyOrigin]):
     # Static shared scratch, identically offset in every CTA — `mapa` rebases it
     # onto a peer's window.
     var smem = unsafe_stack_allocation[

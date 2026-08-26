@@ -59,7 +59,7 @@ for the design context.
 """
 
 from std.math import ceildiv
-from std.memory import UnsafePointer, alloc
+from std.memory import alloc
 from std.random import rand, randn, seed
 from std.sys import size_of
 
@@ -510,7 +510,7 @@ def pv_smoke_kernel[
 # ---------------------------------------------------------------------------
 def fill_random_fp8[
     dtype: DType
-](ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin], n: Int):
+](ptr: MutPointer[Scalar[dtype], MutAnyOrigin], n: Int):
     """Generates random FP8 values via float32 RNG -> cast.
 
     randn doesn't directly support float8_e4m3fn, so we draw float32
@@ -533,8 +533,8 @@ def fill_random_fp8[
 def dequant_fp8_to_bf16[
     src_dtype: DType, dst_dtype: DType
 ](
-    src: UnsafePointer[mut=False, Scalar[src_dtype], _],
-    dst: UnsafePointer[mut=True, Scalar[dst_dtype], _],
+    src: ImmPointer[Scalar[src_dtype], _],
+    dst: MutPointer[Scalar[dst_dtype], _],
     n: Int,
 ):
     for i in range(n):
@@ -622,13 +622,13 @@ def test_qk_smoke(ctx: DeviceContext) raises:
         row_major(Coord(QK_M, QK_N)),
     )
     var a_tt = TileTensor(
-        UnsafePointer[Scalar[REF_TYPE], ImmutAnyOrigin](
+        ImmPointer[Scalar[REF_TYPE], ImmutAnyOrigin](
             unsafe_from_address=Int(a_ref_dev.unsafe_ptr())
         ),
         row_major(Coord(QK_M, QK_K)),
     )
     var b_tt = TileTensor(
-        UnsafePointer[Scalar[REF_TYPE], ImmutAnyOrigin](
+        ImmPointer[Scalar[REF_TYPE], ImmutAnyOrigin](
             unsafe_from_address=Int(b_ref_dev.unsafe_ptr())
         ),
         row_major(Coord(QK_N, QK_K)),
@@ -814,13 +814,13 @@ def test_pv_smoke(ctx: DeviceContext) raises:
         row_major(Coord(PV_M, PV_N)),
     )
     var a_tt = TileTensor(
-        UnsafePointer[Scalar[REF_TYPE], ImmutAnyOrigin](
+        ImmPointer[Scalar[REF_TYPE], ImmutAnyOrigin](
             unsafe_from_address=Int(a_ref_dev.unsafe_ptr())
         ),
         row_major(Coord(PV_M, PV_K)),
     )
     var b_tt = TileTensor(
-        UnsafePointer[Scalar[REF_TYPE], ImmutAnyOrigin](
+        ImmPointer[Scalar[REF_TYPE], ImmutAnyOrigin](
             unsafe_from_address=Int(b_ref_dev.unsafe_ptr())
         ),
         row_major(Coord(PV_N, PV_K)),

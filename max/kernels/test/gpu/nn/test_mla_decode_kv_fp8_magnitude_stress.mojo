@@ -92,8 +92,8 @@ def host_cast_k_fp8_to_bf16[
     kv_fp8_t: DType,
     k_bf16_t: DType,
 ](
-    k_fp8: UnsafePointer[Scalar[kv_fp8_t], _],
-    k_bf16: UnsafePointer[mut=True, Scalar[k_bf16_t], _],
+    k_fp8: Pointer[Scalar[kv_fp8_t], _],
+    k_bf16: MutPointer[Scalar[k_bf16_t], _],
     depth: Int,
     num_keys: Int,
     kv_num_heads: Int,
@@ -115,7 +115,7 @@ def host_cast_k_fp8_to_bf16[
 @always_inline
 def magnitude_stress_inplace[
     dtype: DType
-](buf: UnsafePointer[mut=True, Scalar[dtype], _], n: Int, stress: Float32):
+](buf: MutPointer[Scalar[dtype], _], n: Int, stress: Float32):
     for i in range(n):
         buf[i] = (buf[i].cast[.float32]() * stress).cast[dtype]()
 

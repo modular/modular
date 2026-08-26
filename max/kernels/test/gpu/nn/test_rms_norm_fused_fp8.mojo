@@ -30,7 +30,7 @@ from nn.normalization import rms_norm_fused_fp8
 
 def initialize_test_data[
     dtype: DType
-](data: UnsafePointer[mut=True, Scalar[dtype], _], size: Int):
+](data: MutPointer[Scalar[dtype], _], size: Int):
     """Initialize test data with diverse positive values to avoid FP8 saturation.
 
     Creates a mix of small, medium, and large magnitudes (0.05 to 3.0) that will
@@ -62,10 +62,10 @@ def compute_reference_dynamic_scaling[
     out_dtype: DType,
     scales_dtype: DType,
 ](
-    input_data: UnsafePointer[Scalar[in_dtype], _],
-    gamma_data: UnsafePointer[Scalar[in_dtype], _],
-    output_data: UnsafePointer[mut=True, Scalar[out_dtype], _],
-    scales_data: UnsafePointer[mut=True, Scalar[scales_dtype], _],
+    input_data: Pointer[Scalar[in_dtype], _],
+    gamma_data: Pointer[Scalar[in_dtype], _],
+    output_data: MutPointer[Scalar[out_dtype], _],
+    scales_data: MutPointer[Scalar[scales_dtype], _],
     rows: Int,
     cols: Int,
     epsilon: Float32,

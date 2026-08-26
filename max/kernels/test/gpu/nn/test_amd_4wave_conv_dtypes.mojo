@@ -78,8 +78,8 @@ def _host_im2col_general[
     stride_w: Int,
     K_padded: Int,
 ](
-    input_host_ptr: UnsafePointer[mut=False, Scalar[a_type], _],
-    im2col_host_ptr: UnsafePointer[mut=True, Scalar[a_type], _],
+    input_host_ptr: ImmPointer[Scalar[a_type], _],
+    im2col_host_ptr: MutPointer[Scalar[a_type], _],
 ):
     """Materializes the im2col matrix with halo zeros and K-padding zeros."""
     for n in range(N):

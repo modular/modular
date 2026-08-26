@@ -128,7 +128,7 @@ def lut_max_pages_per_batch(num_keys: Int, page_size: Int) -> Int:
 def fill_paged_blocks_uniform[
     kv_type: DType,
 ](
-    blocks_host: UnsafePointer[mut=True, Scalar[kv_type], _],
+    blocks_host: MutPointer[Scalar[kv_type], _],
     batch_size: Int,
     num_keys: Int,
     page_size: Int,
@@ -188,7 +188,7 @@ def fill_paged_blocks_uniform[
 
 
 def fill_uniform_lookup_table(
-    lookup_table_host: UnsafePointer[mut=True, UInt32, _],
+    lookup_table_host: MutPointer[UInt32, _],
     batch_size: Int,
     num_keys: Int,
     page_size: Int,
@@ -219,8 +219,8 @@ def fill_uniform_lookup_table(
 def extract_k_rope_for_batch[
     kv_type: DType,
 ](
-    blocks_host: UnsafePointer[Scalar[kv_type], MutAnyOrigin],
-    out_host: UnsafePointer[Scalar[kv_type], MutAnyOrigin],
+    blocks_host: MutPointer[Scalar[kv_type], MutAnyOrigin],
+    out_host: MutPointer[Scalar[kv_type], MutAnyOrigin],
     batch_idx: Int,
     num_keys: Int,
     page_size: Int,
@@ -913,7 +913,7 @@ def _palette_scale(idx: Int) -> Float32:
 
 
 def fill_paged_block_scales(
-    scales_host: UnsafePointer[mut=True, Float32, _],
+    scales_host: MutPointer[Float32, _],
     batch_size: Int,
     num_keys: Int,
     page_size: Int,
@@ -960,9 +960,9 @@ def extract_dequantized_k_rope_for_batch[
     fp8_type: DType,
     out_type: DType,
 ](
-    blocks_host: UnsafePointer[mut=False, Scalar[fp8_type], _],
-    scales_host: UnsafePointer[mut=False, Float32, _],
-    out_host: UnsafePointer[mut=True, Scalar[out_type], _],
+    blocks_host: ImmPointer[Scalar[fp8_type], _],
+    scales_host: ImmPointer[Float32, _],
+    out_host: MutPointer[Scalar[out_type], _],
     batch_idx: Int,
     num_keys: Int,
     page_size: Int,

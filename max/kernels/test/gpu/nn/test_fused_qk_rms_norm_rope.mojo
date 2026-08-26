@@ -435,8 +435,8 @@ def run_fused_qk_rms_norm_rope[
                     )
 
     # FIXME(MSTDL-2742): HostBuffer is origin incorrect.
-    _ = UnsafePointer(to=kv_block_host).as_unsafe_any_origin()[]
-    _ = UnsafePointer(to=kv_block_fused_host).as_unsafe_any_origin()[]
+    _ = Pointer(to=kv_block_host).as_unsafe_any_origin()[]
+    _ = Pointer(to=kv_block_fused_host).as_unsafe_any_origin()[]
 
     _ = row_offsets_device^
     _ = cache_lengths_device^
@@ -1031,12 +1031,12 @@ def run_fused_dual_qk_rms_norm_rope[
                     )
 
     # FIXME(MSTDL-2742): HostBuffer is origin incorrect.
-    _ = UnsafePointer(to=main_kv_host).as_unsafe_any_origin()[]
-    _ = UnsafePointer(to=index_kv_host).as_unsafe_any_origin()[]
-    _ = UnsafePointer(to=main_kv_ref_out).as_unsafe_any_origin()[]
-    _ = UnsafePointer(to=main_kv_fused_out).as_unsafe_any_origin()[]
-    _ = UnsafePointer(to=index_kv_ref_out).as_unsafe_any_origin()[]
-    _ = UnsafePointer(to=index_kv_fused_out).as_unsafe_any_origin()[]
+    _ = Pointer(to=main_kv_host).as_unsafe_any_origin()[]
+    _ = Pointer(to=index_kv_host).as_unsafe_any_origin()[]
+    _ = Pointer(to=main_kv_ref_out).as_unsafe_any_origin()[]
+    _ = Pointer(to=main_kv_fused_out).as_unsafe_any_origin()[]
+    _ = Pointer(to=index_kv_ref_out).as_unsafe_any_origin()[]
+    _ = Pointer(to=index_kv_fused_out).as_unsafe_any_origin()[]
 
     # Re-run both ops with an FP8 main-Q output and compare byte for byte; the
     # bf16 equality above misses that threading. Must stay last: these launches

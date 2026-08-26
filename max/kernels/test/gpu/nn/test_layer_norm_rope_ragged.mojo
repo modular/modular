@@ -26,13 +26,13 @@ from std.utils.index import Index, IndexList
 def compute_layer_norm_rope_ragged_ref[
     dtype: DType, output_dtype: DType, freq_dtype: DType
 ](
-    input_h: UnsafePointer[Scalar[dtype], _],
-    gamma_h: UnsafePointer[Scalar[dtype], _],
-    beta_h: UnsafePointer[Scalar[dtype], _],
-    row_offsets_h: UnsafePointer[UInt32, _],
-    start_pos_h: UnsafePointer[UInt32, _],
-    freqs_h: UnsafePointer[Scalar[freq_dtype], _],
-    output_ref: UnsafePointer[mut=True, Scalar[output_dtype], _],
+    input_h: Pointer[Scalar[dtype], _],
+    gamma_h: Pointer[Scalar[dtype], _],
+    beta_h: Pointer[Scalar[dtype], _],
+    row_offsets_h: Pointer[UInt32, _],
+    start_pos_h: Pointer[UInt32, _],
+    freqs_h: Pointer[Scalar[freq_dtype], _],
+    output_ref: MutPointer[Scalar[output_dtype], _],
     rows: Int,
     cols: Int,
     rope_dim: Int,

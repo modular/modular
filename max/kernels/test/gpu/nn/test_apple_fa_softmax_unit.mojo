@@ -46,14 +46,14 @@ comptime OUT_N = DEPTH_MMAS * 16
 
 def _softmax_unit_kernel(
     # Two score tiles (SQ x SK each), row-major, fp32.
-    s0_ptr: UnsafePointer[Float32, MutAnyOrigin],
-    s1_ptr: UnsafePointer[Float32, MutAnyOrigin],
+    s0_ptr: MutPointer[Float32, MutAnyOrigin],
+    s1_ptr: MutPointer[Float32, MutAnyOrigin],
     # Per-tile synthetic "attention output" contribution (SQ x OUT_N) injected
     # directly so the test isolates the softmax; the host reference applies the
     # same recurrence.
-    o0_ptr: UnsafePointer[Float32, MutAnyOrigin],
-    o1_ptr: UnsafePointer[Float32, MutAnyOrigin],
-    out_ptr: UnsafePointer[Float32, MutAnyOrigin],
+    o0_ptr: MutPointer[Float32, MutAnyOrigin],
+    o1_ptr: MutPointer[Float32, MutAnyOrigin],
+    out_ptr: MutPointer[Float32, MutAnyOrigin],
 ):
     """One simdgroup: load 2 score tiles + 2 PV-output tiles into the MMA accum
     layout, run `_softmax_update` twice + `_softmax_normalize`, and write the
@@ -73,7 +73,7 @@ def _softmax_unit_kernel(
 
     @__parameter
     def load_scores(
-        src: UnsafePointer[Float32, MutAnyOrigin],
+        src: MutPointer[Float32, MutAnyOrigin],
     ) -> ScoreMma.AccumType:
         var acc = ScoreMma.zero_accum()
         comptime for ni in range(NUM_N_MMAS):
@@ -88,7 +88,7 @@ def _softmax_unit_kernel(
     @__parameter
     def add_output(
         mut acc: OutMma.AccumType,
-        src: UnsafePointer[Float32, MutAnyOrigin],
+        src: MutPointer[Float32, MutAnyOrigin],
     ):
         comptime for ni in range(DEPTH_MMAS):
             var frag = acc[ni]

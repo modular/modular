@@ -58,8 +58,8 @@ def _bias_compute_lambda[
 def _permute_filter_frsc_to_kpadded_host[
     dtype: DType
 ](
-    src_ptr: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    dst_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    src_ptr: ImmPointer[Scalar[dtype], ImmutAnyOrigin],
+    dst_ptr: MutPointer[Scalar[dtype], MutAnyOrigin],
     *,
     F: Int,
     R: Int,
@@ -85,10 +85,10 @@ def _conv2d_residual_host_ref[
     in_dtype: DType,
     out_dtype: DType,
 ](
-    input_host: UnsafePointer[mut=False, Scalar[in_dtype], _],
-    filter_host: UnsafePointer[mut=False, Scalar[in_dtype], _],
-    residual_host: UnsafePointer[mut=False, Scalar[out_dtype], _],
-    ref_host: UnsafePointer[mut=True, Scalar[out_dtype], _],
+    input_host: ImmPointer[Scalar[in_dtype], _],
+    filter_host: ImmPointer[Scalar[in_dtype], _],
+    residual_host: ImmPointer[Scalar[out_dtype], _],
+    ref_host: MutPointer[Scalar[out_dtype], _],
     *,
     N: Int,
     H: Int,
@@ -157,8 +157,8 @@ def _conv2d_residual_host_ref[
 def _compare[
     dtype: DType
 ](
-    actual: UnsafePointer[mut=False, Scalar[dtype], _],
-    expected: UnsafePointer[mut=False, Scalar[dtype], _],
+    actual: ImmPointer[Scalar[dtype], _],
+    expected: ImmPointer[Scalar[dtype], _],
     *,
     n_elems: Int,
     label: StaticString,

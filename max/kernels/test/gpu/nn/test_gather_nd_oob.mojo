@@ -25,9 +25,9 @@ def execute_gather_nd_test[
     indices_rank: Int,
     batch_dims: Int,
 ](
-    data_host_ptr: UnsafePointer[Scalar[data_type], _],
+    data_host_ptr: Pointer[Scalar[data_type], _],
     data_shape: IndexList[data_rank],
-    indices_host_ptr: UnsafePointer[Scalar[indices_type], _],
+    indices_host_ptr: Pointer[Scalar[indices_type], _],
     indices_shape: IndexList[indices_rank],
     ctx: DeviceContext,
 ) raises:

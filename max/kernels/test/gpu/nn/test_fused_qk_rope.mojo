@@ -124,7 +124,7 @@ def test_fused_qk_rope[dtype: DType](ctx: DeviceContext) raises -> None:
 
     # Initialize KV cache block buffer with golden values.
     var k_cache_input_buffer = k_cache_input[dtype]()
-    var k_cache_input_buffer_ptr: UnsafePointer[
+    var k_cache_input_buffer_ptr: Pointer[
         k_cache_input_buffer.T, origin_of(k_cache_input_buffer)
     ] = k_cache_input_buffer.unsafe_ptr()
     with kv_block_device.map_to_host() as kv_block_host:
@@ -225,7 +225,7 @@ def test_fused_qk_rope[dtype: DType](ctx: DeviceContext) raises -> None:
     assert (
         len(expected_k_out_buffer) == batch_size * seq_len * dim
     ), "invalid expected k out init"
-    var expected_k_out_buffer_ptr: UnsafePointer[
+    var expected_k_out_buffer_ptr: Pointer[
         expected_k_out_buffer.T, origin_of(expected_k_out_buffer)
     ] = expected_k_out_buffer.unsafe_ptr()
 

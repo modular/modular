@@ -31,7 +31,7 @@ This test:
 """
 
 from std.math import ceildiv, exp
-from std.memory import UnsafePointer, alloc, bitcast
+from std.memory import alloc, bitcast
 from std.random import randn, seed
 from std.sys import argv, has_nvidia_gpu_accelerator, size_of
 
@@ -149,9 +149,9 @@ def is_benchmark() -> Bool:
 def host_reference[
     q_type: DType,
 ](
-    q_ptr: UnsafePointer[Scalar[q_type], _],
-    k_bf16_ptr: UnsafePointer[Scalar[q_type], _],
-    output_ptr: UnsafePointer[mut=True, Scalar[q_type], _],
+    q_ptr: Pointer[Scalar[q_type], _],
+    k_bf16_ptr: Pointer[Scalar[q_type], _],
+    output_ptr: MutPointer[Scalar[q_type], _],
     batch_size: Int,
     num_heads: Int,
     num_keys: Int,
@@ -292,7 +292,7 @@ def run_test_sparse[
 
     # Allocate KV cache on host.
     var blocks_host = List(length=block_elems, fill=Scalar[kv_type](0))
-    var blocks_host_ptr: UnsafePointer[
+    var blocks_host_ptr: Pointer[
         blocks_host.T, origin_of(blocks_host)
     ] = blocks_host.unsafe_ptr()
     # Zero-initialize the entire cache.
@@ -631,7 +631,7 @@ def run_test_sparse[
         scale,
         ctx,
         scalar_args_buf_tt,
-        d_indices=rebind[UnsafePointer[Int32, MutAnyOrigin]](
+        d_indices=rebind[MutPointer[Int32, MutAnyOrigin]](
             d_indices_device.unsafe_ptr()
         ),
         indices_stride=indices_stride,
@@ -715,9 +715,9 @@ def run_test_sparse[
 def host_reference_blockscale[
     q_type: DType,
 ](
-    q_ptr: UnsafePointer[Scalar[q_type], _],
-    k_bf16_ptr: UnsafePointer[Scalar[q_type], _],
-    output_ptr: UnsafePointer[mut=True, Scalar[q_type], _],
+    q_ptr: Pointer[Scalar[q_type], _],
+    k_bf16_ptr: Pointer[Scalar[q_type], _],
+    output_ptr: MutPointer[Scalar[q_type], _],
     batch_size: Int,
     num_heads: Int,
     num_keys_per_batch: List[Int],
@@ -904,7 +904,7 @@ def run_test_sparse_blockscale[
     # Allocate KV cache blocks and zero-initialize
     # -----------------------------------------------------------------------
     var blocks_host = List(length=block_elems, fill=Scalar[kv_type](0))
-    var blocks_host_ptr: UnsafePointer[
+    var blocks_host_ptr: Pointer[
         blocks_host.T, origin_of(blocks_host)
     ] = blocks_host.unsafe_ptr()
     # -----------------------------------------------------------------------
@@ -1324,7 +1324,7 @@ def run_test_sparse_blockscale[
         scale,
         ctx,
         scalar_args_buf_tt,
-        d_indices=rebind[UnsafePointer[Int32, MutAnyOrigin]](
+        d_indices=rebind[MutPointer[Int32, MutAnyOrigin]](
             d_indices_device.unsafe_ptr()
         ),
         indices_stride=indices_stride_bs,
@@ -1490,7 +1490,7 @@ def run_test_sparse_variable_topk[
     # Allocate KV cache blocks and zero-initialize
     # -----------------------------------------------------------------------
     var blocks_host = List(length=block_elems, fill=Scalar[kv_type](0))
-    var blocks_host_ptr: UnsafePointer[
+    var blocks_host_ptr: Pointer[
         blocks_host.T, origin_of(blocks_host)
     ] = blocks_host.unsafe_ptr()
     # -----------------------------------------------------------------------
@@ -1808,11 +1808,11 @@ def run_test_sparse_variable_topk[
         scale,
         ctx,
         scalar_args_buf_tt,
-        d_indices=rebind[UnsafePointer[Int32, MutAnyOrigin]](
+        d_indices=rebind[MutPointer[Int32, MutAnyOrigin]](
             d_indices_device.unsafe_ptr()
         ),
         indices_stride=indices_stride,
-        topk_lengths=rebind[UnsafePointer[Int32, MutAnyOrigin]](
+        topk_lengths=rebind[MutPointer[Int32, MutAnyOrigin]](
             topk_lengths_device.unsafe_ptr()
         ),
     )
@@ -1890,10 +1890,10 @@ def run_test_sparse_variable_topk[
 def host_reference_with_attn_sink[
     q_type: DType,
 ](
-    q_ptr: UnsafePointer[Scalar[q_type], _],
-    k_bf16_ptr: UnsafePointer[Scalar[q_type], _],
-    output_ptr: UnsafePointer[mut=True, Scalar[q_type], _],
-    attn_sink_host: UnsafePointer[Float32, _],
+    q_ptr: Pointer[Scalar[q_type], _],
+    k_bf16_ptr: Pointer[Scalar[q_type], _],
+    output_ptr: MutPointer[Scalar[q_type], _],
+    attn_sink_host: Pointer[Float32, _],
     batch_size: Int,
     num_heads: Int,
     num_keys: Int,
@@ -2020,7 +2020,7 @@ def run_test_sparse_attn_sink[
     )
 
     var blocks_host = List(length=block_elems, fill=Scalar[kv_type](0))
-    var blocks_host_ptr: UnsafePointer[
+    var blocks_host_ptr: Pointer[
         blocks_host.T, origin_of(blocks_host)
     ] = blocks_host.unsafe_ptr()
     var k_bf16_total = batch_size * num_keys * Q_DEPTH
@@ -2310,11 +2310,11 @@ def run_test_sparse_attn_sink[
         scale,
         ctx,
         scalar_args_buf_tt,
-        d_indices=rebind[UnsafePointer[Int32, MutAnyOrigin]](
+        d_indices=rebind[MutPointer[Int32, MutAnyOrigin]](
             d_indices_device.unsafe_ptr()
         ),
         indices_stride=indices_stride,
-        attn_sink_ptr=rebind[UnsafePointer[Float32, origin=MutAnyOrigin]](
+        attn_sink_ptr=rebind[MutPointer[Float32, origin=MutAnyOrigin]](
             attn_sink_device.unsafe_ptr()
         ),
     )
@@ -2492,7 +2492,7 @@ def run_test_sparse_extra_kv[
     )
 
     var blocks_host = List(length=block_elems, fill=Scalar[kv_type](0))
-    var blocks_host_ptr: UnsafePointer[
+    var blocks_host_ptr: Pointer[
         blocks_host.T, origin_of(blocks_host)
     ] = blocks_host.unsafe_ptr()
     # Build shuffled page mapping for original cache.
@@ -2596,7 +2596,7 @@ def run_test_sparse_extra_kv[
     var extra_blocks_host = List(
         length=extra_block_elems, fill=Scalar[kv_type](0)
     )
-    var extra_blocks_host_ptr: UnsafePointer[
+    var extra_blocks_host_ptr: Pointer[
         extra_blocks_host.T, origin_of(extra_blocks_host)
     ] = extra_blocks_host.unsafe_ptr()
     for i in range(extra_block_elems):
@@ -2998,19 +2998,19 @@ def run_test_sparse_extra_kv[
         scale,
         ctx,
         scalar_args_buf_tt,
-        d_indices=rebind[UnsafePointer[Int32, MutAnyOrigin]](
+        d_indices=rebind[MutPointer[Int32, MutAnyOrigin]](
             d_indices_device.unsafe_ptr()
         ),
         indices_stride=max_topk,
-        topk_lengths=rebind[UnsafePointer[Int32, MutAnyOrigin]](
+        topk_lengths=rebind[MutPointer[Int32, MutAnyOrigin]](
             topk_lengths_device.unsafe_ptr()
         ),
         extra_k=extra_kv_cache,
-        extra_d_indices=rebind[UnsafePointer[Int32, MutAnyOrigin]](
+        extra_d_indices=rebind[MutPointer[Int32, MutAnyOrigin]](
             extra_d_indices_device.unsafe_ptr()
         ),
         extra_indices_stride=max_extra_topk,
-        extra_topk_lengths=rebind[UnsafePointer[Int32, MutAnyOrigin]](
+        extra_topk_lengths=rebind[MutPointer[Int32, MutAnyOrigin]](
             extra_topk_lengths_device.unsafe_ptr()
         ),
     )
@@ -3206,7 +3206,7 @@ def run_test_sparse_topk_clamping[
     # Allocate KV cache blocks and zero-initialize
     # -----------------------------------------------------------------------
     var blocks_host = List(length=block_elems, fill=Scalar[kv_type](0))
-    var blocks_host_ptr: UnsafePointer[
+    var blocks_host_ptr: Pointer[
         blocks_host.T, origin_of(blocks_host)
     ] = blocks_host.unsafe_ptr()
     # -----------------------------------------------------------------------
@@ -3529,11 +3529,11 @@ def run_test_sparse_topk_clamping[
         scale,
         ctx,
         scalar_args_buf_tt,
-        d_indices=rebind[UnsafePointer[Int32, MutAnyOrigin]](
+        d_indices=rebind[MutPointer[Int32, MutAnyOrigin]](
             d_indices_device.unsafe_ptr()
         ),
         indices_stride=indices_stride,
-        topk_lengths=rebind[UnsafePointer[Int32, MutAnyOrigin]](
+        topk_lengths=rebind[MutPointer[Int32, MutAnyOrigin]](
             topk_lengths_device.unsafe_ptr()
         ),
     )

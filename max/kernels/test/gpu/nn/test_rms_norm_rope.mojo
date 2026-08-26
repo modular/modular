@@ -26,11 +26,11 @@ from std.utils.index import Index, IndexList
 def compute_rms_norm_rope_ref[
     dtype: DType, output_dtype: DType, cos_sin_dtype: DType
 ](
-    input_h: UnsafePointer[Scalar[dtype], _],
-    gamma_h: UnsafePointer[Scalar[dtype], _],
-    cos_h: UnsafePointer[Scalar[cos_sin_dtype], _],
-    sin_h: UnsafePointer[Scalar[cos_sin_dtype], _],
-    output_ref: UnsafePointer[mut=True, Scalar[output_dtype], _],
+    input_h: Pointer[Scalar[dtype], _],
+    gamma_h: Pointer[Scalar[dtype], _],
+    cos_h: Pointer[Scalar[cos_sin_dtype], _],
+    sin_h: Pointer[Scalar[cos_sin_dtype], _],
+    output_ref: MutPointer[Scalar[output_dtype], _],
     rows: Int,
     cols: Int,
     epsilon: Float32,
