@@ -773,7 +773,8 @@ the [container](/container) page now links to the new page.
   sampler's accept decision, so it comes from the sampling kernel rather than
   a separate softmax. When top-k, top-p, and min-p are disabled, the
   distribution-producing path now skips its cutoff search. The existing
-  single-output path is unchanged.
+  single-output path is unchanged. On AMD GPUs, the distribution output also
+  serves as temporary storage for exponentiated logits during sampling.
 - Added `max.nn.kernels.topk_topp_masked_probs`, which computes a row's
   top-k/top-p masked renormalized softmax without sampling and without a
   sort. Speculative decoding verification reads the target's masked
@@ -781,6 +782,8 @@ the [container](/container) page now links to the new page.
   this one tensor, in the same form the draft sampler emits its proposal
   distribution. When top-k and top-p are disabled, the kernel now skips the
   cutoff search because every positive-probability token already survives.
+  On AMD GPUs, it also caches exponentiated logits in the output buffer so
+  cutoff-search passes do not recompute them.
 - The fused gumbel-argmax sampling kernel takes a `from_probs` parameter,
   exposed as `max.nn.kernels.gumbel_argmax_from_probs`: each row's score is
   `ln(p) + gumbel` over unnormalized probabilities, drawn with noise the

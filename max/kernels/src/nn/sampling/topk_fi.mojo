@@ -34,7 +34,7 @@ from max.gpu.primitives.grid_controls import (
 )
 from max.gpu.host import DeviceBuffer, DeviceContext
 from max.gpu.memory import external_memory
-from std.sys.info import has_apple_gpu_accelerator, is_apple_gpu
+from std.sys.info import has_apple_gpu_accelerator, is_amd_gpu, is_apple_gpu
 from layout import (
     ComptimeInt,
     Coord,
@@ -1574,6 +1574,11 @@ def TopKTopPSamplingFromProbKernel[
     comptime assert (
         not emit_dist or not is_apple_gpu()
     ), "out_dist is not supported on Apple GPUs"
+    # AMD benefits from replacing repeated exponentiation with an FP32
+    # workspace; the final pass overwrites the cached weights in place.
+    comptime cache_dist = (
+        is_amd_gpu() and from_logits and emit_dist and dist_dtype == .float32
+    )
 
     var _top_k_val = Int(top_k_val)
     var _d = Int(d)
@@ -1656,6 +1661,18 @@ def TopKTopPSamplingFromProbKernel[
                     (Idx[0], i * vec_size)
                 ).cast[.float32]()
                 var e = exp((v - row_max) * inv_temp)
+                comptime if cache_dist:
+                    # No barrier needed after the store: the strided readers
+                    # below re-read the slice this thread wrote. The lone
+                    # cross-thread read (`load_dist[1](sampled_id)`) is ordered
+                    # by the block reductions in between.
+                    var dist_row = TileTensor(
+                        out_dist.unsafe_value() + bx * _d,
+                        row_major(Idx[1], _d),
+                    )
+                    dist_row.store[width=vec_size](
+                        (Idx[0], i * vec_size), e.cast[dist_dtype]()
+                    )
                 thread_sum += e.reduce_add()
                 comptime if emit_dist:
                     if min_p_thresh > 0:
@@ -1681,12 +1698,21 @@ def TopKTopPSamplingFromProbKernel[
             # Load `width` elements of the sampling distribution at `offset`.
             # In from-logits mode this is the unnormalized softmax value with
             # the min-p mask applied inline.
-            var v = probs_row.load[width=width]((Idx[0], offset)).cast[
-                .float32
-            ]()
-
             comptime if from_logits:
-                var e = exp((v - row_max) * inv_temp)
+                var e: SIMD[.float32, width]
+                comptime if cache_dist:
+                    var dist_row = TileTensor(
+                        out_dist.unsafe_value() + bx * _d,
+                        row_major(Idx[1], _d),
+                    )
+                    e = dist_row.load[width=width]((Idx[0], offset)).cast[
+                        .float32
+                    ]()
+                else:
+                    var v = probs_row.load[width=width]((Idx[0], offset)).cast[
+                        .float32
+                    ]()
+                    e = exp((v - row_max) * inv_temp)
                 # Same predicate as apply_min_p_mask_kernel (`< threshold`
                 # zeroes; NaN compares false and is preserved).
                 if min_p_thresh > 0:
@@ -1695,7 +1721,9 @@ def TopKTopPSamplingFromProbKernel[
                             e[j] = 0
                 return e
             else:
-                return v
+                return probs_row.load[width=width]((Idx[0], offset)).cast[
+                    .float32
+                ]()
 
         # Top-p budget in the working domain (z == 1.0 in from-prob mode).
         var p_eff = p * z
@@ -2761,11 +2789,13 @@ def TopKTopPMaskedProbsKernel[
 
     @__parameter
     @always_inline
-    def load_e(offset: Int) -> SIMD[.float32, vec_size]:
+    def compute_e(offset: Int) -> SIMD[.float32, vec_size]:
         var v = logits_row.load[width=vec_size]((Idx[0], offset)).cast[
             .float32
         ]()
         return exp((v - m) * inv_temp)
+
+    var probs_row = TileTensor(probs_ptr + bx * _d, row_major(Idx[1], _d))
 
     # Total mass, plus how many tokens carry any: a row whose every
     # positive token already satisfies the constraint has no boundary to
@@ -2774,7 +2804,11 @@ def TopKTopPMaskedProbsKernel[
     var thread_sum = Float32(0)
     var thread_pos: Int32 = 0
     for i in range(tx, _d // vec_size, block_size):
-        var e = load_e(i * vec_size)
+        var e = compute_e(i * vec_size)
+        # Repeated exponentiation costs more than the wider cache traffic on
+        # AMD; each thread reuses its own output slice until the final write.
+        comptime if is_amd_gpu():
+            probs_row.store[width=vec_size]((Idx[0], i * vec_size), e)
         thread_sum += e.reduce_add()
         comptime for j in range(vec_size):
             if e[j] > 0:
@@ -2785,6 +2819,14 @@ def TopKTopPMaskedProbsKernel[
     var z = total.value
     var p_eff = p * z
 
+    @__parameter
+    @always_inline
+    def load_e(offset: Int) -> SIMD[.float32, vec_size]:
+        comptime if is_amd_gpu():
+            return probs_row.load[width=vec_size]((Idx[0], offset))
+        else:
+            return compute_e(offset)
+
     var cut = Float32(0)
     var mass_s = z
     if total.count > Int32(k) or z > p_eff:
@@ -2794,7 +2836,6 @@ def TopKTopPMaskedProbsKernel[
         cut = refined[0]
         mass_s = refined[1]
 
-    var probs_row = TileTensor(probs_ptr + bx * _d, row_major(Idx[1], _d))
     for i in range(tx, _d // vec_size, block_size):
         var e = load_e(i * vec_size)
         var masked = (e.gt(cut)).select(e / mass_s, SIMD[.float32, vec_size](0))
