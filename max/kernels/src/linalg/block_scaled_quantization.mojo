@@ -1526,7 +1526,6 @@ def grouped_quantize_dynamic_scaled_fp4_async_kernel[
             high = mid
     var expert_idx = low
 
-    # Tail tiles beyond last expert's range: exit early.
     var curr_expert_start = Int(row_offsets[expert_idx])
     var curr_expert_end = Int(row_offsets[expert_idx + 1])
     var expert_tiles_start = ufloordiv(
@@ -1535,6 +1534,9 @@ def grouped_quantize_dynamic_scaled_fp4_async_kernel[
     var expert_num_tiles = uceildiv(
         curr_expert_end - curr_expert_start, SF_MN_GROUP_SIZE
     )
+    # Padded tiles have no payload, so they exit above the PDL wait.
+    if scale_tile_idx >= expert_tiles_start + expert_num_tiles:
+        return
 
     var expert_id = expert_ids[expert_idx]
     var input_sf = sf_tensor[expert_id]
@@ -1560,12 +1562,7 @@ def grouped_quantize_dynamic_scaled_fp4_async_kernel[
         row_major(Coord(scales_tile_shape)),
     )
 
-    # We can safely prefetch the row_offsets and scales_offsets before
-    # `wait_on_dependent_grids()`.
     with PDL():
-        if scale_tile_idx >= expert_tiles_start + expert_num_tiles:
-            return
-
         comptime ELEMENTS_PER_THREAD = 8
         comptime NUM_THREADS_PER_SF = SF_VECTOR_SIZE // ELEMENTS_PER_THREAD
         comptime OUTPUT_WIDTH = 4 if output_dtype == DType.uint8 else 8
