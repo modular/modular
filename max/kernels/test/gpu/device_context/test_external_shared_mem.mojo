@@ -21,7 +21,7 @@ from std.testing import assert_equal
 def test_external_shared_mem(ctx: DeviceContext) raises:
     print("== test_external_shared_mem")
 
-    def dynamic_smem_kernel(data: UnsafePointer[Float32, MutAnyOrigin]):
+    def dynamic_smem_kernel(data: MutPointer[Float32, MutAnyOrigin]):
         var dynamic_sram = external_memory[
             Float32, address_space=.SHARED, alignment=4
         ]()

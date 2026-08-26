@@ -48,8 +48,8 @@ from kda.reference import kda_decode_ref
 
 
 def _rel_err_ptr(
-    gold: UnsafePointer[Scalar[DType.float32], MutUntrackedOrigin],
-    cand: UnsafePointer[Scalar[DType.float32], MutUntrackedOrigin],
+    gold: MutPointer[Scalar[DType.float32], MutUntrackedOrigin],
+    cand: MutPointer[Scalar[DType.float32], MutUntrackedOrigin],
     n: Int,
 ) -> Float64:
     """RMSE(gold - cand) / RMSE(gold)."""
@@ -85,20 +85,20 @@ def _run_both[
     total_T: Int,
     chunk_size: Int,
     seq_lengths: List[Int],
-    q_h: UnsafePointer[Scalar[qkv_dtype], MutUntrackedOrigin],
-    k_h: UnsafePointer[Scalar[qkv_dtype], MutUntrackedOrigin],
-    v_h: UnsafePointer[Scalar[qkv_dtype], MutUntrackedOrigin],
-    rg_h: UnsafePointer[Scalar[DType.float32], MutUntrackedOrigin],
-    bl_h: UnsafePointer[Scalar[DType.float32], MutUntrackedOrigin],
-    al_h: UnsafePointer[Scalar[DType.float32], MutUntrackedOrigin],
-    dt_h: UnsafePointer[Scalar[DType.float32], MutUntrackedOrigin],
-    state_h: UnsafePointer[Scalar[DType.float32], MutUntrackedOrigin],
+    q_h: MutPointer[Scalar[qkv_dtype], MutUntrackedOrigin],
+    k_h: MutPointer[Scalar[qkv_dtype], MutUntrackedOrigin],
+    v_h: MutPointer[Scalar[qkv_dtype], MutUntrackedOrigin],
+    rg_h: MutPointer[Scalar[DType.float32], MutUntrackedOrigin],
+    bl_h: MutPointer[Scalar[DType.float32], MutUntrackedOrigin],
+    al_h: MutPointer[Scalar[DType.float32], MutUntrackedOrigin],
+    dt_h: MutPointer[Scalar[DType.float32], MutUntrackedOrigin],
+    state_h: MutPointer[Scalar[DType.float32], MutUntrackedOrigin],
     ctx: DeviceContext,
 ) raises -> Tuple[
-    UnsafePointer[Scalar[DType.float32], MutUntrackedOrigin],
-    UnsafePointer[Scalar[DType.float32], MutUntrackedOrigin],
-    UnsafePointer[Scalar[DType.float32], MutUntrackedOrigin],
-    UnsafePointer[Scalar[DType.float32], MutUntrackedOrigin],
+    MutPointer[Scalar[DType.float32], MutUntrackedOrigin],
+    MutPointer[Scalar[DType.float32], MutUntrackedOrigin],
+    MutPointer[Scalar[DType.float32], MutUntrackedOrigin],
+    MutPointer[Scalar[DType.float32], MutUntrackedOrigin],
 ]:
     """Returns (decode_out, decode_state, chunk_out, chunk_state), all fp32.
 

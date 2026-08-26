@@ -247,8 +247,8 @@ def _fill_stable[
 
 
 def _host_block_score(
-    q: UnsafePointer[mut=False, Scalar[kv_type], _],
-    k: UnsafePointer[mut=False, Scalar[kv_type], _],
+    q: ImmPointer[Scalar[kv_type], _],
+    k: ImmPointer[Scalar[kv_type], _],
     t: Int,
     h: Int,
     blk: Int,
@@ -635,8 +635,8 @@ def _batch_of(t: Int, batch: Int, iro: List[Int]) -> Int:
 
 
 def _check_topk_invariant(
-    q_hp: UnsafePointer[mut=False, Scalar[kv_type], _],
-    k_hp: UnsafePointer[mut=False, Scalar[kv_type], _],
+    q_hp: ImmPointer[Scalar[kv_type], _],
+    k_hp: ImmPointer[Scalar[kv_type], _],
     t: Int,
     h: Int,
     key_off_b: Int,
@@ -676,7 +676,7 @@ def _check_topk_invariant(
 
 def _apply_inject(
     inject: Int,
-    out_host: UnsafePointer[mut=True, Scalar[out_idx_type], _],
+    out_host: MutPointer[Scalar[out_idx_type], _],
     max_num_blocks: Int,
 ):
     """Corrupt out_idxs[0] to prove an oracle can FAIL (positive control)."""

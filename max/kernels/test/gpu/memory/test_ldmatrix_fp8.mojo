@@ -36,9 +36,9 @@ from std.utils.numerics import get_accum_type
 def test_ldmatrix_fp8[
     input_type: DType,
 ](
-    c_ptr: UnsafePointer[Float32, MutAnyOrigin],
-    a_ptr: UnsafePointer[Scalar[input_type], ImmutAnyOrigin],
-    b_ptr: UnsafePointer[Scalar[input_type], ImmutAnyOrigin],
+    c_ptr: MutPointer[Float32, MutAnyOrigin],
+    a_ptr: ImmPointer[Scalar[input_type], ImmutAnyOrigin],
+    b_ptr: ImmPointer[Scalar[input_type], ImmutAnyOrigin],
 ):
     comptime accum_type = get_accum_type[input_type]()
     comptime mma_shape = get_mma_shape[input_type, accum_type]()
@@ -141,20 +141,18 @@ def check_ldmatrix_fp8[
     # a/b are constructed as immutable to match the ImmutAnyOrigin
     # parameters that matmul_kernel_naive expects (enqueue_function
     # requires exact type matches).
-    from std.memory import UnsafePointer
-
     var c_ref_tt = TileTensor(
         c_device_ref,
         row_major(Coord(M, N)),
     )
     var a_tt = TileTensor(
-        UnsafePointer[Scalar[input_type], ImmutAnyOrigin](
+        ImmPointer[Scalar[input_type], ImmutAnyOrigin](
             unsafe_from_address=Int(a_device.unsafe_ptr())
         ),
         row_major(Coord(M, K)),
     )
     var b_tt = TileTensor(
-        UnsafePointer[Scalar[input_type], ImmutAnyOrigin](
+        ImmPointer[Scalar[input_type], ImmutAnyOrigin](
             unsafe_from_address=Int(b_device.unsafe_ptr())
         ),
         row_major(Coord(N, K)),

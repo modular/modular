@@ -19,8 +19,8 @@ from std.testing import assert_equal
 
 # Simple kernel for testing event synchronization
 def simple_kernel(
-    input: UnsafePointer[Float32, ImmutAnyOrigin],
-    output: UnsafePointer[Float32, MutAnyOrigin],
+    input: ImmPointer[Float32, ImmutAnyOrigin],
+    output: MutPointer[Float32, MutAnyOrigin],
     len_dev: Int32,
     multiplier: Float32,
 ):
@@ -34,8 +34,8 @@ def simple_kernel(
 
 # Kernel that does more work to test timing
 def heavy_kernel(
-    input: UnsafePointer[Float32, ImmutAnyOrigin],
-    output: UnsafePointer[Float32, MutAnyOrigin],
+    input: ImmPointer[Float32, ImmutAnyOrigin],
+    output: MutPointer[Float32, MutAnyOrigin],
     len: Int,
     iterations: Int,
 ):

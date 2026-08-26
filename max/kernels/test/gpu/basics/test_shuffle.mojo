@@ -31,7 +31,7 @@ def kernel_wrapper[
     kernel_fn: def(SIMD[dtype, simd_width]) capturing -> SIMD[
         dtype, simd_width
     ],
-](device_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin]):
+](device_ptr: MutPointer[Scalar[dtype], MutAnyOrigin]):
     var val = device_ptr.load[width=simd_width](thread_idx.x * simd_width)
     var result = kernel_fn(val)
     barrier()
@@ -46,7 +46,7 @@ def _kernel_launch_helper[
         dtype, simd_width
     ],
 ](
-    host_ptr: UnsafePointer[mut=True, Scalar[dtype], _],
+    host_ptr: MutPointer[Scalar[dtype], _],
     buffer_size: Int,
     block_size: Int,
     ctx: DeviceContext,

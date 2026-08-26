@@ -19,8 +19,8 @@ from std.testing import assert_equal, assert_true
 
 # Simple kernel for testing stream execution
 def simple_kernel(
-    input: UnsafePointer[Float32, ImmutAnyOrigin],
-    output: UnsafePointer[Float32, MutAnyOrigin],
+    input: ImmPointer[Float32, ImmutAnyOrigin],
+    output: MutPointer[Float32, MutAnyOrigin],
     len_dev: Int32,
     multiplier: Float32,
 ):

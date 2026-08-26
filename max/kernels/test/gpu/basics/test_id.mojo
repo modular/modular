@@ -24,7 +24,7 @@ def test_fill_thread_idx(ctx: DeviceContext) raises:
     var output_buffer = ctx.enqueue_create_buffer[.int](buffer_size)
     output_buffer.enqueue_fill(9)
 
-    def kernel(output: UnsafePointer[Int, MutAnyOrigin]):
+    def kernel(output: MutPointer[Int, MutAnyOrigin]):
         output[global_idx.x] = Int(thread_idx.x)
 
     ctx.enqueue_function[kernel](
@@ -46,7 +46,7 @@ def test_fill_block_idx(ctx: DeviceContext) raises:
     var output_buffer = ctx.enqueue_create_buffer[.int](buffer_size)
     output_buffer.enqueue_fill(9)
 
-    def kernel(output: UnsafePointer[Int, MutAnyOrigin]):
+    def kernel(output: MutPointer[Int, MutAnyOrigin]):
         output[global_idx.x] = Int(block_idx.x)
 
     ctx.enqueue_function[kernel](

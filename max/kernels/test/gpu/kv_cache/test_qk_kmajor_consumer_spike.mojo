@@ -142,7 +142,7 @@ def qk_consumer_kernel[
     ]()
 
     var q_smem = rebind[
-        UnsafePointer[
+        MutPointer[
             Scalar[ab_type], address_space=.SHARED, UntrackedOrigin[mut=True]
         ]
     ](

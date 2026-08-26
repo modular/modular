@@ -24,8 +24,8 @@ comptime NUM_THREADS = 64
 
 
 def test_named_barrier_semaphore_equal_kernel(
-    locks_ptr: UnsafePointer[Int32, MutAnyOrigin],
-    shared_ptr: UnsafePointer[Int32, MutAnyOrigin],
+    locks_ptr: MutPointer[Int32, MutAnyOrigin],
+    shared_ptr: MutPointer[Int32, MutAnyOrigin],
 ):
     var sema = NamedBarrierSemaphore[Int32(NUM_THREADS), 4, 1](
         locks_ptr, thread_idx.x
@@ -71,8 +71,8 @@ def test_named_barrier_semaphore_equal(ctx: DeviceContext) raises:
 
 
 def test_named_barrier_semaphore_less_than_kernel(
-    locks_ptr: UnsafePointer[Int32, MutAnyOrigin],
-    shared_ptr: UnsafePointer[Int32, MutAnyOrigin],
+    locks_ptr: MutPointer[Int32, MutAnyOrigin],
+    shared_ptr: MutPointer[Int32, MutAnyOrigin],
 ):
     var sema = NamedBarrierSemaphore[Int32(NUM_THREADS), 4, 1](
         locks_ptr, thread_idx.x

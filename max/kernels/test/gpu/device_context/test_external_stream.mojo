@@ -31,8 +31,8 @@ def native_stream_ptr(
 
 
 def scale_kernel(
-    input: UnsafePointer[Float32, ImmutAnyOrigin],
-    output: UnsafePointer[Float32, MutAnyOrigin],
+    input: ImmPointer[Float32, ImmutAnyOrigin],
+    output: MutPointer[Float32, MutAnyOrigin],
     n_dev: Int32,
     scale: Float32,
 ):

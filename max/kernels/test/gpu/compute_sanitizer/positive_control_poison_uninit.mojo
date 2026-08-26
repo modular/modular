@@ -34,8 +34,8 @@ from std.math import isnan
 
 
 def copy_uninitialized(
-    src: UnsafePointer[Float32, ImmutAnyOrigin],
-    dst: UnsafePointer[Float32, MutAnyOrigin],
+    src: ImmPointer[Float32, ImmutAnyOrigin],
+    dst: MutPointer[Float32, MutAnyOrigin],
 ):
     var tid = Int(thread_idx.x)
     # `src` was never written by the host -> reading it is an uninitialized

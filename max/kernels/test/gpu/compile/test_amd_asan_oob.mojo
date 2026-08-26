@@ -33,7 +33,7 @@ from std.sys import argv
 from max.gpu.host import DeviceContext
 
 
-def bad_func(ptr: UnsafePointer[Int32, MutAnyOrigin], i_dev: Int32):
+def bad_func(ptr: MutPointer[Int32, MutAnyOrigin], i_dev: Int32):
     # `Int` is not device-passable; widen the fixed-width arg.
     var i = Int(i_dev)
     # Potential out of bounds access

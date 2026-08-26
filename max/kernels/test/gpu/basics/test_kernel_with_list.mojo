@@ -14,7 +14,7 @@
 from max.gpu.host import DeviceContext
 
 
-def kernel_with_list(res: UnsafePointer[Float32, MutAnyOrigin]):
+def kernel_with_list(res: MutPointer[Float32, MutAnyOrigin]):
     var list: List[Float32] = [10]
     for i in range(4):
         list.append(Float32(i + 1))

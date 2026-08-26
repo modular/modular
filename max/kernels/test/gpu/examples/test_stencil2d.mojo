@@ -23,8 +23,8 @@ comptime BLOCK_DIM = 4
 
 
 def stencil2d(
-    a_ptr: UnsafePointer[Float32, MutAnyOrigin],
-    b_ptr: UnsafePointer[Float32, MutAnyOrigin],
+    a_ptr: MutPointer[Float32, MutAnyOrigin],
+    b_ptr: MutPointer[Float32, MutAnyOrigin],
     arr_size_dev: Int32,
     num_rows_dev: Int32,
     num_cols_dev: Int32,
@@ -64,8 +64,8 @@ def stencil2d(
 
 
 def stencil2d_smem(
-    a_ptr: UnsafePointer[Float32, MutAnyOrigin],
-    b_ptr: UnsafePointer[Float32, MutAnyOrigin],
+    a_ptr: MutPointer[Float32, MutAnyOrigin],
+    b_ptr: MutPointer[Float32, MutAnyOrigin],
     arr_size_dev: Int32,
     num_rows_dev: Int32,
     num_cols_dev: Int32,

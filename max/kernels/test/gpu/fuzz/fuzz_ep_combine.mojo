@@ -106,7 +106,7 @@ def si_dist_name(d: Int) -> String:
 
 
 def corrupt_src_info_kernel(
-    src_info: UnsafePointer[Int32, MutAnyOrigin],
+    src_info: MutPointer[Int32, MutAnyOrigin],
     n_rows_dev: Int32,
     bad_src_idx: Int32,
     bad_topk_idx: Int32,
@@ -270,20 +270,20 @@ def run_one_case(ctx: DeviceContext, spec: CaseSpec) raises:
 
     var format_handler = token_fmt_type(out_t)
 
-    var recv_bufs = Array[UnsafePointer[UInt8, MutAnyOrigin], n_ranks](
+    var recv_bufs = Array[MutPointer[UInt8, MutAnyOrigin], n_ranks](
         uninitialized=True
     )
     recv_bufs[0] = dispatch_recv.unsafe_ptr().as_unsafe_any_origin()
-    var recv_count_bufs = Array[UnsafePointer[UInt64, MutAnyOrigin], n_ranks](
+    var recv_count_bufs = Array[MutPointer[UInt64, MutAnyOrigin], n_ranks](
         uninitialized=True
     )
     recv_count_bufs[0] = dispatch_recv_count.unsafe_ptr().as_unsafe_any_origin()
-    var combine_recv_bufs = Array[UnsafePointer[UInt8, MutAnyOrigin], n_ranks](
+    var combine_recv_bufs = Array[MutPointer[UInt8, MutAnyOrigin], n_ranks](
         uninitialized=True
     )
     combine_recv_bufs[0] = combine_recv.unsafe_ptr().as_unsafe_any_origin()
     var combine_recv_count_bufs = Array[
-        UnsafePointer[UInt64, MutAnyOrigin], n_ranks
+        MutPointer[UInt64, MutAnyOrigin], n_ranks
     ](uninitialized=True)
     combine_recv_count_bufs[
         0

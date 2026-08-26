@@ -277,9 +277,9 @@ def sgemm_warp_tiling_kernel[
 
 
 def matmul_naive(
-    a_ptr: UnsafePointer[Float32, MutAnyOrigin],
-    b_ptr: UnsafePointer[Float32, MutAnyOrigin],
-    c_ptr: UnsafePointer[Float32, MutAnyOrigin],
+    a_ptr: MutPointer[Float32, MutAnyOrigin],
+    b_ptr: MutPointer[Float32, MutAnyOrigin],
+    c_ptr: MutPointer[Float32, MutAnyOrigin],
     m_dev: Int32,
     n_dev: Int32,
     k_dev: Int32,

@@ -20,7 +20,7 @@ from std.testing import assert_true
 
 def do_prefetch[
     dtype: DType, *, offset: Int = 0
-](addr: UnsafePointer[Scalar[dtype], ImmutAnyOrigin]):
+](addr: ImmPointer[Scalar[dtype], ImmutAnyOrigin]):
     prefetch(addr + offset)
 
 

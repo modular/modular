@@ -58,7 +58,7 @@ comptime llama_num_q_heads = 32
 def _initialize_ragged_inputs[
     dtype: DType, hidden_size: Int
 ](
-    input_row_offsets_host_ptr: UnsafePointer[mut=True, UInt32, _],
+    input_row_offsets_host_ptr: MutPointer[UInt32, _],
     batch_size: Int,
     prompt_lens: List[Int],
     ctx: DeviceContext,

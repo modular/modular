@@ -17,8 +17,8 @@ from std.testing import *
 
 
 def add_constant_fn(
-    output: UnsafePointer[Float32, MutAnyOrigin],
-    input: UnsafePointer[Float32, ImmutAnyOrigin],
+    output: MutPointer[Float32, MutAnyOrigin],
+    input: ImmPointer[Float32, ImmutAnyOrigin],
     constant: Float32,
     len_dev: Int32,
 ):

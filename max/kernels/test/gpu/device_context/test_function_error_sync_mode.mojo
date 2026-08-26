@@ -16,7 +16,7 @@ from std.memory import OwnedPointer
 from std.testing import *
 
 
-def kernel(res: UnsafePointer[UInt32, MutAnyOrigin]):
+def kernel(res: MutPointer[UInt32, MutAnyOrigin]):
     res[] = 0
 
 

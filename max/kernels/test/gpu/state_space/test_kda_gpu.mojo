@@ -48,8 +48,8 @@ from kda.reference import kda_decode_ref
 
 
 def _rmse_f32(
-    a: UnsafePointer[Scalar[DType.float32], MutUntrackedOrigin],
-    b: UnsafePointer[Scalar[DType.float32], MutUntrackedOrigin],
+    a: MutPointer[Scalar[DType.float32], MutUntrackedOrigin],
+    b: MutPointer[Scalar[DType.float32], MutUntrackedOrigin],
     n: Int,
 ) -> Float64:
     var s = Float64(0.0)
@@ -60,8 +60,8 @@ def _rmse_f32(
 
 
 def _rel_err_ptr(
-    gold: UnsafePointer[Scalar[DType.float32], MutUntrackedOrigin],
-    cand: UnsafePointer[Scalar[DType.float32], MutUntrackedOrigin],
+    gold: MutPointer[Scalar[DType.float32], MutUntrackedOrigin],
+    cand: MutPointer[Scalar[DType.float32], MutUntrackedOrigin],
     n: Int,
 ) -> Float64:
     """RMSE(gold - cand) / RMSE(gold)."""
@@ -98,19 +98,19 @@ def _run_gpu[
     total_T: Int,
     seq_lengths: List[Int],
     # Host input pointers (float32 for gate/a_log/dt_bias; qkv_dtype for q/k/v)
-    q_h: UnsafePointer[Scalar[qkv_dtype], MutUntrackedOrigin],
-    k_h: UnsafePointer[Scalar[qkv_dtype], MutUntrackedOrigin],
-    v_h: UnsafePointer[Scalar[qkv_dtype], MutUntrackedOrigin],
-    rg_h: UnsafePointer[Scalar[DType.float32], MutUntrackedOrigin],
-    bl_h: UnsafePointer[Scalar[DType.float32], MutUntrackedOrigin],
-    al_h: UnsafePointer[Scalar[DType.float32], MutUntrackedOrigin],
-    dt_h: UnsafePointer[Scalar[DType.float32], MutUntrackedOrigin],
+    q_h: MutPointer[Scalar[qkv_dtype], MutUntrackedOrigin],
+    k_h: MutPointer[Scalar[qkv_dtype], MutUntrackedOrigin],
+    v_h: MutPointer[Scalar[qkv_dtype], MutUntrackedOrigin],
+    rg_h: MutPointer[Scalar[DType.float32], MutUntrackedOrigin],
+    bl_h: MutPointer[Scalar[DType.float32], MutUntrackedOrigin],
+    al_h: MutPointer[Scalar[DType.float32], MutUntrackedOrigin],
+    dt_h: MutPointer[Scalar[DType.float32], MutUntrackedOrigin],
     # Initial state (float32 always, cast to state_dtype on device)
-    state_h: UnsafePointer[Scalar[DType.float32], MutUntrackedOrigin],
+    state_h: MutPointer[Scalar[DType.float32], MutUntrackedOrigin],
     ctx: DeviceContext,
 ) raises -> Tuple[
-    UnsafePointer[Scalar[DType.float32], MutUntrackedOrigin],
-    UnsafePointer[Scalar[DType.float32], MutUntrackedOrigin],
+    MutPointer[Scalar[DType.float32], MutUntrackedOrigin],
+    MutPointer[Scalar[DType.float32], MutUntrackedOrigin],
 ]:
     """Launch GPU kernel and return (output_host_fp32, state_host_fp32) pointers.
 
@@ -1317,20 +1317,20 @@ def _run_gpu_checkpoint[
     num_slots: Int,
     seq_len: Int,
     # Host inputs for a single sequence of length seq_len (batch_size=1, HV=H=1).
-    q_h: UnsafePointer[Scalar[qkv_dtype], MutUntrackedOrigin],
-    k_h: UnsafePointer[Scalar[qkv_dtype], MutUntrackedOrigin],
-    v_h: UnsafePointer[Scalar[qkv_dtype], MutUntrackedOrigin],
-    rg_h: UnsafePointer[Scalar[DType.float32], MutUntrackedOrigin],
-    bl_h: UnsafePointer[Scalar[DType.float32], MutUntrackedOrigin],
-    al_h: UnsafePointer[Scalar[DType.float32], MutUntrackedOrigin],
-    dt_h: UnsafePointer[Scalar[DType.float32], MutUntrackedOrigin],
+    q_h: MutPointer[Scalar[qkv_dtype], MutUntrackedOrigin],
+    k_h: MutPointer[Scalar[qkv_dtype], MutUntrackedOrigin],
+    v_h: MutPointer[Scalar[qkv_dtype], MutUntrackedOrigin],
+    rg_h: MutPointer[Scalar[DType.float32], MutUntrackedOrigin],
+    bl_h: MutPointer[Scalar[DType.float32], MutUntrackedOrigin],
+    al_h: MutPointer[Scalar[DType.float32], MutUntrackedOrigin],
+    dt_h: MutPointer[Scalar[DType.float32], MutUntrackedOrigin],
     # Committed initial state S0 (float32), laid out for the target layout, one
     # slot; seeds committed column 0. Checkpoint slots are zero-seeded.
-    committed_state_h: UnsafePointer[Scalar[DType.float32], MutUntrackedOrigin],
+    committed_state_h: MutPointer[Scalar[DType.float32], MutUntrackedOrigin],
     ctx: DeviceContext,
 ) raises -> Tuple[
-    UnsafePointer[Scalar[DType.float32], MutUntrackedOrigin],
-    UnsafePointer[Scalar[DType.float32], MutUntrackedOrigin],
+    MutPointer[Scalar[DType.float32], MutUntrackedOrigin],
+    MutPointer[Scalar[DType.float32], MutUntrackedOrigin],
 ]:
     """Launch checkpoint-mode kernel; return (output_fp32, full_pool_fp32).
 

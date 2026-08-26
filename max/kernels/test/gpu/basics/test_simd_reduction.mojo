@@ -48,8 +48,8 @@ def test_simd_reduction(ctx: DeviceContext) raises:
     ctx.enqueue_copy(input_buffer, input_host)
 
     def kernel(
-        output: UnsafePointer[Int, MutAnyOrigin],
-        input: UnsafePointer[Int, ImmutAnyOrigin],
+        output: MutPointer[Int, MutAnyOrigin],
+        input: ImmPointer[Int, ImmutAnyOrigin],
     ):
         output[global_idx.x] = input.load[width=simd_width](
             simd_width * global_idx.x

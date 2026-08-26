@@ -26,16 +26,16 @@ from std.testing import assert_equal
 
 
 def copy_via_shared(
-    src: UnsafePointer[Float32, ImmutAnyOrigin],
-    dst: UnsafePointer[Float32, MutAnyOrigin],
+    src: ImmPointer[Float32, ImmutAnyOrigin],
+    dst: MutPointer[Float32, MutAnyOrigin],
 ):
     var thread_id = thread_idx.x
-    var mem_buff: UnsafePointer[
+    var mem_buff: MutPointer[
         Float32, MutAnyOrigin, address_space=.SHARED
     ] = unsafe_stack_allocation[
         16, Float32, address_space=.SHARED
     ]().as_unsafe_any_origin()
-    var src_global: UnsafePointer[
+    var src_global: ImmPointer[
         Float32, ImmutAnyOrigin, address_space=.GLOBAL
     ] = src.address_space_cast[.GLOBAL]()
 
@@ -85,8 +85,8 @@ def run_copy_via_shared(ctx: DeviceContext) raises:
 
 
 def copy_with_src_size(
-    src: UnsafePointer[Float32, ImmutAnyOrigin],
-    dst: UnsafePointer[Float32, MutAnyOrigin],
+    src: ImmPointer[Float32, ImmutAnyOrigin],
+    dst: MutPointer[Float32, MutAnyOrigin],
     src_size_dev: Int32,
 ):
     # `Int` is not device-passable; widen the fixed-width arg.
@@ -118,8 +118,8 @@ def copy_with_src_size(
 def copy_with_non_zero_fill[
     smem_size: Int
 ](
-    src: UnsafePointer[BFloat16, ImmutAnyOrigin],
-    dst: UnsafePointer[BFloat16, MutAnyOrigin],
+    src: ImmPointer[BFloat16, ImmutAnyOrigin],
+    dst: MutPointer[BFloat16, MutAnyOrigin],
 ):
     var smem = unsafe_stack_allocation[
         smem_size, DType.bfloat16, address_space=.SHARED

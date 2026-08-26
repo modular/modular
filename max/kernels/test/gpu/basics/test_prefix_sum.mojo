@@ -27,8 +27,8 @@ def warp_prefix_sum_kernel[
     dtype: DType,
     exclusive: Bool,
 ](
-    output: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    input: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
+    output: MutPointer[Scalar[dtype], MutAnyOrigin],
+    input: ImmPointer[Scalar[dtype], ImmutAnyOrigin],
     size_dev: Int32,
 ):
     var size = Int(size_dev)
@@ -88,8 +88,8 @@ def block_prefix_sum_kernel[
     block_size: Int,
     exclusive: Bool,
 ](
-    output: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    input: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
+    output: MutPointer[Scalar[dtype], MutAnyOrigin],
+    input: ImmPointer[Scalar[dtype], ImmutAnyOrigin],
     size_dev: Int32,
 ):
     var size = Int(size_dev)

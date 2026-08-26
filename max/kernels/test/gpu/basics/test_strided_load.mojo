@@ -20,8 +20,8 @@ from std.testing import assert_true
 def strided_load_kernel[
     *, dtype: DType = .uint32, width: SIMDLength = 1
 ](
-    output: UnsafePointer[SIMD[dtype, width], MutAnyOrigin],
-    ptr: UnsafePointer[Scalar[dtype], ImmutAnyOrigin, address_space=.GENERIC],
+    output: MutPointer[SIMD[dtype, width], MutAnyOrigin],
+    ptr: ImmPointer[Scalar[dtype], ImmutAnyOrigin, address_space=.GENERIC],
     stride: Int,
 ):
     output[] = strided_load[width](ptr, stride)

@@ -29,9 +29,9 @@ comptime TILE_SZ_RATIO = TILE_SZ_A // TILE_SZ_B
 
 
 def matmul(
-    a_ptr: UnsafePointer[Int, MutAnyOrigin],
-    b_ptr: UnsafePointer[Int, MutAnyOrigin],
-    c_ptr: UnsafePointer[Int, MutAnyOrigin],
+    a_ptr: MutPointer[Int, MutAnyOrigin],
+    b_ptr: MutPointer[Int, MutAnyOrigin],
+    c_ptr: MutPointer[Int, MutAnyOrigin],
     m_dev: Int32,
     n_dev: Int32,
     k_dev: Int32,

@@ -25,9 +25,9 @@ def semaphore_vector_reduce[
     N: Int,
     num_parts: Int,
 ](
-    c_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    a_ptr: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    locks: UnsafePointer[Int32, MutAnyOrigin],
+    c_ptr: MutPointer[Scalar[dtype], MutAnyOrigin],
+    a_ptr: ImmPointer[Scalar[dtype], ImmutAnyOrigin],
+    locks: MutPointer[Int32, MutAnyOrigin],
 ):
     var tid = thread_idx.x
     var block_idx = block_idx.x
@@ -107,9 +107,9 @@ def run_vector_reduction[
 def semaphore_matrix_reduce[
     dtype: DType, M: Int, N: Int, num_parts: Int
 ](
-    c_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    a_ptr: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    locks: UnsafePointer[Int32, MutAnyOrigin],
+    c_ptr: MutPointer[Scalar[dtype], MutAnyOrigin],
+    a_ptr: ImmPointer[Scalar[dtype], ImmutAnyOrigin],
+    locks: MutPointer[Int32, MutAnyOrigin],
 ):
     var tid = thread_idx.x
     var block_idx = block_idx.x

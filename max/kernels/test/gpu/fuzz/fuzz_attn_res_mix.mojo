@@ -199,8 +199,8 @@ def gen_specs(n: Int) -> List[CaseSpec]:
 def _producer_kernel[
     dtype: DType
 ](
-    dst: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    src: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
+    dst: MutPointer[Scalar[dtype], MutAnyOrigin],
+    src: ImmPointer[Scalar[dtype], ImmutAnyOrigin],
     n: Int32,
 ):
     """Stand-in for the real graph's `concat`: a GPU grid that writes the exact

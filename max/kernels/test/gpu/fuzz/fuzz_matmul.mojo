@@ -55,9 +55,9 @@ comptime budget = get_defined_int["budget", 16]()
 
 
 def naive_matmul_ref_kernel(
-    c: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    a: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    b: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    c: MutPointer[Scalar[dtype], MutAnyOrigin],
+    a: MutPointer[Scalar[dtype], MutAnyOrigin],
+    b: MutPointer[Scalar[dtype], MutAnyOrigin],
     m_dev: Int32,
     n_dev: Int32,
     k_dev: Int32,

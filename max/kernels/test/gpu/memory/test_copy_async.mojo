@@ -21,12 +21,12 @@ from std.testing import assert_true
 
 
 def test_mbarrier(
-    addr0: UnsafePointer[Int8, MutAnyOrigin],
-    addr1: UnsafePointer[UInt8, MutAnyOrigin],
-    addr2: UnsafePointer[Float32, MutAnyOrigin, address_space=.GLOBAL],
-    addr3: UnsafePointer[Float32, MutAnyOrigin, address_space=.SHARED],
-    addr4: UnsafePointer[Float64, MutAnyOrigin, address_space=.GLOBAL],
-    addr5: UnsafePointer[Float64, MutAnyOrigin, address_space=.SHARED],
+    addr0: MutPointer[Int8, MutAnyOrigin],
+    addr1: MutPointer[UInt8, MutAnyOrigin],
+    addr2: MutPointer[Float32, MutAnyOrigin, address_space=.GLOBAL],
+    addr3: MutPointer[Float32, MutAnyOrigin, address_space=.SHARED],
+    addr4: MutPointer[Float64, MutAnyOrigin, address_space=.GLOBAL],
+    addr5: MutPointer[Float64, MutAnyOrigin, address_space=.SHARED],
 ):
     async_copy_arrive(addr0)
     async_copy_arrive(addr1)
@@ -56,7 +56,7 @@ def test_mbarrier_sm90() raises:
 
 
 def test_mbarrier_init(
-    shared_mem: UnsafePointer[Int32, MutAnyOrigin, address_space=.SHARED],
+    shared_mem: MutPointer[Int32, MutAnyOrigin, address_space=.SHARED],
 ):
     mbarrier_init(shared_mem, 4)
 
@@ -83,7 +83,7 @@ def test_mbarrier_init_sm90() raises:
 
 
 def test_mbarrier_test_wait(
-    shared_mem: UnsafePointer[Int32, MutAnyOrigin, address_space=.SHARED],
+    shared_mem: MutPointer[Int32, MutAnyOrigin, address_space=.SHARED],
     state: Int,
 ):
     var done = False
@@ -112,7 +112,7 @@ def test_mbarrier_test_wait_sm90() raises:
 
 
 def test_async_copy(
-    src: UnsafePointer[Float32, ImmutAnyOrigin, address_space=.GLOBAL]
+    src: ImmPointer[Float32, ImmutAnyOrigin, address_space=.GLOBAL]
 ):
     var shared_mem = unsafe_stack_allocation[
         4, DType.float32, address_space=.SHARED
@@ -141,7 +141,7 @@ def test_async_copy_sm90() raises:
 
 
 def test_async_copy_l2_prefetch(
-    src: UnsafePointer[Float32, ImmutAnyOrigin, address_space=.GLOBAL]
+    src: ImmPointer[Float32, ImmutAnyOrigin, address_space=.GLOBAL]
 ):
     var shared_mem = unsafe_stack_allocation[
         4, DType.float32, address_space=.SHARED
@@ -172,7 +172,7 @@ def test_async_copy_l2_prefetch_sm90() raises:
 
 
 def test_async_copy_with_zero_fill_kernel(
-    src: UnsafePointer[Float32, ImmutAnyOrigin, address_space=.GLOBAL]
+    src: ImmPointer[Float32, ImmutAnyOrigin, address_space=.GLOBAL]
 ):
     var shared_mem = unsafe_stack_allocation[
         4, DType.float32, address_space=.SHARED
@@ -240,7 +240,7 @@ def test_async_copy_with_zero_fill() raises:
 
 
 def test_async_copy_with_eviction(
-    src: UnsafePointer[Float32, ImmutAnyOrigin, address_space=.GLOBAL]
+    src: ImmPointer[Float32, ImmutAnyOrigin, address_space=.GLOBAL]
 ):
     print("test_async_copy_with_eviction")
     var shared_mem = unsafe_stack_allocation[
@@ -252,7 +252,7 @@ def test_async_copy_with_eviction(
 
 
 def async_copy_with_non_zero_fill_kernel(
-    src: UnsafePointer[Int32, ImmutAnyOrigin, address_space=.GLOBAL]
+    src: ImmPointer[Int32, ImmutAnyOrigin, address_space=.GLOBAL]
 ):
     var shared_mem = unsafe_stack_allocation[
         4, DType.int32, address_space=.SHARED

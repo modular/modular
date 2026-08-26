@@ -28,7 +28,7 @@ struct Buffer[capacity: Int](Defaultable, Writer):
         self.pos = 0
 
     def write_string(mut self, string: StringSlice):
-        var data_ptr: UnsafePointer[
+        var data_ptr: Pointer[
             UInt8, origin_of(self.data)
         ] = self.data.unsafe_ptr()
         for i, byte in enumerate(string.bytes()):

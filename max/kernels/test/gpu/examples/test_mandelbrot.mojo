@@ -57,7 +57,7 @@ def mandelbrot_kernel[
     return iters
 
 
-def mandelbrot(out_ptr: UnsafePointer[Scalar[int_type], MutAnyOrigin]):
+def mandelbrot(out_ptr: MutPointer[Scalar[int_type], MutAnyOrigin]):
     # Each task gets a row.
     var row = global_idx.x
     if row >= height:

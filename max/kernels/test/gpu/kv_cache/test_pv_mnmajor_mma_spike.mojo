@@ -193,7 +193,7 @@ def pv_mma_kernel[
     ]()
 
     var p_smem = rebind[
-        UnsafePointer[
+        MutPointer[
             Scalar[ab_type], address_space=.SHARED, UntrackedOrigin[mut=True]
         ]
     ](

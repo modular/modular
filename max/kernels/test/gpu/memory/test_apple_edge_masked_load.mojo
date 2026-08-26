@@ -33,8 +33,8 @@ comptime OUT_COLS = 4
 
 
 def _gmem_kernel(
-    in_ptr: UnsafePointer[BFloat16, MutAnyOrigin],
-    out_ptr: UnsafePointer[BFloat16, MutAnyOrigin],
+    in_ptr: MutPointer[BFloat16, MutAnyOrigin],
+    out_ptr: MutPointer[BFloat16, MutAnyOrigin],
 ):
     var lane = Int(thread_idx.x)
     var base = lane * IN_COLS
@@ -44,8 +44,8 @@ def _gmem_kernel(
 
 
 def _general_kernel(
-    in_ptr: UnsafePointer[BFloat16, MutAnyOrigin],
-    out_ptr: UnsafePointer[BFloat16, MutAnyOrigin],
+    in_ptr: MutPointer[BFloat16, MutAnyOrigin],
+    out_ptr: MutPointer[BFloat16, MutAnyOrigin],
 ):
     var lane = Int(thread_idx.x)
     var base = lane * IN_COLS

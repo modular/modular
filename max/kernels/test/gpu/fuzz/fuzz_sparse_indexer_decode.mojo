@@ -227,8 +227,8 @@ def _fill_stable[
 
 
 def _host_block_score(
-    q: UnsafePointer[mut=False, Scalar[kv_type], _],
-    k: UnsafePointer[mut=False, Scalar[kv_type], _],
+    q: ImmPointer[Scalar[kv_type], _],
+    k: ImmPointer[Scalar[kv_type], _],
     b: Int,
     h: Int,
     blk: Int,
@@ -342,13 +342,11 @@ def run_one_case(
 
     # Ragged index-K operand: [total_keys, 1, idx_head_dim].
     var k_buf = TileTensor(
-        rebind[UnsafePointer[Scalar[kv_type], ImmutAnyOrigin]](
-            k_dev.unsafe_ptr()
-        ),
+        rebind[ImmPointer[Scalar[kv_type], ImmutAnyOrigin]](k_dev.unsafe_ptr()),
         row_major((total_keys, Idx[1], Idx[idx_head_dim])),
     )
     var cro_buf = TileTensor(
-        rebind[UnsafePointer[UInt32, ImmutAnyOrigin]](cro_dev.unsafe_ptr()),
+        rebind[ImmPointer[UInt32, ImmutAnyOrigin]](cro_dev.unsafe_ptr()),
         row_major((batch + 1,)),
     )
     var k_operand = RaggedMHAOperand(k_buf, cro_buf)
@@ -587,8 +585,8 @@ def _close(got: Float32, expect: Float32) -> Bool:
 
 
 def _check_topk_invariant(
-    q_hp: UnsafePointer[mut=False, Scalar[kv_type], _],
-    k_hp: UnsafePointer[mut=False, Scalar[kv_type], _],
+    q_hp: ImmPointer[Scalar[kv_type], _],
+    k_hp: ImmPointer[Scalar[kv_type], _],
     b: Int,
     h: Int,
     off_b: Int,
@@ -630,7 +628,7 @@ def _check_topk_invariant(
 
 def _apply_inject(
     inject: Int,
-    out_host: UnsafePointer[mut=True, Scalar[out_idx_type], _],
+    out_host: MutPointer[Scalar[out_idx_type], _],
     max_num_blocks: Int,
 ):
     """Corrupt out_idxs[0] to prove an oracle can FAIL (positive control)."""

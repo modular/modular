@@ -25,7 +25,7 @@ def load_value[
     prefetch_size: Optional[Int] = None,
     cache_policy: CacheOperation = CacheOperation.ALWAYS,
     eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
-](ptr: UnsafePointer[Scalar[dtype], ImmutAnyOrigin]) -> SIMD[dtype, width]:
+](ptr: ImmPointer[Scalar[dtype], ImmutAnyOrigin]) -> SIMD[dtype, width]:
     return load[
         width=width,
         read_only=read_only,

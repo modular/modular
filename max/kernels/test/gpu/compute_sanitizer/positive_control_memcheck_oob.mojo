@@ -31,7 +31,7 @@ from std.gpu import thread_idx
 from max.gpu.host import DeviceContext
 
 
-def oob_global_write(dst: UnsafePointer[Float32, MutAnyOrigin], n_dev: Int32):
+def oob_global_write(dst: MutPointer[Float32, MutAnyOrigin], n_dev: Int32):
     # `Int` is not device-passable; widen the fixed-width arg.
     var n = Int(n_dev)
     var thread_id = Int(thread_idx.x)

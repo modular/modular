@@ -31,9 +31,9 @@ from std.utils.numerics import isnan
 
 # TF32 Tensor core Matmul with shape m16n8k8
 def mma_kernel_fp32_tf32(
-    c_ptr: UnsafePointer[Float32, MutAnyOrigin],
-    a_ptr: UnsafePointer[Float32, ImmutAnyOrigin],
-    b_ptr: UnsafePointer[Float32, ImmutAnyOrigin],
+    c_ptr: MutPointer[Float32, MutAnyOrigin],
+    a_ptr: ImmPointer[Float32, ImmutAnyOrigin],
+    b_ptr: ImmPointer[Float32, ImmutAnyOrigin],
     m_dev: Int32,
     n_dev: Int32,
     k_dev: Int32,
@@ -71,9 +71,9 @@ def mma_kernel_fp32_tf32(
 
 # FP32-BF16 (mixed precision) Tensor core Matmul with shape m16n8k8
 def mma_kernel_fp32_bf16(
-    c_ptr: UnsafePointer[Float32, MutAnyOrigin],
-    a_ptr: UnsafePointer[BFloat16, ImmutAnyOrigin],
-    b_ptr: UnsafePointer[BFloat16, ImmutAnyOrigin],
+    c_ptr: MutPointer[Float32, MutAnyOrigin],
+    a_ptr: ImmPointer[BFloat16, ImmutAnyOrigin],
+    b_ptr: ImmPointer[BFloat16, ImmutAnyOrigin],
     m_dev: Int32,
     n_dev: Int32,
     k_dev: Int32,
@@ -111,9 +111,9 @@ def mma_kernel_fp32_bf16(
 
 # FP32-BF16 (mixed precision) Tensor core Matmul with shape m16n8k16
 def mma_kernel_fp32_bf16_2(
-    c_ptr: UnsafePointer[Float32, MutAnyOrigin],
-    a_ptr: UnsafePointer[BFloat16, ImmutAnyOrigin],
-    b_ptr: UnsafePointer[BFloat16, ImmutAnyOrigin],
+    c_ptr: MutPointer[Float32, MutAnyOrigin],
+    a_ptr: ImmPointer[BFloat16, ImmutAnyOrigin],
+    b_ptr: ImmPointer[BFloat16, ImmutAnyOrigin],
     m_dev: Int32,
     n_dev: Int32,
     k_dev: Int32,
@@ -151,9 +151,9 @@ def mma_kernel_fp32_bf16_2(
 
 # FP32-FP16 (mixed precision) Tensor core Matmul with shape m16n8k8
 def mma_kernel_fp32_fp16(
-    c_ptr: UnsafePointer[Float32, MutAnyOrigin],
-    a_ptr: UnsafePointer[Float16, ImmutAnyOrigin],
-    b_ptr: UnsafePointer[Float16, ImmutAnyOrigin],
+    c_ptr: MutPointer[Float32, MutAnyOrigin],
+    a_ptr: ImmPointer[Float16, ImmutAnyOrigin],
+    b_ptr: ImmPointer[Float16, ImmutAnyOrigin],
     m_dev: Int32,
     n_dev: Int32,
     k_dev: Int32,
@@ -191,9 +191,9 @@ def mma_kernel_fp32_fp16(
 
 # FP16 Tensor core Matmul with shape m16n8k8
 def mma_kernel_fp16_fp16(
-    c_ptr: UnsafePointer[Float16, MutAnyOrigin],
-    a_ptr: UnsafePointer[Float16, ImmutAnyOrigin],
-    b_ptr: UnsafePointer[Float16, ImmutAnyOrigin],
+    c_ptr: MutPointer[Float16, MutAnyOrigin],
+    a_ptr: ImmPointer[Float16, ImmutAnyOrigin],
+    b_ptr: ImmPointer[Float16, ImmutAnyOrigin],
     m_dev: Int32,
     n_dev: Int32,
     k_dev: Int32,
@@ -316,13 +316,13 @@ def run_mma_fp32_tf32(
         row_major(Coord(M, N)),
     )
     var a_tt = TileTensor(
-        UnsafePointer[Float32, ImmutAnyOrigin](
+        ImmPointer[Float32, ImmutAnyOrigin](
             unsafe_from_address=Int(a_device_ref.unsafe_ptr())
         ),
         row_major(Coord(M, K)),
     )
     var b_tt = TileTensor(
-        UnsafePointer[Float32, ImmutAnyOrigin](
+        ImmPointer[Float32, ImmutAnyOrigin](
             unsafe_from_address=Int(b_device_ref.unsafe_ptr())
         ),
         row_major(Coord(K, N)),
@@ -482,13 +482,13 @@ def run_mma_fp32_bf16(
         row_major(Coord(M, N)),
     )
     var a_tt = TileTensor(
-        UnsafePointer[Float32, ImmutAnyOrigin](
+        ImmPointer[Float32, ImmutAnyOrigin](
             unsafe_from_address=Int(a_device_ref.unsafe_ptr())
         ),
         row_major(Coord(M, K)),
     )
     var b_tt = TileTensor(
-        UnsafePointer[Float32, ImmutAnyOrigin](
+        ImmPointer[Float32, ImmutAnyOrigin](
             unsafe_from_address=Int(b_device_ref.unsafe_ptr())
         ),
         row_major(Coord(K, N)),
@@ -647,13 +647,13 @@ def run_mma_fp32_bf16_2(
         row_major(Coord(M, N)),
     )
     var a_tt = TileTensor(
-        UnsafePointer[Float32, ImmutAnyOrigin](
+        ImmPointer[Float32, ImmutAnyOrigin](
             unsafe_from_address=Int(a_device_ref.unsafe_ptr())
         ),
         row_major(Coord(M, K)),
     )
     var b_tt = TileTensor(
-        UnsafePointer[Float32, ImmutAnyOrigin](
+        ImmPointer[Float32, ImmutAnyOrigin](
             unsafe_from_address=Int(b_device_ref.unsafe_ptr())
         ),
         row_major(Coord(K, N)),
@@ -812,13 +812,13 @@ def run_mma_fp32_fp16(
         row_major(Coord(M, N)),
     )
     var a_tt = TileTensor(
-        UnsafePointer[Float32, ImmutAnyOrigin](
+        ImmPointer[Float32, ImmutAnyOrigin](
             unsafe_from_address=Int(a_device_ref.unsafe_ptr())
         ),
         row_major(Coord(M, K)),
     )
     var b_tt = TileTensor(
-        UnsafePointer[Float32, ImmutAnyOrigin](
+        ImmPointer[Float32, ImmutAnyOrigin](
             unsafe_from_address=Int(b_device_ref.unsafe_ptr())
         ),
         row_major(Coord(K, N)),
@@ -977,13 +977,13 @@ def run_mma_fp16_fp16(
         row_major(Coord(M, N)),
     )
     var a_tt = TileTensor(
-        UnsafePointer[Float32, ImmutAnyOrigin](
+        ImmPointer[Float32, ImmutAnyOrigin](
             unsafe_from_address=Int(a_device_ref.unsafe_ptr())
         ),
         row_major(Coord(M, K)),
     )
     var b_tt = TileTensor(
-        UnsafePointer[Float32, ImmutAnyOrigin](
+        ImmPointer[Float32, ImmutAnyOrigin](
             unsafe_from_address=Int(b_device_ref.unsafe_ptr())
         ),
         row_major(Coord(K, N)),

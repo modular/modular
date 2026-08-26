@@ -48,7 +48,7 @@ from std.utils import IndexList
 
 def compute_hash[
     type: DType
-](ptr: UnsafePointer[Scalar[type], _], size: Int) -> UInt64:
+](ptr: Pointer[Scalar[type], _], size: Int) -> UInt64:
     var h: UInt64 = 14695981039346656037
     for i in range(size):
         var val = ptr[i].cast[.float32]()

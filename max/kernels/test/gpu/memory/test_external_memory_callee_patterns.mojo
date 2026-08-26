@@ -33,7 +33,7 @@ comptime EXPECTED_SUM = BLOCK_SIZE * (BLOCK_SIZE - 1) // 2
 
 @no_inline
 def _callee_fill_and_reduce(
-    data: UnsafePointer[Float32, MutAnyOrigin], local_idx: Int, blk_idx: Int
+    data: MutPointer[Float32, MutAnyOrigin], local_idx: Int, blk_idx: Int
 ):
     """Each thread writes its index into shared memory; thread 0 reduces to sum.
     """
@@ -56,7 +56,7 @@ def test_external_memory_in_callee(ctx: DeviceContext) raises:
     """Verify that external_memory used only in a callee works correctly."""
     print("== test_external_memory_in_callee")
 
-    def callee_kernel(data: UnsafePointer[Float32, MutAnyOrigin]):
+    def callee_kernel(data: MutPointer[Float32, MutAnyOrigin]):
         # Kernel itself does NOT call external_memory; the callee does.
         _callee_fill_and_reduce(data, thread_idx.x, block_idx.x)
 
@@ -94,7 +94,7 @@ def test_external_memory_in_callee(ctx: DeviceContext) raises:
 
 @no_inline
 def _deep_baz(
-    data: UnsafePointer[Float32, MutAnyOrigin], local_idx: Int, blk_idx: Int
+    data: MutPointer[Float32, MutAnyOrigin], local_idx: Int, blk_idx: Int
 ):
     """Innermost callee — owns the external_memory reference."""
     var smem = external_memory[
@@ -114,7 +114,7 @@ def _deep_baz(
 
 @no_inline
 def _deep_bar(
-    data: UnsafePointer[Float32, MutAnyOrigin], local_idx: Int, blk_idx: Int
+    data: MutPointer[Float32, MutAnyOrigin], local_idx: Int, blk_idx: Int
 ):
     """Pass-through callee — does NOT reference external_memory."""
     _deep_baz(data, local_idx, blk_idx)
@@ -124,7 +124,7 @@ def test_external_memory_deep_callgraph(ctx: DeviceContext) raises:
     """Verify that external_memory 2 levels below the kernel works correctly."""
     print("== test_external_memory_deep_callgraph")
 
-    def deep_kernel(data: UnsafePointer[Float32, MutAnyOrigin]):
+    def deep_kernel(data: MutPointer[Float32, MutAnyOrigin]):
         # Kernel calls _deep_bar which calls _deep_baz (the only ext_memory user).
         _deep_bar(data, thread_idx.x, block_idx.x)
 

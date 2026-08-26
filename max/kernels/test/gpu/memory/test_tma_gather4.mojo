@@ -89,7 +89,7 @@ def gather4_raw_smoke_kernel[
     dtype: DType, row_width: Int
 ](
     descriptor: TMADescriptor,
-    d_out: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    d_out: MutPointer[Scalar[dtype], MutAnyOrigin],
     row0: Int32,
     row1: Int32,
     row2: Int32,
@@ -103,7 +103,7 @@ def gather4_raw_smoke_kernel[
     ]()
 
     var mbar = unsafe_stack_allocation[1, Int64, address_space=.SHARED]()
-    var descriptor_ptr = UnsafePointer(to=descriptor).bitcast[NoneType]()
+    var descriptor_ptr = Pointer(to=descriptor).bitcast[NoneType]()
     mbarrier_init(mbar, 1)
 
     if thread_idx.x == 0:
@@ -138,9 +138,9 @@ def gather4_raw_smoke_kernel[
 def _verify_gathered_rows[
     dtype: DType, row_width: Int
 ](
-    h_out: UnsafePointer[mut=False, Scalar[dtype], _],
-    h_source: UnsafePointer[mut=False, Scalar[dtype], _],
-    h_indices: UnsafePointer[mut=False, Int32, _],
+    h_out: ImmPointer[Scalar[dtype], _],
+    h_source: ImmPointer[Scalar[dtype], _],
+    h_indices: ImmPointer[Int32, _],
     num_rows: Int,
 ) raises:
     """Verifies gathered output rows match the source buffer at the expected
@@ -691,8 +691,8 @@ def gather4_kernel[
     kv_tile: TMATensorTile[
         dtype, tile_rank, tile_shape_param, desc_shape_param
     ],
-    d_out: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    d_indices: UnsafePointer[Int32, MutAnyOrigin],
+    d_out: MutPointer[Scalar[dtype], MutAnyOrigin],
+    d_indices: MutPointer[Int32, MutAnyOrigin],
     num_tiles: Int32,
 ):
     """While-loop gather4 loader using the level 3 TMATensorTile API.
@@ -722,7 +722,7 @@ def gather4_kernel[
 
     if thread_idx.x == 0:
         mbar[0].init(1)
-        var desc_ptr = UnsafePointer(to=kv_tile.descriptor).bitcast[NoneType]()
+        var desc_ptr = Pointer(to=kv_tile.descriptor).bitcast[NoneType]()
         prefetch_tma_descriptor(desc_ptr)
     barrier()
 
@@ -1444,8 +1444,8 @@ def gather4_tile_api_kernel[
     desc_shape: IndexList[tile_rank],
 ](
     g4t_tma: TMATensorTile[dtype, tile_rank, tile_shape, desc_shape],
-    d_indices: UnsafePointer[Int32, MutAnyOrigin],
-    output: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    d_indices: MutPointer[Int32, MutAnyOrigin],
+    output: MutPointer[Scalar[dtype], MutAnyOrigin],
 ):
     """Loads bn rows via async_copy_gather4_tile, then copies SMEM to
     global output for verification."""

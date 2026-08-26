@@ -41,7 +41,7 @@ from layout import TileTensor, row_major
 
 # Derived from https://docs.nvidia.com/cuda/cuda-c-programming-guide/#kernel-example-vector-scalar-multiplication
 def cluster_launch_control(
-    data: UnsafePointer[Float32, MutAnyOrigin], n_dev: Int32
+    data: MutPointer[Float32, MutAnyOrigin], n_dev: Int32
 ):
     # `Int` is not device-passable; widen the fixed-width arg.
     var n = Int(n_dev)

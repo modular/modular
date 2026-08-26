@@ -19,7 +19,7 @@ from std.testing import assert_equal
 
 
 def kernel(
-    output: UnsafePointer[Float32, MutAnyOrigin],
+    output: MutPointer[Float32, MutAnyOrigin],
     size_dev: Int32,
 ):
     var size = Int(size_dev)

@@ -43,8 +43,8 @@ from layout.tma_async import SharedMemBarrier
 def kernel_bulk_g2s[
     NUM_ELEMS: Int
 ](
-    src: UnsafePointer[Float32, ImmutAnyOrigin],
-    dst: UnsafePointer[Float32, MutAnyOrigin],
+    src: ImmPointer[Float32, ImmutAnyOrigin],
+    dst: MutPointer[Float32, MutAnyOrigin],
 ):
     comptime BYTES = NUM_ELEMS * size_of[Float32]()
 
@@ -111,7 +111,7 @@ def test_bulk_g2s[NUM_ELEMS: Int](ctx: DeviceContext) raises:
 
 def kernel_bulk_s2g[
     NUM_ELEMS: Int
-](dst: UnsafePointer[Float32, MutAnyOrigin],):
+](dst: MutPointer[Float32, MutAnyOrigin],):
     comptime BYTES = NUM_ELEMS * size_of[Float32]()
 
     var smem = unsafe_stack_allocation[
@@ -159,7 +159,7 @@ def test_bulk_s2g[NUM_ELEMS: Int](ctx: DeviceContext) raises:
 
 def kernel_bulk_reduce_s2g[
     NUM_ELEMS: Int
-](dst: UnsafePointer[Float32, MutAnyOrigin],):
+](dst: MutPointer[Float32, MutAnyOrigin],):
     comptime BYTES = NUM_ELEMS * size_of[Float32]()
 
     var smem = unsafe_stack_allocation[

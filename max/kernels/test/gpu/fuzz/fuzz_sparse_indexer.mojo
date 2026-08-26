@@ -255,10 +255,10 @@ def _select_test_kernel[
     var row = block_idx.x
     var s_lt = scores.to_layout_tensor()
     var o_lt = out_idxs.to_layout_tensor()
-    var scores_row = rebind[UnsafePointer[Scalar[score_type], MutAnyOrigin]](
+    var scores_row = rebind[MutPointer[Scalar[score_type], MutAnyOrigin]](
         s_lt.ptr_at_offset(Index(row, 0))
     )
-    var out_row = rebind[UnsafePointer[Scalar[out_idx_type], MutAnyOrigin]](
+    var out_row = rebind[MutPointer[Scalar[out_idx_type], MutAnyOrigin]](
         o_lt.ptr_at_offset(Index(row, 0))
     )
     block_select_topk[score_type, out_idx_type](
@@ -272,7 +272,7 @@ def _select_test_kernel[
 
 
 def _fill_scores(
-    scores_host: UnsafePointer[mut=True, Scalar[score_type], _],
+    scores_host: MutPointer[Scalar[score_type], _],
     num_rows: Int,
     num_blocks: Int,
     k: Int,
@@ -574,8 +574,8 @@ def run_schedule_case(ctx: DeviceContext, spec: CaseSpec, repeats: Int) raises:
 
 def _apply_inject(
     inject: Int,
-    out_host: UnsafePointer[mut=True, Scalar[out_idx_type], _],
-    scores_host: UnsafePointer[mut=True, Scalar[score_type], _],
+    out_host: MutPointer[Scalar[out_idx_type], _],
+    scores_host: MutPointer[Scalar[score_type], _],
     num_blocks: Int,
     k: Int,
     force_idx: Int,
@@ -607,7 +607,7 @@ def _apply_inject(
 
 
 def _check_topk_invariant(
-    scores_host: UnsafePointer[mut=True, Scalar[score_type], _],
+    scores_host: MutPointer[Scalar[score_type], _],
     base: Int,
     num_blocks: Int,
     got: Set[Int],

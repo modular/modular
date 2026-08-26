@@ -35,7 +35,7 @@ def kernel_copy_async_tma(descriptor: TMADescriptor):
         16, DType.float32, alignment=16, address_space=.SHARED
     ]()
     var mbar = unsafe_stack_allocation[1, Int64, address_space=.SHARED]()
-    var descriptor_ptr = UnsafePointer(to=descriptor).bitcast[NoneType]()
+    var descriptor_ptr = Pointer(to=descriptor).bitcast[NoneType]()
     mbarrier_init(mbar, 1)
 
     mbarrier_arrive_expect_tx_shared(mbar, 64)

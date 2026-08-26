@@ -242,7 +242,7 @@ def qk_mma_kernel[
     ]()
 
     var q_smem = rebind[
-        UnsafePointer[
+        MutPointer[
             Scalar[ab_type], address_space=.SHARED, UntrackedOrigin[mut=True]
         ]
     ](

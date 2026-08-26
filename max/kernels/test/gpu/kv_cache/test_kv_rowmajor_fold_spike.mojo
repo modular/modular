@@ -109,7 +109,7 @@ comptime _CM_NUM_ROWS = 8
 
 
 # Both descriptors are passed by value and the raw `cp.async.bulk.tensor` is
-# issued against `UnsafePointer(to=tile.descriptor)`. The TMA hardware requires
+# issued against `Pointer(to=tile.descriptor)`. The TMA hardware requires
 # the descriptor to live in grid-constant memory; without `nvvm.grid_constant`
 # the by-value param is copied to the kernel's local frame and the descriptor
 # pointer faults at issue time. Every production SM100 attention kernel annotates
@@ -147,8 +147,8 @@ def _rowmajor_fold_spike_kernel[
         IndexList[3](page_size, 1, head_size),
         TensorMapSwizzle.SWIZZLE_128B,
     ],
-    mismatch_count: UnsafePointer[UInt32, MutAnyOrigin],
-    first_mismatch: UnsafePointer[UInt32, MutAnyOrigin],
+    mismatch_count: MutPointer[UInt32, MutAnyOrigin],
+    first_mismatch: MutPointer[UInt32, MutAnyOrigin],
 ):
     comptime CM = _CM_NUM_ROWS
     comptime num_chunks = head_size // gran
@@ -210,12 +210,8 @@ def _rowmajor_fold_spike_kernel[
         # Both paths land on this single barrier.
         mbar[].expect_bytes(Int32(expect_total))
 
-        var ref_desc_ptr = UnsafePointer(to=ref_tma.descriptor).bitcast[
-            NoneType
-        ]()
-        var test_desc_ptr = UnsafePointer(to=test_tma.descriptor).bitcast[
-            NoneType
-        ]()
+        var ref_desc_ptr = Pointer(to=ref_tma.descriptor).bitcast[NoneType]()
+        var test_desc_ptr = Pointer(to=test_tma.descriptor).bitcast[NoneType]()
 
         # ---- REFERENCE: one TMA per atom, landing at chunk-inner offset ------
         # gmem coord (CUDA fastest-first) for the rank-2 (head_size, BN)-like

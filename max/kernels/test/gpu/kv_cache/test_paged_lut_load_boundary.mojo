@@ -54,7 +54,7 @@ def _populate_kernel[
     num_pages: Int,
 ](
     kv: cache_t,
-    output_ptr: UnsafePointer[UInt32, MutAnyOrigin],
+    output_ptr: MutPointer[UInt32, MutAnyOrigin],
     base_kv_row: UInt32,
 ):
     """Single-thread kernel: write `populate[BN, base_alignment]` rows[] to

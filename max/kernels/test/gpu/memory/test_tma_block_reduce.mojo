@@ -93,7 +93,7 @@ def global_reduction_kernel[
     input_fn: def[width: Int, _rank: Int](
         idx: IndexList[_rank]
     ) capturing -> SIMD[dtype, width],
-](d_out: UnsafePointer[Scalar[accum_type], MutAnyOrigin], num_cols_dev: Int32,):
+](d_out: MutPointer[Scalar[accum_type], MutAnyOrigin], num_cols_dev: Int32,):
     # `Int` is not device-passable; widen the fixed-width arg.
     var num_cols = Int(num_cols_dev)
     var tid = thread_idx.x
@@ -125,8 +125,8 @@ def tma_reduction_kernel[
     descriptor: TMADescriptor,
     rows_dev: Int32,
     cols_dev: Int32,
-    d_data: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    d_out: UnsafePointer[Scalar[accum_type], MutAnyOrigin],
+    d_data: ImmPointer[Scalar[dtype], ImmutAnyOrigin],
+    d_out: MutPointer[Scalar[accum_type], MutAnyOrigin],
 ):
     # `Int` is not device-passable; widen the fixed-width args.
     var rows = Int(rows_dev)
@@ -140,7 +140,7 @@ def tma_reduction_kernel[
     # Create barrier for TMA transfer from GMEM to SMEM.
     var mbar = unsafe_stack_allocation[1, Int64, address_space=.SHARED]()
 
-    var descriptor_ptr = UnsafePointer(to=descriptor).bitcast[NoneType]()
+    var descriptor_ptr = Pointer(to=descriptor).bitcast[NoneType]()
     mbarrier_init(mbar, 1)
 
     if thread_idx.x == 0:

@@ -19,8 +19,8 @@ from std.utils.numerics import inf, isnan, nan, neg_inf
 
 
 def id(
-    input: UnsafePointer[Float32, ImmutAnyOrigin],
-    output: UnsafePointer[Float32, MutAnyOrigin],
+    input: ImmPointer[Float32, ImmutAnyOrigin],
+    output: MutPointer[Float32, MutAnyOrigin],
     len_dev: Int32,
 ):
     var len = Int(len_dev)

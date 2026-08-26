@@ -15,7 +15,6 @@ from std.gpu import thread_idx, WARP_SIZE
 from max.gpu.host import get_gpu_target
 from max.gpu.host.compile import _compile_code
 from std.math.uutils import ufloordiv
-from std.memory import UnsafePointer
 from std.sys.intrinsics import readfirstlane
 from std.testing import assert_true
 
@@ -24,7 +23,7 @@ comptime MI355X_TARGET = get_gpu_target["mi355x"]()
 
 def readfirstlane_kernel[
     dtype: DType
-](y: UnsafePointer[Scalar[dtype], MutAnyOrigin], x: Scalar[dtype]):
+](y: MutPointer[Scalar[dtype], MutAnyOrigin], x: Scalar[dtype]):
     y[0] = readfirstlane(x)
 
 
@@ -78,7 +77,7 @@ def test_readfirstlane_u64() raises:
     LLVM intrinsic (llvm.amdgcn.readfirstlane.i64)."""
 
     def readfirstlane_u64_kernel(
-        y: UnsafePointer[UInt64, MutAnyOrigin], x: UInt64
+        y: MutPointer[UInt64, MutAnyOrigin], x: UInt64
     ):
         y[0] = readfirstlane(x)
 
@@ -101,7 +100,7 @@ def test_warp_id_broadcast_single_readfirstlane() raises:
     readfirstlane for the high bits should be elided."""
 
     def warp_id_broadcast_kernel(
-        y: UnsafePointer[Int, MutAnyOrigin],
+        y: MutPointer[Int, MutAnyOrigin],
     ):
         var res = ufloordiv(thread_idx.x, WARP_SIZE)
         y[0] = readfirstlane(res)

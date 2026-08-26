@@ -82,8 +82,8 @@ def _run[
 ](
     batch: _Batch,
     one_at_a_time: Bool,
-    out_h: UnsafePointer[Scalar[DType.float32], MutUntrackedOrigin],
-    pool_h: UnsafePointer[Scalar[DType.float32], MutUntrackedOrigin],
+    out_h: MutPointer[Scalar[DType.float32], MutUntrackedOrigin],
+    pool_h: MutPointer[Scalar[DType.float32], MutUntrackedOrigin],
     ctx: DeviceContext,
 ) raises:
     """Runs the batch, writing the output and the whole post-run pool to host.

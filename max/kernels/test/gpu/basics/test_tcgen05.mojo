@@ -29,7 +29,7 @@ from std.testing import assert_true
 
 
 def alloc_test_fn[cta_group: Int32]():
-    var ptr_tmem_addr = UnsafePointer[
+    var ptr_tmem_addr = MutPointer[
         UInt32, MutAnyOrigin, address_space=.SHARED
     ].unsafe_dangling()
     var num_cols: UInt32 = 32
@@ -54,7 +54,7 @@ def test_tcgen05_alloc() raises:
 
 
 def alloc_dealloc_test_fn():
-    var ptr_tmem_addr = UnsafePointer[
+    var ptr_tmem_addr = MutPointer[
         UInt32, MutAnyOrigin, address_space=.SHARED
     ].unsafe_dangling()
     var tmem_addr: UInt32 = 0
@@ -76,7 +76,7 @@ def test_tcgen05_dealloc() raises:
 
 
 def ld_test_fn[repeat: Int]():
-    var ptr_tmem_addr = UnsafePointer[
+    var ptr_tmem_addr = MutPointer[
         UInt32, MutAnyOrigin, address_space=.SHARED
     ].unsafe_dangling()
     var num_cols: UInt32 = 32
@@ -111,7 +111,7 @@ def test_tcgen05_ld() raises:
 
 
 def st_test_fn():
-    var ptr_tmem_addr = UnsafePointer[
+    var ptr_tmem_addr = MutPointer[
         UInt32, MutAnyOrigin, address_space=.SHARED
     ].unsafe_dangling()
     var num_cols: UInt32 = 32
@@ -138,7 +138,7 @@ def test_tcgen05_st() raises:
 
 
 def cp_test_fn():
-    var ptr_tmem_addr = UnsafePointer[
+    var ptr_tmem_addr = MutPointer[
         UInt32, MutAnyOrigin, address_space=.SHARED
     ].unsafe_dangling()
     var num_cols: UInt32 = 32

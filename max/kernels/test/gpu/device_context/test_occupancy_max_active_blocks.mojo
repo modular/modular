@@ -25,8 +25,8 @@ from std.testing import assert_almost_equal, assert_equal
 
 # Kernel that uses shared memory for testing occupancy with dynamic shared memory
 def shared_memory_kernel(
-    input: UnsafePointer[Float32, ImmutAnyOrigin],
-    output: UnsafePointer[Float32, MutAnyOrigin],
+    input: ImmPointer[Float32, ImmutAnyOrigin],
+    output: MutPointer[Float32, MutAnyOrigin],
     len_dev: Int32,
 ):
     """A kernel that uses shared memory to test occupancy calculations."""
@@ -66,8 +66,8 @@ def shared_memory_kernel(
 
 # Simple kernel for testing occupancy calculations
 def occupancy_test_kernel(
-    input: UnsafePointer[Float32, ImmutAnyOrigin],
-    output: UnsafePointer[Float32, MutAnyOrigin],
+    input: ImmPointer[Float32, ImmutAnyOrigin],
+    output: MutPointer[Float32, MutAnyOrigin],
     len_dev: Int32,
 ):
     """A simple kernel for testing occupancy - just copies input to output."""

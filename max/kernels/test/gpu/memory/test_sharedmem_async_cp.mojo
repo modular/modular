@@ -20,14 +20,14 @@ from std.memory import unsafe_stack_allocation
 
 
 def copy_via_shared(
-    src: UnsafePointer[Float32, ImmutAnyOrigin],
-    dst: UnsafePointer[Float32, MutAnyOrigin],
+    src: ImmPointer[Float32, ImmutAnyOrigin],
+    dst: MutPointer[Float32, MutAnyOrigin],
 ):
     var thread_id = Int(thread_idx.x)
-    var mem_buff: UnsafePointer[
+    var mem_buff: MutPointer[
         Float32, MutAnyOrigin, address_space=.SHARED
     ] = unsafe_stack_allocation[16, Float32, address_space=.SHARED]()
-    var src_global: UnsafePointer[
+    var src_global: MutPointer[
         Float32, MutAnyOrigin, address_space=.GLOBAL
     ] = src.address_space_cast[.GLOBAL]()
 

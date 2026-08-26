@@ -26,9 +26,9 @@ from std.testing import assert_equal
 def matmul_naive[
     a_type: DType, b_type: DType, c_type: DType, //, mma_n_blocks: Int = 1
 ](
-    a: UnsafePointer[Scalar[a_type], _],
-    b: UnsafePointer[Scalar[b_type], _],
-    c: UnsafePointer[mut=True, Scalar[c_type], _],
+    a: Pointer[Scalar[a_type], _],
+    b: Pointer[Scalar[b_type], _],
+    c: MutPointer[Scalar[c_type], _],
     m: Int,
     n: Int,
     k: Int,
@@ -43,9 +43,9 @@ def matmul_naive[
 
 
 def mma_kernel_fp32_fp32(
-    a_ptr: UnsafePointer[Float32, ImmutAnyOrigin],
-    b_ptr: UnsafePointer[Float32, ImmutAnyOrigin],
-    c_ptr: UnsafePointer[Float32, MutAnyOrigin],
+    a_ptr: ImmPointer[Float32, ImmutAnyOrigin],
+    b_ptr: ImmPointer[Float32, ImmutAnyOrigin],
+    c_ptr: MutPointer[Float32, MutAnyOrigin],
     m_dev: Int32,
     n_dev: Int32,
     k_dev: Int32,
@@ -84,9 +84,9 @@ def mma_kernel_fp32_fp32(
 def mma_kernel_fp32_fp16[
     mma_n_blocks: Int
 ](
-    a_ptr: UnsafePointer[Float16, ImmutAnyOrigin],
-    b_ptr: UnsafePointer[Float16, ImmutAnyOrigin],
-    c_ptr: UnsafePointer[Float32, MutAnyOrigin],
+    a_ptr: ImmPointer[Float16, ImmutAnyOrigin],
+    b_ptr: ImmPointer[Float16, ImmutAnyOrigin],
+    c_ptr: MutPointer[Float32, MutAnyOrigin],
     m_dev: Int32,
     n_dev: Int32,
     k_dev: Int32,
@@ -125,9 +125,9 @@ def mma_kernel_fp32_fp16[
 def mma_kernel_fp32_bf16[
     mma_n_blocks: Int
 ](
-    a_ptr: UnsafePointer[BFloat16, ImmutAnyOrigin],
-    b_ptr: UnsafePointer[BFloat16, ImmutAnyOrigin],
-    c_ptr: UnsafePointer[Float32, MutAnyOrigin],
+    a_ptr: ImmPointer[BFloat16, ImmutAnyOrigin],
+    b_ptr: ImmPointer[BFloat16, ImmutAnyOrigin],
+    c_ptr: MutPointer[Float32, MutAnyOrigin],
     m_dev: Int32,
     n_dev: Int32,
     k_dev: Int32,

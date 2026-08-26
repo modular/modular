@@ -29,7 +29,7 @@ comptime size_clip = size - 5
 
 def kernel[
     dtype: DType, width: Int
-](a: UnsafePointer[Scalar[dtype], MutAnyOrigin]):
+](a: MutPointer[Scalar[dtype], MutAnyOrigin]):
     var aligned_size = align_down(size, width)
     var buffer = AMDBufferResource(a, size_clip)
     for i in range(0, aligned_size, width):
@@ -42,7 +42,7 @@ def kernel[
 
 def kernel_lds[
     dtype: DType, width: Int
-](a: UnsafePointer[Scalar[dtype], MutAnyOrigin]):
+](a: MutPointer[Scalar[dtype], MutAnyOrigin]):
     var a_shared = unsafe_stack_allocation[size, dtype, address_space=.SHARED]()
 
     var aligned_size = align_down(size, width)
@@ -63,7 +63,7 @@ def kernel_lds[
 
 # Assembly test kernels for different cache policies
 def cache_policy_kernel_always():
-    var dummy_ptr = UnsafePointer[Float32, MutAnyOrigin].unsafe_dangling()
+    var dummy_ptr = MutPointer[Float32, MutAnyOrigin].unsafe_dangling()
     var buffer = AMDBufferResource(dummy_ptr, 1024)
     var offset = Int32(thread_idx.x)  # Use dynamic offset to force offen mode
     var v = buffer.load[.float32, 4, cache_policy=CacheOperation.ALWAYS](offset)
@@ -71,7 +71,7 @@ def cache_policy_kernel_always():
 
 
 def cache_policy_kernel_streaming():
-    var dummy_ptr = UnsafePointer[Float32, MutAnyOrigin].unsafe_dangling()
+    var dummy_ptr = MutPointer[Float32, MutAnyOrigin].unsafe_dangling()
     var buffer = AMDBufferResource(dummy_ptr, 1024)
     var offset = Int32(thread_idx.x)  # Use dynamic offset to force offen mode
     var v = buffer.load[
@@ -81,7 +81,7 @@ def cache_policy_kernel_streaming():
 
 
 def cache_policy_kernel_global():
-    var dummy_ptr = UnsafePointer[Float32, MutAnyOrigin].unsafe_dangling()
+    var dummy_ptr = MutPointer[Float32, MutAnyOrigin].unsafe_dangling()
     var buffer = AMDBufferResource(dummy_ptr, 1024)
     var offset = Int32(thread_idx.x)  # Use dynamic offset to force offen mode
     var v = buffer.load[.float32, 4, cache_policy=CacheOperation.GLOBAL](offset)
@@ -89,7 +89,7 @@ def cache_policy_kernel_global():
 
 
 def cache_policy_kernel_volatile():
-    var dummy_ptr = UnsafePointer[Float32, MutAnyOrigin].unsafe_dangling()
+    var dummy_ptr = MutPointer[Float32, MutAnyOrigin].unsafe_dangling()
     var buffer = AMDBufferResource(dummy_ptr, 1024)
     var offset = Int32(thread_idx.x)  # Use dynamic offset to force offen mode
     var v = buffer.load[.float32, 4, cache_policy=CacheOperation.VOLATILE](
