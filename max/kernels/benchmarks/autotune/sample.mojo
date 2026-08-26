@@ -51,7 +51,7 @@ def bench_func[
             ),
         )
         # TODO: enable the following line after adding support for multi-output to kplot and kprofile.
-        # m.bench_function[bench_iter](BenchId(name, input_id=String("2nd-metric (pe_rank=",pe_rank,")")))
+        # m.bench_function(bench_iter, BenchId(name, input_id=String("2nd-metric (pe_rank=",pe_rank,")")))
     if Mode.VERIFY == mode:
         print("verifying dummy results...PASS")
     if Mode.RUN == mode:

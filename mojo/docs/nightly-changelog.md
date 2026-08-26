@@ -146,6 +146,9 @@ This version is still a work in progress.
   closure as a runtime argument. The compile-time parameter form
   `bench_function[fn]()` for a raising zero-argument body has been removed.
 
+- The remaining compile-time parameter forms of `Bench.bench_function()` and
+  `Bencher.iter()` have been removed. Pass the closure as a runtime argument.
+
 - `Bencher.iter_preproc()` now takes its closures as runtime arguments instead
   of compile-time parameters, along with an explicit state value that is passed
   mutably to both: the preprocessing function prepares the state before each
