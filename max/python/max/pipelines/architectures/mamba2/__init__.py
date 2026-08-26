@@ -14,13 +14,39 @@
 
 This package is the Python counterpart of the Mojo
 ``max/kernels/src/state_space/ssd_*`` kernels registered under the
-``ssd_chunk_scan_combined`` op name. The first deliverable exposes the
-functional-op wrapper; NN modules and the full pipeline land in later
-RFC 0003 increments.
+``ssd_chunk_scan_combined`` op name. RFC 0003 item 5 wires the full
+prefill/step pipeline:
+
+* :func:`ssd_chunk_scan_combined` — functional-op wrapper.
+* :class:`Mamba2Mixer` / :class:`Mamba2Block` — standalone NN modules.
+* :class:`Mamba2Prefill` / :class:`Mamba2Step` — compile-time MAX-graph
+  Modules consumed by the pipeline model.
+* :class:`Mamba2SSMStateCache` — per-slot conv/SSM state cache (mirrors
+  the Mamba1 :class:`SSMStateCache`).
+* :class:`Mamba2Model` / :class:`Mamba2ModelInputs` — the pipeline
+  model with prefill/step dispatch.
 """
 
+from .arch import mamba2_arch
 from .functional_ops import ssd_chunk_scan_combined
+from .mamba2 import Mamba2Block, Mamba2Mixer, mamba2_dims
+from .mamba2_module import Mamba2Prefill, Mamba2Step
+from .model import Mamba2Model, Mamba2ModelInputs
+from .model_config import Mamba2Config
+from .ssm_cache import Mamba2SSMStateCache
+from .weight_adapters import convert_mamba2_state_dict
 
 __all__ = [
+    "Mamba2Block",
+    "Mamba2Config",
+    "Mamba2Mixer",
+    "Mamba2Model",
+    "Mamba2ModelInputs",
+    "Mamba2Prefill",
+    "Mamba2SSMStateCache",
+    "Mamba2Step",
+    "convert_mamba2_state_dict",
+    "mamba2_arch",
+    "mamba2_dims",
     "ssd_chunk_scan_combined",
 ]
