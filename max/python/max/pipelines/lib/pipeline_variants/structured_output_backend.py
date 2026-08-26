@@ -55,6 +55,7 @@ from max._xgrammar.structural_tag import (
 )
 from max.pipelines.context import GrammarMatcher
 from max.pipelines.context.exceptions import InputError
+from max.pipelines.lib.json_schema import schema_shape
 from max.pipelines.lib.tool_parsing import get_parser_cls
 from transformers import PreTrainedTokenizerBase, PreTrainedTokenizerFast
 
@@ -75,19 +76,69 @@ STRUCTURED_OUTPUT_MAX_WHITESPACE_RUN = 16
 _CompileFn = TypeVar("_CompileFn", bound=Callable[..., Any])
 
 
+def _structural_tag_schemas(tag: dict[str, Any]) -> list[Any] | None:
+    """Returns the schemas a structural tag embeds, or None if not a tag.
+
+    A tag's ``format`` is an object where a JSON Schema's is a string, which
+    is what tells the two apart. The scan stops at each ``json_schema``, so
+    the tag and its schemas are walked once each.
+    """
+    if not isinstance(tag.get("format"), dict):
+        return None
+    schemas: list[Any] = []
+    stack: list[Any] = [tag]
+    while stack:
+        node = stack.pop()
+        if isinstance(node, dict):
+            for key, value in node.items():
+                if key == "json_schema":
+                    schemas.append(value)
+                elif isinstance(value, (dict, list)):
+                    stack.append(value)
+        elif isinstance(node, list):
+            stack.extend(v for v in node if isinstance(v, (dict, list)))
+    return schemas
+
+
+def _compiled_shape(body: Any) -> tuple[int, int] | None:
+    """Returns ``(max_depth, total_subschemas)`` of what a compile was handed.
+
+    A tool grammar is a structural tag wrapping one schema per tool, so its
+    shape is the deepest of those schemas and the total across them. Anything
+    else is measured as a schema in its own right.
+    """
+    if isinstance(body, (str, bytes)):
+        try:
+            body = json.loads(body)
+        except (ValueError, TypeError):
+            return None
+    if not isinstance(body, dict):
+        return None
+
+    embedded = _structural_tag_schemas(body)
+    if embedded is None:
+        return schema_shape(body)
+    shapes = [s for s in map(schema_shape, embedded) if s is not None]
+    if not shapes:
+        return None
+    return max(d for d, _ in shapes), sum(n for _, n in shapes)
+
+
 def _log_if_slow(fn: _CompileFn) -> _CompileFn:
-    """Time a backend compile method and log when it exceeds the threshold.
+    """Times a compile entry point and logs when it exceeds the threshold.
 
-    Wraps the compile entry points (``create_matcher`` /
-    ``compile_json_schema``) so every caller -- decode-thread setup and
-    admission-time validation alike -- surfaces a slow compile without
-    per-call-site timing. Logs the backend name, method, and duration only;
-    the schema/grammar body is never logged (may be large or sensitive).
+    Duration, method, backend and schema shape ride along as ``extra`` so they
+    are queryable; the schema body never does, being large and possibly
+    sensitive. Shape is walked only past the threshold and is linear in
+    subschema count, so the warm path is unaffected.
 
-    The same three values are attached as ``extra`` so structured log
-    backends can facet and aggregate on them (a duration that lives only in
-    the message text is not queryable). ``grammar_backend`` rather than
-    ``name`` because ``LogRecord`` reserves the latter for the logger name.
+    Typical shapes, for recognizing an outlier: a ``response_format`` schema or
+    a single tool's arguments sit at single-digit depth with at most a few dozen
+    subschemas, and a tool grammar holds that depth while its node count scales
+    with the tool count (20 tools of 5 subschemas each reports depth 4, 100
+    nodes). Compile cost grows super-linearly in both depth and breadth, so a
+    schema hundreds deep, or a thousand wide, sits orders of magnitude above
+    typical.
     """
 
     @wraps(fn)
@@ -98,17 +149,29 @@ def _log_if_slow(fn: _CompileFn) -> _CompileFn:
         finally:
             elapsed_ms = (time.perf_counter() - start) * 1000.0
             if elapsed_ms > _GRAMMAR_COMPILE_LOG_MS:
+                extra: dict[str, Any] = {
+                    "event": "grammar_compile_slow",
+                    "grammar_compile_method": fn.__name__,
+                    "grammar_compile_time_ms": elapsed_ms,
+                    "grammar_backend": self.name,
+                }
+                # Both wrapped methods take exactly one argument, so a
+                # keyword call puts the payload in the sole kwargs entry.
+                payload = args[0] if args else next(iter(kwargs.values()), None)
+                # Never let diagnostics break the call they are describing.
+                try:
+                    shape = _compiled_shape(payload)
+                except Exception:
+                    shape = None
+                if shape is not None:
+                    extra["grammar_schema_depth"] = shape[0]
+                    extra["grammar_schema_nodes"] = shape[1]
                 logger.info(
                     "grammar %s took %.1fms (%s backend)",
                     fn.__name__,
                     elapsed_ms,
                     self.name,
-                    extra={
-                        "event": "grammar_compile_slow",
-                        "grammar_compile_method": fn.__name__,
-                        "grammar_compile_time_ms": elapsed_ms,
-                        "grammar_backend": self.name,
-                    },
+                    extra=extra,
                 )
 
     return cast(_CompileFn, wrapper)

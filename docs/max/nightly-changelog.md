@@ -216,7 +216,12 @@ the [container](/container) page now links to the new page.
   0's, so a row samples independently of its co-residents. A single-row
   batch is bit-identical to the scalar-seed behavior. The gemma4 and
   qwen3.5 unified MTP graphs now pass their per-row seed tensors through.
-
+- Fixed `response_format` schema normalization skipping containers the grammar
+  backends compile: an untyped object-shaped subschema under
+  `additionalProperties`, `unevaluatedProperties`, `unevaluatedItems` or
+  `dependentSchemas` is now anchored to an object, as one under `properties`
+  already was. Such a subschema previously compiled to a grammar admitting an
+  unbounded value, letting a looping model run to `max_length`.
 - Added `max.pipelines.lib.MemoryPlan`, the result of memory planning when a
   pipeline is loaded: the effective `planned_max_length`, `max_batch_size`,
   `max_batch_total_tokens`, KV-cache budget, and device specs the pipeline
