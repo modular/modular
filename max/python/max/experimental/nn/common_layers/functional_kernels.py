@@ -51,6 +51,9 @@ from max.nn.kernels import (
     flash_attention_ragged as _flash_attention_ragged,
 )
 from max.nn.kernels import (
+    flash_attention_ragged_gpu as _flash_attention_ragged_gpu,
+)
+from max.nn.kernels import (
     grouped_matmul_ragged as _grouped_matmul_ragged,
 )
 from max.nn.kernels import (
@@ -327,6 +330,9 @@ def _local_map_num_devices(values: Iterable[Any]) -> int:
 
 
 flash_attention_ragged = _local_functional_op(_flash_attention_ragged, "input")
+flash_attention_ragged_gpu = _local_functional_op(
+    _flash_attention_ragged_gpu, "q"
+)
 rope_split_store_ragged = _local_functional_op(_rope_split_store_ragged, "qkv")
 rms_norm_key_cache = _local_functional_op(_rms_norm_key_cache)
 flare_mla_prefill_plan = _local_functional_op(_flare_mla_prefill_plan)
@@ -371,6 +377,7 @@ def stack_device_shards(
 
 __all__ = [
     "flash_attention_ragged",
+    "flash_attention_ragged_gpu",
     "fused_silu",
     "grouped_matmul_ragged",
     "local_map",

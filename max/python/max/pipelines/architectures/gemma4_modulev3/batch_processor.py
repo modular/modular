@@ -15,19 +15,50 @@
 from __future__ import annotations
 
 from max.driver import Buffer
+from max.dtype import DType
+from max.graph import BufferType, DeviceRef, TensorType
 from max.nn.kv_cache import KVCacheInputsInterface
-from max.pipelines.context import TextContext
+from max.nn.kv_cache.cache_params import KVCacheParamInterface
+from max.pipelines.architectures.gemma4.context import Gemma4Context
 from max.pipelines.lib.interfaces.batch_processor import (
     ModuleV3SingleReplicaBatchProcessor,
+    modulev3_gemma_multimodal_language_symbolic_inputs,
 )
 
 from .inputs import Gemma4Inputs
 
 
 class Gemma4ModuleV3BatchProcessor(
-    ModuleV3SingleReplicaBatchProcessor[TextContext, Gemma4Inputs]
+    ModuleV3SingleReplicaBatchProcessor[Gemma4Context, Gemma4Inputs]
 ):
-    """Ragged batching for Gemma4 ModuleV3 models (single GPU, no signals)."""
+    """Ragged batching for Gemma4 ModuleV3 models (single GPU, no signals).
+
+    Vision runs through the pipeline-owned ``VisionEncoderCache``, so this
+    processor only builds tokens/offsets; the embeddings and scatter indices
+    land on the base :class:`ModelInputs` vision fields.
+    """
+
+    def get_language_symbolic_inputs(
+        self,
+        *,
+        kv_params: KVCacheParamInterface,
+        device_ref: DeviceRef,
+        hidden_size: int,
+        embedding_dtype: DType,
+    ) -> list[TensorType | BufferType]:
+        """Symbolic inputs for the ModuleV3 language-model ``compile()`` call.
+
+        ``embedding_dtype`` must match the vision tower's output dtype:
+        the runtime image-embedding buffers come
+        either from the tower or from ``empty_vision_embeddings``, both of
+        which use ``config.unquantized_dtype``.
+        """
+        return modulev3_gemma_multimodal_language_symbolic_inputs(
+            kv_params=kv_params,
+            device_ref=device_ref,
+            hidden_size=hidden_size,
+            embedding_dtype=embedding_dtype,
+        )
 
     def _make_inputs(
         self,
