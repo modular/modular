@@ -2836,13 +2836,6 @@ def _calc_initial_buffer_size_int64(n0: UInt64) -> Int:
         result += 4
 
 
-def _calc_initial_buffer_size(n0: Int) -> Int:
-    var sign = 0 if n0 >= 0 else 1
-
-    # Add 1 for the terminator
-    return sign + n0._decimal_digit_count() + 1
-
-
 def _calc_initial_buffer_size(n: Float64) -> Int:
     return 128 + 1  # Add 1 for the terminator
 

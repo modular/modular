@@ -233,40 +233,6 @@ from .layout import Layout
 
 
 @always_inline
-def shiftr(a: Int, s: Int) -> Int:
-    """Shift right or left based on sign of shift amount.
-
-    Performs a right shift if `s` is positive, or a left shift if
-    `s` is negative.
-
-    Args:
-        a: The integer value to shift.
-        s: The shift amount. Positive for right, negative for left.
-
-    Returns:
-        The shifted integer value.
-    """
-    return a >> s if s > 0 else a << -s
-
-
-@always_inline
-def shiftl(a: Int, s: Int) -> Int:
-    """Shift left or right based on sign of shift amount.
-
-    Performs a left shift if `s` is positive, or a right shift if
-    `s` is negative.
-
-    Args:
-        a: The integer value to shift.
-        s: The shift amount. Positive for left, negative for right.
-
-    Returns:
-        The shifted integer value.
-    """
-    return a << s if s > 0 else a >> -s
-
-
-@always_inline
 def shiftr(a: Scalar, s: Scalar[a.dtype]) -> Scalar[a.dtype]:
     """Shift right/left based on sign of shift for scalars.
 

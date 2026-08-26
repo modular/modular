@@ -1321,36 +1321,6 @@ def broadcast[
     return shuffle_idx(val, 0)
 
 
-def broadcast(val: Int) -> Int:
-    """Broadcasts an integer value from lane 0 to all lanes in the warp.
-
-    This function takes an integer value from lane 0 and copies it to all other lanes in the warp.
-    It provides a convenient way to share scalar integer data between threads without using shared memory.
-
-    Args:
-        val: The integer value to broadcast from lane 0.
-
-    Returns:
-        The broadcast integer value, where all lanes receive a copy of the input from lane 0.
-    """
-    return Int(shuffle_idx(Int32(val), 0))
-
-
-def broadcast(val: UInt) -> UInt:
-    """Broadcasts an unsigned integer value from lane 0 to all lanes in the warp.
-
-    This function takes an unsigned integer value from lane 0 and copies it to all other lanes in the warp.
-    It provides a convenient way to share scalar unsigned integer data between threads without using shared memory.
-
-    Args:
-        val: The unsigned integer value to broadcast from lane 0.
-
-    Returns:
-        The broadcast unsigned integer value, where all lanes receive a copy of the input from lane 0.
-    """
-    return UInt(shuffle_idx(Int32(val), 0))
-
-
 # ===-----------------------------------------------------------------------===#
 # Warp Vote
 # ===-----------------------------------------------------------------------===#
