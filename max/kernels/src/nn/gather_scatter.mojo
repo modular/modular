@@ -41,11 +41,6 @@ from std.collections import OptionalReg
 
 
 @always_inline
-def _unsafe_normalize_neg_index(idx: Int, dim_size: Int) -> Int:
-    return idx + dim_size if idx < 0 else idx
-
-
-@always_inline
 def _unsafe_normalize_neg_index[
     dtype: DType, width: SIMDLength, out_type: DType = .int
 ](idx: SIMD[dtype, width], dim_size: Int) -> SIMD[out_type, width]:
@@ -53,22 +48,6 @@ def _unsafe_normalize_neg_index[
         idx.cast[out_type]() + Scalar[out_type](dim_size),
         idx.cast[out_type](),
     )
-
-
-@always_inline
-def normalize_neg_index(idx: Int, dim_size: Int) raises -> Int:
-    """Indices passed to gather and scatter ops may be negative. This performs
-    a normalization so that they can be used to index into a buffer.
-
-    Returns val + dim if val < 0 else val
-
-    Raises:
-        If the index is out of range [-dim_size, dim_size).
-    """
-    if -dim_size <= idx < dim_size:
-        return _unsafe_normalize_neg_index(idx, dim_size)
-
-    raise Error("indices must be in range [-dim_size, dim_size)")
 
 
 @always_inline

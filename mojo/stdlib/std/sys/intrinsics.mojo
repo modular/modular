@@ -898,23 +898,6 @@ def readfirstlane[T: AnyType, //](value: Pointer[T, ...]) -> type_of(value):
 
 
 @always_inline
-def readfirstlane(value: Int) -> type_of(value):
-    """
-    Get the value in the lowest active lane of the input operand.
-
-    Args:
-        value: The input pointer.
-
-    Returns:
-        The value in the lowest active lane of the input operand.
-    """
-    comptime assert is_amd_gpu(), "This intrinsic is only defined for AMD GPUs"
-    return llvm_intrinsic[
-        "llvm.amdgcn.readfirstlane", type_of(value), type_of(value)
-    ](value)
-
-
-@always_inline
 def readfirstlane[dtype: DType](value: Scalar[dtype]) -> Scalar[dtype]:
     """Gets the value in the lowest active lane of the input operand.
 
