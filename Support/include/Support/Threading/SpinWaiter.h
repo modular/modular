@@ -75,7 +75,7 @@ public:
         // The client can disable the more expensive yielding mechanisms below
         // by setting "shouldYieldToOS" to true.
         !shouldYieldToOS) {
-#if MODULAR_WINDOWS
+#if MODULAR_WINDOWS && MODULAR_X86_64
       _mm_pause();
 #elif MODULAR_X86_64
       __builtin_ia32_pause();
