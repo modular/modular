@@ -175,6 +175,96 @@ def run_rms_norm_gpu_zero_rows[dtype: DType](ctx: DeviceContext) raises:
     _ = gamma_d
 
 
+def run_rms_norm_row_based[
+    dtype: DType, rank: Int, *, multiply_before_cast: Bool = True
+](ctx: DeviceContext, shape: IndexList[rank], rtol: Float64 = 0.01) raises:
+    """Drives the row-based `rms_norm` entry point, not `rms_norm_gpu`.
+
+    `mo.reduce.rms_norm` lowers through this overload, so its epilogue-closure
+    contract needs coverage of its own; the `run_rms_norm_gpu` cases above
+    exercise a different function.
+    """
+    print("== run_rms_norm_row_based")
+
+    var cols = shape[rank - 1]
+    var rows = shape.flattened_length() // cols
+
+    comptime eps_f32 = Float32(0.001)
+
+    var data_h = ctx.enqueue_create_host_buffer[dtype](rows * cols)
+    var res = ctx.enqueue_create_host_buffer[dtype](rows * cols)
+    var gamma_h = ctx.enqueue_create_host_buffer[dtype](cols)
+
+    rand[dtype](data_h.as_span())
+
+    for i in range(cols):
+        gamma_h[i] = (Float64(i + cols) / Float64(cols)).cast[dtype]()
+
+    var data_d = ctx.enqueue_create_buffer[dtype](rows * cols)
+    # Distinct output buffer: input_fn (reads) and output_fn (writes) are
+    # separate value-closure args, so they must reference distinct buffer
+    # origins (writing in place into `data_d` would alias the read).
+    var out_d = ctx.enqueue_create_buffer[dtype](rows * cols)
+    var gamma_d = ctx.enqueue_create_buffer[dtype](cols)
+
+    var param_shape = Index(cols)
+
+    var data_buf = TileTensor(data_d, row_major(Coord(shape)))
+    var out_buf = TileTensor(out_d, row_major(Coord(shape)))
+    var gamma = TileTensor(gamma_d, row_major(Coord(param_shape)))
+    var epsilon = eps_f32.cast[dtype]()
+    var weight_offset = Scalar[dtype](0.0)
+
+    ctx.enqueue_copy(data_d, data_h)
+    ctx.enqueue_copy(gamma_d, gamma_h)
+
+    @always_inline
+    def input_fn[
+        width: Int, alignment: Int
+    ](coords: Coord) {var data_buf} -> SIMD[dtype, width]:
+        var idx = data_buf.layout(coords)
+        return data_buf.raw_load[width=width, alignment=alignment](idx)
+
+    @always_inline
+    def output_fn[
+        width: SIMDLength, alignment: Int
+    ](coords: Coord, val: SIMD[dtype, width]) {var out_buf}:
+        var idx = out_buf.layout(coords)
+        out_buf.raw_store[width=width, alignment=alignment](
+            idx, rebind[SIMD[dtype, width]](val)
+        )
+
+    rms_norm[
+        dtype, rank, target="gpu", multiply_before_cast=multiply_before_cast
+    ](
+        input_fn,
+        output_fn,
+        Coord(shape),
+        Scalar[DType.int](cols),
+        gamma,
+        epsilon,
+        weight_offset,
+        ctx,
+    )
+    ctx.enqueue_copy(res, out_d)
+    ctx.synchronize()
+
+    for r in range(rows):
+        var vec = TileTensor(
+            data_h.unsafe_ptr() + r * cols,
+            row_major(cols),
+        )
+        var rms_ref = compute_rms(vec, cols, eps_f32)
+        for c in range(cols):
+            var idx = r * cols + c
+            var val = (data_h[idx] / rms_ref) * (gamma_h[c] + weight_offset)
+            assert_almost_equal(val, res[idx], rtol=rtol)
+
+    _ = data_d
+    _ = out_d
+    _ = gamma_d
+
+
 def main() raises:
     with DeviceContext() as ctx:
         run_rms_norm_gpu_zero_rows[.bfloat16](ctx)
@@ -270,4 +360,25 @@ def main() raises:
         )
         run_rms_norm_gpu[.bfloat16, multiply_before_cast=False](
             ctx, Index(4, 5120), rtol=2e-2
+        )
+
+        # Row-based `rms_norm` (the `mo.reduce.rms_norm` lowering path), across
+        # both `multiply_before_cast` branches and the narrow/wide dispatch.
+        run_rms_norm_row_based[DType.float32](ctx, Index(2, 5))
+        run_rms_norm_row_based[DType.float32](ctx, Index(7, 557))
+        run_rms_norm_row_based[DType.float32](ctx, Index(24576, 256))
+        run_rms_norm_row_based[DType.float32](ctx, Index(2, 8192))
+        run_rms_norm_row_based[DType.float32](ctx, Index(3, 4, 10, 20, 8))
+        run_rms_norm_row_based[DType.bfloat16](ctx, Index(64, 256), rtol=2e-2)
+        run_rms_norm_row_based[DType.bfloat16](
+            ctx, Index(4, 1024, 4096), rtol=2e-2
+        )
+        run_rms_norm_row_based[DType.float32, multiply_before_cast=False](
+            ctx, Index(7, 557)
+        )
+        run_rms_norm_row_based[DType.float32, multiply_before_cast=False](
+            ctx, Index(24576, 512)
+        )
+        run_rms_norm_row_based[DType.bfloat16, multiply_before_cast=False](
+            ctx, Index(4, 4096), rtol=2e-2
         )

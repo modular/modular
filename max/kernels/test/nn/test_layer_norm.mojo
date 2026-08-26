@@ -53,16 +53,15 @@ def run_layer_norm_cpu[
     def input_fn[
         width: Int,
         alignment: Int,
-        _rank: Int,
-    ](coords: IndexList[_rank]) {var input_buf} -> SIMD[dtype, width]:
-        var idx = input_buf.layout(Coord(coords))
+    ](coords: Coord) {var input_buf} -> SIMD[dtype, width]:
+        var idx = input_buf.layout(coords)
         return input_buf.raw_load[width=width, alignment=alignment](idx)
 
     @always_inline
     def output_fn[
-        width: SIMDLength, _rank: Int, alignment: Int
-    ](coords: IndexList[_rank], val: SIMD[dtype, width]) {var output_buf}:
-        var idx = output_buf.layout(Coord(coords))
+        width: SIMDLength, alignment: Int
+    ](coords: Coord, val: SIMD[dtype, width]) {var output_buf}:
+        var idx = output_buf.layout(coords)
         output_buf.raw_store[width=width, alignment=alignment](
             idx, rebind[SIMD[dtype, width]](val)
         )

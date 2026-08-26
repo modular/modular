@@ -91,29 +91,27 @@ def run_group_norm_gpu[
     @__copy_capture(data_buf)
     @always_inline
     @__parameter
-    def input_fn[
-        width: Int, _rank: Int
-    ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
-        var idx = data_buf.layout(Coord(coords))
+    def input_fn[width: Int](coords: Coord) -> SIMD[dtype, width]:
+        var idx = data_buf.layout(coords)
 
         return data_buf.raw_load[width=width](idx)
 
     @__copy_capture(gamma)
     @always_inline
     @__parameter
-    def gamma_scalar_fn[width: Int](coords: IndexList[1]) -> SIMD[dtype, width]:
-        var idx = gamma.layout(Coord(coords))
+    def gamma_scalar_fn[width: Int](coords: Coord) -> SIMD[dtype, width]:
+        var idx = gamma.layout(coords)
         return gamma.raw_load[width=width](idx)
 
     @__copy_capture(beta)
     @always_inline
     @__parameter
-    def beta_scalar_fn[width: Int](coords: IndexList[1]) -> SIMD[dtype, width]:
-        var idx = beta.layout(Coord(coords))
+    def beta_scalar_fn[width: Int](coords: Coord) -> SIMD[dtype, width]:
+        var idx = beta.layout(coords)
         return beta.raw_load[width=width](idx)
 
     group_norm[dtype, rank, input_fn, gamma_scalar_fn, beta_scalar_fn, "gpu"](
-        shape, epsilon, Int32(num_groups), data_buf, ctx=ctx
+        Coord(shape), epsilon, Int32(num_groups), data_buf, ctx=ctx
     )
     ctx.enqueue_copy(res, data_d)
     ctx.synchronize()

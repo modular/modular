@@ -78,29 +78,31 @@ def run_group_norm_cpu[
     @__copy_capture(data_buf)
     @always_inline
     @__parameter
-    def input_fn[
-        width: Int, _rank: Int
-    ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
-        var idx = data_buf.layout(Coord(coords))
+    def input_fn[width: Int](coords: Coord) -> SIMD[dtype, width]:
+        var idx = data_buf.layout(coords)
         return data_buf.raw_load[width=width](idx)
 
     @__copy_capture(gamma)
     @always_inline
     @__parameter
-    def gamma_scalar_fn[width: Int](coords: IndexList[1]) -> SIMD[dtype, width]:
-        var idx = gamma.layout(Coord(coords))
+    def gamma_scalar_fn[width: Int](coords: Coord) -> SIMD[dtype, width]:
+        var idx = gamma.layout(coords)
         return gamma.raw_load[width=width](idx)
 
     @__copy_capture(beta)
     @always_inline
     @__parameter
-    def beta_scalar_fn[width: Int](coords: IndexList[1]) -> SIMD[dtype, width]:
-        var idx = beta.layout(Coord(coords))
+    def beta_scalar_fn[width: Int](coords: Coord) -> SIMD[dtype, width]:
+        var idx = beta.layout(coords)
         return beta.raw_load[width=width](idx)
 
-    group_norm_cpu[input_fn, gamma_scalar_fn, beta_scalar_fn](
-        shape, epsilon, output_buf, num_groups
-    )
+    group_norm_cpu[
+        dtype=dtype,
+        rank=rank,
+        input_fn=input_fn,
+        gamma_fn=gamma_scalar_fn,
+        beta_fn=beta_scalar_fn,
+    ](Coord(shape), epsilon, output_buf, num_groups)
 
     var data_ptr_ptr: UnsafePointer[
         data_ptr.T, origin_of(data_ptr)
