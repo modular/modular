@@ -86,20 +86,20 @@ def bench_layer_norm_gpu[
 
     # `layer_norm` takes gamma/beta as `TileTensor`s directly (no
     # `gamma_fn`); `input_fn`/`output_fn` are unified closures matching its
-    # (width, alignment, coord_rank) / (width, rank, alignment) signatures.
+    # (width, alignment) `Coord` signatures.
     @always_inline
     def input_fn[
-        width: Int, alignment: Int, coord_rank: Int
-    ](coords: IndexList[coord_rank]) {var data_buf} -> SIMD[dtype, width]:
-        var idx = data_buf.layout(Coord(coords))
+        width: Int, alignment: Int
+    ](coords: Coord) {var data_buf} -> SIMD[dtype, width]:
+        var idx = data_buf.layout(coords)
 
         return data_buf.raw_load[width=width, alignment=alignment](idx)
 
     @always_inline
     def output_fn[
-        width: SIMDLength, _rank: Int, alignment: Int
-    ](coords: IndexList[_rank], val: SIMD[dtype, width]) {var out_buf} -> None:
-        var idx = out_buf.layout(Coord(coords))
+        width: SIMDLength, alignment: Int
+    ](coords: Coord, val: SIMD[dtype, width]) {var out_buf} -> None:
+        var idx = out_buf.layout(coords)
 
         out_buf.raw_store[width=width, alignment=alignment](idx, val)
 

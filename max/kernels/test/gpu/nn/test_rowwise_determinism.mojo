@@ -129,18 +129,18 @@ def _probe_layer_norm[
 
     @always_inline
     def input_fn[
-        width: Int, alignment: Int, _rank: Int
-    ](coords: IndexList[_rank]) {var in_buf} -> SIMD[dtype, width]:
-        var idx = in_buf.layout(Coord(coords))
+        width: Int, alignment: Int
+    ](coords: Coord) {var in_buf} -> SIMD[dtype, width]:
+        var idx = in_buf.layout(coords)
         return in_buf.raw_load[
             width=width, alignment=alignment * align_of[dtype]()
         ](idx)
 
     @always_inline
     def output_fn[
-        width: SIMDLength, rank_: Int, alignment: Int
-    ](coords: IndexList[rank_], val: SIMD[dtype, width]) {var out_buf}:
-        var idx = out_buf.layout(Coord(coords))
+        width: SIMDLength, alignment: Int
+    ](coords: Coord, val: SIMD[dtype, width]) {var out_buf}:
+        var idx = out_buf.layout(coords)
         out_buf.raw_store[width=width, alignment=alignment * align_of[dtype]()](
             idx, rebind[SIMD[dtype, width]](val)
         )
@@ -206,18 +206,18 @@ def _probe_rms_norm[
 
     @always_inline
     def input_fn[
-        width: Int, alignment: Int, _rank: Int
-    ](coords: IndexList[_rank]) {var in_buf} -> SIMD[dtype, width]:
-        var idx = in_buf.layout(Coord(coords))
+        width: Int, alignment: Int
+    ](coords: Coord) {var in_buf} -> SIMD[dtype, width]:
+        var idx = in_buf.layout(coords)
         return in_buf.raw_load[
             width=width, alignment=alignment * align_of[dtype]()
         ](idx)
 
     @always_inline
     def output_fn[
-        width: SIMDLength, rank_: Int, alignment: Int
-    ](coords: IndexList[rank_], val: SIMD[dtype, width]) {var out_buf}:
-        var idx = out_buf.layout(Coord(coords))
+        width: SIMDLength, alignment: Int
+    ](coords: Coord, val: SIMD[dtype, width]) {var out_buf}:
+        var idx = out_buf.layout(coords)
         out_buf.raw_store[width=width, alignment=alignment * align_of[dtype]()](
             idx, rebind[SIMD[dtype, width]](val)
         )

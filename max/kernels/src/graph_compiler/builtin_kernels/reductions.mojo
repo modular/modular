@@ -880,18 +880,18 @@ struct LayerNorm:
 
         @always_inline
         def input_fn[
-            width: Int, alignment: Int, coord_rank: Int
-        ](coords: IndexList[coord_rank]) {var input} -> SIMD[dtype, width]:
+            width: Int, alignment: Int
+        ](coords: Coord) {var input} -> SIMD[dtype, width]:
             return input._lambda_load[width=width, element_alignment=alignment](
                 coords
             )
 
         @always_inline
         def output_fn[
-            width: SIMDLength, _rank: Int, alignment: Int
-        ](coords: IndexList[_rank], val: SIMD[dtype, width]) {var output}:
+            width: SIMDLength, alignment: Int
+        ](coords: Coord, val: SIMD[dtype, width]) {var output}:
             output._lambda_store[width=width, element_alignment=alignment](
-                rebind[IndexList[output.rank]](coords),
+                coords,
                 rebind[SIMD[output.dtype, width]](val),
             )
 
@@ -1000,22 +1000,21 @@ struct ReduceRMSNorm:
             raise Error("Input and output buffers are not same shape")
 
         # Shape passed via `input.shape_coord()` to preserve statically-known
-        # dims in the `Coord` type. `input_fn` uses the Row 3-arg
-        # (width, alignment, rank) lambda form.
+        # dims in the `Coord` type.
         @always_inline
         def input_fn[
-            width: Int, alignment: Int, coord_rank: Int
-        ](coords: IndexList[coord_rank]) {var input} -> SIMD[dtype, width]:
+            width: Int, alignment: Int
+        ](coords: Coord) {var input} -> SIMD[dtype, width]:
             return input._lambda_load[width=width, element_alignment=alignment](
-                rebind[IndexList[input.rank]](coords)
+                coords
             )
 
         @always_inline
         def output_fn[
-            width: SIMDLength, _rank: Int, alignment: Int
-        ](coords: IndexList[_rank], val: SIMD[dtype, width]) {var output}:
+            width: SIMDLength, alignment: Int
+        ](coords: Coord, val: SIMD[dtype, width]) {var output}:
             output._lambda_store[width=width, element_alignment=alignment](
-                rebind[IndexList[output.rank]](coords),
+                coords,
                 rebind[SIMD[output.dtype, width]](val),
             )
 
@@ -1449,25 +1448,21 @@ struct ReduceGroupNorm:
 
         @__parameter
         @always_inline
-        def input_fn[
-            width: Int, _rank: Int
-        ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
-            return input._lambda_load[width=width](
-                rebind[IndexList[input.rank]](coords)
-            )
+        def input_fn[width: Int](coords: Coord) -> SIMD[dtype, width]:
+            return input._lambda_load[width=width](coords)
 
         @__parameter
         @always_inline
-        def gamma_fn[width: Int](coords: IndexList[1]) -> SIMD[dtype, width]:
+        def gamma_fn[width: Int](coords: Coord) -> SIMD[dtype, width]:
             return gamma._lambda_load[width=width](coords)
 
         @__parameter
         @always_inline
-        def beta_fn[width: Int](coords: IndexList[1]) -> SIMD[dtype, width]:
+        def beta_fn[width: Int](coords: Coord) -> SIMD[dtype, width]:
             return beta._lambda_load[width=width](coords)
 
         group_norm[dtype, rank, input_fn, gamma_fn, beta_fn, target](
-            shape=input.shape(),
+            shape=input.shape_coord(),
             epsilon=epsilon,
             groups=num_groups,
             output=output.to_tile_tensor[.int64](),
