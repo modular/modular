@@ -145,6 +145,81 @@ def test_json_schema_path_through_shim() -> None:
     assert int(bitmask[0]) != -1
 
 
+def _nested_object_schema(depth: int) -> str:
+    head = "".join(
+        f'{{"type": "object", "properties": {{"p{i}":' for i in range(depth)
+    )
+    return head + '{"type": "string"}' + "}}" * depth
+
+
+def _compile_cpu_seconds(compiler: xgr.GrammarCompiler, schema: str) -> float:
+    started = time.process_time()
+    compiled = compiler.compile_json_schema(schema, reject_unsupported=True)
+    elapsed = time.process_time() - started
+    assert isinstance(compiled, xgr.CompiledGrammar)
+    return elapsed
+
+
+def test_deep_nesting_compile_cost_scales_subcubically() -> None:
+    # CPU-time ratios exclude host scheduling noise from this complexity check.
+    compiler = _compiler()
+    compiler.compile_json_schema('{"type": "null"}', reject_unsupported=True)
+    shallow = _compile_cpu_seconds(compiler, _nested_object_schema(100))
+    deep = _compile_cpu_seconds(compiler, _nested_object_schema(400))
+    assert shallow > 0
+    assert deep / shallow < 30
+
+
+def test_near_identical_subschemas_do_not_share() -> None:
+    # Conflating these two keys would leak one maxLength into the other.
+    compiled = _compiler().compile_json_schema(
+        '{"type": "object", "properties":'
+        ' {"a": {"type": "object", "properties":'
+        ' {"x": {"type": "string", "maxLength": 5}}},'
+        ' "b": {"type": "object", "properties":'
+        ' {"x": {"type": "string", "maxLength": 6}}}},'
+        ' "required": ["a", "b"]}',
+        reject_unsupported=True,
+    )
+    assert _accepts(compiled, '{"a": {"x": "12345"}, "b": {"x": "123456"}}')
+    assert not _accepts(compiled, '{"a": {"x": "123456"}, "b": {"x": "1"}}')
+
+
+def test_property_name_escapes_cannot_forge_a_cache_key() -> None:
+    forged_name = 'a":{},"b'
+    # Without key escaping, the one-name map serializes identically to the
+    # two-name map. Compiling them as siblings exercises the cache lookup.
+    compiled = _compiler().compile_json_schema(
+        json.dumps(
+            {
+                "type": "object",
+                "properties": {
+                    "x": {
+                        "type": "object",
+                        "properties": {forged_name: {}},
+                        "additionalProperties": False,
+                    },
+                    "y": {
+                        "type": "object",
+                        "properties": {"a": {}, "b": {}},
+                        "additionalProperties": False,
+                    },
+                },
+                "required": ["x", "y"],
+            }
+        ),
+        reject_unsupported=True,
+    )
+    assert _accepts(
+        compiled,
+        json.dumps({"x": {forged_name: None}, "y": {"a": 1, "b": 2}}),
+    )
+    assert not _accepts(
+        compiled,
+        json.dumps({"x": {}, "y": {forged_name: None}}),
+    )
+
+
 # Rejection of unenforceable keywords is opt-in: it happens only when the caller
 # passes reject_unsupported=True. The default (exercised by the guard tests below)
 # falls back to best-effort decoding instead.

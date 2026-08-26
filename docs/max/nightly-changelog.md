@@ -613,6 +613,10 @@ the [container](/container) page now links to the new page.
   (`MAX_SERVE_MEDIA_URL_ALLOWED_HOSTS`, hostnames or CIDRs) permits trusted
   internal hosts.
 
+- Compiling deeply nested JSON schemas is substantially faster and uses
+  less memory by avoiding repeated subtree copies while constructing cache
+  keys. Emitted grammars are unchanged.
+
 - Speculative decoding takes `--draft-proposal sampled` (default `argmax`,
   unchanged). The draft model samples its proposal under the request's
   temperature/top-k/top-p and keeps the distribution it drew from, so
