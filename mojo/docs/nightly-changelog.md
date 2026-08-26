@@ -315,6 +315,11 @@ This release completes the removal of APIs deprecated during the v1.0 cycle.
   `MutExternalOrigin`, and `ImmUntrackedOrigin` for both
   `ImmutUntrackedOrigin` and `ImmutExternalOrigin`.
 
+- Removed the redundant `Int` overloads of `sqrt()`, `fma()`, `align_down()`,
+  `align_up()`, `clamp()`, and `iota()` from `std.math`. `Int` is an alias for
+  `Scalar[DType.int]`, so the generic `SIMD` overloads already accept `Int`
+  arguments and return `Int`; call sites need no changes.
+
 - Removed the pre-unification pointer aliases `MutUnsafePointer`,
   `ImmUnsafePointer`, `ImmutUnsafePointer`, `ImmutOpaquePointer`,
   `ImmutPointer`, and `OptionalUnsafePointer`. Use `MutPointer`, `ImmPointer`,
