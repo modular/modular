@@ -498,8 +498,8 @@ def bench_shape[
         # Placing K/V (and IndexK) is the other half of what the fused epilogue
         # does, so the unfused path pays for those paged-store launches on top
         # of its band GEMMs.
-        @__parameter
         @always_inline
+        @__copy_capture(kv_out_ptr)
         def k_in[
             width: Int, alignment: Int
         ](idx: IndexList[3]) capturing -> SIMD[OUT_DTYPE, width]:
@@ -507,8 +507,8 @@ def bench_shape[
                 width=width
             ]()
 
-        @__parameter
         @always_inline
+        @__copy_capture(kv_out_ptr, total_seq)
         def v_in[
             width: Int, alignment: Int
         ](idx: IndexList[3]) capturing -> SIMD[OUT_DTYPE, width]:
@@ -516,8 +516,8 @@ def bench_shape[
                 _any(kv_out_ptr) + total_seq * kv_dim + idx[0] * kv_dim + idx[2]
             ).load[width=width]()
 
-        @__parameter
         @always_inline
+        @__copy_capture(kv_out_ptr, total_seq)
         def ik_in[
             width: Int, alignment: Int
         ](idx: IndexList[3]) capturing -> SIMD[OUT_DTYPE, width]:
