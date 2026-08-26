@@ -12,6 +12,8 @@ modular_py_library(
     ignore_unresolved_imports = [
         # Private tool parsers are imported at runtime, not directly
         "tool_parsers",
+        # Private Kimi K3 arch is imported at runtime, not directly
+        "kimi_k3",
         # Private MiniMax-M3 arch is imported at runtime, not directly
         "minimax_m3",
         # Private unified MiniMax-M3 + MTP arch is imported at runtime

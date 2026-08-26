@@ -369,6 +369,14 @@ def register_all_models() -> None:
     except ModuleNotFoundError:
         pass
 
+    # Optional: import the Kimi K3 model if available.
+    try:
+        from kimi_k3 import kimi_k3_arch  # type: ignore[import-not-found]
+
+        PIPELINE_REGISTRY.register(kimi_k3_arch)
+    except ModuleNotFoundError:
+        pass
+
     # Optional: import the MiniMax-M3 model if available.
     try:
         from minimax_m3 import minimax_m3_arch  # type: ignore[import-not-found]
