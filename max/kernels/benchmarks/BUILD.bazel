@@ -24,6 +24,15 @@ _EXTRA_DEPS = {
     "gpu/state_space/prof_ssd_chunk_scan_only.mojo": [
         "//max/kernels/src/state_space",
     ],
+    "gpu/state_space/bench_ssd_chunk_combine.mojo": [
+        "//max/kernels/src/state_space",
+    ],
+    "gpu/state_space/prof_ssd_combine_only.mojo": [
+        "//max/kernels/src/state_space",
+    ],
+    "gpu/state_space/prof_ssd_combine_static.mojo": [
+        "//max/kernels/src/state_space",
+    ],
 }
 
 _EXTRA_CONSTRAINTS = {
