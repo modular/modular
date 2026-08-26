@@ -1,0 +1,35 @@
+load(
+    "//bazel:api.bzl",
+    "modular_py_test",
+    "requirement",
+)
+
+package(default_visibility = [
+    "//:__pkg__",
+    "//SDK/integration-test:__subpackages__",
+    "//max/tests:__subpackages__",
+    "//oss/modular/max/tests:__subpackages__",
+])
+
+# Graph-construction smoke test for the Mamba2 SSD functional-op wrapper.
+# The underlying ssd_chunk_scan_combined kernel is currently CPU-only;
+# the GPU dispatch raises explicitly until later RFC 0002 phases, so this
+# target does not require GPU. The state_space mojo package is registered
+# via mojo_deps so ops.custom("ssd_chunk_scan_combined", ...) resolves at
+# graph-verification time without needing custom_extensions paths.
+modular_py_test(
+    name = "test_mamba2_functional_ops",
+    size = "medium",
+    srcs = ["test_mamba2_functional_ops.py"],
+    mojo_deps = [
+        "//max:state_space",
+    ],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/pipelines/architectures/mamba2",
+        requirement("numpy"),
+    ],
+)
