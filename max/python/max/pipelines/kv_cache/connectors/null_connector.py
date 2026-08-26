@@ -19,14 +19,14 @@ All operations are no-ops that return immediately.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 
+from max.nn.kv_cache import KVCacheGroupId
 from max.nn.kv_cache.metrics import KVCacheMetrics
 from max.pipelines.kv_cache.kv_connector import (
     CompletedTransfer,
     KVConnector,
     KVConnectorTransfer,
-    TransferDirection,
 )
 
 
@@ -34,24 +34,28 @@ class NullConnector(KVConnector):
     """No-op connector for when external caching is disabled."""
 
     @property
+    def leaves(self) -> Mapping[str, KVCacheGroupId]:
+        return {"full": KVCacheGroupId.full()}
+
+    @property
     def name(self) -> str:
         return "NullConnector"
 
     def load(
         self,
-        device_block_ids: list[int],
+        block_ids: Mapping[str, Sequence[int]],
         block_hashes: Sequence[bytes],
         replica_idx: int = 0,
     ) -> KVConnectorTransfer:
-        return CompletedTransfer(TransferDirection.LOAD)
+        return CompletedTransfer.load()
 
     def offload(
         self,
-        block_ids: list[int],
+        block_ids: Mapping[str, Sequence[int]],
         block_hashes: Sequence[bytes],
         replica_idx: int = 0,
     ) -> KVConnectorTransfer:
-        return CompletedTransfer(TransferDirection.OFFLOAD)
+        return CompletedTransfer.offload()
 
     @property
     def metrics(self) -> KVCacheMetrics:

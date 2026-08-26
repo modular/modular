@@ -38,7 +38,6 @@ from max.support.math import ceildiv
 from .block_manager import (
     CompletedTransfer,
     KVConnectorTransfer,
-    TransferDirection,
     _compute_seq_len,
     compute_block_hashes,
 )
@@ -445,7 +444,7 @@ class JengaBlockManager:
             for _ in range(num_new_blocks):
                 req_blocks.append(pool.alloc_block(leaf_id))
 
-        return CompletedTransfer(direction=TransferDirection.LOAD)
+        return CompletedTransfer.load()
 
     @traced
     def alloc_dummy(self, ctx: TextContext, replica_idx: int = 0) -> None:

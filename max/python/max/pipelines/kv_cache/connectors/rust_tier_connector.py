@@ -45,7 +45,7 @@ from __future__ import annotations
 
 import logging
 import time
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import NamedTuple
 
@@ -56,6 +56,7 @@ from max.driver import (
     _unsafe_free_fast_pinned_buffer,
 )
 from max.dtype import DType
+from max.nn.kv_cache import KVCacheGroupId
 from max.nn.kv_cache.cache_params import KVCacheMemory
 from max.nn.kv_cache.metrics import KVCacheMetrics
 from max.support.human_readable_formatter import to_human_readable_bytes
@@ -136,6 +137,7 @@ class RustTierConnector(KVConnector):
 
     def __init__(
         self,
+        leaves: Mapping[str, KVCacheGroupId],
         replica_kv_memory: Sequence[Sequence[KVCacheMemory]],
         disk_cache_dir: str,
         host_offload_max_gb: float | None = None,
@@ -145,6 +147,7 @@ class RustTierConnector(KVConnector):
         """Initializes the connector over ``replica_kv_memory``'s device buffers.
 
         Args:
+            leaves: The leaves / group ids for the connector.
             replica_kv_memory: Per-DP-replica offload-ready KV memory units.
             disk_cache_dir: Directory backing the disk last level.
             host_offload_max_gb: Host budget. ``None`` sizes the host pool to
@@ -160,6 +163,12 @@ class RustTierConnector(KVConnector):
 
         if not replica_kv_memory:
             raise ValueError("RustTierConnector requires at least one replica")
+
+        if not leaves:
+            raise ValueError("RustTierConnector requires at least one leaf")
+        if not all(group_id.is_full() for group_id in leaves.values()):
+            raise ValueError("RustTierConnector only supports full groups")
+        self._leaves = leaves
 
         gpu0 = replica_kv_memory[0][0].buffers[0].device
         if gpu0.is_host:
@@ -242,6 +251,7 @@ class RustTierConnector(KVConnector):
             )
 
         self._rust = TierConnector(
+            list(self._leaves.keys()),
             total_num_host_blocks,
             host_base,
             bytes_per_page,
@@ -262,26 +272,60 @@ class RustTierConnector(KVConnector):
         )
 
     @property
+    def leaves(self) -> Mapping[str, KVCacheGroupId]:
+        return self._leaves
+
+    @property
     def name(self) -> str:
         return "RustTieredConnector"
 
     def load(
         self,
-        device_block_ids: list[int],
+        block_ids: Mapping[str, Sequence[int]],
         block_hashes: Sequence[bytes],
         replica_idx: int = 0,
     ) -> KVConnectorTransfer:
+        if block_ids.keys() != self._leaves.keys():
+            raise ValueError(
+                f"RustTierConnector.load block_ids keys {sorted(block_ids)} do not "
+                f"match the connector's leaves {sorted(self._leaves)}"
+            )
+        unique_block_ids = {tuple(bids) for bids in block_ids.values()}
+        if len(unique_block_ids) != 1:
+            raise ValueError(
+                "RustTierConnector.load expects identical block IDs across all leaves."
+                f"Found {block_ids}"
+            )
+        leaf_block_ids = list(unique_block_ids.pop())
         return self._rust.load(
-            device_block_ids, list(block_hashes), replica_idx
+            leaf_block_ids,
+            list(block_hashes),
+            replica_idx,
         )
 
     def offload(
         self,
-        block_ids: list[int],
+        block_ids: Mapping[str, Sequence[int]],
         block_hashes: Sequence[bytes],
         replica_idx: int = 0,
     ) -> KVConnectorTransfer:
-        return self._rust.offload(block_ids, list(block_hashes), replica_idx)
+        if block_ids.keys() != self._leaves.keys():
+            raise ValueError(
+                f"RustTierConnector.offload block_ids keys {sorted(block_ids)} do not "
+                f"match the connector's leaves {sorted(self._leaves)}"
+            )
+        unique_block_ids = {tuple(bids) for bids in block_ids.values()}
+        if len(unique_block_ids) != 1:
+            raise ValueError(
+                "RustTierConnector.offload expects identical block IDs across all leaves."
+                f"Found {block_ids}"
+            )
+        leaf_block_ids = list(unique_block_ids.pop())
+        return self._rust.offload(
+            leaf_block_ids,
+            list(block_hashes),
+            replica_idx,
+        )
 
     def wait_for_loads(self) -> None:
         # No-op: this connector reports load completion through the

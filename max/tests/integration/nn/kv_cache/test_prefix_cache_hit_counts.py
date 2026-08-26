@@ -24,11 +24,12 @@ Covers the two building blocks added for prefix-aware data-parallel routing:
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from types import SimpleNamespace
 from typing import cast
 
 import numpy as np
+from max.nn.kv_cache import KVCacheGroupId
 from max.pipelines.context import TextContext
 from max.pipelines.kv_cache.connectors.null_connector import NullConnector
 from max.pipelines.kv_cache.kv_connector import (
@@ -119,6 +120,10 @@ class _TierStubConnector:
         self.received_hashes: list[bytes] | None = None
 
     @property
+    def leaves(self) -> Mapping[str, KVCacheGroupId]:
+        return {"full": KVCacheGroupId.full()}
+
+    @property
     def name(self) -> str:
         return "TierStubConnector"
 
@@ -144,14 +149,14 @@ class _TierStubConnector:
 
     def load(
         self,
-        device_block_ids: list[int],
+        block_ids: Mapping[str, Sequence[int]],
         block_hashes: Sequence[bytes],
     ) -> int:
         raise NotImplementedError("must not be called by count paths")
 
     def offload(
         self,
-        block_ids: list[int],
+        block_ids: Mapping[str, Sequence[int]],
         block_hashes: Sequence[bytes],
     ) -> None:
         raise NotImplementedError("must not be called by count paths")
@@ -168,6 +173,10 @@ class _ReusableTierStubConnector:
     def __init__(self, host_hashes: set[bytes] | None = None) -> None:
         self._host_hashes = host_hashes or set()
         self.touched: list[bytes] | None = None
+
+    @property
+    def leaves(self) -> Mapping[str, KVCacheGroupId]:
+        return {"full": KVCacheGroupId.full()}
 
     @property
     def name(self) -> str:
@@ -189,19 +198,22 @@ class _ReusableTierStubConnector:
 
     def load(
         self,
-        device_block_ids: list[int],
+        block_ids: Mapping[str, Sequence[int]],
         block_hashes: Sequence[bytes],
         replica_idx: int = 0,
     ) -> CompletedTransfer:
         # Serve the leading run this stub holds; the manager frees the surplus
         # staging blocks past what we report as loaded.
+        bids = list(block_ids["full"])
         num_loaded = 0
         for h in block_hashes:
             if h not in self._host_hashes:
                 break
             num_loaded += 1
         return CompletedTransfer(
-            TransferDirection.LOAD, list(device_block_ids[:num_loaded])
+            TransferDirection.LOAD,
+            leaves=["full"],
+            g0_blocks=bids[:num_loaded],
         )
 
     def touch(
@@ -211,7 +223,7 @@ class _ReusableTierStubConnector:
 
     def offload(
         self,
-        block_ids: list[int],
+        block_ids: Mapping[str, Sequence[int]],
         block_hashes: Sequence[bytes],
         replica_idx: int = 0,
     ) -> None:

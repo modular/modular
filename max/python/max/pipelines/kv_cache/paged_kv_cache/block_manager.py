@@ -42,7 +42,6 @@ from max.pipelines.kv_cache.kv_connector import (
     CompletedTransfer,
     KVConnector,
     KVConnectorTransfer,
-    TransferDirection,
 )
 from max.pipelines.modeling.types import RequestID
 from max.profiler import traced
@@ -480,7 +479,7 @@ class BlockManager:
         self.assert_runtime_invariants(ctx)
 
         if not self.enable_prefix_caching or ctx.tokens.active_length == 1:
-            return 0, CompletedTransfer(TransferDirection.LOAD)
+            return 0, CompletedTransfer.load()
 
         # Identify a request's first admission so we record one cache-hit
         # observation per request, not one per chunked-prefill chunk.
@@ -754,7 +753,7 @@ class BlockManager:
         connector = self.connector
         pool = self.device_block_pools[replica_idx]
         if not desired_hashes:
-            return [], CompletedTransfer(TransferDirection.LOAD)
+            return [], CompletedTransfer.load()
 
         # Limit by available device blocks.
         num_hashes_to_load = min(len(desired_hashes), pool.num_free_blocks)
@@ -767,21 +766,20 @@ class BlockManager:
         # Query connector for available blocks from host cache.
         block_ids = [b.bid for b in blocks]
         event = connector.load(
-            block_ids,
+            {leaf_id: block_ids for leaf_id in connector.leaves},
             desired_hashes,
             replica_idx=replica_idx,
         )
 
         # The connector may load fewer blocks than requested; its event reports
-        # the loaded device blocks in ``g0_blocks``.
-        num_loaded = len(event.g0_blocks)
+        num_loaded = len(next(iter(event.g0_blocks_per_leaf.values())))
         for surplus_block in blocks[num_loaded:]:
             pool.free_block(surplus_block)
         loaded_blocks = blocks[:num_loaded]
         loaded_hashes = list(desired_hashes[:num_loaded])
 
         if not loaded_blocks:
-            return [], CompletedTransfer(TransferDirection.LOAD)
+            return [], CompletedTransfer.load()
 
         if event.is_complete():
             # Synchronous / stream-ordered connector (dKV): the
@@ -888,7 +886,7 @@ class BlockManager:
         )
 
         if self.connector.name == "NullConnector":
-            return device_blocks, CompletedTransfer(TransferDirection.LOAD), 0
+            return device_blocks, CompletedTransfer.load(), 0
 
         # remove the hashes that were found in the device prefix cache
         uncommitted_hashes = uncommitted_hashes[len(device_blocks) :]
@@ -985,7 +983,7 @@ class BlockManager:
                 src_blocks.append(block)
             if block_hashes:
                 event = connector.offload(
-                    block_ids,
+                    {leaf_id: block_ids for leaf_id in connector.leaves},
                     block_hashes,
                     replica_idx=replica_idx,
                 )

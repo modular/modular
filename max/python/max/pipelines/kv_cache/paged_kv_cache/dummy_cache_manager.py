@@ -25,7 +25,6 @@ from max.pipelines.context import TextContext
 from max.pipelines.kv_cache.kv_connector import (
     CompletedTransfer,
     KVConnectorTransfer,
-    TransferDirection,
 )
 from max.pipelines.modeling.types import RequestID
 
@@ -51,7 +50,7 @@ class DummyKVCache(PagedKVCacheManager):
 
     def alloc(self, *args: Any, **kwargs: Any) -> KVConnectorTransfer:
         """No-op; returns an already-complete transfer (nothing to onload)."""
-        return CompletedTransfer(TransferDirection.LOAD)
+        return CompletedTransfer.load()
 
     def step(self, *args: Any, **kwargs: Any) -> None:
         """No-op."""
