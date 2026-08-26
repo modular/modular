@@ -230,6 +230,44 @@ def test_normalize_response_format_schema_recurses_into_items_and_unions() -> (
     assert normalized["$defs"]["D"]["type"] == "object"
 
 
+def test_normalize_response_format_schema_reaches_every_container() -> None:
+    """Object-type inference reaches every container holding value schemas."""
+    normalized = normalize_response_format_schema(
+        {
+            "type": "object",
+            "additionalProperties": {"properties": {"a": {}}},
+            "unevaluatedProperties": {"properties": {"b": {}}},
+            "unevaluatedItems": {"properties": {"c": {}}},
+            "dependentSchemas": {"e": {"properties": {"f": {}}}},
+        }
+    )
+    assert normalized["additionalProperties"]["type"] == "object"
+    assert normalized["unevaluatedProperties"]["type"] == "object"
+    assert normalized["unevaluatedItems"]["type"] == "object"
+    assert normalized["dependentSchemas"]["e"]["type"] == "object"
+
+
+def test_normalize_response_format_schema_leaves_property_names_alone() -> None:
+    """A ``propertyNames`` subschema validates names, which are strings.
+
+    Inferring an object type there rejects every property name, so an
+    object schema that accepted ``{"a": 1}`` would accept nothing.
+    """
+    schema: dict[str, Any] = {
+        "type": "object",
+        "propertyNames": {"properties": {"x": {}}},
+    }
+    normalized = normalize_response_format_schema(schema)
+    assert normalized["propertyNames"] == {"properties": {"x": {}}}
+    assert "type" not in normalized["propertyNames"]
+
+
+def test_normalize_response_format_schema_leaves_boolean_containers() -> None:
+    """``additionalProperties: false`` is a boolean, not a subschema."""
+    schema = {"type": "object", "additionalProperties": False}
+    assert normalize_response_format_schema(schema) == schema
+
+
 def test_normalize_response_format_schema_leaves_present_type() -> None:
     """A schema with an explicit root ``type`` is returned unchanged."""
     schema = {"type": "object", "properties": {"x": {"type": "string"}}}
