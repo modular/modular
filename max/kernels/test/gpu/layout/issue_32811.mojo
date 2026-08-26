@@ -17,9 +17,9 @@ from layout import *
 
 
 def gpu_kernel(
-    dst: UnsafePointer[Float32, MutAnyOrigin],
-    rhs: UnsafePointer[Float32, ImmutAnyOrigin],
-    lhs: UnsafePointer[Float32, ImmutAnyOrigin],
+    dst: MutPointer[Float32, MutAnyOrigin],
+    rhs: ImmPointer[Float32, ImmutAnyOrigin],
+    lhs: ImmPointer[Float32, ImmutAnyOrigin],
 ):
     dst[block_idx.x * 4 + thread_idx.x] = (
         rhs[block_idx.x * 4 + thread_idx.x]

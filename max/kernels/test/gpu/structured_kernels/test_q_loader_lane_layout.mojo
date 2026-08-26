@@ -59,8 +59,8 @@ def kernel_load_q_fp8[
     cfg: MhaConfigV2,
     depth: Int,
 ](
-    q_ptr: UnsafePointer[Scalar[cfg.dtype], MutAnyOrigin],
-    dump_ptr: UnsafePointer[Scalar[cfg.dtype], MutAnyOrigin],
+    q_ptr: MutPointer[Scalar[cfg.dtype], MutAnyOrigin],
+    dump_ptr: MutPointer[Scalar[cfg.dtype], MutAnyOrigin],
 ):
     """Calls `MhaPrefillV2._load_q_and_scale` and dumps each lane's
     per-base-tile fragment to gmem.

@@ -95,10 +95,10 @@ def _is_finite(v: Float32) -> Bool:
 
 
 def _mla_naive_fp32_ref_chunked(
-    host_q_src: UnsafePointer[mut=False, BFloat16, _],
-    host_knope_src: UnsafePointer[mut=False, BFloat16, _],
-    host_krope_src: UnsafePointer[mut=False, BFloat16, _],
-    host_out_ref_fp32: UnsafePointer[mut=True, Float32, _],
+    host_q_src: ImmPointer[BFloat16, _],
+    host_knope_src: ImmPointer[BFloat16, _],
+    host_krope_src: ImmPointer[BFloat16, _],
+    host_out_ref_fp32: MutPointer[Float32, _],
     batch: Int,
     seq_len: Int,
     num_keys: Int,
@@ -216,8 +216,8 @@ def _mla_prefill_v2_launch[
     scale: Float32,
     num_keys: Int,
     start_pos: Int,
-    work_indptr_ptr: UnsafePointer[mut=False, Int32, _],
-    work_info_ptr: UnsafePointer[mut=False, Int32, _],
+    work_indptr_ptr: ImmPointer[Int32, _],
+    work_info_ptr: ImmPointer[Int32, _],
     num_works: Int,
     num_cu: Int,
     ctx: DeviceContext,

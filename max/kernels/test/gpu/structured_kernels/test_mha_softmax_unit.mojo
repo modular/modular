@@ -181,7 +181,7 @@ def _accumulate_o_from_att(
 
 @always_inline
 def _emit_diag(
-    out_ptr: UnsafePointer[Float32, MutAnyOrigin],
+    out_ptr: MutPointer[Float32, MutAnyOrigin],
     o_reg: RegTile[.float32, _, MutUntrackedOrigin],
     softmax: OnlineSoftmax,
 ):
@@ -216,7 +216,7 @@ def _emit_diag(
 
 
 def kernel_case1_uniform(
-    out_ptr: UnsafePointer[Float32, MutAnyOrigin],
+    out_ptr: MutPointer[Float32, MutAnyOrigin],
 ):
     var att_block = reg_alloc[.float32](ATT_LAYOUT)
     var o_reg = reg_alloc[.float32](O_LAYOUT)
@@ -253,7 +253,7 @@ def kernel_case1_uniform(
 
 
 def kernel_case2_one_hot(
-    out_ptr: UnsafePointer[Float32, MutAnyOrigin],
+    out_ptr: MutPointer[Float32, MutAnyOrigin],
 ):
     var att_block = reg_alloc[.float32](ATT_LAYOUT)
     var o_reg = reg_alloc[.float32](O_LAYOUT)
@@ -290,7 +290,7 @@ def kernel_case2_one_hot(
 
 
 def kernel_case3_negative(
-    out_ptr: UnsafePointer[Float32, MutAnyOrigin],
+    out_ptr: MutPointer[Float32, MutAnyOrigin],
 ):
     var att_block = reg_alloc[.float32](ATT_LAYOUT)
     var o_reg = reg_alloc[.float32](O_LAYOUT)
@@ -329,7 +329,7 @@ def kernel_case3_negative(
 
 
 def kernel_case4_subnormal(
-    out_ptr: UnsafePointer[Float32, MutAnyOrigin],
+    out_ptr: MutPointer[Float32, MutAnyOrigin],
 ):
     var att_block = reg_alloc[.float32](ATT_LAYOUT)
     var o_reg = reg_alloc[.float32](O_LAYOUT)
@@ -387,7 +387,7 @@ def _logit_for_tile(t: Int) -> Float32:
 
 
 def kernel_case5_eager(
-    out_ptr: UnsafePointer[Float32, MutAnyOrigin],
+    out_ptr: MutPointer[Float32, MutAnyOrigin],
 ):
     var att_block = reg_alloc[.float32](ATT_LAYOUT)
     var o_reg = reg_alloc[.float32](O_LAYOUT)
@@ -417,7 +417,7 @@ def kernel_case5_eager(
 
 
 def kernel_case5_lazy(
-    out_ptr: UnsafePointer[Float32, MutAnyOrigin],
+    out_ptr: MutPointer[Float32, MutAnyOrigin],
 ):
     var att_block = reg_alloc[.float32](ATT_LAYOUT)
     var o_reg = reg_alloc[.float32](O_LAYOUT)

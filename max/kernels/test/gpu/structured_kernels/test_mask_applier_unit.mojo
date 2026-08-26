@@ -137,7 +137,7 @@ def _expected_k_pos(k_tile_idx: Int, lane: Int, i: Int, k_local: Int) -> Int:
 # `case_idx * PER_CASE_FP32 + lane * ATT_PER_LANE + p`.
 # --------------------------------------------------------------------------- #
 def kernel_mask_unit(
-    out_ptr: UnsafePointer[Float32, MutAnyOrigin],
+    out_ptr: MutPointer[Float32, MutAnyOrigin],
 ):
     var l_id = Int(lane_id())
 

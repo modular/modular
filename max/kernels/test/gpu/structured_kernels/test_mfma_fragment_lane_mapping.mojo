@@ -144,7 +144,7 @@ def _fp8_a_k_for(lane: Int, elt: Int) -> Int:
 # Kernel: BF16 32x32x16 — uniform C value (sum-of-k validation)
 # ===========================================================================
 def kernel_bf16_32x32x16(
-    dump_ptr: UnsafePointer[Float32, MutAnyOrigin],
+    dump_ptr: MutPointer[Float32, MutAnyOrigin],
 ):
     """Per-lane test of v_mfma_f32_32x32x16_bf16 with uniform output.
 
@@ -183,7 +183,7 @@ def kernel_bf16_32x32x16(
 # Kernel: BF16 32x32x16 — non-uniform C (validates row/col fragment layout)
 # ===========================================================================
 def kernel_bf16_32x32x16_col(
-    dump_ptr: UnsafePointer[Float32, MutAnyOrigin],
+    dump_ptr: MutPointer[Float32, MutAnyOrigin],
 ):
     """Stress per-lane (row, col) decomposition of the C fragment.
 
@@ -211,7 +211,7 @@ def kernel_bf16_32x32x16_col(
 
 
 def kernel_bf16_32x32x16_row(
-    dump_ptr: UnsafePointer[Float32, MutAnyOrigin],
+    dump_ptr: MutPointer[Float32, MutAnyOrigin],
 ):
     """Stress per-lane row mapping by placing the M-index in A.
 
@@ -242,7 +242,7 @@ def kernel_bf16_32x32x16_row(
 # Kernel: FP8 32x32x64 — non-uniform variants
 # ===========================================================================
 def kernel_fp8_32x32x64_col(
-    dump_ptr: UnsafePointer[Float32, MutAnyOrigin],
+    dump_ptr: MutPointer[Float32, MutAnyOrigin],
 ):
     """FP8 analogue of `kernel_bf16_32x32x16_col`.
 
@@ -271,7 +271,7 @@ def kernel_fp8_32x32x64_col(
 
 
 def kernel_fp8_32x32x64_row(
-    dump_ptr: UnsafePointer[Float32, MutAnyOrigin],
+    dump_ptr: MutPointer[Float32, MutAnyOrigin],
 ):
     """FP8 analogue of `kernel_bf16_32x32x16_row`. Tests row mapping.
 
@@ -299,7 +299,7 @@ def kernel_fp8_32x32x64_row(
 # Kernel: BF16 32x32x16 swap_a_b
 # ===========================================================================
 def kernel_bf16_32x32x16_swap(
-    dump_ptr: UnsafePointer[Float32, MutAnyOrigin],
+    dump_ptr: MutPointer[Float32, MutAnyOrigin],
 ):
     """Emulates swap_a_b by calling gpu_mma with A and B swapped.
 
@@ -337,7 +337,7 @@ def kernel_bf16_32x32x16_swap(
 # Kernel: FP8 32x32x64
 # ===========================================================================
 def kernel_fp8_32x32x64(
-    dump_ptr: UnsafePointer[Float32, MutAnyOrigin],
+    dump_ptr: MutPointer[Float32, MutAnyOrigin],
 ):
     """Per-lane test of v_mfma_scale_f32_32x32x64_f8f6f4 (e4m3fn).
 
@@ -374,7 +374,7 @@ def kernel_fp8_32x32x64(
 # Kernel: FP8 32x32x64 swap_a_b
 # ===========================================================================
 def kernel_fp8_32x32x64_swap(
-    dump_ptr: UnsafePointer[Float32, MutAnyOrigin],
+    dump_ptr: MutPointer[Float32, MutAnyOrigin],
 ):
     """Emulates swap_a_b for FP8 32x32x64. Same idea as BF16 swap test."""
     var lid = Int(lane_id())

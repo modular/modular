@@ -124,9 +124,9 @@ def kernel_qk_chain[
     cfg: MhaConfigV2,
     T: DType,
 ](
-    src_k_swz_ptr: UnsafePointer[Scalar[T], MutAnyOrigin],
-    src_q_ptr: UnsafePointer[Scalar[T], MutAnyOrigin],
-    dump_ptr: UnsafePointer[Float32, MutAnyOrigin],
+    src_k_swz_ptr: MutPointer[Scalar[T], MutAnyOrigin],
+    src_q_ptr: MutPointer[Scalar[T], MutAnyOrigin],
+    dump_ptr: MutPointer[Float32, MutAnyOrigin],
 ):
     """Loads K from pre-swizzled SMEM, fills Q per-lane from gmem, calls
     `mma_QK`, dumps per-lane FP32 accumulator to `dump_ptr`.
@@ -311,7 +311,7 @@ def test_qk_chain[T: DType](ctx: DeviceContext) raises -> Bool:
     # Build the FP8/BF16-quantized K and Q matrices in host arrays for the
     # reference computation. Each matrix is `(rows, DEPTH)` flattened. We
     # back the host arrays with DeviceContext buffers so we don't need
-    # manual `UnsafePointer.alloc` plumbing (the test never launches a
+    # manual pointer allocation plumbing (the test never launches a
     # kernel against these buffers).
     var dev_k_quant = ctx.enqueue_create_buffer[.float32](KV_BLOCK * DEPTH)
     var dev_q_quant = ctx.enqueue_create_buffer[.float32](Q_BLOCK_SIZE * DEPTH)

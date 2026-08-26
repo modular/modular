@@ -136,7 +136,7 @@ def _mha_prefill_v2_launch[
     ]
 
     var compiled = ctx.compile_function[kernel_run]()
-    var sink_weights_ptr = UnsafePointer[
+    var sink_weights_ptr = ImmPointer[
         Scalar[q.dtype], ImmutAnyOrigin
     ].unsafe_dangling()
     ctx.enqueue_function(

@@ -162,7 +162,7 @@ def _pattern_P_fp8(k: Int, n: Int) -> Float8_e4m3fn:
 def kernel_mma_QK[
     cfg: MhaConfigV2,
     T: DType,
-](dump_ptr: UnsafePointer[Float32, MutAnyOrigin],):
+](dump_ptr: MutPointer[Float32, MutAnyOrigin],):
     comptime _Op = MhaMmaOp[T, cfg]
     comptime _MMA_M = _Op.MMA_M
     comptime _MMA_N = _Op.MMA_N
@@ -393,7 +393,7 @@ def test_mma_QK[T: DType](ctx: DeviceContext) raises -> Bool:
 def kernel_mma_PV[
     cfg: MhaConfigV2,
     T: DType,
-](dump_ptr: UnsafePointer[Float32, MutAnyOrigin],):
+](dump_ptr: MutPointer[Float32, MutAnyOrigin],):
     comptime _Op = MhaMmaOp[T, cfg]
     comptime _MMA_M = _Op.MMA_M
     comptime _MMA_N = _Op.MMA_N

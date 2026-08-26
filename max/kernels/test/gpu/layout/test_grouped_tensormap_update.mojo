@@ -50,7 +50,7 @@ from layout.tma_async import (
     TMATensorTile,
     TMATensorTileArray,
 )
-from std.memory import unsafe_stack_allocation, UnsafePointer
+from std.memory import unsafe_stack_allocation
 
 from std.utils.index import Index, IndexList
 
@@ -174,10 +174,10 @@ def test_grouped_tensormap_update_kernel[
             var a_addr = Int(group_a_ptrs[group_idx, 0])
             var b_addr = Int(group_b_ptrs[group_idx, 0])
 
-            var a_ptr = UnsafePointer[mut=True, Scalar[dtype], MutAnyOrigin](
+            var a_ptr = MutPointer[Scalar[dtype], MutAnyOrigin](
                 unsafe_from_address=a_addr
             )
-            var b_ptr = UnsafePointer[mut=True, Scalar[dtype], MutAnyOrigin](
+            var b_ptr = MutPointer[Scalar[dtype], MutAnyOrigin](
                 unsafe_from_address=b_addr
             )
 

@@ -284,8 +284,8 @@ def kernel_load_K_fp8[
     cfg: MhaConfigV2,
     depth: Int,
 ](
-    src_swz_ptr: UnsafePointer[Float8_e4m3fn, MutAnyOrigin],
-    dump_ptr: UnsafePointer[Float8_e4m3fn, MutAnyOrigin],
+    src_swz_ptr: MutPointer[Float8_e4m3fn, MutAnyOrigin],
+    dump_ptr: MutPointer[Float8_e4m3fn, MutAnyOrigin],
 ):
     """Loads K SMEM from `src_swz_ptr` (already swizzled), calls
     `MhaMmaOp.load_K`, and dumps each lane's fragment to `dump_ptr`.
@@ -508,8 +508,8 @@ def kernel_load_V_fp8[
     cfg: MhaConfigV2,
     depth: Int,
 ](
-    src_ptr: UnsafePointer[Float8_e4m3fn, MutAnyOrigin],
-    dump_ptr: UnsafePointer[Float8_e4m3fn, MutAnyOrigin],
+    src_ptr: MutPointer[Float8_e4m3fn, MutAnyOrigin],
+    dump_ptr: MutPointer[Float8_e4m3fn, MutAnyOrigin],
 ):
     """Fills V SMEM from `src_ptr` (no swizzle), calls
     `MhaMmaOp.load_V`, and dumps each lane's fragment to `dump_ptr`.

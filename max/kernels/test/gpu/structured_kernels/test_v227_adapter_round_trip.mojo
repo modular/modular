@@ -140,9 +140,9 @@ def _pattern_fp8(key: Int, depth: Int) -> Float8_e4m3fn:
 # they are bit-identical: `W∘R == (W_ours ∘ R_ours)` over the slot.
 # --------------------------------------------------------------------------- #
 def kernel_v227_round_trip(
-    v_src_ptr: UnsafePointer[Float8_e4m3fn, MutAnyOrigin],
-    dump_v227_ptr: UnsafePointer[Float8_e4m3fn, MutAnyOrigin],
-    dump_ref_ptr: UnsafePointer[Float8_e4m3fn, MutAnyOrigin],
+    v_src_ptr: MutPointer[Float8_e4m3fn, MutAnyOrigin],
+    dump_v227_ptr: MutPointer[Float8_e4m3fn, MutAnyOrigin],
+    dump_ref_ptr: MutPointer[Float8_e4m3fn, MutAnyOrigin],
 ):
     # DRAM V tile: tight (KV_BLOCK, DEPTH) row-major, stride (DEPTH, 1).
     # Matches the canonical v227 closed-form case (key = global_row,

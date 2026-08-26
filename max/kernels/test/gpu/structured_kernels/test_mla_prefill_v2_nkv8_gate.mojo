@@ -98,10 +98,10 @@ def _is_finite(v: Float32) -> Bool:
 
 
 def _mla_naive_fp32_ref_chunked(
-    host_q_src: UnsafePointer[mut=False, BFloat16, _],
-    host_knope_src: UnsafePointer[mut=False, BFloat16, _],
-    host_krope_src: UnsafePointer[mut=False, BFloat16, _],
-    host_out_ref_fp32: UnsafePointer[mut=True, Float32, _],
+    host_q_src: ImmPointer[BFloat16, _],
+    host_knope_src: ImmPointer[BFloat16, _],
+    host_krope_src: ImmPointer[BFloat16, _],
+    host_out_ref_fp32: MutPointer[Float32, _],
     batch: Int,
     seq_len: Int,
     num_keys: Int,
@@ -262,8 +262,8 @@ def _mla_prefill_v2_launch[
     # must pass EVERY kernel arg explicitly (defaults are not applied at the
     # launch boundary). The static-grid (non-persistent) path this test
     # drives uses the dangling-pointer / zero defaults.
-    var _work_indptr = UnsafePointer[Int32, ImmutAnyOrigin].unsafe_dangling()
-    var _work_info = UnsafePointer[Int32, ImmutAnyOrigin].unsafe_dangling()
+    var _work_indptr = ImmPointer[Int32, ImmutAnyOrigin].unsafe_dangling()
+    var _work_info = ImmPointer[Int32, ImmutAnyOrigin].unsafe_dangling()
     ctx.enqueue_function(
         compiled,
         q,

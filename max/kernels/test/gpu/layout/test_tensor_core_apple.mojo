@@ -46,9 +46,9 @@ comptime _NUM_ELEMENTS = _N * _N
 def mma_kernel[
     a_dtype: DType, b_dtype: DType, d_dtype: DType
 ](
-    a_ptr: UnsafePointer[Scalar[a_dtype], MutAnyOrigin],
-    b_ptr: UnsafePointer[Scalar[b_dtype], MutAnyOrigin],
-    d_ptr: UnsafePointer[Scalar[d_dtype], MutAnyOrigin],
+    a_ptr: MutPointer[Scalar[a_dtype], MutAnyOrigin],
+    b_ptr: MutPointer[Scalar[b_dtype], MutAnyOrigin],
+    d_ptr: MutPointer[Scalar[d_dtype], MutAnyOrigin],
 ):
     var a_frag = apple_mma_load[a_dtype](a_ptr, _N)
     var b_frag = apple_mma_load[b_dtype](b_ptr, _N)
@@ -115,9 +115,9 @@ def run_mma_test[
 
 
 def mma_strided_kernel(
-    a_ptr: UnsafePointer[Float32, MutAnyOrigin],
-    b_ptr: UnsafePointer[Float32, MutAnyOrigin],
-    d_ptr: UnsafePointer[Float32, MutAnyOrigin],
+    a_ptr: MutPointer[Float32, MutAnyOrigin],
+    b_ptr: MutPointer[Float32, MutAnyOrigin],
+    d_ptr: MutPointer[Float32, MutAnyOrigin],
 ):
     var a_frag = apple_mma_load[.float32](a_ptr, _N * 2, col_stride=2)
     var b_frag = apple_mma_load[.float32](b_ptr, _N * 2, col_stride=2)
@@ -184,12 +184,12 @@ def run_mma_test_strided(ctx: DeviceContext) raises:
 
 
 def mma_rt_transpose_kernel(
-    a_ptr: UnsafePointer[Float32, MutAnyOrigin],
-    b_ptr: UnsafePointer[Float32, MutAnyOrigin],
-    d_ff_ptr: UnsafePointer[Float32, MutAnyOrigin],
-    d_tf_ptr: UnsafePointer[Float32, MutAnyOrigin],
-    d_ft_ptr: UnsafePointer[Float32, MutAnyOrigin],
-    d_tt_ptr: UnsafePointer[Float32, MutAnyOrigin],
+    a_ptr: MutPointer[Float32, MutAnyOrigin],
+    b_ptr: MutPointer[Float32, MutAnyOrigin],
+    d_ff_ptr: MutPointer[Float32, MutAnyOrigin],
+    d_tf_ptr: MutPointer[Float32, MutAnyOrigin],
+    d_ft_ptr: MutPointer[Float32, MutAnyOrigin],
+    d_tt_ptr: MutPointer[Float32, MutAnyOrigin],
 ):
     """Runs MMA for all 4 transpose combos: (F,F), (T,F), (F,T), (T,T)."""
     var a_frag = apple_mma_load[.float32](a_ptr, _N)
@@ -215,9 +215,9 @@ def mma_rt_transpose_kernel(
 
 def _check_transpose(
     name: String,
-    a: UnsafePointer[Float32, ...],
-    b: UnsafePointer[Float32, ...],
-    d: UnsafePointer[Float32, ...],
+    a: ImmPointer[Float32, _],
+    b: ImmPointer[Float32, _],
+    d: ImmPointer[Float32, _],
     ta: Bool,
     tb: Bool,
 ) -> Bool:

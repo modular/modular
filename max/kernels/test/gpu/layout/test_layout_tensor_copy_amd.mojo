@@ -32,7 +32,7 @@ def copy_dram_to_sram_buffer_load_kernel[
     BN: Int,
     BK: Int,
     thread_layout: Layout,
-](input_ptr: UnsafePointer[Scalar[dtype], ImmutAnyOrigin], m_dev: Int32,):
+](input_ptr: ImmPointer[Scalar[dtype], ImmutAnyOrigin], m_dev: Int32,):
     var m = Int(m_dev)
     comptime layout = Layout.row_major(BM, BN)
     comptime q_tile_type = LayoutTensor[
@@ -106,7 +106,7 @@ def copy_dram_to_local_buffer_load_kernel[
     BN: Int,
     BK: Int,
     thread_layout: Layout,
-](input_ptr: UnsafePointer[Scalar[dtype], ImmutAnyOrigin], m_dev: Int32,):
+](input_ptr: ImmPointer[Scalar[dtype], ImmutAnyOrigin], m_dev: Int32,):
     var m = Int(m_dev)
     comptime layout = Layout.row_major(BM, BN)
     comptime q_tile_type = LayoutTensor[
@@ -192,7 +192,7 @@ def run_copy_dram_to_local_buffer_load_tests(ctx: DeviceContext) raises:
 def test_codegen_copy_dram_to_local(ctx: DeviceContext) raises:
     def kernel[
         cache_policy: CacheOperation
-    ](ptr: UnsafePointer[BFloat16, ImmutAnyOrigin]):
+    ](ptr: ImmPointer[BFloat16, ImmutAnyOrigin]):
         comptime simd_width = simd_width_of[DType.bfloat16]()
         var global_tensor = LayoutTensor[
             .bfloat16,

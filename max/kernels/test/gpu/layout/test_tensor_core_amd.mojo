@@ -2078,7 +2078,7 @@ def test_load_b_tr(ctx: DeviceContext) raises:
 
     def kernel[
         mma_shape: IndexList[3]
-    ](flag: UnsafePointer[Scalar[.bool], MutAnyOrigin]):
+    ](flag: MutPointer[Scalar[.bool], MutAnyOrigin]):
         var smem = LayoutTensor[
             .bfloat16,
             Layout.row_major(mma_shape[2], mma_shape[1]),

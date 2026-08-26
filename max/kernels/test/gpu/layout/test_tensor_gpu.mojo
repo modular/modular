@@ -35,7 +35,7 @@ def test_copy_dram_to_sram_async(ctx: DeviceContext) raises:
         layout: Layout,
     ](
         dram_tensor: LayoutTensor[.float32, layout, ImmutAnyOrigin],
-        flag: UnsafePointer[Scalar[.bool], MutAnyOrigin],
+        flag: MutPointer[Scalar[.bool], MutAnyOrigin],
     ):
         var dram_tile = dram_tensor.tile[4, 4](0, block_idx.x)
         var sram_tensor = LayoutTensor[
@@ -57,12 +57,12 @@ def test_copy_dram_to_sram_async(ctx: DeviceContext) raises:
                     flag[] = False
 
     comptime kernel = copy_to_sram_test_kernel[tensor_layout]
-    var ptr = UnsafePointer(to=check_state).bitcast[Scalar[.bool]]()
+    var ptr = Pointer(to=check_state).bitcast[Scalar[.bool]]()
     ctx.enqueue_function[kernel](
         tensor.device_tensor(),
         DeviceBuffer[.bool](
             ctx,
-            rebind[UnsafePointer[Scalar[.bool], MutAnyOrigin]](ptr),
+            rebind[MutPointer[Scalar[.bool], MutAnyOrigin]](ptr),
             1,
             owning=False,
         ),

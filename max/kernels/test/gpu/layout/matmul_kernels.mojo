@@ -72,9 +72,9 @@ def run_cublas[
     M: Int,
     N: Int,
     K: Int,
-    a: UnsafePointer[mut=False, Scalar[dtype], _],
-    b: UnsafePointer[mut=False, Scalar[dtype], _],
-    c: UnsafePointer[mut=True, Scalar[dtype], _],
+    a: ImmPointer[Scalar[dtype], _],
+    b: ImmPointer[Scalar[dtype], _],
+    c: MutPointer[Scalar[dtype], _],
 ) raises:
     var a_device = TileTensor(a, row_major(M, K))
     var b_device = TileTensor(b, row_major(K, N))
@@ -220,7 +220,7 @@ def run_gemm_kernel_1[
     ctx.enqueue_memset(
         DeviceBuffer[dtype](
             ctx,
-            rebind[UnsafePointer[Scalar[dtype], MutAnyOrigin]](c.ptr),
+            rebind[MutPointer[Scalar[dtype], MutAnyOrigin]](c.ptr),
             M * N,
             owning=False,
         ),
@@ -335,7 +335,7 @@ def run_gemm_kernel_2[
     ctx.enqueue_memset(
         DeviceBuffer[dtype](
             ctx,
-            rebind[UnsafePointer[Scalar[dtype], MutAnyOrigin]](c.ptr),
+            rebind[MutPointer[Scalar[dtype], MutAnyOrigin]](c.ptr),
             M * N,
             owning=False,
         ),
@@ -486,7 +486,7 @@ def run_gemm_kernel_3[
     ctx.enqueue_memset(
         DeviceBuffer[dtype](
             ctx,
-            rebind[UnsafePointer[Scalar[dtype], MutAnyOrigin]](c.ptr),
+            rebind[MutPointer[Scalar[dtype], MutAnyOrigin]](c.ptr),
             M * N,
             owning=False,
         ),
@@ -654,7 +654,7 @@ def run_gemm_kernel_4[
     ctx.enqueue_memset(
         DeviceBuffer[dtype](
             ctx,
-            rebind[UnsafePointer[Scalar[dtype], MutAnyOrigin]](c.ptr),
+            rebind[MutPointer[Scalar[dtype], MutAnyOrigin]](c.ptr),
             M * N,
             owning=False,
         ),
@@ -820,7 +820,7 @@ def run_gemm_kernel_5[
     ctx.enqueue_memset(
         DeviceBuffer[dtype](
             ctx,
-            rebind[UnsafePointer[Scalar[dtype], MutAnyOrigin]](c.ptr),
+            rebind[MutPointer[Scalar[dtype], MutAnyOrigin]](c.ptr),
             M * N,
             owning=False,
         ),
@@ -1011,7 +1011,7 @@ def run_gemm_kernel_6[
     ctx.enqueue_memset(
         DeviceBuffer[dtype](
             ctx,
-            rebind[UnsafePointer[Scalar[dtype], MutAnyOrigin]](c.ptr),
+            rebind[MutPointer[Scalar[dtype], MutAnyOrigin]](c.ptr),
             M * N,
             owning=False,
         ),
@@ -1241,7 +1241,7 @@ def run_gemm_kernel_tc[
     ctx.enqueue_memset(
         DeviceBuffer[dtype](
             ctx,
-            rebind[UnsafePointer[Scalar[dtype], MutAnyOrigin]](c.ptr),
+            rebind[MutPointer[Scalar[dtype], MutAnyOrigin]](c.ptr),
             M * N,
             owning=False,
         ),

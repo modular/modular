@@ -72,8 +72,8 @@ def _pattern(i: Int, j: Int) -> BFloat16:
 
 
 def kernel_case_a(
-    src_ptr: UnsafePointer[BFloat16, MutAnyOrigin],
-    out_ptr: UnsafePointer[BFloat16, MutAnyOrigin],
+    src_ptr: MutPointer[BFloat16, MutAnyOrigin],
+    out_ptr: MutPointer[BFloat16, MutAnyOrigin],
 ):
     # SMEM destination: (BN, DEPTH) row-major.
     comptime dst_layout = row_major[BN, DEPTH]()
@@ -106,8 +106,8 @@ def kernel_case_a(
 
 
 def kernel_case_b(
-    src_ptr: UnsafePointer[BFloat16, MutAnyOrigin],
-    out_ptr: UnsafePointer[BFloat16, MutAnyOrigin],
+    src_ptr: MutPointer[BFloat16, MutAnyOrigin],
+    out_ptr: MutPointer[BFloat16, MutAnyOrigin],
 ):
     # SMEM destination: (BN, DEPTH) row-major, same as Case A.
     comptime dst_layout = row_major[BN, DEPTH]()
@@ -199,7 +199,7 @@ def test_case_b(ctx: DeviceContext) raises:
 
     # Pass a pointer already offset by head_dim_offset — mirrors what
     # KVCacheIterator.next_tile does for the MLA rope slice.
-    var dev_in_offset = UnsafePointer[BFloat16, MutAnyOrigin](
+    var dev_in_offset = MutPointer[BFloat16, MutAnyOrigin](
         unsafe_from_address=Int(dev_in.unsafe_ptr()) + head_dim_offset * 2
     )
 

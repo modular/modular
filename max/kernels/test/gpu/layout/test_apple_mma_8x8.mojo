@@ -47,9 +47,9 @@ def _b_val(i: Int, j: Int) -> Int:
 def mma_kernel[
     a_dtype: DType, b_dtype: DType
 ](
-    a_ptr: UnsafePointer[Scalar[a_dtype], MutAnyOrigin],
-    b_ptr: UnsafePointer[Scalar[b_dtype], MutAnyOrigin],
-    d_ptr: UnsafePointer[Float32, MutAnyOrigin],
+    a_ptr: MutPointer[Scalar[a_dtype], MutAnyOrigin],
+    b_ptr: MutPointer[Scalar[b_dtype], MutAnyOrigin],
+    d_ptr: MutPointer[Float32, MutAnyOrigin],
 ):
     var a_frag = apple_mma_load_8x8[a_dtype](a_ptr, _N)
     var b_frag = apple_mma_load_8x8[b_dtype](b_ptr, _N)
@@ -103,9 +103,9 @@ def run_mma_test[
 
 
 def mma_strided_kernel(
-    a_ptr: UnsafePointer[Float32, MutAnyOrigin],
-    b_ptr: UnsafePointer[Float32, MutAnyOrigin],
-    d_ptr: UnsafePointer[Float32, MutAnyOrigin],
+    a_ptr: MutPointer[Float32, MutAnyOrigin],
+    b_ptr: MutPointer[Float32, MutAnyOrigin],
+    d_ptr: MutPointer[Float32, MutAnyOrigin],
 ):
     var a_frag = apple_mma_load_8x8[.float32](a_ptr, _N * 2, col_stride=2)
     var b_frag = apple_mma_load_8x8[.float32](b_ptr, _N * 2, col_stride=2)

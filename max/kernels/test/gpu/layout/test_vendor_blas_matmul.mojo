@@ -16,7 +16,6 @@ from std.os import abort
 from std.sys import has_amd_gpu_accelerator, has_nvidia_gpu_accelerator
 
 from max.gpu.host import DeviceContext
-from std.memory import UnsafePointer
 from internal_utils import assert_almost_equal
 from std.random import rand
 from layout import Coord, Idx, TileTensor, row_major
@@ -75,13 +74,13 @@ def test_matmul[
         row_major(Coord(M, N)),
     )
     var a_immut_tt = TileTensor(
-        UnsafePointer[Scalar[input_type], ImmutAnyOrigin](
+        ImmPointer[Scalar[input_type], ImmutAnyOrigin](
             unsafe_from_address=Int(a_device.unsafe_ptr())
         ),
         row_major(Coord(M, K)),
     )
     var b_immut_tt = TileTensor(
-        UnsafePointer[Scalar[input_type], ImmutAnyOrigin](
+        ImmPointer[Scalar[input_type], ImmutAnyOrigin](
             unsafe_from_address=Int(b_device.unsafe_ptr())
         ),
         row_major(Coord(N, K)),

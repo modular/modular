@@ -63,8 +63,8 @@ comptime _BLOCK_DIM = 4
 
 
 def dram_to_sram_to_dram_kernel(
-    src_ptr: UnsafePointer[Float32, MutAnyOrigin],
-    dst_ptr: UnsafePointer[Float32, MutAnyOrigin],
+    src_ptr: MutPointer[Float32, MutAnyOrigin],
+    dst_ptr: MutPointer[Float32, MutAnyOrigin],
 ):
     """Roundtrip a tile through shared memory using the free-function wrappers.
     """
@@ -82,8 +82,8 @@ def dram_to_sram_to_dram_kernel(
 
 
 def dram_to_local_to_dram_kernel(
-    src_ptr: UnsafePointer[Float32, MutAnyOrigin],
-    dst_ptr: UnsafePointer[Float32, MutAnyOrigin],
+    src_ptr: MutPointer[Float32, MutAnyOrigin],
+    dst_ptr: MutPointer[Float32, MutAnyOrigin],
 ):
     """Roundtrip a tile through registers using the free-function wrappers.
 
@@ -102,8 +102,8 @@ def dram_to_local_to_dram_kernel(
 
 
 def sram_local_sram_kernel(
-    src_ptr: UnsafePointer[Float32, MutAnyOrigin],
-    dst_ptr: UnsafePointer[Float32, MutAnyOrigin],
+    src_ptr: MutPointer[Float32, MutAnyOrigin],
+    dst_ptr: MutPointer[Float32, MutAnyOrigin],
 ):
     """Roundtrip a tile through shared -> local -> shared -> generic.
 
@@ -134,8 +134,8 @@ def sram_local_sram_kernel(
 
 
 def swizzled_local_to_shared_kernel(
-    src_ptr: UnsafePointer[Float32, MutAnyOrigin],
-    dst_ptr: UnsafePointer[Float32, MutAnyOrigin],
+    src_ptr: MutPointer[Float32, MutAnyOrigin],
+    dst_ptr: MutPointer[Float32, MutAnyOrigin],
 ):
     """Swizzled roundtrip via the wrappers: GENERIC -> LOCAL -> SHARED
     (swizzled) -> GENERIC (swizzled).
@@ -163,8 +163,8 @@ def swizzled_local_to_shared_kernel(
 
 
 def async_dram_to_sram_to_dram_kernel(
-    src_ptr: UnsafePointer[Float32, MutAnyOrigin],
-    dst_ptr: UnsafePointer[Float32, MutAnyOrigin],
+    src_ptr: MutPointer[Float32, MutAnyOrigin],
+    dst_ptr: MutPointer[Float32, MutAnyOrigin],
 ):
     """Roundtrip through shared memory using `copy_dram_to_sram_async` for the
     DRAM->SMEM leg.
@@ -190,8 +190,8 @@ def async_dram_to_sram_to_dram_kernel(
 
 def _run_roundtrip[
     kernel_fn: def(
-        UnsafePointer[Float32, MutAnyOrigin],
-        UnsafePointer[Float32, MutAnyOrigin],
+        MutPointer[Float32, MutAnyOrigin],
+        MutPointer[Float32, MutAnyOrigin],
     ) thin -> None,
 ](name: String, ctx: DeviceContext) raises:
     print("==", name)

@@ -34,9 +34,9 @@ from std.utils.numerics import get_accum_type
 
 
 def test_stmatrix(
-    c_ptr: UnsafePointer[Float32, MutAnyOrigin],
-    a_ptr: UnsafePointer[Float32, ImmutAnyOrigin],
-    b_ptr: UnsafePointer[Float32, ImmutAnyOrigin],
+    c_ptr: MutPointer[Float32, MutAnyOrigin],
+    a_ptr: ImmPointer[Float32, ImmutAnyOrigin],
+    b_ptr: ImmPointer[Float32, ImmutAnyOrigin],
     m_dev: Int32,
     n_dev: Int32,
     k_dev: Int32,
@@ -102,9 +102,9 @@ def test_stmatrix(
 def test_stmatrix_gen[
     input_type: DType, output_type: DType
 ](
-    c_ptr: UnsafePointer[Scalar[output_type], MutAnyOrigin],
-    a_ptr: UnsafePointer[Scalar[input_type], ImmutAnyOrigin],
-    b_ptr: UnsafePointer[Scalar[input_type], ImmutAnyOrigin],
+    c_ptr: MutPointer[Scalar[output_type], MutAnyOrigin],
+    a_ptr: ImmPointer[Scalar[input_type], ImmutAnyOrigin],
+    b_ptr: ImmPointer[Scalar[input_type], ImmutAnyOrigin],
 ):
     comptime accum_type = get_accum_type[input_type]()
     comptime mma_shape = get_mma_shape[input_type, accum_type]()
@@ -217,20 +217,18 @@ def check_stmatrix_gen[
     # a/b are constructed as immutable to match the ImmutAnyOrigin
     # parameters that matmul_kernel_naive expects (enqueue_function
     # requires exact type matches).
-    from std.memory import UnsafePointer
-
     var c_ref_tt = TileTensor(
         c_device_ref,
         row_major(Coord(M, N)),
     )
     var a_tt = TileTensor(
-        UnsafePointer[Scalar[input_type], ImmutAnyOrigin](
+        ImmPointer[Scalar[input_type], ImmutAnyOrigin](
             unsafe_from_address=Int(a_device.unsafe_ptr())
         ),
         row_major(Coord(M, K)),
     )
     var b_tt = TileTensor(
-        UnsafePointer[Scalar[input_type], ImmutAnyOrigin](
+        ImmPointer[Scalar[input_type], ImmutAnyOrigin](
             unsafe_from_address=Int(b_device.unsafe_ptr())
         ),
         row_major(Coord(K, N)),
@@ -333,20 +331,18 @@ def check_stmatrix(
     # a/b are constructed as immutable to match the ImmutAnyOrigin
     # parameters that matmul_kernel_naive expects (enqueue_function
     # requires exact type matches).
-    from std.memory import UnsafePointer
-
     var c_ref_tt = TileTensor(
         c_device_ref,
         row_major(Coord(M, N)),
     )
     var a_tt = TileTensor(
-        UnsafePointer[Float32, ImmutAnyOrigin](
+        ImmPointer[Float32, ImmutAnyOrigin](
             unsafe_from_address=Int(a_device.unsafe_ptr())
         ),
         row_major(Coord(M, K)),
     )
     var b_tt = TileTensor(
-        UnsafePointer[Float32, ImmutAnyOrigin](
+        ImmPointer[Float32, ImmutAnyOrigin](
             unsafe_from_address=Int(b_device.unsafe_ptr())
         ),
         row_major(Coord(K, N)),

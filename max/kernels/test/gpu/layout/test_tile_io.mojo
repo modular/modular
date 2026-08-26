@@ -75,8 +75,8 @@ comptime _BLOCK_DIM = 4
 
 
 def generic_to_shared_to_generic_kernel(
-    src_ptr: UnsafePointer[Float32, MutAnyOrigin],
-    dst_ptr: UnsafePointer[Float32, MutAnyOrigin],
+    src_ptr: MutPointer[Float32, MutAnyOrigin],
+    dst_ptr: MutPointer[Float32, MutAnyOrigin],
 ):
     """Roundtrip a tile through shared memory: GENERIC -> SHARED -> GENERIC."""
     comptime thread_layout = row_major(Idx[2], Idx[2])
@@ -93,8 +93,8 @@ def generic_to_shared_to_generic_kernel(
 
 
 def generic_to_local_to_generic_kernel(
-    src_ptr: UnsafePointer[Float32, MutAnyOrigin],
-    dst_ptr: UnsafePointer[Float32, MutAnyOrigin],
+    src_ptr: MutPointer[Float32, MutAnyOrigin],
+    dst_ptr: MutPointer[Float32, MutAnyOrigin],
 ):
     """Roundtrip a tile through registers: GENERIC -> LOCAL -> GENERIC.
 
@@ -114,8 +114,8 @@ def generic_to_local_to_generic_kernel(
 
 
 def shared_local_shared_kernel(
-    src_ptr: UnsafePointer[Float32, MutAnyOrigin],
-    dst_ptr: UnsafePointer[Float32, MutAnyOrigin],
+    src_ptr: MutPointer[Float32, MutAnyOrigin],
+    dst_ptr: MutPointer[Float32, MutAnyOrigin],
 ):
     """Roundtrip a tile through shared -> local -> shared -> generic.
 
@@ -148,8 +148,8 @@ def shared_local_shared_kernel(
 
 
 def swizzled_local_to_shared_to_generic_kernel(
-    src_ptr: UnsafePointer[Float32, MutAnyOrigin],
-    dst_ptr: UnsafePointer[Float32, MutAnyOrigin],
+    src_ptr: MutPointer[Float32, MutAnyOrigin],
+    dst_ptr: MutPointer[Float32, MutAnyOrigin],
 ):
     """Swizzled roundtrip: GENERIC -> LOCAL -> SHARED (swizzled) ->
     GENERIC (swizzled).
@@ -180,8 +180,8 @@ def swizzled_local_to_shared_to_generic_kernel(
 
 
 def async_generic_to_shared_to_generic_kernel(
-    src_ptr: UnsafePointer[Float32, MutAnyOrigin],
-    dst_ptr: UnsafePointer[Float32, MutAnyOrigin],
+    src_ptr: MutPointer[Float32, MutAnyOrigin],
+    dst_ptr: MutPointer[Float32, MutAnyOrigin],
 ):
     """Roundtrip a tile through shared memory using `cp.async` for the
     DRAM->SMEM leg: GENERIC -> SHARED (async) -> GENERIC.
@@ -207,8 +207,8 @@ def async_generic_to_shared_to_generic_kernel(
 
 
 def async_generic_to_shared_to_generic_8b_kernel(
-    src_ptr: UnsafePointer[Float32, MutAnyOrigin],
-    dst_ptr: UnsafePointer[Float32, MutAnyOrigin],
+    src_ptr: MutPointer[Float32, MutAnyOrigin],
+    dst_ptr: MutPointer[Float32, MutAnyOrigin],
 ):
     """Roundtrip with 8-byte (2x f32) async copies.
 
@@ -234,8 +234,8 @@ def async_generic_to_shared_to_generic_8b_kernel(
 
 
 def async_generic_to_shared_to_generic_16b_kernel(
-    src_ptr: UnsafePointer[Float32, MutAnyOrigin],
-    dst_ptr: UnsafePointer[Float32, MutAnyOrigin],
+    src_ptr: MutPointer[Float32, MutAnyOrigin],
+    dst_ptr: MutPointer[Float32, MutAnyOrigin],
 ):
     """Roundtrip with 16-byte (4x f32) async copies.
 
@@ -268,8 +268,8 @@ comptime _BF16_NUM_ELEMENTS = _BF16_ROWS * _BF16_COLS
 
 
 def async_generic_to_shared_to_generic_16b_bf16_kernel(
-    src_ptr: UnsafePointer[BFloat16, MutAnyOrigin],
-    dst_ptr: UnsafePointer[BFloat16, MutAnyOrigin],
+    src_ptr: MutPointer[BFloat16, MutAnyOrigin],
+    dst_ptr: MutPointer[BFloat16, MutAnyOrigin],
 ):
     """Roundtrip with 16-byte (8x bf16) async copies.
 
@@ -297,8 +297,8 @@ def async_generic_to_shared_to_generic_16b_bf16_kernel(
 
 
 def masked_async_generic_to_shared_to_generic_kernel(
-    src_ptr: UnsafePointer[Float32, MutAnyOrigin],
-    dst_ptr: UnsafePointer[Float32, MutAnyOrigin],
+    src_ptr: MutPointer[Float32, MutAnyOrigin],
+    dst_ptr: MutPointer[Float32, MutAnyOrigin],
 ):
     """Smoke-test the masked async write path with a fully in-bounds src.
 
@@ -331,8 +331,8 @@ def masked_async_generic_to_shared_to_generic_kernel(
 
 
 def access_size_swizzled_vectorized_async_kernel(
-    src_ptr: UnsafePointer[Float32, MutAnyOrigin],
-    dst_ptr: UnsafePointer[Float32, MutAnyOrigin],
+    src_ptr: MutPointer[Float32, MutAnyOrigin],
+    dst_ptr: MutPointer[Float32, MutAnyOrigin],
 ):
     """Production-shaped swizzle + vectorize on the async path.
 
@@ -368,8 +368,8 @@ def access_size_swizzled_vectorized_async_kernel(
 
 
 def swizzled_async_generic_to_shared_to_generic_kernel(
-    src_ptr: UnsafePointer[Float32, MutAnyOrigin],
-    dst_ptr: UnsafePointer[Float32, MutAnyOrigin],
+    src_ptr: MutPointer[Float32, MutAnyOrigin],
+    dst_ptr: MutPointer[Float32, MutAnyOrigin],
 ):
     """Swizzled async roundtrip: GENERIC -> SHARED (cp.async, swizzled) ->
     GENERIC (swizzled).
@@ -399,8 +399,8 @@ def swizzled_async_generic_to_shared_to_generic_kernel(
 
 def _run_roundtrip[
     kernel_fn: def(
-        UnsafePointer[Float32, MutAnyOrigin],
-        UnsafePointer[Float32, MutAnyOrigin],
+        MutPointer[Float32, MutAnyOrigin],
+        MutPointer[Float32, MutAnyOrigin],
     ) thin -> None,
 ](name: String, ctx: DeviceContext) raises:
     print("==", name)

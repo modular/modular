@@ -27,8 +27,8 @@ def _copy_through_lds[
     dtype: DType,
     width: Int,
 ](
-    src: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    dst: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    src: MutPointer[Scalar[dtype], MutAnyOrigin],
+    dst: MutPointer[Scalar[dtype], MutAnyOrigin],
     valid_elements: Int32,
 ):
     var smem = unsafe_stack_allocation[
