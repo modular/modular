@@ -1965,24 +1965,35 @@ def TopKTopPSamplingFromProbKernel[
                 var kept_mass = Float32(1)
 
                 if accepted_e >= 0:
+                    if k == _d and p >= 1.0 and not min_p:
+                        cutoff = 0
+                        kept_mass = z
+                    else:
 
-                    @__parameter
-                    @always_inline
-                    def load_dist_vec(
-                        offset: Int,
-                    ) -> SIMD[.float32, vec_size]:
-                        return load_dist[vec_size](offset)
+                        @__parameter
+                        @always_inline
+                        def load_dist_vec(
+                            offset: Int,
+                        ) -> SIMD[.float32, vec_size]:
+                            return load_dist[vec_size](offset)
 
-                    # The search needs `mass(> low)` over the masked working
-                    # distribution. A refined `q` came from `load_dist` sums
-                    # and is exactly that; the initial budget is the unmasked
-                    # `z`, which overstates it whenever min-p zeroed weight.
-                    var mass_above_low = q if low > 0 else masked_z
-                    var refined = _topk_topp_cutoff_search[
-                        vec_size, block_size, load_dist_vec
-                    ](_d, Int32(k), p_eff, low, accepted_e, mass_above_low)
-                    cutoff = refined[0]
-                    kept_mass = refined[1]
+                        # The search needs `mass(> low)` over the masked working
+                        # distribution. A refined `q` came from `load_dist` sums
+                        # and is exactly that; the initial budget is the unmasked
+                        # `z`, which overstates it whenever min-p zeroed weight.
+                        var mass_above_low = q if low > 0 else masked_z
+                        var refined = _topk_topp_cutoff_search[
+                            vec_size, block_size, load_dist_vec
+                        ](
+                            _d,
+                            Int32(k),
+                            p_eff,
+                            low,
+                            accepted_e,
+                            mass_above_low,
+                        )
+                        cutoff = refined[0]
+                        kept_mass = refined[1]
 
                 var dist_row = TileTensor(
                     out_dist.unsafe_value() + bx * _d,
@@ -2776,7 +2787,7 @@ def TopKTopPMaskedProbsKernel[
 
     var cut = Float32(0)
     var mass_s = z
-    if total.count >= Int32(k) or z > p_eff:
+    if total.count > Int32(k) or z > p_eff:
         var refined = _topk_topp_cutoff_search[vec_size, block_size, load_e](
             _d, Int32(k), p_eff, 0.0, 1.0, z
         )
