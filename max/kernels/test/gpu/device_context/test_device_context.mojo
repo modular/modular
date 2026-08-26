@@ -186,7 +186,7 @@ def test_enqueue_unified(ctx: DeviceContext) raises:
     ctx.enqueue_copy(in1_device, in1_host)
 
     var block_dim = 32
-    var supplement = 5
+    var supplement: Float32 = 5
 
     var output = Span(unsafe_ptr=out_device.unsafe_ptr(), length=length)
     var in0 = Span(unsafe_ptr=in0_device.unsafe_ptr(), length=length)
@@ -196,7 +196,7 @@ def test_enqueue_unified(ctx: DeviceContext) raises:
         var tid = global_idx.x
         if tid >= length:
             return
-        output[tid] = in0[tid] + in1[tid] + Float32(supplement)
+        output[tid] = in0[tid] + in1[tid] + supplement
 
     # Execute the kernel on the device.
     #  - notice the simple function call like invocation

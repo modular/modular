@@ -38,6 +38,7 @@ _EXTRA_MOJO_TEST_CONSTRAINTS = {
         deps = [
             "//max:internal_utils",
             "//max:kv_cache",
+            "//max:layout",
             "//max:linalg",
             "//max:nn",
             "//max:quantization",
