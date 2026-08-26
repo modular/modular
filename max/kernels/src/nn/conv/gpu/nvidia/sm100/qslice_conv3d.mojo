@@ -333,12 +333,18 @@ def dispatch_qslice_conv3d_sm100[
         var accum_n_ptr = accum_fp32_ptr + accum_n_offset
 
         for q in range(Q):
+            var input_offset = input.layout[
+                linear_idx_type=input.linear_idx_type
+            ](Coord(n_batch, q, 0, 0, 0))
+            var filter_offset = filter.layout[
+                linear_idx_type=filter.linear_idx_type
+            ](Coord(q, 0, 0, 0, 0))
             var act_tt = TileTensor(
-                input.ptr_at_offset(Coord(IndexList[5](n_batch, q, 0, 0, 0))),
+                input._offset_storage(input_offset),
                 row_major(D_out, H, W, C_in),
             )
             var filter_rscf_tt = TileTensor(
-                filter.ptr_at_offset(Coord(IndexList[5](q, 0, 0, 0, 0))),
+                filter._offset_storage(filter_offset),
                 row_major(R, S, C_in, C_out),
             )
             var temp_tt = TileTensor(

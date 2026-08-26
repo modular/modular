@@ -376,7 +376,7 @@ def dispatch_rdna_conv2d[
 
             var a_tt = TileTensor(im2col_ptr, row_major(Coord(M, K)))
             var b_tt = TileTensor(filter_nk_ptr, row_major(Coord(N, K)))
-            var c_tt = TileTensor(output.ptr, row_major(Coord(M, N)))
+            var c_tt = output.reshape(row_major(Coord(M, N)))
 
             _matmul_gpu[
                 use_tensor_core=True,

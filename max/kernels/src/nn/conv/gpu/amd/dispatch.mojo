@@ -197,7 +197,7 @@ def _launch_amd_4wave_conv2d_runtime[
         # Dynamic 2D `[M_total, C_out]` output view.
         var _output_dims = IndexList[2](_rt_M_total, C_out)
         var _dyn_out_layout = row_major(Coord(_output_dims))
-        var output_2d_tt = TileTensor(output.ptr, _dyn_out_layout)
+        var output_2d_tt = output.reshape(_dyn_out_layout)
         amd_4wave_conv[
             elementwise_lambda_fn=elementwise_lambda_fn,
             R=R,
@@ -493,8 +493,8 @@ def dispatch_amd_4wave_conv2d[
                     _N_static, _H_static, _W_static, _C_in
                 ]()
                 comptime _output_2d_layout = row_major[_M_total_v, _C_out]()
-                var input_nhwc_tt = TileTensor(input.ptr, _nhwc_in_layout)
-                var output_2d_tt = TileTensor(output.ptr, _output_2d_layout)
+                var input_nhwc_tt = input.reshape(_nhwc_in_layout)
+                var output_2d_tt = output.reshape(_output_2d_layout)
                 amd_4wave_conv[
                     elementwise_lambda_fn=elementwise_lambda_fn,
                     H=_H_static,

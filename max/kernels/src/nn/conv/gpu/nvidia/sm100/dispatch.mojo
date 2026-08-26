@@ -246,18 +246,12 @@ def dispatch_sm100_conv2d[
             pad_w=symmetric_padding[1],
         )
 
-        var act_tt = TileTensor(
-            input.ptr,
-            row_major(batch, in_h, in_w, in_c),
-        )
+        var act_tt = input.reshape(row_major(batch, in_h, in_w, in_c))
         var filter_tt = TileTensor(
             filter_krsc_ptr,
             row_major(out_c, fh, fw, in_c),
         )
-        var out_tt = TileTensor(
-            output.ptr,
-            row_major(batch, out_h, out_w, out_c),
-        )
+        var out_tt = output.reshape(row_major(batch, out_h, out_w, out_c))
 
         # Pick activation/filter swizzle based on C_in alignment. SWIZZLE_128B
         # requires the inner C-row to be 128B-aligned; SWIZZLE_64B relaxes that
