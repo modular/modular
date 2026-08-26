@@ -115,6 +115,7 @@ def run_sampling[
     temperature: Float64,
     seed_base: UInt64,
     min_p: Float64 = 0.0,
+    pass_min_p: Bool = True,
     single_block: Bool = False,
 ) raises -> SamplingRun:
     var logits_dev = ctx.enqueue_create_buffer[dtype](rows * d)
@@ -146,6 +147,17 @@ def run_sampling[
     ctx.enqueue_copy(seed_dev, seed_host)
     ctx.enqueue_copy(min_p_dev, min_p_host)
 
+    # Production reaches this kernel through
+    # `sampler.fused_token_sampling_with_dist`, which forwards no min-p array,
+    # so the unfiltered fast path is only reachable with a null optional here.
+    # A buffer of zeros leaves the optional engaged and takes the slow path.
+    var min_p_t = (
+        TileTensor(min_p_dev, row_major(rows)).as_unsafe_any_origin().as_immut()
+    )
+    var min_p_arg = Optional(min_p_t)
+    if not pass_min_p:
+        min_p_arg = None
+
     # `d` is the top_k default, so a per-row -1 means keep every token. The
     # single-block entry is reachable through the dispatcher only past the
     # shared-memory gate, where the O(d^2) reference is unusable, so exact
@@ -170,9 +182,7 @@ def run_sampling[
             temperature=TileTensor(temp_dev, row_major(rows))
             .as_unsafe_any_origin()
             .as_immut(),
-            min_p=TileTensor(min_p_dev, row_major(rows))
-            .as_unsafe_any_origin()
-            .as_immut(),
+            min_p=min_p_arg,
             out_dist=TileTensor(
                 dist_dev, row_major(rows, d) if emit_dist else row_major(1, 1)
             ).as_unsafe_any_origin(),
@@ -197,9 +207,7 @@ def run_sampling[
             temperature=TileTensor(temp_dev, row_major(rows))
             .as_unsafe_any_origin()
             .as_immut(),
-            min_p=TileTensor(min_p_dev, row_major(rows))
-            .as_unsafe_any_origin()
-            .as_immut(),
+            min_p=min_p_arg,
             out_dist=TileTensor(
                 dist_dev, row_major(rows, d) if emit_dist else row_major(1, 1)
             ).as_unsafe_any_origin(),
@@ -251,6 +259,7 @@ def test_dist_matches_reference[
     top_p: Float64,
     temperature: Float64,
     min_p: Float64 = 0.0,
+    pass_min_p: Bool = True,
     single_block: Bool = False,
 ) raises:
     """The emitted distribution equals the reference masked softmax.
@@ -269,6 +278,7 @@ def test_dist_matches_reference[
         temperature=temperature,
         seed_base=1234,
         min_p=min_p,
+        pass_min_p=pass_min_p,
         single_block=single_block,
     )
 
@@ -497,6 +507,42 @@ def main() raises:
         )
         test_dist_matches_reference(
             ctx, rows=4, d=8, k=4, top_p=0.9, temperature=1.0
+        )
+        # The unfiltered fast path: top-k disabled, top_p saturated and no
+        # min-p array, so every positive token survives and the cutoff search
+        # is skipped entirely. This is the shape
+        # `sampler.fused_token_sampling_with_dist` launches, and it is only
+        # reachable with a null min-p optional -- a zero-filled buffer keeps
+        # the optional engaged and takes the search path instead.
+        test_dist_matches_reference(
+            ctx,
+            rows=4,
+            d=1024,
+            k=-1,
+            top_p=1.0,
+            temperature=1.0,
+            pass_min_p=False,
+        )
+        test_dist_matches_reference(
+            ctx,
+            rows=4,
+            d=1024,
+            k=-1,
+            top_p=1.0,
+            temperature=1.0,
+            pass_min_p=False,
+            single_block=True,
+        )
+        # A null min-p array with the constraints still active must keep
+        # taking the search path and agree with the reference.
+        test_dist_matches_reference(
+            ctx,
+            rows=4,
+            d=1024,
+            k=-1,
+            top_p=0.9,
+            temperature=1.0,
+            pass_min_p=False,
         )
         # Min-p masks weight out of the working distribution while the
         # sampling budget stays the unmasked mass, so the emitted row must
