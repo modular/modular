@@ -402,6 +402,12 @@ This release completes the removal of APIs deprecated during the v1.0 cycle.
 
 ## Fixed
 
+- `FileDescriptor.write_bytes()` now completes short writes instead of
+  aborting on them. `write(2)` may consume fewer bytes than it was given, on
+  a pipe or a socket for instance, which previously tripped the
+  all-or-nothing assertion; it now loops until every byte is written, and
+  aborts only on an actual error or a zero-byte write.
+
 - A `where` clause naming a type that an enclosing `where` clause constrained
   to a tighter trait can now be proven. Calling a method declared
   `where Ts.contains[T]()` with such a `T` failed with `lacking evidence to
