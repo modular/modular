@@ -705,6 +705,15 @@ def _resolve_weights_and_encoding(
     return encoding, (cast_from, cast_to), weight_path, device_specs
 
 
+# Fallback mapping for HF checkpoints that ship a populated ``model_type`` but
+# leave the ``architectures`` field unset (e.g. ``AntonV/mamba2-130m-hf``).
+# Keep entries here narrow: they should only cover ``model_type`` values
+# that map unambiguously to one registered ``SupportedArchitecture.name``.
+_MODEL_TYPE_TO_ARCHITECTURE: dict[str, str] = {
+    "mamba2": "Mamba2ForCausalLM",
+}
+
+
 class MAXModelConfigBase(ConfigFileModel):
     """Abstract base class for MAX model configuration.
 
@@ -1293,13 +1302,30 @@ class MAXModelConfig(MAXModelConfigBase):
         """Returns the architecture class name from the HuggingFace config.
 
         For transformers models, returns ``architectures[0]`` from the
-        HuggingFace config.
+        HuggingFace config. Some HF-flavored checkpoints (e.g.
+        ``AntonV/mamba2-130m-hf``) ship a config with ``model_type`` set
+        but ``architectures`` unset; in that case we fall back to a
+        ``model_type -> architecture-class`` mapping so the registry
+        lookup still resolves.
         """
         hf_config = self.huggingface_config
         if hf_config is not None:
             architectures = getattr(hf_config, "architectures", None)
             if architectures:
                 return architectures[0]
+            model_type = getattr(hf_config, "model_type", None)
+            if model_type:
+                fallback = _MODEL_TYPE_TO_ARCHITECTURE.get(model_type)
+                if fallback is not None:
+                    return fallback
+            # state-spaces reference checkpoints (e.g.
+            # ``state-spaces/mamba2-130m``) ship a bare ``config.json`` with
+            # neither ``architectures`` nor ``model_type``; the mixer is
+            # selected via ``ssm_cfg.layer``. Map that to the Mamba2 arch so
+            # the registry lookup resolves.
+            ssm_cfg = getattr(hf_config, "ssm_cfg", None)
+            if isinstance(ssm_cfg, dict) and ssm_cfg.get("layer") == "Mamba2":
+                return "Mamba2ForCausalLM"
         return None
 
     @property
