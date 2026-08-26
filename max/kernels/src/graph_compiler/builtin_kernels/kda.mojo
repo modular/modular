@@ -28,7 +28,7 @@ from extensibility import (
     _MutableInputTensor as MutableInputTensor,
 )
 from max.gpu.host import DeviceContext
-from std.gpu.host.info import is_gpu
+from max.gpu.host.info import is_gpu
 
 from kda.recurrent import kda_decode_gpu
 
@@ -123,6 +123,17 @@ struct KdaDecode:
             k.dim_size(1) == total_T,
             "kda_decode: q and k must have same sequence length",
         )
+        # Every k offset is built from q's `num_key_heads` / `key_head_dim`
+        # (GQA maps a value head to a key head) but scaled by k's own strides,
+        # so mismatched k head extents read outside k.
+        debug_assert(
+            k.dim_size(2) == num_key_heads,
+            "kda_decode: k head dim must match q's num_key_heads",
+        )
+        debug_assert(
+            k.dim_size(3) == key_head_dim,
+            "kda_decode: k key dim must match q's key_head_dim",
+        )
         debug_assert(
             v.dim_size(1) == total_T,
             "kda_decode: q and v must have same sequence length",
@@ -167,6 +178,33 @@ struct KdaDecode:
             state_pool.dim_size(1) == num_value_heads,
             "kda_decode: state_pool head dim must match num_value_heads",
         )
+        # The kernel indexes pool dims 2 and 3 as (kd, tid) under K_FIRST and
+        # (tid, kd) under V_FIRST, with kd < key_head_dim and tid <
+        # value_head_dim, so which extent bounds which index follows the layout.
+        comptime if state_layout == "K_FIRST":
+            debug_assert(
+                state_pool.dim_size(2) == key_head_dim,
+                "kda_decode: K_FIRST state_pool dim 2 must equal key_head_dim",
+            )
+            debug_assert(
+                state_pool.dim_size(3) == value_head_dim,
+                (
+                    "kda_decode: K_FIRST state_pool dim 3 must equal"
+                    " value_head_dim"
+                ),
+            )
+        else:
+            debug_assert(
+                state_pool.dim_size(2) == value_head_dim,
+                (
+                    "kda_decode: V_FIRST state_pool dim 2 must equal"
+                    " value_head_dim"
+                ),
+            )
+            debug_assert(
+                state_pool.dim_size(3) == key_head_dim,
+                "kda_decode: V_FIRST state_pool dim 3 must equal key_head_dim",
+            )
 
         var output_tt = output.to_tile_tensor[DType.int64]()
         var q_tt = q.to_tile_tensor[DType.int64]()

@@ -175,6 +175,7 @@ _KERNEL_PACKAGES = [
 # error; no crash, no other diagnostic.
 _KERNELS_NO_RUN_LIST = [
     "graph_compiler/builtin_kernels/distributed.mojo",
+    "graph_compiler/builtin_kernels/kda.mojo",
     "graph_compiler/builtin_kernels/msa.mojo",
 ]
 
