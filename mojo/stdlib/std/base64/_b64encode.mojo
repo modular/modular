@@ -195,14 +195,14 @@ def _get_number_of_bytes_to_store_from_number_of_bytes_to_load_without_equal_sig
 
 def load_incomplete_simd[
     width: Int
-](pointer: ImmPointer[UInt8, _], nb_of_elements_to_load: Int) -> SIMD[
+](span: ImmSpan[UInt8, _], nb_of_elements_to_load: Int) -> SIMD[
     DType.uint8, width
 ]:
     var result = SIMD[.uint8, width](0)
     var tmp_buffer_pointer = Pointer(to=result).unsafe_bitcast[UInt8]()
-    unsafe_memcpy(
-        dest=tmp_buffer_pointer, src=pointer, count=nb_of_elements_to_load
-    )
+    Span(
+        unsafe_ptr=tmp_buffer_pointer, length=nb_of_elements_to_load
+    ).copy_from(span[:nb_of_elements_to_load])
     return result
 
 
@@ -234,16 +234,13 @@ def _b64encode(input_bytes: ImmSpan[Byte, _], mut result: String):
 
     # We handle the last 0, 1 or 2 chunks
     while input_index < input_bytes_len:
-        var start_of_input_chunk = input_bytes.unsafe_ptr().unsafe_offset(
-            input_index
-        )
         var nb_of_elements_to_load = min(
             input_simd_width, input_bytes_len - input_index
         )
 
         # We don't want to read past the input buffer
         var input_vector = load_incomplete_simd[simd_width](
-            start_of_input_chunk,
+            input_bytes[input_index:],
             nb_of_elements_to_load=nb_of_elements_to_load,
         )
 

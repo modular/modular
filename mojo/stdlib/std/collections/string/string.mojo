@@ -398,10 +398,8 @@ struct String(
         ), "String: span is not valid UTF-8"
         var length = len(unsafe_from_utf8)
         self = Self(unsafe_uninit_length=length)
-        unsafe_memcpy(
-            dest=self.unsafe_ptr_mut(),
-            src=unsafe_from_utf8.unsafe_ptr(),
-            count=length,
+        Span(unsafe_ptr=self.unsafe_ptr_mut(), length=length).copy_from(
+            unsafe_from_utf8
         )
 
     @stable(since="1.0")
@@ -1021,12 +1019,10 @@ struct String(
 
         var result = String(unsafe_uninit_length=lhs_len + rhs_len)
         var result_ptr = result.unsafe_ptr_mut()
-        unsafe_memcpy(dest=result_ptr, src=lhs.unsafe_ptr(), count=lhs_len)
-        unsafe_memcpy(
-            dest=result_ptr.unsafe_offset(lhs_len),
-            src=rhs.unsafe_ptr(),
-            count=rhs_len,
-        )
+        Span(unsafe_ptr=result_ptr, length=lhs_len).copy_from(lhs)
+        Span(
+            unsafe_ptr=result_ptr.unsafe_offset(lhs_len), length=rhs_len
+        ).copy_from(rhs)
         return result^
 
     def __add__(self, other: StringSlice) -> String:
@@ -1085,11 +1081,10 @@ struct String(
             return
         var old_len = self.byte_length()
         var new_len = old_len + other_len
-        unsafe_memcpy(
-            dest=self.unsafe_ptr_mut(new_len).unsafe_offset(old_len),
-            src=other.unsafe_ptr(),
-            count=other_len,
-        )
+        Span(
+            unsafe_ptr=self.unsafe_ptr_mut(new_len).unsafe_offset(old_len),
+            length=other_len,
+        ).copy_from(other)
         self._set_byte_length(new_len)
         self._clear_nul_terminator()
 

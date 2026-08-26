@@ -222,8 +222,7 @@ struct Codepoint(Comparable, ImplicitlyCopyable, Intable, Movable, Writable):
         # 4: 11110aaa 10bbbbbb 10cccccc 10dddddd -> 00000000 000aaabb bbbbcccc ccdddddd     a << 18 | b << 12 | c << 6 | d
         assert len(s) > 0, "input Span must be non-empty"
 
-        var ptr = s.unsafe_ptr()
-        var b1 = ptr[]
+        var b1 = s.unsafe_get(0)
         if (b1 >> 7) == 0:  # This is 1 byte ASCII char
             return Codepoint(b1), 1
 
@@ -238,17 +237,17 @@ struct Codepoint(Comparable, ImplicitlyCopyable, Intable, Movable, Writable):
         var b1_mask = 0b11111111 >> (num_bytes + 1)
         var result = Int(b1 & b1_mask) << shift
         for i in range(1, Int(num_bytes)):
-            ptr = ptr.unsafe_offset(1)
+            var bi = s.unsafe_get(i)
             # Assert that this is a continuation byte
             debug_assert(
-                ptr[] >> 6 == 0b00000010,
+                bi >> 6 == 0b00000010,
                 "invalid UTF-8 byte ",
-                ptr[],
+                bi,
                 " at index ",
                 i,
             )
             shift -= 6
-            result |= Int(ptr[] & 0b00111111) << shift
+            result |= Int(bi & 0b00111111) << shift
 
         # SAFETY: Safe because the input bytes are required to be valid UTF-8,
         #   and valid UTF-8 will never decode to an out of bounds codepoint

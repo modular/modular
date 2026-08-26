@@ -83,11 +83,11 @@ def _get_w_and_q_from_float_string(
     ]
     var prt_to_array = array_ptr(to=exponent)
     var array_index = CONTAINER_SIZE
-    var buffer = input_string.as_bytes().unsafe_ptr()
+    var buffer = input_string.as_bytes()
 
     if (
-        not (ord_0 <= buffer[unsafe_offset=0] <= ord_9)
-        and buffer[unsafe_offset=0] != ord_dot
+        not (ord_0 <= buffer.unsafe_get(0) <= ord_9)
+        and buffer.unsafe_get(0) != ord_dot
     ):
         raise Error(
             "The first character of '",
@@ -96,12 +96,8 @@ def _get_w_and_q_from_float_string(
         )
 
     if (
-        not (
-            ord_0
-            <= buffer[unsafe_offset=input_string.byte_length() - 1]
-            <= ord_9
-        )
-        and buffer[unsafe_offset=input_string.byte_length() - 1] != ord_dot
+        not (ord_0 <= buffer.unsafe_get(len(buffer) - 1) <= ord_9)
+        and buffer.unsafe_get(len(buffer) - 1) != ord_dot
     ):
         raise Error(
             "The last character of '",
@@ -119,7 +115,7 @@ def _get_w_and_q_from_float_string(
                 input_string,
                 "'",
             )
-        if buffer[unsafe_offset=i] == ord_dot:
+        if buffer.unsafe_get(i) == ord_dot:
             dot_or_e_found = True
             if prt_to_array == array_ptr(to=exponent):
                 # We thought we were writing the exponent, but we were writing the significand.
@@ -130,23 +126,21 @@ def _get_w_and_q_from_float_string(
             additional_exponent = CONTAINER_SIZE - array_index - 1
             # We don't want to progress in the significand array.
             array_index += 1
-        elif buffer[unsafe_offset=i] == ord_minus:
+        elif buffer.unsafe_get(i) == ord_minus:
             # Next should be the E letter (or e), so we'll just continue.
             exponent_multiplier = -1
-        elif buffer[unsafe_offset=i] == ord_plus:
+        elif buffer.unsafe_get(i) == ord_plus:
             # Next should be the E letter (or e), so we'll just continue.
             pass
-        elif (
-            buffer[unsafe_offset=i] == ord_e or buffer[unsafe_offset=i] == ord_E
-        ):
+        elif buffer.unsafe_get(i) == ord_e or buffer.unsafe_get(i) == ord_E:
             dot_or_e_found = True
             # We finished writing the exponent.
             prt_to_array = array_ptr(to=significand)
             array_index = CONTAINER_SIZE
-        elif (ord_0 <= buffer[unsafe_offset=i]) and (
-            buffer[unsafe_offset=i] <= ord_9
+        elif (ord_0 <= buffer.unsafe_get(i)) and (
+            buffer.unsafe_get(i) <= ord_9
         ):
-            prt_to_array[][array_index] = buffer[unsafe_offset=i]
+            prt_to_array[][array_index] = buffer.unsafe_get(i)
         else:
             raise Error(
                 "Invalid character(s) in the number: '", input_string, "'"
@@ -312,11 +306,13 @@ comptime _ascii_lower: Byte = Byte(ord("A") ^ ord("a"))
 def _is_nan(stripped: StringSlice) -> Bool:
     comptime `n` = Byte(ord("n"))
     comptime `a` = Byte(ord("a"))
-    var ptr = stripped.as_bytes().unsafe_ptr()
-    return stripped.byte_length() == 3 and (
-        (ptr[unsafe_offset=0] | _ascii_lower == `n`)
-        and (ptr[unsafe_offset=1] | _ascii_lower == `a`)
-        and (ptr[unsafe_offset=2] | _ascii_lower == `n`)
+    if stripped.byte_length() != 3:
+        return False
+    var bytes = stripped.as_bytes()
+    return (
+        (bytes.unsafe_get(0) | _ascii_lower == `n`)
+        and (bytes.unsafe_get(1) | _ascii_lower == `a`)
+        and (bytes.unsafe_get(2) | _ascii_lower == `n`)
     )
 
 
@@ -327,23 +323,26 @@ def _is_inf(stripped: StringSlice) -> Bool:
     comptime `f` = Byte(ord("f"))
     comptime `t` = Byte(ord("t"))
     comptime `y` = Byte(ord("y"))
-    var ptr = stripped.as_bytes().unsafe_ptr()
-    var in_start = (ptr[unsafe_offset=0] | _ascii_lower == `i`) and (
-        ptr[unsafe_offset=1] | _ascii_lower == `n`
+    var length = stripped.byte_length()
+    # Guard the length up front: `stripped` may be shorter than either
+    # literal (e.g. empty after a lone sign character), and the checks
+    # below must not dereference past what `length` actually guarantees.
+    if length != 2 and length != 8:
+        return False
+    var bytes = stripped.as_bytes()
+    var in_start = (bytes.unsafe_get(0) | _ascii_lower == `i`) and (
+        bytes.unsafe_get(1) | _ascii_lower == `n`
     )
-    # f was removed previously
-    var is_in = stripped.byte_length() == 2 and in_start
+    if length == 2:
+        # f was removed previously
+        return in_start
     return in_start and (
-        is_in
-        or (
-            stripped.byte_length() == 8
-            and (ptr[unsafe_offset=2] | _ascii_lower == `f`)
-            and (ptr[unsafe_offset=3] | _ascii_lower == `i`)
-            and (ptr[unsafe_offset=4] | _ascii_lower == `n`)
-            and (ptr[unsafe_offset=5] | _ascii_lower == `i`)
-            and (ptr[unsafe_offset=6] | _ascii_lower == `t`)
-            and (ptr[unsafe_offset=7] | _ascii_lower == `y`)
-        )
+        (bytes.unsafe_get(2) | _ascii_lower == `f`)
+        and (bytes.unsafe_get(3) | _ascii_lower == `i`)
+        and (bytes.unsafe_get(4) | _ascii_lower == `n`)
+        and (bytes.unsafe_get(5) | _ascii_lower == `i`)
+        and (bytes.unsafe_get(6) | _ascii_lower == `t`)
+        and (bytes.unsafe_get(7) | _ascii_lower == `y`)
     )
 
 

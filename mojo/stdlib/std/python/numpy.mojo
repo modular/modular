@@ -138,7 +138,7 @@ def copy_to_numpy_array[
 
     var arr = np.empty(n, dtype=dtype_str)
     var dst = arr.ctypes.data.unsafe_get_as_pointer[dtype]()
-    unsafe_memcpy(dest=dst, src=data.unsafe_ptr(), count=n)
+    Span(unsafe_ptr=dst, length=n).copy_from(data)
     return arr
 
 
@@ -231,7 +231,7 @@ def copy_to_numpy_tensor[
     var arr = np.empty(Python.list(dims), dtype=dtype_str)
 
     var dst = arr.ctypes.data.unsafe_get_as_pointer[dtype]()
-    unsafe_memcpy(dest=dst, src=data.unsafe_ptr(), count=n)
+    Span(unsafe_ptr=dst, length=n).copy_from(data)
     return arr
 
 

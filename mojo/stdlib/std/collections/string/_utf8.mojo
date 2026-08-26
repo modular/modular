@@ -161,14 +161,18 @@ def _is_valid_utf8_runtime(span: ImmSpan[Byte, _]) -> Bool:
     https://github.com/simdutf/SimdUnicode/blob/main/src/UTF8.cs
     """
 
-    var ptr = span.unsafe_ptr()
     var length = len(span)
+    if length == 0:
+        return True
+
     comptime simd_size = simd_byte_width()
     var i: Int = 0
     var previous = SIMD[.uint8, simd_size]()
 
     while i + simd_size <= length:
-        var current_bytes = ptr.unsafe_offset(i).unsafe_load[width=simd_size]()
+        var current_bytes = Pointer(to=span.unsafe_get(i)).unsafe_load[
+            width=simd_size
+        ]()
         var has_error = validate_chunk(current_bytes, previous)
         previous = current_bytes
         if any(has_error.ne(0)):
@@ -180,7 +184,7 @@ def _is_valid_utf8_runtime(span: ImmSpan[Byte, _]) -> Bool:
     if i != length:
         var buffer = SIMD[.uint8, simd_size](0)
         for j in range(i, length):
-            buffer[j - i] = ptr.unsafe_offset(j)[]
+            buffer[j - i] = span.unsafe_get(j)
         has_error = validate_chunk(buffer, previous)
     else:
         # Add a chunk of 0s to the end to validate continuations bytes
@@ -190,12 +194,14 @@ def _is_valid_utf8_runtime(span: ImmSpan[Byte, _]) -> Bool:
 
 
 def _is_valid_utf8_comptime(span: ImmSpan[Byte, _]) -> Bool:
-    var ptr = span.unsafe_ptr()
-    var length = Int(len(span))
+    var length = len(span)
+    if length == 0:
+        return True
+
     var offset = 0
 
     while offset < length:
-        var b0 = ptr[unsafe_offset=offset]
+        var b0 = span.unsafe_get(offset)
         if b0 > BIGGEST_UTF8_FIRST_BYTE:
             return False
         var byte_type = _utf8_byte_type(b0)
@@ -208,12 +214,12 @@ def _is_valid_utf8_comptime(span: ImmSpan[Byte, _]) -> Bool:
         for i in range(1, Int(byte_type)):
             var idx = offset + i
             if idx >= length or not _is_utf8_continuation_byte(
-                ptr[unsafe_offset=idx]
+                span.unsafe_get(idx)
             ):
                 return False
 
         # special unicode ranges
-        var b1 = ptr[unsafe_offset=offset + 1]
+        var b1 = span.unsafe_get(offset + 1)
         if byte_type == 2 and b0 < 0b1100_0010:
             return False
         elif b0 == 0xE0 and b1 < 0xA0:

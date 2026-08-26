@@ -266,10 +266,7 @@ def _printf[
         var fmt_str = get_static_string[fmt]()
         message = printf_append_string_n(
             message,
-            Span(
-                unsafe_ptr=fmt_str.as_bytes().unsafe_ptr(),
-                length=fmt_str.byte_length() + 1,
-            ),
+            fmt_str.as_c_string_slice().as_bytes_with_nul(),
             args_len == 0,
         )
         comptime k_args_per_group = 7

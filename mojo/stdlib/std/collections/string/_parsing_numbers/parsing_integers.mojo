@@ -26,11 +26,9 @@ def standardize_string_slice(
     var standardized_x = Array[Byte, CONTAINER_SIZE](fill=Byte(ord("0")))
     var std_x_ptr = standardized_x.unsafe_ptr()
     var x_len = x.byte_length()
-    unsafe_memcpy(
-        dest=std_x_ptr.unsafe_offset(CONTAINER_SIZE - x_len),
-        src=x.as_bytes().unsafe_ptr(),
-        count=x_len,
-    )
+    Span(
+        unsafe_ptr=std_x_ptr.unsafe_offset(CONTAINER_SIZE - x_len), length=x_len
+    ).copy_from(x.as_bytes())
     return standardized_x^
 
 
