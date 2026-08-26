@@ -45,7 +45,7 @@ def test_accumulate[
     #     [ 2.0, 2.0 ],
     #     [ 3.0, 3.0 ]]
     var a = Array[Scalar[type], 2 * num_rows * length](uninitialized=True)
-    var a_base_ptr: UnsafePointer[Scalar[type], origin_of(a)] = a.unsafe_ptr()
+    var a_base_ptr: MutPointer[Scalar[type], origin_of(a)] = a.unsafe_ptr()
     for i in range(2 * num_rows):
         var a_ptr = a_base_ptr + i * length
         a_ptr[0] = Scalar[type](i)
@@ -57,7 +57,7 @@ def test_accumulate[
     comptime b_size = 2 * num_cols * simd_size * length
     comptime kernel_width = num_cols * simd_size
     var b = Array[Scalar[type], b_size](uninitialized=True)
-    var b_base_ptr: UnsafePointer[Scalar[type], origin_of(b)] = b.unsafe_ptr()
+    var b_base_ptr: MutPointer[Scalar[type], origin_of(b)] = b.unsafe_ptr()
 
     for i in range(2 * length):
         var b_ptr = b_base_ptr + i * num_cols * simd_size
@@ -138,7 +138,7 @@ def test_accumulate_with_offsets[
     #     [ 2.0, 2.0 ],
     #     [ 3.0, 3.0 ]]
     var a = Array[Scalar[type], 2 * num_rows * length](uninitialized=True)
-    var a_base_ptr: UnsafePointer[Scalar[type], origin_of(a)] = a.unsafe_ptr()
+    var a_base_ptr: MutPointer[Scalar[type], origin_of(a)] = a.unsafe_ptr()
     for i in range(2 * num_rows):
         var a_ptr = a_base_ptr + i * length
         a_ptr[0] = Scalar[type](i)
@@ -150,7 +150,7 @@ def test_accumulate_with_offsets[
     comptime b_size = 2 * num_cols * simd_size * length
     comptime kernel_width = num_cols * simd_size
     var b = Array[Scalar[type], b_size](uninitialized=True)
-    var b_base_ptr: UnsafePointer[Scalar[type], origin_of(b)] = b.unsafe_ptr()
+    var b_base_ptr: MutPointer[Scalar[type], origin_of(b)] = b.unsafe_ptr()
 
     for i in range(2 * length):
         var b_ptr = b_base_ptr + i * num_cols * simd_size
@@ -252,7 +252,7 @@ def test_load_store[
     comptime residual_vec = SIMD[type, simd_size](-1.0, 0.0, 0.0, 0.0)
 
     var a = Array[Scalar[type], num_rows * row_size](uninitialized=True)
-    var a_ptr: UnsafePointer[Scalar[type], origin_of(a)] = a.unsafe_ptr()
+    var a_ptr: MutPointer[Scalar[type], origin_of(a)] = a.unsafe_ptr()
 
     # A: [[ 4x0.0, 4x1.0, -1.0],
     #     [ 4x1.0, 4x2.0, -1.0]]

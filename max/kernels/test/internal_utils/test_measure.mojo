@@ -26,8 +26,8 @@ def test_assert_with_custom_measure() raises:
     def always_zero[
         dtype: DType
     ](
-        lhs: UnsafePointer[mut=False, Scalar[dtype], _],
-        rhs: UnsafePointer[mut=False, Scalar[dtype], _],
+        lhs: ImmPointer[Scalar[dtype], _],
+        rhs: ImmPointer[Scalar[dtype], _],
         n: Int,
     ) -> Float64:
         return 0

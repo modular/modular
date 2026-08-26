@@ -40,7 +40,7 @@ def test_convtranspose_pads():
     var input_stack = Array[Scalar[type], input_layout.product()](
         uninitialized=True
     )
-    var input_stack_ptr: UnsafePointer[
+    var input_stack_ptr: MutPointer[
         Scalar[type], origin_of(input_stack)
     ] = input_stack.unsafe_ptr()
     var input = TileTensor(input_stack_ptr, input_layout)
@@ -51,7 +51,7 @@ def test_convtranspose_pads():
     var filter_stack = Array[Scalar[type], filter_layout.product()](
         uninitialized=True
     )
-    var filter_stack_ptr: UnsafePointer[
+    var filter_stack_ptr: MutPointer[
         Scalar[type], origin_of(filter_stack)
     ] = filter_stack.unsafe_ptr()
     var filter = TileTensor(filter_stack_ptr, filter_layout)
@@ -61,7 +61,7 @@ def test_convtranspose_pads():
     var output_stack = Array[Scalar[type], output_layout.product()](
         uninitialized=True
     )
-    var output_stack_ptr: UnsafePointer[
+    var output_stack_ptr: MutPointer[
         Scalar[type], origin_of(output_stack)
     ] = output_stack.unsafe_ptr()
     var output = TileTensor(output_stack_ptr, output_layout)
@@ -121,7 +121,7 @@ def test_convtranspose():
     var input_stack = Array[Scalar[type], input_layout.product()](
         uninitialized=True
     )
-    var input_stack_ptr: UnsafePointer[
+    var input_stack_ptr: MutPointer[
         Scalar[type], origin_of(input_stack)
     ] = input_stack.unsafe_ptr()
     var input = TileTensor(input_stack_ptr, input_layout)
@@ -132,7 +132,7 @@ def test_convtranspose():
     var filter_stack = Array[Scalar[type], filter_layout.product()](
         uninitialized=True
     )
-    var filter_stack_ptr: UnsafePointer[
+    var filter_stack_ptr: MutPointer[
         Scalar[type], origin_of(filter_stack)
     ] = filter_stack.unsafe_ptr()
     var filter = TileTensor(filter_stack_ptr, filter_layout)
@@ -142,7 +142,7 @@ def test_convtranspose():
     var output_stack = Array[Scalar[type], output_layout.product()](
         uninitialized=True
     )
-    var output_stack_ptr: UnsafePointer[
+    var output_stack_ptr: MutPointer[
         Scalar[type], origin_of(output_stack)
     ] = output_stack.unsafe_ptr()
     var output = TileTensor(output_stack_ptr, output_layout)
@@ -197,7 +197,7 @@ def test_convtranspose_dilation():
     var input_stack = Array[Scalar[type], input_layout.product()](
         uninitialized=True
     )
-    var input_stack_ptr: UnsafePointer[
+    var input_stack_ptr: MutPointer[
         Scalar[type], origin_of(input_stack)
     ] = input_stack.unsafe_ptr()
     var input = TileTensor(input_stack_ptr, input_layout)
@@ -215,7 +215,7 @@ def test_convtranspose_dilation():
     var filter_stack = Array[Scalar[type], filter_layout.product()](
         uninitialized=True
     )
-    var filter_stack_ptr: UnsafePointer[
+    var filter_stack_ptr: MutPointer[
         Scalar[type], origin_of(filter_stack)
     ] = filter_stack.unsafe_ptr()
     var filter = TileTensor(filter_stack_ptr, filter_layout)
@@ -228,7 +228,7 @@ def test_convtranspose_dilation():
     var output_stack = Array[Scalar[type], output_layout.product()](
         uninitialized=True
     )
-    var output_stack_ptr: UnsafePointer[
+    var output_stack_ptr: MutPointer[
         Scalar[type], origin_of(output_stack)
     ] = output_stack.unsafe_ptr()
     var output = TileTensor(output_stack_ptr, output_layout)
@@ -297,7 +297,7 @@ def test_convtranspose_attributes():
     var input_stack = Array[Scalar[type], input_layout.product()](
         uninitialized=True
     )
-    var input_stack_ptr: UnsafePointer[
+    var input_stack_ptr: MutPointer[
         Scalar[type], origin_of(input_stack)
     ] = input_stack.unsafe_ptr()
     var input = TileTensor(input_stack_ptr, input_layout)
@@ -308,7 +308,7 @@ def test_convtranspose_attributes():
     var filter_stack = Array[Scalar[type], filter_layout.product()](
         uninitialized=True
     )
-    var filter_stack_ptr: UnsafePointer[
+    var filter_stack_ptr: MutPointer[
         Scalar[type], origin_of(filter_stack)
     ] = filter_stack.unsafe_ptr()
     var filter = TileTensor(filter_stack_ptr, filter_layout)
@@ -318,7 +318,7 @@ def test_convtranspose_attributes():
     var output_stack = Array[Scalar[type], output_layout.product()](
         uninitialized=True
     )
-    var output_stack_ptr: UnsafePointer[
+    var output_stack_ptr: MutPointer[
         Scalar[type], origin_of(output_stack)
     ] = output_stack.unsafe_ptr()
     var output = TileTensor(output_stack_ptr, output_layout)

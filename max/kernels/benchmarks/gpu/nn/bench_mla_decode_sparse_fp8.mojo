@@ -46,7 +46,6 @@ from nn.attention.mha_utils import MHAConfig
 from nn.attention.gpu.nvidia.sm100.mla_decode_dispatch import (
     MLADispatchScalarArgs,
 )
-from std.memory import UnsafePointer
 from std.utils.index import IndexList
 
 comptime KV_LATENT_DIM = 512
@@ -234,7 +233,7 @@ def execute_mla_decode_sparse[
         batch_size, cache_len, seq_len, ctx
     )
     var scalar_args_buf_tt = mla_args.gpu_tile_tensor()
-    var d_indices = rebind[UnsafePointer[Int32, MutAnyOrigin]](
+    var d_indices = rebind[MutPointer[Int32, MutAnyOrigin]](
         d_indices_device.unsafe_ptr()
     )
 

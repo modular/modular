@@ -29,7 +29,7 @@ from layout import (
     row_major,
 )
 from layout.tile_layout import Layout as TileLayout
-from std.memory import UnsafePointer, unsafe_memcpy
+from std.memory import unsafe_memcpy
 from nn.fused_qk_rope import fused_qk_rope_ragged
 from testdata.fused_qk_rope_goldens import (
     freqs_cis_table_input,
@@ -86,7 +86,7 @@ def test_fused_qk_rope[
     var kv_cache_block_buffer = List[Scalar[dtype]](
         length=block_shape.flattened_length(), fill=0
     )
-    var kv_cache_block_ptr: UnsafePointer[
+    var kv_cache_block_ptr: MutPointer[
         Scalar[dtype], origin_of(kv_cache_block_buffer)
     ] = kv_cache_block_buffer.unsafe_ptr()
     var kv_cache_block = LayoutTensor[dtype, Layout.row_major[6]()](
@@ -97,7 +97,7 @@ def test_fused_qk_rope[
     var start_positions_dyn = materialize[start_positions]()
     # Initialize KV cache block buffer with golden values.
     var k_cache_input_buffer = k_cache_input[dtype]()
-    var k_cache_input_buffer_ptr: UnsafePointer[
+    var k_cache_input_buffer_ptr: MutPointer[
         k_cache_input_buffer.T, origin_of(k_cache_input_buffer)
     ] = k_cache_input_buffer.unsafe_ptr()
     var max_cache_len_in_batch = 0
@@ -188,7 +188,7 @@ def test_fused_qk_rope[
         Coord(Idx[max_seq_len], Idx[rope_dim]),
         Coord(Idx[head_dim], Idx[1]),
     )
-    var freqs_cis_table_buffer_ptr: UnsafePointer[
+    var freqs_cis_table_buffer_ptr: MutPointer[
         freqs_cis_table_buffer.T, origin_of(freqs_cis_table_buffer)
     ] = freqs_cis_table_buffer.unsafe_ptr()
     var freqs_cis_table = TileTensor(
@@ -206,7 +206,7 @@ def test_fused_qk_rope[
     assert (
         len(expected_k_out_buffer) == batch_size * seq_len * dim
     ), "invalid expected k out init"
-    var expected_k_out_buffer_ptr: UnsafePointer[
+    var expected_k_out_buffer_ptr: MutPointer[
         expected_k_out_buffer.T, origin_of(expected_k_out_buffer)
     ] = expected_k_out_buffer.unsafe_ptr()
 

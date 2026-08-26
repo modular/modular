@@ -18,10 +18,7 @@ comptime simd_width = 8
 
 def strsv[
     size: Int
-](
-    L_ptr_in: UnsafePointer[Float32, _],
-    x_ptr_in: UnsafePointer[mut=True, Float32, _],
-):
+](L_ptr_in: ImmPointer[Float32, _], x_ptr_in: MutPointer[Float32, _],):
     # assuming size is a multiple of simd_width
     var x_ptr = x_ptr_in
     var L_ptr = L_ptr_in
@@ -70,7 +67,7 @@ def strsv[
 
 
 # Fill the lower triangle matrix.
-def fill_L[size: Int](L: UnsafePointer[mut=True, Float32, _]):
+def fill_L[size: Int](L: MutPointer[Float32, _]):
     for j in range(size):
         for i in range(size):
             if i == j:
@@ -80,14 +77,14 @@ def fill_L[size: Int](L: UnsafePointer[mut=True, Float32, _]):
 
 
 # Fill the rhs, which is also used to save the solution vector.
-def fill_x[size: Int](x: UnsafePointer[mut=True, Float32, _]):
+def fill_x[size: Int](x: MutPointer[Float32, _]):
     for i in range(size):
         x[i] = 1.0
 
 
 def naive_strsv[
     size: Int
-](L: UnsafePointer[Float32, _], x: UnsafePointer[mut=True, Float32, _],):
+](L: ImmPointer[Float32, _], x: MutPointer[Float32, _],):
     for j in range(size):
         var x_j = x[j]
         for i in range(j + 1, size):

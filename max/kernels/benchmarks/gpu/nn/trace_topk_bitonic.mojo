@@ -113,7 +113,7 @@ def _launch[
     ctx: DeviceContext,
     scores_t: TileTensor[.float32, ...],
     idxs_t: TileTensor[.int32, ...],
-    trace_ptr: UnsafePointer[UInt64, MutUntrackedOrigin],
+    trace_ptr: MutPointer[UInt64, MutUntrackedOrigin],
     N: Int,
     K: Int,
     rows: Int,
@@ -133,8 +133,8 @@ def _launch[
                     res_vecs=res_vecs,
                 ]
             ](
-                rebind[UnsafePointer[Float32, ImmutAnyOrigin]](scores_t.ptr),
-                rebind[UnsafePointer[Int32, MutAnyOrigin]](idxs_t.ptr),
+                rebind[ImmPointer[Float32, ImmutAnyOrigin]](scores_t.ptr),
+                rebind[MutPointer[Int32, MutAnyOrigin]](idxs_t.ptr),
                 Int32(N),
                 Int32(K),
                 GmemTrace(trace_ptr),
@@ -155,8 +155,8 @@ def _launch[
                 GmemTrace, enable_trace=True, bin_digit=True
             ]
         ](
-            rebind[UnsafePointer[Float32, ImmutAnyOrigin]](scores_t.ptr),
-            rebind[UnsafePointer[Int32, MutAnyOrigin]](idxs_t.ptr),
+            rebind[ImmPointer[Float32, ImmutAnyOrigin]](scores_t.ptr),
+            rebind[MutPointer[Int32, MutAnyOrigin]](idxs_t.ptr),
             Int32(N),
             Int32(K),
             GmemTrace(trace_ptr),
@@ -169,8 +169,8 @@ def _launch[
         ctx.enqueue_function[
             _histsel_resident_kernel[GmemTrace, enable_trace=True]
         ](
-            rebind[UnsafePointer[Float32, ImmutAnyOrigin]](scores_t.ptr),
-            rebind[UnsafePointer[Int32, MutAnyOrigin]](idxs_t.ptr),
+            rebind[ImmPointer[Float32, ImmutAnyOrigin]](scores_t.ptr),
+            rebind[MutPointer[Int32, MutAnyOrigin]](idxs_t.ptr),
             Int32(N),
             Int32(K),
             GmemTrace(trace_ptr),
@@ -195,8 +195,8 @@ def _launch[
                 deterministic=False,
             ]
         ](
-            rebind[UnsafePointer[Float32, ImmutAnyOrigin]](scores_t.ptr),
-            rebind[UnsafePointer[Int32, MutAnyOrigin]](idxs_t.ptr),
+            rebind[ImmPointer[Float32, ImmutAnyOrigin]](scores_t.ptr),
+            rebind[MutPointer[Int32, MutAnyOrigin]](idxs_t.ptr),
             Int32(N),
             Int32(K),
             GmemTrace(trace_ptr),
@@ -220,8 +220,8 @@ def _launch[
             sel_cap=_HSEL_SEL_CAP,
         ]
     ](
-        rebind[UnsafePointer[Float32, ImmutAnyOrigin]](scores_t.ptr),
-        rebind[UnsafePointer[Int32, MutAnyOrigin]](idxs_t.ptr),
+        rebind[ImmPointer[Float32, ImmutAnyOrigin]](scores_t.ptr),
+        rebind[MutPointer[Int32, MutAnyOrigin]](idxs_t.ptr),
         Int32(N),
         Int32(K),
         GmemTrace(trace_ptr),
@@ -265,7 +265,7 @@ def main() raises:
         var idxs_t = TileTensor(idxs_buf, row_major(rows, K))
         ctx.synchronize()
 
-        var trace_ptr = rebind[UnsafePointer[UInt64, MutUntrackedOrigin]](
+        var trace_ptr = rebind[MutPointer[UInt64, MutUntrackedOrigin]](
             trace_buf.unsafe_ptr()
         )
 

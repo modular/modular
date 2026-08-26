@@ -32,7 +32,7 @@ from std.utils.index import Index, IndexList
 
 def compute_rms_ref[
     dtype: DType
-](data_ptr: UnsafePointer[Scalar[dtype], _], size: Int, eps: Float32) -> Scalar[
+](data_ptr: ImmPointer[Scalar[dtype], _], size: Int, eps: Float32) -> Scalar[
     DType.float32
 ]:
     """Compute reference RMS value."""

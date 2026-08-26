@@ -150,7 +150,7 @@ def bench_rs_norm_gemm_pdl[
     var c_dev = List[DeviceBuffer[in_dtype]](capacity=ngpus)
     var c_ref_dev = List[DeviceBuffer[in_dtype]](capacity=ngpus)
     var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
-    var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+    var rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS](
         uninitialized=True
     )
 
@@ -277,7 +277,7 @@ def bench_rs_norm_gemm_pdl[
             row_major(Coord(Index(config.rank_units(i), num_cols))),
         )
         gamma_shards[i] = GammaShardType(
-            rebind[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin]](
+            rebind[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]](
                 gamma_dev[i].unsafe_ptr()
             ),
             row_major(Coord(Index(num_cols))),
@@ -322,7 +322,7 @@ def bench_rs_norm_gemm_pdl[
         for i in range(ngpus):
             comptime for _j in range(ngpus):
                 in_bufs[_j] = InTensorType(
-                    rebind[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin]](
+                    rebind[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]](
                         cb_inputs[_j].offset_ptr(0)
                     ),
                     row_major(Coord(Index(num_rows, num_cols))),
@@ -356,7 +356,7 @@ def bench_rs_norm_gemm_pdl[
                         row_major(Coord(local_rows, Idx[num_cols])),
                     ),
                     WeightType(
-                        rebind[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin]](
+                        rebind[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]](
                             cb_weights[i].offset_ptr(0)
                         ),
                         row_major(Coord(Idx[gemm_n], Idx[num_cols])),
@@ -427,7 +427,7 @@ def bench_rs_norm_gemm_pdl[
                     comptime for _j in range(ngpus):
                         in_bufs[_j] = InTensorType(
                             rebind[
-                                UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin]
+                                ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]
                             ](cb_inputs[_j].offset_ptr(cache_iter)),
                             row_major(Coord(Index(num_rows, num_cols))),
                         )
@@ -464,9 +464,7 @@ def bench_rs_norm_gemm_pdl[
                             ),
                             WeightType(
                                 rebind[
-                                    UnsafePointer[
-                                        Scalar[in_dtype], ImmutAnyOrigin
-                                    ]
+                                    ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]
                                 ](cb_weights[ctx_idx].offset_ptr(cache_iter)),
                                 row_major(Coord(Idx[gemm_n], Idx[num_cols])),
                             ),

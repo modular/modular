@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.math import ceildiv, sqrt
-from std.memory import UnsafePointer, alloc, dealloc
+from std.memory import alloc, dealloc
 from std.random import randn
 from std.sys import get_defined_dtype, get_defined_int, get_defined_bool
 
@@ -573,7 +573,7 @@ def bench_prefill_sparse[
                 kv_cache,
                 indices_tt,
                 topk_lengths_tt,
-                Optional[UnsafePointer[Float32, ImmutAnyOrigin]](None),
+                Optional[ImmPointer[Float32, ImmutAnyOrigin]](None),
                 scale,
                 Int32(topk),
                 ctx,

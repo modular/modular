@@ -55,8 +55,8 @@ def _host_im2col_general[
     stride_w: Int,
     K_padded: Int,
 ](
-    input_host_ptr: UnsafePointer[Scalar[a_type], ImmutAnyOrigin],
-    im2col_host_ptr: UnsafePointer[Scalar[a_type], MutAnyOrigin],
+    input_host_ptr: ImmPointer[Scalar[a_type], ImmutAnyOrigin],
+    im2col_host_ptr: MutPointer[Scalar[a_type], MutAnyOrigin],
 ):
     for n in range(N):
         for ho in range(H_out):

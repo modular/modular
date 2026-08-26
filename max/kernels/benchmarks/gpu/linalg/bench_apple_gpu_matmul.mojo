@@ -27,7 +27,7 @@ from linalg.matmul.gpu.apple.matmul_kernel import enqueue_apple_matmul
 
 def _fill_small_int[
     dtype: DType
-](buf: UnsafePointer[mut=True, Scalar[dtype], _], count: Int, seed: UInt64):
+](buf: MutPointer[Scalar[dtype], _], count: Int, seed: UInt64):
     """Fill `buf` with deterministic uniform values in `{-2, -1, 0, 1, 2}`.
 
     Inlined xorshift64 keeps the sequence reproducible across runs. With
@@ -46,9 +46,9 @@ def _fill_small_int[
 def _verify[
     in_type: DType, transpose_b: Bool
 ](
-    a_host: UnsafePointer[Scalar[in_type], MutAnyOrigin],
-    b_host: UnsafePointer[Scalar[in_type], MutAnyOrigin],
-    d_host: UnsafePointer[Float32, MutAnyOrigin],
+    a_host: MutPointer[Scalar[in_type], MutAnyOrigin],
+    b_host: MutPointer[Scalar[in_type], MutAnyOrigin],
+    d_host: MutPointer[Float32, MutAnyOrigin],
     m: Int,
     n: Int,
     k: Int,

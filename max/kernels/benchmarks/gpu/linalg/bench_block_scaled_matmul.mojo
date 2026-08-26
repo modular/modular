@@ -70,12 +70,12 @@ from max.gpu.primitives import block
 def _verify_buffers_gpu[
     c_type: DType, BLOCK_SIZE: Int
 ](
-    output: UnsafePointer[Scalar[c_type], ImmutAnyOrigin],
-    reference: UnsafePointer[Scalar[c_type], ImmutAnyOrigin],
+    output: ImmPointer[Scalar[c_type], ImmutAnyOrigin],
+    reference: ImmPointer[Scalar[c_type], ImmutAnyOrigin],
     length: Int32,
     atol: Float32,
     rtol: Float32,
-    result: UnsafePointer[Float32, MutAnyOrigin],
+    result: MutPointer[Float32, MutAnyOrigin],
 ):
     """GPU kernel that computes verification metrics in one pass.
 
@@ -730,13 +730,13 @@ def bench_mxfp4_amd[
         sfb: TileTensor[.float8_e8m0fnu, ...],
     ) raises {imm}:
         var sfa_lt = LayoutTensor[.float8_e8m0fnu, sfa_layout, ImmutAnyOrigin](
-            rebind[UnsafePointer[Float8_e8m0fnu, ImmutAnyOrigin]](sfa.ptr),
+            rebind[ImmPointer[Float8_e8m0fnu, ImmutAnyOrigin]](sfa.ptr),
             RuntimeLayout[sfa_layout].row_major(
                 IndexList[2](Int(sfa.dim[0]()), Int(sfa.dim[1]()))
             ),
         )
         var sfb_lt = LayoutTensor[.float8_e8m0fnu, sfb_layout, ImmutAnyOrigin](
-            rebind[UnsafePointer[Float8_e8m0fnu, ImmutAnyOrigin]](sfb.ptr),
+            rebind[ImmPointer[Float8_e8m0fnu, ImmutAnyOrigin]](sfb.ptr),
             RuntimeLayout[sfb_layout].row_major(
                 IndexList[2](Int(sfb.dim[0]()), Int(sfb.dim[1]()))
             ),

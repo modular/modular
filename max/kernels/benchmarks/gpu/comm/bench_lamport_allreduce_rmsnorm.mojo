@@ -76,9 +76,9 @@ from std.utils.index import Index
 def _run_rms_norm[
     dtype: DType
 ](
-    in_ptr: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    out_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    gamma_ptr: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
+    in_ptr: ImmPointer[Scalar[dtype], ImmutAnyOrigin],
+    out_ptr: MutPointer[Scalar[dtype], MutAnyOrigin],
+    gamma_ptr: ImmPointer[Scalar[dtype], ImmutAnyOrigin],
     M: Int,
     K: Int,
     epsilon: Float32,
@@ -126,8 +126,8 @@ def _verify_results[
     sigs_ar: List[DeviceBuffer[.uint8]],
     sigs_fused: List[DeviceBuffer[.uint8]],
     cb_inputs: List[CacheBustingBuffer[dtype]],
-    rank_sigs_ar: Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
-    rank_sigs_fused: Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
+    rank_sigs_ar: Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS],
+    rank_sigs_fused: Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS],
     gamma_dev: DeviceBuffer[dtype],
     epsilon: Scalar[dtype],
 ) raises:
@@ -157,13 +157,13 @@ def _verify_results[
     var v_in_tensors = Array[InTensorType, ngpus](uninitialized=True)
     for g in range(ngpus):
         v_in_tensors[g] = InTensorType(
-            rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
+            rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](
                 cb_inputs[g].offset_ptr(0)
             ),
             v_layout,
         )
     var v_ar_out = OutTensorType(
-        rebind[UnsafePointer[Scalar[dtype], MutAnyOrigin]](
+        rebind[MutPointer[Scalar[dtype], MutAnyOrigin]](
             v_ar_out_dev.unsafe_ptr()
         ),
         v_layout,
@@ -171,13 +171,13 @@ def _verify_results[
     allreduce[ngpus=ngpus](v_in_tensors, v_ar_out, rank_sigs_ar, ctx0)
     ctx0.synchronize()
     _run_rms_norm(
-        rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
+        rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](
             v_ar_out_dev.unsafe_ptr()
         ),
-        rebind[UnsafePointer[Scalar[dtype], MutAnyOrigin]](
+        rebind[MutPointer[Scalar[dtype], MutAnyOrigin]](
             v_unfused_dev.unsafe_ptr()
         ),
-        rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
+        rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](
             gamma_dev.unsafe_ptr()
         ),
         num_rows,
@@ -197,11 +197,11 @@ def _verify_results[
         ].offset_ptr(0)
         lamport_allreduce_rmsnorm[dtype, ngpus, pdl=False](
             g,
-            rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
+            rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](
                 cb_inputs[g].offset_ptr(0)
             ),
-            rebind[UnsafePointer[Scalar[dtype], MutAnyOrigin]](out_ptr),
-            rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
+            rebind[MutPointer[Scalar[dtype], MutAnyOrigin]](out_ptr),
+            rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](
                 gamma_dev.unsafe_ptr()
             ),
             rank_sigs_fused,
@@ -272,10 +272,10 @@ def bench_fused_lamport_allreduce_rmsnorm[
     # interleaving the two paths on the same buffer would confuse the state.
     var sigs_ar = List[DeviceBuffer[.uint8]](capacity=ngpus)
     var sigs_fused = List[DeviceBuffer[.uint8]](capacity=ngpus)
-    var rank_sigs_ar = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+    var rank_sigs_ar = Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS](
         uninitialized=True
     )
-    var rank_sigs_fused = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+    var rank_sigs_fused = Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS](
         uninitialized=True
     )
 
@@ -351,13 +351,13 @@ def bench_fused_lamport_allreduce_rmsnorm[
     var ar_out_tensors = Array[OutTensorType, ngpus](uninitialized=True)
     for i in range(ngpus):
         in_tensors[i] = InTensorType(
-            rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
+            rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](
                 cb_inputs[i].unsafe_ptr()
             ),
             row_major(length),
         )
         ar_out_tensors[i] = OutTensorType(
-            rebind[UnsafePointer[Scalar[dtype], MutAnyOrigin]](
+            rebind[MutPointer[Scalar[dtype], MutAnyOrigin]](
                 ar_out_dev[i].unsafe_ptr()
             ),
             row_major(length),
@@ -365,18 +365,18 @@ def bench_fused_lamport_allreduce_rmsnorm[
 
     # Pre-capture pointers for the per-iter closures (CacheBustingBuffer uses
     # `offset_ptr(cache_iter)` to rotate through allocations).
-    var ar_out_ptrs = Array[UnsafePointer[Scalar[dtype], MutAnyOrigin], ngpus](
+    var ar_out_ptrs = Array[MutPointer[Scalar[dtype], MutAnyOrigin], ngpus](
         uninitialized=True
     )
     var unfused_out_ptrs = Array[
-        UnsafePointer[Scalar[dtype], MutAnyOrigin], ngpus
+        MutPointer[Scalar[dtype], MutAnyOrigin], ngpus
     ](uninitialized=True)
-    var fused_out_ptrs = Array[
-        UnsafePointer[Scalar[dtype], MutAnyOrigin], ngpus
-    ](uninitialized=True)
+    var fused_out_ptrs = Array[MutPointer[Scalar[dtype], MutAnyOrigin], ngpus](
+        uninitialized=True
+    )
     # Gamma pointers stored as Mut for convenience; rebind to Immut at the
     # call site (only the kernel arg slot needs Immut).
-    var gamma_ptrs = Array[UnsafePointer[Scalar[dtype], MutAnyOrigin], ngpus](
+    var gamma_ptrs = Array[MutPointer[Scalar[dtype], MutAnyOrigin], ngpus](
         uninitialized=True
     )
     for i in range(ngpus):
@@ -409,13 +409,13 @@ def bench_fused_lamport_allreduce_rmsnorm[
         def call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises {imm}:
             lamport_allreduce_rmsnorm[dtype, ngpus, pdl=False](
                 ctx_idx,
-                rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
+                rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](
                     cb_inputs[ctx_idx].offset_ptr(cache_iter)
                 ),
-                rebind[UnsafePointer[Scalar[dtype], MutAnyOrigin]](
+                rebind[MutPointer[Scalar[dtype], MutAnyOrigin]](
                     fused_out_ptrs[ctx_idx]
                 ),
-                rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
+                rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](
                     gamma_ptrs[ctx_idx]
                 ),
                 rank_sigs_fused,
@@ -446,7 +446,7 @@ def bench_fused_lamport_allreduce_rmsnorm[
         ) raises {mut in_tensors, imm}:
             comptime for _j in range(ngpus):
                 in_tensors[_j] = InTensorType(
-                    rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
+                    rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](
                         cb_inputs[_j].offset_ptr(cache_iter)
                     ),
                     row_major(length),
@@ -459,13 +459,13 @@ def bench_fused_lamport_allreduce_rmsnorm[
                 ctx_inner,
             )
             _run_rms_norm(
-                rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
+                rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](
                     ar_out_ptrs[ctx_idx]
                 ),
-                rebind[UnsafePointer[Scalar[dtype], MutAnyOrigin]](
+                rebind[MutPointer[Scalar[dtype], MutAnyOrigin]](
                     unfused_out_ptrs[ctx_idx]
                 ),
-                rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
+                rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](
                     gamma_ptrs[ctx_idx]
                 ),
                 num_rows,

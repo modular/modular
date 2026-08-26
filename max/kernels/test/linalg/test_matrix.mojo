@@ -14,7 +14,7 @@
 from std.math import iota
 
 
-def test_matrix(ptr: UnsafePointer[Int32, MutAnyOrigin], rows: Int, cols: Int):
+def test_matrix(ptr: MutPointer[Int32, MutAnyOrigin], rows: Int, cols: Int):
     # CHECK: [0, 1, 2, 3]
     print(ptr.load[width=4](0 * cols + 0))
     # CHECK: [4, 5, 6, 7]

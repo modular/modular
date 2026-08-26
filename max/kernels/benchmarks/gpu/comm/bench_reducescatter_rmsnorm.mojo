@@ -67,9 +67,9 @@ def _launch_norm[
     in_dtype: DType,
     num_cols: Int,
 ](
-    in_ptr: UnsafePointer[Scalar[in_dtype], MutAnyOrigin],
-    out_ptr: UnsafePointer[Scalar[in_dtype], MutAnyOrigin],
-    gamma_ptr: UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin],
+    in_ptr: MutPointer[Scalar[in_dtype], MutAnyOrigin],
+    out_ptr: MutPointer[Scalar[in_dtype], MutAnyOrigin],
+    gamma_ptr: ImmPointer[Scalar[in_dtype], ImmutAnyOrigin],
     local_rows: Int,
     epsilon: Float32,
     weight_offset: Scalar[in_dtype],
@@ -121,7 +121,7 @@ def _verify_results[
     list_of_ctx: List[DeviceContext],
     signal_buffers: List[DeviceBuffer[.uint8]],
     cb_inputs: List[CacheBustingBuffer[in_dtype]],
-    rank_sigs: Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
+    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS],
     gamma_dev: DeviceBuffer[in_dtype],
     gamma_host: List[Scalar[in_dtype]],
     host_bufs: List[List[Scalar[in_dtype]]],
@@ -173,7 +173,7 @@ def _verify_results[
     var in_bufs = Array[InTensorType, ngpus](uninitialized=True)
     comptime for _i in range(ngpus):
         in_bufs[_i] = InTensorType(
-            rebind[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin]](
+            rebind[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]](
                 cb_inputs[_i].offset_ptr(0)
             ),
             row_major(Coord(Index(num_rows, num_cols))),
@@ -201,7 +201,7 @@ def _verify_results[
             _launch_norm[in_dtype, num_cols](
                 v_rs_shard[i].unsafe_ptr().as_unsafe_any_origin(),
                 v_normed[i].unsafe_ptr().as_unsafe_any_origin(),
-                rebind[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin]](
+                rebind[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]](
                     gamma_dev.unsafe_ptr().as_unsafe_any_origin()
                 ),
                 local_rows,
@@ -218,7 +218,7 @@ def _verify_results[
         in_dtype, type_of(row_major(Coord(Index(0)))), ImmutAnyOrigin
     ]
     var gamma_view = GammaShardType(
-        rebind[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin]](
+        rebind[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]](
             gamma_dev.unsafe_ptr()
         ),
         row_major(Coord(Index(num_cols))),
@@ -529,7 +529,7 @@ def bench_reducescatter_rmsnorm[
     var fused_sum = List[DeviceBuffer[in_dtype]](capacity=ngpus)
 
     var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
-    var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+    var rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS](
         uninitialized=True
     )
 
@@ -620,7 +620,7 @@ def bench_reducescatter_rmsnorm[
     var fused_sum_shards = Array[OutShardType, ngpus](uninitialized=True)
     for i in range(ngpus):
         in_bufs[i] = InTensorType(
-            rebind[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin]](
+            rebind[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]](
                 cb_inputs[i].unsafe_ptr()
             ),
             row_major(Coord(Index(num_rows, num_cols))),
@@ -640,7 +640,7 @@ def bench_reducescatter_rmsnorm[
     # Shared gamma view (GPU 0; peer-read on other ranks via P2P, matching the
     # standalone-norm variant).
     var gamma_shard = GammaShardType(
-        rebind[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin]](
+        rebind[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]](
             gamma_dev.unsafe_ptr()
         ),
         row_major(Coord(Index(num_cols))),
@@ -649,16 +649,16 @@ def bench_reducescatter_rmsnorm[
         list_of_ctx[i].synchronize()
 
     # Per-GPU norm shard pointers, captured once for the timed closures.
-    var cold_ptrs = Array[UnsafePointer[Scalar[in_dtype], MutAnyOrigin], ngpus](
+    var cold_ptrs = Array[MutPointer[Scalar[in_dtype], MutAnyOrigin], ngpus](
         uninitialized=True
     )
-    var rs_out_ptrs = Array[
-        UnsafePointer[Scalar[in_dtype], MutAnyOrigin], ngpus
-    ](uninitialized=True)
-    var normed_ptrs = Array[
-        UnsafePointer[Scalar[in_dtype], MutAnyOrigin], ngpus
-    ](uninitialized=True)
-    var gamma_ptr = rebind[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin]](
+    var rs_out_ptrs = Array[MutPointer[Scalar[in_dtype], MutAnyOrigin], ngpus](
+        uninitialized=True
+    )
+    var normed_ptrs = Array[MutPointer[Scalar[in_dtype], MutAnyOrigin], ngpus](
+        uninitialized=True
+    )
+    var gamma_ptr = rebind[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]](
         gamma_dev.unsafe_ptr().as_unsafe_any_origin()
     )
     for i in range(ngpus):
@@ -689,7 +689,7 @@ def bench_reducescatter_rmsnorm[
         ) raises {mut in_bufs, imm}:
             comptime for _j in range(ngpus):
                 in_bufs[_j] = InTensorType(
-                    rebind[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin]](
+                    rebind[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]](
                         cb_inputs[_j].offset_ptr(cache_iter)
                     ),
                     row_major(Coord(Index(num_rows, num_cols))),
@@ -751,7 +751,7 @@ def bench_reducescatter_rmsnorm[
         ) raises {mut in_bufs, imm}:
             comptime for _j in range(ngpus):
                 in_bufs[_j] = InTensorType(
-                    rebind[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin]](
+                    rebind[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]](
                         cb_inputs[_j].offset_ptr(cache_iter)
                     ),
                     row_major(Coord(Index(num_rows, num_cols))),
@@ -793,7 +793,7 @@ def bench_reducescatter_rmsnorm[
         ) raises {mut in_bufs, imm}:
             comptime for _j in range(ngpus):
                 in_bufs[_j] = InTensorType(
-                    rebind[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin]](
+                    rebind[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]](
                         cb_inputs[_j].offset_ptr(cache_iter)
                     ),
                     row_major(Coord(Index(num_rows, num_cols))),
@@ -835,7 +835,7 @@ def bench_reducescatter_rmsnorm[
         ) raises {mut in_bufs, imm}:
             comptime for _j in range(ngpus):
                 in_bufs[_j] = InTensorType(
-                    rebind[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin]](
+                    rebind[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]](
                         cb_inputs[_j].offset_ptr(cache_iter)
                     ),
                     row_major(Coord(Index(num_rows, num_cols))),

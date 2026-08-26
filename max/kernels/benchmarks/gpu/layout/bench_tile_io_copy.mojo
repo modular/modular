@@ -76,11 +76,9 @@ def _manual_copy[
     simd_size: Int,
     direction: _CopyDirection,
 ](
-    dram_src_ptr: UnsafePointer[Scalar[dtype], ...],
-    dram_dst_ptr: UnsafePointer[mut=True, Scalar[dtype], ...],
-    smem_ptr: UnsafePointer[
-        mut=True, Scalar[dtype], address_space=.SHARED, ...
-    ],
+    dram_src_ptr: ImmPointer[Scalar[dtype], ...],
+    dram_dst_ptr: MutPointer[Scalar[dtype], ...],
+    smem_ptr: MutPointer[Scalar[dtype], address_space=.SHARED, ...],
 ):
     """Copies one leg manually using the benchmark's per-thread layout."""
     comptime rows_per_thread = M // thread_rows
@@ -113,8 +111,8 @@ def _tile_io_copy[
     tile_io_dram_to_sram: Bool,
     tile_io_sram_to_dram: Bool,
 ](
-    src_ptr: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    dst_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    src_ptr: ImmPointer[Scalar[dtype], ImmutAnyOrigin],
+    dst_ptr: MutPointer[Scalar[dtype], MutAnyOrigin],
 ):
     comptime thread_layout = row_major(Idx[thread_rows], Idx[thread_cols])
 
@@ -169,8 +167,8 @@ def _layout_tensor_copy[
     layout_tensor_dram_to_sram: Bool,
     layout_tensor_sram_to_dram: Bool,
 ](
-    src_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    dst_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    src_ptr: MutPointer[Scalar[dtype], MutAnyOrigin],
+    dst_ptr: MutPointer[Scalar[dtype], MutAnyOrigin],
 ):
     comptime thread_layout = Layout.row_major(thread_rows, thread_cols)
 
@@ -224,8 +222,8 @@ def tile_io_copy_roundtrip_kernel[
     thread_cols: Int,
     simd_size: Int,
 ](
-    src_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    dst_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    src_ptr: MutPointer[Scalar[dtype], MutAnyOrigin],
+    dst_ptr: MutPointer[Scalar[dtype], MutAnyOrigin],
 ):
     """Copies a TileTensor from global to shared memory and back."""
     _tile_io_copy[dtype, M, N, thread_rows, thread_cols, simd_size, True, True](
@@ -241,8 +239,8 @@ def tile_io_dram_to_sram_kernel[
     thread_cols: Int,
     simd_size: Int,
 ](
-    src_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    dst_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    src_ptr: MutPointer[Scalar[dtype], MutAnyOrigin],
+    dst_ptr: MutPointer[Scalar[dtype], MutAnyOrigin],
 ):
     """Benchmarks the tile_io global-to-shared copy with a common drain."""
     _tile_io_copy[
@@ -258,8 +256,8 @@ def tile_io_sram_to_dram_kernel[
     thread_cols: Int,
     simd_size: Int,
 ](
-    src_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    dst_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    src_ptr: MutPointer[Scalar[dtype], MutAnyOrigin],
+    dst_ptr: MutPointer[Scalar[dtype], MutAnyOrigin],
 ):
     """Benchmarks the tile_io shared-to-global copy with a common fill."""
     _tile_io_copy[
@@ -303,7 +301,7 @@ def layout_tensor_dram_to_sram_kernel[
     simd_size: Int,
 ](
     src: LayoutTensor[dtype, tensor_layout, MutAnyOrigin],
-    dst_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    dst_ptr: MutPointer[Scalar[dtype], MutAnyOrigin],
 ):
     """Benchmarks LayoutTensor DRAM-to-SRAM copy with a common drain."""
     _layout_tensor_copy[
@@ -328,7 +326,7 @@ def layout_tensor_sram_to_dram_kernel[
     thread_cols: Int,
     simd_size: Int,
 ](
-    src_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    src_ptr: MutPointer[Scalar[dtype], MutAnyOrigin],
     dst: LayoutTensor[dtype, tensor_layout, MutAnyOrigin],
 ):
     """Benchmarks LayoutTensor SRAM-to-DRAM copy with a common fill."""
@@ -349,8 +347,8 @@ def layout_tensor_sram_to_dram_kernel[
 def _assert_buffers_equal[
     dtype: DType, simd_size: Int
 ](
-    actual_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    expected_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    actual_ptr: MutPointer[Scalar[dtype], MutAnyOrigin],
+    expected_ptr: MutPointer[Scalar[dtype], MutAnyOrigin],
     num_elements: Int,
     label: String,
 ) raises:

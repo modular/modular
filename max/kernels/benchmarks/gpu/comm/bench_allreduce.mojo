@@ -96,7 +96,7 @@ def bench_reduce[
 
     # Create signal buffers for synchronization
     var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
-    var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+    var rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS](
         uninitialized=True
     )
 
@@ -170,7 +170,7 @@ def bench_reduce[
     var in_tensors = Array[InTensorType, num_buffers](uninitialized=True)
     var out_tensors = Array[OutTensorType, ngpus](uninitialized=True)
 
-    var multi_ptr = Optional[UnsafePointer[Scalar[dtype], MutAnyOrigin]]()
+    var multi_ptr = Optional[MutPointer[Scalar[dtype], MutAnyOrigin]]()
 
     comptime if use_multimem:
         var multicast_buf = DeviceMulticastBuffer[dtype](
@@ -189,7 +189,7 @@ def bench_reduce[
             .as_unsafe_any_origin()
         )
         in_tensors[0] = TileTensor(
-            rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
+            rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](
                 multi_ptr.unsafe_value()
             ),
             row_major(length),
@@ -197,7 +197,7 @@ def bench_reduce[
     else:
         comptime for i in range(ngpus):
             in_tensors[i] = TileTensor(
-                rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
+                rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](
                     cb_inputs[i].unsafe_ptr()
                 ),
                 row_major(length),
@@ -238,7 +238,7 @@ def bench_reduce[
             comptime if not use_multimem:
                 comptime for i in range(ngpus):
                     in_tensors[i] = TileTensor(
-                        rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
+                        rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](
                             cb_inputs[i].offset_ptr(cache_iter)
                         ),
                         row_major(length),
@@ -246,7 +246,7 @@ def bench_reduce[
             else:
                 # multi_ptr is set when use_multimem == True
                 in_tensors[0] = TileTensor(
-                    rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
+                    rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](
                         multi_ptr.unsafe_value()
                         + cb_template.offset(cache_iter)
                     ),

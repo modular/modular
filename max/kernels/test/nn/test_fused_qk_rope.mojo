@@ -27,7 +27,7 @@ from layout import (
     UNKNOWN_VALUE,
     row_major,
 )
-from std.memory import UnsafePointer, unsafe_memcpy
+from std.memory import unsafe_memcpy
 from nn.fused_qk_rope import fused_qk_rope
 from testdata.fused_qk_rope_goldens import (
     freqs_cis_table_input,
@@ -89,7 +89,7 @@ def test_fused_qk_rope[dtype: DType](ctx: DeviceContext) raises -> None:
     # Initialize KV cache block buffer with golden values.
     var start_positions_dyn = materialize[start_positions]()
     var k_cache_input_buffer = k_cache_input[dtype]()
-    var k_cache_input_buffer_ptr: UnsafePointer[
+    var k_cache_input_buffer_ptr: MutPointer[
         k_cache_input_buffer.T, origin_of(k_cache_input_buffer)
     ] = k_cache_input_buffer.unsafe_ptr()
     var max_cache_len_in_batch = 0
@@ -155,7 +155,7 @@ def test_fused_qk_rope[dtype: DType](ctx: DeviceContext) raises -> None:
     assert (
         len(expected_k_out_buffer) == batch_size * seq_len * dim
     ), "invalid expected k out init"
-    var expected_k_out_buffer_ptr: UnsafePointer[
+    var expected_k_out_buffer_ptr: MutPointer[
         expected_k_out_buffer.T, origin_of(expected_k_out_buffer)
     ] = expected_k_out_buffer.unsafe_ptr()
 

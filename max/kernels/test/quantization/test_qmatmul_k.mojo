@@ -52,9 +52,7 @@ def random_float16(min: Float64 = 0, max: Float64 = 1) -> Float16:
 
 def quantize_a_Q8[
     group_size: Int
-](
-    a: UnsafePointer[Float32, ...], a_quant: UnsafePointer[mut=True, Int8, ...]
-) -> Float32:
+](a: ImmPointer[Float32, ...], a_quant: MutPointer[Int8, ...]) -> Float32:
     var fp_data = a.load[width=group_size]()
     var max_value = abs(fp_data).reduce_max()
     var multiplier = 127.0 / max_value if max_value != 0.0 else 0.0
@@ -71,9 +69,9 @@ def dot_product_QK_K[
     group_size: Int,
     b_zero_point: Int32 = 0,
 ](
-    a_quant_data: UnsafePointer[Int8, ...],
-    b_quant_data: UnsafePointer[UInt8, ...],
-    b_scales: UnsafePointer[Scalar[b_scales_type], ...],
+    a_quant_data: ImmPointer[Int8, ...],
+    b_quant_data: ImmPointer[UInt8, ...],
+    b_scales: ImmPointer[Scalar[b_scales_type], ...],
 ) -> Int32:
     var sum: Int32 = 0
     for i in range(_block_QK_K.quantized_k):
@@ -198,13 +196,16 @@ struct qgemm_Q4_0(QuantizedGemm):
             uninitialized=True
         )
 
-        # Decode the bits of the weight data.
-        var q_bits_ptr: UnsafePointer[
+        # Decode the bits of the weight data. The origin here is
+        # parametrically mutable (it inherits `block_ptr`'s origin), so it can
+        # be neither `MutPointer` (not statically mutable) nor `ImmPointer`
+        # (not statically immutable); the bare `Pointer` keeps it parametric.
+        var q_bits_ptr: Pointer[
             UInt8, origin_of(block_ptr[].q_bits)
         ] = block_ptr[].q_bits.unsafe_ptr()
         var q_packed_bits = q_bits_ptr.load[width=_block_Q4_0.group_size // 2]()
 
-        var b_quant_data_ptr: UnsafePointer[
+        var b_quant_data_ptr: MutPointer[
             UInt8, origin_of(b_quant_data)
         ] = b_quant_data.unsafe_ptr()
         for j in range(2):
@@ -294,7 +295,7 @@ struct qgemm_Q4_K(QuantizedGemm):
         var a_block_sums = Array[Int32, _block_Q4_K.group_count](
             uninitialized=True
         )
-        var a_quant_data_ptr: UnsafePointer[
+        var a_quant_data_ptr: MutPointer[
             Int8, origin_of(a_quant_data)
         ] = a_quant_data.unsafe_ptr()
         for i in range(_block_Q4_K.group_count):
@@ -324,13 +325,13 @@ struct qgemm_Q4_K(QuantizedGemm):
         var b_quant_data = Array[UInt8, _block_QK_K.quantized_k](
             uninitialized=True
         )
-        var b_quant_data_ptr: UnsafePointer[
+        var b_quant_data_ptr: MutPointer[
             UInt8, origin_of(b_quant_data)
         ] = b_quant_data.unsafe_ptr()
 
         # Decode the bits of the weight data.
         for i in range(0, _block_QK_K.quantized_k // 2, 32):
-            var q_bits_ptr: UnsafePointer[
+            var q_bits_ptr: Pointer[
                 UInt8, origin_of(block_ptr[].q_bits)
             ] = block_ptr[].q_bits.unsafe_ptr()
             var q_packed_bits = q_bits_ptr.load[width=32](i)
@@ -427,13 +428,13 @@ struct qgemm_Q6_K(QuantizedGemm):
         var b_quant_data = Array[UInt8, _block_QK_K.quantized_k](
             uninitialized=True
         )
-        var b_quant_data_ptr: UnsafePointer[
+        var b_quant_data_ptr: MutPointer[
             UInt8, origin_of(b_quant_data)
         ] = b_quant_data.unsafe_ptr()
 
         # Decode the bottom bits of the weight data.
         for i in range(0, _block_QK_K.quantized_k // 2, 64):
-            var q_bits_lo_ptr: UnsafePointer[
+            var q_bits_lo_ptr: Pointer[
                 UInt8, origin_of(block_ptr[].q_bits_lo)
             ] = block_ptr[].q_bits_lo.unsafe_ptr()
             var q_packed_bits = q_bits_lo_ptr.load[width=64](i)
@@ -445,7 +446,7 @@ struct qgemm_Q6_K(QuantizedGemm):
 
         # Decode the top bits of the weight data.
         for i in range(0, _block_QK_K.quantized_k // 4, 32):
-            var q_bits_hi_ptr: UnsafePointer[
+            var q_bits_hi_ptr: Pointer[
                 UInt8, origin_of(block_ptr[].q_bits_hi)
             ] = block_ptr[].q_bits_hi.unsafe_ptr()
             var q_packed_bits = q_bits_hi_ptr.load[width=32](i)

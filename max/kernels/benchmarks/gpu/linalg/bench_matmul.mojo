@@ -55,12 +55,12 @@ from std.utils import IndexList
 def _verify_buffers_gpu[
     c_type: DType, BLOCK_SIZE: Int
 ](
-    output: UnsafePointer[Scalar[c_type], ImmutAnyOrigin],
-    reference: UnsafePointer[Scalar[c_type], ImmutAnyOrigin],
+    output: ImmPointer[Scalar[c_type], ImmutAnyOrigin],
+    reference: ImmPointer[Scalar[c_type], ImmutAnyOrigin],
     length: Int32,
     atol: Float32,
     rtol: Float32,
-    result: UnsafePointer[Float32, MutAnyOrigin],
+    result: MutPointer[Float32, MutAnyOrigin],
 ):
     """GPU kernel that computes verification metrics in one pass.
 
@@ -441,7 +441,7 @@ def bench_matmul[
         # create a dummy buffer to force using the mojo the matmul kernel to output values
         # in the correct c_type
         var c_dummy = TileTensor(
-            UnsafePointer[BFloat16, MutUntrackedOrigin].unsafe_dangling(),
+            MutPointer[BFloat16, MutUntrackedOrigin].unsafe_dangling(),
             row_major(shape_c),
         )
 

@@ -87,8 +87,8 @@ def p2p_copy_kernel[
     dtype: DType,
     width: Int,
 ](
-    dst: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    src: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
+    dst: MutPointer[Scalar[dtype], MutAnyOrigin],
+    src: ImmPointer[Scalar[dtype], ImmutAnyOrigin],
     num_elements: Int32,
 ):
     var global_tid = global_idx.x
@@ -177,8 +177,8 @@ def bench_p2p[
             # Determine src/dst based on direction and which GPU we are.
             # Push: each GPU reads local, writes remote.
             # Pull: each GPU reads remote, writes local.
-            var dst: UnsafePointer[Scalar[dtype], MutAnyOrigin]
-            var src: UnsafePointer[Scalar[dtype], ImmutAnyOrigin]
+            var dst: MutPointer[Scalar[dtype], MutAnyOrigin]
+            var src: ImmPointer[Scalar[dtype], ImmutAnyOrigin]
 
             comptime if is_bidir:
                 comptime if is_push:

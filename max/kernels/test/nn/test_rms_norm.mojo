@@ -85,7 +85,7 @@ def run_rms_norm_cpu[
         weight_offset,
     )
 
-    var input_ptr_ptr: UnsafePointer[
+    var input_ptr_ptr: MutPointer[
         input_ptr.T, origin_of(input_ptr)
     ] = input_ptr.unsafe_ptr()
     for r, c in product(range(rows), range(cols)):

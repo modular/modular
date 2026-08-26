@@ -36,7 +36,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.math import ceildiv
-from std.memory import UnsafePointer, alloc, dealloc
+from std.memory import alloc, dealloc
 from std.sys import get_defined_bool, get_defined_int, size_of
 
 from max.benchmark import bencher_iter_custom
@@ -453,11 +453,11 @@ def main() raises:
         # Pre-build the SwiGLU output carrier for the fused dispatch.
         # Bypassing `grouped_matmul_swiglu_nvfp4_dispatch` keeps the per-iter
         # dummy-buffer alloc + SF memset out of the timed region.
-        var c_packed_ptr = rebind[UnsafePointer[UInt8, MutAnyOrigin]](o_tt.ptr)
+        var c_packed_ptr = rebind[MutPointer[UInt8, MutAnyOrigin]](o_tt.ptr)
         var c_swiglu_scales_ptr = rebind[
-            UnsafePointer[Scalar[NVFP4_SF_DTYPE], MutAnyOrigin]
+            MutPointer[Scalar[NVFP4_SF_DTYPE], MutAnyOrigin]
         ](s_tt.ptr)
-        var c_input_scales_ptr = rebind[UnsafePointer[Float32, ImmutAnyOrigin]](
+        var c_input_scales_ptr = rebind[ImmPointer[Float32, ImmutAnyOrigin]](
             input_scales_tt.ptr
         )
         var swiglu_out = RealSwiGLUOutput[

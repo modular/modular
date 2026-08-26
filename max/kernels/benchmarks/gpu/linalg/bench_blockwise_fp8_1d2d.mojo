@@ -201,8 +201,6 @@ def bench_blockwise_fp8_1d2d[
     )
 
     # TileTensor versions for the structured kernel
-    from std.memory import UnsafePointer as NewPtr
-
     var a_tt = TileTensor(
         a_dev_buf,
         new_row_major(Coord(Int64(total_num_tokens), Idx[K])),

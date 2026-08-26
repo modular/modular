@@ -70,7 +70,7 @@ from layout.tma_async import SharedMemBarrier
 def _smem_ptr[
     BYTES_PER_COPY: Int, S: Int
 ](
-    base: UnsafePointer[UInt8, _, address_space=.SHARED],
+    base: MutPointer[UInt8, _, address_space=.SHARED],
     warp: Int,
     slot: Int,
 ) -> type_of(base):
@@ -81,7 +81,7 @@ def _smem_ptr[
 def _mbar_ref[
     S: Int
 ](
-    base: UnsafePointer[SharedMemBarrier, _, address_space=.SHARED],
+    base: MutPointer[SharedMemBarrier, _, address_space=.SHARED],
     warp: Int,
     slot: Int,
 ) -> type_of(base):
@@ -91,8 +91,8 @@ def _mbar_ref[
 def bulk_memcpy_kernel[
     NUM_THREADS: Int, BYTES_PER_COPY: Int, S: Int, PREFETCH: Bool
 ](
-    src: UnsafePointer[UInt8, ImmutAnyOrigin],
-    dst: UnsafePointer[UInt8, MutAnyOrigin],
+    src: ImmPointer[UInt8, ImmutAnyOrigin],
+    dst: MutPointer[UInt8, MutAnyOrigin],
     total_chunks: Int32,
 ):
     comptime NUM_WARPS = NUM_THREADS // 32

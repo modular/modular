@@ -61,10 +61,10 @@ from nn.gemv_partial_norm import (
 def _host_reference[
     c_type: DType, a_type: DType
 ](
-    y_ref_ptr: UnsafePointer[Scalar[c_type], MutAnyOrigin],
-    gamma_ptr: UnsafePointer[Scalar[a_type], MutAnyOrigin],
-    normed_ref: UnsafePointer[Scalar[c_type], MutAnyOrigin],
-    unnormed_ref: UnsafePointer[Scalar[c_type], MutAnyOrigin],
+    y_ref_ptr: MutPointer[Scalar[c_type], MutAnyOrigin],
+    gamma_ptr: MutPointer[Scalar[a_type], MutAnyOrigin],
+    normed_ref: MutPointer[Scalar[c_type], MutAnyOrigin],
+    unnormed_ref: MutPointer[Scalar[c_type], MutAnyOrigin],
     n: Int,
     n_normed: Int,
     eps: Float32,

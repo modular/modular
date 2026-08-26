@@ -83,9 +83,9 @@ def getKr[mode: IntTuple]() -> Int:
 def matmul_ukern[
     elt: DType, width: Int, mr: Int, nr: Int, kr: Int, kf: Int
 ](
-    C: UnsafePointer[mut=True, Scalar[elt], _],
-    A: UnsafePointer[Scalar[elt], _],
-    B: UnsafePointer[Scalar[elt], _],
+    C: MutPointer[Scalar[elt], _],
+    A: ImmPointer[Scalar[elt], _],
+    B: ImmPointer[Scalar[elt], _],
     inc: Bool,
 ):
     comptime Align: Int = size_of[elt]() * width
@@ -339,7 +339,7 @@ def delete_idx(arg: List[Int], idx: Int) -> List[Int]:
 @always_inline
 def strided_load[
     elt: DType, //, W: Int, X: Int
-](p: UnsafePointer[Scalar[elt], _], i: Int) -> SIMD[elt, W]:
+](p: ImmPointer[Scalar[elt], _], i: Int) -> SIMD[elt, W]:
     comptime if X == 1:
         return p.load[width=W](i)
     else:
@@ -349,7 +349,7 @@ def strided_load[
 @always_inline
 def strided_store[
     elt: DType, W: Int, //, X: Int
-](p: UnsafePointer[mut=True, Scalar[elt], _], i: Int, x: SIMD[elt, W]):
+](p: MutPointer[Scalar[elt], _], i: Int, x: SIMD[elt, W]):
     comptime if X == 1:
         p.store(i, x)
     else:
@@ -367,14 +367,14 @@ def vectorize_flat[
     stride_a: List[Int],
     stride_b: List[Int],
 ](
-    a: UnsafePointer[mut=True, Scalar[elt_a], _],
-    b: UnsafePointer[Scalar[elt_b], _],
+    a: MutPointer[Scalar[elt_a], _],
+    b: ImmPointer[Scalar[elt_b], _],
     f: Some[
         def[
             width: Int, stride_a: Int, stride_b: Int
         ](
-            UnsafePointer[mut=True, Scalar[elt_a], _],
-            UnsafePointer[Scalar[elt_b], _],
+            MutPointer[Scalar[elt_a], _],
+            ImmPointer[Scalar[elt_b], _],
             Int,
         ) -> None
     ],
@@ -438,8 +438,8 @@ def vectorize_layout_tensor[
         def[
             width: Int, stride_a: Int, stride_b: Int
         ](
-            UnsafePointer[mut=True, Scalar[elt_a], _],
-            UnsafePointer[Scalar[elt_b], _],
+            MutPointer[Scalar[elt_a], _],
+            ImmPointer[Scalar[elt_b], _],
             Int,
         ) -> None
     ],
@@ -471,8 +471,8 @@ def copy_to[
     def copy[
         width: Int, stride_a: Int, stride_b: Int
     ](
-        dstp: UnsafePointer[mut=True, Scalar[elt_dst], _],
-        srcp: UnsafePointer[Scalar[elt_src], _],
+        dstp: MutPointer[Scalar[elt_dst], _],
+        srcp: ImmPointer[Scalar[elt_src], _],
         i: Int,
     ) {var}:
         var vsrc = strided_load[width, stride_b](srcp, i)
@@ -504,8 +504,8 @@ def check_approx_equal[
     def check[
         width: Int, stride_a: Int, stride_b: Int
     ](
-        pa: UnsafePointer[mut=True, Scalar[elt_dst], _],
-        pb: UnsafePointer[Scalar[elt_src], _],
+        pa: MutPointer[Scalar[elt_dst], _],
+        pb: ImmPointer[Scalar[elt_src], _],
         i: Int,
     ) {mut}:
         var va = strided_load[width, stride_a](pa, i).cast[cmp_elt]()

@@ -53,7 +53,6 @@ run_fold((5,6), (3,2), stride=1, dilation=1, padding=0)
 
 from max.gpu.host import DeviceContext
 from layout import Coord, TileTensor, row_major
-from std.memory import UnsafePointer
 from nn.fold import fold
 
 

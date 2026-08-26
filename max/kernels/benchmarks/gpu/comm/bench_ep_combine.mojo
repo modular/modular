@@ -39,7 +39,7 @@ from std.benchmark import (
 from max.gpu.host import DeviceBuffer, DeviceContext
 from layout import TileTensor, Idx
 from layout.tile_layout import row_major
-from std.memory import UnsafePointer, dealloc
+from std.memory import dealloc
 from shmem import *
 from shmem.ep_comm import (
     BF16TokenFormat,
@@ -55,7 +55,7 @@ from shmem.ep_comm import (
 
 def legalize_topk_ids[
     n_experts: Int, top_k: Int
-](topk_ids: UnsafePointer[mut=True, Int32, _], n_tokens: Int):
+](topk_ids: MutPointer[Int32, _], n_tokens: Int):
     for tok_id in range(n_tokens):
         var topk_ids_for_token = topk_ids + tok_id * top_k
 
@@ -287,12 +287,12 @@ def bench_dispatch[
             ctx: DeviceContext,
         ) raises {imm}:
             # the recv_buf ptrs and recv_count ptrs need to be passed in a InlinedArray
-            var recv_buf_ptrs: Array[UnsafePointer[UInt8, MutAnyOrigin], 1] = [
+            var recv_buf_ptrs: Array[MutPointer[UInt8, MutAnyOrigin], 1] = [
                 recv_buf.as_unsafe_any_origin()
             ]
-            var recv_count_ptrs: Array[
-                UnsafePointer[UInt64, MutAnyOrigin], 1
-            ] = [recv_count.as_unsafe_any_origin()]
+            var recv_count_ptrs: Array[MutPointer[UInt64, MutAnyOrigin], 1] = [
+                recv_count.as_unsafe_any_origin()
+            ]
 
             ctx.enqueue_function(
                 func,
@@ -338,10 +338,10 @@ def bench_dispatch[
         ) raises {imm}:
             # the recv_buf ptrs and recv_count ptrs need to be passed in a InlinedArray
             var combine_recv_buf_ptrs: Array[
-                UnsafePointer[UInt8, MutAnyOrigin], 1
+                MutPointer[UInt8, MutAnyOrigin], 1
             ] = [send_buf.as_unsafe_any_origin()]
             var combine_recv_count_ptrs: Array[
-                UnsafePointer[UInt64, MutAnyOrigin], 1
+                MutPointer[UInt64, MutAnyOrigin], 1
             ] = [recv_count.as_unsafe_any_origin()]
 
             ctx.enqueue_function(

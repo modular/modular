@@ -43,7 +43,7 @@ comptime NR = kernel_shape.simd_cols * simd_size
 comptime prefetch_distance = get_matmul_prefetch_b_distance_k()
 
 
-def print_mat(a_ptr: UnsafePointer[Scalar[dtype], _], m: Int, n: Int):
+def print_mat(a_ptr: ImmPointer[Scalar[dtype], _], m: Int, n: Int):
     var a = TileTensor(a_ptr, row_major(m, n))
     for i in range(m):
         for j in range(n):
@@ -72,9 +72,9 @@ def gemm_naive(
 
 
 def kernel(
-    a_ptr: UnsafePointer[Scalar[dtype], _],
-    b_ptr: UnsafePointer[Scalar[dtype], _],
-    c_ptr: UnsafePointer[mut=True, Scalar[dtype], _],
+    a_ptr: ImmPointer[Scalar[dtype], _],
+    b_ptr: ImmPointer[Scalar[dtype], _],
+    c_ptr: MutPointer[Scalar[dtype], _],
     n: Int,
     k: Int,
     kc: Int,
@@ -122,8 +122,8 @@ def kernel(
 
 
 def pack_B(
-    b_ptr: UnsafePointer[Scalar[dtype], _],
-    b2_ptr: UnsafePointer[mut=True, Scalar[dtype], _],
+    b_ptr: ImmPointer[Scalar[dtype], _],
+    b2_ptr: MutPointer[Scalar[dtype], _],
     k: Int,
     n: Int,
     kc: Int,
@@ -138,8 +138,8 @@ def pack_B(
 
 
 def prepack_B(
-    b_ptr: UnsafePointer[Scalar[dtype], _],
-    b2_ptr: UnsafePointer[mut=True, Scalar[dtype], _],
+    b_ptr: ImmPointer[Scalar[dtype], _],
+    b2_ptr: MutPointer[Scalar[dtype], _],
     k: Int,
     n: Int,
     kc: Int,
@@ -151,9 +151,9 @@ def prepack_B(
 
 
 def gemm(
-    a_ptr: UnsafePointer[Scalar[dtype], _],
-    b_ptr: UnsafePointer[Scalar[dtype], _],
-    c_ptr: UnsafePointer[mut=True, Scalar[dtype], _],
+    a_ptr: ImmPointer[Scalar[dtype], _],
+    b_ptr: ImmPointer[Scalar[dtype], _],
+    c_ptr: MutPointer[Scalar[dtype], _],
     m: Int,
     n: Int,
     k: Int,

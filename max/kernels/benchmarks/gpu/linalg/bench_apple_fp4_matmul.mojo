@@ -49,8 +49,8 @@ from linalg.matmul.gpu.apple.fp4_matmul import (
 
 
 def _fill_packed(
-    packed: UnsafePointer[mut=True, UInt8, _],
-    scales: UnsafePointer[mut=True, Float8_e4m3fn, _],
+    packed: MutPointer[UInt8, _],
+    scales: MutPointer[Float8_e4m3fn, _],
     npacked: Int,
     nscale: Int,
     seed: UInt64,

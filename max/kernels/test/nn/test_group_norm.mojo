@@ -104,7 +104,7 @@ def run_group_norm_cpu[
         beta_fn=beta_scalar_fn,
     ](Coord(shape), epsilon, output_buf, num_groups)
 
-    var data_ptr_ptr: UnsafePointer[
+    var data_ptr_ptr: MutPointer[
         data_ptr.T, origin_of(data_ptr)
     ] = data_ptr.unsafe_ptr()
     for r in range(rows):

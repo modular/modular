@@ -130,10 +130,10 @@ comptime IndexCollection = PagedKVCacheCollection[
 
 @always_inline
 def _any(
-    ptr: UnsafePointer[Scalar[OUT_DTYPE], ...],
-) -> UnsafePointer[Scalar[OUT_DTYPE], MutAnyOrigin]:
+    ptr: MutPointer[Scalar[OUT_DTYPE], ...],
+) -> MutPointer[Scalar[OUT_DTYPE], MutAnyOrigin]:
     """Erase a pointer's origin so one helper serves every band."""
-    return UnsafePointer[Scalar[OUT_DTYPE], MutAnyOrigin](
+    return MutPointer[Scalar[OUT_DTYPE], MutAnyOrigin](
         unsafe_from_address=Int(ptr)
     )
 
@@ -452,7 +452,7 @@ def bench_shape[
             band_n: Int
         ](
             col_off: Int,
-            out_ptr: UnsafePointer[Scalar[OUT_DTYPE], MutAnyOrigin],
+            out_ptr: MutPointer[Scalar[OUT_DTYPE], MutAnyOrigin],
         ) raises:
             var w = LayoutTensor[
                 mut=False, OPERAND_DTYPE, Layout.row_major(band_n, hidden)

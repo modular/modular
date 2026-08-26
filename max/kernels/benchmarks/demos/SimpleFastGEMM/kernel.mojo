@@ -24,9 +24,9 @@ comptime simd_size = 16
 
 
 def kernel6x4(
-    a_ptr: UnsafePointer[Float32, _],
-    b_ptr: UnsafePointer[Float32, _],
-    c_ptr: UnsafePointer[mut=True, Float32, _],
+    a_ptr: ImmPointer[Float32, _],
+    b_ptr: ImmPointer[Float32, _],
+    c_ptr: MutPointer[Float32, _],
     n: Int,
     k: Int,
     kc: Int,
@@ -145,9 +145,9 @@ def kernel6x4(
 
 
 def kernel6x4_naive(
-    a_ptr: UnsafePointer[Float32, _],
-    b_ptr: UnsafePointer[Float32, _],
-    c_ptr: UnsafePointer[mut=True, Float32, _],
+    a_ptr: ImmPointer[Float32, _],
+    b_ptr: ImmPointer[Float32, _],
+    c_ptr: MutPointer[Float32, _],
     n: Int,
     k: Int,
     kc: Int,

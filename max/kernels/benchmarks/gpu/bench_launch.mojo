@@ -39,7 +39,7 @@ def empty_kernel_many_params[
     pass
 
 
-def small_kernel(ptr: UnsafePointer[UInt64, MutAnyOrigin]):
+def small_kernel(ptr: MutPointer[UInt64, MutAnyOrigin]):
     _ = ptr[]
 
 

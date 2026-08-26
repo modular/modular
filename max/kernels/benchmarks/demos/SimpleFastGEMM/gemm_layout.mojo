@@ -134,9 +134,9 @@ def gemm[
 # kgen --emit=asm max/kernels/benchmarks/demos/SimpleFastGEMM/gemm_layout.mojo >out.S
 @export
 def gemm_export_dynamic(
-    a_ptr: UnsafePointer[Scalar[dtype], _],
-    b_packed_ptr: UnsafePointer[Scalar[dtype], _],
-    c_ptr: UnsafePointer[mut=True, Scalar[dtype], _],
+    a_ptr: ImmPointer[Scalar[dtype], _],
+    b_packed_ptr: ImmPointer[Scalar[dtype], _],
+    c_ptr: MutPointer[Scalar[dtype], _],
     M: Int,
 ) abi("C"):
     comptime N = 1024

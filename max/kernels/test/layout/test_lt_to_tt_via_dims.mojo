@@ -22,7 +22,6 @@ from layout import (
     UNKNOWN_VALUE,
     lt_to_tt,
 )
-from std.memory import UnsafePointer
 from std.utils.index import Index
 from std.testing import assert_equal
 

@@ -276,7 +276,7 @@ def mma_throughput_kernel[
     ]()
 
     var a_smem = rebind[
-        UnsafePointer[
+        MutPointer[
             Scalar[a_type], address_space=.SHARED, UntrackedOrigin[mut=True]
         ]
     ](

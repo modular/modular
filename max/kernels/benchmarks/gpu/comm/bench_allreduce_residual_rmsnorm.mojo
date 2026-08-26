@@ -72,7 +72,7 @@ def _verify_results[
     signal_buffers: List[DeviceBuffer[.uint8]],
     cb_inputs: List[CacheBustingBuffer[in_dtype]],
     mut ar_out_dev: List[DeviceBuffer[in_dtype]],
-    rank_sigs: Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
+    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS],
     gamma_dev: DeviceBuffer[in_dtype],
     epsilon: Float32,
     weight_offset: Scalar[in_dtype],
@@ -109,7 +109,7 @@ def _verify_results[
     var out_tensors = Array[OutTensorType, ngpus](uninitialized=True)
     comptime for _i in range(ngpus):
         in_tensors[_i] = TileTensor(
-            rebind[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin]](
+            rebind[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]](
                 cb_inputs[_i].offset_ptr(0)
             ),
             row_major(Coord(Index(num_rows, num_cols))),
@@ -304,7 +304,7 @@ def _verify_add_results[
     signal_buffers: List[DeviceBuffer[.uint8]],
     cb_inputs: List[CacheBustingBuffer[in_dtype]],
     mut ar_out_dev: List[DeviceBuffer[in_dtype]],
-    rank_sigs: Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
+    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS],
     gamma_dev: DeviceBuffer[in_dtype],
     epsilon: Float32,
     weight_offset: Scalar[in_dtype],
@@ -343,7 +343,7 @@ def _verify_add_results[
     var out_tensors = Array[OutTensorType, ngpus](uninitialized=True)
     comptime for _i in range(ngpus):
         in_tensors[_i] = TileTensor(
-            rebind[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin]](
+            rebind[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]](
                 cb_inputs[_i].offset_ptr(0)
             ),
             row_major(Coord(Index(num_rows, num_cols))),
@@ -581,7 +581,7 @@ def bench_allreduce_rmsnorm_fp8[
 
     # Signal buffers.
     var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
-    var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+    var rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS](
         uninitialized=True
     )
     var temp_bytes = ngpus * size_of[in_dtype]() * length
@@ -629,7 +629,7 @@ def bench_allreduce_rmsnorm_fp8[
     var ar_out_tensors = Array[OutTensorType, ngpus](uninitialized=True)
     for i in range(ngpus):
         in_tensors[i] = TileTensor(
-            rebind[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin]](
+            rebind[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]](
                 cb_inputs[i].unsafe_ptr()
             ),
             row_major(Coord(Index(num_rows, num_cols))),
@@ -723,25 +723,25 @@ def bench_allreduce_rmsnorm_fp8[
     # Capture per-GPU pointers for closures.
     var residual_ptr_base = cb_residual.unsafe_ptr()
     var fused_fp8_out_ptrs = Array[
-        UnsafePointer[Scalar[out_dtype], MutAnyOrigin], ngpus
+        MutPointer[Scalar[out_dtype], MutAnyOrigin], ngpus
     ](uninitialized=True)
-    var fused_scales_ptrs = Array[UnsafePointer[Float32, MutAnyOrigin], ngpus](
+    var fused_scales_ptrs = Array[MutPointer[Float32, MutAnyOrigin], ngpus](
         uninitialized=True
     )
     var fully_fused_fp8_out_ptrs = Array[
-        UnsafePointer[Scalar[out_dtype], MutAnyOrigin], ngpus
+        MutPointer[Scalar[out_dtype], MutAnyOrigin], ngpus
     ](uninitialized=True)
     var fully_fused_scales_ptrs = Array[
-        UnsafePointer[Float32, MutAnyOrigin], ngpus
+        MutPointer[Float32, MutAnyOrigin], ngpus
     ](uninitialized=True)
     var fused_add_fp8_out_ptrs = Array[
-        UnsafePointer[Scalar[out_dtype], MutAnyOrigin], ngpus
+        MutPointer[Scalar[out_dtype], MutAnyOrigin], ngpus
     ](uninitialized=True)
-    var fused_add_scales_ptrs = Array[
-        UnsafePointer[Float32, MutAnyOrigin], ngpus
-    ](uninitialized=True)
+    var fused_add_scales_ptrs = Array[MutPointer[Float32, MutAnyOrigin], ngpus](
+        uninitialized=True
+    )
     var residual_output_ptrs = Array[
-        UnsafePointer[Scalar[in_dtype], MutAnyOrigin], ngpus
+        MutPointer[Scalar[in_dtype], MutAnyOrigin], ngpus
     ](uninitialized=True)
     for i in range(ngpus):
         fused_fp8_out_ptrs[i] = (
@@ -778,7 +778,7 @@ def bench_allreduce_rmsnorm_fp8[
         ) raises {mut in_tensors, imm}:
             comptime for _j in range(ngpus):
                 in_tensors[_j] = TileTensor(
-                    rebind[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin]](
+                    rebind[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]](
                         cb_inputs[_j].offset_ptr(cache_iter)
                     ),
                     row_major(Coord(Index(num_rows, num_cols))),
@@ -813,7 +813,7 @@ def bench_allreduce_rmsnorm_fp8[
             ) raises {mut in_tensors, imm}:
                 comptime for _j in range(ngpus):
                     in_tensors[_j] = TileTensor(
-                        rebind[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin]](
+                        rebind[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]](
                             cb_inputs[_j].offset_ptr(cache_iter)
                         ),
                         row_major(Coord(Index(num_rows, num_cols))),
@@ -887,7 +887,7 @@ def bench_allreduce_rmsnorm_fp8[
         ) raises {mut in_tensors, imm}:
             comptime for _j in range(ngpus):
                 in_tensors[_j] = TileTensor(
-                    rebind[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin]](
+                    rebind[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]](
                         cb_inputs[_j].offset_ptr(cache_iter)
                     ),
                     row_major(Coord(Index(num_rows, num_cols))),
@@ -936,7 +936,7 @@ def bench_allreduce_rmsnorm_fp8[
             ) raises {mut in_tensors, mut ar_out_dev, imm}:
                 comptime for _j in range(ngpus):
                     in_tensors[_j] = TileTensor(
-                        rebind[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin]](
+                        rebind[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]](
                             cb_inputs[_j].offset_ptr(cache_iter)
                         ),
                         row_major(Coord(Index(num_rows, num_cols))),
@@ -1037,7 +1037,7 @@ def bench_allreduce_rmsnorm_fp8[
         ) raises {mut in_tensors, imm}:
             comptime for _j in range(ngpus):
                 in_tensors[_j] = TileTensor(
-                    rebind[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin]](
+                    rebind[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]](
                         cb_inputs[_j].offset_ptr(cache_iter)
                     ),
                     row_major(Coord(Index(num_rows, num_cols))),

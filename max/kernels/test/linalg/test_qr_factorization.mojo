@@ -88,7 +88,7 @@ def create_vector[
     dtype: DType, layout: Layout
 ](
     m: Int,
-    ptr: UnsafePointer[mut=True, Scalar[dtype], _],
+    ptr: MutPointer[Scalar[dtype], _],
     out result: LayoutTensor[dtype, layout, ptr.origin],
 ):
     var dynamic_layout = type_of(result.runtime_layout)(
@@ -103,7 +103,7 @@ def create_tensor[
 ](
     m: Int,
     n: Int,
-    ptr: UnsafePointer[mut=True, Scalar[dtype], _],
+    ptr: MutPointer[Scalar[dtype], _],
     out result: LayoutTensor[dtype, layout, ptr.origin],
 ):
     var dynamic_layout = type_of(result.runtime_layout)(

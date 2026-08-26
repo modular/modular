@@ -185,8 +185,8 @@ def execute_topk_bitonic[
             ordered=ordered, deterministic=deterministic
         ](
             c,
-            rebind[UnsafePointer[Float32, ImmutAnyOrigin]](scores_t.ptr),
-            rebind[UnsafePointer[Int32, MutAnyOrigin]](idxs_t.ptr),
+            rebind[ImmPointer[Float32, ImmutAnyOrigin]](scores_t.ptr),
+            rebind[MutPointer[Int32, MutAnyOrigin]](idxs_t.ptr),
             N,
             K,
             rows,

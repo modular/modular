@@ -256,7 +256,7 @@ def bench_rms_norm_gemm_pdl[
                 c_tile,
                 a_normed,
                 WeightType(
-                    rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
+                    rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](
                         cb_weights.offset_ptr(cache_iter)
                     ),
                     row_major(Coord(Idx[gemm_n], Idx[num_cols])),

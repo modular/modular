@@ -1076,12 +1076,10 @@ def bench_bitonic_topk(
         def launch(dctx: DeviceContext) raises {mut idxs_buf, imm}:
             persistent_topk_block(
                 dctx,
-                rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
+                rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](
                     scores_tt.ptr
                 ),
-                rebind[UnsafePointer[Int32, MutAnyOrigin]](
-                    idxs_buf.unsafe_ptr()
-                ),
+                rebind[MutPointer[Int32, MutAnyOrigin]](idxs_buf.unsafe_ptr()),
                 N,
                 K,
                 batch_size,
