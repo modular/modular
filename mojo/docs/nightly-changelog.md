@@ -408,6 +408,11 @@ This release completes the removal of APIs deprecated during the v1.0 cycle.
 
 ## Fixed
 
+- `SIMD.__init__(py=...)` now reads unsigned dtypes through the unsigned CPython
+  entry point (`PyLong_AsSize_t`). Constructing an unsigned `SIMD` from a Python
+  int in `[2**63, 2**64)` no longer overflows, and a negative Python int now
+  raises instead of silently wrapping to the maximum value.
+
 - A `where` clause naming a type that an enclosing `where` clause constrained
   to a tighter trait can now be proven. Calling a method declared
   `where Ts.contains[T]()` with such a `T` failed with `lacking evidence to

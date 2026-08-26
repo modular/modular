@@ -990,7 +990,8 @@ struct SIMD[dtype: DType, length: SIMDLength](
             py: The PythonObject to convert.
 
         Raises:
-            If the conversion to double fails.
+            If the conversion to double fails, or if the value is out of range
+            for an unsigned dtype (a negative or too-large Python int).
         """
 
         comptime if Self.dtype.is_floating_point():
@@ -1003,7 +1004,19 @@ struct SIMD[dtype: DType, length: SIMDLength](
             # NOTE: if dtype is not float64, we truncate.
             self = Scalar[Self.dtype](float_value)
         elif Self.dtype.is_integral() and bit_width_of[Self.dtype]() <= 64:
-            self = Scalar[Self.dtype](Python.py_long_as_ssize_t(py.__int__()))
+            comptime if Self.dtype.is_unsigned():
+                # Read unsigned dtypes through the unsigned entry point so that
+                # values in `[2**63, 2**64)` round-trip (the signed path
+                # overflows on them) and negative Python ints raise instead of
+                # silently wrapping. Mirrors the Mojo -> Python direction, which
+                # already uses the unsigned `PyLong_FromSize_t`.
+                self = Scalar[Self.dtype](
+                    Python.py_long_as_size_t(py.__int__())
+                )
+            else:
+                self = Scalar[Self.dtype](
+                    Python.py_long_as_ssize_t(py.__int__())
+                )
         else:
             self = Scalar[Self.dtype]()
             comptime assert False, "unsupported dtype"

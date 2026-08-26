@@ -20,7 +20,7 @@ from std.python import Python
 """
 
 from std.os import abort
-from std.ffi import _Global
+from std.ffi import _Global, c_size_t
 
 from ._cpython import (
     CPython,
@@ -587,6 +587,29 @@ struct Python(Defaultable, ImplicitlyCopyable):
         if num == -1 and cpy.PyErr_Occurred():
             # Note that -1 does not guarantee an error, it just means we need to
             # check if there was an exception.
+            raise cpy.unsafe_get_error()
+        return num
+
+    @staticmethod
+    def py_long_as_size_t(obj: PythonObject) raises -> c_size_t:
+        """Get the value of a Python `long` object as an unsigned `size_t`.
+
+        Args:
+            obj: The Python `long` object.
+
+        Returns:
+            The value of the `long` object as a `size_t`.
+
+        Raises:
+            If `obj` is not a Python `long` object, if the `long` object value
+            is negative, or if it overflows `size_t`.
+        """
+        ref cpy = Self().cpython()
+        var num = cpy.PyLong_AsSize_t(obj._obj_ptr)
+        # `PyLong_AsSize_t` returns `(size_t)-1` on error (e.g. a negative
+        # input, which raises `OverflowError`). Unlike the signed path, the
+        # sentinel is the maximum `size_t`, so we must check `PyErr_Occurred`.
+        if num == c_size_t.MAX and cpy.PyErr_Occurred():
             raise cpy.unsafe_get_error()
         return num
 
