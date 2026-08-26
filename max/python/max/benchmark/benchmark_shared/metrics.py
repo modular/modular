@@ -414,6 +414,67 @@ class BaseBenchmarkMetrics(BaseModel, Metrics):
         return len(errors) == 0, errors
 
 
+class RequestRecord(BaseModel):
+    """One request's own outcome, keyed by its dispatch index.
+
+    The aggregates carry several per-request arrays (``input_lens``,
+    ``output_lens``, ``ttfts``, ``request_submit_times``, …), but they are
+    *not* mutually aligned: ``output_lens`` lists failures before
+    successes while ``input_lens`` follows dispatch order, so
+    ``input_lens[i]`` and ``output_lens[i]`` can describe different
+    requests. Nothing can join them back together, which makes them
+    unusable for any analysis that needs a request as a unit — comparing
+    one run's request against another run's same request, above all.
+
+    A record is that unit. ``index`` is the request's position in dispatch
+    order, stable across runs of the same workload and seed, so two runs
+    pair on it. Every request gets exactly one record, including failures
+    and cancellations, because "this request failed here and succeeded
+    there" is itself the finding.
+
+    ``generated_text`` is opt-in (``--record-request-text``): it is the
+    only unbounded field here, and a long-context run would multiply the
+    result file by the size of its own output. Correctness comparison
+    across runs needs it; a latency dashboard does not.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    index: int
+    """Position in dispatch order; the identity two runs pair on."""
+
+    prompt_len: int
+    output_len: int
+    """Generated token count. 0 for a request that failed or was cancelled,
+    which is the count it produced, not a missing value."""
+
+    success: bool
+    cancelled: bool
+    measured: bool
+    """Whether this request is inside the window the aggregates were
+    computed over. A request can succeed and still be excluded by the
+    skip-first/skip-last trim or by steady-state detection, and a reader
+    comparing a record against a percentile needs to know which."""
+
+    error: str = ""
+    ttft_ms: float | None = None
+    tpot_ms: float | None = None
+    """Mean time per output token; None below two generated tokens, where
+    it is undefined rather than zero."""
+
+    latency_ms: float | None = None
+    submit_time: float | None = None
+    complete_time: float | None = None
+    """Run-relative ``perf_counter`` stamps, as the aggregates use."""
+
+    session_id: str | None = None
+    turn_index: int | None = None
+    """Multi-turn provenance; None for single-turn workloads."""
+
+    generated_text: str | None = None
+    """None unless ``--record-request-text`` was set."""
+
+
 # Workload-specific aggregates. ``BenchmarkResult`` (below) holds at
 # most one per record, selected by ``task_type``; failed runs leave both
 # ``None``. Composing them as nested pydantic objects (rather than
@@ -583,6 +644,13 @@ class TextGenAggregates(_CompletedRunBase):
     input_lens: list[int] = Field(default_factory=list)
     output_lens: list[int] = Field(default_factory=list)
     ttfts: list[float] = Field(default_factory=list)
+    # One record per request in dispatch order, the joinable form of the
+    # arrays above. ``csv_mode=opaque`` keeps type-driven CSV from
+    # exploding it into a column per request.
+    request_records: list[RequestRecord] = Field(
+        default_factory=list,
+        json_schema_extra={"csv_mode": "opaque"},
+    )
     # Empty when the server did not report per-request cached_tokens.
     per_turn_cached_token_rates: list[float] = Field(default_factory=list)
     # Per-turn cache retention fractions (one per checked turn, N>=2). Empty
@@ -617,6 +685,7 @@ class TextGenAggregates(_CompletedRunBase):
         d["input_lens"] = self.input_lens
         d["output_lens"] = self.output_lens
         d["ttfts"] = self.ttfts
+        d["request_records"] = [r.model_dump() for r in self.request_records]
         d["per_turn_cached_token_rates"] = self.per_turn_cached_token_rates
         d["per_turn_cache_retentions"] = self.per_turn_cache_retentions
         d["global_cached_token_rate"] = self.global_cached_token_rate

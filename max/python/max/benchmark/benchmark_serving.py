@@ -828,6 +828,7 @@ async def benchmark(
             metrics_by_endpoint=endpoint_metrics,
             spec_decode_stats=spec_decode_stats,
             kv_block_size=args.kv_block_size,
+            record_request_text=args.record_request_text,
         )
         if outputs_by_session is not None:
             text_result.session_server_stats = {

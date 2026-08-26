@@ -231,6 +231,7 @@ def _group_raw(key: str) -> bool:
         "request_complete_times",
         "per_turn_cached_token_rates",
         "per_turn_cache_retentions",
+        "request_records",
         "session_server_stats",
         "aggregate_server_stats",
     )

@@ -21,6 +21,7 @@ import math
 from unittest.mock import MagicMock
 
 import pytest
+from max.benchmark.benchmark_shared.metrics import BenchmarkResult
 from max.benchmark.benchmark_shared.request import (
     PixelGenerationRequestFuncOutput,
     RequestFuncOutput,
@@ -1485,3 +1486,169 @@ class TestPerTurnCacheRetention:
         )
         assert metrics.text_data is not None
         assert metrics.text_data.per_turn_cache_retention is None
+
+
+class TestRequestRecords:
+    """Per-request records: the joinable form of the unaligned arrays.
+
+    ``input_lens`` follows dispatch order while ``output_lens`` lists
+    failures before successes, so the two cannot be zipped. These tests pin
+    the properties that make records usable where the arrays are not: one
+    record per dispatched request, in dispatch order, each carrying its own
+    outcome.
+    """
+
+    def _outputs(self) -> list[RequestFuncOutput]:
+        return [
+            RequestFuncOutput(
+                success=True,
+                latency=1.0,
+                ttft=0.1,
+                prompt_len=10,
+                generated_text="alpha",
+                itl=[0.1] * 4,
+            ),
+            RequestFuncOutput(
+                success=False,
+                error="boom",
+                prompt_len=20,
+                generated_text="",
+            ),
+            RequestFuncOutput(
+                success=True,
+                latency=2.0,
+                ttft=0.2,
+                prompt_len=30,
+                generated_text="gamma",
+                itl=[0.2] * 4,
+            ),
+        ]
+
+    def _metrics(
+        self, *, record_request_text: bool = False, skip_first: int = 0
+    ) -> BenchmarkResult:
+        tokenizer = _make_mock_tokenizer({"alpha": 5, "gamma": 5, "": 0})
+        return calculate_metrics(
+            outputs=self._outputs(),
+            dur_s=3.0,
+            tokenizer=tokenizer,
+            gpu_metrics=None,
+            cpu_metrics=_EMPTY_CPU_METRICS,
+            skip_first_n_requests=skip_first,
+            skip_last_n_requests=0,
+            max_concurrency=None,
+            max_concurrent_conversations=None,
+            collect_gpu_stats=False,
+            kv_block_size=128,
+            record_request_text=record_request_text,
+        )
+
+    def test_one_record_per_dispatched_request(self) -> None:
+        """Failures included: "failed here, succeeded there" is the finding."""
+        text_data = self._metrics().text_data
+        assert text_data is not None
+
+        assert [r.index for r in text_data.request_records] == [0, 1, 2]
+        assert [r.prompt_len for r in text_data.request_records] == [10, 20, 30]
+        assert [r.success for r in text_data.request_records] == [
+            True,
+            False,
+            True,
+        ]
+
+    def test_records_are_joinable_where_the_arrays_are_not(self) -> None:
+        """The arrays disagree on which request index 0 is; records do not."""
+        text_data = self._metrics().text_data
+        assert text_data is not None
+
+        # output_lens puts the failure first, input_lens keeps dispatch
+        # order — so zipping them pairs the failure's 0 with prompt_len=10.
+        assert text_data.input_lens == [10, 20, 30]
+        assert text_data.output_lens[0] == 0
+
+        by_index = {r.index: r for r in text_data.request_records}
+        assert by_index[1].output_len == 0
+        assert by_index[1].error == "boom"
+        assert by_index[0].output_len == 5
+
+    def test_a_failed_request_reports_no_latency(self) -> None:
+        """0.0 would read as an instant response rather than no response."""
+        text_data = self._metrics().text_data
+        assert text_data is not None
+
+        failed = text_data.request_records[1]
+        assert failed.ttft_ms is None
+        assert failed.latency_ms is None
+        assert failed.tpot_ms is None
+
+    def test_generated_text_is_opt_in(self) -> None:
+        """It is the only unbounded field, so a run must ask for it."""
+        default = self._metrics().text_data
+        opted_in = self._metrics(record_request_text=True).text_data
+        assert default is not None and opted_in is not None
+
+        assert all(r.generated_text is None for r in default.request_records)
+        assert [r.generated_text for r in opted_in.request_records] == [
+            "alpha",
+            "",
+            "gamma",
+        ]
+
+    def test_trimmed_requests_are_recorded_but_not_measured(self) -> None:
+        """A record outside the aggregates' window has to say so."""
+        text_data = self._metrics(skip_first=1).text_data
+        assert text_data is not None
+
+        measured = {r.index for r in text_data.request_records if r.measured}
+        # The trim drops the first success; the failure was never measured.
+        assert measured == {2}
+        assert len(text_data.request_records) == 3
+
+    def test_records_survive_the_result_dict(self) -> None:
+        """The JSON blob is what an offline consumer actually reads."""
+        text_data = self._metrics(record_request_text=True).text_data
+        assert text_data is not None
+
+        payload = json.loads(json.dumps(text_data.to_result_dict()))
+
+        records = payload["request_records"]
+        assert [r["index"] for r in records] == [0, 1, 2]
+        assert records[2]["generated_text"] == "gamma"
+
+
+def test_steady_state_records_keep_dispatch_indices() -> None:
+    """The steady-state path hands a filtered slice to calculate_metrics.
+
+    Indexing that slice would renumber the requests and destroy the key two
+    runs pair on, so records are built over the full dispatch list.
+    """
+    outputs = [
+        RequestFuncOutput(
+            success=True,
+            latency=1.0,
+            ttft=0.1 + 0.001 * i,
+            prompt_len=10,
+            generated_text="alpha",
+            itl=[0.1] * 4,
+            request_submit_time=float(i),
+        )
+        for i in range(12)
+    ]
+    tokenizer = _make_mock_tokenizer({"alpha": 5})
+
+    result = build_text_generation_result(
+        outputs=outputs,
+        benchmark_duration=12.0,
+        tokenizer=tokenizer,
+        gpu_metrics=None,
+        cpu_metrics=_EMPTY_CPU_METRICS,
+        skip_first_n_requests=0,
+        skip_last_n_requests=0,
+        max_concurrency=4,
+        max_concurrent_conversations=None,
+        collect_gpu_stats=False,
+    )
+
+    assert result.text_data is not None
+    records = result.text_data.request_records
+    assert [r.index for r in records] == list(range(12))
