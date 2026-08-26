@@ -368,15 +368,26 @@ class InklingMoE(MoEQuantized):
         """Runs every sink expert on every token, weighted by its gate value,
         applied to the intermediate as the reference fuses it."""
         mlp = self.shared_experts
-        hidden = ops.silu(mlp.gate_proj(x)) * mlp.up_proj(x)
+        ffl = mlp.gate_proj.weight.shape[0]
+        gate_up = ops.concat((mlp.gate_proj.weight, mlp.up_proj.weight))
+        gate, up = ops.split(x @ gate_up.T, [ffl, ffl], axis=-1)
+        hidden = ops.silu(gate) * up
         sinks_here = self._sink_ids_on_this_shard()
         if len(sinks_here) != int(sink_weights.shape[1]):
             # A TP shard sees only the sinks its column range falls in.
             sink_weights = sink_weights[:, sinks_here.start : sinks_here.stop]
-        weighted = ops.reshape(
-            hidden, [hidden.shape[0], len(sinks_here), -1]
-        ) * ops.unsqueeze(ops.cast(sink_weights, hidden.dtype), axis=-1)
-        return mlp.down_proj(ops.reshape(weighted, hidden.shape))
+        weights = ops.cast(sink_weights, hidden.dtype)
+        if len(sinks_here) == 1:
+            # Rank-2 saves a kernel launch here: the rank-3 reshape stops
+            # folding once the intermediate comes from split slices.
+            weighted = hidden * weights
+        else:
+            weighted = ops.reshape(
+                ops.reshape(hidden, [hidden.shape[0], len(sinks_here), -1])
+                * ops.unsqueeze(weights, axis=-1),
+                hidden.shape,
+            )
+        return mlp.down_proj(weighted)
 
     def _sink_ids_on_this_shard(self) -> range:
         """Which sink experts this shard's intermediate columns belong to."""
