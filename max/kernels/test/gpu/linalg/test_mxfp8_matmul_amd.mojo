@@ -30,7 +30,7 @@ from max.gpu.host import DeviceContext
 from std.math import ceildiv
 from std.memory import bitcast
 from std.random import random_ui64, seed
-from std.testing import assert_almost_equal
+from std.testing import assert_almost_equal, assert_equal
 
 from layout import TileTensor
 from layout.tile_layout import row_major
@@ -38,6 +38,7 @@ from linalg.fp4_utils import MXFP8_SF_VECTOR_SIZE
 from linalg.matmul.gpu.amd.block_scaled_matmul_amd import (
     BlockScaledMatmulAMD,
     _launch_block_scaled_split_k,
+    _sk_perf_clamped_max_m,
     block_scaled_matmul_amd,
 )
 
@@ -101,6 +102,28 @@ def _rand_e4m3_byte() -> UInt8:
     return _e4m3_byte(Float32(Int(random_ui64(0, 2000))) / 1000.0 - 1.0)
 
 
+def _rand_positive_e4m3_byte() -> UInt8:
+    """Random finite E4M3 byte in (0, 1].
+
+    Sign-free products add, so the reference stays ~K*eps. Still varies
+    along K, unlike const-fill.
+    """
+    return _e4m3_byte(Float32(Int(random_ui64(1, 1000))) / 1000.0)
+
+
+def _operand_byte[ones_data: Bool, positive_data: Bool]() -> UInt8:
+    """One A/B byte in the fill mode the case asked for.
+
+    Untaken branches draw no RNG, so appending a const-fill case cannot
+    re-roll data of cases above it.
+    """
+    if ones_data:
+        return _e4m3_byte(Float32(1.0))
+    if positive_data:
+        return _rand_positive_e4m3_byte()
+    return _rand_e4m3_byte()
+
+
 def _test_case[
     M_static: Int,
     N_static: Int,
@@ -110,12 +133,20 @@ def _test_case[
     BK_ELEMS: Int = 128,
     WM: Int = 64,
     WN: Int = 64,
+    num_stages: Int = 1,
     unit_scales: Bool = False,
     ones_data: Bool = False,
+    positive_data: Bool = False,
+    out_dtype: DType = DType.float32,
 ](name: String, ctx: DeviceContext) raises:
     comptime assert (
         K_static % MXFP8_SF_VECTOR_SIZE == 0
     ), "K must be a multiple of 32"
+    comptime assert not (
+        ones_data and positive_data
+    ), "ones_data and positive_data are alternative fills; pick one"
+    # Sign-free operands leave the reference at ~K*eps, so the oracle tightens.
+    comptime rtol = 5e-3 if positive_data else 1e-2
 
     # MXFP8: one byte per element.
     comptime K_BYTES = K_static
@@ -129,11 +160,10 @@ def _test_case[
     var sfb_h = ctx.enqueue_create_host_buffer[.uint8](N_static * K_SCALES)
     ctx.synchronize()
 
-    var one = _e4m3_byte(Float32(1.0))
     for i in range(M_static * K_BYTES):
-        a_h[i] = one if ones_data else _rand_e4m3_byte()
+        a_h[i] = _operand_byte[ones_data, positive_data]()
     for i in range(N_static * K_BYTES):
-        b_h[i] = one if ones_data else _rand_e4m3_byte()
+        b_h[i] = _operand_byte[ones_data, positive_data]()
     # E8M0: 127 == 2^0. Vary the exponent so a mis-indexed scale block reads a
     # genuinely different power of two.
     for i in range(M_static * K_SCALES):
@@ -145,7 +175,7 @@ def _test_case[
     var b_d = ctx.enqueue_create_buffer[.uint8](N_static * K_BYTES)
     var sfa_d = ctx.enqueue_create_buffer[.uint8](M_static * K_SCALES)
     var sfb_d = ctx.enqueue_create_buffer[.uint8](N_static * K_SCALES)
-    var c_d = ctx.enqueue_create_buffer[.float32](M_static * N_static)
+    var c_d = ctx.enqueue_create_buffer[out_dtype](M_static * N_static)
     var c_ref_d = ctx.enqueue_create_buffer[.float32](M_static * N_static)
     ctx.enqueue_copy(a_d, a_h)
     ctx.enqueue_copy(b_d, b_h)
@@ -170,10 +200,11 @@ def _test_case[
         BK_ELEMS=BK_ELEMS,
         WM=WM,
         WN=WN,
+        num_stages=num_stages,
         matrix_format=CDNA4F8F6F4MatrixFormat.FLOAT8_E4M3,
     ]
     comptime kernel = Kernel.run[
-        .float32,
+        out_dtype,
         type_of(c_tt).LayoutType,
         type_of(a_tt).LayoutType,
         type_of(b_tt).LayoutType,
@@ -204,7 +235,7 @@ def _test_case[
         block_dim=(BLOCK_DIM, BLOCK_DIM),
     )
 
-    var c_h = ctx.enqueue_create_host_buffer[.float32](M_static * N_static)
+    var c_h = ctx.enqueue_create_host_buffer[out_dtype](M_static * N_static)
     var c_ref_h = ctx.enqueue_create_host_buffer[.float32](M_static * N_static)
     ctx.enqueue_copy(c_h, c_d)
     ctx.enqueue_copy(c_ref_h, c_ref_d)
@@ -212,10 +243,10 @@ def _test_case[
 
     for i in range(M_static * N_static):
         assert_almost_equal(
-            c_h[i],
+            c_h[i].cast[DType.float32](),
             c_ref_h[i],
             atol=1e-2,
-            rtol=1e-2,
+            rtol=rtol,
             msg=String("mismatch at ", i),
         )
     print("     OK")
@@ -231,12 +262,16 @@ def test_mxfp8_matmul_split_k[
     BK_ELEMS: Int = 256,
     WM: Int = 64,
     WN: Int = 32,
+    unit_scales: Bool = False,
 ](ctx: DeviceContext) raises:
     """MXFP8 sibling of `test_mxfp4_matmul_split_k`.
 
     Launches `_launch_block_scaled_split_k[lane_bytes=32]` (workspace + reduce
     path) for the given `num_splits` and verifies against the same
     per-element reference used by `_test_case`.
+
+    `unit_scales` pins every E8M0 scale to 2^0. Operands stay random so a
+    K-band error still fails; the tighter spread keeps the reference in atol.
     """
     print(
         M_static,
@@ -254,6 +289,8 @@ def test_mxfp8_matmul_split_k[
         BK_ELEMS,
         " WN=",
         WN,
+        " unit_scales=",
+        unit_scales,
         "]",
     )
 
@@ -275,9 +312,9 @@ def test_mxfp8_matmul_split_k[
     for i in range(N_static * K_BYTES):
         b_h[i] = _rand_e4m3_byte()
     for i in range(M_static * K_SCALES):
-        sfa_h[i] = UInt8(Int(random_ui64(124, 130)))
+        sfa_h[i] = 127 if unit_scales else UInt8(Int(random_ui64(124, 130)))
     for i in range(N_static * K_SCALES):
-        sfb_h[i] = UInt8(Int(random_ui64(124, 130)))
+        sfb_h[i] = 127 if unit_scales else UInt8(Int(random_ui64(124, 130)))
 
     var a_d = ctx.enqueue_create_buffer[.uint8](M_static * K_BYTES)
     var b_d = ctx.enqueue_create_buffer[.uint8](N_static * K_BYTES)
@@ -344,7 +381,13 @@ def test_mxfp8_matmul_split_k[
 
 
 def _test_dispatch[
-    M_static: Int, N_static: Int, K_static: Int
+    M_static: Int,
+    N_static: Int,
+    K_static: Int,
+    unit_scales: Bool = False,
+    ones_data: Bool = False,
+    positive_data: Bool = False,
+    out_dtype: DType = DType.float32,
 ](name: String, ctx: DeviceContext) raises:
     """Drives the public dispatcher rather than a hand-picked tile shape.
 
@@ -352,10 +395,18 @@ def _test_dispatch[
     only way to cover its BK-bucket gates. A gate that admits a BK the kernel
     cannot tile fails the comptime assert in `BlockScaledMatmulAMD.run` --
     i.e. this case fails to BUILD rather than producing a wrong answer.
+
+    `out_dtype` is a kernel parameter, not just an epilogue: f32 and bf16
+    output are different code objects.
     """
     comptime assert (
         K_static % MXFP8_SF_VECTOR_SIZE == 0
     ), "K must be a multiple of 32"
+    comptime assert not (
+        ones_data and positive_data
+    ), "ones_data and positive_data are alternative fills; pick one"
+    # See `_test_case`: sign-free operands earn a tighter oracle.
+    comptime rtol = 5e-3 if positive_data else 1e-2
     comptime K_BYTES = K_static
     comptime K_SCALES = K_static // MXFP8_SF_VECTOR_SIZE
 
@@ -368,19 +419,19 @@ def _test_dispatch[
     ctx.synchronize()
 
     for i in range(M_static * K_BYTES):
-        a_h[i] = _rand_e4m3_byte()
+        a_h[i] = _operand_byte[ones_data, positive_data]()
     for i in range(N_static * K_BYTES):
-        b_h[i] = _rand_e4m3_byte()
+        b_h[i] = _operand_byte[ones_data, positive_data]()
     for i in range(M_static * K_SCALES):
-        sfa_h[i] = UInt8(Int(random_ui64(124, 130)))
+        sfa_h[i] = 127 if unit_scales else UInt8(Int(random_ui64(124, 130)))
     for i in range(N_static * K_SCALES):
-        sfb_h[i] = UInt8(Int(random_ui64(124, 130)))
+        sfb_h[i] = 127 if unit_scales else UInt8(Int(random_ui64(124, 130)))
 
     var a_d = ctx.enqueue_create_buffer[.uint8](M_static * K_BYTES)
     var b_d = ctx.enqueue_create_buffer[.uint8](N_static * K_BYTES)
     var sfa_d = ctx.enqueue_create_buffer[.uint8](M_static * K_SCALES)
     var sfb_d = ctx.enqueue_create_buffer[.uint8](N_static * K_SCALES)
-    var c_d = ctx.enqueue_create_buffer[.float32](M_static * N_static)
+    var c_d = ctx.enqueue_create_buffer[out_dtype](M_static * N_static)
     var c_ref_d = ctx.enqueue_create_buffer[.float32](M_static * N_static)
     ctx.enqueue_copy(a_d, a_h)
     ctx.enqueue_copy(b_d, b_h)
@@ -417,7 +468,7 @@ def _test_dispatch[
         block_dim=(BLOCK_DIM, BLOCK_DIM),
     )
 
-    var c_h = ctx.enqueue_create_host_buffer[.float32](M_static * N_static)
+    var c_h = ctx.enqueue_create_host_buffer[out_dtype](M_static * N_static)
     var c_ref_h = ctx.enqueue_create_host_buffer[.float32](M_static * N_static)
     ctx.enqueue_copy(c_h, c_d)
     ctx.enqueue_copy(c_ref_h, c_ref_d)
@@ -425,17 +476,44 @@ def _test_dispatch[
 
     for i in range(M_static * N_static):
         assert_almost_equal(
-            c_h[i],
+            c_h[i].cast[DType.float32](),
             c_ref_h[i],
             atol=1e-2,
-            rtol=1e-2,
+            rtol=rtol,
             msg=String("mismatch at ", i),
         )
     print("     OK")
 
 
+def _test_route_policy() raises:
+    """Pins the split-K M ceiling at the measured o_proj crossover.
+
+    Both routes agree, so a wrong ceiling is a silent perf regression.
+    """
+    print("\n--- split-K route policy (performance pin) ---")
+
+    # o_proj key: workspace 1365, clamped to the measured crossover 320.
+    assert_equal(
+        _sk_perf_clamped_max_m[FP8_LANE_BYTES, 6144, 2048, 1365](), 320
+    )
+
+    # Clamp is keyed to that (format, N, K); other shapes keep the byte budget.
+    assert_equal(
+        _sk_perf_clamped_max_m[FP8_LANE_BYTES, 6144, 4096, 1365](), 1365
+    )
+    assert_equal(
+        _sk_perf_clamped_max_m[FP8_LANE_BYTES, 2560, 2048, 1092](), 1092
+    )
+    assert_equal(_sk_perf_clamped_max_m[16, 6144, 2048, 1365](), 1365)
+
+    # A tighter workspace budget still wins.
+    assert_equal(_sk_perf_clamped_max_m[FP8_LANE_BYTES, 6144, 2048, 128](), 128)
+    print("     OK")
+
+
 def main() raises:
     seed(0)
+    _test_route_policy()
     with DeviceContext() as ctx:
         print("===> dense row-major MXFP8 matmul (lane_bytes=32)")
 
@@ -528,3 +606,69 @@ def main() raises:
         # Confirms it actually routes them into split-K.
         _test_dispatch[16, 6144, 6144]("dispatch-sk-moe-gateup", ctx)
         _test_dispatch[16, 6144, 3072]("dispatch-sk-moe-down", ctx)
+
+        print("\n--- BK_ELEMS=128 split tiles (LDS-swizzle-eligible) ---")
+
+        # BK_ELEMS=128 is swizzle-eligible (`num_k_tiles==1`); 256 is not.
+        # o_proj key, random data and scales. Appended last (draws RNG).
+        test_mxfp8_matmul_split_k[64, 6144, 2048, num_splits=4, BK_ELEMS=128](
+            ctx
+        )
+        test_mxfp8_matmul_split_k[17, 6144, 2048, num_splits=4, BK_ELEMS=128](
+            ctx
+        )
+        test_mxfp8_matmul_split_k[
+            16,
+            6144,
+            2048,
+            num_splits=4,
+            BM=16,
+            BN=128,
+            BK_ELEMS=128,
+            WM=16,
+            WN=64,
+        ](ctx)
+
+        # BM=64 band clamps to 2 splits; SK4 above is a different object.
+        # Random K, unit scales (reference atol), ragged M for OOB rows.
+        test_mxfp8_matmul_split_k[
+            64, 6144, 2048, num_splits=2, BK_ELEMS=128, unit_scales=True
+        ](ctx)
+        test_mxfp8_matmul_split_k[
+            17, 6144, 2048, num_splits=2, BK_ELEMS=128, unit_scales=True
+        ](ctx)
+        # Random-scale twin of the ragged SK2 case; unit_scales is blind to
+        # a scale-band offset. M=17 keeps the reference inside atol.
+        test_mxfp8_matmul_split_k[17, 6144, 2048, num_splits=2, BK_ELEMS=128](
+            ctx
+        )
+
+        # o_proj key, one token either side of `_sk_route_max_m` (320): M=319
+        # split-K, M=321 dense. Const-fill so C==K; appended last (no RNG).
+        _test_dispatch[319, 6144, 2048, unit_scales=True, ones_data=True](
+            "dispatch-oproj-m319", ctx
+        )
+        _test_dispatch[321, 6144, 2048, unit_scales=True, ones_data=True](
+            "dispatch-oproj-m321", ctx
+        )
+
+        print("\n--- num_stages=2: LDS ping-pong pipeline ---")
+
+        # Const-fill cannot see a stage-base/swizzle fault; signed random at
+        # this (N, K) exceeds atol. Complementary pair. Appended last (RNG).
+        _test_case[
+            256, 6144, 2048, num_stages=2, unit_scales=True, ones_data=True
+        ]("dbuf-const-fill", ctx)
+        # Random data and scales, M-OOB rows. N=2048 keeps the reference in atol.
+        _test_case[64, 2048, 2048, num_stages=2]("dbuf-random-oob", ctx)
+
+        print("\n--- bf16 out: varying operands on the objects that ship ---")
+
+        # o_proj key, bf16 out, positive data: const-fill cannot see a granule
+        # swap; signed random exceeds atol. M=321 dense, M=319 split-K. Last (RNG).
+        _test_dispatch[
+            321, 6144, 2048, positive_data=True, out_dtype=DType.bfloat16
+        ]("dispatch-oproj-m321-bf16", ctx)
+        _test_dispatch[
+            319, 6144, 2048, positive_data=True, out_dtype=DType.bfloat16
+        ]("dispatch-oproj-m319-bf16", ctx)
