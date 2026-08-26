@@ -981,6 +981,11 @@ the [container](/container) page now links to the new page.
   separately compiled kernels now load and launch there as they already did on
   other GPU backends.
 
+- Fixed device buffer allocation no longer being pooled on GPUs without
+  GPUDirect RDMA support, such as GeForce cards. A
+  `DeviceContext.enqueue_create_buffer()` create and destroy round trip on an
+  affected device took roughly 67 us instead of 375 ns.
+
 - Fixed reductions over a zero-extent axis — for example `ops.sum(x, axis=1)`
   where that axis has length `0` — leaving their output unwritten, along with
   anything fused into the reduction's epilogue. Each now writes its identity:
