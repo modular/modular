@@ -1,0 +1,11 @@
+load("//bazel:api.bzl", "modular_py_library")
+
+package(default_visibility = ["//max:consumers"])
+
+modular_py_library(
+    name = "mamba2",
+    srcs = glob(["**/*.py"]),
+    deps = [
+        "//max/python/max/graph",
+    ],
+)

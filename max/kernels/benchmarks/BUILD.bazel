@@ -13,9 +13,26 @@ _RUN_BENCHMARKS = [
     "nn/bench_gather_reduce.mojo",
 ]
 
+# Per-src extra deps for GPU benchmarks that import a specific kernel package
+# not covered by the default dep set below.
 _EXTRA_DEPS = {
     "algorithm/parallelize_overhead.mojo": ["//max:max_mojo"],
     "linalg/bench_layout_tensor.mojo": ["//max:max_mojo"],
+    "gpu/state_space/bench_ssd_chunk_scan.mojo": [
+        "//max/kernels/src/state_space",
+    ],
+    "gpu/state_space/prof_ssd_chunk_scan_only.mojo": [
+        "//max/kernels/src/state_space",
+    ],
+    "gpu/state_space/bench_ssd_chunk_combine.mojo": [
+        "//max/kernels/src/state_space",
+    ],
+    "gpu/state_space/prof_ssd_combine_only.mojo": [
+        "//max/kernels/src/state_space",
+    ],
+    "gpu/state_space/prof_ssd_combine_static.mojo": [
+        "//max/kernels/src/state_space",
+    ],
 }
 
 _EXTRA_CONSTRAINTS = {
@@ -235,9 +252,10 @@ _CPU_TESTS = glob(
             "//max:max_mojo",
             "//max:nn",
             "//max:shmem",
+            "//max:state_space",
             "//max:structured_kernels",
             "@mojo//:std",
-        ],
+        ] + _EXTRA_DEPS.get(src, []),
     )
     for src in glob(
         ["gpu/**/*.mojo"],
