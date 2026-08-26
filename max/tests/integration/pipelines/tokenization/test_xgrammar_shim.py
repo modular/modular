@@ -21,8 +21,10 @@ path.
 """
 
 import importlib.util
+import json
 import math
 import sys
+import time
 from typing import Any
 
 import numpy as np
@@ -361,11 +363,81 @@ def test_unsupported_keyword_compiles_by_default() -> None:
     assert isinstance(compiled, xgr.CompiledGrammar)
 
 
-def test_oneof_two_branches_rejected() -> None:
-    # oneOf is only approximated as anyOf; reject under strict mode.
+def test_oneof_type_disjoint_compiles_and_enforces() -> None:
+    compiled = _compiler().compile_json_schema(
+        '{"oneOf": [{"type": "string"}, {"type": "integer"}]}',
+        reject_unsupported=True,
+    )
+    assert _accepts(compiled, '"a"')
+    assert _accepts(compiled, "1")
+    assert not _accepts(compiled, "true")
+    assert not _accepts(compiled, "null")
+
+
+def test_oneof_const_disjoint_compiles_and_enforces() -> None:
+    compiled = _compiler().compile_json_schema(
+        '{"oneOf": [{"const": "a"}, {"const": "b"}]}', reject_unsupported=True
+    )
+    assert _accepts(compiled, '"a"')
+    assert _accepts(compiled, '"b"')
+    assert not _accepts(compiled, '"ab"')
+
+
+def test_oneof_enum_disjoint_compiles_and_enforces() -> None:
+    compiled = _compiler().compile_json_schema(
+        '{"oneOf": [{"enum": ["a", "b"]}, {"enum": [1]}]}',
+        reject_unsupported=True,
+    )
+    assert _accepts(compiled, '"a"')
+    assert _accepts(compiled, "1")
+    assert not _accepts(compiled, "true")
+
+
+def test_oneof_discriminated_objects_compile_and_enforce() -> None:
+    # Distinct required discriminator values make the branches disjoint.
+    compiled = _compiler().compile_json_schema(
+        '{"oneOf": ['
+        '{"type": "object", "required": ["a"], '
+        '"properties": {"a": {"const": "a"}}}, '
+        '{"type": "object", "required": ["a"], '
+        '"properties": {"a": {"const": "b"}}}]}',
+        reject_unsupported=True,
+    )
+    assert _accepts(compiled, '{"a": "a"}')
+    assert _accepts(compiled, '{"a": "b"}')
+    assert not _accepts(compiled, '{"a": 1}')
+
+
+def test_oneof_integer_number_overlap_rejected() -> None:
     with pytest.raises(Exception):
         _compiler().compile_json_schema(
-            '{"oneOf": [{"type": "string"}, {"type": "number"}]}',
+            '{"oneOf": [{"type": "integer"}, {"type": "number"}]}',
+            reject_unsupported=True,
+        )
+
+
+def test_oneof_untyped_branch_rejected() -> None:
+    # Type-specific keywords do not imply that an untyped branch has that type.
+    with pytest.raises(Exception):
+        _compiler().compile_json_schema(
+            '{"oneOf": [{"type": "number"}, {"minimum": 0}]}',
+            reject_unsupported=True,
+        )
+
+
+def test_oneof_overlapping_compiles_when_permissive() -> None:
+    compiled = _compiler().compile_json_schema(
+        '{"oneOf": [{"type": "integer"}, {"type": "number"}]}'
+    )
+    assert isinstance(compiled, xgr.CompiledGrammar)
+
+
+def test_oneof_sibling_of_anyof_not_dropped() -> None:
+    # Dispatch must not drop a sibling union.
+    with pytest.raises(Exception):
+        _compiler().compile_json_schema(
+            '{"anyOf": [{"type": "string"}], '
+            '"oneOf": [{"type": "integer"}, {"type": "number"}]}',
             reject_unsupported=True,
         )
 
@@ -405,7 +477,7 @@ def test_allof_with_false_member_rejected() -> None:
 
 
 def test_allof_with_restricting_additional_properties_rejected() -> None:
-    # additionalProperties governs the keys ITS OWN object leaves unnamed. The
+    # additionalProperties governs the keys its own object leaves unnamed. The
     # base here names none, so it accepts only {}; folding the member's "a" in
     # would make the merged schema accept an object the base forbids.
     for value in ("false", '{"type": "string"}'):
@@ -415,6 +487,124 @@ def test_allof_with_restricting_additional_properties_rejected() -> None:
                 '"string"}}}], "additionalProperties": ' + value + "}",
                 reject_unsupported=True,
             )
+
+
+def test_oneof_type_array_arms_disjoint_compiles() -> None:
+    # A "type" array is a union of types; ["string","null"] and integer share none.
+    compiled = _compiler().compile_json_schema(
+        '{"oneOf": [{"type": ["string", "null"]}, {"type": "integer"}]}',
+        reject_unsupported=True,
+    )
+    assert _accepts(compiled, '"a"')
+    assert _accepts(compiled, "null")
+    assert _accepts(compiled, "7")
+
+
+def test_oneof_type_array_arms_overlapping_rejected() -> None:
+    # integer is a subset of number, so the arms overlap inside the array.
+    with pytest.raises(Exception):
+        _compiler().compile_json_schema(
+            '{"oneOf": [{"type": ["integer", "null"]}, {"type": "number"}]}',
+            reject_unsupported=True,
+        )
+
+
+def test_oneof_const_versus_type_disjoint_compiles() -> None:
+    # A finite arm against a typed arm: "a" is not an integer.
+    compiled = _compiler().compile_json_schema(
+        '{"oneOf": [{"const": "a"}, {"type": "integer"}]}',
+        reject_unsupported=True,
+    )
+    assert _accepts(compiled, '"a"')
+    assert _accepts(compiled, "7")
+    assert not _accepts(compiled, '"b"')
+
+
+def test_oneof_fractional_const_versus_integer_compiles() -> None:
+    compiled = _compiler().compile_json_schema(
+        '{"oneOf": [{"const": 2.5}, {"type": "integer"}]}',
+        reject_unsupported=True,
+    )
+    assert _accepts(compiled, "2.5")
+    assert _accepts(compiled, "2")
+
+
+def test_oneof_const_versus_type_overlapping_rejected() -> None:
+    # 1 is a number, so the finite arm falls inside the typed arm.
+    with pytest.raises(Exception):
+        _compiler().compile_json_schema(
+            '{"oneOf": [{"const": 1}, {"type": "number"}]}',
+            reject_unsupported=True,
+        )
+
+
+def test_oneof_huge_enums_rejected_not_hung() -> None:
+    # Branch counts and enum sizes come from the request, and the proof is
+    # quadratic in both. Over budget must refuse, not run for minutes.
+    a = json.dumps(list(range(10000)))
+    b = json.dumps(list(range(10000, 20000)))
+    started = time.monotonic()
+    with pytest.raises(Exception):
+        _compiler().compile_json_schema(
+            '{"oneOf": [{"enum": ' + a + '}, {"enum": ' + b + "}]}",
+            reject_unsupported=True,
+        )
+    assert time.monotonic() - started < 10
+
+
+def test_oneof_many_discriminator_candidates_rejected_not_hung() -> None:
+    keys = [f"k{i}" for i in range(50000)]
+    option = {
+        "type": "object",
+        "required": keys,
+        "properties": {key: {"const": 0} for key in keys},
+    }
+    schema = json.dumps({"oneOf": [option, option]})
+    started = time.monotonic()
+    with pytest.raises(Exception):
+        _compiler().compile_json_schema(schema, reject_unsupported=True)
+    assert time.monotonic() - started < 10
+
+
+def test_allof_conflicting_id_rejected() -> None:
+    # $id rebases $ref resolution, so two members declaring different ones
+    # disagree about something an instance can observe.
+    with pytest.raises(Exception):
+        _compiler().compile_json_schema(
+            '{"allOf": [{"$id": "https://example.com/a", "type": "string"}, '
+            '{"$id": "https://example.com/b", "minLength": 1}]}',
+            reject_unsupported=True,
+        )
+
+
+def test_allof_matching_id_merges() -> None:
+    # The same $id on both sides is not a conflict.
+    compiled = _compiler().compile_json_schema(
+        '{"allOf": [{"$id": "https://example.com/a", "type": "string"}, '
+        '{"$id": "https://example.com/a", "minLength": 2}]}',
+        reject_unsupported=True,
+    )
+    assert _accepts(compiled, '"ab"')
+    assert not _accepts(compiled, '"a"')
+
+
+def test_oneof_mixed_integer_and_float_consts_compiles() -> None:
+    # 1 and 2.5 are disjoint. The proof must compare numbers, not picojson's
+    # storage tag, which differs between an integer and a float literal.
+    compiled = _compiler().compile_json_schema(
+        '{"oneOf": [{"const": 1}, {"const": 2.5}]}', reject_unsupported=True
+    )
+    assert _accepts(compiled, "1")
+    assert _accepts(compiled, "2.5")
+    assert not _accepts(compiled, "3")
+
+
+def test_oneof_equal_integer_and_float_consts_rejected() -> None:
+    # 1 and 1.0 are the same value, so the branches are not disjoint.
+    with pytest.raises(Exception):
+        _compiler().compile_json_schema(
+            '{"oneOf": [{"const": 1}, {"const": 1.0}]}', reject_unsupported=True
+        )
 
 
 def test_allof_with_open_additional_properties_merged() -> None:
@@ -1465,10 +1655,10 @@ def test_ambiguous_object_number_keywords_rejected() -> None:
         )
 
 
-def test_tool_call_rejects_non_multiple_of_keyword() -> None:
+def test_tool_call_carries_reject_unsupported() -> None:
     # The tool-call path (triggered tags -> JSONSchemaFormat content) carries
     # reject_unsupported through the tag JSON, so an unenforceable arg schema
-    # (oneOf is only approximated) is rejected there too.
+    # (a oneOf whose branches are not provably disjoint) is rejected there too.
     tag = xgr.StructuralTag(
         format=TriggeredTagsFormat(
             triggers=["<t>"],
@@ -1477,7 +1667,7 @@ def test_tool_call_rejects_non_multiple_of_keyword() -> None:
                     begin="<t>",
                     content=JSONSchemaFormat(
                         json_schema={
-                            "oneOf": [{"type": "string"}, {"type": "number"}]
+                            "oneOf": [{"type": "number"}, {"minimum": 0}]
                         },
                         reject_unsupported=True,
                     ),
@@ -1548,6 +1738,39 @@ def test_tool_call_anyof_non_object_branch_rejected() -> None:
     with pytest.raises(Exception):
         _compiler().compile_structural_tag(
             _toolcall({"anyOf": [{"type": "object"}, {"type": "string"}]})
+        )
+
+
+def test_tool_call_oneof_object_branches_accepted() -> None:
+    # Object-root verification recurses through oneOf the same way it does
+    # through anyOf: all-object branches ARE an object root.
+    compiled = _compiler().compile_structural_tag(
+        _toolcall(
+            {
+                "oneOf": [
+                    {
+                        "type": "object",
+                        "required": ["a"],
+                        "properties": {"a": {"const": "a"}},
+                    },
+                    {
+                        "type": "object",
+                        "required": ["a"],
+                        "properties": {"a": {"const": "b"}},
+                    },
+                ]
+            }
+        )
+    )
+    assert isinstance(compiled, xgr.CompiledGrammar)
+
+
+def test_tool_call_oneof_non_object_branch_rejected() -> None:
+    # The counterpart: a provably-disjoint oneOf still fails the object root
+    # when a branch is a scalar.
+    with pytest.raises(Exception):
+        _compiler().compile_structural_tag(
+            _toolcall({"oneOf": [{"type": "string"}, {"type": "integer"}]})
         )
 
 
@@ -3340,6 +3563,168 @@ def test_excludes_overlapping_prefixes() -> None:
     assert _accepts(compiled, "abxe")
 
 
+def test_anyof_base_additional_properties_not_folded_into_branch() -> None:
+    # additionalProperties is defined against the names its OWN object declares,
+    # so folding a copy into a branch closes over the wrong set. The base here
+    # declares nothing and closes the object, so base AND branch admits only {};
+    # the fold used to accept {"a": "a"}.
+    with pytest.raises(Exception, match="forbids unlisted properties"):
+        _compiler().compile_json_schema(
+            '{"anyOf": [{"type": "object", "properties":'
+            ' {"a": {"type": "string"}}}], "additionalProperties": false}',
+            reject_unsupported=True,
+        )
+
+
+def test_anyof_base_additional_properties_over_own_names_compiles() -> None:
+    # The rule is name-aware, not a ban on additionalProperties beside a union:
+    # when the closing side declares the names itself, the fold is exact.
+    compiled = _compiler().compile_json_schema(
+        '{"anyOf": [{"required": ["a"]}], "type": "object", "properties":'
+        ' {"a": {"type": "string"}}, "additionalProperties": false}',
+        reject_unsupported=True,
+    )
+    assert _accepts(compiled, '{"a": "x"}')
+    assert not _accepts(compiled, '{"a": "x", "b": 1}')
+
+
+def test_anyof_open_base_still_folds() -> None:
+    # additionalProperties: true names nothing and closes nothing, so there is
+    # no boundary to misplace and the fold stays available.
+    compiled = _compiler().compile_json_schema(
+        '{"anyOf": [{"type": "object", "properties":'
+        ' {"a": {"type": "string"}}}], "additionalProperties": true}',
+        reject_unsupported=True,
+    )
+    assert _accepts(compiled, '{"a": "x"}')
+
+
+def test_anyof_base_items_boundary_not_folded_into_branch() -> None:
+    # Same defect on the array side: base "items": false closes over the base's
+    # own prefixItems (none), so folding it into a branch that sets prefixItems
+    # would let the branch's positional entries through.
+    with pytest.raises(Exception, match="forbids extra items"):
+        _compiler().compile_json_schema(
+            '{"anyOf": [{"type": "array", "prefixItems":'
+            ' [{"type": "string"}]}], "items": false}',
+            reject_unsupported=True,
+        )
+
+
+def test_anyof_base_unevaluated_properties_not_folded() -> None:
+    # unevaluatedProperties depends on which properties each applicator
+    # evaluated, and a flattened branch no longer records that, so the fold
+    # cannot represent it at all.
+    with pytest.raises(Exception, match="unevaluatedProperties"):
+        _compiler().compile_json_schema(
+            '{"anyOf": [{"type": "object", "properties":'
+            ' {"a": {"type": "string"}}}], "unevaluatedProperties": false}',
+            reject_unsupported=True,
+        )
+
+
+def test_exclusive_keyword_not_folded_across_sides() -> None:
+    # A base keyword folded beside a branch's const is dropped by the
+    # dispatch, so the fold refuses it for either union spelling.
+    for schema in (
+        '{"anyOf": [{"const": "ab"}], "minLength": 5}',
+        '{"oneOf": [{"const": "ab"}], "minLength": 5}',
+    ):
+        with pytest.raises(Exception, match='combines "const"'):
+            _compiler().compile_json_schema(schema, reject_unsupported=True)
+
+
+def test_exclusive_keyword_beside_sibling_union_rejected() -> None:
+    # $ref, const and enum win the dispatch outright and the sibling union is
+    # never looked at again, so its branches are dropped rather than enforced.
+    # No fold-time guard can see this: ParseAnyOf never runs on that path.
+    for schema in (
+        '{"const": "ab", "anyOf": [{"const": "zz"}]}',
+        '{"enum": ["ab"], "anyOf": [{"const": "zz"}]}',
+        '{"$defs": {"n": {"type": "integer"}}, "$ref": "#/$defs/n",'
+        ' "oneOf": [{"type": "string"}]}',
+    ):
+        with pytest.raises(Exception, match="takes dispatch priority"):
+            _compiler().compile_json_schema(schema, reject_unsupported=True)
+
+
+def test_ref_beside_same_object_sibling_rejected() -> None:
+    # A sibling in the SAME object shares the $ref's source, so the cross-side
+    # fold check cannot see it, yet the dispatch drops it just the same. Draft 7
+    # ignores such a sibling and 2019-09 conjoins it, so neither reading is safe
+    # to guess. The last shape arrives through a single-member allOf, where the
+    # fold has nothing to compare against.
+    for schema in (
+        '{"$defs": {"x": {"type": "string"}}, "$ref": "#/$defs/x",'
+        ' "maxLength": 3}',
+        '{"$defs": {"x": {"type": "string"}}, "$ref": "#/$defs/x",'
+        ' "pattern": "^zz$"}',
+        '{"$defs": {"x": {"type": "string"}}, "$ref": "#/$defs/x",'
+        ' "type": "integer"}',
+        '{"$defs": {"i": {"type": "object", "properties":'
+        ' {"a": {"type": "string"}}}},'
+        ' "allOf": [{"$ref": "#/$defs/i", "minProperties": 1}]}',
+    ):
+        with pytest.raises(Exception, match="takes dispatch priority"):
+            _compiler().compile_json_schema(schema, reject_unsupported=True)
+
+
+def test_finite_value_beside_dropped_sibling_rejected() -> None:
+    # ParseConst and ParseEnum read no sibling, so a sibling that rules out one
+    # of the listed values is dropped on every draft, not just one. const also
+    # outranks enum, so a schema setting both keeps only const.
+    for schema in (
+        '{"type": "string", "const": "abcd", "maxLength": 1}',
+        '{"enum": ["a", "b"], "minLength": 5}',
+        '{"type": "integer", "enum": ["a"]}',
+        '{"const": "a", "enum": ["a", "b"]}',
+    ):
+        with pytest.raises(Exception, match="takes dispatch priority"):
+            _compiler().compile_json_schema(schema, reject_unsupported=True)
+
+
+def test_enum_with_sibling_type_still_compiles() -> None:
+    # An enum beside a plain type keyword is the single most common schema shape
+    # there is, and dropping a type that every enumerated value already
+    # satisfies widens nothing.
+    compiled = _compiler().compile_json_schema(
+        '{"type": "string", "enum": ["a", "b"]}', reject_unsupported=True
+    )
+    assert _accepts(compiled, '"a"')
+    assert not _accepts(compiled, '"c"')
+
+
+def test_exclusive_keyword_with_annotation_siblings_compiles() -> None:
+    # An annotation constrains no instance, and $defs is a container for what
+    # the $ref names rather than a constraint on the instance, so neither
+    # sibling can be dropped by the dispatch.
+    compiled = _compiler().compile_json_schema(
+        '{"$ref": "#/$defs/x", "description": "d",'
+        ' "$defs": {"x": {"type": "string"}}}',
+        reject_unsupported=True,
+    )
+    assert _accepts(compiled, '"a"')
+    assert not _accepts(compiled, "1")
+
+    compiled = _compiler().compile_json_schema(
+        '{"const": 5, "title": "n"}', reject_unsupported=True
+    )
+    assert _accepts(compiled, "5")
+    assert not _accepts(compiled, "6")
+
+
+def test_allof_boundary_check_sees_through_union() -> None:
+    # A member names a property through an applicator just as plainly as
+    # through a sibling "properties". The allOf boundary check used to look
+    # only at literal "properties" and merged straight past this.
+    with pytest.raises(Exception, match="forbids unlisted properties"):
+        _compiler().compile_json_schema(
+            '{"allOf": [{"type": "object", "additionalProperties": false},'
+            ' {"anyOf": [{"properties": {"a": {"type": "string"}}}]}]}',
+            reject_unsupported=True,
+        )
+
+
 def test_excludes_match_beginning_inside_another_branch() -> None:
     # The output-link half, a different defect from the failure-link one above:
     # failure links decide where matching RESUMES, output links whether a pattern
@@ -3574,3 +3959,113 @@ def test_allof_empty_schema_does_not_close_the_object() -> None:
             ' "allOf": [{"properties": {"a": {"type": "string"}}}]}',
             reject_unsupported=True,
         )
+
+
+def test_oneof_nullable_string_with_length_bound() -> None:
+    # A declared type bounds the branch while its other constraints still apply.
+    compiled = _compiler().compile_json_schema(
+        '{"oneOf": [{"type": "string", "maxLength": 4}, {"type": "null"}]}',
+        reject_unsupported=True,
+    )
+    assert _accepts(compiled, '"abcd"')
+    assert _accepts(compiled, "null")
+    assert not _accepts(compiled, '"abcde"')
+    assert not _accepts(compiled, "1")
+
+
+def test_oneof_nullable_object() -> None:
+    compiled = _compiler().compile_json_schema(
+        '{"oneOf": [{"type": "object", "properties": {"a": {"type": "string"}},'
+        ' "required": ["a"]}, {"type": "null"}]}',
+        reject_unsupported=True,
+    )
+    assert _accepts(compiled, '{"a": "x"}')
+    assert _accepts(compiled, "null")
+    assert not _accepts(compiled, "{}")
+    assert not _accepts(compiled, "1")
+
+
+def test_oneof_same_type_arms_refused() -> None:
+    # Bounds are not part of the disjointness proof.
+    with pytest.raises(Exception, match="non-provably-disjoint"):
+        _compiler().compile_json_schema(
+            '{"oneOf": [{"type": "string", "maxLength": 4},'
+            ' {"type": "string", "minLength": 6}]}',
+            reject_unsupported=True,
+        )
+
+
+def test_oneof_branch_without_declared_type_refused() -> None:
+    # `properties` also admits every non-object, so it does not imply `object`.
+    with pytest.raises(Exception, match="non-provably-disjoint"):
+        _compiler().compile_json_schema(
+            '{"oneOf": [{"properties": {"a": {"type": "string"}}},'
+            ' {"type": "null"}]}',
+            reject_unsupported=True,
+        )
+
+
+def test_string_schema_with_multiple_generation_tiers_rejected() -> None:
+    for schema in (
+        '{"type": "string", "pattern": "^a+$", "maxLength": 1}',
+        '{"oneOf": [{"type": "string", "pattern": "^a+$",'
+        ' "maxLength": 1}, {"type": "null"}]}',
+    ):
+        with pytest.raises(Exception, match="only one is enforced"):
+            _compiler().compile_json_schema(schema, reject_unsupported=True)
+
+
+def test_union_base_string_tier_not_folded_across_sides() -> None:
+    for schema in (
+        '{"oneOf": [{"type": "string", "pattern": "^a+$"},'
+        ' {"type": "null"}], "maxLength": 1}',
+        '{"anyOf": [{"type": "string", "pattern": "^a+$"},'
+        ' {"type": "null"}], "maxLength": 1}',
+        '{"oneOf": [{"type": "string", "maxLength": 1},'
+        ' {"type": "null"}], "pattern": "^a+$"}',
+    ):
+        with pytest.raises(Exception, match="only one is enforced"):
+            _compiler().compile_json_schema(schema, reject_unsupported=True)
+
+
+def test_union_base_length_bound_folds_without_a_pattern() -> None:
+    compiled = _compiler().compile_json_schema(
+        '{"oneOf": [{"type": "string"}, {"type": "null"}], "maxLength": 1}',
+        reject_unsupported=True,
+    )
+    assert _accepts(compiled, '"a"')
+    assert _accepts(compiled, "null")
+    assert not _accepts(compiled, '"aa"')
+
+
+def test_oneof_finite_arm_with_dropped_sibling_refused() -> None:
+    for schema in (
+        '{"oneOf": [{"const": "a", "type": "number"}, {"const": "b"}]}',
+        '{"oneOf": [{"enum": ["a"], "minLength": 5}, {"const": "b"}]}',
+        '{"oneOf": [{"const": "a", "enum": ["b"]}, {"const": "b"}]}',
+    ):
+        with pytest.raises(Exception, match="non-provably-disjoint"):
+            _compiler().compile_json_schema(schema, reject_unsupported=True)
+
+
+def test_oneof_discriminator_with_dropped_sibling_refused() -> None:
+    with pytest.raises(Exception, match="non-provably-disjoint"):
+        _compiler().compile_json_schema(
+            '{"oneOf": ['
+            '{"type": "object", "required": ["k"],'
+            ' "properties": {"k": {"const": "a", "type": "number"}}}, '
+            '{"type": "object", "required": ["k"],'
+            ' "properties": {"k": {"const": "b"}}}]}',
+            reject_unsupported=True,
+        )
+
+
+def test_oneof_finite_arm_with_redundant_siblings_compiles() -> None:
+    compiled = _compiler().compile_json_schema(
+        '{"oneOf": [{"const": "a", "type": "string", "title": "A"},'
+        ' {"const": 1, "type": "integer"}]}',
+        reject_unsupported=True,
+    )
+    assert _accepts(compiled, '"a"')
+    assert _accepts(compiled, "1")
+    assert not _accepts(compiled, '"b"')

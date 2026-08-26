@@ -587,6 +587,24 @@ the [container](/container) page now links to the new page.
   shape compiles. A conjunction that cannot be folded exactly still returns
   400 naming the keyword pair at fault, rather than compiling to a looser
   grammar.
+- A JSON schema using `oneOf` is now enforced when its branches can be
+  proven pairwise disjoint, instead of being refused outright. Disjoint
+  branches make the union exactly-one, which is what `oneOf` means. Branch
+  types and `const`/`enum` value sets carry the proof, covering nullable
+  values, scalar unions, enum partitions and unions discriminated by a
+  constant property. A union that cannot be proven disjoint still returns
+  400, as does a `const`/`enum` branch carrying a keyword the lowering
+  drops. The refusals apply when unsupported-schema rejection
+  (`reject_unsupported`) is enabled.
+- Fixed a union (`anyOf`/`oneOf`) folding its sibling keywords into each
+  branch too widely, which could accept values the schema forbids. These
+  shapes now return 400 instead, when
+  unsupported-schema rejection (`reject_unsupported`) is enabled: a closing
+  `additionalProperties`, `items` or `unevaluatedProperties` beside a union,
+  a base constraint beside `$ref`, `const` or `enum` — whether folded in
+  from a union or written in the same object — `$ref` beside a sibling
+  union, and a `pattern` or `format` combined with a length bound, whether
+  written together or on opposite sides of a fold.
 
 - Hardened the server-side fetch of client-supplied `image_url` / `video_url`
   references against SSRF: the host is now validated and hosts that resolve to
