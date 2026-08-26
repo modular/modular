@@ -149,6 +149,10 @@ struct CausalConv1D[activation: StaticString]:
                         W.LayoutType,
                         O.LayoutType,
                         B.LayoutType,
+                        X.Storage,
+                        W.Storage,
+                        O.Storage,
+                        B.Storage,
                     ]
                 ]()
                 var silu_activation_int8 = Int8(silu_activation)
@@ -194,6 +198,10 @@ struct CausalConv1D[activation: StaticString]:
                         W.LayoutType,
                         O.LayoutType,
                         B.LayoutType,
+                        X.Storage,
+                        W.Storage,
+                        O.Storage,
+                        B.Storage,
                     ]
                 ]()
                 var silu_activation_int8 = Int8(silu_activation)
@@ -239,6 +247,10 @@ struct CausalConv1D[activation: StaticString]:
                         W.LayoutType,
                         O.LayoutType,
                         B.LayoutType,
+                        X.Storage,
+                        W.Storage,
+                        O.Storage,
+                        B.Storage,
                     ]
                 ]()
                 var silu_activation_int8 = Int8(silu_activation)
@@ -284,6 +296,10 @@ struct CausalConv1D[activation: StaticString]:
                         W.LayoutType,
                         O.LayoutType,
                         B.LayoutType,
+                        X.Storage,
+                        W.Storage,
+                        O.Storage,
+                        B.Storage,
                     ]
                 ]()
                 var silu_activation_int8 = Int8(silu_activation)
@@ -474,9 +490,7 @@ struct CausalConv1DUpdate[activation: StaticString]:
             )
         elif is_gpu[target]():
             var gpu_ctx: DeviceContext = ctx
-            gpu_ctx.enqueue_copy(
-                CS._storage, CS_IN._storage, total_state_elements
-            )
+            gpu_ctx.enqueue_copy(CS.ptr, CS_IN.ptr, total_state_elements)
             comptime kNThreads = 128
             var compiled_func = gpu_ctx.compile_function[
                 causal_conv1d_update_gpu[
@@ -491,6 +505,11 @@ struct CausalConv1DUpdate[activation: StaticString]:
                     W.LayoutType,
                     O.LayoutType,
                     B.LayoutType,
+                    X.Storage,
+                    CS.Storage,
+                    W.Storage,
+                    O.Storage,
+                    B.Storage,
                 ]
             ]()
             var silu_activation_int8 = Int8(silu_activation)

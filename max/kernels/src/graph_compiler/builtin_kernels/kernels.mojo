@@ -4741,6 +4741,14 @@ struct CausalConv1DVarlenFwd[
                             has_initial_state_tt.LayoutType,
                             conv_states_tt.LayoutType,
                             output_tt.LayoutType,
+                            x_tt.Storage,
+                            weight_tt.Storage,
+                            bias_tt.Storage,
+                            query_start_loc_tt.Storage,
+                            cache_indices_tt.Storage,
+                            has_initial_state_tt.Storage,
+                            conv_states_tt.Storage,
+                            output_tt.Storage,
                         ]
                     ]()
                     # Host-side safe upper bound on the per-sequence tile
@@ -4808,6 +4816,14 @@ struct CausalConv1DVarlenFwd[
                         has_initial_state_tt.LayoutType,
                         conv_states_tt.LayoutType,
                         output_tt.LayoutType,
+                        x_tt.Storage,
+                        weight_tt.Storage,
+                        bias_tt.Storage,
+                        query_start_loc_tt.Storage,
+                        cache_indices_tt.Storage,
+                        has_initial_state_tt.Storage,
+                        conv_states_tt.Storage,
+                        output_tt.Storage,
                     ]
                 ]()
                 gpu_ctx.enqueue_function(

@@ -277,6 +277,14 @@ def run_varlen_causal_conv1d_fwd_gpu[
                 has_initial_state_device_tt.LayoutType,
                 conv_states_device_tt.LayoutType,
                 output_device_tt.LayoutType,
+                x_device_tt.Storage,
+                weight_device_tt.Storage,
+                bias_device_tt.Storage,
+                query_start_loc_device_tt.Storage,
+                cache_indices_device_tt.Storage,
+                has_initial_state_device_tt.Storage,
+                conv_states_device_tt.Storage,
+                output_device_tt.Storage,
             ]
         ]()
         ctx.enqueue_function(
@@ -333,6 +341,14 @@ def run_varlen_causal_conv1d_fwd_gpu[
                 has_initial_state_device_tt.LayoutType,
                 conv_states_device_tt.LayoutType,
                 output_device_tt.LayoutType,
+                x_device_tt.Storage,
+                weight_device_tt.Storage,
+                bias_device_tt.Storage,
+                query_start_loc_device_tt.Storage,
+                cache_indices_device_tt.Storage,
+                has_initial_state_device_tt.Storage,
+                conv_states_device_tt.Storage,
+                output_device_tt.Storage,
             ]
         ]()
         ctx.enqueue_function(
@@ -389,6 +405,14 @@ def run_varlen_causal_conv1d_fwd_gpu[
                 has_initial_state_device_tt.LayoutType,
                 conv_states_device_tt.LayoutType,
                 output_device_tt.LayoutType,
+                x_device_tt.Storage,
+                weight_device_tt.Storage,
+                bias_device_tt.Storage,
+                query_start_loc_device_tt.Storage,
+                cache_indices_device_tt.Storage,
+                has_initial_state_device_tt.Storage,
+                conv_states_device_tt.Storage,
+                output_device_tt.Storage,
             ]
         ]()
         ctx.enqueue_function(
@@ -445,6 +469,14 @@ def run_varlen_causal_conv1d_fwd_gpu[
                 has_initial_state_device_tt.LayoutType,
                 conv_states_device_tt.LayoutType,
                 output_device_tt.LayoutType,
+                x_device_tt.Storage,
+                weight_device_tt.Storage,
+                bias_device_tt.Storage,
+                query_start_loc_device_tt.Storage,
+                cache_indices_device_tt.Storage,
+                has_initial_state_device_tt.Storage,
+                conv_states_device_tt.Storage,
+                output_device_tt.Storage,
             ]
         ]()
         ctx.enqueue_function(
@@ -577,6 +609,14 @@ def run_varlen_causal_conv1d_fwd_gpu[
                 has_initial_state_device_tt.LayoutType,
                 conv_states_seqpar_device_tt.LayoutType,
                 output_seqpar_device_tt.LayoutType,
+                x_device_tt.Storage,
+                weight_device_tt.Storage,
+                bias_device_tt.Storage,
+                query_start_loc_device_tt.Storage,
+                cache_indices_device_tt.Storage,
+                has_initial_state_device_tt.Storage,
+                conv_states_seqpar_device_tt.Storage,
+                output_seqpar_device_tt.Storage,
             ]
         ]()
         with ctx.push_context():
@@ -976,6 +1016,13 @@ def run_varlen_causal_conv1d_update_gpu[
                 cache_seqlens_device_tt.LayoutType,
                 conv_state_indices_device_tt.LayoutType,
                 output_upd_device_tt.LayoutType,
+                x_upd_device_tt.Storage,
+                weight_upd_device_tt.Storage,
+                bias_upd_device_tt.Storage,
+                conv_state_upd_device_tt.Storage,
+                cache_seqlens_device_tt.Storage,
+                conv_state_indices_device_tt.Storage,
+                output_upd_device_tt.Storage,
             ]
         ]()
         ctx.enqueue_function(
@@ -1030,6 +1077,13 @@ def run_varlen_causal_conv1d_update_gpu[
                 cache_seqlens_device_tt.LayoutType,
                 conv_state_indices_device_tt.LayoutType,
                 output_upd_device_tt.LayoutType,
+                x_upd_device_tt.Storage,
+                weight_upd_device_tt.Storage,
+                bias_upd_device_tt.Storage,
+                conv_state_upd_device_tt.Storage,
+                cache_seqlens_device_tt.Storage,
+                conv_state_indices_device_tt.Storage,
+                output_upd_device_tt.Storage,
             ]
         ]()
         ctx.enqueue_function(
@@ -1084,6 +1138,13 @@ def run_varlen_causal_conv1d_update_gpu[
                 cache_seqlens_device_tt.LayoutType,
                 conv_state_indices_device_tt.LayoutType,
                 output_upd_device_tt.LayoutType,
+                x_upd_device_tt.Storage,
+                weight_upd_device_tt.Storage,
+                bias_upd_device_tt.Storage,
+                conv_state_upd_device_tt.Storage,
+                cache_seqlens_device_tt.Storage,
+                conv_state_indices_device_tt.Storage,
+                output_upd_device_tt.Storage,
             ]
         ]()
         ctx.enqueue_function(
@@ -1138,6 +1199,13 @@ def run_varlen_causal_conv1d_update_gpu[
                 cache_seqlens_device_tt.LayoutType,
                 conv_state_indices_device_tt.LayoutType,
                 output_upd_device_tt.LayoutType,
+                x_upd_device_tt.Storage,
+                weight_upd_device_tt.Storage,
+                bias_upd_device_tt.Storage,
+                conv_state_upd_device_tt.Storage,
+                cache_seqlens_device_tt.Storage,
+                conv_state_indices_device_tt.Storage,
+                output_upd_device_tt.Storage,
             ]
         ]()
         ctx.enqueue_function(

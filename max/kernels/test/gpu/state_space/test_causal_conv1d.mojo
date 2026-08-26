@@ -207,6 +207,10 @@ def run_causal_conv1d_gpu[
                 weight_device_tt.LayoutType,
                 output_device_tt.LayoutType,
                 bias_device_tt.LayoutType,
+                input_device_tt.Storage,
+                weight_device_tt.Storage,
+                output_device_tt.Storage,
+                bias_device_tt.Storage,
             ]
         ]()
         var silu_activation_int8 = Int8(silu_activation)
@@ -249,6 +253,10 @@ def run_causal_conv1d_gpu[
                 weight_device_tt.LayoutType,
                 output_device_tt.LayoutType,
                 bias_device_tt.LayoutType,
+                input_device_tt.Storage,
+                weight_device_tt.Storage,
+                output_device_tt.Storage,
+                bias_device_tt.Storage,
             ]
         ]()
         var silu_activation_int8 = Int8(silu_activation)
@@ -291,6 +299,10 @@ def run_causal_conv1d_gpu[
                 weight_device_tt.LayoutType,
                 output_device_tt.LayoutType,
                 bias_device_tt.LayoutType,
+                input_device_tt.Storage,
+                weight_device_tt.Storage,
+                output_device_tt.Storage,
+                bias_device_tt.Storage,
             ]
         ]()
         var silu_activation_int8 = Int8(silu_activation)
@@ -333,6 +345,10 @@ def run_causal_conv1d_gpu[
                 weight_device_tt.LayoutType,
                 output_device_tt.LayoutType,
                 bias_device_tt.LayoutType,
+                input_device_tt.Storage,
+                weight_device_tt.Storage,
+                output_device_tt.Storage,
+                bias_device_tt.Storage,
             ]
         ]()
         var silu_activation_int8 = Int8(silu_activation)

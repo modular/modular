@@ -56,7 +56,7 @@ from max.gpu.host import DeviceContext
 from std.math import ceildiv, rsqrt
 import std.gpu.primitives.warp as warp
 
-from layout import Coord, TensorLayout, TileTensor
+from layout import Coord, TensorLayout, TensorStorage, TileTensor
 
 from nn.activations import silu
 
@@ -74,11 +74,19 @@ def gated_group_rmsnorm_kernel[
     YLayout: TensorLayout,
     GateLayout: TensorLayout,
     WeightLayout: TensorLayout,
+    OutStorage: TensorStorage,
+    YStorage: TensorStorage,
+    GateStorage: TensorStorage,
+    WeightStorage: TensorStorage,
 ](
-    output: TileTensor[dtype, OutLayout, MutAnyOrigin],
-    y: TileTensor[dtype, YLayout, ImmutAnyOrigin],
-    gate: TileTensor[gate_dtype, GateLayout, ImmutAnyOrigin],
-    weight: TileTensor[.float32, WeightLayout, ImmutAnyOrigin],
+    output: TileTensor[dtype, OutLayout, MutAnyOrigin, Storage=OutStorage],
+    y: TileTensor[dtype, YLayout, ImmutAnyOrigin, Storage=YStorage],
+    gate: TileTensor[
+        gate_dtype, GateLayout, ImmutAnyOrigin, Storage=GateStorage
+    ],
+    weight: TileTensor[
+        .float32, WeightLayout, ImmutAnyOrigin, Storage=WeightStorage
+    ],
     n_rows_dev: Int32,
     num_groups_dev: Int32,
     group_size_dev: Int32,
@@ -159,6 +167,10 @@ def gated_group_rmsnorm_gpu[
         type_of(y).LayoutType,
         type_of(gate).LayoutType,
         type_of(weight).LayoutType,
+        type_of(output).Storage,
+        type_of(y).Storage,
+        type_of(gate).Storage,
+        type_of(weight).Storage,
     ]
     ctx.enqueue_function[kernel](
         output,

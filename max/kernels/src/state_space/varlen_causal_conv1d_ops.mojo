@@ -191,6 +191,13 @@ struct CausalConv1DVarlenUpdate[activation: StaticString]:
                         cache_seqlens_tt.LayoutType,
                         conv_state_indices_tt.LayoutType,
                         output_tt.LayoutType,
+                        x_tt.Storage,
+                        weight_tt.Storage,
+                        bias_tt.Storage,
+                        conv_state_tt.Storage,
+                        cache_seqlens_tt.Storage,
+                        conv_state_indices_tt.Storage,
+                        output_tt.Storage,
                     ]
                 ]()
                 gpu_ctx.enqueue_function(
@@ -245,6 +252,13 @@ struct CausalConv1DVarlenUpdate[activation: StaticString]:
                         cache_seqlens_tt.LayoutType,
                         conv_state_indices_tt.LayoutType,
                         output_tt.LayoutType,
+                        x_tt.Storage,
+                        weight_tt.Storage,
+                        bias_tt.Storage,
+                        conv_state_tt.Storage,
+                        cache_seqlens_tt.Storage,
+                        conv_state_indices_tt.Storage,
+                        output_tt.Storage,
                     ]
                 ]()
                 gpu_ctx.enqueue_function(
@@ -299,6 +313,13 @@ struct CausalConv1DVarlenUpdate[activation: StaticString]:
                         cache_seqlens_tt.LayoutType,
                         conv_state_indices_tt.LayoutType,
                         output_tt.LayoutType,
+                        x_tt.Storage,
+                        weight_tt.Storage,
+                        bias_tt.Storage,
+                        conv_state_tt.Storage,
+                        cache_seqlens_tt.Storage,
+                        conv_state_indices_tt.Storage,
+                        output_tt.Storage,
                     ]
                 ]()
                 gpu_ctx.enqueue_function(
@@ -353,6 +374,13 @@ struct CausalConv1DVarlenUpdate[activation: StaticString]:
                         cache_seqlens_tt.LayoutType,
                         conv_state_indices_tt.LayoutType,
                         output_tt.LayoutType,
+                        x_tt.Storage,
+                        weight_tt.Storage,
+                        bias_tt.Storage,
+                        conv_state_tt.Storage,
+                        cache_seqlens_tt.Storage,
+                        conv_state_indices_tt.Storage,
+                        output_tt.Storage,
                     ]
                 ]()
                 gpu_ctx.enqueue_function(
@@ -506,6 +534,9 @@ struct CausalConv1DVarlenStates:
                     x_tt.LayoutType,
                     cu_seqlens_tt.LayoutType,
                     states_tt.LayoutType,
+                    x_tt.Storage,
+                    cu_seqlens_tt.Storage,
+                    states_tt.Storage,
                 ]
             ]()
             gpu_ctx.enqueue_function(

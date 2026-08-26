@@ -89,8 +89,11 @@ def _channel_weights[
     weight_dtype: DType,
     WIDTH: Int,
     weight_LT: TensorLayout,
+    weight_store: TensorStorage,
 ](
-    weight: TileTensor[weight_dtype, weight_LT, MutUntrackedOrigin],
+    weight: TileTensor[
+        weight_dtype, weight_LT, MutUntrackedOrigin, Storage=weight_store
+    ],
     d: Int,
 ) -> Array[Scalar[weight_dtype], WIDTH]:
     """Load channel `d`'s `WIDTH` conv weights into a register buffer.
@@ -103,6 +106,7 @@ def _channel_weights[
         weight_dtype: The weight element type.
         WIDTH: The convolution width (number of taps).
         weight_LT: Layout type of the weight tensor.
+        weight_store: Storage policy of the weight tensor.
 
     Args:
         weight: The `(dim, width)` weight tensor.
@@ -838,19 +842,25 @@ def causal_conv1d_varlen_states_gpu[
     x_LT: TensorLayout,
     cu_seqlens_LT: TensorLayout,
     states_LT: TensorLayout,
+    x_store: TensorStorage,
+    cu_seqlens_store: TensorStorage,
+    states_store: TensorStorage,
 ](
     total_tokens: Int32,
     dim: Int32,
     batch: Int32,
     state_len: Int32,
     x: TileTensor[
-        x_dtype, x_LT, MutUntrackedOrigin
+        x_dtype, x_LT, MutUntrackedOrigin, Storage=x_store
     ],  # Shape (total_tokens, dim)
     cu_seqlens: TileTensor[
-        cu_seqlens_dtype, cu_seqlens_LT, MutUntrackedOrigin
+        cu_seqlens_dtype,
+        cu_seqlens_LT,
+        MutUntrackedOrigin,
+        Storage=cu_seqlens_store,
     ],  # Shape (batch + 1,)
     states: TileTensor[
-        states_dtype, states_LT, MutUntrackedOrigin
+        states_dtype, states_LT, MutUntrackedOrigin, Storage=states_store
     ],  # Shape (batch, dim, state_len)
     x_seqlen_stride: UInt32,
     x_dim_stride: UInt32,
@@ -872,6 +882,9 @@ def causal_conv1d_varlen_states_gpu[
         x_LT: Layout type of input tensor.
         cu_seqlens_LT: Layout type of cumulative sequence lengths tensor.
         states_LT: Layout type of output states tensor.
+        x_store: Storage policy of input tensor.
+        cu_seqlens_store: Storage policy of cumulative sequence lengths tensor.
+        states_store: Storage policy of output states tensor.
 
     Args:
         total_tokens: Total number of tokens.
@@ -947,26 +960,52 @@ def causal_conv1d_varlen_fwd_gpu[
     has_initial_state_LT: TensorLayout,
     conv_states_LT: TensorLayout,
     output_LT: TensorLayout,
+    x_store: TensorStorage,
+    weight_store: TensorStorage,
+    bias_store: TensorStorage,
+    query_start_loc_store: TensorStorage,
+    cache_indices_store: TensorStorage,
+    has_initial_state_store: TensorStorage,
+    conv_states_store: TensorStorage,
+    output_store: TensorStorage,
 ](
     dim: Int32,
     total_seqlen: Int32,
     batch: Int32,
-    x: TileTensor[x_dtype, x_LT, MutUntrackedOrigin],
-    weight: TileTensor[weight_dtype, weight_LT, MutUntrackedOrigin],
-    bias: TileTensor[bias_dtype, bias_LT, MutUntrackedOrigin],
+    x: TileTensor[x_dtype, x_LT, MutUntrackedOrigin, Storage=x_store],
+    weight: TileTensor[
+        weight_dtype, weight_LT, MutUntrackedOrigin, Storage=weight_store
+    ],
+    bias: TileTensor[
+        bias_dtype, bias_LT, MutUntrackedOrigin, Storage=bias_store
+    ],
     query_start_loc: TileTensor[
-        cu_seqlens_dtype, query_start_loc_LT, MutUntrackedOrigin
+        cu_seqlens_dtype,
+        query_start_loc_LT,
+        MutUntrackedOrigin,
+        Storage=query_start_loc_store,
     ],
     cache_indices: TileTensor[
-        cache_indices_dtype, cache_indices_LT, MutUntrackedOrigin
+        cache_indices_dtype,
+        cache_indices_LT,
+        MutUntrackedOrigin,
+        Storage=cache_indices_store,
     ],
     has_initial_state: TileTensor[
-        has_initial_state_dtype, has_initial_state_LT, MutUntrackedOrigin
+        has_initial_state_dtype,
+        has_initial_state_LT,
+        MutUntrackedOrigin,
+        Storage=has_initial_state_store,
     ],
     conv_states: TileTensor[
-        conv_states_dtype, conv_states_LT, MutUntrackedOrigin
+        conv_states_dtype,
+        conv_states_LT,
+        MutUntrackedOrigin,
+        Storage=conv_states_store,
     ],
-    output: TileTensor[output_dtype, output_LT, MutUntrackedOrigin],
+    output: TileTensor[
+        output_dtype, output_LT, MutUntrackedOrigin, Storage=output_store
+    ],
     x_dim_stride: UInt32,
     x_seqlen_stride: UInt32,
     weight_dim_stride: UInt32,
@@ -1145,26 +1184,52 @@ def causal_conv1d_varlen_fwd_seqparallel_gpu[
     has_initial_state_LT: TensorLayout,
     conv_states_LT: TensorLayout,
     output_LT: TensorLayout,
+    x_store: TensorStorage,
+    weight_store: TensorStorage,
+    bias_store: TensorStorage,
+    query_start_loc_store: TensorStorage,
+    cache_indices_store: TensorStorage,
+    has_initial_state_store: TensorStorage,
+    conv_states_store: TensorStorage,
+    output_store: TensorStorage,
 ](
     dim_dev: Int32,
     total_seqlen_dev: Int32,
     batch_dev: Int32,
-    x: TileTensor[x_dtype, x_LT, MutUntrackedOrigin],
-    weight: TileTensor[weight_dtype, weight_LT, MutUntrackedOrigin],
-    bias: TileTensor[bias_dtype, bias_LT, MutUntrackedOrigin],
+    x: TileTensor[x_dtype, x_LT, MutUntrackedOrigin, Storage=x_store],
+    weight: TileTensor[
+        weight_dtype, weight_LT, MutUntrackedOrigin, Storage=weight_store
+    ],
+    bias: TileTensor[
+        bias_dtype, bias_LT, MutUntrackedOrigin, Storage=bias_store
+    ],
     query_start_loc: TileTensor[
-        cu_seqlens_dtype, query_start_loc_LT, MutUntrackedOrigin
+        cu_seqlens_dtype,
+        query_start_loc_LT,
+        MutUntrackedOrigin,
+        Storage=query_start_loc_store,
     ],
     cache_indices: TileTensor[
-        cache_indices_dtype, cache_indices_LT, MutUntrackedOrigin
+        cache_indices_dtype,
+        cache_indices_LT,
+        MutUntrackedOrigin,
+        Storage=cache_indices_store,
     ],
     has_initial_state: TileTensor[
-        has_initial_state_dtype, has_initial_state_LT, MutUntrackedOrigin
+        has_initial_state_dtype,
+        has_initial_state_LT,
+        MutUntrackedOrigin,
+        Storage=has_initial_state_store,
     ],
     conv_states: TileTensor[
-        conv_states_dtype, conv_states_LT, MutUntrackedOrigin
+        conv_states_dtype,
+        conv_states_LT,
+        MutUntrackedOrigin,
+        Storage=conv_states_store,
     ],
-    output: TileTensor[output_dtype, output_LT, MutUntrackedOrigin],
+    output: TileTensor[
+        output_dtype, output_LT, MutUntrackedOrigin, Storage=output_store
+    ],
     x_dim_stride: UInt32,
     x_seqlen_stride: UInt32,
     weight_dim_stride: UInt32,
@@ -1367,22 +1432,46 @@ def causal_conv1d_varlen_update_gpu[
     cache_seqlens_LT: TensorLayout,
     conv_state_indices_LT: TensorLayout,
     output_LT: TensorLayout,
+    x_store: TensorStorage,
+    weight_store: TensorStorage,
+    bias_store: TensorStorage,
+    conv_state_store: TensorStorage,
+    cache_seqlens_store: TensorStorage,
+    conv_state_indices_store: TensorStorage,
+    output_store: TensorStorage,
 ](
     batch: Int32,
     dim: Int32,
     seqlen: Int32,
     state_len: Int32,
-    x: TileTensor[x_dtype, x_LT, MutUntrackedOrigin],
-    weight: TileTensor[weight_dtype, weight_LT, MutUntrackedOrigin],
-    bias: TileTensor[bias_dtype, bias_LT, MutUntrackedOrigin],
-    conv_state: TileTensor[conv_state_dtype, conv_state_LT, MutUntrackedOrigin],
+    x: TileTensor[x_dtype, x_LT, MutUntrackedOrigin, Storage=x_store],
+    weight: TileTensor[
+        weight_dtype, weight_LT, MutUntrackedOrigin, Storage=weight_store
+    ],
+    bias: TileTensor[
+        bias_dtype, bias_LT, MutUntrackedOrigin, Storage=bias_store
+    ],
+    conv_state: TileTensor[
+        conv_state_dtype,
+        conv_state_LT,
+        MutUntrackedOrigin,
+        Storage=conv_state_store,
+    ],
     cache_seqlens: TileTensor[
-        cache_seqlens_dtype, cache_seqlens_LT, MutUntrackedOrigin
+        cache_seqlens_dtype,
+        cache_seqlens_LT,
+        MutUntrackedOrigin,
+        Storage=cache_seqlens_store,
     ],
     conv_state_indices: TileTensor[
-        conv_state_indices_dtype, conv_state_indices_LT, MutUntrackedOrigin
+        conv_state_indices_dtype,
+        conv_state_indices_LT,
+        MutUntrackedOrigin,
+        Storage=conv_state_indices_store,
     ],
-    output: TileTensor[output_dtype, output_LT, MutUntrackedOrigin],
+    output: TileTensor[
+        output_dtype, output_LT, MutUntrackedOrigin, Storage=output_store
+    ],
     x_batch_stride: UInt32,
     x_dim_stride: UInt32,
     x_seqlen_stride: UInt32,
