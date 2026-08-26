@@ -197,24 +197,6 @@ MAX records these metrics only in disaggregated inference deployments.
 | `maxserve_di_prefill_queue_wait_time_milliseconds`          | Histogram | Prefill-local time a request spends enqueued before its first CE batch executes, in milliseconds.                                                                                                  |
 | `maxserve_di_decode_postprocess_time_milliseconds`          | Histogram | Decode-local time from receiving a prefill response to handing the result off to the response queue, in milliseconds.                                                                              |
 
-### Disaggregated KV store
-
-The following metrics track NIXL transfer performance and dKV client
-connectivity.
-
-| Metric                                             | Type      | Description                                                                                              |
-|----------------------------------------------------|-----------|----------------------------------------------------------------------------------------------------------|
-| `maxserve_dkv_nixl_read_latency_milliseconds`      | Histogram | NIXL read transfer latency, in milliseconds.                                                             |
-| `maxserve_dkv_nixl_write_latency_milliseconds`     | Histogram | NIXL write transfer latency, in milliseconds.                                                            |
-| `maxserve_dkv_nixl_read_gib_per_s_GiB_per_second`  | Histogram | NIXL read throughput, in GiB/s.                                                                          |
-| `maxserve_dkv_nixl_write_gib_per_s_GiB_per_second` | Histogram | NIXL write throughput, in GiB/s.                                                                         |
-| `maxserve_dkv_rpc_acquire_latency_milliseconds`    | Histogram | dKV `acquire_blocks()` RPC latency, in milliseconds.                                                     |
-| `maxserve_dkv_rpc_read_latency_milliseconds`       | Histogram | dKV `read_blocks()` RPC latency, in milliseconds.                                                        |
-| `maxserve_dkv_connected_clients`                   | Gauge     | Number of dKV connector clients currently connected to the external KV tier.                             |
-| `maxserve_dkv_total_clients`                       | Gauge     | Total number of dKV connector clients, one per data-parallel replica.                                    |
-| `maxserve_dkv_read_blocks_total`                   | Counter   | Cumulative KV blocks landed in device memory from the dKV tier. Only confirmed-complete transfers count. |
-| `maxserve_dkv_reconnect_attempts`                  | Gauge     | Cumulative dKV reconnect attempts across all clients.                                                    |
-
 ### Structured output and tool calls
 
 The following metrics track schema-conformance errors and grammar-rejection
