@@ -67,10 +67,10 @@ def _allreduce_lamport_rmsnorm_kernel[
     pdl: Bool = True,
     early_launch: Bool = True,
 ](
-    result: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    src: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    gamma: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    rank_sigs: Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
+    result: MutPointer[Scalar[dtype], MutAnyOrigin],
+    src: ImmPointer[Scalar[dtype], ImmutAnyOrigin],
+    gamma: ImmPointer[Scalar[dtype], ImmutAnyOrigin],
+    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS],
     rows_dev: Int32,
     cols_dev: Int32,
     epsilon: Scalar[dtype],
@@ -107,7 +107,7 @@ def _allreduce_lamport_rmsnorm_kernel[
 
     # This rank's own region (polled) + peer regions in round-robin order.
     var my_region = rank_sigs[my_rank][].lamport_region_ptr[dtype]()
-    var peer_regions = Array[UnsafePointer[Scalar[dtype], MutAnyOrigin], ngpus](
+    var peer_regions = Array[MutPointer[Scalar[dtype], MutAnyOrigin], ngpus](
         uninitialized=True
     )
     comptime for i in range(ngpus):
@@ -250,10 +250,10 @@ def lamport_allreduce_rmsnorm[
     early_launch: Bool = True,
 ](
     my_rank: Int,
-    src: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    dst: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    gamma: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    rank_sigs: Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
+    src: ImmPointer[Scalar[dtype], ImmutAnyOrigin],
+    dst: MutPointer[Scalar[dtype], MutAnyOrigin],
+    gamma: ImmPointer[Scalar[dtype], ImmutAnyOrigin],
+    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS],
     rows: Int,
     cols: Int,
     epsilon: Scalar[dtype],

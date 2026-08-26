@@ -251,7 +251,7 @@ struct Signal:
     @always_inline
     def lamport_state_ptr(
         mut self,
-    ) -> UnsafePointer[Scalar[Self.flag_t], MutAnyOrigin]:
+    ) -> MutPointer[Scalar[Self.flag_t], MutAnyOrigin]:
         """Typed pointer to this `Signal`'s `lamport_state` block.
 
         Index it with the `Lamport.STATE_*` constants. The field is located by
@@ -259,7 +259,7 @@ struct Signal:
         byte offset to keep in sync with the field order.
         """
         return (
-            UnsafePointer(to=self.lamport_state)
+            Pointer(to=self.lamport_state)
             .bitcast[Scalar[Self.flag_t]]()
             .as_unsafe_any_origin()
         )
@@ -267,7 +267,7 @@ struct Signal:
     @always_inline
     def lamport_region_ptr[
         dtype: DType
-    ](mut self) -> UnsafePointer[Scalar[dtype], MutAnyOrigin]:
+    ](mut self) -> MutPointer[Scalar[dtype], MutAnyOrigin]:
         """Typed pointer to the start of this `Signal`'s embedded Lamport region.
 
         Parameters:
@@ -277,7 +277,7 @@ struct Signal:
                 dtype without an extra cast.
         """
         return (
-            UnsafePointer(to=self.lamport_region)
+            Pointer(to=self.lamport_region)
             .bitcast[Scalar[dtype]]()
             .as_unsafe_any_origin()
         )
@@ -342,8 +342,8 @@ def _multi_gpu_barrier[
     named_barrier_id: Int = 1,
     domain_id: Int = 0,
 ](
-    rank_sigs: Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
-    self_sg: UnsafePointer[Signal, MutAnyOrigin],
+    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS],
+    self_sg: MutPointer[Signal, MutAnyOrigin],
     my_rank: Int,
 ):
     """Implements a barrier synchronization across multiple GPUs to ensure all

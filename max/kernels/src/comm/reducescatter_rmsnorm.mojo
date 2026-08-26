@@ -100,7 +100,7 @@ def _reducescatter_rmsnorm_kernel[
     domain_id: Int = 0,
     pdl_level: PDLLevel = PDLLevel(),
 ](
-    src_ptrs: Array[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin], ngpus],
+    src_ptrs: Array[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin], ngpus],
     gamma: TileTensor[in_dtype, GammaLayoutType, origin],
     normed_out: TileTensor[mut=True, in_dtype, NormedLayoutType, normed_origin],
     sum_out: TileTensor[mut=True, in_dtype, SumLayoutType, sum_origin],
@@ -114,7 +114,7 @@ def _reducescatter_rmsnorm_kernel[
     weight_offset: Scalar[in_dtype],
     rows_dev: Int32,
     cols_dev: Int32,
-    rank_sigs: Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
+    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS],
     my_rank_dev: Int32,
 ):
     """Reduce-scatter each owned row in f32, then RMSNorm it in registers.
@@ -159,7 +159,7 @@ def _reducescatter_rmsnorm_kernel[
     # Round-robin peer order (RS's `circular_add`): peer 0 is self, so accum
     # from 0 over all peers is bit-for-bit RS's `accum = peer[0]` init (AMD
     # non-multimem).
-    var ptrs = Array[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin], ngpus](
+    var ptrs = Array[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin], ngpus](
         uninitialized=True
     )
     comptime for i in range(ngpus):
@@ -275,13 +275,13 @@ def _reducescatter_rmsnorm_launch[
 ](
     rows: Int,
     cols: Int,
-    src_ptrs: Array[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin], ngpus],
+    src_ptrs: Array[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin], ngpus],
     normed_out: TileTensor[mut=True, in_dtype, ...],
     sum_out: TileTensor[mut=True, in_dtype, ...],
     gamma: TileTensor[in_dtype, ...],
     epsilon: Float32,
     weight_offset: Scalar[in_dtype],
-    rank_sigs: Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
+    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS],
     my_rank: Int,
     ctx: DeviceContext,
     residual: _ComptimeConditionalTileTensor[
@@ -403,7 +403,7 @@ def reducescatter_rmsnorm[
     gamma: TileTensor[in_dtype, ...],
     epsilon: Float32,
     weight_offset: Scalar[in_dtype],
-    rank_sigs: Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
+    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS],
     ctx: DeviceContext,
     local_rank: Optional[Int] = None,
     residual: _ComptimeConditionalTileTensor[
@@ -483,9 +483,9 @@ def reducescatter_rmsnorm[
     var rows = in_num_elems // cols
 
     # Raw peer pointers, origin erased to ImmutAnyOrigin (matches standalone RS).
-    var src_ptrs = Array[
-        UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin], ngpus
-    ](uninitialized=True)
+    var src_ptrs = Array[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin], ngpus](
+        uninitialized=True
+    )
     comptime for i in range(ngpus):
         src_ptrs[i] = input_buffers[i]._storage.as_imm().as_unsafe_any_origin()
 
@@ -621,7 +621,7 @@ def _dispatch_rs_norm[
     gamma: TileTensor[in_dtype, ...],
     epsilon: Float32,
     weight_offset: Scalar[in_dtype],
-    rank_sigs: Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
+    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS],
     ctx: DeviceContext,
     threshold: Int = RS_NORM_FUSE_THRESHOLD,
     local_rank: Optional[Int] = None,

@@ -390,7 +390,7 @@ def allreduce[
         TileTensor[dtype, in_layout, in_origin], 1 if use_multimem else ngpus
     ],
     output_tensor: TileTensor[mut=True, dtype, out_layout, out_origin],
-    rank_sigs: Array[UnsafePointer[Signal, rank_sigs_origin], MAX_GPUS],
+    rank_sigs: Array[MutPointer[Signal, rank_sigs_origin], MAX_GPUS],
     ctx: DeviceContext,
     _max_num_blocks: Optional[Int] = None,
 ) raises:
@@ -605,7 +605,7 @@ def broadcast[
 ](
     input_tensor: TileTensor[dtype, in_layout, in_origin],
     output_tensor: TileTensor[mut=True, dtype, out_layout, out_origin],
-    rank_sigs: Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
+    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS],
     ctx: DeviceContext,
     root: Int,
     _max_num_blocks: Optional[Int] = None,

@@ -472,8 +472,8 @@ comptime allreduce_tuning_table = Table(
 def _naive_reduce_kernel[
     dtype: DType
 ](
-    dst_buf: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    src_buf: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
+    dst_buf: MutPointer[Scalar[dtype], MutAnyOrigin],
+    src_buf: ImmPointer[Scalar[dtype], ImmutAnyOrigin],
     num_elements: Int32,
 ):
     """
@@ -506,7 +506,7 @@ def _naive_reduce_kernel_with_lambda[
     output_lambda: elementwise_epilogue_type,
 ](
     dst_buf: TileTensor[dtype, out_layout, MutAnyOrigin],
-    src_buf: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
+    src_buf: ImmPointer[Scalar[dtype], ImmutAnyOrigin],
     num_elements: Int32,
 ):
     """Apply ``output_lambda`` from ``src_buf`` into ``dst_buf`` (naive epilogue).
@@ -621,7 +621,7 @@ def _allreduce_naive_single[
         dev_inputs.append(
             DeviceBuffer[dtype](
                 rctx,
-                rebind[UnsafePointer[Scalar[dtype], MutAnyOrigin]](
+                rebind[MutPointer[Scalar[dtype], MutAnyOrigin]](
                     list_of_in_tensors[i]._storage
                 ),
                 num_elements,
@@ -706,7 +706,7 @@ def _allreduce_2stage_kernel[
         TileTensor[dtype, in_layout, ImmutAnyOrigin],
         1 if use_multimem else ngpus,
     ],
-    rank_sigs: Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
+    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS],
     num_elements: Int32,
     my_rank: Int32,
 ):
@@ -749,7 +749,7 @@ def _allreduce_2stage_kernel[
 
     with PDL():
         # --- Define tmp buffers by offsetting for Signal struct ---
-        var tmps = Array[UnsafePointer[Scalar[dtype], MutAnyOrigin], ngpus](
+        var tmps = Array[MutPointer[Scalar[dtype], MutAnyOrigin], ngpus](
             uninitialized=True
         )
 
@@ -921,7 +921,7 @@ def _allreduce_1stage_kernel[
         TileTensor[dtype, in_layout, ImmutAnyOrigin],
         1 if use_multimem else ngpus,
     ],
-    rank_sigs: Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
+    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS],
     num_elements: Int32,
     my_rank: Int32,
 ):
@@ -1060,7 +1060,7 @@ def _allreduce_lamport_kernel[
 ](
     result: TileTensor[dtype, out_layout, MutAnyOrigin],
     src_tensors: Array[TileTensor[dtype, in_layout, ImmutAnyOrigin], ngpus],
-    rank_sigs: Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
+    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS],
     num_elements: Int32,
     my_rank: Int32,
 ):
@@ -1142,7 +1142,7 @@ def _allreduce_lamport_kernel[
 
     # Peer comm-region bases in round-robin order (balances NVLink/XGMI traffic
     # the same way the existing kernels do).
-    var peer_regions = Array[UnsafePointer[Scalar[dtype], MutAnyOrigin], ngpus](
+    var peer_regions = Array[MutPointer[Scalar[dtype], MutAnyOrigin], ngpus](
         uninitialized=True
     )
     comptime for i in range(ngpus):
@@ -1286,7 +1286,7 @@ def _allreduce_lamport_p2p[
 ](
     list_of_in_tensors: Array[TileTensor[dtype, in_layout, in_origin], ngpus],
     out_tensor: TileTensor[mut=True, dtype, out_layout, ...],
-    rank_sigs: Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
+    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS],
     dispatch_config: AllReduceTuningConfig,
     ctx: DeviceContext,
 ) raises:
@@ -1327,7 +1327,7 @@ def _allreduce_lamport_p2p[
     var flat_inputs = Array[FlatIn, ngpus](uninitialized=True)
     comptime for i in range(ngpus):
         flat_inputs[i] = FlatIn(
-            rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
+            rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](
                 list_of_in_tensors[i]._storage
             ),
             row_major(num_elements),
@@ -1377,7 +1377,7 @@ def _allreduce_p2p[
         1 if use_multimem else ngpus,
     ],
     out_tensor: TileTensor[mut=True, dtype, out_layout, ...],
-    rank_sigs: Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
+    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS],
     dispatch_config: AllReduceTuningConfig,
     ctx: DeviceContext,
 ) raises:
@@ -1423,7 +1423,7 @@ def _allreduce_p2p[
     var flat_inputs = Array[FlatIn, num_tensors](uninitialized=True)
     comptime for i in range(num_tensors):
         flat_inputs[i] = FlatIn(
-            rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
+            rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](
                 list_of_in_tensors[i]._storage
             ),
             row_major(num_elements),
@@ -1558,7 +1558,7 @@ def allreduce[
         1 if use_multimem else ngpus,
     ],
     output_tensor: TileTensor[mut=True, dtype, out_layout, ...],
-    rank_sigs: Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
+    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS],
     ctx: DeviceContext,
     _max_num_blocks: Optional[Int] = None,
 ) raises:

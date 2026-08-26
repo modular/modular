@@ -66,10 +66,10 @@ def scatter_pull_kernel[
     dp_size: Int,
     simd_width: Int = simd_width_of[dtype, target=get_gpu_target()](),
 ](
-    output_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    input_ptrs: Array[UnsafePointer[Scalar[dtype], ImmutAnyOrigin], dp_size],
+    output_ptr: MutPointer[Scalar[dtype], MutAnyOrigin],
+    input_ptrs: Array[ImmPointer[Scalar[dtype], ImmutAnyOrigin], dp_size],
     chunk_num_elems: Array[Int32, dp_size],
-    rank_sigs: Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
+    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS],
     my_rank: Int32,
 ):
     """Pull-based scatter+broadcast: each GPU reads its chunk from root.
@@ -126,7 +126,7 @@ def scatter[
 ](
     input_buffers: Array[TileTensor[dtype, in_layout, in_origin], dp_size],
     output_buffer: TileTensor[mut=True, dtype, ...],
-    rank_sigs: Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
+    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS],
     ctx: DeviceContext,
 ) raises:
     """Pull-based scatter+broadcast.
@@ -156,13 +156,13 @@ def scatter[
         raise Error("Scatter currently requires P2P access between GPUs")
 
     # Extract raw pointers and sizes from TileTensors for the kernel.
-    var input_ptrs = Array[
-        UnsafePointer[Scalar[dtype], ImmutAnyOrigin], dp_size
-    ](uninitialized=True)
+    var input_ptrs = Array[ImmPointer[Scalar[dtype], ImmutAnyOrigin], dp_size](
+        uninitialized=True
+    )
     var chunk_num_elems_int = Array[Int, dp_size](fill=0)
     var chunk_num_elems = Array[Int32, dp_size](fill=Int32(0))
     for i in range(dp_size):
-        input_ptrs[i] = rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
+        input_ptrs[i] = rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](
             input_buffers[i]._storage
         )
         chunk_num_elems_int[i] = input_buffers[i].num_elements()
@@ -187,9 +187,7 @@ def scatter[
     ]
 
     ctx.enqueue_function[kernel](
-        rebind[UnsafePointer[Scalar[dtype], MutAnyOrigin]](
-            output_buffer._storage
-        ),
+        rebind[MutPointer[Scalar[dtype], MutAnyOrigin]](output_buffer._storage),
         input_ptrs,
         chunk_num_elems,
         rank_sigs,
