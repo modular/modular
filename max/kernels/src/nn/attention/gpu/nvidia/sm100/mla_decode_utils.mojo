@@ -3407,9 +3407,9 @@ struct MLA_SM100_Decode_Common[
     # Writes -inf to LSE so the combine kernel gives this split zero weight,
     # then calls barrier() + launch_dependent_grids().
     #
-    # Note: We no longer TMA-zero o_accum_split here. The combine kernel
-    # uses a `select` guard (scale != 0) so that uninitialised memory
-    # is never multiplied into the result when scale == 0 (i.e. LSE == -inf).
+    # o_accum_split is deliberately left untouched: the combine kernel's
+    # `select` guard (scale != 0) keeps uninitialised memory out of the
+    # result when scale == 0 (i.e. LSE == -inf).
     # --------------------------------------------------------------------------
     @staticmethod
     @always_inline
@@ -3421,17 +3421,8 @@ struct MLA_SM100_Decode_Common[
         split_idx: Int,
         batch_idx: Int,
         max_seq_len: Int,
-        out_row_offset: Int,
         batch_size: Int,
         lse_accum_split_ptr: Self.SplitAccumType,
-        o_tma: ORaggedTMATile[
-            dtype=Self.output_dtype,
-            BM=Self.config.out_rows,
-            # BN_PV/4 (per-warp stripe), not BN_QK — must match `store`'s
-            # o_tma so a single TMA descriptor flows through both paths.
-            BK=Self.config.BN_PV // 4,
-            swizzle_mode=Self.config.swizzle_mode,
-        ],
         # Explicit seq_idx for fold callers iterating q_local 0..q_len_fold-1.
         # Under fold grid.y=1 so block_idx.y can't address all seq slots.
         # Only consumed when fold_q=True.

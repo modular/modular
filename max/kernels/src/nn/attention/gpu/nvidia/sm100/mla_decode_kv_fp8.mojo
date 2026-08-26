@@ -350,20 +350,18 @@ struct MLA_SM100_Decode_KV_FP8[
         )
 
         # Early exit for split-K: CTAs with no work (num_keys_this_split == 0)
-        # must still write -inf LSE, zero o_accum_split, and call
-        # launch_dependent_grids() to fulfill the PDL contract with the
-        # combine kernel. Skipping launch_dependent_grids() causes the
-        # combine kernel to hang, leading to CUDA_ERROR_ILLEGAL_ADDRESS.
+        # must still write -inf LSE and call launch_dependent_grids()
+        # to fulfill the PDL contract with the combine kernel. Skipping
+        # launch_dependent_grids() causes the combine kernel to hang,
+        # leading to CUDA_ERROR_ILLEGAL_ADDRESS.
         comptime if Self.config.decoding_warp_split_k:
             if offset_position.num_keys_this_split == 0:
                 Self.Common_MLA_Op.pdl_early_exit(
                     offset_position.split_idx,
                     offset_position.batch_idx,
                     offset_position.max_seq_len,
-                    offset_position.out_row_offset,
                     batch_size,
                     lse_accum_split_ptr,
-                    o_tma,
                 )
                 return
 
@@ -371,8 +369,8 @@ struct MLA_SM100_Decode_KV_FP8[
         # In ragged mode with split-K, q_max_seq_len can be > 1 (up to 8).
         # block_idx.y ranges from 0 to q_max_seq_len-1, but some sequences
         # may have fewer tokens. CTAs with block_idx.y >= seq_len must still
-        # fulfill the PDL contract (write -inf LSE, zero o_accum_split, and
-        # call launch_dependent_grids) or the combine kernel will hang.
+        # fulfill the PDL contract (write -inf LSE and call
+        # launch_dependent_grids) or the combine kernel will hang.
         comptime if Self.ragged:
             # In ragged mode, block_idx.y is the query token index (0 to q_max_seq_len-1)
             # But this batch might have fewer tokens than q_max_seq_len
@@ -382,10 +380,8 @@ struct MLA_SM100_Decode_KV_FP8[
                         offset_position.split_idx,
                         offset_position.batch_idx,
                         offset_position.max_seq_len,
-                        offset_position.out_row_offset,
                         batch_size,
                         lse_accum_split_ptr,
-                        o_tma,
                     )
 
                 return  # This query position doesn't exist for this batch

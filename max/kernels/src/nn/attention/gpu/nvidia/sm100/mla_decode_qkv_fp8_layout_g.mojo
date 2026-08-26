@@ -1124,10 +1124,8 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
                             offset_position.split_idx,
                             offset_position.batch_idx,
                             offset_position.max_seq_len,
-                            offset_position.out_row_offset_at(q_local),
                             batch_size,
                             lse_accum_split_ptr,
-                            o_tma,
                             seq_idx_fold=UInt32(q_local),
                         )
                 else:
@@ -1135,10 +1133,8 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
                         offset_position.split_idx,
                         offset_position.batch_idx,
                         offset_position.max_seq_len,
-                        offset_position.out_row_offset,
                         batch_size,
                         lse_accum_split_ptr,
-                        o_tma,
                     )
                 return
 
@@ -1160,10 +1156,8 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
                             offset_position.split_idx,
                             offset_position.batch_idx,
                             offset_position.max_seq_len,
-                            offset_position.out_row_offset_at(q_local),
                             batch_size,
                             lse_accum_split_ptr,
-                            o_tma,
                             seq_idx_fold=UInt32(q_local),
                         )
                 else:
@@ -1171,10 +1165,8 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
                         offset_position.split_idx,
                         offset_position.batch_idx,
                         offset_position.max_seq_len,
-                        offset_position.out_row_offset,
                         batch_size,
                         lse_accum_split_ptr,
-                        o_tma,
                     )
                 return
 
@@ -1190,10 +1182,8 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
                                 offset_position.split_idx,
                                 offset_position.batch_idx,
                                 offset_position.max_seq_len,
-                                offset_position.out_row_offset_at(q_local),
                                 batch_size,
                                 lse_accum_split_ptr,
-                                o_tma,
                                 seq_idx_fold=UInt32(q_local),
                             )
                     else:
@@ -1201,10 +1191,8 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
                             offset_position.split_idx,
                             offset_position.batch_idx,
                             offset_position.max_seq_len,
-                            offset_position.out_row_offset,
                             batch_size,
                             lse_accum_split_ptr,
-                            o_tma,
                         )
 
                 return

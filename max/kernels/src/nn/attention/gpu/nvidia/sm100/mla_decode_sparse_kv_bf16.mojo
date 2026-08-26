@@ -344,29 +344,26 @@ struct MLA_SM100_Decode_Sparse_KV_BF16[
         topk = offset_position.num_keys - extra_topk
 
         # Early exit for split-K: CTAs with no work (num_keys_this_split == 0)
-        # must still write -inf LSE, zero o_accum_split, and call
-        # launch_dependent_grids() to fulfill the PDL contract with the
-        # combine kernel.  Skipping launch_dependent_grids() causes the
-        # combine kernel to hang, leading to CUDA_ERROR_ILLEGAL_ADDRESS.
+        # must still write -inf LSE and call launch_dependent_grids()
+        # to fulfill the PDL contract with the combine kernel.  Skipping
+        # launch_dependent_grids() causes the combine kernel to hang,
+        # leading to CUDA_ERROR_ILLEGAL_ADDRESS.
         comptime if Self.config.decoding_warp_split_k:
             if offset_position.num_keys_this_split == 0:
                 Self.Common_MLA_Op.pdl_early_exit(
                     offset_position.split_idx,
                     offset_position.batch_idx,
                     offset_position.max_seq_len,
-                    offset_position.out_row_offset,
                     batch_size,
                     lse_accum_split_ptr,
-                    o_tma,
                 )
                 return
 
         # Skip query positions beyond this batch's actual seq_len.  In
         # ragged mode with split-K, q_max_seq_len can be > 1 (up to 8),
         # so block_idx.y can exceed a specific batch's seq_len.  Those
-        # CTAs must still fulfill the PDL contract (write -inf LSE, zero
-        # o_accum_split, and call launch_dependent_grids) or the combine
-        # kernel will hang.
+        # CTAs must still fulfill the PDL contract (write -inf LSE and
+        # call launch_dependent_grids) or the combine kernel will hang.
         comptime if Self.ragged:
             if block_idx.y >= offset_position.seq_len:
                 comptime if Self.config.decoding_warp_split_k:
@@ -374,10 +371,8 @@ struct MLA_SM100_Decode_Sparse_KV_BF16[
                         offset_position.split_idx,
                         offset_position.batch_idx,
                         offset_position.max_seq_len,
-                        offset_position.out_row_offset,
                         batch_size,
                         lse_accum_split_ptr,
-                        o_tma,
                     )
 
                 return

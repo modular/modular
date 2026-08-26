@@ -420,10 +420,8 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
                     offset_position.split_idx,
                     offset_position.batch_idx,
                     offset_position.max_seq_len,
-                    offset_position.out_row_offset,
                     batch_size,
                     lse_accum_split_ptr,
-                    o_tma,
                 )
                 return
 
@@ -435,10 +433,8 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
                         offset_position.split_idx,
                         offset_position.batch_idx,
                         offset_position.max_seq_len,
-                        offset_position.out_row_offset,
                         batch_size,
                         lse_accum_split_ptr,
-                        o_tma,
                     )
 
                 return
