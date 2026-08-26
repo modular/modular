@@ -722,13 +722,21 @@ OriginTrackable::decodeIndividualVariadicArguments(Value callArgVal,
       result.push_back(RefImmutOp::stripRebinds(elt));
   } else if (auto fromPointerPackOp =
                  ctorArg.getDefiningOp<RefPackFromPointerPackOp>()) {
-    // This is either a RefPackFromPointerPackOp directly.
+    // This is either a RefPackFromPointerPackOp directly...
+    extraOrigin = OriginMutCastAttr::get(
+        cast<RefPackType>(fromPointerPackOp.getResult().getType()).getOrigin(),
+        false);
   } else if (auto refLoad = ctorArg.getDefiningOp<RefLoadOp>()) {
-    assert(findSingleStoreToVarDecl(
-               refLoad.getOperand().getDefiningOp<VarDeclOp>())
-               .getDefiningOp<RefPackFromPointerPackOp>() &&
+    // ...or a load of a RefPackFromPointerPackOp result
+    auto fromPointerPackOp =
+        findSingleStoreToVarDecl(
+            refLoad.getOperand().getDefiningOp<VarDeclOp>())
+            .getDefiningOp<RefPackFromPointerPackOp>();
+    assert(fromPointerPackOp &&
            "expected to find a ref pack from pointer pack");
-
+    extraOrigin = OriginMutCastAttr::get(
+        cast<RefPackType>(fromPointerPackOp.getResult().getType()).getOrigin(),
+        false);
   } else {
     auto varDecl = ctorArg.getDefiningOp<VarDeclOp>();
     assert(varDecl && "expected to find a var decl");

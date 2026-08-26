@@ -80,6 +80,43 @@ def call_from_three_ptrs[
     callee(*pack)
 
 
+# ===----------------------------------------------------------------------=== #
+# Regression test for MOCO-4734
+# ===----------------------------------------------------------------------=== #
+
+
+@fieldwise_init
+struct NoisyDeinit:
+    var value: Int
+
+    def __deinit__(deinit self):
+        print("destroyed:", self.value)
+
+
+def use_noisy_deinit[Ts: TypeList[Trait=AnyType, ...]](*args: *Ts):
+    print("called:", rebind[NoisyDeinit](args[0]).value)
+
+
+def check_pointer_pack_lifetime():
+    var value = NoisyDeinit(42)
+    var ptr_tuple = Tuple(Pointer(to=value).as_unsafe_any_origin())
+    comptime PackType = VariadicPack[
+        origin=MutAnyOrigin,
+        element_trait=AnyType,
+        False,
+        NoisyDeinit,
+    ]
+    var pack = PackType(
+        __mlir_op.`lit.ref.pack.from_pointer_pack`[_type=PackType._mlir_type](
+            ptr_tuple._mlir_value
+        )
+    )
+    use_noisy_deinit(*pack)
+
+
+# ===----------------------------------------------------------------------=== #
+
+
 def main():
     var x = MyObject(1)
     var y = MyObject(2)
@@ -91,3 +128,7 @@ def main():
     var c = MyObject(5)
     # CHECK: sink_three: MyObject(value=3) MyObject(value=4) MyObject(value=5)
     call_from_three_ptrs[sink_three](a, b, c)
+
+    # CHECK: called: 42
+    # CHECK-NEXT: destroyed: 42
+    check_pointer_pack_lifetime()
