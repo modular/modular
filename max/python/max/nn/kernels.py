@@ -2764,12 +2764,12 @@ def msa_sparse_indexer(
 ) -> TensorValue:
     """Selects the top-k key *blocks* per token for MiniMax-M3 sparse attention.
 
-    Computes per-block QK scores against the BF16 index-K paged cache and
-    returns, for each (index head, query token), the ids of the ``topk``
-    highest-scoring 128-token blocks. The forward sparse-attention op consumes
-    these block ids to gather a sparse KV band. The op selects the prefill or
-    decode kernel at runtime from the index-K cache's ``max_seq_length``, so the
-    same call serves both paths.
+    Computes per-block QK scores against the index-K paged cache (BF16 or
+    scale-free FP8 e4m3) and returns, for each (index head, query token), the
+    ids of the ``topk`` highest-scoring 128-token blocks. The forward
+    sparse-attention op consumes these block ids to gather a sparse KV band.
+    The op selects the prefill or decode kernel at runtime from the index-K
+    cache's ``max_seq_length``, so the same call serves both paths.
 
     Args:
         kv_params: Key-value cache parameters for the index-K cache.
@@ -2780,7 +2780,8 @@ def msa_sparse_indexer(
             the prefill path; on decode it is ``[0, 1, ..., batch]``).
         prefix_lens: Per-row cached-key count ``[batch]`` (the index-K
             ``cache_lengths``). uint32.
-        index_kv_collection: Paged index-K cache (BF16, no scales).
+        index_kv_collection: Paged index-K cache (BF16 or scale-free e4m3, no
+            scales).
         layer_idx: Layer index, uint32, on CPU.
         score_scratch: Persistent FP32 scratch buffer for decode scoring, shape
             ``[num_index_heads, max_rows, MAX_NUM_BLOCKS]``. ``max_rows`` must
@@ -2825,10 +2826,15 @@ def msa_sparse_indexer(
         rank=1,
         device=index_q.device,
     )
+    k_dtype = index_kv_collection.kv_blocks.dtype
+    if k_dtype not in (DType.bfloat16, DType.float8_e4m3fn):
+        raise ValueError(
+            "index_kv_collection.kv_blocks must be bfloat16 or "
+            f"float8_e4m3fn, got {k_dtype}"
+        )
     _validate_argument_tensor(
         "index_kv_collection.kv_blocks",
         index_kv_collection.kv_blocks,
-        dtype=DType.bfloat16,
         rank=6,
         device=index_q.device,
     )

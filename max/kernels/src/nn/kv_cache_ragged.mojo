@@ -849,8 +849,8 @@ def _fused_qkv_matmul_kv_cache_ragged_impl[
     comptime kv_params = cache_t.kv_params
 
     comptime assert (
-        kv_type == dtype
-    ), "Mismatch in dtype between Q and KV tensors"
+        kv_type == dtype or kv_type == DType.float8_e4m3fn
+    ), "KV cache must be the Q dtype or e4m3"
 
     var q_dim = output.dim[1]()
     var k_dim = kv_params.head_size * kv_params.num_heads
@@ -908,7 +908,7 @@ def _fused_qkv_matmul_kv_cache_ragged_impl[
             h_idx,
             cache_token_idx,
             hd_idx,
-            rebind[SIMD[kv_type, width]](output_val),
+            rebind[SIMD[kv_type, width]](cast_saturating[kv_type](output_val)),
         )
 
     comptime if group_size:
@@ -979,8 +979,8 @@ def _fused_qkv_matmul_kv_cache_ragged_impl_bias[
     comptime kv_params = cache_t.kv_params
 
     comptime assert (
-        kv_type == dtype
-    ), "Mismatch in dtype between Q and KV tensors"
+        kv_type == dtype or kv_type == DType.float8_e4m3fn
+    ), "KV cache must be the Q dtype or e4m3"
 
     var q_dim = output.dim[1]()
     var k_dim = kv_params.head_size * kv_params.num_heads
@@ -1033,7 +1033,7 @@ def _fused_qkv_matmul_kv_cache_ragged_impl_bias[
             h_idx,
             cache_token_idx,
             hd_idx,
-            rebind[SIMD[kv_type, width]](output_val),
+            rebind[SIMD[kv_type, width]](cast_saturating[kv_type](output_val)),
         )
 
     comptime if group_size:
@@ -1679,12 +1679,10 @@ def _fused_qkv_index_matmul_kv_cache_ragged_impl_scale_float4[
     comptime index_kv_type = index_cache_t.dtype
     comptime index_kv_params = index_cache_t.kv_params
 
-    # `index_kv_type` and `output_dtype` share the GEMM scratch buffer, so they
-    # must match. The main cache dtype may differ: the epilogue below
-    # saturating-casts K/V into `kv_type`.
+    # IndexK may be e4m3; saturating-cast from the GEMM output like main K/V.
     comptime assert (
-        index_kv_type == output_dtype
-    ), "Index KV cache dtype must match the output dtype."
+        index_kv_type == output_dtype or index_kv_type == DType.float8_e4m3fn
+    ), "the index-K cache must be the GEMM output dtype or e4m3"
 
     # Boundaries over the concatenated N dimension. Q lands in `q_output`
     # ([M, q_dim]) and IndexQ in `iq_output` ([M, iq_dim]):
@@ -1800,7 +1798,7 @@ def _fused_qkv_index_matmul_kv_cache_ragged_impl_scale_float4[
                 cache_token_idx,
                 hd_idx,
                 rebind[SIMD[index_kv_type, width]](
-                    output_val_out.cast[index_kv_type]()
+                    cast_saturating[index_kv_type](val)
                 ),
             )
 
@@ -2022,9 +2020,13 @@ def _fused_qkv_index_matmul_kv_cache_ragged_impl[
     comptime kv_params = cache_t.kv_params
     comptime index_kv_type = index_cache_t.dtype
 
+    # Q/IndexQ stay `dtype`. Cache dtypes may be e4m3; epilogue saturating-casts.
     comptime assert (
-        kv_type == index_kv_type == dtype
-    ), "Main/index KV cache dtype must match the QKV tensor dtype."
+        kv_type == dtype or kv_type == DType.float8_e4m3fn
+    ), "the main KV cache must be bf16 or e4m3"
+    comptime assert (
+        index_kv_type == dtype or index_kv_type == DType.float8_e4m3fn
+    ), "the index-K cache must be bf16 or e4m3"
 
     # Boundaries over the concatenated N dimension. `output` is the combined
     # [M, q_dim + iq_dim] buffer (Q then IndexQ):
@@ -2134,7 +2136,7 @@ def _fused_qkv_index_matmul_kv_cache_ragged_impl[
                 h_idx,
                 cache_token_idx,
                 hd_idx,
-                rebind[SIMD[kv_type, width]](output_val_out.cast[kv_type]()),
+                rebind[SIMD[kv_type, width]](cast_saturating[kv_type](val)),
             )
         else:
             # IndexK band -> index cache, single shared head (head == 0).
@@ -2147,7 +2149,7 @@ def _fused_qkv_index_matmul_kv_cache_ragged_impl[
                 cache_token_idx,
                 hd_idx,
                 rebind[SIMD[index_kv_type, width]](
-                    output_val_out.cast[index_kv_type]()
+                    cast_saturating[index_kv_type](val)
                 ),
             )
 

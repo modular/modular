@@ -40,10 +40,9 @@ speculative decode, and anything larger is a prefill / context-encoding step.
 
 The indexer op emits top-k *block* ids per (index head, token); the attention
 op consumes those block ids (`d_indices`) to gather a sparse band of KV blocks
-from the main paged cache.  The index-K cache is always BF16; the main-KV cache
-is BF16 or native FP8 e4m3 (the attention op infers its `kv_type` from the
-operands).  Neither carries scales, so both build with `generic_get_paged_cache`.
-FP8 here is scale-free and the `msa_sm100_*` kernels accumulate in FP32.
+from the main paged cache.  Index-K and main-KV are each BF16 or scale-free
+e4m3 (inferred from the operands).  Neither carries scales, so both build with
+`generic_get_paged_cache`. The `msa_sm100_*` kernels accumulate in FP32.
 
 Modeled on the MLA FP8 indexer registration in `attention.mojo`
 (`mo.mla.indexer.ragged.float8.paged`) for the comptime cache-param extraction
@@ -191,6 +190,8 @@ struct Struct_msa_indexer_ragged_paged:
     @always_inline
     @staticmethod
     def execute[
+        k_type: DType,
+        //,
         *,
         num_index_heads: Int,
         idx_head_dim: Int,
@@ -203,7 +204,7 @@ struct Struct_msa_indexer_ragged_paged:
         q: InputTensor[dtype=.bfloat16, rank=3, ...],
         input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
         prefix_lens: InputTensor[dtype=.uint32, rank=1, ...],
-        k_blocks: MutableInputTensor[dtype=.bfloat16, rank=6, ...],
+        k_blocks: MutableInputTensor[dtype=k_type, rank=6, ...],
         k_cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
         k_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
         k_max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
@@ -238,7 +239,7 @@ struct Struct_msa_indexer_ragged_paged:
             prefix_lens: Per-batch cached-key count `[batch]` uint32 (pass the
                 index-K `cache_lengths`); used as the decode `seq_lens`.
             k_blocks: Index-K paged blocks `[num_blocks, 1, num_layers,
-                page_size, 1, idx_head_dim]` BF16.
+                page_size, 1, idx_head_dim]`, BF16 or scale-free e4m3.
             k_cache_lengths: Index-K cache lengths `[batch]` uint32.
             k_lookup_table: Index-K page table `[batch, max_pages]` uint32.
             k_max_prompt_length: Index-K max prompt (query) length `[1]` uint32.
@@ -259,6 +260,9 @@ struct Struct_msa_indexer_ragged_paged:
             scale: QK scale.
             ctx: Device context.
         """
+        comptime assert (
+            k_type == DType.bfloat16 or k_type == DType.float8_e4m3fn
+        ), "index-K cache must be bf16 or scale-free e4m3"
         var k_collection = generic_get_paged_cache(
             k_blocks,
             k_cache_lengths,
@@ -441,7 +445,6 @@ struct Struct_msa_indexer_ragged_paged:
                 and num_index_heads == 1
                 and idx_head_dim == 128
                 and block_size == 128
-                and type_of(k_operand).dtype == .bfloat16
                 and type_of(k_operand).page_size % block_size == 0
             )
             comptime if USE_AMD_MTP_SCORER:

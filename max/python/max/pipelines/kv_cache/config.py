@@ -250,6 +250,20 @@ class KVCacheConfig(ConfigFileModel):
     )
     """An override for the default data type of the KV cache."""
 
+    indexer_kv_cache_format: str | None = Field(
+        default=None,
+        description=(
+            "Override the MiniMax sparse-indexer (IndexK) cache dtype, "
+            "independent of ``kv_cache_format``. "
+            "Supported values: ``bfloat16``, ``float8_e4m3fn``. "
+            "``None`` (default) keeps IndexK in bfloat16 so "
+            "``--kv-cache-format=float8_e4m3fn`` still means main GQA FP8 "
+            "plus indexer BF16. Ignored by architectures without an "
+            "indexer cache. FP8 IndexK is scale-free and AMD-only."
+        ),
+    )
+    """Independent IndexK cache dtype for MiniMax sparse attention."""
+
     state_pool_dtype: str | None = Field(
         default=None,
         description=(
@@ -264,6 +278,7 @@ class KVCacheConfig(ConfigFileModel):
         ),
     )
     """An override for the storage dtype of recurrent (SSM) state pools."""
+
     kv_cache_hash_algo: KVHashAlgo = Field(
         default="ahash64",
         description=(
