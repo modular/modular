@@ -861,6 +861,41 @@ ASSISTANT: {% endif %}"""
 
 
 @pytest.mark.asyncio
+async def test_custom_prompt_template_beats_tokenizer_override() -> None:
+    """A tokenizer that renders its own format must not defeat --chat-template.
+
+    ``trust_remote_code`` tokenizers (e.g. Kimi's ``TikTokenTokenizer``)
+    override ``apply_chat_template`` with a format hardcoded in Python and
+    never read the ``chat_template`` attribute, which silently discarded the
+    override.
+    """
+    model_name = "HuggingFaceTB/SmolLM2-135M-Instruct"
+    custom_template = (
+        "{% for message in messages %}{{ message['content'] }}{% endfor %}"
+    )
+
+    pipeline_config = _create_mock_pipeline_config(model_name)
+    tokenizer = TextTokenizer(
+        model_path=model_name,
+        pipeline_config=pipeline_config,
+        trust_remote_code=True,
+        chat_template=custom_template,
+    )
+    tokenizer.delegate.apply_chat_template = lambda *args, **kwargs: (
+        "HARDCODED FORMAT"
+    )
+
+    prompt = tokenizer.apply_chat_template(
+        messages=[
+            TextGenerationRequestMessage(role="user", content="Hello there")
+        ],
+        tools=None,
+    )
+
+    assert prompt == "Hello there"
+
+
+@pytest.mark.asyncio
 async def test_custom_prompt_template_with_tools() -> None:
     """Test that custom prompt_template works with tools."""
     model_name = "HuggingFaceTB/SmolLM2-135M-Instruct"

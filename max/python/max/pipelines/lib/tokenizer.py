@@ -46,6 +46,7 @@ from PIL import Image
 from transformers import (
     AutoProcessor,
     AutoTokenizer,
+    PreTrainedTokenizerBase,
 )
 from typing_extensions import ParamSpec
 
@@ -465,6 +466,7 @@ class TextTokenizer(
         # Override chat template if provided
         # This will be used by the delegate's apply_chat_template method automatically
         self._custom_template_provided = chat_template is not None
+        self._chat_template = chat_template
         if chat_template is not None:
             self.delegate.chat_template = chat_template
             logger.info(
@@ -524,13 +526,31 @@ class TextTokenizer(
             **chat_template_options,
         }
 
+        flattened = [message.flatten_content() for message in messages]
+
         try:
-            templated_message = self.delegate.apply_chat_template(
-                [message.flatten_content() for message in messages],
-                tokenize=False,
-                tools=tools,
-                **chat_template_options,
-            )
+            if self._custom_template_provided:
+                # A ``trust_remote_code`` tokenizer may override
+                # ``apply_chat_template`` to render a format hardcoded in
+                # Python, never reading the ``chat_template`` attribute -- which
+                # silently discards an explicit ``--chat-template``. Render the
+                # requested template through the base implementation so the
+                # override is the format that actually reaches the model.
+                templated_message = PreTrainedTokenizerBase.apply_chat_template(
+                    self.delegate,
+                    flattened,
+                    chat_template=self._chat_template,
+                    tokenize=False,
+                    tools=tools,
+                    **chat_template_options,
+                )
+            else:
+                templated_message = self.delegate.apply_chat_template(
+                    flattened,
+                    tokenize=False,
+                    tools=tools,
+                    **chat_template_options,
+                )
         except Exception as e:
             if self._custom_template_provided:
                 # Provide additional context when a custom template is used
