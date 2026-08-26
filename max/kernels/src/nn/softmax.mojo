@@ -2946,11 +2946,7 @@ def softmax[
     rank: Int,
     InputFn: ImplicitlyCopyable
     & RegisterPassable
-    & (
-        def[
-            width: Int, alignment: Int, coord_rank: Int
-        ](IndexList[coord_rank]) -> SIMD[dtype, width]
-    ),
+    & (def[width: Int, alignment: Int](Coord) -> SIMD[dtype, width]),
     AxisSizeT: CoordLike,
     /,
     target: StaticString,
@@ -2971,6 +2967,10 @@ def softmax[
     # 8x163840); CPU ignores it. No real caller has ever needed a different
     # value, so it's hardcoded at the `launch` call below rather than
     # exposed here.
+    comptime assert shape.rank == rank, "shape.rank must be the same as rank"
+    comptime assert shape.is_flat, "shape must be flat"
+    comptime assert output.rank == rank, "output.rank must be the same as rank"
+    comptime assert 0 <= reduce_dim < rank, "reduce_dim must be in [0, rank)"
     comptime accum = get_accum_type[dtype]()
     comptime assert accum.is_floating_point(), "softmax requires fp accum"
     comptime simd_width = rowwise.pick_simd_width[
@@ -2990,9 +2990,7 @@ def softmax[
         def load[
             width: Int, alignment: Int
         ](idx: RowCoord[row_rank]) {var input_fn} -> SIMD[dtype, width]:
-            return input_fn[width, alignment, row_rank](
-                rebind[IndexList[row_rank]](coord_to_index_list(idx.coord))
-            )
+            return input_fn[width, alignment](idx.coord)
 
         var row = rowwise.Row[
             params, accum, dtype, reduce_dim, row_rank, is_cached=True
@@ -3050,16 +3048,14 @@ def softmax[
                     - log_denom.slice[width]()
                 )
                 var result = shifted.cast[dtype]()
-                output.store_linear[width=width, alignment=alignment](
-                    rebind[IndexList[rank]](coord_to_index_list(idx.coord)),
-                    result,
+                output.store[width=width, alignment=alignment](
+                    idx.coord, result
                 )
             else:
                 var numerator = exp(tile_accum - row_max.slice[width]())
                 var result = (numerator * recip.slice[width]()).cast[dtype]()
-                output.store_linear[width=width, alignment=alignment](
-                    rebind[IndexList[rank]](coord_to_index_list(idx.coord)),
-                    result,
+                output.store[width=width, alignment=alignment](
+                    idx.coord, result
                 )
 
         # `row_max`/`recip`/`log_denom`/`output` ride `write`'s capture list

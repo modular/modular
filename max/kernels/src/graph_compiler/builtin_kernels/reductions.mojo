@@ -33,6 +33,7 @@ from algorithm.reductions import (
     reduce_product,
     reduce_sum,
 )
+from algorithm.rowwise_types import RowCoord
 
 from max.gpu.host import DeviceContext, get_gpu_target
 from max.gpu.host.info import is_gpu
@@ -120,18 +121,18 @@ struct ArgMax:
 
         @always_inline
         def input_fn[
-            width: Int, alignment: Int, _rank: Int
-        ](coords: IndexList[_rank]) {var input} -> SIMD[input.dtype, width]:
+            width: Int, alignment: Int
+        ](coords: Coord) {var input} -> SIMD[input.dtype, width]:
             return input._lambda_load[width=width, element_alignment=alignment](
-                rebind[IndexList[input.rank]](coords)
+                coords
             )
 
         @always_inline
         def output_fn[
-            width: SIMDLength, _rank: Int
-        ](coords: IndexList[_rank], val: SIMD[.int64, width]) {var output}:
+            width: SIMDLength
+        ](coords: Coord, val: SIMD[.int64, width]) {var output}:
             output._lambda_store[width=width](
-                rebind[IndexList[output.rank]](coords),
+                coords,
                 rebind[SIMD[output.dtype, width]](val),
             )
 
@@ -139,7 +140,7 @@ struct ArgMax:
             input.dtype,
             target=target,
             reduce_dim=reduce_dim,
-        ](input_fn, output_fn, Coord(input.shape()), ctx)
+        ](input_fn, output_fn, input.shape_coord(), ctx)
 
 
 @extensibility.register("mo.reduce.arg_min")
@@ -179,18 +180,18 @@ struct ArgMin:
 
         @always_inline
         def input_fn[
-            width: Int, alignment: Int, _rank: Int
-        ](coords: IndexList[_rank]) {var input} -> SIMD[input.dtype, width]:
+            width: Int, alignment: Int
+        ](coords: Coord) {var input} -> SIMD[input.dtype, width]:
             return input._lambda_load[width=width, element_alignment=alignment](
-                rebind[IndexList[input.rank]](coords)
+                coords
             )
 
         @always_inline
         def output_fn[
-            width: SIMDLength, _rank: Int
-        ](coords: IndexList[_rank], val: SIMD[.int64, width]) {var output}:
+            width: SIMDLength
+        ](coords: Coord, val: SIMD[.int64, width]) {var output}:
             output._lambda_store[width=width](
-                rebind[IndexList[output.rank]](coords),
+                coords,
                 rebind[SIMD[output.dtype, width]](val),
             )
 
@@ -198,7 +199,7 @@ struct ArgMin:
             input.dtype,
             target=target,
             reduce_dim=reduce_dim,
-        ](input_fn, output_fn, Coord(input.shape()), ctx)
+        ](input_fn, output_fn, input.shape_coord(), ctx)
 
 
 @extensibility.register("mo.arg_nonzero")
@@ -265,18 +266,18 @@ struct Mean:
 
         @always_inline
         def input_fn[
-            width: Int, alignment: Int, rank: Int
-        ](coords: IndexList[rank]) {var input} -> SIMD[input.dtype, width]:
+            width: Int, alignment: Int
+        ](coords: Coord) {var input} -> SIMD[input.dtype, width]:
             return input._lambda_load[width=width, element_alignment=alignment](
-                rebind[IndexList[input.rank]](coords)
+                coords
             )
 
         @always_inline
         def output_fn[
-            width: SIMDLength, rank: Int
-        ](coords: IndexList[rank], val: SIMD[output.dtype, width]) {var output}:
+            width: SIMDLength
+        ](coords: Coord, val: SIMD[output.dtype, width]) {var output}:
             output._lambda_store[width=width](
-                rebind[IndexList[output.rank]](coords),
+                coords,
                 rebind[SIMD[output.dtype, width]](val),
             )
 
@@ -284,7 +285,7 @@ struct Mean:
             output.dtype,
             target=target,
             reduce_dim=axis,
-        ](input_fn, output_fn, Coord(input.shape()), ctx)
+        ](input_fn, output_fn, input.shape_coord(), ctx)
 
 
 @extensibility.register_shape_function("mo.reduce.mean")
@@ -342,22 +343,20 @@ struct RowMeanOfSquares:
 
         @always_inline
         def input_fn[
-            width: Int, _rank: Int
-        ](coords: IndexList[_rank]) {var input} -> SIMD[input.dtype, width]:
-            return input._lambda_load[width=width](
-                rebind[IndexList[input.rank]](coords)
-            )
+            width: Int
+        ](coords: Coord) {var input} -> SIMD[input.dtype, width]:
+            return input._lambda_load[width=width](coords)
 
         @always_inline
         def output_fn[
-            width: SIMDLength, rank: Int
-        ](coords: IndexList[rank], val: SIMD[output.dtype, width]) {var output}:
+            width: SIMDLength
+        ](coords: Coord, val: SIMD[output.dtype, width]) {var output}:
             # `output` is `[M, 1]`, so `width` adjacent rows (tiled tier) at
             # column 0 sit contiguously -- one vector store, no lane splitting.
-            output.store[width=width](Index(coords[0], 0), val)
+            output.store[width=width](Index(Int(coords[0].value()), 0), val)
 
         row_mean_of_squares[input.dtype, output.dtype, 2, target=target](
-            input_fn, output_fn, input.shape(), ctx
+            input_fn, output_fn, input.shape_coord(), ctx
         )
 
 
@@ -579,18 +578,18 @@ struct ReduceAdd:
 
         @always_inline
         def input_fn[
-            width: Int, alignment: Int, rank: Int
-        ](coords: IndexList[rank]) {var input} -> SIMD[input.dtype, width]:
+            width: Int, alignment: Int
+        ](coords: Coord) {var input} -> SIMD[input.dtype, width]:
             return input._lambda_load[width=width, element_alignment=alignment](
-                rebind[IndexList[input.rank]](coords)
+                coords
             )
 
         @always_inline
         def output_fn[
-            width: SIMDLength, rank: Int
-        ](coords: IndexList[rank], val: SIMD[output.dtype, width]) {var output}:
+            width: SIMDLength
+        ](coords: Coord, val: SIMD[output.dtype, width]) {var output}:
             output._lambda_store[width=width](
-                rebind[IndexList[output.rank]](coords),
+                coords,
                 rebind[SIMD[output.dtype, width]](val),
             )
 
@@ -598,7 +597,7 @@ struct ReduceAdd:
             output.dtype,
             target=target,
             reduce_dim=axis,
-        ](input_fn, output_fn, Coord(input.shape()), ctx)
+        ](input_fn, output_fn, input.shape_coord(), ctx)
 
 
 @extensibility.register_shape_function("mo.reduce.add")
@@ -651,18 +650,18 @@ struct ReduceMul:
 
         @always_inline
         def input_fn[
-            width: Int, alignment: Int, rank: Int
-        ](coords: IndexList[rank]) {var input} -> SIMD[input.dtype, width]:
+            width: Int, alignment: Int
+        ](coords: Coord) {var input} -> SIMD[input.dtype, width]:
             return input._lambda_load[width=width, element_alignment=alignment](
-                rebind[IndexList[input.rank]](coords)
+                coords
             )
 
         @always_inline
         def output_fn[
-            width: SIMDLength, rank: Int
-        ](coords: IndexList[rank], val: SIMD[output.dtype, width]) {var output}:
+            width: SIMDLength
+        ](coords: Coord, val: SIMD[output.dtype, width]) {var output}:
             output._lambda_store[width=width](
-                rebind[IndexList[output.rank]](coords),
+                coords,
                 rebind[SIMD[output.dtype, width]](val),
             )
 
@@ -670,7 +669,7 @@ struct ReduceMul:
             output.dtype,
             target=target,
             reduce_dim=axis,
-        ](input_fn, output_fn, Coord(input.shape()), ctx)
+        ](input_fn, output_fn, input.shape_coord(), ctx)
 
 
 @extensibility.register_shape_function("mo.reduce.mul")
@@ -724,18 +723,18 @@ struct ReduceMax:
 
         @always_inline
         def input_fn[
-            width: Int, alignment: Int, rank: Int
-        ](coords: IndexList[rank]) {var input} -> SIMD[input.dtype, width]:
+            width: Int, alignment: Int
+        ](coords: Coord) {var input} -> SIMD[input.dtype, width]:
             return input._lambda_load[width=width, element_alignment=alignment](
-                rebind[IndexList[input.rank]](coords)
+                coords
             )
 
         @always_inline
         def output_fn[
-            width: SIMDLength, rank: Int
-        ](coords: IndexList[rank], val: SIMD[output.dtype, width]) {var output}:
+            width: SIMDLength
+        ](coords: Coord, val: SIMD[output.dtype, width]) {var output}:
             output._lambda_store[width=width](
-                rebind[IndexList[output.rank]](coords),
+                coords,
                 rebind[SIMD[output.dtype, width]](val),
             )
 
@@ -743,7 +742,7 @@ struct ReduceMax:
             output.dtype,
             target=target,
             reduce_dim=axis,
-        ](input_fn, output_fn, Coord(input.shape()), ctx)
+        ](input_fn, output_fn, input.shape_coord(), ctx)
 
 
 @extensibility.register_shape_function("mo.reduce.max")
@@ -796,18 +795,18 @@ struct ReduceMin:
 
         @always_inline
         def input_fn[
-            width: Int, alignment: Int, rank: Int
-        ](coords: IndexList[rank]) {var input} -> SIMD[input.dtype, width]:
+            width: Int, alignment: Int
+        ](coords: Coord) {var input} -> SIMD[input.dtype, width]:
             return input._lambda_load[width=width, element_alignment=alignment](
-                rebind[IndexList[input.rank]](coords)
+                coords
             )
 
         @always_inline
         def output_fn[
-            width: SIMDLength, rank: Int
-        ](coords: IndexList[rank], val: SIMD[output.dtype, width]) {var output}:
+            width: SIMDLength
+        ](coords: Coord, val: SIMD[output.dtype, width]) {var output}:
             output._lambda_store[width=width](
-                rebind[IndexList[output.rank]](coords),
+                coords,
                 rebind[SIMD[output.dtype, width]](val),
             )
 
@@ -815,7 +814,7 @@ struct ReduceMin:
             output.dtype,
             target=target,
             reduce_dim=axis,
-        ](input_fn, output_fn, Coord(input.shape()), ctx)
+        ](input_fn, output_fn, input.shape_coord(), ctx)
 
 
 @extensibility.register_shape_function("mo.reduce.min")
@@ -1524,35 +1523,37 @@ struct ReduceMinAndMax:
 
         @always_inline
         def input_fn[
-            width: Int, alignment: Int, _rank: Int
-        ](coords: IndexList[_rank]) {var input} -> SIMD[dtype, width]:
+            width: Int, alignment: Int
+        ](coords: Coord) {var input} -> SIMD[dtype, width]:
             return input._fused_load[width=width, element_alignment=alignment](
-                rebind[IndexList[input.rank]](coords)
+                coords
             )
 
         # The op packs both reductions into one `[..., 2, ...]` output tensor:
-        # min at slot 0, max at slot 1 of the reduced axis.
+        # min at slot 0, max at slot 1 of the reduced axis. A `Coord`'s
+        # elements are immutable and typed per position, so the retarget goes
+        # through `RowCoord`, whose axis element is dynamic and writable.
         @always_inline
         def output_min_fn[
-            width: SIMDLength, _rank: Int
-        ](coords: IndexList[_rank], val: SIMD[dtype, width]) {var output}:
-            var idx = rebind[IndexList[output.rank]](coords)
-            idx[norm_axis] = 0
-            output._fused_store[width=width](idx, val)
+            width: SIMDLength
+        ](coords: Coord, val: SIMD[dtype, width]) {var output}:
+            output._fused_store[width=width](
+                RowCoord[output.rank](coords).at_axis[norm_axis](0).coord, val
+            )
 
         @always_inline
         def output_max_fn[
-            width: SIMDLength, _rank: Int
-        ](coords: IndexList[_rank], val: SIMD[dtype, width]) {var output}:
-            var idx = rebind[IndexList[output.rank]](coords)
-            idx[norm_axis] = 1
-            output._fused_store[width=width](idx, val)
+            width: SIMDLength
+        ](coords: Coord, val: SIMD[dtype, width]) {var output}:
+            output._fused_store[width=width](
+                RowCoord[output.rank](coords).at_axis[norm_axis](1).coord, val
+            )
 
         reduce_min_and_max[
             dtype,
             target=target,
             reduce_dim=norm_axis,
-        ](input_fn, output_min_fn, output_max_fn, Coord(input.shape()), ctx)
+        ](input_fn, output_min_fn, output_max_fn, input.shape_coord(), ctx)
 
 
 @extensibility.register_shape_function("mo.reduce.reduce_min_and_max")
@@ -2139,12 +2140,10 @@ struct Softmax:
 
         @always_inline
         def input_fn[
-            width: Int, alignment: Int, coord_rank: Int
-        ](coords: IndexList[coord_rank]) {var input} -> SIMD[
-            output.dtype, width
-        ]:
+            width: Int, alignment: Int
+        ](coords: Coord) {var input} -> SIMD[output.dtype, width]:
             return input._lambda_load[width=width, element_alignment=alignment](
-                rebind[IndexList[output.rank]](coords)
+                coords
             )
 
         # Pass the static reduced-axis width when known so the Row
@@ -2205,12 +2204,10 @@ struct LogSoftmax:
 
         @always_inline
         def input_fn[
-            width: Int, alignment: Int, coord_rank: Int
-        ](coords: IndexList[coord_rank]) {var input} -> SIMD[
-            output.dtype, width
-        ]:
+            width: Int, alignment: Int
+        ](coords: Coord) {var input} -> SIMD[output.dtype, width]:
             return input._lambda_load[width=width, element_alignment=alignment](
-                rebind[IndexList[output.rank]](coords)
+                coords
             )
 
         # Pass the static reduced-axis width when known so the Row

@@ -32,7 +32,7 @@ from std.benchmark import (
 )
 from max.gpu.host import DeviceContext
 from internal_utils import arg_parse
-from layout import Coord, TileTensor, row_major
+from layout import Coord, TileTensor, coord_to_index_list, row_major
 from nn.argmaxmin_gpu import argmax_gpu
 from nn.topk import topk_gpu
 from std.utils.index import IndexList
@@ -103,19 +103,15 @@ def bench_argmax[
     ) raises {mut out_tensor, imm}:
         @always_inline
         def input_fn[
-            width: Int, alignment: Int, _rank: Int
-        ](coords: IndexList[_rank]) {var in_tensor} -> SIMD[dtype, width]:
-            return in_tensor.load_linear[width=width](
-                rebind[IndexList[2]](coords)
-            )
+            width: Int, alignment: Int
+        ](coords: Coord) {var in_tensor} -> SIMD[dtype, width]:
+            return in_tensor.load[width=width](coords)
 
         @always_inline
         def output_fn[
-            width: SIMDLength, _rank: Int
-        ](coords: IndexList[_rank], val: SIMD[.int64, width]) {var out_tensor}:
-            out_tensor.store_linear[width=Int(width)](
-                rebind[IndexList[2]](coords), val.cast[out_idx_type]()
-            )
+            width: SIMDLength
+        ](coords: Coord, val: SIMD[.int64, width]) {var out_tensor}:
+            out_tensor.store[width=Int(width)](coords, val.cast[out_idx_type]())
 
         reduce_argmax[dtype, target="gpu", reduce_dim=1](
             input_fn, output_fn, in_shape, ctx

@@ -21,8 +21,7 @@ single reduce phase plus a per-row `emit` — and runs on both CPU and GPU.
 
 from max.gpu.host import DeviceContext
 from std.sys.info import has_apple_gpu_accelerator
-from std.utils.coord import Coord, coord_to_index_list
-from std.utils.index import IndexList
+from std.utils.coord import Coord
 
 from algorithm import rowwise
 from algorithm.rowwise_types import RowCoord
@@ -41,18 +40,10 @@ def reduce_sum[
     dtype: DType,
     InputFn: ImplicitlyCopyable
     & RegisterPassable
-    & (
-        def[
-            width: Int, alignment: Int, rank: Int
-        ](IndexList[rank]) -> SIMD[dtype, width]
-    ),
+    & (def[width: Int, alignment: Int](Coord) -> SIMD[dtype, width]),
     OutputFn: ImplicitlyCopyable
     & RegisterPassable
-    & (
-        def[
-            width: SIMDLength, rank: Int
-        ](IndexList[rank], SIMD[dtype, width]) -> None
-    ),
+    & (def[width: SIMDLength](Coord, SIMD[dtype, width]) -> None),
     /,
     target: StaticString,
     *,
@@ -72,6 +63,10 @@ def reduce_sum[
     comptime simd_width = rowwise.pick_simd_width[
         ReduceSum[dtype, 1], target, 64, dtype
     ]()
+    comptime assert (
+        0 <= reduce_dim < input_shape.rank
+    ), "reduce_dim must index input_shape"
+    comptime assert input_shape.is_flat, "input_shape must be flat"
     var axis_size = Int(input_shape[reduce_dim].value())
 
     @always_inline
@@ -87,9 +82,7 @@ def reduce_sum[
         def load[
             width: Int, alignment: Int
         ](idx: RowCoord[rank]) {var input_fn} -> SIMD[dtype, width]:
-            return input_fn[width, alignment, rank](
-                rebind[IndexList[rank]](coord_to_index_list(idx.coord))
-            )
+            return input_fn[width, alignment](idx.coord)
 
         # Prepare Row: build the row view over the axis size (always
         # dynamic here — these entry points take no static_cols param).
@@ -111,8 +104,8 @@ def reduce_sum[
         # Emit: per-row output — the reduced scalar.
         @always_inline
         def write(oc: RowCoord[rank]) {var acc, var output_fn}:
-            output_fn[params.emit_tile_width, rank](
-                rebind[IndexList[rank]](coord_to_index_list(oc.coord)),
+            output_fn[params.emit_tile_width](
+                oc.coord,
                 acc.slice[params.emit_tile_width](),
             )
 
@@ -138,18 +131,10 @@ def reduce_max[
     dtype: DType,
     InputFn: ImplicitlyCopyable
     & RegisterPassable
-    & (
-        def[
-            width: Int, alignment: Int, rank: Int
-        ](IndexList[rank]) -> SIMD[dtype, width]
-    ),
+    & (def[width: Int, alignment: Int](Coord) -> SIMD[dtype, width]),
     OutputFn: ImplicitlyCopyable
     & RegisterPassable
-    & (
-        def[
-            width: SIMDLength, rank: Int
-        ](IndexList[rank], SIMD[dtype, width]) -> None
-    ),
+    & (def[width: SIMDLength](Coord, SIMD[dtype, width]) -> None),
     /,
     target: StaticString,
     *,
@@ -163,6 +148,10 @@ def reduce_max[
     comptime simd_width = rowwise.pick_simd_width[
         ReduceMax[dtype, 1], target, 64, dtype
     ]()
+    comptime assert (
+        0 <= reduce_dim < input_shape.rank
+    ), "reduce_dim must index input_shape"
+    comptime assert input_shape.is_flat, "input_shape must be flat"
     var axis_size = Int(input_shape[reduce_dim].value())
 
     @always_inline
@@ -178,9 +167,7 @@ def reduce_max[
         def load[
             width: Int, alignment: Int
         ](idx: RowCoord[rank]) {var input_fn} -> SIMD[dtype, width]:
-            return input_fn[width, alignment, rank](
-                rebind[IndexList[rank]](coord_to_index_list(idx.coord))
-            )
+            return input_fn[width, alignment](idx.coord)
 
         # Prepare Row: build the row view over the axis size (always
         # dynamic here — these entry points take no static_cols param).
@@ -202,8 +189,8 @@ def reduce_max[
         # Emit: per-row output — the reduced scalar.
         @always_inline
         def write(oc: RowCoord[rank]) {var acc, var output_fn}:
-            output_fn[params.emit_tile_width, rank](
-                rebind[IndexList[rank]](coord_to_index_list(oc.coord)),
+            output_fn[params.emit_tile_width](
+                oc.coord,
                 acc.slice[params.emit_tile_width](),
             )
 
@@ -222,18 +209,10 @@ def reduce_min[
     dtype: DType,
     InputFn: ImplicitlyCopyable
     & RegisterPassable
-    & (
-        def[
-            width: Int, alignment: Int, rank: Int
-        ](IndexList[rank]) -> SIMD[dtype, width]
-    ),
+    & (def[width: Int, alignment: Int](Coord) -> SIMD[dtype, width]),
     OutputFn: ImplicitlyCopyable
     & RegisterPassable
-    & (
-        def[
-            width: SIMDLength, rank: Int
-        ](IndexList[rank], SIMD[dtype, width]) -> None
-    ),
+    & (def[width: SIMDLength](Coord, SIMD[dtype, width]) -> None),
     /,
     target: StaticString,
     *,
@@ -247,6 +226,10 @@ def reduce_min[
     comptime simd_width = rowwise.pick_simd_width[
         ReduceMin[dtype, 1], target, 64, dtype
     ]()
+    comptime assert (
+        0 <= reduce_dim < input_shape.rank
+    ), "reduce_dim must index input_shape"
+    comptime assert input_shape.is_flat, "input_shape must be flat"
     var axis_size = Int(input_shape[reduce_dim].value())
 
     @always_inline
@@ -262,9 +245,7 @@ def reduce_min[
         def load[
             width: Int, alignment: Int
         ](idx: RowCoord[rank]) {var input_fn} -> SIMD[dtype, width]:
-            return input_fn[width, alignment, rank](
-                rebind[IndexList[rank]](coord_to_index_list(idx.coord))
-            )
+            return input_fn[width, alignment](idx.coord)
 
         # Prepare Row: build the row view over the axis size (always
         # dynamic here — these entry points take no static_cols param).
@@ -286,8 +267,8 @@ def reduce_min[
         # Emit: per-row output — the reduced scalar.
         @always_inline
         def write(oc: RowCoord[rank]) {var acc, var output_fn}:
-            output_fn[params.emit_tile_width, rank](
-                rebind[IndexList[rank]](coord_to_index_list(oc.coord)),
+            output_fn[params.emit_tile_width](
+                oc.coord,
                 acc.slice[params.emit_tile_width](),
             )
 
@@ -306,18 +287,10 @@ def reduce_product[
     dtype: DType,
     InputFn: ImplicitlyCopyable
     & RegisterPassable
-    & (
-        def[
-            width: Int, alignment: Int, rank: Int
-        ](IndexList[rank]) -> SIMD[dtype, width]
-    ),
+    & (def[width: Int, alignment: Int](Coord) -> SIMD[dtype, width]),
     OutputFn: ImplicitlyCopyable
     & RegisterPassable
-    & (
-        def[
-            width: SIMDLength, rank: Int
-        ](IndexList[rank], SIMD[dtype, width]) -> None
-    ),
+    & (def[width: SIMDLength](Coord, SIMD[dtype, width]) -> None),
     /,
     target: StaticString,
     *,
@@ -331,6 +304,10 @@ def reduce_product[
     comptime simd_width = rowwise.pick_simd_width[
         ReduceProduct[dtype, 1], target, 64, dtype
     ]()
+    comptime assert (
+        0 <= reduce_dim < input_shape.rank
+    ), "reduce_dim must index input_shape"
+    comptime assert input_shape.is_flat, "input_shape must be flat"
     var axis_size = Int(input_shape[reduce_dim].value())
 
     @always_inline
@@ -346,9 +323,7 @@ def reduce_product[
         def load[
             width: Int, alignment: Int
         ](idx: RowCoord[rank]) {var input_fn} -> SIMD[dtype, width]:
-            return input_fn[width, alignment, rank](
-                rebind[IndexList[rank]](coord_to_index_list(idx.coord))
-            )
+            return input_fn[width, alignment](idx.coord)
 
         # Prepare Row: build the row view over the axis size (always
         # dynamic here — these entry points take no static_cols param).
@@ -372,8 +347,8 @@ def reduce_product[
         # Emit: per-row output — the reduced scalar.
         @always_inline
         def write(oc: RowCoord[rank]) {var acc, var output_fn}:
-            output_fn[params.emit_tile_width, rank](
-                rebind[IndexList[rank]](coord_to_index_list(oc.coord)),
+            output_fn[params.emit_tile_width](
+                oc.coord,
                 acc.slice[params.emit_tile_width](),
             )
 
@@ -392,18 +367,10 @@ def reduce_mean[
     dtype: DType,
     InputFn: ImplicitlyCopyable
     & RegisterPassable
-    & (
-        def[
-            width: Int, alignment: Int, rank: Int
-        ](IndexList[rank]) -> SIMD[dtype, width]
-    ),
+    & (def[width: Int, alignment: Int](Coord) -> SIMD[dtype, width]),
     OutputFn: ImplicitlyCopyable
     & RegisterPassable
-    & (
-        def[
-            width: SIMDLength, rank: Int
-        ](IndexList[rank], SIMD[dtype, width]) -> None
-    ),
+    & (def[width: SIMDLength](Coord, SIMD[dtype, width]) -> None),
     /,
     target: StaticString,
     *,
@@ -417,6 +384,10 @@ def reduce_mean[
     comptime simd_width = rowwise.pick_simd_width[
         ReduceSum[dtype, 1], target, 64, dtype
     ]()
+    comptime assert (
+        0 <= reduce_dim < input_shape.rank
+    ), "reduce_dim must index input_shape"
+    comptime assert input_shape.is_flat, "input_shape must be flat"
     var axis_size = Int(input_shape[reduce_dim].value())
 
     @always_inline
@@ -432,9 +403,7 @@ def reduce_mean[
         def load[
             width: Int, alignment: Int
         ](idx: RowCoord[rank]) {var input_fn} -> SIMD[dtype, width]:
-            return input_fn[width, alignment, rank](
-                rebind[IndexList[rank]](coord_to_index_list(idx.coord))
-            )
+            return input_fn[width, alignment](idx.coord)
 
         # Prepare Row: build the row view over the axis size (always
         # dynamic here — these entry points take no static_cols param).
@@ -473,8 +442,8 @@ def reduce_mean[
                 var recip = (
                     Scalar[float_type](1) / Scalar[float_type](axis_size)
                 ).cast[dtype]()
-                output_fn[params.emit_tile_width, rank](
-                    rebind[IndexList[rank]](coord_to_index_list(oc.coord)),
+                output_fn[params.emit_tile_width](
+                    oc.coord,
                     total * recip,
                 )
             else:
@@ -500,8 +469,8 @@ def reduce_mean[
                 # hoisting cost +2 instantiations and +95 KB of MEF for a
                 # select the compiler hoists out of the row loop anyway.
                 var divisor = axis_size if axis_size != 0 else 1
-                output_fn[params.emit_tile_width, rank](
-                    rebind[IndexList[rank]](coord_to_index_list(oc.coord)),
+                output_fn[params.emit_tile_width](
+                    oc.coord,
                     total
                     / SIMD[dtype, params.emit_tile_width](
                         Scalar[dtype](divisor)
@@ -530,18 +499,10 @@ def reduce_argmin[
     dtype: DType,
     InputFn: ImplicitlyCopyable
     & RegisterPassable
-    & (
-        def[
-            width: Int, alignment: Int, rank: Int
-        ](IndexList[rank]) -> SIMD[dtype, width]
-    ),
+    & (def[width: Int, alignment: Int](Coord) -> SIMD[dtype, width]),
     OutputFn: ImplicitlyCopyable
     & RegisterPassable
-    & (
-        def[
-            width: SIMDLength, rank: Int
-        ](IndexList[rank], SIMD[.int64, width]) -> None
-    ),
+    & (def[width: SIMDLength](Coord, SIMD[.int64, width]) -> None),
     /,
     target: StaticString,
     *,
@@ -558,6 +519,10 @@ def reduce_argmin[
     comptime simd_width = rowwise.pick_simd_width[
         ArgMin[dtype, 1], target, 64, dtype
     ]()
+    comptime assert (
+        0 <= reduce_dim < input_shape.rank
+    ), "reduce_dim must index input_shape"
+    comptime assert input_shape.is_flat, "input_shape must be flat"
     var axis_size = Int(input_shape[reduce_dim].value())
 
     @always_inline
@@ -573,9 +538,7 @@ def reduce_argmin[
         def load[
             width: Int, alignment: Int
         ](idx: RowCoord[rank]) {var input_fn} -> SIMD[dtype, width]:
-            return input_fn[width, alignment, rank](
-                rebind[IndexList[rank]](coord_to_index_list(idx.coord))
-            )
+            return input_fn[width, alignment](idx.coord)
 
         # Prepare Row: build the row view over the axis size (always
         # dynamic here — these entry points take no static_cols param).
@@ -599,8 +562,8 @@ def reduce_argmin[
         # Emit: per-row output — the winning index.
         @always_inline
         def write(oc: RowCoord[rank]) {var indices, var output_fn}:
-            output_fn[params.emit_tile_width, rank](
-                rebind[IndexList[rank]](coord_to_index_list(oc.coord)),
+            output_fn[params.emit_tile_width](
+                oc.coord,
                 indices.slice[params.emit_tile_width](),
             )
 
@@ -619,18 +582,10 @@ def reduce_argmax[
     dtype: DType,
     InputFn: ImplicitlyCopyable
     & RegisterPassable
-    & (
-        def[
-            width: Int, alignment: Int, rank: Int
-        ](IndexList[rank]) -> SIMD[dtype, width]
-    ),
+    & (def[width: Int, alignment: Int](Coord) -> SIMD[dtype, width]),
     OutputFn: ImplicitlyCopyable
     & RegisterPassable
-    & (
-        def[
-            width: SIMDLength, rank: Int
-        ](IndexList[rank], SIMD[.int64, width]) -> None
-    ),
+    & (def[width: SIMDLength](Coord, SIMD[.int64, width]) -> None),
     /,
     target: StaticString,
     *,
@@ -644,6 +599,10 @@ def reduce_argmax[
     comptime simd_width = rowwise.pick_simd_width[
         ArgMax[dtype, 1], target, 64, dtype
     ]()
+    comptime assert (
+        0 <= reduce_dim < input_shape.rank
+    ), "reduce_dim must index input_shape"
+    comptime assert input_shape.is_flat, "input_shape must be flat"
     var axis_size = Int(input_shape[reduce_dim].value())
 
     @always_inline
@@ -659,9 +618,7 @@ def reduce_argmax[
         def load[
             width: Int, alignment: Int
         ](idx: RowCoord[rank]) {var input_fn} -> SIMD[dtype, width]:
-            return input_fn[width, alignment, rank](
-                rebind[IndexList[rank]](coord_to_index_list(idx.coord))
-            )
+            return input_fn[width, alignment](idx.coord)
 
         # Prepare Row: build the row view over the axis size (always
         # dynamic here — these entry points take no static_cols param).
@@ -685,8 +642,8 @@ def reduce_argmax[
         # Emit: per-row output — the winning index.
         @always_inline
         def write(oc: RowCoord[rank]) {var indices, var output_fn}:
-            output_fn[params.emit_tile_width, rank](
-                rebind[IndexList[rank]](coord_to_index_list(oc.coord)),
+            output_fn[params.emit_tile_width](
+                oc.coord,
                 indices.slice[params.emit_tile_width](),
             )
 
@@ -711,25 +668,13 @@ def reduce_min_and_max[
     dtype: DType,
     InputFn: ImplicitlyCopyable
     & RegisterPassable
-    & (
-        def[
-            width: Int, alignment: Int, rank: Int
-        ](IndexList[rank]) -> SIMD[dtype, width]
-    ),
+    & (def[width: Int, alignment: Int](Coord) -> SIMD[dtype, width]),
     OutputMinFn: ImplicitlyCopyable
     & RegisterPassable
-    & (
-        def[
-            width: SIMDLength, rank: Int
-        ](IndexList[rank], SIMD[dtype, width]) -> None
-    ),
+    & (def[width: SIMDLength](Coord, SIMD[dtype, width]) -> None),
     OutputMaxFn: ImplicitlyCopyable
     & RegisterPassable
-    & (
-        def[
-            width: SIMDLength, rank: Int
-        ](IndexList[rank], SIMD[dtype, width]) -> None
-    ),
+    & (def[width: SIMDLength](Coord, SIMD[dtype, width]) -> None),
     /,
     target: StaticString,
     *,
@@ -746,6 +691,10 @@ def reduce_min_and_max[
     comptime simd_width = rowwise.pick_simd_width[
         MinMax[dtype, 1], target, 64, dtype
     ]()
+    comptime assert (
+        0 <= reduce_dim < input_shape.rank
+    ), "reduce_dim must index input_shape"
+    comptime assert input_shape.is_flat, "input_shape must be flat"
     var axis_size = Int(input_shape[reduce_dim].value())
 
     @always_inline
@@ -761,9 +710,7 @@ def reduce_min_and_max[
         def load[
             width: Int, alignment: Int
         ](idx: RowCoord[rank]) {var input_fn} -> SIMD[dtype, width]:
-            return input_fn[width, alignment, rank](
-                rebind[IndexList[rank]](coord_to_index_list(idx.coord))
-            )
+            return input_fn[width, alignment](idx.coord)
 
         # Prepare Row: build the row view over the axis size (always
         # dynamic here — these entry points take no static_cols param).
@@ -789,12 +736,12 @@ def reduce_min_and_max[
         def write(
             oc: RowCoord[rank],
         ) {var mn, var mx, var output_min_fn, var output_max_fn,}:
-            output_min_fn[params.emit_tile_width, rank](
-                rebind[IndexList[rank]](coord_to_index_list(oc.coord)),
+            output_min_fn[params.emit_tile_width](
+                oc.coord,
                 mn.slice[params.emit_tile_width](),
             )
-            output_max_fn[params.emit_tile_width, rank](
-                rebind[IndexList[rank]](coord_to_index_list(oc.coord)),
+            output_max_fn[params.emit_tile_width](
+                oc.coord,
                 mx.slice[params.emit_tile_width](),
             )
 

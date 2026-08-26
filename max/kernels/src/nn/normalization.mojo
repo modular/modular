@@ -3575,23 +3575,22 @@ def row_mean_of_squares[
     rank: Int,
     InputFn: ImplicitlyCopyable
     & RegisterPassable
-    & (def[width: Int, rank: Int](IndexList[rank]) -> SIMD[in_dtype, width]),
+    & (def[width: Int](Coord) -> SIMD[in_dtype, width]),
     OutputFn: ImplicitlyCopyable
     & RegisterPassable
-    & (
-        def[
-            width: SIMDLength, rank: Int
-        ](IndexList[rank], SIMD[out_dtype, width]) -> None
-    ),
+    & (def[width: SIMDLength](Coord, SIMD[out_dtype, width]) -> None),
     /,
     target: StaticString = "cpu",
     reduce_dim: Int = rank - 1,
 ](
     input_fn: InputFn,
     output_fn: OutputFn,
-    shape: IndexList[rank],
+    shape: Coord,
     ctx: DeviceContext,
 ) raises:
+    comptime assert shape.rank == rank, "shape.rank must be the same as rank"
+    comptime assert shape.is_flat, "shape must be flat"
+    comptime assert 0 <= reduce_dim < rank, "reduce_dim must be in [0, rank)"
     comptime accum = get_accum_type[in_dtype]()
     comptime assert (
         accum.is_floating_point()
@@ -3599,7 +3598,7 @@ def row_mean_of_squares[
     comptime simd_width = rowwise.pick_simd_width[
         ReduceSum[accum, 1], target, 64, in_dtype, accum
     ]()
-    var axis_size = shape[reduce_dim]
+    var axis_size = Int(shape[reduce_dim].value())
     var axis_size_accum = Scalar[accum](axis_size)
 
     @always_inline
@@ -3618,9 +3617,7 @@ def row_mean_of_squares[
         def load[
             width: Int, alignment: Int
         ](idx: RowCoord[row_rank]) {var input_fn} -> SIMD[in_dtype, width]:
-            return input_fn[width, row_rank](
-                rebind[IndexList[row_rank]](coord_to_index_list(idx.coord))
-            )
+            return input_fn[width](idx.coord)
 
         # Prepare Row: this is a true reduction (no fuse-eligible cache), so
         # the axis size is always the dynamic form.
@@ -3650,8 +3647,8 @@ def row_mean_of_squares[
         def write(
             oc: RowCoord[row_rank],
         ) {var mean_sq, var output_fn}:
-            output_fn[params.emit_tile_width, row_rank](
-                rebind[IndexList[row_rank]](coord_to_index_list(oc.coord)),
+            output_fn[params.emit_tile_width](
+                oc.coord,
                 mean_sq.slice[params.emit_tile_width]().cast[out_dtype](),
             )
 
@@ -3663,7 +3660,7 @@ def row_mean_of_squares[
         simd_width=simd_width,
         target=target,
         num_phases=1,
-    ](body, Coord(shape), ctx)
+    ](body, shape, ctx)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -3694,12 +3691,8 @@ def row_mean_of_squares_qk[
         return
 
     @always_inline
-    def q_in[
-        width: Int, rank: Int
-    ](idx: IndexList[rank]) {var query} -> SIMD[in_dtype, width]:
-        return query.load[width=width, alignment=1](
-            Coord(rebind[IndexList[2]](idx))
-        )
+    def q_in[width: Int](idx: Coord) {var query} -> SIMD[in_dtype, width]:
+        return query.load[width=width, alignment=1](idx)
 
     # Column 0 (q) / column 1 (k) sit stride-2 apart in `output`'s `[rows, 2]`
     # layout, so a `width`-wide batch of adjacent rows can't land in one
@@ -3707,32 +3700,32 @@ def row_mean_of_squares_qk[
     # is comptime, so this unrolls to `width` scalar stores).
     @always_inline
     def q_out[
-        width: SIMDLength, rank: Int
-    ](oc: IndexList[rank], val: SIMD[out_dtype, width]) {var output}:
+        width: SIMDLength
+    ](oc: Coord, val: SIMD[out_dtype, width]) {var output}:
         comptime for i in range(width):
-            output.store[width=1](Coord(IndexList[2](oc[0] + i, 0)), val[i])
+            output.store[width=1](
+                Coord(IndexList[2](Int(oc[0].value()) + i, 0)), val[i]
+            )
 
     row_mean_of_squares[in_dtype, out_dtype, 2, target=target](
-        q_in, q_out, IndexList[2](rows, q_cols), ctx
+        q_in, q_out, Coord(rows, q_cols), ctx
     )
 
     @always_inline
-    def k_in[
-        width: Int, rank: Int
-    ](idx: IndexList[rank]) {var key} -> SIMD[in_dtype, width]:
-        return key.load[width=width, alignment=1](
-            Coord(rebind[IndexList[2]](idx))
-        )
+    def k_in[width: Int](idx: Coord) {var key} -> SIMD[in_dtype, width]:
+        return key.load[width=width, alignment=1](idx)
 
     @always_inline
     def k_out[
-        width: SIMDLength, rank: Int
-    ](oc: IndexList[rank], val: SIMD[out_dtype, width]) {var output}:
+        width: SIMDLength
+    ](oc: Coord, val: SIMD[out_dtype, width]) {var output}:
         comptime for i in range(width):
-            output.store[width=1](Coord(IndexList[2](oc[0] + i, 1)), val[i])
+            output.store[width=1](
+                Coord(IndexList[2](Int(oc[0].value()) + i, 1)), val[i]
+            )
 
     row_mean_of_squares[in_dtype, out_dtype, 2, target=target](
-        k_in, k_out, IndexList[2](rows, k_cols), ctx
+        k_in, k_out, Coord(rows, k_cols), ctx
     )
 
 

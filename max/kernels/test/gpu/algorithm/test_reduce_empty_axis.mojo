@@ -70,15 +70,14 @@ from layout import Coord, TileTensor, row_major
 from max.gpu.host import DeviceContext
 from std.math import isnan
 from std.testing import TestSuite, assert_equal, assert_true
-from std.utils.index import Index, IndexList
+from std.utils.index import Index
 from std.utils.numerics import min_finite
 
 
-def test_reduce_sum_stale_buffer_gpu() raises:
+def _test_reduce_sum_stale_buffer_gpu[dtype: DType = DType.float32]() raises:
     """The originally reported pattern for `sum`: real axis, then empty
     axis, same output buffer."""
     with DeviceContext() as ctx:
-        comptime dtype = DType.float32
         comptime num_rows = 2
         comptime real_axis_size = 4
 
@@ -101,17 +100,17 @@ def test_reduce_sum_stale_buffer_gpu() raises:
 
         @always_inline
         def input_fn[
-            width: Int, alignment: Int, rank: Int
-        ](coords: IndexList[rank]) {var in_buf} -> SIMD[dtype, width]:
-            var idx = in_buf.layout(Coord(coords))
+            width: Int, alignment: Int
+        ](coords: Coord) {var in_buf} -> SIMD[dtype, width]:
+            var idx = in_buf.layout(coords)
             return in_buf.raw_load[
                 width=width, alignment=alignment * align_of[dtype]()
             ](idx)
 
         @always_inline
         def output_fn[
-            width: SIMDLength, rank: Int
-        ](coords: IndexList[rank], val: SIMD[dtype, width]) {var out_ptr}:
+            width: SIMDLength
+        ](coords: Coord, val: SIMD[dtype, width]) {var out_ptr}:
             # `out_ptr` is 1-D (`num_rows` elements) while `coords` carries
             # the full input rank (`Row.emit` zeroes the axis position
             # rather than dropping it) — index by the row component
@@ -123,7 +122,7 @@ def test_reduce_sum_stale_buffer_gpu() raises:
             # slot. NVIDIA tolerates that; AMD faults on it ("Memory access
             # fault ... on address 0x7ff...", a host address), and every
             # closure in this file needs the copy.
-            out_ptr.unsafe_store[width=width](coords[0], val)
+            out_ptr.unsafe_store[width=width](Int(coords[0].value()), val)
 
         # Run 1: real data (all 2s) over a real axis. Sum = 2 * 4 = 8/row.
         reduce_sum[dtype, target="gpu", reduce_dim=1](
@@ -131,8 +130,8 @@ def test_reduce_sum_stale_buffer_gpu() raises:
         )
         ctx.enqueue_copy(out_h, out_d)
         ctx.synchronize()
-        assert_equal(out_h[0], Float32(8))
-        assert_equal(out_h[1], Float32(8))
+        assert_equal(out_h[0], Scalar[dtype](8))
+        assert_equal(out_h[1], Scalar[dtype](8))
 
         # Run 2: SAME `out_d`, empty axis. Before the fix, `launch`'s
         # `flattened_length() // row_size` returned `0` (the zero-guard, not
@@ -143,19 +142,18 @@ def test_reduce_sum_stale_buffer_gpu() raises:
         )
         ctx.enqueue_copy(out_h, out_d)
         ctx.synchronize()
-        assert_equal(out_h[0], Float32(0))
-        assert_equal(out_h[1], Float32(0))
+        assert_equal(out_h[0], Scalar[dtype](0))
+        assert_equal(out_h[1], Scalar[dtype](0))
 
         _ = in_buf
         _ = in_d^
         _ = out_d^
 
 
-def test_reduce_max_stale_buffer_gpu() raises:
+def _test_reduce_max_stale_buffer_gpu[dtype: DType = DType.float32]() raises:
     """Same pattern for `max` — the ambiguous monoid. Identity is
     `ReduceMax`'s `min_finite`, not a raise; see the module docstring."""
     with DeviceContext() as ctx:
-        comptime dtype = DType.float32
         comptime num_rows = 2
         comptime real_axis_size = 4
 
@@ -166,7 +164,7 @@ def test_reduce_max_stale_buffer_gpu() raises:
         ctx.synchronize()
         for r in range(num_rows):
             for c in range(real_axis_size):
-                in_h[r * real_axis_size + c] = Float32(c + 1)
+                in_h[r * real_axis_size + c] = Scalar[dtype](c + 1)
 
         var in_d = ctx.enqueue_create_buffer[dtype](num_rows * real_axis_size)
         var out_d = ctx.enqueue_create_buffer[dtype](num_rows)
@@ -179,21 +177,21 @@ def test_reduce_max_stale_buffer_gpu() raises:
 
         @always_inline
         def input_fn[
-            width: Int, alignment: Int, rank: Int
-        ](coords: IndexList[rank]) {var in_buf} -> SIMD[dtype, width]:
-            var idx = in_buf.layout(Coord(coords))
+            width: Int, alignment: Int
+        ](coords: Coord) {var in_buf} -> SIMD[dtype, width]:
+            var idx = in_buf.layout(coords)
             return in_buf.raw_load[
                 width=width, alignment=alignment * align_of[dtype]()
             ](idx)
 
         @always_inline
         def output_fn[
-            width: SIMDLength, rank: Int
-        ](coords: IndexList[rank], val: SIMD[dtype, width]) {var out_ptr}:
+            width: SIMDLength
+        ](coords: Coord, val: SIMD[dtype, width]) {var out_ptr}:
             # See `test_reduce_sum_stale_buffer_gpu`'s `output_fn` for why
             # this indexes `out_ptr` directly rather than through a
             # rank-mismatched `TileTensor`.
-            out_ptr.unsafe_store[width=width](coords[0], val)
+            out_ptr.unsafe_store[width=width](Int(coords[0].value()), val)
 
         # Run 1: real max = real_axis_size (4).
         reduce_max[dtype, target="gpu", reduce_dim=1](
@@ -201,8 +199,8 @@ def test_reduce_max_stale_buffer_gpu() raises:
         )
         ctx.enqueue_copy(out_h, out_d)
         ctx.synchronize()
-        assert_equal(out_h[0], Float32(real_axis_size))
-        assert_equal(out_h[1], Float32(real_axis_size))
+        assert_equal(out_h[0], Scalar[dtype](real_axis_size))
+        assert_equal(out_h[1], Scalar[dtype](real_axis_size))
 
         # Run 2: SAME `out_d`, empty axis. Must become the identity, not
         # the stale `4` from run 1.
@@ -220,12 +218,11 @@ def test_reduce_max_stale_buffer_gpu() raises:
         _ = out_d^
 
 
-def test_reduce_argmax_stale_buffer_gpu() raises:
+def _test_reduce_argmax_stale_buffer_gpu[dtype: DType = DType.float32]() raises:
     """Same pattern for `argmax`. A real run picks a real winning index
     (not `0`), so a stale-buffer bug can't hide behind the identity index
     also being `0`."""
     with DeviceContext() as ctx:
-        comptime dtype = DType.float32
         comptime out_dtype = DType.int64
         comptime num_rows = 2
         comptime real_axis_size = 4
@@ -254,21 +251,21 @@ def test_reduce_argmax_stale_buffer_gpu() raises:
 
         @always_inline
         def input_fn[
-            width: Int, alignment: Int, rank: Int
-        ](coords: IndexList[rank]) {var in_buf} -> SIMD[dtype, width]:
-            var idx = in_buf.layout(Coord(coords))
+            width: Int, alignment: Int
+        ](coords: Coord) {var in_buf} -> SIMD[dtype, width]:
+            var idx = in_buf.layout(coords)
             return in_buf.raw_load[
                 width=width, alignment=alignment * align_of[dtype]()
             ](idx)
 
         @always_inline
         def output_fn[
-            width: SIMDLength, rank: Int
-        ](coords: IndexList[rank], val: SIMD[out_dtype, width]) {var out_ptr}:
+            width: SIMDLength
+        ](coords: Coord, val: SIMD[out_dtype, width]) {var out_ptr}:
             # See `test_reduce_sum_stale_buffer_gpu`'s `output_fn` for why
             # this indexes `out_ptr` directly rather than through a
             # rank-mismatched `TileTensor`.
-            out_ptr.unsafe_store[width=width](coords[0], val)
+            out_ptr.unsafe_store[width=width](Int(coords[0].value()), val)
 
         # Run 1: real winner at `winner_idx`.
         reduce_argmax[dtype, target="gpu", reduce_dim=1](
@@ -294,7 +291,9 @@ def test_reduce_argmax_stale_buffer_gpu() raises:
         _ = out_d^
 
 
-def _max_non_inner_real_then_empty(num_cols: Int) raises:
+def _max_non_inner_real_then_empty[
+    dtype: DType = DType.float32
+](num_cols: Int) raises:
     """`reduce_max` over `[axis, num_cols]` on axis 0 — real axis first,
     then empty, same output buffer. `num_cols` selects the tier: a few
     columns cannot fill the tiled tier's occupancy gate and fall to
@@ -305,9 +304,8 @@ def _max_non_inner_real_then_empty(num_cols: Int) raises:
     value distinguishable from the identity.
     """
     with DeviceContext() as ctx:
-        comptime dtype = DType.float32
         comptime real_axis_size = 4
-        comptime real_value = Float32(7)
+        comptime real_value = Scalar[dtype](7)
 
         var out_h = ctx.enqueue_create_host_buffer[dtype](num_cols)
         var out_d = ctx.enqueue_create_buffer[dtype](num_cols)
@@ -316,16 +314,16 @@ def _max_non_inner_real_then_empty(num_cols: Int) raises:
 
         @always_inline
         def input_fn[
-            width: Int, alignment: Int, rank: Int
-        ](coords: IndexList[rank]) {} -> SIMD[dtype, width]:
+            width: Int, alignment: Int
+        ](coords: Coord) {} -> SIMD[dtype, width]:
             return SIMD[dtype, width](real_value)
 
         @always_inline
         def output_fn[
-            width: SIMDLength, rank: Int
-        ](coords: IndexList[rank], val: SIMD[dtype, width]) {var out_ptr}:
+            width: SIMDLength
+        ](coords: Coord, val: SIMD[dtype, width]) {var out_ptr}:
             # Non-inner axis, so the output column is the *inner* coord.
-            out_ptr.unsafe_store[width=width](coords[1], val)
+            out_ptr.unsafe_store[width=width](Int(coords[1].value()), val)
 
         reduce_max[dtype, target="gpu", reduce_dim=0](
             input_fn, output_fn, Coord(Index(real_axis_size, num_cols)), ctx
@@ -358,16 +356,17 @@ def test_reduce_max_non_inner_tiled_stale_buffer_gpu() raises:
     _max_non_inner_real_then_empty(num_cols=4096)
 
 
-def test_reduce_sum_rank1_stale_buffer_gpu() raises:
+def _test_reduce_sum_rank1_stale_buffer_gpu[
+    dtype: DType = DType.float32
+]() raises:
     """Rank 1, `(0,)`: excluding `axis` leaves no dims to multiply, so the
     single output comes entirely from the empty product. This is what
     `ops.sum` over a whole empty tensor lowers to, and the old
     `num_rows == 0` guard swallowed it.
     """
     with DeviceContext() as ctx:
-        comptime dtype = DType.float32
         comptime real_axis_size = 4
-        comptime real_value = Float32(2)
+        comptime real_value = Scalar[dtype](2)
 
         var out_h = ctx.enqueue_create_host_buffer[dtype](1)
         var out_d = ctx.enqueue_create_buffer[dtype](1)
@@ -376,14 +375,14 @@ def test_reduce_sum_rank1_stale_buffer_gpu() raises:
 
         @always_inline
         def input_fn[
-            width: Int, alignment: Int, rank: Int
-        ](coords: IndexList[rank]) {} -> SIMD[dtype, width]:
+            width: Int, alignment: Int
+        ](coords: Coord) {} -> SIMD[dtype, width]:
             return SIMD[dtype, width](real_value)
 
         @always_inline
         def output_fn[
-            width: SIMDLength, rank: Int
-        ](coords: IndexList[rank], val: SIMD[dtype, width]) {var out_ptr}:
+            width: SIMDLength
+        ](coords: Coord, val: SIMD[dtype, width]) {var out_ptr}:
             out_ptr.unsafe_store[width=width](0, val)
 
         reduce_sum[dtype, target="gpu", reduce_dim=0](
@@ -398,12 +397,12 @@ def test_reduce_sum_rank1_stale_buffer_gpu() raises:
         )
         ctx.enqueue_copy(out_h, out_d)
         ctx.synchronize()
-        assert_equal(out_h[0], Float32(0))
+        assert_equal(out_h[0], Scalar[dtype](0))
 
         _ = out_d^
 
 
-def test_reduce_mean_int_empty_axis_gpu() raises:
+def _test_reduce_mean_int_empty_axis_gpu[dtype: DType = DType.int32]() raises:
     """Integer `mean` on device — the case `reduce_mean`'s divisor
     substitution exists for. `SIMD.__truediv__` lowers to a raw `pop.div`
     with no zero-guard, so an unsubstituted empty axis is a hardware fault
@@ -412,10 +411,9 @@ def test_reduce_mean_int_empty_axis_gpu() raises:
     which never divide.
     """
     with DeviceContext() as ctx:
-        comptime dtype = DType.int32
         comptime num_rows = 2
         comptime real_axis_size = 4
-        comptime real_value = Int32(2)
+        comptime real_value = Scalar[dtype](2)
 
         var out_h = ctx.enqueue_create_host_buffer[dtype](num_rows)
         var out_d = ctx.enqueue_create_buffer[dtype](num_rows)
@@ -424,15 +422,15 @@ def test_reduce_mean_int_empty_axis_gpu() raises:
 
         @always_inline
         def input_fn[
-            width: Int, alignment: Int, rank: Int
-        ](coords: IndexList[rank]) {} -> SIMD[dtype, width]:
+            width: Int, alignment: Int
+        ](coords: Coord) {} -> SIMD[dtype, width]:
             return SIMD[dtype, width](real_value)
 
         @always_inline
         def output_fn[
-            width: SIMDLength, rank: Int
-        ](coords: IndexList[rank], val: SIMD[dtype, width]) {var out_ptr}:
-            out_ptr.unsafe_store[width=width](coords[0], val)
+            width: SIMDLength
+        ](coords: Coord, val: SIMD[dtype, width]) {var out_ptr}:
+            out_ptr.unsafe_store[width=width](Int(coords[0].value()), val)
 
         # Run 1: mean of four 2s is 2, so the stale value is not the
         # identity the empty run must produce.
@@ -449,23 +447,24 @@ def test_reduce_mean_int_empty_axis_gpu() raises:
         )
         ctx.enqueue_copy(out_h, out_d)
         ctx.synchronize()
-        assert_equal(out_h[0], Int32(0))
-        assert_equal(out_h[1], Int32(0))
+        assert_equal(out_h[0], Scalar[dtype](0))
+        assert_equal(out_h[1], Scalar[dtype](0))
 
         _ = out_d^
 
 
-def test_reduce_mean_float_empty_axis_gpu() raises:
+def _test_reduce_mean_float_empty_axis_gpu[
+    dtype: DType = DType.float32
+]() raises:
     """Float `mean` on device relies on IEEE-754 `0 * inf = NaN` surviving
     codegen. Worth pinning separately from the CPU case: a device compiler
     that assumed no-NaN would fold this to something finite, and the
     integer branch above cannot catch that.
     """
     with DeviceContext() as ctx:
-        comptime dtype = DType.float32
         comptime num_rows = 2
         comptime real_axis_size = 4
-        comptime real_value = Float32(2)
+        comptime real_value = Scalar[dtype](2)
 
         var out_h = ctx.enqueue_create_host_buffer[dtype](num_rows)
         var out_d = ctx.enqueue_create_buffer[dtype](num_rows)
@@ -474,15 +473,15 @@ def test_reduce_mean_float_empty_axis_gpu() raises:
 
         @always_inline
         def input_fn[
-            width: Int, alignment: Int, rank: Int
-        ](coords: IndexList[rank]) {} -> SIMD[dtype, width]:
+            width: Int, alignment: Int
+        ](coords: Coord) {} -> SIMD[dtype, width]:
             return SIMD[dtype, width](real_value)
 
         @always_inline
         def output_fn[
-            width: SIMDLength, rank: Int
-        ](coords: IndexList[rank], val: SIMD[dtype, width]) {var out_ptr}:
-            out_ptr.unsafe_store[width=width](coords[0], val)
+            width: SIMDLength
+        ](coords: Coord, val: SIMD[dtype, width]) {var out_ptr}:
+            out_ptr.unsafe_store[width=width](Int(coords[0].value()), val)
 
         reduce_mean[dtype, target="gpu", reduce_dim=1](
             input_fn, output_fn, Coord(Index(num_rows, real_axis_size)), ctx
@@ -501,6 +500,30 @@ def test_reduce_mean_float_empty_axis_gpu() raises:
         assert_true(isnan(out_h[1]), "row 1")
 
         _ = out_d^
+
+
+def test_reduce_sum_stale_buffer_gpu() raises:
+    _test_reduce_sum_stale_buffer_gpu()
+
+
+def test_reduce_max_stale_buffer_gpu() raises:
+    _test_reduce_max_stale_buffer_gpu()
+
+
+def test_reduce_argmax_stale_buffer_gpu() raises:
+    _test_reduce_argmax_stale_buffer_gpu()
+
+
+def test_reduce_sum_rank1_stale_buffer_gpu() raises:
+    _test_reduce_sum_rank1_stale_buffer_gpu()
+
+
+def test_reduce_mean_int_empty_axis_gpu() raises:
+    _test_reduce_mean_int_empty_axis_gpu()
+
+
+def test_reduce_mean_float_empty_axis_gpu() raises:
+    _test_reduce_mean_float_empty_axis_gpu()
 
 
 def main() raises:

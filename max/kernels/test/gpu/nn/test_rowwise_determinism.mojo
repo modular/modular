@@ -271,9 +271,9 @@ def _probe_softmax[
 
     @always_inline
     def input_fn[
-        width: Int, alignment: Int, _rank: Int
-    ](coords: IndexList[_rank]) {var in_buf} -> SIMD[dtype, width]:
-        var idx = in_buf.layout(Coord(coords))
+        width: Int, alignment: Int
+    ](coords: Coord) {var in_buf} -> SIMD[dtype, width]:
+        var idx = in_buf.layout(coords)
         return in_buf.raw_load[
             width=width, alignment=alignment * align_of[dtype]()
         ](idx)

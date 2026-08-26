@@ -334,7 +334,7 @@ def _check_arg_outputs(
 
 
 def _run_shaped[
-    nd: Int, dim: Int
+    nd: Int, dim: Int, dtype: DType = rd_type
 ](
     ctx: DeviceContext,
     shape: IndexList[nd],
@@ -381,62 +381,62 @@ def _run_shaped[
 
     @always_inline
     def input_fn[
-        width: Int, alignment: Int, coord_rank: Int
-    ](coords: IndexList[coord_rank]) {var in_buf} -> SIMD[rd_type, width]:
-        var idx = in_buf.layout(Coord(rebind[IndexList[nd]](coords)))
-        return in_buf.raw_load[
-            width=width, alignment=alignment * align_of[rd_type]()
-        ](idx)
+        width: Int, alignment: Int
+    ](coords: Coord) {var in_buf} -> SIMD[dtype, width]:
+        var idx = in_buf.layout(coords)
+        return rebind[SIMD[dtype, width]](
+            in_buf.raw_load[
+                width=width, alignment=alignment * align_of[rd_type]()
+            ](idx)
+        )
 
     @always_inline
     def output_fn[
-        width: SIMDLength, coord_rank: Int
-    ](coords: IndexList[coord_rank], val: SIMD[rd_type, width]) {
-        var out_ptr, var shape
-    }:
+        width: SIMDLength
+    ](coords: Coord, val: SIMD[dtype, width]) {var out_ptr, var shape}:
         # `Row.emit` zeroes the reduced axis rather than dropping it, so the
         # output row is the row-major flatten over the OTHER dims.
         var row = 0
         comptime for i in range(nd):
             if i != dim:
-                row = row * shape[i] + coords[i]
-        out_ptr.unsafe_store[width=width](row, val)
+                row = row * shape[i] + Int(coords[i].value())
+        out_ptr.unsafe_store[width=width](
+            row, rebind[SIMD[rd_type, width]](val)
+        )
 
     @always_inline
     def idx_output_fn[
-        width: SIMDLength, coord_rank: Int
-    ](coords: IndexList[coord_rank], val: SIMD[idx_type, width]) {
-        var out_idx_ptr, var shape
-    }:
+        width: SIMDLength
+    ](coords: Coord, val: SIMD[idx_type, width]) {var out_idx_ptr, var shape}:
         var row = 0
         comptime for i in range(nd):
             if i != dim:
-                row = row * shape[i] + coords[i]
+                row = row * shape[i] + Int(coords[i].value())
         out_idx_ptr.unsafe_store[width=width](row, val)
 
     var coord = Coord(shape)
     if op == OP_SUM:
-        reduce_sum[rd_type, target="gpu", reduce_dim=dim](
+        reduce_sum[dtype, target="gpu", reduce_dim=dim](
             input_fn, output_fn, coord, ctx
         )
     elif op == OP_MAX:
-        reduce_max[rd_type, target="gpu", reduce_dim=dim](
+        reduce_max[dtype, target="gpu", reduce_dim=dim](
             input_fn, output_fn, coord, ctx
         )
     elif op == OP_MIN:
-        reduce_min[rd_type, target="gpu", reduce_dim=dim](
+        reduce_min[dtype, target="gpu", reduce_dim=dim](
             input_fn, output_fn, coord, ctx
         )
     elif op == OP_MEAN:
-        reduce_mean[rd_type, target="gpu", reduce_dim=dim](
+        reduce_mean[dtype, target="gpu", reduce_dim=dim](
             input_fn, output_fn, coord, ctx
         )
     elif op == OP_ARGMAX:
-        reduce_argmax[rd_type, target="gpu", reduce_dim=dim](
+        reduce_argmax[dtype, target="gpu", reduce_dim=dim](
             input_fn, idx_output_fn, coord, ctx
         )
     else:
-        reduce_argmin[rd_type, target="gpu", reduce_dim=dim](
+        reduce_argmin[dtype, target="gpu", reduce_dim=dim](
             input_fn, idx_output_fn, coord, ctx
         )
     ctx.synchronize()

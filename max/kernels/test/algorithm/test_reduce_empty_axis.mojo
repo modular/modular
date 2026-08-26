@@ -46,7 +46,7 @@ from algorithm.reductions import (
 from std.math import isnan
 from std.testing import TestSuite, assert_equal, assert_true
 from std.utils.coord import Coord
-from std.utils.index import Index, IndexList
+from std.utils.index import Index
 from std.utils.numerics import min_finite
 
 comptime _POISON = Float32(111)
@@ -55,185 +55,177 @@ comptime _POISON = Float32(111)
 the write."""
 
 
-def _run_reduce_sum_inner(
-    num_rows: Int, axis_size: Int
-) raises -> List[Float32]:
+def _run_reduce_sum_inner[
+    dtype: DType = DType.float32
+](num_rows: Int, axis_size: Int) raises -> List[Scalar[dtype]]:
     """`reduce_sum` over a `[num_rows, axis_size]` input, axis=1 (inner)."""
-    var input_buf = List(length=num_rows * axis_size, fill=Float32(2))
+    var input_buf = List(length=num_rows * axis_size, fill=Scalar[dtype](2))
     var input_ptr = input_buf.unsafe_ptr()
-    var output_buf = List(length=num_rows, fill=_POISON)
+    var output_buf = List(length=num_rows, fill=Scalar[dtype](_POISON))
     var output_ptr = output_buf.unsafe_ptr()
 
     @always_inline
     def input_fn[
-        width: Int, alignment: Int, rank: Int
-    ](coords: IndexList[rank]) {var input_ptr, var axis_size} -> SIMD[
-        DType.float32, width
-    ]:
+        width: Int, alignment: Int
+    ](coords: Coord) {var input_ptr, var axis_size} -> SIMD[dtype, width]:
         return input_ptr.unsafe_load[width=width](
-            coords[0] * axis_size + coords[1]
+            Int(coords[0].value()) * axis_size + Int(coords[1].value())
         )
 
     @always_inline
     def output_fn[
-        width: SIMDLength, rank: Int
-    ](coords: IndexList[rank], val: SIMD[.float32, width]) {var output_ptr}:
-        output_ptr.unsafe_store[width=width](coords[0], val)
+        width: SIMDLength
+    ](coords: Coord, val: SIMD[dtype, width]) {var output_ptr}:
+        output_ptr.unsafe_store[width=width](Int(coords[0].value()), val)
 
-    reduce_sum[.float32, target="cpu", reduce_dim=1](
+    reduce_sum[dtype, target="cpu", reduce_dim=1](
         input_fn, output_fn, Coord(Index(num_rows, axis_size))
     )
     return output_buf^
 
 
-def _run_reduce_max_non_inner(
-    axis_size: Int, num_rows: Int
-) raises -> List[Float32]:
+def _run_reduce_max_non_inner[
+    dtype: DType = DType.float32
+](axis_size: Int, num_rows: Int) raises -> List[Scalar[dtype]]:
     """`reduce_max` over an `[axis_size, num_rows]` input, axis=0
     (non-inner — the tiled/cooperative tiers, not the warp tier)."""
-    var input_buf = List(length=axis_size * num_rows, fill=Float32(2))
+    var input_buf = List(length=axis_size * num_rows, fill=Scalar[dtype](2))
     var input_ptr = input_buf.unsafe_ptr()
-    var output_buf = List(length=num_rows, fill=_POISON)
+    var output_buf = List(length=num_rows, fill=Scalar[dtype](_POISON))
     var output_ptr = output_buf.unsafe_ptr()
 
     @always_inline
     def input_fn[
-        width: Int, alignment: Int, rank: Int
-    ](coords: IndexList[rank]) {var input_ptr, var num_rows} -> SIMD[
-        DType.float32, width
-    ]:
+        width: Int, alignment: Int
+    ](coords: Coord) {var input_ptr, var num_rows} -> SIMD[dtype, width]:
         return input_ptr.unsafe_load[width=width](
-            coords[0] * num_rows + coords[1]
+            Int(coords[0].value()) * num_rows + Int(coords[1].value())
         )
 
     @always_inline
     def output_fn[
-        width: SIMDLength, rank: Int
-    ](coords: IndexList[rank], val: SIMD[.float32, width]) {var output_ptr}:
-        output_ptr.unsafe_store[width=width](coords[1], val)
+        width: SIMDLength
+    ](coords: Coord, val: SIMD[dtype, width]) {var output_ptr}:
+        output_ptr.unsafe_store[width=width](Int(coords[1].value()), val)
 
-    reduce_max[.float32, target="cpu", reduce_dim=0](
+    reduce_max[dtype, target="cpu", reduce_dim=0](
         input_fn, output_fn, Coord(Index(axis_size, num_rows))
     )
     return output_buf^
 
 
-def _run_reduce_argmax_inner(
-    num_rows: Int, axis_size: Int
-) raises -> List[Int64]:
+def _run_reduce_argmax_inner[
+    dtype: DType = DType.float32
+](num_rows: Int, axis_size: Int) raises -> List[Int64]:
     """`reduce_argmax` over a `[num_rows, axis_size]` input, axis=1."""
-    var input_buf = List(length=num_rows * axis_size, fill=Float32(2))
+    var input_buf = List(length=num_rows * axis_size, fill=Scalar[dtype](2))
     var input_ptr = input_buf.unsafe_ptr()
     var output_buf = List(length=num_rows, fill=Int64(-1))
     var output_ptr = output_buf.unsafe_ptr()
 
     @always_inline
     def input_fn[
-        width: Int, alignment: Int, rank: Int
-    ](coords: IndexList[rank]) {var input_ptr, var axis_size} -> SIMD[
-        DType.float32, width
-    ]:
+        width: Int, alignment: Int
+    ](coords: Coord) {var input_ptr, var axis_size} -> SIMD[dtype, width]:
         return input_ptr.unsafe_load[width=width](
-            coords[0] * axis_size + coords[1]
+            Int(coords[0].value()) * axis_size + Int(coords[1].value())
         )
 
     @always_inline
     def output_fn[
-        width: SIMDLength, rank: Int
-    ](coords: IndexList[rank], val: SIMD[.int64, width]) {var output_ptr}:
-        output_ptr.unsafe_store[width=width](coords[0], val)
+        width: SIMDLength
+    ](coords: Coord, val: SIMD[.int64, width]) {var output_ptr}:
+        output_ptr.unsafe_store[width=width](Int(coords[0].value()), val)
 
-    reduce_argmax[.float32, target="cpu", reduce_dim=1](
+    reduce_argmax[dtype, target="cpu", reduce_dim=1](
         input_fn, output_fn, Coord(Index(num_rows, axis_size))
     )
     return output_buf^
 
 
-def _run_reduce_mean_inner_f32(
-    num_rows: Int, axis_size: Int
-) raises -> List[Float32]:
+def _run_reduce_mean_inner_f32[
+    dtype: DType = DType.float32
+](num_rows: Int, axis_size: Int) raises -> List[Scalar[dtype]]:
     """`reduce_mean` (float) over a `[num_rows, axis_size]` input, axis=1."""
-    var input_buf = List(length=num_rows * axis_size, fill=Float32(2))
+    var input_buf = List(length=num_rows * axis_size, fill=Scalar[dtype](2))
     var input_ptr = input_buf.unsafe_ptr()
-    var output_buf = List(length=num_rows, fill=_POISON)
+    var output_buf = List(length=num_rows, fill=Scalar[dtype](_POISON))
     var output_ptr = output_buf.unsafe_ptr()
 
     @always_inline
     def input_fn[
-        width: Int, alignment: Int, rank: Int
-    ](coords: IndexList[rank]) {var input_ptr, var axis_size} -> SIMD[
-        DType.float32, width
-    ]:
+        width: Int, alignment: Int
+    ](coords: Coord) {var input_ptr, var axis_size} -> SIMD[dtype, width]:
         return input_ptr.unsafe_load[width=width](
-            coords[0] * axis_size + coords[1]
+            Int(coords[0].value()) * axis_size + Int(coords[1].value())
         )
 
     @always_inline
     def output_fn[
-        width: SIMDLength, rank: Int
-    ](coords: IndexList[rank], val: SIMD[.float32, width]) {var output_ptr}:
-        output_ptr.unsafe_store[width=width](coords[0], val)
+        width: SIMDLength
+    ](coords: Coord, val: SIMD[dtype, width]) {var output_ptr}:
+        output_ptr.unsafe_store[width=width](Int(coords[0].value()), val)
 
-    reduce_mean[.float32, target="cpu", reduce_dim=1](
+    reduce_mean[dtype, target="cpu", reduce_dim=1](
         input_fn, output_fn, Coord(Index(num_rows, axis_size))
     )
     return output_buf^
 
 
-def _run_reduce_mean_inner_i32(
-    num_rows: Int, axis_size: Int
-) raises -> List[Int32]:
+def _run_reduce_mean_inner_i32[
+    dtype: DType = DType.int32
+](num_rows: Int, axis_size: Int) raises -> List[Scalar[dtype]]:
     """`reduce_mean` (integer) over a `[num_rows, axis_size]` input,
     axis=1 — the dtype with no NaN to signal "no data" with."""
-    var input_buf = List(length=num_rows * axis_size, fill=Int32(2))
+    var input_buf = List(length=num_rows * axis_size, fill=Scalar[dtype](2))
     var input_ptr = input_buf.unsafe_ptr()
-    var output_buf = List(length=num_rows, fill=Int32(111))
+    var output_buf = List(length=num_rows, fill=Scalar[dtype](111))
     var output_ptr = output_buf.unsafe_ptr()
 
     @always_inline
     def input_fn[
-        width: Int, alignment: Int, rank: Int
-    ](coords: IndexList[rank]) {var input_ptr, var axis_size} -> SIMD[
-        DType.int32, width
-    ]:
+        width: Int, alignment: Int
+    ](coords: Coord) {var input_ptr, var axis_size} -> SIMD[dtype, width]:
         return input_ptr.unsafe_load[width=width](
-            coords[0] * axis_size + coords[1]
+            Int(coords[0].value()) * axis_size + Int(coords[1].value())
         )
 
     @always_inline
     def output_fn[
-        width: SIMDLength, rank: Int
-    ](coords: IndexList[rank], val: SIMD[.int32, width]) {var output_ptr}:
-        output_ptr.unsafe_store[width=width](coords[0], val)
+        width: SIMDLength
+    ](coords: Coord, val: SIMD[dtype, width]) {var output_ptr}:
+        output_ptr.unsafe_store[width=width](Int(coords[0].value()), val)
 
-    reduce_mean[.int32, target="cpu", reduce_dim=1](
+    reduce_mean[dtype, target="cpu", reduce_dim=1](
         input_fn, output_fn, Coord(Index(num_rows, axis_size))
     )
     return output_buf^
 
 
-def _run_reduce_sum_rank1(axis_size: Int) raises -> List[Float32]:
+def _run_reduce_sum_rank1[
+    dtype: DType = DType.float32
+](axis_size: Int) raises -> List[Scalar[dtype]]:
     """`reduce_sum` over a rank-1 `[axis_size]` input, axis=0. The output
     is a single value: excluding `axis` leaves no dims to multiply, so the
     row count is the empty product, `1`."""
-    var input_buf = List(length=axis_size, fill=Float32(2))
+    var input_buf = List(length=axis_size, fill=Scalar[dtype](2))
     var input_ptr = input_buf.unsafe_ptr()
-    var output_buf = List(length=1, fill=_POISON)
+    var output_buf = List(length=1, fill=Scalar[dtype](_POISON))
     var output_ptr = output_buf.unsafe_ptr()
 
     @always_inline
     def input_fn[
-        width: Int, alignment: Int, rank: Int
-    ](coords: IndexList[rank]) {var input_ptr} -> SIMD[.float32, width]:
-        return input_ptr.unsafe_load[width=width](coords[0])
+        width: Int, alignment: Int
+    ](coords: Coord) {var input_ptr} -> SIMD[dtype, width]:
+        return input_ptr.unsafe_load[width=width](Int(coords[0].value()))
 
     @always_inline
     def output_fn[
-        width: SIMDLength, rank: Int
-    ](coords: IndexList[rank], val: SIMD[.float32, width]) {var output_ptr}:
+        width: SIMDLength
+    ](coords: Coord, val: SIMD[dtype, width]) {var output_ptr}:
         output_ptr.unsafe_store[width=width](0, val)
 
-    reduce_sum[.float32, target="cpu", reduce_dim=0](
+    reduce_sum[dtype, target="cpu", reduce_dim=0](
         input_fn, output_fn, Coord(Index(axis_size))
     )
     return output_buf^

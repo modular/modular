@@ -33,7 +33,7 @@ from algorithm.reductions import reduce_argmax, reduce_argmin
 from max.algorithm.backend.cpu.parallelize import _get_num_workers
 from std.testing import TestSuite, assert_equal, assert_true
 from std.utils.coord import Coord
-from std.utils.index import Index, IndexList
+from std.utils.index import Index
 from std.utils.numerics import nan
 
 
@@ -81,7 +81,9 @@ def _assert_reaches_splitk_tier() raises:
     )
 
 
-def _run_splitk_arg[is_max: Bool](mut row: List[Float32]) raises -> Int:
+def _run_splitk_arg[
+    is_max: Bool, dtype: DType = DType.float32
+](mut row: List[Scalar[dtype]]) raises -> Int:
     """Drives `reduce_argmax` (`is_max`) or `reduce_argmin` over `row` as a
     single `[1, len(row)]` row. `input_fn`/`output_fn` read/write straight
     off `List`'s own buffer: the row is contiguous and the output is one
@@ -92,22 +94,22 @@ def _run_splitk_arg[is_max: Bool](mut row: List[Float32]) raises -> Int:
 
     @always_inline
     def input_fn[
-        width: Int, alignment: Int, rank: Int
-    ](coords: IndexList[rank]) {input_ptr} -> SIMD[.float32, width]:
-        return input_ptr.unsafe_load[width=width](coords[1])
+        width: Int, alignment: Int
+    ](coords: Coord) {input_ptr} -> SIMD[dtype, width]:
+        return input_ptr.unsafe_load[width=width](Int(coords[1].value()))
 
     @always_inline
     def output_fn[
-        width: SIMDLength, rank: Int
-    ](coords: IndexList[rank], val: SIMD[.int64, width]) {output_ptr}:
+        width: SIMDLength
+    ](coords: Coord, val: SIMD[.int64, width]) {output_ptr}:
         output_ptr.unsafe_store[width=width](val)
 
     comptime if is_max:
-        reduce_argmax[.float32, target="cpu", reduce_dim=1](
+        reduce_argmax[dtype, target="cpu", reduce_dim=1](
             input_fn, output_fn, Coord(_SPLITK_ROW_SHAPE)
         )
     else:
-        reduce_argmin[.float32, target="cpu", reduce_dim=1](
+        reduce_argmin[dtype, target="cpu", reduce_dim=1](
             input_fn, output_fn, Coord(_SPLITK_ROW_SHAPE)
         )
     return Int(output_row[0])

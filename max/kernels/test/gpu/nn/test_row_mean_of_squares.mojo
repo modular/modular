@@ -18,11 +18,11 @@ from layout import Coord, TileTensor, row_major
 from nn.normalization import row_mean_of_squares
 from std.testing import assert_almost_equal
 
-from std.utils.index import Index, IndexList
+from std.utils.index import Index
 
 
 def run_row_mean_of_squares_gpu[
-    in_dtype: DType
+    in_dtype: DType, out_dtype: DType = DType.float32
 ](
     ctx: DeviceContext,
     rows: Int,
@@ -31,8 +31,6 @@ def run_row_mean_of_squares_gpu[
     atol: Float64 = 1e-3,
 ) raises:
     print("== run_row_mean_of_squares_gpu rows=", rows, " cols=", cols)
-
-    comptime out_dtype = DType.float32
 
     var data_h = ctx.enqueue_create_host_buffer[in_dtype](rows * cols)
     var out_h = ctx.enqueue_create_host_buffer[out_dtype](rows)
@@ -50,22 +48,20 @@ def run_row_mean_of_squares_gpu[
 
     @always_inline
     def input_fn[
-        width: Int, _rank: Int
-    ](coords: IndexList[_rank]) {var data_buf} -> SIMD[in_dtype, width]:
-        var idx = data_buf.layout(Coord(coords))
+        width: Int
+    ](coords: Coord) {var data_buf} -> SIMD[in_dtype, width]:
+        var idx = data_buf.layout(coords)
         return data_buf.raw_load[width=width](idx)
 
     @always_inline
     def output_fn[
-        width: SIMDLength, rank: Int
-    ](coords: IndexList[rank], val: SIMD[out_dtype, width]) {
-        var out_buf
-    } -> None:
-        var idx = out_buf.layout(Coord(Index(coords[0], 0)))
+        width: SIMDLength
+    ](coords: Coord, val: SIMD[out_dtype, width]) {var out_buf} -> None:
+        var idx = out_buf.layout(Coord(Index(Int(coords[0].value()), 0)))
         out_buf.raw_store[width=width](idx, val)
 
     row_mean_of_squares[in_dtype, out_dtype, 2, target="gpu"](
-        input_fn, output_fn, shape, ctx
+        input_fn, output_fn, Coord(shape), ctx
     )
     ctx.enqueue_copy(out_h, out_d)
     ctx.synchronize()
