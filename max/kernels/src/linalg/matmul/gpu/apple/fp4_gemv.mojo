@@ -64,7 +64,7 @@ from std.math import ceildiv
 import std.gpu.primitives.warp as warp
 from std.utils import IndexList
 
-from layout import Coord, TileTensor, TensorLayout
+from layout import Coord, TensorStorage, TileTensor, TensorLayout
 from layout.tile_layout import row_major
 
 from linalg.fp4_utils import decode_e2m1_to_f16, NVFP4_SF_VECTOR_SIZE
@@ -78,12 +78,22 @@ def fp4_gemv_kernel[
     a_layout: TensorLayout,
     p_layout: TensorLayout,
     s_layout: TensorLayout,
+    c_storage: TensorStorage,
+    a_storage: TensorStorage,
+    p_storage: TensorStorage,
+    s_storage: TensorStorage,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type],
 ](
-    c: TileTensor[c_type, c_layout, MutAnyOrigin],  # [1, N]
-    a: TileTensor[.bfloat16, a_layout, ImmutAnyOrigin],  # [1, K]
-    packed: TileTensor[.uint8, p_layout, ImmutAnyOrigin],  # [N, K//2]
-    scales: TileTensor[.float8_e4m3fn, s_layout, ImmutAnyOrigin],  # [N,K//16]
+    c: TileTensor[c_type, c_layout, MutAnyOrigin, Storage=c_storage],  # [1, N]
+    a: TileTensor[
+        .bfloat16, a_layout, ImmutAnyOrigin, Storage=a_storage
+    ],  # [1, K]
+    packed: TileTensor[
+        .uint8, p_layout, ImmutAnyOrigin, Storage=p_storage
+    ],  # [N, K//2]
+    scales: TileTensor[
+        .float8_e4m3fn, s_layout, ImmutAnyOrigin, Storage=s_storage
+    ],  # [N,K//16]
     n_arg: Int32,
     k_arg: Int32,
 ):
@@ -99,6 +109,10 @@ def fp4_gemv_kernel[
         a_layout: `TileTensor` layout of the activation `a`.
         p_layout: `TileTensor` layout of the packed FP4 weight.
         s_layout: `TileTensor` layout of the FP8 block scales.
+        c_storage: `TensorStorage` of the output `c`.
+        a_storage: `TensorStorage` of the activation `a`.
+        p_storage: `TensorStorage` of the packed FP4 weight.
+        s_storage: `TensorStorage` of the FP8 block scales.
         elementwise_lambda_fn: Optional fused epilogue applied on the
             width-1 store.
 
@@ -160,7 +174,7 @@ def fp4_gemv_kernel[
             comptime epilogue = elementwise_lambda_fn.value()
             epilogue[c_type, 1](IndexList[2](0, n_idx), y)
         else:
-            c.store(Coord(0, n_idx), y)
+            c.store[width=1](Coord(0, n_idx), y)
 
 
 @always_inline
@@ -209,6 +223,10 @@ def enqueue_apple_fp4_gemv[
         type_of(a).LayoutType,
         type_of(packed).LayoutType,
         type_of(scales).LayoutType,
+        type_of(c).Storage,
+        type_of(a).Storage,
+        type_of(packed).Storage,
+        type_of(scales).Storage,
         elementwise_lambda_fn,
     ]
     ctx.enqueue_function[kernel](

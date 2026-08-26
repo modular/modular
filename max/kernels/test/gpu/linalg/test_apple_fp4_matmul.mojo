@@ -568,18 +568,25 @@ def _parity_and_hostref[
     var scale_tt = TileTensor(
         scale_dev.unsafe_ptr(), row_major(N, scale_k)
     ).as_immut()
-    var cf_tt = TileTensor(c_fused.unsafe_ptr(), row_major(M, N))
     var co_tt = TileTensor(c_oracle.unsafe_ptr(), row_major(M, N))
     var wdense_tt = TileTensor(wdense.unsafe_ptr(), row_major(N, K))
 
     # --- the matmul2d FP4 path ---
+    # `DevicePointerStorage`-backed views, constructed straight from the
+    # DeviceBuffers: the fused path runs on device-pointer tiles (exercising
+    # the entry points' Storage threading) while the oracle keeps the
+    # pointer-backed views above.
+    var cf_tt = TileTensor(c_fused, row_major(M, N))
+    var a_dp_tt = TileTensor(a_dev, row_major(M, K)).as_immut()
+    var packed_dp_tt = TileTensor(packed_dev, row_major(N, packed_k)).as_immut()
+    var scale_dp_tt = TileTensor(scale_dev, row_major(N, scale_k)).as_immut()
     comptime if use_smem:
         enqueue_matmul2d_fp4_smem[c_type=c_type](
-            cf_tt, a_tt, packed_tt, scale_tt, ctx
+            cf_tt, a_dp_tt, packed_dp_tt, scale_dp_tt, ctx
         )
     else:
         enqueue_matmul2d_fp4[c_type=c_type](
-            cf_tt, a_tt, packed_tt, scale_tt, ctx
+            cf_tt, a_dp_tt, packed_dp_tt, scale_dp_tt, ctx
         )
 
     # --- materialize -> dense oracle (identical dequant + bf16 MMA) ---

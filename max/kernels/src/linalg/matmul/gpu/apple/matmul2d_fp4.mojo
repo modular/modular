@@ -67,7 +67,7 @@ from max.gpu.host import DeviceContext
 from std.memory import unsafe_stack_allocation
 from std.utils import IndexList
 
-from layout import TileTensor, Idx
+from layout import Idx, TensorStorage, TileTensor
 from layout.coord import Coord
 from layout.tile_layout import Layout, TensorLayout
 
@@ -276,10 +276,17 @@ def matmul2d_mma_regc_bt_native(
 
 @fieldwise_init
 struct Fp4WeightLoader[
+    a_origin: ImmOrigin,
+    packed_origin: ImmOrigin,
+    scale_origin: ImmOrigin,
+    //,
     in_type: DType,
     a_layout: TensorLayout,
     packed_layout: TensorLayout,
     scale_layout: TensorLayout,
+    a_storage: TensorStorage,
+    packed_storage: TensorStorage,
+    scale_storage: TensorStorage,
 ](ImplicitlyCopyable, Movable):
     """Owner of the packed-FP4 weight -> dequant -> {register B | SMEM} transition.
 
@@ -287,27 +294,44 @@ struct Fp4WeightLoader[
     plus the `(M, N, K)` geometry, and exposes bounds-aware loads that do all
     addressing via TileTensor indexing (`t[i, j][0]`) and width-loads
     (`t.load[width=W](Coord(...))`) -- no raw pointer arithmetic. `in_type` is
-    the dequant target (bf16). Views are held with `AnyOrigin` (the kernel args
-    outlive the K-loop; this loader is a local, not a struct field, so the
-    field-origin restriction does not apply).
+    the dequant target (bf16). Each view's origin and storage policy are
+    inferred struct parameters, so the kernel args are held exactly as passed.
 
     Parameters:
+        a_origin: Origin of the activation view (inferred).
+        packed_origin: Origin of the packed weight view (inferred).
+        scale_origin: Origin of the block scales view (inferred).
         in_type: Dequant + activation dtype (bf16).
         a_layout: Layout of the activation `(M, K)` view.
         packed_layout: Layout of the packed weight `(N, K//2)` view.
         scale_layout: Layout of the block scales `(N, ceil(K/16))` view.
+        a_storage: `TensorStorage` of the activation view.
+        packed_storage: `TensorStorage` of the packed weight view.
+        scale_storage: `TensorStorage` of the block scales view.
     """
 
     comptime SF = NVFP4_SF_VECTOR_SIZE  # 16
 
-    # Held with `ImmUntrackedOrigin`: struct fields cannot expose `AnyOrigin`
-    # (same field-origin rule as `DenseALoader` in `matmul_kernel.mojo`). The
-    # kernel args these views derive from outlive the K-loop, so the explicit-
-    # lifetime case applies. Constructed via `Fp4WeightLoader.from_kernel_args`.
-    var a: TileTensor[Self.in_type, Self.a_layout, ImmUntrackedOrigin]
-    var packed: TileTensor[.uint8, Self.packed_layout, ImmUntrackedOrigin]
+    # The origins are struct parameters because a field may not spell an
+    # any-origin directly (same rule `Int8DequantWriter` parameterizes around).
+    # The kernel args they bind to outlive the K-loop.
+    var a: TileTensor[
+        Self.in_type,
+        Self.a_layout,
+        Self.a_origin,
+        Storage=Self.a_storage,
+    ]
+    var packed: TileTensor[
+        .uint8,
+        Self.packed_layout,
+        Self.packed_origin,
+        Storage=Self.packed_storage,
+    ]
     var scales: TileTensor[
-        .float8_e4m3fn, Self.scale_layout, ImmUntrackedOrigin
+        .float8_e4m3fn,
+        Self.scale_layout,
+        Self.scale_origin,
+        Storage=Self.scale_storage,
     ]
     var M: Int
     var N: Int
@@ -316,17 +340,30 @@ struct Fp4WeightLoader[
     @always_inline
     @staticmethod
     def from_kernel_args(
-        a: TileTensor[Self.in_type, Self.a_layout, ImmutAnyOrigin],
-        packed: TileTensor[.uint8, Self.packed_layout, ImmutAnyOrigin],
-        scales: TileTensor[.float8_e4m3fn, Self.scale_layout, ImmutAnyOrigin],
+        a: TileTensor[
+            Self.in_type, Self.a_layout, Self.a_origin, Storage=Self.a_storage
+        ],
+        packed: TileTensor[
+            .uint8,
+            Self.packed_layout,
+            Self.packed_origin,
+            Storage=Self.packed_storage,
+        ],
+        scales: TileTensor[
+            .float8_e4m3fn,
+            Self.scale_layout,
+            Self.scale_origin,
+            Storage=Self.scale_storage,
+        ],
         M: Int,
         N: Int,
         K: Int,
     ) -> Self:
         """Build the loader from the kernel's `AnyOrigin` tensor args.
 
-        Rebases each view onto `ImmUntrackedOrigin` (the field-origin rule; the
-        args outlive the K-loop), preserving layout/shape/stride.
+        The fields carry the args' own origin and storage policy, so each view
+        is held as passed -- no origin cast, and any storage policy carries
+        through unchanged.
 
         Args:
             a: Bf16 activation `TileTensor` view with shape `(M, K)`.
@@ -338,22 +375,7 @@ struct Fp4WeightLoader[
             N: Number of columns in the output and rows of the weight.
             K: Reduction dimension; inner size of `a` and the weight.
         """
-        return Self(
-            TileTensor(
-                a.ptr.unsafe_origin_cast[ImmUntrackedOrigin](), a.layout
-            ),
-            TileTensor(
-                packed.ptr.unsafe_origin_cast[ImmUntrackedOrigin](),
-                packed.layout,
-            ),
-            TileTensor(
-                scales.ptr.unsafe_origin_cast[ImmUntrackedOrigin](),
-                scales.layout,
-            ),
-            M,
-            N,
-            K,
-        )
+        return Self(a, packed, scales, M, N, K)
 
     @always_inline
     def load_a_frag[
@@ -449,6 +471,7 @@ struct Fp4WeightLoader[
     def decode_strip_to_smem[
         b_view_origin: Origin[mut=True],
         b_view_layout: TensorLayout,
+        b_view_storage: TensorStorage,
         b_view_addr: AddressSpace,
         //,
         bytes_per_thread: Int,
@@ -459,6 +482,7 @@ struct Fp4WeightLoader[
             Self.in_type,
             b_view_layout,
             b_view_origin,
+            Storage=b_view_storage,
             address_space=b_view_addr,
         ],
         n_abs: Int,
@@ -480,6 +504,7 @@ struct Fp4WeightLoader[
         Parameters:
             b_view_origin: Origin of the `b_view` SMEM store target.
             b_view_layout: Layout of the `b_view` SMEM store target.
+            b_view_storage: `TensorStorage` of the `b_view` SMEM store target.
             b_view_addr: Address space of the `b_view` SMEM store target.
             bytes_per_thread: Packed bytes this thread loads in one width-load
                 (each byte yields two bf16 columns).
@@ -585,11 +610,21 @@ struct Matmul2dFp4[
         a_layout: TensorLayout,
         packed_layout: TensorLayout,
         scale_layout: TensorLayout,
+        c_storage: TensorStorage,
+        a_storage: TensorStorage,
+        packed_storage: TensorStorage,
+        scale_storage: TensorStorage,
     ](
-        c: TileTensor[Self.c_type, c_layout, MutAnyOrigin],
-        a: TileTensor[Self.in_type, a_layout, ImmutAnyOrigin],
-        packed: TileTensor[.uint8, packed_layout, ImmutAnyOrigin],
-        scales: TileTensor[.float8_e4m3fn, scale_layout, ImmutAnyOrigin],
+        c: TileTensor[Self.c_type, c_layout, MutAnyOrigin, Storage=c_storage],
+        a: TileTensor[
+            Self.in_type, a_layout, ImmutAnyOrigin, Storage=a_storage
+        ],
+        packed: TileTensor[
+            .uint8, packed_layout, ImmutAnyOrigin, Storage=packed_storage
+        ],
+        scales: TileTensor[
+            .float8_e4m3fn, scale_layout, ImmutAnyOrigin, Storage=scale_storage
+        ],
         M_arg: Int32,
         N_arg: Int32,
         K_arg: Int32,
@@ -602,6 +637,10 @@ struct Matmul2dFp4[
             a_layout: Layout of the activation `A` `(M, K)` view.
             packed_layout: Layout of the packed FP4 weight `(N, K//2)` view.
             scale_layout: Layout of the block scales `(N, ceil(K/16))` view.
+            c_storage: `TensorStorage` of the output `C` view.
+            a_storage: `TensorStorage` of the activation `A` view.
+            packed_storage: `TensorStorage` of the packed FP4 weight view.
+            scale_storage: `TensorStorage` of the block scales view.
 
         Args:
             c: Output `TileTensor` view with shape `(M, N)`.
@@ -647,7 +686,13 @@ struct Matmul2dFp4[
         # The FP4 decode / A-gather owner: all packed/scale/A addressing goes
         # through it via TileTensor indexing (no raw pointer arithmetic).
         var loader = Fp4WeightLoader[
-            Self.in_type, a_layout, packed_layout, scale_layout
+            Self.in_type,
+            a_layout,
+            packed_layout,
+            scale_layout,
+            a_storage,
+            packed_storage,
+            scale_storage,
         ].from_kernel_args(a, packed, scales, M, N, K)
 
         var accs = Array[SIMD[.float32, 16], Self.tm * Self.tn](
@@ -704,11 +749,21 @@ struct Matmul2dFp4[
         a_layout: TensorLayout,
         packed_layout: TensorLayout,
         scale_layout: TensorLayout,
+        c_storage: TensorStorage,
+        a_storage: TensorStorage,
+        packed_storage: TensorStorage,
+        scale_storage: TensorStorage,
     ](
-        c: TileTensor[Self.c_type, c_layout, MutAnyOrigin],
-        a: TileTensor[Self.in_type, a_layout, ImmutAnyOrigin],
-        packed: TileTensor[.uint8, packed_layout, ImmutAnyOrigin],
-        scales: TileTensor[.float8_e4m3fn, scale_layout, ImmutAnyOrigin],
+        c: TileTensor[Self.c_type, c_layout, MutAnyOrigin, Storage=c_storage],
+        a: TileTensor[
+            Self.in_type, a_layout, ImmutAnyOrigin, Storage=a_storage
+        ],
+        packed: TileTensor[
+            .uint8, packed_layout, ImmutAnyOrigin, Storage=packed_storage
+        ],
+        scales: TileTensor[
+            .float8_e4m3fn, scale_layout, ImmutAnyOrigin, Storage=scale_storage
+        ],
         M_arg: Int32,
         N_arg: Int32,
         K_arg: Int32,
@@ -738,6 +793,10 @@ struct Matmul2dFp4[
             a_layout: Layout of the activation `A` `(M, K)` view.
             packed_layout: Layout of the packed FP4 weight `(N, K//2)` view.
             scale_layout: Layout of the block scales `(N, ceil(K/16))` view.
+            c_storage: `TensorStorage` of the output `C` view.
+            a_storage: `TensorStorage` of the activation `A` view.
+            packed_storage: `TensorStorage` of the packed FP4 weight view.
+            scale_storage: `TensorStorage` of the block scales view.
 
         Args:
             c: Output `TileTensor` view with shape `(M, N)`.
@@ -799,7 +858,13 @@ struct Matmul2dFp4[
         # The FP4 decode / A-gather owner: all packed/scale/A/SMEM addressing
         # goes through it via TileTensor indexing (no raw pointer arithmetic).
         var loader = Fp4WeightLoader[
-            Self.in_type, a_layout, packed_layout, scale_layout
+            Self.in_type,
+            a_layout,
+            packed_layout,
+            scale_layout,
+            a_storage,
+            packed_storage,
+            scale_storage,
         ].from_kernel_args(a, packed, scales, M, N, K)
 
         var accs = Array[SIMD[.float32, 16], Self.tm * Self.tn](
@@ -976,6 +1041,10 @@ def enqueue_matmul2d_fp4[
         type_of(a).LayoutType,
         type_of(packed).LayoutType,
         type_of(scales).LayoutType,
+        type_of(c).Storage,
+        type_of(a).Storage,
+        type_of(packed).Storage,
+        type_of(scales).Storage,
     ]
     ctx.enqueue_function[kernel](
         c,
@@ -1097,6 +1166,10 @@ def enqueue_matmul2d_fp4_smem[
         type_of(a).LayoutType,
         type_of(packed).LayoutType,
         type_of(scales).LayoutType,
+        type_of(c).Storage,
+        type_of(a).Storage,
+        type_of(packed).Storage,
+        type_of(scales).Storage,
     ]
     ctx.enqueue_function[kernel](
         c,
