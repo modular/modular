@@ -149,31 +149,25 @@ struct RMSNormFusedQuantizeDynamicScaledFP8:
 
         @always_inline
         def input_fn[
-            width: Int, alignment: Int, coord_rank: Int
-        ](coords: IndexList[coord_rank]) {var input} -> SIMD[
-            input_dtype, width
-        ]:
+            width: Int, alignment: Int
+        ](coords: Coord) {var input} -> SIMD[input_dtype, width]:
             return input._lambda_load[width=width, element_alignment=alignment](
-                rebind[IndexList[input.rank]](coords)
+                coords
             )
 
         @always_inline
         def output_fn[
-            width: SIMDLength, _rank: Int, alignment: Int
-        ](coords: IndexList[_rank], val: SIMD[output_dtype, width]) {var out_t}:
-            out_t.store_linear[width=width, alignment=alignment](
-                rebind[IndexList[out_t.rank]](coords), val
-            )
+            width: SIMDLength, alignment: Int
+        ](coords: Coord, val: SIMD[output_dtype, width]) {var out_t}:
+            out_t.store[width=width, alignment=alignment](coords, val)
 
         @always_inline
-        def scale_fn[
-            coord_rank: Int
-        ](coords: IndexList[coord_rank], val: Scalar[scale_dtype]) {
-            var scale_t, var in_shape
-        }:
+        def scale_fn(
+            coords: Coord, val: Scalar[scale_dtype]
+        ) {var scale_t, var in_shape}:
             var row = 0
             comptime for i in range(rank - 1):
-                row = row * in_shape[i] + coords[i]
+                row = row * in_shape[i] + Int(coords[i].value())
             scale_t.store_linear[width=1, alignment=1](IndexList[1](row), val)
 
         # Static row width (when known) enables the register-cached row path.

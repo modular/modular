@@ -114,36 +114,34 @@ def run_rms_norm_fused_residual_add_gpu[
     # Test fused operation
     @always_inline
     def input_fn[
-        width: Int, _rank: Int
-    ](coords: IndexList[_rank]) {var data_buf} -> SIMD[dtype, width]:
-        var idx = data_buf.layout(Coord(coords))
+        width: Int
+    ](coords: Coord) {var data_buf} -> SIMD[dtype, width]:
+        var idx = data_buf.layout(coords)
         return data_buf.raw_load[width=width](idx)
 
     @always_inline
     def residual_input_fn[
-        width: Int, _rank: Int
-    ](coords: IndexList[_rank]) {var data_buf_res} -> SIMD[dtype, width]:
-        var idx = data_buf_res.layout(Coord(coords))
+        width: Int
+    ](coords: Coord) {var data_buf_res} -> SIMD[dtype, width]:
+        var idx = data_buf_res.layout(coords)
         return data_buf_res.raw_load[width=width](idx)
 
     @always_inline
     def fused_output_fn[
-        width: SIMDLength, rank_: Int, alignment: Int
-    ](coords: IndexList[rank_], val: SIMD[dtype, width]) {
-        var result_fused_buf
-    } -> None:
-        var idx = result_fused_buf.layout(Coord(coords))
+        width: SIMDLength, alignment: Int
+    ](coords: Coord, val: SIMD[dtype, width]) {var result_fused_buf} -> None:
+        var idx = result_fused_buf.layout(coords)
         result_fused_buf.raw_store[
             width=width, alignment=alignment * align_of[dtype]()
         ](idx, val)
 
     @always_inline
     def fused_residual_output_fn[
-        width: SIMDLength, rank_: Int, alignment: Int
-    ](coords: IndexList[rank_], val: SIMD[dtype, width]) {
+        width: SIMDLength, alignment: Int
+    ](coords: Coord, val: SIMD[dtype, width]) {
         var residual_fused_output_buf
     } -> None:
-        var idx = residual_fused_output_buf.layout(Coord(coords))
+        var idx = residual_fused_output_buf.layout(coords)
         residual_fused_output_buf.raw_store[
             width=width, alignment=alignment * align_of[dtype]()
         ](idx, val)
