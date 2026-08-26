@@ -50,8 +50,8 @@ comptime out_fp8_dtype = DType.float8_e4m3fnuz if is_amd_gpu() else DType.float8
 def _assert_fp8_close[
     out_dtype: DType,
 ](
-    ref_host: UnsafePointer[Scalar[out_dtype], _],
-    fused_host: UnsafePointer[Scalar[out_dtype], _],
+    ref_host: Pointer[Scalar[out_dtype], _],
+    fused_host: Pointer[Scalar[out_dtype], _],
     length: Int,
     *,
     max_error_rate: Float32 = 0.05,
@@ -103,8 +103,8 @@ def _assert_fp8_close[
 def _assert_scales_close[
     scales_dtype: DType,
 ](
-    ref_host: UnsafePointer[Scalar[scales_dtype], _],
-    fused_host: UnsafePointer[Scalar[scales_dtype], _],
+    ref_host: Pointer[Scalar[scales_dtype], _],
+    fused_host: Pointer[Scalar[scales_dtype], _],
     rows: Int,
     *,
     max_rel_diff: Float32 = 0.005,
@@ -141,8 +141,8 @@ def _assert_scales_close[
 def _assert_bf16_close[
     dtype: DType,
 ](
-    ref_host: UnsafePointer[Scalar[dtype], _],
-    fused_host: UnsafePointer[Scalar[dtype], _],
+    ref_host: Pointer[Scalar[dtype], _],
+    fused_host: Pointer[Scalar[dtype], _],
     length: Int,
     *,
     max_ulp: Int = 2,
@@ -223,7 +223,7 @@ def test_fused_allreduce_rmsnorm_fp8[
     var in_dev = List[DeviceBuffer[in_dtype]](capacity=ngpus)
     var host_bufs = List[HostBuffer[in_dtype]](capacity=ngpus)
     var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
-    var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+    var rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS](
         uninitialized=True
     )
     var temp_bytes = ngpus * size_of[in_dtype]() * length
@@ -429,7 +429,7 @@ def test_fused_allreduce_rmsnorm_noquant[
     var in_dev = List[DeviceBuffer[dtype]](capacity=ngpus)
     var host_bufs = List[HostBuffer[dtype]](capacity=ngpus)
     var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
-    var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+    var rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS](
         uninitialized=True
     )
     var temp_bytes = ngpus * size_of[dtype]() * length
@@ -587,7 +587,7 @@ def test_fused_allreduce_residual_rmsnorm_fp8[
     var in_dev = List[DeviceBuffer[in_dtype]](capacity=ngpus)
     var host_bufs = List[HostBuffer[in_dtype]](capacity=ngpus)
     var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
-    var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+    var rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS](
         uninitialized=True
     )
     var temp_bytes = ngpus * size_of[in_dtype]() * length
@@ -856,7 +856,7 @@ def test_fused_allreduce_residual_rmsnorm_noquant[
     var in_dev = List[DeviceBuffer[dtype]](capacity=ngpus)
     var host_bufs = List[HostBuffer[dtype]](capacity=ngpus)
     var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
-    var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+    var rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS](
         uninitialized=True
     )
     var temp_bytes = ngpus * size_of[dtype]() * length

@@ -43,7 +43,7 @@ def all_gather_test[
 
     # Create signal buffers for synchronization
     var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
-    var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+    var rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS](
         uninitialized=True
     )
 
@@ -236,7 +236,7 @@ def grouped_all_gather_test[
     var out_bufs_list = List[List[DeviceBuffer[dtype]]](capacity=ngpus)
     var host_buffers = List[HostBuffer[dtype]](capacity=ngpus)
     var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
-    var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+    var rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS](
         uninitialized=True
     )
 
@@ -312,9 +312,9 @@ def grouped_all_gather_test[
     comptime for group_idx in range(ngpus // group_size):
         comptime group_start = group_idx * group_size
         var group_in_bufs = Array[InTileType, group_size](uninitialized=True)
-        var group_rank_sigs = Array[
-            UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS
-        ](uninitialized=True)
+        var group_rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS](
+            uninitialized=True
+        )
 
         comptime for local_idx in range(group_size):
             group_in_bufs[local_idx] = tt_in_bufs[group_start + local_idx]

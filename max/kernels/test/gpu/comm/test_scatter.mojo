@@ -111,7 +111,7 @@ def _test_pull[
 
     # Signal buffers.
     var signal_bufs = List[DeviceBuffer[.uint8]]()
-    var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+    var rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS](
         uninitialized=True
     )
     for i in range(ngpus):

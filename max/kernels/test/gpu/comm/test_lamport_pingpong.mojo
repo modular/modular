@@ -96,7 +96,7 @@ comptime NUM_SLOTS = 256
 def writer_kernel[
     use_fence: Bool,
     fence_scope: StaticString,
-](peer_buf: UnsafePointer[Scalar[DTYPE], MutAnyOrigin], num_slots_dev: Int32):
+](peer_buf: MutPointer[Scalar[DTYPE], MutAnyOrigin], num_slots_dev: Int32):
     """Publishes ITERS generations of the all-lanes-equal pack into a peer slot.
 
     Each thread owns one 128-bit slot. For every generation `g` it first writes
@@ -136,10 +136,10 @@ def reader_kernel[
     use_fence: Bool,
     fence_scope: StaticString,
 ](
-    own_buf: UnsafePointer[Scalar[DTYPE], MutAnyOrigin],
+    own_buf: MutPointer[Scalar[DTYPE], MutAnyOrigin],
     num_slots_dev: Int32,
-    torn_counts: UnsafePointer[Int64, MutAnyOrigin],
-    max_seen: UnsafePointer[Int64, MutAnyOrigin],
+    torn_counts: MutPointer[Int64, MutAnyOrigin],
+    max_seen: MutPointer[Int64, MutAnyOrigin],
 ):
     """Spins on its own slot, detecting torn reads and tracking progress.
 

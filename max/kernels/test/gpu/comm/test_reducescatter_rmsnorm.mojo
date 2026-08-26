@@ -110,7 +110,7 @@ def _run_case[
     var sum_shard = List[DeviceBuffer[in_dtype]](capacity=ngpus)
     var rs_ref = List[DeviceBuffer[in_dtype]](capacity=ngpus)
     var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
-    var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+    var rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS](
         uninitialized=True
     )
 
@@ -181,7 +181,7 @@ def _run_case[
     var in_bufs = Array[InTensorType, ngpus](uninitialized=True)
     comptime for i in range(ngpus):
         in_bufs[i] = InTensorType(
-            rebind[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin]](
+            rebind[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]](
                 in_dev[i].unsafe_ptr()
             ),
             row_major(Coord(Index(num_rows, num_cols))),
@@ -199,7 +199,7 @@ def _run_case[
             row_major(Coord(Index(config.rank_units(i), num_cols))),
         )
         var gamma_view = GammaType(
-            rebind[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin]](
+            rebind[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]](
                 gamma_dev[i].unsafe_ptr()
             ),
             row_major(Coord(Index(num_cols))),
@@ -469,17 +469,17 @@ def _rms_norm_shard[
         MutAnyOrigin,
     ]
     var src_view = ShardType(
-        rebind[UnsafePointer[Scalar[in_dtype], MutAnyOrigin]](src.unsafe_ptr()),
+        rebind[MutPointer[Scalar[in_dtype], MutAnyOrigin]](src.unsafe_ptr()),
         row_major(Coord(Index(rows, num_cols))),
     )
     var dst_view = ShardType(
-        rebind[UnsafePointer[Scalar[in_dtype], MutAnyOrigin]](dst.unsafe_ptr()),
+        rebind[MutPointer[Scalar[in_dtype], MutAnyOrigin]](dst.unsafe_ptr()),
         row_major(Coord(Index(rows, num_cols))),
     )
     var gamma_view = TileTensor[
         in_dtype, type_of(row_major(Coord(Index(0)))), ImmutAnyOrigin
     ](
-        rebind[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin]](
+        rebind[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]](
             gamma.unsafe_ptr()
         ),
         row_major(Coord(Index(num_cols))),
@@ -561,7 +561,7 @@ def _run_prod_oracle_case[
     var rs_ref = List[DeviceBuffer[in_dtype]](capacity=ngpus)
     var prod = List[DeviceBuffer[in_dtype]](capacity=ngpus)
     var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
-    var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+    var rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS](
         uninitialized=True
     )
 
@@ -632,13 +632,13 @@ def _run_prod_oracle_case[
         # Group-local peer/signal arrays: ranks 0..group_size-1 are this
         # device's group, exactly what the handler hands the kernel.
         var bufs = Array[InTensorType, group_size](uninitialized=True)
-        var sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+        var sigs = Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS](
             uninitialized=True
         )
         for k in range(group_size):
             sigs[k] = rank_sigs[base + k]
             bufs[k] = InTensorType(
-                rebind[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin]](
+                rebind[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]](
                     in_dev[base + k].unsafe_ptr()
                 ),
                 row_major(Coord(Index(num_rows, num_cols))),
@@ -653,7 +653,7 @@ def _run_prod_oracle_case[
             row_major(Coord(Index(config.rank_units(local), num_cols))),
         )
         var gamma_view = GammaType(
-            rebind[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin]](
+            rebind[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]](
                 gamma_dev[i].unsafe_ptr()
             ),
             row_major(Coord(Index(num_cols))),
@@ -723,13 +723,13 @@ def _run_prod_oracle_case[
         var local = i % group_size
         var base = (i // group_size) * group_size
         var bufs = Array[InTensorType, group_size](uninitialized=True)
-        var sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+        var sigs = Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS](
             uninitialized=True
         )
         for k in range(group_size):
             sigs[k] = rank_sigs[base + k]
             bufs[k] = InTensorType(
-                rebind[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin]](
+                rebind[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]](
                     in_dev[base + k].unsafe_ptr()
                 ),
                 row_major(Coord(Index(num_rows, num_cols))),
@@ -942,7 +942,7 @@ def _run_residual_case[
     var normed_b = List[DeviceBuffer[in_dtype]](capacity=ngpus)
     var sum_b = List[DeviceBuffer[in_dtype]](capacity=ngpus)
     var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
-    var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+    var rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS](
         uninitialized=True
     )
 
@@ -1046,19 +1046,19 @@ def _run_residual_case[
         var local = i % group_size
         var base = align_down(i, group_size)
         var bufs = Array[InTensorType, group_size](uninitialized=True)
-        var sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+        var sigs = Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS](
             uninitialized=True
         )
         for k in range(group_size):
             sigs[k] = rank_sigs[base + k]
             bufs[k] = InTensorType(
-                rebind[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin]](
+                rebind[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]](
                     in_dev[base + k].unsafe_ptr()
                 ),
                 row_major(Coord(Index(num_rows, num_cols))),
             )
         var res_view = InTensorType(
-            rebind[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin]](
+            rebind[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]](
                 res_dev[i].unsafe_ptr()
             ),
             row_major(Coord(Index(num_rows, num_cols))),
@@ -1074,7 +1074,7 @@ def _run_residual_case[
                 row_major(Coord(Index(config.rank_units(local), num_cols))),
             ),
             GammaType(
-                rebind[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin]](
+                rebind[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]](
                     gamma_dev[i].unsafe_ptr()
                 ),
                 row_major(Coord(Index(num_cols))),
@@ -1101,13 +1101,13 @@ def _run_residual_case[
         var local = i % group_size
         var base = (i // group_size) * group_size
         var bufs = Array[InTensorType, group_size](uninitialized=True)
-        var sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+        var sigs = Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS](
             uninitialized=True
         )
         for k in range(group_size):
             sigs[k] = rank_sigs[base + k]
             bufs[k] = InTensorType(
-                rebind[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin]](
+                rebind[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]](
                     pre_dev[base + k].unsafe_ptr()
                 ),
                 row_major(Coord(Index(num_rows, num_cols))),
@@ -1123,7 +1123,7 @@ def _run_residual_case[
                 row_major(Coord(Index(config.rank_units(local), num_cols))),
             ),
             GammaType(
-                rebind[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin]](
+                rebind[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]](
                     gamma_dev[i].unsafe_ptr()
                 ),
                 row_major(Coord(Index(num_cols))),
@@ -1410,7 +1410,7 @@ def _run_interleaved_barrier_case[
     var sum_shard = List[DeviceBuffer[in_dtype]](capacity=ngpus)
     var world_out = List[DeviceBuffer[in_dtype]](capacity=ngpus)
     var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
-    var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+    var rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS](
         uninitialized=True
     )
 
@@ -1481,7 +1481,7 @@ def _run_interleaved_barrier_case[
     var world_bufs = Array[InTensorType, ngpus](uninitialized=True)
     comptime for i in range(ngpus):
         world_bufs[i] = InTensorType(
-            rebind[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin]](
+            rebind[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]](
                 in_dev[i].unsafe_ptr()
             ),
             row_major(Coord(Index(num_rows, num_cols))),
@@ -1493,13 +1493,13 @@ def _run_interleaved_barrier_case[
             var local = i % group_size
             var base = (i // group_size) * group_size
             var bufs = Array[InTensorType, group_size](uninitialized=True)
-            var sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+            var sigs = Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS](
                 uninitialized=True
             )
             for k in range(group_size):
                 sigs[k] = rank_sigs[base + k]
                 bufs[k] = InTensorType(
-                    rebind[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin]](
+                    rebind[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]](
                         in_dev[base + k].unsafe_ptr()
                     ),
                     row_major(Coord(Index(num_rows, num_cols))),
@@ -1514,7 +1514,7 @@ def _run_interleaved_barrier_case[
                 row_major(Coord(Index(grp_cfg.rank_units(local), num_cols))),
             )
             var gamma_view = GammaType(
-                rebind[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin]](
+                rebind[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]](
                     gamma_dev[i].unsafe_ptr()
                 ),
                 row_major(Coord(Index(num_cols))),
@@ -1665,7 +1665,7 @@ def _run_rank_validation_case[
 
     var in_dev = List[DeviceBuffer[in_dtype]](capacity=group_size)
     var signal_buffers = List[DeviceBuffer[.uint8]](capacity=group_size)
-    var sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+    var sigs = Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS](
         uninitialized=True
     )
     for i in range(group_size):
@@ -1700,13 +1700,13 @@ def _run_rank_validation_case[
     var bufs = Array[InTensorType, group_size](uninitialized=True)
     for k in range(group_size):
         bufs[k] = InTensorType(
-            rebind[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin]](
+            rebind[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]](
                 in_dev[k].unsafe_ptr()
             ),
             row_major(Coord(Index(num_rows, num_cols))),
         )
     var gamma_view = GammaType(
-        rebind[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin]](
+        rebind[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]](
             gamma_dev.unsafe_ptr()
         ),
         row_major(Coord(Index(num_cols))),
@@ -1787,7 +1787,7 @@ def _run_rank_validation_case[
     # 3. A shard-shaped residual on BOTH arms: indexed by global row either
     #    way, so rejection must precede the arm choice. The marker proves it.
     var res_shard = InTensorType(
-        rebind[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin]](
+        rebind[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]](
             in_dev[0].unsafe_ptr()
         ),
         row_major(Coord(Index(rank0_rows, num_cols))),

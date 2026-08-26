@@ -78,13 +78,13 @@ def allreduce_test[
     # Create device buffers for all GPUs
     var in_dev = List[DeviceBuffer[dtype]](capacity=ngpus)
     var out_dev = List[DeviceBuffer[dtype]](capacity=ngpus)
-    var host_buffers = List[UnsafePointer[Scalar[dtype], MutUntrackedOrigin]](
+    var host_buffers = List[MutPointer[Scalar[dtype], MutUntrackedOrigin]](
         capacity=ngpus
     )
 
     # Create signal buffers for synchronization
     var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
-    var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+    var rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS](
         uninitialized=True
     )
 
@@ -138,7 +138,7 @@ def allreduce_test[
             list_of_ctx[i].enqueue_copy(unicast_buf, host_buffers[i])
         # All GPUs use the same multicast pointer
         in_tensors[0] = TileTensor(
-            rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
+            rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](
                 multicast_buf.multicast_buffer_for(list_of_ctx[0]).unsafe_ptr()
             ),
             row_major(length),
@@ -146,7 +146,7 @@ def allreduce_test[
     else:
         for i in range(ngpus):
             in_tensors[i] = TileTensor(
-                rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
+                rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](
                     in_dev[i].unsafe_ptr()
                 ),
                 row_major(length),
@@ -314,7 +314,7 @@ def allreduce_naive_test() raises -> None:
     # Allocate input/output buffers and initialize inputs
     var in_dev = List[DeviceBuffer[.float32]](capacity=ngpus)
     var out_dev = List[DeviceBuffer[.float32]](capacity=ngpus)
-    var host_ptrs = List[UnsafePointer[Float32, MutUntrackedOrigin]](
+    var host_ptrs = List[MutPointer[Float32, MutUntrackedOrigin]](
         capacity=ngpus
     )
 
@@ -334,9 +334,7 @@ def allreduce_naive_test() raises -> None:
     var in_tensors = Array[InTensorType, ngpus](uninitialized=True)
     for i in range(ngpus):
         in_tensors[i] = TileTensor(
-            rebind[UnsafePointer[Float32, ImmutAnyOrigin]](
-                in_dev[i].unsafe_ptr()
-            ),
+            rebind[ImmPointer[Float32, ImmutAnyOrigin]](in_dev[i].unsafe_ptr()),
             row_major(length),
         )
 

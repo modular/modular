@@ -75,9 +75,9 @@ def _neg_zero_bits() -> Scalar[dtype]:
 
 
 def _run_rms_norm_unfused(
-    in_ptr: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    out_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    gamma_ptr: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
+    in_ptr: ImmPointer[Scalar[dtype], ImmutAnyOrigin],
+    out_ptr: MutPointer[Scalar[dtype], MutAnyOrigin],
+    gamma_ptr: ImmPointer[Scalar[dtype], ImmutAnyOrigin],
     M: Int,
     K: Int,
     epsilon: Float32,
@@ -160,17 +160,17 @@ def rmsnorm_test[
     # lamport_state) but each rotates its own generation flag independently.
     var sigs_ar_devbufs = List[DeviceBuffer[.uint8]](capacity=ngpus)
     var sigs_fused_devbufs = List[DeviceBuffer[.uint8]](capacity=ngpus)
-    var rank_sigs_ar = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+    var rank_sigs_ar = Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS](
         uninitialized=True
     )
-    var rank_sigs_fused = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+    var rank_sigs_fused = Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS](
         uninitialized=True
     )
 
     var gamma_host = alloc[Scalar[dtype]](K)
     for i in range(K):
         gamma_host[i] = random_float64(min=0.5, max=1.5).cast[dtype]()
-    var act_host = List[UnsafePointer[Scalar[dtype], MutUntrackedOrigin]](
+    var act_host = List[MutPointer[Scalar[dtype], MutUntrackedOrigin]](
         capacity=ngpus
     )
 
@@ -229,7 +229,7 @@ def rmsnorm_test[
     var in_tensors = Array[InTensorType, ngpus](uninitialized=True)
     for g in range(ngpus):
         in_tensors[g] = InTensorType(
-            rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
+            rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](
                 act_in[g].unsafe_ptr()
             ),
             act_layout,
@@ -240,7 +240,7 @@ def rmsnorm_test[
     var ar_out_tensors = Array[OutTensorType, ngpus](uninitialized=True)
     for g in range(ngpus):
         ar_out_tensors[g] = OutTensorType(
-            rebind[UnsafePointer[Scalar[dtype], MutAnyOrigin]](
+            rebind[MutPointer[Scalar[dtype], MutAnyOrigin]](
                 ar_out[g].unsafe_ptr()
             ),
             act_layout,
@@ -262,13 +262,13 @@ def rmsnorm_test[
 
     for g in range(ngpus):
         _run_rms_norm_unfused(
-            rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
+            rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](
                 ar_out[g].unsafe_ptr()
             ),
-            rebind[UnsafePointer[Scalar[dtype], MutAnyOrigin]](
+            rebind[MutPointer[Scalar[dtype], MutAnyOrigin]](
                 unfused_out[g].unsafe_ptr()
             ),
-            rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
+            rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](
                 gamma[g].unsafe_ptr()
             ),
             M,
@@ -297,13 +297,13 @@ def rmsnorm_test[
         comptime for g in range(ngpus):
             lamport_allreduce_rmsnorm[dtype, ngpus, pdl=False](
                 g,
-                rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
+                rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](
                     act_in[g].unsafe_ptr()
                 ),
-                rebind[UnsafePointer[Scalar[dtype], MutAnyOrigin]](
+                rebind[MutPointer[Scalar[dtype], MutAnyOrigin]](
                     fused_out[g].unsafe_ptr()
                 ),
-                rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
+                rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](
                     gamma[g].unsafe_ptr()
                 ),
                 rank_sigs_fused,
@@ -370,17 +370,17 @@ def unsynced_skew_test[
     var unfused_big = List[DeviceBuffer[dtype]](capacity=ngpus)
     var fused_big = List[DeviceBuffer[dtype]](capacity=ngpus)
     var gamma = List[DeviceBuffer[dtype]](capacity=ngpus)
-    var act_host = List[UnsafePointer[Scalar[dtype], MutUntrackedOrigin]](
+    var act_host = List[MutPointer[Scalar[dtype], MutUntrackedOrigin]](
         capacity=ngpus
     )
 
     # Separate signal buffers per kernel path -- as in `rmsnorm_test`.
     var sigs_ar_devbufs = List[DeviceBuffer[.uint8]](capacity=ngpus)
     var sigs_fused_devbufs = List[DeviceBuffer[.uint8]](capacity=ngpus)
-    var rank_sigs_ar = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+    var rank_sigs_ar = Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS](
         uninitialized=True
     )
-    var rank_sigs_fused = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+    var rank_sigs_fused = Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS](
         uninitialized=True
     )
 
@@ -445,13 +445,13 @@ def unsynced_skew_test[
         var ar_out_tensors = Array[OutType, ngpus](uninitialized=True)
         for g in range(ngpus):
             in_tensors[g] = InType(
-                rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
+                rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](
                     act_big[g].unsafe_ptr() + base
                 ),
                 act_layout,
             )
             ar_out_tensors[g] = OutType(
-                rebind[UnsafePointer[Scalar[dtype], MutAnyOrigin]](
+                rebind[MutPointer[Scalar[dtype], MutAnyOrigin]](
                     ar_big[g].unsafe_ptr() + base
                 ),
                 act_layout,
@@ -470,13 +470,13 @@ def unsynced_skew_test[
         # into the big buffer (no DeviceBuffer slice API needed).
         for g in range(ngpus):
             _run_rms_norm_unfused(
-                rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
+                rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](
                     ar_big[g].unsafe_ptr() + base
                 ),
-                rebind[UnsafePointer[Scalar[dtype], MutAnyOrigin]](
+                rebind[MutPointer[Scalar[dtype], MutAnyOrigin]](
                     unfused_big[g].unsafe_ptr() + base
                 ),
-                rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
+                rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](
                     gamma[g].unsafe_ptr()
                 ),
                 M,
@@ -493,13 +493,13 @@ def unsynced_skew_test[
         comptime for g in range(ngpus):
             lamport_allreduce_rmsnorm[dtype, ngpus, pdl=False](
                 g,
-                rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
+                rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](
                     act_big[g].unsafe_ptr() + base
                 ),
-                rebind[UnsafePointer[Scalar[dtype], MutAnyOrigin]](
+                rebind[MutPointer[Scalar[dtype], MutAnyOrigin]](
                     fused_big[g].unsafe_ptr() + base
                 ),
-                rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
+                rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](
                     gamma[g].unsafe_ptr()
                 ),
                 rank_sigs_fused,

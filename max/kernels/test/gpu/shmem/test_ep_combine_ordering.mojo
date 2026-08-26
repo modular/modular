@@ -43,10 +43,10 @@ comptime MSG_ELEMS = 256
 
 
 def ordering_guard_kernel(
-    payload: UnsafePointer[Float32, MutAnyOrigin],
-    flags: UnsafePointer[Int32, MutAnyOrigin],
-    output: UnsafePointer[Float32, MutAnyOrigin],
-    scratch: UnsafePointer[Float32, MutAnyOrigin],
+    payload: MutPointer[Float32, MutAnyOrigin],
+    flags: MutPointer[Int32, MutAnyOrigin],
+    output: MutPointer[Float32, MutAnyOrigin],
+    scratch: MutPointer[Float32, MutAnyOrigin],
 ):
     """Block 0 is the producer (~ wait SM); blocks 1.. are consumers (~ reduce
     SMs), one payload slot each."""

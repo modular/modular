@@ -21,8 +21,8 @@ from std.testing import assert_almost_equal, assert_true
 
 
 def p2p_copy_kernel(
-    dst: UnsafePointer[Float32, MutAnyOrigin],
-    src: UnsafePointer[Float32, ImmutAnyOrigin],
+    dst: MutPointer[Float32, MutAnyOrigin],
+    src: ImmPointer[Float32, ImmutAnyOrigin],
     num_elements_dev: Int32,
 ):
     # `Int` is not device-passable; widen the fixed-width arg.

@@ -76,7 +76,7 @@ def _elem_bits_u64[dtype: DType](x: Scalar[dtype]) -> UInt64:
 
 def hash_output[
     dtype: DType
-](p: UnsafePointer[Scalar[dtype], MutUntrackedOrigin], length: Int) -> UInt64:
+](p: MutPointer[Scalar[dtype], MutUntrackedOrigin], length: Int) -> UInt64:
     """Order-sensitive FNV-1a over a host buffer's element bit patterns.
 
     Sensitive to any single-bit change and to element order, and (unlike an
@@ -132,15 +132,15 @@ def allreduce_determinism_test[
 
     var in_dev = List[DeviceBuffer[dtype]](capacity=ngpus)
     var out_dev = List[DeviceBuffer[dtype]](capacity=ngpus)
-    var host_in = List[UnsafePointer[Scalar[dtype], MutUntrackedOrigin]](
+    var host_in = List[MutPointer[Scalar[dtype], MutUntrackedOrigin]](
         capacity=ngpus
     )
-    var host_out = List[UnsafePointer[Scalar[dtype], MutUntrackedOrigin]](
+    var host_out = List[MutPointer[Scalar[dtype], MutUntrackedOrigin]](
         capacity=ngpus
     )
 
     var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
-    var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+    var rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS](
         uninitialized=True
     )
     var temp_buffer_num_bytes = ngpus * size_of[dtype]() * length
@@ -179,7 +179,7 @@ def allreduce_determinism_test[
     var in_tensors = Array[InTensorType, ngpus](uninitialized=True)
     for i in range(ngpus):
         in_tensors[i] = TileTensor(
-            rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
+            rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](
                 in_dev[i].unsafe_ptr()
             ),
             row_major(length),
