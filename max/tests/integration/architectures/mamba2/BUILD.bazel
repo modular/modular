@@ -33,3 +33,54 @@ modular_py_test(
         requirement("numpy"),
     ],
 )
+
+# End-to-end greedy + stochastic parity vs. the upstream ``mamba_ssm``
+# reference. Both tests are currently xfail(run=False) — see the module
+# docstring for the two upstream blockers. The target is wired up
+# regardless so that once those clear, removing the xfail markers is the
+# only change required to start running on CI.
+modular_py_test(
+    name = "test_mamba2_parity",
+    size = "enormous",
+    srcs = ["test_mamba2_parity.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    gpu_constraints = ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    # The test imports the pipeline stack lazily (importlib) inside the test
+    # bodies so collection works without the model weights; pydeps cannot see
+    # those imports, so the runtime deps are listed here as well.
+    ignore_extra_deps = [
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/pipelines/architectures",
+        "//max/python/max/pipelines/architectures/mamba2",
+        "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/modeling",
+        requirement("torch"),
+        requirement("transformers"),
+    ],
+    tags = [
+        "gpu",
+        "manual",  # parked behind upstream final_state-conv-tail follow-up
+        "no-sandbox",
+        "requires-network",
+    ],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/pipelines/architectures",
+        "//max/python/max/pipelines/architectures/mamba2",
+        "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/modeling",
+        requirement("numpy"),
+        requirement("torch"),
+        requirement("transformers"),
+    ],
+)
