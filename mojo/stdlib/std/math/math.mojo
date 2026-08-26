@@ -180,15 +180,7 @@ def trunc[T: Truncable, //](value: T) -> T:
 
 
 @always_inline
-def sqrt(x: Int) -> Int:
-    """Performs square root on an integer.
-
-    Args:
-        x: The integer value to perform square root on.
-
-    Returns:
-        The square root of x.
-    """
+def _sqrt_int(x: Int) -> Int:
     if x < 0:
         return 0
 
@@ -239,7 +231,7 @@ def sqrt[
         var res = SIMD[dtype, width]()
 
         comptime for i in range(width):
-            res[i] = Scalar[dtype](sqrt(Int(x[i])))
+            res[i] = Scalar[dtype](_sqrt_int(Int(x[i])))
         return res
     elif is_nvidia_gpu():
         comptime if dtype in (DType.float16, DType.bfloat16):
@@ -1354,37 +1346,9 @@ def iota[dtype: DType, //](span: MutSpan[Scalar[dtype], _], offset: Int = 0):
     iota(span.unsafe_ptr(), len(span), offset)
 
 
-def iota(span: MutSpan[Int, _], offset: Int = 0):
-    """Fill a Span with consecutive numbers starting from the specified offset.
-
-    Args:
-        span: The Span to fill with numbers.
-        offset: The starting value to fill at index 0.
-    """
-    var buff = span.unsafe_ptr().unsafe_bitcast[Int]()
-    iota(buff, len(span), offset=offset)
-
-
 # ===----------------------------------------------------------------------=== #
 # fma
 # ===----------------------------------------------------------------------=== #
-
-
-@always_inline
-def fma(a: Int, b: Int, c: Int) -> Int:
-    """Performs `fma` (fused multiply-add) on the inputs.
-
-    The result is `(a * b) + c`.
-
-    Args:
-        a: The first input.
-        b: The second input.
-        c: The third input.
-
-    Returns:
-        `(a * b) + c`.
-    """
-    return a * b + c
 
 
 @always_inline("nodebug")
@@ -1423,23 +1387,6 @@ def fma[
 
 
 @always_inline
-def align_down(value: Int, alignment: Int) -> Int:
-    """Returns the closest multiple of alignment that is less than or equal to
-    value.
-
-    Args:
-        value: The value to align.
-        alignment: Value to align to.
-
-    Returns:
-        Closest multiple of the alignment that is less than or equal to the
-        input value. In other words, floor(value / alignment) * alignment.
-    """
-    assert alignment != 0, "zero alignment"
-    return (value // alignment) * alignment
-
-
-@always_inline
 def align_down[
     dtype: DType, width: SIMDLength, //
 ](value: SIMD[dtype, width], alignment: SIMD[dtype, width]) -> SIMD[
@@ -1467,23 +1414,6 @@ def align_down[
 # ===----------------------------------------------------------------------=== #
 # align_up
 # ===----------------------------------------------------------------------=== #
-
-
-@always_inline
-def align_up(value: Int, alignment: Int) -> Int:
-    """Returns the closest multiple of alignment that is greater than or equal
-    to value.
-
-    Args:
-        value: The value to align.
-        alignment: Value to align to.
-
-    Returns:
-        Closest multiple of the alignment that is greater than or equal to the
-        input value. In other words, ceiling(value / alignment) * alignment.
-    """
-    assert alignment != 0, "zero alignment"
-    return ceildiv(value, alignment) * alignment
 
 
 @always_inline
@@ -3273,22 +3203,6 @@ def perm(n: Int, k: Int = -1) -> Int:
 # ===----------------------------------------------------------------------=== #
 
 
-def clamp(
-    val: Int, lower_bound: type_of(val), upper_bound: type_of(val)
-) -> type_of(val):
-    """Clamps the integer value vector to be in a certain range.
-
-    Args:
-        val: The value to clamp.
-        lower_bound: Minimum of the range to clamp to.
-        upper_bound: Maximum of the range to clamp to.
-
-    Returns:
-        An integer clamped to be within lower_bound and upper_bound.
-    """
-    return max(min(val, upper_bound), lower_bound)
-
-
 def clamp[
     dtype: DType, width: SIMDLength, //
 ](
@@ -3789,20 +3703,6 @@ def divmod[T: DivModable](numerator: T, denominator: T) -> Tuple[T, T]:
 # ===----------------------------------------------------------------------=== #
 # max
 # ===----------------------------------------------------------------------=== #
-
-
-# @always_inline("nodebug")
-# def max(x: Int, y: Int, /) -> Int:
-#     """Gets the maximum of two integers.
-
-#     Args:
-#         x: Integer input to max.
-#         y: Integer input to max.
-
-#     Returns:
-#         Maximum of x and y.
-#     """
-#     return Int(mlir_value=__mlir_op.`index.maxs`(x._mlir_value, y._mlir_value))
 
 
 @always_inline("nodebug")
