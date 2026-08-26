@@ -112,7 +112,7 @@ def _stencil_impl_gpu[
     # GPU kernel implementation
     @always_inline
     def stencil_kernel() {
-        imm shape,
+        var shape,
         var input_shape,
         var map_func,
         var map_strides_func,

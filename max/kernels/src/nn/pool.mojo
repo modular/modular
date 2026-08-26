@@ -488,7 +488,9 @@ def max_pool_gpu[
     @always_inline
     def load_fn[
         simd_width: Int, dtype: DType
-    ](point: IndexList[output.rank, ...]) {input,} -> SIMD[dtype, simd_width]:
+    ](point: IndexList[output.rank, ...]) {var input} -> SIMD[
+        dtype, simd_width
+    ]:
         var i = input.layout(Coord(point))
         return rebind[SIMD[dtype, simd_width]](
             input.raw_load[width=simd_width](i)
@@ -515,7 +517,7 @@ def max_pool_gpu[
         point: IndexList[output.rank, ...],
         val: SIMD[dtype, simd_width],
     ) {
-        output, mut
+        var output
     }:
         var i = output.layout(Coord(point))
         output.raw_store(i, val)
@@ -675,7 +677,9 @@ def avg_pool_cpu[
     @always_inline
     def load_fn[
         simd_width: Int, dtype: DType
-    ](point: IndexList[output.rank, ...]) {input,} -> SIMD[dtype, simd_width]:
+    ](point: IndexList[output.rank, ...]) {var input} -> SIMD[
+        dtype, simd_width
+    ]:
         var i = input.layout(Coord(point))
         return rebind[SIMD[dtype, simd_width]](
             input.raw_load[width=simd_width](i)
@@ -713,7 +717,7 @@ def avg_pool_cpu[
         point: IndexList[output.rank, ...],
         val: SIMD[dtype, simd_width],
     ) {
-        output,
+        var output,
         var output_height,
         var padding_h_low,
         var padding_h_high,
@@ -747,7 +751,7 @@ def avg_pool_cpu[
         point: IndexList[output.rank, ...],
         val: SIMD[dtype, simd_width],
     ) {
-        output,
+        var output,
         var pool_window_h,
         var pool_window_w,
     }:
@@ -966,7 +970,9 @@ def avg_pool_gpu[
     @always_inline
     def load_fn[
         simd_width: Int, dtype: DType
-    ](point: IndexList[output.rank, ...]) {input,} -> SIMD[dtype, simd_width]:
+    ](point: IndexList[output.rank, ...]) {var input} -> SIMD[
+        dtype, simd_width
+    ]:
         var i = input.layout(Coord(point))
         return rebind[SIMD[dtype, simd_width]](
             input.raw_load[width=simd_width](i)
@@ -1004,7 +1010,7 @@ def avg_pool_gpu[
         point: IndexList[output.rank, ...],
         val: SIMD[dtype, simd_width],
     ) {
-        output,
+        var output,
         var output_height,
         var padding_h_low,
         var padding_h_high,
@@ -1036,7 +1042,7 @@ def avg_pool_gpu[
         point: IndexList[output.rank, ...],
         val: SIMD[dtype, simd_width],
     ) {
-        output,
+        var output,
         var pool_window_h,
         var pool_window_w,
     }:

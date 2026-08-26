@@ -521,6 +521,10 @@ the [container](/container) page now links to the new page.
 - `DeviceContext.create_event()` on NVIDIA GPUs now honors the default
   `disable_timing` flag (previously inverted) and recycles events through the
   driver's event cache instead of growing it on every create/destroy cycle.
+- Capturing `DeviceContext.enqueue_function()` now encodes the closure
+  through `DevicePassable` before launch, matching explicit kernel
+  arguments. Host handles such as `DevicePointer` reach the device as
+  device addresses rather than raw host bytes.
 
 ### Inference server
 
