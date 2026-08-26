@@ -88,11 +88,6 @@ def test_numpy_float() raises:
 
 
 def test_scalar_from_python_unsigned() raises:
-    # Unsigned scalars must read through the unsigned CPython entry point so
-    # that Mojo -> Python -> Mojo round-trips for values >= 2**63 and negative
-    # Python ints raise instead of silently wrapping (regression test for
-    # #6850).
-
     # Values in [2**63, 2**64) survived the Mojo -> Python leg (via the
     # unsigned `PyLong_FromSize_t`) and must survive the read-back too.
     assert_equal(UInt64(py=PythonObject(UInt64.MAX)), UInt64.MAX)

@@ -990,7 +990,8 @@ struct SIMD[dtype: DType, length: SIMDLength](
             py: The PythonObject to convert.
 
         Raises:
-            If the conversion to double fails.
+            If the conversion to double fails, or if the value is out of range
+            for an unsigned dtype (a negative or too-large Python int).
         """
 
         comptime if Self.dtype.is_floating_point():
