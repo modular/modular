@@ -1122,40 +1122,34 @@ struct ReduceRMSNormRoPE:
 
         @always_inline
         def input_fn[
-            width: Int, alignment: Int, coord_rank: Int
-        ](coords: IndexList[coord_rank]) {var input} -> SIMD[dtype, width]:
+            width: Int, alignment: Int
+        ](coords: Coord) {var input} -> SIMD[dtype, width]:
             return input._lambda_load[width=width, element_alignment=alignment](
-                rebind[IndexList[input.rank]](coords)
+                coords
             )
 
         @always_inline
         def cos_fn[
-            width: Int, alignment: Int, coord_rank: Int
-        ](coords: IndexList[coord_rank]) {var cos_vals} -> SIMD[
-            cos_sin_dtype, width
-        ]:
+            width: Int, alignment: Int
+        ](coords: Coord) {var cos_vals} -> SIMD[cos_sin_dtype, width]:
             return cos_vals._fused_load[
                 width=width, element_alignment=alignment
-            ](rebind[IndexList[cos_vals.rank]](coords))
+            ](coords)
 
         @always_inline
         def sin_fn[
-            width: Int, alignment: Int, coord_rank: Int
-        ](coords: IndexList[coord_rank]) {var sin_vals} -> SIMD[
-            cos_sin_dtype, width
-        ]:
+            width: Int, alignment: Int
+        ](coords: Coord) {var sin_vals} -> SIMD[cos_sin_dtype, width]:
             return sin_vals._fused_load[
                 width=width, element_alignment=alignment
-            ](rebind[IndexList[sin_vals.rank]](coords))
+            ](coords)
 
         @always_inline
         def output_fn[
-            width: SIMDLength, _rank: Int, alignment: Int
-        ](coords: IndexList[_rank], val: SIMD[output_dtype, width]) {
-            var output
-        }:
+            width: SIMDLength, alignment: Int
+        ](coords: Coord, val: SIMD[output_dtype, width]) {var output}:
             output._lambda_store[width=width, element_alignment=alignment](
-                rebind[IndexList[output.rank]](coords),
+                coords,
                 rebind[SIMD[output.dtype, width]](val),
             )
 
@@ -1292,22 +1286,18 @@ struct LayerNormRopeRagged:
 
         @always_inline
         def input_fn[
-            width: Int, alignment: Int, coord_rank: Int
-        ](coords: IndexList[coord_rank]) {var input} -> SIMD[
-            input_dtype, width
-        ]:
+            width: Int, alignment: Int
+        ](coords: Coord) {var input} -> SIMD[input_dtype, width]:
             return input._lambda_load[width=width, element_alignment=alignment](
-                rebind[IndexList[input.rank]](coords)
+                coords
             )
 
         @always_inline
         def output_fn[
-            width: SIMDLength, _rank: Int, alignment: Int
-        ](coords: IndexList[_rank], val: SIMD[output_dtype, width]) {
-            var output
-        }:
+            width: SIMDLength, alignment: Int
+        ](coords: Coord, val: SIMD[output_dtype, width]) {var output}:
             output._lambda_store[width=width, element_alignment=alignment](
-                rebind[IndexList[output.rank]](coords),
+                coords,
                 rebind[SIMD[output.dtype, width]](val),
             )
 
@@ -1644,39 +1634,35 @@ struct ReduceRMSNormFusedResidualAdd:
 
         @always_inline
         def input_fn[
-            width: Int, _rank: Int
-        ](coords: IndexList[_rank]) {var input} -> SIMD[dtype, width]:
+            width: Int
+        ](coords: Coord) {var input} -> SIMD[dtype, width]:
             return input._lambda_load[width=width, element_alignment=width](
-                rebind[IndexList[input.rank]](coords)
+                coords
             )
 
         @always_inline
         def residual_input_fn[
-            width: Int, _rank: Int
-        ](coords: IndexList[_rank]) {var residual_input} -> SIMD[dtype, width]:
-            return residual_input._lambda_load[width=width](
-                rebind[IndexList[input.rank]](coords)
-            )
+            width: Int
+        ](coords: Coord) {var residual_input} -> SIMD[dtype, width]:
+            return residual_input._lambda_load[width=width](coords)
 
         @always_inline
         def output_fn[
-            width: SIMDLength, _rank: Int, alignment: Int
-        ](coords: IndexList[_rank], val: SIMD[dtype, width]) {var output}:
+            width: SIMDLength, alignment: Int
+        ](coords: Coord, val: SIMD[dtype, width]) {var output}:
             output._fused_store[width=width, element_alignment=alignment](
-                rebind[IndexList[output.rank]](coords),
+                coords,
                 rebind[SIMD[output.dtype, width]](val),
             )
 
         @always_inline
         def residual_output_fn[
-            width: SIMDLength, _rank: Int, alignment: Int
-        ](coords: IndexList[_rank], val: SIMD[dtype, width]) {
-            var residual_output
-        }:
+            width: SIMDLength, alignment: Int
+        ](coords: Coord, val: SIMD[dtype, width]) {var residual_output}:
             residual_output._fused_store[
                 width=width, element_alignment=alignment
             ](
-                rebind[IndexList[residual_output.rank]](coords),
+                coords,
                 rebind[SIMD[residual_output.dtype, width]](val),
             )
 

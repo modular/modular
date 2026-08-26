@@ -70,37 +70,31 @@ def bench_rms_norm_fused_residual_add_gpu[
     ctx.enqueue_copy(gamma1_d, gamma1_h)
     ctx.enqueue_copy(gamma2_d, gamma2_h)
 
-    # `rms_norm_fused_residual_add`'s `Input*Fn`/`Output*Fn` are
-    # unified closures (value-closure form), matching its `(width, rank)` /
-    # `(width, rank, alignment)` signatures; `Output0Fn` precedes
-    # `OutputResidualFn` (the reverse of the deleted `..._gpu` kernel's order).
+    # `Output0Fn` precedes `OutputResidualFn`, the reverse of the deleted
+    # `..._gpu` kernel's order.
     @always_inline
     def input_fn[
-        width: Int, _rank: Int
-    ](coords: IndexList[_rank]) {var data_buf} -> SIMD[dtype, width]:
-        return data_buf.load[width=width](Coord(coords))
+        width: Int
+    ](coords: Coord) {var data_buf} -> SIMD[dtype, width]:
+        return data_buf.load[width=width](coords)
 
     @always_inline
     def residual_input_fn[
-        width: Int, _rank: Int
-    ](coords: IndexList[_rank]) {var residual_buf} -> SIMD[dtype, width]:
-        return residual_buf.load[width=width](Coord(coords))
+        width: Int
+    ](coords: Coord) {var residual_buf} -> SIMD[dtype, width]:
+        return residual_buf.load[width=width](coords)
 
     @always_inline
     def output_fn[
-        width: SIMDLength, rank_: Int, alignment: Int
-    ](coords: IndexList[rank_], val: SIMD[dtype, width]) {
-        var output_buf
-    } -> None:
-        output_buf.store[alignment=alignment](Coord(coords), val)
+        width: SIMDLength, alignment: Int
+    ](coords: Coord, val: SIMD[dtype, width]) {var output_buf} -> None:
+        output_buf.store[alignment=alignment](coords, val)
 
     @always_inline
     def residual_output_fn[
-        width: SIMDLength, rank_: Int, alignment: Int
-    ](coords: IndexList[rank_], val: SIMD[dtype, width]) {
-        var residual_output_buf
-    } -> None:
-        residual_output_buf.store[alignment=alignment](Coord(coords), val)
+        width: SIMDLength, alignment: Int
+    ](coords: Coord, val: SIMD[dtype, width]) {var residual_output_buf} -> None:
+        residual_output_buf.store[alignment=alignment](coords, val)
 
     @always_inline
     def bench_fn(
