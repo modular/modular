@@ -28,6 +28,8 @@ from . import (
     Attribute,
 )
 
+from ._device_context_metal import MetalEnqueueFunctionArgs
+
 from .device_context import (
     DeviceContext,
     DeviceBuffer,
@@ -257,6 +259,57 @@ __extension DeviceExternalFunction:
         # External functions carry no argument-size metadata, so no per-arg
         # sizes are passed to the enqueuer (matching the previous direct call).
         var no_arg_sizes = OptionalPointer[UInt64, MutAnyOrigin](None)
+
+        if self._context.api() == "metal":
+            # Metal takes the launch payload via `args[0]`; see
+            # `MetalDeviceContext::enqueueFunctionExecDirect`.
+            var dense_args_sizes = Array[UInt64, num_args](fill=0)
+
+            comptime for i in range(num_args):
+                dense_args_sizes[i] = UInt64(size_of[Ts[i]]())
+
+            # TODO(GEX-3761): Unchecked path — no argument is encoded as a
+            # device pointer, so this launch marks no used buffers resident.
+            var dense_args_is_device_ptr = Array[Bool, num_args](fill=False)
+
+            var metal_args = MetalEnqueueFunctionArgs(
+                dense_args_addrs.unsafe_ptr()
+                .unsafe_origin_cast[MutUntrackedOrigin]()
+                .unsafe_bitcast[OpaquePointer[MutUntrackedOrigin]](),
+                dense_args_sizes.unsafe_ptr().unsafe_origin_cast[
+                    MutUntrackedOrigin
+                ](),
+                dense_args_is_device_ptr.unsafe_ptr().unsafe_origin_cast[
+                    MutUntrackedOrigin
+                ](),
+                None,
+                Int32(0),
+            )
+
+            var ptr = (
+                Pointer(to=metal_args)
+                .unsafe_bitcast[NoneType]()
+                .unsafe_mut_cast[True]()
+                .as_unsafe_any_origin()
+            )
+            var metal_args_addrs = [ptr]
+
+            _checked(
+                ctx.enqueue(
+                    self._handle,
+                    grid_dim,
+                    block_dim,
+                    shared_mem_bytes.or_else(0),
+                    attributes.unsafe_ptr().unsafe_origin_cast[MutAnyOrigin](),
+                    len(attributes),
+                    metal_args_addrs.unsafe_ptr().as_unsafe_any_origin(),
+                    UInt32(num_args),
+                    no_arg_sizes,
+                ),
+                location=location.or_else(call_location()),
+            )
+            return
+
         _checked(
             ctx.enqueue(
                 self._handle,

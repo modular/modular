@@ -67,7 +67,6 @@ _EXTRA_CONSTRAINTS = {
     "test_print.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: MOCO-2405
     "test_capture_trait_type.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: MOCO-2405
     "test_printf.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: MOCO-2405
-    "test_launch_binary.mojo": _APPLE_GPU_INCOMPATIBLE,  # Requires metallib tool which may not be available on Mac
     "test_init_vector_gpu.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: KERN-2360 - MetalAIRPass address space propagation bug
     "test_prefix_sum.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: llvm.ctlz intrinsic not evaluating at compile time on macOS
     "test_shuffle.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: llvm.ctlz intrinsic not evaluating at compile time on macOS

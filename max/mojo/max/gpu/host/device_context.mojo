@@ -3684,6 +3684,9 @@ struct DeviceExternalFunction:
     var _handle: _DeviceFunctionPtr[mut=True]
     """Internal handle to the native device function object."""
 
+    var _context: DeviceContext
+    """The device context backing the function."""
+
     def __init__(out self, *, copy: Self):
         """Creates a copy of an existing device function by incrementing its reference count.
 
@@ -3699,6 +3702,7 @@ struct DeviceExternalFunction:
             _DeviceFunctionPtr[mut=True],
         ](copy._handle)
         self._handle = copy._handle
+        self._context = copy._context
 
     def __deinit__(deinit self):
         """Releases resources associated with this device function."""
@@ -3762,6 +3766,8 @@ struct DeviceExternalFunction:
         Raises:
             If function loading fails or if an unsupported attribute is provided.
         """
+        self._context = ctx
+
         var max_dynamic_shared_size_bytes: Int32 = -1
         if func_attribute:
             if (

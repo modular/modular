@@ -950,6 +950,10 @@ the [container](/container) page now links to the new page.
 
 ## Fixes
 
+- Fixed `DeviceExternalFunction` crashing on Metal instead of launching, so
+  separately compiled kernels now load and launch there as they already did on
+  other GPU backends.
+
 - Fixed reductions over a zero-extent axis — for example `ops.sum(x, axis=1)`
   where that axis has length `0` — leaving their output unwritten, along with
   anything fused into the reduction's epilogue. Each now writes its identity:
