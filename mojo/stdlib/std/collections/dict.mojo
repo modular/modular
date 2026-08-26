@@ -907,6 +907,7 @@ struct Dict[
         """
         return self._find_ref(key)
 
+    @always_inline
     def __setitem__(
         mut self, var key: Self.K, var value: Self.V
     ) where conforms_to(Self.K, Deinitable) and conforms_to(Self.V, Deinitable):
@@ -958,6 +959,7 @@ struct Dict[
         self._place_new_entry(slot_idx, entry^)
         return None
 
+    @always_inline
     def __contains__(self, key: Self.K) -> Bool:
         """Check if a given key is in the dictionary or not.
 
@@ -1103,12 +1105,14 @@ struct Dict[
         if len(self) != len(other):
             return False
 
+        # Probe `other` with the hash cached on the entry rather than through
+        # `_find_ref`, which rehashes every key. Both dicts share the hasher
+        # `H`, so the cached hash is the one `other`'s table was built with.
         for entry in self.items():
-            try:
-                ref other_val = other._find_ref(entry.key)
-                if entry.value != other_val:
-                    return False
-            except:
+            var found, slot_idx = other._table.find_slot(entry._hash, entry.key)
+            if not found:
+                return False
+            if entry.value != other._table._slots[unsafe_offset=slot_idx].value:
                 return False
 
         return True
@@ -1246,11 +1250,13 @@ struct Dict[
         print(missing_value)  # => None
         ```
         """
-
-        try:
-            return self._find_ref(key).copy()
-        except:
+        # Probes the table directly rather than catching `_find_ref`'s
+        # `DictKeyError`: a `try` region around the copy fences the optimizer
+        # and the raising path costs an extra copy of the value.
+        var found, slot_idx = self._table.find_slot(hash[Self.H](key), key)
+        if not found:
             return Optional[Self.V](None)
+        return (self._table._slots.unsafe_offset(slot_idx))[].value.copy()
 
     @__unsafe_nested_origins_read_only
     def _find_ref(
@@ -1316,6 +1322,7 @@ struct Dict[
 
         raise DictKeyError[Self.K]()
 
+    @always_inline
     def get(
         self, key: Self.K
     ) -> Optional[Self.V] where conforms_to(Self.V, Copyable):
@@ -1346,6 +1353,7 @@ struct Dict[
         """
         return self.find(key)
 
+    @always_inline
     def get(
         self, key: Self.K, var default: Self.V
     ) -> Self.V where conforms_to(Self.V, Copyable & Deinitable):
@@ -1374,7 +1382,12 @@ struct Dict[
         assert_true(my_dict["a"] == my_dict.get("a", Int.MAX))
         ```
         """
-        return self.find(key).or_else(default^)
+        # Probes the table directly instead of going through `find`, which
+        # would build an `Optional` only for `or_else` to unwrap it again.
+        var found, slot_idx = self._table.find_slot(hash[Self.H](key), key)
+        if not found:
+            return default^
+        return (self._table._slots.unsafe_offset(slot_idx))[].value.copy()
 
     def pop(
         mut self, key: Self.K, var default: Self.V
@@ -1410,10 +1423,20 @@ struct Dict[
         print(missing_value)  # => 99
         ```
         """
-        try:
-            return self.pop(key)
-        except:
+        # Probes the table directly rather than catching the raising `pop`'s
+        # `DictKeyError`, which fences the optimizer around the whole removal.
+        var found, slot_idx = self._table.find_slot(hash[Self.H](key), key)
+        if not found:
             return default^
+        assert is_occupied(
+            self._table._ctrl[unsafe_offset=slot_idx]
+        ), "find_slot returned found=True but ctrl byte is not occupied"
+        var entry = (
+            self._table._slots.unsafe_offset(slot_idx)
+        ).unsafe_take_pointee()
+        self._table.set_ctrl(slot_idx, CTRL_DELETED)
+        self._table._len -= 1
+        return entry^.reap_value()
 
     def pop(
         mut self, ref key: Self.K
@@ -1503,9 +1526,15 @@ struct Dict[
                 ).unsafe_take_pointee()
                 self._table.set_ctrl(slot, CTRL_DELETED)
                 self._table._len -= 1
+                # Every `_order` entry from `i` up refers to a slot that is now
+                # unoccupied, so drop them. Without this a destructive drain
+                # rescans the same dead tail on each call, making it quadratic.
+                self._order.shrink(i)
                 return entry^
             i -= 1
 
+        # Nothing occupied anywhere in `_order`, so all of it is stale.
+        self._order.clear()
         raise EmptyDictError()
 
     def keys(
@@ -1669,8 +1698,16 @@ struct Dict[
         print(dict1)  # => {"a": 1, "b": 3, "c": 4}
         ```
         """
+        # `other` shares the hasher `H`, so reuse each entry's cached hash
+        # instead of letting `__setitem__` recompute it.
         for entry in other.items():
-            self[entry.key.copy()] = entry.value.copy()
+            self._insert(
+                DictEntry[Self.K, Self.V, Self.H](
+                    entry.key.copy(),
+                    entry.value.copy(),
+                    unsafe_hash=entry._hash,
+                )
+            )
 
     def clear(
         mut self,
@@ -1730,6 +1767,7 @@ struct Dict[
         self._table.clear_with(destroy_func)
         self._order.clear()
 
+    @always_inline
     def setdefault(
         mut self, var key: Self.K, var default: Self.V
     ) -> ref[
@@ -1836,11 +1874,13 @@ struct Dict[
             self._table._growth_left >= 0
         ), "_growth_left went negative after insert"
 
+    @always_inline
     def _insert(
         mut self, var key: Self.K, var value: Self.V
     ) where conforms_to(Self.K, Deinitable) and conforms_to(Self.V, Deinitable):
         self._insert(DictEntry[Self.K, Self.V, Self.H](key^, value^))
 
+    @always_inline
     def _insert[
         safe_context: Bool = False
     ](mut self, var entry: DictEntry[Self.K, Self.V, Self.H]) where conforms_to(
@@ -1858,6 +1898,7 @@ struct Dict[
             # New entry
             self._place_new_entry(slot_idx, entry^)
 
+    @always_inline
     def _ensure_capacity(mut self):
         """Ensures the table has room for one more insertion.
 
@@ -1875,11 +1916,20 @@ struct Dict[
         returned by `find_slot`; in lazy state, `find_slot` returns a
         meaningless slot index that is only safe to use after this call
         has allocated the backing buffer.
-        """
-        if not self._table.needs_resize():
-            self._maybe_compact_order()
-            return
 
+        Notes:
+            Only the guard is inlined into the caller; the cold resize body
+            lives in `_grow_slow` so that inlining an insert does not drag a
+            rehash along with it.
+        """
+        if self._table.needs_resize():
+            self._grow_slow()
+        else:
+            self._maybe_compact_order()
+
+    @no_inline
+    def _grow_slow(mut self):
+        """Grows or rehashes the table. See `_ensure_capacity`."""
         # First allocation from the lazy empty state: no entries to rehash and
         # no `_order` to rebuild. Allocate INITIAL_CAPACITY directly.
         if self._table._capacity == 0:
@@ -1935,6 +1985,7 @@ struct Dict[
             )
         )
 
+    @no_inline
     def _rehash_in_place(mut self):
         """Rehash the table in place without changing capacity."""
         # Compact _order to remove stale entries before we lose

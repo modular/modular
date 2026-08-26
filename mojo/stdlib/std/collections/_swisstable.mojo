@@ -754,6 +754,7 @@ struct SwissTable[
         """
         return self._len <= self._capacity * 7 // 16
 
+    @no_inline
     def resize(mut self, new_capacity: Int) -> List[Tuple[Int, Int]]:
         """Double the table capacity and rehash all entries.
 
@@ -805,6 +806,7 @@ struct SwissTable[
 
         return relocations^
 
+    @no_inline
     def rehash_in_place(mut self) -> Pointer[Int32, MutUntrackedOrigin]:
         """Rehash in place without changing capacity (Abseil's drop-deletes).
 
