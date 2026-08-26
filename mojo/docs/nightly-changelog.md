@@ -302,6 +302,12 @@ This release completes the removal of APIs deprecated during the v1.0 cycle.
   `Int`/`UInt` values now shuffles the full 64-bit value instead of silently
   truncating it to 32 bits.
 
+- Removed the `Int` overloads of `rotate_bits_left()` and
+  `rotate_bits_right()` in `std.bit`. The `SIMD` overloads now accept any
+  integral element type instead of only unsigned ones — rotation is a pure
+  bit-pattern operation, so signed and unsigned rotate identically — and
+  therefore handle `Int` arguments directly. Call sites need no changes.
+
 - Removed the `std.gpu.profiler` module and its `ProfileBlock` context manager.
   It timed host wall-clock, not GPU work, and reported the elapsed time with the
   operands reversed. Time a block of host code with

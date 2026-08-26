@@ -386,52 +386,17 @@ def prev_power_of_two[
 # ===-----------------------------------------------------------------------===#
 
 
-@always_inline
-def rotate_bits_left[shift: Int](x: Int) -> Int:
-    """Shifts the bits of an input to the left by `shift` bits (with
-    wrap-around).
-
-    Constraints:
-        `-size <= shift < size`
-
-    Parameters:
-        shift: The number of bit positions by which to rotate the bits of the
-               integer to the left (with wrap-around).
-
-    Args:
-        x: The input value.
-
-    Returns:
-        The input rotated to the left by `shift` elements (with wrap-around).
-    """
-    comptime assert (
-        -bit_width_of[Int]() <= shift < bit_width_of[Int]()
-    ), "Constraints: -bit_width_of[Int]() <= shift < bit_width_of[Int]()"
-
-    comptime if shift == 0:
-        return x
-    elif shift < 0:
-        return rotate_bits_right[-shift](x)
-    else:
-        return llvm_intrinsic["llvm.fshl", Int, has_side_effect=False](
-            x, x, shift
-        )
-
-
 @always_inline("nodebug")
 def rotate_bits_left[
     dtype: DType,
     width: SIMDLength,
     //,
     shift: Int,
-](x: SIMD[dtype, width]) -> SIMD[dtype, width] where dtype.is_unsigned():
+](x: SIMD[dtype, width]) -> SIMD[dtype, width] where dtype.is_integral():
     """Shifts bits to the left by `shift` positions (with wrap-around) for each element of a SIMD vector.
 
-    Constraints:
-        `0 <= shift < size`
-
     Parameters:
-        dtype: The `dtype` of the input and output SIMD vector. Must be integral and unsigned.
+        dtype: The `dtype` of the input and output SIMD vector. Must be integral.
         width: The width of the SIMD vector.
         shift: The number of positions to rotate left.
 
@@ -457,52 +422,17 @@ def rotate_bits_left[
 # ===-----------------------------------------------------------------------===#
 
 
-@always_inline
-def rotate_bits_right[shift: Int](x: Int) -> Int:
-    """Shifts the bits of an input to the right by `shift` bits (with
-    wrap-around).
-
-    Constraints:
-        `-size <= shift < size`
-
-    Parameters:
-        shift: The number of bit positions by which to rotate the bits of the
-               integer to the right (with wrap-around).
-
-    Args:
-        x: The input value.
-
-    Returns:
-        The input rotated to the right by `shift` elements (with wrap-around).
-    """
-    comptime assert (
-        -bit_width_of[Int]() <= shift < bit_width_of[Int]()
-    ), "Constraints: -bit_width_of[Int]() <= shift < bit_width_of[Int]()"
-
-    comptime if shift == 0:
-        return x
-    elif shift < 0:
-        return rotate_bits_left[-shift](x)
-    else:
-        return llvm_intrinsic["llvm.fshr", Int, has_side_effect=False](
-            x, x, shift
-        )
-
-
 @always_inline("nodebug")
 def rotate_bits_right[
     dtype: DType,
     width: SIMDLength,
     //,
     shift: Int,
-](x: SIMD[dtype, width]) -> SIMD[dtype, width] where dtype.is_unsigned():
+](x: SIMD[dtype, width]) -> SIMD[dtype, width] where dtype.is_integral():
     """Shifts bits to the right by `shift` positions (with wrap-around) for each element of a SIMD vector.
 
-    Constraints:
-        `0 <= shift < size`
-
     Parameters:
-        dtype: The `dtype` of the input and output SIMD vector. Must be integral and unsigned.
+        dtype: The `dtype` of the input and output SIMD vector. Must be integral.
         width: The width of the SIMD vector.
         shift: The number of positions to rotate right.
 
