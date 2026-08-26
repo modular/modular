@@ -602,9 +602,8 @@ the [container](/container) page now links to the new page.
   unsupported-schema rejection (`reject_unsupported`) is enabled: a closing
   `additionalProperties`, `items` or `unevaluatedProperties` beside a union,
   a base constraint beside `$ref`, `const` or `enum` — whether folded in
-  from a union or written in the same object — `$ref` beside a sibling
-  union, and a `pattern` or `format` combined with a length bound, whether
-  written together or on opposite sides of a fold.
+  from a union or written in the same object — and `$ref` beside a
+  sibling union.
 
 - Hardened the server-side fetch of client-supplied `image_url` / `video_url`
   references against SSRF: the host is now validated and hosts that resolve to
@@ -616,6 +615,13 @@ the [container](/container) page now links to the new page.
 - Compiling deeply nested JSON schemas is substantially faster and uses
   less memory by avoiding repeated subtree copies while constructing cache
   keys. Emitted grammars are unchanged.
+
+- Fixed strict JSON Schema compilation silently dropping string length
+  bounds when a pattern or format is present. Redundant bounds now compile,
+  while unsatisfiable or partially overlapping constraints return 400.
+  Equivalent direct, `allOf`, and union-folded schemas receive the same
+  result. Regex length analysis has a per-schema work limit, so oversized
+  patterns return 400 promptly.
 
 - Speculative decoding takes `--draft-proposal sampled` (default `argmax`,
   unchanged). The draft model samples its proposal under the request's

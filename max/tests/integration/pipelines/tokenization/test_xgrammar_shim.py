@@ -1655,14 +1655,219 @@ def test_allof_under_restricting_unevaluated_properties_rejected() -> None:
 
 
 def test_allof_pattern_and_length_from_two_members_rejected() -> None:
-    # The generator emits a string's pattern OR its length bounds, never both,
-    # so a merge that gathers them from two members would drop one silently.
-    with pytest.raises(Exception):
+    with pytest.raises(Exception, match="each admit lengths the other forbids"):
         _compiler().compile_json_schema(
             '{"allOf": [{"type": "string", "pattern": "a+"}, '
             '{"type": "string", "minLength": 2}]}',
             reject_unsupported=True,
         )
+
+
+def test_pattern_implying_the_length_bounds_compiles() -> None:
+    compiled = _compiler().compile_json_schema(
+        '{"type": "string", "pattern": "^a{3,5}$", "maxLength": 10}',
+        reject_unsupported=True,
+    )
+    assert _accepts(compiled, '"aaa"')
+    assert not _accepts(compiled, '"aa"')
+    assert not _accepts(compiled, '"aaaaaa"')
+
+
+def test_pattern_disjoint_from_the_length_bounds_rejected() -> None:
+    with pytest.raises(Exception, match="no length in common"):
+        _compiler().compile_json_schema(
+            '{"type": "string", "pattern": "^a{5,}$", "maxLength": 3}',
+            reject_unsupported=True,
+        )
+
+
+def test_pattern_overlapping_the_length_bounds_rejected() -> None:
+    with pytest.raises(Exception, match="each admit lengths the other forbids"):
+        _compiler().compile_json_schema(
+            '{"type": "string", "pattern": "a+", "minLength": 2}',
+            reject_unsupported=True,
+        )
+
+
+def test_unbounded_repeat_with_one_required_match_keeps_min_length() -> None:
+    with pytest.raises(Exception, match="each admit lengths the other forbids"):
+        _compiler().compile_json_schema(
+            '{"type": "string", "pattern": "^a{1,}$", "minLength": 2}',
+            reject_unsupported=True,
+        )
+
+
+def test_string_length_bounds_must_fit_the_enforceable_range() -> None:
+    for schema in (
+        '{"type": "string", "minLength": -1}',
+        '{"type": "string", "maxLength": -1}',
+        '{"type": "string", "pattern": "^a$", "minLength": 2147483648}',
+    ):
+        with pytest.raises(
+            Exception, match="non-negative integer in the enforceable range"
+        ):
+            _compiler().compile_json_schema(schema, reject_unsupported=True)
+
+
+def test_allof_pattern_implying_the_length_bounds_compiles() -> None:
+    compiled = _compiler().compile_json_schema(
+        '{"allOf": [{"type": "string", "pattern": "^a{3,5}$"}, '
+        '{"maxLength": 10}]}',
+        reject_unsupported=True,
+    )
+    assert _accepts(compiled, '"aaa"')
+    assert not _accepts(compiled, '"aa"')
+
+
+def test_allof_pattern_disjoint_from_the_length_bounds_rejected() -> None:
+    with pytest.raises(Exception, match="no length in common"):
+        _compiler().compile_json_schema(
+            '{"allOf": [{"type": "string", "pattern": "^a{5,}$"}, '
+            '{"maxLength": 3}]}',
+            reject_unsupported=True,
+        )
+
+
+def test_union_base_length_bound_not_dropped_by_a_branch_pattern() -> None:
+    with pytest.raises(Exception, match="each admit lengths the other forbids"):
+        _compiler().compile_json_schema(
+            '{"oneOf": [{"type": "string", "pattern": "^a+$"}, '
+            '{"type": "null"}], "maxLength": 1}',
+            reject_unsupported=True,
+        )
+
+
+def test_format_implying_the_length_bounds_compiles() -> None:
+    compiled = _compiler().compile_json_schema(
+        '{"type": "string", "format": "date", "maxLength": 32}',
+        reject_unsupported=True,
+    )
+    assert _accepts(compiled, '"2026-01-31"')
+
+
+def test_format_disjoint_from_the_length_bounds_rejected() -> None:
+    with pytest.raises(Exception, match="no length in common"):
+        _compiler().compile_json_schema(
+            '{"type": "string", "format": "date", "maxLength": 3}',
+            reject_unsupported=True,
+        )
+
+
+def test_format_overlapping_the_length_bounds_rejected() -> None:
+    with pytest.raises(Exception, match="each admit lengths the other forbids"):
+        _compiler().compile_json_schema(
+            '{"type": "string", "format": "email", "maxLength": 20}',
+            reject_unsupported=True,
+        )
+
+
+def test_format_and_pattern_together_rejected() -> None:
+    with pytest.raises(Exception, match="only one is enforced"):
+        _compiler().compile_json_schema(
+            '{"type": "string", "format": "email", "pattern": "a+"}',
+            reject_unsupported=True,
+        )
+
+
+def test_non_ascii_pattern_with_length_bounds_rejected() -> None:
+    # Length is counted in characters and the automaton counts bytes, so a
+    # pattern that can leave ASCII is refused rather than measured in the
+    # wrong unit.
+    with pytest.raises(Exception, match="cannot be measured"):
+        _compiler().compile_json_schema(
+            '{"type": "string", "pattern": "^\\u00e9+$", "maxLength": 3}',
+            reject_unsupported=True,
+        )
+
+
+def test_multichar_escape_length_analysis_fails_closed() -> None:
+    schema = json.dumps(
+        {"type": "string", "pattern": r"^\u0041$", "minLength": 2}
+    )
+    with pytest.raises(Exception, match="cannot be measured"):
+        _compiler().compile_json_schema(schema, reject_unsupported=True)
+
+
+def test_misplaced_anchor_length_analysis_fails_closed() -> None:
+    schema = json.dumps({"type": "string", "pattern": "a^b", "minLength": 3})
+    with pytest.raises(Exception, match="cannot be measured"):
+        _compiler().compile_json_schema(schema, reject_unsupported=True)
+
+
+@pytest.mark.parametrize("pattern", [r"^\^\$$", r"^[$^]{2}$"])
+def test_valid_anchor_placements_still_measured(pattern: str) -> None:
+    schema = json.dumps({"type": "string", "pattern": pattern, "minLength": 2})
+    compiled = _compiler().compile_json_schema(schema, reject_unsupported=True)
+    assert isinstance(compiled, xgr.CompiledGrammar)
+
+
+def test_huge_quantifier_with_length_bounds_refused_quickly() -> None:
+    for schema in (
+        '{"type": "string", "pattern": "^a{100000000}$",'
+        ' "maxLength": 100000000}',
+        '{"allOf": [{"type": "string", "pattern": "^a{100000000}$"},'
+        ' {"maxLength": 100000000}]}',
+        '{"oneOf": [{"type": "string", "pattern": "^a{100000000}$"},'
+        ' {"type": "null"}], "maxLength": 100000000}',
+    ):
+        started = time.process_time()
+        with pytest.raises(Exception, match="cannot be measured"):
+            _compiler().compile_json_schema(schema, reject_unsupported=True)
+        assert time.process_time() - started < 1.0
+
+
+def test_quantifier_beyond_integer_range_is_refused() -> None:
+    for pattern in (
+        "^a{999999999999999999999999}$",
+        "^a{1,999999999999999999999999}$",
+    ):
+        with pytest.raises(Exception, match="cannot be measured"):
+            _compiler().compile_json_schema(
+                f'{{"type": "string", "pattern": "{pattern}", "maxLength": 1}}',
+                reject_unsupported=True,
+            )
+
+
+def test_length_measurement_budget_is_shared_across_union_branches() -> None:
+    branches = ",".join(
+        f'{{"type": "string", "pattern": "^{index:04d}a{{1,500}}$"}}'
+        for index in range(32)
+    )
+    with pytest.raises(Exception, match="cannot be measured"):
+        _compiler().compile_json_schema(
+            f'{{"anyOf": [{branches}], "maxLength": 10000}}',
+            reject_unsupported=True,
+        )
+
+
+def test_moderate_quantifier_with_length_bounds_still_measured() -> None:
+    compiled = _compiler().compile_json_schema(
+        '{"type": "string", "pattern": "^a{1,500}$", "maxLength": 9999}',
+        reject_unsupported=True,
+    )
+    assert _accepts(compiled, '"aa"')
+    assert not _accepts(compiled, '""')
+
+
+def test_string_tier_alone_still_compiles() -> None:
+    for schema in (
+        '{"type": "string", "pattern": "^a{3,5}$"}',
+        '{"type": "string", "minLength": 2, "maxLength": 4}',
+        '{"type": "string", "format": "date"}',
+    ):
+        compiled = _compiler().compile_json_schema(
+            schema, reject_unsupported=True
+        )
+        assert isinstance(compiled, xgr.CompiledGrammar)
+
+
+def test_pattern_and_length_bounds_permissive_unchanged() -> None:
+    # Without reject_unsupported the converter keeps upstream's bargain: the
+    # first tier wins and the rest are dropped.
+    compiled = _compiler().compile_json_schema(
+        '{"type": "string", "pattern": "a+", "minLength": 2}'
+    )
+    assert _accepts(compiled, '"a"')
 
 
 def test_allof_lone_ref_member_still_compiles() -> None:
@@ -4080,27 +4285,28 @@ def test_oneof_branch_without_declared_type_refused() -> None:
         )
 
 
-def test_string_schema_with_multiple_generation_tiers_rejected() -> None:
+def test_union_base_string_tier_judged_across_sides() -> None:
     for schema in (
-        '{"type": "string", "pattern": "^a+$", "maxLength": 1}',
-        '{"oneOf": [{"type": "string", "pattern": "^a+$",'
-        ' "maxLength": 1}, {"type": "null"}]}',
-    ):
-        with pytest.raises(Exception, match="only one is enforced"):
-            _compiler().compile_json_schema(schema, reject_unsupported=True)
-
-
-def test_union_base_string_tier_not_folded_across_sides() -> None:
-    for schema in (
-        '{"oneOf": [{"type": "string", "pattern": "^a+$"},'
-        ' {"type": "null"}], "maxLength": 1}',
         '{"anyOf": [{"type": "string", "pattern": "^a+$"},'
         ' {"type": "null"}], "maxLength": 1}',
         '{"oneOf": [{"type": "string", "maxLength": 1},'
         ' {"type": "null"}], "pattern": "^a+$"}',
     ):
-        with pytest.raises(Exception, match="only one is enforced"):
+        with pytest.raises(
+            Exception, match="each admit lengths the other forbids"
+        ):
             _compiler().compile_json_schema(schema, reject_unsupported=True)
+
+
+def test_union_base_pattern_within_length_bound_compiles() -> None:
+    compiled = _compiler().compile_json_schema(
+        '{"oneOf": [{"type": "string", "pattern": "^a$"},'
+        ' {"type": "null"}], "maxLength": 10}',
+        reject_unsupported=True,
+    )
+    assert _accepts(compiled, '"a"')
+    assert _accepts(compiled, "null")
+    assert not _accepts(compiled, '"aa"')
 
 
 def test_union_base_length_bound_folds_without_a_pattern() -> None:
