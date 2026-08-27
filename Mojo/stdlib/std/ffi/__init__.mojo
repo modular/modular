@@ -1055,9 +1055,9 @@ struct _Global[
             comptime if conforms_to(Self.StorageType, Deinitable):
                 typed_ptr.unsafe_deinit_pointee()
             dealloc(
-                ThinAllocation(
-                    unsafe_owned_ptr=typed_ptr
-                ).unsafe_with_layout({count = 1})
+                ThinAllocation(unsafe_owned_ptr=typed_ptr).unsafe_with_layout(
+                    {count = 1}
+                )
             )
 
     @staticmethod

@@ -53,15 +53,9 @@ def test_python_atexit_via_subprocess() raises:
     var tmp = String(tempfile.mktemp(suffix=".txt"))
     var test_mojo_script = String(tempfile.mktemp(suffix=".mojo"))
 
-    var mojo_code = (
-        "from std.python import Python\n"
-        "def main() raises:\n"
-        "    _ = Python.evaluate(\\"\\"\\"\n"
-        "import atexit; f=r'"
-        + tmp
-        + "'; atexit.register(lambda: open(f,'w').write('OK'))\n"
-        "\\"\\"\\")"
-    )
+    var mojo_code = "from std.python import Python\n"
+    mojo_code += "def main() raises:\n"
+    mojo_code += "    _ = Python.evaluate('import atexit; f=r\"" + tmp + "\"; atexit.register(lambda: open(f, \"w\").write(\"OK\"))')\n"
 
     _ = Python.evaluate("open(r'" + test_mojo_script + "','w').write(r'''" + mojo_code + "''')")
 
