@@ -1223,7 +1223,7 @@ ASTDecl &SharedState::createModule(StringRef moduleName,
   ModuleLoader &loader = getModuleLoader();
   ModuleState &state = loader.createModuleState(
       StringAttr::get(getContext(), moduleName), moduleBuffer,
-      loader.getTopLevelState(), loc, spec);
+      loader.getTopLevelState(), loc, spec, /*importLoc=*/{});
   return *state.decl;
 }
 

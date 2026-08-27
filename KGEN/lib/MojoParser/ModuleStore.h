@@ -37,6 +37,7 @@
 namespace M::KGEN::LIT {
 
 class ASTDecl;
+struct ModuleState;
 
 //===----------------------------------------------------------------------===//
 // ModuleOrigin
@@ -46,9 +47,8 @@ class ASTDecl;
 /// precompiled artifact whose single file holds many modules. Every binding
 /// that reads out of it points at this one record.
 struct ModuleOrigin {
-  ModuleOrigin(std::string canonicalPath, std::string canonicalMount)
-      : canonicalPath(std::move(canonicalPath)),
-        canonicalMount(std::move(canonicalMount)) {}
+  explicit ModuleOrigin(std::string canonicalPath)
+      : canonicalPath(std::move(canonicalPath)) {}
 
   ~ModuleOrigin() {
     // Drop any remaining operations in the reader to avoid dangling
@@ -61,9 +61,14 @@ struct ModuleOrigin {
   /// The canonical path. Also the key this origin is stored under.
   std::string canonicalPath;
 
-  /// The dotted name of the binding that fixes the symbol path this origin's
-  /// contents are named by. Re-anchoring rewrites an artifact's references to
-  /// exactly one path, so only one binding can contribute to symbol paths.
+  /// The binding that fixes the symbol path this origin's contents are named
+  /// by, and the one every later binding of the entity aliases to. First
+  /// binding wins.
+  ModuleState *canonicalBinding = nullptr;
+
+  /// The dotted name that the canonical binding is mounted at. Set with it.
+  /// Re-anchoring rewrites an artifact's references to exactly one path, which
+  /// is this one.
   std::string canonicalMount;
 
   //===--------------------------------------------------------------------===//
