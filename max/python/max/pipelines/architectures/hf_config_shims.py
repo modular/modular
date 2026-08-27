@@ -314,3 +314,22 @@ class _InklingMMHFConfig(PretrainedConfig):
 
 
 AutoConfig.register("inkling_mm_model", _InklingMMHFConfig, exist_ok=True)
+
+
+class _Glm5NextHFConfig(PretrainedConfig):
+    """Shim for GLM-5.3-Flash's ``glm5_next`` model type."""
+
+    model_type = "glm5_next"
+
+    def __init__(
+        self,
+        text_config: Any = None,
+        vision_config: Any = None,
+        **kwargs: Any,
+    ) -> None:
+        self.text_config = PretrainedConfig(**(text_config or {}))
+        self.vision_config = PretrainedConfig(**(vision_config or {}))
+        super().__init__(**kwargs)
+
+
+AutoConfig.register("glm5_next", _Glm5NextHFConfig, exist_ok=True)
