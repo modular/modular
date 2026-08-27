@@ -1915,7 +1915,15 @@ def block_scaled_matmul_amd[
     comptime _m3_mxfp8_o_projection = (
         lane_bytes == 32 and N == 6144 and K_BYTES * _elems_per_byte == 2048
     )
-    comptime _shape_gated_split_k = _m3_mxfp8_o_projection
+    # Fused QKV projections: N=2304 and N=2560, K=6144 elements.
+    comptime _m3_mxfp8_qkv_projection = (
+        lane_bytes == 32
+        and (N == 2304 or N == 2560)
+        and K_BYTES * _elems_per_byte == 6144
+    )
+    comptime _shape_gated_split_k = (
+        _m3_mxfp8_o_projection or _m3_mxfp8_qkv_projection
+    )
     comptime assert not _shape_gated_split_k or (
         can_use_bk_256 and _sk_splits > 1 and _sk_n_aligned
     ), (
@@ -1951,8 +1959,8 @@ def block_scaled_matmul_amd[
     )
 
     # Runtime M-bucket dispatch. Tile shapes tuned on MI355.
-    #   M <=  16  → BN=32 split-K for the MXFP8 O-projection; other shapes use
-    #               the wide-N short-K route or narrow BM=16 split-K.
+    #   M <=  16  → BN=32/64 split-K for the MXFP8 O/QKV projections; other
+    #               shapes use the wide-N short-K route or narrow BM=16 split-K.
     #   16 < M <= 32 → BM=32 split-K for the MXFP8 O-projection shape; other
     #                  shapes use the BM=64 split-K tile below.
     #   32 < M <= 128 → BN=64 split-K for the MXFP8 O-projection shape.
@@ -1962,6 +1970,21 @@ def block_scaled_matmul_amd[
     #               CTA-starved at large M keeps benefiting there too. The
     #               BK512 fallback stays capped at M<=64 — see that branch.
     if M <= 16:
+        comptime if _m3_mxfp8_qkv_projection and _mma_is_default:
+            _launch_block_scaled_split_k[
+                BM=16,
+                BN=64,
+                BK_ELEMS=SK_BK_ELEMS,
+                WM=16,
+                WN=32,
+                num_splits=_sk_splits,
+                MMA_M=MMA_M,
+                MMA_N=MMA_N,
+                MMA_K=MMA_K,
+                matrix_format=_fmt,
+                elementwise_lambda_fn=elementwise_lambda_fn,
+            ](c, a, b, a_scales, b_scales, M, ctx)
+            return
         comptime if _m3_mxfp8_o_projection and _mma_is_default:
             # Reuses `_sk_splits` outside its `SK_BN=128` calibration, as the
             # `M <= 128` branch below does.

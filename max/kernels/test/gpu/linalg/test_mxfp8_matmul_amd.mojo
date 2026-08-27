@@ -681,3 +681,9 @@ def main() raises:
         _test_dispatch[48, 6144, 2048]("dispatch-sk-m3-o-m48", ctx)
         _test_dispatch[64, 6144, 2048]("dispatch-sk-m3-o-m64", ctx)
         _test_dispatch[128, 6144, 2048]("dispatch-sk-m3-o-m128", ctx)
+
+        # Reference-checked here because the epilogue test's oracle is a
+        # second launch of the same tile.
+        _test_dispatch[4, 2560, 6144]("dispatch-sk-m3-qkv-n2560-m4", ctx)
+        _test_dispatch[16, 2560, 6144]("dispatch-sk-m3-qkv-n2560-m16", ctx)
+        _test_dispatch[4, 2304, 6144]("dispatch-sk-m3-qkv-n2304-m4", ctx)

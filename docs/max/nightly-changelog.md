@@ -807,6 +807,9 @@ the [container](/container) page now links to the new page.
 - Improved MXFP8 block-scaled matmul decode latency for attention
   output-projection shapes at M=4, M=32, M=64, and M=128 on MI355.
 
+- Improved MXFP8 block-scaled fused QKV projection decode latency at M=4 on
+  MI355.
+
 - The MLA sparse-attention indexer (DeepSeek V3.2, GLM 5.x) now does work
   proportional to each row's actual key count instead of the batch's
   `max_cache_length` metadata. Inside captured decode device graphs that
