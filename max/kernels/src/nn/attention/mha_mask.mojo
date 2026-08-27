@@ -121,7 +121,8 @@ struct TileMaskStatus(
         writer.write("unknown mask")
 
 
-struct MaskStrategy(TrivialRegisterPassable):
+@fieldwise_init
+struct MaskStrategy(Equatable, TrivialRegisterPassable):
     """Bit-flag enum that selects the masking strategy for a tile iteration set.
 
     Strategies are combined with bitwise OR. `NO_MASK` skips masking
@@ -155,18 +156,6 @@ struct MaskStrategy(TrivialRegisterPassable):
     `UPPER_TRIANGULAR` (and `OUT_OF_BOUNDS` for masks that fold it into
     `mask_bits`).
     """
-
-    @always_inline
-    def __init__(out self, value: Int32):
-        self._value = value
-
-    @always_inline
-    def __eq__(self, other: Self) -> Bool:
-        return self._value == other._value
-
-    @always_inline
-    def __ne__(self, other: Self) -> Bool:
-        return self._value != other._value
 
     @always_inline
     def __and__(self, other: Self) -> Self:
