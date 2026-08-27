@@ -27,6 +27,7 @@ from max.nn.kv_cache import KVCacheParams
 from max.nn.quant_config import QuantConfig
 from max.pipelines.kv_cache import cache_dtype_for_encoding
 from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
+from max.pipelines.lib.interfaces.arch_config import ArchConfigWithVisionCache
 from max.pipelines.modeling.config_enums import SupportedEncoding
 from max.pipelines.weights import resolve_hf_quant_config
 from transformers.models.auto.configuration_auto import AutoConfig
@@ -34,6 +35,7 @@ from typing_extensions import Self, override
 
 from ..llama3.model_config import Llama3Config
 from ..qwen3vl_moe.model_config import VisionConfig
+from ..qwen3vl_moe.nn.data_processing import QWEN3VL_MAX_PIXELS
 from .quantization import Qwen3_5QuantScheme, parse_quant_scheme
 
 __all__ = ["Qwen3_5Config", "VisionConfig"]
@@ -61,7 +63,7 @@ def _declared_dtype(text_config: AutoConfig) -> DType | None:
 
 
 @dataclass(kw_only=True)
-class Qwen3_5Config(Llama3Config):
+class Qwen3_5Config(Llama3Config, ArchConfigWithVisionCache):
     """Configuration for Qwen3.5 hybrid attention models.
 
     Qwen3.5 uses a hybrid architecture with both full (standard) attention
@@ -210,6 +212,65 @@ class Qwen3_5Config(Llama3Config):
     def _get_text_config(huggingface_config: AutoConfig) -> AutoConfig:
         """Extract text config, handling both multimodal and text-only models."""
         return getattr(huggingface_config, "text_config", huggingface_config)
+
+    @staticmethod
+    def _get_vision_config(huggingface_config: AutoConfig) -> AutoConfig | None:
+        """The checkpoint's vision tower config, or None for text-only ones.
+
+        Same shape check ``initialize_from_config`` uses to decide whether to
+        build a :class:`VisionConfig`, so the vision-cache facts below and the
+        compiled graph agree on whether this checkpoint has a tower.
+        """
+        vision_config = getattr(huggingface_config, "vision_config", None)
+        if vision_config is None or not hasattr(vision_config, "patch_size"):
+            return None
+        return vision_config
+
+    @classmethod
+    def estimate_vision_cache_entry_bytes(
+        cls, huggingface_config: AutoConfig
+    ) -> int:
+        """Estimates per-entry bytes for the Qwen3.5 vision encoder cache.
+
+        Qwen3.5's tower is NaViT-style: an image keeps its aspect ratio and
+        yields one token per merged patch, so — unlike Gemma4's fixed pooled
+        patch count — no per-image token count exists in the config to read.
+        The bound that does exist is the image processor's post-resize pixel
+        ceiling, which every served image is smart-resized under, so the
+        largest entry the cache can be asked to hold is that ceiling divided
+        by the patch area and the spatial merge.
+
+        Returns:
+            Estimated bytes per vision cache entry, or 0 for a checkpoint
+            with no vision tower.
+        """
+        vision_config = cls._get_vision_config(huggingface_config)
+        if vision_config is None:
+            return 0
+        patch_area = vision_config.patch_size**2
+        merge = getattr(vision_config, "spatial_merge_size", 2)
+        max_tokens = QWEN3VL_MAX_PIXELS // (patch_area * merge**2)
+        spec = cls.get_vision_cache_row_spec(huggingface_config)
+        assert spec is not None
+        hidden, dtype = spec
+        return max_tokens * hidden * dtype.size_in_bytes
+
+    @classmethod
+    def get_vision_cache_row_spec(
+        cls, huggingface_config: AutoConfig
+    ) -> tuple[int, DType] | None:
+        """One embedding row per merged vision token, at the LM hidden size.
+
+        The dtype is the checkpoint's declared one rather than a fixed
+        bfloat16, because the block pool has to match the buffers the encoder
+        hands it: those are cast to :attr:`compute_dtype`, which for every
+        encoding this architecture supports resolves to the declared dtype.
+        """
+        vision_config = cls._get_vision_config(huggingface_config)
+        if vision_config is None:
+            return None
+        declared = _declared_dtype(cls._get_text_config(huggingface_config))
+        return (vision_config.out_hidden_size, declared or DType.bfloat16)
 
     @override
     @classmethod

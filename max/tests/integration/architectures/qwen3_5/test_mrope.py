@@ -469,8 +469,6 @@ def _batcher_without_mrope() -> Qwen3_5BatchProcessor:
         rec_pools=[],
     )
     batcher._slot_idx_prealloc = []
-    batcher._empty_lm_image_embeddings = []
-    batcher._empty_lm_image_token_indices = []
     batcher._mrope_enabled = False
     return batcher
 
