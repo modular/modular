@@ -33,14 +33,9 @@ from std.math import ceil, floor, trunc
 # Implementing only the required methods (__eq__, __lt__, write_to) and letting
 # the rest be provided/synthesized is itself the test: it compiles only if the
 # card's required-method claims are correct.
+@fieldwise_init
 struct Meters(Comparable, Copyable, Movable, Writable):
     var v: Int
-
-    def __init__(out self, v: Int):
-        self.v = v
-
-    def __eq__(self, other: Self) -> Bool:
-        return self.v == other.v
 
     def __lt__(self, rhs: Self) -> Bool:
         return self.v < rhs.v
