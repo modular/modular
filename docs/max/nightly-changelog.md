@@ -799,6 +799,10 @@ the [container](/container) page now links to the new page.
 
 ## MAX kernels
 
+- The SM100 MLA decode dispatch now enumerates 12, 24 and 48 query heads
+  alongside the powers of two it already covered, so a model whose per-device
+  head count is not a power of two can bind its dispatch metadata.
+
 - Added `MODULAR_APPLE_M5_ALLOW_LOSSY_F32_ATTENTION`. Set it to `0` to keep
   fp32 attention off the Apple M5 MMA, which truncates operands to fp19. It
   defaults to the fast (lossy) path, matching
