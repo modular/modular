@@ -121,6 +121,11 @@ This version is still a work in progress.
 
 ## Library changes
 
+- `List.extend` and `List.resize` now grow geometrically, so repeatedly
+  extending or resizing by a small increment is no longer quadratic. As a
+  result `capacity()` can report more than was asked for. `reserve` is
+  unchanged and still allocates exactly what you request.
+
 - `CompilationTarget` has a new `is_arm()` predicate, and `is_x86()` now
   reports the architecture rather than SSE4 availability. Both read the
   architecture from the target triple, so they no longer vary with

@@ -573,6 +573,46 @@ def test_list_extend_trivial_copy_nontrivial_move() raises:
     assert_equal(v1[0].move_count, 2)
 
 
+def test_list_extend_growth_is_amortized() raises:
+    # Extending in a loop must at least double the capacity each time it
+    # reallocates, otherwise repeated extends are quadratic. Seven chunks of
+    # four separate the two policies: growing to exactly what each call asks
+    # for ends at a capacity of 28, while at least doubling clears 32. The
+    # bound is a lower one so that a future policy which overshoots more
+    # stays passing.
+    var owned = List[Int]()
+    var spanned = List[Int]()
+    for _ in range(7):
+        var chunk: List[Int] = [1, 2, 3, 4]
+        spanned.extend(Span(chunk))
+        owned.extend(chunk^)
+
+    assert_equal(len(owned), 28)
+    assert_equal(len(spanned), 28)
+    assert_true(owned.capacity() >= 32)
+    assert_true(spanned.capacity() >= 32)
+
+    # `reserve` keeps honoring the requested capacity exactly.
+    var exact = List[Int](capacity=4)
+    exact.reserve(5)
+    assert_equal(exact.capacity(), 5)
+
+
+def test_list_resize_growth_is_amortized() raises:
+    # `resize` grows through the same path as `extend`, so growing by a fixed
+    # increment must double as well.
+    var filled = List[Int]()
+    var uninit = List[Int]()
+    for length in range(4, 29, 4):
+        filled.resize(length, 0)
+        uninit.resize(unsafe_uninit_length=length)
+
+    assert_equal(len(filled), 28)
+    assert_equal(len(uninit), 28)
+    assert_true(filled.capacity() >= 32)
+    assert_true(uninit.capacity() >= 32)
+
+
 def test_2d_dynamic_list() raises:
     var list = List[List[Int]]()
 

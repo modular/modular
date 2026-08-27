@@ -869,6 +869,28 @@ struct List[T: AnyType, /](
         self._capacity = new_capacity
         self._annotate_new()
 
+    @always_inline
+    def _grow_amortized(
+        mut self, min_capacity: Int
+    ) where conforms_to(Self.T, Movable):
+        """Grows the storage to hold at least `min_capacity` elements, at least
+        doubling the capacity.
+
+        Args:
+            min_capacity: The capacity the caller needs.
+
+        Notes:
+            Unlike `reserve`, which honors the requested capacity exactly, this
+            never grows by less than a factor of two, so repeated
+            single-element or small-batch growth stays amortized O(1) per
+            element instead of O(n). Growth routines should reach for this
+            rather than `reserve`. `append` is the exception: it open-codes the
+            equivalent doubling to keep its hot path as small as possible.
+        """
+        if self._capacity >= min_capacity:
+            return
+        self._realloc(max(self._capacity * 2, min_capacity))
+
     # FIXME: This annotation is needed to support List[Span[x, o]] types with
     # mutable origins.
     @__unsafe_nested_origins_read_only
@@ -954,7 +976,7 @@ struct List[T: AnyType, /](
 
         var other_len = len(other)
         var final_size = len(self) + other_len
-        self.reserve(final_size)
+        self._grow_amortized(final_size)
 
         var dest_ptr = self._data.unsafe_offset(self._len)
         var src_ptr = other.unsafe_ptr()
@@ -991,9 +1013,7 @@ struct List[T: AnyType, /](
         """
         var elements_len = len(elements)
         var new_num_elts = self._len + elements_len
-        if new_num_elts > self._capacity:
-            # Make sure our capacity at least doubles to avoid O(n^2) behavior.
-            self._realloc(max(self._capacity * 2, new_num_elts))
+        self._grow_amortized(new_num_elts)
 
         self._annotate_increase(elements_len)
         var i = self._len
@@ -1032,7 +1052,7 @@ struct List[T: AnyType, /](
                        #  SIMD[DType.int64, 1](3), SIMD[DType.int64, 1](4)]
         ```
         """
-        self.reserve(self._len + value.length)
+        self._grow_amortized(self._len + value.length)
         self._annotate_increase(value.length)
         self._unsafe_next_uninit_ptr().unsafe_store(value)
         self._len += value.length
@@ -1067,7 +1087,7 @@ struct List[T: AnyType, /](
         ```
         """
         assert count <= value.length, "count must be <= value.length"
-        self.reserve(self._len + count)
+        self._grow_amortized(self._len + count)
         self._annotate_increase(count)
         var v_ptr = Pointer(to=value).unsafe_bitcast[Scalar[dtype]]()
         unsafe_memcpy(
@@ -1170,7 +1190,7 @@ struct List[T: AnyType, /](
     ) where conforms_to(Self.T, Copyable):
         assert new_length >= self._len
 
-        self.reserve(new_length)
+        self._grow_amortized(new_length)
         self._annotate_increase(new_length - self._len)
         for i in range(self._len, new_length):
             self._data.unsafe_offset(i).unsafe_write(copy=fill)
@@ -1202,7 +1222,7 @@ struct List[T: AnyType, /](
         if unsafe_uninit_length <= self._len:
             self.shrink(unsafe_uninit_length)
         else:
-            self.reserve(unsafe_uninit_length)
+            self._grow_amortized(unsafe_uninit_length)
             self._annotate_increase(unsafe_uninit_length - self._len)
             self._len = unsafe_uninit_length
 
