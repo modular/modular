@@ -288,6 +288,8 @@ class TraitSelfBinder : public IndexParameterReplacer<TraitSelfBinder> {
 public:
   TraitSelfBinder(TypedAttr selfValue) : selfValue(selfValue) {}
 
+  FnTypeGeneratorType bindTraitFnSignature(FnTypeGeneratorType sig);
+
 private:
   Attribute tryReplace(Attribute attr, size_t depth);
   Type tryReplace(Type, size_t) { return {}; }

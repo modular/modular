@@ -944,6 +944,16 @@ Attribute TraitSelfBinder::tryReplace(Attribute attr, size_t depth) {
   return selfValue;
 }
 
+FnTypeGeneratorType
+TraitSelfBinder::bindTraitFnSignature(FnTypeGeneratorType sig) {
+  SmallVector<Type> inputTypes(sig.getInputParamTypes());
+  inputTypes[0] = ParamType::get(selfValue);
+
+  sig = FnTypeGeneratorType::get(inputTypes, sig.getBodyFnType(),
+                                 sig.getParamListAttrs());
+  return replace(sig);
+}
+
 //===----------------------------------------------------------------------===//
 // ImplicitOriginRefAttrReplacer
 //===----------------------------------------------------------------------===//
