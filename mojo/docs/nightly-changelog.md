@@ -121,6 +121,10 @@ This version is still a work in progress.
 
 ## Library changes
 
+- `Array` now has a `fill()` method, which assigns a value to every element
+  of an existing array. The `fill=` constructor covers only construction; this
+  covers refilling an array you already have.
+
 - `CompilationTarget` has a new `is_arm()` predicate, and `is_x86()` now
   reports the architecture rather than SSE4 availability. Both read the
   architecture from the target triple, so they no longer vary with
