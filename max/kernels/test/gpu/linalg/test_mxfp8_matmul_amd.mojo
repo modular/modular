@@ -672,3 +672,7 @@ def main() raises:
         _test_dispatch[
             319, 6144, 2048, positive_data=True, out_dtype=DType.bfloat16
         ]("dispatch-oproj-m319-bf16", ctx)
+
+        # Shape-gated decode projection tiles, at exact-fill and unaligned M.
+        _test_dispatch[20, 6144, 2048]("dispatch-sk-m3-o-m20", ctx)
+        _test_dispatch[32, 6144, 2048]("dispatch-sk-m3-o-m32", ctx)

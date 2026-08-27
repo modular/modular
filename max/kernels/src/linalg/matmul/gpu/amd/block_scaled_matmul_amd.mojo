@@ -1911,6 +1911,17 @@ def block_scaled_matmul_amd[
     # and the narrow wide-N tile below can only be the default MFMA; route a
     # 32x32x64 request past them rather than downgrading it silently.
     comptime _mma_is_default = MMA_M == 16 and MMA_N == 16 and MMA_K == 128
+    # Decode O-projection: N=6144, K=2048 elements.
+    comptime _m3_mxfp8_o_projection = (
+        lane_bytes == 32 and N == 6144 and K_BYTES * _elems_per_byte == 2048
+    )
+    comptime _shape_gated_split_k = _m3_mxfp8_o_projection
+    comptime assert not _shape_gated_split_k or (
+        can_use_bk_256 and _sk_splits > 1 and _sk_n_aligned
+    ), (
+        "shape-gated split-K needs BK256-tileable K, a legal split factor, and"
+        " N aligned to the branch's BN"
+    )
 
     # Wide-N short-K decode gate (e.g. down-proj N=16384, K<=3072). For wide
     # N the plain launch already yields ceildiv(N, BN) CTAs that fill the GPU,
@@ -1939,9 +1950,11 @@ def block_scaled_matmul_amd[
         and can_use_bk_512
     )
 
-    # Runtime M-bucket dispatch. Tile shapes tuned for Kimi K2.5 on MI355.
+    # Runtime M-bucket dispatch. Tile shapes tuned on MI355.
     #   M <=  16  → decode → single small-BN kernel for the wide-N short-K
     #               regime, else narrow split-K (BM=16, no wasted M rows)
+    #   16 < M <= 32 → BM=32 split-K for the MXFP8 O-projection shape; other
+    #                  shapes use the BM=64 split-K tile below.
     #   M >   16  → BM=64 split-K when `_sk_band_splits` found a legal factor
     #               and M <= `_sk_route_max_m`. `_sk_splits` is
     #               keyed on N/K/cta_cap, not M, so a shape that's still
@@ -2006,6 +2019,22 @@ def block_scaled_matmul_amd[
                 elementwise_lambda_fn=elementwise_lambda_fn,
             ](c, a, b, a_scales, b_scales, M, ctx)
     else:
+        comptime if _m3_mxfp8_o_projection and _mma_is_default:
+            if M <= 32:
+                _launch_block_scaled_split_k[
+                    BM=32,
+                    BN=SK_BN,
+                    BK_ELEMS=SK_BK_ELEMS,
+                    WM=32,
+                    WN=64,
+                    num_splits=_sk_splits,
+                    MMA_M=MMA_M,
+                    MMA_N=MMA_N,
+                    MMA_K=MMA_K,
+                    matrix_format=_fmt,
+                    elementwise_lambda_fn=elementwise_lambda_fn,
+                ](c, a, b, a_scales, b_scales, M, ctx)
+                return
         comptime if (
             can_use_bk_256
             and _sk_band_splits > 1

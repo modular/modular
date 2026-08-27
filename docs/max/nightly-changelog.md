@@ -804,6 +804,9 @@ the [container](/container) page now links to the new page.
   defaults to the fast (lossy) path, matching
   `MODULAR_APPLE_M5_ALLOW_LOSSY_F32_MATMUL`.
 
+- Improved MXFP8 block-scaled matmul decode latency for attention
+  output-projection shapes at M=32 on MI355.
+
 - The MLA sparse-attention indexer (DeepSeek V3.2, GLM 5.x) now does work
   proportional to each row's actual key count instead of the batch's
   `max_cache_length` metadata. Inside captured decode device graphs that
