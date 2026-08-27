@@ -2524,16 +2524,12 @@ def _to_string_list[
     //,
     as_bytes_fn: def(T) thin -> Span[Byte, O],
 ](items: List[T]) -> List[String]:
-    var i_len = len(items)
-
-    var out_list = List[String](capacity=i_len)
-
-    for i in range(i_len):
-        var elt_ptr = Pointer(to=items[i])
-        out_list.append(
-            String(StringSpan(unsafe_from_utf8=as_bytes_fn(elt_ptr[])))
-        )
-    return out_list^
+    return List(
+        length=len(items),
+        fill_with=lambda (i: Int) -> String: String(
+            StringSpan(unsafe_from_utf8=as_bytes_fn(Pointer(to=items[i])[]))
+        ),
+    )
 
 
 @always_inline

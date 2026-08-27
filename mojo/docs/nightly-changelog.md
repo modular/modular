@@ -271,6 +271,10 @@ This version is still a work in progress.
 
 - `List`'s element type is now bounded by `AnyType` instead of `Movable`.
 
+- `List` has a new `fill_with=` constructor that calls a function with each
+  index in `[0, length)` and writes its result into that position, without
+  requiring the element type to be `Movable`.
+
 - Added `write()` to `MaybeUninit` and `Pointer`, as a safe counterpart to
   `unsafe_write()` for types that are trivially deinitializable (for example
   `Int`). Since a trivial deinitializer is a no-op, overwriting a live value

@@ -40,13 +40,18 @@ def _flat_to_nd_index(flat_idx: Int, shape: List[Int]) -> String:
     if len(shape) == 0:
         return String(t"i={flat_idx}")
 
-    # Compute N-dimensional indices from flat index (row-major order)
-    var indices = List[Int](capacity=len(shape))
+    # Compute N-dimensional indices from flat index (row-major order).
+    # `next_digit` is called for i in [0, len(shape)), so it walks
+    # dimensions from last to first -- matching the row-major unravel order.
     var remaining = flat_idx
-    for dim_idx in range(len(shape) - 1, -1, -1):
-        var dim_size = shape[dim_idx]
-        indices.append(remaining % dim_size)
+
+    def next_digit(i: Int) {mut remaining, imm shape} -> Int:
+        var dim_size = shape[len(shape) - 1 - i]
+        var digit = remaining % dim_size
         remaining //= dim_size
+        return digit
+
+    var indices = List(length=len(shape), fill_with=next_digit)
 
     # Build string in correct order (indices were computed in reverse)
     var result = String("[")

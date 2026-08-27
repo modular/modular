@@ -462,6 +462,31 @@ struct List[T: AnyType, /](
         self._unchecked_grow(length, fill)
 
     @always_inline
+    def __init__(out self, *, length: Int, fill_with: Some[def(Int) -> Self.T]):
+        """Constructs a list by calling `fill_with(i)` for each index `i`.
+
+        Args:
+            length: The requested length of the list.
+            fill_with: A function called with each index in `[0, length)`,
+                whose result is written to that position.
+
+        Examples:
+
+        ```mojo
+        var squares = List(length=5, fill_with=lambda (i: Int) -> Int: i * i)
+        # [0, 1, 4, 9, 16]
+        ```
+        """
+        self = Self(capacity=length)
+        self._annotate_increase(length)
+        self._len = length
+
+        for i in range(length):
+            self._data.unsafe_offset(i).unsafe_write(
+                init_with=lambda () {imm} -> Self.T: fill_with(i)
+            )
+
+    @always_inline
     def __init__(
         out self, var *values: Self.T, __list_literal__: NoneType
     ) where conforms_to(Self.T, Movable):
@@ -1453,11 +1478,12 @@ struct List[T: AnyType, /](
         if not len(r):
             return Self()
 
-        var res = Self(capacity=len(r))
-        for i in r:
-            res.append(self[i].copy())
-
-        return res^
+        return Self(
+            length=len(r),
+            fill_with=lambda (idx: Int) -> Self.T: self[
+                start + idx * step
+            ].copy(),
+        )
 
     @__unsafe_nested_origins_read_only
     @stable(since="1.0")

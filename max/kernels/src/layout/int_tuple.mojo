@@ -2790,11 +2790,8 @@ particularly for operations like permutations and indices.
 def _sorted_perm(tuple: IntTuple) -> IntList:
     """Returns permutation indices that would sort the tuple."""
     var n = len(tuple)
-    var indices = IntList(capacity=n)
+    var indices = IntList(length=n, fill_with=lambda (i: Int) -> Int: i)
     var values = tuple
-
-    for i in range(n):
-        indices.append(i)
 
     # Insertion sort
     for i in range(1, n):
