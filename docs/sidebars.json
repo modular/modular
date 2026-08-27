@@ -27,6 +27,7 @@
         "serve/image-to-text",
         "serve/image-generation",
         "serve/video-generation",
+        "serve/audio-generation",
         "serve/embeddings",
         "serve/function-calling",
         "serve/structured-output",

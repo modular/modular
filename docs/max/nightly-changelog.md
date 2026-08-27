@@ -11,6 +11,13 @@ This version is still a work in progress.
 - Added a dedicated [metrics](/serve/metrics) reference page with all
 available Prometheus metrics, categorized by subsystem. The metrics section in
 the [container](/container) page now links to the new page.
+- Added an [audio generation](/serve/audio-generation) guide, covering serving
+  a text-to-music model over `/v1/audio/speech` and `/v1/responses`, the
+  request fields and their defaults, the lyric tag syntax, and the length a
+  single render is capped at.
+- Added a music generation example that renders songs past that per-render
+  cap by rendering sections and joining them, and checks the joins for
+  audible seams.
 
 ## MAX models
 
