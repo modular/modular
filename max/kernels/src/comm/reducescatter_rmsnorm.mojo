@@ -159,11 +159,10 @@ def _reducescatter_rmsnorm_kernel[
     # Round-robin peer order (RS's `circular_add`): peer 0 is self, so accum
     # from 0 over all peers is bit-for-bit RS's `accum = peer[0]` init (AMD
     # non-multimem).
-    var ptrs = Array[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin], ngpus](
-        uninitialized=True
+    comptime PtrType = ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]
+    var ptrs = Array[_, ngpus](
+        fill_with=lambda (i: Int) -> PtrType: src_ptrs[(my_rank + i) % ngpus]
     )
-    comptime for i in range(ngpus):
-        ptrs[i] = src_ptrs[(my_rank + i) % ngpus]
 
     # Gamma is a model weight, not predecessor output, so it can be loaded ahead
     # of the wait below (local data, latency-hidden).
@@ -483,11 +482,12 @@ def reducescatter_rmsnorm[
     var rows = in_num_elems // cols
 
     # Raw peer pointers, origin erased to ImmutAnyOrigin (matches standalone RS).
-    var src_ptrs = Array[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin], ngpus](
-        uninitialized=True
+    comptime PtrType = ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]
+    var src_ptrs = Array[_, ngpus](
+        fill_with=lambda (i: Int) -> PtrType: input_buffers[i]
+        ._storage.as_imm()
+        .as_unsafe_any_origin()
     )
-    comptime for i in range(ngpus):
-        src_ptrs[i] = input_buffers[i]._storage.as_imm().as_unsafe_any_origin()
 
     # Each thread owns `simd_width` cols; H=6144 fits the base width
     # (64*8*16=8192) on all targets (no AR two-width dispatch). Assert fit +

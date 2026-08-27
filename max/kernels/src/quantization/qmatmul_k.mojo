@@ -708,10 +708,11 @@ def _matmul_group_stream_neon_dotprod[
     var b_vals = Array[SIMD[.uint8, b_width], b_count](fill=0)
 
     comptime for k in range(0, group_size, 16):
-        var a_tile = Array[SIMD[.int8, 16], tile_m](uninitialized=True)
-
-        comptime for row in range(tile_m):
-            a_tile[row] = (a_q_bits_ptr + row * group_size + k).load[width=16]()
+        var a_tile = Array[_, tile_m](
+            fill_with=lambda (row: Int) {imm a_q_bits_ptr} -> SIMD[.int8, 16]: (
+                a_q_bits_ptr + row * group_size + k
+            ).load[width=16]()
+        )
 
         comptime for lane in range(0, 4, tile_k):
             stream_b_vals_fn(b_vals)

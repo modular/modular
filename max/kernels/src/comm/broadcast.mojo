@@ -304,14 +304,12 @@ def broadcast_pull_2stage_kernel[
 
     # Get payload buffers from signal pointers (skip Signal header)
     # These are used as scratch space for the scatter-gather pattern
-    var payloads = Array[MutPointer[Scalar[dtype], MutAnyOrigin], ngpus](
-        uninitialized=True
+    comptime PtrType = MutPointer[Scalar[dtype], MutAnyOrigin]
+    var payloads = Array[_, ngpus](
+        fill_with=lambda (i: Int) -> PtrType: (
+            rank_sigs[i].address_space_cast[.GENERIC]() + 1
+        ).bitcast[Scalar[dtype]]()
     )
-
-    comptime for i in range(ngpus):
-        payloads[i] = (rank_sigs[i].address_space_cast[.GENERIC]() + 1).bitcast[
-            Scalar[dtype]
-        ]()
 
     with PDL():
         # === Stage 1: Scatter from root ===

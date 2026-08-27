@@ -162,30 +162,30 @@ struct Pipe[N: Int](Copyable, Movable):
     @always_inline
     def as_schedule[phase: Phase](self) -> Array[ScheduleEntry, Self.N]:
         """Convert to schedule entries with sequential time slots."""
-        var entries = Array[ScheduleEntry, Self.N](uninitialized=True)
-        for i in range(Self.N):
-            entries[i] = ScheduleEntry(
+        return Array[_, Self.N](
+            fill_with=lambda (i: Int) {
+                imm self
+            } -> ScheduleEntry: ScheduleEntry(
                 op=self.ops[i],
                 time_slot=i,
                 phase=phase,
                 is_prefetch=False,
             )
-        return entries^
+        )
 
     @always_inline
     def as_schedule[
         phase: Phase
     ](self, offset: Int) -> Array[ScheduleEntry, Self.N]:
         """Convert to schedule entries with time slots starting at offset."""
-        var entries = Array[ScheduleEntry, Self.N](uninitialized=True)
-        for i in range(Self.N):
-            entries[i] = ScheduleEntry(
+        return Array[_, Self.N](
+            fill_with=lambda (i: Int) {imm} -> ScheduleEntry: ScheduleEntry(
                 op=self.ops[i],
                 time_slot=offset + i,
                 phase=phase,
                 is_prefetch=False,
             )
-        return entries^
+        )
 
     @always_inline
     def emit_into[

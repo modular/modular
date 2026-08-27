@@ -107,12 +107,12 @@ def _allreduce_lamport_rmsnorm_kernel[
 
     # This rank's own region (polled) + peer regions in round-robin order.
     var my_region = rank_sigs[my_rank][].lamport_region_ptr[dtype]()
-    var peer_regions = Array[MutPointer[Scalar[dtype], MutAnyOrigin], ngpus](
-        uninitialized=True
+    comptime PtrType = MutPointer[Scalar[dtype], MutAnyOrigin]
+    var peer_regions = Array[_, ngpus](
+        fill_with=lambda (i: Int) -> PtrType: rank_sigs[
+            circular_add[ngpus](my_rank, i)
+        ][].lamport_region_ptr[dtype]()
     )
-    comptime for i in range(ngpus):
-        var target = circular_add[ngpus](my_rank, i)
-        peer_regions[i] = rank_sigs[target][].lamport_region_ptr[dtype]()
     var sentinel = set_neg_zero[dtype, atomic_width]()
 
     # Generation geometry (read the device-resident counter once per call).

@@ -2890,19 +2890,21 @@ def _mxfp4_dotprod[
 
     for ko in range(k_groups):
         var a_scale = a_scales_ptr[ko].cast[.float32]()
-        var b_scale = Array[Float32, BLOCK_N](uninitialized=True)
-
-        comptime for bn in range(BLOCK_N):
-            b_scale[bn] = b_scales_ptr[bn * k_groups + ko].cast[.float32]()
+        var b_scale = Array[_, BLOCK_N](
+            fill_with=lambda (bn: Int) {
+                imm b_scales_ptr, imm k_groups, imm ko
+            } -> Float32: b_scales_ptr[bn * k_groups + ko].cast[.float32]()
+        )
 
         comptime for ki in range(0, MXFP4_SF_VECTOR_SIZE // 2, 4):
             var a_data = bitcast[.int32, 1](a_local_ptr.load[width=4](ki))
-            var b_data = Array[Int32, BLOCK_N](uninitialized=True)
-
-            comptime for bn in range(BLOCK_N):
-                b_data[bn] = bitcast[.int32, 1](
+            var b_data = Array[_, BLOCK_N](
+                fill_with=lambda (bn: Int) {
+                    imm b_local_ptr, imm K
+                } -> Int32: bitcast[.int32, 1](
                     b_local_ptr.load[width=4](bn * (K // 2) + ki)
                 )
+            )
 
             comptime for byte_select in range(4):
                 var a_slice_bf16x2 = cast_fp2em1x2_to_bf16x2[byte_select](
