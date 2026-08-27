@@ -1010,6 +1010,12 @@ the [container](/container) page now links to the new page.
   `@__copy_capture(x)` with an explicit capture list such as `{imm}` or
   `{var x, imm}`.
 
+- `DeviceGraphBuilder.add_function[kernel](*args, ...)` takes a thin
+  function pointer (`func: def(...) thin -> None`), the same identity as
+  `DeviceContext.compile_function[kernel]()`. The capturing compile-and-add
+  overloads are removed; capturing kernels use
+  `DeviceContext.enqueue_function()` or `recording_context()`.
+
 - `PipelineRegistry.retrieve_factory` now returns a `RetrievedPipeline`
   dataclass with `tokenizer`, `factory`, and `memory_plan` fields instead of
   a `(tokenizer, factory)` tuple, so callers can reach the memory plan
