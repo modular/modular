@@ -16,6 +16,7 @@ from std.collections.string.string_span import get_static_string
 from std.math import align_down, ceildiv, iota
 from std.sys import align_of, bit_width_of, simd_width_of, size_of
 from std.sys.info import CompilationTarget, _current_target, is_apple_gpu
+from std.utils.numerics import neg_inf
 
 from max.algorithm import elementwise, sync_parallelize, unsafe_parallel_memcpy
 from std.algorithm.functional import tile
@@ -1874,6 +1875,14 @@ def apply_packed_bitmask[
     sentinel, e.g. a large negative number). This replaces a CPU unpack +
     `ops.where` in constrained decoding.
 
+    A position the model itself excluded with `-inf` stays `-inf` rather than
+    taking `fill_value`. Callers pass a finite `fill_value` so that a row the
+    grammar masks entirely degrades to a uniform draw instead of NaN, and
+    writing it over a model-excluded position would make that position
+    sampleable again. Since a grammar may only ever remove candidates, never
+    add them back, carrying `-inf` through is the mask's correct semantics.
+    A row cannot become entirely `-inf` this way, so the NaN guarantee holds.
+
     Parameters:
         dtype: Element type of `logits`, `output`, and `fill_value`.
         target: Target backend to execute on, such as "cpu" or "cuda".
@@ -1915,7 +1924,11 @@ def apply_packed_bitmask[
         var keep = ((word >> (tok & 31)) & 1).ne(0)
         var values = logits.load[width=width]((b, v))
         var filled = SIMD[dtype, width](fill_value)
-        output.store((b, v), keep.select(values, filled))
+        comptime if dtype.is_floating_point():
+            var excluded = values.eq(neg_inf[dtype]())
+            output.store((b, v), (keep | excluded).select(values, filled))
+        else:
+            output.store((b, v), keep.select(values, filled))
 
     comptime simd_width = simd_width_of[dtype]()
     var dispatch_shape = Coord(Int(output.dim[0]()), Int(output.dim[1]()))

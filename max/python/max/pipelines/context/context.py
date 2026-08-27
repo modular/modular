@@ -292,6 +292,15 @@ class GrammarEnforcementState:
     has_json_schema: bool = False
     """Whether this request includes a JSON schema response format."""
 
+    dead_matcher_reported: bool = False
+    """Whether this request already logged that its matcher stopped without accepting.
+
+    A matcher in that state has erred and stays erred, so the bitmask path would
+    otherwise log once per slot per decode step for the rest of the request.
+    Deliberately outside :meth:`snapshot` / :meth:`restore`, so the speculative
+    walk's rollback cannot clear the latch and re-arm the log.
+    """
+
     tool_region: StructuredOutputRegionDelimiters | None = None
     """Token sequences defining tool call boundaries, if conditional enforcement."""
 

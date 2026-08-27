@@ -98,6 +98,49 @@ class _NoopBackend(GrammarBackend[Any]):
         pass
 
 
+class _DeadMatcher(_RecordingMatcher):
+    """Stopped without accepting: llguidance's state after a rejected token.
+
+    Its mask is all-zero, since no token can continue the grammar.
+    """
+
+    def is_accepting(self) -> bool:
+        return False
+
+    def is_stopped(self) -> bool:
+        return True
+
+    def deep_copy(self) -> _DeadMatcher:
+        return _DeadMatcher()
+
+
+class _CompletedMatcher(_RecordingMatcher):
+    """Stopped *and* accepting: a satisfied grammar, whose mask allows EOS."""
+
+    def is_stopped(self) -> bool:
+        return True
+
+    def deep_copy(self) -> _CompletedMatcher:
+        return _CompletedMatcher()
+
+
+class _FillCountingBackend(_NoopBackend):
+    """Backend whose fill is observable, so a skipped fill can be asserted on."""
+
+    def __init__(self) -> None:
+        self.fills = 0
+
+    def fill_next_token_bitmask(
+        self,
+        matcher: GrammarMatcher,
+        bitmask: npt.NDArray[np.int32],
+        index: int,
+    ) -> None:
+        self.fills += 1
+        # Any non--1 value marks the slot as "the backend wrote here".
+        bitmask[index, :] = 0
+
+
 def create_text_context(prompt_len: int, max_length: int) -> TextContext:
     """Create a TextContext for testing."""
     tokens = np.arange(prompt_len, dtype=np.int64)
@@ -637,6 +680,88 @@ class _RaisingBackend(GrammarBackend[Any]):
         index: int,
     ) -> None:
         raise NotImplementedError
+
+
+class TestDeadMatcherLeavesSlotUnconstrained:
+    """``StructuredOutputHelper._fill_slot_unless_matcher_dead``.
+
+    A matcher stopped without accepting has erred and can allow no token, so
+    its mask is all-zero. Handing that row to the sampler is worse than
+    dropping the constraint: the masked-out fill is finite (so a fully-masked
+    row degrades to a uniform draw rather than NaN), which turns the row into a
+    uniform draw over the whole vocabulary -- padded tail included. The slot
+    must stay at its all-valid ``-1`` reset instead.
+    """
+
+    @staticmethod
+    def _constrained_ctx(matcher: GrammarMatcher) -> TextContext:
+        ctx = create_text_context(prompt_len=4, max_length=128)
+        ctx.update(new_token=99)
+        ctx.set_matcher(matcher)
+        ctx.grammar_enforced = True
+        return ctx
+
+    @staticmethod
+    def _run(
+        helper: StructuredOutputHelper, ctx: TextContext
+    ) -> npt.NDArray[np.int32]:
+        bitmask_out = np.zeros((1, 2, 1), dtype=np.int32)
+        helper.advance_fsm_and_compute_bitmasks(
+            context_batch=[ctx],
+            accepted_draft_tokens=np.zeros((1, 1), dtype=np.int64),
+            num_accepted=np.zeros((1,), dtype=np.int64),
+            bonus_tokens=np.full((1,), 5, dtype=np.int64),
+            next_draft_tokens=np.zeros((1, 1), dtype=np.int64),
+            bitmask_out=bitmask_out,
+            output_context_batch=[ctx],
+        )
+        return bitmask_out
+
+    def test_dead_matcher_leaves_every_slot_all_valid(self) -> None:
+        backend = _FillCountingBackend()
+        helper = StructuredOutputHelper(
+            enabled=True, vocab_size=16, backend=backend
+        )
+        ctx = self._constrained_ctx(_DeadMatcher())
+
+        bitmask_out = self._run(helper, ctx)
+
+        assert backend.fills == 0
+        assert (bitmask_out == -1).all()
+
+    def test_completed_matcher_is_still_applied(self) -> None:
+        """Control: a stopped *accepting* matcher is a satisfied grammar.
+
+        Its EOS-only mask is correct and must still constrain the row -- the
+        guard keys on the error state, not on being stopped.
+        """
+        backend = _FillCountingBackend()
+        helper = StructuredOutputHelper(
+            enabled=True, vocab_size=16, backend=backend
+        )
+        ctx = self._constrained_ctx(_CompletedMatcher())
+
+        bitmask_out = self._run(helper, ctx)
+
+        assert backend.fills > 0
+        assert (bitmask_out == 0).any()
+
+    def test_report_is_latched_per_request(self) -> None:
+        """The error state persists, so the log must not repeat every step."""
+        backend = _FillCountingBackend()
+        helper = StructuredOutputHelper(
+            enabled=True, vocab_size=16, backend=backend
+        )
+        ctx = self._constrained_ctx(_DeadMatcher())
+
+        assert not ctx.grammar_state.dead_matcher_reported
+        self._run(helper, ctx)
+        assert ctx.grammar_state.dead_matcher_reported
+
+        # The latch survives the speculative walk's snapshot/restore, so a
+        # second step reports nothing further while still skipping the fill.
+        self._run(helper, ctx)
+        assert backend.fills == 0
 
 
 class TestGrammarCompileFailure:

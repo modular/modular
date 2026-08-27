@@ -1003,6 +1003,9 @@ def stochastic_acceptance_sampler(
                 Dim("packed_vocab_size"),
             ],
         )
+        # The fill is finite so a fully-masked row degrades to a uniform draw
+        # instead of NaN; ``apply_packed_bitmask`` carries the model's own -inf
+        # positions through it, so masking can only ever narrow the support.
         target_logits_3d = apply_packed_bitmask(
             target_logits_3d, bitmask_rebound, fill_val=_MASKED_LOGIT_VALUE
         )
