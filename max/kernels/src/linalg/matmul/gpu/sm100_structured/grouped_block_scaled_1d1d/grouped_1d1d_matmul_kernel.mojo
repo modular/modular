@@ -124,6 +124,7 @@ from ..structured_kernels.config import (
     OutputPipelineConfig,
 )
 from structured_kernels.kernel_common import (
+    MbarPtr,
     WarpRole1D1D,
     compute_tma_tile_dims,
     compute_accum_barrier_counts,
@@ -2718,6 +2719,9 @@ struct Grouped1D1DMatmulKernel[
     def load_input_tiles[
         tiles_origin: MutOrigin,
         //,
+        split_txn: Bool = False,
+        weight_txn_bytes: Int = 0,
+        activation_txn_bytes: Int = 0,
     ](
         a_tma_op: Self.ATmaOp,
         b_tma_op: Self.BTmaOp,
@@ -2738,6 +2742,7 @@ struct Grouped1D1DMatmulKernel[
         b_multicast_mask: UInt16,
         load_weights: Bool = True,
         load_activations: Bool = True,
+        wr_mbar: Optional[MbarPtr] = None,
     ):
         """Load A, B, SFA, SFB tiles using TMA.
 
@@ -2755,9 +2760,26 @@ struct Grouped1D1DMatmulKernel[
         activations-only). Branches inside are cheap compared to the
         TMA ops and the warp-level election that gates them.
 
+        `split_txn` splits the stage's single transaction count in two:
+        the weight side (A + SFA when `AB_swapped`) completes a
+        caller-supplied weight-ready barrier carrying
+        `weight_txn_bytes`, and the stage's own FULL barrier is reduced
+        to `activation_txn_bytes`. Both counts are armed during the
+        weight phase, so an activation-only follow-up call for the same
+        stage re-arms neither. A consumer that reads A must then join
+        the weight-ready barrier as well as the stage barrier. With
+        `split_txn=False` (the default) nothing about the emitted code
+        changes.
+
         Parameters:
             tiles_origin: SMEM `MutOrigin` of the producer tiles (inferred
                 from `tiles`).
+            split_txn: When `True`, account the weight bytes on `wr_mbar`
+                and the activation bytes on the stage barrier instead of
+                arming the stage barrier with `input_expected_bytes`.
+            weight_txn_bytes: Weight-side expected bytes (`split_txn`).
+            activation_txn_bytes: Activation-side expected bytes
+                (`split_txn`).
 
         Args:
             a_tma_op: TMA operation descriptor for A tile loads.
@@ -2787,7 +2809,18 @@ struct Grouped1D1DMatmulKernel[
                 `AB_swapped`, else B+SFB) (defaults to `True`).
             load_activations: When `True`, load the activation side
                 (defaults to `True`).
+            wr_mbar: Weight-ready barrier the weight-side TMAs signal
+                under `split_txn`. Must be present whenever `split_txn`
+                is set; ignored otherwise.
         """
+        comptime assert (
+            not split_txn
+            or weight_txn_bytes + activation_txn_bytes
+            == Self.input_expected_bytes
+        ), (
+            "split_txn byte counts must reconstruct input_expected_bytes"
+            " exactly, or the stage's transactions never balance"
+        )
         var peer_rank_n = peer_cta_coord[0]
         var peer_rank_m = peer_cta_coord[1]
         var peer_m_rank = peer_cta_coord[2]
@@ -2847,9 +2880,30 @@ struct Grouped1D1DMatmulKernel[
             # phase so activation-only calls (post-PDL-wait) don't re-expect.
             if load_weights:
                 if elect_one_cta:
-                    tiles.expect_bytes(Self.input_expected_bytes)
+                    comptime if split_txn:
+                        # BOTH counts are armed in the weight phase, so the
+                        # `load_weights=False, load_activations=True`
+                        # follow-up call for the same stage re-arms
+                        # neither and no transaction is left outstanding.
+                        wr_mbar.unsafe_value()[0].expect_bytes(
+                            Int32(weight_txn_bytes)
+                        )
+                        tiles.expect_bytes(activation_txn_bytes)
+                    else:
+                        tiles.expect_bytes(Self.input_expected_bytes)
 
             var barrier = tiles.barrier()
+            # Per-side completion barriers. Both are the stage barrier
+            # unless the caller split the transaction, in which case the
+            # WEIGHT side (A+SFA when AB_swapped, B+SFB otherwise) moves
+            # onto the caller's weight-ready barrier.
+            var a_side_barrier = barrier
+            var b_side_barrier = barrier
+            comptime if split_txn:
+                comptime if Self.config.AB_swapped:
+                    a_side_barrier = wr_mbar.unsafe_value()
+                else:
+                    b_side_barrier = wr_mbar.unsafe_value()
 
             comptime for jj in range(Self.config.k_group_size):
                 var j = UInt32(jj)
@@ -2875,14 +2929,14 @@ struct Grouped1D1DMatmulKernel[
                 if load_a_side:
                     a_tma_op.async_multicast_load[Self.cta_group](
                         a_peer_tt,
-                        barrier[0],
+                        a_side_barrier[0],
                         (k_coord, a_gmem_m_coord),
                         a_multicast_mask,
                     )
                 if load_b_side:
                     b_tma_op.async_multicast_load[Self.cta_group](
                         b_peer_tt,
-                        barrier[0],
+                        b_side_barrier[0],
                         (k_coord, b_gmem_n_coord),
                         b_multicast_mask,
                     )
@@ -2927,7 +2981,7 @@ struct Grouped1D1DMatmulKernel[
                     )
                     sfa_tma_op.async_copy_4d[Self.cta_group](
                         sfa_tt_u16,
-                        barrier[0],
+                        a_side_barrier[0],
                         (
                             0,
                             Int(
@@ -2959,7 +3013,7 @@ struct Grouped1D1DMatmulKernel[
                         )
                         sfb_tma_op.async_copy_4d[Self.cta_group](
                             sfb_tt_u16,
-                            barrier[0],
+                            b_side_barrier[0],
                             (
                                 0,
                                 Int(

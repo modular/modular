@@ -56,6 +56,7 @@ from std.utils.index import IndexList
 from structured_kernels.tile_types import SMemTileArray2DRowMajor
 
 from structured_kernels.barriers import WarpGroupBarrier
+from structured_kernels.kernel_common import WarpRole1D1D
 from .config import OutputPipelineConfig
 from .tile_pipeline import OutputStage
 from .output_writer_trait import OutputWriter
@@ -194,6 +195,11 @@ struct TileWriter[
     comptime N_dim = 0 if Self.transpose_c else 1
     comptime stageN = Self.c_smem_dim0 if Self.transpose_c else Self.c_smem_dim1
     comptime stage_contiguous_size = Self.c_smem_dim1
+
+    # Warp-role table used only for `epilogue_role_index()`, which depends
+    # on `EPILOGUE_WARP_START` alone — identical under either `has_sfb`
+    # setting, so the default instantiation is exact for every caller.
+    comptime WarpRole = WarpRole1D1D[num_epi_warps=Self.num_output_warps]
 
     # EpilogueConfig bundles common epilogue parameters
     comptime epc = EpilogueConfig.create(
@@ -935,7 +941,11 @@ struct TileWriter[
             c_tensor: C tensor in GMEM (for bounds-checked stores).
         """
         var accum_tiles = Self.AccumTmemArray(output_stage.tmem.offset())
-        var warp_id = get_warp_id()
+        # Role-relative: this path's `warp_id == 0` single-writer election
+        # (TMAStoreCoords, commit_group) means "first EPILOGUE warp", not
+        # "first warp in the block". Identical today (the pool starts at
+        # thread 0) and correct if the pool ever moves.
+        var warp_id = Self.WarpRole.epilogue_role_index()
         var lane = lane_id()
         var scale = expert_scale.cast[Self.accum_type]()
 
