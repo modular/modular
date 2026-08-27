@@ -497,3 +497,11 @@ This release completes the removal of APIs deprecated during the v1.0 cycle.
 - Every value of a struct type whose `@align(N)` exceeds its natural
   alignment is now aligned to `N`, including every element of an array or a
   `List` of that type.
+
+- [`b64decode()`](/docs/std/base64/base64/b64decode/) now ignores ASCII
+  whitespace in its input, so base64 text wrapped across lines by a MIME
+  encoder or the `base64` command line tool decodes without the caller
+  stripping it first. Only the six ASCII whitespace bytes are ignored; unlike
+  Python's `base64.b64decode()`, any other byte outside the base64 alphabet
+  still raises. The "length must be divisible by 4" error now counts only the
+  significant characters.
