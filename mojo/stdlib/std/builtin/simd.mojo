@@ -1247,18 +1247,27 @@ struct SIMD[dtype: DType, length: SIMDLength](
         )
         comptime if Self.length == exp.length and self.dtype == exp.dtype:
             return _pow(self, rebind[Self](exp))
-        elif exp.dtype.is_floating_point() and Self.dtype.is_floating_point():
-            # `_pow` asks the base and exponent dtypes to match, so cast
-            # a mismatched float exponent (e.g. a float literal, which
-            # defaults to float64) to the base dtype.
-            return _pow(
-                self, Self(rebind[Scalar[exp.dtype]](exp).cast[Self.dtype]())
-            )
         else:
             return _pow(
                 self,
                 SIMD[exp.dtype, self.length](rebind[Scalar[exp.dtype]](exp)),
             )
+
+    @always_inline("nodebug")
+    def __pow__(self, exp: FloatLiteral) -> Self:
+        """Computes the vector raised to the power of a float literal.
+
+        The literal is converted to `Self`, so the exponent always has the
+        same dtype as the base.
+
+        Args:
+            exp: The exponent value.
+
+        Returns:
+            A SIMD vector where each element is raised to the power of the
+            specified exponent value.
+        """
+        return _pow(self, Self(exp))
 
     # TODO(#22771): remove this overload.
     @always_inline("nodebug")
