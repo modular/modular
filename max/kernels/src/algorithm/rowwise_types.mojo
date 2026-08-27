@@ -454,3 +454,26 @@ struct RowCoord[rank: Int](
         var result = self
         result.write_axis[axis](pos)
         return result
+
+
+@always_inline
+def _num_outputs_excluding_axis[axis: Int](shape: Coord) -> Int:
+    """Product of `shape`'s dims other than `axis`.
+
+    `total_size // axis_size` cannot supply that count when the reduce
+    axis is empty (`axis_size == 0`). Not because it faults: Mojo's `//`
+    inserts a zero-guard, so `0 // 0` yields `0` — indistinguishable from
+    the `0` a shape with no rows at all produces, which is exactly why an
+    empty axis used to read as "nothing to do". A reduce-shaped body still
+    owns one output per row when the axis is empty (the monoid identity,
+    from an axis walk of zero elements), so `launch` counts outputs
+    without dividing by the (possibly empty) axis. Shared by the CPU and
+    GPU backends (`cpu/rowwise.mojo`, `gpu/rowwise.mojo`); it lives here,
+    rather than in `rowwise.mojo`, so both backends can import it without
+    an import cycle through the unified dispatcher.
+    """
+    var num_outputs = 1
+    comptime for i in range(shape.rank):
+        if i != axis:
+            num_outputs *= Int(shape[i].value())
+    return num_outputs
