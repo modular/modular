@@ -505,6 +505,52 @@ def test_list_append() raises:
     assert_equal(items, [UInt32(1), 2, 3])
 
 
+def test_list_insert_move_count() raises:
+    # Preallocate so reallocation does not contribute moves.
+    var vec = List[MoveCounter[Int]](capacity=4)
+    vec.append(MoveCounter(1))
+    vec.append(MoveCounter(2))
+    vec.append(MoveCounter(3))
+
+    vec.insert(0, MoveCounter(0))
+
+    assert_equal(len(vec), 4)
+    assert_equal(vec[0].value, 0)
+    assert_equal(vec[1].value, 1)
+    assert_equal(vec[2].value, 2)
+    assert_equal(vec[3].value, 3)
+
+    # Inserting shifts the tail right by one, so each displaced element takes
+    # exactly one additional move on top of the one that appended it.
+    assert_equal(vec[0].move_count, 1)
+    assert_equal(vec[1].move_count, 2)
+    assert_equal(vec[2].move_count, 2)
+    assert_equal(vec[3].move_count, 2)
+
+
+def test_list_insert_middle_move_count() raises:
+    # Inserting past the front must leave everything before `i` alone. Index 0
+    # drops `i` out of the shift arithmetic, so an off-by-one in it only shows
+    # up on a middle insert.
+    var vec = List[MoveCounter[Int]](capacity=5)
+    vec.append(MoveCounter(0))
+    vec.append(MoveCounter(1))
+    vec.append(MoveCounter(3))
+    vec.append(MoveCounter(4))
+
+    vec.insert(2, MoveCounter(2))
+
+    assert_equal(len(vec), 5)
+    for i in range(5):
+        assert_equal(vec[i].value, i)
+
+    assert_equal(vec[0].move_count, 1)
+    assert_equal(vec[1].move_count, 1)
+    assert_equal(vec[2].move_count, 1)
+    assert_equal(vec[3].move_count, 2)
+    assert_equal(vec[4].move_count, 2)
+
+
 def test_list_extend() raises:
     var items: List[UInt32] = [1, 2, 3]
     var copy = items.copy()

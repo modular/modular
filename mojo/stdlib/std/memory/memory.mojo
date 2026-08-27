@@ -588,9 +588,9 @@ def unsafe_uninit_move_n[
     Parameters:
         T: The type of values to move, which must be `Movable`.
         overlapping: If False, the function assumes `src` and `dest` do not
-            overlap and uses `unsafe_memcpy`. If True, the function assumes
-            `src` and `dest` may overlap and uses `unsafe_memmove` to handle
-            this safely.
+            overlap and uses `unsafe_memcpy`. If True, the function handles an
+            overlap safely, walking the elements back-to-front when `dest` sits
+            above `src`.
 
     Args:
         dest: Pointer to the destination memory region.
@@ -615,8 +615,16 @@ def unsafe_uninit_move_n[
         else:
             unsafe_memcpy(dest=dest, src=src, count=count)
     else:
-        for i in range(count):
-            dest.unsafe_offset(i).unsafe_write_move_from(src.unsafe_offset(i))
+        if overlapping and Int(dest) > Int(src):
+            for i in reversed(range(count)):
+                dest.unsafe_offset(i).unsafe_write_move_from(
+                    src.unsafe_offset(i)
+                )
+        else:
+            for i in range(count):
+                dest.unsafe_offset(i).unsafe_write_move_from(
+                    src.unsafe_offset(i)
+                )
 
 
 @always_inline
@@ -646,9 +654,9 @@ def unsafe_uninit_copy_n[
     Parameters:
         T: The type of values to copy, which must be `Copyable`.
         overlapping: If False, the function assumes `src` and `dest` do not
-            overlap and uses `unsafe_memcpy`. If True, the function assumes
-            `src` and `dest` may overlap and uses `unsafe_memmove` to handle
-            this safely.
+            overlap and uses `unsafe_memcpy`. If True, the function handles an
+            overlap safely, walking the elements back-to-front when `dest` sits
+            above `src`.
 
     Args:
         dest: Pointer to the destination memory region.
@@ -673,8 +681,12 @@ def unsafe_uninit_copy_n[
         else:
             unsafe_memcpy(dest=dest, src=src, count=count)
     else:
-        for i in range(count):
-            dest.unsafe_offset(i).unsafe_write(copy=src.unsafe_offset(i)[])
+        if overlapping and Int(dest) > Int(src):
+            for i in reversed(range(count)):
+                dest.unsafe_offset(i).unsafe_write(copy=src.unsafe_offset(i)[])
+        else:
+            for i in range(count):
+                dest.unsafe_offset(i).unsafe_write(copy=src.unsafe_offset(i)[])
 
 
 @always_inline

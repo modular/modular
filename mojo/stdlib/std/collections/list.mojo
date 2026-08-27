@@ -915,7 +915,10 @@ struct List[T: AnyType, /](
         if self._len >= self._capacity:
             self._realloc(self._capacity * 2 | Int(self._capacity == 0))
         self._annotate_increase()
-        self._unsafe_next_uninit_ptr().unsafe_write(value^)
+        # Not `_unsafe_next_uninit_ptr`: its capacity assert survives into the
+        # hot path, because the `@no_inline` `_realloc` hides the invariant
+        # just established above from the optimizer.
+        self._data.unsafe_offset(self._len).unsafe_write(value^)
         self._len += 1
 
     @always_inline
@@ -940,20 +943,18 @@ struct List[T: AnyType, /](
         # Valid range is `[0, len(self)]` (`len(self)` appends).
         check_bounds(i, len(self) + 1)
 
-        var earlier_idx = len(self)
-        var later_idx = len(self) - 1
-        self.append(value^)
+        var old_len = self._len
+        self._grow_amortized(old_len + 1)
+        self._annotate_increase()
 
-        for _ in range(i, len(self) - 1):
-            var earlier_ptr = self._data.unsafe_offset(earlier_idx)
-            var later_ptr = self._data.unsafe_offset(later_idx)
-
-            var tmp = earlier_ptr.unsafe_take_pointee()
-            earlier_ptr.unsafe_write_move_from(later_ptr)
-            later_ptr.unsafe_write(tmp^)
-
-            earlier_idx -= 1
-            later_idx -= 1
+        var data = self._data
+        unsafe_uninit_move_n[overlapping=True](
+            dest=data.unsafe_offset(i + 1),
+            src=data.unsafe_offset(i),
+            count=old_len - i,
+        )
+        data.unsafe_offset(i).unsafe_write(value^)
+        self._len = old_len + 1
 
     @stable(since="1.0")
     def extend(mut self, var other: Self) where conforms_to(Self.T, Movable):

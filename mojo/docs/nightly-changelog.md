@@ -420,6 +420,11 @@ This release completes the removal of APIs deprecated during the v1.0 cycle.
 
 ## Fixed
 
+- `unsafe_uninit_move_n()` and `unsafe_uninit_copy_n()` with `overlapping=True`
+  now handle an overlap in either direction when `T` is not trivially movable
+  or copyable. They always walked front-to-back, so a `dest` above `src`
+  overwrote elements that had not been moved or read yet.
+
 - `SIMD.__init__(py=...)` now reads unsigned dtypes through the unsigned CPython
   entry point (`PyLong_AsSize_t`). Constructing an unsigned `SIMD` from a Python
   int in `[2**63, 2**64)` no longer overflows, and a negative Python int now
