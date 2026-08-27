@@ -1261,7 +1261,7 @@ struct IRFFT:
 # Fused QKV matmul
 #
 # Expected kernel name format:
-# mo.fused_qkv_matmul.<padded/ragged>.<continuous_batching/paged>
+# mo.fused_qkv_matmul.<padded/ragged>.paged
 # ===-----------------------------------------------------------------------===#
 
 
@@ -1833,7 +1833,7 @@ struct Struct_rope_ragged_paged_with_position_id[interleaved: Bool]:
 # MHA
 #
 # Expected kernel name format:
-# mo.mha.<padded/ragged>.<continuous_batching/paged>
+# mo.mha.<padded/ragged>.paged
 # ===-----------------------------------------------------------------------===#
 
 
@@ -2011,7 +2011,7 @@ def _execute_mha_ragged_paged_rel_logits[
 # Cross attention
 #
 # Expected kernel name format:
-# mo.cross_attention.<padded/ragged>.<continuous_batching/paged>
+# mo.cross_attention.<padded/ragged>.paged
 # ===-----------------------------------------------------------------------===#
 
 
@@ -2292,7 +2292,7 @@ struct Struct_moe_eplb_remap:
 # KV Cache Store
 #
 # Expected kernel name format:
-# mo.kv_cache.store.<continuous_batching/paged>.<ragged/padded>
+# mo.kv_cache.store.paged.<ragged/padded>
 # ===-----------------------------------------------------------------------===#
 
 
@@ -2426,7 +2426,7 @@ def _layout_transform_conv_filter_from_fcrs[
 # RMSNorm
 #
 # Expected kernel name format:
-# mo.rms_norm_kv_cache.<padded/ragged>.<continuous_batching/paged>
+# mo.rms_norm_kv_cache.<padded/ragged>.paged
 # ===-----------------------------------------------------------------------===#
 
 
@@ -2494,7 +2494,7 @@ def print_kv_cache_paged_generic_kernel_api[
 # Matmul KV cache
 #
 # Expected kernel name format:
-# mo.kv_matmul.ragged.<continuous_batching/paged>
+# mo.kv_matmul.ragged.paged
 # ===-----------------------------------------------------------------------===#
 
 
@@ -2502,7 +2502,7 @@ def print_kv_cache_paged_generic_kernel_api[
 # Matmul K cache
 #
 # Expected kernel name format:
-# mo.k_matmul.ragged.<continuous_batching/paged>
+# mo.k_matmul.ragged.paged
 # ===-----------------------------------------------------------------------===#
 
 
