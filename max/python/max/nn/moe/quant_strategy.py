@@ -389,7 +389,9 @@ class NvMxf4f8Strategy:
         ``max.nn.kernels.grouped_matmul_blocked_swiglu``); the layout is
         produced by :meth:`MoE.gate_up_proj` and
         :meth:`MoEQuantized.gate_up_proj_scales` when
-        ``quant_config.can_use_fused_swiglu`` is set.
+        ``quant_config.can_use_fused_swiglu`` is set, or ships natively
+        (gate, up)-interleaved in the checkpoint (the TP path gated by
+        :meth:`MoEQuantized._can_fuse_swiglu_interleaved`).
 
         Args:
             weight: Sigma-permuted gate/up projection weights.

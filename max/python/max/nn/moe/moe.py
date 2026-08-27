@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Sequence
+from dataclasses import dataclass
 
 from max.dtype import DType
 from max.graph import (
@@ -75,25 +76,29 @@ def make_concatenated_gated_activation_fn(
     return _concatenated_gated_activation_fn
 
 
+@dataclass
+class _InterleavedGatedActivation:
+    """Gated activation for interleaved ``[g0, u0, g1, u1, ...]`` projections.
+
+    Reads the gate and up halves with a stride rather than a split point,
+    which lets a checkpoint with interleaved gate/up rows reach the matmul
+    unrearranged. A distinct type carrying ``activation_fn`` so
+    :class:`MoEQuantized` can recognize both the layout and the activation
+    when selecting the fused SwiGLU kernel.
+    """
+
+    activation_fn: Callable[[TensorValue], TensorValue]
+
+    def __call__(self, gate_up: TensorValue, moe_dim: int) -> TensorValue:
+        del moe_dim  # The halves are separated by a stride, not a split point.
+        return self.activation_fn(gate_up[:, 0::2]) * gate_up[:, 1::2]
+
+
 def make_interleaved_gated_activation_fn(
     activation_fn: Callable[[TensorValue], TensorValue],
 ) -> Callable[[TensorValue, int], TensorValue]:
-    """Builds a gated activation for interleaved ``[gate | up]`` projections.
-
-    The returned callable reads the gate and up halves with a stride rather
-    than a split point: ``activation_fn(gate_up[:, 0::2]) * gate_up[:, 1::2]``.
-    That is the layout a checkpoint fusing each expert's gate and up rows as
-    ``[g0, u0, g1, u1, ...]`` produces, and reading it with a stride is what
-    lets such a weight reach the matmul unrearranged.
-    """
-
-    def _interleaved_gated_activation_fn(
-        gate_up: TensorValue, moe_dim: int
-    ) -> TensorValue:
-        del moe_dim  # The halves are separated by a stride, not a split point.
-        return activation_fn(gate_up[:, 0::2]) * gate_up[:, 1::2]
-
-    return _interleaved_gated_activation_fn
+    """Builds a gated activation for interleaved ``[gate | up]`` projections."""
+    return _InterleavedGatedActivation(activation_fn)
 
 
 def _swigluoai_activation(
