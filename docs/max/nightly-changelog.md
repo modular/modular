@@ -881,6 +881,12 @@ the [container](/container) page now links to the new page.
   kernel generates from a per-row seed. This enables sampling a speculative
   decoding rejection residual `max(p_target - q_draft, 0)` that the caller
   builds in graph ops. GPU-only, non-Apple.
+- Retuned the MI355X dispatch table for a grouped block-scaled MoE
+  matmul (gate-up and down projections) at the estimated-total-M > 2048
+  band that real serving traffic hits, plus the down projection's
+  estimated-total-M <= 2048 band. Gate-up projection speeds up 7.4-10.1%
+  and down projection 18.2-19.6% (etm > 2048) and 6.9-18.5% (etm <= 2048)
+  across real ragged-M, skewed routing scenarios.
 
 ## Breaking changes
 
