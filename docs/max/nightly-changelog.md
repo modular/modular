@@ -891,7 +891,7 @@ the [container](/container) page now links to the new page.
   matmul (gate-up and down projections) at the estimated-total-M > 2048
   band that real serving traffic hits, plus the down projection's
   estimated-total-M <= 2048 band. Gate-up projection speeds up 7.4-10.1%
-  and down projection 18.2-19.6% (etm > 2048) and 6.9-18.5% (etm <= 2048)
+  and down projection 18.2-19.6% (etm > 2048) and 6.9-23.3% (etm <= 2048)
   across real ragged-M, skewed routing scenarios.
 
 ## Breaking changes
