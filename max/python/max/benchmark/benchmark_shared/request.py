@@ -31,6 +31,7 @@ from dataclasses import dataclass, field
 from typing import Any, TypeVar
 
 import aiohttp
+from openai.types.chat.chat_completion_chunk import ChoiceDeltaToolCall
 from openai.types.chat.completion_create_params import ResponseFormat
 from pydantic import BaseModel
 from tqdm.asyncio import tqdm
@@ -505,6 +506,7 @@ class _ChatDelta(BaseModel):
     reasoning: str | None = None
     reasoning_content: str | None = None
     content: str | None = None
+    tool_calls: list[ChoiceDeltaToolCall] | None = None
 
 
 class _ChatChoice(BaseModel):
@@ -539,6 +541,33 @@ class _TRTLLMChunk(BaseModel):
 
 
 _ChunkT = TypeVar("_ChunkT", _ChatCompletionChunk, _CompletionChunk)
+
+
+def _extract_chat_delta_text(data: _ChatCompletionChunk) -> str:
+    """Extracts all generated text carried by a chat streaming chunk.
+
+    "reasoning" and "reasoning_content" are NOT official OpenAI fields.
+    Different model providers and serving frameworks may emit one or both to
+    stream chain-of-thought tokens separately from "content". These fields may
+    also be None in some chunks. We merge them here to preserve all streamed
+    text.
+
+    Tool-call fragments (function name and argument bytes) also count: a pure
+    tool-call turn has no ``content`` by design, and without this a successful
+    agentic response is misreported as "No text content captured".
+    """
+    delta = data.choices[0].delta
+    tool_call_text = "".join(
+        (tc.function.name or "") + (tc.function.arguments or "")
+        for tc in delta.tool_calls or []
+        if tc.function is not None
+    )
+    return (
+        (delta.reasoning or "")
+        + (delta.reasoning_content or "")
+        + (delta.content or "")
+        + tool_call_text
+    )
 
 
 async def _run_openai_stream_request(
@@ -601,10 +630,9 @@ async def _run_openai_stream_request(
                         text_content = content_extractor(data)
                         if text_content:
                             # A response only counts as content-bearing once it
-                            # streams actual text. Chunks that carry only a role
-                            # or finish_reason, or that put text in a delta
-                            # field we don't model (e.g. a model whose output
-                            # lands outside reasoning/reasoning_content/content),
+                            # streams actual text or tool-call fragments.
+                            # Chunks that carry only a role or finish_reason,
+                            # or that put text in a delta field we don't model,
                             # leave this False so the request is flagged rather
                             # than recorded as a success with ttft=0 and no
                             # tokens.
@@ -631,9 +659,9 @@ async def _run_openai_stream_request(
                         output.error = (
                             "No text content captured from the response"
                             " (choices were present but"
-                            " delta.reasoning/reasoning_content/content were"
-                            " all empty). The model may stream text in a field"
-                            " this client does not parse."
+                            " delta.reasoning/reasoning_content/content/"
+                            "tool_calls were all empty). The model may stream"
+                            " text in a field this client does not parse."
                         )
                         output.success = False
                     else:
@@ -869,19 +897,8 @@ class OpenAIChatCompletionsRequestDriver(RequestDriver):
             payload=payload,
             headers=headers,
             prompt_len=request_func_input.prompt_len,
-            # NOTE:
-            # "reasoning" and "reasoning_content" are NOT official OpenAI fields.
-            # Different model providers and serving frameworks may emit one or both
-            # to stream chain-of-thought tokens separately from "content". These
-            # fields may also be None in some chunks.
-            #
-            # We merge them here to preserve all streamed text.
             chunk_type=_ChatCompletionChunk,
-            content_extractor=lambda data: (
-                (data.choices[0].delta.reasoning or "")
-                + (data.choices[0].delta.reasoning_content or "")
-                + (data.choices[0].delta.content or "")
-            ),
+            content_extractor=_extract_chat_delta_text,
             tokenizer=self.tokenizer,
         )
 
