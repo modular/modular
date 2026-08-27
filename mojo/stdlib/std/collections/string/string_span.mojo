@@ -2633,11 +2633,9 @@ def _memchr_impl[
         var bool_mask = haystack.unsafe_load[width=bool_mask_width](i).eq(
             first_needle
         )
-        var mask = pack_bits(bool_mask)
-        if mask:
-            return haystack.unsafe_offset(
-                Int(type_of(mask)(i) + count_trailing_zeros(mask))
-            )
+        var pos = bool_mask.first_true()
+        if pos >= 0:
+            return haystack.unsafe_offset(i + Int(pos))
 
     for i in range(vectorized_end, length):
         if haystack[unsafe_offset=i] == char:
