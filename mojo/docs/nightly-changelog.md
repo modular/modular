@@ -119,6 +119,13 @@ This version is still a work in progress.
   - `def __init__(out self, *, capacity_bytes: Int):`
   - `def reserve_bytes(mut self, new_capacity_bytes: Int, /):`
 
+## Library performance improvements
+
+- Files with many t-string (`t"..."`) literals compile faster: the
+  compile-time step that encodes each literal's format string (part of
+  elaboration, not the whole compile) is about 7x faster. The effect on
+  total build time scales with how many t-string literals a file has.
+
 ## Library changes
 
 - `List.extend` and `List.resize` now grow geometrically, so repeatedly
