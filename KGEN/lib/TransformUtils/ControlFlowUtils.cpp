@@ -17,13 +17,17 @@
 using namespace M;
 using namespace KGEN;
 
-bool KGEN::userCrossesFunctionCFG(Operation *op, Operation *user) {
+bool KGEN::userCrossesFunctionCFG(
+    Operation *op, Operation *user,
+    SmallVectorImpl<Operation *> *enclosingNodes) {
   for (Operation *cur = user->getParentOp(), *parent = op->getParentOp();
        cur != parent; cur = cur->getParentOp()) {
     // If there is any non-control-flow operation between the user and the
     // operation, then the user crosses an unknown region.
     if (!isa<HLCF::ControlFlowNode>(cur))
       return true;
+    if (enclosingNodes)
+      enclosingNodes->push_back(cur);
   }
   return false;
 }

@@ -39,6 +39,12 @@ struct PassStats {
   unsigned numLoadsElided = 0;
   unsigned numStoresElided = 0;
 };
+
+/// For each control-flow node, the promoted stack allocations that are stored
+/// to somewhere inside it, in promotion order. Such an allocation is "variant"
+/// across the node and has to be carried through its regions as an iteration
+/// variable.
+using NodeVariantMap = DenseMap<Operation *, SmallVector<StackAllocationOp>>;
 } // namespace
 
 /// Return the pointer element type of an allocation.
@@ -49,7 +55,19 @@ static Type getAllocType(StackAllocationOp alloc) {
 /// We can promote a stack allocation if all its uses are as the pointer to
 /// loads and stores and no load or store crosses a region of an unknown
 /// operation.
-static bool canPromote(StackAllocationOp alloc) {
+///
+/// The walk to each store already visits exactly the control-flow nodes that
+/// the store makes the allocation variant across, so on success `alloc` is
+/// recorded in `nodeVariants` for each of them. This is why the promotability
+/// check owns the variance bookkeeping: recomputing it per node would mean
+/// re-testing every store against every node.
+static bool canPromote(StackAllocationOp alloc, NodeVariantMap &nodeVariants) {
+  // Only committed to `nodeVariants` once the allocation is known to be
+  // promotable, since the checks below bail out on the first bad user.
+  SmallVector<Operation *> variantNodes;
+  SmallPtrSet<Operation *, 8> seenNodes;
+  SmallVector<Operation *> enclosingNodes;
+
   for (Operation *user : alloc->getUsers()) {
     if (isa<StackAllocLifetimeStartOp, StackAllocLifetimeEndOp>(user))
       continue;
@@ -65,10 +83,20 @@ static bool canPromote(StackAllocationOp alloc) {
       continue;
     }
     auto store = dyn_cast<StoreOp>(user);
-    if (!store || store.getArg() == alloc || store.mightBeVolatile() ||
-        userCrossesFunctionCFG(alloc, store))
+    if (!store || store.getArg() == alloc || store.mightBeVolatile())
       return false;
+    enclosingNodes.clear();
+    if (userCrossesFunctionCFG(alloc, store, &enclosingNodes))
+      return false;
+    // Several stores can share an enclosing node; record each node once.
+    for (Operation *node : enclosingNodes) {
+      if (seenNodes.insert(node).second)
+        variantNodes.push_back(node);
+    }
   }
+
+  for (Operation *node : variantNodes)
+    nodeVariants[node].push_back(alloc);
   return true;
 }
 
@@ -222,6 +250,7 @@ processRegion(Region &region, const HLCF::CFGAnalysis &cfg,
               llvm::MapVector<StackAllocationOp, PromotedStackAlloc> &state,
               DenseMap<HLCF::ControlFlowTerminator, ArrayRef<StackAllocationOp>>
                   &termVariants,
+              NodeVariantMap &nodeVariants,
               DebugInfo::DIExprLeafReplacer &exprLeafReplacer,
               PassStats &stats) {
   if (region.empty())
@@ -237,7 +266,7 @@ processRegion(Region &region, const HLCF::CFGAnalysis &cfg,
     if (auto alloc = dyn_cast<StackAllocationOp>(op)) {
       // If we can promote this stack allocation, initialize its state with an
       // undefined value.
-      if (canPromote(alloc))
+      if (canPromote(alloc, nodeVariants))
         state.try_emplace(alloc);
       continue;
     }
@@ -311,28 +340,29 @@ processRegion(Region &region, const HLCF::CFGAnalysis &cfg,
 
     auto node = dyn_cast<HLCF::ControlFlowNode>(op);
     if (!node) {
-      // This is an unknown operation. Process it as if it were isolated.
+      // This is an unknown operation. Its regions share the current state, but
+      // `canPromote` rejected any allocation used across an opaque boundary, so
+      // only allocations defined inside them can be promoted there.
       for (Region &region : op.getRegions())
-        if (failed(processRegion(region, cfg, state, termVariants,
+        if (failed(processRegion(region, cfg, state, termVariants, nodeVariants,
                                  exprLeafReplacer, stats)))
           return failure();
       continue;
     }
 
     // For control-flow operations, all current stack allocations are visible
-    // within the regions. Determine which are variant. These values will have
-    // to be carried through the regions using iteration variables.
-    std::vector<StackAllocationOp> variant;
-    for (StackAllocationOp alloc : llvm::make_first_range(state)) {
-      for (Operation *user : alloc->getUsers()) {
-        auto store = dyn_cast<StoreOp>(user);
-        if (!store)
-          continue;
-        if (op.isProperAncestor(store)) {
-          variant.push_back(alloc);
-          break;
-        }
-      }
+    // within the regions. The variant ones were recorded when they were
+    // promoted. Their values have to be carried through the regions using
+    // iteration variables.
+    //
+    // The values move out of the map: `termVariants` holds a reference to them
+    // across the recursion below, which inserts into `nodeVariants` and can
+    // invalidate its storage. Dropping the entry also keeps this operation from
+    // being found again once it is erased and its address is free to be reused.
+    SmallVector<StackAllocationOp> variant;
+    if (auto it = nodeVariants.find(&op); it != nodeVariants.end()) {
+      variant = std::move(it->second);
+      nodeVariants.erase(it);
     }
 
     // Map the required variant values to predecessor terminators of the end of
@@ -394,7 +424,7 @@ processRegion(Region &region, const HLCF::CFGAnalysis &cfg,
       }
       // Okay, now recurse into the region.
       if (failed(processRegion(region, cfg, nestedState, termVariants,
-                               exprLeafReplacer, stats)))
+                               nodeVariants, exprLeafReplacer, stats)))
         return failure();
 
       // Erase elided allocations in the nested region.
@@ -450,13 +480,15 @@ void Mem2RegPass::runOnOperation() {
   llvm::MapVector<StackAllocationOp, PromotedStackAlloc> entryState;
   DenseMap<HLCF::ControlFlowTerminator, ArrayRef<StackAllocationOp>>
       termVariants;
+  NodeVariantMap nodeVariants;
   for (Region &region : getOperation()->getRegions()) {
     // Reuse the same memory for the maps each time.
     entryState.clear();
     termVariants.clear();
+    nodeVariants.clear();
     DebugInfo::DIExprLeafReplacer exprLeafReplacer(mem2RegLeafConversion);
     if (failed(processRegion(region, cfg, entryState, termVariants,
-                             exprLeafReplacer, stats)))
+                             nodeVariants, exprLeafReplacer, stats)))
       return signalPassFailure();
     // Erase elided allocations.
     for (StackAllocationOp alloc : llvm::make_first_range(entryState)) {

@@ -60,6 +60,55 @@ kgen.generator @store_in_region(%arg0: index, %arg1: index, %arg2: !kgen.scalar<
   kgen.return %1 : index
 }
 
+// Repeated stores to one allocation within a single region must contribute one
+// iteration variable, not one per store.
+// CHECK-LABEL: @repeated_store_in_region
+kgen.generator @repeated_store_in_region(%arg0: index, %arg1: index, %arg2: !kgen.scalar<bool>) -> index {
+  %0 = pop.stack_allocation 1 x index
+  pop.store %arg0, %0 : !kgen.pointer<index>
+
+  // CHECK-NEXT: %0 = hlcf.if %arg2 -> index
+  hlcf.if %arg2 {
+    pop.store %arg1, %0 : !kgen.pointer<index>
+    %1 = pop.load %0 : !kgen.pointer<index>
+    // CHECK-NEXT: %[[V:.*]] = index.add %arg1, %arg1
+    %2 = index.add %1, %arg1
+    pop.store %2, %0 : !kgen.pointer<index>
+    // CHECK-NEXT: hlcf.yield %[[V]] : index
+    hlcf.yield
+  } else {
+    // CHECK: hlcf.yield %arg0 : index
+    hlcf.yield
+  }
+
+  %1 = pop.load %0 : !kgen.pointer<index>
+  // CHECK: return %0
+  kgen.return %1 : index
+}
+
+// Stores to one allocation in sibling regions of the same operation must also
+// contribute a single iteration variable.
+// CHECK-LABEL: @store_in_both_regions
+kgen.generator @store_in_both_regions(%arg0: index, %arg1: index, %arg2: !kgen.scalar<bool>) -> index {
+  %0 = pop.stack_allocation 1 x index
+  pop.store %arg0, %0 : !kgen.pointer<index>
+
+  // CHECK-NEXT: %0 = hlcf.if %arg2 -> index
+  hlcf.if %arg2 {
+    pop.store %arg1, %0 : !kgen.pointer<index>
+    // CHECK-NEXT: hlcf.yield %arg1 : index
+    hlcf.yield
+  } else {
+    pop.store %arg0, %0 : !kgen.pointer<index>
+    // CHECK: hlcf.yield %arg0 : index
+    hlcf.yield
+  }
+
+  %1 = pop.load %0 : !kgen.pointer<index>
+  // CHECK: return %0
+  kgen.return %1 : index
+}
+
 // CHECK-LABEL: @unknown_use
 kgen.generator @unknown_use(%arg0: index) -> index {
   // CHECK-NEXT: stack_allocation
