@@ -67,7 +67,6 @@ from .decorators import register_internal
 # ===----------------------------------------------------------------------=== #
 
 
-@fieldwise_init
 struct IO(Equatable, TrivialRegisterPassable):
     """Tags the direction and fusion kind of a tensor argument to a DPS kernel.
 
@@ -97,6 +96,10 @@ struct IO(Equatable, TrivialRegisterPassable):
 
     # Output fusion using a tile-based store lambda (the fusion owns the store).
     comptime _FusedOutputTile = IO(33)
+
+    @always_inline("builtin")
+    def __init__(out self, value: Int):
+        self.value = value
 
     @always_inline("nodebug")
     def is_fused(self) -> Bool:
