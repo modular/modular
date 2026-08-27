@@ -23,6 +23,13 @@ the [container](/container) page now links to the new page.
   `usage.audio_generation_details` block carries `duration_seconds`,
   `sample_rate`, `channels`, `num_samples`, and `steps`, measured from the
   audio actually produced rather than the duration that was asked for.
+- Added MiniMax-Music3 (`MiniMaxMusic3ModularPipeline`) support, the first
+  architecture on the `audio_generation` task: a text-to-music model that
+  renders a style caption plus lyrics into 44.1 kHz stereo audio. The five
+  component networks exceed a 24 GB card together, so the pipeline builds and
+  releases each stage in turn within a request; the first request after a cold
+  start pays a multi-minute compile that later ones replay from the
+  compilation cache.
 - Fixed unbounded host-memory usage in Gemma 4 video pre-processing: the
   server now decodes only the sampled frames of a video instead of
   materializing every frame before sampling, bounding peak memory at the

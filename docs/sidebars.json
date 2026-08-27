@@ -459,6 +459,7 @@
                 "api/python/pipelines.architectures.llama4",
                 "api/python/pipelines.architectures.mamba",
                 "api/python/pipelines.architectures.minimax_m2",
+                "api/python/pipelines.architectures.minimax_music3",
                 "api/python/pipelines.architectures.mistral",
                 "api/python/pipelines.architectures.mistral3",
                 "api/python/pipelines.architectures.mpnet",
