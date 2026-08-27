@@ -200,11 +200,9 @@ LogicalResult ParamType::printValue(AsmPrinter &p, TypedAttr value) const {
 //===----------------------------------------------------------------------===//
 
 Type TypeValueType::get(TypedAttr typeValue) {
-  // If the type-value is already resolved to a type constant, and it is
-  // trivially a mlir Type, fold this to the indicated type.
+  // Simply forward the value domain type from a TypeParamAttr.
   if (auto constant = dyn_cast<TypeParamAttr>(typeValue))
-    if (constant.hasIdenticalRepresentation())
-      return constant.getMlirType();
+    return constant.getTypeValue();
 
   // Otherwise, form the TypeValueType like normal.
   return Base::get(typeValue.getContext(), typeValue);
