@@ -35,6 +35,7 @@ from max.pipelines.modeling.types import (
     PipelineTask,
     PipelineTokenizer,
 )
+from max.serve._body_size_limit import RequestBodySizeLimitMiddleware
 from max.serve._error_envelope import openai_error_body
 from max.serve.config import APIType, MetricRecordingMethod, Settings
 from max.serve.media import GeneratedMediaStore
@@ -342,6 +343,12 @@ def fastapi_app(
 
     app = FastAPI(title="MAX Serve", lifespan=lifespan_wrap)
     app.state.zmq_endpoint_base = zmq_endpoint_base
+
+    if settings.max_request_bytes > 0:
+        app.add_middleware(
+            RequestBodySizeLimitMiddleware,
+            max_bytes=settings.max_request_bytes,
+        )
 
     if settings.transaction_recording_file is not None:
         transaction_recording_file = settings.transaction_recording_file

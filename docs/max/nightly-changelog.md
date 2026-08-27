@@ -388,6 +388,13 @@ the [container](/container) page now links to the new page.
   waits for in-flight requests to finish after receiving `SIGTERM` before
   exiting (default 5 seconds). Raise it so long-running requests are drained
   rather than dropped during a rolling restart.
+- Added a request body size limit. `MAX_SERVE_MAX_REQUEST_BYTES` (default
+  100 MiB) caps the size of an accepted HTTP request body; a larger request is
+  rejected with HTTP 413 before the body is buffered, so a client cannot
+  exhaust host memory with an oversized payload. The cap is enforced both from
+  an oversized `Content-Length` and by counting the bytes actually received, so
+  a chunked or mislabeled body cannot evade it. Raise it for larger inline
+  (base64) multimodal payloads, or set it to 0 to disable the limit.
 - Data-parallel (DP) serving now shares the prefix cache across replicas, so a
   multi-turn conversation gets cache hits even when a later turn is scheduled on
   a different replica than the previous one. GPU prefix-cache hits are served by
