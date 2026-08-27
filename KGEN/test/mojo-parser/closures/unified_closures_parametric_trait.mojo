@@ -20,12 +20,11 @@
 # CHECK:      lit.trait.decl @"##__mojo_closure__##"<*"P#0": param_list<type>, *"A#1": param_list<type>, *"R#2": type, *"M#3": non_struct_type, *"O#4": param_list<string>
 # CHECK:        lit.alias.decl __call__: !kgen.func_gen_type_builder<
 #
-# CHECK-SAME:     #kgen.param_list.concat<#kgen.param_list<[#kgen.fn_gen_builder.param.decl<"_Self`",
+# CHECK-SAME:     #kgen.param_list.concat<#kgen.param_list<[#kgen.quote<trait<@"##__mojo_closure__##"
 # CHECK-SAME:     *"P#0"> : !kgen.param_list<param_list<type>>> : !kgen.param_list<type>,
 #
-# CHECK-SAME:     #kgen.param_list.concat<#kgen.param_list<[!lit.ref<:trait<@"##__mojo_closure__##"
-# CHECK-SAME:     *"_Self`0x", mut #kgen.fn_gen_builder.param.decl.ref<"_self_origin`", !lit.origin<true>>>],
-# CHECK-SAME:     *"A#1"> : !kgen.param_list<param_list<type>>> : !kgen.param_list<type>,
+# CHECK-SAME:     #kgen.param_list.concat<#kgen.param_list<[#kgen.quote<!lit.ref<:trait<@"##__mojo_closure__##"
+# CHECK-SAME:     *(0,0), mut *[0,0]>>], *"A#1"> : !kgen.param_list<param_list<type>>> : !kgen.param_list<type>,
 #
 # CHECK-SAME:     #kgen.param.decl.ref<"R#2"> : !kgen.type,
 #
@@ -33,13 +32,15 @@
 #
 # CHECK-SAME:     #kgen.param_list.concat<#kgen.param_list<["_self_origin`"], *"O#4"> : !kgen.param_list<param_list<string>>> : !kgen.param_list<string>>
 
+# The bound components are quoted; the closure's own references are shifted up
+# by one to make room for `_Self` (so `T` becomes `*(0,1)`).
 # CHECK:        lit.alias.decl *"ClosureTraitP`0x"
 # CHECK-SAME:     @"##__mojo_closure__##"<
-# CHECK-SAME:     :param_list<type> [#kgen.fn_gen_builder.param.decl<"Fn_P#0`0", !AnyType_Copyable_Movable>],
-# CHECK-SAME:     :param_list<type> [!lit.ref<!lit.struct<#List <:!AnyType_Copyable_Movable #kgen.fn_gen_builder.param.decl.ref<"Fn_P#0`0", !AnyType_Copyable_Movable>>>, imm #kgen.fn_gen_builder.param.decl.ref<"0_unnamed`0", !lit.origin<false>>>]
-# CHECK-SAME:     :type !NoneType,
-# CHECK-SAME:     :non_struct_type #kgen.fn_metadata<[mut, imm_mem], "none"
-# CHECK-SAME:     :param_list<string> ["0_unnamed`0"]
+# CHECK-SAME:     :param_list<type> [#kgen.quote<!AnyType_Copyable_Movable>],
+# CHECK-SAME:     :param_list<type> [#kgen.quote<!lit.ref<!lit.struct<#List <:!AnyType_Copyable_Movable *(0,1)>>, imm *[0,1]>>],
+# CHECK-SAME:     :type #kgen.quote<!NoneType>,
+# CHECK-SAME:     :non_struct_type #kgen.fn_metadata<[mut, imm_mem], "none", #lit.fn_meta_origin_data<2>>,
+# CHECK-SAME:     :param_list<string> []>
 comptime ClosureTraitP = def[T: Copyable](List[T]) __param_trait__ -> NoneType
 
 
@@ -52,11 +53,13 @@ struct Foo[T: AnyType](def(T) __param_trait__):
         pass
 
 
+# A quote is itself a parameter scope, so the inner closure reaches the outer
+# `T` one level up: `*(1,1)` (index 1 again because of the outer `_Self`).
 # CHECK: lit.alias.decl *"NestedClosure
 # CHECK-SAME: "##__mojo_closure__##"<:param_list<type> [
-# CHECK-SAME:   #kgen.fn_gen_builder.param.decl<"Fn_P#0`1", !AnyType>,
-# CHECK-SAME:   #kgen.fn_gen_builder.param.decl<"Fn_P#1`1", !lit.trait<@"##__mojo_closure__##"<:param_list<type> [
-# CHECK-SAME:     #kgen.fn_gen_builder.param.decl<"Fn_P#0`0", !kgen.param<:!AnyType #kgen.fn_gen_builder.param.decl.ref<"Fn_P#0`1", !AnyType>>>
+# CHECK-SAME:   #kgen.quote<!AnyType>,
+# CHECK-SAME:   #kgen.quote<trait<@"##__mojo_closure__##"<:param_list<type> [
+# CHECK-SAME:     #kgen.quote<!kgen.param<:!AnyType *(1,1)>>
 comptime NestedClosure = def[
     T: AnyType,
     InnerClosure: def[T]() __param_trait__,
@@ -91,14 +94,14 @@ def main():
     var fi = Foo[Int]()
     # CHECK:      lit.call {{.*}}@"call_int[##__mojo_closure__## & ::AnyType & ::Deinitable & ::Movable]($0)"
     # CHECK-SAME:   <:trait<@"##__mojo_closure__##"<
-    # CHECK-SAME:     :param_list<type> [!lit.ref<!Int, imm #kgen.fn_gen_builder.param.decl.ref<"0_unnamed`0", !lit.origin<false>>>],
+    # CHECK-SAME:     :param_list<type> [#kgen.quote<!lit.ref<!Int, imm *[0,1]>>],
     # CHECK-SAME:     @Foo<:!AnyType !Int>>
     call_int(fi)
 
     var fm = Foo[MemOnly]()
     # CHECK:      lit.call {{.*}}@"call_mem_only[##__mojo_closure__## & ::AnyType & ::Deinitable & ::Movable]($0)"
     # CHECK-SAME:   <:trait<@"##__mojo_closure__##"<
-    # CHECK-SAME:     :param_list<type> [!lit.ref<!MemOnly, imm #kgen.fn_gen_builder.param.decl.ref<"0_unnamed`0", !lit.origin<false>>>],
+    # CHECK-SAME:     :param_list<type> [#kgen.quote<!lit.ref<!MemOnly, imm *[0,1]>>],
     # CHECK-SAME:     @Foo<:!AnyType !MemOnly>>
     call_mem_only(fm)
 
@@ -128,11 +131,13 @@ struct Runner(Movable):
 
 
 def foo[C: def(var Int) __param_trait__](c: C):
-    # Parametric trait enables matching between foldable expression during binding.
+    # Parametric trait enables matching between foldable expression during
+    # binding: `StrategyType.Value` folds to `Int` once `StrategyType` is bound,
+    # and quoting canonicalizes it, so the member-alias sugar is gone.
 
     # CHECK:      lit.call {{.*}}@Runner::@"test[
     # CHECK-SAME:   <:!AnyType_Movable_MyStrategy !IntStrategy,
     # CHECK-SAME:     :trait<@"##__mojo_closure__##"<
-    # CHECK-SAME:     :param_list<type> [!lit.ref<:!AnyType_Copyable_Deinitable_Movable
-    # CHECK-SAME:     sugar_member_alias(!IntStrategy, "Value", !Int), mut
+    # CHECK-SAME:     :param_list<type> [], :param_list<type> [
+    # CHECK-SAME:     #kgen.quote<!lit.ref<!Int, mut *[0,1]>>]
     Runner().test(IntStrategy(), c)

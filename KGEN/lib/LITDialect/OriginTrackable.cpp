@@ -782,11 +782,8 @@ static bool handleOriginAttr(TypedAttr attr,
     //
     // ParamIndexRefAttr is only meaningful relative to an un-parameterized
     // generator scope.
-    //
-    // FnGenBuilderParamDeclRefAttr is just a metadata for constructing the
-    // function type.
-    if (isa<ImplicitOriginRefAttr, ParamIndexRefAttr,
-            FnGenBuilderParamDeclRefAttr>(OriginMutCastAttr::strip(raw)))
+    if (isa<ImplicitOriginRefAttr, ParamIndexRefAttr>(
+            OriginMutCastAttr::strip(raw)))
       return;
 
     results.push_back(raw);

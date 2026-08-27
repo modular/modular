@@ -1150,9 +1150,7 @@ static TriState doesNominalTypeConformToUncached(
   // going through the rebinding process for struct/trait symbols.
   auto providedSymbols = llvm::map_to_vector(
       declProvidedTrait.getSymbols(), [&](TraitSymbolAttr symbol) {
-        if (!symbol.isFullyResolved())
-          return cast<TraitSymbolAttr>(evaluator.replace(symbol));
-        return symbol;
+        return cast<TraitSymbolAttr>(evaluator.replace(symbol));
       });
   TraitType providedCanonTrait = TraitType::get(
       self->getContext(), providedSymbols, declProvidedTrait.getConstraints());

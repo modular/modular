@@ -23,6 +23,16 @@ kgen.generator @return_one() -> index {
 // CHECK: #kgen.param.index.ref<0, 0> : index
 "some.op"() {ref = #kgen.param.index.ref<0, 0> : index} : () -> ()
 
+// A quote wraps a type-valued parameter expression and is itself always typed
+// `!kgen.type`. The canonical case freezes an otherwise out-of-scope
+// `param.index.ref`, which prints in sugared `*(depth, index)` form.
+// CHECK: #kgen.quote<index> : !kgen.type
+// CHECK-SAME: #kgen.quote<*(0,0)> : !kgen.type
+"some.op"() {
+  a = #kgen.quote<#kgen.type<index>>,
+  b = #kgen.quote<#kgen.param.index.ref<0, 0> : !kgen.type>
+} : () -> ()
+
 // CHECK: #pop.int_literal<5> : !pop.int_literal
 "some.op"() {data = #pop.int_literal<5> : !pop.int_literal} : () -> ()
 

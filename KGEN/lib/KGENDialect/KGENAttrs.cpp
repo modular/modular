@@ -148,11 +148,14 @@ EmitAsAttr EmitAsAttr::get(MLIRContext *ctx, EmitAs val) {
 EmitAs EmitAsAttr::getValue() const { return (EmitAs)getInt(); }
 
 //===----------------------------------------------------------------------===//
-// FnGenBuilder-related attr
+// QuoteAttr
 //===----------------------------------------------------------------------===//
 
-bool FnGenBuilderParamDeclAttr::isConstant() const { return false; }
-bool FnGenBuilderParamDeclRefAttr::isConstant() const { return false; }
+bool QuoteAttr::isConstant() const {
+  // Should we consider enclosed index ref constant within quoted attr? probably
+  // does not matter.
+  return ParameterAttr::isSimpleConstant(getQuotedParam());
+}
 
 //===----------------------------------------------------------------------===//
 // ParamListAttr

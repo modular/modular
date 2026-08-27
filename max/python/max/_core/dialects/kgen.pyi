@@ -315,12 +315,6 @@ class FnMetadataAttrInterface(Protocol):
         arg3: FnEffects,
         /,
     ) -> bool: ...
-    def remap_name_to_implicit_origin_index_ref(
-        self,
-        arg0: Sequence[max._core.dialects.builtin.StringAttr],
-        arg1: max._core.dialects.builtin.TypedAttr,
-        /,
-    ) -> max._core.dialects.builtin.TypedAttr: ...
     def equals(self, arg: FnMetadataAttrInterface, /) -> bool: ...
 
 class IndexRefAttrInterface(Protocol):
@@ -801,58 +795,6 @@ class ExtensionAttr(max._core.Attribute):
     def anchor(self) -> max._core.dialects.builtin.TypedAttr: ...
     @property
     def extensions(self) -> Sequence[max._core.dialects.builtin.TypedAttr]: ...
-
-class FnGenBuilderParamDeclAttr(max._core.Attribute):
-    """
-    This is the parameter-expression dual of `#kgen.param.decl`: it is a
-    placeholder for a parameter of that is going to be built by a function
-    generator type builder.
-
-    It declare a parameter to be built with `declaredType`, the attribute itself
-    always has the type `!kgen.type`.
-    """
-
-    @overload
-    def __init__(
-        self,
-        name: max._core.dialects.builtin.StringAttr,
-        declared_type: max._core.Type,
-    ) -> None: ...
-    @overload
-    def __init__(self, name: str, declared_type: max._core.Type) -> None: ...
-    @overload
-    def __init__(
-        self,
-        name: max._core.dialects.builtin.StringAttr,
-        declared_type: max._core.Type,
-    ) -> None: ...
-    @property
-    def name(self) -> max._core.dialects.builtin.StringAttr: ...
-    @property
-    def declared_type(self) -> max._core.Type | None: ...
-
-class FnGenBuilderParamDeclRefAttr(max._core.Attribute):
-    """
-    A reference to a parameter declared by a function generator type builder in
-    the `fn_gen_builder.param.decl`.
-    """
-
-    @overload
-    def __init__(self, decl: FnGenBuilderParamDeclAttr) -> None: ...
-    @overload
-    def __init__(
-        self, name: max._core.dialects.builtin.StringAttr, type: max._core.Type
-    ) -> None: ...
-    @overload
-    def __init__(self, name: str, type: max._core.Type) -> None: ...
-    @overload
-    def __init__(
-        self, name: max._core.dialects.builtin.StringAttr, type: max._core.Type
-    ) -> None: ...
-    @property
-    def name(self) -> max._core.dialects.builtin.StringAttr: ...
-    @property
-    def type(self) -> max._core.Type | None: ...
 
 class FnMetadataAttr(max._core.Attribute):
     """
@@ -1921,6 +1863,37 @@ class PreservedAttr(max._core.Attribute):
     def __init__(self, value: max._core.Attribute) -> None: ...
     @property
     def value(self) -> max._core.Attribute | None: ...
+
+class QuoteAttr(max._core.Attribute):
+    """
+    This attribute "quote" a parameter expression, meaning that it freezes any
+    param.index.ref within the expression it quoted. This allows us to pull out
+    the parameter expression from its enclosing generator scope without creating
+    invalid binding. The major use case for this is for FnTypeGeneratorTypeBuilder,
+    which accept lists of "quoted" type expression, and assemble them into an
+    actual FnTypeGeneratorType by later "unquoting" them.
+
+    For example:
+    ```mlir
+    !fn.gen.builder<[#quote<AnyType, #type[*(0, 0)], [], NoneType>] >
+    // will be folded into
+    !kgen.generator<[AnyType, #type[*(0, 0)]() -> NoneType>
+    ```
+
+    Note that `#type[*(0, 0)]` would otherwise hold an invalid reference to (0, 0)
+    without a quote, since it is not within a parameter scope.
+    """
+
+    @overload
+    def __init__(
+        self, quoted_param: max._core.dialects.builtin.TypedAttr
+    ) -> None: ...
+    @overload
+    def __init__(
+        self, quoted_param: max._core.dialects.builtin.TypedAttr
+    ) -> None: ...
+    @property
+    def quoted_param(self) -> max._core.dialects.builtin.TypedAttr: ...
 
 class SIMDAttr(max._core.Attribute):
     """

@@ -268,10 +268,6 @@ def FnMetadataAttrInterface : AttrInterface<"FnMetadataAttrInterface"> {
     }], "void", "printFuncTypeBody", (ins "AsmPrinter &":$p,
                                            "FuncType":$sig)>,
     InterfaceMethod<[{
-      Remap implicit origin name ref to index ref .
-    }], "TypedAttr", "remapNameToImplicitOriginIndexRef", (ins "ArrayRef<StringAttr>":$names,
-                                                               "TypedAttr":$toRemap)>,
-    InterfaceMethod<[{
       Request the custom metadata attribute print the provided FuncType.
     }], "void", "printFuncType", (ins "AsmPrinter &":$p, "FuncType":$sig)>,
     InterfaceMethod<[{
