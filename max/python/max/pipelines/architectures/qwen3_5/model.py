@@ -98,6 +98,12 @@ class Qwen3_5Inputs(Llama3Inputs):
     decode/text-only steps, real embeddings for prefill steps with images).
     Must be non-None for multimodal models."""
 
+    decoder_position_ids: Buffer | None = None
+    """``[3, total_seq_len]`` M-RoPE positions, one column per active token.
+
+    Present only when the graph was built with M-RoPE wired in; see
+    ``Qwen3_5.mrope_enabled``."""
+
     @property
     def has_vision_inputs(self) -> bool:
         """True when pixel values are available for vision encoding."""
@@ -127,6 +133,11 @@ class Qwen3_5Inputs(Llama3Inputs):
             *(self.conv_pools or ()),
             *(self.recurrent_pools or ()),
             *vision_lm_inputs,
+            *(
+                ()
+                if self.decoder_position_ids is None
+                else (self.decoder_position_ids,)
+            ),
         )
 
 
@@ -230,6 +241,9 @@ class Qwen3_5Model(AlwaysSignalBuffersMixin, LlamaModelBase):
     _num_v_heads: int = 0
     _key_head_dim: int = 0
     _value_head_dim: int = 0
+
+    # Whether the built graph takes M-RoPE positions; set during graph build.
+    _mrope_enabled: bool = False
 
     # Per-request state cache for the linear-attention pools.
     _state_cache: GatedDeltaNetStateCache | None = None
@@ -342,6 +356,7 @@ class Qwen3_5Model(AlwaysSignalBuffersMixin, LlamaModelBase):
                     slot_idx_prealloc=self._slot_idx_prealloc,
                     empty_lm_image_embeddings=self._empty_lm_image_embeddings,
                     empty_lm_image_token_indices=self._empty_lm_image_token_indices,
+                    mrope_enabled=self._mrope_enabled,
                 )
 
         return model
@@ -548,6 +563,9 @@ class Qwen3_5Model(AlwaysSignalBuffersMixin, LlamaModelBase):
         num_linear_layers = self._num_linear_layers
         # Vision adds image_embeddings + image_token_indices, per device.
         vision_input_count = 2 * num_devices if has_vision else 0
+        # M-RoPE adds one shared [3, total_seq_len] positions tensor.
+        self._mrope_enabled = nn_model.mrope_enabled
+        position_ids_count = 1 if nn_model.mrope_enabled else 0
 
         with Graph(
             "qwen3_5",
@@ -572,6 +590,7 @@ class Qwen3_5Model(AlwaysSignalBuffersMixin, LlamaModelBase):
                 - slot_idx_count
                 - pool_count * 2
                 - vision_input_count
+                - position_ids_count
             )
             kv_cache_inputs = variadic_args[kv_start : kv_start + kv_count]
             kv_collections = self._unflatten_kv_inputs(kv_cache_inputs)
@@ -610,6 +629,11 @@ class Qwen3_5Model(AlwaysSignalBuffersMixin, LlamaModelBase):
                     variadic_args[idx + num_devices + d].tensor
                     for d in range(num_devices)
                 ]
+                idx += vision_input_count
+
+            position_ids_g = (
+                variadic_args[idx].tensor if position_ids_count else None
+            )
 
             assert slot_idx_g, (
                 "Qwen3.5 graph requires linear attention layers; got 0"
@@ -625,6 +649,7 @@ class Qwen3_5Model(AlwaysSignalBuffersMixin, LlamaModelBase):
                 recurrent_pools,
                 image_embeddings_g,
                 image_token_indices_g,
+                position_ids_g,
             )
 
             graph.output(*outputs)

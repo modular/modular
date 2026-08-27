@@ -553,10 +553,15 @@ class Qwen3VLPipelineOracle(PipelineOracle):
     def __init__(
         self,
         model_path: str,
+        torch_model_path: str | None = None,
         device_encoding_map: dict[str, list[str]] | None = None,
     ) -> None:
         super().__init__()
         self.model_path = model_path
+        # A quantized checkpoint transformers cannot load names its bf16 source
+        # here, so the torch reference is the model MAX's weights were
+        # quantized from; the quantization error lands in the tolerances.
+        self.torch_model_path = torch_model_path or model_path
         self._device_encoding_map = device_encoding_map or {"gpu": ["bfloat16"]}
         self.trust_remote_code = True
 
@@ -600,21 +605,22 @@ class Qwen3VLPipelineOracle(PipelineOracle):
         device: torch.device,
     ) -> TorchModelAndDataProcessor:
         config = transformers.AutoConfig.from_pretrained(
-            self.model_path, trust_remote_code=True
+            self.torch_model_path, trust_remote_code=True
         )
         processor = transformers.AutoProcessor.from_pretrained(
-            self.model_path, trust_remote_code=True
+            self.torch_model_path, trust_remote_code=True
         )
-        # For FP8 models, use bfloat16 as compute dtype since the FP8 weights
-        # are pre-quantized and have their own scale tensors.
-        if encoding == "float8_e4m3fn":
+        # Sub-byte and FP8 encodings cannot be a torch default dtype, and the
+        # reference checkpoint holds unquantized weights anyway, so the torch
+        # side computes in bfloat16.
+        if encoding in ("float8_e4m3fn", "float4_e2m1fnx2"):
             torch_dtype = torch.bfloat16
         else:
             torch_dtype = (
                 ENCODING_TO_TORCH_DTYPE[encoding] if encoding else None
             )
         model = transformers.AutoModelForImageTextToText.from_pretrained(
-            self.model_path,
+            self.torch_model_path,
             config=config,
             device_map=device,
             torch_dtype=torch_dtype,
@@ -2031,8 +2037,19 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
         model_path="Qwen/Qwen3.8-27B",
         device_encoding_map={"gpu": ["bfloat16"]},
     ),
+    # Same checkpoint through its image path. Qwen3.5 shares Qwen3-VL's
+    # processor and `AutoModelForImageTextToText` entry, so the Qwen3VL oracle
+    # drives it unchanged. The text-only entry above cannot stand in: with no
+    # image to splice, M-RoPE's three axes collapse onto the flat token index
+    # and the multi-axis positions go unexercised.
+    "Qwen/Qwen3.8-27B-vision": Qwen3VLPipelineOracle("Qwen/Qwen3.8-27B"),
     "RadixArk/Qwen3.8-27B-NVFP4": GenericOracle(
         model_path="RadixArk/Qwen3.8-27B-NVFP4",
+        torch_model_path="Qwen/Qwen3.8-27B",
+        device_encoding_map={"gpu": ["float4_e2m1fnx2"]},
+    ),
+    "RadixArk/Qwen3.8-27B-NVFP4-vision": Qwen3VLPipelineOracle(
+        "RadixArk/Qwen3.8-27B-NVFP4",
         torch_model_path="Qwen/Qwen3.8-27B",
         device_encoding_map={"gpu": ["float4_e2m1fnx2"]},
     ),

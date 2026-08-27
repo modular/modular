@@ -18,6 +18,7 @@ from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
 import numpy as np
+import numpy.typing as npt
 from max.driver import Buffer
 from max.nn.kv_cache import KVCacheInputsInterface
 from max.pipelines.architectures.llama3.batch_processor import (
@@ -35,6 +36,10 @@ if TYPE_CHECKING:
     from .state_cache import GatedDeltaNetStateCache
 
 
+_MROPE_AXES = 3
+"""Temporal, height and width, the three axes M-RoPE positions carry."""
+
+
 class Qwen3_5BatchProcessor(Llama3BatchProcessor):
     """Ragged batching with linear-attention state pools and optional vision inputs."""
 
@@ -42,6 +47,7 @@ class Qwen3_5BatchProcessor(Llama3BatchProcessor):
     _slot_idx_prealloc: list[Buffer] | None = None
     _empty_lm_image_embeddings: list[Buffer] | None = None
     _empty_lm_image_token_indices: list[Buffer] | None = None
+    _mrope_enabled: bool = False
 
     def bind_prepare_state(
         self,
@@ -50,12 +56,51 @@ class Qwen3_5BatchProcessor(Llama3BatchProcessor):
         slot_idx_prealloc: list[Buffer],
         empty_lm_image_embeddings: list[Buffer] | None = None,
         empty_lm_image_token_indices: list[Buffer] | None = None,
+        mrope_enabled: bool = False,
     ) -> None:
         """Wires state pools and vision placeholders created during ``load_model``."""
         self._state_cache = state_cache
         self._slot_idx_prealloc = slot_idx_prealloc
         self._empty_lm_image_embeddings = empty_lm_image_embeddings
         self._empty_lm_image_token_indices = empty_lm_image_token_indices
+        self._mrope_enabled = mrope_enabled
+
+    def _decoder_position_ids(self, contexts: Sequence[TextContext]) -> Buffer:
+        """Returns this step's ``[3, total_seq_len]`` M-RoPE positions.
+
+        A prompt whose images are still to be encoded takes the slice of the
+        positions the tokenizer precomputed for the whole prompt. Everything
+        else -- decode steps, and continuations of a prompt whose images are
+        already behind it -- counts on from the processed length, offset by
+        the request's rope delta. Past the last image those two agree, which
+        is what lets a decode step extend the corrected positions without
+        recomputing them.
+        """
+        rows: list[npt.NDArray[np.int64]] = []
+        for ctx in contexts:
+            rope_delta = 0
+            if isinstance(ctx, Qwen3VLTextAndVisionContext):
+                precomputed = ctx.decoder_position_ids
+                if ctx.needs_vision_encoding and precomputed.shape[1] == len(
+                    ctx.tokens
+                ):
+                    rows.append(
+                        precomputed[
+                            :,
+                            ctx.tokens.processed_length : ctx.tokens.current_position,
+                        ]
+                    )
+                    continue
+                rope_delta = ctx.rope_delta
+            flat = np.arange(ctx.tokens.active_length, dtype=np.int64)
+            rows.append(
+                np.tile(flat, (_MROPE_AXES, 1))
+                + ctx.tokens.processed_length
+                + rope_delta
+            )
+        return Buffer.from_numpy(
+            np.concatenate(rows, axis=1).astype(np.int64)
+        ).to(self.runtime.devices[0])
 
     def prepare_initial_token_inputs(
         self,
@@ -130,6 +175,20 @@ class Qwen3_5BatchProcessor(Llama3BatchProcessor):
                 ]
             else:
                 image_token_indices = self._empty_lm_image_token_indices
+
+            # TODO(kevinbi): nothing between here and the model worker's main
+            # loop catches this, so it ends the worker process rather than the
+            # one request that asked for the impossible. Failing just the
+            # request needs the scheduler's per-request path
+            # (`SchedulerResult.failed`) to cover batch preparation, not only
+            # batch construction.
+            if vision_datas and not self._mrope_enabled:
+                raise ValueError(
+                    "Qwen3.5 cannot serve image prompts in this "
+                    "configuration: M-RoPE positions are not wired into the "
+                    "compiled graph, so every token after an image would get "
+                    "a flat position. Re-run with a bfloat16 KV cache."
+                )
 
             if vision_datas:
                 device0 = self.runtime.devices[0]
@@ -208,4 +267,9 @@ class Qwen3_5BatchProcessor(Llama3BatchProcessor):
             grid_thw=grid_thw,
             cu_seqlens=cu_seqlens,
             max_seqlen=max_seqlen,
+            decoder_position_ids=(
+                self._decoder_position_ids(all_contexts)
+                if self._mrope_enabled
+                else None
+            ),
         )

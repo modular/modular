@@ -39,10 +39,10 @@ modular_py_library(
     srcs = ["test_data.py"],
     imports = [".."],
     deps = [
+        ":storage",
         "//max/python/max/pipelines/context",
         "//max/python/max/pipelines/modeling",
         "//max/python/max/pipelines/request",
-        "//max/python/max/support",
     ],
 )
 
