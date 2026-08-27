@@ -36,7 +36,14 @@ from nn.activations import silu
 # ===----------------------------------------------------------------------=== #
 
 comptime LOG2E = 1.4426950408889634  # For converting exp to exp2 (faster on GPU)
-comptime MAX_DSTATE = 16
+# Bumped from 16 -> 128 -> 256 to admit Mamba2 decode paths up to d_state=256.
+# Mamba1 callers (d_state in {8, 16}) still work: they only use the leading
+# elements of each SIMD register and never read past their compile-time
+# D_STATE. Trade-off: every state SIMD now occupies up to 16x the registers
+# of the d_state=16 case, which can spill on small GPUs. If Mamba1 perf
+# regresses materially we should parameterize MAX_D_STATE on D_STATE
+# rather than carry both costs.
+comptime MAX_D_STATE = 256
 
 # Stride types for passing tensor strides to kernels
 comptime Strides1D = IndexList[1]
@@ -73,7 +80,7 @@ def sigmoid(val: Float32) -> Float32:
 
 def selective_scan_fwd_gpu[
     kernel_dtype: DType,
-    DSTATE: Int,
+    D_STATE: Int,
     output_LT: TensorLayout,
     x_LT: TensorLayout,
     out_z_LT: TensorLayout,
@@ -131,7 +138,7 @@ def selective_scan_fwd_gpu[
 
     Parameters:
         kernel_dtype: Element type of the input and output tensors.
-        DSTATE: Number of SSM state elements per (batch, dim) pair.
+        D_STATE: Number of SSM state elements per (batch, dim) pair.
         output_LT: Memory layout of the `output` tensor.
         x_LT: Memory layout of the `x` checkpoint tensor.
         out_z_LT: Memory layout of the `out_z` gated output tensor.
@@ -154,13 +161,13 @@ def selective_scan_fwd_gpu[
         group_size: Dims per group sharing `B` and `C`.
         delta_softplus: When nonzero, apply `softplus` to `delta`.
         output: Output tensor `(batch, dim, seqlen)`.
-        x: Checkpoint tensor `(batch, dim, n_chunks, 2*DSTATE)`.
+        x: Checkpoint tensor `(batch, dim, n_chunks, 2*D_STATE)`.
         out_z: Gated output `(batch, dim, seqlen)` when `z` is present.
         u: Input tensor `(batch, dim, seqlen)`.
         delta: Time-step tensor `(batch, dim, seqlen)`.
-        A: Recurrence matrix `(dim, DSTATE)`.
-        B: Input projection `(batch, n_groups, DSTATE, seqlen)`.
-        C: Output projection `(batch, n_groups, DSTATE, seqlen)`.
+        A: Recurrence matrix `(dim, D_STATE)`.
+        B: Input projection `(batch, n_groups, D_STATE, seqlen)`.
+        C: Output projection `(batch, n_groups, D_STATE, seqlen)`.
         D: Skip vector `(dim,)`.
         z: Gating tensor `(batch, dim, seqlen)`.
         delta_bias: Bias vector `(dim,)`.
@@ -194,16 +201,16 @@ def selective_scan_fwd_gpu[
 
     var group_id = d // _group_size
 
-    # Local state storage (max dstate 16 to fit in registers)
+    # Local state storage (max d_state 16 to fit in registers)
     # Note: Using large SIMD sizes (e.g. 256) causes register spilling and massive performance loss
-    var state = SIMD[.float32, MAX_DSTATE](0.0)
-    var cum_a = SIMD[.float32, MAX_DSTATE](1.0)
-    var cum_b = SIMD[.float32, MAX_DSTATE](0.0)
+    var state = SIMD[.float32, MAX_D_STATE](0.0)
+    var cum_a = SIMD[.float32, MAX_D_STATE](1.0)
+    var cum_b = SIMD[.float32, MAX_D_STATE](0.0)
 
     # Pre-load A values for this _dim and pre-multiply by LOG2E for faster exp2
     # This optimization converts exp(A * delta) to exp2(A * LOG2E * delta)
     # which is faster on GPUs
-    var A_vals = SIMD[.float32, MAX_DSTATE](0.0)
+    var A_vals = SIMD[.float32, MAX_D_STATE](0.0)
     var has_delta_bias = Int(delta_bias.dim[0]()) > 0
     var delta_bias_val = Float32(0.0)
     if has_delta_bias:
@@ -223,7 +230,7 @@ def selective_scan_fwd_gpu[
     var has_out_z = Int(out_z.dim[0]()) > 0
 
     # Pre-multiply A by LOG2E for exp2 optimization
-    comptime for n in range(DSTATE):
+    comptime for n in range(D_STATE):
         var A_offset = UInt32(d * A_strides[0] + n * A_strides[1])
         A_vals[n] = (
             Scalar[kernel_dtype](A.raw_load(A_offset)).cast[.float32]() * LOG2E
@@ -277,14 +284,14 @@ def selective_scan_fwd_gpu[
 
         # PRE-LOAD B/C TILES: Load B[n, t:t+TILE] and C[n, t:t+TILE] for all n
         # This avoids redundant address calculations inside the inner loop
-        var B_tiles = Array[SIMD[.float32, TILE_SIZE], DSTATE](fill=0)
-        var C_tiles = Array[SIMD[.float32, TILE_SIZE], DSTATE](fill=0)
+        var B_tiles = Array[SIMD[.float32, TILE_SIZE], D_STATE](fill=0)
+        var C_tiles = Array[SIMD[.float32, TILE_SIZE], D_STATE](fill=0)
 
         # Load B tiles - always use scalar loads to handle different layouts from slicing/reshaping
         for i in range(TILE_SIZE):
             var b_base = curr_B_offset + UInt32(i * B_strides[3])
 
-            comptime for n in range(DSTATE):
+            comptime for n in range(D_STATE):
                 B_tiles[n][i] = Scalar[kernel_dtype](
                     B.raw_load(b_base + UInt32(n * B_strides[2]))
                 ).cast[.float32]()
@@ -293,7 +300,7 @@ def selective_scan_fwd_gpu[
         for i in range(TILE_SIZE):
             var c_base = curr_C_offset + UInt32(i * C_strides[3])
 
-            comptime for n in range(DSTATE):
+            comptime for n in range(D_STATE):
                 C_tiles[n][i] = Scalar[kernel_dtype](
                     C.raw_load(c_base + UInt32(n * C_strides[2]))
                 ).cast[.float32]()
@@ -319,10 +326,10 @@ def selective_scan_fwd_gpu[
             var delta_u = delta_val * u_val
 
             # Extract B/C values for this timestep from pre-loaded tiles
-            var B_vals = SIMD[.float32, MAX_DSTATE](0.0)
-            var C_vals = SIMD[.float32, MAX_DSTATE](0.0)
+            var B_vals = SIMD[.float32, MAX_D_STATE](0.0)
+            var C_vals = SIMD[.float32, MAX_D_STATE](0.0)
 
-            comptime for n in range(DSTATE):
+            comptime for n in range(D_STATE):
                 B_vals[n] = B_tiles[n][i]
                 C_vals[n] = C_tiles[n][i]
 
@@ -352,7 +359,7 @@ def selective_scan_fwd_gpu[
             var is_last_step = current_t == _seqlen - 1
 
             if is_chunk_boundary or is_last_step:
-                comptime for n in range(DSTATE):
+                comptime for n in range(D_STATE):
                     var x_offset_a = UInt32(
                         b * x_strides[0]
                         + d * x_strides[1]
@@ -431,10 +438,10 @@ def selective_scan_fwd_gpu[
         if delta_softplus_bool:
             delta_val = softplus(delta_val)
         var delta_u = delta_val * u_val
-        var B_vals = SIMD[.float32, MAX_DSTATE](0.0)
-        var C_vals = SIMD[.float32, MAX_DSTATE](0.0)
+        var B_vals = SIMD[.float32, MAX_D_STATE](0.0)
+        var C_vals = SIMD[.float32, MAX_D_STATE](0.0)
 
-        comptime for n in range(DSTATE):
+        comptime for n in range(D_STATE):
             B_vals[n] = Scalar[kernel_dtype](
                 B.raw_load(curr_B_offset + UInt32(n * B_strides[2]))
             ).cast[.float32]()
@@ -475,7 +482,7 @@ def selective_scan_fwd_gpu[
         var is_chunk_boundary = t_in_chunk == chunk_size
         var is_last_step = t == _seqlen - 1
         if is_chunk_boundary or is_last_step:
-            comptime for n in range(DSTATE):
+            comptime for n in range(D_STATE):
                 var x_offset_a = UInt32(
                     b * x_strides[0]
                     + d * x_strides[1]
@@ -506,7 +513,7 @@ def selective_scan_fwd_gpu[
 
 def selective_scan_fwd_gpu_minimal[
     kernel_dtype: DType,
-    DSTATE: Int,
+    D_STATE: Int,
     output_LT: TensorLayout,
     x_LT: TensorLayout,
     u_LT: TensorLayout,
@@ -549,7 +556,7 @@ def selective_scan_fwd_gpu_minimal[
 
     Parameters:
         kernel_dtype: Element type of the input and output tensors.
-        DSTATE: Number of SSM state elements per (batch, dim) pair.
+        D_STATE: Number of SSM state elements per (batch, dim) pair.
         output_LT: Memory layout of the `output` tensor.
         x_LT: Memory layout of the `x` checkpoint tensor.
         u_LT: Memory layout of the `u` input tensor.
@@ -573,28 +580,28 @@ def selective_scan_fwd_gpu_minimal[
             the scan recurrence.
         output: Output tensor of shape `(batch, dim, seqlen)`, written.
         x: Checkpoint tensor of shape `(batch, dim, n_chunks,
-            2*DSTATE)` storing per-chunk cumulative `A` and `B`
+            2*D_STATE)` storing per-chunk cumulative `A` and `B`
             values, written.
         u: Selective scan input tensor of shape `(batch, dim,
             seqlen)`, read.
         delta: Time-step tensor of shape `(batch, dim, seqlen)`, read.
-        A: SSM recurrence matrix of shape `(dim, DSTATE)`, read.
-        B: SSM input projection of shape `(batch, n_groups, DSTATE,
+        A: SSM recurrence matrix of shape `(dim, D_STATE)`, read.
+        B: SSM input projection of shape `(batch, n_groups, D_STATE,
             seqlen)`, read.
-        C: SSM output projection of shape `(batch, n_groups, DSTATE,
+        C: SSM output projection of shape `(batch, n_groups, D_STATE,
             seqlen)`, read.
         output_strides: 3D strides `(batch, dim, seqlen)` for
             indexing `output`.
-        x_strides: 4D strides `(batch, dim, n_chunks, 2*DSTATE)` for
+        x_strides: 4D strides `(batch, dim, n_chunks, 2*D_STATE)` for
             indexing `x`.
         u_strides: 3D strides `(batch, dim, seqlen)` for indexing
             `u`.
         delta_strides: 3D strides `(batch, dim, seqlen)` for
             indexing `delta`.
-        A_strides: 2D strides `(dim, DSTATE)` for indexing `A`.
-        B_strides: 4D strides `(batch, n_groups, DSTATE, seqlen)` for
+        A_strides: 2D strides `(dim, D_STATE)` for indexing `A`.
+        B_strides: 4D strides `(batch, n_groups, D_STATE, seqlen)` for
             indexing `B`.
-        C_strides: 4D strides `(batch, n_groups, DSTATE, seqlen)` for
+        C_strides: 4D strides `(batch, n_groups, D_STATE, seqlen)` for
             indexing `C`.
     """
     var _total_batch_dim = Int(total_batch_dim)
@@ -613,14 +620,14 @@ def selective_scan_fwd_gpu_minimal[
 
     var group_id = d // _group_size
 
-    var state = SIMD[.float32, MAX_DSTATE](0.0)
-    var cum_a = SIMD[.float32, MAX_DSTATE](1.0)
-    var cum_b = SIMD[.float32, MAX_DSTATE](0.0)
+    var state = SIMD[.float32, MAX_D_STATE](0.0)
+    var cum_a = SIMD[.float32, MAX_D_STATE](1.0)
+    var cum_b = SIMD[.float32, MAX_D_STATE](0.0)
 
-    var A_vals = SIMD[.float32, MAX_DSTATE](0.0)
+    var A_vals = SIMD[.float32, MAX_D_STATE](0.0)
     var delta_softplus_bool = Bool(Int(delta_softplus) != 0)
 
-    comptime for n in range(DSTATE):
+    comptime for n in range(D_STATE):
         var A_offset = UInt32(d * A_strides[0] + n * A_strides[1])
         A_vals[n] = (
             Scalar[kernel_dtype](A.raw_load(A_offset)).cast[.float32]() * LOG2E
@@ -652,10 +659,10 @@ def selective_scan_fwd_gpu_minimal[
             delta_val = softplus(delta_val)
         var delta_u = delta_val * u_val
 
-        var B_vals = SIMD[.float32, MAX_DSTATE](0.0)
-        var C_vals = SIMD[.float32, MAX_DSTATE](0.0)
+        var B_vals = SIMD[.float32, MAX_D_STATE](0.0)
+        var C_vals = SIMD[.float32, MAX_D_STATE](0.0)
 
-        comptime for n in range(DSTATE):
+        comptime for n in range(D_STATE):
             B_vals[n] = Scalar[kernel_dtype](
                 B.raw_load(curr_B_offset + UInt32(n * B_strides[2]))
             ).cast[.float32]()
@@ -685,7 +692,7 @@ def selective_scan_fwd_gpu_minimal[
         var is_chunk_boundary = t_in_chunk == chunk_size
         var is_last_step = t == _seqlen - 1
         if is_chunk_boundary or is_last_step:
-            comptime for n in range(DSTATE):
+            comptime for n in range(D_STATE):
                 var x_offset_a = UInt32(
                     b * x_strides[0]
                     + d * x_strides[1]
@@ -735,7 +742,7 @@ def selective_scan_fwd_gpu_minimal[
 
 def selective_scan_update_gpu[
     kernel_dtype: DType,
-    DSTATE: Int,
+    D_STATE: Int,
     state_out_LT: TensorLayout,
     output_LT: TensorLayout,
     state_in_LT: TensorLayout,
@@ -792,7 +799,7 @@ def selective_scan_update_gpu[
 
     Parameters:
         kernel_dtype: Element type of the input and output tensors.
-        DSTATE: Number of SSM state elements per (batch, dim) pair.
+        D_STATE: Number of SSM state elements per (batch, dim) pair.
         state_out_LT: Memory layout of the `state_out` tensor.
         output_LT: Memory layout of the `output` tensor.
         state_in_LT: Memory layout of the `state_in` tensor.
@@ -818,17 +825,17 @@ def selective_scan_update_gpu[
         delta_softplus: Nonzero applies `softplus` to `dt` before the
             scan recurrence.
         state_out: Updated SSM state tensor of shape `(batch, dim,
-            DSTATE)`, written.
+            D_STATE)`, written.
         output: Step output tensor of shape `(batch, dim)`, written.
         state_in: Previous SSM state tensor of shape `(batch, dim,
-            DSTATE)`, read.
+            D_STATE)`, read.
         x: Input value tensor of shape `(batch, dim)` for the current
             timestep, read.
         dt: Time-step tensor of shape `(batch, dim)`, read.
-        A: SSM recurrence matrix of shape `(dim, DSTATE)`, read.
-        B: SSM input projection of shape `(batch, n_groups, DSTATE)`,
+        A: SSM recurrence matrix of shape `(dim, D_STATE)`, read.
+        B: SSM input projection of shape `(batch, n_groups, D_STATE)`,
             read.
-        C: SSM output projection of shape `(batch, n_groups, DSTATE)`,
+        C: SSM output projection of shape `(batch, n_groups, D_STATE)`,
             read.
         D: Skip connection vector of shape `(dim,)`, read; added as
             `D * x` to the output when present.
@@ -836,18 +843,18 @@ def selective_scan_update_gpu[
             output via `z * sigmoid(z)` when present.
         dt_bias: Bias vector of shape `(dim,)`, read; added to `dt`
             before `softplus` when present.
-        state_out_strides: 3D strides `(batch, dim, DSTATE)` for
+        state_out_strides: 3D strides `(batch, dim, D_STATE)` for
             indexing `state_out`.
         output_strides: 2D strides `(batch, dim)` for indexing
             `output`.
-        state_in_strides: 3D strides `(batch, dim, DSTATE)` for
+        state_in_strides: 3D strides `(batch, dim, D_STATE)` for
             indexing `state_in`.
         x_strides: 2D strides `(batch, dim)` for indexing `x`.
         dt_strides: 2D strides `(batch, dim)` for indexing `dt`.
-        A_strides: 2D strides `(dim, DSTATE)` for indexing `A`.
-        B_strides: 3D strides `(batch, n_groups, DSTATE)` for indexing
+        A_strides: 2D strides `(dim, D_STATE)` for indexing `A`.
+        B_strides: 3D strides `(batch, n_groups, D_STATE)` for indexing
             `B`.
-        C_strides: 3D strides `(batch, n_groups, DSTATE)` for indexing
+        C_strides: 3D strides `(batch, n_groups, D_STATE)` for indexing
             `C`.
         D_strides: 1D strides `(dim,)` for indexing `D`.
         z_strides: 2D strides `(batch, dim)` for indexing `z`.
@@ -896,9 +903,9 @@ def selective_scan_update_gpu[
     var x_val = Scalar[kernel_dtype](x.raw_load(x_offset)).cast[.float32]()
 
     # Load A values for this _dim and pre-multiply by LOG2E for faster exp2
-    var A_vals = SIMD[.float32, MAX_DSTATE](0.0)
+    var A_vals = SIMD[.float32, MAX_D_STATE](0.0)
 
-    comptime for n in range(DSTATE):
+    comptime for n in range(D_STATE):
         var A_offset = UInt32(d * A_strides[0] + n * A_strides[1])
         A_vals[n] = (
             Scalar[kernel_dtype](A.raw_load(A_offset)).cast[.float32]() * LOG2E
@@ -908,9 +915,9 @@ def selective_scan_update_gpu[
     var dA = exp2(A_vals * dt_val)
 
     # Load B values using group_id
-    var B_vals = SIMD[.float32, MAX_DSTATE](0.0)
+    var B_vals = SIMD[.float32, MAX_D_STATE](0.0)
 
-    comptime for n in range(DSTATE):
+    comptime for n in range(D_STATE):
         var B_offset = UInt32(
             b * B_strides[0] + group_id * B_strides[1] + n * B_strides[2]
         )
@@ -922,9 +929,9 @@ def selective_scan_update_gpu[
     var dB = B_vals * dt_val
 
     # Load current state from state_in
-    var state_vals = SIMD[.float32, MAX_DSTATE](0.0)
+    var state_vals = SIMD[.float32, MAX_D_STATE](0.0)
 
-    comptime for n in range(DSTATE):
+    comptime for n in range(D_STATE):
         var state_offset = UInt32(
             b * state_in_strides[0]
             + d * state_in_strides[1]
@@ -938,7 +945,7 @@ def selective_scan_update_gpu[
     state_vals = state_vals * dA + dB * x_val
 
     # Store updated state to state_out
-    comptime for n in range(DSTATE):
+    comptime for n in range(D_STATE):
         var state_offset = UInt32(
             b * state_out_strides[0]
             + d * state_out_strides[1]
@@ -949,9 +956,9 @@ def selective_scan_update_gpu[
             Scalar[kernel_dtype](state_vals[n].cast[kernel_dtype]()),
         )
     # Load C values using group_id
-    var C_vals = SIMD[.float32, MAX_DSTATE](0.0)
+    var C_vals = SIMD[.float32, MAX_D_STATE](0.0)
 
-    comptime for n in range(DSTATE):
+    comptime for n in range(D_STATE):
         var C_offset = UInt32(
             b * C_strides[0] + group_id * C_strides[1] + n * C_strides[2]
         )
@@ -991,7 +998,7 @@ def selective_scan_update_gpu[
 
 def selective_scan_update_cpu[
     kernel_dtype: DType,
-    DSTATE: Int,
+    D_STATE: Int,
 ](
     batch: Int,
     dim: Int,
@@ -1030,7 +1037,7 @@ def selective_scan_update_cpu[
 
     Parameters:
         kernel_dtype: Element type of the input and output tensors.
-        DSTATE: Number of SSM state elements per (batch, dim) pair.
+        D_STATE: Number of SSM state elements per (batch, dim) pair.
 
     Args:
         batch: Number of sequences processed in parallel.
@@ -1041,17 +1048,17 @@ def selective_scan_update_cpu[
         delta_softplus: Nonzero applies `softplus` to `dt` before the
             scan recurrence.
         state_out: Updated SSM state tensor of shape `(batch, dim,
-            DSTATE)`, written.
+            D_STATE)`, written.
         output: Step output tensor of shape `(batch, dim)`, written.
         state_in: Previous SSM state tensor of shape `(batch, dim,
-            DSTATE)`, read.
+            D_STATE)`, read.
         x: Input value tensor of shape `(batch, dim)` for the current
             timestep, read.
         dt: Time-step tensor of shape `(batch, dim)`, read.
-        A: SSM recurrence matrix of shape `(dim, DSTATE)`, read.
-        B: SSM input projection of shape `(batch, n_groups, DSTATE)`,
+        A: SSM recurrence matrix of shape `(dim, D_STATE)`, read.
+        B: SSM input projection of shape `(batch, n_groups, D_STATE)`,
             read.
-        C: SSM output projection of shape `(batch, n_groups, DSTATE)`,
+        C: SSM output projection of shape `(batch, n_groups, D_STATE)`,
             read.
         D: Skip connection vector of shape `(dim,)`, read; added as
             `D * x` to the output when present.
@@ -1059,18 +1066,18 @@ def selective_scan_update_cpu[
             output via `z * sigmoid(z)` when present.
         dt_bias: Bias vector of shape `(dim,)`, read; added to `dt`
             before `softplus` when present.
-        state_out_strides: 3D strides `(batch, dim, DSTATE)` for
+        state_out_strides: 3D strides `(batch, dim, D_STATE)` for
             indexing `state_out`.
         output_strides: 2D strides `(batch, dim)` for indexing
             `output`.
-        state_in_strides: 3D strides `(batch, dim, DSTATE)` for
+        state_in_strides: 3D strides `(batch, dim, D_STATE)` for
             indexing `state_in`.
         x_strides: 2D strides `(batch, dim)` for indexing `x`.
         dt_strides: 2D strides `(batch, dim)` for indexing `dt`.
-        A_strides: 2D strides `(dim, DSTATE)` for indexing `A`.
-        B_strides: 3D strides `(batch, n_groups, DSTATE)` for indexing
+        A_strides: 2D strides `(dim, D_STATE)` for indexing `A`.
+        B_strides: 3D strides `(batch, n_groups, D_STATE)` for indexing
             `B`.
-        C_strides: 3D strides `(batch, n_groups, DSTATE)` for indexing
+        C_strides: 3D strides `(batch, n_groups, D_STATE)` for indexing
             `C`.
         D_strides: 1D strides `(dim,)` for indexing `D`.
         z_strides: 2D strides `(batch, dim)` for indexing `z`.
@@ -1114,9 +1121,9 @@ def selective_scan_update_cpu[
         ]()
 
         # Load A values and pre-multiply by LOG2E
-        var A_vals = SIMD[.float32, MAX_DSTATE](0.0)
+        var A_vals = SIMD[.float32, MAX_D_STATE](0.0)
 
-        comptime for n in range(DSTATE):
+        comptime for n in range(D_STATE):
             var A_offset = UInt32(d * A_strides[0] + n * A_strides[1])
             A_vals[n] = (
                 Scalar[kernel_dtype](A.raw_load(A_offset)).cast[.float32]()
@@ -1127,9 +1134,9 @@ def selective_scan_update_cpu[
         var dA = exp2(A_vals * dt_val)
 
         # Load B values using group_id
-        var B_vals = SIMD[.float32, MAX_DSTATE](0.0)
+        var B_vals = SIMD[.float32, MAX_D_STATE](0.0)
 
-        comptime for n in range(DSTATE):
+        comptime for n in range(D_STATE):
             var B_offset = UInt32(
                 b * B_strides[0] + group_id * B_strides[1] + n * B_strides[2]
             )
@@ -1141,9 +1148,9 @@ def selective_scan_update_cpu[
         var dB = B_vals * dt_val
 
         # Load current state from state_in
-        var state_vals = SIMD[.float32, MAX_DSTATE](0.0)
+        var state_vals = SIMD[.float32, MAX_D_STATE](0.0)
 
-        comptime for n in range(DSTATE):
+        comptime for n in range(D_STATE):
             var state_offset = UInt32(
                 b * state_in_strides[0]
                 + d * state_in_strides[1]
@@ -1157,7 +1164,7 @@ def selective_scan_update_cpu[
         state_vals = state_vals * dA + dB * x_val
 
         # Store updated state to state_out
-        comptime for n in range(DSTATE):
+        comptime for n in range(D_STATE):
             var state_offset = UInt32(
                 b * state_out_strides[0]
                 + d * state_out_strides[1]
@@ -1169,9 +1176,9 @@ def selective_scan_update_cpu[
             )
 
         # Load C values using group_id
-        var C_vals = SIMD[.float32, MAX_DSTATE](0.0)
+        var C_vals = SIMD[.float32, MAX_D_STATE](0.0)
 
-        comptime for n in range(DSTATE):
+        comptime for n in range(D_STATE):
             var C_offset = UInt32(
                 b * C_strides[0] + group_id * C_strides[1] + n * C_strides[2]
             )
@@ -1208,7 +1215,7 @@ def selective_scan_update_cpu[
 
 def selective_scan_fwd_cpu[
     kernel_dtype: DType,
-    DSTATE: Int,
+    D_STATE: Int,
 ](
     batch: Int,
     dim: Int,
@@ -1250,13 +1257,13 @@ def selective_scan_fwd_cpu[
 
         var group_id = d // group_size
 
-        # Local state storage (max dstate 16)
-        var state = SIMD[.float32, MAX_DSTATE](0.0)
-        var cum_a = SIMD[.float32, MAX_DSTATE](1.0)
-        var cum_b = SIMD[.float32, MAX_DSTATE](0.0)
+        # Local state storage (max d_state 16)
+        var state = SIMD[.float32, MAX_D_STATE](0.0)
+        var cum_a = SIMD[.float32, MAX_D_STATE](1.0)
+        var cum_b = SIMD[.float32, MAX_D_STATE](0.0)
 
         # Pre-load A values for this dim and pre-multiply by LOG2E for faster exp2
-        var A_vals = SIMD[.float32, MAX_DSTATE](0.0)
+        var A_vals = SIMD[.float32, MAX_D_STATE](0.0)
         var has_delta_bias = Int(delta_bias.dim[0]()) > 0
         var delta_bias_val = Float32(0.0)
         if has_delta_bias:
@@ -1277,7 +1284,7 @@ def selective_scan_fwd_cpu[
         var has_z = Int(z.dim[0]()) > 0
         var has_out_z = Int(out_z.dim[0]()) > 0
 
-        comptime for n in range(DSTATE):
+        comptime for n in range(D_STATE):
             var A_offset = UInt32(d * A_strides[0] + n * A_strides[1])
             A_vals[n] = (
                 Scalar[kernel_dtype](A.raw_load(A_offset)).cast[.float32]()
@@ -1349,10 +1356,10 @@ def selective_scan_fwd_cpu[
 
                 var delta_u = delta_val * u_val
 
-                var B_vals = SIMD[.float32, MAX_DSTATE](0.0)
-                var C_vals = SIMD[.float32, MAX_DSTATE](0.0)
+                var B_vals = SIMD[.float32, MAX_D_STATE](0.0)
+                var C_vals = SIMD[.float32, MAX_D_STATE](0.0)
 
-                comptime for n in range(DSTATE):
+                comptime for n in range(D_STATE):
                     var b_off = (
                         curr_B_offset
                         + UInt32(i * B_strides[3])
@@ -1404,7 +1411,7 @@ def selective_scan_fwd_cpu[
                 var is_last_step = current_t == seqlen - 1
 
                 if is_chunk_boundary or is_last_step:
-                    comptime for n in range(DSTATE):
+                    comptime for n in range(D_STATE):
                         var x_offset_a = UInt32(
                             b * x_strides[0]
                             + d * x_strides[1]
@@ -1455,10 +1462,10 @@ def selective_scan_fwd_cpu[
             if delta_softplus_bool:
                 delta_val = softplus(delta_val)
             var delta_u = delta_val * u_val
-            var B_vals = SIMD[.float32, MAX_DSTATE](0.0)
-            var C_vals = SIMD[.float32, MAX_DSTATE](0.0)
+            var B_vals = SIMD[.float32, MAX_D_STATE](0.0)
+            var C_vals = SIMD[.float32, MAX_D_STATE](0.0)
 
-            comptime for n in range(DSTATE):
+            comptime for n in range(D_STATE):
                 B_vals[n] = Scalar[kernel_dtype](
                     B.raw_load(curr_B_offset + UInt32(n * B_strides[2]))
                 ).cast[.float32]()
@@ -1499,7 +1506,7 @@ def selective_scan_fwd_cpu[
             var is_chunk_boundary = t_in_chunk == chunk_size
             var is_last_step = t == seqlen - 1
             if is_chunk_boundary or is_last_step:
-                comptime for n in range(DSTATE):
+                comptime for n in range(D_STATE):
                     var x_offset_a = UInt32(
                         b * x_strides[0]
                         + d * x_strides[1]
@@ -1532,7 +1539,7 @@ def selective_scan_fwd_cpu[
 
 def selective_scan_fwd_cpu_minimal[
     kernel_dtype: DType,
-    DSTATE: Int,
+    D_STATE: Int,
 ](
     batch: Int,
     dim: Int,
@@ -1559,7 +1566,7 @@ def selective_scan_fwd_cpu_minimal[
 
     Parameters:
         kernel_dtype: Element type of the input and output tensors.
-        DSTATE: Number of SSM state elements per (batch, dim) pair.
+        D_STATE: Number of SSM state elements per (batch, dim) pair.
 
     Args:
         batch: Number of sequences processed in parallel.
@@ -1572,27 +1579,27 @@ def selective_scan_fwd_cpu_minimal[
             scan recurrence.
         output: Output tensor of shape `(batch, dim, seqlen)`, written.
         x: Checkpoint tensor of shape `(batch, dim, n_chunks,`
-            `2*DSTATE)` storing per-chunk cumulative `A` and `B`
+            `2*D_STATE)` storing per-chunk cumulative `A` and `B`
             values, written.
         u: Selective scan input tensor of shape `(batch, dim, seqlen)`,
             read.
         delta: Time-step tensor of shape `(batch, dim, seqlen)`, read.
-        A: SSM recurrence matrix of shape `(dim, DSTATE)`, read.
-        B: SSM input projection of shape `(batch, n_groups, DSTATE,
+        A: SSM recurrence matrix of shape `(dim, D_STATE)`, read.
+        B: SSM input projection of shape `(batch, n_groups, D_STATE,
             seqlen)`, read.
-        C: SSM output projection of shape `(batch, n_groups, DSTATE,
+        C: SSM output projection of shape `(batch, n_groups, D_STATE,
             seqlen)`, read.
         output_strides: 3D strides `(batch, dim, seqlen)` for indexing
             `output`.
-        x_strides: 4D strides `(batch, dim, n_chunks, 2*DSTATE)` for
+        x_strides: 4D strides `(batch, dim, n_chunks, 2*D_STATE)` for
             indexing `x`.
         u_strides: 3D strides `(batch, dim, seqlen)` for indexing `u`.
         delta_strides: 3D strides `(batch, dim, seqlen)` for indexing
             `delta`.
-        A_strides: 2D strides `(dim, DSTATE)` for indexing `A`.
-        B_strides: 4D strides `(batch, n_groups, DSTATE, seqlen)` for
+        A_strides: 2D strides `(dim, D_STATE)` for indexing `A`.
+        B_strides: 4D strides `(batch, n_groups, D_STATE, seqlen)` for
             indexing `B`.
-        C_strides: 4D strides `(batch, n_groups, DSTATE, seqlen)` for
+        C_strides: 4D strides `(batch, n_groups, D_STATE, seqlen)` for
             indexing `C`.
         ctx: Device context for parallel execution (defaults to `None`).
     """
@@ -1605,14 +1612,14 @@ def selective_scan_fwd_cpu_minimal[
 
         var group_id = d // group_size
 
-        var state = SIMD[.float32, MAX_DSTATE](0.0)
-        var cum_a = SIMD[.float32, MAX_DSTATE](1.0)
-        var cum_b = SIMD[.float32, MAX_DSTATE](0.0)
+        var state = SIMD[.float32, MAX_D_STATE](0.0)
+        var cum_a = SIMD[.float32, MAX_D_STATE](1.0)
+        var cum_b = SIMD[.float32, MAX_D_STATE](0.0)
 
-        var A_vals = SIMD[.float32, MAX_DSTATE](0.0)
+        var A_vals = SIMD[.float32, MAX_D_STATE](0.0)
         var delta_softplus_bool = Bool(Int(delta_softplus) != 0)
 
-        comptime for n in range(DSTATE):
+        comptime for n in range(D_STATE):
             var A_offset = UInt32(d * A_strides[0] + n * A_strides[1])
             A_vals[n] = (
                 Scalar[kernel_dtype](A.raw_load(A_offset)).cast[.float32]()
@@ -1646,10 +1653,10 @@ def selective_scan_fwd_cpu_minimal[
                 delta_val = softplus(delta_val)
             var delta_u = delta_val * u_val
 
-            var B_vals = SIMD[.float32, MAX_DSTATE](0.0)
-            var C_vals = SIMD[.float32, MAX_DSTATE](0.0)
+            var B_vals = SIMD[.float32, MAX_D_STATE](0.0)
+            var C_vals = SIMD[.float32, MAX_D_STATE](0.0)
 
-            comptime for n in range(DSTATE):
+            comptime for n in range(D_STATE):
                 B_vals[n] = Scalar[kernel_dtype](
                     B.raw_load(curr_B_offset + UInt32(n * B_strides[2]))
                 ).cast[.float32]()
@@ -1679,7 +1686,7 @@ def selective_scan_fwd_cpu_minimal[
             var is_chunk_boundary = t_in_chunk == chunk_size
             var is_last_step = t == seqlen - 1
             if is_chunk_boundary or is_last_step:
-                comptime for n in range(DSTATE):
+                comptime for n in range(D_STATE):
                     var x_offset_a = UInt32(
                         b * x_strides[0]
                         + d * x_strides[1]
@@ -1723,7 +1730,7 @@ def selective_scan_fwd_cpu_minimal[
 
 def ssd_combined_gpu[
     kernel_dtype: DType,
-    DSTATE: Int,
+    D_STATE: Int,
     output_LT: TensorLayout,
     x_LT: TensorLayout,
     out_z_LT: TensorLayout,
@@ -1772,7 +1779,7 @@ def ssd_combined_gpu[
 
     Parameters:
         kernel_dtype: Element type of the input and output tensors.
-        DSTATE: Number of SSM state elements per (batch, dim) pair.
+        D_STATE: Number of SSM state elements per (batch, dim) pair.
         output_LT: Memory layout of the `output` tensor.
         x_LT: Memory layout of the `x` checkpoint tensor.
         out_z_LT: Memory layout of the `out_z` gated output tensor.
@@ -1804,7 +1811,7 @@ def ssd_combined_gpu[
         output: Output tensor of shape `(batch, dim, seqlen)` holding
             the normalized result, written.
         x: Checkpoint tensor of shape `(batch, dim, n_chunks,
-            2*DSTATE)` storing per-chunk cumulative `A` and `B`
+            2*D_STATE)` storing per-chunk cumulative `A` and `B`
             values, written.
         out_z: Gated output tensor of shape `(batch, dim, seqlen)`
             holding `output * silu(z)`, written when `z` is present.
@@ -1814,10 +1821,10 @@ def ssd_combined_gpu[
         u: Selective scan input tensor of shape `(batch, dim,
             seqlen)`, read.
         delta: Time-step tensor of shape `(batch, dim, seqlen)`, read.
-        A: SSM recurrence matrix of shape `(dim, DSTATE)`, read.
-        B: SSM input projection of shape `(batch, n_groups, DSTATE,
+        A: SSM recurrence matrix of shape `(dim, D_STATE)`, read.
+        B: SSM input projection of shape `(batch, n_groups, D_STATE,
             seqlen)`, read.
-        C: SSM output projection of shape `(batch, n_groups, DSTATE,
+        C: SSM output projection of shape `(batch, n_groups, D_STATE,
             seqlen)`, read.
         D: Skip connection vector of shape `(dim,)`, read; added as
             `D * u` to the output when present.
@@ -1859,17 +1866,17 @@ def ssd_combined_gpu[
     var z_b_stride = output_b_stride
     var z_d_stride = output_d_stride
     var z_t_stride = output_t_stride
-    # 4D (_batch, _dim, n_chunks, 2*dstate) strides for x
-    var x_b_stride = UInt32(_dim * n_chunks * 2 * DSTATE)
-    var x_d_stride = UInt32(n_chunks * 2 * DSTATE)
-    var x_chunk_stride = UInt32(2 * DSTATE)
+    # 4D (_batch, _dim, n_chunks, 2*d_state) strides for x
+    var x_b_stride = UInt32(_dim * n_chunks * 2 * D_STATE)
+    var x_d_stride = UInt32(n_chunks * 2 * D_STATE)
+    var x_chunk_stride = UInt32(2 * D_STATE)
     var x_n_stride = UInt32(1)
-    # 2D (_dim, dstate) strides for A
-    var A_d_stride = UInt32(DSTATE)
+    # 2D (_dim, d_state) strides for A
+    var A_d_stride = UInt32(D_STATE)
     var A_n_stride = UInt32(1)
-    # 4D (_batch, n_groups, dstate, _seqlen) strides for B, C
-    var B_b_stride = UInt32(n_groups * DSTATE * _seqlen)
-    var B_g_stride = UInt32(DSTATE * _seqlen)
+    # 4D (_batch, n_groups, d_state, _seqlen) strides for B, C
+    var B_b_stride = UInt32(n_groups * D_STATE * _seqlen)
+    var B_g_stride = UInt32(D_STATE * _seqlen)
     var B_n_stride = UInt32(_seqlen)
     var B_t_stride = UInt32(1)
     var C_b_stride = B_b_stride
@@ -1893,12 +1900,12 @@ def ssd_combined_gpu[
     var group_id = d // _group_size
 
     # Local state storage
-    var state = SIMD[.float32, MAX_DSTATE](0.0)
-    var cum_a = SIMD[.float32, MAX_DSTATE](1.0)
-    var cum_b = SIMD[.float32, MAX_DSTATE](0.0)
+    var state = SIMD[.float32, MAX_D_STATE](0.0)
+    var cum_a = SIMD[.float32, MAX_D_STATE](1.0)
+    var cum_b = SIMD[.float32, MAX_D_STATE](0.0)
 
     # Pre-load A values
-    var A_vals = SIMD[.float32, MAX_DSTATE](0.0)
+    var A_vals = SIMD[.float32, MAX_D_STATE](0.0)
     var has_delta_bias = delta_bias.dim(0) > 0
     var delta_bias_val = Float32(0.0)
     if has_delta_bias:
@@ -1918,7 +1925,7 @@ def ssd_combined_gpu[
     var has_out_z = out_z.dim(0) > 0
 
     # Pre-multiply A by LOG2E
-    comptime for n in range(DSTATE):
+    comptime for n in range(D_STATE):
         var A_offset = UInt32(d) * A_d_stride + UInt32(n) * A_n_stride
         A_vals[n] = (
             Scalar[kernel_dtype](A.raw_load(A_offset)).cast[.float32]() * LOG2E
@@ -2015,10 +2022,10 @@ def ssd_combined_gpu[
 
             var delta_u = delta_val * u_val
 
-            var B_vals = SIMD[.float32, MAX_DSTATE](0.0)
-            var C_vals = SIMD[.float32, MAX_DSTATE](0.0)
+            var B_vals = SIMD[.float32, MAX_D_STATE](0.0)
+            var C_vals = SIMD[.float32, MAX_D_STATE](0.0)
 
-            comptime for n in range(DSTATE):
+            comptime for n in range(D_STATE):
                 var b_off = (
                     curr_B_offset
                     + UInt32(i) * B_t_stride
@@ -2077,7 +2084,7 @@ def ssd_combined_gpu[
             var is_last_step = current_t == _seqlen - 1
 
             if is_chunk_boundary or is_last_step:
-                comptime for n in range(DSTATE):
+                comptime for n in range(D_STATE):
                     var x_offset_a = UInt32(
                         b * Int(x_b_stride)
                         + d * Int(x_d_stride)
@@ -2135,10 +2142,10 @@ def ssd_combined_gpu[
             delta_val = softplus(delta_val)
 
         var delta_u = delta_val * u_val
-        var B_vals = SIMD[.float32, MAX_DSTATE](0.0)
-        var C_vals = SIMD[.float32, MAX_DSTATE](0.0)
+        var B_vals = SIMD[.float32, MAX_D_STATE](0.0)
+        var C_vals = SIMD[.float32, MAX_D_STATE](0.0)
 
-        comptime for n in range(DSTATE):
+        comptime for n in range(D_STATE):
             B_vals[n] = Scalar[kernel_dtype](
                 B.raw_load(curr_B_offset + UInt32(n) * B_n_stride)
             ).cast[.float32]()
@@ -2190,7 +2197,7 @@ def ssd_combined_gpu[
         var is_chunk_boundary = t_in_chunk == chunk_size
         var is_last_step = t == _seqlen - 1
         if is_chunk_boundary or is_last_step:
-            comptime for n in range(DSTATE):
+            comptime for n in range(D_STATE):
                 var x_offset_a = UInt32(
                     b * Int(x_b_stride)
                     + d * Int(x_d_stride)
@@ -2221,7 +2228,7 @@ def ssd_combined_gpu[
 
 def ssd_combined_cpu[
     kernel_dtype: DType,
-    DSTATE: Int,
+    D_STATE: Int,
     output_LT: TensorLayout,
     x_LT: TensorLayout,
     out_z_LT: TensorLayout,
@@ -2266,7 +2273,7 @@ def ssd_combined_cpu[
 
     Parameters:
         kernel_dtype: Element type of the input and output tensors.
-        DSTATE: Number of SSM state elements per (batch, dim) pair.
+        D_STATE: Number of SSM state elements per (batch, dim) pair.
         output_LT: Memory layout of the `output` tensor.
         x_LT: Memory layout of the `x` checkpoint tensor.
         out_z_LT: Memory layout of the `out_z` gated output tensor.
@@ -2294,7 +2301,7 @@ def ssd_combined_cpu[
         output: Normalized output tensor of shape `(batch, dim,
             seqlen)`, written.
         x: Checkpoint tensor of shape `(batch, dim, n_chunks,
-            2*DSTATE)` storing per-chunk cumulative `A` and `B`
+            2*D_STATE)` storing per-chunk cumulative `A` and `B`
             values, written.
         out_z: Gated output tensor of shape `(batch, dim, seqlen)`
             holding `normalized * silu(z)`, written when `z` is
@@ -2305,10 +2312,10 @@ def ssd_combined_cpu[
         u: Selective scan input tensor of shape `(batch, dim,
             seqlen)`, read.
         delta: Time-step tensor of shape `(batch, dim, seqlen)`, read.
-        A: SSM recurrence matrix of shape `(dim, DSTATE)`, read.
-        B: SSM input projection of shape `(batch, n_groups, DSTATE,
+        A: SSM recurrence matrix of shape `(dim, D_STATE)`, read.
+        B: SSM input projection of shape `(batch, n_groups, D_STATE,
             seqlen)`, read.
-        C: SSM output projection of shape `(batch, n_groups, DSTATE,
+        C: SSM output projection of shape `(batch, n_groups, D_STATE,
             seqlen)`, read.
         D: Skip connection vector of shape `(dim,)`, read; added as
             `D * u` to the scan output when present.
@@ -2348,17 +2355,17 @@ def ssd_combined_cpu[
     var z_b_stride = output_b_stride
     var z_d_stride = output_d_stride
     var z_t_stride = output_t_stride
-    # 4D (batch, dim, n_chunks, 2*dstate) strides for x
-    var x_b_stride = UInt32(dim * n_chunks * 2 * DSTATE)
-    var x_d_stride = UInt32(n_chunks * 2 * DSTATE)
-    var x_chunk_stride = UInt32(2 * DSTATE)
+    # 4D (batch, dim, n_chunks, 2*d_state) strides for x
+    var x_b_stride = UInt32(dim * n_chunks * 2 * D_STATE)
+    var x_d_stride = UInt32(n_chunks * 2 * D_STATE)
+    var x_chunk_stride = UInt32(2 * D_STATE)
     var x_n_stride = UInt32(1)
-    # 2D (dim, dstate) strides for A
-    var A_d_stride = UInt32(DSTATE)
+    # 2D (dim, d_state) strides for A
+    var A_d_stride = UInt32(D_STATE)
     var A_n_stride = UInt32(1)
-    # 4D (batch, n_groups, dstate, seqlen) strides for B, C
-    var B_b_stride = UInt32(n_groups * DSTATE * seqlen)
-    var B_g_stride = UInt32(DSTATE * seqlen)
+    # 4D (batch, n_groups, d_state, seqlen) strides for B, C
+    var B_b_stride = UInt32(n_groups * D_STATE * seqlen)
+    var B_g_stride = UInt32(D_STATE * seqlen)
     var B_n_stride = UInt32(seqlen)
     var B_t_stride = UInt32(1)
     var C_b_stride = B_b_stride
@@ -2375,11 +2382,11 @@ def ssd_combined_cpu[
 
         var group_id = d // group_size
 
-        var state = SIMD[.float32, MAX_DSTATE](0.0)
-        var cum_a = SIMD[.float32, MAX_DSTATE](1.0)
-        var cum_b = SIMD[.float32, MAX_DSTATE](0.0)
+        var state = SIMD[.float32, MAX_D_STATE](0.0)
+        var cum_a = SIMD[.float32, MAX_D_STATE](1.0)
+        var cum_b = SIMD[.float32, MAX_D_STATE](0.0)
 
-        var A_vals = SIMD[.float32, MAX_DSTATE](0.0)
+        var A_vals = SIMD[.float32, MAX_D_STATE](0.0)
         var has_delta_bias = delta_bias.dim(0) > 0
         var delta_bias_val = Float32(0.0)
         if has_delta_bias:
@@ -2400,7 +2407,7 @@ def ssd_combined_cpu[
         var has_z = z.dim(0) > 0
         var has_out_z = out_z.dim(0) > 0
 
-        comptime for n in range(DSTATE):
+        comptime for n in range(D_STATE):
             var A_offset = UInt32(d) * A_d_stride + UInt32(n) * A_n_stride
             A_vals[n] = (
                 Scalar[kernel_dtype](A.raw_load(A_offset)).cast[.float32]()
@@ -2498,10 +2505,10 @@ def ssd_combined_cpu[
 
                 var delta_u = delta_val * u_val
 
-                var B_vals = SIMD[.float32, MAX_DSTATE](0.0)
-                var C_vals = SIMD[.float32, MAX_DSTATE](0.0)
+                var B_vals = SIMD[.float32, MAX_D_STATE](0.0)
+                var C_vals = SIMD[.float32, MAX_D_STATE](0.0)
 
-                comptime for n in range(DSTATE):
+                comptime for n in range(D_STATE):
                     var b_off = (
                         curr_B_offset
                         + UInt32(i) * B_t_stride
@@ -2559,7 +2566,7 @@ def ssd_combined_cpu[
                 var is_last_step = current_t == seqlen - 1
 
                 if is_chunk_boundary or is_last_step:
-                    comptime for n in range(DSTATE):
+                    comptime for n in range(D_STATE):
                         var x_offset_a = UInt32(
                             b * Int(x_b_stride)
                             + d * Int(x_d_stride)
@@ -2616,10 +2623,10 @@ def ssd_combined_cpu[
                 delta_val = softplus(delta_val)
 
             var delta_u = delta_val * u_val
-            var B_vals = SIMD[.float32, MAX_DSTATE](0.0)
-            var C_vals = SIMD[.float32, MAX_DSTATE](0.0)
+            var B_vals = SIMD[.float32, MAX_D_STATE](0.0)
+            var C_vals = SIMD[.float32, MAX_D_STATE](0.0)
 
-            comptime for n in range(DSTATE):
+            comptime for n in range(D_STATE):
                 B_vals[n] = Scalar[kernel_dtype](
                     B.raw_load(curr_B_offset + UInt32(n) * B_n_stride)
                 ).cast[.float32]()
@@ -2670,7 +2677,7 @@ def ssd_combined_cpu[
             var is_chunk_boundary = t_in_chunk == chunk_size
             var is_last_step = t == seqlen - 1
             if is_chunk_boundary or is_last_step:
-                comptime for n in range(DSTATE):
+                comptime for n in range(D_STATE):
                     var x_offset_a = UInt32(
                         b * Int(x_b_stride)
                         + d * Int(x_d_stride)
@@ -2716,7 +2723,7 @@ def ssd_combined_cpu[
 
 def mamba_split_conv1d_scan_combined_cpu[
     kernel_dtype: DType,
-    DSTATE: Int,
+    D_STATE: Int,
     zxbcdt_layout: TensorLayout,
     conv_weight_layout: TensorLayout,
     conv_bias_layout: TensorLayout,
@@ -2748,13 +2755,13 @@ def mamba_split_conv1d_scan_combined_cpu[
     has_outproj: Int8,
     zxbcdt: TileTensor[
         kernel_dtype, zxbcdt_layout, MutAnyOrigin
-    ],  # (batch, seqlen, 2*dim + 2*ngroups*dstate + nheads)
+    ],  # (batch, seqlen, 2*dim + 2*ngroups*d_state + nheads)
     conv_weight: TileTensor[
         kernel_dtype, conv_weight_layout, MutAnyOrigin
-    ],  # (dim + 2*ngroups*dstate, width)
+    ],  # (dim + 2*ngroups*d_state, width)
     conv_bias: TileTensor[
         kernel_dtype, conv_bias_layout, MutAnyOrigin
-    ],  # (dim + 2*ngroups*dstate,)
+    ],  # (dim + 2*ngroups*d_state,)
     dt_bias: TileTensor[
         kernel_dtype, delta_bias_layout, MutAnyOrigin
     ],  # (nheads,)
@@ -2764,7 +2771,7 @@ def mamba_split_conv1d_scan_combined_cpu[
     ],  # (nheads, headdim) or (nheads,)
     x: TileTensor[
         kernel_dtype, x_layout, MutAnyOrigin
-    ],  # (batch, dim, num_chunks, 2*dstate)
+    ],  # (batch, dim, num_chunks, 2*d_state)
     out_z: TileTensor[
         kernel_dtype, out_z_layout, MutAnyOrigin
     ],  # (batch, dim, seqlen)
@@ -2773,10 +2780,10 @@ def mamba_split_conv1d_scan_combined_cpu[
     ],  # (batch, nheads, seqlen)
     B: TileTensor[
         kernel_dtype, B_layout, MutAnyOrigin
-    ],  # (batch, ngroups, dstate, seqlen)
+    ],  # (batch, ngroups, d_state, seqlen)
     C: TileTensor[
         kernel_dtype, C_layout, MutAnyOrigin
-    ],  # (batch, ngroups, dstate, seqlen)
+    ],  # (batch, ngroups, d_state, seqlen)
     z: TileTensor[kernel_dtype, z_layout, MutAnyOrigin],  # (batch, dim, seqlen)
     rmsnorm_weight: TileTensor[
         kernel_dtype, rmsnorm_weight_layout, MutAnyOrigin
@@ -2797,17 +2804,17 @@ def mamba_split_conv1d_scan_combined_cpu[
 
     Input zxbcdt structure:
     - Channels 0 to dim-1: z (gating values)
-    - Channels dim to dim + 2*ngroups*dstate - 1: xBC (x, B, C before conv)
-    - Channels 2*dim + 2*ngroups*dstate to end: dt (time step values)
+    - Channels dim to dim + 2*ngroups*d_state - 1: xBC (x, B, C before conv)
+    - Channels 2*dim + 2*ngroups*d_state to end: dt (time step values)
 
     After conv on xBC:
     - Channels 0 to dim-1: x (input to scan)
-    - Channels dim to dim + ngroups*dstate - 1: B
-    - Channels dim + ngroups*dstate to dim + 2*ngroups*dstate - 1: C
+    - Channels dim to dim + ngroups*d_state - 1: B
+    - Channels dim + ngroups*d_state to dim + 2*ngroups*d_state - 1: C
     """
     # Compute row-major strides from dimensions
     var n_chunks = ceildiv(seqlen, chunk_size)
-    var zxbcdt_channels = 2 * dim + 2 * ngroups * DSTATE + nheads
+    var zxbcdt_channels = 2 * dim + 2 * ngroups * D_STATE + nheads
     var out_dim = output.dim(2)
     # zxbcdt: (batch, seqlen, channels)
     var zxbcdt_b_stride = UInt32(seqlen * zxbcdt_channels)
@@ -2822,10 +2829,10 @@ def mamba_split_conv1d_scan_combined_cpu[
     var output_b_stride = UInt32(seqlen * Int(out_dim))
     var output_s_stride = UInt32(out_dim)
     var output_c_stride = UInt32(1)
-    # x: (batch, dim, n_chunks, 2*dstate)
-    var x_b_stride = UInt32(dim * n_chunks * 2 * DSTATE)
-    var x_d_stride = UInt32(n_chunks * 2 * DSTATE)
-    var x_chunk_stride = UInt32(2 * DSTATE)
+    # x: (batch, dim, n_chunks, 2*d_state)
+    var x_b_stride = UInt32(dim * n_chunks * 2 * D_STATE)
+    var x_d_stride = UInt32(n_chunks * 2 * D_STATE)
+    var x_chunk_stride = UInt32(2 * D_STATE)
     var x_n_stride = UInt32(1)
     # out_z, z: (batch, dim, seqlen)
     var out_z_b_stride = UInt32(dim * seqlen)
@@ -2840,9 +2847,9 @@ def mamba_split_conv1d_scan_combined_cpu[
     var dt_s_stride = UInt32(1)
     # A: (nheads,)
     var A_stride = UInt32(1)
-    # B, C: (batch, ngroups, dstate, seqlen)
-    var B_b_stride = UInt32(ngroups * DSTATE * seqlen)
-    var B_g_stride = UInt32(DSTATE * seqlen)
+    # B, C: (batch, ngroups, d_state, seqlen)
+    var B_b_stride = UInt32(ngroups * D_STATE * seqlen)
+    var B_g_stride = UInt32(D_STATE * seqlen)
     var B_n_stride = UInt32(seqlen)
     var B_t_stride = UInt32(1)
     var C_b_stride = B_b_stride
@@ -2864,7 +2871,7 @@ def mamba_split_conv1d_scan_combined_cpu[
     var group_size = dim // nheads  # Should equal headdim
     var z_start = 0
     var xBC_start = dim
-    var dt_start = 2 * dim + 2 * ngroups * DSTATE
+    var dt_start = 2 * dim + 2 * ngroups * D_STATE
 
     def worker(idx: Int) raises {imm}:
         var b, d = divmod(idx, dim)
@@ -2872,14 +2879,14 @@ def mamba_split_conv1d_scan_combined_cpu[
         var group_id = h // ngroups if ngroups > 1 else 0
 
         # Initialize state for selective scan
-        var state = SIMD[.float32, MAX_DSTATE](0.0)
-        var cum_a = SIMD[.float32, MAX_DSTATE](1.0)
-        var cum_b = SIMD[.float32, MAX_DSTATE](0.0)
+        var state = SIMD[.float32, MAX_D_STATE](0.0)
+        var cum_a = SIMD[.float32, MAX_D_STATE](1.0)
+        var cum_b = SIMD[.float32, MAX_D_STATE](0.0)
 
         # Pre-load A values
-        var A_vals = SIMD[.float32, MAX_DSTATE](0.0)
+        var A_vals = SIMD[.float32, MAX_D_STATE](0.0)
 
-        comptime for n in range(DSTATE):
+        comptime for n in range(D_STATE):
             var A_offset = UInt32(h) * A_stride
             A_vals[n] = (
                 Scalar[kernel_dtype](A.raw_load(A_offset)).cast[.float32]()
@@ -2981,12 +2988,12 @@ def mamba_split_conv1d_scan_combined_cpu[
             var x_val = conv_sum / (1.0 + exp(-conv_sum))
 
             # Step 3: Compute B and C for this group
-            var B_vals = SIMD[.float32, MAX_DSTATE](0.0)
-            var C_vals = SIMD[.float32, MAX_DSTATE](0.0)
+            var B_vals = SIMD[.float32, MAX_D_STATE](0.0)
+            var C_vals = SIMD[.float32, MAX_D_STATE](0.0)
 
-            comptime for n in range(DSTATE):
-                # B channel: dim + group_id * dstate + n
-                var B_channel_in_xBC = dim + group_id * DSTATE + n
+            comptime for n in range(D_STATE):
+                # B channel: dim + group_id * d_state + n
+                var B_channel_in_xBC = dim + group_id * D_STATE + n
                 var B_channel_in_zxbcdt = xBC_start + B_channel_in_xBC
 
                 var B_conv_sum = Scalar[kernel_dtype](
@@ -3028,9 +3035,9 @@ def mamba_split_conv1d_scan_combined_cpu[
                     B_offset,
                     Scalar[kernel_dtype](B_vals[n].cast[kernel_dtype]()),
                 )
-                # C channel: dim + ngroups*dstate + group_id * dstate + n
+                # C channel: dim + ngroups*d_state + group_id * d_state + n
                 var C_channel_in_xBC = (
-                    dim + ngroups * DSTATE + group_id * DSTATE + n
+                    dim + ngroups * D_STATE + group_id * D_STATE + n
                 )
                 var C_channel_in_zxbcdt = xBC_start + C_channel_in_xBC
 
@@ -3202,7 +3209,7 @@ def mamba_split_conv1d_scan_combined_cpu[
             var is_last_step = t == seqlen - 1
 
             if is_chunk_boundary or is_last_step:
-                comptime for n in range(DSTATE):
+                comptime for n in range(D_STATE):
                     var x_offset_a = UInt32(
                         b * Int(x_b_stride)
                         + d * Int(x_d_stride)
@@ -3235,7 +3242,7 @@ def mamba_split_conv1d_scan_combined_cpu[
 
 def mamba_split_conv1d_scan_combined_gpu[
     kernel_dtype: DType,
-    DSTATE: Int,
+    D_STATE: Int,
     zxbcdt_layout: TensorLayout,
     conv_weight_layout: TensorLayout,
     conv_bias_layout: TensorLayout,
@@ -3300,7 +3307,7 @@ def mamba_split_conv1d_scan_combined_gpu[
     var _chunk_size = Int(chunk_size)
     # Compute row-major strides from dimensions
     var n_chunks = ceildiv(_seqlen, _chunk_size)
-    var zxbcdt_channels = 2 * _dim + 2 * _ngroups * DSTATE + _nheads
+    var zxbcdt_channels = 2 * _dim + 2 * _ngroups * D_STATE + _nheads
     var out_dim = output.dim(2)
     # zxbcdt: (_batch, _seqlen, channels)
     var zxbcdt_b_stride = UInt32(_seqlen * zxbcdt_channels)
@@ -3315,10 +3322,10 @@ def mamba_split_conv1d_scan_combined_gpu[
     var output_b_stride = UInt32(_seqlen * Int(out_dim))
     var output_s_stride = UInt32(out_dim)
     var output_c_stride = UInt32(1)
-    # x: (_batch, _dim, n_chunks, 2*dstate)
-    var x_b_stride = UInt32(_dim * n_chunks * 2 * DSTATE)
-    var x_d_stride = UInt32(n_chunks * 2 * DSTATE)
-    var x_chunk_stride = UInt32(2 * DSTATE)
+    # x: (_batch, _dim, n_chunks, 2*d_state)
+    var x_b_stride = UInt32(_dim * n_chunks * 2 * D_STATE)
+    var x_d_stride = UInt32(n_chunks * 2 * D_STATE)
+    var x_chunk_stride = UInt32(2 * D_STATE)
     var x_n_stride = UInt32(1)
     # out_z, z: (_batch, _dim, _seqlen)
     var out_z_b_stride = UInt32(_dim * _seqlen)
@@ -3333,9 +3340,9 @@ def mamba_split_conv1d_scan_combined_gpu[
     var dt_s_stride = UInt32(1)
     # A: (_nheads,)
     var A_stride = UInt32(1)
-    # B, C: (_batch, _ngroups, dstate, _seqlen)
-    var B_b_stride = UInt32(_ngroups * DSTATE * _seqlen)
-    var B_g_stride = UInt32(DSTATE * _seqlen)
+    # B, C: (_batch, _ngroups, d_state, _seqlen)
+    var B_b_stride = UInt32(_ngroups * D_STATE * _seqlen)
+    var B_g_stride = UInt32(D_STATE * _seqlen)
     var B_n_stride = UInt32(_seqlen)
     var B_t_stride = UInt32(1)
     var C_b_stride = B_b_stride
@@ -3367,17 +3374,17 @@ def mamba_split_conv1d_scan_combined_gpu[
     var width_minus_1 = _width - 1
     var z_start = 0
     var xBC_start = _dim
-    var dt_start = 2 * _dim + 2 * _ngroups * DSTATE
+    var dt_start = 2 * _dim + 2 * _ngroups * D_STATE
 
     # Initialize state for selective scan
-    var state = SIMD[.float32, MAX_DSTATE](0.0)
-    var cum_a = SIMD[.float32, MAX_DSTATE](1.0)
-    var cum_b = SIMD[.float32, MAX_DSTATE](0.0)
+    var state = SIMD[.float32, MAX_D_STATE](0.0)
+    var cum_a = SIMD[.float32, MAX_D_STATE](1.0)
+    var cum_b = SIMD[.float32, MAX_D_STATE](0.0)
 
     # Pre-load A values
-    var A_vals = SIMD[.float32, MAX_DSTATE](0.0)
+    var A_vals = SIMD[.float32, MAX_D_STATE](0.0)
 
-    comptime for n in range(DSTATE):
+    comptime for n in range(D_STATE):
         var A_offset = UInt32(h) * A_stride
         A_vals[n] = (
             Scalar[kernel_dtype](A.raw_load(A_offset)).cast[.float32]() * LOG2E
@@ -3475,12 +3482,12 @@ def mamba_split_conv1d_scan_combined_gpu[
         var x_val = conv_sum / (1.0 + std.math.exp(-conv_sum))
 
         # Step 3: Compute B and C for this group
-        var B_vals = SIMD[.float32, MAX_DSTATE](0.0)
-        var C_vals = SIMD[.float32, MAX_DSTATE](0.0)
+        var B_vals = SIMD[.float32, MAX_D_STATE](0.0)
+        var C_vals = SIMD[.float32, MAX_D_STATE](0.0)
 
-        comptime for n in range(DSTATE):
+        comptime for n in range(D_STATE):
             # B channel
-            var B_channel_in_xBC = _dim + group_id * DSTATE + n
+            var B_channel_in_xBC = _dim + group_id * D_STATE + n
             var B_channel_in_zxbcdt = xBC_start + B_channel_in_xBC
 
             var B_conv_sum = Scalar[kernel_dtype](
@@ -3519,7 +3526,7 @@ def mamba_split_conv1d_scan_combined_gpu[
             )
             # C channel
             var C_channel_in_xBC = (
-                _dim + _ngroups * DSTATE + group_id * DSTATE + n
+                _dim + _ngroups * D_STATE + group_id * D_STATE + n
             )
             var C_channel_in_zxbcdt = xBC_start + C_channel_in_xBC
 
@@ -3678,7 +3685,7 @@ def mamba_split_conv1d_scan_combined_gpu[
         var is_last_step = t == _seqlen - 1
 
         if is_chunk_boundary or is_last_step:
-            comptime for n in range(DSTATE):
+            comptime for n in range(D_STATE):
                 var x_offset_a = UInt32(
                     b * Int(x_b_stride)
                     + d * Int(x_d_stride)
