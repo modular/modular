@@ -2,12 +2,13 @@ load("//bazel:api.bzl", "modular_run_binary_test", "mojo_binary")
 
 package(default_visibility = ["//oss/modular/docs:__subpackages__"])
 
+# Assertions over the tutorial's code examples.
 mojo_binary(
-    name = "life_step5",
+    name = "tests",
     testonly = True,
     srcs = [
-        "gridv1_step5.mojo",
-        "life_step5.mojo",
+        "grid.mojo",
+        "tests.mojo",
     ],
     deps = [
         "@mojo//:std",
@@ -15,61 +16,7 @@ mojo_binary(
 )
 
 modular_run_binary_test(
-    name = "life_step5_test",
+    name = "tests_test",
     size = "small",
-    binary = "life_step5",
-)
-
-mojo_binary(
-    name = "life_step7",
-    testonly = True,
-    srcs = [
-        "gridv1_step7.mojo",
-        "life_step7.mojo",
-    ],
-    deps = [
-        "@mojo//:std",
-    ],
-)
-
-modular_run_binary_test(
-    name = "life_step7_test",
-    size = "small",
-    binary = "life_step7",
-)
-
-mojo_binary(
-    name = "life_step8",
-    testonly = True,
-    srcs = [
-        "gridv1_step8.mojo",
-        "life_step8.mojo",
-    ],
-    deps = [
-        "@mojo//:std",
-    ],
-)
-
-modular_run_binary_test(
-    name = "life_step8_test",
-    size = "small",
-    binary = "life_step8",
-)
-
-mojo_binary(
-    name = "life_step9",
-    testonly = True,
-    srcs = [
-        "gridv1_step9.mojo",
-        "life_step9.mojo",
-    ],
-    deps = [
-        "@mojo//:std",
-    ],
-)
-
-modular_run_binary_test(
-    name = "life_step9_test",
-    size = "small",
-    binary = "life_step9",
+    binary = "tests",
 )

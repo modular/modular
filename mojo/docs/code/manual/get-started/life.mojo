@@ -10,21 +10,20 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-
-
-from gridv1_step9 import Grid
+from std.random import seed
+from grid import Grid
+from std.time import sleep
 
 
 def main():
-    var glider: List[List[Int]] = [
-        [0, 1, 0, 0, 0, 0, 0, 0],
-        [0, 0, 1, 0, 0, 0, 0, 0],
-        [1, 1, 1, 0, 0, 0, 0, 0],
-        [0, 0, 0, 0, 0, 0, 0, 0],
-        [0, 0, 0, 0, 0, 0, 0, 0],
-        [0, 0, 0, 0, 0, 0, 0, 0],
-        [0, 0, 0, 0, 0, 0, 0, 0],
-        [0, 0, 0, 0, 0, 0, 0, 0],
-    ]
-    var start = Grid(8, 8, glider^)
-    print(String(start))
+    seed()
+
+    var grid = Grid[60, 20].random_grid(240)
+    var gen = 1
+
+    for _ in range(300):
+        print(t"\033[H\033J\nGeneration: {gen}")
+        grid.evolve()
+        grid.print_grid()
+        sleep(0.1)
+        gen += 1
