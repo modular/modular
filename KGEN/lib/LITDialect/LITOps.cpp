@@ -2080,8 +2080,7 @@ ValueRange TryOp::getEntryArguments(std::optional<unsigned> target) {
 
 ErrorTreeOrSuccess TryOp::interpret(ArrayRef<Attribute> operands,
                                     InterpreterState &state) {
-  state.transferControlFlowTo(getTryRegion(), operands);
-  return success();
+  return state.transferControlFlowTo(getTryRegion(), operands);
 }
 
 ErrorTreeOrSuccess
@@ -2137,13 +2136,11 @@ ErrorTreeOrSuccess TryYieldOp::interpret(ArrayRef<Attribute> operands,
   switch ((*this)->getParentRegion()->getRegionNumber()) {
   case TryOp::kTRY:
     // Yield from the 'try' region branches to the 'else' region.
-    state.transferControlFlowTo(tryOp.getElseRegion(), operands);
-    return success();
+    return state.transferControlFlowTo(tryOp.getElseRegion(), operands);
   case TryOp::kELSE:
     // Yield from either the 'except' or 'else' regions branches back to the
     // parent region which continues after the try.
-    state.transferControlFlowTo(tryOp, operands);
-    return success();
+    return state.transferControlFlowTo(tryOp, operands);
   case TryOp::kFINALLY:
     llvm_unreachable("Should be processed by LowerSemanticCF");
   default:
@@ -2191,8 +2188,7 @@ ErrorTreeOrSuccess TryRaiseOp::interpret(ArrayRef<Attribute> operands,
   }
   assert(tryOp && "LowerSemanticCF ensures this before elaboration");
 
-  state.transferControlFlowTo(tryOp.getExceptRegion(), operands);
-  return success();
+  return state.transferControlFlowTo(tryOp.getExceptRegion(), operands);
 }
 
 ErrorTreeOrSuccess
