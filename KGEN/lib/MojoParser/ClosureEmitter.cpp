@@ -3203,14 +3203,26 @@ ASTDecl *ClosureEmitter::addCaptureValue(ASTDecl &closure, SMLoc location,
     }
   }
 
-  CValue valueInParent =
-      ASTDeclToCValue(result, *emitter.builder, funcOp->getLoc());
+  // Capture materialization is inserted into the enclosing function. Stamp
+  // those ops with that function's debug scope, using the inner closure's
+  // file/line only. Keeping the inner subprogram on the loc would lower as
+  // an inlined location and fail LLVM's dbg-value verifier.
+  emitter.builder->setInsertionPoint(closure.getIfOperation());
+  DebugInfo::DIBuilder::ScopeGuard diGuard;
+  Location captureLoc = funcOp.getLoc();
+  if (auto fileLoc = captureLoc->findInstanceOf<FileLineColLoc>())
+    captureLoc = fileLoc;
+  if (shared.diBuilder) {
+    diGuard = shared.diBuilder->pushScopeGuard(parentFn.getLocScope());
+    captureLoc = shared.diBuilder->createScopedLoc(captureLoc);
+  }
+
+  CValue valueInParent = ASTDeclToCValue(result, *emitter.builder, captureLoc);
   if (!valueInParent) {
     shared.emitError(location, "'")
         << name << "' does not name a capturable value";
     return nullptr;
   }
-  emitter.builder->setInsertionPoint(closure.getIfOperation());
 
   CaptureConvention convention;
   /// The captureValue is a map of the valueInParent. For example, the
@@ -3220,11 +3232,6 @@ ASTDecl *ClosureEmitter::addCaptureValue(ASTDecl &closure, SMLoc location,
   /// later, we have to create a temporary value to represent the change in
   /// the properties of the value in the body of the closure.
   CValue captureValue;
-  // Switch the DI Scope to the enclosing function before emitting the
-  // load so the debug information is accurate.
-  DebugInfo::DIBuilder::ScopeGuard diGuard;
-  if (shared.diBuilder)
-    diGuard = shared.diBuilder->pushScopeGuard(parentFn.getLocScope());
 
   auto captureByRef = [&](CValue value,
                           std::optional<bool> mutability) -> CValue {
@@ -3246,8 +3253,8 @@ ASTDecl *ClosureEmitter::addCaptureValue(ASTDecl &closure, SMLoc location,
 
       if (originType.isMutableKnown(true)) {
         // convert a mut ref to immut ref
-        auto refImmutOp = LIT::RefImmutOp::create(
-            *emitter.builder, parentFn.getLoc(), valueInParent.getMlirValue());
+        auto refImmutOp = LIT::RefImmutOp::create(*emitter.builder, captureLoc,
+                                                  valueInParent.getMlirValue());
         return MBValue(refImmutOp->getResult(0));
       }
     }
@@ -3319,11 +3326,8 @@ ASTDecl *ClosureEmitter::addCaptureValue(ASTDecl &closure, SMLoc location,
               sugarDynCast<RefType>(valueInParent.getType().mlirType)) {
         OriginType originType = refType.getOriginType();
         if (originType.isMutableKnown(false)) {
-          Location fusedLoc =
-              FusedLoc::get(funcOp.getLoc().getContext(), funcOp.getLoc(),
-                            parentFn.getSubprogramScope());
           auto refImmutOp = LIT::RefImmutOp::create(
-              *emitter.builder, fusedLoc, valueInParent.getMlirValue());
+              *emitter.builder, captureLoc, valueInParent.getMlirValue());
           captureValue = MBValue(refImmutOp->getResult(0));
         }
       }
