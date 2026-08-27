@@ -1955,6 +1955,7 @@ def block_scaled_matmul_amd[
     #               regime, else narrow split-K (BM=16, no wasted M rows)
     #   16 < M <= 32 → BM=32 split-K for the MXFP8 O-projection shape; other
     #                  shapes use the BM=64 split-K tile below.
+    #   32 < M <= 128 → BN=64 split-K for the MXFP8 O-projection shape.
     #   M >   16  → BM=64 split-K when `_sk_band_splits` found a legal factor
     #               and M <= `_sk_route_max_m`. `_sk_splits` is
     #               keyed on N/K/cta_cap, not M, so a shape that's still
@@ -2027,6 +2028,24 @@ def block_scaled_matmul_amd[
                     BK_ELEMS=SK_BK_ELEMS,
                     WM=32,
                     WN=64,
+                    num_splits=_sk_splits,
+                    MMA_M=MMA_M,
+                    MMA_N=MMA_N,
+                    MMA_K=MMA_K,
+                    matrix_format=_fmt,
+                    elementwise_lambda_fn=elementwise_lambda_fn,
+                ](c, a, b, a_scales, b_scales, M, ctx)
+                return
+            if M <= 128:
+                # Reuses `_sk_splits` outside its `SK_BN=128` calibration: at
+                # BN=64 this overshoots the CTA cap, but measured faster, so
+                # the derivation is not authoritative for this branch.
+                _launch_block_scaled_split_k[
+                    BM=64,
+                    BN=64,
+                    BK_ELEMS=SK_BK_ELEMS,
+                    WM=64,
+                    WN=32,
                     num_splits=_sk_splits,
                     MMA_M=MMA_M,
                     MMA_N=MMA_N,

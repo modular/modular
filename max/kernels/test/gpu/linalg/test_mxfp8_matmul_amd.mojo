@@ -676,3 +676,6 @@ def main() raises:
         # Shape-gated decode projection tiles, at exact-fill and unaligned M.
         _test_dispatch[20, 6144, 2048]("dispatch-sk-m3-o-m20", ctx)
         _test_dispatch[32, 6144, 2048]("dispatch-sk-m3-o-m32", ctx)
+        _test_dispatch[48, 6144, 2048]("dispatch-sk-m3-o-m48", ctx)
+        _test_dispatch[64, 6144, 2048]("dispatch-sk-m3-o-m64", ctx)
+        _test_dispatch[128, 6144, 2048]("dispatch-sk-m3-o-m128", ctx)
