@@ -483,6 +483,11 @@ This release completes the removal of APIs deprecated during the v1.0 cycle.
   unsigned, so any mode with the `S_IFREG` bit set (every regular file)
   sign-extended into a negative `Int`.
 
+- On macOS, `os.stat()` and `os.lstat()` now report file timestamps with the
+  correct nanosecond values. `_CTimeSpec.as_nanoseconds()` previously treated
+  the `timespec.tv_nsec` field as microseconds, inflating the subsecond
+  component by a factor of up to 1,000.
+
 - `PythonObject` no longer leaks a CPython reference per positional argument
   when calling a Python object, nor when setting an item, attribute, or set
   literal element.
