@@ -1106,6 +1106,138 @@ def router_group_limited[
         )
 
 
+@always_inline
+def _block_top_k[
+    scores_type: DType,
+    //,
+    n_experts_per_tok: Int,
+    num_threads: Int,
+](biased_score: Scalar[scores_type]) -> TopK_2[scores_type]:
+    """Selects a block's top `n_experts_per_tok` scores by warp-bitonic sort.
+
+    One score per thread, `num_threads` per block. Runs in 2 or 3 phases
+    depending on WARP_SIZE: each warp sorts its own lanes and keeps its top
+    `n_experts_per_tok` (phase 1), the survivors are re-sorted down to one
+    warp's worth (phase 2, eliminated at compile time when phase 1 already
+    fits in one warp, as it does on AMD's 64-lane wavefronts), and warp 0
+    sorts those to the global top k (phase 3).
+
+    All threads must call this: it barriers between phases. Ties break by
+    lower index, per `_warp_bitonic_sort`.
+
+    Parameters:
+        scores_type: DType of the scores being ranked.
+        n_experts_per_tok: Number of winners to select.
+        num_threads: Threads per block; also the number of scores ranked.
+
+    Args:
+        biased_score: This thread's score.
+
+    Returns:
+        In warp 0, lane `i < n_experts_per_tok` holds the `i`th-largest score
+        and its originating thread index. Every other lane and warp gets an
+        unspecified value.
+    """
+    comptime assert (
+        num_threads % WARP_SIZE == 0
+    ), "num_threads must be a whole number of warps"
+
+    # Phase 1 produces num_warps × n_experts_per_tok survivors:
+    comptime num_warps = num_threads // WARP_SIZE
+    comptime phase1_candidates = num_warps * n_experts_per_tok
+
+    # Phase 2 spreads the phase-1 survivors over ceil(ph1/WARP_SIZE) warps,
+    # each sorting a full warp:
+    comptime num_phase2_warps = ceildiv(phase1_candidates, WARP_SIZE)
+    comptime phase2_candidates = num_phase2_warps * n_experts_per_tok
+
+    # A 64-lane wavefront fits more survivors per warp, so phase 1 can
+    # already leave one warp's worth and phase 2 drops out entirely.
+    comptime skip_phase2 = (num_phase2_warps == 1)
+    # Phase 3 takes ph2_candidates padded up to WARP_SIZE.
+    comptime assert (
+        phase2_candidates <= WARP_SIZE
+    ), "phase2_candidates must be less than or equal to WARP_SIZE"
+
+    comptime if skip_phase2:
+        # When skipping phase 2, warp 0 reads directly from smem_phase1.
+        # Requires phase1_candidates to fit within one warp.
+        comptime assert (
+            phase1_candidates <= WARP_SIZE
+        ), "phase1_candidates exceeds WARP_SIZE, cannot skip phase 2"
+
+    comptime total_smem = phase1_candidates if skip_phase2 else (
+        phase1_candidates + phase2_candidates
+    )
+
+    var tid = Int(thread_idx.x)
+    var warp_id = warp_id()
+    var lane_id = lane_id()
+
+    var shared_mem = unsafe_stack_allocation[
+        total_smem,
+        TopK_2[scores_type],
+        address_space=.SHARED,
+    ]()
+
+    var shared_mem_phase1 = shared_mem
+    var shared_mem_phase2 = shared_mem + phase1_candidates
+
+    var val = TopK_2(u=biased_score, p=tid)
+    var sorted_val = _warp_bitonic_sort[num_lanes=WARP_SIZE](val)
+
+    if lane_id < n_experts_per_tok:
+        shared_mem_phase1[warp_id * n_experts_per_tok + lane_id] = sorted_val
+
+    barrier()
+
+    comptime if not skip_phase2:
+        var val2: TopK_2[scores_type]
+        # Sequential read: warp W reads the contiguous WARP_SIZE-wide slice
+        # of smem_phase1 starting at W*WARP_SIZE, so no bank conflicts. The
+        # `tid < phase1_candidates` guard matters whenever phase1_candidates
+        # is not a whole number of warps -- 160 routed experts with k=8
+        # leaves 40 survivors across 2 phase-2 warps -- since without it the
+        # trailing lanes would read past shared_mem_phase1 into
+        # shared_mem_phase2's backing memory, which nothing has written yet.
+        if warp_id < num_phase2_warps and tid < phase1_candidates:
+            val2 = shared_mem_phase1[tid]
+        else:
+            # Inactive warps: dead-value cannot corrupt the sort because
+            # _warp_bitonic_sort is fully intra-warp.
+            val2 = TopK_2[scores_type]()
+
+        var sorted_val2 = _warp_bitonic_sort[num_lanes=WARP_SIZE](val2)
+
+        if warp_id < num_phase2_warps and lane_id < n_experts_per_tok:
+            shared_mem_phase2[
+                warp_id * n_experts_per_tok + lane_id
+            ] = sorted_val2
+
+        barrier()
+
+    var winners = TopK_2[scores_type]()
+    if warp_id == 0:
+        var val3: TopK_2[scores_type]
+
+        comptime if skip_phase2:
+            # Wide-wavefront path: warp 0 reads the phase-1 survivors.
+            if lane_id < phase1_candidates:
+                val3 = shared_mem_phase1[lane_id]
+            else:
+                val3 = TopK_2[scores_type]()  # padding: -inf
+        else:
+            # Narrow-warp path: warp 0 reads the phase-2 survivors.
+            if lane_id < phase2_candidates:
+                val3 = shared_mem_phase2[lane_id]
+            else:
+                val3 = TopK_2[scores_type]()  # padding: -inf
+
+        winners = _warp_bitonic_sort[num_lanes=WARP_SIZE](val3)
+
+    return winners
+
+
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(num_threads))
 )
@@ -1139,12 +1271,8 @@ def single_group_router_kernel[
 ):
     """Single-group MoE router kernel. One block per token, one thread per expert.
 
-    Fuses: corrected = scores + bias → top-k selection → weight = corrected - bias
-    → optional normalize → scale.
-    Uses warp-bitonic sort across 2 or 3 phases
-    depending on WARP_SIZE. NVIDIA (WARP_SIZE=32): 3-phase. AMD (WARP_SIZE=64):
-    2-phase (phase 2 eliminated at compile time when phase1_candidates fits in
-    one wavefront).
+    Fuses: corrected = scores + bias → top-k selection (`_block_top_k`) →
+    weight = corrected - bias → optional normalize → scale.
     """
 
     comptime assert expert_indices.flat_rank == 2
@@ -1168,55 +1296,16 @@ def single_group_router_kernel[
         num_threads == n_routed_experts
     ), "num_threads must be equal to n_routed_experts"
 
-    comptime assert (
-        num_threads % WARP_SIZE == 0
-    ), "WARP_SIZE must be divisible by num_threads"
-
-    # k = n_experts_per_tok must be a power of 2 because _warp_bitonic_sort[num_lanes=k] uses a bitonic sort algorithm
+    # The weight reduction below is a lane_group_sum over n_experts_per_tok
+    # lanes, which must be a power of two.
     comptime assert (
         n_experts_per_tok.is_power_of_two()
     ), "n_experts_per_tok must be a power of two"
-
-    # Phase 1 produces num_warps × n_experts_per_tok survivors:
-    comptime num_warps = num_threads // WARP_SIZE
-    comptime phase1_candidates = num_warps * n_experts_per_tok
-
-    # Phase 2 assign selected candidates to ceil(ph1/32) warps, each sorting 32:
-    comptime num_phase2_warps = ceildiv(phase1_candidates, WARP_SIZE)
-    comptime phase2_candidates = num_phase2_warps * n_experts_per_tok
-
-    # AMD has 64 warps per SM, so we can skip phase 2 for KIMIk2.5 with 384 MOE
-    comptime skip_phase2 = (num_phase2_warps == 1)
-    # Phase 3 takes ph2_candidates padded up to WARP_SIZE.
-    comptime assert (
-        phase2_candidates <= WARP_SIZE
-    ), "phase2_candidates must be less than or equal to WARP_SIZE"
-
-    comptime if skip_phase2:
-        # When skipping phase 2, warp 0 reads directly from smem_phase1.
-        # Requires phase1_candidates to fit within one warp.
-        comptime assert (
-            phase1_candidates <= WARP_SIZE
-        ), "phase1_candidates exceeds WARP_SIZE — cannot skip phase 2"
-    # comptime ph3_padding = WARP_SIZE - phase2_candidates
-
-    comptime total_smem = phase1_candidates if skip_phase2 else (
-        phase1_candidates + phase2_candidates
-    )
 
     var token_idx = Int(block_idx.x)
     var tid = Int(thread_idx.x)
     var warp_id = warp_id()
     var lane_id = lane_id()
-
-    var shared_mem = unsafe_stack_allocation[
-        total_smem,
-        TopK_2[scores_type],
-        address_space=.SHARED,
-    ]()
-
-    var shared_mem_phase1 = shared_mem
-    var shared_mem_phase2 = shared_mem + phase1_candidates
 
     with PDL():
         var thread_expert_bias = expert_bias.load[width=1](Coord(tid)).cast[
@@ -1231,55 +1320,12 @@ def single_group_router_kernel[
             thread_expert_score = expert_scores.load[width=1]((token_idx, tid))
         var biased_score = thread_expert_score + thread_expert_bias
 
-        var val = TopK_2(u=biased_score, p=tid)
-        var sorted_val = _warp_bitonic_sort[num_lanes=WARP_SIZE](val)
-
-        if lane_id < n_experts_per_tok:
-            shared_mem_phase1[
-                warp_id * n_experts_per_tok + lane_id
-            ] = sorted_val
-
-        barrier()
-
-        comptime if not skip_phase2:
-            var val2: TopK_2[scores_type]
-            if warp_id < num_phase2_warps:
-                # Sequential read: warp W reads smem_phase1[W*32 .. W*32+31].
-                # No bank conflicts — each warp reads a contiguous slice.
-                val2 = shared_mem_phase1[tid]
-            else:
-                # Inactive warps: dead-value cannot corrupt the sort because
-                # _warp_bitonic_sort is fully intra-warp.
-                val2 = TopK_2[scores_type]()
-
-            var sorted_val2 = _warp_bitonic_sort[num_lanes=WARP_SIZE](val2)
-
-            if warp_id < num_phase2_warps and lane_id < n_experts_per_tok:
-                shared_mem_phase2[
-                    warp_id * n_experts_per_tok + lane_id
-                ] = sorted_val2
-
-            barrier()
+        var sorted_val3 = _block_top_k[n_experts_per_tok, num_threads](
+            biased_score
+        )
 
         # WARP 0 ONLY gives top n_experts_per_tok
         if warp_id == 0:
-            var val3: TopK_2[scores_type]
-
-            comptime if skip_phase2:
-                # AMD path: read phase1_candidates (48) entries directly.
-                if lane_id < phase1_candidates:
-                    val3 = shared_mem_phase1[lane_id]
-                else:
-                    val3 = TopK_2[scores_type]()  # padding: -inf
-            else:
-                # NVIDIA path: read phase2_candidates (24) entries.
-                if lane_id < phase2_candidates:
-                    val3 = shared_mem_phase2[lane_id]
-                else:
-                    val3 = TopK_2[scores_type]()  # padding: -inf
-
-            var sorted_val3 = _warp_bitonic_sort[num_lanes=WARP_SIZE](val3)
-
             # get the original weights and normalize them
             var original_weight: Scalar[scores_type] = 0
             if lane_id < n_experts_per_tok:
@@ -1354,16 +1400,15 @@ def single_group_router_eplb_kernel[
 ):
     """Single-group MoE router fused with EPLB log->phy remap.
 
-    Mirrors `single_group_router_kernel` exactly through phase 3, then at the
-    K writers performs the EPLB lookup using a per-block SMEM cache of the
-    current layer's logcnt/log2phy slice.
+    Selects with the same `_block_top_k` as `single_group_router_kernel`, then
+    at the K writers performs the EPLB lookup using a per-block SMEM cache of
+    the current layer's logcnt/log2phy slice.
 
     Backend specialization:
       - NVIDIA: cp.async issues the table fetch up front; sort hides the latency.
       - AMD/Apple: plain ld_global into registers up front, ds_write later.
     """
 
-    # ---- existing comptime asserts ----
     comptime assert expert_indices.flat_rank == 2
     comptime assert expert_indices_log.flat_rank == 2
     comptime assert expert_weights.flat_rank == 2
@@ -1385,14 +1430,13 @@ def single_group_router_eplb_kernel[
     comptime assert (
         num_threads == n_routed_experts
     ), "num_threads must be equal to n_routed_experts"
-    comptime assert (
-        num_threads % WARP_SIZE == 0
-    ), "WARP_SIZE must be divisible by num_threads"
+
+    # The weight reduction below is a lane_group_sum over n_experts_per_tok
+    # lanes, which must be a power of two.
     comptime assert (
         n_experts_per_tok.is_power_of_two()
     ), "n_experts_per_tok must be a power of two"
 
-    # ---- EPLB-specific asserts ----
     comptime assert (
         logcnt.static_shape[1] == num_log
     ), "logcnt.static_shape[1] must equal num_log"
@@ -1402,37 +1446,11 @@ def single_group_router_eplb_kernel[
     comptime assert (
         log2phy.static_shape[2] == max_replicas
     ), "log2phy.static_shape[2] must equal max_replicas"
-    comptime assert (
-        n_experts_per_tok.is_power_of_two()
-    ), "n_experts_per_tok must be a power of two"
-
-    # ---- existing phase math ----
-    comptime num_warps = num_threads // WARP_SIZE
-    comptime phase1_candidates = num_warps * n_experts_per_tok
-    comptime num_phase2_warps = ceildiv(phase1_candidates, WARP_SIZE)
-    comptime phase2_candidates = num_phase2_warps * n_experts_per_tok
-    comptime skip_phase2 = (num_phase2_warps == 1)
-    comptime assert phase2_candidates <= WARP_SIZE
-    comptime if skip_phase2:
-        comptime assert phase1_candidates <= WARP_SIZE
-
-    comptime total_smem = phase1_candidates if skip_phase2 else (
-        phase1_candidates + phase2_candidates
-    )
 
     var token_idx = Int(block_idx.x)
     var tid = Int(thread_idx.x)
     var w_id = warp_id()
     var l_id = lane_id()
-
-    # ---- existing TopK_2 SMEM ----
-    var shared_mem = unsafe_stack_allocation[
-        total_smem,
-        TopK_2[scores_type],
-        address_space=.SHARED,
-    ]()
-    var shared_mem_phase1 = shared_mem
-    var shared_mem_phase2 = shared_mem + phase1_candidates
 
     with PDL():
         var Lidx = Int(layer_idx.load[width=1](Coord(Idx[0]))[0])
@@ -1448,44 +1466,14 @@ def single_group_router_eplb_kernel[
             thread_expert_score = expert_scores.load[width=1]((token_idx, tid))
         var biased_score = thread_expert_score + thread_expert_bias
 
-        var val = TopK_2(u=biased_score, p=tid)
-        var sorted_val = _warp_bitonic_sort[num_lanes=WARP_SIZE](val)
-
-        if l_id < n_experts_per_tok:
-            shared_mem_phase1[w_id * n_experts_per_tok + l_id] = sorted_val
-        barrier()
-
-        comptime if not skip_phase2:
-            var val2: TopK_2[scores_type]
-            if w_id < num_phase2_warps:
-                val2 = shared_mem_phase1[tid]
-            else:
-                val2 = TopK_2[scores_type]()
-
-            var sorted_val2 = _warp_bitonic_sort[num_lanes=WARP_SIZE](val2)
-
-            if w_id < num_phase2_warps and l_id < n_experts_per_tok:
-                shared_mem_phase2[w_id * n_experts_per_tok + l_id] = sorted_val2
-            barrier()
+        var sorted_val3 = _block_top_k[n_experts_per_tok, num_threads](
+            biased_score
+        )
 
         # ============================================================
-        # PHASE 3 + REMAP + STORE (warp 0 only)
+        # REMAP + STORE (warp 0 only)
         # ============================================================
         if w_id == 0:
-            var val3: TopK_2[scores_type]
-            comptime if skip_phase2:
-                if l_id < phase1_candidates:
-                    val3 = shared_mem_phase1[l_id]
-                else:
-                    val3 = TopK_2[scores_type]()
-            else:
-                if l_id < phase2_candidates:
-                    val3 = shared_mem_phase2[l_id]
-                else:
-                    val3 = TopK_2[scores_type]()
-
-            var sorted_val3 = _warp_bitonic_sort[num_lanes=WARP_SIZE](val3)
-
             comptime assert (
                 max_replicas == 1
                 or max_replicas == 2
