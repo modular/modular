@@ -3,41 +3,35 @@ index b620cc7..7f37319 100644
 --- a/cpp/fsm_builder.cc
 +++ b/cpp/fsm_builder.cc
 @@ -6,6 +6,7 @@
- 
+
  #include <sys/types.h>
- 
+
 +#include <array>
  #include <cstddef>
  #include <cstdint>
  #include <cstring>
 @@ -25,6 +26,8 @@ namespace xgrammar {
--
-+
+
  class RegexIR {
   public:
 +  explicit RegexIR(int64_t* remaining_work) : remaining_work_(remaining_work) {}
 +
    struct Leaf;
--
-+
+
    struct Symbol;
 @@ -37,6 +40,8 @@ class RegexIR {
--
-+
+
    static constexpr int kRepeatNoUpperBound = -1;
--
-+
+
 +  static constexpr const char* kOverBudget = "Regex expands past the state budget";
 +
    using State = std::variant<Leaf, Symbol, Union, Bracket, Repeat>;
--
-+
+
    // This struct is used to store the string in regex, or
 @@ -86,6 +91,11 @@ class RegexIR {
    */
    Result<FSMWithStartEnd> Build() const;
--
-+
+
 +  /*!
 +    \brief Visits one state and charges its size against the build budget.
 +  */
@@ -49,8 +43,7 @@ index b620cc7..7f37319 100644
 @@ -127,9 +137,29 @@ class RegexIR {
     */
    static Result<std::pair<int, int>> CheckRepeat(const std::string& regex, int& start);
--
-+
+
 +  //! \brief Charges `states` against the budget, true when it is exhausted.
 +  bool OverBudget(int64_t states) const {
 +    if (states > *remaining_work_) {
@@ -65,8 +58,7 @@ index b620cc7..7f37319 100644
 +
    friend class RegexFSMBuilder;
  };
--
-+
+
 +Result<FSMWithStartEnd> RegexIR::VisitState(const RegexIR::State& state) const {
 +  auto visited = std::visit([&](auto&& arg) { return visit(arg); }, state);
 +  if (visited.IsOk() && OverBudget(visited.ValueRef().NumStates())) {
@@ -181,8 +173,7 @@ index b620cc7..7f37319 100644
      return child_result;
    }
 @@ -297,8 +355,10 @@ Result<FSMWithStartEnd> RegexIR::visit(const RegexIR::Repeat& state) const {
--
-+
+
    // Handling {n,}
    if (state.upper_bound == RegexIR::kRepeatNoUpperBound) {
 +    if (state.lower_bound == 1) return ResultOk(child.Plus());
@@ -203,8 +194,7 @@ index b620cc7..7f37319 100644
 @@ -561,8 +622,11 @@ std::vector<std::pair<int, int>> RegexIR::HandleEscapes(const std::string& regex
    }
  }
--
-+
+
 -Result<FSMWithStartEnd> RegexFSMBuilder::Build(const std::string& regex) {
 -  RegexIR ir;
 +Result<FSMWithStartEnd> RegexFSMBuilder::Build(
@@ -227,21 +217,21 @@ index b620cc7..7f37319 100644
 +      std::unordered_set<int32_t>* dead_states
 +  );
  };
- 
+
  std::optional<FSMWithStartEnd> TrieFSMBuilderImpl::Build(
 @@ -863,7 +932,7 @@ std::optional<FSMWithStartEnd> TrieFSMBuilderImpl::Build(
      }
- 
+
      // Add back edges.
 -    AddBackEdges(&fsm, start, ends);
 +    AddBackEdges(&fsm, start, ends, &dead_state_set);
- 
+
      // Remove the edges to excluded end states.
      if (dead_state_set.size() != 0) {
 @@ -890,68 +959,107 @@ std::optional<FSMWithStartEnd> TrieFSMBuilderImpl::Build(
    return FSMWithStartEnd(fsm, start, is_end_state);
  }
- 
+
 -void TrieFSMBuilderImpl::AddBackEdges(FSM* fsm, int start, const std::unordered_set<int>& ends) {
 +void TrieFSMBuilderImpl::AddBackEdges(
 +    FSM* fsm,
@@ -342,7 +332,7 @@ index b620cc7..7f37319 100644
        }
      }
 +  }
- 
+
 -    // Step 2. Add i--(c)-->start for c not in the edge set of i.
 -    f_add_range_edges(i, cur_edges_set);
 -
@@ -365,7 +355,7 @@ index b620cc7..7f37319 100644
 +      }
 +    }
    }
- 
+
 -  // Finally, add range edges to the start state.
 -  std::vector<FSMEdge>& start_edges = fsm->GetEdges(start);
 -  std::set<FSMEdge, FSMEdgeRangeComparator> start_edges_set(start_edges.begin(), start_edges.end());
@@ -399,7 +389,7 @@ index b620cc7..7f37319 100644
 +    fsm->GetEdges(u) = std::move(new_edges);
 +  }
  }
- 
+
  std::optional<FSMWithStartEnd> TrieFSMBuilder::Build(
 diff --git a/cpp/fsm_builder.h b/cpp/fsm_builder.h
 index 6eeb83b..e5bdd0f 100644
@@ -422,8 +412,7 @@ index 6eeb83b..e5bdd0f 100644
 +      const std::string& regex, int64_t* remaining_work = nullptr
 +  );
  };
--
-+
+
  /*!
 diff --git a/cpp/grammar.cc b/cpp/grammar.cc
 index 0eb69c3..3925957 100644
@@ -465,7 +454,7 @@ index 5cf140d..5d7ef98 100644
 +      bool require_object_root,
 +      bool reject_unsupported
    );
- 
+
    CompiledGrammar CompileRegex(const std::string& regex);
 @@ -1143,7 +1145,9 @@ CompiledGrammar GrammarCompilerSub::CompileJSONSchema(
      std::optional<std::pair<std::string, std::string>> separators,
@@ -488,14 +477,14 @@ index 5cf140d..5d7ef98 100644
 +      reject_unsupported
    ));
  }
- 
+
 @@ -1246,6 +1252,8 @@ class GrammarCompilerCacheKeys {
      bool strict_mode;
      std::optional<int> max_whitespace_cnt;
      bool any_order;
 +    bool require_object_root;
 +    bool reject_unsupported;
- 
+
      XGRAMMAR_EQUAL_BY_MEMBERS(
          SchemaKey,
 @@ -1255,7 +1263,9 @@ class GrammarCompilerCacheKeys {
@@ -508,7 +497,7 @@ index 5cf140d..5d7ef98 100644
 +        &SchemaKey::reject_unsupported
      );
    };
- 
+
 @@ -1296,7 +1306,9 @@ XGRAMMAR_HASH_BY_MEMBERS(
      &xgrammar::GrammarCompilerCacheKeys::SchemaKey::separators,
      &xgrammar::GrammarCompilerCacheKeys::SchemaKey::strict_mode,
@@ -518,7 +507,7 @@ index 5cf140d..5d7ef98 100644
 +    &xgrammar::GrammarCompilerCacheKeys::SchemaKey::require_object_root,
 +    &xgrammar::GrammarCompilerCacheKeys::SchemaKey::reject_unsupported
  );
- 
+
  XGRAMMAR_HASH_BY_MEMBERS(
 @@ -1362,7 +1374,9 @@ class GrammarCompiler::Impl {
        std::optional<std::pair<std::string, std::string>> separators,
@@ -529,7 +518,7 @@ index 5cf140d..5d7ef98 100644
 +      bool require_object_root,
 +      bool reject_unsupported
    );
- 
+
    CompiledGrammar CompileStructuralTag(const std::string& structural_tag_json);
 @@ -1421,10 +1435,18 @@ CompiledGrammar GrammarCompiler::Impl::Compute(const UnionKey& key) {
            const auto& [ebnf_str, root_rule_name] = key;
@@ -588,7 +577,7 @@ index 5cf140d..5d7ef98 100644
 +      reject_unsupported
    });
  }
- 
+
 @@ -1537,10 +1577,20 @@ CompiledGrammar GrammarCompiler::CompileJSONSchema(
      std::optional<std::pair<std::string, std::string>> separators,
      bool strict_mode,
@@ -611,15 +600,15 @@ index 5cf140d..5d7ef98 100644
 +      reject_unsupported
    );
  }
- 
+
 diff --git a/cpp/grammar_functor.cc b/cpp/grammar_functor.cc
 index 4424aca..18e3893 100644
 --- a/cpp/grammar_functor.cc
 +++ b/cpp/grammar_functor.cc
 @@ -7,6 +7,7 @@
- 
+
  #include <xgrammar/xgrammar.h>
- 
+
 +#include <algorithm>
  #include <bitset>
  #include <cstdint>
@@ -646,7 +635,7 @@ index 4424aca..18e3893 100644
 @@ -1336,22 +1340,32 @@ void GrammarFSMBuilderImpl::AddCharacterRange(
    return;
  }
- 
+
 +void GrammarFSMBuilderImpl::AddCodepointRange(
 +    FSMWithStartEnd& fsm, int from, int to, uint32_t lo, uint32_t hi
 +) {
@@ -683,7 +672,7 @@ index 4424aca..18e3893 100644
 +      excluded_multibyte.emplace_back(std::max<uint32_t>(cp_min, 0x80), cp_max);
      }
    }
- 
+
 @@ -1384,7 +1398,25 @@ FSMWithStartEnd GrammarFSMBuilderImpl::BuildNegativeCharacterClass(const Grammar
        i = right_bound;
      }
@@ -710,7 +699,7 @@ index 4424aca..18e3893 100644
 +  }
    return result_fsm;
  }
- 
+
 @@ -1406,12 +1438,10 @@ FSMWithStartEnd GrammarFSMBuilderImpl::CharacterClass(const GrammarExpr& expr) {
    }
    result_fsm.AddEndState(end_state);
@@ -735,7 +724,7 @@ index d68479f..360396f 100644
 @@ -509,6 +509,15 @@ class GrammarMatcher::Impl : public EarleyParser {
        bool allow_special_token = false
    );
- 
+
 +  /*!
 +   * \brief Set the bitmask bits for special tokens the given states accept via an
 +   * explicit token-id edge (Token()/ExcludeToken()). Special tokens are excluded
@@ -751,7 +740,7 @@ index d68479f..360396f 100644
 @@ -640,14 +649,14 @@ bool GrammarMatcher::Impl::AcceptToken(int32_t token_id, bool debug_print) {
      return accepted;
    }
- 
+
 +  // A special token is never matched byte-by-byte (it must not appear as string
 +  // content). It stays emittable at grammar positions that reference it with an
 +  // explicit token-id edge (Token()/ExcludeToken()), which the atomic path below
@@ -767,13 +756,13 @@ index d68479f..360396f 100644
 -  }
 +  bool is_special_token = std::find(special_token_ids.begin(), special_token_ids.end(), token_id) !=
 +                          special_token_ids.end();
- 
+
    const auto& token = tokenizer_info_.GetDecodedVocab()[token_id];
- 
+
 @@ -664,15 +673,19 @@ bool GrammarMatcher::Impl::AcceptToken(int32_t token_id, bool debug_print) {
      PopLastStates(1);
    }
- 
+
 -  // Phase 2: Try byte-by-byte path (from the same original state)
 +  // Phase 2: Try byte-by-byte path (from the same original state). Special tokens
 +  // skip this path so they can never be admitted as raw string content.
@@ -795,7 +784,7 @@ index d68479f..360396f 100644
      }
 -    ++pos;
    }
- 
+
    // Phase 3: Combine results (no priority — merge with deduplication)
 @@ -955,12 +968,52 @@ bool GrammarMatcher::Impl::FillNextTokenBitmask(
    SetTokenBitmask(
@@ -812,7 +801,7 @@ index d68479f..360396f 100644
    }
    return !IsTokenBitmaskAllTrue(bitmask_data_ptr);
  }
- 
+
 +void GrammarMatcher::Impl::SetSpecialTokenBitmaskBits(
 +    int32_t* bitmask_data_ptr, const std::vector<ParserState>& states
 +) {
@@ -851,18 +840,17 @@ index d68479f..360396f 100644
    XGRAMMAR_CHECK(!IsStopTokenAccepted())
        << "GrammarMatcher has terminated after accepting the stop token, but is trying to "
 diff --git a/cpp/json_schema_converter.cc b/cpp/json_schema_converter.cc
-index da8b516..62cd45f 100644
+index da8b516..9cf8844 100644
 --- a/cpp/json_schema_converter.cc
 +++ b/cpp/json_schema_converter.cc
 @@ -5,15 +5,20 @@
   */
  #include "json_schema_converter.h"
--
-+
+
 +#include <iterator>
 +
  #include <picojson.h>
- 
+
  #include <algorithm>
 +#include <cctype>
  #include <climits>
@@ -888,7 +876,7 @@ index da8b516..62cd45f 100644
    s +=
        std::string("], allow_additional_properties=") +
        (allow_additional_properties ? "true" : "false") +
-@@ -137,10 +147,415 @@ namespace {
+@@ -137,22 +147,443 @@ namespace {
  enum class SchemaErrorType : int {
    kInvalidSchema = 0,
    kUnsatisfiableSchema = 1,
@@ -896,10 +884,9 @@ index da8b516..62cd45f 100644
 +  // reads this to decide whether it may approximate; the others never can.
 +  kUnsupportedSchema = 2,
  };
- 
+
  using SchemaError = TypedError<SchemaErrorType>;
--
-+
+
 +constexpr const char* kUnsupportedOneOfMessage =
 +    "unsupported schema keyword: oneOf with overlapping or non-provably-disjoint branches";
 +
@@ -1302,7 +1289,16 @@ index da8b516..62cd45f 100644
  /*!
   * \brief Parser for JSON Schema, converts JSON Schema to SchemaSpec intermediate representation.
   */
-@@ -149,6 +564,18 @@ class SchemaParser {
++// A resource declaration found below the document root. The keyword travels
++// with the value because draft 4 spells it "id" and later drafts "$id", and the
++// refusal quotes the one the document actually used.
++struct ResourceDeclaration {
++  std::string keyword;
++  std::string id;
++};
++
+ class SchemaParser {
+  public:
    struct Config {
      bool strict_mode = false;
      JSONFormat json_format;
@@ -1319,9 +1315,14 @@ index da8b516..62cd45f 100644
 +    // iff this is true.
 +    bool keys_are_bare = false;
    };
- 
-   explicit SchemaParser(const picojson::value& root_schema, const Config& config)
-@@ -171,6 +598,12 @@ class SchemaParser {
+
+-  explicit SchemaParser(const picojson::value& root_schema, const Config& config)
+-      : config_(config), root_schema_(root_schema) {}
++  SchemaParser(const picojson::value& root_schema, const Config& config);
+
+   Result<SchemaSpecPtr, SchemaError> Parse(
+       const picojson::value& schema,
+@@ -171,6 +602,15 @@ class SchemaParser {
    Result<IntegerSpec, SchemaError> ParseInteger(const picojson::object& schema);
    Result<NumberSpec, SchemaError> ParseNumber(const picojson::object& schema);
    Result<StringSpec, SchemaError> ParseString(const picojson::object& schema);
@@ -1331,10 +1332,13 @@ index da8b516..62cd45f 100644
 +  // reject_unsupported, clear bounds the winning tier already guarantees, and
 +  // refuse a combination the emitted rule would not enforce.
 +  std::optional<SchemaError> ReconcileStringTiers(StringSpec* spec);
++
++  // The refusal FindEmbeddedResource settled at construction, if any.
++  std::optional<SchemaError> CheckDocumentIsOneResource() const;
    Result<BooleanSpec, SchemaError> ParseBoolean(const picojson::object& schema);
    Result<NullSpec, SchemaError> ParseNull(const picojson::object& schema);
    Result<ArraySpec, SchemaError> ParseArray(const picojson::object& schema);
-@@ -178,25 +611,54 @@ class SchemaParser {
+@@ -178,25 +618,60 @@ class SchemaParser {
    Result<ConstSpec, SchemaError> ParseConst(const picojson::object& schema);
    Result<EnumSpec, SchemaError> ParseEnum(const picojson::object& schema);
    Result<RefSpec, SchemaError> ParseRef(const picojson::object& schema);
@@ -1349,7 +1353,7 @@ index da8b516..62cd45f 100644
    Result<TypeArraySpec, SchemaError> ParseTypeArray(
        const picojson::object& schema, const std::string& rule_name_hint
    );
- 
+
 -  std::string ComputeCacheKey(const picojson::value& schema);
 +  // Serialization context for ComputeCacheKey: object keys are filtered
 +  // as annotation keywords only in kSchema context; kNameMap marks a map of
@@ -1365,11 +1369,11 @@ index da8b516..62cd45f 100644
 +  );
 +
 +  void AppendCacheKey(const picojson::value& schema, CacheKeyContext context, std::string& out);
- 
+
    static void WarnUnsupportedKeywords(
        const picojson::object& schema, const std::vector<std::string>& keywords, bool verbose = false
    );
- 
+
 +  // When reject_unsupported is set, returns an error if any of the listed
 +  // keywords (which xgrammar cannot faithfully enforce) is present. Otherwise
 +  // logs via WarnUnsupportedKeywords and returns nullopt.
@@ -1381,10 +1385,16 @@ index da8b516..62cd45f 100644
    picojson::value root_schema_;
 +  int64_t work_remaining_ = 1 << 20;
 +  int64_t regex_work_remaining_ = 1 << 20;
++  // A resource the document declares below its root, and the malformed
++  // identifier the scan stopped on; both settled once, at construction. The
++  // optional separates "no declaration" from one whose "$id" is the empty
++  // string, which is a declaration the converter still cannot resolve against.
++  std::optional<ResourceDeclaration> embedded_resource_;
++  std::optional<SchemaError> embedded_resource_error_;
    std::unordered_map<std::string, SchemaSpecPtr> ref_cache_;
    std::unordered_map<std::string, SchemaSpecPtr> schema_cache_;
  };
- 
+
 -std::string SchemaParser::ComputeCacheKey(const picojson::value& schema) {
 +void SchemaParser::AppendCacheKey(
 +    const picojson::value& schema, CacheKeyContext context, std::string& out
@@ -1392,7 +1402,7 @@ index da8b516..62cd45f 100644
    static const std::unordered_set<std::string> kSkippedKeys = {
        "title",
        "default",
-@@ -208,40 +670,86 @@ std::string SchemaParser::ComputeCacheKey(const picojson::value& schema) {
+@@ -208,40 +683,86 @@ std::string SchemaParser::ComputeCacheKey(const picojson::value& schema) {
        "$comment",
        "$schema",
    };
@@ -1424,7 +1434,7 @@ index da8b516..62cd45f 100644
 +    }
 +    return CacheKeyContext::kSchema;
 +  };
- 
+
    if (schema.is<picojson::object>()) {
 -    std::string result = "{";
 -    std::vector<std::pair<std::string, picojson::value>> sorted_kv;
@@ -1493,13 +1503,12 @@ index da8b516..62cd45f 100644
 +  AppendCacheKey(schema, context, key);
 +  return key;
  }
--
-+
+
  void SchemaParser::WarnUnsupportedKeywords(
-@@ -257,12 +765,401 @@ void SchemaParser::WarnUnsupportedKeywords(
+@@ -257,12 +778,617 @@ void SchemaParser::WarnUnsupportedKeywords(
    }
  }
- 
+
 +std::optional<SchemaError> SchemaParser::CheckUnsupportedKeywords(
 +    const picojson::object& schema, const std::vector<std::string>& keywords
 +) {
@@ -1527,7 +1536,10 @@ index da8b516..62cd45f 100644
 +      "title",   "description",  "default",        "examples",
 +      "$comment", "readOnly",    "writeOnly",      "deprecated",
 +      "$id",     "$schema",      "$anchor",        "$vocabulary",
-+      "$dynamicAnchor", "$recursiveAnchor"};
++      "$dynamicAnchor", "$recursiveAnchor",
++      // Draft 4 spells the identifier "id"; later drafts do not know the
++      // keyword at all. Either way it names a resource and constrains nothing.
++      "id"};
 +  return kAnnotationKeywords;
 +}
 +
@@ -1661,8 +1673,31 @@ index da8b516..62cd45f 100644
 +
 +// Whether the URI is a pointer this converter can resolve: the root, or a
 +// JSON pointer into it. A "#foo" plain-name anchor is neither.
-+static bool IsLocalPointerUri(const std::string& uri) {
-+  return uri == "#" || uri.rfind("#/", 0) == 0;
++static bool DecodePercentEncoded(std::string* token);
++
++// A local reference is "#" or a JSON Pointer fragment. RFC 6901 evaluates a
++// fragment once it is percent-decoded, so "#%2F$defs%2Fx" names the same place
++// as "#/$defs/x" and the decoded text is what decides. Upstream read the
++// fragment raw, so permissive mode keeps reading it raw and only the stricter
++// mode gains the escape handling.
++static bool IsLocalPointerUri(const std::string& uri, bool decode_escapes) {
++  if (uri.empty() || uri[0] != '#') return false;
++  std::string path = uri.substr(1);
++  // A malformed escape is still a local reference. Saying otherwise would
++  // report it as a foreign URI instead of as the bad escape it is.
++  if (decode_escapes && !DecodePercentEncoded(&path)) return true;
++  return path.empty() || path[0] == '/';
++}
++
++enum class LocalPointerStatus { kResolved, kNotFound, kMalformedPercentEscape };
++struct LocalPointerResult {
++  LocalPointerStatus status;
++  const picojson::value* target;
++};
++
++static std::string MalformedPercentEscapeError(const std::string& uri) {
++  return "malformed percent escape in $ref \"" + uri +
++         "\": '%' must be followed by two hexadecimal digits";
 +}
 +
 +// Decodes one RFC 6901 reference token in place: "~1" is "/" and "~0" is "~".
@@ -1690,17 +1725,48 @@ index da8b516..62cd45f 100644
 +  return true;
 +}
 +
++static bool DecodePercentEncoded(std::string* token) {
++  auto hex_value = [](char digit) {
++    if (digit >= '0' && digit <= '9') return digit - '0';
++    if (digit >= 'a' && digit <= 'f') return digit - 'a' + 10;
++    if (digit >= 'A' && digit <= 'F') return digit - 'A' + 10;
++    return -1;
++  };
++  std::string decoded;
++  decoded.reserve(token->size());
++  for (size_t i = 0; i < token->size(); ++i) {
++    if ((*token)[i] != '%') {
++      decoded += (*token)[i];
++      continue;
++    }
++    if (i + 2 >= token->size()) return false;
++    const int high = hex_value((*token)[i + 1]);
++    const int low = hex_value((*token)[i + 2]);
++    if (high < 0 || low < 0) return false;
++    decoded += static_cast<char>((high << 4) | low);
++    i += 2;
++  }
++  *token = std::move(decoded);
++  return true;
++}
++
 +// Walks a local JSON pointer, one RFC 6901 token per "/". An empty token names
-+// the "" member rather than nothing. nullptr when the pointer is not local, an
-+// escape is malformed, a step is not an object (an array index is such a step),
-+// or a member is absent; `missing` then carries the token that stopped the walk.
-+static const picojson::value* FindLocalPointerTarget(
-+    const picojson::value& root, const std::string& uri, std::string* missing
++// the "" member rather than nothing. The status distinguishes malformed percent
++// escapes from unresolved pointers; `missing` carries the token that stopped an
++// otherwise valid walk.
++static LocalPointerResult FindLocalPointerTarget(
++    const picojson::value& root,
++    const std::string& uri,
++    std::string* missing,
++    bool decode_escapes
 +) {
-+  if (uri == "#") return &root;
-+  if (!IsLocalPointerUri(uri)) return nullptr;
++  if (uri == "#") return {LocalPointerStatus::kResolved, &root};
++  if (!IsLocalPointerUri(uri, decode_escapes)) return {LocalPointerStatus::kNotFound, nullptr};
 +  const picojson::value* current = &root;
-+  const std::string path = uri.substr(1);
++  std::string path = uri.substr(1);
++  if (decode_escapes && !DecodePercentEncoded(&path)) {
++    return {LocalPointerStatus::kMalformedPercentEscape, nullptr};
++  }
 +  for (size_t start = 0; start < path.size();) {
 +    const size_t next = path.find('/', start + 1);
 +    const std::string raw =
@@ -1710,41 +1776,198 @@ index da8b516..62cd45f 100644
 +    if (!DecodePointerToken(&token) || !current->is<picojson::object>() ||
 +        !current->contains(token)) {
 +      if (missing != nullptr) *missing = raw;
-+      return nullptr;
++      return {LocalPointerStatus::kNotFound, nullptr};
 +    }
 +    current = &current->get(token);
 +  }
-+  return current;
++  return {LocalPointerStatus::kResolved, current};
 +}
 +
-+// A "#/..." $ref resolves against the base URI in scope, and an "$id" on any
-+// object below the root starts a new one. The flatten resolves against the
-+// document root, so it may inline only while the root declares the sole base.
-+// The scan does not tell a subschema from instance data, so an "$id" member of
-+// a const or enum value refuses the inline too.
-+static bool HasNestedId(const picojson::value& value, bool is_root) {
-+  if (value.is<picojson::array>()) {
-+    for (const auto& item : value.get<picojson::array>()) {
-+      if (HasNestedId(item, /*is_root=*/false)) return true;
-+    }
-+    return false;
++// An "$id" below the document root declares a second resource, and a fragment
++// names a place inside the resource whose base URI it is resolved against. This
++// converter resolves every fragment against the document, so it can only honour
++// a document that is one resource. Answering per reference instead would have to
++// survive MergeAllOf and the folds, which copy subschemas between objects and
++// leave a reference somewhere it was not written; the question is settled here
++// instead, once, on the schema as written, where no later rewrite can reach it.
++//
++// Draft 4 spells the keyword "id", so a nested one declares a resource too. A
++// name map ($defs, properties) holds user-chosen names rather than keywords, and
++// const/enum/examples hold instance data, so neither declares anything.
++// How a keyword holds the subschemas it applies, if it holds any. Only a
++// keyword listed here is descended into: an unknown extension keyword such as
++// "x-meta" is an annotation whose value may be any JSON, so an "$id" inside it
++// is a member name and not an identifier. The same goes for const, enum,
++// default and examples, which hold instance data.
++enum class SchemaChildren { kNone, kOne, kList, kMap };
++
++static SchemaChildren ClassifyKeyword(const std::string& key) {
++  if (key == "additionalProperties" || key == "additionalItems" ||
++      key == "unevaluatedProperties" || key == "unevaluatedItems" || key == "contains" ||
++      key == "propertyNames" || key == "not" || key == "if" || key == "then" ||
++      key == "else" || key == "contentSchema") {
++    return SchemaChildren::kOne;
 +  }
-+  if (!value.is<picojson::object>()) return false;
++  // "items" is one subschema in 2020-12 and a list of them in draft 7; kList
++  // takes either spelling.
++  if (key == "allOf" || key == "anyOf" || key == "oneOf" || key == "prefixItems" ||
++      key == "items") {
++    return SchemaChildren::kList;
++  }
++  // A map's keys are user-chosen names, never keywords. Draft 7 "dependencies"
++  // holds a subschema or a required-name list per member; a list holds no
++  // object, so walking it finds nothing.
++  if (key == "properties" || key == "patternProperties" || key == "$defs" ||
++      key == "definitions" || key == "dependentSchemas" || key == "dependencies") {
++    return SchemaChildren::kMap;
++  }
++  return SchemaChildren::kNone;
++}
++
++// Draft 6 renamed the identifier from "id" to "$id" and left "id" an ordinary
++// annotation, so which spelling names a resource is a property of the dialect
++// rather than of the subschema. Only the root's "$schema" says which dialect a
++// document is written in.
++enum class SchemaDialect { kModern, kLegacyId, kUnrecognized };
++
++// Matched against the metaschemas themselves, tolerating only the "#" suffix
++// and either scheme. A URI that merely spells a draft -- a vendor's
++// ".../draft-04-migration/v1" -- is not that draft.
++static SchemaDialect DetectDialect(const picojson::value& root, std::string* uri_out) {
++  if (!root.is<picojson::object>()) return SchemaDialect::kModern;
++  const auto& object = root.get<picojson::object>();
++  // Omitting "$schema" is how nearly every tool-call schema is written, and it
++  // means the current draft, whose identifier is "$id".
++  if (!object.count("$schema")) return SchemaDialect::kModern;
++  if (!object.at("$schema").is<std::string>()) return SchemaDialect::kUnrecognized;
++  std::string uri = object.at("$schema").get<std::string>();
++  *uri_out = uri;
++  if (!uri.empty() && uri.back() == '#') uri.pop_back();
++  if (uri.rfind("https://", 0) == 0) uri = "http://" + uri.substr(8);
++  if (uri == "http://json-schema.org/draft-04/schema") return SchemaDialect::kLegacyId;
++  if (uri == "http://json-schema.org/draft-06/schema" ||
++      uri == "http://json-schema.org/draft-07/schema" ||
++      uri == "http://json-schema.org/draft/2019-09/schema" ||
++      uri == "http://json-schema.org/draft/2020-12/schema") {
++    return SchemaDialect::kModern;
++  }
++  // Everything else is refused rather than read as a modern document. Draft 3
++  // is the reason: it names resources with "id" and puts subschemas under
++  // "extends" and inside "type"/"disallow", so assuming "$id" would walk past
++  // every resource it declares and resolve fragments against the wrong one in
++  // silence. Guessing is wrong the same way for any dialect this converter
++  // does not model, so no dialect is guessed at.
++  return SchemaDialect::kUnrecognized;
++}
++
++static std::optional<SchemaError> ScanSchema(
++    const picojson::value& schema,
++    bool is_root,
++    const char* identifier,
++    std::optional<ResourceDeclaration>* declared
++);
++
++static std::optional<SchemaError> ScanSchemaList(
++    const picojson::value& value,
++    const char* identifier,
++    std::optional<ResourceDeclaration>* declared
++) {
++  if (!value.is<picojson::array>()) {
++    return ScanSchema(value, /*is_root=*/false, identifier, declared);
++  }
++  for (const auto& item : value.get<picojson::array>()) {
++    if (auto err = ScanSchema(item, /*is_root=*/false, identifier, declared)) return err;
++  }
++  return std::nullopt;
++}
++
++static std::optional<SchemaError> ScanSchemaMap(
++    const picojson::value& value,
++    const char* identifier,
++    std::optional<ResourceDeclaration>* declared
++) {
++  if (!value.is<picojson::object>()) return std::nullopt;
 +  const auto& object = value.get<picojson::object>();
-+  if (!is_root && object.count("$id")) return true;
 +  for (const auto& key : object.ordered_keys()) {
-+    if (HasNestedId(object.at(key), /*is_root=*/false)) return true;
++    if (auto err = ScanSchema(object.at(key), /*is_root=*/false, identifier, declared)) return err;
 +  }
-+  return false;
++  return std::nullopt;
++}
++
++static std::optional<SchemaError> ScanSchema(
++    const picojson::value& schema,
++    bool is_root,
++    const char* identifier,
++    std::optional<ResourceDeclaration>* declared
++) {
++  if (!schema.is<picojson::object>()) return std::nullopt;
++  const auto& object = schema.get<picojson::object>();
++  if (object.count(identifier)) {
++    const auto& id = object.at(identifier);
++    if (!id.is<std::string>()) {
++      return SchemaError(
++          SchemaErrorType::kInvalidSchema,
++          std::string("\"") + identifier + "\" must be a string"
++      );
++    }
++    // The root's identifier names the document, so it declares nothing to
++    // refuse -- but an unreadable one is unreadable there too, hence the type
++    // check above running either way. Engaged-but-empty is a declaration whose
++    // identifier is "", not the absence of one, so the first found is kept.
++    if (!is_root && !declared->has_value()) {
++      *declared = ResourceDeclaration{identifier, id.get<std::string>()};
++    }
++  }
++  for (const auto& key : object.ordered_keys()) {
++    const picojson::value& child = object.at(key);
++    std::optional<SchemaError> err;
++    switch (ClassifyKeyword(key)) {
++      case SchemaChildren::kNone:
++        continue;
++      case SchemaChildren::kOne:
++        err = ScanSchema(child, /*is_root=*/false, identifier, declared);
++        break;
++      case SchemaChildren::kList:
++        err = ScanSchemaList(child, identifier, declared);
++        break;
++      case SchemaChildren::kMap:
++        err = ScanSchemaMap(child, identifier, declared);
++        break;
++    }
++    if (err) return err;
++  }
++  return std::nullopt;
++}
++
++static std::optional<SchemaError> FindEmbeddedResource(
++    const picojson::value& root, std::optional<ResourceDeclaration>* declared
++) {
++  std::string uri;
++  const SchemaDialect dialect = DetectDialect(root, &uri);
++  if (dialect == SchemaDialect::kUnrecognized) {
++    return SchemaError(
++        SchemaErrorType::kUnsupportedSchema,
++        "unsupported \"$schema\" dialect: " + (uri.empty() ? std::string("(not a string)") : uri)
++    );
++  }
++  const char* identifier = dialect == SchemaDialect::kLegacyId ? "id" : "$id";
++  return ScanSchema(root, /*is_root=*/true, identifier, declared);
++}
++
++SchemaParser::SchemaParser(const picojson::value& root_schema, const Config& config)
++    : config_(config), root_schema_(root_schema) {
++  if (config_.reject_unsupported) {
++    embedded_resource_error_ = FindEmbeddedResource(root_schema_, &embedded_resource_);
++  }
 +}
 +
 +// A member carrying nothing but a local $ref means exactly its target on every
 +// draft. A $ref beside a sibling constraint does not: draft 7 ignores the
 +// sibling and later drafts conjoin it, so the flatten refuses rather than pick.
-+static bool IsBareLocalRef(const picojson::object& schema) {
++static bool IsBareLocalRef(const picojson::object& schema, bool decode_escapes) {
 +  if (!schema.count("$ref") || !schema.at("$ref").is<std::string>()) return false;
 +  const std::string& uri = schema.at("$ref").get<std::string>();
-+  if (!IsLocalPointerUri(uri)) return false;
++  if (!IsLocalPointerUri(uri, decode_escapes)) return false;
 +  for (const auto& key : schema.ordered_keys()) {
 +    if (key == "$ref" || key == "$defs" || key == "definitions") continue;
 +    if (!IsAnnotationKeyword(key)) return false;
@@ -1760,8 +1983,7 @@ index da8b516..62cd45f 100644
 +// allOf member's, in document order.
 +struct AllOfFlattener {
 +  const picojson::value& root;
-+  // Whether a "#/..." member resolves against `root`; see HasNestedId.
-+  bool refs_reach_root;
++  bool reject_unsupported;
 +  std::vector<picojson::object> contributors;
 +  std::vector<std::string> ref_path;
 +  int inline_budget = kMaxAllOfRefInlines;
@@ -1888,6 +2110,9 @@ index da8b516..62cd45f 100644
      const std::string& rule_name_hint,
      std::optional<std::string> default_type
  ) {
++  // Ahead of the cache, so no hit can carry a refused document past it.
++  if (auto err = CheckDocumentIsOneResource()) return ResultErr(std::move(*err));
++
    std::string cache_key = ComputeCacheKey(schema);
 +  if (default_type.has_value()) {
 +    // The same schema text parses differently under a default type (a bare {}
@@ -1898,16 +2123,24 @@ index da8b516..62cd45f 100644
    if (schema_cache_.count(cache_key)) {
      return ResultOk(schema_cache_[cache_key]);
    }
-@@ -286,9 +1183,94 @@ Result<SchemaSpecPtr, SchemaError> SchemaParser::Parse(
+@@ -286,9 +1412,102 @@ Result<SchemaSpecPtr, SchemaError> SchemaParser::Parse(
    }
- 
+
    const auto& schema_obj = schema.get<picojson::object>();
 -  WarnUnsupportedKeywords(
 -      schema_obj, {"not", "if", "then", "else", "dependentRequired", "dependentSchemas"}
 -  );
++  if (config_.reject_unsupported && schema_obj.count("$id") &&
++      !schema_obj.at("$id").is<std::string>()) {
++    return ResultErr<SchemaError>(
++        SchemaErrorType::kInvalidSchema, "\"$id\" must be a string"
++    );
++  }
 +  if (auto err = CheckUnsupportedKeywords(
 +          schema_obj,
 +          {"not",
++           "$dynamicRef",
++           "$recursiveRef",
 +           "dependentRequired",
 +           "dependentSchemas",
 +           "multipleOf",
@@ -1952,7 +2185,7 @@ index da8b516..62cd45f 100644
 +  if (config_.reject_unsupported && schema_obj.count("$ref") &&
 +      schema_obj.at("$ref").is<std::string>()) {
 +    const std::string& ref = schema_obj.at("$ref").get<std::string>();
-+    if (!IsLocalPointerUri(ref)) {
++    if (!IsLocalPointerUri(ref, /*decode_escapes=*/true)) {
 +      return ResultErr<SchemaError>(
 +          SchemaErrorType::kUnsatisfiableSchema, "unsupported non-local $ref: " + ref
 +      );
@@ -1993,10 +2226,10 @@ index da8b516..62cd45f 100644
 +      }
 +    }
 +  }
- 
+
    SchemaSpecPtr result;
- 
-@@ -305,10 +1287,24 @@ Result<SchemaSpecPtr, SchemaError> SchemaParser::Parse(
+
+@@ -305,10 +1524,24 @@ Result<SchemaSpecPtr, SchemaError> SchemaParser::Parse(
      auto enum_result = ParseEnum(schema_obj);
      if (enum_result.IsErr()) return ResultErr(std::move(enum_result).UnwrapErr());
      result = SchemaSpec::Make(std::move(enum_result).Unwrap(), cache_key, rule_name_hint);
@@ -2023,7 +2256,7 @@ index da8b516..62cd45f 100644
    } else if (schema_obj.count("allOf")) {
      auto allof_result = ParseAllOf(schema_obj);
      if (allof_result.IsErr()) return ResultErr(std::move(allof_result).UnwrapErr());
-@@ -358,18 +1354,93 @@ Result<SchemaSpecPtr, SchemaError> SchemaParser::Parse(
+@@ -358,18 +1591,93 @@ Result<SchemaSpecPtr, SchemaError> SchemaParser::Parse(
          );
        }
      }
@@ -2126,29 +2359,29 @@ index da8b516..62cd45f 100644
 +      result = SchemaSpec::Make(AnySpec{}, cache_key, rule_name_hint);
 +    }
    }
- 
+
    schema_cache_[cache_key] = result;
-@@ -377,7 +1448,9 @@ Result<SchemaSpecPtr, SchemaError> SchemaParser::Parse(
+@@ -377,7 +1685,9 @@ Result<SchemaSpecPtr, SchemaError> SchemaParser::Parse(
  }
- 
+
  Result<IntegerSpec, SchemaError> SchemaParser::ParseInteger(const picojson::object& schema) {
 -  WarnUnsupportedKeywords(schema, {"multipleOf"});
 +  if (auto err = CheckUnsupportedKeywords(schema, {"multipleOf"})) {
 +    return ResultErr(std::move(*err));
 +  }
    IntegerSpec spec;
- 
+
    auto checkAndConvertIntegerBound = [](const picojson::value& value
-@@ -462,14 +1535,24 @@ Result<IntegerSpec, SchemaError> SchemaParser::ParseInteger(const picojson::obje
+@@ -462,14 +1772,24 @@ Result<IntegerSpec, SchemaError> SchemaParser::ParseInteger(const picojson::obje
  }
- 
+
  Result<NumberSpec, SchemaError> SchemaParser::ParseNumber(const picojson::object& schema) {
 -  WarnUnsupportedKeywords(schema, {"multipleOf"});
 +  if (auto err = CheckUnsupportedKeywords(schema, {"multipleOf"})) {
 +    return ResultErr(std::move(*err));
 +  }
    NumberSpec spec;
- 
+
 -  auto getDouble = [](const picojson::value& value) -> Result<double, SchemaError> {
 +  auto getDouble = [this](const picojson::value& value) -> Result<double, SchemaError> {
      if (!value.is<double>() && !value.is<int64_t>()) {
@@ -2165,12 +2398,12 @@ index da8b516..62cd45f 100644
 +    }
 +    return ResultOk<double>(d);
    };
- 
+
    if (schema.count("minimum")) {
-@@ -521,17 +1604,53 @@ Result<NumberSpec, SchemaError> SchemaParser::ParseNumber(const picojson::object
+@@ -521,17 +1841,53 @@ Result<NumberSpec, SchemaError> SchemaParser::ParseNumber(const picojson::object
    return ResultOk(std::move(spec));
  }
- 
+
 +static bool IsSupportedStringFormat(const std::string& format) {
 +  static const std::unordered_set<std::string> kSupported = {
 +      "email",
@@ -2224,7 +2457,7 @@ index da8b516..62cd45f 100644
    }
    if (schema.count("maxLength")) {
      if (!schema.at("maxLength").is<int64_t>()) {
-@@ -539,7 +1658,14 @@ Result<StringSpec, SchemaError> SchemaParser::ParseString(const picojson::object
+@@ -539,7 +1895,14 @@ Result<StringSpec, SchemaError> SchemaParser::ParseString(const picojson::object
            SchemaErrorType::kInvalidSchema, "maxLength must be an integer"
        );
      }
@@ -2240,15 +2473,14 @@ index da8b516..62cd45f 100644
    }
    if (spec.max_length != -1 && spec.min_length > spec.max_length) {
      return ResultErr<SchemaError>(
-@@ -548,9 +1674,78 @@ Result<StringSpec, SchemaError> SchemaParser::ParseString(const picojson::object
+@@ -548,9 +1911,78 @@ Result<StringSpec, SchemaError> SchemaParser::ParseString(const picojson::object
              std::to_string(spec.max_length)
      );
    }
 +  if (auto err = ReconcileStringTiers(&spec)) return ResultErr(std::move(*err));
    return ResultOk(std::move(spec));
  }
--
-+
+
 +std::optional<SchemaError> SchemaParser::ReconcileStringTiers(StringSpec* spec) {
 +  // Permissive mode keeps upstream's bargain: GenerateString emits its first
 +  // tier and the rest are dropped.
@@ -2320,9 +2552,9 @@ index da8b516..62cd45f 100644
  Result<BooleanSpec, SchemaError> SchemaParser::ParseBoolean(const picojson::object&) {
    return ResultOk(BooleanSpec{});
  }
-@@ -560,7 +1755,18 @@ Result<NullSpec, SchemaError> SchemaParser::ParseNull(const picojson::object&) {
+@@ -560,7 +1992,18 @@ Result<NullSpec, SchemaError> SchemaParser::ParseNull(const picojson::object&) {
  }
- 
+
  Result<ArraySpec, SchemaError> SchemaParser::ParseArray(const picojson::object& schema) {
 -  WarnUnsupportedKeywords(schema, {"uniqueItems", "contains", "minContains", "maxContains"});
 +  if (auto err = CheckUnsupportedKeywords(schema, {"contains", "minContains", "maxContains"})) {
@@ -2338,9 +2570,9 @@ index da8b516..62cd45f 100644
 +    );
 +  }
    ArraySpec spec;
- 
+
    if (schema.count("prefixItems")) {
-@@ -615,7 +1821,12 @@ Result<ArraySpec, SchemaError> SchemaParser::ParseArray(const picojson::object&
+@@ -615,7 +2058,12 @@ Result<ArraySpec, SchemaError> SchemaParser::ParseArray(const picojson::object&
        if (items_result.IsErr()) return ResultErr(std::move(items_result).UnwrapErr());
        spec.additional_items = std::move(items_result).Unwrap();
      }
@@ -2354,10 +2586,10 @@ index da8b516..62cd45f 100644
      spec.allow_additional_items = true;
      spec.additional_items = SchemaSpec::Make(AnySpec{}, "", "any");
    } else {
-@@ -681,8 +1892,49 @@ Result<ArraySpec, SchemaError> SchemaParser::ParseArray(const picojson::object&
+@@ -681,8 +2129,49 @@ Result<ArraySpec, SchemaError> SchemaParser::ParseArray(const picojson::object&
    return ResultOk(std::move(spec));
  }
- 
+
 +// Whether `key` can be emitted as a FORCED-literal (declared / required /
 +// const / enum) bare object key. Such keys are emitted as explicit EBNF string
 +// literals, so `forbidden` (the literal-key alphabet) omits the escapable `"`
@@ -2401,10 +2633,10 @@ index da8b516..62cd45f 100644
 +      spec.required.insert(req.get<std::string>());
 +    }
 +  }
- 
+
    if (schema.count("properties")) {
      if (!schema.at("properties").is<picojson::object>()) {
-@@ -692,7 +1944,29 @@ Result<ObjectSpec, SchemaError> SchemaParser::ParseObject(const picojson::object
+@@ -692,7 +2181,29 @@ Result<ObjectSpec, SchemaError> SchemaParser::ParseObject(const picojson::object
      }
      auto properties_obj = schema.at("properties").get<picojson::object>();
      for (const auto& key : properties_obj.ordered_keys()) {
@@ -2435,7 +2667,7 @@ index da8b516..62cd45f 100644
        if (prop_result.IsErr()) return ResultErr(std::move(prop_result).UnwrapErr());
        spec.properties.push_back({key, std::move(prop_result).Unwrap()});
      }
-@@ -703,7 +1977,49 @@ Result<ObjectSpec, SchemaError> SchemaParser::ParseObject(const picojson::object
+@@ -703,7 +2214,49 @@ Result<ObjectSpec, SchemaError> SchemaParser::ParseObject(const picojson::object
        return ResultErr<SchemaError>(SchemaErrorType::kInvalidSchema, "required must be an array");
      }
      for (const auto& req : schema.at("required").get<picojson::array>()) {
@@ -2485,8 +2717,8 @@ index da8b516..62cd45f 100644
 +      spec.required.insert(req_key);
      }
    }
- 
-@@ -714,6 +2030,51 @@ Result<ObjectSpec, SchemaError> SchemaParser::ParseObject(const picojson::object
+
+@@ -714,6 +2267,51 @@ Result<ObjectSpec, SchemaError> SchemaParser::ParseObject(const picojson::object
        );
      }
      auto pattern_props = schema.at("patternProperties").get<picojson::object>();
@@ -2538,10 +2770,10 @@ index da8b516..62cd45f 100644
      for (const auto& key : pattern_props.ordered_keys()) {
        auto prop_result = Parse(pattern_props.at(key), "pattern_prop");
        if (prop_result.IsErr()) return ResultErr(std::move(prop_result).UnwrapErr());
-@@ -721,7 +2082,12 @@ Result<ObjectSpec, SchemaError> SchemaParser::ParseObject(const picojson::object
+@@ -721,7 +2319,12 @@ Result<ObjectSpec, SchemaError> SchemaParser::ParseObject(const picojson::object
      }
    }
- 
+
 -  if (schema.count("propertyNames")) {
 +  // propertyNames: true is a no-op key constraint (accept any key), so skip
 +  // the whole block -- keys then route to the default any-key pattern. Any
@@ -2552,7 +2784,7 @@ index da8b516..62cd45f 100644
      if (!schema.at("propertyNames").is<picojson::object>()) {
        return ResultErr<SchemaError>(
            SchemaErrorType::kInvalidSchema, "propertyNames must be an object"
-@@ -735,12 +2101,116 @@ Result<ObjectSpec, SchemaError> SchemaParser::ParseObject(const picojson::object
+@@ -735,12 +2338,116 @@ Result<ObjectSpec, SchemaError> SchemaParser::ParseObject(const picojson::object
            "propertyNames must be an object that validates string"
        );
      }
@@ -2663,23 +2895,17 @@ index da8b516..62cd45f 100644
      if (prop_names_result.IsErr()) return ResultErr(std::move(prop_names_result).UnwrapErr());
      spec.property_names = std::move(prop_names_result).Unwrap();
    }
- 
+
 -  spec.allow_additional_properties = !config_.strict_mode;
 +  spec.allow_additional_properties =
 +      !config_.strict_mode || schema.count("minProperties") || schema.count("maxProperties");
    if (schema.count("additionalProperties")) {
      auto add_props = schema.at("additionalProperties");
      if (add_props.is<bool>()) {
-@@ -792,9 +2262,39 @@ Result<ObjectSpec, SchemaError> SchemaParser::ParseObject(const picojson::object
-     spec.max_properties = static_cast<int>(schema.at("maxProperties").get<int64_t>());
-     if (spec.max_properties < 0) {
-       return ResultErr<SchemaError>(
--          SchemaErrorType::kUnsatisfiableSchema, "maxProperties must be a non-negative integer"
-+          SchemaErrorType::kUnsatisfiableSchema, "maxProperties must be a non-negative integer"
-+      );
-+    }
-+  }
-+
+@@ -797,6 +2504,36 @@ Result<ObjectSpec, SchemaError> SchemaParser::ParseObject(const picojson::object
+     }
+   }
+
 +  // An explicit additionalProperties:false with no declared or pattern
 +  // properties forbids every key, so the object must be empty.
 +  if (spec.properties.empty() && spec.pattern_properties.empty() &&
@@ -2697,8 +2923,8 @@ index da8b516..62cd45f 100644
 +          SchemaErrorType::kUnsatisfiableSchema,
 +          "propertyNames permits only the empty key, which a bare key cannot represent, so no "
 +          "property can be present; remove minProperties/required or the propertyNames length bound"
-       );
-     }
++      );
++    }
 +    spec.max_properties = 0;
 +    spec.properties.clear();
 +    spec.forbidden_keys.clear();
@@ -2708,12 +2934,13 @@ index da8b516..62cd45f 100644
 +    spec.additional_properties_schema = nullptr;
 +    spec.allow_unevaluated_properties = false;
 +    spec.unevaluated_properties_schema = nullptr;
-   }
--
++  }
 +
    if (spec.max_properties != -1 && spec.min_properties > spec.max_properties) {
-@@ -826,7 +2326,15 @@ Result<ObjectSpec, SchemaError> SchemaParser::ParseObject(const picojson::object
- 
+     return ResultErr<SchemaError>(
+         SchemaErrorType::kUnsatisfiableSchema,
+@@ -826,7 +2563,15 @@ Result<ObjectSpec, SchemaError> SchemaParser::ParseObject(const picojson::object
+
  Result<ConstSpec, SchemaError> SchemaParser::ParseConst(const picojson::object& schema) {
    ConstSpec spec;
 -  spec.json_value = schema.at("const").serialize();
@@ -2728,8 +2955,8 @@ index da8b516..62cd45f 100644
 +  spec.parsed_json_value = value;
    return ResultOk(std::move(spec));
  }
- 
-@@ -840,7 +2348,14 @@ Result<EnumSpec, SchemaError> SchemaParser::ParseEnum(const picojson::object& sc
+
+@@ -840,7 +2585,14 @@ Result<EnumSpec, SchemaError> SchemaParser::ParseEnum(const picojson::object& sc
      return ResultErr<SchemaError>(SchemaErrorType::kInvalidSchema, "enum array must not be empty");
    }
    for (const auto& value : enum_array) {
@@ -2744,16 +2971,39 @@ index da8b516..62cd45f 100644
    }
    return ResultOk(std::move(spec));
  }
-@@ -869,58 +2384,140 @@ Result<SchemaSpecPtr, SchemaError> SchemaParser::ResolveRef(
+@@ -854,9 +2606,22 @@ Result<RefSpec, SchemaError> SchemaParser::ParseRef(const picojson::object& sche
+   return ResultOk(std::move(spec));
+ }
+
++std::optional<SchemaError> SchemaParser::CheckDocumentIsOneResource() const {
++  if (embedded_resource_error_.has_value()) return embedded_resource_error_;
++  if (!embedded_resource_.has_value()) return std::nullopt;
++  return SchemaError(
++      SchemaErrorType::kUnsupportedSchema,
++      "\"" + embedded_resource_->keyword + "\" \"" + embedded_resource_->id +
++          "\" declares a resource below the document root, which this converter does "
++          "not resolve fragments against"
++  );
++}
++
+ Result<SchemaSpecPtr, SchemaError> SchemaParser::ResolveRef(
+     const std::string& uri, const std::string& rule_name_hint
+ ) {
++  // Keying by URI alone is sound: a document that declares a resource below its
++  // root is refused before any reference resolves, so one URI names one place.
+   if (ref_cache_.count(uri)) return ResultOk(ref_cache_[uri]);
+
+   if (uri == "#") {
+@@ -869,58 +2634,148 @@ Result<SchemaSpecPtr, SchemaError> SchemaParser::ResolveRef(
      return ResultOk(resolved);
    }
- 
+
 -  if (uri.size() < 2 || uri[0] != '#' || uri[1] != '/') {
-+  if (!IsLocalPointerUri(uri)) {
++  if (!IsLocalPointerUri(uri, config_.reject_unsupported)) {
      XGRAMMAR_LOG(WARNING) << "URI should either be '#' or start with '#/' but got " << uri;
      return ResultOk(SchemaSpec::Make(AnySpec{}, "", "any"));
    }
- 
+
 -  std::vector<std::string> parts;
    std::stringstream ss(uri.substr(2));
    std::string part;
@@ -2765,7 +3015,7 @@ index da8b516..62cd45f 100644
        if (std::isalpha(c) || c == '_' || c == '-' || c == '.') new_rule_name_prefix += c;
      }
    }
- 
+
 -  auto current = std::cref(root_schema_);
 -  for (const auto& p : parts) {
 -    if (!current.get().is<picojson::object>() || !current.get().contains(p)) {
@@ -2775,13 +3025,21 @@ index da8b516..62cd45f 100644
 -    }
 -    current = current.get().get(p);
 +  std::string missing;
-+  const picojson::value* target = FindLocalPointerTarget(root_schema_, uri, &missing);
++  const LocalPointerResult pointer =
++      FindLocalPointerTarget(root_schema_, uri, &missing, config_.reject_unsupported);
++  if (config_.reject_unsupported &&
++      pointer.status == LocalPointerStatus::kMalformedPercentEscape) {
++    return ResultErr<SchemaError>(
++        SchemaErrorType::kInvalidSchema, MalformedPercentEscapeError(uri)
++    );
++  }
++  const picojson::value* target = pointer.target;
 +  if (target == nullptr) {
 +    return ResultErr<SchemaError>(
 +        SchemaErrorType::kInvalidSchema, "Cannot find field " + missing + " in " + uri
 +    );
    }
- 
+
 -  auto result = Parse(current, new_rule_name_prefix);
 +  auto result = Parse(*target, new_rule_name_prefix);
    if (result.IsErr()) return ResultErr(std::move(result).UnwrapErr());
@@ -2789,8 +3047,7 @@ index da8b516..62cd45f 100644
    ref_cache_[uri] = resolved;
    return ResultOk(resolved);
  }
--
-+
+
 -Result<AnyOfSpec, SchemaError> SchemaParser::ParseAnyOf(const picojson::object& schema) {
 +Result<AnyOfSpec, SchemaError> SchemaParser::ParseAnyOf(
 +    const picojson::object& schema, const std::string& keyword
@@ -2881,7 +3138,7 @@ index da8b516..62cd45f 100644
 +  }
    return ResultOk(std::move(spec));
  }
- 
+
 +Result<AnyOfSpec, SchemaError> SchemaParser::ParseOneOf(const picojson::object& schema) {
 +  if (!schema.at("oneOf").is<picojson::array>()) {
 +    return ResultErr<SchemaError>(SchemaErrorType::kInvalidSchema, "oneOf must be an array");
@@ -2907,7 +3164,7 @@ index da8b516..62cd45f 100644
  Result<AllOfSpec, SchemaError> SchemaParser::ParseAllOf(const picojson::object& schema) {
    AllOfSpec spec;
    if (!schema.at("allOf").is<picojson::array>()) {
-@@ -928,6 +2525,13 @@ Result<AllOfSpec, SchemaError> SchemaParser::ParseAllOf(const picojson::object&
+@@ -928,6 +2783,13 @@ Result<AllOfSpec, SchemaError> SchemaParser::ParseAllOf(const picojson::object&
    }
    int idx = 0;
    for (const auto& sub_schema : schema.at("allOf").get<picojson::array>()) {
@@ -2921,10 +3178,10 @@ index da8b516..62cd45f 100644
      auto sub_result = Parse(sub_schema, "all_" + std::to_string(idx));
      if (sub_result.IsErr()) return ResultErr(std::move(sub_result).UnwrapErr());
      spec.schemas.push_back(std::move(sub_result).Unwrap());
-@@ -936,6 +2540,121 @@ Result<AllOfSpec, SchemaError> SchemaParser::ParseAllOf(const picojson::object&
+@@ -936,6 +2798,128 @@ Result<AllOfSpec, SchemaError> SchemaParser::ParseAllOf(const picojson::object&
    return ResultOk(std::move(spec));
  }
- 
+
 +std::optional<SchemaError> AllOfFlattener::Collect(const picojson::object& schema) {
 +  picojson::object own = schema;
 +  own.erase("allOf");
@@ -2949,17 +3206,16 @@ index da8b516..62cd45f 100644
 +          SchemaErrorType::kInvalidSchema, "allOf member must be an object or a bool"
 +      );
 +    }
++    const picojson::object& member_obj = member.get<picojson::object>();
++    if (member_obj.count("$id") && !member_obj.at("$id").is<std::string>()) {
++      return SchemaError(
++          SchemaErrorType::kInvalidSchema, "\"$id\" must be a string"
++      );
++    }
 +    if (SubschemaIsNoOp(member)) continue;
 +
-+    const picojson::object& member_obj = member.get<picojson::object>();
-+    if (IsBareLocalRef(member_obj)) {
++    if (IsBareLocalRef(member_obj, reject_unsupported)) {
 +      const std::string& uri = member_obj.at("$ref").get<std::string>();
-+      if (!refs_reach_root) {
-+        return SchemaError(
-+            SchemaErrorType::kUnsupportedSchema,
-+            "allOf member \"" + uri + "\" resolves against an \"$id\" the flatten does not track"
-+        );
-+      }
 +      if (std::find(ref_path.begin(), ref_path.end(), uri) != ref_path.end()) {
 +        return SchemaError(
 +            SchemaErrorType::kUnsupportedSchema,
@@ -2971,7 +3227,15 @@ index da8b516..62cd45f 100644
 +            SchemaErrorType::kUnsupportedSchema, "allOf reaches too many $ref members to flatten"
 +        );
 +      }
-+      const picojson::value* target = FindLocalPointerTarget(root, uri, nullptr);
++      const LocalPointerResult pointer =
++          FindLocalPointerTarget(root, uri, nullptr, reject_unsupported);
++      if (reject_unsupported &&
++          pointer.status == LocalPointerStatus::kMalformedPercentEscape) {
++        return SchemaError(
++            SchemaErrorType::kInvalidSchema, MalformedPercentEscapeError(uri)
++        );
++      }
++      const picojson::value* target = pointer.target;
 +      if (target != nullptr && target->is<bool>()) {
 +        if (target->get<bool>()) continue;
 +        return SchemaError(
@@ -2995,7 +3259,7 @@ index da8b516..62cd45f 100644
 +
 +Result<picojson::value, SchemaError> SchemaParser::MergeAllOf(const picojson::object& schema) {
 +  // The checks below need to know which contributor a merged key came from.
-+  AllOfFlattener flattener{GetRootSchema(), !HasNestedId(GetRootSchema(), /*is_root=*/true)};
++  AllOfFlattener flattener{GetRootSchema(), config_.reject_unsupported};
 +  if (auto err = flattener.Collect(schema)) return ResultErr<SchemaError>(std::move(*err));
 +  const std::vector<picojson::object>& contributors = flattener.contributors;
 +  std::vector<const picojson::object*> contributor_ptrs;
@@ -3043,15 +3307,15 @@ index da8b516..62cd45f 100644
  Result<TypeArraySpec, SchemaError> SchemaParser::ParseTypeArray(
      const picojson::object& schema, const std::string& rule_name_hint
  ) {
-@@ -1102,6 +2821,7 @@ const std::string JSONSchemaConverter::kBasicArray = "basic_array";
+@@ -1102,6 +3086,7 @@ const std::string JSONSchemaConverter::kBasicArray = "basic_array";
  const std::string JSONSchemaConverter::kBasicObject = "basic_object";
  const std::string JSONSchemaConverter::kBasicEscape = "basic_escape";
  const std::string JSONSchemaConverter::kBasicStringSub = "basic_string_sub";
 +const std::string JSONSchemaConverter::kBareKey = "bare_key";
- 
+
  // ==================== JSONSchemaConverter Implementation ====================
- 
-@@ -1111,7 +2831,12 @@ JSONSchemaConverter::JSONSchemaConverter(
+
+@@ -1111,7 +3096,12 @@ JSONSchemaConverter::JSONSchemaConverter(
      bool any_whitespace,
      std::optional<int> max_whitespace_cnt,
      RefResolver ref_resolver,
@@ -3065,7 +3329,7 @@ index da8b516..62cd45f 100644
  )
      : indent_manager_(
            indent,
-@@ -1123,9 +2848,25 @@ JSONSchemaConverter::JSONSchemaConverter(
+@@ -1123,9 +3113,25 @@ JSONSchemaConverter::JSONSchemaConverter(
        any_whitespace_(any_whitespace),
        max_whitespace_cnt_(max_whitespace_cnt),
        any_order_(any_order),
@@ -3091,7 +3355,7 @@ index da8b516..62cd45f 100644
    if (any_whitespace) {
      std::string whitespace_part;
      if (!max_whitespace_cnt_.has_value()) {
-@@ -1198,7 +2939,7 @@ void JSONSchemaConverter::AddBasicRules() {
+@@ -1198,7 +3204,7 @@ void JSONSchemaConverter::AddBasicRules() {
    // basic_string - cache_key matches SchemaParser::ComputeCacheKey for {"type": "string"}
    constexpr const char* kStringCacheKey = "{\"type\":\"string\"}";
    auto str_spec = SchemaSpec::Make(StringSpec{}, kStringCacheKey, kBasicString);
@@ -3099,22 +3363,22 @@ index da8b516..62cd45f 100644
 +  std::string str_body = GenerateStringDefault();
    ebnf_script_creator_.AddRule(kBasicString, str_body);
    AddCache(kStringCacheKey, kBasicString);
- 
-@@ -1236,6 +2977,10 @@ void JSONSchemaConverter::AddBasicRules() {
+
+@@ -1236,6 +3242,10 @@ void JSONSchemaConverter::AddBasicRules() {
    ebnf_script_creator_.AddRule(kBasicObject, obj_body);
    AddCache(kObjectCacheKey, kBasicObject);
- 
+
 +  if (keys_are_bare_) {
 +    ebnf_script_creator_.AddRule(kBareKey, additional_bare_key_terminal_);
 +  }
 +
    indent_manager_ = saved_indent_manager;
  }
- 
-@@ -1263,7 +3008,12 @@ std::string JSONSchemaConverter::NextSeparator(bool is_end) {
+
+@@ -1263,7 +3273,12 @@ std::string JSONSchemaConverter::NextSeparator(bool is_end) {
    return indent_manager_.NextSeparator(is_end);
  }
- 
+
 -std::string JSONSchemaConverter::GetKeyPattern() const { return kBasicString; }
 +std::string JSONSchemaConverter::GetKeyPattern() const {
 +  if (keys_are_bare_) {
@@ -3122,13 +3386,13 @@ index da8b516..62cd45f 100644
 +  }
 +  return kBasicString;
 +}
- 
+
  namespace {
- 
-@@ -1272,6 +3022,142 @@ struct TrieNode {
+
+@@ -1272,6 +3287,142 @@ struct TrieNode {
    std::map<char, TrieNode> children;
  };
- 
+
 +// Whether `c` must not be spliced into EBNF source raw. Raw \r/\n are lexer
 +// errors and NUL ends lexing; the remaining control bytes are escaped for
 +// hygiene.
@@ -3268,10 +3532,10 @@ index da8b516..62cd45f 100644
  std::string BuildTrieBody(const TrieNode& node) {
    std::string result;
    bool first = true;
-@@ -1318,26 +3204,168 @@ std::string BuildTrieBody(const TrieNode& node) {
+@@ -1318,26 +3469,168 @@ std::string BuildTrieBody(const TrieNode& node) {
    return "(" + result + ")";
  }
- 
+
 +// Build a trie of the names to carve out of an object's additional-key
 +// pattern: the declared property names followed by the forbidden (false-schema)
 +// keys. `accept`, when set, drops names that can never collide with an
@@ -3394,7 +3658,7 @@ index da8b516..62cd45f 100644
 +}
 +
  }  // namespace
- 
+
 +const std::vector<std::string>& JSONSchemaConverter::CurrentForbiddenKeys() const {
 +  static const std::vector<std::string> kNone;
 +  return current_forbidden_keys_ != nullptr ? *current_forbidden_keys_ : kNone;
@@ -3427,7 +3691,7 @@ index da8b516..62cd45f 100644
 +  if (properties.empty() && forbidden_keys.empty()) {
      return GetKeyPattern();
    }
- 
+
 -  // Build trie from property names
 -  // TODO(linzhang): The trie only excludes the literal unescaped spelling of each property name.
 -  TrieNode root;
@@ -3441,16 +3705,16 @@ index da8b516..62cd45f 100644
 +    auto pattern = BuildBareKeyPatternExcluding(additional_bare_key_terminal_, properties, rule_name);
 +    return pattern.has_value() ? *pattern : kBareKey;
    }
- 
+
 +  TrieNode root = BuildNameTrie(properties, forbidden_keys);
 +
    // Generate EBNF body
    std::string inner = BuildTrieBody(root);
    std::string ws = GetWhitespacePattern();
-@@ -1346,6 +3374,28 @@ std::string JSONSchemaConverter::GetKeyPatternExcluding(
+@@ -1346,6 +3639,28 @@ std::string JSONSchemaConverter::GetKeyPatternExcluding(
    return ebnf_script_creator_.AddRule(rule_name + "_addl_key", body);
  }
- 
+
 +std::string JSONSchemaConverter::FormatPatternPropertyKey(const std::string& pattern) {
 +  if (!bare_key_pattern_forbidden_.empty()) {
 +    return "(" + RegexToEBNF(pattern, false, bare_key_pattern_forbidden_) + ")";
@@ -3474,12 +3738,12 @@ index da8b516..62cd45f 100644
 +}
 +
  std::string JSONSchemaConverter::GetBasicAnyRuleName() const { return kBasicAny; }
- 
+
  void JSONSchemaConverter::AddCache(const std::string& key, const std::string& value) {
-@@ -1491,41 +3541,162 @@ std::string JSONSchemaConverter::GenerateNumber(
+@@ -1491,41 +3806,162 @@ std::string JSONSchemaConverter::GenerateNumber(
    return "\"-\"? (\"0\" | [1-9] [0-9]*) (\".\" [0-9]+)? ([eE] [+-]? [0-9]+)?";
  }
- 
+
 +std::string JSONSchemaConverter::TokenTerminal(int32_t id) {
 +  return "Token(" + std::to_string(id) + ")";
 +}
@@ -3614,7 +3878,7 @@ index da8b516..62cd45f 100644
    if (spec.format.has_value()) {
      const std::string& format = *spec.format;
      auto regex_pattern = JSONFormatToRegexPattern(format);
- 
+
      if (regex_pattern.has_value()) {
 -      std::string converted_regex = RegexToEBNF(regex_pattern.value(), false);
 -      return "\"\\\"\" " + converted_regex + " \"\\\"\"";
@@ -3623,7 +3887,7 @@ index da8b516..62cd45f 100644
 +      return open_delim + " " + converted_regex + " " + close_delim;
      }
    }
- 
+
    // Check for pattern
    if (spec.pattern.has_value()) {
 -    std::string converted_regex = RegexToEBNF(*spec.pattern, false);
@@ -3631,7 +3895,7 @@ index da8b516..62cd45f 100644
 +    std::string converted_regex = RegexToEBNF(*spec.pattern, false, StringPatternForbiddenChars());
 +    return open_delim + " " + converted_regex + " " + close_delim;
    }
- 
+
    // Check for length constraints
    if (spec.min_length != 0 || spec.max_length != -1) {
 -    std::string char_pattern = "[^\"\\\\\\r\\n]";
@@ -3646,16 +3910,16 @@ index da8b516..62cd45f 100644
 +    return open_delim + " " + GenerateStringLengthBody(spec.min_length, spec.max_length) + " " +
 +           close_delim;
    }
- 
+
    // Default string
 -  return "[\"] " + kBasicStringSub;
 +  return GenerateStringDefault();
  }
- 
+
  std::string JSONSchemaConverter::GenerateBoolean(
-@@ -1641,6 +3812,11 @@ std::string JSONSchemaConverter::GenerateArray(
+@@ -1641,6 +4077,11 @@ std::string JSONSchemaConverter::GenerateArray(
  }
- 
+
  std::string JSONSchemaConverter::FormatPropertyKey(const std::string& key) {
 +  if (keys_are_bare_) {
 +    std::string json = picojson::value(key).serialize();
@@ -3664,8 +3928,8 @@ index da8b516..62cd45f 100644
 +  }
    return "\"" + JSONStrToPrintableStr(picojson::value(key).serialize()) + "\"";
  }
- 
-@@ -2096,6 +4272,8 @@ std::string JSONSchemaConverter::GetPartialRuleForProperties(
+
+@@ -2096,6 +4537,8 @@ std::string JSONSchemaConverter::GetPartialRuleForProperties(
  std::string JSONSchemaConverter::GenerateObject(
      const ObjectSpec& spec, const std::string& rule_name, bool need_braces
  ) {
@@ -3674,7 +3938,7 @@ index da8b516..62cd45f 100644
    std::string result = "";
    if (need_braces) {
      result += "\"{\"";
-@@ -2133,8 +4311,8 @@ std::string JSONSchemaConverter::GenerateObject(
+@@ -2133,8 +4576,8 @@ std::string JSONSchemaConverter::GenerateObject(
        for (size_t i = 0; i < spec.pattern_properties.size(); ++i) {
          const auto& pp = spec.pattern_properties[i];
          std::string value = CreateRule(pp.schema, rule_name + "_pp_" + std::to_string(i));
@@ -3685,7 +3949,7 @@ index da8b516..62cd45f 100644
          if (i != 0) pp_body += " | ";
          pp_body += pp_single;
        }
-@@ -2156,7 +4334,7 @@ std::string JSONSchemaConverter::GenerateObject(
+@@ -2156,7 +4599,7 @@ std::string JSONSchemaConverter::GenerateObject(
        // propertyNames constrains keys of additional properties.
        // Only apply when additional properties are allowed — when additionalProperties
        // is false, no extra keys beyond named properties should be permitted.
@@ -3694,7 +3958,7 @@ index da8b516..62cd45f 100644
        std::string val_rule = CreateRule(effective_additional, rule_name + "_" + effective_suffix);
        pp_override = key_pattern + " " + colon_pattern_ + " " + val_rule;
        effective_suffix = "pn";
-@@ -2183,8 +4361,8 @@ std::string JSONSchemaConverter::GenerateObject(
+@@ -2183,8 +4626,8 @@ std::string JSONSchemaConverter::GenerateObject(
          for (size_t i = 0; i < spec.pattern_properties.size(); ++i) {
            const auto& pp = spec.pattern_properties[i];
            std::string value = CreateRule(pp.schema, rule_name + "_prop_" + std::to_string(i));
@@ -3705,7 +3969,7 @@ index da8b516..62cd45f 100644
            if (i != 0) {
              property_rule_body += " | ";
            }
-@@ -2192,9 +4370,9 @@ std::string JSONSchemaConverter::GenerateObject(
+@@ -2192,9 +4635,9 @@ std::string JSONSchemaConverter::GenerateObject(
          }
          property_rule_body += ")";
        } else {
@@ -3715,9 +3979,9 @@ index da8b516..62cd45f 100644
 -            beg_seq + " " + key_pattern + " " + colon_pattern_ + " " + GetBasicAnyRuleName() + ")";
 +            beg_seq + " " + key_pattern + " " + colon_pattern_ + " " + (additional_property ? CreateRule(additional_property, rule_name + "_" + additional_suffix) : GetBasicAnyRuleName()) + ")";
        }
- 
+
        auto prop_rule_name = ebnf_script_creator_.AllocateRuleName(rule_name + "_prop");
-@@ -2225,8 +4403,12 @@ std::string JSONSchemaConverter::GenerateObject(
+@@ -2225,8 +4668,12 @@ std::string JSONSchemaConverter::GenerateObject(
      if (spec.max_properties != 0) {
        std::string add_value_rule =
            CreateRule(additional_property, rule_name + "_" + additional_suffix);
@@ -3732,15 +3996,15 @@ index da8b516..62cd45f 100644
        result += " " + NextSeparator() + " " + other_property_pattern + " ";
        result += GetPropertyWithNumberConstraints(
                      NextSeparator() + " " + other_property_pattern,
-@@ -2260,6 +4442,7 @@ std::string JSONSchemaConverter::GenerateObject(
+@@ -2260,6 +4707,7 @@ std::string JSONSchemaConverter::GenerateObject(
      }
    }
- 
+
 +  current_forbidden_keys_ = saved_forbidden_keys;
    if (result.empty()) {
      return "\"\"";
    }
-@@ -2274,12 +4457,25 @@ std::string JSONSchemaConverter::GenerateAny(const AnySpec& spec, const std::str
+@@ -2274,12 +4722,25 @@ std::string JSONSchemaConverter::GenerateAny(const AnySpec& spec, const std::str
  std::string JSONSchemaConverter::GenerateConst(
      const ConstSpec& spec, const std::string& rule_name
  ) {
@@ -3749,7 +4013,7 @@ index da8b516..62cd45f 100644
 +  }
    return "\"" + JSONStrToPrintableStr(spec.json_value) + "\"";
  }
- 
+
  std::string JSONSchemaConverter::GenerateEnum(const EnumSpec& spec, const std::string& rule_name) {
    XGRAMMAR_DCHECK(!spec.json_values.empty())
        << "GenerateEnum called with empty enum spec for rule: " << rule_name;
@@ -3766,10 +4030,10 @@ index da8b516..62cd45f 100644
    std::string result = "";
    for (size_t i = 0; i < spec.json_values.size(); ++i) {
      if (i != 0) {
-@@ -2391,12 +4587,18 @@ std::optional<std::string> JSONSchemaConverter::JSONFormatToRegexPattern(const s
+@@ -2391,12 +4852,18 @@ std::optional<std::string> JSONSchemaConverter::JSONFormatToRegexPattern(const s
          ")";
      m["email"] = "^(" + dot_string + "|" + quoted_string + ")@" + domain + "$";
- 
+
 -    m["date"] = "^(\\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[1-2]\\d|3[01]))$";
 +    m["date"] =  // NB: Feb arm accepts day 29 every year (no leap check in regex)
 +        "^(\\d{4}-((0[13578]|1[02])-(0[1-9]|[12]\\d|3[01])"
@@ -3789,7 +4053,7 @@ index da8b516..62cd45f 100644
      m["duration"] =
          "^P((\\d+D|\\d+M(\\d+D)?|\\d+Y(\\d+M(\\d+D)?)?)(T(\\d+S|\\d+M(\\d+S)?|\\d+H(\\d+M(\\d+"
          "S)?"
-@@ -3328,7 +5530,15 @@ std::string JSONSchemaToEBNF(
+@@ -3328,7 +5795,15 @@ std::string JSONSchemaToEBNF(
      bool strict_mode,
      std::optional<int> max_whitespace_cnt,
      JSONFormat json_format,
@@ -3806,7 +4070,7 @@ index da8b516..62cd45f 100644
  ) {
    picojson::value schema_value;
    std::string err = picojson::parse(schema_value, schema);
-@@ -3342,7 +5552,15 @@ std::string JSONSchemaToEBNF(
+@@ -3342,7 +5817,15 @@ std::string JSONSchemaToEBNF(
        strict_mode,
        max_whitespace_cnt,
        json_format,
@@ -3822,8 +4086,8 @@ index da8b516..62cd45f 100644
 +      std::move(xml_marker_token_ids)
    );
  }
- 
-@@ -3354,10 +5572,54 @@ std::string JSONSchemaToEBNF(
+
+@@ -3354,11 +5837,57 @@ std::string JSONSchemaToEBNF(
      bool strict_mode,
      std::optional<int> max_whitespace_cnt,
      JSONFormat json_format,
@@ -3840,6 +4104,7 @@ index da8b516..62cd45f 100644
  ) {
 -  // Parse JSON Schema to SchemaSpec
 -  SchemaParser parser(schema, {strict_mode, json_format});
+-  auto spec_result = parser.Parse(schema, "root");
 +  // The bare-key options are a group: a format either renders keys bare (and
 +  // sets all three) or does not (and sets none).
 +  const bool any_bare = !additional_bare_key_terminal.empty() ||
@@ -3878,13 +4143,16 @@ index da8b516..62cd45f 100644
 +       bare_key_pattern_forbidden,
 +       keys_are_bare}
 +  );
-   auto spec_result = parser.Parse(schema, "root");
++  // The parser's own copy, so that the root position is one address: ResolveRef
++  // ("#") parses that same value.
++  auto spec_result = parser.Parse(parser.GetRootSchema(), "root");
    if (spec_result.IsErr()) {
      XGRAMMAR_LOG(FATAL) << std::move(spec_result).UnwrapErr().what();
-@@ -3372,11 +5634,29 @@ std::string JSONSchemaToEBNF(
+   }
+@@ -3372,11 +5901,29 @@ std::string JSONSchemaToEBNF(
      return std::move(r).Unwrap();
    };
- 
+
 +  if (require_object_root) {
 +    auto root_result = EnsureObjectRoot(spec, ref_resolver);
 +    if (root_result.IsErr()) {
@@ -3912,7 +4180,7 @@ index da8b516..62cd45f 100644
        );
        return converter.Convert(spec);
      }
-@@ -3391,7 +5671,13 @@ std::string JSONSchemaToEBNF(
+@@ -3391,7 +5938,13 @@ std::string JSONSchemaToEBNF(
            max_whitespace_cnt,
            ref_resolver,
            json_format,
@@ -3927,10 +4195,10 @@ index da8b516..62cd45f 100644
        );
        return converter.Convert(spec);
      }
-@@ -3414,7 +5700,9 @@ std::string GenerateFloatRangeRegex(
+@@ -3414,7 +5967,9 @@ std::string GenerateFloatRangeRegex(
    );
  }
- 
+
 -std::string QwenXMLToolCallingToEBNF(const std::string& schema, bool any_order) {
 +std::string QwenXMLToolCallingToEBNF(
 +    const std::string& schema, bool any_order, bool require_object_root, bool reject_unsupported
@@ -3938,7 +4206,7 @@ index da8b516..62cd45f 100644
    picojson::value json_value;
    std::string err = picojson::parse(json_value, schema);
    if (!err.empty()) {
-@@ -3428,11 +5716,16 @@ std::string QwenXMLToolCallingToEBNF(const std::string& schema, bool any_order)
+@@ -3428,11 +5983,16 @@ std::string QwenXMLToolCallingToEBNF(const std::string& schema, bool any_order)
        true,
        std::nullopt,
        JSONFormat::kQwenXML,
@@ -3949,7 +4217,7 @@ index da8b516..62cd45f 100644
 +      reject_unsupported
    );
  }
- 
+
 -std::string MiniMaxXMLToolCallingToEBNF(const std::string& schema, bool any_order) {
 +std::string MiniMaxXMLToolCallingToEBNF(
 +    const std::string& schema, bool any_order, bool require_object_root, bool reject_unsupported
@@ -3957,7 +4225,7 @@ index da8b516..62cd45f 100644
    picojson::value json_value;
    std::string err = picojson::parse(json_value, schema);
    if (!err.empty()) {
-@@ -3446,11 +5739,16 @@ std::string MiniMaxXMLToolCallingToEBNF(const std::string& schema, bool any_orde
+@@ -3446,11 +6006,16 @@ std::string MiniMaxXMLToolCallingToEBNF(const std::string& schema, bool any_orde
        true,
        std::nullopt,
        JSONFormat::kMiniMaxXML,
@@ -3968,7 +4236,7 @@ index da8b516..62cd45f 100644
 +      reject_unsupported
    );
  }
- 
+
 -std::string DeepSeekXMLToolCallingToEBNF(const std::string& schema, bool any_order) {
 +std::string DeepSeekXMLToolCallingToEBNF(
 +    const std::string& schema, bool any_order, bool require_object_root, bool reject_unsupported
@@ -3976,7 +4244,7 @@ index da8b516..62cd45f 100644
    picojson::value json_value;
    std::string err = picojson::parse(json_value, schema);
    if (!err.empty()) {
-@@ -3464,11 +5762,16 @@ std::string DeepSeekXMLToolCallingToEBNF(const std::string& schema, bool any_ord
+@@ -3464,11 +6029,16 @@ std::string DeepSeekXMLToolCallingToEBNF(const std::string& schema, bool any_ord
        true,
        std::nullopt,
        JSONFormat::kDeepSeekXML,
@@ -3987,7 +4255,7 @@ index da8b516..62cd45f 100644
 +      reject_unsupported
    );
  }
- 
+
 -std::string GlmXMLToolCallingToEBNF(const std::string& schema, bool any_order) {
 +std::string GlmXMLToolCallingToEBNF(
 +    const std::string& schema, bool any_order, bool require_object_root, bool reject_unsupported
@@ -3995,7 +4263,7 @@ index da8b516..62cd45f 100644
    picojson::value json_value;
    std::string err = picojson::parse(json_value, schema);
    if (!err.empty()) {
-@@ -3482,7 +5785,10 @@ std::string GlmXMLToolCallingToEBNF(const std::string& schema, bool any_order) {
+@@ -3482,7 +6052,10 @@ std::string GlmXMLToolCallingToEBNF(const std::string& schema, bool any_order) {
        true,
        std::nullopt,
        JSONFormat::kGlmXML,
@@ -4006,15 +4274,15 @@ index da8b516..62cd45f 100644
 +      reject_unsupported
    );
  }
- 
+
 diff --git a/cpp/json_schema_converter.h b/cpp/json_schema_converter.h
 index f0175ba..c4281e8 100644
 --- a/cpp/json_schema_converter.h
 +++ b/cpp/json_schema_converter.h
 @@ -9,6 +9,7 @@
- 
+
  #include <picojson.h>
- 
+
 +#include <cstdint>
  #include <functional>
  #include <memory>
@@ -4027,7 +4295,7 @@ index f0175ba..c4281e8 100644
 +  // declared-property rule, and the additional-properties key pattern
 +  // excludes them so they cannot be emitted.
 +  std::vector<std::string> forbidden_keys;
- 
+
    bool allow_additional_properties = false;
    SchemaSpecPtr additional_properties_schema;
 @@ -110,12 +115,14 @@ struct ObjectSpec {
@@ -4035,14 +4303,14 @@ index f0175ba..c4281e8 100644
  struct ConstSpec {
    std::string json_value;  // JSON serialized value
 +  picojson::value parsed_json_value;  // parsed form of json_value
- 
+
    std::string ToString() const;
  };
- 
+
  struct EnumSpec {
    std::vector<std::string> json_values;  // JSON serialized values
 +  std::vector<picojson::value> parsed_json_values;  // parsed forms of json_values
- 
+
    std::string ToString() const;
  };
 @@ -262,7 +269,12 @@ class JSONSchemaConverter {
@@ -4057,12 +4325,12 @@ index f0175ba..c4281e8 100644
 +      std::string bare_key_pattern_forbidden = "",
 +      bool keys_are_bare = false
    );
- 
+
    virtual ~JSONSchemaConverter() = default;
 @@ -316,14 +328,61 @@ class JSONSchemaConverter {
        const std::string& rule_name_suffix
    );
- 
+
 +  /*! \brief Opening/closing EBNF delimiter fragments wrapping a string body in
 +   * GenerateString (format/pattern/length ladder). The JSON `"` byte quote, or
 +   * the configured token-delimited pair when a string value delimiter is set. */
@@ -4085,7 +4353,7 @@ index f0175ba..c4281e8 100644
 +
    /*! \brief Get the basic string rule name. Override for different formats. */
    virtual std::string GetKeyPattern() const;
- 
+
 -  /*! \brief Get a key pattern that excludes specific property names. */
 +  /*! \brief Get a key pattern that excludes the declared property names, plus
 +   * the forbidden (false-schema) keys of the object currently being generated
@@ -4093,7 +4361,7 @@ index f0175ba..c4281e8 100644
    virtual std::string GetKeyPatternExcluding(
        const std::vector<ObjectSpec::Property>& properties, const std::string& rule_name
    );
- 
+
 +  /*! \brief Build an additional-key pattern over a bare-key terminal of shape
 +   * [first][cont]* that excludes the declared property names and the current
 +   * object's forbidden keys. Returns nullopt when the terminal cannot be
@@ -4121,11 +4389,11 @@ index f0175ba..c4281e8 100644
 +
    /*! \brief Get the basic any rule name. Override for different formats. */
    virtual std::string GetBasicAnyRuleName() const;
- 
+
 @@ -350,6 +409,11 @@ class JSONSchemaConverter {
    /*! \brief Get whitespace pattern. */
    std::string GetWhitespacePattern() const;
- 
+
 +  /*! \brief EBNF terminal referencing a vocabulary token by id: "Token(<id>)".
 +   * Used to emit a special structural token (string delimiter, XML marker) that
 +   * the tokenizer masks out of byte-level content matching. */
@@ -4161,7 +4429,7 @@ index f0175ba..c4281e8 100644
 +  // CurrentForbiddenKeys(). Object generation nests, so this is saved/restored
 +  // around GenerateObject. Null means none.
 +  const std::vector<std::string>* current_forbidden_keys_ = nullptr;
- 
+
   public:
    // Basic rule names
 @@ -413,6 +494,13 @@ class JSONSchemaConverter {
@@ -4175,13 +4443,13 @@ index f0175ba..c4281e8 100644
 +  // identically to the renderer (e.g. to test a propertyNames format regex
 +  // against a bare-key forbidden set).
 +  static std::optional<std::string> JSONFormatToRegexPattern(const std::string& format);
- 
+
   protected:
    GenerateCacheManager rule_cache_manager_;
 @@ -420,6 +508,15 @@ class JSONSchemaConverter {
   private:
    void AddHelperRules();
- 
+
 +  std::string DelimiterTokenTerminal() const;
 +  std::string ExcludeStringContentArgs() const;
 +  // EBNF body for a token-delimited string value: the delimiter token, a run of
@@ -4196,7 +4464,7 @@ index f0175ba..c4281e8 100644
    RefResolver ref_resolver_;  // Resolves $ref URI to SchemaSpecPtr at generate time
 @@ -451,8 +548,6 @@ class JSONSchemaConverter {
    static std::string JSONStrToPrintableStr(const std::string& json_str);
- 
+
   protected:
 -  static std::optional<std::string> JSONFormatToRegexPattern(const std::string& format);
 -
@@ -4229,7 +4497,7 @@ index f0175ba..c4281e8 100644
 +    // a Token(id) reference instead of a byte literal. See XMLToolCallingConverter.
 +    std::vector<int32_t> xml_marker_token_ids = {}
  );
- 
+
  /*!
 @@ -535,7 +649,23 @@ std::string JSONSchemaToEBNF(
      bool strict_mode = true,
@@ -4254,7 +4522,7 @@ index f0175ba..c4281e8 100644
 +    // a Token(id) reference instead of a byte literal. See XMLToolCallingConverter.
 +    std::vector<int32_t> xml_marker_token_ids = {}
  );
- 
+
  /*!
 @@ -559,7 +689,12 @@ std::string GenerateFloatRangeRegex(
   * \return The ebnf-grammar to match the requirements of the schema, and
@@ -4267,7 +4535,7 @@ index f0175ba..c4281e8 100644
 +    bool require_object_root = false,
 +    bool reject_unsupported = false
 +);
- 
+
  /*!
   * \brief Convert a function call to a Grammar.
 @@ -567,7 +702,12 @@ std::string QwenXMLToolCallingToEBNF(const std::string& schema, bool any_order =
@@ -4281,7 +4549,7 @@ index f0175ba..c4281e8 100644
 +    bool require_object_root = false,
 +    bool reject_unsupported = false
 +);
- 
+
  /*!
   * \brief Convert a function call to a Grammar.
 @@ -575,7 +715,12 @@ std::string MiniMaxXMLToolCallingToEBNF(const std::string& schema, bool any_orde
@@ -4295,7 +4563,7 @@ index f0175ba..c4281e8 100644
 +    bool require_object_root = false,
 +    bool reject_unsupported = false
 +);
- 
+
  /*!
   * \brief Convert a function call to a Grammar.
 @@ -583,7 +728,12 @@ std::string DeepSeekXMLToolCallingToEBNF(const std::string& schema, bool any_ord
@@ -4309,9 +4577,9 @@ index f0175ba..c4281e8 100644
 +    bool require_object_root = false,
 +    bool reject_unsupported = false
 +);
- 
+
  }  // namespace xgrammar
- 
+
 diff --git a/cpp/json_schema_converter_ext.cc b/cpp/json_schema_converter_ext.cc
 index 4f1cc65..12d580a 100644
 --- a/cpp/json_schema_converter_ext.cc
@@ -4319,11 +4587,11 @@ index 4f1cc65..12d580a 100644
 @@ -5,6 +5,8 @@
   */
  #include "json_schema_converter_ext.h"
- 
+
 +#include <picojson.h>
 +
  #include <unordered_map>
- 
+
  #include "json_schema_converter.h"
 @@ -17,6 +19,7 @@ const std::string XMLToolCallingConverter::kXMLString = "xml_string";
  const std::string XMLToolCallingConverter::kXMLAny = "xml_any";
@@ -4382,7 +4650,7 @@ index 4f1cc65..12d580a 100644
 +  }
 +  return "\"" + literal + "\"";
 +}
- 
+
  std::string XMLToolCallingConverter::Convert(const SchemaSpecPtr& spec) {
    nested_object_level_ = 0;
 @@ -63,16 +101,34 @@ void XMLToolCallingConverter::AddBasicRules() {
@@ -4429,11 +4697,11 @@ index 4f1cc65..12d580a 100644
 +  }
    constexpr const char* kStringCacheKey = "{\"type\":\"string\"}";
    AddCache(kStringCacheKey, kXMLString);
- 
+
 @@ -85,19 +141,22 @@ void XMLToolCallingConverter::AddBasicRules() {
    // Reset the nested object level to 0, which is the root level.
    nested_object_level_ = 0;
- 
+
 -  // Add XML object rule
 -  constexpr const char* kObjectCacheKey = "{\"type\":\"object\"}";
 +  // Add XML object rule. kXMLObject is the outer, brace-less object body used by
@@ -4451,13 +4719,13 @@ index 4f1cc65..12d580a 100644
    std::string obj_body = GenerateObject(std::get<ObjectSpec>(obj_spec->spec), kXMLObject);
    ebnf_script_creator_.AddRule(kXMLObject, obj_body);
 -  AddCache(kObjectCacheKey, kXMLObject);
- 
+
    // Add XML variable name rule
 -  std::string var_body = "[a-zA-Z_][a-zA-Z0-9_]*";
 -  ebnf_script_creator_.AddRule(kXMLVariableName, var_body);
 +  ebnf_script_creator_.AddRule(kXMLVariableName, kXMLVariableNameTerminal);
  }
- 
+
  std::string XMLToolCallingConverter::GetKeyPattern() const {
 @@ -118,7 +177,11 @@ std::string XMLToolCallingConverter::GetKeyPatternExcluding(
      const std::vector<ObjectSpec::Property>& properties, const std::string& rule_name
@@ -4475,7 +4743,7 @@ index 4f1cc65..12d580a 100644
 @@ -155,17 +218,19 @@ std::string XMLToolCallingConverter::GenerateString(
        return converted_regex;
      }
- 
+
 -    // Check for length constraints
 +    // Check for length constraints. The bare value is a run of non-control
 +    // bytes terminated by the value close marker (appended by FormatProperty).
@@ -4501,7 +4769,7 @@ index 4f1cc65..12d580a 100644
    }
    return JSONSchemaConverter::GenerateString(spec, rule_name);
 @@ -230,7 +295,8 @@ std::string XMLToolCallingConverter::GenerateEnum(
- 
+
  std::string XMLToolCallingConverter::FormatPropertyKey(const std::string& key) {
    if (nested_object_level_ <= 1) {
 -    return "\"" + xml_wrapper_.key_wrapper_prefix + key + xml_wrapper_.key_wrapper_suffix + "\"";
@@ -4574,14 +4842,14 @@ index 8d778e0..d594393 100644
 @@ -7,8 +7,10 @@
  #ifndef XGRAMMAR_JSON_SCHEMA_CONVERTER_EXT_H_
  #define XGRAMMAR_JSON_SCHEMA_CONVERTER_EXT_H_
- 
+
 +#include <cstdint>
  #include <unordered_map>
  #include <utility>
 +#include <vector>
- 
+
  #include "json_schema_converter.h"
- 
+
 @@ -30,7 +32,13 @@ class XMLToolCallingConverter : public JSONSchemaConverter {
        std::optional<int> max_whitespace_cnt,
        RefResolver ref_resolver = nullptr,
@@ -4595,7 +4863,7 @@ index 8d778e0..d594393 100644
 +      bool keys_are_bare = false,
 +      std::vector<int32_t> xml_marker_token_ids = {}
    );
- 
+
    /*! \brief Convert SchemaSpec to EBNF with XML format for root object. Note that this function is
 @@ -90,10 +98,28 @@ class XMLToolCallingConverter : public JSONSchemaConverter {
    static const std::string kXMLAny;
@@ -4616,7 +4884,7 @@ index 8d778e0..d594393 100644
 +  // resolved marker by id keeps its bytes out of string-body content matching so
 +  // a length bound cannot be satisfied by the marker itself.
 +  std::string EmitMarker(XMLMarker marker, const std::string& literal) const;
- 
+
    // Track if we're at the root object level
    int nested_object_level_ = 0;
    const XMLWrapper xml_wrapper_;
@@ -4624,16 +4892,16 @@ index 8d778e0..d594393 100644
 +  // means all markers fall back to byte literals (current non-glm behavior).
 +  const std::vector<int32_t> xml_marker_token_ids_;
  };
- 
+
  }  // namespace xgrammar
 diff --git a/cpp/regex_converter.cc b/cpp/regex_converter.cc
-index 76a0f4c..31fcfb2 100644
+index 76a0f4c..fc2003e 100644
 --- a/cpp/regex_converter.cc
 +++ b/cpp/regex_converter.cc
 @@ -4,11 +4,15 @@
   */
  #include "regex_converter.h"
- 
+
 +#include <cstdio>
 +#include <deque>
  #include <iostream>
@@ -4641,7 +4909,7 @@ index 76a0f4c..31fcfb2 100644
  #include <unordered_map>
 +#include <utility>
  #include <vector>
- 
+
 +#include "fsm_builder.h"
  #include "support/encoding.h"
  #include "support/logging.h"
@@ -4665,7 +4933,7 @@ index 76a0f4c..31fcfb2 100644
 +    ParseForbiddenRanges();
    }
    std::string Convert();
- 
+
 +  // Whether the last Convert() saw a POSITIVE literal or positive char-class
 +  // member in the forbidden set (see RegexMatchesForbidden).
 +  bool MatchedForbiddenPositive() const { return matched_forbidden_positive_; }
@@ -4677,7 +4945,7 @@ index 76a0f4c..31fcfb2 100644
    /**
     * \brief Add a segment string to the result EBNF string. It especially adds a space if needed
 @@ -46,16 +61,43 @@ class RegexConverter {
- 
+
    std::string HandleCharacterClass();
    std::string HandleRepetitionRange();
 -  std::string HandleCharEscape();
@@ -4703,7 +4971,7 @@ index 76a0f4c..31fcfb2 100644
     * "(?:abc)" is a non-capturing group.
     */
    void HandleGroupModifier();
- 
+
 +  // Parse forbidden_chars_ (an EBNF char-class body) into codepoint ranges so a
 +  // positive literal / class member can be tested for membership.
 +  void ParseForbiddenRanges();
@@ -4735,12 +5003,12 @@ index 76a0f4c..31fcfb2 100644
 -  return char_class;
 +  return MakeCharClassJsonSafe(char_class);
  }
- 
+
  // {x}: Match exactly x occurrences of the preceding regular expression.
 @@ -141,7 +188,179 @@ std::string RegexConverter::HandleRepetitionRange() {
    return result;
  }
- 
+
 -std::string RegexConverter::HandleCharEscape() {
 +// Iterate a char-class body (no enclosing `[]`), invoking emit(lo, hi) for each
 +// member or `lo-hi` range. Endpoints are UTF-8/escaped; `-` and `]` are literals.
@@ -4951,7 +5219,7 @@ index 76a0f4c..31fcfb2 100644
 +    return FormatCharLiteral(current_[-1], json_escape);
    }
  }
- 
+
 @@ -235,19 +454,19 @@ std::string RegexConverter::HandleEscape() {
      return "[0-9]";
    } else if (current_[1] == 'D') {
@@ -4984,7 +5252,7 @@ index 76a0f4c..31fcfb2 100644
 +    return "\"" + HandleCharEscape(/*json_escape=*/true) + "\"";
    }
  }
- 
+
 @@ -371,12 +590,14 @@ std::string RegexConverter::Convert() {
        AddEBNFSegment(HandleEscape());
      } else if (*current_ == '.') {
@@ -5005,7 +5273,7 @@ index 76a0f4c..31fcfb2 100644
 @@ -393,8 +614,10 @@ std::string RegexConverter::Convert() {
    return result_ebnf_;
  }
- 
+
 -std::string RegexToEBNF(const std::string& regex, bool with_rule_name) {
 -  RegexConverter converter(regex);
 +std::string RegexToEBNF(
@@ -5018,7 +5286,7 @@ index 76a0f4c..31fcfb2 100644
 @@ -402,4 +625,208 @@ std::string RegexToEBNF(const std::string& regex, bool with_rule_name) {
    }
  }
- 
+
 +bool RegexMatchesForbidden(const std::string& regex, const std::string& forbidden_chars) {
 +  RegexConverter converter(regex, forbidden_chars);
 +  converter.Convert();
@@ -5231,15 +5499,15 @@ index fcb3442..c72d2fa 100644
 @@ -7,14 +7,82 @@
  #ifndef XGRAMMAR_REGEX_CONVERTER_H_
  #define XGRAMMAR_REGEX_CONVERTER_H_
- 
+
 +#include <cstdint>
 +#include <optional>
 +#include <set>
  #include <string>
 +#include <utility>
- 
+
  namespace xgrammar {
- 
+
  /*!
   * \brief Convert a regex string to EBNF grammar string.
 + * \param forbidden_chars An EBNF character-class body (e.g. `\"\\\x00-\x1F`) of
@@ -5309,9 +5577,9 @@ index fcb3442..c72d2fa 100644
 + * callers fall back rather than act on a partial expansion.
 + */
 +std::optional<std::set<char>> ExpandCharClassBodyToASCIISet(const std::string& class_body);
- 
+
  }  // namespace xgrammar
- 
+
 diff --git a/cpp/structural_tag.cc b/cpp/structural_tag.cc
 index 592de70..f4c8f52 100644
 --- a/cpp/structural_tag.cc
@@ -5351,11 +5619,11 @@ index 592de70..f4c8f52 100644
 +  }
    return picojson::value(std::move(obj));
  }
- 
+
 @@ -519,6 +548,10 @@ Result<ConstStringFormat, ISTError> StructuralTagParser::ParseConstStringFormat(
    return ResultOk<ConstStringFormat>(value_it->second.get<std::string>());
  }
- 
+
 +Result<std::vector<std::variant<int32_t, std::string>>, ISTError> ParseIntOrStringArray(
 +    const picojson::value& val, const std::string& field_name
 +);
@@ -5377,7 +5645,7 @@ index 592de70..f4c8f52 100644
 @@ -555,8 +588,149 @@ Result<JSONSchemaFormat, ISTError> StructuralTagParser::ParseJSONSchemaFormat(
      any_order = any_order_it->second.get<bool>();
    }
- 
+
 +  std::optional<std::variant<int32_t, std::string>> string_value_delimiter_token = std::nullopt;
 +  auto delim_it = obj.find("string_value_delimiter_token");
 +  if (delim_it != obj.end() && !delim_it->second.is<picojson::null>()) {
@@ -5523,20 +5791,20 @@ index 592de70..f4c8f52 100644
 +      std::move(separators)
 +  );
  }
- 
+
  Result<AnyTextFormat, ISTError> StructuralTagParser::ParseAnyTextFormat(const picojson::object& obj
 @@ -1194,6 +1368,7 @@ class StructuralTagTokenResolver {
    std::optional<ISTError> ResolveIntOrStringVec(
        const std::vector<std::variant<int32_t, std::string>>& input, std::vector<int32_t>* output
    );
 +  std::optional<ISTError> ResolveJSONSchemaFormat(JSONSchemaFormat* fmt);
- 
+
    const std::optional<TokenizerInfo>& tokenizer_info_;
  };
 @@ -1251,6 +1426,84 @@ std::optional<ISTError> StructuralTagTokenResolver::ResolveIntOrStringVec(
    return std::nullopt;
  }
- 
+
 +// Structural XML markers that are single tokens in the vocabulary, in
 +// XMLWrapper order (key-open, key-close, value-open, value-close). Only glm_xml
 +// currently uses atomic single-token markers; the other XML styles embed the
@@ -5630,7 +5898,7 @@ index 592de70..f4c8f52 100644
 @@ -1785,7 +2040,8 @@ bool StructuralTagGrammarConverter::IsPrefix(
           std::string_view(full_str).substr(0, prefix.size()) == prefix;
  }
- 
+
 -Result<Grammar, ISTError> StructuralTagGrammarConverter::Convert(const StructuralTag& structural_tag
 +Result<Grammar, ISTError> StructuralTagGrammarConverter::Convert(
 +    const StructuralTag& structural_tag
@@ -5639,7 +5907,7 @@ index 592de70..f4c8f52 100644
    auto result = converter.Visit(structural_tag.format);
 @@ -1834,43 +2090,43 @@ Result<int, ISTError> StructuralTagGrammarConverter::VisitSub(const ConstStringF
  }
- 
+
  Result<int, ISTError> StructuralTagGrammarConverter::VisitSub(const JSONSchemaFormat& format) {
 -  const static std::unordered_map<std::string, std::function<std::string(const std::string&, bool)>>
 -      style_to_grammar_converter = {
@@ -5785,7 +6053,7 @@ index 88e990e..a78261e 100644
 +        separators(std::move(separators)) {}
    picojson::value ToJSON() const;
  };
- 
+
 diff --git a/cpp/tokenizer_info.cc b/cpp/tokenizer_info.cc
 index 24f5d27..f1406b3 100644
 --- a/cpp/tokenizer_info.cc
@@ -5797,7 +6065,7 @@ index 24f5d27..f1406b3 100644
 +#include <unordered_set>
  #include <variant>
  #include <vector>
- 
+
 @@ -268,11 +269,22 @@ TokenizerInfo::Impl::Impl(
      VocabType vocab_type,
      std::optional<int> vocab_size,
@@ -5843,7 +6111,7 @@ index 24f5d27..f1406b3 100644
 -          encoded_vocab, vocab_type, vocab_size, stop_token_ids, add_prefix_space
 +          encoded_vocab, vocab_type, vocab_size, stop_token_ids, add_prefix_space, special_token_ids
        )) {}
- 
+
  int TokenizerInfo::GetVocabSize() const { return pimpl_->GetVocabSize(); }
 diff --git a/cpp/tokenizer_info_impl.h b/cpp/tokenizer_info_impl.h
 index d490b15..8eb50dd 100644
@@ -5857,7 +6125,7 @@ index d490b15..8eb50dd 100644
 +      bool add_prefix_space,
 +      std::optional<std::vector<int32_t>> special_token_ids = std::nullopt
    );
- 
+
    VocabType GetVocabType() const { return vocab_type_; }
 diff --git a/include/xgrammar/compiler.h b/include/xgrammar/compiler.h
 index 9f2caf2..6cc094b 100644
@@ -5872,7 +6140,7 @@ index 9f2caf2..6cc094b 100644
 +      bool require_object_root = false,
 +      bool reject_unsupported = false
    );
- 
+
    /*! \brief Get the compiled grammar for pure JSON. */
 diff --git a/include/xgrammar/grammar.h b/include/xgrammar/grammar.h
 index 4796b62..14e3016 100644
@@ -5887,7 +6155,7 @@ index 4796b62..14e3016 100644
 +      bool require_object_root = false,
 +      bool reject_unsupported = false
    );
- 
+
    /*!
 diff --git a/include/xgrammar/tokenizer_info.h b/include/xgrammar/tokenizer_info.h
 index 6a8e674..1a24754 100644
@@ -5901,5 +6169,5 @@ index 6a8e674..1a24754 100644
 +      bool add_prefix_space = false,
 +      std::optional<std::vector<int32_t>> special_token_ids = std::nullopt
    );
- 
+
    VocabType GetVocabType() const;

@@ -254,6 +254,228 @@ def test_local_ref_compiles() -> None:
     assert _accepts(compiled, '"a"')
 
 
+# An embedded resource: "sub" declares its own "$id" and its own "$defs/x", so
+# the "#/$defs/x" inside it names sub's string, not the document's integer.
+# Resolving against the document root binds the wrong one of the two.
+_EMBEDDED_RESOURCE_SCHEMA = (
+    '{"$defs": {"x": {"type": "integer"},'
+    ' "sub": {"$id": "https://example.com/sub",'
+    ' "$defs": {"x": {"type": "string"}},'
+    ' "type": "object", "properties": {"v": {"$ref": "#/$defs/x"}},'
+    ' "required": ["v"]}},'
+    ' "$ref": "#/$defs/sub"}'
+)
+
+
+def test_ref_under_nested_id_refused() -> None:
+    with pytest.raises(
+        Exception, match="declares a resource below the document root"
+    ):
+        _compiler().compile_json_schema(
+            _EMBEDDED_RESOURCE_SCHEMA, reject_unsupported=True
+        )
+
+
+def test_hash_ref_under_nested_id_refused() -> None:
+    # A bare "#" is a fragment too: inside an embedded resource it means that
+    # resource's root, not the document's.
+    with pytest.raises(
+        Exception, match="declares a resource below the document root"
+    ):
+        _compiler().compile_json_schema(
+            '{"$defs": {"sub": {"$id": "https://example.com/sub",'
+            ' "type": "object", "properties": {"v": {"$ref": "#"}}}},'
+            ' "type": "object", "properties": {"w": {"$ref": "#/$defs/sub"}}}',
+            reject_unsupported=True,
+        )
+
+
+def test_ref_reached_through_nested_id_refused() -> None:
+    with pytest.raises(
+        Exception, match="declares a resource below the document root"
+    ):
+        _compiler().compile_json_schema(
+            '{"$defs": {"x": {"type": "integer"},'
+            ' "sub": {"$id": "https://example.com/sub",'
+            ' "$defs": {"x": {"type": "string"}},'
+            ' "properties": {"inner": {"type": "object",'
+            ' "properties": {"v": {"$ref": "#/$defs/x"}},'
+            ' "required": ["v"]}}}},'
+            ' "type": "object",'
+            ' "properties": {"w": {"$ref": "#/$defs/sub/properties/inner"}},'
+            ' "required": ["w"]}',
+            reject_unsupported=True,
+        )
+
+
+def test_same_ref_text_in_both_resources_refused() -> None:
+    # The root's "#/$defs/x" parses first, so a scope-blind parse cache would
+    # hand its answer to sub's identically spelled one.
+    with pytest.raises(
+        Exception, match="declares a resource below the document root"
+    ):
+        _compiler().compile_json_schema(
+            '{"$defs": {"x": {"type": "integer"},'
+            ' "sub": {"$id": "https://example.com/sub",'
+            ' "$defs": {"x": {"type": "string"}},'
+            ' "type": "object", "properties": {"v": {"$ref": "#/$defs/x"}},'
+            ' "required": ["v"]}},'
+            ' "type": "object",'
+            ' "properties": {"a": {"$ref": "#/$defs/x"},'
+            ' "b": {"$ref": "#/$defs/sub"}},'
+            ' "required": ["a", "b"]}',
+            reject_unsupported=True,
+        )
+
+
+# The refusal is a property of the document, not of any one reference: a
+# declaration below the root is refused even where every reference in the
+# document happens to be a root-resource one. Resolving those correctly needs a
+# base URI per subschema, which this converter does not compute.
+def test_unused_nested_id_refuses_the_document() -> None:
+    with pytest.raises(
+        Exception, match="declares a resource below the document root"
+    ):
+        _compiler().compile_json_schema(
+            '{"$defs": {"x": {"type": "string"},'
+            ' "unused": {"$id": "https://example.com/unused",'
+            ' "type": "integer"}},'
+            ' "type": "object", "properties": {"v": {"$ref": "#/$defs/x"}},'
+            ' "required": ["v"]}',
+            reject_unsupported=True,
+        )
+
+
+def test_allof_beside_unused_nested_id_refuses_the_document() -> None:
+    with pytest.raises(
+        Exception, match="declares a resource below the document root"
+    ):
+        _compiler().compile_json_schema(
+            '{"$defs": {"x": {"type": "string"},'
+            ' "unused": {"$id": "https://example.com/unused", "type": "integer"}},'
+            ' "allOf": [{"$ref": "#/$defs/x"}]}',
+            reject_unsupported=True,
+        )
+
+
+# An unknown extension keyword is an annotation whose value is arbitrary JSON,
+# so an "$id" member inside it is a name and declares nothing.
+def test_annotation_keyword_id_does_not_declare_a_resource() -> None:
+    compiled = _compiler().compile_json_schema(
+        '{"type": "string", "x-metadata": {"$id": "not-a-schema"}}',
+        reject_unsupported=True,
+    )
+    assert _accepts(compiled, '"a"')
+    assert not _accepts(compiled, "1")
+
+
+def test_empty_nested_id_refuses_the_document() -> None:
+    # "" is a valid URI-reference, so this is a declaration with empty text
+    # rather than no declaration, and sub's own "x" is what its $ref names.
+    with pytest.raises(
+        Exception, match="declares a resource below the document root"
+    ):
+        _compiler().compile_json_schema(
+            '{"$defs": {"x": {"type": "integer"},'
+            ' "sub": {"$id": "", "$defs": {"x": {"type": "string"}},'
+            ' "$ref": "#/$defs/x"}},'
+            ' "$ref": "#/$defs/sub"}',
+            reject_unsupported=True,
+        )
+
+
+def test_definition_named_id_does_not_open_resource() -> None:
+    compiled = _compiler().compile_json_schema(
+        '{"$defs": {"$id": {"type": "string"}},'
+        ' "allOf": [{"$ref": "#/$defs/$id"}]}',
+        reject_unsupported=True,
+    )
+    assert _accepts(compiled, '"a"')
+    assert not _accepts(compiled, "1")
+
+
+def test_definition_named_id_can_contain_embedded_resource() -> None:
+    with pytest.raises(
+        Exception, match="declares a resource below the document root"
+    ):
+        _compiler().compile_json_schema(
+            '{"$defs": {"x": {"type": "integer"},'
+            ' "$id": {"$id": "https://example.com/sub",'
+            ' "$defs": {"x": {"type": "string"}},'
+            ' "$ref": "#/$defs/x"}},'
+            ' "$ref": "#/$defs/$id"}',
+            reject_unsupported=True,
+        )
+
+
+def test_ref_under_root_id_still_compiles() -> None:
+    compiled = _compiler().compile_json_schema(
+        '{"$id": "https://example.com/root",'
+        ' "$defs": {"x": {"type": "string"}},'
+        ' "type": "object", "properties": {"v": {"$ref": "#/$defs/x"}},'
+        ' "required": ["v"]}',
+        reject_unsupported=True,
+    )
+    assert _accepts(compiled, '{"v": "a"}')
+    assert not _accepts(compiled, '{"v": 1}')
+
+
+# The root's "$id" text repeated below the root, on instance data. "examples"
+# holds values rather than subschemas, so the scan does not descend into it and
+# the only declaration in this document is the root's own.
+_ROOT_ID_IN_INSTANCE_DATA_SCHEMA = (
+    '{"$id": "https://example/root",'
+    ' "examples": [{"$id": "https://example/root"}],'
+    ' "$defs": {"x": {"type": "string"}},'
+    ' "$ref": "#/$defs/x"}'
+)
+
+
+def test_ref_under_root_id_repeated_below_root_compiles() -> None:
+    compiled = _compiler().compile_json_schema(
+        _ROOT_ID_IN_INSTANCE_DATA_SCHEMA, reject_unsupported=True
+    )
+    assert _accepts(compiled, '"a"')
+    assert not _accepts(compiled, "1")
+
+
+def test_root_id_repeated_below_root_permissive_unchanged() -> None:
+    compiled = _compiler().compile_json_schema(_ROOT_ID_IN_INSTANCE_DATA_SCHEMA)
+    assert _accepts(compiled, '"a"')
+
+
+def test_instance_id_does_not_rebase_allof_ref() -> None:
+    compiled = _compiler().compile_json_schema(
+        '{"examples": [{"$id": "https://example.com/instance"}],'
+        ' "$defs": {"x": {"type": "string"}},'
+        ' "allOf": [{"$ref": "#/$defs/x"}]}',
+        reject_unsupported=True,
+    )
+    assert _accepts(compiled, '"a"')
+    assert not _accepts(compiled, "1")
+
+
+def test_ref_under_duplicate_root_id_refused() -> None:
+    with pytest.raises(
+        Exception, match="declares a resource below the document root"
+    ):
+        _compiler().compile_json_schema(
+            '{"$id": "https://example.com/root",'
+            ' "$defs": {"x": {"type": "integer"},'
+            ' "sub": {"$id": "https://example.com/root",'
+            ' "$defs": {"x": {"type": "string"}},'
+            ' "type": "object", "properties": {"v": {"$ref": "#/$defs/x"}},'
+            ' "required": ["v"]}},'
+            ' "$ref": "#/$defs/sub"}',
+            reject_unsupported=True,
+        )
+
+
+def test_ref_under_nested_id_permissive_unchanged() -> None:
+    compiled = _compiler().compile_json_schema(_EMBEDDED_RESOURCE_SCHEMA)
+    assert isinstance(compiled, xgr.CompiledGrammar)
+
+
 def test_dynamic_ref_rejected() -> None:
     # $dynamicRef is a reference (it resolves to a subschema the instance must
     # satisfy), not a no-op annotation; with no other type keyword it would fall
@@ -262,6 +484,232 @@ def test_dynamic_ref_rejected() -> None:
         _compiler().compile_json_schema(
             '{"$dynamicRef": "#node"}', reject_unsupported=True
         )
+
+
+def test_dynamic_and_recursive_ref_with_type_rejected() -> None:
+    for keyword in ("$dynamicRef", "$recursiveRef"):
+        with pytest.raises(
+            Exception, match=f"unsupported schema keyword: \\{keyword}"
+        ):
+            _compiler().compile_json_schema(
+                f'{{"type": "integer", "{keyword}": "#"}}',
+                reject_unsupported=True,
+            )
+
+
+def test_legacy_id_keyword_rejected() -> None:
+    # Draft 4 spells the identifier "id", so a nested one declares a resource
+    # on the same terms as "$id", and the refusal quotes the keyword the
+    # document actually used rather than one it never wrote.
+    with pytest.raises(Exception) as excinfo:
+        _compiler().compile_json_schema(
+            '{"$schema": "http://json-schema.org/draft-04/schema#",'
+            ' "definitions": {"x": {"type": "integer"},'
+            ' "sub": {"id": "sub", "definitions": {"x": {"type": "string"}},'
+            ' "type": "object", "properties": {"v": {"$ref": "#/definitions/x"}},'
+            ' "required": ["v"]}}, "$ref": "#/definitions/sub"}',
+            reject_unsupported=True,
+        )
+    message = str(excinfo.value)
+    assert "declares a resource below the document root" in message
+    assert '"id" "sub"' in message
+    assert "$id" not in message
+
+
+def test_draft_03_refused_as_an_unmodelled_dialect() -> None:
+    # Draft 3 names resources with "id" and puts subschemas under "extends",
+    # which the scan does not walk. Reading it as a modern document would walk
+    # past the resource this one declares, so the dialect is refused instead.
+    with pytest.raises(Exception, match='unsupported "\\$schema" dialect'):
+        _compiler().compile_json_schema(
+            '{"$schema": "http://json-schema.org/draft-03/schema#",'
+            ' "type": "string", "extends": {"id": "sub"}}',
+            reject_unsupported=True,
+        )
+
+
+def test_custom_schema_uri_spelling_a_draft_is_not_that_draft() -> None:
+    # A vendor URI that merely spells a draft is not that draft, and is not a
+    # dialect this converter models either, so the document is refused rather
+    # than read under a guessed identifier spelling.
+    with pytest.raises(Exception, match='unsupported "\\$schema" dialect'):
+        _compiler().compile_json_schema(
+            '{"$schema": "https://example.com/schemas/draft-04-migration/v1",'
+            ' "$defs": {"x": {"type": "integer"},'
+            ' "sub": {"$id": "https://example.com/sub",'
+            ' "$defs": {"x": {"type": "string"}},'
+            ' "$ref": "#/$defs/x"}},'
+            ' "$ref": "#/$defs/sub"}',
+            reject_unsupported=True,
+        )
+
+
+@pytest.mark.parametrize(
+    "metaschema",
+    [
+        "http://json-schema.org/draft-06/schema#",
+        "http://json-schema.org/draft-07/schema#",
+        "https://json-schema.org/draft/2019-09/schema",
+        "https://json-schema.org/draft/2020-12/schema",
+    ],
+)
+def test_recognized_modern_metaschemas_compile(metaschema: str) -> None:
+    compiled = _compiler().compile_json_schema(
+        json.dumps(
+            {
+                "$schema": metaschema,
+                "definitions": {"s": {"type": "string"}},
+                "$ref": "#/definitions/s",
+            }
+        ),
+        reject_unsupported=True,
+    )
+    assert _accepts(compiled, '"a"')
+    assert not _accepts(compiled, "1")
+
+
+def test_modern_dialect_bare_id_is_not_an_identifier() -> None:
+    # Draft 6 renamed the identifier to "$id" and left "id" an ordinary
+    # annotation, so a draft 7 subschema carrying one declares no resource.
+    compiled = _compiler().compile_json_schema(
+        '{"$schema": "http://json-schema.org/draft-07/schema#",'
+        ' "definitions": {"s": {"id": "metadata", "type": "string"}},'
+        ' "$ref": "#/definitions/s"}',
+        reject_unsupported=True,
+    )
+    assert _accepts(compiled, '"a"')
+    assert not _accepts(compiled, "1")
+
+
+def test_malformed_root_legacy_id_rejected() -> None:
+    # The root's identifier declares nothing to refuse, but an unreadable one
+    # is unreadable there too.
+    with pytest.raises(Exception, match='"id" must be a string'):
+        _compiler().compile_json_schema(
+            '{"$schema": "http://json-schema.org/draft-04/schema#",'
+            ' "id": {}, "type": "string"}',
+            reject_unsupported=True,
+        )
+
+
+def test_permissive_raw_percent_pointer_unchanged() -> None:
+    # Upstream read a fragment raw, so a member whose name carries a literal
+    # "%" still resolves when unsupported-schema rejection is off.
+    compiled = _compiler().compile_json_schema(
+        '{"definitions": {"x%": {"type": "string"}}, "$ref": "#/definitions/x%"}'
+    )
+    assert _accepts(compiled, '"a"')
+
+
+def test_root_legacy_id_still_compiles() -> None:
+    # A root "id" names the document's sole resource, exactly as a root "$id"
+    # does, so every fragment still resolves against the document.
+    compiled = _compiler().compile_json_schema(
+        '{"$schema": "http://json-schema.org/draft-04/schema#",'
+        ' "id": "https://example.com/root",'
+        ' "definitions": {"x": {"type": "string"}},'
+        ' "$ref": "#/definitions/x"}',
+        reject_unsupported=True,
+    )
+    assert _accepts(compiled, '"a"')
+    assert not _accepts(compiled, "1")
+
+
+def test_percent_encoded_pointer_separator_compiles() -> None:
+    # RFC 6901 evaluates a fragment once percent-decoded, so encoding the
+    # pointer's own separators names the same place as writing them plainly.
+    compiled = _compiler().compile_json_schema(
+        '{"$defs": {"x": {"type": "string"}}, "$ref": "#%2F$defs%2Fx"}',
+        reject_unsupported=True,
+    )
+    assert _accepts(compiled, '"a"')
+    assert not _accepts(compiled, "1")
+
+
+def test_percent_encoded_local_ref_compiles() -> None:
+    for schema in (
+        '{"$defs": {"a b": {"type": "string"}}, "$ref": "#/$defs/a%20b"}',
+        '{"$defs": {"x": {"type": "string"}}, "$ref": "#/%24defs/x"}',
+        '{"$defs": {"a": {"b": {"type": "string"}},'
+        ' "a/b": {"type": "integer"}}, "$ref": "#/$defs/a%2Fb"}',
+    ):
+        compiled = _compiler().compile_json_schema(
+            schema, reject_unsupported=True
+        )
+        assert _accepts(compiled, '"a"')
+        assert not _accepts(compiled, "1")
+
+
+@pytest.mark.parametrize("ref", ["#/x%", "#/x%GG"])
+def test_malformed_percent_ref_rejected(ref: str) -> None:
+    with pytest.raises(
+        Exception,
+        match=r"malformed percent escape.*must be followed by two hexadecimal digits",
+    ):
+        _compiler().compile_json_schema(
+            json.dumps({"$ref": ref}), reject_unsupported=True
+        )
+
+
+def test_malformed_id_rejected_without_recursive_scan() -> None:
+    with pytest.raises(Exception, match='"\\$id" must be a string'):
+        _compiler().compile_json_schema(
+            '{"$defs": {"s": {"$id": {"$id": {"$id": "leaf"}},'
+            ' "type": "string"}}, "$ref": "#/$defs/s"}',
+            reject_unsupported=True,
+        )
+
+
+@pytest.mark.parametrize(
+    ("schema", "error"),
+    [
+        (
+            '{"$defs": {"x": {"type": "integer"},'
+            ' "sub": {"$id": {}, "properties":'
+            ' {"v": {"$ref": "#/$defs/x"}}}},'
+            ' "$ref": "#/$defs/sub/properties/v"}',
+            '"\\$id" must be a string',
+        ),
+        (
+            '{"$schema": "http://json-schema.org/draft-04/schema#",'
+            ' "definitions": {"x": {"type": "integer"},'
+            ' "sub": {"id": "sub", "properties":'
+            ' {"v": {"$ref": "#/definitions/x"}}}},'
+            ' "$ref": "#/definitions/sub/properties/v"}',
+            "declares a resource below the document root",
+        ),
+    ],
+)
+def test_ref_path_validates_ancestor_identifier(
+    schema: str, error: str
+) -> None:
+    with pytest.raises(Exception, match=error):
+        _compiler().compile_json_schema(schema, reject_unsupported=True)
+
+
+@pytest.mark.parametrize(
+    ("schema", "error"),
+    [
+        (
+            '{"$defs": {"sub": {"$id": {},'
+            ' "properties": {"v": {"type": "integer"}}}},'
+            ' "allOf": [{"$ref": "#/$defs/sub/properties/v"}]}',
+            '"\\$id" must be a string',
+        ),
+        (
+            '{"$schema": "http://json-schema.org/draft-04/schema#",'
+            ' "definitions": {"sub": {"id": "sub",'
+            ' "properties": {"v": {"type": "integer"}}}},'
+            ' "allOf": [{"$ref": "#/definitions/sub/properties/v"}]}',
+            "declares a resource below the document root",
+        ),
+    ],
+)
+def test_allof_ref_path_validates_ancestor_identifier(
+    schema: str, error: str
+) -> None:
+    with pytest.raises(Exception, match=error):
+        _compiler().compile_json_schema(schema, reject_unsupported=True)
 
 
 def test_unknown_keyword_without_type_rejected() -> None:
@@ -652,15 +1100,18 @@ def test_allof_conflicting_id_rejected() -> None:
         )
 
 
-def test_allof_matching_id_merges() -> None:
-    # The same $id on both sides is not a conflict.
-    compiled = _compiler().compile_json_schema(
-        '{"allOf": [{"$id": "https://example.com/a", "type": "string"}, '
-        '{"$id": "https://example.com/a", "minLength": 2}]}',
-        reject_unsupported=True,
-    )
-    assert _accepts(compiled, '"ab"')
-    assert not _accepts(compiled, '"a"')
+def test_allof_matching_id_refused() -> None:
+    # Agreeing on the identifier does not make the document one resource: both
+    # members still declare one below the root, and a fragment written in
+    # either would name a place inside it.
+    with pytest.raises(
+        Exception, match="declares a resource below the document root"
+    ):
+        _compiler().compile_json_schema(
+            '{"allOf": [{"$id": "https://example.com/a", "type": "string"}, '
+            '{"$id": "https://example.com/a", "minLength": 2}]}',
+            reject_unsupported=True,
+        )
 
 
 def test_oneof_mixed_integer_and_float_consts_compiles() -> None:
@@ -4171,6 +4622,18 @@ def test_allof_ref_pointer_malformed_escape_refused() -> None:
         )
 
 
+@pytest.mark.parametrize("ref", ["#/x%", "#/x%GG"])
+def test_allof_malformed_percent_ref_rejected(ref: str) -> None:
+    with pytest.raises(
+        Exception,
+        match=r"malformed percent escape.*must be followed by two hexadecimal digits",
+    ):
+        _compiler().compile_json_schema(
+            json.dumps({"type": "object", "allOf": [{"$ref": ref}]}),
+            reject_unsupported=True,
+        )
+
+
 def test_allof_ref_pointer_through_array_refused() -> None:
     # The walk traverses object members only, so a pointer that indexes an array
     # resolves to no target rather than to a guessed element.
@@ -4187,7 +4650,9 @@ def test_allof_ref_under_nested_id_refused() -> None:
     # An "$id" below the root starts a new base URI, and a "#/..." $ref then
     # points into that resource rather than into the document. The merge does
     # not track base URIs, so it refuses instead of resolving against the root.
-    with pytest.raises(Exception, match='resolves against an "\\$id"'):
+    with pytest.raises(
+        Exception, match="declares a resource below the document root"
+    ):
         _compiler().compile_json_schema(
             '{"type": "object", "$defs": {"s": {"$id": "https://example.com/s",'
             ' "type": "object", "properties": {"x": {"type": "string"}},'
@@ -4197,15 +4662,67 @@ def test_allof_ref_under_nested_id_refused() -> None:
         )
 
 
+def test_allof_ref_declared_under_nested_id_refused() -> None:
+    with pytest.raises(
+        Exception, match="declares a resource below the document root"
+    ):
+        _compiler().compile_json_schema(
+            '{"$defs": {"x": {"type": "integer"},'
+            ' "sub": {"$id": "https://example.com/sub",'
+            ' "$defs": {"x": {"type": "string"}},'
+            ' "allOf": [{"$ref": "#/$defs/x"}]}},'
+            ' "$ref": "#/$defs/sub"}',
+            reject_unsupported=True,
+        )
+
+
+def test_allof_sibling_id_does_not_rebase_a_contributor() -> None:
+    # The flatten merges every contributor key into one object, "$id" included,
+    # so a sibling's identifier would otherwise scope references the second
+    # contributor inlined from the root resource. Refusing the document keeps
+    # the merge from having to carry a base URI it never computed.
+    with pytest.raises(
+        Exception, match="declares a resource below the document root"
+    ):
+        _compiler().compile_json_schema(
+            '{"$defs": {"x": {"type": "string"},'
+            ' "obj": {"type": "object",'
+            ' "properties": {"v": {"$ref": "#/$defs/x"}},'
+            ' "required": ["v"]}},'
+            ' "allOf": [{"$id": "https://example.com/sub", "type": "object"},'
+            ' {"$ref": "#/$defs/obj"}]}',
+            reject_unsupported=True,
+        )
+
+
 def test_allof_ref_beside_id_refused() -> None:
     # "$id" on the member holding the $ref rebases that $ref itself, which the
     # bare-ref test would otherwise wave through as a mere annotation.
-    with pytest.raises(Exception, match='resolves against an "\\$id"'):
+    with pytest.raises(
+        Exception, match="declares a resource below the document root"
+    ):
         _compiler().compile_json_schema(
             '{"type": "object", "$defs": {"s": {"type": "object",'
             ' "properties": {"x": {"type": "string"}}, "required": ["x"]}},'
             ' "allOf": [{"$ref": "#/$defs/s",'
             ' "$id": "https://example.com/other"}]}',
+            reject_unsupported=True,
+        )
+
+
+def test_allof_ref_beside_malformed_id_rejected() -> None:
+    with pytest.raises(Exception, match='"\\$id" must be a string'):
+        _compiler().compile_json_schema(
+            '{"$defs": {"s": {"type": "string"}},'
+            ' "allOf": [{"$id": {}, "$ref": "#/$defs/s"}]}',
+            reject_unsupported=True,
+        )
+
+
+def test_allof_annotation_only_malformed_id_rejected() -> None:
+    with pytest.raises(Exception, match='"\\$id" must be a string'):
+        _compiler().compile_json_schema(
+            '{"type": "string", "allOf": [{"$id": {}}]}',
             reject_unsupported=True,
         )
 

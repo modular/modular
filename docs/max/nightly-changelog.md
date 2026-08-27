@@ -646,6 +646,26 @@ the [container](/container) page now links to the new page.
   result. Regex length analysis has a per-schema work limit, so oversized
   patterns return 400 promptly.
 
+- Fixed JSON Schema compilation resolving a local `$ref` against the wrong
+  resource when the document declares a resource identifier (`$id`, or `id` in
+  Draft 4) below its root. A fragment names a place inside the resource it is
+  resolved against, and every fragment was resolved against the whole document,
+  so a definition name that appeared in both an embedded resource and at the
+  root bound the root's copy in silence. When unsupported-schema rejection
+  (`reject_unsupported`) is enabled, such a document now returns 400 naming the
+  declaration, rather than compiling a grammar the author never wrote. A
+  document whose only resource identifier sits at the root, or that has none at
+  all, is one resource and is unaffected.
+
+- JSON Schema compilation now recognizes the `$schema` dialects it models:
+  Draft 4, whose resource identifier is `id`, and Drafts 6, 7, 2019-09 and
+  2020-12, whose identifier is `$id`. When unsupported-schema rejection
+  (`reject_unsupported`) is enabled, any other `$schema` returns 400 rather
+  than being read as a modern document, because assuming the wrong dialect
+  walks past the resources a document declares and resolves its fragments
+  against the wrong one. Omitting `$schema`, as most tool schemas do, still
+  means the current draft and is unaffected.
+
 - Speculative decoding takes `--draft-proposal sampled` (default `argmax`,
   unchanged). The draft model samples its proposal under the request's
   temperature/top-k/top-p and keeps the distribution it drew from, so
