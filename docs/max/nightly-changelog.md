@@ -1032,6 +1032,10 @@ the [container](/container) page now links to the new page.
 
 ## Fixes
 
+- Fixed `generate_async` raising `KeyError: Request ID not found in replica
+  batch` when requests in one batch finish on different steps, which happens
+  whenever they are given different `max_new_tokens`.
+
 - Fixed `DeviceExternalFunction` crashing on Metal instead of launching, so
   separately compiled kernels now load and launch there as they already did on
   other GPU backends.
