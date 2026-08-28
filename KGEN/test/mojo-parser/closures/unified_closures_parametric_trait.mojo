@@ -17,7 +17,7 @@
 # and function metadata - are references to the trait's own parameters, so they
 # stay symbolic until the trait is bound.
 
-# CHECK:      lit.trait.decl @"##__mojo_closure__##"<*"P#0": param_list<type>, *"A#1": param_list<type>, *"R#2": type, *"M#3": non_struct_type, *"O#4": param_list<string>
+# CHECK:      lit.trait.decl @"##__mojo_closure__##"<*"P#0": param_list<type>, *"A#1": param_list<type>, *"R#2": type, *"M#3": non_struct_type
 # CHECK:        lit.alias.decl __call__: !kgen.func_gen_type_builder<
 #
 # CHECK-SAME:     #kgen.param_list.concat<#kgen.param_list<[#kgen.quote<trait<@"##__mojo_closure__##"
@@ -28,9 +28,7 @@
 #
 # CHECK-SAME:     #kgen.param.decl.ref<"R#2"> : !kgen.type,
 #
-# CHECK-SAME:     #kgen.param.decl.ref<"M#3"> : !kgen.non_struct_type,
-#
-# CHECK-SAME:     #kgen.param_list.concat<#kgen.param_list<["_self_origin`"], *"O#4"> : !kgen.param_list<param_list<string>>> : !kgen.param_list<string>>
+# CHECK-SAME:     #kgen.param.decl.ref<"M#3"> : !kgen.non_struct_type
 
 # The bound components are quoted; the closure's own references are shifted up
 # by one to make room for `_Self` (so `T` becomes `*(0,1)`).
@@ -39,8 +37,7 @@
 # CHECK-SAME:     :param_list<type> [#kgen.quote<!AnyType_Copyable_Movable>],
 # CHECK-SAME:     :param_list<type> [#kgen.quote<!lit.ref<!lit.struct<#List <:!AnyType_Copyable_Movable *(0,1)>>, imm *[0,1]>>],
 # CHECK-SAME:     :type #kgen.quote<!NoneType>,
-# CHECK-SAME:     :non_struct_type #kgen.fn_metadata<[mut, imm_mem], "none", #lit.fn_meta_origin_data<2>>,
-# CHECK-SAME:     :param_list<string> []>
+# CHECK-SAME:     :non_struct_type #kgen.fn_metadata<[mut, imm_mem], "none", #lit.fn_meta_origin_data<2>>
 comptime ClosureTraitP = def[T: Copyable](List[T]) __param_trait__ -> NoneType
 
 

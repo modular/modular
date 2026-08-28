@@ -4780,7 +4780,6 @@ class FuncGeneratorTypeBuilderType(max._core.Type):
         arg_types: max._core.dialects.builtin.TypedAttr,
         result_type: max._core.dialects.builtin.TypedAttr,
         metadata: max._core.dialects.builtin.TypedAttr,
-        implicit_origin_decls: max._core.dialects.builtin.TypedAttr,
     ) -> None: ...
     @overload
     def __init__(
@@ -4789,7 +4788,6 @@ class FuncGeneratorTypeBuilderType(max._core.Type):
         arg_types: max._core.dialects.builtin.TypedAttr,
         result_type: max._core.dialects.builtin.TypedAttr,
         metadata: max._core.dialects.builtin.TypedAttr,
-        implicit_origin_decls: max._core.dialects.builtin.TypedAttr,
     ) -> None: ...
     @property
     def param_decls(self) -> max._core.dialects.builtin.TypedAttr: ...
@@ -4799,8 +4797,6 @@ class FuncGeneratorTypeBuilderType(max._core.Type):
     def result_type(self) -> max._core.dialects.builtin.TypedAttr: ...
     @property
     def metadata(self) -> max._core.dialects.builtin.TypedAttr: ...
-    @property
-    def implicit_origin_decls(self) -> max._core.dialects.builtin.TypedAttr: ...
 
 class FuncLiteralType(max._core.Type):
     """

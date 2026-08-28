@@ -507,17 +507,14 @@ GeneratorType GeneratorType::getSpecializedGenerator(
 
 Type FuncGeneratorTypeBuilderType::get(MLIRContext *ctx, TypedAttr paramDecls,
                                        TypedAttr argTypes, TypedAttr resultType,
-                                       TypedAttr metadata,
-                                       TypedAttr implicitOriginDecls) {
+                                       TypedAttr metadata) {
   auto cstParamDecls = dyn_cast<ParamListAttr>(paramDecls);
   auto cstArgTypes = dyn_cast<ParamListAttr>(argTypes);
   auto cstMetadata = dyn_cast<FnMetadataAttr>(metadata);
-  auto cstImplicitOriginDecls = dyn_cast<ParamListAttr>(implicitOriginDecls);
 
   // If any of the components are not constants, skip.
-  if (!cstParamDecls || !cstArgTypes || !cstMetadata || !cstImplicitOriginDecls)
-    return Base::get(ctx, paramDecls, argTypes, resultType, metadata,
-                     implicitOriginDecls);
+  if (!cstParamDecls || !cstArgTypes || !cstMetadata)
+    return Base::get(ctx, paramDecls, argTypes, resultType, metadata);
   assert(llvm::all_of(cstParamDecls.getValues(), llvm::IsaPred<QuoteAttr>) &&
          "malformed fn gen builder param decls");
 
@@ -551,18 +548,15 @@ Type FuncGeneratorTypeBuilderType::get(MLIRContext *ctx, TypedAttr paramDecls,
 Type FuncGeneratorTypeBuilderType::getChecked(
     function_ref<InFlightDiagnostic()> emitError, MLIRContext *ctx,
     TypedAttr paramDecls, TypedAttr argTypes, TypedAttr resultType,
-    TypedAttr metadata, TypedAttr implicitOriginDecls) {
-  if (failed(verify(emitError, paramDecls, argTypes, resultType, metadata,
-                    implicitOriginDecls)))
+    TypedAttr metadata) {
+  if (failed(verify(emitError, paramDecls, argTypes, resultType, metadata)))
     return {};
-  return get(ctx, paramDecls, argTypes, resultType, metadata,
-             implicitOriginDecls);
+  return get(ctx, paramDecls, argTypes, resultType, metadata);
 }
 
 LogicalResult FuncGeneratorTypeBuilderType::verify(
     function_ref<InFlightDiagnostic()> emitError, TypedAttr paramDecls,
-    TypedAttr argTypes, TypedAttr resultType, TypedAttr metadata,
-    TypedAttr implicitOriginDecls) {
+    TypedAttr argTypes, TypedAttr resultType, TypedAttr metadata) {
 
   // NOTE:we can not easily verify that this is a list of type values (since
   // type expressions might in different forms between lit/kgen)
@@ -578,14 +572,6 @@ LogicalResult FuncGeneratorTypeBuilderType::verify(
     return emitError()
            << "function metadata should have !kgen.non_struct_type type, not "
            << metadata.getType();
-
-  auto implicitOriginDeclsType =
-      dyn_cast<ParamListType>(implicitOriginDecls.getType());
-  if (!implicitOriginDeclsType ||
-      !isa<StringType>(implicitOriginDeclsType.getElementType()))
-    return emitError() << " expect to have !kgen.param_list<!kgen.string> "
-                          "type for implicit origin decl list, not "
-                       << implicitOriginDecls.getType();
 
   return success();
 }
