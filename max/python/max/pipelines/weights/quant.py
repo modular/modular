@@ -967,6 +967,11 @@ def _is_mxfp4_config(hf_quant_config: dict[str, Any]) -> bool:
             weight_cfg.get("scale_format") == "e8m0"
             and weight_cfg.get("dtype") == "fp4"
         )
+    # compressed-tensors carries the scheme in `format` rather than in
+    # `quant_method`, which it shares with FP8 and INT4 checkpoints, so the
+    # format string is the only thing that distinguishes MXFP4 here.
+    if quant_method.lower() == "compressed-tensors":
+        return "mxfp4" in str(hf_quant_config.get("format", "")).lower()
     return False
 
 
@@ -1052,6 +1057,31 @@ def _parse_mxfp6_config(
         _mxfp6_element_format=_mxfp6_element_format(hf_quant_config),
         can_use_fused_mlp=can_use_fused_mlp(state_dict),
     )
+
+
+def is_mxfp4_checkpoint(huggingface_config: AutoConfig) -> bool:
+    """Reports whether a checkpoint's quantization config describes MXFP4.
+
+    Unlike :func:`parse_quant_config` this reads the HuggingFace config alone,
+    so a caller that must decide before the weights are loaded can still ask.
+    Sizing an expert-parallel dispatch is the motivating case: the dispatch
+    dtype has to be fixed while the ``EPConfig`` is built, which happens before
+    the state dict exists.
+
+    Args:
+        huggingface_config: The config carrying ``quantization_config``. Pass
+            the text config for multimodal checkpoints that nest it there.
+
+    Returns:
+        ``True`` if the checkpoint stores MXFP4 weights.
+    """
+    hf_quant_config = getattr(huggingface_config, "quantization_config", None)
+    # `isinstance`, not a truthiness check: the attribute is untyped, and a
+    # config that carries something other than a mapping would otherwise reach
+    # `_is_mxfp4_config` and fail on `.get`.
+    if not isinstance(hf_quant_config, dict):
+        return False
+    return _is_mxfp4_config(hf_quant_config)
 
 
 def _parse_mxfp4_config(
