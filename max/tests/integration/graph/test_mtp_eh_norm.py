@@ -26,8 +26,17 @@ import torch
 from max.driver import Accelerator, Buffer, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import DeviceRef, Graph, TensorType, ops
+from max.graph import (
+    DeviceRef,
+    Graph,
+    ShardingStrategy,
+    TensorType,
+    TensorValue,
+    ops,
+)
+from max.nn import Module, RMSNorm
 from max.nn.kernels import mtp_eh_norm
+from max.nn.transformer.distributed_transformer import forward_sharded_layers
 from torch.utils.dlpack import from_dlpack
 
 pytestmark = pytest.mark.skipif(
@@ -77,11 +86,13 @@ def _build(hidden_size: int, fused: bool, block_threads: int = 256) -> Graph:
     return g
 
 
-def _to_device(arr: np.ndarray, device: Accelerator) -> Buffer:
+def _cpu_buffer(arr: np.ndarray) -> Buffer:
     # bfloat16 has no numpy dtype; carry the bits through float16.
-    return (
-        Buffer.from_numpy(arr.view(np.float16)).view(DType.bfloat16).to(device)
-    )
+    return Buffer.from_numpy(arr.view(np.float16)).view(DType.bfloat16)
+
+
+def _to_device(arr: np.ndarray, device: Accelerator) -> Buffer:
+    return _cpu_buffer(arr).to(device)
 
 
 def _bf16(rng: np.random.Generator, *shape: int, scale: float) -> np.ndarray:
@@ -158,3 +169,86 @@ def test_rejects_mismatched_inputs() -> None:
         with pytest.raises(ValueError, match="not exceed 1024"):
             mtp_eh_norm(a, a, w, w, EPS, block_threads=2048)
         g.output(a)
+
+
+class _DraftInputPair(Module):
+    """Holds the two norms the way ``DeepseekV3_2NextN`` holds them."""
+
+    def __init__(self, hidden_size: int, eps: float) -> None:
+        super().__init__()
+        devices = [DeviceRef.GPU()]
+        self.enorm = RMSNorm(
+            hidden_size, DType.bfloat16, eps, multiply_before_cast=False
+        )
+        self.enorm.sharding_strategy = ShardingStrategy.replicate(1)
+        self.enorm_shards = self.enorm.shard(devices)
+        self.hnorm = RMSNorm(
+            hidden_size, DType.bfloat16, eps, multiply_before_cast=False
+        )
+        self.hnorm.sharding_strategy = ShardingStrategy.replicate(1)
+        self.hnorm_shards = self.hnorm.shard(devices)
+
+    def __call__(
+        self, embed: TensorValue, prev: TensorValue
+    ) -> tuple[TensorValue, TensorValue]:
+        reference = ops.concat(
+            [
+                forward_sharded_layers(self.enorm_shards, [embed])[0],
+                forward_sharded_layers(self.hnorm_shards, [prev])[0],
+            ],
+            axis=-1,
+        )
+        fused = mtp_eh_norm(
+            embed,
+            prev,
+            self.enorm_shards[0].weight.cast(embed.dtype).to(embed.device),
+            self.hnorm_shards[0].weight.cast(embed.dtype).to(embed.device),
+            self.enorm.eps,
+        )
+        return reference, fused
+
+
+@pytest.mark.parametrize("hidden_size,tokens", [(4096, 4), (1536, 3)])
+def test_matches_the_draft_layer_it_replaces(
+    hidden_size: int, tokens: int
+) -> None:
+    """The fused call must match two rms_norms on the draft layer's own norms.
+
+    The test above compares against ``ops.rms_norm`` directly. This one runs
+    through the objects the draft layer holds, so passing the wrong shard's
+    weight, the wrong device or the wrong epsilon fails here.
+    """
+    rng = np.random.default_rng(7)
+    device = Accelerator()
+    session = InferenceSession(devices=[device])
+    gpu = DeviceRef.GPU()
+    t = TensorType(DType.bfloat16, ["tokens", hidden_size], gpu)
+
+    pair = _DraftInputPair(hidden_size, EPS)
+    # Both norms declare a weight named "weight". The module tree resolves
+    # those to distinct names only when the state dict is loaded, so load it
+    # before building the graph, as the pipeline does.
+    pair.load_state_dict(
+        {
+            "enorm.weight": _cpu_buffer(_bf16(rng, hidden_size, scale=1.0)),
+            "hnorm.weight": _cpu_buffer(_bf16(rng, hidden_size, scale=1.0)),
+        },
+        strict=True,
+    )
+    with Graph("draft_input_pair", input_types=(t, t)) as g:
+        reference, fused = pair(g.inputs[0].tensor, g.inputs[1].tensor)
+        g.output(reference, fused)
+    compiled = session.load(g, weights_registry=pair.state_dict())
+
+    embed_np = _bf16(rng, tokens, hidden_size, scale=1.0)
+    prev_np = _bf16(rng, tokens, hidden_size, scale=4.0)
+    out = compiled.execute(
+        _to_device(embed_np, device), _to_device(prev_np, device)
+    )
+    ref = from_dlpack(out[0]).cpu().view(torch.uint16).numpy()
+    got = from_dlpack(out[1]).cpu().view(torch.uint16).numpy()
+    mismatches = int(np.count_nonzero(ref != got))
+    assert mismatches == 0, (
+        "the draft layer's fused call differs from the two-norm form in"
+        f" {mismatches} of {ref.size} elements"
+    )
