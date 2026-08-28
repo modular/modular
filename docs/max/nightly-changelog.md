@@ -935,6 +935,30 @@ the [container](/container) page now links to the new page.
 
 ## Breaking changes
 
+- The KV connector's external host and disk tiers now report occupancy and
+  transfer volume in bytes rather than in blocks. Those tiers are byte budgets
+  the operator sizes in bytes (`host_offload_max_gb`, `disk_offload_max_gb`),
+  their block width need not match the device's, and bytes rate directly
+  against PCIe and disk bandwidth. The device (G0) cache is unchanged and
+  still reports blocks.
+
+  `KVConnector` replaces `host_block_count` / `disk_block_count` with
+  `host_byte_count` / `disk_byte_count`, returning a new `ByteCount` (the same
+  `free` / `total` / `used` / `used_pct` / `free_pct` surface as `BlockCount`,
+  measured in bytes). The KV cache managers make the same swap;
+  `block_count()` is untouched. `KVCacheMetrics` renames `h2d_blocks_copied`,
+  `d2h_blocks_copied`, `disk_blocks_read`, and `disk_blocks_written` to
+  `h2d_bytes_copied`, `d2h_bytes_copied`, `disk_bytes_read`, and
+  `disk_bytes_written`.
+
+  The exported metrics follow: `maxserve.cache.h2d_blocks_copied`,
+  `maxserve.cache.d2h_blocks_copied`, `maxserve.cache.disk_blocks_read`, and
+  `maxserve.cache.disk_blocks_written` become `h2d_bytes_copied`,
+  `d2h_bytes_copied`, `disk_bytes_read`, and `disk_bytes_written`, with unit
+  `bytes`. `maxserve.cache.used_host_kv_pct` and
+  `maxserve.cache.used_disk_kv_pct` keep their names and are now computed over
+  bytes. Dashboards and alerts on the old tier counter names need updating.
+
 - The pipeline configs are now immutable: `PipelineArgs`,
   `PipelineConfig`, `PipelineRuntimeConfig`, `SamplingConfig`,
   `MAXModelConfig`, `KVCacheConfig` and its nested `KVConnectorConfig`,

@@ -28,6 +28,7 @@ from .memory_planner import (
 )
 from .paged_kv_cache import (
     BlockCount,
+    ByteCount,
     DummyKVCache,
     InsufficientBlocksError,
     JengaKVCacheManager,
@@ -42,6 +43,7 @@ from .registry import load_kv_manager
 
 __all__ = [
     "BlockCount",
+    "ByteCount",
     "DummyKVCache",
     "InsufficientBlocksError",
     "JengaKVCacheManager",

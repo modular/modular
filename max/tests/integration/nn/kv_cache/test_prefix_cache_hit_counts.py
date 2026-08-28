@@ -33,7 +33,7 @@ from max.nn.kv_cache import KVCacheGroupId
 from max.pipelines.context import TextContext
 from max.pipelines.kv_cache.connectors.null_connector import NullConnector
 from max.pipelines.kv_cache.kv_connector import (
-    BlockCount,
+    ByteCount,
     CompletedTransfer,
     TransferDirection,
 )
@@ -128,8 +128,8 @@ class _TierStubConnector:
         return "TierStubConnector"
 
     @property
-    def host_block_count(self) -> BlockCount:
-        return BlockCount(free=4, total=4)
+    def host_byte_count(self) -> ByteCount:
+        return ByteCount(free=4 * 4096, total=4 * 4096)
 
     def count_cached_prefix(
         self, block_hashes: Sequence[bytes]
@@ -183,8 +183,8 @@ class _ReusableTierStubConnector:
         return "ReusableTierStubConnector"
 
     @property
-    def host_block_count(self) -> BlockCount:
-        return BlockCount(free=8, total=8)
+    def host_byte_count(self) -> ByteCount:
+        return ByteCount(free=8 * 4096, total=8 * 4096)
 
     def count_cached_prefix(
         self, block_hashes: Sequence[bytes]

@@ -61,7 +61,7 @@ from max.nn.kv_cache.cache_params import KVCacheMemory
 from max.nn.kv_cache.metrics import KVCacheMetrics
 from max.support.human_readable_formatter import to_human_readable_bytes
 
-from ..kv_connector import BlockCount, KVConnector, KVConnectorTransfer
+from ..kv_connector import ByteCount, KVConnector, KVConnectorTransfer
 from ..paged_kv_cache.block_copy_engine import _check_host_memory_capacity
 from ..paged_kv_cache.block_manager import (
     _resolve_only_use_kv_connector_last_level_cache,
@@ -366,17 +366,17 @@ class RustTierConnector(KVConnector):
         _unsafe_free_fast_pinned_buffer(self._host_buffer)
 
     @property
-    def host_block_count(self) -> BlockCount:
-        return BlockCount(
-            free=self._rust.num_free_host_blocks(),
-            total=self._rust.num_host_blocks(),
+    def host_byte_count(self) -> ByteCount:
+        return ByteCount(
+            free=self._rust.free_host_bytes(),
+            total=self._rust.host_bytes(),
         )
 
     @property
-    def disk_block_count(self) -> BlockCount:
-        return BlockCount(
-            free=self._rust.num_free_disk_blocks(),
-            total=self._rust.num_disk_blocks(),
+    def disk_byte_count(self) -> ByteCount:
+        return ByteCount(
+            free=self._rust.free_disk_bytes(),
+            total=self._rust.disk_bytes(),
         )
 
     def reset_prefix_cache(self) -> None:
@@ -386,10 +386,10 @@ class RustTierConnector(KVConnector):
     def metrics(self) -> KVCacheMetrics:
         h2d, d2h, disk_read, disk_write = self._rust.metrics()
         return KVCacheMetrics(
-            h2d_blocks_copied=h2d,
-            d2h_blocks_copied=d2h,
-            disk_blocks_read=disk_read,
-            disk_blocks_written=disk_write,
+            h2d_bytes_copied=h2d,
+            d2h_bytes_copied=d2h,
+            disk_bytes_read=disk_read,
+            disk_bytes_written=disk_write,
             inflight_disk_ops=self._rust.inflight_disk_ops(),
         )
 

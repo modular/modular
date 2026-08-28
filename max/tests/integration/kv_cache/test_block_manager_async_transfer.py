@@ -39,7 +39,7 @@ from max.nn.kv_cache import KVCacheGroupId
 from max.nn.kv_cache.metrics import KVCacheMetrics
 from max.pipelines.context import TextContext
 from max.pipelines.kv_cache.kv_connector import (
-    BlockCount,
+    ByteCount,
     KVConnectorTransfer,
     TransferDirection,
 )
@@ -87,7 +87,7 @@ class _ControllableTransfer:
 class _AsyncConnector:
     """A fake external-tier connector that returns in-flight transfers.
 
-    ``host_block_count.total`` is positive so the block manager runs its
+    ``host_byte_count.total`` is positive so the block manager runs its
     host-onload path; ``num_blocks_to_load`` controls how many of a ``load``'s
     requested hashes are reported as found. Every returned transfer is
     recorded so a test can flip it complete and then drive ``poll_transfers``.
@@ -143,12 +143,12 @@ class _AsyncConnector:
     def reset_prefix_cache(self) -> None: ...
 
     @property
-    def host_block_count(self) -> BlockCount:
-        return BlockCount(free=1024, total=1024)
+    def host_byte_count(self) -> ByteCount:
+        return ByteCount(free=1024 * 4096, total=1024 * 4096)
 
     @property
-    def disk_block_count(self) -> BlockCount:
-        return BlockCount(free=0, total=0)
+    def disk_byte_count(self) -> ByteCount:
+        return ByteCount(free=0, total=0)
 
     @property
     def metrics(self) -> KVCacheMetrics:

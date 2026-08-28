@@ -34,7 +34,11 @@ from max.nn.kv_cache import (
 from max.nn.kv_cache.cache_params import KVCacheBufferInterface
 from max.nn.kv_cache.metrics import KVCacheMetrics
 from max.pipelines.context import TextContext
-from max.pipelines.kv_cache.kv_connector import BlockCount, KVConnectorTransfer
+from max.pipelines.kv_cache.kv_connector import (
+    BlockCount,
+    ByteCount,
+    KVConnectorTransfer,
+)
 
 from .block_manager import PrefixCacheHits
 
@@ -88,12 +92,12 @@ class PagedKVCacheManagerInterface(ABC):
         """Returns the device KV cache block occupancy for the given replica."""
 
     @abstractmethod
-    def host_block_count(self, replica_idx: int = 0) -> BlockCount:
-        """Returns the host KV cache block occupancy for the given replica."""
+    def host_byte_count(self, replica_idx: int = 0) -> ByteCount:
+        """Returns the host KV tier occupancy in bytes for the given replica."""
 
     @abstractmethod
-    def disk_block_count(self, replica_idx: int = 0) -> BlockCount:
-        """Returns the disk KV cache block occupancy for the given replica."""
+    def disk_byte_count(self, replica_idx: int = 0) -> ByteCount:
+        """Returns the disk KV tier occupancy in bytes for the given replica."""
 
     @abstractmethod
     def release(self, ctx: TextContext) -> None:

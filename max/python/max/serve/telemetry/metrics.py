@@ -498,7 +498,7 @@ SERVE_METRICS: dict[str, SupportedInstruments] = {
     "maxserve.cache.used_host_kv_pct": _meter.create_histogram(
         "maxserve.cache.used_host_kv_pct",
         unit="percent",
-        description="Percentage of host KV cache blocks in use (0-100%), sampled once per scheduler batch when host paging is enabled.",
+        description="Percentage of the host KV tier's bytes in use (0-100%), sampled once per scheduler batch when host paging is enabled.",
     ),  # type: ignore
     "maxserve.cache.device_blocks_served": _meter.create_counter(
         "maxserve.cache.device_blocks_served",
@@ -509,10 +509,13 @@ SERVE_METRICS: dict[str, SupportedInstruments] = {
             "copy needed."
         ),
     ),  # type: ignore
-    "maxserve.cache.h2d_blocks_copied": _meter.create_counter(
-        "maxserve.cache.h2d_blocks_copied",
-        unit="blocks",
-        description="Cumulative host->device KV block copies.",
+    "maxserve.cache.h2d_bytes_copied": _meter.create_counter(
+        "maxserve.cache.h2d_bytes_copied",
+        unit="bytes",
+        description=(
+            "Cumulative KV bytes copied from the connector's host tier to "
+            "device. Rate this to see the PCIe bandwidth host paging consumes."
+        ),
     ),  # type: ignore
     "maxserve.cache.cross_replica_blocks_copied": _meter.create_counter(
         "maxserve.cache.cross_replica_blocks_copied",
@@ -532,20 +535,23 @@ SERVE_METRICS: dict[str, SupportedInstruments] = {
             "bandwidth consumed by cross-replica prefix reuse."
         ),
     ),  # type: ignore
-    "maxserve.cache.d2h_blocks_copied": _meter.create_counter(
-        "maxserve.cache.d2h_blocks_copied",
-        unit="blocks",
-        description="Cumulative device->host KV block copies.",
+    "maxserve.cache.d2h_bytes_copied": _meter.create_counter(
+        "maxserve.cache.d2h_bytes_copied",
+        unit="bytes",
+        description=(
+            "Cumulative KV bytes copied from device to the connector's host "
+            "tier."
+        ),
     ),  # type: ignore
-    "maxserve.cache.disk_blocks_read": _meter.create_counter(
-        "maxserve.cache.disk_blocks_read",
-        unit="blocks",
-        description="Cumulative KV blocks read from the disk cache tier.",
+    "maxserve.cache.disk_bytes_read": _meter.create_counter(
+        "maxserve.cache.disk_bytes_read",
+        unit="bytes",
+        description="Cumulative KV bytes read from the disk cache tier.",
     ),  # type: ignore
-    "maxserve.cache.disk_blocks_written": _meter.create_counter(
-        "maxserve.cache.disk_blocks_written",
-        unit="blocks",
-        description="Cumulative KV blocks written to the disk cache tier.",
+    "maxserve.cache.disk_bytes_written": _meter.create_counter(
+        "maxserve.cache.disk_bytes_written",
+        unit="bytes",
+        description="Cumulative KV bytes written to the disk cache tier.",
     ),  # type: ignore
     "maxserve.spec_decode.avg_acceptance_length": _meter.create_histogram(
         "maxserve.spec_decode.avg_acceptance_length",
@@ -565,7 +571,7 @@ SERVE_METRICS: dict[str, SupportedInstruments] = {
     "maxserve.cache.used_disk_kv_pct": _meter.create_histogram(
         "maxserve.cache.used_disk_kv_pct",
         unit="percent",
-        description="Percentage of disk KV cache blocks in use (0-100%), sampled once per scheduler batch when disk paging is enabled.",
+        description="Percentage of the disk KV tier's bytes in use (0-100%), sampled once per scheduler batch when disk paging is enabled.",
     ),  # type: ignore
     "maxserve.vision.images_encoded": _meter.create_counter(
         "maxserve.vision.images_encoded",
@@ -1523,10 +1529,10 @@ class _AsyncMetrics:
             ),
         )
 
-    def cache_h2d_blocks_copied(self, count: int) -> None:
+    def cache_h2d_bytes_copied(self, count: int) -> None:
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.cache.h2d_blocks_copied",
+                "maxserve.cache.h2d_bytes_copied",
                 count,
                 self.extra_attributes,
             ),
@@ -1550,28 +1556,28 @@ class _AsyncMetrics:
             ),
         )
 
-    def cache_d2h_blocks_copied(self, count: int) -> None:
+    def cache_d2h_bytes_copied(self, count: int) -> None:
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.cache.d2h_blocks_copied",
+                "maxserve.cache.d2h_bytes_copied",
                 count,
                 self.extra_attributes,
             ),
         )
 
-    def cache_disk_blocks_read(self, count: int) -> None:
+    def cache_disk_bytes_read(self, count: int) -> None:
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.cache.disk_blocks_read",
+                "maxserve.cache.disk_bytes_read",
                 count,
                 self.extra_attributes,
             ),
         )
 
-    def cache_disk_blocks_written(self, count: int) -> None:
+    def cache_disk_bytes_written(self, count: int) -> None:
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.cache.disk_blocks_written",
+                "maxserve.cache.disk_bytes_written",
                 count,
                 self.extra_attributes,
             ),

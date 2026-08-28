@@ -32,7 +32,7 @@ from max.nn.kv_cache.cache_params import KVCacheMemory
 from max.nn.kv_cache.metrics import KVCacheMetrics
 from max.pipelines.context import TextContext
 from max.pipelines.kv_cache.kv_connector import (
-    BlockCount,
+    ByteCount,
     CompletedTransfer,
     KVConnectorTransfer,
     TransferDirection,
@@ -64,8 +64,8 @@ class RecordingConnector:
         # Blocks ``load`` reports as loaded from the host tier (0 == host miss);
         # lets a test drive a cold-G0/warm-host hit without real device memory.
         self.num_blocks_to_load = 0
-        self._h2d_blocks_copied = 0
-        self._d2h_blocks_copied = 0
+        self._h2d_bytes_copied = 0
+        self._d2h_bytes_copied = 0
 
     @property
     def leaves(self) -> Mapping[str, KVCacheGroupId]:
@@ -119,38 +119,40 @@ class RecordingConnector:
     def reset_prefix_cache(self) -> None: ...
 
     @property
-    def host_block_count(self) -> BlockCount:
-        return BlockCount(free=0, total=0)
+    def host_byte_count(self) -> ByteCount:
+        return ByteCount(free=0, total=0)
 
     @property
-    def disk_block_count(self) -> BlockCount:
-        return BlockCount(free=0, total=0)
+    def disk_byte_count(self) -> ByteCount:
+        return ByteCount(free=0, total=0)
 
     @property
     def metrics(self) -> KVCacheMetrics:
         return KVCacheMetrics(
-            h2d_blocks_copied=self._h2d_blocks_copied,
-            d2h_blocks_copied=self._d2h_blocks_copied,
+            h2d_bytes_copied=self._h2d_bytes_copied,
+            d2h_bytes_copied=self._d2h_bytes_copied,
         )
 
     def reset_metrics(self) -> None:
-        self._h2d_blocks_copied = 0
-        self._d2h_blocks_copied = 0
+        self._h2d_bytes_copied = 0
+        self._d2h_bytes_copied = 0
 
 
 class _ExternalTierConnector(RecordingConnector):
     """A dKV-style connector that advertises an external tier.
 
     ``get_full_blocks_from_prefix_cache`` gates the G0 recency ``touch`` behind
-    its ``host_block_count.total == 0`` early-return, so the touch-firing
+    its ``host_byte_count.total == 0`` early-return, so the touch-firing
     tests need a connector whose host block count is positive (a plain
     ``RecordingConnector`` reports 0, i.e. no external tier). Records touches
     like its base so a test can assert on them.
     """
 
     @property
-    def host_block_count(self) -> BlockCount:
-        return BlockCount(free=1024, total=1024)
+    def host_byte_count(self) -> ByteCount:
+        return ByteCount(
+            free=1024 * _FAKE_BYTES_PER_PAGE, total=1024 * _FAKE_BYTES_PER_PAGE
+        )
 
 
 _FAKE_BYTES_PER_PAGE = 64
@@ -409,20 +411,20 @@ def test_reset_metrics_clears_connector_transfer_counters() -> None:
     totals and Datadog counter.add() double-counts across batches (MXSERV-203).
     """
     bm, connector = _make_block_manager()
-    connector._d2h_blocks_copied = 5
-    connector._h2d_blocks_copied = 2
+    connector._d2h_bytes_copied = 5
+    connector._h2d_bytes_copied = 2
 
-    assert bm.metrics.d2h_blocks_copied == 5
-    assert bm.metrics.h2d_blocks_copied == 2
+    assert bm.metrics.d2h_bytes_copied == 5
+    assert bm.metrics.h2d_bytes_copied == 2
 
     bm.reset_metrics()
 
-    assert bm.metrics.d2h_blocks_copied == 0
-    assert bm.metrics.h2d_blocks_copied == 0
+    assert bm.metrics.d2h_bytes_copied == 0
+    assert bm.metrics.h2d_bytes_copied == 0
 
-    connector._d2h_blocks_copied = 3
-    assert bm.metrics.d2h_blocks_copied == 3
-    assert bm.metrics.h2d_blocks_copied == 0
+    connector._d2h_bytes_copied = 3
+    assert bm.metrics.d2h_bytes_copied == 3
+    assert bm.metrics.h2d_bytes_copied == 0
 
 
 def test_touch_fires_on_device_hit_with_full_root_anchored_hashes() -> None:
@@ -435,7 +437,7 @@ def test_touch_fires_on_device_hit_with_full_root_anchored_hashes() -> None:
     stays MRU under dKV's reverse full-attention LRU (the ordering correction,
     CLIN-1533). It fires exactly once and, the whole prefix being on device,
     issues no ``load``. Uses an external-tier connector because the anchor is
-    gated on ``host_block_count.total``.
+    gated on ``host_byte_count.total``.
     """
     bm, connector = _make_block_manager(connector=_ExternalTierConnector())
     rid = RequestID("req-hit")
@@ -462,7 +464,7 @@ def test_touch_anchor_not_fired_on_fully_cold_request() -> None:
     (``num_blocks_to_load == 0``), so both ``device_blocks`` and ``host_blocks``
     are empty and the ``if device_blocks or host_blocks`` gate suppresses the
     anchor -- even though the load path ran (``load`` was called). Uses an
-    external-tier connector so the ``host_block_count.total`` gate is passed
+    external-tier connector so the ``host_byte_count.total`` gate is passed
     and the empty-result gate is what's exercised.
     """
     bm, connector = _make_block_manager(connector=_ExternalTierConnector())
