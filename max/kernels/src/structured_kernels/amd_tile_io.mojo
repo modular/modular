@@ -1423,7 +1423,7 @@ struct TileLoaderLDS[
     @always_inline
     def __init__(
         out self,
-        src: GMemTile[Self.dtype, _, _],
+        src: TileTensor[Self.dtype, ...],
         warp_id: Int,
         lane_id: Int,
         *,
@@ -2322,7 +2322,7 @@ struct RegTileLoader[
     @always_inline
     def __init__(
         out self,
-        gmem_tile: TileTensor[Self.dtype, Storage=PointerStorage[], ...],
+        gmem_tile: TileTensor[Self.dtype, ...],
     ):
         """Creates a loader from a DRAM tile.
 
@@ -2334,14 +2334,14 @@ struct RegTileLoader[
             gmem_tile: The DRAM tile as TileTensor.
         """
         self.bc = make_amd_buffer_resource(gmem_tile)
-        self.base_ptr_as_int = Int(gmem_tile._storage)
+        self.base_ptr_as_int = Int(gmem_tile.ptr)
 
     @always_inline
     def __init__(
         out self,
-        gmem_tile: TileTensor[Self.dtype, Storage=PointerStorage[], ...],
+        gmem_tile: TileTensor[Self.dtype, ...],
         *,
-        bounds_from: TileTensor[Self.dtype, Storage=PointerStorage[], ...],
+        bounds_from: TileTensor[Self.dtype, ...],
     ):
         """Creates a loader with OOB bounds from a full (pre-tiled) tensor.
 
@@ -2356,17 +2356,17 @@ struct RegTileLoader[
         """
         from layout._utils import _get_bounds
 
-        var off = (
-            Int(gmem_tile._storage) - Int(bounds_from._storage)
-        ) // size_of[Self.dtype]()
+        var off = (Int(gmem_tile.ptr) - Int(bounds_from.ptr)) // size_of[
+            Self.dtype
+        ]()
         # A tile based entirely past `bounds_from` makes the remaining extent
         # negative, which `AMDBufferResource` narrows to a UInt32 byte count —
         # wrapping to ~4 GiB and clamping nothing. Saturate so it reads as zero.
         self.bc = AMDBufferResource(
-            readfirstlane(gmem_tile._storage),
+            readfirstlane(gmem_tile.ptr),
             readfirstlane(max(0, _get_bounds(bounds_from) - off)),
         )
-        self.base_ptr_as_int = Int(gmem_tile._storage)
+        self.base_ptr_as_int = Int(gmem_tile.ptr)
 
     @always_inline
     def load(
@@ -2454,7 +2454,7 @@ struct RegTileWriter[
     """Integer address of the full DRAM tile base pointer."""
 
     @always_inline
-    def __init__(out self, dst_base: TileTensor[Storage=PointerStorage[], ...]):
+    def __init__(out self, dst_base: TileTensor[...]):
         """Create a writer from the full DRAM output tile.
 
         The TileTensor must carry Scalar for any masked dimension
@@ -2465,7 +2465,7 @@ struct RegTileWriter[
             dst_base: The full DRAM output tile as TileTensor.
         """
         self.bc = make_amd_buffer_resource(dst_base)
-        self.base_ptr_as_int = Int(dst_base._storage)
+        self.base_ptr_as_int = Int(dst_base.ptr)
 
     @always_inline
     def store[

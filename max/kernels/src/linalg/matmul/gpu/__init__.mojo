@@ -550,11 +550,15 @@ def _matmul_gpu[
 
     comptime matmul_supported_format = matmul_supported_format_amd if has_amd_gpu_accelerator() else matmul_supported_format_nvidia
 
+    # Capture the raw pointer: `@__copy_capture` byte-copies, so a
+    # `DeviceBuffer`-backed tile would reach the device as a host reference.
+    var c_epilogue = TileTensor(c.ptr, c.layout)
+
     # Only the H100 version of gemm supports the compute lambda.
     # For the other kernels we wrap it around an epilogue lambda instead.
     @__parameter
     @always_inline
-    @__copy_capture(c)
+    @__copy_capture(c_epilogue)
     def compute_lambda_wrapper[
         _dtype: DType, _width: SIMDLength, *, alignment: Int = 1
     ](coords: IndexList[2], val: SIMD[_dtype, _width]):
@@ -564,7 +568,7 @@ def _matmul_gpu[
             comptime assert (
                 output.dtype == c_type
             ), "compute epilogue lambda output and c type mismatch"
-            c.store_linear[alignment=alignment * size_of[c_type]()](
+            c_epilogue.store_linear[alignment=alignment * size_of[c_type]()](
                 coords, rebind[SIMD[c_type, _width]](output)
             )
 
@@ -1670,7 +1674,14 @@ def multistage_gemm[
                     pingpong_config,
                     enable_swizzle=True,
                     elementwise_lambda_fn=elementwise_lambda_fn,
-                ].run[a.LayoutType, b.LayoutType, c.LayoutType]
+                ].run[
+                    type_of(a).LayoutType,
+                    type_of(b).LayoutType,
+                    type_of(c).LayoutType,
+                    type_of(a).Storage,
+                    type_of(b).Storage,
+                    type_of(c).Storage,
+                ]
                 ctx.enqueue_function[k](
                     a,
                     b,
@@ -1694,7 +1705,14 @@ def multistage_gemm[
                     skinny_config,
                     enable_swizzle=True,
                     elementwise_lambda_fn=elementwise_lambda_fn,
-                ].run[a.LayoutType, b.LayoutType, c.LayoutType]
+                ].run[
+                    type_of(a).LayoutType,
+                    type_of(b).LayoutType,
+                    type_of(c).LayoutType,
+                    type_of(a).Storage,
+                    type_of(b).Storage,
+                    type_of(c).Storage,
+                ]
                 ctx.enqueue_function[k](
                     a,
                     b,
@@ -1962,7 +1980,14 @@ def multistage_gemm[
                     pingpong_config,
                     enable_swizzle=True,
                     elementwise_lambda_fn=elementwise_lambda_fn,
-                ].run[a.LayoutType, b.LayoutType, c.LayoutType]
+                ].run[
+                    type_of(a).LayoutType,
+                    type_of(b).LayoutType,
+                    type_of(c).LayoutType,
+                    type_of(a).Storage,
+                    type_of(b).Storage,
+                    type_of(c).Storage,
+                ]
                 ctx.enqueue_function[k](
                     a,
                     b,
@@ -1986,7 +2011,14 @@ def multistage_gemm[
                     skinny_config,
                     enable_swizzle=True,
                     elementwise_lambda_fn=elementwise_lambda_fn,
-                ].run[a.LayoutType, b.LayoutType, c.LayoutType]
+                ].run[
+                    type_of(a).LayoutType,
+                    type_of(b).LayoutType,
+                    type_of(c).LayoutType,
+                    type_of(a).Storage,
+                    type_of(b).Storage,
+                    type_of(c).Storage,
+                ]
                 ctx.enqueue_function[k](
                     a,
                     b,

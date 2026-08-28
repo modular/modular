@@ -69,7 +69,7 @@ struct PreshuffledBLoader[
     @always_inline
     def __init__(
         out self,
-        b_gmem_tile: TileTensor[.uint8, Storage=PointerStorage[], ...],
+        b_gmem_tile: TileTensor[.uint8, ...],
     ):
         """Builds the V# from a preshuffled per-expert B byte buffer.
 
@@ -136,7 +136,7 @@ struct PreshuffledScaleLoader[MN_padded: Int, K_SCALES: Int](
     @always_inline
     def __init__(
         out self,
-        scale_gmem_tile: TileTensor[.uint8, Storage=PointerStorage[], ...],
+        scale_gmem_tile: TileTensor[.uint8, ...],
     ):
         """Builds the V# from a preshuffled per-expert scale byte buffer.
 

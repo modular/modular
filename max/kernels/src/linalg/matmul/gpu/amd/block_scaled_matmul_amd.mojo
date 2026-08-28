@@ -70,7 +70,7 @@ from max.gpu.sync import (
     schedule_barrier,
     schedule_group_barrier,
 )
-from layout import Coord, Idx, TensorLayout, TileTensor
+from layout import Coord, Idx, TensorLayout, TensorStorage, TileTensor
 from layout.tile_layout import row_major, col_major
 from layout.tile_tensor import stack_allocation
 from layout.swizzle import Swizzle
@@ -858,13 +858,22 @@ struct BlockScaledMatmulAMD[
         b_layout: TensorLayout,
         sfa_layout: TensorLayout,
         sfb_layout: TensorLayout,
+        c_store: TensorStorage,
+        a_store: TensorStorage,
+        b_store: TensorStorage,
+        sfa_store: TensorStorage,
+        sfb_store: TensorStorage,
         num_splits: Int = 1,
     ](
-        c: TileTensor[out_dtype, c_layout, MutAnyOrigin],
-        a: TileTensor[.uint8, a_layout, ImmutAnyOrigin],
-        b: TileTensor[.uint8, b_layout, ImmutAnyOrigin],
-        sfa: TileTensor[.float8_e8m0fnu, sfa_layout, ImmutAnyOrigin],
-        sfb: TileTensor[.float8_e8m0fnu, sfb_layout, ImmutAnyOrigin],
+        c: TileTensor[out_dtype, c_layout, MutAnyOrigin, Storage=c_store],
+        a: TileTensor[.uint8, a_layout, ImmutAnyOrigin, Storage=a_store],
+        b: TileTensor[.uint8, b_layout, ImmutAnyOrigin, Storage=b_store],
+        sfa: TileTensor[
+            .float8_e8m0fnu, sfa_layout, ImmutAnyOrigin, Storage=sfa_store
+        ],
+        sfb: TileTensor[
+            .float8_e8m0fnu, sfb_layout, ImmutAnyOrigin, Storage=sfb_store
+        ],
     ):
         """MXFP4 block-scaled GEMM kernel with SMEM pipeline.
 
@@ -884,6 +893,11 @@ struct BlockScaledMatmulAMD[
             b_layout: Compile-time layout of the B operand.
             sfa_layout: Compile-time layout of the A scales tensor `sfa`.
             sfb_layout: Compile-time layout of the B scales tensor `sfb`.
+            c_store: Storage policy of the output tensor `c`.
+            a_store: Storage policy of the A operand.
+            b_store: Storage policy of the B operand.
+            sfa_store: Storage policy of the A scales tensor `sfa`.
+            sfb_store: Storage policy of the B scales tensor `sfb`.
             num_splits: Number of disjoint K-bands the K dimension is
                 partitioned into (defaults to 1, no split).
 
@@ -1553,6 +1567,11 @@ def _launch_block_scaled[
         type_of(b).LayoutType,
         type_of(a_scales).LayoutType,
         type_of(b_scales).LayoutType,
+        type_of(c).Storage,
+        type_of(a).Storage,
+        type_of(b).Storage,
+        type_of(a_scales).Storage,
+        type_of(b_scales).Storage,
     ]
 
     ctx.enqueue_function[kernel](
@@ -1647,6 +1666,11 @@ def _launch_block_scaled_split_k[
         type_of(b).LayoutType,
         type_of(a_scales).LayoutType,
         type_of(b_scales).LayoutType,
+        type_of(ws_tile).Storage,
+        type_of(a).Storage,
+        type_of(b).Storage,
+        type_of(a_scales).Storage,
+        type_of(b_scales).Storage,
         num_splits=num_splits,
     ]
 
@@ -2297,6 +2321,11 @@ def mxfp6_block_scaled_matmul_amd[
         type_of(b).LayoutType,
         type_of(a_scales).LayoutType,
         type_of(b_scales).LayoutType,
+        type_of(c).Storage,
+        type_of(a).Storage,
+        type_of(b).Storage,
+        type_of(a_scales).Storage,
+        type_of(b_scales).Storage,
     ]
 
     ctx.enqueue_function[kernel](

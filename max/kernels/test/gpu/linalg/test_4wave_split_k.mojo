@@ -162,7 +162,9 @@ def test_4wave_split_k_epilogue[
     var a_tt = TileTensor(device_a, row_major[M, K]())
     var b_tt = TileTensor(device_b, row_major[N, K]())
     var c_tt = TileTensor(device_c, row_major[M, N]())
-    var out_tt = TileTensor(device_out, row_major[M, N]())
+    # Capture the raw pointer: `@__copy_capture` byte-copies, so a
+    # `DeviceBuffer`-backed tile would reach the device as a host reference.
+    var out_tt = TileTensor(device_out.unsafe_ptr(), row_major[M, N]())
 
     ctx.enqueue_memset(device_c_ref, 0)
     var c_ref_tt = TileTensor(device_c_ref, row_major[M, N]())

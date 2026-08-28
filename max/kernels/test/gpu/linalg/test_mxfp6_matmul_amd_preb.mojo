@@ -41,7 +41,14 @@ from std.random import random_ui64, seed
 from std.testing import assert_true
 from std.utils import StaticTuple
 
-from layout import Coord, Idx, TensorLayout, TileTensor, row_major
+from layout import (
+    Coord,
+    Idx,
+    TensorLayout,
+    TensorStorage,
+    TileTensor,
+    row_major,
+)
 from linalg.arch.amd.block_scaled_mma import CDNA4F8F6F4MatrixFormat
 from linalg.fp6_utils import (
     FP6Format,
@@ -174,14 +181,23 @@ def _preb_grid_kernel[
     LayoutBPre: TensorLayout,
     LayoutSFA: TensorLayout,
     LayoutSFB: TensorLayout,
+    StoreC: TensorStorage,
+    StoreA: TensorStorage,
+    StoreBPre: TensorStorage,
+    StoreSFA: TensorStorage,
+    StoreSFB: TensorStorage,
     N: Int,
     K_BYTES: Int,
 ](
-    c: TileTensor[mut=True, out_dtype, LayoutC, MutAnyOrigin],
-    a: TileTensor[.uint8, LayoutA, ImmutAnyOrigin],
-    b_pre: TileTensor[.uint8, LayoutBPre, ImmutAnyOrigin],
-    sfa: TileTensor[.float8_e8m0fnu, LayoutSFA, ImmutAnyOrigin],
-    sfb: TileTensor[.float8_e8m0fnu, LayoutSFB, ImmutAnyOrigin],
+    c: TileTensor[mut=True, out_dtype, LayoutC, MutAnyOrigin, Storage=StoreC],
+    a: TileTensor[.uint8, LayoutA, ImmutAnyOrigin, Storage=StoreA],
+    b_pre: TileTensor[.uint8, LayoutBPre, ImmutAnyOrigin, Storage=StoreBPre],
+    sfa: TileTensor[
+        .float8_e8m0fnu, LayoutSFA, ImmutAnyOrigin, Storage=StoreSFA
+    ],
+    sfb: TileTensor[
+        .float8_e8m0fnu, LayoutSFB, ImmutAnyOrigin, Storage=StoreSFB
+    ],
 ):
     BlockScaledMatmulAMD_PreB[
         BM=BM,
@@ -201,6 +217,11 @@ def _preb_grid_kernel[
         LayoutBPre,
         LayoutSFA,
         LayoutSFB,
+        StoreC,
+        StoreA,
+        StoreBPre,
+        StoreSFA,
+        StoreSFB,
         N,
         K_BYTES,
     ](
@@ -326,10 +347,8 @@ def _test_case[
 
     # GPU preshuffle B -> b_pre_d through the plane-split kernel; the tuned
     # 16-byte atom path cannot express a 24-byte fragment.
-    var b_raw_tt = TileTensor[mut=False](b_d, row_major[1, N_static, K_BYTES]())
-    var b_pre_dst_tt = TileTensor[mut=True](
-        b_pre_d, row_major[1, N_static, K_BYTES]()
-    )
+    var b_raw_tt = TileTensor(b_d, row_major[1, N_static, K_BYTES]()).as_immut()
+    var b_pre_dst_tt = TileTensor(b_pre_d, row_major[1, N_static, K_BYTES]())
     Shuffler[1].preshuffle_b_planes[
         N=N_static, K_BYTES=K_BYTES, lane_bytes=FP6_LANE_BYTES
     ](b_raw_tt, b_pre_dst_tt, ctx)
@@ -349,24 +368,24 @@ def _test_case[
         block_dim=(BLOCK_DIM, BLOCK_DIM),
     )
 
-    var a_tt = TileTensor[mut=False](
+    var a_tt = TileTensor(
         a_d, row_major(Coord(M_static, Idx[K_BYTES]))
-    )
-    var b_pre_tt = TileTensor[mut=False](
+    ).as_immut()
+    var b_pre_tt = TileTensor(
         b_pre_d, row_major[1, N_static * K_BYTES]()
-    )
+    ).as_immut()
     # Scales: the preshuffled buffers wrapped in a row-major layout -- the
     # kernel reads the underlying bytes through `PreshuffledScaleLoader`, so
     # the TileTensor layout is unused.
-    var sfa_tt = TileTensor[mut=False](
+    var sfa_tt = TileTensor(
         sfa_pre_d.unsafe_ptr().bitcast[Float8_e8m0fnu](),
         row_major[padded_M, scale_K](),
-    )
-    var sfb_tt = TileTensor[mut=False](
+    ).as_immut()
+    var sfb_tt = TileTensor(
         sfb_pre_d.unsafe_ptr().bitcast[Float8_e8m0fnu](),
         row_major[N_static, scale_K](),
-    )
-    var c_tt = TileTensor[mut=True](c_d, row_major[M_static, N_static]())
+    ).as_immut()
+    var c_tt = TileTensor(c_d, row_major[M_static, N_static]())
 
     comptime kernel = _preb_grid_kernel[
         BM,
@@ -385,6 +404,11 @@ def _test_case[
         type_of(b_pre_tt).LayoutType,
         type_of(sfa_tt).LayoutType,
         type_of(sfb_tt).LayoutType,
+        type_of(c_tt).Storage,
+        type_of(a_tt).Storage,
+        type_of(b_pre_tt).Storage,
+        type_of(sfa_tt).Storage,
+        type_of(sfb_tt).Storage,
         N_static,
         K_BYTES,
     ]

@@ -404,7 +404,7 @@ def test_oob_epilogue[
 
     # Output buffer: [alloc_M, alloc_N] so OOB writes in both dims are visible
     var out_tensor = TileTensor(
-        out_dev,
+        out_dev.unsafe_ptr(),
         row_major(Coord(Idx[alloc_M], Idx[alloc_N])),
     )
 
@@ -603,7 +603,9 @@ def test_oob_epilogue_dynamic_m[
     var c_tensor = TileTensor(c_dev, row_major(Coord(Int(m), Idx[N])))
     var c_ref_tensor = TileTensor(c_ref_dev, row_major(Coord(Int(m), Idx[N])))
 
-    var out_tensor = TileTensor(out_dev, row_major(Coord(Int(alloc_m), Idx[N])))
+    var out_tensor = TileTensor(
+        out_dev.unsafe_ptr(), row_major(Coord(Int(alloc_m), Idx[N]))
+    )
 
     @__parameter
     @always_inline

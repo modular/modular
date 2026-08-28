@@ -30,7 +30,7 @@ from max.gpu.host import DeviceContext
 from max.gpu.host.info import MI355X
 from max.gpu.memory import CacheOperation
 
-from layout import Coord, Idx, TensorLayout, TileTensor
+from layout import Coord, Idx, TensorLayout, TensorStorage, TileTensor
 from layout.tile_layout import row_major
 
 from std.utils import StaticTuple
@@ -196,6 +196,13 @@ struct PreShuffledBGroupedGEMM[
         LayoutSFB: TensorLayout,
         AOffsetsLayout: TensorLayout,
         ExpertIdsLayout: TensorLayout,
+        StoreC: TensorStorage,
+        StoreA: TensorStorage,
+        StoreBPre: TensorStorage,
+        StoreSFA: TensorStorage,
+        StoreSFB: TensorStorage,
+        StoreAOffsets: TensorStorage,
+        StoreExpertIds: TensorStorage,
         N: Int,
         K_BYTES: Int,
         b_cache_policy: CacheOperation = CacheOperation.ALWAYS,
@@ -205,16 +212,32 @@ struct PreShuffledBGroupedGEMM[
         pipeline_depth: Int = 2,
         waves_per_eu: Int = 0,
     ](
-        c_tensor: TileTensor[mut=True, out_dtype, LayoutC, MutAnyOrigin],
-        a_tensor: TileTensor[.uint8, LayoutA, ImmutAnyOrigin],
-        b_pre_tensor: TileTensor[.uint8, LayoutBPre, ImmutAnyOrigin],
-        sfa_tensor: TileTensor[.float8_e8m0fnu, LayoutSFA, ImmutAnyOrigin],
-        sfb_tensor: TileTensor[.float8_e8m0fnu, LayoutSFB, ImmutAnyOrigin],
+        c_tensor: TileTensor[
+            mut=True, out_dtype, LayoutC, MutAnyOrigin, Storage=StoreC
+        ],
+        a_tensor: TileTensor[.uint8, LayoutA, ImmutAnyOrigin, Storage=StoreA],
+        b_pre_tensor: TileTensor[
+            .uint8, LayoutBPre, ImmutAnyOrigin, Storage=StoreBPre
+        ],
+        sfa_tensor: TileTensor[
+            .float8_e8m0fnu, LayoutSFA, ImmutAnyOrigin, Storage=StoreSFA
+        ],
+        sfb_tensor: TileTensor[
+            .float8_e8m0fnu, LayoutSFB, ImmutAnyOrigin, Storage=StoreSFB
+        ],
         a_offsets: TileTensor[
-            mut=False, .uint32, AOffsetsLayout, ImmutAnyOrigin
+            mut=False,
+            .uint32,
+            AOffsetsLayout,
+            ImmutAnyOrigin,
+            Storage=StoreAOffsets,
         ],
         expert_ids: TileTensor[
-            mut=False, .int32, ExpertIdsLayout, ImmutAnyOrigin
+            mut=False,
+            .int32,
+            ExpertIdsLayout,
+            ImmutAnyOrigin,
+            Storage=StoreExpertIds,
         ],
         num_active_experts: Int32,
         max_padded_M: Int32,
@@ -356,6 +379,11 @@ struct PreShuffledBGroupedGEMM[
                     type_of(b_pre_tile).LayoutType,
                     type_of(sfa_tile).LayoutType,
                     type_of(sfb_tile).LayoutType,
+                    type_of(c_tile).Storage,
+                    type_of(a_tile).Storage,
+                    type_of(b_pre_tile).Storage,
+                    type_of(sfa_tile).Storage,
+                    type_of(sfb_tile).Storage,
                     N,
                     K_BYTES,
                 ](
@@ -407,6 +435,13 @@ struct PreShuffledBGroupedGEMM[
         LayoutSFB: TensorLayout,
         AOffsetsLayout: TensorLayout,
         ExpertIdsLayout: TensorLayout,
+        StoreC: TensorStorage,
+        StoreA: TensorStorage,
+        StoreBPre: TensorStorage,
+        StoreSFA: TensorStorage,
+        StoreSFB: TensorStorage,
+        StoreAOffsets: TensorStorage,
+        StoreExpertIds: TensorStorage,
         N: Int,
         K_BYTES: Int,
         b_cache_policy: CacheOperation = CacheOperation.ALWAYS,
@@ -416,16 +451,32 @@ struct PreShuffledBGroupedGEMM[
         pipeline_depth: Int = 2,
         waves_per_eu: Int = 0,
     ](
-        c_tensor: TileTensor[mut=True, out_dtype, LayoutC, MutAnyOrigin],
-        a_tensor: TileTensor[.uint8, LayoutA, ImmutAnyOrigin],
-        b_pre_tensor: TileTensor[.uint8, LayoutBPre, ImmutAnyOrigin],
-        sfa_tensor: TileTensor[.float8_e8m0fnu, LayoutSFA, ImmutAnyOrigin],
-        sfb_tensor: TileTensor[.float8_e8m0fnu, LayoutSFB, ImmutAnyOrigin],
+        c_tensor: TileTensor[
+            mut=True, out_dtype, LayoutC, MutAnyOrigin, Storage=StoreC
+        ],
+        a_tensor: TileTensor[.uint8, LayoutA, ImmutAnyOrigin, Storage=StoreA],
+        b_pre_tensor: TileTensor[
+            .uint8, LayoutBPre, ImmutAnyOrigin, Storage=StoreBPre
+        ],
+        sfa_tensor: TileTensor[
+            .float8_e8m0fnu, LayoutSFA, ImmutAnyOrigin, Storage=StoreSFA
+        ],
+        sfb_tensor: TileTensor[
+            .float8_e8m0fnu, LayoutSFB, ImmutAnyOrigin, Storage=StoreSFB
+        ],
         a_offsets: TileTensor[
-            mut=False, .uint32, AOffsetsLayout, ImmutAnyOrigin
+            mut=False,
+            .uint32,
+            AOffsetsLayout,
+            ImmutAnyOrigin,
+            Storage=StoreAOffsets,
         ],
         expert_ids: TileTensor[
-            mut=False, .int32, ExpertIdsLayout, ImmutAnyOrigin
+            mut=False,
+            .int32,
+            ExpertIdsLayout,
+            ImmutAnyOrigin,
+            Storage=StoreExpertIds,
         ],
         num_active_experts: Int32,
         max_padded_M: Int32,
@@ -495,6 +546,11 @@ struct PreShuffledBGroupedGEMM[
             type_of(b_pre_tile).LayoutType,
             type_of(sfa_tile).LayoutType,
             type_of(sfb_tile).LayoutType,
+            type_of(c_tile).Storage,
+            type_of(a_tile).Storage,
+            type_of(b_pre_tile).Storage,
+            type_of(sfa_tile).Storage,
+            type_of(sfb_tile).Storage,
             N,
             K_BYTES,
         ](
@@ -608,6 +664,13 @@ struct PreShuffledBGroupedGEMM[
                 type_of(b_scales_i).LayoutType,
                 type_of(a_off_i).LayoutType,
                 type_of(expert_ids_i).LayoutType,
+                type_of(c).Storage,
+                type_of(a_i).Storage,
+                type_of(b_pre_i).Storage,
+                type_of(a_scales_i).Storage,
+                type_of(b_scales_i).Storage,
+                type_of(a_off_i).Storage,
+                type_of(expert_ids_i).Storage,
                 N,
                 K_BYTES,
                 b_cache_policy,
@@ -644,6 +707,13 @@ struct PreShuffledBGroupedGEMM[
                 type_of(b_scales_i).LayoutType,
                 type_of(a_off_i).LayoutType,
                 type_of(expert_ids_i).LayoutType,
+                type_of(c).Storage,
+                type_of(a_i).Storage,
+                type_of(b_pre_i).Storage,
+                type_of(a_scales_i).Storage,
+                type_of(b_scales_i).Storage,
+                type_of(a_off_i).Storage,
+                type_of(expert_ids_i).Storage,
                 N,
                 K_BYTES,
                 b_cache_policy,
@@ -712,14 +782,39 @@ def block_scaled_grouped_matmul_amd_kernel[
     LayoutSFB: TensorLayout,
     AOffsetsLayout: TensorLayout,
     ExpertIdsLayout: TensorLayout,
+    StoreC: TensorStorage,
+    StoreA: TensorStorage,
+    StoreB: TensorStorage,
+    StoreSFA: TensorStorage,
+    StoreSFB: TensorStorage,
+    StoreAOffsets: TensorStorage,
+    StoreExpertIds: TensorStorage,
 ](
-    c_tensor: TileTensor[mut=True, out_dtype, LayoutC, MutAnyOrigin],
-    a_tensor: TileTensor[.uint8, LayoutA, ImmutAnyOrigin],
-    b_tensor: TileTensor[.uint8, LayoutB, ImmutAnyOrigin],
-    sfa_tensor: TileTensor[.float8_e8m0fnu, LayoutSFA, ImmutAnyOrigin],
-    sfb_tensor: TileTensor[.float8_e8m0fnu, LayoutSFB, ImmutAnyOrigin],
-    a_offsets: TileTensor[mut=False, .uint32, AOffsetsLayout, ImmutAnyOrigin],
-    expert_ids: TileTensor[mut=False, .int32, ExpertIdsLayout, ImmutAnyOrigin],
+    c_tensor: TileTensor[
+        mut=True, out_dtype, LayoutC, MutAnyOrigin, Storage=StoreC
+    ],
+    a_tensor: TileTensor[.uint8, LayoutA, ImmutAnyOrigin, Storage=StoreA],
+    b_tensor: TileTensor[.uint8, LayoutB, ImmutAnyOrigin, Storage=StoreB],
+    sfa_tensor: TileTensor[
+        .float8_e8m0fnu, LayoutSFA, ImmutAnyOrigin, Storage=StoreSFA
+    ],
+    sfb_tensor: TileTensor[
+        .float8_e8m0fnu, LayoutSFB, ImmutAnyOrigin, Storage=StoreSFB
+    ],
+    a_offsets: TileTensor[
+        mut=False,
+        .uint32,
+        AOffsetsLayout,
+        ImmutAnyOrigin,
+        Storage=StoreAOffsets,
+    ],
+    expert_ids: TileTensor[
+        mut=False,
+        .int32,
+        ExpertIdsLayout,
+        ImmutAnyOrigin,
+        Storage=StoreExpertIds,
+    ],
     num_active_experts: Int32,
 ):
     """MXFP4 grouped matmul kernel with expert dispatch via block_idx.z.
@@ -744,6 +839,14 @@ def block_scaled_grouped_matmul_amd_kernel[
         AOffsetsLayout: Compile-time layout of the token offsets tensor
             `a_offsets`.
         ExpertIdsLayout: Compile-time layout of the expert indices tensor
+            `expert_ids`.
+        StoreC: Storage policy of the output tensor `c_tensor`.
+        StoreA: Storage policy of the A operand `a_tensor`.
+        StoreB: Storage policy of the B operand `b_tensor`.
+        StoreSFA: Storage policy of the A scales tensor `sfa_tensor`.
+        StoreSFB: Storage policy of the B scales tensor `sfb_tensor`.
+        StoreAOffsets: Storage policy of the token offsets tensor `a_offsets`.
+        StoreExpertIds: Storage policy of the expert indices tensor
             `expert_ids`.
 
     Args:
@@ -815,6 +918,11 @@ def block_scaled_grouped_matmul_amd_kernel[
         type_of(b_tile).LayoutType,
         type_of(sfa_tile).LayoutType,
         type_of(sfb_tile).LayoutType,
+        type_of(c_tile).Storage,
+        type_of(a_tile).Storage,
+        type_of(b_tile).Storage,
+        type_of(sfa_tile).Storage,
+        type_of(sfb_tile).Storage,
     ](c_tile, a_tile, b_tile, sfa_tile, sfb_tile)
 
 
@@ -997,6 +1105,13 @@ def _launch_block_scaled_grouped[
         type_of(sfb_2d).LayoutType,
         type_of(a_off_i).LayoutType,
         type_of(expert_ids_i).LayoutType,
+        type_of(c).Storage,
+        type_of(a_i).Storage,
+        type_of(b_2d).Storage,
+        type_of(a_scales_i).Storage,
+        type_of(sfb_2d).Storage,
+        type_of(a_off_i).Storage,
+        type_of(expert_ids_i).Storage,
     ]
 
     ctx.enqueue_function[kernel](

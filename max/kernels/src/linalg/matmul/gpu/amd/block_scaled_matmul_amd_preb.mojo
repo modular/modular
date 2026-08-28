@@ -49,7 +49,7 @@ from max.gpu.memory import CacheOperation
 from max.gpu.sync import s_waitcnt
 from std.sys.intrinsics import llvm_intrinsic
 
-from layout import Coord, TensorLayout, TileTensor
+from layout import Coord, TensorLayout, TensorStorage, TileTensor
 from layout.tile_layout import row_major, col_major
 from layout.tile_tensor import stack_allocation
 from layout.swizzle import Swizzle
@@ -799,14 +799,25 @@ struct BlockScaledMatmulAMD_PreB[
         b_pre_layout: TensorLayout,
         sfa_layout: TensorLayout,
         sfb_layout: TensorLayout,
+        c_store: TensorStorage,
+        a_store: TensorStorage,
+        b_pre_store: TensorStorage,
+        sfa_store: TensorStorage,
+        sfb_store: TensorStorage,
         N: Int,
         K_BYTES: Int,
     ](
-        c: TileTensor[out_dtype, c_layout, MutAnyOrigin],
-        a: TileTensor[.uint8, a_layout, ImmutAnyOrigin],
-        b_pre: TileTensor[.uint8, b_pre_layout, ImmutAnyOrigin],
-        sfa: TileTensor[.float8_e8m0fnu, sfa_layout, ImmutAnyOrigin],
-        sfb: TileTensor[.float8_e8m0fnu, sfb_layout, ImmutAnyOrigin],
+        c: TileTensor[out_dtype, c_layout, MutAnyOrigin, Storage=c_store],
+        a: TileTensor[.uint8, a_layout, ImmutAnyOrigin, Storage=a_store],
+        b_pre: TileTensor[
+            .uint8, b_pre_layout, ImmutAnyOrigin, Storage=b_pre_store
+        ],
+        sfa: TileTensor[
+            .float8_e8m0fnu, sfa_layout, ImmutAnyOrigin, Storage=sfa_store
+        ],
+        sfb: TileTensor[
+            .float8_e8m0fnu, sfb_layout, ImmutAnyOrigin, Storage=sfb_store
+        ],
         n_tile_idx: Int,
         m_tile_idx: Int,
     ):
