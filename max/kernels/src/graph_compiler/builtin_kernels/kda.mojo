@@ -10,14 +10,29 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Graph-op binding for the KDA (Kimi Delta Attention) decode recurrence.
+"""Graph-op bindings for the KDA (Kimi Delta Attention) kernels.
 
-The kernel math lives in `//Kernels/lib/kda` (`kda.recurrent`); only the
-`@extensibility.register` wrapper lives here, mirroring the `msa.mojo`
+The kernel math and `kda_chunk`'s host-side launch sequence live in
+`//Kernels/lib/kda` (`kda.recurrent`, `kda.chunk_fwd`, `kda.chunk_launch`);
+only the `@extensibility.register` wrappers live here, mirroring the `msa.mojo`
 binding for `//Kernels/lib/msa`. Registration has to be declared inside the
 built-in kernel library itself -- importing the struct from the standalone
 lib does not put the op in the graph compiler's registry, so a served graph
-resolving `kda_decode` needs this declaration and not just the dependency.
+resolving `kda_decode` / `kda_chunk` needs this declaration and not just the
+dependency.
+
+Two ops, one per prefill regime:
+
+  * `kda_decode` -- the token-sequential recurrence (`kda.recurrent`). Correct
+    for any ragged batch (decode's 1-token sequences and a multi-token
+    prefill alike), but O(T) sequential steps per sequence.
+  * `kda_chunk` -- the chunk-parallel prefill pipeline (`kda.chunk_fwd`,
+    driven by `kda.chunk_launch`): L1 `kda_chunk_prepare_gpu` (parallel per
+    chunk) -> L2 `kda_chunk_scan_gpu` (sequential, but only O(T/CHUNK_SIZE)
+    steps) -> L3 `kda_chunk_output_gpu` (parallel). This is what turns
+    prefill from O(T) into O(T/CHUNK_SIZE) sequential depth; the Python KDA
+    layer picks it for prefill and keeps `kda_decode` for single-token decode
+    (see `kda_attention.py`).
 """
 
 import extensibility
@@ -29,8 +44,8 @@ from extensibility import (
 )
 from max.gpu.host import DeviceContext
 from max.gpu.host.info import is_gpu
-
 from kda.recurrent import kda_decode_gpu
+from kda.chunk_launch import kda_chunk_launch
 
 
 @extensibility.register("kda_decode")
@@ -327,6 +342,220 @@ struct KdaDecode:
         if not dispatched:
             raise Error(
                 "kda_decode: unsupported (key_head_dim, value_head_dim) = ("
+                + String(key_head_dim)
+                + ", "
+                + String(value_head_dim)
+                + "). Compiled: (32, 32), (128, 128)."
+            )
+
+
+@extensibility.register("kda_chunk")
+struct KdaChunk:
+    """KDA chunk-parallel prefill forward pass.
+
+    Same algorithm and same numerics-within-tolerance contract as
+    `kda_decode` (see `Kernels/lib/kda/chunk_fwd.mojo`'s M2c docstring and
+    `test_kda_chunk_parallel.mojo`), but restructures the recurrence so a
+    prefill's sequential depth is O(total_T / 16) instead of O(total_T):
+    L1 (`kda_chunk_prepare_gpu`) and L3 (`kda_chunk_output_gpu`) run one CTA
+    per (chunk, value-head) in parallel; only L2 (`kda_chunk_scan_gpu`)
+    carries a sequential dependency, and it carries it per-CHUNK rather than
+    per-token. Intended for prefill (multi-token sequences); `kda_decode`
+    remains the single-token decode path.
+
+    Takes the SAME tensors as `kda_decode` -- CHUNK_SIZE (16) and the chunk
+    map are internal to this op, not part of its call contract, so a caller
+    can swap between the two ops without restructuring its inputs.
+
+    Default parameters match `kda_decode`'s (backward-compatible with the S1
+    graph op):
+      gate_mode    = "original"  (stable-softplus gate)
+      beta_mode    = "logits"    (sigmoid applied to beta_logits)
+      state_layout = "K_FIRST"   (pool shape [N, HV, K, V])
+
+    Tensor shapes: identical to `kda_decode` (see that op's docstring).
+    """
+
+    @staticmethod
+    def execute[
+        qkv_dtype: DType,
+        gate_dtype: DType,
+        state_dtype: DType,
+        output_dtype: DType,
+        target: StaticString,
+        gate_mode: StaticString = "original",
+        beta_mode: StaticString = "logits",
+        state_layout: StaticString = "K_FIRST",
+    ](
+        output: OutputTensor[dtype=output_dtype, rank=4, ...],
+        q: InputTensor[dtype=qkv_dtype, rank=4, ...],
+        k: InputTensor[dtype=qkv_dtype, rank=4, ...],
+        v: InputTensor[dtype=qkv_dtype, rank=4, ...],
+        raw_gate: InputTensor[dtype=gate_dtype, rank=4, ...],
+        beta_logits: InputTensor[dtype=gate_dtype, rank=3, ...],
+        a_log: InputTensor[dtype=gate_dtype, rank=1, ...],
+        dt_bias: InputTensor[dtype=gate_dtype, rank=2, ...],
+        cu_seqlens: InputTensor[dtype=DType.int32, rank=1, ...],
+        # See `KdaDecode.execute`'s `state_pool` note: mutated in place, so
+        # it must stay a `MutableInputTensor`.
+        state_pool: MutableInputTensor[dtype=state_dtype, rank=4, ...],
+        state_indices: InputTensor[dtype=DType.int32, rank=1, ...],
+        ctx: DeviceContext,
+    ) capturing raises:
+        comptime assert gate_mode == "original" or gate_mode == "safe", (
+            "KdaChunk: gate_mode must be 'original' or 'safe', got: "
+            + gate_mode
+        )
+        comptime assert beta_mode == "logits" or beta_mode == "probability", (
+            "KdaChunk: beta_mode must be 'logits' or 'probability', got: "
+            + beta_mode
+        )
+        comptime assert (
+            state_layout == "K_FIRST" or state_layout == "V_FIRST"
+        ), (
+            "KdaChunk: state_layout must be 'K_FIRST' or 'V_FIRST', got: "
+            + state_layout
+        )
+        comptime assert is_gpu[target](), "kda_chunk is only supported on GPU."
+
+        var num_key_heads = q.dim_size(2)
+        var key_head_dim = q.dim_size(3)
+        var num_value_heads = v.dim_size(2)
+        var value_head_dim = v.dim_size(3)
+        var batch_size = state_indices.dim_size(0)
+        var total_T = q.dim_size(1)
+
+        debug_assert(
+            num_value_heads % num_key_heads == 0,
+            "kda_chunk: num_value_heads must be divisible by num_key_heads",
+        )
+        debug_assert(
+            k.dim_size(1) == total_T,
+            "kda_chunk: q and k must have same sequence length",
+        )
+        # These extents bound more here than they do in `kda_decode`, where
+        # they only scale in-kernel offsets: `kda_chunk_launch` reinterprets
+        # k / raw_gate / beta_logits / dt_bias as flat 2-D TMA views sized
+        # from q's head counts and the comptime head dim, so a mismatch makes
+        # the descriptor itself span memory the tensor does not own.
+        debug_assert(
+            k.dim_size(2) == num_key_heads,
+            "kda_chunk: k head dim must match q's num_key_heads",
+        )
+        debug_assert(
+            k.dim_size(3) == key_head_dim,
+            "kda_chunk: k key dim must match q's key_head_dim",
+        )
+        debug_assert(
+            v.dim_size(1) == total_T,
+            "kda_chunk: q and v must have same sequence length",
+        )
+        debug_assert(
+            raw_gate.dim_size(1) == total_T,
+            "kda_chunk: raw_gate must have same sequence length as q",
+        )
+        debug_assert(
+            raw_gate.dim_size(2) == num_value_heads,
+            "kda_chunk: raw_gate head dim must match num_value_heads",
+        )
+        debug_assert(
+            raw_gate.dim_size(3) == key_head_dim,
+            "kda_chunk: raw_gate key dim must match key_head_dim",
+        )
+        debug_assert(
+            beta_logits.dim_size(1) == total_T,
+            "kda_chunk: beta_logits must have same sequence length as q",
+        )
+        debug_assert(
+            beta_logits.dim_size(2) == num_value_heads,
+            "kda_chunk: beta_logits head dim must match num_value_heads",
+        )
+        debug_assert(
+            a_log.dim_size(0) == num_value_heads,
+            "kda_chunk: a_log length must match num_value_heads",
+        )
+        debug_assert(
+            dt_bias.dim_size(0) == num_value_heads,
+            "kda_chunk: dt_bias head dim must match num_value_heads",
+        )
+        debug_assert(
+            dt_bias.dim_size(1) == key_head_dim,
+            "kda_chunk: dt_bias key dim must match key_head_dim",
+        )
+        debug_assert(
+            cu_seqlens.dim_size(0) == batch_size + 1,
+            "kda_chunk: cu_seqlens must have batch_size + 1 entries",
+        )
+        debug_assert(
+            state_pool.dim_size(1) == num_value_heads,
+            "kda_chunk: state_pool head dim must match num_value_heads",
+        )
+        # `kda_chunk_scan_gpu` indexes pool dims 2/3 under the same layout
+        # convention as the decode kernel; see `KdaDecode.execute`.
+        comptime if state_layout == "K_FIRST":
+            debug_assert(
+                state_pool.dim_size(2) == key_head_dim,
+                "kda_chunk: K_FIRST state_pool dim 2 must equal key_head_dim",
+            )
+            debug_assert(
+                state_pool.dim_size(3) == value_head_dim,
+                "kda_chunk: K_FIRST state_pool dim 3 must equal value_head_dim",
+            )
+        else:
+            debug_assert(
+                state_pool.dim_size(2) == value_head_dim,
+                "kda_chunk: V_FIRST state_pool dim 2 must equal value_head_dim",
+            )
+            debug_assert(
+                state_pool.dim_size(3) == key_head_dim,
+                "kda_chunk: V_FIRST state_pool dim 3 must equal key_head_dim",
+            )
+
+        # Same (key_head_dim, value_head_dim) instantiations as `kda_decode`;
+        # see that op for the "one entry per geometry" rationale.
+        comptime SUPPORTED_HEAD_DIMS = [(32, 32), (128, 128)]
+        var dispatched = False
+
+        comptime for head_dims in SUPPORTED_HEAD_DIMS:
+            comptime kKD = head_dims[0]
+            comptime kVD = head_dims[1]
+            if key_head_dim == kKD and value_head_dim == kVD:
+                dispatched = True
+                kda_chunk_launch[kKD, kVD, gate_mode, beta_mode, state_layout](
+                    num_key_heads,
+                    num_value_heads,
+                    batch_size,
+                    total_T,
+                    output.to_tile_tensor[DType.int64](),
+                    q.to_tile_tensor[DType.int64](),
+                    k.to_tile_tensor[DType.int64](),
+                    v.to_tile_tensor[DType.int64](),
+                    raw_gate.to_tile_tensor[DType.int64](),
+                    beta_logits.to_tile_tensor[DType.int64](),
+                    a_log.to_tile_tensor[DType.int64](),
+                    dt_bias.to_tile_tensor[DType.int64](),
+                    cu_seqlens.to_device_buffer(ctx),
+                    state_pool.to_tile_tensor[DType.int64](),
+                    state_indices.to_tile_tensor[DType.int64](),
+                    q.to_device_buffer(ctx),
+                    k.to_device_buffer(ctx),
+                    raw_gate.to_device_buffer(ctx),
+                    beta_logits.to_device_buffer(ctx),
+                    dt_bias.to_device_buffer(ctx),
+                    q.strides(),
+                    k.strides(),
+                    v.strides(),
+                    raw_gate.strides(),
+                    beta_logits.strides(),
+                    dt_bias.strides(),
+                    state_pool.strides(),
+                    output.strides(),
+                    ctx,
+                )
+
+        if not dispatched:
+            raise Error(
+                "kda_chunk: unsupported (key_head_dim, value_head_dim) = ("
                 + String(key_head_dim)
                 + ", "
                 + String(value_head_dim)

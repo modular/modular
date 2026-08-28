@@ -810,6 +810,12 @@ the [container](/container) page now links to the new page.
   alongside the powers of two it already covered, so a model whose per-device
   head count is not a power of two can bind its dispatch metadata.
 
+- KDA prefill now runs on the chunk-parallel pipeline. The pipeline existed as
+  a Mojo kernel with no graph-op registration, so every prefill fell back to
+  the token-sequential decode recurrence: O(total_seq_len) sequential steps per
+  sequence, with no parallelism to spend on a long prompt. Registering
+  `kda_chunk` as its own graph op takes that to O(total_seq_len / CHUNK_SIZE).
+
 - Added `MODULAR_APPLE_M5_ALLOW_LOSSY_F32_ATTENTION`. Set it to `0` to keep
   fp32 attention off the Apple M5 MMA, which truncates operands to fp19. It
   defaults to the fast (lossy) path, matching
