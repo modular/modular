@@ -4414,6 +4414,80 @@ def test_finite_value_beside_dropped_sibling_rejected() -> None:
             _compiler().compile_json_schema(schema, reject_unsupported=True)
 
 
+def test_finite_value_beside_satisfied_sibling_compiles() -> None:
+    cases = (
+        ('{"type": "string", "enum": ["a", "ab"], "maxLength": 2}', '"ab"'),
+        ('{"enum": ["ab"], "minLength": 2}', '"ab"'),
+        (
+            '{"type": "object", "enum": [{"a": 1}], "required": ["a"]}',
+            '{"a":1}',
+        ),
+        # Two bytes, one character.
+        ('{"enum": ["\u00e9"], "maxLength": 1}', '"\u00e9"'),
+    )
+    for schema, accepted in cases:
+        compiled = _compiler().compile_json_schema(
+            schema, reject_unsupported=True
+        )
+        assert _accepts(compiled, accepted), schema
+        assert not _accepts(compiled, '"zzz"'), schema
+
+
+def test_finite_value_beside_violated_sibling_rejected() -> None:
+    for schema in (
+        # One character, two bytes.
+        '{"enum": ["\u00e9"], "minLength": 2}',
+        '{"type": "object", "enum": [{}], "required": ["a"]}',
+    ):
+        with pytest.raises(Exception, match="takes dispatch priority"):
+            _compiler().compile_json_schema(schema, reject_unsupported=True)
+
+
+def test_finite_value_beside_malformed_sibling_rejected() -> None:
+    for schema in (
+        '{"enum": [1], "minLength": -1}',
+        '{"enum": [1], "maxLength": -1}',
+        '{"enum": ["a"], "minLength": -1}',
+        '{"enum": [1], "required": [1]}',
+        '{"enum": [{"a": 1}], "required": ["a", "a"]}',
+        '{"enum": ["a"], "type": ["string", "string"]}',
+    ):
+        with pytest.raises(Exception, match="takes dispatch priority"):
+            _compiler().compile_json_schema(schema, reject_unsupported=True)
+
+
+def test_finite_value_sibling_walk_is_budgeted() -> None:
+    repeats = 70000
+    schema = (
+        '{"enum": [1], "required": ['
+        + ",".join(f'"a{i}"' for i in range(repeats))
+        + "]}"
+    )
+    with pytest.raises(Exception, match="takes dispatch priority"):
+        _compiler().compile_json_schema(schema, reject_unsupported=True)
+
+
+def test_finite_value_beside_undecidable_sibling_rejected() -> None:
+    for schema in (
+        '{"enum": ["a"], "pattern": "^a$"}',
+        '{"enum": ["a"], "nullable": true}',
+        '{"enum": [{"a": "xy"}],'
+        ' "properties": {"a": {"type": "string", "maxLength": 2}}}',
+        '{"type": "integer", "enum": [5, 7], "minimum": 5}',
+    ):
+        with pytest.raises(Exception, match="takes dispatch priority"):
+            _compiler().compile_json_schema(schema, reject_unsupported=True)
+
+
+def test_enum_with_annotation_only_sibling_compiles() -> None:
+    compiled = _compiler().compile_json_schema(
+        '{"type": "string", "enum": ["a"], "enumDescriptions": ["first"]}',
+        reject_unsupported=True,
+    )
+    assert _accepts(compiled, '"a"')
+    assert not _accepts(compiled, '"b"')
+
+
 def test_enum_with_sibling_type_still_compiles() -> None:
     # An enum beside a plain type keyword is the single most common schema shape
     # there is, and dropping a type that every enumerated value already

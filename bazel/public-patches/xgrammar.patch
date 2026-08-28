@@ -876,7 +876,7 @@ index da8b516..9cf8844 100644
    s +=
        std::string("], allow_additional_properties=") +
        (allow_additional_properties ? "true" : "false") +
-@@ -137,22 +147,443 @@ namespace {
+@@ -137,22 +147,486 @@ namespace {
  enum class SchemaErrorType : int {
    kInvalidSchema = 0,
    kUnsatisfiableSchema = 1,
@@ -911,8 +911,7 @@ index da8b516..9cf8844 100644
 +    if (!IsSupportedJSONType(type)) {
 +      return false;
 +    }
-+    type_set->insert(type);
-+    return true;
++    return type_set->insert(type).second;
 +  }
 +  if (!type_value.is<picojson::array>()) {
 +    return false;
@@ -930,7 +929,7 @@ index da8b516..9cf8844 100644
 +    if (!IsSupportedJSONType(type)) {
 +      return false;
 +    }
-+    type_set->insert(type);
++    if (!type_set->insert(type).second) return false;
 +  }
 +  return true;
 +}
@@ -1097,20 +1096,64 @@ index da8b516..9cf8844 100644
 +  return false;
 +}
 +
-+// ParseConst/ParseEnum read no sibling, and const outranks enum: anything else here is dropped.
++// Match GenerateStringLengthBody and JSON Schema by counting characters.
++static int64_t JSONStringLength(const std::string& text) {
++  int64_t length = 0;
++  for (unsigned char byte : text) {
++    if ((byte & 0xC0) != 0x80) ++length;
++  }
++  return length;
++}
++
++static bool ValueSatisfiesKeyword(
++    const std::string& key,
++    const picojson::value& constraint,
++    const picojson::value& value,
++    int64_t* work
++) {
++  if (key == "type") {
++    std::unordered_set<std::string> type_set;
++    if (!NormalizeTypeSet(constraint, &type_set)) return false;
++    for (const auto& type : type_set) {
++      if (ValueMatchesType(value, type)) return true;
++    }
++    return false;
++  }
++  if (key == "minLength" || key == "maxLength") {
++    if (!constraint.is<int64_t>() || constraint.get<int64_t>() < 0) return false;
++    if (!value.is<std::string>()) return true;
++    const int64_t length = JSONStringLength(value.get<std::string>());
++    const int64_t bound = constraint.get<int64_t>();
++    return key == "minLength" ? length >= bound : length <= bound;
++  }
++  if (key == "required") {
++    if (!constraint.is<picojson::array>()) return false;
++    const auto* members = value.is<picojson::object>() ? &value.get<picojson::object>() : nullptr;
++    std::unordered_set<std::string> required_keys;
++    for (const auto& required_key : constraint.get<picojson::array>()) {
++      if (--*work < 0) return false;
++      if (!required_key.is<std::string>()) return false;
++      const auto& name = required_key.get<std::string>();
++      if (!required_keys.insert(name).second) return false;
++      if (members && !members->count(name)) return false;
++    }
++    return true;
++  }
++  return false;
++}
++
++// Drop a sibling only when every listed value already satisfies it.
 +bool FiniteValuesAreExact(
 +    const picojson::object& schema, const std::vector<picojson::value>& values
 +) {
 +  const std::string finite_key = schema.count("const") ? "const" : "enum";
++  // Bound request-controlled quadratic work.
++  int64_t work = 1 << 16;
 +  for (const auto& key : schema.ordered_keys()) {
 +    if (key == finite_key || IsNoConstraintKeyword(key)) continue;
-+    if (key != "type") return false;
-+    std::unordered_set<std::string> type_set;
-+    if (!NormalizeTypeSet(schema.at(key), &type_set)) return false;
 +    for (const auto& value : values) {
-+      bool matches = false;
-+      for (const auto& type : type_set) matches = matches || ValueMatchesType(value, type);
-+      if (!matches) return false;
++      if (--work < 0) return false;
++      if (!ValueSatisfiesKeyword(key, schema.at(key), value, &work)) return false;
 +    }
 +  }
 +  return true;
@@ -1505,7 +1548,7 @@ index da8b516..9cf8844 100644
  }
 
  void SchemaParser::WarnUnsupportedKeywords(
-@@ -257,12 +778,617 @@ void SchemaParser::WarnUnsupportedKeywords(
+@@ -257,12 +778,619 @@ void SchemaParser::WarnUnsupportedKeywords(
    }
  }
 
@@ -1537,6 +1580,8 @@ index da8b516..9cf8844 100644
 +      "$comment", "readOnly",    "writeOnly",      "deprecated",
 +      "$id",     "$schema",      "$anchor",        "$vocabulary",
 +      "$dynamicAnchor", "$recursiveAnchor",
++      // Per-enum labels used by tool schemas; they do not constrain values.
++      "enumDescriptions",
 +      // Draft 4 spells the identifier "id"; later drafts do not know the
 +      // keyword at all. Either way it names a resource and constrains nothing.
 +      "id"};
