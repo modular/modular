@@ -6699,6 +6699,36 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
         )
         return result
 
+    @always_inline
+    def is_host_unified(self) raises -> Bool:
+        """Returns True if this device and the host share one physical memory
+        pool.
+
+        Reports hardware topology, so it does not predict whether
+        `DeviceBuffer.unsafe_host_ptr()` succeeds for any particular buffer.
+
+        Returns:
+            True if device and host memory are one physical pool.
+
+        Raises:
+            If there's an error querying the device.
+        """
+        var result: Bool = False
+        # const char *AsyncRT_DeviceContext_isHostUnified(bool *result, const DeviceContext *ctx)
+        _checked(
+            external_call[
+                "AsyncRT_DeviceContext_isHostUnified",
+                _CString[],
+                Pointer[Bool, origin_of(result)],
+                _DeviceContextPtr[mut=True],
+            ](
+                Pointer(to=result),
+                self._handle,
+            ),
+            location=call_location(),
+        )
+        return result
+
     @staticmethod
     @always_inline
     def number_of_devices(

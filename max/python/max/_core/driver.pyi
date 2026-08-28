@@ -91,6 +91,22 @@ class Device:
         """
 
     @property
+    def is_host_unified(self) -> bool:
+        """
+        Whether this device and the host draw from one physical memory pool.
+
+        Reports hardware topology, so it does not predict whether a particular
+        buffer is readable from the host.
+
+        .. code-block:: python
+
+            from max import driver
+
+            device = driver.Accelerator()
+            device.is_host_unified
+        """
+
+    @property
     def stats(self) -> Mapping[str, Any]:
         """
         Returns utilization data for the device.

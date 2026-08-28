@@ -227,6 +227,11 @@ the [container](/container) page now links to the new page.
 
 ## MAX framework
 
+- Added `Device.is_host_unified` (`max.driver`) and
+  `DeviceContext.is_host_unified()` (Mojo): whether a device and the host draw
+  from one physical memory pool. Reports hardware topology, so it does not imply
+  any given buffer is host-readable. Driver plugins answer it through the new
+  optional `host_unified` device property.
 - Greedy speculative acceptance (`greedy_acceptance_sampler`,
   `AcceptanceSampler` in greedy mode) now applies the structured-output
   grammar bitmask to the target logits (with a `-inf` fill) before the
