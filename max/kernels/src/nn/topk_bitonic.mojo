@@ -43,7 +43,6 @@ from std.math import ceildiv
 from std.time import global_perf_counter_ns
 from std.utils.numerics import min_or_neg_inf
 from std.utils.static_tuple import StaticTuple
-from layout import TileTensor, row_major
 from structured_kernels.trace_buf import GmemTrace, NullTrace, TraceBuf
 
 # ===----------------------------------------------------------------------=== #
