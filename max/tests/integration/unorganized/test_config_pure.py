@@ -442,6 +442,15 @@ class TestSpeculativeArchitectureOverride:
         )
         assert self._resolved_arch(cfg) == "Eagle3DeepseekV3ForCausalLM"
 
+    def test_deepseek_unrecognized_draft_raises(self) -> None:
+        cfg = self._make_config(
+            "DeepseekV3ForCausalLM", draft_arch="LlamaForCausalLM"
+        )
+        with pytest.raises(
+            ValueError, match="Unrecognized draft architecture for DeepseekV3"
+        ):
+            self._resolved_arch(cfg)
+
     def test_llama_eagle(self) -> None:
         cfg = self._make_config("LlamaForCausalLM")
         assert self._resolved_arch(cfg) == "UnifiedEagleLlama3ForCausalLM"

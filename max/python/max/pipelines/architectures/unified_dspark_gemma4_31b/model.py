@@ -176,10 +176,6 @@ class UnifiedDSparkGemma4_31BModel(
     def _create_model_config(
         self, state_dict: dict[str, Any]
     ) -> UnifiedDSparkGemma4_31BConfig:
-        # ``initialize`` runs ``validate_dspark_fields``, which resolves
-        # num_speculative_tokens (explicit values honored, unset falls back
-        # to the drafter's trained width) before any KV params are derived
-        # from it below.
         unified_config = UnifiedDSparkGemma4_31BConfig.initialize(
             self.pipeline_config, max_seq_len=self.max_seq_len
         )

@@ -942,6 +942,16 @@ the [container](/container) page now links to the new page.
   `ModelManifest.resolve()` is removed — a manifest is complete when built.
   Construct it with the component configs you need. The unused
   `total_weights_size` property is also removed.
+- `SpeculativeConfig` is now immutable: assigning to a field after
+  construction raises a pydantic `ValidationError`. Construct it with the
+  values you need. A failed speculative target-architecture rewrite now
+  raises from `PipelineConfig.from_args()` instead of being logged and
+  ignored.
+
+- An architecture can set `checkpoint_draft_width` on its
+  registration to supply the draft width its checkpoint was trained for,
+  so users of those models do not have to pass `--num-speculative-tokens`.
+  A width that disagrees with the checkpoint is replaced, with a warning.
 
 - Constructing a `MAXModelConfig` directly now only validates the fields
   you pass. It no longer fills in the weight and model paths or loads the

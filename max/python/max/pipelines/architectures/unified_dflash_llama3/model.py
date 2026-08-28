@@ -237,6 +237,7 @@ class UnifiedDflashLlama3Model(
             target=target_config,
             draft=draft_config,
             speculative_config=self.pipeline_config.speculative,
+            resolved_num_speculative_tokens=resolved_spec,
             target_layer_ids=list(dflash_hf.target_layer_ids),
             mask_token_id=int(dflash_hf.mask_token_id),
             block_size=int(dflash_hf.block_size or 0),

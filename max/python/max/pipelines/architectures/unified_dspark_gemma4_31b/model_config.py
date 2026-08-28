@@ -70,6 +70,8 @@ class UnifiedDSparkGemma4_31BConfig(ArchConfigWithKVCache):
     target_layer_ids: list[int] = field(default_factory=list)
     mask_token_id: int = 0
     block_size: int = 0
+    resolved_num_speculative_tokens: int | None = None
+    """Per-step draft count: explicit value if set, else the trained width."""
 
     def __post_init__(self) -> None:
         self.target.text_config.return_logits = ReturnLogits.VARIABLE
@@ -83,6 +85,10 @@ class UnifiedDSparkGemma4_31BConfig(ArchConfigWithKVCache):
                 "DSpark currently supports a single device only. Got"
                 f" {len(self.target.devices)} devices."
             )
+
+        self.resolved_num_speculative_tokens = (
+            self.draft.checkpoint_draft_width(self.speculative_config)
+        )
 
     def validate_dspark_fields(self) -> None:
         """Strict validation of the draft config against the target.
@@ -125,13 +131,6 @@ class UnifiedDSparkGemma4_31BConfig(ArchConfigWithKVCache):
                 f" Got mask_token_id={self.mask_token_id}"
                 f" vocab_size={self.target.text_config.vocab_size}."
             )
-        # An explicit num_speculative_tokens is always honored: at or below
-        # the trained draft width the causal block makes truncation
-        # prefix-stable; beyond it the block runs as extrapolation (with a
-        # warning). Unset resolves to the trained width.
-        self.speculative_config.num_speculative_tokens = (
-            self.draft.resolve_num_speculative_tokens(self.speculative_config)
-        )
 
     @property
     def effective_block_size(self) -> int:
@@ -142,9 +141,9 @@ class UnifiedDSparkGemma4_31BConfig(ArchConfigWithKVCache):
         identical to the trained-width block's), and more than trained
         runs the extra slots as extrapolation.
         """
-        num_spec = self.speculative_config.num_speculative_tokens
+        num_spec = self.resolved_num_speculative_tokens
         assert num_spec is not None, (
-            "num_speculative_tokens is resolved by validate_dspark_fields"
+            "num_speculative_tokens is resolved at construction"
         )
         return num_spec + 1
 

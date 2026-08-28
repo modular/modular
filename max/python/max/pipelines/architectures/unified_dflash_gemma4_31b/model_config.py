@@ -39,14 +39,16 @@ from max.pipelines.lib.interfaces.arch_config import (
     ArchConfigWithKVCache,
 )
 from max.pipelines.modeling.config_enums import SupportedEncoding
+from max.pipelines.speculative._dflash import (
+    DflashDraftHFConfig,
+    parse_dflash_draft_hf_config,
+)
 from transformers import AutoConfig
 from typing_extensions import Self
 
 from ..gemma4.model_config import Gemma4ForConditionalGenerationConfig
 from ..llama3.model_config import Llama3Config
-from ..unified_dflash_llama3.model_config import (  # re-exported helpers
-    DflashDraftHFConfig,
-    parse_dflash_draft_hf_config,
+from ..unified_dflash_llama3.model_config import (
     resolve_dflash_num_speculative_tokens,
 )
 
@@ -120,6 +122,8 @@ class UnifiedDflashGemma4_31BConfig(ArchConfigWithKVCache):
     layer_types: list[str] = field(default_factory=list)
     mask_token_id: int = 0
     block_size: int = 0
+    resolved_num_speculative_tokens: int | None = None
+    """Per-step draft count: explicit value if set, else the trained width."""
 
     def __post_init__(self) -> None:
         self.target.text_config.return_logits = ReturnLogits.VARIABLE
@@ -196,7 +200,11 @@ class UnifiedDflashGemma4_31BConfig(ArchConfigWithKVCache):
         """
         if self.block_size > 0:
             return self.block_size
-        num_spec = self.speculative_config.num_speculative_tokens
+        num_spec = (
+            self.resolved_num_speculative_tokens
+            if self.resolved_num_speculative_tokens is not None
+            else self.speculative_config.num_speculative_tokens
+        )
         if num_spec is None:
             raise ValueError(
                 "The DFlash draft checkpoint declares no block_size; set"
@@ -233,15 +241,12 @@ class UnifiedDflashGemma4_31BConfig(ArchConfigWithKVCache):
         assert pipeline_config.speculative is not None
 
         speculative_config = pipeline_config.speculative
-        resolved: int | None = None
-        if speculative_config.num_speculative_tokens is None:
-            # Unset resolves to the drafter's trained width. The resolved
-            # value lives on this arch config's own speculative section; the
-            # caller's pipeline_config is never mutated or copied.
+        explicit = speculative_config.num_speculative_tokens
+        if explicit is None:
+            # Unset resolves to the drafter's trained width.
             resolved = resolve_dflash_num_speculative_tokens(pipeline_config)
-            speculative_config = speculative_config.model_copy(
-                update={"num_speculative_tokens": resolved}
-            )
+        else:
+            resolved = explicit
 
         dflash_hf = parse_dflash_draft_hf_config(draft_hf_config)
         target_config = (
@@ -260,7 +265,7 @@ class UnifiedDflashGemma4_31BConfig(ArchConfigWithKVCache):
             pipeline_config.draft_model,
             max_seq_len=draft_max_length,
         )
-        if resolved is not None:
+        if explicit is None:
             # ``initialize_from_config`` derives KV from the raw pipeline
             # config, where the unset width would bake num_draft_tokens=0.
             target_config.kv_params = _with_num_draft_tokens(
@@ -280,7 +285,7 @@ class UnifiedDflashGemma4_31BConfig(ArchConfigWithKVCache):
             pipeline_config,
             draft_config,
             list(target_config.devices),
-            num_draft_tokens=(speculative_config.num_speculative_tokens or 0),
+            num_draft_tokens=(resolved or 0),
         )
 
         return cls(
@@ -288,6 +293,7 @@ class UnifiedDflashGemma4_31BConfig(ArchConfigWithKVCache):
             draft=draft_config,
             draft_kv_params=draft_config.kv_params,
             speculative_config=speculative_config,
+            resolved_num_speculative_tokens=resolved,
             target_layer_ids=list(dflash_hf.target_layer_ids),
             layer_types=list(
                 getattr(draft_hf_config, "layer_types", None) or []
