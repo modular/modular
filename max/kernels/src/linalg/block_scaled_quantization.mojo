@@ -1888,8 +1888,7 @@ def block_scaled_matmul_with_epilogue[
         return
 
     @always_inline
-    @__parameter
-    def description_fn() -> String:
+    def description_fn() {imm} -> String:
         # fmt: off
         return String(
             "(gpu",
@@ -1910,7 +1909,7 @@ def block_scaled_matmul_with_epilogue[
             String("nvfp4_" if a_type == .uint8 else "mxfp8_"),
             String(SF_VECTOR_SIZE) + String("_sfvs"),
         ](),
-        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+        Trace[TraceLevel.OP]._get_detail_str(description_fn),
         task_id=get_safe_task_id(ctx),
     ):
         comptime if not elementwise_lambda_fn:
@@ -2204,8 +2203,7 @@ def block_scaled_matmul[
             raise Error("Heuristic and outliers dispatch failed")
 
     @always_inline
-    @__parameter
-    def description_fn() -> String:
+    def description_fn() {imm} -> String:
         # fmt: off
         return String(
             "(",
@@ -2231,7 +2229,7 @@ def block_scaled_matmul[
             String(SF_VECTOR_SIZE) + String("_sfvs"),
             _trace_description if _trace_description else "",
         ](),
-        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+        Trace[TraceLevel.OP]._get_detail_str(description_fn),
         task_id=get_safe_task_id(ctx),
     ):
         # For these large-N shapes on B200, Mojo also wins at M=256.

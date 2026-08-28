@@ -338,8 +338,7 @@ def argmaxmin_gpu[
         coord_to_index_list(input.layout.shape_coord())
     )
 
-    @__parameter
-    def trace_information() -> String:
+    def trace_information() {imm} -> String:
         return String(";").join(
             Span(
                 [
@@ -351,7 +350,7 @@ def argmaxmin_gpu[
 
     with Trace[TraceLevel.OP, target=StaticString("gpu")](
         "argmaxmin_gpu",
-        Trace[TraceLevel.OP]._get_detail_str[trace_information](),
+        Trace[TraceLevel.OP]._get_detail_str(trace_information),
         task_id=Int(ctx.id()),
     ):
         var num_elements = in_shape[input.rank - 1]

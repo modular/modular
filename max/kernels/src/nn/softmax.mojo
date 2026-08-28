@@ -1359,13 +1359,12 @@ def softmax_inline[
     """
     var shape_il = rebind[IndexList[rank]](coord_to_index_list(shape))
 
-    @__parameter
-    def trace_information() -> String:
+    def trace_information() {imm} -> String:
         return trace_arg("input", shape_il, dtype)
 
     with Trace[TraceLevel.OP, target=target](
         "softmax",
-        Trace[TraceLevel.OP]._get_detail_str[trace_information](),
+        Trace[TraceLevel.OP]._get_detail_str(trace_information),
     ):
         # Exit early if the tensors are empty.
         if shape_il.flattened_length() == 0:

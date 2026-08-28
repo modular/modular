@@ -1874,13 +1874,12 @@ def apply_qk_rms_norm[
     """
 
     @always_inline
-    @__parameter
-    def description_fn() -> String:
+    def description_fn() {imm} -> String:
         return trace_arg("qk", Coord(rows, q_cols + k_cols), in_dtype)
 
     with Trace[TraceLevel.OP, target=target](
         "apply_qk_rms_norm",
-        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+        Trace[TraceLevel.OP]._get_detail_str(description_fn),
         task_id=Int(ctx.id()),
     ):
         if rows == 0:
@@ -2758,13 +2757,12 @@ def group_norm[
         )
 
     @always_inline
-    @__parameter
-    def description_fn() -> String:
+    def description_fn() {imm} -> String:
         return trace_arg("input", shape_il, dtype)
 
     with Trace[TraceLevel.OP, target=target](
         "group_norm",
-        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+        Trace[TraceLevel.OP]._get_detail_str(description_fn),
         task_id=Int(ctx.id()),
     ):
         comptime if is_cpu[target]():

@@ -2603,8 +2603,7 @@ struct Struct_ep_fused_silu:
         ]
 
         @always_inline
-        @__parameter
-        def description_fn() -> String:
+        def description_fn() {imm} -> String:
             # fmt: off
             return String(
                 "output_dtype=", output_dtype,
@@ -2614,7 +2613,7 @@ struct Struct_ep_fused_silu:
 
         with Trace[TraceLevel.OP, target=target](
             "ep.fused_silu",
-            Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+            Trace[TraceLevel.OP]._get_detail_str(description_fn),
             task_id=get_safe_task_id(context),
         ):
             gpu_ctx.enqueue_function[fused_silu](
@@ -2686,8 +2685,7 @@ struct Struct_ep_fused_silu_fp8:
         ]
 
         @always_inline
-        @__parameter
-        def description_fn() -> String:
+        def description_fn() {imm} -> String:
             # fmt: off
             return String(
                 "fp8_dtype=", fp8_dtype,
@@ -2699,7 +2697,7 @@ struct Struct_ep_fused_silu_fp8:
 
         with Trace[TraceLevel.OP, target=target](
             "ep.fused_silu.fp8",
-            Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+            Trace[TraceLevel.OP]._get_detail_str(description_fn),
             task_id=get_safe_task_id(context),
         ):
             gpu_ctx.enqueue_function[fused_silu_fp8](
@@ -2793,8 +2791,7 @@ struct Struct_ep_fused_silu_mxfp4:
         ]
 
         @always_inline
-        @__parameter
-        def description_fn() -> String:
+        def description_fn() {imm} -> String:
             # fmt: off
             return String(
                 "quant_dtype=", quant_dtype,
@@ -2807,7 +2804,7 @@ struct Struct_ep_fused_silu_mxfp4:
 
         with Trace[TraceLevel.OP, target=target](
             trace_name,
-            Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+            Trace[TraceLevel.OP]._get_detail_str(description_fn),
             task_id=get_safe_task_id(context),
         ):
             gpu_ctx.enqueue_function[fused_silu_mx](
@@ -2936,8 +2933,7 @@ struct Struct_ep_fused_silu_mxfp6:
         ]
 
         @always_inline
-        @__parameter
-        def description_fn() -> String:
+        def description_fn() {imm} -> String:
             # fmt: off
             return String(
                 "scales_dtype=", scales_dtype,
@@ -2949,7 +2945,7 @@ struct Struct_ep_fused_silu_mxfp6:
 
         with Trace[TraceLevel.OP, target=target](
             "ep.fused_silu.mxfp6",
-            Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+            Trace[TraceLevel.OP]._get_detail_str(description_fn),
             task_id=get_safe_task_id(context),
         ):
             gpu_ctx.enqueue_function[fused_silu_fp6](
@@ -3031,8 +3027,7 @@ struct Struct_ep_fused_silu_nvfp4:
         ]
 
         @always_inline
-        @__parameter
-        def description_fn() -> String:
+        def description_fn() {imm} -> String:
             # fmt: off
             return String(
                 "fp4_dtype=", fp4_dtype,
@@ -3043,7 +3038,7 @@ struct Struct_ep_fused_silu_nvfp4:
 
         with Trace[TraceLevel.OP, target=target](
             "ep.fused_silu.nvfp4",
-            Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+            Trace[TraceLevel.OP]._get_detail_str(description_fn),
             task_id=get_safe_task_id(context),
         ):
             gpu_ctx.enqueue_function[fused_silu_nvfp4](

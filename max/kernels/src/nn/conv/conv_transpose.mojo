@@ -1585,8 +1585,7 @@ def conv_transposed_cpu[
     """
 
     @always_inline
-    @__parameter
-    def description_fn() -> String:
+    def description_fn() {imm} -> String:
         # fmt: off
         return String(
             trace_arg("input", coord_to_index_list(input.layout.shape_coord())),
@@ -1604,7 +1603,7 @@ def conv_transposed_cpu[
 
     with Trace[TraceLevel.OP, target=StaticString("cpu")](
         "conv_transposed",
-        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+        Trace[TraceLevel.OP]._get_detail_str(description_fn),
     ):
         comptime packed_filter_rank = filter.rank if filter_packed else filter.rank + 1
 

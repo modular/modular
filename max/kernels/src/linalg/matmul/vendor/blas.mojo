@@ -606,8 +606,7 @@ def matmul[
     batch_size: Int = 1,
 ) raises:
     @always_inline
-    @__parameter
-    def description_fn() -> String:
+    def description_fn() {imm} -> String:
         return String(
             trace_arg(
                 "A",
@@ -634,7 +633,7 @@ def matmul[
 
     with Trace[TraceLevel.OP, target=StaticString("gpu")](
         String(t"{handle.resolved_backend}_matmul"),
-        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+        Trace[TraceLevel.OP]._get_detail_str(description_fn),
         task_id=get_safe_task_id(ctx),
     ):
         comptime if handle.resolved_backend is Backend.CUBLAS:

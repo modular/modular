@@ -195,8 +195,7 @@ def top_k[
         coord_to_index_list(input.layout.shape_coord())
     )
 
-    @__parameter
-    def trace_information() -> String:
+    def trace_information() {imm} -> String:
         return String(";").join(
             Span(
                 [
@@ -210,7 +209,7 @@ def top_k[
 
     with Trace[TraceLevel.OP, target=target](
         "top_k",
-        Trace[TraceLevel.OP]._get_detail_str[trace_information](),
+        Trace[TraceLevel.OP]._get_detail_str(trace_information),
         task_id=Int(ctx.id()),
     ):
         var normalized_axis = normalize_neg_index(Int64(axis), input.rank)
@@ -429,8 +428,7 @@ def fused_token_sampling_cpu[
         coord_to_index_list(input.layout.shape_coord())
     )
 
-    @__parameter
-    def trace_information() -> String:
+    def trace_information() {imm} -> String:
         return String(";").join(
             Span(
                 [
@@ -442,7 +440,7 @@ def fused_token_sampling_cpu[
 
     with Trace[TraceLevel.OP, target=StaticString("cpu")](
         "fused_token_sampling",
-        Trace[TraceLevel.OP]._get_detail_str[trace_information](),
+        Trace[TraceLevel.OP]._get_detail_str(trace_information),
     ):
         var bound_max_k = 255 if max_k == -1 else max_k
 
@@ -1710,8 +1708,7 @@ def topk_gpu[
         coord_to_index_list(input.layout.shape_coord())
     )
 
-    @__parameter
-    def trace_information() -> String:
+    def trace_information() {imm} -> String:
         return String(";").join(
             Span(
                 [
@@ -1725,7 +1722,7 @@ def topk_gpu[
 
     with Trace[TraceLevel.OP, target=StaticString("gpu")](
         "topk_gpu",
-        Trace[TraceLevel.OP]._get_detail_str[trace_information](),
+        Trace[TraceLevel.OP]._get_detail_str(trace_information),
         task_id=Int(ctx.id()),
     ):
         var N = orig_in_shape[input.rank - 1]
@@ -2052,8 +2049,7 @@ def fused_token_sampling_gpu[
         coord_to_index_list(input.layout.shape_coord())
     )
 
-    @__parameter
-    def trace_information() -> String:
+    def trace_information() {imm} -> String:
         return String(";").join(
             Span(
                 [
@@ -2066,7 +2062,7 @@ def fused_token_sampling_gpu[
 
     with Trace[TraceLevel.OP, target=StaticString("gpu")](
         "fused_token_sampling_gpu",
-        Trace[TraceLevel.OP]._get_detail_str[trace_information](),
+        Trace[TraceLevel.OP]._get_detail_str(trace_information),
         task_id=Int(ctx.id()),
     ):
         # If all items in the batch, want to sample all tokens (top_k==-1, top_p=1)
@@ -2520,13 +2516,12 @@ def gumbel_sampling_fused_gpu[
         coord_to_index_list(input.layout.shape_coord())
     )
 
-    @__parameter
-    def trace_information() -> String:
+    def trace_information() {imm} -> String:
         return trace_arg("input", input_shape, dtype)
 
     with Trace[TraceLevel.OP, target=StaticString("gpu")](
         "gumbel_sampling_fused_gpu",
-        Trace[TraceLevel.OP]._get_detail_str[trace_information](),
+        Trace[TraceLevel.OP]._get_detail_str(trace_information),
         task_id=Int(ctx.id()),
     ):
         var batch_size = Int(input.dim(0))
@@ -2614,13 +2609,12 @@ def gumbel_sampling_gpu[
         coord_to_index_list(input.layout.shape_coord())
     )
 
-    @__parameter
-    def trace_information() -> String:
+    def trace_information() {imm} -> String:
         return trace_arg("input", input_shape, dtype)
 
     with Trace[TraceLevel.OP, target=StaticString("gpu")](
         "gumbel_sampling_gpu",
-        Trace[TraceLevel.OP]._get_detail_str[trace_information](),
+        Trace[TraceLevel.OP]._get_detail_str(trace_information),
         task_id=Int(ctx.id()),
     ):
         # create a buffer to hold the Gumbel noise applied input

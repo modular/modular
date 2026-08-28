@@ -2550,9 +2550,7 @@ def grouped_matmul_dynamic_scaled_nvfp4[
         return
 
     @always_inline
-    @__parameter
-    @__copy_capture(c, a)
-    def description_fn() -> String:
+    def description_fn() {var c, var a, imm} -> String:
         # fmt: off
         return String(
             "(gpu",
@@ -2570,7 +2568,7 @@ def grouped_matmul_dynamic_scaled_nvfp4[
             String(a_type) + "x" + String(b_type) + "_to_" + String(c_type),
             "_scales_" + String(scales_type),
         ](),
-        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+        Trace[TraceLevel.OP]._get_detail_str(description_fn),
         task_id=get_safe_task_id(ctx),
     ):
         comptime MMA_K = 32

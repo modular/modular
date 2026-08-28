@@ -140,8 +140,7 @@ def generic_fused_qkv_matmul_kv_cache_paged_ragged[
     """
 
     @always_inline
-    @__parameter
-    def description_fn() -> String:
+    def description_fn() {imm} -> String:
         return String(";").join(
             Span(
                 [
@@ -162,7 +161,7 @@ def generic_fused_qkv_matmul_kv_cache_paged_ragged[
     ) + ".hdim_" + String(kv_collection.kv_params.head_size)
     with Trace[TraceLevel.OP, target=target](
         name,
-        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+        Trace[TraceLevel.OP]._get_detail_str(description_fn),
         task_id=Int(ctx.id()),
     ):
         return _fused_qkv_matmul_kv_cache_ragged[
@@ -229,8 +228,7 @@ def generic_fused_qkv_matmul_kv_cache_paged_ragged_bias[
     """
 
     @always_inline
-    @__parameter
-    def description_fn() -> String:
+    def description_fn() {imm} -> String:
         return String(";").join(
             Span(
                 [
@@ -251,7 +249,7 @@ def generic_fused_qkv_matmul_kv_cache_paged_ragged_bias[
     ) + ".hdim_" + String(kv_collection.kv_params.head_size)
     with Trace[TraceLevel.OP, target=target](
         name,
-        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+        Trace[TraceLevel.OP]._get_detail_str(description_fn),
         task_id=Int(ctx.id()),
     ):
         return _fused_qkv_matmul_kv_cache_ragged_bias[
@@ -341,8 +339,7 @@ def generic_fused_qkv_matmul_kv_cache_paged_ragged_scale[
     """
 
     @always_inline
-    @__parameter
-    def description_fn() -> String:
+    def description_fn() {imm} -> String:
         return String(";").join(
             Span(
                 [
@@ -377,7 +374,7 @@ def generic_fused_qkv_matmul_kv_cache_paged_ragged_scale[
     )
     with Trace[TraceLevel.OP, target=target](
         name,
-        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+        Trace[TraceLevel.OP]._get_detail_str(description_fn),
         task_id=Int(ctx.id()),
     ):
         return _fused_qkv_matmul_kv_cache_ragged_scale[
@@ -465,8 +462,7 @@ def generic_fused_qkv_matmul_kv_cache_paged_ragged_scale_float4[
     """
 
     @always_inline
-    @__parameter
-    def description_fn() -> String:
+    def description_fn() {imm} -> String:
         return String(";").join(
             Span(
                 [
@@ -494,7 +490,7 @@ def generic_fused_qkv_matmul_kv_cache_paged_ragged_scale_float4[
     ) + ".hdim_" + String(kv_collection.kv_params.head_size)
     with Trace[TraceLevel.OP, target=target](
         name,
-        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+        Trace[TraceLevel.OP]._get_detail_str(description_fn),
         task_id=Int(ctx.id()),
     ):
         return _fused_qkv_matmul_kv_cache_ragged_scale_float4[
@@ -1503,8 +1499,7 @@ def generic_fused_qkv_index_matmul_kv_cache_paged_ragged_scale_float4[
     """
 
     @always_inline
-    @__parameter
-    def description_fn() -> String:
+    def description_fn() {imm} -> String:
         return String(";").join(
             Span(
                 [
@@ -1535,7 +1530,7 @@ def generic_fused_qkv_index_matmul_kv_cache_paged_ragged_scale_float4[
     )
     with Trace[TraceLevel.OP, target=target](
         name,
-        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+        Trace[TraceLevel.OP]._get_detail_str(description_fn),
         task_id=Int(ctx.id()),
     ):
         return _fused_qkv_index_matmul_kv_cache_ragged_scale_float4[
@@ -1887,8 +1882,7 @@ def generic_fused_qkv_index_matmul_kv_cache_paged_ragged[
     """
 
     @always_inline
-    @__parameter
-    def description_fn() -> String:
+    def description_fn() {imm} -> String:
         return String(";").join(
             Span(
                 [
@@ -1913,7 +1907,7 @@ def generic_fused_qkv_index_matmul_kv_cache_paged_ragged[
     ) + ".hdim_" + String(kv_collection.kv_params.head_size)
     with Trace[TraceLevel.OP, target=target](
         name,
-        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+        Trace[TraceLevel.OP]._get_detail_str(description_fn),
         task_id=Int(ctx.id()),
     ):
         return _fused_qkv_index_matmul_kv_cache_ragged[target=target,](
@@ -2504,8 +2498,7 @@ def kv_matmul_ragged_paged[
     """
 
     @always_inline
-    @__parameter
-    def description_fn() -> String:
+    def description_fn() {imm} -> String:
         return String(";").join(
             Span(
                 [
@@ -2522,7 +2515,7 @@ def kv_matmul_ragged_paged[
         + String(kv_collection.kv_params.num_heads)
         + ".hdim_"
         + String(kv_collection.kv_params.head_size),
-        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+        Trace[TraceLevel.OP]._get_detail_str(description_fn),
         task_id=Int(ctx.id()),
     ):
         return _matmul_kv_cache_ragged[target=target](
@@ -2746,8 +2739,7 @@ def k_matmul_ragged_paged[
     """
 
     @always_inline
-    @__parameter
-    def description_fn() -> String:
+    def description_fn() {imm} -> String:
         return String(";").join(
             Span(
                 [
@@ -2762,7 +2754,7 @@ def k_matmul_ragged_paged[
         + String(kv_collection.kv_params.num_heads)
         + ".hdim_"
         + String(kv_collection.kv_params.head_size),
-        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+        Trace[TraceLevel.OP]._get_detail_str(description_fn),
         task_id=Int(ctx.id()),
     ):
         return _matmul_k_cache_ragged[target=target](
@@ -2947,8 +2939,7 @@ def k_matmul_ragged_paged_scale[
     """
 
     @always_inline
-    @__parameter
-    def description_fn() -> String:
+    def description_fn() {imm} -> String:
         return String(";").join(
             Span(
                 [
@@ -2972,7 +2963,7 @@ def k_matmul_ragged_paged_scale[
         + String(kv_collection.kv_params.num_heads)
         + ".hdim_"
         + String(kv_collection.kv_params.head_size),
-        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+        Trace[TraceLevel.OP]._get_detail_str(description_fn),
         task_id=Int(ctx.id()),
     ):
         comptime assert is_gpu[
@@ -3158,8 +3149,7 @@ def unfused_qkv_matmul_ragged_paged_gguf_quantized[
     """
 
     @always_inline
-    @__parameter
-    def description_fn() -> String:
+    def description_fn() {imm} -> String:
         return String(";").join(
             Span(
                 [
@@ -3187,7 +3177,7 @@ def unfused_qkv_matmul_ragged_paged_gguf_quantized[
         + quantization_encoding_k
         + ".quantization_encoding_v="
         + quantization_encoding_v,
-        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+        Trace[TraceLevel.OP]._get_detail_str(description_fn),
     ):
         return _unfused_qkv_matmul_ragged_paged_gguf_quantized_impl[
             quantization_encoding_q,
@@ -3537,8 +3527,7 @@ def generic_fused_qk_rope_bshd_paged_ragged[
     """
 
     @always_inline
-    @__parameter
-    def description_fn() -> String:
+    def description_fn() {imm} -> String:
         return String(";").join(
             Span(
                 [
@@ -3567,7 +3556,7 @@ def generic_fused_qk_rope_bshd_paged_ragged[
     ) + ".hdim_" + String(kv_collection.kv_params.head_size)
     with Trace[TraceLevel.OP, target=target](
         name,
-        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+        Trace[TraceLevel.OP]._get_detail_str(description_fn),
         task_id=Int(context.id()),
     ):
         comptime if has_position_ids:
@@ -3666,8 +3655,7 @@ def generic_flash_attention_kv_cache_ragged[
     """
 
     @always_inline
-    @__parameter
-    def description_fn() -> String:
+    def description_fn() {imm} -> String:
         var desc_parts = List[String]()
         desc_parts.append(trace_arg("q", q.runtime_layout.shape.value))
         desc_parts.append("scale=" + String(scale))
@@ -3690,7 +3678,7 @@ def generic_flash_attention_kv_cache_ragged[
 
     with Trace[TraceLevel.OP, target=target](
         name,
-        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+        Trace[TraceLevel.OP]._get_detail_str(description_fn),
         task_id=Int(context.id()),
     ):
         return _flash_attention_dispatch[
@@ -3980,8 +3968,7 @@ def generic_flash_attention_kv_cache_ragged_sink[
     """
 
     @always_inline
-    @__parameter
-    def description_fn() -> String:
+    def description_fn() {imm} -> String:
         var desc_parts = List[String]()
         desc_parts.append(trace_arg("q", q.runtime_layout.shape.value))
         desc_parts.append("scale=" + String(scale))
@@ -4004,7 +3991,7 @@ def generic_flash_attention_kv_cache_ragged_sink[
 
     with Trace[TraceLevel.OP, target=target](
         name,
-        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+        Trace[TraceLevel.OP]._get_detail_str(description_fn),
         task_id=Int(context.id()),
     ):
         return _flash_attention_dispatch[
@@ -4122,8 +4109,7 @@ def generic_flare_mla_decode_kv_cache_ragged[
     """
 
     @always_inline
-    @__parameter
-    def description_fn() -> String:
+    def description_fn() {imm} -> String:
         return String(";").join(
             Span(
                 [
@@ -4148,7 +4134,7 @@ def generic_flare_mla_decode_kv_cache_ragged[
         + String(collection_t.kv_params.num_heads)
         + ".hdim_"
         + String(collection_t.kv_params.head_size),
-        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+        Trace[TraceLevel.OP]._get_detail_str(description_fn),
         task_id=Int(context.id()),
     ):
         return _flare_mla_decode_kv_cache_ragged[
@@ -4393,8 +4379,7 @@ def generic_flare_mla_prefill_kv_cache_ragged[
     """
 
     @always_inline
-    @__parameter
-    def description_fn() -> String:
+    def description_fn() {imm} -> String:
         return String(";").join(
             Span(
                 [
@@ -4443,7 +4428,7 @@ def generic_flare_mla_prefill_kv_cache_ragged[
         + String(collection_t.kv_params.num_heads)
         + ".hdim_"
         + String(collection_t.kv_params.head_size),
-        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+        Trace[TraceLevel.OP]._get_detail_str(description_fn),
         task_id=Int(context.id()),
     ):
         return _flare_mla_prefill_kv_cache_ragged[
@@ -4969,8 +4954,7 @@ def generic_cross_attention_kv_cache[
     """
 
     @always_inline
-    @__parameter
-    def description_fn() -> String:
+    def description_fn() {imm} -> String:
         return String(";").join(
             Span(
                 [
@@ -5000,7 +4984,7 @@ def generic_cross_attention_kv_cache[
         + String(collection_t.kv_params.num_heads)
         + ".hdim_"
         + String(collection_t.kv_params.head_size),
-        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+        Trace[TraceLevel.OP]._get_detail_str(description_fn),
         task_id=Int(context.id()),
     ):
         return _cross_attention_dispatch[

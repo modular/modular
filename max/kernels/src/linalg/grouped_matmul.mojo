@@ -1038,9 +1038,7 @@ def grouped_matmul[
     )
 
     @always_inline
-    @__parameter
-    @__copy_capture(c, a, b)
-    def description_fn() -> String:
+    def description_fn() {var c, var a, var b, imm} -> String:
         # fmt: off
         return String(
             "(gpu",
@@ -1057,7 +1055,7 @@ def grouped_matmul[
             String(a_type) + "x" + String(b_type) + "_to_" + String(c_type),
             "_has_epilogue" if elementwise_lambda_fn else "",
         ](),
-        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+        Trace[TraceLevel.OP]._get_detail_str(description_fn),
         task_id=get_safe_task_id(ctx),
     ):
         # Resolve the host scalars the SM90/AMD/naive launch grids need. Prefer
@@ -1697,9 +1695,7 @@ def grouped_matmul_vendor[
     var b_K = Int(b.dim[2]())
 
     @always_inline
-    @__parameter
-    @__copy_capture(c, a, b)
-    def vendor_description_fn() -> String:
+    def vendor_description_fn() {var c, var a, var b, imm} -> String:
         # fmt: off
         return String(
             "(gpu",
@@ -1718,7 +1714,7 @@ def grouped_matmul_vendor[
             "grouped_matmul_vendor_",
             String(a_type) + "x" + String(b_type) + "_to_" + String(c_type),
         ](),
-        Trace[TraceLevel.OP]._get_detail_str[vendor_description_fn](),
+        Trace[TraceLevel.OP]._get_detail_str(vendor_description_fn),
         task_id=get_safe_task_id(ctx),
     ):
         for i in range(num_active_experts):

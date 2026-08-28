@@ -990,9 +990,7 @@ def batched_matmul[
     )
 
     @always_inline
-    @__copy_capture(a_shape, b_shape, c_shape)
-    @__parameter
-    def description_fn() -> String:
+    def description_fn() {var a_shape, var b_shape, var c_shape, imm} -> String:
         # fmt: off
         return String(
             trace_arg("A", a_shape, a_buf.dtype),
@@ -1005,7 +1003,7 @@ def batched_matmul[
 
     with Trace[TraceLevel.OP, target=target](
         "batched_matmul",
-        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+        Trace[TraceLevel.OP]._get_detail_str(description_fn),
         task_id=get_safe_task_id(context),
     ):
         comptime assert is_valid_target[target](), "unsupported target"
