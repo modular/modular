@@ -556,9 +556,10 @@ static LogicalResult processRegion(
       SmallVector<Type> newTypes = llvm::to_vector(op.getResultTypes());
       for (StackAllocationOp alloc : variant)
         newTypes.push_back(getAllocType(alloc));
-      Operation *newOp = Operation::create(
-          op.getLoc(), op.getName(), newTypes, op.getOperands(),
-          op.getAttrDictionary(), mlir::PropertyRef{}, {}, op.getNumRegions());
+      Operation *newOp =
+          Operation::create(op.getLoc(), op.getName(), newTypes,
+                            op.getOperands(), op.getDiscardableAttrDictionary(),
+                            op.getPropertiesStorage(), {}, op.getNumRegions());
       OpBuilder(&op).insert(newOp);
       for (unsigned i = 0, e = op.getNumRegions(); i != e; ++i)
         newOp->getRegion(i).takeBody(op.getRegion(i));
