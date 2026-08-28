@@ -27,6 +27,20 @@ package for path functions or the `pathlib` package for the object-oriented
 
 from .env import getenv, setenv, unsetenv
 from .fstat import lstat, stat, stat_result
+from .mmap import (
+    MemoryMap,
+    Prot,
+    MapFlags,
+    PROT_NONE,
+    PROT_READ,
+    PROT_WRITE,
+    PROT_EXEC,
+    MAP_SHARED,
+    MAP_PRIVATE,
+    MAP_FIXED,
+    MAP_ANONYMOUS,
+    page_size,
+)
 from .os import (
     SEEK_CUR,
     SEEK_END,
