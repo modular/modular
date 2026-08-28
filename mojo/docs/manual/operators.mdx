@@ -387,12 +387,18 @@ explicitly, so not every type that supports `+` also supports `+=`.
 
 The walrus operator (`:=`, officially an *assignment expression*) assigns a
 value inside an expression. The assigned value becomes the result of that
-expression:
+expression.
+
+Press Return without entering text to terminate the loop. Non-empty strings are
+truthy:
 
 ```mojo
-while (name := input("Name or 'quit': ")) != "quit":
+while (var name := input("Name or return: ")):
     print("Hello,", name)
 ```
+
+`input()` is a raising function, so call it from a raising function or
+handle its errors with `try`.
 
 ## Precedence
 
