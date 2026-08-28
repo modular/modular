@@ -106,10 +106,11 @@ ParamInf::ParamInf(const ParamBindings &paramBinding,
                    ArrayRef<Type> declaredParamTypes,
                    PogListAttr declaredParamPogs, bool allowImplicitConversions,
                    ASTDecl *declIfDirect, bool discardError,
-                   DeferredTypingContext *deferredTypingContext)
+                   DeferredTypingContext *deferredTypingContext,
+                   ArrayRef<ConstraintAttr> additionalAssumptions)
     : InferenceState(paramBinding.declScope, declaredParamTypes,
                      declaredParamPogs, paramBinding.getExprLoc(), discardError,
-                     deferredTypingContext),
+                     deferredTypingContext, additionalAssumptions),
       paramBindings(paramBinding), declIfKnown(declIfDirect),
       deferredGivenParams(declaredParamTypes.size(), false),
       explicitlyUnboundParams(declaredParamTypes.size(), false),
@@ -1385,9 +1386,11 @@ CallParamInf::CallParamInf(const ParamBindings &paramBinding,
                            FnTypeGeneratorType calleeSignature,
                            const CallOperands &callOperands,
                            const CallOperands::PogAssignment &pogAssignment,
-                           OperandsNeedingOriginsList &operandsNeedingOrigins)
+                           OperandsNeedingOriginsList &operandsNeedingOrigins,
+                           ArrayRef<ConstraintAttr> additionalAssumptions)
     : ParamInf(paramBinding, declaredParamTypes, declaredParamPogs,
-               allowImplicitConversions, declIfDirect, discardError),
+               allowImplicitConversions, declIfDirect, discardError,
+               /*deferredTypingContext=*/nullptr, additionalAssumptions),
       calleeSignature(calleeSignature), callOperands(callOperands),
       pogAssignment(pogAssignment),
       operandsNeedingOrigins(operandsNeedingOrigins) {}

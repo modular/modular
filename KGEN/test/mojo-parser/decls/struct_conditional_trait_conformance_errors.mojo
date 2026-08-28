@@ -230,16 +230,19 @@ struct NoExplicitRPConformsToRPTrait[T: Deinitable & Movable](
 
 # expected-note @below {{trait 'UnconditionalConformanceTrait' declared here}}
 trait UnconditionalConformanceTrait:
-    # expected-note @below {{required by trait method here}}
+    # expected-note @+2 {{required by trait method here}}
+    # expected-note @below {{invalid reference to 'do_something': lacking evidence to prove correctness}}
     def do_something(self):
         ...
 
 
-# expected-error @below {{does not implement all requirements for 'UnconditionalConformanceTrait'}}
+# expected-error @+2 {{does not implement all requirements for 'UnconditionalConformanceTrait'}}
+# expected-note @below {{provide evidence for the constraint here to aid in candidate selection}}
 struct UnconditionalWithConditionalMethod[x: Int](
     Movable, UnconditionalConformanceTrait
 ):
-    # expected-note @below {{method 'do_something' has constraints that cannot be proven or disproven from conformance constraint}}
+    # expected-note @+2 {{cannot prove constraint for candidate}}
+    # expected-note @below {{constraint declared here needs evidence for '(x > Int(10))'}}
     def do_something(self) where Self.x > 10:
         pass
 
@@ -254,17 +257,20 @@ struct UnconditionalWithConditionalMethod[x: Int](
 
 # expected-note @below {{trait 'MismatchedConstraintTrait' declared here}}
 trait MismatchedConstraintTrait:
-    # expected-note @below {{required by trait method here}}
+    # expected-note @+2 {{required by trait method here}}
+    # expected-note @below {{invalid reference to 'process': lacking evidence to prove correctness}}
     def process(self):
         ...
 
 
-# expected-error @below {{does not implement all requirements for 'MismatchedConstraintTrait'}}
+# expected-error @+2 {{does not implement all requirements for 'MismatchedConstraintTrait'}}
+# expected-note @below {{provide evidence for the constraint here to aid in candidate selection}}
 struct MismatchedConstraints[T: Movable](
     MismatchedConstraintTrait where conforms_to(T, Intable), Movable
 ):
     # This method requires Copyable, but conformance only guarantees Intable
-    # expected-note @below {{method 'process' has constraints that cannot be proven or disproven from conformance constraint}}
+    # expected-note @+2 {{cannot prove constraint for candidate}}
+    # expected-note @below {{constraint declared here needs evidence for 'conforms_to(T, Copyable)'}}
     def process(self) where conforms_to(Self.T, Copyable):
         pass
 
@@ -278,20 +284,23 @@ struct MismatchedConstraints[T: Movable](
 
 # expected-note @below {{trait 'WeakerConformanceTrait' declared here}}
 trait WeakerConformanceTrait:
-    # expected-note @below {{required by trait method here}}
+    # expected-note @+2 {{required by trait method here}}
+    # expected-note @below {{invalid reference to 'execute': lacking evidence to prove correctness}}
     def execute(self):
         ...
 
 
-# expected-error @below {{does not implement all requirements for 'WeakerConformanceTrait'}}
+# expected-error @+2 {{does not implement all requirements for 'WeakerConformanceTrait'}}
+# expected-note @below {{provide evidence for the constraint here to aid in candidate selection}}
 struct WeakerConformanceStrongerMethod[T: Movable](
     Movable,
     WeakerConformanceTrait where conforms_to(T, Copyable),
 ):
     # This method requires BOTH Copyable AND Intable, but conformance only guarantees Copyable
-    # expected-note @below {{method 'execute' has constraints that cannot be proven or disproven from conformance constraint}}
+    # expected-note @below {{cannot prove constraint for candidate}}
     def execute(
         self,
+        # expected-note @below {{constraint declared here needs evidence for 'conforms_to(T, Intable) if conforms_to(T, Copyable) else conforms_to(T, Copyable)'}}
     ) where conforms_to(Self.T, Copyable) and conforms_to(Self.T, Intable):
         pass
 
@@ -374,23 +383,27 @@ struct AmbiguousBothConditional[T: Movable](
 
 # expected-note @below {{trait 'UnprovableCandidateTrait' declared here}}
 trait UnprovableCandidateTrait:
-    # expected-note @below {{required by trait method here}}
+    # expected-note @+2 {{required by trait method here}}
+    # expected-note @below {{ambiguous reference to 'handle': lacking evidence to select candidate}}
     def handle(self):
         ...
 
 
-# expected-error @below {{does not implement all requirements for 'UnprovableCandidateTrait'}}
+# expected-error @+2 {{does not implement all requirements for 'UnprovableCandidateTrait'}}
+# expected-note @below {{provide evidence for or against the constraints here to aid in candidate selection}}
 struct UnprovableWithValidCandidate[T: Movable](
     Movable,
     UnprovableCandidateTrait where conforms_to(T, Copyable),
 ):
     # Unprovable: Intable is unrelated to Copyable - can't prove or disprove.
-    # expected-note @below {{method 'handle' has constraints that cannot be proven or disproven from conformance constraint}}
+    # expected-note @+2 {{cannot prove constraint for candidate}}
+    # expected-note @below {{constraint declared here needs evidence for 'conforms_to(T, Intable)'}}
     def handle(self) where conforms_to(Self.T, Intable):
         pass
 
     # Provable: Copyable matches the conformance constraint.
     # But we still error because we can't rule out the above candidate.
+    # expected-note @below {{candidate is valid but cannot be selected until other candidates are disproved}}
     def handle(self) where conforms_to(Self.T, Copyable):
         pass
 
@@ -402,13 +415,14 @@ struct UnprovableWithValidCandidate[T: Movable](
 # is "disproved" - definitively not a valid candidate. This is different from
 # "unprovable" because we CAN make a determination (it's definitely invalid).
 #
-# With a disproved candidate that the user actually wrote, we explain the
-# contradiction instead of reporting the requirement as missing outright.
+# A disproved candidate is simply not a candidate, so the requirement goes
+# unwitnessed. The candidate is still listed with its `where` clause, so the
+# contradiction with the conformance is visible.
 
 
 # expected-note @below {{trait 'ContradictingConstraintTrait' declared here}}
 trait ContradictingConstraintTrait:
-    # expected-note @below {{required by trait method here}}
+    # expected-note @below {{no 'apply' candidates have type 'def(self: DisprovedWithWhereNot[T]) thin -> None'}}
     def apply(self):
         ...
 
@@ -419,7 +433,7 @@ struct DisprovedWithWhereNot[T: Movable](
     Movable,
 ):
     # Disproved: `not conforms_to(T, Copyable)` contradicts conformance.
-    # expected-note @below {{constraint declared here evaluated to False}}
+    # expected-note @below {{candidate declared here with type 'def[T: Movable, //](self: DisprovedWithWhereNot[T]) thin -> None where not conforms_to(T, Copyable).__bool__()'}}
     def apply(self) where not conforms_to(Self.T, Copyable):
         pass
 

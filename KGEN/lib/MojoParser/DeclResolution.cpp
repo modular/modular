@@ -3655,7 +3655,7 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
                                    structBuilder);
   llvm::append_range(paramSignature.emittedBodyConstraints,
                      closureExternalRefConstraints);
-  decl.insertKnownAssumptions(closureExternalRefConstraints);
+  sigDecl.insertKnownAssumptions(closureExternalRefConstraints);
 
   // Look up traits the compiler unconditionally injects into every struct.
   // These lookups are reused below both for constraint building (to skip
@@ -5519,6 +5519,11 @@ ParseResult DeclResolver::resolveBody(TraitType traitType, ASTDecl &traitDecl) {
 ParseResult DeclResolver::resolveBody(ConformanceOp op, ASTDecl &decl) {
   // TODO: Sink this to when the body is actually resolved.
   decl.resolvedness = DeclResolvedness::body;
+
+  if (ConstraintAttr constraint = op.getConstraintAttr())
+    if (!isTriviallyTrueConstraint(constraint))
+      decl.insertKnownAssumptions({constraint});
+
   // Verify conformance explicitly.
   std::optional<MojoInflightDiag> diag;
 

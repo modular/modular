@@ -42,8 +42,10 @@ InferenceState::InferenceState(ASTDecl &declScope,
                                ArrayRef<Type> declaredParamTypes,
                                PogListAttr declaredParamPogs, SMLoc defaultLoc,
                                bool discardError,
-                               DeferredTypingContext *deferredTypingContext)
-    : deferredTypingContext(deferredTypingContext), declScope(declScope),
+                               DeferredTypingContext *deferredTypingContext,
+                               ArrayRef<ConstraintAttr> additionalAssumptions)
+    : deferredTypingContext(deferredTypingContext),
+      additionalAssumptions(additionalAssumptions), declScope(declScope),
       shared(declScope.getShared()), evaluator(shared.getParameterEvaluator()),
       declaredParamTypes(declaredParamTypes),
       declaredParamPogs(declaredParamPogs),
@@ -93,10 +95,10 @@ void InferenceState::setInferredValue(size_t paramIdx, TypedAttr paramVal,
 }
 
 namespace {
-/// Walks an attribute/type tree and reports whether it still contains values
-/// that are not yet bound. A `ParamIndexRefAttr` is "not yet bound" if the
-/// evaluator does not have a binding for it, or the binding for it is
-/// `UnboundAttr`.
+/// Walks an attribute/type tree and reports whether it still refers to
+/// parameters that are not yet bound. Substituting the bound parameters leaves
+/// an unbound one's reference in place, so a surviving `ParamIndexRefAttr` at
+/// the current depth is exactly such a parameter.
 ///
 /// The walker mirrors the depth bookkeeping in `ParamIndexRefAttrFinder`
 /// (incrementing depth on entering nested parameter scopes) so index refs into
@@ -105,11 +107,9 @@ namespace {
 /// re-walked.
 class ConcretenessChecker {
 public:
-  ConcretenessChecker(ArrayRef<TypedAttr> bindings) : bindings(bindings) {}
   bool isConcrete(Attribute attr) { return !hasUnresolvedImpl(attr, 0); }
 
 private:
-  ArrayRef<TypedAttr> bindings;
   DenseMap<std::pair<size_t, const void *>, bool> cache;
 
   template <typename T>
@@ -133,9 +133,7 @@ private:
     bool unresolved = false;
     if constexpr (std::is_base_of_v<Attribute, T>) {
       if (auto indexRef = dyn_cast<ParamIndexRefAttr>(value))
-        unresolved = indexRef.getDepth() == depth &&
-                     (indexRef.getIndex() >= bindings.size() ||
-                      isa<UnboundAttr>(bindings[indexRef.getIndex()]));
+        unresolved = indexRef.getDepth() == depth;
     }
 
     if (!unresolved) {
@@ -156,11 +154,20 @@ private:
 
 LogicalResult InferenceState::checkBodyConstraints(
     ArrayRef<ConstraintAttr> extraConstraints) {
+  // Substitute the parameters that are bound, but leave the unbound ones as
+  // references rather than inlining their `UnboundAttr` marker.
+  ParameterEvaluator partialEvaluator;
+  partialEvaluator.setEvaluationContext(evaluator.getEvaluationContext());
+  partialEvaluator.setInputDepth(evaluator.getInputDepth());
+  for (TypedAttr binding : evaluator.getIndexBindings())
+    partialEvaluator.appendIndexBinding(
+        binding && sugarIsa<UnboundAttr>(binding) ? TypedAttr() : binding);
+
   // Check the extra constraints first.
   if (LIT::canDischargeConstraintsInScope(
           declScope, declaredParamPogs, extraConstraints,
           /*origConstraints=*/{}, diag.getDiag(), &bodyUnprovableConstraints,
-          &evaluator)
+          &partialEvaluator, additionalAssumptions)
           .isFalse())
     return failure();
 
@@ -171,15 +178,17 @@ LogicalResult InferenceState::checkBodyConstraints(
   if (bodyConstraints.empty())
     return success();
 
-  // Filter to only the body constraints that are fully concrete under the
-  // current bindings.
-  ConcretenessChecker concreteness(evaluator.getIndexBindings());
+  // Filter to the body constraints that are fully concrete once the bound
+  // parameters are substituted. Being unproven is only tolerable while a
+  // constraint is not fully concrete.
+  ConcretenessChecker concreteness;
   SmallVector<ConstraintAttr> concreteConstraints;
   SmallVector<size_t> concreteConstraintIndices;
   concreteConstraints.reserve(bodyConstraints.size());
   concreteConstraintIndices.reserve(bodyConstraints.size());
   for (auto [idx, constraint] : llvm::enumerate(bodyConstraints)) {
-    if (concreteness.isConcrete(constraint.getProposition())) {
+    if (concreteness.isConcrete(partialEvaluator.getReboundAttribute(
+            constraint.getProposition()))) {
       concreteConstraints.push_back(constraint);
       concreteConstraintIndices.push_back(idx);
     }
@@ -191,13 +200,19 @@ LogicalResult InferenceState::checkBodyConstraints(
   // Verify that no concrete constraints are violated. Any unprovable concrete
   // constraints are recorded in `bodyUnprovableConstraints`. The caller is
   // responsible for surfacing any errors if appropriate.
-  TriState result = LIT::canDischargeConstraintsInScope(
-      declScope, declaredParamPogs, concreteConstraints,
-      /*origConstraints=*/{}, diag.getDiag(), &bodyUnprovableConstraints,
-      &evaluator);
-  for (size_t idx : concreteConstraintIndices)
-    dischargedBodyConstraints.set(idx);
-  return success(!result.isFalse());
+  llvm::BitVector provenConstraints;
+  if (LIT::canDischargeConstraintsInScope(
+          declScope, declaredParamPogs, concreteConstraints,
+          /*origConstraints=*/{}, diag.getDiag(), &bodyUnprovableConstraints,
+          &partialEvaluator, additionalAssumptions, &provenConstraints)
+          .isFalse())
+    return failure();
+
+  for (auto [i, idx] : llvm::enumerate(concreteConstraintIndices))
+    if (provenConstraints[i])
+      dischargedBodyConstraints.set(idx);
+
+  return success();
 }
 
 TypedAttr

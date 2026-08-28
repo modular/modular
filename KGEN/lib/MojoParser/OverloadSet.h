@@ -69,6 +69,11 @@ public:
   /// constructed, which may include parameter values like "1".
   ASTType selfResultType;
 
+  /// Facts that hold at this call site but are not reachable from
+  /// `paramBindings.declScope`'s lexical assumptions. These are used as
+  /// assumptions when discharging candidates' constraints.
+  SmallVector<ConstraintAttr> additionalAssumptions;
+
   /// When doing resolution, we should only raise new errors if previous errors
   /// haven't already been raised about functions in the overload set.  The most
   /// common issue is when one of the included declarations is erroneous.
@@ -200,9 +205,18 @@ public:
   /// to produce a function pointer with the specified type.  This returns a
   /// pair of PValue for the callee (or null if not resolvable) and the selected
   /// method declaration (or null if no unique match).
+  ///
+  /// A candidate whose body constraints can be neither proven nor disproven in
+  /// this scope is inconclusive: it cannot be selected, but neither can it be
+  /// ruled out, so no other candidate may be selected over it either. When
+  /// `emitError` is set this is diagnosed like any other inconclusive overload
+  /// set; `hasInconclusiveCandidates`, when non-null, additionally reports it
+  /// to callers that probe silently and must account for every candidate that
+  /// survives (e.g. witness selection).
   std::pair<PValue, ASTDecl *> filterOverloadSetForValueType(
       ASTType functionType,
-      function_ref<MojoInflightDiag &(llvm::SMLoc)> emitError) const;
+      function_ref<MojoInflightDiag &(llvm::SMLoc)> emitError,
+      bool *hasInconclusiveCandidates = nullptr) const;
 
   /// If the specified type can be constructed with the specified operands
   /// return the initializer that would be invoked. If not, return null PValue.

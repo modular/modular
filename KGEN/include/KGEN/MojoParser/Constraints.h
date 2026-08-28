@@ -23,6 +23,7 @@
 #include "KGEN/LITDialect/LITAttrs.h"
 #include "KGEN/Support/TriState.h"
 #include "llvm/ADT/ArrayRef.h"
+#include "llvm/ADT/BitVector.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/SMLoc.h"
@@ -56,8 +57,8 @@ struct ConstraintFailure {
     unprovenConstraints.clear();
   }
 
-  /// Note per captured constraint ("failed"/"unproven conditional
-  /// conformance"). No-op if empty.
+  /// Add a note per captured constraint ("failed"/"unproven constraint"). No-op
+  /// if empty.
   void attachNotes(MojoInflightDiag &diag) const;
 };
 
@@ -76,7 +77,10 @@ void emitConstraintInconclusive(DeclResolver &resolver, MojoInflightDiag &diag,
 /// ParameterEvaluator can be provided to substitute parameters into the
 /// constraints. Additional assumptions can be passed to consider alongside the
 /// scope's known assumptions (e.g., a conformance constraint during trait
-/// checking).
+/// checking). If provided, `provenConstraints` is sized to `constraints` and
+/// has a bit set per constraint the assumptions proved, letting a caller that
+/// needs per-constraint verdicts read them off this one pass instead of
+/// re-checking each constraint on its own.
 TriState canDischargeConstraintsInScope(
     ASTDecl &declScope, PogListAttr paramListAttr,
     ArrayRef<ConstraintAttr> constraints,
@@ -84,7 +88,8 @@ TriState canDischargeConstraintsInScope(
     llvm::function_ref<MojoInflightDiag &(std::optional<SMLoc> loc)> getDiag,
     SmallVectorImpl<ConstraintAttr> *unprovableConstraints,
     ParameterEvaluator *evaluator,
-    ArrayRef<ConstraintAttr> additionalAssumptions = {});
+    ArrayRef<ConstraintAttr> additionalAssumptions = {},
+    llvm::BitVector *provenConstraints = nullptr);
 
 /// Rewrite cond(a, b, a) patterns to and(a, b) for constraint propositions.
 /// This breaks the "short-circuit" pattern of `and`/`or` operators, so is only

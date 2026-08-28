@@ -125,7 +125,11 @@ struct StructViolation(diags_package.StillNoDefaultFunc):
         pass
 
 
-# CHECK: note: method 'handle' has constraints that cannot be proven or disproven from conformance constraint
+# CHECK: note: ambiguous reference to 'handle': lacking evidence to select candidate
+# CHECK: note: cannot prove constraint for candidate
+# CHECK: note: constraint declared here needs evidence for 'conforms_to(T, Intable)'
+# CHECK: note: candidate is valid but cannot be selected until other candidates are disproved
+# CHECK: note: provide evidence for or against the constraints here to aid in candidate selection
 # CHECK: note: required by trait method here
 # CHECK-NEXT: def handle(self)    # note - synthetic signature
 # CHECK: note: trait 'UnprovableCandidateTrait' declared here

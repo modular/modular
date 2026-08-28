@@ -259,7 +259,9 @@ OverloadFitness OverloadFitness::evaluate(ASTDecl *candidate,
   ParamInf inference(callable.paramBindings, signature.getInputParamTypes(),
                      signature.getParamListAttrs(),
                      /*allowImplicitConversions=*/true, candidate,
-                     /*discardError=*/true);
+                     /*discardError=*/true,
+                     /*deferredTypingContext=*/nullptr,
+                     callable.additionalAssumptions);
   // Don't yield constraint failure for a single overload failure: we want a
   // better error message diagnosed for the entire set.
   VerifiedParamBindings bindings = inference.inferForStruct();
@@ -408,11 +410,11 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
 
   // Check that the signature can be rebound with this set of bindings.
   OperandsNeedingOriginsList operandsNeedingOrigins;
-  CallParamInf inference(callable.paramBindings, signature.getInputParamTypes(),
-                         signature.getParamListAttrs(),
-                         allowImplicitConversions, funcIfDirect,
-                         /*discardError=*/false, signature, operands,
-                         pogAssignment, operandsNeedingOrigins);
+  CallParamInf inference(
+      callable.paramBindings, signature.getInputParamTypes(),
+      signature.getParamListAttrs(), allowImplicitConversions, funcIfDirect,
+      /*discardError=*/false, signature, operands, pogAssignment,
+      operandsNeedingOrigins, callable.additionalAssumptions);
   // Check if we're calling a closure's __call__ method and need to set
   // captured closure parameters. Only applies to method call syntax on a
   // __call__ method — not direct calls that happen to pass a closure as an
