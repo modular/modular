@@ -37,6 +37,7 @@ from .types import (
     ObservableDel,
     ObservableMoveOnly,
     ExplicitDelOnly,
+    Pinned,
     PinnedExplicitDelOnly,
     TriviallyCopyableMoveCounter,
 )

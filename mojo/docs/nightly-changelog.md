@@ -255,6 +255,9 @@ This version is still a work in progress.
   turns what would otherwise be silent memory-safety bugs into compile-time
   errors.
 
+- Added `deinit()`, for any `Deinitable` type, to explicitly extend a value's
+  lifetime up to a specific point and run its deinitializer there.
+
 - `Atomic` is now parameterized on a value type `T` instead of a `DType`.
   Update call sites from `Atomic[DType.float32]` to `Atomic[Float32]`. The
   atomic operations (`load()`, `store()`, `fetch_add()`, `compare_exchange()`,

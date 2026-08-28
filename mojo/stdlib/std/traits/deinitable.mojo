@@ -18,6 +18,49 @@ This is a Mojo built-in, so you don't need to import it.
 from std.builtin.rebind import downcast
 
 
+@always_inline
+def deinit[T: Deinitable](var value: T, /):
+    """Extends a value's lifetime up to this call, then deinitializes it.
+
+    Mojo deinitializes a value at its last use, not at the end of its enclosing
+    scope. If nothing in the code reads `value` again after some earlier
+    point, that earlier point *is* its last use, and its deinitializer runs
+    there. This function is a way to explicitly extend the lifetime of that
+    value until this point exactly.
+
+    ```mojo
+    from std.testing import assert_equal
+
+    struct AddOne[origin: MutOrigin]:
+        var n: Pointer[Int, Self.origin]
+
+        def __init__(out self, ref[Self.origin] n: Int):
+            self.ptr = Pointer(to=n)
+
+        def __deinit__(deinit self):
+            self.n[] += 1
+
+    def main() raises:
+        var n = 0
+        var add_one = AddOne(n)
+        assert_equal(n, 0)
+
+        # `add_one` is never used, so without the `deinit()` call below, its
+        # deinitializer would run immediately after construction, causing
+        # `n` to equal `1` and triggering the `assert_equal` to raise an error.
+        deinit(add_one^)
+        assert_equal(n, 1)
+    ```
+
+    Parameters:
+        T: The type of the value to destroy. Must conform to `Deinitable`.
+
+    Args:
+        value: The value whose lifetime to extend and then end.
+    """
+    pass
+
+
 @stable(since="1.0")
 trait Deinitable:
     """A trait for types that require lifetime management through destructors.
