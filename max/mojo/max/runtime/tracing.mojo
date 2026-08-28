@@ -14,6 +14,7 @@
 
 
 from std.collections.list import List
+from std.utils.coord import Coord
 from std.collections.optional import Optional, OptionalReg
 from std.ffi import external_call
 from std.sys import stderr
@@ -363,7 +364,41 @@ def trace_arg(name: String, shape: IndexList) -> String:
 
 
 @always_inline
+def trace_arg(name: String, shape: Coord) -> String:
+    """Helper to stringify the type and shape of a kernel argument for tracing.
+
+    Args:
+        name: The name of the argument.
+        shape: The shape of the argument.
+
+    Returns:
+        A string representation of the argument with its shape.
+    """
+    var s = name + "="
+    comptime for i in range(shape.rank):
+        if i != 0:
+            s += "x"
+        s += String(shape[i].value())
+    return s
+
+
+@always_inline
 def trace_arg(name: String, shape: IndexList, dtype: DType) -> String:
+    """Helper to stringify the type and shape of a kernel argument for tracing.
+
+    Args:
+        name: The name of the argument.
+        shape: The shape of the argument.
+        dtype: The data type of the argument.
+
+    Returns:
+        A string representation of the argument with its shape and data type.
+    """
+    return String(t"{trace_arg(name, shape)}x{dtype}")
+
+
+@always_inline
+def trace_arg(name: String, shape: Coord, dtype: DType) -> String:
     """Helper to stringify the type and shape of a kernel argument for tracing.
 
     Args:
