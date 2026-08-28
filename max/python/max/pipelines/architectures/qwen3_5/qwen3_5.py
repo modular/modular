@@ -333,16 +333,11 @@ class Qwen3_5(DistributedLogitsPostprocessMixin, Module):
         # splice and degenerate to that default on all three axes, so they
         # keep the static table.
         #
-        # An FP8 KV cache stays on the static table as well: its store path is
-        # `mo.rope_split_store.ragged.paged.with_position_id`, whose
-        # registration ties the Q output and the cache blocks to the QKV
-        # dtype, so it cannot write BF16-computed K into FP8 blocks. Image
-        # requests are rejected in that configuration rather than served with
-        # flat positions -- see `Qwen3_5BatchProcessor`.
+        # The KV cache dtype does not enter into this: rope is applied to K
+        # before the value is cast into the cache.
         self.mrope_enabled = (
             config.mrope_section is not None
             and config.vision_config is not None
-            and not config.kv_params.is_fp8_kv_dtype
         )
         rope: Llama3RotaryEmbedding
         if self.mrope_enabled:

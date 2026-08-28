@@ -524,13 +524,11 @@ def _fp8_attention() -> Qwen3_5Attention:
     return attention
 
 
-def test_fp8_attention_rejects_per_token_freq_rows() -> None:
-    """Handed a per-token table, the FP8 store path refuses rather than ignore it.
+def test_fp8_attention_takes_per_token_freq_rows() -> None:
+    """The FP8 store path carries M-RoPE positions, like the bf16 path.
 
-    ``mrope_enabled`` is gated on a bf16 KV cache, so nothing builds this
-    graph today. The guard is what keeps that gate from being quietly
-    dropped: the position-id kernel would otherwise be picked for a dtype it
-    cannot write, or worse, the row ids would be dropped on the floor.
+    Builds the layer an FP8 KV cache compiles and checks it reaches the fused
+    store with the row ids intact.
     """
     device = DeviceRef.CPU()
     with Graph(
@@ -559,6 +557,7 @@ def test_fp8_attention_rejects_per_token_freq_rows() -> None:
                 device=device,
             ),
             TensorType(DType.uint32, shape=[1, "total_seq_len"], device=device),
+            TensorType(DType.int64, shape=[4], device=DeviceRef.CPU()),
         ],
     ) as graph:
         (
@@ -571,21 +570,24 @@ def test_fp8_attention_rejects_per_token_freq_rows() -> None:
             max_cache_length,
             freqs_cis,
             freq_row_ids,
+            dispatch_metadata,
         ) = graph.inputs
+        out = _fp8_attention()(
+            ops.constant(0, DType.uint32, device),
+            x.tensor,
+            PagedCacheValues(
+                kv_blocks.buffer,
+                cache_lengths.tensor,
+                lookup_table.tensor,
+                max_prompt_length.tensor,
+                max_cache_length.tensor,
+                attention_dispatch_metadata=dispatch_metadata.tensor,
+            ),
+            freqs_cis.tensor,
+            input_row_offsets.tensor,
+            freq_row_ids.tensor,
+        )
+        graph.output(out)
 
-        with pytest.raises(NotImplementedError, match="FP8 KV cache"):
-            _fp8_attention()(
-                ops.constant(0, DType.uint32, device),
-                x.tensor,
-                PagedCacheValues(
-                    kv_blocks.buffer,
-                    cache_lengths.tensor,
-                    lookup_table.tensor,
-                    max_prompt_length.tensor,
-                    max_cache_length.tensor,
-                ),
-                freqs_cis.tensor,
-                input_row_offsets.tensor,
-                freq_row_ids.tensor,
-            )
-        graph.output(x.tensor)
+    mlir = str(graph._mlir_op)
+    assert "rope_split_store.ragged.paged.with_position_id" in mlir

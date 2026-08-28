@@ -136,10 +136,10 @@ class Qwen3_5BatchProcessor(Llama3BatchProcessor):
             for ctx in all_contexts
         ):
             raise ValueError(
-                "Qwen3.5 cannot serve image prompts in this "
-                "configuration: M-RoPE positions are not wired into the "
-                "compiled graph, so every token after an image would get "
-                "a flat position. Re-run with a bfloat16 KV cache."
+                "Qwen3.5 cannot serve image prompts for this checkpoint: "
+                "it declares no vision config or no mrope_section, so "
+                "M-RoPE positions are not wired into the compiled graph "
+                "and every token after an image would get a flat position."
             )
 
         return Qwen3_5Inputs(
