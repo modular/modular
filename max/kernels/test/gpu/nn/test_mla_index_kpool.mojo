@@ -21,6 +21,7 @@ from max.gpu.host import DeviceContext, HostBuffer
 
 from nn.attention.gpu.mla_index_kpool import (
     kpool_compress_kernel,
+    kpool_expand_topk_kernel,
     kpool_tail_update_kernel,
 )
 
@@ -1006,6 +1007,151 @@ def test_ring_survives_a_batch_reorder[
     _ = ape_d
 
 
+def test_expand_topk[
+    kpool: Int, pool_topk: Int, always_select_tail: Bool
+](seq_lens: List[Int], cache_lens: List[Int], ctx: DeviceContext) raises:
+    """Expand selected pools to token positions and check every column.
+
+    Parameters:
+        kpool: Tokens per pool.
+        pool_topk: Selected pools per token.
+        always_select_tail: Whether the incomplete trailing pool is appended.
+
+    Args:
+        seq_lens: New tokens per request.
+        cache_lens: Cached prefix length per request.
+        ctx: Device context.
+    """
+    comptime tail_width = (kpool - 1) if always_select_tail else 0
+    comptime out_width = pool_topk * kpool + tail_width
+
+    var batch_size = len(seq_lens)
+    var total_seq_len = 0
+    for i in range(batch_size):
+        total_seq_len += seq_lens[i]
+    print(
+        "expand_topk: kpool=",
+        kpool,
+        " pool_topk=",
+        pool_topk,
+        " tail=",
+        tail_width,
+        " tokens=",
+        total_seq_len,
+    )
+
+    var pool_host = ctx.enqueue_create_host_buffer[.int32](
+        total_seq_len * pool_topk
+    )
+    var iro_host = ctx.enqueue_create_host_buffer[.uint32](batch_size + 1)
+    var clen_host = ctx.enqueue_create_host_buffer[.uint32](batch_size)
+    var out_host = ctx.enqueue_create_host_buffer[.int32](
+        total_seq_len * out_width
+    )
+    ctx.synchronize()
+
+    var off = 0
+    for b in range(batch_size):
+        iro_host[b] = UInt32(off)
+        clen_host[b] = UInt32(cache_lens[b])
+        off += seq_lens[b]
+    iro_host[batch_size] = UInt32(off)
+
+    # A -1 in every row, so the sentinel path runs on every token.
+    for t in range(total_seq_len):
+        for j in range(pool_topk):
+            if j == pool_topk - 1:
+                pool_host[t * pool_topk + j] = Int32(-1)
+            else:
+                pool_host[t * pool_topk + j] = Int32((t * 7 + j * 3) % 32)
+
+    var pool_dev = ctx.enqueue_create_buffer[.int32](total_seq_len * pool_topk)
+    var iro_dev = ctx.enqueue_create_buffer[.uint32](batch_size + 1)
+    var clen_dev = ctx.enqueue_create_buffer[.uint32](batch_size)
+    var out_dev = ctx.enqueue_create_buffer[.int32](total_seq_len * out_width)
+    ctx.enqueue_copy(pool_dev, pool_host)
+    ctx.enqueue_copy(iro_dev, iro_host)
+    ctx.enqueue_copy(clen_dev, clen_host)
+    ctx.synchronize()
+
+    var out_tile = TileTensor(out_dev, row_major(total_seq_len, out_width))
+    var pool_tile = TileTensor(pool_dev, row_major(total_seq_len, pool_topk))
+    var iro_tile = TileTensor(iro_dev, row_major(batch_size + 1))
+    var clen_tile = TileTensor(clen_dev, row_major(batch_size))
+
+    comptime kernel = kpool_expand_topk_kernel[
+        out_tile.LayoutType,
+        out_tile.origin,
+        type_of(pool_tile.as_immut()).LayoutType,
+        ImmOrigin(pool_tile.origin),
+        type_of(iro_tile.as_immut()).LayoutType,
+        ImmOrigin(iro_tile.origin),
+        type_of(clen_tile.as_immut()).LayoutType,
+        kpool,
+        pool_topk,
+        always_select_tail,
+    ]
+    ctx.enqueue_function[kernel](
+        out_tile,
+        pool_tile.as_immut(),
+        iro_tile.as_immut(),
+        clen_tile.as_immut(),
+        Int32(total_seq_len),
+        grid_dim=(total_seq_len, 1, 1),
+        block_dim=(128, 1, 1),
+    )
+    ctx.synchronize()
+    ctx.enqueue_copy(out_host, out_dev)
+    ctx.synchronize()
+
+    for b in range(batch_size):
+        for local in range(seq_lens[b]):
+            var t = Int(iro_host[b]) + local
+            var visible = cache_lens[b] + local + 1
+            var tail_count = visible % kpool
+            var tail_start = visible - tail_count
+
+            for col in range(out_width):
+                var got = Int(out_host[t * out_width + col])
+                var want: Int
+                if col < pool_topk * kpool:
+                    var pid = Int(pool_host[t * pool_topk + col // kpool])
+                    # An unselected pool stays unselected in all of its slots.
+                    want = -1 if pid < 0 else pid * kpool + col % kpool
+                else:
+                    var tail_idx = col - pool_topk * kpool
+                    want = (
+                        tail_start + tail_idx if tail_idx < tail_count else -1
+                    )
+                assert_equal(
+                    got,
+                    want,
+                    String("token ", t, " column ", col, " wrong"),
+                )
+
+            # The tail must never reach past the query's own position.
+            comptime if always_select_tail:
+                for tail_idx in range(tail_width):
+                    var v = Int(
+                        out_host[t * out_width + pool_topk * kpool + tail_idx]
+                    )
+                    assert_true(
+                        v < visible,
+                        String("token ", t, " tail ", v, " past position"),
+                    )
+                assert_equal(
+                    tail_count,
+                    visible - tail_start,
+                    "tail arithmetic disagrees with itself",
+                )
+
+    print("  every column matches over", total_seq_len, "tokens")
+    _ = pool_dev
+    _ = iro_dev
+    _ = clen_dev
+    _ = out_dev
+
+
 def main() raises:
     with DeviceContext() as ctx:
         test_kpool_one_is_identity[head_dim=128](ctx)
@@ -1052,6 +1198,24 @@ def main() raises:
         # request, not the row.
         test_ring_survives_a_batch_reorder[head_dim=128, kpool=4](
             seq_len=8, ctx=ctx
+        )
+        # Ragged, with cached prefixes that put each request's tail at a
+        # different phase: cache_len % kpool of 0, 1, 2 and 3.
+        test_expand_topk[kpool=4, pool_topk=8, always_select_tail=True](
+            seq_lens=[3, 5, 1, 4], cache_lens=[0, 9, 6, 7], ctx=ctx
+        )
+        # Without the tail the width is exactly the expanded selection.
+        test_expand_topk[kpool=4, pool_topk=8, always_select_tail=False](
+            seq_lens=[2, 6], cache_lens=[4, 11], ctx=ctx
+        )
+        # kpool=1 leaves the selection untouched and adds no tail columns.
+        test_expand_topk[kpool=1, pool_topk=16, always_select_tail=True](
+            seq_lens=[4, 2], cache_lens=[0, 5], ctx=ctx
+        )
+        # GLM-5.3-Flash's real width: 512 pools expand to 2048 positions plus
+        # a 3-wide tail, so each row takes several strided passes.
+        test_expand_topk[kpool=4, pool_topk=512, always_select_tail=True](
+            seq_lens=[3, 2], cache_lens=[8000, 4097], ctx=ctx
         )
 
         print("\nAll tests passed!")

@@ -32,7 +32,7 @@ from std.math import exp, max
 
 from layout import TensorLayout, TileTensor
 
-from std.gpu import block_idx, thread_idx
+from std.gpu import block_dim, block_idx, thread_idx
 
 
 @always_inline
@@ -303,3 +303,99 @@ def kpool_tail_update_kernel[
     )
     if c == 0:
         closed_pool.raw_store(r, Int32(pos // kpool))
+
+
+@__name(t"mla_kpool_expand_topk_{kpool}_{pool_topk}_{always_select_tail}")
+def kpool_expand_topk_kernel[
+    OutLayoutType: TensorLayout,
+    out_origin: MutOrigin,
+    PoolLayoutType: TensorLayout,
+    pool_origin: ImmOrigin,
+    IROLayoutType: TensorLayout,
+    iro_origin: ImmOrigin,
+    CacheLenLayoutType: TensorLayout,
+    kpool: Int,
+    pool_topk: Int,
+    always_select_tail: Bool,
+](
+    out_indices: TileTensor[.int32, OutLayoutType, out_origin],
+    pool_ids: TileTensor[mut=False, .int32, PoolLayoutType, pool_origin],
+    input_row_offsets: TileTensor[
+        mut=False, .uint32, IROLayoutType, iro_origin
+    ],
+    cache_lengths: TileTensor[
+        mut=False, .uint32, CacheLenLayoutType, ImmutAnyOrigin
+    ],
+    total_seq_len: Int32,
+):
+    """Turns selected pool ids back into the token positions they cover.
+
+    The indexer selects pools; attention reads tokens. Each selected pool
+    expands to the `kpool` consecutive positions it covers.
+
+    An unselected slot expands to `-1` in every one of its positions, never to
+    a clamped valid one, which would point attention at a token the indexer did
+    not choose.
+
+    With `always_select_tail` the output carries `kpool - 1` further columns
+    holding the query's most recent positions, the ones no complete pool covers
+    yet. Their location comes from the query's visible count, so it tracks the
+    pool currently being filled.
+
+    Parameters:
+        OutLayoutType: Layout of `out_indices`.
+        out_origin: Origin of `out_indices`.
+        PoolLayoutType: Layout of `pool_ids`.
+        pool_origin: Origin of `pool_ids`.
+        IROLayoutType: Layout of `input_row_offsets`.
+        iro_origin: Origin of `input_row_offsets`.
+        CacheLenLayoutType: Layout of `cache_lengths`.
+        kpool: Tokens per pool.
+        pool_topk: Selected pools per token, `index_topk // kpool`.
+        always_select_tail: Whether to append the incomplete trailing pool.
+
+    Args:
+        out_indices: Output `[total_seq_len, pool_topk * kpool + tail]`, where
+            `tail` is `kpool - 1` when `always_select_tail` and 0 otherwise.
+        pool_ids: Selected pool ids, `[total_seq_len, pool_topk]`, `-1` where
+            fewer than `pool_topk` pools were available.
+        input_row_offsets: Token row offsets per request, `[batch_size + 1]`.
+        cache_lengths: Cached-prefix length per request, `[batch_size]`.
+        total_seq_len: Number of token rows.
+    """
+    comptime tail_width = (kpool - 1) if always_select_tail else 0
+    comptime out_width = pool_topk * kpool + tail_width
+
+    var token_idx = block_idx.x
+    if token_idx >= Int(total_seq_len):
+        return
+
+    var batch_size = Int(input_row_offsets.dim[0]()) - 1
+    var b = 0
+    for i in range(batch_size):
+        if token_idx < Int(input_row_offsets.raw_load(i + 1)):
+            b = i
+            break
+
+    var local = token_idx - Int(input_row_offsets.raw_load(b))
+    # Causal: a query sees its own position and everything before it.
+    var visible = Int(cache_lengths[b]) + local + 1
+
+    var tail_count = visible % kpool
+    var tail_start = visible - tail_count
+
+    var col = thread_idx.x
+    while col < out_width:
+        var value = Int32(-1)
+        if col < pool_topk * kpool:
+            var pid = Int(
+                pool_ids.raw_load(token_idx * pool_topk + col // kpool)
+            )
+            if pid >= 0:
+                value = Int32(pid * kpool + col % kpool)
+        else:
+            var tail_idx = col - pool_topk * kpool
+            if tail_idx < tail_count:
+                value = Int32(tail_start + tail_idx)
+        out_indices.raw_store(token_idx * out_width + col, value)
+        col += block_dim.x
