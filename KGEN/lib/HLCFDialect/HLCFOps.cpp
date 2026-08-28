@@ -16,9 +16,7 @@
 #include "KGEN/Interpreter/ParametricInterpreterState.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
-#include "KGEN/POPDialect/POPTypes.h"
 #include "mlir/IR/Matchers.h"
-#include "mlir/IR/PatternMatch.h"
 
 using namespace M;
 using namespace HLCF;

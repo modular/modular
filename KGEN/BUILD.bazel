@@ -540,7 +540,6 @@ modular_cc_library(
         ":HLCFInterfacesIncGen",
         ":Interpreter",
         ":KGENDialect.headers",
-        ":POPDialect.headers",
         "//Support:ADT",
         "//Support:Base",
         "//Support:Compiler",
@@ -844,20 +843,6 @@ modular_cc_library(
         ":KGENInterfacesIncGen",
         ":KGENTypeInterfacesIncGen",
         ":ToolCommon.headers",
-    ],
-)
-
-modular_cc_library(
-    name = "POPDialect.headers",
-    hdrs = glob(["include/KGEN/POPDialect/*.h"]),
-    tags = ["no-clang-tidy-headers"],
-    visibility = ["//visibility:private"],
-    deps = [
-        ":Interpreter",
-        ":KGENDialect.headers",
-        ":POPAttrsIncGen",
-        ":POPDialectIncGen",
-        ":POPEnumsIncGen",
     ],
 )
 
