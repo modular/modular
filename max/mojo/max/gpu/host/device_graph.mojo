@@ -404,9 +404,11 @@ trait DeviceGraphInput(ImplicitlyCopyable):
         which reserves the address for the graph's lifetime and registers it, and
         describe the result with the same shape and dtype as `self`.
 
-        Read only `self`'s shape. The result must **not** retain `self`'s
-        storage: doing so pins the caller's memory for as long as the graph
-        lives, which is exactly the coupling a stable location exists to remove.
+        Read only `self`'s shape, unless the input's data is host-resident,
+        in which case also copy `self`'s contents into the stable allocation
+        before returning. Recorded ops read host values at enqueue time, so
+        the stable location must already hold the caller's bytes while the
+        build closure records.
 
         A *mutable* input the graph writes in place (a KV cache, for example)
         must instead call
@@ -594,6 +596,7 @@ struct DeviceGraph(ImplicitlyCopyable, Writable):
         if found:
             _logger.info("found existing device graph for key", key)
             return found.take()
+        _logger.info("recording new device graph for key", key)
 
         # Graphs built through the cache draw from one pool per device
         # context, so they share activation memory. Cached graphs replay

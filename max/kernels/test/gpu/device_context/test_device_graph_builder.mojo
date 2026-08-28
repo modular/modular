@@ -940,6 +940,131 @@ def test_add_in_place_input(ctx: DeviceContext) raises:
         assert_equal(host_dst[i], UInt8(0x3C))
 
 
+@fieldwise_init
+struct _HostValueInput(DeviceGraphInput, ImplicitlyCopyable, Movable):
+    """A host-resident graph input whose contents are baked into the graph.
+
+    Models dispatch metadata (e.g. attention cache lengths): the build closure
+    reads the value on the host at record time, freezing it into the recorded
+    nodes, so the full contents join the cache key -- changed bytes must miss
+    and re-record rather than replay stale dispatch. `allocate_stable` copies
+    the caller's bytes into a graph-owned host allocation before returning,
+    since recorded ops read the stable location while the build runs.
+    """
+
+    var data: Pointer[Scalar[DType.uint8], MutUntrackedOrigin]
+    var size: Int
+
+    def write_graph_key(self, mut writer: Some[Writer]):
+        writer.write(t"HostValueInput({self.size}, ")
+        for i in range(self.size):
+            writer.write(Int(self.data[i]), ",")
+        writer.write(")")
+
+    def allocate_stable(self, mut builder: DeviceGraphBuilder) raises -> Self:
+        var stable = builder.create_input_buffer[DType.uint8](
+            self.size, is_host=True
+        )
+        # The graph retains the allocation (create_input_buffer registers it),
+        # so returning just the pointer keeps the address reserved.
+        var dst = stable.unsafe_ptr().unsafe_origin_cast[MutUntrackedOrigin]()
+        for i in range(self.size):
+            dst[i] = self.data[i]
+        return Self(dst, self.size)
+
+
+def test_add_host_input(ctx: DeviceContext) raises:
+    print("Test host inputs get a stable host twin whose value bakes in.")
+    comptime length = 64
+
+    var host_dst = ctx.enqueue_create_host_buffer[DType.uint8](length)
+    for i in range(length):
+        host_dst[i] = 0
+
+    var device_buf = ctx.enqueue_create_buffer[DType.uint8](length)
+
+    # The host "dispatch value" the recording bakes in.
+    var caller_buf = ctx.enqueue_create_host_buffer[DType.uint8](1)
+    caller_buf[0] = 0x2B
+    var caller_input = _HostValueInput(caller_buf.unsafe_ptr(), 1)
+
+    var cache = DeviceGraphCache()
+    var build_count = 0
+    var count = Pointer(to=build_count)
+
+    def build(mut builder: DeviceGraphBuilder) raises {imm}:
+        count[] += 1
+        var stable = builder.add_input(caller_input)
+        assert_equal(builder.num_inputs(), 1)
+
+        # The stable twin is graph-owned host memory, not the caller's.
+        assert_true(stable.data != caller_input.data)
+
+        # Enqueue-time host read: the value steers what gets recorded, the
+        # way dispatch metadata steers kernel selection and launch geometry.
+        var pattern = stable.data[0]
+        var memset = builder.add_memset(device_buf, pattern)
+        _ = builder.add_copy(host_dst, device_buf, dependencies=[memset])
+
+    var graph = DeviceGraph.create(
+        ctx, build, caller_input, cache=Pointer(to=cache)
+    )
+    assert_equal(build_count, 1)
+    graph.replay()
+    ctx.synchronize()
+    for i in range(length):
+        assert_equal(host_dst[i], UInt8(0x2B))
+
+    # Same bytes: cache hit, no rebuild.
+    var again = DeviceGraph.create(
+        ctx, build, caller_input, cache=Pointer(to=cache)
+    )
+    assert_equal(build_count, 1)
+    _ = again^
+
+    # Changed bytes: miss and re-record with the new baked value.
+    caller_buf[0] = 0x71
+    var rerecorded = DeviceGraph.create(
+        ctx, build, caller_input, cache=Pointer(to=cache)
+    )
+    assert_equal(build_count, 2)
+    rerecorded.replay()
+    ctx.synchronize()
+    for i in range(length):
+        assert_equal(host_dst[i], UInt8(0x71))
+
+
+def test_host_input_key_bakes_contents(ctx: DeviceContext) raises:
+    print("Test host-input cache keys separate by contents.")
+
+    def build(mut builder: DeviceGraphBuilder) raises {imm}:
+        return
+
+    var a = ctx.enqueue_create_host_buffer[DType.uint8](2)
+    a[0] = 1
+    a[1] = 2
+    var b = ctx.enqueue_create_host_buffer[DType.uint8](2)
+    b[0] = 1
+    b[1] = 3
+
+    var key_a = DeviceGraphCache.make_key(
+        build, _HostValueInput(a.unsafe_ptr(), 2)
+    )
+    var key_b = DeviceGraphCache.make_key(
+        build, _HostValueInput(b.unsafe_ptr(), 2)
+    )
+    assert_not_equal(key_a, key_b)
+
+    # Same contents at a different address must agree: the key is the value.
+    var a2 = ctx.enqueue_create_host_buffer[DType.uint8](2)
+    a2[0] = 1
+    a2[1] = 2
+    assert_equal(
+        key_a,
+        DeviceGraphCache.make_key(build, _HostValueInput(a2.unsafe_ptr(), 2)),
+    )
+
+
 def test_cache_key_separates_inputs() raises:
     print("Test cache keys keep adjacent input contributions apart.")
 
