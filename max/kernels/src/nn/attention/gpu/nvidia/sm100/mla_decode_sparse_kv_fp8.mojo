@@ -176,14 +176,14 @@ struct MLA_SM100_Decode_Sparse_KV_FP8[
     #   tile_stride = 72 (same; whole row)
     #   box_width   = tile_width = 72 (SWIZZLE_NONE => box == tile_width)
     #   num_col_groups = ceildiv(72, 72) = 1
-    comptime kv_gather4_tile_width = Self.config.padded_q_depth // 8
+    comptime kv_gather4_tile_width = Self.config.input_q_depth // 8
     comptime kv_gather4_box_w = _gather4_box_width[
         DType.int64,
         Self.kv_gather4_tile_width,
         TensorMapSwizzle.SWIZZLE_NONE,
     ]()
     comptime kv_gather4_num_col_groups = ceildiv(
-        Self.config.padded_q_depth // 8, Self.kv_gather4_box_w
+        Self.config.input_q_depth // 8, Self.kv_gather4_box_w
     )
     # Number of 4-row chunks for BN_QK=64 rows: 64 / 4 = 16
     comptime gather4_num_4row_chunks = Self.config.BN_QK // 4
@@ -326,7 +326,7 @@ struct MLA_SM100_Decode_Sparse_KV_FP8[
         q_tma: QOTMATile[
             dtype=Self.q_type,
             BM=Self.config.BM,  # tile_m =64
-            BK=Self.config.BK_QK,  # tile_n =576
+            BK=Self.config.input_q_depth,
             swizzle_mode=Self.config.swizzle_mode,
         ],
         # Single K gather4 TMA covering full 576-byte row: INT64,
@@ -1128,7 +1128,7 @@ struct MLA_SM100_Decode_Sparse_KV_FP8[
         q_tma: QOTMATile[
             dtype=Self.q_type,
             BM=Self.config.BM,  # tile_m =64
-            BK=Self.config.BK_QK,  # tile_n =576
+            BK=Self.config.input_q_depth,
             swizzle_mode=Self.config.swizzle_mode,
         ],
         # Single K gather4 TMA: INT64, 64 rows, SWIZZLE_NONE, 576-byte row.
@@ -1346,7 +1346,7 @@ struct MLA_SM100_Decode_Sparse_KV_FP8[
         expect_bytes_pred(k_mbar, Int32(kv_bytes), Int32(is_leader))
         if is_leader:
             cur_k_tma.async_copy_gather4_tile[
-                tile_width=Self.config.padded_q_depth // 8,
+                tile_width=Self.config.input_q_depth // 8,
                 eviction_policy=CacheEviction.EVICT_LAST,
             ](
                 kv_stage_ptr.bitcast[Int64](),
@@ -1405,7 +1405,7 @@ struct MLA_SM100_Decode_Sparse_KV_FP8[
             expect_bytes_pred(k_mbar, Int32(kv_bytes), Int32(is_leader))
             if is_leader:
                 cur_k_tma.async_copy_gather4_tile[
-                    tile_width=Self.config.padded_q_depth // 8,
+                    tile_width=Self.config.input_q_depth // 8,
                     eviction_policy=CacheEviction.EVICT_LAST,
                 ](
                     kv_stage_ptr.bitcast[Int64](),

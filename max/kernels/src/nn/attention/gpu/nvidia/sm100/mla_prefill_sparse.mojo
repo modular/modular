@@ -169,13 +169,13 @@ struct MLAPrefillSparse[
     # lands at the PADDED (64-row) depth-tile stride the BMN=64 QK-MMA reads
     # (see the Q-load in `kernel`). NFC at 64/128 (real == padded).
     comptime q_tile_shape = Index(
-        1, Self.NUM_Q_HEADS_PER_CTA, Self.config.qk_depth
+        1, Self.NUM_Q_HEADS_PER_CTA, Self.config.input_qk_depth
     )
     comptime q_desc_shape = _default_desc_shape[
         3, Self.qkv_dtype, Self.q_tile_shape, Self.config.q_swizzle_mode
     ]()
 
-    comptime k_tile_width = Self.config.qk_depth
+    comptime k_tile_width = Self.config.input_qk_depth
     comptime k_swizzle_mode = Self.config.k_swizzle_mode
     comptime k_tile_height = Self.B_TOPK_PER_CTA
     comptime k_gather_box = _gather4_box_width[
@@ -213,7 +213,7 @@ struct MLAPrefillSparse[
     # Kept separate because `DType.int64 if fp8 else qkv_dtype` trips a
     # Mojo parser bug in comptime positions.
     comptime k_tma_dtype_fp8 = DType.int64
-    comptime k_tma_tile_width_fp8 = Self.config.qk_depth // 8
+    comptime k_tma_tile_width_fp8 = Self.config.input_qk_depth // 8
     comptime k_tma_swizzle_fp8 = Self.FP8_K_SWIZZLE
     comptime k_tma_gather_box_fp8 = _gather4_box_width[
         Self.k_tma_dtype_fp8,

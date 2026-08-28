@@ -416,6 +416,308 @@ def verify_mla_output(
 # ===-----------------------------------------------------------------------===#
 
 
+comptime LATENT_DEPTH = 512
+
+
+def run_nope_native_512_fp8[
+    num_heads: Int,
+](
+    ctx: DeviceContext,
+    batch_size: Int,
+    cache_len: Int,
+    *,
+    topk: Int = -1,
+    q_max_seq_len: Int = 1,
+    name: StringLiteral = "",
+) raises:
+    """The native-FP8 kernel takes a 512-wide NoPE row and answers identically.
+
+    Same property as the BF16-KV oracle
+    (`test_mla_decode_sparse_kv_bf16.run_nope_native_512`), on the backend a
+    NoPE model actually runs: one problem, run once with both operands padded
+    to 576 with a zero tail and once at their native 512, required
+    **bit-identical**.
+
+    This path is worth pinning separately because it reaches the tail through
+    different machinery -- an INT64-packed gather into a linear staging buffer,
+    then a re-swizzle warpgroup that permutes it into the SW64 MMA layout. The
+    narrow row has to shorten the gather, the staging row stride and the
+    re-swizzle's column count together; any one of them left wide would corrupt
+    the operand rather than merely waste bandwidth.
+    """
+    comptime q_type = DType.float8_e4m3fn
+    var num_keys = cache_len + q_max_seq_len
+    var eff_topk = num_keys if topk < 0 else topk
+    comptime scale = Float32(0.125)
+
+    print(
+        "NoPE native 512 (QKV FP8): ",
+        name,
+        " batch_size=",
+        batch_size,
+        " cache_len=",
+        cache_len,
+        " num_heads=",
+        num_heads,
+    )
+    seed(0x5EED18)
+
+    comptime kv_params_576 = KVCacheStaticParams(
+        num_heads=KV_NUM_HEADS, head_size=Q_DEPTH, is_mla=True
+    )
+    comptime kv_params_512 = KVCacheStaticParams(
+        num_heads=KV_NUM_HEADS, head_size=LATENT_DEPTH, is_mla=True
+    )
+    comptime kv_dim2 = 1
+
+    var pages_per_batch = ceildiv(num_keys, PAGE_SIZE)
+    var total_pages = batch_size * pages_per_batch
+    var rows_meta = (
+        total_pages * kv_dim2 * NUM_LAYERS * PAGE_SIZE * KV_NUM_HEADS
+    )
+
+    var block_shape_576 = IndexList[6](
+        total_pages, kv_dim2, NUM_LAYERS, PAGE_SIZE, KV_NUM_HEADS, Q_DEPTH
+    )
+    var block_shape_512 = IndexList[6](
+        total_pages, kv_dim2, NUM_LAYERS, PAGE_SIZE, KV_NUM_HEADS, LATENT_DEPTH
+    )
+
+    # One latent cache, quantized once, laid out at both widths so the two runs
+    # see exactly the same FP8 bytes over [0, 512).
+    var src = ctx.enqueue_create_host_buffer[.bfloat16](
+        rows_meta * LATENT_DEPTH
+    )
+    randn(src.as_span(), mean=0.0, standard_deviation=0.5)
+    var blocks_512_host = ctx.enqueue_create_host_buffer[q_type](
+        rows_meta * LATENT_DEPTH
+    )
+    var blocks_576_host = ctx.enqueue_create_host_buffer[q_type](
+        rows_meta * Q_DEPTH
+    )
+    for r in range(rows_meta):
+        for d in range(LATENT_DEPTH):
+            var v = src[r * LATENT_DEPTH + d].cast[q_type]()
+            blocks_512_host[r * LATENT_DEPTH + d] = v
+            blocks_576_host[r * Q_DEPTH + d] = v
+        for d in range(LATENT_DEPTH, Q_DEPTH):
+            blocks_576_host[r * Q_DEPTH + d] = Scalar[q_type](0)
+
+    var lut_size = batch_size * pages_per_batch
+    var lookup_table_host = ctx.enqueue_create_host_buffer[.uint32](lut_size)
+    for bi in range(batch_size):
+        for p in range(pages_per_batch):
+            lookup_table_host[bi * pages_per_batch + p] = UInt32(
+                bi * pages_per_batch + p
+            )
+    var cache_lengths_host = ctx.enqueue_create_host_buffer[.uint32](batch_size)
+    for i in range(batch_size):
+        cache_lengths_host[i] = UInt32(cache_len)
+
+    var total_q_tokens = batch_size * q_max_seq_len
+    var q_rows = total_q_tokens * num_heads
+    var q_src = ctx.enqueue_create_host_buffer[.bfloat16](q_rows * LATENT_DEPTH)
+    randn(q_src.as_span(), mean=0.0, standard_deviation=0.5)
+    var q_512_host = ctx.enqueue_create_host_buffer[q_type](
+        q_rows * LATENT_DEPTH
+    )
+    var q_576_host = ctx.enqueue_create_host_buffer[q_type](q_rows * Q_DEPTH)
+    for row in range(q_rows):
+        for d in range(LATENT_DEPTH):
+            var v = q_src[row * LATENT_DEPTH + d].cast[q_type]()
+            q_512_host[row * LATENT_DEPTH + d] = v
+            q_576_host[row * Q_DEPTH + d] = v
+        for d in range(LATENT_DEPTH, Q_DEPTH):
+            q_576_host[row * Q_DEPTH + d] = Scalar[q_type](0)
+
+    # Indices are per QUERY TOKEN, not per batch: the kernel walks
+    # `d_indices` with a stride of `topk` for each of the `total_q_tokens`
+    # rows. These coincide only when `q_max_seq_len == 1`.
+    var total_indices = total_q_tokens * eff_topk
+    var h_indices = ctx.enqueue_create_host_buffer[.int32](total_indices)
+    for bi in range(batch_size):
+        for si in range(q_max_seq_len):
+            var g = bi * q_max_seq_len + si
+            for i in range(eff_topk):
+                var page_idx = i // PAGE_SIZE
+                var tok_in_page = i % PAGE_SIZE
+                var block_id = Int(
+                    lookup_table_host[bi * pages_per_batch + page_idx]
+                )
+                h_indices[g * eff_topk + i] = Int32(
+                    block_id * PAGE_SIZE + tok_in_page
+                )
+
+    var out_size = total_q_tokens * num_heads * V_DEPTH
+
+    var blocks_576_dev = ctx.enqueue_create_buffer[q_type](rows_meta * Q_DEPTH)
+    ctx.enqueue_copy(blocks_576_dev, blocks_576_host)
+    var blocks_512_dev = ctx.enqueue_create_buffer[q_type](
+        rows_meta * LATENT_DEPTH
+    )
+    ctx.enqueue_copy(blocks_512_dev, blocks_512_host)
+    var cache_lengths_device = ctx.enqueue_create_buffer[.uint32](batch_size)
+    ctx.enqueue_copy(cache_lengths_device, cache_lengths_host)
+    var lookup_table_device = ctx.enqueue_create_buffer[.uint32](lut_size)
+    ctx.enqueue_copy(lookup_table_device, lookup_table_host)
+    var q_576_dev = ctx.enqueue_create_buffer[q_type](q_rows * Q_DEPTH)
+    ctx.enqueue_copy(q_576_dev, q_576_host)
+    var q_512_dev = ctx.enqueue_create_buffer[q_type](q_rows * LATENT_DEPTH)
+    ctx.enqueue_copy(q_512_dev, q_512_host)
+    var d_indices_device = ctx.enqueue_create_buffer[.int32](total_indices)
+    ctx.enqueue_copy(d_indices_device, h_indices)
+    var out_576 = ctx.enqueue_create_buffer[.bfloat16](out_size)
+    var out_512 = ctx.enqueue_create_buffer[.bfloat16](out_size)
+
+    var row_offsets_host = ctx.enqueue_create_host_buffer[.uint32](
+        batch_size + 1
+    )
+    for i in range(batch_size + 1):
+        row_offsets_host[i] = UInt32(i * q_max_seq_len)
+    var row_offsets_device = ctx.enqueue_create_buffer[.uint32](batch_size + 1)
+    ctx.enqueue_copy(row_offsets_device, row_offsets_host)
+    ctx.synchronize()
+
+    comptime cl_layout = Layout(UNKNOWN_VALUE)
+    comptime lt_layout_2d = Layout.row_major[2]()
+    comptime blk_layout = Layout.row_major[6]()
+
+    var cl_lt = LayoutTensor[mut=False, .uint32, cl_layout](
+        cache_lengths_device.unsafe_ptr(),
+        RuntimeLayout[cl_layout].row_major(IndexList[1](batch_size)),
+    )
+    var lt_lt = LayoutTensor[mut=False, .uint32, lt_layout_2d](
+        lookup_table_device.unsafe_ptr(),
+        RuntimeLayout[lt_layout_2d].row_major(
+            IndexList[2](batch_size, pages_per_batch)
+        ),
+    )
+
+    var kv_576 = PagedKVCacheCollection[q_type, kv_params_576, PAGE_SIZE](
+        LayoutTensor[q_type, blk_layout](
+            blocks_576_dev.unsafe_ptr(),
+            RuntimeLayout[blk_layout].row_major(block_shape_576),
+        ),
+        cl_lt,
+        lt_lt,
+        UInt32(q_max_seq_len),
+        UInt32(cache_len),
+    )
+    var kv_512 = PagedKVCacheCollection[q_type, kv_params_512, PAGE_SIZE](
+        LayoutTensor[q_type, blk_layout](
+            blocks_512_dev.unsafe_ptr(),
+            RuntimeLayout[blk_layout].row_major(block_shape_512),
+        ),
+        cl_lt,
+        lt_lt,
+        UInt32(q_max_seq_len),
+        UInt32(cache_len),
+    )
+
+    var row_offsets_tt = TileTensor(
+        row_offsets_device.unsafe_ptr(), row_major(batch_size + 1)
+    )
+    var args_576 = MLADispatchScalarArgs[num_heads=num_heads, is_fp8_kv=True](
+        batch_size, cache_len, q_max_seq_len, ctx
+    )
+    var args_512 = MLADispatchScalarArgs[num_heads=num_heads, is_fp8_kv=True](
+        batch_size, cache_len, q_max_seq_len, ctx
+    )
+
+    flare_mla_decoding[
+        rank=3,
+        config=MHAConfig[q_type](num_heads, Q_DEPTH),
+        ragged=True,
+        sparse=True,
+    ](
+        TileTensor(
+            out_576.unsafe_ptr(),
+            row_major((total_q_tokens, Idx[num_heads], Idx[V_DEPTH])),
+        ),
+        TileTensor(
+            q_576_dev.unsafe_ptr(),
+            row_major((total_q_tokens, Idx[num_heads], Idx[Q_DEPTH])),
+        ),
+        kv_576.get_key_cache(0),
+        NullMask(),
+        row_offsets_tt,
+        scale,
+        ctx,
+        args_576.gpu_tile_tensor(),
+        d_indices=rebind[MutPointer[Int32, MutAnyOrigin]](
+            d_indices_device.unsafe_ptr()
+        ),
+        indices_stride=eff_topk,
+    )
+    ctx.synchronize()
+
+    flare_mla_decoding[
+        rank=3,
+        config=MHAConfig[q_type](num_heads, LATENT_DEPTH),
+        ragged=True,
+        sparse=True,
+    ](
+        TileTensor(
+            out_512.unsafe_ptr(),
+            row_major((total_q_tokens, Idx[num_heads], Idx[V_DEPTH])),
+        ),
+        TileTensor(
+            q_512_dev.unsafe_ptr(),
+            row_major((total_q_tokens, Idx[num_heads], Idx[LATENT_DEPTH])),
+        ),
+        kv_512.get_key_cache(0),
+        NullMask(),
+        row_offsets_tt,
+        scale,
+        ctx,
+        args_512.gpu_tile_tensor(),
+        d_indices=rebind[MutPointer[Int32, MutAnyOrigin]](
+            d_indices_device.unsafe_ptr()
+        ),
+        indices_stride=eff_topk,
+    )
+    ctx.synchronize()
+
+    var h576 = ctx.enqueue_create_host_buffer[.bfloat16](out_size)
+    var h512 = ctx.enqueue_create_host_buffer[.bfloat16](out_size)
+    ctx.enqueue_copy(h576, out_576)
+    ctx.enqueue_copy(h512, out_512)
+    ctx.synchronize()
+
+    var mismatches = 0
+    for i in range(out_size):
+        if isnan(h512[i].cast[.float64]()):
+            raise Error("NaN in native-512 QKV-FP8 decode output")
+        if h576[i] != h512[i]:
+            mismatches += 1
+            if mismatches <= 5:
+                print(
+                    "  mismatch idx=",
+                    i,
+                    " padded576=",
+                    h576[i],
+                    " native512=",
+                    h512[i],
+                )
+    if mismatches > 0:
+        print("  FAILED: ", mismatches, "of", out_size, "outputs differ")
+        raise Error("native-512 QKV-FP8 decode does not match padded 576")
+    print("  PASSED: native 512 is bit-identical to zero-padded 576")
+
+    _ = args_576
+    _ = args_512
+    _ = blocks_576_dev
+    _ = blocks_512_dev
+    _ = cache_lengths_device
+    _ = lookup_table_device
+    _ = q_576_dev
+    _ = q_512_dev
+    _ = d_indices_device
+    _ = out_576
+    _ = out_512
+    _ = row_offsets_device
+
+
 def run_test_sparse_qkv_fp8[
     kv_type: DType,  # float8_e4m3fn
     num_heads: Int,
@@ -427,6 +729,10 @@ def run_test_sparse_qkv_fp8[
     order_mode: Int = 0,
     # Phase 5 seq_len=0: make the LAST batch a 0-length (empty) ragged sequence.
     empty_last_batch: Bool = False,
+    # Width of the KV row and the absorbed Q as the model stores them. 576
+    # carries a rotary tail after the 512 latent; a NoPE model stores the
+    # latent alone and the kernel takes that row directly.
+    row_depth: Int = Q_DEPTH,
 ](
     name: StringLiteral,
     batch_size: Int,
@@ -459,7 +765,7 @@ def run_test_sparse_qkv_fp8[
     comptime scale = Float32(0.125)
 
     comptime kv_params = KVCacheStaticParams(
-        num_heads=KV_NUM_HEADS, head_size=KV_HEAD_SIZE, is_mla=True
+        num_heads=KV_NUM_HEADS, head_size=row_depth, is_mla=True
     )
     comptime kv_dim2 = 1
 
@@ -489,7 +795,7 @@ def run_test_sparse_qkv_fp8[
         blocks_host[i] = Scalar[kv_type](0)
 
     # Generate random BF16 K data for nope (512) + rope (64) per token.
-    var k_bf16_total = batch_size * num_keys * Q_DEPTH
+    var k_bf16_total = batch_size * num_keys * row_depth
     var k_bf16_host = ctx.enqueue_create_host_buffer[.bfloat16](k_bf16_total)
     randn(k_bf16_host.as_span(), mean=0.0, standard_deviation=0.5)
 
@@ -531,8 +837,8 @@ def run_test_sparse_qkv_fp8[
                 lookup_table_host[bi * max_pages_per_batch + page_idx]
             )
             var base = block_id * page_stride_elems + tok_in_page * tok_stride
-            var k_base = bi * num_keys * Q_DEPTH + t * Q_DEPTH
-            for d in range(Q_DEPTH):
+            var k_base = bi * num_keys * row_depth + t * row_depth
+            for d in range(row_depth):
                 blocks_host[base + d] = k_bf16_host[k_base + d].cast[kv_type]()
 
     # Reference K: read back FP8 bytes as BF16 so the reference sees
@@ -546,14 +852,14 @@ def run_test_sparse_qkv_fp8[
                 lookup_table_host[bi * max_pages_per_batch + page_idx]
             )
             var base = block_id * page_stride_elems + tok_in_page * tok_stride
-            var k_base = bi * num_keys * Q_DEPTH + t * Q_DEPTH
-            for d in range(Q_DEPTH):
+            var k_base = bi * num_keys * row_depth + t * row_depth
+            for d in range(row_depth):
                 k_ref_host[k_base + d] = blocks_host[base + d].cast[
                     DType.bfloat16
                 ]()
 
     # Q tensor: generate BF16 randn, cast to FP8 for the kernel.
-    var q_size = batch_size * q_max_seq_len * num_heads * Q_DEPTH
+    var q_size = batch_size * q_max_seq_len * num_heads * row_depth
     var q_bf16_scratch = ctx.enqueue_create_host_buffer[.bfloat16](q_size)
     randn(q_bf16_scratch.as_span(), mean=0.0, standard_deviation=0.5)
     var q_host = ctx.enqueue_create_host_buffer[.float8_e4m3fn](q_size)
@@ -580,8 +886,8 @@ def run_test_sparse_qkv_fp8[
                         i * mult + 1 + s
                     ) % num_keys
 
-    # Build sparse reference K buffer [total_q_tokens, topk, Q_DEPTH].
-    var k_sparse_ref_size = total_q_tokens * topk * Q_DEPTH
+    # Build sparse reference K buffer [total_q_tokens, topk, row_depth].
+    var k_sparse_ref_size = total_q_tokens * topk * row_depth
     var k_sparse_ref = ctx.enqueue_create_host_buffer[.bfloat16](
         k_sparse_ref_size
     )
@@ -590,9 +896,9 @@ def run_test_sparse_qkv_fp8[
             var g = bi * q_max_seq_len + s
             for i in range(topk):
                 var t = selected_tokens[g * topk + i]
-                var src_base = bi * num_keys * Q_DEPTH + t * Q_DEPTH
-                var dst_base = g * topk * Q_DEPTH + i * Q_DEPTH
-                for d in range(Q_DEPTH):
+                var src_base = bi * num_keys * row_depth + t * row_depth
+                var dst_base = g * topk * row_depth + i * row_depth
+                for d in range(row_depth):
                     k_sparse_ref[dst_base + d] = k_ref_host[src_base + d]
 
     var out_size = batch_size * q_max_seq_len * num_heads * V_DEPTH
@@ -605,9 +911,9 @@ def run_test_sparse_qkv_fp8[
                 var causal_limit = cache_len + s + 1
                 for h in range(num_heads):
                     var q_base = (
-                        b * q_max_seq_len * num_heads * Q_DEPTH
-                        + s * num_heads * Q_DEPTH
-                        + h * Q_DEPTH
+                        b * q_max_seq_len * num_heads * row_depth
+                        + s * num_heads * row_depth
+                        + h * row_depth
                     )
                     var max_s = Float64(min_or_neg_inf[.float32]())
                     var s_buf = List(length=topk, fill=Float64(0))
@@ -619,9 +925,9 @@ def run_test_sparse_qkv_fp8[
                             s_buf[i] = Float64(min_or_neg_inf[.float32]())
                             continue
                         valid[i] = True
-                        var k_base = g * topk * Q_DEPTH + i * Q_DEPTH
+                        var k_base = g * topk * row_depth + i * row_depth
                         var dot = Float64(0)
-                        for d in range(Q_DEPTH):
+                        for d in range(row_depth):
                             dot += (
                                 q_host[q_base + d].cast[.float64]()
                                 * k_sparse_ref[k_base + d].cast[.float64]()
@@ -652,7 +958,7 @@ def run_test_sparse_qkv_fp8[
                         for i in range(topk):
                             if not valid[i]:
                                 continue
-                            var k_base = g * topk * Q_DEPTH + i * Q_DEPTH
+                            var k_base = g * topk * row_depth + i * row_depth
                             acc += (
                                 s_buf[i]
                                 * k_sparse_ref[k_base + d].cast[.float64]()
@@ -666,16 +972,16 @@ def run_test_sparse_qkv_fp8[
                 var g = b * q_max_seq_len + s
                 for h in range(num_heads):
                     var q_base = (
-                        b * q_max_seq_len * num_heads * Q_DEPTH
-                        + s * num_heads * Q_DEPTH
-                        + h * Q_DEPTH
+                        b * q_max_seq_len * num_heads * row_depth
+                        + s * num_heads * row_depth
+                        + h * row_depth
                     )
                     var max_s = Float64(min_or_neg_inf[.float32]())
                     var s_buf = List(length=topk, fill=Float64(0))
                     for i in range(topk):
-                        var k_base = g * topk * Q_DEPTH + i * Q_DEPTH
+                        var k_base = g * topk * row_depth + i * row_depth
                         var dot = Float64(0)
-                        for d in range(Q_DEPTH):
+                        for d in range(row_depth):
                             dot += (
                                 q_host[q_base + d].cast[.float64]()
                                 * k_sparse_ref[k_base + d].cast[.float64]()
@@ -699,7 +1005,7 @@ def run_test_sparse_qkv_fp8[
                     for d in range(V_DEPTH):
                         var acc = Float64(0)
                         for i in range(topk):
-                            var k_base = g * topk * Q_DEPTH + i * Q_DEPTH
+                            var k_base = g * topk * row_depth + i * row_depth
                             acc += (
                                 s_buf[i]
                                 * k_sparse_ref[k_base + d].cast[.float64]()
@@ -820,7 +1126,7 @@ def run_test_sparse_qkv_fp8[
     # -----------------------------------------------------------------------
     var q_tt = TileTensor(
         q_device.unsafe_ptr(),
-        row_major((total_q_tokens, Idx[num_heads], Idx[Q_DEPTH])),
+        row_major((total_q_tokens, Idx[num_heads], Idx[row_depth])),
     )
 
     var out_tt = TileTensor(
@@ -884,7 +1190,7 @@ def run_test_sparse_qkv_fp8[
     comptime if use_causal:
         flare_mla_decoding[
             rank=3,
-            config=MHAConfig[.float8_e4m3fn](num_heads, Q_DEPTH),
+            config=MHAConfig[.float8_e4m3fn](num_heads, row_depth),
             ragged=True,
             sparse=True,
             fold_shared_index=shared_index,
@@ -909,7 +1215,7 @@ def run_test_sparse_qkv_fp8[
     else:
         flare_mla_decoding[
             rank=3,
-            config=MHAConfig[.float8_e4m3fn](num_heads, Q_DEPTH),
+            config=MHAConfig[.float8_e4m3fn](num_heads, row_depth),
             ragged=True,
             sparse=True,
             fold_shared_index=shared_index,
@@ -969,6 +1275,10 @@ def run_test_sparse_qkv_fp8[
 def run_test_sparse_qkv_fp8_variable_topk[
     kv_type: DType,
     num_heads: Int,
+    # Width of the KV row and the absorbed Q as the model stores them. 576
+    # carries a rotary tail after the 512 latent; a NoPE model stores the
+    # latent alone and the kernel takes that row directly.
+    row_depth: Int = Q_DEPTH,
 ](
     name: StringLiteral,
     cache_lengths: List[Int],
@@ -1015,7 +1325,7 @@ def run_test_sparse_qkv_fp8_variable_topk[
     var max_pages_per_batch = ceildiv(max_num_keys, PAGE_SIZE)
 
     comptime kv_params = KVCacheStaticParams(
-        num_heads=KV_NUM_HEADS, head_size=KV_HEAD_SIZE, is_mla=True
+        num_heads=KV_NUM_HEADS, head_size=row_depth, is_mla=True
     )
     comptime kv_dim2 = 1
 
@@ -1069,7 +1379,7 @@ def run_test_sparse_qkv_fp8_variable_topk[
 
     var total_k_elems = 0
     for bi in range(batch_size):
-        total_k_elems += num_keys_list[bi] * Q_DEPTH
+        total_k_elems += num_keys_list[bi] * row_depth
     var k_bf16_host = ctx.enqueue_create_host_buffer[.bfloat16](total_k_elems)
     randn(k_bf16_host.as_span(), mean=0.0, standard_deviation=0.5)
 
@@ -1087,15 +1397,15 @@ def run_test_sparse_qkv_fp8_variable_topk[
             var base = (
                 physical_page * page_stride_elems + tok_in_page * tok_stride
             )
-            var k_base = k_offset + t * Q_DEPTH
-            for d in range(Q_DEPTH):
+            var k_base = k_offset + t * row_depth
+            for d in range(row_depth):
                 var fp8_val = k_bf16_host[k_base + d].cast[kv_type]()
                 blocks_host[base + d] = fp8_val
                 k_ref_host[k_base + d] = fp8_val.cast[.bfloat16]()
-        k_offset += nk * Q_DEPTH
+        k_offset += nk * row_depth
 
     # Q: generate BF16 randn, cast to FP8.
-    var q_size = batch_size * num_heads * Q_DEPTH
+    var q_size = batch_size * num_heads * row_depth
     var q_bf16_scratch = ctx.enqueue_create_host_buffer[.bfloat16](q_size)
     randn(q_bf16_scratch.as_span(), mean=0.0, standard_deviation=0.5)
     var q_host = ctx.enqueue_create_host_buffer[.float8_e4m3fn](q_size)
@@ -1108,7 +1418,7 @@ def run_test_sparse_qkv_fp8_variable_topk[
         h_indices[i] = Int32(0)
     var total_sparse_ref_elems = 0
     for bi in range(batch_size):
-        total_sparse_ref_elems += topk_per_batch[bi] * Q_DEPTH
+        total_sparse_ref_elems += topk_per_batch[bi] * row_depth
     var k_sparse_ref = ctx.enqueue_create_host_buffer[.bfloat16](
         total_sparse_ref_elems
     )
@@ -1129,12 +1439,12 @@ def run_test_sparse_qkv_fp8_variable_topk[
             h_indices[bi * max_topk + i] = Int32(
                 physical_page * PAGE_SIZE + tok_in_page
             )
-            var src_base = k_offset_src + t * Q_DEPTH
-            var dst_base = sparse_ref_offset + i * Q_DEPTH
-            for d in range(Q_DEPTH):
+            var src_base = k_offset_src + t * row_depth
+            var dst_base = sparse_ref_offset + i * row_depth
+            for d in range(row_depth):
                 k_sparse_ref[dst_base + d] = k_ref_host[src_base + d]
-        sparse_ref_offset += topk_bi * Q_DEPTH
-        k_offset_src += nk * Q_DEPTH
+        sparse_ref_offset += topk_bi * row_depth
+        k_offset_src += nk * row_depth
 
     var sparse_num_keys_list = List[Int]()
     for bi in range(batch_size):
@@ -1149,7 +1459,7 @@ def run_test_sparse_qkv_fp8_variable_topk[
         batch_size,
         num_heads,
         sparse_num_keys_list,
-        Q_DEPTH,
+        row_depth,
         V_DEPTH,
         scale,
     )
@@ -1219,7 +1529,7 @@ def run_test_sparse_qkv_fp8_variable_topk[
 
     var q_tt = TileTensor(
         q_device.unsafe_ptr(),
-        row_major((batch_size, Idx[num_heads], Idx[Q_DEPTH])),
+        row_major((batch_size, Idx[num_heads], Idx[row_depth])),
     )
     var out_tt = TileTensor(
         out_device.unsafe_ptr(),
@@ -1263,7 +1573,7 @@ def run_test_sparse_qkv_fp8_variable_topk[
 
     flare_mla_decoding[
         rank=3,
-        config=MHAConfig[.float8_e4m3fn](num_heads, Q_DEPTH),
+        config=MHAConfig[.float8_e4m3fn](num_heads, row_depth),
         ragged=True,
         sparse=True,
     ](
@@ -1315,6 +1625,10 @@ def run_test_sparse_qkv_fp8_variable_topk[
 def run_test_sparse_qkv_fp8_attn_sink[
     kv_type: DType,
     num_heads: Int,
+    # Width of the KV row and the absorbed Q as the model stores them. 576
+    # carries a rotary tail after the 512 latent; a NoPE model stores the
+    # latent alone and the kernel takes that row directly.
+    row_depth: Int = Q_DEPTH,
 ](
     name: StringLiteral,
     batch_size: Int,
@@ -1344,7 +1658,7 @@ def run_test_sparse_qkv_fp8_attn_sink[
     comptime scale = Float32(0.125)
 
     comptime kv_params = KVCacheStaticParams(
-        num_heads=KV_NUM_HEADS, head_size=KV_HEAD_SIZE, is_mla=True
+        num_heads=KV_NUM_HEADS, head_size=row_depth, is_mla=True
     )
     comptime kv_dim2 = 1
 
@@ -1371,7 +1685,7 @@ def run_test_sparse_qkv_fp8_attn_sink[
     var blocks_host = ctx.enqueue_create_host_buffer[kv_type](block_elems)
     for i in range(block_elems):
         blocks_host[i] = Scalar[kv_type](0)
-    var k_bf16_total = batch_size * num_keys * Q_DEPTH
+    var k_bf16_total = batch_size * num_keys * row_depth
     var k_bf16_host = ctx.enqueue_create_host_buffer[.bfloat16](k_bf16_total)
     randn(k_bf16_host.as_span(), mean=0.0, standard_deviation=0.5)
 
@@ -1406,8 +1720,8 @@ def run_test_sparse_qkv_fp8_attn_sink[
                 lookup_table_host[bi * max_pages_per_batch + page_idx]
             )
             var base = block_id * page_stride_elems + tok_in_page * tok_stride
-            var k_base = bi * num_keys * Q_DEPTH + t * Q_DEPTH
-            for d in range(Q_DEPTH):
+            var k_base = bi * num_keys * row_depth + t * row_depth
+            for d in range(row_depth):
                 blocks_host[base + d] = k_bf16_host[k_base + d].cast[kv_type]()
 
     var k_ref_host = ctx.enqueue_create_host_buffer[.bfloat16](k_bf16_total)
@@ -1419,8 +1733,8 @@ def run_test_sparse_qkv_fp8_attn_sink[
                 lookup_table_host[bi * max_pages_per_batch + page_idx]
             )
             var base = block_id * page_stride_elems + tok_in_page * tok_stride
-            var k_base = bi * num_keys * Q_DEPTH + t * Q_DEPTH
-            for d in range(Q_DEPTH):
+            var k_base = bi * num_keys * row_depth + t * row_depth
+            for d in range(row_depth):
                 k_ref_host[k_base + d] = blocks_host[base + d].cast[
                     DType.bfloat16
                 ]()
@@ -1432,14 +1746,14 @@ def run_test_sparse_qkv_fp8_attn_sink[
             selected_tokens[bi * topk + i] = (i * mult + 1) % num_keys
 
     var k_sparse_ref = ctx.enqueue_create_host_buffer[.bfloat16](
-        batch_size * topk * Q_DEPTH
+        batch_size * topk * row_depth
     )
     for bi in range(batch_size):
         for i in range(topk):
             var t = selected_tokens[bi * topk + i]
-            var src = bi * num_keys * Q_DEPTH + t * Q_DEPTH
-            var dst = bi * topk * Q_DEPTH + i * Q_DEPTH
-            for d in range(Q_DEPTH):
+            var src = bi * num_keys * row_depth + t * row_depth
+            var dst = bi * topk * row_depth + i * row_depth
+            for d in range(row_depth):
                 k_sparse_ref[dst + d] = k_ref_host[src + d]
 
     var attn_sink_host = ctx.enqueue_create_host_buffer[.float32](num_heads)
@@ -1449,7 +1763,7 @@ def run_test_sparse_qkv_fp8_attn_sink[
         )
 
     # Q: generate BF16 randn, cast to FP8.
-    var q_size = batch_size * num_heads * Q_DEPTH
+    var q_size = batch_size * num_heads * row_depth
     var q_bf16_scratch = ctx.enqueue_create_host_buffer[.bfloat16](q_size)
     randn(q_bf16_scratch.as_span(), mean=0.0, standard_deviation=0.3)
     var q_host = ctx.enqueue_create_host_buffer[.float8_e4m3fn](q_size)
@@ -1466,7 +1780,7 @@ def run_test_sparse_qkv_fp8_attn_sink[
         batch_size,
         num_heads,
         topk,
-        Q_DEPTH,
+        row_depth,
         V_DEPTH,
         scale,
     )
@@ -1549,7 +1863,7 @@ def run_test_sparse_qkv_fp8_attn_sink[
 
     var q_tt = TileTensor(
         q_device.unsafe_ptr(),
-        row_major((batch_size, Idx[num_heads], Idx[Q_DEPTH])),
+        row_major((batch_size, Idx[num_heads], Idx[row_depth])),
     )
     var out_tt = TileTensor(
         out_device.unsafe_ptr(),
@@ -1593,7 +1907,7 @@ def run_test_sparse_qkv_fp8_attn_sink[
 
     flare_mla_decoding[
         rank=3,
-        config=MHAConfig[.float8_e4m3fn](num_heads, Q_DEPTH),
+        config=MHAConfig[.float8_e4m3fn](num_heads, row_depth),
         ragged=True,
         sparse=True,
     ](
@@ -1647,6 +1961,10 @@ def run_test_sparse_qkv_fp8_attn_sink[
 def run_test_sparse_qkv_fp8_extra_kv[
     kv_type: DType,
     num_heads: Int,
+    # Width of the KV row and the absorbed Q as the model stores them. 576
+    # carries a rotary tail after the 512 latent; a NoPE model stores the
+    # latent alone and the kernel takes that row directly.
+    row_depth: Int = Q_DEPTH,
 ](
     name: StringLiteral,
     cache_lengths: List[Int],
@@ -1685,7 +2003,7 @@ def run_test_sparse_qkv_fp8_extra_kv[
         )
 
     comptime kv_params = KVCacheStaticParams(
-        num_heads=KV_NUM_HEADS, head_size=KV_HEAD_SIZE, is_mla=True
+        num_heads=KV_NUM_HEADS, head_size=row_depth, is_mla=True
     )
     comptime kv_dim2 = 1
     var tok_stride = kv_params.head_size
@@ -1752,7 +2070,7 @@ def run_test_sparse_qkv_fp8_extra_kv[
 
     var total_k_elems = 0
     for bi in range(batch_size):
-        total_k_elems += num_keys_list[bi] * Q_DEPTH
+        total_k_elems += num_keys_list[bi] * row_depth
     var k_bf16_host = ctx.enqueue_create_host_buffer[.bfloat16](total_k_elems)
     randn(k_bf16_host.as_span(), mean=0.0, standard_deviation=0.5)
     var k_ref_host = ctx.enqueue_create_host_buffer[.bfloat16](total_k_elems)
@@ -1769,12 +2087,12 @@ def run_test_sparse_qkv_fp8_extra_kv[
             var base = (
                 physical_page * page_stride_elems + tok_in_page * tok_stride
             )
-            var k_base = k_offset + t * Q_DEPTH
-            for d in range(Q_DEPTH):
+            var k_base = k_offset + t * row_depth
+            for d in range(row_depth):
                 var fp8_val = k_bf16_host[k_base + d].cast[kv_type]()
                 blocks_host[base + d] = fp8_val
                 k_ref_host[k_base + d] = fp8_val.cast[.bfloat16]()
-        k_offset += nk * Q_DEPTH
+        k_offset += nk * row_depth
 
     # --- EXTRA cache ---
     var max_extra_cache_len = 0
@@ -1837,7 +2155,7 @@ def run_test_sparse_qkv_fp8_extra_kv[
 
     var extra_total_k_elems = 0
     for bi in range(batch_size):
-        extra_total_k_elems += extra_num_keys_list[bi] * Q_DEPTH
+        extra_total_k_elems += extra_num_keys_list[bi] * row_depth
     var extra_k_bf16_host = ctx.enqueue_create_host_buffer[.bfloat16](
         extra_total_k_elems
     )
@@ -1860,15 +2178,15 @@ def run_test_sparse_qkv_fp8_extra_kv[
             var base = (
                 physical_page * page_stride_elems + tok_in_page * tok_stride
             )
-            var k_base = ek_offset + t * Q_DEPTH
-            for d in range(Q_DEPTH):
+            var k_base = ek_offset + t * row_depth
+            for d in range(row_depth):
                 var fp8_val = extra_k_bf16_host[k_base + d].cast[kv_type]()
                 extra_blocks_host[base + d] = fp8_val
                 extra_k_ref_host[k_base + d] = fp8_val.cast[.bfloat16]()
-        ek_offset += enk * Q_DEPTH
+        ek_offset += enk * row_depth
 
     # Q: generate BF16 randn, cast to FP8.
-    var q_size = batch_size * num_heads * Q_DEPTH
+    var q_size = batch_size * num_heads * row_depth
     var q_bf16_scratch = ctx.enqueue_create_host_buffer[.bfloat16](q_size)
     randn(q_bf16_scratch.as_span(), mean=0.0, standard_deviation=0.5)
     var q_host = ctx.enqueue_create_host_buffer[.float8_e4m3fn](q_size)
@@ -1890,7 +2208,7 @@ def run_test_sparse_qkv_fp8_extra_kv[
     for bi in range(batch_size):
         total_combined_ref_elems += (
             topk_per_batch[bi] + extra_topk_per_batch[bi]
-        ) * Q_DEPTH
+        ) * row_depth
     var k_combined_ref = ctx.enqueue_create_host_buffer[.bfloat16](
         total_combined_ref_elems
     )
@@ -1912,11 +2230,11 @@ def run_test_sparse_qkv_fp8_extra_kv[
             h_indices[bi * max_topk + i] = Int32(
                 physical_page * PAGE_SIZE + tok_in_page
             )
-            var src_base = k_offset_src + t * Q_DEPTH
-            var dst_base = combined_ref_offset + i * Q_DEPTH
-            for d in range(Q_DEPTH):
+            var src_base = k_offset_src + t * row_depth
+            var dst_base = combined_ref_offset + i * row_depth
+            for d in range(row_depth):
                 k_combined_ref[dst_base + d] = k_ref_host[src_base + d]
-        combined_ref_offset += topk_bi * Q_DEPTH
+        combined_ref_offset += topk_bi * row_depth
 
         var enk = extra_num_keys_list[bi]
         var extra_topk_bi = extra_topk_per_batch[bi]
@@ -1933,13 +2251,13 @@ def run_test_sparse_qkv_fp8_extra_kv[
             extra_h_indices[bi * max_extra_topk + i] = Int32(
                 physical_page * PAGE_SIZE + tok_in_page
             )
-            var src_base = ek_offset_src + t * Q_DEPTH
-            var dst_base = combined_ref_offset + i * Q_DEPTH
-            for d in range(Q_DEPTH):
+            var src_base = ek_offset_src + t * row_depth
+            var dst_base = combined_ref_offset + i * row_depth
+            for d in range(row_depth):
                 k_combined_ref[dst_base + d] = extra_k_ref_host[src_base + d]
-        combined_ref_offset += extra_topk_bi * Q_DEPTH
-        k_offset_src += nk * Q_DEPTH
-        ek_offset_src += enk * Q_DEPTH
+        combined_ref_offset += extra_topk_bi * row_depth
+        k_offset_src += nk * row_depth
+        ek_offset_src += enk * row_depth
 
     var combined_num_keys_list = List[Int]()
     for bi in range(batch_size):
@@ -1956,7 +2274,7 @@ def run_test_sparse_qkv_fp8_extra_kv[
         batch_size,
         num_heads,
         combined_num_keys_list,
-        Q_DEPTH,
+        row_depth,
         V_DEPTH,
         scale,
     )
@@ -2098,7 +2416,7 @@ def run_test_sparse_qkv_fp8_extra_kv[
 
     var q_tt = TileTensor(
         q_device.unsafe_ptr(),
-        row_major((batch_size, Idx[num_heads], Idx[Q_DEPTH])),
+        row_major((batch_size, Idx[num_heads], Idx[row_depth])),
     )
     var out_tt = TileTensor(
         out_device.unsafe_ptr(),
@@ -2142,7 +2460,7 @@ def run_test_sparse_qkv_fp8_extra_kv[
 
     flare_mla_decoding[
         rank=3,
-        config=MHAConfig[.float8_e4m3fn](num_heads, Q_DEPTH),
+        config=MHAConfig[.float8_e4m3fn](num_heads, row_depth),
         ragged=True,
         sparse=True,
     ](
@@ -2207,6 +2525,10 @@ def run_test_sparse_qkv_fp8_extra_kv[
 def run_test_sparse_qkv_fp8_topk_clamping[
     kv_type: DType,
     num_heads: Int,
+    # Width of the KV row and the absorbed Q as the model stores them. 576
+    # carries a rotary tail after the 512 latent; a NoPE model stores the
+    # latent alone and the kernel takes that row directly.
+    row_depth: Int = Q_DEPTH,
 ](
     name: StringLiteral,
     cache_lengths: List[Int],
@@ -2264,7 +2586,7 @@ def run_test_sparse_qkv_fp8_topk_clamping[
     var max_pages_per_batch = ceildiv(max_num_keys, PAGE_SIZE)
 
     comptime kv_params = KVCacheStaticParams(
-        num_heads=KV_NUM_HEADS, head_size=KV_HEAD_SIZE, is_mla=True
+        num_heads=KV_NUM_HEADS, head_size=row_depth, is_mla=True
     )
     comptime kv_dim2 = 1
 
@@ -2318,7 +2640,7 @@ def run_test_sparse_qkv_fp8_topk_clamping[
 
     var total_k_elems = 0
     for bi in range(batch_size):
-        total_k_elems += num_keys_list[bi] * Q_DEPTH
+        total_k_elems += num_keys_list[bi] * row_depth
     var k_bf16_host = ctx.enqueue_create_host_buffer[.bfloat16](total_k_elems)
     randn(k_bf16_host.as_span(), mean=0.0, standard_deviation=0.5)
     var k_ref_host = ctx.enqueue_create_host_buffer[.bfloat16](total_k_elems)
@@ -2335,15 +2657,15 @@ def run_test_sparse_qkv_fp8_topk_clamping[
             var base = (
                 physical_page * page_stride_elems + tok_in_page * tok_stride
             )
-            var k_base = k_offset + t * Q_DEPTH
-            for d in range(Q_DEPTH):
+            var k_base = k_offset + t * row_depth
+            for d in range(row_depth):
                 var fp8_val = k_bf16_host[k_base + d].cast[kv_type]()
                 blocks_host[base + d] = fp8_val
                 k_ref_host[k_base + d] = fp8_val.cast[.bfloat16]()
-        k_offset += nk * Q_DEPTH
+        k_offset += nk * row_depth
 
     # Q: generate BF16 randn, cast to FP8.
-    var q_size = batch_size * num_heads * Q_DEPTH
+    var q_size = batch_size * num_heads * row_depth
     var q_bf16_scratch = ctx.enqueue_create_host_buffer[.bfloat16](q_size)
     randn(q_bf16_scratch.as_span(), mean=0.0, standard_deviation=0.5)
     var q_host = ctx.enqueue_create_host_buffer[.float8_e4m3fn](q_size)
@@ -2358,7 +2680,7 @@ def run_test_sparse_qkv_fp8_topk_clamping[
 
     var total_sparse_ref_elems = 0
     for bi in range(batch_size):
-        total_sparse_ref_elems += effective_topk_list[bi] * Q_DEPTH
+        total_sparse_ref_elems += effective_topk_list[bi] * row_depth
     var k_sparse_ref = ctx.enqueue_create_host_buffer[.bfloat16](
         total_sparse_ref_elems
     )
@@ -2383,12 +2705,12 @@ def run_test_sparse_qkv_fp8_topk_clamping[
             h_indices[bi * max_topk + i] = Int32(
                 physical_page * PAGE_SIZE + tok_in_page
             )
-            var src_base = k_offset_src + t * Q_DEPTH
-            var dst_base = sparse_ref_offset + i * Q_DEPTH
-            for d in range(Q_DEPTH):
+            var src_base = k_offset_src + t * row_depth
+            var dst_base = sparse_ref_offset + i * row_depth
+            for d in range(row_depth):
                 k_sparse_ref[dst_base + d] = k_ref_host[src_base + d]
-        sparse_ref_offset += eff_topk * Q_DEPTH
-        k_offset_src += nk * Q_DEPTH
+        sparse_ref_offset += eff_topk * row_depth
+        k_offset_src += nk * row_depth
 
     var sparse_num_keys_list = List[Int]()
     for bi in range(batch_size):
@@ -2403,7 +2725,7 @@ def run_test_sparse_qkv_fp8_topk_clamping[
         batch_size,
         num_heads,
         sparse_num_keys_list,
-        Q_DEPTH,
+        row_depth,
         V_DEPTH,
         scale,
     )
@@ -2473,7 +2795,7 @@ def run_test_sparse_qkv_fp8_topk_clamping[
 
     var q_tt = TileTensor(
         q_device.unsafe_ptr(),
-        row_major((batch_size, Idx[num_heads], Idx[Q_DEPTH])),
+        row_major((batch_size, Idx[num_heads], Idx[row_depth])),
     )
     var out_tt = TileTensor(
         out_device.unsafe_ptr(),
@@ -2517,7 +2839,7 @@ def run_test_sparse_qkv_fp8_topk_clamping[
 
     flare_mla_decoding[
         rank=3,
-        config=MHAConfig[.float8_e4m3fn](num_heads, Q_DEPTH),
+        config=MHAConfig[.float8_e4m3fn](num_heads, row_depth),
         ragged=True,
         sparse=True,
     ](
@@ -2568,6 +2890,184 @@ def main() raises:
             ctx.default_device_info
         ):
             seed(42)
+
+            # ===============================================================
+            # NoPE native 512 on the production (native-FP8) decode backend.
+            # ---------------------------------------------------------------
+            # Breadth comes from differentials against the zero-tailed 576 run
+            # rather than a host reference: both arms are GPU runs, so the
+            # production shapes are affordable and the comparison is bit-exact.
+            # ===============================================================
+            run_nope_native_512_fp8[64](ctx, batch_size=1, cache_len=256)
+            run_nope_native_512_fp8[64](ctx, batch_size=4, cache_len=2048)
+
+            # Primes and the page-size boundary (PAGE_SIZE=128).
+            run_nope_native_512_fp8[64](
+                ctx, batch_size=1, cache_len=2, name="prime_cl2"
+            )
+            run_nope_native_512_fp8[64](
+                ctx, batch_size=1, cache_len=7, name="prime_cl7"
+            )
+            run_nope_native_512_fp8[64](
+                ctx, batch_size=3, cache_len=13, name="prime_cl13"
+            )
+            run_nope_native_512_fp8[64](
+                ctx, batch_size=1, cache_len=97, name="prime_cl97"
+            )
+            run_nope_native_512_fp8[64](
+                ctx, batch_size=1, cache_len=127, name="page_cl127"
+            )
+            run_nope_native_512_fp8[64](
+                ctx, batch_size=1, cache_len=128, name="page_cl128"
+            )
+            run_nope_native_512_fp8[64](
+                ctx, batch_size=1, cache_len=129, name="page_cl129"
+            )
+            run_nope_native_512_fp8[64](
+                ctx, batch_size=2, cache_len=257, topk=64, name="prime_cl257"
+            )
+
+            # Production selection width, long context, and batching.
+            run_nope_native_512_fp8[64](
+                ctx,
+                batch_size=1,
+                cache_len=2048,
+                topk=2048,
+                name="prod_topk2048_saturating",
+            )
+            run_nope_native_512_fp8[64](
+                ctx,
+                batch_size=1,
+                cache_len=8192,
+                topk=2048,
+                name="prod_cl8192_topk2048",
+            )
+            run_nope_native_512_fp8[64](
+                ctx,
+                batch_size=4,
+                cache_len=4096,
+                topk=2048,
+                name="prod_b4_cl4096_topk2048",
+            )
+            # The real GLM decode step: TP=8 -> 8 heads, MTP=5 -> q_len 6.
+            run_nope_native_512_fp8[8](
+                ctx,
+                batch_size=1,
+                cache_len=4096,
+                topk=2048,
+                q_max_seq_len=6,
+                name="prod_tp8_mtp6_topk2048",
+            )
+            run_nope_native_512_fp8[8](
+                ctx,
+                batch_size=4,
+                cache_len=2048,
+                topk=2048,
+                q_max_seq_len=6,
+                name="prod_tp8_mtp6_b4",
+            )
+
+            # Production decode batch sweep at the deployed shape. Batch moves
+            # the decode grid and the split-K decision, so the narrow row has
+            # to hold across it, not only at the one batch the mechanism was
+            # first proved on.
+            run_nope_native_512_fp8[8](
+                ctx,
+                batch_size=8,
+                cache_len=4096,
+                topk=2048,
+                q_max_seq_len=6,
+                name="prod_tp8_mtp6_b8",
+            )
+            run_nope_native_512_fp8[8](
+                ctx,
+                batch_size=16,
+                cache_len=4096,
+                topk=2048,
+                q_max_seq_len=6,
+                name="prod_tp8_mtp6_b16",
+            )
+            run_nope_native_512_fp8[8](
+                ctx,
+                batch_size=24,
+                cache_len=4096,
+                topk=2048,
+                q_max_seq_len=6,
+                name="prod_tp8_mtp6_b24",
+            )
+            run_nope_native_512_fp8[8](
+                ctx,
+                batch_size=32,
+                cache_len=4096,
+                topk=2048,
+                q_max_seq_len=6,
+                name="prod_tp8_mtp6_b32",
+            )
+            # The selection width is not a round 2048. Pooling by 4 selects 512
+            # pools of four contiguous tokens and always appends a tail of up to
+            # three, so the row the kernel sees is 2051 wide; an engine that
+            # tiles its index by 128 columns rounds that to 2176. Neither is a
+            # multiple of the gather tile, so both run the remainder path at
+            # production scale rather than at the toy sizes the prime cases use.
+            run_nope_native_512_fp8[8](
+                ctx,
+                batch_size=8,
+                cache_len=8192,
+                topk=2051,
+                q_max_seq_len=6,
+                name="prod_kpool_tail_topk2051",
+            )
+            run_nope_native_512_fp8[8](
+                ctx,
+                batch_size=8,
+                cache_len=8192,
+                topk=2176,
+                q_max_seq_len=6,
+                name="prod_engine_padded_topk2176",
+            )
+            # Speculative depth sweep. The deployment recipe is MTP=5 (q_len 6)
+            # but the engine varies draft depth at runtime and falls back to
+            # q_len 1 with speculation off.
+            run_nope_native_512_fp8[8](
+                ctx,
+                batch_size=8,
+                cache_len=4096,
+                topk=2048,
+                q_max_seq_len=1,
+                name="prod_tp8_qlen1_b8",
+            )
+            run_nope_native_512_fp8[8](
+                ctx,
+                batch_size=8,
+                cache_len=4096,
+                topk=2048,
+                q_max_seq_len=2,
+                name="prod_tp8_qlen2_b8",
+            )
+            run_nope_native_512_fp8[8](
+                ctx,
+                batch_size=8,
+                cache_len=4096,
+                topk=2048,
+                q_max_seq_len=4,
+                name="prod_tp8_qlen4_b8",
+            )
+            # Multi-token Q at smaller scale, and prime-on-prime.
+            run_nope_native_512_fp8[64](
+                ctx,
+                batch_size=2,
+                cache_len=512,
+                topk=64,
+                q_max_seq_len=4,
+                name="qlen4_b2",
+            )
+            run_nope_native_512_fp8[64](
+                ctx,
+                batch_size=2,
+                cache_len=1021,
+                topk=509,
+                name="prime_cl1021_topk509",
+            )
 
             # =====================================================
             # Read-once shared-index MTP fold (KERN-3141), shared_index=True.
@@ -2925,5 +3425,84 @@ def main() raises:
                 "sparse_qkv_fp8_topk_clamp_mixed_b2_h16",
                 tc_cls_3,
                 tc_topk_3,
+                ctx,
+            )
+
+            # =====================================================
+            # NoPE native 512, the ragged and edge-case families.
+            # ---------------------------------------------------------------
+            # The differential above runs the narrow row at production scale,
+            # but only on shapes that are uniform across the batch. These
+            # re-run the ragged families -- per-batch topk and cache length,
+            # attention sink, a second always-attend cache, and clamping on a
+            # near-empty cache -- at 512 against the same host reference the
+            # 576 row is held to, so the narrow row clears the whole bar and
+            # not a friendly subset of it.
+            #
+            # The extra-KV case is the one that answers a specific question:
+            # the tail is zeroed once at kernel entry, so a second cache that
+            # wrote the tail afterwards would break that. It does not.
+            # =====================================================
+
+            run_test_sparse_qkv_fp8[.float8_e4m3fn, 16, row_depth=512](
+                "nope512_qkv_fp8_b4_h16_cl256_topk64",
+                4,
+                256,
+                ctx,
+                topk=64,
+            )
+            run_test_sparse_qkv_fp8[
+                .float8_e4m3fn, 16, use_causal=True, row_depth=512
+            ](
+                "nope512_qkv_fp8_causal_b3_h16_cl509_topk73_seq3",
+                3,
+                509,
+                ctx,
+                topk=73,
+                q_max_seq_len=3,
+            )
+
+            var n512_vt_cls: List[Int] = [256, 384, 128, 512]
+            var n512_vt_topk: List[Int] = [64, 128, 32, 64]
+            run_test_sparse_qkv_fp8_variable_topk[
+                .float8_e4m3fn, 16, row_depth=512
+            ](
+                "nope512_qkv_fp8_variable_topk_b4_h16",
+                n512_vt_cls,
+                n512_vt_topk,
+                ctx,
+            )
+
+            run_test_sparse_qkv_fp8_attn_sink[
+                .float8_e4m3fn, 16, row_depth=512
+            ](
+                "nope512_qkv_fp8_attn_sink_b4_h16_cl256_topk64",
+                4,
+                256,
+                ctx,
+                topk=64,
+            )
+
+            var n512_ek_cls: List[Int] = [256, 384]
+            var n512_ek_topk: List[Int] = [64, 64]
+            var n512_ek_ecls: List[Int] = [64, 128]
+            var n512_ek_etopk: List[Int] = [64, 64]
+            run_test_sparse_qkv_fp8_extra_kv[.float8_e4m3fn, 16, row_depth=512](
+                "nope512_qkv_fp8_extra_kv_b2_h16_variable",
+                n512_ek_cls,
+                n512_ek_topk,
+                n512_ek_ecls,
+                n512_ek_etopk,
+                ctx,
+            )
+
+            var n512_tc_cls: List[Int] = [0, 256]
+            var n512_tc_topk: List[Int] = [64, 64]
+            run_test_sparse_qkv_fp8_topk_clamping[
+                .float8_e4m3fn, 16, row_depth=512
+            ](
+                "nope512_qkv_fp8_topk_clamp_mixed_b2_h16",
+                n512_tc_cls,
+                n512_tc_topk,
                 ctx,
             )

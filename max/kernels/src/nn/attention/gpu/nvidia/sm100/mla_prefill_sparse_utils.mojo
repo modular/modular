@@ -142,6 +142,13 @@ struct MLASparseConfig[
     var padded_num_q_heads: Int
     var num_kv_heads: Int
     var qk_depth: Int
+    # Width of the Q / KV row as the TMA finds it in global memory. Equal to
+    # `qk_depth` for the rotary-carrying row the SMEM/TMEM split is laid out
+    # for. A NoPE model stores a narrower row -- latent only, no rotary tail --
+    # and the kernel zero-fills the difference, so this drives the TMA
+    # descriptors and the transaction byte count and nothing else. It must
+    # never reach the SMEM/TMEM layout or the MMA width.
+    var input_qk_depth: Int
     var v_depth: Int
     var indices_stride: Int
     var group: Int
@@ -174,11 +181,14 @@ struct MLASparseConfig[
         v_depth: Int,
         indices_stride: Int,
         group: Int,
+        # 0 means "use `qk_depth`" (every rotary-carrying call site).
+        input_qk_depth: Int = 0,
     ):
         self.num_q_heads = num_q_heads
         self.padded_num_q_heads = 64 if num_q_heads <= 64 else num_q_heads
         self.num_kv_heads = num_kv_heads
         self.qk_depth = qk_depth
+        self.input_qk_depth = input_qk_depth if input_qk_depth > 0 else qk_depth
         self.v_depth = v_depth
         self.indices_stride = indices_stride
         self.group = group
@@ -470,13 +480,13 @@ struct MLAPrefillSparseCommon[
     # lands at the PADDED (64-row) depth-tile stride the BMN=64 QK-MMA reads
     # (see the Q-load in `kernel`). NFC at 64/128 (real == padded).
     comptime q_tile_shape = Index(
-        1, Self.NUM_Q_HEADS_PER_CTA, Self.config.qk_depth
+        1, Self.NUM_Q_HEADS_PER_CTA, Self.config.input_qk_depth
     )
     comptime q_desc_shape = _default_desc_shape[
         3, Self.qkv_dtype, Self.q_tile_shape, Self.config.q_swizzle_mode
     ]()
 
-    comptime k_tile_width = Self.config.qk_depth
+    comptime k_tile_width = Self.config.input_qk_depth
     comptime k_swizzle_mode = Self.config.k_swizzle_mode
     comptime k_tile_height = Self.B_TOPK_PER_CTA
     comptime k_gather_box = _gather4_box_width[
@@ -516,7 +526,7 @@ struct MLAPrefillSparseCommon[
     # Kept separate because `DType.int64 if fp8 else qkv_dtype` trips a
     # Mojo parser bug in comptime positions.
     comptime k_tma_dtype_fp8 = DType.int64
-    comptime k_tma_tile_width_fp8 = Self.config.qk_depth // 8
+    comptime k_tma_tile_width_fp8 = Self.config.input_qk_depth // 8
     comptime k_tma_swizzle_fp8 = Self.FP8_K_SWIZZLE
     comptime k_tma_gather_box_fp8 = _gather4_box_width[
         Self.k_tma_dtype_fp8,
@@ -641,7 +651,7 @@ struct MLAPrefillSparseCommon[
                     # box would; the untouched rows stay zeroed above.
                     comptime Q_SWIZZLE_COLS = Self.q_desc_shape[2]
                     comptime NUM_Q_DEPTH_TILES = (
-                        Self.config.qk_depth // Q_SWIZZLE_COLS
+                        Self.config.input_qk_depth // Q_SWIZZLE_COLS
                     )
                     comptime Q_PADDED_DEPTH_TILE_STRIDE = (
                         Self.PADDED_HEADS_PER_CTA * Q_SWIZZLE_COLS
@@ -667,7 +677,9 @@ struct MLAPrefillSparseCommon[
                     var q_full_smem_tensor = TileTensor(
                         full_q_ptr,
                         row_major[
-                            1, Self.NUM_Q_HEADS_PER_CTA, Self.config.qk_depth
+                            1,
+                            Self.NUM_Q_HEADS_PER_CTA,
+                            Self.config.input_qk_depth,
                         ](),
                     )
                     q_tma_op.async_copy[cta_group=Self.config.cta_group](
@@ -789,7 +801,10 @@ struct MLAPrefillSparseCommon[
                 k_p1_ready[cur_buf].expect_bytes(
                     Int32(
                         Self.config.B_TOPK
-                        * Self.config.q_tmem_depth
+                        * (
+                            Self.config.input_qk_depth
+                            - Self.config.q_smem_depth
+                        )
                         * Self.qkv_dtype_size
                     )
                 )

@@ -297,18 +297,16 @@ struct MLAPrefillSparseQKVFP8[
     comptime SMemType = MLASparseSharedMemoryQKVFP8[Self.config]
 
     # ---- TMA tile shapes ----
-    # Q FP8 SWIZZLE_64B, 3D box [1, NUM_Q_HEADS, qk_depth].
     comptime q_tile_shape = Index(
-        1, Self.NUM_Q_HEADS_PER_CTA, Self.config.qk_depth
+        1, Self.NUM_Q_HEADS_PER_CTA, Self.config.input_qk_depth
     )
     comptime q_desc_shape = _default_desc_shape[
         3, FP8_TYPE, Self.q_tile_shape, SW64
     ]()
     comptime Q_SWIZZLE_COLS = Self.q_desc_shape[2]
 
-    # KV gather4 FP8 SWIZZLE_64B: box_width = 64 (=SW64/fp8), 9 col-groups.
     comptime kv_gather_box = _gather4_box_width[
-        FP8_TYPE, Self.config.qk_depth, SW64
+        FP8_TYPE, Self.config.input_qk_depth, SW64
     ]()
     comptime kv_tile_shape = Index(Self.B_TOPK, Self.kv_gather_box)
     comptime kv_desc_shape = Index(1, Self.kv_gather_box)
@@ -478,7 +476,7 @@ struct MLAPrefillSparseQKVFP8[
         # globally visible before any TMA arrival can satisfy the mbarrier.
         if local_warp_idx == 0 and elect_one_sync():
             kv_ready[].expect_bytes(
-                Int32(Self.B_TOPK_PER_CTA * Self.config.qk_depth)
+                Int32(Self.B_TOPK_PER_CTA * Self.config.input_qk_depth)
             )
         named_barrier[Int32(WARPGROUP_SIZE)](3)
 
@@ -489,7 +487,7 @@ struct MLAPrefillSparseQKVFP8[
         # SW64 offset `cg*BN*box_w + c*4*box_w` the k-major descriptor reads.
         comptime BN = Self.B_TOPK_PER_CTA
         comptime box_w = Self.kv_gather_box
-        comptime NUM_CG = Self.config.qk_depth // box_w
+        comptime NUM_CG = Self.config.input_qk_depth // box_w
         comptime NUM_CHUNKS = BN // 4
         comptime NUM_PROD_WARPS = WARPGROUP_SIZE // WARP_SIZE  # 4
         comptime CHUNKS_PER_WARP = NUM_CHUNKS // NUM_PROD_WARPS
@@ -654,13 +652,15 @@ struct MLAPrefillSparseQKVFP8[
             fence_async_view_proxy()
 
         if warp_id() == 0 and elect_one_sync():
-            comptime q_bytes = (Self.NUM_Q_HEADS_PER_CTA * Self.config.qk_depth)
+            comptime q_bytes = (
+                Self.NUM_Q_HEADS_PER_CTA * Self.config.input_qk_depth
+            )
             comptime if not Self.is_cg2:
                 prologue_q[].expect_bytes(Int32(q_bytes))
             var head_coord = cta_id * UInt32(Self.NUM_Q_HEADS_PER_CTA)
             comptime if Self.NUM_Q_HEADS_PER_CTA < Self.PADDED_HEADS_PER_CTA:
                 comptime NUM_Q_DEPTH_TILES = (
-                    Self.config.qk_depth // Self.Q_SWIZZLE_COLS
+                    Self.config.input_qk_depth // Self.Q_SWIZZLE_COLS
                 )
                 comptime Q_PADDED_DEPTH_TILE_STRIDE = (
                     Self.PADDED_HEADS_PER_CTA * Self.Q_SWIZZLE_COLS
@@ -684,7 +684,9 @@ struct MLAPrefillSparseQKVFP8[
                 var q_full = TileTensor(
                     q_smem,
                     row_major[
-                        1, Self.NUM_Q_HEADS_PER_CTA, Self.config.qk_depth
+                        1,
+                        Self.NUM_Q_HEADS_PER_CTA,
+                        Self.config.input_qk_depth,
                     ](),
                 )
                 q_tma_op.async_copy[cta_group=Self.config.cta_group](
@@ -709,7 +711,7 @@ struct MLAPrefillSparseQKVFP8[
     )
     @__llvm_metadata(`nvvm.minctasm`=SIMDLength(1))
     @__name(
-        t"mla_prefill_sparse_qkv_fp8_nqh{Self.config.num_q_heads}_nkvh{Self.config.num_kv_heads}",
+        t"mla_prefill_sparse_qkv_fp8_nqh{Self.config.num_q_heads}_nkvh{Self.config.num_kv_heads}_iqd{Self.config.input_qk_depth}",
     )
     def kernel[
         TopKLengthLayout: TensorLayout,
@@ -846,6 +848,34 @@ struct MLAPrefillSparseQKVFP8[
                         # Local V TMA transaction barrier.
                         v_tma_done_ptr[i].init(1)
                 fence_mbarrier_init()
+
+        # Zero the NoPE tail (Q and each KV buffer). `p` is its own buffer and V
+        # occupies only the leading v_depth columns, so nothing rewrites the tail
+        # afterwards. The fence publishes the stores to the async proxy for the
+        # tcgen05 read.
+        comptime if Self.config.input_qk_depth < Self.config.qk_depth:
+            comptime _q_kept = (
+                Self.SMemType.PADDED_HEADS_PER_CTA * Self.config.input_qk_depth
+            )
+            comptime _kv_kept = (
+                Self.SMemType.B_TOPK_PER_CTA * Self.config.input_qk_depth
+            )
+            var _tid = Int(thread_idx.x)
+            for i in range(
+                _q_kept + _tid,
+                Self.SMemType.Q_SIZE,
+                Self.config.num_threads,
+            ):
+                q_ptr[i] = Scalar[FP8_TYPE](0)
+            comptime for _st in range(Self.SMemType.num_mbars):
+                var _base = _st * Self.SMemType.KV_STAGE_SIZE
+                for i in range(
+                    _kv_kept + _tid,
+                    Self.SMemType.KV_STAGE_SIZE,
+                    Self.config.num_threads,
+                ):
+                    kv_ptr[_base + i] = Scalar[FP8_TYPE](0)
+            fence_async_view_proxy()
         cluster_sync()
 
         Self._load_q_fp8(q_ptr, q_tma_op, prologue_q_ptr, seq_idx, cta_id)
@@ -1058,7 +1088,7 @@ struct MLAPrefillSparseQKVFP8[
             prologue_q[].expect_bytes(
                 Int32(
                     Self.NUM_Q_HEADS_PER_CTA
-                    * Self.config.qk_depth
+                    * Self.config.input_qk_depth
                     * Self.config.cta_group
                 )
             )
@@ -1531,8 +1561,11 @@ def mla_prefill_sparse_qkv_fp8[
     indices_stride: Int32,
     ctx: DeviceContext,
 ) raises:
-    comptime assert q_depth == config.qk_depth
+    comptime assert q_depth == config.input_qk_depth
     comptime assert config.qk_depth == 576
+    comptime assert (
+        config.input_qk_depth == 576 or config.input_qk_depth == 512
+    ), "sparse MLA prefill supports a 576 (rotary) or 512 (NoPE) row"
     # head=128 runs the 2-CTA (cta_group=2) f8f6f4 tile; head<=64 runs the
     # single-CTA shared-KV tile.  The two paths are separate comptime branches
     # keyed on config.cta_group throughout this file.
@@ -1568,12 +1601,13 @@ def mla_prefill_sparse_qkv_fp8[
         swizzle_mode=SW64,
     ](ctx, q)
 
-    # k-major SW64 FP8 gather (box_width 64, 9 col-groups over qk_depth).  The
-    # K producer gathers this CTA's B_TOPK/cta_group rows; the cg2 V producer
-    # reuses this SAME descriptor to gather all B_TOPK keys' per-CTA depth slice.
+    # k-major SW64 FP8 gather (box_width 64, one col-group per 64 columns of the
+    # row as stored).  The K producer gathers this CTA's B_TOPK/cta_group rows.
+    # The cg2 V producer reuses this SAME descriptor to gather all B_TOPK keys'
+    # per-CTA depth slice.
     var kv_tma_op = kv_operand.create_gather4_tma_tile[
-        tile_width=config.qk_depth,
-        tile_stride=config.qk_depth,
+        tile_width=config.input_qk_depth,
+        tile_stride=config.input_qk_depth,
         swizzle_mode=SW64,
         tile_height=config.B_TOPK,
         tma_dtype=FP8_TYPE,

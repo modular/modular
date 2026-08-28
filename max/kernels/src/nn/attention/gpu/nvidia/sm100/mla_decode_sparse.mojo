@@ -367,7 +367,7 @@ struct MLA_SM100_Decode_Sparse[
         q_tma: QOTMATile[
             dtype=Self.q_type,
             BM=Self.config.BM,  # tile_m =64
-            BK=Self.config.BK_QK,  # tile_n =576
+            BK=Self.config.input_q_depth,
             swizzle_mode=Self.config.swizzle_mode,
         ],
         # K_nope gather4 TMA: INT64, BN_QK(64) rows, SWIZZLE_NONE
@@ -1175,7 +1175,7 @@ struct MLA_SM100_Decode_Sparse[
         q_tma: QOTMATile[
             dtype=Self.q_type,
             BM=Self.config.BM,  # tile_m =64
-            BK=Self.config.BK_QK,  # tile_n =576
+            BK=Self.config.input_q_depth,
             swizzle_mode=Self.config.swizzle_mode,
         ],
         # K_nope gather4 TMA: INT64, 64 rows, SWIZZLE_NONE

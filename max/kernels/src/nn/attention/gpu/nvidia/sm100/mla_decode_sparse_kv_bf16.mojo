@@ -140,7 +140,7 @@ struct MLA_SM100_Decode_Sparse_KV_BF16[
     # (36 issues per elected lane).  Box width is 64 BF16 elems = 128
     # bytes (one swizzle group), so the gather4 SMEM layout is directly
     # consumable by the UMMA K-major descriptor.
-    comptime kv_gather4_tile_width = Self.config.padded_q_depth
+    comptime kv_gather4_tile_width = Self.config.input_q_depth
     comptime kv_gather4_box_w = _gather4_box_width[
         DType.bfloat16,
         Self.kv_gather4_tile_width,
@@ -209,7 +209,7 @@ struct MLA_SM100_Decode_Sparse_KV_BF16[
         q_tma: QOTMATile[
             dtype=Self.q_type,
             BM=Self.config.BM,  # 64
-            BK=Self.config.BK_QK,  # 576
+            BK=Self.config.input_q_depth,
             swizzle_mode=Self.config.swizzle_mode,
         ],
         # Single BF16 gather4 TMA: SWIZZLE_128B, BN_QK rows, box_w=64 BF16
@@ -717,7 +717,7 @@ struct MLA_SM100_Decode_Sparse_KV_BF16[
         q_tma: QOTMATile[
             dtype=Self.q_type,
             BM=Self.config.BM,
-            BK=Self.config.BK_QK,
+            BK=Self.config.input_q_depth,
             swizzle_mode=Self.config.swizzle_mode,
         ],
         k_tma: TMATensorTile[

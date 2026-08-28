@@ -257,14 +257,14 @@ struct MLA_SM100_Decode_QKV_FP8[
         q_tma: QOTMATile[
             dtype=Self.kv_type,
             BM=Self.config.BM,  # tile_m =64
-            BK=Self.config.BK_QK,  # tile_n =576
+            BK=Self.config.input_q_depth,
             swizzle_mode=Self.config.kv_tma_swizzle_mode,  # SWIZZLE_64B
         ],
         k_tma: KVTMATile[
             dtype=Self.kv_type,
             swizzle_mode=Self.config.kv_tma_swizzle_mode,
             BN=Self.config.BK_PV,  # tile_m =64
-            BK=Self.config.BK_QK,  # tile_n =576
+            BK=Self.config.input_q_depth,
         ],
         o_tma: ORaggedTMATile[
             dtype=Self.output_type,
@@ -634,14 +634,14 @@ struct MLA_SM100_Decode_QKV_FP8[
         q_tma: QOTMATile[
             dtype=Self.kv_type,
             BM=Self.config.BM,
-            BK=Self.config.BK_QK,
+            BK=Self.config.input_q_depth,
             swizzle_mode=Self.config.kv_tma_swizzle_mode,  # SWIZZLE_64B
         ],
         k_tma: KVTMATile[
             dtype=Self.kv_type,
             swizzle_mode=Self.config.kv_tma_swizzle_mode,
             BN=Self.config.BK_PV,
-            BK=Self.config.BK_QK,
+            BK=Self.config.input_q_depth,
         ],
         kv_lut: Self.KVLUTType,
         q_smem: SharedMemPointer[Scalar[Self.fp8_type]],

@@ -394,11 +394,17 @@ struct MLA_SM100_Decode_Config:
     var BM: Int
     var BN_PV: Int  # N of PV MMA = output (V) head_dim per CTA. Anchors output writeback path.
     var BN_QK: Int  # N of QK MMA = KV cache tile width (keys per k-tile)
-    var BK_QK: Int  # K of QK MMA = padded Q depth
+    # K of the QK MMA. The SMEM tile width, not the gmem row width (see
+    # `input_q_depth`), so the NoPE tail stays contracted as zero.
+    var BK_QK: Int
     var q_depth: Int
     var depth: Int  # this is V depth
     var padded_depth: Int
     var padded_q_depth: Int
+    # Gmem row width the TMA reads. May be narrower than `padded_q_depth` for a
+    # NoPE model, which zero-fills the tail in SMEM. Drives the TMA descriptors
+    # and byte count only, never the SMEM layout or MMA width.
+    var input_q_depth: Int
     var rope_depth: Int  # this is Q depth - V depth
     var group: Int
     var num_q_heads: Int
@@ -500,6 +506,8 @@ struct MLA_SM100_Decode_Config:
         # `O` and `mi` is skipped. Default `-6.0` matches FlashMLA's
         # value.
         skip_correction_threshold: Float32 = -6.0,
+        # 0 means "use `padded_q_depth`" (every rotary-carrying call site).
+        input_q_depth: Int = 0,
     ):
         self.num_q_heads = num_q_heads
         self.num_kv_heads = num_q_heads // group
@@ -533,6 +541,9 @@ struct MLA_SM100_Decode_Config:
         var swizzle_elems = swizzle_mode.bytes() // dtype_size
         self.padded_depth = align_up(depth, swizzle_elems)
         self.padded_q_depth = align_up(q_depth, swizzle_elems)
+        self.input_q_depth = (
+            input_q_depth if input_q_depth > 0 else self.padded_q_depth
+        )
 
         self.kv_tma_swizzle_mode = (
             TensorMapSwizzle.SWIZZLE_64B if kv_type_size
@@ -796,8 +807,16 @@ struct MLA_SM100_Decode_Config:
 
     def supported(self) -> Bool:
         # BM is 32 (Layout G) or 64 (everyone else).
+        # `input_q_depth` narrows only the TMA, so it must cover every V block,
+        # fit within the SMEM row, and land on a gather column-group boundary.
+        var input_row_ok = (
+            self.padded_depth <= self.input_q_depth
+            and self.input_q_depth <= self.padded_q_depth
+            and self.input_q_depth % self.BN_QK == 0
+        )
         var base = (
             self.q_depth == 576
+            and input_row_ok
             and self.BN_QK == 64
             and (self.BM == 32 or self.BM == 64)
             and self.depth == 512
@@ -3474,7 +3493,7 @@ struct MLA_SM100_Decode_Common[
             dtype=Self.kv_type,
             swizzle_mode=Self.config.kv_tma_swizzle_mode,
             BN=Self.config.BN_QK,  # tile_m: 64 (Layout-E / Layout-G-64) or 128 (Layout-G-128)
-            BK=Self.config.BK_QK,  # tile_n =576
+            BK=Self.config.input_q_depth,  # the row as stored
         ],
         smem: SharedMemPointer[Scalar[Self.kv_type]],
         mbar: MBarType,
@@ -3483,7 +3502,7 @@ struct MLA_SM100_Decode_Common[
     ):
         # TMA only uses .ptr from the destination — layout is irrelevant
         # (swizzle is in the TMA descriptor). Use flat row_major TileTensor.
-        comptime kv_elements = Self.config.BN_QK * Self.config.BK_QK
+        comptime kv_elements = Self.config.BN_QK * Self.config.input_q_depth
         comptime kv_tt_layout = tt_row_major[kv_elements]()
         var smem_tensor = TileTensor[
             Self.kv_type, type_of(kv_tt_layout), address_space=.SHARED
@@ -3496,7 +3515,7 @@ struct MLA_SM100_Decode_Common[
         tma: QOTMATile[
             dtype=Self.q_type,
             BM=Self.config.BM,  # tile_m =64
-            BK=Self.config.BK_QK,  # tile_n =576
+            BK=Self.config.input_q_depth,  # the row as stored
             swizzle_mode=Self.config.swizzle_mode,
         ],
         smem: SharedMemPointer[Scalar[Self.q_type]],
@@ -3504,7 +3523,7 @@ struct MLA_SM100_Decode_Common[
         col_start: Int,
         row_start: Int,
     ):
-        comptime q_elements = Self.config.BM * Self.config.BK_QK
+        comptime q_elements = Self.config.BM * Self.config.input_q_depth
         comptime q_tt_layout = tt_row_major[q_elements]()
         var smem_tensor = TileTensor[
             Self.q_type, type_of(q_tt_layout), address_space=.SHARED
