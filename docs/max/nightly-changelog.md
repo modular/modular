@@ -913,27 +913,30 @@ the [container](/container) page now links to the new page.
 
 ## Breaking changes
 
-- `max.pipelines.PipelineArgs` is now immutable: assigning to one of its
-  top-level fields after construction raises a pydantic `ValidationError`.
-  Construct it with the values you need. Its sub-configs (`runtime`,
-  `sampling`, etc.) are unchanged for now.
-
-- `max.pipelines.lib.LoRAConfig` and `max.pipelines.lib.ProfilingConfig` are
-  now immutable (pydantic `frozen=True`); assigning to a field after
-  construction raises a `ValidationError`. Construct with the desired values.
-
-- `KVCacheConfig` and nested `KVConnectorConfig` are now immutable:
-  assigning to a field after construction raises a pydantic
-  `ValidationError`. Construct them with the values you need.
-  Architectures that need KV-head replication declare
-  `requires_kv_head_replication`; construction sets the flag on the
-  model's KV-cache config.
+- The pipeline configs are now immutable: `PipelineArgs`,
+  `PipelineConfig`, `PipelineRuntimeConfig`, `SamplingConfig`,
+  `MAXModelConfig`, `KVCacheConfig` and its nested `KVConnectorConfig`,
+  `LoRAConfig`, and `ProfilingConfig`. Assigning to a field after
+  construction raises a pydantic `ValidationError`. Construct them with
+  the values you need.
 
 - `ModelManifest` is now immutable from construction: mutating the mapping
   (item assignment, `update`, `pop`, and so on) raises a `TypeError`, and
   `ModelManifest.resolve()` is removed — a manifest is complete when built.
   Construct it with the component configs you need. The unused
   `total_weights_size` property is also removed.
+
+- Constructing a `MAXModelConfig` directly now only validates the fields
+  you pass. It no longer fills in the weight and model paths or loads the
+  HuggingFace config. Configs the pipeline builds are unchanged.
+
+- `ArchConfig.calculate_max_seq_len()` no longer takes `pipeline_config`,
+  and `model_config` is now required.
+
+- `KVCacheConfig.allow_kv_head_replication`, the architecture registration
+  field `requires_kv_head_replication`, and the
+  `--allow-kv-head-replication` flag are removed. An architecture now asks
+  for KV head replication in its `construct_kv_params()`.
 
 - The KV cache connector is now configured as a single object: its type moved
   onto `--kv-connector-config` as a `type` field, and the separate
