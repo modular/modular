@@ -556,6 +556,10 @@ the [container](/container) page now links to the new page.
 - `DeviceContext.create_event()` on NVIDIA GPUs now honors the default
   `disable_timing` flag (previously inverted) and recycles events through the
   driver's event cache instead of growing it on every create/destroy cycle.
+- Device-to-device copies on Apple GPUs no longer race when the source was
+  written on another `DeviceStream`.
+- `MODULAR_DEBUG=device-sync-mode` now works on Apple GPUs, where it
+  previously did nothing.
 - Capturing `DeviceContext.enqueue_function()` now encodes the closure
   through `DevicePassable` before launch, matching explicit kernel
   arguments. Host handles such as `DevicePointer` reach the device as
