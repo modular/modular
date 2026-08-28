@@ -5180,6 +5180,153 @@ def moe_router_group_limited(
     return (results[0].tensor, results[1].tensor)
 
 
+def moe_sink_gate_router(
+    logits: TensorValue,
+    expert_bias: TensorValue,
+    global_scale: TensorValue,
+    n_routed_experts: int,
+    n_experts_per_tok: int,
+    n_shared_experts: int,
+    route_scale: float,
+) -> tuple[TensorValue, TensorValue, TensorValue]:
+    """Fused sigmoid-gate MoE router with always-on sink experts.
+
+    Sink experts are gated shared experts, not attention sinks.
+
+    Selects the top ``n_experts_per_tok`` routed experts by
+    ``sigmoid(logits) + expert_bias``, then softmax-normalizes the
+    log-sigmoid of those experts' raw logits together with
+    ``n_shared_experts`` always-selected sink logits, scaled by
+    ``route_scale * global_scale``. This is the Inkling gate formula, run on
+    the GPU as a single kernel (``mo.moe.sink.gate.router``, implemented as
+    ``sink_gate_router`` in Mojo).
+
+    Args:
+        logits: Raw (pre-sigmoid) gate logits, routed experts followed by
+            sink experts. Must be float32, which is the only dtype the
+            kernel's joint softmax has been validated at. Shape:
+            [num_tokens, n_routed_experts + n_shared_experts].
+        expert_bias: Per-routed-expert selection bias. Shape: [n_routed_experts].
+        global_scale: Scalar output-scaling weight. Shape: [1].
+        n_routed_experts: Total number of routed experts. Must be a positive
+            multiple of the target's warp width, no greater than 1024: the
+            kernel runs one thread per routed expert.
+        n_experts_per_tok: Number of routed experts selected per token.
+            Bounded jointly with ``n_routed_experts`` by the top-k's
+            surviving candidates having to fit one warp, so the ceiling
+            falls as the expert count rises: at a warp width of 32, 256
+            experts admit up to 10 per token and 512 up to 8, while at 64
+            the same 256 experts admit up to 32.
+        n_shared_experts: Number of always-selected sink experts.
+            ``n_experts_per_tok + n_shared_experts`` must be a power of two
+            no greater than the target's warp width, since the two are
+            jointly normalized by a single warp-level reduction.
+        route_scale: Scalar output-scaling factor.
+
+    Returns:
+        A tuple of three tensors:
+        - expert_ids: Selected routed-expert indices. Shape:
+            [num_tokens, n_experts_per_tok].
+        - expert_weights: Routing weight per selected routed expert. Shape:
+            [num_tokens, n_experts_per_tok].
+        - sink_weights: Routing weight per sink expert. Shape:
+            [num_tokens, n_shared_experts].
+
+    Raises:
+        ValueError: If the routing shape is one the kernel cannot compile.
+    """
+    _check_rank(2, logits=logits)
+    _check_rank(1, expert_bias=expert_bias, global_scale=global_scale)
+    _check_same_dtype(logits=logits, global_scale=global_scale)
+    if logits.dtype != DType.float32:
+        raise ValueError(f"expected float32 logits but got {logits.dtype}")
+
+    # The kernel runs one thread per routed expert and normalizes the
+    # selected-plus-sink weights with a single warp-level reduction, so both
+    # counts are bounded by the target's warp width. Check here so an
+    # unsupported checkpoint fails before the Mojo compiler sees it.
+    warp_size = 64 if _is_amd_gpu() else 32
+    if (
+        n_routed_experts <= 0
+        or n_routed_experts % warp_size
+        or n_routed_experts > 1024
+    ):
+        raise ValueError(
+            f"n_routed_experts must be a positive multiple of {warp_size} and"
+            f" fit in one block (<= 1024) but got {n_routed_experts}"
+        )
+    k_total = n_experts_per_tok + n_shared_experts
+    if k_total <= 0 or k_total & (k_total - 1) or k_total > warp_size:
+        raise ValueError(
+            "n_experts_per_tok + n_shared_experts must be a positive power of"
+            f" two no greater than {warp_size} but got {n_experts_per_tok} +"
+            f" {n_shared_experts} = {k_total}"
+        )
+    # The top-k reduces in phases, and warp 0 sorts the last round, so the
+    # survivors of the round before it must fit one warp. Rules out shapes
+    # like 1024/30/2 that clear the two bounds above.
+    num_warps = n_routed_experts // warp_size
+    phase2_warps = -(-(num_warps * n_experts_per_tok) // warp_size)
+    if phase2_warps * n_experts_per_tok > warp_size:
+        raise ValueError(
+            f"{n_routed_experts} routed experts with n_experts_per_tok"
+            f" {n_experts_per_tok} leaves"
+            f" {phase2_warps * n_experts_per_tok} top-k survivors, which"
+            f" exceeds the target's warp width of {warp_size}; lower"
+            " n_experts_per_tok or n_routed_experts"
+        )
+
+    if logits.shape[1] != n_routed_experts + n_shared_experts:
+        raise ValueError(
+            "expected logits of shape [num_tokens, n_routed_experts +"
+            f" n_shared_experts] but got {logits.shape}"
+        )
+    if expert_bias.shape[0] != n_routed_experts:
+        raise ValueError(
+            f"expected expert_bias of shape [{n_routed_experts}] but got"
+            f" {expert_bias.shape}"
+        )
+    if global_scale.shape[0] != 1:
+        raise ValueError(
+            f"expected global_scale of shape [1] but got {global_scale.shape}"
+        )
+
+    results = ops.custom(
+        "mo.moe.sink.gate.router",
+        device=logits.device,
+        values=[
+            logits,
+            expert_bias,
+            global_scale,
+            ops.constant(route_scale, DType.float32, device=DeviceRef.CPU()),
+        ],
+        out_types=[
+            TensorType(
+                dtype=DType.int32,
+                shape=[logits.shape[0], n_experts_per_tok],
+                device=logits.device,
+            ),  # expert_ids
+            TensorType(
+                dtype=logits.dtype,
+                shape=[logits.shape[0], n_experts_per_tok],
+                device=logits.device,
+            ),  # expert_weights
+            TensorType(
+                dtype=logits.dtype,
+                shape=[logits.shape[0], n_shared_experts],
+                device=logits.device,
+            ),  # sink_weights
+        ],
+        parameters={
+            "n_routed_experts": n_routed_experts,
+            "n_experts_per_tok": n_experts_per_tok,
+            "n_shared_experts": n_shared_experts,
+        },
+    )
+
+    return (results[0].tensor, results[1].tensor, results[2].tensor)
+
+
 def _router_gate_mixed_gemv(
     hidden_states: TensorValue,
     gate_weight: TensorValue,

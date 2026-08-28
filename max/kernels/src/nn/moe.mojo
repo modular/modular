@@ -14,7 +14,7 @@
 
 from std.collections import OptionalReg
 
-from std.math import align_up, ceildiv
+from std.math import align_up, ceildiv, exp, log1p
 from std.math.uutils import umod
 from std.memory import unsafe_stack_allocation
 
@@ -53,6 +53,7 @@ from max.runtime.tracing import Trace, TraceLevel
 from std.utils.index import IndexList, StaticTuple
 from std.builtin.dtype import _uint_type_of_width
 
+from nn.activations import sigmoid
 from nn.topk import TopK_2
 
 
@@ -1628,6 +1629,289 @@ def single_group_router[
             expert_bias,
             routed_scaling_factor,
             grid_dim=expert_scores.dim(0),
+            block_dim=num_threads,
+            attributes=pdl_launch_attributes(PDLLevel.ON),
+        )
+
+
+@__llvm_metadata(
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(num_threads))
+)
+@__name(t"sink_gate_router_{scores_type}_{bias_type}_t{num_threads}")
+def sink_gate_router_kernel[
+    scores_type: DType,
+    bias_type: DType,
+    ExpertIndicesLayoutType: TensorLayout,
+    ExpertWeightsLayoutType: TensorLayout,
+    SinkWeightsLayoutType: TensorLayout,
+    LogitsLayoutType: TensorLayout,
+    ExpertBiasLayoutType: TensorLayout,
+    GlobalScaleLayoutType: TensorLayout,
+    n_routed_experts: Int,
+    n_experts_per_tok: Int,
+    n_shared_experts: Int,
+    num_threads: Int,
+](
+    expert_indices: TileTensor[
+        mut=True, .int32, ExpertIndicesLayoutType, MutAnyOrigin
+    ],
+    expert_weights: TileTensor[
+        mut=True, scores_type, ExpertWeightsLayoutType, MutAnyOrigin
+    ],
+    sink_weights: TileTensor[
+        mut=True, scores_type, SinkWeightsLayoutType, MutAnyOrigin
+    ],
+    logits: TileTensor[scores_type, LogitsLayoutType, ImmutAnyOrigin],
+    expert_bias: TileTensor[bias_type, ExpertBiasLayoutType, ImmutAnyOrigin],
+    global_scale: TileTensor[
+        scores_type, GlobalScaleLayoutType, ImmutAnyOrigin
+    ],
+    route_scale: Float32,
+):
+    """Fused sigmoid-gate MoE router with always-on sink (shared-expert) lanes.
+
+    Sink lanes are gated shared experts, not attention sinks.
+
+    One block per token, one thread per routed expert. Fuses: sigmoid(logit) +
+    bias -> top-k selection (`_block_top_k`) -> softmax over the log-sigmoid of
+    the selected experts' raw (unbiased) logits concatenated with
+    `n_shared_experts` always-selected sink logits -> scale by
+    `route_scale * global_scale`.
+
+    Softmax over log-sigmoids equals `sigmoid(z_i) / sum_j sigmoid(z_j)`,
+    computed in log space so it stays finite where the sigmoids themselves
+    would underflow.
+
+    Expert bucketing stays in `moe_create_indices`: it needs every token's
+    assignment before it can build the per-expert CSR, which this
+    per-token-block kernel cannot provide without a grid-wide sync.
+
+    Parameters:
+        scores_type: DType of the logits and the output weights.
+        bias_type: DType of the per-routed-expert selection bias.
+        ExpertIndicesLayoutType: `TensorLayout` of the `expert_indices`
+            output tensor.
+        ExpertWeightsLayoutType: `TensorLayout` of the `expert_weights`
+            output tensor.
+        SinkWeightsLayoutType: `TensorLayout` of the `sink_weights` output
+            tensor.
+        LogitsLayoutType: `TensorLayout` of the `logits` input tensor.
+        ExpertBiasLayoutType: `TensorLayout` of the `expert_bias` input
+            tensor.
+        GlobalScaleLayoutType: `TensorLayout` of the `global_scale` input
+            tensor.
+        n_routed_experts: Total number of routed experts scored per token.
+            Also equals the thread count per block.
+        n_experts_per_tok: Number of routed experts selected per token.
+        n_shared_experts: Number of always-selected sink experts. Together
+            with n_experts_per_tok, must sum to a power of two no greater
+            than the warp size (the two are jointly softmax-normalized by a
+            single warp-level reduction).
+        num_threads: Threads per block; must equal n_routed_experts.
+
+    Args:
+        expert_indices: Output selected routed-expert index per token. Shape
+            [num_tokens, n_experts_per_tok].
+        expert_weights: Output routing weight per selected routed expert.
+            Shape [num_tokens, n_experts_per_tok].
+        sink_weights: Output routing weight per sink expert. Shape
+            [num_tokens, n_shared_experts].
+        logits: Input raw (pre-sigmoid) gate logits, routed experts followed
+            by sink experts. Shape [num_tokens, n_routed_experts + n_shared_experts].
+        expert_bias: Per-routed-expert bias added during selection only.
+            Shape [n_routed_experts].
+        global_scale: Single scalar multiplied into every weight. Shape [1].
+        route_scale: Compile-time-known-per-model scalar multiplied into
+            every weight alongside global_scale.
+    """
+    # is_floating_point is what proves exp/log1p below well-formed; the
+    # float32 bound is narrower, and is all the joint softmax's reduce and
+    # divide have been validated at.
+    comptime assert (
+        scores_type.is_floating_point()
+    ), "scores_type must be floating point"
+    comptime assert scores_type == .float32, "scores_type must be float32"
+    comptime assert expert_indices.flat_rank == 2
+    comptime assert expert_weights.flat_rank == 2
+    comptime assert sink_weights.flat_rank == 2
+    comptime assert logits.flat_rank == 2
+    comptime assert expert_bias.flat_rank == 1
+    comptime assert global_scale.flat_rank == 1
+
+    comptime assert (
+        logits.static_shape[1] == n_routed_experts + n_shared_experts
+    ), "logits.static_shape[1] must be n_routed_experts + n_shared_experts"
+    comptime assert (
+        expert_weights.static_shape[1] == n_experts_per_tok
+    ), "expert_weights.static_shape[1] must be equal to n_experts_per_tok"
+    comptime assert (
+        expert_indices.static_shape[1] == n_experts_per_tok
+    ), "expert_indices.static_shape[1] must be equal to n_experts_per_tok"
+    comptime assert (
+        sink_weights.static_shape[1] == n_shared_experts
+    ), "sink_weights.static_shape[1] must be equal to n_shared_experts"
+    comptime assert (
+        expert_bias.static_shape[0] == n_routed_experts
+    ), "expert_bias.static_shape[0] must be equal to n_routed_experts"
+
+    comptime assert (
+        num_threads == n_routed_experts
+    ), "num_threads must be equal to n_routed_experts"
+
+    comptime k_total = n_experts_per_tok + n_shared_experts
+    comptime assert k_total.is_power_of_two(), (
+        "n_experts_per_tok + n_shared_experts must be a power of two (the joint"
+        " softmax is one warp-level reduction)"
+    )
+    comptime assert (
+        k_total <= WARP_SIZE
+    ), "n_experts_per_tok + n_shared_experts must fit in one warp"
+
+    var token_idx = Int(block_idx.x)
+    var tid = Int(thread_idx.x)
+    var warp_id = warp_id()
+    var lane_id = lane_id()
+
+    with PDL():
+        var thread_bias = expert_bias.load[width=1](Coord(tid)).cast[
+            scores_type
+        ]()
+        var thread_logit = logits.load[width=1]((token_idx, tid))
+        var biased_score = sigmoid(thread_logit) + thread_bias
+
+        var sorted_val3 = _block_top_k[n_experts_per_tok, num_threads](
+            biased_score
+        )
+
+        # WARP 0 ONLY: compute the log-sigmoid softmax weights over the
+        # selected experts plus the n_shared_experts always-on sink lanes.
+        if warp_id == 0:
+            # sorted_val3.u is the biased selection score; the softmax needs
+            # the raw logit, so winner lanes reload it by the winning index
+            # and sink lanes read their fixed columns. Lanes >= k_total sit
+            # outside this reduction's warp segment and never get read.
+            var raw_val: Scalar[scores_type] = 0
+            if lane_id < n_experts_per_tok:
+                raw_val = logits.load[width=1]((token_idx, sorted_val3.p))
+            elif lane_id < k_total:
+                var sink_idx = n_routed_experts + (
+                    Int(lane_id) - n_experts_per_tok
+                )
+                raw_val = logits.load[width=1]((token_idx, sink_idx))
+
+            # log_sigmoid(x) = min(x, 0) - log1p(exp(-abs(x))), stable where
+            # sigmoid(x) itself would underflow.
+            var zero = Scalar[scores_type](0)
+            var log_score = min(raw_val, zero) - log1p(exp(-abs(raw_val)))
+
+            var shift = warp.lane_group_max[num_lanes=k_total](log_score)
+            var score = exp(log_score - shift)
+            var sum_score = warp.lane_group_sum[num_lanes=k_total](score)
+
+            var global_scale_val = global_scale.load[width=1](Coord(0)).cast[
+                scores_type
+            ]()
+            var factor = (
+                Scalar[scores_type](route_scale) * global_scale_val
+            ) / sum_score
+            var weight = score * factor
+
+            if lane_id < n_experts_per_tok:
+                expert_indices.store((token_idx, lane_id), Int32(sorted_val3.p))
+                expert_weights[token_idx, lane_id] = weight
+            elif lane_id < k_total:
+                sink_weights[
+                    token_idx, Int(lane_id) - n_experts_per_tok
+                ] = weight
+
+
+@always_inline
+def sink_gate_router[
+    scores_type: DType,
+    bias_type: DType,
+    //,
+    n_routed_experts: Int,
+    n_experts_per_tok: Int,
+    n_shared_experts: Int,
+    target: StaticString,
+](
+    expert_indices: TileTensor[mut=True, .int32, ...],
+    expert_weights: TileTensor[mut=True, scores_type, ...],
+    sink_weights: TileTensor[mut=True, scores_type, ...],
+    logits: TileTensor[mut=False, scores_type, ...],
+    expert_bias: TileTensor[mut=False, bias_type, ...],
+    global_scale: TileTensor[mut=False, scores_type, ...],
+    route_scale: Float32,
+    context: DeviceContext,
+) raises:
+    """Launch the fused sink-gate MoE router on GPU.
+
+    See `sink_gate_router_kernel` for the fused computation. One block per
+    token, one thread per routed expert.
+
+    Parameters:
+        scores_type: DType of logits and output weights.
+        bias_type: DType of the expert selection bias.
+        n_routed_experts: Total number of routed experts (e.g. 256 for
+            Inkling-Small).
+        n_experts_per_tok: Routed experts selected per token (e.g. 6 for
+            Inkling-Small).
+        n_shared_experts: Always-selected sink experts (e.g. 2 for
+            Inkling-Small).
+        target: The target device to run the kernel on.
+
+    Inputs:
+        expert_indices: Output selected expert indices. Shape:
+            [num_tokens, n_experts_per_tok].
+        expert_weights: Output selected-expert weights. Shape:
+            [num_tokens, n_experts_per_tok].
+        sink_weights: Output sink-expert weights. Shape:
+            [num_tokens, n_shared_experts].
+        logits: Input raw gate logits (routed then sink columns). Shape:
+            [num_tokens, n_routed_experts + n_shared_experts].
+        expert_bias: Per-routed-expert selection bias.
+        global_scale: Scalar output-scaling weight.
+        route_scale: Scalar output-scaling factor.
+        context: The device context.
+    """
+    comptime assert is_gpu[
+        target
+    ](), "sink_gate_router is only supported on GPU"
+
+    if logits.dim(0) == 0:
+        return
+
+    var gpu_ctx = context
+
+    with Trace[TraceLevel.OP, target=target](
+        "mo.moe.router_sink_gate", task_id=Int(gpu_ctx.id())
+    ):
+        comptime num_threads = n_routed_experts
+
+        comptime kernel = sink_gate_router_kernel[
+            scores_type,
+            bias_type,
+            expert_indices.LayoutType,
+            expert_weights.LayoutType,
+            sink_weights.LayoutType,
+            logits.LayoutType,
+            expert_bias.LayoutType,
+            global_scale.LayoutType,
+            n_routed_experts,
+            n_experts_per_tok,
+            n_shared_experts,
+            num_threads,
+        ]
+
+        gpu_ctx.enqueue_function[kernel](
+            expert_indices,
+            expert_weights,
+            sink_weights,
+            logits,
+            expert_bias,
+            global_scale,
+            route_scale,
+            grid_dim=logits.dim(0),
             block_dim=num_threads,
             attributes=pdl_launch_attributes(PDLLevel.ON),
         )
