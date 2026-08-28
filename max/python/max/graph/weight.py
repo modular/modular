@@ -15,10 +15,12 @@
 
 from __future__ import annotations
 
+import weakref
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from functools import cached_property, partial
 
+from max import mlir
 from max._core import Value as _Value
 from max._core.dialects import mo
 from max.dtype import DType
@@ -780,6 +782,10 @@ class Weight(TensorValue):
     align: int | None
     _sharding_strategy: _ShardingStrategyContainer | None
     shard_idx: int | None
+    _cached_mlir_value: _Value[mo.TensorType] | None = None
+    # Shard values, per block of the graph in `_shard_graph`.
+    _shard_graph: weakref.ref[graph.Graph] | None = None
+    _shard_values: dict[mlir.Block, TensorValue] | None = None
 
     def __new__(cls, *args, **kwargs):
         """Create a new Weight instance.
@@ -850,16 +856,39 @@ class Weight(TensorValue):
         """The device where the weight resides."""
         return self._device
 
-    @cached_property
+    @property
     def _mlir_value(self) -> _Value[mo.TensorType]:  # type: ignore[override]
         if not self._sharding_strategy or self.shard_idx is None:
-            return _add_weight_to_graph(self)._mlir_value
-        host_weight = self._sharding_strategy.host_weight
-        tensor_value = self._sharding_strategy.shard_value(
-            host_weight, self.shard_idx
-        )
-        tensor_value = tensor_value.to(self._device)
-        return tensor_value._mlir_value
+            # Cache the MLIR value. `add_weight` hoists the constant to
+            # the graph body, so it dominates every block.
+            if self._cached_mlir_value is None:
+                self._cached_mlir_value = _add_weight_to_graph(self)._mlir_value
+            return self._cached_mlir_value
+
+        # Create and cache the shard MLIR value, but an important detail is that
+        # the shard value is cached per block of the graph (where "block" refers
+        # to a parallel region for launching concurrent operations).
+        assert self._sharding_strategy is not None
+        assert self.shard_idx is not None
+
+        current_graph = _current_graph()
+        if (
+            self._shard_graph is None
+            or self._shard_graph() is not current_graph
+        ):
+            self._shard_graph = weakref.ref(current_graph)
+            self._shard_values = {}
+
+        assert self._shard_values is not None
+        block = current_graph._current_block
+        if (value := self._shard_values.get(block)) is not None:
+            return value._mlir_value
+
+        value = self._sharding_strategy.shard_value(
+            self._sharding_strategy.host_weight, self.shard_idx
+        ).to(self.device)
+        self._shard_values[block] = value
+        return value._mlir_value
 
     def __repr__(self) -> str:
         device_str = f", {self._device}"
@@ -935,18 +964,20 @@ class Weight(TensorValue):
         return shards
 
 
-def _add_weight_to_graph(weight: Weight):  # noqa: ANN202
+def _current_graph() -> graph.Graph:
     try:
-        current_graph = graph.Graph.current
+        return graph.Graph.current
     except LookupError:
         raise ValueError(  # noqa: B904
             "Cannot operate on a `max.graph.Weight` when there is no parent graph."
         )
 
+
+def _add_weight_to_graph(weight: Weight):  # noqa: ANN202
     # If the weight doesn't exist on the graph, `Graph.add_weight` will
     # return a new `TensorValue`. Otherwise, this will return the existing
     # `TensorValue`.
-    return current_graph.add_weight(
+    return _current_graph().add_weight(
         weight,
         # Don't force the weight to be on host if it has an alias.
         # We expect these external constants to already be resident on the
