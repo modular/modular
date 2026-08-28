@@ -497,6 +497,7 @@ def _rope_split_store_ragged_with_position_ids[
     dtype: DType,
     freq_dtype: DType,
     cache_t: KVCacheT,
+    q_out_dtype: DType = dtype,
     //,
     *,
     target: StaticString,
@@ -515,7 +516,7 @@ def _rope_split_store_ragged_with_position_ids[
     k_cache: cache_t,
     v_cache: OptionalReg[cache_t],
     position_ids: TileTensor[mut=False, .uint32, PositionIdsLayoutType, ...],
-    q_output: TileTensor[mut=True, dtype, ...],
+    q_output: TileTensor[mut=True, q_out_dtype, ...],
     context: Optional[DeviceContext],
 ) raises:
     """Read flat QKV buffer, apply rope (with explicit position IDs) to Q and K,
@@ -592,6 +593,7 @@ def _rope_split_store_ragged_with_position_ids[
 def rope_split_store_paged_ragged_with_position_ids[
     dtype: DType,
     freq_dtype: DType,
+    q_out_dtype: DType = dtype,
     target: StaticString = "cpu",
     interleaved: Bool = True,
     mrope_types: TypeList[Trait=CoordLike, ...] = TypeList.of[
@@ -608,7 +610,7 @@ def rope_split_store_paged_ragged_with_position_ids[
     kv_collection: PagedKVCacheCollection,
     position_ids: TileTensor[mut=False, .uint32, PositionIdsLayoutType, ...],
     layer_idx: UInt32,
-    q_output: TileTensor[mut=True, dtype, ...],
+    q_output: TileTensor[mut=True, q_out_dtype, ...],
     ctx: DeviceContext,
 ) raises:
     """Rope+split+store with paged KV cache and explicit position IDs.
@@ -617,6 +619,9 @@ def rope_split_store_paged_ragged_with_position_ids[
         dtype: Element type of the QKV input buffer.
         freq_dtype: Element type of the ``freqs_cis`` RoPE frequency
             table.
+        q_out_dtype: Element type of the roped Q output. Defaults to
+            ``dtype``; an FP8 KV cache sets it to the cache dtype so
+            flash attention sees a Q matching its cache.
         target: Compile target backend, for example ``"gpu"`` or
             ``"cpu"`` (defaults to ``"cpu"``).
         interleaved: Whether RoPE uses the interleaved real/imag layout
