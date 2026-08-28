@@ -63,7 +63,6 @@ from .model_config import (
     MultiKVCacheParams,
     UnifiedDflashKimiK25Config,
     parse_dflash_draft_hf_config,
-    resolve_dflash_num_speculative_tokens,
 )
 from .unified_dflash_kimi_k25 import UnifiedDflashKimiK25
 
@@ -132,10 +131,9 @@ class UnifiedDflashKimiK25Model(_UnifiedSpecDecodeModelMixin, KimiK2_5Model):
     ) -> None:
         kwargs["return_logits"] = ReturnLogits.VARIABLE
         kwargs["return_hidden_states"] = ReturnHiddenStates.SELECTED_LAYERS
-        # The drafter's trained width, resolved from the draft checkpoint;
-        # exposed for the overlap pipeline's spec-decode buffers.
+        assert pipeline_config.speculative is not None
         self.resolved_num_speculative_tokens = (
-            resolve_dflash_num_speculative_tokens(pipeline_config)
+            pipeline_config.speculative.draft_width
         )
         super().__init__(pipeline_config, *args, **kwargs)
 
@@ -158,12 +156,11 @@ class UnifiedDflashKimiK25Model(_UnifiedSpecDecodeModelMixin, KimiK2_5Model):
             kv_cache_config,
             cache_dtype,
         )
+        assert pipeline_config.speculative is not None
         assert isinstance(params, KVCacheParams)
         return replace(
             params,
-            num_draft_tokens=resolve_dflash_num_speculative_tokens(
-                pipeline_config, warn=False
-            ),
+            num_draft_tokens=pipeline_config.speculative.draft_width,
         )
 
     @override

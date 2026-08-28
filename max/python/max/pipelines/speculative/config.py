@@ -277,6 +277,19 @@ class SpeculativeConfig(ConfigFileModel):
 
     _config_file_section_name: str = "speculative_config"
 
+    @property
+    def draft_width(self) -> int:
+        """The number of tokens drafted per step.
+
+        Set for every config the pipeline builds: the architecture supplies
+        it for checkpoints that fix it, and the rest take the default.
+        """
+        assert self.num_speculative_tokens is not None, (
+            "num_speculative_tokens is unset; the config was not built by"
+            " PipelineConfig.from_args()."
+        )
+        return self.num_speculative_tokens
+
     def is_eagle(self) -> bool:
         """Returns whether the configured method is EAGLE.
 
