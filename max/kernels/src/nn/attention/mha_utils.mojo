@@ -431,16 +431,24 @@ struct MHAConfig[dtype: DType](TrivialRegisterPassable, Writable):
 
 
 @always_inline
-def indexer_key_bound(
-    num_keys: Int, seq_len: Int, tok_local: Int, causal: Int
-) -> Int:
-    """Keys the sparse indexer defines for token `tok_local` of a row.
+def indexer_key_bound[
+    kpool: Int = 1
+](num_keys: Int, seq_len: Int, tok_local: Int, causal: Int) -> Int:
+    """Candidate rows the sparse indexer defines for token `tok_local` of a row.
 
     `num_keys` is the row's total key count (`cache_len + seq_len`); the
     result is all of them without a causal mask, `cache_len + tok_local + 1`
     with one. Branchless multiply form: a branch in the scorer
     epilogues' unrolled token loop measured +4-9% on the non-causal path from
     codegen alone.
+
+    With `kpool > 1` the cache holds one pooled key per `kpool` consecutive
+    tokens, and the result counts *pools* instead of tokens. A pool covering
+    tokens `[kpool*p, kpool*p + kpool)` is a candidate only once its last
+    member is visible, which is exactly `visible // kpool` pools -- so the
+    pooled bound is the token bound floored by `kpool`, and no separate
+    validity rule is needed. A non-positive token bound stays non-positive,
+    which both call sites already treat as "no rows".
 
     Read side of the indexer's write/read contract: the SM100 scorers
     (`sparse_index_fp8_sm100[_prefill].mojo`) write score slots `[0, bound)`
@@ -451,7 +459,8 @@ def indexer_key_bound(
     prefill between them. If either side drifts, the top-k reads score slots
     the scorer never wrote.
     """
-    return num_keys - (seq_len - 1 - tok_local) * causal
+    comptime assert kpool >= 1, "kpool must be positive"
+    return (num_keys - (seq_len - 1 - tok_local) * causal) // kpool
 
 
 @always_inline

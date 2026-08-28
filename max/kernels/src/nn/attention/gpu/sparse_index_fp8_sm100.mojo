@@ -229,6 +229,7 @@ def _fp8_index_body[
     BM_key: Int,
     N_TOKENS: Int,
     _is_cache_length_accurate: Bool,
+    kpool: Int = 1,
     epilogue_chunk: Int = _EPILOGUE_CHUNK,
     *,
     VLStorageType: TensorStorage = PointerStorage[element_width=1],
@@ -291,6 +292,11 @@ def _fp8_index_body[
     var num_keys = Int(k_operand.cache_length(b))
     comptime if not _is_cache_length_accurate:
         num_keys += seq_len
+
+    # `num_keys` counts tokens, because the causal bound is expressed in
+    # tokens. `num_rows` counts what the cache holds, one pooled key per
+    # `kpool` tokens. The two are equal when `kpool == 1`.
+    var num_rows = num_keys // kpool
 
     # This launch owns global token rows `[out_row_begin, out_row_end)` and writes
     # them to `output` rows `[0, out_row_end - out_row_begin)`, so a caller that
@@ -383,7 +389,7 @@ def _fp8_index_body[
     # --- Stage the K tile once (A operand). A full BM_key-row tile is always
     # staged; rows past this batch's num_keys hold unrelated pool data (the
     # paged descriptor's bound is the whole pool, not num_keys, so it does not
-    # zero them). Correctness comes from the epilogue's `key_local < num_keys`
+    # zero them). Correctness comes from the epilogue's `key_local < num_rows`
     # guard, which drops those rows' scores before any write to `output`.
     comptime k_bytes = k_elems * size_of[dtype]()
     comptime q_bytes = q_elems * size_of[dtype]()
@@ -413,7 +419,7 @@ def _fp8_index_body[
     # re-load them from global memory in every token tile's critical path.
     if Int(tid) < BM_key:
         var key_local = key_start + Int(tid)
-        if key_local < num_keys:
+        if key_local < num_rows:
             var ks_ptr = ks_operand.block_paged_ptr[1](
                 UInt32(b), UInt32(key_local), UInt32(0), UInt32(0)
             )
@@ -583,7 +589,7 @@ def _fp8_index_body[
                         # on the non-causal path from codegen alone.
                         var key_bound = (
                             num_keys - (seq_len - 1 - tok_local) * causal
-                        )
+                        ) // kpool
                         if key_local < key_bound and tok_local < tok_hi:
                             var out_row = out_row0 + tok_local
                             output.raw_store(
@@ -622,6 +628,7 @@ def _fp8_index_score_kernel_sm100[
     BM_key: Int,
     N_TOKENS: Int,
     _is_cache_length_accurate: Bool,
+    kpool: Int = 1,
     *,
     VLStorageType: TensorStorage = PointerStorage[element_width=1],
     QSStorageType: TensorStorage = PointerStorage[element_width=1],
@@ -650,6 +657,7 @@ def _fp8_index_score_kernel_sm100[
     var num_keys = Int(k_operand.cache_length(b))
     comptime if not _is_cache_length_accurate:
         num_keys += seq_len
+    var num_rows = num_keys // kpool
 
     # Tokens this entry contributes to the caller's row window (see the body).
     var out_row_begin = Int(out_row_begin_dev)
@@ -661,7 +669,7 @@ def _fp8_index_score_kernel_sm100[
     # Bail uniformly (every thread) before the helper's first collective op
     # (TMA mbar / tcgen05 alloc); a divergent early return would deadlock them.
     # OOB keys keep the caller's `-inf` fill.
-    if key_start >= num_keys or win_tokens <= 0:
+    if key_start >= num_rows or win_tokens <= 0:
         return
 
     # Flat launch covers every windowed token tile of this sequence (grid.z == 1).
@@ -677,6 +685,7 @@ def _fp8_index_score_kernel_sm100[
         BM_key,
         N_TOKENS,
         _is_cache_length_accurate,
+        kpool,
         VLStorageType=VLStorageType,
         QSStorageType=QSStorageType,
         OutStorageType=OutStorageType,
@@ -715,6 +724,7 @@ def _fp8_index_score_kernel_sm100_split[
     BM_key: Int,
     N_TOKENS: Int,
     _is_cache_length_accurate: Bool,
+    kpool: Int = 1,
     *,
     VLStorageType: TensorStorage = PointerStorage[element_width=1],
     QSStorageType: TensorStorage = PointerStorage[element_width=1],
@@ -743,6 +753,7 @@ def _fp8_index_score_kernel_sm100_split[
     var num_keys = Int(k_operand.cache_length(b))
     comptime if not _is_cache_length_accurate:
         num_keys += seq_len
+    var num_rows = num_keys // kpool
 
     # Tokens this entry contributes to the caller's row window (see the body).
     var out_row_begin = Int(out_row_begin_dev)
@@ -760,7 +771,7 @@ def _fp8_index_score_kernel_sm100_split[
     # Bail uniformly (every thread) before the helper's first collective op
     # (TMA mbar / tcgen05 alloc); a divergent early return would deadlock them.
     # OOB keys keep the caller's `-inf` fill.
-    if key_start >= num_keys or win_tokens <= 0 or nt_start >= n_token_tiles:
+    if key_start >= num_rows or win_tokens <= 0 or nt_start >= n_token_tiles:
         return
     var n_local = min(tiles_per_slice, n_token_tiles - nt_start)
 
@@ -776,6 +787,7 @@ def _fp8_index_score_kernel_sm100_split[
         BM_key,
         N_TOKENS,
         _is_cache_length_accurate,
+        kpool,
         VLStorageType=VLStorageType,
         QSStorageType=QSStorageType,
         OutStorageType=OutStorageType,
@@ -805,6 +817,7 @@ def fp8_index_score_sm100[
     depth: Int,
     _is_cache_length_accurate: Bool,
     N_TOKENS_ALT: Int = 0,
+    kpool: Int = 1,
 ](
     output: TileTensor[.float32, ...],
     q: TileTensor[mut=False, dtype, ...],
@@ -843,6 +856,10 @@ def fp8_index_score_sm100[
             Silently inert at head counts and sequence lengths where any of that
             fails, so one constant is safe across TP ranks. Intended value: the
             speculative decode width (`num_draft_tokens + 1`) or a divisor of it.
+        kpool: Tokens per pooled cache row. `1` scores one row per token;
+            `k > 1` scores one pooled key per `k` consecutive tokens, so
+            every candidate count and the caller's `top_k` are
+            pool-granular.
 
     Args:
         output: Score buffer `[total_seq, max_num_keys]`, f32.
@@ -1030,6 +1047,7 @@ def fp8_index_score_sm100[
                         BM_key,
                         N_WIDE,
                         _is_cache_length_accurate,
+                        kpool,
                     ](
                         rebind[QTMATileT[dtype, MMA_N_WIDE, depth]](q_tma_wide),
                         rebind[KTMATileT[dtype, BM_key, depth]](k_tma_tile),
@@ -1120,6 +1138,7 @@ def fp8_index_score_sm100[
                         BM_key,
                         N_ALT,
                         _is_cache_length_accurate,
+                        kpool,
                         VLStorageType=type_of(valid_length.as_immut()).Storage,
                         QSStorageType=q_s.Storage,
                         OutStorageType=output.Storage,
@@ -1148,6 +1167,7 @@ def fp8_index_score_sm100[
                 BM_key,
                 N_TOKENS,
                 _is_cache_length_accurate,
+                kpool,
                 VLStorageType=type_of(valid_length.as_immut()).Storage,
                 QSStorageType=q_s.Storage,
                 OutStorageType=output.Storage,
@@ -1188,6 +1208,7 @@ def fp8_index_score_sm100[
             BM_key,
             N_TOKENS,
             _is_cache_length_accurate,
+            kpool,
             VLStorageType=type_of(valid_length.as_immut()).Storage,
             QSStorageType=q_s.Storage,
             OutStorageType=output.Storage,
@@ -1204,6 +1225,7 @@ def fp8_index_score_sm100[
             BM_key,
             N_TOKENS,
             _is_cache_length_accurate,
+            kpool,
             VLStorageType=type_of(valid_length.as_immut()).Storage,
             QSStorageType=q_s.Storage,
             OutStorageType=output.Storage,

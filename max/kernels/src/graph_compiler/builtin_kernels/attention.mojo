@@ -121,6 +121,7 @@ struct MLAIndexerRaggedFloat8Paged:
         k: Int,
         quantization_granularity: Int,
         mask_str: StaticString,
+        kpool: Int = 1,
     ](
         output_indices: OutputTensor[dtype=.int32, rank=2, ...],
         q: InputTensor[dtype=.float8_e4m3fn, rank=3, ...],
@@ -152,6 +153,9 @@ struct MLAIndexerRaggedFloat8Paged:
             k: Number of top indices to return per token.
             quantization_granularity: Quantization granularity for the K cache.
             mask_str: Mask type - either MaskName.NULL (no mask) or MaskName.CAUSAL.
+            kpool: Tokens per pooled cache row. `1` scores one row per token;
+                `k > 1` scores one pooled key per `kpool` consecutive tokens,
+                so the K cache holds pooled keys and `k` counts pools.
 
         Args:
             output_indices: Output tensor [total_seq_len, top_k] containing
@@ -245,6 +249,7 @@ struct MLAIndexerRaggedFloat8Paged:
             depth,
             k,
             mask_str,
+            kpool=kpool,
         ](
             output_indices.to_tile_tensor[.int64](),
             q.to_tile_tensor[.int64](),

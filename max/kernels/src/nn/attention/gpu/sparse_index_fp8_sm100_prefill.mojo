@@ -500,6 +500,7 @@ def _fp8_index_score_prefill_kernel_sm100[
     BM_key: Int,
     N_TOKENS: Int,
     _is_cache_length_accurate: Bool,
+    kpool: Int = 1,
     *,
     VLStorageType: TensorStorage = PointerStorage[element_width=1],
     QSStorageType: TensorStorage = PointerStorage[element_width=1],
@@ -605,14 +606,18 @@ def _fp8_index_score_prefill_kernel_sm100[
     var num_keys = Int32(k_operand.cache_length(b))
     comptime if not _is_cache_length_accurate:
         num_keys += seq_len
-    # The host bounds `max_num_keys`, but `num_keys` is per-entry device data it never
-    # sees. On the MLA path this holds structurally; on the ragged path it rests on a
-    # caller contract, so check the final value where it can be seen. DEFAULT assert
-    # mode, NOT "safe": a "safe" assert in this kernel drags in `vprintf` and grew the
-    # emitted PTX +26% while perturbing register allocation.
+    # `num_keys` counts tokens, for the causal bounds below. `num_rows` counts
+    # what the cache holds, one pooled key per `kpool` tokens.
+    var num_rows = num_keys // Int32(kpool)
+    # The host bounds `max_num_keys`, but the per-entry count is device data the
+    # host never sees, and on the ragged path it rests on a caller contract. So
+    # check it here, in cache rows, which is what `max_num_keys` measures.
+    # Keep the default assert mode. A "safe" assert in this kernel pulls in
+    # `vprintf`, which inflates the emitted PTX and perturbs register
+    # allocation.
     debug_assert(
-        num_keys <= max_num_keys_dev,
-        "fp8 index prefill: per-entry num_keys exceeds max_num_keys",
+        num_rows <= max_num_keys_dev,
+        "fp8 index prefill: per-entry candidate rows exceed max_num_keys",
     )
 
     # Bail uniformly (every thread) before any collective op (TMA mbar / tcgen05
@@ -633,7 +638,9 @@ def _fp8_index_score_prefill_kernel_sm100[
     # guard in the epilogue). Non-causal streams every key; causal trims the
     # triangle a zero-prefix fresh prefill leaves off the end.
     var last_tok = min(tok0 + Int32(N_TOKENS), tok_hi) - 1
-    var block_key_bound = num_keys - (seq_len - 1 - last_tok) * causal
+    var block_key_bound = (
+        num_keys - (seq_len - 1 - last_tok) * causal
+    ) // Int32(kpool)
     # `block_key_bound` can be <= 0 (a causal bound that trims the whole block), so the
     # SUBTRACTION above stays signed. The `ceildiv` does not: `SIMD.__ceildiv__`
     # branches at COMPTIME on the dtype -- signed lowers to `-(x // -d)` with a
@@ -897,7 +904,7 @@ def _fp8_index_score_prefill_kernel_sm100[
         @__parameter
         @always_inline
         def gather_k_scale(key: Int32) -> Float32:
-            if key < num_keys:
+            if key < num_rows:
                 return ks_operand.block_paged_ptr[1](
                     UInt32(b), UInt32(key), UInt32(0), UInt32(0)
                 )[0].cast[.float32]()
@@ -1022,7 +1029,7 @@ def _fp8_index_score_prefill_kernel_sm100[
                             # in both arms at MMA_N 96 and 128, nh 32 and 64.
                             var key_bound = (
                                 num_keys - (seq_len - 1 - tok_local) * causal
-                            )
+                            ) // Int32(kpool)
                             # The OFFSET must be 64-bit: the score buffer is
                             # `total_seq_len * max_num_keys` f32, so the flat index
                             # passes 2^31 at ~13.1K tokens x 163840 keys and 2^32
@@ -1355,6 +1362,7 @@ def fp8_index_score_sm100_prefill[
     BM_key: Int,
     N_TOKENS: Int,
     _is_cache_length_accurate: Bool,
+    kpool: Int = 1,
     *,
     VLStorageType: TensorStorage = PointerStorage[element_width=1],
     QSStorageType: TensorStorage = PointerStorage[element_width=1],
@@ -1479,6 +1487,7 @@ def fp8_index_score_sm100_prefill[
         BM_key,
         N_TOKENS,
         _is_cache_length_accurate,
+        kpool,
         VLStorageType=type_of(valid_length.as_immut()).Storage,
         QSStorageType=q_s.Storage,
         OutStorageType=output.Storage,

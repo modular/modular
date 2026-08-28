@@ -2646,6 +2646,7 @@ def mla_fp8_index_top_k(
     top_k: int,
     quantization_granularity: int,
     mask_variant: MHAMaskVariant = MHAMaskVariant.CAUSAL_MASK,
+    kpool: int = 1,
 ) -> TensorValue:
     """Computes top-k indices for MLA FP8 indexed attention scores.
 
@@ -2662,11 +2663,21 @@ def mla_fp8_index_top_k(
         top_k: Requested number of top indices per token.
         quantization_granularity: Quantization granularity for the K cache.
         mask_variant: The mask variant to use (NULL or CAUSAL_MASK).
+        kpool: Tokens per row of ``k_collection``. ``1`` scores one row per
+            cached token. ``k > 1`` means the cache holds one pooled key per
+            ``k`` consecutive tokens, so ``top_k`` counts pools and the
+            returned indices are pool ids that the caller expands back to
+            token positions.
 
     Returns:
         Output tensor of shape [total_seq_len, effective_k] containing top-k key
         indices per token, where effective_k = min(top_k, max_num_keys).
-        Invalid positions are filled with -1.
+        Invalid positions are filled with -1. With ``kpool > 1`` the entries are
+        pool ids rather than token positions.
+
+    Raises:
+        ValueError: If ``top_k`` or ``kpool`` is not positive, or if
+            ``mask_variant`` is neither NULL nor CAUSAL.
     """
     _validate_argument_tensor(
         "q", q, dtype=DType.float8_e4m3fn, rank=3, device_type=DeviceKind.GPU
@@ -2705,6 +2716,8 @@ def mla_fp8_index_top_k(
     )
     if top_k <= 0:
         raise ValueError(f"top_k must be greater than 0, got {top_k}")
+    if kpool < 1:
+        raise ValueError(f"kpool must be at least 1, got {kpool}")
 
     # Validate mask_variant is supported
     if mask_variant not in (
@@ -2739,6 +2752,7 @@ def mla_fp8_index_top_k(
             "k": top_k,
             "quantization_granularity": quantization_granularity,
             "mask_str": mask_str,
+            "kpool": kpool,
         },
     )[0].tensor
 
