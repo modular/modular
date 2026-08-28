@@ -36,6 +36,27 @@ from std.gpu import block_idx, thread_idx
 
 
 @always_inline
+def pool_channel[
+    kpool: Int
+](logits: Array[Float32, kpool], vals: Array[Float32, kpool]) -> Float32:
+    """One pooled channel: softmax over `logits`, weighted sum of `vals`.
+
+    Shared by the prefill and decode writers so the two cannot drift.
+    """
+    var m_max = -Float32.MAX
+    for m in range(kpool):
+        m_max = max(m_max, logits[m])
+
+    var acc = Float32(0)
+    var denom = Float32(0)
+    for m in range(kpool):
+        var w = exp(logits[m] - m_max)
+        denom += w
+        acc += w * vals[m]
+    return acc / denom
+
+
+@always_inline
 def _batch_of_pool_row(
     pool_row_offsets: TileTensor[mut=False, .uint32, ...],
     batch_size: Int,
@@ -136,24 +157,149 @@ def kpool_compress_kernel[
         Int(input_row_offsets.raw_load(b)) + align + local_pool * kpool
     )
 
-    # Pass 1: per-channel max, for a stable softmax. Every member of a written
-    # pool exists, so nothing needs masking.
-    var m_max = -Float32.MAX
+    # Every member of a written pool exists, so nothing needs masking.
+    var logits = Array[Float32, kpool]()
+    var vals = Array[Float32, kpool]()
     for m in range(kpool):
-        var logit = gate.raw_load((first_row + m) * head_dim + c).cast[
+        logits[m] = gate.raw_load((first_row + m) * head_dim + c).cast[
             .float32
         ]() + ape.raw_load(m * head_dim + c)
-        m_max = max(m_max, logit)
+        vals[m] = k.raw_load((first_row + m) * head_dim + c).cast[.float32]()
 
-    # Pass 2: weighted sum.
-    var acc = Float32(0)
-    var denom = Float32(0)
+    pooled.raw_store(
+        pool_row * head_dim + c, pool_channel[kpool](logits, vals).cast[dtype]()
+    )
+
+
+@__name(t"mla_kpool_tail_update_{kpool}_{head_dim}")
+def kpool_tail_update_kernel[
+    dtype: DType,
+    TailLayoutType: TensorLayout,
+    tail_origin: MutOrigin,
+    OutLayoutType: TensorLayout,
+    out_origin: MutOrigin,
+    ClosedLayoutType: TensorLayout,
+    closed_origin: MutOrigin,
+    KLayoutType: TensorLayout,
+    k_origin: ImmOrigin,
+    GateLayoutType: TensorLayout,
+    gate_origin: ImmOrigin,
+    ApeLayoutType: TensorLayout,
+    ape_origin: ImmOrigin,
+    PosLayoutType: TensorLayout,
+    pos_origin: ImmOrigin,
+    SlotLayoutType: TensorLayout,
+    slot_origin: ImmOrigin,
+    head_dim: Int,
+    kpool: Int,
+](
+    tail: TileTensor[dtype, TailLayoutType, tail_origin],
+    pooled: TileTensor[dtype, OutLayoutType, out_origin],
+    closed_pool: TileTensor[.int32, ClosedLayoutType, closed_origin],
+    k: TileTensor[mut=False, dtype, KLayoutType, k_origin],
+    gate: TileTensor[mut=False, dtype, GateLayoutType, gate_origin],
+    ape: TileTensor[mut=False, .float32, ApeLayoutType, ape_origin],
+    positions: TileTensor[mut=False, .int32, PosLayoutType, pos_origin],
+    slot_idx: TileTensor[mut=False, .uint32, SlotLayoutType, slot_origin],
+    num_requests: Int32,
+):
+    """Stashes one decoded token per request, and closes a pool when it fills.
+
+    A decoded token cannot be pooled on arrival, because its pool-mates arrived
+    on earlier steps and have left the batch. Each request keeps its
+    in-progress pool in `tail`, a ring of `kpool` slots addressed by
+    `position % kpool`.
+
+    The ring is indexed by `slot_idx[r]`, not by `r`. A batch reorders between
+    steps, so row `r` is not always the same request.
+
+    Every real token stashes, whether or not it closes a pool.
+
+    Handles one token per request per call. A speculative step that verifies
+    several at once must walk them in position order, which this does not do.
+
+    Parameters:
+        dtype: Element type of `tail`, `k`, `gate` and `pooled`.
+        TailLayoutType: Layout of `tail`.
+        tail_origin: Origin of `tail`.
+        OutLayoutType: Layout of `pooled`.
+        out_origin: Origin of `pooled`.
+        ClosedLayoutType: Layout of `closed_pool`.
+        closed_origin: Origin of `closed_pool`.
+        KLayoutType: Layout of `k`.
+        k_origin: Origin of `k`.
+        GateLayoutType: Layout of `gate`.
+        gate_origin: Origin of `gate`.
+        ApeLayoutType: Layout of `ape`.
+        ape_origin: Origin of `ape`.
+        PosLayoutType: Layout of `positions`.
+        pos_origin: Origin of `positions`.
+        SlotLayoutType: Layout of `slot_idx`.
+        slot_origin: Origin of `slot_idx`.
+        head_dim: Channels per key; also the block width.
+        kpool: Tokens per pool.
+
+    Args:
+        tail: Per-slot ring, `[max_slots, 2, kpool, head_dim]`, sized by the
+            engine's concurrent-request capacity. Index 0 holds keys, index 1
+            holds gate scores. Only slot `slot_idx[r]` is touched for row `r`.
+            Persists across steps.
+        pooled: Output `[num_requests, head_dim]`, meaningful only where
+            `closed_pool` is non-negative.
+        closed_pool: Output `[num_requests]`. The pool id this step completed,
+            or -1 when the request's pool is still filling.
+        k: This step's layer-normed keys, `[num_requests, head_dim]`.
+        gate: This step's gate scores, `[num_requests, head_dim]`.
+        ape: Within-pool position embedding, `[kpool, head_dim]`, f32.
+        positions: Absolute position of each request's new token,
+            `[num_requests]`. Negative marks a padded batch entry.
+        slot_idx: Ring slot owned by each batch row, `[num_requests]`, `uint32`.
+        num_requests: Requests actually present.
+    """
+    var r = block_idx.x
+    if r >= Int(num_requests):
+        return
+
+    var c = thread_idx.x
+    if c >= head_dim:
+        return
+
+    var pos = Int(positions.raw_load(r))
+    if pos < 0:
+        if c == 0:
+            closed_pool.raw_store(r, Int32(-1))
+        return
+
+    var slot = pos % kpool
+    var tail_base = Int(slot_idx.raw_load(r)) * 2 * kpool * head_dim
+
+    # This write and the reads below are the same thread's, so no barrier is
+    # needed.
+    tail.raw_store(
+        tail_base + slot * head_dim + c, k.raw_load(r * head_dim + c)
+    )
+    tail.raw_store(
+        tail_base + (kpool + slot) * head_dim + c,
+        gate.raw_load(r * head_dim + c),
+    )
+
+    if slot != kpool - 1:
+        if c == 0:
+            closed_pool.raw_store(r, Int32(-1))
+        return
+
+    # The pool closing here spans positions `pos - kpool + 1` through `pos`,
+    # so member `m` sits at slot `m` and pairs with `ape[m]`.
+    var logits = Array[Float32, kpool]()
+    var vals = Array[Float32, kpool]()
     for m in range(kpool):
-        var logit = gate.raw_load((first_row + m) * head_dim + c).cast[
+        logits[m] = tail.raw_load(tail_base + (kpool + m) * head_dim + c).cast[
             .float32
         ]() + ape.raw_load(m * head_dim + c)
-        var w = exp(logit - m_max)
-        denom += w
-        acc += w * k.raw_load((first_row + m) * head_dim + c).cast[.float32]()
+        vals[m] = tail.raw_load(tail_base + m * head_dim + c).cast[.float32]()
 
-    pooled.raw_store(pool_row * head_dim + c, (acc / denom).cast[dtype]())
+    pooled.raw_store(
+        r * head_dim + c, pool_channel[kpool](logits, vals).cast[dtype]()
+    )
+    if c == 0:
+        closed_pool.raw_store(r, Int32(pos // kpool))
