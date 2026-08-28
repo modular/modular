@@ -24,13 +24,14 @@ preshuffled B, direct VGPR loads).
 A's K byte extent is `K * lane_bytes // 32`; the E8M0 scale extent is `K // 32`.
 """
 
-from std.math import align_up, ceildiv
+from std.math import align_up, ceildiv, isnan
 from std.os import abort
 from std.random import random_ui64, seed
 from std.sys import (
     get_defined_int,
     get_defined_string,
 )
+from std.gpu import block_dim, block_idx, global_idx, grid_dim, thread_idx
 
 from max.benchmark import bencher_iter_custom
 from std.benchmark import (
@@ -41,10 +42,12 @@ from std.benchmark import (
     ThroughputMeasure,
 )
 from max.gpu.host import DeviceContext
+from max.gpu.primitives import block
 from internal_utils import arg_parse, CacheBustingBuffer, CACHE_BUST_BYTES
 from internal_utils._utils import InitializationType
 from layout import Coord, Idx, TileTensor, row_major
-from linalg.matmul.gpu.amd import block_scaled_grouped_matmul_amd_preb
+from linalg.fp4_utils import MXFP8_SF_VECTOR_SIZE
+from linalg.matmul.gpu.amd import Shuffler, block_scaled_grouped_matmul_amd_preb
 
 
 # ===----------------------------------------------------------------------=== #
@@ -116,6 +119,147 @@ def _run_name(
 
 
 # ===----------------------------------------------------------------------=== #
+# Correctness verification (MXFP8 only).
+#
+# `_verify_buffers_gpu` is ported verbatim from `bench_block_scaled_matmul.mojo`
+# and `_block_scaled_matmul_fp8_ref` from `test_mxfp8_matmul_amd_preb.mojo`.
+# Kept as second copies rather than a shared-module refactor across
+# benchmarks/test — that refactor can't be exercised on a GPU in this
+# environment, so a copy is the lower-risk choice here (see the AMD grouped
+# matmul autotune plan doc for the tradeoff).
+# ===----------------------------------------------------------------------=== #
+
+
+def _verify_buffers_gpu[
+    c_type: DType, BLOCK_SIZE: Int
+](
+    output: UnsafePointer[Scalar[c_type], ImmutAnyOrigin],
+    reference: UnsafePointer[Scalar[c_type], ImmutAnyOrigin],
+    length: Int32,
+    atol: Float32,
+    rtol: Float32,
+    result: UnsafePointer[Float32, MutAnyOrigin],
+):
+    """GPU kernel that computes verification metrics in one pass.
+
+    Each block computes partial reductions and writes 6 Float32 values:
+      [0] abs_diff_sum — for relative difference metric (NaN pairs excluded)
+      [1] abs_ref_sum  — for relative difference metric (NaN pairs excluded)
+      [2] max_violation — max(|x-y| - (atol + rtol*|y|)) over non-NaN pairs,
+          <=0 means pass
+      [3] out_nz — 1.0 if any output element is nonzero
+      [4] ref_nz — 1.0 if any reference element is nonzero
+      [5] nan_mismatch — 1.0 if some element is NaN in the output but not the
+          reference, or vice versa
+
+    The synthetic activation fill is a uniform random byte pattern (see
+    `_rand_e4m3_byte`'s docstring in `test_mxfp8_matmul_amd_preb.mojo`), which
+    occasionally lands on the E4M3 NaN encoding — so a NaN that the
+    reference also produces is expected input propagation, not a bug.
+    `nan_mismatch` instead flags a NaN appearing on only one side, which a
+    real kernel bug (e.g. an uninitialized read in a newly-tuned tile) would
+    trigger. `max_violation` alone is NaN-blind: `max()` lowers to maxNum
+    semantics, which ignore a NaN operand rather than propagate it, so pairs
+    where both sides agree on NaN are excluded from the sums/violation to
+    keep those metrics meaningful instead of being silently poisoned to NaN.
+    """
+    var abs_diff_sum: Float32 = 0
+    var abs_ref_sum: Float32 = 0
+    var max_violation = Float32.MIN_FINITE
+    var out_nz: Float32 = 0
+    var ref_nz: Float32 = 0
+    var nan_mismatch: Float32 = 0
+
+    var i = global_idx.x
+    var stride = grid_dim.x * block_dim.x
+    while i < Int(length):
+        var x = output[i].cast[.float32]()
+        var y = reference[i].cast[.float32]()
+        var x_nan = isnan(x)
+        var y_nan = isnan(y)
+        if x_nan != y_nan:
+            nan_mismatch = 1.0
+        if not x_nan and not y_nan:
+            abs_diff_sum += abs(x - y)
+            abs_ref_sum += abs(y)
+            max_violation = max(
+                max_violation, abs(x - y) - (atol + rtol * abs(y))
+            )
+        if x != 0:
+            out_nz = 1.0
+        if y != 0:
+            ref_nz = 1.0
+        i += stride
+
+    abs_diff_sum = block.sum[block_size=BLOCK_SIZE](abs_diff_sum)
+    abs_ref_sum = block.sum[block_size=BLOCK_SIZE](abs_ref_sum)
+    max_violation = block.max[block_size=BLOCK_SIZE](max_violation)
+    out_nz = block.max[block_size=BLOCK_SIZE](out_nz)
+    ref_nz = block.max[block_size=BLOCK_SIZE](ref_nz)
+    nan_mismatch = block.max[block_size=BLOCK_SIZE](nan_mismatch)
+
+    if thread_idx.x == 0:
+        var base = block_idx.x * 6
+        result[base + 0] = abs_diff_sum
+        result[base + 1] = abs_ref_sum
+        result[base + 2] = max_violation
+        result[base + 3] = out_nz
+        result[base + 4] = ref_nz
+        result[base + 5] = nan_mismatch
+
+
+def _block_scaled_matmul_fp8_ref(
+    a_ptr: ImmPointer[UInt8, ImmutAnyOrigin],
+    b_ptr: ImmPointer[UInt8, ImmutAnyOrigin],
+    a_scales_ptr: ImmPointer[Float8_e8m0fnu, ImmutAnyOrigin],
+    b_scales_ptr: ImmPointer[Float8_e8m0fnu, ImmutAnyOrigin],
+    c_ptr: MutPointer[Float32, MutAnyOrigin],
+    M_arg: Int32,
+    N_arg: Int32,
+    K_arg: Int32,
+):
+    """Per-element GPU reference for MXFP8 block-scaled matmul.
+
+    No MFMA, no code shared with the real kernel, so a fragment-layout bug
+    in the real kernel can't cancel out against a shared bug in the
+    reference.
+    """
+    var M = Int(M_arg)
+    var N = Int(N_arg)
+    var K = Int(K_arg)
+    var m = global_idx.x
+    var n = global_idx.y
+
+    if m >= M or n >= N:
+        return
+
+    var k_groups = K // MXFP8_SF_VECTOR_SIZE
+
+    var am_scales_ptr = a_scales_ptr + m * k_groups
+    var bn_scales_ptr = b_scales_ptr + n * k_groups
+
+    # One byte per element at MXFP8, so the row stride is K.
+    var am_ptr = (a_ptr + m * K).bitcast[Float8_e4m3fn]()
+    var bn_ptr = (b_ptr + n * K).bitcast[Float8_e4m3fn]()
+
+    var accum = Float32(0)
+
+    for ko in range(k_groups):
+        var a_scale = am_scales_ptr[ko].cast[.float32]()
+        var b_scale = bn_scales_ptr[ko].cast[.float32]()
+
+        var part = Float32(0)
+        for ki in range(MXFP8_SF_VECTOR_SIZE):
+            part += am_ptr[ki].cast[.float32]() * bn_ptr[ki].cast[.float32]()
+        accum += part * a_scale * b_scale
+
+        am_ptr += MXFP8_SF_VECTOR_SIZE
+        bn_ptr += MXFP8_SF_VECTOR_SIZE
+
+    c_ptr[m * N + n] = accum
+
+
+# ===----------------------------------------------------------------------=== #
 # Preshuffled-B path (block_scaled_grouped_matmul_amd_preb)
 # ===----------------------------------------------------------------------=== #
 
@@ -140,6 +284,7 @@ def bench_preb[
     cache_bust_gb: Float64 = 0.0,
     max_tokens_capacity: Int = 0,
     estimated_total_m: Int = 0,
+    verify: Bool = True,
 ) raises:
     # A's K byte extent per format: K/2 (MXFP4), K*3/4 (MXFP6), K (MXFP8).
     comptime packed_K = (K * lane_bytes) // 32
@@ -299,6 +444,196 @@ def bench_preb[
         [ThroughputMeasure(BenchMetric.flops, total_flops)],
     )
 
+    # Correctness verify: reference is only implemented for MXFP8
+    # (lane_bytes=32) — the two grouped-matmul shapes this autotune targets. Runs
+    # the timed benchmark so a verify failure never affects the reported
+    # perf number. `verify` is a runtime Bool so it must be the outer check;
+    # a `comptime if`'s branches must all be comptime-decidable, so the
+    # `lane_bytes == 32` gate nests inside it rather than sharing one chain.
+    if verify:
+        comptime if lane_bytes == 32:
+            print("  verifying vs. per-element MXFP8 reference...")
+            comptime BLOCK_DIM = 32
+
+            # `cb_b`'s iteration-0 slot is random bytes with no prior layout
+            # meaning, so it doubles as the natural [num_experts, N,
+            # packed_K] source `preshuffle_b_5d` shuffles into a genuinely
+            # preshuffled buffer. This step is required: the real kernel's
+            # `PreshuffledBLoader` addressing depends on B actually being in
+            # preshuffled byte order, unlike the scale buffers below.
+            var b_raw_tt = TileTensor[mut=False](
+                cb_b.offset_ptr(0), row_major[num_experts, N, packed_K]()
+            )
+            var verify_b_pre_dev = ctx.enqueue_create_buffer[.uint8](
+                num_experts * N * packed_K
+            )
+            var b_pre_dst_tt = TileTensor[mut=True](
+                verify_b_pre_dev,
+                Shuffler[num_experts].b_5d_grouped_layout[
+                    N=N, K_BYTES=packed_K
+                ],
+            )
+            Shuffler[num_experts].preshuffle_b_5d[N=N, K_BYTES=packed_K](
+                b_raw_tt, b_pre_dst_tt, ctx
+            )
+
+            # Both scale buffers are a constant E8M0=127 (2^0=1.0) byte
+            # everywhere (see the memset above) — a byte permutation of an
+            # all-identical buffer is the identity, so `cb_a_sc`/`cb_b_sc`
+            # are valid inputs to BOTH the real (preshuffled-addressing)
+            # kernel and the natural-layout reference without running the
+            # scale preshuffle kernels.
+            var verify_sfa_natural_dev = ctx.enqueue_create_buffer[.uint8](
+                total_routes * scale_K
+            )
+            ctx.enqueue_memset(verify_sfa_natural_dev, UInt8(127))
+
+            var verify_c_dev = ctx.enqueue_create_buffer[.float32](
+                total_routes * N
+            )
+            var verify_c_ref_dev = ctx.enqueue_create_buffer[.float32](
+                total_routes * N
+            )
+
+            var a_tt_v = TileTensor[mut=False](
+                cb_a.offset_ptr(0),
+                row_major(Coord(total_routes, Idx[packed_K])),
+            )
+            var b_pre_flat_v = TileTensor[mut=False](
+                verify_b_pre_dev, row_major[num_experts, N * packed_K]()
+            )
+            var sfa_tt_v = TileTensor[mut=False](
+                cb_a_sc.offset_ptr(0).bitcast[Float8_e8m0fnu](),
+                row_major(Coord(num_experts * max_padded_M, Idx[scale_K])),
+            )
+            var sfb_tt_v = TileTensor[mut=False](
+                cb_b_sc.offset_ptr(0).bitcast[Float8_e8m0fnu](),
+                row_major[num_experts, N, scale_K](),
+            )
+            var c_tt_v = TileTensor[mut=True](
+                verify_c_dev, row_major(Coord(total_routes, Idx[N]))
+            )
+
+            block_scaled_grouped_matmul_amd_preb[lane_bytes=lane_bytes](
+                c_tt_v,
+                a_tt_v,
+                b_pre_flat_v,
+                sfa_tt_v,
+                sfb_tt_v,
+                aoff_tt,
+                ei_tt,
+                max_tokens_for_kernel,
+                num_active_experts,
+                ctx,
+                estimated_total_m,
+            )
+
+            # Reference: one ungrouped per-element matmul per active expert
+            # slot, reading the natural (un-preshuffled) A/B/scale buffers.
+            for slot in range(num_active_experts):
+                var tok_start = Int(a_off_h[slot])
+                var m_slot = target_counts[slot]
+                if m_slot == 0:
+                    continue
+                var eid = Int(ei_h[slot])
+                ctx.enqueue_function[_block_scaled_matmul_fp8_ref](
+                    (cb_a.offset_ptr(0) + tok_start * packed_K).as_imm(),
+                    (cb_b.offset_ptr(0) + eid * N * packed_K).as_imm(),
+                    (verify_sfa_natural_dev.unsafe_ptr() + tok_start * scale_K)
+                    .bitcast[Float8_e8m0fnu]()
+                    .as_imm(),
+                    (cb_b_sc.offset_ptr(0) + eid * N * scale_K)
+                    .bitcast[Float8_e8m0fnu]()
+                    .as_imm(),
+                    verify_c_ref_dev.unsafe_ptr() + tok_start * N,
+                    Int32(m_slot),
+                    Int32(N),
+                    Int32(K),
+                    grid_dim=(
+                        ceildiv(m_slot, BLOCK_DIM),
+                        ceildiv(N, BLOCK_DIM),
+                    ),
+                    block_dim=(BLOCK_DIM, BLOCK_DIM),
+                )
+
+            comptime NUM_BLOCKS = 32
+            comptime VERIFY_BLOCK_SIZE = 256
+            var rtol = Float32(0.05)
+            var atol = Float32(0.05)
+            var result_device = ctx.enqueue_create_buffer[.float32](
+                NUM_BLOCKS * 6
+            )
+            comptime verify_kernel = _verify_buffers_gpu[
+                DType.float32, VERIFY_BLOCK_SIZE
+            ]
+            ctx.enqueue_function[verify_kernel](
+                verify_c_dev.unsafe_ptr(),
+                verify_c_ref_dev.unsafe_ptr(),
+                Int32(total_routes * N),
+                atol,
+                rtol,
+                result_device,
+                grid_dim=NUM_BLOCKS,
+                block_dim=VERIFY_BLOCK_SIZE,
+            )
+
+            var result_host = List(length=NUM_BLOCKS * 6, fill=Float32(0))
+            ctx.enqueue_copy(result_host, result_device)
+            ctx.synchronize()
+
+            var total_abs_diff: Float32 = 0
+            var total_abs_ref: Float32 = 0
+            var worst_violation = Float32.MIN_FINITE
+            var out_nz: Float32 = 0
+            var ref_nz: Float32 = 0
+            var nan_mismatch: Float32 = 0
+            for bi in range(NUM_BLOCKS):
+                var base = bi * 6
+                total_abs_diff += result_host[base + 0]
+                total_abs_ref += result_host[base + 1]
+                worst_violation = max(worst_violation, result_host[base + 2])
+                out_nz = max(out_nz, result_host[base + 3])
+                ref_nz = max(ref_nz, result_host[base + 4])
+                nan_mismatch = max(nan_mismatch, result_host[base + 5])
+
+            if nan_mismatch != 0:
+                raise (
+                    "CORRECTNESS: kernel output and reference disagree on"
+                    " NaN placement"
+                )
+            if out_nz == 0:
+                raise "CORRECTNESS: kernel output is all zeros"
+            if ref_nz == 0:
+                raise "CORRECTNESS: reference output is all zeros"
+
+            if total_abs_ref > 0:
+                var rel_diff = total_abs_diff / total_abs_ref
+                if rel_diff > rtol:
+                    raise String(
+                        "CORRECTNESS: relative difference ",
+                        rel_diff,
+                        " > ",
+                        rtol,
+                    )
+
+            if worst_violation > 0:
+                raise String(
+                    "CORRECTNESS: element-wise tolerance violated, worst = ",
+                    worst_violation,
+                )
+
+            print("  verify PASSED (atol=", atol, " rtol=", rtol, ")")
+            _ = result_host^
+            _ = verify_b_pre_dev^
+            _ = verify_sfa_natural_dev^
+            _ = verify_c_dev^
+            _ = verify_c_ref_dev^
+        else:
+            print(
+                "  verify: skipped (reference only implemented for"
+                " lane_bytes=32 / MXFP8)"
+            )
+
     _ = cb_a^
     _ = cb_b^
     _ = cb_a_sc^
@@ -362,6 +697,10 @@ def main() raises:
     # 512 MiB * num_experts (enough windows to evict even a single-expert M=1
     # read; = 24 GiB at 48 experts). Set explicitly to cap or raise the budget.
     var cache_bust_gb = Float64(arg_parse("cache_bust_gb", 0.0))
+    # Correctness verify against a per-element reference (MXFP8 only; see
+    # bench_preb). Default True: this kernel's whole output is the tuned
+    # low-precision path, so it never gets an fp8-disables-default carve-out.
+    var verify = Bool(arg_parse("verify", True))
     # Replay a literal serve routing: pass comma-separated per-slot token
     # counts and expert IDs. Both must be set together and both must have
     # length == num_active_experts. Bypasses skew synthesis.
@@ -518,6 +857,7 @@ def main() raises:
             cache_bust_gb,
             max_tokens_capacity,
             estimated_total_m,
+            verify,
         )
 
         bench.dump_report()

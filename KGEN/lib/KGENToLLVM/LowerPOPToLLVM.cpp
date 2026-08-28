@@ -2018,7 +2018,7 @@ void LowerPOPToLLVMPass::runOnOperation() {
 
   // Ops the target lowers in the global pass are left legal (skipped) here.
   target.addDynamicallyLegalOp<POP::MaxOp, POP::MinOp, POP::AtomicRMWOp,
-                               POP::AtomicCmpXchgOp, POP::CastOp,
+                               POP::AtomicCmpXchgOp, POP::CastOp, POP::FenceOp,
                                CallLLVMIntrinsicOp>([&](Operation *op) {
     return lowering && lowering->isLoweredInGlobalPOPPass(op);
   });
@@ -2478,7 +2478,7 @@ void LowerGlobalPOPToLLVMPass::runOnOperation() {
 
   // Ops the target lowers in this pass are illegal here so they get converted.
   target.addDynamicallyLegalOp<POP::MaxOp, POP::MinOp, POP::AtomicRMWOp,
-                               POP::AtomicCmpXchgOp, POP::CastOp,
+                               POP::AtomicCmpXchgOp, POP::CastOp, POP::FenceOp,
                                CallLLVMIntrinsicOp>([&](Operation *op) {
     return !(lowering && lowering->isLoweredInGlobalPOPPass(op));
   });

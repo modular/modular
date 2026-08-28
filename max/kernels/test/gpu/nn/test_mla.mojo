@@ -911,6 +911,41 @@ def test_decoding_partial_head_group[
         ](1, 1024, ctx, use_index_input=use_index_input)
 
 
+def test_decoding_k3_head_counts[
+    batch_size: Int,
+    num_partitions: Optional[Int],
+    split_k: Bool,
+](ctx: DeviceContext, seq_len: Int, num_keys: Int) raises:
+    """Kimi K3's per-device Q-head counts at TP2/TP4/TP8 -- 48, 24 and 12.
+
+    K3 serves bf16 KV, and the only K3 head count measured so far (12, in
+    `test_mla_decode_kv_fp8.mojo`) was measured under fp8 KV. These are the
+    counts `compute_mla_dispatch_scalars_runtime` has to enumerate for K3's
+    latent cache to dispatch at all, so they are measured here first.
+
+    48/24/12 are all a single head group. K3's TP1 count of 96 leaves a partial
+    tail head group, which `test_decoding_partial_head_group` covers directly,
+    so it is not repeated here. Of the three, only 12 tails the *combine* grid,
+    which blocks 8 heads per CTA at `warps_per_head=1` and so leaves 4 -- and
+    only a split-K run reaches that kernel at all.
+
+    The control comes FIRST at this exact shape and batch: an assert aborts the
+    run, so ordering a supported count ahead of an unusual one is what makes a
+    failure attributable to the head count rather than to the shape.
+    """
+    comptime for num_heads in [128, 48, 24, 12]:
+        test[
+            DType.bfloat16,
+            576,
+            num_heads,
+            group=num_heads,
+            against_gpu_naive=True,
+            batch_size=batch_size,
+            num_partitions=num_partitions,
+            decoding_warp_split_k=split_k,
+        ](seq_len, num_keys, ctx)
+
+
 def test_mla_prefill[
     batch_size: Int,
     qkv_type: DType,
@@ -1095,6 +1130,14 @@ def main() raises:
                 qkv_type=DType.float8_e4m3fn,
                 output_type=DType.bfloat16,
             ](ctx, False)
+
+        comptime if _is_sm10x_gpu(ctx.default_device_info):
+            test_decoding_k3_head_counts[2, 1, False](ctx, 1, 512)
+            test_decoding_k3_head_counts[1, 1, False](ctx, 1, 4096)
+            # Split-K is what launches the combine kernel, whose 8-head block
+            # these counts tail; an overrun there folds one split's partials
+            # into the next head's output.
+            test_decoding_k3_head_counts[1, 2, True](ctx, 1, 4096)
 
         # test mla prefill
         test_mla_prefill[2, DType.bfloat16, DType.bfloat16](ctx)

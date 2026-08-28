@@ -498,8 +498,6 @@ async def generate_image(args: argparse.Namespace) -> None:
             ),
         ),
     )
-    # Resolve the manifest (encodings + weight paths) before use.
-    config.models.resolve()
 
     # Step 2: Initialize the tokenizer
     # The tokenizer handles prompt encoding and context preparation

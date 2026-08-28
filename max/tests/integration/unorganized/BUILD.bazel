@@ -445,6 +445,32 @@ modular_py_test(
     ],
 )
 
+# The grammar bitmask must not resurrect -inf logits (vocab-tail safety).
+modular_py_test(
+    name = "test-bitmask-preserves-vocab-mask",
+    size = "medium",
+    srcs = [
+        "conftest.py",
+        "sampling/test_bitmask_preserves_vocab_mask.py",
+    ],
+    env = {
+        "MODULAR_PATH": ".",
+    },
+    exec_properties = {
+        "test.resources:gpu-memory": "9",
+    },
+    gpu_constraints = _SAMPLING_GPU_CONSTRAINTS,
+    tags = [
+        "gpu",
+        "no-sandbox",
+    ],
+    deps = _SAMPLING_BASE_DEPS + [
+        "//max/python/max/nn",
+        # conftest.py imports generate_local_model_path.
+        "//max/python/max/pipelines/lib",
+    ],
+)
+
 # Acceptance-sampler behaviour on a draft that proposes masked padded ids.
 modular_py_test(
     name = "test-padded-tail-acceptance",

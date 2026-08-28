@@ -105,8 +105,7 @@ interpretBinaryOp(Location loc, MLIRContext *ctx, ArrayRef<Attribute> operands,
   else
     result = result.zextOrTrunc(IndexType::kInternalStorageBitWidth);
 
-  state.mapResults(IntegerAttr::get(IndexType::get(ctx), result));
-  return success();
+  return state.mapResults(IntegerAttr::get(IndexType::get(ctx), result));
 }
 
 template <>
@@ -128,8 +127,7 @@ CmpOpInterpretInterface::interpret(mlir::index::CmpOp cmpOp,
                     compareIndices(lhs.getValue().truncSSat(targetBitwidth),
                                    rhs.getValue().truncSSat(targetBitwidth),
                                    cmpOp.getPred()));
-  state.mapResults(result);
-  return success();
+  return state.mapResults(result);
 }
 
 template <>

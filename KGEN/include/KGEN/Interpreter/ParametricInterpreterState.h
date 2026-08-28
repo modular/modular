@@ -43,8 +43,9 @@ public:
                               SmartVariant<Type, TypedAttr> result,
                               Type resultPtrType);
 
-  virtual void transferControlFlowToParent(Operation *target,
-                                           ArrayRef<Attribute> values) = 0;
+  virtual ErrorTreeOrSuccess
+  transferControlFlowToParent(Operation *target,
+                              ArrayRef<Attribute> values) = 0;
 
   virtual ErrorOr<TypedAttr> loadAttributeFromMemRef(MemRefAttr memref,
                                                      Type type) override;
@@ -146,50 +147,65 @@ public:
     }
 
     pushFrame(pc.isValid() ? &*pc : nullptr, body.getParentOp());
-    transferControlFlowTo(body, arguments);
-    return success();
+    return transferControlFlowTo(body, arguments);
   }
 
-  void returnFromFunction(ArrayRef<Attribute> returnValues) override {
+  ErrorTreeOrSuccess
+  returnFromFunction(ArrayRef<Attribute> returnValues) override {
     // Pop the current frame and transfer control flow back to the call
     // operation, using the operands of the return as the results of the call.
     Operation *call = popFrame();
-    transferControlFlowTo(call, returnValues);
+    return transferControlFlowTo(call, returnValues);
   }
 
-  void transferControlFlowTo(Operation *target,
-                             ArrayRef<Attribute> values) override {
+  ErrorTreeOrSuccess
+  transferControlFlowTo(Operation *target,
+                        ArrayRef<Attribute> values) override {
     if (target) {
       block = target->getBlock();
       pc = target->getIterator();
-      mapResults(values);
-    } else {
-      block = nullptr;
-      pc = Block::iterator();
-      exitValues = llvm::to_vector(values);
+      return mapResults(values);
     }
+    block = nullptr;
+    pc = Block::iterator();
+    exitValues = llvm::to_vector(values);
+    return success();
   }
 
-  void transferControlFlowToParent(Operation *target,
-                                   ArrayRef<Attribute> values) override {
+  ErrorTreeOrSuccess
+  transferControlFlowToParent(Operation *target,
+                              ArrayRef<Attribute> values) override {
     block = target->getBlock();
     pc = target->getIterator();
-    mapResults(values);
+    if (ErrorTreeOrSuccess err = mapResults(values); err.isError())
+      return err;
     pc--;
+    return success();
   }
 
-  void transferControlFlowTo(Region &target,
-                             ArrayRef<Attribute> arguments) override {
+  ErrorTreeOrSuccess
+  transferControlFlowTo(Region &target,
+                        ArrayRef<Attribute> arguments) override {
+    if (target.getNumArguments() != arguments.size())
+      return ErrorTree(target.getLoc(),
+                       "internal error: region argument count does not match "
+                       "the values passed to it");
+    // Argument types may still be symbolic in the un-substituted callee body,
+    // so only the argument count is checked.
     for (auto [arg, value] : llvm::zip(target.getArguments(), arguments))
       mapOrOverwrite(arg, value);
     block = &target.front();
     pc = Block::iterator();
+    return success();
   }
 
-  void mapResults(ArrayRef<Attribute> results) override {
+  ErrorTreeOrSuccess mapResults(ArrayRef<Attribute> results) override {
     assert(pc->getNumResults() == results.size());
+    // No type check here: this interpreter runs on un-substituted IR, where a
+    // result type can still be parametric while the value is already concrete.
     for (auto [result, value] : llvm::zip(pc->getResults(), results))
       mapOrOverwrite(result, value);
+    return success();
   }
 
 private:

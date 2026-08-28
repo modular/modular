@@ -1096,8 +1096,6 @@ def _load_max_pipeline(
         models=manifest,
         runtime=PipelineRuntimeConfig(),
     )
-    # Resolve the manifest (encodings + weight paths) before use.
-    config.models.resolve()
     arch = PIPELINE_REGISTRY.retrieve_architecture(
         config.models.main_architecture_name,
         task=PipelineTask.PIXEL_GENERATION,

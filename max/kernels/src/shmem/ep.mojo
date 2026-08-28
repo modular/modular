@@ -136,19 +136,21 @@ def pack_ptrs_array[
         my_rank: Rank index of the calling device within the communicator.
     """
     comptime assert _ptrs.flat_rank == 1, "Pointers must be a 1D tensor."
-    var ptr_arr = Array[
-        UnsafePointer[Scalar[ptr_type], MutUntrackedOrigin], n_gpus_per_node
-    ](uninitialized=True)
 
-    comptime for i in range(n_gpus_per_node):
+    @always_inline
+    def ptr_arr_init(
+        i: Int,
+    ) {imm} -> UnsafePointer[Scalar[ptr_type], MutUntrackedOrigin]:
         comptime if local_rank_only:
-            ptr_arr[i] = UnsafePointer[Scalar[ptr_type], MutUntrackedOrigin](
+            return UnsafePointer[Scalar[ptr_type], MutUntrackedOrigin](
                 unsafe_from_address=Int(_ptrs[my_rank])
             )
         else:
-            ptr_arr[i] = UnsafePointer[Scalar[ptr_type], MutUntrackedOrigin](
+            return UnsafePointer[Scalar[ptr_type], MutUntrackedOrigin](
                 unsafe_from_address=Int(_ptrs[i])
             )
+
+    var ptr_arr = Array[_, n_gpus_per_node](fill_with=ptr_arr_init)
 
     return ptr_arr^
 

@@ -21,6 +21,7 @@ enables coalesced shared-memory reads and direct MFMA consumption.
 """
 
 from std.math import align_up, ceildiv
+from std.sys import get_defined_bool, get_defined_int
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     block_idx,
@@ -1188,6 +1189,31 @@ def block_scaled_grouped_matmul_amd_preb[
             grid_m_cap,
         )
 
+    # Autotune entry point, mirroring the AMD dense-matmul hook in
+    # `linalg/matmul/gpu/__init__.mojo`. Bypasses every per-shape band below
+    # for whichever shape is being compiled -- shape-agnostic by
+    # construction, since it only reads `TUNE_*` defines and forwards them to
+    # `run_kernel`. Each knob defaults to that band table's own fallback
+    # value; `AUTOTUNING_MODE` defaults off, so this never fires in
+    # production.
+    comptime if get_defined_bool["AUTOTUNING_MODE", False]():
+        comptime _tune_bm = get_defined_int["TUNE_BM", 64]()
+        comptime _tune_bn = get_defined_int["TUNE_BN", 128]()
+        comptime _tune_wn = get_defined_int["TUNE_WN", 32]()
+        comptime _tune_bk = get_defined_int["TUNE_BK", 256]()
+        comptime _tune_persistent = get_defined_bool["TUNE_PERSISTENT", False]()
+        comptime _tune_waves_per_eu = get_defined_int["TUNE_WAVES_PER_EU", 0]()
+        comptime _tune_wg_per_cu = get_defined_int["TUNE_WG_PER_CU", 2]()
+        return run_kernel[
+            _tune_bm,
+            _tune_bn,
+            _tune_bk,
+            _tune_wn,
+            _tune_persistent,
+            wg_per_cu=_tune_wg_per_cu,
+            waves_per_eu=_tune_waves_per_eu,
+        ]()
+
     # Per-(shape, M-band) tuned picks: persistent decode -> direct prefill at
     # etm >= m_threshold; STREAMING on the BN128 mid/upper decode bands.
     comptime STREAM = CacheOperation.STREAMING
@@ -1285,11 +1311,9 @@ def block_scaled_grouped_matmul_amd_preb[
         else:
             return run_kernel[128, 128, 512, 64, True]()
 
-    # MXFP8. Tiles below were autotuned on MI355 over the M3 gate_up/down
-    # shapes; the FP4 bands above carry their own rationale inline.
-    # `use_decode_cap` is required on the decode bands, not preferred:
+    # MXFP8. `use_decode_cap` is required on the decode band, not preferred:
     # it makes grid.z a capture-time constant for device graph capture.
-    comptime if LB == 32 and N == 6144 and packed_K == 6144:  # M3 gate+up, K=6144
+    comptime if LB == 32 and N == 6144 and packed_K == 6144:  # gate+up, K=6144
         if decode_grid_m_cap > 0 and etm <= decode_grid_m_cap:
             return run_kernel[
                 16,
@@ -1318,11 +1342,9 @@ def block_scaled_grouped_matmul_amd_preb[
                 mfma_cluster=2,
             ]()
         else:
-            return run_kernel[
-                64, 128, 256, 32, False, cluster_drain_sched=True
-            ]()
+            return run_kernel[128, 128, 256, 64, False]()
 
-    comptime if LB == 32 and N == 6144 and packed_K == 3072:  # M3 down, K=3072
+    comptime if LB == 32 and N == 6144 and packed_K == 3072:  # down, K=3072
         if decode_grid_m_cap > 0 and etm <= decode_grid_m_cap:
             return run_kernel[
                 16,
@@ -1341,9 +1363,13 @@ def block_scaled_grouped_matmul_amd_preb[
         elif etm <= 512:
             return run_kernel[64, 128, 512, 32, False, STREAM]()
         elif etm <= 2048:
-            return run_kernel[64, 128, 512, 32, False]()
+            # Real ragged-M scenarios across this band (low/high-M x
+            # low/high-skew, plus a held-out check) show a consistent
+            # 6.9%-23.3% win over the prior tile here.
+            return run_kernel[64, 64, 256, 16, False]()
         else:
-            return run_kernel[128, 128, 256, 64, True, waves_per_eu=2]()
+            # Direct dispatch beats the prior persistent-grid tile here.
+            return run_kernel[128, 128, 256, 64, False, waves_per_eu=2]()
 
     comptime if LB == 24 and N == 6144 and K_LOGICAL == 6144:  # M3 gate+up
         if etm <= 256:

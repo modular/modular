@@ -38,8 +38,7 @@ ErrorTreeOrSuccess interpretOpWithFold(Location loc, StringRef opName,
                                        TargetAwareFoldFn fold) {
   if (auto result = fold(FoldValues(operands), state.getTarget())) {
     if (auto attr = result.getAttr()) {
-      state.mapResults(attr);
-      return success();
+      return state.mapResults(attr);
     }
   }
   return ErrorTree(loc, "failed to interpret " + opName);
@@ -51,8 +50,7 @@ ErrorTreeOrSuccess interpretOpWithFold(Location loc, StringRef opName,
                                        TargetAwareFoldFn fold) {
   if (auto result = fold(FoldValues(operands), state.getTarget())) {
     if (auto attr = result.getAttr()) {
-      state.mapResults(attr);
-      return success();
+      return state.mapResults(attr);
     }
   }
   return ErrorTree(loc, "failed to interpret " + opName);

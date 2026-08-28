@@ -927,6 +927,20 @@ def main() raises:
     det_ok &= _probe_grouped_determinism[2, 6144, 3072](
         "m3-down etm=1024", [512, 512], 1024, ctx
     )
+
+    # `estimated_total_m` only steers the dispatcher's band pick (it is not
+    # a kernel bound), so it can be set independently of the real token
+    # count above to reach the `etm > 2048` band -- the one real serving
+    # traffic hits -- without paying for a huge per-element reference matmul.
+    # Both shapes' `LB==32` dispatch has a single band above 2048 (no further
+    # split), so one value per shape covers it -- a second value in the same
+    # band would compile to the same tile and add no branch coverage.
+    det_ok &= _probe_grouped_determinism[2, 6144, 6144](
+        "m3-gate_up etm=2049", [256, 256], 2049, ctx
+    )
+    det_ok &= _probe_grouped_determinism[2, 6144, 3072](
+        "m3-down etm=2049", [512, 512], 2049, ctx
+    )
     if not det_ok:
         raise Error(
             "grouped MXFP8 dispatcher is run-to-run nondeterministic or"

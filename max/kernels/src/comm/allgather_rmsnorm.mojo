@@ -423,13 +423,15 @@ def _allgather_rmsnorm_impl[
     comptime last_dim_idx = in_layout.rank - 1
     var cols = Int(input_buffers[0].dim[last_dim_idx]())
 
-    var src_ptrs = Array[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin], ngpus](
-        uninitialized=True
+    comptime PtrType = ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]
+    var src_ptrs = Array[_, ngpus](
+        fill_with=lambda (i: Int) -> PtrType: input_buffers[i]
+        ._storage.as_imm()
+        .as_unsafe_any_origin()
     )
     var in_lengths = StaticTuple[Int, ngpus](0)
     var rows = 0
     comptime for i in range(ngpus):
-        src_ptrs[i] = input_buffers[i]._storage.as_imm().as_unsafe_any_origin()
         var len_i = input_buffers[i].num_elements() // cols
         in_lengths[i] = len_i
         rows += len_i

@@ -430,23 +430,6 @@ class StructuredOutputHelper:
 
         return (None, None)
 
-    @staticmethod
-    def any_constrained(
-        context_batch: Sequence[TextGenerationContextType],
-    ) -> bool:
-        """Whether any context in the batch is constrained.
-
-        ``needs_bitmask_constraints`` is a static per-process signal and says
-        nothing about whether a given batch actually has a constrained
-        request; callers use this to tell the two apart.
-        """
-        return any(
-            ctx.matcher is not None
-            or ctx.grammar is not None
-            or ctx.json_schema is not None
-            for ctx in context_batch
-        )
-
     @classmethod
     def from_tokenizer(
         cls,
@@ -669,7 +652,9 @@ class StructuredOutputHelper:
         Only fills the bitmask when the context has a matcher AND
         grammar_enforced is True. For conditional enforcement
         (tool_choice=auto), the bitmask is left unconstrained until
-        the tool call start token is detected.
+        the tool call start token is detected, and a matcher with no valid
+        continuation leaves it unconstrained too (see
+        :meth:`_fill_slot_unless_matcher_dead`).
 
         Args:
             context: Request context with a matcher.
@@ -677,9 +662,8 @@ class StructuredOutputHelper:
             index: Position in the bitmask for this request.
         """
         if context.matcher and context.grammar_enforced:
-            assert self.backend is not None
-            self.backend.fill_next_token_bitmask(
-                context.matcher, bitmask, index
+            self._fill_slot_unless_matcher_dead(
+                context, context.matcher, bitmask, index
             )
 
     def set_context_tool_region(
@@ -719,6 +703,52 @@ class StructuredOutputHelper:
             return list(delims.start_token_ids)
         return [token]
 
+    def _fill_slot_unless_matcher_dead(
+        self,
+        ctx: TextGenerationContextType,
+        matcher: GrammarMatcher,
+        bitmask: npt.NDArray[np.int32],
+        index: int,
+    ) -> None:
+        """Fill one bitmask slot, unless the matcher has no valid continuation.
+
+        A matcher that is stopped *without* accepting has erred: llguidance
+        leaves it stopped-and-not-accepting once a token is rejected, and
+        ``fill_next_token_bitmask`` then writes an all-zero row. That row offers
+        the sampler no candidate at all, and because the masked-out fill is
+        finite by design -- so a fully-masked row degrades to a uniform draw
+        rather than NaN -- the draw spreads across the whole vocabulary,
+        including any padded tail the model masked to ``-inf``. Leaving the slot
+        at its ``-1`` reset is strictly better: the request keeps generating
+        from the model's own distribution instead of a uniform one, and the
+        grammar was already unsatisfiable for this request.
+
+        A stopped matcher that *is* accepting is a completed grammar, not an
+        error. Its mask allows only EOS, which is correct and still applied.
+
+        Args:
+            ctx: The request context, for the report latch and diagnostics.
+            matcher: The matcher to read the mask from (a speculative copy on
+                the spec-decode path, the request's own matcher otherwise).
+            bitmask: The ``[rows, packed_vocab]`` bitmask to write into.
+            index: Row of ``bitmask`` to fill.
+        """
+        if matcher.is_stopped() and not matcher.is_accepting():
+            if not ctx.grammar_state.dead_matcher_reported:
+                ctx.grammar_state.dead_matcher_reported = True
+                logger.error(
+                    "Matcher for request %s is stopped without accepting, so "
+                    "it has no valid next token; leaving its bitmask "
+                    "unconstrained for the rest of the request. "
+                    "matcher_errors=%s matcher_warnings=%s",
+                    ctx.request_id,
+                    matcher.get_error(),
+                    matcher.get_grammar_warnings(),
+                )
+            return
+        assert self.backend is not None
+        self.backend.fill_next_token_bitmask(matcher, bitmask, index)
+
     def _speculatively_fill_bitmask_window(
         self,
         ctx: TextGenerationContextType,
@@ -745,7 +775,9 @@ class StructuredOutputHelper:
                 ``-1`` (unconstrained). Slot 0 is the position
                 immediately after the committed tokens; slot ``i+1`` is
                 the position after consuming ``drafts[i]``. Slots stay
-                ``-1`` wherever grammar enforcement is off.
+                ``-1`` wherever grammar enforcement is off, or where the
+                matcher has no valid continuation (see
+                :meth:`_fill_slot_unless_matcher_dead`).
         """
         assert ctx.matcher is not None
         fsm_snap = ctx.snapshot_grammar_state()
@@ -757,13 +789,10 @@ class StructuredOutputHelper:
         # issue by taking a deep copy instead.
         matcher_copy = ctx.matcher.deep_copy()
 
-        assert self.backend is not None
         # Slot 0: state immediately after committed tokens.
         if ctx.grammar_enforced:
-            self.backend.fill_next_token_bitmask(
-                matcher_copy,
-                bitmask_window[0, :].reshape(1, -1),
-                0,
+            self._fill_slot_unless_matcher_dead(
+                ctx, matcher_copy, bitmask_window[0, :].reshape(1, -1), 0
             )
 
         vocab_size = self.vocab_size or 0
@@ -791,7 +820,8 @@ class StructuredOutputHelper:
                     break
 
             if consumed or ctx.grammar_enforced:
-                self.backend.fill_next_token_bitmask(
+                self._fill_slot_unless_matcher_dead(
+                    ctx,
                     matcher_copy,
                     bitmask_window[i + 1, :].reshape(1, -1),
                     0,
@@ -1091,7 +1121,12 @@ class StructuredOutputHelper:
         packed_vocab_size = ceildiv(self.vocab_size, 32)
 
         # Check if any context has structured output
-        has_structured_output = self.any_constrained(context_batch)
+        has_structured_output = any(
+            ctx.json_schema is not None
+            or ctx.matcher is not None
+            or ctx.grammar is not None
+            for ctx in context_batch
+        )
 
         if not has_structured_output:
             # Fast path: all unconstrained, return all-valid packed bitmask

@@ -84,6 +84,16 @@ class DeepseekV3_2Config(DeepseekV3Config):
     # GLM-5.x sets indexer_rope_interleave=true.
     indexer_rope_interleave: bool = False
 
+    kv_b_proj_dtype: DType | None = None
+    """Storage dtype of ``kv_b_proj`` when it differs from the rest of the
+    attention block.
+
+    ``None`` keeps it quantized with the other three sparse-MLA projections,
+    which is what DeepSeek-V3.2 and GLM-5.2 ship. A checkpoint that leaves this
+    one projection unquantized sets it here: the absorb then reads the weight
+    directly instead of dequantizing, and declares no
+    ``kv_b_proj.weight_scale``."""
+
     @staticmethod
     def construct_kv_params(
         huggingface_config: AutoConfig,

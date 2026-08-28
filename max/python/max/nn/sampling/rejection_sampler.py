@@ -36,6 +36,45 @@ _GREEDY_TEMPERATURE_EPS = 1e-5
 # 2**64).
 _SEED_GOLDEN_GAMMA = 0x9E3779B97F4A7C15
 
+# SplitMix64's first mixing constant, reused here purely as a domain tag for
+# the residual-recovery stream so a recovery draw can never share a key with a
+# draft-proposal draw that happens to sit at the same index.
+_SEED_DOMAIN_RECOVERY = 0xBF58476D1CE4E5B9
+
+
+def _seed_offset(index: int, domain: int = 0) -> int:
+    """Returns the RNG-seed offset for ``index`` in the family tagged ``domain``.
+
+    A request's per-execute seed is its base seed plus its generated-token
+    count, so it advances by however many tokens the last iteration committed
+    -- under speculation anywhere from 1 to ``num_speculative_tokens + 1``,
+    rather than always 1. A family walking consecutive integers off that base
+    therefore lands the next iteration's index ``i`` on the key this iteration
+    used at ``i + c`` for a commit of ``c`` tokens, and a key reused against an
+    adjacent position's near-identical distribution reselects the same
+    quantile -- which, since an accepted draft token is a committed token,
+    reaches the output as repetition.
+
+    Spacing by the golden gamma makes such a collision require the token count
+    to jump by a whole multiple of the gamma; ``domain`` separates families
+    that would otherwise walk the same offsets off the same base. Any distinct
+    seed draws from the same distribution, so this changes correlation between
+    draws, never a marginal.
+    """
+    return (domain + index * _SEED_GOLDEN_GAMMA) % (1 << 64)
+
+
+def _draft_step_seed(seed: TensorValue, step: int) -> TensorValue:
+    """Returns the RNG seed a sampled draft proposal uses at ``step``."""
+    if step == 0:
+        return seed
+    return seed + _seed_offset(step)
+
+
+def _recovery_row_offset(row: int) -> int:
+    """Returns the seed offset the residual-recovery stream uses for ``row``."""
+    return _seed_offset(row, _SEED_DOMAIN_RECOVERY)
+
 
 def _multinomial(
     probs: TensorValue, residual_rand: TensorValue | None = None
@@ -83,6 +122,37 @@ def repeat_per_draft_step(
         ops.broadcast_to(ops.unsqueeze(value, axis=-1), [batch_dim, steps_dim]),
         [batch_dim * steps_dim],
     )
+
+
+def _recovery_seed_rows(
+    seed: TensorValue,
+    batch_size: Dim,
+    num_steps: Dim,
+    device: DeviceRef,
+) -> TensorValue:
+    """Returns the residual-recovery seeds, one per (request, draft position).
+
+    One noise row per request, shared by its draft positions, for ``num_steps``
+    times less RNG. Sharing is sound because at most one recovered token per
+    request (the first rejection) is ever committed.
+
+    The vectorized form of :func:`_recovery_row_offset`: plain ``seed + b``
+    would put row ``b`` on the same key as draft step ``b``, which walks the
+    same small integers off the same base, so a row's recovery draw and one of
+    its own proposal draws would share randomness -- the coupling
+    :func:`_argmax_draft_verdict` already spaces its rows to avoid.
+    """
+    row_offsets = ops.constant(
+        _SEED_DOMAIN_RECOVERY, DType.uint64, device
+    ) + ops.range(
+        0,
+        batch_size,
+        1,
+        out_dim=Dim("batch_size"),
+        device=device,
+        dtype=DType.uint64,
+    ) * ops.constant(_SEED_GOLDEN_GAMMA, DType.uint64, device)
+    return repeat_per_draft_step(seed + row_offsets, batch_size, num_steps)
 
 
 def _find_first_rejected(
@@ -654,23 +724,7 @@ def _sampled_draft_verdict(
     )
     residual = ops.relu(target_masked - draft_mass)
 
-    # One noise row per request, shared by its draft positions (the seed
-    # repeats across a request's rows), for num_steps times less RNG.
-    # Sharing is sound here because at most one recovered token per request
-    # (the first rejection) is ever committed.
-    seed_rows = repeat_per_draft_step(
-        seed
-        + ops.range(
-            0,
-            batch_size,
-            1,
-            out_dim=Dim("batch_size"),
-            device=device,
-            dtype=DType.uint64,
-        ),
-        batch_size,
-        num_steps,
-    )
+    seed_rows = _recovery_seed_rows(seed, batch_size, num_steps, device)
     recovered = ops.reshape(
         gumbel_argmax_from_probs(
             ops.reshape(residual, [flat_rows, vocab_size]),
@@ -1003,6 +1057,9 @@ def stochastic_acceptance_sampler(
                 Dim("packed_vocab_size"),
             ],
         )
+        # The fill is finite so a fully-masked row degrades to a uniform draw
+        # instead of NaN; ``apply_packed_bitmask`` carries the model's own -inf
+        # positions through it, so masking can only ever narrow the support.
         target_logits_3d = apply_packed_bitmask(
             target_logits_3d, bitmask_rebound, fill_val=_MASKED_LOGIT_VALUE
         )

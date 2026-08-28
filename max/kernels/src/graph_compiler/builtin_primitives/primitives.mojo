@@ -398,10 +398,9 @@ def create_tensor_spec_async[
     # Mojo impl is bitwise compatible with cpp variant, can construct TensorSpec in mojo
     # and pass it back to C++ -- However, this is an issue for the heap allocated dims.
     # For the benefit of simplicity, allocate the shapes and ptrs and free explicitly after
-    var storage = Array[Int, spec_rank](uninitialized=True)
-
-    comptime for i in range(spec_rank):
-        storage[i] = spec[i]
+    var storage = Array[_, spec_rank](
+        fill_with=lambda (i: Int) {imm spec} -> Int: spec[i]
+    )
 
     external_call["MGP_RT_CreateAsyncTensorShape", NoneType](
         storage.unsafe_ptr(), spec_rank, async_ptr

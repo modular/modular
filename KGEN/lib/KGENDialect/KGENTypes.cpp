@@ -200,11 +200,9 @@ LogicalResult ParamType::printValue(AsmPrinter &p, TypedAttr value) const {
 //===----------------------------------------------------------------------===//
 
 Type TypeValueType::get(TypedAttr typeValue) {
-  // If the type-value is already resolved to a type constant, and it is
-  // trivially a mlir Type, fold this to the indicated type.
+  // Simply forward the value domain type from a TypeParamAttr.
   if (auto constant = dyn_cast<TypeParamAttr>(typeValue))
-    if (constant.hasIdenticalRepresentation())
-      return constant.getMlirType();
+    return constant.getTypeValue();
 
   // Otherwise, form the TypeValueType like normal.
   return Base::get(typeValue.getContext(), typeValue);
@@ -322,11 +320,6 @@ ErrorOr<TypedAttr> TypeType::readFrom(int64_t addr,
 
 GeneratorType GeneratorType::getWithBody(Type newBody) {
   return GeneratorType::get(getInputParamTypes(), newBody, getParamListAttrs());
-}
-
-GeneratorType
-GeneratorType::getWithInputParamTypes(ArrayRef<Type> inputParamTypes) {
-  return GeneratorType::get(inputParamTypes, getBody(), getParamListAttrs());
 }
 
 StringAttr GeneratorType::getParamName(size_t idx) {
@@ -525,57 +518,30 @@ Type FuncGeneratorTypeBuilderType::get(MLIRContext *ctx, TypedAttr paramDecls,
   if (!cstParamDecls || !cstArgTypes || !cstMetadata || !cstImplicitOriginDecls)
     return Base::get(ctx, paramDecls, argTypes, resultType, metadata,
                      implicitOriginDecls);
-  assert(llvm::all_of(cstParamDecls.getValues(),
-                      llvm::IsaPred<FnGenBuilderParamDeclAttr>) &&
+  assert(llvm::all_of(cstParamDecls.getValues(), llvm::IsaPred<QuoteAttr>) &&
          "malformed fn gen builder param decls");
 
-  // We are going to introduce a new scope, adjust the depth of the existing
-  // index ref by one. Don't adjust implicit origin reference depth (those are
-  // not remapped to a named reference for the builder, but should we?).
-  IndexDepthAdjuster adjuster(1, /*onlyAdjustIndexRef=*/true);
-  cstParamDecls = adjuster.replace(cstParamDecls);
-  cstArgTypes = adjuster.replace(cstArgTypes);
-  cstMetadata = adjuster.replace(cstMetadata);
-  resultType = adjuster.replace(resultType);
+  // Unquote before we assemble a FnTypeGeneratorType.
+  auto unquote = [](TypedAttr value) -> TypedAttr {
+    return cast<QuoteAttr>(value).getQuotedParam();
+  };
 
-  SmallVector<Type> inputParamTypes;
-  FnGenIndexRefRemapper remapper;
-  for (TypedAttr value : cstParamDecls.getValues()) {
-    auto remapped = cast<FnGenBuilderParamDeclAttr>(remapper.replace(value));
-    remapper.appendParamDecl(remapped);
-    // record the declared parameter type.
-    inputParamTypes.push_back(remapped.getDeclaredType());
-  }
+  SmallVector<Type> inputParamTypes = llvm::map_to_vector(
+      cstParamDecls.getValues(),
+      [&](TypedAttr attr) -> Type { return ParamType::get(unquote(attr)); });
 
-  cstParamDecls = remapper.replace(cstParamDecls);
-  cstArgTypes = remapper.replace(cstArgTypes);
-  resultType = remapper.replace(resultType);
-  if (!cstImplicitOriginDecls.getValues().empty()) {
-    assert(cstMetadata.getMetadata() &&
-           "origin metadata must be present for implicit origin decls");
-
-    SmallVector<StringAttr> names = llvm::map_to_vector(
-        cstImplicitOriginDecls.getValues(),
-        [](TypedAttr attr) -> StringAttr { return cast<StringAttr>(attr); });
-    // map implicit origin back to index refs.
-    cstArgTypes = cast<ParamListAttr>(
-        cstMetadata.getMetadata().remapNameToImplicitOriginIndexRef(
-            names, cstArgTypes));
-    resultType = cstMetadata.getMetadata().remapNameToImplicitOriginIndexRef(
-        names, resultType);
-  }
   SmallVector<Type> inputArgTypes =
-      llvm::map_to_vector(cstArgTypes.getValues(), [](TypedAttr attr) -> Type {
-        return ParamType::get(attr);
+      llvm::map_to_vector(cstArgTypes.getValues(), [&](TypedAttr attr) -> Type {
+        return ParamType::get(unquote(attr));
       });
 
   // Fold to the generator type this builder describes.
   return KGEN::FuncTypeGeneratorType::get(
       inputParamTypes,
-      FuncType::get(
-          FunctionType::get(ctx, inputArgTypes, ParamType::get(resultType)),
-          cstMetadata.getArgConventions(), cstMetadata.getFnEffects(),
-          cstMetadata.getMetadata()),
+      FuncType::get(FunctionType::get(ctx, inputArgTypes,
+                                      ParamType::get(unquote(resultType))),
+                    cstMetadata.getArgConventions(), cstMetadata.getFnEffects(),
+                    cstMetadata.getMetadata()),
       // When it has a metadata, we need a empty pog list (instead of nullptr)
       // to round trip, since the existence of the pog list might redirect the
       // mlir parser/printer to a lit-specific format...

@@ -104,68 +104,6 @@ def KGEN_ParamDeclArrayAttr : ArrayOfAttr<KGENDialect, "ParamDeclArray",
 }
 
 //===----------------------------------------------------------------------===//
-// FnGenBuilder-related
-//===----------------------------------------------------------------------===//
-
-/// Declaration of a named parameter of a function generator type builder.
-def KGEN_FnGenBuilderParamDeclAttr
-    : KGEN_ExprAttr<"FnGenBuilderParamDecl", "fn_gen_builder.param.decl"> {
-  let summary = "Parameter declaration of a function generator type builder";
-  let description = [{
-    This is the parameter-expression dual of `#kgen.param.decl`: it is a
-    placeholder for a parameter of that is going to be built by a function
-    generator type builder.
-
-    It declare a parameter to be built with `declaredType`, the attribute itself
-    always has the type `!kgen.type`.
-  }];
-  let parameters = (ins "StringAttr":$name, "Type":$declaredType);
-  let assemblyFormat = "`<` $name `,` $declaredType `>`";
-
-  let builders = [
-    AttrBuilderWithInferredContext<(ins "StringAttr":$name,
-                                        "Type":$declaredType), [{
-      return $_get(name.getContext(), name, declaredType);
-    }]>,
-    AttrBuilderWithInferredContext<(ins "StringRef":$name,
-                                        "Type":$declaredType), [{
-      return get(StringAttr::get(declaredType.getContext(), name), declaredType);
-    }]>
-  ];
-
-  let extraClassDeclaration = [{
-    // This is the type for the attr itself (not the type of the parameter it
-    // declares). Use kgen.type here for simplicity.
-    Type getType() const { return KGEN::TypeType::get(getContext()); }
-  }];
-}
-
-def KGEN_FnGenBuilderParamDeclRefAttr
-    : KGEN_ExprAttr<"FnGenBuilderParamDeclRef", "fn_gen_builder.param.decl.ref"> {
-  let summary = "A reference to a function generator type builder parameter.";
-  let description = [{
-    A reference to a parameter declared by a function generator type builder in
-    the `fn_gen_builder.param.decl`.
-  }];
-  let parameters = (ins "StringAttr":$name, "Type":$type);
-  let assemblyFormat = "`<` $name `,` $type `>`";
-
-  let builders = [
-    AttrBuilderWithInferredContext<(ins "StringAttr":$name,
-                                        "Type":$type), [{
-      return $_get(name.getContext(), name, type);
-    }]>,
-    AttrBuilderWithInferredContext<(ins "StringRef":$name,
-                                        "Type":$type), [{
-      return get(StringAttr::get(type.getContext(), name), type);
-    }]>,
-    AttrBuilderWithInferredContext<(ins "FnGenBuilderParamDeclAttr":$decl), [{
-      return get(decl.getName(), decl.getDeclaredType());
-    }]>
-  ];
-}
-
-//===----------------------------------------------------------------------===//
 // ParamListAttr
 //===----------------------------------------------------------------------===//
 
@@ -543,6 +481,51 @@ def KGEN_ParamIndexRefAttr : KGEN_ExprAttr<"ParamIndexRef", "param.index.ref",
 }
 
 //===----------------------------------------------------------------------===//
+// QuoteAttr
+//===----------------------------------------------------------------------===//
+
+def KGEN_QuoteAttr : KGEN_ExprAttr<"Quote", "quote",
+    [DeclareAttrInterfaceMethods<ParameterScopeAttrInterface>]> {
+  let summary = "Quote an parameter expression";
+  let description = [{
+    This attribute "quote" a parameter expression, meaning that it freezes any
+    param.index.ref within the expression it quoted. This allows us to pull out
+    the parameter expression from its enclosing generator scope without creating
+    invalid binding. The major use case for this is for FnTypeGeneratorTypeBuilder,
+    which accept lists of "quoted" type expression, and assemble them into an
+    actual FnTypeGeneratorType by later "unquoting" them.
+
+    For example:
+    ```mlir
+    !fn.gen.builder<[#quote<AnyType, #type[*(0, 0)], [], NoneType>] >
+    // will be folded into
+    !kgen.generator<[AnyType, #type[*(0, 0)]() -> NoneType>
+    ```
+
+    Note that `#type[*(0, 0)]` would otherwise hold an invalid reference to (0, 0)
+    without a quote, since it is not within a parameter scope.
+  }];
+
+  let parameters = (ins "TypedAttr":$quotedParam);
+
+  let assemblyFormat = "`<` custom<TypeParamValue>($quotedParam) `>`";
+
+  let builders = [
+    AttrBuilderWithInferredContext<(ins "TypedAttr":$quotedParam), [{
+      return $_get(quotedParam.getContext(), quotedParam);
+    }]>,
+  ];
+
+  let extraClassDeclaration = [{
+    // TODO: do we need a !quote<type> here?
+    Type getType() const { return getQuotedParam().getType(); }
+
+    // A quote is a "deferred scope"
+    ArrayRef<Type> getInputParamTypes() { return {};}
+  }];
+}
+
+//===----------------------------------------------------------------------===//
 // TypeParamAttr
 //===----------------------------------------------------------------------===//
 
@@ -888,7 +871,6 @@ def KGEN_TraitSymbolAttr : KGENAttr<"TraitSymbol", "trait_symbol"> {
   let parameters = (ins
     "SymbolRefAttr":$symbol,
     OptionalArrayRefParameter<"TypedAttr">:$paramValues
-
   );
 
   let assemblyFormat = "`<` $symbol `` custom<ParameterValues>($paramValues) `` `>`";

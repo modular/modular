@@ -462,6 +462,31 @@ struct List[T: AnyType, /](
         self._unchecked_grow(length, fill)
 
     @always_inline
+    def __init__(out self, *, length: Int, fill_with: Some[def(Int) -> Self.T]):
+        """Constructs a list by calling `fill_with(i)` for each index `i`.
+
+        Args:
+            length: The requested length of the list.
+            fill_with: A function called with each index in `[0, length)`,
+                whose result is written to that position.
+
+        Examples:
+
+        ```mojo
+        var squares = List(length=5, fill_with=lambda (i: Int) -> Int: i * i)
+        # [0, 1, 4, 9, 16]
+        ```
+        """
+        self = Self(capacity=length)
+        self._annotate_increase(length)
+        self._len = length
+
+        for i in range(length):
+            self._data.unsafe_offset(i).unsafe_write(
+                init_with=lambda () {imm} -> Self.T: fill_with(i)
+            )
+
+    @always_inline
     def __init__(
         out self, var *values: Self.T, __list_literal__: NoneType
     ) where conforms_to(Self.T, Movable):
@@ -869,6 +894,28 @@ struct List[T: AnyType, /](
         self._capacity = new_capacity
         self._annotate_new()
 
+    @always_inline
+    def _grow_amortized(
+        mut self, min_capacity: Int
+    ) where conforms_to(Self.T, Movable):
+        """Grows the storage to hold at least `min_capacity` elements, at least
+        doubling the capacity.
+
+        Args:
+            min_capacity: The capacity the caller needs.
+
+        Notes:
+            Unlike `reserve`, which honors the requested capacity exactly, this
+            never grows by less than a factor of two, so repeated
+            single-element or small-batch growth stays amortized O(1) per
+            element instead of O(n). Growth routines should reach for this
+            rather than `reserve`. `append` is the exception: it open-codes the
+            equivalent doubling to keep its hot path as small as possible.
+        """
+        if self._capacity >= min_capacity:
+            return
+        self._realloc(max(self._capacity * 2, min_capacity))
+
     # FIXME: This annotation is needed to support List[Span[x, o]] types with
     # mutable origins.
     @__unsafe_nested_origins_read_only
@@ -893,7 +940,10 @@ struct List[T: AnyType, /](
         if self._len >= self._capacity:
             self._realloc(self._capacity * 2 | Int(self._capacity == 0))
         self._annotate_increase()
-        self._unsafe_next_uninit_ptr().unsafe_write(value^)
+        # Not `_unsafe_next_uninit_ptr`: its capacity assert survives into the
+        # hot path, because the `@no_inline` `_realloc` hides the invariant
+        # just established above from the optimizer.
+        self._data.unsafe_offset(self._len).unsafe_write(value^)
         self._len += 1
 
     @always_inline
@@ -918,20 +968,18 @@ struct List[T: AnyType, /](
         # Valid range is `[0, len(self)]` (`len(self)` appends).
         check_bounds(i, len(self) + 1)
 
-        var earlier_idx = len(self)
-        var later_idx = len(self) - 1
-        self.append(value^)
+        var old_len = self._len
+        self._grow_amortized(old_len + 1)
+        self._annotate_increase()
 
-        for _ in range(i, len(self) - 1):
-            var earlier_ptr = self._data.unsafe_offset(earlier_idx)
-            var later_ptr = self._data.unsafe_offset(later_idx)
-
-            var tmp = earlier_ptr.unsafe_take_pointee()
-            earlier_ptr.unsafe_write_move_from(later_ptr)
-            later_ptr.unsafe_write(tmp^)
-
-            earlier_idx -= 1
-            later_idx -= 1
+        var data = self._data
+        unsafe_uninit_move_n[overlapping=True](
+            dest=data.unsafe_offset(i + 1),
+            src=data.unsafe_offset(i),
+            count=old_len - i,
+        )
+        data.unsafe_offset(i).unsafe_write(value^)
+        self._len = old_len + 1
 
     @stable(since="1.0")
     def extend(mut self, var other: Self) where conforms_to(Self.T, Movable):
@@ -954,7 +1002,7 @@ struct List[T: AnyType, /](
 
         var other_len = len(other)
         var final_size = len(self) + other_len
-        self.reserve(final_size)
+        self._grow_amortized(final_size)
 
         var dest_ptr = self._data.unsafe_offset(self._len)
         var src_ptr = other.unsafe_ptr()
@@ -991,9 +1039,7 @@ struct List[T: AnyType, /](
         """
         var elements_len = len(elements)
         var new_num_elts = self._len + elements_len
-        if new_num_elts > self._capacity:
-            # Make sure our capacity at least doubles to avoid O(n^2) behavior.
-            self._realloc(max(self._capacity * 2, new_num_elts))
+        self._grow_amortized(new_num_elts)
 
         self._annotate_increase(elements_len)
         var i = self._len
@@ -1032,7 +1078,7 @@ struct List[T: AnyType, /](
                        #  SIMD[DType.int64, 1](3), SIMD[DType.int64, 1](4)]
         ```
         """
-        self.reserve(self._len + value.length)
+        self._grow_amortized(self._len + value.length)
         self._annotate_increase(value.length)
         self._unsafe_next_uninit_ptr().unsafe_store(value)
         self._len += value.length
@@ -1067,7 +1113,7 @@ struct List[T: AnyType, /](
         ```
         """
         assert count <= value.length, "count must be <= value.length"
-        self.reserve(self._len + count)
+        self._grow_amortized(self._len + count)
         self._annotate_increase(count)
         var v_ptr = Pointer(to=value).unsafe_bitcast[Scalar[dtype]]()
         unsafe_memcpy(
@@ -1170,7 +1216,7 @@ struct List[T: AnyType, /](
     ) where conforms_to(Self.T, Copyable):
         assert new_length >= self._len
 
-        self.reserve(new_length)
+        self._grow_amortized(new_length)
         self._annotate_increase(new_length - self._len)
         for i in range(self._len, new_length):
             self._data.unsafe_offset(i).unsafe_write(copy=fill)
@@ -1202,7 +1248,7 @@ struct List[T: AnyType, /](
         if unsafe_uninit_length <= self._len:
             self.shrink(unsafe_uninit_length)
         else:
-            self.reserve(unsafe_uninit_length)
+            self._grow_amortized(unsafe_uninit_length)
             self._annotate_increase(unsafe_uninit_length - self._len)
             self._len = unsafe_uninit_length
 
@@ -1432,11 +1478,12 @@ struct List[T: AnyType, /](
         if not len(r):
             return Self()
 
-        var res = Self(capacity=len(r))
-        for i in r:
-            res.append(self[i].copy())
-
-        return res^
+        return Self(
+            length=len(r),
+            fill_with=lambda (idx: Int) -> Self.T: self[
+                start + idx * step
+            ].copy(),
+        )
 
     @__unsafe_nested_origins_read_only
     @stable(since="1.0")

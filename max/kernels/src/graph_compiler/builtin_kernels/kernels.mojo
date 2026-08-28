@@ -88,6 +88,7 @@ from nn.moe import (
     eplb_remap,
     moe_create_indices,
     router_group_limited,
+    sink_gate_router,
     single_group_router,
     single_group_router_eplb,
 )
@@ -1261,7 +1262,7 @@ struct IRFFT:
 # Fused QKV matmul
 #
 # Expected kernel name format:
-# mo.fused_qkv_matmul.<padded/ragged>.<continuous_batching/paged>
+# mo.fused_qkv_matmul.<padded/ragged>.paged
 # ===-----------------------------------------------------------------------===#
 
 
@@ -1833,7 +1834,7 @@ struct Struct_rope_ragged_paged_with_position_id[interleaved: Bool]:
 # MHA
 #
 # Expected kernel name format:
-# mo.mha.<padded/ragged>.<continuous_batching/paged>
+# mo.mha.<padded/ragged>.paged
 # ===-----------------------------------------------------------------------===#
 
 
@@ -2011,7 +2012,7 @@ def _execute_mha_ragged_paged_rel_logits[
 # Cross attention
 #
 # Expected kernel name format:
-# mo.cross_attention.<padded/ragged>.<continuous_batching/paged>
+# mo.cross_attention.<padded/ragged>.paged
 # ===-----------------------------------------------------------------------===#
 
 
@@ -2251,6 +2252,49 @@ struct Struct_moe_single_group_router:
         )
 
 
+@extensibility.register("mo.moe.sink.gate.router")
+struct Struct_moe_sink_gate_router:
+    """Registers the `mo.moe.sink.gate.router` graph op with the graph compiler.
+    """
+
+    @always_inline
+    @staticmethod
+    @__parameter
+    def execute[
+        scores_type: DType,
+        bias_type: DType,
+        //,
+        n_routed_experts: Int,
+        n_experts_per_tok: Int,
+        n_shared_experts: Int,
+        target: StaticString,
+    ](
+        expert_indices: OutputTensor[dtype=.int32, rank=2, ...],
+        expert_weights: OutputTensor[dtype=scores_type, rank=2, ...],
+        sink_weights: OutputTensor[dtype=scores_type, rank=2, ...],
+        logits: InputTensor[dtype=scores_type, rank=2, ...],
+        expert_bias: InputTensor[dtype=bias_type, rank=1, ...],
+        global_scale: InputTensor[dtype=scores_type, rank=1, ...],
+        route_scale: Float32,
+        context: DeviceContext,
+    ) raises:
+        sink_gate_router[
+            n_routed_experts,
+            n_experts_per_tok,
+            n_shared_experts,
+            target=target,
+        ](
+            expert_indices.to_tile_tensor[.int64](),
+            expert_weights.to_tile_tensor[.int64](),
+            sink_weights.to_tile_tensor[.int64](),
+            logits.to_tile_tensor[.int64]().as_immut(),
+            expert_bias.to_tile_tensor[.int64]().as_immut(),
+            global_scale.to_tile_tensor[.int64]().as_immut(),
+            route_scale,
+            context,
+        )
+
+
 @extensibility.register("mo.moe.eplb.remap")
 struct Struct_moe_eplb_remap:
     """Registers the `mo.moe.eplb.remap` graph op with the graph compiler."""
@@ -2292,7 +2336,7 @@ struct Struct_moe_eplb_remap:
 # KV Cache Store
 #
 # Expected kernel name format:
-# mo.kv_cache.store.<continuous_batching/paged>.<ragged/padded>
+# mo.kv_cache.store.paged.<ragged/padded>
 # ===-----------------------------------------------------------------------===#
 
 
@@ -2426,7 +2470,7 @@ def _layout_transform_conv_filter_from_fcrs[
 # RMSNorm
 #
 # Expected kernel name format:
-# mo.rms_norm_kv_cache.<padded/ragged>.<continuous_batching/paged>
+# mo.rms_norm_kv_cache.<padded/ragged>.paged
 # ===-----------------------------------------------------------------------===#
 
 
@@ -2494,7 +2538,7 @@ def print_kv_cache_paged_generic_kernel_api[
 # Matmul KV cache
 #
 # Expected kernel name format:
-# mo.kv_matmul.ragged.<continuous_batching/paged>
+# mo.kv_matmul.ragged.paged
 # ===-----------------------------------------------------------------------===#
 
 
@@ -2502,7 +2546,7 @@ def print_kv_cache_paged_generic_kernel_api[
 # Matmul K cache
 #
 # Expected kernel name format:
-# mo.k_matmul.ragged.<continuous_batching/paged>
+# mo.k_matmul.ragged.paged
 # ===-----------------------------------------------------------------------===#
 
 

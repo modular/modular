@@ -47,8 +47,7 @@ struct IndexOpInterpretInterface
                 llvm::map_to_vector(foldResults, [](OpFoldResult foldResult) {
                   return cast<Attribute>(foldResult);
                 });
-            state.mapResults(results);
-            return success();
+            return state.mapResults(results);
           }
           Concrete concrete = cast<Concrete>(op);
           return Interface::interpret(concrete, operands, state);
@@ -65,8 +64,7 @@ struct IndexOpInterpretInterface
                 llvm::map_to_vector(foldResults, [](OpFoldResult foldResult) {
                   return cast<Attribute>(foldResult);
                 });
-            state.mapResults(results);
-            return success();
+            return state.mapResults(results);
           }
           Concrete concrete = cast<Concrete>(op);
           return Interface::parametric_interpret(concrete, operands, state);

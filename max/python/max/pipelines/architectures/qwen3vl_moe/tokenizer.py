@@ -30,6 +30,7 @@ from max.pipelines.architectures.qwen2_5vl.nn.data_processing import (
 )
 from max.pipelines.architectures.qwen2_5vl.nn.qwen_vl_utils import smart_resize
 from max.pipelines.architectures.qwen3vl_moe.nn.data_processing import (
+    QWEN3VL_MAX_PIXELS,
     get_bilinear_interpolation_weights_and_indices,
     get_rope_index,
     get_seqlens,
@@ -118,7 +119,7 @@ def qwen3vl_image_preprocessing(
     temporal_patch_size: int = 2,
     merge_size: int = 2,
     min_pixels: int = 65536,
-    max_pixels: int = 16777216,
+    max_pixels: int = QWEN3VL_MAX_PIXELS,
 ) -> tuple[npt.NDArray[np.float32], tuple[int, int, int]]:
     """Preprocess image for Qwen3VL vision model.
 
@@ -132,7 +133,7 @@ def qwen3vl_image_preprocessing(
         temporal_patch_size: Temporal patch size (default 2)
         merge_size: Spatial merge size (default 2)
         min_pixels: Minimum pixels for smart_resize (default 65536)
-        max_pixels: Maximum pixels for smart_resize (default 16777216)
+        max_pixels: Maximum pixels for smart_resize
 
     Returns:
         Tuple of (pixel_values, image_grid_thw) where:
@@ -231,7 +232,7 @@ class Qwen3VLImageProcessor:
         temporal_patch_size: int = 2,
         merge_size: int = 2,
         min_pixels: int = 65536,
-        max_pixels: int = 16777216,
+        max_pixels: int = QWEN3VL_MAX_PIXELS,
     ):
         """Initialize the custom image processor.
 
@@ -240,7 +241,7 @@ class Qwen3VLImageProcessor:
             temporal_patch_size: Temporal patch size
             merge_size: Spatial merge size (used for calculating image tokens)
             min_pixels: Minimum pixels for smart_resize (default 65536)
-            max_pixels: Maximum pixels for smart_resize (default 16777216)
+            max_pixels: Maximum pixels for smart_resize
         """
         self.patch_size = patch_size
         self.temporal_patch_size = temporal_patch_size
@@ -373,7 +374,7 @@ class Qwen3VLTokenizer(TextAndVisionTokenizer):
             temporal_patch_size=self.temporal_patch_size,
             merge_size=self.spatial_merge_size,
             min_pixels=65536,  # Qwen3VL default shortest_edge
-            max_pixels=16777216,  # Qwen3VL default longest_edge
+            max_pixels=QWEN3VL_MAX_PIXELS,
         )
 
         self._preprocess_cache: VisionPreprocessCache[_PreprocessedImage] = (
@@ -395,6 +396,9 @@ class Qwen3VLTokenizer(TextAndVisionTokenizer):
 
         self.enable_prefix_caching = (
             pipeline_config.model.kv_cache.enable_prefix_caching
+        )
+        self.enable_vision_caching = (
+            pipeline_config.runtime.vision_cache_utilization != 0
         )
 
         if image_token_id := getattr(
@@ -608,7 +612,9 @@ class Qwen3VLTokenizer(TextAndVisionTokenizer):
                     hash_image(raw_bytes, self.img_processor.max_pixels)
                     for raw_bytes in request.images
                 ]
-                if self.enable_prefix_caching or self._preprocess_cache.enabled
+                if self.enable_prefix_caching
+                or self.enable_vision_caching
+                or self._preprocess_cache.enabled
                 else [None] * len(image_inputs)
             )
             per_image = [
@@ -787,7 +793,7 @@ class Qwen3VLTokenizer(TextAndVisionTokenizer):
                     end_idx=end_idx,
                     pixel_values=pixel_values,
                     image_hash=image_hash
-                    if self.enable_prefix_caching
+                    if self.enable_prefix_caching or self.enable_vision_caching
                     else None,
                 )
                 for (start_idx, end_idx), pixel_values, image_hash in zip(

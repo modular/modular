@@ -649,12 +649,13 @@ def concat[
         if output.num_elements() == 0:
             return
         comptime if is_cpu[target]():
-            var inputVec = List[
-                TileTensor[dtype, InputLayoutType, input_origin]
-            ](capacity=len(inputs))
-
-            for i in range(inputs.size):
-                inputVec.append(inputs[i])
+            comptime InputTileType = TileTensor[
+                dtype, InputLayoutType, input_origin
+            ]
+            var inputVec = List(
+                length=inputs.size,
+                fill_with=lambda (i: Int) -> InputTileType: inputs[i],
+            )
 
             # Dynamic input length is required by `mo.concat_from_list`
             # TODO: Should we just provide a separate implementation for

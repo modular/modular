@@ -15,6 +15,7 @@ from std.sys import simd_width_of, size_of
 from std.os import abort
 
 from std.memory import (
+    Allocation,
     unsafe_memcmp,
     unsafe_memcpy,
     unsafe_memmove,
@@ -1008,6 +1009,146 @@ def test_uninit_copy_n_nontrivial() raises:
     assert_equal(src_copy_count0, 0)
     assert_equal(src_copy_count1, 0)
     assert_equal(src_copy_count2, 0)
+
+
+# An overlapping call has to alias `dest` and `src`, which the exclusivity
+# checker allows only for an untracked origin.
+def _untracked[
+    T: AnyType
+](mut allocation: Allocation[T]) -> Pointer[T, MutUntrackedOrigin]:
+    return allocation.unsafe_ptr().unsafe_origin_cast[MutUntrackedOrigin]()
+
+
+def test_uninit_move_n_overlapping_trivial() raises:
+    var allocation = alloc[Int]({count = 4})
+    var ptr = _untracked(allocation)
+
+    ptr.unsafe_offset(0).unsafe_write(1)
+    ptr.unsafe_offset(1).unsafe_write(2)
+    ptr.unsafe_offset(2).unsafe_write(3)
+    unsafe_uninit_move_n[overlapping=True](
+        dest=ptr.unsafe_offset(1), src=ptr.unsafe_offset(0), count=3
+    )
+    var right = [
+        ptr[unsafe_offset=1],
+        ptr[unsafe_offset=2],
+        ptr[unsafe_offset=3],
+    ]
+
+    unsafe_uninit_move_n[overlapping=True](
+        dest=ptr.unsafe_offset(0), src=ptr.unsafe_offset(1), count=3
+    )
+    var left = [
+        ptr[unsafe_offset=0],
+        ptr[unsafe_offset=1],
+        ptr[unsafe_offset=2],
+    ]
+
+    unsafe_uninit_move_n[overlapping=True](
+        dest=ptr.unsafe_offset(1), src=ptr.unsafe_offset(0), count=0
+    )
+    var empty = [ptr[unsafe_offset=0], ptr[unsafe_offset=1]]
+
+    dealloc(allocation^)
+
+    assert_equal(right, [1, 2, 3])
+    assert_equal(left, [1, 2, 3])
+    assert_equal(empty, [1, 2])
+
+
+def test_uninit_move_n_overlapping_shift_right_nontrivial() raises:
+    # Walking forward would move slot 0 onto slot 1 and then read slot 1
+    # again, leaving "foo" in every slot.
+    var allocation = alloc[MoveCounter[String]]({count = 4})
+    var ptr = _untracked(allocation)
+    ptr.unsafe_offset(0).unsafe_write(MoveCounter("foo"))
+    ptr.unsafe_offset(1).unsafe_write(MoveCounter("bar"))
+    ptr.unsafe_offset(2).unsafe_write(MoveCounter("baz"))
+
+    unsafe_uninit_move_n[overlapping=True](
+        dest=ptr.unsafe_offset(1), src=ptr.unsafe_offset(0), count=3
+    )
+
+    var value1 = ptr[unsafe_offset=1].value
+    var value2 = ptr[unsafe_offset=2].value
+    var value3 = ptr[unsafe_offset=3].value
+    var move_count1 = ptr[unsafe_offset=1].move_count
+
+    # Slot 0 was moved out of, so the live range is now [1, 4).
+    unsafe_destroy_n(ptr.unsafe_offset(1), count=3)
+    dealloc(allocation^)
+
+    assert_equal(value1, "foo")
+    assert_equal(value2, "bar")
+    assert_equal(value3, "baz")
+
+    # One move to initialize the slot, one for the shift.
+    assert_equal(move_count1, 2)
+
+
+def test_uninit_move_n_overlapping_shift_left_nontrivial() raises:
+    var allocation = alloc[MoveCounter[String]]({count = 4})
+    var ptr = _untracked(allocation)
+    ptr.unsafe_offset(1).unsafe_write(MoveCounter("foo"))
+    ptr.unsafe_offset(2).unsafe_write(MoveCounter("bar"))
+    ptr.unsafe_offset(3).unsafe_write(MoveCounter("baz"))
+
+    unsafe_uninit_move_n[overlapping=True](
+        dest=ptr.unsafe_offset(0), src=ptr.unsafe_offset(1), count=3
+    )
+
+    var value0 = ptr[unsafe_offset=0].value
+    var value1 = ptr[unsafe_offset=1].value
+    var value2 = ptr[unsafe_offset=2].value
+    var move_count0 = ptr[unsafe_offset=0].move_count
+
+    unsafe_destroy_n(ptr, count=3)
+    dealloc(allocation^)
+
+    assert_equal(value0, "foo")
+    assert_equal(value1, "bar")
+    assert_equal(value2, "baz")
+    assert_equal(move_count0, 2)
+
+
+def test_uninit_copy_n_overlapping_nontrivial() raises:
+    comptime Counter = CopyCounter[Int]
+    var allocation = alloc[Counter]({count = 4})
+    var ptr = _untracked(allocation)
+
+    ptr.unsafe_offset(0).unsafe_write(Counter(1))
+    ptr.unsafe_offset(1).unsafe_write(Counter(2))
+    ptr.unsafe_offset(2).unsafe_write(Counter(3))
+    unsafe_uninit_copy_n[overlapping=True](
+        dest=ptr.unsafe_offset(1), src=ptr.unsafe_offset(0), count=3
+    )
+    var right = [
+        ptr[unsafe_offset=1].value,
+        ptr[unsafe_offset=2].value,
+        ptr[unsafe_offset=3].value,
+    ]
+    var right_copy_count = ptr[unsafe_offset=1].copy_count
+
+    ptr.unsafe_offset(1).unsafe_write(Counter(1))
+    ptr.unsafe_offset(2).unsafe_write(Counter(2))
+    ptr.unsafe_offset(3).unsafe_write(Counter(3))
+    unsafe_uninit_copy_n[overlapping=True](
+        dest=ptr.unsafe_offset(0), src=ptr.unsafe_offset(1), count=3
+    )
+    var left = [
+        ptr[unsafe_offset=0].value,
+        ptr[unsafe_offset=1].value,
+        ptr[unsafe_offset=2].value,
+    ]
+    var left_copy_count = ptr[unsafe_offset=0].copy_count
+
+    unsafe_destroy_n(ptr, count=4)
+    dealloc(allocation^)
+
+    assert_equal(right, [1, 2, 3])
+    assert_equal(right_copy_count, 1)
+    assert_equal(left, [1, 2, 3])
+    assert_equal(left_copy_count, 1)
 
 
 def test_destroy_n_trivial() raises:

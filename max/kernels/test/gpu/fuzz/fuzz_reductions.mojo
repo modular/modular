@@ -514,10 +514,10 @@ def _run_shaped[
             # `n * eps * max|x|` with a factor for reassociation; on a
             # cancelling `large` distribution that bound is deliberately loose,
             # which costs nothing here because the written-contract check above
-            # and `numeric_check`'s finite contract are what catch this
-            # target's bug class.
+            # is what catches this target's bug class.
             var atol = Float64(1e-3)
             var rtol = Float64(1e-2)
+            var allow_nonfinite = False
             if op == OP_MAX or op == OP_MIN:
                 atol = 0.0
                 rtol = 0.0
@@ -533,11 +533,21 @@ def _run_shaped[
                     bound /= Float64(axis_size)
                 atol = bound
                 rtol = 1e-5
+                # `_reduce_ref` sums in f64 and only narrows at the end, so it
+                # divides (mean) or cancels (sum) its way back into range. The
+                # kernel has no such luxury: once a running fp32 partial passes
+                # `max_finite` it saturates, and +-Inf is absorbing. Whenever
+                # the worst-case partial `n * max|x|` clears that ceiling the
+                # overflow is a property of the format rather than of the
+                # kernel, so the finite contract has nothing to say about it.
+                var ceiling = Float64(max_finite[rd_type]())
+                allow_nonfinite = Float64(axis_size) * max_abs > ceiling
             if not numeric_check(
                 got_h.as_span(),
                 ref_vals.as_span(),
                 atol=atol,
                 rtol=rtol,
+                allow_nonfinite=allow_nonfinite,
             ):
                 raise Error(op_name(op), " numeric mismatch")
 

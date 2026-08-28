@@ -11,10 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-# As for a source package: one artifact bound under two names is two packages,
-# with two of every type it declares. A second name for one artifact need not
-# come from a second import root, so this reaches it with a link instead: both
-# names sit at the same root and resolve to one file.
+# As for a source package: one artifact reached under two names is one package,
+# and the alias is resolved before the artifact is read, so the second name
+# costs no second load. A second name for one artifact need not come from a
+# second import root, so this reaches it with a link instead: both names sit at
+# the same root and resolve to one file.
 
 # RUN: rm -rf %t.dir && mkdir -p %t.dir/src/utils %t.dir/lib
 # RUN: echo "# pkg" > %t.dir/src/utils/__init__.mojo
@@ -29,9 +30,10 @@
 # RUN: mojo precompile %t.dir/src/utils -o %t.dir/lib/utils.mojoc
 # RUN: rm -rf %t.dir/src
 # RUN: ln -s utils.mojoc %t.dir/lib/dup.mojoc
-# RUN: not mojo run -I %t.dir/lib %s 2>&1 | FileCheck %s
+# RUN: mojo run -I %t.dir/lib %s 2>&1 | FileCheck %s
 
-# CHECK: error: package imported as 'utils' must not also be imported as 'dup'; remove the duplicate import root or file that reaches it twice
+# CHECK: warning: 'dup' and 'utils' name the same package; remove the duplicate import root or file that reaches it twice
+# CHECK: note: 'utils' is the name used in error messages and debug info
 
 from utils.a import Thing
 from dup.a import make
@@ -39,4 +41,5 @@ from dup.a import make
 
 def main():
     var t: Thing = make()
+    # CHECK: 7
     print(t.x)

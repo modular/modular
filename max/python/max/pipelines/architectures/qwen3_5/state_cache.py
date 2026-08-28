@@ -229,7 +229,16 @@ class GatedDeltaNetStateCache:
             )
         slot = self._free_slots.pop()
         self._request_to_slot[request_id] = slot
-        # Zero the slot rows in every device's pools via GPU-to-GPU copy.
+        self.zero_slot(slot)
+        return slot
+
+    def zero_slot(self, slot: int) -> None:
+        """Wipes one slot's rows in every device's pools via GPU-to-GPU copy.
+
+        Split out of :meth:`claim` so a caller that owns slot allocation
+        itself -- a tensor-parallel model holding one of these per device --
+        can reuse the buffers without also inheriting the bookkeeping.
+        """
         for d in range(len(self._devices)):
             for l in range(self._num_layers):
                 i = d * self._num_layers + l
@@ -239,7 +248,6 @@ class GatedDeltaNetStateCache:
                 self._rec_pool[i][slot, :, :, :].inplace_copy_from(
                     self._zero_rec[d]
                 )
-        return slot
 
     def release(self, request_id: RequestID) -> None:
         """Free a slot, making it available for future requests.

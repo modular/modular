@@ -75,6 +75,7 @@ from algorithm.rowwise_types import (
     ReduceTier,
     RowBody,
     RowCoord,
+    _num_outputs_excluding_axis,
 )
 from std.algorithm.backend.unswitch import unswitch
 from algorithm.reduce_op import ReduceOp, Reducer
@@ -1036,27 +1037,6 @@ def _pointwise_splitk_combine[
     return local
 
 
-@always_inline
-def _num_rows_excluding_axis[axis: Int](shape: Coord) -> Int:
-    """Product of `shape`'s dims other than `axis`.
-
-    `shape.product() // shape[axis]` cannot supply that count when the
-    reduce axis is empty (`shape[axis] == 0`). Not because it faults:
-    Mojo's `//` inserts a zero-guard, so `0 // 0` yields `0` —
-    indistinguishable from the `0` a shape with no rows at all produces,
-    which is exactly why an empty axis used to read as "nothing to
-    launch". A reduce-shaped body still owns one output per row when the
-    axis is empty (the monoid identity, from an axis walk of zero
-    elements), so both `launch` and every per-tier kernel count rows
-    without dividing by the (possibly empty) axis.
-    """
-    var num_rows = 1
-    comptime for i in range(shape.rank):
-        if i != axis:
-            num_rows *= Int(shape[i].value())
-    return num_rows
-
-
 # ===-----------------------------------------------------------------------===#
 # Kernels — one per tier; each binds `ctx` and calls the body.
 # ===-----------------------------------------------------------------------===#
@@ -1099,7 +1079,7 @@ struct _BlockKernel[rank: Int, params: ContextParams, Body: RowBody](
         )
     )
     def __call__(self) capturing:
-        var num_rows = _num_rows_excluding_axis[Self.params.axis](self.shape)
+        var num_rows = _num_outputs_excluding_axis[Self.params.axis](self.shape)
 
         with PDL():
             var ctx = Context[Self.params].empty()
@@ -1135,7 +1115,7 @@ struct _WarpKernel[rank: Int, params: ContextParams, Body: RowBody](
     )
     def __call__(self) capturing:
         comptime warps_per_block = Self.params.BLOCK_SIZE // WARP_SIZE
-        var num_rows = _num_rows_excluding_axis[Self.params.axis](self.shape)
+        var num_rows = _num_outputs_excluding_axis[Self.params.axis](self.shape)
 
         with PDL():
             var ctx = Context[Self.params].empty()
@@ -1185,7 +1165,9 @@ struct _TiledKernel[rank: Int, params: ContextParams, Body: RowBody](
             or Self.params._tier == ReduceTier.Serial
         ), "tiled kernel needs a one-thread-per-output tier"
 
-        var num_outputs = _num_rows_excluding_axis[Self.params.axis](self.shape)
+        var num_outputs = _num_outputs_excluding_axis[Self.params.axis](
+            self.shape
+        )
 
         # Index math is not data-dependent — compute it before the PDL
         # wait so it overlaps with the prior grid's tail.
@@ -1243,7 +1225,7 @@ struct _SplitkKernel[rank: Int, params: ContextParams, Body: RowBody](
         )
     )
     def __call__(self) capturing:
-        var num_rows = _num_rows_excluding_axis[Self.params.axis](self.shape)
+        var num_rows = _num_outputs_excluding_axis[Self.params.axis](self.shape)
 
         var qr = udivmod(Int(block_idx.x), Int(self.blocks_per_row))
         var row_idx_ = qr[0]
@@ -1304,7 +1286,7 @@ struct _PointwiseSplitkKernel[rank: Int, params: ContextParams, Body: RowBody](
         )
     )
     def __call__(self) capturing:
-        var num_rows = _num_rows_excluding_axis[Self.params.axis](self.shape)
+        var num_rows = _num_outputs_excluding_axis[Self.params.axis](self.shape)
 
         var qr = udivmod(Int(block_idx.x), Int(self.num_splits))
         var row_idx_ = qr[0]
@@ -1443,7 +1425,7 @@ def launch[
     # that case. A reduce-shaped body still owns one output per row when
     # the axis is empty (the monoid identity), so only `num_rows == 0`
     # (no rows at all) means there is truly nothing to launch.
-    var num_rows = _num_rows_excluding_axis[axis](shape_dc)
+    var num_rows = _num_outputs_excluding_axis[axis](shape_dc)
     if num_rows == 0:
         return
 

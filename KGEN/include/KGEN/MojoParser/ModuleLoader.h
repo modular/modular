@@ -26,6 +26,24 @@
 
 namespace M::KGEN::LIT {
 
+/// The binding a module name is about to make: which entity it names, where
+/// that lands, and whether some other name already binds it.
+struct BindingSpec {
+  /// The name being bound, in the scope binding it.
+  StringAttr name;
+
+  /// The entity read out of, shared by every binding of it. Null for a
+  /// namespace, which spans several import roots and so names no single one.
+  ModuleOrigin *origin = nullptr;
+
+  /// Any existing binding this one was aliased to. Only set for a second
+  /// binding of a given origin under a different name.
+  ModuleState *aliasOf = nullptr;
+
+  /// The dotted path `name` makes in that scope, empty when there is no origin.
+  std::string mount;
+};
+
 /// Module & package handling logic.
 ///
 /// Its primary purpose is resolution: given an import path, work out what it
@@ -85,19 +103,15 @@ public:
   traverseImportDirectories(unsigned importBufferFileId,
                             function_ref<WalkResult(StringRef)> callback) const;
 
-  /// Returns the ModuleOrigin that the spec names, shared by every binding of
-  /// the same entity.
+  /// Resolve what binding the name makes in the provided scope, creating the
+  /// entity's origin if this is the first binding of it.
   ///
-  /// The bound name is in the given parent decl's scope. An origin can carry
-  /// one symbol path only, since re-anchoring an artefact rewrites its
-  /// references to a single path. Binding one entity under two names is a
-  /// dual-mount error.
-  ///
-  /// Null is a success: a namespace spans several import roots, so names no
-  /// single entity.
-  ErrorOr<ModuleOrigin *> getOrCreateModuleOrigin(const ModuleSpec &spec,
-                                                  StringRef boundName,
-                                                  ASTDecl &parentDecl);
+  /// An origin can only carry one symbol path; the first binding names the
+  /// entity and any later one under a different name is an alias, which this
+  /// installs and warns about at `importLoc` - the import that asked for it.
+  /// An invalid `importLoc` means nothing asked, so nothing is reported.
+  BindingSpec resolveModuleBinding(const ModuleSpec &spec, StringAttr name,
+                                   ModuleState &parentState, SMLoc importLoc);
 
   /// Every origin created so far, in creation order.
   ArrayRef<std::unique_ptr<ModuleOrigin>> getOrigins() const;
@@ -117,7 +131,11 @@ public:
   ModuleState *lookupState(ASTDecl *decl) const;
 
   /// Record `state` as what `decl` was imported as.
-  void setState(ASTDecl &decl, ModuleState &state);
+  ///
+  /// Given the binding that created it, `state` also takes its origin, and
+  /// claims the naming of that origin's contents when no binding has yet.
+  void setState(ASTDecl &decl, ModuleState &state,
+                const BindingSpec *binding = nullptr);
 
   /// Record `state` as what `packageOp` was imported as.
   void setPackageState(PackageOp packageOp, ModuleState &state);
@@ -179,17 +197,17 @@ public:
   /// the parse cursor (valid for an already-open module, invalid for a deferred
   /// one) and is responsible for importing builtins (eagerly, or at
   /// materialization for a deferred module).
-  ModuleState &createFileModuleState(StringAttr declName,
-                                     ModuleState &parentState,
+  ModuleState &createFileModuleState(ModuleState &parentState,
                                      FileLineColLoc loc, llvm::SMLoc declLoc,
                                      LexerCursor cursor, LexerCursor endCursor,
-                                     const ModuleSpec &spec);
+                                     const ModuleSpec &spec,
+                                     const BindingSpec &binding);
 
   /// Create a new module state with the given name, location, and body.
   ModuleState &createModuleState(StringAttr declName,
                                  const llvm::MemoryBuffer *moduleBuffer,
                                  ModuleState &parentState, FileLineColLoc loc,
-                                 const ModuleSpec &spec);
+                                 const ModuleSpec &spec, SMLoc importLoc);
 
   /// Create a module state for a source module whose file has not been opened.
   ModuleState &createDeferredModuleState(ModuleSpec moduleSpec,
@@ -205,11 +223,6 @@ public:
   /// Create a new module state for a binary package with the given spec.
   ModuleState &createBinaryPackageState(SMLoc loc, const ModuleSpec &spec,
                                         ModuleState &parentState);
-
-  /// Returns the dotted module path of `target` below `root`, or an empty
-  /// string when `target` is not nested below `root`.
-  static std::string moduleMountPath(const ModuleState &root,
-                                     const ModuleState &target);
 
   /// Create an error module state and emit the given error message. If
   /// `unlisted` is set, the erroneous decl is not registered in
@@ -232,6 +245,11 @@ private:
                                         llvm::SMLoc loc,
                                         llvm::SMLoc identifierLoc,
                                         bool emitErrors);
+
+  /// True when binding the spec to the given name would alias an entity some
+  /// other name already binds.
+  bool wouldAliasExistingBinding(const ModuleSpec &spec, StringRef name,
+                                 ASTDecl &parentDecl) const;
 
   /// Look up a module by its name, in the specified parent scope, in the module
   /// cache. Returns nullptr on a miss. On a hit:

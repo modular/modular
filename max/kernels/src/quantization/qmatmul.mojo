@@ -355,13 +355,13 @@ def _scale_and_accumulate[
     mut c_int32: _Accumulator[.int32, tile_m, tile_n, simd_width],
     mut c_float: _Accumulator[.float32, tile_m, tile_n, simd_width],
 ):
-    var b_scale = Array[SIMD[.float32, simd_width], tile_n](uninitialized=True)
-
     # Load the per-column scale values for the B matrix.
-    comptime for col in range(tile_n):
-        b_scale[col] = b_scale_ptr.unsafe_load[width=simd_width](
-            col * simd_width
-        ).cast[.float32]()
+    comptime ScaleType = SIMD[.float32, simd_width]
+    var b_scale = Array[_, tile_n](
+        fill_with=lambda (col: Int) -> ScaleType: b_scale_ptr.unsafe_load[
+            width=simd_width
+        ](col * simd_width).cast[.float32]()
+    )
 
     @__parameter
     @always_inline
@@ -830,11 +830,13 @@ struct _MatmulQInt4Kernel_neon_dotprod(_MatmulQInt4Kernel):
 
         var b_offset = 0
 
+        comptime AType = SIMD[.int8, 16]
         comptime for k in range(0, group_size, 16):
-            var a_tile = Array[SIMD[.int8, 16], tile_m](uninitialized=True)
-
-            comptime for row in range(tile_m):
-                a_tile[row] = a_ptr.unsafe_load[width=16](row * group_size + k)
+            var a_tile = Array[_, tile_m](
+                fill_with=lambda (row: Int) -> AType: a_ptr.unsafe_load[
+                    width=16
+                ](row * group_size + k)
+            )
 
             comptime for lane in range(4):
                 comptime for col in range(tile_n):

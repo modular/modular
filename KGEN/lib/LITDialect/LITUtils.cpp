@@ -944,13 +944,21 @@ Attribute TraitSelfBinder::tryReplace(Attribute attr, size_t depth) {
   return selfValue;
 }
 
+FnTypeGeneratorType
+TraitSelfBinder::bindTraitFnSignature(FnTypeGeneratorType sig) {
+  SmallVector<Type> inputTypes(sig.getInputParamTypes());
+  inputTypes[0] = ParamType::get(selfValue);
+
+  sig = FnTypeGeneratorType::get(inputTypes, sig.getBodyFnType(),
+                                 sig.getParamListAttrs());
+  return replace(sig);
+}
+
 //===----------------------------------------------------------------------===//
 // ImplicitOriginRefAttrReplacer
 //===----------------------------------------------------------------------===//
 
-template <typename NameRefT>
-Attribute
-ImplicitOriginToNameRefAttrReplacer<NameRefT>::tryReplace(Attribute attr,
+Attribute ImplicitOriginToNameRefAttrReplacer::tryReplace(Attribute attr,
                                                           size_t depth) {
   auto implicitOriginRef = dyn_cast<ImplicitOriginRefAttr>(attr);
   if (!implicitOriginRef || implicitOriginRef.getDepth() != depth)
@@ -964,41 +972,26 @@ ImplicitOriginToNameRefAttrReplacer<NameRefT>::tryReplace(Attribute attr,
                                              "_unnamed`" + namePostfix);
   originDecls.push_back(
       ParamDeclAttr::get(originName, implicitOriginRef.getType()));
-  auto originParamRef = NameRefT::get(originName, implicitOriginRef.getType());
+  auto originParamRef =
+      ParamDeclRefAttr::get(originName, implicitOriginRef.getType());
   implicitOriginToNewParamRef.insert({implicitOriginRef, originParamRef});
   return originParamRef;
 }
-
-// Explicit instantiation, these are the only two variants.
-template class M::KGEN::LIT::ImplicitOriginToNameRefAttrReplacer<
-    ParamDeclRefAttr>;
-template class M::KGEN::LIT::ImplicitOriginToNameRefAttrReplacer<
-    FnGenBuilderParamDeclRefAttr>;
 
 //===----------------------------------------------------------------------===//
 // OriginDeclRemapper
 //===----------------------------------------------------------------------===//
 
-template <typename NameRefT>
-NameToImplicitOriginRefRemapper<NameRefT>::NameToImplicitOriginRefRemapper(
+NameToImplicitOriginRefRemapper::NameToImplicitOriginRefRemapper(
     ArrayRef<ParamDeclAttr> originDecls, size_t depthOffset)
     : depthOffset(depthOffset) {
   for (auto [index, decl] : llvm::enumerate(originDecls))
     mapping.try_emplace(decl.getName().strref(), index);
 }
 
-template <typename NameRefT>
-NameToImplicitOriginRefRemapper<NameRefT>::NameToImplicitOriginRefRemapper(
-    ArrayRef<StringAttr> originDecls, size_t depthOffset)
-    : depthOffset(depthOffset) {
-  for (auto [index, decl] : llvm::enumerate(originDecls))
-    mapping.try_emplace(decl.strref(), index);
-}
-
-template <typename NameRefT>
-Attribute NameToImplicitOriginRefRemapper<NameRefT>::tryReplace(Attribute attr,
-                                                                size_t depth) {
-  auto ref = dyn_cast<NameRefT>(attr);
+Attribute NameToImplicitOriginRefRemapper::tryReplace(Attribute attr,
+                                                      size_t depth) {
+  auto ref = dyn_cast<ParamDeclRefAttr>(attr);
   if (!ref)
     return nullptr;
   // If it's in the mapping, then we know it's an *origin* param ref, so no
@@ -1009,11 +1002,6 @@ Attribute NameToImplicitOriginRefRemapper<NameRefT>::tryReplace(Attribute attr,
   return ImplicitOriginRefAttr::get(depth - depthOffset, it->second,
                                     ref.getType());
 }
-
-// Explicit instantiation, these are the only two variants.
-template class M::KGEN::LIT::NameToImplicitOriginRefRemapper<ParamDeclRefAttr>;
-template class M::KGEN::LIT::NameToImplicitOriginRefRemapper<
-    FnGenBuilderParamDeclRefAttr>;
 
 //===----------------------------------------------------------------------===//
 // Constraint Implication

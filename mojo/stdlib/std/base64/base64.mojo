@@ -126,8 +126,59 @@ def b64encode(input_bytes: ImmSpan[Byte, _]) -> String:
 # ===-----------------------------------------------------------------------===#
 
 
+@always_inline
+def _is_ascii_whitespace(char: Byte) -> Bool:
+    """Returns True if `char` is one of the six ASCII whitespace bytes.
+
+    `Codepoint.is_posix_space()` is not usable here: it also accepts the file,
+    group and record separators (0x1C-0x1E), so it would let those bytes
+    through the base64 alphabet check.
+
+    Args:
+        char: A single byte.
+
+    Returns:
+        True if the byte is a space, tab, newline, vertical tab, form feed, or
+        carriage return.
+    """
+    comptime ` ` = Byte(ord(" "))
+    comptime `\t` = Byte(ord("\t"))
+    comptime `\r` = Byte(ord("\r"))
+
+    # \t, \n, \v, \f and \r occupy the contiguous range 0x09-0x0D.
+    return char == ` ` or (char >= `\t` and char <= `\r`)
+
+
+@always_inline
+def _next_significant_byte(
+    data: ImmSpan[Byte, _], pos: Int
+) -> Tuple[Byte, Int]:
+    """Returns the next non-whitespace byte in `data` and the position past it.
+
+    The caller must guarantee that a non-whitespace byte remains at or after
+    `pos`; this is not checked here.
+
+    Args:
+        data: The bytes to scan.
+        pos: The position to start scanning from.
+
+    Returns:
+        The next non-whitespace byte, and the position one past that byte.
+    """
+    var i = pos
+    while _is_ascii_whitespace(data[i]):
+        i += 1
+    return data[i], i + 1
+
+
 def b64decode(str: StringSlice[mut=False, _]) raises -> List[Byte]:
     """Performs base64 decoding on the input string.
+
+    Whitespace (spaces, tabs, newlines, carriage returns, form feeds, and
+    vertical tabs) is ignored, which allows decoding base64 text that has
+    been wrapped across multiple lines. Unlike Python's `base64.b64decode`,
+    which discards *any* non-alphabet byte, Mojo only ignores whitespace and
+    still rejects other invalid characters.
 
     Args:
         str: A base64 encoded string.
@@ -136,30 +187,48 @@ def b64decode(str: StringSlice[mut=False, _]) raises -> List[Byte]:
         The decoded bytes.
 
     Raises:
-        If the input length is not divisible by 4, or the input contains a
-        character outside the base64 alphabet.
+        If the input length (ignoring whitespace) is not divisible by 4, or
+        the input contains a non-whitespace character outside the base64
+        alphabet.
     """
     comptime `=` = Byte(ord("="))
-    var data = str.as_bytes()
-    var n = str.byte_length()
+
+    var input = str.as_bytes()
+
+    var n = 0
+    for char in input:
+        if not _is_ascii_whitespace(char):
+            n += 1
 
     if n % 4 != 0:
-        raise Error("ValueError: Input length '", n, "' must be divisible by 4")
+        raise Error(
+            t"ValueError: Input length '{n}' (ignoring whitespace) must be"
+            t" divisible by 4"
+        )
 
-    var result = List[Byte](capacity=n)
+    var result = List[Byte](capacity=(n // 4) * 3)
 
-    # This algorithm is based on https://arxiv.org/abs/1704.00605
-    for i in range(0, n, 4):
-        var a = _ascii_to_value(data[i])
-        var b = _ascii_to_value(data[i + 1])
-        var c = _ascii_to_value(data[i + 2])
-        var d = _ascii_to_value(data[i + 3])
+    # This algorithm is based on https://arxiv.org/abs/1704.00605. It reads
+    # directly from `input`, skipping over whitespace as it goes, so it never
+    # allocates or copies a whitespace-free version of the input.
+    var pos = 0
+    for _ in range(0, n, 4):
+        var a_byte, a_pos = _next_significant_byte(input, pos)
+        var b_byte, b_pos = _next_significant_byte(input, a_pos)
+        var c_byte, c_pos = _next_significant_byte(input, b_pos)
+        var d_byte, d_pos = _next_significant_byte(input, c_pos)
+        pos = d_pos
+
+        var a = _ascii_to_value(a_byte)
+        var b = _ascii_to_value(b_byte)
+        var c = _ascii_to_value(c_byte)
+        var d = _ascii_to_value(d_byte)
 
         result.append((a << 2) | (b >> 4))
-        if data[i + 2] == `=`:
+        if c_byte == `=`:
             break
         result.append(((b & 0x0F) << 4) | (c >> 2))
-        if data[i + 3] == `=`:
+        if d_byte == `=`:
             break
         result.append(((c & 0x03) << 6) | d)
 

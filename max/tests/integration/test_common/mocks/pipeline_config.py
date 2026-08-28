@@ -35,7 +35,7 @@ from max.pipelines.weights.hf_utils import (
 from max.pipelines.weights.hf_utils import (
     generate_local_model_path as _real_generate_local_model_path,
 )
-from transformers import AutoConfig
+from transformers import AutoConfig, PretrainedConfig
 from typing_extensions import ParamSpec
 
 from .memory_estimation import mock_plan_from_sizes
@@ -80,6 +80,8 @@ class DummyPipelineConfig(PipelineConfig):
         device_specs: list[DeviceSpec] | None = None,
         max_batch_total_tokens: int | None = None,
         device_graph_capture: bool | None = None,
+        weight_path: list[Path] | None = None,
+        huggingface_config: PretrainedConfig | None = None,
         # TODO(AITLIB-328): These values do not belong in PipelineConfig,
         # but are somehow used by MockPipelineModel in pipeline_model.py.
         eos_prob: float | None = None,
@@ -105,7 +107,7 @@ class DummyPipelineConfig(PipelineConfig):
             device_specs=device_specs,
             quantization_encoding=quantization_encoding,
             max_length=max_length,
-            weight_path=[],
+            weight_path=weight_path if weight_path is not None else [],
             kv_cache=KVCacheConfig(),
         )
         # model_construct bypasses __init__, where user intent for max_length
@@ -126,13 +128,12 @@ class DummyPipelineConfig(PipelineConfig):
         weight_repo_stub.files_for_encoding.return_value = {}
         weight_repo_stub.encoding_for_file.return_value = None
         model_config._cached_weight_repo = weight_repo_stub
-        # NOTE: Using MagicMock without spec here because HuggingFace configs
-        # vary by model type (LlamaConfig, Qwen2Config, etc.). Tests that need
-        # strict type checking should pass a model-specific huggingface_config
-        # parameter to DummyPipelineConfig or use the real AutoConfig.
-        # TODO: Consider accepting huggingface_config as an optional parameter
-        # to allow tests to provide model-specific spec'd mocks.
-        model_config._huggingface_config = MagicMock()
+        # Tests that assert on config contents pass their own.
+        model_config._huggingface_config = (
+            huggingface_config
+            if huggingface_config is not None
+            else MagicMock()
+        )
 
         manifest = ModelManifest({"main": model_config})
         runtime = PipelineRuntimeConfig.model_construct(

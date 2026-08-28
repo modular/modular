@@ -156,15 +156,15 @@ def scatter[
         raise Error("Scatter currently requires P2P access between GPUs")
 
     # Extract raw pointers and sizes from TileTensors for the kernel.
-    var input_ptrs = Array[ImmPointer[Scalar[dtype], ImmutAnyOrigin], dp_size](
-        uninitialized=True
+    comptime PtrType = ImmPointer[Scalar[dtype], ImmutAnyOrigin]
+    var input_ptrs = Array[_, dp_size](
+        fill_with=lambda (i: Int) -> PtrType: rebind[
+            ImmPointer[Scalar[dtype], ImmutAnyOrigin]
+        ](input_buffers[i]._storage)
     )
     var chunk_num_elems_int = Array[Int, dp_size](fill=0)
     var chunk_num_elems = Array[Int32, dp_size](fill=Int32(0))
     for i in range(dp_size):
-        input_ptrs[i] = rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](
-            input_buffers[i]._storage
-        )
         chunk_num_elems_int[i] = input_buffers[i].num_elements()
         chunk_num_elems[i] = Int32(chunk_num_elems_int[i])
 

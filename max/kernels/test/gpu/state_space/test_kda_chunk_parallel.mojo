@@ -1037,6 +1037,51 @@ def test_cp_bf16_state_original_kfirst() raises:
     )
 
 
+def test_cp_k3_headdim_t64_original_kfirst() raises:
+    """K3's own (key_head_dim, value_head_dim) = (32, 32), not (128, 128).
+
+    Every other case in this file runs Kimi-Linear's head dims; K3 (via
+    `kimi_k3_kda_attention` / the `kda_chunk` graph op in `kda.mojo`) uses
+    (32, 32) with num_heads=8 and no GQA. `kda_chunk_scan_gpu`'s tc2
+    tensor-core arm only compiles for KEY_HEAD_DIM==VALUE_HEAD_DIM==128, so
+    this comptime-falls to the portable M3 scan body -- the same body every
+    other case in this file already exercises -- but the (32, 32) geometry
+    itself (TMA box widths, workspace strides, warp/lane mapping) is
+    otherwise untested until this case.
+    """
+    comptime assert has_accelerator(), "Requires GPU"
+    var ctx = DeviceContext()
+    _check[
+        DType.bfloat16, DType.float32, 32, 32, "original", "logits", "K_FIRST"
+    ](
+        "cp-k3-headdim-t64",
+        batch_size=1,
+        num_value_heads=8,
+        num_key_heads=8,
+        total_T=64,
+        seq_lengths=[64],
+        ctx=ctx,
+    )
+
+
+def test_cp_k3_headdim_varlen_ragged_vfirst() raises:
+    """K3 head dims, varlen ragged [200, 56], V_FIRST -- the production shape.
+    """
+    comptime assert has_accelerator(), "Requires GPU"
+    var ctx = DeviceContext()
+    _check[
+        DType.bfloat16, DType.float32, 32, 32, "original", "logits", "V_FIRST"
+    ](
+        "cp-k3-headdim-varlen",
+        batch_size=2,
+        num_value_heads=8,
+        num_key_heads=8,
+        total_T=256,
+        seq_lengths=[200, 56],
+        ctx=ctx,
+    )
+
+
 # ===----------------------------------------------------------------------=== #
 # M3-full slice 1: two-level segmented associative scan (A -> B -> C).
 #

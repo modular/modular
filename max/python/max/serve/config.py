@@ -187,6 +187,21 @@ class Settings(BaseSettings):
         alias="MAX_SERVE_MAX_PENDING_REQUESTS",
     )
 
+    max_request_bytes: int = Field(
+        description=(
+            "Maximum size in bytes of an accepted HTTP request body. Requests "
+            "whose body exceeds this are rejected with HTTP 413 before the body "
+            "is buffered, bounding per-request memory so a client cannot "
+            "exhaust host memory with an oversized payload. The default (100 "
+            "MiB) leaves ample headroom for multimodal requests that inline "
+            "base64 media; raise it for larger inline payloads, or set 0 to "
+            "disable the limit."
+        ),
+        default=100 * 1024 * 1024,  # 100 MiB
+        ge=0,
+        alias="MAX_SERVE_MAX_REQUEST_BYTES",
+    )
+
     # File URI configuration
     allowed_image_roots: list[str] = Field(
         description="List of allowed root directories for file:// URI access",
@@ -498,6 +513,12 @@ class Settings(BaseSettings):
             f"    max_pending_requests   : "
             f"{self.max_pending_requests if self.max_pending_requests is not None else 'unbounded'}"
         )
+        max_request_str = (
+            to_human_readable_bytes(self.max_request_bytes)
+            if self.max_request_bytes
+            else "unbounded"
+        )
+        logger.info(f"    max_request_bytes      : {max_request_str}")
         logger.info("")
 
         # File System Configuration

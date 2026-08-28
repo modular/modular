@@ -77,6 +77,10 @@ _EXTRA_CONSTRAINTS = {
         "//:b200_gpu": ["//:b200_gpu"],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
+    "test_kda_glm53_flash.mojo": select({
+        "//:b200_gpu": ["//:b200_gpu"],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
     "bench_sm100_kda_prefill_m128.mojo": select({
         "//:b200_gpu": ["//:b200_gpu"],
         "//conditions:default": ["@platforms//:incompatible"],
@@ -100,6 +104,7 @@ _GPU_MEMORY = {
     "test_sm100_kda_prefill_m64.mojo": "8",
     "test_sm100_kda_prefill_m128.mojo": "8",
     "test_sm100_kda_bt16.mojo": "8",
+    "test_kda_glm53_flash.mojo": "8",
     "bench_sm100_kda_prefill_m128.mojo": "8",
     "bench_sm100_kda_prefill_m64.mojo": "8",
     "bench_sm100_kda_bt16.mojo": "8",
@@ -119,6 +124,7 @@ _KDA_DEPS = {
     "test_sm100_kda_prefill_m64.mojo": ["//Kernels/lib/kda"],
     "test_sm100_kda_prefill_m128.mojo": ["//Kernels/lib/kda"],
     "test_sm100_kda_bt16.mojo": ["//Kernels/lib/kda"],
+    "test_kda_glm53_flash.mojo": ["//Kernels/lib/kda"],
 }
 
 # The SM100 KDA ports carry the reference instruction stream; ASSERT=all
@@ -128,6 +134,7 @@ _NO_ASSERTS = [
     "test_sm100_kda_prefill_m64.mojo",
     "test_sm100_kda_prefill_m128.mojo",
     "test_sm100_kda_bt16.mojo",
+    "test_kda_glm53_flash.mojo",
     "bench_sm100_kda_prefill_m128.mojo",
     "bench_sm100_kda_prefill_m64.mojo",
     "bench_sm100_kda_bt16.mojo",

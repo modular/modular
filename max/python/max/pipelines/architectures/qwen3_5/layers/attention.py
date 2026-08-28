@@ -310,6 +310,7 @@ class Qwen3_5Attention(Module, Shardable):
         kv_collection: PagedCacheValues,
         freqs_cis: TensorValue,
         input_row_offsets: TensorValue,
+        freq_row_ids: TensorValue | None = None,
     ) -> TensorValue:
         """Forward pass through the gated full attention layer.
 
@@ -319,6 +320,11 @@ class Qwen3_5Attention(Module, Shardable):
             kv_collection: KV cache handle.
             freqs_cis: RoPE frequency table.
             input_row_offsets: Ragged offsets for batched sequences.
+            freq_row_ids: ``[1, total_seq_len]`` row of ``freqs_cis`` to use
+                for each token. Set when the table is per token (M-RoPE);
+                ``None`` leaves the kernels on their default
+                ``cache_length + token_idx`` lookup, which is only right when
+                the table is indexed by absolute position.
 
         Returns:
             Output hidden states [total_seq_len, hidden_size].
@@ -438,6 +444,17 @@ class Qwen3_5Attention(Module, Shardable):
                 ),
                 axis=-1,
             )
+            if freq_row_ids is not None:
+                # `mo.rope_split_store.ragged.paged.with_position_id` ties its
+                # Q output and cache blocks to the QKV dtype, so it cannot
+                # take the BF16-in/FP8-out shape this branch needs.
+                raise NotImplementedError(
+                    "Qwen3.5 M-RoPE is not supported with an FP8 KV cache: "
+                    "the position-id variant of rope_split_store is "
+                    "monomorphic in dtype. Serve images with a bfloat16 KV "
+                    "cache until it takes independent Q-output and cache "
+                    "dtypes like `mo.rope_split_store.ragged.paged` does."
+                )
             query = rope_split_store_ragged(
                 kv_params=self.kv_params,
                 qkv=qkv,
@@ -471,6 +488,7 @@ class Qwen3_5Attention(Module, Shardable):
                 freqs_cis,
                 layer_idx,
                 interleaved=self.rope.interleaved,
+                position_ids=freq_row_ids,
             )
 
         # Flash attention. `output_dtype` is pinned to the activation dtype so

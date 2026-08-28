@@ -1926,16 +1926,17 @@ ASTDecl *IREmitter::createParametricClosureTrait(SharedState &shared) {
 
   // An extra _Self parameter.
   ASTType declSelf = traitDecl.getTypeDeclSelf();
-  auto selfParam =
-      FnGenBuilderParamDeclAttr::get("_Self`", declSelf.extractMetaType());
+  auto selfParam = QuoteAttr::get(
+      TypeParamAttr::get(declSelf.extractMetaType(), TypeType::get(ctx)));
 
   // An extra `mut self` argument: we don't have two trait for FnMut/FnImm, use
   // mut self for better generality.
   auto selfOriginType = OriginType::get(shared.getContext(), true);
   auto mutSelfRef = LIT::RefType::get(
-      declSelf,
-      FnGenBuilderParamDeclRefAttr::get("_self_origin`", selfOriginType));
-  auto mutSelf = TypeParamAttr::get(mutSelfRef, TypeType::get(ctx));
+      ParamType::get(ParamIndexRefAttr::get(0, declSelf.extractMetaType())),
+      ImplicitOriginRefAttr::get(0, 0, selfOriginType));
+  auto mutSelf =
+      QuoteAttr::get(TypeParamAttr::get(mutSelfRef, TypeType::get(ctx)));
 
   // An extra implicit origin for `_Self` parameter.
   auto selfOrigin = StringAttr::get("_self_origin`", StringType::get(ctx));
@@ -1960,99 +1961,93 @@ ASTDecl *IREmitter::createParametricClosureTrait(SharedState &shared) {
   return &traitDecl;
 }
 
+namespace {
+/// Shifts every reference to the closure's own parameters and implicit origins
+/// up by one, making room for the `_Self` parameter and `mut self` argument the
+/// universal parametric closure trait prepends. This is the index-reference
+/// analogue of `IndexRefRemapper`'s `offset` (which only covers parameter
+/// refs), extended to implicit-origin refs.
+struct SelfPrependShifter : IndexParameterReplacer<SelfPrependShifter> {
+  Attribute tryReplace(Attribute attr, size_t depth) {
+    if (auto ref = dyn_cast<ParamIndexRefAttr>(attr);
+        ref && ref.getDepth() == depth)
+      return ParamIndexRefAttr::get(depth, ref.getIndex() + 1,
+                                    this->replaceImpl(ref.getType(), depth));
+    if (auto ref = dyn_cast<ImplicitOriginRefAttr>(attr);
+        ref && ref.getDepth() == depth)
+      return ImplicitOriginRefAttr::get(depth, ref.getIndex() + 1,
+                                        ref.getType());
+    return nullptr;
+  }
+  Type tryReplace(Type, size_t) { return {}; }
+};
+} // namespace
+
 TraitType IREmitter::bindParamsToClosureTraitFromSig(const ExprNode *expr,
                                                      FnTypeGeneratorType sig) {
-  // We don't have scope for the FnGenBuilderParamDeclAttr, just use the number
-  // of pre existing closure trait symbols as the unique index (we just need to
-  // ensure the name is unique for all the nested closure traits that are
-  // "dominated" by the current trait).
-  size_t uniqueIdx = 0;
-  sig.walk([&](TraitSymbolAttr symbol) {
-    if (symbol.getSymbol() ==
-        shared.getUniversalParametricClosureTrait()->getSymbolRef())
-      uniqueIdx++;
-  });
-  std::string uniqueIdxStr = llvm::utostr(uniqueIdx);
-
   MLIRContext *ctx = shared.getContext();
   ASTDecl *closureTraitDecl = shared.getUniversalParametricClosureTrait();
   TypeSignatureType traitSig =
       cast<TraitDeclOp>(closureTraitDecl->getIfOperation()).getSignature();
 
-  SmallVector<StringAttr> fnDecls;
-  for (auto [idx, type] : llvm::enumerate(sig.getInputParamTypes())) {
-    // The names here does not matter, the purpose is just to set up the
-    // function generator type builder.
-    fnDecls.push_back(
-        StringAttr::get(ctx, "Fn_P#" + llvm::utostr(idx) + "`" + uniqueIdxStr));
-  }
-  FnGenParamRefRemapper remapper(fnDecls);
+  // The universal closure trait prepends a `_Self` parameter and a `mut self`
+  // argument/origin, so shift the closure's own parameter and implicit-origin
+  // references up by one to make room. Each component is then "quoted": the
+  // quote freezes the (now out-of-scope) references so they can be pulled into
+  // the trait's builder without creating an invalid binding -- the builder
+  // unquotes them when it folds into the generator type. A parameter's declared
+  // type, an argument type and the result type are all encoded this way.
+  SelfPrependShifter shifter;
+  auto quote = [&](Type type) -> TypedAttr {
+    // Canonicalize the type value (as the previous `emitPValue` path did): the
+    // closure trait it feeds into must stay canonical.
+    return QuoteAttr::get(TypeParamAttr::get(
+        getCanonicalType(shifter.replace(type)), TypeType::get(ctx)));
+  };
 
   ParameterEvaluator evaluator;
-  // NOTE: this has to be in sync with `createParametricClosureTrait`
-  DenseMap<StringAttr, TypedAttr> declBindings;
+  // NOTE: this has to be in sync with `createParametricClosureTrait`.
+
   // 1st, the parameter decl list.
-  SmallVector<TypedAttr> paramDecls;
-  for (auto [idx, type] : llvm::enumerate(sig.getInputParamTypes())) {
-    auto paramDecl =
-        FnGenBuilderParamDeclAttr::get(fnDecls[idx], remapper.replace(type));
-    paramDecls.push_back(paramDecl);
-  }
-  auto paramDeclList =
-      ParamListAttr::get(paramDecls, ParamListType::get(TypeType::get(ctx)));
-  evaluator.setDeclBinding(traitSig.getParamName(0), paramDeclList);
+  SmallVector<TypedAttr> paramDecls =
+      llvm::map_to_vector(sig.getInputParamTypes(), quote);
+  evaluator.setDeclBinding(
+      traitSig.getParamName(0),
+      ParamListAttr::get(paramDecls, ParamListType::get(TypeType::get(ctx))));
 
-  ImplicitOriginToNameRefAttrReplacer<FnGenBuilderParamDeclRefAttr>
-      originRemapper(ctx, uniqueIdxStr);
-
-  FuncType nameOriginFnType = originRemapper.replace(sig.getBody());
   // 2nd, the argument type list.
-  SmallVector<TypedAttr> argTypes;
-  for (auto [idx, type] : llvm::enumerate(nameOriginFnType.getArguments())) {
-    auto argTypeValue = emitPValue({PValue(remapper.replace(type)), expr},
-                                   EC_TypeParamValue, TypeType::get(ctx));
-    argTypes.push_back(argTypeValue);
-  }
-  auto argTypeList =
-      ParamListAttr::get(argTypes, ParamListType::get(TypeType::get(ctx)));
-  evaluator.setDeclBinding(traitSig.getParamName(1), argTypeList);
+  SmallVector<TypedAttr> argTypes =
+      llvm::map_to_vector(sig.getBody().getArguments(), quote);
+  evaluator.setDeclBinding(
+      traitSig.getParamName(1),
+      ParamListAttr::get(argTypes, ParamListType::get(TypeType::get(ctx))));
 
   // 3rd, the result type.
-  TypedAttr resultType = emitPValue(
-      {PValue(remapper.replace(nameOriginFnType.getResultType())), expr},
-      EC_TypeParamValue, TypeType::get(ctx));
-  evaluator.setDeclBinding(traitSig.getParamName(2), resultType);
+  evaluator.setDeclBinding(traitSig.getParamName(2),
+                           quote(sig.getBody().getResultType()));
 
-  // 4th, the metadata.
-  //
-  // Need to adjust the metadata for the extra self argument, we can only do it
-  // here since we can not build parameter expression on the metadata when
-  // constructing the alias decl op in the closure trait.
+  // 4th, the metadata. Adjust for the extra `mut self` argument (prepend a Mut
+  // convention and one implicit origin decl); we can only do it here since we
+  // cannot build a parameter expression on the metadata when constructing the
+  // alias decl op in the closure trait.
   auto originData = FnMetaOriginDataAttr::get(
-      shared.getContext(),
-      sig.getFnMetaOriginData().getNumImplicitOriginDecls() + 1,
+      ctx, sig.getFnMetaOriginData().getNumImplicitOriginDecls() + 1,
       sig.getFnMetaOriginData().getCaptureOrigins(),
       sig.getFnMetaOriginData().getIsNestedOriginsReadOnly(),
       sig.getFnMetaOriginData().getDefinesInteriorOrigins());
   SmallVector<ArgConvention> argConventions;
   argConventions.push_back(ArgConvention::Mut);
   llvm::append_range(argConventions, sig.getFnMetadata().getArgConventions());
+  evaluator.setDeclBinding(
+      traitSig.getParamName(3),
+      FnMetadataAttr::get(ctx, argConventions,
+                          sig.getFnMetadata().getFnEffects(), originData));
 
-  TypedAttr metadata =
-      FnMetadataAttr::get(shared.getContext(), argConventions,
-                          sig.getFnMetadata().getFnEffects(), originData);
-
-  evaluator.setDeclBinding(traitSig.getParamName(3), metadata);
-
-  // 5th, the implicit origin decl list.
-  SmallVector<TypedAttr> originDeclNames = llvm::map_to_vector(
-      originRemapper.getNewOriginParamDecls(),
-      [&](ParamDeclAttr decl) -> TypedAttr {
-        return StringAttr::get(decl.getName().strref(), StringType::get(ctx));
-      });
-  auto nameList = ParamListAttr::get(originDeclNames,
-                                     ParamListType::get(StringType::get(ctx)));
-  evaluator.setDeclBinding(traitSig.getParamName(4), nameList);
+  // 5th, the implicit origin decl list. Origins are index-based and frozen in
+  // the quoted arguments now, so the builder needs no name declarations.
+  evaluator.setDeclBinding(
+      traitSig.getParamName(4),
+      ParamListAttr::get({}, ParamListType::get(StringType::get(ctx))));
 
   auto traitType = closureTraitDecl->getTypeDeclSelf().extractMetaType();
   return cast<TraitType>(evaluator.getReboundType(traitType));

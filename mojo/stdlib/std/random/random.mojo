@@ -47,7 +47,7 @@ def seed():
     seed()
     ```
     """
-    seed(Int(perf_counter_ns()))
+    seed(perf_counter_ns())
 
 
 def seed(a: Int):

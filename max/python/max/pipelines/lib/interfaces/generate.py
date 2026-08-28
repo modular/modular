@@ -147,7 +147,8 @@ class GenerateMixin(Protocol[TextGenerationContextType, RequestType]):
                 # Filter out all responses for requests that are already released.
                 # We can get a response for a request that is already released due to
                 # the quirk of overlap scheduling where the pipeline may produce an extra
-                # token after EOS.
+                # token after EOS. `batch_to_replica_idx` holds the requests still
+                # running.
                 step_outputs = {
                     request_id: output
                     for request_id, output in step_outputs.items()
@@ -159,9 +160,12 @@ class GenerateMixin(Protocol[TextGenerationContextType, RequestType]):
                     outputs.append(output)
                     if output.is_done:
                         done += 1
-                        # Remove the request from the batch passed to the next
-                        # call to execute.
-                        replica_idx = batch_to_replica_idx[request_id]
+                        # Drop the request from the batch passed to the next
+                        # call to execute, and from the still-running set the
+                        # filter above reads: the two must stay in sync, or a
+                        # post-EOS extra token gets past the filter and finds
+                        # no context to release here.
+                        replica_idx = batch_to_replica_idx.pop(request_id)
                         replica_batch = batches[replica_idx]
                         for idx, ctx in enumerate(replica_batch):
                             if ctx.request_id == request_id:

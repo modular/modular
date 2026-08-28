@@ -21,6 +21,7 @@ from test_utils import (
     ExplicitDestroy,
     MoveCounter,
     MoveOnly,
+    NonMovable,
     Observable,
     TriviallyCopyableMoveCounter,
     check_write_to,
@@ -505,6 +506,52 @@ def test_list_append() raises:
     assert_equal(items, [UInt32(1), 2, 3])
 
 
+def test_list_insert_move_count() raises:
+    # Preallocate so reallocation does not contribute moves.
+    var vec = List[MoveCounter[Int]](capacity=4)
+    vec.append(MoveCounter(1))
+    vec.append(MoveCounter(2))
+    vec.append(MoveCounter(3))
+
+    vec.insert(0, MoveCounter(0))
+
+    assert_equal(len(vec), 4)
+    assert_equal(vec[0].value, 0)
+    assert_equal(vec[1].value, 1)
+    assert_equal(vec[2].value, 2)
+    assert_equal(vec[3].value, 3)
+
+    # Inserting shifts the tail right by one, so each displaced element takes
+    # exactly one additional move on top of the one that appended it.
+    assert_equal(vec[0].move_count, 1)
+    assert_equal(vec[1].move_count, 2)
+    assert_equal(vec[2].move_count, 2)
+    assert_equal(vec[3].move_count, 2)
+
+
+def test_list_insert_middle_move_count() raises:
+    # Inserting past the front must leave everything before `i` alone. Index 0
+    # drops `i` out of the shift arithmetic, so an off-by-one in it only shows
+    # up on a middle insert.
+    var vec = List[MoveCounter[Int]](capacity=5)
+    vec.append(MoveCounter(0))
+    vec.append(MoveCounter(1))
+    vec.append(MoveCounter(3))
+    vec.append(MoveCounter(4))
+
+    vec.insert(2, MoveCounter(2))
+
+    assert_equal(len(vec), 5)
+    for i in range(5):
+        assert_equal(vec[i].value, i)
+
+    assert_equal(vec[0].move_count, 1)
+    assert_equal(vec[1].move_count, 1)
+    assert_equal(vec[2].move_count, 1)
+    assert_equal(vec[3].move_count, 2)
+    assert_equal(vec[4].move_count, 2)
+
+
 def test_list_extend() raises:
     var items: List[UInt32] = [1, 2, 3]
     var copy = items.copy()
@@ -571,6 +618,46 @@ def test_list_extend_trivial_copy_nontrivial_move() raises:
 
     # `extend()` should call move constructor, not perform any copies.
     assert_equal(v1[0].move_count, 2)
+
+
+def test_list_extend_growth_is_amortized() raises:
+    # Extending in a loop must at least double the capacity each time it
+    # reallocates, otherwise repeated extends are quadratic. Seven chunks of
+    # four separate the two policies: growing to exactly what each call asks
+    # for ends at a capacity of 28, while at least doubling clears 32. The
+    # bound is a lower one so that a future policy which overshoots more
+    # stays passing.
+    var owned = List[Int]()
+    var spanned = List[Int]()
+    for _ in range(7):
+        var chunk: List[Int] = [1, 2, 3, 4]
+        spanned.extend(Span(chunk))
+        owned.extend(chunk^)
+
+    assert_equal(len(owned), 28)
+    assert_equal(len(spanned), 28)
+    assert_true(owned.capacity() >= 32)
+    assert_true(spanned.capacity() >= 32)
+
+    # `reserve` keeps honoring the requested capacity exactly.
+    var exact = List[Int](capacity=4)
+    exact.reserve(5)
+    assert_equal(exact.capacity(), 5)
+
+
+def test_list_resize_growth_is_amortized() raises:
+    # `resize` grows through the same path as `extend`, so growing by a fixed
+    # increment must double as well.
+    var filled = List[Int]()
+    var uninit = List[Int]()
+    for length in range(4, 29, 4):
+        filled.resize(length, 0)
+        uninit.resize(unsafe_uninit_length=length)
+
+    assert_equal(len(filled), 28)
+    assert_equal(len(uninit), 28)
+    assert_true(filled.capacity() >= 32)
+    assert_true(uninit.capacity() >= 32)
 
 
 def test_2d_dynamic_list() raises:
@@ -1125,6 +1212,39 @@ def test_list_fill_constructor() raises:
 
     for i in range(20):
         assert_equal(l2[i], "hi")
+
+
+def test_list_fill_with_constructor() raises:
+    var squares = List(length=5, fill_with=lambda (i: Int) -> Int: i * i)
+    assert_equal(len(squares), 5)
+    for i in range(5):
+        assert_equal(squares[i], i * i)
+
+    var strs = List(length=3, fill_with=lambda (i: Int) -> String: String(i))
+    assert_equal(len(strs), 3)
+    for i in range(3):
+        assert_equal(strs[i], String(i))
+
+
+def test_list_fill_with_named_function() raises:
+    def cube(i: Int) {imm} -> Int:
+        return i * i * i
+
+    var cubes = List(length=4, fill_with=cube)
+    assert_equal(len(cubes), 4)
+    for i in range(4):
+        assert_equal(cubes[i], i * i * i)
+
+
+def test_list_fill_with_non_movable() raises:
+    # `fill_with=` constructs each element in place, so it works even for a
+    # non-`Movable` element type -- no constraint on `T` at all.
+    var l = List(
+        length=3, fill_with=lambda (i: Int) -> NonMovable: NonMovable(i * 10)
+    )
+    assert_equal(l[0].value, 0)
+    assert_equal(l[1].value, 10)
+    assert_equal(l[2].value, 20)
 
 
 def test_uninit_ctor() raises:

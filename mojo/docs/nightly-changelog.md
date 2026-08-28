@@ -119,7 +119,19 @@ This version is still a work in progress.
   - `def __init__(out self, *, capacity_bytes: Int):`
   - `def reserve_bytes(mut self, new_capacity_bytes: Int, /):`
 
+## Library performance improvements
+
+- Files with many t-string (`t"..."`) literals compile faster: the
+  compile-time step that encodes each literal's format string (part of
+  elaboration, not the whole compile) is about 7x faster. The effect on
+  total build time scales with how many t-string literals a file has.
+
 ## Library changes
+
+- `List.extend` and `List.resize` now grow geometrically, so repeatedly
+  extending or resizing by a small increment is no longer quadratic. As a
+  result `capacity()` can report more than was asked for. `reserve` is
+  unchanged and still allocates exactly what you request.
 
 - `CompilationTarget` has a new `is_arm()` predicate, and `is_x86()` now
   reports the architecture rather than SSE4 availability. Both read the
@@ -253,7 +265,15 @@ This version is still a work in progress.
   than moving an already-constructed value there. Unlike `unsafe_write(var T)`,
   this does not require the pointee type to be `Movable`.
 
+- `Array[T, N]` has a new `fill_with=` constructor that calls a function with
+  each index in `[0, N)` and writes its result into that position, replacing
+  the `Array(uninitialized=True)` plus manual fill-loop idiom.
+
 - `List`'s element type is now bounded by `AnyType` instead of `Movable`.
+
+- `List` has a new `fill_with=` constructor that calls a function with each
+  index in `[0, length)` and writes its result into that position, without
+  requiring the element type to be `Movable`.
 
 - Added `write()` to `MaybeUninit` and `Pointer`, as a safe counterpart to
   `unsafe_write()` for types that are trivially deinitializable (for example
@@ -408,6 +428,11 @@ This release completes the removal of APIs deprecated during the v1.0 cycle.
 
 ## Fixed
 
+- `unsafe_uninit_move_n()` and `unsafe_uninit_copy_n()` with `overlapping=True`
+  now handle an overlap in either direction when `T` is not trivially movable
+  or copyable. They always walked front-to-back, so a `dest` above `src`
+  overwrote elements that had not been moved or read yet.
+
 - `SIMD.__init__(py=...)` now reads unsigned dtypes through the unsigned CPython
   entry point (`PyLong_AsSize_t`). Constructing an unsigned `SIMD` from a Python
   int in `[2**63, 2**64)` no longer overflows, and a negative Python int now
@@ -502,3 +527,11 @@ This release completes the removal of APIs deprecated during the v1.0 cycle.
 - Every value of a struct type whose `@align(N)` exceeds its natural
   alignment is now aligned to `N`, including every element of an array or a
   `List` of that type.
+
+- [`b64decode()`](/docs/std/base64/base64/b64decode/) now ignores ASCII
+  whitespace in its input, so base64 text wrapped across lines by a MIME
+  encoder or the `base64` command line tool decodes without the caller
+  stripping it first. Only the six ASCII whitespace bytes are ignored; unlike
+  Python's `base64.b64decode()`, any other byte outside the base64 alphabet
+  still raises. The "length must be divisible by 4" error now counts only the
+  significant characters.

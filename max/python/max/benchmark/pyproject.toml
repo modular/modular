@@ -20,7 +20,7 @@ dependencies = [
     "tqdm>=4.67.1",
     "transformers>=5.12.0,<5.13.0",
     "typing-extensions>=4.12.2",
-    "Pillow>=11.0.0",
+    "Pillow>=12.3.0",
     # for upload.py
     "boto3",
     "click>=8.0.0",

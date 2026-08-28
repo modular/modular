@@ -1070,133 +1070,6 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
 
     @always_inline
     def add_function[
-        FuncType: def() -> None,
-        //,
-        dump_asm: _DumpPath = False,
-        dump_llvm: _DumpPath = False,
-        _dump_sass: _DumpPath = False,
-        _ptxas_info_verbose: Bool = False,
-    ](
-        self,
-        func: FuncType,
-        grid_dim: Dim,
-        block_dim: Dim,
-        *,
-        var dependencies: List[Self.Node] = [],
-        cluster_dim: OptionalReg[Dim] = None,
-        shared_mem_bytes: OptionalReg[Int] = None,
-        var attributes: List[LaunchAttribute] = [],
-        var constant_memory: List[ConstantMemoryMapping] = [],
-        func_attribute: OptionalReg[FuncAttribute] = None,
-        location: Optional[SourceLocation] = None,
-    ) raises -> Self.Node:
-        """Compiles and adds a capturing kernel closure as a node in this graph.
-
-        This overload is for kernels that capture variables from their
-        enclosing scope using the `{var}` capture syntax. Compilation is
-        performed automatically using the `DeviceContext` that created this
-        builder, so no separate compile step is needed.
-
-        Parameters:
-            FuncType: The type of the closure function (usually inferred).
-            dump_asm: To dump the compiled assembly, pass `True`, or a file
-                path to dump to, or a function returning a file path.
-            dump_llvm: To dump the generated LLVM code, pass `True`, or a file
-                path to dump to, or a function returning a file path.
-            _dump_sass: Only runs on NVIDIA targets, and requires CUDA Toolkit
-                to be installed. Pass `True`, or a file path to dump to, or a
-                function returning a file path.
-            _ptxas_info_verbose: Only runs on NVIDIA targets, and requires CUDA
-                Toolkit to be installed. Changes `dump_asm` to output verbose
-                PTX assembly (default `False`).
-
-        Args:
-            func: The capturing kernel closure to compile and add as a graph
-                node.
-            grid_dim: Dimensions of the compute grid.
-            block_dim: Dimensions of each thread block.
-            dependencies: Explicit list of predecessor node handles. An
-                empty list makes the new node a graph root with no
-                predecessors; a non-empty list uses those exact handles
-                as predecessors.
-            cluster_dim: Cluster dimensions (optional).
-            shared_mem_bytes: Amount of dynamic shared memory per block.
-            attributes: Launch attributes.
-            constant_memory: Constant memory mappings.
-            func_attribute: `CUfunction_attribute` enum.
-            location: Source location for the function call.
-
-        Returns:
-            A handle to the newly added kernel-dispatch node.
-
-        Raises:
-            If adding the node fails.
-
-        Example:
-
-        ```mojo
-        from std.gpu import global_idx
-        from max.gpu.host import DeviceContext, DeviceGraph, DeviceGraphBuilder
-
-        with DeviceContext() as ctx:
-            var scale: Float32 = 2.0
-            var buf = ctx.enqueue_create_buffer[.float32](256)
-            var ptr = buf.unsafe_ptr()
-
-            def scale_kernel() {var}:
-                var i = global_idx.x
-                ptr[i] = Float32(i) * scale
-
-            def build(mut builder: DeviceGraphBuilder) raises {imm}:
-                _ = builder.add_function(
-                    scale_kernel, grid_dim=1, block_dim=256, dependencies=[]
-                )
-
-            var graph = DeviceGraph.create(ctx, build)
-            graph.replay()
-            ctx.synchronize()
-        ```
-        """
-        _check_dim["DeviceGraphBuilder.add_function", "grid_dim"](
-            grid_dim, location=call_location()
-        )
-        _check_dim["DeviceGraphBuilder.add_function", "block_dim"](
-            block_dim, location=call_location()
-        )
-        var compiled = DeviceFunction[
-            FuncType.__call__,
-            TypeList.of[Trait=AnyType](),
-            target=DeviceContext.default_device_info.target(),
-            _ptxas_info_verbose=_ptxas_info_verbose,
-        ](self._ctx, func_attribute=func_attribute)
-        compiled.dump_rep[
-            dump_asm=dump_asm,
-            dump_llvm=dump_llvm,
-            _dump_sass=_dump_sass,
-        ]()
-        dependencies = self._merge_implicit(dependencies^)
-        # Build a transient enqueuer that pairs the builder handle with the
-        # caller-supplied deps. It implements `_FunctionEnqueuer` so the
-        # trait machinery in `_call_with_pack` routes the call into our
-        # C ABI, deps and all. (`_DeviceGraphBuilderEnqueuer` is defined
-        # below `DeviceGraphBuilder` because it borrows `Self`.)
-        var enqueuer = _DeviceGraphBuilderEnqueuer(self, dependencies^)
-        compiled._call_with_pack(
-            enqueuer,
-            func,
-            grid_dim=grid_dim,
-            block_dim=block_dim,
-            cluster_dim=cluster_dim,
-            shared_mem_bytes=shared_mem_bytes,
-            attributes=attributes^,
-            constant_memory=constant_memory^,
-            location=location.or_else(call_location()),
-        )
-        return self._last_node().value()
-
-    @__parameter
-    @always_inline
-    def add_function[
         declared_arg_types: TypeList[Trait=AnyType, ...],
         //,
         func: def(* args: * declared_arg_types) thin -> None,
@@ -1219,19 +1092,18 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
         func_attribute: OptionalReg[FuncAttribute] = None,
         location: Optional[SourceLocation] = None,
     ) raises -> Self.Node:
-        """Compiles and adds a kernel function as a node in this graph.
+        """Compiles a thin kernel and adds it as a node in this graph.
 
-        This overload takes the kernel as a compile-time parameter and
-        compiles it automatically using the `DeviceContext` that created this
-        builder, so no separate `DeviceContext.compile_function()` step is
-        needed. It mirrors the parameter-based
-        [`DeviceContext.enqueue_function()`](/api/mojo/max/gpu/host/device_context/DeviceContext/#enqueue_function)
-        overload for the non-graph path.
+        Takes the kernel as a compile-time function pointer (`thin`) and
+        compiles it with the `DeviceContext` that created this builder. This
+        is the same identity as `DeviceContext.compile_function[kernel]()`.
+        Capturing kernels use `DeviceContext.enqueue_function` or
+        `recording_context()`, not `add_function`.
 
         Parameters:
             declared_arg_types: Types of the arguments to pass to the device
                 function.
-            func: The function to compile and add as a graph node.
+            func: The thin kernel to compile and add as a graph node.
             actual_arg_types: The types of the arguments being passed to the
                 function.
             link_options: Additional linker flags and options as a string.
@@ -1267,8 +1139,7 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
         Raises:
             If adding the node fails.
 
-        You can pass the function directly to `add_function` without compiling
-        it first:
+        Example:
 
         ```mojo
         from max.gpu.host import DeviceContext, DeviceGraph, DeviceGraphBuilder
@@ -1294,123 +1165,6 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
             block_dim, location=call_location()
         )
 
-        # If shared_mem_bytes is specified but func_attribute is not,
-        # automatically set MAX_DYNAMIC_SHARED_SIZE_BYTES if needed (>48KB)
-        var inferred_func_attribute = func_attribute
-        if not func_attribute and shared_mem_bytes:
-            var max_shared = self._ctx._get_max_dynamic_shared_memory_bytes(
-                shared_mem_bytes.value()
-            )
-            if max_shared > 0:
-                inferred_func_attribute = (
-                    FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(max_shared)
-                )
-
-        var gpu_kernel = self._ctx.compile_function[
-            func,
-            dump_asm=dump_asm,
-            dump_llvm=dump_llvm,
-            link_options=link_options,
-            _dump_sass=_dump_sass,
-            _ptxas_info_verbose=_ptxas_info_verbose,
-        ](func_attribute=inferred_func_attribute)
-
-        return self.add_function(
-            gpu_kernel,
-            *args,
-            grid_dim=grid_dim,
-            block_dim=block_dim,
-            dependencies=dependencies^,
-            cluster_dim=cluster_dim,
-            shared_mem_bytes=shared_mem_bytes,
-            attributes=attributes^,
-            constant_memory=constant_memory^,
-            location=location.or_else(call_location()),
-        )
-
-    @__parameter
-    @always_inline
-    def add_function[
-        declared_arg_types: TypeList[Trait=AnyType, ...],
-        //,
-        func: def(* args: * declared_arg_types) capturing -> None,
-        *actual_arg_types: DevicePassable,
-        link_options: StaticString = "",
-        dump_asm: _DumpPath = False,
-        dump_llvm: _DumpPath = False,
-        _dump_sass: _DumpPath = False,
-        _ptxas_info_verbose: Bool = False,
-    ](
-        self,
-        *args: *actual_arg_types,
-        grid_dim: Dim,
-        block_dim: Dim,
-        var dependencies: List[Self.Node] = [],
-        cluster_dim: OptionalReg[Dim] = None,
-        shared_mem_bytes: OptionalReg[Int] = None,
-        var attributes: List[LaunchAttribute] = [],
-        var constant_memory: List[ConstantMemoryMapping] = [],
-        func_attribute: OptionalReg[FuncAttribute] = None,
-        location: Optional[SourceLocation] = None,
-    ) raises -> Self.Node:
-        """Compiles and adds a capturing kernel function as a node in this
-        graph.
-
-        This overload takes a capturing kernel as a compile-time parameter and
-        compiles it automatically using the `DeviceContext` that created this
-        builder, so no separate `DeviceContext.compile_function()` step is
-        needed. It mirrors the capturing parameter-based
-        [`DeviceContext.enqueue_function()`](/api/mojo/max/gpu/host/device_context/DeviceContext/#enqueue_function)
-        overload for the non-graph path.
-
-        Parameters:
-            declared_arg_types: Types of the arguments to pass to the device
-                function.
-            func: The capturing function to compile and add as a graph node.
-            actual_arg_types: The types of the arguments being passed to the
-                function.
-            link_options: Additional linker flags and options as a string.
-            dump_asm: To dump the compiled assembly, pass `True`, or a file
-                path to dump to, or a function returning a file path.
-            dump_llvm: To dump the generated LLVM code, pass `True`, or a file
-                path to dump to, or a function returning a file path.
-            _dump_sass: Only runs on NVIDIA targets, and requires CUDA Toolkit
-                to be installed. Pass `True`, or a file path to dump to, or a
-                function returning a file path.
-            _ptxas_info_verbose: Only runs on NVIDIA targets, and requires CUDA
-                Toolkit to be installed. Changes `dump_asm` to output verbose
-                PTX assembly (default `False`).
-
-        Args:
-            args: Variadic arguments which are passed to the `func`.
-            grid_dim: Dimensions of the compute grid.
-            block_dim: Dimensions of each thread block.
-            dependencies: Explicit list of predecessor node handles. An
-                empty list makes the new node a graph root with no
-                predecessors; a non-empty list uses those exact handles
-                as predecessors.
-            cluster_dim: Cluster dimensions (optional).
-            shared_mem_bytes: Amount of dynamic shared memory per block.
-            attributes: Launch attributes.
-            constant_memory: Constant memory mappings.
-            func_attribute: `CUfunction_attribute` enum.
-            location: Source location for the function call.
-
-        Returns:
-            A handle to the newly added kernel-dispatch node.
-
-        Raises:
-            If adding the node fails.
-        """
-        _check_dim["DeviceGraphBuilder.add_function", "grid_dim"](
-            grid_dim, location=call_location()
-        )
-        _check_dim["DeviceGraphBuilder.add_function", "block_dim"](
-            block_dim, location=call_location()
-        )
-
-        # If shared_mem_bytes is specified but func_attribute is not,
-        # automatically set MAX_DYNAMIC_SHARED_SIZE_BYTES if needed (>48KB)
         var inferred_func_attribute = func_attribute
         if not func_attribute and shared_mem_bytes:
             var max_shared = self._ctx._get_max_dynamic_shared_memory_bytes(

@@ -871,20 +871,19 @@ struct ConvDirectNHWC[
         comptime micro_kernel_f_size = micro_kernel_width * simd_size
 
         # Base input offsets.
-        var input_base_stack = Array[Int32, micro_kernel_height](
-            uninitialized=True
-        )
-        var input_base_offsets = TileTensor(
-            input_base_stack, row_major[micro_kernel_height]()
-        )
-
-        comptime for i in range(micro_kernel_height):
-            input_base_offsets[i] = Int32(
+        var input_base_stack = Array[_, micro_kernel_height](
+            fill_with=lambda (i: Int) {
+                imm self, imm n, imm output_flat_coord, imm c_tile_offset
+            } -> Int32: Int32(
                 self.conv_shape.output_flat_coord_to_input_offset(
                     n, output_flat_coord + i
                 )
                 + c_tile_offset
             )
+        )
+        var input_base_offsets = TileTensor(
+            input_base_stack, row_major[micro_kernel_height]()
+        )
 
         comptime alignment = align_of[SIMD[Self.output_type, simd_size]]()
 

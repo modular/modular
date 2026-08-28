@@ -26,6 +26,7 @@ from max.graph import (
     Weight,
     ops,
 )
+from max.nn.kernels import moe_sink_gate_router
 from max.nn.layer import LayerList
 from max.nn.moe import MoE, MoEGate, MoEQuantized
 from max.nn.quant_config import fp4_packed_k
@@ -34,13 +35,11 @@ from typing_extensions import Self
 _ROUTER_DTYPE = DType.float32
 
 
-def _log_sigmoid(x: TensorValue) -> TensorValue:
-    zero = ops.constant(0.0, x.dtype, device=x.device)
-    return ops.min(x, zero) - ops.log1p(ops.exp(-ops.abs(x)))
-
-
 class InklingRouting(NamedTuple):
-    """One token batch's routing decision, including the sink weights."""
+    """One token batch's routing decision, including the sink weights.
+
+    Sinks are shared experts the router weights, not attention sinks.
+    """
 
     expert_ids: TensorValue
     expert_weights: TensorValue
@@ -107,34 +106,16 @@ class InklingGate(MoEGate):
         weight = ops.cast(self.weight, hidden_states.dtype).to(device)
         logits = ops.cast(hidden_states @ weight.T, _ROUTER_DTYPE)
 
-        routed = logits[:, : self.n_routed_experts]
-        _, expert_ids = ops.top_k(
-            ops.sigmoid(routed) + self.bias.to(device),
-            k=self.num_experts_per_token,
-            axis=-1,
-        )
-
-        # Weights renormalize the raw logits: the selection bias must not
-        # leak into them.
-        selected = ops.gather_nd(
-            routed, ops.unsqueeze(expert_ids, axis=-1), batch_dims=1
-        )
-        sinks = logits[:, self.n_routed_experts :]
-
-        # Softmax over log-sigmoids = sigmoid(z_i) / sum_j sigmoid(z_j),
-        # stable where the sigmoids themselves would underflow.
-        log_scores = _log_sigmoid(ops.concat([selected, sinks], axis=-1))
-        scores = ops.exp(log_scores - ops.max(log_scores, axis=-1))
-        factor = (
-            ops.constant(self.route_scale, _ROUTER_DTYPE, device=device)
-            * self.global_scale.to(device)
-        ) / ops.sum(scores, axis=-1)
-        weights = scores * factor
-        num_selected = self.num_experts_per_token
         return InklingRouting(
-            expert_ids=expert_ids,
-            expert_weights=weights[:, :num_selected],
-            sink_weights=weights[:, num_selected:],
+            *moe_sink_gate_router(
+                logits,
+                self.bias.to(device),
+                self.global_scale.to(device),
+                n_routed_experts=self.n_routed_experts,
+                n_experts_per_tok=self.num_experts_per_token,
+                n_shared_experts=self.n_shared_experts,
+                route_scale=self.route_scale,
+            )
         )
 
     @property

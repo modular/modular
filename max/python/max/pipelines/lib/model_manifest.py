@@ -20,6 +20,10 @@ import logging
 import os
 from typing import Any
 
+from max.pipelines.lib._model_components import (
+    architecture_name_for,
+    updated_component,
+)
 from max.pipelines.lib.config.model_config import (
     MAXModelConfig,
     _build_model_config,
@@ -31,14 +35,15 @@ from pydantic_core import CoreSchema, core_schema
 
 logger = logging.getLogger(__name__)
 
-# Overriding these feeds weight-path identity resolution in __init__, so
-# with_override() rebuilds through the constructor rather than model_copy.
-_WEIGHT_IDENTITY_FIELDS = frozenset({"model_path", "weight_path"})
-
 # In precedence order: a repo that ships both is a Modular Pipeline with a
 # plain diffusers one alongside it, and the plain one is the simpler
 # description.
 _MODEL_INDEX_FILENAMES = ("model_index.json", "modular_model_index.json")
+
+_IMMUTABLE_MSG = (
+    "ModelManifest is immutable; construct a new one with the component "
+    "configs you need."
+)
 
 
 def _component_subfolder(key: str, value: Any) -> str | None:
@@ -88,8 +93,11 @@ class ModelManifest(dict[str, MAXModelConfig]):
     speculative decoding) store models under their respective roles.
 
     ``ModelManifest`` is a ``dict[str, MAXModelConfig]`` subclass, so
-    standard dict operations (``[]``, ``in``, ``len``, ``items``, etc.)
-    work directly.
+    standard read operations (``[]``, ``in``, ``len``, ``items``, etc.)
+    work directly. The manifest is immutable: it is complete at
+    construction, and mutating operations raise ``TypeError``. Construct
+    it with the component configs you need; :meth:`with_override` is for
+    replacing one component of a manifest you were handed.
 
     For diffusion pipelines constructed from ``model_index.json``, the
     ``metadata`` property exposes non-component entries (e.g.
@@ -109,7 +117,17 @@ class ModelManifest(dict[str, MAXModelConfig]):
     ) -> None:
         super().__init__(*args, **kwargs)
         self._metadata: dict[str, Any] = dict(metadata) if metadata else {}
-        self._resolved: bool = False
+
+    def __reduce__(
+        self,
+    ) -> tuple[
+        type[ModelManifest],
+        tuple[dict[str, MAXModelConfig]],
+        dict[str, Any],
+    ]:
+        # Unpickling a dict subclass replays its items through __setitem__,
+        # which this class rejects. Rebuild it in one call instead.
+        return (ModelManifest, (dict(self),), {"_metadata": self._metadata})
 
     @classmethod
     def __get_pydantic_core_schema__(
@@ -179,37 +197,33 @@ class ModelManifest(dict[str, MAXModelConfig]):
                 f"{role!r} (available roles: {list(self.keys())})"
             ) from None
 
-    def _check_frozen(self) -> None:
-        # During pickle reconstruction, __setitem__ is called before
-        # __init__, so _resolved may not exist yet.
-        if getattr(self, "_resolved", False):
-            raise TypeError(
-                "ModelManifest is frozen after resolve(). "
-                "Use with_override() to create a new manifest."
-            )
-
     def __setitem__(self, key: str, value: MAXModelConfig) -> None:
-        self._check_frozen()
-        super().__setitem__(key, value)
+        raise TypeError(_IMMUTABLE_MSG)
 
     def __delitem__(self, key: str) -> None:
-        self._check_frozen()
-        super().__delitem__(key)
+        raise TypeError(_IMMUTABLE_MSG)
 
+    # No __ior__ guard: |= updates at the C level without calling these,
+    # and nothing merges into a manifest.
     def update(self, *args: Any, **kwargs: Any) -> None:
-        """Update the manifest with new model configs."""
-        self._check_frozen()
-        super().update(*args, **kwargs)
+        """Raises ``TypeError``: the manifest is immutable."""
+        raise TypeError(_IMMUTABLE_MSG)
 
     def pop(self, *args: Any) -> Any:
-        """Remove and return a model config by key."""
-        self._check_frozen()
-        return super().pop(*args)
+        """Raises ``TypeError``: the manifest is immutable."""
+        raise TypeError(_IMMUTABLE_MSG)
+
+    def popitem(self) -> tuple[str, MAXModelConfig]:
+        """Raises ``TypeError``: the manifest is immutable."""
+        raise TypeError(_IMMUTABLE_MSG)
+
+    def setdefault(self, *args: Any) -> Any:
+        """Raises ``TypeError``: the manifest is immutable."""
+        raise TypeError(_IMMUTABLE_MSG)
 
     def clear(self) -> None:
-        """Remove all model configs from the manifest."""
-        self._check_frozen()
-        super().clear()
+        """Raises ``TypeError``: the manifest is immutable."""
+        raise TypeError(_IMMUTABLE_MSG)
 
     # ------------------------------------------------------------------
     # Properties
@@ -255,49 +269,7 @@ class ModelManifest(dict[str, MAXModelConfig]):
         Raises:
             ValueError: If the architecture name cannot be determined.
         """
-        if "main" in self:
-            arch_name = self["main"].architecture_name
-            if arch_name:
-                return arch_name
-            raise ValueError(
-                f"Cannot determine architecture name for main model "
-                f"{self['main'].model_path!r}: HuggingFace config has "
-                f"no 'architectures' field."
-            )
-
-        # Diffusion pipeline — use stored metadata from model_index.json.
-        if not self:
-            raise ValueError(
-                "Cannot determine architecture name: manifest is empty."
-            )
-        class_name = self._metadata.get("_class_name")
-        if class_name:
-            return class_name
-        any_config = next(iter(self.values()))
-        raise ValueError(
-            f"Cannot determine architecture name for diffusion model "
-            f"{any_config.model_path!r}: metadata has no "
-            f"'_class_name' field."
-        )
-
-    @property
-    def total_weights_size(self) -> int:
-        """Total weight size in bytes across all components.
-
-        Walks every ``MAXModelConfig`` in the manifest and sums
-        ``weights_size()``.  Components with no weight files (e.g.
-        schedulers) contribute zero.
-
-        Raises:
-            RuntimeError: If the manifest has not been resolved via
-                ``resolve()`` first.
-        """
-        if not self._resolved:
-            raise RuntimeError(
-                "ModelManifest must be resolved before accessing "
-                "total_weights_size. Call resolve() first."
-            )
-        return sum(config.weights_size() for config in self.values())
+        return architecture_name_for(self, self._metadata)
 
     def loader(self) -> WeightLoader:
         """Returns a :class:`WeightLoader` over the role-prefixed union.
@@ -341,20 +313,6 @@ class ModelManifest(dict[str, MAXModelConfig]):
             config.log_model_info(role=role)
 
     # ------------------------------------------------------------------
-    # Resolution
-    # ------------------------------------------------------------------
-
-    def resolve(self) -> None:
-        """Freezes the manifest against further mutation.
-
-        Per-component weight-path identity is resolved in
-        ``MAXModelConfig.__init__`` and repo access is validated at
-        ``PipelineConfig`` construction, so this only flips the freeze flag
-        (use ``with_override()`` to change the manifest afterward).
-        """
-        self._resolved = True
-
-    # ------------------------------------------------------------------
     # Immutable update operations
     # ------------------------------------------------------------------
 
@@ -364,29 +322,14 @@ class ModelManifest(dict[str, MAXModelConfig]):
         config: MAXModelConfig | None = None,
         **field_overrides: Any,
     ) -> ModelManifest:
-        """Return a new manifest with the given role updated.
+        """Returns a new manifest with one role replaced.
 
-        Three usage patterns:
-
-        1. **Partial field update** on an existing component::
-
-               manifest.with_override("transformer",
-                   weight_path=[Path("w.safetensors")],
-                   quantization_encoding="float4_e2m1fnx2",
-               )
-
-        2. **Full replacement or addition** of a component::
-
-               manifest.with_override("draft",
-                   config=MAXModelConfig(model_path="org/draft"),
-               )
-
-        3. **Add/replace with additional field tweaks**::
-
-               manifest.with_override("draft",
-                   config=base_cfg,
-                   quantization_encoding="q4_0",
-               )
+        For callers handed a manifest they did not build and cannot
+        construct differently -- merging late CLI flags into a
+        caller-supplied manifest, for instance. Code that owns the
+        component configs builds the manifest with them instead:
+        chaining overrides rebuilds the whole mapping once per change,
+        and the intermediate manifests mean nothing.
 
         Args:
             role: The semantic role string identifying the component.
@@ -424,23 +367,8 @@ class ModelManifest(dict[str, MAXModelConfig]):
 
         if not field_overrides:
             updated_config = base
-        elif _WEIGHT_IDENTITY_FIELDS.isdisjoint(field_overrides):
-            updated_config = base.model_copy(update=field_overrides)
         else:
-            # model_copy would keep the stale derived identity (an external
-            # org/repo/file path would 404), so rebuild through the factory
-            # to re-resolve it, carrying each loaded seed unless its source
-            # field changed.
-            data = {**base.__dict__, **field_overrides}
-            if "model_path" not in field_overrides:
-                data["_huggingface_config"] = getattr(
-                    base, "_huggingface_config", None
-                )
-            if "weight_path" not in field_overrides:
-                data["_weights_repo_id"] = getattr(
-                    base, "_weights_repo_id", None
-                )
-            updated_config = _build_model_config(type(base), **data)
+            updated_config = updated_component(base, **field_overrides)
         new_models = {**self, role: updated_config}
         return ModelManifest(new_models, metadata=self._metadata)
 

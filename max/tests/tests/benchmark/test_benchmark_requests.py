@@ -489,6 +489,139 @@ class TestRequestDriver:
         assert "No text content" in result.error
 
     @pytest.mark.asyncio
+    async def test_openai_chat_completions_tool_call_only_response_is_success(
+        self,
+        mock_aiohttp_session: Any,
+        mock_openai_env: None,
+        mocker: MockerFixture,
+    ) -> None:
+        """A pure tool-call turn is a successful, content-bearing response.
+
+        Regression test for the nemotron-opencode "No text content captured"
+        failures: an agentic response can consist entirely of ``tool_calls``
+        deltas (no ``content``/``reasoning`` at all). The client must model
+        the ``tool_calls`` field and treat those chunks as content-bearing
+        rather than reporting the request as failed.
+        """
+        request_input = RequestFuncInput(
+            model="test-model",
+            session_id=None,
+            sampling=SamplingConfig(),
+            prompt="Write a file",
+            images=[],
+            api_url="http://localhost:8000/chat/completions",
+            prompt_len=10,
+            max_tokens=100,
+            ignore_eos=False,
+        )
+
+        # Mirrors the server's streaming shape for a tool-call-only turn:
+        # an opener chunk with id + name, then argument fragments.
+        mock_response_data = [
+            (
+                b'data: {"choices": [{"delta": {"role": "assistant", '
+                b'"tool_calls": [{"index": 0, "id": "write:fa3c5398", '
+                b'"type": "function", '
+                b'"function": {"name": "write", "arguments": "{\\""}}]}}]}\n\n'
+            ),
+            (
+                b'data: {"choices": [{"delta": {"tool_calls": [{"index": 0, '
+                b'"function": {"arguments": "content\\": \\"hi\\"}"}}]}}]}\n\n'
+            ),
+            (
+                b'data: {"choices": [{"delta": {}, '
+                b'"finish_reason": "length"}]}\n\n'
+            ),
+            b"data: [DONE]\n\n",
+        ]
+
+        async def async_iter() -> AsyncIterator[bytes]:
+            for item in mock_response_data:
+                yield item
+
+        mock_response = mocker.AsyncMock()
+        mock_response.status = 200
+        mock_response.content = async_iter()
+        mock_aiohttp_session.setup_post_response(mock_response)
+
+        driver = OpenAIChatCompletionsRequestDriver()
+        result = await driver.request(request_input)
+
+        assert result.success is True
+        assert result.error == ""
+        assert result.ttft > 0.0
+        # The tool name and argument bytes are the generated text.
+        assert result.generated_text == 'write{"content": "hi"}'
+
+    @pytest.mark.asyncio
+    async def test_openai_chat_completions_content_before_tool_call_is_not_double_counted(
+        self,
+        mock_aiohttp_session: Any,
+        mock_openai_env: None,
+        mocker: MockerFixture,
+    ) -> None:
+        """Content and tool_calls deltas are additive, never overlapping.
+
+        Regression guard for double-counting: a turn that streams prose
+        before deciding to call a tool must count that prose exactly once,
+        even though ``_extract_chat_delta_text`` sums ``content`` and
+        ``tool_calls`` text from the same delta object. The server only ever
+        populates one of the two per ``ParsedToolCallDelta``, so summing them
+        is additive by construction -- this test pins that with an exact
+        length/text check rather than relying on that invariant by
+        inspection alone.
+        """
+        request_input = RequestFuncInput(
+            model="test-model",
+            session_id=None,
+            sampling=SamplingConfig(),
+            prompt="What's the weather, then check the time",
+            images=[],
+            api_url="http://localhost:8000/chat/completions",
+            prompt_len=10,
+            max_tokens=100,
+            ignore_eos=False,
+        )
+
+        mock_response_data = [
+            (
+                b'data: {"choices": [{"delta": {"role": "assistant", '
+                b'"content": "Let me check that for you."}}]}\n\n'
+            ),
+            (
+                b'data: {"choices": [{"delta": {'
+                b'"tool_calls": [{"index": 0, "id": "get_weather:1", '
+                b'"type": "function", '
+                b'"function": {"name": "get_weather", "arguments": "{}"}}]}}]}\n\n'
+            ),
+            (
+                b'data: {"choices": [{"delta": {}, '
+                b'"finish_reason": "tool_calls"}]}\n\n'
+            ),
+            b"data: [DONE]\n\n",
+        ]
+
+        async def async_iter() -> AsyncIterator[bytes]:
+            for item in mock_response_data:
+                yield item
+
+        mock_response = mocker.AsyncMock()
+        mock_response.status = 200
+        mock_response.content = async_iter()
+        mock_aiohttp_session.setup_post_response(mock_response)
+
+        driver = OpenAIChatCompletionsRequestDriver()
+        result = await driver.request(request_input)
+
+        assert result.success is True
+        # The prose and the tool call are disjoint deltas; the total is
+        # their concatenation, not double the prose or double the call.
+        assert (
+            result.generated_text == "Let me check that for you.get_weather{}"
+        )
+        assert result.generated_text.count("Let me check that for you.") == 1
+
+    @pytest.mark.asyncio
     async def test_openai_chat_completions_merges_reasoning_reasoning_content_and_content(
         self,
         mock_aiohttp_session: Any,

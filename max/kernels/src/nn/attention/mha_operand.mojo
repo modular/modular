@@ -193,13 +193,12 @@ trait MHAOperand(DevicePassable, TrivialRegisterPassable):
         single SIMD load from the underlying lookup table.
         """
 
-        @__parameter
-        def _row(batch_idx: UInt32, start_tok_idx: UInt32) -> UInt32:
+        def _row(batch_idx: UInt32, start_tok_idx: UInt32) {imm} -> UInt32:
             return self.row_idx(batch_idx, start_tok_idx)
 
-        return _populate_via_row_idx[
-            BN, Self.page_size, pair_cta, is_leader, _row
-        ](batch_idx, base_kv_row)
+        return _populate_via_row_idx[BN, Self.page_size, pair_cta, is_leader](
+            batch_idx, base_kv_row, _row
+        )
 
     @always_inline
     def get_tma_row(self, encoded_index: Int32) -> Int32:

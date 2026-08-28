@@ -74,21 +74,82 @@ def test_b64decode() raises:
 
     assert_equal(b64decode("QUJDREVGYWJjZGVm"), bytes_of("ABCDEFabcdef"))
 
+    # The two spaces are ignored, leaving 19 significant characters.
     with assert_raises(
-        contains="ValueError: Input length '21' must be divisible by 4"
+        contains=(
+            "ValueError: Input length '19' (ignoring whitespace) must be"
+            " divisible by 4"
+        )
     ):
         _ = b64decode("invalid base64 string")
 
     # A truncated input must raise instead of reading out of bounds.
     with assert_raises(
-        contains="ValueError: Input length '3' must be divisible by 4"
+        contains=(
+            "ValueError: Input length '3' (ignoring whitespace) must be"
+            " divisible by 4"
+        )
     ):
         _ = b64decode("abc")
 
     with assert_raises(
-        contains="ValueError: Unexpected character ' ' encountered"
+        contains="ValueError: Unexpected character '!' encountered"
     ):
-        _ = b64decode("invalid base64 string!!!")
+        _ = b64decode("abc!")
+
+
+def test_b64decode_whitespace() raises:
+    # Regression test for https://github.com/modular/modular/issues/3446.
+    # Whitespace is ignored, similar to Python's `base64.b64decode`.
+    assert_equal(b64decode("Qm9 uam91cg=="), bytes_of("Bonjour"))
+
+    # Base64 text wrapped across multiple lines.
+    assert_equal(
+        b64decode("SGVsbG8g\nTW9qbyEh\nIQ=="), bytes_of("Hello Mojo!!!")
+    )
+
+    # A mix of tabs, newlines, carriage returns, and spaces.
+    assert_equal(b64decode("\t Y Q\r\n=\v=\f"), bytes_of("a"))
+
+    # Whitespace-only input has zero significant characters, which is
+    # divisible by 4, so it decodes to an empty result.
+    assert_equal(b64decode(" "), List[Byte]())
+    assert_equal(b64decode("\t\n\r\v\f "), List[Byte]())
+
+    # Whitespace that makes the effective length not divisible by 4 must
+    # still raise.
+    with assert_raises(
+        contains=(
+            "ValueError: Input length '3' (ignoring whitespace) must be"
+            " divisible by 4"
+        )
+    ):
+        _ = b64decode("a b c")
+
+    # Whitespace mixed with an invalid (non-alphabet) character must still
+    # raise on the invalid character, unlike Python which discards it.
+    with assert_raises(
+        contains="ValueError: Unexpected character '!' encountered"
+    ):
+        _ = b64decode("ab c!")
+
+    # Only the six ASCII whitespace bytes are ignored. The file, group and
+    # record separators (0x1C-0x1E) are counted as significant and rejected by
+    # the alphabet check, so an input carrying them must not decode as if they
+    # had been stripped.
+    with assert_raises(contains="ValueError: Unexpected character"):
+        _ = b64decode("Y\x1cQ=")
+    with assert_raises(contains="ValueError: Unexpected character"):
+        _ = b64decode("Y\x1dQ=")
+    with assert_raises(contains="ValueError: Unexpected character"):
+        _ = b64decode("Y\x1eQ=")
+    with assert_raises(
+        contains=(
+            "ValueError: Input length '5' (ignoring whitespace) must be"
+            " divisible by 4"
+        )
+    ):
+        _ = b64decode("Y\x1cQ==")
 
 
 def test_b16encode() raises:
