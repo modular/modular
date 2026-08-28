@@ -35,41 +35,31 @@ namespace M::KGEN {
 
 /// Utility class for remapping named parameter references to index references,
 /// see DCRTODS.
-template <typename NameDeclT, typename NameRefT>
-class NameToIndexRefRemapper
-    : public IndexParameterReplacer<
-          NameToIndexRefRemapper<NameDeclT, NameRefT>> {
+class IndexRefRemapper : public IndexParameterReplacer<IndexRefRemapper> {
 
 public:
-  NameToIndexRefRemapper() = default;
+  IndexRefRemapper() = default;
 
   /// Populate the remapper with named input and result parameters.
-  NameToIndexRefRemapper(ArrayRef<NameDeclT> inputParams, size_t offset = 0);
-  NameToIndexRefRemapper(ArrayRef<NameRefT> inputParams, size_t offset = 0);
+  IndexRefRemapper(ArrayRef<ParamDeclAttr> inputParams, size_t offset = 0);
+  IndexRefRemapper(ArrayRef<ParamDeclRefAttr> inputParams, size_t offset = 0);
 
   /// Append a parameter declaration to the remapper.
-  void appendParamDecl(NameDeclT paramDecl);
+  void appendParamDecl(ParamDeclAttr paramDecl);
 
 private:
-  using Base =
-      IndexParameterReplacer<NameToIndexRefRemapper<NameDeclT, NameRefT>>;
+  using Base = IndexParameterReplacer<IndexRefRemapper>;
 
   // CRTP methods.
   Attribute tryReplace(Attribute attr, size_t depth);
   Type tryReplace(Type, size_t) { return {}; }
-  friend class IndexParameterReplacer<NameToIndexRefRemapper>;
+  friend class IndexParameterReplacer<IndexRefRemapper>;
 
   /// Mapping from parameter reference to an index.
   DenseMap<StringAttr, size_t> mapping;
   /// The index offset of references to root input parameters.
   size_t offset;
 };
-
-using IndexRefRemapper =
-    NameToIndexRefRemapper<ParamDeclAttr, ParamDeclRefAttr>;
-using FnGenIndexRefRemapper =
-    NameToIndexRefRemapper<FnGenBuilderParamDeclAttr,
-                           FnGenBuilderParamDeclRefAttr>;
 
 //===----------------------------------------------------------------------===//
 // ParamRefRemapper
@@ -96,16 +86,14 @@ using FnGenIndexRefRemapper =
 // We recursively traverse attributes, replacing ParamIndexRefAttr with
 // ParamDeclRefAttr using a map from indices to parameter declarations.
 // The recursion terminates because MLIR attributes are directed acyclic graphs.
-template <typename NameRefT>
-struct IndexToNameRefRemapper
-    : public IndexParameterReplacer<IndexToNameRefRemapper<NameRefT>> {
-  using Base = IndexParameterReplacer<IndexToNameRefRemapper<NameRefT>>;
-  IndexToNameRefRemapper() = default;
-  IndexToNameRefRemapper(ArrayRef<StringAttr> declNames) {
+struct ParamRefRemapper : public IndexParameterReplacer<ParamRefRemapper> {
+  using Base = IndexParameterReplacer<ParamRefRemapper>;
+  ParamRefRemapper() = default;
+  ParamRefRemapper(ArrayRef<StringAttr> declNames) {
     for (auto n : declNames)
       parameters.push_back(n);
   }
-  IndexToNameRefRemapper(ArrayRef<ParamDeclAttr> declarations) {
+  ParamRefRemapper(ArrayRef<ParamDeclAttr> declarations) {
     for (auto p : declarations)
       parameters.push_back(p.getName());
   }
@@ -119,15 +107,11 @@ struct IndexToNameRefRemapper
 
     StringAttr paramName = parameters[indexRef.getIndex()];
     Type mappedType = Base::replace(indexRef.getType());
-    return NameRefT::get(paramName.strref(), mappedType);
+    return ParamDeclRefAttr::get(paramName.strref(), mappedType);
   }
   Type tryReplace(Type t, size_t) { return {}; }
   SmallVector<StringAttr> parameters;
 };
-
-using ParamRefRemapper = IndexToNameRefRemapper<ParamDeclRefAttr>;
-using FnGenParamRefRemapper =
-    IndexToNameRefRemapper<FnGenBuilderParamDeclRefAttr>;
 
 //===----------------------------------------------------------------------===//
 // IndexDepthAdjuster
@@ -275,7 +259,9 @@ private:
 
   /// An internal stack of scoped parameter types representing the input param
   /// types of the current nested signatures.
-  SmallVector<ArrayRef<Type>> signatures;
+  SmallVector<
+      SmartVariant<ParameterScopeAttrInterface, ParameterScopeTypeInterface>>
+      signatures;
 };
 
 //===----------------------------------------------------------------------===//

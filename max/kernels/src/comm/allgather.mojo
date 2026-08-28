@@ -191,18 +191,24 @@ def _allgather_p2p_kernel[
     var _my_rank = Int(my_rank)
     var my_sig = rank_sigs[_my_rank]
 
-    var src_ptrs_rr = Array[ImmPointer[Scalar[dtype], ImmutAnyOrigin], ngpus](
-        uninitialized=True
+    comptime SrcPtrType = ImmPointer[Scalar[dtype], ImmutAnyOrigin]
+    var src_ptrs_rr = Array[_, ngpus](
+        fill_with=lambda (i: Int) -> SrcPtrType: src_ptrs[
+            circular_add[ngpus](_my_rank, i)
+        ]
     )
-    var out_ptrs_rr = Array[MutPointer[Scalar[dtype], MutAnyOrigin], ngpus](
-        uninitialized=True
+
+    comptime OutPtrType = MutPointer[Scalar[dtype], MutAnyOrigin]
+    var out_ptrs_rr = Array[_, ngpus](
+        fill_with=lambda (i: Int) -> OutPtrType: outputs[
+            circular_add[ngpus](_my_rank, i)
+        ]
     )
-    var lengths_rr = Array[Int, ngpus](uninitialized=True)
-    for i in range(ngpus):
-        var target = circular_add[ngpus](_my_rank, i)
-        src_ptrs_rr[i] = src_ptrs[target]
-        out_ptrs_rr[i] = outputs[target]
-        lengths_rr[i] = Int(lengths[target])
+    var lengths_rr = Array[_, ngpus](
+        fill_with=lambda (i: Int) -> Int: Int(
+            lengths[circular_add[ngpus](_my_rank, i)]
+        )
+    )
 
     with PDL():
         # Synchronize before reading.

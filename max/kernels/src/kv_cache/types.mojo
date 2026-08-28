@@ -1161,10 +1161,10 @@ def _populate_via_row_idx[
     page_size: Int,
     pair_cta: Bool,
     is_leader: Bool,
-    row_idx_fn: def(UInt32, UInt32) capturing -> UInt32,
-](batch_idx: UInt32, base_kv_row: UInt32) -> PagedRowIndices[
-    BN, page_size, pair_cta, is_leader
-]:
+    FuncType: def(UInt32, UInt32) -> UInt32,
+](
+    batch_idx: UInt32, base_kv_row: UInt32, row_idx_fn: FuncType
+) -> PagedRowIndices[BN, page_size, pair_cta, is_leader]:
     """Scalar-loop fallback shared by `MHAOperand.populate` and
     `KVCacheT.populate`. Calls `row_idx_fn` once per sub-tile page,
     populating the full `num_pages` range so V (and pair-CTA peers) can
@@ -1362,13 +1362,12 @@ trait KVCacheT(DevicePassable, TrivialRegisterPassable):
         SIMD load against the lookup table.
         """
 
-        @__parameter
-        def _row(batch_idx: UInt32, start_tok_idx: UInt32) -> UInt32:
+        def _row(batch_idx: UInt32, start_tok_idx: UInt32) {imm} -> UInt32:
             return self.row_idx(batch_idx, start_tok_idx)
 
-        return _populate_via_row_idx[
-            BN, Self.page_size_, pair_cta, is_leader, _row
-        ](batch_idx, base_kv_row)
+        return _populate_via_row_idx[BN, Self.page_size_, pair_cta, is_leader](
+            batch_idx, base_kv_row, _row
+        )
 
     @always_inline
     def get_tma_row(self, encoded_index: Int32) -> Int32:

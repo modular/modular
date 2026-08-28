@@ -20,14 +20,14 @@ This module contains common components used by all SM100 matmul kernel variants:
 - _Batched3DLayout / _to_batched_3d: Reshape 2D TileTensor to 3D (batch=1)
 """
 
-from std.gpu import thread_idx
+from std.gpu import WARP_SIZE, lane_id, thread_idx
 from std.gpu import warp_id as get_warp_id
 from std.gpu import block_id_in_cluster
 from max.gpu.primitives.cluster import (
     block_rank_in_cluster,
     elect_one_sync_with_mask,
 )
-from std.math.uutils import udivmod
+from std.math.uutils import udivmod, ufloordiv
 from layout.tma_async import SharedMemBarrier
 from layout import (
     ComptimeInt,
@@ -256,6 +256,33 @@ struct WarpRole1D1D[has_sfb: Bool = False, num_epi_warps: Int = 4](
         warp precomputes tile info into SMEM for consumer warps.
         """
         return thread_idx.x >= Self.SCHEDULER_WARP_START
+
+    @staticmethod
+    @always_inline
+    def epilogue_role_index() -> Int:
+        """Returns this thread's warp index WITHIN the epilogue pool.
+
+        Role-relative (`0 .. num_epi_warps - 1`), so callers electing
+        "the first epilogue warp" no longer have to know where the pool
+        sits in the block. Only meaningful when `is_epilogue()`.
+        """
+        return ufloordiv(thread_idx.x - Self.EPILOGUE_WARP_START, WARP_SIZE)
+
+    @staticmethod
+    @always_inline
+    def is_epilogue_leader() -> Bool:
+        """Returns True for the single leader thread of the epilogue pool.
+
+        This is the election callers mean when they write
+        `thread_idx.x == 0`: lane 0 of the pool's first warp. Writing it
+        as a role predicate keeps the election correct if the pool ever
+        stops starting at thread 0.
+        """
+        return (
+            Self.is_epilogue()
+            and Self.epilogue_role_index() == 0
+            and lane_id() == 0
+        )
 
 
 # =============================================================================

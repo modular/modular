@@ -24,7 +24,7 @@ preshuffled B, direct VGPR loads).
 A's K byte extent is `K * lane_bytes // 32`; the E8M0 scale extent is `K // 32`.
 """
 
-from std.math import align_up, ceildiv
+from std.math import align_up, ceildiv, isnan
 from std.os import abort
 from std.random import random_ui64, seed
 from std.sys import (
@@ -142,27 +142,49 @@ def _verify_buffers_gpu[
 ):
     """GPU kernel that computes verification metrics in one pass.
 
-    Each block computes partial reductions and writes 5 Float32 values:
-      [0] abs_diff_sum — for relative difference metric
-      [1] abs_ref_sum  — for relative difference metric
-      [2] max_violation — max(|x-y| - (atol + rtol*|y|)), <=0 means pass
+    Each block computes partial reductions and writes 6 Float32 values:
+      [0] abs_diff_sum — for relative difference metric (NaN pairs excluded)
+      [1] abs_ref_sum  — for relative difference metric (NaN pairs excluded)
+      [2] max_violation — max(|x-y| - (atol + rtol*|y|)) over non-NaN pairs,
+          <=0 means pass
       [3] out_nz — 1.0 if any output element is nonzero
       [4] ref_nz — 1.0 if any reference element is nonzero
+      [5] nan_mismatch — 1.0 if some element is NaN in the output but not the
+          reference, or vice versa
+
+    The synthetic activation fill is a uniform random byte pattern (see
+    `_rand_e4m3_byte`'s docstring in `test_mxfp8_matmul_amd_preb.mojo`), which
+    occasionally lands on the E4M3 NaN encoding — so a NaN that the
+    reference also produces is expected input propagation, not a bug.
+    `nan_mismatch` instead flags a NaN appearing on only one side, which a
+    real kernel bug (e.g. an uninitialized read in a newly-tuned tile) would
+    trigger. `max_violation` alone is NaN-blind: `max()` lowers to maxNum
+    semantics, which ignore a NaN operand rather than propagate it, so pairs
+    where both sides agree on NaN are excluded from the sums/violation to
+    keep those metrics meaningful instead of being silently poisoned to NaN.
     """
     var abs_diff_sum: Float32 = 0
     var abs_ref_sum: Float32 = 0
     var max_violation = Float32.MIN_FINITE
     var out_nz: Float32 = 0
     var ref_nz: Float32 = 0
+    var nan_mismatch: Float32 = 0
 
     var i = global_idx.x
     var stride = grid_dim.x * block_dim.x
     while i < Int(length):
         var x = output[i].cast[.float32]()
         var y = reference[i].cast[.float32]()
-        abs_diff_sum += abs(x - y)
-        abs_ref_sum += abs(y)
-        max_violation = max(max_violation, abs(x - y) - (atol + rtol * abs(y)))
+        var x_nan = isnan(x)
+        var y_nan = isnan(y)
+        if x_nan != y_nan:
+            nan_mismatch = 1.0
+        if not x_nan and not y_nan:
+            abs_diff_sum += abs(x - y)
+            abs_ref_sum += abs(y)
+            max_violation = max(
+                max_violation, abs(x - y) - (atol + rtol * abs(y))
+            )
         if x != 0:
             out_nz = 1.0
         if y != 0:
@@ -174,14 +196,16 @@ def _verify_buffers_gpu[
     max_violation = block.max[block_size=BLOCK_SIZE](max_violation)
     out_nz = block.max[block_size=BLOCK_SIZE](out_nz)
     ref_nz = block.max[block_size=BLOCK_SIZE](ref_nz)
+    nan_mismatch = block.max[block_size=BLOCK_SIZE](nan_mismatch)
 
     if thread_idx.x == 0:
-        var base = block_idx.x * 5
+        var base = block_idx.x * 6
         result[base + 0] = abs_diff_sum
         result[base + 1] = abs_ref_sum
         result[base + 2] = max_violation
         result[base + 3] = out_nz
         result[base + 4] = ref_nz
+        result[base + 5] = nan_mismatch
 
 
 def _block_scaled_matmul_fp8_ref(
@@ -537,7 +561,7 @@ def bench_preb[
             var rtol = Float32(0.05)
             var atol = Float32(0.05)
             var result_device = ctx.enqueue_create_buffer[.float32](
-                NUM_BLOCKS * 5
+                NUM_BLOCKS * 6
             )
             comptime verify_kernel = _verify_buffers_gpu[
                 DType.float32, VERIFY_BLOCK_SIZE
@@ -553,7 +577,7 @@ def bench_preb[
                 block_dim=VERIFY_BLOCK_SIZE,
             )
 
-            var result_host = List(length=NUM_BLOCKS * 5, fill=Float32(0))
+            var result_host = List(length=NUM_BLOCKS * 6, fill=Float32(0))
             ctx.enqueue_copy(result_host, result_device)
             ctx.synchronize()
 
@@ -562,14 +586,21 @@ def bench_preb[
             var worst_violation = Float32.MIN_FINITE
             var out_nz: Float32 = 0
             var ref_nz: Float32 = 0
+            var nan_mismatch: Float32 = 0
             for bi in range(NUM_BLOCKS):
-                var base = bi * 5
+                var base = bi * 6
                 total_abs_diff += result_host[base + 0]
                 total_abs_ref += result_host[base + 1]
                 worst_violation = max(worst_violation, result_host[base + 2])
                 out_nz = max(out_nz, result_host[base + 3])
                 ref_nz = max(ref_nz, result_host[base + 4])
+                nan_mismatch = max(nan_mismatch, result_host[base + 5])
 
+            if nan_mismatch != 0:
+                raise (
+                    "CORRECTNESS: kernel output and reference disagree on"
+                    " NaN placement"
+                )
             if out_nz == 0:
                 raise "CORRECTNESS: kernel output is all zeros"
             if ref_nz == 0:

@@ -265,7 +265,15 @@ This version is still a work in progress.
   than moving an already-constructed value there. Unlike `unsafe_write(var T)`,
   this does not require the pointee type to be `Movable`.
 
+- `Array[T, N]` has a new `fill_with=` constructor that calls a function with
+  each index in `[0, N)` and writes its result into that position, replacing
+  the `Array(uninitialized=True)` plus manual fill-loop idiom.
+
 - `List`'s element type is now bounded by `AnyType` instead of `Movable`.
+
+- `List` has a new `fill_with=` constructor that calls a function with each
+  index in `[0, length)` and writes its result into that position, without
+  requiring the element type to be `Movable`.
 
 - Added `write()` to `MaybeUninit` and `Pointer`, as a safe counterpart to
   `unsafe_write()` for types that are trivially deinitializable (for example

@@ -447,27 +447,6 @@ def reduce_mean[
                     total * recip,
                 )
             else:
-                # Integer `dtype` has no NaN to signal "no data" with, and
-                # this divide is `SIMD.__truediv__` — a raw `pop.div`, no
-                # zero-guard — so an empty axis is undefined behavior here
-                # rather than merely a wrong number, and it does not trap
-                # where you would hope. Measured with the substitution
-                # removed: NVIDIA SM100 hands back `-1`, and on CPU LLVM
-                # takes the poison and drops the store outright, leaving
-                # the output unwritten — the exact symptom this change
-                # exists to remove. `total` is already `0` (the `ReduceSum`
-                # identity) whenever `axis_size == 0`, so substituting any
-                # nonzero divisor is exact, not a guess; `1` keeps the
-                # result `0`, matching `sum`'s own identity for an empty
-                # axis.
-                #
-                # Keep the select here rather than hoisting it to host
-                # scope: `axis_size` is already captured, while a hoisted
-                # divisor is one more captured value, which changes the
-                # body's closure type enough to cost an extra `_BlockKernel`
-                # instantiation per dtype. Measured on a 24-reduce graph,
-                # hoisting cost +2 instantiations and +95 KB of MEF for a
-                # select the compiler hoists out of the row loop anyway.
                 var divisor = axis_size if axis_size != 0 else 1
                 output_fn[params.emit_tile_width](
                     oc.coord,

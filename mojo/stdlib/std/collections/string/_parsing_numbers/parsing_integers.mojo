@@ -131,7 +131,9 @@ def to_integer(standardized_x: Array[Byte, CONTAINER_SIZE]) raises -> UInt64:
 
 def get_vector_with_exponents() -> Array[UInt64, CONTAINER_SIZE]:
     """Returns (0, 0, 0, 0, 10**19, 10**18, 10**17, ..., 10, 1)."""
-    var result = Array[UInt64, CONTAINER_SIZE](uninitialized=True)
-    for i in range(4, CONTAINER_SIZE):
-        result[i] = UInt64(10) ** UInt64(CONTAINER_SIZE - i - 1)
-    return result^
+    return Array[_, CONTAINER_SIZE](
+        fill_with=lambda (i: Int) -> UInt64: (
+            UInt64(10) ** UInt64(CONTAINER_SIZE - i - 1) if i
+            >= 4 else UInt64(0)
+        )
+    )

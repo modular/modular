@@ -891,8 +891,6 @@ def _load_max_pipeline(args: argparse.Namespace) -> tuple[Any, Any, Any]:
             ),
         ),
     )
-    # Resolve the manifest (encodings + weight paths) before use.
-    config.models.resolve()
 
     max_length = None
     if "tokenizer" in config.models:

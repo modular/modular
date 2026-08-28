@@ -147,16 +147,6 @@ def ParamDeclArrayAttr : DialectAttribute<(attr
   ConcreteAttrArray<"ParamDeclAttr">:$value
 )>;
 
-def FnGenBuilderParamDeclAttr : DialectAttribute<(attr
-  StringAttr:$name,
-  Type:$declaredType
-)>;
-
-def FnGenBuilderParamDeclRefAttr : DialectAttribute<(attr
-  StringAttr:$name,
-  Type:$type
-)>;
-
 def PogMetadataAttr : DialectAttribute<(attr
   StringAttr:$name,
   EnumAttr<"::M::KGEN::PassingKind">:$passingKind,
@@ -674,9 +664,7 @@ def KGENDialectAttributes : DialectAttributes<"kgen"> {
     SingletonAttr,
     FnMetadataAttr,
     TraitSymbolAttr,
-    TraitSymbolArrayAttr,
-    FnGenBuilderParamDeclAttr,
-    FnGenBuilderParamDeclRefAttr
+    TraitSymbolArrayAttr
   ];
 }
 

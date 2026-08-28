@@ -642,19 +642,17 @@ PValue OverloadSet::filterOverloadSet(
     FnTypeGeneratorType desiredSignature = candidate->getDeclFullSignature();
     if (candidate->getIfWitness()) {
       auto sig = cast<FnTypeGeneratorType>(getCanonicalType(desiredSignature));
-      SmallVector<Type> inputTypes(sig.getInputParamTypes());
-      if (inputTypes.empty() || !isa<TraitType>(inputTypes[0]))
+      ArrayRef<Type> inputParamTypes = sig.getInputParamTypes();
+      if (inputParamTypes.empty() || !isa<TraitType>(inputParamTypes[0]))
         continue;
-      // does not really matter which we pick, we just want to test equality
+      // Does not really matter which we pick, we just want to test equality
       // without considering `_Self` parameter.
       if (!selfTrait)
-        selfTrait = inputTypes[0];
-      inputTypes[0] = selfTrait;
-      Type dedupKey = sig.getWithInputParamTypes(inputTypes);
-      TypedAttr self =
-          TypeParamAttr::get(selfTrait, selfTrait.extractMetaType());
-      TraitSelfBinder selfBinder(self);
-      if (!seenWitness.insert(selfBinder.replace(dedupKey)).second)
+        selfTrait = inputParamTypes[0];
+
+      TraitSelfBinder selfBinder(
+          TypeParamAttr::get(selfTrait, selfTrait.extractMetaType()));
+      if (!seenWitness.insert(selfBinder.bindTraitFnSignature(sig)).second)
         continue; // skip if saw the same witness.
     }
 

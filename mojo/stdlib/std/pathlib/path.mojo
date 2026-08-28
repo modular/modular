@@ -579,11 +579,7 @@ struct Path(
         """
 
         var ls = listdir(self)
-        var res = List[Path](capacity=len(ls))
-        for i in range(len(ls)):
-            res.append(ls[i])
-
-        return res^
+        return List(length=len(ls), fill_with=lambda (i: Int) -> Path: ls[i])
 
     def name(self) -> String:
         """Returns the name of the path.

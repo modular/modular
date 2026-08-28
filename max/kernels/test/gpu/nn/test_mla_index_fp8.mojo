@@ -105,6 +105,7 @@ def test_mla_index_fp8_paged_variable_lengths[
     mask_name: StaticString = MaskName.NULL.name,
     strict_complete: Bool = False,
     check_scores: Bool = False,
+    kpool: Int = 1,
 ](
     seq_lens: List[Int],
     cache_lens: List[Int],
@@ -129,6 +130,9 @@ def test_mla_index_fp8_paged_variable_lengths[
             catches the topk_gpu out_vals/out_idxs row-stride desync bug,
             where higher query rows collapsed to all -1 (see the regression
             cases in main()).
+        kpool: Tokens per pooled cache row. With `kpool > 1` the cache rows are
+            pooled keys, so the indexer selects pool ids and each token's
+            candidate count is its visible-token count floored by `kpool`.
         check_scores: When True (B200 only, NULL mask), run the SM100 tensor-core
             scorer on the paged KV cache and compare every (token, key) logit
             against a host reference computed over the paged layout. A wrong
@@ -369,6 +373,7 @@ def test_mla_index_fp8_paged_variable_lengths[
         depth,
         top_k,
         mask_name,
+        kpool=kpool,
     ](
         o_tile,
         q_tile,
@@ -383,9 +388,11 @@ def test_mla_index_fp8_paged_variable_lengths[
     ctx.enqueue_copy(o_ptr, o_device)
     ctx.synchronize()
 
-    # Build a mapping from global token index to its valid key range
+    # Build a mapping from global token index to its valid candidate range.
     # With causal mask: num_keys = cache_len + local_seq_idx + 1
     # Without mask (NULL): num_keys = cache_len + seq_len
+    # With kpool > 1 a candidate is a pool of `kpool` tokens, and a pool is only
+    # selectable once its last member is visible, so the count is floored.
     var token_to_num_keys = List[Int]()
     for batch_idx in range(batch_size):
         var cache_len = cache_lens[batch_idx]
@@ -393,10 +400,10 @@ def test_mla_index_fp8_paged_variable_lengths[
 
         comptime if use_causal_mask:
             for local_seq_idx in range(seq_len):
-                var num_keys = cache_len + local_seq_idx + 1
+                var num_keys = (cache_len + local_seq_idx + 1) // kpool
                 token_to_num_keys.append(num_keys)
         else:
-            var num_keys = cache_len + seq_len
+            var num_keys = (cache_len + seq_len) // kpool
             for _ in range(seq_len):
                 token_to_num_keys.append(num_keys)
 
@@ -2041,6 +2048,94 @@ def main() raises:
             ](
                 seq_lens=[6, 5, 4, 3],
                 cache_lens=[2000, 2000, 2000, 2000],
+                ctx=ctx,
+            )
+
+        # ===== Pooled candidates (kpool > 1) =====
+        # A cache row is one pooled key per `kpool` tokens, so each token's
+        # candidate count is its visible-token count floored by `kpool`.
+        # kpool > 1 requires the SM100 tensor-core scorer, so B200 only.
+        comptime if _has_blackwell_tcgen05():
+            print("\n--- pooled candidates (kpool=4) ---")
+
+            # GLM indexer geometry. `nh=32` routes to the warp-specialized
+            # prefill scorer. Every pool count here is under `top_k`, so each
+            # token must select its whole pool set.
+            test_mla_index_fp8_paged_variable_lengths[
+                num_heads=32,
+                depth=128,
+                page_size=128,
+                top_k=64,
+                mask_name=MaskName.NULL.name,
+                strict_complete=True,
+                kpool=4,
+            ](
+                seq_lens=[6, 4, 2, 1],
+                cache_lens=[64, 128, 32, 96],
+                ctx=ctx,
+            )
+
+            # Same geometry under causality. The bound moves per token, so a
+            # token whose visible count is not a multiple of 4 must not see the
+            # pool its tail sits in.
+            test_mla_index_fp8_paged_variable_lengths[
+                num_heads=32,
+                depth=128,
+                page_size=128,
+                top_k=64,
+                mask_name=MaskName.CAUSAL.name,
+                strict_complete=True,
+                kpool=4,
+            ](
+                seq_lens=[7, 5, 3, 1],
+                cache_lens=[64, 130, 33, 97],
+                ctx=ctx,
+            )
+
+            # `nh=64` takes the resident-key scorer, which is the other
+            # epilogue carrying the pooled store guard.
+            test_mla_index_fp8_paged_variable_lengths[
+                num_heads=64,
+                depth=128,
+                page_size=128,
+                top_k=64,
+                mask_name=MaskName.CAUSAL.name,
+                strict_complete=True,
+                kpool=4,
+            ](
+                seq_lens=[6, 1, 4, 1],
+                cache_lens=[128, 64, 200, 50],
+                ctx=ctx,
+            )
+
+            # Fewer tokens than one pool: no candidate exists, so every
+            # output slot must be the invalid sentinel rather than garbage.
+            # `effective_k` is 0 on this path, which no other case reaches.
+            test_mla_index_fp8_paged_variable_lengths[
+                num_heads=32,
+                depth=128,
+                page_size=128,
+                top_k=64,
+                mask_name=MaskName.CAUSAL.name,
+                kpool=4,
+            ](
+                seq_lens=[2, 1, 3],
+                cache_lens=[0, 0, 0],
+                ctx=ctx,
+            )
+
+            # Sparse: 2048 tokens of context is 512 pools, well above top_k, so
+            # the selection is a real top-k over pools rather than everything.
+            test_mla_index_fp8_paged_variable_lengths[
+                num_heads=32,
+                depth=128,
+                page_size=128,
+                top_k=64,
+                mask_name=MaskName.CAUSAL.name,
+                kpool=4,
+            ](
+                seq_lens=[4, 2],
+                cache_lens=[2048, 1024],
                 ctx=ctx,
             )
 

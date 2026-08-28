@@ -2646,6 +2646,7 @@ def mla_fp8_index_top_k(
     top_k: int,
     quantization_granularity: int,
     mask_variant: MHAMaskVariant = MHAMaskVariant.CAUSAL_MASK,
+    kpool: int = 1,
 ) -> TensorValue:
     """Computes top-k indices for MLA FP8 indexed attention scores.
 
@@ -2662,11 +2663,21 @@ def mla_fp8_index_top_k(
         top_k: Requested number of top indices per token.
         quantization_granularity: Quantization granularity for the K cache.
         mask_variant: The mask variant to use (NULL or CAUSAL_MASK).
+        kpool: Tokens per row of ``k_collection``. ``1`` scores one row per
+            cached token. ``k > 1`` means the cache holds one pooled key per
+            ``k`` consecutive tokens, so ``top_k`` counts pools and the
+            returned indices are pool ids that the caller expands back to
+            token positions.
 
     Returns:
         Output tensor of shape [total_seq_len, effective_k] containing top-k key
         indices per token, where effective_k = min(top_k, max_num_keys).
-        Invalid positions are filled with -1.
+        Invalid positions are filled with -1. With ``kpool > 1`` the entries are
+        pool ids rather than token positions.
+
+    Raises:
+        ValueError: If ``top_k`` or ``kpool`` is not positive, or if
+            ``mask_variant`` is neither NULL nor CAUSAL.
     """
     _validate_argument_tensor(
         "q", q, dtype=DType.float8_e4m3fn, rank=3, device_type=DeviceKind.GPU
@@ -2705,6 +2716,8 @@ def mla_fp8_index_top_k(
     )
     if top_k <= 0:
         raise ValueError(f"top_k must be greater than 0, got {top_k}")
+    if kpool < 1:
+        raise ValueError(f"kpool must be at least 1, got {kpool}")
 
     # Validate mask_variant is supported
     if mask_variant not in (
@@ -2739,6 +2752,7 @@ def mla_fp8_index_top_k(
             "k": top_k,
             "quantization_granularity": quantization_granularity,
             "mask_str": mask_str,
+            "kpool": kpool,
         },
     )[0].tensor
 
@@ -5164,6 +5178,153 @@ def moe_router_group_limited(
     )
 
     return (results[0].tensor, results[1].tensor)
+
+
+def moe_sink_gate_router(
+    logits: TensorValue,
+    expert_bias: TensorValue,
+    global_scale: TensorValue,
+    n_routed_experts: int,
+    n_experts_per_tok: int,
+    n_shared_experts: int,
+    route_scale: float,
+) -> tuple[TensorValue, TensorValue, TensorValue]:
+    """Fused sigmoid-gate MoE router with always-on sink experts.
+
+    Sink experts are gated shared experts, not attention sinks.
+
+    Selects the top ``n_experts_per_tok`` routed experts by
+    ``sigmoid(logits) + expert_bias``, then softmax-normalizes the
+    log-sigmoid of those experts' raw logits together with
+    ``n_shared_experts`` always-selected sink logits, scaled by
+    ``route_scale * global_scale``. This is the Inkling gate formula, run on
+    the GPU as a single kernel (``mo.moe.sink.gate.router``, implemented as
+    ``sink_gate_router`` in Mojo).
+
+    Args:
+        logits: Raw (pre-sigmoid) gate logits, routed experts followed by
+            sink experts. Must be float32, which is the only dtype the
+            kernel's joint softmax has been validated at. Shape:
+            [num_tokens, n_routed_experts + n_shared_experts].
+        expert_bias: Per-routed-expert selection bias. Shape: [n_routed_experts].
+        global_scale: Scalar output-scaling weight. Shape: [1].
+        n_routed_experts: Total number of routed experts. Must be a positive
+            multiple of the target's warp width, no greater than 1024: the
+            kernel runs one thread per routed expert.
+        n_experts_per_tok: Number of routed experts selected per token.
+            Bounded jointly with ``n_routed_experts`` by the top-k's
+            surviving candidates having to fit one warp, so the ceiling
+            falls as the expert count rises: at a warp width of 32, 256
+            experts admit up to 10 per token and 512 up to 8, while at 64
+            the same 256 experts admit up to 32.
+        n_shared_experts: Number of always-selected sink experts.
+            ``n_experts_per_tok + n_shared_experts`` must be a power of two
+            no greater than the target's warp width, since the two are
+            jointly normalized by a single warp-level reduction.
+        route_scale: Scalar output-scaling factor.
+
+    Returns:
+        A tuple of three tensors:
+        - expert_ids: Selected routed-expert indices. Shape:
+            [num_tokens, n_experts_per_tok].
+        - expert_weights: Routing weight per selected routed expert. Shape:
+            [num_tokens, n_experts_per_tok].
+        - sink_weights: Routing weight per sink expert. Shape:
+            [num_tokens, n_shared_experts].
+
+    Raises:
+        ValueError: If the routing shape is one the kernel cannot compile.
+    """
+    _check_rank(2, logits=logits)
+    _check_rank(1, expert_bias=expert_bias, global_scale=global_scale)
+    _check_same_dtype(logits=logits, global_scale=global_scale)
+    if logits.dtype != DType.float32:
+        raise ValueError(f"expected float32 logits but got {logits.dtype}")
+
+    # The kernel runs one thread per routed expert and normalizes the
+    # selected-plus-sink weights with a single warp-level reduction, so both
+    # counts are bounded by the target's warp width. Check here so an
+    # unsupported checkpoint fails before the Mojo compiler sees it.
+    warp_size = 64 if _is_amd_gpu() else 32
+    if (
+        n_routed_experts <= 0
+        or n_routed_experts % warp_size
+        or n_routed_experts > 1024
+    ):
+        raise ValueError(
+            f"n_routed_experts must be a positive multiple of {warp_size} and"
+            f" fit in one block (<= 1024) but got {n_routed_experts}"
+        )
+    k_total = n_experts_per_tok + n_shared_experts
+    if k_total <= 0 or k_total & (k_total - 1) or k_total > warp_size:
+        raise ValueError(
+            "n_experts_per_tok + n_shared_experts must be a positive power of"
+            f" two no greater than {warp_size} but got {n_experts_per_tok} +"
+            f" {n_shared_experts} = {k_total}"
+        )
+    # The top-k reduces in phases, and warp 0 sorts the last round, so the
+    # survivors of the round before it must fit one warp. Rules out shapes
+    # like 1024/30/2 that clear the two bounds above.
+    num_warps = n_routed_experts // warp_size
+    phase2_warps = -(-(num_warps * n_experts_per_tok) // warp_size)
+    if phase2_warps * n_experts_per_tok > warp_size:
+        raise ValueError(
+            f"{n_routed_experts} routed experts with n_experts_per_tok"
+            f" {n_experts_per_tok} leaves"
+            f" {phase2_warps * n_experts_per_tok} top-k survivors, which"
+            f" exceeds the target's warp width of {warp_size}; lower"
+            " n_experts_per_tok or n_routed_experts"
+        )
+
+    if logits.shape[1] != n_routed_experts + n_shared_experts:
+        raise ValueError(
+            "expected logits of shape [num_tokens, n_routed_experts +"
+            f" n_shared_experts] but got {logits.shape}"
+        )
+    if expert_bias.shape[0] != n_routed_experts:
+        raise ValueError(
+            f"expected expert_bias of shape [{n_routed_experts}] but got"
+            f" {expert_bias.shape}"
+        )
+    if global_scale.shape[0] != 1:
+        raise ValueError(
+            f"expected global_scale of shape [1] but got {global_scale.shape}"
+        )
+
+    results = ops.custom(
+        "mo.moe.sink.gate.router",
+        device=logits.device,
+        values=[
+            logits,
+            expert_bias,
+            global_scale,
+            ops.constant(route_scale, DType.float32, device=DeviceRef.CPU()),
+        ],
+        out_types=[
+            TensorType(
+                dtype=DType.int32,
+                shape=[logits.shape[0], n_experts_per_tok],
+                device=logits.device,
+            ),  # expert_ids
+            TensorType(
+                dtype=logits.dtype,
+                shape=[logits.shape[0], n_experts_per_tok],
+                device=logits.device,
+            ),  # expert_weights
+            TensorType(
+                dtype=logits.dtype,
+                shape=[logits.shape[0], n_shared_experts],
+                device=logits.device,
+            ),  # sink_weights
+        ],
+        parameters={
+            "n_routed_experts": n_routed_experts,
+            "n_experts_per_tok": n_experts_per_tok,
+            "n_shared_experts": n_shared_experts,
+        },
+    )
+
+    return (results[0].tensor, results[1].tensor, results[2].tensor)
 
 
 def _router_gate_mixed_gemv(
@@ -8576,6 +8737,124 @@ def merge_ragged_tensors(
     )
 
     return results[0].tensor, results[1].tensor
+
+
+def mtp_eh_norm(
+    embed: TensorValue,
+    prev_hidden: TensorValue,
+    enorm_weight: TensorValue,
+    hnorm_weight: TensorValue,
+    epsilon: float,
+    block_threads: int = 256,
+) -> TensorValue:
+    """Normalizes both inputs of an MTP draft layer into one projection input.
+
+    A multi-token-prediction draft predicts a token two ahead from the
+    embedding of the token the target just produced and the target's hidden
+    state. Each is RMS-normalized with its own weight, and the pair is
+    projected back to one hidden width. This returns that projection's input
+    in a single pass.
+
+    Normalization matches :func:`~max.graph.ops.rms_norm` in its Llama-style
+    configuration -- ``weight_offset=0`` and ``multiply_before_cast=False``.
+    Do not use this with the Gemma-style configuration.
+
+    Args:
+        embed: Token embeddings ``[num_tokens, hidden_size]``.
+        prev_hidden: Target hidden states, same shape and dtype as ``embed``.
+        enorm_weight: Embedding norm weight ``[hidden_size]``.
+        hnorm_weight: Hidden-state norm weight ``[hidden_size]``.
+        epsilon: Added inside the square root.
+        block_threads: Threads per block; must be a whole number of warps.
+
+    Returns:
+        ``[num_tokens, 2 * hidden_size]`` with the normalized embedding in the
+        leading columns and the normalized hidden state in the trailing ones.
+
+    Raises:
+        ValueError: If the inputs disagree in shape, dtype or device, if the
+            hidden size is not statically known, if the dtype is float8, or if
+            ``block_threads`` is not a positive multiple of 32 no greater than
+            1024.
+    """
+    if embed.shape != prev_hidden.shape:
+        raise ValueError(
+            "embed and prev_hidden must have the same shape, got"
+            f" {embed.shape} and {prev_hidden.shape}"
+        )
+    if embed.dtype != prev_hidden.dtype:
+        raise ValueError(
+            "embed and prev_hidden must have the same dtype, got"
+            f" {embed.dtype} and {prev_hidden.dtype}"
+        )
+    if embed.device != prev_hidden.device:
+        raise ValueError(
+            "embed and prev_hidden must be on the same device, got"
+            f" {embed.device} and {prev_hidden.device}"
+        )
+    for name, w in (
+        ("enorm_weight", enorm_weight),
+        ("hnorm_weight", hnorm_weight),
+    ):
+        if w.dtype != embed.dtype:
+            raise ValueError(
+                f"{name} must match embed's dtype {embed.dtype}, got {w.dtype}"
+            )
+        if w.device != embed.device:
+            raise ValueError(
+                f"{name} must be on embed's device {embed.device}, got"
+                f" {w.device}"
+            )
+        if w.shape[0] != embed.shape[1]:
+            raise ValueError(
+                f"{name} length {w.shape[0]} must equal the hidden size"
+                f" {embed.shape[1]}"
+            )
+    if embed.dtype in (DType.float8_e4m3fn, DType.float8_e5m2):
+        raise ValueError(
+            f"mtp_eh_norm does not support {embed.dtype}: it accumulates in"
+            " float32, where ops.rms_norm reduces float8 in float16"
+        )
+    if block_threads <= 0 or block_threads % 32 != 0:
+        raise ValueError(
+            "block_threads must be a positive multiple of 32, got"
+            f" {block_threads}"
+        )
+    if block_threads > 1024:
+        raise ValueError(
+            "block_threads must not exceed 1024, the largest block any"
+            f" supported GPU allows, got {block_threads}"
+        )
+
+    if not isinstance(embed.shape[1], StaticDim):
+        raise ValueError(
+            "the hidden size (embed.shape[1]) must be statically known, got"
+            f" {embed.shape[1]}"
+        )
+    hidden_size = int(embed.shape[1])
+
+    return ops.custom(
+        "mo.mtp.eh_norm",
+        device=embed.device,
+        values=[
+            embed,
+            prev_hidden,
+            enorm_weight,
+            hnorm_weight,
+            ops.constant(epsilon, dtype=DType.float32, device=DeviceRef.CPU()),
+        ],
+        out_types=[
+            TensorType(
+                dtype=embed.dtype,
+                shape=(embed.shape[0], 2 * hidden_size),
+                device=embed.device,
+            )
+        ],
+        parameters={
+            "hidden_size": hidden_size,
+            "block_threads": block_threads,
+        },
+    )[0].tensor
 
 
 def eagle_prefill_shift_tokens(

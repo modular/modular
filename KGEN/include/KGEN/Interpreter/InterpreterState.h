@@ -117,6 +117,15 @@ private:
   size_t idx = 0;
 };
 
+/// Whether `attr` may be bound to a value of type `type`; an untyped attribute
+/// carries no constraint. Interpreted pointer arithmetic takes the address from
+/// the attribute and the stride from the static type, so a disagreement
+/// silently computes wrong offsets.
+inline bool isAttributeTypeCompatible(Attribute attr, Type type) {
+  auto typed = llvm::dyn_cast_if_present<mlir::TypedAttr>(attr);
+  return !typed || typed.getType() == type;
+}
+
 //===----------------------------------------------------------------------===//
 // InterpreterState
 //===----------------------------------------------------------------------===//
@@ -262,13 +271,16 @@ public:
   /// Transfer control flow to the given operation. If the operation is null,
   /// this is indicating that the interpreter should exit. Otherwise, the
   /// current return values are taken as the results of the target operation.
-  virtual void transferControlFlowTo(Operation *target,
-                                     ArrayRef<Attribute> values) = 0;
+  virtual ErrorTreeOrSuccess
+  transferControlFlowTo(Operation *target, ArrayRef<Attribute> values) = 0;
 
   /// Transfer control flow to the beginning of the given region with the
-  /// constant values of the block arguments.
-  virtual void transferControlFlowTo(Region &target,
-                                     ArrayRef<Attribute> arguments) = 0;
+  /// constant values of the block arguments. The target region may belong to
+  /// un-substituted IR, so its argument types can still be symbolic
+  /// (`!kgen.param<T>`) while the incoming values are already concrete;
+  /// implementations therefore validate the argument count but not the types.
+  virtual ErrorTreeOrSuccess
+  transferControlFlowTo(Region &target, ArrayRef<Attribute> arguments) = 0;
 
   //===--------------------------------------------------------------------===//
   // Interpreter Stack Management
@@ -282,7 +294,8 @@ public:
 
   /// Return from the current function back to the caller using `returnValues`
   /// as the return values of the function.
-  virtual void returnFromFunction(ArrayRef<Attribute> returnValues) = 0;
+  virtual ErrorTreeOrSuccess
+  returnFromFunction(ArrayRef<Attribute> returnValues) = 0;
 
   /// Return the origin operation of the frame at the given depth in the stack.
   /// If the stack is not deep enough, return null.
@@ -302,7 +315,7 @@ public:
   // Interpreter Value Management
 
   /// Map the results of the current operation.
-  virtual void mapResults(ArrayRef<Attribute> results) = 0;
+  virtual ErrorTreeOrSuccess mapResults(ArrayRef<Attribute> results) = 0;
 
   virtual ErrorTreeOrSuccess
   interpretOpWithFolder(Operation *op, ArrayRef<Attribute> operands) = 0;
@@ -502,42 +515,57 @@ public:
     // Function regions are isolated from above, so push a new stack frame.
     // Then, transfer control flow to the beginning of the function body.
     pushFrame(pc.isValid() ? &*pc : nullptr, body.getParentOp());
-    transferControlFlowTo(body, arguments);
-    return success();
+    return transferControlFlowTo(body, arguments);
   }
 
-  void returnFromFunction(ArrayRef<Attribute> returnValues) override {
+  ErrorTreeOrSuccess
+  returnFromFunction(ArrayRef<Attribute> returnValues) override {
     // Pop the current frame and transfer control flow back to the call
     // operation, using the operands of the return as the results of the call.
     Operation *call = popFrame();
-    transferControlFlowTo(call, returnValues);
+    return transferControlFlowTo(call, returnValues);
   }
 
-  void transferControlFlowTo(Operation *target,
-                             ArrayRef<Attribute> values) override {
+  ErrorTreeOrSuccess
+  transferControlFlowTo(Operation *target,
+                        ArrayRef<Attribute> values) override {
     if (target) {
       block = target->getBlock();
       pc = target->getIterator();
-      mapResults(values);
-    } else {
-      block = nullptr;
-      pc = Block::iterator();
-      exitValues = llvm::to_vector(values);
+      return mapResults(values);
     }
+    block = nullptr;
+    pc = Block::iterator();
+    exitValues = llvm::to_vector(values);
+    return success();
   }
 
-  void transferControlFlowTo(Region &target,
-                             ArrayRef<Attribute> arguments) override {
+  ErrorTreeOrSuccess
+  transferControlFlowTo(Region &target,
+                        ArrayRef<Attribute> arguments) override {
+    if (target.getNumArguments() != arguments.size())
+      return ErrorTree(target.getLoc(),
+                       "internal error: region argument count does not match "
+                       "the values passed to it");
+    // Argument types may still be symbolic in the un-substituted callee body,
+    // so only the argument count is checked.
     for (auto [arg, value] : llvm::zip(target.getArguments(), arguments))
       mapOrOverwrite(arg, value);
     block = &target.front();
     pc = Block::iterator();
+    return success();
   }
 
-  void mapResults(ArrayRef<Attribute> results) override {
+  ErrorTreeOrSuccess mapResults(ArrayRef<Attribute> results) override {
     assert(pc->getNumResults() == results.size());
-    for (auto [result, value] : llvm::zip(pc->getResults(), results))
+    for (auto [result, value] : llvm::zip(pc->getResults(), results)) {
+      if (!isAttributeTypeCompatible(value, result.getType()))
+        return ErrorTree(pc->getLoc(),
+                         "internal error: attribute type does not match the "
+                         "result type it is bound to");
       mapOrOverwrite(result, value);
+    }
+    return success();
   }
 
 private:

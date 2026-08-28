@@ -702,6 +702,25 @@ def compute_mla_dispatch_scalars[
     return (batch_size, q_max_seq_len, num_partitions)
 
 
+def _dispatch_scalars_for_heads[
+    num_heads: Int
+](
+    batch_size: Int,
+    max_cache_valid_length: Int,
+    q_max_seq_len: Int,
+    is_fp8_kv: Bool,
+    sm_count: Int,
+) -> Tuple[Int, Int, Int]:
+    """Binds `is_fp8_kv` at comptime for one already-bound head count."""
+    if is_fp8_kv:
+        return compute_mla_dispatch_scalars[num_heads, is_fp8_kv=True](
+            batch_size, max_cache_valid_length, q_max_seq_len, sm_count
+        )
+    return compute_mla_dispatch_scalars[num_heads](
+        batch_size, max_cache_valid_length, q_max_seq_len, sm_count
+    )
+
+
 def compute_mla_dispatch_scalars_runtime(
     batch_size: Int,
     max_cache_valid_length: Int,
@@ -710,78 +729,77 @@ def compute_mla_dispatch_scalars_runtime(
     is_fp8_kv: Bool,
     sm_count: Int,
 ) raises -> Tuple[Int, Int, Int]:
-    if is_fp8_kv:
-        if num_heads == 8:
-            return compute_mla_dispatch_scalars[8, is_fp8_kv=True](
-                batch_size,
-                max_cache_valid_length,
-                q_max_seq_len,
-                sm_count,
-            )
-        if num_heads == 16:
-            return compute_mla_dispatch_scalars[16, is_fp8_kv=True](
-                batch_size,
-                max_cache_valid_length,
-                q_max_seq_len,
-                sm_count,
-            )
-        if num_heads == 32:
-            return compute_mla_dispatch_scalars[32, is_fp8_kv=True](
-                batch_size,
-                max_cache_valid_length,
-                q_max_seq_len,
-                sm_count,
-            )
-        if num_heads == 64:
-            return compute_mla_dispatch_scalars[64, is_fp8_kv=True](
-                batch_size,
-                max_cache_valid_length,
-                q_max_seq_len,
-                sm_count,
-            )
-        if num_heads == 128:
-            return compute_mla_dispatch_scalars[128, is_fp8_kv=True](
-                batch_size,
-                max_cache_valid_length,
-                q_max_seq_len,
-                sm_count,
-            )
-    else:
-        if num_heads == 8:
-            return compute_mla_dispatch_scalars[8](
-                batch_size,
-                max_cache_valid_length,
-                q_max_seq_len,
-                sm_count,
-            )
-        if num_heads == 16:
-            return compute_mla_dispatch_scalars[16](
-                batch_size,
-                max_cache_valid_length,
-                q_max_seq_len,
-                sm_count,
-            )
-        if num_heads == 32:
-            return compute_mla_dispatch_scalars[32](
-                batch_size,
-                max_cache_valid_length,
-                q_max_seq_len,
-                sm_count,
-            )
-        if num_heads == 64:
-            return compute_mla_dispatch_scalars[64](
-                batch_size,
-                max_cache_valid_length,
-                q_max_seq_len,
-                sm_count,
-            )
-        if num_heads == 128:
-            return compute_mla_dispatch_scalars[128](
-                batch_size,
-                max_cache_valid_length,
-                q_max_seq_len,
-                sm_count,
-            )
+    """Binds a runtime Q-head count to a comptime dispatch instantiation.
+
+    Every count here is one the kernel is measured correct at; 12, 24 and 48
+    are Kimi K3 at TP8/TP4/TP2. The list is not exhaustive — a count the kernel
+    supports but that no model asks for yet is left out rather than paying its
+    instantiation, so add an arm when a model needs one.
+    """
+    if num_heads == 8:
+        return _dispatch_scalars_for_heads[8](
+            batch_size,
+            max_cache_valid_length,
+            q_max_seq_len,
+            is_fp8_kv,
+            sm_count,
+        )
+    if num_heads == 12:
+        return _dispatch_scalars_for_heads[12](
+            batch_size,
+            max_cache_valid_length,
+            q_max_seq_len,
+            is_fp8_kv,
+            sm_count,
+        )
+    if num_heads == 16:
+        return _dispatch_scalars_for_heads[16](
+            batch_size,
+            max_cache_valid_length,
+            q_max_seq_len,
+            is_fp8_kv,
+            sm_count,
+        )
+    if num_heads == 24:
+        return _dispatch_scalars_for_heads[24](
+            batch_size,
+            max_cache_valid_length,
+            q_max_seq_len,
+            is_fp8_kv,
+            sm_count,
+        )
+    if num_heads == 32:
+        return _dispatch_scalars_for_heads[32](
+            batch_size,
+            max_cache_valid_length,
+            q_max_seq_len,
+            is_fp8_kv,
+            sm_count,
+        )
+    if num_heads == 48:
+        return _dispatch_scalars_for_heads[48](
+            batch_size,
+            max_cache_valid_length,
+            q_max_seq_len,
+            is_fp8_kv,
+            sm_count,
+        )
+    if num_heads == 64:
+        return _dispatch_scalars_for_heads[64](
+            batch_size,
+            max_cache_valid_length,
+            q_max_seq_len,
+            is_fp8_kv,
+            sm_count,
+        )
+    if num_heads == 128:
+        return _dispatch_scalars_for_heads[128](
+            batch_size,
+            max_cache_valid_length,
+            q_max_seq_len,
+            is_fp8_kv,
+            sm_count,
+        )
     raise Error(
         "Unsupported MLA num_heads for direct dispatch metadata binding: "
         + String(num_heads)

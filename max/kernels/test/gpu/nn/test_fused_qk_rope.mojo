@@ -14,8 +14,8 @@
 from max.gpu.host import DeviceContext
 from internal_utils import assert_almost_equal
 from kv_cache.types import (
-    ContinuousBatchingKVCacheCollection,
     KVCacheStaticParams,
+    PagedKVCacheCollection,
 )
 from layout import (
     Layout,
@@ -49,7 +49,18 @@ def test_fused_qk_rope[dtype: DType](ctx: DeviceContext) raises -> None:
     comptime seq_len = 3
     comptime max_seq_len = 16
     comptime num_layers = 1
-    var lookup_table: List[UInt32] = [0, 1]
+    # Small pages so batch 1's [5, 8) window straddles a page boundary.
+    comptime page_size = 2
+    comptime pages_per_seq = max_seq_len // page_size
+    comptime num_paged_blocks = batch_size * pages_per_seq
+
+    # Reverse the page pool so no sequence lands on an identity mapping.
+    def _page_of(batch_idx: Int, tok_idx: Int) -> Int:
+        return (
+            num_paged_blocks
+            - 1
+            - (batch_idx * pages_per_seq + tok_idx // page_size)
+        )
 
     def _max[dtype: DType, items: List[Scalar[dtype]]]() -> Scalar[dtype]:
         comptime assert len(items) > 0, "empty list in _max"
@@ -77,7 +88,7 @@ def test_fused_qk_rope[dtype: DType](ctx: DeviceContext) raises -> None:
         batch_size, 2, num_layers, max_seq_len, num_heads, head_dim
     )
     comptime cache_lengths_layout = Layout.row_major(UNKNOWN_VALUE)
-    comptime lookup_table_layout = Layout.row_major(UNKNOWN_VALUE)
+    comptime lookup_table_layout = Layout.row_major[2]()
 
     # Define TileTensor layouts
     comptime q_tile_layout = row_major[
@@ -88,10 +99,10 @@ def test_fused_qk_rope[dtype: DType](ctx: DeviceContext) raises -> None:
 
     # Create shapes
     var kv_block_shape = IndexList[6](
-        batch_size, 2, num_layers, max_seq_len, num_heads, head_dim
+        num_paged_blocks, 2, num_layers, page_size, num_heads, head_dim
     )
     var cache_lengths_shape = Index(batch_size)
-    var lookup_table_shape = Index(batch_size)
+    var lookup_table_shape = IndexList[2](batch_size, pages_per_seq)
     var q_shape = IndexList[4](batch_size, seq_len, num_heads, head_dim)
     var freqs_shape = IndexList[2](max_seq_len, head_dim)
 
@@ -111,7 +122,9 @@ def test_fused_qk_rope[dtype: DType](ctx: DeviceContext) raises -> None:
         kv_block_shape.flattened_length()
     )
     var cache_lengths_device = ctx.enqueue_create_buffer[.uint32](batch_size)
-    var lookup_table_device = ctx.enqueue_create_buffer[.uint32](batch_size)
+    var lookup_table_device = ctx.enqueue_create_buffer[.uint32](
+        batch_size * pages_per_seq
+    )
     var q_device = ctx.enqueue_create_buffer[dtype](q_shape.flattened_length())
     var freqs_device = ctx.enqueue_create_buffer[dtype](
         freqs_shape.flattened_length()
@@ -132,15 +145,25 @@ def test_fused_qk_rope[dtype: DType](ctx: DeviceContext) raises -> None:
             kv_block_host, kv_block_runtime_layout
         )
         for batch_idx in range(batch_size):
-            var dest_offset = (
-                batch_idx * 2 * num_layers * max_seq_len * num_heads * head_dim
-                + Int(start_positions_dyn[batch_idx]) * num_heads * head_dim
-            )
-            unsafe_memcpy(
-                dest=kv_block_tensor.ptr + dest_offset,
-                src=k_cache_input_buffer_ptr + (batch_idx * seq_len * dim),
-                count=seq_len * dim,
-            )
+            var start_pos = Int(start_positions_dyn[batch_idx])
+            # Rows are contiguous only within a page, so seed a token at a time.
+            for seq_idx in range(seq_len):
+                var tok_idx = start_pos + seq_idx
+                var dest_offset = (
+                    _page_of(batch_idx, tok_idx)
+                    * 2
+                    * num_layers
+                    * page_size
+                    * num_heads
+                    * head_dim
+                    + (tok_idx % page_size) * num_heads * head_dim
+                )
+                unsafe_memcpy(
+                    dest=kv_block_tensor.ptr + dest_offset,
+                    src=k_cache_input_buffer_ptr
+                    + ((batch_idx * seq_len + seq_idx) * dim),
+                    count=dim,
+                )
 
     # Initialize cache_lengths with start_positions
     with cache_lengths_device.map_to_host() as cache_lengths_host:
@@ -149,8 +172,11 @@ def test_fused_qk_rope[dtype: DType](ctx: DeviceContext) raises -> None:
 
     # Initialize lookup_table
     with lookup_table_device.map_to_host() as lookup_table_host:
-        for i in range(batch_size):
-            lookup_table_host[i] = lookup_table[i]
+        for batch_idx in range(batch_size):
+            for page_idx in range(pages_per_seq):
+                lookup_table_host[
+                    batch_idx * pages_per_seq + page_idx
+                ] = UInt32(_page_of(batch_idx, page_idx * page_size))
 
     # Initialize query buffer with golden values
     var q_input_buffer = q_input[dtype]()
@@ -192,10 +218,10 @@ def test_fused_qk_rope[dtype: DType](ctx: DeviceContext) raises -> None:
     var lookup_table_tensor = LayoutTensor[
         mut=False,
         .uint32,
-        Layout(UNKNOWN_VALUE),
+        lookup_table_layout,
     ](
         lookup_table_device,
-        RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(lookup_table_shape),
+        RuntimeLayout[lookup_table_layout].row_major(lookup_table_shape),
     )
 
     # Create TileTensors for q, freqs, and output
@@ -203,7 +229,7 @@ def test_fused_qk_rope[dtype: DType](ctx: DeviceContext) raises -> None:
     var freqs_tensor = TileTensor(freqs_device, freqs_tile_layout)
     var q_out_tensor = TileTensor(q_out_device, q_tile_layout)
 
-    var kv_collection = ContinuousBatchingKVCacheCollection[dtype, kv_params](
+    var kv_collection = PagedKVCacheCollection[dtype, kv_params, page_size](
         blocks=LayoutTensor[dtype, Layout.row_major[6]()](
             kv_block_tensor.ptr,
             RuntimeLayout[Layout.row_major[6]()].row_major(
@@ -273,16 +299,25 @@ def test_fused_qk_rope[dtype: DType](ctx: DeviceContext) raises -> None:
             kv_block_out_host, kv_block_runtime_layout
         )
         for batch_idx in range(batch_size):
-            var src_offset = (
-                batch_idx * 2 * num_layers * max_seq_len * num_heads * head_dim
-                + Int(start_positions_dyn[batch_idx]) * num_heads * head_dim
-            )
-            assert_almost_equal(
-                kv_block_out_tensor.ptr + src_offset,
-                expected_k_out_buffer_ptr + (batch_idx * seq_len * dim),
-                # Number of elements in one batch item.
-                len(expected_k_out_buffer) // batch_size,
-            )
+            var start_pos = Int(start_positions_dyn[batch_idx])
+            for seq_idx in range(seq_len):
+                var tok_idx = start_pos + seq_idx
+                var src_offset = (
+                    _page_of(batch_idx, tok_idx)
+                    * 2
+                    * num_layers
+                    * page_size
+                    * num_heads
+                    * head_dim
+                    + (tok_idx % page_size) * num_heads * head_dim
+                )
+                assert_almost_equal(
+                    kv_block_out_tensor.ptr + src_offset,
+                    expected_k_out_buffer_ptr
+                    + ((batch_idx * seq_len + seq_idx) * dim),
+                    # Number of elements in one token.
+                    dim,
+                )
 
     # Explicitly free device buffers to return memory to the buffer cache
     _ = kv_block_device^

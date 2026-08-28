@@ -21,6 +21,7 @@ from test_utils import (
     ExplicitDestroy,
     MoveCounter,
     MoveOnly,
+    NonMovable,
     Observable,
     TriviallyCopyableMoveCounter,
     check_write_to,
@@ -1211,6 +1212,39 @@ def test_list_fill_constructor() raises:
 
     for i in range(20):
         assert_equal(l2[i], "hi")
+
+
+def test_list_fill_with_constructor() raises:
+    var squares = List(length=5, fill_with=lambda (i: Int) -> Int: i * i)
+    assert_equal(len(squares), 5)
+    for i in range(5):
+        assert_equal(squares[i], i * i)
+
+    var strs = List(length=3, fill_with=lambda (i: Int) -> String: String(i))
+    assert_equal(len(strs), 3)
+    for i in range(3):
+        assert_equal(strs[i], String(i))
+
+
+def test_list_fill_with_named_function() raises:
+    def cube(i: Int) {imm} -> Int:
+        return i * i * i
+
+    var cubes = List(length=4, fill_with=cube)
+    assert_equal(len(cubes), 4)
+    for i in range(4):
+        assert_equal(cubes[i], i * i * i)
+
+
+def test_list_fill_with_non_movable() raises:
+    # `fill_with=` constructs each element in place, so it works even for a
+    # non-`Movable` element type -- no constraint on `T` at all.
+    var l = List(
+        length=3, fill_with=lambda (i: Int) -> NonMovable: NonMovable(i * 10)
+    )
+    assert_equal(l[0].value, 0)
+    assert_equal(l[1].value, 10)
+    assert_equal(l[2].value, 20)
 
 
 def test_uninit_ctor() raises:

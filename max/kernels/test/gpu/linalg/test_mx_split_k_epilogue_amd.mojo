@@ -446,6 +446,8 @@ def main() raises:
         # IndexK scatter IS the `elementwise_lambda_fn`. Both formats reach the
         # same 12-way split there, so one `num_splits` serves both arms.
         comptime for lane_bytes in [MXFP4_LANE_BYTES, MXFP8_LANE_BYTES]:
+            # These params match what dispatch picks at MXFP4; at MXFP8 it now
+            # picks BN=64, so there the two arms exercise different tiles.
             test_split_k_epilogue[
                 lane_bytes, 16, 2560, 6144, num_splits=12, BM=16, WM=16, WN=64
             ](ctx)

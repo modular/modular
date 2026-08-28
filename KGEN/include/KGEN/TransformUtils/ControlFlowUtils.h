@@ -21,7 +21,13 @@ namespace M::KGEN {
 /// CFG in which the operation lives. A contiguous CFG is defined as a region
 /// subtree where all region operations implement an HLCF interface. Any other
 /// operation is assumed to break the CFG, such as inline closures.
-bool userCrossesFunctionCFG(Operation *op, Operation *user);
+///
+/// If `enclosingNodes` is non-null, it is appended with the control-flow nodes
+/// between `user` and `op`, innermost first. Its contents are meaningless when
+/// this returns true, since the walk stops at the operation that breaks the
+/// CFG.
+bool userCrossesFunctionCFG(Operation *op, Operation *user,
+                            SmallVectorImpl<Operation *> *enclosingNodes = {});
 } // namespace M::KGEN
 
 #endif // KGEN_TRANSFORMUTILS_CONTROLFLOWUTILS_H

@@ -75,18 +75,15 @@ def make_pipeline_config_factory(
         device_specs: list[DeviceSpec],
         max_batch_size: int = 1,
     ) -> DummyPipelineConfig:
-        pipeline_config = DummyPipelineConfig(
+        return DummyPipelineConfig(
             model_path=repo_id,
             max_batch_size=max_batch_size,
             max_length=hf_config.max_position_embeddings,
             quantization_encoding="bfloat16",
             device_specs=device_specs,
+            weight_path=[Path("fake.safetensors")],
+            huggingface_config=hf_config,
         )
-        pipeline_config.model._huggingface_config = hf_config
-        pipeline_config.models["main"] = pipeline_config.model.model_copy(
-            update={"weight_path": [Path("fake.safetensors")]}
-        )
-        return pipeline_config
 
     return _make
 

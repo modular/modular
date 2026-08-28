@@ -105,7 +105,7 @@ PINS = {
     "pandas": "pandas@2.3.3",
     "pathspec": "pathspec@1.1.1",
     "peft": "peft@0.18.1",
-    "pillow": "pillow@12.0.0",
+    "pillow": "pillow@12.3.0",
     "platformdirs": "platformdirs@4.2.2",
     "plotext": "plotext@5.3.2",
     "plotly": "plotly@6.0.1",
@@ -2254,7 +2254,7 @@ def targets():
         ":huggingface-hub@1.8.0",
         ":importlib-metadata@7.1.0",
         ":numpy@multiple",
-        ":pillow@12.0.0",
+        ":pillow@12.3.0",
         ":regex@2025.11.3",
         ":requests@2.32.3",
         ":safetensors@0.6.2",
@@ -4910,7 +4910,7 @@ def targets():
         ":kiwisolver@1.4.9",
         ":numpy@multiple",
         ":packaging@25.0",
-        ":pillow@12.0.0",
+        ":pillow@12.3.0",
         ":pyparsing@3.1.2",
         ":python-dateutil@2.9.0.post0",
     ]
@@ -5022,7 +5022,7 @@ def targets():
     ] + select({
         ":_env_python_3.10_x86_64-unknown-linux-gnu_nvidia_gpu": [
             ":jsonschema@4.23.0",
-            ":pillow@12.0.0",
+            ":pillow@12.3.0",
             ":pydantic-extra-types@2.10.6",
             ":pydantic@2.12.5",
             ":requests@2.32.3",
@@ -5031,7 +5031,7 @@ def targets():
         ],
         ":_env_python_3.11_x86_64-unknown-linux-gnu_nvidia_gpu": [
             ":jsonschema@4.23.0",
-            ":pillow@12.0.0",
+            ":pillow@12.3.0",
             ":pydantic-extra-types@2.10.6",
             ":pydantic@2.12.5",
             ":requests@2.32.3",
@@ -5040,7 +5040,7 @@ def targets():
         ],
         ":_env_python_3.12_x86_64-unknown-linux-gnu_nvidia_gpu": [
             ":jsonschema@4.23.0",
-            ":pillow@12.0.0",
+            ":pillow@12.3.0",
             ":pydantic-extra-types@2.10.6",
             ":pydantic@2.12.5",
             ":requests@2.32.3",
@@ -5049,7 +5049,7 @@ def targets():
         ],
         ":_env_python_3.13_x86_64-unknown-linux-gnu_nvidia_gpu": [
             ":jsonschema@4.23.0",
-            ":pillow@12.0.0",
+            ":pillow@12.3.0",
             ":pydantic-extra-types@2.10.6",
             ":pydantic@2.12.5",
             ":requests@2.32.3",
@@ -5058,7 +5058,7 @@ def targets():
         ],
         ":_env_python_3.14_x86_64-unknown-linux-gnu-freethreaded_nvidia_gpu": [
             ":jsonschema@4.23.0",
-            ":pillow@12.0.0",
+            ":pillow@12.3.0",
             ":pydantic-extra-types@2.10.6",
             ":pydantic@2.12.5",
             ":requests@2.32.3",
@@ -5067,7 +5067,7 @@ def targets():
         ],
         ":_env_python_3.14_x86_64-unknown-linux-gnu_nvidia_gpu": [
             ":jsonschema@4.23.0",
-            ":pillow@12.0.0",
+            ":pillow@12.3.0",
             ":pydantic-extra-types@2.10.6",
             ":pydantic@2.12.5",
             ":requests@2.32.3",
@@ -7405,32 +7405,32 @@ def targets():
     )
 
     native.alias(
-        name = "_wheel_pillow@12.0.0",
+        name = "_wheel_pillow@12.3.0",
         actual = select({
-            ":_env_python_3.10_aarch64-apple-darwin": "@pycross_lock_file_wheel_pillow_12.0.0_cp310_cp310_macosx_11_0_arm64//file",
-            ":_env_python_3.10_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_pillow_12.0.0_cp310_cp310_manylinux_2_27_aarch64.manylinux_2_28_aarch64//file",
-            ":_env_python_3.10_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_pillow_12.0.0_cp310_cp310_manylinux_2_27_x86_64.manylinux_2_28_x86_64//file",
-            ":_env_python_3.11_aarch64-apple-darwin": "@pycross_lock_file_wheel_pillow_12.0.0_cp311_cp311_macosx_11_0_arm64//file",
-            ":_env_python_3.11_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_pillow_12.0.0_cp311_cp311_manylinux_2_27_aarch64.manylinux_2_28_aarch64//file",
-            ":_env_python_3.11_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_pillow_12.0.0_cp311_cp311_manylinux_2_27_x86_64.manylinux_2_28_x86_64//file",
-            ":_env_python_3.12_aarch64-apple-darwin": "@pycross_lock_file_wheel_pillow_12.0.0_cp312_cp312_macosx_11_0_arm64//file",
-            ":_env_python_3.12_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_pillow_12.0.0_cp312_cp312_manylinux_2_27_aarch64.manylinux_2_28_aarch64//file",
-            ":_env_python_3.12_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_pillow_12.0.0_cp312_cp312_manylinux_2_27_x86_64.manylinux_2_28_x86_64//file",
-            ":_env_python_3.13_aarch64-apple-darwin": "@pycross_lock_file_wheel_pillow_12.0.0_cp313_cp313_macosx_11_0_arm64//file",
-            ":_env_python_3.13_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_pillow_12.0.0_cp313_cp313_manylinux_2_27_aarch64.manylinux_2_28_aarch64//file",
-            ":_env_python_3.13_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_pillow_12.0.0_cp313_cp313_manylinux_2_27_x86_64.manylinux_2_28_x86_64//file",
-            ":_env_python_3.14_aarch64-apple-darwin": "@pycross_lock_file_wheel_pillow_12.0.0_cp314_cp314_macosx_11_0_arm64//file",
-            ":_env_python_3.14_aarch64-apple-darwin-freethreaded": "@pycross_lock_file_wheel_pillow_12.0.0_cp314_cp314t_macosx_11_0_arm64//file",
-            ":_env_python_3.14_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_pillow_12.0.0_cp314_cp314_manylinux_2_27_aarch64.manylinux_2_28_aarch64//file",
-            ":_env_python_3.14_aarch64-unknown-linux-gnu-freethreaded": "@pycross_lock_file_wheel_pillow_12.0.0_cp314_cp314t_manylinux_2_27_aarch64.manylinux_2_28_aarch64//file",
-            ":_env_python_3.14_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_pillow_12.0.0_cp314_cp314_manylinux_2_27_x86_64.manylinux_2_28_x86_64//file",
-            ":_env_python_3.14_x86_64-unknown-linux-gnu-freethreaded": "@pycross_lock_file_wheel_pillow_12.0.0_cp314_cp314t_manylinux_2_27_x86_64.manylinux_2_28_x86_64//file",
+            ":_env_python_3.10_aarch64-apple-darwin": "@pycross_lock_file_wheel_pillow_12.3.0_cp310_cp310_macosx_11_0_arm64//file",
+            ":_env_python_3.10_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_pillow_12.3.0_cp310_cp310_manylinux_2_27_aarch64.manylinux_2_28_aarch64//file",
+            ":_env_python_3.10_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_pillow_12.3.0_cp310_cp310_manylinux_2_27_x86_64.manylinux_2_28_x86_64//file",
+            ":_env_python_3.11_aarch64-apple-darwin": "@pycross_lock_file_wheel_pillow_12.3.0_cp311_cp311_macosx_11_0_arm64//file",
+            ":_env_python_3.11_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_pillow_12.3.0_cp311_cp311_manylinux_2_27_aarch64.manylinux_2_28_aarch64//file",
+            ":_env_python_3.11_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_pillow_12.3.0_cp311_cp311_manylinux_2_27_x86_64.manylinux_2_28_x86_64//file",
+            ":_env_python_3.12_aarch64-apple-darwin": "@pycross_lock_file_wheel_pillow_12.3.0_cp312_cp312_macosx_11_0_arm64//file",
+            ":_env_python_3.12_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_pillow_12.3.0_cp312_cp312_manylinux_2_27_aarch64.manylinux_2_28_aarch64//file",
+            ":_env_python_3.12_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_pillow_12.3.0_cp312_cp312_manylinux_2_27_x86_64.manylinux_2_28_x86_64//file",
+            ":_env_python_3.13_aarch64-apple-darwin": "@pycross_lock_file_wheel_pillow_12.3.0_cp313_cp313_macosx_11_0_arm64//file",
+            ":_env_python_3.13_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_pillow_12.3.0_cp313_cp313_manylinux_2_27_aarch64.manylinux_2_28_aarch64//file",
+            ":_env_python_3.13_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_pillow_12.3.0_cp313_cp313_manylinux_2_27_x86_64.manylinux_2_28_x86_64//file",
+            ":_env_python_3.14_aarch64-apple-darwin": "@pycross_lock_file_wheel_pillow_12.3.0_cp314_cp314_macosx_11_0_arm64//file",
+            ":_env_python_3.14_aarch64-apple-darwin-freethreaded": "@pycross_lock_file_wheel_pillow_12.3.0_cp314_cp314t_macosx_11_0_arm64//file",
+            ":_env_python_3.14_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_pillow_12.3.0_cp314_cp314_manylinux_2_27_aarch64.manylinux_2_28_aarch64//file",
+            ":_env_python_3.14_aarch64-unknown-linux-gnu-freethreaded": "@pycross_lock_file_wheel_pillow_12.3.0_cp314_cp314t_manylinux_2_27_aarch64.manylinux_2_28_aarch64//file",
+            ":_env_python_3.14_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_pillow_12.3.0_cp314_cp314_manylinux_2_27_x86_64.manylinux_2_28_x86_64//file",
+            ":_env_python_3.14_x86_64-unknown-linux-gnu-freethreaded": "@pycross_lock_file_wheel_pillow_12.3.0_cp314_cp314t_manylinux_2_27_x86_64.manylinux_2_28_x86_64//file",
         }),
     )
 
     pycross_wheel_library(
-        name = "pillow@12.0.0",
-        wheel = ":_wheel_pillow@12.0.0",
+        name = "pillow@12.3.0",
+        wheel = ":_wheel_pillow@12.3.0",
         testonly = "pillow" in _TESTONLY_DEPS,
     )
 
@@ -8690,7 +8690,7 @@ def targets():
     _qwen_vl_utils_0_0_11_deps = [
         ":av@17.0.1",
         ":packaging@25.0",
-        ":pillow@12.0.0",
+        ":pillow@12.3.0",
         ":requests@2.32.3",
     ]
 
@@ -9554,7 +9554,7 @@ def targets():
             ":outlines@0.1.11",
             ":packaging@25.0",
             ":partial-json-parser@0.2.1.1.post7",
-            ":pillow@12.0.0",
+            ":pillow@12.3.0",
             ":prometheus-client@0.20.0",
             ":psutil@7.0.0",
             ":py-spy@0.4.1",
@@ -9610,7 +9610,7 @@ def targets():
             ":outlines@0.1.11",
             ":packaging@25.0",
             ":partial-json-parser@0.2.1.1.post7",
-            ":pillow@12.0.0",
+            ":pillow@12.3.0",
             ":prometheus-client@0.20.0",
             ":psutil@7.0.0",
             ":py-spy@0.4.1",
@@ -9666,7 +9666,7 @@ def targets():
             ":outlines@0.1.11",
             ":packaging@25.0",
             ":partial-json-parser@0.2.1.1.post7",
-            ":pillow@12.0.0",
+            ":pillow@12.3.0",
             ":prometheus-client@0.20.0",
             ":psutil@7.0.0",
             ":py-spy@0.4.1",
@@ -9722,7 +9722,7 @@ def targets():
             ":outlines@0.1.11",
             ":packaging@25.0",
             ":partial-json-parser@0.2.1.1.post7",
-            ":pillow@12.0.0",
+            ":pillow@12.3.0",
             ":prometheus-client@0.20.0",
             ":psutil@7.0.0",
             ":py-spy@0.4.1",
@@ -9778,7 +9778,7 @@ def targets():
             ":outlines@0.1.11",
             ":packaging@25.0",
             ":partial-json-parser@0.2.1.1.post7",
-            ":pillow@12.0.0",
+            ":pillow@12.3.0",
             ":prometheus-client@0.20.0",
             ":psutil@7.0.0",
             ":py-spy@0.4.1",
@@ -9834,7 +9834,7 @@ def targets():
             ":outlines@0.1.11",
             ":packaging@25.0",
             ":partial-json-parser@0.2.1.1.post7",
-            ":pillow@12.0.0",
+            ":pillow@12.3.0",
             ":prometheus-client@0.20.0",
             ":psutil@7.0.0",
             ":py-spy@0.4.1",
@@ -11981,22 +11981,22 @@ def targets():
         ":torch@multiple",
     ] + select({
         ":_env_python_3.10_aarch64-apple-darwin": [
-            ":pillow@12.0.0",
+            ":pillow@12.3.0",
         ],
         ":_env_python_3.11_aarch64-apple-darwin": [
-            ":pillow@12.0.0",
+            ":pillow@12.3.0",
         ],
         ":_env_python_3.12_aarch64-apple-darwin": [
-            ":pillow@12.0.0",
+            ":pillow@12.3.0",
         ],
         ":_env_python_3.13_aarch64-apple-darwin": [
-            ":pillow@12.0.0",
+            ":pillow@12.3.0",
         ],
         ":_env_python_3.14_aarch64-apple-darwin": [
-            ":pillow@12.0.0",
+            ":pillow@12.3.0",
         ],
         ":_env_python_3.14_aarch64-apple-darwin-freethreaded": [
-            ":pillow@12.0.0",
+            ":pillow@12.3.0",
         ],
         "//conditions:default": [],
     })
@@ -12025,40 +12025,40 @@ def targets():
         ":torch@multiple",
     ] + select({
         ":_env_python_3.10_aarch64-unknown-linux-gnu": [
-            ":pillow@12.0.0",
+            ":pillow@12.3.0",
         ],
         ":_env_python_3.10_x86_64-unknown-linux-gnu": [
-            ":pillow@12.0.0",
+            ":pillow@12.3.0",
         ],
         ":_env_python_3.11_aarch64-unknown-linux-gnu": [
-            ":pillow@12.0.0",
+            ":pillow@12.3.0",
         ],
         ":_env_python_3.11_x86_64-unknown-linux-gnu": [
-            ":pillow@12.0.0",
+            ":pillow@12.3.0",
         ],
         ":_env_python_3.12_aarch64-unknown-linux-gnu": [
-            ":pillow@12.0.0",
+            ":pillow@12.3.0",
         ],
         ":_env_python_3.12_x86_64-unknown-linux-gnu": [
-            ":pillow@12.0.0",
+            ":pillow@12.3.0",
         ],
         ":_env_python_3.13_aarch64-unknown-linux-gnu": [
-            ":pillow@12.0.0",
+            ":pillow@12.3.0",
         ],
         ":_env_python_3.13_x86_64-unknown-linux-gnu": [
-            ":pillow@12.0.0",
+            ":pillow@12.3.0",
         ],
         ":_env_python_3.14_aarch64-unknown-linux-gnu": [
-            ":pillow@12.0.0",
+            ":pillow@12.3.0",
         ],
         ":_env_python_3.14_aarch64-unknown-linux-gnu-freethreaded": [
-            ":pillow@12.0.0",
+            ":pillow@12.3.0",
         ],
         ":_env_python_3.14_x86_64-unknown-linux-gnu": [
-            ":pillow@12.0.0",
+            ":pillow@12.3.0",
         ],
         ":_env_python_3.14_x86_64-unknown-linux-gnu-freethreaded": [
-            ":pillow@12.0.0",
+            ":pillow@12.3.0",
         ],
         "//conditions:default": [],
     })
@@ -12093,22 +12093,22 @@ def targets():
         ":torch@multiple",
     ] + select({
         ":_env_python_3.10_x86_64-unknown-linux-gnu_nvidia_gpu": [
-            ":pillow@12.0.0",
+            ":pillow@12.3.0",
         ],
         ":_env_python_3.11_x86_64-unknown-linux-gnu_nvidia_gpu": [
-            ":pillow@12.0.0",
+            ":pillow@12.3.0",
         ],
         ":_env_python_3.12_x86_64-unknown-linux-gnu_nvidia_gpu": [
-            ":pillow@12.0.0",
+            ":pillow@12.3.0",
         ],
         ":_env_python_3.13_x86_64-unknown-linux-gnu_nvidia_gpu": [
-            ":pillow@12.0.0",
+            ":pillow@12.3.0",
         ],
         ":_env_python_3.14_x86_64-unknown-linux-gnu-freethreaded_nvidia_gpu": [
-            ":pillow@12.0.0",
+            ":pillow@12.3.0",
         ],
         ":_env_python_3.14_x86_64-unknown-linux-gnu_nvidia_gpu": [
-            ":pillow@12.0.0",
+            ":pillow@12.3.0",
         ],
         "//conditions:default": [],
     })
@@ -12143,22 +12143,22 @@ def targets():
         ":torch@multiple",
     ] + select({
         ":_env_python_3.10_x86_64-unknown-linux-gnu_amd_gpu": [
-            ":pillow@12.0.0",
+            ":pillow@12.3.0",
         ],
         ":_env_python_3.11_x86_64-unknown-linux-gnu_amd_gpu": [
-            ":pillow@12.0.0",
+            ":pillow@12.3.0",
         ],
         ":_env_python_3.12_x86_64-unknown-linux-gnu_amd_gpu": [
-            ":pillow@12.0.0",
+            ":pillow@12.3.0",
         ],
         ":_env_python_3.13_x86_64-unknown-linux-gnu_amd_gpu": [
-            ":pillow@12.0.0",
+            ":pillow@12.3.0",
         ],
         ":_env_python_3.14_x86_64-unknown-linux-gnu-freethreaded_amd_gpu": [
-            ":pillow@12.0.0",
+            ":pillow@12.3.0",
         ],
         ":_env_python_3.14_x86_64-unknown-linux-gnu_amd_gpu": [
-            ":pillow@12.0.0",
+            ":pillow@12.3.0",
         ],
         "//conditions:default": [],
     })
@@ -12180,22 +12180,22 @@ def targets():
         ":torch@multiple",
     ] + select({
         ":_env_python_3.10_x86_64-unknown-linux-gnu_nvidia_gpu": [
-            ":pillow@12.0.0",
+            ":pillow@12.3.0",
         ],
         ":_env_python_3.11_x86_64-unknown-linux-gnu_nvidia_gpu": [
-            ":pillow@12.0.0",
+            ":pillow@12.3.0",
         ],
         ":_env_python_3.12_x86_64-unknown-linux-gnu_nvidia_gpu": [
-            ":pillow@12.0.0",
+            ":pillow@12.3.0",
         ],
         ":_env_python_3.13_x86_64-unknown-linux-gnu_nvidia_gpu": [
-            ":pillow@12.0.0",
+            ":pillow@12.3.0",
         ],
         ":_env_python_3.14_x86_64-unknown-linux-gnu-freethreaded_nvidia_gpu": [
-            ":pillow@12.0.0",
+            ":pillow@12.3.0",
         ],
         ":_env_python_3.14_x86_64-unknown-linux-gnu_nvidia_gpu": [
-            ":pillow@12.0.0",
+            ":pillow@12.3.0",
         ],
         "//conditions:default": [],
     })
@@ -13369,7 +13369,7 @@ def targets():
             ":opentelemetry-sdk@1.35.0",
             ":opentelemetry-semantic-conventions-ai@0.4.13",
             ":partial-json-parser@0.2.1.1.post7",
-            ":pillow@12.0.0",
+            ":pillow@12.3.0",
             ":prometheus-client@0.20.0",
             ":prometheus-fastapi-instrumentator@8.0.2",
             ":protobuf@6.33.5",
@@ -13428,7 +13428,7 @@ def targets():
             ":opentelemetry-sdk@1.35.0",
             ":opentelemetry-semantic-conventions-ai@0.4.13",
             ":partial-json-parser@0.2.1.1.post7",
-            ":pillow@12.0.0",
+            ":pillow@12.3.0",
             ":prometheus-client@0.20.0",
             ":prometheus-fastapi-instrumentator@8.0.2",
             ":protobuf@6.33.5",
@@ -13489,7 +13489,7 @@ def targets():
             ":opentelemetry-sdk@1.35.0",
             ":opentelemetry-semantic-conventions-ai@0.4.13",
             ":partial-json-parser@0.2.1.1.post7",
-            ":pillow@12.0.0",
+            ":pillow@12.3.0",
             ":prometheus-client@0.20.0",
             ":prometheus-fastapi-instrumentator@8.0.2",
             ":protobuf@6.33.5",
@@ -13550,7 +13550,7 @@ def targets():
             ":opentelemetry-sdk@1.35.0",
             ":opentelemetry-semantic-conventions-ai@0.4.13",
             ":partial-json-parser@0.2.1.1.post7",
-            ":pillow@12.0.0",
+            ":pillow@12.3.0",
             ":prometheus-client@0.20.0",
             ":prometheus-fastapi-instrumentator@8.0.2",
             ":protobuf@6.33.5",
@@ -13611,7 +13611,7 @@ def targets():
             ":opentelemetry-sdk@1.35.0",
             ":opentelemetry-semantic-conventions-ai@0.4.13",
             ":partial-json-parser@0.2.1.1.post7",
-            ":pillow@12.0.0",
+            ":pillow@12.3.0",
             ":prometheus-client@0.20.0",
             ":prometheus-fastapi-instrumentator@8.0.2",
             ":protobuf@6.33.5",
@@ -13757,7 +13757,7 @@ def targets():
         ":cffi@2.0.0",
         ":cssselect2@0.9.0",
         ":fonttools@4.63.0",
-        ":pillow@12.0.0",
+        ":pillow@12.3.0",
         ":pydyf@0.12.1",
         ":pyphen@0.17.2",
         ":tinycss2@1.5.1",
@@ -24584,182 +24584,182 @@ def repositories():
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_pillow_12.0.0_cp310_cp310_macosx_11_0_arm64",
+        name = "pycross_lock_file_wheel_pillow_12.3.0_cp310_cp310_macosx_11_0_arm64",
         urls = [
-            "https://files.pythonhosted.org/packages/cb/e9/4e58fb097fb74c7b4758a680aacd558810a417d1edaa7000142976ef9d2f/pillow-12.0.0-cp310-cp310-macosx_11_0_arm64.whl",
+            "https://files.pythonhosted.org/packages/6b/ba/3762f376a2948e3036488d773a146e0ae6ecc2ca03ac20e2615bd0b2ba02/pillow-12.3.0-cp310-cp310-macosx_11_0_arm64.whl",
         ],
-        sha256 = "1ac11e8ea4f611c3c0147424eae514028b5e9077dd99ab91e1bd7bc33ff145e1",
-        downloaded_file_path = "pillow-12.0.0-cp310-cp310-macosx_11_0_arm64.whl",
+        sha256 = "bcc33feacfaefce60c12fd500a277533bdc02b10a19f7f6d348763d8140bbba7",
+        downloaded_file_path = "pillow-12.3.0-cp310-cp310-macosx_11_0_arm64.whl",
     )
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_pillow_12.0.0_cp310_cp310_manylinux_2_27_aarch64.manylinux_2_28_aarch64",
+        name = "pycross_lock_file_wheel_pillow_12.3.0_cp310_cp310_manylinux_2_27_aarch64.manylinux_2_28_aarch64",
         urls = [
-            "https://files.pythonhosted.org/packages/2e/69/0688e7c1390666592876d9d474f5e135abb4acb39dcb583c4dc5490f1aff/pillow-12.0.0-cp310-cp310-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl",
+            "https://files.pythonhosted.org/packages/07/50/b5d688cc9c52d4482f3d5bcab6ce20bc2a74a85d2343841c907444a3be2c/pillow-12.3.0-cp310-cp310-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl",
         ],
-        sha256 = "d64317d2587c70324b79861babb9c09f71fbb780bad212018874b2c013d8600e",
-        downloaded_file_path = "pillow-12.0.0-cp310-cp310-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl",
+        sha256 = "5594fc43d548a7ed94949d139aa1341b270f1863f11cfd37f5a6c8b778a6b67f",
+        downloaded_file_path = "pillow-12.3.0-cp310-cp310-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl",
     )
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_pillow_12.0.0_cp310_cp310_manylinux_2_27_x86_64.manylinux_2_28_x86_64",
+        name = "pycross_lock_file_wheel_pillow_12.3.0_cp310_cp310_manylinux_2_27_x86_64.manylinux_2_28_x86_64",
         urls = [
-            "https://files.pythonhosted.org/packages/ed/1c/880921e98f525b9b44ce747ad1ea8f73fd7e992bafe3ca5e5644bf433dea/pillow-12.0.0-cp310-cp310-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+            "https://files.pythonhosted.org/packages/4e/89/36f4cd76cf4baf05c50ababb976249153f18c959171c7f6ba09a6f217260/pillow-12.3.0-cp310-cp310-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
         ],
-        sha256 = "d77153e14b709fd8b8af6f66a3afbb9ed6e9fc5ccf0b6b7e1ced7b036a228782",
-        downloaded_file_path = "pillow-12.0.0-cp310-cp310-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+        sha256 = "f0606c8bf2cdefea14a43530f7657cbbb7ecf1c4222512492ef4a4434a9501ec",
+        downloaded_file_path = "pillow-12.3.0-cp310-cp310-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
     )
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_pillow_12.0.0_cp311_cp311_macosx_11_0_arm64",
+        name = "pycross_lock_file_wheel_pillow_12.3.0_cp311_cp311_macosx_11_0_arm64",
         urls = [
-            "https://files.pythonhosted.org/packages/2e/05/069b1f8a2e4b5a37493da6c5868531c3f77b85e716ad7a590ef87d58730d/pillow-12.0.0-cp311-cp311-macosx_11_0_arm64.whl",
+            "https://files.pythonhosted.org/packages/b2/5b/a02d30018abd97ced9f5a6c63d28597694a00d066516b9c1c6de45859fc9/pillow-12.3.0-cp311-cp311-macosx_11_0_arm64.whl",
         ],
-        sha256 = "a3475b96f5908b3b16c47533daaa87380c491357d197564e0ba34ae75c0f3257",
-        downloaded_file_path = "pillow-12.0.0-cp311-cp311-macosx_11_0_arm64.whl",
+        sha256 = "37d6d0a00072fd2948eb22bce7e1475f34569d90c87c59f7a2ec59541b77f7a6",
+        downloaded_file_path = "pillow-12.3.0-cp311-cp311-macosx_11_0_arm64.whl",
     )
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_pillow_12.0.0_cp311_cp311_manylinux_2_27_aarch64.manylinux_2_28_aarch64",
+        name = "pycross_lock_file_wheel_pillow_12.3.0_cp311_cp311_manylinux_2_27_aarch64.manylinux_2_28_aarch64",
         urls = [
-            "https://files.pythonhosted.org/packages/f6/1b/c9711318d4901093c15840f268ad649459cd81984c9ec9887756cca049a5/pillow-12.0.0-cp311-cp311-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl",
+            "https://files.pythonhosted.org/packages/c8/98/766667a4be768150a202836acd9fad19c06824ca86c4286d3cf6b274964e/pillow-12.3.0-cp311-cp311-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl",
         ],
-        sha256 = "aa5129de4e174daccbc59d0a3b6d20eaf24417d59851c07ebb37aeb02947987c",
-        downloaded_file_path = "pillow-12.0.0-cp311-cp311-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl",
+        sha256 = "bcb46e2f9feff8d06323983bd83ed00c201fdcab3d74973e7072a889b3979fcd",
+        downloaded_file_path = "pillow-12.3.0-cp311-cp311-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl",
     )
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_pillow_12.0.0_cp311_cp311_manylinux_2_27_x86_64.manylinux_2_28_x86_64",
+        name = "pycross_lock_file_wheel_pillow_12.3.0_cp311_cp311_manylinux_2_27_x86_64.manylinux_2_28_x86_64",
         urls = [
-            "https://files.pythonhosted.org/packages/41/1e/db9470f2d030b4995083044cd8738cdd1bf773106819f6d8ba12597d5352/pillow-12.0.0-cp311-cp311-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+            "https://files.pythonhosted.org/packages/3b/2d/ede717bc1144f63886c21fd349bb95860b0d1a21149ff16f2bb362b612b6/pillow-12.3.0-cp311-cp311-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
         ],
-        sha256 = "bee2a6db3a7242ea309aa7ee8e2780726fed67ff4e5b40169f2c940e7eb09227",
-        downloaded_file_path = "pillow-12.0.0-cp311-cp311-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+        sha256 = "23d27a3e0307ec2244cc51e7287b919aa68d097504ebe19df4e76a98a3eea5bd",
+        downloaded_file_path = "pillow-12.3.0-cp311-cp311-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
     )
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_pillow_12.0.0_cp312_cp312_macosx_11_0_arm64",
+        name = "pycross_lock_file_wheel_pillow_12.3.0_cp312_cp312_macosx_11_0_arm64",
         urls = [
-            "https://files.pythonhosted.org/packages/fd/e0/ed960067543d080691d47d6938ebccbf3976a931c9567ab2fbfab983a5dd/pillow-12.0.0-cp312-cp312-macosx_11_0_arm64.whl",
+            "https://files.pythonhosted.org/packages/d8/66/9a386a92561f402389a4fc70c18838bf6d35eb5eb5c6850b4b2dc64f5048/pillow-12.3.0-cp312-cp312-macosx_11_0_arm64.whl",
         ],
-        sha256 = "71db6b4c1653045dacc1585c1b0d184004f0d7e694c7b34ac165ca70c0838082",
-        downloaded_file_path = "pillow-12.0.0-cp312-cp312-macosx_11_0_arm64.whl",
+        sha256 = "ffd0c5368496f41b0944be820fcb7a838aa6e623d250b01acf2643939c3f99d7",
+        downloaded_file_path = "pillow-12.3.0-cp312-cp312-macosx_11_0_arm64.whl",
     )
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_pillow_12.0.0_cp312_cp312_manylinux_2_27_aarch64.manylinux_2_28_aarch64",
+        name = "pycross_lock_file_wheel_pillow_12.3.0_cp312_cp312_manylinux_2_27_aarch64.manylinux_2_28_aarch64",
         urls = [
-            "https://files.pythonhosted.org/packages/a7/62/a22e8d3b602ae8cc01446d0c57a54e982737f44b6f2e1e019a925143771d/pillow-12.0.0-cp312-cp312-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl",
+            "https://files.pythonhosted.org/packages/25/27/ac8f99618ffd3dde21db0f4d4b1d2ab00c0880595bfd17df103f7f39fd0c/pillow-12.3.0-cp312-cp312-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl",
         ],
-        sha256 = "55f818bd74fe2f11d4d7cbc65880a843c4075e0ac7226bc1a23261dbea531953",
-        downloaded_file_path = "pillow-12.0.0-cp312-cp312-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl",
+        sha256 = "d9c7f76c0673154f044e9d78c8655fb4213f6ca31a836df48b40fe5d187717b9",
+        downloaded_file_path = "pillow-12.3.0-cp312-cp312-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl",
     )
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_pillow_12.0.0_cp312_cp312_manylinux_2_27_x86_64.manylinux_2_28_x86_64",
+        name = "pycross_lock_file_wheel_pillow_12.3.0_cp312_cp312_manylinux_2_27_x86_64.manylinux_2_28_x86_64",
         urls = [
-            "https://files.pythonhosted.org/packages/4f/87/424511bdcd02c8d7acf9f65caa09f291a519b16bd83c3fb3374b3d4ae951/pillow-12.0.0-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+            "https://files.pythonhosted.org/packages/84/21/a35af28dcc61f37ed850a2d64c65c701321dfbf25085e469d5559360cbbf/pillow-12.3.0-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
         ],
-        sha256 = "b87843e225e74576437fd5b6a4c2205d422754f84a06942cfaf1dc32243e45a8",
-        downloaded_file_path = "pillow-12.0.0-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+        sha256 = "78cb2c6865a35ab8ff8b75fd122f6033b92a62c82801110e48ddd6c936a45d91",
+        downloaded_file_path = "pillow-12.3.0-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
     )
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_pillow_12.0.0_cp313_cp313_macosx_11_0_arm64",
+        name = "pycross_lock_file_wheel_pillow_12.3.0_cp313_cp313_macosx_11_0_arm64",
         urls = [
-            "https://files.pythonhosted.org/packages/83/06/48eab21dd561de2914242711434c0c0eb992ed08ff3f6107a5f44527f5e9/pillow-12.0.0-cp313-cp313-macosx_11_0_arm64.whl",
+            "https://files.pythonhosted.org/packages/10/76/8803c13605b763d33d156c4678fc77f8443389c0c51c8aef707bb02015f4/pillow-12.3.0-cp313-cp313-macosx_11_0_arm64.whl",
         ],
-        sha256 = "5193fde9a5f23c331ea26d0cf171fbf67e3f247585f50c08b3e205c7aeb4589b",
-        downloaded_file_path = "pillow-12.0.0-cp313-cp313-macosx_11_0_arm64.whl",
+        sha256 = "d69141514cc30b774ceea5e3ed3a6635c8d8a96edf664689b890f4089111fb35",
+        downloaded_file_path = "pillow-12.3.0-cp313-cp313-macosx_11_0_arm64.whl",
     )
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_pillow_12.0.0_cp313_cp313_manylinux_2_27_aarch64.manylinux_2_28_aarch64",
+        name = "pycross_lock_file_wheel_pillow_12.3.0_cp313_cp313_manylinux_2_27_aarch64.manylinux_2_28_aarch64",
         urls = [
-            "https://files.pythonhosted.org/packages/20/39/c685d05c06deecfd4e2d1950e9a908aa2ca8bc4e6c3b12d93b9cafbd7837/pillow-12.0.0-cp313-cp313-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl",
+            "https://files.pythonhosted.org/packages/1f/01/e18aff37cb0b4aac47ac90f016d347a49aca667ef97f190b06ac2aabc928/pillow-12.3.0-cp313-cp313-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl",
         ],
-        sha256 = "0b817e7035ea7f6b942c13aa03bb554fc44fea70838ea21f8eb31c638326584e",
-        downloaded_file_path = "pillow-12.0.0-cp313-cp313-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl",
+        sha256 = "f7401aebd7f581d7f83a439d87d474999317ee099218e5ad25d125290990ba65",
+        downloaded_file_path = "pillow-12.3.0-cp313-cp313-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl",
     )
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_pillow_12.0.0_cp313_cp313_manylinux_2_27_x86_64.manylinux_2_28_x86_64",
+        name = "pycross_lock_file_wheel_pillow_12.3.0_cp313_cp313_manylinux_2_27_x86_64.manylinux_2_28_x86_64",
         urls = [
-            "https://files.pythonhosted.org/packages/38/57/755dbd06530a27a5ed74f8cb0a7a44a21722ebf318edbe67ddbd7fb28f88/pillow-12.0.0-cp313-cp313-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+            "https://files.pythonhosted.org/packages/f7/62/de5bdd77d935331f4f802edc11e4d82950f642caad6cb2f949837b8560e2/pillow-12.3.0-cp313-cp313-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
         ],
-        sha256 = "f4f1231b7dec408e8670264ce63e9c71409d9583dd21d32c163e25213ee2a344",
-        downloaded_file_path = "pillow-12.0.0-cp313-cp313-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+        sha256 = "0847a763afefb695bc912d7c131e7e0632d4edc1d8698f58ddabec8e46b8b6d3",
+        downloaded_file_path = "pillow-12.3.0-cp313-cp313-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
     )
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_pillow_12.0.0_cp314_cp314_macosx_11_0_arm64",
+        name = "pycross_lock_file_wheel_pillow_12.3.0_cp314_cp314_macosx_11_0_arm64",
         urls = [
-            "https://files.pythonhosted.org/packages/fc/f5/eae31a306341d8f331f43edb2e9122c7661b975433de5e447939ae61c5da/pillow-12.0.0-cp314-cp314-macosx_11_0_arm64.whl",
+            "https://files.pythonhosted.org/packages/c7/da/32c752228ae345f489e3a42499d817b6c3996da7e8a3bc7a04fc806b243b/pillow-12.3.0-cp314-cp314-macosx_11_0_arm64.whl",
         ],
-        sha256 = "266cd5f2b63ff316d5a1bba46268e603c9caf5606d44f38c2873c380950576ad",
-        downloaded_file_path = "pillow-12.0.0-cp314-cp314-macosx_11_0_arm64.whl",
+        sha256 = "e158cb00350dc278f3b91551101aa7d12415a66ebf2c91d8d5ac14e56ddd3ad0",
+        downloaded_file_path = "pillow-12.3.0-cp314-cp314-macosx_11_0_arm64.whl",
     )
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_pillow_12.0.0_cp314_cp314_manylinux_2_27_aarch64.manylinux_2_28_aarch64",
+        name = "pycross_lock_file_wheel_pillow_12.3.0_cp314_cp314_manylinux_2_27_aarch64.manylinux_2_28_aarch64",
         urls = [
-            "https://files.pythonhosted.org/packages/d8/61/3f5d3b35c5728f37953d3eec5b5f3e77111949523bd2dd7f31a851e50690/pillow-12.0.0-cp314-cp314-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl",
+            "https://files.pythonhosted.org/packages/b1/9d/8b2c807dbef61a5197c047afe99823787eb66f63daf9fb2432f91d6f0462/pillow-12.3.0-cp314-cp314-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl",
         ],
-        sha256 = "6846bd2d116ff42cba6b646edf5bf61d37e5cbd256425fa089fee4ff5c07a99e",
-        downloaded_file_path = "pillow-12.0.0-cp314-cp314-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl",
+        sha256 = "e9aeb04d6aef139de265b29683e119b638208f88cf73cdd1658aa07221165321",
+        downloaded_file_path = "pillow-12.3.0-cp314-cp314-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl",
     )
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_pillow_12.0.0_cp314_cp314_manylinux_2_27_x86_64.manylinux_2_28_x86_64",
+        name = "pycross_lock_file_wheel_pillow_12.3.0_cp314_cp314_manylinux_2_27_x86_64.manylinux_2_28_x86_64",
         urls = [
-            "https://files.pythonhosted.org/packages/3a/be/ee90a3d79271227e0f0a33c453531efd6ed14b2e708596ba5dd9be948da3/pillow-12.0.0-cp314-cp314-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+            "https://files.pythonhosted.org/packages/5c/44/c85361f65dbe00eea8576ee467c768d25129989efb76e94f205e9ca9bb46/pillow-12.3.0-cp314-cp314-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
         ],
-        sha256 = "c98fa880d695de164b4135a52fd2e9cd7b7c90a9d8ac5e9e443a24a95ef9248e",
-        downloaded_file_path = "pillow-12.0.0-cp314-cp314-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+        sha256 = "251bf95b67017e27b13d82f5b326234ca62d70f9cf4c2b9032de2358a3b12c7b",
+        downloaded_file_path = "pillow-12.3.0-cp314-cp314-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
     )
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_pillow_12.0.0_cp314_cp314t_macosx_11_0_arm64",
+        name = "pycross_lock_file_wheel_pillow_12.3.0_cp314_cp314t_macosx_11_0_arm64",
         urls = [
-            "https://files.pythonhosted.org/packages/44/76/20776057b4bfd1aef4eeca992ebde0f53a4dce874f3ae693d0ec90a4f79b/pillow-12.0.0-cp314-cp314t-macosx_11_0_arm64.whl",
+            "https://files.pythonhosted.org/packages/07/70/e5686d753e898a45d778ff1718dba8516ead6ab6b95d85fc8c4b70650cf2/pillow-12.3.0-cp314-cp314t-macosx_11_0_arm64.whl",
         ],
-        sha256 = "b2e4b27a6e15b04832fe9bf292b94b5ca156016bbc1ea9c2c20098a0320d6cf6",
-        downloaded_file_path = "pillow-12.0.0-cp314-cp314t-macosx_11_0_arm64.whl",
+        sha256 = "5afb51d599ea772b8365ae807ae557f18bccfe46ab261fd1c2a9ed700fc6eb17",
+        downloaded_file_path = "pillow-12.3.0-cp314-cp314t-macosx_11_0_arm64.whl",
     )
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_pillow_12.0.0_cp314_cp314t_manylinux_2_27_aarch64.manylinux_2_28_aarch64",
+        name = "pycross_lock_file_wheel_pillow_12.3.0_cp314_cp314t_manylinux_2_27_aarch64.manylinux_2_28_aarch64",
         urls = [
-            "https://files.pythonhosted.org/packages/75/87/fcea108944a52dad8cca0715ae6247e271eb80459364a98518f1e4f480c1/pillow-12.0.0-cp314-cp314t-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl",
+            "https://files.pythonhosted.org/packages/d5/37/25c6692f06927ee973ff18c8d9ee98ad0b4d84ee67a09610c2dd1447958e/pillow-12.3.0-cp314-cp314t-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl",
         ],
-        sha256 = "5d5c411a8eaa2299322b647cd932586b1427367fd3184ffbb8f7a219ea2041ca",
-        downloaded_file_path = "pillow-12.0.0-cp314-cp314t-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl",
+        sha256 = "3edce1d53195db527e0191f84b71d02022de0540bf43a16ed734ed7537b07385",
+        downloaded_file_path = "pillow-12.3.0-cp314-cp314t-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl",
     )
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_pillow_12.0.0_cp314_cp314t_manylinux_2_27_x86_64.manylinux_2_28_x86_64",
+        name = "pycross_lock_file_wheel_pillow_12.3.0_cp314_cp314t_manylinux_2_27_x86_64.manylinux_2_28_x86_64",
         urls = [
-            "https://files.pythonhosted.org/packages/91/52/0d31b5e571ef5fd111d2978b84603fce26aba1b6092f28e941cb46570745/pillow-12.0.0-cp314-cp314t-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+            "https://files.pythonhosted.org/packages/cc/91/420637fcb8f1bc11029e403b4538e6694744428d8246118e45719f944556/pillow-12.3.0-cp314-cp314t-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
         ],
-        sha256 = "d7e091d464ac59d2c7ad8e7e08105eaf9dafbc3883fd7265ffccc2baad6ac925",
-        downloaded_file_path = "pillow-12.0.0-cp314-cp314t-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+        sha256 = "bf16ba1b4d0b6b7c8e534936632270cf70eb00dbe09005bc345b2677b726855c",
+        downloaded_file_path = "pillow-12.3.0-cp314-cp314t-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
     )
 
     maybe(

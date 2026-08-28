@@ -253,6 +253,7 @@ def numeric_check[
     *,
     atol: Float64 = 1e-3,
     rtol: Float64 = 1e-2,
+    allow_nonfinite: Bool = False,
 ) -> Bool:
     """Element-wise compares `actual` vs a (higher-precision) `expected`.
 
@@ -266,6 +267,13 @@ def numeric_check[
     reduction-order FP differences in a correct kernel do not cry wolf); a real
     wrong-answer is grossly out of band. Tightening per-dtype/per-reduction-depth
     is future work.
+
+    Set `allow_nonfinite` when the kernel accumulates in a narrower type than
+    the reference and the case's magnitudes put intermediate overflow out of
+    reach of any ordering: saturating to +-Inf is IEEE-correct there, so the
+    finite contract would be reporting the format, not a bug. It waives only
+    the elements whose reference is finite and output is not; every other
+    element still answers to `atol`/`rtol`.
     """
     var n = min(len(actual), len(expected))
     var max_abs = Float64(0)
@@ -277,6 +285,8 @@ def numeric_check[
         var e = expected[i].cast[.float64]()
         # Finite contract: finite reference must yield a finite output.
         if isfinite(e) and not isfinite(a):
+            if allow_nonfinite:
+                continue
             n_bad += 1
             if worst < 0:
                 worst = i

@@ -42,13 +42,16 @@ def _compute_shareable_rows[
     result[i].test(j) == True iff can_share[i * N + j] == 1, i.e. allocations
     i and j have non-overlapping lifetimes and may share a memory block.
     """
-    result = Array[BitSet[N], N](uninitialized=True)
-    for i in range(N):
+
+    @always_inline
+    def result_init(i: Int) {imm can_share} -> BitSet[N]:
         var row: BitSet[N] = {}
         for j in range(N):
             if can_share[i * N + j]:
                 row.set(j)
-        result[i] = row^
+        return row^
+
+    result = Array[_, N](fill_with=result_init)
 
 
 def _maximum(alignments: Array[Int, _]) -> Int:

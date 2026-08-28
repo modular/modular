@@ -388,6 +388,13 @@ the [container](/container) page now links to the new page.
   waits for in-flight requests to finish after receiving `SIGTERM` before
   exiting (default 5 seconds). Raise it so long-running requests are drained
   rather than dropped during a rolling restart.
+- Added a request body size limit. `MAX_SERVE_MAX_REQUEST_BYTES` (default
+  100 MiB) caps the size of an accepted HTTP request body; a larger request is
+  rejected with HTTP 413 before the body is buffered, so a client cannot
+  exhaust host memory with an oversized payload. The cap is enforced both from
+  an oversized `Content-Length` and by counting the bytes actually received, so
+  a chunked or mislabeled body cannot evade it. Raise it for larger inline
+  (base64) multimodal payloads, or set it to 0 to disable the limit.
 - Data-parallel (DP) serving now shares the prefix cache across replicas, so a
   multi-turn conversation gets cache hits even when a later turn is scheduled on
   a different replica than the previous one. GPU prefix-cache hits are served by
@@ -799,10 +806,26 @@ the [container](/container) page now links to the new page.
 
 ## MAX kernels
 
+- The SM100 MLA decode dispatch now enumerates 12, 24 and 48 query heads
+  alongside the powers of two it already covered, so a model whose per-device
+  head count is not a power of two can bind its dispatch metadata.
+
+- KDA prefill now runs on the chunk-parallel pipeline. The pipeline existed as
+  a Mojo kernel with no graph-op registration, so every prefill fell back to
+  the token-sequential decode recurrence: O(total_seq_len) sequential steps per
+  sequence, with no parallelism to spend on a long prompt. Registering
+  `kda_chunk` as its own graph op takes that to O(total_seq_len / CHUNK_SIZE).
+
 - Added `MODULAR_APPLE_M5_ALLOW_LOSSY_F32_ATTENTION`. Set it to `0` to keep
   fp32 attention off the Apple M5 MMA, which truncates operands to fp19. It
   defaults to the fast (lossy) path, matching
   `MODULAR_APPLE_M5_ALLOW_LOSSY_F32_MATMUL`.
+
+- Improved MXFP8 block-scaled matmul decode latency for attention
+  output-projection shapes at M=4, M=32, M=64, and M=128 on MI355.
+
+- Improved MXFP8 block-scaled fused QKV projection decode latency at M=4 on
+  MI355.
 
 - The MLA sparse-attention indexer (DeepSeek V3.2, GLM 5.x) now does work
   proportional to each row's actual key count instead of the batch's
@@ -885,26 +908,35 @@ the [container](/container) page now links to the new page.
   matmul (gate-up and down projections) at the estimated-total-M > 2048
   band that real serving traffic hits, plus the down projection's
   estimated-total-M <= 2048 band. Gate-up projection speeds up 7.4-10.1%
-  and down projection 18.2-19.6% (etm > 2048) and 6.9-18.5% (etm <= 2048)
+  and down projection 18.2-19.6% (etm > 2048) and 6.9-23.3% (etm <= 2048)
   across real ragged-M, skewed routing scenarios.
 
 ## Breaking changes
 
-- `max.pipelines.PipelineArgs` is now immutable: assigning to one of its
-  top-level fields after construction raises a pydantic `ValidationError`.
-  Construct it with the values you need. Its sub-configs (`runtime`,
-  `sampling`, etc.) are unchanged for now.
+- The pipeline configs are now immutable: `PipelineArgs`,
+  `PipelineConfig`, `PipelineRuntimeConfig`, `SamplingConfig`,
+  `MAXModelConfig`, `KVCacheConfig` and its nested `KVConnectorConfig`,
+  `LoRAConfig`, and `ProfilingConfig`. Assigning to a field after
+  construction raises a pydantic `ValidationError`. Construct them with
+  the values you need.
 
-- `max.pipelines.lib.LoRAConfig` and `max.pipelines.lib.ProfilingConfig` are
-  now immutable (pydantic `frozen=True`); assigning to a field after
-  construction raises a `ValidationError`. Construct with the desired values.
+- `ModelManifest` is now immutable from construction: mutating the mapping
+  (item assignment, `update`, `pop`, and so on) raises a `TypeError`, and
+  `ModelManifest.resolve()` is removed — a manifest is complete when built.
+  Construct it with the component configs you need. The unused
+  `total_weights_size` property is also removed.
 
-- `KVCacheConfig` and nested `KVConnectorConfig` are now immutable:
-  assigning to a field after construction raises a pydantic
-  `ValidationError`. Construct them with the values you need.
-  Architectures that need KV-head replication declare
-  `requires_kv_head_replication`; construction sets the flag on the
-  model's KV-cache config.
+- Constructing a `MAXModelConfig` directly now only validates the fields
+  you pass. It no longer fills in the weight and model paths or loads the
+  HuggingFace config. Configs the pipeline builds are unchanged.
+
+- `ArchConfig.calculate_max_seq_len()` no longer takes `pipeline_config`,
+  and `model_config` is now required.
+
+- `KVCacheConfig.allow_kv_head_replication`, the architecture registration
+  field `requires_kv_head_replication`, and the
+  `--allow-kv-head-replication` flag are removed. An architecture now asks
+  for KV head replication in its `construct_kv_params()`.
 
 - The KV cache connector is now configured as a single object: its type moved
   onto `--kv-connector-config` as a `type` field, and the separate
@@ -1003,6 +1035,12 @@ the [container](/container) page now links to the new page.
   closures passed this way are unified closures, so replace `@__parameter` and
   `@__copy_capture(x)` with an explicit capture list such as `{imm}` or
   `{var x, imm}`.
+
+- `DeviceGraphBuilder.add_function[kernel](*args, ...)` takes a thin
+  function pointer (`func: def(...) thin -> None`), the same identity as
+  `DeviceContext.compile_function[kernel]()`. The capturing compile-and-add
+  overloads are removed; capturing kernels use
+  `DeviceContext.enqueue_function()` or `recording_context()`.
 
 - `PipelineRegistry.retrieve_factory` now returns a `RetrievedPipeline`
   dataclass with `tokenizer`, `factory`, and `memory_plan` fields instead of

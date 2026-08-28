@@ -461,6 +461,28 @@ struct Array[T: AnyType, length: Int](
             further improve compilation speed while still maintaining good
             runtime performance.
         """
+        self = Self(fill_with=lambda (_i: Int) -> Self.T: fill.copy())
+
+    @always_inline
+    def __init__[
+        batch_size: SIMDLength = 64
+    ](out self, *, fill_with: Some[def(Int) -> Self.T]):
+        """Constructs an array by calling `fill_with(i)` for each index `i`.
+
+        Parameters:
+            batch_size: The number of elements to unroll for filling the array.
+
+        Args:
+            fill_with: A function called with each index in `[0, length)`,
+                whose result is written to that position.
+
+        Examples:
+
+        ```mojo
+        var squares = Array[Int, 5](fill_with=lambda (i: Int) -> Int: i * i)
+        # [0, 1, 4, 9, 16]
+        ```
+        """
         _array_construction_checks[Self.length]()
         self = Self(uninitialized=True)
 
@@ -473,14 +495,17 @@ struct Array[T: AnyType, length: Int](
         # `unroll_end == 0` leaves the inlined iterator's line-table marker
         # behind as an irremovable barrier, even though the loop is dead.
         comptime if unroll_end > 0:
-            for _ in range(0, unroll_end, batch_size):
-                comptime for _ in range(batch_size):
-                    ptr.unsafe_write(copy=fill)
+            for batch_start in range(0, unroll_end, batch_size):
+                comptime for i in range(batch_size):
+                    var idx = batch_start + i
+                    ptr.unsafe_write(
+                        init_with=lambda () {ref} -> Self.T: fill_with(idx)
+                    )
                     ptr = ptr.unsafe_offset(1)
 
         # Fill the remainder
-        comptime for _ in range(unroll_end, Self.length):
-            ptr.unsafe_write(copy=fill)
+        comptime for i in range(unroll_end, Self.length):
+            ptr.unsafe_write(init_with=lambda () {ref} -> Self.T: fill_with(i))
             ptr = ptr.unsafe_offset(1)
         debug_assert(
             ptr == base.unsafe_offset(Self.length),

@@ -242,10 +242,7 @@ def single_buffer_epilogue_recipe() -> List[PhaseStep]:
 
 def pipe_to_list[N: Int](p: Pipe[N]) -> List[OpDesc]:
     """Convert a Pipe to a List[OpDesc]."""
-    var result = List[OpDesc](capacity=N)
-    for i in range(N):
-        result.append(p.ops[i])
-    return result^
+    return List(length=N, fill_with=lambda (i: Int) -> OpDesc: p.ops[i])
 
 
 def default_prologue(

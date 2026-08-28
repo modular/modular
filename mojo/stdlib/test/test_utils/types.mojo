@@ -845,7 +845,8 @@ struct ConfigureTrivial[
 
 
 @fieldwise_init
-struct NonMovable:
+struct NonMovable(Movable where False):
     """A non-movable type."""
 
-    pass
+    var value: Int
+    """Test value payload."""

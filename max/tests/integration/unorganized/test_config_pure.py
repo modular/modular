@@ -663,16 +663,16 @@ class TestDraftModelQuantizationEncoding:
         mock_arch.pipeline_model.estimate_weights_size.return_value = 0
         mock_arch.config.initialize.return_value = mock_draft_arch_config
 
-        # Encodings resolve at construction, before the speculative
-        # validation runs; mirror that by replacing the models up front.
-        config.models["main"] = config.model.model_copy(
-            update={"quantization_encoding": "float8_e4m3fn"}
+        # Encodings settle at construction, so set them up front.
+        models = config.models.with_override(
+            "main", quantization_encoding="float8_e4m3fn"
         )
         assert config.draft_model is not None
         if config.draft_model.quantization_encoding is None:
-            config.models["draft"] = config.draft_model.model_copy(
-                update={"quantization_encoding": draft_encoding}
+            models = models.with_override(
+                "draft", quantization_encoding=draft_encoding
             )
+        config = config.model_copy(update={"models": models})
 
         with patch.object(
             PipelineConfig,

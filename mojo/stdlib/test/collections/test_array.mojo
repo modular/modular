@@ -124,6 +124,54 @@ def test_array_int() raises:
     test_init_fill[2048, 1](Int64.MAX)
 
 
+def test_array_fill_with() raises:
+    var squares = Array[Int, 5](fill_with=lambda (i: Int) -> Int: i * i)
+    for i in range(5):
+        assert_equal(squares[i], i * i)
+
+    var strs = Array[String, 3](fill_with=lambda (i: Int) -> String: String(i))
+    for i in range(3):
+        assert_equal(strs[i], String(i))
+
+
+def test_array_fill_with_named_function() raises:
+    def cube(i: Int) {imm} -> Int:
+        return i * i * i
+
+    var cubes = Array[Int, 4](fill_with=cube)
+    for i in range(4):
+        assert_equal(cubes[i], i * i * i)
+
+
+def test_array_fill_with_non_movable() raises:
+    # `fill_with=` constructs each element in place, so it works even for a
+    # non-`Movable` element type -- no constraint on `T` at all.
+    var arr = Array[NonMovable, 3](
+        fill_with=lambda (i: Int) -> NonMovable: NonMovable(i * 10)
+    )
+    assert_equal(arr[0].value, 0)
+    assert_equal(arr[1].value, 10)
+    assert_equal(arr[2].value, 20)
+
+
+def test_array_fill_with_explicit_batch_size() raises:
+    var arr = Array[Int, 10].__init__[batch_size=4](
+        fill_with=lambda (i: Int) -> Int: i * 2
+    )
+    for i in range(10):
+        assert_equal(arr[i], i * 2)
+
+
+def test_array_fill_with_crosses_batch_boundary() raises:
+    # The default `batch_size` is 64: indices `>= 64` come from a runtime
+    # loop rather than a `comptime for` unroll, so this exercises the
+    # `batch_start + i` arithmetic on both sides of that boundary.
+    comptime size = 130
+    var arr = Array[Int, size](fill_with=lambda (i: Int) -> Int: i + 1)
+    for i in range(size):
+        assert_equal(arr[i], i + 1)
+
+
 def test_array_String() raises:
     var arr: Array[String, 3] = ["hi", "hello", "hey"]
 
@@ -501,6 +549,9 @@ struct NonMovable(Movable where False):
     """A non-`Movable` (pinned) type; still implicitly deletable by default."""
 
     var value: Int
+
+    def __init__(out self, value: Int):
+        self.value = value
 
 
 struct LinearNonMovable(Deinitable where False, Movable where False):

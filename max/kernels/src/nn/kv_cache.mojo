@@ -23,7 +23,6 @@ from max.gpu.host import DeviceContext, DeviceBuffer, get_gpu_target
 from max.gpu.host.info import is_cpu, is_gpu
 from std.collections import OptionalReg
 from kv_cache.types import (
-    ContinuousBatchingKVCacheCollection,
     KVCacheStaticParams,
     KVCacheT,
     KVCollectionT,
@@ -59,7 +58,6 @@ from nn.attention.gpu.mha import flash_attention as gpu_flash_attention
 from nn.attention.mha_mask import MHAMask
 from nn.attention.mha_utils import (
     dispatch_mask,
-    dispatch_materialized_mask,
 )
 from nn.normalization import _rms_norm_impl, _rms_norm_warp_tiling_subkernel
 from max.runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
@@ -74,83 +72,6 @@ from extensibility import (
 # ===-----------------------------------------------------------------------===#
 # Fused QKV matmul (padded)
 # ===-----------------------------------------------------------------------===#
-
-
-@always_inline
-def generic_fused_qkv_matmul_kv_cache_bshd_continuous_batch[
-    dtype: DType,
-    target: StaticString = "cpu",
-](
-    hidden_state: LayoutTensor[mut=False, dtype, address_space=.GENERIC, ...],
-    weight: LayoutTensor[mut=False, dtype, address_space=.GENERIC, ...],
-    kv_collection: ContinuousBatchingKVCacheCollection,
-    layer_idx: UInt32,
-    valid_lengths: LayoutTensor[
-        .uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
-    ],
-    output: LayoutTensor[mut=True, dtype, ...],
-    ctx: DeviceContext,
-) raises:
-    """Performs a fused QKV matmul. Q outputs are written to the output argument
-    while K and V outputs are written in-place into k_cache and v_cache.
-
-    Only positions within valid_lengths are written to the KV cache.
-
-    Args:
-        hidden_state: Tensor with shape (batch_size, seq_len, num_heads * head_size).
-        weight: Tensor with shape (num_heads * head_size, num_kv_heads * head_size).
-        kv_collection: The historical KVCache for keys and values. The KVCache for
-            this layer is retrieved via layer_idx.
-        layer_idx: The index of the layer being executed. Used to retrieve the KVCache
-            for the given layer from kv_collection.
-        valid_lengths: Tensor of shape [batch] containing the valid length for each
-            sequence. K and V are only written to cache for positions within these lengths.
-        output: The pre-allocated output buffer for Q projections. K and V
-            projections are written in-place to k_cache and v_cache.
-        ctx: The call context pointer, passed by the graph compiler.
-    """
-
-    @always_inline
-    @__parameter
-    def description_fn() -> String:
-        return String(";").join(
-            Span(
-                [
-                    trace_arg("output", output.runtime_layout.shape.value),
-                    trace_arg(
-                        "hidden_state", hidden_state.runtime_layout.shape.value
-                    ),
-                    trace_arg("weight", weight.runtime_layout.shape.value),
-                    trace_arg(
-                        "valid_lengths",
-                        valid_lengths.runtime_layout.shape.value,
-                    ),
-                    "layer_idx=" + String(layer_idx),
-                    "num_heads=" + String(kv_collection.kv_params.num_heads),
-                    "head_size=" + String(kv_collection.kv_params.head_size),
-                ]
-            )
-        )
-
-    with Trace[TraceLevel.OP, target=target](
-        "mo.fused_qkv_matmul.padded.continuous_batching.nhead_"
-        + String(kv_collection.kv_params.num_heads)
-        + ".hdim_"
-        + String(kv_collection.kv_params.head_size),
-        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
-        task_id=get_safe_task_id(ctx),
-    ):
-        return _fused_qkv_matmul_kv_cache[
-            kv_collection.CacheType, target=target
-        ](
-            hidden_state,
-            weight,
-            kv_collection,
-            layer_idx,
-            valid_lengths,
-            output,
-            ctx,
-        )
 
 
 @always_inline
@@ -468,95 +389,6 @@ def _matmul_common[
 
 
 @always_inline
-def generic_fused_qk_rope_bshd_continuous_batch[
-    dtype: DType,
-    //,
-    *,
-    interleaved: Bool,
-    target: StaticString,
-](
-    q_proj: TileTensor[mut=False, dtype, ...],
-    kv_collection: ContinuousBatchingKVCacheCollection,
-    freqs_cis: TileTensor[mut=False, dtype, ...],
-    layer_idx: UInt32,
-    valid_lengths: TileTensor[mut=False, .uint32, ...],
-    output: TileTensor[mut=True, dtype, ...],
-    context: DeviceContext,
-) raises:
-    """Performs a fused RoPE projection for Q and K projections.
-
-    We have a manually fused QKV projection with mo.opaque dtypes in our Llama model.
-    Due to a limitation in custom op definitions, we can't declare both a tensor
-    and opaque dtype as output from a custom kernel. This requires us to only note
-    Q_proj as an output from the QKV projection. If we immediately follow the
-    QKV proj kernel with a RoPE kernel applied to K, we'll get a race condition
-    because the graph compiler doesn't know about the dependency between these
-    kernels in the graph definition. Here we fuse the RoPE kernel applied to
-    Q_proj with K_proj, so K_proj RoPE is only executed after QKV completes.
-
-    Args:
-        q_proj: Query projection tensor of shape [batch, seq_len, n_heads, head_dim].
-        kv_collection: The continuous batching KV cache collection.
-        freqs_cis: Frequency tensor for RoPE of shape [max_seq_len, head_dim].
-        layer_idx: The layer index for accessing the correct cache.
-        valid_lengths: Tensor of shape [batch] containing the valid length for each
-            sequence. RoPE is only applied to positions within these lengths.
-        output: Output tensor for Q with RoPE applied, same shape as q_proj.
-        context: Device context pointer for execution.
-    """
-
-    @always_inline
-    @__parameter
-    def description_fn() -> String:
-        return String(";").join(
-            Span(
-                [
-                    trace_arg(
-                        "output",
-                        coord_to_index_list(output.layout.shape_coord()),
-                    ),
-                    trace_arg(
-                        "q_proj",
-                        coord_to_index_list(q_proj.layout.shape_coord()),
-                    ),
-                    trace_arg(
-                        "freqs_cis",
-                        coord_to_index_list(freqs_cis.layout.shape_coord()),
-                    ),
-                    trace_arg(
-                        "valid_lengths",
-                        coord_to_index_list(valid_lengths.layout.shape_coord()),
-                    ),
-                    "layer_idx=" + String(layer_idx),
-                    "num_heads=" + String(kv_collection.kv_params.num_heads),
-                    "head_size=" + String(kv_collection.kv_params.head_size),
-                    "interleaved=" + String(interleaved),
-                ]
-            )
-        )
-
-    with Trace[TraceLevel.OP, target=target](
-        "mo.fused_qk_rope.padded.continuous_batching.nhead_"
-        + String(kv_collection.kv_params.num_heads)
-        + ".hdim_"
-        + String(kv_collection.kv_params.head_size),
-        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
-        task_id=get_safe_task_id(context),
-    ):
-        fused_qk_rope[
-            kv_collection.CacheType, interleaved=interleaved, target=target
-        ](
-            q_proj,
-            kv_collection,
-            freqs_cis,
-            layer_idx,
-            valid_lengths,
-            output,
-            context,
-        )
-
-
-@always_inline
 def generic_fused_qk_rope_bshd_paged[
     dtype: DType,
     //,
@@ -574,8 +406,7 @@ def generic_fused_qk_rope_bshd_paged[
 ) raises:
     """Performs a fused RoPE projection for Q and K with paged KV cache.
 
-    This is the paged equivalent of generic_fused_qk_rope_bshd_continuous_batch.
-    It applies RoPE to both Q (returned) and K (in paged cache) to ensure
+    Applies RoPE to both Q (returned) and K (in the paged cache) to ensure
     proper dependency ordering after fused_qkv_padded_matmul.
 
     Args:
@@ -716,73 +547,6 @@ def generic_flash_attention_kv_cache_padded[
         )
 
 
-@always_inline
-def generic_flash_attention_kv_cache_padded_materialized_mask[
-    collection_t: KVCollectionT,
-    dtype: DType,
-    //,
-    *,
-    target: StaticString,
-    local_window_size: Int = -1,
-    num_heads: Int = -1,
-](
-    q: LayoutTensor[mut=False, dtype, address_space=.GENERIC, ...],
-    kv_collection: collection_t,
-    layer_idx: UInt32,
-    mask: LayoutTensor[mut=False, dtype, address_space=.GENERIC, ...],
-    valid_lengths: LayoutTensor[
-        .uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
-    ],
-    scale: Float32,
-    output: LayoutTensor[mut=True, dtype, address_space=.GENERIC, ...],
-    context: DeviceContext,
-    sink_weights: OptionalReg[
-        LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
-    ] = None,
-) raises:
-    @always_inline
-    @__parameter
-    def description_fn() -> String:
-        return String(";").join(
-            Span(
-                [
-                    trace_arg("q", q.runtime_layout.shape.value),
-                    trace_arg("mask", mask.runtime_layout.shape.value),
-                    trace_arg(
-                        "valid_lengths",
-                        valid_lengths.runtime_layout.shape.value,
-                    ),
-                    "scale=" + String(scale),
-                    "layer_idx=" + String(layer_idx),
-                    "num_heads=" + String(collection_t.kv_params.num_heads),
-                    "head_size=" + String(collection_t.kv_params.head_size),
-                ]
-            )
-        )
-
-    with Trace[TraceLevel.OP, target=target](
-        "mo.mha.padded.continuous_batching.tensor_mask.nhead_"
-        + String(collection_t.kv_params.num_heads)
-        + ".hdim_"
-        + String(collection_t.kv_params.head_size),
-        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
-    ):
-        return _flash_attention_dispatch_materialized_mask[
-            target=target,
-            local_window_size=local_window_size,
-        ](
-            q,
-            kv_collection,
-            layer_idx,
-            mask,
-            valid_lengths,
-            scale,
-            output,
-            context,
-            sink_weights,
-        )
-
-
 def _flash_attention_dispatch[
     dtype: DType,
     collection_t: KVCollectionT,
@@ -837,70 +601,6 @@ def _flash_attention_dispatch[
             )
 
     return dispatch_mask[mask_str](_dispatch_flash_attention)
-
-
-def _flash_attention_dispatch_materialized_mask[
-    dtype: DType,
-    collection_t: KVCollectionT,
-    //,
-    *,
-    target: StaticString,
-    local_window_size: Int = -1,
-](
-    q: LayoutTensor[mut=False, dtype, address_space=.GENERIC, ...],
-    kv_cache: collection_t,
-    layer_idx: UInt32,
-    mask_nd: LayoutTensor[mut=False, dtype, address_space=.GENERIC, ...],
-    valid_lengths: LayoutTensor[
-        .uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
-    ],
-    scale: Float32,
-    output: LayoutTensor[mut=True, dtype, address_space=.GENERIC, ...],
-    context: DeviceContext,
-    sink_weights: OptionalReg[
-        LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
-    ] = None,
-) raises:
-    var k = kv_cache.get_key_cache(Int(layer_idx))
-    var v = kv_cache.get_value_cache(Int(layer_idx))
-
-    def _dispatch_flash_attention[mask_t: MHAMask](mask: mask_t) raises {imm}:
-        @always_inline
-        def call_flash_attention[sink: Bool]() raises {imm}:
-            comptime if is_cpu[target]():
-                return flash_attention_kv_cache_cpu(
-                    q,
-                    k,
-                    v,
-                    mask,
-                    scale,
-                    output,
-                    sink_weights,
-                )
-            else:
-                gpu_flash_attention[sink=sink](
-                    output,
-                    q,
-                    k,
-                    v,
-                    mask,
-                    valid_lengths,
-                    scale,
-                    context,
-                    sink_weights=sink_weights,
-                )
-
-        unswitch(Bool(sink_weights), call_flash_attention)
-
-    return dispatch_materialized_mask(
-        LayoutTensor[mask_nd.dtype, mask_nd.layout, mask_nd.origin](
-            mask_nd.ptr,
-            RuntimeLayout[mask_nd.layout].row_major(
-                mask_nd.runtime_layout.shape.value.canonicalize()
-            ),
-        ),
-        _dispatch_flash_attention,
-    )
 
 
 # ===-----------------------------------------------------------------------===#
@@ -2572,35 +2272,6 @@ def _print_cache[
             print()
 
 
-def print_kv_cache_cont_batch_generic_cpu[
-    target: StaticString, dtype: DType, kv_params: KVCacheStaticParams
-](
-    valid_lengths: LayoutTensor[mut=False, .uint32, ...],
-    kv_collection: ContinuousBatchingKVCacheCollection[dtype, kv_params, ...],
-    layer_idx: UInt32,
-    is_print_compact: Bool,
-    context: DeviceContext,
-) raises:
-    var k_cache = kv_collection.get_key_cache(Int(layer_idx))
-    var v_cache = kv_collection.get_value_cache(Int(layer_idx))
-
-    print("K:")
-    _print_cache[type_of(kv_collection)](
-        k_cache,
-        kv_collection,
-        valid_lengths,
-        is_print_compact,
-    )
-
-    print("V:")
-    _print_cache[type_of(kv_collection)](
-        v_cache,
-        kv_collection,
-        valid_lengths,
-        is_print_compact,
-    )
-
-
 def print_kv_cache_paged_generic_cpu[
     target: StaticString,
     dtype: DType,
@@ -2636,131 +2307,6 @@ def print_kv_cache_paged_generic_cpu[
         valid_lengths,
         is_print_compact,
     )
-
-
-def print_kv_cache_cont_batch_generic_gpu[
-    target: StaticString, dtype: DType, kv_params: KVCacheStaticParams
-](
-    valid_lengths: LayoutTensor[
-        mut=False, .uint32, address_space=.GENERIC, ...
-    ],
-    kv_collection: ContinuousBatchingKVCacheCollection[dtype, kv_params, ...],
-    layer_idx: UInt32,
-    is_print_compact: Bool,
-    context: DeviceContext,
-) raises:
-    # Create host TileTensor copies of device data. Each host copy re-origins the
-    # device view's type onto its freshly-allocated host buffer via
-    # `OriginCastType`; the host collection is then inferred from those copies.
-    var dev_ctx = context
-
-    var n_blocks = kv_collection.blocks.num_elements()
-    var blocks_alloc = alloc(
-        AllocLayout[Scalar[dtype]](count=n_blocks)
-    ).into_managed()
-    var blocks_ptr: UnsafePointer[
-        Scalar[dtype], origin_of(blocks_alloc)
-    ] = blocks_alloc.unsafe_ptr()
-    dev_ctx.enqueue_copy(blocks_ptr, kv_collection.blocks.ptr, n_blocks)
-    var blocks_host = type_of(kv_collection.blocks).OriginCastType[_](
-        ptr=blocks_ptr,
-        layout=kv_collection.blocks.layout,
-    )
-
-    var n_cache_lengths = kv_collection.cache_lengths.num_elements()
-    var cache_lengths_alloc = alloc(
-        AllocLayout[UInt32](count=n_cache_lengths)
-    ).into_managed()
-    var cache_lengths_ptr: UnsafePointer[
-        UInt32, origin_of(cache_lengths_alloc)
-    ] = cache_lengths_alloc.unsafe_ptr()
-    dev_ctx.enqueue_copy(
-        cache_lengths_ptr,
-        kv_collection.cache_lengths.ptr,
-        n_cache_lengths,
-    )
-    var cache_lengths_host = type_of(
-        kv_collection.cache_lengths
-    ).OriginCastType[mut=False, _](
-        ptr=cache_lengths_ptr,
-        layout=kv_collection.cache_lengths.layout,
-    )
-
-    var n_lookup_table = kv_collection.lookup_table.num_elements()
-    var lookup_table_alloc = alloc(
-        AllocLayout[UInt32](count=n_lookup_table)
-    ).into_managed()
-    var lookup_table_ptr: UnsafePointer[
-        UInt32, origin_of(lookup_table_alloc)
-    ] = lookup_table_alloc.unsafe_ptr()
-    dev_ctx.enqueue_copy(
-        lookup_table_ptr,
-        kv_collection.lookup_table.ptr,
-        n_lookup_table,
-    )
-    var lookup_table_host = type_of(kv_collection.lookup_table).OriginCastType[
-        mut=False, _
-    ](
-        ptr=lookup_table_ptr,
-        layout=kv_collection.lookup_table.layout,
-    )
-
-    var host_kv_collection = ContinuousBatchingKVCacheCollection[
-        dtype, kv_params
-    ](
-        blocks_host,
-        cache_lengths_host,
-        lookup_table_host,
-        kv_collection.max_seq_length,
-        kv_collection.max_cache_length,
-    )
-
-    var valid_lengths_host_alloc = alloc(
-        AllocLayout[UInt32](count=valid_lengths.size())
-    ).into_managed()
-    var valid_lengths_host_ptr: UnsafePointer[
-        UInt32, origin_of(valid_lengths_host_alloc)
-    ] = valid_lengths_host_alloc.unsafe_ptr()
-    var valid_lengths_host_nd = LayoutTensor[
-        valid_lengths.dtype, valid_lengths.layout
-    ](
-        valid_lengths_host_ptr,
-        RuntimeLayout[valid_lengths.layout].row_major(
-            valid_lengths.runtime_layout.shape.value.canonicalize()
-        ),
-    )
-    dev_ctx.enqueue_copy(
-        valid_lengths_host_nd.ptr,
-        valid_lengths.ptr,
-        valid_lengths.size(),
-    )
-
-    var k_cache = host_kv_collection.get_key_cache(Int(layer_idx))
-    var v_cache = host_kv_collection.get_value_cache(Int(layer_idx))
-
-    # Bring host buffers in sync with device buffers.
-    dev_ctx.synchronize()
-
-    print("K:")
-    _print_cache[type_of(host_kv_collection)](
-        k_cache,
-        host_kv_collection,
-        valid_lengths_host_nd,
-        is_print_compact,
-    )
-
-    print("V:")
-    _print_cache[type_of(host_kv_collection)](
-        v_cache,
-        host_kv_collection,
-        valid_lengths_host_nd,
-        is_print_compact,
-    )
-
-    dealloc(blocks_alloc^)
-    dealloc(cache_lengths_alloc^)
-    dealloc(lookup_table_alloc^)
-    dealloc(valid_lengths_host_alloc^)
 
 
 def print_kv_cache_paged_generic_gpu[
@@ -2906,69 +2452,6 @@ def print_kv_cache_paged_generic_gpu[
 # ===-----------------------------------------------------------------------===#
 # KV Collection Constructors (Ctor)
 # ===-----------------------------------------------------------------------===#
-
-
-def _continuous_batch_kv_cache_collection[
-    dtype: DType, //, kv_params: KVCacheStaticParams
-](
-    blocks: LayoutTensor[mut=True, dtype, Layout.row_major[6](), _],
-    cache_lengths: LayoutTensor[mut=False, .uint32, Layout(UNKNOWN_VALUE), _],
-    lookup_table: LayoutTensor[mut=False, .uint32, Layout(UNKNOWN_VALUE), _],
-    max_prompt_length: LayoutTensor[
-        mut=False, .uint32, Layout.row_major[1](), _
-    ],
-    max_cache_length: LayoutTensor[
-        mut=False, .uint32, Layout.row_major[1](), _
-    ],
-    out result: ContinuousBatchingKVCacheCollection[
-        dtype,
-        kv_params,
-        blocks.origin,
-        cache_lengths.origin,
-        lookup_table.origin,
-    ],
-):
-    # Marshal LayoutTensor into arguments expected by the
-    # ContinuousKVCacheCollection constructor. The collection carries the
-    # input tensors' origins, so the borrow checker keeps the backing
-    # buffers alive for as long as the collection (and any cache views
-    # derived from it) are in use.
-    return {
-        blocks = blocks,
-        cache_lengths = cache_lengths,
-        lookup_table = lookup_table,
-        max_seq_length = max_prompt_length[0][0],
-        max_cache_length = max_cache_length[0][0],
-    }
-
-
-@always_inline
-def generic_get_continuous_cache[
-    dtype: DType, kv_params: KVCacheStaticParams
-](
-    blocks: LayoutTensor[mut=True, dtype, Layout.row_major[6](), _],
-    cache_lengths: LayoutTensor[mut=False, .uint32, Layout(UNKNOWN_VALUE), _],
-    lookup_table: LayoutTensor[mut=False, .uint32, Layout(UNKNOWN_VALUE), _],
-    max_prompt_length: LayoutTensor[
-        mut=False, .uint32, Layout.row_major[1](), _
-    ],
-    max_cache_length: LayoutTensor[
-        mut=False, .uint32, Layout.row_major[1](), _
-    ],
-) -> ContinuousBatchingKVCacheCollection[
-    dtype,
-    kv_params,
-    blocks.origin,
-    cache_lengths.origin,
-    lookup_table.origin,
-]:
-    return _continuous_batch_kv_cache_collection[kv_params](
-        blocks,
-        cache_lengths,
-        lookup_table,
-        max_prompt_length,
-        max_cache_length,
-    )
 
 
 def generic_get_paged_cache[

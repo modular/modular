@@ -374,35 +374,78 @@ static std::string mountPathFor(StringRef boundName, ASTDecl &parentDecl) {
   return mount;
 }
 
-ErrorOr<ModuleOrigin *> ModuleLoader::getOrCreateModuleOrigin(
-    const ModuleSpec &spec, StringRef boundName, ASTDecl &parentDecl) {
-  // A namespace is several directories under different import roots, so there
-  // is no single entity for it to own.
+/// Warn that the import bound as 'mount' at 'loc' names an entity already bound
+/// under another name. Reported lazily from the lookup.
+static void warnAliasedBinding(const ModuleLoader &loader, SMLoc loc,
+                               StringRef mount, const ModuleOrigin &origin,
+                               bool isModule) {
+  StringRef noun = isModule ? "module" : "package";
+  MojoInflightDiag diag = loader.emitWarning(
+      loc, "'" + mount + "' and '" + origin.canonicalMount +
+               "' name the same " + noun +
+               "; remove the duplicate import root or file that "
+               "reaches it twice");
+  // Whichever name has already been bound is the canonical one and decides how
+  // the contents are reported to users; point to that.
+  SMLoc canonicalLoc = origin.canonicalBinding->importLoc;
+  if (canonicalLoc.isValid()) {
+    diag.attachNote(canonicalLoc)
+        << "'" << origin.canonicalMount
+        << "' is the name used in error messages and debug info";
+  }
+}
+
+bool ModuleLoader::wouldAliasExistingBinding(const ModuleSpec &spec,
+                                             StringRef name,
+                                             ASTDecl &parentDecl) const {
   if (!spec.isSourceModule() && !spec.isSourcePackage() &&
       !spec.isPrecompiled())
-    return nullptr;
+    return false;
+
+  auto it = store->originsByCanonicalPath.find(spec.canonicalPath());
+  return it != store->originsByCanonicalPath.end() &&
+         it->second->canonicalBinding &&
+         it->second->canonicalMount != mountPathFor(name, parentDecl);
+}
+
+BindingSpec ModuleLoader::resolveModuleBinding(const ModuleSpec &spec,
+                                               StringAttr name,
+                                               ModuleState &parentState,
+                                               SMLoc importLoc) {
+  BindingSpec binding;
+  binding.name = name;
+  // A namespace is several directories under different import roots, so there
+  // is no single entity for it to own, and so never aliases.
+  if (!spec.isSourceModule() && !spec.isSourcePackage() &&
+      !spec.isPrecompiled())
+    return binding;
+
+  binding.mount = mountPathFor(name.getValue(), *parentState.decl);
 
   std::string canonicalPath = spec.canonicalPath();
-  std::string mount = mountPathFor(boundName, parentDecl);
-
   auto it = store->originsByCanonicalPath.find(canonicalPath);
-  if (it != store->originsByCanonicalPath.end()) {
-    ModuleOrigin *existing = it->second;
-    if (existing->canonicalMount != mount) {
-      return Error(
-          Twine{spec.isSourceModule() ? "module" : "package"} +
-          " imported as '" + existing->canonicalMount +
-          "' must not also be imported as '" + mount +
-          "'; remove the duplicate import root or file that reaches it twice");
-    }
-    return existing;
+  if (it == store->originsByCanonicalPath.end()) {
+    store->originAllocations.push_back(
+        std::make_unique<ModuleOrigin>(std::move(canonicalPath)));
+    binding.origin = store->originAllocations.back().get();
+    store->originsByCanonicalPath[binding.origin->canonicalPath] =
+        binding.origin;
+    return binding;
   }
 
-  store->originAllocations.push_back(
-      std::make_unique<ModuleOrigin>(canonicalPath, std::move(mount)));
-  ModuleOrigin *origin = store->originAllocations.back().get();
-  store->originsByCanonicalPath[canonicalPath] = origin;
-  return origin;
+  binding.origin = it->second;
+  // A second name for the one entity aliases the binding that already names it.
+  if (binding.origin->canonicalMount != binding.mount &&
+      binding.origin->canonicalBinding) {
+    binding.aliasOf = binding.origin->canonicalBinding;
+    parentState.nestedModules.insert({name, binding.aliasOf});
+    // Only when actually resolving an import to this binding do we warn.
+    if (importLoc.isValid()) {
+      warnAliasedBinding(*this, importLoc, binding.mount, *binding.origin,
+                         spec.isSourceModule());
+    }
+  }
+  return binding;
 }
 
 ArrayRef<std::unique_ptr<ModuleOrigin>> ModuleLoader::getOrigins() const {
@@ -433,8 +476,20 @@ ModuleState *ModuleLoader::lookupPackageState(PackageOp packageOp) const {
   return store->packageStates.lookup(packageOp);
 }
 
-void ModuleLoader::setState(ASTDecl &decl, ModuleState &state) {
+void ModuleLoader::setState(ASTDecl &decl, ModuleState &state,
+                            const BindingSpec *binding) {
   store->moduleStates[&decl] = &state;
+  if (!binding)
+    return;
+
+  state.origin = binding->origin;
+  // First binding wins, so a state created for an origin something else
+  // already names - a rebinding under the same name - shares it without
+  // claiming it.
+  if (binding->origin && !binding->origin->canonicalBinding) {
+    binding->origin->canonicalBinding = &state;
+    binding->origin->canonicalMount = binding->mount;
+  }
 }
 
 void ModuleLoader::setPackageState(PackageOp packageOp, ModuleState &state) {
@@ -692,7 +747,7 @@ ModuleState *ModuleLoader::importSubModuleStateImpl(StringRef name,
   auto fileLoc = shared.createLocation(moduleBuffer->getBufferIdentifier(),
                                        /*line=*/1, /*column=*/1);
   return &createModuleState(declNameAttr, moduleBuffer, *parentState, fileLoc,
-                            *modulePath);
+                            *modulePath, /*importLoc=*/loc);
 }
 
 ModuleState &
@@ -918,6 +973,12 @@ void ModuleLoader::registerSourcePackageChildren(ASTDecl &packageDecl) {
     auto declNameAttr = StringAttr::get(getContext(), value.name);
     if (parentState->nestedModules.count(declNameAttr))
       continue;
+    // A child some other name already binds would be bound here as an alias. We
+    // don't want to pre-emptively warn when we haven't yet explicitly been
+    // asked to import this child. Skip it for now, we'll create the state if
+    // and when we're required.
+    if (wouldAliasExistingBinding(value, value.name, *parentState->decl))
+      continue;
     if (value.isSourcePackageLike()) {
       // Registered by the directory scan so it gets no import location here.
       // We'll resolve that location if/when it's actually resolved.
@@ -941,18 +1002,11 @@ void ModuleLoader::registerSourcePackageChildren(ASTDecl &packageDecl) {
 //===----------------------------------------------------------------------===//
 
 ModuleState &ModuleLoader::createFileModuleState(
-    StringAttr declName, ModuleState &parentState, FileLineColLoc loc,
-    llvm::SMLoc declLoc, LexerCursor cursor, LexerCursor endCursor,
-    const ModuleSpec &spec) {
-  // A module's identity is its position, so one file bound under a second name
-  // declares a second copy of every type in it.
-  ErrorOr<ModuleOrigin *> originOrErr =
-      getOrCreateModuleOrigin(spec, declName.getValue(), *parentState.decl);
-  if (const char *originError = originOrErr.getError()) {
-    return createErrorModuleState(declLoc.isValid() ? declLoc
-                                                    : parentState.importLoc,
-                                  declName, *parentState.decl, originError);
-  }
+    ModuleState &parentState, FileLineColLoc loc, llvm::SMLoc declLoc,
+    LexerCursor cursor, LexerCursor endCursor, const ModuleSpec &spec,
+    const BindingSpec &binding) {
+  assert(!binding.aliasOf && "an aliased binding creates no module");
+  StringAttr declName = binding.name;
 
   auto moduleBuilder = parentState.decl->getDeclEndBuilder();
   Operation *fileOp = FileModuleOp::create(moduleBuilder, loc, declName);
@@ -965,19 +1019,26 @@ ModuleState &ModuleLoader::createFileModuleState(
 
   ModuleState &moduleState = parentState.insertNestedModule(
       declName, std::make_unique<ModuleState>(&moduleDecl, spec));
-  moduleState.origin = *originOrErr;
-  setState(moduleDecl, moduleState);
+  setState(moduleDecl, moduleState, &binding);
   return moduleState;
 }
 
-ModuleState &ModuleLoader::createModuleState(
-    StringAttr declName, const llvm::MemoryBuffer *moduleBuffer,
-    ModuleState &parentState, FileLineColLoc loc, const ModuleSpec &spec) {
+ModuleState &
+ModuleLoader::createModuleState(StringAttr declName,
+                                const llvm::MemoryBuffer *moduleBuffer,
+                                ModuleState &parentState, FileLineColLoc loc,
+                                const ModuleSpec &spec, SMLoc importLoc) {
   // An eagerly-opened module: its cursor points at the freshly-lexed buffer.
   Lexer lexer(shared.diags, moduleBuffer);
-  ModuleState &moduleState = createFileModuleState(
-      declName, parentState, loc, lexer.getToken().getLoc(), lexer.getCursor(),
-      LexerCursor::getEOF(moduleBuffer), spec);
+  SMLoc declLoc = lexer.getToken().getLoc();
+  BindingSpec binding =
+      resolveModuleBinding(spec, declName, parentState, importLoc);
+  if (binding.aliasOf)
+    return *binding.aliasOf;
+
+  ModuleState &moduleState =
+      createFileModuleState(parentState, loc, declLoc, lexer.getCursor(),
+                            LexerCursor::getEOF(moduleBuffer), spec, binding);
   // An erroneous state carries no module body, so nothing below applies to it.
   if (moduleState.decl->isErroneous())
     return moduleState;
@@ -1000,10 +1061,17 @@ ModuleState &ModuleLoader::createDeferredModuleState(ModuleSpec moduleSpec,
   auto declNameAttr = StringAttr::get(shared.getContext(), moduleSpec.name);
   FileLineColLoc loc =
       shared.createLocation(moduleSpec.path.string(), /*line=*/1, /*column=*/1);
-  return createFileModuleState(declNameAttr, parentState, loc,
-                               /*declLoc=*/SMLoc(),
+  // Scan-created: nothing imported this, so an alias would go unreported. The
+  // scan skips children that would alias, so this never has one to make.
+  BindingSpec binding = resolveModuleBinding(moduleSpec, declNameAttr,
+                                             parentState, /*importLoc=*/{});
+  if (binding.aliasOf)
+    return *binding.aliasOf;
+
+  return createFileModuleState(parentState, loc, /*declLoc=*/SMLoc(),
                                /*cursor=*/LexerCursor(),
-                               /*endCursor=*/LexerCursor(), moduleSpec);
+                               /*endCursor=*/LexerCursor(), moduleSpec,
+                               binding);
 }
 
 ModuleState &ModuleLoader::createPackageState(ModuleSpec moduleSpec,
@@ -1017,15 +1085,13 @@ ModuleState &ModuleLoader::createPackageState(ModuleSpec moduleSpec,
   // ModuleState::nestedModules (populated by insertNestedModule below).
   assert(moduleSpec.isSourcePackageLike() && "Invalid package kind");
 
-  // A package's identity is its position, so the same directory bound under a
-  // second name declares a second, incompatible copy of every type in it. A
-  // namespace gets no origin, so it is exempt without a kind check here.
-  ErrorOr<ModuleOrigin *> originOrErr =
-      getOrCreateModuleOrigin(moduleSpec, moduleSpec.name, *parentState.decl);
-  if (const char *originError = originOrErr.getError()) {
-    return createErrorModuleState(importLoc, declName, *parentState.decl,
-                                  originError);
-  }
+  // The same directory bound under a second name is one package under two
+  // names. A namespace gets no origin, so it is exempt without a kind check
+  // here and never aliases.
+  BindingSpec binding =
+      resolveModuleBinding(moduleSpec, declName, parentState, importLoc);
+  if (binding.aliasOf)
+    return *binding.aliasOf;
 
   auto loc = shared.createLocation((moduleSpec.isSourcePackage()
                                         ? moduleSpec.path / "__init__.mojo"
@@ -1047,24 +1113,11 @@ ModuleState &ModuleLoader::createPackageState(ModuleSpec moduleSpec,
   ModuleState &moduleState = parentState.insertNestedModule(
       declName, std::make_unique<ModuleState>(&decl, moduleSpec));
   moduleState.importLoc = importLoc;
-  // Null for a namespace, which owns no single entity.
-  moduleState.origin = *originOrErr;
-  setState(decl, moduleState);
+  // The binding carries no origin for a namespace, which owns no single entity.
+  setState(decl, moduleState, &binding);
   setPackageState(packageOp, moduleState);
 
   return moduleState;
-}
-
-std::string ModuleLoader::moduleMountPath(const ModuleState &root,
-                                          const ModuleState &target) {
-  for (const auto &[name, nested] : root.nestedModules) {
-    if (nested == &target)
-      return name.getValue().str();
-    std::string subPath = moduleMountPath(*nested, target);
-    if (!subPath.empty())
-      return (name.getValue() + "." + subPath).str();
-  }
-  return {};
 }
 
 ModuleState &ModuleLoader::createBinaryPackageState(SMLoc loc,
@@ -1082,22 +1135,18 @@ ModuleState &ModuleLoader::createBinaryPackageState(SMLoc loc,
   // TODO(MOCO-4487): lift this once loading re-anchors recorded roots to the
   // mount point.
   if (parentState.decl != &shared.getTopLevelDecl()) {
-    std::string mountPath = moduleMountPath(getTopLevelState(), parentState);
-    if (!mountPath.empty())
-      mountPath += ".";
-    mountPath += spec.name;
     return makeError("precompiled package '" + pathStr +
                      "' must be imported directly from an import root, not "
                      "as '" +
-                     mountPath + "'");
+                     mountPathFor(spec.name, *parentState.decl) + "'");
   }
 
-  // One artifact bound under two names is two packages, and every type it
-  // declares exists twice over.
-  ErrorOr<ModuleOrigin *> originOrErr =
-      getOrCreateModuleOrigin(spec, spec.name, *parentState.decl);
-  if (const char *originError = originOrErr.getError())
-    return makeError(originError);
+  // One artifact bound under two names is one package under two names. Aliasing
+  // before the load also means the second name costs no second read.
+  BindingSpec binding =
+      resolveModuleBinding(spec, declNameAttr, parentState, /*importLoc=*/loc);
+  if (binding.aliasOf)
+    return *binding.aliasOf;
 
   llvm::ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> packageBuffer =
       llvm::MemoryBuffer::getFile(pathStr);
@@ -1218,7 +1267,8 @@ ModuleState &ModuleLoader::createBinaryPackageState(SMLoc loc,
   // from this package is lazily materialized we use this to set its location
   // at the import site.
   moduleState.importLoc = loc;
-  moduleState.origin = *originOrErr;
+  setState(decl, moduleState, &binding);
+  setPackageState(cast_or_null<PackageOp>(decl.getIfOperation()), moduleState);
 
   // The reader and the buffers under it belong to the file, so every module
   // bound out of this artifact reaches them through the shared origin. The
@@ -1231,9 +1281,6 @@ ModuleState &ModuleLoader::createBinaryPackageState(SMLoc loc,
   origin.sourceMgr = sourceMgr;
   origin.tmpModule = tmpModule;
   origin.bytecodeImportLoc = loc;
-
-  setState(decl, moduleState);
-  setPackageState(cast_or_null<PackageOp>(decl.getIfOperation()), moduleState);
 
   return moduleState;
 }

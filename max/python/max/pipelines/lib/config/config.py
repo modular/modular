@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import logging
 import os
+from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any, Literal, TypeVar, get_args
 
 from max.config import ConfigFileModel
@@ -24,6 +25,10 @@ from max.driver import accelerator_api
 from max.engine import InferenceSession
 from max.nn.comm import Signals
 from max.pipelines.diffusion.config import resolve_denoising_cache
+from max.pipelines.lib._model_components import (
+    architecture_name_for,
+    updated_component,
+)
 from max.pipelines.lib.arch_lookup import (
     find_architecture,
     import_custom_architectures,
@@ -76,8 +81,8 @@ logger = logging.getLogger("max.pipelines")
 # cyclopts (CLI framework) only recognizes plain dict types via typing.get_origin(),
 # which returns None for concrete subclasses. At runtime, Pydantic sees
 # dict[str, MAXModelConfig] so cyclopts can resolve CLI paths like
-# --pipeline.models.main.model-path. mypy sees ModelManifest so methods like
-# .with_override(), .resolve(), .main_architecture_name type-check correctly.
+# --models.main.model-path. mypy sees ModelManifest so methods like
+# .with_override() and .main_architecture_name type-check correctly.
 if TYPE_CHECKING:
     from max.pipelines.lib.pipeline_args import PipelineArgs
 
@@ -569,7 +574,7 @@ def _apply_speculative_draft_architecture(
 
 
 def _apply_speculative_target_architecture(
-    speculative: SpeculativeConfig | None, manifest: ModelManifest
+    speculative: SpeculativeConfig | None, models: Mapping[str, MAXModelConfig]
 ) -> None:
     """Override the target architecture for unified spec-decode pipelines.
 
@@ -588,8 +593,8 @@ def _apply_speculative_target_architecture(
     if not speculative:
         return
 
-    draft_model = manifest.get("draft")
-    target_archs = manifest["main"].huggingface_config.architectures
+    draft_model = models.get("draft")
+    target_archs = models["main"].huggingface_config.architectures
     if target_archs[0] == "LlamaForCausalLM":
         if speculative.is_dflash():
             target_archs[0] = "UnifiedDflashLlama3ForCausalLM"
@@ -680,7 +685,7 @@ def _apply_speculative_target_architecture(
             if draft_model is not None
             else None
         )
-        if speculative.is_mtp() and manifest.get("draft") is None:
+        if speculative.is_mtp() and models.get("draft") is None:
             target_archs[0] = (
                 "UnifiedMTPMiniMaxM3SparseForConditionalGeneration"
             )
@@ -697,12 +702,12 @@ def _apply_speculative_target_architecture(
         # is served by Mach rather than MAX, so a plain `max serve` of a
         # Qwen3.8 checkpoint must keep landing on the base architecture.
         text_config = getattr(
-            manifest["main"].huggingface_config,
+            models["main"].huggingface_config,
             "text_config",
-            manifest["main"].huggingface_config,
+            models["main"].huggingface_config,
         )
         has_mtp = (getattr(text_config, "mtp_num_hidden_layers", 0) or 0) > 0
-        if speculative.is_mtp() and manifest.get("draft") is None and has_mtp:
+        if speculative.is_mtp() and models.get("draft") is None and has_mtp:
             target_archs[0] = "UnifiedMTPQwen3_5ForConditionalGeneration"
     if target_archs[0] == "GlmMoeDsaForCausalLM":
         # GLM-5.2 bakes a NextN MTP layer into the target checkpoint, so
@@ -710,25 +715,25 @@ def _apply_speculative_target_architecture(
         # but has no MTP layer; only override when MTP weights exist.
         has_mtp = (
             getattr(
-                manifest["main"].huggingface_config,
+                models["main"].huggingface_config,
                 "num_nextn_predict_layers",
                 0,
             )
             or 0
         ) > 0
-        if manifest.get("draft") is None and has_mtp:
+        if models.get("draft") is None and has_mtp:
             target_archs[0] = "UnifiedMTPGlmMoeDsaForCausalLM"
     if target_archs[0] == "InklingForConditionalGeneration":
         # Inkling bakes chained MTP depths into the target checkpoint.
         mtp_config = getattr(
-            manifest["main"].huggingface_config, "mtp_config", None
+            models["main"].huggingface_config, "mtp_config", None
         )
         n_mtp = (
             mtp_config.get("num_nextn_predict_layers")
             if isinstance(mtp_config, dict)
             else getattr(mtp_config, "num_nextn_predict_layers", None)
         )
-        if manifest.get("draft") is None and (n_mtp or 0) > 0:
+        if models.get("draft") is None and (n_mtp or 0) > 0:
             target_archs[0] = "UnifiedMTPInklingForConditionalGeneration"
 
 
@@ -752,16 +757,16 @@ def _required_argument_changes(
 
 def _apply_required_arguments(
     architecture: Any,
-    manifest: ModelManifest,
+    models: dict[str, MAXModelConfig],
     runtime: PipelineRuntimeConfig,
     sampling: SamplingConfig,
     top_level: dict[str, Any],
 ) -> tuple[PipelineRuntimeConfig, SamplingConfig]:
     """Applies the architecture's required arguments to every receiver.
 
-    Model and KV-cache changes land in the manifest, runtime and sampling
-    come back rebuilt, and PipelineConfig's own fields land in
-    ``top_level``, joining the final construction.
+    Model and KV-cache changes land in the ``models`` workspace, the
+    runtime and sampling configs come back rebuilt, and PipelineConfig's
+    own fields land in ``top_level``, joining the final construction.
     """
     if not architecture.required_arguments:
         return runtime, sampling
@@ -793,7 +798,7 @@ def _apply_required_arguments(
         ("main", "MAXModelConfig", "KVCacheConfig"),
         ("draft", "Draft_MAXModelConfig", "Draft_KVCacheConfig"),
     ):
-        model = manifest.get(role)
+        model = models.get(role)
         if model is None:
             continue
         model_changes = _required_argument_changes(
@@ -806,23 +811,23 @@ def _apply_required_arguments(
                 model.kv_cache, **kv_changes
             )
         if model_changes:
-            # A copy, not a reconstruction: the model constructor re-probes
-            # the network, while a copy keeps the already-loaded state.
-            manifest[role] = model.model_copy(update=model_changes)
+            # TODO(MXF-517): stop copying here; build the model config once
+            # with the resolved values.
+            models[role] = model.model_copy(update=model_changes)
     return runtime, sampling
 
 
 def _resolve_models_max_length(
-    manifest: ModelManifest, arch: Any, draft_arch: Any
+    models: dict[str, MAXModelConfig], arch: Any, draft_arch: Any
 ) -> None:
-    """Replaces each model with a copy carrying its resolved ``max_length``.
+    """Stores each model's resolved ``max_length`` in the workspace.
 
     The architecture owns the rule -- whether the checkpoint's length is a
     hard cap or just a default -- and it runs here, once. Memory planning
     may lower the result to fit the device, but only on the plan.
     """
     for role, model_arch in (("main", arch), ("draft", draft_arch)):
-        model = manifest.get(role)
+        model = models.get(role)
         if model is None or model_arch is None:
             continue
         # Capture intent before resolving: anything that set max_length
@@ -833,7 +838,7 @@ def _resolve_models_max_length(
         )
         replaced = model.model_copy(update={"max_length": resolved})
         replaced._max_length_user_provided = user_provided
-        manifest[role] = replaced
+        models[role] = replaced
 
 
 class PipelineConfig(ConfigFileModel):
@@ -1184,8 +1189,8 @@ class PipelineConfig(ConfigFileModel):
     ) -> MAXModelConfig:
         """Returns the model config with its architecture-resolved weights.
 
-        A copy, not a reconstruction: the model constructor re-probes the
-        network, while a copy keeps the already-loaded state.
+        TODO(MXF-517): stop copying here; build the model config once with
+        the resolved values.
         """
         encoding, dtype_cast, weight_path, device_specs = (
             _resolve_weights_and_encoding(
@@ -1321,22 +1326,19 @@ class PipelineConfig(ConfigFileModel):
         import_custom_architectures(args.runtime.custom_architectures)
 
         if args._manifest_override is not None:
-            manifest = args._manifest_override
+            models: dict[str, MAXModelConfig] = dict(args._manifest_override)
+            models_metadata = dict(args._manifest_override.metadata)
         else:
-            models_dict: dict[str, MAXModelConfig] = {
-                "main": MAXModelConfig.from_pipeline_args(args)
-            }
+            models = {"main": MAXModelConfig.from_pipeline_args(args)}
+            models_metadata = {}
             if args.draft_model is not None:
-                # The args-side model is plain user input; the factory
-                # resolves its paths and loads its HuggingFace state.
-                models_dict["draft"] = _build_model_config(
+                models["draft"] = _build_model_config(
                     MAXModelConfig,
                     **args.draft_model.model_dump(
                         include=args.draft_model.model_fields_set
                         - {"config_file", "section_name"}
                     ),
                 )
-            manifest = ModelManifest(models_dict)
 
         # The model's HF generation_config may declare default sampling
         # params (e.g. repetition_penalty) that the sampler can only honor
@@ -1345,8 +1347,8 @@ class PipelineConfig(ConfigFileModel):
         # from_generation_config_sampling_defaults switch on
         # enable_penalties/enable_min_tokens where the generation config
         # requires them.
-        if "main" in manifest:
-            main_model = manifest["main"]
+        if "main" in models:
+            main_model = models["main"]
             explicit_sampling = args.sampling.model_dump(
                 include=args.sampling.model_fields_set
                 - {"config_file", "section_name"}
@@ -1360,24 +1362,22 @@ class PipelineConfig(ConfigFileModel):
         else:
             sampling = _construct_from_user_fields(args.sampling)
 
-        # Apply --model-override entries to the manifest before resolution
-        # (with_override returns a new manifest). Idempotent for "main"/
-        # "draft" fields that from_flat_kwargs already folded into the flat
-        # fields; this is the only application path for pre-built manifests
-        # and programmatically constructed PipelineArgs.
+        # The only path that applies these to a pre-built manifest.
         for component, fields in _parse_component_overrides(
             args.model_override
         ).items():
-            if component not in manifest:
+            if component not in models:
                 raise ValueError(
                     f"Component {component!r} not found in manifest. "
-                    f"Available: {list(manifest.keys())}"
+                    f"Available: {list(models.keys())}"
                 )
-            manifest = manifest.with_override(component, **fields)
+            models[component] = updated_component(models[component], **fields)
 
         # Fill unset denoising-cache fields from the architecture's defaults.
         try:
-            denoising_arch_name: str | None = manifest.main_architecture_name
+            denoising_arch_name: str | None = architecture_name_for(
+                models, models_metadata
+            )
         except (ValueError, FileNotFoundError):
             logger.debug(
                 "Could not determine the architecture name for "
@@ -1410,21 +1410,19 @@ class PipelineConfig(ConfigFileModel):
             args.speculative.model_copy(deep=True) if args.speculative else None
         )
 
-        _apply_speculative_draft_architecture(
-            speculative, manifest.get("draft")
-        )
+        _apply_speculative_draft_architecture(speculative, models.get("draft"))
         # Must precede the arch lookups so every consumer resolves the
         # overridden arch (#88511). Best-effort: repos whose HF config
         # cannot load fail downstream instead.
         try:
-            _apply_speculative_target_architecture(speculative, manifest)
+            _apply_speculative_target_architecture(speculative, models)
         except Exception:
             logger.debug(
                 "Could not apply the speculative target-architecture "
                 "override at construction.",
                 exc_info=True,
             )
-        for model in manifest.values():
+        for model in models.values():
             model.validate_repo_access()
 
         # Architecture lookup. Must use the same selection inputs as the
@@ -1435,9 +1433,9 @@ class PipelineConfig(ConfigFileModel):
         # skip this resolution entirely.
         arch = None
         arch_name: str | None = None
-        if "main" in manifest:
+        if "main" in models:
             try:
-                arch_name = manifest.main_architecture_name
+                arch_name = architecture_name_for(models, models_metadata)
             except Exception:
                 logger.debug(
                     "Could not determine the architecture name at "
@@ -1458,11 +1456,9 @@ class PipelineConfig(ConfigFileModel):
                 raise ValueError(f"No architecture found for {arch_name}")
 
         draft_arch = None
-        if manifest.get("draft") is not None:
+        if models.get("draft") is not None:
             try:
-                draft_arch_name: str | None = manifest[
-                    "draft"
-                ].architecture_name
+                draft_arch_name: str | None = models["draft"].architecture_name
             except Exception:
                 logger.debug(
                     "Could not determine the draft architecture name at "
@@ -1482,27 +1478,26 @@ class PipelineConfig(ConfigFileModel):
 
         top_level: dict[str, Any] = {}
         if arch is not None:
-            manifest["main"] = cls._model_with_resolved_weights(
-                manifest["main"], arch
+            models["main"] = cls._model_with_resolved_weights(
+                models["main"], arch
             )
             if draft_arch is not None:
-                manifest["draft"] = cls._model_with_resolved_weights(
-                    manifest["draft"], draft_arch
+                models["draft"] = cls._model_with_resolved_weights(
+                    models["draft"], draft_arch
                 )
             if not runtime.force:
                 # Draft first so the target architecture wins conflicting
-                # keys, matching the order resolve() historically applied
-                # them in.
+                # keys.
                 if draft_arch is not None:
                     runtime, sampling = _apply_required_arguments(
-                        draft_arch, manifest, runtime, sampling, top_level
+                        draft_arch, models, runtime, sampling, top_level
                     )
                 runtime, sampling = _apply_required_arguments(
-                    arch, manifest, runtime, sampling, top_level
+                    arch, models, runtime, sampling, top_level
                 )
-            _resolve_models_max_length(manifest, arch, draft_arch)
+            _resolve_models_max_length(models, arch, draft_arch)
             runtime, sampling = _resolved_runtime_and_sampling(
-                runtime, sampling, lora, manifest["main"], arch
+                runtime, sampling, lora, models["main"], arch
             )
         elif runtime.device_graph_capture is None:
             # Overlap/DGC resolution is arch-gated; configs without a
@@ -1512,7 +1507,7 @@ class PipelineConfig(ConfigFileModel):
             )
 
         config = cls(
-            models=manifest,
+            models=ModelManifest(models, metadata=models_metadata),
             model_override=list(args.model_override),
             sampling=sampling,
             runtime=runtime,
@@ -1547,9 +1542,6 @@ class PipelineConfig(ConfigFileModel):
                     )
             else:
                 config._validate_model_config_against_arch(config.model, arch)
-        # Freeze the manifest: construction is complete, so any later dict
-        # mutation must go through with_override() on a new manifest.
-        config.models.resolve()
         return config
 
     # NOTE: Do not override `__getstate__` / `__setstate__` on Pydantic models.
