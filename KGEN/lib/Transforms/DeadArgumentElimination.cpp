@@ -210,7 +210,7 @@ CallGraphNode *CallGraphNode::getCalleeNode(KGENCallOpInterface callOp) {
   auto iter = std::find_if(
       callsites.begin(), callsites.end(),
       [&](const CallGraphNode::EdgeT &edge) { return edge.call == callOp; });
-  return iter->node;
+  return iter == callsites.end() ? nullptr : iter->node;
 }
 
 std::vector<CallGraphNode::EdgeT>
@@ -288,7 +288,11 @@ DeadArgumentElimination::surveyUse(OpOperand &inputUse, CallGraphNode *node,
       if (!isa<CallOp>(call))
         return Live;
 
+      // External callees have no edge in the call graph, so the liveness of
+      // their arguments is unknowable here.
       CallGraphNode *calleeNode = node->getCalleeNode(call);
+      if (!calleeNode)
+        return Live;
 
       // Value passed to a normal call. It's only live when the corresponding
       // argument to the called function turns out live.
