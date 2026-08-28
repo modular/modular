@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.logger import Logger
-from std.math import fma
+from std.math import fma, gcd
 from std.ffi import external_call, c_size_t
 from std.sys import size_of, align_of
 
@@ -44,6 +44,7 @@ from std.memory import OwnedPointer, MaybeUninit, alloc, dealloc
 from std.os import abort
 from layout import (
     Coord,
+    CoordLike,
     Idx,
     IntTuple,
     TensorLayout,
@@ -51,6 +52,7 @@ from layout import (
     row_major,
     coord_to_index_list,
 )
+from layout.coord import ComptimeInt
 from layout.tile_io import (
     GenericToLocalTileCopier,
     LocalToGenericTileCopier,
@@ -60,6 +62,10 @@ from std.memory import unsafe_memcpy
 from std.memory.unsafe_pointer import unsafe_cast
 
 from nn.concat import concat
+from nn.slice import slice_as_view
+from layout.coord import DynamicCoord
+from layout.int_tuple import _IntTupleToCoordLike
+from layout.tile_layout import Layout as TileLayout
 from extensibility import register_internal
 from extensibility import (
     IOSpec,
@@ -2292,6 +2298,142 @@ def _foreach[
         target=target,
         _trace_description=_trace_name,
     ](lambda_, shape, ctx)
+
+
+comptime _MoggSliceStrideTypesTabulator[
+    input_stride_types: TypeList[Trait=CoordLike, ...],
+    step_types: TypeList[Trait=CoordLike, ...],
+    idx: Int,
+]: CoordLike = ComptimeInt[
+    input_stride_types[idx].static_value * step_types[idx].static_value
+] if input_stride_types[
+    idx
+].is_static_value and step_types[
+    idx
+].is_static_value else Scalar[
+    DType.int
+]
+
+comptime _MoggSliceStrideTypes[
+    rank: Int,
+    input_stride_types: TypeList[Trait=CoordLike, ...],
+    step_types: TypeList[Trait=CoordLike, ...],
+] = TypeList.tabulate[
+    rank, _MoggSliceStrideTypesTabulator[input_stride_types, step_types, _]
+]()
+
+
+def _mogg_slice_view_alignment[
+    rank: Int,
+    dtype: DType,
+    input_strides: IntTuple,
+    static_starts: IntTuple,
+    static_steps: IntTuple,
+](input_alignment: Int) -> Int:
+    """Same alignment derivation as `Slice.get_view_alignment` (mirrored here,
+    not called directly, since `builtin_kernels` already depends on
+    `builtin_primitives` and importing the other way would be circular).
+    """
+    comptime stride_types = _IntTupleToCoordLike[DType.int, input_strides]
+    comptime start_types = _IntTupleToCoordLike[DType.int, static_starts]
+    comptime step_types = _IntTupleToCoordLike[DType.int, static_steps]
+
+    var alignment = input_alignment
+    comptime for i in range(rank):
+        comptime if not step_types[i].is_static_value or step_types[
+            i
+        ].static_value < 0:
+            return 1
+        comptime if not start_types[i].is_static_value:
+            return 1
+        comptime if start_types[i].static_value != 0:
+            comptime if not stride_types[i].is_static_value:
+                return 1
+            alignment = gcd(
+                alignment,
+                start_types[i].static_value
+                * stride_types[i].static_value
+                * align_of[dtype](),
+            )
+    return alignment
+
+
+@register_internal("mogg._tensor.create.slice")
+def mogg_tensor_create_slice[
+    dtype: DType,
+    rank: Int,
+    start_type: DType,
+    stop_type: DType,
+    step_type: DType,
+    //,
+    output_static_shape: IntTuple,
+    static_starts: IntTuple,
+    static_steps: IntTuple,
+](
+    input: ManagedTensorSlice[dtype=dtype, rank=rank, ...],
+    starts: ManagedTensorSlice[dtype=start_type, rank=1, ...],
+    stops: ManagedTensorSlice[dtype=stop_type, rank=1, ...],
+    steps: ManagedTensorSlice[dtype=step_type, rank=1, ...],
+) -> ManagedTensorSlice[
+    io_spec=input.io_spec,
+    static_spec=input.static_spec.with_tile_layout_and_alignment[
+        rank,
+        TileLayout[
+            shape_types=_IntTupleToCoordLike[DType.int, output_static_shape],
+            stride_types=_MoggSliceStrideTypes[
+                rank,
+                input.static_spec.static_layout._stride_types,
+                _IntTupleToCoordLike[DType.int, static_steps],
+            ],
+        ],
+    ](
+        _mogg_slice_view_alignment[
+            rank,
+            dtype,
+            input._static_strides_tuple,
+            static_starts,
+            static_steps,
+        ](input.alignment),
+    ),
+]:
+    """Backing primitive for `mogg._tensor.create.slice`: a zero-copy strided
+    view of `input`, offset and re-strided per `starts`/`stops`/`steps`.
+    `output_static_shape`/`static_starts`/`static_steps` carry whatever is
+    known about the view's shape and bounds at compile time (an entry is
+    `UNKNOWN_VALUE` where it isn't), letting the result keep a static layout
+    and alignment instead of falling back to a fully dynamic one.
+
+    Parameters:
+        dtype: The element type of `input`.
+        rank: The rank of `input` (and of the returned view).
+        start_type: The element type of `starts`.
+        stop_type: The element type of `stops`.
+        step_type: The element type of `steps`.
+        output_static_shape: The view's shape, where known at compile time.
+        static_starts: The view's starting indices, where known at compile
+            time.
+        static_steps: The view's strides, where known at compile time.
+
+    Args:
+        input: The tensor to slice.
+        starts: One-dimensional tensor of starting indices, one per rank.
+        stops: One-dimensional tensor of stopping indices (exclusive), one
+            per rank.
+        steps: One-dimensional tensor of strides, one per rank.
+    """
+    var view = slice_as_view(
+        input.to_tile_tensor[DType.int64](),
+        starts.to_tile_tensor[DType.int64](),
+        stops.to_tile_tensor[DType.int64](),
+        steps.to_tile_tensor[DType.int64](),
+    )
+    return {
+        view._storage,
+        rebind[IndexList[rank]](coord_to_index_list(view.layout.shape_coord())),
+        rebind[IndexList[rank]](
+            coord_to_index_list(view.layout.stride_coord())
+        ),
+    }
 
 
 @fieldwise_init
