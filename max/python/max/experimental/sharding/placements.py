@@ -148,20 +148,12 @@ class Sharded(Placement):
 
     Args:
         axis: The tensor axis along which data is split.
-        even: When ``True``, per-shard cells of a dynamic ``axis`` parent
-            stay connected via uniform ``parent // n``. When ``False``,
-            scatter mints fresh per-shard cells so each rank can bind to
-            a different extent.
     """
 
     axis: int
-    even: bool = True
 
     def __repr__(self) -> str:
-        parts = [f"axis={self.axis}"]
-        if not self.even:
-            parts.append("even=False")
-        return f"Sharded({', '.join(parts)})"
+        return f"Sharded(axis={self.axis})"
 
     def localized_axis(self) -> int | None:
         """Returns the tensor axis this Sharded localizes."""
