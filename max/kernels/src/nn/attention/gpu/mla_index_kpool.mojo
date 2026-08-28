@@ -322,6 +322,98 @@ def kpool_tail_update_kernel[
             closed_pool.raw_store(r * max_closed + j, Int32(-1))
 
 
+@__name(t"mla_kpool_seed_tail_{kpool}_{head_dim}")
+def kpool_seed_tail_kernel[
+    dtype: DType,
+    TailLayoutType: TensorLayout,
+    tail_origin: MutOrigin,
+    KLayoutType: TensorLayout,
+    k_origin: ImmOrigin,
+    GateLayoutType: TensorLayout,
+    gate_origin: ImmOrigin,
+    IROLayoutType: TensorLayout,
+    iro_origin: ImmOrigin,
+    CacheLenLayoutType: TensorLayout,
+    SlotLayoutType: TensorLayout,
+    slot_origin: ImmOrigin,
+    head_dim: Int,
+    kpool: Int,
+](
+    tail: TileTensor[dtype, TailLayoutType, tail_origin],
+    k: TileTensor[mut=False, dtype, KLayoutType, k_origin],
+    gate: TileTensor[mut=False, dtype, GateLayoutType, gate_origin],
+    input_row_offsets: TileTensor[
+        mut=False, .uint32, IROLayoutType, iro_origin
+    ],
+    cache_lengths: TileTensor[
+        mut=False, .uint32, CacheLenLayoutType, ImmutAnyOrigin
+    ],
+    slot_idx: TileTensor[mut=False, .uint32, SlotLayoutType, slot_origin],
+    num_requests: Int32,
+):
+    """Stashes a prefill chunk's trailing tokens into the tail ring.
+
+    Compression writes only whole pools, so the tokens after the last complete
+    pool have nowhere else to go. They are the members of the request's
+    in-progress pool, and decode reads them back from the ring.
+
+    Only the trailing tokens this call owns are written, so a chunked prefill
+    lands where a single one does.
+
+    Parameters:
+        dtype: Element type of `tail`, `k` and `gate`.
+        TailLayoutType: Layout of `tail`.
+        tail_origin: Origin of `tail`.
+        KLayoutType: Layout of `k`.
+        k_origin: Origin of `k`.
+        GateLayoutType: Layout of `gate`.
+        gate_origin: Origin of `gate`.
+        IROLayoutType: Layout of `input_row_offsets`.
+        iro_origin: Origin of `input_row_offsets`.
+        CacheLenLayoutType: Layout of `cache_lengths`.
+        SlotLayoutType: Layout of `slot_idx`.
+        slot_origin: Origin of `slot_idx`.
+        head_dim: Channels per key; also the block width.
+        kpool: Tokens per pool.
+
+    Args:
+        tail: Per-slot ring, `[max_slots, 2, kpool, head_dim]`. Index 0 holds
+            keys, index 1 holds gate scores.
+        k: Layer-normed indexer keys, `[total_tokens, head_dim]`.
+        gate: Per-token gate scores, `[total_tokens, head_dim]`.
+        input_row_offsets: Token row offsets per request, `[batch_size + 1]`.
+        cache_lengths: Cached-prefix length per request, `[batch_size]`.
+        slot_idx: Ring slot owned by each batch row, `[num_requests]`, `uint32`.
+        num_requests: Requests actually present.
+    """
+    var r = block_idx.x
+    if r >= Int(num_requests):
+        return
+
+    var c = thread_idx.x
+    if c >= head_dim:
+        return
+
+    var row_start = Int(input_row_offsets.raw_load(r))
+    var n = Int(input_row_offsets.raw_load(r + 1)) - row_start
+    var cache_len = Int(cache_lengths[r])
+    var end = cache_len + n
+    # Positions after the last complete pool, clipped to this call.
+    var seed_start = max((end // kpool) * kpool, cache_len)
+    var tail_base = Int(slot_idx.raw_load(r)) * 2 * kpool * head_dim
+
+    for pos in range(seed_start, end):
+        var slot = pos % kpool
+        var row = row_start + (pos - cache_len)
+        tail.raw_store(
+            tail_base + slot * head_dim + c, k.raw_load(row * head_dim + c)
+        )
+        tail.raw_store(
+            tail_base + (kpool + slot) * head_dim + c,
+            gate.raw_load(row * head_dim + c),
+        )
+
+
 @__name(t"mla_kpool_expand_topk_{kpool}_{pool_topk}_{always_select_tail}")
 def kpool_expand_topk_kernel[
     OutLayoutType: TensorLayout,

@@ -17,10 +17,11 @@ from std.random import rand
 from std.testing import assert_almost_equal, assert_equal, assert_true
 
 from layout import TileTensor, row_major
-from max.gpu.host import DeviceContext, HostBuffer
+from max.gpu.host import DeviceBuffer, DeviceContext, HostBuffer
 
 from nn.attention.gpu.mla_index_kpool import (
     kpool_compress_kernel,
+    kpool_seed_tail_kernel,
     kpool_expand_topk_kernel,
     kpool_tail_update_kernel,
 )
@@ -1537,6 +1538,178 @@ def test_padded_slot_leaves_no_trace[
     _ = ape_d
 
 
+def _seed_chunk[
+    head_dim: Int, kpool: Int
+](
+    k_d: DeviceBuffer[.bfloat16],
+    g_d: DeviceBuffer[.bfloat16],
+    ring_t: TileTensor[mut=True, .bfloat16, ...],
+    row_start: Int,
+    n: Int,
+    cache_len: Int,
+    ctx: DeviceContext,
+) raises:
+    """Seeds one prefill chunk's trailing tokens into slot 0 of `ring_t`."""
+    var iro_d = ctx.enqueue_create_buffer[.uint32](2)
+    var clen_d = ctx.enqueue_create_buffer[.uint32](1)
+    var slot_d = ctx.enqueue_create_buffer[.uint32](1)
+    var iro_h = ctx.enqueue_create_host_buffer[.uint32](2)
+    var clen_h = ctx.enqueue_create_host_buffer[.uint32](1)
+    var slot_h = ctx.enqueue_create_host_buffer[.uint32](1)
+    ctx.synchronize()
+    iro_h[0] = UInt32(row_start)
+    iro_h[1] = UInt32(row_start + n)
+    clen_h[0] = UInt32(cache_len)
+    slot_h[0] = 0
+    ctx.enqueue_copy(iro_d, iro_h)
+    ctx.enqueue_copy(clen_d, clen_h)
+    ctx.enqueue_copy(slot_d, slot_h)
+
+    var k_t = TileTensor(k_d, row_major(row_start + n, head_dim))
+    var g_t = TileTensor(g_d, row_major(row_start + n, head_dim))
+    var iro_t = TileTensor(iro_d, row_major(2))
+    var clen_t = TileTensor(clen_d, row_major(1))
+    var slot_t = TileTensor(slot_d, row_major(1))
+
+    comptime kern = kpool_seed_tail_kernel[
+        .bfloat16,
+        ring_t.LayoutType,
+        ring_t.origin,
+        type_of(k_t.as_immut()).LayoutType,
+        ImmOrigin(k_t.origin),
+        type_of(g_t.as_immut()).LayoutType,
+        ImmOrigin(g_t.origin),
+        type_of(iro_t.as_immut()).LayoutType,
+        ImmOrigin(iro_t.origin),
+        type_of(clen_t.as_immut()).LayoutType,
+        type_of(slot_t.as_immut()).LayoutType,
+        ImmOrigin(slot_t.origin),
+        head_dim,
+        kpool,
+    ]
+    ctx.enqueue_function[kern](
+        ring_t,
+        k_t.as_immut(),
+        g_t.as_immut(),
+        iro_t.as_immut(),
+        clen_t.as_immut(),
+        slot_t.as_immut(),
+        Int32(1),
+        grid_dim=(1, 1, 1),
+        block_dim=(head_dim, 1, 1),
+    )
+    ctx.synchronize()
+    _ = iro_d
+    _ = clen_d
+    _ = slot_d
+
+
+def test_seed_matches_feeding_the_prefix[
+    head_dim: Int, kpool: Int, prefill_len: Int
+](ctx: DeviceContext) raises:
+    """Seeding a prefill chunk must leave the ring where decoding it would.
+
+    Compression writes only whole pools, so the trailing tokens reach the ring
+    through the seed kernel instead. The ring it leaves has to match what the
+    decode path produces from the same tokens, or the first pool to close
+    during decode pools against whatever the ring happened to hold. The second
+    arm also splits the prefill into two chunks, which must land in the same
+    place as one.
+
+    Parameters:
+        head_dim: Channels per key.
+        kpool: Tokens per pool.
+        prefill_len: Tokens in the prefill; not a multiple of `kpool`.
+
+    Args:
+        ctx: Device context.
+    """
+    print("seed vs decode: prefill_len=", prefill_len, " kpool=", kpool)
+    var ring_elems = 2 * kpool * head_dim
+
+    var k_h = ctx.enqueue_create_host_buffer[.bfloat16](prefill_len * head_dim)
+    var g_h = ctx.enqueue_create_host_buffer[.bfloat16](prefill_len * head_dim)
+    var ape_h = ctx.enqueue_create_host_buffer[.float32](kpool * head_dim)
+    ctx.synchronize()
+    rand(k_h.unsafe_ptr(), prefill_len * head_dim)
+    rand(g_h.unsafe_ptr(), prefill_len * head_dim)
+    rand(ape_h.unsafe_ptr(), kpool * head_dim)
+    for i in range(kpool * head_dim):
+        ape_h[i] = (ape_h[i] - 0.5) * 4.0
+
+    var ape_d = ctx.enqueue_create_buffer[.float32](kpool * head_dim)
+    var k_d = ctx.enqueue_create_buffer[.bfloat16](prefill_len * head_dim)
+    var g_d = ctx.enqueue_create_buffer[.bfloat16](prefill_len * head_dim)
+    ctx.enqueue_copy(ape_d, ape_h)
+    ctx.enqueue_copy(k_d, k_h)
+    ctx.enqueue_copy(g_d, g_h)
+    ctx.synchronize()
+    var ape_t = TileTensor(ape_d, row_major(kpool, head_dim)).as_immut()
+
+    var seeded_d = ctx.enqueue_create_buffer[.bfloat16](ring_elems)
+    var chunked_d = ctx.enqueue_create_buffer[.bfloat16](ring_elems)
+    ctx.enqueue_memset(seeded_d, 0)
+    ctx.enqueue_memset(chunked_d, 0)
+    var seeded_h = ctx.enqueue_create_host_buffer[.bfloat16](ring_elems)
+    var chunked_h = ctx.enqueue_create_host_buffer[.bfloat16](ring_elems)
+    var decoded_h = ctx.enqueue_create_host_buffer[.bfloat16](ring_elems)
+    ctx.synchronize()
+    var seeded_t = TileTensor(seeded_d, row_major(1, 2 * kpool, head_dim))
+    var chunked_t = TileTensor(chunked_d, row_major(1, 2 * kpool, head_dim))
+
+    # One chunk.
+    _seed_chunk[head_dim, kpool](k_d, g_d, seeded_t, 0, prefill_len, 0, ctx)
+    ctx.enqueue_copy(seeded_h, seeded_d)
+
+    # The same prefill, split in two.
+    comptime first = kpool
+    _seed_chunk[head_dim, kpool](k_d, g_d, chunked_t, 0, first, 0, ctx)
+    _seed_chunk[head_dim, kpool](
+        k_d, g_d, chunked_t, first, prefill_len - first, first, ctx
+    )
+    ctx.enqueue_copy(chunked_h, chunked_d)
+
+    # The decode path over the same tokens.
+    _ring_after[head_dim, kpool, prefill_len](
+        k_h, g_h, ape_t, prefill_len, decoded_h, ctx
+    )
+    ctx.synchronize()
+
+    # Only the in-progress pool's members that have already arrived need to be
+    # in the ring. Decode overwrites the remaining slots before the pool
+    # closes.
+    var live_slots = prefill_len % kpool
+    for slot in range(live_slots):
+        for c in range(head_dim):
+            var key = slot * head_dim + c
+            var gate_el = (kpool + slot) * head_dim + c
+            assert_equal(
+                seeded_h[key],
+                decoded_h[key],
+                String("seeded key differs at slot ", slot, " channel ", c),
+            )
+            assert_equal(
+                seeded_h[gate_el],
+                decoded_h[gate_el],
+                String("seeded gate differs at slot ", slot, " channel ", c),
+            )
+    assert_true(live_slots > 0, "prefill_len must not be a multiple of kpool")
+
+    # Two chunks must land exactly where one does.
+    for i in range(ring_elems):
+        assert_equal(
+            chunked_h[i],
+            seeded_h[i],
+            String("chunked seeding differs at element ", i),
+        )
+    print("  the in-progress pool's", live_slots, "seeded slots match")
+    _ = ape_d
+    _ = k_d
+    _ = g_d
+    _ = seeded_d
+    _ = chunked_d
+
+
 def main() raises:
     with DeviceContext() as ctx:
         test_kpool_one_is_identity[head_dim=128](ctx)
@@ -1614,5 +1787,11 @@ def main() raises:
 
         # A speculative batch pads unused slots with a negative position.
         test_padded_slot_leaves_no_trace[head_dim=128, kpool=4, next_n=4](ctx)
+
+        # Prefill's trailing tokens must reach the ring for decode to pool
+        # against them.
+        test_seed_matches_feeding_the_prefix[
+            head_dim=128, kpool=4, prefill_len=6
+        ](ctx)
 
         print("\nAll tests passed!")
