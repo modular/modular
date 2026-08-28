@@ -506,12 +506,12 @@ struct Layout[
                     var coord_val = _mod_by_shape[
                         Self.shape_types[i].ParamListType[j]
                     ](divided, Int(sub_shape[j].value()))
-                    UnsafePointer(to=sub_result[j]).write(
+                    Pointer(to=sub_result[j]).write(
                         rebind[SubResultType.element_types[j]](
                             Scalar[out_dtype](coord_val)
                         )
                     )
-                UnsafePointer(to=result[i]).write(
+                Pointer(to=result[i]).write(
                     rebind[ResultType.element_types[i]](sub_result)
                 )
             else:
@@ -521,7 +521,7 @@ struct Layout[
                 var coord_val = _mod_by_shape[Self.shape_types[i]](
                     divided, Int(shape_t[i].value())
                 )
-                UnsafePointer(to=result[i]).write(
+                Pointer(to=result[i]).write(
                     rebind[ResultType.element_types[i]](
                         Scalar[out_dtype](coord_val)
                     )
@@ -994,7 +994,7 @@ def row_major(var shape: Coord) -> RowMajorLayout[*shape.element_types]:
 
     comptime for i in range(rank):
         comptime idx = rank - 1 - i  # Process in reverse order
-        var stride_ptr = UnsafePointer(to=strides[idx])
+        var stride_ptr = Pointer(to=strides[idx])
 
         comptime if i == 0:
             # Rightmost dimension always has stride 1.
@@ -1050,7 +1050,7 @@ def row_major[
     # nested case has its own `row_major_nested` constructor).
     comptime for i in range(rank):
         comptime idx = rank - 1 - i  # Process in reverse order
-        var stride_ptr = UnsafePointer(to=strides[idx])
+        var stride_ptr = Pointer(to=strides[idx])
 
         comptime if i == 0:
             # Rightmost dimension always has stride 1.
@@ -1125,7 +1125,7 @@ def row_major_nested(
 
     comptime for i in range(rank):
         comptime idx = rank - 1 - i
-        var stride_ptr = UnsafePointer(to=strides[idx])
+        var stride_ptr = Pointer(to=strides[idx])
         comptime StrideType = RowMajorTypes[idx]
         stride_ptr.write(rebind[StrideType](StrideType()))
 
@@ -1263,7 +1263,7 @@ def col_major(var shape: Coord) -> ColMajorLayout[shape.element_types]:
     # Compute column-major strides (flat-only — the nested case has
     # its own `col_major_nested` constructor).
     comptime for i in range(rank):
-        var stride_ptr = UnsafePointer(to=strides[i])
+        var stride_ptr = Pointer(to=strides[i])
 
         comptime if i == 0:
             # Leftmost dimension always has stride 1.
@@ -1339,7 +1339,7 @@ def col_major_nested(
     var strides = Tuple[*ColMajorTypes]()
 
     comptime for i in range(rank):
-        var stride_ptr = UnsafePointer(to=strides[i])
+        var stride_ptr = Pointer(to=strides[i])
         comptime StrideType = ColMajorTypes[i]
         stride_ptr.write(rebind[StrideType](StrideType()))
 
@@ -1716,14 +1716,14 @@ def blocked_product[
 
     comptime for i in range(outer_shape.rank):
         comptime if OuterStrideTypes[i].is_static_value:
-            UnsafePointer(to=outer_stride[i]).write(
+            Pointer(to=outer_stride[i]).write(
                 rebind[OuterStrideTypes[i]](
                     ComptimeInt[OuterStrideTypes[i].static_value]()
                 )
             )
         else:
             var block_cosize = Int(block.shape_coord().product())
-            UnsafePointer(to=outer_stride[i]).write(
+            Pointer(to=outer_stride[i]).write(
                 rebind[OuterStrideTypes[i]](
                     Scalar[OuterStrideTypes[i].DTYPE](
                         Int(tiler.stride_coord()[i].value()) * block_cosize
@@ -1737,12 +1737,12 @@ def blocked_product[
     var result_stride = Coord[*ResultType._stride_types]()
 
     comptime for i in range(inner_shape.rank):
-        UnsafePointer(to=result_shape[i]).write(
+        Pointer(to=result_shape[i]).write(
             rebind[ResultType._shape_types[i]](
                 Coord(inner_shape[i], outer_shape[i])
             )
         )
-        UnsafePointer(to=result_stride[i]).write(
+        Pointer(to=result_stride[i]).write(
             rebind[ResultType._stride_types[i]](
                 Coord(inner_stride[i], outer_stride[i])
             )
@@ -1976,9 +1976,9 @@ def upcast[
 
         # Compute new_stride[i] = shape_div(stride[i], factor).
         comptime if ResultStrideTypes[i].is_static_value:
-            UnsafePointer(to=new_stride[i]).write(ResultStrideTypes[i]())
+            Pointer(to=new_stride[i]).write(ResultStrideTypes[i]())
         else:
-            UnsafePointer(to=new_stride[i]).write(
+            Pointer(to=new_stride[i]).write(
                 rebind[ResultStrideTypes[i]](
                     Scalar[ResultStrideTypes[i].DTYPE](
                         _runtime_shape_div(
@@ -1990,9 +1990,9 @@ def upcast[
 
         # Compute new_shape[i] = shape_div(shape[i], shape_div(factor, stride[i])).
         comptime if ResultShapeTypes[i].is_static_value:
-            UnsafePointer(to=new_shape[i]).write(ResultShapeTypes[i]())
+            Pointer(to=new_shape[i]).write(ResultShapeTypes[i]())
         else:
-            UnsafePointer(to=new_shape[i]).write(
+            Pointer(to=new_shape[i]).write(
                 rebind[ResultShapeTypes[i]](
                     Scalar[ResultShapeTypes[i].DTYPE](
                         _runtime_shape_div(
