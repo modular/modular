@@ -2212,12 +2212,41 @@ def test_format_overlapping_the_length_bounds_rejected() -> None:
         )
 
 
-def test_format_and_pattern_together_rejected() -> None:
-    with pytest.raises(Exception, match="only one is enforced"):
+def test_format_beside_pattern_rejected() -> None:
+    for schema in (
+        '{"type": "string", "format": "email", "pattern": "a+"}',
+        '{"allOf": [{"type": "string", "format": "email"}, {"pattern": "a+"}]}',
+    ):
+        with pytest.raises(Exception, match="only one is enforced"):
+            _compiler().compile_json_schema(schema, reject_unsupported=True)
+
+
+def test_unenforceable_format_beside_pattern_rejected() -> None:
+    with pytest.raises(Exception, match="unsupported string format"):
         _compiler().compile_json_schema(
-            '{"type": "string", "format": "email", "pattern": "a+"}',
+            '{"type": "string", "format": "phone", "pattern": "a+"}',
             reject_unsupported=True,
         )
+
+
+def test_format_beside_pattern_rejected_on_an_older_draft() -> None:
+    # The converter enforces format regardless of the declared draft.
+    with pytest.raises(Exception, match="only one is enforced"):
+        _compiler().compile_json_schema(
+            '{"$schema": "http://json-schema.org/draft-04/schema#",'
+            ' "type": "string", "format": "email", "pattern": "a+"}',
+            reject_unsupported=True,
+        )
+
+
+def test_format_beside_pattern_permissive_keeps_the_pattern() -> None:
+    for string_format in ("email", "phone"):
+        compiled = _compiler().compile_json_schema(
+            f'{{"type": "string", "format": "{string_format}",'
+            ' "pattern": "a+"}'
+        )
+        assert _accepts(compiled, '"aa"'), string_format
+        assert not _accepts(compiled, '"b"'), string_format
 
 
 def test_non_ascii_pattern_with_length_bounds_rejected() -> None:

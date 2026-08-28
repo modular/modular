@@ -2518,7 +2518,7 @@ index da8b516..9cf8844 100644
    }
    if (spec.max_length != -1 && spec.min_length > spec.max_length) {
      return ResultErr<SchemaError>(
-@@ -548,9 +1911,78 @@ Result<StringSpec, SchemaError> SchemaParser::ParseString(const picojson::object
+@@ -548,9 +1911,80 @@ Result<StringSpec, SchemaError> SchemaParser::ParseString(const picojson::object
              std::to_string(spec.max_length)
      );
    }
@@ -2527,19 +2527,21 @@ index da8b516..9cf8844 100644
  }
 
 +std::optional<SchemaError> SchemaParser::ReconcileStringTiers(StringSpec* spec) {
++  // Strict refuses the pair. Permissive keeps pattern.
++  if (spec->format.has_value() && spec->pattern.has_value()) {
++    if (config_.reject_unsupported) {
++      return SchemaError(
++          SchemaErrorType::kUnsupportedSchema,
++          "\"format\" and \"pattern\" both constrain the string, and only one is enforced"
++      );
++    }
++    spec->format.reset();
++  }
++
 +  // Permissive mode keeps upstream's bargain: GenerateString emits its first
 +  // tier and the rest are dropped.
 +  if (!config_.reject_unsupported) return std::nullopt;
 +  if (!spec->format.has_value() && !spec->pattern.has_value()) return std::nullopt;
-+
-+  // Two regex tiers would have to be intersected into the one rule
-+  // GenerateString emits, and nothing here does that.
-+  if (spec->format.has_value() && spec->pattern.has_value()) {
-+    return SchemaError(
-+        SchemaErrorType::kUnsupportedSchema,
-+        "\"format\" and \"pattern\" both constrain the string, and only one is enforced"
-+    );
-+  }
 +
 +  if (spec->min_length == 0 && spec->max_length == -1) return std::nullopt;
 +
