@@ -64,7 +64,7 @@ from std.memory.unsafe_pointer import unsafe_cast
 from nn.concat import concat
 from nn.slice import slice_as_view
 from layout.coord import DynamicCoord
-from layout.int_tuple import _IntTupleToCoordLike
+from layout.int_tuple import _IntTupleToCoordLike, UNKNOWN_VALUE
 from layout.tile_layout import Layout as TileLayout
 from extensibility import register_internal
 from extensibility import (
@@ -2434,6 +2434,89 @@ def mogg_tensor_create_slice[
             coord_to_index_list(view.layout.stride_coord())
         ),
     }
+
+
+def _mogg_broadcast_view_strides[
+    out_rank: Int,
+    in_rank: Int,
+    input_shape: IntTuple,
+    input_strides: IntTuple,
+]() -> IndexList[out_rank]:
+    """Same view-stride derivation as `StaticBroadcastTo.get_view_strides_list`
+    (mirrored here, not called directly, since `builtin_kernels` already
+    depends on `builtin_primitives` and importing the other way would be
+    circular): `UNKNOWN_VALUE` marks a dimension whose stride isn't known at
+    compile time, so `with_int_tuple_layout` falls back to a dynamic entry
+    for it.
+    """
+    var new_strides = IndexList[out_rank]()
+    comptime delta = out_rank - in_rank
+    comptime for i in range(out_rank):
+        comptime if i < delta:
+            new_strides[i] = 0
+        else:
+            if Int(input_shape[i - delta]) == UNKNOWN_VALUE:
+                new_strides[i] = UNKNOWN_VALUE
+            elif Int(input_shape[i - delta]) <= 1:
+                new_strides[i] = 0
+            else:
+                new_strides[i] = Int(input_strides[i - delta])
+    return new_strides
+
+
+@register_internal("mogg._tensor.create.broadcast")
+def mogg_tensor_create_broadcast[
+    dtype: DType,
+    in_rank: Int,
+    //,
+    output_static_shape: IntTuple,
+](
+    input: ManagedTensorSlice[dtype=dtype, rank=in_rank, ...],
+) -> ManagedTensorSlice[
+    io_spec=input.io_spec,
+    static_spec=input.static_spec.with_int_tuple_layout[
+        len(output_static_shape),
+        output_static_shape,
+        _mogg_broadcast_view_strides[
+            len(output_static_shape),
+            in_rank,
+            input._static_shape_tuple,
+            input._static_strides_tuple,
+        ](),
+    ](),
+]:
+    """Backing primitive for `mogg._tensor.create.broadcast`: a zero-copy
+    reindexed view of `input` that replicates it (numpy broadcasting
+    semantics) up to `output_static_shape` -- a leading dimension `input`
+    doesn't have, or an aligned dimension where `input`'s size is 1, gets
+    stride 0. Preserves whatever static shape/stride information is known
+    at compile time, mirroring
+    `StaticBroadcastTo.update_input_view`/`get_view_strides_list`.
+
+    Parameters:
+        dtype: The element type of `input`.
+        in_rank: The rank of `input`.
+        output_static_shape: The view's shape (broadcast shapes are always
+            statically known by Mojo emission time; see
+            `mo.static.broadcast_to`'s own docstring).
+
+    Args:
+        input: The tensor to broadcast.
+    """
+    comptime out_rank = len(output_static_shape)
+    comptime delta = out_rank - in_rank
+    var new_shape = IndexList[out_rank]()
+    var new_strides = IndexList[out_rank]()
+    comptime for i in range(out_rank):
+        new_shape[i] = Int(output_static_shape[i])
+        comptime if i < delta:
+            new_strides[i] = 0
+        else:
+            if input.dim_size[i - delta]() <= 1:
+                new_strides[i] = 0
+            else:
+                new_strides[i] = input.stride_length[i - delta]()
+    return {input.unsafe_ptr(), new_shape, new_strides}
 
 
 @fieldwise_init
