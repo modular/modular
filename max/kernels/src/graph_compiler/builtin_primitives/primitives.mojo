@@ -2519,6 +2519,78 @@ def mogg_tensor_create_broadcast[
     return {input.unsafe_ptr(), new_shape, new_strides}
 
 
+comptime _MoggTransposeStrideTypesTabulator[
+    permutations: IntTuple,
+    input_stride_types: TypeList[Trait=CoordLike, ...],
+    idx: Int,
+]: CoordLike = Scalar[DType.int] if Int(
+    permutations[idx]
+) == UNKNOWN_VALUE else input_stride_types[
+    Int(permutations[idx])
+]
+
+
+comptime _MoggTransposeStrideTypes[
+    rank: Int,
+    permutations: IntTuple,
+    input_stride_types: TypeList[Trait=CoordLike, ...],
+] = TypeList.tabulate[
+    rank,
+    _MoggTransposeStrideTypesTabulator[permutations, input_stride_types, _],
+]()
+
+
+@register_internal("mogg._tensor.create.transpose")
+def mogg_tensor_create_transpose[
+    dtype: DType,
+    rank: Int,
+    //,
+    output_static_shape: IntTuple,
+    static_permutations: IntTuple,
+](
+    input: ManagedTensorSlice[dtype=dtype, rank=rank, ...],
+) -> ManagedTensorSlice[
+    io_spec=input.io_spec,
+    static_spec=input.static_spec.with_tile_layout[
+        rank,
+        TileLayout[
+            shape_types=_IntTupleToCoordLike[DType.int, output_static_shape],
+            stride_types=_MoggTransposeStrideTypes[
+                rank,
+                static_permutations,
+                input.static_spec.static_layout._stride_types,
+            ],
+        ],
+    ](),
+]:
+    """Backing primitive for `mogg._tensor.create.transpose`: a zero-copy
+    reindexed view of `input` that reorders its dimensions according to
+    `static_permutations` -- the view's dimension `i` comes from `input`'s
+    dimension `static_permutations[i]`. Preserves whatever static
+    shape/stride information is known at compile time, mirroring
+    `Transpose.update_input_view`/`_TransposeStrideTypes`.
+
+    Parameters:
+        dtype: The element type of `input`.
+        rank: The rank of `input` (and of the returned view -- transpose
+            never changes rank).
+        output_static_shape: The view's shape.
+        static_permutations: The permutation applied to `input`'s
+            dimensions to produce the view (transpose's `perm` is always a
+            compile-time constant by the time this primitive is called; see
+            MOToMAP's lowering of `mo.transpose`).
+
+    Args:
+        input: The tensor to transpose.
+    """
+    var new_shape = IndexList[rank]()
+    var new_strides = IndexList[rank]()
+    comptime for i in range(rank):
+        new_shape[i] = Int(output_static_shape[i])
+        new_strides[i] = input.stride_length[Int(static_permutations[i])]()
+    return {input.unsafe_ptr(), new_shape, new_strides}
+
+
 @fieldwise_init
 struct _ElementwiseFusionTileAdapter[
     dtype: DType,
