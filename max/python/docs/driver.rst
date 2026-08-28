@@ -39,6 +39,7 @@ Buffers
    Buffer
    DevicePinnedBuffer
    DLPackArray
+   Usage
 
 .. autosummary::
    :nosignatures:

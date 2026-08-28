@@ -794,6 +794,19 @@ the [container](/container) page now links to the new page.
   by its `dtype`, `shape`, and `device`. `repr(buffer)` still returns the
   metadata-only representation.
 
+- Added `max.driver.Usage`, an allocation-intent flag for `Buffer`.
+  `Buffer(..., usage=Usage.STAGING)` requests host memory for staging
+  transfers to and from the given device, which may be page-locked
+  depending on the backend. `Buffer.usage` reports the intent;
+  `Buffer.pinned` reports whether the memory is page-locked.
+
+- **Breaking:** the `pinned=` argument to `Buffer(...)` and
+  `Buffer.zeros(...)` is removed. Use `usage=Usage.STAGING` instead.
+
+- DLPack export of a staging buffer (`__dlpack__`, and `to_numpy()` in
+  turn) does not synchronize pending device work. Synchronize explicitly
+  before reading one after a device operation.
+
 - `max.nn.sampling.AcceptanceSampler` and
   `max.nn.sampling.stochastic_acceptance_sampler` take a `draft_proposal`
   argument. The default, `"argmax"`, is unchanged: the draft proposes

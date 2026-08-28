@@ -22,7 +22,13 @@ from unittest.mock import MagicMock
 import numpy as np
 import pytest
 from max.config import ConfigFileModel
-from max.driver import Accelerator, Buffer, DevicePinnedBuffer, DeviceSpec
+from max.driver import (
+    Accelerator,
+    Buffer,
+    DevicePinnedBuffer,
+    DeviceSpec,
+    Usage,
+)
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import (
@@ -454,7 +460,7 @@ def prime_host_buffer_cache() -> None:
         shape=[1024 * 1024],
         dtype=DType.int8,
         device=Accelerator(),
-        pinned=True,
+        usage=Usage.STAGING,
     )
     del t
 
