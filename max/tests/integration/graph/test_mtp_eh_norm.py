@@ -37,6 +37,7 @@ from max.graph import (
 from max.nn import Module, RMSNorm
 from max.nn.kernels import mtp_eh_norm
 from max.nn.transformer.distributed_transformer import forward_sharded_layers
+from test_common.graph_utils import gpu_warp_size
 from torch.utils.dlpack import from_dlpack
 
 pytestmark = pytest.mark.skipif(
@@ -100,26 +101,30 @@ def _bf16(rng: np.random.Generator, *shape: int, scale: float) -> np.ndarray:
     return x.to(torch.bfloat16).view(torch.float16).numpy()
 
 
+# The kernel needs a whole number of warps, so cases are sized in warps and
+# scaled by the device's warp size below (32 on NVIDIA, 64 on AMD). A fixed
+# thread count would be a fractional warp on one vendor.
 @pytest.mark.parametrize(
-    "hidden_size,tokens,block_threads",
+    "hidden_size,tokens,warps",
     [
-        (4096, 5, 256),  # the draft width GLM-5.3-Flash and DeepSeek-V3.2 use
-        (384, 3, 256),  # not a multiple of the block: a genuinely ragged pass
-        (512, 2, 32),  # one warp: the cross-warp reduction path is skipped
+        (4096, 5, 8),  # the draft width GLM-5.3-Flash and DeepSeek-V3.2 use
+        (384, 3, 8),  # hidden not a multiple of the block: a ragged pass
+        (512, 2, 1),  # one warp: the cross-warp reduction path is skipped
         # Three warps. `block_reduce_dual_sum` reduces over a power-of-two lane
         # group, so a non-power-of-two warp count can drop a warp's sum.
-        (384, 2, 96),
-        (1024, 2, 160),  # five warps
+        (384, 2, 3),
+        (1024, 2, 5),  # five warps
     ],
 )
 def test_fused_matches_rms_norm_and_concat(
-    hidden_size: int, tokens: int, block_threads: int
+    hidden_size: int, tokens: int, warps: int
 ) -> None:
     """The fused op must reproduce two rms_norms plus a concat."""
     rng = np.random.default_rng(0)
     device = Accelerator()
     session = InferenceSession(devices=[device])
 
+    block_threads = warps * gpu_warp_size()
     fused = session.load(_build(hidden_size, True, block_threads))
     ref = session.load(_build(hidden_size, False))
 
