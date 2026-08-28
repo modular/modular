@@ -3420,7 +3420,7 @@ index da8b516..9cf8844 100644
    indent_manager_ = saved_indent_manager;
  }
 
-@@ -1263,7 +3273,12 @@ std::string JSONSchemaConverter::NextSeparator(bool is_end) {
+@@ -1263,15 +3273,175 @@ std::string JSONSchemaConverter::NextSeparator(bool is_end) {
    return indent_manager_.NextSeparator(is_end);
  }
 
@@ -3434,10 +3434,13 @@ index da8b516..9cf8844 100644
 
  namespace {
 
-@@ -1272,6 +3287,142 @@ struct TrieNode {
-   std::map<char, TrieNode> children;
- };
-
++// Byte-splitting a UTF-8 trie edge produces invalid EBNF.
+ struct TrieNode {
+   bool is_terminal = false;
+-  std::map<char, TrieNode> children;
++  std::map<TCodepoint, TrieNode> children;
++};
++
 +// Whether `c` must not be spliced into EBNF source raw. Raw \r/\n are lexer
 +// errors and NUL ends lexing; the remaining control bytes are escaped for
 +// hygiene.
@@ -3451,6 +3454,28 @@ index da8b516..9cf8844 100644
 +  *out += "\\u00";
 +  *out += kHex[(c >> 4) & 0xF];
 +  *out += kHex[c & 0xF];
++}
++
++void AppendEscapedCodepoint(
++    std::string* out, TCodepoint codepoint, const char* metacharacters
++) {
++  if (codepoint >= 0x20 && codepoint < 0x7f) {
++    auto c = static_cast<char>(codepoint);
++    for (const char* m = metacharacters; *m; ++m) {
++      if (*m == c) {
++        *out += '\\';
++        break;
++      }
++    }
++    *out += c;
++    return;
++  }
++  static const char kHexDigits[] = "0123456789abcdef";
++  const int width = codepoint <= 0xFFFF ? 4 : 8;
++  *out += width == 4 ? "\\u" : "\\U";
++  for (int shift = (width - 1) * 4; shift >= 0; shift -= 4) {
++    *out += kHexDigits[(codepoint >> shift) & 0xF];
++  }
 +}
 +
 +// Formats a positive character class matching exactly `chars` (non-empty).
@@ -3472,8 +3497,8 @@ index da8b516..9cf8844 100644
 +struct BareKeyAlphabet {
 +  std::set<char> first;
 +  std::set<char> cont;
-+};
-+
+ };
+
 +// Splits a bare-key terminal of the canonical shape "[first][cont]*" into its
 +// expanded first-char and continuation-char sets. Any other shape returns
 +// nullopt (no exact exclusion possible; see the callers for how each handles
@@ -3551,22 +3576,18 @@ index da8b516..9cf8844 100644
 +  // 2. Diverging char - any alphabet char that is not a trie edge, then any
 +  // continuation tail
 +  std::set<char> diverging = at_root ? alphabet.first : alphabet.cont;
-+  for (const auto& [c, _] : node.children) {
-+    diverging.erase(c);
++  for (const auto& [codepoint, _] : node.children) {
++    // The alphabet is ASCII-only, so a wider codepoint has nothing to erase.
++    if (codepoint >= 0 && codepoint < 0x80) diverging.erase(static_cast<char>(codepoint));
 +  }
 +  if (!diverging.empty()) {
 +    add(FormatCharClass(diverging) + " " + FormatCharClass(alphabet.cont) + "*");
 +  }
 +
 +  // 3. Trie edges - recurse.
-+  for (const auto& [c, child] : node.children) {
++  for (const auto& [codepoint, child] : node.children) {
 +    std::string char_lit = "\"";
-+    if (NeedsControlEscape(c)) {
-+      AppendControlEscape(&char_lit, c);
-+    } else {
-+      if (c == '"' || c == '\\') char_lit += '\\';
-+      char_lit += c;
-+    }
++    AppendEscapedCodepoint(&char_lit, codepoint, "\"\\");
 +    char_lit += "\"";
 +    add(char_lit + " " + BuildBareTrieBody(child, alphabet, false));
 +  }
@@ -3577,7 +3598,41 @@ index da8b516..9cf8844 100644
  std::string BuildTrieBody(const TrieNode& node) {
    std::string result;
    bool first = true;
-@@ -1318,26 +3469,168 @@ std::string BuildTrieBody(const TrieNode& node) {
+@@ -1288,11 +3464,8 @@ std::string BuildTrieBody(const TrieNode& node) {
+
+   // 2. Negated char class - excludes edge chars + JSON specials
+   std::string neg = "[^";
+-  for (const auto& [c, _] : node.children) {
+-    if (c == ']' || c == '\\' || c == '^' || c == '-') {
+-      neg += "\\";
+-    }
+-    neg += c;
++  for (const auto& [codepoint, _] : node.children) {
++    AppendEscapedCodepoint(&neg, codepoint, "]\\^-");
+   }
+   neg += "\\0-\\x1f\\\"\\\\\\r\\n]";
+   add(neg + " " + JSONSchemaConverter::kBasicStringSub);
+@@ -1301,43 +3474,186 @@ std::string BuildTrieBody(const TrieNode& node) {
+   add("\"\\\\\" " + JSONSchemaConverter::kBasicEscape + " " + JSONSchemaConverter::kBasicStringSub);
+
+   // 4. Trie edges - recurse
+-  for (const auto& [c, child] : node.children) {
+-    std::string child_body = BuildTrieBody(child);
++  for (const auto& [codepoint, child] : node.children) {
+     std::string char_lit = "\"";
+-    if (c == '"') {
+-      char_lit += "\\\"";
+-    } else if (c == '\\') {
+-      char_lit += "\\\\";
+-    } else {
+-      char_lit += c;
+-    }
++    AppendEscapedCodepoint(&char_lit, codepoint, "\"\\");
+     char_lit += "\"";
+-    add(char_lit + " " + child_body);
++    add(char_lit + " " + BuildTrieBody(child));
+   }
+
    return "(" + result + ")";
  }
 
@@ -3596,9 +3651,17 @@ index da8b516..9cf8844 100644
 +  TrieNode root;
 +  auto insert_name = [&](const std::string& name) {
 +    if (accept && !accept(name)) return;
++    // Not ParseUTF8: it stops at a NUL, which a name carries legally via \u0000.
++    std::vector<TCodepoint> codepoints;
++    for (size_t offset = 0; offset < name.size();) {
++      auto [codepoint, num_bytes] = ParseNextUTF8(name.data() + offset);
++      if (codepoint == CharHandlingError::kInvalidUTF8) return;
++      codepoints.push_back(codepoint);
++      offset += num_bytes;
++    }
 +    TrieNode* cur = &root;
-+    for (char c : name) {
-+      cur = &cur->children[c];
++    for (TCodepoint codepoint : codepoints) {
++      cur = &cur->children[codepoint];
 +    }
 +    cur->is_terminal = true;
 +  };
