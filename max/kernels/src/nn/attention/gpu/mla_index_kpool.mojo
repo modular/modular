@@ -192,6 +192,7 @@ def kpool_tail_update_kernel[
     slot_origin: ImmOrigin,
     head_dim: Int,
     kpool: Int,
+    next_n: Int = 1,
 ](
     tail: TileTensor[dtype, TailLayoutType, tail_origin],
     pooled: TileTensor[dtype, OutLayoutType, out_origin],
@@ -203,20 +204,23 @@ def kpool_tail_update_kernel[
     slot_idx: TileTensor[mut=False, .uint32, SlotLayoutType, slot_origin],
     num_requests: Int32,
 ):
-    """Stashes one decoded token per request, and closes a pool when it fills.
+    """Stashes a request's new tokens, and closes each pool as it fills.
 
     A decoded token cannot be pooled on arrival, because its pool-mates arrived
     on earlier steps and have left the batch. Each request keeps its
     in-progress pool in `tail`, a ring of `kpool` slots addressed by
     `position % kpool`.
 
+    A speculative step appends `next_n` tokens at once, so several pools can
+    close in one call.
+
     The ring is indexed by `slot_idx[r]`, not by `r`. A batch reorders between
     steps, so row `r` is not always the same request.
 
     Every real token stashes, whether or not it closes a pool.
 
-    Handles one token per request per call. A speculative step that verifies
-    several at once must walk them in position order, which this does not do.
+    Rejected speculative tokens are the caller's problem. The ring holds no
+    pointer to rewind, so a rejected token that has already stashed stays.
 
     Parameters:
         dtype: Element type of `tail`, `k`, `gate` and `pooled`.
@@ -238,21 +242,22 @@ def kpool_tail_update_kernel[
         slot_origin: Origin of `slot_idx`.
         head_dim: Channels per key; also the block width.
         kpool: Tokens per pool.
+        next_n: Tokens appended per request per call.
 
     Args:
         tail: Per-slot ring, `[max_slots, 2, kpool, head_dim]`, sized by the
             engine's concurrent-request capacity. Index 0 holds keys, index 1
             holds gate scores. Only slot `slot_idx[r]` is touched for row `r`.
             Persists across steps.
-        pooled: Output `[num_requests, head_dim]`, meaningful only where
-            `closed_pool` is non-negative.
-        closed_pool: Output `[num_requests]`. The pool id this step completed,
-            or -1 when the request's pool is still filling.
-        k: This step's layer-normed keys, `[num_requests, head_dim]`.
-        gate: This step's gate scores, `[num_requests, head_dim]`.
+        pooled: Output `[num_requests, ceil(next_n / kpool), head_dim]`,
+            meaningful only where `closed_pool` is non-negative.
+        closed_pool: Output `[num_requests, ceil(next_n / kpool)]`. The pool ids
+            this call completed, in order, padded with -1.
+        k: This step's layer-normed keys, `[num_requests, next_n, head_dim]`.
+        gate: This step's gate scores, `[num_requests, next_n, head_dim]`.
         ape: Within-pool position embedding, `[kpool, head_dim]`, f32.
-        positions: Absolute position of each request's new token,
-            `[num_requests]`. Negative marks a padded batch entry.
+        positions: Absolute position of each new token,
+            `[num_requests, next_n]`. Negative marks a padded entry.
         slot_idx: Ring slot owned by each batch row, `[num_requests]`, `uint32`.
         num_requests: Requests actually present.
     """
@@ -264,45 +269,57 @@ def kpool_tail_update_kernel[
     if c >= head_dim:
         return
 
-    var pos = Int(positions.raw_load(r))
-    if pos < 0:
-        if c == 0:
-            closed_pool.raw_store(r, Int32(-1))
-        return
-
-    var slot = pos % kpool
+    comptime max_closed = (next_n + kpool - 1) // kpool
     var tail_base = Int(slot_idx.raw_load(r)) * 2 * kpool * head_dim
+    var n_closed = 0
 
-    # This write and the reads below are the same thread's, so no barrier is
-    # needed.
-    tail.raw_store(
-        tail_base + slot * head_dim + c, k.raw_load(r * head_dim + c)
-    )
-    tail.raw_store(
-        tail_base + (kpool + slot) * head_dim + c,
-        gate.raw_load(r * head_dim + c),
-    )
+    # Walk in position order: a pool closing here reads slots that earlier
+    # tokens stashed in this same call. No barrier is needed, because each
+    # stash is read back by the same thread.
+    for t in range(next_n):
+        var pos = Int(positions.raw_load(r * next_n + t))
+        # A padded entry in a speculative batch.
+        if pos < 0:
+            continue
 
-    if slot != kpool - 1:
+        var slot = pos % kpool
+        tail.raw_store(
+            tail_base + slot * head_dim + c,
+            k.raw_load((r * next_n + t) * head_dim + c),
+        )
+        tail.raw_store(
+            tail_base + (kpool + slot) * head_dim + c,
+            gate.raw_load((r * next_n + t) * head_dim + c),
+        )
+
+        if slot != kpool - 1:
+            continue
+
+        # The pool closing here runs from `pos - kpool + 1` to `pos`, so
+        # member `m` sits at slot `m` and pairs with `ape[m]`.
+        var logits = Array[Float32, kpool]()
+        var vals = Array[Float32, kpool]()
+        for m in range(kpool):
+            logits[m] = tail.raw_load(
+                tail_base + (kpool + m) * head_dim + c
+            ).cast[.float32]() + ape.raw_load(m * head_dim + c)
+            vals[m] = tail.raw_load(tail_base + m * head_dim + c).cast[
+                .float32
+            ]()
+
+        pooled.raw_store(
+            (r * max_closed + n_closed) * head_dim + c,
+            pool_channel[kpool](logits, vals).cast[dtype](),
+        )
         if c == 0:
-            closed_pool.raw_store(r, Int32(-1))
-        return
+            closed_pool.raw_store(
+                r * max_closed + n_closed, Int32(pos // kpool)
+            )
+        n_closed += 1
 
-    # The pool closing here spans positions `pos - kpool + 1` through `pos`,
-    # so member `m` sits at slot `m` and pairs with `ape[m]`.
-    var logits = Array[Float32, kpool]()
-    var vals = Array[Float32, kpool]()
-    for m in range(kpool):
-        logits[m] = tail.raw_load(tail_base + (kpool + m) * head_dim + c).cast[
-            .float32
-        ]() + ape.raw_load(m * head_dim + c)
-        vals[m] = tail.raw_load(tail_base + m * head_dim + c).cast[.float32]()
-
-    pooled.raw_store(
-        r * head_dim + c, pool_channel[kpool](logits, vals).cast[dtype]()
-    )
     if c == 0:
-        closed_pool.raw_store(r, Int32(pos // kpool))
+        for j in range(n_closed, max_closed):
+            closed_pool.raw_store(r * max_closed + j, Int32(-1))
 
 
 @__name(t"mla_kpool_expand_topk_{kpool}_{pool_topk}_{always_select_tail}")

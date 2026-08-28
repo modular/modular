@@ -1152,6 +1152,391 @@ def test_expand_topk[
     _ = out_dev
 
 
+def _run_ring[
+    head_dim: Int, kpool: Int, next_n: Int
+](
+    k_host: HostBuffer[.bfloat16],
+    gate_host: HostBuffer[.bfloat16],
+    ape_t: TileTensor[mut=False, .float32, ...],
+    num_requests: Int,
+    seq_len: Int,
+    out_host: HostBuffer[.bfloat16],
+    ids_host: HostBuffer[.int32],
+    ctx: DeviceContext,
+) raises -> Int:
+    """Drives the ring `seq_len // next_n` times, collecting the closed pools.
+    """
+    comptime max_closed = (next_n + kpool - 1) // kpool
+    var steps = seq_len // next_n
+
+    var tail_d = ctx.enqueue_create_buffer[.bfloat16](
+        num_requests * 2 * kpool * head_dim
+    )
+    ctx.enqueue_memset(tail_d, 0)
+    var k_d = ctx.enqueue_create_buffer[.bfloat16](
+        num_requests * next_n * head_dim
+    )
+    var g_d = ctx.enqueue_create_buffer[.bfloat16](
+        num_requests * next_n * head_dim
+    )
+    var pos_d = ctx.enqueue_create_buffer[.int32](num_requests * next_n)
+    var slot_d = ctx.enqueue_create_buffer[.uint32](num_requests)
+    var pooled_d = ctx.enqueue_create_buffer[.bfloat16](
+        num_requests * max_closed * head_dim
+    )
+    var closed_d = ctx.enqueue_create_buffer[.int32](num_requests * max_closed)
+
+    var k_s = ctx.enqueue_create_host_buffer[.bfloat16](
+        num_requests * next_n * head_dim
+    )
+    var g_s = ctx.enqueue_create_host_buffer[.bfloat16](
+        num_requests * next_n * head_dim
+    )
+    var pos_s = ctx.enqueue_create_host_buffer[.int32](num_requests * next_n)
+    var slot_s = ctx.enqueue_create_host_buffer[.uint32](num_requests)
+    var pooled_s = ctx.enqueue_create_host_buffer[.bfloat16](
+        num_requests * max_closed * head_dim
+    )
+    var closed_s = ctx.enqueue_create_host_buffer[.int32](
+        num_requests * max_closed
+    )
+    ctx.synchronize()
+
+    var tail_t = TileTensor(
+        tail_d, row_major(num_requests, 2 * kpool, head_dim)
+    )
+    var k_t = TileTensor(k_d, row_major(num_requests * next_n, head_dim))
+    var g_t = TileTensor(g_d, row_major(num_requests * next_n, head_dim))
+    var pos_t = TileTensor(pos_d, row_major(num_requests * next_n))
+    for r in range(num_requests):
+        slot_s[r] = UInt32(r)
+    ctx.enqueue_copy(slot_d, slot_s)
+    var slot_t = TileTensor(slot_d, row_major(num_requests))
+    var pooled_t = TileTensor(
+        pooled_d, row_major(num_requests * max_closed, head_dim)
+    )
+    var closed_t = TileTensor(closed_d, row_major(num_requests * max_closed))
+
+    comptime kern = kpool_tail_update_kernel[
+        .bfloat16,
+        tail_t.LayoutType,
+        tail_t.origin,
+        pooled_t.LayoutType,
+        pooled_t.origin,
+        closed_t.LayoutType,
+        closed_t.origin,
+        type_of(k_t.as_immut()).LayoutType,
+        ImmOrigin(k_t.origin),
+        type_of(g_t.as_immut()).LayoutType,
+        ImmOrigin(g_t.origin),
+        type_of(ape_t).LayoutType,
+        ImmOrigin(ape_t.origin),
+        type_of(pos_t.as_immut()).LayoutType,
+        ImmOrigin(pos_t.origin),
+        type_of(slot_t.as_immut()).LayoutType,
+        ImmOrigin(slot_t.origin),
+        head_dim,
+        kpool,
+        next_n,
+    ]
+
+    var kept = 0
+    for step in range(steps):
+        for r in range(num_requests):
+            for t in range(next_n):
+                var pos = step * next_n + t
+                pos_s[r * next_n + t] = Int32(pos)
+                var src = (r * seq_len + pos) * head_dim
+                var dst = (r * next_n + t) * head_dim
+                for c in range(head_dim):
+                    k_s[dst + c] = k_host[src + c]
+                    g_s[dst + c] = gate_host[src + c]
+        ctx.enqueue_copy(k_d, k_s)
+        ctx.enqueue_copy(g_d, g_s)
+        ctx.enqueue_copy(pos_d, pos_s)
+        ctx.enqueue_function[kern](
+            tail_t,
+            pooled_t,
+            closed_t,
+            k_t.as_immut(),
+            g_t.as_immut(),
+            ape_t,
+            pos_t.as_immut(),
+            slot_t.as_immut(),
+            Int32(num_requests),
+            grid_dim=(num_requests, 1, 1),
+            block_dim=(head_dim, 1, 1),
+        )
+        ctx.synchronize()
+        ctx.enqueue_copy(closed_s, closed_d)
+        ctx.enqueue_copy(pooled_s, pooled_d)
+        ctx.synchronize()
+        for r in range(num_requests):
+            for j in range(max_closed):
+                var cid = Int(closed_s[r * max_closed + j])
+                if cid < 0:
+                    continue
+                # Index by request and pool id. Arrival order differs between
+                # the arms and says nothing about the pooled keys.
+                var dst_row = r * (seq_len // kpool) + cid
+                ids_host[dst_row] = Int32(cid)
+                var src = (r * max_closed + j) * head_dim
+                for c in range(head_dim):
+                    out_host[dst_row * head_dim + c] = pooled_s[src + c]
+                kept += 1
+
+    _ = tail_d
+    _ = k_d
+    _ = g_d
+    _ = pos_d
+    _ = slot_d
+    _ = pooled_d
+    _ = closed_d
+    return kept
+
+
+def test_spec_step_matches_single_steps[
+    head_dim: Int, kpool: Int, next_n: Int
+](num_requests: Int, seq_len: Int, ctx: DeviceContext) raises:
+    """A speculative step must equal the same tokens fed one at a time.
+
+    A speculative step appends `next_n` tokens per call instead of one, so
+    several pools can complete in a single invocation and the ring has to be
+    walked in position order. Feeding the identical token stream both ways must
+    produce identical pooled keys and identical closed pool ids, bit for bit,
+    since the same arithmetic runs either way.
+
+    Parameters:
+        head_dim: Channels per key.
+        kpool: Tokens per pool.
+        next_n: Tokens appended per request per call.
+
+    Args:
+        num_requests: Requests decoded together.
+        seq_len: Total tokens per request; must divide by `next_n`.
+        ctx: Device context.
+    """
+    var steps = seq_len // next_n
+    assert_equal(steps * next_n, seq_len, "seq_len must divide by next_n")
+    print(
+        "spec-vs-single: requests=",
+        num_requests,
+        " next_n=",
+        next_n,
+        " seq_len=",
+        seq_len,
+    )
+
+    var total = num_requests * seq_len
+    var k_host = ctx.enqueue_create_host_buffer[.bfloat16](total * head_dim)
+    var gate_host = ctx.enqueue_create_host_buffer[.bfloat16](total * head_dim)
+    var ape_host = ctx.enqueue_create_host_buffer[.float32](kpool * head_dim)
+    ctx.synchronize()
+    rand(k_host.unsafe_ptr(), total * head_dim)
+    rand(gate_host.unsafe_ptr(), total * head_dim)
+    rand(ape_host.unsafe_ptr(), kpool * head_dim)
+    for i in range(total * head_dim):
+        gate_host[i] = (gate_host[i] - 0.5) * 8.0
+    for i in range(kpool * head_dim):
+        ape_host[i] = (ape_host[i] - 0.5) * 4.0
+
+    var ape_dev = ctx.enqueue_create_buffer[.float32](kpool * head_dim)
+    ctx.enqueue_copy(ape_dev, ape_host)
+    ctx.synchronize()
+    var ape_t = TileTensor(ape_dev, row_major(kpool, head_dim)).as_immut()
+
+    var wide_out = ctx.enqueue_create_host_buffer[.bfloat16](total * head_dim)
+    var single_out = ctx.enqueue_create_host_buffer[.bfloat16](total * head_dim)
+    var wide_ids = ctx.enqueue_create_host_buffer[.int32](total)
+    var single_ids = ctx.enqueue_create_host_buffer[.int32](total)
+    ctx.synchronize()
+
+    var wide_n = _run_ring[head_dim, kpool, next_n](
+        k_host, gate_host, ape_t, num_requests, seq_len, wide_out, wide_ids, ctx
+    )
+    var single_n = _run_ring[head_dim, kpool, 1](
+        k_host,
+        gate_host,
+        ape_t,
+        num_requests,
+        seq_len,
+        single_out,
+        single_ids,
+        ctx,
+    )
+
+    assert_equal(
+        wide_n, single_n, "the two arms closed a different number of pools"
+    )
+    assert_true(wide_n > 0, "no pool closed; the shape proves nothing")
+    var slots = num_requests * (seq_len // kpool)
+    assert_equal(wide_n, slots, "not every pool of every request closed")
+    for i in range(slots):
+        assert_equal(
+            wide_ids[i],
+            single_ids[i],
+            String("closed pool id at slot ", i, " differs between arms"),
+        )
+    for i in range(slots * head_dim):
+        assert_equal(
+            wide_out[i],
+            single_out[i],
+            String("pooled key element ", i, " differs between arms"),
+        )
+    print("  ", wide_n, "pools identical between a wide step and single steps")
+    _ = ape_dev
+
+
+def _ring_after[
+    head_dim: Int, kpool: Int, next_n: Int
+](
+    k_host: HostBuffer[.bfloat16],
+    gate_host: HostBuffer[.bfloat16],
+    ape_t: TileTensor[mut=False, .float32, ...],
+    n_valid: Int,
+    ring_out: HostBuffer[.bfloat16],
+    ctx: DeviceContext,
+) raises:
+    """Runs one call over `next_n` slots and copies the resulting ring out.
+
+    The first `n_valid` slots carry real positions; the rest carry -1, which is
+    what a padded entry in a speculative batch holds.
+    """
+    comptime max_closed = (next_n + kpool - 1) // kpool
+    var ring_elems = 2 * kpool * head_dim
+    var ring_d = ctx.enqueue_create_buffer[.bfloat16](ring_elems)
+    ctx.enqueue_memset(ring_d, 0)
+    var k_d = ctx.enqueue_create_buffer[.bfloat16](next_n * head_dim)
+    var g_d = ctx.enqueue_create_buffer[.bfloat16](next_n * head_dim)
+    var pos_d = ctx.enqueue_create_buffer[.int32](next_n)
+    var slot_d = ctx.enqueue_create_buffer[.uint32](1)
+    var pooled_d = ctx.enqueue_create_buffer[.bfloat16](max_closed * head_dim)
+    var closed_d = ctx.enqueue_create_buffer[.int32](max_closed)
+    var pos_h = ctx.enqueue_create_host_buffer[.int32](next_n)
+    var slot_h = ctx.enqueue_create_host_buffer[.uint32](1)
+    ctx.synchronize()
+
+    for t in range(next_n):
+        pos_h[t] = Int32(t) if t < n_valid else Int32(-1)
+    slot_h[0] = UInt32(0)
+    ctx.enqueue_copy(k_d, k_host)
+    ctx.enqueue_copy(g_d, gate_host)
+    ctx.enqueue_copy(pos_d, pos_h)
+    ctx.enqueue_copy(slot_d, slot_h)
+
+    var ring_t = TileTensor(ring_d, row_major(1, 2 * kpool, head_dim))
+    var k_t = TileTensor(k_d, row_major(next_n, head_dim))
+    var g_t = TileTensor(g_d, row_major(next_n, head_dim))
+    var pos_t = TileTensor(pos_d, row_major(next_n))
+    var slot_t = TileTensor(slot_d, row_major(1))
+    var pooled_t = TileTensor(pooled_d, row_major(max_closed, head_dim))
+    var closed_t = TileTensor(closed_d, row_major(max_closed))
+
+    comptime kern = kpool_tail_update_kernel[
+        .bfloat16,
+        ring_t.LayoutType,
+        ring_t.origin,
+        pooled_t.LayoutType,
+        pooled_t.origin,
+        closed_t.LayoutType,
+        closed_t.origin,
+        type_of(k_t.as_immut()).LayoutType,
+        ImmOrigin(k_t.origin),
+        type_of(g_t.as_immut()).LayoutType,
+        ImmOrigin(g_t.origin),
+        type_of(ape_t).LayoutType,
+        ImmOrigin(ape_t.origin),
+        type_of(pos_t.as_immut()).LayoutType,
+        ImmOrigin(pos_t.origin),
+        type_of(slot_t.as_immut()).LayoutType,
+        ImmOrigin(slot_t.origin),
+        head_dim,
+        kpool,
+        next_n,
+    ]
+    ctx.enqueue_function[kern](
+        ring_t,
+        pooled_t,
+        closed_t,
+        k_t.as_immut(),
+        g_t.as_immut(),
+        ape_t,
+        pos_t.as_immut(),
+        slot_t.as_immut(),
+        Int32(1),
+        grid_dim=(1, 1, 1),
+        block_dim=(head_dim, 1, 1),
+    )
+    ctx.synchronize()
+    ctx.enqueue_copy(ring_out, ring_d)
+    ctx.synchronize()
+
+    _ = ring_d
+    _ = k_d
+    _ = g_d
+    _ = pos_d
+    _ = slot_d
+    _ = pooled_d
+    _ = closed_d
+
+
+def test_padded_slot_leaves_no_trace[
+    head_dim: Int, kpool: Int, next_n: Int
+](ctx: DeviceContext) raises:
+    """A padded slot must leave the ring exactly where a shorter call does.
+
+    A speculative batch pads its unused slots with a negative position. The
+    kernel skips those, so a call over `next_n` slots whose last one is padded
+    has to leave the ring byte-identical to a call over just the real tokens.
+    Skipping the slot only partway -- stashing it, or folding it into a
+    neighbour -- would show up here and nowhere else.
+
+    Parameters:
+        head_dim: Channels per key.
+        kpool: Tokens per pool.
+        next_n: Slots the wide call covers.
+
+    Args:
+        ctx: Device context.
+    """
+    comptime real = next_n - 1
+    print("padded slot: next_n=", next_n, " real=", real, " kpool=", kpool)
+
+    var k_h = ctx.enqueue_create_host_buffer[.bfloat16](next_n * head_dim)
+    var g_h = ctx.enqueue_create_host_buffer[.bfloat16](next_n * head_dim)
+    var ape_h = ctx.enqueue_create_host_buffer[.float32](kpool * head_dim)
+    ctx.synchronize()
+    rand(k_h.unsafe_ptr(), next_n * head_dim)
+    rand(g_h.unsafe_ptr(), next_n * head_dim)
+    rand(ape_h.unsafe_ptr(), kpool * head_dim)
+    for i in range(next_n * head_dim):
+        g_h[i] = (g_h[i] - 0.5) * 8.0
+    for i in range(kpool * head_dim):
+        ape_h[i] = (ape_h[i] - 0.5) * 4.0
+
+    var ape_d = ctx.enqueue_create_buffer[.float32](kpool * head_dim)
+    ctx.enqueue_copy(ape_d, ape_h)
+    ctx.synchronize()
+    var ape_t = TileTensor(ape_d, row_major(kpool, head_dim)).as_immut()
+
+    var ring_elems = 2 * kpool * head_dim
+    var padded = ctx.enqueue_create_host_buffer[.bfloat16](ring_elems)
+    var shorter = ctx.enqueue_create_host_buffer[.bfloat16](ring_elems)
+    ctx.synchronize()
+
+    _ring_after[head_dim, kpool, next_n](k_h, g_h, ape_t, real, padded, ctx)
+    _ring_after[head_dim, kpool, real](k_h, g_h, ape_t, real, shorter, ctx)
+
+    for i in range(ring_elems):
+        assert_equal(
+            padded[i],
+            shorter[i],
+            String("a padded slot changed ring element ", i),
+        )
+    print("  the padded slot left the ring untouched")
+    _ = ape_d
+
+
 def main() raises:
     with DeviceContext() as ctx:
         test_kpool_one_is_identity[head_dim=128](ctx)
@@ -1217,5 +1602,17 @@ def main() raises:
         test_expand_topk[kpool=4, pool_topk=512, always_select_tail=True](
             seq_lens=[3, 2], cache_lens=[8000, 4097], ctx=ctx
         )
+
+        # Speculative steps: several tokens per request per call.
+        test_spec_step_matches_single_steps[head_dim=128, kpool=4, next_n=2](
+            num_requests=2, seq_len=8, ctx=ctx
+        )
+        # `next_n` above `kpool`, so more than one pool closes in one call.
+        test_spec_step_matches_single_steps[head_dim=128, kpool=4, next_n=8](
+            num_requests=2, seq_len=16, ctx=ctx
+        )
+
+        # A speculative batch pads unused slots with a negative position.
+        test_padded_slot_leaves_no_trace[head_dim=128, kpool=4, next_n=4](ctx)
 
         print("\nAll tests passed!")
