@@ -358,6 +358,8 @@ private:
                                        unsigned Abbrev);
   void writeDIObjCProperty(const DIObjCProperty *N,
                            SmallVectorImpl<uint64_t> &Record, unsigned Abbrev);
+  void writeDIProperty(const DIProperty *N, SmallVectorImpl<uint64_t> &Record,
+                       unsigned Abbrev);
   void writeDIImportedEntity(const DIImportedEntity *N,
                              SmallVectorImpl<uint64_t> &Record,
                              unsigned Abbrev);
@@ -2440,6 +2442,15 @@ void ModuleBitcodeWriter::writeDIObjCProperty(const DIObjCProperty *N,
 
   Stream.EmitRecord(bitc::METADATA_OBJC_PROPERTY, Record, Abbrev);
   Record.clear();
+}
+
+// DW_TAG_property support postdates this bitcode format, whose readers have no
+// METADATA_PROPERTY record. Mojo debug info never builds one, so reaching here
+// means a caller changed that and needs a format that can represent it.
+void ModuleBitcodeWriter::writeDIProperty(const DIProperty *,
+                                          SmallVectorImpl<uint64_t> &,
+                                          unsigned) {
+  llvm_unreachable("DIProperty cannot be encoded in this bitcode version");
 }
 
 void ModuleBitcodeWriter::writeDIImportedEntity(

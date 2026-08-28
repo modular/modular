@@ -144,7 +144,7 @@ static void forceLinkMLIRCIR() {
       << (void *)mlirIdentifierGet << (void *)mlirIdentifierGetContext
       << (void *)mlirIdentifierEqual << (void *)mlirIdentifierStr
       << (void *)mlirSymbolTableGetSymbolAttributeName
-      << (void *)mlirSymbolTableGetVisibilityAttributeName
+      << (void *)mlirSymbolTableGetDefaultVisibilityAttributeName
       << (void *)mlirSymbolTableCreate << (void *)mlirSymbolTableIsNull
       << (void *)mlirSymbolTableDestroy << (void *)mlirSymbolTableLookup
       << (void *)mlirSymbolTableInsert << (void *)mlirSymbolTableErase

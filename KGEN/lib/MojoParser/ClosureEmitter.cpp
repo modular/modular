@@ -198,7 +198,8 @@ static void addConformanceTable(
   Block &block = witnessTable.getBody().emplaceBlock();
   b.setInsertionPointToStart(&block);
   for (auto [name, newWitness] : witnesses)
-    WitnessOp::create(b, StringAttr::get(ctx, name), newWitness);
+    WitnessOp::create(b, StringAttr::get(ctx, name), /*sym_visibility=*/nullptr,
+                      newWitness);
 
   // Register the conformance with the ASTDecl so lookupInCurrentScope can find
   // it during constraint checking.
@@ -906,7 +907,8 @@ static void generateIsTrivialSpecialAlias(StringRef name, bool value,
                                             structDecl.getLoc(), &structDecl);
 
   b.setInsertionPointToEnd(&conformanceOp.getBody().front());
-  WitnessOp::create(b, StringAttr::get(ctx, name), valueAttr);
+  WitnessOp::create(b, StringAttr::get(ctx, name), /*sym_visibility=*/nullptr,
+                    valueAttr);
 }
 
 //===----------------------------------------------------------------------===//
@@ -1142,10 +1144,12 @@ ClosureEmitter::createFnStructWrapper(ASTDecl &moduleDecl, ASTDecl &traitDecl,
     Block &block = witnessTable.getBody().emplaceBlock();
     b.setInsertionPointToStart(&block);
     SymbolConstantAttr symbolConstant = buildSymbol(impl, implParameters);
-    WitnessOp::create(b, fnOp.getSymNameAttr(), symbolConstant);
+    WitnessOp::create(b, fnOp.getSymNameAttr(), /*sym_visibility=*/nullptr,
+                      symbolConstant);
     if (parent.getClosureMethod() == ClosureMethod::CALL) {
       for (auto [aliasName, value] : aliases)
-        WitnessOp::create(b, aliasName, value.second);
+        WitnessOp::create(b, aliasName, /*sym_visibility=*/nullptr,
+                          value.second);
     }
 
     return witnessTable;
@@ -2764,7 +2768,8 @@ ClosureEmitter::Closure ClosureEmitter::liftClosure(
            "non-marker closure method missing an implementation");
 
     TypedAttr symbol = buildSymbol(it->second, structOp.getInputParams());
-    WitnessOp::create(builder, fnOp.getSymNameAttr(), symbol);
+    WitnessOp::create(builder, fnOp.getSymNameAttr(),
+                      /*sym_visibility=*/nullptr, symbol);
 
     // add the alias entries
     if (closureParent.getClosureMethod() == ClosureMethod::CALL) {
@@ -2781,7 +2786,7 @@ ClosureEmitter::Closure ClosureEmitter::liftClosure(
                traitAliases,
                ArrayRef(captureBindings).take_front(traitAliases.size())))
         WitnessOp::create(builder, alias.getParamDecl().getName(),
-                          witnessValue);
+                          /*sym_visibility=*/nullptr, witnessValue);
     }
   };
 

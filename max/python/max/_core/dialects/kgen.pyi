@@ -3196,6 +3196,7 @@ class ExternGeneratorOp(max._core.Operation):
         builder: max._core.OpBuilder,
         location: Location,
         sym_name: max._core.dialects.builtin.StringAttr,
+        sym_visibility: max._core.dialects.builtin.StringAttr,
         func_type_generator: max._core.dialects.builtin.TypeAttr,
         function_type: max._core.dialects.builtin.TypeAttr,
         input_params: ParamDeclArrayAttr,
@@ -3205,6 +3206,12 @@ class ExternGeneratorOp(max._core.Operation):
     def sym_name(self) -> str: ...
     @sym_name.setter
     def sym_name(
+        self, arg: max._core.dialects.builtin.StringAttr, /
+    ) -> None: ...
+    @property
+    def sym_visibility(self) -> str | None: ...
+    @sym_visibility.setter
+    def sym_visibility(
         self, arg: max._core.dialects.builtin.StringAttr, /
     ) -> None: ...
     @property
@@ -3273,6 +3280,7 @@ class FuncOp(max._core.Operation):
         builder: max._core.OpBuilder,
         location: Location,
         sym_name: max._core.dialects.builtin.StringAttr,
+        sym_visibility: max._core.dialects.builtin.StringAttr,
         func_type_generator: max._core.dialects.builtin.TypeAttr,
         decorators: DecoratorsAttr,
         inline_level: InlineLevelAttr,
@@ -3305,6 +3313,12 @@ class FuncOp(max._core.Operation):
     def sym_name(self) -> str: ...
     @sym_name.setter
     def sym_name(
+        self, arg: max._core.dialects.builtin.StringAttr, /
+    ) -> None: ...
+    @property
+    def sym_visibility(self) -> str | None: ...
+    @sym_visibility.setter
+    def sym_visibility(
         self, arg: max._core.dialects.builtin.StringAttr, /
     ) -> None: ...
     @property
@@ -3393,6 +3407,7 @@ class GeneratorOp(max._core.Operation):
         builder: max._core.OpBuilder,
         location: Location,
         sym_name: max._core.dialects.builtin.StringAttr,
+        sym_visibility: max._core.dialects.builtin.StringAttr,
         source_name: max._core.dialects.builtin.StringAttr,
         func_type_generator: max._core.dialects.builtin.TypeAttr,
         function_type: max._core.dialects.builtin.TypeAttr,
@@ -3436,6 +3451,12 @@ class GeneratorOp(max._core.Operation):
     def sym_name(self) -> str: ...
     @sym_name.setter
     def sym_name(
+        self, arg: max._core.dialects.builtin.StringAttr, /
+    ) -> None: ...
+    @property
+    def sym_visibility(self) -> str | None: ...
+    @sym_visibility.setter
+    def sym_visibility(
         self, arg: max._core.dialects.builtin.StringAttr, /
     ) -> None: ...
     @property
@@ -3665,6 +3686,8 @@ class ParamDeclareRegionOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
+        sym_name: max._core.dialects.builtin.StringAttr,
+        sym_visibility: max._core.dialects.builtin.StringAttr,
         param_decl: ParamDeclAttr,
         source_name: max._core.dialects.builtin.StringAttr,
         func_type_generator: max._core.dialects.builtin.TypeAttr,
@@ -3675,6 +3698,18 @@ class ParamDeclareRegionOp(max._core.Operation):
         _llvm_metadata_array: max._core.dialects.builtin.ArrayAttr,
         _llvm_arg_metadata_array: max._core.dialects.builtin.ArrayAttr,
         isolated: max._core.dialects.builtin.UnitAttr,
+    ) -> None: ...
+    @property
+    def sym_name(self) -> str | None: ...
+    @sym_name.setter
+    def sym_name(
+        self, arg: max._core.dialects.builtin.StringAttr, /
+    ) -> None: ...
+    @property
+    def sym_visibility(self) -> str | None: ...
+    @sym_visibility.setter
+    def sym_visibility(
+        self, arg: max._core.dialects.builtin.StringAttr, /
     ) -> None: ...
     @property
     def param_decl(self) -> ParamDeclAttr: ...
@@ -4253,6 +4288,7 @@ class StructGeneratorOp(max._core.Operation):
         builder: max._core.OpBuilder,
         location: Location,
         sym_name: max._core.dialects.builtin.StringAttr,
+        sym_visibility: max._core.dialects.builtin.StringAttr,
         input_params: ParamDeclArrayAttr,
         value_domain_type: max._core.dialects.builtin.TypeAttr,
         meta_type: max._core.dialects.builtin.TypeAttr,
@@ -4261,6 +4297,12 @@ class StructGeneratorOp(max._core.Operation):
     def sym_name(self) -> str: ...
     @sym_name.setter
     def sym_name(
+        self, arg: max._core.dialects.builtin.StringAttr, /
+    ) -> None: ...
+    @property
+    def sym_visibility(self) -> str | None: ...
+    @sym_visibility.setter
+    def sym_visibility(
         self, arg: max._core.dialects.builtin.StringAttr, /
     ) -> None: ...
     @property
@@ -4301,6 +4343,7 @@ class StructInstanceOp(max._core.Operation):
         builder: max._core.OpBuilder,
         location: Location,
         sym_name: max._core.dialects.builtin.StringAttr,
+        sym_visibility: max._core.dialects.builtin.StringAttr,
         value_domain_type: max._core.dialects.builtin.TypeAttr,
         meta_type: max._core.dialects.builtin.TypeAttr,
     ) -> None: ...
@@ -4308,6 +4351,12 @@ class StructInstanceOp(max._core.Operation):
     def sym_name(self) -> str: ...
     @sym_name.setter
     def sym_name(
+        self, arg: max._core.dialects.builtin.StringAttr, /
+    ) -> None: ...
+    @property
+    def sym_visibility(self) -> str | None: ...
+    @sym_visibility.setter
+    def sym_visibility(
         self, arg: max._core.dialects.builtin.StringAttr, /
     ) -> None: ...
     @property
@@ -4580,12 +4629,19 @@ class WitnessOp(max._core.Operation):
         builder: max._core.OpBuilder,
         location: Location,
         sym_name: max._core.dialects.builtin.StringAttr,
+        sym_visibility: max._core.dialects.builtin.StringAttr,
         value: max._core.dialects.builtin.TypedAttr,
     ) -> None: ...
     @property
     def sym_name(self) -> str: ...
     @sym_name.setter
     def sym_name(
+        self, arg: max._core.dialects.builtin.StringAttr, /
+    ) -> None: ...
+    @property
+    def sym_visibility(self) -> str | None: ...
+    @sym_visibility.setter
+    def sym_visibility(
         self, arg: max._core.dialects.builtin.StringAttr, /
     ) -> None: ...
     @property

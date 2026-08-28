@@ -749,7 +749,7 @@ LIT::verifyAndBuildConformance(ASTDecl &structDecl, TraitSymbolAttr parent,
           structDecl, traitDecl, *selectedStructMethod, *traitFnDecl, shared);
     }
 
-    WitnessOp::create(b, fnSymName, result.get());
+    WitnessOp::create(b, fnSymName, /*sym_visibility=*/nullptr, result.get());
     return success();
   };
 
@@ -904,7 +904,7 @@ LIT::verifyAndBuildConformance(ASTDecl &structDecl, TraitSymbolAttr parent,
     checkStableTraitMemberImplementation(
         structDecl, traitDecl, *structAliasDecl, *traitAliasDecl, shared);
 
-    WitnessOp::create(b, name, aliasValue.get());
+    WitnessOp::create(b, name, /*sym_visibility=*/nullptr, aliasValue.get());
     traitAliasReplacer.setDeclBinding(traitAlias.getParamDecl(), aliasValue);
 
     return success();

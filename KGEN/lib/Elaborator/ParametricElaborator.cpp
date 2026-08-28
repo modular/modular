@@ -1735,8 +1735,8 @@ ElaborationState ParametricElaborator::specializeGenerator(PImplNode *inode,
   } else {
     auto structGenOp = dyn_cast<StructGeneratorOp>(*gen);
     instance = cast<InstantiatedOpInterface>(*StructInstanceOp::create(
-        b, gen.getLoc(), mangledName, structGenOp.getValueDomainType(),
-        structGenOp.getMetaType()));
+        b, gen.getLoc(), mangledName, /*sym_visibility=*/nullptr,
+        structGenOp.getValueDomainType(), structGenOp.getMetaType()));
     instantiateBody = false;
   }
 

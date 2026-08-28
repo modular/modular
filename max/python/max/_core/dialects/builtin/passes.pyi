@@ -28,6 +28,13 @@ class GreedySimplifyRegionLevel(enum.Enum):
 
     aggressive = 2
 
+class ConvergenceFailureAction(enum.Enum):
+    warn = 0
+
+    error = 1
+
+    silent = 2
+
 def BubbleDownMemorySpaceCasts() -> max._core.Pass:
     """
     This pass tries to iteratively bubble down all possible memory-space cast
@@ -103,6 +110,7 @@ def CompositeFixedPointPass(
     name: str = "CompositeFixedPointPass",
     pipeline_str: str = "",
     max_iter: int = 10,
+    convergence_failure_action: ConvergenceFailureAction = ConvergenceFailureAction.warn,
 ) -> max._core.Pass:
     """
     Composite pass runs provided set of passes until fixed point or maximum
