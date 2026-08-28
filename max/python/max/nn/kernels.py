@@ -8578,6 +8578,124 @@ def merge_ragged_tensors(
     return results[0].tensor, results[1].tensor
 
 
+def mtp_eh_norm(
+    embed: TensorValue,
+    prev_hidden: TensorValue,
+    enorm_weight: TensorValue,
+    hnorm_weight: TensorValue,
+    epsilon: float,
+    block_threads: int = 256,
+) -> TensorValue:
+    """Normalizes both inputs of an MTP draft layer into one projection input.
+
+    A multi-token-prediction draft predicts a token two ahead from the
+    embedding of the token the target just produced and the target's hidden
+    state. Each is RMS-normalized with its own weight, and the pair is
+    projected back to one hidden width. This returns that projection's input
+    in a single pass.
+
+    Normalization matches :func:`~max.graph.ops.rms_norm` in its Llama-style
+    configuration -- ``weight_offset=0`` and ``multiply_before_cast=False``.
+    Do not use this with the Gemma-style configuration.
+
+    Args:
+        embed: Token embeddings ``[num_tokens, hidden_size]``.
+        prev_hidden: Target hidden states, same shape and dtype as ``embed``.
+        enorm_weight: Embedding norm weight ``[hidden_size]``.
+        hnorm_weight: Hidden-state norm weight ``[hidden_size]``.
+        epsilon: Added inside the square root.
+        block_threads: Threads per block; must be a whole number of warps.
+
+    Returns:
+        ``[num_tokens, 2 * hidden_size]`` with the normalized embedding in the
+        leading columns and the normalized hidden state in the trailing ones.
+
+    Raises:
+        ValueError: If the inputs disagree in shape, dtype or device, if the
+            hidden size is not statically known, if the dtype is float8, or if
+            ``block_threads`` is not a positive multiple of 32 no greater than
+            1024.
+    """
+    if embed.shape != prev_hidden.shape:
+        raise ValueError(
+            "embed and prev_hidden must have the same shape, got"
+            f" {embed.shape} and {prev_hidden.shape}"
+        )
+    if embed.dtype != prev_hidden.dtype:
+        raise ValueError(
+            "embed and prev_hidden must have the same dtype, got"
+            f" {embed.dtype} and {prev_hidden.dtype}"
+        )
+    if embed.device != prev_hidden.device:
+        raise ValueError(
+            "embed and prev_hidden must be on the same device, got"
+            f" {embed.device} and {prev_hidden.device}"
+        )
+    for name, w in (
+        ("enorm_weight", enorm_weight),
+        ("hnorm_weight", hnorm_weight),
+    ):
+        if w.dtype != embed.dtype:
+            raise ValueError(
+                f"{name} must match embed's dtype {embed.dtype}, got {w.dtype}"
+            )
+        if w.device != embed.device:
+            raise ValueError(
+                f"{name} must be on embed's device {embed.device}, got"
+                f" {w.device}"
+            )
+        if w.shape[0] != embed.shape[1]:
+            raise ValueError(
+                f"{name} length {w.shape[0]} must equal the hidden size"
+                f" {embed.shape[1]}"
+            )
+    if embed.dtype in (DType.float8_e4m3fn, DType.float8_e5m2):
+        raise ValueError(
+            f"mtp_eh_norm does not support {embed.dtype}: it accumulates in"
+            " float32, where ops.rms_norm reduces float8 in float16"
+        )
+    if block_threads <= 0 or block_threads % 32 != 0:
+        raise ValueError(
+            "block_threads must be a positive multiple of 32, got"
+            f" {block_threads}"
+        )
+    if block_threads > 1024:
+        raise ValueError(
+            "block_threads must not exceed 1024, the largest block any"
+            f" supported GPU allows, got {block_threads}"
+        )
+
+    if not isinstance(embed.shape[1], StaticDim):
+        raise ValueError(
+            "the hidden size (embed.shape[1]) must be statically known, got"
+            f" {embed.shape[1]}"
+        )
+    hidden_size = int(embed.shape[1])
+
+    return ops.custom(
+        "mo.mtp.eh_norm",
+        device=embed.device,
+        values=[
+            embed,
+            prev_hidden,
+            enorm_weight,
+            hnorm_weight,
+            ops.constant(epsilon, dtype=DType.float32, device=DeviceRef.CPU()),
+        ],
+        out_types=[
+            TensorType(
+                dtype=embed.dtype,
+                shape=(embed.shape[0], 2 * hidden_size),
+                device=embed.device,
+            )
+        ],
+        parameters={
+            "hidden_size": hidden_size,
+            "block_threads": block_threads,
+        },
+    )[0].tensor
+
+
 def eagle_prefill_shift_tokens(
     tokens: TensorValue,
     offsets: TensorValue,
