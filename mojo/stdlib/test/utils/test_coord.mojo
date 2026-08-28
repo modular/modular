@@ -575,5 +575,82 @@ def test_device_passable_conformance() raises:
     comptime assert Coord[Int, Int].device_type == Coord[Int, Int]
 
 
+def test_replace_keeps_other_dims_static() raises:
+    var c = Coord(ComptimeInt[3](), ComptimeInt[4](), ComptimeInt[5]())
+    var moved = c.replace[1](Int64(7))
+
+    assert_equal(Int(moved[0].value()), 3)
+    assert_equal(Int(moved[1].value()), 7)
+    assert_equal(Int(moved[2].value()), 5)
+
+    # Only the replaced element gains runtime storage; `make_dynamic` would
+    # have made all three dynamic.
+    comptime assert size_of[type_of(moved)]() == size_of[Int64]()
+    comptime assert (
+        size_of[type_of(c.make_dynamic[DType.int64]())]()
+        == 3 * size_of[Int64]()
+    )
+
+
+def test_replace_static_element_stays_comptime() raises:
+    var c = Coord(ComptimeInt[8](), ComptimeInt[16](), ComptimeInt[128]())
+    var idx = c.replace[2](Int64(64))
+
+    # The untouched leading dims are still compile-time values.
+    comptime assert type_of(idx).element_types[0] == ComptimeInt[8]
+    comptime assert type_of(idx).element_types[1] == ComptimeInt[16]
+    assert_equal(Int(idx[2].value()), 64)
+
+
+def test_replace_first_and_last() raises:
+    var c = Coord(ComptimeInt[2](), ComptimeInt[3](), ComptimeInt[4]())
+
+    var first = c.replace[0](Int32(9))
+    assert_equal(Int(first[0].value()), 9)
+    assert_equal(Int(first[2].value()), 4)
+
+    var last = c.replace[2](Int32(9))
+    assert_equal(Int(last[0].value()), 2)
+    assert_equal(Int(last[2].value()), 9)
+
+
+def test_replace_dynamic_element() raises:
+    var c = Coord(Int64(1), Int64(2))
+    var r = c.replace[0](Int64(9))
+
+    assert_equal(Int(r[0].value()), 9)
+    assert_equal(Int(r[1].value()), 2)
+
+
+def test_replace_static_with_static() raises:
+    var c = Coord(ComptimeInt[3](), ComptimeInt[4]())
+    var r = c.replace[1](ComptimeInt[9]())
+
+    # Replacing a static with a static keeps the coord zero-sized.
+    comptime assert size_of[type_of(r)]() == 0
+    assert_equal(Int(r[1].value()), 9)
+
+
+def test_replace_rank_one() raises:
+    var c = Coord(ComptimeInt[5]())
+    var r = c.replace[0](Int64(11))
+    assert_equal(Int(r[0].value()), 11)
+
+
+def test_replace_chains_for_multiple_dims() raises:
+    var c = Coord(
+        ComptimeInt[2](), ComptimeInt[3](), ComptimeInt[4](), ComptimeInt[5]()
+    )
+    var r = c.replace[0](Int64(9)).replace[2](Int64(8))
+
+    assert_equal(Int(r[0].value()), 9)
+    assert_equal(Int(r[1].value()), 3)
+    assert_equal(Int(r[2].value()), 8)
+    assert_equal(Int(r[3].value()), 5)
+
+    # Chaining costs only the dims actually replaced.
+    comptime assert size_of[type_of(r)]() == 2 * size_of[Int64]()
+
+
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

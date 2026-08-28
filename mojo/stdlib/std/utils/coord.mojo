@@ -733,6 +733,52 @@ struct Coord[*element_types: CoordLike](
 
         return result
 
+    def replace[
+        T: CoordLike, //, at: Int
+    ](var self, value: T) -> Coord[*_CoordReplaceAt[Self.element_types, at, T]]:
+        """Replace the element at `at`, keeping the other elements' types.
+
+        A `Coord`'s element types are part of its type, so a statically known
+        element has no runtime storage to assign into. Overwriting one with a
+        runtime value therefore produces a `Coord` of a different type rather
+        than mutating in place. The untouched elements keep their static
+        values.
+
+        Parameters:
+            T: The replacement element's type.
+            at: The index of the element to replace.
+
+        Args:
+            value: The replacement element.
+
+        Returns:
+            A new `Coord` with `value` at `at`.
+
+        Examples:
+            ```mojo
+            from std.utils.coord import Coord, ComptimeInt
+            var c = Coord(ComptimeInt[3](), ComptimeInt[4](), ComptimeInt[5]())
+            var moved = c.replace[1](Int64(7))
+            # moved is Coord(ComptimeInt[3](), Int64(7), ComptimeInt[5]())
+            ```
+        """
+        comptime assert (
+            0 <= at < Self.__len__()
+        ), "`at` must be a valid element index"
+        comptime ResultTypes = _CoordReplaceAt[Self.element_types, at, T]
+        var result: Coord[*ResultTypes]
+        __mlir_op.`lit.ownership.mark_initialized`(
+            __get_mvalue_as_litref(result)
+        )
+
+        comptime for i in range(Self.__len__()):
+            comptime if i != at:
+                Pointer(to=result[i]).write(rebind[ResultTypes[i]](self[i]))
+            else:
+                Pointer(to=result[i]).write(rebind[ResultTypes[i]](value))
+
+        return result
+
     def write_to(self, mut w: Some[Writer]):
         """Write this `Coord` to a `Writer`.
 
@@ -1447,6 +1493,27 @@ comptime _IntToComptimeIntMapper[
 comptime _IntToComptimeInt[*values: Int] = values.map_to_type[
     _IntToComptimeIntMapper
 ]()
+
+
+# ===-----------------------------------------------------------------------===#
+# Single-element type replacement
+# ===-----------------------------------------------------------------------===#
+
+comptime _CoordReplaceAtTabulator[
+    element_types: TypeList[Trait=CoordLike, ...],
+    at: Int,
+    T: CoordLike,
+    idx: Int,
+]: CoordLike = T if idx == at else element_types.__getitem_param__[idx]
+"Maps index `idx` to `T` at position `at`, otherwise keeps the original"
+
+comptime _CoordReplaceAt[
+    element_types: TypeList[Trait=CoordLike, ...], at: Int, T: CoordLike
+] = TypeList.tabulate[
+    element_types.length,
+    _CoordReplaceAtTabulator[element_types, at, T, idx=_],
+]()
+"Replaces the element at `at` with `T` leaving others untouched"
 
 
 # ===-----------------------------------------------------------------------===#
