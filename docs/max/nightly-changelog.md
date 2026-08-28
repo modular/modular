@@ -1063,6 +1063,15 @@ the [container](/container) page now links to the new page.
   `@__copy_capture(x)` with an explicit capture list such as `{imm}` or
   `{var x, imm}`.
 
+- Removed the parametric capturing `layout.int_tuple.apply[func](t)`,
+  `reduce[reducer](t, initializer)`, and capturing `apply_zip[func](...)`
+  overloads. Pass the closure as a runtime value: `apply(t, func)`,
+  `reduce(t, initializer, reducer)`, and `apply_zip(t1, t2, func)` (or
+  `apply_zip(t1, t2, t3, func)`). Nested closures passed this way are
+  unified closures, so replace `@__parameter` with an explicit capture list
+  such as `{}` or `{imm}`. Thin `apply_zip[func](t1, t2)` function-pointer
+  overloads are unchanged.
+
 - `DeviceGraphBuilder.add_function[kernel](*args, ...)` takes a thin
   function pointer (`func: def(...) thin -> None`), the same identity as
   `DeviceContext.compile_function[kernel]()`. The capturing compile-and-add
