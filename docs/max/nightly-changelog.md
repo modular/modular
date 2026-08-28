@@ -929,6 +929,12 @@ the [container](/container) page now links to the new page.
   `requires_kv_head_replication`; construction sets the flag on the
   model's KV-cache config.
 
+- `ModelManifest` is now immutable from construction: mutating the mapping
+  (item assignment, `update`, `pop`, and so on) raises a `TypeError`, and
+  `ModelManifest.resolve()` is removed — a manifest is complete when built.
+  Construct it with the component configs you need. The unused
+  `total_weights_size` property is also removed.
+
 - The KV cache connector is now configured as a single object: its type moved
   onto `--kv-connector-config` as a `type` field, and the separate
   `--kv-connector` flag is removed. Replace `--kv-connector rust_tiered` with

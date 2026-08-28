@@ -165,16 +165,19 @@ def _dummy_llama_config(
 
 def _set_kv_connector(
     cfg: DummyPipelineConfig, kv_connector: KVConnectorType
-) -> None:
+) -> DummyPipelineConfig:
     kv = cfg.model.kv_cache
-    cfg.models["main"] = cfg.model.model_copy(
+    return cfg.model_copy(
         update={
-            "kv_cache": kv.model_copy(
-                update={
-                    "kv_connector_config": kv.kv_connector_config.model_copy(
-                        update={"type": kv_connector}
-                    )
-                }
+            "models": cfg.models.with_override(
+                "main",
+                kv_cache=kv.model_copy(
+                    update={
+                        "kv_connector_config": kv.kv_connector_config.model_copy(
+                            update={"type": kv_connector}
+                        )
+                    }
+                ),
             )
         }
     )
@@ -283,10 +286,14 @@ def _overcommitted_llama_config(
     reach the shrink-to-fit branch of ``plan_from_sizes``.
     """
     config = _dummy_llama_config(max_length=max_length)
-    config.models["main"] = config.model.model_copy(
-        update={"kv_cache": KVCacheConfig(device_memory_utilization=1.5)}
+    return config.model_copy(
+        update={
+            "models": config.models.with_override(
+                "main",
+                kv_cache=KVCacheConfig(device_memory_utilization=1.5),
+            )
+        }
     )
-    return config
 
 
 def test_shrink_to_fit__runs_for_resolved_default_max_length(
@@ -301,7 +308,9 @@ def test_shrink_to_fit__runs_for_resolved_default_max_length(
     # Mirror PipelineConfig._resolve_max_length: intent was captured at
     # construction (None -> not user provided); the policy value is then
     # stored on the config.
-    config.models["main"] = config.model.model_copy(update={"max_length": 4096})
+    config = config.model_copy(
+        update={"models": config.models.with_override("main", max_length=4096)}
+    )
 
     with patch(
         "max.driver.Device.stats", new_callable=PropertyMock
@@ -616,7 +625,7 @@ def test_estimate_signal_buffer_memory__default(
         max_length=1024,
         device_specs=device_specs,
     )
-    _set_kv_connector(cfg, kv_connector)
+    cfg = _set_kv_connector(cfg, kv_connector)
 
     expected = Signals.NUM_BYTES * expected_count_per_gpu * len(device_specs)
     assert cfg.estimate_signal_buffer_memory() == expected
@@ -648,7 +657,7 @@ def test_estimate_signal_buffer_memory__always_signal_buffers_mixin(
         max_length=1024,
         device_specs=device_specs,
     )
-    _set_kv_connector(cfg, kv_connector)
+    cfg = _set_kv_connector(cfg, kv_connector)
 
     arch_config = DUMMY_LLAMA_ARCH.config.initialize(
         cfg, max_seq_len=cfg.model.max_length or 4096
