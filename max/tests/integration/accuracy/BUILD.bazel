@@ -443,12 +443,32 @@ modular_py_test(
     ],
 )
 
+modular_py_library(
+    name = "llm_fuzz_constrained_stream",
+    testonly = True,
+    srcs = ["llm_fuzz/scenarios/_constrained_stream.py"],
+    imports = ["llm_fuzz"],
+    deps = [requirement("jsonschema")],
+)
+
+modular_py_test(
+    name = "test_llm_fuzz_constrained_stream",
+    size = "small",
+    srcs = ["llm_fuzz/test_constrained_stream.py"],
+    imports = ["llm_fuzz"],
+    deps = [":llm_fuzz_constrained_stream"],
+)
+
 modular_py_binary(
     name = "llm-fuzz",
     testonly = True,
     srcs = glob(
         ["llm_fuzz/**/*.py"],
-        exclude = ["llm_fuzz/.venv/**"],
+        exclude = [
+            "llm_fuzz/.venv/**",
+            "llm_fuzz/scenarios/_constrained_stream.py",
+            "llm_fuzz/test_*.py",
+        ],
     ),
     data = glob(["llm_fuzz/data/**"]),
     ignore_unresolved_imports = [
@@ -459,6 +479,7 @@ modular_py_binary(
     main = "llm_fuzz/fuzz.py",
     visibility = ["//max_private:__subpackages__"],
     deps = [
+        ":llm_fuzz_constrained_stream",
         requirement("openai"),
         requirement("jsonschema"),
         requirement("pydantic"),

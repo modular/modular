@@ -144,6 +144,8 @@ conservative defaults (4096 tokens).
 | `json_schema_compliance`           | ~100  | 100-run cache-busted guided decoding validation                                        |
 | `tool_arguments_json_stability`    | 32x   | Repeated forced tool calls, arguments must parse as JSON                               |
 | `streaming_reasoning_monotonicity` | 30x   | Reasoning/content monotonicity in streaming                                            |
+| `schema_admission_policy`          | 12    | Admission verdict (serve vs refuse) for production-shaped, unenforceable JSON schemas  |
+| `reasoning_under_constraint`       | 4     | Gemma 4-only reasoning + document conformance (run with `--model-profile gemma4`)      |
 | `zombie_horde`                     | all   | Chaos mode, all scenarios in random parallel waves                                     |
 
 ### Validation scenarios (correctness, OpenAI SDK-based)
