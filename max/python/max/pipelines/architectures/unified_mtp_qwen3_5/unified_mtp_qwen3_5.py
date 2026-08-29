@@ -98,10 +98,10 @@ class UnifiedMTPQwen3_5(Module):
         if speculative_config is not None:
             if speculative_config.use_greedy_acceptance:
                 raise ValueError(
-                    "Qwen3.5 MTP requires stochastic acceptance: the greedy"
-                    " path ignores token_bitmasks, and this checkpoint's"
-                    " lm_head padding rows are only excluded through the"
-                    " bitmask."
+                    "Qwen3.5 MTP requires stochastic acceptance: this"
+                    " checkpoint's state rollback and lm_head padding"
+                    " exclusion are only validated through the stochastic"
+                    " path."
                 )
             if speculative_config.synthetic_acceptance_rate is not None:
                 raise ValueError(
@@ -250,7 +250,9 @@ class UnifiedMTPQwen3_5(Module):
                 self.acceptance_sampler,
                 draft_tokens,
                 logits,
-                seed=seed[0],
+                # Per-row seeds: each row's sampling is keyed off its own
+                # seed, never coupled to co-residents' draws.
+                seed=seed,
                 temperature=temperature,
                 top_k=top_k,
                 max_k=max_k,

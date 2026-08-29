@@ -53,14 +53,12 @@ comptime block_scale = 128
 def _initialize_ragged_inputs[
     dtype: DType, hidden_size: Int
 ](
-    input_row_offsets_host_ptr: UnsafePointer[
-        mut=True, Scalar[DType.uint32], _
-    ],
+    input_row_offsets_host_ptr: MutPointer[UInt32, _],
     batch_size: Int,
     prompt_lens: List[Int],
     ctx: DeviceContext,
 ) raises -> Tuple[
-    DeviceBuffer[DType.uint32],
+    DeviceBuffer[.uint32],
     DeviceBuffer[dtype],
     DeviceBuffer[dtype],
     Int,  # total_length
@@ -78,7 +76,7 @@ def _initialize_ragged_inputs[
             max_seq_length_batch = curr_len
 
     input_row_offsets_host_ptr[batch_size] = UInt32(total_length)
-    var input_row_offsets_device = ctx.enqueue_create_buffer[DType.uint32](
+    var input_row_offsets_device = ctx.enqueue_create_buffer[.uint32](
         batch_size + 1
     )
     ctx.enqueue_copy(input_row_offsets_device, input_row_offsets_host_ptr)
@@ -312,7 +310,7 @@ def execute_matmul_k_cache_ragged_scale[
     )
     var input_row_offsets_tensor = LayoutTensor[
         mut=False,
-        DType.uint32,
+        .uint32,
         layout_1d,
     ](
         input_row_offsets_device,

@@ -49,16 +49,16 @@ comptime NRUN = 1
 def time_kernel[
     func: def(DeviceContext) raises capturing -> None
 ](mut m: Bench, ctx: DeviceContext, size: Int, kernel_name: String) raises:
-    @__parameter
     @always_inline
-    def bench_func(mut m: Bencher):
+    def bench_func(mut m: Bencher) {imm}:
         @always_inline
         def kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
             func(ctx)
 
         bencher_iter_custom(m, kernel_launch, ctx)
 
-    m.bench_function[bench_func](
+    m.bench_function(
+        bench_func,
         BenchId(kernel_name),
         [ThroughputMeasure(BenchMetric.elements, 2 * size)],
     )
@@ -72,9 +72,9 @@ def run_cublas[
     M: Int,
     N: Int,
     K: Int,
-    a: UnsafePointer[mut=False, Scalar[dtype], _],
-    b: UnsafePointer[mut=False, Scalar[dtype], _],
-    c: UnsafePointer[mut=True, Scalar[dtype], _],
+    a: ImmPointer[Scalar[dtype], _],
+    b: ImmPointer[Scalar[dtype], _],
+    c: MutPointer[Scalar[dtype], _],
 ) raises:
     var a_device = TileTensor(a, row_major(M, K))
     var b_device = TileTensor(b, row_major(K, N))
@@ -82,8 +82,7 @@ def run_cublas[
 
     with vendor_blas.Handle() as _handle:
 
-        @__parameter
-        def bench_func(mut m: Bencher):
+        def bench_func(mut m: Bencher) {imm}:
             @always_inline
             def kernel_launch(ctx: DeviceContext) raises {imm}:
                 vendor_blas.matmul[use_tf32=enable_tc](
@@ -104,7 +103,8 @@ def run_cublas[
             else:
                 return "cublas"
 
-        m.bench_function[bench_func](
+        m.bench_function(
+            bench_func,
             BenchId(get_bench_id()),
             [ThroughputMeasure(BenchMetric.elements, 2 * M * N * K)],
         )
@@ -220,7 +220,7 @@ def run_gemm_kernel_1[
     ctx.enqueue_memset(
         DeviceBuffer[dtype](
             ctx,
-            rebind[UnsafePointer[Scalar[dtype], MutAnyOrigin]](c.ptr),
+            rebind[MutPointer[Scalar[dtype], MutAnyOrigin]](c.ptr),
             M * N,
             owning=False,
         ),
@@ -335,7 +335,7 @@ def run_gemm_kernel_2[
     ctx.enqueue_memset(
         DeviceBuffer[dtype](
             ctx,
-            rebind[UnsafePointer[Scalar[dtype], MutAnyOrigin]](c.ptr),
+            rebind[MutPointer[Scalar[dtype], MutAnyOrigin]](c.ptr),
             M * N,
             owning=False,
         ),
@@ -403,13 +403,13 @@ def gemm_kernel_3[
         dtype,
         Layout.row_major(BM, BK),
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ].stack_allocation()
     var b_smem = LayoutTensor[
         dtype,
         Layout.row_major(BK, BN),
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ].stack_allocation()
 
     # Initialize the register to accumulate the result
@@ -486,7 +486,7 @@ def run_gemm_kernel_3[
     ctx.enqueue_memset(
         DeviceBuffer[dtype](
             ctx,
-            rebind[UnsafePointer[Scalar[dtype], MutAnyOrigin]](c.ptr),
+            rebind[MutPointer[Scalar[dtype], MutAnyOrigin]](c.ptr),
             M * N,
             owning=False,
         ),
@@ -560,18 +560,18 @@ def gemm_kernel_4[
         dtype,
         Layout.row_major(BM, BK),
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ].stack_allocation()
     var b_smem = LayoutTensor[
         dtype,
         Layout.row_major(BK, BN),
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ].stack_allocation()
 
     # Allocate a register tile to store the partial results.
     var dst_reg = LayoutTensor[
-        dtype, Layout(TM), MutAnyOrigin, address_space=AddressSpace.LOCAL
+        dtype, Layout(TM), MutAnyOrigin, address_space=.LOCAL
     ].stack_allocation()
     dst_reg.copy_from(dst)
 
@@ -654,7 +654,7 @@ def run_gemm_kernel_4[
     ctx.enqueue_memset(
         DeviceBuffer[dtype](
             ctx,
-            rebind[UnsafePointer[Scalar[dtype], MutAnyOrigin]](c.ptr),
+            rebind[MutPointer[Scalar[dtype], MutAnyOrigin]](c.ptr),
             M * N,
             owning=False,
         ),
@@ -730,27 +730,27 @@ def gemm_kernel_5[
         dtype,
         Layout.row_major(BM, BK),
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ].stack_allocation()
     var b_smem = LayoutTensor[
         dtype,
         Layout.row_major(BK, BN),
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ].stack_allocation()
 
     var dst_reg = LayoutTensor[
         dtype,
         Layout.row_major(TM, TN),
         MutAnyOrigin,
-        address_space=AddressSpace.LOCAL,
+        address_space=.LOCAL,
     ].stack_allocation()
     dst_reg.copy_from(dst)
     var a_reg = LayoutTensor[
-        dtype, Layout(TM), MutAnyOrigin, address_space=AddressSpace.LOCAL
+        dtype, Layout(TM), MutAnyOrigin, address_space=.LOCAL
     ].stack_allocation()
     var b_reg = LayoutTensor[
-        dtype, Layout(TN), MutAnyOrigin, address_space=AddressSpace.LOCAL
+        dtype, Layout(TN), MutAnyOrigin, address_space=.LOCAL
     ].stack_allocation()
 
     var ntiles = b.dim[0]() // BK
@@ -820,7 +820,7 @@ def run_gemm_kernel_5[
     ctx.enqueue_memset(
         DeviceBuffer[dtype](
             ctx,
-            rebind[UnsafePointer[Scalar[dtype], MutAnyOrigin]](c.ptr),
+            rebind[MutPointer[Scalar[dtype], MutAnyOrigin]](c.ptr),
             M * N,
             owning=False,
         ),
@@ -905,13 +905,13 @@ def gemm_kernel_6[
         dtype,
         Layout.col_major(BM, BK),
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ].stack_allocation()
     var b_smem = LayoutTensor[
         dtype,
         Layout.row_major(BK, BN),
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ].stack_allocation()
 
     # Allocate register tiles to store the partial results and operands.
@@ -919,16 +919,16 @@ def gemm_kernel_6[
         dtype,
         Layout.row_major(TM, TN),
         MutAnyOrigin,
-        address_space=AddressSpace.LOCAL,
+        address_space=.LOCAL,
     ].stack_allocation()
     var dst_reg_vec = dst_reg.vectorize[1, simd_width]()
     dst_reg_vec.copy_from(dst_vec)
 
     var a_reg = LayoutTensor[
-        dtype, Layout(TM), MutAnyOrigin, address_space=AddressSpace.LOCAL
+        dtype, Layout(TM), MutAnyOrigin, address_space=.LOCAL
     ].stack_allocation()
     var b_reg = LayoutTensor[
-        dtype, Layout(TN), MutAnyOrigin, address_space=AddressSpace.LOCAL
+        dtype, Layout(TN), MutAnyOrigin, address_space=.LOCAL
     ].stack_allocation()
 
     var ntiles = b.dim[0]() // BK
@@ -1011,7 +1011,7 @@ def run_gemm_kernel_6[
     ctx.enqueue_memset(
         DeviceBuffer[dtype](
             ctx,
-            rebind[UnsafePointer[Scalar[dtype], MutAnyOrigin]](c.ptr),
+            rebind[MutPointer[Scalar[dtype], MutAnyOrigin]](c.ptr),
             M * N,
             owning=False,
         ),
@@ -1104,13 +1104,13 @@ def matmul_kernel_tc[
         A.dtype,
         Layout.row_major(BM, BK),
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ].stack_allocation()
     var B_sram_tile = LayoutTensor[
         B.dtype,
         Layout.row_major(BK, BN),
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ].stack_allocation()
 
     # Allocate register tile for accumulating partial results
@@ -1119,7 +1119,7 @@ def matmul_kernel_tc[
             C.dtype,
             Layout.row_major(WM // MMA_M, (WN * 4) // MMA_N),
             MutAnyOrigin,
-            address_space=AddressSpace.LOCAL,
+            address_space=.LOCAL,
         ]
         .stack_allocation()
         .fill(0)
@@ -1241,7 +1241,7 @@ def run_gemm_kernel_tc[
     ctx.enqueue_memset(
         DeviceBuffer[dtype](
             ctx,
-            rebind[UnsafePointer[Scalar[dtype], MutAnyOrigin]](c.ptr),
+            rebind[MutPointer[Scalar[dtype], MutAnyOrigin]](c.ptr),
             M * N,
             owning=False,
         ),

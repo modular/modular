@@ -149,22 +149,18 @@ def load_AB[
         a_type,
         a_smem_layout,
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
     ],
     b_smem: LayoutTensorIter[
         b_type,
         b_smem_layout,
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
     ],
-    mma_mbar: UnsafePointer[
-        mut=True, SharedMemBarrier, address_space=AddressSpace.SHARED, _
-    ],
-    tma_mbar: UnsafePointer[
-        mut=True, SharedMemBarrier, address_space=AddressSpace.SHARED, _
-    ],
+    mma_mbar: MutPointer[SharedMemBarrier, address_space=.SHARED, _],
+    tma_mbar: MutPointer[SharedMemBarrier, address_space=.SHARED, _],
     producer_phase: PipelineState[num_pipeline_stages],
     peer_cta_coord: Tuple[Int, Int, Int],
     work_tile_coord: Tuple[Int, Int],
@@ -256,22 +252,18 @@ def consumer_main_loop[
         a_type,
         a_smem_layout,
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
     ],
     b_smem_iter: LayoutTensorIter[
         b_type,
         b_smem_layout,
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
     ],
-    mma_mbar: UnsafePointer[
-        mut=True, SharedMemBarrier, address_space=AddressSpace.SHARED, _
-    ],
-    tma_mbar: UnsafePointer[
-        mut=True, SharedMemBarrier, address_space=AddressSpace.SHARED, _
-    ],
+    mma_mbar: MutPointer[SharedMemBarrier, address_space=.SHARED, _],
+    tma_mbar: MutPointer[SharedMemBarrier, address_space=.SHARED, _],
     consumer_phase: PipelineState[pipeline_stages],
     mma_op: MmaOpSM100_SS[
         c_type,
@@ -315,7 +307,7 @@ def stsm_helper[
     vec_size: Int,
 ](
     vec: Array[Scalar[vec_dtype], vec_size],
-    dst: LayoutTensor[mut=True, _, _, address_space=AddressSpace.SHARED, ...],
+    dst: LayoutTensor[mut=True, _, _, address_space=.SHARED, ...],
 ):
     # Number of elements in one row per stsmx4 tile, a row is 32B.
     comptime stsmx4_row_size = 32 // size_of[dst.dtype]()
@@ -345,7 +337,7 @@ def stsm_helper[
             var casted = pair.cast[dst.dtype]()
             v[2 * k] = casted[0]
             v[2 * k + 1] = casted[1]
-        st_matrix[simd_width=4](dst.ptr + offset, bitcast[DType.float32, 4](v))
+        st_matrix[simd_width=4](dst.ptr + offset, bitcast[.float32, 4](v))
 
 
 @always_inline
@@ -371,17 +363,13 @@ def multi_stage_store_C[
         c_type,
         c_smem_layout,
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
     ],
     c_tma_op: TMATensorTile[c_type, c_tma_rank, c_tile_shape, c_desc_shape],
     accum_pipeline_consumer_state: PipelineState[num_accum_pipeline_stages],
-    accum_full_mbar: UnsafePointer[
-        mut=True, SharedMemBarrier, address_space=AddressSpace.SHARED, _
-    ],
-    accum_empty_mbar: UnsafePointer[
-        mut=True, SharedMemBarrier, address_space=AddressSpace.SHARED, _
-    ],
+    accum_full_mbar: MutPointer[SharedMemBarrier, address_space=.SHARED, _],
+    accum_empty_mbar: MutPointer[SharedMemBarrier, address_space=.SHARED, _],
     tmem_addr: UInt32,
     work_tile_coord: Tuple[Int, Int],
     elect_one_warp: Bool,
@@ -593,7 +581,7 @@ def kernel_8[
 
     var base_ptr_smem = external_memory[
         Scalar[a_type],
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
     ]()
 
@@ -610,7 +598,7 @@ def kernel_8[
     var a_smem = LayoutTensorIter[
         a_type,
         a_smem_layout,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
     ](
         a_smem_base.as_unsafe_any_origin(),
@@ -620,7 +608,7 @@ def kernel_8[
     var b_smem = LayoutTensorIter[
         b_type,
         b_smem_layout,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
     ](
         b_smem_base.as_unsafe_any_origin(),
@@ -630,7 +618,7 @@ def kernel_8[
     var c_smem_iter = LayoutTensorIter[
         c_type,
         Layout.row_major(output_tile_shape[0], output_tile_shape[1]),
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
     ](c_smem_base.as_unsafe_any_origin(), c_smem_size)
 
@@ -749,7 +737,7 @@ def kernel_8[
 
     var scheduler = TileScheduler[
         num_stages=num_clc_pipeline_stages,
-        cluster_shape=Index[dtype=DType.uint32](
+        cluster_shape=Index[dtype=.uint32](
             cluster_shape[0], cluster_shape[1], cluster_shape[2]
         ),
         block_swizzle_size=1,
@@ -1262,7 +1250,7 @@ def test_blackwell_kernel_8[
             tflops_rounded,
         )
     else:
-        comptime assert a_type != DType.float8_e4m3fn or transpose_b, (
+        comptime assert a_type != .float8_e4m3fn or transpose_b, (
             "Testing is only supported for transposed_b==True when"
             " a_type==float8_e4m3fn. Add the non-transposed case if needed."
         )
@@ -1335,8 +1323,8 @@ def benchmark_blackwell_matmul(ctx: DeviceContext) raises:
             comptime shape = get_dic_of_shapes(i, dic_of_shapes)
             try:
                 test_blackwell_kernel_8[
-                    DType.bfloat16,
-                    DType.bfloat16,
+                    .bfloat16,
+                    .bfloat16,
                     c_type,
                     block_tile_shape,
                     umma_shape,
@@ -1362,9 +1350,9 @@ def main() raises:
         comptime umma_shape = Index(256, 128, 16)
 
         test_blackwell_kernel_8[
-            DType.bfloat16,
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
+            .bfloat16,
             block_tile_shape,
             umma_shape,
             cluster_shape=StaticTuple[Int32, 3](2, 1, 1),

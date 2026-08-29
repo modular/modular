@@ -42,7 +42,6 @@ from max.pipelines.kv_cache.kv_connector import (
     CompletedTransfer,
     KVConnector,
     KVConnectorTransfer,
-    TransferDirection,
 )
 from max.pipelines.modeling.types import RequestID
 from max.profiler import traced
@@ -480,7 +479,7 @@ class BlockManager:
         self.assert_runtime_invariants(ctx)
 
         if not self.enable_prefix_caching or ctx.tokens.active_length == 1:
-            return 0, CompletedTransfer(TransferDirection.LOAD)
+            return 0, CompletedTransfer.load()
 
         # Identify a request's first admission so we record one cache-hit
         # observation per request, not one per chunked-prefill chunk.
@@ -492,7 +491,7 @@ class BlockManager:
         self.compute_hashes_for_request(ctx)
 
         # Query prefix cache for full blocks.
-        prefix_cache_blocks, load_event = (
+        prefix_cache_blocks, load_event, num_external_blocks = (
             self.get_full_blocks_from_prefix_cache(ctx)
         )
 
@@ -522,10 +521,23 @@ class BlockManager:
             )
             if is_first_admission:
                 ctx.cached_prefix_length = skip_amount
+                external_tokens = num_external_blocks * self.block_size
+                # The connector's blocks are the tail of the committed prefix,
+                # and `release_uncommitted_blocks` above re-synced
+                # `processed_length` to the committed index, so `skip_amount`
+                # covers every block just spliced in. Assert rather than clamp:
+                # a clamp would silently under-report `external` and inflate
+                # `g0` if that ever stopped holding.
+                assert external_tokens <= skip_amount, (
+                    f"external prefix {external_tokens} tokens exceeds the "
+                    f"{skip_amount} tokens skipped"
+                )
+                ctx.cached_prefix_external_length = external_tokens
             return skip_amount, load_event
 
         if is_first_admission:
             ctx.cached_prefix_length = 0
+            ctx.cached_prefix_external_length = 0
         return 0, load_event
 
     @traced
@@ -741,7 +753,7 @@ class BlockManager:
         connector = self.connector
         pool = self.device_block_pools[replica_idx]
         if not desired_hashes:
-            return [], CompletedTransfer(TransferDirection.LOAD)
+            return [], CompletedTransfer.load()
 
         # Limit by available device blocks.
         num_hashes_to_load = min(len(desired_hashes), pool.num_free_blocks)
@@ -754,21 +766,20 @@ class BlockManager:
         # Query connector for available blocks from host cache.
         block_ids = [b.bid for b in blocks]
         event = connector.load(
-            block_ids,
+            {leaf_id: block_ids for leaf_id in connector.leaves},
             desired_hashes,
             replica_idx=replica_idx,
         )
 
         # The connector may load fewer blocks than requested; its event reports
-        # the loaded device blocks in ``g0_blocks``.
-        num_loaded = len(event.g0_blocks)
+        num_loaded = len(next(iter(event.g0_blocks_per_leaf.values())))
         for surplus_block in blocks[num_loaded:]:
             pool.free_block(surplus_block)
         loaded_blocks = blocks[:num_loaded]
         loaded_hashes = list(desired_hashes[:num_loaded])
 
         if not loaded_blocks:
-            return [], CompletedTransfer(TransferDirection.LOAD)
+            return [], CompletedTransfer.load()
 
         if event.is_complete():
             # Synchronous / stream-ordered connector (dKV): the
@@ -846,16 +857,19 @@ class BlockManager:
     @traced
     def get_full_blocks_from_prefix_cache(
         self, ctx: TextContext
-    ) -> tuple[list[KVCacheBlock], KVConnectorTransfer]:
+    ) -> tuple[list[KVCacheBlock], KVConnectorTransfer, int]:
         """Gets the computed (cached) blocks for the request.
 
         Note that the computed blocks must be full.
 
         Returns:
-            ``(blocks, event)`` where ``event`` is the async onload transfer for
-            the host-tier portion, or an already-complete
+            ``(blocks, event, num_external_blocks)`` where ``event`` is the async
+            onload transfer for the host-tier portion, or an already-complete
             :class:`CompletedTransfer` when nothing was onloaded asynchronously
             (device / cross-replica hits are served synchronously).
+            ``num_external_blocks`` is how many trailing entries of ``blocks``
+            the connector served rather than the device prefix cache, for
+            per-tier hit attribution.
         """
         assert self.enable_prefix_caching
 
@@ -872,7 +886,7 @@ class BlockManager:
         )
 
         if self.connector.name == "NullConnector":
-            return device_blocks, CompletedTransfer(TransferDirection.LOAD)
+            return device_blocks, CompletedTransfer.load(), 0
 
         # remove the hashes that were found in the device prefix cache
         uncommitted_hashes = uncommitted_hashes[len(device_blocks) :]
@@ -889,7 +903,7 @@ class BlockManager:
         if hit_hashes:
             self.connector.touch(hit_hashes, replica_idx=replica_idx)
 
-        return device_blocks + host_blocks, load_event
+        return device_blocks + host_blocks, load_event, len(host_blocks)
 
     @traced
     def commit_to_prefix_cache(
@@ -969,7 +983,7 @@ class BlockManager:
                 src_blocks.append(block)
             if block_hashes:
                 event = connector.offload(
-                    block_ids,
+                    {leaf_id: block_ids for leaf_id in connector.leaves},
                     block_hashes,
                     replica_idx=replica_idx,
                 )

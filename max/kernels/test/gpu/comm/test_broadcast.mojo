@@ -111,8 +111,8 @@ def broadcast_test[
     var out_tiles = Array[OutputTileType, ngpus](uninitialized=True)
 
     # Create signal buffers for synchronization
-    var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
-    var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+    var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
+    var rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS](
         uninitialized=True
     )
     for i in range(ngpus):
@@ -138,7 +138,7 @@ def broadcast_test[
     for i in range(ngpus):
         # Create and initialize signal buffers (with payload space for 2-stage)
         signal_buffers.append(
-            list_of_ctxs[i].create_buffer_sync[DType.uint8](signal_buf_size)
+            list_of_ctxs[i].create_buffer_sync[.uint8](signal_buf_size)
         )
         init_signal_buffer(signal_buffers[i], list_of_ctxs[i])
         rank_sigs[i] = (

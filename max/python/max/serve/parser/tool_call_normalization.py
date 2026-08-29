@@ -17,6 +17,12 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from max.pipelines.lib.json_schema import (
+    SUBSCHEMA_KEYS,
+    SUBSCHEMA_LIST_KEYS,
+    SUBSCHEMA_MAP_KEYS,
+)
+
 
 def normalize_tool_call_arguments(
     tool_calls: list[dict[str, Any]],
@@ -67,18 +73,10 @@ _OBJECT_IMPLYING_KEYWORDS = frozenset(
     {"properties", "required", "additionalProperties", "patternProperties"}
 )
 
-# Keys whose values are themselves subschemas (recurse into these).
-_SUBSCHEMA_KEYS = frozenset(
-    {"items", "additionalItems", "contains", "not", "if", "then", "else"}
-)
-
-# Keys whose values map property/definition names to subschemas.
-_SUBSCHEMA_MAP_KEYS = frozenset(
-    {"properties", "patternProperties", "$defs", "definitions"}
-)
-
-# Keys whose values are lists of subschemas.
-_SUBSCHEMA_LIST_KEYS = frozenset({"allOf", "anyOf", "oneOf", "prefixItems"})
+# ``propertyNames`` holds a subschema validated against property names, which
+# are always strings. Inferring an object type inside it would reject every
+# name and make an otherwise satisfiable object schema unsatisfiable.
+_TYPE_INFERRED_SUBSCHEMA_KEYS = SUBSCHEMA_KEYS - {"propertyNames"}
 
 
 def normalize_response_format_schema(
@@ -139,7 +137,7 @@ def _normalize_subschema(node: Any) -> Any:
 
     # Recurse into nested subschemas so inner object-shaped schemas are
     # anchored too (parity with xgrammar's recursive conversion).
-    for key in _SUBSCHEMA_KEYS:
+    for key in _TYPE_INFERRED_SUBSCHEMA_KEYS:
         if key in out and isinstance(out[key], dict):
             new_child = _normalize_subschema(out[key])
             if new_child is not out[key]:
@@ -148,7 +146,7 @@ def _normalize_subschema(node: Any) -> Any:
                     changed = True
                 out[key] = new_child
 
-    for key in _SUBSCHEMA_MAP_KEYS:
+    for key in SUBSCHEMA_MAP_KEYS:
         mapping = out.get(key)
         if isinstance(mapping, dict):
             new_mapping: dict[str, Any] | None = None
@@ -164,7 +162,7 @@ def _normalize_subschema(node: Any) -> Any:
                     changed = True
                 out[key] = new_mapping
 
-    for key in _SUBSCHEMA_LIST_KEYS:
+    for key in SUBSCHEMA_LIST_KEYS:
         seq = out.get(key)
         if isinstance(seq, list):
             new_seq: list[Any] | None = None

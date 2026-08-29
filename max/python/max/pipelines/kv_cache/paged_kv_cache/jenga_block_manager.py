@@ -38,7 +38,6 @@ from max.support.math import ceildiv
 from .block_manager import (
     CompletedTransfer,
     KVConnectorTransfer,
-    TransferDirection,
     _compute_seq_len,
     compute_block_hashes,
 )
@@ -445,7 +444,7 @@ class JengaBlockManager:
             for _ in range(num_new_blocks):
                 req_blocks.append(pool.alloc_block(leaf_id))
 
-        return CompletedTransfer(direction=TransferDirection.LOAD)
+        return CompletedTransfer.load()
 
     @traced
     def alloc_dummy(self, ctx: TextContext, replica_idx: int = 0) -> None:
@@ -771,10 +770,12 @@ class JengaBlockManager:
             ctx, replica_idx
         )
 
-        # Updates cache hit metrics
+        # Updates cache hit metrics. This manager has no KV connector, so every
+        # reused token came from the device prefix cache and none is external.
         self._metrics.device_blocks_served += num_hit_blocks
         self._metrics.cache_tokens += num_hit_blocks * self._block_size
         ctx.cached_prefix_length = num_hit_blocks * self._block_size
+        ctx.cached_prefix_external_length = 0
 
         if num_hit_blocks == 0:
             return 0

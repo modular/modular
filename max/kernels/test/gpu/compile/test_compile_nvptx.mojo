@@ -50,7 +50,7 @@ def test_compile_code() raises:
 def test_compile_function() raises:
     print("== test_compile_function")
 
-    def kernel(x: UnsafePointer[Int, MutAnyOrigin]):
+    def kernel(x: MutPointer[Int, MutAnyOrigin]):
         x[0] = thread_idx.x
 
     # CHECK: tid.x
@@ -114,10 +114,8 @@ def test_compile_function_with_path_func() raises:
 def test_short_nvptx_ptr() raises:
     print("== test_short_nvptx_ptr")
 
-    def do_some_shared_mem_op(src: UnsafePointer[Int32, ImmutAnyOrigin]):
-        var a = unsafe_stack_allocation[
-            20, Int32, address_space=AddressSpace.SHARED
-        ]()
+    def do_some_shared_mem_op(src: ImmPointer[Int32, ImmutAnyOrigin]):
+        var a = unsafe_stack_allocation[20, Int32, address_space=.SHARED]()
         a[thread_idx.x] = src[0]
         barrier()
 
@@ -138,9 +136,9 @@ def test_exp2_compile() raises:
     print("== test_exp2_compile")
 
     # https://godbolt.org/z/j9ecfjjP1
-    def exp_op(output: UnsafePointer[Float32, MutAnyOrigin], max_scaled: Int32):
+    def exp_op(output: MutPointer[Float32, MutAnyOrigin], max_scaled: Int32):
         output[] = exp2(
-            output[] * 1.44269504088896340736 - max_scaled.cast[DType.float32]()
+            output[] * 1.44269504088896340736 - max_scaled.cast[.float32]()
         )
 
     # CHECK: "target-cpu"="sm_80" "target-features"="+ptx81,+sm_80" "tune-cpu"="sm_80"

@@ -260,8 +260,10 @@ static lldb::TypeSystemSP createInstance(lldb::LanguageType language,
   if (!arch.IsValid())
     return {};
 
-  return std::make_shared<MojoTypeSystem>(createContextFn.load()(), target,
-                                          arch);
+  ContextRef ctx = createContextFn.load()();
+  if (!ctx)
+    return {};
+  return std::make_shared<MojoTypeSystem>(std::move(ctx), target, arch);
 }
 
 void MojoTypeSystem::Initialize(CreateContextFn ctxFn) {

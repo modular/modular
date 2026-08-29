@@ -188,6 +188,30 @@ TEST(DeviceSpecs, SimdWidthFromFeature) {
   EXPECT_EQ(simdWidthFromFeature("avx512f"), 512u);
   EXPECT_EQ(simdWidthFromFeature("avx2"), 256u);
   EXPECT_EQ(simdWidthFromFeature("bmi1"), 128u);
+
+  // The answer is in bits whatever unit the feature spells its length in: HVX
+  // names its vector length in bytes, so "length128b" is a 1024-bit register.
+  EXPECT_EQ(simdWidthFromFeature("hvx-length128b"), 1024u);
+  EXPECT_EQ(simdWidthFromFeature("hvx-length64b"), 512u);
+  // Only the length feature carries a width; the rest of the HVX set does not.
+  EXPECT_EQ(simdWidthFromFeature("hvx"), 128u);
+  EXPECT_EQ(simdWidthFromFeature("hvxv81"), 128u);
+}
+
+// The whole-string form takes the widest enabled feature. The x86 and AArch64
+// rows pin that recognizing HVX did not move any other target, and the last row
+// pins that a disabled token cannot raise the width.
+TEST(DeviceSpecs, SimdWidthFromFeatureString) {
+  EXPECT_EQ(simdWidthFromFeatures("+sse4.2"), 128u);
+  EXPECT_EQ(simdWidthFromFeatures("+neon,+dotprod,+i8mm"), 128u);
+  EXPECT_EQ(simdWidthFromFeatures("+avx,+avx2,+bmi1"), 256u);
+  EXPECT_EQ(simdWidthFromFeatures("+avx512f,+avx2,+avx"), 512u);
+  EXPECT_EQ(simdWidthFromFeatures(
+                "+hvx,+hvx-length128b,+hvx-qfloat,+hvxv81,+v81,-long-calls"),
+            1024u);
+  EXPECT_EQ(simdWidthFromFeatures("+hvx,+hvx-ieee-fp,+hvx-length64b,+hvxv68"),
+            512u);
+  EXPECT_EQ(simdWidthFromFeatures("+avx2,-hvx-length128b"), 256u);
 }
 
 TEST(DeviceSpecs, DecodeFeaturesLastWins) {

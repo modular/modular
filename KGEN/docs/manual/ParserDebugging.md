@@ -81,8 +81,8 @@ But if you do `llvm::outs() << x.mlirType << "\n"` then it will print out
 ```python
 !kgen.generator<
   !lit.generator<[2](
-    "a": !lit.ref<@bork::@Int, imm *[0,0]> read_mem,
-    "b": !lit.ref<@bork::@Bool, imm *[0,1]> read_mem
+    "a": !lit.ref<@bork::@Int, imm *[0,0]> imm_mem,
+    "b": !lit.ref<@bork::@Bool, imm *[0,1]> imm_mem
   ) -> !kgen.none>>
 ```
 

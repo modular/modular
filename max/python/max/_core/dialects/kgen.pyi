@@ -54,9 +54,9 @@ class EmitAs(enum.Enum):
     llvm_opt_bitcode = 5
 
 class ArgConvention(enum.Enum):
-    read = 0
+    imm = 0
 
-    read_mem = 1
+    imm_mem = 1
 
     owned = 2
 
@@ -315,12 +315,6 @@ class FnMetadataAttrInterface(Protocol):
         arg3: FnEffects,
         /,
     ) -> bool: ...
-    def remap_name_to_implicit_origin_index_ref(
-        self,
-        arg0: Sequence[max._core.dialects.builtin.StringAttr],
-        arg1: max._core.dialects.builtin.TypedAttr,
-        /,
-    ) -> max._core.dialects.builtin.TypedAttr: ...
     def equals(self, arg: FnMetadataAttrInterface, /) -> bool: ...
 
 class IndexRefAttrInterface(Protocol):
@@ -801,58 +795,6 @@ class ExtensionAttr(max._core.Attribute):
     def anchor(self) -> max._core.dialects.builtin.TypedAttr: ...
     @property
     def extensions(self) -> Sequence[max._core.dialects.builtin.TypedAttr]: ...
-
-class FnGenBuilderParamDeclAttr(max._core.Attribute):
-    """
-    This is the parameter-expression dual of `#kgen.param.decl`: it is a
-    placeholder for a parameter of that is going to be built by a function
-    generator type builder.
-
-    It declare a parameter to be built with `declaredType`, the attribute itself
-    always has the type `!kgen.type`.
-    """
-
-    @overload
-    def __init__(
-        self,
-        name: max._core.dialects.builtin.StringAttr,
-        declared_type: max._core.Type,
-    ) -> None: ...
-    @overload
-    def __init__(self, name: str, declared_type: max._core.Type) -> None: ...
-    @overload
-    def __init__(
-        self,
-        name: max._core.dialects.builtin.StringAttr,
-        declared_type: max._core.Type,
-    ) -> None: ...
-    @property
-    def name(self) -> max._core.dialects.builtin.StringAttr: ...
-    @property
-    def declared_type(self) -> max._core.Type | None: ...
-
-class FnGenBuilderParamDeclRefAttr(max._core.Attribute):
-    """
-    A reference to a parameter declared by a function generator type builder in
-    the `fn_gen_builder.param.decl`.
-    """
-
-    @overload
-    def __init__(self, decl: FnGenBuilderParamDeclAttr) -> None: ...
-    @overload
-    def __init__(
-        self, name: max._core.dialects.builtin.StringAttr, type: max._core.Type
-    ) -> None: ...
-    @overload
-    def __init__(self, name: str, type: max._core.Type) -> None: ...
-    @overload
-    def __init__(
-        self, name: max._core.dialects.builtin.StringAttr, type: max._core.Type
-    ) -> None: ...
-    @property
-    def name(self) -> max._core.dialects.builtin.StringAttr: ...
-    @property
-    def type(self) -> max._core.Type | None: ...
 
 class FnMetadataAttr(max._core.Attribute):
     """
@@ -1921,6 +1863,37 @@ class PreservedAttr(max._core.Attribute):
     def __init__(self, value: max._core.Attribute) -> None: ...
     @property
     def value(self) -> max._core.Attribute | None: ...
+
+class QuoteAttr(max._core.Attribute):
+    """
+    This attribute "quote" a parameter expression, meaning that it freezes any
+    param.index.ref within the expression it quoted. This allows us to pull out
+    the parameter expression from its enclosing generator scope without creating
+    invalid binding. The major use case for this is for FnTypeGeneratorTypeBuilder,
+    which accept lists of "quoted" type expression, and assemble them into an
+    actual FnTypeGeneratorType by later "unquoting" them.
+
+    For example:
+    ```mlir
+    !fn.gen.builder<[#quote<AnyType, #type[*(0, 0)], [], NoneType>] >
+    // will be folded into
+    !kgen.generator<[AnyType, #type[*(0, 0)]() -> NoneType>
+    ```
+
+    Note that `#type[*(0, 0)]` would otherwise hold an invalid reference to (0, 0)
+    without a quote, since it is not within a parameter scope.
+    """
+
+    @overload
+    def __init__(
+        self, quoted_param: max._core.dialects.builtin.TypedAttr
+    ) -> None: ...
+    @overload
+    def __init__(
+        self, quoted_param: max._core.dialects.builtin.TypedAttr
+    ) -> None: ...
+    @property
+    def quoted_param(self) -> max._core.dialects.builtin.TypedAttr: ...
 
 class SIMDAttr(max._core.Attribute):
     """
@@ -3223,6 +3196,7 @@ class ExternGeneratorOp(max._core.Operation):
         builder: max._core.OpBuilder,
         location: Location,
         sym_name: max._core.dialects.builtin.StringAttr,
+        sym_visibility: max._core.dialects.builtin.StringAttr,
         func_type_generator: max._core.dialects.builtin.TypeAttr,
         function_type: max._core.dialects.builtin.TypeAttr,
         input_params: ParamDeclArrayAttr,
@@ -3232,6 +3206,12 @@ class ExternGeneratorOp(max._core.Operation):
     def sym_name(self) -> str: ...
     @sym_name.setter
     def sym_name(
+        self, arg: max._core.dialects.builtin.StringAttr, /
+    ) -> None: ...
+    @property
+    def sym_visibility(self) -> str | None: ...
+    @sym_visibility.setter
+    def sym_visibility(
         self, arg: max._core.dialects.builtin.StringAttr, /
     ) -> None: ...
     @property
@@ -3300,6 +3280,7 @@ class FuncOp(max._core.Operation):
         builder: max._core.OpBuilder,
         location: Location,
         sym_name: max._core.dialects.builtin.StringAttr,
+        sym_visibility: max._core.dialects.builtin.StringAttr,
         func_type_generator: max._core.dialects.builtin.TypeAttr,
         decorators: DecoratorsAttr,
         inline_level: InlineLevelAttr,
@@ -3332,6 +3313,12 @@ class FuncOp(max._core.Operation):
     def sym_name(self) -> str: ...
     @sym_name.setter
     def sym_name(
+        self, arg: max._core.dialects.builtin.StringAttr, /
+    ) -> None: ...
+    @property
+    def sym_visibility(self) -> str | None: ...
+    @sym_visibility.setter
+    def sym_visibility(
         self, arg: max._core.dialects.builtin.StringAttr, /
     ) -> None: ...
     @property
@@ -3420,6 +3407,7 @@ class GeneratorOp(max._core.Operation):
         builder: max._core.OpBuilder,
         location: Location,
         sym_name: max._core.dialects.builtin.StringAttr,
+        sym_visibility: max._core.dialects.builtin.StringAttr,
         source_name: max._core.dialects.builtin.StringAttr,
         func_type_generator: max._core.dialects.builtin.TypeAttr,
         function_type: max._core.dialects.builtin.TypeAttr,
@@ -3463,6 +3451,12 @@ class GeneratorOp(max._core.Operation):
     def sym_name(self) -> str: ...
     @sym_name.setter
     def sym_name(
+        self, arg: max._core.dialects.builtin.StringAttr, /
+    ) -> None: ...
+    @property
+    def sym_visibility(self) -> str | None: ...
+    @sym_visibility.setter
+    def sym_visibility(
         self, arg: max._core.dialects.builtin.StringAttr, /
     ) -> None: ...
     @property
@@ -3692,6 +3686,8 @@ class ParamDeclareRegionOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
+        sym_name: max._core.dialects.builtin.StringAttr,
+        sym_visibility: max._core.dialects.builtin.StringAttr,
         param_decl: ParamDeclAttr,
         source_name: max._core.dialects.builtin.StringAttr,
         func_type_generator: max._core.dialects.builtin.TypeAttr,
@@ -3702,6 +3698,18 @@ class ParamDeclareRegionOp(max._core.Operation):
         _llvm_metadata_array: max._core.dialects.builtin.ArrayAttr,
         _llvm_arg_metadata_array: max._core.dialects.builtin.ArrayAttr,
         isolated: max._core.dialects.builtin.UnitAttr,
+    ) -> None: ...
+    @property
+    def sym_name(self) -> str | None: ...
+    @sym_name.setter
+    def sym_name(
+        self, arg: max._core.dialects.builtin.StringAttr, /
+    ) -> None: ...
+    @property
+    def sym_visibility(self) -> str | None: ...
+    @sym_visibility.setter
+    def sym_visibility(
+        self, arg: max._core.dialects.builtin.StringAttr, /
     ) -> None: ...
     @property
     def param_decl(self) -> ParamDeclAttr: ...
@@ -4280,6 +4288,7 @@ class StructGeneratorOp(max._core.Operation):
         builder: max._core.OpBuilder,
         location: Location,
         sym_name: max._core.dialects.builtin.StringAttr,
+        sym_visibility: max._core.dialects.builtin.StringAttr,
         input_params: ParamDeclArrayAttr,
         value_domain_type: max._core.dialects.builtin.TypeAttr,
         meta_type: max._core.dialects.builtin.TypeAttr,
@@ -4288,6 +4297,12 @@ class StructGeneratorOp(max._core.Operation):
     def sym_name(self) -> str: ...
     @sym_name.setter
     def sym_name(
+        self, arg: max._core.dialects.builtin.StringAttr, /
+    ) -> None: ...
+    @property
+    def sym_visibility(self) -> str | None: ...
+    @sym_visibility.setter
+    def sym_visibility(
         self, arg: max._core.dialects.builtin.StringAttr, /
     ) -> None: ...
     @property
@@ -4328,6 +4343,7 @@ class StructInstanceOp(max._core.Operation):
         builder: max._core.OpBuilder,
         location: Location,
         sym_name: max._core.dialects.builtin.StringAttr,
+        sym_visibility: max._core.dialects.builtin.StringAttr,
         value_domain_type: max._core.dialects.builtin.TypeAttr,
         meta_type: max._core.dialects.builtin.TypeAttr,
     ) -> None: ...
@@ -4335,6 +4351,12 @@ class StructInstanceOp(max._core.Operation):
     def sym_name(self) -> str: ...
     @sym_name.setter
     def sym_name(
+        self, arg: max._core.dialects.builtin.StringAttr, /
+    ) -> None: ...
+    @property
+    def sym_visibility(self) -> str | None: ...
+    @sym_visibility.setter
+    def sym_visibility(
         self, arg: max._core.dialects.builtin.StringAttr, /
     ) -> None: ...
     @property
@@ -4607,12 +4629,19 @@ class WitnessOp(max._core.Operation):
         builder: max._core.OpBuilder,
         location: Location,
         sym_name: max._core.dialects.builtin.StringAttr,
+        sym_visibility: max._core.dialects.builtin.StringAttr,
         value: max._core.dialects.builtin.TypedAttr,
     ) -> None: ...
     @property
     def sym_name(self) -> str: ...
     @sym_name.setter
     def sym_name(
+        self, arg: max._core.dialects.builtin.StringAttr, /
+    ) -> None: ...
+    @property
+    def sym_visibility(self) -> str | None: ...
+    @sym_visibility.setter
+    def sym_visibility(
         self, arg: max._core.dialects.builtin.StringAttr, /
     ) -> None: ...
     @property
@@ -4751,7 +4780,6 @@ class FuncGeneratorTypeBuilderType(max._core.Type):
         arg_types: max._core.dialects.builtin.TypedAttr,
         result_type: max._core.dialects.builtin.TypedAttr,
         metadata: max._core.dialects.builtin.TypedAttr,
-        implicit_origin_decls: max._core.dialects.builtin.TypedAttr,
     ) -> None: ...
     @overload
     def __init__(
@@ -4760,7 +4788,6 @@ class FuncGeneratorTypeBuilderType(max._core.Type):
         arg_types: max._core.dialects.builtin.TypedAttr,
         result_type: max._core.dialects.builtin.TypedAttr,
         metadata: max._core.dialects.builtin.TypedAttr,
-        implicit_origin_decls: max._core.dialects.builtin.TypedAttr,
     ) -> None: ...
     @property
     def param_decls(self) -> max._core.dialects.builtin.TypedAttr: ...
@@ -4770,8 +4797,6 @@ class FuncGeneratorTypeBuilderType(max._core.Type):
     def result_type(self) -> max._core.dialects.builtin.TypedAttr: ...
     @property
     def metadata(self) -> max._core.dialects.builtin.TypedAttr: ...
-    @property
-    def implicit_origin_decls(self) -> max._core.dialects.builtin.TypedAttr: ...
 
 class FuncLiteralType(max._core.Type):
     """

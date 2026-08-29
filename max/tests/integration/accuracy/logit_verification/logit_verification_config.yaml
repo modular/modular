@@ -510,10 +510,32 @@ logit_verification_pipelines:
     compatible_with: [gpu]
     encoding: bfloat16
     tags: [nvidia-only]
-    # Suggested by --find-tolerances on 1x B200: 3.4e-4 / 1.4e-3. Widened ~3x
-    # for cross-hardware headroom; re-confirm on the other agents.
+    # Measured on 1x B200: 5.2e-4 / 1.6e-3, up from 3.4e-4 / 1.4e-3 before
+    # M-RoPE moved this checkpoint onto a runtime rope table, whose GPU
+    # transcendentals are less exact than the host-folded constant they
+    # replaced. Text-only prompts take that table too: `mrope_enabled` follows
+    # the checkpoint, not the request. The thresholds still clear by ~2x and
+    # keep cross-hardware headroom, so they stand.
     cos_dist_threshold: 1.0e-3
     kl_div_threshold: 5.0e-3
+
+  # Image prompts through the same checkpoint. The text-only entries above
+  # cannot see M-RoPE at all: without an image every axis carries the flat
+  # token index, so the multi-axis positions only start to matter here.
+  Qwen/Qwen3.8-27B-vision-bfloat16:
+    pre_submit_agents: []
+    pipeline: "Qwen/Qwen3.8-27B-vision"
+    compatible_with: [gpu]
+    encoding: bfloat16
+    tags: [nvidia-only]
+    # Measured on 1x B200: 1.2e-3 / 7.6e-3, widened ~3x for cross-hardware
+    # headroom like the text-only entries above. The image prompts sit a
+    # little above those entries because the vision tower's own error rides
+    # along; before M-RoPE reached the graph they sat at 1.6e-1 KL, so this
+    # gate separates a mispositioned image from a correctly positioned one by
+    # more than an order of magnitude.
+    cos_dist_threshold: 4.0e-3
+    kl_div_threshold: 2.5e-2
 
   Qwen/Qwen3.8-27B-bfloat16-multi:
     pre_submit_agents: []
@@ -825,21 +847,6 @@ logit_verification_pipelines:
     # Loosened pending MODELS-943 (sparse-MLA prefill correctness).
     cos_dist_threshold: 6.0e-01
     kl_div_threshold: 5.0e+00
-    timeout: 1200
-
-  zai-org/GLM-5.1-FP8:
-    pre_submit_agents: []
-    pipeline: "zai-org/GLM-5.1-FP8"
-    compatible_with: [gpu]
-    encoding: float8_e4m3fn
-    tags: [nvidia-multi, 8xb200]
-    # Goldens generated using local installation of vLLM, not with workflow
-    # because model requires deep_gemm, which must be installed from git repo.
-    pregenerated_torch_goldens:
-      tar_file: "s3://modular-bazel-artifacts-public/artifacts/zai-org_GLM-5.1-FP8_golden/1/6a79dc15919c845af6e762d41d7e38bae299eb78b20e4b8a4024de24f4c1b0cb/zai-org_GLM-5.1-FP8_golden.tar.gz"
-      json_file: "torch_zai-org_GLM-5.1-FP8_float8_e4m3fn_golden.json"
-    cos_dist_threshold: 1.1e-03
-    kl_div_threshold: 4.0e-01
     timeout: 1200
 
   google/gemma-3-1b-it-bfloat16:

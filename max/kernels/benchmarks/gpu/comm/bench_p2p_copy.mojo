@@ -87,8 +87,8 @@ def p2p_copy_kernel[
     dtype: DType,
     width: Int,
 ](
-    dst: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    src: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
+    dst: MutPointer[Scalar[dtype], MutAnyOrigin],
+    src: ImmPointer[Scalar[dtype], ImmutAnyOrigin],
     num_elements: Int32,
 ):
     var global_tid = global_idx.x
@@ -161,11 +161,10 @@ def bench_p2p[
         human_readable_size(num_bytes),
     )
 
-    @__parameter
     @always_inline
     def bench_iter(
         mut bencher: Bencher, ctx: DeviceContext, ctx_idx: Int
-    ) raises:
+    ) raises {mut buf0_write, mut buf1_write, imm}:
         @always_inline
         def call_fn(
             ctx_inner: DeviceContext, cache_iter: Int
@@ -178,8 +177,8 @@ def bench_p2p[
             # Determine src/dst based on direction and which GPU we are.
             # Push: each GPU reads local, writes remote.
             # Pull: each GPU reads remote, writes local.
-            var dst: UnsafePointer[Scalar[dtype], MutAnyOrigin]
-            var src: UnsafePointer[Scalar[dtype], ImmutAnyOrigin]
+            var dst: MutPointer[Scalar[dtype], MutAnyOrigin]
+            var src: ImmPointer[Scalar[dtype], ImmutAnyOrigin]
 
             comptime if is_bidir:
                 comptime if is_push:
@@ -214,8 +213,9 @@ def bench_p2p[
 
         bencher_iter_custom(bencher, call_fn, ctx)
 
-    bench_multicontext[bench_iter](
+    bench_multicontext(
         b,
+        bench_iter,
         ctxs,
         BenchId(name),
         [ThroughputMeasure(BenchMetric.bytes, num_bytes)],
@@ -358,7 +358,7 @@ def _verify[
 
 def main() raises:
     var num_bytes = arg_parse("num_bytes", 64 * 1024 * 1024)
-    comptime dtype = get_defined_dtype["dtype", DType.bfloat16]()
+    comptime dtype = get_defined_dtype["dtype", .bfloat16]()
     comptime simd_width = (
         simd_width_of[dtype, target=get_gpu_target()]() if store_width
         == 0 else store_width

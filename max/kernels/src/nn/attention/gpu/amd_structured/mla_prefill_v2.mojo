@@ -455,7 +455,7 @@ struct MlaPrefillV2[config: MlaConfigV2]:
             the DRAM path at the call site.
         """
         comptime assert (
-            Self.config.dtype == DType.float8_e4m3fn
+            Self.config.dtype == .float8_e4m3fn
         ), "MlaPrefillV2._load_q_lds_exact: FP8 e4m3 only"
 
         comptime _BK = Self._MmaOp.MMA_K
@@ -501,7 +501,7 @@ struct MlaPrefillV2[config: MlaConfigV2]:
                     UnsafePointer[
                         Scalar[Self.config.dtype],
                         MutAnyOrigin,
-                        address_space=AddressSpace.SHARED,
+                        address_space=.SHARED,
                     ]
                 ](q_slot.tile[1, Self.D_QK](r, 0).ptr)
             )
@@ -561,7 +561,7 @@ struct MlaPrefillV2[config: MlaConfigV2]:
             comptime for h in range(_H):
                 comptime for w in range(_W):
                     q_v[h, w, 0] = (
-                        q_v[h, w, 0].cast[DType.float32]() * scale_log2e
+                        q_v[h, w, 0].cast[.float32]() * scale_log2e
                     ).cast[Self.config.dtype]()
 
         return q_reg
@@ -579,7 +579,7 @@ struct MlaPrefillV2[config: MlaConfigV2]:
         mut q_reg: RegTile[
             Self.config.dtype, Self._Q_LAYOUT_MLA_T, MutUntrackedOrigin
         ],
-        mut o_reg: RegTile[DType.float32, Self._O_LAYOUT_T, MutUntrackedOrigin],
+        mut o_reg: RegTile[.float32, Self._O_LAYOUT_T, MutUntrackedOrigin],
         mut softmax: OnlineSoftmax[Self._SOFTMAX_DTYPE],
         mask_functor: mask_t,
         mut att_block: RegTile[
@@ -1681,10 +1681,10 @@ struct MlaPrefillV2[config: MlaConfigV2]:
 
         comptime _o_view_layout = Self._MmaOp.O_T_LAYOUT
         var o_normalized_view = TileTensor[
-            DType.float32,
+            .float32,
             type_of(_o_view_layout),
             MutUntrackedOrigin,
-            address_space=AddressSpace.LOCAL,
+            address_space=.LOCAL,
         ](o_reg.ptr, _o_view_layout)
         var epilogue_writer = RegTileEpilogue[out_dtype, 1](o_warp_2d)
         # int32 clamp: `seq_len`/`block_tile_idx`/`w_id` originate as Int32
@@ -1785,15 +1785,11 @@ struct MlaPrefillV2[config: MlaConfigV2]:
         scale: Float32,
         num_keys_dev: Int32,
         start_pos_dev: Int32,
-        work_indptr_ptr: UnsafePointer[
-            Scalar[DType.int32], ImmutAnyOrigin
-        ] = UnsafePointer[
-            Scalar[DType.int32], ImmutAnyOrigin
+        work_indptr_ptr: UnsafePointer[Int32, ImmutAnyOrigin] = UnsafePointer[
+            Int32, ImmutAnyOrigin
         ].unsafe_dangling(),
-        work_info_ptr: UnsafePointer[
-            Scalar[DType.int32], ImmutAnyOrigin
-        ] = UnsafePointer[
-            Scalar[DType.int32], ImmutAnyOrigin
+        work_info_ptr: UnsafePointer[Int32, ImmutAnyOrigin] = UnsafePointer[
+            Int32, ImmutAnyOrigin
         ].unsafe_dangling(),
         num_works_dev: Int32 = 0,
     ):
@@ -2012,7 +2008,7 @@ struct MlaPrefillV2[config: MlaConfigV2]:
 
             # ---- Per-work-item register state ----------------------------
             # The reference footprint: Q(24) + att(64 FP32) + o_reg(64 FP32).
-            var o_reg = reg_alloc[DType.float32](Self._MmaOp.O_LAYOUT)
+            var o_reg = reg_alloc[.float32](Self._MmaOp.O_LAYOUT)
             var softmax = OnlineSoftmax[Self._SOFTMAX_DTYPE]()
             _ = o_reg.fill(0)
             var att_block = reg_alloc[Self._SOFTMAX_DTYPE](
@@ -2135,9 +2131,7 @@ struct MlaPrefillV2[config: MlaConfigV2]:
         output_ptr: UnsafePointer[Scalar[output_dtype], MutAnyOrigin],
         mask_functor: mask_t,
         scale: Float32,
-        input_row_offsets_ptr: UnsafePointer[
-            Scalar[DType.uint32], ImmutAnyOrigin
-        ],
+        input_row_offsets_ptr: UnsafePointer[UInt32, ImmutAnyOrigin],
     ):
         """Ragged-batch GPU kernel entry. Per-sequence setup mirrors
         `MlaPrefillV2Core.ragged_kernel` (self-attention; `num_keys =
@@ -2242,7 +2236,7 @@ def mla_prefill_v2_ragged[
     output_ptr: UnsafePointer[Scalar[output_dtype], MutAnyOrigin],
     mask_functor: mask_t,
     scale: Float32,
-    input_row_offsets_ptr: UnsafePointer[Scalar[DType.uint32], ImmutAnyOrigin],
+    input_row_offsets_ptr: UnsafePointer[UInt32, ImmutAnyOrigin],
     max_prompt_len: Int,
     batch_size: Int,
     ctx: DeviceContext,

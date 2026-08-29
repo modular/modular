@@ -90,35 +90,29 @@ static ErrorOrSuccess populateContainsPtrPayload(Attribute value,
 }
 
 template <typename Payload>
-ErrorOrSuccess interpretIfContainsPtr(const Payload &payload,
-                                      InterpreterState &state) {
-  if (payload.containsPtr) {
-    SmallVector<Attribute> attributes;
-    attributes.push_back(payload.value);
-    if (ErrorOrSuccess err = state.internalizeMemory(attributes); err.isError())
-      return err.takeError();
-    state.mapResults(attributes.front());
-  } else {
-    state.mapResults(payload.value);
-  }
-  return success();
+ErrorTreeOrSuccess interpretIfContainsPtr(const Payload &payload,
+                                          InterpreterState &state,
+                                          Location loc) {
+  if (!payload.containsPtr)
+    return state.mapResults(payload.value);
+  SmallVector<Attribute> attributes;
+  attributes.push_back(payload.value);
+  if (ErrorOrSuccess err = state.internalizeMemory(attributes); err.isError())
+    return ErrorTree(loc, err.takeError());
+  return state.mapResults(attributes.front());
 }
 
 template <typename Payload>
-ErrorOrSuccess
-parametricInterpretIfContainsPtr(const Payload &payload,
-                                 ParametricInterpreterState &state) {
+ErrorTreeOrSuccess parametricInterpretIfContainsPtr(
+    const Payload &payload, ParametricInterpreterState &state, Location loc) {
   Attribute attr = state.getReboundAttribute(payload.value);
-  if (payload.containsPtr) {
-    SmallVector<Attribute> attributes;
-    attributes.push_back(payload.value);
-    if (ErrorOrSuccess err = state.internalizeMemory(attributes); err.isError())
-      return err.takeError();
-    state.mapResults(attributes.front());
-  } else {
-    state.mapResults(attr);
-  }
-  return success();
+  if (!payload.containsPtr)
+    return state.mapResults(attr);
+  SmallVector<Attribute> attributes;
+  attributes.push_back(payload.value);
+  if (ErrorOrSuccess err = state.internalizeMemory(attributes); err.isError())
+    return ErrorTree(loc, err.takeError());
+  return state.mapResults(attributes.front());
 }
 
 //===----------------------------------------------------------------------===//
@@ -145,20 +139,14 @@ ParamConstantOp::parametric_compile(Payload &payload, TargetInfoAttr target,
 ErrorTreeOrSuccess ParamConstantOp::interpret(ArrayRef<Attribute> operands,
                                               const Payload &payload,
                                               InterpreterState &state) {
-  if (ErrorOrSuccess err = interpretIfContainsPtr(payload, state);
-      err.isError())
-    return ErrorTree(getLoc(), err.takeError());
-  return success();
+  return interpretIfContainsPtr(payload, state, getLoc());
 }
 
 ErrorTreeOrSuccess
 ParamConstantOp::parametric_interpret(ArrayRef<Attribute> operands,
                                       const Payload &payload,
                                       ParametricInterpreterState &state) {
-  if (ErrorOrSuccess err = parametricInterpretIfContainsPtr(payload, state);
-      err.isError())
-    return ErrorTree(getLoc(), err.takeError());
-  return success();
+  return parametricInterpretIfContainsPtr(payload, state, getLoc());
 }
 
 //===----------------------------------------------------------------------===//
@@ -223,10 +211,7 @@ ParamMaterializeOp::parametric_compile(Payload &payload, TargetInfoAttr target,
 ErrorTreeOrSuccess ParamMaterializeOp::interpret(ArrayRef<Attribute> operands,
                                                  const Payload &payload,
                                                  InterpreterState &state) {
-  if (ErrorOrSuccess err = interpretIfContainsPtr(payload, state);
-      err.isError())
-    return ErrorTree(getLoc(), err.takeError());
-  return success();
+  return interpretIfContainsPtr(payload, state, getLoc());
 }
 
 ErrorTreeOrSuccess
@@ -234,10 +219,7 @@ ParamMaterializeOp::parametric_interpret(ArrayRef<Attribute> operands,
                                          const Payload &payload,
                                          ParametricInterpreterState &state) {
 
-  if (ErrorOrSuccess err = parametricInterpretIfContainsPtr(payload, state);
-      err.isError())
-    return ErrorTree(getLoc(), err.takeError());
-  return success();
+  return parametricInterpretIfContainsPtr(payload, state, getLoc());
 }
 
 //===----------------------------------------------------------------------===//
@@ -277,8 +259,7 @@ RebindOp::parametric_interpret(ArrayRef<Attribute> operands,
   Type type = state.getReboundType(getType());
   if (TypedAttr attr = llvm::dyn_cast_if_present<TypedAttr>(operands.front())) {
     if (attr.getType() == type) {
-      state.mapResults(attr);
-      return success();
+      return state.mapResults(attr);
     }
   }
 
@@ -387,7 +368,7 @@ ParamForOp::parametric_interpret(ArrayRef<Attribute> operands,
     ArrayRef<Attribute> arguments =
         firstIteration ? operands : iter->second.operands;
     state.currOpSideEffectState().erase(this->getOperation());
-    state.transferControlFlowTo(this->getOperation(), arguments);
+    (void)state.transferControlFlowTo(this->getOperation(), arguments);
 
   } else {
     state.overwriteDeclBinding(getParamDecl(), iterator);
@@ -424,7 +405,7 @@ ParamForOp::parametric_interpret(ArrayRef<Attribute> operands,
 
     state.pushParamValues({iterator}, false, this->getOperation());
     state.pushEvalFrame(getOperation(), &getBody(), {}, 5);
-    state.transferControlFlowTo(getBody(), arguments);
+    return state.transferControlFlowTo(getBody(), arguments);
   }
 
   return success();
@@ -445,8 +426,7 @@ ParamForBreakOp::parametric_interpret(ArrayRef<Attribute> operands,
   auto parent = this->getOperation()->getParentOfType<ParamForOp>();
   state.popEvalFrame();
   state.popParamValues(false, this->getOperation(), parent);
-  state.transferControlFlowTo(parent, operands);
-  return success();
+  return state.transferControlFlowTo(parent, operands);
 }
 
 //===----------------------------------------------------------------------===//
@@ -464,7 +444,7 @@ ParamForContinueOp::parametric_interpret(ArrayRef<Attribute> operands,
   if (auto parent = this->getOperation()->getParentOfType<KGEN::ParamForOp>()) {
     state.popEvalFrame();
     state.popParamValues(false, this->getOperation(), parent);
-    state.transferControlFlowToParent(parent, operands);
+    (void)state.transferControlFlowToParent(parent, operands);
     auto iter = state.currOpSideEffectState().find(parent.getOperation());
     assert(iter != state.currOpSideEffectState().end() &&
            "kgen.param.for.continue has broken state");
@@ -586,8 +566,7 @@ ParamIfOp::parametric_interpret(ArrayRef<Attribute> operands,
     Region &target = getRegion(regionId);
     state.pushParamValues({}, false);
     state.pushEvalFrame(getOperation(), &target, {}, 6);
-    state.transferControlFlowTo(target, {});
-    return success();
+    return state.transferControlFlowTo(target, {});
   }
 
   return ErrorTree(getLoc(), "wrong param if condition");
@@ -607,8 +586,7 @@ ParamYieldOp::parametric_interpret(ArrayRef<Attribute> operands,
                                    ParametricInterpreterState &state) {
   state.popEvalFrame();
   state.popParamValues(false, this->getOperation());
-  state.transferControlFlowTo((*this)->getParentOp(), operands);
-  return success();
+  return state.transferControlFlowTo((*this)->getParentOp(), operands);
 }
 
 //===----------------------------------------------------------------------===//
@@ -764,8 +742,7 @@ ErrorTreeOrSuccess CreateClosureOp::interpret(ArrayRef<Attribute> operands,
   if (!operands.empty())
     return ErrorTree(getLoc(), "TODO: cannot form a closure at compile time");
 
-  state.mapResults(getCallee());
-  return success();
+  return state.mapResults(getCallee());
 }
 
 ErrorTreeOrSuccess
@@ -775,8 +752,7 @@ CreateClosureOp::parametric_interpret(ArrayRef<Attribute> operands,
   if (!operands.empty())
     return ErrorTree(getLoc(), "TODO: cannot form a closure at compile time");
 
-  state.mapResults(state.getReboundAttribute(getCallee()));
-  return success();
+  return state.mapResults(state.getReboundAttribute(getCallee()));
 }
 
 //===----------------------------------------------------------------------===//
@@ -863,14 +839,14 @@ ErrorTreeOrSuccess CostOfOp::interpret(ArrayRef<Attribute> operands,
     return builder.getIndexAttr(compute[static_cast<int>(kind)]);
   };
 
-  state.mapResults({builder.getIndexAttr(loads), builder.getIndexAttr(stores),
-                    getComputeOpsAttr(ComputeKind::Addition),
-                    getComputeOpsAttr(ComputeKind::Comparison),
-                    getComputeOpsAttr(ComputeKind::Division),
-                    getComputeOpsAttr(ComputeKind::Multiplication),
-                    getComputeOpsAttr(ComputeKind::MultiplyAdd),
-                    getComputeOpsAttr(ComputeKind::Other)});
-  return success();
+  return state.mapResults({builder.getIndexAttr(loads),
+                           builder.getIndexAttr(stores),
+                           getComputeOpsAttr(ComputeKind::Addition),
+                           getComputeOpsAttr(ComputeKind::Comparison),
+                           getComputeOpsAttr(ComputeKind::Division),
+                           getComputeOpsAttr(ComputeKind::Multiplication),
+                           getComputeOpsAttr(ComputeKind::MultiplyAdd),
+                           getComputeOpsAttr(ComputeKind::Other)});
 }
 
 ErrorTreeOrSuccess
@@ -894,14 +870,14 @@ CostOfOp::parametric_interpret(ArrayRef<Attribute> operands,
     return builder.getIndexAttr(compute[static_cast<int>(kind)]);
   };
 
-  state.mapResults({builder.getIndexAttr(loads), builder.getIndexAttr(stores),
-                    getComputeOpsAttr(ComputeKind::Addition),
-                    getComputeOpsAttr(ComputeKind::Comparison),
-                    getComputeOpsAttr(ComputeKind::Division),
-                    getComputeOpsAttr(ComputeKind::Multiplication),
-                    getComputeOpsAttr(ComputeKind::MultiplyAdd),
-                    getComputeOpsAttr(ComputeKind::Other)});
-  return success();
+  return state.mapResults({builder.getIndexAttr(loads),
+                           builder.getIndexAttr(stores),
+                           getComputeOpsAttr(ComputeKind::Addition),
+                           getComputeOpsAttr(ComputeKind::Comparison),
+                           getComputeOpsAttr(ComputeKind::Division),
+                           getComputeOpsAttr(ComputeKind::Multiplication),
+                           getComputeOpsAttr(ComputeKind::MultiplyAdd),
+                           getComputeOpsAttr(ComputeKind::Other)});
 }
 
 //===----------------------------------------------------------------------===//
@@ -912,15 +888,13 @@ ErrorTreeOrSuccess
 IsRunInComptimeInterpreterOp::interpret(ArrayRef<Attribute> operands,
                                         InterpreterState &state) {
   // Always return true during interpreting time.
-  state.mapResults(SIMDAttr::getScalarBool(getContext(), true));
-  return success();
+  return state.mapResults(SIMDAttr::getScalarBool(getContext(), true));
 }
 
 ErrorTreeOrSuccess IsRunInComptimeInterpreterOp::parametric_interpret(
     ArrayRef<Attribute> operands, ParametricInterpreterState &state) {
   // Always return true during interpreting time.
-  state.mapResults(SIMDAttr::getScalarBool(getContext(), true));
-  return success();
+  return state.mapResults(SIMDAttr::getScalarBool(getContext(), true));
 }
 
 //===----------------------------------------------------------------------===//
@@ -1006,8 +980,7 @@ ErrorTreeOrSuccess SourceLocOp::interpret(ArrayRef<Attribute> operands,
   SmallVector<Attribute> results;
   (void)sourceLocOpHelper(inlineCountIntAttr.getInt(), getContext(), getLoc(),
                           &state, results);
-  state.mapResults(results);
-  return success();
+  return state.mapResults(results);
 }
 
 ErrorTreeOrSuccess
@@ -1023,8 +996,7 @@ SourceLocOp::parametric_interpret(ArrayRef<Attribute> operands,
   SmallVector<Attribute> results;
   (void)sourceLocOpHelper(inlineCountIntAttr.getInt(), getContext(), getLoc(),
                           &state, results);
-  state.mapResults(results);
-  return success();
+  return state.mapResults(results);
 }
 
 //===----------------------------------------------------------------------===//
@@ -1033,15 +1005,13 @@ SourceLocOp::parametric_interpret(ArrayRef<Attribute> operands,
 
 ErrorTreeOrSuccess ReturnOp::interpret(ArrayRef<Attribute> operands,
                                        InterpreterState &state) {
-  state.returnFromFunction(operands);
-  return success();
+  return state.returnFromFunction(operands);
 }
 
 ErrorTreeOrSuccess
 ReturnOp::parametric_interpret(ArrayRef<Attribute> operands,
                                ParametricInterpreterState &state) {
-  state.returnFromFunction(operands);
-  return success();
+  return state.returnFromFunction(operands);
 }
 
 //===----------------------------------------------------------------------===//
@@ -1074,8 +1044,7 @@ VariantCreateOp::parametric_interpret(ArrayRef<Attribute> operands,
     auto type = state.getReboundType(cast<TypedAttr>(operands[0]).getType());
     auto resultType = cast<VariantType>(state.getReboundType(getType()));
     if (type == value.getType()) {
-      state.mapResults(VariantAttr::get(value, getIndex(), resultType));
-      return success();
+      return state.mapResults(VariantAttr::get(value, getIndex(), resultType));
     }
   }
 
@@ -1131,8 +1100,7 @@ VariantGetOp::parametric_interpret(ArrayRef<Attribute> operands,
     //// If the variant value type is not equal to the result type, this is
     //// undefined behaviour.
     // if (variant.getValue().getType() != state.getReboundType(getType()))
-    state.mapResults(variant.getValue());
-    return success();
+    return state.mapResults(variant.getValue());
   }
   return ErrorTree(getLoc(), "input ill formed");
 }
@@ -1199,8 +1167,7 @@ StructCreateOp::parametric_interpret(ArrayRef<Attribute> operands,
                                      ParametricInterpreterState &state) {
   if (StructAttr cst = foldStructCreateConstant(
           cast<StructType>(state.getReboundType(getType())), operands)) {
-    state.mapResults(cst);
-    return success();
+    return state.mapResults(cst);
   }
 
   return ErrorTree(getLoc(), "can't interpret POP::StructCreateOp");
@@ -1251,8 +1218,7 @@ StructExtractOp::parametric_interpret(ArrayRef<Attribute> operands,
                                    " elements");
 
   auto result = StructExtractAttr::get(structValue, idx);
-  state.mapResults(result);
-  return success();
+  return state.mapResults(result);
 }
 
 //===----------------------------------------------------------------------===//
@@ -1283,9 +1249,8 @@ StructReplaceOp::parametric_interpret(ArrayRef<Attribute> operands,
     return ErrorTree(getLoc(), "input ill formed");
   SmallVector<TypedAttr> values(container.getValues());
   values[getIndexAttr().getInt()] = value;
-  state.mapResults(StructAttr::get(
+  return state.mapResults(StructAttr::get(
       values, cast<StructType>(state.getReboundType(getType()))));
-  return success();
 }
 
 //===----------------------------------------------------------------------===//
@@ -1347,8 +1312,7 @@ ErrorTreeOrSuccess StructGEPOp::interpret(ArrayRef<Attribute> operands,
   if (!targetAlign)
     return ErrorTree(getLoc(), kStructTargetAlignError);
   offset = llvm::alignTo(offset, *targetAlign);
-  state.mapResults(PointerAttr::get(ptr.getAddr() + offset, getType()));
-  return success();
+  return state.mapResults(PointerAttr::get(ptr.getAddr() + offset, getType()));
 }
 
 ErrorTreeOrSuccess
@@ -1391,9 +1355,8 @@ StructGEPOp::parametric_interpret(ArrayRef<Attribute> operands,
   if (!targetAlign)
     return ErrorTree(getLoc(), kStructTargetAlignError);
   offset = llvm::alignTo(offset, *targetAlign);
-  state.mapResults(PointerAttr::get(ptr.getAddr() + offset,
-                                    state.getReboundType(getType())));
-  return success();
+  return state.mapResults(PointerAttr::get(ptr.getAddr() + offset,
+                                           state.getReboundType(getType())));
 }
 
 //===----------------------------------------------------------------------===//
@@ -1416,8 +1379,7 @@ ErrorTreeOrSuccess StructLoadIndirectOp::interpret(ArrayRef<Attribute> operands,
         return ErrorTree(getLoc(), result.takeError());
       values.push_back(cast<TypedAttr>(result.takeValue()));
     }
-    state.mapResults(StructAttr::get(values, getType()));
-    return success();
+    return state.mapResults(StructAttr::get(values, getType()));
   }
   return ErrorTree(getLoc(), "non-constant inputs");
 }
@@ -1441,8 +1403,7 @@ StructLoadIndirectOp::parametric_interpret(ArrayRef<Attribute> operands,
         return ErrorTree(getLoc(), result.takeError());
       values.push_back(cast<TypedAttr>(result.takeValue()));
     }
-    state.mapResults(StructAttr::get(values, structType));
-    return success();
+    return state.mapResults(StructAttr::get(values, structType));
   }
   return ErrorTree(getLoc(), "non-constant inputs");
 }

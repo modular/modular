@@ -15,6 +15,7 @@ from max.graph.weights import WeightsFormat
 from max.pipelines.context import TextContext
 from max.pipelines.lib import SupportedArchitecture, TextTokenizer
 from max.pipelines.modeling.types import PipelineTask
+from max.pipelines.speculative._dflash import dflash_draft_width
 
 from ..llama3 import weight_adapters as llama3_weight_adapters
 from .batch_processor import UnifiedDflashLlama3BatchProcessor
@@ -40,4 +41,5 @@ unified_dflash_llama3_arch = SupportedArchitecture(
     config=UnifiedDflashLlama3Config,
     supports_device_graph_capture=False,
     batching=UnifiedDflashLlama3BatchProcessor,
+    checkpoint_draft_width=dflash_draft_width,
 )

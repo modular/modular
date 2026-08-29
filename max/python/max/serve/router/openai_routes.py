@@ -36,11 +36,12 @@ from typing import (
     overload,
 )
 
+import numpy as np
+import numpy.typing as npt
 import opentelemetry.trace as otel_trace
 from fastapi import APIRouter, FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, Response
 from jinja2.exceptions import UndefinedError
-from llguidance import LLMatcher
 from max.pipelines.context import (
     GenerationStatus,
     SamplingParams,
@@ -48,10 +49,8 @@ from max.pipelines.context import (
     TextGenerationResponseFormat,
 )
 from max.pipelines.context.exceptions import InputError
+from max.pipelines.context.outputs import GenerationOutput
 from max.pipelines.lib import PipelineConfig
-from max.pipelines.lib.pipeline_variants.structured_output_backend import (
-    GrammarValidator,
-)
 from max.pipelines.lib.tool_parsing import create as create_tool_parser
 from max.pipelines.lib.tool_parsing import (
     maybe_name_from_tool,
@@ -62,8 +61,11 @@ from max.pipelines.lora import LoRAOperation, LoRARequest, LoRAStatus
 from max.pipelines.modeling.types import (
     ImageContentPart,
     MessageContent,
+    OpenResponsesRequest,
     ParsedToolCallDelta,
     ParsedToolResponse,
+    PipelineOutput,
+    PipelineTask,
     PipelineTokenizer,
     RequestID,
     TextContentPart,
@@ -73,8 +75,11 @@ from max.pipelines.modeling.types import (
     TextGenerationRequestTool,
     VideoContentPart,
 )
+from max.pipelines.request import OpenResponsesRequestBody
+from max.pipelines.request.open_responses import OutputAudioContent
 from max.profiler import Tracer, traced
 from max.serve.config import Settings
+from max.serve.media import WAV_MEDIA_TYPE, encode_wav_bytes
 from max.serve.parser import (
     LlamaToolParser,
     ToolParser,
@@ -89,6 +94,7 @@ from max.serve.parser.tool_call_validation import (
     check_response_format_conformance,
     check_tool_call_conformance,
 )
+from max.serve.pipelines.general_handler import GeneralPipelineHandler
 from max.serve.pipelines.llm import (
     TokenGeneratorOutput,
     TokenGeneratorPipeline,
@@ -119,6 +125,7 @@ from max.serve.schemas.openai import (
     CreateCompletionResponse,
     CreateEmbeddingRequest,
     CreateEmbeddingResponse,
+    CreateSpeechRequest,
     Embedding,
     Error,
     ErrorResponse,
@@ -159,6 +166,40 @@ from sse_starlette.sse import EventSourceResponse
 from starlette.datastructures import State
 
 _T = TypeVar("_T")
+
+
+async def _start_stream(
+    stream: AsyncGenerator[_T, None],
+) -> tuple[JSONResponse | None, AsyncGenerator[_T, None]]:
+    """Resolves the first chunk before the caller starts the SSE response.
+
+    A request rejected after admission (an uncompilable grammar) is reported
+    by the generator yielding a ``JSONResponse``, which the caller can return
+    as the HTTP status instead of emitting inside an already-200 stream.
+
+    Returns that error response, if the stream opened with one, and a stream
+    that replays the chunk this consumed.
+    """
+    iterator = stream.__aiter__()
+    try:
+        first = await iterator.__anext__()
+    except StopAsyncIteration:
+
+        async def empty() -> AsyncGenerator[_T, None]:
+            return
+            yield  # unreachable; makes this an async generator
+
+        return None, empty()
+
+    async def chained() -> AsyncGenerator[_T, None]:
+        yield first
+        async for item in iterator:
+            yield item
+
+    if isinstance(first, JSONResponse):
+        return first, chained()
+    return None, chained()
+
 
 router = APIRouter(prefix="/v1")
 logger = logging.getLogger("max.serve")
@@ -406,6 +447,38 @@ def get_pipeline(request: Request, model_name: str) -> TokenGeneratorPipeline:
     return pipeline
 
 
+def _get_audio_handler(
+    request: Request, model_name: str
+) -> GeneralPipelineHandler:
+    """Returns the handler serving audio generation, or refuses the request.
+
+    The audio routes share ``app.state.handler`` with the OpenResponses API,
+    which every task populates -- so the served task, not the handler's
+    presence, is what says whether this endpoint means anything here.
+
+    Raises:
+        HTTPException: 404 if the served model is not an audio model.
+        ValueError: If ``model_name`` names a model this server is not serving.
+    """
+    app_state: State = request.app.state
+    if getattr(app_state, "task", None) != PipelineTask.AUDIO_GENERATION:
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                "This server is not serving an audio generation model, so "
+                "/v1/audio/speech is unavailable."
+            ),
+        )
+
+    handler: GeneralPipelineHandler = app_state.handler
+    if model_name and model_name != handler.model_name:
+        raise ValueError(
+            f"Unknown model '{model_name}', currently serving "
+            f"'{handler.model_name}'."
+        )
+    return handler
+
+
 def _content_before_tool_call_marker(parser: ToolParser, response: str) -> str:
     """Truncates ``response`` at the parser's first structural tool-call marker.
 
@@ -632,6 +705,9 @@ class OpenAIChatResponseGenerator(
 
         _first_batch_id: int | None = None
         _last_batch_id: int | None = None
+        # Until a payload is emitted the response is not yet a 200, so a
+        # failure can still be answered with a real HTTP status.
+        emitted = False
 
         try:
             async for chunk in token_generator:
@@ -896,6 +972,7 @@ class OpenAIChatResponseGenerator(
                     # null on every chunk, so a client reading the first
                     # tool_calls-bearing delta sees null instead of the real
                     # tool-call fragment.
+                    emitted = True
                     yield response.model_dump_json(exclude_none=True)
 
             # TODO: (MODELS-1117) determine whether to break out reasoning tokens into a separate metric
@@ -943,12 +1020,12 @@ class OpenAIChatResponseGenerator(
                     usage=final_usage,
                     service_tier=None,
                 )
+                emitted = True
                 yield final_response.model_dump_json()
 
+            emitted = True
             yield "[DONE]"
         except Exception as e:
-            # Note that for SSE, the server will have already responded with a
-            # 200 when establishing the connection.
             if isinstance(e, InputError):
                 status_code = 400
                 logger.warning(
@@ -968,7 +1045,13 @@ class OpenAIChatResponseGenerator(
                     code=str(status_code), message=str(e), param="", type=""
                 )
             )
-            yield error_response.model_dump_json()
+            if emitted:
+                yield error_response.model_dump_json()
+            else:
+                yield JSONResponse(
+                    status_code=status_code,
+                    content=error_response.model_dump(),
+                )
         finally:
             request_span.set_attribute(
                 "gen_ai.usage.output_tokens", n_reasoning_tokens + n_tokens
@@ -1934,13 +2017,9 @@ async def openai_create_chat_completion(
                 completion_request.tools, valid_tool_name_re
             )
 
-        # Off the event loop: validation compiles the schema, which can take
-        # seconds and would freeze in-flight streaming responses.
-        response_format = await asyncio.to_thread(
-            _create_response_format,
+        response_format = _create_response_format(
             completion_request.response_format,
             enable_response_format_schema=pipeline_config.sampling.enable_structured_output,
-            grammar_validator=request.app.state.grammar_validator,
         )
         # Keep the user's schema for the observability-only conformance check
         # of the final content: a combined tools+response_format request
@@ -2024,24 +2103,6 @@ async def openai_create_chat_completion(
                     tools_forced,
                     enforce_from_start,
                 )
-
-        # Admission-time validation. Rejects a tool-call grammar the active
-        # backend cannot compile with an InputError (HTTP 400) here.
-        grammar_validator = request.app.state.grammar_validator
-        if (
-            grammar_validator is not None
-            and response_format is not None
-            and response_format.type == "grammar"
-            and response_format.grammar is not None
-        ):
-            try:
-                await asyncio.to_thread(
-                    grammar_validator.check_tool_grammar,
-                    response_format.grammar,
-                )
-            except InputError:
-                METRICS.structured_output_grammar_rejection("tool_grammar")
-                raise
 
         stream_options = None
         if completion_request.stream:
@@ -2171,10 +2232,13 @@ async def openai_create_chat_completion(
         )
 
         if completion_request.stream:
-            # Await the submit so a failed handoff surfaces as an HTTP error
-            # before the SSE headers are sent, rather than as an error chunk
-            # inside an already-200 stream.
-            token_stream = await response_generator.stream(token_request)
+            # Resolve the submit and first chunk before the SSE headers go
+            # out, so a failed handoff is an HTTP error.
+            error, token_stream = await _start_stream(
+                await response_generator.stream(token_request)
+            )
+            if error is not None:
+                return error
             # We set a large timeout for ping otherwise benchmarking scripts
             # such as sglang will fail in parsing the ping message.
             return EventSourceResponse(token_stream, ping=100000, sep="\n")
@@ -2267,36 +2331,9 @@ def _validate_tool_function_name(
         )
 
 
-def _validate_json_schema(json_schema: dict[str, Any]) -> None:
-    """Validate that a JSON schema can be compiled to a grammar.
-
-    This catches invalid schemas (recursive $ref, unsupported constructs)
-    early in the HTTP request handler, returning a 400 error instead of
-    crashing the model worker process later during constrained decoding.
-
-    Raises:
-        InputError: If a grammar cannot be created from the JSON schema.
-    """
-    if not json_schema:
-        return
-
-    try:
-        grammar = LLMatcher.grammar_from_json_schema(json_schema)
-    except Exception as e:
-        raise InputError(
-            f"Failed to create a grammar from the JSON schema: {e}"
-        ) from e
-    error = LLMatcher.validate_grammar(grammar)
-    if error:
-        raise InputError(
-            f"Invalid grammar created from the JSON schema: {error}"
-        )
-
-
 def _create_response_format(
     response_format: ResponseFormat | None,
     enable_response_format_schema: bool,
-    grammar_validator: GrammarValidator | None = None,
 ) -> TextGenerationResponseFormat | None:
     """Convert OpenAI response format to TextGenerationResponseFormat.
 
@@ -2352,18 +2389,7 @@ def _create_response_format(
     # to ``max_length`` (the runaway-output incident).
     json_schema = normalize_response_format_schema(json_schema)
 
-    # Validate against the active backend, which compiles the schema and checks
-    # grammar validity (rejecting what the worker can't compile with an InputError).
-    # Fall back to the backend-agnostic check when there is no validator.
-    if json_schema:
-        if grammar_validator is not None:
-            try:
-                grammar_validator.check_json_schema(json.dumps(json_schema))
-            except InputError:
-                METRICS.structured_output_grammar_rejection("json_schema")
-                raise
-        else:
-            _validate_json_schema(json_schema)
+    # Not compiled here: the model worker owns the single compile.
 
     # A json_schema/json_object response_format ALWAYS requests enforcement,
     # even when the schema is an explicit ``{}`` / boolean ``true`` ("any valid
@@ -2468,6 +2494,189 @@ async def openai_create_embeddings(
         raise HTTPException(
             status_code=500, detail="Internal server error."
         ) from e
+
+
+def _speech_as_open_responses_request(
+    speech_request: CreateSpeechRequest, request_id: str
+) -> OpenResponsesRequest:
+    """Restates a speech request in the form audio tokenizers take.
+
+    Every audio checkpoint owns its prompt contract through
+    ``AudioGenerationTokenizer``, which reads an
+    :class:`OpenResponsesRequest`. Translating here rather than tokenizing in
+    the route keeps one path to a context, so this endpoint and
+    ``/v1/responses`` cannot disagree about what a prompt is.
+
+    Args:
+        speech_request: The validated request.
+        request_id: Id to carry through to the worker.
+
+    Returns:
+        The equivalent OpenResponses request.
+    """
+    body = OpenResponsesRequestBody.model_validate(
+        {
+            "model": speech_request.model,
+            # ``instructions`` describes the audio; ``input`` is the text the
+            # audio renders, which a singing model takes as lyrics.
+            "input": speech_request.instructions or "",
+            "seed": speech_request.seed,
+            "provider_options": {
+                "audio": {
+                    "lyrics": speech_request.input,
+                    "audio_duration": speech_request.audio_duration,
+                    "steps": speech_request.steps,
+                    "guidance_scale": speech_request.guidance_scale,
+                    "audio_format": "wav",
+                }
+            },
+        }
+    )
+    return OpenResponsesRequest(
+        request_id=RequestID(value=request_id), body=body
+    )
+
+
+def _validate_speech_request(speech_request: CreateSpeechRequest) -> None:
+    """Rejects a speech request this server cannot answer as asked.
+
+    Answering an unsupported option by ignoring it is worse than refusing it:
+    a client that asked for mp3 and got WAV bytes under an ``audio/wav``
+    header has no way to notice.
+
+    Raises:
+        ValueError: On a request that asks for something unsupported.
+    """
+    if speech_request.response_format not in (None, "wav"):
+        raise ValueError(
+            f"response_format '{speech_request.response_format}' is not "
+            "supported; this server returns WAV. Omit the field or pass 'wav'."
+        )
+    if speech_request.stream_format == "sse":
+        raise ValueError(
+            "Streaming is not supported for audio generation: the model "
+            "produces a whole waveform in one pass."
+        )
+    if speech_request.speed is not None and speech_request.speed != 1.0:
+        raise ValueError(
+            "'speed' is not supported; ask for a duration with "
+            "'audio_duration' instead."
+        )
+    if not speech_request.instructions:
+        raise ValueError(
+            "'instructions' must describe the audio to generate (style, "
+            "instrumentation, mood). A generative audio model has no default "
+            "voice to fall back on."
+        )
+
+
+def _waveform_from_output(
+    output: GenerationOutput,
+) -> tuple[npt.NDArray[np.float32], int]:
+    """Pulls the raw waveform and its rate out of a generation's output.
+
+    Returns:
+        The ``[channels, samples]`` waveform and its sample rate.
+
+    Raises:
+        ValueError: If the pipeline returned something other than one piece of
+            raw audio, which means the served model is not an audio model.
+    """
+    audio = [c for c in output.output if isinstance(c, OutputAudioContent)]
+    if len(audio) != 1:
+        raise ValueError(
+            f"Expected one audio output from the model, got {len(audio)}."
+        )
+    content = audio[0]
+    if content.samples is None or content.sample_rate is None:
+        raise ValueError(
+            "The model returned audio without raw samples, which this "
+            "endpoint needs in order to encode a WAV."
+        )
+    return content.samples, content.sample_rate
+
+
+@router.post("/audio/speech", response_model=None)
+async def openai_create_speech(request: Request) -> Response:
+    """Generates audio from text, returning a WAV body.
+
+    OpenAI's speech endpoint is a plain request/response with binary output,
+    which is also how a generative audio model works: one pass, one waveform,
+    no streaming.
+    """
+    request_id = request.state.request_id
+    request_trace_ctx.set(otel_propagate.extract(request.headers))
+
+    # Request parsing and validation (client fault -> 400).
+    try:
+        speech_request = CreateSpeechRequest.model_validate_json(
+            await request.body()
+        )
+        _validate_speech_request(speech_request)
+        handler = _get_audio_handler(request, speech_request.model)
+        logger.debug(
+            "Processing path, %s, req-id, %s, for model, %s.",
+            request.url.path,
+            request_id,
+            speech_request.model,
+        )
+        open_responses_request = _speech_as_open_responses_request(
+            speech_request, request_id
+        )
+    except JSONDecodeError as e:
+        logger.warning("JSONDecodeError in request %s: %s", request_id, e)
+        raise HTTPException(status_code=400, detail="Missing JSON.") from e
+    except ValidationError as e:
+        logger.warning(
+            "Request validation error in request %s: %s", request_id, e
+        )
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except InputError as e:
+        logger.warning(
+            "Input validation error in request %s: %s", request_id, str(e)
+        )
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except ValueError as e:
+        logger.warning("Value error in request %s: %s", request_id, str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+    # Generation (server fault -> 500), except for the input errors a
+    # checkpoint's own tokenizer raises when it reads the assembled prompt.
+    try:
+        final_output: PipelineOutput | None = None
+        async for chunk in handler.next(open_responses_request):
+            final_output = chunk
+            if chunk.is_done:
+                break
+        if not isinstance(final_output, GenerationOutput):
+            raise ValueError(
+                "Expected generated audio from the model, got "
+                f"{type(final_output).__name__}."
+            )
+        samples, sample_rate = _waveform_from_output(final_output)
+        payload = encode_wav_bytes(samples, sample_rate)
+    except InputError as e:
+        logger.warning(
+            "Input validation error in request %s: %s", request_id, str(e)
+        )
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except RequestQueueFull:
+        # Admission was rejected (full worker queue); the central handler maps
+        # this to HTTP 429 rather than the generic 500 below.
+        raise
+    except Exception as e:
+        logger.exception(
+            "Exception during response generation in request %s", request_id
+        )
+        raise HTTPException(
+            status_code=500, detail="Internal server error."
+        ) from e
+
+    return Response(
+        content=payload,
+        media_type=WAV_MEDIA_TYPE,
+        headers={"Content-Disposition": 'attachment; filename="speech.wav"'},
+    )
 
 
 class CompletionResponseStreamChoice(BaseModel):
@@ -3092,10 +3301,13 @@ async def openai_create_completion(
                 raise NotImplementedError(
                     "Streaming responses for multiple prompts is not supported"
                 )
-            # Await the submit so a failed handoff surfaces as an HTTP error
-            # before the SSE headers are sent, rather than as an error chunk
-            # inside an already-200 stream.
-            token_stream = await response_generator.stream(token_requests[0])
+            # Resolve the submit and first chunk before the SSE headers go
+            # out, so a failed handoff is an HTTP error.
+            error, token_stream = await _start_stream(
+                await response_generator.stream(token_requests[0])
+            )
+            if error is not None:
+                return error
             # We set a large timeout for ping otherwise benchmarking scripts
             # such as sglang will fail in parsing the ping message.
             return EventSourceResponse(
@@ -3147,6 +3359,10 @@ def _resolve_max_model_len(request: Request) -> int | None:
 
     Returns the smallest length the tokenizer and model can handle, so clients
     can avoid overflowing the model's context.
+
+    A multi-component checkpoint (diffusion, audio) has no main model to ask
+    and no single context length to report either, so its memory plan carries
+    no planned length and this reports none.
     """
     memory_plan = request.app.state.memory_plan
     max_model_len = (

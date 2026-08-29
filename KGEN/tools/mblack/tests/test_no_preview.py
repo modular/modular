@@ -86,11 +86,11 @@ def test_keyword_spacing():
     """Argument convention keywords format correctly without preview."""
     source = (
         "struct Foo:\n"
-        "    def __init__(out self, mut v:Int, read x:Int): pass\n"
+        "    def __init__(out self, mut v:Int, imm x:Int): pass\n"
     )
     expected = (
         "struct Foo:\n"
-        "    def __init__(out self, mut v: Int, read x: Int):\n"
+        "    def __init__(out self, mut v: Int, imm x: Int):\n"
         "        pass\n"
     )
     assert_mojo_format(source, expected, mode=MOJO_MODE_NO_PREVIEW)

@@ -62,18 +62,19 @@ def _rope_split_store_ragged_impl[
     freq_dtype: DType,
     cache_t: KVCacheT,
     q_out_dtype: DType,
+    FuncType: ImplicitlyCopyable & RegisterPassable & def(Int, Int, Int) -> Int,
     //,
     *,
     target: StaticString,
     interleaved: Bool = True,
-    get_freq_pos: def(Int, Int, Int) capturing -> Int,
 ](
     qkv: TileTensor[mut=False, dtype, ...],
-    input_row_offsets: TileTensor[mut=False, DType.uint32, ...],
+    input_row_offsets: TileTensor[mut=False, .uint32, ...],
     freqs_cis: TileTensor[mut=False, freq_dtype, ...],
     k_cache: cache_t,
     v_cache: OptionalReg[cache_t],
     q_output: TileTensor[mut=True, q_out_dtype, ...],
+    get_freq_pos: FuncType,
     context: Optional[DeviceContext],
 ) raises:
     """Read flat QKV buffer, apply RoPE to Q and K, store K/V to cache.
@@ -83,6 +84,11 @@ def _rope_split_store_ragged_impl[
     coefficients. Callers swap in different closures to get
     cache-derived positions vs. explicit position-ID lookups.
 
+    Parameters:
+        FuncType: Type of the ``get_freq_pos`` callback.
+        target: Compile target backend, for example ``"gpu"`` or ``"cpu"``.
+        interleaved: Whether RoPE uses the interleaved real/imag layout.
+
     Args:
         qkv: Flat matmul output [total_seq_len, q_dim + k_dim + v_dim].
         input_row_offsets: [batch_size + 1] ragged offsets.
@@ -90,6 +96,8 @@ def _rope_split_store_ragged_impl[
         k_cache: Key cache to store roped K.
         v_cache: Value cache to store V.
         q_output: Output buffer for roped Q [total_seq_len, q_dim].
+        get_freq_pos: Maps ``(dim_idx, global_token_idx, cache_pos)`` to
+            the ``freqs_cis`` row used for RoPE coefficients.
         context: DeviceContext for GPU.
     """
     comptime kv_params = cache_t.kv_params
@@ -124,27 +132,23 @@ def _rope_split_store_ragged_impl[
     var combined_dim = Int(qkv.dim[1]())
     var qk_offset = q_dim + k_dim
 
-    # TODO: This elementwise body captures KV cache views (`CacheType`), which
-    # fail codegen when stored into a unified closure ('pop.store' pointer
-    # element-type verification). Keep using the deprecated parameter-closure
-    # overload until cache captures in unified closures are supported.
-    @__parameter
-    @__copy_capture(
-        q_dim,
-        qk_offset,
-        combined_dim,
-        batch_size,
-        freqs_ptr,
-        freqs_stride0,
-        qkv_ptr,
-        q_out_ptr,
-        k_cache,
-        v_cache,
-        input_row_offsets,
-    )
     def rope_split_store_fn[
-        simd_width: Int, alignment: Int = 1
-    ](idx_arg: Coord):
+        width: Int, alignment: Int = 1
+    ](idx_arg: Coord) {
+        var q_dim,
+        var qk_offset,
+        var combined_dim,
+        var batch_size,
+        var freqs_ptr,
+        var freqs_stride0,
+        var qkv_ptr,
+        var q_out_ptr,
+        var k_cache,
+        var v_cache,
+        var input_row_offsets,
+        var get_freq_pos,
+    }:
+        comptime simd_width = width
         comptime assert idx_arg.rank == 2
         var idx = rebind[IndexList[2]](coord_to_index_list(idx_arg))
         var global_token_idx = idx[0]
@@ -357,11 +361,9 @@ def _rope_split_store_ragged_impl[
     ), "head_size must be divisible by simd_width"
 
     var device_ctx = context.value() if context else DeviceContext(api="cpu")
-    elementwise[
-        func=rope_split_store_fn,
-        simd_width=kernel_simd_width,
-        target=target,
-    ](launch_shape, device_ctx)
+    elementwise[simd_width=kernel_simd_width, target=target](
+        rope_split_store_fn, launch_shape, device_ctx
+    )
 
 
 # ===-----------------------------------------------------------------------===#
@@ -386,7 +388,7 @@ def _rope_split_store_ragged[
     interleaved: Bool = True,
 ](
     qkv: TileTensor[mut=False, dtype, ...],
-    input_row_offsets: TileTensor[mut=False, DType.uint32, ...],
+    input_row_offsets: TileTensor[mut=False, .uint32, ...],
     freqs_cis: TileTensor[mut=False, freq_dtype, ...],
     k_cache: cache_t,
     v_cache: OptionalReg[cache_t],
@@ -405,7 +407,6 @@ def _rope_split_store_ragged[
         context: DeviceContext for GPU.
     """
 
-    @__parameter
     def get_freq_pos(
         dim_idx: Int, global_token_idx: Int, cache_pos: Int
     ) -> Int:
@@ -414,7 +415,6 @@ def _rope_split_store_ragged[
     return _rope_split_store_ragged_impl[
         target=target,
         interleaved=interleaved,
-        get_freq_pos=get_freq_pos,
     ](
         qkv,
         input_row_offsets,
@@ -422,6 +422,7 @@ def _rope_split_store_ragged[
         k_cache,
         v_cache,
         q_output,
+        get_freq_pos,
         context,
     )
 
@@ -435,7 +436,7 @@ def rope_split_store_paged_ragged[
     interleaved: Bool = True,
 ](
     qkv: TileTensor[mut=False, dtype, ...],
-    input_row_offsets: TileTensor[mut=False, DType.uint32, ...],
+    input_row_offsets: TileTensor[mut=False, .uint32, ...],
     freqs_cis: TileTensor[mut=False, freq_dtype, ...],
     kv_collection: PagedKVCacheCollection,
     layer_idx: UInt32,
@@ -497,6 +498,7 @@ def _rope_split_store_ragged_with_position_ids[
     dtype: DType,
     freq_dtype: DType,
     cache_t: KVCacheT,
+    q_out_dtype: DType = dtype,
     //,
     *,
     target: StaticString,
@@ -510,14 +512,12 @@ def _rope_split_store_ragged_with_position_ids[
     ],
 ](
     qkv: TileTensor[mut=False, dtype, ...],
-    input_row_offsets: TileTensor[mut=False, DType.uint32, ...],
+    input_row_offsets: TileTensor[mut=False, .uint32, ...],
     freqs_cis: TileTensor[mut=False, freq_dtype, ...],
     k_cache: cache_t,
     v_cache: OptionalReg[cache_t],
-    position_ids: TileTensor[
-        mut=False, DType.uint32, PositionIdsLayoutType, ...
-    ],
-    q_output: TileTensor[mut=True, dtype, ...],
+    position_ids: TileTensor[mut=False, .uint32, PositionIdsLayoutType, ...],
+    q_output: TileTensor[mut=True, q_out_dtype, ...],
     context: Optional[DeviceContext],
 ) raises:
     """Read flat QKV buffer, apply rope (with explicit position IDs) to Q and K,
@@ -557,11 +557,9 @@ def _rope_split_store_ragged_with_position_ids[
     var pos_ids_ptr = position_ids.ptr
     var pos_ids_stride = Int(position_ids.dim[1]())
 
-    @__parameter
-    @__copy_capture(pos_ids_ptr, pos_ids_stride)
     def get_freq_pos(
         dim_idx: Int, global_token_idx: Int, cache_pos: Int
-    ) -> Int:
+    ) {var pos_ids_ptr, var pos_ids_stride} -> Int:
         comptime if mrope_section:
             var section_idx = 0
             comptime for i in range(len(mrope_section.value())):
@@ -578,7 +576,6 @@ def _rope_split_store_ragged_with_position_ids[
     return _rope_split_store_ragged_impl[
         target=target,
         interleaved=interleaved,
-        get_freq_pos=get_freq_pos,
     ](
         qkv,
         input_row_offsets,
@@ -586,6 +583,7 @@ def _rope_split_store_ragged_with_position_ids[
         k_cache,
         v_cache,
         q_output,
+        get_freq_pos,
         context,
     )
 
@@ -594,6 +592,7 @@ def _rope_split_store_ragged_with_position_ids[
 def rope_split_store_paged_ragged_with_position_ids[
     dtype: DType,
     freq_dtype: DType,
+    q_out_dtype: DType = dtype,
     target: StaticString = "cpu",
     interleaved: Bool = True,
     mrope_types: TypeList[Trait=CoordLike, ...] = TypeList.of[
@@ -605,14 +604,12 @@ def rope_split_store_paged_ragged_with_position_ids[
     ],
 ](
     qkv: TileTensor[mut=False, dtype, ...],
-    input_row_offsets: TileTensor[mut=False, DType.uint32, ...],
+    input_row_offsets: TileTensor[mut=False, .uint32, ...],
     freqs_cis: TileTensor[mut=False, freq_dtype, ...],
     kv_collection: PagedKVCacheCollection,
-    position_ids: TileTensor[
-        mut=False, DType.uint32, PositionIdsLayoutType, ...
-    ],
+    position_ids: TileTensor[mut=False, .uint32, PositionIdsLayoutType, ...],
     layer_idx: UInt32,
-    q_output: TileTensor[mut=True, dtype, ...],
+    q_output: TileTensor[mut=True, q_out_dtype, ...],
     ctx: DeviceContext,
 ) raises:
     """Rope+split+store with paged KV cache and explicit position IDs.
@@ -621,6 +618,9 @@ def rope_split_store_paged_ragged_with_position_ids[
         dtype: Element type of the QKV input buffer.
         freq_dtype: Element type of the ``freqs_cis`` RoPE frequency
             table.
+        q_out_dtype: Element type of the roped Q output. Defaults to
+            ``dtype``; an FP8 KV cache sets it to the cache dtype so
+            flash attention sees a Q matching its cache.
         target: Compile target backend, for example ``"gpu"`` or
             ``"cpu"`` (defaults to ``"cpu"``).
         interleaved: Whether RoPE uses the interleaved real/imag layout

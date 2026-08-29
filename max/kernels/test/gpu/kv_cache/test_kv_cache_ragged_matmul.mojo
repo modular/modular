@@ -58,14 +58,12 @@ comptime llama_num_q_heads = 32
 def _initialize_ragged_inputs[
     dtype: DType, hidden_size: Int
 ](
-    input_row_offsets_host_ptr: UnsafePointer[
-        mut=True, Scalar[DType.uint32], _
-    ],
+    input_row_offsets_host_ptr: MutPointer[UInt32, _],
     batch_size: Int,
     prompt_lens: List[Int],
     ctx: DeviceContext,
 ) raises -> Tuple[
-    DeviceBuffer[DType.uint32],
+    DeviceBuffer[.uint32],
     DeviceBuffer[dtype],
     DeviceBuffer[dtype],
     Int,  # total_length
@@ -83,7 +81,7 @@ def _initialize_ragged_inputs[
             max_seq_length_batch = curr_len
 
     input_row_offsets_host_ptr[batch_size] = UInt32(total_length)
-    var input_row_offsets_device = ctx.enqueue_create_buffer[DType.uint32](
+    var input_row_offsets_device = ctx.enqueue_create_buffer[.uint32](
         batch_size + 1
     )
     ctx.enqueue_copy(input_row_offsets_device, input_row_offsets_host_ptr)
@@ -190,7 +188,7 @@ def execute_matmul_kv_cache_ragged[
     )
 
     # Initialize input row offsets and hidden states.
-    var input_row_offsets_host_ptr = alloc[Scalar[DType.uint32]](batch_size + 1)
+    var input_row_offsets_host_ptr = alloc[UInt32](batch_size + 1)
     var init_result = _initialize_ragged_inputs[dtype, hidden_size](
         input_row_offsets_host_ptr, batch_size, prompt_lens, ctx
     )
@@ -233,7 +231,7 @@ def execute_matmul_kv_cache_ragged[
     var ref_output_device = ctx.enqueue_create_buffer[dtype](ref_output_size)
 
     # Initialize our KVCache.
-    var cache_lengths = ManagedLayoutTensor[DType.uint32, layout_1d](
+    var cache_lengths = ManagedLayoutTensor[.uint32, layout_1d](
         RuntimeLayout[layout_1d].row_major(IndexList[1](batch_size)),
         ctx,
     )
@@ -266,7 +264,7 @@ def execute_matmul_kv_cache_ragged[
         ctx,
     )
 
-    var lookup_table = ManagedLayoutTensor[DType.uint32, layout_1d](
+    var lookup_table = ManagedLayoutTensor[.uint32, layout_1d](
         RuntimeLayout[layout_1d].row_major(IndexList[1](batch_size)),
         ctx,
     )
@@ -284,11 +282,11 @@ def execute_matmul_kv_cache_ragged[
 
     var kv_collection_device = CollectionType(
         kv_block.device_tensor(),
-        LayoutTensor[DType.uint32, layout_1d, ImmutAnyOrigin](
+        LayoutTensor[.uint32, layout_1d, ImmutAnyOrigin](
             cache_lengths.device_tensor().ptr,
             cache_lengths.device_tensor().runtime_layout,
         ),
-        LayoutTensor[DType.uint32, layout_1d, ImmutAnyOrigin](
+        LayoutTensor[.uint32, layout_1d, ImmutAnyOrigin](
             lookup_table.device_tensor().ptr,
             lookup_table.device_tensor().runtime_layout,
         ),
@@ -301,11 +299,11 @@ def execute_matmul_kv_cache_ragged[
 
     var kv_collection_host = CollectionType(
         kv_block.tensor(),
-        LayoutTensor[DType.uint32, layout_1d, ImmutAnyOrigin](
+        LayoutTensor[.uint32, layout_1d, ImmutAnyOrigin](
             cache_lengths.tensor().ptr,
             cache_lengths.tensor().runtime_layout,
         ),
-        LayoutTensor[DType.uint32, layout_1d, ImmutAnyOrigin](
+        LayoutTensor[.uint32, layout_1d, ImmutAnyOrigin](
             lookup_table.tensor().ptr,
             lookup_table.tensor().runtime_layout,
         ),
@@ -324,9 +322,7 @@ def execute_matmul_kv_cache_ragged[
             IndexList[2](total_length, hidden_size)
         ),
     )
-    var input_row_offsets_tensor = LayoutTensor[
-        mut=False, DType.uint32, layout_1d
-    ](
+    var input_row_offsets_tensor = LayoutTensor[mut=False, .uint32, layout_1d](
         input_row_offsets_device,
         RuntimeLayout[layout_1d].row_major(IndexList[1](batch_size + 1)),
     )
@@ -500,7 +496,7 @@ def execute_matmul_k_cache_ragged[
     var k_cache_host = kv_collection_host.get_key_cache(layer_idx)
 
     # Initialize input row offsets and hidden states.
-    var input_row_offsets_host_ptr = alloc[Scalar[DType.uint32]](batch_size + 1)
+    var input_row_offsets_host_ptr = alloc[UInt32](batch_size + 1)
     var init_result = _initialize_ragged_inputs[dtype, hidden_size](
         input_row_offsets_host_ptr, batch_size, prompt_lens, ctx
     )
@@ -543,7 +539,7 @@ def execute_matmul_k_cache_ragged[
         ),
     )
     var input_row_offsets_tensor = LayoutTensor[
-        mut=False, DType.uint32, layout_1d, ImmutAnyOrigin
+        mut=False, .uint32, layout_1d, ImmutAnyOrigin
     ](
         input_row_offsets_device,
         RuntimeLayout[layout_1d].row_major(IndexList[1](batch_size + 1)),
@@ -784,7 +780,7 @@ def generic_execute_fused_qkv_cache_ragged[
     )
 
     # Initialize input row offsets and hidden states.
-    var input_row_offsets_host_ptr = alloc[Scalar[DType.uint32]](batch_size + 1)
+    var input_row_offsets_host_ptr = alloc[UInt32](batch_size + 1)
     var init_result = _initialize_ragged_inputs[dtype, hidden_size](
         input_row_offsets_host_ptr, batch_size, prompt_lens, ctx
     )
@@ -825,9 +821,7 @@ def generic_execute_fused_qkv_cache_ragged[
             IndexList[2](total_length, hidden_size)
         ),
     )
-    var input_row_offsets_tensor = LayoutTensor[
-        mut=False, DType.uint32, layout_1d
-    ](
+    var input_row_offsets_tensor = LayoutTensor[mut=False, .uint32, layout_1d](
         input_row_offsets_device,
         RuntimeLayout[layout_1d].row_major(IndexList[1](batch_size + 1)),
     )
@@ -915,7 +909,7 @@ def execute_paged_fused_qkv_matmul[
         cache_sizes
     ), "expected prompt_lens and cache_sizes size to be equal"
 
-    var cache_lengths_host_ptr = alloc[Scalar[DType.uint32]](batch_size)
+    var cache_lengths_host_ptr = alloc[UInt32](batch_size)
 
     var kv_block_size = (
         num_paged_blocks
@@ -1031,7 +1025,7 @@ def execute_cont_batch_fused_qkv_matmul[
 
     # Initialize our KVCache
     var batch_size = len(cache_sizes)
-    var cache_lengths_host_ptr = alloc[Scalar[DType.uint32]](batch_size)
+    var cache_lengths_host_ptr = alloc[UInt32](batch_size)
     var max_seq_length_batch = -1
     var max_context_length = 0
 
@@ -1043,9 +1037,7 @@ def execute_cont_batch_fused_qkv_matmul[
         if prompt_lens[i] > max_seq_length_batch:
             max_seq_length_batch = prompt_lens[i]
 
-    var cache_lengths_device = ctx.enqueue_create_buffer[DType.uint32](
-        batch_size
-    )
+    var cache_lengths_device = ctx.enqueue_create_buffer[.uint32](batch_size)
     ctx.enqueue_copy(cache_lengths_device, cache_lengths_host_ptr)
 
     var kv_block_size = (
@@ -1067,7 +1059,7 @@ def execute_cont_batch_fused_qkv_matmul[
     var kv_block_host_ptr = alloc[Scalar[dtype]](kv_block_size)
     var kv_block_device = ctx.enqueue_create_buffer[dtype](kv_block_size)
 
-    var lookup_table_host_ptr = alloc[Scalar[DType.uint32]](batch_size)
+    var lookup_table_host_ptr = alloc[UInt32](batch_size)
 
     # Assign each batch entry a distinct block. `random_ui64` is inclusive, so
     # the original draw range `[0, num_blocks - 1]` is a population of
@@ -1076,9 +1068,7 @@ def execute_cont_batch_fused_qkv_matmul[
     for idx in range(batch_size):
         lookup_table_host_ptr[idx] = UInt32(lut_blocks[idx])
 
-    var lookup_table_device = ctx.enqueue_create_buffer[DType.uint32](
-        batch_size
-    )
+    var lookup_table_device = ctx.enqueue_create_buffer[.uint32](batch_size)
     ctx.enqueue_copy(lookup_table_device, lookup_table_host_ptr)
 
     # Create runtime layouts
@@ -1094,11 +1084,11 @@ def execute_cont_batch_fused_qkv_matmul[
             kv_block_device,
             kv_block_runtime,
         ),
-        LayoutTensor[mut=False, DType.uint32, layout_1d](
+        LayoutTensor[mut=False, .uint32, layout_1d](
             cache_lengths_device,
             cache_len_runtime,
         ),
-        LayoutTensor[mut=False, DType.uint32, layout_1d](
+        LayoutTensor[mut=False, .uint32, layout_1d](
             lookup_table_device,
             cache_len_runtime,
         ),
@@ -1114,11 +1104,11 @@ def execute_cont_batch_fused_qkv_matmul[
             kv_block_host_ptr,
             kv_block_runtime,
         ),
-        LayoutTensor[mut=False, DType.uint32, layout_1d](
+        LayoutTensor[mut=False, .uint32, layout_1d](
             cache_lengths_host_ptr,
             cache_len_runtime,
         ),
-        LayoutTensor[mut=False, DType.uint32, layout_1d](
+        LayoutTensor[mut=False, .uint32, layout_1d](
             lookup_table_host_ptr,
             cache_len_runtime,
         ),
@@ -1259,6 +1249,6 @@ def main() raises:
 
     with DeviceContext() as ctx:
         comptime if test_dtype == "all" or test_dtype == "float32":
-            execute_fused_matmul_suite[DType.float32, 1e-3](ctx)
+            execute_fused_matmul_suite[.float32, 1e-3](ctx)
         comptime if test_dtype == "all" or test_dtype == "bfloat16":
-            execute_fused_matmul_suite[DType.bfloat16, 1e-2](ctx)
+            execute_fused_matmul_suite[.bfloat16, 1e-2](ctx)

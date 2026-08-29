@@ -123,6 +123,14 @@ class Indexer(Module):
         self.head_dim: int = index_head_dim
         self.rope_head_dim: int = qk_rope_head_dim
         self.rope_interleaved: bool = rope_interleaved
+        # The rotation covers the leading half of each head, so a non-zero
+        # rope width must be exactly half of ``index_head_dim``.
+        if qk_rope_head_dim != 0 and qk_rope_head_dim * 2 != index_head_dim:
+            raise ValueError(
+                "indexer rope width must be 0 or half of index_head_dim; got"
+                f" qk_rope_head_dim={qk_rope_head_dim} with"
+                f" index_head_dim={index_head_dim}"
+            )
         self.index_topk: int = index_topk
         self.q_lora_rank: int = q_lora_rank
         self.softmax_scale = self.head_dim**-0.5
@@ -190,34 +198,33 @@ class Indexer(Module):
         # qr comes projected to lora rank and pre-normed; q_lora_rank -> self.n_heads * self.head_dim
         q = self.wq_b(qr)
         q = q.reshape((-1, self.n_heads, self.head_dim))
-        assert self.rope_head_dim == self.head_dim - self.rope_head_dim
-        q_pe, q_nope = ops.chunk(q, chunks=2, axis=-1)
-
-        q_pe = rope_ragged(
-            q_pe,
-            input_row_offsets,
-            indexer_k_collection.cache_lengths,
-            freqs_cis,
-            interleaved=self.rope_interleaved,
-        )
-        q = ops.concat([q_pe, q_nope], axis=-1)
-
-        k = self.wk(x)  # dim -> head_dim
-        k = self.k_norm(k)
-
-        assert self.rope_head_dim == self.head_dim - self.rope_head_dim
-        k_pe, k_nope = ops.chunk(k, chunks=2, axis=-1)
-        k_pe = ops.squeeze(
-            rope_ragged(
-                ops.unsqueeze(k_pe, axis=-2),
+        if self.rope_head_dim:
+            q_pe, q_nope = ops.chunk(q, chunks=2, axis=-1)
+            q_pe = rope_ragged(
+                q_pe,
                 input_row_offsets,
                 indexer_k_collection.cache_lengths,
                 freqs_cis,
                 interleaved=self.rope_interleaved,
-            ),
-            axis=-2,
-        )
-        k = ops.concat([k_pe, k_nope], axis=-1)
+            )
+            q = ops.concat([q_pe, q_nope], axis=-1)
+
+        k = self.wk(x)  # dim -> head_dim
+        k = self.k_norm(k)
+
+        if self.rope_head_dim:
+            k_pe, k_nope = ops.chunk(k, chunks=2, axis=-1)
+            k_pe = ops.squeeze(
+                rope_ragged(
+                    ops.unsqueeze(k_pe, axis=-2),
+                    input_row_offsets,
+                    indexer_k_collection.cache_lengths,
+                    freqs_cis,
+                    interleaved=self.rope_interleaved,
+                ),
+                axis=-2,
+            )
+            k = ops.concat([k_pe, k_nope], axis=-1)
 
         q_fp8, q_scale = act_quant(q, self.quant_config)
         k_fp8, k_scale = act_quant(k, self.quant_config)

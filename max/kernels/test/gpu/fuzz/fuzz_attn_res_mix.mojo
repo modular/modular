@@ -199,8 +199,8 @@ def gen_specs(n: Int) -> List[CaseSpec]:
 def _producer_kernel[
     dtype: DType
 ](
-    dst: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    src: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
+    dst: MutPointer[Scalar[dtype], MutAnyOrigin],
+    src: ImmPointer[Scalar[dtype], ImmutAnyOrigin],
     n: Int32,
 ):
     """Stand-in for the real graph's `concat`: a GPU grid that writes the exact
@@ -294,11 +294,8 @@ def _attn_res_ref[
             var sum_sq = Float64(0)
             var dot = Float64(0)
             for h in range(hidden):
-                var v = cands_h[base + h].cast[DType.float64]()
-                var sw = (
-                    proj_h[h].cast[DType.float64]()
-                    * norm_h[h].cast[DType.float64]()
-                )
+                var v = cands_h[base + h].cast[.float64]()
+                var sw = proj_h[h].cast[.float64]() * norm_h[h].cast[.float64]()
                 sum_sq += v * v
                 dot += v * sw
             scores[c] = dot / sqrt(sum_sq / Float64(hidden) + eps)
@@ -522,7 +519,7 @@ def _run_case[
             tokens,
             c_count,
             hidden,
-            eps.cast[DType.float64](),
+            eps.cast[.float64](),
         )
         if not numeric_check(
             out_h.as_span(),
@@ -559,9 +556,9 @@ def run_one_case(
     the corpus can pin.
     """
     if spec.dt == DT_F32:
-        _run_case[DType.float32](ctx, spec, check, contract, rerun)
+        _run_case[.float32](ctx, spec, check, contract, rerun)
     elif spec.dt == DT_BF16:
-        _run_case[DType.bfloat16](ctx, spec, check, contract, rerun)
+        _run_case[.bfloat16](ctx, spec, check, contract, rerun)
     else:
         raise Error(
             "attn_res_mix fuzz: unknown dtype id ",

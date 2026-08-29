@@ -262,7 +262,7 @@ def matmul[
             res.dtype,
             Layout.row_major(M, N),
             MutAnyOrigin,
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
         ].stack_allocation()
 
         comptime BK = 8

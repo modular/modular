@@ -128,7 +128,7 @@ def lut_max_pages_per_batch(num_keys: Int, page_size: Int) -> Int:
 def fill_paged_blocks_uniform[
     kv_type: DType,
 ](
-    blocks_host: UnsafePointer[mut=True, Scalar[kv_type], _],
+    blocks_host: MutPointer[Scalar[kv_type], _],
     batch_size: Int,
     num_keys: Int,
     page_size: Int,
@@ -157,7 +157,7 @@ def fill_paged_blocks_uniform[
 
     # Random bf16 → cast to kv_type.
     var blocks_bf16 = alloc[BFloat16](block_elems)
-    randn[DType.bfloat16](
+    randn[.bfloat16](
         blocks_bf16,
         block_elems,
         mean=0.0,
@@ -188,7 +188,7 @@ def fill_paged_blocks_uniform[
 
 
 def fill_uniform_lookup_table(
-    lookup_table_host: UnsafePointer[mut=True, UInt32, _],
+    lookup_table_host: MutPointer[UInt32, _],
     batch_size: Int,
     num_keys: Int,
     page_size: Int,
@@ -219,8 +219,8 @@ def fill_uniform_lookup_table(
 def extract_k_rope_for_batch[
     kv_type: DType,
 ](
-    blocks_host: UnsafePointer[Scalar[kv_type], MutAnyOrigin],
-    out_host: UnsafePointer[Scalar[kv_type], MutAnyOrigin],
+    blocks_host: MutPointer[Scalar[kv_type], MutAnyOrigin],
+    out_host: MutPointer[Scalar[kv_type], MutAnyOrigin],
     batch_idx: Int,
     num_keys: Int,
     page_size: Int,
@@ -443,13 +443,11 @@ def run_test_paged_prefill[
     var k_device_buf = ctx.enqueue_create_buffer[qkv_type](k_size)
     var v_device_buf = ctx.enqueue_create_buffer[qkv_type](v_size)
     var output_device_buf = ctx.enqueue_create_buffer[output_type](o_size)
-    var input_ro_buf = ctx.enqueue_create_buffer[DType.uint32](batch_size + 1)
-    var cache_ro_buf = ctx.enqueue_create_buffer[DType.uint32](batch_size + 1)
+    var input_ro_buf = ctx.enqueue_create_buffer[.uint32](batch_size + 1)
+    var cache_ro_buf = ctx.enqueue_create_buffer[.uint32](batch_size + 1)
     var blocks_device = ctx.enqueue_create_buffer[k_rope_type](block_elems)
-    var cache_lengths_device = ctx.enqueue_create_buffer[DType.uint32](
-        batch_size
-    )
-    var lookup_table_device = ctx.enqueue_create_buffer[DType.uint32](lut_size)
+    var cache_lengths_device = ctx.enqueue_create_buffer[.uint32](batch_size)
+    var lookup_table_device = ctx.enqueue_create_buffer[.uint32](lut_size)
 
     ctx.enqueue_copy(q_device_buf, q_ptr)
     ctx.enqueue_copy(k_device_buf, k_ptr)
@@ -505,13 +503,13 @@ def run_test_paged_prefill[
     )
 
     comptime cl_layout = Layout(UNKNOWN_VALUE)
-    var cache_lengths_lt = LayoutTensor[DType.uint32, cl_layout](
+    var cache_lengths_lt = LayoutTensor[.uint32, cl_layout](
         cache_lengths_device.unsafe_ptr(),
         RuntimeLayout[cl_layout].row_major(IndexList[1](batch_size)),
     )
 
     comptime lt_layout_2d = Layout.row_major[2]()
-    var lookup_table_lt = LayoutTensor[DType.uint32, lt_layout_2d](
+    var lookup_table_lt = LayoutTensor[.uint32, lt_layout_2d](
         lookup_table_device.unsafe_ptr(),
         RuntimeLayout[lt_layout_2d].row_major(
             IndexList[2](batch_size, max_pages_per_batch)
@@ -528,14 +526,14 @@ def run_test_paged_prefill[
                 blocks_lt.runtime_layout.stride.value,
             ),
         ),
-        LayoutTensor[DType.uint32, cl_layout, ImmutAnyOrigin](
+        LayoutTensor[.uint32, cl_layout, ImmutAnyOrigin](
             cache_lengths_lt.ptr.as_unsafe_any_origin(),
             RuntimeLayout[cl_layout](
                 cache_lengths_lt.runtime_layout.shape.value,
                 cache_lengths_lt.runtime_layout.stride.value,
             ),
         ),
-        LayoutTensor[DType.uint32, lt_layout_2d, ImmutAnyOrigin](
+        LayoutTensor[.uint32, lt_layout_2d, ImmutAnyOrigin](
             lookup_table_lt.ptr.as_unsafe_any_origin(),
             RuntimeLayout[lt_layout_2d](
                 lookup_table_lt.runtime_layout.shape.value,
@@ -655,7 +653,7 @@ def run_test_paged_prefill[
     )
 
     var null_valid_length = LayoutTensor[
-        DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
+        .uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
     ](
         None,
         RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(Index(0)),
@@ -713,10 +711,10 @@ def run_test_paged_prefill[
                             (b * seq_len + s) * num_heads * v_dim
                             + h * v_dim
                             + d
-                        ).cast[DType.float64]()
+                        ).cast[.float64]()
                         var expect = output_ref_host.load(
                             ((b * seq_len + s) * num_heads + h) * depth + d
-                        ).cast[DType.float64]()
+                        ).cast[.float64]()
                         var abs_err = abs(actual - expect)
                         if abs_err > max_abs_err:
                             max_abs_err = abs_err
@@ -764,10 +762,10 @@ def run_test_paged_prefill[
                             (b * seq_len + s) * num_heads * v_dim
                             + h * v_dim
                             + d
-                        ).cast[DType.float64]()
+                        ).cast[.float64]()
                         var expect = output_ref_host.load(
                             ((b * seq_len + s) * num_heads + h) * depth + d
-                        ).cast[DType.float64]()
+                        ).cast[.float64]()
                         assert_almost_equal(
                             actual, expect, atol=atol, rtol=rtol
                         )
@@ -782,10 +780,10 @@ def run_test_paged_prefill[
                             (b * seq_len + s) * num_heads * v_dim
                             + h * v_dim
                             + d
-                        ).cast[DType.float64]()
+                        ).cast[.float64]()
                         var expect = output_ref_host.load(
                             ((b * seq_len + s) * num_heads + h) * depth + d
-                        ).cast[DType.float64]()
+                        ).cast[.float64]()
                         var abs_err = abs(actual - expect)
                         if abs_err > max_abs_err:
                             max_abs_err = abs_err
@@ -915,7 +913,7 @@ def _palette_scale(idx: Int) -> Float32:
 
 
 def fill_paged_block_scales(
-    scales_host: UnsafePointer[mut=True, Float32, _],
+    scales_host: MutPointer[Float32, _],
     batch_size: Int,
     num_keys: Int,
     page_size: Int,
@@ -962,9 +960,9 @@ def extract_dequantized_k_rope_for_batch[
     fp8_type: DType,
     out_type: DType,
 ](
-    blocks_host: UnsafePointer[mut=False, Scalar[fp8_type], _],
-    scales_host: UnsafePointer[mut=False, Float32, _],
-    out_host: UnsafePointer[mut=True, Scalar[out_type], _],
+    blocks_host: ImmPointer[Scalar[fp8_type], _],
+    scales_host: ImmPointer[Float32, _],
+    out_host: MutPointer[Scalar[out_type], _],
     batch_idx: Int,
     num_keys: Int,
     page_size: Int,
@@ -1013,7 +1011,7 @@ def extract_dequantized_k_rope_for_batch[
 
         var dst_offset = tok * ROPE_DEPTH
         for d in range(ROPE_DEPTH):
-            var fp8_val = blocks_host[src_offset + d].cast[DType.float32]()
+            var fp8_val = blocks_host[src_offset + d].cast[.float32]()
             out_host[dst_offset + d] = (fp8_val * scale_val).cast[out_type]()
 
 

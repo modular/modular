@@ -18,6 +18,7 @@ from typing import ClassVar
 
 from max.graph.weights import WeightsFormat
 from max.pipelines.context import PixelContext
+from max.pipelines.diffusion.config import GENERIC_TAYLORSEER_DEFAULTS
 from max.pipelines.lib import SupportedArchitecture
 from max.pipelines.lib.config import MAXModelConfig, PipelineConfig
 from max.pipelines.lib.interfaces import ArchConfig
@@ -44,11 +45,10 @@ class ZImageArchConfig(ArchConfig):
     @classmethod
     def calculate_max_seq_len(
         cls,
-        pipeline_config: PipelineConfig,
         huggingface_config: AutoConfig,
-        model_config: MAXModelConfig | None = None,
+        model_config: MAXModelConfig,
     ) -> int:
-        del pipeline_config, huggingface_config, model_config
+        del huggingface_config, model_config
         return 0
 
     @classmethod
@@ -79,4 +79,5 @@ z_image_arch = SupportedArchitecture(
     default_weights_format=WeightsFormat.safetensors,
     tokenizer=ZImageTokenizer,
     config=ZImageArchConfig,
+    denoising_cache_defaults=GENERIC_TAYLORSEER_DEFAULTS,
 )

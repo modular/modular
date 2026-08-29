@@ -50,10 +50,10 @@ def test_grouped_nvfp4_quantization[
     comptime SENTINEL = 0xEE
 
     # Derive row_offsets, tile_starts, scales_offsets from expert_counts.
-    var row_offsets_host = alloc[Scalar[DType.uint32]](num_experts + 1)
-    var scales_offsets_host = alloc[Scalar[DType.uint32]](num_experts)
-    var expert_ids_host = alloc[Scalar[DType.int32]](num_experts)
-    var sf_tensor_host = alloc[Scalar[DType.float32]](num_experts)
+    var row_offsets_host = alloc[UInt32](num_experts + 1)
+    var scales_offsets_host = alloc[UInt32](num_experts)
+    var expert_ids_host = alloc[Int32](num_experts)
+    var sf_tensor_host = alloc[Float32](num_experts)
     var tile_starts = alloc[Int](num_experts + 1)
 
     row_offsets_host[0] = 0
@@ -97,14 +97,10 @@ def test_grouped_nvfp4_quantization[
     var dev_scales = ctx.enqueue_create_buffer[scales_dtype](
         max(total_scales, 1)
     )
-    var dev_row_offsets = ctx.enqueue_create_buffer[DType.uint32](
-        num_experts + 1
-    )
-    var dev_scales_offsets = ctx.enqueue_create_buffer[DType.uint32](
-        num_experts
-    )
-    var dev_expert_ids = ctx.enqueue_create_buffer[DType.int32](num_experts)
-    var dev_sf_tensor = ctx.enqueue_create_buffer[DType.float32](num_experts)
+    var dev_row_offsets = ctx.enqueue_create_buffer[.uint32](num_experts + 1)
+    var dev_scales_offsets = ctx.enqueue_create_buffer[.uint32](num_experts)
+    var dev_expert_ids = ctx.enqueue_create_buffer[.int32](num_experts)
+    var dev_sf_tensor = ctx.enqueue_create_buffer[.float32](num_experts)
 
     ctx.enqueue_copy(dev_input, host_input)
     ctx.enqueue_copy(dev_row_offsets, row_offsets_host)
@@ -258,8 +254,8 @@ def test_grouped_nvfp4_quantization[
                                 ak,
                             )
                             assert_equal(
-                                grouped_scales[c].cast[DType.float64](),
-                                ref_sc[c].cast[DType.float64](),
+                                grouped_scales[c].cast[.float64](),
+                                ref_sc[c].cast[.float64](),
                             )
 
         host_ref_output.free()

@@ -14,7 +14,7 @@
 # RUN: %parse-mojo-isolated %s | FileCheck %s
 
 
-struct IndexList[size: Int, *, element_type: DType = DType.int]():
+struct IndexList[size: Int, *, element_type: DType = .int]():
     @always_inline
     def __init__(out self, *elems: Int, __list_literal__: NoneType = None):
         pass

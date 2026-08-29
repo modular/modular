@@ -104,12 +104,8 @@ def naive_grouped_matmul_kernel[
     c: TileTensor[mut=True, c_type, CLayout, MutAnyOrigin],
     a: TileTensor[mut=False, a_type, ALayout, MutAnyOrigin],
     b: TileTensor[mut=False, b_type, BLayout, MutAnyOrigin],
-    a_offsets: TileTensor[
-        mut=False, DType.uint32, AOffsetsLayout, MutAnyOrigin
-    ],
-    expert_ids: TileTensor[
-        mut=False, DType.int32, ExpertIdsLayout, MutAnyOrigin
-    ],
+    a_offsets: TileTensor[mut=False, .uint32, AOffsetsLayout, MutAnyOrigin],
+    expert_ids: TileTensor[mut=False, .int32, ExpertIdsLayout, MutAnyOrigin],
 ):
     """Computes one element per thread of the grouped matmul product ``C[a_offsets[z]:a_offsets[z+1], :] = A[...] @ B[expert_ids[z], :, :].T`` for each active expert ``z``, with an optional elementwise epilogue.
 
@@ -211,12 +207,8 @@ def grouped_matmul_kernel_sm100[
 ](
     a_tma_op: TMATensorTile[a_type, a_tile_rank, a_tile_shape, a_desc_shape],
     b_tma_op: TMATensorTile[b_type, b_tile_rank, b_tile_shape, b_desc_shape],
-    a_offsets: TileTensor[
-        mut=False, DType.uint32, AOffsetsLayout, MutAnyOrigin
-    ],
-    expert_ids: TileTensor[
-        mut=False, DType.int32, ExpertIdsLayout, MutAnyOrigin
-    ],
+    a_offsets: TileTensor[mut=False, .uint32, AOffsetsLayout, MutAnyOrigin],
+    expert_ids: TileTensor[mut=False, .int32, ExpertIdsLayout, MutAnyOrigin],
     c: TileTensor[mut=True, c_type, CLayout, MutAnyOrigin],
     num_iters: Int32,
 ):
@@ -269,14 +261,12 @@ def grouped_matmul_kernel_sm100[
 
     var a_smem = rebind[
         UnsafePointer[
-            Scalar[a_type],
-            UntrackedOrigin[mut=True],
-            address_space=AddressSpace.SHARED,
+            Scalar[a_type], UntrackedOrigin[mut=True], address_space=.SHARED
         ]
     ](
         external_memory[
             Scalar[a_type],
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
             alignment=128,
             name="tmem_test_dynamic_shared_memory",
         ]()
@@ -287,14 +277,14 @@ def grouped_matmul_kernel_sm100[
         a_type,
         sub_a_smem_layout,
         MutUntrackedOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
     ]
     comptime sub_b_smem_tile_t = LayoutTensor[
         b_type,
         sub_b_smem_layout,
         MutUntrackedOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
     ]
     comptime a_size = a_smem_layout.size()
@@ -438,8 +428,8 @@ def grouped_matmul_kernel_sm100[
         c_type,
         c_gmem_layout,
         MutAnyOrigin,
-        layout_int_type=DType.int32,
-        address_space=AddressSpace.GENERIC,
+        layout_int_type=.int32,
+        address_space=.GENERIC,
     ]
 
     # FIXME: A list literal initializer should be enough here, but somehow Mojo fails to infer that.
@@ -523,16 +513,12 @@ def grouped_matmul_sm100[
     block_tile_shape: IndexList[3] = Index(64, 128, 64),
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
-    c: TileTensor[mut=True, c_type, address_space=AddressSpace.GENERIC, ...],
-    a: TileTensor[mut=False, a_type, address_space=AddressSpace.GENERIC, ...],
-    a_offsets: TileTensor[
-        mut=False, DType.uint32, address_space=AddressSpace.GENERIC, ...
-    ],
+    c: TileTensor[mut=True, c_type, address_space=.GENERIC, ...],
+    a: TileTensor[mut=False, a_type, address_space=.GENERIC, ...],
+    a_offsets: TileTensor[mut=False, .uint32, address_space=.GENERIC, ...],
     max_num_tokens_per_expert: Int,
-    b: TileTensor[mut=False, b_type, address_space=AddressSpace.GENERIC, ...],
-    expert_ids: TileTensor[
-        mut=False, DType.int32, address_space=AddressSpace.GENERIC, ...
-    ],
+    b: TileTensor[mut=False, b_type, address_space=.GENERIC, ...],
+    expert_ids: TileTensor[mut=False, .int32, address_space=.GENERIC, ...],
     num_active_experts: Int,
     ctx: DeviceContext,
 ) raises:
@@ -628,12 +614,8 @@ def grouped_matmul_amd_kernel_launcher[
     c_tensor: TileTensor[mut=True, c_type, LayoutC, MutAnyOrigin],
     a_tensor: TileTensor[a_type, LayoutA, MutAnyOrigin],
     b_tensor: TileTensor[b_type, LayoutB, MutAnyOrigin],
-    a_offsets: TileTensor[
-        mut=False, DType.uint32, AOffsetsLayout, MutAnyOrigin
-    ],
-    expert_ids: TileTensor[
-        mut=False, DType.int32, ExpertIdsLayout, MutAnyOrigin
-    ],
+    a_offsets: TileTensor[mut=False, .uint32, AOffsetsLayout, MutAnyOrigin],
+    expert_ids: TileTensor[mut=False, .int32, ExpertIdsLayout, MutAnyOrigin],
     num_active_experts: Int32,
 ):
     """Computes the AMD GPU grouped matmul by dispatching per-expert tiles through ``AMDMatmul``, with separate zero-fill handling for inactive (``expert_id == -1``) blocks.
@@ -859,16 +841,12 @@ def grouped_matmul_amd[
     block_tile_shape: IndexList[3] = Index(128, 128, 64),
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
-    c: TileTensor[mut=True, c_type, address_space=AddressSpace.GENERIC, ...],
-    a: TileTensor[a_type, address_space=AddressSpace.GENERIC, ...],
-    a_offsets: TileTensor[
-        mut=False, DType.uint32, address_space=AddressSpace.GENERIC, ...
-    ],
+    c: TileTensor[mut=True, c_type, address_space=.GENERIC, ...],
+    a: TileTensor[a_type, address_space=.GENERIC, ...],
+    a_offsets: TileTensor[mut=False, .uint32, address_space=.GENERIC, ...],
     max_num_tokens_per_expert: Int,
-    b: TileTensor[b_type, address_space=AddressSpace.GENERIC, ...],
-    expert_ids: TileTensor[
-        mut=False, DType.int32, address_space=AddressSpace.GENERIC, ...
-    ],
+    b: TileTensor[b_type, address_space=.GENERIC, ...],
+    expert_ids: TileTensor[mut=False, .int32, address_space=.GENERIC, ...],
     num_active_experts: Int,
     ctx: DeviceContext,
 ) raises:
@@ -963,17 +941,13 @@ def grouped_matmul[
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     a_plane_splits: IndexList[2] = Index(0, 0),
 ](
-    c: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
-    a: TileTensor[address_space=AddressSpace.GENERIC, ...],
-    b: TileTensor[address_space=AddressSpace.GENERIC, ...],
-    a_offsets: TileTensor[
-        mut=False, DType.uint32, address_space=AddressSpace.GENERIC, ...
-    ],
-    expert_ids: TileTensor[
-        mut=False, DType.int32, address_space=AddressSpace.GENERIC, ...
-    ],
+    c: TileTensor[mut=True, address_space=.GENERIC, ...],
+    a: TileTensor[address_space=.GENERIC, ...],
+    b: TileTensor[address_space=.GENERIC, ...],
+    a_offsets: TileTensor[mut=False, .uint32, address_space=.GENERIC, ...],
+    expert_ids: TileTensor[mut=False, .int32, address_space=.GENERIC, ...],
     expert_usage_stats: TileTensor[
-        mut=False, DType.uint32, address_space=AddressSpace.GENERIC, ...
+        mut=False, .uint32, address_space=.GENERIC, ...
     ],
     ctx: DeviceContext,
     host_stats: Optional[Tuple[Int, Int]] = None,
@@ -1057,16 +1031,14 @@ def grouped_matmul[
     # builds compile this branch out (`has_apple_gpu_accelerator()` is comptime).
     comptime is_apple_fp8_moe_applicable = (
         has_apple_gpu_accelerator()
-        and a_type == DType.bfloat16
-        and b_type == DType.float8_e4m3fn
+        and a_type == .bfloat16
+        and b_type == .float8_e4m3fn
         and is_expert_shape_static
         and not elementwise_lambda_fn
     )
 
     @always_inline
-    @__parameter
-    @__copy_capture(c, a, b)
-    def description_fn() -> String:
+    def description_fn() {var c, var a, var b, imm} -> String:
         # fmt: off
         return String(
             "(gpu",
@@ -1083,7 +1055,7 @@ def grouped_matmul[
             String(a_type) + "x" + String(b_type) + "_to_" + String(c_type),
             "_has_epilogue" if elementwise_lambda_fn else "",
         ](),
-        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+        Trace[TraceLevel.OP]._get_detail_str(description_fn),
         task_id=get_safe_task_id(ctx),
     ):
         # Resolve the host scalars the SM90/AMD/naive launch grids need. Prefer
@@ -1095,8 +1067,8 @@ def grouped_matmul[
         def resolve_usage_stats() raises -> Tuple[Int, Int]:
             if host_stats:
                 return host_stats.value()
-            var host_buf = ctx.enqueue_create_host_buffer[DType.uint32](2)
-            var dev_buf = DeviceBuffer[DType.uint32](
+            var host_buf = ctx.enqueue_create_host_buffer[.uint32](2)
+            var dev_buf = DeviceBuffer[.uint32](
                 ctx,
                 expert_usage_stats.ptr.as_unsafe_any_origin(),
                 2,
@@ -1212,7 +1184,7 @@ def grouped_matmul[
                 # the guard already proves (mirrors the dense Apple matmul
                 # dispatch in `matmul/gpu/__init__.mojo`).
                 comptime ABf16 = TileTensor[
-                    DType.bfloat16,
+                    .bfloat16,
                     type_of(a).LayoutType,
                     type_of(a).origin,
                     address_space=type_of(a).address_space,
@@ -1220,7 +1192,7 @@ def grouped_matmul[
                     Storage=type_of(a).Storage,
                 ]
                 comptime BFp8 = TileTensor[
-                    DType.float8_e4m3fn,
+                    .float8_e4m3fn,
                     type_of(b).LayoutType,
                     type_of(b).origin,
                     address_space=type_of(b).address_space,
@@ -1275,15 +1247,11 @@ def grouped_matmul[
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     a_plane_splits: IndexList[2] = Index(0, 0),
 ](
-    c: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
-    a: TileTensor[address_space=AddressSpace.GENERIC, ...],
-    b: TileTensor[address_space=AddressSpace.GENERIC, ...],
-    a_offsets: TileTensor[
-        mut=False, DType.uint32, address_space=AddressSpace.GENERIC, ...
-    ],
-    expert_ids: TileTensor[
-        mut=False, DType.int32, address_space=AddressSpace.GENERIC, ...
-    ],
+    c: TileTensor[mut=True, address_space=.GENERIC, ...],
+    a: TileTensor[address_space=.GENERIC, ...],
+    b: TileTensor[address_space=.GENERIC, ...],
+    a_offsets: TileTensor[mut=False, .uint32, address_space=.GENERIC, ...],
+    expert_ids: TileTensor[mut=False, .int32, address_space=.GENERIC, ...],
     max_num_tokens_per_expert: Int,
     num_active_experts: Int,
     ctx: DeviceContext,
@@ -1298,7 +1266,7 @@ def grouped_matmul[
     round-trip. The staged buffer is consumed only on SM100; this overload is
     off the MoE decode path, so its small staging cost does not matter.
     """
-    var usage_stats_buf = ctx.enqueue_create_buffer[DType.uint32](2)
+    var usage_stats_buf = ctx.enqueue_create_buffer[.uint32](2)
     with usage_stats_buf.map_to_host() as host:
         host[0] = UInt32(max_num_tokens_per_expert)
         host[1] = UInt32(num_active_experts)
@@ -1326,15 +1294,11 @@ def naive_grouped_matmul[
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     a_plane_splits: IndexList[2] = Index(0, 0),
 ](
-    c: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
-    a: TileTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
-    b: TileTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
-    a_offsets: TileTensor[
-        mut=False, DType.uint32, address_space=AddressSpace.GENERIC, ...
-    ],
-    expert_ids: TileTensor[
-        mut=False, DType.int32, address_space=AddressSpace.GENERIC, ...
-    ],
+    c: TileTensor[mut=True, address_space=.GENERIC, ...],
+    a: TileTensor[mut=False, address_space=.GENERIC, ...],
+    b: TileTensor[mut=False, address_space=.GENERIC, ...],
+    a_offsets: TileTensor[mut=False, .uint32, address_space=.GENERIC, ...],
+    expert_ids: TileTensor[mut=False, .int32, address_space=.GENERIC, ...],
     max_num_tokens_per_expert: Int,
     num_active_experts: Int,
     ctx: DeviceContext,
@@ -1452,14 +1416,14 @@ def grouped_matmul_rowwise_scaled_fp8_kernel[
     ],
     a_offsets: TileTensor[
         mut=False,
-        DType.uint32,
+        .uint32,
         AOffsetsLayout,
         MutAnyOrigin,
         Storage=a_offsets_storage,
     ],
     expert_ids: TileTensor[
         mut=False,
-        DType.int32,
+        .int32,
         ExpertIdsLayout,
         MutAnyOrigin,
         Storage=expert_ids_storage,
@@ -1475,7 +1439,7 @@ def grouped_matmul_rowwise_scaled_fp8_kernel[
     """
     comptime assert transpose_b, "Only support transposed B (B is [E, N, K])."
     comptime assert (
-        accum_type == DType.float32
+        accum_type == .float32
     ), "Only float32 accumulation is supported."
     comptime assert a_offsets.flat_rank == 1, "a_offsets must be rank 1"
     comptime assert expert_ids.flat_rank == 1, "expert_ids must be rank 1"
@@ -1491,10 +1455,10 @@ def grouped_matmul_rowwise_scaled_fp8_kernel[
     var N = Int(b.dim[1]())
     var K = Int(b.dim[2]())
 
-    var a_start_row = rebind[Scalar[DType.uint32]](a_offsets[block_idx.z])
+    var a_start_row = rebind[UInt32](a_offsets[block_idx.z])
     var a_by_expert = a.ptr + Int64(a_start_row) * Int64(K)
 
-    var expert = rebind[Scalar[DType.int32]](expert_ids[block_idx.z])
+    var expert = rebind[Int32](expert_ids[block_idx.z])
     var b_by_expert = b.ptr + Int64(expert) * Int64(N) * Int64(K)
 
     # indices in current matmul
@@ -1554,54 +1518,20 @@ def grouped_matmul_rowwise_dynamic_scaled_fp8[
     target: StaticString = "cpu",
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
-    c: TileTensor[
-        mut=True,
-        c_type,
-        address_space=AddressSpace.GENERIC,
-        Storage=_,
-        ...,
-    ],
-    a: TileTensor[
-        mut=False,
-        a_type,
-        address_space=AddressSpace.GENERIC,
-        Storage=_,
-        ...,
-    ],
-    b: TileTensor[
-        mut=False,
-        b_type,
-        address_space=AddressSpace.GENERIC,
-        Storage=_,
-        ...,
-    ],
+    c: TileTensor[mut=True, c_type, address_space=.GENERIC, Storage=_, ...],
+    a: TileTensor[mut=False, a_type, address_space=.GENERIC, Storage=_, ...],
+    b: TileTensor[mut=False, b_type, address_space=.GENERIC, Storage=_, ...],
     a_scales: TileTensor[
-        mut=False,
-        a_scales_type,
-        address_space=AddressSpace.GENERIC,
-        Storage=_,
-        ...,
+        mut=False, a_scales_type, address_space=.GENERIC, Storage=_, ...
     ],
     b_scales: TileTensor[
-        mut=False,
-        b_scales_type,
-        address_space=AddressSpace.GENERIC,
-        Storage=_,
-        ...,
+        mut=False, b_scales_type, address_space=.GENERIC, Storage=_, ...
     ],
     a_offsets: TileTensor[
-        mut=False,
-        a_offsets_type,
-        address_space=AddressSpace.GENERIC,
-        Storage=_,
-        ...,
+        mut=False, a_offsets_type, address_space=.GENERIC, Storage=_, ...
     ],
     expert_ids: TileTensor[
-        mut=False,
-        expert_ids_type,
-        address_space=AddressSpace.GENERIC,
-        Storage=_,
-        ...,
+        mut=False, expert_ids_type, address_space=.GENERIC, Storage=_, ...
     ],
     max_num_tokens_per_expert: Int,
     num_active_experts: Int,
@@ -1653,16 +1583,16 @@ def grouped_matmul_rowwise_dynamic_scaled_fp8[
 
     comptime assert transpose_b, "Only support transpose_b = True."
     comptime assert (
-        a_type == b_type == DType.float8_e4m3fn
+        a_type == b_type == .float8_e4m3fn
     ), "input A and B dtype should be float8_e4m3fn"
     comptime assert (
-        a_scales_type == DType.float32 and b_scales_type == DType.float32
+        a_scales_type == .float32 and b_scales_type == .float32
     ), "A and B scales must be float32 for rowwise/per-token granularity"
-    comptime assert a_offsets_type == DType.uint32, (
+    comptime assert a_offsets_type == .uint32, (
         "Only uint32 is supported for a_offsets in grouped rowwise scaled fp8"
         " matmul"
     )
-    comptime assert expert_ids_type == DType.int32, (
+    comptime assert expert_ids_type == .int32, (
         "Only int32 is supported for expert_ids in grouped rowwise scaled fp8"
         " matmul"
     )
@@ -1731,15 +1661,11 @@ def grouped_matmul_vendor[
     transpose_b: Bool = True,
     use_tf32: Bool = False,
 ](
-    c: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
-    a: TileTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
-    b: TileTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
-    a_offsets: TileTensor[
-        mut=False, DType.uint32, address_space=AddressSpace.GENERIC, ...
-    ],
-    expert_ids: TileTensor[
-        mut=False, DType.int32, address_space=AddressSpace.GENERIC, ...
-    ],
+    c: TileTensor[mut=True, address_space=.GENERIC, ...],
+    a: TileTensor[mut=False, address_space=.GENERIC, ...],
+    b: TileTensor[mut=False, address_space=.GENERIC, ...],
+    a_offsets: TileTensor[mut=False, .uint32, address_space=.GENERIC, ...],
+    expert_ids: TileTensor[mut=False, .int32, address_space=.GENERIC, ...],
     max_num_tokens_per_expert: Int,
     num_active_experts: Int,
     ctx: DeviceContext,
@@ -1769,9 +1695,7 @@ def grouped_matmul_vendor[
     var b_K = Int(b.dim[2]())
 
     @always_inline
-    @__parameter
-    @__copy_capture(c, a, b)
-    def vendor_description_fn() -> String:
+    def vendor_description_fn() {var c, var a, var b, imm} -> String:
         # fmt: off
         return String(
             "(gpu",
@@ -1790,7 +1714,7 @@ def grouped_matmul_vendor[
             "grouped_matmul_vendor_",
             String(a_type) + "x" + String(b_type) + "_to_" + String(c_type),
         ](),
-        Trace[TraceLevel.OP]._get_detail_str[vendor_description_fn](),
+        Trace[TraceLevel.OP]._get_detail_str(vendor_description_fn),
         task_id=get_safe_task_id(ctx),
     ):
         for i in range(num_active_experts):

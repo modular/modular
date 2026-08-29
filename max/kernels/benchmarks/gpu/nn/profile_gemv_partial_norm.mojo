@@ -61,10 +61,10 @@ from nn.gemv_partial_norm import (
 def _host_reference[
     c_type: DType, a_type: DType
 ](
-    y_ref_ptr: UnsafePointer[Scalar[c_type], MutAnyOrigin],
-    gamma_ptr: UnsafePointer[Scalar[a_type], MutAnyOrigin],
-    normed_ref: UnsafePointer[Scalar[c_type], MutAnyOrigin],
-    unnormed_ref: UnsafePointer[Scalar[c_type], MutAnyOrigin],
+    y_ref_ptr: MutPointer[Scalar[c_type], MutAnyOrigin],
+    gamma_ptr: MutPointer[Scalar[a_type], MutAnyOrigin],
+    normed_ref: MutPointer[Scalar[c_type], MutAnyOrigin],
+    unnormed_ref: MutPointer[Scalar[c_type], MutAnyOrigin],
     n: Int,
     n_normed: Int,
     eps: Float32,
@@ -73,14 +73,14 @@ def _host_reference[
     var n_unnormed = n - n_normed
     var sumsq: Float64 = 0.0
     for i in range(n_normed):
-        var v = y_ref_ptr[i].cast[DType.float64]()
+        var v = y_ref_ptr[i].cast[.float64]()
         sumsq += v * v
     var mean_sq = sumsq / Float64(n_normed)
-    var norm_factor = Float64(1) / sqrt(mean_sq + eps.cast[DType.float64]())
+    var norm_factor = Float64(1) / sqrt(mean_sq + eps.cast[.float64]())
 
     for i in range(n_normed):
-        var v = y_ref_ptr[i].cast[DType.float64]()
-        var g = gamma_ptr[i].cast[DType.float64]()
+        var v = y_ref_ptr[i].cast[.float64]()
+        var g = gamma_ptr[i].cast[.float64]()
         normed_ref[i] = (v * norm_factor * g).cast[c_type]()
 
     for i in range(n_unnormed):
@@ -195,8 +195,8 @@ def main() raises:
         var eps = Float32(0.001)
 
         # Kernel-internal scratch: reused across iters by design.
-        var counter_buf = ctx.enqueue_create_buffer[DType.int32](1)
-        ctx.enqueue_memset(counter_buf, Scalar[DType.int32](0))
+        var counter_buf = ctx.enqueue_create_buffer[.int32](1)
+        ctx.enqueue_memset(counter_buf, Int32(0))
 
         ctx.synchronize()
 
@@ -262,15 +262,14 @@ def main() raises:
                     ctx,
                 )
 
-        @__parameter
         @always_inline
-        def bench_func(mut b: Bencher) raises:
+        def bench_func(mut b: Bencher) raises {imm}:
             bencher_iter_custom(b, kernel_launch, ctx)
 
         var bw = ThroughputMeasure(BenchMetric.bytes, total_bytes)
 
         var m = Bench()
-        m.bench_function[bench_func](BenchId(run_name), [bw])
+        m.bench_function(bench_func, BenchId(run_name), [bw])
 
         # Post-bench correctness verification: re-run the kernel into
         # iter=0's output slots and compare to the vendor-BLAS + host

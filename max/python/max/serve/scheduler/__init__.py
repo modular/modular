@@ -19,7 +19,9 @@ from typing import Any, cast
 
 _logger = logging.getLogger("max.pipelines")
 
+from max.pipelines.audio.pipeline import AudioGenerationPipeline
 from max.pipelines.context import (
+    AudioContext,
     BaseContextType,
     PixelContext,
     TextContext,
@@ -36,6 +38,7 @@ from max.pipelines.lib import (
     TextGenerationPipeline,
 )
 from max.pipelines.modeling.types import (
+    AudioGenerationInputs,
     EmbeddingsContext,
     EmbeddingsGenerationOutput,
     Pipeline,
@@ -99,6 +102,31 @@ def load_scheduler(
             batch_constructor=batch_constructor,
             request_queue=cast(
                 MAXPullQueue[PixelContext],
+                request_queue,
+            ),
+            response_queue=cast(
+                MAXPushQueue[
+                    dict[RequestID, SchedulerResult[GenerationOutput]]
+                ],
+                response_queue,
+            ),
+            cancel_queue=cancel_queue,
+        )
+    elif pipeline.__class__.__name__ == "AudioGenerationPipeline":
+        audio_pipeline = cast(AudioGenerationPipeline[Any], pipeline)
+
+        def audio_batch_constructor(
+            context: AudioContext,
+        ) -> AudioGenerationInputs[Any]:
+            return AudioGenerationInputs(batch={context.request_id: context})
+
+        return OneShotScheduler[
+            AudioContext, AudioGenerationInputs[Any], GenerationOutput
+        ](
+            pipeline=audio_pipeline,
+            batch_constructor=audio_batch_constructor,
+            request_queue=cast(
+                MAXPullQueue[AudioContext],
                 request_queue,
             ),
             response_queue=cast(

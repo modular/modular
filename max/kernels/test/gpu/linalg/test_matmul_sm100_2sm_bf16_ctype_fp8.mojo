@@ -63,7 +63,7 @@ def test_blackwell_matmul_tma_umma_warp_specialized[
     block_swizzle_size: Int = 0,
     swapAB: Bool = False,
     k_group_size: Int = 1,
-    accum_dtype: DType = DType.float32,
+    accum_dtype: DType = .float32,
 ](ctx: DeviceContext, m: MType, n: NType, k: KType) raises:
     print(
         t"in/out dtypes=({a_type}, {b_type}, {c_type})  problem"
@@ -145,7 +145,7 @@ def test_blackwell_matmul_tma_umma_warp_specialized[
         ctx,
     )
 
-    comptime assert a_type != DType.float8_e4m3fn or transpose_b, (
+    comptime assert a_type != .float8_e4m3fn or transpose_b, (
         "Testing is only supported for transposed_b==True when"
         " a_type==float8_e4m3fn. Add the non-transposed case if needed."
     )
@@ -179,8 +179,8 @@ def test_blackwell_matmul_tma_umma_warp_specialized[
             comptime assert type_of(j).dtype.is_integral()
             comptime assert c_host.flat_rank == 2
             assert_equal(
-                c_host[i, j].cast[DType.float64](),
-                c_host_ref[i, j].cast[c_type]().cast[DType.float64](),
+                c_host[i, j].cast[.float64](),
+                c_host_ref[i, j].cast[c_type]().cast[.float64](),
                 msg="At [" + String(i) + ", " + String(j) + "]",
             )
 
@@ -220,7 +220,7 @@ def main() raises:
                         test_blackwell_matmul_tma_umma_warp_specialized[
                             dtype,
                             dtype,
-                            DType.float8_e4m3fn,
+                            .float8_e4m3fn,
                             block_tile_shape,
                             umma_shape,
                             cluster_shape=StaticTuple[Int32, 3](2, 1, 1),
@@ -239,7 +239,7 @@ def main() raises:
                         test_blackwell_matmul_tma_umma_warp_specialized[
                             dtype,
                             dtype,
-                            DType.float8_e4m3fn,
+                            .float8_e4m3fn,
                             block_tile_shape,
                             umma_shape,
                             cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
@@ -258,7 +258,7 @@ def main() raises:
                         test_blackwell_matmul_tma_umma_warp_specialized[
                             dtype,
                             dtype,
-                            DType.float8_e4m3fn,
+                            .float8_e4m3fn,
                             block_tile_shape,
                             umma_shape,
                             cluster_shape=StaticTuple[Int32, 3](4, 2, 1),
@@ -278,7 +278,7 @@ def main() raises:
                         test_blackwell_matmul_tma_umma_warp_specialized[
                             dtype,
                             dtype,
-                            DType.float8_e4m3fn,
+                            .float8_e4m3fn,
                             block_tile_shape,
                             umma_shape,
                             cluster_shape=StaticTuple[Int32, 3](8, 2, 1),
@@ -297,7 +297,7 @@ def main() raises:
                         test_blackwell_matmul_tma_umma_warp_specialized[
                             dtype,
                             dtype,
-                            DType.float8_e4m3fn,
+                            .float8_e4m3fn,
                             block_tile_shape,
                             umma_shape,
                             cluster_shape=StaticTuple[Int32, 3](4, 4, 1),

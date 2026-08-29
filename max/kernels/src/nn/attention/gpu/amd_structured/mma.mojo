@@ -68,9 +68,9 @@ struct TiledMmaOp[
     def mma[
         swap_a_b: Bool = False
     ](
-        a: TileTensor[_, _, address_space=AddressSpace.LOCAL, ...],
-        b: TileTensor[_, _, address_space=AddressSpace.LOCAL, ...],
-        c: TileTensor[mut=True, _, _, address_space=AddressSpace.LOCAL, ...],
+        a: TileTensor[_, _, address_space=.LOCAL, ...],
+        b: TileTensor[_, _, address_space=.LOCAL, ...],
+        c: TileTensor[mut=True, _, _, address_space=.LOCAL, ...],
     ):
         """Perform MMA on TileTensor operands.
 
@@ -128,11 +128,9 @@ struct TiledMmaOp[
     def load_b[
         swizzle: Optional[Swizzle] = None,
     ](
-        warp_tile: TileTensor[
-            Self.in_type, _, _, address_space=AddressSpace.SHARED, ...
-        ],
+        warp_tile: TileTensor[Self.in_type, _, _, address_space=.SHARED, ...],
         reg_tile: TileTensor[
-            mut=True, Self.in_type, _, _, address_space=AddressSpace.LOCAL, ...
+            mut=True, Self.in_type, _, _, address_space=.LOCAL, ...
         ],
         k_group_idx: Int = 0,
     ):
@@ -182,11 +180,9 @@ struct TiledMmaOp[
     def load_a[
         swizzle: Optional[Swizzle] = None,
     ](
-        warp_tile: TileTensor[
-            Self.in_type, _, _, address_space=AddressSpace.SHARED, ...
-        ],
+        warp_tile: TileTensor[Self.in_type, _, _, address_space=.SHARED, ...],
         reg_tile: TileTensor[
-            mut=True, Self.in_type, _, _, address_space=AddressSpace.LOCAL, ...
+            mut=True, Self.in_type, _, _, address_space=.LOCAL, ...
         ],
         k_group_idx: Int = 0,
     ):
@@ -271,12 +267,12 @@ struct KVMmaOp[
         Self.in_type,
         type_of(Self._reg_layout),
         MutUntrackedOrigin,
-        address_space=AddressSpace.LOCAL,
+        address_space=.LOCAL,
     ]
 
     @always_inline
     def __init__(out self):
-        self.reg_tile = stack_allocation[Self.in_type, AddressSpace.LOCAL](
+        self.reg_tile = stack_allocation[Self.in_type, address_space=.LOCAL](
             Self._reg_layout
         )
 
@@ -285,9 +281,7 @@ struct KVMmaOp[
         bk_tile: Int
     ](
         self,
-        warp_smem: TileTensor[
-            Self.in_type, _, _, address_space=AddressSpace.SHARED, ...
-        ],
+        warp_smem: TileTensor[Self.in_type, _, _, address_space=.SHARED, ...],
     ):
         """Load the `bk_tile`-th BK strip of K fragments from SMEM.
 
@@ -323,10 +317,10 @@ struct KVMmaOp[
     ](
         self,
         warp_smem_lo: TileTensor[
-            Self.in_type, _, _, address_space=AddressSpace.SHARED, ...
+            Self.in_type, _, _, address_space=.SHARED, ...
         ],
         warp_smem_hi: TileTensor[
-            Self.in_type, _, _, address_space=AddressSpace.SHARED, ...
+            Self.in_type, _, _, address_space=.SHARED, ...
         ],
     ):
         """Load the `bk_tile`-th MMA K=128 strip composed of two
@@ -413,7 +407,7 @@ struct KVMmaOp[
         Self.in_type,
         type_of(row_major[Self.num_mmas, Self.input_frag_size]()),
         MutUntrackedOrigin,
-        address_space=AddressSpace.LOCAL,
+        address_space=.LOCAL,
     ]:
         """Sub-view of the reg tile for a given (bk_tile, k-group) pair.
 
@@ -435,9 +429,7 @@ struct KVMmaOp[
     ](
         self,
         smem_base: UnsafePointer[
-            Scalar[Self.in_type],
-            MutAnyOrigin,
-            address_space=AddressSpace.SHARED,
+            Scalar[Self.in_type], MutAnyOrigin, address_space=.SHARED
         ],
     ):
         """Load the `bk_tile`-th BK strip of BF16 V fragments from SMEM.
@@ -460,9 +452,7 @@ struct KVMmaOp[
                 shared memory.
         """
         comptime assert not Self.transpose_b, "load_v_bf16 is V-operand only"
-        comptime assert (
-            Self.in_type == DType.bfloat16
-        ), "load_v_bf16 is bf16 only"
+        comptime assert Self.in_type == .bfloat16, "load_v_bf16 is bf16 only"
 
         comptime _MmaTileLayout = MixedLayout[
             Coord[
@@ -543,7 +533,7 @@ struct KVMmaOp[
                         Self.in_type,
                         _MmaTileLayout,
                         MutAnyOrigin,
-                        address_space=AddressSpace.SHARED,
+                        address_space=.SHARED,
                     ](smem_base + offset, _MmaTileLayout())
                     var frag = TiledMmaLoader[
                         Self.in_type, Self.mma_shape
@@ -562,9 +552,7 @@ struct KVMmaOp[
     ](
         self,
         smem_base: UnsafePointer[
-            Scalar[Self.in_type],
-            MutAnyOrigin,
-            address_space=AddressSpace.SHARED,
+            Scalar[Self.in_type], MutAnyOrigin, address_space=.SHARED
         ],
         rel_key: Int,
         hw_key_shift: Int,
@@ -621,8 +609,8 @@ struct KVMmaOp[
         swap_a_b: Bool = False,
     ](
         self,
-        a: TileTensor[_, _, address_space=AddressSpace.LOCAL, ...],
-        c: TileTensor[mut=True, _, _, address_space=AddressSpace.LOCAL, ...],
+        a: TileTensor[_, _, address_space=.LOCAL, ...],
+        c: TileTensor[mut=True, _, _, address_space=.LOCAL, ...],
         bk_tile: Int,
         kg: Int,
     ):

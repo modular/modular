@@ -398,10 +398,8 @@ struct String(
         ), "String: span is not valid UTF-8"
         var length = len(unsafe_from_utf8)
         self = Self(unsafe_uninit_length=length)
-        unsafe_memcpy(
-            dest=self.unsafe_ptr_mut(),
-            src=unsafe_from_utf8.unsafe_ptr(),
-            count=length,
+        Span(unsafe_ptr=self.unsafe_ptr_mut(), length=length).copy_from(
+            unsafe_from_utf8
         )
 
     @stable(since="1.0")
@@ -1021,12 +1019,10 @@ struct String(
 
         var result = String(unsafe_uninit_length=lhs_len + rhs_len)
         var result_ptr = result.unsafe_ptr_mut()
-        unsafe_memcpy(dest=result_ptr, src=lhs.unsafe_ptr(), count=lhs_len)
-        unsafe_memcpy(
-            dest=result_ptr.unsafe_offset(lhs_len),
-            src=rhs.unsafe_ptr(),
-            count=rhs_len,
-        )
+        Span(unsafe_ptr=result_ptr, length=lhs_len).copy_from(lhs)
+        Span(
+            unsafe_ptr=result_ptr.unsafe_offset(lhs_len), length=rhs_len
+        ).copy_from(rhs)
         return result^
 
     def __add__(self, other: StringSlice) -> String:
@@ -1085,11 +1081,10 @@ struct String(
             return
         var old_len = self.byte_length()
         var new_len = old_len + other_len
-        unsafe_memcpy(
-            dest=self.unsafe_ptr_mut(new_len).unsafe_offset(old_len),
-            src=other.unsafe_ptr(),
-            count=other_len,
-        )
+        Span(
+            unsafe_ptr=self.unsafe_ptr_mut(new_len).unsafe_offset(old_len),
+            length=other_len,
+        ).copy_from(other)
         self._set_byte_length(new_len)
         self._clear_nul_terminator()
 
@@ -2428,7 +2423,7 @@ def _repr_ascii(c: UInt8) -> String:
     elif c == ord_carriage_return:
         return r"\r"
     else:
-        var uc = c.cast[DType.uint8]()
+        var uc = c.cast[.uint8]()
         if uc < 16:
             return hex(uc, prefix=r"\x0")
         else:
@@ -2528,6 +2523,8 @@ def atol(str_slice: StringSlice, base: Int = 10) raises -> Int:
     var str_len = str_slice.byte_length()
 
     start, is_negative = _trim_and_handle_sign(str_slice, str_len)
+    if start >= str_len:
+        raise Error(_str_to_base_error(base, str_slice))
 
     comptime ord_0 = ord("0")
     comptime ord_letter_min = (ord("a"), ord("A"))
@@ -2641,6 +2638,8 @@ def _trim_and_handle_sign(
         and Codepoint(buff[unsafe_offset=start]).is_posix_space()
     ):
         start += 1
+    if start == str_len:
+        return start, False
     var p: Bool = buff[unsafe_offset=start] == UInt8(ord("+"))
     var n: Bool = buff[unsafe_offset=start] == UInt8(ord("-"))
     return start + (Int(p) or Int(n)), n
@@ -2832,13 +2831,6 @@ def _calc_initial_buffer_size_int64(n0: UInt64) -> Int:
         result += 4
 
 
-def _calc_initial_buffer_size(n0: Int) -> Int:
-    var sign = 0 if n0 >= 0 else 1
-
-    # Add 1 for the terminator
-    return sign + n0._decimal_digit_count() + 1
-
-
 def _calc_initial_buffer_size(n: Float64) -> Int:
     return 128 + 1  # Add 1 for the terminator
 
@@ -2851,11 +2843,7 @@ def _calc_initial_buffer_size[dtype: DType](n0: Scalar[dtype]) -> Int:
         comptime if is_32bit() or bit_width_of[dtype]() <= 32:
             return sign + _calc_initial_buffer_size_int32(Int(n)) + 1
         else:
-            return (
-                sign
-                + _calc_initial_buffer_size_int64(n.cast[DType.uint64]())
-                + 1
-            )
+            return sign + _calc_initial_buffer_size_int64(n.cast[.uint64]()) + 1
 
     return 128 + 1  # Add 1 for the terminator
 

@@ -38,6 +38,7 @@ from max.pipelines.architectures.gemma3_modulev3.layers.scaled_word_embedding im
 from max.pipelines.architectures.gemma4.model_config import (
     Gemma4ForConditionalGenerationConfig,
 )
+from max.pipelines.lib.vlm_utils import F_merge_multimodal_embeddings
 
 from .layers.attention import Gemma4Attention
 from .layers.rms_norm import Gemma4RMSNorm
@@ -173,11 +174,24 @@ class Gemma4TextModel(Module[..., tuple[Tensor, ...]]):
         global_kv: PagedCacheValues,
         return_n_logits: Tensor,
         input_row_offsets: Tensor,
+        image_embeddings: Tensor,
+        image_token_indices: Tensor,
     ) -> tuple[Tensor, ...]:
         tokens = tokens.to(self.mesh)
         input_row_offsets = input_row_offsets.to(self.mesh)
+        image_embeddings = image_embeddings.to(self.mesh)
+        image_token_indices = image_token_indices.to(self.mesh)
         h = self.embed_tokens(tokens)
         self.prepare_freq_cis(self.mesh)
+
+        # Scatter the vision tower's soft tokens over their placeholder
+        # positions, after the sqrt(hidden) embedding scale: image
+        # embeddings arrive pre-scaled.
+        # Out-of-bounds indices are skipped, so an empty (text-only or decode)
+        # batch is a no-op.
+        h = F_merge_multimodal_embeddings(
+            h, image_embeddings.cast(h.dtype), image_token_indices
+        )
 
         kv_by_type = {
             "sliding_attention": sliding_kv,
@@ -248,6 +262,8 @@ class Gemma4(Module[..., tuple[Tensor, ...]]):
         tokens: Tensor,
         return_n_logits: Tensor,
         input_row_offsets: Tensor,
+        image_embeddings: Tensor,
+        image_token_indices: Tensor,
         *variadic_args,
     ) -> tuple[Tensor, ...]:
         assert isinstance(self.kv_params, MultiKVCacheParams)
@@ -262,5 +278,11 @@ class Gemma4(Module[..., tuple[Tensor, ...]]):
             global_inputs, tokens.mapping
         )
         return self.language_model(
-            tokens, sliding_kv, global_kv, return_n_logits, input_row_offsets
+            tokens,
+            sliding_kv,
+            global_kv,
+            return_n_logits,
+            input_row_offsets,
+            image_embeddings,
+            image_token_indices,
         )

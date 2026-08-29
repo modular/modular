@@ -304,11 +304,11 @@ struct Communicators(ImplicitlyCopyable):
 
 
 def _dtype_to_ccl[dtype: DType]() raises -> ncclDataType_t:
-    comptime if dtype == DType.float32:
+    comptime if dtype == .float32:
         return ncclDataType_t.ncclFloat32
-    elif dtype == DType.bfloat16:
+    elif dtype == .bfloat16:
         return ncclDataType_t.ncclBfloat16
-    elif dtype == DType.float16:
+    elif dtype == .float16:
         return ncclDataType_t.ncclFloat16
 
     raise Error("vendor_ccl: dtype not supported: ", dtype)
@@ -390,7 +390,7 @@ def allreduce[
         TileTensor[dtype, in_layout, in_origin], 1 if use_multimem else ngpus
     ],
     output_tensor: TileTensor[mut=True, dtype, out_layout, out_origin],
-    rank_sigs: Array[UnsafePointer[Signal, rank_sigs_origin], MAX_GPUS],
+    rank_sigs: Array[MutPointer[Signal, rank_sigs_origin], MAX_GPUS],
     ctx: DeviceContext,
     _max_num_blocks: Optional[Int] = None,
 ) raises:
@@ -605,7 +605,7 @@ def broadcast[
 ](
     input_tensor: TileTensor[dtype, in_layout, in_origin],
     output_tensor: TileTensor[mut=True, dtype, out_layout, out_origin],
-    rank_sigs: Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
+    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS],
     ctx: DeviceContext,
     root: Int,
     _max_num_blocks: Optional[Int] = None,

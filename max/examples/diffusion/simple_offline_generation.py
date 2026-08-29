@@ -53,7 +53,10 @@ from max.driver import DeviceSpec
 from max.examples.diffusion.profiler import profile_execute
 from max.pipelines import PIPELINE_REGISTRY, MAXModelConfig, PipelineConfig
 from max.pipelines.context import PixelContext
-from max.pipelines.diffusion.cache import DenoisingCacheConfig
+from max.pipelines.diffusion.config import (
+    DenoisingCacheSettings,
+    resolve_denoising_cache,
+)
 from max.pipelines.diffusion.interface import DiffusionPipeline
 from max.pipelines.diffusion.pipeline import PixelGenerationPipeline
 from max.pipelines.lib import PixelGenerationTokenizer
@@ -468,21 +471,32 @@ async def generate_image(args: argparse.Namespace) -> None:
             value = adapter.validate_python(parsed)
             manifest = manifest.with_override(component, **{field_name: value})
 
-    config = PipelineConfig(
-        models=manifest,
-        runtime=PipelineRuntimeConfig(
-            prefer_module_v3=args.prefer_module_v3,
-        ),
-    )
-    # Resolve the manifest (encodings + weight paths) before use.
-    config.models.resolve()
     arch = PIPELINE_REGISTRY.retrieve_architecture(
-        config.models.main_architecture_name,
-        prefer_module_v3=config.runtime.prefer_module_v3,
+        manifest.main_architecture_name,
+        prefer_module_v3=args.prefer_module_v3,
         task=PipelineTask.PIXEL_GENERATION,
     )
     assert arch is not None, (
         "No matching diffusion architecture found for the provided model."
+    )
+
+    # Fill unset denoising-cache fields from the architecture's defaults.
+    config = PipelineConfig(
+        models=manifest,
+        runtime=PipelineRuntimeConfig(
+            prefer_module_v3=args.prefer_module_v3,
+            denoising_cache=resolve_denoising_cache(
+                DenoisingCacheSettings(
+                    first_block_caching=args.first_block_caching,
+                    taylorseer=args.taylorseer,
+                    taylorseer_cache_interval=args.taylorseer_cache_interval,
+                    taylorseer_warmup_steps=args.taylorseer_warmup_steps,
+                    taylorseer_max_order=args.taylorseer_max_order,
+                ),
+                arch.denoising_cache_defaults,
+                arch_name=arch.name,
+            ),
+        ),
     )
 
     # Step 2: Initialize the tokenizer
@@ -550,13 +564,6 @@ async def generate_image(args: argparse.Namespace) -> None:
     pipeline_model = cast(
         "type[DiffusionPipeline | PipelineExecutor[Any, Any, Any]]",
         arch.pipeline_model,
-    )
-    config.runtime.denoising_cache = DenoisingCacheConfig(
-        first_block_caching=args.first_block_caching,
-        taylorseer=args.taylorseer,
-        taylorseer_cache_interval=args.taylorseer_cache_interval,
-        taylorseer_warmup_steps=args.taylorseer_warmup_steps,
-        taylorseer_max_order=args.taylorseer_max_order,
     )
     pipeline = PixelGenerationPipeline[PixelContext](
         pipeline_config=config,

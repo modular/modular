@@ -166,10 +166,8 @@ def run_one_case(
     # Per-expert row + scale-slab offsets (identical math to the kernel test).
     # Both offset tensors carry a STATIC first dim: the kernel reads the group
     # count from `scales_offsets.static_shape[0]`.
-    var row_off_host = ctx.enqueue_create_host_buffer[DType.uint32](
-        NUM_ACTIVE + 1
-    )
-    var sc_off_host = ctx.enqueue_create_host_buffer[DType.uint32](NUM_ACTIVE)
+    var row_off_host = ctx.enqueue_create_host_buffer[.uint32](NUM_ACTIVE + 1)
+    var sc_off_host = ctx.enqueue_create_host_buffer[.uint32](NUM_ACTIVE)
     var scales_dim0 = 0
     row_off_host[0] = 0
     for i in range(NUM_ACTIVE):
@@ -200,8 +198,8 @@ def run_one_case(
     var in_dev = ctx.enqueue_create_buffer[in_dtype](in_size)
     var out_dev = ctx.enqueue_create_buffer[fp8_dtype](out_size)
     var scales_dev = ctx.enqueue_create_buffer[scales_dtype](scales_size)
-    var row_off_dev = ctx.enqueue_create_buffer[DType.uint32](NUM_ACTIVE + 1)
-    var sc_off_dev = ctx.enqueue_create_buffer[DType.uint32](NUM_ACTIVE)
+    var row_off_dev = ctx.enqueue_create_buffer[.uint32](NUM_ACTIVE + 1)
+    var sc_off_dev = ctx.enqueue_create_buffer[.uint32](NUM_ACTIVE)
     ctx.enqueue_copy(in_dev, in_host)
     ctx.enqueue_copy(scales_dev, scales_host)
     ctx.enqueue_copy(row_off_dev, row_off_host)
@@ -279,14 +277,14 @@ def run_one_case(
                 # bounded, so such a block is exempt from the finiteness contract.
                 var all_z_finite = True
                 for c in range(c0, c0 + SF_VECTOR_SIZE):
-                    var g = in_host[m * two_H + 2 * c].cast[DType.float32]()
-                    var u = in_host[m * two_H + 2 * c + 1].cast[DType.float32]()
+                    var g = in_host[m * two_H + 2 * c].cast[.float32]()
+                    var u = in_host[m * two_H + 2 * c + 1].cast[.float32]()
                     if not isfinite(_swiglu(g, u)):
                         all_z_finite = False
                         break
                 var sf = get_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
                     scales_host_tt, slab_row, c0
-                ).cast[DType.float32]()
+                ).cast[.float32]()
 
                 if contract:
                     if not all_z_finite:
@@ -297,7 +295,7 @@ def run_one_case(
                         )
                         raise Error("fused swiglu MXFP8 scale not finite")
                     for c in range(c0, c0 + SF_VECTOR_SIZE):
-                        var o = out_host[m * H + c].cast[DType.float32]()
+                        var o = out_host[m * H + c].cast[.float32]()
                         if not isfinite(o):
                             print(
                                 "FUZZ_CONTRACT_FAIL kind=output m=",
@@ -308,14 +306,14 @@ def run_one_case(
                             raise Error("fused swiglu MXFP8 output not finite")
                 else:  # ref: dequant round-trip vs host SwiGLU
                     for c in range(c0, c0 + SF_VECTOR_SIZE):
-                        var g = in_host[m * two_H + 2 * c].cast[DType.float32]()
+                        var g = in_host[m * two_H + 2 * c].cast[.float32]()
                         var u = in_host[m * two_H + 2 * c + 1].cast[
                             DType.float32
                         ]()
                         var z = _swiglu(g, u)
                         if not isfinite(z):
                             continue
-                        var deq = out_host[m * H + c].cast[DType.float32]() * sf
+                        var deq = out_host[m * H + c].cast[.float32]() * sf
                         total += 1
                         if abs(deq - z) > 1.0 + 0.1 * abs(z):
                             mismatch += 1

@@ -92,7 +92,7 @@ def _allgather_rmsnorm_kernel[
     ] = None,
     domain_id: Int = 0,
 ](
-    src_ptrs: Array[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin], ngpus],
+    src_ptrs: Array[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin], ngpus],
     in_lengths: StaticTuple[Int32, ngpus],
     gamma: TileTensor[in_dtype, GammaLayoutType, origin],
     normed_out: TileTensor[mut=True, in_dtype, NormedLayoutType, normed_origin],
@@ -100,7 +100,7 @@ def _allgather_rmsnorm_kernel[
     epsilon: Float32,
     weight_offset: Scalar[in_dtype],
     cols_dev: Int32,
-    rank_sigs: Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
+    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS],
     my_rank_dev: Int32,
 ):
     """Gather every source-GPU row into `[rows, cols]` and RMSNorm it in registers.
@@ -214,14 +214,14 @@ def _allgather_rmsnorm_launch[
 ](
     rows: Int,
     cols: Int,
-    src_ptrs: Array[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin], ngpus],
+    src_ptrs: Array[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin], ngpus],
     in_lengths: StaticTuple[Int, ngpus],
     normed_out: TileTensor[mut=True, in_dtype, ...],
     sum_out: TileTensor[mut=True, in_dtype, ...],
     gamma: TileTensor[in_dtype, ...],
     epsilon: Float32,
     weight_offset: Scalar[in_dtype],
-    rank_sigs: Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
+    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS],
     my_rank: Int,
     ctx: DeviceContext,
 ) raises:
@@ -299,7 +299,7 @@ def allgather_rmsnorm[
     gamma: TileTensor[in_dtype, ...],
     epsilon: Float32,
     weight_offset: Scalar[in_dtype],
-    rank_sigs: Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
+    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS],
     ctx: DeviceContext,
     local_rank: Optional[Int] = None,
 ) raises:
@@ -359,7 +359,7 @@ def _allgather_rmsnorm_impl[
     gamma: TileTensor[in_dtype, ...],
     epsilon: Float32,
     weight_offset: Scalar[in_dtype],
-    rank_sigs: Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
+    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS],
     ctx: DeviceContext,
     local_rank: Optional[Int] = None,
 ) raises:
@@ -423,13 +423,15 @@ def _allgather_rmsnorm_impl[
     comptime last_dim_idx = in_layout.rank - 1
     var cols = Int(input_buffers[0].dim[last_dim_idx]())
 
-    var src_ptrs = Array[
-        UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin], ngpus
-    ](uninitialized=True)
+    comptime PtrType = ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]
+    var src_ptrs = Array[_, ngpus](
+        fill_with=lambda (i: Int) -> PtrType: input_buffers[i]
+        ._storage.as_imm()
+        .as_unsafe_any_origin()
+    )
     var in_lengths = StaticTuple[Int, ngpus](0)
     var rows = 0
     comptime for i in range(ngpus):
-        src_ptrs[i] = input_buffers[i]._storage.as_imm().as_unsafe_any_origin()
         var len_i = input_buffers[i].num_elements() // cols
         in_lengths[i] = len_i
         rows += len_i
@@ -556,7 +558,7 @@ def allgather_rmsnorm_quant[
     gamma: TileTensor[in_dtype, ...],
     epsilon: Float32,
     weight_offset: Scalar[in_dtype],
-    rank_sigs: Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
+    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS],
     ctx: DeviceContext,
     local_rank: Optional[Int] = None,
 ) raises:
@@ -616,7 +618,7 @@ def _dispatch_ag_norm[
     gamma: TileTensor[in_dtype, ...],
     epsilon: Float32,
     weight_offset: Scalar[in_dtype],
-    rank_sigs: Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
+    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS],
     ctx: DeviceContext,
     threshold: Int = AG_NORM_FUSE_THRESHOLD,
     local_rank: Optional[Int] = None,
@@ -654,7 +656,7 @@ def _dispatch_ag_norm[
     # Threshold is bf16-row-count in bytes; another element size fuses a diverging
     # shape. Fail loud.
     comptime assert (
-        in_dtype == DType.bfloat16
+        in_dtype == .bfloat16
     ), "_dispatch_ag_norm fuse threshold is bf16-calibrated (bf16 in/out only)"
 
     # Gates on the full replicated row count, identical on every rank: the two
@@ -712,7 +714,7 @@ def _dispatch_ag_norm_quant[
     gamma: TileTensor[in_dtype, ...],
     epsilon: Float32,
     weight_offset: Scalar[in_dtype],
-    rank_sigs: Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
+    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS],
     ctx: DeviceContext,
     threshold: Int = AG_NORM_FUSE_THRESHOLD,
     local_rank: Optional[Int] = None,
@@ -750,7 +752,7 @@ def _dispatch_ag_norm_quant[
         local_rank: Optional group-local rank of THIS GPU; defaults to the
             physical device id. Required when grouped.
     """
-    comptime assert in_dtype == DType.bfloat16, (
+    comptime assert in_dtype == .bfloat16, (
         "_dispatch_ag_norm_quant fuse threshold is bf16-calibrated (bf16 in/out"
         " only)"
     )

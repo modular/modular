@@ -25,9 +25,9 @@ def semaphore_vector_reduce[
     N: Int,
     num_parts: Int,
 ](
-    c_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    a_ptr: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    locks: UnsafePointer[Int32, MutAnyOrigin],
+    c_ptr: MutPointer[Scalar[dtype], MutAnyOrigin],
+    a_ptr: ImmPointer[Scalar[dtype], ImmutAnyOrigin],
+    locks: MutPointer[Int32, MutAnyOrigin],
 ):
     var tid = thread_idx.x
     var block_idx = block_idx.x
@@ -70,7 +70,7 @@ def run_vector_reduction[
 
     var a_device = ctx.enqueue_create_buffer[dtype](PN)
     var c_device = ctx.enqueue_create_buffer[dtype](N)
-    var lock_dev = ctx.enqueue_create_buffer[DType.int32](1)
+    var lock_dev = ctx.enqueue_create_buffer[.int32](1)
 
     ctx.enqueue_memset(lock_dev, 0)
     ctx.enqueue_copy(a_device, a_host)
@@ -107,9 +107,9 @@ def run_vector_reduction[
 def semaphore_matrix_reduce[
     dtype: DType, M: Int, N: Int, num_parts: Int
 ](
-    c_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    a_ptr: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    locks: UnsafePointer[Int32, MutAnyOrigin],
+    c_ptr: MutPointer[Scalar[dtype], MutAnyOrigin],
+    a_ptr: ImmPointer[Scalar[dtype], ImmutAnyOrigin],
+    locks: MutPointer[Int32, MutAnyOrigin],
 ):
     var tid = thread_idx.x
     var block_idx = block_idx.x
@@ -158,7 +158,7 @@ def run_matrix_reduction[
 
     var a_device = ctx.enqueue_create_buffer[dtype](PX)
     var c_device = ctx.enqueue_create_buffer[dtype](M * N)
-    var lock_dev = ctx.enqueue_create_buffer[DType.int32](1)
+    var lock_dev = ctx.enqueue_create_buffer[.int32](1)
 
     ctx.enqueue_memset(lock_dev, 0)
     ctx.enqueue_copy(a_device, a_host)
@@ -199,5 +199,5 @@ def run_matrix_reduction[
 
 def main() raises:
     with DeviceContext() as ctx:
-        run_vector_reduction[DType.float32, 128, 4](ctx)
-        run_matrix_reduction[DType.float32, 128, 128, 4](ctx)
+        run_vector_reduction[.float32, 128, 4](ctx)
+        run_matrix_reduction[.float32, 128, 128, 4](ctx)

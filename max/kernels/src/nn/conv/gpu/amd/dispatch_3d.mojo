@@ -472,8 +472,8 @@ def dispatch_amd_4wave_conv3d[
                         _N_static, _D_static, _H_static, _W_static, _C_in
                     ]()
                     comptime _output_2d_layout = row_major[_M_total_v, _C_out]()
-                    var input_ndhwc_tt = TileTensor(input.ptr, _ndhwc_in_layout)
-                    var output_2d_tt = TileTensor(output.ptr, _output_2d_layout)
+                    var input_ndhwc_tt = input.reshape(_ndhwc_in_layout)
+                    var output_2d_tt = output.reshape(_output_2d_layout)
                     amd_4wave_conv[
                         elementwise_lambda_fn=elementwise_lambda_fn,
                         block_m_override=_BM_static,
@@ -589,7 +589,7 @@ def dispatch_amd_4wave_conv3d[
                 var _rt_M_total = _rt_N * _rt_D_out * _rt_H_out * _rt_W_out
                 var _output_dims = IndexList[2](_rt_M_total, _C_out)
                 var _dyn_out_layout = row_major(Coord(_output_dims))
-                var output_2d_tt = TileTensor(output.ptr, _dyn_out_layout)
+                var output_2d_tt = output.reshape(_dyn_out_layout)
                 # Runtime-HW shape isn't known at comptime; leave
                 # BM/BN at the launcher default (128/128 for bf16) and
                 # only set BK from the static K-padding heuristic.

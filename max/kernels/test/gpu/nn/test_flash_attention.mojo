@@ -236,7 +236,7 @@ def test[
                 ]()
                 var actual = flash_output_ptr[
                     d + depth * (h + s * num_heads)
-                ].cast[DType.float64]()
+                ].cast[.float64]()
                 var rerr = abs((actual - expect) / expect)
                 assert_almost_equal(
                     actual,
@@ -263,7 +263,7 @@ def test_depth_supported_by_gpu(info: GPUInfo) -> List[Int]:
 
 
 def test_context_encoding(ctx: DeviceContext) raises:
-    test[DType.bfloat16, depth=127, num_heads=2](111, 121, ctx)
+    test[.bfloat16, depth=127, num_heads=2](111, 121, ctx)
 
     comptime depths = test_depth_supported_by_gpu(ctx.default_device_info)
 
@@ -399,7 +399,7 @@ def test_decoding[
     batch_size: Int,
     num_partitions: Optional[Int],
     split_k: Bool,
-    qkv_type: DType = DType.bfloat16,
+    qkv_type: DType = .bfloat16,
 ](ctx: DeviceContext, use_index_input: Bool = False) raises:
     comptime depths = test_depth_supported_by_gpu(ctx.default_device_info)
 
@@ -464,7 +464,7 @@ def test_decoding_large_group[
     batch_size: Int,
     num_partitions: Optional[Int] = None,
     split_k: Bool = False,
-    qkv_type: DType = DType.bfloat16,
+    qkv_type: DType = .bfloat16,
 ](ctx: DeviceContext, use_index_input: Bool = False) raises:
     comptime depths = test_depth_supported_by_gpu(ctx.default_device_info)
 
@@ -597,8 +597,8 @@ def test_flash_attention_sink_kernel(ctx: DeviceContext, seq_len: Int) raises:
     # (since V=1)
     for s in range(seq_len):
         for d in range(depth):
-            var got0 = out_host[0, s, 0, d].cast[DType.float32]()
-            var got1 = out_host[0, s, 1, d].cast[DType.float32]()
+            var got0 = out_host[0, s, 0, d].cast[.float32]()
+            var got1 = out_host[0, s, 1, d].cast[.float32]()
             assert_almost_equal(got0, want0, atol=2e-2, rtol=2e-2)
             assert_almost_equal(got1, want1, atol=2e-2, rtol=2e-2)
 

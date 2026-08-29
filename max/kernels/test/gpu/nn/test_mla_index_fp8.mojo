@@ -54,10 +54,10 @@ def _score_paged_sm100[
     depth: Int,
     KCollectionT: KVCollectionT,
 ](
-    output: TileTensor[DType.float32, ...],
-    q: TileTensor[mut=False, DType.float8_e4m3fn, ...],
-    q_s: TileTensor[mut=False, DType.float32, ...],
-    input_row_offsets: TileTensor[mut=False, DType.uint32, ...],
+    output: TileTensor[.float32, ...],
+    q: TileTensor[mut=False, .float8_e4m3fn, ...],
+    q_s: TileTensor[mut=False, .float32, ...],
+    input_row_offsets: TileTensor[mut=False, .uint32, ...],
     k_collection: KCollectionT,
     batch_size: Int,
     max_seq_len: Int,
@@ -105,6 +105,7 @@ def test_mla_index_fp8_paged_variable_lengths[
     mask_name: StaticString = MaskName.NULL.name,
     strict_complete: Bool = False,
     check_scores: Bool = False,
+    kpool: Int = 1,
 ](
     seq_lens: List[Int],
     cache_lens: List[Int],
@@ -135,6 +136,9 @@ def test_mla_index_fp8_paged_variable_lengths[
             paged TMA row mapping (page_size / LUT) reads the wrong K rows, so
             this catches it -- coverage the index-only checks and
             `test_index_fp8` (page_size == 0) never exercise.
+        kpool: Tokens per pooled cache row. With `kpool > 1` the cache rows are
+            pooled keys, so the indexer selects pool ids and each token's
+            candidate count is its visible-token count floored by `kpool`.
 
     Args:
         seq_lens: Length of each sequence (new tokens) per batch item.
@@ -206,20 +210,20 @@ def test_mla_index_fp8_paged_variable_lengths[
 
     # Q tensor: [total_seq_len, num_heads, depth]
     var q_size = total_seq_len * num_heads * depth
-    var q_ptr = ctx.enqueue_create_host_buffer[DType.float8_e4m3fn](q_size)
+    var q_ptr = ctx.enqueue_create_host_buffer[.float8_e4m3fn](q_size)
     rand(q_ptr.as_span())
-    var q_device = ctx.enqueue_create_buffer[DType.float8_e4m3fn](q_size)
+    var q_device = ctx.enqueue_create_buffer[.float8_e4m3fn](q_size)
     ctx.enqueue_copy(q_device, q_ptr)
 
     # Q scales: [total_seq_len, num_heads]
     var qs_size = total_seq_len * num_heads
-    var qs_ptr = ctx.enqueue_create_host_buffer[DType.float32](qs_size)
+    var qs_ptr = ctx.enqueue_create_host_buffer[.float32](qs_size)
     rand(qs_ptr.as_span())
-    var qs_device = ctx.enqueue_create_buffer[DType.float32](qs_size)
+    var qs_device = ctx.enqueue_create_buffer[.float32](qs_size)
     ctx.enqueue_copy(qs_device, qs_ptr)
 
     # Input row offsets: [batch_size + 1] for ragged indexing (variable lengths)
-    var input_row_offsets_ptr = ctx.enqueue_create_host_buffer[DType.uint32](
+    var input_row_offsets_ptr = ctx.enqueue_create_host_buffer[.uint32](
         batch_size + 1
     )
     input_row_offsets_ptr[0] = UInt32(0)
@@ -227,20 +231,16 @@ def test_mla_index_fp8_paged_variable_lengths[
         input_row_offsets_ptr[i + 1] = input_row_offsets_ptr[i] + UInt32(
             seq_lens[i]
         )
-    var input_row_offsets_device = ctx.enqueue_create_buffer[DType.uint32](
+    var input_row_offsets_device = ctx.enqueue_create_buffer[.uint32](
         batch_size + 1
     )
     ctx.enqueue_copy(input_row_offsets_device, input_row_offsets_ptr)
 
     # Cache lengths: [batch_size] - variable cached tokens per sequence
-    var cache_lengths_ptr = ctx.enqueue_create_host_buffer[DType.uint32](
-        batch_size
-    )
+    var cache_lengths_ptr = ctx.enqueue_create_host_buffer[.uint32](batch_size)
     for i in range(batch_size):
         cache_lengths_ptr[i] = UInt32(cache_lens[i])
-    var cache_lengths_device = ctx.enqueue_create_buffer[DType.uint32](
-        batch_size
-    )
+    var cache_lengths_device = ctx.enqueue_create_buffer[.uint32](batch_size)
     ctx.enqueue_copy(cache_lengths_device, cache_lengths_ptr)
 
     # K blocks: [num_blocks, 1, num_layers, page_size, num_heads, head_size]
@@ -256,7 +256,7 @@ def test_mla_index_fp8_paged_variable_lengths[
     var k_block_runtime_layout = RuntimeLayout[k_block_layout].row_major(
         k_shape
     )
-    var k_block_device = ctx.enqueue_create_buffer[DType.float8_e4m3fn](
+    var k_block_device = ctx.enqueue_create_buffer[.float8_e4m3fn](
         k_shape.flattened_length()
     )
     with k_block_device.map_to_host() as k_block_host:
@@ -272,7 +272,7 @@ def test_mla_index_fp8_paged_variable_lengths[
         kv_params.num_heads,
         head_dim_granularity,
     )
-    var ks_block_device = ctx.enqueue_create_buffer[DType.float32](
+    var ks_block_device = ctx.enqueue_create_buffer[.float32](
         ks_shape.flattened_length()
     )
     with ks_block_device.map_to_host() as ks_block_host:
@@ -285,7 +285,7 @@ def test_mla_index_fp8_paged_variable_lengths[
         paged_lut_shape
     )
 
-    var k_lut_device = ctx.enqueue_create_buffer[DType.uint32](
+    var k_lut_device = ctx.enqueue_create_buffer[.uint32](
         paged_lut_shape.flattened_length()
     )
 
@@ -316,15 +316,15 @@ def test_mla_index_fp8_paged_variable_lengths[
         scale_dtype_=DType.float32,
         quantization_granularity_=128,
     ](
-        LayoutTensor[DType.float8_e4m3fn, k_block_layout](
+        LayoutTensor[.float8_e4m3fn, k_block_layout](
             k_block_device,
             k_block_runtime_layout,
         ),
-        LayoutTensor[mut=False, DType.uint32, cache_lengths_layout](
+        LayoutTensor[mut=False, .uint32, cache_lengths_layout](
             cache_lengths_device,
             cache_lengths_runtime_layout,
         ),
-        LayoutTensor[mut=False, DType.uint32, paged_lut_layout](
+        LayoutTensor[mut=False, .uint32, paged_lut_layout](
             k_lut_device,
             paged_lut_runtime_layout,
         ),
@@ -332,7 +332,7 @@ def test_mla_index_fp8_paged_variable_lengths[
         # max_cache_length (cached tokens), optionally frozen far above the
         # real maximum as a captured decode graph would bake it.
         UInt32(metadata_cache_len if metadata_cache_len > 0 else max_cache_len),
-        LayoutTensor[DType.float32, ks_block_layout](
+        LayoutTensor[.float32, ks_block_layout](
             ks_block_device,
             ks_block_runtime_layout,
         ),
@@ -341,8 +341,8 @@ def test_mla_index_fp8_paged_variable_lengths[
     # Dense output: [total_seq_len, top_k]
     var total_output_size = total_seq_len * top_k
 
-    var o_ptr = ctx.enqueue_create_host_buffer[DType.int32](total_output_size)
-    var o_device = ctx.enqueue_create_buffer[DType.int32](total_output_size)
+    var o_ptr = ctx.enqueue_create_host_buffer[.int32](total_output_size)
+    var o_device = ctx.enqueue_create_buffer[.int32](total_output_size)
 
     var q_tile = TileTensor(
         q_device,
@@ -373,6 +373,7 @@ def test_mla_index_fp8_paged_variable_lengths[
         depth,
         top_k,
         mask_name,
+        kpool=kpool,
     ](
         o_tile,
         q_tile,
@@ -387,9 +388,11 @@ def test_mla_index_fp8_paged_variable_lengths[
     ctx.enqueue_copy(o_ptr, o_device)
     ctx.synchronize()
 
-    # Build a mapping from global token index to its valid key range
+    # Build a mapping from global token index to its valid candidate range.
     # With causal mask: num_keys = cache_len + local_seq_idx + 1
     # Without mask (NULL): num_keys = cache_len + seq_len
+    # With kpool > 1 a candidate is a pool of `kpool` tokens, and a pool is only
+    # selectable once its last member is visible, so the count is floored.
     var token_to_num_keys = List[Int]()
     for batch_idx in range(batch_size):
         var cache_len = cache_lens[batch_idx]
@@ -397,10 +400,10 @@ def test_mla_index_fp8_paged_variable_lengths[
 
         comptime if use_causal_mask:
             for local_seq_idx in range(seq_len):
-                var num_keys = cache_len + local_seq_idx + 1
+                var num_keys = (cache_len + local_seq_idx + 1) // kpool
                 token_to_num_keys.append(num_keys)
         else:
-            var num_keys = cache_len + seq_len
+            var num_keys = (cache_len + seq_len) // kpool
             for _ in range(seq_len):
                 token_to_num_keys.append(num_keys)
 
@@ -472,7 +475,7 @@ def test_mla_index_fp8_paged_variable_lengths[
         # fallback + the index checks above.
         comptime if _has_blackwell_tcgen05():
             var sc_size = total_seq_len * total_num_keys_max
-            var sc_buf = ctx.enqueue_create_buffer[DType.float32](sc_size)
+            var sc_buf = ctx.enqueue_create_buffer[.float32](sc_size)
             sc_buf.enqueue_fill(-Float32.MAX)
             var sc_tile = TileTensor(
                 sc_buf, row_major(total_seq_len, total_num_keys_max)
@@ -490,7 +493,7 @@ def test_mla_index_fp8_paged_variable_lengths[
                 ctx,
             )
             ctx.synchronize()
-            var sc_host = ctx.enqueue_create_host_buffer[DType.float32](sc_size)
+            var sc_host = ctx.enqueue_create_host_buffer[.float32](sc_size)
             ctx.enqueue_copy(sc_host, sc_buf)
             ctx.synchronize()
 
@@ -518,7 +521,7 @@ def test_mla_index_fp8_paged_variable_lengths[
                                         for d in range(depth):
                                             var qd = q_ptr[
                                                 (g * num_heads + h) * depth + d
-                                            ].cast[DType.float32]()
+                                            ].cast[.float32]()
                                             var kd = k_host[kbase + d].cast[
                                                 DType.float32
                                             ]()
@@ -550,8 +553,8 @@ def test_mla_index_fp8_paged_variable_lengths[
 
 
 def _assert_same_selection(
-    expected: HostBuffer[DType.int32],
-    actual: HostBuffer[DType.int32],
+    expected: HostBuffer[.int32],
+    actual: HostBuffer[.int32],
     total_seq_len: Int,
     top_k: Int,
     changed_by: StaticString,
@@ -696,16 +699,16 @@ def test_mla_index_frozen_metadata_equivalence[
     var num_blocks = batch_size * real_pages_per_seq + 1
 
     var q_size = total_seq_len * num_heads * depth
-    var q_device = ctx.enqueue_create_buffer[DType.float8_e4m3fn](q_size)
+    var q_device = ctx.enqueue_create_buffer[.float8_e4m3fn](q_size)
     with q_device.map_to_host() as q_host:
         rand(q_host.as_span())
 
     var qs_size = total_seq_len * num_heads
-    var qs_device = ctx.enqueue_create_buffer[DType.float32](qs_size)
+    var qs_device = ctx.enqueue_create_buffer[.float32](qs_size)
     with qs_device.map_to_host() as qs_host:
         rand(qs_host.as_span())
 
-    var input_row_offsets_device = ctx.enqueue_create_buffer[DType.uint32](
+    var input_row_offsets_device = ctx.enqueue_create_buffer[.uint32](
         batch_size + 1
     )
     with input_row_offsets_device.map_to_host() as iro_host:
@@ -713,9 +716,7 @@ def test_mla_index_frozen_metadata_equivalence[
         for i in range(batch_size):
             iro_host[i + 1] = iro_host[i] + UInt32(seq_lens[i])
 
-    var cache_lengths_device = ctx.enqueue_create_buffer[DType.uint32](
-        batch_size
-    )
+    var cache_lengths_device = ctx.enqueue_create_buffer[.uint32](batch_size)
     with cache_lengths_device.map_to_host() as cl_host:
         for i in range(batch_size):
             cl_host[i] = UInt32(cache_lens[i])
@@ -732,7 +733,7 @@ def test_mla_index_frozen_metadata_equivalence[
     var k_block_runtime_layout = RuntimeLayout[k_block_layout].row_major(
         k_shape
     )
-    var k_block_device = ctx.enqueue_create_buffer[DType.float8_e4m3fn](
+    var k_block_device = ctx.enqueue_create_buffer[.float8_e4m3fn](
         k_shape.flattened_length()
     )
     with k_block_device.map_to_host() as k_block_host:
@@ -751,7 +752,7 @@ def test_mla_index_frozen_metadata_equivalence[
     var ks_block_runtime_layout = RuntimeLayout[ks_block_layout].row_major(
         ks_shape
     )
-    var ks_block_device = ctx.enqueue_create_buffer[DType.float32](
+    var ks_block_device = ctx.enqueue_create_buffer[.float32](
         ks_shape.flattened_length()
     )
     with ks_block_device.map_to_host() as ks_block_host:
@@ -762,7 +763,7 @@ def test_mla_index_frozen_metadata_equivalence[
     var paged_lut_runtime_layout = RuntimeLayout[paged_lut_layout].row_major(
         paged_lut_shape
     )
-    var k_lut_device = ctx.enqueue_create_buffer[DType.uint32](
+    var k_lut_device = ctx.enqueue_create_buffer[.uint32](
         paged_lut_shape.flattened_length()
     )
     with k_lut_device.map_to_host() as k_lut_host:
@@ -782,10 +783,8 @@ def test_mla_index_frozen_metadata_equivalence[
     ].row_major(cache_lengths_shape)
 
     var total_output_size = total_seq_len * top_k
-    var o_ref_device = ctx.enqueue_create_buffer[DType.int32](total_output_size)
-    var o_frozen_device = ctx.enqueue_create_buffer[DType.int32](
-        total_output_size
-    )
+    var o_ref_device = ctx.enqueue_create_buffer[.int32](total_output_size)
+    var o_frozen_device = ctx.enqueue_create_buffer[.int32](total_output_size)
 
     var q_tile = TileTensor(
         q_device, row_major(total_seq_len, num_heads, depth)
@@ -804,21 +803,21 @@ def test_mla_index_frozen_metadata_equivalence[
             scale_dtype_=DType.float32,
             quantization_granularity_=128,
         ](
-            LayoutTensor[DType.float8_e4m3fn, k_block_layout](
+            LayoutTensor[.float8_e4m3fn, k_block_layout](
                 k_block_device,
                 k_block_runtime_layout,
             ),
-            LayoutTensor[mut=False, DType.uint32, cache_lengths_layout](
+            LayoutTensor[mut=False, .uint32, cache_lengths_layout](
                 cache_lengths_device,
                 cache_lengths_runtime_layout,
             ),
-            LayoutTensor[mut=False, DType.uint32, paged_lut_layout](
+            LayoutTensor[mut=False, .uint32, paged_lut_layout](
                 k_lut_device,
                 paged_lut_runtime_layout,
             ),
             UInt32(max_seq_len),
             UInt32(metadata_cache),
-            LayoutTensor[DType.float32, ks_block_layout](
+            LayoutTensor[.float32, ks_block_layout](
                 ks_block_device,
                 ks_block_runtime_layout,
             ),
@@ -845,10 +844,8 @@ def test_mla_index_frozen_metadata_equivalence[
         )
         ctx.synchronize()
 
-    var o_ref_host = ctx.enqueue_create_host_buffer[DType.int32](
-        total_output_size
-    )
-    var o_frozen_host = ctx.enqueue_create_host_buffer[DType.int32](
+    var o_ref_host = ctx.enqueue_create_host_buffer[.int32](total_output_size)
+    var o_frozen_host = ctx.enqueue_create_host_buffer[.int32](
         total_output_size
     )
     ctx.enqueue_copy(o_ref_host, o_ref_device)
@@ -978,16 +975,16 @@ def test_mla_index_chunked_equivalence[
     var num_blocks = batch_size * pages_per_seq + 1
 
     var q_size = total_seq_len * num_heads * depth
-    var q_device = ctx.enqueue_create_buffer[DType.float8_e4m3fn](q_size)
+    var q_device = ctx.enqueue_create_buffer[.float8_e4m3fn](q_size)
     with q_device.map_to_host() as q_host:
         rand(q_host.as_span())
 
     var qs_size = total_seq_len * num_heads
-    var qs_device = ctx.enqueue_create_buffer[DType.float32](qs_size)
+    var qs_device = ctx.enqueue_create_buffer[.float32](qs_size)
     with qs_device.map_to_host() as qs_host:
         rand(qs_host.as_span())
 
-    var input_row_offsets_device = ctx.enqueue_create_buffer[DType.uint32](
+    var input_row_offsets_device = ctx.enqueue_create_buffer[.uint32](
         batch_size + 1
     )
     with input_row_offsets_device.map_to_host() as iro_host:
@@ -995,9 +992,7 @@ def test_mla_index_chunked_equivalence[
         for i in range(batch_size):
             iro_host[i + 1] = iro_host[i] + UInt32(seq_lens[i])
 
-    var cache_lengths_device = ctx.enqueue_create_buffer[DType.uint32](
-        batch_size
-    )
+    var cache_lengths_device = ctx.enqueue_create_buffer[.uint32](batch_size)
     with cache_lengths_device.map_to_host() as cl_host:
         for i in range(batch_size):
             cl_host[i] = UInt32(cache_lens[i])
@@ -1014,7 +1009,7 @@ def test_mla_index_chunked_equivalence[
     var k_block_runtime_layout = RuntimeLayout[k_block_layout].row_major(
         k_shape
     )
-    var k_block_device = ctx.enqueue_create_buffer[DType.float8_e4m3fn](
+    var k_block_device = ctx.enqueue_create_buffer[.float8_e4m3fn](
         k_shape.flattened_length()
     )
     with k_block_device.map_to_host() as k_block_host:
@@ -1033,7 +1028,7 @@ def test_mla_index_chunked_equivalence[
     var ks_block_runtime_layout = RuntimeLayout[ks_block_layout].row_major(
         ks_shape
     )
-    var ks_block_device = ctx.enqueue_create_buffer[DType.float32](
+    var ks_block_device = ctx.enqueue_create_buffer[.float32](
         ks_shape.flattened_length()
     )
     with ks_block_device.map_to_host() as ks_block_host:
@@ -1044,7 +1039,7 @@ def test_mla_index_chunked_equivalence[
     var paged_lut_runtime_layout = RuntimeLayout[paged_lut_layout].row_major(
         paged_lut_shape
     )
-    var k_lut_device = ctx.enqueue_create_buffer[DType.uint32](
+    var k_lut_device = ctx.enqueue_create_buffer[.uint32](
         paged_lut_shape.flattened_length()
     )
     with k_lut_device.map_to_host() as k_lut_host:
@@ -1061,10 +1056,8 @@ def test_mla_index_chunked_equivalence[
     ].row_major(cache_lengths_shape)
 
     var total_output_size = total_seq_len * top_k
-    var o_ref_device = ctx.enqueue_create_buffer[DType.int32](total_output_size)
-    var o_chunked_device = ctx.enqueue_create_buffer[DType.int32](
-        total_output_size
-    )
+    var o_ref_device = ctx.enqueue_create_buffer[.int32](total_output_size)
+    var o_chunked_device = ctx.enqueue_create_buffer[.int32](total_output_size)
 
     var q_tile = TileTensor(
         q_device, row_major(total_seq_len, num_heads, depth)
@@ -1081,21 +1074,21 @@ def test_mla_index_chunked_equivalence[
         scale_dtype_=DType.float32,
         quantization_granularity_=128,
     ](
-        LayoutTensor[DType.float8_e4m3fn, k_block_layout](
+        LayoutTensor[.float8_e4m3fn, k_block_layout](
             k_block_device,
             k_block_runtime_layout,
         ),
-        LayoutTensor[mut=False, DType.uint32, cache_lengths_layout](
+        LayoutTensor[mut=False, .uint32, cache_lengths_layout](
             cache_lengths_device,
             cache_lengths_runtime_layout,
         ),
-        LayoutTensor[mut=False, DType.uint32, paged_lut_layout](
+        LayoutTensor[mut=False, .uint32, paged_lut_layout](
             k_lut_device,
             paged_lut_runtime_layout,
         ),
         UInt32(max_seq_len),
         UInt32(max_cache_len),
-        LayoutTensor[DType.float32, ks_block_layout](
+        LayoutTensor[.float32, ks_block_layout](
             ks_block_device,
             ks_block_runtime_layout,
         ),
@@ -1142,10 +1135,8 @@ def test_mla_index_chunked_equivalence[
     )
     ctx.synchronize()
 
-    var o_ref_host = ctx.enqueue_create_host_buffer[DType.int32](
-        total_output_size
-    )
-    var o_chunked_host = ctx.enqueue_create_host_buffer[DType.int32](
+    var o_ref_host = ctx.enqueue_create_host_buffer[.int32](total_output_size)
+    var o_chunked_host = ctx.enqueue_create_host_buffer[.int32](
         total_output_size
     )
     ctx.enqueue_copy(o_ref_host, o_ref_device)
@@ -2057,6 +2048,94 @@ def main() raises:
             ](
                 seq_lens=[6, 5, 4, 3],
                 cache_lens=[2000, 2000, 2000, 2000],
+                ctx=ctx,
+            )
+
+        # ===== Pooled candidates (kpool > 1) =====
+        # A cache row is one pooled key per `kpool` tokens, so each token's
+        # candidate count is its visible-token count floored by `kpool`.
+        # kpool > 1 requires the SM100 tensor-core scorer, so B200 only.
+        comptime if _has_blackwell_tcgen05():
+            print("\n--- pooled candidates (kpool=4) ---")
+
+            # GLM indexer geometry. `nh=32` routes to the warp-specialized
+            # prefill scorer. Every pool count here is under `top_k`, so each
+            # token must select its whole pool set.
+            test_mla_index_fp8_paged_variable_lengths[
+                num_heads=32,
+                depth=128,
+                page_size=128,
+                top_k=64,
+                mask_name=MaskName.NULL.name,
+                strict_complete=True,
+                kpool=4,
+            ](
+                seq_lens=[6, 4, 2, 1],
+                cache_lens=[64, 128, 32, 96],
+                ctx=ctx,
+            )
+
+            # Same geometry under causality. The bound moves per token, so a
+            # token whose visible count is not a multiple of 4 must not see the
+            # pool its tail sits in.
+            test_mla_index_fp8_paged_variable_lengths[
+                num_heads=32,
+                depth=128,
+                page_size=128,
+                top_k=64,
+                mask_name=MaskName.CAUSAL.name,
+                strict_complete=True,
+                kpool=4,
+            ](
+                seq_lens=[7, 5, 3, 1],
+                cache_lens=[64, 130, 33, 97],
+                ctx=ctx,
+            )
+
+            # `nh=64` takes the resident-key scorer, which is the other
+            # epilogue carrying the pooled store guard.
+            test_mla_index_fp8_paged_variable_lengths[
+                num_heads=64,
+                depth=128,
+                page_size=128,
+                top_k=64,
+                mask_name=MaskName.CAUSAL.name,
+                strict_complete=True,
+                kpool=4,
+            ](
+                seq_lens=[6, 1, 4, 1],
+                cache_lens=[128, 64, 200, 50],
+                ctx=ctx,
+            )
+
+            # Fewer tokens than one pool: no candidate exists, so every
+            # output slot must be the invalid sentinel rather than garbage.
+            # `effective_k` is 0 on this path, which no other case reaches.
+            test_mla_index_fp8_paged_variable_lengths[
+                num_heads=32,
+                depth=128,
+                page_size=128,
+                top_k=64,
+                mask_name=MaskName.CAUSAL.name,
+                kpool=4,
+            ](
+                seq_lens=[2, 1, 3],
+                cache_lens=[0, 0, 0],
+                ctx=ctx,
+            )
+
+            # Sparse: 2048 tokens of context is 512 pools, well above top_k, so
+            # the selection is a real top-k over pools rather than everything.
+            test_mla_index_fp8_paged_variable_lengths[
+                num_heads=32,
+                depth=128,
+                page_size=128,
+                top_k=64,
+                mask_name=MaskName.CAUSAL.name,
+                kpool=4,
+            ](
+                seq_lens=[4, 2],
+                cache_lens=[2048, 1024],
                 ctx=ctx,
             )
 

@@ -20,16 +20,12 @@ comptime tN = 4
 @always_inline
 def mm(
     k: Int,
-    a: UnsafePointer[
-        Scalar[DType.float32], _, address_space=AddressSpace.SHARED
-    ],
+    a: UnsafePointer[Float32, _, address_space=.SHARED],
     lda: Int,
-    b: UnsafePointer[
-        Scalar[DType.float32], _, address_space=AddressSpace.SHARED
-    ],
+    b: UnsafePointer[Float32, _, address_space=.SHARED],
     ldb: Int,
-    c: SIMD[DType.float32, tM * tN],
-) -> SIMD[DType.float32, tM * tN]:
+    c: SIMD[.float32, tM * tN],
+) -> SIMD[.float32, tM * tN]:
     """Compute matrix multiplication: c += a @ b.
 
     Args:

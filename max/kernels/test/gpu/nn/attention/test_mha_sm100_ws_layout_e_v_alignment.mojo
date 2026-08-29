@@ -37,15 +37,14 @@ physical page partition 0 already read, instead of its own back half.
 
 This is reachable and silent in a production build: `supported()` admits every
 `(depth, group, dtype)` cell in the shipping Layout-E grid at `page_size = 256`
-(`partition_keys` is 128 in every one of them, since `BN = 256` and
-`m_pack = 2`), `kv_cache_page_size` has no validator
+(see the plan's host-side table), `kv_cache_page_size` has no validator
 (`max/python/max/pipelines/kv_cache/config.py`), and with assertions off
 `PagedRowIndices.populate`'s `debug_assert` on `base_kv_row % page_size == 0`
 compiles out -- so this manifests as wrong keys, not a fault.
 
 The fix (`load_warp.mojo`) is `v_e_base_alignment = gcd(base_alignment,
-partition_keys)` -- the alignment promise is derived from the loop's own stride
-rather than inherited from the enclosing tile. `gcd(256, 128) == 128`, so
+partition_keys)`, the same shape as the shared-key V-walk's
+`v_sk_base_alignment` fix one section below it. `gcd(256, 128) == 128`, so
 `128 % 256 != 0` takes `populate`'s general (`row_idx`, full divmod) arm
 instead, which is correct for both partitions regardless of `p_base`'s
 alignment.
@@ -55,11 +54,10 @@ alignment.
 `num_q_heads=64` / `kv_heads=8` (`group=8`), `head_size=64`, `page_size=256`,
 `valid_length=8`. Per `test_mha_sm100_ws_bm32.mojo`'s module docstring:
 Layout-G's `BM_eff() = 32/8 = 4` fails an 8-token prompt, so the auto route
-(`FA4_FORCE_CONFIG == 0`, no copt needed) falls through to Layout-E, whose
-`BM_eff() = 64/8 = 8` accepts it.
+falls through to Layout-E, whose `BM_eff() = 64/8 = 8` accepts it.
 
-`cache_length=504` gives `num_keys=512`, two full 256-key WS tiles (`T=2`), so
-BOTH
+`cache_length=504` gives `num_keys=512`, two full 256-key WS tiles (`T=2`,
+inside the `T <= 3` WS cap `test_mha_sm100_ws_bm32.mojo` documents), so BOTH
 tiles' partition-1 V loads exercise the misaligned walk with real, distinct
 per-page KV data -- not merely an OOB-zero-filled or single-tile corner case.
 `CausalMask` at this cache/valid-length combination leaves nearly the whole
@@ -120,24 +118,22 @@ def main() raises:
     seed(0x5151)
 
     with DeviceContext() as ctx:
-        var row_offsets_host = ctx.enqueue_create_host_buffer[DType.uint32](2)
+        var row_offsets_host = ctx.enqueue_create_host_buffer[.uint32](2)
         row_offsets_host[0] = 0
         row_offsets_host[1] = UInt32(valid_length)
-        var row_offsets_dev = ctx.enqueue_create_buffer[DType.uint32](2)
+        var row_offsets_dev = ctx.enqueue_create_buffer[.uint32](2)
         ctx.enqueue_copy(row_offsets_dev, row_offsets_host)
-        var row_offsets = LayoutTensor[
-            mut=False, DType.uint32, row_offsets_layout
-        ](
+        var row_offsets = LayoutTensor[mut=False, .uint32, row_offsets_layout](
             row_offsets_dev,
             RuntimeLayout[row_offsets_layout].row_major(IndexList[1](2)),
         )
 
-        var cache_lengths_host = ctx.enqueue_create_host_buffer[DType.uint32](1)
+        var cache_lengths_host = ctx.enqueue_create_host_buffer[.uint32](1)
         cache_lengths_host[0] = UInt32(cache_length)
-        var cache_lengths_dev = ctx.enqueue_create_buffer[DType.uint32](1)
+        var cache_lengths_dev = ctx.enqueue_create_buffer[.uint32](1)
         ctx.enqueue_copy(cache_lengths_dev, cache_lengths_host)
         var cache_lengths = LayoutTensor[
-            mut=False, DType.uint32, cache_lengths_layout
+            mut=False, .uint32, cache_lengths_layout
         ](
             cache_lengths_dev,
             RuntimeLayout[cache_lengths_layout].row_major(IndexList[1](1)),
@@ -191,12 +187,12 @@ def main() raises:
         # shuffling, so no permutation is needed. Tail columns point at the
         # poison block (see `padded_lut_cols`'s docstring above).
         var lut_cols = padded_lut_cols(num_pages)
-        var lut_host = ctx.enqueue_create_host_buffer[DType.uint32](lut_cols)
+        var lut_host = ctx.enqueue_create_host_buffer[.uint32](lut_cols)
         for i in range(lut_cols):
             lut_host[i] = UInt32(poison_block if i >= num_pages else i)
-        var lut_dev = ctx.enqueue_create_buffer[DType.uint32](lut_cols)
+        var lut_dev = ctx.enqueue_create_buffer[.uint32](lut_cols)
         ctx.enqueue_copy(lut_dev, lut_host)
-        var lut = LayoutTensor[mut=False, DType.uint32, paged_lut_layout](
+        var lut = LayoutTensor[mut=False, .uint32, paged_lut_layout](
             lut_dev,
             RuntimeLayout[paged_lut_layout].row_major(
                 IndexList[2](1, lut_cols)
@@ -258,11 +254,11 @@ def main() raises:
         var nan_count = 0
         var max_abs_diff = Float32(0)
         for i in range(qo_size):
-            var got = test_host[i].cast[DType.float32]()
+            var got = test_host[i].cast[.float32]()
             if isnan(got):
                 nan_count += 1
                 continue
-            var want = ref_host[i].cast[DType.float32]()
+            var want = ref_host[i].cast[.float32]()
             max_abs_diff = max(max_abs_diff, abs(got - want))
 
         _ = q_dev^

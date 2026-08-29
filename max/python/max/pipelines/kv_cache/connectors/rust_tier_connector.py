@@ -45,7 +45,7 @@ from __future__ import annotations
 
 import logging
 import time
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import NamedTuple
 
@@ -56,11 +56,12 @@ from max.driver import (
     _unsafe_free_fast_pinned_buffer,
 )
 from max.dtype import DType
+from max.nn.kv_cache import KVCacheGroupId
 from max.nn.kv_cache.cache_params import KVCacheMemory
 from max.nn.kv_cache.metrics import KVCacheMetrics
 from max.support.human_readable_formatter import to_human_readable_bytes
 
-from ..kv_connector import BlockCount, KVConnector, KVConnectorTransfer
+from ..kv_connector import ByteCount, KVConnector, KVConnectorTransfer
 from ..paged_kv_cache.block_copy_engine import _check_host_memory_capacity
 from ..paged_kv_cache.block_manager import (
     _resolve_only_use_kv_connector_last_level_cache,
@@ -136,6 +137,7 @@ class RustTierConnector(KVConnector):
 
     def __init__(
         self,
+        leaves: Mapping[str, KVCacheGroupId],
         replica_kv_memory: Sequence[Sequence[KVCacheMemory]],
         disk_cache_dir: str,
         host_offload_max_gb: float | None = None,
@@ -145,12 +147,13 @@ class RustTierConnector(KVConnector):
         """Initializes the connector over ``replica_kv_memory``'s device buffers.
 
         Args:
+            leaves: The leaves / group ids for the connector.
             replica_kv_memory: Per-DP-replica offload-ready KV memory units.
             disk_cache_dir: Directory backing the disk last level.
             host_offload_max_gb: Host budget. ``None`` sizes the host pool to
-                hold twice the device page pool.
-            disk_offload_max_gb: Disk budget. ``None`` sizes it to hold three
-                times the device page pool.
+                hold 1.5 times the device page pool.
+            disk_offload_max_gb: Disk budget. ``None`` sizes it to hold twice
+                the device page pool.
             num_disk_workers: Disk I/O worker threads.
         """
         # Lazy import: OSS MAX can import this module without the extension.
@@ -160,6 +163,12 @@ class RustTierConnector(KVConnector):
 
         if not replica_kv_memory:
             raise ValueError("RustTierConnector requires at least one replica")
+
+        if not leaves:
+            raise ValueError("RustTierConnector requires at least one leaf")
+        if not all(group_id.is_full() for group_id in leaves.values()):
+            raise ValueError("RustTierConnector only supports full groups")
+        self._leaves = leaves
 
         gpu0 = replica_kv_memory[0][0].buffers[0].device
         if gpu0.is_host:
@@ -173,7 +182,7 @@ class RustTierConnector(KVConnector):
         # budget would be far too small for one and wasteful for another.
         GiB = 1024**3
         if host_offload_max_gb is None:
-            total_num_host_blocks = 2 * total_num_pages
+            total_num_host_blocks = int(1.5 * total_num_pages)
         else:
             total_num_host_blocks = (
                 int(host_offload_max_gb * GiB) // bytes_per_page
@@ -187,7 +196,7 @@ class RustTierConnector(KVConnector):
                     f"{to_human_readable_bytes(int(host_offload_max_gb * GiB))}."
                 )
         if disk_offload_max_gb is None:
-            disk_offload_max_gb = 3 * total_num_pages * bytes_per_page / GiB
+            disk_offload_max_gb = 2 * total_num_pages * bytes_per_page / GiB
 
         # The shared pinned host buffer the Rust lanes copy to/from. It is not
         # GC-managed (see `_unsafe_alloc_fast_pinned_buffer`), so it must be
@@ -198,6 +207,7 @@ class RustTierConnector(KVConnector):
         _check_disk_capacity(disk_cache_dir, int(disk_offload_max_gb * GiB))
         total_gib = total_bytes / (1024**3)
         start = time.perf_counter()
+        logger.info("Allocating %.1f GiB pinned host KV cache...", total_gib)
         self._host_buffer = _unsafe_alloc_fast_pinned_buffer(
             DType.uint8, [total_num_host_blocks, bytes_per_page], gpu0
         )
@@ -241,6 +251,7 @@ class RustTierConnector(KVConnector):
             )
 
         self._rust = TierConnector(
+            list(self._leaves.keys()),
             total_num_host_blocks,
             host_base,
             bytes_per_page,
@@ -261,26 +272,60 @@ class RustTierConnector(KVConnector):
         )
 
     @property
+    def leaves(self) -> Mapping[str, KVCacheGroupId]:
+        return self._leaves
+
+    @property
     def name(self) -> str:
         return "RustTieredConnector"
 
     def load(
         self,
-        device_block_ids: list[int],
+        block_ids: Mapping[str, Sequence[int]],
         block_hashes: Sequence[bytes],
         replica_idx: int = 0,
     ) -> KVConnectorTransfer:
+        if block_ids.keys() != self._leaves.keys():
+            raise ValueError(
+                f"RustTierConnector.load block_ids keys {sorted(block_ids)} do not "
+                f"match the connector's leaves {sorted(self._leaves)}"
+            )
+        unique_block_ids = {tuple(bids) for bids in block_ids.values()}
+        if len(unique_block_ids) != 1:
+            raise ValueError(
+                "RustTierConnector.load expects identical block IDs across all leaves."
+                f"Found {block_ids}"
+            )
+        leaf_block_ids = list(unique_block_ids.pop())
         return self._rust.load(
-            device_block_ids, list(block_hashes), replica_idx
+            leaf_block_ids,
+            list(block_hashes),
+            replica_idx,
         )
 
     def offload(
         self,
-        block_ids: list[int],
+        block_ids: Mapping[str, Sequence[int]],
         block_hashes: Sequence[bytes],
         replica_idx: int = 0,
     ) -> KVConnectorTransfer:
-        return self._rust.offload(block_ids, list(block_hashes), replica_idx)
+        if block_ids.keys() != self._leaves.keys():
+            raise ValueError(
+                f"RustTierConnector.offload block_ids keys {sorted(block_ids)} do not "
+                f"match the connector's leaves {sorted(self._leaves)}"
+            )
+        unique_block_ids = {tuple(bids) for bids in block_ids.values()}
+        if len(unique_block_ids) != 1:
+            raise ValueError(
+                "RustTierConnector.offload expects identical block IDs across all leaves."
+                f"Found {block_ids}"
+            )
+        leaf_block_ids = list(unique_block_ids.pop())
+        return self._rust.offload(
+            leaf_block_ids,
+            list(block_hashes),
+            replica_idx,
+        )
 
     def wait_for_loads(self) -> None:
         # No-op: this connector reports load completion through the
@@ -321,17 +366,17 @@ class RustTierConnector(KVConnector):
         _unsafe_free_fast_pinned_buffer(self._host_buffer)
 
     @property
-    def host_block_count(self) -> BlockCount:
-        return BlockCount(
-            free=self._rust.num_free_host_blocks(),
-            total=self._rust.num_host_blocks(),
+    def host_byte_count(self) -> ByteCount:
+        return ByteCount(
+            free=self._rust.free_host_bytes(),
+            total=self._rust.host_bytes(),
         )
 
     @property
-    def disk_block_count(self) -> BlockCount:
-        return BlockCount(
-            free=self._rust.num_free_disk_blocks(),
-            total=self._rust.num_disk_blocks(),
+    def disk_byte_count(self) -> ByteCount:
+        return ByteCount(
+            free=self._rust.free_disk_bytes(),
+            total=self._rust.disk_bytes(),
         )
 
     def reset_prefix_cache(self) -> None:
@@ -341,10 +386,10 @@ class RustTierConnector(KVConnector):
     def metrics(self) -> KVCacheMetrics:
         h2d, d2h, disk_read, disk_write = self._rust.metrics()
         return KVCacheMetrics(
-            h2d_blocks_copied=h2d,
-            d2h_blocks_copied=d2h,
-            disk_blocks_read=disk_read,
-            disk_blocks_written=disk_write,
+            h2d_bytes_copied=h2d,
+            d2h_bytes_copied=d2h,
+            disk_bytes_read=disk_read,
+            disk_bytes_written=disk_write,
             inflight_disk_ops=self._rust.inflight_disk_ops(),
         )
 

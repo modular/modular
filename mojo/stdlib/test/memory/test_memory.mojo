@@ -15,6 +15,7 @@ from std.sys import simd_width_of, size_of
 from std.os import abort
 
 from std.memory import (
+    Allocation,
     unsafe_memcmp,
     unsafe_memcpy,
     unsafe_memmove,
@@ -263,32 +264,28 @@ def _test_memcmp_extensive[
 
 
 def test_memcmp_extensive() raises:
-    _test_memcmp_extensive[DType.int8](1)
-    _test_memcmp_extensive[DType.int8](3)
+    _test_memcmp_extensive[.int8](1)
+    _test_memcmp_extensive[.int8](3)
 
-    _test_memcmp_extensive[DType.int](3)
-    _test_memcmp_extensive[DType.int](simd_width_of[Int]())
-    _test_memcmp_extensive[DType.int](4 * simd_width_of[DType.int]())
-    _test_memcmp_extensive[DType.int](4 * simd_width_of[DType.int]() + 1)
-    _test_memcmp_extensive[DType.int](4 * simd_width_of[DType.int]() - 1)
+    _test_memcmp_extensive[.int](3)
+    _test_memcmp_extensive[.int](simd_width_of[Int]())
+    _test_memcmp_extensive[.int](4 * simd_width_of[DType.int]())
+    _test_memcmp_extensive[.int](4 * simd_width_of[DType.int]() + 1)
+    _test_memcmp_extensive[.int](4 * simd_width_of[DType.int]() - 1)
 
-    _test_memcmp_extensive[DType.float32](3)
-    _test_memcmp_extensive[DType.float32](simd_width_of[DType.float32]())
-    _test_memcmp_extensive[DType.float32](4 * simd_width_of[DType.float32]())
-    _test_memcmp_extensive[DType.float32](
-        4 * simd_width_of[DType.float32]() + 1
-    )
-    _test_memcmp_extensive[DType.float32](
-        4 * simd_width_of[DType.float32]() - 1
-    )
+    _test_memcmp_extensive[.float32](3)
+    _test_memcmp_extensive[.float32](simd_width_of[DType.float32]())
+    _test_memcmp_extensive[.float32](4 * simd_width_of[DType.float32]())
+    _test_memcmp_extensive[.float32](4 * simd_width_of[DType.float32]() + 1)
+    _test_memcmp_extensive[.float32](4 * simd_width_of[DType.float32]() - 1)
 
-    _test_memcmp_extensive[DType.float32, "nan"](3)
-    _test_memcmp_extensive[DType.float32, "nan"](99)
-    _test_memcmp_extensive[DType.float32, "nan"](254)
+    _test_memcmp_extensive[.float32, "nan"](3)
+    _test_memcmp_extensive[.float32, "nan"](99)
+    _test_memcmp_extensive[.float32, "nan"](254)
 
-    _test_memcmp_extensive[DType.float32, "inf"](3)
-    _test_memcmp_extensive[DType.float32, "inf"](99)
-    _test_memcmp_extensive[DType.float32, "inf"](254)
+    _test_memcmp_extensive[.float32, "inf"](3)
+    _test_memcmp_extensive[.float32, "inf"](99)
+    _test_memcmp_extensive[.float32, "inf"](254)
 
 
 def test_memcmp_simd_boundary() raises:
@@ -548,6 +545,83 @@ def test_memcmp_simd_zero_bytes() raises:
         )
 
 
+@fieldwise_init
+struct TwelveByteStruct(TrivialRegisterPassable):
+    var a: UInt32
+    var b: UInt32
+    var c: UInt32
+
+
+@fieldwise_init
+struct SixteenByteStruct(TrivialRegisterPassable):
+    var a: UInt64
+    var b: UInt64
+
+
+def test_memcmp_high_bit_and_multiples_of_4() raises:
+    # 4-byte element: high bit set should compare as unsigned
+    var a4 = List[UInt32](length=1, fill=0x8000_0001)
+    var b4 = List[UInt32](length=1, fill=0x0000_0001)
+    var res4_chunked = unsafe_memcmp(a4.unsafe_ptr(), b4.unsafe_ptr(), 1)
+    var res4_bytewise = unsafe_memcmp(
+        a4.unsafe_ptr().unsafe_bitcast[Byte](),
+        b4.unsafe_ptr().unsafe_bitcast[Byte](),
+        4,
+    )
+    assert_equal(res4_chunked, 1)
+    assert_equal(res4_chunked, res4_bytewise)
+    assert_equal(unsafe_memcmp(b4.unsafe_ptr(), a4.unsafe_ptr(), 1), -1)
+
+    # 8-byte element: high bit set should compare as unsigned
+    var a8 = List[UInt64](length=1, fill=0x8000_0000_0000_0001)
+    var b8 = List[UInt64](length=1, fill=0x0000_0000_0000_0001)
+    var res8_chunked = unsafe_memcmp(a8.unsafe_ptr(), b8.unsafe_ptr(), 1)
+    var res8_bytewise = unsafe_memcmp(
+        a8.unsafe_ptr().unsafe_bitcast[Byte](),
+        b8.unsafe_ptr().unsafe_bitcast[Byte](),
+        8,
+    )
+    assert_equal(res8_chunked, 1)
+    assert_equal(res8_chunked, res8_bytewise)
+    assert_equal(unsafe_memcmp(b8.unsafe_ptr(), a8.unsafe_ptr(), 1), -1)
+
+    # 12-byte element: high bit in middle chunk
+    var a12 = List[TwelveByteStruct](
+        length=1, fill=TwelveByteStruct(0, 0x8000_0000, 0)
+    )
+    var b12 = List[TwelveByteStruct](
+        length=1, fill=TwelveByteStruct(0, 0x0000_0000, 0)
+    )
+    var res12_chunked = unsafe_memcmp(a12.unsafe_ptr(), b12.unsafe_ptr(), 1)
+    var res12_bytewise = unsafe_memcmp(
+        a12.unsafe_ptr().unsafe_bitcast[Byte](),
+        b12.unsafe_ptr().unsafe_bitcast[Byte](),
+        12,
+    )
+    assert_equal(res12_chunked, 1)
+    assert_equal(res12_chunked, res12_bytewise)
+    assert_equal(unsafe_memcmp(b12.unsafe_ptr(), a12.unsafe_ptr(), 1), -1)
+
+    # 16-byte element: high bit in first 8-byte field
+    var a16 = List[SixteenByteStruct](
+        length=1,
+        fill=SixteenByteStruct(0x8000_0000_0000_0000, 0),
+    )
+    var b16 = List[SixteenByteStruct](
+        length=1,
+        fill=SixteenByteStruct(0x0000_0000_0000_0000, 0),
+    )
+    var res16_chunked = unsafe_memcmp(a16.unsafe_ptr(), b16.unsafe_ptr(), 1)
+    var res16_bytewise = unsafe_memcmp(
+        a16.unsafe_ptr().unsafe_bitcast[Byte](),
+        b16.unsafe_ptr().unsafe_bitcast[Byte](),
+        16,
+    )
+    assert_equal(res16_chunked, 1)
+    assert_equal(res16_chunked, res16_bytewise)
+    assert_equal(unsafe_memcmp(b16.unsafe_ptr(), a16.unsafe_ptr(), 1), -1)
+
+
 def test_memset() raises:
     var pair = Pair(1, 2)
 
@@ -662,7 +736,7 @@ def test_dtypepointer_gather() raises:
         width: SIMDLength
     ](
         offset: SIMD[_, width],
-        mask: SIMD[DType.bool, width],
+        mask: SIMD[.bool, width],
         default: SIMD[ptr.T.dtype, width],
         desired: SIMD[ptr.T.dtype, width],
     ) raises {imm}:
@@ -671,19 +745,19 @@ def test_dtypepointer_gather() raises:
             actual, desired, msg="_test_masked_gather", atol=0.0, rtol=0.0
         )
 
-    var offset = SIMD[DType.int64, 8](3, 0, 2, 1, 2, 0, 3, 1)
+    var offset = SIMD[.int64, 8](3, 0, 2, 1, 2, 0, 3, 1)
     var desired = SIMD[ptr.T.dtype, 8](3.0, 0.0, 2.0, 1.0, 2.0, 0.0, 3.0, 1.0)
 
     _test_gather[1](UInt16(2), 2.0)
-    _test_gather(offset.cast[DType.uint32]().slice[2](), desired.slice[2]())
-    _test_gather(offset.cast[DType.uint64]().slice[4](), desired.slice[4]())
+    _test_gather(offset.cast[.uint32]().slice[2](), desired.slice[2]())
+    _test_gather(offset.cast[.uint64]().slice[4](), desired.slice[4]())
 
     var mask = offset.ge(0) & offset.lt(3)
     var default = SIMD[ptr.T.dtype, 8](-1.0)
     desired = SIMD[ptr.T.dtype, 8](-1.0, 0.0, 2.0, 1.0, 2.0, 0.0, -1.0, 1.0)
 
-    _test_masked_gather[1](Int16(2), Scalar[DType.bool](False), -1.0, -1.0)
-    _test_masked_gather[1](Int32(2), Scalar[DType.bool](True), -1.0, 2.0)
+    _test_masked_gather[1](Int16(2), Scalar[.bool](False), -1.0, -1.0)
+    _test_masked_gather[1](Int32(2), Scalar[.bool](True), -1.0, 2.0)
     _test_masked_gather(offset, mask, default, desired)
 
 
@@ -710,7 +784,7 @@ def test_dtypepointer_scatter() raises:
     ](
         offset: SIMD[_, width],
         val: SIMD[ptr.T.dtype, width],
-        mask: SIMD[DType.bool, width],
+        mask: SIMD[.bool, width],
         desired: SIMD[ptr.T.dtype, 4],
     ) raises {imm}:
         ptr.unsafe_scatter(offset, val, mask)
@@ -721,12 +795,12 @@ def test_dtypepointer_scatter() raises:
 
     _test_scatter[1](UInt16(2), 2.0, SIMD[ptr.T.dtype, 4](0.0, 0.0, 2.0, 0.0))
     _test_scatter(  # Test with repeated offsets
-        SIMD[DType.uint32, 4](1, 1, 1, 1),
+        SIMD[.uint32, 4](1, 1, 1, 1),
         SIMD[ptr.T.dtype, 4](-1.0, 2.0, -2.0, 1.0),
         SIMD[ptr.T.dtype, 4](0.0, 1.0, 2.0, 0.0),
     )
     _test_scatter(
-        SIMD[DType.uint64, 4](3, 2, 1, 0),
+        SIMD[.uint64, 4](3, 2, 1, 0),
         SIMD[ptr.T.dtype, 4](0.0, 1.0, 2.0, 3.0),
         SIMD[ptr.T.dtype, 4](3.0, 2.0, 1.0, 0.0),
     )
@@ -736,25 +810,25 @@ def test_dtypepointer_scatter() raises:
     _test_masked_scatter[1](
         Int16(2),
         2.0,
-        Scalar[DType.bool](False),
+        Scalar[.bool](False),
         SIMD[ptr.T.dtype, 4](0.0, 0.0, 0.0, 0.0),
     )
     _test_masked_scatter[1](
         Int32(2),
         2.0,
-        Scalar[DType.bool](True),
+        Scalar[.bool](True),
         SIMD[ptr.T.dtype, 4](0.0, 0.0, 2.0, 0.0),
     )
     _test_masked_scatter(  # Test with repeated offsets
-        SIMD[DType.int64, 4](1, 1, 1, 1),
+        SIMD[.int64, 4](1, 1, 1, 1),
         SIMD[ptr.T.dtype, 4](-1.0, 2.0, -2.0, 1.0),
-        SIMD[DType.bool, 4](True, True, True, False),
+        SIMD[.bool, 4](True, True, True, False),
         SIMD[ptr.T.dtype, 4](0.0, -2.0, 2.0, 0.0),
     )
     _test_masked_scatter(
-        SIMD[DType.int, 4](3, 2, 1, 0),
+        SIMD[.int, 4](3, 2, 1, 0),
         SIMD[ptr.T.dtype, 4](0.0, 1.0, 2.0, 3.0),
-        SIMD[DType.bool, 4](True, False, True, True),
+        SIMD[.bool, 4](True, False, True, True),
         SIMD[ptr.T.dtype, 4](3.0, 2.0, 2.0, 0.0),
     )
 
@@ -935,6 +1009,146 @@ def test_uninit_copy_n_nontrivial() raises:
     assert_equal(src_copy_count0, 0)
     assert_equal(src_copy_count1, 0)
     assert_equal(src_copy_count2, 0)
+
+
+# An overlapping call has to alias `dest` and `src`, which the exclusivity
+# checker allows only for an untracked origin.
+def _untracked[
+    T: AnyType
+](mut allocation: Allocation[T]) -> Pointer[T, MutUntrackedOrigin]:
+    return allocation.unsafe_ptr().unsafe_origin_cast[MutUntrackedOrigin]()
+
+
+def test_uninit_move_n_overlapping_trivial() raises:
+    var allocation = alloc[Int]({count = 4})
+    var ptr = _untracked(allocation)
+
+    ptr.unsafe_offset(0).unsafe_write(1)
+    ptr.unsafe_offset(1).unsafe_write(2)
+    ptr.unsafe_offset(2).unsafe_write(3)
+    unsafe_uninit_move_n[overlapping=True](
+        dest=ptr.unsafe_offset(1), src=ptr.unsafe_offset(0), count=3
+    )
+    var right = [
+        ptr[unsafe_offset=1],
+        ptr[unsafe_offset=2],
+        ptr[unsafe_offset=3],
+    ]
+
+    unsafe_uninit_move_n[overlapping=True](
+        dest=ptr.unsafe_offset(0), src=ptr.unsafe_offset(1), count=3
+    )
+    var left = [
+        ptr[unsafe_offset=0],
+        ptr[unsafe_offset=1],
+        ptr[unsafe_offset=2],
+    ]
+
+    unsafe_uninit_move_n[overlapping=True](
+        dest=ptr.unsafe_offset(1), src=ptr.unsafe_offset(0), count=0
+    )
+    var empty = [ptr[unsafe_offset=0], ptr[unsafe_offset=1]]
+
+    dealloc(allocation^)
+
+    assert_equal(right, [1, 2, 3])
+    assert_equal(left, [1, 2, 3])
+    assert_equal(empty, [1, 2])
+
+
+def test_uninit_move_n_overlapping_shift_right_nontrivial() raises:
+    # Walking forward would move slot 0 onto slot 1 and then read slot 1
+    # again, leaving "foo" in every slot.
+    var allocation = alloc[MoveCounter[String]]({count = 4})
+    var ptr = _untracked(allocation)
+    ptr.unsafe_offset(0).unsafe_write(MoveCounter("foo"))
+    ptr.unsafe_offset(1).unsafe_write(MoveCounter("bar"))
+    ptr.unsafe_offset(2).unsafe_write(MoveCounter("baz"))
+
+    unsafe_uninit_move_n[overlapping=True](
+        dest=ptr.unsafe_offset(1), src=ptr.unsafe_offset(0), count=3
+    )
+
+    var value1 = ptr[unsafe_offset=1].value
+    var value2 = ptr[unsafe_offset=2].value
+    var value3 = ptr[unsafe_offset=3].value
+    var move_count1 = ptr[unsafe_offset=1].move_count
+
+    # Slot 0 was moved out of, so the live range is now [1, 4).
+    unsafe_destroy_n(ptr.unsafe_offset(1), count=3)
+    dealloc(allocation^)
+
+    assert_equal(value1, "foo")
+    assert_equal(value2, "bar")
+    assert_equal(value3, "baz")
+
+    # One move to initialize the slot, one for the shift.
+    assert_equal(move_count1, 2)
+
+
+def test_uninit_move_n_overlapping_shift_left_nontrivial() raises:
+    var allocation = alloc[MoveCounter[String]]({count = 4})
+    var ptr = _untracked(allocation)
+    ptr.unsafe_offset(1).unsafe_write(MoveCounter("foo"))
+    ptr.unsafe_offset(2).unsafe_write(MoveCounter("bar"))
+    ptr.unsafe_offset(3).unsafe_write(MoveCounter("baz"))
+
+    unsafe_uninit_move_n[overlapping=True](
+        dest=ptr.unsafe_offset(0), src=ptr.unsafe_offset(1), count=3
+    )
+
+    var value0 = ptr[unsafe_offset=0].value
+    var value1 = ptr[unsafe_offset=1].value
+    var value2 = ptr[unsafe_offset=2].value
+    var move_count0 = ptr[unsafe_offset=0].move_count
+
+    unsafe_destroy_n(ptr, count=3)
+    dealloc(allocation^)
+
+    assert_equal(value0, "foo")
+    assert_equal(value1, "bar")
+    assert_equal(value2, "baz")
+    assert_equal(move_count0, 2)
+
+
+def test_uninit_copy_n_overlapping_nontrivial() raises:
+    comptime Counter = CopyCounter[Int]
+    var allocation = alloc[Counter]({count = 4})
+    var ptr = _untracked(allocation)
+
+    ptr.unsafe_offset(0).unsafe_write(Counter(1))
+    ptr.unsafe_offset(1).unsafe_write(Counter(2))
+    ptr.unsafe_offset(2).unsafe_write(Counter(3))
+    unsafe_uninit_copy_n[overlapping=True](
+        dest=ptr.unsafe_offset(1), src=ptr.unsafe_offset(0), count=3
+    )
+    var right = [
+        ptr[unsafe_offset=1].value,
+        ptr[unsafe_offset=2].value,
+        ptr[unsafe_offset=3].value,
+    ]
+    var right_copy_count = ptr[unsafe_offset=1].copy_count
+
+    ptr.unsafe_offset(1).unsafe_write(Counter(1))
+    ptr.unsafe_offset(2).unsafe_write(Counter(2))
+    ptr.unsafe_offset(3).unsafe_write(Counter(3))
+    unsafe_uninit_copy_n[overlapping=True](
+        dest=ptr.unsafe_offset(0), src=ptr.unsafe_offset(1), count=3
+    )
+    var left = [
+        ptr[unsafe_offset=0].value,
+        ptr[unsafe_offset=1].value,
+        ptr[unsafe_offset=2].value,
+    ]
+    var left_copy_count = ptr[unsafe_offset=0].copy_count
+
+    unsafe_destroy_n(ptr, count=4)
+    dealloc(allocation^)
+
+    assert_equal(right, [1, 2, 3])
+    assert_equal(right_copy_count, 1)
+    assert_equal(left, [1, 2, 3])
+    assert_equal(left_copy_count, 1)
 
 
 def test_destroy_n_trivial() raises:

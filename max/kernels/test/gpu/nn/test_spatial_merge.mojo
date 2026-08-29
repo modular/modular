@@ -38,7 +38,7 @@ def test_spatial_merge(ctx: DeviceContext) raises:
     # Create device buffers
     var input_device = ctx.enqueue_create_buffer[dtype](input_size)
     var output_device = ctx.enqueue_create_buffer[dtype](output_size)
-    var grid_thw_device = ctx.enqueue_create_buffer[DType.int64](grid_thw_size)
+    var grid_thw_device = ctx.enqueue_create_buffer[.int64](grid_thw_size)
 
     # Initialize input data on host
     with input_device.map_to_host() as input_host:
@@ -115,7 +115,7 @@ def test_spatial_merge(ctx: DeviceContext) raises:
         14,
         15,
     ]
-    var batch0_expected: UnsafePointer[
+    var batch0_expected: Pointer[
         batch0_expected_list.T, origin_of(batch0_expected_list)
     ] = batch0_expected_list.unsafe_ptr()
 
@@ -161,7 +161,7 @@ def test_spatial_merge(ctx: DeviceContext) raises:
             18,
             19,  # Frame 0 and Frame 1 (repeated)
         ]
-        var batch1_expected: UnsafePointer[
+        var batch1_expected: Pointer[
             batch1_expected_list.T, origin_of(batch1_expected_list)
         ] = batch1_expected_list.unsafe_ptr()
 
@@ -225,7 +225,7 @@ def test_spatial_merge_no_out_of_bounds(ctx: DeviceContext) raises:
     var output_device = ctx.enqueue_create_buffer[dtype](
         output_size + canary_size
     )
-    var grid_thw_device = ctx.enqueue_create_buffer[DType.int64](grid_thw_size)
+    var grid_thw_device = ctx.enqueue_create_buffer[.int64](grid_thw_size)
 
     with input_device.map_to_host() as input_host:
         var input_host_tensor = TileTensor(
@@ -280,7 +280,7 @@ def test_spatial_merge_no_out_of_bounds(ctx: DeviceContext) raises:
     # merged patch 0 (wo=0) contains input patches [0, 1, 4, 5]
     # merged patch 1 (wo=1) contains input patches [2, 3, 6, 7]
     var expected_list: List[Int] = [0, 1, 4, 5, 2, 3, 6, 7]
-    var expected: UnsafePointer[
+    var expected: Pointer[
         expected_list.T, origin_of(expected_list)
     ] = expected_list.unsafe_ptr()
 

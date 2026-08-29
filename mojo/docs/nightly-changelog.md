@@ -109,6 +109,9 @@ This version is still a work in progress.
   - Intra-package accesses without explicit `import`s are now an error,
     following a period of deprecation.
 
+- Use of the `read` argument convention is now a hard error, following a period
+  of deprecation; use `imm` instead.
+
 ## Library stabilizations
 
 - String
@@ -116,7 +119,32 @@ This version is still a work in progress.
   - `def __init__(out self, *, capacity_bytes: Int):`
   - `def reserve_bytes(mut self, new_capacity_bytes: Int, /):`
 
+## Library performance improvements
+
+- Files with many t-string (`t"..."`) literals compile faster: the
+  compile-time step that encodes each literal's format string (part of
+  elaboration, not the whole compile) is about 7x faster. The effect on
+  total build time scales with how many t-string literals a file has.
+
 ## Library changes
+
+- `Coord` has a new `replace[at](value)` method that returns a `Coord` with
+  the element at `at` swapped for `value`, keeping the other elements' types. A
+  statically known element (`ComptimeInt`) has no runtime storage to assign
+  into, so overwriting one with a runtime value yields a `Coord` of a different
+  type rather than mutating in place. Unlike `make_dynamic()`, which converts
+  every element to a `Scalar`, the untouched dimensions keep their compile-time
+  values:
+
+  ```mojo
+  var c = Coord(ComptimeInt[3](), ComptimeInt[4]())
+  var moved = c.replace[1](Int64(7))  # Coord(ComptimeInt[3](), Int64(7))
+  ```
+
+- `List.extend` and `List.resize` now grow geometrically, so repeatedly
+  extending or resizing by a small increment is no longer quadratic. As a
+  result `capacity()` can report more than was asked for. `reserve` is
+  unchanged and still allocates exactly what you request.
 
 - `CompilationTarget` has a new `is_arm()` predicate, and `is_x86()` now
   reports the architecture rather than SSE4 availability. Both read the
@@ -138,6 +166,13 @@ This version is still a work in progress.
   `c`. Previously either one reported only the base integer ISA.
 
 - `Bencher.bench_function()` now takes a raising closure.
+
+- The zero-argument `Bench.bench_function()` overload now takes a raising
+  closure as a runtime argument. The compile-time parameter form
+  `bench_function[fn]()` for a raising zero-argument body has been removed.
+
+- The remaining compile-time parameter forms of `Bench.bench_function()` and
+  `Bencher.iter()` have been removed. Pass the closure as a runtime argument.
 
 - `Bencher.iter_preproc()` now takes its closures as runtime arguments instead
   of compile-time parameters, along with an explicit state value that is passed
@@ -233,6 +268,9 @@ This version is still a work in progress.
   turns what would otherwise be silent memory-safety bugs into compile-time
   errors.
 
+- Added `deinit()`, for any `Deinitable` type, to explicitly extend a value's
+  lifetime up to a specific point and run its deinitializer there.
+
 - `Atomic` is now parameterized on a value type `T` instead of a `DType`.
   Update call sites from `Atomic[DType.float32]` to `Atomic[Float32]`. The
   atomic operations (`load()`, `store()`, `fetch_add()`, `compare_exchange()`,
@@ -243,7 +281,15 @@ This version is still a work in progress.
   than moving an already-constructed value there. Unlike `unsafe_write(var T)`,
   this does not require the pointee type to be `Movable`.
 
+- `Array[T, N]` has a new `fill_with=` constructor that calls a function with
+  each index in `[0, N)` and writes its result into that position, replacing
+  the `Array(uninitialized=True)` plus manual fill-loop idiom.
+
 - `List`'s element type is now bounded by `AnyType` instead of `Movable`.
+
+- `List` has a new `fill_with=` constructor that calls a function with each
+  index in `[0, length)` and writes its result into that position, without
+  requiring the element type to be `Movable`.
 
 - Added `write()` to `MaybeUninit` and `Pointer`, as a safe counterpart to
   `unsafe_write()` for types that are trivially deinitializable (for example
@@ -281,6 +327,23 @@ This release completes the removal of APIs deprecated during the v1.0 cycle.
 - Removed the temporary `InlineArray` alias for `Array`, including its
   re-exports from `std.collections` and the prelude. Use `Array` directly.
 
+- Removed redundant `Int` overloads across the standard library:
+  `count_leading_zeros()`, `count_trailing_zeros()`, `bit_reverse()`,
+  `byte_swap()`, `pop_count()`, `log2_ceil()`, `next_power_of_two()`, and
+  `prev_power_of_two()` in `std.bit`; `broadcast()` in `std.gpu.primitives`
+  (including the `UInt` overload); `readfirstlane()` in `std.sys`; and
+  `umod()` in `std.math.uutils`. `Int` is an alias for `Scalar[DType.int]`,
+  so the generic `SIMD` overloads already accept `Int` arguments and return
+  `Int`; call sites need no changes. As a side effect, `broadcast()` on
+  `Int`/`UInt` values now shuffles the full 64-bit value instead of silently
+  truncating it to 32 bits.
+
+- Removed the `Int` overloads of `rotate_bits_left()` and
+  `rotate_bits_right()` in `std.bit`. The `SIMD` overloads now accept any
+  integral element type instead of only unsigned ones — rotation is a pure
+  bit-pattern operation, so signed and unsigned rotate identically — and
+  therefore handle `Int` arguments directly. Call sites need no changes.
+
 - Removed the `std.gpu.profiler` module and its `ProfileBlock` context manager.
   It timed host wall-clock, not GPU work, and reported the elapsed time with the
   operands reversed. Time a block of host code with
@@ -307,6 +370,11 @@ This release completes the removal of APIs deprecated during the v1.0 cycle.
   `UntrackedOrigin` for `ExternalOrigin`, `MutUntrackedOrigin` for
   `MutExternalOrigin`, and `ImmUntrackedOrigin` for both
   `ImmutUntrackedOrigin` and `ImmutExternalOrigin`.
+
+- Removed the redundant `Int` overloads of `sqrt()`, `fma()`, `align_down()`,
+  `align_up()`, `clamp()`, and `iota()` from `std.math`. `Int` is an alias for
+  `Scalar[DType.int]`, so the generic `SIMD` overloads already accept `Int`
+  arguments and return `Int`; call sites need no changes.
 
 - Removed the pre-unification pointer aliases `MutUnsafePointer`,
   `ImmUnsafePointer`, `ImmutUnsafePointer`, `ImmutOpaquePointer`,
@@ -376,10 +444,26 @@ This release completes the removal of APIs deprecated during the v1.0 cycle.
 
 ## Fixed
 
+- `unsafe_uninit_move_n()` and `unsafe_uninit_copy_n()` with `overlapping=True`
+  now handle an overlap in either direction when `T` is not trivially movable
+  or copyable. They always walked front-to-back, so a `dest` above `src`
+  overwrote elements that had not been moved or read yet.
+
+- `SIMD.__init__(py=...)` now reads unsigned dtypes through the unsigned CPython
+  entry point (`PyLong_AsSize_t`). Constructing an unsigned `SIMD` from a Python
+  int in `[2**63, 2**64)` no longer overflows, and a negative Python int now
+  raises instead of silently wrapping to the maximum value.
+
 - A `where` clause naming a type that an enclosing `where` clause constrained
   to a tighter trait can now be proven. Calling a method declared
   `where Ts.contains[T]()` with such a `T` failed with `lacking evidence to
   prove correctness`, even though `T` was plainly in `Ts`.
+
+- `hash()` on a floating-point `SIMD` value now normalizes the sign of zero, so
+  `hash(-0.0) == hash(0.0)`. Hashing the raw bit pattern broke the `Hashable`
+  contract that equal values hash equally: a `Dict` or `Set` could hold both
+  `-0.0` and `0.0` as separate keys even though they compare equal, and a
+  lookup could then return a value stored under the other key.
 
 - `mojo build` can cross-compile to RISC-V again. Emitting LLVM IR, assembly,
   or an object for a `riscv32` or `riscv64` triple failed with `target '...'
@@ -448,7 +532,17 @@ This release completes the removal of APIs deprecated during the v1.0 cycle.
   the `Int` range. Values just past `Int.MAX` (such as `Int.MAX + 1`) no
   longer wrap silently, and `Int.MIN` parses correctly by design rather than
   by wraparound.
+  `atol()` will also now raise instead of aborting on a string that holds only
+  whitespace, or only whitespace and a sign.
 
 - Every value of a struct type whose `@align(N)` exceeds its natural
   alignment is now aligned to `N`, including every element of an array or a
   `List` of that type.
+
+- [`b64decode()`](/docs/std/base64/base64/b64decode/) now ignores ASCII
+  whitespace in its input, so base64 text wrapped across lines by a MIME
+  encoder or the `base64` command line tool decodes without the caller
+  stripping it first. Only the six ASCII whitespace bytes are ignored; unlike
+  Python's `base64.b64decode()`, any other byte outside the base64 alphabet
+  still raises. The "length must be divisible by 4" error now counts only the
+  significant characters.

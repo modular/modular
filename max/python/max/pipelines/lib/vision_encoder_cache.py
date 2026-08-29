@@ -266,7 +266,7 @@ class _VisionBlockPool:
         stores never cross devices.
         """
         assert self.matches(src[0]), (
-            "vision encoder output does not match the memory planner's "
+            "vision encoder output does not match the arch config's "
             "get_vision_cache_row_spec"
         )
         dsts: list[Buffer] = []

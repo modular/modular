@@ -126,10 +126,7 @@ struct TileLoaderTMA[
     ](
         self,
         dest: TileTensor[
-            Self.dtype,
-            LayoutType,
-            MutAnyOrigin,
-            address_space=AddressSpace.SHARED,
+            Self.dtype, LayoutType, MutAnyOrigin, address_space=.SHARED
         ],
         ref[AddressSpace.SHARED] barrier: SharedMemBarrier,
         k_coord: Int,
@@ -213,10 +210,7 @@ struct TileLoader[
     ](
         self,
         dest: TileTensor[
-            Self.dtype,
-            LayoutType,
-            MutAnyOrigin,
-            address_space=AddressSpace.SHARED,
+            Self.dtype, LayoutType, MutAnyOrigin, address_space=.SHARED
         ],
         ref[AddressSpace.SHARED] barrier: SharedMemBarrier,
         k_coord: Int,
@@ -291,10 +285,7 @@ struct ScalesLoader[
     ](
         self,
         dest: TileTensor[
-            Self.dtype,
-            LayoutType,
-            MutAnyOrigin,
-            address_space=AddressSpace.SHARED,
+            Self.dtype, LayoutType, MutAnyOrigin, address_space=.SHARED
         ],
         ref[AddressSpace.SHARED] barrier: SharedMemBarrier,
         row_coord: Int,

@@ -129,15 +129,11 @@ def kernel_4[
     comptime c_smem_layout = Layout.row_major(BM, BN)
 
     var a_smem = rebind[
-        UnsafePointer[
-            Scalar[a_type],
-            address_space=AddressSpace.SHARED,
-            UntrackedOrigin[mut=True],
-        ]
+        MutPointer[Scalar[a_type], address_space=.SHARED, MutUntrackedOrigin]
     ](
         external_memory[
             Scalar[a_type],
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
             alignment=128,
             name="tmem_test_dynamic_shared_memory",
         ]()
@@ -146,35 +142,35 @@ def kernel_4[
         a_type,
         a_smem_layout,
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
     ]
     comptime b_smem_tile_t = LayoutTensor[
         b_type,
         b_smem_layout,
         _,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
     ]
     comptime c_smem_tile_t = LayoutTensor[
         c_type,
         c_smem_layout,
         _,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
     ]
     comptime sub_a_smem_tile_t = LayoutTensor[
         a_type,
         sub_a_smem_layout,
         _,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
     ]
     comptime sub_b_smem_tile_t = LayoutTensor[
         b_type,
         sub_b_smem_layout,
         _,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
     ]
     comptime a_size = a_smem_layout.size()
@@ -256,7 +252,7 @@ def kernel_4[
         accum_type,
         a_type,
         b_type,
-        Index[dtype=DType.uint32](mma_shape[0], mma_shape[1]),
+        Index[dtype=.uint32](mma_shape[0], mma_shape[1]),
         transpose_b=transpose_b,
     ]()
 
@@ -333,8 +329,8 @@ def kernel_4[
 
     var st_matrix_rt_layout = RuntimeLayout[
         st_matrix_n_layout[c_type, TMA_BN, num_m_mmas, 1](),
-        element_type=DType.int32,
-        linear_idx_type=DType.int32,
+        element_type=.int32,
+        linear_idx_type=.int32,
     ]()
 
     comptime st_matrix_swizzle = make_swizzle[c_type, c_swizzle]()
@@ -342,17 +338,17 @@ def kernel_4[
     comptime for tma_n in range(BN // TMA_BN):
         comptime for m_mma in range(num_m_mmas):
             comptime for i in range(TMA_BN // 16):
-                var d_reg = SIMD[DType.bfloat16, 8]()
+                var d_reg = SIMD[.bfloat16, 8]()
 
                 comptime for _ei in range(4):
                     comptime _src_offset = (
                         i + tma_n * (TMA_BN // 16)
                     ) * 8 + 2 * _ei
-                    var pair = SIMD[DType.float32, 2](
-                        rebind[Scalar[DType.float32]](c_frag[_src_offset]),
-                        rebind[Scalar[DType.float32]](c_frag[_src_offset + 1]),
+                    var pair = SIMD[.float32, 2](
+                        rebind[Float32](c_frag[_src_offset]),
+                        rebind[Float32](c_frag[_src_offset + 1]),
                     )
-                    var casted = pair.cast[DType.bfloat16]()
+                    var casted = pair.cast[.bfloat16]()
                     d_reg[2 * _ei] = casted[0]
                     d_reg[2 * _ei + 1] = casted[1]
 
@@ -372,7 +368,7 @@ def kernel_4[
                     + BM * TMA_BN * tma_n
                 )
 
-                var d_reg_f32_packed = bitcast[DType.float32, 4](d_reg)
+                var d_reg_f32_packed = bitcast[.float32, 4](d_reg)
 
                 st_matrix[simd_width=4](offset, d_reg_f32_packed)
     barrier()
@@ -389,7 +385,7 @@ def kernel_4[
         var c_tma_tile = LayoutTensor[
             c_type,
             Layout.row_major(c_tile_shape[0], c_tile_shape[1]),
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
             alignment=128,
         ](smem_offset)
 
@@ -713,9 +709,9 @@ def main() raises:
             return
 
         test_blackwell_kernel_4[
-            DType.bfloat16,
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
+            .bfloat16,
             umma_shape=Index(64, 256, 16),
             a_swizzle=TensorMapSwizzle.SWIZZLE_128B,
             b_swizzle=TensorMapSwizzle.SWIZZLE_128B,

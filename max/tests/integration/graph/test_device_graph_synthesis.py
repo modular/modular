@@ -29,6 +29,9 @@ a literal, so neither notices a graph replaying a stale address.
 
 from __future__ import annotations
 
+import os
+from pathlib import Path
+
 import numpy as np
 import pytest
 from max.driver import CPU, Accelerator, Buffer, accelerator_count
@@ -204,4 +207,67 @@ def test_mutable_buffer_input_is_read_and_written_in_place() -> None:
     )
     np.testing.assert_allclose(
         first.to(CPU()).to_numpy(), np.full([4], 4.0, dtype=np.float32)
+    )
+
+
+def test_host_input_contents_key_the_graph() -> None:
+    """A CPU input's contents key the graph: changed bytes re-record.
+
+    ``fill_from_host_scalar`` reads the host scalar on the host at enqueue
+    time (the dispatch-metadata pattern), so the value is frozen into the
+    recorded kernel. A replay is only sound for the exact bytes that were
+    recorded: executing with a different value must miss the cache and
+    re-record, and returning to a previous value must reuse its graph.
+    """
+    if accelerator_count() == 0:
+        pytest.skip("GPU not available")
+
+    session = InferenceSession(devices=[Accelerator()])
+    host_type = TensorType(DType.float32, [1], device=DeviceRef.CPU())
+    out_type = TensorType(DType.float32, [4], device=DeviceRef.GPU(0))
+
+    with Graph(
+        "device_graph_host_input",
+        input_types=[host_type],
+        custom_extensions=[
+            Path(os.environ["MODULAR_KERNEL_VERIFICATION_OPS_PATH"])
+        ],
+        is_device_graph=True,
+    ) as graph:
+        h = graph.inputs[0].tensor
+        result = ops.custom(
+            "fill_from_host_scalar",
+            device=DeviceRef.GPU(0),
+            values=[h],
+            out_types=[out_type],
+        )[0]
+        graph.output(result)
+
+    model = session.load(graph)
+
+    three = Buffer.from_numpy(np.array([3.0], dtype=np.float32))
+    nine = Buffer.from_numpy(np.array([9.0], dtype=np.float32))
+
+    (out,) = model.execute(three)
+    np.testing.assert_allclose(
+        out.to(CPU()).to_numpy(), np.full([4], 3.0, dtype=np.float32)
+    )
+
+    # Changed bytes: a stale replay would still fill 3.0.
+    (out,) = model.execute(nine)
+    np.testing.assert_allclose(
+        out.to(CPU()).to_numpy(), np.full([4], 9.0, dtype=np.float32)
+    )
+
+    # Back to the first value: hits the original cache entry.
+    (out,) = model.execute(three)
+    np.testing.assert_allclose(
+        out.to(CPU()).to_numpy(), np.full([4], 3.0, dtype=np.float32)
+    )
+
+    # The same value at a different address is the same key.
+    three_again = Buffer.from_numpy(np.array([3.0], dtype=np.float32))
+    (out,) = model.execute(three_again)
+    np.testing.assert_allclose(
+        out.to(CPU()).to_numpy(), np.full([4], 3.0, dtype=np.float32)
     )

@@ -97,17 +97,17 @@ def _rms_norm_full[
         MutAnyOrigin,
     ]
     var src_view = FullType(
-        rebind[UnsafePointer[Scalar[in_dtype], MutAnyOrigin]](src.unsafe_ptr()),
+        rebind[MutPointer[Scalar[in_dtype], MutAnyOrigin]](src.unsafe_ptr()),
         row_major(Coord(Index(rows, num_cols))),
     )
     var dst_view = FullType(
-        rebind[UnsafePointer[Scalar[in_dtype], MutAnyOrigin]](dst.unsafe_ptr()),
+        rebind[MutPointer[Scalar[in_dtype], MutAnyOrigin]](dst.unsafe_ptr()),
         row_major(Coord(Index(rows, num_cols))),
     )
     var gamma_view = TileTensor[
         in_dtype, type_of(row_major(Coord(Index(0)))), ImmutAnyOrigin
     ](
-        rebind[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin]](
+        rebind[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]](
             gamma.unsafe_ptr()
         ),
         row_major(Coord(Index(num_cols))),
@@ -174,8 +174,8 @@ def _run_case[
     var normed = List[DeviceBuffer[in_dtype]](capacity=ngpus)
     var sum_full = List[DeviceBuffer[in_dtype]](capacity=ngpus)
     var ag_ref = List[DeviceBuffer[in_dtype]](capacity=ngpus)
-    var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
-    var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+    var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
+    var rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS](
         uninitialized=True
     )
 
@@ -218,7 +218,7 @@ def _run_case[
         ag_ref.append(list_of_ctx[i].enqueue_create_buffer[in_dtype](full_n))
 
         signal_buffers.append(
-            list_of_ctx[i].create_buffer_sync[DType.uint8](size_of[Signal]())
+            list_of_ctx[i].create_buffer_sync[.uint8](size_of[Signal]())
         )
         rank_sigs[i] = (
             signal_buffers[i]
@@ -235,9 +235,7 @@ def _run_case[
     # Peer-shard array (all `ngpus` shards, P2P-accessible) -- identical on every
     # GPU; full `[num_rows, num_cols]` output views.
     comptime ShardType = TileTensor[
-        in_dtype,
-        type_of(row_major(Coord(Index(0, num_cols)))),
-        ImmutAnyOrigin,
+        in_dtype, type_of(row_major(Coord(Index(0, num_cols)))), ImmutAnyOrigin
     ]
     comptime FullType = TileTensor[
         mut=True,
@@ -251,7 +249,7 @@ def _run_case[
     var in_shards = Array[ShardType, ngpus](uninitialized=True)
     comptime for i in range(ngpus):
         in_shards[i] = ShardType(
-            rebind[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin]](
+            rebind[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]](
                 shard_dev[i].unsafe_ptr()
             ),
             row_major(Coord(Index(config.rank_units(i), num_cols))),
@@ -269,7 +267,7 @@ def _run_case[
             row_major(Coord(Index(num_rows, num_cols))),
         )
         var gamma_view = GammaType(
-            rebind[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin]](
+            rebind[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]](
                 gamma_dev[i].unsafe_ptr()
             ),
             row_major(Coord(Index(num_cols))),
@@ -336,7 +334,7 @@ def _run_case[
         list_of_ctx[i].synchronize()
 
     # --- Host norm oracle + residual bit-identity on GPU 0. ---
-    var woff = weight_offset.cast[DType.float32]()
+    var woff = weight_offset.cast[.float32]()
     var total_elems = full_n
     var max_ulp = 0  # fused normed vs host ref
     var gt1_ulp = 0
@@ -358,15 +356,15 @@ def _run_case[
         # Pass 1: mean-square of the gathered bf16 row (in f32).
         var m2 = Float32(0)
         for c in range(num_cols):
-            var x = _gathered_value[in_dtype](r, c).cast[DType.float32]()
+            var x = _gathered_value[in_dtype](r, c).cast[.float32]()
             m2 += x * x
         var nf = rsqrt(m2 / Float32(num_cols) + epsilon)
         # Pass 2: normalize, fold gamma in f32, cast bf16 last, compare.
         for c in range(num_cols):
-            var x = _gathered_value[in_dtype](r, c).cast[DType.float32]()
-            var g_f = gamma_host[c].cast[DType.float32]() + woff
-            var ref_v = ((x * nf) * g_f).cast[DType.bfloat16]()
-            var gpu = normed_h0[base + c].cast[DType.bfloat16]()
+            var x = _gathered_value[in_dtype](r, c).cast[.float32]()
+            var g_f = gamma_host[c].cast[.float32]() + woff
+            var ref_v = ((x * nf) * g_f).cast[.bfloat16]()
+            var gpu = normed_h0[base + c].cast[.bfloat16]()
 
             var ulp = abs(Int(gpu.to_bits()) - Int(ref_v.to_bits()))
             if ulp > max_ulp:
@@ -508,7 +506,7 @@ def _allgather_full[
     ],
     out_full: DeviceBuffer[in_dtype],
     config: ReduceScatterConfig[in_dtype, ngpus],
-    rank_sigs: Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
+    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS],
     ctx: DeviceContext,
     my_rank: Int,
 ) raises:
@@ -526,7 +524,7 @@ def _allgather_full[
         type_of(row_major(Coord(Index(0, num_cols)))),
         MutAnyOrigin,
     ]
-    var out_base = rebind[UnsafePointer[Scalar[in_dtype], MutAnyOrigin]](
+    var out_base = rebind[MutPointer[Scalar[in_dtype], MutAnyOrigin]](
         out_full.unsafe_ptr()
     )
     var out_views = Array[OutViewType, ngpus](uninitialized=True)
@@ -598,8 +596,8 @@ def _run_prod_oracle_case[
     var sum_full = List[DeviceBuffer[in_dtype]](capacity=ngpus)
     var ag_ref = List[DeviceBuffer[in_dtype]](capacity=ngpus)
     var prod = List[DeviceBuffer[in_dtype]](capacity=ngpus)
-    var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
-    var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+    var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
+    var rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS](
         uninitialized=True
     )
 
@@ -643,7 +641,7 @@ def _run_prod_oracle_case[
         prod.append(list_of_ctx[i].enqueue_create_buffer[in_dtype](full_n))
 
         signal_buffers.append(
-            list_of_ctx[i].create_buffer_sync[DType.uint8](size_of[Signal]())
+            list_of_ctx[i].create_buffer_sync[.uint8](size_of[Signal]())
         )
         rank_sigs[i] = (
             signal_buffers[i]
@@ -658,9 +656,7 @@ def _run_prod_oracle_case[
         list_of_ctx[i].synchronize()
 
     comptime ShardType = TileTensor[
-        in_dtype,
-        type_of(row_major(Coord(Index(0, num_cols)))),
-        ImmutAnyOrigin,
+        in_dtype, type_of(row_major(Coord(Index(0, num_cols)))), ImmutAnyOrigin
     ]
     comptime FullType = TileTensor[
         mut=True,
@@ -680,13 +676,13 @@ def _run_prod_oracle_case[
         # Group-local peer/signal arrays: entries 0..group_size-1 are this
         # device's own group, exactly what the handler hands the kernel.
         var in_shards = Array[ShardType, group_size](uninitialized=True)
-        var sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+        var sigs = Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS](
             uninitialized=True
         )
         for k in range(group_size):
             sigs[k] = rank_sigs[base + k]
             in_shards[k] = ShardType(
-                rebind[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin]](
+                rebind[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]](
                     shard_dev[base + k].unsafe_ptr()
                 ),
                 row_major(Coord(Index(config.rank_units(k), num_cols))),
@@ -701,7 +697,7 @@ def _run_prod_oracle_case[
             row_major(Coord(Index(num_rows, num_cols))),
         )
         var gamma_view = GammaType(
-            rebind[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin]](
+            rebind[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]](
                 gamma_dev[i].unsafe_ptr()
             ),
             row_major(Coord(Index(num_cols))),
@@ -763,13 +759,13 @@ def _run_prod_oracle_case[
         var local = i % group_size
         var base = (i // group_size) * group_size
         var in_shards = Array[ShardType, group_size](uninitialized=True)
-        var sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+        var sigs = Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS](
             uninitialized=True
         )
         for k in range(group_size):
             sigs[k] = rank_sigs[base + k]
             in_shards[k] = ShardType(
-                rebind[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin]](
+                rebind[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]](
                     shard_dev[base + k].unsafe_ptr()
                 ),
                 row_major(Coord(Index(config.rank_units(k), num_cols))),
@@ -959,8 +955,8 @@ def _run_interleaved_barrier_case[
     var normed = List[DeviceBuffer[in_dtype]](capacity=ngpus)
     var sum_full = List[DeviceBuffer[in_dtype]](capacity=ngpus)
     var world_out = List[DeviceBuffer[in_dtype]](capacity=ngpus)
-    var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
-    var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+    var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
+    var rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS](
         uninitialized=True
     )
 
@@ -1004,7 +1000,7 @@ def _run_interleaved_barrier_case[
         )
 
         signal_buffers.append(
-            list_of_ctx[i].create_buffer_sync[DType.uint8](size_of[Signal]())
+            list_of_ctx[i].create_buffer_sync[.uint8](size_of[Signal]())
         )
         rank_sigs[i] = (
             signal_buffers[i]
@@ -1021,9 +1017,7 @@ def _run_interleaved_barrier_case[
         list_of_ctx[i].synchronize()
 
     comptime ShardType = TileTensor[
-        in_dtype,
-        type_of(row_major(Coord(Index(0, num_cols)))),
-        ImmutAnyOrigin,
+        in_dtype, type_of(row_major(Coord(Index(0, num_cols)))), ImmutAnyOrigin
     ]
     comptime FullType = TileTensor[
         mut=True,
@@ -1038,7 +1032,7 @@ def _run_interleaved_barrier_case[
     var world_shards = Array[ShardType, ngpus](uninitialized=True)
     comptime for i in range(ngpus):
         world_shards[i] = ShardType(
-            rebind[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin]](
+            rebind[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]](
                 shard_dev[i].unsafe_ptr()
             ),
             row_major(Coord(Index(rows_per_dev, num_cols))),
@@ -1050,13 +1044,13 @@ def _run_interleaved_barrier_case[
             var local = i % group_size
             var base = (i // group_size) * group_size
             var in_shards = Array[ShardType, group_size](uninitialized=True)
-            var sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+            var sigs = Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS](
                 uninitialized=True
             )
             for k in range(group_size):
                 sigs[k] = rank_sigs[base + k]
                 in_shards[k] = ShardType(
-                    rebind[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin]](
+                    rebind[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]](
                         shard_dev[base + k].unsafe_ptr()
                     ),
                     row_major(Coord(Index(rows_per_dev, num_cols))),
@@ -1071,7 +1065,7 @@ def _run_interleaved_barrier_case[
                 row_major(Coord(Index(grp_rows, num_cols))),
             )
             var gamma_view = GammaType(
-                rebind[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin]](
+                rebind[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]](
                     gamma_dev[i].unsafe_ptr()
                 ),
                 row_major(Coord(Index(num_cols))),
@@ -1216,8 +1210,8 @@ def _run_rank_validation_case[
     var weight_offset = Scalar[in_dtype](1.0)
 
     var shard_dev = List[DeviceBuffer[in_dtype]](capacity=group_size)
-    var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=group_size)
-    var sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+    var signal_buffers = List[DeviceBuffer[.uint8]](capacity=group_size)
+    var sigs = Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS](
         uninitialized=True
     )
     for i in range(group_size):
@@ -1227,7 +1221,7 @@ def _run_rank_validation_case[
             )
         )
         signal_buffers.append(
-            list_of_ctx[i].create_buffer_sync[DType.uint8](size_of[Signal]())
+            list_of_ctx[i].create_buffer_sync[.uint8](size_of[Signal]())
         )
         sigs[i] = (
             signal_buffers[i]
@@ -1247,9 +1241,7 @@ def _run_rank_validation_case[
     list_of_ctx[0].synchronize()
 
     comptime ShardType = TileTensor[
-        in_dtype,
-        type_of(row_major(Coord(Index(0, num_cols)))),
-        ImmutAnyOrigin,
+        in_dtype, type_of(row_major(Coord(Index(0, num_cols)))), ImmutAnyOrigin
     ]
     comptime FullType = TileTensor[
         mut=True,
@@ -1264,13 +1256,13 @@ def _run_rank_validation_case[
     var shards = Array[ShardType, group_size](uninitialized=True)
     for k in range(group_size):
         shards[k] = ShardType(
-            rebind[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin]](
+            rebind[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]](
                 shard_dev[k].unsafe_ptr()
             ),
             row_major(Coord(Index(rows_per_dev, num_cols))),
         )
     var gamma_view = GammaType(
-        rebind[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin]](
+        rebind[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]](
             gamma_dev.unsafe_ptr()
         ),
         row_major(Coord(Index(num_cols))),

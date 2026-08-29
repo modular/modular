@@ -98,26 +98,21 @@ class ArchConfig(Protocol):
     @classmethod
     def calculate_max_seq_len(
         cls,
-        pipeline_config: PipelineConfig,
         huggingface_config: AutoConfig,
-        model_config: MAXModelConfig | None = None,
+        model_config: MAXModelConfig,
     ) -> int:
-        """Returns the architecture's maximum-sequence-length policy value.
+        """Returns the resolved maximum sequence length.
 
-        Bounds or defaults the user-provided ``max_length``
-        (``model_config.max_length``) with the model's own limits. This is
-        pure policy over model metadata and user intent: construction runs it
-        exactly once and stores the result on ``model_config.max_length``;
-        memory planning consumes that value and carries any VRAM-lowered
-        length on the memory plan, never back on the config.
+        Bounds or defaults the user's ``model_config.max_length`` with the
+        model's own limits. Construction runs this once and stores the
+        result on ``model_config.max_length``; memory planning may lower
+        it further, but only on the memory plan.
 
         Args:
-            pipeline_config: The pipeline configuration.
-            huggingface_config: The HuggingFace config to read model bounds
-                from.
-            model_config: The model configuration whose ``max_length``
-                expresses user intent. When ``None`` (the default),
-                ``pipeline_config.model`` is used.
+            huggingface_config: The HuggingFace config to read model
+                bounds from.
+            model_config: The model config whose ``max_length`` carries
+                the user's setting.
         """
 
 
@@ -127,6 +122,61 @@ class ArchConfigWithKVCache(ArchConfig, Protocol):
 
     def get_kv_params(self) -> KVCacheParamInterface:
         """KV cache parameters to use when running the model."""
+
+
+@runtime_checkable
+class ArchConfigWithVisionCache(Protocol):
+    """Config for a vision-language architecture with a vision encoder cache.
+
+    Both hooks are architecture facts derived purely from the HuggingFace
+    config — classmethods, so config construction and memory planning can
+    consult them without building an arch config instance. Architectures
+    without a vision cache simply do not implement this protocol; consumers
+    gate on ``issubclass``. Deliberately standalone (not an ``ArchConfig``
+    refinement) so that gate checks exactly these two hooks.
+    """
+
+    @classmethod
+    def estimate_vision_cache_entry_bytes(
+        cls, huggingface_config: AutoConfig
+    ) -> int:
+        """Worst-case bytes for one vision encoder cache entry.
+
+        The memory a single max-resolution image (or video, for video
+        models) occupies after the vision encoder's spatial merge / patch
+        merge step. ``0`` means the checkpoint has no vision cache.
+        """
+        ...
+
+    @classmethod
+    def get_vision_cache_row_spec(
+        cls, huggingface_config: AutoConfig
+    ) -> tuple[int, DType] | None:
+        """Describes one merged vision token's embedding row in the cache.
+
+        Returns ``(hidden_size, dtype)`` for architectures that opt into the
+        block-mode vision cache, or ``None`` when the checkpoint has no
+        vision cache.
+        """
+        ...
+
+
+def arch_has_vision_tower(
+    arch_config_cls: type, huggingface_config: AutoConfig
+) -> bool:
+    """Whether this architecture encodes images at all.
+
+    True when the arch config publishes vision-cache facts
+    (:class:`ArchConfigWithVisionCache`) and sizes a cache entry above zero
+    for this checkpoint. Both consumers of the vision budgets -- config
+    construction and memory planning -- gate on this same signal.
+    """
+    if not issubclass(arch_config_cls, ArchConfigWithVisionCache):
+        return False
+    return (
+        arch_config_cls.estimate_vision_cache_entry_bytes(huggingface_config)
+        > 0
+    )
 
 
 class ArchConfigWithBoundedMaxSeqLen:
@@ -141,12 +191,10 @@ class ArchConfigWithBoundedMaxSeqLen:
     @classmethod
     def calculate_max_seq_len(
         cls,
-        pipeline_config: PipelineConfig,
         huggingface_config: AutoConfig,
-        model_config: MAXModelConfig | None = None,
+        model_config: MAXModelConfig,
     ) -> int:
         """Bounds ``max_length`` by ``max_position_embeddings``."""
-        model_config = model_config or pipeline_config.model
         try:
             return upper_bounded_default(
                 upper_bound=huggingface_config.max_position_embeddings,
@@ -212,10 +260,17 @@ class ArchConfigWithStoredKVParams(ArchConfigWithBoundedMaxSeqLen):
         devices: list[DeviceRef],
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
+        *,
+        allow_kv_head_replication: bool = False,
     ) -> KVCacheParams:
-        """Default KV params for standard grouped attention."""
+        """Default KV params for standard grouped attention.
+
+        Overrides for models with fewer KV heads than the tensor-parallel
+        width pass ``allow_kv_head_replication=True``.
+        """
         return kv_cache_config.to_params(
             dtype=cache_dtype,
+            allow_kv_head_replication=allow_kv_head_replication,
             n_kv_heads=huggingface_config.num_key_value_heads,
             head_dim=cls.get_head_dim(huggingface_config),
             num_layers=cls.get_num_layers(huggingface_config),
@@ -232,12 +287,10 @@ class ArchConfigWithPermissiveMaxSeqLen:
     @classmethod
     def calculate_max_seq_len(
         cls,
-        pipeline_config: PipelineConfig,
         huggingface_config: AutoConfig,
-        model_config: MAXModelConfig | None = None,
+        model_config: MAXModelConfig,
     ) -> int:
         """Uses ``max_length`` when set, else ``max_position_embeddings``."""
-        model_config = model_config or pipeline_config.model
         if model_config.max_length:
             return model_config.max_length
         return huggingface_config.max_position_embeddings
@@ -292,6 +345,8 @@ class ArchVLConfigWithTextSubconfig:
         devices: list[DeviceRef],
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
+        *,
+        allow_kv_head_replication: bool = False,
     ) -> KVCacheParams:
         """Delegates to the annotated text config class."""
         return cls._text_config_cls().construct_kv_params(
@@ -300,18 +355,17 @@ class ArchVLConfigWithTextSubconfig:
             devices=devices,
             kv_cache_config=kv_cache_config,
             cache_dtype=cache_dtype,
+            allow_kv_head_replication=allow_kv_head_replication,
         )
 
     @classmethod
     def calculate_max_seq_len(
         cls,
-        pipeline_config: PipelineConfig,
         huggingface_config: AutoConfig,
-        model_config: MAXModelConfig | None = None,
+        model_config: MAXModelConfig,
     ) -> int:
         """Delegates to the annotated text config class."""
         return cls._text_config_cls().calculate_max_seq_len(
-            pipeline_config,
             cls._hf_text_config(huggingface_config),
             model_config,
         )

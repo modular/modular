@@ -115,10 +115,18 @@ def bench_matmul[
     cb_a.init_on_device(init_type, ctx)
     cb_b.init_on_device(init_type, ctx)
 
-    @__parameter
-    @__copy_capture(cb_a, cb_b, cb_c, shape_c, shape_a, shape_b)
     @always_inline
-    def bench_func(mut b: Bencher):
+    def bench_func(
+        mut b: Bencher,
+    ) {
+        var cb_a,
+        var cb_b,
+        var cb_c,
+        var shape_c,
+        var shape_a,
+        var shape_b,
+        imm,
+    }:
         @always_inline
         def kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
             var tensor_a = TileTensor(
@@ -210,7 +218,8 @@ def bench_matmul[
         * Int(shape_c[1].value())
         * Int(shape_a[1].value()),
     )
-    b.bench_function[bench_func](
+    b.bench_function(
+        bench_func,
         BenchId(
             _get_run_name[
                 dtype,
@@ -265,7 +274,7 @@ def create_matmul_bench[
 
 
 def main() raises:
-    comptime dtype = get_defined_dtype["dtype", DType.bfloat16]()
+    comptime dtype = get_defined_dtype["dtype", .bfloat16]()
 
     var M = Int(arg_parse("M", 1))
     comptime N = get_defined_int["N", 1]()

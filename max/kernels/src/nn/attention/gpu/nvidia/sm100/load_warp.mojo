@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """TMA load warp logic for FA4 (SM100 Flash Attention)."""
 
-from std.math import ceildiv, gcd
+from std.math import ceildiv
 from std.sys import size_of
 from max.gpu.memory import CacheEviction
 from layout.tma_async import SharedMemBarrier
@@ -200,6 +200,17 @@ def fa4_load[
         pair_cta=pair_cta,
         is_leader=is_leader,
     ]
+    # Both V producers that need a SUB-RANGE of the tile (Layout-E's partitions,
+    # shared-key's key chunks) carve it with `sub_rows`, which needs this LUT's
+    # own populate base to be page-aligned. It always is: every mask's
+    # `start_column_alignment` returns `BN` or `min(page_size, BN)` and must
+    # divide `BN`, while `eff_page` is `BN` (`page_size` 0 or `>= BN`) or
+    # `page_size`. A `page_size` breaking this already breaks `populate` itself
+    # (`num_pages * eff_page != BN`), so make it a build error rather than
+    # silently wrong keys.
+    comptime assert (
+        base_alignment % KVPagedRows.eff_page == 0
+    ), "V sub-range reuse needs a page-aligned tile LUT base"
     # K's per-CTA TMA page count. Must derive from K's tile size
     # (k_rows_per_cta) rather than `num_pages // 2`: when
     # `page_size >= BN` (e.g. ps256 hs128), `num_pages = 1` but K's
@@ -211,7 +222,8 @@ def fa4_load[
 
     var mbars = smem.misc_mbars()
     # Cross-stage P (2Q shared-KV, non-WS): fills FlashInfer's K-ahead sequence
-    # K0,K1,V0,K2,V1,...  (fmha.py:1125-1167) instead of the strict
+    # K0,K1,V0,K2,V1,...  (upstream FlashInfer `fmha.py`; no line anchor, it
+    # is another project's file and would rot) instead of the strict
     # K0,V0,K1,V1,... interleave, so K is always one BN ahead of its V.
     # `crossp_effective` is the kernel-level predicate: it already folds in
     # everything this file's regime guard below demands, so the default path
@@ -245,7 +257,7 @@ def fa4_load[
         KVLUTType.dtype,
         type_of(tt_row_major[q_elements]()),
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]
 
     var kv_head_idx: UInt32
@@ -319,6 +331,15 @@ def fa4_load[
     # `tma_copy_{k,v}[needs_partial=True]` with a runtime-bounded page
     # count to avoid OOB page lookups.
     comptime needs_partial = page_size > 0 and page_size < BN
+    # KV ring co-rotation: emit each odd V one K group later, so the producer
+    # emits in the MMA warp's *consumption* order. The ring bound is a SPAN,
+    # not a liveness count -- block order puts V_o[n-1] immediately behind
+    # K_e[n], forcing N >= 2 * num_qk_stages; the rotation takes that to
+    # num_qk_stages, which is what `ring_slots_needed()` now returns.
+    #
+    # `mma_warp.mojo`'s `_body_1q` is the consumer half. The two must rotate
+    # TOGETHER: rotating one file alone is a hang -- or, at T <= 2 where block
+    # and consumption order coincide, a green that proves nothing.
     # WS shared sub-tile ring: V depth-tile width (256x64 sub-tile). Folds to the
     # full V width for non-WS (which loads V whole). All V byte/box constants
     # below route through this so the WS path emits one TMA per V depth-tile.
@@ -330,14 +351,13 @@ def fa4_load[
         qkv_type
     ]()
 
-    # Depth-chunk TMA fold (SM100). Fold the BK0 (K) / v_cols_per_cta (V) depth
-    # chunks into one rank-4 TMA when byte-equivalent. MUST use identical args to
-    # the matching `create_tma_tile[..., fold_chunks=...]` calls in
-    # `mha_sm100_dispatch` (single source of truth) so the baked descriptor rank
-    # and the issue-coord rank agree. The per-issue byte totals are unchanged: one
-    # folded TMA carries the same bytes as the N per-chunk TMAs.
+    # Depth-chunk TMA fold (SM100): fold a tile's depth chunks into one rank-4
+    # TMA when byte-equivalent (same total bytes as unfolded). MUST match the
+    # `create_tma_tile[..., fold_chunks=...]` args in `mha_sm100_dispatch`
+    # (single source of truth), or the baked descriptor rank and issue-coord
+    # rank disagree.
     #   K: smem_BN == k_rows_per_cta (K's per-CTA tile_rows; == BN single-CTA,
-    #      BN//2 pair-CTA). V: smem_BN == BN (V's tile_rows; num_v_sub_tiles == 1).
+    #      BN//2 pair-CTA).
     comptime k_row_major = config.k_row_major()
     comptime k_fold_chunks = kv_tma_fold_chunks[
         qkv_type,
@@ -349,14 +369,19 @@ def fa4_load[
         page_size=page_size,
         row_major=k_row_major,
     ]()
-    comptime v_row_major = config.v_row_major()
-    comptime v_fold_chunks = kv_tma_fold_chunks[
+    #   V: same `v_tma_box_cols()` / `v_tma_box_rows()` / `v_tma_tile_rows()`
+    #      accessors `mha_sm100_dispatch` uses to build `v_tma_op` -- else the
+    #      baked descriptor rank and issue-coord rank disagree.
+    comptime v_desc_cols = config.v_tma_box_cols()
+    comptime v_desc_rows = config.v_tma_box_rows(page_size)
+    comptime v_row_major = False if config.m_pack == 2 else config.v_row_major()
+    comptime v_fold_chunks = 1 if config.m_pack == 2 else kv_tma_fold_chunks[
         qkv_type,
         config.swizzle_mode,
-        BK=v_sub_cols,
+        BK=v_desc_cols,
         head_size=config.ov_depth,
-        box_rows=kv_sub_tile_rows(BN, page_size),
-        smem_BN=BN,
+        box_rows=v_desc_rows,
+        smem_BN=config.v_tma_tile_rows(),
         page_size=page_size,
         row_major=v_row_major,
     ]()
@@ -403,8 +428,8 @@ def fa4_load[
     # combined range. Offset kv_row by cb*BN BEFORE the first-tile
     # valid-page counts below (they key on kv_row), and stash the local
     # tile count for the 1Q peel at the `T` site below. Same window as the
-    # other warps -- last_masked_set_end == total_iters for
-    # check_mask==False masks (mha_mask.mojo:641-644/...).
+    # other warps -- last_masked_set_end == total_iters for check_mask==False
+    # masks.
     var part_first_tile: UInt32 = 0
     var part_local_iters: UInt32 = 0
     comptime if config.num_q == 1 and (
@@ -542,6 +567,13 @@ def fa4_load[
         mbar: SharedMemPointer[SharedMemBarrier],
         v_num_valid_pages: UInt32,
     ):
+        # Shared-key uses `_produce_v_sk` instead; assert the prune rather than
+        # trust it, so an instantiation here is a build error, not a rank-3
+        # coord handed to a rank-4 descriptor.
+        comptime assert not config.ws_shared_key, (
+            "_produce_v is shared-key-dead; the shared-key V producer is"
+            " _produce_v_sk"
+        )
         # WS: one TMA per V depth-tile; `d_tile` selects the 256x64 sub-tile at
         # gmem depth `d_tile * v_sub_cols` (mirrors K's `qk_stage * BK0`).
         # Non-WS keeps d_tile==0 -> depth_offset == v_col_offset (unchanged).
@@ -590,37 +622,23 @@ def fa4_load[
     # reduction-chunk ring slot (one of `num_qk_stages`, mirrors K's
     # `qk_stage`); within it, TWO per-partition natural TMA loads (full
     # depth, `pv_bk_chunk` keys each) land at `p * partition_region_elems`
-    # sub-offsets, filling the 32 KB slot as the CONTIGUOUS `mn = p*ov_depth
-    # + d` B-operand `test_ws_v_layout_e_probe.mojo` pins.
+    # sub-offsets, filling the 32 KB slot as a single CONTIGUOUS B-operand in
+    # `mn = p*ov_depth + d` order -- partition-major, depth-minor, no gap
+    # between the two partitions' regions.
     #
-    # Populates each partition's OWN `partition_keys`-row range via a FRESH
-    # `kv_lut.populate[BN=partition_keys]` call (single-CTA only:
-    # `pair_cta=False, is_leader=True`, matching Layout-E's `supported()`
-    # invariant) rather than reusing the SHARED `BN=config.BN` row LUT
-    # Layout-G's depth-split V load reuses from K. `PagedRowIndices`'s
-    # `num_v_sub_tiles` sub-tile row math (`kv_cache/types.mojo`) is
-    # documented correct only for `num_pages >= num_v_sub_tiles` or
-    # `num_pages == 1` (the depth-512 MLA precedent); a single BN=256
-    # populate split `m_pack * num_qk_stages` ways would fall in NEITHER
-    # case at e.g. `page_size=128` (`num_pages=2 < 4`). Populating each
-    # partition's own `partition_keys`-row range keeps the
-    # `num_v_sub_tiles=num_qk_stages` reduction split within one of those two
-    # documented cases for any `page_size`.
+    # Carves each partition's OWN `partition_keys`-row range out of the SHARED
+    # `BN=config.BN` row LUT with `sub_rows` (single-CTA: `pair_cta=False,
+    # is_leader=True`, matching Layout-E's `supported()` invariant), rather than
+    # selecting the partition through `num_v_sub_tiles`. `PagedRowIndices`'s
+    # sub-tile row math (`kv_cache/types.mojo`) is documented correct only for
+    # `num_pages >= num_v_sub_tiles` or `num_pages == 1` (the depth-512 MLA
+    # precedent); one BN=256 LUT split `m_pack * num_qk_stages` ways would fall
+    # in NEITHER case at e.g. `page_size=128` (`num_pages=2 < 4`). A
+    # `partition_keys`-row sub-range keeps the
+    # `num_v_sub_tiles=num_qk_stages` reduction split inside one of those two
+    # documented cases for any `page_size` -- and costs no LUT read, since
+    # `sub_rows` reads only rows K already populated.
     comptime partition_keys = config.BN // config.m_pack
-    # `p_base` below walks in `partition_keys`-row steps, NOT
-    # `base_alignment`-row steps -- `base_alignment` is the TILE-level
-    # `MaskType.start_column_alignment[...]()`, a promise about the tile's own
-    # base row (`kv_row_base`), not about the `partition_keys` stride a
-    # partition sits at inside it. The promise this walk can actually keep is
-    # only their gcd. Do NOT "simplify" this back to `base_alignment`: at
-    # `page_size == config.BN` (256 on the shipping grid) every admitted mask
-    # (Null/Causal/Chunked/SlidingWindow) has `base_alignment % page_size ==
-    # 0`, so `kv_lut.populate` would take its `num_pages == 1` fast arm and
-    # drop `tok_in_block` -- silently wrong keys (partition 1 aliases
-    # partition 0's page), not a build error. The general rule: an alignment
-    # promise is derived at the call site from the loop's OWN stride, never
-    # inherited from the enclosing tile.
-    comptime v_e_base_alignment = gcd(base_alignment, partition_keys)
     # Per-partition SMEM footprint WITHIN one reduction-chunk ring slot: one
     # reduction chunk (`v_e_chunk_rows()` chunk-keys x `v_e_box_cols()` full
     # depth) = `pv_bk_chunk * padded_ov_depth` elems. This is the REGION size,
@@ -655,6 +673,7 @@ def fa4_load[
         partial: Bool,
         r: Int,
     ](
+        rows: KVPagedRows,
         kv_row_base: UInt32,
         smem_ptr: SharedMemPointer[Scalar[qkv_type]],
         mbar: SharedMemPointer[SharedMemBarrier],
@@ -667,9 +686,9 @@ def fa4_load[
             expect_bytes_pred(mbar, Int32(v_expect_bytes), e)
         comptime for p in range(config.m_pack):
             var p_base = kv_row_base + UInt32(p * partition_keys)
-            var p_rows = kv_lut.populate[
-                partition_keys, v_e_base_alignment, False, True
-            ](seq_info.prompt_idx, p_base)
+            var p_rows = rows.sub_rows[partition_keys](
+                UInt32(p * partition_keys)
+            )
             # Each partition owns a DIFFERENT key range, and sub-tile `r` sits
             # `r` reduction chunks into it, so the valid-page count is per
             # (partition, sub-tile) -- a single tile-wide count would leave the
@@ -698,6 +717,74 @@ def fa4_load[
                 elect=e,
                 num_valid_pages=p_valid,
             )
+
+    # ---- Shared-key (deep heads) key-chunked V producer ----
+    # V is cut along KEYS into `v_sk_chunks` chunks of `v_sk_key_chunk` keys,
+    # each crossed with `num_o_tiles()` output depth tiles of `v_sk_depth_tile`
+    # columns. One (chunk, tile) pair is exactly one ring slot -- the byte
+    # identity `pv_key_chunk() * pv_mma_n() == BN * BK0` -- and exactly one P@V
+    # MMA's B operand, which is what drops V liveness to a single in-flight slot.
+    comptime v_sk_key_chunk = config.pv_key_chunk()
+    comptime v_sk_chunks = config.pv_reduction_chunks()
+    comptime v_sk_depth_tile = config.pv_mma_n()
+    comptime v_sk_rows_per_page = config.v_tma_box_rows(page_size)
+    comptime v_sk_pages_per_chunk = config.v_pages_per_chunk(page_size)
+    comptime v_sk_oob_fill = config.v_oob_fill_needed(page_size)
+    # A key chunk's OWN row LUT type -- `v_sk_key_chunk` rows, single-CTA. NOT
+    # `KVPagedRows` (BN rows) directly: selecting the chunk out of the BN-wide
+    # LUT with `num_v_sub_tiles = v_sk_chunks` is the documented-wrong case in
+    # `kv_cache/types.mojo`, whose sub-tile row math holds only for
+    # `num_pages >= num_v_sub_tiles` or `num_pages == 1`. At `page_size=128`,
+    # `num_pages == 2 < 4`, so both ternaries there take the wrong arm and
+    # chunks 2-3 address past the end of page 0 -- silent wrong data, no assert.
+    # `sub_rows` carves the chunk into its own LUT instead, which keeps
+    # `num_v_sub_tiles == 1` -- inside the documented case for every
+    # `page_size` -- and reads no page table of its own.
+    comptime VSKPagedRows = PagedRowIndices[
+        BN=v_sk_key_chunk,
+        page_size=page_size,
+        pair_cta=False,
+        is_leader=True,
+    ]
+
+    @__parameter
+    @always_inline
+    def _produce_v_sk[
+        partial: Bool,
+        t: Int,
+    ](
+        chunk_rows: VSKPagedRows,
+        smem_ptr: SharedMemPointer[Scalar[qkv_type]],
+        mbar: SharedMemPointer[SharedMemBarrier],
+        chunk_valid_pages: UInt32,
+    ):
+        # Always the FULL slot: a chunk that reaches here is live, and at the
+        # production page sizes `v_sk_pages_per_chunk == 1`, so one issue
+        # delivers the whole box. The dead chunks contribute no bytes because
+        # they contribute no ring positions at all -- the skip replaces the byte
+        # accounting rather than complicating it.
+        #
+        # Shared-key's box is 4 swizzle chunks wide (vs K's 1), so `fold_chunks`
+        # saves more here than elsewhere. `expect_bytes` above is a
+        # transaction-byte count, so folding doesn't change it.
+        comptime if is_leader:
+            expect_bytes_pred(mbar, Int32(v_expect_bytes), e)
+        chunk_rows.tma_copy_v[
+            needs_partial=partial,
+            num_v_sub_tiles=1,
+            v_sub_tile_idx=0,
+            oob_fill_pages=v_sk_oob_fill and partial,
+            fold_chunks=v_fold_chunks,
+            row_major=v_row_major,
+        ](
+            v_tma_op,
+            smem_ptr,
+            mbar[],
+            kv_head_idx=kv_head_idx,
+            elect=e,
+            num_valid_pages=chunk_valid_pages,
+            depth_offset=UInt32(t * v_sk_depth_tile + v_col_offset),
+        )
 
     comptime if config.use_shared_kv:
         # ---- Shared KV mode ----
@@ -789,10 +876,93 @@ def fa4_load[
             # non-WS shared (num_qk_stages==1). The ring scaffolding
             # (acquire/mbar/smem_ptr/step) is layout-independent; only the
             # producer differs: Layout-G (m_pack==4) depth-splits
-            # (`_produce_v`, reuses the shared `rows` LUT), Layout-E (m_pack==2)
-            # reduction/key-splits (`_produce_v_e`, its own per-partition LUT
-            # populated from `kv_row_base` -- see its docstring for why it
-            # cannot reuse `rows`).
+            # (`_produce_v`, indexes `rows` whole), Layout-E (m_pack==2)
+            # reduction/key-splits (`_produce_v_e`, one `rows.sub_rows`
+            # partition each), shared-key key-splits (one `rows.sub_rows` chunk
+            # each). All three read the SAME `rows` K populated.
+            comptime if config.ws_shared_key:
+                # Shared-key: a RUNTIME chunk count, the only sub-tile walk in
+                # this kernel whose trip count is not comptime. `live` is the
+                # number of key chunks that hold at least one real key; the rest
+                # emit nothing at all -- no TMA, no MMA, no ring position.
+                #
+                # It is computed from the tile's own base row at EVERY site, not
+                # only the ones spelled `partial=True`. That is deliberate: the
+                # formula returns `v_sk_chunks` for any full tile, so the
+                # interior sites are unchanged by construction, and the walk
+                # stops depending on a site-by-site "is this the last tile?"
+                # classification that `partial` does NOT actually encode
+                # (`partial` is paging, and it is True on the known-FULL
+                # second-to-last tile at `_emit_v`'s peeled-last-full site).
+                comptime assert acquire, (
+                    "shared-key V: the acquire=False peel is K-only; a skipped"
+                    " first chunk would leave the peeled slot unacquired"
+                )
+                # `kv_row_base` is this V group's ABSOLUTE base row; the
+                # `live` count below and the per-chunk OOB page count both
+                # measure against it. All nine 1Q call sites supply it; the 2Q
+                # ones do not and take the 0 default, which would walk every
+                # chunk from row 0 -- silently, since the ring would stay in
+                # step. `FA4Config.__init__` already forces
+                # `ws_shared_key => num_q == 1`, so this is unreachable; assert
+                # it here because THIS is the code that depends on it.
+                comptime assert config.num_q == 1, (
+                    "shared-key V: the key-chunk walk needs `kv_row_base`,"
+                    " which only the 1Q producer threads through"
+                )
+                # Every mask clamps `end_col <= num_cols`, so the last tile
+                # always holds >= 1 key and chunk 0 is never dead. A base at or
+                # past `num_keys` would wrap this subtraction and `min` would
+                # silently restore a full walk, so assert rather than defend.
+                debug_assert(
+                    kv_row_base < num_keys,
+                    (
+                        "shared-key V: tile base at/past num_keys -- the"
+                        " producer was asked for an entirely dead tile"
+                    ),
+                )
+                var live = min(
+                    UInt32(v_sk_chunks),
+                    UInt32(
+                        ceildiv(Int(num_keys - kv_row_base), v_sk_key_chunk)
+                    ),
+                )
+                for c in range(live):
+                    var chunk_base = kv_row_base + c * UInt32(v_sk_key_chunk)
+                    # Hoisted out of the depth-tile loop: all `num_o_tiles()`
+                    # tiles of a chunk read the SAME key rows and differ only in
+                    # `depth_offset`. This is the payoff of chunk-outer order.
+                    var chunk_rows = rows.sub_rows[v_sk_key_chunk](
+                        c * UInt32(v_sk_key_chunk)
+                    )
+                    var chunk_nvp = UInt32(v_sk_pages_per_chunk)
+                    comptime if v_sk_oob_fill and partial:
+                        # Only reachable at `page_size < pv_key_chunk()`, where
+                        # a LIVE chunk can still contain dead page slots. The
+                        # subtraction is safe because `c < live` implies
+                        # `chunk_base < num_keys`, and `live` really was
+                        # truncated above.
+                        chunk_nvp = min(
+                            UInt32(v_sk_pages_per_chunk),
+                            UInt32(
+                                ceildiv(
+                                    Int(num_keys - chunk_base),
+                                    v_sk_rows_per_page,
+                                )
+                            ),
+                        )
+                    comptime for t in range(config.num_o_tiles()):
+                        kv_pipeline.producer_acquire()
+                        var mbar_sk = kv_pipeline.producer_mbar()
+                        var smem_sk = kv_smem + kv_pipeline.state.index() * (
+                            UInt32(kv_stage_elems)
+                        )
+                        _produce_v_sk[partial=partial, t=t](
+                            chunk_rows, smem_sk, mbar_sk, chunk_nvp
+                        )
+                        kv_pipeline.state.step()
+                return
+
             comptime for stage in range(config.num_qk_stages):
                 comptime if acquire or stage != 0:
                     kv_pipeline.producer_acquire()
@@ -805,7 +975,7 @@ def fa4_load[
                     # per (partition, sub-tile) in the per-partition LUT's page
                     # frame, which the caller's tile-wide count cannot express.
                     _produce_v_e[partial=partial, r=stage](
-                        kv_row_base, smem_ptr, mbar
+                        rows, kv_row_base, smem_ptr, mbar
                     )
                 else:
                     _produce_v[partial=partial, d_tile=stage](
@@ -839,9 +1009,8 @@ def fa4_load[
                 )
 
             # T == 1 fast path: produce K_e[0] (with Q) + V_e[0] only.
-            # mma_warp's matching T==1 fast path consumes those two
-            # slots then returns; softmax_warp's WG1 takes its no-op
-            # path at softmax_warp.mojo:1254-1257.
+            # mma_warp's matching T==1 fast path consumes those two slots then
+            # returns; softmax_warp's WG1 takes its no-op path.
             if T == UInt32(1):
                 var rows_e_t1 = kv_lut.populate[
                     BN, base_alignment, pair_cta, is_leader
@@ -879,8 +1048,19 @@ def fa4_load[
             # V_e[0] (reuses rows_e)
             _emit_v[partial=needs_partial](rows_e, v_nvp, kv_row)
 
-            # V_o[0] (reuses rows_o)
-            _emit_v[partial=needs_partial](rows_o, v_nvp_o, kv_row + UInt32(BN))
+            # V_o[0] (reuses rows_o).
+            # `v_o_row` is the row of the odd V that is currently OWED. It is
+            # assigned at every site that would have emitted an odd V, so the
+            # rotated sites below never re-derive it from `kv_row` -- which by
+            # then has advanced by 2*BN, making the correct expression
+            # `kv_row - BN` at three sites and `kv_row + BN` at the fourth.
+            # That sign is the one mistake this whole rotation can make
+            # silently: `_emit_v`'s row argument is dead on Layout-G but live on
+            # Layout-E (`_produce_v_e`'s partition bases) and on the shared-key
+            # arm (its `live` chunk count and OOB page counts). The shared-key
+            # arm IS auto-dispatched at depth 256/512, so a wrong sign now reads
+            # the wrong keys on a production route rather than lying dormant.
+            var v_o_row: UInt32 = kv_row + UInt32(BN)
 
             # ---- Loop bookkeeping ----
             # T is total K-tiles. Peel consumed K_e[0] + K_o[0] (2 tiles)
@@ -910,6 +1090,15 @@ def fa4_load[
                 ](seq_info.prompt_idx, kv_row)
                 _emit_k[partial=False](rows_e, UInt32(KVPagedRows.num_pages))
 
+                # Owed V_o[n-1] (tile 2n-1), one K group later than block order.
+                # MUST precede the K_o[n] `rows_o` populate just below -- that
+                # is what still makes `rows_o` tile 2n-1. Always full: this site
+                # needs main_iters > 0, i.e. T >= 4, so tile 2n-1 <= T-3 is
+                # interior.
+                _emit_v[partial=False](
+                    rows_o, UInt32(KVPagedRows.num_pages), v_o_row
+                )
+
                 # K_o[n] (full)
                 rows_o = kv_lut.populate[
                     BN, base_alignment, pair_cta, is_leader
@@ -921,15 +1110,14 @@ def fa4_load[
                     rows_e, UInt32(KVPagedRows.num_pages), kv_row
                 )
 
-                # V_o[n] (full, reuses rows_o)
-                _emit_v[partial=False](
-                    rows_o, UInt32(KVPagedRows.num_pages), kv_row + UInt32(BN)
-                )
+                # V_o[n] (full, reuses rows_o) is NOT emitted here -- the
+                # rotation defers it to the next block, so only the owed row
+                # carries forward.
+                v_o_row = kv_row + UInt32(BN)
 
             # ---- Tail K_e + V_e (T odd, any needs_partial) ----
-            # mma_warp's break-check at mma_warp.mojo:257-274 swaps
-            # s1/o1 onto s0/o0 and consumes one trailing K + V; that
-            # K and V come from this block.
+            # mma_warp's break-check swaps s1/o1 onto s0/o0 and consumes one
+            # trailing K + V; that K and V come from this block.
             if has_tail:
                 kv_row += UInt32(2 * BN)
                 var k_nvp_t: UInt32 = UInt32(k_pages_per_cta)
@@ -942,6 +1130,14 @@ def fa4_load[
                     BN, base_alignment, pair_cta, is_leader
                 ](seq_info.prompt_idx, kv_row)
                 _emit_k[partial=needs_partial](rows_t, k_nvp_t)
+
+                # Owed V_o (tile T-2). Full: has_tail => T odd >= 3, so T-2 is
+                # interior. This block's own V below is tile T-1, the terminal
+                # one, so the drain is suppressed here.
+                _emit_v[partial=False](
+                    rows_o, UInt32(KVPagedRows.num_pages), v_o_row
+                )
+
                 _emit_v[partial=needs_partial](rows_t, v_nvp_t, kv_row)
 
             # ---- Peeled-last full pair (needs_partial && T even) ----
@@ -959,6 +1155,14 @@ def fa4_load[
                     ](seq_info.prompt_idx, kv_row)
                     _emit_k[partial=True](rows_pe, k_nvp_pe)
 
+                    # Owed V_o (tile T-3). Full: this block itself emits T-2 and
+                    # T-1, so T-3 is interior. MUST precede the `rows_po`
+                    # populate below, which does not touch `rows_o` -- but the
+                    # owed tile is `rows_o`'s.
+                    _emit_v[partial=False](
+                        rows_o, UInt32(KVPagedRows.num_pages), v_o_row
+                    )
+
                     # K_o (partial)
                     var rows_po = kv_lut.populate[
                         BN, base_alignment, pair_cta, is_leader
@@ -968,10 +1172,34 @@ def fa4_load[
                     # V_e (partial, reuses rows_pe)
                     _emit_v[partial=True](rows_pe, v_nvp_pe, kv_row)
 
-                    # V_o (partial, reuses rows_po)
+                    # V_o (partial, reuses rows_po). Already the terminal V of
+                    # this branch and already in rotated position -- unmoved,
+                    # which is why the drain below must skip this cell.
                     _emit_v[partial=True](
                         rows_po, v_nvp_po, kv_row + UInt32(BN)
                     )
+
+            # ---- Terminal V_o drain ----
+            # The rotation leaves exactly one V owed at the end: the peel owes
+            # one, and every block that emits a K pair flushes one and owes one.
+            # The tail (T odd) and peeled-last (needs_partial, T even) blocks
+            # each end on their own terminal V, so this fires only when neither
+            # ran -- T even and either needs_partial is False, or T == 2. It
+            # pairs with the consumer's single unconditional post-loop acquire;
+            # omitting it, or widening the guard, hangs the CTA rather than
+            # corrupting output.
+            #
+            # `partial=needs_partial` is exact, not conservative: with
+            # needs_partial True the guard forces main_iters == 0 and T even,
+            # i.e. T == 2, where the peel's odd tile IS terminal and the peel's
+            # `v_nvp_o` is its runtime count. With it False nothing is ever
+            # partial and `v_nvp_o` is literally num_pages.
+            #
+            # Must stay the last statement of this arm: the T == 1 fast path
+            # returns above and owes nothing.
+            if not has_tail and not has_peeled_last_full:
+                _emit_v[partial=needs_partial](rows_o, v_nvp_o, v_o_row)
+
         else:
             comptime if CrossP:
                 # ---- 2Q shared-KV K-ahead producer (cross-stage P enabler) ----

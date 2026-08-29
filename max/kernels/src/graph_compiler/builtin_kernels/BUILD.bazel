@@ -12,6 +12,7 @@ mojo_library(
     validate_missing_docs = False,
     deps = [
         "//Kernels/lib/attn_res",
+        "//Kernels/lib/kda",
         "//Kernels/lib/matmul_rs",
         "//Kernels/lib/msa",
         "//Kernels/src/mega_ffn",

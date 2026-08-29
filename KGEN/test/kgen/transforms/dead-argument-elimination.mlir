@@ -75,7 +75,7 @@ kgen.func @f_maybe_live(%arg0: index, %arg1: index) -> index {
 }
 
 kgen.func @f_reference() {
-  %0 = kgen.param.constant: (index read, index read) -> index = <@f_maybe_live>
+  %0 = kgen.param.constant: (index imm, index imm) -> index = <@f_maybe_live>
   kgen.return
 }
 
@@ -114,4 +114,19 @@ kgen.func @test_correctly_handle_pure_ops(%arg0: index, %arg1: !kgen.scalar<inde
   %4 = pop.array.create [%3, %arg1] : !pop.array<2, scalar<index>>
   kgen.call @test_correctly_handle_pure_ops_callee(%4, %arg1, %2) : (!pop.array<2, scalar<index>>, !kgen.scalar<index>, index) -> ()
   kgen.return
+}
+
+// -----
+
+// COM: An argument passed to an external callee stays live: the callee has no
+// COM: call graph edge, so its argument liveness is unknowable.
+kgen.func @external_callee(%arg0: index) -> index attributes {external} {
+  kgen.unreachable
+}
+
+// CHECK-LABEL: kgen.func @calls_external(%arg0: index) -> index {
+kgen.func @calls_external(%dead_arg: index, %live_arg: index) -> index {
+  // CHECK: kgen.call @external_callee(%arg0) : (index) -> index
+  %0 = kgen.call @external_callee(%live_arg) : (index) -> index
+  kgen.return %0: index
 }

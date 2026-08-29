@@ -128,9 +128,7 @@ def _load_to_lds[
 ](
     bc: AMDBufferResource,
     vector_offset: Int32,
-    shared_ptr: UnsafePointer[
-        Scalar[dtype], _, address_space=AddressSpace.SHARED
-    ],
+    shared_ptr: UnsafePointer[Scalar[dtype], _, address_space=.SHARED],
     scalar_offset: Int32 = 0,
 ):
     """Loads one raw-buffer vector into LDS with TileIO's async-copy scope.
@@ -170,18 +168,12 @@ def _load_to_lds[
         CacheOperation.STREAMING,
     ), "_load_to_lds supports ALWAYS or STREAMING cache policy"
     var desc_ptr = UnsafePointer[
-        Scalar[DType.bfloat16],
-        MutAnyOrigin,
-        address_space=AddressSpace.BUFFER_RESOURCE,
+        BFloat16, MutAnyOrigin, address_space=.BUFFER_RESOURCE
     ].unsafe_dangling()
     var ptr_to_ptr = UnsafePointer(to=desc_ptr)
     var ptr_to_simd = UnsafePointer(to=bc.desc)
     ptr_to_ptr[0] = ptr_to_simd.bitcast[
-        UnsafePointer[
-            Scalar[DType.bfloat16],
-            MutAnyOrigin,
-            address_space=AddressSpace.BUFFER_RESOURCE,
-        ]
+        UnsafePointer[BFloat16, MutAnyOrigin, address_space=.BUFFER_RESOURCE]
     ]()[0]
     var desc_ptr_llvm = __mlir_op.`builtin.unrealized_conversion_cast`[
         _type=__mlir_type.`!llvm.ptr<8>`
@@ -230,7 +222,7 @@ def _load_to_lds[
 
 @always_inline
 def ds_read_tr16_b64_row(
-    tile: TileTensor[_, _, address_space=AddressSpace.SHARED, ...],
+    tile: TileTensor[_, _, address_space=.SHARED, ...],
 ) -> SIMD[tile.dtype, 4]:
     """4x16 transposed LDS read via rocdl.ds.read.tr16.b64.
 
@@ -275,11 +267,7 @@ def ds_read_tr16_b64_row(
 @always_inline
 def ds_read_tr16_b64_warp[
     mma_shape: IndexList[3],
-](
-    tile: TileTensor[_, _, address_space=AddressSpace.SHARED, ...],
-) -> SIMD[
-    tile.dtype, 4
-]:
+](tile: TileTensor[_, _, address_space=.SHARED, ...],) -> SIMD[tile.dtype, 4]:
     """Warp-level transposed LDS read distributing across 16-lane rows.
 
     For 32x32x16 MMA: 2x2 row distribution over 8x32 tile.
@@ -297,7 +285,7 @@ def ds_read_tr16_b64_warp[
     comptime row_dim0 = 2 if mma_shape[0] == 32 else 4
     comptime row_dim1 = 2 if mma_shape[0] == 32 else 1
 
-    comptime assert tile.dtype == DType.bfloat16
+    comptime assert tile.dtype == .bfloat16
     comptime assert type_of(tile).static_shape[0] == row_dim0 * 4
     comptime assert type_of(tile).static_shape[1] == row_dim1 * 16
 
@@ -357,13 +345,10 @@ struct TiledMmaLoader[
         simd_width: Int,
         imm_offset_bytes: Int = 0,
     ](
-        src: TileTensor[
-            Self.in_type,
-            _,
-            address_space=AddressSpace.SHARED,
-            ...,
-        ],
-    ) -> Array[SIMD[Self.in_type, simd_width], num_mmas]:
+        src: TileTensor[Self.in_type, _, address_space=.SHARED, ...],
+    ) -> Array[
+        SIMD[Self.in_type, simd_width], num_mmas
+    ]:
         """Full B operand load from a SMEM warp tile.
 
         Loads all MMA tiles from a WN x BK SMEM warp tile and returns
@@ -430,12 +415,7 @@ struct TiledMmaLoader[
     @staticmethod
     @always_inline
     def load_b_tr(
-        tile: TileTensor[
-            Self.in_type,
-            _,
-            address_space=AddressSpace.SHARED,
-            ...,
-        ],
+        tile: TileTensor[Self.in_type, _, address_space=.SHARED, ...],
     ) -> SIMD[Self.in_type, 8]:
         """Transposed B operand load for double-rate MFMA shapes.
 
@@ -452,7 +432,7 @@ struct TiledMmaLoader[
             IndexList[3](32, 32, 16),
             IndexList[3](16, 16, 32),
         )
-        comptime assert Self.in_type == DType.bfloat16
+        comptime assert Self.in_type == .bfloat16
         comptime MMA_K = Self.mma_shape[2]
         comptime MMA_N = Self.mma_shape[1]
         comptime half_k = MMA_K // 2
@@ -476,9 +456,7 @@ struct TiledMmaLoader[
         dt: Int,
     ](
         v_base: UnsafePointer[
-            Scalar[Self.in_type],
-            MutAnyOrigin,
-            address_space=AddressSpace.SHARED,
+            Scalar[Self.in_type], MutAnyOrigin, address_space=.SHARED
         ],
         rel_key: Int,
         hw_key_shift: Int,
@@ -569,9 +547,7 @@ struct TiledMmaLoader[
         dt: Int,
     ](
         v_base: UnsafePointer[
-            Scalar[Self.in_type],
-            MutAnyOrigin,
-            address_space=AddressSpace.SHARED,
+            Scalar[Self.in_type], MutAnyOrigin, address_space=.SHARED
         ],
         key_group: Int,
         pair_idx: Int,
@@ -687,13 +663,10 @@ struct TiledMmaLoader[
         k_tile_idx: Int,
         imm_offset_bytes: Int = 0,
     ](
-        src: TileTensor[
-            Self.in_type,
-            _,
-            address_space=AddressSpace.SHARED,
-            ...,
-        ],
-    ) -> SIMD[Self.in_type, simd_width_of[Self.in_type]()]:
+        src: TileTensor[Self.in_type, _, address_space=.SHARED, ...],
+    ) -> SIMD[
+        Self.in_type, simd_width_of[Self.in_type]()
+    ]:
         """Private helper for `load_b`: single MMA sub-tile load.
 
         Takes the MMA shape as a parameter (rather than reading Self.mma_shape)
@@ -761,10 +734,10 @@ def _load_from_lds[
     imm_offset_bytes: Int = 0,
     typed_imm_offset_bytes: Int = 0,
 ](
-    shared_ptr: UnsafePointer[
-        Scalar[dtype], _, address_space=AddressSpace.SHARED
-    ],
-) -> SIMD[dtype, width]:
+    shared_ptr: UnsafePointer[Scalar[dtype], _, address_space=.SHARED],
+) -> SIMD[
+    dtype, width
+]:
     """Alias-scoped LDS load via LLVM intrinsic with noalias annotations.
 
     When `imm_offset_bytes != 0`, routes through `ds_read_b128_imm_u32x4`
@@ -797,12 +770,12 @@ def _load_from_lds[
     offset:imm`), but makes the hoist explicit at the source level.
     """
     comptime if imm_offset_bytes != 0:
-        comptime if dtype == DType.bfloat16 and width == 8:
-            var bf16_ptr = shared_ptr.bitcast[Scalar[DType.bfloat16]]()
+        comptime if dtype == .bfloat16 and width == 8:
+            var bf16_ptr = shared_ptr.bitcast[BFloat16]()
             var raw = ds_read_b128_imm_u32x4[offset_bytes=imm_offset_bytes](
                 bf16_ptr
             )
-            return rebind[SIMD[dtype, width]](bitcast[DType.bfloat16, 8](raw))
+            return rebind[SIMD[dtype, width]](bitcast[.bfloat16, 8](raw))
         else:
             comptime assert (
                 False
@@ -826,7 +799,7 @@ def _load_from_lds[
     comptime load_bytes = width * size_of[dtype]()
     comptime alignment = min(load_bytes, 16)
 
-    comptime if dtype == DType.bfloat16 and width == 4:
+    comptime if dtype == .bfloat16 and width == 4:
         var llvm_res = __mlir_op.`llvm.load`[
             _type=__mlir_type.`vector<4 x bf16>`,
             alignment=to_i64(Int64(alignment)),
@@ -835,10 +808,10 @@ def _load_from_lds[
         ](shared_ptr3)
         return rebind[SIMD[dtype, width]](
             __mlir_op.`pop.cast_from_builtin`[
-                _type=SIMD[DType.bfloat16, 4]._mlir_type
+                _type=SIMD[.bfloat16, 4]._mlir_type
             ](llvm_res)
         )
-    elif dtype == DType.bfloat16 and width == 8:
+    elif dtype == .bfloat16 and width == 8:
         var llvm_res = __mlir_op.`llvm.load`[
             _type=__mlir_type.`vector<8 x bf16>`,
             alignment=to_i64(Int64(alignment)),
@@ -847,10 +820,10 @@ def _load_from_lds[
         ](shared_ptr3)
         return rebind[SIMD[dtype, width]](
             __mlir_op.`pop.cast_from_builtin`[
-                _type=SIMD[DType.bfloat16, 8]._mlir_type
+                _type=SIMD[.bfloat16, 8]._mlir_type
             ](llvm_res)
         )
-    elif dtype == DType.float16 and width == 4:
+    elif dtype == .float16 and width == 4:
         var llvm_res = __mlir_op.`llvm.load`[
             _type=__mlir_type.`vector<4 x f16>`,
             alignment=to_i64(Int64(alignment)),
@@ -859,10 +832,10 @@ def _load_from_lds[
         ](shared_ptr3)
         return rebind[SIMD[dtype, width]](
             __mlir_op.`pop.cast_from_builtin`[
-                _type=SIMD[DType.float16, 4]._mlir_type
+                _type=SIMD[.float16, 4]._mlir_type
             ](llvm_res)
         )
-    elif dtype == DType.float16 and width == 8:
+    elif dtype == .float16 and width == 8:
         var llvm_res = __mlir_op.`llvm.load`[
             _type=__mlir_type.`vector<8 x f16>`,
             alignment=to_i64(Int64(alignment)),
@@ -871,7 +844,7 @@ def _load_from_lds[
         ](shared_ptr3)
         return rebind[SIMD[dtype, width]](
             __mlir_op.`pop.cast_from_builtin`[
-                _type=SIMD[DType.float16, 8]._mlir_type
+                _type=SIMD[.float16, 8]._mlir_type
             ](llvm_res)
         )
     elif dtype.is_float8() and width == 8:
@@ -882,11 +855,9 @@ def _load_from_lds[
             alias_scopes=no_alias_scope_attr,
         ](shared_ptr3)
         var uint8_vec = __mlir_op.`pop.cast_from_builtin`[
-            _type=SIMD[DType.uint8, 8]._mlir_type
+            _type=SIMD[.uint8, 8]._mlir_type
         ](llvm_res)
-        return bitcast[dtype, width](
-            rebind[SIMD[DType.uint8, width]](uint8_vec)
-        )
+        return bitcast[dtype, width](rebind[SIMD[.uint8, width]](uint8_vec))
     elif dtype.is_float8() and width == 16:
         var llvm_res = __mlir_op.`llvm.load`[
             _type=__mlir_type.`vector<16 x i8>`,
@@ -895,11 +866,9 @@ def _load_from_lds[
             alias_scopes=no_alias_scope_attr,
         ](shared_ptr3)
         var uint8_vec = __mlir_op.`pop.cast_from_builtin`[
-            _type=SIMD[DType.uint8, 16]._mlir_type
+            _type=SIMD[.uint8, 16]._mlir_type
         ](llvm_res)
-        return bitcast[dtype, width](
-            rebind[SIMD[DType.uint8, width]](uint8_vec)
-        )
+        return bitcast[dtype, width](rebind[SIMD[.uint8, width]](uint8_vec))
     elif dtype.is_float8() and width == 32:
         var llvm_res0 = __mlir_op.`llvm.load`[
             _type=__mlir_type.`vector<16 x i8>`,
@@ -918,13 +887,13 @@ def _load_from_lds[
             alias_scopes=no_alias_scope_attr,
         ](shared_ptr3_hi)
         var uint8_vec0 = __mlir_op.`pop.cast_from_builtin`[
-            _type=SIMD[DType.uint8, 16]._mlir_type
+            _type=SIMD[.uint8, 16]._mlir_type
         ](llvm_res0)
         var uint8_vec1 = __mlir_op.`pop.cast_from_builtin`[
-            _type=SIMD[DType.uint8, 16]._mlir_type
+            _type=SIMD[.uint8, 16]._mlir_type
         ](llvm_res1)
-        var uint8_vec = rebind[SIMD[DType.uint8, 16]](uint8_vec0).join(
-            rebind[SIMD[DType.uint8, 16]](uint8_vec1)
+        var uint8_vec = rebind[SIMD[.uint8, 16]](uint8_vec0).join(
+            rebind[SIMD[.uint8, 16]](uint8_vec1)
         )
         return bitcast[dtype, width](uint8_vec)
     else:
@@ -952,12 +921,12 @@ def _load_from_lds[
 def ds_read_b128_imm_u32x4[
     offset_bytes: Int,
 ](
-    base_ptr: UnsafePointer[
-        Scalar[DType.bfloat16], _, address_space=AddressSpace.SHARED
-    ],
-) -> SIMD[DType.uint32, 4]:
+    base_ptr: UnsafePointer[BFloat16, _, address_space=.SHARED],
+) -> SIMD[
+    .uint32, 4
+]:
     """Issues `ds_read_b128` with a comptime immediate offset and returns the
-    loaded 128 bits as `SIMD[DType.uint32, 4]`.
+    loaded 128 bits as `SIMD[.uint32, 4]`.
 
     Includes pre-issue `s_nop` hazard guard, pre-issue `s_waitcnt vmcnt(0)`
     (DMA completion), and POST-issue `s_waitcnt lgkmcnt(0)` (LDS read
@@ -989,7 +958,7 @@ def ds_read_b128_imm_u32x4[
     # trade-off for kernels with concurrent MFMA + LDS-read flows.
     return inlined_assembly[
         "ds_read_b128 $0, $1 offset:$2",
-        SIMD[DType.uint32, 4],
+        SIMD[.uint32, 4],
         constraints="=v,v,n",
         has_side_effect=True,
     ](addr_i32, Int32(offset_bytes))
@@ -1147,16 +1116,14 @@ def smem_subtile[
     BK: Int,
     dtype: DType,
 ](
-    smem_ptr: UnsafePointer[
-        Scalar[dtype], MutAnyOrigin, address_space=AddressSpace.SHARED
-    ],
+    smem_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin, address_space=.SHARED],
     tile_row: Int,
     tile_col: Int,
 ) -> TileTensor[
     dtype,
     type_of(row_major[tile_rows, tile_cols]()),
     MutAnyOrigin,
-    address_space=AddressSpace.SHARED,
+    address_space=.SHARED,
 ]:
     """Creates a flat TileTensor sub-view of a blocked SMEM layout.
 
@@ -1188,7 +1155,7 @@ def smem_subtile[
         dtype,
         type_of(row_major[tile_rows, tile_cols]()),
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ](smem_ptr + offset, row_major[tile_rows, tile_cols]())
 
 
@@ -1229,9 +1196,7 @@ def smem_mma_subtile[
     BK: Int,
     dtype: DType,
 ](
-    smem_ptr: UnsafePointer[
-        Scalar[dtype], MutAnyOrigin, address_space=AddressSpace.SHARED
-    ],
+    smem_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin, address_space=.SHARED],
     bk_tile: Int,
     k_sub: Int,
     mma_idx: Int,
@@ -1239,7 +1204,7 @@ def smem_mma_subtile[
     dtype,
     type_of(row_major[mma_rows, mma_cols]()),
     MutAnyOrigin,
-    address_space=AddressSpace.SHARED,
+    address_space=.SHARED,
 ]:
     """Creates a flat TileTensor for an MMA-sized sub-tile in blocked SMEM.
 
@@ -1275,7 +1240,7 @@ def smem_mma_subtile[
         dtype,
         type_of(row_major[mma_rows, mma_cols]()),
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ](smem_ptr + offset, row_major[mma_rows, mma_cols]())
 
 
@@ -1458,7 +1423,7 @@ struct TileLoaderLDS[
     @always_inline
     def __init__(
         out self,
-        src: GMemTile[Self.dtype, _, _],
+        src: TileTensor[Self.dtype, ...],
         warp_id: Int,
         lane_id: Int,
         *,
@@ -1572,9 +1537,7 @@ struct TileLoaderLDS[
             k_offset: Column (K dim) offset within the block.
         """
         comptime SmemPtr = Pointer[
-            Scalar[Self.dtype],
-            MutAnyOrigin,
-            address_space=AddressSpace.SHARED,
+            Scalar[Self.dtype], MutAnyOrigin, address_space=.SHARED
         ]
 
         comptime if not Self._needs_per_iter_swizzle:
@@ -1752,13 +1715,7 @@ struct SubTileLoaderLDS[
         hoist_scalar_offset: Bool = False,
     ](
         self,
-        dst: TileTensor[
-            Self.dtype,
-            _,
-            _,
-            address_space=AddressSpace.SHARED,
-            ...,
-        ],
+        dst: TileTensor[Self.dtype, _, _, address_space=.SHARED, ...],
         src: TileTensor[Self.dtype, ...],
         scalar_offset: Int = 0,
         worker_base: Int = 0,
@@ -1874,22 +1831,16 @@ struct SubTileLoaderLDS[
             var src_dist = src_partitions.vectorize[1, load_width]().distribute[
                 thread_layout
             ](umod(swizzled_worker_idx, WARP_SIZE))
-            var dst_ptr = dst_partitions.ptr.address_space_cast[
-                AddressSpace.SHARED
-            ]()
+            var dst_ptr = dst_partitions.ptr.address_space_cast[.SHARED]()
 
             var desc_ptr_ = UnsafePointer[
-                Scalar[DType.bfloat16],
-                MutAnyOrigin,
-                address_space=AddressSpace.BUFFER_RESOURCE,
+                BFloat16, MutAnyOrigin, address_space=.BUFFER_RESOURCE
             ].unsafe_dangling()
             var ptr_to_ptr = UnsafePointer(to=desc_ptr_)
             var ptr_to_simd = UnsafePointer(to=self.bc.desc)
             ptr_to_ptr[0] = ptr_to_simd.bitcast[
                 UnsafePointer[
-                    Scalar[DType.bfloat16],
-                    MutAnyOrigin,
-                    address_space=AddressSpace.BUFFER_RESOURCE,
+                    BFloat16, MutAnyOrigin, address_space=.BUFFER_RESOURCE
                 ]
             ]()[0]
             var desc_ptr_llvm = __mlir_op.`builtin.unrealized_conversion_cast`[
@@ -2112,7 +2063,7 @@ struct SubTileLoaderLDS_st_8x32[
         comptime _num_iters = _total_bytes // _bytes_per_iter
 
         comptime assert (
-            Self.dtype == DType.bfloat16 or Self.dtype == DType.float8_e4m3fn
+            Self.dtype == .bfloat16 or Self.dtype == .float8_e4m3fn
         ), (
             "SubTileLoaderLDS_st_8x32: dtype must be BF16 or FP8 e4m3."
             " The byte-level `buffer_load_lds` DMA is byte-equivalent for"
@@ -2241,19 +2192,19 @@ struct SubTileLoaderLDS_st_8x32[
                     # gated study path — see the `_v227_layout` field doc.
                     global_byte_in_tile = Int32(
                         crd2idx(
-                            Scalar[DType.int32](_ci),
+                            Int32(_ci),
                             _SRC_CHUNK_SHAPE,
                             _SRC_CHUNK_STRIDE,
                         )
                         + crd2idx(
-                            Scalar[DType.int32](lane_id_local),
+                            Int32(lane_id_local),
                             _SRC_LANE_SHAPE,
                             _SRC_LANE_STRIDE,
                         )
                     ) * Int32(size_of[Self.dtype]())
                     lds_warp_byte = Int32(
                         crd2idx(
-                            Scalar[DType.int32](_ci),
+                            Int32(_ci),
                             _LDS_CHUNK_SHAPE,
                             _LDS_CHUNK_STRIDE,
                         )
@@ -2292,17 +2243,13 @@ struct SubTileLoaderLDS_st_8x32[
             ](v_smem_warp_ptr)
 
             var desc_ptr_ = UnsafePointer[
-                Scalar[DType.bfloat16],
-                MutAnyOrigin,
-                address_space=AddressSpace.BUFFER_RESOURCE,
+                BFloat16, MutAnyOrigin, address_space=.BUFFER_RESOURCE
             ].unsafe_dangling()
             var ptr_to_ptr = UnsafePointer(to=desc_ptr_)
             var ptr_to_simd = UnsafePointer(to=self.bc.desc)
             ptr_to_ptr[0] = ptr_to_simd.bitcast[
                 UnsafePointer[
-                    Scalar[DType.bfloat16],
-                    MutAnyOrigin,
-                    address_space=AddressSpace.BUFFER_RESOURCE,
+                    BFloat16, MutAnyOrigin, address_space=.BUFFER_RESOURCE
                 ]
             ]()[0]
             var desc_ptr_llvm = __mlir_op.`builtin.unrealized_conversion_cast`[
@@ -2375,7 +2322,7 @@ struct RegTileLoader[
     @always_inline
     def __init__(
         out self,
-        gmem_tile: TileTensor[Self.dtype, Storage=PointerStorage[], ...],
+        gmem_tile: TileTensor[Self.dtype, ...],
     ):
         """Creates a loader from a DRAM tile.
 
@@ -2387,14 +2334,14 @@ struct RegTileLoader[
             gmem_tile: The DRAM tile as TileTensor.
         """
         self.bc = make_amd_buffer_resource(gmem_tile)
-        self.base_ptr_as_int = Int(gmem_tile._storage)
+        self.base_ptr_as_int = Int(gmem_tile.ptr)
 
     @always_inline
     def __init__(
         out self,
-        gmem_tile: TileTensor[Self.dtype, Storage=PointerStorage[], ...],
+        gmem_tile: TileTensor[Self.dtype, ...],
         *,
-        bounds_from: TileTensor[Self.dtype, Storage=PointerStorage[], ...],
+        bounds_from: TileTensor[Self.dtype, ...],
     ):
         """Creates a loader with OOB bounds from a full (pre-tiled) tensor.
 
@@ -2409,24 +2356,22 @@ struct RegTileLoader[
         """
         from layout._utils import _get_bounds
 
-        var off = (
-            Int(gmem_tile._storage) - Int(bounds_from._storage)
-        ) // size_of[Self.dtype]()
+        var off = (Int(gmem_tile.ptr) - Int(bounds_from.ptr)) // size_of[
+            Self.dtype
+        ]()
         # A tile based entirely past `bounds_from` makes the remaining extent
         # negative, which `AMDBufferResource` narrows to a UInt32 byte count —
         # wrapping to ~4 GiB and clamping nothing. Saturate so it reads as zero.
         self.bc = AMDBufferResource(
-            readfirstlane(gmem_tile._storage),
+            readfirstlane(gmem_tile.ptr),
             readfirstlane(max(0, _get_bounds(bounds_from) - off)),
         )
-        self.base_ptr_as_int = Int(gmem_tile._storage)
+        self.base_ptr_as_int = Int(gmem_tile.ptr)
 
     @always_inline
     def load(
         self,
-        dst: TileTensor[
-            mut=True, Self.dtype, _, _, address_space=AddressSpace.LOCAL, ...
-        ],
+        dst: TileTensor[mut=True, Self.dtype, _, _, address_space=.LOCAL, ...],
         src: TileTensor[Self.dtype, ...],
     ):
         """Loads DRAM tile data into a LOCAL register tile.
@@ -2509,7 +2454,7 @@ struct RegTileWriter[
     """Integer address of the full DRAM tile base pointer."""
 
     @always_inline
-    def __init__(out self, dst_base: TileTensor[Storage=PointerStorage[], ...]):
+    def __init__(out self, dst_base: TileTensor[...]):
         """Create a writer from the full DRAM output tile.
 
         The TileTensor must carry Scalar for any masked dimension
@@ -2520,7 +2465,7 @@ struct RegTileWriter[
             dst_base: The full DRAM output tile as TileTensor.
         """
         self.bc = make_amd_buffer_resource(dst_base)
-        self.base_ptr_as_int = Int(dst_base._storage)
+        self.base_ptr_as_int = Int(dst_base.ptr)
 
     @always_inline
     def store[
@@ -2528,7 +2473,7 @@ struct RegTileWriter[
     ](
         self,
         dst_warp_tile: TileTensor[Self.dtype, ...],
-        src_tile: TileTensor[_, _, _, address_space=AddressSpace.LOCAL, ...],
+        src_tile: TileTensor[_, _, _, address_space=.LOCAL, ...],
     ):
         """Write register tile data to a DRAM warp sub-tile.
 
@@ -2749,7 +2694,7 @@ def _buffer_load_impl[
     num_threads: Int = thread_layout.size(),
     warp_scope: Bool = False,
 ](
-    dst: TileTensor[mut=True, _, _, _, address_space=AddressSpace.LOCAL, ...],
+    dst: TileTensor[mut=True, _, _, _, address_space=.LOCAL, ...],
     src: TileTensor[dst.dtype, ...],
     bc: AMDBufferResource,
     base_ptr_as_int: Int,
@@ -2854,10 +2799,8 @@ struct RegTileWriterLDS[
     @staticmethod
     @always_inline
     def copy(
-        dst: TileTensor[
-            mut=True, _, _, _, address_space=AddressSpace.SHARED, ...
-        ],
-        src: TileTensor[_, _, _, address_space=AddressSpace.LOCAL, ...],
+        dst: TileTensor[mut=True, _, _, _, address_space=.SHARED, ...],
+        src: TileTensor[_, _, _, address_space=.LOCAL, ...],
     ):
         """Copy register data to SMEM, distributed across threads.
 
@@ -3031,7 +2974,7 @@ comptime SMemTile[
     dtype: DType,
     LayoutType: TensorLayout,
     origin: Origin[mut=mut],
-] = TileTensor[dtype, LayoutType, origin, address_space=AddressSpace.SHARED]
+] = TileTensor[dtype, LayoutType, origin, address_space=.SHARED]
 """Shared memory tile. Alias for TileTensor in SHARED address space."""
 
 
@@ -3041,7 +2984,7 @@ comptime RegTile[
     dtype: DType,
     LayoutType: TensorLayout,
     origin: Origin[mut=mut],
-] = TileTensor[dtype, LayoutType, origin, address_space=AddressSpace.LOCAL]
+] = TileTensor[dtype, LayoutType, origin, address_space=.LOCAL]
 """Register tile. Alias for TileTensor in LOCAL address space."""
 
 
@@ -3065,7 +3008,7 @@ def reg_alloc[
     """Stack-allocate a register tile (LOCAL address space) with the given layout.
     """
     return tt_stack_allocation[
-        dtype, address_space=AddressSpace.LOCAL, alignment=alignment
+        dtype, address_space=.LOCAL, alignment=alignment
     ](layout)
 
 
@@ -3081,5 +3024,5 @@ def smem_alloc[
     """Stack-allocate a shared memory tile (SHARED address space) with the given layout.
     """
     return tt_stack_allocation[
-        dtype, address_space=AddressSpace.SHARED, alignment=alignment
+        dtype, address_space=.SHARED, alignment=alignment
     ](layout)

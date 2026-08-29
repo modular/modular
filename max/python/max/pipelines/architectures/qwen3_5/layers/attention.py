@@ -310,6 +310,7 @@ class Qwen3_5Attention(Module, Shardable):
         kv_collection: PagedCacheValues,
         freqs_cis: TensorValue,
         input_row_offsets: TensorValue,
+        freq_row_ids: TensorValue | None = None,
     ) -> TensorValue:
         """Forward pass through the gated full attention layer.
 
@@ -319,6 +320,11 @@ class Qwen3_5Attention(Module, Shardable):
             kv_collection: KV cache handle.
             freqs_cis: RoPE frequency table.
             input_row_offsets: Ragged offsets for batched sequences.
+            freq_row_ids: ``[1, total_seq_len]`` row of ``freqs_cis`` to use
+                for each token. Set when the table is per token (M-RoPE);
+                ``None`` leaves the kernels on their default
+                ``cache_length + token_idx`` lookup, which is only right when
+                the table is indexed by absolute position.
 
         Returns:
             Output hidden states [total_seq_len, hidden_size].
@@ -425,11 +431,11 @@ class Qwen3_5Attention(Module, Shardable):
         key = ops.concat([k_pass, k_rope_interleaved], axis=-1)
 
         if self.kv_params.is_fp8_kv_dtype:
-            # `store_k_cache_ragged` and `store_v_cache_ragged` are monomorphic
-            # on the cache dtype, so they cannot write bf16-computed K/V into an
-            # FP8 `kv_blocks`. The fused rope+store converts at store time. Q is
-            # emitted in the cache dtype so flash attention's
-            # `input.dtype == kv_params.dtype` guard passes.
+            # The bf16 branch below stores raw K and ropes it in place inside
+            # the cache, which on FP8 would round twice around the rope. The
+            # fused rope+store ropes in registers and casts once, so it is the
+            # right topology here with or without M-RoPE position ids. Q is
+            # emitted in the cache dtype for flash attention's dtype guard.
             qkv = ops.concat(
                 (
                     ops.reshape(query, [total_seq_len, -1]),
@@ -447,6 +453,7 @@ class Qwen3_5Attention(Module, Shardable):
                 layer_idx=layer_idx,
                 n_heads=self.n_heads,
                 interleaved=self.rope.interleaved,
+                position_ids=freq_row_ids,
                 q_out_dtype=self.kv_params.dtype,
             )
             query = ops.reshape(
@@ -471,6 +478,7 @@ class Qwen3_5Attention(Module, Shardable):
                 freqs_cis,
                 layer_idx,
                 interleaved=self.rope.interleaved,
+                position_ids=freq_row_ids,
             )
 
         # Flash attention. `output_dtype` is pinned to the activation dtype so

@@ -275,16 +275,16 @@ def test_all_out_idx_types[
     dtype: DType,
     FillFn: ImplicitlyCopyable & FillFnType,
 ](fill_fn: FillFn) raises:
-    test_toppminp[dtype, DType.int32](fill_fn)
-    test_toppminp[dtype, DType.int64](fill_fn)
-    test_toppminp[dtype, DType.uint64](fill_fn)
+    test_toppminp[dtype, .int32](fill_fn)
+    test_toppminp[dtype, .int64](fill_fn)
+    test_toppminp[dtype, .uint64](fill_fn)
 
 
 def test_all_types[
     FillFn: ImplicitlyCopyable & FillFnType,
 ](fill_fn: FillFn) raises:
     print("\n=== Testing Float32 ===")
-    test_all_out_idx_types[DType.float32](fill_fn)
+    test_all_out_idx_types[.float32](fill_fn)
 
 
 def main() raises:

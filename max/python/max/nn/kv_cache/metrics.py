@@ -30,7 +30,12 @@ def dkv_tier_degraded(connected_clients: int, total_clients: int) -> bool:
 class KVCacheMetrics:
     """Metrics for the KV cache.
 
-    Tracks token usage and block transfer statistics for KV cache operations.
+    Tracks token usage and transfer statistics for KV cache operations.
+
+    Device (G0) figures are in blocks, the unit the manager allocates in. The
+    connector's external host and disk tiers are in bytes: those are byte
+    budgets the operator sizes in bytes, their block width need not match the
+    device's, and bytes rate directly against PCIe and disk bandwidth.
     """
 
     input_tokens: int = 0
@@ -40,18 +45,18 @@ class KVCacheMetrics:
     device_blocks_served: int = 0
     """Number of cache blocks served directly from the local device prefix
     cache, with no host/disk promotion or cross-replica copy needed."""
-    h2d_blocks_copied: int = 0
-    """Number of cache blocks copied from host to device."""
-    d2h_blocks_copied: int = 0
-    """Number of cache blocks copied from device to host."""
+    h2d_bytes_copied: int = 0
+    """Bytes of KV copied from the connector's host tier to device."""
+    d2h_bytes_copied: int = 0
+    """Bytes of KV copied from device to the connector's host tier."""
     cross_replica_blocks_copied: int = 0
     """Number of cache blocks copied device-to-device across DP replicas."""
     cross_replica_bytes_copied: int = 0
     """Bytes moved by device-to-device copies across DP replicas."""
-    disk_blocks_written: int = 0
-    """Number of cache blocks written to disk."""
-    disk_blocks_read: int = 0
-    """Number of cache blocks read from disk."""
+    disk_bytes_written: int = 0
+    """Bytes of KV written to disk."""
+    disk_bytes_read: int = 0
+    """Bytes of KV read from disk."""
     inflight_disk_ops: int = 0
     """Number of in-flight disk operations."""
     nixl_read_blocks: int = 0
@@ -197,15 +202,15 @@ class KVCacheMetrics:
             cache_tokens=self.cache_tokens + other.cache_tokens,
             device_blocks_served=self.device_blocks_served
             + other.device_blocks_served,
-            h2d_blocks_copied=self.h2d_blocks_copied + other.h2d_blocks_copied,
-            d2h_blocks_copied=self.d2h_blocks_copied + other.d2h_blocks_copied,
+            h2d_bytes_copied=self.h2d_bytes_copied + other.h2d_bytes_copied,
+            d2h_bytes_copied=self.d2h_bytes_copied + other.d2h_bytes_copied,
             cross_replica_blocks_copied=self.cross_replica_blocks_copied
             + other.cross_replica_blocks_copied,
             cross_replica_bytes_copied=self.cross_replica_bytes_copied
             + other.cross_replica_bytes_copied,
-            disk_blocks_written=self.disk_blocks_written
-            + other.disk_blocks_written,
-            disk_blocks_read=self.disk_blocks_read + other.disk_blocks_read,
+            disk_bytes_written=self.disk_bytes_written
+            + other.disk_bytes_written,
+            disk_bytes_read=self.disk_bytes_read + other.disk_bytes_read,
             inflight_disk_ops=self.inflight_disk_ops + other.inflight_disk_ops,
             nixl_read_blocks=self.nixl_read_blocks + other.nixl_read_blocks,
             nixl_write_blocks=self.nixl_write_blocks + other.nixl_write_blocks,

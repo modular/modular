@@ -58,8 +58,8 @@ def _bias_compute_lambda[
 def _permute_filter_frsc_to_kpadded_host[
     dtype: DType
 ](
-    src_ptr: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    dst_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    src_ptr: ImmPointer[Scalar[dtype], ImmutAnyOrigin],
+    dst_ptr: MutPointer[Scalar[dtype], MutAnyOrigin],
     *,
     F: Int,
     R: Int,
@@ -85,10 +85,10 @@ def _conv2d_residual_host_ref[
     in_dtype: DType,
     out_dtype: DType,
 ](
-    input_host: UnsafePointer[mut=False, Scalar[in_dtype], _],
-    filter_host: UnsafePointer[mut=False, Scalar[in_dtype], _],
-    residual_host: UnsafePointer[mut=False, Scalar[out_dtype], _],
-    ref_host: UnsafePointer[mut=True, Scalar[out_dtype], _],
+    input_host: ImmPointer[Scalar[in_dtype], _],
+    filter_host: ImmPointer[Scalar[in_dtype], _],
+    residual_host: ImmPointer[Scalar[out_dtype], _],
+    ref_host: MutPointer[Scalar[out_dtype], _],
     *,
     N: Int,
     H: Int,
@@ -157,8 +157,8 @@ def _conv2d_residual_host_ref[
 def _compare[
     dtype: DType
 ](
-    actual: UnsafePointer[mut=False, Scalar[dtype], _],
-    expected: UnsafePointer[mut=False, Scalar[dtype], _],
+    actual: ImmPointer[Scalar[dtype], _],
+    expected: ImmPointer[Scalar[dtype], _],
     *,
     n_elems: Int,
     label: StaticString,
@@ -400,7 +400,7 @@ def test_conv_residual[
     # rounding error through the accumulator; treat as FP8 tolerance.
     comptime _ref_dtype = in_dtype
     comptime rel_tol = Float32(0.05) if _ref_dtype.is_float8() else (
-        Float32(1.6e-2) if _ref_dtype == DType.bfloat16 else Float32(1e-3)
+        Float32(1.6e-2) if _ref_dtype == .bfloat16 else Float32(1e-3)
     )
     comptime abs_tol = Float32(0.01) if _ref_dtype.is_float8() else Float32(
         1e-5
@@ -653,11 +653,11 @@ def run_dtype_sweep[
 def main() raises:
     with DeviceContext() as ctx:
         # In-main dtype iteration (HK MHA pattern).
-        run_dtype_sweep[DType.bfloat16](ctx)
+        run_dtype_sweep[.bfloat16](ctx)
         # FP8 input → BF16 output (the 4-wave kernel doesn't support
         # FP8 output today, accumulation/store goes through BF16).
         # The residual is BF16; residual FMA happens in F32 — identical
         # to the BF16-in path numerically once the FP8 quant noise is
         # accounted for via the wider FP8 tolerance.
-        run_dtype_sweep[DType.float8_e4m3fn, out_dtype=DType.bfloat16](ctx)
+        run_dtype_sweep[.float8_e4m3fn, out_dtype=DType.bfloat16](ctx)
     print("==== amd_4wave_conv_fprop_with_residual tests PASSED ====")

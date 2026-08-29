@@ -109,12 +109,12 @@ def test_index_tensor_DLRM() raises:
         indices[i, 0] = index_a[i]
         indices[i, 1] = index_b[i]
 
-    var input_dyn = input.make_dynamic[DType.int64]()
-    var indices_dyn = indices.make_dynamic[DType.int64]()
+    var input_dyn = input.make_dynamic[.int64]()
+    var indices_dyn = indices.make_dynamic[.int64]()
     var output_shape = index_tensor_shape[
         output_rank,
         input_type,
-        DType.uint64,
+        .uint64,
         batch_dims,
     ](input_dyn, indices_dyn)
 
@@ -124,7 +124,7 @@ def test_index_tensor_DLRM() raises:
     ](uninitialized=True)
     comptime output_static_layout = row_major[dim_0, index_len]()
     var output_data_buffer = TileTensor(output_data_stack, output_static_layout)
-    var output_dyn = output_data_buffer.make_dynamic[DType.int64]()
+    var output_dyn = output_data_buffer.make_dynamic[.int64]()
 
     _index_tensor_1d[batch_dims](input_dyn, indices_dyn, output_dyn)
 
@@ -211,12 +211,12 @@ def test_index_tensor_DLRM_batch() raises:
         indices[i, 0] = index_a[i]
         indices[i, 1] = index_b[i]
 
-    var input_dyn = input.make_dynamic[DType.int64]()
-    var indices_dyn = indices.make_dynamic[DType.int64]()
+    var input_dyn = input.make_dynamic[.int64]()
+    var indices_dyn = indices.make_dynamic[.int64]()
     var output_shape = index_tensor_shape[
         output_rank,
         input_type,
-        DType.uint64,
+        .uint64,
         batch_dims,
     ](input_dyn, indices_dyn)
 
@@ -226,7 +226,7 @@ def test_index_tensor_DLRM_batch() raises:
     ](uninitialized=True)
     comptime output_static_layout = row_major[dim_0, dim_1, index_len]()
     var output_data_buffer = TileTensor(output_data_stack, output_static_layout)
-    var output_dyn = output_data_buffer.make_dynamic[DType.int64]()
+    var output_dyn = output_data_buffer.make_dynamic[.int64]()
 
     _index_tensor_impl[batch_dims](input_dyn, indices_dyn, output_dyn)
 
@@ -317,12 +317,12 @@ def test_index_tensor_CLIPVIT() raises:
     indices[1, 1] = index_b[1]
     # TODO: Or index_a[0], index_a[1] and index_b[0], index_b[1]???
 
-    var input_dyn = input.make_dynamic[DType.int64]()
-    var indices_dyn = indices.make_dynamic[DType.int64]()
+    var input_dyn = input.make_dynamic[.int64]()
+    var indices_dyn = indices.make_dynamic[.int64]()
     var output_shape = gather_nd_shape[
         output_rank,
         input_type,
-        DType.uint64,
+        .uint64,
         0,
     ](
         input_dyn,
@@ -335,7 +335,7 @@ def test_index_tensor_CLIPVIT() raises:
     ](uninitialized=True)
     comptime output_static_layout = row_major[dim_0, dim_2]()
     var output_data_buffer = TileTensor(output_data_stack, output_static_layout)
-    var output_dyn = output_data_buffer.make_dynamic[DType.int64]()
+    var output_dyn = output_data_buffer.make_dynamic[.int64]()
 
     # TODO: index_tensor works too. For batch_dims = 0 only.
     gather_nd[batch_dims, target="cpu"](
@@ -405,8 +405,8 @@ def test_index_tensor_llama2_mistral() raises:
             for k in range(dim_1):
                 ref_output[i, j, k] = input[Int(index_a[i, j]), k]
 
-    var input_dyn = input.make_dynamic[DType.int64]()
-    var index_a_dyn = index_a.make_dynamic[DType.int64]()
+    var input_dyn = input.make_dynamic[.int64]()
+    var index_a_dyn = index_a.make_dynamic[.int64]()
     var output_shape = gather_shape[output_rank, input_type, index_type](
         input_dyn,
         index_a_dyn,
@@ -421,7 +421,7 @@ def test_index_tensor_llama2_mistral() raises:
     ](uninitialized=True)
     comptime output_static_layout = row_major[index_dim_0, index_dim_1, dim_1]()
     var output_data_buffer = TileTensor(output_data_stack, output_static_layout)
-    var output_dyn = output_data_buffer.make_dynamic[DType.int64]()
+    var output_dyn = output_data_buffer.make_dynamic[.int64]()
 
     gather[axis=0](
         output_dyn,
@@ -451,7 +451,7 @@ def test_advanced_indexing_getitem(ctx: DeviceContext) raises:
     ](uninitialized=True)
     comptime input_static_layout = row_major[2, 3, 5, 6]()
     var input_buffer = TileTensor(input_stack, input_static_layout)
-    var input_dyn = input_buffer.make_dynamic[DType.int64]()
+    var input_dyn = input_buffer.make_dynamic[.int64]()
     for i in range(input_shape.flattened_length()):
         input_stack[i] = Int32(i)
 
@@ -470,8 +470,8 @@ def test_advanced_indexing_getitem(ctx: DeviceContext) raises:
     comptime index_static_layout = row_major[2, 3]()
     var index_a = TileTensor(a_stack, index_static_layout)
     var index_b = TileTensor(b_stack, index_static_layout)
-    var _index_a_dyn = index_a.make_dynamic[DType.int64]()
-    var _index_b_dyn = index_b.make_dynamic[DType.int64]()
+    var _index_a_dyn = index_a.make_dynamic[.int64]()
+    var _index_b_dyn = index_b.make_dynamic[.int64]()
     for i in range(index_shape.flattened_length()):
         a_stack[i] = UInt64(i % 5)
         b_stack[i] = UInt64((i + 1) % 5)
@@ -489,7 +489,7 @@ def test_advanced_indexing_getitem(ctx: DeviceContext) raises:
     ](uninitialized=True)
     comptime output_static_layout = row_major[2, 3, 2, 3]()
     var output_data_buffer = TileTensor(output_data_stack, output_static_layout)
-    var output_dyn = output_data_buffer.make_dynamic[DType.int64]()
+    var output_dyn = output_data_buffer.make_dynamic[.int64]()
 
     @always_inline
     def input_tensor_fn[
@@ -604,7 +604,7 @@ def test_advanced_indexing_setitem_inplace(ctx: DeviceContext) raises:
     # Fill with zeros
     for i in range(input_shape.flattened_length()):
         input_stack[i] = 0
-    var input_dyn = input_buffer.make_dynamic[DType.int64]()
+    var input_dyn = input_buffer.make_dynamic[.int64]()
 
     # Create indexing tensors, ensure no pair of indices point to the same
     # location in `input` to avoid nondeterministic behavior.
@@ -624,8 +624,8 @@ def test_advanced_indexing_setitem_inplace(ctx: DeviceContext) raises:
     comptime index_static_layout = row_major[2, 2]()
     var index_a = TileTensor(a_stack, index_static_layout)
     var index_b = TileTensor(b_stack, index_static_layout)
-    var _index_a_dyn = index_a.make_dynamic[DType.int64]()
-    var _index_b_dyn = index_b.make_dynamic[DType.int64]()
+    var _index_a_dyn = index_a.make_dynamic[.int64]()
+    var _index_b_dyn = index_b.make_dynamic[.int64]()
     for i in range(index_shape.flattened_length()):
         a_stack[i] = UInt64(i % 4)
         b_stack[i] = UInt64((i + 1) % 4)
@@ -639,7 +639,7 @@ def test_advanced_indexing_setitem_inplace(ctx: DeviceContext) raises:
     ](uninitialized=True)
     comptime updates_static_layout = row_major[2, 2, 2, 2]()
     var updates = TileTensor(updates_stack, updates_static_layout)
-    var updates_dyn = updates.make_dynamic[DType.int64]()
+    var updates_dyn = updates.make_dynamic[.int64]()
     for i in range(updates_shape.flattened_length()):
         updates_stack[i] = Int32(1 + i)
 

@@ -606,8 +606,7 @@ def matmul[
     batch_size: Int = 1,
 ) raises:
     @always_inline
-    @__parameter
-    def description_fn() -> String:
+    def description_fn() {imm} -> String:
         return String(
             trace_arg(
                 "A",
@@ -634,7 +633,7 @@ def matmul[
 
     with Trace[TraceLevel.OP, target=StaticString("gpu")](
         String(t"{handle.resolved_backend}_matmul"),
-        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+        Trace[TraceLevel.OP]._get_detail_str(description_fn),
         task_id=get_safe_task_id(ctx),
     ):
         comptime if handle.resolved_backend is Backend.CUBLAS:
@@ -726,7 +725,7 @@ def _cublas_matmul[
     beta: Float32 = 0.0,
 ) raises:
     comptime assert a_type == b_type and (
-        a_type == DType.float32 or a_type.is_half_float()
+        a_type == .float32 or a_type.is_half_float()
     ), (
         "Only support FP32, FP16 and BF16 for cublas wrapper. Please extend"
         " it if more types are needed."
@@ -742,9 +741,9 @@ def _cublas_matmul[
 
     var compute_type: ComputeType
 
-    comptime if a_type == DType.float16:
+    comptime if a_type == .float16:
         compute_type = ComputeType.COMPUTE_32F
-    elif a_type == DType.bfloat16:
+    elif a_type == .bfloat16:
         compute_type = ComputeType.COMPUTE_32F
     else:
         compute_type = (
@@ -778,7 +777,7 @@ def _cublas_matmul[
     # its split-K reduction kernel reads from, which trips initcheck. Supply
     # our own zeroed workspace instead to pass in.
     var workspace_size = 32 * 1024 * 1024
-    var workspace = ctx.enqueue_create_buffer[DType.uint8](workspace_size)
+    var workspace = ctx.enqueue_create_buffer[.uint8](workspace_size)
     ctx.enqueue_memset(workspace, UInt8(0))
     check_cublas_error(
         cublasSetWorkspace(
@@ -916,7 +915,7 @@ def _rocblas_matmul[
     beta: Float32 = 0.0,
 ) raises:
     comptime assert a_type == b_type and (
-        a_type == DType.float32 or a_type.is_half_float()
+        a_type == .float32 or a_type.is_half_float()
     ), (
         "Only support FP32, FP16 and BF16 for cublas wrapper. Please extend"
         " it if more types are needed."
@@ -1066,7 +1065,7 @@ def _cublasLt_matmul[
     comptime assert a_type == b_type, "A and B must have the same type"
 
     comptime if a_type.is_float8():
-        comptime assert not (a_type == b_type == DType.float8_e5m2), (
+        comptime assert not (a_type == b_type == .float8_e5m2), (
             "E5M2xE5m2 is not supported! Please refer to"
             " `https://docs.nvidia.com/cuda/cublas/#id105`"
         )
@@ -1164,11 +1163,8 @@ def _cublasLt_matmul[
             if not (
                 a_type == b_type
                 and (
-                    (
-                        a_type == DType.float8_e4m3fn
-                        and scales_type == MXFP8_SF_DTYPE
-                    )
-                    or (a_type == DType.uint8 and scales_type == NVFP4_SF_DTYPE)
+                    (a_type == .float8_e4m3fn and scales_type == MXFP8_SF_DTYPE)
+                    or (a_type == .uint8 and scales_type == NVFP4_SF_DTYPE)
                 )
             ):
                 raise Error(
@@ -1180,12 +1176,12 @@ def _cublasLt_matmul[
             # TODO (KERN-2238): uint8 is a proxy data type for two Float4-E2M1 values for now.
             # We need to double the K dimension as we are allocating for uint8 input data type.
             # Remove this when GENAI-337 is fixed.
-            if a_type == DType.uint8 and scales_type == NVFP4_SF_DTYPE:
+            if a_type == .uint8 and scales_type == NVFP4_SF_DTYPE:
                 K = K * 2
 
             if not (
-                (a_type == DType.uint8 and K % 32 == 0)
-                or (a_type == DType.float8_e4m3fn and K % 16 == 0)
+                (a_type == .uint8 and K % 32 == 0)
+                or (a_type == .float8_e4m3fn and K % 16 == 0)
             ):
                 raise Error(
                     "Due to TMA 16B alignment requirement, K must be divisible"
@@ -1392,9 +1388,7 @@ def _cublasLt_matmul[
     if algorithm_count == 0:
         raise Error("No algorithm was found!")
 
-    var matmul_workspace = ctx.enqueue_create_buffer[DType.uint8](
-        workspace_size
-    )
+    var matmul_workspace = ctx.enqueue_create_buffer[.uint8](workspace_size)
 
     var d_void = _ffi_void_ptr(d.ptr)
     if c_row_major:
@@ -1598,7 +1592,7 @@ def _hipblasLt_matmul[
 
         if comptime (scales_type != MXFP8_SF_DTYPE):
             raise Error("Only float8_e8m0fnu(scale type: MXFP8) supported")
-        if comptime (a_type != DType.uint8):
+        if comptime (a_type != .uint8):
             raise Error("Only float4_e2m1fnx2 input type supported")
         if not c_row_major or transpose_a or not transpose_b:
             raise Error("Unexpected transpose flags")
@@ -1728,7 +1722,7 @@ def _hipblasLt_matmul[
         raise Error("No algorithm was found!")
 
     var workspace_size = heuristicResult.workspaceSize
-    var workspace = ctx.enqueue_create_buffer[DType.uint8](workspace_size)
+    var workspace = ctx.enqueue_create_buffer[.uint8](workspace_size)
 
     var d_void = _ffi_void_ptr(d.ptr)
     if c_row_major:

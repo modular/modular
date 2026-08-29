@@ -40,11 +40,7 @@ def block_reduce[
     op: def(Float32, Float32) thin -> Float32
 ](
     val: Float32,
-    shared_mem: UnsafePointer[
-        Scalar[DType.float32],
-        MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
-    ],
+    shared_mem: UnsafePointer[Float32, MutAnyOrigin, address_space=.SHARED],
 ) -> Float32:
     var tid = thread_idx.x
     var smem = shared_mem
@@ -67,9 +63,9 @@ def block_reduce[
 
 
 def softmax_kernel(
-    S: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
-    D: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
-    P: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
+    S: UnsafePointer[Float32, MutAnyOrigin],
+    D: UnsafePointer[Float32, MutAnyOrigin],
+    P: UnsafePointer[Float32, MutAnyOrigin],
     N_dev: Int32,
 ):
     # Int is not device-passable; widen the fixed-width arg.
@@ -79,13 +75,13 @@ def softmax_kernel(
 
     var temp_store = unsafe_stack_allocation[
         BLOCK_SIZE,
-        Scalar[DType.float32],
-        address_space=AddressSpace.SHARED,
+        Float32,
+        address_space=.SHARED,
     ]()
     var broadcast_slot = unsafe_stack_allocation[
         1,
-        Scalar[DType.float32],
-        address_space=AddressSpace.SHARED,
+        Float32,
+        address_space=.SHARED,
     ]()
 
     var row = block_idx.x
@@ -197,9 +193,9 @@ def main() raises:
 
         cpu_softmax(h_S, h_P_ref, N)
 
-        var d_S = device.enqueue_create_buffer[DType.float32](size_S)
-        var d_D = device.enqueue_create_buffer[DType.float32](size_D)
-        var d_P = device.enqueue_create_buffer[DType.float32](size_P)
+        var d_S = device.enqueue_create_buffer[.float32](size_S)
+        var d_D = device.enqueue_create_buffer[.float32](size_D)
+        var d_P = device.enqueue_create_buffer[.float32](size_P)
 
         device.enqueue_copy(d_S, h_S)
 

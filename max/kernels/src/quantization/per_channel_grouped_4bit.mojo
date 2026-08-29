@@ -49,7 +49,7 @@ def _to_SIMD[
 def calculate_symmetric_vector[
     input_dtype: DType, simd_width: SIMDLength, output_bits: Int
 ](data: SIMD[input_dtype, simd_width]) -> Tuple[
-    SIMD[DType.uint8, simd_width],
+    SIMD[.uint8, simd_width],
     Scalar[input_dtype],
 ]:
     """
@@ -91,7 +91,7 @@ def calculate_symmetric_vector[
     ) else result_range / Scalar[input_dtype](positive_steps)
 
     # TODO: consider clipping values
-    var data_rounded = round(data / f32_scale).cast[DType.int8]()
+    var data_rounded = round(data / f32_scale).cast[.int8]()
 
     # each bit pattern in `data_quantized`
     var data_quantized = (data_rounded + Int8(negative_steps)).cast[
@@ -103,7 +103,7 @@ def calculate_symmetric_vector[
 
 struct Q4sym[
     group_size: Int,
-    float_dtype: DType = DType.float32,
+    float_dtype: DType = .float32,
 ](Defaultable):
     """
     Q4sym: compresses values of type `float_dtype` to 4bit unsigned integers
@@ -173,28 +173,28 @@ struct Q4sym[
         var f_scale = quantization_tuple[1]
 
         # TODO: add warning if we overflow/underflow
-        var f16_scale = f_scale.cast[DType.float16]()
-        self.scale = _to_StaticTuple(bitcast[DType.uint8, 2](f16_scale))
+        var f16_scale = f_scale.cast[.float16]()
+        self.scale = _to_StaticTuple(bitcast[.uint8, 2](f16_scale))
         self.bits = _to_StaticTuple(self._encode_bits(qdata))
         self._check_constraints()
 
     @staticmethod
     @always_inline
     def _encode_bits(
-        qdata: SIMD[DType.uint8, Self.group_size]
-    ) -> SIMD[DType.uint8, SIMDLength(Self.group_size) // 2]:
+        qdata: SIMD[.uint8, Self.group_size]
+    ) -> SIMD[.uint8, SIMDLength(Self.group_size) // 2]:
         var lo_hi = qdata.split()
         return lo_hi[0] | (lo_hi[1] << 4)
 
     @always_inline
-    def _decode_bits(mut self) -> SIMD[DType.uint8, Self.group_size]:
+    def _decode_bits(mut self) -> SIMD[.uint8, Self.group_size]:
         # Extract the lower 4 bits of all bits in the `l_bits` format
-        var bits_simd = _to_SIMD[DType.uint8, SIMDLength(Self.group_size) // 2](
+        var bits_simd = _to_SIMD[.uint8, SIMDLength(Self.group_size) // 2](
             self.bits
         )
         var bits_upper = (bits_simd & 0xF0) >> 4
         var bits_lower = bits_simd & 0x0F
-        return rebind[SIMD[DType.uint8, Self.group_size]](
+        return rebind[SIMD[.uint8, Self.group_size]](
             bits_lower.join(bits_upper)
         )
 
@@ -208,21 +208,17 @@ struct Q4sym[
         """
         # We avoid bit-casting directly, as the code-generation might hit a
         # path which attempts to bitcast 2xui8 --> f16 which is not typically supported
-        var scale_bytes: SIMD[DType.uint8, 2] = _to_SIMD[DType.uint8, 2](
-            self.scale
-        )
+        var scale_bytes: SIMD[.uint8, 2] = _to_SIMD[.uint8, 2](self.scale)
 
         # NOTE: this may break on different endian systems...
-        var upcast_bytes: SIMD[DType.uint16, 2] = scale_bytes.cast[
-            DType.uint16
-        ]()
+        var upcast_bytes: SIMD[.uint16, 2] = scale_bytes.cast[.uint16]()
         upcast_bytes[1] = upcast_bytes[1] << 8
         var final_result: UInt16 = upcast_bytes.reduce_add()
-        var scale_decoded = bitcast[DType.float16, 1](final_result)
+        var scale_decoded = bitcast[.float16, 1](final_result)
         return scale_decoded
 
     @always_inline
-    def decode_unsigned(mut self) -> SIMD[DType.uint8, Self.group_size]:
+    def decode_unsigned(mut self) -> SIMD[.uint8, Self.group_size]:
         """
         Decode the stored uint4 numbers to uint8.
 
@@ -234,7 +230,7 @@ struct Q4sym[
         return self._decode_bits()
 
     @always_inline
-    def decode_signed(mut self) -> SIMD[DType.int8, Self.group_size]:
+    def decode_signed(mut self) -> SIMD[.int8, Self.group_size]:
         """
         Decode the stored uint4 numbers to requantized int4 numbers.
 
@@ -246,7 +242,7 @@ struct Q4sym[
           0.
         """
         var decoded_result = self.decode_unsigned()
-        return decoded_result.cast[DType.int8]() - 8
+        return decoded_result.cast[.int8]() - 8
 
     @always_inline
     def decode_fully(mut self) -> SIMD[Self.float_dtype, Self.group_size]:
@@ -272,11 +268,9 @@ struct Q4sym[
         input_rank: Int
     ](
         input_tt: TileTensor[
-            mut=False, Self.float_dtype, address_space=AddressSpace.GENERIC, ...
+            mut=False, Self.float_dtype, address_space=.GENERIC, ...
         ],
-        output_tt: TileTensor[
-            mut=True, DType.uint8, address_space=AddressSpace.GENERIC, ...
-        ],
+        output_tt: TileTensor[mut=True, .uint8, address_space=.GENERIC, ...],
         input_shape: IndexList[input_rank],
     ):
         """
@@ -357,14 +351,9 @@ struct Q4sym[
     def dequantize_and_write_to_tensor[
         output_rank: Int
     ](
-        input_tt: TileTensor[
-            mut=False, DType.uint8, address_space=AddressSpace.GENERIC, ...
-        ],
+        input_tt: TileTensor[mut=False, .uint8, address_space=.GENERIC, ...],
         output_tt: TileTensor[
-            mut=True,
-            Self.float_dtype,
-            address_space=AddressSpace.GENERIC,
-            ...,
+            mut=True, Self.float_dtype, address_space=.GENERIC, ...
         ],
         output_shape: IndexList[output_rank],
     ):
@@ -464,7 +453,7 @@ struct block_Q4_K:
 
 
 def scale_min_k4(
-    src_ptr: UnsafePointer[block_Q4_K, address_space=AddressSpace.GENERIC, ...],
+    src_ptr: UnsafePointer[block_Q4_K, address_space=.GENERIC, ...],
     g: Int,
 ) -> Tuple[Float32, Float32]:
     """Extracts the 6-bit quantized scale and min for group `g` from a Q4_K block.
@@ -480,7 +469,7 @@ def scale_min_k4(
         var q_scale = src_ptr[].q_scales_and_mins[g] & 63
         var q_min = src_ptr[].q_scales_and_mins[g + 4] & 63
 
-        return q_scale.cast[DType.float32](), q_min.cast[DType.float32]()
+        return q_scale.cast[.float32](), q_min.cast[.float32]()
     else:
         var q_scale_lo = src_ptr[].q_scales_and_mins[g + 4] & 15
         var q_min_lo = src_ptr[].q_scales_and_mins[g + 4] >> 4
@@ -489,16 +478,12 @@ def scale_min_k4(
         var q_scale = (q_scale_hi << 4) | q_scale_lo
         var q_min = (q_min_hi << 4) | q_min_lo
 
-        return q_scale.cast[DType.float32](), q_min.cast[DType.float32]()
+        return q_scale.cast[.float32](), q_min.cast[.float32]()
 
 
 def q4_k_dequantize_impl(
-    input_tt: TileTensor[
-        mut=False, DType.uint8, address_space=AddressSpace.GENERIC, ...
-    ],
-    output_tt: TileTensor[
-        mut=True, DType.float32, address_space=AddressSpace.GENERIC, ...
-    ],
+    input_tt: TileTensor[mut=False, .uint8, address_space=.GENERIC, ...],
+    output_tt: TileTensor[mut=True, .float32, address_space=.GENERIC, ...],
 ):
     """Dequantizes a Q4_K encoded tensor into a float32 output tensor.
 
@@ -522,9 +507,9 @@ def q4_k_dequantize_impl(
         var dst_ptr = output_ptr + (block_idx * block_nelems)
 
         # d
-        var b_scale = src_ptr[].base_scale.cast[DType.float32]()
+        var b_scale = src_ptr[].base_scale.cast[.float32]()
         # min
-        var b_min = src_ptr[].base_min.cast[DType.float32]()
+        var b_min = src_ptr[].base_min.cast[.float32]()
 
         # Process 2 groups at a time to load 6-bit scales/mins.
         comptime for group_idx in range(0, block_Q4_K.group_count, 2):
@@ -595,12 +580,8 @@ struct block_Q6_K:
 def q6_k_dequantize_impl[
     output_rank: Int
 ](
-    input_tt: TileTensor[
-        mut=False, DType.uint8, address_space=AddressSpace.GENERIC, ...
-    ],
-    output_tt: TileTensor[
-        mut=True, DType.float32, address_space=AddressSpace.GENERIC, ...
-    ],
+    input_tt: TileTensor[mut=False, .uint8, address_space=.GENERIC, ...],
+    output_tt: TileTensor[mut=True, .float32, address_space=.GENERIC, ...],
     output_shape: IndexList[output_rank],
 ):
     """Dequantizes a Q6_K encoded tensor into a float32 output tensor.
@@ -626,7 +607,7 @@ def q6_k_dequantize_impl[
     for block_idx in range(num_blocks):
         var src_ptr = input_q6_k_ptr + block_idx
 
-        var d = src_ptr[].base_scale.cast[DType.float32]()
+        var d = src_ptr[].base_scale.cast[.float32]()
 
         var ql: UnsafePointer[
             UInt8, origin_of(src_ptr[].q_bits_lo)
@@ -656,24 +637,16 @@ def q6_k_dequantize_impl[
                 ]() - 32
 
                 dst_ptr[l + 0] = (
-                    d
-                    * sc[sc_idx + 0].cast[DType.float32]()
-                    * q1.cast[DType.float32]()
+                    d * sc[sc_idx + 0].cast[.float32]() * q1.cast[.float32]()
                 )
                 dst_ptr[l + 32] = (
-                    d
-                    * sc[sc_idx + 2].cast[DType.float32]()
-                    * q2.cast[DType.float32]()
+                    d * sc[sc_idx + 2].cast[.float32]() * q2.cast[.float32]()
                 )
                 dst_ptr[l + 64] = (
-                    d
-                    * sc[sc_idx + 4].cast[DType.float32]()
-                    * q3.cast[DType.float32]()
+                    d * sc[sc_idx + 4].cast[.float32]() * q3.cast[.float32]()
                 )
                 dst_ptr[l + 96] = (
-                    d
-                    * sc[sc_idx + 6].cast[DType.float32]()
-                    * q4.cast[DType.float32]()
+                    d * sc[sc_idx + 6].cast[.float32]() * q4.cast[.float32]()
                 )
 
             dst_ptr += 128

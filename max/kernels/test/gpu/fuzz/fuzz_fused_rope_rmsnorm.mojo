@@ -366,7 +366,7 @@ def run_one_case(
     fill_uniform(gamma_host.as_span(), lo=0.5, hi=1.5)
 
     # --- cache_lengths + paged lookup table ----------------------------------
-    var cache_lengths_host = ctx.enqueue_create_host_buffer[DType.uint32](
+    var cache_lengths_host = ctx.enqueue_create_host_buffer[.uint32](
         max(1, batch_size)
     )
     for i in range(batch_size):
@@ -374,9 +374,7 @@ def run_one_case(
 
     var max_pages_per_batch = align_up(ceildiv(max_post, PAGE_SIZE), 8)
     var lut_size = max(1, batch_size * max_pages_per_batch)
-    var lookup_table_host = ctx.enqueue_create_host_buffer[DType.uint32](
-        lut_size
-    )
+    var lookup_table_host = ctx.enqueue_create_host_buffer[.uint32](lut_size)
     for i in range(lut_size):
         lookup_table_host[i] = UInt32(0)
     var page_offset = 0
@@ -389,7 +387,7 @@ def run_one_case(
         page_offset += num_pages_i
 
     # --- input_row_offsets (ragged Q prefix sum) -----------------------------
-    var row_offsets_host = ctx.enqueue_create_host_buffer[DType.uint32](
+    var row_offsets_host = ctx.enqueue_create_host_buffer[.uint32](
         batch_size + 1
     )
     row_offsets_host[0] = UInt32(0)
@@ -412,15 +410,13 @@ def run_one_case(
     ctx.enqueue_copy(freqs_device, freqs_host)
     var gamma_device = ctx.enqueue_create_buffer[gamma_dtype](KV_NORM_DIM)
     ctx.enqueue_copy(gamma_device, gamma_host)
-    var cache_lengths_device = ctx.enqueue_create_buffer[DType.uint32](
+    var cache_lengths_device = ctx.enqueue_create_buffer[.uint32](
         max(1, batch_size)
     )
     ctx.enqueue_copy(cache_lengths_device, cache_lengths_host)
-    var lookup_table_device = ctx.enqueue_create_buffer[DType.uint32](lut_size)
+    var lookup_table_device = ctx.enqueue_create_buffer[.uint32](lut_size)
     ctx.enqueue_copy(lookup_table_device, lookup_table_host)
-    var row_offsets_device = ctx.enqueue_create_buffer[DType.uint32](
-        batch_size + 1
-    )
+    var row_offsets_device = ctx.enqueue_create_buffer[.uint32](batch_size + 1)
     ctx.enqueue_copy(row_offsets_device, row_offsets_host)
     ctx.synchronize()
 
@@ -430,12 +426,12 @@ def run_one_case(
         RuntimeLayout[Layout.row_major[6]()].row_major(block_shape),
     )
     comptime cl_layout = Layout(UNKNOWN_VALUE)
-    var cache_lengths_lt = LayoutTensor[DType.uint32, cl_layout](
+    var cache_lengths_lt = LayoutTensor[.uint32, cl_layout](
         cache_lengths_device.unsafe_ptr(),
         RuntimeLayout[cl_layout].row_major(IndexList[1](batch_size)),
     )
     comptime lt_layout_2d = Layout.row_major[2]()
-    var lookup_table_lt = LayoutTensor[DType.uint32, lt_layout_2d](
+    var lookup_table_lt = LayoutTensor[.uint32, lt_layout_2d](
         lookup_table_device.unsafe_ptr(),
         RuntimeLayout[lt_layout_2d].row_major(
             IndexList[2](batch_size, max_pages_per_batch)
@@ -450,14 +446,14 @@ def run_one_case(
                 blocks_lt.runtime_layout.stride.value,
             ),
         ).as_unsafe_any_origin(),
-        LayoutTensor[mut=False, DType.uint32, cl_layout](
+        LayoutTensor[mut=False, .uint32, cl_layout](
             cache_lengths_lt.ptr,
             RuntimeLayout[cl_layout](
                 cache_lengths_lt.runtime_layout.shape.value,
                 cache_lengths_lt.runtime_layout.stride.value,
             ),
         ).as_unsafe_any_origin(),
-        LayoutTensor[mut=False, DType.uint32, lt_layout_2d](
+        LayoutTensor[mut=False, .uint32, lt_layout_2d](
             lookup_table_lt.ptr,
             RuntimeLayout[lt_layout_2d](
                 lookup_table_lt.runtime_layout.shape.value,
@@ -582,8 +578,8 @@ def _verify_ref(
         for h in range(num_q_heads):
             var base = (t * num_q_heads + h) * ROPE_DIM
             for j in range(ROPE_DIM // 2):
-                var x_re = q_host[base + 2 * j].cast[DType.float64]()
-                var x_im = q_host[base + 2 * j + 1].cast[DType.float64]()
+                var x_re = q_host[base + 2 * j].cast[.float64]()
+                var x_im = q_host[base + 2 * j + 1].cast[.float64]()
                 var f_re = freqs_host[post * ROPE_DIM + 2 * j].cast[
                     DType.float64
                 ]()
@@ -630,22 +626,20 @@ def _verify_ref(
         # RMSNorm reference over the latent columns [0, KV_NORM_DIM).
         var ss = Float64(0)
         for c in range(KV_NORM_DIM):
-            var v = latent_host[t * HEAD_SIZE + c].cast[DType.float64]()
+            var v = latent_host[t * HEAD_SIZE + c].cast[.float64]()
             ss += v * v
-        var nf = 1.0 / sqrt(
-            ss / Float64(KV_NORM_DIM) + EPS.cast[DType.float64]()
-        )
+        var nf = 1.0 / sqrt(ss / Float64(KV_NORM_DIM) + EPS.cast[.float64]())
         for c in range(KV_NORM_DIM):
-            var v = latent_host[t * HEAD_SIZE + c].cast[DType.float64]()
-            var g = gamma_host[c].cast[DType.float64]()
+            var v = latent_host[t * HEAD_SIZE + c].cast[.float64]()
+            var g = gamma_host[c].cast[.float64]()
             cache_ref[dst + c] = (v * nf * g).cast[kv_type]()
 
         # Interleaved RoPE reference over the rope columns [KV_NORM_DIM, ...).
         for j in range(ROPE_DIM // 2):
             var lat_base = t * HEAD_SIZE + KV_NORM_DIM
-            var x_re = latent_host[lat_base + 2 * j].cast[DType.float64]()
-            var x_im = latent_host[lat_base + 2 * j + 1].cast[DType.float64]()
-            var f_re = freqs_host[post * ROPE_DIM + 2 * j].cast[DType.float64]()
+            var x_re = latent_host[lat_base + 2 * j].cast[.float64]()
+            var x_im = latent_host[lat_base + 2 * j + 1].cast[.float64]()
+            var f_re = freqs_host[post * ROPE_DIM + 2 * j].cast[.float64]()
             var f_im = freqs_host[post * ROPE_DIM + 2 * j + 1].cast[
                 DType.float64
             ]()

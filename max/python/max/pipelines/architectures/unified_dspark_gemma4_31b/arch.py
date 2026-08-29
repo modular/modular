@@ -18,6 +18,7 @@ from max.pipelines.modeling.types import PipelineTask
 
 from ..gemma4.memory_planner import Gemma4MemoryPlanner
 from ..gemma4.tokenizer import Gemma4Tokenizer
+from ..speculators_common.draft_config import speculators_dspark_width
 from .batch_processor import UnifiedDSparkGemma4_31BBatchProcessor
 from .model import UnifiedDSparkGemma4_31BModel
 from .model_config import UnifiedDSparkGemma4_31BConfig
@@ -54,6 +55,7 @@ unified_dspark_gemma4_31b_arch = SupportedArchitecture(
     # Backend resolution runs after the speculative arch rewrite, so the
     # base gemma4 arch's declaration never applies here.
     default_structured_output_backend="xgrammar",
+    checkpoint_draft_width=speculators_dspark_width,
 )
 
 # The generic draft-side registration ("DSparkDraftModel") lives in the

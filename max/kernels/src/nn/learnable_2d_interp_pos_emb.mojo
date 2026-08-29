@@ -89,10 +89,10 @@ def _gpu_kernel[
         dtype, WeightLayoutType, weight_origin, Storage=WeightStorage
     ],
     grid_thws: TileTensor[
-        DType.int64, GridLayoutType, grid_origin, Storage=GridStorage
+        .int64, GridLayoutType, grid_origin, Storage=GridStorage
     ],
     time_weight: TileTensor[
-        DType.float32, TimeLayoutType, time_origin, Storage=TimeStorage
+        .float32, TimeLayoutType, time_origin, Storage=TimeStorage
     ],
     N: Int32,
     dim: Int32,
@@ -206,8 +206,8 @@ def learnable_2d_interp_pos_emb[
     output: TileTensor[mut=True, dtype, ...],
     x: TileTensor[dtype, ...],
     weight: TileTensor[dtype, ...],
-    grid_thws: TileTensor[DType.int64, ...],
-    time_weight: TileTensor[DType.float32, ...],
+    grid_thws: TileTensor[.int64, ...],
+    time_weight: TileTensor[.float32, ...],
     ctx: DeviceContext,
 ) raises:
     """Applies learnable 2D interpolated position embedding on GPU.

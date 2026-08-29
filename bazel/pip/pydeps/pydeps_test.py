@@ -77,7 +77,8 @@ def main() -> int:
             if new_source.is_relative_to(working_dir):
                 final_srcs.add(new_source.relative_to(working_dir))
                 adjust_working_dir = True
-            else:
+            # Ignore .mojo and .so files that aren't in the working dir, since they may be unrelated.
+            elif new_source.suffix not in (".mojo", ".so"):
                 raise ValueError(
                     f"Source file {tsrc} is not in working directory {working_dir}"
                 )

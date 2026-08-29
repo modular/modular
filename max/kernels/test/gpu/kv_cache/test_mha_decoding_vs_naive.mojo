@@ -48,12 +48,12 @@ from std.utils import IndexList
 
 def compute_hash[
     type: DType
-](ptr: UnsafePointer[Scalar[type], _], size: Int) -> UInt64:
+](ptr: Pointer[Scalar[type], _], size: Int) -> UInt64:
     var h: UInt64 = 14695981039346656037
     for i in range(size):
-        var val = ptr[i].cast[DType.float32]()
-        var bits = bitcast[DType.uint32, 1](val)
-        h ^= bits.cast[DType.uint64]()
+        var val = ptr[i].cast[.float32]()
+        var bits = bitcast[.uint32, 1](val)
+        h ^= bits.cast[.uint64]()
         h *= 1099511628211
     return h
 
@@ -114,7 +114,7 @@ def test_decode_kv_cache[
     comptime lookup_table_layout = Layout(UNKNOWN_VALUE)
 
     # Row offsets
-    var row_offsets = ManagedLayoutTensor[DType.uint32, row_offsets_layout](
+    var row_offsets = ManagedLayoutTensor[.uint32, row_offsets_layout](
         RuntimeLayout[row_offsets_layout].row_major(
             IndexList[1](batch_size + 1)
         ),
@@ -128,7 +128,7 @@ def test_decode_kv_cache[
     row_offsets_host[batch_size] = running_offset
 
     # Cache lengths
-    var cache_lens = ManagedLayoutTensor[DType.uint32, cache_lengths_layout](
+    var cache_lens = ManagedLayoutTensor[.uint32, cache_lengths_layout](
         RuntimeLayout[cache_lengths_layout].row_major(IndexList[1](batch_size)),
         ctx,
     )
@@ -196,7 +196,7 @@ def test_decode_kv_cache[
                 ] = Scalar[dtype](k_channel_value)
 
     # Lookup table for continuous batching
-    var lookup_table = ManagedLayoutTensor[DType.uint32, lookup_table_layout](
+    var lookup_table = ManagedLayoutTensor[.uint32, lookup_table_layout](
         RuntimeLayout[lookup_table_layout].row_major(IndexList[1](batch_size)),
         ctx,
     )

@@ -1,39 +1,32 @@
 # Code examples and tests for get started with Mojo
 
-This directory contains Code examples and tests for the
+This directory contains code examples and tests for the
 [Get started with Mojo](../../../manual/get-started.mdx) tutorial of the
-Mojo Manual. These are only "checkpoints" for various steps of the tutorial, to
-ensure that the code for these intermediate steps is correct. The complete
-reference solution for the tutorial is in
+Mojo Manual. The complete reference solution for the tutorial is in the
 [examples/mojo/life](../../../../examples/life/) directory, which is
-deployed to the public GitHub repo. Checkpoints aren't needed for steps that
-simply "accrete" functionality or for the final result, so there isn't a
-checkpoint for each step of the tutorial.
+deployed to the public GitHub repo.
 
 Contents:
 
-- `life_step5.mojo` and `gridv1_step5.mojo`: The result of completing Step 5 of
-  the tutorial.
+- `life01.mojo`: The first step of the tutorial — the glider grid built
+  from a `List[Int]` and a local `to_index` lambda, before `Grid` exists.
 
-- `life_step7.mojo` and `gridv1_step7.mojo`: The result of completing Step 7 of
-  the tutorial.
+- `grid.mojo` and `life.mojo`: The finished tutorial. `grid.mojo` is the
+  `Grid` struct the tutorial accretes across its later steps; `life.mojo`
+  is the animation loop it ends on.
 
-- `life_step8.mojo` and `gridv1_step8.mojo`: The result of completing Step 8 of
-  the tutorial.
-
-- `life_step9.mojo` and `gridv1_step9.mojo`: The result of completing Step 9 of
-  the tutorial.
+- `tests.mojo`: Assertions over the tutorial's code examples. Steps that
+  have a module to import are tested against `grid.mojo`; earlier steps
+  have their snippets reproduced in the file as written on the page. The
+  header comment lists what isn't covered and why.
 
 - The `BUILD.bazel` file defines:
 
   - Runnable binary targets:
-    - `life_step5`
-    - `life_step7`
-    - `life_step8`
-    - `life_step9`
+    - `life01`
+    - `life` (built only — `main()` is a 300-generation animation loop)
+    - `tests`
 
   - Test targets:
-    - `life_step5_test`
-    - `life_step7_test`
-    - `life_step8_test`
-    - `life_step9_test`
+    - `life01_test`
+    - `tests_test`

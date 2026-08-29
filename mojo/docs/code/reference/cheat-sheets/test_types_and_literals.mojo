@@ -23,7 +23,7 @@ from std.sys.info import bit_width_of
 
 
 def test_simd_is_the_foundation() raises:
-    var v = SIMD[DType.float32, 4](1.0, 2.0, 3.0, 4.0)
+    var v = SIMD[.float32, 4](1.0, 2.0, 3.0, 4.0)
     var d = v * 2.0
     assert_equal(d[1], 4.0)  # every lane scaled
     v[0] = 5.0  # write one lane
@@ -33,7 +33,7 @@ def test_simd_is_the_foundation() raises:
 def test_conversions_explicit() raises:
     var i = 42
     assert_equal(Float64(i), 42.0)
-    var g = Float64(i).cast[DType.int32]()  # between SIMD types
+    var g = Float64(i).cast[.int32]()  # between SIMD types
     assert_equal(g, Int32(42))
 
 

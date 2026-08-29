@@ -71,14 +71,14 @@ page_size: int = 128
 seed: int = 42
 
 
-def _indexer_config() -> GlmMoeDsaConfig:
+def _indexer_config(rope_dim: int = qk_rope_head_dim) -> GlmMoeDsaConfig:
     return GlmMoeDsaConfig(
         hidden_size=dim,
         q_lora_rank=q_lora_rank,
         index_n_heads=index_n_heads,
         index_head_dim=index_head_dim,
         index_topk=index_topk,
-        qk_rope_head_dim=qk_rope_head_dim,
+        qk_rope_head_dim=rope_dim,
         max_position_embeddings=1024,
         num_attention_heads=8,
         num_hidden_layers=1,
@@ -138,9 +138,10 @@ def run_torch_indexer(
     state_dict: dict[str, torch.Tensor],
     mask: bool = False,
     device: str = "cuda",
+    rope_dim: int = qk_rope_head_dim,
 ) -> torch.Tensor:
     """Run :class:`GlmMoeDsaIndexer` with fixture inputs and weights."""
-    config = _indexer_config()
+    config = _indexer_config(rope_dim)
     indexer = GlmMoeDsaIndexer(config, layer_idx=0)
     indexer.load_state_dict(
         {k: v for k, v in state_dict.items() if "scale" not in k}, strict=True
@@ -151,16 +152,18 @@ def run_torch_indexer(
     position_ids = torch.arange(seq_len_local, device=device).unsqueeze(0)
     position_ids = position_ids.expand(batch_size_local, -1)
 
-    rotary_emb = GlmMoeDsaRotaryEmbedding(config).to(device)
-    probe = torch.zeros(
-        batch_size_local,
-        seq_len_local,
-        config.index_n_heads,
-        config.qk_rope_head_dim,
-        dtype=x.dtype,
-        device=device,
-    )
-    cos, sin = rotary_emb(probe, position_ids)
+    position_embeddings: tuple[torch.Tensor, torch.Tensor] | None = None
+    if rope_dim:
+        rotary_emb = GlmMoeDsaRotaryEmbedding(config).to(device)
+        probe = torch.zeros(
+            batch_size_local,
+            seq_len_local,
+            config.index_n_heads,
+            config.qk_rope_head_dim,
+            dtype=x.dtype,
+            device=device,
+        )
+        position_embeddings = rotary_emb(probe, position_ids)
 
     attention_mask = None
     if mask:
@@ -174,7 +177,7 @@ def run_torch_indexer(
         return indexer(
             x.to(device),
             qr.to(device),
-            (cos, sin),
+            position_embeddings,
             attention_mask,
             use_cache=False,
         )
@@ -186,6 +189,7 @@ def run_max_indexer(
     input_row_offsets: torch.Tensor,
     state_dict: dict[str, torch.Tensor],
     mask_variant: MHAMaskVariant = MHAMaskVariant.NULL_MASK,
+    rope_dim: int = qk_rope_head_dim,
 ) -> torch.Tensor:
     device = Accelerator()
     session = InferenceSession(devices=[device])
@@ -230,6 +234,8 @@ def run_max_indexer(
         max_batch_size=128,
     )
 
+    # A NoPE indexer never reads ``freqs_cis``, so the table stays full width
+    # and simply goes unused.
     rope = RotaryEmbedding(
         dim=qk_rope_head_dim,
         n_heads=index_n_heads,
@@ -243,7 +249,7 @@ def run_max_indexer(
         dim=dim,
         index_n_heads=index_n_heads,
         index_head_dim=index_head_dim,
-        qk_rope_head_dim=qk_rope_head_dim,
+        qk_rope_head_dim=rope_dim,
         index_topk=index_topk,
         q_lora_rank=q_lora_rank,
         devices=[DeviceRef.GPU()],
@@ -338,6 +344,12 @@ def run_max_indexer(
     return output_tensor.cpu()
 
 
+def _sorted_rows(indices: torch.Tensor) -> torch.Tensor:
+    """Selected indices sorted within each row, as int32 on the CPU."""
+    rows = indices.reshape(-1, index_topk).to("cpu").to(torch.int32)
+    return rows.sort(dim=-1).values
+
+
 @pytest.mark.skipif(
     accelerator_api() == "hip",
     reason="Memory access fault by GPU node-2 (Agent handle: 0x49c8e0a0) on address 0x10e2bfcf8000. Reason: Unknown.",
@@ -346,15 +358,21 @@ def run_max_indexer(
     is_h100_h200(),
     reason="CUDA call failed: CUDA_ERROR_ILLEGAL_ADDRESS (an illegal memory access was encountered)",
 )
+@pytest.mark.parametrize(
+    "rope_dim", [qk_rope_head_dim, 0], ids=["rope", "nope"]
+)
 def test_indexer_no_mask(
     x: torch.Tensor,
     qr: torch.Tensor,
     input_row_offsets: torch.Tensor,
     state_dict: dict[str, torch.Tensor],
+    rope_dim: int,
 ) -> None:
     total_seq_len = batch_size * seq_len
-    torch_output = run_torch_indexer(x, qr, state_dict)
-    max_output = run_max_indexer(x, qr, input_row_offsets, state_dict)
+    torch_output = run_torch_indexer(x, qr, state_dict, rope_dim=rope_dim)
+    max_output = run_max_indexer(
+        x, qr, input_row_offsets, state_dict, rope_dim=rope_dim
+    )
 
     assert max_output.shape[0] == total_seq_len, (
         f"Expected first dimension {total_seq_len}, got {max_output.shape[0]}"
@@ -364,10 +382,13 @@ def test_indexer_no_mask(
         "Output should not be all -1 (invalid)"
     )
 
+    # Top-k index order is not part of the indexer's contract, because the
+    # consumer scatters these positions into a mask. Compare the sorted rows so
+    # that reordered ties do not count as mismatches.
     total_equal = torch.sum(
         torch.eq(
-            torch_output.view(-1).to("cpu").to(torch.int32),
-            max_output.view(-1).to(torch.int32),
+            _sorted_rows(torch_output).view(-1),
+            _sorted_rows(max_output).view(-1),
         )
     )
     assert total_equal / float(total_seq_len * index_topk) >= 0.89
@@ -381,16 +402,27 @@ def test_indexer_no_mask(
     is_h100_h200(),
     reason="CUDA call failed: CUDA_ERROR_ILLEGAL_ADDRESS (an illegal memory access was encountered)",
 )
+@pytest.mark.parametrize(
+    "rope_dim", [qk_rope_head_dim, 0], ids=["rope", "nope"]
+)
 def test_indexer_causal_mask(
     x: torch.Tensor,
     qr: torch.Tensor,
     input_row_offsets: torch.Tensor,
     state_dict: dict[str, torch.Tensor],
+    rope_dim: int,
 ) -> None:
     total_seq_len = batch_size * seq_len
-    torch_output = run_torch_indexer(x, qr, state_dict, mask=True)
+    torch_output = run_torch_indexer(
+        x, qr, state_dict, mask=True, rope_dim=rope_dim
+    )
     max_output = run_max_indexer(
-        x, qr, input_row_offsets, state_dict, MHAMaskVariant.CAUSAL_MASK
+        x,
+        qr,
+        input_row_offsets,
+        state_dict,
+        MHAMaskVariant.CAUSAL_MASK,
+        rope_dim=rope_dim,
     )
 
     assert max_output.shape[0] == total_seq_len, (
@@ -411,10 +443,47 @@ def test_indexer_causal_mask(
     torch_output_flat = torch_output.view(-1).to("cpu").to(torch.int32)
     max_output_flat = max_output.view(-1).to(torch.int32)
 
+    # Collapse out-of-range picks to -1 before sorting. Sorting first would
+    # place the two sides' sentinels at different positions.
     total_equal = torch.sum(
         torch.eq(
-            torch_output_flat.where(torch_output_flat <= valid_ids, -1),
-            max_output_flat.where(max_output_flat <= valid_ids, -1),
+            _sorted_rows(
+                torch_output_flat.where(torch_output_flat <= valid_ids, -1)
+            ),
+            _sorted_rows(
+                max_output_flat.where(max_output_flat <= valid_ids, -1)
+            ),
         )
     )
     assert total_equal / float(total_seq_len * index_topk) >= 0.89
+
+
+def test_indexer_rejects_partial_rope_width() -> None:
+    """A rope width that is neither 0 nor half the head dim cannot split."""
+    with pytest.raises(ValueError, match="rope width must be 0 or half"):
+        Indexer(
+            dim=dim,
+            index_n_heads=index_n_heads,
+            index_head_dim=index_head_dim,
+            qk_rope_head_dim=index_head_dim // 4,
+            index_topk=index_topk,
+            q_lora_rank=q_lora_rank,
+            devices=[DeviceRef.GPU()],
+            quant_config=QuantConfig(
+                input_scale=InputScaleSpec(
+                    granularity=ScaleGranularity.BLOCK,
+                    origin=ScaleOrigin.DYNAMIC,
+                    dtype=DType.float32,
+                    block_size=(1, 128),
+                ),
+                weight_scale=WeightScaleSpec(
+                    granularity=ScaleGranularity.BLOCK,
+                    dtype=DType.float32,
+                    block_size=(128, 128),
+                ),
+                mlp_quantized_layers=set(),
+                attn_quantized_layers=set(),
+                embedding_output_dtype=None,
+                format=QuantFormat.BLOCKSCALED_FP8,
+            ),
+        )

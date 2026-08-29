@@ -65,18 +65,18 @@ def run_one_case(ctx: DeviceContext, spec: CaseSpec) raises:
     var n = spec.num_tokens
 
     # Host copy-back targets for the two precondition-sensitive buffers.
-    var esi_host = ctx.enqueue_create_host_buffer[DType.uint32](num_experts + 1)
-    var eids_host = ctx.enqueue_create_host_buffer[DType.int32](num_experts)
-    var topk_host = ctx.enqueue_create_host_buffer[DType.uint32](n)
+    var esi_host = ctx.enqueue_create_host_buffer[.uint32](num_experts + 1)
+    var eids_host = ctx.enqueue_create_host_buffer[.int32](num_experts)
+    var topk_host = ctx.enqueue_create_host_buffer[.uint32](n)
 
-    var token_expert_order_dev = ctx.enqueue_create_buffer[DType.uint32](n)
-    var expert_start_indices_dev = ctx.enqueue_create_buffer[DType.uint32](
+    var token_expert_order_dev = ctx.enqueue_create_buffer[.uint32](n)
+    var expert_start_indices_dev = ctx.enqueue_create_buffer[.uint32](
         num_experts + 1
     )
-    var restore_token_order_dev = ctx.enqueue_create_buffer[DType.uint32](n)
-    var expert_ids_dev = ctx.enqueue_create_buffer[DType.int32](num_experts)
-    var expert_usage_stats_dev = ctx.enqueue_create_buffer[DType.uint32](2)
-    var topk_dev = ctx.enqueue_create_buffer[DType.uint32](n)
+    var restore_token_order_dev = ctx.enqueue_create_buffer[.uint32](n)
+    var expert_ids_dev = ctx.enqueue_create_buffer[.int32](num_experts)
+    var expert_usage_stats_dev = ctx.enqueue_create_buffer[.uint32](2)
+    var topk_dev = ctx.enqueue_create_buffer[.uint32](n)
 
     var token_expert_order = TileTensor(token_expert_order_dev, row_major(n))
     var expert_start_indices = TileTensor(

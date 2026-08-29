@@ -85,15 +85,15 @@ def _test_hash_int_simd[
 
 
 def test_hash_simd() raises:
-    _test_hash_int_simd[DType.int8]()
-    _test_hash_int_simd[DType.int16]()
-    _test_hash_int_simd[DType.int32]()
-    _test_hash_int_simd[DType.int64]()
+    _test_hash_int_simd[.int8]()
+    _test_hash_int_simd[.int16]()
+    _test_hash_int_simd[.int32]()
+    _test_hash_int_simd[.int64]()
     # float32 currently has low entropy in the low bits for these test examples.
     # this could affect performance of small dicts some. Let's punt and see
     # if this is an issue in practice, if so we can specialize the float
     # hash implementation.
-    _test_hash_int_simd[DType.float32](max_num_same=7)
+    _test_hash_int_simd[.float32](max_num_same=7)
     # TODO: test hashing different NaNs.
 
     # Test a couple other random things
@@ -102,29 +102,76 @@ def test_hash_simd() raises:
         hash(Float32(1e10)),
     )
     assert_equal(
-        hash(Scalar[DType.bool](True)),
-        hash(Scalar[DType.bool](True)),
+        hash(Scalar[.bool](True)),
+        hash(Scalar[.bool](True)),
     )
     assert_equal(
-        hash(Scalar[DType.bool](False)),
-        hash(Scalar[DType.bool](False)),
+        hash(Scalar[.bool](False)),
+        hash(Scalar[.bool](False)),
     )
     assert_not_equal(
-        hash(Scalar[DType.bool](True)),
-        hash(Scalar[DType.bool](False)),
+        hash(Scalar[.bool](True)),
+        hash(Scalar[.bool](False)),
     )
     assert_equal(
-        hash(SIMD[DType.bool, 2](fill=True)),
-        hash(SIMD[DType.bool, 2](fill=True)),
+        hash(SIMD[.bool, 2](fill=True)),
+        hash(SIMD[.bool, 2](fill=True)),
     )
     assert_equal(
-        hash(SIMD[DType.bool, 2](fill=False)),
-        hash(SIMD[DType.bool, 2](fill=False)),
+        hash(SIMD[.bool, 2](fill=False)),
+        hash(SIMD[.bool, 2](fill=False)),
     )
     assert_not_equal(
-        hash(SIMD[DType.bool, 2](fill=True)),
-        hash(SIMD[DType.bool, 2](fill=False)),
+        hash(SIMD[.bool, 2](fill=True)),
+        hash(SIMD[.bool, 2](fill=False)),
     )
+
+
+def _test_hash_signed_zero[dtype: DType]() raises:
+    var pos = Scalar[dtype](0.0)
+    var neg = Scalar[dtype](-0.0)
+
+    # Keep the check honest: it is vacuous unless the two really do differ in
+    # their bit patterns.
+    assert_not_equal(pos.to_bits(), neg.to_bits())
+
+    assert_true(pos == neg)
+    assert_equal(hash(pos), hash(neg))
+
+
+def test_hash_signed_zero() raises:
+    _test_hash_signed_zero[DType.float8_e3m4]()
+    _test_hash_signed_zero[DType.float8_e4m3fn]()
+    _test_hash_signed_zero[DType.float8_e5m2]()
+    _test_hash_signed_zero[DType.float16]()
+    _test_hash_signed_zero[DType.bfloat16]()
+    _test_hash_signed_zero[DType.float32]()
+    _test_hash_signed_zero[DType.float64]()
+
+    # The sign of zero is normalized elementwise, not just for scalars.
+    assert_equal(
+        hash(SIMD[DType.float64, 4](0.0, -0.0, 1.5, -1.5)),
+        hash(SIMD[DType.float64, 4](-0.0, 0.0, 1.5, -1.5)),
+    )
+
+    # Normalizing zero must not fold the sign of anything else away.
+    assert_not_equal(hash(Float64(1.5)), hash(Float64(-1.5)))
+
+    # The comptime hasher takes its own `_update_with_simd` path.
+    comptime pos = hash[default_comp_time_hasher](Float64(0.0))
+    comptime neg = hash[default_comp_time_hasher](Float64(-0.0))
+    assert_equal(pos, neg)
+
+
+def test_hash_exotic_float_vectors() raises:
+    """Test that every 8-bit float encoding still lowers, including those with
+    no negative zero (`fnuz`) and no zero at all (`e8m0fnu`)."""
+    _ = hash(SIMD[DType.float8_e3m4, 4](0))
+    _ = hash(SIMD[DType.float8_e4m3fn, 4](0))
+    _ = hash(SIMD[DType.float8_e4m3fnuz, 4](0))
+    _ = hash(SIMD[DType.float8_e5m2, 4](0))
+    _ = hash(SIMD[DType.float8_e5m2fnuz, 4](0))
+    _ = hash(SIMD[DType.float8_e8m0fnu, 4](1))
 
 
 def test_issue_31111() raises:

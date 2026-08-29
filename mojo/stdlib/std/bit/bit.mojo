@@ -31,19 +31,6 @@ from std.utils._select import _select_register_value as select
 
 
 @always_inline("nodebug")
-def count_leading_zeros(val: Int) -> Int:
-    """Counts the number of leading zeros of an integer.
-
-    Args:
-        val: The input value.
-
-    Returns:
-        The number of leading zeros of the input.
-    """
-    return llvm_intrinsic["llvm.ctlz", Int, has_side_effect=False](val, False)
-
-
-@always_inline("nodebug")
 def count_leading_zeros[
     dtype: DType, width: SIMDLength, //
 ](val: SIMD[dtype, width]) -> SIMD[dtype, width]:
@@ -72,19 +59,6 @@ def count_leading_zeros[
 # ===-----------------------------------------------------------------------===#
 # count_trailing_zeros
 # ===-----------------------------------------------------------------------===#
-
-
-@always_inline("nodebug")
-def count_trailing_zeros(val: Int) -> Int:
-    """Counts the number of trailing zeros for an integer.
-
-    Args:
-        val: The input value.
-
-    Returns:
-        The number of trailing zeros of the input.
-    """
-    return llvm_intrinsic["llvm.cttz", Int, has_side_effect=False](val, False)
 
 
 @always_inline("nodebug")
@@ -119,19 +93,6 @@ def count_trailing_zeros[
 
 
 @always_inline("nodebug")
-def bit_reverse(val: Int) -> Int:
-    """Reverses the bitpattern of an integer value.
-
-    Args:
-        val: The input value.
-
-    Returns:
-        The input value with its bitpattern reversed.
-    """
-    return llvm_intrinsic["llvm.bitreverse", Int, has_side_effect=False](val)
-
-
-@always_inline("nodebug")
 def bit_reverse[
     dtype: DType, width: SIMDLength, //
 ](val: SIMD[dtype, width]) -> SIMD[dtype, width]:
@@ -160,24 +121,6 @@ def bit_reverse[
 # ===-----------------------------------------------------------------------===#
 # byte_swap
 # ===-----------------------------------------------------------------------===#
-
-
-@always_inline("nodebug")
-def byte_swap(val: Int) -> Int:
-    """Byte-swaps an integer value with an even number of bytes.
-
-    Byte swap an integer value (8 bytes) with an even number of bytes (positive multiple
-    of 16 bits). This returns an integer value (8 bytes) that has its bytes swapped. For
-    example, if the input bytes are numbered 0, 1, 2, 3, 4, 5, 6, 7 then the returned
-    integer will have its bytes in 7, 6, 5, 4, 3, 2, 1, 0 order.
-
-    Args:
-        val: The input value.
-
-    Returns:
-        The input value with its bytes swapped.
-    """
-    return llvm_intrinsic["llvm.bswap", Int, has_side_effect=False](val)
 
 
 @always_inline("nodebug")
@@ -220,19 +163,6 @@ def byte_swap[
 # ===-----------------------------------------------------------------------===#
 # pop_count
 # ===-----------------------------------------------------------------------===#
-
-
-@always_inline("nodebug")
-def pop_count(val: Int) -> Int:
-    """Counts the number of bits set in an integer value.
-
-    Args:
-        val: The input value.
-
-    Returns:
-        The number of bits set in the input value.
-    """
-    return llvm_intrinsic["llvm.ctpop", Int, has_side_effect=False](val)
 
 
 @always_inline("nodebug")
@@ -364,21 +294,6 @@ def log2_floor[
 
 
 @always_inline
-def log2_ceil(val: Int) -> Int:
-    """Returns the ceiling of the base-2 logarithm of an integer value.
-
-    Args:
-        val: The input value.
-
-    Returns:
-        The ceiling of the base-2 logarithm of the input value, which corresponds
-        to the smallest power of 2 greater than or equal to the input. Returns 0
-        if val is 0.
-    """
-    return select(val <= 1, 0, log2_floor(val - 1) + 1)
-
-
-@always_inline
 def log2_ceil(val: Scalar) -> type_of(val):
     """Returns the ceiling of the base-2 logarithm of an integer value.
 
@@ -398,26 +313,6 @@ def log2_ceil(val: Scalar) -> type_of(val):
 # ===-----------------------------------------------------------------------===#
 # reference: https://en.cppreference.com/w/cpp/numeric/bit_ceil
 # reference: https://doc.rust-lang.org/std/primitive.usize.html#method.next_power_of_two
-
-
-@always_inline
-def next_power_of_two(val: Int) -> Int:
-    """Computes the smallest power of 2 that is greater than or equal to the
-    input value. Any integral value less than or equal to 1 will be ceiled to 1.
-
-    Args:
-        val: The input value.
-
-    Returns:
-        The smallest power of 2 that is greater than or equal to the input
-        value.
-
-    Notes:
-        This operation is called `bit_ceil()` in C++.
-    """
-    return select(
-        val <= 1, 1, 1 << (bit_width_of[Int]() - count_leading_zeros(val - 1))
-    )
 
 
 @always_inline
@@ -456,22 +351,6 @@ def next_power_of_two[
 
 
 @always_inline
-def prev_power_of_two(val: Int) -> Int:
-    """Computes the largest power of 2 that is less than or equal to the input
-    value. Any integral value less than or equal to 0 will be floored to 0.
-
-    This operation is called `bit_floor()` in C++.
-
-    Args:
-        val: The input value.
-
-    Returns:
-        The largest power of 2 that is less than or equal to the input value.
-    """
-    return select(val > 0, 1 << (bit_width(val) - 1), 0)
-
-
-@always_inline
 def prev_power_of_two[
     dtype: DType, width: SIMDLength, //
 ](val: SIMD[dtype, width]) -> SIMD[dtype, width]:
@@ -507,52 +386,17 @@ def prev_power_of_two[
 # ===-----------------------------------------------------------------------===#
 
 
-@always_inline
-def rotate_bits_left[shift: Int](x: Int) -> Int:
-    """Shifts the bits of an input to the left by `shift` bits (with
-    wrap-around).
-
-    Constraints:
-        `-size <= shift < size`
-
-    Parameters:
-        shift: The number of bit positions by which to rotate the bits of the
-               integer to the left (with wrap-around).
-
-    Args:
-        x: The input value.
-
-    Returns:
-        The input rotated to the left by `shift` elements (with wrap-around).
-    """
-    comptime assert (
-        -bit_width_of[Int]() <= shift < bit_width_of[Int]()
-    ), "Constraints: -bit_width_of[Int]() <= shift < bit_width_of[Int]()"
-
-    comptime if shift == 0:
-        return x
-    elif shift < 0:
-        return rotate_bits_right[-shift](x)
-    else:
-        return llvm_intrinsic["llvm.fshl", Int, has_side_effect=False](
-            x, x, shift
-        )
-
-
 @always_inline("nodebug")
 def rotate_bits_left[
     dtype: DType,
     width: SIMDLength,
     //,
     shift: Int,
-](x: SIMD[dtype, width]) -> SIMD[dtype, width] where dtype.is_unsigned():
+](x: SIMD[dtype, width]) -> SIMD[dtype, width] where dtype.is_integral():
     """Shifts bits to the left by `shift` positions (with wrap-around) for each element of a SIMD vector.
 
-    Constraints:
-        `0 <= shift < size`
-
     Parameters:
-        dtype: The `dtype` of the input and output SIMD vector. Must be integral and unsigned.
+        dtype: The `dtype` of the input and output SIMD vector. Must be integral.
         width: The width of the SIMD vector.
         shift: The number of positions to rotate left.
 
@@ -578,52 +422,17 @@ def rotate_bits_left[
 # ===-----------------------------------------------------------------------===#
 
 
-@always_inline
-def rotate_bits_right[shift: Int](x: Int) -> Int:
-    """Shifts the bits of an input to the right by `shift` bits (with
-    wrap-around).
-
-    Constraints:
-        `-size <= shift < size`
-
-    Parameters:
-        shift: The number of bit positions by which to rotate the bits of the
-               integer to the right (with wrap-around).
-
-    Args:
-        x: The input value.
-
-    Returns:
-        The input rotated to the right by `shift` elements (with wrap-around).
-    """
-    comptime assert (
-        -bit_width_of[Int]() <= shift < bit_width_of[Int]()
-    ), "Constraints: -bit_width_of[Int]() <= shift < bit_width_of[Int]()"
-
-    comptime if shift == 0:
-        return x
-    elif shift < 0:
-        return rotate_bits_left[-shift](x)
-    else:
-        return llvm_intrinsic["llvm.fshr", Int, has_side_effect=False](
-            x, x, shift
-        )
-
-
 @always_inline("nodebug")
 def rotate_bits_right[
     dtype: DType,
     width: SIMDLength,
     //,
     shift: Int,
-](x: SIMD[dtype, width]) -> SIMD[dtype, width] where dtype.is_unsigned():
+](x: SIMD[dtype, width]) -> SIMD[dtype, width] where dtype.is_integral():
     """Shifts bits to the right by `shift` positions (with wrap-around) for each element of a SIMD vector.
 
-    Constraints:
-        `0 <= shift < size`
-
     Parameters:
-        dtype: The `dtype` of the input and output SIMD vector. Must be integral and unsigned.
+        dtype: The `dtype` of the input and output SIMD vector. Must be integral.
         width: The width of the SIMD vector.
         shift: The number of positions to rotate right.
 

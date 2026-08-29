@@ -56,12 +56,12 @@ from std.utils import IndexList
 def _verify_buffers_gpu[
     c_type: DType, BLOCK_SIZE: Int
 ](
-    output: UnsafePointer[Scalar[c_type], ImmutAnyOrigin],
-    reference: UnsafePointer[Scalar[c_type], ImmutAnyOrigin],
+    output: ImmPointer[Scalar[c_type], ImmutAnyOrigin],
+    reference: ImmPointer[Scalar[c_type], ImmutAnyOrigin],
     length_dev: Int32,
     atol: Float32,
     rtol: Float32,
-    result: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
+    result: MutPointer[Float32, MutAnyOrigin],
 ):
     """GPU kernel that computes verification metrics in one pass.
 
@@ -84,8 +84,8 @@ def _verify_buffers_gpu[
     var i = global_idx.x
     var stride = grid_dim.x * block_dim.x
     while i < length:
-        var x = output[i].cast[DType.float32]()
-        var y = reference[i].cast[DType.float32]()
+        var x = output[i].cast[.float32]()
+        var y = reference[i].cast[.float32]()
         abs_diff_sum += abs(x - y)
         abs_ref_sum += abs(y)
         max_violation = max(max_violation, abs(x - y) - (atol + rtol * abs(y)))
@@ -202,11 +202,11 @@ def verify_matmul[
     else:
         var rtol64: Float64
         var atol64: Float64
-        rtol64, atol64 = pytorch_like_tolerances_for[DType.bfloat16]()
+        rtol64, atol64 = pytorch_like_tolerances_for[.bfloat16]()
         rtol = Float32(rtol64)
         atol = Float32(atol64)
 
-    var result_device = ctx.enqueue_create_buffer[DType.float32](NUM_BLOCKS * 5)
+    var result_device = ctx.enqueue_create_buffer[.float32](NUM_BLOCKS * 5)
 
     comptime kernel = _verify_buffers_gpu[c_type, BLOCK_SIZE]
     ctx.enqueue_function[kernel](
@@ -221,7 +221,7 @@ def verify_matmul[
     )
 
     # Copy back only NUM_BLOCKS * 5 Float32 values
-    var result_host_alloc = alloc[Scalar[DType.float32]](
+    var result_host_alloc = alloc[Float32](
         {count = NUM_BLOCKS * 5}
     ).into_managed()
     var result_host = result_host_alloc.unsafe_ptr()
@@ -472,9 +472,8 @@ def bench_matmul[
             # transpose_b=True is hardcoded in the kernel (FP8 layout).
             structured_4wave_matmul(tensor_a, tensor_b, tensor_c, ctx)
 
-    @__parameter
     @always_inline
-    def bench_func(mut b: Bencher) raises:
+    def bench_func(mut b: Bencher) raises {imm}:
         bencher_iter_custom(b, kernel_launch, ctx)
 
     var flops = ThroughputMeasure(
@@ -486,7 +485,8 @@ def bench_matmul[
         * Int(shape_a[1].value()),
     )
     if run_benchmark:
-        b.bench_function[bench_func](
+        b.bench_function(
+            bench_func,
             BenchId(
                 _get_run_name[
                     c_type,
@@ -567,8 +567,8 @@ def main() raises:
     # 4-wave kernel is FP8-only; default the bench dtype accordingly so
     # `bazel build` (no `-D dtype=...`) compiles cleanly. Override to
     # other FP8 variants via `-D dtype=...` at the command line.
-    comptime a_type = get_defined_dtype["dtype", DType.float8_e4m3fn]()
-    comptime c_type = get_defined_dtype["ctype", DType.bfloat16]()
+    comptime a_type = get_defined_dtype["dtype", .float8_e4m3fn]()
+    comptime c_type = get_defined_dtype["ctype", .bfloat16]()
 
     var M = Int(arg_parse("M", 1024))
     comptime N = get_defined_int["N", 16384]()

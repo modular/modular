@@ -1451,7 +1451,7 @@ class DynamicOpTrait:
     @classmethod
     def attach(
         cls,
-        op_name: object,
+        op_name: type | str,
         target: object | None = None,
         context: _mlir.ir.Context | None = None,
     ) -> bool:
@@ -1460,23 +1460,30 @@ class DynamicOpTrait:
 class IsTerminatorTrait(DynamicOpTrait):
     @classmethod
     def attach(
-        cls, op_name: object, context: _mlir.ir.Context | None = None
+        cls, op_name: type | str, context: _mlir.ir.Context | None = None
     ) -> bool:
         """Attach IsTerminator trait to the given operation name."""
 
 class NoTerminatorTrait(DynamicOpTrait):
     @classmethod
     def attach(
-        cls, op_name: object, context: _mlir.ir.Context | None = None
+        cls, op_name: type | str, context: _mlir.ir.Context | None = None
     ) -> bool:
         """Attach NoTerminator trait to the given operation name."""
 
 class IsIsolatedFromAboveTrait(DynamicOpTrait):
     @classmethod
     def attach(
-        cls, op_name: object, context: _mlir.ir.Context | None = None
+        cls, op_name: type | str, context: _mlir.ir.Context | None = None
     ) -> bool:
         """Attach IsIsolatedFromAbove trait to the given operation name."""
+
+class RecursiveMemoryEffectsTrait(DynamicOpTrait):
+    @classmethod
+    def attach(
+        cls, op_name: type | str, context: _mlir.ir.Context | None = None
+    ) -> bool:
+        """Attach RecursiveMemoryEffects trait to the given operation name."""
 
 class MLIRError(Exception):
     @property

@@ -190,7 +190,7 @@ def test_matmul_sm100_epilogue[
         kernel_launch(ctx)
 
     if not is_benchmark:
-        comptime assert a_type != DType.float8_e4m3fn or transpose_b, (
+        comptime assert a_type != .float8_e4m3fn or transpose_b, (
             "Testing is only supported for transposed_b==True when"
             " a_type==float8_e4m3fn. Add the non-transposed case if needed."
         )
@@ -277,7 +277,7 @@ def main() raises:
                     test_matmul_sm100_epilogue[
                         dtype,
                         dtype,
-                        DType.bfloat16,
+                        .bfloat16,
                         block_tile_shape,
                         umma_shape,
                         cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
@@ -297,7 +297,7 @@ def main() raises:
                     test_matmul_sm100_epilogue[
                         dtype,
                         dtype,
-                        DType.bfloat16,
+                        .bfloat16,
                         block_tile_shape,
                         umma_shape,
                         cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
@@ -323,7 +323,7 @@ def main() raises:
                     test_matmul_sm100_epilogue[
                         dtype,
                         dtype,
-                        DType.bfloat16,
+                        .bfloat16,
                         block_tile_shape,
                         umma_shape,
                         cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
@@ -343,7 +343,7 @@ def main() raises:
                     test_matmul_sm100_epilogue[
                         dtype,
                         dtype,
-                        DType.bfloat16,
+                        .bfloat16,
                         block_tile_shape,
                         umma_shape,
                         cluster_shape=StaticTuple[Int32, 3](4, 2, 1),

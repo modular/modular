@@ -87,12 +87,7 @@ def _mask_apply_rdna[
     scale: Float32,
     mask: mask_t,
     p_reg_tile: TileTensor[
-        mut=True,
-        accum_type,
-        _,
-        _,
-        address_space=AddressSpace.LOCAL,
-        linear_idx_type=_,
+        mut=True, accum_type, _, _, address_space=.LOCAL, linear_idx_type=_
     ],
     not_last_iter: Bool,
     cache_start_pos: UInt32 = 0,
@@ -148,7 +143,7 @@ def _mask_apply_rdna[
                         + group_idx if token_gen else block_idx.x
                     )
                     p_reg_vectorized[mma_id, 0][j] = mask.mask(
-                        IndexList[4, element_type=DType.uint32](
+                        IndexList[4, element_type=.uint32](
                             block_idx.z,
                             q_head_idx,
                             Int(score_seq_with_start_pos),
@@ -356,14 +351,10 @@ struct AttentionRDNA[
     var softmax: Self.SoftmaxType
 
     var k_smem_ptr: UnsafePointer[
-        Scalar[Self.k_t.dtype],
-        MutUntrackedOrigin,
-        address_space=AddressSpace.SHARED,
+        Scalar[Self.k_t.dtype], MutUntrackedOrigin, address_space=.SHARED
     ]
     var v_smem_ptr: UnsafePointer[
-        Scalar[Self.v_t.dtype],
-        MutUntrackedOrigin,
-        address_space=AddressSpace.SHARED,
+        Scalar[Self.v_t.dtype], MutUntrackedOrigin, address_space=.SHARED
     ]
 
     var q_buffer: Self.QRegisterBufferType
@@ -480,20 +471,20 @@ struct AttentionRDNA[
         comptime if Self.token_gen:
             return self.mask.status(
                 UInt32(self.batch_idx),
-                IndexList[2, element_type=DType.uint32](
+                IndexList[2, element_type=.uint32](
                     Int(self.num_keys - 1),
                     Int(kv_tile_start_row),
                 ),
-                IndexList[2, element_type=DType.uint32](1, Self.BN),
+                IndexList[2, element_type=.uint32](1, Self.BN),
             )
         else:
             return self.mask.status(
                 UInt32(self.batch_idx),
-                IndexList[2, element_type=DType.uint32](
+                IndexList[2, element_type=.uint32](
                     Int(self.mask_block_row + UInt32(self.start_pos)),
                     Int(kv_tile_start_row + UInt32(self.cache_start_pos)),
                 ),
-                IndexList[2, element_type=DType.uint32](Self.BM, Self.BN),
+                IndexList[2, element_type=.uint32](Self.BM, Self.BN),
             )
 
     @always_inline
@@ -589,13 +580,13 @@ struct AttentionRDNA[
         self.k_smem_ptr = unsafe_stack_allocation[
             Self._k_smem_size,
             Self.k_t.dtype,
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
             alignment=Self._smem_alignment,
         ]()
         self.v_smem_ptr = unsafe_stack_allocation[
             Self._v_smem_size,
             Self.v_t.dtype,
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
             alignment=Self._smem_alignment,
         ]()
 
@@ -605,7 +596,7 @@ struct AttentionRDNA[
             var p_ptr = unsafe_stack_allocation[
                 Self.BM * Self.BK,
                 Self.q_type,
-                address_space=AddressSpace.SHARED,
+                address_space=.SHARED,
             ]()
             self.p_reg_buffer = Self.PRegisterBufferType(
                 p_ptr.as_unsafe_any_origin()
@@ -614,7 +605,7 @@ struct AttentionRDNA[
             var p_ptr = unsafe_stack_allocation[
                 Self._p_smem_size,
                 Self.q_type,
-                address_space=AddressSpace.SHARED,
+                address_space=.SHARED,
             ]()
             self.p_reg_buffer = Self.PRegisterBufferType(
                 p_ptr.as_unsafe_any_origin()
@@ -702,7 +693,7 @@ struct AttentionRDNA[
         var warp_scratch = TileTensor[
             Self.accum_type,
             type_of(Self._warp_scratch_layout),
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
         ](
             self.k_smem_ptr.bitcast[Scalar[Self.accum_type]](),
             Self._warp_scratch_layout,

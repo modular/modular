@@ -258,12 +258,12 @@ def test_overloaded() raises:
 
 
 @always_inline
-def exp(x: SIMD[DType.float32, 4]) -> type_of(x):
+def exp(x: SIMD[.float32, 4]) -> type_of(x):
     return std.math.exp(x)
 
 
 @always_inline
-def tanh(x: SIMD[DType.float32, 4]) -> type_of(x):
+def tanh(x: SIMD[.float32, 4]) -> type_of(x):
     return std.math.tanh(x)
 
 

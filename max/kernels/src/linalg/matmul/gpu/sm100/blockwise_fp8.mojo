@@ -107,7 +107,7 @@ def matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
     comptime accum_type = get_accum_type[a_type]()
 
     comptime assert (
-        b_scales_type == a_scales_type == accum_type == DType.float32
+        b_scales_type == a_scales_type == accum_type == .float32
     ), "Only support float32 for a_scales and b_scales"
 
     comptime N = c_layout.static_shape[1]
@@ -144,7 +144,7 @@ def matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
 
     var a_smem = external_memory[
         Scalar[a_type],
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
         name="tmem_test_dynamic_shared_memory",
     ]().as_unsafe_any_origin()
@@ -619,11 +619,11 @@ def matmul_sm100_blockwise_scaled_fp8[
     comptime b_scales_type = type_of(b_scales).dtype
 
     comptime assert (
-        a_type == b_type and a_type == DType.float8_e4m3fn
+        a_type == b_type and a_type == .float8_e4m3fn
     ), "Only support float8_e4m3fn"
 
     comptime assert (
-        a_scales_type == b_scales_type and a_scales_type == DType.float32
+        a_scales_type == b_scales_type and a_scales_type == .float32
     ), "Only support float32 for scales"
 
     comptime assert (

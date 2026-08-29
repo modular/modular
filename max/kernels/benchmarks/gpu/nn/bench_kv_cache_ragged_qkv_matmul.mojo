@@ -86,9 +86,7 @@ def execute_kv_cache_ragged_matmul[
     var max_context_length = 0
     var max_prompt_length = 0
     var total_seq_len: UInt32 = 0
-    var prefix_sums_device = ctx.enqueue_create_buffer[DType.uint32](
-        batch_size + 1
-    )
+    var prefix_sums_device = ctx.enqueue_create_buffer[.uint32](batch_size + 1)
     var prefix_sums_device_tensor = TileTensor(
         prefix_sums_device, row_major(batch_size + 1)
     )
@@ -97,7 +95,7 @@ def execute_kv_cache_ragged_matmul[
         for i in range(batch_size):
             var length: UInt32
             if use_random_lengths:
-                length = random_ui64(1, UInt64(seq_len)).cast[DType.uint32]()
+                length = random_ui64(1, UInt64(seq_len)).cast[.uint32]()
             else:
                 length = UInt32(seq_len)
 
@@ -175,12 +173,12 @@ def execute_kv_cache_ragged_matmul[
     var lookup_table_runtime_layout = RuntimeLayout[
         lookup_table_static_shape
     ].row_major(lookup_table_dynamic_shape)
-    var lookup_table_buffer = ctx.enqueue_create_buffer[DType.uint32](
+    var lookup_table_buffer = ctx.enqueue_create_buffer[.uint32](
         lookup_table_dynamic_shape.flattened_length()
     )
-    var lookup_table_device = LayoutTensor[
-        DType.uint32, lookup_table_static_shape
-    ](lookup_table_buffer, lookup_table_runtime_layout)
+    var lookup_table_device = LayoutTensor[.uint32, lookup_table_static_shape](
+        lookup_table_buffer, lookup_table_runtime_layout
+    )
 
     # hacky way to select random blocks.
     with lookup_table_buffer.map_to_host() as lookup_table_host:
@@ -201,11 +199,11 @@ def execute_kv_cache_ragged_matmul[
     var cache_lengths_runtime_layout = RuntimeLayout[
         cache_lengths_static_shape
     ].row_major(cache_lengths_dynamic_shape)
-    var cache_lengths_buffer = ctx.enqueue_create_buffer[DType.uint32](
+    var cache_lengths_buffer = ctx.enqueue_create_buffer[.uint32](
         cache_lengths_dynamic_shape.flattened_length()
     )
     var cache_lengths_device = LayoutTensor[
-        DType.uint32, cache_lengths_static_shape
+        .uint32, cache_lengths_static_shape
     ](cache_lengths_buffer, cache_lengths_runtime_layout)
 
     # Initialize cache lengths on host
@@ -228,14 +226,14 @@ def execute_kv_cache_ragged_matmul[
                 kv_block_runtime_layout.stride.value,
             ),
         ),
-        LayoutTensor[mut=False, DType.uint32, cache_lengths_static_shape](
+        LayoutTensor[mut=False, .uint32, cache_lengths_static_shape](
             cache_lengths_device.ptr,
             RuntimeLayout[cache_lengths_static_shape](
                 cache_lengths_runtime_layout.shape.value,
                 cache_lengths_runtime_layout.stride.value,
             ),
         ),
-        LayoutTensor[mut=False, DType.uint32, lookup_table_static_shape](
+        LayoutTensor[mut=False, .uint32, lookup_table_static_shape](
             lookup_table_device.ptr,
             RuntimeLayout[lookup_table_static_shape](
                 lookup_table_runtime_layout.shape.value,
@@ -295,7 +293,7 @@ def execute_kv_cache_ragged_matmul[
 
 
 def main() raises:
-    comptime dtype = get_defined_dtype["dtype", DType.bfloat16]()
+    comptime dtype = get_defined_dtype["dtype", .bfloat16]()
     comptime head_dim = get_defined_int["head_dim", 128]()
     comptime num_q_heads = get_defined_int["num_q_heads", 128]()
     comptime num_kv_heads = get_defined_int["num_kv_heads", 128]()

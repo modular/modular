@@ -383,11 +383,13 @@ print(product)
 
 ### Scalar values
 
-The `SIMD` module defines several
-[`comptime` values](/docs/manual/metaprogramming/comptime-evaluation/#comptime-values)
+The `SIMD` module defines several [`comptime`
+values](/docs/manual/metaprogramming/comptime-evaluation/#comptime-values)
 that function as *type aliases*—shorthand names for different `SIMD` vector
-types. The `Scalar` type is a `SIMD` vector with a single element. The numeric
-types listed in [Table 1](#table-1), like `Int`, `Int8`, and `Float32`, are type
+types. The `Scalar` type is a `SIMD` vector with a single element. The
+numeric types, including signed integers such as `Int8` ([Table
+1](#table-1)), unsigned integers such as `UInt16` ([Table 2](#table-2)),
+and floating-point values such as `Float32` ([Table 4](#table-4)), are type
 aliases for scalar values:
 
 ```mojo
@@ -744,7 +746,7 @@ element types) is fixed, individual elements can be mutated. Tuples support
 several forms of indexing:
 
 ```mojo
-# Tuples are immutable and can hold multiple types
+# Tuples can hold multiple types
 var example_tuple = Tuple[Int, String](1, "Example")
 
 # Assign multiple variables at once
@@ -818,11 +820,8 @@ The following sections give brief introduction to the main collection types.
 ### List
 
 [`List`](/docs/std/collections/list/List/) is a dynamically-sized array of
-elements. List elements need to conform to the
-[`Copyable`](/docs/std/traits/copyable/Copyable/) trait. Most of the common
-standard library primitives, like `Int`, `String`, and `SIMD` conform to this
-trait. You can create a `List` by passing the element type as a parameter, like
-this:
+elements. You can create a `List` by passing the element type as a
+parameter, like this:
 
 ```mojo
 var l = List[String]()
@@ -933,8 +932,9 @@ var values = Dict[String, Float64]()
 ```
 
 The dictionary's key type must conform to the
-[`KeyElement`](/docs/std/collections/dict/#keyelement) trait, and value elements
-must conform to the [`Copyable`](/docs/std/traits/copyable/Copyable/) trait.
+[`KeyElement`](/docs/std/collections/dict/#keyelement) trait, and value
+elements must conform to the
+[`Copyable`](/docs/std/traits/copyable/Copyable/) trait.
 
 You can insert and remove key-value pairs, update the value assigned to a key,
 and iterate through keys, values, or items in the dictionary.

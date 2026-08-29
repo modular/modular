@@ -227,8 +227,8 @@ def _fill_stable[
 
 
 def _host_block_score(
-    q: UnsafePointer[mut=False, Scalar[kv_type], _],
-    k: UnsafePointer[mut=False, Scalar[kv_type], _],
+    q: ImmPointer[Scalar[kv_type], _],
+    k: ImmPointer[Scalar[kv_type], _],
     b: Int,
     h: Int,
     blk: Int,
@@ -246,10 +246,7 @@ def _host_block_score(
         var k_off = (off_b + key) * idx_head_dim
         var dot = Float32(0)
         for d in range(idx_head_dim):
-            dot += (
-                q[q_off + d].cast[DType.float32]()
-                * k[k_off + d].cast[DType.float32]()
-            )
+            dot += q[q_off + d].cast[.float32]() * k[k_off + d].cast[.float32]()
         var s = dot * sm_scale
         if s > blk_max:
             blk_max = s
@@ -301,8 +298,8 @@ def run_one_case(
     # --- host inputs ---------------------------------------------------------
     var q_host = ctx.enqueue_create_host_buffer[kv_type](q_n)
     var k_host = ctx.enqueue_create_host_buffer[kv_type](k_n + k_pad)
-    var sl_host = ctx.enqueue_create_host_buffer[DType.uint32](batch)
-    var cro_host = ctx.enqueue_create_host_buffer[DType.uint32](batch + 1)
+    var sl_host = ctx.enqueue_create_host_buffer[.uint32](batch)
+    var cro_host = ctx.enqueue_create_host_buffer[.uint32](batch + 1)
     _fill_stable(q_host.as_span(), spec.dist)
     _fill_stable(Span(unsafe_ptr=k_host.unsafe_ptr(), length=k_n), spec.dist)
     for j in range(k_pad):
@@ -318,9 +315,9 @@ def run_one_case(
     # --- device buffers ------------------------------------------------------
     var q_dev = ctx.enqueue_create_buffer[kv_type](q_n)
     var k_dev = ctx.enqueue_create_buffer[kv_type](k_n + k_pad)
-    var sl_dev = ctx.enqueue_create_buffer[DType.uint32](batch)
-    var cro_dev = ctx.enqueue_create_buffer[DType.uint32](batch + 1)
-    var score_dev = ctx.enqueue_create_buffer[DType.float32](score_n)
+    var sl_dev = ctx.enqueue_create_buffer[.uint32](batch)
+    var cro_dev = ctx.enqueue_create_buffer[.uint32](batch + 1)
+    var score_dev = ctx.enqueue_create_buffer[.float32](score_n)
     var out_dev = ctx.enqueue_create_buffer[out_idx_type](out_n)
     ctx.enqueue_copy(dst_buf=q_dev, src_buf=q_host)
     ctx.enqueue_copy(dst_buf=k_dev, src_buf=k_host)
@@ -339,19 +336,17 @@ def run_one_case(
 
     # `seq_lens` here is the full inclusive key count, so the decode kernels'
     # in-step add must be 0: pass an all-zeros `input_row_offsets`.
-    var iro_dev = ctx.enqueue_create_buffer[DType.uint32](batch + 1)
+    var iro_dev = ctx.enqueue_create_buffer[.uint32](batch + 1)
     iro_dev.enqueue_fill(UInt32(0))
     var iro_t = TileTensor(iro_dev, row_major(batch + 1))
 
     # Ragged index-K operand: [total_keys, 1, idx_head_dim].
     var k_buf = TileTensor(
-        rebind[UnsafePointer[Scalar[kv_type], ImmutAnyOrigin]](
-            k_dev.unsafe_ptr()
-        ),
+        rebind[ImmPointer[Scalar[kv_type], ImmutAnyOrigin]](k_dev.unsafe_ptr()),
         row_major((total_keys, Idx[1], Idx[idx_head_dim])),
     )
     var cro_buf = TileTensor(
-        rebind[UnsafePointer[UInt32, ImmutAnyOrigin]](cro_dev.unsafe_ptr()),
+        rebind[ImmPointer[UInt32, ImmutAnyOrigin]](cro_dev.unsafe_ptr()),
         row_major((batch + 1,)),
     )
     var k_operand = RaggedMHAOperand(k_buf, cro_buf)
@@ -359,7 +354,7 @@ def run_one_case(
     # --- schedule oracle: re-run the score kernel N times on the same input and
     # flag any non-bit-exact score buffer (a split-K / inter-chunk race) --------
     if schedule_repeats > 0:
-        var ref_host = ctx.enqueue_create_host_buffer[DType.float32](score_n)
+        var ref_host = ctx.enqueue_create_host_buffer[.float32](score_n)
         var n_runs = max(2, schedule_repeats)
         for r in range(n_runs):
             score_dev.enqueue_fill(Float32(0))
@@ -382,7 +377,7 @@ def run_one_case(
                 sm_scale,
                 ctx,
             )
-            var sh = ctx.enqueue_create_host_buffer[DType.float32](score_n)
+            var sh = ctx.enqueue_create_host_buffer[.float32](score_n)
             ctx.enqueue_copy(dst_buf=sh, src_buf=score_dev)
             ctx.synchronize()
             if r == 0:
@@ -434,7 +429,7 @@ def run_one_case(
         sm_scale,
         ctx,
     )
-    var score_host = ctx.enqueue_create_host_buffer[DType.float32](score_n)
+    var score_host = ctx.enqueue_create_host_buffer[.float32](score_n)
     ctx.enqueue_copy(dst_buf=score_host, src_buf=score_dev)
     ctx.synchronize()
 
@@ -590,8 +585,8 @@ def _close(got: Float32, expect: Float32) -> Bool:
 
 
 def _check_topk_invariant(
-    q_hp: UnsafePointer[mut=False, Scalar[kv_type], _],
-    k_hp: UnsafePointer[mut=False, Scalar[kv_type], _],
+    q_hp: ImmPointer[Scalar[kv_type], _],
+    k_hp: ImmPointer[Scalar[kv_type], _],
     b: Int,
     h: Int,
     off_b: Int,
@@ -633,7 +628,7 @@ def _check_topk_invariant(
 
 def _apply_inject(
     inject: Int,
-    out_host: UnsafePointer[mut=True, Scalar[out_idx_type], _],
+    out_host: MutPointer[Scalar[out_idx_type], _],
     max_num_blocks: Int,
 ):
     """Corrupt out_idxs[0] to prove an oracle can FAIL (positive control)."""

@@ -33,15 +33,17 @@ from max.pipelines.lib.interfaces.arch_config import (
     ArchConfigWithKVCache,
 )
 from max.pipelines.modeling.config_enums import SupportedEncoding
+from max.pipelines.speculative._dflash import (
+    DflashDraftHFConfig,
+    parse_dflash_draft_hf_config,
+)
 from transformers import AutoConfig
 from typing_extensions import Self
 
 from ..deepseekV3.model_config import DeepseekV3Config
 from ..dflash_kimi_k25 import DFlashKimiK25DraftConfig
 from ..kimik2_5.model_config import KimiK2_5TextConfig
-from ..unified_dflash_llama3.model_config import (  # re-exported helpers
-    DflashDraftHFConfig,
-    parse_dflash_draft_hf_config,
+from ..unified_dflash_llama3.model_config import (
     resolve_dflash_num_speculative_tokens,
 )
 
@@ -227,12 +229,10 @@ class UnifiedDflashKimiK25Config(ArchConfigWithKVCache):
     @classmethod
     def calculate_max_seq_len(
         cls,
-        pipeline_config: PipelineConfig,
         huggingface_config: AutoConfig,
-        model_config: MAXModelConfig | None = None,
+        model_config: MAXModelConfig,
     ) -> int:
         return KimiK2_5TextConfig.calculate_max_seq_len(
-            pipeline_config,
             getattr(huggingface_config, "text_config", huggingface_config),
             model_config,
         )

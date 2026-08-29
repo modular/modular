@@ -27,7 +27,7 @@ struct SomeStruct[size: Int, other_param: Bool]:
 
     def __init__(
         out self,
-        read borrowed_input: Int,
+        imm borrowed_input: Int,
         init_arg: Int,
         var owned_input: Int,
         *init_kargs: Int,
@@ -35,7 +35,7 @@ struct SomeStruct[size: Int, other_param: Bool]:
         """Init documentation.
 
         Args:
-            borrowed_input: A read argument.
+            borrowed_input: An imm argument.
             init_arg: An Int argument.
             owned_input: An owned argument.
             init_kargs: Multiple arguments.

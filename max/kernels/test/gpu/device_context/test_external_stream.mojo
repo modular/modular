@@ -31,8 +31,8 @@ def native_stream_ptr(
 
 
 def scale_kernel(
-    input: UnsafePointer[Float32, ImmutAnyOrigin],
-    output: UnsafePointer[Float32, MutAnyOrigin],
+    input: ImmPointer[Float32, ImmutAnyOrigin],
+    output: MutPointer[Float32, MutAnyOrigin],
     n_dev: Int32,
     scale: Float32,
 ):
@@ -50,13 +50,13 @@ def main() raises:
     comptime scale = Float32(3.0)
 
     with DeviceContext() as ctx:
-        var host_in = ctx.enqueue_create_host_buffer[DType.float32](length)
-        var host_out = ctx.enqueue_create_host_buffer[DType.float32](length)
+        var host_in = ctx.enqueue_create_host_buffer[.float32](length)
+        var host_out = ctx.enqueue_create_host_buffer[.float32](length)
         for i in range(length):
             host_in[i] = Float32(i)
 
-        var dev_in = ctx.enqueue_create_buffer[DType.float32](length)
-        var dev_out = ctx.enqueue_create_buffer[DType.float32](length)
+        var dev_in = ctx.enqueue_create_buffer[.float32](length)
+        var dev_out = ctx.enqueue_create_buffer[.float32](length)
         ctx.enqueue_copy(dev_in, host_in)
         ctx.synchronize()
 

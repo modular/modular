@@ -23,11 +23,11 @@ from linalg.matmul.gpu.amd import Shuffler
 def test_preshuffle_b_round_trip[
     N: Int, K_BYTES: Int
 ](ctx: DeviceContext) raises:
-    var src_hb = ctx.enqueue_create_host_buffer[DType.uint8](N * K_BYTES)
-    var dst_hb = ctx.enqueue_create_host_buffer[DType.uint8](N * K_BYTES)
+    var src_hb = ctx.enqueue_create_host_buffer[.uint8](N * K_BYTES)
+    var dst_hb = ctx.enqueue_create_host_buffer[.uint8](N * K_BYTES)
 
-    var src_db = ctx.enqueue_create_buffer[DType.uint8](N * K_BYTES)
-    var dst_db = ctx.enqueue_create_buffer[DType.uint8](N * K_BYTES)
+    var src_db = ctx.enqueue_create_buffer[.uint8](N * K_BYTES)
+    var dst_db = ctx.enqueue_create_buffer[.uint8](N * K_BYTES)
     ctx.synchronize()
 
     for i in range(N * K_BYTES):
@@ -62,7 +62,7 @@ def test_preshuffle_b_round_trip[
             assert_equal(dst_hb[dst_idx], src_hb[src_idx])
 
     # Permutation, not duplication: every output position written exactly once.
-    var seen_hb = ctx.enqueue_create_host_buffer[DType.uint8](N * K_BYTES)
+    var seen_hb = ctx.enqueue_create_host_buffer[.uint8](N * K_BYTES)
     ctx.synchronize()
     for i in range(N * K_BYTES):
         seen_hb[i] = UInt8(0)
@@ -91,10 +91,10 @@ def test_preshuffle_b_planes_round_trip[
     byte lands where the reader will look for it, and every destination byte
     is written exactly once.
     """
-    var src_hb = ctx.enqueue_create_host_buffer[DType.uint8](N * K_BYTES)
-    var dst_hb = ctx.enqueue_create_host_buffer[DType.uint8](N * K_BYTES)
-    var src_db = ctx.enqueue_create_buffer[DType.uint8](N * K_BYTES)
-    var dst_db = ctx.enqueue_create_buffer[DType.uint8](N * K_BYTES)
+    var src_hb = ctx.enqueue_create_host_buffer[.uint8](N * K_BYTES)
+    var dst_hb = ctx.enqueue_create_host_buffer[.uint8](N * K_BYTES)
+    var src_db = ctx.enqueue_create_buffer[.uint8](N * K_BYTES)
+    var dst_db = ctx.enqueue_create_buffer[.uint8](N * K_BYTES)
     ctx.synchronize()
 
     for i in range(N * K_BYTES):
@@ -115,7 +115,7 @@ def test_preshuffle_b_planes_round_trip[
     ctx.synchronize()
 
     comptime num_planes = Shuffler[1].num_planes[lane_bytes]()
-    var seen_hb = ctx.enqueue_create_host_buffer[DType.uint8](N * K_BYTES)
+    var seen_hb = ctx.enqueue_create_host_buffer[.uint8](N * K_BYTES)
     ctx.synchronize()
     for i in range(N * K_BYTES):
         seen_hb[i] = UInt8(0)
@@ -142,10 +142,8 @@ def test_preshuffle_scale_round_trip[
     MN: Int, K_SCALES: Int
 ](ctx: DeviceContext) raises:
     comptime MN_padded = Shuffler[1].scale_padded_mn(MN)
-    var src_hb = ctx.enqueue_create_host_buffer[DType.uint8](MN * K_SCALES)
-    var dst_hb = ctx.enqueue_create_host_buffer[DType.uint8](
-        MN_padded * K_SCALES
-    )
+    var src_hb = ctx.enqueue_create_host_buffer[.uint8](MN * K_SCALES)
+    var dst_hb = ctx.enqueue_create_host_buffer[.uint8](MN_padded * K_SCALES)
     ctx.synchronize()
 
     for i in range(MN * K_SCALES):
@@ -290,13 +288,9 @@ def test_preshuffle_grouped_scale_gpu[
     )
 
     # ---- Host buffers + random-like init ----
-    var src_hb = ctx.enqueue_create_host_buffer[DType.uint8](
-        total_tokens * K_SCALES
-    )
-    var a_off_hb = ctx.enqueue_create_host_buffer[DType.uint32](num_active + 1)
-    var dst_hb = ctx.enqueue_create_host_buffer[DType.uint8](
-        num_active * slot_bytes
-    )
+    var src_hb = ctx.enqueue_create_host_buffer[.uint8](total_tokens * K_SCALES)
+    var a_off_hb = ctx.enqueue_create_host_buffer[.uint32](num_active + 1)
+    var dst_hb = ctx.enqueue_create_host_buffer[.uint8](num_active * slot_bytes)
     ctx.synchronize()
 
     # Deterministic per-token-per-scale fingerprint: byte = (token_idx * 7
@@ -320,20 +314,20 @@ def test_preshuffle_grouped_scale_gpu[
         dst_hb[i] = UInt8(0xAB)
 
     # ---- Device buffers + upload ----
-    var src_db = ctx.enqueue_create_buffer[DType.uint8](total_tokens * K_SCALES)
-    var a_off_db = ctx.enqueue_create_buffer[DType.uint32](num_active + 1)
-    var dst_db = ctx.enqueue_create_buffer[DType.uint8](num_active * slot_bytes)
+    var src_db = ctx.enqueue_create_buffer[.uint8](total_tokens * K_SCALES)
+    var a_off_db = ctx.enqueue_create_buffer[.uint32](num_active + 1)
+    var dst_db = ctx.enqueue_create_buffer[.uint8](num_active * slot_bytes)
     ctx.enqueue_copy(src_db, src_hb)
     ctx.enqueue_copy(a_off_db, a_off_hb)
     ctx.enqueue_copy(dst_db, dst_hb)
 
-    var src_tt = TileTensor[mut=False](
+    var src_tt = TileTensor[mut=False, ...](
         src_db, row_major(Coord(total_tokens, Idx[K_SCALES]))
     )
-    var dst_tt = TileTensor[mut=True](
+    var dst_tt = TileTensor[mut=True, ...](
         dst_db, row_major(Coord(num_active * max_padded_M, Idx[K_SCALES]))
     )
-    var a_off_tt = TileTensor[mut=False](
+    var a_off_tt = TileTensor[mut=False, ...](
         a_off_db, row_major(Coord(num_active + 1))
     )
 

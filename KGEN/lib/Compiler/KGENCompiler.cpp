@@ -26,6 +26,7 @@
 #include "KGEN/Support/NameMangling.h"
 #include "KGEN/ToolCommon/Debug.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
+#include "KGEN/ToolCommon/PipelineTiming.h"
 #include "KGEN/TransformUtils/SlicingUtils.h"
 #include "ObjectCompiler/KGENToLLVMPipeline.h"
 #include "Pipeline/Pipeline.h"
@@ -197,7 +198,7 @@ writeCaptureArgs(ModuleOp module, FuncOp sliced, StringAttr preRenameSym) {
   auto noneType = b.getType<KGEN::NoneType>();
   auto nonePtr = PointerType::get(noneType);
   auto sig = FuncType::get(b.getFunctionType(nonePtr, noneType),
-                           ArgConvention::ReadReg, FnEffects().setCapturing());
+                           ArgConvention::ImmReg, FnEffects().setCapturing());
   OwningOpRef<FuncOp> func =
       FuncOp::create(b, b.getStringAttr(name.getValue() + "_populate_captures"),
                      sig, InlineLevel::Always);
@@ -633,10 +634,21 @@ static ElaboratorCompileOffloadRetType compileOffloads(
       std::unique_ptr<llvm::TargetMachine> tm = tmOr.takeValue();
 
       // Run elaboration through to the end of the optimization pipeline.
+      // The scope comes before the pass manager in this declaration. Thus
+      // the program destroys the pass manager first. Then the pass manager
+      // reports into a scope that is still active.
+      mlir::TimingScope offloadTiming =
+          nestMLIROffloadScope(compilationOptions);
+
       mlir::PassManager pm(target.getContext());
       // Ignore potential error that could happen when `mojo` tool is called,
       // which does not register pass manager options.
       (void)pmOptions.configurePassManager(pm);
+      // `configurePassManager` stops at that error. It stops before it reads
+      // the timing scope. Thus this code starts the timing. A command
+      // without the option gives an empty scope. An empty scope adds no times
+      // to the pass manager.
+      pm.enableTiming(offloadTiming);
 
       pm.addPass(
           createElaborateGenerators(target, elabOptions, compilationOptions,

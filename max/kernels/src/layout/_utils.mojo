@@ -32,12 +32,8 @@ struct ManagedLayoutTensor[
     layout: Layout,
     *,
 ]:
-    comptime index_type: DType = _get_index_type(
-        Self.layout, AddressSpace.GENERIC
-    )
-    comptime element_type: DType = _get_layout_type(
-        Self.layout, AddressSpace.GENERIC
-    )
+    comptime index_type: DType = _get_index_type(Self.layout, .GENERIC)
+    comptime element_type: DType = _get_layout_type(Self.layout, .GENERIC)
     comptime layout_tensor_type = LayoutTensor[
         Self.dtype,
         Self.layout,
@@ -259,7 +255,7 @@ def _get_bounds(tensor: TileTensor) -> Int:
 
 @always_inline
 def make_amd_buffer_resource(
-    tensor: TileTensor[Storage=PointerStorage[], ...],
+    tensor: TileTensor,
 ) -> AMDBufferResource:
     """Creates an AMD buffer resource descriptor from a TileTensor.
 
@@ -268,9 +264,7 @@ def make_amd_buffer_resource(
     runtime register cost.
     """
     var size = _get_bounds(tensor)
-    return AMDBufferResource(
-        readfirstlane(tensor._storage), readfirstlane(size)
-    )
+    return AMDBufferResource(readfirstlane(tensor.ptr), readfirstlane(size))
 
 
 @always_inline

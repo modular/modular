@@ -427,6 +427,10 @@ DeviceRefAttr fromRuntimeDeviceRef(MLIRContext *ctx,
 DeviceRefAttr getHostDevice(MLIRContext *ctx);
 DeviceRefAttr getHostDevice(Operation *op);
 
+/// Returns true if the device ref names a host (CPU) device, regardless of
+/// its id: `cpu:1` is as host-resident as `cpu:0`.
+bool isHostPlaced(DeviceRefAttr device);
+
 //===----------------------------------------------------------------------===//
 // DeviceSpecAttr
 //===----------------------------------------------------------------------===//

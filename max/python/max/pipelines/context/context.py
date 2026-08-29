@@ -292,6 +292,15 @@ class GrammarEnforcementState:
     has_json_schema: bool = False
     """Whether this request includes a JSON schema response format."""
 
+    dead_matcher_reported: bool = False
+    """Whether this request already logged that its matcher stopped without accepting.
+
+    A matcher in that state has erred and stays erred, so the bitmask path would
+    otherwise log once per slot per decode step for the rest of the request.
+    Deliberately outside :meth:`snapshot` / :meth:`restore`, so the speculative
+    walk's rollback cannot clear the latch and re-arm the log.
+    """
+
     tool_region: StructuredOutputRegionDelimiters | None = None
     """Token sequences defining tool call boundaries, if conditional enforcement."""
 
@@ -553,6 +562,20 @@ class TextContext:
     consumes the value to emit a per-request cache hit rate observation, and
     uses ``_cache_metrics_emitted`` to guard against re-emitting on
     chunked-prefill follow-up calls.
+    """
+
+    cached_prefix_external_length: int = field(default=0)
+    """How many of :obj:`cached_prefix_length` tokens the KV connector served.
+
+    Set alongside :obj:`cached_prefix_length` on first admission. The remainder
+    came from the on-device prefix cache, which is what lets the scheduler tag
+    its hit counter per tier without a second lookup. Always ``0`` when no
+    connector is configured.
+
+    Not split into the connector's own tiers: :meth:`KVConnector.load` reports
+    only a loaded-block count, so the host/disk (dKV G1/G2) breakdown does not
+    cross that boundary and these tokens are reported as ``external`` rather
+    than guessed at.
     """
 
     _cache_metrics_emitted: bool = field(default=False)
@@ -1500,6 +1523,78 @@ class PixelContext:
         )
 
 
+@dataclass(kw_only=True)
+class AudioContext:
+    """A model-ready context for audio generation requests.
+
+    Like :class:`PixelContext`, this carries only what the model executes
+    against: the caller's text has already been through the tokenizer, and
+    what is left is token ids plus the numbers that size the generation.
+
+    Configuration:
+        tokens: The conditional prompt's token ids.
+        request_id: A unique identifier for this generation request.
+        model_name: Name of the model being used.
+        negative_tokens: The unconditional prompt's token ids, for models
+            that generate with classifier-free guidance.
+        audio_duration: Upper bound on the generated audio, in seconds. A
+            model may stop earlier, so the waveform's own length is the
+            authority on what was produced. Required, because what a request
+            leaves unset is the checkpoint's default rather than any value
+            this framework could pick, and the tokenizer resolves it.
+        num_inference_steps: Denoising steps, for models whose audio comes
+            from a diffusion or flow-matching stage. Required, for the same
+            reason as ``audio_duration``.
+        guidance_scale: Classifier-free guidance scale, or ``None`` to leave
+            it to the model. Audio models often bake distinct scales into
+            distinct stages, and a single request-level number cannot say
+            which one it means.
+        seed: RNG seed for the sampling the model does.
+        audio_format: Container the waveform is encoded into for the
+            response.
+        waveform: The generated samples, once there are any.
+    """
+
+    tokens: TokenBuffer
+    """Conditional prompt tokens."""
+
+    request_id: RequestID = field(default_factory=RequestID)
+
+    model_name: str = field(default="")
+
+    negative_tokens: TokenBuffer | None = field(default=None)
+    """Unconditional prompt tokens. None for models that do not guide."""
+
+    audio_duration: float
+    num_inference_steps: int
+    guidance_scale: float | None = field(default=None)
+    seed: int | None = field(default=None)
+    audio_format: str = field(default="wav")
+
+    waveform: npt.NDArray[np.float32] | None = field(default=None)
+    """Generated samples in ``(channels, samples)`` layout, in ``[-1, 1]``."""
+
+    status: GenerationStatus = field(default=GenerationStatus.ACTIVE)
+
+    @property
+    def is_done(self) -> bool:
+        """Whether the request has completed generation."""
+        return self.status.is_done
+
+    def compute_num_available_steps(self, max_seq_len: int) -> int:
+        """Returns the denoising steps, for scheduler compatibility."""
+        return self.num_inference_steps
+
+    def reset(self) -> None:
+        """Resets the context's state."""
+        self.status = GenerationStatus.ACTIVE
+        self.waveform = None
+
+    def update(self, waveform: npt.NDArray[np.float32]) -> None:
+        """Stores the generated samples on the context."""
+        self.waveform = waveform
+
+
 # ---------------------------------------------------------------------------
 # Context TypeVars (bound to concrete implementations)
 # ---------------------------------------------------------------------------
@@ -1517,3 +1612,8 @@ PixelGenerationContextType = TypeVar(
     "PixelGenerationContextType", bound=PixelContext
 )
 """Type variable for pixel generation context types, constrained to PixelContext."""
+
+AudioGenerationContextType = TypeVar(
+    "AudioGenerationContextType", bound=AudioContext
+)
+"""Type variable for audio generation context types, constrained to AudioContext."""

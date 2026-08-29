@@ -27,7 +27,7 @@ from linalg.matmul.gpu.apple.matmul_kernel import enqueue_apple_matmul
 
 def _fill_small_int[
     dtype: DType
-](buf: UnsafePointer[mut=True, Scalar[dtype], _], count: Int, seed: UInt64):
+](buf: MutPointer[Scalar[dtype], _], count: Int, seed: UInt64):
     """Fill `buf` with deterministic uniform values in `{-2, -1, 0, 1, 2}`.
 
     Inlined xorshift64 keeps the sequence reproducible across runs. With
@@ -46,9 +46,9 @@ def _fill_small_int[
 def _verify[
     in_type: DType, transpose_b: Bool
 ](
-    a_host: UnsafePointer[Scalar[in_type], MutAnyOrigin],
-    b_host: UnsafePointer[Scalar[in_type], MutAnyOrigin],
-    d_host: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
+    a_host: MutPointer[Scalar[in_type], MutAnyOrigin],
+    b_host: MutPointer[Scalar[in_type], MutAnyOrigin],
+    d_host: MutPointer[Float32, MutAnyOrigin],
     m: Int,
     n: Int,
     k: Int,
@@ -146,8 +146,8 @@ def _bench_shape[
 
     var a_dev = ctx.enqueue_create_buffer[in_type](m * k)
     var b_dev = ctx.enqueue_create_buffer[in_type](b_size)
-    var d_dev = ctx.enqueue_create_buffer[DType.float32](m * n)
-    var d_host = ctx.enqueue_create_host_buffer[DType.float32](m * n)
+    var d_dev = ctx.enqueue_create_buffer[.float32](m * n)
+    var d_host = ctx.enqueue_create_host_buffer[.float32](m * n)
     ctx.enqueue_copy(a_dev, a_host)
     ctx.enqueue_copy(b_dev, b_host)
 
@@ -262,27 +262,27 @@ def main() raises:
     )
 
     # Peak-perf anchor: 8192^3 fp16 NT (research-port reference).
-    _ = _bench_shape[DType.float16, True](8192, 8192, 8192, ctx, verify=verify)
+    _ = _bench_shape[.float16, True](8192, 8192, 8192, ctx, verify=verify)
     # NN/NT asymmetry check.
-    _ = _bench_shape[DType.float16, False](8192, 8192, 8192, ctx, verify=verify)
+    _ = _bench_shape[.float16, False](8192, 8192, 8192, ctx, verify=verify)
     # bf16 same-shape comparison.
-    _ = _bench_shape[DType.bfloat16, True](8192, 8192, 8192, ctx, verify=verify)
+    _ = _bench_shape[.bfloat16, True](8192, 8192, 8192, ctx, verify=verify)
     # fp32 sanity (expected slower).
-    _ = _bench_shape[DType.float32, True](8192, 8192, 8192, ctx, verify=verify)
+    _ = _bench_shape[.float32, True](8192, 8192, 8192, ctx, verify=verify)
     # Llama-3-ish MLP up-proj (prefill).
-    _ = _bench_shape[DType.float16, True](2048, 14336, 4096, ctx, verify=verify)
+    _ = _bench_shape[.float16, True](2048, 14336, 4096, ctx, verify=verify)
     # MLP down-proj.
-    _ = _bench_shape[DType.float16, True](2048, 4096, 14336, ctx, verify=verify)
+    _ = _bench_shape[.float16, True](2048, 4096, 14336, ctx, verify=verify)
     # Ragged shape.
-    _ = _bench_shape[DType.float16, True](100, 1003, 97, ctx, verify=verify)
+    _ = _bench_shape[.float16, True](100, 1003, 97, ctx, verify=verify)
     # Small square.
-    _ = _bench_shape[DType.float16, True](512, 512, 512, ctx, verify=verify)
+    _ = _bench_shape[.float16, True](512, 512, 512, ctx, verify=verify)
 
     # Single-pass vs split-K on under-occupied (small-M*N / deep-K) shapes,
     # forced via the `force_split_k` flag (folded in from bench_apple_split_k).
     print("== single-pass vs split-K (forced via force_split_k):")
-    _bench_split_compare[DType.float16, False](64, 64, 8192, ctx)
-    _bench_split_compare[DType.float16, False](64, 64, 16384, ctx)
-    _bench_split_compare[DType.float16, False](128, 128, 8192, ctx)
-    _bench_split_compare[DType.float16, False](256, 256, 8192, ctx)
-    _bench_split_compare[DType.float16, False](64, 256, 8192, ctx)
+    _bench_split_compare[.float16, False](64, 64, 8192, ctx)
+    _bench_split_compare[.float16, False](64, 64, 16384, ctx)
+    _bench_split_compare[.float16, False](128, 128, 8192, ctx)
+    _bench_split_compare[.float16, False](256, 256, 8192, ctx)
+    _bench_split_compare[.float16, False](64, 256, 8192, ctx)

@@ -246,7 +246,7 @@ def test_address_as_integer_scalar() raises:
 def test_bitcast() raises:
     var local = 1
     var ptr = Pointer[Int](to=local)
-    var aliased_ptr = ptr.unsafe_bitcast[SIMD[DType.uint8, 4]]()
+    var aliased_ptr = ptr.unsafe_bitcast[SIMD[.uint8, 4]]()
 
     assert_equal(Int(ptr), Int(ptr.unsafe_bitcast[Int]()))
 
@@ -301,7 +301,7 @@ def test_unsafepointer_address_space() raises:
     var p2 = (
         alloc[Int]({count = 1})
         .unsafe_leak()
-        .unsafe_address_space_cast[AddressSpace.GENERIC]()
+        .unsafe_address_space_cast[.GENERIC]()
     )
     dealloc(Allocation(unsafe_owned_ptr=p2, layout={count = 1}))
 
@@ -473,9 +473,7 @@ def test_offset_from() raises:
     assert_equal(end - ptr, 8)
     assert_equal(ptr - end, -8)
 
-    var wide_allocation = alloc[SIMD[DType.int64, 4]](
-        {count = 3}
-    ).into_managed()
+    var wide_allocation = alloc[SIMD[.int64, 4]]({count = 3}).into_managed()
     var wide = wide_allocation.unsafe_ptr()
     assert_equal(wide.unsafe_offset(2) - wide, 2)
     assert_equal(wide - wide.unsafe_offset(2), -2)
@@ -501,13 +499,13 @@ def test_load_and_store_simd() raises:
         var vec = ptr.unsafe_load[width=4](i)
         assert_equal(
             vec,
-            SIMD[DType.int8, 4](Int8(i), Int8(i + 1), Int8(i + 2), Int8(i + 3)),
+            SIMD[.int8, 4](Int8(i), Int8(i + 1), Int8(i + 2), Int8(i + 3)),
         )
 
     var ptr2_allocation = alloc[Int8]({count = 16}).into_managed()
     var ptr2 = ptr2_allocation.unsafe_ptr()
     for i in range(0, 16, 4):
-        ptr2.unsafe_store(i, SIMD[DType.int8, 4](i))
+        ptr2.unsafe_store(i, SIMD[.int8, 4](i))
     for i in range(16):
         assert_equal(ptr2[unsafe_offset=i], Int8(i // 4 * 4))
 
@@ -515,15 +513,15 @@ def test_load_and_store_simd() raises:
 def test_load_and_store_simd_bool() raises:
     # Regression test: storing SIMD[DType.bool, N] with width > 1 then
     # loading element-wise should give correct results (github.com/modular/modular/issues/5875).
-    var allocation = alloc[Scalar[DType.bool]]({count = 4}).into_managed()
+    var allocation = alloc[Scalar[.bool]]({count = 4}).into_managed()
     var p = allocation.unsafe_ptr()
-    p.unsafe_store(0, SIMD[DType.bool, 2](True, False))
+    p.unsafe_store(0, SIMD[.bool, 2](True, False))
     assert_true(p[unsafe_offset=0])
     assert_false(p[unsafe_offset=1])
     for i in range(2):
         assert_equal(p.unsafe_load[width=2](0)[i], p[unsafe_offset=i])
 
-    p.unsafe_store(0, SIMD[DType.bool, 4](False, True, True, False))
+    p.unsafe_store(0, SIMD[.bool, 4](False, True, True, False))
     assert_false(p[unsafe_offset=0])
     assert_true(p[unsafe_offset=1])
     assert_true(p[unsafe_offset=2])
@@ -542,14 +540,10 @@ def test_unsafe_methods_on_safe_pointer() raises:
     assert_equal(ptr.unsafe_offset(2)[], Int32(2))
     assert_equal(ptr[unsafe_offset=3], Int32(3))
 
-    ptr.unsafe_store(4, SIMD[DType.int32, 4](10, 11, 12, 13))
-    assert_equal(
-        ptr.unsafe_load[width=4](4), SIMD[DType.int32, 4](10, 11, 12, 13)
-    )
+    ptr.unsafe_store(4, SIMD[.int32, 4](10, 11, 12, 13))
+    assert_equal(ptr.unsafe_load[width=4](4), SIMD[.int32, 4](10, 11, 12, 13))
 
-    assert_equal(
-        Int(ptr.unsafe_address_space_cast[AddressSpace.GENERIC]()), Int(ptr)
-    )
+    assert_equal(Int(ptr.unsafe_address_space_cast[.GENERIC]()), Int(ptr))
     assert_equal(Int(ptr.unsafe_as_noalias()), Int(ptr))
 
 
@@ -562,13 +556,13 @@ def test_volatile_load_and_store_simd() raises:
         var vec = ptr.unsafe_load[width=4, volatile=True](i)
         assert_equal(
             vec,
-            SIMD[DType.int8, 4](Int8(i), Int8(i + 1), Int8(i + 2), Int8(i + 3)),
+            SIMD[.int8, 4](Int8(i), Int8(i + 1), Int8(i + 2), Int8(i + 3)),
         )
 
     var ptr2_allocation = alloc[Int8]({count = 16}).into_managed()
     var ptr2 = ptr2_allocation.unsafe_ptr()
     for i in range(0, 16, 4):
-        ptr2.unsafe_store[volatile=True](i, SIMD[DType.int8, 4](i))
+        ptr2.unsafe_store[volatile=True](i, SIMD[.int8, 4](i))
     for i in range(16):
         assert_equal(ptr2[unsafe_offset=i], Int8(i // 4 * 4))
 
@@ -715,9 +709,7 @@ def test_unsafe_from_address_pointer_width() raises:
     comptime AMD_TARGET = get_gpu_target["mi355x"]()
 
     comptime GenericPtr = Pointer[Int, MutUntrackedOrigin]
-    comptime SharedPtr = Pointer[
-        Int, MutUntrackedOrigin, address_space=AddressSpace.SHARED
-    ]
+    comptime SharedPtr = Pointer[Int, MutUntrackedOrigin, address_space=.SHARED]
 
     assert_equal(
         bit_width_of[GenericPtr, target=AMD_TARGET](),
@@ -753,7 +745,7 @@ def test_write_repr_to() raises:
         is_repr=True,
     )
     check_write_to(
-        Pointer(to=x).unsafe_address_space_cast[AddressSpace.SHARED](),
+        Pointer(to=x).unsafe_address_space_cast[.SHARED](),
         contains=(
             "Pointer[mut=True, SIMD[DType.int, 1],"
             " address_space=AddressSpace.SHARED](0x"

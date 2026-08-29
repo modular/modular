@@ -24,7 +24,7 @@ def test_shared_mem_barrier():
     var mbar = unsafe_stack_allocation[
         10,
         SharedMemBarrier,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=8,
     ]()
 

@@ -1755,7 +1755,7 @@ def matmul_dispatch_sm90_bf16_fp32[
     # we enable float32 here.
     # Fallback path with vectorized output and cp.async.ca load if K
     # is not multiple of 16B.
-    comptime if a_type == DType.bfloat16 and BN != -1:
+    comptime if a_type == .bfloat16 and BN != -1:
         comptime cond = static_N == 4096 and static_K == 1536
 
         comptime if not cond:
@@ -1953,7 +1953,7 @@ def matmul_dispatch_sm90_bf16_fp32[
                 return DISPATCH_HIT
 
     # Fallback path, will use scalar 2B output and lots of OOB check.
-    comptime if a_type == DType.bfloat16:
+    comptime if a_type == .bfloat16:
         comptime BN = 256
         comptime default_bf16_config = MatmulConfig[
             a_type, b_type, c_type, transpose_b

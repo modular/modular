@@ -15,6 +15,7 @@
 #include "Support/Error.h"
 #include "Support/ErrorOr.h"
 #include "Support/LLVMForwardDecls.h"
+#include "Support/PlatformUtils.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/DebugLog.h"
@@ -37,10 +38,15 @@
 #include <utility>
 #include <vector>
 
-#ifdef _MSC_VER
+// _WIN32 rather than _MSC_VER, so this also builds under the mingw cross
+// toolchain. The x86 intrinsic headers have no aarch64 form, so they narrow to
+// x86_64 instead of following the wider Windows check.
+#ifdef _WIN32
 #include "llvm/Support/WindowsError.h"
+#if MODULAR_X86_64
 #include <cpuid.h>
 #include <intrin.h>
+#endif // MODULAR_X86_64
 #include <iphlpapi.h>
 #include <windows.h>
 #else
@@ -524,14 +530,15 @@ static std::string bytesToHexStr(uint8_t *ptr, int count) {
 
 std::vector<std::string> M::localMACs() {
   std::vector<std::string> macs;
-#ifdef _MSC_VER
+#ifdef _WIN32
   IP_ADAPTER_INFO AdapterInfo[32];
   DWORD dwBufLen = sizeof(AdapterInfo);
   DWORD dwStatus = GetAdaptersInfo(AdapterInfo, &dwBufLen);
   if (dwStatus == ERROR_SUCCESS) {
     PIP_ADAPTER_INFO pAdapterInfo = AdapterInfo;
     while (pAdapterInfo) {
-      macs.emplace_back(bytesToHexStr(pAdapterInfo->Address, pAdapterInfo->AddressLength);
+      macs.emplace_back(
+          bytesToHexStr(pAdapterInfo->Address, pAdapterInfo->AddressLength));
       pAdapterInfo = pAdapterInfo->Next;
     }
   }

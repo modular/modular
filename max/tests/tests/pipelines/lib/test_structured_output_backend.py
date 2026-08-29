@@ -23,6 +23,7 @@ import pytest
 from max.pipelines.lib.pipeline_variants import structured_output_backend
 from max.pipelines.lib.pipeline_variants.structured_output_backend import (
     STRUCTURED_OUTPUT_MAX_WHITESPACE_RUN,
+    _compiled_shape,
     _log_if_slow,
 )
 from max.pipelines.lib.pipeline_variants.utils import StructuredOutputHelper
@@ -284,3 +285,156 @@ def test_fast_grammar_compile_logs_nothing(
     with caplog.at_level(logging.INFO, logger="max.pipelines"):
         _SlowBackend().compile_json_schema("{}")
     assert not [r for r in caplog.records if r.msg.startswith("grammar %s")]
+
+
+class _ShapeBackend:
+    """Stand-in whose compile entry point takes any of the wire forms."""
+
+    name = "fake"
+
+    @_log_if_slow
+    def create_matcher(self, grammar: Any) -> Any:
+        return grammar
+
+
+def _slow_log(
+    arg: Any, caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
+) -> dict[str, Any]:
+    """Force the slow path for ``arg`` and return the emitted record's fields."""
+    monkeypatch.setattr(
+        structured_output_backend, "_GRAMMAR_COMPILE_LOG_MS", -1.0
+    )
+    with caplog.at_level(logging.INFO, logger="max.pipelines"):
+        _ShapeBackend().create_matcher(arg)
+    return vars(
+        next(r for r in caplog.records if r.msg.startswith("grammar %s took"))
+    )
+
+
+def test_slow_compile_log_carries_schema_shape(
+    caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Depth and node count are attached to the slow-compile record."""
+    schema = {
+        "type": "object",
+        "properties": {
+            "a": {"type": "object", "properties": {"b": {"type": "string"}}}
+        },
+    }
+    fields = _slow_log(json.dumps(schema), caplog, monkeypatch)
+    # root -> a -> b
+    assert fields["grammar_schema_depth"] == 3
+    assert fields["grammar_schema_nodes"] == 3
+
+
+def test_slow_compile_log_omits_shape_for_non_schema_arguments(
+    caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A compiled handle has no shape; the duration is still logged."""
+    fields = _slow_log(object(), caplog, monkeypatch)
+    assert fields["grammar_compile_time_ms"] > 0.0
+    assert "grammar_schema_depth" not in fields
+    assert "grammar_schema_nodes" not in fields
+
+
+def _tool(name: str) -> dict[str, Any]:
+    """An OpenAI tool whose arguments schema is 5 subschemas, 4 deep."""
+    return {
+        "type": "function",
+        "function": {
+            "name": name,
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string"},
+                    "filters": {
+                        "type": "object",
+                        "properties": {
+                            "tags": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                            }
+                        },
+                    },
+                },
+                "required": ["query"],
+            },
+        },
+    }
+
+
+def test_compiled_shape_aggregates_schemas_inside_a_tool_grammar() -> None:
+    """A tool grammar's shape is its embedded schemas, not its envelope.
+
+    Depth is the deepest of them; node count is their sum.
+    """
+    one_tool = _compiled_shape(
+        structured_output_backend.build_xgrammar_tool_grammar(
+            "kimi", [_tool("a")], "auto"
+        )
+    )
+    assert one_tool is not None
+    depth, nodes = one_tool
+    assert depth == 4, "root -> filters -> tags -> items"
+    assert nodes == 5
+
+    five_tools = _compiled_shape(
+        structured_output_backend.build_xgrammar_tool_grammar(
+            "kimi", [_tool(f"t{i}") for i in range(5)], "auto"
+        )
+    )
+    assert five_tools is not None
+    assert five_tools == (depth, nodes * 5), (
+        "depth is the deepest tool's, node count the sum across tools"
+    )
+
+
+def test_slow_compile_log_carries_tool_grammar_shape(
+    caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The logged fields carry a tool grammar's aggregated shape."""
+    grammar = structured_output_backend.build_xgrammar_tool_grammar(
+        "kimi", [_tool(f"t{i}") for i in range(5)], "auto"
+    )
+    fields = _slow_log(grammar, caplog, monkeypatch)
+    assert fields["grammar_schema_depth"] == 4
+    assert fields["grammar_schema_nodes"] == 25, (
+        "expected 5 tool schemas of 5 subschemas each"
+    )
+
+
+def test_slow_compile_log_carries_shape_for_a_keyword_call(
+    caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The payload is found whether it arrives positionally or by keyword."""
+    monkeypatch.setattr(
+        structured_output_backend, "_GRAMMAR_COMPILE_LOG_MS", -1.0
+    )
+    schema = _tool("a")["function"]["parameters"]
+    with caplog.at_level(logging.INFO, logger="max.pipelines"):
+        _ShapeBackend().create_matcher(grammar=json.dumps(schema))
+    fields = vars(
+        next(r for r in caplog.records if r.msg.startswith("grammar %s took"))
+    )
+    assert fields["grammar_schema_depth"] == 4
+    assert fields["grammar_schema_nodes"] == 5
+
+
+def test_compiled_shape_reads_a_bare_schema_directly() -> None:
+    """The response_format path hands over a schema, not a tag."""
+    schema = _tool("a")["function"]["parameters"]
+    assert _compiled_shape(json.dumps(schema)) == (4, 5)
+
+
+def test_compiled_shape_ignores_a_lark_grammar() -> None:
+    """A Lark grammar is not JSON, so no shape is reported."""
+    assert _compiled_shape("start: /[a-z]+/\n") is None
+
+
+def test_slow_compile_log_survives_malformed_json(
+    caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Unparseable input omits the shape fields rather than raising."""
+    fields = _slow_log("{not json", caplog, monkeypatch)
+    assert fields["grammar_compile_time_ms"] > 0.0
+    assert "grammar_schema_depth" not in fields

@@ -4875,6 +4875,7 @@ class GraphOp(max._core.Operation):
         builder: max._core.OpBuilder,
         location: Location,
         sym_name: max._core.dialects.builtin.StringAttr,
+        sym_visibility: max._core.dialects.builtin.StringAttr,
         signature: max._core.dialects.builtin.TypeAttr,
         function_type: max._core.dialects.builtin.TypeAttr,
         input_parameters: max._core.dialects.kgen.ParamDeclArrayAttr,
@@ -4897,6 +4898,12 @@ class GraphOp(max._core.Operation):
     def sym_name(self) -> str: ...
     @sym_name.setter
     def sym_name(
+        self, arg: max._core.dialects.builtin.StringAttr, /
+    ) -> None: ...
+    @property
+    def sym_visibility(self) -> str | None: ...
+    @sym_visibility.setter
+    def sym_visibility(
         self, arg: max._core.dialects.builtin.StringAttr, /
     ) -> None: ...
     @property

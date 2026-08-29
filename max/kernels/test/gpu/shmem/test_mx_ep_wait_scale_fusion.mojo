@@ -101,7 +101,7 @@ def _scale_byte(token: Int, k: Int) -> UInt8:
 
 
 def _build_routing(
-    a_offsets_host: HostBuffer[DType.uint32],
+    a_offsets_host: HostBuffer[.uint32],
     num_tokens_by_expert: List[Int],
 ):
     """Fills `a_offsets_host` with the ragged per-expert prefix sums: [0] is 0
@@ -132,7 +132,7 @@ def _ep_wait_copy_kernel[
     output_tokens: TileTensor[quant_dtype, out_layout, MutUntrackedOrigin],
     output_scales: TileTensor[scales_dtype, scales_layout, MutUntrackedOrigin],
     recv_buf: Pointer[UInt8, MutUntrackedOrigin],
-    a_offsets: TileTensor[DType.uint32, aoff_layout, ImmutAnyOrigin],
+    a_offsets: TileTensor[.uint32, aoff_layout, ImmutAnyOrigin],
     msg_bytes_dev: Int32,
     num_active_dev: Int32,
     total_tokens_dev: Int32,
@@ -250,9 +250,7 @@ def _run_fusion_check[
 
     # Message per token: [quants | E8M0 scales]. A throwaway instance yields the
     # real offsets; passing the token tensor is what resolves `elems_per_byte`.
-    var dummy_scales_d = ctx.enqueue_create_buffer[DType.float8_e8m0fnu](
-        scale_K
-    )
+    var dummy_scales_d = ctx.enqueue_create_buffer[.float8_e8m0fnu](scale_K)
     var dummy_fmt = MXTokenFormat[hidden_size, top_k](
         ref_tok_tt,
         TileTensor[origin=MutAnyOrigin](
@@ -270,10 +268,10 @@ def _run_fusion_check[
     )
 
     # --- Host inputs: synthesized recv buffer + routing. ---
-    var recv_h = ctx.enqueue_create_host_buffer[DType.uint8](
+    var recv_h = ctx.enqueue_create_host_buffer[.uint8](
         total_tokens * msg_bytes
     )
-    var a_off_h = ctx.enqueue_create_host_buffer[DType.uint32](n_off)
+    var a_off_h = ctx.enqueue_create_host_buffer[.uint32](n_off)
     ctx.synchronize()
     for i in range(total_tokens * msg_bytes):
         recv_h[i] = UInt8(0)
@@ -285,10 +283,8 @@ def _run_fusion_check[
             recv_h[base + scales_off + k] = _scale_byte(t, k)
     _build_routing(a_off_h, num_tokens_by_expert)
 
-    var recv_d = ctx.enqueue_create_buffer[DType.uint8](
-        total_tokens * msg_bytes
-    )
-    var a_off_d = ctx.enqueue_create_buffer[DType.uint32](n_off)
+    var recv_d = ctx.enqueue_create_buffer[.uint8](total_tokens * msg_bytes)
+    var a_off_d = ctx.enqueue_create_buffer[.uint32](n_off)
     ctx.enqueue_copy(recv_d, recv_h)
     ctx.enqueue_copy(a_off_d, a_off_h)
     var a_off_tt = TileTensor[origin=ImmutAnyOrigin](
@@ -301,10 +297,10 @@ def _run_fusion_check[
 
     # ---- Path A (reference): copy writes raw [tokens, scale_K], then the
     #      standalone preshuffle kernel rearranges into slots. ----
-    var raw_scales_d = ctx.enqueue_create_buffer[DType.float8_e8m0fnu](
+    var raw_scales_d = ctx.enqueue_create_buffer[.float8_e8m0fnu](
         total_tokens * scale_K
     )
-    var ref_d = ctx.enqueue_create_buffer[DType.uint8](slot_bytes)
+    var ref_d = ctx.enqueue_create_buffer[.uint8](slot_bytes)
     ref_d.enqueue_fill(UInt8(0))
 
     var raw_scales_tt = TileTensor[origin=MutAnyOrigin](
@@ -359,10 +355,8 @@ def _run_fusion_check[
     )
 
     # ---- Path B (fused): copy writes the slot layout directly. ----
-    var fused_scales_d = ctx.enqueue_create_buffer[DType.float8_e8m0fnu](
-        slot_bytes
-    )
-    fused_scales_d.enqueue_fill(Scalar[DType.float8_e8m0fnu](0))
+    var fused_scales_d = ctx.enqueue_create_buffer[.float8_e8m0fnu](slot_bytes)
+    fused_scales_d.enqueue_fill(Float8_e8m0fnu(0))
     var fused_slots_tt = TileTensor[origin=MutAnyOrigin](
         fused_scales_d,
         row_major(Coord(num_active * max_padded_M, Idx[scale_K])),
@@ -392,8 +386,8 @@ def _run_fusion_check[
     )
 
     # --- Gate 1: fused slots == reference slots, byte for byte. ---
-    var ref_host = ctx.enqueue_create_host_buffer[DType.uint8](slot_bytes)
-    var fused_host = ctx.enqueue_create_host_buffer[DType.uint8](slot_bytes)
+    var ref_host = ctx.enqueue_create_host_buffer[.uint8](slot_bytes)
+    var fused_host = ctx.enqueue_create_host_buffer[.uint8](slot_bytes)
     ctx.enqueue_copy(ref_host, ref_d)
     ctx.enqueue_copy(
         fused_host, fused_scales_d.unsafe_ptr().unsafe_bitcast[UInt8]()
@@ -402,9 +396,9 @@ def _run_fusion_check[
     # --- Gate 2 inputs: the copied quant region and the unfused row-major
     #     scales, both decoded against the host pattern. ---
     var tok_bytes = total_tokens * output_dim
-    var ref_tok_h = ctx.enqueue_create_host_buffer[DType.uint8](tok_bytes)
-    var fused_tok_h = ctx.enqueue_create_host_buffer[DType.uint8](tok_bytes)
-    var raw_sc_h = ctx.enqueue_create_host_buffer[DType.uint8](
+    var ref_tok_h = ctx.enqueue_create_host_buffer[.uint8](tok_bytes)
+    var fused_tok_h = ctx.enqueue_create_host_buffer[.uint8](tok_bytes)
+    var raw_sc_h = ctx.enqueue_create_host_buffer[.uint8](
         total_tokens * scale_K
     )
     ctx.enqueue_copy(ref_tok_h, ref_tok_d.unsafe_ptr().unsafe_bitcast[UInt8]())
@@ -481,50 +475,50 @@ def main() raises:
     print("===> ep_wait MXFP4: fold equivalence + message decode")
     # KS224 up/gate proj: hidden 7168 → scale_K 224. The cases cover decode
     # (few tokens/expert), prefill, empty experts, and multi-tile m_blocks.
-    _run_fusion_check[DType.uint8, hidden_size=7168, NUM_ACTIVE=1](
+    _run_fusion_check[.uint8, hidden_size=7168, NUM_ACTIVE=1](
         "up-proj-single-tiny", [1], 0, ctx
     )
-    _run_fusion_check[DType.uint8, hidden_size=7168, NUM_ACTIVE=5](
+    _run_fusion_check[.uint8, hidden_size=7168, NUM_ACTIVE=5](
         "up-proj-decode", [1, 3, 0, 2, 5], 0, ctx
     )
     # >=17 tokens/expert makes rows r and r+16 both real inside one cell,
     # written by different warps (race-stress); >32 spans multiple m_blocks.
-    _run_fusion_check[DType.uint8, hidden_size=7168, NUM_ACTIVE=4](
+    _run_fusion_check[.uint8, hidden_size=7168, NUM_ACTIVE=4](
         "up-proj-multi-tile", [37, 64, 100, 5], 0, ctx
     )
     # Inflated max_padded_M (> runtime max) with >1 expert: guards that both
     # paths use the SAME build-time slot stride, so experts >= 1 land right.
-    _run_fusion_check[DType.uint8, hidden_size=7168, NUM_ACTIVE=3](
+    _run_fusion_check[.uint8, hidden_size=7168, NUM_ACTIVE=3](
         "up-proj-inflated-stride", [5, 20, 12], 128, ctx
     )
     # A down-proj-sized check too (KS64) to confirm the same code path is
     # K_SCALES-agnostic.
-    _run_fusion_check[DType.uint8, hidden_size=2048, NUM_ACTIVE=4](
+    _run_fusion_check[.uint8, hidden_size=2048, NUM_ACTIVE=4](
         "down-proj-decode", [1, 2, 0, 4], 0, ctx
     )
 
     print("===> ep_wait MXFP8: fold equivalence + message decode")
     # MiniMax-M3 up/gate proj: hidden 6144 → scale_K 192.
-    _run_fusion_check[DType.float8_e4m3fn, hidden_size=6144, NUM_ACTIVE=1](
+    _run_fusion_check[.float8_e4m3fn, hidden_size=6144, NUM_ACTIVE=1](
         "up-proj-single-tiny", [1], 0, ctx
     )
-    _run_fusion_check[DType.float8_e4m3fn, hidden_size=6144, NUM_ACTIVE=5](
+    _run_fusion_check[.float8_e4m3fn, hidden_size=6144, NUM_ACTIVE=5](
         "up-proj-decode", [1, 3, 0, 2, 5], 0, ctx
     )
-    _run_fusion_check[DType.float8_e4m3fn, hidden_size=6144, NUM_ACTIVE=4](
+    _run_fusion_check[.float8_e4m3fn, hidden_size=6144, NUM_ACTIVE=4](
         "up-proj-multi-tile", [37, 64, 100, 5], 0, ctx
     )
-    _run_fusion_check[DType.float8_e4m3fn, hidden_size=6144, NUM_ACTIVE=3](
+    _run_fusion_check[.float8_e4m3fn, hidden_size=6144, NUM_ACTIVE=3](
         "up-proj-inflated-stride", [5, 20, 12], 128, ctx
     )
     # M3's down-proj size (intermediate 3072 → KS96).
-    _run_fusion_check[DType.float8_e4m3fn, hidden_size=3072, NUM_ACTIVE=4](
+    _run_fusion_check[.float8_e4m3fn, hidden_size=3072, NUM_ACTIVE=4](
         "down-proj-ks96", [1, 2, 0, 4], 0, ctx
     )
     # Production EP8 (tp4dp2ep8, 8x MI355): 128 routed experts / 8 ranks = 16
     # local, +1 fused shared. Stride is `align_up(max_tokens_per_rank * n_ranks,
     # 32)`, and the dispatch branch takes `ceildiv(4096, ep_size // dp)` = 1024.
-    _run_fusion_check[DType.float8_e4m3fn, hidden_size=6144, NUM_ACTIVE=17](
+    _run_fusion_check[.float8_e4m3fn, hidden_size=6144, NUM_ACTIVE=17](
         "up-proj-ep8-dispatch",
         [3, 0, 1, 5, 2, 0, 7, 1, 0, 4, 2, 6, 0, 1, 3, 0, 9],
         8192,
@@ -532,7 +526,7 @@ def main() raises:
     )
     # The allreduce-backed branch keeps the full 4096, giving 4096 * 8 = 32768:
     # the widest production stride, a 102 MiB slot region.
-    _run_fusion_check[DType.float8_e4m3fn, hidden_size=6144, NUM_ACTIVE=17](
+    _run_fusion_check[.float8_e4m3fn, hidden_size=6144, NUM_ACTIVE=17](
         "up-proj-ep8-wide-stride",
         [3, 0, 1, 5, 2, 0, 7, 1, 0, 4, 2, 6, 0, 1, 3, 0, 9],
         32768,

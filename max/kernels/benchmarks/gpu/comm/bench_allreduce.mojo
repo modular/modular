@@ -95,8 +95,8 @@ def bench_reduce[
     comptime num_buffers = 1 if use_multimem else ngpus
 
     # Create signal buffers for synchronization
-    var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
-    var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+    var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
+    var rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS](
         uninitialized=True
     )
 
@@ -148,7 +148,7 @@ def bench_reduce[
 
         # Create and initialize signal buffers
         signal_buffers.append(
-            list_of_ctx[gpu_idx].create_buffer_sync[DType.uint8](
+            list_of_ctx[gpu_idx].create_buffer_sync[.uint8](
                 size_of[Signal]() + temp_buffer_num_bytes
             )
         )
@@ -170,7 +170,7 @@ def bench_reduce[
     var in_tensors = Array[InTensorType, num_buffers](uninitialized=True)
     var out_tensors = Array[OutTensorType, ngpus](uninitialized=True)
 
-    var multi_ptr = Optional[UnsafePointer[Scalar[dtype], MutAnyOrigin]]()
+    var multi_ptr = Optional[MutPointer[Scalar[dtype], MutAnyOrigin]]()
 
     comptime if use_multimem:
         var multicast_buf = DeviceMulticastBuffer[dtype](
@@ -189,7 +189,7 @@ def bench_reduce[
             .as_unsafe_any_origin()
         )
         in_tensors[0] = TileTensor(
-            rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
+            rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](
                 multi_ptr.unsafe_value()
             ),
             row_major(length),
@@ -197,7 +197,7 @@ def bench_reduce[
     else:
         comptime for i in range(ngpus):
             in_tensors[i] = TileTensor(
-                rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
+                rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](
                     cb_inputs[i].unsafe_ptr()
                 ),
                 row_major(length),
@@ -227,9 +227,10 @@ def bench_reduce[
             raise "Vendor CCL not available; skipping vendor path."
         vendor_ccl.init_comms(ngpus)
 
-    @__parameter
     @always_inline
-    def bench_iter(mut b: Bencher, ctx: DeviceContext, ctx_idx: Int) raises:
+    def bench_iter(
+        mut b: Bencher, ctx: DeviceContext, ctx_idx: Int
+    ) raises {mut in_tensors, imm}:
         @always_inline
         def call_fn(
             ctx_inner: DeviceContext, cache_iter: Int
@@ -237,7 +238,7 @@ def bench_reduce[
             comptime if not use_multimem:
                 comptime for i in range(ngpus):
                     in_tensors[i] = TileTensor(
-                        rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
+                        rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](
                             cb_inputs[i].offset_ptr(cache_iter)
                         ),
                         row_major(length),
@@ -245,7 +246,7 @@ def bench_reduce[
             else:
                 # multi_ptr is set when use_multimem == True
                 in_tensors[0] = TileTensor(
-                    rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
+                    rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](
                         multi_ptr.unsafe_value()
                         + cb_template.offset(cache_iter)
                     ),
@@ -277,8 +278,9 @@ def bench_reduce[
 
         bencher_iter_custom(b, call_fn, ctx)
 
-    bench_multicontext[bench_iter](
+    bench_multicontext(
         b,
+        bench_iter,
         list_of_ctx,
         BenchId(name),
         [ThroughputMeasure(BenchMetric.bytes, num_bytes)],
@@ -368,7 +370,7 @@ def _get_test_str[
 def main() raises:
     var num_bytes = arg_parse("num_bytes", 16 * 1024)
 
-    comptime dtype = get_defined_dtype["dtype", DType.bfloat16]()
+    comptime dtype = get_defined_dtype["dtype", .bfloat16]()
     comptime num_gpus = get_defined_int["num_gpus", 2]()
     comptime ragged = get_defined_bool["ragged", False]()
     # Force passing `max_num_blocks` explicitly.

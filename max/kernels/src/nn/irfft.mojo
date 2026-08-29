@@ -62,7 +62,7 @@ def _get_fft_workarea(
         return lookup.unsafe_value()
 
     # manually allocate the memory on the device, and cache the pointer
-    var work_space = ctx.enqueue_create_buffer[DType.uint8](buffer_size)
+    var work_space = ctx.enqueue_create_buffer[.uint8](buffer_size)
     var device_ptr = work_space.take_ptr()
 
     global_cache_insert(
@@ -141,17 +141,8 @@ def _irfft[
     input_type: DType,
     output_type: DType,
 ](
-    input: TileTensor[
-        input_type,
-        address_space=AddressSpace.GENERIC,
-        ...,
-    ],
-    output: TileTensor[
-        mut=True,
-        output_type,
-        address_space=AddressSpace.GENERIC,
-        ...,
-    ],
+    input: TileTensor[input_type, address_space=.GENERIC, ...],
+    output: TileTensor[mut=True, output_type, address_space=.GENERIC, ...],
     n: Int,
     buffer_size_mb: Int,
     ctx: DeviceContext,
@@ -160,10 +151,10 @@ def _irfft[
         input.rank == output.rank
     ), "Input and output must have the same rank"
     comptime assert (
-        input_type == DType.float32
+        input_type == .float32
     ), "Only Float32 is supported for IRFFT"
     comptime assert (
-        output_type == DType.float32
+        output_type == .float32
     ), "Only Float32 is supported for IRFFT"
     # we allocate 64 MB more than the buffer size because the estimation might
     # not be exact.
@@ -314,17 +305,8 @@ def irfft[
     input_type: DType,
     output_type: DType,
 ](
-    input: TileTensor[
-        input_type,
-        address_space=AddressSpace.GENERIC,
-        ...,
-    ],
-    output: TileTensor[
-        mut=True,
-        output_type,
-        address_space=AddressSpace.GENERIC,
-        ...,
-    ],
+    input: TileTensor[input_type, address_space=.GENERIC, ...],
+    output: TileTensor[mut=True, output_type, address_space=.GENERIC, ...],
     n: Int,
     buffer_size_mb: Int,
     ctx: DeviceContext,

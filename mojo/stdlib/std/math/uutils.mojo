@@ -63,25 +63,6 @@ def udiv_unchecked(a: Int, b: Int) -> Int:
 
 
 @always_inline
-def umod(a: Int, b: Int) -> Int:
-    """Perform unsigned modulo (`%`) on Int arguments.
-
-    This function treats both arguments as unsigned values and performs
-    unsigned modulo, which is faster than signed modulo on NVIDIA GPUs.
-
-    For correctness, both arguments should be non-negative integers.
-
-    Args:
-        a: The dividend (treated as unsigned).
-        b: The divisor (treated as unsigned).
-
-    Returns:
-        The remainder of unsigned division.
-    """
-    return Int(UInt(a) % UInt(b))
-
-
-@always_inline
 def umod[
     dtype: DType, width: SIMDLength, //
 ](a: SIMD[dtype, width], b: SIMD[dtype, width]) -> SIMD[dtype, width]:

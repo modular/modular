@@ -104,7 +104,7 @@ def bench_rs_norm_gemm_pdl[
         list_of_ctx: One context per participating GPU.
     """
     comptime assert (
-        in_dtype == DType.bfloat16
+        in_dtype == .bfloat16
     ), "the fused RS+RMSNorm producer is bf16-only"
 
     comptime simd_size = simd_width_of[in_dtype, target=get_gpu_target()]()
@@ -149,8 +149,8 @@ def bench_rs_norm_gemm_pdl[
     var gamma_dev = List[DeviceBuffer[in_dtype]](capacity=ngpus)
     var c_dev = List[DeviceBuffer[in_dtype]](capacity=ngpus)
     var c_ref_dev = List[DeviceBuffer[in_dtype]](capacity=ngpus)
-    var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
-    var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+    var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
+    var rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS](
         uninitialized=True
     )
 
@@ -229,7 +229,7 @@ def bench_rs_norm_gemm_pdl[
         )
 
         signal_buffers.append(
-            list_of_ctx[i].create_buffer_sync[DType.uint8](size_of[Signal]())
+            list_of_ctx[i].create_buffer_sync[.uint8](size_of[Signal]())
         )
         rank_sigs[i] = (
             signal_buffers[i]
@@ -277,7 +277,7 @@ def bench_rs_norm_gemm_pdl[
             row_major(Coord(Index(config.rank_units(i), num_cols))),
         )
         gamma_shards[i] = GammaShardType(
-            rebind[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin]](
+            rebind[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]](
                 gamma_dev[i].unsafe_ptr()
             ),
             row_major(Coord(Index(num_cols))),
@@ -322,7 +322,7 @@ def bench_rs_norm_gemm_pdl[
         for i in range(ngpus):
             comptime for _j in range(ngpus):
                 in_bufs[_j] = InTensorType(
-                    rebind[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin]](
+                    rebind[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]](
                         cb_inputs[_j].offset_ptr(0)
                     ),
                     row_major(Coord(Index(num_rows, num_cols))),
@@ -356,7 +356,7 @@ def bench_rs_norm_gemm_pdl[
                         row_major(Coord(local_rows, Idx[num_cols])),
                     ),
                     WeightType(
-                        rebind[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin]](
+                        rebind[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]](
                             cb_weights[i].offset_ptr(0)
                         ),
                         row_major(Coord(Idx[gemm_n], Idx[num_cols])),
@@ -413,11 +413,10 @@ def bench_rs_norm_gemm_pdl[
             == 4 else "consumer_only"
         )
 
-        @__parameter
         @always_inline
         def bench_pair_iter(
             mut bench: Bencher, ctx: DeviceContext, ctx_idx: Int
-        ) raises:
+        ) raises {mut in_bufs, imm}:
             var local_rows = config.rank_units(ctx_idx)
 
             @always_inline
@@ -428,7 +427,7 @@ def bench_rs_norm_gemm_pdl[
                     comptime for _j in range(ngpus):
                         in_bufs[_j] = InTensorType(
                             rebind[
-                                UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin]
+                                ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]
                             ](cb_inputs[_j].offset_ptr(cache_iter)),
                             row_major(Coord(Index(num_rows, num_cols))),
                         )
@@ -465,9 +464,7 @@ def bench_rs_norm_gemm_pdl[
                             ),
                             WeightType(
                                 rebind[
-                                    UnsafePointer[
-                                        Scalar[in_dtype], ImmutAnyOrigin
-                                    ]
+                                    ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]
                                 ](cb_weights[ctx_idx].offset_ptr(cache_iter)),
                                 row_major(Coord(Idx[gemm_n], Idx[num_cols])),
                             ),
@@ -476,8 +473,9 @@ def bench_rs_norm_gemm_pdl[
 
             bencher_iter_custom(bench, call_fn, ctx)
 
-        bench_multicontext[bench_pair_iter](
+        bench_multicontext(
             b,
+            bench_pair_iter,
             list_of_ctx,
             BenchId(variant_name, input_id=bench_name_prefix),
             [ThroughputMeasure(BenchMetric.bytes, total_bytes)],
@@ -495,7 +493,7 @@ def bench_rs_norm_gemm_pdl[
 
 
 def main() raises:
-    comptime in_dtype = get_defined_dtype["dtype", DType.bfloat16]()
+    comptime in_dtype = get_defined_dtype["dtype", .bfloat16]()
     comptime num_cols = get_defined_int["num_cols", 6144]()
     comptime gemm_n = get_defined_int["gemm_n", 4096]()
     comptime bm = get_defined_int["bm", 64]()

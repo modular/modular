@@ -231,13 +231,13 @@ def testSelfRef(a: SelfRefTest, mut b: SelfRefTest):
 
 
 # CHECK-LABEL: lit.fn @"testLifetimeOf1
-# CHECK-SAME: (%a: !lit.ref<!MemExample, imm *"a`"> read_mem) ->
-# CHECK-SAME: !lit.struct<#Pointer <{{.*}}:origin<false> *"a`">> *(), :!AddressSpace {_value: !SIMDLength = {0}}>>
+# CHECK-SAME: (%a: !lit.ref<!MemExample, imm *"a`"> imm_mem) ->
+# CHECK-SAME: !lit.struct<#Pointer <{{.*}}:origin<false> *"a`">> {}, :!AddressSpace {_value: !SIMDLength = {0}}>>
 def testLifetimeOf1(a: MemExample) -> Pointer[MemExample, origin_of(a)]:
   return Pointer(to=a)
 
 # CHECK-LABEL: lit.fn @"testLifetimeOf2
-# CHECK-SAME: (%a: !lit.ref<!MemExample, imm *"a`"> read_mem) ->
+# CHECK-SAME: (%a: !lit.ref<!MemExample, imm *"a`"> imm_mem) ->
 # CHECK-SAME: !lit.ref<!MemExample, imm *"a`">
 def testLifetimeOf2(a: MemExample) -> Pointer[MemExample, origin_of(a)]._mlir_lit_ref:
 
@@ -290,8 +290,7 @@ struct CutDownVariadicPack[element_trait: type_of(AnyType), //,
 
     def get_element[index: Int](self) -> Pointer[
         Self.element_types[index],
-        origin_of(self),
-    ]:
+        origin_of(self)]:
        while True: pass
 
 # Test that you can implicitly convert an "any" mutable reference (as is returned

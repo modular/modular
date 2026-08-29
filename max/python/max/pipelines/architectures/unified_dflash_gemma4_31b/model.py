@@ -55,7 +55,6 @@ from .model_config import (
     UnifiedDflashGemma4_31BConfig,
     _with_num_draft_tokens,
     construct_dflash_draft_kv_params,
-    resolve_dflash_num_speculative_tokens,
 )
 from .unified_dflash_gemma4_31b import (
     UnifiedDflashGemma4_31B as UnifiedDflashGemma4_31BModule,
@@ -121,10 +120,9 @@ class UnifiedDflashGemma4_31BModel(
         return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
         max_batch_size: int = 1,
     ) -> None:
-        # The drafter's trained width, resolved from the draft checkpoint;
-        # exposed for the overlap pipeline's spec-decode buffers.
+        assert pipeline_config.speculative is not None
         self.resolved_num_speculative_tokens = (
-            resolve_dflash_num_speculative_tokens(pipeline_config)
+            pipeline_config.speculative.draft_width
         )
         super().__init__(
             pipeline_config,
@@ -152,6 +150,7 @@ class UnifiedDflashGemma4_31BModel(
         # The KV bake in ``PipelineModelWithKVCache.__init__`` reads the raw
         # speculative section, where the unset width would bake
         # num_draft_tokens=0; rebake at the drafter's trained width.
+        assert pipeline_config.speculative is not None
         return _with_num_draft_tokens(
             Gemma4ForConditionalGenerationConfig.construct_kv_params(
                 huggingface_config,
@@ -160,7 +159,7 @@ class UnifiedDflashGemma4_31BModel(
                 kv_cache_config,
                 cache_dtype,
             ),
-            resolve_dflash_num_speculative_tokens(pipeline_config, warn=False),
+            pipeline_config.speculative.draft_width,
         )
 
     def _load_state_dict(self) -> dict[str, Any]:

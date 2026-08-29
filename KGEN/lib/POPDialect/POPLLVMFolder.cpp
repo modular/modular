@@ -379,8 +379,7 @@ ErrorTreeOrSuccess CallLLVMIntrinsicOp::interpret(ArrayRef<Attribute> operands,
                      "result type mismatch: " + stringize(attr.getType()) +
                          " != " + stringize(getResult(0).getType()));
 
-  state.mapResults(attr);
-  return success();
+  return state.mapResults(attr);
 }
 
 ErrorTreeOrSuccess
@@ -505,7 +504,7 @@ CallLLVMIntrinsicOp::parametric_interpret(ArrayRef<Attribute> operands,
                      "result type mismatch: " + stringize(attr.getType()) +
                          " != " + stringize(resultType));
 
-  state.mapResults(attr);
+  (void)state.mapResults(attr);
 
   return success();
 }

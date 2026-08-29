@@ -43,7 +43,7 @@ from linalg.fp4_utils import (
 def _create_mma_desc_k_major[
     dtype: DType, swizzle_mode: TensorMapSwizzle
 ](
-    ptr: UnsafePointer[Scalar[dtype], address_space=AddressSpace.SHARED, ...]
+    ptr: UnsafePointer[Scalar[dtype], address_space=.SHARED, ...]
 ) -> MMASmemDescriptor:
     """Creates an MMA descriptor for K-major layout directly from swizzle mode.
 
@@ -105,7 +105,7 @@ def max_contiguous_tile_shape[
 def _create_mma_desc_pair[
     dtype: DType, //, canonical_layout: Layout, swizzle_mode: TensorMapSwizzle
 ](
-    ptr: UnsafePointer[Scalar[dtype], address_space=AddressSpace.SHARED, ...]
+    ptr: UnsafePointer[Scalar[dtype], address_space=.SHARED, ...]
 ) -> MMASmemDescriptorPair:
     # Extract the stride values from the canonical layout
     # The canonical layout is expected to have at least 2 dimensions
@@ -130,7 +130,7 @@ def smem_descriptor[
     is_k_major: Bool,
     page_dense: Bool = False,
 ](
-    ptr: UnsafePointer[Scalar[dtype], address_space=AddressSpace.SHARED, ...]
+    ptr: UnsafePointer[Scalar[dtype], address_space=.SHARED, ...]
 ) -> MMASmemDescriptorPair:
     """Creates an MMASmemDescriptorPair for an SM100 MMA operand tile in shared memory.
 
@@ -180,7 +180,7 @@ struct MmaOpSM100_SS[
     mma_shape: IndexList[3],
     /,
     *,
-    accum_type: DType = DType.float32,
+    accum_type: DType = .float32,
     cta_group: Int = 1,
     cluster_shape: IndexList[3] = Index(1, 1, 1),
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
@@ -269,7 +269,7 @@ struct MmaOpSM100_SS[
     @always_inline
     def make_a_desc(
         self,
-        a: TileTensor[address_space=AddressSpace.SHARED, ...],
+        a: TileTensor[address_space=.SHARED, ...],
     ) -> MMASmemDescriptor:
         """Build the K-major MMA descriptor for an A operand tile.
 
@@ -289,7 +289,7 @@ struct MmaOpSM100_SS[
     @always_inline
     def make_b_desc(
         self,
-        b: TileTensor[address_space=AddressSpace.SHARED, ...],
+        b: TileTensor[address_space=.SHARED, ...],
     ) -> MMASmemDescriptor:
         """Build the K-major MMA descriptor for a B operand tile.
 
@@ -306,8 +306,8 @@ struct MmaOpSM100_SS[
     @always_inline
     def mma(
         self,
-        a: TileTensor[address_space=AddressSpace.SHARED, ...],
-        b: TileTensor[address_space=AddressSpace.SHARED, ...],
+        a: TileTensor[address_space=.SHARED, ...],
+        b: TileTensor[address_space=.SHARED, ...],
         c_tmem: UInt32,
         init_c: Bool,
     ):
@@ -377,7 +377,7 @@ struct MmaOpSM100_SS[
     @always_inline
     def commit(
         self,
-        ptr_mbar: UnsafePointer[address_space=AddressSpace.SHARED, ...],
+        ptr_mbar: UnsafePointer[address_space=.SHARED, ...],
     ):
         comptime if product(Self.cluster_shape) == 1:
             mma_arrive[Self.cta_group](ptr_mbar)
@@ -390,7 +390,7 @@ struct MmaOpSM100_SS[
 
     @staticmethod
     def _get_umma_kind[dtype: DType]() -> UMMAKind:
-        comptime if dtype == DType.float32:
+        comptime if dtype == .float32:
             return UMMAKind.KIND_TF32
         elif dtype in (DType.float16, DType.bfloat16):
             return UMMAKind.KIND_F16
@@ -416,7 +416,7 @@ struct MmaOpSM100_BlockScaled_SS[
     mma_shape: IndexList[3],
     /,
     *,
-    accum_type: DType = DType.float32,
+    accum_type: DType = .float32,
     cta_group: Int = 1,
     cluster_shape: IndexList[3] = Index(1, 1, 1),
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
@@ -524,10 +524,10 @@ struct MmaOpSM100_BlockScaled_SS[
     @always_inline
     def mma(
         self,
-        a: TileTensor[address_space=AddressSpace.SHARED, ...],
-        b: TileTensor[address_space=AddressSpace.SHARED, ...],
-        sfa_smem: TileTensor[address_space=AddressSpace.SHARED, ...],
-        sfb_smem: TileTensor[address_space=AddressSpace.SHARED, ...],
+        a: TileTensor[address_space=.SHARED, ...],
+        b: TileTensor[address_space=.SHARED, ...],
+        sfa_smem: TileTensor[address_space=.SHARED, ...],
+        sfb_smem: TileTensor[address_space=.SHARED, ...],
         c_tmem: UInt32,
         sfa_tmem: UInt32,
         sfb_tmem: UInt32,
@@ -691,7 +691,7 @@ struct MmaOpSM100_BlockScaled_SS[
     @always_inline
     def commit(
         self,
-        ptr_mbar: UnsafePointer[address_space=AddressSpace.SHARED, ...],
+        ptr_mbar: UnsafePointer[address_space=.SHARED, ...],
     ):
         comptime if product(Self.cluster_shape) == 1:
             mma_arrive[Self.cta_group](ptr_mbar)
@@ -708,11 +708,7 @@ struct MmaOpSM100_BlockScaled_SS[
         SFLayoutType: TensorLayout,
         TILE_MN: Int,
         tile_k_idx: Int,
-    ](
-        self,
-        sf_smem: TileTensor[address_space=AddressSpace.SHARED, ...],
-        sf_tmem: UInt32,
-    ):
+    ](self, sf_smem: TileTensor[address_space=.SHARED, ...], sf_tmem: UInt32,):
         """TileTensor overload for copying scale factors to TMEM via tcgen05_cp.
 
         Only valid for MMA_N % 64 == 0.  For smaller MMA_N, the caller

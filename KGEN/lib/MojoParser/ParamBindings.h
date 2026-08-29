@@ -165,8 +165,9 @@ TypedAttr getBoundConstAttrForFn(ASTDecl &fnDecl, SharedState &shared,
                                  const VerifiedParamBindings &verifiedBindings,
                                  ASTDecl &useScope, SMLoc useLoc);
 
+// FIXME: we should create the correct signature upon constructing the trait.
 FnTypeGeneratorType substituteTraitAliasesIntoSignature(
-    DeclResolver &declResolver, ASTDecl &traitDecl, FnOp candidateFunc,
+    DeclResolver &declResolver, TraitSymbolAttr traitSymbol,
     FnTypeGeneratorType desiredSignature, PValue selfPValue);
 
 } // namespace M::KGEN::LIT

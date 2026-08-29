@@ -25,8 +25,9 @@ from max.pipelines.lib import ModelInputs
 class Gemma4Inputs(ModelInputs):
     """A class representing inputs for the Gemma4 model (ModuleV3).
 
-    This class encapsulates the input tensors required for the Gemma4 model
-    execution.
+    Image (and video-frame) embeddings arrive on the base
+    ``vision_embeddings`` / ``vision_scatter_indices`` fields, populated by the
+    pipeline-owned ``VisionEncoderCache``.
     """
 
     tokens: Buffer

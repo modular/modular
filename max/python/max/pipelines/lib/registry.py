@@ -30,7 +30,7 @@ from typing import (
 
 import numpy as np
 import numpy.typing as npt
-from max.pipelines.context import TextContext
+from max.pipelines.context import AudioContext, PixelContext, TextContext
 from max.pipelines.modeling.types import (
     EmbeddingsContext,
     Pipeline,
@@ -49,6 +49,7 @@ from transformers import (
 if TYPE_CHECKING:
     from .config import PipelineConfig
 
+from max.pipelines.audio.pipeline import AudioGenerationPipeline
 from max.pipelines.diffusion.pipeline import PixelGenerationPipeline
 from max.pipelines.lib._hf_config import load_huggingface_config
 from max.pipelines.lib.memory_estimation import MemoryEstimator, MemoryPlan
@@ -104,6 +105,7 @@ def get_pipeline_for_task(
     TextGenerationPipeline[TextContext]
     | EmbeddingsPipeline
     | PixelGenerationPipeline[Any]
+    | AudioGenerationPipeline[Any]
     | OverlapTextGenerationPipeline[TextContext]
 ]:
     """Returns the pipeline class for the given task and config.
@@ -141,6 +143,8 @@ def get_pipeline_for_task(
         return EmbeddingsPipeline
     elif task == PipelineTask.PIXEL_GENERATION:
         return PixelGenerationPipeline
+    elif task == PipelineTask.AUDIO_GENERATION:
+        return AudioGenerationPipeline
     else:
         raise ValueError(f"Unsupported pipeline task: {task}")
 
@@ -721,11 +725,12 @@ class PipelineRegistry:
             arch.pipeline_model, PipelineModel
         ):
             memory_plan = MemoryPlan(
-                max_batch_size=pipeline_config.runtime.max_batch_size or 1,
+                planned_max_batch_size=pipeline_config.runtime.max_batch_size
+                or 1,
                 footprint=0,
                 planned_max_length=pipeline_config.model.max_length,
                 device_specs=tuple(pipeline_config.model.device_specs),
-                max_batch_total_tokens=pipeline_config.runtime.max_batch_total_tokens,
+                planned_max_batch_total_tokens=pipeline_config.runtime.max_batch_total_tokens,
             )
         else:
             memory_plan = MemoryEstimator.plan(
@@ -755,7 +760,7 @@ class PipelineRegistry:
             arch_config = arch.config.initialize(
                 pipeline_config,
                 max_seq_len=arch.config.calculate_max_seq_len(
-                    pipeline_config, first_config.huggingface_config
+                    first_config.huggingface_config, first_config
                 ),
             )
             max_length = arch_config.get_max_seq_len()
@@ -823,6 +828,35 @@ class PipelineRegistry:
             return RetrievedPipeline(
                 tokenizer=typed_tokenizer,
                 factory=pipeline_factory,
+                memory_plan=memory_plan,
+            )
+
+        # Audio generation, like pixel generation, is a multi-component
+        # checkpoint whose tokenizer lives in a subfolder, and it has no
+        # top-level transformers config to load.
+        if task == PipelineTask.AUDIO_GENERATION:
+            first_config = next(iter(pipeline_config.models.values()))
+            audio_tokenizer = arch.tokenizer(
+                model_path=first_config.model_path,
+                pipeline_config=pipeline_config,
+                subfolder="tokenizer",
+                max_length=max_length,
+                revision=first_config.huggingface_model_revision,
+                trust_remote_code=first_config.trust_remote_code,
+            )
+            audio_factory_kwargs: dict[str, Any] = {
+                "pipeline_config": pipeline_config,
+                "pipeline_model": arch.pipeline_model,
+            }
+            audio_pipeline_factory = cast(
+                Callable[[], PipelineTypes],
+                functools.partial(pipeline_class, **audio_factory_kwargs),
+            )
+            return RetrievedPipeline(
+                tokenizer=cast(
+                    PipelineTokenizer[Any, Any, Any], audio_tokenizer
+                ),
+                factory=audio_pipeline_factory,
                 memory_plan=memory_plan,
             )
 
@@ -917,12 +951,13 @@ class PipelineRegistry:
         pipeline_config: PipelineConfig,
         override_architecture: str | None = None,
         task: PipelineTask | None = None,
-    ) -> type[TextContext | EmbeddingsContext]:
+    ) -> type[TextContext | EmbeddingsContext | PixelContext | AudioContext]:
         """Retrieve the context class type associated with the architecture for the given pipeline configuration.
 
-        The context type defines how the pipeline manages request state and inputs during
-        model execution. Different architectures may use different context implementations
-        that adhere to either the TextContext or EmbeddingsContext protocol.
+        The context type defines how the pipeline manages request state and
+        inputs during model execution, and which one an architecture uses
+        follows from its task: TextContext or EmbeddingsContext for token and
+        embedding models, PixelContext or AudioContext for the media tasks.
 
         Args:
             pipeline_config: The configuration for the pipeline.
@@ -932,8 +967,7 @@ class PipelineRegistry:
                 the same name but serve different tasks.
 
         Returns:
-            The context class type associated with the architecture, which implements
-            either the TextContext or EmbeddingsContext protocol.
+            The context class type associated with the architecture.
 
         Raises:
             ValueError: If no supported architecture is found for the given model repository

@@ -19,6 +19,7 @@
 #include "IREmitter.h"
 #include "KGEN/MojoParser/ASTDecl.h"
 #include "KGEN/MojoParser/Constraints.h"
+#include "KGEN/MojoParser/ModuleLoader.h"
 #include "MojoUtils.h"
 #include "ParserBase.h"
 #include "ParserEvaluationContext.h"
@@ -2488,11 +2489,11 @@ ParseResult DeclResolver::resolveBody(FnOp funcOp, Lexer &lexer,
     }
 
     CValue argValue;
-    if (convention == ArgConvention::ReadMem) {
+    if (convention == ArgConvention::ImmMem) {
       setDecl(MBValue(refinedArg)); // borrowed (possibly refined)
       continue;
     }
-    if (convention == ArgConvention::ReadReg) {
+    if (convention == ArgConvention::ImmReg) {
       // borrowed_in_reg is used for TrivialRegisterPassable types. Use
       // SBValue (not SRValue) to preserve borrowed semantics, while still
       // keeping any type refinement rebind visible in the function body.
@@ -2642,7 +2643,7 @@ ParseResult DeclResolver::resolveBody(LIT::PackageOp op, ASTDecl &decl) {
 
   // Register a (deferred, unlisted) child decl for every sibling module and
   // sub-package.
-  shared.registerSourcePackageChildren(decl);
+  shared.getModuleLoader().registerSourcePackageChildren(decl);
 
   return success();
 }
@@ -3654,7 +3655,7 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
                                    structBuilder);
   llvm::append_range(paramSignature.emittedBodyConstraints,
                      closureExternalRefConstraints);
-  decl.insertKnownAssumptions(closureExternalRefConstraints);
+  sigDecl.insertKnownAssumptions(closureExternalRefConstraints);
 
   // Look up traits the compiler unconditionally injects into every struct.
   // These lookups are reused below both for constraint building (to skip
@@ -3903,7 +3904,7 @@ static FnOp findFieldwiseInit(ASTDecl &structDecl) {
       // Fieldwise initializers must have read/owned conventions. ref etc
       // are lit.ref's mechanically but these are invisible the to the caller.
       if (hasImplicitOrigin(conv)) {
-        if (conv != ArgConvention::ReadMem && conv != ArgConvention::OwnedMem &&
+        if (conv != ArgConvention::ImmMem && conv != ArgConvention::OwnedMem &&
             conv != ArgConvention::DeinitMem) {
           isMatch = false;
           break;
@@ -5348,6 +5349,88 @@ ParseResult DeclResolver::resolveSignature(LIT::UnresolvedImportOp op,
 // Trait Composition Decl implementation
 //===----------------------------------------------------------------------===//
 
+ParseResult DeclResolver::resolveSignature(WitnessDecl *witness,
+                                           ASTDecl &decl) {
+  if (auto alias = dyn_cast<AliasDeclOp>(
+          witness->getDecls().front()->getIfOperation())) {
+    Type mergedType;
+    DenseSet<TraitType> traitTypesToMerge;
+    for (ASTDecl *decl : witness->getDecls()) {
+      if (failed(resolve(*decl, DeclResolvedness::signature, decl->getLoc())))
+        return failure();
+
+      auto alias = cast<AliasDeclOp>(decl->getIfOperation());
+      if (!mergedType) {
+        mergedType = alias.getType();
+        if (isa<TraitType>(mergedType))
+          traitTypesToMerge.insert(cast<TraitType>(mergedType));
+        continue;
+      }
+
+      if (ASTType(alias.getType()).isEqualCanon(mergedType))
+        continue;
+
+      if (isa<TraitType>(mergedType) && isa<TraitType>(alias.getType())) {
+        traitTypesToMerge.insert(cast<TraitType>(alias.getType()));
+        continue;
+      }
+
+      // We can only merge two trait types.
+      return emitError(decl->getLoc(),
+                       "trait composition has conflicting types for '")
+             << alias.getDeclName().getValue() << "'";
+    }
+    if (traitTypesToMerge.size() > 1) {
+      SmallVector<TraitSymbolAttr> mergedTraitSymbols;
+      for (TraitType traitType : traitTypesToMerge)
+        mergedTraitSymbols.append(traitType.getSymbols().begin(),
+                                  traitType.getSymbols().end());
+      sortAndDeduplicateTraitSymbols(mergedTraitSymbols);
+      mergedType = TraitType::get(getContext(), mergedTraitSymbols);
+    }
+
+    // The merged entry is keyed by whichever trait the first alias came from;
+    // all of them agree on the name, and conformance checking re-verifies the
+    // merged bound against each.
+    WitnessDecl::ResolvedType resolved;
+    resolved.witnessName = alias.getDeclName();
+    resolved.witnessType = mergedType;
+    witness->storage = resolved;
+    return success();
+  }
+
+  ASTDecl &onlyWitness = *witness->getDecls().front();
+  if (failed(resolve(onlyWitness, DeclResolvedness::signature,
+                     onlyWitness.getLoc())))
+    return failure();
+
+  // Propagate the disabled state. Signature resolution is what disables an
+  // overridden method, so this has to be checked before touching the
+  // operation, which disabling clears.
+  if (onlyWitness.isDisabled()) {
+    decl.markDisabled();
+    return success();
+  }
+
+  auto fnOp = cast<FnOp>(onlyWitness.getIfOperation());
+
+  WitnessDecl::ResolvedType resolved;
+  resolved.witnessName = fnOp.getSymNameAttr();
+  resolved.witnessType = fnOp.getFullSignature();
+  resolved.implicitConversion = fnOp.getImplicitConversion();
+  resolved.isStaticMethod = fnOp.getIsStatic();
+  witness->storage = resolved;
+  return success();
+}
+
+ParseResult DeclResolver::resolveBody(WitnessDecl *witness, ASTDecl &decl) {
+  // We don't need to resolve the body of a witness, only need the type.
+  assert(witness->getWitnessEntry().witnessType &&
+         "Witness type should be resolved");
+  decl.resolvedness = DeclResolvedness::body;
+  return success();
+}
+
 ParseResult DeclResolver::resolveSignature(TraitType traitType,
                                            ASTDecl &traitDecl) {
   // There is no signature to resolve for a trait composition.
@@ -5355,6 +5438,21 @@ ParseResult DeclResolver::resolveSignature(TraitType traitType,
 }
 
 ParseResult DeclResolver::resolveBody(TraitType traitType, ASTDecl &traitDecl) {
+  // TODO: why do we ever need to add inherited decl to begin with?? now that
+  // every trait type is canonical and every lookup on trait are routed via
+  // trait type, we no longer need this.
+  auto isInherited = [&](Operation *nestedOp, ASTDecl &parentDecl) {
+    if (auto aliasOp = dyn_cast<AliasDeclOp>(nestedOp);
+        aliasOp && aliasOp.getInheritedFrom())
+      return true;
+    if (auto fnOp = dyn_cast<FnOp>(nestedOp); fnOp && fnOp.getInheritedFrom())
+      return true;
+
+    auto parentTraitOp = cast<TraitDeclOp>(nestedOp->getParentOp());
+    return getFullyResolvedSymbolRef(parentTraitOp) !=
+           parentDecl.getSymbolRef();
+  };
+
   // TODO: Sink this to when the body is actually resolved.
   traitDecl.resolvedness = DeclResolvedness::body;
 
@@ -5363,16 +5461,8 @@ ParseResult DeclResolver::resolveBody(TraitType traitType, ASTDecl &traitDecl) {
   // inherits from each trait in the composition. The differences are that:
   // - There is no physical TraitDeclOp in the IR for the trait composition.
   //   The ASTDecl's irValue is a TraitType (instead of a TraitDeclOp).
-  // - Its child decls are "weak links" to the existing child decls of its
-  //   parent traits. No new child ASTDecls or child Ops are created during this
-  //   body resolution. As a result, the child methods' self parameter reference
-  //   `_Self` still have the parent trait's type instead of the composition's.
-
-  // Deduplicate member aliases if they have identical types. Otherwise, keep
-  // all mergeable types in the list. They will each be checked during
-  // conformance checking.
-  DenseMap<StringAttr, Type> existingAliases;
-  // Functions are deduplicated by filtering out all inherited functions.
+  DenseMap<StringAttr, std::pair<TraitSymbolAttr, SmallVector<ASTDecl *>>>
+      aliases;
 
   for (TraitSymbolAttr symbol : traitType.getSymbols()) {
     // FIXME: we need to handle trait type with constraints correctly here...
@@ -5381,55 +5471,44 @@ ParseResult DeclResolver::resolveBody(TraitType traitType, ASTDecl &traitDecl) {
     if (failed(resolveBody(parentDecl, traitDecl.getLoc())))
       return failure();
 
+    if (shared.isUniversalParametricClosureTrait(symbol)) {
+      // TODO: implement this!
+      continue;
+    }
+
+    assert(symbol.getParamValues().empty() &&
+           "non-closure trait should have no param values");
     // Inherit members from the parent.
     for (auto &[name, decls] : parentDecl.getDeclsInScope()) {
       for (ASTDecl *decl : decls) {
-        // Trait composition only needs member signatures for lookup. Do not
-        // body-resolve inherited default methods here: their bodies must remain
-        // typechecked in the declaring trait or concrete conformance context.
-        if (failed(resolveSignature(*decl, traitDecl.getLoc())))
-          return failure();
-
-        // Signature resolution may disable this decl (e.g. when the child trait
-        // overrides a parent method with the same signature). Skip it.
-        if (decl->isDisabled())
+        Operation *memberOp = decl->getIfOperation();
+        // Skip disabled member and inherited decls.
+        if (decl->isDisabled() || isInherited(memberOp, parentDecl))
           continue;
-
-        if (auto fn = dyn_cast_or_null<FnOp>(decl->getIfOperation())) {
-          if (fn.getInheritedFrom())
-            continue;
-        } else if (auto alias =
-                       dyn_cast_or_null<AliasDeclOp>(decl->getIfOperation())) {
-          // Check if the type is mergeable with the existing alias type.
-          if (auto it = existingAliases.find(name);
-              it != existingAliases.end()) {
-            Type existingType = it->second;
-            Type newType = alias.getType();
-            if (existingType == newType)
-              continue;
-
-            TraitType existingTrait = dyn_cast<TraitType>(existingType);
-            TraitType newTrait = dyn_cast<TraitType>(newType);
-            if (!existingTrait || !newTrait)
-              return emitError(traitDecl.getLoc(),
-                               "trait composition has conflicting types for '")
-                     << alias.getDeclName().getValue() << "'";
-            // No need to update existingAliases since we don't care about the
-            // specific trait type.
-          } else {
-            existingAliases[name] = alias.getType();
-          }
-        } else {
+        if (!isa<AliasDeclOp, FnOp>(memberOp)) {
           // If the decl is not a function or alias, it is an error.
           return emitError(parentDecl.getLoc(), "unexpected decl in trait")
                      .attachNote(decl->getLoc())
                  << " declared here";
         }
-
-        attachDeclToTraitCompositionDecl(&traitDecl, decl, name);
+        if (isa<FnOp>(memberOp)) {
+          attachDeclToTraitCompositionDecl(&traitDecl, symbol,
+                                           SmallVector<ASTDecl *>{decl}, name);
+        } else {
+          auto &witnessForAndDecls = aliases[name];
+          witnessForAndDecls.second.push_back(decl);
+          // It doesn't not really matter which trait symbol we picked for a
+          // mergeable trait alias decls.
+          witnessForAndDecls.first = symbol;
+        }
       }
     }
   }
+
+  for (auto &[name, decls] : aliases)
+    attachDeclToTraitCompositionDecl(&traitDecl, decls.first,
+                                     std::move(decls.second), name);
+
   return success();
 }
 
@@ -5440,6 +5519,11 @@ ParseResult DeclResolver::resolveBody(TraitType traitType, ASTDecl &traitDecl) {
 ParseResult DeclResolver::resolveBody(ConformanceOp op, ASTDecl &decl) {
   // TODO: Sink this to when the body is actually resolved.
   decl.resolvedness = DeclResolvedness::body;
+
+  if (ConstraintAttr constraint = op.getConstraintAttr())
+    if (!isTriviallyTrueConstraint(constraint))
+      decl.insertKnownAssumptions({constraint});
+
   // Verify conformance explicitly.
   std::optional<MojoInflightDiag> diag;
 

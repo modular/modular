@@ -41,21 +41,21 @@ from layout import TileTensor, row_major
 
 # Derived from https://docs.nvidia.com/cuda/cuda-c-programming-guide/#kernel-example-vector-scalar-multiplication
 def cluster_launch_control(
-    data: UnsafePointer[Float32, MutAnyOrigin], n_dev: Int32
+    data: MutPointer[Float32, MutAnyOrigin], n_dev: Int32
 ):
     # `Int` is not device-passable; widen the fixed-width arg.
     var n = Int(n_dev)
     var result = unsafe_stack_allocation[
         1,
         UInt128,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=16,
     ]()
 
     var mbar = unsafe_stack_allocation[
         1,
         SharedMemBarrier,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=8,
     ]()
 
@@ -113,21 +113,21 @@ def pipeline_test_kernel[
     var clc_response = unsafe_stack_allocation[
         num_stages,
         UInt128,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=16,
     ]()
 
     var full_mbar = unsafe_stack_allocation[
         num_stages,
         SharedMemBarrier,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=16,
     ]()
 
     var empty_mbar = unsafe_stack_allocation[
         num_stages,
         SharedMemBarrier,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=16,
     ]()
 
@@ -200,7 +200,7 @@ def pipeline_test_kernel[
 def test_cluster_launch_control(ctx: DeviceContext) raises:
     comptime n = 4000
 
-    var data = ctx.enqueue_create_buffer[DType.float32](n)
+    var data = ctx.enqueue_create_buffer[.float32](n)
 
     comptime kernel = cluster_launch_control
     ctx.enqueue_function[kernel](

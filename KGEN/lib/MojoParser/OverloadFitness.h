@@ -115,6 +115,23 @@ public:
   static OverloadFitness
   evaluate(ASTDecl *candidate, const OverloadSet &callable, PValue selfPValue);
 
+  /// Build a fitness for a candidate already known to be valid. For callers
+  /// that decide validity themselves.
+  static OverloadFitness valid(VerifiedParamBindings paramBindings) {
+    return OverloadFitness(std::move(paramBindings), {});
+  }
+
+  /// Build a fitness for a candidate that is neither valid nor definitively
+  /// rejected: `unprovableConstraints` could be neither proven nor disproven.
+  static OverloadFitness
+  constraintInconclusive(VerifiedParamBindings paramBindings,
+                         ArrayRef<ConstraintAttr> unprovableConstraints) {
+    OverloadFitness fitness(std::move(paramBindings), {});
+    fitness.unprovableConstraints.assign(unprovableConstraints.begin(),
+                                         unprovableConstraints.end());
+    return fitness;
+  }
+
   /// Return the set of args that need to be emitted to MValues to select this
   /// candidate.
   const OperandsNeedingOriginsList &getOperandsNeedingOrigins() const {

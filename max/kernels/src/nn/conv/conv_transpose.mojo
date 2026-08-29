@@ -489,7 +489,7 @@ struct ConvTransposedPacked[
     # padded, only ho is partitioned for now.
     var partition: ConvPartition
 
-    var cf_tile_size: DynamicCoord[DType.int64, 2]
+    var cf_tile_size: DynamicCoord[.int64, 2]
 
     @staticmethod
     def run(
@@ -500,7 +500,7 @@ struct ConvTransposedPacked[
             Self.output_origin,
             Storage=Self.output_storage,
             linear_idx_type=Self.output_linear_idx_type,
-            address_space=AddressSpace.GENERIC,
+            address_space=.GENERIC,
             ...,
         ],
         input: TileTensor[
@@ -509,7 +509,7 @@ struct ConvTransposedPacked[
             Self.input_origin,
             Storage=Self.input_storage,
             linear_idx_type=Self.input_linear_idx_type,
-            address_space=AddressSpace.GENERIC,
+            address_space=.GENERIC,
             ...,
         ],
         filter: TileTensor[
@@ -518,7 +518,7 @@ struct ConvTransposedPacked[
             Self.filter_origin,
             Storage=Self.filter_storage,
             linear_idx_type=Self.filter_linear_idx_type,
-            address_space=AddressSpace.GENERIC,
+            address_space=.GENERIC,
             ...,
         ],
         conv_shape: ConvShape[Self.conv_attr_rank],
@@ -555,9 +555,7 @@ struct ConvTransposedPacked[
         ](num_threads, conv_shape)
         var num_tasks = num_partitions.flattened_length()
 
-        @__copy_capture(num_partitions, cf_tile_size)
-        @__parameter
-        def task_func(task_id: Int):
+        def task_func(task_id: Int) {var num_partitions, var cf_tile_size, imm}:
             var partition = get_partition(
                 task_id,
                 num_partitions,
@@ -592,7 +590,7 @@ struct ConvTransposedPacked[
             )
             instance._batch_group_loop()
 
-        sync_parallelize[task_func](num_tasks, ctx)
+        sync_parallelize(task_func, num_tasks, ctx)
 
     @always_inline
     def _zero_output(self, n: Int, g: Int):
@@ -1552,9 +1550,9 @@ def conv_transposed_cpu[
     has_epilogue_fusion: Bool,
     elementwise_lambda: elementwise_simd_epilogue_type,
 ](
-    output: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
-    input: TileTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
-    filter: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
+    output: TileTensor[mut=True, address_space=.GENERIC, ...],
+    input: TileTensor[mut=False, address_space=.GENERIC, ...],
+    filter: TileTensor[mut=True, address_space=.GENERIC, ...],
     stride: IndexList[input.rank - 2],
     dilation: IndexList[input.rank - 2],
     pad_d: IndexList[2],
@@ -1587,8 +1585,7 @@ def conv_transposed_cpu[
     """
 
     @always_inline
-    @__parameter
-    def description_fn() -> String:
+    def description_fn() {imm} -> String:
         # fmt: off
         return String(
             trace_arg("input", coord_to_index_list(input.layout.shape_coord())),
@@ -1606,7 +1603,7 @@ def conv_transposed_cpu[
 
     with Trace[TraceLevel.OP, target=StaticString("cpu")](
         "conv_transposed",
-        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+        Trace[TraceLevel.OP]._get_detail_str(description_fn),
     ):
         comptime packed_filter_rank = filter.rank if filter_packed else filter.rank + 1
 
@@ -1709,18 +1706,9 @@ def conv_transposed_gpu[
     output_type: DType,
     elementwise_epilogue: Optional[elementwise_simd_epilogue_type] = None,
 ](
-    output: TileTensor[
-        mut=True,
-        output_type,
-        address_space=AddressSpace.GENERIC,
-        ...,
-    ],
-    input: TileTensor[
-        mut=False, input_type, address_space=AddressSpace.GENERIC, ...
-    ],
-    filter: TileTensor[
-        mut=False, filter_type, address_space=AddressSpace.GENERIC, ...
-    ],
+    output: TileTensor[mut=True, output_type, address_space=.GENERIC, ...],
+    input: TileTensor[mut=False, input_type, address_space=.GENERIC, ...],
+    filter: TileTensor[mut=False, filter_type, address_space=.GENERIC, ...],
     stride: IndexList[input.rank - 2],
     dilation: IndexList[input.rank - 2],
     padding: IndexList[input.rank - 2],
@@ -1797,13 +1785,9 @@ def _conv_transposed_cudnn[
     filter_type: DType,
     output_type: DType,
 ](
-    input: TileTensor[
-        mut=False, input_type, address_space=AddressSpace.GENERIC, ...
-    ],
-    filter: TileTensor[
-        mut=False, filter_type, address_space=AddressSpace.GENERIC, ...
-    ],
-    output: TileTensor[output_type, address_space=AddressSpace.GENERIC, ...],
+    input: TileTensor[mut=False, input_type, address_space=.GENERIC, ...],
+    filter: TileTensor[mut=False, filter_type, address_space=.GENERIC, ...],
+    output: TileTensor[output_type, address_space=.GENERIC, ...],
     stride: IndexList[2],
     dilation: IndexList[2],
     padding: IndexList[2],
@@ -1887,9 +1871,7 @@ def _conv_transposed_cudnn[
         )
     )
 
-    var workspace_buffer = ctx.enqueue_create_buffer[DType.uint8](
-        workspace_size
-    )
+    var workspace_buffer = ctx.enqueue_create_buffer[.uint8](workspace_size)
 
     var alpha = Float32(1.0)
     var beta = Float32(0.0)
@@ -1921,13 +1903,9 @@ def conv_transposed_cudnn[
     filter_type: DType,
     output_type: DType,
 ](
-    input: TileTensor[
-        mut=False, input_type, address_space=AddressSpace.GENERIC, ...
-    ],
-    filter: TileTensor[
-        mut=False, filter_type, address_space=AddressSpace.GENERIC, ...
-    ],
-    output: TileTensor[output_type, address_space=AddressSpace.GENERIC, ...],
+    input: TileTensor[mut=False, input_type, address_space=.GENERIC, ...],
+    filter: TileTensor[mut=False, filter_type, address_space=.GENERIC, ...],
+    output: TileTensor[output_type, address_space=.GENERIC, ...],
     stride: IndexList[2],
     dilation: IndexList[2],
     padding: IndexList[2],

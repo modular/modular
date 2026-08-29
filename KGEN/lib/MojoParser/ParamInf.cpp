@@ -106,10 +106,11 @@ ParamInf::ParamInf(const ParamBindings &paramBinding,
                    ArrayRef<Type> declaredParamTypes,
                    PogListAttr declaredParamPogs, bool allowImplicitConversions,
                    ASTDecl *declIfDirect, bool discardError,
-                   DeferredTypingContext *deferredTypingContext)
+                   DeferredTypingContext *deferredTypingContext,
+                   ArrayRef<ConstraintAttr> additionalAssumptions)
     : InferenceState(paramBinding.declScope, declaredParamTypes,
                      declaredParamPogs, paramBinding.getExprLoc(), discardError,
-                     deferredTypingContext),
+                     deferredTypingContext, additionalAssumptions),
       paramBindings(paramBinding), declIfKnown(declIfDirect),
       deferredGivenParams(declaredParamTypes.size(), false),
       explicitlyUnboundParams(declaredParamTypes.size(), false),
@@ -698,7 +699,8 @@ ParamInf::inferAndEmitOneParam(ASTExprAnd<AnyValue> binding,
   // problem.
   DeclResolver::DiagnosticDeclContextChanger x(&(getDeclScope()));
   MojoInflightDiag &diag = getMojoDiag(binding.expr->getLoc());
-  if (declIfKnown) // Why only structs? Seems arbitrary, push higher?
+  // Why only structs? Seems arbitrary, push higher?
+  if (declIfKnown && declIfKnown->getUserNameIfOperation().has_value())
     diag << "'" << *declIfKnown->getUserNameIfOperation() << "' ";
   diag << "parameter "
        << ParamDeclRefAttr::get(declaredParamPogs.getName(paramIdx),
@@ -907,7 +909,7 @@ LogicalResult ParamInf::inferFromParamList() {
           return failure();
         // The ParameterList now has a concrete type.
         auto listValue =
-            SingletonAttr::get(evaluator.getReboundType(expectedType));
+            LIT::getEmptyStructValue(evaluator.getReboundType(expectedType));
         setInferredValue(idx, listValue);
       }
       continue;
@@ -1148,8 +1150,8 @@ LogicalResult ParamInf::inferFromDefaults() {
 
       // The list itself doesn't have a value, so default it to {} now that it
       // has a concrete type.
-      auto listValue =
-          SingletonAttr::get(evaluator.getReboundType(declaredParamTypes[idx]));
+      auto listValue = LIT::getEmptyStructValue(
+          evaluator.getReboundType(declaredParamTypes[idx]));
       setInitialInferredValue(idx, listValue);
     }
   }
@@ -1282,7 +1284,8 @@ LogicalResult ParamInf::finalizeWithUnbound() {
 
   auto emitInferenceFailure = [&](size_t paramIdx) {
     MojoInflightDiag &diag = getMojoDiag(paramBindings.getExprLoc());
-    if (declIfKnown && isa<StructDeclOp>(declIfKnown->getIfOperation()))
+    if (declIfKnown &&
+        isa_and_nonnull<StructDeclOp>(declIfKnown->getIfOperation()))
       diag << "'" << *declIfKnown->getUserNameIfOperation() << "' ";
 
     {
@@ -1295,7 +1298,7 @@ LogicalResult ParamInf::finalizeWithUnbound() {
 
     // If this is a method on a struct and we couldn't infer something from
     // its self parameters, complain about the struct.
-    if (declIfKnown && isa<FnOp>(declIfKnown->getIfOperation())) {
+    if (declIfKnown && isa_and_nonnull<FnOp>(declIfKnown->getIfOperation())) {
       if (auto structOp = dyn_cast<StructDeclOp>(
               cast<FnOp>(declIfKnown->getIfOperation())->getParentOp())) {
         auto structSig = structOp.getSignature();
@@ -1383,9 +1386,11 @@ CallParamInf::CallParamInf(const ParamBindings &paramBinding,
                            FnTypeGeneratorType calleeSignature,
                            const CallOperands &callOperands,
                            const CallOperands::PogAssignment &pogAssignment,
-                           OperandsNeedingOriginsList &operandsNeedingOrigins)
+                           OperandsNeedingOriginsList &operandsNeedingOrigins,
+                           ArrayRef<ConstraintAttr> additionalAssumptions)
     : ParamInf(paramBinding, declaredParamTypes, declaredParamPogs,
-               allowImplicitConversions, declIfDirect, discardError),
+               allowImplicitConversions, declIfDirect, discardError,
+               /*deferredTypingContext=*/nullptr, additionalAssumptions),
       calleeSignature(calleeSignature), callOperands(callOperands),
       pogAssignment(pogAssignment),
       operandsNeedingOrigins(operandsNeedingOrigins) {}
@@ -1573,8 +1578,8 @@ LogicalResult CallParamInf::inferOneOperand(ASTExprAnd<AnyValue> operand,
   }
   case ArgConvention::OwnedMem:
   case ArgConvention::DeinitMem:
-  case ArgConvention::ReadMem:
-  case ArgConvention::ReadReg:
+  case ArgConvention::ImmMem:
+  case ArgConvention::ImmReg:
     break;
   }
 
@@ -1610,7 +1615,7 @@ LogicalResult CallParamInf::inferOneOperand(ASTExprAnd<AnyValue> operand,
         {operandIdx, argIdx, expectedRVType, calleeSignature});
 
   // If a register-passable type is being passed in-memory, remember this.
-  if (expectedConvention != ArgConvention::ReadReg &&
+  if (expectedConvention != ArgConvention::ImmReg &&
       expectedRVType.isRegisterPassable(operand.expr->getLoc(), getShared()))
     ++numMismatchedConventions;
 
@@ -1808,7 +1813,8 @@ LogicalResult CallParamInf::inferCTADParams() {
 
   // We need to convert named parameters like "T", which are ParamDeclRefAttr
   // into ParamIndexRefAttr(0) style of representation.
-  if (auto structDecl = dyn_cast<StructDeclOp>(decl->getIfOperation())) {
+  if (auto structDecl =
+          dyn_cast_or_null<StructDeclOp>(decl->getIfOperation())) {
     IndexRefRemapper remapper(structDecl.getParams(), /*resultParams*/ {});
     selfType = remapper.replace(selfType.mlirType);
   }
@@ -2194,7 +2200,7 @@ VerifiedParamBindings CallParamInf::inferForCall() {
       // value of the TypeList struct.
       auto typeListType =
           evaluator.getReboundType(expectedInfo.typeListStruct.getType());
-      auto typeListValue = SingletonAttr::get(typeListType);
+      auto typeListValue = LIT::getEmptyStructValue(typeListType);
       (void)matcher.matchParams(typeListValue, expectedInfo.typeListStruct);
       continue;
     }
@@ -2362,7 +2368,7 @@ VerifiedParamBindings CallParamInf::inferForCall() {
       // value of the TypeList struct.
       auto typeListType =
           evaluator.getReboundType(expectedInfo.typeListStruct.getType());
-      auto typeListValue = SingletonAttr::get(typeListType);
+      auto typeListValue = LIT::getEmptyStructValue(typeListType);
       (void)matcher.matchParams(typeListValue, expectedInfo.typeListStruct);
       continue;
     }
@@ -2382,11 +2388,12 @@ VerifiedParamBindings CallParamInf::inferForCall() {
   //         pass
   // All of the arguments have been resolved here so all parameters must be
   // inferred (or not able to).
-  if (declIfKnown && cast<FnOp>(declIfKnown->getIfOperation())
-                         .getSpecialFunctionInfo()
-                         .hasSelfResult()) {
-    if (failed(inferSelfFromInitResult()))
-      return {};
+  if (declIfKnown && declIfKnown->getIfOperation()) {
+    if (cast<FnOp>(declIfKnown->getIfOperation())
+            .getSpecialFunctionInfo()
+            .hasSelfResult())
+      if (failed(inferSelfFromInitResult()))
+        return {};
   }
 
   // Check to see if this is a CTAD parameter - a parameter on the struct
@@ -2405,7 +2412,9 @@ VerifiedParamBindings CallParamInf::inferForCall() {
   //
   // TODO: Provide a first class representation for conditional conformance
   // that doesn't have us shadowing parameters like this!
-  if (declIfKnown) {
+  // A trait member's enclosing declaration is a trait rather than a struct, so
+  // the struct-shaped CTAD inference never applies to one.
+  if (declIfKnown && !declIfKnown->getIfWitness()) {
     auto fnOp = cast<FnOp>(declIfKnown->getIfOperation());
     if (!fnOp.getIsStatic() && isa<StructDeclOp>(fnOp->getParentOp())) {
       if (failed(inferCTADParams()))

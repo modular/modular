@@ -66,8 +66,8 @@ def host_cast_k_fp8_to_bf16[
     kv_fp8_t: DType,
     k_bf16_t: DType,
 ](
-    k_fp8: UnsafePointer[Scalar[kv_fp8_t], _],
-    k_bf16: UnsafePointer[mut=True, Scalar[k_bf16_t], _],
+    k_fp8: Pointer[Scalar[kv_fp8_t], _],
+    k_bf16: MutPointer[Scalar[k_bf16_t], _],
     depth: Int,
     num_keys: Int,
     kv_num_heads: Int,
@@ -277,7 +277,7 @@ def test[
         comptime if mla_mask_type == MLAMaskType.CAUSAL:
             var k_operand = LayoutTensorMHAOperand(lt_to_tt(k_ref_device))
             var null_valid_length = LayoutTensor[
-                DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
+                .uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
             ](
                 None,
                 RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
@@ -339,12 +339,12 @@ def test[
                         d
                         + depth * (h + s * num_heads)
                         + b * depth * num_heads * seq_len
-                    ].cast[DType.float64]()
+                    ].cast[.float64]()
                     var actual = flash_output_ptr[
                         d
                         + (depth - 64) * (h + s * num_heads)
                         + b * (depth - 64) * num_heads * seq_len
-                    ].cast[DType.float64]()
+                    ].cast[.float64]()
                     # if not isclose(actual, expect, atol=1e-3, rtol=rtol):
                     #     var rerr = abs((actual - expect) / expect)
                     #     print(h, s, d, actual, expect, rerr)
@@ -437,6 +437,43 @@ def test_decoding_partial_head_group[
         ](seq_len, num_keys, ctx, use_index_input=use_index_input)
 
 
+def test_decoding_k3_head_counts[
+    batch_size: Int,
+    mla_mask_type: MLAMaskType,
+    split_k: Bool = False,
+    num_partitions: Optional[Int] = 1,
+](ctx: DeviceContext, seq_len: Int, num_keys: Int) raises:
+    """Kimi K3's TP8 Q-head count, 12, with 128 as the same-shape control.
+
+    Every other single-head-group count in this file is a power of two. 12 is
+    not, and it works — so the kernel is not restricted to powers of two, and
+    the `compute_mla_dispatch_scalars_runtime` enumeration is the only thing
+    that was in the way at that count.
+
+    K3's TP1 count, 96, is covered by `test_decoding_partial_head_group` above,
+    which owns every count that leaves a partial tail head group. 12 leaves no
+    partial *head* group but does tail the combine grid's 8-head block, which
+    only a split-K run reaches.
+
+    The control comes FIRST at this exact shape and batch: an assert aborts the
+    run, so ordering a supported count ahead of an unusual one is what makes a
+    failure attributable to the head count rather than to the shape.
+    """
+    comptime for num_heads in [128, 12]:
+        test[
+            mla_mask_type,
+            DType.bfloat16,  # q_type
+            DType.float8_e4m3fn,  # kv_type  (fp8 KV)
+            576,
+            num_heads,
+            group=num_heads,
+            against_gpu_naive=True,
+            batch_size=batch_size,
+            num_partitions=num_partitions,
+            decoding_warp_split_k=split_k,
+        ](seq_len, num_keys, ctx)
+
+
 def main() raises:
     with DeviceContext() as ctx:
         comptime if has_nvidia_gpu_accelerator() and _is_sm10x_gpu(
@@ -464,6 +501,11 @@ def main() raises:
             # partials, which the combine kernel then folds into the output.
             test_decoding_partial_head_group[1, MLAMaskType.NO_MASK, True, 2](
                 ctx, False, 1, 1024
+            )
+            test_decoding_k3_head_counts[2, MLAMaskType.CAUSAL](ctx, 1, 512)
+            test_decoding_k3_head_counts[1, MLAMaskType.NO_MASK](ctx, 1, 4096)
+            test_decoding_k3_head_counts[1, MLAMaskType.NO_MASK, True, 2](
+                ctx, 1, 4096
             )
         else:
             pass

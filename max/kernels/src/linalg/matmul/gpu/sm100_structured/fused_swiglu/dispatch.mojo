@@ -43,14 +43,12 @@ def matmul_swiglu_dispatch_sm100[
     pdl_level: PDLLevel = PDLLevel(0),
 ](
     c_out: TileTensor[
-        mut=True, DType.bfloat16, Storage=PointerStorage[element_width=1], ...
+        mut=True, .bfloat16, Storage=PointerStorage[element_width=1], ...
     ],
-    a: TileTensor[mut=False, DType.bfloat16, ...],
-    b: TileTensor[mut=False, DType.bfloat16, ...],
+    a: TileTensor[mut=False, .bfloat16, ...],
+    b: TileTensor[mut=False, .bfloat16, ...],
     ctx: DeviceContext,
-    bias_ptr: OptionalReg[
-        UnsafePointer[Scalar[DType.bfloat16], ImmutAnyOrigin]
-    ] = None,
+    bias_ptr: OptionalReg[UnsafePointer[BFloat16, ImmutAnyOrigin]] = None,
 ) raises:
     """Dispatch fused GEMM+SwiGLU to SM100 kernel with given config.
 
@@ -110,9 +108,7 @@ def matmul_swiglu_dispatch_sm100_bf16[
     a: TileTensor[...],
     b: TileTensor[...],
     ctx: DeviceContext,
-    bias_ptr: OptionalReg[
-        UnsafePointer[Scalar[DType.bfloat16], ImmutAnyOrigin]
-    ] = None,
+    bias_ptr: OptionalReg[UnsafePointer[BFloat16, ImmutAnyOrigin]] = None,
 ) raises:
     """Auto-dispatch fused GEMM+SwiGLU on SM100 using shape-based tuning table.
 
@@ -143,9 +139,9 @@ def matmul_swiglu_dispatch_sm100_bf16[
     comptime static_N = b.static_shape[0]
     comptime static_K = b.static_shape[1]
     # When has_bias=False, c_out._storage is a valid dummy (bias never accessed).
-    var bias_base = rebind[
-        UnsafePointer[Scalar[DType.bfloat16], ImmutAnyOrigin]
-    ](c_out._storage)
+    var bias_base = rebind[UnsafePointer[BFloat16, ImmutAnyOrigin]](
+        c_out._storage
+    )
     comptime if has_bias:
         bias_base = bias_ptr.value()
     var bias_tile = TileTensor(bias_base, row_major(Coord(Idx[static_N])))

@@ -115,15 +115,13 @@ def bench_broadcast[
     # Two-stage broadcast needs payload space for each GPU's chunk
     var chunk_bytes = ceildiv(num_bytes, ngpus)
     var signal_buf_size = size_of[Signal]() + chunk_bytes
-    var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
-    var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+    var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
+    var rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS](
         uninitialized=True
     )
 
     # Multicast buffer for output (when use_multimem=True)
-    var out_multicast_ptr = Optional[
-        UnsafePointer[Scalar[dtype], MutAnyOrigin]
-    ]()
+    var out_multicast_ptr = Optional[MutPointer[Scalar[dtype], MutAnyOrigin]]()
 
     # Initialize output and signal buffers for each GPU
     comptime if use_multimem:
@@ -145,11 +143,9 @@ def bench_broadcast[
 
             # Create and initialize signal buffers (with payload space for 2-stage)
             signal_buffers.append(
-                list_of_ctx[gpu_idx].create_buffer_sync[DType.uint8](
-                    signal_buf_size
-                )
+                list_of_ctx[gpu_idx].create_buffer_sync[.uint8](signal_buf_size)
             )
-            list_of_ctx[gpu_idx].enqueue_memset[DType.uint8](
+            list_of_ctx[gpu_idx].enqueue_memset[.uint8](
                 signal_buffers[gpu_idx], 0
             )
             rank_sigs[gpu_idx] = (
@@ -167,11 +163,9 @@ def bench_broadcast[
 
             # Create and initialize signal buffers (with payload space for 2-stage)
             signal_buffers.append(
-                list_of_ctx[gpu_idx].create_buffer_sync[DType.uint8](
-                    signal_buf_size
-                )
+                list_of_ctx[gpu_idx].create_buffer_sync[.uint8](signal_buf_size)
             )
-            list_of_ctx[gpu_idx].enqueue_memset[DType.uint8](
+            list_of_ctx[gpu_idx].enqueue_memset[.uint8](
                 signal_buffers[gpu_idx], 0
             )
             rank_sigs[gpu_idx] = (
@@ -226,11 +220,10 @@ def bench_broadcast[
             raise "Vendor CCL not available; skipping vendor path."
         vendor_ccl.init_comms(ngpus)
 
-    @__parameter
     @always_inline
     def bench_iter(
         mut bencher: Bencher, ctx: DeviceContext, ctx_idx: Int
-    ) raises:
+    ) raises {imm}:
         @always_inline
         def call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises {imm}:
             var in_tile = TileTensor(
@@ -260,8 +253,9 @@ def bench_broadcast[
 
         bencher_iter_custom(bencher, call_fn, ctx)
 
-    bench_multicontext[bench_iter](
+    bench_multicontext(
         b,
+        bench_iter,
         list_of_ctx,
         BenchId(name),
         [ThroughputMeasure(BenchMetric.bytes, num_bytes)],
@@ -348,7 +342,7 @@ def main() raises:
     var num_bytes = arg_parse("num_bytes", 64 * 1024 * 1024)
     var root = arg_parse("root", 0)
 
-    comptime dtype = get_defined_dtype["dtype", DType.bfloat16]()
+    comptime dtype = get_defined_dtype["dtype", .bfloat16]()
     comptime num_gpus = get_defined_int["num_gpus", 2]()
     comptime use_multimem = get_defined_bool["use_multimem", False]()
     comptime use_vendor_ccl = get_defined_bool["use_vendor_ccl", False]()

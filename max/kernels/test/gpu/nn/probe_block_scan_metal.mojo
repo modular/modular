@@ -37,10 +37,10 @@ from std.testing import assert_equal, assert_almost_equal, TestSuite
 def block_scan_kernel[
     block_size: Int
 ](
-    inp: UnsafePointer[Float32, MutAnyOrigin],
-    out_incl: UnsafePointer[Float32, MutAnyOrigin],
-    out_excl: UnsafePointer[Float32, MutAnyOrigin],
-    out_sum: UnsafePointer[Float32, MutAnyOrigin],
+    inp: MutPointer[Float32, MutAnyOrigin],
+    out_incl: MutPointer[Float32, MutAnyOrigin],
+    out_excl: MutPointer[Float32, MutAnyOrigin],
+    out_sum: MutPointer[Float32, MutAnyOrigin],
 ):
     """Per-thread: read input, run block.sum + block.prefix_sum, write results.
 
@@ -79,10 +79,10 @@ def run_case[
     ctx: DeviceContext,
 ) raises:
     """Run one probe case. tx in [0, n_active) get fill_active, rest get 0."""
-    var inp = ctx.enqueue_create_buffer[DType.float32](block_size)
-    var out_incl = ctx.enqueue_create_buffer[DType.float32](block_size)
-    var out_excl = ctx.enqueue_create_buffer[DType.float32](block_size)
-    var out_sum = ctx.enqueue_create_buffer[DType.float32](block_size)
+    var inp = ctx.enqueue_create_buffer[.float32](block_size)
+    var out_incl = ctx.enqueue_create_buffer[.float32](block_size)
+    var out_excl = ctx.enqueue_create_buffer[.float32](block_size)
+    var out_sum = ctx.enqueue_create_buffer[.float32](block_size)
 
     # Host input + reference.
     var host_in = Array[Float32, block_size](fill=0)

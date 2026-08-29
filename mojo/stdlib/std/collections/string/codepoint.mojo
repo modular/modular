@@ -136,6 +136,62 @@ struct Codepoint(Comparable, ImplicitlyCopyable, Intable, Movable, Writable):
         """
         self._scalar_value = UInt32(Int(codepoint))
 
+    @always_inline("nodebug")
+    def __init__(out self, lit: StringLiteral):
+        """Construct a `Codepoint` from a single-codepoint `StringLiteral`.
+
+        This constructor validates at compile-time that the literal contains
+        exactly one Unicode codepoint, and computes the codepoint value as a
+        compile-time constant. This provides an ergonomic and efficient way to
+        create codepoints from string literals without runtime overhead.
+
+        Args:
+            lit: A string literal containing exactly one Unicode codepoint.
+
+        Constraints:
+            The string literal must contain exactly one Unicode codepoint.
+            Multi-byte UTF-8 sequences are supported (e.g., "🔥").
+
+        Examples:
+
+        ```mojo
+        from std.collections.string import Codepoint
+        from std.testing import assert_equal
+
+        # Create codepoints from ASCII literals
+        var a = Codepoint("A")
+        assert_equal(a.to_u32(), 65)
+
+        var space = Codepoint(" ")
+        assert_equal(space, Codepoint.ord(" "))
+
+        # Multi-byte UTF-8 codepoints also work
+        var emoji = Codepoint("🔥")
+        assert_equal(emoji, Codepoint.ord("🔥"))
+        ```
+        """
+        # Reconstruct the literal from the type parameter to force compile-time
+        # evaluation.
+        comptime sl: StringLiteral[lit.value] = {}
+
+        # Compile-time validation for proper UTF-8 codepoint.
+        comptime assert (
+            sl.byte_length() > 0
+        ), "Cannot construct an empty codepoint"
+
+        # SAFETY:
+        #   This is safe because `StringLiteral` is guaranteed to point to
+        #   valid UTF-8.
+        comptime char, num_bytes = Codepoint.unsafe_decode_utf8_codepoint(
+            sl.as_bytes()
+        )
+
+        comptime assert sl.byte_length() == Int(
+            num_bytes
+        ), "input string must be one character"
+
+        self = char
+
     # ===-------------------------------------------------------------------===#
     # Factory methods
     # ===-------------------------------------------------------------------===#
@@ -222,8 +278,7 @@ struct Codepoint(Comparable, ImplicitlyCopyable, Intable, Movable, Writable):
         # 4: 11110aaa 10bbbbbb 10cccccc 10dddddd -> 00000000 000aaabb bbbbcccc ccdddddd     a << 18 | b << 12 | c << 6 | d
         assert len(s) > 0, "input Span must be non-empty"
 
-        var ptr = s.unsafe_ptr()
-        var b1 = ptr[]
+        var b1 = s.unsafe_get(0)
         if (b1 >> 7) == 0:  # This is 1 byte ASCII char
             return Codepoint(b1), 1
 
@@ -238,17 +293,17 @@ struct Codepoint(Comparable, ImplicitlyCopyable, Intable, Movable, Writable):
         var b1_mask = 0b11111111 >> (num_bytes + 1)
         var result = Int(b1 & b1_mask) << shift
         for i in range(1, Int(num_bytes)):
-            ptr = ptr.unsafe_offset(1)
+            var bi = s.unsafe_get(i)
             # Assert that this is a continuation byte
             debug_assert(
-                ptr[] >> 6 == 0b00000010,
+                bi >> 6 == 0b00000010,
                 "invalid UTF-8 byte ",
-                ptr[],
+                bi,
                 " at index ",
                 i,
             )
             shift -= 6
-            result |= Int(ptr[] & 0b00111111) << shift
+            result |= Int(bi & 0b00111111) << shift
 
         # SAFETY: Safe because the input bytes are required to be valid UTF-8,
         #   and valid UTF-8 will never decode to an out of bounds codepoint
@@ -610,10 +665,10 @@ struct Codepoint(Comparable, ImplicitlyCopyable, Intable, Movable, Writable):
 
         # Minimum codepoint values (respectively) that can fit in a 1, 2, 3,
         # and 4 byte encoded UTF-8 sequence.
-        comptime sizes = SIMD[DType.uint32, 4](
+        comptime sizes = SIMD[.uint32, 4](
             0, UInt32(2**7), UInt32(2**11), UInt32(2**16)
         )
 
         # Count how many of the minimums this codepoint exceeds, which is equal
         # to the number of bytes needed to encode it.
-        return Int(sizes.le(self.to_u32()).cast[DType.uint8]().reduce_add())
+        return Int(sizes.le(self.to_u32()).cast[.uint8]().reduce_add())

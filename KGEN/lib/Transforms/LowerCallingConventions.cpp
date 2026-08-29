@@ -335,7 +335,7 @@ void LowerCallingConventionsPass::runOnOperation() {
     SmallVector<ArgConvention> newArgConventions;
     for (auto conv : signature.getArgConventions()) {
       if (conv == ArgConvention::ByRefError)
-        conv = ArgConvention::ReadReg;
+        conv = ArgConvention::ImmReg;
       newArgConventions.push_back(conv);
     }
 

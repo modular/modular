@@ -180,18 +180,14 @@ struct AMDSharedMemoryBarrier(TrivialRegisterPassable):
     def value[
         origin: MutOrigin
     ](ref[AddressSpace.SHARED, origin] self) -> Int32:
-        var bar = UnsafePointer(to=self.__repr).address_space_cast[
-            AddressSpace.SHARED
-        ]()
+        var bar = UnsafePointer(to=self.__repr).address_space_cast[.SHARED]()
         return _workgroup_atomic.load[ordering=Ordering.ACQUIRE](bar)
 
     @always_inline
     def increment[
         origin: MutOrigin
     ](ref[AddressSpace.SHARED, origin] self, warp_id: Int):
-        var bar = UnsafePointer(to=self.__repr).address_space_cast[
-            AddressSpace.SHARED
-        ]()
+        var bar = UnsafePointer(to=self.__repr).address_space_cast[.SHARED]()
         _workgroup_atomic.store[ordering=Ordering.RELEASE](
             bar, _workgroup_atomic.load[ordering=Ordering.ACQUIRE](bar) + 1
         )
@@ -233,11 +229,7 @@ struct AMDWarpSharedMemoryBarrier[size: Int](TrivialRegisterPassable):
     @always_inline
     def increment(ref[AddressSpace.SHARED, MutAnyOrigin] self, warp_id: Int):
         var bar = rebind[
-            UnsafePointer[
-                Scalar[DType.int32],
-                MutAnyOrigin,
-                address_space=AddressSpace.SHARED,
-            ]
+            UnsafePointer[Int32, MutAnyOrigin, address_space=.SHARED]
         ](Pointer(to=self.__repr))
         bar[warp_id] += 1
 
@@ -390,7 +382,7 @@ struct AmdTileOperator[
         Self._out_layout,
         MutAnyOrigin,
         alignment=Self._type_alignment,
-        address_space=AddressSpace.LOCAL,
+        address_space=.LOCAL,
     ]
 
     comptime OutRegTileFragmentType = Self.OutRegTile.TileType[

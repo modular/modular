@@ -62,8 +62,8 @@ def host_cast_fp8_to_bf16[
     fp8_t: DType,
     bf16_t: DType,
 ](
-    src: UnsafePointer[Scalar[fp8_t], _],
-    dst: UnsafePointer[mut=True, Scalar[bf16_t], _],
+    src: Pointer[Scalar[fp8_t], _],
+    dst: MutPointer[Scalar[bf16_t], _],
     size: Int,
 ):
     """Cast fp8 → bf16 element-by-element on the host. Lossless: every
@@ -223,8 +223,8 @@ def execute_pure_fp8_test[
                         + head_dim * (h + s * num_q_heads)
                         + b * head_dim * num_q_heads * seq_len
                     )
-                    var expect = out_ref_host[idx].cast[DType.float64]()
-                    var actual = out_fp8_host[idx].cast[DType.float64]()
+                    var expect = out_ref_host[idx].cast[.float64]()
+                    var actual = out_fp8_host[idx].cast[.float64]()
                     var diff = abs(actual - expect)
                     total_abs_diff += diff
                     if diff > max_abs_diff:

@@ -21,6 +21,7 @@ from block_idx.x >> 1.
 from std.collections import OptionalReg
 from std.math import ceildiv
 from max.gpu.host import DeviceContext, Dim, FuncAttribute, DeviceBuffer
+from layout import TensorStorage
 from layout.tma_async import RaggedTMA3DTile
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.logger import Logger
@@ -61,6 +62,7 @@ def mha_sm100_depth512_dispatch[
     output_type: DType,
     MaxPromptLenType: OptionallyStaticInt,
     PartitionType: MHAPartitionScheme,
+    KVRowOffsetsStorage: TensorStorage,
     //,
     config: MHAConfig,
     group: Int,
@@ -77,7 +79,9 @@ def mha_sm100_depth512_dispatch[
     max_prompt_len_arg: MaxPromptLenType,
     max_cache_valid_length_arg: Int,
     scale: Float32,
-    kv_input_row_offsets: OptionalReg[ImmutTileTensor1D[DType.uint32]],
+    kv_input_row_offsets: OptionalReg[
+        ImmutTileTensor1D[.uint32, Storage=KVRowOffsetsStorage]
+    ],
     batch_size_arg: Int,
     partition: PartitionType,
     ctx: DeviceContext,
@@ -100,6 +104,8 @@ def mha_sm100_depth512_dispatch[
         MaxPromptLenType: The maximum prompt length as a static or runtime
             value (inferred).
         PartitionType: The KV cache partition scheme (inferred).
+        KVRowOffsetsStorage: `TensorStorage` policy of `kv_input_row_offsets`
+            (inferred).
         config: The MHA configuration with head count, depth, and swizzle
             mode used to build the `Depth512SM100Config`.
         group: Number of query heads per KV head for grouped-query attention.
@@ -273,7 +279,7 @@ def mha_sm100_depth512_dispatch[
                 MaskType,
                 SchedulerType,
                 ValidLengthType,
-                NullPointer[DType.float32],  # no sink
+                NullPointer[.float32],  # no sink
                 KVRowOffsetsType,
                 MaxPromptLenType,
                 PartitionType,
@@ -282,7 +288,7 @@ def mha_sm100_depth512_dispatch[
                 mask,
                 scheduler,
                 valid_len,
-                NullPointer[DType.float32](),
+                NullPointer[.float32](),
                 kv_row_offsets,
                 max_prompt_len_arg,
                 partition,
@@ -346,16 +352,16 @@ def mha_sm100_depth512_dispatch[
 
         # --- ragged dispatch ---
         comptime if ragged:
-            with_valid_length[NonNullPointer[DType.uint32]](
+            with_valid_length[NonNullPointer[.uint32]](
                 {valid_length.as_imm().as_unsafe_any_origin()}
             )
         else:
-            with_valid_length[NullPointer[DType.uint32]]({})
+            with_valid_length[NullPointer[.uint32]]({})
 
     # --- kv_input_row_offsets dispatch ---
     if kv_input_row_offsets:
-        with_kv_offsets[NonNullPointer[DType.uint32]](
+        with_kv_offsets[NonNullPointer[.uint32]](
             {kv_input_row_offsets.value().ptr}
         )
     else:
-        with_kv_offsets[NullPointer[DType.uint32]]({})
+        with_kv_offsets[NullPointer[.uint32]]({})

@@ -430,12 +430,14 @@ def bench_max(
 
     # Use bench_kineto to profile the kernel.
     # Split-K decode launches up to two kernels:
-    #   sm100_mha_1q_depth128_..._<hash>         (main decode)
-    #   mha_splitk_reduce_..._<hash>              (reduction, when partitions > 1)
-    # The substring "mha_" matches both (and nothing else in this graph).
+    #   sm100_mha_1q_depth128_..._<hash>    (FA4 SM100MHA2Q main decode; the
+    #                                       num_q=1 variant of the @__name
+    #                                       "sm100_mha_{nq}q_depth{d}_...")
+    #   sm100_splitk_combine_..._<hash>     (fa4_splitk_combine reduction,
+    #                                       when partitions > 1)
     time_s = bench_kineto(
         run_kernel,
-        kernel_names="mha_",
+        kernel_names="sm100_mha_",
         num_tests=100,
         suppress_kineto_output=True,
         flush_l2=True,

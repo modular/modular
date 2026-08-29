@@ -37,5 +37,7 @@ def test_max_seq_len_is_a_read_only_view_of_the_plan() -> None:
 
     fget = descriptor.fget
     assert fget is not None
-    plan = MemoryPlan(max_batch_size=1, footprint=0, planned_max_length=77)
+    plan = MemoryPlan(
+        planned_max_batch_size=1, footprint=0, planned_max_length=77
+    )
     assert fget(SimpleNamespace(memory_plan=plan)) == 77

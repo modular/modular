@@ -25,6 +25,7 @@ from layout import (
     Coord,
     Idx,
     TensorLayout,
+    TensorStorage,
     TileTensor,
     coord,
     coord_to_index_list,
@@ -178,7 +179,7 @@ def cpu_bicubic_kernel(
             # now that i have the weight y and x of said pixel, i multiply it by its weight and add it to the sum
             var pixel_value = Float32(
                 input_host.load[width=1](
-                    dyn_coord[DType.int64]((b, c, y_pos, x_pos))
+                    dyn_coord[.int64]((b, c, y_pos, x_pos))
                 )
             )
             sum_value += pixel_value * weight
@@ -186,7 +187,7 @@ def cpu_bicubic_kernel(
 
         # store the result in the output tensor
         output_host.store[width=1](
-            dyn_coord[DType.int64]((b, c, y_out, x_out)),
+            dyn_coord[.int64]((b, c, y_out, x_out)),
             sum_value.cast[output_host.dtype](),
         )
 
@@ -198,9 +199,15 @@ def gpu_bicubic_kernel[
     output_origin: MutOrigin,
     InputLayoutType: TensorLayout,
     input_origin: ImmOrigin,
+    OutputStorage: TensorStorage,
+    InputStorage: TensorStorage,
 ](
-    output: TileTensor[dtype, OutputLayoutType, output_origin],
-    input: TileTensor[dtype, InputLayoutType, input_origin],
+    output: TileTensor[
+        dtype, OutputLayoutType, output_origin, Storage=OutputStorage
+    ],
+    input: TileTensor[
+        dtype, InputLayoutType, input_origin, Storage=InputStorage
+    ],
 ) -> None:
     """Perform bicubic interpolation using GPU.
 
@@ -210,6 +217,8 @@ def gpu_bicubic_kernel[
         output_origin: Mutable `Origin` of the output tensor.
         InputLayoutType: `TensorLayout` of the input tensor.
         input_origin: Immutable `Origin` of the input tensor.
+        OutputStorage: Storage policy of the output tensor.
+        InputStorage: Storage policy of the input tensor.
 
     Args:
         output: Output tensor with desired dimensions on the device.
@@ -221,6 +230,8 @@ def gpu_bicubic_kernel[
     # Provide evidence that flat_rank >= 4 for the Coord(..., ...) loads/stores below.
     comptime assert input.flat_rank >= 4
     comptime assert output.flat_rank >= 4
+    comptime assert output.element_size == 1
+    comptime assert input.element_size == 1
 
     var b = block_idx.x
     var c = block_idx.y
@@ -260,8 +271,8 @@ def gpu_bicubic_kernel[
         var sum_weights: Float32 = 0.0
 
         # Pre-compute cubic weights for better performance
-        var weights_y = cubic_kernel(SIMD[DType.float32, 4](-1, 0, 1, 2) - dy)
-        var weights_x = cubic_kernel(SIMD[DType.float32, 4](-1, 0, 1, 2) - dx)
+        var weights_y = cubic_kernel(SIMD[.float32, 4](-1, 0, 1, 2) - dy)
+        var weights_x = cubic_kernel(SIMD[.float32, 4](-1, 0, 1, 2) - dx)
 
         # get the 4x4 surrounding pixels, and assign weights to them
         comptime for i, j in product(range(4), range(4)):
@@ -275,7 +286,7 @@ def gpu_bicubic_kernel[
             # now that i have the weight y and x of said pixel, i multiply it by its weight and add it to the sum
             var pixel_value = input.load[width=1](
                 Coord(b, c, y_pos, x_pos)
-            ).cast[DType.float32]()
+            ).cast[.float32]()
             sum_value += pixel_value * weight
             sum_weights += weight
 
@@ -290,10 +301,8 @@ def resize_bicubic[
     //,
     target: StaticString,
 ](
-    output: TileTensor[
-        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
-    ],
-    input: TileTensor[dtype, address_space=AddressSpace.GENERIC, ...],
+    output: TileTensor[mut=True, dtype, address_space=.GENERIC, ...],
+    input: TileTensor[dtype, address_space=.GENERIC, ...],
     ctx: DeviceContext,
 ) raises:
     """Perform bicubic interpolation.
@@ -323,8 +332,10 @@ def resize_bicubic[
             output.dtype,
             output_origin=output.origin,
             OutputLayoutType=output.LayoutType,
+            OutputStorage=output.Storage,
             input_origin=ImmOrigin(input.origin),
             InputLayoutType=input.LayoutType,
+            InputStorage=input.Storage,
         ]
         ctx.enqueue_function[kernel](
             output,

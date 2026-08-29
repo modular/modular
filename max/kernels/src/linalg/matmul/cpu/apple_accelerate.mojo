@@ -160,8 +160,7 @@ def use_apple_accelerate_lib[
         `True` if the Accelerate library is available and the dtype combination is supported.
     """
     return (
-        CompilationTarget.is_macos()
-        and a_type == b_type == c_type == DType.float32
+        CompilationTarget.is_macos() and a_type == b_type == c_type == .float32
     )
 
 
@@ -270,9 +269,9 @@ def apple_gemv[
     transpose_b: Bool = False,
     elementwise_lambda_fn: Optional[matmul_elementwise_epilogue_type] = None,
 ](
-    c: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
-    a: TileTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
-    b: TileTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
+    c: TileTensor[mut=True, address_space=.GENERIC, ...],
+    a: TileTensor[mut=False, address_space=.GENERIC, ...],
+    b: TileTensor[mut=False, address_space=.GENERIC, ...],
     ctx: Optional[DeviceContext] = None,
 ) raises:
     """Performs a parallelized and vectorized GEMV for the M=1 case on Apple CPUs.
@@ -429,7 +428,7 @@ def apple_matmul[
     comptime assert a.flat_rank >= 2
     comptime assert b.flat_rank >= 2
     comptime assert (
-        a.dtype == b.dtype == c.dtype == DType.float32
+        a.dtype == b.dtype == c.dtype == .float32
     ), "unsupported type in apple accelerate"
     var m = Int32(Int(a.dim[0]()))
     var n = Int32(Int(b.dim[0]()) if transpose_b else Int(b.dim[1]()))
@@ -506,7 +505,7 @@ def apple_matmul[
         b: Input B matrix tile.
     """
     comptime assert (
-        a.dtype == b.dtype == c.dtype == DType.float32
+        a.dtype == b.dtype == c.dtype == .float32
     ), "unsupported type in apple accelerate"
     var cblas_gemm = get_cblas_f32_function()
 

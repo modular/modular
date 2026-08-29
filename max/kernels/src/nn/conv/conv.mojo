@@ -185,17 +185,17 @@ struct Naive2dConvolution[
     var output: UnsafePointer[Scalar[Self.output_type], Self.output_origin]
     var input: UnsafePointer[Scalar[Self.input_type], Self.input_origin]
     var filter: UnsafePointer[Scalar[Self.filter_type], Self.filter_origin]
-    var pad_d: DynamicCoord[DType.int64, 2]
-    var pad_h: DynamicCoord[DType.int64, 2]
-    var pad_w: DynamicCoord[DType.int64, 2]
-    var stride: DynamicCoord[DType.int64, 3]
-    var dilation: DynamicCoord[DType.int64, 3]
+    var pad_d: DynamicCoord[.int64, 2]
+    var pad_h: DynamicCoord[.int64, 2]
+    var pad_w: DynamicCoord[.int64, 2]
+    var stride: DynamicCoord[.int64, 3]
+    var dilation: DynamicCoord[.int64, 3]
     var num_groups: Int
 
     # Derived params.
-    var output_shape: DynamicCoord[DType.int64, 5]  # NDHWC layout.
-    var input_shape: DynamicCoord[DType.int64, 5]  # NDHWC layout.
-    var filter_shape: DynamicCoord[DType.int64, 5]  # QRSCF layout.
+    var output_shape: DynamicCoord[.int64, 5]  # NDHWC layout.
+    var input_shape: DynamicCoord[.int64, 5]  # NDHWC layout.
+    var filter_shape: DynamicCoord[.int64, 5]  # QRSCF layout.
 
     @staticmethod
     def run(
@@ -403,16 +403,15 @@ def _reduce_output[
     var buf_size = num_rows * F
 
     # Reduce from the output scratch buffer to the actual output.
-    @__parameter
     @always_inline
-    def reduce_task(tid: Int):
+    def reduce_task(tid: Int) {imm}:
         # Use all threads in reduction.
         var reduce_range = partition_work(tid, num_threads, num_rows, 1)
 
         @always_inline
         def sum[
             width: Int
-        ](offset: Int) {F, scratch, num_partitions, output, mut}:
+        ](offset: Int) {F, scratch, num_partitions, output, imm buf_size, mut}:
             var tid_output_offset = reduce_range[0] * F + offset
             var vec = scratch.load[width=width](tid_output_offset)
             # The number of partitions here is typically small.
@@ -435,7 +434,7 @@ def _reduce_output[
                 epilogue(Index(nhowo[0], nhowo[1], nhowo[2], 0), F)
 
     # NOTE: _synchronous, so use of locally allocated output_ptr is safe.
-    sync_parallelize[reduce_task](num_threads, ctx)
+    sync_parallelize(reduce_task, num_threads, ctx)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -507,7 +506,7 @@ struct ConvDirectNHWC[
     # padded, only ho is partitioned for now.
     var partition: ConvPartition
 
-    var cf_tile_size: DynamicCoord[DType.int64, 2]
+    var cf_tile_size: DynamicCoord[.int64, 2]
 
     # If shapes and attributes are known at compile time
     comptime packed_and_fully_static = Self.conv_attr.all_known() and Self.input_layout.shape.all_known[
@@ -595,12 +594,16 @@ struct ConvDirectNHWC[
             ),
         )
 
-        @__copy_capture(
-            num_partitions, cf_tile_size, output_scratch, output_size
-        )
-        @__parameter
         @always_inline
-        def task_func(task_id: Int):
+        def task_func(
+            task_id: Int,
+        ) {
+            var num_partitions,
+            var cf_tile_size,
+            var output_scratch,
+            var output_size,
+            imm,
+        }:
             var partition = get_partition(
                 task_id,
                 num_partitions,
@@ -648,7 +651,7 @@ struct ConvDirectNHWC[
             instance._batch_group_loop()
 
         if num_partitions[1] > 1:
-            sync_parallelize[task_func](num_tasks, ctx)
+            sync_parallelize(task_func, num_tasks, ctx)
 
             # Reduce from the output scratch buffer to the actual output.
             _reduce_output[
@@ -673,7 +676,7 @@ struct ConvDirectNHWC[
             )
         else:
             # Use sync to work around #12624
-            sync_parallelize[task_func](num_tasks, ctx)
+            sync_parallelize(task_func, num_tasks, ctx)
 
     def _batch_group_loop(self):
         """Loop over the batch and group dimensions. The two dimension are
@@ -868,20 +871,19 @@ struct ConvDirectNHWC[
         comptime micro_kernel_f_size = micro_kernel_width * simd_size
 
         # Base input offsets.
-        var input_base_stack = Array[Int32, micro_kernel_height](
-            uninitialized=True
-        )
-        var input_base_offsets = TileTensor(
-            input_base_stack, row_major[micro_kernel_height]()
-        )
-
-        comptime for i in range(micro_kernel_height):
-            input_base_offsets[i] = Int32(
+        var input_base_stack = Array[_, micro_kernel_height](
+            fill_with=lambda (i: Int) {
+                imm self, imm n, imm output_flat_coord, imm c_tile_offset
+            } -> Int32: Int32(
                 self.conv_shape.output_flat_coord_to_input_offset(
                     n, output_flat_coord + i
                 )
                 + c_tile_offset
             )
+        )
+        var input_base_offsets = TileTensor(
+            input_base_stack, row_major[micro_kernel_height]()
+        )
 
         comptime alignment = align_of[SIMD[Self.output_type, simd_size]]()
 
@@ -1164,7 +1166,7 @@ struct ConvDirectNHWC[
         prefetch_offset: Int,
     ](
         self,
-        input_base_offsets: TileTensor[mut=False, DType.int32, ...],
+        input_base_offsets: TileTensor[mut=False, .int32, ...],
         input_offset: Int,
         c_tile_size: Int,
         input: UnsafePointer[mut=False, Scalar[Self.input_type], ...],
@@ -3282,7 +3284,7 @@ def pack_filter_from_fcrs(
                         rscf_buf.store(dst, filter_lt.ptr.load(src))
         # Reinterpret as int64 for pack_filter (matches existing convention).
         var rscf_tile = TileTensor(
-            rscf_buf.bitcast[Scalar[DType.int64]](),
+            rscf_buf.bitcast[Int64](),
             row_major((dim_R, dim_S, dim_C, dim_F)),
         )
         pack_filter(rscf_tile, packed_filter, num_groups)
@@ -3314,7 +3316,7 @@ def pack_filter_from_fcrs(
                             )
                             rscf_buf.store(dst, filter_lt.ptr.load(src))
         var rscf_tile = TileTensor(
-            rscf_buf.bitcast[Scalar[DType.int64]](),
+            rscf_buf.bitcast[Int64](),
             row_major(
                 (
                     dim_Q,
@@ -3338,20 +3340,16 @@ def conv_shape[
     dilations_type: DType,
     paddings_type: DType,
 ](
-    input_buf: TileTensor[
-        mut=False, input_type, address_space=AddressSpace.GENERIC, ...
-    ],
-    filter_buf: TileTensor[
-        mut=False, filter_type, address_space=AddressSpace.GENERIC, ...
-    ],
+    input_buf: TileTensor[mut=False, input_type, address_space=.GENERIC, ...],
+    filter_buf: TileTensor[mut=False, filter_type, address_space=.GENERIC, ...],
     strides_buf: TileTensor[
-        mut=False, strides_type, address_space=AddressSpace.GENERIC, ...
+        mut=False, strides_type, address_space=.GENERIC, ...
     ],
     dilations_buf: TileTensor[
-        mut=False, dilations_type, address_space=AddressSpace.GENERIC, ...
+        mut=False, dilations_type, address_space=.GENERIC, ...
     ],
     paddings_buf: TileTensor[
-        mut=False, paddings_type, address_space=AddressSpace.GENERIC, ...
+        mut=False, paddings_type, address_space=.GENERIC, ...
     ],
     num_groups_scalar: Scalar,
 ) raises -> IndexList[input_buf.flat_rank]:
@@ -3475,15 +3473,9 @@ def conv_nhwc_direct[
     has_epilogue_fusion: Bool,
     elementwise_lambda: elementwise_simd_epilogue_type,
 ](
-    input: TileTensor[
-        mut=False, input_type, address_space=AddressSpace.GENERIC, ...
-    ],
-    filter: TileTensor[
-        mut=False, filter_type, address_space=AddressSpace.GENERIC, ...
-    ],
-    output: TileTensor[
-        mut=True, output_type, address_space=AddressSpace.GENERIC, ...
-    ],
+    input: TileTensor[mut=False, input_type, address_space=.GENERIC, ...],
+    filter: TileTensor[mut=False, filter_type, address_space=.GENERIC, ...],
+    output: TileTensor[mut=True, output_type, address_space=.GENERIC, ...],
     stride: IndexList[conv_info_rank],
     dilation: IndexList[conv_info_rank],
     pad_d: IndexList[2],
@@ -3578,8 +3570,7 @@ def conv_nhwc_direct[
     ), "Filter and input ranks mismatch."
 
     @always_inline
-    @__parameter
-    def description_fn() -> String:
+    def description_fn() {imm} -> String:
         return ";".join(
             [
                 trace_arg("input", input_lt.runtime_layout.shape.value),
@@ -3594,7 +3585,7 @@ def conv_nhwc_direct[
 
     with Trace[TraceLevel.OP, target=StaticString("cpu")](
         "conv",
-        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+        Trace[TraceLevel.OP]._get_detail_str(description_fn),
     ):
         var conv_shape = get_conv_shape[conv_info_rank, filter_packed](
             output,
@@ -3906,11 +3897,11 @@ def get_cudnn_dtype[dtype: DType]() raises -> cudnnDataType_t:
         If the dtype is not supported by cuDNN.
     """
 
-    comptime if dtype == DType.float32:
+    comptime if dtype == .float32:
         return cudnnDataType_t.CUDNN_DATA_FLOAT
-    elif dtype == DType.float16:
+    elif dtype == .float16:
         return cudnnDataType_t.CUDNN_DATA_HALF
-    elif dtype == DType.bfloat16:
+    elif dtype == .bfloat16:
         return cudnnDataType_t.CUDNN_DATA_BFLOAT16
     else:
         raise Error("unsupported dtype", dtype, "for cuDNN")
@@ -4156,7 +4147,7 @@ def _conv_cudnn[
         # Use ALLOW_CONVERSION only for half-precision types to enable tensor
         # core acceleration. For float32, use DEFAULT_MATH to avoid incorrect
         # results on some GPU architectures (e.g., B200).
-        comptime if input_type == DType.float16 or input_type == DType.bfloat16:
+        comptime if input_type == .float16 or input_type == .bfloat16:
             check_cudnn_error(
                 cudnnSetConvolutionMathType(
                     ptr_meta[].ptr_conv_desc,
@@ -4222,7 +4213,7 @@ def _conv_cudnn[
         ptr_meta[].dil = dil
 
     # Allocate workspace per-call using ctx (runtime-managed buffer)
-    var workspace_buffer = ctx.enqueue_create_buffer[DType.uint8](
+    var workspace_buffer = ctx.enqueue_create_buffer[.uint8](
         ptr_meta[].workspace_size
     )
 
@@ -4688,7 +4679,7 @@ def _conv_miopen[
             )
         )
 
-        var find_workspace = ctx.enqueue_create_buffer[DType.uint8](
+        var find_workspace = ctx.enqueue_create_buffer[.uint8](
             Int(workspace_size)
         )
 
@@ -4730,7 +4721,7 @@ def _conv_miopen[
         ptr_meta[].dilation = dilation.copy()
 
     # Run forward convolution
-    var forward_workspace = ctx.enqueue_create_buffer[DType.uint8](
+    var forward_workspace = ctx.enqueue_create_buffer[.uint8](
         Int(ptr_meta[].workspace_size)
     )
 
@@ -4881,13 +4872,9 @@ def conv_gpu[
     filter_is_fcrs: Bool = False,
     has_residual: Bool = False,
 ](
-    input: TileTensor[
-        mut=True, input_type, address_space=AddressSpace.GENERIC, ...
-    ],
-    filter: TileTensor[filter_type, address_space=AddressSpace.GENERIC, ...],
-    output: TileTensor[
-        mut=True, output_type, address_space=AddressSpace.GENERIC, ...
-    ],
+    input: TileTensor[mut=True, input_type, address_space=.GENERIC, ...],
+    filter: TileTensor[filter_type, address_space=.GENERIC, ...],
+    output: TileTensor[mut=True, output_type, address_space=.GENERIC, ...],
     stride: IndexList[conv_rank],
     dilation: IndexList[conv_rank],
     padding: IndexList[2 * conv_rank],
@@ -4974,7 +4961,7 @@ def conv_gpu[
             paddings_tensor[2 * axis + 1] = 0
 
         comptime for i in range(conv_rank):
-            comptime SIMDInt = Scalar[DType.int]
+            comptime SIMDInt = Int
 
             var axis = i + 1  # skip batch axis
             paddings_tensor[2 * axis] = SIMDInt(padding[2 * i])  # before
@@ -6254,7 +6241,7 @@ def _conv3d_cudnn_depth_tiled[
             ws_size = 0
 
         # --- Execute tile ---
-        var workspace_buffer = ctx.enqueue_create_buffer[DType.uint8](ws_size)
+        var workspace_buffer = ctx.enqueue_create_buffer[.uint8](ws_size)
 
         # Compute pointer offsets for input and output tiles.
         var in_offset = d_in_start * in_d_stride
@@ -6517,7 +6504,7 @@ def _conv3d_cudnn[
         workspace_size_var = entry[].workspace_size
     else:
         # Cache miss — run FindEx to find the fastest algorithm.
-        var find_ws = ctx.enqueue_create_buffer[DType.uint8](FIND_WS_CAP)
+        var find_ws = ctx.enqueue_create_buffer[.uint8](FIND_WS_CAP)
 
         # CRITICAL: The Mojo cudnnConvolutionFwdAlgoPerfStruct uses Int8 for
         # enum fields, but the C struct uses int (4 bytes). This causes a
@@ -6642,9 +6629,7 @@ def _conv3d_cudnn[
     var alpha = Float32(1.0)
     var beta = Float32(0.0)
 
-    var workspace_buffer = ctx.enqueue_create_buffer[DType.uint8](
-        workspace_size_var
-    )
+    var workspace_buffer = ctx.enqueue_create_buffer[.uint8](workspace_size_var)
     var fwd_status = cudnnConvolutionForward(
         ptr_meta[].ptr_handle,
         UnsafePointer(to=alpha).bitcast[NoneType](),
@@ -6683,7 +6668,7 @@ def _conv3d_cudnn[
         algo = IMPLICIT_GEMM
         workspace_size_var = 0
 
-        var retry_workspace = ctx.enqueue_create_buffer[DType.uint8](0)
+        var retry_workspace = ctx.enqueue_create_buffer[.uint8](0)
         fwd_status = cudnnConvolutionForward(
             ptr_meta[].ptr_handle,
             UnsafePointer(to=alpha).bitcast[NoneType](),

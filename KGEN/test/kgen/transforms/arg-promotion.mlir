@@ -3,8 +3,8 @@
 module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
 
 // CHECK-LABEL: kgen.func export @exported
-// CHECK-SAME: %arg0: !kgen.pointer<index> read_mem
-kgen.func export @exported(%arg0: !kgen.pointer<index> read_mem) {
+// CHECK-SAME: %arg0: !kgen.pointer<index> imm_mem
+kgen.func export @exported(%arg0: !kgen.pointer<index> imm_mem) {
   kgen.return
 }
 
@@ -15,29 +15,29 @@ kgen.func @inreg_args(%arg0: index owned) {
 }
 
 // CHECK-LABEL: kgen.func @indirectly_referenced
-// CHECK-SAME: %arg0: !kgen.pointer<index> read_mem
-kgen.func @indirectly_referenced(%arg0: !kgen.pointer<index> read_mem) {
-  kgen.create_closure[(!kgen.pointer<index> read_mem) -> (): @indirectly_referenced]()
+// CHECK-SAME: %arg0: !kgen.pointer<index> imm_mem
+kgen.func @indirectly_referenced(%arg0: !kgen.pointer<index> imm_mem) {
+  kgen.create_closure[(!kgen.pointer<index> imm_mem) -> (): @indirectly_referenced]()
   kgen.return
 }
 
 // CHECK-LABEL: kgen.func @too_large
-// CHECK-SAME: %arg0: !kgen.pointer<array<64, f64>> read_mem
-kgen.func @too_large(%arg0: !kgen.pointer<array<64, f64>> read_mem) {
+// CHECK-SAME: %arg0: !kgen.pointer<array<64, f64>> imm_mem
+kgen.func @too_large(%arg0: !kgen.pointer<array<64, f64>> imm_mem) {
   kgen.return
 }
 
 // CHECK-LABEL: kgen.func @used_as_store_arg
-// CHECK-SAME: %arg0: !kgen.pointer<index> read_mem
-kgen.func @used_as_store_arg(%arg0: !kgen.pointer<index> read_mem) {
+// CHECK-SAME: %arg0: !kgen.pointer<index> imm_mem
+kgen.func @used_as_store_arg(%arg0: !kgen.pointer<index> imm_mem) {
   %0 = pop.stack_allocation 1 x pointer<index>
   pop.store %arg0, %0 : !kgen.pointer<pointer<index>>
   kgen.return
 }
 
 // CHECK-LABEL: kgen.func @captured_pointer
-// CHECK-SAME: %arg0: !kgen.pointer<index> read_mem
-kgen.func @captured_pointer(%arg0: !kgen.pointer<index> read_mem) {
+// CHECK-SAME: %arg0: !kgen.pointer<index> imm_mem
+kgen.func @captured_pointer(%arg0: !kgen.pointer<index> imm_mem) {
   %0 = kgen.struct.create(%arg0) : !kgen.struct<(pointer<index>)>
   kgen.return
 }
@@ -49,8 +49,8 @@ kgen.func @capture_pointer(%arg0: !kgen.pointer<index>) {
 }
 
 // CHECK-LABEL: kgen.func @captured_by_call
-// CHECK-SAME: %arg0: !kgen.pointer<index> read_mem
-kgen.func @captured_by_call(%arg0: !kgen.pointer<index> read_mem) {
+// CHECK-SAME: %arg0: !kgen.pointer<index> imm_mem
+kgen.func @captured_by_call(%arg0: !kgen.pointer<index> imm_mem) {
   kgen.call @capture_pointer(%arg0) : (!kgen.pointer<index>) -> ()
   kgen.return
 }
@@ -110,7 +110,7 @@ kgen.func @call_use(%arg0: !kgen.pointer<i64> mut) {
 }
 
 // CHECK-LABEL: kgen.func @borrowed_in_mem(%arg0: index) {
-kgen.func @borrowed_in_mem(%arg0: !kgen.pointer<index> read_mem) {
+kgen.func @borrowed_in_mem(%arg0: !kgen.pointer<index> imm_mem) {
   // CHECK-NEXT: %0 = pop.stack_allocation 1 x index
   // CHECK-NEXT: store %arg0, %0
 
@@ -180,7 +180,7 @@ kgen.func @byref_error(%arg0: !kgen.pointer<index> byref_error) throws {
 // CHECK-LABEL: kgen.func @all_of_them
 // CHECK-SAME: (%arg0: i1, %arg1: i2 owned, %arg2: i3, %arg3: i4) throws -> (i3, i4, i5, i6)
 kgen.func @all_of_them(
-    %arg0: !kgen.pointer<i1> read_mem,
+    %arg0: !kgen.pointer<i1> imm_mem,
     %arg1: !kgen.pointer<i2> owned_in_mem,
     %arg2: !kgen.pointer<i3> mut,
     %arg3: !kgen.pointer<i4> ref,
@@ -207,7 +207,7 @@ kgen.func @all_of_them(
 
 // CHECK-LABEL: kgen.func @only_one_promoted
 // CHECK-SAME: %arg0: index, %arg1: index
-kgen.func @only_one_promoted(%arg0: !kgen.pointer<index> read_mem, %arg1: index) {
+kgen.func @only_one_promoted(%arg0: !kgen.pointer<index> imm_mem, %arg1: index) {
   kgen.return
 }
 
@@ -232,7 +232,7 @@ kgen.func @all_of_them_calls() {
   // CHECK-NEXT: [[I4_IN:%.*]] = pop.load [[I4]]
   // CHECK-NEXT: [[R:%.*]]:4 = kgen.call @all_of_them([[I1_IN]], [[I2_IN]], [[I3_IN]], [[I4_IN]]) : (i1, i2 owned, i3, i4) throws -> (i3, i4, i5, i6)
   kgen.call @all_of_them(%0, %1, %2, %3, %4, %5) : (
-    !kgen.pointer<i1> read_mem,
+    !kgen.pointer<i1> imm_mem,
     !kgen.pointer<i2> owned_in_mem,
     !kgen.pointer<i3> mut,
     !kgen.pointer<i4> ref,

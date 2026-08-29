@@ -22,7 +22,13 @@ from __future__ import annotations
 from typing import Literal
 
 from max.config import ConfigFileModel
-from pydantic import Field, field_validator, model_validator
+from pydantic import (
+    ConfigDict,
+    Field,
+    ValidationInfo,
+    field_validator,
+    model_validator,
+)
 from typing_extensions import Self
 
 __all__ = [
@@ -44,6 +50,9 @@ draft slots before any real draft exists. Defined here so the graph side
 
 SpeculativeMethod = Literal["eagle", "mtp", "dflash"]
 """The supported methods for speculative decoding."""
+
+_ONE_TOKEN_PER_STEP: tuple[SpeculativeMethod, ...] = ("eagle", "mtp")
+"""Methods that draft one token per step, and so default to a width of 2."""
 
 RejectionSamplingStrategy = Literal[
     "greedy", "residual", "typical-acceptance", "logit-comparison"
@@ -86,7 +95,11 @@ class SpeculativeConfig(ConfigFileModel):
             speculative_method="eagle",
             num_speculative_tokens=3,
         )
+
+    Instances are immutable. Assigning a field after construction raises.
     """
+
+    model_config = ConfigDict(frozen=True)
 
     speculative_method: SpeculativeMethod | None = Field(
         default=None, description="The speculative decoding method to use."
@@ -99,6 +112,8 @@ class SpeculativeConfig(ConfigFileModel):
 
     num_speculative_tokens: int | None = Field(
         default=None,
+        # So the default below runs when the field is unset.
+        validate_default=True,
         description=(
             "The number of speculative tokens. Unset selects a per-method "
             "default: 2 for ``eagle``/``mtp``, and the draft checkpoint's "
@@ -115,17 +130,16 @@ class SpeculativeConfig(ConfigFileModel):
     increase kernel latencies from the additional tokens.
     """
 
-    @model_validator(mode="after")
-    def _resolve_autoregressive_draft_width(self) -> Self:
-        # Eagle/MTP draft one token per autoregressive step and keep their
-        # longstanding default of 2. DFlash-style block drafts derive the
-        # width from the draft checkpoint's trained block size, so unset
-        # stays None until the architecture resolves it.
-        if self.num_speculative_tokens is None and (
-            self.is_eagle() or self.is_mtp()
-        ):
-            self.num_speculative_tokens = 2
-        return self
+    @field_validator("num_speculative_tokens", mode="after")
+    @classmethod
+    def _resolve_autoregressive_draft_width(
+        cls, value: int | None, info: ValidationInfo
+    ) -> int | None:
+        # DFlash leaves it unset for the architecture to fill.
+        method = info.data.get("speculative_method")
+        if value is None and method in _ONE_TOKEN_PER_STEP:
+            return 2
+        return value
 
     rejection_sampling_strategy: RejectionSamplingStrategy | None = Field(
         default=None,
@@ -262,6 +276,19 @@ class SpeculativeConfig(ConfigFileModel):
         return v
 
     _config_file_section_name: str = "speculative_config"
+
+    @property
+    def draft_width(self) -> int:
+        """The number of tokens drafted per step.
+
+        Set for every config the pipeline builds: the architecture supplies
+        it for checkpoints that fix it, and the rest take the default.
+        """
+        assert self.num_speculative_tokens is not None, (
+            "num_speculative_tokens is unset; the config was not built by"
+            " PipelineConfig.from_args()."
+        )
+        return self.num_speculative_tokens
 
     def is_eagle(self) -> bool:
         """Returns whether the configured method is EAGLE.

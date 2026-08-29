@@ -28,7 +28,7 @@ def main():
     var b_data = Array[Float32, 4](fill=1.0)
     var a = TileTensor(a_data, row_major[2, 2]())
     var b = TileTensor[
-        DType.float32,
+        .float32,
         type_of(row_major[2, 2]()),
         origin_of(b_data),
         Storage=StaticOffsetStorage[static_offset=0],

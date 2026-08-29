@@ -22,6 +22,7 @@ from .model import UnifiedDSparkGemma4_12BModel
 from .model_config import (
     Gemma4DSparkDraftArchConfig,
     UnifiedDSparkGemma4_12BConfig,
+    gemma4_dspark_12b_width,
 )
 from .weight_adapters import convert_safetensor_state_dict
 
@@ -67,4 +68,5 @@ gemma4_dspark_draft_arch = SupportedArchitecture(
     multi_gpu_supported=False,
     task=PipelineTask.TEXT_GENERATION,
     config=Gemma4DSparkDraftArchConfig,
+    checkpoint_draft_width=gemma4_dspark_12b_width,
 )

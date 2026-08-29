@@ -186,7 +186,7 @@ def test_defaults_return() raises:
 
 def process[
     n: Int
-](data: SIMD[DType.float32, n]) -> Float32 where (
+](data: SIMD[.float32, n]) -> Float32 where (
     n == 1 or n == 2 or n == 4 or n == 8 or n == 16 or n == 32
 ):
     var sum: Float32 = 0.0
@@ -196,7 +196,7 @@ def process[
 
 
 def test_where_clause() raises:
-    var data = SIMD[DType.float32, 16](255.0)
+    var data = SIMD[.float32, 16](255.0)
     var sum = process[n=16](data)
     assert_equal(sum, 4080.0)
 

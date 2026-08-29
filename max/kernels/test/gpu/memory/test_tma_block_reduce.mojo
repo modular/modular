@@ -51,10 +51,10 @@ def block_reduce[
     dtype: DType, max_warps_per_block: Int = 32
 ](val: Scalar[dtype]) -> Scalar[dtype]:
     var m2_shared = unsafe_stack_allocation[
-        max_warps_per_block, dtype, address_space=AddressSpace.SHARED
+        max_warps_per_block, dtype, address_space=.SHARED
     ]()
     var m2_broadcast = unsafe_stack_allocation[
-        1, dtype, address_space=AddressSpace.SHARED
+        1, dtype, address_space=.SHARED
     ]()
 
     var tid = thread_idx.x
@@ -93,7 +93,7 @@ def global_reduction_kernel[
     input_fn: def[width: Int, _rank: Int](
         idx: IndexList[_rank]
     ) capturing -> SIMD[dtype, width],
-](d_out: UnsafePointer[Scalar[accum_type], MutAnyOrigin], num_cols_dev: Int32,):
+](d_out: MutPointer[Scalar[accum_type], MutAnyOrigin], num_cols_dev: Int32,):
     # `Int` is not device-passable; widen the fixed-width arg.
     var num_cols = Int(num_cols_dev)
     var tid = thread_idx.x
@@ -125,24 +125,22 @@ def tma_reduction_kernel[
     descriptor: TMADescriptor,
     rows_dev: Int32,
     cols_dev: Int32,
-    d_data: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    d_out: UnsafePointer[Scalar[accum_type], MutAnyOrigin],
+    d_data: ImmPointer[Scalar[dtype], ImmutAnyOrigin],
+    d_out: MutPointer[Scalar[accum_type], MutAnyOrigin],
 ):
     # `Int` is not device-passable; widen the fixed-width args.
     var rows = Int(rows_dev)
     var cols = Int(cols_dev)
     var shmem = external_memory[
-        Scalar[dtype], address_space=AddressSpace.SHARED, alignment=128
+        Scalar[dtype], address_space=.SHARED, alignment=128
     ]()
     # Calculate elements offset for this block (row).
     var block_offset = block_idx.x
 
     # Create barrier for TMA transfer from GMEM to SMEM.
-    var mbar = unsafe_stack_allocation[
-        1, Int64, address_space=AddressSpace.SHARED
-    ]()
+    var mbar = unsafe_stack_allocation[1, Int64, address_space=.SHARED]()
 
-    var descriptor_ptr = UnsafePointer(to=descriptor).bitcast[NoneType]()
+    var descriptor_ptr = Pointer(to=descriptor).bitcast[NoneType]()
     mbarrier_init(mbar, 1)
 
     if thread_idx.x == 0:

@@ -34,7 +34,9 @@ from max.pipelines.architectures.unified_dspark_gemma4_31b.model import (
 from max.pipelines.architectures.unified_dspark_gemma4_31b.model_config import (
     UnifiedDSparkGemma4_31BConfig,
 )
-from max.pipelines.lib.config import PipelineConfig
+from max.pipelines.lib.config.config import (
+    _apply_speculative_target_architecture,
+)
 
 
 def test_unified_dspark_31b_arch_registered() -> None:
@@ -102,14 +104,18 @@ class TestSpeculativeArchitectureRewrite:
                 huggingface_config=SimpleNamespace(architectures=[draft_arch])
             )
         spec = SimpleNamespace(is_dflash=lambda: True) if speculative else None
-        return SimpleNamespace(
-            speculative=spec, model=model, draft_model=draft_model
-        )
+        manifest = {"main": model}
+        if draft_model is not None:
+            manifest["draft"] = draft_model
+        return SimpleNamespace(speculative=spec, manifest=manifest)
 
     @staticmethod
     def _resolved_arch(cfg: SimpleNamespace) -> str:
-        PipelineConfig._apply_speculative_target_architecture(cfg)  # type: ignore[arg-type]
-        return cfg.model.huggingface_config.architectures[0]
+        _apply_speculative_target_architecture(
+            cfg.speculative,
+            cfg.manifest,
+        )
+        return cfg.manifest["main"].huggingface_config.architectures[0]
 
     def test_gemma4_dspark_31b_pair(self) -> None:
         cfg = self._make_config(

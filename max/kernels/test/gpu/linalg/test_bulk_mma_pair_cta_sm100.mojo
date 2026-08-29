@@ -129,9 +129,7 @@ def bulk_mma_pair_cta_kernel[
         ab_type, BN, BK, swizzle_mode=b_swizzle
     ]()
 
-    var smem = external_memory[
-        UInt8, address_space=AddressSpace.SHARED, alignment=8
-    ]()
+    var smem = external_memory[UInt8, address_space=.SHARED, alignment=8]()
 
     comptime a_smem_bytes = a_smem_layout.size() * size_of[ab_type]()
     comptime b_smem_bytes = b_smem_layout.size() * size_of[ab_type]()
@@ -144,14 +142,14 @@ def bulk_mma_pair_cta_kernel[
     var a_smem_tile = LayoutTensor[
         ab_type,
         a_smem_layout,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
     ](a_smem.as_unsafe_any_origin())
 
     var b_smem_tile = LayoutTensor[
         ab_type,
         b_smem_layout,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
     ](b_smem.as_unsafe_any_origin())
 
@@ -427,9 +425,7 @@ def bulk_mma_pair_cta_ts_kernel[
         ab_type, BN, BK, swizzle_mode=b_swizzle
     ]()
 
-    var smem = external_memory[
-        UInt8, address_space=AddressSpace.SHARED, alignment=8
-    ]()
+    var smem = external_memory[UInt8, address_space=.SHARED, alignment=8]()
 
     comptime a_smem_bytes = a_smem_layout.size() * size_of[ab_type]()
     comptime b_smem_bytes = b_smem_layout.size() * size_of[ab_type]()
@@ -442,14 +438,14 @@ def bulk_mma_pair_cta_ts_kernel[
     var a_smem_tile = LayoutTensor[
         ab_type,
         a_smem_layout,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
     ](a_smem.as_unsafe_any_origin())
 
     var b_smem_tile = LayoutTensor[
         ab_type,
         b_smem_layout,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
     ](b_smem.as_unsafe_any_origin())
 
@@ -517,7 +513,7 @@ def bulk_mma_pair_cta_ts_kernel[
         accum_type,
         ab_type,
         ab_type,
-        Index[dtype=DType.uint32](MMA_M, MMA_N),
+        Index[dtype=.uint32](MMA_M, MMA_N),
         transpose_b=transpose_b,
     ]()
 
@@ -614,10 +610,10 @@ def bulk_mma_pair_cta_ts_kernel[
         # Compute the M-part of the offset once (invariant across K).
         var m_offset = (a_row % 8) * sw_K + (a_row // 8) * (8 * sw_K)
 
-        var a_data = Array[Scalar[DType.float32], BK](uninitialized=True)
+        var a_data = Array[Float32, BK](uninitialized=True)
         comptime for j in range(BK):
             var base = m_offset + (j % sw_K) + (j // sw_K) * outer_k_stride
-            a_data[j] = a_smem[sw(base)].cast[DType.float32]()
+            a_data[j] = a_smem[sw(base)].cast[.float32]()
 
         TMemTile[ab_type, 32, BK](tmem_addr).store_async(a_data)
         tcgen05_store_wait()
@@ -922,8 +918,8 @@ def main() raises:
             comptime for transpose_b in [True, False]:
                 # BM=64, BN=128 -> larger N tile, tests wider bulk_mma
                 test_bulk_mma_pair_cta[
-                    ab_type=DType.bfloat16,
-                    c_type=DType.bfloat16,
+                    ab_type=.bfloat16,
+                    c_type=.bfloat16,
                     prob_shape=Index(512, 1024, 8 * BK),
                     block_tile_shape=Index(64, 128, BK),
                     transpose_b=transpose_b,
@@ -936,8 +932,8 @@ def main() raises:
 
                 # BM=64 -> MMA_M=128, cluster_shape=(2,1,1)
                 test_bulk_mma_pair_cta[
-                    ab_type=DType.bfloat16,
-                    c_type=DType.bfloat16,
+                    ab_type=.bfloat16,
+                    c_type=.bfloat16,
                     prob_shape=Index(128, 2 * BN_BM64, 2 * BK),
                     block_tile_shape=Index(64, BN_BM64, BK),
                     transpose_b=transpose_b,
@@ -948,8 +944,8 @@ def main() raises:
 
                 # Larger cluster: (2,2,1)
                 test_bulk_mma_pair_cta[
-                    ab_type=DType.bfloat16,
-                    c_type=DType.bfloat16,
+                    ab_type=.bfloat16,
+                    c_type=.bfloat16,
                     prob_shape=Index(128, 4 * BN_BM64, 2 * BK),
                     block_tile_shape=Index(64, BN_BM64, BK),
                     transpose_b=transpose_b,
@@ -962,8 +958,8 @@ def main() raises:
 
                 # BM=128 -> MMA_M=256, tests different TMEM read-back path
                 test_bulk_mma_pair_cta[
-                    ab_type=DType.bfloat16,
-                    c_type=DType.bfloat16,
+                    ab_type=.bfloat16,
+                    c_type=.bfloat16,
                     prob_shape=Index(256, 2 * BN_BM128, 2 * BK),
                     block_tile_shape=Index(128, BN_BM128, BK),
                     transpose_b=transpose_b,
@@ -985,8 +981,8 @@ def main() raises:
 
             # Matches depth512 Q@K': BM=64, BN=128, BK=128, transpose_b=True
             test_bulk_mma_pair_cta[
-                ab_type=DType.bfloat16,
-                c_type=DType.bfloat16,
+                ab_type=.bfloat16,
+                c_type=.bfloat16,
                 prob_shape=Index(128, 256, 2 * BK2),
                 block_tile_shape=Index(64, 128, BK2),
                 transpose_b=True,
@@ -997,8 +993,8 @@ def main() raises:
 
             # Same with transpose_b=False (matches P@V geometry)
             test_bulk_mma_pair_cta[
-                ab_type=DType.bfloat16,
-                c_type=DType.bfloat16,
+                ab_type=.bfloat16,
+                c_type=.bfloat16,
                 prob_shape=Index(128, 256, 2 * BK2),
                 block_tile_shape=Index(64, 128, BK2),
                 transpose_b=False,
@@ -1020,8 +1016,8 @@ def main() raises:
 
                 # BM=128 (MMA_M=256): simple TMEM readback
                 test_bulk_mma_pair_cta[
-                    ab_type=DType.bfloat16,
-                    c_type=DType.bfloat16,
+                    ab_type=.bfloat16,
+                    c_type=.bfloat16,
                     prob_shape=Index(256, 2 * BN_TS_BM128, 2 * BK_TS),
                     block_tile_shape=Index(128, BN_TS_BM128, BK_TS),
                     transpose_b=transpose_b_ts,
@@ -1035,8 +1031,8 @@ def main() raises:
 
                 # BM=64 (MMA_M=128): split TMEM readback, 1 K iter
                 test_bulk_mma_pair_cta[
-                    ab_type=DType.bfloat16,
-                    c_type=DType.bfloat16,
+                    ab_type=.bfloat16,
+                    c_type=.bfloat16,
                     prob_shape=Index(128, 2 * BN_TS_BM64, BK_TS),
                     block_tile_shape=Index(64, BN_TS_BM64, BK_TS),
                     transpose_b=transpose_b_ts,
@@ -1048,8 +1044,8 @@ def main() raises:
 
                 # BM=64 (MMA_M=128): split TMEM readback, 2 K iters
                 test_bulk_mma_pair_cta[
-                    ab_type=DType.bfloat16,
-                    c_type=DType.bfloat16,
+                    ab_type=.bfloat16,
+                    c_type=.bfloat16,
                     prob_shape=Index(128, 2 * BN_TS_BM64, 2 * BK_TS),
                     block_tile_shape=Index(64, BN_TS_BM64, BK_TS),
                     transpose_b=transpose_b_ts,

@@ -41,6 +41,7 @@ from max.profiler import Tracer, traced
 from max.serve.config import Settings
 from max.serve.scheduler.base import (
     CancelRequest,
+    PrefillFailure,
     PrefillProgressPing,
     PrefillRequest,
     PrefillResponse,
@@ -64,6 +65,13 @@ logger = logging.getLogger("max.serve")
 # request is unwanted steady-state overhead outside an active
 # investigation.
 _DI_LATENCY_PING_ENABLED = os.getenv("MAX_SERVE_DI_LATENCY_PING", "0") == "1"
+
+# Bracketing dispatch/completion logging around the model-execute call in
+# schedule() -- on a stall, a dispatch line with no matching completion
+# means prefill is stuck inside that one call, rather than the scheduler
+# loop not running at all. Off by default -- two extra log lines per batch
+# is unwanted steady-state overhead outside an active investigation.
+_TRACE_PREFILL_BATCH = os.getenv("MAX_SERVE_TRACE_PREFILL_BATCH", "0") == "1"
 
 
 @dataclass
@@ -360,7 +368,22 @@ class PrefillScheduler(Scheduler):
         """
         # Execute the Batch
         assert len(inputs.batches) > 0
+        if _TRACE_PREFILL_BATCH:
+            batch_sizes = [len(batch) for batch in inputs.batches]
+            dispatch_t0 = time.monotonic()
+            logger.info(
+                "Dispatching prefill batch: %d replica(s), sizes=%s",
+                len(inputs.batches),
+                batch_sizes,
+            )
         responses = self.pipeline.execute(inputs)
+        if _TRACE_PREFILL_BATCH:
+            logger.info(
+                "Completed prefill batch: %d replica(s), sizes=%s, took %.1fms",
+                len(inputs.batches),
+                batch_sizes,
+                (time.monotonic() - dispatch_t0) * 1000,
+            )
 
         self.batch_constructor.advance_requests(inputs)
 
@@ -438,15 +461,18 @@ class PrefillScheduler(Scheduler):
         t1 = time.monotonic()
         batch_creation_time_s = t1 - t0
 
-        # The DI protocol has no failure reply, so the decode node is not
-        # notified; route-side validation makes this unreachable in practice.
         for failed_id, error in self.batch_constructor.take_grammar_failed():
-            self.request_id_to_reply_context.pop(failed_id, None)
-            logger.error(
-                "Dropping prefill request %s: grammar build failed after "
-                "route-side validation passed: %s",
-                failed_id,
-                error,
+            # Never reaches an executed CE batch, so drop its queue-wait
+            # entry here rather than leaving it to accumulate.
+            self._enqueue_time.pop(failed_id, None)
+            reply_context = self.request_id_to_reply_context.pop(
+                failed_id, None
+            )
+            if reply_context is None:
+                continue
+            identity, _ = reply_context
+            self.dispatcher.send_reply_nowait(
+                PrefillFailure(id=failed_id, error=error), identity
             )
 
         # With the overlap pipeline, a pending _prev_batch must be drained

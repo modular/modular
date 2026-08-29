@@ -23,15 +23,19 @@ from __future__ import annotations
 import asyncio
 import base64
 import io
+import ipaddress
 import logging
+import socket
 from pathlib import Path
 from typing import Protocol
 from urllib.parse import unquote, urlparse
 
 import aiofiles
+import httpx
 from httpx import (
     AsyncClient,
     HTTPStatusError,
+    Response,
     Timeout,
     TimeoutException,
     TransportError,
@@ -42,6 +46,206 @@ from PIL import Image, UnidentifiedImageError
 from pydantic import AnyUrl
 
 logger = logging.getLogger("max.serve")
+
+# SSRF protection for client-supplied media URLs: validate the host, reject
+# internal/reserved addresses, and pin to the resolved IP. See
+# ``_validate_and_pin``.
+
+_ALLOWED_SCHEMES = ("http", "https")
+
+# Explicit cloud-metadata endpoints. Most are already caught by the link-local /
+# private predicates below, but list them so the intent is auditable and so a
+# predicate gap can never silently expose them.
+_METADATA_IPS = frozenset(
+    {
+        ipaddress.ip_address("169.254.169.254"),  # AWS/GCP/Azure IMDS
+        ipaddress.ip_address("169.254.170.2"),  # AWS ECS task metadata
+        ipaddress.ip_address("fd00:ec2::254"),  # AWS IMDS over IPv6
+    }
+)
+
+# Non-routable ranges that ``ipaddress``'s predicates miss/misreport across
+# Python versions: 100.64.0.0/10 (RFC6598 CGNAT, the default in-cluster pod/node
+# CIDR on EKS/GKE) and fec0::/10 (deprecated IPv6 site-local).
+_EXTRA_BLOCKED_NETWORKS = (
+    ipaddress.ip_network("100.64.0.0/10"),
+    ipaddress.ip_network("fec0::/10"),
+)
+
+# Cap on redirect hops we follow, each re-validated. Media fetches need only a
+# hop or two; keep it low to bound re-validation work and egress.
+_MAX_REDIRECTS = 4
+
+
+def _ip_is_blocked(
+    ip: ipaddress.IPv4Address | ipaddress.IPv6Address,
+) -> bool:
+    """Whether an address must never be fetched from (an SSRF target).
+
+    Conservative by construction: blocks the union of private, loopback,
+    link-local, reserved, multicast and unspecified ranges plus the explicit
+    metadata IPs, and unwraps IPv4-in-IPv6 forms (``::ffff:a.b.c.d``, 6to4,
+    teredo) so an embedded internal address cannot slip through.
+    """
+    # Unwrap IPv4-mapped IPv6 (e.g. ``::ffff:169.254.169.254``) and recheck the
+    # embedded v4 address against every rule.
+    mapped = getattr(ip, "ipv4_mapped", None)
+    if mapped is not None and _ip_is_blocked(mapped):
+        return True
+    # 6to4 (``2002::/16``) and Teredo (``2001::/32``) embed a v4 address too.
+    sixtofour = getattr(ip, "sixtofour", None)
+    if sixtofour is not None and _ip_is_blocked(sixtofour):
+        return True
+    teredo = getattr(ip, "teredo", None)
+    if teredo is not None:
+        # ``teredo`` is a (server, client) pair of v4 addresses.
+        if any(_ip_is_blocked(part) for part in teredo):
+            return True
+    if ip in _METADATA_IPS:
+        return True
+    if any(ip in net for net in _EXTRA_BLOCKED_NETWORKS):
+        return True
+    # ``is_global`` is the catch-all; the explicit predicates below are
+    # belt-and-suspenders for versions that misreport it.
+    if not ip.is_global:
+        return True
+    return (
+        ip.is_private
+        or ip.is_loopback
+        or ip.is_link_local
+        or ip.is_reserved
+        or ip.is_multicast
+        or ip.is_unspecified
+    )
+
+
+def _parse_allowed_hosts(
+    entries: list[str],
+) -> tuple[list[ipaddress.IPv4Network | ipaddress.IPv6Network], set[str]]:
+    """Split the configured allowlist into IP networks and hostnames.
+
+    An entry that parses as an IP/CIDR becomes a network; everything else is a
+    case-insensitive hostname.
+    """
+    nets: list[ipaddress.IPv4Network | ipaddress.IPv6Network] = []
+    names: set[str] = set()
+    for raw in entries:
+        entry = raw.strip()
+        if not entry:
+            continue
+        try:
+            nets.append(ipaddress.ip_network(entry, strict=False))
+        except ValueError:
+            # Normalize the FQDN trailing-dot form so an allowlisted
+            # "minio.internal" also matches the "minio.internal." a client may
+            # send (and vice versa).
+            names.add(entry.rstrip(".").lower())
+    return nets, names
+
+
+def _host_allowlisted(
+    host: str,
+    ips: list[ipaddress.IPv4Address | ipaddress.IPv6Address],
+    nets: list[ipaddress.IPv4Network | ipaddress.IPv6Network],
+    names: set[str],
+) -> bool:
+    """Whether an otherwise-blocked host is explicitly permitted.
+
+    A hostname match permits the host regardless of the address it resolves to
+    (the operator is vouching for that name); a CIDR/IP allowlist permits a host
+    only when *every* resolved address falls within an allowlisted range (so a
+    host that mixes an allowed and a disallowed answer is still rejected).
+    """
+    if host.rstrip(".").lower() in names:
+        return True
+    return bool(
+        nets and ips and all(any(ip in net for net in nets) for ip in ips)
+    )
+
+
+async def _resolve_host(host: str, port: int) -> list[str]:
+    """Resolve a hostname to its IP strings. Isolated for testability.
+
+    Returns the literal IP strings from ``getaddrinfo`` (A and AAAA). A host that
+    is already an IP literal resolves to itself.
+    """
+    loop = asyncio.get_running_loop()
+    infos = await loop.getaddrinfo(host, port, type=socket.SOCK_STREAM)
+    # sockaddr[0] is typed str | int because typeshed includes the AF_PACKET
+    # form; SOCK_STREAM lookups only yield AF_INET/AF_INET6, where it is a str.
+    addrs: list[str] = []
+    for info in infos:
+        addr = info[4][0]
+        assert isinstance(addr, str)
+        addrs.append(addr)
+    return addrs
+
+
+async def _validate_and_pin(
+    url: str,
+    nets: list[ipaddress.IPv4Network | ipaddress.IPv6Network],
+    names: set[str],
+) -> tuple[str, str, str, httpx.URL]:
+    """Validate a media URL and resolve it to a pinned connection target.
+
+    Returns ``(pinned_url, host_header, sni_hostname, parsed)`` where
+    ``pinned_url`` has its host replaced by a single validated IP literal so
+    httpx connects there without re-resolving (no rebinding window), while
+    ``host_header`` / ``sni_hostname`` carry the real hostname so the Host header
+    is correct and TLS still verifies against the hostname; ``parsed`` is the
+    parsed input URL, returned so the caller need not re-parse it.
+
+    Raises ``InputError`` (mapped to a 400) for a disallowed scheme, a host that
+    will not resolve, or a host that resolves to an internal/reserved/metadata
+    address and is not allowlisted.
+    """
+    try:
+        parsed = httpx.URL(url)
+    except httpx.InvalidURL:
+        # A malformed URL (e.g. a dotted-octal host or unbalanced IPv6 bracket,
+        # possibly arriving via a redirect Location) is a client error, not a
+        # server fault -- surface a 400, never an opaque 500.
+        raise InputError("malformed media URL") from None
+    scheme = parsed.scheme
+    if scheme not in _ALLOWED_SCHEMES:
+        raise InputError(f"unsupported media URL scheme '{scheme}'")
+    host = parsed.host
+    if not host:
+        raise InputError("media URL has no host")
+    default_port = 443 if scheme == "https" else 80
+    port = parsed.port or default_port
+
+    try:
+        ip_strings = await _resolve_host(host, port)
+    except socket.gaierror:
+        raise InputError(f"could not resolve media URL host '{host}'") from None
+    if not ip_strings:
+        raise InputError(f"could not resolve media URL host '{host}'")
+
+    ips: list[ipaddress.IPv4Address | ipaddress.IPv6Address] = []
+    for raw_ip in ip_strings:
+        # getaddrinfo can hand back a scoped v6 literal ("fe80::1%eth0"); drop
+        # the zone id before parsing.
+        try:
+            ips.append(ipaddress.ip_address(raw_ip.split("%", 1)[0]))
+        except ValueError:
+            raise InputError(
+                f"media URL host '{host}' resolved to an unparseable address"
+            ) from None
+
+    if not _host_allowlisted(host, ips, nets, names):
+        if any(_ip_is_blocked(ip) for ip in ips):
+            raise InputError(
+                "media URL host resolves to a disallowed"
+                " (internal/reserved) address"
+            )
+
+    # Pin to a single validated (or allowlisted) IP, chosen deterministically.
+    pinned_ip_obj = min(ips, key=lambda ip: (ip.version != 4, ip.packed))
+    pinned_url = str(parsed.copy_with(host=str(pinned_ip_obj), port=port))
+    host_header = host if port == default_port else f"{host}:{port}"
+    return pinned_url, host_header, host, parsed
+
 
 # ``data:`` payloads at or below this size (in bytes of the base64 string) are
 # decoded inline; larger ones are offloaded to a worker thread. Base64 decoding
@@ -248,6 +452,176 @@ def make_media_ref(url: str) -> MediaRef:
     return AnyUrl(url)
 
 
+async def _read_streamed_response(
+    response: Response, media_kind: str, max_bytes: int | None
+) -> bytes:
+    """Stream a final (non-redirect) response body under the byte cap.
+
+    Enforces the same limits on both the guarded and break-glass fetch paths:
+    the ``Content-Length`` fast path rejects an over-cap body before any bytes
+    are read, then the body is streamed in bounded chunks and aborted the moment
+    the running total crosses ``max_bytes`` (covering a missing or lying
+    ``Content-Length``).
+
+    Args:
+        response: An open streaming response.
+        media_kind: ``"image"`` or ``"video"`` (used in the error message).
+        max_bytes: The effective byte cap, or ``None`` for no cap.
+
+    Returns:
+        The full response body.
+
+    Raises:
+        InputError: If the body exceeds ``max_bytes``.
+        HTTPStatusError: If the response status is 4xx or 5xx.
+    """
+    response.raise_for_status()
+    # Fast path: reject up front when the server advertises an over-cap size, so
+    # we never start streaming the body.
+    if max_bytes is not None:
+        advertised = response.headers.get("content-length")
+        if (
+            advertised is not None
+            and advertised.isdigit()
+            and int(advertised) > max_bytes
+        ):
+            _raise_media_too_large(media_kind, max_bytes)
+    chunks: list[bytes] = []
+    total = 0
+    async for chunk in response.aiter_bytes(_HTTP_CHUNK_SIZE):
+        total += len(chunk)
+        if max_bytes is not None and total > max_bytes:
+            _raise_media_too_large(media_kind, max_bytes)
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
+async def _fetch_validated(
+    image_ref: MediaRef,
+    settings: Settings,
+    media_kind: str,
+    max_bytes: int | None,
+    client: AsyncClient,
+) -> bytes:
+    """SSRF-safe streaming fetch: validate + pin, following redirects manually so
+    every hop is re-validated. Streams the final body under the byte cap and
+    returns it, or raises ``HTTPStatusError`` (non-2xx -> caller maps) /
+    ``InputError``.
+    """
+    nets, names = _parse_allowed_hosts(settings.media_url_allowed_hosts)
+    current = str(image_ref)
+    for _hop in range(_MAX_REDIRECTS + 1):
+        pinned_url, host_header, sni_hostname, parsed = await _validate_and_pin(
+            current, nets, names
+        )
+        # Only override Host/SNI when the original URL used a hostname. If the
+        # client supplied an IP-literal URL, let httpx derive Host/SNI from the
+        # (pinned) URL to avoid emitting an invalid IPv6 Host header.
+        headers: dict[str, str] = {}
+        try:
+            ipaddress.ip_address(parsed.host)
+        except ValueError:
+            headers["Host"] = host_header
+
+        extensions: dict[str, str] = {}
+        if parsed.scheme == "https":
+            try:
+                ipaddress.ip_address(parsed.host)
+            except ValueError:
+                extensions["sni_hostname"] = sni_hostname
+        try:
+            async with client.stream(
+                "GET",
+                pinned_url,
+                headers=headers,
+                extensions=extensions,
+                follow_redirects=False,
+            ) as response:
+                if response.is_redirect:
+                    location = response.headers.get("location")
+                    if not location:
+                        raise InputError(
+                            f"media url '{image_ref}' returned a redirect with"
+                            " no location"
+                        )
+                    # Resolve a relative redirect against the original hostname
+                    # URL (not the pinned-IP one), then loop to re-validate it.
+                    try:
+                        next_url = str(parsed.join(location))
+                    except httpx.InvalidURL:
+                        raise InputError(
+                            f"media url '{image_ref}' redirected to a malformed"
+                            " location"
+                        ) from None
+                    current = next_url
+                    continue
+                return await _read_streamed_response(
+                    response, media_kind, max_bytes
+                )
+        except httpx.RemoteProtocolError as e:
+            # A malformed redirect Location that httpx rejects while opening the
+            # stream is a client-visible 400, not a transient error.
+            if "location" in str(e).lower():
+                raise InputError(
+                    f"media url '{image_ref}' returned a malformed redirect"
+                    " location"
+                ) from None
+            raise
+    raise InputError(f"too many redirects fetching media url '{image_ref}'")
+
+
+async def _fetch_url_bytes(
+    image_ref: MediaRef,
+    settings: Settings,
+    media_kind: str,
+    max_bytes: int | None,
+) -> bytes:
+    """Fetch an http(s) media reference into raw bytes under the byte cap.
+
+    When SSRF protection is enabled (the default) the host is validated and the
+    connection pinned to the resolved IP, following redirects manually and
+    re-validating each hop; the break-glass path (protection disabled) restores
+    the legacy fetch that lets httpx follow redirects itself. Both paths stream
+    the body under ``max_bytes`` and share the same error mapping.
+    """
+    # TODO: Evaluate creating a single AsyncClient for the app.
+    async with AsyncClient(
+        headers=_FETCH_HEADERS, timeout=_FETCH_TIMEOUT
+    ) as client:
+        try:
+            if settings.media_url_ssrf_protection_enabled:
+                return await _fetch_validated(
+                    image_ref, settings, media_kind, max_bytes, client
+                )
+            # Break-glass: guard disabled -> legacy unvalidated fetch that lets
+            # httpx follow redirects itself.
+            async with client.stream(
+                "GET", str(image_ref), follow_redirects=True
+            ) as response:
+                return await _read_streamed_response(
+                    response, media_kind, max_bytes
+                )
+        except HTTPStatusError as e:
+            raise ValueError(
+                f"Failed to fetch {media_kind}: HTTP {e.response.status_code}"
+            ) from None
+        except TimeoutException:
+            # A slow/stalled download must not surface as an opaque 500
+            # (which the client then retries). Turn it into a clean input
+            # error attributable to the unreachable/slow media source.
+            raise InputError(
+                f"timed out fetching {media_kind} from its URL; the source "
+                "may be too slow or the file too large"
+            ) from None
+        except TransportError as e:
+            # Connection reset / DNS / network failure mid-fetch: same
+            # treatment as a timeout, a clean input error rather than a 500.
+            raise InputError(
+                f"failed to fetch {media_kind} from its URL "
+                f"({type(e).__name__})"
+            ) from None
+
+
 async def resolve_image_from_url(
     image_ref: MediaRef,
     settings: Settings,
@@ -283,59 +657,13 @@ async def resolve_image_from_url(
         )
 
     if image_ref.scheme == "http" or image_ref.scheme == "https":
-        # TODO: Evaluate creating a single AsyncClient for the app.
-        async with AsyncClient(
-            headers=_FETCH_HEADERS, timeout=_FETCH_TIMEOUT
-        ) as client:
-            try:
-                async with client.stream(
-                    "GET", str(image_ref), follow_redirects=True
-                ) as response:
-                    response.raise_for_status()
-                    # Fast path: reject up front when the server advertises an
-                    # over-cap size, so we never start streaming the body.
-                    if max_bytes is not None:
-                        advertised = response.headers.get("content-length")
-                        if (
-                            advertised is not None
-                            and advertised.isdigit()
-                            and int(advertised) > max_bytes
-                        ):
-                            _raise_media_too_large(media_kind, max_bytes)
-                    # Stream in bounded chunks, aborting the moment the running
-                    # total exceeds the cap (covers a missing or lying
-                    # Content-Length).
-                    chunks: list[bytes] = []
-                    total = 0
-                    async for chunk in response.aiter_bytes(_HTTP_CHUNK_SIZE):
-                        total += len(chunk)
-                        if max_bytes is not None and total > max_bytes:
-                            _raise_media_too_large(media_kind, max_bytes)
-                        chunks.append(chunk)
-                    images_bytes = b"".join(chunks)
-            except HTTPStatusError as e:
-                raise ValueError(
-                    f"Failed to fetch image: HTTP {e.response.status_code}"
-                ) from None
-            except TimeoutException:
-                # A slow/stalled download must not surface as an opaque 500
-                # (which the client then retries). Turn it into a clean input
-                # error attributable to the unreachable/slow media source.
-                raise InputError(
-                    f"timed out fetching {media_kind} from its URL; the source "
-                    "may be too slow or the file too large"
-                ) from None
-            except TransportError as e:
-                # Connection reset / DNS / network failure mid-fetch: same
-                # treatment as a timeout, a clean input error rather than a 500.
-                raise InputError(
-                    f"failed to fetch {media_kind} from its URL "
-                    f"({type(e).__name__})"
-                ) from None
-            logger.debug(
-                "ResolvedImageUrl: %s -> %d bytes", image_ref, len(images_bytes)
-            )
-            return images_bytes
+        images_bytes = await _fetch_url_bytes(
+            image_ref, settings, media_kind, max_bytes
+        )
+        logger.debug(
+            "ResolvedImageUrl: %s -> %d bytes", image_ref, len(images_bytes)
+        )
+        return images_bytes
     elif image_ref.scheme == "data":
         data_uri = image_ref.unicode_string()
         # Decode off the event loop for large payloads: base64 decoding is

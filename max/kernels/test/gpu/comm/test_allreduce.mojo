@@ -78,13 +78,13 @@ def allreduce_test[
     # Create device buffers for all GPUs
     var in_dev = List[DeviceBuffer[dtype]](capacity=ngpus)
     var out_dev = List[DeviceBuffer[dtype]](capacity=ngpus)
-    var host_buffers = List[UnsafePointer[Scalar[dtype], MutUntrackedOrigin]](
+    var host_buffers = List[MutPointer[Scalar[dtype], MutUntrackedOrigin]](
         capacity=ngpus
     )
 
     # Create signal buffers for synchronization
-    var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
-    var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+    var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
+    var rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS](
         uninitialized=True
     )
 
@@ -108,7 +108,7 @@ def allreduce_test[
 
         # Create and initialize signal buffers
         signal_buffers.append(
-            list_of_ctx[i].create_buffer_sync[DType.uint8](
+            list_of_ctx[i].create_buffer_sync[.uint8](
                 size_of[Signal]() + temp_buffer_num_bytes
             )
         )
@@ -138,7 +138,7 @@ def allreduce_test[
             list_of_ctx[i].enqueue_copy(unicast_buf, host_buffers[i])
         # All GPUs use the same multicast pointer
         in_tensors[0] = TileTensor(
-            rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
+            rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](
                 multicast_buf.multicast_buffer_for(list_of_ctx[0]).unsafe_ptr()
             ),
             row_major(length),
@@ -146,7 +146,7 @@ def allreduce_test[
     else:
         for i in range(ngpus):
             in_tensors[i] = TileTensor(
-                rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
+                rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](
                     in_dev[i].unsafe_ptr()
                 ),
                 row_major(length),
@@ -312,15 +312,15 @@ def allreduce_naive_test() raises -> None:
         ctxs.append(DeviceContext(device_id=i))
 
     # Allocate input/output buffers and initialize inputs
-    var in_dev = List[DeviceBuffer[DType.float32]](capacity=ngpus)
-    var out_dev = List[DeviceBuffer[DType.float32]](capacity=ngpus)
-    var host_ptrs = List[UnsafePointer[Float32, MutUntrackedOrigin]](
+    var in_dev = List[DeviceBuffer[.float32]](capacity=ngpus)
+    var out_dev = List[DeviceBuffer[.float32]](capacity=ngpus)
+    var host_ptrs = List[MutPointer[Float32, MutUntrackedOrigin]](
         capacity=ngpus
     )
 
     for i in range(ngpus):
-        in_dev.append(ctxs[i].enqueue_create_buffer[DType.float32](length))
-        out_dev.append(ctxs[i].enqueue_create_buffer[DType.float32](length))
+        in_dev.append(ctxs[i].enqueue_create_buffer[.float32](length))
+        out_dev.append(ctxs[i].enqueue_create_buffer[.float32](length))
         var h = alloc[Float32](length)
         host_ptrs.append(h)
         for j in range(length):
@@ -329,19 +329,17 @@ def allreduce_naive_test() raises -> None:
 
     # Build TileTensor arrays for the kernel API.
     comptime InTensorType = TileTensor[
-        DType.float32, type_of(row_major(length)), ImmutAnyOrigin
+        .float32, type_of(row_major(length)), ImmutAnyOrigin
     ]
     var in_tensors = Array[InTensorType, ngpus](uninitialized=True)
     for i in range(ngpus):
         in_tensors[i] = TileTensor(
-            rebind[UnsafePointer[Float32, ImmutAnyOrigin]](
-                in_dev[i].unsafe_ptr()
-            ),
+            rebind[ImmPointer[Float32, ImmutAnyOrigin]](in_dev[i].unsafe_ptr()),
             row_major(length),
         )
 
     comptime OutTensorType = TileTensor[
-        DType.float32, type_of(row_major(length)), MutAnyOrigin
+        .float32, type_of(row_major(length)), MutAnyOrigin
     ]
     var out_tensors = Array[OutTensorType, ngpus](uninitialized=True)
     for i in range(ngpus):
@@ -366,7 +364,7 @@ def allreduce_naive_test() raises -> None:
             width=_width, alignment=_alignment
         ](
             rebind[IndexList[1]](coord_to_index_list(coords)),
-            rebind[SIMD[DType.float32, _width]](val),
+            rebind[SIMD[.float32, _width]](val),
         )
 
     # Launch naive allreduce per device

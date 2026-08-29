@@ -245,11 +245,11 @@ def _printf[
             elif T == Int8:
                 return UInt64(rebind[Int8](value))
             elif T == Float16:
-                return bitcast[DType.uint64](Float64(rebind[Float16](value)))
+                return bitcast[.uint64](Float64(rebind[Float16](value)))
             elif T == Float32:
-                return bitcast[DType.uint64](Float64(rebind[Float32](value)))
+                return bitcast[.uint64](Float64(rebind[Float32](value)))
             elif T == Float64:
-                return bitcast[DType.uint64](rebind[Float64](value))
+                return bitcast[.uint64](rebind[Float64](value))
             elif T == Int:
                 return UInt64(rebind[Int](value))
             elif T == UInt:
@@ -266,10 +266,7 @@ def _printf[
         var fmt_str = get_static_string[fmt]()
         message = printf_append_string_n(
             message,
-            Span(
-                unsafe_ptr=fmt_str.as_bytes().unsafe_ptr(),
-                length=fmt_str.byte_length() + 1,
-            ),
+            fmt_str.as_c_string_slice().as_bytes_with_nul(),
             args_len == 0,
         )
         comptime k_args_per_group = 7

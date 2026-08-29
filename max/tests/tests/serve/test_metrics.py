@@ -508,12 +508,12 @@ def test_block_level_metrics_are_gauges() -> None:
         )
 
 
-def test_disk_block_counters_record() -> None:
+def test_disk_byte_counters_record() -> None:
     """The disk-tier block transfer counters exist and record without raising."""
     common.configure_metrics(Settings())
     for name in (
-        "maxserve.cache.disk_blocks_read",
-        "maxserve.cache.disk_blocks_written",
+        "maxserve.cache.disk_bytes_read",
+        "maxserve.cache.disk_bytes_written",
     ):
         assert name in metrics.SERVE_METRICS
         metrics.MaxMeasurement(name, 7).commit()  # Should not raise

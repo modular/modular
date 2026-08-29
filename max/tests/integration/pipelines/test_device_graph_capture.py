@@ -196,8 +196,8 @@ def capture_model() -> CapturePipelineModel:
         quantization_encoding=MagicMock(),
         max_batch_size=4,
         max_length=128,
+        device_graph_capture=True,
     )
-    pipeline_config.runtime.device_graph_capture = True
     return CapturePipelineModel(
         pipeline_config=pipeline_config,
         session=MagicMock(),
@@ -209,7 +209,7 @@ def capture_model() -> CapturePipelineModel:
         # The value the mock's clamp derived before plans became required:
         # min(MOCK_MODEL_MAX_SEQ_LEN, max_length=128).
         memory_plan=MemoryPlan(
-            max_batch_size=4,
+            planned_max_batch_size=4,
             footprint=0,
             planned_max_length=128,
         ),

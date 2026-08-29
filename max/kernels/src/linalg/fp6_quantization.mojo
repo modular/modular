@@ -62,9 +62,15 @@ def _quantize_mxfp6_amd_kernel[
     fmt: FP6Format,
     SF_VECTOR_SIZE: Int = 32,
 ](
-    output: TileTensor[DType.uint8, output_layout, MutAnyOrigin],
-    scales: TileTensor[scales_dtype, scales_layout, MutAnyOrigin],
-    input: TileTensor[in_dtype, input_layout, MutAnyOrigin],
+    output: TileTensor[
+        .uint8, output_layout, MutAnyOrigin, Storage=output_storage
+    ],
+    scales: TileTensor[
+        scales_dtype, scales_layout, MutAnyOrigin, Storage=scales_storage
+    ],
+    input: TileTensor[
+        in_dtype, input_layout, MutAnyOrigin, Storage=input_storage
+    ],
     num_rows: Int32,
     num_cols: Int32,
 ):
@@ -75,6 +81,9 @@ def _quantize_mxfp6_amd_kernel[
     comptime assert output.flat_rank >= 2
     comptime assert scales.flat_rank >= 2
     comptime assert input.flat_rank >= 2
+    comptime assert output.element_size == 1
+    comptime assert scales.element_size == 1
+    comptime assert input.element_size == 1
 
     for global_row_idx in range(block_idx.x, _num_rows, grid_dim.x):
         for col_thread_idx in range(
@@ -88,22 +97,22 @@ def _quantize_mxfp6_amd_kernel[
 
             var data = input.load[ELEMENTS_PER_THREAD](
                 Coord(global_row_idx, global_col_idx)
-            ).cast[DType.float32]()
+            ).cast[.float32]()
 
             var group_max = abs(data).reduce_max()
             var e8m0_scale = compute_mxfp6_even_scale[fmt](group_max)
 
             var out_scale = Float32(0.0)
             if group_max != Float32(0.0) and isfinite(group_max):
-                out_scale = recip(e8m0_scale.cast[DType.float32]())
+                out_scale = recip(e8m0_scale.cast[.float32]())
             if not isfinite(group_max) or not isfinite(out_scale):
                 out_scale = Float32(0.0)
-                e8m0_scale = bitcast[DType.float8_e8m0fnu](UInt8(0))
+                e8m0_scale = bitcast[.float8_e8m0fnu](UInt8(0))
                 data = type_of(data)(0.0)
 
             var codes = encode_f32_to_fp6[fmt](data * out_scale)
 
-            var packed = SIMD[DType.uint8, 32](0)
+            var packed = SIMD[.uint8, 32](0)
             comptime for g in range(ELEMENTS_PER_THREAD // 4):
                 var word = pack_fp6_x4(codes.slice[4, offset=g * 4]())
                 comptime for b in range(3):
@@ -152,13 +161,11 @@ def quantize_mxfp6_amd[
     comptime in_dtype = input.dtype
     comptime scales_dtype = scales.dtype
 
+    comptime assert out_dtype == .uint8, "output must be uint8 (packed FP6)"
     comptime assert (
-        out_dtype == DType.uint8
-    ), "output must be uint8 (packed FP6)"
-    comptime assert (
-        scales_dtype == DType.float8_e8m0fnu
+        scales_dtype == .float8_e8m0fnu
     ), "scales must be float8_e8m0fnu"
-    comptime assert in_dtype == DType.bfloat16, "input must be bfloat16"
+    comptime assert in_dtype == .bfloat16, "input must be bfloat16"
     comptime assert (
         SF_VECTOR_SIZE == MXFP6_SF_VECTOR_SIZE
     ), "SF_VECTOR_SIZE must be 32 for MXFP6"

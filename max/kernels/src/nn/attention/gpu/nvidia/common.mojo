@@ -35,8 +35,10 @@ from layout import (
     IntTuple,
     Layout,
     LayoutTensor,
+    PointerStorage,
     RuntimeLayout,
     RuntimeTuple,
+    TensorStorage,
     TileTensor,
     UNKNOWN_VALUE,
     row_major,
@@ -107,7 +109,7 @@ comptime _LocalTT[dtype: DType, layout: InternalLayout] = TileTensor[
         stride_types=layout.stride_types,
     ],
     MutAnyOrigin,
-    address_space=AddressSpace.LOCAL,
+    address_space=.LOCAL,
 ]
 comptime _SharedMemTT[dtype: DType, layout: InternalLayout] = TileTensor[
     dtype,
@@ -116,7 +118,7 @@ comptime _SharedMemTT[dtype: DType, layout: InternalLayout] = TileTensor[
         stride_types=layout.stride_types,
     ],
     MutAnyOrigin,
-    address_space=AddressSpace.SHARED,
+    address_space=.SHARED,
 ]
 
 # TileTensor type alias for 1D row-major tensors with dynamic size, used for
@@ -125,11 +127,9 @@ comptime _1d_row_major_tt_layout = InternalLayout[
     shape_types=Coord[Int64].element_types,
     stride_types=Coord[ComptimeInt[1]].element_types,
 ]
-comptime ImmutTileTensor1D[dtype: DType] = TileTensor[
-    dtype,
-    _1d_row_major_tt_layout,
-    ImmutAnyOrigin,
-]
+comptime ImmutTileTensor1D[
+    dtype: DType, *, Storage: TensorStorage = PointerStorage[element_width=1]
+] = TileTensor[dtype, _1d_row_major_tt_layout, ImmutAnyOrigin, Storage=Storage]
 
 
 struct Pack[
@@ -321,8 +321,8 @@ struct MHAPosition[
             dtype,
             Self.q_output_gmem_layout,
             type_of(ptr).origin,
-            layout_int_type=DType.int32,
-            linear_idx_type=DType.int32,
+            layout_int_type=.int32,
+            linear_idx_type=.int32,
             masked=True,
         ],
     ):
@@ -383,28 +383,14 @@ struct MHAPosition[
         UnsafePointer[Scalar[partition_t.accum_dtype], MutAnyOrigin],
         UnsafePointer[Scalar[partition_t.accum_dtype], MutAnyOrigin],
     ]:
-        # Every caller already reaches this under `comptime if
-        # PartitionType.do_partition`; asserting it here is what makes the
-        # mutability laundering below sound, since only `SplitKPartition` owns a
-        # real buffer.
         comptime assert partition_t.do_partition, (
             "exp_sum_qk_max_ptr is split-K only; a non-partitioning scheme has"
             " no partial-statistics buffer to point at"
         )
-        # `NullPointer.value()` returns a dangling address rather than trapping,
-        # so non-nullness has to be established before the unwrap below. The
-        # SM100 2Q kernel pins the full biconditional
-        # (`do_partition == not LSEPointerType.is_null`), but it is instantiated
-        # only from `sm100/kernel.mojo` — the sm90, MSA, and `mha_1q` callers of
-        # this method never reach it. For those this assert is the only check,
-        # not a redundant one.
         comptime assert not partition_t.LSEPointerType.is_null, (
             "the split-K LSE pointer must be the non-null conformer before"
             " `value()`"
         )
-        # Both conformers derive `LSEPointerType` from `accum_dtype`, but that
-        # tie is not expressible in the trait, so the equality is asserted here
-        # and the `rebind` below reconciles the (identically-represented) types.
         comptime assert (
             partition_t.LSEPointerType.dtype == partition_t.accum_dtype
         ), "the split-K LSE buffer must be typed by the scheme's accum_dtype"
@@ -552,7 +538,7 @@ def get_seq_info[
     # SAFETY: Stored in MHATileState.sidx_ptr but never dereferenced.
     var state: MHATileState = scheduler.initial_state(
         UnsafePointer[
-            UInt32, MutAnyOrigin, address_space=AddressSpace.SHARED
+            UInt32, MutAnyOrigin, address_space=.SHARED
         ].unsafe_dangling(),
         tile_summary,
     )
@@ -969,8 +955,8 @@ def output_reg_to_smem_st_matrix[
         st_matrix_n_layout[
             output_type, padded_depth, num_m_mmas, num_consumer
         ](),
-        element_type=DType.int32,
-        linear_idx_type=DType.int32,
+        element_type=.int32,
+        linear_idx_type=.int32,
     ]()
 
     comptime for m_mma in range(num_m_mmas):
@@ -988,5 +974,5 @@ def output_reg_to_smem_st_matrix[
             var output_frag = output_reg_tile.raw_load[width=8](
                 m_mma * o_frag_size + i * 8
             ).cast[output_type]()
-            var output_frag_f32_packed = bitcast[DType.float32, 4](output_frag)
+            var output_frag_f32_packed = bitcast[.float32, 4](output_frag)
             st_matrix[simd_width=4](offset, output_frag_f32_packed)

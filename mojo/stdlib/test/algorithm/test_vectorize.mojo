@@ -88,11 +88,9 @@ def test_vectorize_evl() raises:
             )
         else:
             var ptr = vector.unsafe_ptr().unsafe_offset(idx)
-            var incr = iota[DType.int32, width]()
+            var incr = iota[.int32, width]()
             var mask = incr.lt(Int32(evl))
-            var loaded = masked_load[width](
-                ptr, mask, SIMD[DType.float32, width]()
-            )
+            var loaded = masked_load[width](ptr, mask, SIMD[.float32, width]())
             var result = loaded + loaded
             masked_store[width](result, ptr, mask)
 

@@ -22,7 +22,13 @@ from unittest.mock import MagicMock
 import numpy as np
 import pytest
 from max.config import ConfigFileModel
-from max.driver import Accelerator, Buffer, DevicePinnedBuffer, DeviceSpec
+from max.driver import (
+    Accelerator,
+    Buffer,
+    DevicePinnedBuffer,
+    DeviceSpec,
+    Usage,
+)
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import (
@@ -292,7 +298,7 @@ class FakePipelineModel(PipelineModelWithKVCache[TextContext]):
         self.kv_cache_config = MagicMock()
         # max_seq_len is a read-only view of the plan on the base class.
         self.memory_plan = MemoryPlan(
-            max_batch_size=1, footprint=0, planned_max_length=9999
+            planned_max_batch_size=1, footprint=0, planned_max_length=9999
         )
         print(f"Building graph for device {self.device}")
         t0 = time.time()
@@ -435,7 +441,7 @@ def create_overlap_pipeline(
         weight_adapters=MagicMock(),
         tokenizer=MagicMock(spec=[]),
         memory_plan=MemoryPlan(
-            max_batch_size=runtime.max_batch_size or 1,
+            planned_max_batch_size=runtime.max_batch_size or 1,
             footprint=0,
             planned_max_length=None,
             device_specs=tuple(model_config.device_specs),
@@ -454,7 +460,7 @@ def prime_host_buffer_cache() -> None:
         shape=[1024 * 1024],
         dtype=DType.int8,
         device=Accelerator(),
-        pinned=True,
+        usage=Usage.STAGING,
     )
     del t
 

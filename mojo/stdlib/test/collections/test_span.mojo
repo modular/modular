@@ -333,17 +333,17 @@ def test_reverse() raises:
             assert_equal(num, backward[i])
             i += 1
 
-    _test_dtype[DType.uint8]()
-    _test_dtype[DType.uint16]()
-    _test_dtype[DType.uint32]()
-    _test_dtype[DType.uint64]()
-    _test_dtype[DType.int8]()
-    _test_dtype[DType.int16]()
-    _test_dtype[DType.int32]()
-    _test_dtype[DType.int64]()
-    _test_dtype[DType.float16]()
-    _test_dtype[DType.float32]()
-    _test_dtype[DType.float64]()
+    _test_dtype[.uint8]()
+    _test_dtype[.uint16]()
+    _test_dtype[.uint32]()
+    _test_dtype[.uint64]()
+    _test_dtype[.int8]()
+    _test_dtype[.int16]()
+    _test_dtype[.int32]()
+    _test_dtype[.int64]()
+    _test_dtype[.float16]()
+    _test_dtype[.float32]()
+    _test_dtype[.float64]()
 
 
 def test_apply() raises:
@@ -351,7 +351,7 @@ def test_apply() raises:
         def _twice[w: SIMDLength](x: SIMD[D, w]) -> SIMD[D, w]:
             return x * 2
 
-        def _where[w: SIMDLength](x: SIMD[D, w]) -> SIMD[DType.bool, w]:
+        def _where[w: SIMDLength](x: SIMD[D, w]) -> SIMD[.bool, w]:
             return (x % 2).eq(0)
 
         var items: List[Scalar[D]] = [
@@ -391,21 +391,21 @@ def test_apply() raises:
             else:
                 assert_true(span[i] == item)
 
-    _test[DType.uint8]()
-    _test[DType.uint16]()
-    _test[DType.uint32]()
-    _test[DType.uint64]()
-    _test[DType.int8]()
-    _test[DType.int16]()
-    _test[DType.int32]()
-    _test[DType.int64]()
-    _test[DType.float16]()
-    _test[DType.float32]()
-    _test[DType.float64]()
+    _test[.uint8]()
+    _test[.uint16]()
+    _test[.uint32]()
+    _test[.uint64]()
+    _test[.int8]()
+    _test[.int16]()
+    _test[.int32]()
+    _test[.int64]()
+    _test[.float16]()
+    _test[.float32]()
+    _test[.float64]()
 
 
 def test_count_func() raises:
-    def is_2[w: SIMDLength](v: SIMD[DType.uint8, w]) -> SIMD[DType.bool, w]:
+    def is_2[w: SIMDLength](v: SIMD[.uint8, w]) -> SIMD[.bool, w]:
         return v.eq(2)
 
     var data = Span([Byte(0), 1, 2, 1, 2, 1, 2])
@@ -452,10 +452,10 @@ def test_binary_search() raises:
             max_val - 1,
         )
 
-    _test[DType.uint8]()
-    _test[DType.int8]()
-    _test[DType.uint16]()
-    _test[DType.int16]()
+    _test[.uint8]()
+    _test[.int8]()
+    _test[.uint16]()
+    _test[.int16]()
 
 
 def test_binary_search_by() raises:

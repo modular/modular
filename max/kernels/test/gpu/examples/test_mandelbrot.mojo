@@ -46,7 +46,7 @@ def mandelbrot_kernel[
     var z = ComplexSIMD[float_type, simd_width](0, 0)
     var iters = SIMD[int_type, simd_width](0)
 
-    var in_set_mask = SIMD[DType.bool, simd_width](fill=True)
+    var in_set_mask = SIMD[.bool, simd_width](fill=True)
     for _ in range(MAX_ITERS):
         if not in_set_mask.reduce_or():
             break
@@ -57,7 +57,7 @@ def mandelbrot_kernel[
     return iters
 
 
-def mandelbrot(out_ptr: UnsafePointer[Scalar[int_type], MutAnyOrigin]):
+def mandelbrot(out_ptr: MutPointer[Scalar[int_type], MutAnyOrigin]):
     # Each task gets a row.
     var row = global_idx.x
     if row >= height:

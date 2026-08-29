@@ -136,7 +136,7 @@ def _mha_prefill_v2_launch[
     ]
 
     var compiled = ctx.compile_function[kernel_run]()
-    var sink_weights_ptr = UnsafePointer[
+    var sink_weights_ptr = ImmPointer[
         Scalar[q.dtype], ImmutAnyOrigin
     ].unsafe_dangling()
     ctx.enqueue_function(
@@ -359,7 +359,7 @@ def test_mha_vs_naive[
         v_ref_tt.as_immut().as_unsafe_any_origin()
     )
     var null_valid_length = LayoutTensor[
-        DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
+        .uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
     ](
         None,
         RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(Index(0)),

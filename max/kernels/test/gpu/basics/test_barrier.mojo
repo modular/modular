@@ -22,9 +22,9 @@ from std.testing import assert_equal
 def kernel[
     dtype: DType
 ](
-    input: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    output: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    shared_data: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    input: ImmPointer[Scalar[dtype], ImmutAnyOrigin],
+    output: MutPointer[Scalar[dtype], MutAnyOrigin],
+    shared_data: MutPointer[Scalar[dtype], MutAnyOrigin],
     size_dev: Int32,
 ):
     var size = Int(size_dev)
@@ -84,4 +84,4 @@ def test_barrier[dtype: DType](ctx: DeviceContext) raises:
 
 def main() raises:
     with DeviceContext() as ctx:
-        test_barrier[DType.float32](ctx)
+        test_barrier[.float32](ctx)

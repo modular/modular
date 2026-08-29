@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.collections import Set
-from std.math import ceildiv, rsqrt
+from std.math import ceildiv, isinf, isnan, rsqrt, sqrt
 from std.random import random_ui64, seed
 from std.sys import get_defined_bool, get_defined_dtype, get_defined_int
 
@@ -53,6 +53,11 @@ def flops(
         * avg_seqlen
         * Float64((headdim + headdim))
     )
+
+
+def _p_opt(p: Int) -> Optional[Int]:
+    # 0 == auto (the `mha.mojo` decode heuristic), >= 1 pins the count.
+    return p if p > 0 else Optional[Int]()
 
 
 def _get_run_name[
@@ -118,6 +123,8 @@ def execute_kv_cache_ragged_flash_attention[
     cache_len: Int,
     use_random_cache_lengths: Bool,
     run_benchmark: Bool,
+    num_partitions: Int,
+    verify: Bool,
 ) raises:
     comptime num_layers = 1
     comptime layer_idx = 0
@@ -139,12 +146,8 @@ def execute_kv_cache_ragged_flash_attention[
     )
 
     # Host allocations for row offsets and cache lengths
-    var input_row_offsets_host_ptr = List(
-        length=batch_size + 1, fill=Scalar[DType.uint32](0)
-    )
-    var cache_lengths_host_ptr = List(
-        length=batch_size, fill=Scalar[DType.uint32](0)
-    )
+    var input_row_offsets_host_ptr = List(length=batch_size + 1, fill=UInt32(0))
+    var cache_lengths_host_ptr = List(length=batch_size, fill=UInt32(0))
     var max_context_length = 0
     var max_seq_length: UInt32 = 0
     var total_seq_len: UInt32 = 0
@@ -180,13 +183,13 @@ def execute_kv_cache_ragged_flash_attention[
     input_row_offsets_host_ptr[batch_size] = total_seq_len
 
     # Device allocations and copies for row offsets
-    var input_row_offsets_dev_buffer = ctx.enqueue_create_buffer[DType.uint32](
+    var input_row_offsets_dev_buffer = ctx.enqueue_create_buffer[.uint32](
         batch_size + 1
     )
     ctx.enqueue_copy(input_row_offsets_dev_buffer, input_row_offsets_host_ptr)
 
     # Device allocation and copy for cache lengths
-    var cache_lengths_dev_buffer = ctx.enqueue_create_buffer[DType.uint32](
+    var cache_lengths_dev_buffer = ctx.enqueue_create_buffer[.uint32](
         batch_size
     )
     ctx.enqueue_copy(cache_lengths_dev_buffer, cache_lengths_host_ptr)
@@ -194,6 +197,14 @@ def execute_kv_cache_ragged_flash_attention[
     # Q tensor allocation
     var q_size = Int(total_seq_len) * num_q_heads * head_dim
     var q_host_ptr = List(length=q_size, fill=Scalar[dtype](0))
+    # `--verify` needs a zero-mean stimulus. Drawn from uniform[0,1) every V
+    # row has mean 0.5, so any softmax weights over any key subset average to
+    # ~0.5 and the digest is blind to which keys were attended (it missed a
+    # 95% key drop). Centring makes the output magnitude and sign depend on
+    # the attended set. Timing is data-independent, so benchmark runs are
+    # unaffected.
+    var fill_lo = Scalar[dtype](-0.5) if verify else Scalar[dtype](0)
+    var fill_hi = Scalar[dtype](0.5) if verify else Scalar[dtype](1)
     random(
         TileTensor(
             q_host_ptr,
@@ -204,7 +215,9 @@ def execute_kv_cache_ragged_flash_attention[
                     Idx[head_dim],
                 )
             ),
-        )
+        ),
+        fill_lo,
+        fill_hi,
     )
     var q_dev_buffer = ctx.enqueue_create_buffer[dtype](q_size)
     ctx.enqueue_copy(q_dev_buffer, q_host_ptr)
@@ -235,9 +248,7 @@ def execute_kv_cache_ragged_flash_attention[
     def _ri(v: Int) -> Int64:
         return Int64(v)
 
-    var paged_lut_host_ptr = List(
-        length=paged_lut_size, fill=Scalar[DType.uint32](0)
-    )
+    var paged_lut_host_ptr = List(length=paged_lut_size, fill=UInt32(0))
     var paged_lut_host = TileTensor(
         paged_lut_host_ptr,
         row_major(Coord(_ri(batch_size), _ri(paged_lut_cols))),
@@ -253,7 +264,7 @@ def execute_kv_cache_ragged_flash_attention[
             paged_lut_set.add(randval)
             paged_lut_host[bs, block_idx] = UInt32(randval)
 
-    var paged_lut_dev_buffer = ctx.enqueue_create_buffer[DType.uint32](
+    var paged_lut_dev_buffer = ctx.enqueue_create_buffer[.uint32](
         paged_lut_size
     )
     ctx.enqueue_copy(paged_lut_dev_buffer, paged_lut_host_ptr)
@@ -273,7 +284,9 @@ def execute_kv_cache_ragged_flash_attention[
                     num_pages, 2, num_layers, page_size, num_kv_heads, head_dim
                 )
             ),
-        )
+        ),
+        fill_lo,
+        fill_hi,
     )
     var kv_block_paged_dev_buffer = ctx.enqueue_create_buffer[dtype](
         kv_block_size
@@ -293,7 +306,7 @@ def execute_kv_cache_ragged_flash_attention[
 
     comptime cache_lengths_layout = Layout(UNKNOWN_VALUE)
     var cache_lengths_layout_tensor = LayoutTensor[
-        mut=False, DType.uint32, cache_lengths_layout
+        mut=False, .uint32, cache_lengths_layout
     ](
         cache_lengths_dev_buffer.unsafe_ptr(),
         RuntimeLayout[cache_lengths_layout].row_major(IndexList[1](batch_size)),
@@ -301,7 +314,7 @@ def execute_kv_cache_ragged_flash_attention[
 
     comptime paged_lut_layout = Layout.row_major[2]()
     var paged_lut_layout_tensor = LayoutTensor[
-        mut=False, DType.uint32, paged_lut_layout
+        mut=False, .uint32, paged_lut_layout
     ](
         paged_lut_dev_buffer.unsafe_ptr(),
         RuntimeLayout[paged_lut_layout].row_major(
@@ -353,7 +366,7 @@ def execute_kv_cache_ragged_flash_attention[
         )
 
     var kv_input_row_offsets_view = LayoutTensor[
-        mut=False, DType.uint32, Layout.row_major(UNKNOWN_VALUE)
+        mut=False, .uint32, Layout.row_major(UNKNOWN_VALUE)
     ](
         kv_input_row_offsets_dev_buffer.unsafe_ptr(),
         RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
@@ -413,6 +426,7 @@ def execute_kv_cache_ragged_flash_attention[
                         input_row_offsets_tensor.to_layout_tensor(),
                         rsqrt(Float32(head_dim)),
                         ctx,
+                        num_partitions=_p_opt(num_partitions),
                     )
                 else:
                     # Sink/cross_attention dispatch: passing
@@ -432,6 +446,7 @@ def execute_kv_cache_ragged_flash_attention[
                             rsqrt(Float32(head_dim)),
                             ctx,
                             kv_input_row_offsets=kv_input_row_offsets_view.as_unsafe_any_origin(),
+                            num_partitions=_p_opt(num_partitions),
                             sink_weights=sink_weights_view,
                         )
                     elif sink:
@@ -444,6 +459,7 @@ def execute_kv_cache_ragged_flash_attention[
                             input_row_offsets_tensor.to_layout_tensor(),
                             rsqrt(Float32(head_dim)),
                             ctx,
+                            num_partitions=_p_opt(num_partitions),
                             sink_weights=sink_weights_view,
                         )
                     elif cross_attention:
@@ -457,6 +473,7 @@ def execute_kv_cache_ragged_flash_attention[
                             rsqrt(Float32(head_dim)),
                             ctx,
                             kv_input_row_offsets=kv_input_row_offsets_view.as_unsafe_any_origin(),
+                            num_partitions=_p_opt(num_partitions),
                         )
                     else:
                         flash_attention[ragged=True](
@@ -468,6 +485,7 @@ def execute_kv_cache_ragged_flash_attention[
                             input_row_offsets_tensor.to_layout_tensor(),
                             rsqrt(Float32(head_dim)),
                             ctx,
+                            num_partitions=_p_opt(num_partitions),
                         )
 
             bencher_iter_custom(b, kernel_launch, ctx)
@@ -514,6 +532,7 @@ def execute_kv_cache_ragged_flash_attention[
                 input_row_offsets_tensor.to_layout_tensor(),
                 rsqrt(Float32(head_dim)),
                 ctx,
+                num_partitions=_p_opt(num_partitions),
             )
         else:
             flash_attention[ragged=True](
@@ -525,7 +544,78 @@ def execute_kv_cache_ragged_flash_attention[
                 input_row_offsets_tensor.to_layout_tensor(),
                 rsqrt(Float32(head_dim)),
                 ctx,
+                num_partitions=_p_opt(num_partitions),
             )
+
+    if verify:
+        # A GROSS-ERROR detector -- wrong keys, an unmasked tail, NaN -- not an
+        # oracle: 8 samples cannot localize a defect. `seed(0)` plus drawing
+        # every input before the first launch makes the digest reproducible.
+        # It is sensitive only because the fill above is zero-mean; on raw
+        # uniform[0,1) it provably could not fail. Absolute correctness stays
+        # with `test_mha_sm100_ws_shared_key.mojo`.
+        ctx.synchronize()
+        var digest_host = ctx.enqueue_create_host_buffer[dtype](output_size)
+        ctx.enqueue_copy(digest_host, output_dev_buffer)
+        ctx.synchronize()
+
+        var nan_count = 0
+        var inf_count = 0
+        var sum_sq = Float64(0)
+        var sum_abs = Float64(0)
+        var max_abs = Float64(0)
+        for i in range(output_size):
+            var v = digest_host[i].cast[DType.float64]()
+            if isnan(v):
+                nan_count += 1
+                continue
+            if isinf(v):
+                inf_count += 1
+                continue
+            var a = abs(v)
+            sum_sq += v * v
+            sum_abs += a
+            max_abs = max(max_abs, a)
+
+        # `rms` divides by the full element count on purpose: a NaN/Inf run
+        # must DEPRESS rms rather than be silently excluded from the
+        # denominator, so a partially poisoned output cannot pass the ratio
+        # bar by shrinking its own reference.
+        print(
+            "[digest] n=",
+            output_size,
+            " nan=",
+            nan_count,
+            " inf=",
+            inf_count,
+            " rms=",
+            sqrt(sum_sq / Float64(output_size)),
+            " maxabs=",
+            max_abs,
+            " meanabs=",
+            sum_abs / Float64(output_size),
+            sep="",
+        )
+
+        # Eight fixed, shape-derived indices. Both arms compute the same
+        # indices from the same `output_size`, so the samples are positionally
+        # matched without either arm knowing about the other.
+        var stride = max(1, output_size // 8)
+        var samples = String("[digest_samples]")
+        for s in range(8):
+            var idx = min(output_size - 1, s * stride + (13 % stride))
+            samples += String(
+                " i",
+                s,
+                "=",
+                idx,
+                " v",
+                s,
+                "=",
+                digest_host[idx].cast[DType.float64](),
+            )
+        print(samples)
+        _ = digest_host^
 
     # Consume device buffers
     _ = input_row_offsets_dev_buffer^
@@ -545,7 +635,7 @@ def execute_kv_cache_ragged_flash_attention[
 
 
 def main() raises:
-    comptime dtype = get_defined_dtype["dtype", DType.bfloat16]()
+    comptime dtype = get_defined_dtype["dtype", .bfloat16]()
 
     comptime head_dim = get_defined_int["head_dim", 128]()
     comptime num_q_heads = get_defined_int["num_q_heads", 32]()
@@ -561,6 +651,9 @@ def main() raises:
     var cache_len = arg_parse("cache_len", 1)
     var use_random_cache_lengths = arg_parse("use_random_cache_lengths", False)
     var run_benchmark = arg_parse("run_benchmark", True)
+    # 0 == auto (the `mha.mojo` decode heuristic); >= 1 pins the count.
+    var num_partitions = Int(arg_parse("num_partitions", 0))
+    var verify = arg_parse("verify", False)
 
     seed(0)
 
@@ -586,9 +679,16 @@ def main() raises:
                 cache_len,
                 use_random_cache_lengths,
                 run_benchmark,
+                num_partitions,
+                verify,
             )
 
     except e:
+        # Re-raise. Printing and returning 0 makes a failed launch
+        # indistinguishable from a real run to anything reading the exit code:
+        # the process exits successfully, `dump_report` prints "No benchmarks
+        # recorded...", and the bazel target reports a pass.
         print("CUDA_ERROR:", e)
+        raise e
 
     m.dump_report()

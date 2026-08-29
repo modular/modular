@@ -39,7 +39,7 @@ def empty_kernel_many_params[
     pass
 
 
-def small_kernel(ptr: UnsafePointer[UInt64, MutAnyOrigin]):
+def small_kernel(ptr: MutPointer[UInt64, MutAnyOrigin]):
     _ = ptr[]
 
 
@@ -88,7 +88,7 @@ def bench_empty_launch_many_params_caller(
 
 def bench_gpu_kernel_enqueue_caller(mut m: Bench, ctx: DeviceContext) raises:
     var size = 1
-    var buf = ctx.create_buffer_sync[DType.uint64](size)
+    var buf = ctx.create_buffer_sync[.uint64](size)
 
     # Warm up before benchmarking
     for _ in range(NUM_WARMUP_ITERATIONS):

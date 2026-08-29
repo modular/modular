@@ -130,7 +130,11 @@ Examples:
         help="Comma-separated tags to filter scenarios (runs scenarios matching ANY tag)",
     )
     p.add_argument(
-        "--exclude", help="Comma-separated scenario names to exclude"
+        "--exclude",
+        help=(
+            "Comma-separated scenarios to exclude. Use scenario:test to "
+            "exclude a single test instead of the whole scenario."
+        ),
     )
 
     p.add_argument(
@@ -320,7 +324,22 @@ def list_scenarios() -> None:
     print()
 
 
-def select_scenarios(args: argparse.Namespace) -> list[Any]:
+def parse_exclude(spec: str | None) -> tuple[set[str], set[str]]:
+    """Split an --exclude value into whole-scenario names and scenario:test
+    names (the tokens containing a ":")."""
+    exclude_groups: set[str] = set()
+    exclude_tests: set[str] = set()
+    for token in (spec or "").split(","):
+        token = token.strip()
+        if not token:
+            continue
+        (exclude_tests if ":" in token else exclude_groups).add(token)
+    return exclude_groups, exclude_tests
+
+
+def select_scenarios(
+    args: argparse.Namespace, exclude_groups: set[str]
+) -> list[Any]:
     """Select which scenarios to run based on CLI args."""
     all_scenarios = get_all_scenarios()
 
@@ -344,9 +363,8 @@ def select_scenarios(args: argparse.Namespace) -> list[Any]:
             print(f"{RED}No scenarios match tags: {args.tags}{RESET}")
             sys.exit(1)
 
-    if args.exclude:
-        exclude = {n.strip() for n in args.exclude.split(",")}
-        selected = [s for s in selected if s.name not in exclude]
+    if exclude_groups:
+        selected = [s for s in selected if s.name not in exclude_groups]
 
     # Filter by scenario type
     if args.fuzz_only:
@@ -389,7 +407,12 @@ async def run(args: argparse.Namespace) -> int:
         image_stress_nodes=args.image_stress_nodes,
     )
 
-    scenario_classes = select_scenarios(args)
+    exclude_groups: set[str] = set()
+    exclude_tests: set[str] = set()
+    if args.exclude:
+        exclude_groups, exclude_tests = parse_exclude(args.exclude)
+
+    scenario_classes = select_scenarios(args, exclude_groups)
 
     # In endurance mode, only run scenarios tagged with "endurance"
     if args.endurance:
@@ -435,7 +458,7 @@ async def run(args: argparse.Namespace) -> int:
 
     try:
         return await _run_body(
-            args, config, scenario_classes, run_log, validator
+            args, config, scenario_classes, run_log, validator, exclude_tests
         )
     finally:
         if run_log:
@@ -473,6 +496,7 @@ async def _run_body(
     scenario_classes: list[Any],
     run_log: RunLog | None,
     validator: ValidatorClient | None,
+    exclude_tests: set[str],
 ) -> int:
     print(f"  Target:       {BOLD}{config.base_url}{RESET}")
     print(f"  Model:        {config.model}")
@@ -620,6 +644,13 @@ async def _run_body(
                                 error=health.error or "",
                             )
                         )
+                    if exclude_tests:
+                        scenario_results = [
+                            r
+                            for r in scenario_results
+                            if f"{r.scenario_name}:{r.test_name}"
+                            not in exclude_tests
+                        ]
                     all_results.extend(scenario_results)
                     s_pass = s_fail = 0
                     for r in scenario_results:

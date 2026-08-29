@@ -39,25 +39,25 @@ def run_matmul_naive(ctx: DeviceContext, M: Int, N: Int, K: Int) raises:
     var rand_max = 1.0
 
     for i in range(M * K):
-        var val = random_float64(rand_min, rand_max).cast[DType.float32]()
-        a_host[i] = val.cast[DType.bfloat16]()
-        a_host_n[i] = a_host[i].cast[DType.float32]()
+        var val = random_float64(rand_min, rand_max).cast[.float32]()
+        a_host[i] = val.cast[.bfloat16]()
+        a_host_n[i] = a_host[i].cast[.float32]()
 
     for i in range(K * N):
-        var val = random_float64(rand_min, rand_max).cast[DType.float32]()
-        b_host[i] = val.cast[DType.bfloat16]()
-        b_host_n[i] = b_host[i].cast[DType.float32]()
+        var val = random_float64(rand_min, rand_max).cast[.float32]()
+        b_host[i] = val.cast[.bfloat16]()
+        b_host_n[i] = b_host[i].cast[.float32]()
 
     for i in range(M * N):
         c_host[i] = 0
         c_host_n[i] = 0
 
-    var a_device = ctx.enqueue_create_buffer[DType.bfloat16](M * K)
-    var b_device = ctx.enqueue_create_buffer[DType.bfloat16](K * N)
-    var c_device = ctx.enqueue_create_buffer[DType.bfloat16](M * N)
-    var a_device_n = ctx.enqueue_create_buffer[DType.float32](M * K)
-    var b_device_n = ctx.enqueue_create_buffer[DType.float32](K * N)
-    var c_device_n = ctx.enqueue_create_buffer[DType.float32](M * N)
+    var a_device = ctx.enqueue_create_buffer[.bfloat16](M * K)
+    var b_device = ctx.enqueue_create_buffer[.bfloat16](K * N)
+    var c_device = ctx.enqueue_create_buffer[.bfloat16](M * N)
+    var a_device_n = ctx.enqueue_create_buffer[.float32](M * K)
+    var b_device_n = ctx.enqueue_create_buffer[.float32](K * N)
+    var c_device_n = ctx.enqueue_create_buffer[.float32](M * N)
 
     ctx.enqueue_copy(a_device, a_host)
     ctx.enqueue_copy(b_device, b_host)
@@ -67,20 +67,19 @@ def run_matmul_naive(ctx: DeviceContext, M: Int, N: Int, K: Int) raises:
     # Create TileTensors for bf16 kernel.
     # a/b are constructed as immutable to match the ImmutAnyOrigin
     # parameters that matmul_kernel_naive expects.
-    from std.memory import UnsafePointer
 
     var c_tt_bf16 = TileTensor(
         c_device,
         row_major(Coord(M, N)),
     )
     var a_tt_bf16 = TileTensor(
-        UnsafePointer[Scalar[DType.bfloat16], ImmutAnyOrigin](
+        ImmPointer[BFloat16, ImmutAnyOrigin](
             unsafe_from_address=Int(a_device.unsafe_ptr())
         ),
         row_major(Coord(M, K)),
     )
     var b_tt_bf16 = TileTensor(
-        UnsafePointer[Scalar[DType.bfloat16], ImmutAnyOrigin](
+        ImmPointer[BFloat16, ImmutAnyOrigin](
             unsafe_from_address=Int(b_device.unsafe_ptr())
         ),
         row_major(Coord(K, N)),
@@ -90,9 +89,9 @@ def run_matmul_naive(ctx: DeviceContext, M: Int, N: Int, K: Int) raises:
     @__parameter
     def run_func_bf16() raises:
         comptime kernel = matmul_kernel_naive[
-            DType.bfloat16,
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
+            .bfloat16,
             type_of(c_tt_bf16).LayoutType,
             type_of(a_tt_bf16).LayoutType,
             type_of(b_tt_bf16).LayoutType,
@@ -123,13 +122,13 @@ def run_matmul_naive(ctx: DeviceContext, M: Int, N: Int, K: Int) raises:
         row_major(Coord(M, N)),
     )
     var a_tt_fp32 = TileTensor(
-        UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin](
+        ImmPointer[Float32, ImmutAnyOrigin](
             unsafe_from_address=Int(a_device_n.unsafe_ptr())
         ),
         row_major(Coord(M, K)),
     )
     var b_tt_fp32 = TileTensor(
-        UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin](
+        ImmPointer[Float32, ImmutAnyOrigin](
             unsafe_from_address=Int(b_device_n.unsafe_ptr())
         ),
         row_major(Coord(K, N)),
@@ -139,9 +138,9 @@ def run_matmul_naive(ctx: DeviceContext, M: Int, N: Int, K: Int) raises:
     @__parameter
     def run_func_fp32() raises:
         comptime kernel = matmul_kernel_naive[
-            DType.float32,
-            DType.float32,
-            DType.float32,
+            .float32,
+            .float32,
+            .float32,
             type_of(c_tt_fp32).LayoutType,
             type_of(a_tt_fp32).LayoutType,
             type_of(b_tt_fp32).LayoutType,
@@ -165,7 +164,7 @@ def run_matmul_naive(ctx: DeviceContext, M: Int, N: Int, K: Int) raises:
 
     for i in range(M * N):
         var out_val = c_host[i]
-        var out_ref = c_host_n[i].cast[DType.bfloat16]()
+        var out_ref = c_host_n[i].cast[.bfloat16]()
         assert_almost_equal(out_val, out_ref)
 
     _ = a_device
@@ -210,12 +209,12 @@ def run_matmul[
     var rand_max = rng_width
 
     for i in range(M * K):
-        var val = random_float64(rand_min, rand_max).cast[DType.float32]()
+        var val = random_float64(rand_min, rand_max).cast[.float32]()
         a_host[i] = val.cast[dtype]()
         a_host_n[i] = a_host[i]
 
     for i in range(K * N):
-        var val = random_float64(rand_min, rand_max).cast[DType.float32]()
+        var val = random_float64(rand_min, rand_max).cast[.float32]()
         b_host[i] = val.cast[dtype]()
         b_host_n[i] = b_host[i]
 
@@ -250,20 +249,19 @@ def run_matmul[
     # Create TileTensors for naive kernel.
     # a/b are constructed as immutable to match the ImmutAnyOrigin
     # parameters that matmul_kernel_naive expects.
-    from std.memory import UnsafePointer
 
     var c_tt = TileTensor(
         c_device_n,
         row_major(Coord(M, N)),
     )
     var a_tt = TileTensor(
-        UnsafePointer[Scalar[dtype], ImmutAnyOrigin](
+        ImmPointer[Scalar[dtype], ImmutAnyOrigin](
             unsafe_from_address=Int(a_device_n.unsafe_ptr())
         ),
         row_major(Coord(M, K)),
     )
     var b_tt = TileTensor(
-        UnsafePointer[Scalar[dtype], ImmutAnyOrigin](
+        ImmPointer[Scalar[dtype], ImmutAnyOrigin](
             unsafe_from_address=Int(b_device_n.unsafe_ptr())
         ),
         row_major(Coord(K, N)),
@@ -352,11 +350,11 @@ def run_matmul_split_k[
     var rand_max = rng_width
 
     for i in range(M * K):
-        var val = random_float64(rand_min, rand_max).cast[DType.float32]()
+        var val = random_float64(rand_min, rand_max).cast[.float32]()
         a_host[i] = val.cast[dtype]()
 
     for i in range(K * N):
-        var val = random_float64(rand_min, rand_max).cast[DType.float32]()
+        var val = random_float64(rand_min, rand_max).cast[.float32]()
         b_host[i] = val.cast[dtype]()
 
     for i in range(M * N):
@@ -400,20 +398,19 @@ def run_matmul_split_k[
     # Create TileTensors for naive kernel.
     # a/b are constructed as immutable to match the ImmutAnyOrigin
     # parameters that matmul_kernel_naive expects.
-    from std.memory import UnsafePointer
 
     var c_tt = TileTensor(
         c_device_n,
         row_major(Coord(M, N)),
     )
     var a_tt = TileTensor(
-        UnsafePointer[Scalar[dtype], ImmutAnyOrigin](
+        ImmPointer[Scalar[dtype], ImmutAnyOrigin](
             unsafe_from_address=Int(a_device_n.unsafe_ptr())
         ),
         row_major(Coord(M, K)),
     )
     var b_tt = TileTensor(
-        UnsafePointer[Scalar[dtype], ImmutAnyOrigin](
+        ImmPointer[Scalar[dtype], ImmutAnyOrigin](
             unsafe_from_address=Int(b_device_n.unsafe_ptr())
         ),
         row_major(Coord(K, N)),
@@ -491,12 +488,12 @@ def run_matmul_transpose[
     var rand_max = rng_width
 
     for i in range(M * K):
-        var val = random_float64(rand_min, rand_max).cast[DType.float32]()
+        var val = random_float64(rand_min, rand_max).cast[.float32]()
         a_host[i] = val.cast[dtype]()
         a_host_n[i] = a_host[i]
 
     for i in range(K * N):
-        var val = random_float64(rand_min, rand_max).cast[DType.float32]()
+        var val = random_float64(rand_min, rand_max).cast[.float32]()
         b_host[i] = val.cast[dtype]()
         b_host_n[i] = b_host[i]
 
@@ -533,20 +530,19 @@ def run_matmul_transpose[
     # Create TileTensors for naive kernel.
     # a/b are constructed as immutable to match the ImmutAnyOrigin
     # parameters that matmul_kernel_naive expects.
-    from std.memory import UnsafePointer
 
     var c_tt = TileTensor(
         c_device_n,
         row_major(Coord(M, N)),
     )
     var a_tt = TileTensor(
-        UnsafePointer[Scalar[dtype], ImmutAnyOrigin](
+        ImmPointer[Scalar[dtype], ImmutAnyOrigin](
             unsafe_from_address=Int(a_device_n.unsafe_ptr())
         ),
         row_major(Coord(M, K)),
     )
     var b_tt = TileTensor(
-        UnsafePointer[Scalar[dtype], ImmutAnyOrigin](
+        ImmPointer[Scalar[dtype], ImmutAnyOrigin](
             unsafe_from_address=Int(b_device_n.unsafe_ptr())
         ),
         row_major(Coord(N, K)),
@@ -623,21 +619,21 @@ def run_batched_matmul(
 
     for i in range(B * M * K):
         var val = random_float64(rand_min, rand_max)
-        a_host[i] = val.cast[DType.bfloat16]()
-        a_host_n[i] = a_host[i].cast[DType.float32]()
+        a_host[i] = val.cast[.bfloat16]()
+        a_host_n[i] = a_host[i].cast[.float32]()
 
     for i in range(B * K * N):
         var val = random_float64(rand_min, rand_max)
-        b_host[i] = val.cast[DType.bfloat16]()
-        b_host_n[i] = b_host[i].cast[DType.float32]()
+        b_host[i] = val.cast[.bfloat16]()
+        b_host_n[i] = b_host[i].cast[.float32]()
 
     for i in range(B * M * N):
         c_host[i] = 0
         c_host_n[i] = 0
 
-    var a_device = ctx.enqueue_create_buffer[DType.bfloat16](B * M * K)
-    var b_device = ctx.enqueue_create_buffer[DType.bfloat16](B * K * N)
-    var c_device = ctx.enqueue_create_buffer[DType.bfloat16](B * M * N)
+    var a_device = ctx.enqueue_create_buffer[.bfloat16](B * M * K)
+    var b_device = ctx.enqueue_create_buffer[.bfloat16](B * K * N)
+    var c_device = ctx.enqueue_create_buffer[.bfloat16](B * M * N)
     var a_tensor = TileTensor(
         a_device,
         row_major(Coord(B, M, K)),
@@ -651,9 +647,9 @@ def run_batched_matmul(
         row_major(Coord(B, M, N)),
     )
 
-    var a_device_n = ctx.enqueue_create_buffer[DType.float32](B * M * K)
-    var b_device_n = ctx.enqueue_create_buffer[DType.float32](B * K * N)
-    var c_device_n = ctx.enqueue_create_buffer[DType.float32](B * M * N)
+    var a_device_n = ctx.enqueue_create_buffer[.float32](B * M * K)
+    var b_device_n = ctx.enqueue_create_buffer[.float32](B * K * N)
+    var c_device_n = ctx.enqueue_create_buffer[.float32](B * M * N)
     var a_tensor_n = TileTensor(
         a_device_n,
         row_major(Coord(B, M, K)),
@@ -715,7 +711,7 @@ def run_batched_matmul(
 
     for i in range(B * M * N):
         var out_val = c_host[i]
-        var out_ref = c_host_n[i].cast[DType.bfloat16]()
+        var out_ref = c_host_n[i].cast[.bfloat16]()
         assert_almost_equal(out_val, out_ref, rtol=1e-02)
 
     _ = a_device
@@ -738,49 +734,49 @@ def run_batched_matmul(
 def main() raises:
     with DeviceContext() as ctx:
         comptime kernels = MatmulKernels[
-            DType.bfloat16, DType.bfloat16, DType.bfloat16, False
+            .bfloat16, .bfloat16, .bfloat16, False
         ]()
         comptime config = kernels.ampere_256x128_3 if ctx.default_device_info == A100 else kernels.ampere_128x128_4
-        run_matmul_split_k[DType.bfloat16, 512, 4096, 14336, config](
+        run_matmul_split_k[.bfloat16, 512, 4096, 14336, config](
             ctx, atol=1.0, rng_width=1.0
         )
 
-        run_matmul_split_k[
-            DType.bfloat16, 128, 128, 4096, kernels.ampere_128x128_4
-        ](ctx, atol=0.5, rng_width=1.0)
-
-        run_matmul_transpose[DType.bfloat16, 1, 200, 300](
-            ctx, atol=0.25, rng_width=1.0
-        )
-        run_matmul_transpose[DType.bfloat16, 1, 300, 200](
-            ctx, atol=0.25, rng_width=1.0
-        )
-        run_matmul_transpose[DType.bfloat16, 1, 5120, 3072](
-            ctx, atol=0.25, rng_width=1.0
-        )
-        run_matmul_transpose[DType.bfloat16, 1, 12288, 3072](
-            ctx, atol=0.5, rng_width=1.0
-        )
-        run_matmul_transpose[DType.bfloat16, 1, 5120, 12288](
-            ctx, atol=0.5, rng_width=1.0
-        )
-        run_matmul_transpose[DType.bfloat16, 1, 131072, 5120](
-            ctx, atol=0.5, rng_width=1.0
-        )
-        run_matmul_transpose[DType.bfloat16, 1, 3072, 12288](
+        run_matmul_split_k[.bfloat16, 128, 128, 4096, kernels.ampere_128x128_4](
             ctx, atol=0.5, rng_width=1.0
         )
 
-        run_matmul[DType.bfloat16, 128, 128, 128](ctx)
-        run_matmul[DType.bfloat16, 32, 32, 32](ctx)
-        run_matmul[DType.bfloat16, 1024, 1, 1024](ctx, atol=0.2, rng_width=1.0)
-        run_matmul[DType.bfloat16, 1, 1024, 1024](ctx)
+        run_matmul_transpose[.bfloat16, 1, 200, 300](
+            ctx, atol=0.25, rng_width=1.0
+        )
+        run_matmul_transpose[.bfloat16, 1, 300, 200](
+            ctx, atol=0.25, rng_width=1.0
+        )
+        run_matmul_transpose[.bfloat16, 1, 5120, 3072](
+            ctx, atol=0.25, rng_width=1.0
+        )
+        run_matmul_transpose[.bfloat16, 1, 12288, 3072](
+            ctx, atol=0.5, rng_width=1.0
+        )
+        run_matmul_transpose[.bfloat16, 1, 5120, 12288](
+            ctx, atol=0.5, rng_width=1.0
+        )
+        run_matmul_transpose[.bfloat16, 1, 131072, 5120](
+            ctx, atol=0.5, rng_width=1.0
+        )
+        run_matmul_transpose[.bfloat16, 1, 3072, 12288](
+            ctx, atol=0.5, rng_width=1.0
+        )
+
+        run_matmul[.bfloat16, 128, 128, 128](ctx)
+        run_matmul[.bfloat16, 32, 32, 32](ctx)
+        run_matmul[.bfloat16, 1024, 1, 1024](ctx, atol=0.2, rng_width=1.0)
+        run_matmul[.bfloat16, 1, 1024, 1024](ctx)
 
         # KERN-1807 We need to systematically test the float16 kernels.
-        # run_matmul[DType.float16, 128, 128, 128](ctx, rng_width=10.0)
-        # run_matmul[DType.float16, 32, 32, 32](ctx, rng_width=10.0)
-        # run_matmul[DType.float16, 1024, 1, 1024](ctx, 1e-03, rng_width=10.0)
-        # run_matmul[DType.float16, 1, 1024, 1024](ctx, 1e-01, rng_width=10.0)
+        # run_matmul[.float16, 128, 128, 128](ctx, rng_width=10.0)
+        # run_matmul[.float16, 32, 32, 32](ctx, rng_width=10.0)
+        # run_matmul[.float16, 1024, 1, 1024](ctx, 1e-03, rng_width=10.0)
+        # run_matmul[.float16, 1, 1024, 1024](ctx, 1e-01, rng_width=10.0)
 
         run_batched_matmul(ctx, 1, 32, 32, 32)
         run_batched_matmul(ctx, 3, 32, 32, 32)

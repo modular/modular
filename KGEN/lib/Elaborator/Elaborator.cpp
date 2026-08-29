@@ -1823,8 +1823,8 @@ ElaborationState Elaborator::specializeGenerator(ImplNode *inode,
   } else {
     auto structGenOp = dyn_cast<StructGeneratorOp>(*gen);
     instance = cast<InstantiatedOpInterface>(*StructInstanceOp::create(
-        b, gen.getLoc(), mangledName, structGenOp.getValueDomainType(),
-        structGenOp.getMetaType()));
+        b, gen.getLoc(), mangledName, /*sym_visibility=*/nullptr,
+        structGenOp.getValueDomainType(), structGenOp.getMetaType()));
     instantiateBody = false;
   }
 
@@ -1981,7 +1981,7 @@ ErrorTreeOrSuccess Elaborator::bundleCompileOffloadOp(CompileOffloadOp op,
   auto noneType = KGEN::NoneType::get(ctx);
   auto populateFnType = FuncTypeGeneratorType::get(
       {}, b.getFunctionType(PointerType::get(noneType), noneType),
-      {ArgConvention::ReadReg}, FnEffects().setCapturing());
+      {ArgConvention::ImmReg}, FnEffects().setCapturing());
 
   // Specialize the generator with another target by slicing it and its
   // transitive dependencies out of the IR and re-invoking the elaborator. If it

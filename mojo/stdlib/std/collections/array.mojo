@@ -461,6 +461,28 @@ struct Array[T: AnyType, length: Int](
             further improve compilation speed while still maintaining good
             runtime performance.
         """
+        self = Self(fill_with=lambda (_i: Int) -> Self.T: fill.copy())
+
+    @always_inline
+    def __init__[
+        batch_size: SIMDLength = 64
+    ](out self, *, fill_with: Some[def(Int) -> Self.T]):
+        """Constructs an array by calling `fill_with(i)` for each index `i`.
+
+        Parameters:
+            batch_size: The number of elements to unroll for filling the array.
+
+        Args:
+            fill_with: A function called with each index in `[0, length)`,
+                whose result is written to that position.
+
+        Examples:
+
+        ```mojo
+        var squares = Array[Int, 5](fill_with=lambda (i: Int) -> Int: i * i)
+        # [0, 1, 4, 9, 16]
+        ```
+        """
         _array_construction_checks[Self.length]()
         self = Self(uninitialized=True)
 
@@ -473,14 +495,17 @@ struct Array[T: AnyType, length: Int](
         # `unroll_end == 0` leaves the inlined iterator's line-table marker
         # behind as an irremovable barrier, even though the loop is dead.
         comptime if unroll_end > 0:
-            for _ in range(0, unroll_end, batch_size):
-                comptime for _ in range(batch_size):
-                    ptr.unsafe_write(copy=fill)
+            for batch_start in range(0, unroll_end, batch_size):
+                comptime for i in range(batch_size):
+                    var idx = batch_start + i
+                    ptr.unsafe_write(
+                        init_with=lambda () {ref} -> Self.T: fill_with(idx)
+                    )
                     ptr = ptr.unsafe_offset(1)
 
         # Fill the remainder
-        comptime for _ in range(unroll_end, Self.length):
-            ptr.unsafe_write(copy=fill)
+        comptime for i in range(unroll_end, Self.length):
+            ptr.unsafe_write(init_with=lambda () {ref} -> Self.T: fill_with(i))
             ptr = ptr.unsafe_offset(1)
         debug_assert(
             ptr == base.unsafe_offset(Self.length),
@@ -821,7 +846,6 @@ struct Array[T: AnyType, length: Int](
         """
         return Self.length
 
-    @always_inline
     @stable(since="1.0")
     def __eq__(self, other: Self) -> Bool where conforms_to(Self.T, Equatable):
         """Compares two arrays for equality.
@@ -832,12 +856,14 @@ struct Array[T: AnyType, length: Int](
         Returns:
             True if all elements are equal, False otherwise.
         """
-        comptime for i in range(Self.length):
+        # Not a `comptime for` as we can just rely on LLVM unrolling to its
+        # own budget. `comptime for` forces large arrays to be fully
+        # unrolled, which can be a performance hit.
+        for i in range(Self.length):
             if self.unsafe_get(i) != other.unsafe_get(i):
                 return False
         return True
 
-    @always_inline
     @stable(since="1.0")
     def __ne__(self, other: Self) -> Bool where conforms_to(Self.T, Equatable):
         """Compares two arrays for inequality.
@@ -848,7 +874,7 @@ struct Array[T: AnyType, length: Int](
         Returns:
             True if any elements are not equal, False otherwise.
         """
-        comptime for i in range(Self.length):
+        for i in range(Self.length):
             if self.unsafe_get(i) != other.unsafe_get(i):
                 return True
         return False
@@ -940,7 +966,7 @@ struct Array[T: AnyType, length: Int](
         Args:
             hasher: The hasher instance.
         """
-        comptime for i in range(Self.length):
+        for i in range(Self.length):
             self.unsafe_get(i).__hash__(hasher)
 
     # ===------------------------------------------------------------------===#
@@ -1048,7 +1074,7 @@ struct Array[T: AnyType, length: Int](
             element for equality with the given value. The element type must
             implement the `Equatable` trait to support equality comparison.
         """
-        comptime for i in range(Self.length):
+        for i in range(Self.length):
             if self[i] == value:
                 return True
         return False

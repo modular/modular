@@ -59,7 +59,7 @@ for the design context.
 """
 
 from std.math import ceildiv
-from std.memory import UnsafePointer, alloc
+from std.memory import alloc
 from std.random import rand, randn, seed
 from std.sys import size_of
 
@@ -200,7 +200,7 @@ def qk_smoke_kernel[
 
     # ---- Dynamic SMEM ----
     var smem_base = external_memory[
-        UInt8, address_space=AddressSpace.SHARED, alignment=128
+        UInt8, address_space=.SHARED, alignment=128
     ]()
     var a_smem_ptr = (smem_base + QK_A_OFFSET).bitcast[Scalar[FP8_TYPE]]()
     var b_smem_ptr = (smem_base + QK_B_OFFSET).bitcast[Scalar[FP8_TYPE]]()
@@ -208,13 +208,13 @@ def qk_smoke_kernel[
     var a_smem_tile = LayoutTensor[
         FP8_TYPE,
         Layout.row_major(QK_M, QK_K),
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
     ](a_smem_ptr)
     var b_smem_tile = LayoutTensor[
         FP8_TYPE,
         Layout.row_major(QK_N, QK_K),
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
     ](b_smem_ptr)
 
@@ -368,7 +368,7 @@ def pv_smoke_kernel[
     """SS .ws MMA: C [32,512] = A [32,64] x B [512,64] (mn-major B, FP8)."""
 
     var smem_base = external_memory[
-        UInt8, address_space=AddressSpace.SHARED, alignment=128
+        UInt8, address_space=.SHARED, alignment=128
     ]()
     var a_smem_ptr = (smem_base + PV_A_OFFSET).bitcast[Scalar[FP8_TYPE]]()
     var b_smem_ptr = (smem_base + PV_B_OFFSET).bitcast[Scalar[FP8_TYPE]]()
@@ -376,7 +376,7 @@ def pv_smoke_kernel[
     var a_smem_tile = LayoutTensor[
         FP8_TYPE,
         Layout.row_major(PV_M, PV_K),
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
     ](a_smem_ptr)
     # B is mn-major: [PV_N rows, PV_K cols] but the descriptor will treat
@@ -384,7 +384,7 @@ def pv_smoke_kernel[
     var b_smem_tile = LayoutTensor[
         FP8_TYPE,
         Layout.row_major(PV_N, PV_K),
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
     ](b_smem_ptr)
 
@@ -510,14 +510,14 @@ def pv_smoke_kernel[
 # ---------------------------------------------------------------------------
 def fill_random_fp8[
     dtype: DType
-](ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin], n: Int):
+](ptr: MutPointer[Scalar[dtype], MutAnyOrigin], n: Int):
     """Generates random FP8 values via float32 RNG -> cast.
 
     randn doesn't directly support float8_e4m3fn, so we draw float32
     values, scale them down to fit FP8's e4m3 range, and cast.
     """
     var f32_buf = alloc[Float32](n)
-    randn[DType.float32](f32_buf, n)
+    randn[.float32](f32_buf, n)
     for i in range(n):
         # Scale to ~[-2, 2] to keep values well inside FP8 e4m3 range
         # (max representable ~448, but we want non-saturated values).
@@ -533,8 +533,8 @@ def fill_random_fp8[
 def dequant_fp8_to_bf16[
     src_dtype: DType, dst_dtype: DType
 ](
-    src: UnsafePointer[mut=False, Scalar[src_dtype], _],
-    dst: UnsafePointer[mut=True, Scalar[dst_dtype], _],
+    src: ImmPointer[Scalar[src_dtype], _],
+    dst: MutPointer[Scalar[dst_dtype], _],
     n: Int,
 ):
     for i in range(n):
@@ -622,13 +622,13 @@ def test_qk_smoke(ctx: DeviceContext) raises:
         row_major(Coord(QK_M, QK_N)),
     )
     var a_tt = TileTensor(
-        UnsafePointer[Scalar[REF_TYPE], ImmutAnyOrigin](
+        ImmPointer[Scalar[REF_TYPE], ImmutAnyOrigin](
             unsafe_from_address=Int(a_ref_dev.unsafe_ptr())
         ),
         row_major(Coord(QK_M, QK_K)),
     )
     var b_tt = TileTensor(
-        UnsafePointer[Scalar[REF_TYPE], ImmutAnyOrigin](
+        ImmPointer[Scalar[REF_TYPE], ImmutAnyOrigin](
             unsafe_from_address=Int(b_ref_dev.unsafe_ptr())
         ),
         row_major(Coord(QK_N, QK_K)),
@@ -814,13 +814,13 @@ def test_pv_smoke(ctx: DeviceContext) raises:
         row_major(Coord(PV_M, PV_N)),
     )
     var a_tt = TileTensor(
-        UnsafePointer[Scalar[REF_TYPE], ImmutAnyOrigin](
+        ImmPointer[Scalar[REF_TYPE], ImmutAnyOrigin](
             unsafe_from_address=Int(a_ref_dev.unsafe_ptr())
         ),
         row_major(Coord(PV_M, PV_K)),
     )
     var b_tt = TileTensor(
-        UnsafePointer[Scalar[REF_TYPE], ImmutAnyOrigin](
+        ImmPointer[Scalar[REF_TYPE], ImmutAnyOrigin](
             unsafe_from_address=Int(b_ref_dev.unsafe_ptr())
         ),
         row_major(Coord(PV_N, PV_K)),

@@ -64,13 +64,13 @@ def mac_loop[
     a_type: DType,
     b_type: DType,
 ](
-    C: UnsafePointer[Scalar[c_type], MutAnyOrigin],
-    A: UnsafePointer[Scalar[a_type], ImmutAnyOrigin],
-    B: UnsafePointer[Scalar[b_type], ImmutAnyOrigin],
+    C: MutPointer[Scalar[c_type], MutAnyOrigin],
+    A: ImmPointer[Scalar[a_type], ImmutAnyOrigin],
+    B: ImmPointer[Scalar[b_type], ImmutAnyOrigin],
     M: Int,
     N: Int,
     K: Int,
-    locks: UnsafePointer[Int32, MutAnyOrigin],
+    locks: MutPointer[Int32, MutAnyOrigin],
     stride_am: Int,
     stride_ak: Int,
     stride_bk: Int,
@@ -143,13 +143,13 @@ def first_wave_kernel[
     BLOCK_K: Int,
     GROUP_M: Int,
 ](
-    C: UnsafePointer[Scalar[c_type], MutAnyOrigin],
-    A: UnsafePointer[Scalar[a_type], ImmutAnyOrigin],
-    B: UnsafePointer[Scalar[b_type], ImmutAnyOrigin],
+    C: MutPointer[Scalar[c_type], MutAnyOrigin],
+    A: ImmPointer[Scalar[a_type], ImmutAnyOrigin],
+    B: ImmPointer[Scalar[b_type], ImmutAnyOrigin],
     M_dev: Int32,
     N_dev: Int32,
     K_dev: Int32,
-    locks: UnsafePointer[Int32, MutAnyOrigin],
+    locks: MutPointer[Int32, MutAnyOrigin],
     stride_am_dev: Int32,
     stride_ak_dev: Int32,
     stride_bk_dev: Int32,
@@ -227,13 +227,13 @@ def full_tiles_kernel[
     BLOCK_K: Int,
     GROUP_M: Int,
 ](
-    C: UnsafePointer[Scalar[c_type], MutAnyOrigin],
-    A: UnsafePointer[Scalar[a_type], ImmutAnyOrigin],
-    B: UnsafePointer[Scalar[b_type], ImmutAnyOrigin],
+    C: MutPointer[Scalar[c_type], MutAnyOrigin],
+    A: ImmPointer[Scalar[a_type], ImmutAnyOrigin],
+    B: ImmPointer[Scalar[b_type], ImmutAnyOrigin],
     M_dev: Int32,
     N_dev: Int32,
     K_dev: Int32,
-    locks: UnsafePointer[Int32, ImmutAnyOrigin],
+    locks: ImmPointer[Int32, ImmutAnyOrigin],
     stride_am_dev: Int32,
     stride_ak_dev: Int32,
     stride_bk_dev: Int32,
@@ -320,19 +320,19 @@ def matmul_stream_k[
     c: TileTensor[
         mut=True,
         c_type,
-        address_space=AddressSpace.GENERIC,
+        address_space=.GENERIC,
         ...,
         Storage=PointerStorage[element_width=1],
     ],
     a: TileTensor[
         a_type,
-        address_space=AddressSpace.GENERIC,
+        address_space=.GENERIC,
         ...,
         Storage=PointerStorage[element_width=1],
     ],
     b: TileTensor[
         b_type,
-        address_space=AddressSpace.GENERIC,
+        address_space=.GENERIC,
         ...,
         Storage=PointerStorage[element_width=1],
     ],
@@ -364,7 +364,7 @@ def matmul_stream_k[
             total_iters_streamk, total_programs_streamk
         )
 
-    var locks_data = ctx.enqueue_create_buffer[DType.int32](total_tiles_streamk)
+    var locks_data = ctx.enqueue_create_buffer[.int32](total_tiles_streamk)
     ctx.enqueue_memset(locks_data, 0)
 
     print("M=", M, ", N=", N, ", K=", K)
@@ -564,7 +564,7 @@ def run_matmul_stream_k[
 
 def main() raises:
     with DeviceContext() as ctx:
-        run_matmul_stream_k[DType.float32, 128, 128, 128](ctx)
-        run_matmul_stream_k[DType.float32, 512, 2560, 8192](ctx)
-        run_matmul_stream_k[DType.float32, 256, 256, 1024](ctx)
-        run_matmul_stream_k[DType.float32, 128, 128, 1024](ctx)
+        run_matmul_stream_k[.float32, 128, 128, 128](ctx)
+        run_matmul_stream_k[.float32, 512, 2560, 8192](ctx)
+        run_matmul_stream_k[.float32, 256, 256, 1024](ctx)
+        run_matmul_stream_k[.float32, 128, 128, 1024](ctx)

@@ -135,6 +135,7 @@ class RecipeConfig(BaseModel):
         model_config = ConfigDict(extra="ignore")
 
         model_path: str | None = None
+        served_model_name: str | None = None
         device_specs: list[int] | None = None
         data_parallel_degree: int = 1
         kv_cache: RecipeConfig.KVCache = Field(
@@ -195,6 +196,32 @@ def _inside_bazel() -> bool:
     return os.getenv("BUILD_WORKSPACE_DIRECTORY") is not None
 
 
+# Private entrypoints keep hw-keyed recipe tables next to their recipes (this
+# OSS-synced file can't name them); the glob matches nothing in the OSS tree.
+_HW_RECIPES_GLOB = "max_private/*/recipes/hw_recipes.yaml"
+
+
+def _private_recipe_paths_for_model(model: str) -> list[str]:
+    """Recipes a private entrypoint may serve for this model, on any GPU.
+
+    Pre-fetching wants the union across hardware: every table entry for a
+    model serves the same weights, so the union warms exactly the repos the
+    entrypoint's own GPU-keyed selection will load.
+    """
+    for base in Path(__file__).resolve().parents:
+        tables = sorted(base.glob(_HW_RECIPES_GLOB))
+        if tables:
+            break
+    else:
+        return []
+    return [
+        str(table.parent / entry["recipe"])
+        for table in tables
+        for entry in yaml.safe_load(table.read_text()).values()
+        if entry["model"].lower() == model.lower()
+    ]
+
+
 def _resolve_recipe_path(recipe_path: str) -> str:
     """Resolve a recipe path to an absolute file path.
     Recipe paths use the ``max/pipelines/architectures/`` prefix and are
@@ -253,16 +280,24 @@ def hf_repos_for_model(model: str) -> list[str]:
         seen.add(key)
         repos.append(repo)
 
-    # Recipe-derived paths win the casefold dedup, so a lowercased alias
-    # input still resolves to the canonical casing the cache expects.
-    recipe_path = MODEL_RECIPES.get(model)
-    if recipe_path is not None:
+    def add_recipe_repos(recipe_path: str) -> None:
         recipe = _load_recipe(recipe_path)
         if recipe.model.model_path:
             add(recipe.model.model_path)
         if recipe.draft_model and recipe.draft_model.model_path:
             add(recipe.draft_model.model_path)
+
+    # Recipe-derived paths win the casefold dedup, so a lowercased alias
+    # input still resolves to the canonical casing the cache expects.
+    recipe_path = MODEL_RECIPES.get(model)
+    if recipe_path is not None:
+        add_recipe_repos(recipe_path)
     add(model.split("__", 1)[0])
+    # A private recipe can serve a different repo than the alias; adding its
+    # repos after the alias keeps the alias as the base repo callers get back.
+    if recipe_path is None:
+        for private_path in _private_recipe_paths_for_model(model):
+            add_recipe_repos(private_path)
     return repos
 
 
@@ -631,6 +666,10 @@ def smoke_test(
         result_dir.mkdir(parents=True, exist_ok=True)
 
     hf_model_path, recipe_path = resolve_model_path(model, recipe_path)
+    # A recipe can serve its weights under another name; requests must use it.
+    served = hf_model_path
+    if recipe_path:
+        served = _load_recipe(recipe_path).model.served_model_name or served
     cmd, server_env = get_server_cmd(
         framework,
         hf_model_path,
@@ -663,17 +702,17 @@ def smoke_test(
 
         for task in tasks:
             test_single_request(
-                URL, hf_model_path, task, disable_timeouts=disable_timeouts
+                URL, served, task, disable_timeouts=disable_timeouts
             )
             result, samples = call_eval(
                 URL,
-                hf_model_path,
+                served,
                 task,
                 max_concurrent=max_concurrent,
                 num_questions=num_questions,
                 disable_timeouts=disable_timeouts,
                 metrics_url=metrics_url,
-                model_alias=model if hf_model_path != model else None,
+                model_alias=model if served != model else None,
                 lm_eval_metadata=lm_eval_metadata,
             )
 

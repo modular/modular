@@ -118,7 +118,7 @@ struct Element[
 
     var runtime_layout: RuntimeLayout[
         Self.layout,
-        element_type=DType.int32,
+        element_type=.int32,
         linear_idx_type=Self.index_type,
     ]
     """The runtime layout information for memory access patterns.
@@ -142,7 +142,7 @@ struct Element[
         element_data: Self.element_data_type,
         runtime_layout: RuntimeLayout[
             Self.layout,
-            element_type=DType.int32,
+            element_type=.int32,
             linear_idx_type=Self.index_type,
         ],
     ):
@@ -158,14 +158,19 @@ struct Element[
     @always_inline("nodebug")
     @staticmethod
     def load(
-        ptr: UnsafePointer[Scalar[Self.dtype], ...],
+        # Bare `Pointer`, not `ImmPointer`: a `mut=True` source pointer (the
+        # usual case, since `MemoryElement` wraps a mutable `LayoutTensor`'s
+        # `.ptr`) passed to `ImmPointer[Scalar, ...]` would force a mut->imm
+        # conversion whose `...`-elided `address_space` falls back to `.GENERIC`,
+        # silently breaking `.LOCAL`/`.SHARED` loads on the GPU.
+        ptr: Pointer[Scalar[Self.dtype], ...],
         runtime_layout: RuntimeLayout[
             Self.layout,
-            element_type=DType.int32,
+            element_type=.int32,
             linear_idx_type=Self.index_type,
         ] = RuntimeLayout[
             Self.layout,
-            element_type=DType.int32,
+            element_type=.int32,
             linear_idx_type=Self.index_type,
         ](),
     ) -> Self:
@@ -242,14 +247,14 @@ struct Element[
     @always_inline("nodebug")
     @staticmethod
     def masked_load(
-        ptr: UnsafePointer[Scalar[Self.dtype], ...],
+        ptr: Pointer[Scalar[Self.dtype], ...],
         runtime_layout: RuntimeLayout[
             Self.layout,
-            element_type=DType.int32,
+            element_type=.int32,
             linear_idx_type=Self.index_type,
         ] = RuntimeLayout[
             Self.layout,
-            element_type=DType.int32,
+            element_type=.int32,
             linear_idx_type=Self.index_type,
         ](),
     ) -> Self:
@@ -370,7 +375,7 @@ struct Element[
         return Element(element_data, runtime_layout)
 
     @always_inline("nodebug")
-    def store(self, ptr: UnsafePointer[mut=True, Scalar[Self.dtype], ...]):
+    def store(self, ptr: MutPointer[Scalar[Self.dtype], ...]):
         """Stores element data to memory according to the specified layout.
 
         This method performs a layout-aware store operation, writing data to memory
@@ -442,9 +447,7 @@ struct Element[
                 )
 
     @always_inline("nodebug")
-    def masked_store(
-        self, ptr: UnsafePointer[mut=True, Scalar[Self.dtype], ...]
-    ):
+    def masked_store(self, ptr: MutPointer[Scalar[Self.dtype], ...]):
         """Stores element data to memory with masking for partial stores.
 
         This method performs a layout-aware store operation with boundary checking.
@@ -617,10 +620,8 @@ struct MemoryElement[
         index_type=Self.index_type,
     ]
 
-    var ptr: UnsafePointer[
-        Scalar[Self.dtype],
-        Self.origin,
-        address_space=Self.address_space,
+    var ptr: Pointer[
+        Scalar[Self.dtype], Self.origin, address_space=Self.address_space
     ]
     """Pointer to the memory location where the data is stored.
 
@@ -631,7 +632,7 @@ struct MemoryElement[
 
     var runtime_layout: RuntimeLayout[
         Self.layout,
-        element_type=DType.int32,
+        element_type=.int32,
         linear_idx_type=Self.index_type,
     ]
     """Runtime layout information used for memory access calculations.
@@ -643,14 +644,12 @@ struct MemoryElement[
 
     def __init__(
         out self,
-        ptr: UnsafePointer[
-            Scalar[Self.dtype],
-            Self.origin,
-            address_space=Self.address_space,
+        ptr: Pointer[
+            Scalar[Self.dtype], Self.origin, address_space=Self.address_space
         ],
         runtime_layout: RuntimeLayout[
             Self.layout,
-            element_type=DType.int32,
+            element_type=.int32,
             linear_idx_type=Self.index_type,
         ],
     ):

@@ -59,6 +59,16 @@ Text generation
    TextGenerationRequestTool
    VideoContentPart
 
+Audio generation
+----------------
+
+.. autosummary::
+   :nosignatures:
+   :toctree: generated
+   :template: autosummary/class.rst
+
+   AudioGenerationInputs
+
 Embeddings
 ----------
 

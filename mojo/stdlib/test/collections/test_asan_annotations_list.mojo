@@ -99,8 +99,8 @@ def main() raises:
         # CHECK_8: #0 {{.*}} in test_asan_annotations_list::main() {{.*}}:[[#@LINE+1]]
         print(l.unsafe_ptr()[unsafe_offset=3])
     elif test == "9":
-        var l = List[Scalar[DType.int64]](capacity=10)
-        l.extend(SIMD[DType.int64, 2](1, 2))
+        var l = List[Int64](capacity=10)
+        l.extend(SIMD[.int64, 2](1, 2))
         print(l.unsafe_ptr()[unsafe_offset=0])
         print(l.unsafe_ptr()[unsafe_offset=1])
         # CHECK_9: AddressSanitizer: container-overflow on address

@@ -840,6 +840,17 @@ class ServingBenchmarkConfig(BaseServingBenchmarkConfig):
         json_schema_extra={"group": "Result Saving"},
     )
 
+    record_request_text: bool = Field(
+        default=False,
+        description=(
+            "Include each request's generated text in the per-request"
+            " records. Needed to compare two runs' outputs; off by default"
+            " because it grows the result file by the size of the run's own"
+            " output."
+        ),
+        json_schema_extra={"group": "Result Saving"},
+    )
+
     result_filename: str | None = Field(
         default=None,
         description="JSON filename for results. If None, no results are saved. Can include directory path.",

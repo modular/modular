@@ -447,7 +447,7 @@ struct AccessPolicyWindow(
         self.base_ptr = Optional[OpaquePointer[MutUntrackedOrigin]](
             base_ptr.unsafe_bitcast[NoneType]()
             .unsafe_mut_cast[True]()
-            .unsafe_address_space_cast[AddressSpace.GENERIC]()
+            .unsafe_address_space_cast[.GENERIC]()
             .unsafe_origin_cast[MutUntrackedOrigin]()
         )
         self.num_bytes = count * size_of[T]()

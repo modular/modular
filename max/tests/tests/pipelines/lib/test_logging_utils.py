@@ -42,8 +42,8 @@ def _make_pipeline_config(max_length: int | None) -> PipelineConfig:
         model_path="modularai/Llama-3.1-8B-Instruct-GGUF",
         device_specs=[DeviceSpec.cpu()],
         max_length=max_length,
+        kv_cache=KVCacheConfig(),
     )
-    model_config.kv_cache = KVCacheConfig()
     model_config._huggingface_config = MagicMock()
 
     runtime = PipelineRuntimeConfig.model_construct()
@@ -100,7 +100,7 @@ class TestLogBasicConfigAfterResolve:
         """max_seq_len must show the resolved value, not None."""
         config = _make_pipeline_config(max_length=131072)
         memory_plan = MemoryPlan(
-            max_batch_size=1, footprint=0, planned_max_length=131072
+            planned_max_batch_size=1, footprint=0, planned_max_length=131072
         )
         output = _capture_log_basic_config(config, memory_plan)
         assert "131072" in output, (

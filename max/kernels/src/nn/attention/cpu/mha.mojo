@@ -554,8 +554,7 @@ struct _FlashAttention[
     output_origin: Origin[mut=True],
     //,
     input_q_ptr_fn: def(IndexList[rank]) capturing -> UnsafePointer[
-        Scalar[dtype],
-        q_origin,
+        Scalar[dtype], q_origin
     ],
     input_k_fn: def[simd_width: Int, rank: Int](
         idx: IndexList[rank]
@@ -728,20 +727,21 @@ struct _FlashAttention[
 
         var num_threads = min(work_count, parallelism_level(ctx))
 
-        @__copy_capture(
-            num_threads,
-            work_count,
-            num_blocks_n,
-            num_blocks_m,
-            packed_size,
-            kv_group_count,
-            depth_dim,
-            max_seq_len,
-            num_heads,
-            sink_weights,
-        )
-        @__parameter
-        def task_func(task_id: Int):
+        def task_func(
+            task_id: Int,
+        ) {
+            var num_threads,
+            var work_count,
+            var num_blocks_n,
+            var num_blocks_m,
+            var packed_size,
+            var kv_group_count,
+            var depth_dim,
+            var max_seq_len,
+            var num_heads,
+            var sink_weights,
+            imm,
+        }:
             var qk_block_ptr = unsafe_stack_allocation[
                 Self._config.block_m * Self._config.qk_block_n,
                 Self.dtype,
@@ -958,7 +958,7 @@ struct _FlashAttention[
 
             packed_alloc^.deinit_with(_dealloc_packed)
 
-        sync_parallelize[task_func](num_threads, ctx)
+        sync_parallelize(task_func, num_threads, ctx)
 
 
 @always_inline
@@ -979,15 +979,11 @@ def _flash_attention[
         IndexList[mask_rank]
     ) capturing -> SIMD[dtype, simd_width],
 ](
-    q: LayoutTensor[
-        dtype, _, q_origin, address_space=AddressSpace.GENERIC, ...
-    ],
+    q: LayoutTensor[dtype, _, q_origin, address_space=.GENERIC, ...],
     k_shape: IndexList[rank],
     v_shape: IndexList[rank],
     mask_shape: IndexList[mask_rank],
-    output: LayoutTensor[
-        dtype, _, output_origin, address_space=AddressSpace.GENERIC, ...
-    ],
+    output: LayoutTensor[dtype, _, output_origin, address_space=.GENERIC, ...],
     scale: Float32,
     sink_weights: OptionalReg[
         LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
@@ -1085,15 +1081,11 @@ def flash_attention[
         IndexList[mask_rank]
     ) capturing -> SIMD[dtype, simd_width],
 ](
-    q: LayoutTensor[
-        dtype, _, q_origin, address_space=AddressSpace.GENERIC, ...
-    ],
+    q: LayoutTensor[dtype, _, q_origin, address_space=.GENERIC, ...],
     k_shape: IndexList[rank],
     v_shape: IndexList[rank],
     mask_shape: IndexList[mask_rank],
-    output: LayoutTensor[
-        dtype, _, output_origin, address_space=AddressSpace.GENERIC, ...
-    ],
+    output: LayoutTensor[dtype, _, output_origin, address_space=.GENERIC, ...],
     scale: Float32,
     sink_weights: OptionalReg[
         LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
@@ -1163,16 +1155,14 @@ def flash_attention_split_kv[
         IndexList[mask_rank]
     ) capturing -> SIMD[dtype, simd_width],
 ](
-    q: LayoutTensor[mut=False, dtype, address_space=AddressSpace.GENERIC, ...],
+    q: LayoutTensor[mut=False, dtype, address_space=.GENERIC, ...],
     k_shape: IndexList[rank],
     v_shape: IndexList[rank],
     # {k,v}_cache_shape are rank + 1 because reshape in MO IR prevents fusion.
     k_cache_shape: IndexList[rank + 1],
     v_cache_shape: IndexList[rank + 1],
     mask_shape: IndexList[mask_rank],
-    output: LayoutTensor[
-        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
-    ],
+    output: LayoutTensor[mut=True, dtype, address_space=.GENERIC, ...],
     scale: Float32,
     ctx: Optional[DeviceContext] = None,
 ) raises:
@@ -1226,8 +1216,7 @@ def flash_attention_split_kv[
     comptime assert rank == 4
 
     @always_inline
-    @__parameter
-    def description_fn() -> String:
+    def description_fn() {imm} -> String:
         return String(";").join(
             Span(
                 [
@@ -1243,7 +1232,7 @@ def flash_attention_split_kv[
 
     with Trace[TraceLevel.OP, target=StaticString("cpu")](
         "flash_attention_split_kv",
-        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+        Trace[TraceLevel.OP]._get_detail_str(description_fn),
     ):
         comptime kv_rank = rank + 1
 
@@ -1338,15 +1327,11 @@ def _flash_attention_kv_cache[
     ) capturing -> SIMD[dtype, simd_width],
     mask_rank: Int,
 ](
-    q: LayoutTensor[
-        dtype, _, q_origin, address_space=AddressSpace.GENERIC, ...
-    ],
+    q: LayoutTensor[dtype, _, q_origin, address_space=.GENERIC, ...],
     k: cache_t,
     v: cache_t,
     scale: Float32,
-    output: LayoutTensor[
-        dtype, _, output_origin, address_space=AddressSpace.GENERIC, ...
-    ],
+    output: LayoutTensor[dtype, _, output_origin, address_space=.GENERIC, ...],
     sink_weights: OptionalReg[
         LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
     ] = None,
@@ -1495,18 +1480,12 @@ def flash_attention_kv_cache[
     output_origin: Origin[mut=True],
     //,
 ](
-    q: LayoutTensor[
-        dtype, _, q_origin, address_space=AddressSpace.GENERIC, ...
-    ],
+    q: LayoutTensor[dtype, _, q_origin, address_space=.GENERIC, ...],
     k: cache_t,
     v: cache_t,
-    mask: LayoutTensor[
-        mut=False, dtype, address_space=AddressSpace.GENERIC, ...
-    ],
+    mask: LayoutTensor[mut=False, dtype, address_space=.GENERIC, ...],
     scale: Float32,
-    output: LayoutTensor[
-        dtype, _, output_origin, address_space=AddressSpace.GENERIC, ...
-    ],
+    output: LayoutTensor[dtype, _, output_origin, address_space=.GENERIC, ...],
     sink_weights: OptionalReg[
         LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
     ] = None,
@@ -1549,16 +1528,12 @@ def flash_attention_kv_cache[
     output_origin: Origin[mut=True],
     //,
 ](
-    q: LayoutTensor[
-        dtype, _, q_origin, address_space=AddressSpace.GENERIC, ...
-    ],
+    q: LayoutTensor[dtype, _, q_origin, address_space=.GENERIC, ...],
     k: cache_t,
     v: cache_t,
     mask: mask_t,
     scale: Float32,
-    output: LayoutTensor[
-        dtype, _, output_origin, address_space=AddressSpace.GENERIC, ...
-    ],
+    output: LayoutTensor[dtype, _, output_origin, address_space=.GENERIC, ...],
     sink_weights: OptionalReg[
         LayoutTensor[
             mut=False, dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
@@ -1608,22 +1583,18 @@ def flash_attention_kv_cache[
     output_origin: Origin[mut=True],
     //,
 ](
-    q: LayoutTensor[
-        dtype, _, q_origin, address_space=AddressSpace.GENERIC, ...
-    ],
+    q: LayoutTensor[dtype, _, q_origin, address_space=.GENERIC, ...],
     q_input_row_offsets: LayoutTensor[
-        mut=False, DType.uint32, address_space=AddressSpace.GENERIC, ...
+        mut=False, .uint32, address_space=.GENERIC, ...
     ],
     kv_input_row_offsets: LayoutTensor[
-        mut=False, DType.uint32, address_space=AddressSpace.GENERIC, ...
+        mut=False, .uint32, address_space=.GENERIC, ...
     ],
     k: cache_t,
     v: cache_t,
     mask: mask_t,
     scale: Float32,
-    output: LayoutTensor[
-        dtype, _, output_origin, address_space=AddressSpace.GENERIC, ...
-    ],
+    output: LayoutTensor[dtype, _, output_origin, address_space=.GENERIC, ...],
     sink_weights: OptionalReg[
         LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
     ] = None,

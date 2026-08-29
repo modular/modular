@@ -55,7 +55,7 @@ def im2col_load_kernel[
     BK: Int,
 ](
     act_tma_op: TMATensorTileIm2col[dtype, tile_rank, tile_shape, desc_shape],
-    output_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    output_ptr: MutPointer[Scalar[dtype], MutAnyOrigin],
     k_coord: Int,
     m_coord: Int,
 ):
@@ -70,15 +70,15 @@ def im2col_load_kernel[
 
     var smem_ptr = external_memory[
         Scalar[dtype],
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
         name="im2col_smem",
     ]()
 
     var barrier_ptr = (
         external_memory[
-            Scalar[DType.uint8],
-            address_space=AddressSpace.SHARED,
+            UInt8,
+            address_space=.SHARED,
             alignment=128,
             name="im2col_smem",
         ]()
@@ -96,7 +96,7 @@ def im2col_load_kernel[
             dtype,
             smem_layout,
             MutAnyOrigin,
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
             alignment=128,
         ]
         var smem_tile = smem_tile_t(smem_ptr)
@@ -128,8 +128,8 @@ def im2col_load_kernel[
 def im2col_reference[
     dtype: DType,
 ](
-    output: UnsafePointer[mut=True, Scalar[dtype], _],
-    input: UnsafePointer[Scalar[dtype], _],  # NHWC (flat pointer)
+    output: MutPointer[Scalar[dtype], _],
+    input: ImmPointer[Scalar[dtype], _],  # NHWC (flat pointer)
     batch: Int,
     in_height: Int,
     in_width: Int,

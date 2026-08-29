@@ -130,7 +130,7 @@ class DSparkSpeculatorsDraftConfig:
         ``sample_from_anchor`` is set."""
         return self.block_size - (0 if self.sample_from_anchor else 1)
 
-    def resolve_num_speculative_tokens(
+    def checkpoint_draft_width(
         self, speculative_config: SpeculativeConfig
     ) -> int:
         """Resolves the per-step draft count against the trained block.
@@ -157,13 +157,11 @@ class DSparkSpeculatorsDraftConfig:
         """
         trained = self.num_speculative_tokens
         requested = speculative_config.num_speculative_tokens
-        if requested is None:
-            return trained
-        if requested < 1:
+        if requested is not None and requested < 1:
             raise ValueError(
                 f"num_speculative_tokens={requested} must be at least 1."
             )
-        if requested > trained:
+        if requested is not None and requested > trained:
             logger.warning(
                 "This DSpark drafter was trained at block_size=%d"
                 " (sample_from_anchor=%s), i.e. %d drafted tokens per step;"
@@ -175,7 +173,8 @@ class DSparkSpeculatorsDraftConfig:
                 trained,
                 requested,
             )
-        return requested
+        resolved = trained if requested is None else requested
+        return resolved
 
     @property
     def target_layer_ids(self) -> tuple[int, ...]:
@@ -424,11 +423,10 @@ class DSparkSpeculatorsDraftArchConfig:
     @classmethod
     def calculate_max_seq_len(
         cls,
-        pipeline_config: PipelineConfig,
         huggingface_config: AutoConfig,
-        model_config: MAXModelConfig | None = None,
+        model_config: MAXModelConfig,
     ) -> int:
-        del pipeline_config, model_config
+        del model_config
         layer_cfg = _get(huggingface_config, "transformer_layer_config")
         max_pos = (
             _get(layer_cfg, "max_position_embeddings")
@@ -441,3 +439,18 @@ class DSparkSpeculatorsDraftArchConfig:
                 " transformer_layer_config.max_position_embeddings."
             )
         return int(max_pos)
+
+
+def speculators_dspark_width(
+    speculative: SpeculativeConfig,
+    target_huggingface_config: Any,
+    draft_huggingface_config: Any,
+) -> int:
+    """Returns the user's width if set, else the draft's trained width."""
+    del target_huggingface_config
+    if draft_huggingface_config is None:
+        raise ValueError("DSpark requires a draft model.")
+    draft = DSparkSpeculatorsDraftConfig.from_huggingface_config(
+        draft_huggingface_config
+    )
+    return draft.checkpoint_draft_width(speculative)

@@ -11,9 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 """Implements `TString`, a template string that captures interpolated values at compile-time."""
-from std.collections.string.format import _FormatUtils, _comptime_list_to_span
-from std.utils import Variant
 import std.format._utils as fmt
+from std.builtin.globals import global_constant
+from std.os import abort
+from std.utils import StaticTuple
 
 
 @always_inline
@@ -93,12 +94,22 @@ struct TString[
         Args:
             writer: The writer to output the formatted string to.
         """
-        comptime bytes = _encode_format_string_comptime[Self.format_string]()
+        comptime length = _count_encoded_bytes(Self.format_string)
+        comptime bytes = _encoded_bytes[length](Self.format_string)
+
+        def tuple_to_span(
+            ref bytes: type_of(bytes),
+        ) -> Span[Byte, origin_of(bytes)]:
+            return {
+                unsafe_ptr = Pointer(to=bytes).unsafe_bitcast[Byte](),
+                length = length,
+            }
+
         if __is_run_in_comptime_interpreter:
-            self._write_to_impl(writer, materialize[bytes]())
+            self._write_to_impl(writer, tuple_to_span(materialize[bytes]()))
         else:
-            var span = _comptime_list_to_span[bytes]()
-            self._write_to_impl(writer, span)
+            ref global_bytes = global_constant[bytes]()
+            self._write_to_impl(writer, tuple_to_span(global_bytes))
 
     @no_inline
     def write_repr_to(self, mut writer: Some[Writer]):
@@ -159,28 +170,31 @@ def __make_tstring[
     tstring = {pack = rebind_var[type_of(tstring)._InjectedValues](args.copy())}
 
 
-def _encode_format_string_comptime[format: StringSlice]() -> List[Byte]:
-    comptime result = _encode_format_string_no_raises(format)
-    comptime if result.isa[Error]():
-        comptime assert False, String(result[Error])
-    else:
-        # Extract at comptime and explicitly materialize to runtime, since
-        # `Variant[List[Byte], Error]` is not `ImplicitlyCopyable` (`Error`
-        # is only `Copyable`).
-        comptime value = result.unwrap[List[Byte]]()
-        return materialize[value]()
+def _count_encoded_bytes(format: StaticString) -> Int:
+    var count = 0
+
+    def addone(_byte: Byte) {mut}:
+        count += 1
+
+    _encode_format_string(format, addone)
+    return count
 
 
-def _encode_format_string_no_raises(
-    format: StringSlice,
-) -> Variant[List[Byte], Error]:
-    try:
-        return _encode_format_string(format)
-    except e:
-        return e^
+def _encoded_bytes[
+    length: Int
+](format: StaticString) -> StaticTuple[Byte, length]:
+    var bytes = StaticTuple[Byte, length](fill=0)
+    var index = 0
+
+    def append(byte: Byte) {mut}:
+        bytes[index] = byte
+        index += 1
+
+    _encode_format_string(format, append)
+    return bytes
 
 
-def _encode_format_string(format: StringSlice) raises -> List[Byte]:
+def _encode_format_string(format: StaticString, f: Some[def(Byte)]):
     """Encode a format string into a flat byte sequence.
 
     The output is an alternating sequence of NUL-terminated literal segments
@@ -213,55 +227,53 @@ def _encode_format_string(format: StringSlice) raises -> List[Byte]:
 
     Args:
         format: The format string to encode.
-
-    Returns:
-        A list of bytes containing the encoded format string.
-
-    Raises:
-        If the format string contains non-empty replacement fields, unmatched
-        braces, or other syntax errors.
+        f: Called once per encoded byte, in order, instead of returning a
+            buffer directly. This lets callers collect the bytes however
+            they need to, for example counting them or writing them into a
+            fixed-size buffer.
     """
-    comptime LBRACE = Byte(ord("{"))
-    comptime RBRACE = Byte(ord("}"))
+    comptime LBRACE = Byte(123)  # '{'
+    comptime RBRACE = Byte(125)  # '}'
     comptime NUL = Byte(0)
 
-    var result = List[Byte]()
     var bytes = format.as_bytes()
     var i = 0
 
-    var immut_bytes = bytes.as_imm()
+    # Note: using `bytes.unsafe_ptr()[unsafe_offset=i]` is intentional over
+    # using `bytes[i]` as it puts less stress on the comptime interpreter
+    # resulting in better compile times.
 
     @always_inline
     def peek_next_is(byte: Byte) {imm} -> Bool:
-        return i + 1 < len(immut_bytes) and immut_bytes[i + 1] == byte
+        return (
+            i + 1 < len(bytes)
+            and bytes.unsafe_ptr()[unsafe_offset=i + 1] == byte
+        )
 
     while i < len(bytes):
-        var byte = bytes[i]
+        var byte = bytes.unsafe_ptr()[unsafe_offset=i]
         if byte == LBRACE:
             if peek_next_is(LBRACE):
                 # Escaped brace {{ -> {
-                result.append(LBRACE)
+                f(LBRACE)
             elif peek_next_is(RBRACE):
                 # Empty replacement field {} -> NUL separator.
-                result.append(NUL)
+                f(NUL)
             else:
-                raise Error(
-                    "unclosed/non-empty replacement field in format string"
-                )
+                abort()
 
             # skip past escaped brace or replacement field
             i += 2
         elif byte == RBRACE:
             if not peek_next_is(RBRACE):
-                raise Error("single '}' is not allowed in format string")
+                abort()
 
             # Escaped brace }} -> }
-            result.append(RBRACE)
+            f(RBRACE)
             i += 2
         else:
-            result.append(byte)
+            f(byte)
             i += 1
 
     # Terminate the final literal segment with NUL.
-    result.append(NUL)
-    return result^
+    f(NUL)

@@ -237,7 +237,7 @@ def test[
             k_device.as_immut().as_unsafe_any_origin()
         )
         var null_valid_length = LayoutTensor[
-            DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
+            .uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
         ](
             None,
             RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(Index(0)),
@@ -280,12 +280,12 @@ def test[
                         d
                         + depth * (h + s * num_heads)
                         + b * depth * num_heads * seq_len
-                    ].cast[DType.float64]()
+                    ].cast[.float64]()
                     var actual = flash_output_ptr[
                         d
                         + (depth - 64) * (h + s * num_heads)
                         + b * (depth - 64) * num_heads * seq_len
-                    ].cast[DType.float64]()
+                    ].cast[.float64]()
                     # if not isclose(actual, expect, atol=1e-3, rtol=rtol):
                     #     var rerr = abs((actual - expect) / expect)
                     #     print(h, s, d, actual, expect, rerr)
@@ -356,10 +356,10 @@ def test_prefill[
     randn(cache_ptr.as_span())
 
     # input row offsets and cache row offsets
-    var input_row_offsets = ctx.enqueue_create_host_buffer[DType.uint32](
+    var input_row_offsets = ctx.enqueue_create_host_buffer[.uint32](
         batch_size + 1
     )
-    var cache_row_offsets = ctx.enqueue_create_host_buffer[DType.uint32](
+    var cache_row_offsets = ctx.enqueue_create_host_buffer[.uint32](
         batch_size + 1
     )
     for i in range(batch_size):
@@ -403,10 +403,10 @@ def test_prefill[
     var v_device_ptr = ctx.enqueue_create_buffer[qkv_type](v_size)
     var cache_device_ptr = ctx.enqueue_create_buffer[k_rope_type](cache_size)
     var output_device_ptr = ctx.enqueue_create_buffer[output_type](o_size)
-    var input_row_offsets_device_ptr = ctx.enqueue_create_buffer[DType.uint32](
+    var input_row_offsets_device_ptr = ctx.enqueue_create_buffer[.uint32](
         batch_size + 1
     )
-    var cache_row_offsets_device_ptr = ctx.enqueue_create_buffer[DType.uint32](
+    var cache_row_offsets_device_ptr = ctx.enqueue_create_buffer[.uint32](
         batch_size + 1
     )
 
@@ -591,7 +591,7 @@ def test_prefill[
     ctx.enqueue_copy(v_ref_device_ptr, v_ref_ptr)
 
     var null_valid_length = LayoutTensor[
-        DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
+        .uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
     ](
         None,
         RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(Index(0)),
@@ -647,7 +647,7 @@ def test_prefill[
                 for d in range(kv_depth):
                     var lhs = output_rank4[b, s, h, d]
                     var rhs = output_ref[b, s, h, d]
-                    if abs((lhs - rhs)).cast[DType.float64]() > atol:
+                    if abs((lhs - rhs)).cast[.float64]() > atol:
                         print(b, s, h, d, lhs, rhs)
                     # print(b, s, h, d, lhs, rhs)
                     assert_almost_equal(
@@ -671,7 +671,7 @@ def test_decoding[
     batch_size: Int,
     num_partitions: Optional[Int],
     split_k: Bool,
-    qkv_type: DType = DType.bfloat16,
+    qkv_type: DType = .bfloat16,
     output_type: DType = qkv_type,
 ](ctx: DeviceContext, use_index_input: Bool) raises:
     comptime if _is_sm10x_gpu(ctx.default_device_info):
@@ -890,7 +890,7 @@ def test_decoding_partial_head_group[
     batch_size: Int,
     num_partitions: Optional[Int],
     split_k: Bool,
-    qkv_type: DType = DType.bfloat16,
+    qkv_type: DType = .bfloat16,
     output_type: DType = qkv_type,
 ](ctx: DeviceContext, use_index_input: Bool) raises:
     """Covers head counts whose last head group is partial, with a
@@ -909,6 +909,41 @@ def test_decoding_partial_head_group[
             decoding_warp_split_k=split_k,
             output_type=output_type,
         ](1, 1024, ctx, use_index_input=use_index_input)
+
+
+def test_decoding_k3_head_counts[
+    batch_size: Int,
+    num_partitions: Optional[Int],
+    split_k: Bool,
+](ctx: DeviceContext, seq_len: Int, num_keys: Int) raises:
+    """Kimi K3's per-device Q-head counts at TP2/TP4/TP8 -- 48, 24 and 12.
+
+    K3 serves bf16 KV, and the only K3 head count measured so far (12, in
+    `test_mla_decode_kv_fp8.mojo`) was measured under fp8 KV. These are the
+    counts `compute_mla_dispatch_scalars_runtime` has to enumerate for K3's
+    latent cache to dispatch at all, so they are measured here first.
+
+    48/24/12 are all a single head group. K3's TP1 count of 96 leaves a partial
+    tail head group, which `test_decoding_partial_head_group` covers directly,
+    so it is not repeated here. Of the three, only 12 tails the *combine* grid,
+    which blocks 8 heads per CTA at `warps_per_head=1` and so leaves 4 -- and
+    only a split-K run reaches that kernel at all.
+
+    The control comes FIRST at this exact shape and batch: an assert aborts the
+    run, so ordering a supported count ahead of an unusual one is what makes a
+    failure attributable to the head count rather than to the shape.
+    """
+    comptime for num_heads in [128, 48, 24, 12]:
+        test[
+            DType.bfloat16,
+            576,
+            num_heads,
+            group=num_heads,
+            against_gpu_naive=True,
+            batch_size=batch_size,
+            num_partitions=num_partitions,
+            decoding_warp_split_k=split_k,
+        ](seq_len, num_keys, ctx)
 
 
 def test_mla_prefill[
@@ -1095,6 +1130,14 @@ def main() raises:
                 qkv_type=DType.float8_e4m3fn,
                 output_type=DType.bfloat16,
             ](ctx, False)
+
+        comptime if _is_sm10x_gpu(ctx.default_device_info):
+            test_decoding_k3_head_counts[2, 1, False](ctx, 1, 512)
+            test_decoding_k3_head_counts[1, 1, False](ctx, 1, 4096)
+            # Split-K is what launches the combine kernel, whose 8-head block
+            # these counts tail; an overrun there folds one split's partials
+            # into the next head's output.
+            test_decoding_k3_head_counts[1, 2, True](ctx, 1, 4096)
 
         # test mla prefill
         test_mla_prefill[2, DType.bfloat16, DType.bfloat16](ctx)

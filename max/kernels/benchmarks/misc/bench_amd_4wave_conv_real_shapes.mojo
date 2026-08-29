@@ -55,8 +55,8 @@ def _host_im2col_general[
     stride_w: Int,
     K_padded: Int,
 ](
-    input_host_ptr: UnsafePointer[Scalar[a_type], ImmutAnyOrigin],
-    im2col_host_ptr: UnsafePointer[Scalar[a_type], MutAnyOrigin],
+    input_host_ptr: ImmPointer[Scalar[a_type], ImmutAnyOrigin],
+    im2col_host_ptr: MutPointer[Scalar[a_type], MutAnyOrigin],
 ):
     for n in range(N):
         for ho in range(H_out):
@@ -420,7 +420,7 @@ def _run_suite[a_type: DType, c_type: DType](ctx: DeviceContext) raises:
 def main() raises:
     # Pick the input dtype via `-D DTYPE=<dtype>`. Output dtype mirrors
     # the matmul: FP8 → BF16, BF16 → BF16, FP16 → FP16. Default = FP8.
-    comptime a_type = get_defined_dtype["DTYPE", DType.float8_e4m3fn]()
+    comptime a_type = get_defined_dtype["DTYPE", .float8_e4m3fn]()
     comptime c_type = (
         DType.bfloat16 if a_type == DType.float8_e4m3fn else a_type
     )

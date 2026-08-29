@@ -70,7 +70,7 @@ def test_effects():
     assert_mojo_format(source, source)
 
 
-@pytest.mark.parametrize("conv", ["read", "mut", "var", "ref"])
+@pytest.mark.parametrize("conv", ["imm", "mut", "var", "ref"])
 def test_arg_conventions(conv):
     """Each argument convention formats with a single space after it."""
     source = f"def main():\n    var f = lambda ({conv} x: Int) {{}} -> Int: x + 1\n"
@@ -88,7 +88,7 @@ def test_capture_by_mut():
 
 
 def test_omitted_capture_list_reads_free_var():
-    """An omitted capture list (read-captures the free `z`) is unchanged."""
+    """An omitted capture list (imm-captures the free `z`) is unchanged."""
     source = (
         "def main():\n"
         "    var z = 3\n"

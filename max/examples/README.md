@@ -63,6 +63,12 @@ Using the `LayoutTensor` type to manipulate multidimensional data on both CPU
 and GPU, accompanying [Using
 LayoutTensor](https://max.modular.com/layout/tensors/).
 
+## [Music generation](music_generation/)
+
+Rendering a full-length song from a caption and lyrics with MiniMax-Music3,
+either in process or through a running MAX server, and measuring the joins
+between the model's denoising windows.
+
 ---
 
 ## Example code tests

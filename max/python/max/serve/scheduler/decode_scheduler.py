@@ -32,6 +32,7 @@ from max.pipelines.kv_cache import (
     PagedKVCacheManagerInterface,
     TransferReqData,
 )
+from max.pipelines.kv_cache.kv_connector import KVConnectorTransfer
 from max.pipelines.lib import (
     PIPELINE_REGISTRY,
     MemoryPlan,
@@ -52,6 +53,7 @@ from max.serve.queue import (
 )
 from max.serve.scheduler.base import (
     CancelRequest,
+    PrefillFailure,
     PrefillProgressPing,
     PrefillRequest,
     PrefillResponse,
@@ -97,6 +99,10 @@ class PendingDecodeRequest:
     context: TextContext
     replica_idx: int
     phase: DecodeRequestPhase
+    # The admission-time KV onload (a reused-prefix H2D copy). Release
+    # and TG-enqueue sites must wait for this too, not just the prefill
+    # transfer.
+    onload_event: KVConnectorTransfer
     phase_entered_at: float = field(default_factory=time.monotonic)
     transfer: TransferReqData | None = None
     # Decode-clock receipt times for prefill's ping-back events, used to
@@ -105,11 +111,9 @@ class PendingDecodeRequest:
     # prefill).
     arrived_ping_at: float | None = None
     ce_done_ping_at: float | None = None
-    # Cancelled while TRANSFERRING: releasing blocks immediately would free
-    # memory the transfer is still writing into, racing a future allocation
-    # that reuses the same blocks. Cleanup defers to
-    # check_for_completed_transfers, once the transfer engine confirms the
-    # write actually landed.
+    # Cancelled while onload and/or prefill's transfer may still be
+    # writing into these blocks. Release defers to
+    # check_for_completed_transfers until both are confirmed landed.
     cancelled: bool = False
 
 
@@ -184,6 +188,22 @@ class DecodeScheduler(Scheduler):
         logger.debug(f"connecting to remote transfer engine: {message.name}")
         self.transfer_engine.connect(message)
 
+    def handle_prefill_failure(self, message: PrefillFailure) -> None:
+        """Terminates a request the prefill node rejected.
+
+        No KV transfer was started, so the blocks are released immediately,
+        mirroring the pre-transfer cancellation path.
+        """
+        pending = self.requests.pop(message.id, None)
+        if pending is None:
+            return
+        self.prefill_reqs_per_replica[pending.replica_idx] -= 1
+        self.kv_cache.release(pending.context)
+        self.pipeline.release(message.id)
+        self.response_queue.put_nowait(
+            {message.id: SchedulerResult.failed(message.error)}
+        )
+
     def handle_prefill_response(self, message: PrefillResponse) -> None:
         """Handles a prefill response from the dispatcher."""
         request_id = message.id
@@ -192,6 +212,16 @@ class DecodeScheduler(Scheduler):
         # was in-flight over ZMQ.  Discard the stale response
         pending = self.requests.get(request_id)
         if pending is None:
+            return
+
+        if pending.cancelled:
+            # Client already got SchedulerResult.cancelled() -- don't
+            # also emit a generation result. Still record the transfer
+            # so check_for_completed_transfers waits for it before
+            # releasing these blocks.
+            pending.phase = DecodeRequestPhase.TRANSFERRING
+            pending.phase_entered_at = time.monotonic()
+            pending.transfer = message.transfer_metadata
             return
 
         postprocess_start = time.monotonic()
@@ -301,13 +331,13 @@ class DecodeScheduler(Scheduler):
             f"Invalid Context: Expected needs_ce to be True. Found: {data}"
         )
 
-        # Set dst_idx to -1 to denote pages which the decode already has due to
-        # prefix caching. processed_length is in tokens; divide by page_size to
-        # convert to blocks before accounting for data-parallel degree.
+        # Set dst_idx to -1 to denote pages which the decode already has due
+        # to prefix caching. processed_length is in tokens; divide by
+        # page_size to convert to blocks. dst_idxs is already per-replica
+        # (get_req_blocks returns blocks on the replica the request was
+        # claimed on), so no further scaling by data-parallel degree.
         for i in range(
-            data.tokens.processed_length
-            // self.kv_cache.params.page_size
-            // self.scheduler_config.data_parallel_degree
+            data.tokens.processed_length // self.kv_cache.params.page_size
         ):
             dst_idxs[i] = -1
 
@@ -325,6 +355,32 @@ class DecodeScheduler(Scheduler):
             data.target_endpoint,
         )
         METRICS.di_decode_send_time((time.monotonic() - send_start) * 1000)
+
+    def _send_admitted_request_to_prefill(
+        self,
+        req_id: RequestID,
+        context: TextContext,
+        replica_idx: int,
+        onload_event: KVConnectorTransfer,
+    ) -> None:
+        """Sends a claimed request to the prefill node.
+
+        Does not wait for ``onload_event`` (the admission-time KV onload)
+        to complete first -- prefill only ever writes blocks beyond the
+        request's already-cached prefix, so its own KV transfer and our
+        onload never target the same memory. ``onload_event`` still has
+        to complete before this request can join a TG batch or release
+        its blocks; see ``check_for_completed_transfers``.
+        """
+        dst_idxs = self.kv_cache.get_req_blocks(context)
+        self.requests[req_id] = PendingDecodeRequest(
+            context=context,
+            replica_idx=replica_idx,
+            phase=DecodeRequestPhase.AWAITING_PREFILL,
+            onload_event=onload_event,
+            phase_entered_at=time.monotonic(),
+        )
+        self.send_prefill_request(req_id, context, dst_idxs, replica_idx)
 
     def reserve_memory_and_send_to_prefill(self) -> None:
         """Continuously pulls requests from the request queue and forwards them to the prefill node."""
@@ -378,9 +434,6 @@ class DecodeScheduler(Scheduler):
             # so we must allocate matching blocks on the decode side.
             try:
                 load_event = self.kv_cache.alloc(context)
-                # TODO: cordon the request (like the CE batch constructor) so the
-                # onload overlaps GPU execution instead of blocking here.
-                load_event.synchronize()
             except InsufficientBlocksError:
                 # If we don't have enough space, we will return this to the request queue.
                 self.pending_reqs[req_id] = context
@@ -388,22 +441,16 @@ class DecodeScheduler(Scheduler):
                 self.kv_cache.release(context)
                 break
 
-            # Send to the Prefill Node
-            dst_idxs = self.kv_cache.get_req_blocks(context)
             admitted_at = time.monotonic()
             enqueued_at = self._admission_enqueue_time.pop(req_id, None)
             if enqueued_at is not None:
                 METRICS.di_decode_admission_queue_wait_time(
                     (admitted_at - enqueued_at) * 1000
                 )
-            self.requests[req_id] = PendingDecodeRequest(
-                context=context,
-                replica_idx=replica_idx,
-                phase=DecodeRequestPhase.AWAITING_PREFILL,
-                phase_entered_at=admitted_at,
-            )
             self.prefill_reqs_per_replica[replica_idx] += 1
-            self.send_prefill_request(req_id, context, dst_idxs, replica_idx)
+            self._send_admitted_request_to_prefill(
+                req_id, context, replica_idx, load_event
+            )
 
     def _handle_cancelled_requests(self) -> None:
         for req_id in get_cancelled_reqs(self.cancel_queue):
@@ -426,16 +473,21 @@ class DecodeScheduler(Scheduler):
             data = pending.context
             dst_replica_idx = pending.replica_idx
 
-            if pending.phase is DecodeRequestPhase.TRANSFERRING:
-                # A PrefillResponse already landed and the KV transfer is
-                # running -- releasing these blocks now would free memory
-                # that transfer is still writing into. Defer the block
-                # release to check_for_completed_transfers, once the
-                # transfer engine confirms the write actually landed.
+            if (
+                pending.phase is DecodeRequestPhase.TRANSFERRING
+                or not pending.onload_event.is_complete()
+            ):
+                # A PrefillResponse's KV transfer may be running, or --
+                # since this request was sent to prefill without waiting
+                # for its own admission-time onload -- that onload copy
+                # may still be writing into these blocks. Defer the
+                # release to check_for_completed_transfers, which waits
+                # for whichever of the two is still outstanding.
                 pending.cancelled = True
             else:
-                # No transfer in flight yet, so nothing is writing to
-                # these blocks -- safe to release immediately.
+                # Onload landed and no transfer is in flight yet, so
+                # nothing is writing to these blocks -- safe to release
+                # immediately.
                 del self.requests[req_id]
                 self.prefill_reqs_per_replica[dst_replica_idx] -= 1
                 self.kv_cache.release(data)
@@ -535,35 +587,39 @@ class DecodeScheduler(Scheduler):
         )
 
     def check_for_completed_transfers(self) -> None:
-        """Marks completed transfers ready for TG, or -- for ones cancelled
-        mid-flight -- releases their KV blocks now that the write landed.
+        """Settles requests once every write still targeting their blocks
+        has landed: the admission-time onload always, and -- once a
+        ``PrefillResponse`` arrives -- prefill's own KV transfer too.
+        Ready requests join a TG batch, or, if cancelled, release their
+        blocks.
 
         Must run after ``_handle_cancelled_requests`` within the same
         iteration, so a same-tick cancellation is already flagged on its
         record before this checks it.
         """
-
-        transferring_ids = [
-            req_id
-            for req_id, pending in self.requests.items()
-            if pending.phase is DecodeRequestPhase.TRANSFERRING
-        ]
-        for request_id in transferring_ids:
-            pending = self.requests[request_id]
-            assert pending.transfer is not None
-
-            # Transfer is not complete, skip.
-            if not self.transfer_engine.is_complete(pending.transfer):
+        ready_ids = []
+        for req_id, pending in self.requests.items():
+            if not pending.onload_event.is_complete():
                 continue
+            if pending.phase is DecodeRequestPhase.TRANSFERRING:
+                assert pending.transfer is not None
+                if not self.transfer_engine.is_complete(pending.transfer):
+                    continue
+            elif not pending.cancelled:
+                # AWAITING_PREFILL and not cancelled: still waiting on a
+                # PrefillResponse, unrelated to the onload above.
+                continue
+            ready_ids.append(req_id)
 
-            del self.requests[request_id]
+        for request_id in ready_ids:
+            pending = self.requests.pop(request_id)
             self.prefill_reqs_per_replica[pending.replica_idx] -= 1
-            self.transfer_engine.cleanup_transfer(pending.transfer)
+
+            if pending.phase is DecodeRequestPhase.TRANSFERRING:
+                assert pending.transfer is not None
+                self.transfer_engine.cleanup_transfer(pending.transfer)
 
             if pending.cancelled:
-                # Cancelled while the transfer was in flight (see
-                # _handle_cancelled_requests): the write has now actually
-                # landed, so it's finally safe to release the blocks.
                 self.kv_cache.release(pending.context)
                 continue
 
@@ -641,6 +697,8 @@ class DecodeScheduler(Scheduler):
                 self.handle_prefill_response(reply)
             elif isinstance(reply, PrefillProgressPing):
                 self.handle_prefill_progress_ping(reply)
+            elif isinstance(reply, PrefillFailure):
+                self.handle_prefill_failure(reply)
             else:
                 raise ValueError(f"Invalid reply type: {reply}")
 
@@ -670,14 +728,22 @@ class DecodeScheduler(Scheduler):
         elif self.scheduler_config.decode_stall_timeout_s is not None:
             stall_duration = time.monotonic() - self._last_batch_activity
             if stall_duration > self.scheduler_config.decode_stall_timeout_s:
+                awaiting_prefill = sum(
+                    1
+                    for p in self.requests.values()
+                    if p.phase is DecodeRequestPhase.AWAITING_PREFILL
+                )
+                transferring = len(self.requests) - awaiting_prefill
                 logger.error(
                     "Decode stall detected: no batch activity for %.1fs"
-                    " with %d pending requests (%d queued, %d in"
-                    " prefill). Terminating worker to trigger restart.",
+                    " with %d pending requests (%d queued, %d awaiting"
+                    " prefill, %d transferring). Terminating worker to"
+                    " trigger restart.",
                     stall_duration,
                     total_pending,
                     len(self.pending_reqs),
-                    len(self.requests),
+                    awaiting_prefill,
+                    transferring,
                 )
                 # SystemExit bypasses except Exception handlers in the
                 # scheduler loop, guaranteeing the process exits and
@@ -717,7 +783,7 @@ class DecodeScheduler(Scheduler):
             kv_cache=self.kv_cache,
             batch_creation_time_s=batch_creation_time_s,
             batch_execution_time_s=batch_execution_time_s,
-            num_pending_reqs=len(self.pending_reqs) + len(self.requests),
+            num_pending_reqs=total_pending,
             num_terminated_reqs=num_terminated_reqs,
             total_preemption_count=self.batch_constructor.total_preemption_count,
             batch_spec_decode_metrics=self.pipeline.batch_spec_decode_metrics()

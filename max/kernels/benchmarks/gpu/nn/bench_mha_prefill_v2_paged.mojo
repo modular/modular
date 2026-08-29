@@ -122,7 +122,7 @@ def run_mha_prefill_v2_paged[
     comptime num_layers = 1
     comptime layer_idx = 0
 
-    comptime assert qkv_type == DType.bfloat16, "MhaPrefillV2 is BF16-only"
+    comptime assert qkv_type == .bfloat16, "MhaPrefillV2 is BF16-only"
     comptime assert (
         page_size >= _KV_BLOCK
     ), "page_size must be >= the kernel's KV_BLOCK (64)"
@@ -142,28 +142,24 @@ def run_mha_prefill_v2_paged[
 
     comptime simd_size = 4
     var cb_q = CacheBustingBuffer[qkv_type](q_size, simd_size, ctx)
-    var cb_o = CacheBustingBuffer[DType.float32](o_size, simd_size, ctx)
+    var cb_o = CacheBustingBuffer[.float32](o_size, simd_size, ctx)
 
     comptime random_distribution = InitializationType.uniform_distribution
     cb_q.init_on_device(random_distribution, ctx)
 
     # -------- K / V (paged, single allocation, fixed LUT) -------------------
     # Host-side: cache_lengths = 0 for every batch (fresh prefill).
-    var cache_lengths_host = List(
-        length=batch_size, fill=Scalar[DType.uint32](0)
-    )
+    var cache_lengths_host = List(length=batch_size, fill=UInt32(0))
     var max_seq_length: UInt32 = UInt32(seq_len)
     var max_context_length: UInt32 = UInt32(seq_len)
 
-    var cache_lengths_dev = ctx.enqueue_create_buffer[DType.uint32](batch_size)
+    var cache_lengths_dev = ctx.enqueue_create_buffer[.uint32](batch_size)
     ctx.enqueue_copy(cache_lengths_dev, cache_lengths_host)
 
     # Paged LUT: random unique page index per (batch, block).
     var paged_lut_cols = pages_per_seq
     var paged_lut_size = batch_size * paged_lut_cols
-    var paged_lut_host = List(
-        length=paged_lut_size, fill=Scalar[DType.uint32](0)
-    )
+    var paged_lut_host = List(length=paged_lut_size, fill=UInt32(0))
     var paged_lut_view = TileTensor(
         paged_lut_host,
         row_major(
@@ -182,7 +178,7 @@ def run_mha_prefill_v2_paged[
             seen.add(p)
             paged_lut_view[bs, block_idx] = UInt32(p)
 
-    var paged_lut_dev = ctx.enqueue_create_buffer[DType.uint32](paged_lut_size)
+    var paged_lut_dev = ctx.enqueue_create_buffer[.uint32](paged_lut_size)
     ctx.enqueue_copy(paged_lut_dev, paged_lut_host)
 
     # KV block tensor: (num_pages, 2 [K|V], num_layers, page_size, kv_num_heads, depth)
@@ -217,7 +213,7 @@ def run_mha_prefill_v2_paged[
     comptime cache_lengths_layout = Layout(UNKNOWN_VALUE)
     var cache_lengths_tensor = LayoutTensor[
         mut=False,
-        DType.uint32,
+        .uint32,
         cache_lengths_layout,
     ](
         cache_lengths_dev,
@@ -227,7 +223,7 @@ def run_mha_prefill_v2_paged[
     comptime paged_lut_layout = Layout.row_major[2]()
     var paged_lut_tensor = LayoutTensor[
         mut=False,
-        DType.uint32,
+        .uint32,
         paged_lut_layout,
     ](
         paged_lut_dev,
@@ -289,7 +285,7 @@ def run_mha_prefill_v2_paged[
                     ),
                 )
                 var o_tt = TileTensor(
-                    cb_o.offset_ptr(iteration).bitcast[Scalar[DType.float32]](),
+                    cb_o.offset_ptr(iteration).bitcast[Float32](),
                     row_major(
                         Coord(
                             Int32(batch_size),
@@ -351,7 +347,7 @@ def run_mha_prefill_v2_paged[
 def main() raises:
     seed(0)
 
-    comptime qkv_type = get_defined_dtype["qkv_type", DType.bfloat16]()
+    comptime qkv_type = get_defined_dtype["qkv_type", .bfloat16]()
     comptime depth = get_defined_int["depth", 128]()
     comptime num_heads = get_defined_int["num_heads", 16]()
     comptime group = get_defined_int["group", 1]()

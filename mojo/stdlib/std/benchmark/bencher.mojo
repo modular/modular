@@ -786,45 +786,7 @@ struct Bench(Writable):
 
     @always_inline
     def bench_function[
-        bench_fn: def() raises capturing[_] -> None,
-    ](
-        mut self,
-        bench_id: BenchId,
-        measures: List[ThroughputMeasure] = {},
-        fixed_iterations: Optional[Int] = None,
-    ) raises:
-        """Benchmarks or Tests an input function.
-
-        Parameters:
-            bench_fn: The function to be benchmarked.
-
-        Args:
-            bench_id: The benchmark Id object used for identification.
-            measures: Optional arg used to represent a list of ThroughputMeasure's.
-            fixed_iterations: Just run a fixed number of iterations.
-
-        Raises:
-            If the operation fails.
-        """
-
-        @__parameter
-        @always_inline
-        def bench_iter(mut b: Bencher):
-            @__parameter
-            @always_inline
-            def call_func():
-                try:
-                    bench_fn()
-                except e:
-                    abort(String(e))
-
-            b.iter[call_func]()
-
-        self.bench_function[bench_iter](bench_id, measures=measures)
-
-    @always_inline
-    def bench_function[
-        FuncType: def() -> None,
+        FuncType: def() raises -> None,
     ](
         mut self,
         func: FuncType,
@@ -850,85 +812,10 @@ struct Bench(Writable):
         @always_inline
         def bench_iter(
             mut b: Bencher,
-        ) {imm func,}:
+        ) raises {imm func,}:
             b.iter(func)
 
         self.bench_function(bench_iter, bench_id, measures=measures)
-
-    # TODO: add a variant of the following function for with DeviceContext
-    @always_inline
-    def bench_function[
-        bench_fn: def() capturing[_] -> None,
-    ](
-        mut self,
-        bench_id: BenchId,
-        measures: List[ThroughputMeasure] = {},
-        fixed_iterations: Optional[Int] = None,
-    ) raises:
-        """Benchmarks or Tests an input function.
-
-        Parameters:
-            bench_fn: The function to be benchmarked.
-
-        Args:
-            bench_id: The benchmark Id object used for identification.
-            measures: Optional arg used to represent a list of ThroughputMeasure's.
-            fixed_iterations: Just run a fixed number of iterations.
-
-        Raises:
-            If the operation fails.
-        """
-
-        @__parameter
-        @always_inline
-        def bench_iter(mut b: Bencher):
-            @__parameter
-            @always_inline
-            def call_func():
-                bench_fn()
-
-            b.iter[call_func]()
-
-        self.bench_function[bench_iter](bench_id, measures=measures)
-
-    def bench_function[
-        bench_fn: def(mut Bencher) raises capturing[_] -> None
-    ](
-        mut self,
-        bench_id: BenchId,
-        measures: List[ThroughputMeasure] = {},
-        fixed_iterations: Optional[Int] = None,
-    ) raises:
-        """Benchmarks or Tests an input function.
-
-        Parameters:
-            bench_fn: The function to be benchmarked.
-
-        Args:
-            bench_id: The benchmark Id object used for identification.
-            measures: Optional arg used to represent a list of ThroughputMeasure's.
-            fixed_iterations: Just run a fixed number of iterations.
-
-        Raises:
-            If the operation fails.
-        """
-
-        @__parameter
-        def bench_with_abort_on_err(mut b: Bencher):
-            # TODO: if we don't catch the exception here we have to overload
-            # almost every function in stdlib benchmark and stdlib time.
-            try:
-                bench_fn(b)
-            except e:
-                abort(String(e))
-
-        if self.mode == Mode.Benchmark:
-            for _ in range(self.config.num_repetitions):
-                self._bench[bench_with_abort_on_err](
-                    bench_id, measures.copy(), fixed_iterations
-                )
-        elif self.mode == Mode.Test:
-            self._test[bench_with_abort_on_err]()
 
     def bench_function[
         FuncType: def(mut Bencher) raises -> None,
@@ -960,19 +847,6 @@ struct Bench(Writable):
         elif self.mode == Mode.Test:
             self._test(func)
 
-    def _test[bench_fn: def(mut Bencher) capturing[_] -> None](mut self) raises:
-        """Tests an input function by executing it only once.
-
-        Parameters:
-            bench_fn: The function to be benchmarked.
-        """
-
-        @always_inline
-        def func_unified(mut b: Bencher) {}:
-            bench_fn(b)
-
-        self._test(func_unified)
-
     def _test[
         FuncType: def(mut Bencher) raises -> None,
     ](mut self, func: FuncType) raises:
@@ -987,31 +861,6 @@ struct Bench(Writable):
 
         var b = Bencher(1)
         func(b)
-
-    def _bench[
-        user_bench_fn: def(mut Bencher) capturing[_] -> None
-    ](
-        mut self,
-        bench_id: BenchId,
-        var measures: List[ThroughputMeasure] = {},
-        fixed_iterations: Optional[Int] = None,
-    ) raises:
-        """Benchmarks an input function.
-
-        Parameters:
-            user_bench_fn: The function to be benchmarked.
-
-        Args:
-            bench_id: The benchmark Id object used for identification.
-            measures: Optional arg used to represent a list of ThroughputMeasure's.
-            fixed_iterations: Just run a fixed number of iterations.
-        """
-
-        @always_inline
-        def func_unified(mut b: Bencher) {}:
-            user_bench_fn(b)
-
-        self._bench(func_unified, bench_id, measures^, fixed_iterations)
 
     def _bench[
         FuncType: def(mut Bencher) raises -> None,
@@ -1393,20 +1242,6 @@ struct Bencher(RegisterPassable):
         self.num_iters = num_iters
         self.elapsed = 0
 
-    def iter[iter_fn: def() capturing[_] -> None](mut self):
-        """Returns the total elapsed time by running a target function a particular
-        number of times.
-
-        Parameters:
-            iter_fn: The target function to benchmark.
-        """
-
-        @always_inline
-        def unified_closure() {}:
-            iter_fn()
-
-        self.iter(unified_closure)
-
     # TODO(MOCO-4470): Collapse this overload and the raising one below into a
     # single `iter[E: AnyType, //, IterFn: def() raises E](f: IterFn) raises E`
     # once a non-raising argument can bind `E` to the empty error type. Today
@@ -1505,20 +1340,3 @@ struct Bencher(RegisterPassable):
         """
 
         self.elapsed = func(self.num_iters)
-
-    def iter[iter_fn: def() capturing raises -> None](mut self) raises:
-        """Returns the total elapsed time by running a target function a particular
-        number of times.
-
-        Parameters:
-            iter_fn: The target function to benchmark.
-
-        Raises:
-            If the operation fails.
-        """
-
-        @always_inline
-        def unified_closure() raises {}:
-            iter_fn()
-
-        self.iter(unified_closure)

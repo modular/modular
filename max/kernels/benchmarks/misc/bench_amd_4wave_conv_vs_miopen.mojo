@@ -40,8 +40,8 @@ from nn.conv.gpu.amd.amd_4wave_conv import amd_4wave_conv
 def _permute_filter_frsc_to_rscf_host[
     dtype: DType
 ](
-    src_ptr: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    dst_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    src_ptr: ImmPointer[Scalar[dtype], ImmutAnyOrigin],
+    dst_ptr: MutPointer[Scalar[dtype], MutAnyOrigin],
     *,
     F: Int,
     R: Int,

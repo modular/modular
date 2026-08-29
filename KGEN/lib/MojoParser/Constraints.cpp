@@ -33,7 +33,7 @@ using namespace M::KGEN::LIT;
 
 void ConstraintFailure::attachNotes(MojoInflightDiag &diag) const {
   auto emitNote = [&](ConstraintAttr constraint, StringRef kind) {
-    diag.attachNote(constraint.getLoc()) << kind << " conditional conformance";
+    diag.attachNote(constraint.getLoc()) << kind << " constraint";
     if (StringAttr message = constraint.getMessage())
       diag << ": " << message.getValue();
   };
@@ -81,7 +81,8 @@ TriState LIT::canDischargeConstraintsInScope(
     llvm::function_ref<MojoInflightDiag &(std::optional<SMLoc> loc)> getDiag,
     SmallVectorImpl<ConstraintAttr> *unprovableConstraints,
     ParameterEvaluator *evaluator,
-    ArrayRef<ConstraintAttr> additionalAssumptions) {
+    ArrayRef<ConstraintAttr> additionalAssumptions,
+    llvm::BitVector *provenConstraints) {
   if (constraints.empty())
     return TriState::yes();
 
@@ -91,18 +92,13 @@ TriState LIT::canDischargeConstraintsInScope(
   assumptions.append(additionalAssumptions.begin(),
                      additionalAssumptions.end());
 
-  // If in a conformance op, use its known constraints as assumptions.
-  // FIXME(MOCO-4261): This shouldn't be needed - this should be passed down as
-  // 'additionalAssumptions', but OverloadSet isn't passing assumptions down
-  // correctly when doing overload ranking.
-  if (auto confOp =
-          dyn_cast_if_present<ConformanceOp>(declScope.getIfOperation()))
-    assumptions.push_back(confOp.getConstraint());
-
   SmallVector<TypedAttr> overallAssumptionOperands;
   for (ConstraintAttr assumption : assumptions)
     overallAssumptionOperands.push_back(
         getCanonicalAttr(assumption.getProposition()));
+
+  if (provenConstraints)
+    provenConstraints->resize(constraints.size());
 
   SmallVector<std::pair<size_t, ConstraintAttr>> failedConstraints;
   SmallVector<ConstraintAttr> localUnprovableConstraints;
@@ -116,8 +112,11 @@ TriState LIT::canDischargeConstraintsInScope(
     // treat it as violated.
     TriState result =
         isPropositionImplied(canonProp, overallAssumptionOperands);
-    if (result.isTrue())
+    if (result.isTrue()) {
+      if (provenConstraints)
+        provenConstraints->set(idx);
       continue;
+    }
     if (result.isFalse()) {
       failedConstraints.emplace_back(idx, constraint);
       continue;

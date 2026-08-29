@@ -21,12 +21,12 @@ from test_utils import MoveCopyCounter, DelCounter
 # ===----------------------------------------------------------------------=== #
 
 
-def indirect_rebind_reg[X: SIMDLength](a: SIMD[DType.int32, X]) -> String:
-    return String(rebind[SIMD[DType.int32, 4]](a))
+def indirect_rebind_reg[X: SIMDLength](a: SIMD[.int32, X]) -> String:
+    return String(rebind[SIMD[.int32, 4]](a))
 
 
 def test_rebind_register() raises:
-    var value = SIMD[DType.int32, 4](17)
+    var value = SIMD[.int32, 4](17)
 
     var string = indirect_rebind_reg(value)
     assert_equal(string, "[17, 17, 17, 17]")

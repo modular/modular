@@ -83,7 +83,7 @@ comptime _NUM_ELEMENTS = _ROWS * _COLS
 # matches the origin-erased type the kernel parameter names after
 # `as_unsafe_any_origin()`.
 comptime _ProbeTile[LayoutType: TensorLayout] = TileTensor[
-    DType.float32,
+    .float32,
     LayoutType,
     UnsafeAnyOrigin[mut=True],
     Storage=DevicePointerStorage[element_width=1],
@@ -129,7 +129,7 @@ def test_kernel_reads_dynamic_layout_dims_after_device_pointer(
     layout extents back through the device pointer."""
     print("== test_kernel_reads_dynamic_layout_dims_after_device_pointer")
 
-    var buf = ctx.enqueue_create_buffer[DType.float32](_NUM_ELEMENTS)
+    var buf = ctx.enqueue_create_buffer[.float32](_NUM_ELEMENTS)
     buf.enqueue_fill(Float32(-1))
 
     # Runtime extents -> a dynamic layout whose shape lives in the struct's
@@ -148,7 +148,7 @@ def test_kernel_reads_dynamic_layout_dims_after_device_pointer(
         tile.as_unsafe_any_origin(), grid_dim=1, block_dim=1
     )
 
-    var host = ctx.enqueue_create_host_buffer[DType.float32](_NUM_ELEMENTS)
+    var host = ctx.enqueue_create_host_buffer[.float32](_NUM_ELEMENTS)
     ctx.enqueue_copy(host, buf)
     ctx.synchronize()
 
@@ -165,7 +165,7 @@ def test_kernel_fills_tile_via_dynamic_layout_and_device_pointer(
     the device pointer, verifying shape + stride decode and every store."""
     print("== test_kernel_fills_tile_via_dynamic_layout_and_device_pointer")
 
-    var buf = ctx.enqueue_create_buffer[DType.float32](_NUM_ELEMENTS)
+    var buf = ctx.enqueue_create_buffer[.float32](_NUM_ELEMENTS)
     buf.enqueue_fill(Float32(-1))
 
     var rows = _ROWS
@@ -179,7 +179,7 @@ def test_kernel_fills_tile_via_dynamic_layout_and_device_pointer(
         tile.as_unsafe_any_origin(), grid_dim=1, block_dim=1
     )
 
-    var host = ctx.enqueue_create_host_buffer[DType.float32](_NUM_ELEMENTS)
+    var host = ctx.enqueue_create_host_buffer[.float32](_NUM_ELEMENTS)
     ctx.enqueue_copy(host, buf)
     ctx.synchronize()
 

@@ -134,7 +134,6 @@ TEST_DESCENDANTS: Final = {
 TYPED_NAMES: Final = {syms.tname, syms.tname_star}
 CONVENTIONS: Final = {
     token.VAR,
-    token.READ,
     token.IMM,
     token.MUT,
     token.OUT,
@@ -486,6 +485,10 @@ def whitespace(
     elif p.type == syms.atom:
         if prev and t == token.DOT:
             # dots, but not the first one.
+            return NO
+
+        if prev and prev.type == token.DOT and t == token.NAME:
+            # Inferred member reference: `.member` (no space after the dot).
             return NO
 
     elif p.type == syms.dictsetmaker:

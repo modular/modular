@@ -237,31 +237,25 @@ def flare_mla_decoding[
     # (default) -> unchanged per-position behavior.
     fold_shared_index: Bool = False,
 ](
-    output: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
-    q: TileTensor[dtype, address_space=AddressSpace.GENERIC, ...],
+    output: TileTensor[mut=True, address_space=.GENERIC, ...],
+    q: TileTensor[dtype, address_space=.GENERIC, ...],
     k: cache_t,
     mask_functor: mask_t,
-    valid_length: TileTensor[
-        DType.uint32, address_space=AddressSpace.GENERIC, ...
-    ],
+    valid_length: TileTensor[.uint32, address_space=.GENERIC, ...],
     scale: Float32,
     ctx: DeviceContext,
     scalar_args_buf: NullableTileTensor[
-        DType.int64, address_space=AddressSpace.GENERIC, ...
+        DType.int64, address_space=.GENERIC, ...
     ],
     q_max_seq_len: OptionalReg[Int] = None,
     kv_input_row_offsets: OptionalReg[
-        LayoutTensor[
-            DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
-        ]
+        LayoutTensor[.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
     ] = None,
     num_partitions: Optional[Int] = None,
     # Per-token Q scale pointer: float32 array with one scale per Q token.
     # sigma_Q[q_token_idx] is folded into scale_log2e inside the Softmax function.
     # Default is null (sigma_Q = 1.0, no effect).
-    q_scale_ptr: OptionalReg[
-        UnsafePointer[Scalar[DType.float32], MutAnyOrigin]
-    ] = None,
+    q_scale_ptr: OptionalReg[UnsafePointer[Float32, MutAnyOrigin]] = None,
     # Sparse indices: when non-null, the kernel uses gather4 TMA with
     # pre-computed physical row indices instead of page-table lookups.
     # d_indices[batch * indices_stride + token] = physical KV row index.
@@ -271,18 +265,14 @@ def flare_mla_decoding[
     # the actual number of valid sparse indices for that batch. indices_stride
     # is the allocation stride (max topk across all batches).
     topk_lengths: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
-    attn_sink_ptr: OptionalReg[
-        UnsafePointer[Scalar[DType.float32], MutAnyOrigin]
-    ] = None,
+    attn_sink_ptr: OptionalReg[UnsafePointer[Float32, MutAnyOrigin]] = None,
     # Extra KV: separate always-attend cache. Tokens from extra_k are
     # appended after the topk tokens in a unified attention loop.
     extra_k: OptionalReg[cache_t] = None,
     extra_d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
     extra_indices_stride: Int = 0,
     extra_topk_lengths: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
-    extra_scales_ptr: OptionalReg[
-        UnsafePointer[Scalar[DType.float32], MutAnyOrigin]
-    ] = None,
+    extra_scales_ptr: OptionalReg[UnsafePointer[Float32, MutAnyOrigin]] = None,
     # Capturable-graph scalar from the Python resolver. When set, the
     # SM100 dispatcher uses this instead of recomputing num_partitions
     # at grid time.
@@ -404,15 +394,14 @@ def flare_mla_decoding[
     # Q and output may differ for native FP8 path: Q is float8_e4m3fn,
     # output is bfloat16. Both half-float Q (bfloat16) and FP8 Q are valid.
     comptime assert q.dtype == output.dtype or (
-        q.dtype == DType.float8_e4m3fn and output.dtype == DType.bfloat16
+        q.dtype == .float8_e4m3fn and output.dtype == .bfloat16
     ), (
         "Q and output must have same type, or Q=float8_e4m3fn with"
         " output=bfloat16."
     )
 
     @always_inline
-    @__parameter
-    def description_fn() -> String:
+    def description_fn() {imm} -> String:
         return String(";").join(
             Span(
                 [
@@ -432,7 +421,7 @@ def flare_mla_decoding[
         "flare_mla_decoding",
         Trace[
             TraceLevel.OP, target=ctx.default_device_info.api
-        ]._get_detail_str[description_fn](),
+        ]._get_detail_str(description_fn),
         task_id=Int(ctx.id()),
     ):
         comptime kv_num_heads = cache_t.kv_params.num_heads
@@ -542,14 +531,14 @@ def flare_mla_decoding[
     config: MHAConfig[dtype],
     decoding_warp_split_k: Bool = False,
 ](
-    output: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
-    q: TileTensor[dtype, address_space=AddressSpace.GENERIC, ...],
-    k: TileTensor[address_space=AddressSpace.GENERIC, ...],
+    output: TileTensor[mut=True, address_space=.GENERIC, ...],
+    q: TileTensor[dtype, address_space=.GENERIC, ...],
+    k: TileTensor[address_space=.GENERIC, ...],
     mask_functor: mask_t,
     scale: Float32,
     ctx: DeviceContext,
     scalar_args_buf: NullableTileTensor[
-        DType.int64, address_space=AddressSpace.GENERIC, ...
+        DType.int64, address_space=.GENERIC, ...
     ],
     # if not set, we select num_partitions based on heuristics
     num_partitions: Optional[Int] = None,
@@ -569,9 +558,7 @@ def flare_mla_decoding[
     )
 
     var valid_length = TileTensor(
-        UnsafePointer[
-            Scalar[DType.uint32], MutUntrackedOrigin
-        ].unsafe_dangling(),
+        UnsafePointer[UInt32, MutUntrackedOrigin].unsafe_dangling(),
         row_major(Coord(Idx[0])),
     )
 
@@ -624,43 +611,33 @@ def flare_mla_decoding_dispatch[
     # Read-once shared-index MTP fold (KERN-3141); see flare_mla_decoding.
     fold_shared_index: Bool = False,
 ](
-    output: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
-    q: TileTensor[dtype, address_space=AddressSpace.GENERIC, ...],
+    output: TileTensor[mut=True, address_space=.GENERIC, ...],
+    q: TileTensor[dtype, address_space=.GENERIC, ...],
     k: k_t,
     mask_functor: mask_t,
-    valid_length: TileTensor[
-        DType.uint32, address_space=AddressSpace.GENERIC, ...
-    ],
+    valid_length: TileTensor[.uint32, address_space=.GENERIC, ...],
     max_prompt_len: Int,
     max_cache_valid_length: Int,
     scale: Float32,
     ctx: DeviceContext,
     scalar_args_buf: NullableTileTensor[
-        DType.int64, address_space=AddressSpace.GENERIC, ...
+        DType.int64, address_space=.GENERIC, ...
     ],
     kv_input_row_offsets: OptionalReg[
-        LayoutTensor[
-            DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
-        ]
+        LayoutTensor[.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
     ] = None,
     num_partitions: Optional[Int] = None,
-    q_scale_ptr: OptionalReg[
-        UnsafePointer[Scalar[DType.float32], MutAnyOrigin]
-    ] = None,
+    q_scale_ptr: OptionalReg[UnsafePointer[Float32, MutAnyOrigin]] = None,
     d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
     indices_stride: Int = 0,
     topk_lengths: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
-    attn_sink_ptr: OptionalReg[
-        UnsafePointer[Scalar[DType.float32], MutAnyOrigin]
-    ] = None,
+    attn_sink_ptr: OptionalReg[UnsafePointer[Float32, MutAnyOrigin]] = None,
     # Extra KV: separate always-attend cache operand.
     extra_k: OptionalReg[k_t] = None,
     extra_d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
     extra_indices_stride: Int = 0,
     extra_topk_lengths: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
-    extra_scales_ptr: OptionalReg[
-        UnsafePointer[Scalar[DType.float32], MutAnyOrigin]
-    ] = None,
+    extra_scales_ptr: OptionalReg[UnsafePointer[Float32, MutAnyOrigin]] = None,
     # Capturable-graph scalar: forwarded by the Python resolver so grid-time
     # dispatch matches the kernel's device-side divmod.
     num_partitions_in: Optional[Int] = None,
@@ -788,9 +765,24 @@ def flare_mla_decoding_dispatch[
             type_of(q).static_shape[q.rank - 1] == 640
         ), "per_token_scale_rope_aware requires Q physical dim == 640."
     else:
+        # 576 = 512 latent + 64 rotary. A NoPE model stores the 512 latent alone.
+        # The kernels keep SMEM at 576 and zero-fill the tail, so both rows run.
+        comptime assert depth == type_of(q).static_shape[q.rank - 1] and (
+            depth == 576 or depth == 512
+        ), (
+            "flareMLA_decoding only supports head_dim 576 (rotary) or 512"
+            " (NoPE)."
+        )
+        # The mixed BF16-Q / FP8-KV converter narrowed its TMA widths but not
+        # the byte counts its barriers wait for, so a 512 row hangs rather
+        # than returns wrong. Refuse it here while the combination is legible.
         comptime assert (
-            depth == type_of(q).static_shape[q.rank - 1] == 576
-        ), "flareMLA_decoding only supports head_dim == 576."
+            depth == 576 or q.dtype != .bfloat16 or k_t.dtype == .bfloat16
+        ), (
+            "the NoPE 512-wide row is supported with a BF16 KV cache (BF16 Q)"
+            " or with an all-FP8 QKV cache. The BF16-Q / FP8-KV combination"
+            " still expects the 576-wide rotary row"
+        )
     comptime assert (
         kv_num_heads == 1
     ), "flareMLA_decoding only supports kv_num_heads == 1."
@@ -799,7 +791,7 @@ def flare_mla_decoding_dispatch[
     ), "flareMLA_decoding currently only supports Nvidia and AMD GPUs."
 
     comptime assert (
-        q.dtype.is_half_float() or q.dtype == DType.float8_e4m3fn
+        q.dtype.is_half_float() or q.dtype == .float8_e4m3fn
     ), "Only support half precision or float8_e4m3fn Q."
 
     # AMD MLA decode folds H*S query rows into the QK^T MMA M dimension up to
@@ -941,9 +933,9 @@ def flare_mla_decoding_dispatch[
                 valid_length,
                 mask_functor,
                 TileTensor(
-                    rebind[
-                        UnsafePointer[Scalar[DType.int64], origin=MutAnyOrigin]
-                    ](local_args.gpu_buf.unsafe_ptr()),
+                    rebind[UnsafePointer[Int64, origin=MutAnyOrigin]](
+                        local_args.gpu_buf.unsafe_ptr()
+                    ),
                     row_major[3](),
                 ),
                 local_args.batch_size,
@@ -1457,7 +1449,7 @@ def mla_splitk_reduce[
     # input_row_offsets `[batch_size + 1]`. Read only on the `ragged and
     # q_seq_len > 1` path (remap the final store, skip short-sequence pad rows);
     # a zero-length placeholder otherwise.
-    valid_length_tt: TileTensor[DType.uint32, ValidLT, ImmutAnyOrigin],
+    valid_length_tt: TileTensor[.uint32, ValidLT, ImmutAnyOrigin],
 ):
     var _batch_size = Int(batch_size)
     var _num_partitions = Int(num_partitions)
@@ -1523,10 +1515,10 @@ def mla_splitk_reduce[
     )
 
     var scales_tt = tt_stack_allocation[
-        dtype=accum_type, address_space=AddressSpace.SHARED
+        dtype=accum_type, address_space=.SHARED
     ](row_major[MAX_PARTITIONS]())
     var warp_partial_tt = tt_stack_allocation[
-        dtype=accum_type, address_space=AddressSpace.SHARED
+        dtype=accum_type, address_space=.SHARED
     ](row_major[W_PARTS, depth_per_cta]())
 
     var d_tile_idx = block_idx.x
@@ -1658,9 +1650,9 @@ def mla_splitk_reduce[
             ).cast[accum_type]()
         comptime for k in range(parts_per_warp):
             var scale_k = scales_local[k]
-            var safe = SIMD[DType.bool, elems_per_lane](
-                fill=scale_k > 0
-            ).select(xs[k], type_of(xs[k])(0))
+            var safe = SIMD[.bool, elems_per_lane](fill=scale_k > 0).select(
+                xs[k], type_of(xs[k])(0)
+            )
             acc += safe * type_of(safe)(scale_k)
 
     # Step 3: cross-warp reduction and output store (`out_row` set above).
@@ -1727,9 +1719,7 @@ def mla_decoding[
     num_partitions_dev: Int32,
     max_cache_valid_length_dev: Int32,  # longest KV cache entry
     valid_length_tt: TileTensor[
-        DType.uint32,
-        ValidLT,
-        ImmutAnyOrigin,
+        .uint32, ValidLT, ImmutAnyOrigin
     ],  # valid length per batch
     mask: mask_t,
 ):
@@ -2054,14 +2044,14 @@ def mla_decoding_single_batch[
     comptime q_smem_size = BM * depth
     var q_smem = external_memory[
         Scalar[q_type],
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=alignment,
     ]()
     comptime IteratorTypeQ = LayoutTensorIter[
         q_type,
         Layout.row_major(BM, BK),
         _,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=alignment,
     ]
     var q_smem_iter = IteratorTypeQ(
@@ -2071,7 +2061,7 @@ def mla_decoding_single_batch[
                     q_type,
                     Layout.row_major(BM, BK),
                     q_smem.origin,
-                    address_space=AddressSpace.SHARED,
+                    address_space=.SHARED,
                     alignment=alignment,
                 ]().ptr
             )
@@ -2093,7 +2083,7 @@ def mla_decoding_single_batch[
         k_type,
         Layout(IntTuple(BN, BK), IntTuple(nope_dim, 1)),
         _,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         circular=True,
     ]
     var kv_nope_smem_iter = IteratorTypeKV(
@@ -2107,7 +2097,7 @@ def mla_decoding_single_batch[
         k_type,
         Layout.row_major(BK, nope_dim),
         _,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         circular=True,
     ]
     var v_smem_iter = IteratorTypeV(
@@ -2120,7 +2110,7 @@ def mla_decoding_single_batch[
         k_type,
         Layout.row_major(BN, BK),
         _,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         circular=True,
     ]
     var k_rope_smem_iter = IteratorTypeK(
@@ -2143,7 +2133,7 @@ def mla_decoding_single_batch[
         accum_type,
         Layout.row_major(num_m_mmas * num_n_mmas, p_frag_size),
         MutAnyOrigin,
-        address_space=AddressSpace.LOCAL,
+        address_space=.LOCAL,
     ].stack_allocation()
 
     comptime num_output_rows = num_m_mmas * (WN_O // MMA_N)  # num_n_mmas
@@ -2153,7 +2143,7 @@ def mla_decoding_single_batch[
             accum_type,
             Layout.row_major(num_output_rows_full, p_frag_size),
             MutAnyOrigin,
-            address_space=AddressSpace.LOCAL,
+            address_space=.LOCAL,
         ]
         .stack_allocation()
         .fill(0.0)
@@ -2181,7 +2171,7 @@ def mla_decoding_single_batch[
         k_type,
         Layout.row_major(BM, BK),
         _,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]
     var p_smem_iter = IteratorTypeP(
         p_smem, IteratorTypeP.layout_uint_type(BM * BN)
@@ -2191,7 +2181,7 @@ def mla_decoding_single_batch[
     var warp_scratch = LayoutTensor[
         accum_type,
         Layout.row_major(2 * num_warps_n, BM),
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]((p_smem + BM * BN).bitcast[Scalar[accum_type]]())
 
     comptime kv_num_heads = 1
@@ -2259,12 +2249,12 @@ def mla_decoding_single_batch[
 
         # kv cache gmem has to clip num rows as runtime layout
         var kv_runtime_layout = RuntimeLayout[
-            element_type=DType.int32, linear_idx_type=DType.int32
+            element_type=.int32, linear_idx_type=.int32
         ](
-            RuntimeTuple[kv_gmem_layout.shape, element_type=DType.int32](
+            RuntimeTuple[kv_gmem_layout.shape, element_type=.int32](
                 kv_tile_num_rows, depth
             ),
-            RuntimeTuple[kv_gmem_layout.stride, element_type=DType.int32](
+            RuntimeTuple[kv_gmem_layout.stride, element_type=.int32](
                 kv_num_heads * depth, 1
             ),
         )
@@ -2274,8 +2264,8 @@ def mla_decoding_single_batch[
         var k_gmem_block = LayoutTensor[
             k_type,
             kv_gmem_layout,
-            layout_int_type=DType.int32,
-            linear_idx_type=DType.int32,
+            layout_int_type=.int32,
+            linear_idx_type=.int32,
             masked=not not_last_iter,
         ](
             k_ptr,
@@ -2400,7 +2390,7 @@ def mla_decoding_single_batch[
 
                         comptime if masked:
                             p_reg_vec2[mma_id, i] = mask.mask(
-                                IndexList[4, element_type=DType.uint32](
+                                IndexList[4, element_type=.uint32](
                                     block_idx.z,
                                     score_head_idx,
                                     score_row_with_start_pos,
@@ -2420,10 +2410,10 @@ def mla_decoding_single_batch[
 
                         if not not_last_iter:
                             p_reg_vec2[mma_id, i] = _kernel_mask(
-                                IndexList[2, element_type=DType.uint32](
+                                IndexList[2, element_type=.uint32](
                                     score_row, score_col
                                 ),
-                                IndexList[2, element_type=DType.uint32](
+                                IndexList[2, element_type=.uint32](
                                     seq_len,
                                     num_keys,
                                 ),
@@ -2541,7 +2531,7 @@ def mla_decoding_single_batch[
         var accum_smem_tile = LayoutTensor[
             output_type,
             Layout.row_major(BM, nope_dim),
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
         ](q_smem.bitcast[Scalar[output_type]]())
 
         var accum_smem_warp_tile = accum_smem_tile.tile[WM, WN_O](
@@ -2585,7 +2575,7 @@ def mla_decoding_single_batch[
 
 @always_inline
 def _ragged_kv_view(
-    src: TileTensor[address_space=AddressSpace.GENERIC, ...],
+    src: TileTensor[address_space=.GENERIC, ...],
 ) -> TileTensor[
     src.dtype,
     RowMajorLayout[*Coord[Int, Int, Int].element_types],
@@ -2610,9 +2600,9 @@ def _ragged_kv_view(
 
 @always_inline
 def _ragged_offsets_view(
-    src: TileTensor[DType.uint32, address_space=AddressSpace.GENERIC, ...],
+    src: TileTensor[.uint32, address_space=.GENERIC, ...],
 ) -> TileTensor[
-    DType.uint32, RowMajorLayout[*Coord[Int].element_types], ImmutAnyOrigin
+    .uint32, RowMajorLayout[*Coord[Int].element_types], ImmutAnyOrigin
 ]:
     """Rebuild ragged cache-row-offsets as a rank-1 row-major TileTensor view.
 
@@ -2626,7 +2616,7 @@ def _ragged_offsets_view(
 
 @always_inline
 def _ragged_scales_view(
-    src: TileTensor[address_space=AddressSpace.GENERIC, ...],
+    src: TileTensor[address_space=.GENERIC, ...],
 ) -> TileTensor[
     src.dtype, RowMajorLayout[*Coord[Int, Int].element_types], ImmutAnyOrigin
 ]:
@@ -2651,27 +2641,19 @@ def flare_mla_prefill[
     output_type: DType,
     //,
 ](
-    output: TileTensor[
-        mut=True, output_type, address_space=AddressSpace.GENERIC, ...
-    ],
-    q: TileTensor[dtype, address_space=AddressSpace.GENERIC, ...],
-    k: LayoutTensor[mut=False, _, address_space=AddressSpace.GENERIC, ...],
-    v: LayoutTensor[mut=False, _, address_space=AddressSpace.GENERIC, ...],
+    output: TileTensor[mut=True, output_type, address_space=.GENERIC, ...],
+    q: TileTensor[dtype, address_space=.GENERIC, ...],
+    k: LayoutTensor[mut=False, _, address_space=.GENERIC, ...],
+    v: LayoutTensor[mut=False, _, address_space=.GENERIC, ...],
     k_rope: cache_t,
     mask_functor: mask_t,
-    valid_length: TileTensor[
-        DType.uint32, address_space=AddressSpace.GENERIC, ...
-    ],
-    cache_row_offsets: TileTensor[
-        DType.uint32, address_space=AddressSpace.GENERIC, ...
-    ],
+    valid_length: TileTensor[.uint32, address_space=.GENERIC, ...],
+    cache_row_offsets: TileTensor[.uint32, address_space=.GENERIC, ...],
     scale: Float32,
     ctx: DeviceContext,
     q_max_seq_len: OptionalReg[Int] = None,
     cache_offsets: OptionalReg[
-        LayoutTensor[
-            DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
-        ]
+        LayoutTensor[.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin]
     ] = None,
 ) raises:
     """MLA prefill kernel that would only be called in the optimized compute
@@ -2735,19 +2717,19 @@ def flare_mla_prefill[
     """
     comptime assert rank == 3, "only support ragged inputs"
 
-    comptime if q.dtype == DType.bfloat16 and cache_t.dtype == DType.bfloat16:
+    comptime if q.dtype == .bfloat16 and cache_t.dtype == .bfloat16:
         comptime assert (
             q.dtype == k.dtype == v.dtype == cache_t.dtype == output.dtype
         ), "Q, K, V, output should have same type if q.dtype is bfloat16"
-    elif q.dtype == DType.bfloat16 and cache_t.dtype == DType.float8_e4m3fn:
+    elif q.dtype == .bfloat16 and cache_t.dtype == .float8_e4m3fn:
         comptime assert q.dtype == k.dtype == v.dtype == output.dtype, (
             "Q, K, V, output should have same type if q.dtype is bfloat16 and"
             " k_rope.dtype is float8_e4m3fn"
         )
-    elif q.dtype == DType.float8_e4m3fn and cache_t.dtype == DType.float8_e4m3fn:
+    elif q.dtype == .float8_e4m3fn and cache_t.dtype == .float8_e4m3fn:
         comptime assert (
             q.dtype == k.dtype == v.dtype == cache_t.dtype
-            and output.dtype == DType.bfloat16
+            and output.dtype == .bfloat16
         ), (
             "Q, K, V, output should have same type if q.dtype is float8_e4m3fn"
             " and k_rope.dtype is float8_e4m3fn and output.dtype is bfloat16"
@@ -2756,8 +2738,7 @@ def flare_mla_prefill[
         comptime assert False, "Q, K, V, output dtype combination not supported"
 
     @always_inline
-    @__parameter
-    def description_fn() -> String:
+    def description_fn() {imm} -> String:
         return String(";").join(
             Span(
                 [
@@ -2779,7 +2760,7 @@ def flare_mla_prefill[
         "flare_mla_prefill",
         Trace[
             TraceLevel.OP, target=ctx.default_device_info.api
-        ]._get_detail_str[description_fn](),
+        ]._get_detail_str(description_fn),
         task_id=Int(ctx.id()),
     ):
         var max_prompt_len: Int
@@ -2852,42 +2833,38 @@ def flare_mla_prefill[
     dtype: DType,
     //,
 ](
-    output: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
-    q: TileTensor[dtype, address_space=AddressSpace.GENERIC, ...],
-    k: TileTensor[address_space=AddressSpace.GENERIC, ...],
-    v: TileTensor[address_space=AddressSpace.GENERIC, ...],
-    k_rope: TileTensor[address_space=AddressSpace.GENERIC, ...],
+    output: TileTensor[mut=True, address_space=.GENERIC, ...],
+    q: TileTensor[dtype, address_space=.GENERIC, ...],
+    k: TileTensor[address_space=.GENERIC, ...],
+    v: TileTensor[address_space=.GENERIC, ...],
+    k_rope: TileTensor[address_space=.GENERIC, ...],
     mask_functor: mask_t,
-    valid_length: TileTensor[
-        DType.uint32, address_space=AddressSpace.GENERIC, ...
-    ],
+    valid_length: TileTensor[.uint32, address_space=.GENERIC, ...],
     cache_row_offsets: TileTensor[
-        mut=True, DType.uint32, address_space=AddressSpace.GENERIC, ...
+        mut=True, .uint32, address_space=.GENERIC, ...
     ],
     scale: Float32,
     ctx: DeviceContext,
     q_max_seq_len: OptionalReg[Int] = None,
     cache_offsets: OptionalReg[
-        LayoutTensor[
-            DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
-        ]
+        LayoutTensor[.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin]
     ] = None,
 ) raises:
     comptime assert rank == 3, "only support ragged inputs"
 
-    comptime if q.dtype == DType.bfloat16 and k_rope.dtype == DType.bfloat16:
+    comptime if q.dtype == .bfloat16 and k_rope.dtype == .bfloat16:
         comptime assert (
             q.dtype == k.dtype == v.dtype == k_rope.dtype == output.dtype
         ), "Q, K, V, output should have same type if q.dtype is bfloat16"
-    elif q.dtype == DType.bfloat16 and k_rope.dtype == DType.float8_e4m3fn:
+    elif q.dtype == .bfloat16 and k_rope.dtype == .float8_e4m3fn:
         comptime assert q.dtype == k.dtype == v.dtype == output.dtype, (
             "Q, K, V, output should have same type if q.dtype is bfloat16 and"
             " k_rope.dtype is float8_e4m3fn"
         )
-    elif q.dtype == DType.float8_e4m3fn and k_rope.dtype == DType.float8_e4m3fn:
+    elif q.dtype == .float8_e4m3fn and k_rope.dtype == .float8_e4m3fn:
         comptime assert (
             q.dtype == k.dtype == v.dtype == k_rope.dtype
-            and output.dtype == DType.bfloat16
+            and output.dtype == .bfloat16
         ), (
             "Q, K, V, output should have same type if q.dtype is float8_e4m3fn"
             " and k_rope.dtype is float8_e4m3fn and output.dtype is bfloat16"
@@ -2896,8 +2873,7 @@ def flare_mla_prefill[
         comptime assert False, "Q, K, V, output dtype combination not supported"
 
     @always_inline
-    @__parameter
-    def description_fn() -> String:
+    def description_fn() {imm} -> String:
         return String(";").join(
             Span(
                 [
@@ -2925,7 +2901,7 @@ def flare_mla_prefill[
         "flare_mla_prefill",
         Trace[
             TraceLevel.OP, target=ctx.default_device_info.api
-        ]._get_detail_str[description_fn](),
+        ]._get_detail_str(description_fn),
         task_id=Int(ctx.id()),
     ):
         var max_prompt_len: Int = Int(q.dim[0]())
@@ -2980,44 +2956,39 @@ def flare_mla_prefill[
     dtype: DType,
     //,
 ](
-    output: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
-    q: TileTensor[dtype, address_space=AddressSpace.GENERIC, ...],
-    k: TileTensor[address_space=AddressSpace.GENERIC, ...],
-    v: TileTensor[address_space=AddressSpace.GENERIC, ...],
-    k_rope: TileTensor[address_space=AddressSpace.GENERIC, ...],
-    k_rope_scales: TileTensor[address_space=AddressSpace.GENERIC, ...],
+    output: TileTensor[mut=True, address_space=.GENERIC, ...],
+    q: TileTensor[dtype, address_space=.GENERIC, ...],
+    k: TileTensor[address_space=.GENERIC, ...],
+    v: TileTensor[address_space=.GENERIC, ...],
+    k_rope: TileTensor[address_space=.GENERIC, ...],
+    k_rope_scales: TileTensor[address_space=.GENERIC, ...],
     mask_functor: mask_t,
-    valid_length: TileTensor[
-        DType.uint32, address_space=AddressSpace.GENERIC, ...
-    ],
+    valid_length: TileTensor[.uint32, address_space=.GENERIC, ...],
     cache_row_offsets: TileTensor[
-        mut=True, DType.uint32, address_space=AddressSpace.GENERIC, ...
+        mut=True, .uint32, address_space=.GENERIC, ...
     ],
     scale: Float32,
     ctx: DeviceContext,
     q_max_seq_len: OptionalReg[Int] = None,
     cache_offsets: OptionalReg[
-        LayoutTensor[
-            DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
-        ]
+        LayoutTensor[.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin]
     ] = None,
 ) raises:
     comptime assert rank == 3, "only support ragged inputs"
     comptime assert (
         q.dtype == k.dtype == v.dtype == k_rope.dtype == output.dtype
-    ) if k_rope.dtype == DType.bfloat16 else (
+    ) if k_rope.dtype == .bfloat16 else (
         q.dtype == k.dtype == v.dtype == output.dtype
     ), (
         "Q, K, V, output should have same type if k_rope.dtype is bfloat16,"
         " otherwise only Q, K, V should have same type."
     )
     comptime assert (
-        q.dtype == DType.float32 or q.dtype.is_half_float()
+        q.dtype == .float32 or q.dtype.is_half_float()
     ), "Only support single and half precision."
 
     @always_inline
-    @__parameter
-    def description_fn() -> String:
+    def description_fn() {imm} -> String:
         return String(";").join(
             Span(
                 [
@@ -3045,7 +3016,7 @@ def flare_mla_prefill[
         "flare_mla_prefill",
         Trace[
             TraceLevel.OP, target=ctx.default_device_info.api
-        ]._get_detail_str[description_fn](),
+        ]._get_detail_str(description_fn),
         task_id=Int(ctx.id()),
     ):
         var max_prompt_len: Int = Int(q.dim[0]())
@@ -3104,33 +3075,28 @@ def flare_mla_prefill[
     scale_dtype: DType,
     //,
 ](
-    output: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
-    q_nope: TileTensor[dtype, address_space=AddressSpace.GENERIC, ...],
-    q_rope: TileTensor[address_space=AddressSpace.GENERIC, ...],
-    q_scale: TileTensor[scale_dtype, address_space=AddressSpace.GENERIC, ...],
-    k: TileTensor[address_space=AddressSpace.GENERIC, ...],
-    k_scales: TileTensor[scale_dtype, address_space=AddressSpace.GENERIC, ...],
-    v: TileTensor[address_space=AddressSpace.GENERIC, ...],
-    k_rope: TileTensor[address_space=AddressSpace.GENERIC, ...],
+    output: TileTensor[mut=True, address_space=.GENERIC, ...],
+    q_nope: TileTensor[dtype, address_space=.GENERIC, ...],
+    q_rope: TileTensor[address_space=.GENERIC, ...],
+    q_scale: TileTensor[scale_dtype, address_space=.GENERIC, ...],
+    k: TileTensor[address_space=.GENERIC, ...],
+    k_scales: TileTensor[scale_dtype, address_space=.GENERIC, ...],
+    v: TileTensor[address_space=.GENERIC, ...],
+    k_rope: TileTensor[address_space=.GENERIC, ...],
     mask_functor: mask_t,
-    valid_length: TileTensor[
-        DType.uint32, address_space=AddressSpace.GENERIC, ...
-    ],
+    valid_length: TileTensor[.uint32, address_space=.GENERIC, ...],
     cache_row_offsets: TileTensor[
-        mut=True, DType.uint32, address_space=AddressSpace.GENERIC, ...
+        mut=True, .uint32, address_space=.GENERIC, ...
     ],
     scale: Float32,
     ctx: DeviceContext,
     q_max_seq_len: OptionalReg[Int] = None,
     cache_offsets: OptionalReg[
-        LayoutTensor[
-            DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
-        ]
+        LayoutTensor[.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin]
     ] = None,
 ) raises:
     @always_inline
-    @__parameter
-    def description_fn() -> String:
+    def description_fn() {imm} -> String:
         return String(";").join(
             Span(
                 [
@@ -3162,7 +3128,7 @@ def flare_mla_prefill[
         "flare_mla_prefill",
         Trace[
             TraceLevel.OP, target=ctx.default_device_info.api
-        ]._get_detail_str[description_fn](),
+        ]._get_detail_str(description_fn),
         task_id=Int(ctx.id()),
     ):
         var max_prompt_len: Int = Int(q_nope.dim[0]())
@@ -3249,33 +3215,28 @@ def flare_mla_prefill[
     scale_dtype: DType,
     //,
 ](
-    output: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
-    q_nope: TileTensor[dtype, address_space=AddressSpace.GENERIC, ...],
-    q_rope: TileTensor[address_space=AddressSpace.GENERIC, ...],
-    q_scale: TileTensor[scale_dtype, address_space=AddressSpace.GENERIC, ...],
-    k: TileTensor[address_space=AddressSpace.GENERIC, ...],
-    k_scales: TileTensor[scale_dtype, address_space=AddressSpace.GENERIC, ...],
-    v: TileTensor[address_space=AddressSpace.GENERIC, ...],
+    output: TileTensor[mut=True, address_space=.GENERIC, ...],
+    q_nope: TileTensor[dtype, address_space=.GENERIC, ...],
+    q_rope: TileTensor[address_space=.GENERIC, ...],
+    q_scale: TileTensor[scale_dtype, address_space=.GENERIC, ...],
+    k: TileTensor[address_space=.GENERIC, ...],
+    k_scales: TileTensor[scale_dtype, address_space=.GENERIC, ...],
+    v: TileTensor[address_space=.GENERIC, ...],
     k_rope: cache_t,
     mask_functor: mask_t,
-    valid_length: TileTensor[
-        DType.uint32, address_space=AddressSpace.GENERIC, ...
-    ],
+    valid_length: TileTensor[.uint32, address_space=.GENERIC, ...],
     cache_row_offsets: TileTensor[
-        mut=True, DType.uint32, address_space=AddressSpace.GENERIC, ...
+        mut=True, .uint32, address_space=.GENERIC, ...
     ],
     scale: Float32,
     ctx: DeviceContext,
     q_max_seq_len: OptionalReg[Int] = None,
     cache_offsets: OptionalReg[
-        LayoutTensor[
-            DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
-        ]
+        LayoutTensor[.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin]
     ] = None,
 ) raises:
     @always_inline
-    @__parameter
-    def description_fn() -> String:
+    def description_fn() {imm} -> String:
         return String(";").join(
             Span(
                 [
@@ -3307,7 +3268,7 @@ def flare_mla_prefill[
         "flare_mla_prefill",
         Trace[
             TraceLevel.OP, target=ctx.default_device_info.api
-        ]._get_detail_str[description_fn](),
+        ]._get_detail_str(description_fn),
         task_id=Int(ctx.id()),
     ):
         var max_prompt_len: Int
@@ -3395,24 +3356,18 @@ def flare_mla_prefill_dispatch[
     cache_depth: Int = 576,
     _ndbuffer_mha_operand: Bool = False,
 ](
-    output: TileTensor[
-        mut=True, output_type, address_space=AddressSpace.GENERIC, ...
-    ],
-    q: TileTensor[dtype, address_space=AddressSpace.GENERIC, ...],
+    output: TileTensor[mut=True, output_type, address_space=.GENERIC, ...],
+    q: TileTensor[dtype, address_space=.GENERIC, ...],
     k: k_t,
     v: v_t,
     k_rope: k_rope_t,
     mask_functor: mask_t,
-    valid_length: TileTensor[
-        DType.uint32, address_space=AddressSpace.GENERIC, ...
-    ],
+    valid_length: TileTensor[.uint32, address_space=.GENERIC, ...],
     max_prompt_len: Int,
     scale: Float32,
     ctx: DeviceContext,
     cache_offsets: OptionalReg[
-        LayoutTensor[
-            DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
-        ]
+        LayoutTensor[.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin]
     ] = None,
 ) raises:
     """Dispatches an MLA prefill request to the platform-specific kernel.
@@ -3505,8 +3460,7 @@ def flare_mla_prefill_dispatch[
 
     comptime if _is_sm10x_gpu(ctx.default_device_info):
         comptime assert (
-            k_rope_t.dtype == DType.bfloat16
-            or k_rope_t.dtype == DType.float8_e4m3fn
+            k_rope_t.dtype == .bfloat16 or k_rope_t.dtype == .float8_e4m3fn
         ), "Only support bfloat16 or float8_e4m3fn for SM100"
 
         mla_sm100_prefill[
@@ -3532,7 +3486,7 @@ def flare_mla_prefill_dispatch[
 
     else:
         comptime assert (
-            k_rope_t.dtype == DType.bfloat16 or has_amd_gpu_accelerator()
+            k_rope_t.dtype == .bfloat16 or has_amd_gpu_accelerator()
         ), (
             "Only support bfloat16 for non-SM100 Nvidia GPUs; AMD supports"
             " bfloat16 and float8_e4m3fn"
@@ -3620,15 +3574,9 @@ def mla_prefill[
     scale: Float32,
     batch_size: Int32,
     seq_len_arg: Int32,
-    valid_length_tt: TileTensor[
-        DType.uint32,
-        valid_layout,
-        ImmutAnyOrigin,
-    ],
+    valid_length_tt: TileTensor[.uint32, valid_layout, ImmutAnyOrigin],
     cache_offsets: OptionalReg[
-        LayoutTensor[
-            DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
-        ]
+        LayoutTensor[.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin]
     ],
     mask: mask_t,
 ):
@@ -3837,14 +3785,14 @@ def mla_prefill_single_batch[
     comptime q_smem_size = BM * q_depth
     var q_smem = external_memory[
         Scalar[q_type],
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=alignment,
     ]()
     comptime IteratorTypeQ = LayoutTensorIter[
         q_type,
         Layout.row_major(BM, BK),
         _,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=alignment,
     ]
     var q_smem_iter = IteratorTypeQ(
@@ -3854,7 +3802,7 @@ def mla_prefill_single_batch[
                     q_type,
                     Layout.row_major(BM, BK),
                     q_smem.origin,
-                    address_space=AddressSpace.SHARED,
+                    address_space=.SHARED,
                     alignment=alignment,
                 ]().ptr
             )
@@ -3869,7 +3817,7 @@ def mla_prefill_single_batch[
         k_type,
         Layout.row_major(BN, BK),
         _,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         circular=True,
     ]
     var k_smem_iter = IteratorTypeK(
@@ -3882,7 +3830,7 @@ def mla_prefill_single_batch[
         v_type,
         Layout.row_major(BK, depth),
         _,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         circular=True,
     ]
     var v_smem_iter = IteratorTypeV(
@@ -3907,16 +3855,16 @@ def mla_prefill_single_batch[
     var q_gmem_block = LayoutTensor[
         q_type,
         q_gmem_layout,
-        layout_int_type=DType.int32,
-        linear_idx_type=DType.int32,
+        layout_int_type=.int32,
+        linear_idx_type=.int32,
         masked=True,
     ](
         q_ptr + Int(q_offset),
-        RuntimeLayout[element_type=DType.int32, linear_idx_type=DType.int32](
-            RuntimeTuple[q_gmem_layout.shape, element_type=DType.int32](
+        RuntimeLayout[element_type=.int32, linear_idx_type=.int32](
+            RuntimeTuple[q_gmem_layout.shape, element_type=.int32](
                 Int(q_tile_num_rows), q_depth
             ),
-            RuntimeTuple[q_gmem_layout.stride, element_type=DType.int32](
+            RuntimeTuple[q_gmem_layout.stride, element_type=.int32](
                 num_heads * q_depth, 1
             ),
         ),
@@ -3945,7 +3893,7 @@ def mla_prefill_single_batch[
         accum_type,
         Layout.row_major(num_m_mmas * num_n_mmas, p_frag_size),
         MutAnyOrigin,
-        address_space=AddressSpace.LOCAL,
+        address_space=.LOCAL,
     ].stack_allocation()
 
     var output_reg_tile = (
@@ -3953,7 +3901,7 @@ def mla_prefill_single_batch[
             accum_type,
             Layout.row_major(num_m_mmas * num_n_mmas_output, p_frag_size),
             MutAnyOrigin,
-            address_space=AddressSpace.LOCAL,
+            address_space=.LOCAL,
         ]
         .stack_allocation()
         .fill(0)
@@ -3981,7 +3929,7 @@ def mla_prefill_single_batch[
         v_type,
         Layout.row_major(BM, BK),
         _,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         circular=True,
     ]
     var p_smem_iter = IteratorTypeP(
@@ -3992,7 +3940,7 @@ def mla_prefill_single_batch[
     var warp_scratch = LayoutTensor[
         accum_type,
         Layout.row_major(2 * num_warps_n, BM),
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ](
         (p_smem + (BM * BN if num_warps_n > 1 else 0)).bitcast[
             Scalar[accum_type]
@@ -4074,12 +4022,12 @@ def mla_prefill_single_batch[
 
         # kv cache gmem has to clip num rows as runtime layout
         var kv_runtime_layout = RuntimeLayout[
-            element_type=DType.int32, linear_idx_type=DType.int32
+            element_type=.int32, linear_idx_type=.int32
         ](
-            RuntimeTuple[kv_gmem_layout.shape, element_type=DType.int32](
+            RuntimeTuple[kv_gmem_layout.shape, element_type=.int32](
                 kv_tile_num_rows, depth
             ),
-            RuntimeTuple[kv_gmem_layout.stride, element_type=DType.int32](
+            RuntimeTuple[kv_gmem_layout.stride, element_type=.int32](
                 num_heads * depth, 1
             ),
         )
@@ -4087,8 +4035,8 @@ def mla_prefill_single_batch[
         var k_gmem_block = LayoutTensor[
             k_type,
             kv_gmem_layout,
-            layout_int_type=DType.int32,
-            linear_idx_type=DType.int32,
+            layout_int_type=.int32,
+            linear_idx_type=.int32,
             masked=not not_last_iter,
         ](
             k.block_paged_ptr[BN](
@@ -4104,8 +4052,8 @@ def mla_prefill_single_batch[
         var v_gmem_block = LayoutTensor[
             v_type,
             kv_gmem_layout,
-            layout_int_type=DType.int32,
-            linear_idx_type=DType.int32,
+            layout_int_type=.int32,
+            linear_idx_type=.int32,
             masked=not not_last_iter,
         ](
             v.block_paged_ptr[BN](
@@ -4125,12 +4073,12 @@ def mla_prefill_single_batch[
         )
 
         var k_rope_runtime_layout = RuntimeLayout[
-            element_type=DType.int32, linear_idx_type=DType.int32
+            element_type=.int32, linear_idx_type=.int32
         ](
-            RuntimeTuple[k_rope_gmem_layout.shape, element_type=DType.int32](
+            RuntimeTuple[k_rope_gmem_layout.shape, element_type=.int32](
                 kv_tile_num_rows, cache_depth
             ),
-            RuntimeTuple[k_rope_gmem_layout.stride, element_type=DType.int32](
+            RuntimeTuple[k_rope_gmem_layout.stride, element_type=.int32](
                 cache_num_heads * cache_depth, 1
             ),
         )
@@ -4138,8 +4086,8 @@ def mla_prefill_single_batch[
         var k_rope_gmem_block = LayoutTensor[
             k_rope_type,
             k_rope_gmem_layout,
-            layout_int_type=DType.int32,
-            linear_idx_type=DType.int32,
+            layout_int_type=.int32,
+            linear_idx_type=.int32,
             masked=not not_last_iter,
         ](
             k_rope.block_paged_ptr[BN](
@@ -4281,7 +4229,7 @@ def mla_prefill_single_batch[
 
                         comptime if masked:
                             p_reg_vec2[mma_id, i] = mask.mask(
-                                IndexList[4, element_type=DType.uint32](
+                                IndexList[4, element_type=.uint32](
                                     block_idx.z,
                                     block_idx.y,
                                     Int(score_row_with_start_pos),
@@ -4301,10 +4249,10 @@ def mla_prefill_single_batch[
 
                         if not not_last_iter:
                             p_reg_vec2[mma_id, i] = _kernel_mask(
-                                IndexList[2, element_type=DType.uint32](
+                                IndexList[2, element_type=.uint32](
                                     Int(score_row), Int(score_col)
                                 ),
-                                IndexList[2, element_type=DType.uint32](
+                                IndexList[2, element_type=.uint32](
                                     seq_len,
                                     num_keys,
                                 ),
@@ -4468,20 +4416,20 @@ def mla_prefill_single_batch[
         head_idx + UInt32(num_heads) * q_tile_idx * UInt32(BM)
     )
     var output_gemm_runtime_layout = RuntimeLayout[
-        element_type=DType.int32, linear_idx_type=DType.int32
+        element_type=.int32, linear_idx_type=.int32
     ](
-        RuntimeTuple[output_gmem_layout.shape, element_type=DType.int32](
+        RuntimeTuple[output_gmem_layout.shape, element_type=.int32](
             Int(q_tile_num_rows), depth
         ),
-        RuntimeTuple[output_gmem_layout.stride, element_type=DType.int32](
+        RuntimeTuple[output_gmem_layout.stride, element_type=.int32](
             num_heads * depth, 1
         ),
     )
     var output_gmem_tile = LayoutTensor[
         output_type,
         output_gmem_layout,
-        layout_int_type=DType.int32,
-        linear_idx_type=DType.int32,
+        layout_int_type=.int32,
+        linear_idx_type=.int32,
         masked=True,
     ](
         output_ptr + Int(output_offset),
@@ -4512,7 +4460,7 @@ def mla_prefill_single_batch[
         var accum_smem_tile = LayoutTensor[
             output_type,
             Layout.row_major(BM, depth),
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
         ](q_smem.bitcast[Scalar[output_type]]())
 
         var accum_smem_warp_tile = accum_smem_tile.tile[WM, depth](
@@ -4557,7 +4505,7 @@ def set_buffer_lengths_to_zero[
     BufferLengthsLayoutType: TensorLayout,
 ](
     buffer_lengths: TileTensor[
-        mut=True, DType.int32, BufferLengthsLayoutType, MutUntrackedOrigin
+        mut=True, .int32, BufferLengthsLayoutType, MutUntrackedOrigin
     ],
 ):
     """Zeroes out every element of a 1D buffer-lengths tensor.
@@ -4584,10 +4532,10 @@ def set_buffer_lengths_to_zero[
 def mla_prefill_plan[
     cache_t: KVCacheT,
 ](
-    buffer_row_offsets: TileTensor[mut=True, DType.uint32, ...],
-    cache_offsets: TileTensor[mut=True, DType.uint32, ...],
-    buffer_lengths: TileTensor[mut=True, DType.int32, ...],
-    input_row_offsets: TileTensor[mut=False, DType.uint32, ...],
+    buffer_row_offsets: TileTensor[mut=True, .uint32, ...],
+    cache_offsets: TileTensor[mut=True, .uint32, ...],
+    buffer_lengths: TileTensor[mut=True, .int32, ...],
+    input_row_offsets: TileTensor[mut=False, .uint32, ...],
     k_cache: cache_t,
     buffer_token_size: UInt32,
     ctx: DeviceContext,
@@ -4667,27 +4615,16 @@ def mla_prefill_plan_kernel[
     cache_t: KVCacheT,
 ](
     buffer_row_offsets: TileTensor[
-        mut=True,
-        DType.uint32,
-        BufferRowOffsetsLayoutType,
-        MutUntrackedOrigin,
+        mut=True, .uint32, BufferRowOffsetsLayoutType, MutUntrackedOrigin
     ],
     cache_offsets: TileTensor[
-        mut=True,
-        DType.uint32,
-        CacheOffsetsLayoutType,
-        MutUntrackedOrigin,
+        mut=True, .uint32, CacheOffsetsLayoutType, MutUntrackedOrigin
     ],
     buffer_lengths: TileTensor[
-        mut=True,
-        DType.int32,
-        BufferLengthsLayoutType,
-        MutUntrackedOrigin,
+        mut=True, .int32, BufferLengthsLayoutType, MutUntrackedOrigin
     ],
     input_row_offsets: TileTensor[
-        DType.uint32,
-        InputRowOffsetsLayoutType,
-        ImmUntrackedOrigin,
+        .uint32, InputRowOffsetsLayoutType, ImmUntrackedOrigin
     ],
     k_cache: cache_t,
     buffer_token_size: UInt32,
@@ -4828,13 +4765,11 @@ def _k_cache_to_buffer[
     BufferRowOffsetsLayoutType: TensorLayout,
     CacheOffsetsLayoutType: TensorLayout,
 ](
-    buffer_row_offsets: TileTensor[
-        DType.uint32, BufferRowOffsetsLayoutType, ...
-    ],
-    cache_offsets: TileTensor[DType.uint32, CacheOffsetsLayoutType, ...],
+    buffer_row_offsets: TileTensor[.uint32, BufferRowOffsetsLayoutType, ...],
+    cache_offsets: TileTensor[.uint32, CacheOffsetsLayoutType, ...],
     k_cache: cache_t,
     length: Int32,
-    buffer: TileTensor[mut=True, dtype=dtype, ...],
+    buffer: TileTensor[mut=True, dtype, ...],
     context: DeviceContext,
 ) raises:
     comptime num_heads = cache_t.kv_params.num_heads

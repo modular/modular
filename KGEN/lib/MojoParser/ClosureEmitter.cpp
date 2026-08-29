@@ -130,7 +130,7 @@ static LogicalResult emitForwardingCall(ImplicitLocOpBuilder &builder,
       continue;
 
     AnyValue argValue = [&]() -> AnyValue {
-      if (convention == ArgConvention::ReadReg)
+      if (convention == ArgConvention::ImmReg)
         return SRValue(bbArg);
       // Forward the moved argument.
       if (convention == ArgConvention::OwnedMem ||
@@ -198,7 +198,8 @@ static void addConformanceTable(
   Block &block = witnessTable.getBody().emplaceBlock();
   b.setInsertionPointToStart(&block);
   for (auto [name, newWitness] : witnesses)
-    WitnessOp::create(b, StringAttr::get(ctx, name), newWitness);
+    WitnessOp::create(b, StringAttr::get(ctx, name), /*sym_visibility=*/nullptr,
+                      newWitness);
 
   // Register the conformance with the ASTDecl so lookupInCurrentScope can find
   // it during constraint checking.
@@ -247,8 +248,9 @@ TraitDeclOp ClosureEmitter::ClosureParent::getTrait(ASTDecl &moduleDecl) {
 
   for (auto [_, decls] : traitDeclParent->getDeclsInScope()) {
     for ([[maybe_unused]] auto decl : decls) {
-      assert(succeeded(shared.declResolver->resolveSignature(*decl,
-                                                             decl->getLoc())) &&
+      [[maybe_unused]] bool outcome = succeeded(
+          shared.declResolver->resolveSignature(*decl, decl->getLoc()));
+      assert(outcome &&
              "builtin trait nested decls should not fail signature resolution");
     }
   }
@@ -905,7 +907,8 @@ static void generateIsTrivialSpecialAlias(StringRef name, bool value,
                                             structDecl.getLoc(), &structDecl);
 
   b.setInsertionPointToEnd(&conformanceOp.getBody().front());
-  WitnessOp::create(b, StringAttr::get(ctx, name), valueAttr);
+  WitnessOp::create(b, StringAttr::get(ctx, name), /*sym_visibility=*/nullptr,
+                    valueAttr);
 }
 
 //===----------------------------------------------------------------------===//
@@ -1141,10 +1144,12 @@ ClosureEmitter::createFnStructWrapper(ASTDecl &moduleDecl, ASTDecl &traitDecl,
     Block &block = witnessTable.getBody().emplaceBlock();
     b.setInsertionPointToStart(&block);
     SymbolConstantAttr symbolConstant = buildSymbol(impl, implParameters);
-    WitnessOp::create(b, fnOp.getSymNameAttr(), symbolConstant);
+    WitnessOp::create(b, fnOp.getSymNameAttr(), /*sym_visibility=*/nullptr,
+                      symbolConstant);
     if (parent.getClosureMethod() == ClosureMethod::CALL) {
       for (auto [aliasName, value] : aliases)
-        WitnessOp::create(b, aliasName, value.second);
+        WitnessOp::create(b, aliasName, /*sym_visibility=*/nullptr,
+                          value.second);
     }
 
     return witnessTable;
@@ -1488,7 +1493,7 @@ ASTDecl *ClosureEmitter::createClosureTrait(
 
     RefType refType = decl.getTypeDeclSelf().getRefForArgument("self", true);
     FnTypeGeneratorType sig = addClosureSelfArgToFunctionSignature(
-        refType, ArgConvention::ReadMem, signatureNoSelf);
+        refType, ArgConvention::ImmMem, signatureNoSelf);
     // Augment the call function with auxiliary parameters. These auxiliary
     // parameters enable rebinding argument types in terms of external
     // parameters (e.g. "T") in terms of the alias members of closure type C
@@ -2514,7 +2519,7 @@ ClosureEmitter::Closure ClosureEmitter::liftClosure(
       structOp.bindReference(selfRefParamValues);
   assert(isa<FnOp>(nestedFnDecl.getIfOperation()) &&
          "expected nested closure declaration to be a function");
-  PromotedClosureSelfArg selfArg{closureStructType, ArgConvention::ReadMem};
+  PromotedClosureSelfArg selfArg{closureStructType, ArgConvention::ImmMem};
   ASTDecl *promotedCallDecl = liftClosureIntoMethod(
       nestedFnDecl, structDecl, selfArg, concreteFieldDecls,
       concreteFieldCaptures, concreteFieldCaptureConventions,
@@ -2597,7 +2602,7 @@ ClosureEmitter::Closure ClosureEmitter::liftClosure(
     case CaptureConvention::kConventionCopy:
       argType = ASTType(fieldType).getRefForArgument(initArgName.getValue(),
                                                      /*isMut=*/false);
-      argConvention = ArgConvention::ReadMem;
+      argConvention = ArgConvention::ImmMem;
       break;
     case CaptureConvention::kConventionMove: {
       TypeConvention passability = ASTType(fieldType).getRegisterPassability(
@@ -2673,10 +2678,10 @@ ClosureEmitter::Closure ClosureEmitter::liftClosure(
       // Value captures
       CValue argValue;
       switch (argConventions[index]) {
-      case ArgConvention::ReadReg:
+      case ArgConvention::ImmReg:
         argValue = SRValue(arg);
         break;
-      case ArgConvention::ReadMem:
+      case ArgConvention::ImmMem:
         argValue = MBValue(arg);
         break;
       case ArgConvention::OwnedMem:
@@ -2763,7 +2768,8 @@ ClosureEmitter::Closure ClosureEmitter::liftClosure(
            "non-marker closure method missing an implementation");
 
     TypedAttr symbol = buildSymbol(it->second, structOp.getInputParams());
-    WitnessOp::create(builder, fnOp.getSymNameAttr(), symbol);
+    WitnessOp::create(builder, fnOp.getSymNameAttr(),
+                      /*sym_visibility=*/nullptr, symbol);
 
     // add the alias entries
     if (closureParent.getClosureMethod() == ClosureMethod::CALL) {
@@ -2780,7 +2786,7 @@ ClosureEmitter::Closure ClosureEmitter::liftClosure(
                traitAliases,
                ArrayRef(captureBindings).take_front(traitAliases.size())))
         WitnessOp::create(builder, alias.getParamDecl().getName(),
-                          witnessValue);
+                          /*sym_visibility=*/nullptr, witnessValue);
     }
   };
 
@@ -3202,14 +3208,26 @@ ASTDecl *ClosureEmitter::addCaptureValue(ASTDecl &closure, SMLoc location,
     }
   }
 
-  CValue valueInParent =
-      ASTDeclToCValue(result, *emitter.builder, funcOp->getLoc());
+  // Capture materialization is inserted into the enclosing function. Stamp
+  // those ops with that function's debug scope, using the inner closure's
+  // file/line only. Keeping the inner subprogram on the loc would lower as
+  // an inlined location and fail LLVM's dbg-value verifier.
+  emitter.builder->setInsertionPoint(closure.getIfOperation());
+  DebugInfo::DIBuilder::ScopeGuard diGuard;
+  Location captureLoc = funcOp.getLoc();
+  if (auto fileLoc = captureLoc->findInstanceOf<FileLineColLoc>())
+    captureLoc = fileLoc;
+  if (shared.diBuilder) {
+    diGuard = shared.diBuilder->pushScopeGuard(parentFn.getLocScope());
+    captureLoc = shared.diBuilder->createScopedLoc(captureLoc);
+  }
+
+  CValue valueInParent = ASTDeclToCValue(result, *emitter.builder, captureLoc);
   if (!valueInParent) {
     shared.emitError(location, "'")
         << name << "' does not name a capturable value";
     return nullptr;
   }
-  emitter.builder->setInsertionPoint(closure.getIfOperation());
 
   CaptureConvention convention;
   /// The captureValue is a map of the valueInParent. For example, the
@@ -3219,11 +3237,6 @@ ASTDecl *ClosureEmitter::addCaptureValue(ASTDecl &closure, SMLoc location,
   /// later, we have to create a temporary value to represent the change in
   /// the properties of the value in the body of the closure.
   CValue captureValue;
-  // Switch the DI Scope to the enclosing function before emitting the
-  // load so the debug information is accurate.
-  DebugInfo::DIBuilder::ScopeGuard diGuard;
-  if (shared.diBuilder)
-    diGuard = shared.diBuilder->pushScopeGuard(parentFn.getLocScope());
 
   auto captureByRef = [&](CValue value,
                           std::optional<bool> mutability) -> CValue {
@@ -3245,8 +3258,8 @@ ASTDecl *ClosureEmitter::addCaptureValue(ASTDecl &closure, SMLoc location,
 
       if (originType.isMutableKnown(true)) {
         // convert a mut ref to immut ref
-        auto refImmutOp = LIT::RefImmutOp::create(
-            *emitter.builder, parentFn.getLoc(), valueInParent.getMlirValue());
+        auto refImmutOp = LIT::RefImmutOp::create(*emitter.builder, captureLoc,
+                                                  valueInParent.getMlirValue());
         return MBValue(refImmutOp->getResult(0));
       }
     }
@@ -3318,11 +3331,8 @@ ASTDecl *ClosureEmitter::addCaptureValue(ASTDecl &closure, SMLoc location,
               sugarDynCast<RefType>(valueInParent.getType().mlirType)) {
         OriginType originType = refType.getOriginType();
         if (originType.isMutableKnown(false)) {
-          Location fusedLoc =
-              FusedLoc::get(funcOp.getLoc().getContext(), funcOp.getLoc(),
-                            parentFn.getSubprogramScope());
           auto refImmutOp = LIT::RefImmutOp::create(
-              *emitter.builder, fusedLoc, valueInParent.getMlirValue());
+              *emitter.builder, captureLoc, valueInParent.getMlirValue());
           captureValue = MBValue(refImmutOp->getResult(0));
         }
       }
@@ -3846,7 +3856,7 @@ void ClosureEmitter::buildCallAdaptorAndAddWitness(
 
     // Handle convention mismatches between the adaptor (trait signature) and
     // the callee (storage/wrapper `__call__`). Generic trait parameters use
-    // ReadMem (ref), but concrete RegisterPassable types use ReadReg (value).
+    // ImmMem (ref), but concrete RegisterPassable types use ImmReg (value).
     if (!hasImplicitOrigin(conv) && isa<RefType>(operand.getType()))
       operand = RefLoadOp::create(b, operand);
 

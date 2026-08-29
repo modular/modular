@@ -55,9 +55,7 @@ comptime ROW_ALL_ZERO = 4
 
 
 def poison_lds_kernel[nbytes: Int]():
-    var p = unsafe_stack_allocation[
-        nbytes // 8, Int64, address_space=AddressSpace.SHARED
-    ]()
+    var p = unsafe_stack_allocation[nbytes // 8, Int64, address_space=.SHARED]()
     for i in range(thread_idx.x, nbytes // 8, BLOCK):
         p[i] = Int64(0x0BADF00DDEADBEEF)
     barrier()
@@ -79,8 +77,8 @@ def check_degenerate_row(
 
     var d_in = ctx.enqueue_create_buffer[DTYPE](in_shape.flattened_length())
     var d_out = ctx.enqueue_create_buffer[IDX](batch_size)
-    var seed_buf = ctx.enqueue_create_buffer[DType.uint64](batch_size)
-    var temp_buf = ctx.enqueue_create_buffer[DType.float32](batch_size)
+    var seed_buf = ctx.enqueue_create_buffer[.uint64](batch_size)
+    var temp_buf = ctx.enqueue_create_buffer[.float32](batch_size)
 
     with d_in.map_to_host() as h_in:
         var t = TileTensor(h_in, in_layout)

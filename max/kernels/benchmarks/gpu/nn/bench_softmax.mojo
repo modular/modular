@@ -23,7 +23,7 @@ from max.benchmark import bencher_iter_custom
 from std.benchmark import Bench, BenchConfig, Bencher, BenchId
 from max.gpu.host import DeviceContext, get_gpu_target
 from internal_utils import get_defined_shape, int_list_to_tuple
-from layout import Coord, TileTensor, row_major
+from layout import Coord, TileTensor, coord_to_index_list, row_major
 from nn.softmax import softmax, softmax_inline, softmax_with_temperature
 
 from std.utils.coord import ComptimeInt
@@ -85,11 +85,9 @@ def bench_softmax_gpu[
     def kernel_launch_rowwise(ctx: DeviceContext) raises {mut out_buf, imm}:
         @always_inline
         def rowwise_input_fn[
-            width: Int, alignment: Int, coord_rank: Int
-        ](coords: IndexList[coord_rank]) {var data_buf} -> SIMD[dtype, width]:
-            return data_buf.load_linear[width=width](
-                rebind[IndexList[rank]](coords)
-            )
+            width: Int, alignment: Int
+        ](coords: Coord) {var data_buf} -> SIMD[dtype, width]:
+            return data_buf.load[width=width](coords)
 
         softmax[dtype, rank, target="gpu", reduce_dim=rank - 1](
             rowwise_input_fn,
@@ -167,7 +165,7 @@ def bench_softmax_with_temperature_gpu[
 
 
 def main() raises:
-    comptime dtype = get_defined_dtype["dtype", DType.bfloat16]()
+    comptime dtype = get_defined_dtype["dtype", .bfloat16]()
     comptime shape = int_list_to_tuple[
         get_defined_shape["shape", "256x256"]()
     ]()

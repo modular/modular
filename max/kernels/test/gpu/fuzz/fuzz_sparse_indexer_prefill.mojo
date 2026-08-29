@@ -247,8 +247,8 @@ def _fill_stable[
 
 
 def _host_block_score(
-    q: UnsafePointer[mut=False, Scalar[kv_type], _],
-    k: UnsafePointer[mut=False, Scalar[kv_type], _],
+    q: ImmPointer[Scalar[kv_type], _],
+    k: ImmPointer[Scalar[kv_type], _],
     t: Int,
     h: Int,
     blk: Int,
@@ -265,10 +265,7 @@ def _host_block_score(
         var k_off = (key_off_b + key) * idx_head_dim
         var dot = Float32(0)
         for d in range(idx_head_dim):
-            dot += (
-                q[q_off + d].cast[DType.float32]()
-                * k[k_off + d].cast[DType.float32]()
-            )
+            dot += q[q_off + d].cast[.float32]() * k[k_off + d].cast[.float32]()
         var s = dot * sm_scale
         if s > blk_max:
             blk_max = s
@@ -350,9 +347,9 @@ def run_one_case(
         for d in range(idx_head_dim):
             k_host[plant_key * idx_head_dim + d] = Scalar[kv_type](PLANT_VAL)
 
-    var iro_host = ctx.enqueue_create_host_buffer[DType.uint32](batch + 1)
-    var cro_host = ctx.enqueue_create_host_buffer[DType.uint32](batch + 1)
-    var pl_host = ctx.enqueue_create_host_buffer[DType.uint32](batch)
+    var iro_host = ctx.enqueue_create_host_buffer[.uint32](batch + 1)
+    var cro_host = ctx.enqueue_create_host_buffer[.uint32](batch + 1)
+    var pl_host = ctx.enqueue_create_host_buffer[.uint32](batch)
     for b in range(batch + 1):
         iro_host[b] = UInt32(iro[b])
         cro_host[b] = UInt32(cro[b])
@@ -363,10 +360,10 @@ def run_one_case(
     # --- device buffers ------------------------------------------------------
     var q_dev = ctx.enqueue_create_buffer[kv_type](q_n)
     var k_dev = ctx.enqueue_create_buffer[kv_type](k_n + k_pad)
-    var iro_dev = ctx.enqueue_create_buffer[DType.uint32](batch + 1)
-    var cro_dev = ctx.enqueue_create_buffer[DType.uint32](batch + 1)
-    var pl_dev = ctx.enqueue_create_buffer[DType.uint32](batch)
-    var score_dev = ctx.enqueue_create_buffer[DType.float32](score_n)
+    var iro_dev = ctx.enqueue_create_buffer[.uint32](batch + 1)
+    var cro_dev = ctx.enqueue_create_buffer[.uint32](batch + 1)
+    var pl_dev = ctx.enqueue_create_buffer[.uint32](batch)
+    var score_dev = ctx.enqueue_create_buffer[.float32](score_n)
     var out_dev = ctx.enqueue_create_buffer[out_idx_type](out_n)
     ctx.enqueue_copy(dst_buf=q_dev, src_buf=q_host)
     ctx.enqueue_copy(dst_buf=k_dev, src_buf=k_host)
@@ -393,7 +390,7 @@ def run_one_case(
 
     # --- schedule oracle: re-run the score kernel and check bit-exact --------
     if schedule_repeats > 0:
-        var ref_host = ctx.enqueue_create_host_buffer[DType.float32](score_n)
+        var ref_host = ctx.enqueue_create_host_buffer[.float32](score_n)
         var n_runs = max(2, schedule_repeats)
         for r in range(n_runs):
             score_dev.enqueue_fill(Float32(0))
@@ -418,7 +415,7 @@ def run_one_case(
                 sm_scale,
                 ctx,
             )
-            var sh = ctx.enqueue_create_host_buffer[DType.float32](score_n)
+            var sh = ctx.enqueue_create_host_buffer[.float32](score_n)
             ctx.enqueue_copy(dst_buf=sh, src_buf=score_dev)
             ctx.synchronize()
             if r == 0:
@@ -471,7 +468,7 @@ def run_one_case(
         sm_scale,
         ctx,
     )
-    var score_host = ctx.enqueue_create_host_buffer[DType.float32](score_n)
+    var score_host = ctx.enqueue_create_host_buffer[.float32](score_n)
     ctx.enqueue_copy(dst_buf=score_host, src_buf=score_dev)
     ctx.synchronize()
 
@@ -638,8 +635,8 @@ def _batch_of(t: Int, batch: Int, iro: List[Int]) -> Int:
 
 
 def _check_topk_invariant(
-    q_hp: UnsafePointer[mut=False, Scalar[kv_type], _],
-    k_hp: UnsafePointer[mut=False, Scalar[kv_type], _],
+    q_hp: ImmPointer[Scalar[kv_type], _],
+    k_hp: ImmPointer[Scalar[kv_type], _],
     t: Int,
     h: Int,
     key_off_b: Int,
@@ -679,7 +676,7 @@ def _check_topk_invariant(
 
 def _apply_inject(
     inject: Int,
-    out_host: UnsafePointer[mut=True, Scalar[out_idx_type], _],
+    out_host: MutPointer[Scalar[out_idx_type], _],
     max_num_blocks: Int,
 ):
     """Corrupt out_idxs[0] to prove an oracle can FAIL (positive control)."""

@@ -32,10 +32,9 @@ from std.collections import Array
 from std.math import ceildiv
 from std.sys import simd_width_of, align_of, size_of
 
-from layout import TileTensor
+from layout import TensorStorage, TileTensor
 from layout.tile_layout import TensorLayout
 from layout.tma_async import SharedMemBarrier
-from std.memory import UnsafePointer
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
@@ -74,6 +73,7 @@ from .sync import (
     is_p2p_enabled,
     circular_add,
 )
+
 
 # Tuning table to get num_blocks for allgather.
 # Arch-specific defaults use ngpus=-1, num_bytes=-1 with the arch's sm_version.
@@ -117,10 +117,15 @@ def _allgather_naive[
     in_origin: Origin,
     out_layout: TensorLayout,
     out_origin: MutOrigin,
+    in_store: TensorStorage,
+    out_store: TensorStorage,
 ](
-    input_buffers: Array[TileTensor[dtype, in_layout, in_origin], ngpus],
+    input_buffers: Array[
+        TileTensor[dtype, in_layout, in_origin, Storage=in_store], ngpus
+    ],
     output_buffers: Array[
-        TileTensor[mut=True, dtype, out_layout, out_origin], ngpus
+        TileTensor[mut=True, dtype, out_layout, out_origin, Storage=out_store],
+        ngpus,
     ],
     ctx: DeviceContext,
 ) raises:
@@ -136,8 +141,8 @@ def _allgather_naive[
         device_buffers.append(
             DeviceBuffer(
                 rctx,
-                rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
-                    input_buffers[i]._storage
+                rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](
+                    input_buffers[i].ptr
                 ),
                 input_buffers[i].num_elements(),
                 owning=False,
@@ -147,8 +152,8 @@ def _allgather_naive[
     for input_idx in range(ngpus):
         var output_device_buffer = DeviceBuffer(
             ctx,
-            rebind[UnsafePointer[Scalar[dtype], MutAnyOrigin]](
-                output_buffers[input_idx]._storage
+            rebind[MutPointer[Scalar[dtype], MutAnyOrigin]](
+                output_buffers[input_idx].ptr
             ),
             output_buffers[input_idx].num_elements(),
             owning=False,
@@ -172,9 +177,9 @@ def _allgather_p2p_kernel[
     BLOCK_SIZE: Int,
     domain_id: Int = 0,
 ](
-    outputs: StaticTuple[UnsafePointer[Scalar[dtype], MutAnyOrigin], ngpus],
-    src_ptrs: StaticTuple[UnsafePointer[Scalar[dtype], ImmutAnyOrigin], ngpus],
-    rank_sigs: Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
+    outputs: StaticTuple[MutPointer[Scalar[dtype], MutAnyOrigin], ngpus],
+    src_ptrs: StaticTuple[ImmPointer[Scalar[dtype], ImmutAnyOrigin], ngpus],
+    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS],
     lengths: StaticTuple[Int32, ngpus],
     max_num_blocks: Int32,
     my_rank: Int32,
@@ -192,18 +197,24 @@ def _allgather_p2p_kernel[
     var _my_rank = Int(my_rank)
     var my_sig = rank_sigs[_my_rank]
 
-    var src_ptrs_rr = Array[
-        UnsafePointer[Scalar[dtype], ImmutAnyOrigin], ngpus
-    ](uninitialized=True)
-    var out_ptrs_rr = Array[UnsafePointer[Scalar[dtype], MutAnyOrigin], ngpus](
-        uninitialized=True
+    comptime SrcPtrType = ImmPointer[Scalar[dtype], ImmutAnyOrigin]
+    var src_ptrs_rr = Array[_, ngpus](
+        fill_with=lambda (i: Int) -> SrcPtrType: src_ptrs[
+            circular_add[ngpus](_my_rank, i)
+        ]
     )
-    var lengths_rr = Array[Int, ngpus](uninitialized=True)
-    for i in range(ngpus):
-        var target = circular_add[ngpus](_my_rank, i)
-        src_ptrs_rr[i] = src_ptrs[target]
-        out_ptrs_rr[i] = outputs[target]
-        lengths_rr[i] = Int(lengths[target])
+
+    comptime OutPtrType = MutPointer[Scalar[dtype], MutAnyOrigin]
+    var out_ptrs_rr = Array[_, ngpus](
+        fill_with=lambda (i: Int) -> OutPtrType: outputs[
+            circular_add[ngpus](_my_rank, i)
+        ]
+    )
+    var lengths_rr = Array[_, ngpus](
+        fill_with=lambda (i: Int) -> Int: Int(
+            lengths[circular_add[ngpus](_my_rank, i)]
+        )
+    )
 
     with PDL():
         # Synchronize before reading.
@@ -275,9 +286,9 @@ def _allgather_tma_kernel[
     BYTES_PER_COPY: Int,
     domain_id: Int = 0,
 ](
-    outputs: StaticTuple[UnsafePointer[Scalar[dtype], MutAnyOrigin], ngpus],
-    src_ptrs: StaticTuple[UnsafePointer[Scalar[dtype], ImmutAnyOrigin], ngpus],
-    rank_sigs: Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
+    outputs: StaticTuple[MutPointer[Scalar[dtype], MutAnyOrigin], ngpus],
+    src_ptrs: StaticTuple[ImmPointer[Scalar[dtype], ImmutAnyOrigin], ngpus],
+    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS],
     lengths: StaticTuple[Int32, ngpus],
     my_rank: Int32,
 ):
@@ -296,7 +307,7 @@ def _allgather_tma_kernel[
     var my_sig = rank_sigs[_my_rank]
 
     var smem_base = external_memory[
-        UInt8, address_space=AddressSpace.SHARED, alignment=128
+        UInt8, address_space=.SHARED, alignment=128
     ]()
     var mbar_base = (smem_base + NUM_WARPS * BYTES_PER_COPY).bitcast[
         SharedMemBarrier
@@ -314,14 +325,10 @@ def _allgather_tma_kernel[
     var my_src_idx = warp % ngpus
 
     var src_g = (
-        src_ptrs[my_src_idx]
-        .bitcast[UInt8]()
-        .address_space_cast[AddressSpace.GLOBAL]()
+        src_ptrs[my_src_idx].bitcast[UInt8]().address_space_cast[.GLOBAL]()
     )
     var dst_g = (
-        outputs[my_src_idx]
-        .bitcast[UInt8]()
-        .address_space_cast[AddressSpace.GLOBAL]()
+        outputs[my_src_idx].bitcast[UInt8]().address_space_cast[.GLOBAL]()
     )
     var nbytes = Int(lengths[my_src_idx]) * size_of[dtype]()
     var smem = smem_base + warp * BYTES_PER_COPY
@@ -372,11 +379,11 @@ def _allgather_p2p_tma[
     ngpus: Int,
     domain_id: Int = 0,
 ](
-    output_ptrs: StaticTuple[UnsafePointer[Scalar[dtype], MutAnyOrigin], ngpus],
+    output_ptrs: StaticTuple[MutPointer[Scalar[dtype], MutAnyOrigin], ngpus],
     list_of_in_ptrs: StaticTuple[
-        UnsafePointer[Scalar[dtype], ImmutAnyOrigin], ngpus
+        ImmPointer[Scalar[dtype], ImmutAnyOrigin], ngpus
     ],
-    rank_sigs: Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
+    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS],
     lengths: StaticTuple[Int32, ngpus],
     ctx: DeviceContext,
     my_rank: Int,
@@ -437,40 +444,44 @@ def _allgather_p2p[
     in_origin: Origin,
     out_layout: TensorLayout,
     out_origin: MutOrigin,
+    in_store: TensorStorage,
+    out_store: TensorStorage,
     domain_id: Int = 0,
 ](
-    input_buffers: Array[TileTensor[dtype, in_layout, in_origin], ngpus],
-    output_buffers: Array[
-        TileTensor[mut=True, dtype, out_layout, out_origin], ngpus
+    input_buffers: Array[
+        TileTensor[dtype, in_layout, in_origin, Storage=in_store], ngpus
     ],
-    rank_sigs: Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
+    output_buffers: Array[
+        TileTensor[mut=True, dtype, out_layout, out_origin, Storage=out_store],
+        ngpus,
+    ],
+    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS],
     _max_num_blocks: Optional[Int],
     ctx: DeviceContext,
     my_rank: Int,
 ) raises:
     """Per-device P2P allgather: each GPU reads from all peers directly."""
 
-    # Extract raw pointers and sizes from TileTensors.
     var list_of_in_ptrs = StaticTuple[
-        UnsafePointer[Scalar[dtype], ImmutAnyOrigin], ngpus
+        ImmPointer[Scalar[dtype], ImmutAnyOrigin], ngpus
     ]()
     var lengths = StaticTuple[Int, ngpus]()
 
     comptime for i in range(ngpus):
-        list_of_in_ptrs[i] = rebind[
-            UnsafePointer[Scalar[dtype], ImmutAnyOrigin]
-        ](input_buffers[i]._storage)
+        list_of_in_ptrs[i] = rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](
+            input_buffers[i].ptr
+        )
         lengths[i] = input_buffers[i].num_elements()
 
     # Prepare output pointers.
     var output_ptrs = StaticTuple[
-        UnsafePointer[Scalar[dtype], MutAnyOrigin], ngpus
+        MutPointer[Scalar[dtype], MutAnyOrigin], ngpus
     ]()
 
     comptime for src_idx in range(ngpus):
-        output_ptrs[src_idx] = rebind[
-            UnsafePointer[Scalar[dtype], MutAnyOrigin]
-        ](output_buffers[src_idx]._storage)
+        output_ptrs[src_idx] = rebind[MutPointer[Scalar[dtype], MutAnyOrigin]](
+            output_buffers[src_idx].ptr
+        )
 
     # Build Int32 versions for passing to GPU kernels.
     var lengths_i32 = StaticTuple[Int32, ngpus]()
@@ -546,13 +557,18 @@ def allgather[
     in_origin: Origin,
     out_layout: TensorLayout,
     out_origin: MutOrigin,
+    in_store: TensorStorage,
+    out_store: TensorStorage,
     domain_id: Int = 0,
 ](
-    input_buffers: Array[TileTensor[dtype, in_layout, in_origin], ngpus],
-    output_buffers: Array[
-        TileTensor[mut=True, dtype, out_layout, out_origin], ngpus
+    input_buffers: Array[
+        TileTensor[dtype, in_layout, in_origin, Storage=in_store], ngpus
     ],
-    rank_sigs: Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
+    output_buffers: Array[
+        TileTensor[mut=True, dtype, out_layout, out_origin, Storage=out_store],
+        ngpus,
+    ],
+    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS],
     ctx: DeviceContext,
     my_rank: Int,
     _max_num_blocks: Optional[Int] = None,
@@ -573,6 +589,8 @@ def allgather[
         in_origin: Origin of the input TileTensors.
         out_layout: Layout of the output TileTensors.
         out_origin: Origin of the output TileTensors.
+        in_store: `TensorStorage` policy of the input TileTensors.
+        out_store: `TensorStorage` policy of the output TileTensors.
         domain_id: Barrier counter bank to use (0 for full-world; a distinct
             nonzero value for grouped collectives sharing the same Signal
             buffers). See `_multi_gpu_barrier`.

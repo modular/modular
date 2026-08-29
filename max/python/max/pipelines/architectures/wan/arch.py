@@ -18,6 +18,7 @@ from typing import ClassVar
 
 from max.graph.weights import WeightsFormat
 from max.pipelines.context import validate_wan_max_pixel_area
+from max.pipelines.diffusion.config import TaylorSeerDefaults
 from max.pipelines.lib import SupportedArchitecture
 from max.pipelines.lib.config import MAXModelConfig, PipelineConfig
 from max.pipelines.lib.interfaces import ArchConfig
@@ -52,11 +53,10 @@ class WanArchConfig(ArchConfig):
     @classmethod
     def calculate_max_seq_len(
         cls,
-        pipeline_config: PipelineConfig,
         huggingface_config: AutoConfig,
-        model_config: MAXModelConfig | None = None,
+        model_config: MAXModelConfig,
     ) -> int:
-        del pipeline_config, huggingface_config, model_config
+        del huggingface_config, model_config
         return 512
 
     @classmethod
@@ -81,6 +81,11 @@ class WanArchConfig(ArchConfig):
         return cls(pipeline_config=pipeline_config)
 
 
+# TaylorSeer defaults (from https://github.com/Shenyi-Z/TaylorSeer).
+_WAN_TAYLORSEER_DEFAULTS = TaylorSeerDefaults(
+    cache_interval=5, warmup_steps=4, max_order=1
+)
+
 wan_arch = SupportedArchitecture(
     name="WanPipeline",
     task=PipelineTask.PIXEL_GENERATION,
@@ -98,6 +103,7 @@ wan_arch = SupportedArchitecture(
     tokenizer=WanTokenizer,
     config=WanArchConfig,
     context_validators=[validate_wan_max_pixel_area],
+    denoising_cache_defaults=_WAN_TAYLORSEER_DEFAULTS,
 )
 
 wan_i2v_arch = SupportedArchitecture(
@@ -115,4 +121,5 @@ wan_i2v_arch = SupportedArchitecture(
     tokenizer=WanTokenizer,
     config=WanArchConfig,
     context_validators=[validate_wan_max_pixel_area],
+    denoising_cache_defaults=_WAN_TAYLORSEER_DEFAULTS,
 )

@@ -23,6 +23,7 @@
 #include "KGEN/MojoParser/DocString.h"
 #include "KGEN/MojoParser/EntryPoint.h"
 #include "KGEN/MojoParser/Lexer.h"
+#include "KGEN/MojoParser/ModuleLoader.h"
 #include "KGEN/MojoParser/SharedState.h"
 #include "KGEN/MojoTooling/PublicASTDecl.h"
 #include "KGEN/POPDialect/POPDialect.h"
@@ -90,10 +91,11 @@ SharedState &MojoParserContext::getSharedState() { return impl->sharedState; }
 std::vector<std::string>
 MojoParserContext::getModuleSearchDirectories(unsigned fileId) {
   std::vector<std::string> searchDirs;
-  impl->sharedState.traverseImportDirectories(fileId, [&](StringRef dir) {
-    searchDirs.push_back(dir.str());
-    return WalkResult::advance();
-  });
+  impl->sharedState.getModuleLoader().traverseImportDirectories(
+      fileId, [&](StringRef dir) {
+        searchDirs.push_back(dir.str());
+        return WalkResult::advance();
+      });
   return searchDirs;
 }
 
@@ -103,6 +105,12 @@ const KGEN::CompilationOptions &MojoParserContext::getCompilationOptions() {
 
 MojoASTDeclRef MojoParserContext::getDecl(MojoASTTypeRef type) {
   return type.getDecl(impl->sharedState);
+}
+
+MojoASTDeclRef
+MojoParserContext::getTraitDecl(KGEN::TraitSymbolAttr traitSymbol) {
+  return MojoASTDeclRef(&impl->sharedState.declResolver->getDeclForTypeSymbol(
+      traitSymbol.getSymbol()));
 }
 
 MojoASTTypeRef MojoParserContext::concretizeType(MojoASTTypeRef base,

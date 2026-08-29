@@ -120,7 +120,7 @@ def elementwise_epilogue_c_tile[
 ](
     offset: GemmShape,
     tile_len: GemmShape,
-    c: TileTensor[mut=False, c_type, address_space=AddressSpace.GENERIC, ...],
+    c: TileTensor[mut=False, c_type, address_space=.GENERIC, ...],
 ):
     """Applies a vectorized epilogue function over a 2D C output tile.
 
@@ -165,13 +165,13 @@ def tiled_matmul_run[
     & def(
         GemmShape,
         GemmShape,
-        TileTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
+        TileTensor[mut=False, address_space=.GENERIC, ...],
     ) -> None,
 ](
     alg: algorithm,
-    c: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
-    a: TileTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
-    b: TileTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
+    c: TileTensor[mut=True, address_space=.GENERIC, ...],
+    a: TileTensor[mut=False, address_space=.GENERIC, ...],
+    b: TileTensor[mut=False, address_space=.GENERIC, ...],
     elementwise_epilogue_fn: ElementwiseEpilogueFnType,
     global_tile_shape: GemmShape,
     global_tile_offset: GemmShape,
@@ -261,7 +261,7 @@ struct TiledMatmul[
     & def(
         GemmShape,
         GemmShape,
-        TileTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
+        TileTensor[mut=False, address_space=.GENERIC, ...],
     ) -> None,
 ](ImplicitlyCopyable):
     """Tiled matmul implementation integrating packing, inner loop and tile
@@ -504,9 +504,9 @@ def _matmul_cpu_impl[
     algorithm: InnerMatmulKernel,
 ](
     alg: algorithm,
-    c: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
-    a: TileTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
-    b: TileTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
+    c: TileTensor[mut=True, address_space=.GENERIC, ...],
+    a: TileTensor[mut=False, address_space=.GENERIC, ...],
+    b: TileTensor[mut=False, address_space=.GENERIC, ...],
     num_threads: Int = -1,
     ctx: Optional[DeviceContext] = None,
 ) raises:
@@ -568,9 +568,9 @@ def _matmul_cpu_impl[
             )
 
         @always_inline
-        @__copy_capture(m, k, num_tasks)
-        @__parameter
-        def pack_task_func(task_id: Int):
+        def pack_task_func(
+            task_id: Int,
+        ) {mut a_packed_alloc, var m, var k, var num_tasks, imm}:
             var sub_matmul_config = get_partitioned_matmul[
                 a.dtype,
                 b.dtype,
@@ -590,9 +590,9 @@ def _matmul_cpu_impl[
             )
 
         @always_inline
-        @__copy_capture(m, k, num_tasks, n, mh, kh)
-        @__parameter
-        def task_func(task_id: Int):
+        def task_func(
+            task_id: Int,
+        ) {var m, var k, var num_tasks, var n, var mh, var kh, imm}:
             var sub_matmul_config = get_partitioned_matmul[
                 a.dtype,
                 b.dtype,
@@ -650,11 +650,11 @@ def _matmul_cpu_impl[
         # Also parallelize currently is slower than asyn_parallelize which is depreciated now.
         # See issue 27734
         comptime if use_i8mm:
-            sync_parallelize[pack_task_func](num_tasks, ctx)
+            sync_parallelize(pack_task_func, num_tasks, ctx)
 
         # TODO (#12624): Closure captures some state on the stack so this needs
         # to be synchronous in order to keep that state alive
-        sync_parallelize[task_func](num_tasks, ctx)
+        sync_parallelize(task_func, num_tasks, ctx)
 
         a_packed_alloc^.deinit_with(dealloc[Scalar[a.dtype]])
 
@@ -667,9 +667,9 @@ def matmul[
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     saturated_vnni: Bool = False,
 ](
-    c: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
-    a: TileTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
-    b: TileTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
+    c: TileTensor[mut=True, address_space=.GENERIC, ...],
+    a: TileTensor[mut=False, address_space=.GENERIC, ...],
+    b: TileTensor[mut=False, address_space=.GENERIC, ...],
     kernel_type_m: Int,
     num_threads: Int = -1,
     ctx: Optional[DeviceContext] = None,
@@ -844,9 +844,9 @@ def _submatmul_sequential_sync[
     algorithm: InnerMatmulKernel,
 ](
     alg: algorithm,
-    c: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
-    a: TileTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
-    b: TileTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
+    c: TileTensor[mut=True, address_space=.GENERIC, ...],
+    a: TileTensor[mut=False, address_space=.GENERIC, ...],
+    b: TileTensor[mut=False, address_space=.GENERIC, ...],
     sub_matrix_shape: GemmShape,
     sub_matrix_offset: GemmShape,
 ):
@@ -855,7 +855,7 @@ def _submatmul_sequential_sync[
     def elementwise_closure(
         offset: GemmShape,
         shape: GemmShape,
-        c_read: TileTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
+        c_read: TileTensor[mut=False, address_space=.GENERIC, ...],
     ):
         comptime if elementwise_lambda_fn:
             comptime func = elementwise_lambda_fn.value()
@@ -896,9 +896,9 @@ def _submatmul_sequential_sync[
     elementwise_lambda_fn: Optional[elementwise_epilogue_type],
     saturated_vnni: Bool,
 ](
-    c: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
-    a: TileTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
-    b: TileTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
+    c: TileTensor[mut=True, address_space=.GENERIC, ...],
+    a: TileTensor[mut=False, address_space=.GENERIC, ...],
+    b: TileTensor[mut=False, address_space=.GENERIC, ...],
     sub_matrix_shape: GemmShape,
     sub_matrix_offset: GemmShape,
 ):

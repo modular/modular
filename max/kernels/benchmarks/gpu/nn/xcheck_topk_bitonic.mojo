@@ -47,18 +47,16 @@ def _hash32(a: UInt32, b: UInt32) -> UInt32:
 
 def _launch(
     ctx: DeviceContext,
-    scores_t: TileTensor[DType.float32, ...],
-    idxs_t: TileTensor[DType.int32, ...],
+    scores_t: TileTensor[.float32, ...],
+    idxs_t: TileTensor[.int32, ...],
     N: Int,
     K: Int,
     rows: Int,
 ) raises:
     persistent_topk_block_split(
         ctx,
-        rebind[UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin]](
-            scores_t.ptr
-        ),
-        rebind[UnsafePointer[Scalar[DType.int32], MutAnyOrigin]](idxs_t.ptr),
+        rebind[ImmPointer[Float32, ImmutAnyOrigin]](scores_t.ptr),
+        rebind[MutPointer[Int32, MutAnyOrigin]](idxs_t.ptr),
         N,
         K,
         rows,
@@ -74,8 +72,8 @@ def main() raises:
     var dump = arg_parse("dump", True)
 
     with DeviceContext() as ctx:
-        var scores_buf = ctx.enqueue_create_buffer[DType.float32](rows * N)
-        var idxs_buf = ctx.enqueue_create_buffer[DType.int32](rows * K)
+        var scores_buf = ctx.enqueue_create_buffer[.float32](rows * N)
+        var idxs_buf = ctx.enqueue_create_buffer[.int32](rows * K)
 
         # Row lengths and a per-row checksum let the peer harnesses prove they
         # built the same input before any output is compared.

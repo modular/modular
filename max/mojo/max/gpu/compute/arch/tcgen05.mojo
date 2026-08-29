@@ -38,9 +38,7 @@ def check_blackwell_constraint():
 struct TensorMemory(TrivialRegisterPassable):
     """A wrapper around tensor memory allocated for tcgen05 instructions."""
 
-    var ptr: Pointer[
-        UInt32, MutUntrackedOrigin, address_space=AddressSpace.SHARED
-    ]
+    var ptr: Pointer[UInt32, MutUntrackedOrigin, address_space=.SHARED]
     """Pointer to the tensor memory address."""
 
     var num_cols: UInt32
@@ -55,9 +53,7 @@ struct TensorMemory(TrivialRegisterPassable):
         """
         # Bitcast to avoid `cannot implicitly convert` error.
         self.ptr = (
-            external_memory[
-                UInt32, address_space=AddressSpace.SHARED, alignment=16
-            ]()
+            external_memory[UInt32, address_space=.SHARED, alignment=16]()
             .unsafe_bitcast[UInt32]()
             .unsafe_origin_cast[MutUntrackedOrigin]()
         )
@@ -68,9 +64,7 @@ struct TensorMemory(TrivialRegisterPassable):
 def tcgen05_alloc[
     cta_group: Int32
 ](
-    ptr_tmem_addr: Pointer[
-        mut=True, UInt32, _, address_space=AddressSpace.SHARED
-    ],
+    ptr_tmem_addr: Pointer[mut=True, UInt32, _, address_space=.SHARED],
     num_cols: UInt32,
 ):
     """Allocates tensor memory for use with tcgen05 instructions.

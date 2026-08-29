@@ -99,12 +99,13 @@ public:
   // Required interpreter public interface.
   ErrorTreeOrSuccess callFunctionBody(Region &body,
                                       ArrayRef<Attribute> arguments) override;
-  void returnFromFunction(ArrayRef<Attribute> returnValues) override;
-  void transferControlFlowTo(Operation *target,
-                             ArrayRef<Attribute> values) override;
-  void transferControlFlowTo(Region &target,
-                             ArrayRef<Attribute> arguments) override;
-  void mapResults(ArrayRef<Attribute> results) override;
+  ErrorTreeOrSuccess
+  returnFromFunction(ArrayRef<Attribute> returnValues) override;
+  ErrorTreeOrSuccess transferControlFlowTo(Operation *target,
+                                           ArrayRef<Attribute> values) override;
+  ErrorTreeOrSuccess
+  transferControlFlowTo(Region &target, ArrayRef<Attribute> arguments) override;
+  ErrorTreeOrSuccess mapResults(ArrayRef<Attribute> results) override;
 
   /// Interpret a generic operation by trying to use its operation folder.
   ErrorTreeOrSuccess

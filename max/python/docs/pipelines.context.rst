@@ -22,6 +22,7 @@ Concrete context classes
    TextContext
    TextAndVisionContext
    PixelContext
+   AudioContext
 
 Generation status
 -----------------
@@ -65,6 +66,7 @@ Type variables
    TextGenerationContextType
    VLMContextType
    PixelGenerationContextType
+   AudioGenerationContextType
 
 Sampling
 --------

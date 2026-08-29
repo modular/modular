@@ -14,13 +14,16 @@
 import dataclasses
 
 from max.graph.weights import WeightsFormat
+from max.pipelines.architectures.gemma4.context import Gemma4Context
+from max.pipelines.architectures.gemma4.memory_planner import (
+    Gemma4MemoryPlanner,
+)
 from max.pipelines.architectures.gemma4.model_config import (
     Gemma4ForConditionalGenerationConfig,
 )
-from max.pipelines.context import TextContext
-from max.pipelines.kv_cache.memory_planner import PagedMemoryPlanner
-from max.pipelines.lib import SupportedArchitecture, TextTokenizer
-from max.pipelines.modeling.types import PipelineTask
+from max.pipelines.architectures.gemma4.tokenizer import Gemma4Tokenizer
+from max.pipelines.lib import SupportedArchitecture
+from max.pipelines.modeling.types import InputModality, PipelineTask
 
 from . import weight_adapters
 from .batch_processor import Gemma4ModuleV3BatchProcessor
@@ -33,25 +36,35 @@ gemma4_modulev3_arch = SupportedArchitecture(
     supported_encodings={"bfloat16"},
     pipeline_model=Gemma4Model,
     task=PipelineTask.TEXT_GENERATION,
-    tokenizer=TextTokenizer,
-    context_type=TextContext,
+    tokenizer=Gemma4Tokenizer,
+    context_type=Gemma4Context,
+    input_modalities={
+        InputModality.TEXT,
+        InputModality.IMAGE,
+        InputModality.VIDEO,
+    },
     default_weights_format=WeightsFormat.safetensors,
     multi_gpu_supported=False,
     weight_adapters={
         WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
     },
     config=Gemma4ForConditionalGenerationConfig,
+    tool_parser="gemma4",
+    reasoning_parser="gemma4",
+    default_structured_output_backend="xgrammar",
     batching=Gemma4ModuleV3BatchProcessor,
-    memory_planner=PagedMemoryPlanner,
+    memory_planner=Gemma4MemoryPlanner,
     supports_overlap_scheduler=False,
     supports_device_graph_capture=False,
 )
 
 # Text-only model_type "gemma4_unified" line (e.g. google/gemma-4-12B-it):
 # same model, different HF architecture string -- mirrors the graph side's
-# dataclasses.replace at gemma4/arch.py:70-77.
+# dataclasses.replace. Served text-only: the unified
+# vision embedder is not implemented.
 gemma4_unified_modulev3_arch = dataclasses.replace(
     gemma4_modulev3_arch,
     name="Gemma4UnifiedForConditionalGeneration_ModuleV3",
     example_repo_ids=["google/gemma-4-12B-it"],
+    input_modalities={InputModality.TEXT},
 )

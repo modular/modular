@@ -257,14 +257,14 @@ struct MLA_SM100_Decode_QKV_FP8[
         q_tma: QOTMATile[
             dtype=Self.kv_type,
             BM=Self.config.BM,  # tile_m =64
-            BK=Self.config.BK_QK,  # tile_n =576
+            BK=Self.config.input_q_depth,
             swizzle_mode=Self.config.kv_tma_swizzle_mode,  # SWIZZLE_64B
         ],
         k_tma: KVTMATile[
             dtype=Self.kv_type,
             swizzle_mode=Self.config.kv_tma_swizzle_mode,
             BN=Self.config.BK_PV,  # tile_m =64
-            BK=Self.config.BK_QK,  # tile_n =576
+            BK=Self.config.input_q_depth,
         ],
         o_tma: ORaggedTMATile[
             dtype=Self.output_type,
@@ -280,11 +280,9 @@ struct MLA_SM100_Decode_QKV_FP8[
             MaskType=Self.MaskType,
             SplitAccumType=Self.SplitAccumType,
         ],
-        scales_ptr: UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin],
+        scales_ptr: UnsafePointer[Float32, origin=MutAnyOrigin],
         scalar_args: TileTensor[
-            DType.int64,
-            RowMajorLayout[ComptimeInt[3]],
-            MutAnyOrigin,
+            .int64, RowMajorLayout[ComptimeInt[3]], MutAnyOrigin
         ],
     ):
         # MaskType assertion: native FP8 backend supports NullMask, CausalMask,
@@ -325,7 +323,7 @@ struct MLA_SM100_Decode_QKV_FP8[
                 UnsafePointer[
                     Scalar[Self.ValidLengthType.dtype],
                     ImmutAnyOrigin,
-                    address_space=AddressSpace.GENERIC,
+                    address_space=.GENERIC,
                 ]
             ](valid_length.value()),
             q_max_seq_len,
@@ -346,10 +344,8 @@ struct MLA_SM100_Decode_QKV_FP8[
                             offset_position.split_idx,
                             offset_position.batch_idx,
                             offset_position.max_seq_len,
-                            offset_position.out_row_offset_at(q_local),
                             batch_size,
                             lse_accum_split_ptr,
-                            o_tma,
                             seq_idx_fold=UInt32(q_local),
                         )
                 else:
@@ -357,10 +353,8 @@ struct MLA_SM100_Decode_QKV_FP8[
                         offset_position.split_idx,
                         offset_position.batch_idx,
                         offset_position.max_seq_len,
-                        offset_position.out_row_offset,
                         batch_size,
                         lse_accum_split_ptr,
-                        o_tma,
                     )
                 return
 
@@ -384,10 +378,8 @@ struct MLA_SM100_Decode_QKV_FP8[
                             offset_position.split_idx,
                             offset_position.batch_idx,
                             offset_position.max_seq_len,
-                            offset_position.out_row_offset_at(q_local),
                             batch_size,
                             lse_accum_split_ptr,
-                            o_tma,
                             seq_idx_fold=UInt32(q_local),
                         )
                 else:
@@ -395,10 +387,8 @@ struct MLA_SM100_Decode_QKV_FP8[
                         offset_position.split_idx,
                         offset_position.batch_idx,
                         offset_position.max_seq_len,
-                        offset_position.out_row_offset,
                         batch_size,
                         lse_accum_split_ptr,
-                        o_tma,
                     )
                 return
 
@@ -417,10 +407,8 @@ struct MLA_SM100_Decode_QKV_FP8[
                                 offset_position.split_idx,
                                 offset_position.batch_idx,
                                 offset_position.max_seq_len,
-                                offset_position.out_row_offset_at(q_local),
                                 batch_size,
                                 lse_accum_split_ptr,
-                                o_tma,
                                 seq_idx_fold=UInt32(q_local),
                             )
                     else:
@@ -428,10 +416,8 @@ struct MLA_SM100_Decode_QKV_FP8[
                             offset_position.split_idx,
                             offset_position.batch_idx,
                             offset_position.max_seq_len,
-                            offset_position.out_row_offset,
                             batch_size,
                             lse_accum_split_ptr,
-                            o_tma,
                         )
 
                 return
@@ -440,7 +426,7 @@ struct MLA_SM100_Decode_QKV_FP8[
         # Q FP8 region: 64 x 576 x 1 bytes = 36864 bytes
         var q_smem = external_memory[
             Scalar[Self.fp8_type],
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
             alignment=128,
             name="mha_dynamic_shared_memory",
         ]()
@@ -648,14 +634,14 @@ struct MLA_SM100_Decode_QKV_FP8[
         q_tma: QOTMATile[
             dtype=Self.kv_type,
             BM=Self.config.BM,
-            BK=Self.config.BK_QK,
+            BK=Self.config.input_q_depth,
             swizzle_mode=Self.config.kv_tma_swizzle_mode,  # SWIZZLE_64B
         ],
         k_tma: KVTMATile[
             dtype=Self.kv_type,
             swizzle_mode=Self.config.kv_tma_swizzle_mode,
             BN=Self.config.BK_PV,
-            BK=Self.config.BK_QK,
+            BK=Self.config.input_q_depth,
         ],
         kv_lut: Self.KVLUTType,
         q_smem: SharedMemPointer[Scalar[Self.fp8_type]],
@@ -737,7 +723,7 @@ struct MLA_SM100_Decode_QKV_FP8[
                 Self.kv_type,
                 type_of(q_tt_layout),
                 MutAnyOrigin,
-                address_space=AddressSpace.SHARED,
+                address_space=.SHARED,
             ](q_smem.bitcast[Scalar[Self.kv_type]](), q_tt_layout)
             q_tma.async_copy(q_smem_tensor, mbar_q[], (0, row))
 

@@ -18,8 +18,8 @@ from std.collections import Span
 
 from .hasher import Hasher
 
-comptime U256 = SIMD[DType.uint64, 4]
-comptime U128 = SIMD[DType.uint64, 2]
+comptime U256 = SIMD[.uint64, 4]
+comptime U128 = SIMD[.uint64, 2]
 comptime MULTIPLE = 6364136223846793005
 comptime ROT = 23
 
@@ -36,9 +36,9 @@ def _folded_multiply(lhs: UInt64, rhs: UInt64) -> UInt64:
         A value which is similar in its bitpattern to result of a folded multiply.
     """
     # Extend to 128 bits and multiply.
-    var m = lhs.cast[DType.uint128]() * rhs.cast[DType.uint128]()
+    var m = lhs.cast[.uint128]() * rhs.cast[.uint128]()
     # Extract the high and low 64 bits.
-    var res = bitcast[DType.uint64, 2](m)
+    var res = bitcast[.uint64, 2](m)
     return res[0] ^ res[1]
 
 
@@ -51,36 +51,28 @@ def _read_small(data: ImmPointer[UInt8, _], length: Int) -> U128:
         length: The byte array length.
 
     Returns:
-        Returns a SIMD[DType.uint64, 2] value.
+        Returns a SIMD[.uint64, 2] value.
     """
     if length >= 2:
         if length >= 4:
             # len 4-8
-            var a = (
-                data.unsafe_bitcast[UInt32]().unsafe_load().cast[DType.uint64]()
-            )
+            var a = data.unsafe_bitcast[UInt32]().unsafe_load().cast[.uint64]()
             var b = (
                 data.unsafe_offset(length - 4)
                 .unsafe_bitcast[UInt32]()
                 .unsafe_load()
-                .cast[DType.uint64]()
+                .cast[.uint64]()
             )
             return U128(a, b)
         else:
             # len 2-3
-            var a = (
-                data.unsafe_bitcast[UInt16]().unsafe_load().cast[DType.uint64]()
-            )
-            var b = (
-                data.unsafe_offset(length - 1)
-                .unsafe_load()
-                .cast[DType.uint64]()
-            )
+            var a = data.unsafe_bitcast[UInt16]().unsafe_load().cast[.uint64]()
+            var b = data.unsafe_offset(length - 1).unsafe_load().cast[.uint64]()
             return U128(a, b)
     else:
         # len 0-1
         if length > 0:
-            var a = data.unsafe_load().cast[DType.uint64]()
+            var a = data.unsafe_load().cast[.uint64]()
             return U128(a, a)
         else:
             return U128(0, 0)
@@ -208,7 +200,7 @@ struct AHasher[key: U256](Defaultable, Hasher):
 
         comptime if rounds == 1:
             # vector values are not bigger than 8 bytes each
-            var u64 = new_data.to_bits[DType.uint64]()
+            var u64 = new_data.to_bits[.uint64]()
 
             comptime if u64.length == 1:
                 self._update(u64[0])
@@ -227,7 +219,7 @@ struct AHasher[key: U256](Defaultable, Hasher):
                     ]()
                     var u64_2 = (
                         v >> Scalar[new_data.dtype]((r + 1) * 64)
-                    ).cast[DType.uint64]()
+                    ).cast[.uint64]()
                     self._large_update(U128(u64_1, u64_2))
 
     def update(mut self, value: Some[Hashable]):

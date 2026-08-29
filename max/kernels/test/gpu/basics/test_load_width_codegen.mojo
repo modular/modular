@@ -19,8 +19,8 @@ comptime _TargetType = __mlir_type.`!kgen.target`
 
 
 def kernel(
-    src: UnsafePointer[Float32, ImmutAnyOrigin],
-    dst: UnsafePointer[Float32, MutAnyOrigin],
+    src: ImmPointer[Float32, ImmutAnyOrigin],
+    dst: MutPointer[Float32, MutAnyOrigin],
 ):
     var v = src.load[width=8, alignment=32]()
     dst.store[width=8, alignment=32](v)

@@ -37,11 +37,11 @@ def _e8m0_to_float32(bits: UInt8) -> Float32:
     if bits == UInt8(0):
         return Float32(0.0)
     var f32_bits = UInt32(bits) << UInt32(23)
-    return bitcast[DType.float32](f32_bits)
+    return bitcast[.float32](f32_bits)
 
 
 def _code_at(
-    stream: UnsafePointer[mut=False, Scalar[DType.uint8], _],
+    stream: ImmPointer[UInt8, _],
     row_base: Int,
     row_bytes: Int,
     col: Int,
@@ -64,9 +64,9 @@ def _code_at(
 def _cpu_dequant_mxfp6[
     fmt: FP6Format, out_dtype: DType
 ](
-    expected: UnsafePointer[mut=True, Scalar[out_dtype], _],
-    input_data: UnsafePointer[mut=False, Scalar[DType.uint8], _],
-    scales_data: UnsafePointer[mut=False, Scalar[DType.uint8], _],
+    expected: MutPointer[Scalar[out_dtype], _],
+    input_data: ImmPointer[UInt8, _],
+    scales_data: ImmPointer[UInt8, _],
     num_rows: Int,
     num_cols: Int,
 ):
@@ -92,7 +92,7 @@ def test_mxfp6_dequant[
     fmt: FP6Format,
     num_rows: Int,
     num_cols: Int,
-    out_dtype: DType = DType.bfloat16,
+    out_dtype: DType = .bfloat16,
 ](ctx: DeviceContext, scale_exp: UInt8) raises:
     """Tests the MXFP6 dequant kernel for one shape, format and scale."""
     comptime assert num_cols % 32 == 0, "num_cols must be a multiple of 32"
@@ -121,8 +121,8 @@ def test_mxfp6_dequant[
     comptime scales_size = num_rows * scale_cols
     comptime out_size = num_rows * num_cols
 
-    var in_host = ctx.enqueue_create_host_buffer[DType.uint8](in_size)
-    var scales_host = ctx.enqueue_create_host_buffer[DType.uint8](scales_size)
+    var in_host = ctx.enqueue_create_host_buffer[.uint8](in_size)
+    var scales_host = ctx.enqueue_create_host_buffer[.uint8](scales_size)
     var expected_host = ctx.enqueue_create_host_buffer[out_dtype](out_size)
 
     for i in range(scales_size):
@@ -132,7 +132,7 @@ def test_mxfp6_dequant[
     # offset per row so a row-indexing bug cannot alias into a pass.
     for row in range(num_rows):
         for group in range(packed_cols // 3):
-            var quad = SIMD[DType.uint8, 4](0)
+            var quad = SIMD[.uint8, 4](0)
             for j in range(4):
                 quad[j] = UInt8((group * 4 + j + row) % 64)
             var packed = pack_fp6_x4(quad)
@@ -149,17 +149,15 @@ def test_mxfp6_dequant[
         num_cols,
     )
 
-    var in_device = ctx.enqueue_create_buffer[DType.uint8](in_size)
-    var scales_device = ctx.enqueue_create_buffer[DType.float8_e8m0fnu](
-        scales_size
-    )
+    var in_device = ctx.enqueue_create_buffer[.uint8](in_size)
+    var scales_device = ctx.enqueue_create_buffer[.float8_e8m0fnu](scales_size)
     var out_device = ctx.enqueue_create_buffer[out_dtype](out_size)
 
-    var scales_host_buf = ctx.enqueue_create_host_buffer[DType.float8_e8m0fnu](
+    var scales_host_buf = ctx.enqueue_create_host_buffer[.float8_e8m0fnu](
         scales_size
     )
     for i in range(scales_size):
-        scales_host_buf[i] = bitcast[DType.float8_e8m0fnu](scales_host[i])
+        scales_host_buf[i] = bitcast[.float8_e8m0fnu](scales_host[i])
 
     ctx.enqueue_copy(in_device, in_host)
     ctx.enqueue_copy(scales_device, scales_host_buf)
@@ -186,8 +184,8 @@ def test_mxfp6_dequant[
     var max_err = Float32(0.0)
     var num_mismatches = 0
     for i in range(out_size):
-        var got = out_host_buf[i].cast[DType.float32]()
-        var want = expected_host[i].cast[DType.float32]()
+        var got = out_host_buf[i].cast[.float32]()
+        var want = expected_host[i].cast[.float32]()
         var err = abs(got - want)
         max_err = max(max_err, err)
         if err > tol:
@@ -232,10 +230,10 @@ def main() raises:
         test_mxfp6_dequant[FP6Format.E3M2, 64, 256](ctx, UInt8(133))
 
         print("-- float8_e4m3fn output --")
-        test_mxfp6_dequant[FP6Format.E2M3, 64, 256, DType.float8_e4m3fn](
+        test_mxfp6_dequant[FP6Format.E2M3, 64, 256, .float8_e4m3fn](
             ctx, UInt8(127)
         )
-        test_mxfp6_dequant[FP6Format.E3M2, 64, 256, DType.float8_e4m3fn](
+        test_mxfp6_dequant[FP6Format.E3M2, 64, 256, .float8_e4m3fn](
             ctx, UInt8(127)
         )
 

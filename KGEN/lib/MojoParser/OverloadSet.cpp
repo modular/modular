@@ -171,7 +171,7 @@ static bool filterForBestCandidates(
 
     // If the current best candidates are not static, we ignore new static
     // candidates.
-    bool isStatic = cast<FnOp>(candidate->getIfOperation()).getIsStatic();
+    bool isStatic = candidate->isStaticMethodDecl();
     if (!areTheBestCandidatesStatic && isStatic)
       continue;
 
@@ -180,8 +180,8 @@ static bool filterForBestCandidates(
     // converted. Otherwise the implicit ctor + explicit trait ctor will be
     // ambiguous when initializing with an implicitly convertible type e.g.
     // Bool is Intable and ImplicitlyIntable, so `Int(True)` would be ambiguous.
-    bool isImplicit =
-        cast<FnOp>(candidate->getIfOperation()).isImplicitConversion();
+    bool isImplicit = candidate->getDeclImplicitConversionKind() !=
+                      ImplicitConversionKind::None;
     if (!areTheBestCandidatesImplicit && isImplicit)
       continue;
 
@@ -240,20 +240,21 @@ static const char *getCalleeKind(CallSyntax syntax) {
   llvm_unreachable("invalid call syntax");
 }
 
-/// Emit an error for ambiguous candidates due to unprovable constraints.
-/// This function will mutate the evaluations to drop any diags from invalid
-/// candidates.
+/// Explain inconclusive candidates into `diag`, which the caller owns: the
+/// summary is appended to it and the per-candidate reasons are attached as
+/// notes. This function will mutate the evaluations to drop any diags from
+/// invalid candidates.
 /// If `baseName` is empty, it is considered an indirect reference.
-/// If `isCall` is true, the error is emitted as a "call", otherwise it is
-/// emitted as a "reference".
+/// If `isCall` is true, the message is phrased as a "call", otherwise as a
+/// "reference".
 /// `deferralAttempted` indicates the caller had installed a deferred
 /// body-constraint deferral context, but deferral was rejected (e.g. because
 /// more than one candidate is body-constraint-inconclusive). When true, an
 /// extra note is attached to explain why deferral did not apply.
-static void emitInconclusiveCandidatesError(
+static void explainInconclusiveCandidates(
     SharedState &shared, const ExprNode *expr, StringRef baseName, bool isCall,
     MutableArrayRef<std::pair<ASTDecl *, OverloadFitness>> candidates,
-    bool deferralAttempted = false) {
+    MojoInflightDiag &diag, bool deferralAttempted = false) {
   // Figure out how many possibly valid candidates there are to make the error
   // message more precise.
   size_t numRemainingCandidates = 0;
@@ -262,7 +263,6 @@ static void emitInconclusiveCandidatesError(
       ++numRemainingCandidates;
   }
 
-  auto diag = shared.emitError(expr->getLoc());
   // Determine the type of error.
   if (numRemainingCandidates == 1)
     diag << "invalid ";
@@ -346,6 +346,17 @@ static void emitInconclusiveCandidatesError(
         << "body constraints cannot be deferred because more than one "
            "candidate is inconclusive";
   }
+}
+
+/// Emit a standalone error for ambiguous candidates due to unprovable
+/// constraints.
+static void emitInconclusiveCandidatesError(
+    SharedState &shared, const ExprNode *expr, StringRef baseName, bool isCall,
+    MutableArrayRef<std::pair<ASTDecl *, OverloadFitness>> candidates,
+    bool deferralAttempted = false) {
+  auto diag = shared.emitError(expr->getLoc());
+  explainInconclusiveCandidates(shared, expr, baseName, isCall, candidates,
+                                diag, deferralAttempted);
 }
 
 /// Evaluate the fnDecls candidates and see if there is an unambiguous
@@ -576,8 +587,8 @@ static LogicalResult emitOperandsNeedingOriginsToMemory(
 }
 
 bool LIT::isNeverCallableSynthesizedCandidate(ASTDecl *candidate) {
-  auto func = cast<FnOp>(candidate->getIfOperation());
-  if (!func.isSynthetic())
+  auto func = cast_or_null<FnOp>(candidate->getIfOperation());
+  if (!func || !func.isSynthetic())
     return false;
   for (ConstraintAttr constraint :
        func.getFullSignature().getParamListAttrs().getBodyConstraints())
@@ -612,21 +623,50 @@ PValue OverloadSet::filterOverloadSet(
               kOverloadEvaluationsInlineSize>
       evaluations;
   bool allInvalid = true;
+
+  // We do allow:
+  //
+  // trait A:
+  //     def foo(self):
+  //         ...
+  //
+  // trait B(A):
+  //     def foo(self):
+  //         ...
+  //
+  // This set keeps track of the overload witness with the exact same type, and
+  // skip one if needed.
+  DenseSet<Type> seenWitness;
+  ASTType selfTrait;
   for (ASTDecl *candidate : fnDecls) {
     if (candidate->isDisabled())
       continue;
 
-    auto func = cast<FnOp>(candidate->getIfOperation());
-
     // If we are dealing with a static method, we check if the operands include
     // a self operand and remove it, otherwise the signature might not match.
-    if (operands.hasSelfOperand && func.getIsStatic()) {
+    if (operands.hasSelfOperand && candidate->isStaticMethodDecl()) {
       savedSelfOperand = operands[0];
       operands.values.erase(operands.values.begin());
       operands.hasSelfOperand = false;
     }
 
-    auto desiredSignature = func.getFullSignature();
+    FnTypeGeneratorType desiredSignature = candidate->getDeclFullSignature();
+    if (candidate->getIfWitness()) {
+      auto sig = cast<FnTypeGeneratorType>(getCanonicalType(desiredSignature));
+      ArrayRef<Type> inputParamTypes = sig.getInputParamTypes();
+      if (inputParamTypes.empty() || !isa<TraitType>(inputParamTypes[0]))
+        continue;
+      // Does not really matter which we pick, we just want to test equality
+      // without considering `_Self` parameter.
+      if (!selfTrait)
+        selfTrait = inputParamTypes[0];
+
+      TraitSelfBinder selfBinder(
+          TypeParamAttr::get(selfTrait, selfTrait.extractMetaType()));
+      if (!seenWitness.insert(selfBinder.bindTraitFnSignature(sig)).second)
+        continue; // skip if saw the same witness.
+    }
+
     evaluations.emplace_back(
         candidate,
         OverloadFitness::evaluate(desiredSignature, candidate, *this, operands,
@@ -812,11 +852,9 @@ PValue OverloadSet::filterOverloadSet(
   if (evaluations.size() == 1) {
     ASTDecl *selectedDecl = evaluations[0].first;
     OverloadFitness &bestFitness = evaluations[0].second;
-    auto selectedFunc = cast<FnOp>(selectedDecl->getIfOperation());
-
     // If the target is static and there is a self operand, remove it from the
     // operand list so it doesn't get passed.
-    if (operands.hasSelfOperand && selectedFunc.getIsStatic()) {
+    if (operands.hasSelfOperand && selectedDecl->isStaticMethodDecl()) {
       operands.values.erase(operands.values.begin());
       operands.hasSelfOperand = false;
     }
@@ -827,7 +865,7 @@ PValue OverloadSet::filterOverloadSet(
                                      bestFitness.getParamBindings());
 
     if (emitDiagnosticOnFailure && syntax == CallSyntax::kImplicitConvert &&
-        selectedFunc.getImplicitConversion() ==
+        selectedDecl->getDeclImplicitConversionKind() ==
             ImplicitConversionKind::Deprecated) {
       auto diag = emitter.emitWarning(getExprLoc(),
                                       "deprecated implicit conversion from ")
@@ -901,8 +939,8 @@ PValue OverloadSet::filterOverloadSet(
 }
 
 std::pair<PValue, ASTDecl *> OverloadSet::filterOverloadSetForValueType(
-    ASTType functionType,
-    function_ref<MojoInflightDiag &(SMLoc)> emitError) const {
+    ASTType functionType, function_ref<MojoInflightDiag &(SMLoc)> emitError,
+    bool *hasInconclusiveCandidates) const {
 
   // If the target type is something weird then don't filter.  Let the error be
   // reported another way.
@@ -936,7 +974,9 @@ std::pair<PValue, ASTDecl *> OverloadSet::filterOverloadSetForValueType(
                        candidateType.getParamListAttrs(),
                        /*allowImplicitConversions=*/true,
                        /*declIfDirect=*/nullptr,
-                       /*discardError=*/true);
+                       /*discardError=*/true,
+                       /*deferredTypingContext=*/nullptr,
+                       additionalAssumptions);
     VerifiedParamBindings newBindings = inference.inferForStruct();
     if (!newBindings)
       return {{}, nullptr}; // If there is an error, return the problem.
@@ -947,38 +987,94 @@ std::pair<PValue, ASTDecl *> OverloadSet::filterOverloadSetForValueType(
         cast<GeneratorType>(newBindings.specializeGeneratorType(candidateType));
     return {std::move(newBindings), candidateType};
   };
-  auto getBindingsIfValidCandidate =
-      [&](GeneratorType candidateType) -> VerifiedParamBindings {
-    auto [newBindings, boundCandidateType] =
-        getBindingsAndBoundCandidateType(candidateType);
-    if (!boundCandidateType)
-      return {};
-    // This candidate is valid if it can be implicitly converted to the required
-    // function type.
-    if (IREmitter::canImplicitlyConvertToType(
-            {UnboundAttr::get(boundCandidateType), getExpr()}, functionType,
-            getDeclScope()))
-      return newBindings;
-    return {};
+  // Converting to `functionType` means discharging the candidate's body
+  // constraints, and that can come back undecided.
+  enum class Candidacy { kInvalid, kInconclusive, kValid };
+  SmallVector<ConstraintAttr> unprovableConstraints;
+  auto classifyCandidate = [&](GeneratorType boundCandidateType) -> Candidacy {
+    unprovableConstraints.clear();
+    // Pass our assumptions along: dropping the candidate's generator body
+    // constraints to reach `functionType` may depend on them.
+    ConversionFailure failure;
+    TriState verdict = IREmitter::classifyImplicitConversion(
+        {UnboundAttr::get(boundCandidateType), getExpr()}, functionType,
+        getDeclScope(), additionalAssumptions, /*deferralCtx=*/nullptr,
+        &failure);
+    if (verdict.isTrue())
+      return Candidacy::kValid;
+    if (verdict.isFalse())
+      return Candidacy::kInvalid;
+
+    // Undecided: Only an unsatisfied constraint names anything this diagnostic
+    // can use.
+    if (auto *unsatisfied =
+            failure.getReasonIf<ConversionFailure::UnsatisfiedConstraints>())
+      llvm::append_range(unprovableConstraints,
+                         unsatisfied->constraints.unprovenConstraints);
+    return Candidacy::kInconclusive;
   };
 
   // Evaluate the fitness of each candidate in our overload set.
   SmallVector<ASTDecl *> validCandidates;
   SmallVector<VerifiedParamBindings> candidateBindings;
+  SmallVector<std::pair<ASTDecl *, OverloadFitness>,
+              kOverloadEvaluationsInlineSize>
+      inconclusiveEvaluations;
   for (ASTDecl *candidate : fnDecls) {
     // Skip functions explicitly marked as 'disabled'.
     if (candidate->isDisabled())
       continue;
 
+    // A trait member reached through a composition has no `FnOp` to form a
+    // function literal from, so it cannot be referenced as a function value.
+    auto candidateFn = dyn_cast_or_null<FnOp>(candidate->getIfOperation());
+    if (!candidateFn)
+      continue;
     Type candidateType =
-        cast<FnOp>(candidate->getIfOperation())
-            .getFuncLiteralGenerator(getShared().getEvaluationContext())
+        candidateFn.getFuncLiteralGenerator(getShared().getEvaluationContext())
             .getType();
-    if (VerifiedParamBindings bindings = getBindingsIfValidCandidate(
-            sugarCast<GeneratorType>(candidateType))) {
+    auto [newBindings, boundCandidateType] = getBindingsAndBoundCandidateType(
+        sugarCast<GeneratorType>(candidateType));
+    if (!boundCandidateType)
+      continue;
+
+    switch (classifyCandidate(boundCandidateType)) {
+    case Candidacy::kInvalid:
+      break;
+    case Candidacy::kValid:
       validCandidates.push_back(candidate);
-      candidateBindings.push_back(std::move(bindings));
+      candidateBindings.push_back(std::move(newBindings));
+      break;
+    case Candidacy::kInconclusive:
+      inconclusiveEvaluations.emplace_back(
+          candidate, OverloadFitness::constraintInconclusive(
+                         std::move(newBindings), unprovableConstraints));
+      break;
     }
+  }
+
+  // An inconclusive candidate cannot be selected, but it also cannot be ruled
+  // out, so nothing else may be selected over it: committing to another
+  // candidate would silently discard a potential match.
+  if (!inconclusiveEvaluations.empty()) {
+    if (hasInconclusiveCandidates)
+      *hasInconclusiveCandidates = true;
+    if (!emitError || isErroneous())
+      return {};
+
+    // A valid candidate is still worth reporting: it is the one the user
+    // probably meant, and the note says why it cannot be selected yet.
+    for (auto [candidate, bindings] :
+         llvm::zip(validCandidates, candidateBindings))
+      inconclusiveEvaluations.emplace_back(
+          candidate, OverloadFitness::valid(std::move(bindings)));
+
+    // Explain into the caller's diagnostic.
+    MojoInflightDiag &diag = emitError(getExprLoc());
+    explainInconclusiveCandidates(getShared(), getExpr(), baseName,
+                                  /*isCall=*/false, inconclusiveEvaluations,
+                                  diag);
+    return {};
   }
 
   // Notify the listener of the updated decl references for the call now that
@@ -1028,8 +1124,7 @@ std::pair<PValue, ASTDecl *> OverloadSet::filterOverloadSetForValueType(
 
   for (ASTDecl *candidate : declsToReport) {
     diag.attachNote(*candidate) << "candidate declared here with type ";
-    FnTypeGeneratorType candidateType =
-        cast<FnOp>(candidate->getIfOperation()).getFullSignature();
+    FnTypeGeneratorType candidateType = candidate->getDeclFullSignature();
     // If there are bindings, specialize the candidate type and print the
     // specialized type.
     bool hadCandidate = false;
@@ -1116,7 +1211,7 @@ OverloadSet OverloadSet::lookup(ASTDecl &declScope, ASTType type,
       if (lookup.isSuccess()) {
         ArrayRef<ASTDecl *> foundDecls = lookup.getIfSuccess();
         for (ASTDecl *decl : foundDecls) {
-          if (!isa_and_nonnull<FnOp>(decl->getIfOperation()))
+          if (!decl->isCallableDecl())
             continue;
           result.fnDecls.push_back(decl);
         }
@@ -1145,7 +1240,7 @@ OverloadSet OverloadSet::lookup(ASTDecl &declScope, ASTType type,
           continue;
         // If we find a vardecl or any other thing, then fail to find anything
         // because it cannot be called.
-        if (!isa<FnOp>(decl->getIfOperation())) {
+        if (!decl->isCallableDecl()) {
           // FIXME: This seems wrong. why aren't we emitting an error??
           return result;
         }
@@ -1177,7 +1272,7 @@ OverloadSet OverloadSet::lookup(ASTDecl &declScope, ASTType type,
             continue;
           // If we find a vardecl or any other thing, then fail to find anything
           // because it cannot be called.
-          if (!isa<FnOp>(decl->getIfOperation())) {
+          if (!decl->isCallableDecl()) {
             // FIXME: This seems wrong. why aren't we emitting an error??
             return result;
           }

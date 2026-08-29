@@ -280,8 +280,8 @@ def bench_conv2d[
     var max_diff: Float32 = 0.0
     for i in range(output_size):
         var diff = abs(
-            output_sm100_host_ptr[i].cast[DType.float32]()
-            - output_cudnn_host_ptr[i].cast[DType.float32]()
+            output_sm100_host_ptr[i].cast[.float32]()
+            - output_cudnn_host_ptr[i].cast[.float32]()
         )
         if diff > max_diff:
             max_diff = diff

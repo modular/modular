@@ -39,16 +39,19 @@ from .tokenizer import TextTokenizer
 if TYPE_CHECKING:
     from max.graph.weights import WeightsAdapter, WeightsFormat
     from max.pipelines.context import (
+        AudioContext,
         PixelContext,
         TextAndVisionContext,
         TextContext,
     )
+    from max.pipelines.diffusion.config import TaylorSeerDefaults
     from max.pipelines.kv_cache.memory_planner import MemoryPlanner
     from max.pipelines.modeling.config_enums import SupportedEncoding
     from max.pipelines.modeling.types import (
         EmbeddingsContext,
         PipelineTokenizer,
     )
+    from max.pipelines.speculative import SpeculativeConfig
     from max.pipelines.weights.hf_utils import HuggingFaceRepo
 
     from .config import PipelineConfig
@@ -152,11 +155,16 @@ class SupportedArchitecture:
     default_weights_format: WeightsFormat
     """The weights format expected by the `pipeline_model`."""
 
-    context_type: type[TextContext | EmbeddingsContext]
+    context_type: type[
+        TextContext | EmbeddingsContext | PixelContext | AudioContext
+    ]
     """The context class type that this architecture uses for managing request state and inputs.
 
-    This should be a class (not an instance) that implements either the `TextContext`
-    or `EmbeddingsContext` protocol, defining how the pipeline processes and tracks requests.
+    This should be a class (not an instance) carrying the state and inputs of
+    one request, in whichever form the architecture's task calls for: a
+    `TextContext` or `EmbeddingsContext` protocol implementation for token and
+    embedding models, or a `PixelContext` or `AudioContext` subclass for the
+    media tasks.
     """
 
     config: type[ArchConfig]
@@ -300,6 +308,17 @@ class SupportedArchitecture:
     If None, the global default (compact JSON) is used.
     """
 
+    denoising_cache_defaults: TaylorSeerDefaults | None = None
+    """TaylorSeer tuning for this architecture. User-set fields always win."""
+
+    checkpoint_draft_width: (
+        Callable[[SpeculativeConfig, Any, Any], int] | None
+    ) = None
+    """Returns the draft width this checkpoint was trained for.
+
+    Set it when the checkpoint fixes the width rather than the user.
+    """
+
     supports_overlap_scheduler: bool = True
     """Whether this architecture supports auto-enabling the overlap scheduler.
 
@@ -321,7 +340,7 @@ class SupportedArchitecture:
     this architecture.
 
     When set, ``PipelineConfig`` uses the planner to estimate weight size,
-    activation memory, signal-buffer memory, and vision cache entry bytes.
+    activation memory, and signal-buffer memory.
     Autoregressive text-generation models should set this to
     :class:`~max.pipelines.kv_cache.PagedMemoryPlanner` (or a subclass with
     architecture-specific overrides).

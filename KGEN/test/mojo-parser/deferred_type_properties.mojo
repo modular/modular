@@ -13,7 +13,7 @@
 
 # RUN: %parse-mojo-isolated %s | FileCheck %s
 
-# CHECK-LABEL: lit.fn @"defer_with_props[::SIMD[::DType(int), ::SIMDLength(1)]]
+# CHECK-LABEL: lit.fn @"defer_with_props[::SIMD[DType.int, 1]]
 # CHECK: kgen.deferred "test.op_with_props"
 # CHECK-SAME: properties {operandSegmentSizes = array<i32: 1, 0>}
 @always_inline

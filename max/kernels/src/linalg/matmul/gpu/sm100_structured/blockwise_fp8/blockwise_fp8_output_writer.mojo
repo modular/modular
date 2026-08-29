@@ -327,7 +327,7 @@ struct BlockwiseFP8TileWriter[
         m_end: UInt32,
         expert_scale: Float32,
         c_tensor: TileTensor[
-            mut=True, dtype=Self.c_type, LayoutType=c_tensor_layout, ...
+            mut=True, Self.c_type, LayoutType=c_tensor_layout, ...
         ],
     ):
         """Write accumulated register tiles to GMEM with bounds checking.
@@ -373,7 +373,7 @@ struct BlockwiseFP8TileWriter[
         m_end: UInt32,
         expert_scale: Float32,
         c_tensor: TileTensor[
-            mut=True, dtype=Self.c_type, LayoutType=c_tensor_layout, ...
+            mut=True, Self.c_type, LayoutType=c_tensor_layout, ...
         ],
     ):
         """Internal implementation for bounds-checked register-to-GMEM write.
@@ -476,13 +476,10 @@ struct BlockwiseFP8TileWriter[
         c_smem_layout: TensorLayout,
     ](
         c_smem_tile: TileTensor[
-            Self.c_type,
-            c_smem_layout,
-            MutAnyOrigin,
-            address_space=AddressSpace.SHARED,
+            Self.c_type, c_smem_layout, MutAnyOrigin, address_space=.SHARED
         ],
         c_tensor: TileTensor[
-            mut=True, dtype=Self.c_type, LayoutType=c_tensor_layout, ...
+            mut=True, Self.c_type, LayoutType=c_tensor_layout, ...
         ],
         m_abs: UInt32,
         n_abs: UInt32,

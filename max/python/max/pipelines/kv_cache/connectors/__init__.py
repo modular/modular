@@ -28,6 +28,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from max.driver import Device, accelerator_api
+from max.nn.kv_cache import KVCacheGroupId
 from max.nn.kv_cache.cache_params import (
     KVCacheMemory,
     KVCacheParamInterface,
@@ -90,14 +91,15 @@ def _resolve_disk_offload_dir(cfg: KVConnectorConfigInterface) -> str:
     A single connector serves every DP replica, so the directory is created
     once here (not per replica). Warns about leftovers from previous runs.
     """
-    if cfg.disk_offload_dir is None:
-        cfg.disk_offload_dir = tempfile.mkdtemp(prefix=KV_OFFLOAD_DIR_PREFIX)
+    disk_dir = cfg.disk_offload_dir
+    if disk_dir is None:
+        disk_dir = tempfile.mkdtemp(prefix=KV_OFFLOAD_DIR_PREFIX)
         logger.info(
             "Tiered connector: auto-created disk offload dir %s",
-            cfg.disk_offload_dir,
+            disk_dir,
         )
-    warn_stale_offload_dirs(cfg.disk_offload_dir)
-    return cfg.disk_offload_dir
+    warn_stale_offload_dirs(disk_dir)
+    return disk_dir
 
 
 def create_connector(
@@ -133,6 +135,8 @@ def create_connector(
     """
     cfg = params.kv_connector_config
     connector = cfg.type
+
+    leaves = {leaf_id: KVCacheGroupId.full() for leaf_id in params.leaves()}
 
     if connector == KVConnectorType.dkv:
         from .dkv import DKVConnector
@@ -194,6 +198,7 @@ def create_connector(
         # Both budgets may be None: the connector then sizes each tier from its
         # own device page pool.
         return RustTierConnector(
+            leaves=leaves,
             replica_kv_memory=replica_kv_memory,
             disk_cache_dir=disk_dir,
             host_offload_max_gb=cfg.host_offload_max_gb,

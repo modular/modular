@@ -31,9 +31,9 @@ from std.utils.numerics import isnan
 
 # TF32 Tensor core Matmul with shape m16n8k8
 def mma_kernel_fp32_tf32(
-    c_ptr: UnsafePointer[Float32, MutAnyOrigin],
-    a_ptr: UnsafePointer[Float32, ImmutAnyOrigin],
-    b_ptr: UnsafePointer[Float32, ImmutAnyOrigin],
+    c_ptr: MutPointer[Float32, MutAnyOrigin],
+    a_ptr: ImmPointer[Float32, ImmutAnyOrigin],
+    b_ptr: ImmPointer[Float32, ImmutAnyOrigin],
     m_dev: Int32,
     n_dev: Int32,
     k_dev: Int32,
@@ -45,7 +45,7 @@ def mma_kernel_fp32_tf32(
     comptime mma_n = 8
     comptime mma_k = 8
 
-    var d_reg = SIMD[DType.float32, 4](0)
+    var d_reg = SIMD[.float32, 4](0)
     var tile_loops = k // mma_k
 
     for i in range(tile_loops):
@@ -71,9 +71,9 @@ def mma_kernel_fp32_tf32(
 
 # FP32-BF16 (mixed precision) Tensor core Matmul with shape m16n8k8
 def mma_kernel_fp32_bf16(
-    c_ptr: UnsafePointer[Float32, MutAnyOrigin],
-    a_ptr: UnsafePointer[BFloat16, ImmutAnyOrigin],
-    b_ptr: UnsafePointer[BFloat16, ImmutAnyOrigin],
+    c_ptr: MutPointer[Float32, MutAnyOrigin],
+    a_ptr: ImmPointer[BFloat16, ImmutAnyOrigin],
+    b_ptr: ImmPointer[BFloat16, ImmutAnyOrigin],
     m_dev: Int32,
     n_dev: Int32,
     k_dev: Int32,
@@ -85,7 +85,7 @@ def mma_kernel_fp32_bf16(
     comptime mma_n = 8
     comptime mma_k = 8
 
-    var d_reg = SIMD[DType.float32, 4](0)
+    var d_reg = SIMD[.float32, 4](0)
     var tile_loops = k // mma_k
 
     for i in range(tile_loops):
@@ -111,9 +111,9 @@ def mma_kernel_fp32_bf16(
 
 # FP32-BF16 (mixed precision) Tensor core Matmul with shape m16n8k16
 def mma_kernel_fp32_bf16_2(
-    c_ptr: UnsafePointer[Float32, MutAnyOrigin],
-    a_ptr: UnsafePointer[BFloat16, ImmutAnyOrigin],
-    b_ptr: UnsafePointer[BFloat16, ImmutAnyOrigin],
+    c_ptr: MutPointer[Float32, MutAnyOrigin],
+    a_ptr: ImmPointer[BFloat16, ImmutAnyOrigin],
+    b_ptr: ImmPointer[BFloat16, ImmutAnyOrigin],
     m_dev: Int32,
     n_dev: Int32,
     k_dev: Int32,
@@ -125,7 +125,7 @@ def mma_kernel_fp32_bf16_2(
     comptime mma_n = 8
     comptime mma_k = 16
 
-    var d_reg = SIMD[DType.float32, 4](0)
+    var d_reg = SIMD[.float32, 4](0)
     var tile_loops = k // mma_k
 
     for i in range(tile_loops):
@@ -151,9 +151,9 @@ def mma_kernel_fp32_bf16_2(
 
 # FP32-FP16 (mixed precision) Tensor core Matmul with shape m16n8k8
 def mma_kernel_fp32_fp16(
-    c_ptr: UnsafePointer[Float32, MutAnyOrigin],
-    a_ptr: UnsafePointer[Float16, ImmutAnyOrigin],
-    b_ptr: UnsafePointer[Float16, ImmutAnyOrigin],
+    c_ptr: MutPointer[Float32, MutAnyOrigin],
+    a_ptr: ImmPointer[Float16, ImmutAnyOrigin],
+    b_ptr: ImmPointer[Float16, ImmutAnyOrigin],
     m_dev: Int32,
     n_dev: Int32,
     k_dev: Int32,
@@ -165,7 +165,7 @@ def mma_kernel_fp32_fp16(
     comptime mma_n = 8
     comptime mma_k = 8
 
-    var d_reg = SIMD[DType.float32, 4](0)
+    var d_reg = SIMD[.float32, 4](0)
     var tile_loops = k // mma_k
 
     for i in range(tile_loops):
@@ -191,9 +191,9 @@ def mma_kernel_fp32_fp16(
 
 # FP16 Tensor core Matmul with shape m16n8k8
 def mma_kernel_fp16_fp16(
-    c_ptr: UnsafePointer[Float16, MutAnyOrigin],
-    a_ptr: UnsafePointer[Float16, ImmutAnyOrigin],
-    b_ptr: UnsafePointer[Float16, ImmutAnyOrigin],
+    c_ptr: MutPointer[Float16, MutAnyOrigin],
+    a_ptr: ImmPointer[Float16, ImmutAnyOrigin],
+    b_ptr: ImmPointer[Float16, ImmutAnyOrigin],
     m_dev: Int32,
     n_dev: Int32,
     k_dev: Int32,
@@ -205,7 +205,7 @@ def mma_kernel_fp16_fp16(
     comptime mma_n = 8
     comptime mma_k = 8
 
-    var d_reg = SIMD[DType.float16, 4](0)
+    var d_reg = SIMD[.float16, 4](0)
     var tile_loops = k // mma_k
 
     for i in range(tile_loops):
@@ -250,24 +250,24 @@ def run_mma_fp32_tf32(
 
     for i in range(M * K):
         var val = random_si64(rand_min, rand_max)
-        a_host[i] = val.cast[DType.float32]()
-        a_host_ref[i] = val.cast[DType.float32]()
+        a_host[i] = val.cast[.float32]()
+        a_host_ref[i] = val.cast[.float32]()
 
     for i in range(K * N):
         var val = random_si64(rand_min, rand_max)
-        b_host[i] = val.cast[DType.float32]()
-        b_host_ref[i] = val.cast[DType.float32]()
+        b_host[i] = val.cast[.float32]()
+        b_host_ref[i] = val.cast[.float32]()
 
     for i in range(M * N):
         c_host[i] = 0
         c_host_ref[i] = 0
 
-    var a_device = ctx.enqueue_create_buffer[DType.float32](M * K)
-    var b_device = ctx.enqueue_create_buffer[DType.float32](K * N)
-    var c_device = ctx.enqueue_create_buffer[DType.float32](M * N)
-    var a_device_ref = ctx.enqueue_create_buffer[DType.float32](M * K)
-    var b_device_ref = ctx.enqueue_create_buffer[DType.float32](K * N)
-    var c_device_ref = ctx.enqueue_create_buffer[DType.float32](M * N)
+    var a_device = ctx.enqueue_create_buffer[.float32](M * K)
+    var b_device = ctx.enqueue_create_buffer[.float32](K * N)
+    var c_device = ctx.enqueue_create_buffer[.float32](M * N)
+    var a_device_ref = ctx.enqueue_create_buffer[.float32](M * K)
+    var b_device_ref = ctx.enqueue_create_buffer[.float32](K * N)
+    var c_device_ref = ctx.enqueue_create_buffer[.float32](M * N)
 
     ctx.enqueue_copy(a_device, a_host)
     ctx.enqueue_copy(b_device, b_host)
@@ -316,13 +316,13 @@ def run_mma_fp32_tf32(
         row_major(Coord(M, N)),
     )
     var a_tt = TileTensor(
-        UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin](
+        ImmPointer[Float32, ImmutAnyOrigin](
             unsafe_from_address=Int(a_device_ref.unsafe_ptr())
         ),
         row_major(Coord(M, K)),
     )
     var b_tt = TileTensor(
-        UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin](
+        ImmPointer[Float32, ImmutAnyOrigin](
             unsafe_from_address=Int(b_device_ref.unsafe_ptr())
         ),
         row_major(Coord(K, N)),
@@ -419,24 +419,24 @@ def run_mma_fp32_bf16(
 
     for i in range(M * K):
         var val = random_si64(rand_min, rand_max)
-        a_host[i] = val.cast[DType.bfloat16]()
-        a_host_ref[i] = val.cast[DType.float32]()
+        a_host[i] = val.cast[.bfloat16]()
+        a_host_ref[i] = val.cast[.float32]()
 
     for i in range(K * N):
         var val = random_si64(rand_min, rand_max)
-        b_host[i] = val.cast[DType.bfloat16]()
-        b_host_ref[i] = val.cast[DType.float32]()
+        b_host[i] = val.cast[.bfloat16]()
+        b_host_ref[i] = val.cast[.float32]()
 
     for i in range(M * N):
         c_host[i] = 0
         c_host_ref[i] = 0
 
-    var a_device = ctx.enqueue_create_buffer[DType.bfloat16](M * K)
-    var b_device = ctx.enqueue_create_buffer[DType.bfloat16](K * N)
-    var c_device = ctx.enqueue_create_buffer[DType.float32](M * N)
-    var a_device_ref = ctx.enqueue_create_buffer[DType.float32](M * K)
-    var b_device_ref = ctx.enqueue_create_buffer[DType.float32](K * N)
-    var c_device_ref = ctx.enqueue_create_buffer[DType.float32](M * N)
+    var a_device = ctx.enqueue_create_buffer[.bfloat16](M * K)
+    var b_device = ctx.enqueue_create_buffer[.bfloat16](K * N)
+    var c_device = ctx.enqueue_create_buffer[.float32](M * N)
+    var a_device_ref = ctx.enqueue_create_buffer[.float32](M * K)
+    var b_device_ref = ctx.enqueue_create_buffer[.float32](K * N)
+    var c_device_ref = ctx.enqueue_create_buffer[.float32](M * N)
 
     ctx.enqueue_copy(a_device, a_host)
     ctx.enqueue_copy(b_device, b_host)
@@ -482,13 +482,13 @@ def run_mma_fp32_bf16(
         row_major(Coord(M, N)),
     )
     var a_tt = TileTensor(
-        UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin](
+        ImmPointer[Float32, ImmutAnyOrigin](
             unsafe_from_address=Int(a_device_ref.unsafe_ptr())
         ),
         row_major(Coord(M, K)),
     )
     var b_tt = TileTensor(
-        UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin](
+        ImmPointer[Float32, ImmutAnyOrigin](
             unsafe_from_address=Int(b_device_ref.unsafe_ptr())
         ),
         row_major(Coord(K, N)),
@@ -584,24 +584,24 @@ def run_mma_fp32_bf16_2(
 
     for i in range(M * K):
         var val = random_si64(rand_min, rand_max)
-        a_host[i] = val.cast[DType.bfloat16]()
-        a_host_ref[i] = val.cast[DType.float32]()
+        a_host[i] = val.cast[.bfloat16]()
+        a_host_ref[i] = val.cast[.float32]()
 
     for i in range(K * N):
         var val = random_si64(rand_min, rand_max)
-        b_host[i] = val.cast[DType.bfloat16]()
-        b_host_ref[i] = val.cast[DType.float32]()
+        b_host[i] = val.cast[.bfloat16]()
+        b_host_ref[i] = val.cast[.float32]()
 
     for i in range(M * N):
         c_host[i] = 0
         c_host_ref[i] = 0
 
-    var a_device = ctx.enqueue_create_buffer[DType.bfloat16](M * K)
-    var b_device = ctx.enqueue_create_buffer[DType.bfloat16](K * N)
-    var c_device = ctx.enqueue_create_buffer[DType.float32](M * N)
-    var a_device_ref = ctx.enqueue_create_buffer[DType.float32](M * K)
-    var b_device_ref = ctx.enqueue_create_buffer[DType.float32](K * N)
-    var c_device_ref = ctx.enqueue_create_buffer[DType.float32](M * N)
+    var a_device = ctx.enqueue_create_buffer[.bfloat16](M * K)
+    var b_device = ctx.enqueue_create_buffer[.bfloat16](K * N)
+    var c_device = ctx.enqueue_create_buffer[.float32](M * N)
+    var a_device_ref = ctx.enqueue_create_buffer[.float32](M * K)
+    var b_device_ref = ctx.enqueue_create_buffer[.float32](K * N)
+    var c_device_ref = ctx.enqueue_create_buffer[.float32](M * N)
 
     ctx.enqueue_copy(a_device, a_host)
     ctx.enqueue_copy(b_device, b_host)
@@ -647,13 +647,13 @@ def run_mma_fp32_bf16_2(
         row_major(Coord(M, N)),
     )
     var a_tt = TileTensor(
-        UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin](
+        ImmPointer[Float32, ImmutAnyOrigin](
             unsafe_from_address=Int(a_device_ref.unsafe_ptr())
         ),
         row_major(Coord(M, K)),
     )
     var b_tt = TileTensor(
-        UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin](
+        ImmPointer[Float32, ImmutAnyOrigin](
             unsafe_from_address=Int(b_device_ref.unsafe_ptr())
         ),
         row_major(Coord(K, N)),
@@ -749,24 +749,24 @@ def run_mma_fp32_fp16(
 
     for i in range(M * K):
         var val = random_si64(rand_min, rand_max)
-        a_host[i] = val.cast[DType.float16]()
-        a_host_ref[i] = val.cast[DType.float32]()
+        a_host[i] = val.cast[.float16]()
+        a_host_ref[i] = val.cast[.float32]()
 
     for i in range(K * N):
         var val = random_si64(rand_min, rand_max)
-        b_host[i] = val.cast[DType.float16]()
-        b_host_ref[i] = val.cast[DType.float32]()
+        b_host[i] = val.cast[.float16]()
+        b_host_ref[i] = val.cast[.float32]()
 
     for i in range(M * N):
         c_host[i] = 0
         c_host_ref[i] = 0
 
-    var a_device = ctx.enqueue_create_buffer[DType.float16](M * K)
-    var b_device = ctx.enqueue_create_buffer[DType.float16](K * N)
-    var c_device = ctx.enqueue_create_buffer[DType.float32](M * N)
-    var a_device_ref = ctx.enqueue_create_buffer[DType.float32](M * K)
-    var b_device_ref = ctx.enqueue_create_buffer[DType.float32](K * N)
-    var c_device_ref = ctx.enqueue_create_buffer[DType.float32](M * N)
+    var a_device = ctx.enqueue_create_buffer[.float16](M * K)
+    var b_device = ctx.enqueue_create_buffer[.float16](K * N)
+    var c_device = ctx.enqueue_create_buffer[.float32](M * N)
+    var a_device_ref = ctx.enqueue_create_buffer[.float32](M * K)
+    var b_device_ref = ctx.enqueue_create_buffer[.float32](K * N)
+    var c_device_ref = ctx.enqueue_create_buffer[.float32](M * N)
 
     ctx.enqueue_copy(a_device, a_host)
     ctx.enqueue_copy(b_device, b_host)
@@ -812,13 +812,13 @@ def run_mma_fp32_fp16(
         row_major(Coord(M, N)),
     )
     var a_tt = TileTensor(
-        UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin](
+        ImmPointer[Float32, ImmutAnyOrigin](
             unsafe_from_address=Int(a_device_ref.unsafe_ptr())
         ),
         row_major(Coord(M, K)),
     )
     var b_tt = TileTensor(
-        UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin](
+        ImmPointer[Float32, ImmutAnyOrigin](
             unsafe_from_address=Int(b_device_ref.unsafe_ptr())
         ),
         row_major(Coord(K, N)),
@@ -914,24 +914,24 @@ def run_mma_fp16_fp16(
 
     for i in range(M * K):
         var val = random_si64(rand_min, rand_max)
-        a_host[i] = val.cast[DType.float16]()
-        a_host_ref[i] = val.cast[DType.float32]()
+        a_host[i] = val.cast[.float16]()
+        a_host_ref[i] = val.cast[.float32]()
 
     for i in range(K * N):
         var val = random_si64(rand_min, rand_max)
-        b_host[i] = val.cast[DType.float16]()
-        b_host_ref[i] = val.cast[DType.float32]()
+        b_host[i] = val.cast[.float16]()
+        b_host_ref[i] = val.cast[.float32]()
 
     for i in range(M * N):
         c_host[i] = 0
         c_host_ref[i] = 0
 
-    var a_device = ctx.enqueue_create_buffer[DType.float16](M * K)
-    var b_device = ctx.enqueue_create_buffer[DType.float16](K * N)
-    var c_device = ctx.enqueue_create_buffer[DType.float16](M * N)
-    var a_device_ref = ctx.enqueue_create_buffer[DType.float32](M * K)
-    var b_device_ref = ctx.enqueue_create_buffer[DType.float32](K * N)
-    var c_device_ref = ctx.enqueue_create_buffer[DType.float32](M * N)
+    var a_device = ctx.enqueue_create_buffer[.float16](M * K)
+    var b_device = ctx.enqueue_create_buffer[.float16](K * N)
+    var c_device = ctx.enqueue_create_buffer[.float16](M * N)
+    var a_device_ref = ctx.enqueue_create_buffer[.float32](M * K)
+    var b_device_ref = ctx.enqueue_create_buffer[.float32](K * N)
+    var c_device_ref = ctx.enqueue_create_buffer[.float32](M * N)
 
     ctx.enqueue_copy(a_device, a_host)
     ctx.enqueue_copy(b_device, b_host)
@@ -977,13 +977,13 @@ def run_mma_fp16_fp16(
         row_major(Coord(M, N)),
     )
     var a_tt = TileTensor(
-        UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin](
+        ImmPointer[Float32, ImmutAnyOrigin](
             unsafe_from_address=Int(a_device_ref.unsafe_ptr())
         ),
         row_major(Coord(M, K)),
     )
     var b_tt = TileTensor(
-        UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin](
+        ImmPointer[Float32, ImmutAnyOrigin](
             unsafe_from_address=Int(b_device_ref.unsafe_ptr())
         ),
         row_major(Coord(K, N)),
@@ -1024,7 +1024,7 @@ def run_mma_fp16_fp16(
     # Check correctness.
     var failed = False
     for i in range(M * N):
-        var outVal = c_host[i].cast[DType.float32]()
+        var outVal = c_host[i].cast[.float32]()
         # var outVal = c_host[i]
         var outRef = c_host_ref[i]
         var relDiff = (max(outVal, outRef) / min(outVal, outRef)) - 1.0

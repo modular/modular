@@ -502,6 +502,46 @@ def test_flush_prefix_cache_proxy_wrapped_mixed_statuses_raises() -> None:
             flush_prefix_cache("vllm-chat", "localhost", 8000, dry_run=False)
 
 
+def test_flush_prefix_cache_base_url_uses_url_and_bearer_auth(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """--base-url targets the remote endpoint and carries bearer auth."""
+    from max.benchmark.benchmark_serving import flush_prefix_cache
+
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+
+    with patch("requests.post", return_value=mock_response) as post:
+        flush_prefix_cache(
+            "modular",
+            "localhost",
+            8000,
+            dry_run=False,
+            base_url="https://example.com/",
+        )
+
+    post.assert_called_once_with(
+        "https://example.com/reset_prefix_cache",
+        headers={"Authorization": "Bearer test-key"},
+    )
+
+
+def test_flush_prefix_cache_no_base_url_uses_host_port_without_auth() -> None:
+    """Local servers keep the http://host:port URL and send no auth."""
+    from max.benchmark.benchmark_serving import flush_prefix_cache
+
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+
+    with patch("requests.post", return_value=mock_response) as post:
+        flush_prefix_cache("modular", "localhost", 8000, dry_run=False)
+
+    post.assert_called_once_with(
+        "http://localhost:8000/reset_prefix_cache", headers=None
+    )
+
+
 # ===========================================================================
 # result_filename plumbing tests
 # ===========================================================================

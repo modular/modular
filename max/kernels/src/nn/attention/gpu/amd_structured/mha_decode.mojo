@@ -80,7 +80,7 @@ __extension Attention:
         comptime k_swizzle = _get_k_swizzle[Self.mma_shape[0], Self.BK]()
 
         var warp_id = UInt32(
-            readfirstlane(bitcast[DType.int32](UInt32(get_warp_id())))
+            readfirstlane(bitcast[.int32](UInt32(get_warp_id())))
         )
 
         # Split-K: compute this partition's key range.

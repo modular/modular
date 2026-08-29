@@ -99,6 +99,21 @@ class PrefillProgressPing(
     prefill, or the request's CE batch finished executing."""
 
 
+class PrefillFailure(
+    msgspec.Struct, tag=True, omit_defaults=True, kw_only=True
+):
+    """A prefill request the prefill node rejected without running it.
+
+    Lets the decode node terminate the request with the reason instead of
+    waiting out its TTL for a ``PrefillResponse`` that never arrives.
+    """
+
+    id: RequestID
+    """Unique identifier of the failed request."""
+    error: str
+    """User-facing description of why the request failed."""
+
+
 class CancelRequest(msgspec.Struct, tag=True, omit_defaults=True, kw_only=True):
     """A request to cancel an ongoing request.
 

@@ -190,11 +190,11 @@ def _constrained_mma_n[
 
 @always_inline
 def _get_f16_mma_shape[
-    output_shape: IndexList[2, element_type=DType.uint32],
+    output_shape: IndexList[2, element_type=.uint32],
     /,
     *,
     use_cta_pair: Bool = False,
-]() -> IndexList[3, element_type=DType.uint32]:
+]() -> IndexList[3, element_type=.uint32]:
     """Get the shape of the MMA instruction for F16 MMA kind.
 
     This function returns the shape of the MMA instruction for F16 MMA kind.
@@ -218,7 +218,7 @@ def _get_f16_mma_shape[
                 UMMAKind.KIND_F16,
                 use_cta_pair=use_cta_pair,
             ]()
-            return IndexList[3, element_type=DType.uint32](mma_m, mma_n, 16)
+            return IndexList[3, element_type=.uint32](mma_m, mma_n, 16)
         elif mma_m == 128:
             _constrained_mma_n[
                 mma_n,
@@ -228,7 +228,7 @@ def _get_f16_mma_shape[
                 use_cta_pair=use_cta_pair,
             ]()
 
-            return IndexList[3, element_type=DType.uint32](mma_m, mma_n, 16)
+            return IndexList[3, element_type=.uint32](mma_m, mma_n, 16)
         else:
             comptime assert False, String("Invalid MMA shape: ", mma_m, mma_n)
 
@@ -249,7 +249,7 @@ def _get_f16_mma_shape[
                 use_cta_pair=use_cta_pair,
             ]()
 
-            return IndexList[3, element_type=DType.uint32](mma_m, mma_n, 16)
+            return IndexList[3, element_type=.uint32](mma_m, mma_n, 16)
         elif mma_m == 256:
             _constrained_mma_n[
                 mma_n,
@@ -259,18 +259,18 @@ def _get_f16_mma_shape[
                 use_cta_pair=use_cta_pair,
             ]()
 
-            return IndexList[3, element_type=DType.uint32](mma_m, mma_n, 16)
+            return IndexList[3, element_type=.uint32](mma_m, mma_n, 16)
         else:
             comptime assert False, String("Invalid MMA shape: ", mma_m, mma_n)
 
 
 @always_inline
 def _get_tf32_mma_shape[
-    output_shape: IndexList[2, element_type=DType.uint32],
+    output_shape: IndexList[2, element_type=.uint32],
     /,
     *,
     use_pair_cta: Bool = False,
-]() -> IndexList[3, element_type=DType.uint32]:
+]() -> IndexList[3, element_type=.uint32]:
     """Get the shape of the MMA instruction for TF32 MMA kind.
 
     This function returns the shape of the MMA instruction for TF32 MMA kind.
@@ -296,7 +296,7 @@ def _get_tf32_mma_shape[
                 use_cta_pair=use_pair_cta,
             ]()
 
-            return IndexList[3, element_type=DType.uint32](mma_m, mma_n, 8)
+            return IndexList[3, element_type=.uint32](mma_m, mma_n, 8)
         elif mma_m == 128:
             _constrained_mma_n[
                 mma_n,
@@ -306,7 +306,7 @@ def _get_tf32_mma_shape[
                 use_cta_pair=use_pair_cta,
             ]()
 
-            return IndexList[3, element_type=DType.uint32](mma_m, mma_n, 8)
+            return IndexList[3, element_type=.uint32](mma_m, mma_n, 8)
         else:
             comptime assert False, String("Invalid MMA shape: ", mma_m, mma_n)
     else:
@@ -326,7 +326,7 @@ def _get_tf32_mma_shape[
                 use_cta_pair=use_pair_cta,
             ]()
 
-            return IndexList[3, element_type=DType.uint32](mma_m, mma_n, 8)
+            return IndexList[3, element_type=.uint32](mma_m, mma_n, 8)
         elif mma_m == 256:
             _constrained_mma_n[
                 mma_n,
@@ -336,18 +336,18 @@ def _get_tf32_mma_shape[
                 use_cta_pair=use_pair_cta,
             ]()
 
-            return IndexList[3, element_type=DType.uint32](mma_m, mma_n, 8)
+            return IndexList[3, element_type=.uint32](mma_m, mma_n, 8)
         else:
             comptime assert False, String("Invalid MMA shape: ", mma_m, mma_n)
 
 
 @always_inline
 def _get_f8f6f4_mma_shape[
-    output_shape: IndexList[2, element_type=DType.uint32],
+    output_shape: IndexList[2, element_type=.uint32],
     /,
     *,
     use_pair_cta: Bool = False,
-]() -> IndexList[3, element_type=DType.uint32]:
+]() -> IndexList[3, element_type=.uint32]:
     """Get the shape of the MMA instruction for F8F6F4 MMA kind.
 
     This function returns the shape of the MMA instruction for F8F6F4 MMA kind.
@@ -373,7 +373,7 @@ def _get_f8f6f4_mma_shape[
                 use_cta_pair=use_pair_cta,
             ]()
 
-            return IndexList[3, element_type=DType.uint32](mma_m, mma_n, 32)
+            return IndexList[3, element_type=.uint32](mma_m, mma_n, 32)
         elif mma_m == 128:
             _constrained_mma_n[
                 mma_n,
@@ -383,7 +383,7 @@ def _get_f8f6f4_mma_shape[
                 use_cta_pair=use_pair_cta,
             ]()
 
-            return IndexList[3, element_type=DType.uint32](mma_m, mma_n, 32)
+            return IndexList[3, element_type=.uint32](mma_m, mma_n, 32)
 
         else:
             comptime assert False, String("Invalid MMA shape: ", mma_m, mma_n)
@@ -405,7 +405,7 @@ def _get_f8f6f4_mma_shape[
                 use_cta_pair=use_pair_cta,
             ]()
 
-            return IndexList[3, element_type=DType.uint32](mma_m, mma_n, 32)
+            return IndexList[3, element_type=.uint32](mma_m, mma_n, 32)
         elif mma_m == 256:
             _constrained_mma_n[
                 mma_n,
@@ -415,18 +415,18 @@ def _get_f8f6f4_mma_shape[
                 use_cta_pair=use_pair_cta,
             ]()
 
-            return IndexList[3, element_type=DType.uint32](mma_m, mma_n, 32)
+            return IndexList[3, element_type=.uint32](mma_m, mma_n, 32)
         else:
             comptime assert False, String("Invalid MMA shape: ", mma_m, mma_n)
 
 
 @always_inline
 def _get_mxf8f6f4_mma_shape[
-    output_shape: IndexList[2, element_type=DType.uint32],
+    output_shape: IndexList[2, element_type=.uint32],
     /,
     *,
     use_pair_cta: Bool = False,
-]() -> IndexList[3, element_type=DType.uint32]:
+]() -> IndexList[3, element_type=.uint32]:
     """Get the shape of the MMA instruction for MXF8F6F4 MMA kind.
 
     This function returns the shape of the MMA instruction for MXF8F6F4 MMA kind.
@@ -452,7 +452,7 @@ def _get_mxf8f6f4_mma_shape[
                 use_cta_pair=use_pair_cta,
             ]()
 
-            return IndexList[3, element_type=DType.uint32](mma_m, mma_n, 32)
+            return IndexList[3, element_type=.uint32](mma_m, mma_n, 32)
 
         else:
             comptime assert False, String("Invalid MMA shape: ", mma_m, mma_n)
@@ -474,7 +474,7 @@ def _get_mxf8f6f4_mma_shape[
                 use_cta_pair=use_pair_cta,
             ]()
 
-            return IndexList[3, element_type=DType.uint32](mma_m, mma_n, 32)
+            return IndexList[3, element_type=.uint32](mma_m, mma_n, 32)
         elif mma_m == 256:
             _constrained_mma_n[
                 mma_n,
@@ -484,7 +484,7 @@ def _get_mxf8f6f4_mma_shape[
                 use_cta_pair=use_pair_cta,
             ]()
 
-            return IndexList[3, element_type=DType.uint32](mma_m, mma_n, 32)
+            return IndexList[3, element_type=.uint32](mma_m, mma_n, 32)
         else:
             comptime assert False, String("Invalid MMA shape: ", mma_m, mma_n)
 
@@ -501,12 +501,12 @@ def _mxf8f6f4_operand_format[dtype: DType]() -> UInt32:
     (`PACKED_FP4_ALIGN16B`), not from the densely packed layout the FP4-only
     kinds read.
     """
-    comptime if dtype == DType.float8_e4m3fn:
+    comptime if dtype == .float8_e4m3fn:
         return 0
-    elif dtype == DType.float8_e5m2:
+    elif dtype == .float8_e5m2:
         return 1
     else:
-        comptime assert dtype == DType.uint8, String(
+        comptime assert dtype == .uint8, String(
             "Unsupported operand type for kind::mxf8f6f4: ", dtype
         )
         return 5
@@ -606,9 +606,7 @@ struct UMMAInsDescriptor[
         """
 
         comptime assert (
-            d_type == DType.float32
-            and a_type == DType.float32
-            and b_type == DType.float32
+            d_type == .float32 and a_type == .float32 and b_type == .float32
         ), String(
             "Invalid operand data type for UMMA instruction: ",
             d_type,
@@ -659,13 +657,13 @@ struct UMMAInsDescriptor[
         )
 
         comptime d_type_bit = Self._insert_bit[4](
-            0x0, UInt32(1) if d_type == DType.float32 else UInt32(0)
+            0x0, UInt32(1) if d_type == .float32 else UInt32(0)
         )
         comptime a_type_bit = Self._insert_bit[7](
-            d_type_bit, UInt32(1) if a_type == DType.bfloat16 else UInt32(0)
+            d_type_bit, UInt32(1) if a_type == .bfloat16 else UInt32(0)
         )
         comptime desc = Self._insert_bit[10](
-            a_type_bit, UInt32(1) if b_type == DType.bfloat16 else UInt32(0)
+            a_type_bit, UInt32(1) if b_type == .bfloat16 else UInt32(0)
         )
 
         return desc
@@ -706,14 +704,14 @@ struct UMMAInsDescriptor[
         )
 
         comptime d_type_bit = Self._insert_bit[4](
-            0x0, UInt32(1) if d_type == DType.float32 else UInt32(0)
+            0x0, UInt32(1) if d_type == .float32 else UInt32(0)
         )
 
         comptime a_type_bit = Self._insert_bit[7](
-            d_type_bit, UInt32(1) if a_type == DType.float8_e5m2 else UInt32(0)
+            d_type_bit, UInt32(1) if a_type == .float8_e5m2 else UInt32(0)
         )
         comptime desc = Self._insert_bit[10](
-            a_type_bit, UInt32(1) if b_type == DType.float8_e5m2 else UInt32(0)
+            a_type_bit, UInt32(1) if b_type == .float8_e5m2 else UInt32(0)
         )
 
         return desc
@@ -805,7 +803,7 @@ struct UMMAInsDescriptor[
 
         comptime desc = Self._insert_bit[23](
             b_type_bit,
-            UInt32(0) if scale_type == DType.float8_e4m3fn else UInt32(1),
+            UInt32(0) if scale_type == .float8_e4m3fn else UInt32(1),
         )
 
         return desc
@@ -815,7 +813,7 @@ struct UMMAInsDescriptor[
         d_type: DType,
         a_type: DType,
         b_type: DType,
-        output_shape: IndexList[2, element_type=DType.uint32],
+        output_shape: IndexList[2, element_type=.uint32],
         /,
         *,
         transpose_a: Bool = False,
@@ -880,7 +878,7 @@ struct UMMAInsDescriptor[
         a_type: DType,
         b_type: DType,
         scale_type: DType,
-        output_shape: IndexList[2, element_type=DType.uint32],
+        output_shape: IndexList[2, element_type=.uint32],
         /,
         *,
         transpose_a: Bool = False,
@@ -1034,7 +1032,7 @@ struct MMASmemDescriptor(MMAOperandDescriptor, TrivialRegisterPassable):
         stride_byte_offset: Int,
         leading_byte_offset: Int,
         swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
-    ](smem_ptr: Pointer[_, _, address_space=AddressSpace.SHARED]) -> Self:
+    ](smem_ptr: Pointer[_, _, address_space=.SHARED]) -> Self:
         """Create a descriptor for shared memory operand.
 
         Parameters:
@@ -1194,7 +1192,7 @@ struct MMASmemDescriptorPair(TrivialRegisterPassable):
         stride_byte_offset: Int,
         leading_byte_offset: Int,
         swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
-    ](smem_ptr: Pointer[_, _, address_space=AddressSpace.SHARED],) -> Self:
+    ](smem_ptr: Pointer[_, _, address_space=.SHARED],) -> Self:
         """Create a descriptor for shared memory operand.
 
         Parameters:
@@ -1751,7 +1749,7 @@ def mma[
 @always_inline
 def mma_arrive[
     cta_group: Int = 1,
-](mbar_ptr: Pointer[_, _, address_space=AddressSpace.SHARED]):
+](mbar_ptr: Pointer[_, _, address_space=.SHARED]):
     """Arrive at the mbar pointer for the MMA instruction.
 
     Parameters:
@@ -1780,10 +1778,7 @@ def mma_arrive[
 @always_inline
 def mma_arrive_multicast[
     cta_group: Int = 1,
-](
-    mbar_ptr: Pointer[_, _, address_space=AddressSpace.SHARED],
-    cta_mask: UInt16,
-):
+](mbar_ptr: Pointer[_, _, address_space=.SHARED], cta_mask: UInt16,):
     """Arrive at the mbar pointer for the MMA instruction for multiple ctas.
 
     Parameters:

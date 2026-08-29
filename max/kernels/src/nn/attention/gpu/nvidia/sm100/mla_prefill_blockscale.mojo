@@ -563,7 +563,7 @@ __extension SM100MLA:
             Self.KVLUTType.dtype,
             type_of(tt_row_major[elems]()),
             MutAnyOrigin,
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
         ]
         comptime q_elems = type_of(q_tma_op).tile_shape[0] * type_of(
             q_tma_op
@@ -688,7 +688,7 @@ __extension SM100MLA:
             Self.KRopeType.dtype,
             type_of(tt_row_major[k_rope_sub_elems]()),
             MutAnyOrigin,
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
         ]
         # Full-tile byte counts (when no partial bound applies).
         comptime k_rope_full_bytes = (
@@ -1338,13 +1338,13 @@ __extension SM100MLA:
                 Self.KRopeType.dtype,
                 type_of(tile_layout),
                 MutAnyOrigin,
-                address_space=AddressSpace.SHARED,
+                address_space=.SHARED,
             ]
             comptime SmemBF16 = TileTensor[
                 Self.KVLUTType.dtype,
                 type_of(tile_layout),
                 MutAnyOrigin,
-                address_space=AddressSpace.SHARED,
+                address_space=.SHARED,
             ]
             var tile_offset = Int(local_warp_idx) * tile_rows * Self.rope_depth
             var fp8_base = k_rope_smem_ptr.bitcast[
@@ -1717,15 +1717,13 @@ def mla_sm100_prefill_blockscale[
     blockwise_scale: Int = 0,
     v_depth: Int = -1,
 ](
-    output: TileTensor[output_dtype, address_space=AddressSpace.GENERIC, ...],
-    q: TileTensor[q_type, address_space=AddressSpace.GENERIC, ...],
+    output: TileTensor[output_dtype, address_space=.GENERIC, ...],
+    q: TileTensor[q_type, address_space=.GENERIC, ...],
     k: KVType,
     v: VType,
     k_rope: KRopeType,
     mask_functor: MaskType,
-    valid_length: TileTensor[
-        DType.uint32, address_space=AddressSpace.GENERIC, ...
-    ],
+    valid_length: TileTensor[.uint32, address_space=.GENERIC, ...],
     max_prompt_len: MaxPromptLenType,
     scale: Float32,
     batch_size: Int,
@@ -1959,9 +1957,7 @@ def _mla_prefill_sm100_valid_length_dispatch[
     kv_lut: KVType,
     k_rope_lut: KRopeType,
     mask_functor: MaskType,
-    valid_length: TileTensor[
-        DType.uint32, address_space=AddressSpace.GENERIC, ...
-    ],
+    valid_length: TileTensor[.uint32, address_space=.GENERIC, ...],
     max_prompt_len: MaxPromptLenType,
     scale: Float32,
     batch_size: Int,
@@ -1972,10 +1968,10 @@ def _mla_prefill_sm100_valid_length_dispatch[
         UInt32(fa4_config.num_q_heads),
         flip_prompt_idx=MaskType.get_type_name() == "CausalMask",
     ]
-    comptime ValidLengthType = NonNullPointer[DType.uint32]
+    comptime ValidLengthType = NonNullPointer[.uint32]
     comptime SinkType = NullPointer[output_dtype]
-    comptime KVRowOffsetsType = NullPointer[DType.uint32]
-    comptime PartitionType = NoPartition[DType.float32]
+    comptime KVRowOffsetsType = NullPointer[.uint32]
+    comptime PartitionType = NoPartition[.float32]
     var valid_len: ValidLengthType = {
         rebind[UnsafePointer[UInt32, ImmutAnyOrigin]](valid_length.ptr)
     }

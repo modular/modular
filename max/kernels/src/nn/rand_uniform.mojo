@@ -35,7 +35,7 @@ def random_uniform[
     shape: IndexList[rank],
     lower_bound: Scalar[dtype],
     upper_bound: Scalar[dtype],
-    seed_ptr: UnsafePointer[Scalar[DType.uint64], ImmutAnyOrigin],
+    seed_ptr: UnsafePointer[UInt64, ImmutAnyOrigin],
     ctx: DeviceContext,
     output_fn: OutputFn,
 ) raises:
@@ -77,7 +77,7 @@ def random_uniform[
 
         var generator = Random(seed=seed_value, offset=UInt64(offset))
 
-        var values: SIMD[DType.float32, 4] = generator.step_uniform()
+        var values: SIMD[.float32, 4] = generator.step_uniform()
         values = values * delta + Float32(lower_bound)
 
         output_fn[width=width](

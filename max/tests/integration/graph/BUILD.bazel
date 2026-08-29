@@ -392,6 +392,12 @@ modular_py_test(
         "conftest.py",
         "test_device_graph_synthesis.py",
     ],
+    data = [
+        "//max/tests/integration/Inputs/kernel_verification_ops",
+    ],
+    env = {
+        "MODULAR_KERNEL_VERIFICATION_OPS_PATH": "$(rootpath //max/tests/integration/Inputs/kernel_verification_ops)",
+    },
     gpu_constraints = ["//:has_gpu"] + select({
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],

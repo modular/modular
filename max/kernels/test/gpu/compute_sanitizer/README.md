@@ -100,7 +100,32 @@ Knobs: `CS_JOBS` (local parallelism), `CS_GPU` (pin to one physical GPU),
   keys off specific violation phrases only — never the bare `ERROR SUMMARY: N`
   count — so those gaps don't false-positive. Prefer reference-free MAX-kernel
   tests under the sanitizer.
+- **`initcheck` runs with `-D FA4_WS_POISON=1`.** `launch_workspace`
+  (`sm100/dispatch.mojo`) deliberately leaves the split-K
+  `o_partial`/`lse_partial` workspace unfilled — an empty partition skips its
+  O store while still writing `lse_p = -inf`, and `fa4_splitk_combine`'s
+  `scale != 0` select is what substitutes a literal 0 instead of evaluating
+  `0 * garbage`. initcheck sees only the load, so an un-poisoned lane reports
+  every empty partition as an uninitialized read. NaN-filling the workspace
+  both silences that (the memory *is* initialized) and turns the lane into a
+  real grader of the no-initialization contract: a dropped select or a missing
+  `-inf` LSE write now propagates NaN into the output and trips the test's own
+  assert.
+- **`synccheck` cannot report usefully on SM100.** A warp-specialized kernel
+  rendezvouses two warpgroups with `named_barrier[2 * WARPGROUP_SIZE](id)` —
+  `bar.sync id, 256` — and PTX lets the participating warps arrive at
+  *different* `bar.sync` instructions sharing that barrier name. `synccheck`
+  only accepts arrivals from one instruction address, so it reports "Divergent
+  thread(s) in block" for the whole SM100 attention/MLA family — about 48
+  targets, essentially all noise. NVIDIA supports `--suppressions` for
+  `memcheck`, `initcheck` and `racecheck` but **not** for `synccheck`, so there
+  is no way to filter it. **The lane is expected to fail.** KERN-3536 tracks
+  it; until that is resolved, read the sweep's result per lane rather than
+  as a single pass/fail.
+- **No known-failure list.** A lane either reports nothing or the finding gets
+  fixed. There is no file of parked targets to rot, which is also why the
+  `synccheck` noise is not suppressed.
 - **Operational.** GPU tests need `--local_resources=gpu-memory=1000` locally;
   exclude `mojo_filecheck_test` (can't run under `--run_under`) and perf
-  benchmarks (pathologically slow under `racecheck`/`synccheck`); never
+  benchmarks (pathologically slow under `racecheck`); never
   `kill -9` a bazel test action (it crashes the bazel server).

@@ -3777,7 +3777,7 @@ DestructorInserter::optimizeCopyDestroys(Operation *opWithUse) {
   // Handle the register form: `__init__(*, copy: src) -> T`.
   if (copyInitCall.getNumOperands() == 1) {
     assert(copyInitCall.getCalleeType().getArgConvention(0) ==
-               ArgConvention::ReadMem &&
+               ArgConvention::ImmMem &&
            "non-trivial register types passed in memory");
     ValueToDestroy *deadSrc = nullptr;
     Value copyDst = copyInitCall.getResult(0);
@@ -3970,7 +3970,7 @@ static bool canEntirelyElideMemoryTemporary(LIT::CallOp copyInitCall,
           operand.getOperandNumber());
       if (convention != ArgConvention::OwnedMem &&
           convention != ArgConvention::DeinitMem &&
-          convention != ArgConvention::ReadMem)
+          convention != ArgConvention::ImmMem)
         return false;
       userOfTmp.insert(callUser);
     }
@@ -5292,19 +5292,25 @@ void DestructorInsertion::emitDebugInit(Value value, ValueRef valueRef,
       valueRef.endBit == info.endValueBit) {
     // The IR type needs to be deref'ed to get the source type. Encode the IR
     // type as a pointer type.
-    auto newIrValue = DebugInfo::DIIRValueExprAttr::get(value.getType());
-    Type sourceType =
-        cast<DebugInfo::DIUnresolvedMLIRType>(info.debugVariable.getType())
-            .getType();
+    Type irType = value.getType();
+    auto newIrValue = DebugInfo::DIIRValueExprAttr::get(irType);
+    Type derefTy = irType;
+    if (auto refType = dyn_cast<RefType>(irType))
+      derefTy = refType.getElementType();
     DebugInfo::DIExprAttr conversion =
-        DebugInfo::DIDerefExprAttr::get(newIrValue, sourceType);
+        DebugInfo::DIDerefExprAttr::get(newIrValue, derefTy);
 
     // For ref bindings (e.g. loop variables), the VarDecl element is itself a
     // ref. Add an extra deref to reach the actual value through the inner ref.
     auto varDecl = info.value.getDefiningOp<VarDeclOp>();
-    if (varDecl && varDecl.getKind() == VarDeclKind::Ref)
-      if (isa<RefType>(varDecl.getType().getElementType()))
-        conversion = DebugInfo::DIDerefExprAttr::get(conversion, sourceType);
+    if (varDecl && varDecl.getKind() == VarDeclKind::Ref) {
+      if (isa<RefType>(varDecl.getType().getElementType())) {
+        Type innerTy = derefTy;
+        if (auto innerRef = dyn_cast<RefType>(derefTy))
+          innerTy = innerRef.getElementType();
+        conversion = DebugInfo::DIDerefExprAttr::get(conversion, innerTy);
+      }
+    }
 
     DebugInfo::ValueOp::create(builder, value, info.debugVariable, conversion);
   }

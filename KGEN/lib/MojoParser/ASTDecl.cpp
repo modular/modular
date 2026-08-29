@@ -41,6 +41,30 @@ ASTDecl::ASTDecl(SharedState &shared, DeclIRValue irValue, llvm::SMLoc loc,
   isExplicitParamScope = false;
 }
 
+bool ASTDecl::isCallableDecl() const {
+  if (auto witness = getIfWitness())
+    return isa<FnTypeGeneratorType>(witness->getWitnessEntry().witnessType);
+  return isa_and_nonnull<FnOp>(getIfOperation());
+}
+
+FnTypeGeneratorType ASTDecl::getDeclFullSignature() const {
+  if (auto witness = getIfWitness()) // already expanded.
+    return cast<FnTypeGeneratorType>(witness->getWitnessEntry().witnessType);
+  return cast<FnOp>(getIfOperation()).getFullSignature();
+}
+
+bool ASTDecl::isStaticMethodDecl() const {
+  if (auto witness = getIfWitness())
+    return witness->getWitnessEntry().isStaticMethod;
+  return cast<FnOp>(getIfOperation()).getIsStatic();
+}
+
+ImplicitConversionKind ASTDecl::getDeclImplicitConversionKind() const {
+  if (auto witness = getIfWitness())
+    return witness->getWitnessEntry().implicitConversion;
+  return cast<FnOp>(getIfOperation()).getImplicitConversion();
+}
+
 DocStringAttr ASTDecl::getDocString() const {
   if (auto astDeclOp = dyn_cast_or_null<ASTDeclInterface>(getIfOperation()))
     return astDeclOp.getDocStringAttr();
@@ -178,6 +202,7 @@ void ASTDecl::takeDecls(ASTDecl &src) {
       child->parentDecl = this;
   declsInScope = std::move(src.declsInScope);
   counter = src.counter;
+  assert(!knownAssumptions && "assumptions should be empty before overwriting");
   knownAssumptions = std::move(src.knownAssumptions);
 }
 
@@ -263,6 +288,12 @@ bool ASTDecl::hasRecursivelyStableType(const ASTDecl *typeDecl) const {
   return false;
 }
 
+bool UnresolvedWildcardImport::markSearched(StringRef name) {
+  if (!searchedNames)
+    searchedNames.reset(new llvm::StringSet<>());
+  return searchedNames->insert(name).second;
+}
+
 /// Add an unresolved wild card import into this scope.
 void ASTDecl::addUnresolvedWildcardImport(
     UnresolvedWildcardImport unresolvedImport) {
@@ -270,44 +301,16 @@ void ASTDecl::addUnresolvedWildcardImport(
   if (!unresolvedWildcardImports)
     unresolvedWildcardImports.reset(new UnresolvedWildcardImportsType());
   else {
-    // If we are already tracking this entity, remove it so we can place it
-    // last. The last unresolved wildcard statement always wins:
+    // If we are already tracking this entity, mark it as superseded so we can
+    // place it last. The last unresolved wildcard statement always wins:
     //   from a import *
     //   from b import *
     //   from a import *
-    auto it = llvm::find_if(
-        *unresolvedWildcardImports,
-        [&unresolvedImport](const UnresolvedWildcardImport &import) {
-          return import.moduleName == unresolvedImport.moduleName;
-        });
-    if (it != unresolvedWildcardImports->end())
-      unresolvedWildcardImports->erase(it);
+    for (UnresolvedWildcardImport &import : *unresolvedWildcardImports)
+      if (import.moduleName == unresolvedImport.moduleName)
+        import.isSuperseded = true;
   }
   unresolvedWildcardImports->emplace_back(std::move(unresolvedImport));
-}
-
-std::optional<UnresolvedWildcardImport>
-ASTDecl::popLatestUnresolvedWildcardImport(StringRef lookupName) {
-  if (!unresolvedWildcardImports || unresolvedWildcardImports->empty())
-    return std::nullopt;
-
-  // Only an internal-name lookup filters anything: non-full imports never
-  // provide underscore names, so they stay pending for other lookups. An
-  // empty lookupName takes the newest unconditionally.
-  size_t i = unresolvedWildcardImports->size();
-  if (!lookupName.empty() && isInternalName(lookupName))
-    while (i > 0 && !(*unresolvedWildcardImports)[i - 1].isFullImport)
-      --i;
-
-  // Only skipped entries remain
-  if (i == 0)
-    return std::nullopt;
-
-  auto it = unresolvedWildcardImports->begin() + (i - 1);
-  UnresolvedWildcardImport unresolvedImport = *it;
-  unresolvedWildcardImports->erase(it);
-
-  return unresolvedImport;
 }
 
 /// Mangle a parameter name for the given parameter scope and scope depth. Due
@@ -357,6 +360,17 @@ void ASTDecl::dump() const {
     llvm::errs() << "\n";
   } else if (auto cv = getIfIRValue()) {
     cv.dump();
+  } else if (auto witness = getIfWitness()) {
+    llvm::errs() << "witness ";
+    if (resolvedness < DeclResolvedness::signature) {
+      llvm::errs() << "<unresolved>";
+    } else {
+      auto resolvedType = witness->getWitnessEntry();
+      resolvedType.witnessName.print(llvm::errs());
+      llvm::errs() << ": ";
+      resolvedType.witnessType.print(llvm::errs());
+    }
+    llvm::errs() << "\n";
   } else {
     llvm::errs() << "<null decl>\n";
   }

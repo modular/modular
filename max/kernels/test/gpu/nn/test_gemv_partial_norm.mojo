@@ -34,10 +34,10 @@ from nn.gemv_partial_norm import gemv_and_partial_norm
 def _host_reference[
     c_type: DType, a_type: DType
 ](
-    y_ref_ptr: UnsafePointer[mut=False, Scalar[c_type], _],
-    gamma_ptr: UnsafePointer[mut=False, Scalar[a_type], _],
-    normed_ref: UnsafePointer[mut=True, Scalar[c_type], _],
-    unnormed_ref: UnsafePointer[mut=True, Scalar[c_type], _],
+    y_ref_ptr: ImmPointer[Scalar[c_type], _],
+    gamma_ptr: ImmPointer[Scalar[a_type], _],
+    normed_ref: MutPointer[Scalar[c_type], _],
+    unnormed_ref: MutPointer[Scalar[c_type], _],
     n: Int,
     n_normed: Int,
     eps: Float32,
@@ -46,14 +46,14 @@ def _host_reference[
     var n_unnormed = n - n_normed
     var sumsq: Float64 = 0.0
     for i in range(n_normed):
-        var v = y_ref_ptr[i].cast[DType.float64]()
+        var v = y_ref_ptr[i].cast[.float64]()
         sumsq += v * v
     var mean_sq = sumsq / Float64(n_normed)
-    var norm_factor = Float64(1) / sqrt(mean_sq + eps.cast[DType.float64]())
+    var norm_factor = Float64(1) / sqrt(mean_sq + eps.cast[.float64]())
 
     for i in range(n_normed):
-        var v = y_ref_ptr[i].cast[DType.float64]()
-        var g = gamma_ptr[i].cast[DType.float64]()
+        var v = y_ref_ptr[i].cast[.float64]()
+        var g = gamma_ptr[i].cast[.float64]()
         normed_ref[i] = (v * norm_factor * g).cast[c_type]()
 
     for i in range(n_unnormed):
@@ -202,17 +202,17 @@ def test_gemv_partial_norm[
 def main() raises:
     with DeviceContext() as ctx:
         # Primary shape: N=2112, K=7168, N_normed=1536.
-        test_gemv_partial_norm[DType.bfloat16, DType.bfloat16, fused=False](
+        test_gemv_partial_norm[.bfloat16, DType.bfloat16, fused=False](
             ctx, Idx[2112], Idx[7168], Idx[1536]
         )
-        test_gemv_partial_norm[DType.bfloat16, DType.bfloat16, fused=True](
+        test_gemv_partial_norm[.bfloat16, DType.bfloat16, fused=True](
             ctx, Idx[2112], Idx[7168], Idx[1536]
         )
 
         # Smaller shape exercising the same path.
-        test_gemv_partial_norm[DType.bfloat16, DType.bfloat16, fused=False](
+        test_gemv_partial_norm[.bfloat16, DType.bfloat16, fused=False](
             ctx, Idx[512], Idx[1024], Idx[256]
         )
-        test_gemv_partial_norm[DType.bfloat16, DType.bfloat16, fused=True](
+        test_gemv_partial_norm[.bfloat16, DType.bfloat16, fused=True](
             ctx, Idx[512], Idx[1024], Idx[256]
         )

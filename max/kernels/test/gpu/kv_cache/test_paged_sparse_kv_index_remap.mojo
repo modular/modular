@@ -25,7 +25,7 @@
 """GPU test for row-offset sparse KV remap (same dispatch as sparse MLA MOGG path)."""
 
 from max.gpu.host import DeviceContext
-from std.memory import UnsafePointer, alloc
+from std.memory import alloc
 
 from std.testing import assert_equal
 
@@ -37,7 +37,7 @@ from kv_cache.paged_sparse_kv_index_remap import (
 @always_inline
 def _find_batch_for_row_ref(
     r: Int,
-    row_offsets: UnsafePointer[mut=False, UInt32, _],
+    row_offsets: ImmPointer[UInt32, _],
     num_batches: Int,
 ) -> UInt32:
     """Matches production ``_find_batch_for_row`` (test golden only)."""
@@ -52,7 +52,7 @@ def _find_batch_for_row_ref(
 def _remap_one_ref(
     log_t: Int32,
     batch_u32: UInt32,
-    lut: UnsafePointer[mut=False, UInt32, _],
+    lut: ImmPointer[UInt32, _],
     lut_cols: Int,
     lut_rows: Int,
     page_size: Int,
@@ -76,10 +76,10 @@ def _remap_one_ref(
 
 
 def _reference_row_offsets_remap(
-    logical: UnsafePointer[mut=False, Int32, _],
-    row_offsets: UnsafePointer[mut=False, UInt32, _],
-    lut: UnsafePointer[mut=False, UInt32, _],
-    physical_out: UnsafePointer[mut=True, Int32, _],
+    logical: ImmPointer[Int32, _],
+    row_offsets: ImmPointer[UInt32, _],
+    lut: ImmPointer[UInt32, _],
+    physical_out: MutPointer[Int32, _],
     num_indices: Int,
     lut_cols: Int,
     lut_rows: Int,
@@ -168,10 +168,10 @@ def main() raises:
     var h_out = alloc[Int32](NUM_IDX)
 
     with DeviceContext() as ctx:
-        var d_log = ctx.enqueue_create_buffer[DType.int32](NUM_IDX)
-        var d_row_off = ctx.enqueue_create_buffer[DType.uint32](NUM_BATCHES + 1)
-        var d_lut = ctx.enqueue_create_buffer[DType.uint32](LUT_ROWS * LUT_COLS)
-        var d_out = ctx.enqueue_create_buffer[DType.int32](NUM_IDX)
+        var d_log = ctx.enqueue_create_buffer[.int32](NUM_IDX)
+        var d_row_off = ctx.enqueue_create_buffer[.uint32](NUM_BATCHES + 1)
+        var d_lut = ctx.enqueue_create_buffer[.uint32](LUT_ROWS * LUT_COLS)
+        var d_out = ctx.enqueue_create_buffer[.int32](NUM_IDX)
 
         ctx.enqueue_copy(d_log, h_log)
         ctx.enqueue_copy(d_row_off, h_row_off)

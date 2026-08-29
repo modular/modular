@@ -29,7 +29,7 @@ def my_func():
 comptime a = 42
 
 
-# CHECK: lit.fn @"parametric_name[::SIMD[::DType(int), ::SIMDLength(1)]]()"
+# CHECK: lit.fn @"parametric_name[::SIMD[DType.int, 1]]()"
 # CHECK-SAME: linkageName = #kgen.linkage_name<#kgen.param.expr<data_to_str
 @__name("prefix_" + String(T) + "_" + String(a))
 def parametric_name[T: Int]():

@@ -22,16 +22,17 @@ commit, multi-run ordering, and that the pending queue is drained.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from types import SimpleNamespace
 from typing import cast
 
 import pytest
+from max.nn.kv_cache import KVCacheGroupId
 from max.nn.kv_cache.cache_params import KVCacheMemory
 from max.nn.kv_cache.metrics import KVCacheMetrics
 from max.pipelines.context import TextContext
 from max.pipelines.kv_cache.kv_connector import (
-    BlockCount,
+    ByteCount,
     CompletedTransfer,
     KVConnectorTransfer,
     TransferDirection,
@@ -63,8 +64,12 @@ class RecordingConnector:
         # Blocks ``load`` reports as loaded from the host tier (0 == host miss);
         # lets a test drive a cold-G0/warm-host hit without real device memory.
         self.num_blocks_to_load = 0
-        self._h2d_blocks_copied = 0
-        self._d2h_blocks_copied = 0
+        self._h2d_bytes_copied = 0
+        self._d2h_bytes_copied = 0
+
+    @property
+    def leaves(self) -> Mapping[str, KVCacheGroupId]:
+        return {"full": KVCacheGroupId.full()}
 
     @property
     def name(self) -> str:
@@ -72,12 +77,15 @@ class RecordingConnector:
 
     def offload(
         self,
-        block_ids: list[int],
+        block_ids: Mapping[str, Sequence[int]],
         block_hashes: Sequence[bytes],
         replica_idx: int = 0,
     ) -> KVConnectorTransfer:
-        self.offloads.append((block_ids, list(block_hashes)))
-        return CompletedTransfer(TransferDirection.OFFLOAD, list(block_ids))
+        bids = list(block_ids["full"])
+        self.offloads.append((bids, list(block_hashes)))
+        return CompletedTransfer(
+            TransferDirection.OFFLOAD, leaves=["full"], g0_blocks=bids
+        )
 
     def touch(
         self,
@@ -89,14 +97,15 @@ class RecordingConnector:
 
     def load(
         self,
-        device_block_ids: list[int],
+        block_ids: Mapping[str, Sequence[int]],
         block_hashes: Sequence[bytes],
         replica_idx: int = 0,
     ) -> KVConnectorTransfer:
         self.calls.append("load")
+        bids = list(block_ids["full"])
         num_loaded = min(len(block_hashes), self.num_blocks_to_load)
         return CompletedTransfer(
-            TransferDirection.LOAD, list(device_block_ids[:num_loaded])
+            TransferDirection.LOAD, leaves=["full"], g0_blocks=bids[:num_loaded]
         )
 
     def count_cached_prefix(
@@ -110,38 +119,40 @@ class RecordingConnector:
     def reset_prefix_cache(self) -> None: ...
 
     @property
-    def host_block_count(self) -> BlockCount:
-        return BlockCount(free=0, total=0)
+    def host_byte_count(self) -> ByteCount:
+        return ByteCount(free=0, total=0)
 
     @property
-    def disk_block_count(self) -> BlockCount:
-        return BlockCount(free=0, total=0)
+    def disk_byte_count(self) -> ByteCount:
+        return ByteCount(free=0, total=0)
 
     @property
     def metrics(self) -> KVCacheMetrics:
         return KVCacheMetrics(
-            h2d_blocks_copied=self._h2d_blocks_copied,
-            d2h_blocks_copied=self._d2h_blocks_copied,
+            h2d_bytes_copied=self._h2d_bytes_copied,
+            d2h_bytes_copied=self._d2h_bytes_copied,
         )
 
     def reset_metrics(self) -> None:
-        self._h2d_blocks_copied = 0
-        self._d2h_blocks_copied = 0
+        self._h2d_bytes_copied = 0
+        self._d2h_bytes_copied = 0
 
 
 class _ExternalTierConnector(RecordingConnector):
     """A dKV-style connector that advertises an external tier.
 
     ``get_full_blocks_from_prefix_cache`` gates the G0 recency ``touch`` behind
-    its ``host_block_count.total == 0`` early-return, so the touch-firing
+    its ``host_byte_count.total == 0`` early-return, so the touch-firing
     tests need a connector whose host block count is positive (a plain
     ``RecordingConnector`` reports 0, i.e. no external tier). Records touches
     like its base so a test can assert on them.
     """
 
     @property
-    def host_block_count(self) -> BlockCount:
-        return BlockCount(free=1024, total=1024)
+    def host_byte_count(self) -> ByteCount:
+        return ByteCount(
+            free=1024 * _FAKE_BYTES_PER_PAGE, total=1024 * _FAKE_BYTES_PER_PAGE
+        )
 
 
 _FAKE_BYTES_PER_PAGE = 64
@@ -400,20 +411,20 @@ def test_reset_metrics_clears_connector_transfer_counters() -> None:
     totals and Datadog counter.add() double-counts across batches (MXSERV-203).
     """
     bm, connector = _make_block_manager()
-    connector._d2h_blocks_copied = 5
-    connector._h2d_blocks_copied = 2
+    connector._d2h_bytes_copied = 5
+    connector._h2d_bytes_copied = 2
 
-    assert bm.metrics.d2h_blocks_copied == 5
-    assert bm.metrics.h2d_blocks_copied == 2
+    assert bm.metrics.d2h_bytes_copied == 5
+    assert bm.metrics.h2d_bytes_copied == 2
 
     bm.reset_metrics()
 
-    assert bm.metrics.d2h_blocks_copied == 0
-    assert bm.metrics.h2d_blocks_copied == 0
+    assert bm.metrics.d2h_bytes_copied == 0
+    assert bm.metrics.h2d_bytes_copied == 0
 
-    connector._d2h_blocks_copied = 3
-    assert bm.metrics.d2h_blocks_copied == 3
-    assert bm.metrics.h2d_blocks_copied == 0
+    connector._d2h_bytes_copied = 3
+    assert bm.metrics.d2h_bytes_copied == 3
+    assert bm.metrics.h2d_bytes_copied == 0
 
 
 def test_touch_fires_on_device_hit_with_full_root_anchored_hashes() -> None:
@@ -426,7 +437,7 @@ def test_touch_fires_on_device_hit_with_full_root_anchored_hashes() -> None:
     stays MRU under dKV's reverse full-attention LRU (the ordering correction,
     CLIN-1533). It fires exactly once and, the whole prefix being on device,
     issues no ``load``. Uses an external-tier connector because the anchor is
-    gated on ``host_block_count.total``.
+    gated on ``host_byte_count.total``.
     """
     bm, connector = _make_block_manager(connector=_ExternalTierConnector())
     rid = RequestID("req-hit")
@@ -436,9 +447,12 @@ def test_touch_fires_on_device_hit_with_full_root_anchored_hashes() -> None:
     _commit_device_block(bm.device_block_pool, 333)
     _commit_device_block(bm.device_block_pool, 444)
 
-    device_blocks, _ = bm.get_full_blocks_from_prefix_cache(_make_ctx(bm, rid))
+    device_blocks, _, num_external = bm.get_full_blocks_from_prefix_cache(
+        _make_ctx(bm, rid)
+    )
 
     assert len(device_blocks) == 2  # the two uncommitted device hits
+    assert num_external == 0  # served on device, so nothing to attribute out
     assert connector.calls == ["touch"]  # fires once; no host load
     assert connector.touches == [([_b(111), _b(222), _b(333), _b(444)], 0)]
 
@@ -450,7 +464,7 @@ def test_touch_anchor_not_fired_on_fully_cold_request() -> None:
     (``num_blocks_to_load == 0``), so both ``device_blocks`` and ``host_blocks``
     are empty and the ``if device_blocks or host_blocks`` gate suppresses the
     anchor -- even though the load path ran (``load`` was called). Uses an
-    external-tier connector so the ``host_block_count.total`` gate is passed
+    external-tier connector so the ``host_byte_count.total`` gate is passed
     and the empty-result gate is what's exercised.
     """
     bm, connector = _make_block_manager(connector=_ExternalTierConnector())
@@ -460,7 +474,7 @@ def test_touch_anchor_not_fired_on_fully_cold_request() -> None:
         _b(222),
     ]  # nothing on device, nothing in host
 
-    served, _ = bm.get_full_blocks_from_prefix_cache(_make_ctx(bm, rid))
+    served, _, _ = bm.get_full_blocks_from_prefix_cache(_make_ctx(bm, rid))
 
     assert served == []  # nothing served
     assert connector.calls == ["load"]  # load ran; gate suppressed the touch
@@ -484,7 +498,7 @@ def test_touch_fires_on_cross_replica_hit_keyed_to_serving_replica() -> None:
     _commit_device_block(bm.device_block_pools[1], 111)
     _commit_device_block(bm.device_block_pools[1], 222)
 
-    device_blocks, _ = bm.get_full_blocks_from_prefix_cache(
+    device_blocks, _, _ = bm.get_full_blocks_from_prefix_cache(
         _make_ctx(bm, rid, replica_idx=0)
     )
 
@@ -524,7 +538,7 @@ def test_cross_replica_hit_issues_a_single_batched_copy() -> None:
 
     src_unit.on_batch_copy = _snapshot_local_visibility
 
-    served, _ = bm.get_full_blocks_from_prefix_cache(
+    served, _, _ = bm.get_full_blocks_from_prefix_cache(
         _make_ctx(bm, rid, replica_idx=0)
     )
 
@@ -567,7 +581,7 @@ def test_cross_replica_hit_merges_units_into_one_submit() -> None:
 
     src_unit.on_batch_copy = _snapshot_local_visibility
 
-    served, _ = bm.get_full_blocks_from_prefix_cache(
+    served, _, _ = bm.get_full_blocks_from_prefix_cache(
         _make_ctx(bm, rid, replica_idx=0)
     )
 
@@ -603,7 +617,7 @@ def test_cross_replica_hit_covers_every_device_in_one_submit() -> None:
     assert bm._replica_kv_memory is not None
     src_unit = cast(_FakeKVMemory, bm._replica_kv_memory[1][0])
 
-    served, _ = bm.get_full_blocks_from_prefix_cache(
+    served, _, _ = bm.get_full_blocks_from_prefix_cache(
         _make_ctx(bm, rid, replica_idx=0)
     )
 
@@ -631,11 +645,15 @@ def test_cross_replica_copy_disabled_serves_from_external_tier() -> None:
     _commit_device_block(bm.device_block_pools[1], 111)
     _commit_device_block(bm.device_block_pools[1], 222)
 
-    served, _ = bm.get_full_blocks_from_prefix_cache(
+    served, _, num_external = bm.get_full_blocks_from_prefix_cache(
         _make_ctx(bm, rid, replica_idx=0)
     )
 
     assert len(served) == 2  # served, but by the external tier
+    # With cross-replica copies off, the peer's device blocks are unreachable
+    # and the connector serves the whole prefix, so it is all `external` rather
+    # than the `g0` it would have been with the copy enabled.
+    assert num_external == 2
     assert connector.calls == ["load", "touch"]  # host load, no device hit
     assert bm.metrics.cross_replica_blocks_copied == 0
     assert bm._replica_kv_memory is not None
@@ -687,9 +705,12 @@ def test_touch_anchor_fires_after_load_on_host_only_hit() -> None:
         _b(222),
     ]  # nothing committed, nothing on device
 
-    served, _ = bm.get_full_blocks_from_prefix_cache(_make_ctx(bm, rid))
+    served, _, num_external = bm.get_full_blocks_from_prefix_cache(
+        _make_ctx(bm, rid)
+    )
 
     assert len(served) == 2  # both served from the host tier (no device hit)
+    assert num_external == 2  # every block is the connector's
     assert connector.calls == ["load", "touch"]  # touch after load, once
     assert connector.touches == [([_b(111), _b(222)], 0)]
 
@@ -711,7 +732,7 @@ def test_touch_anchor_payload_trims_uncached_tail() -> None:
     bm.req_to_committed_idx[rid] = 1 * bm.block_size
     _commit_device_block(bm.device_block_pool, 222)  # 333 stays uncached
 
-    served, _ = bm.get_full_blocks_from_prefix_cache(_make_ctx(bm, rid))
+    served, _, _ = bm.get_full_blocks_from_prefix_cache(_make_ctx(bm, rid))
 
     assert len(served) == 1  # only 222 hit; 333 is the uncached tail
     assert connector.touches == [([_b(111), _b(222)], 0)]  # root in, tail out

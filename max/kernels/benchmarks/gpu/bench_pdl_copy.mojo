@@ -31,8 +31,8 @@ from max.gpu.host import DeviceContext
 
 
 def copy1(
-    a: UnsafePointer[Float32, ImmutAnyOrigin],
-    b: UnsafePointer[Float32, MutAnyOrigin],
+    a: ImmPointer[Float32, ImmutAnyOrigin],
+    b: MutPointer[Float32, MutAnyOrigin],
     n: Int32,
 ):
     var tmp = Float32()
@@ -54,9 +54,9 @@ def copy1(
 
 
 def copy2(
-    b: UnsafePointer[Float32, ImmutAnyOrigin],
-    c: UnsafePointer[Float32, MutAnyOrigin],
-    d: UnsafePointer[Float32, ImmutAnyOrigin],
+    b: ImmPointer[Float32, ImmutAnyOrigin],
+    c: MutPointer[Float32, MutAnyOrigin],
+    d: ImmPointer[Float32, ImmutAnyOrigin],
     n: Int32,
 ):
     var result = Float32()
@@ -78,8 +78,8 @@ def copy2(
 
 
 def copy1_n(
-    a: UnsafePointer[Float32, ImmutAnyOrigin],
-    b: UnsafePointer[Float32, MutAnyOrigin],
+    a: ImmPointer[Float32, ImmutAnyOrigin],
+    b: MutPointer[Float32, MutAnyOrigin],
     n: Int32,
 ):
     var tmp = Float32()
@@ -99,9 +99,9 @@ def copy1_n(
 
 
 def copy2_n(
-    b: UnsafePointer[Float32, ImmutAnyOrigin],
-    c: UnsafePointer[Float32, MutAnyOrigin],
-    d: UnsafePointer[Float32, ImmutAnyOrigin],
+    b: ImmPointer[Float32, ImmutAnyOrigin],
+    c: MutPointer[Float32, MutAnyOrigin],
+    d: ImmPointer[Float32, ImmutAnyOrigin],
     n: Int32,
 ):
     var result = Float32()

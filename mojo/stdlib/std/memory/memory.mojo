@@ -88,8 +88,8 @@ def _memcmp_opt_impl_unconstrained[
         if any(diff):
             var index = Int(
                 diff.select(
-                    iota[DType.uint8, simd_width](),
-                    SIMD[DType.uint8, simd_width](255),
+                    iota[.uint8, simd_width](),
+                    SIMD[.uint8, simd_width](255),
                 ).reduce_min()
             )
             return -1 if s1i[index] < s2i[index] else 1
@@ -100,8 +100,8 @@ def _memcmp_opt_impl_unconstrained[
     if any(diff):
         var index = Int(
             diff.select(
-                iota[DType.uint8, simd_width](),
-                SIMD[DType.uint8, simd_width](255),
+                iota[.uint8, simd_width](),
+                SIMD[.uint8, simd_width](255),
             ).reduce_min()
         )
         return -1 if s1i[index] < s2i[index] else 1
@@ -148,11 +148,11 @@ def unsafe_memcmp[
     """
     var byte_count = count * size_of[type]()
 
-    comptime if size_of[type]() % size_of[DType.int32]() == 0:
+    comptime if size_of[type]() % size_of[UInt32]() == 0:
         return _memcmp_impl(
-            s1.unsafe_bitcast[Int32](),
-            s2.unsafe_bitcast[Int32](),
-            byte_count // size_of[DType.int32](),
+            s1.unsafe_bitcast[UInt32](),
+            s2.unsafe_bitcast[UInt32](),
+            byte_count // size_of[UInt32](),
         )
 
     return _memcmp_impl(
@@ -348,7 +348,7 @@ def memmove[
 @always_inline("nodebug")
 def _memset_impl(ptr: MutPointer[Byte, ...], value: Byte, count: Int):
     def fill[width: Int](offset: Int) {imm}:
-        ptr.unsafe_store(offset, SIMD[DType.uint8, width](value))
+        ptr.unsafe_store(offset, SIMD[.uint8, width](value))
 
     comptime simd_width = simd_width_of[Byte]()
     vectorize[simd_width](count, fill)
@@ -433,7 +433,7 @@ def _malloc[
     out result: OptionalPointer[
         type,
         MutUntrackedOrigin,
-        address_space=AddressSpace.GENERIC,
+        address_space=.GENERIC,
     ],
 ):
     comptime MlirPointerType = type_of(result).T._mlir_type
@@ -588,9 +588,9 @@ def unsafe_uninit_move_n[
     Parameters:
         T: The type of values to move, which must be `Movable`.
         overlapping: If False, the function assumes `src` and `dest` do not
-            overlap and uses `unsafe_memcpy`. If True, the function assumes
-            `src` and `dest` may overlap and uses `unsafe_memmove` to handle
-            this safely.
+            overlap and uses `unsafe_memcpy`. If True, the function handles an
+            overlap safely, walking the elements back-to-front when `dest` sits
+            above `src`.
 
     Args:
         dest: Pointer to the destination memory region.
@@ -615,8 +615,16 @@ def unsafe_uninit_move_n[
         else:
             unsafe_memcpy(dest=dest, src=src, count=count)
     else:
-        for i in range(count):
-            dest.unsafe_offset(i).unsafe_write_move_from(src.unsafe_offset(i))
+        if overlapping and Int(dest) > Int(src):
+            for i in reversed(range(count)):
+                dest.unsafe_offset(i).unsafe_write_move_from(
+                    src.unsafe_offset(i)
+                )
+        else:
+            for i in range(count):
+                dest.unsafe_offset(i).unsafe_write_move_from(
+                    src.unsafe_offset(i)
+                )
 
 
 @always_inline
@@ -646,9 +654,9 @@ def unsafe_uninit_copy_n[
     Parameters:
         T: The type of values to copy, which must be `Copyable`.
         overlapping: If False, the function assumes `src` and `dest` do not
-            overlap and uses `unsafe_memcpy`. If True, the function assumes
-            `src` and `dest` may overlap and uses `unsafe_memmove` to handle
-            this safely.
+            overlap and uses `unsafe_memcpy`. If True, the function handles an
+            overlap safely, walking the elements back-to-front when `dest` sits
+            above `src`.
 
     Args:
         dest: Pointer to the destination memory region.
@@ -673,8 +681,12 @@ def unsafe_uninit_copy_n[
         else:
             unsafe_memcpy(dest=dest, src=src, count=count)
     else:
-        for i in range(count):
-            dest.unsafe_offset(i).unsafe_write(copy=src.unsafe_offset(i)[])
+        if overlapping and Int(dest) > Int(src):
+            for i in reversed(range(count)):
+                dest.unsafe_offset(i).unsafe_write(copy=src.unsafe_offset(i)[])
+        else:
+            for i in range(count):
+                dest.unsafe_offset(i).unsafe_write(copy=src.unsafe_offset(i)[])
 
 
 @always_inline

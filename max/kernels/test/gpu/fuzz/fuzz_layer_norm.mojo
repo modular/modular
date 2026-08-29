@@ -24,7 +24,7 @@ from std.sys.defines import get_defined_int
 from max.gpu.host import DeviceContext
 from layout import Coord, TileTensor, row_major
 from nn.normalization import *
-from std.utils.index import Index, IndexList
+from std.utils.index import Index
 
 from _fuzz import boundary_int, collect_args, flag, flag_int, numeric_check
 
@@ -53,11 +53,13 @@ def gen_specs(n: Int) -> List[CaseSpec]:
     return specs^
 
 
-def _layer_norm_ref(
-    src: Span[Scalar[ln_type], _],
-    gamma: Span[Scalar[ln_type], _],
-    beta: Span[Scalar[ln_type], _],
-    dst: Span[mut=True, Scalar[ln_type], _],
+def _layer_norm_ref[
+    dtype: DType
+](
+    src: Span[Scalar[dtype], _],
+    gamma: Span[Scalar[dtype], _],
+    beta: Span[Scalar[dtype], _],
+    dst: Span[mut=True, Scalar[dtype], _],
     rows: Int,
     cols: Int,
     eps: Float64,
@@ -67,43 +69,43 @@ def _layer_norm_ref(
         var base = r * cols
         var mean = Float64(0)
         for c in range(cols):
-            mean += src[base + c].cast[DType.float64]()
+            mean += src[base + c].cast[.float64]()
         mean /= Float64(cols)
         var var_ = Float64(0)
         for c in range(cols):
-            var d = src[base + c].cast[DType.float64]() - mean
+            var d = src[base + c].cast[.float64]() - mean
             var_ += d * d
         var_ /= Float64(cols)
         var norm = 1.0 / sqrt(var_ + eps)
         for c in range(cols):
-            var x = src[base + c].cast[DType.float64]()
-            var g = gamma[c].cast[DType.float64]()
-            var b = beta[c].cast[DType.float64]()
-            dst[base + c] = (((x - mean) * norm) * g + b).cast[ln_type]()
+            var x = src[base + c].cast[.float64]()
+            var g = gamma[c].cast[.float64]()
+            var b = beta[c].cast[.float64]()
+            dst[base + c] = (((x - mean) * norm) * g + b).cast[dtype]()
 
 
-def run_one_case(
-    ctx: DeviceContext, spec: CaseSpec, check: Bool = False
-) raises:
+def run_one_case[
+    dtype: DType = ln_type
+](ctx: DeviceContext, spec: CaseSpec, check: Bool = False) raises:
     var rows = spec.rows
     var cols = spec.cols
     var shape = Index(rows, cols)
 
-    var data_h = ctx.enqueue_create_host_buffer[ln_type](rows * cols)
-    var gamma_h = ctx.enqueue_create_host_buffer[ln_type](cols)
-    var beta_h = ctx.enqueue_create_host_buffer[ln_type](cols)
+    var data_h = ctx.enqueue_create_host_buffer[dtype](rows * cols)
+    var gamma_h = ctx.enqueue_create_host_buffer[dtype](cols)
+    var beta_h = ctx.enqueue_create_host_buffer[dtype](cols)
     rand(data_h.as_span())
     rand(gamma_h.as_span())
     rand(beta_h.as_span())
 
-    var data_d = ctx.enqueue_create_buffer[ln_type](rows * cols)
+    var data_d = ctx.enqueue_create_buffer[dtype](rows * cols)
     # Distinct output buffer: input_fn (reads) and output_fn (writes) are
     # separate value-closure args, so they must reference distinct buffer
     # origins (writing in place into `data_d` would alias the read; mirrors
     # test_layer_norm.mojo's `run_layer_norm_gpu`).
-    var out_d = ctx.enqueue_create_buffer[ln_type](rows * cols)
-    var gamma_d = ctx.enqueue_create_buffer[ln_type](cols)
-    var beta_d = ctx.enqueue_create_buffer[ln_type](cols)
+    var out_d = ctx.enqueue_create_buffer[dtype](rows * cols)
+    var gamma_d = ctx.enqueue_create_buffer[dtype](cols)
+    var beta_d = ctx.enqueue_create_buffer[dtype](cols)
     ctx.enqueue_copy(data_d, data_h)
     ctx.enqueue_copy(gamma_d, gamma_h)
     ctx.enqueue_copy(beta_d, beta_h)
@@ -117,37 +119,37 @@ def run_one_case(
 
     @always_inline
     def input_fn[
-        width: Int, alignment: Int, _rank: Int
-    ](coords: IndexList[_rank]) {var data_buf} -> SIMD[ln_type, width]:
-        var idx = data_buf.layout(Coord(coords))
+        width: Int, alignment: Int
+    ](coords: Coord) {var data_buf} -> SIMD[dtype, width]:
+        var idx = data_buf.layout(coords)
         return data_buf.raw_load[width=width, alignment=alignment](idx)
 
     @always_inline
     def output_fn[
-        width: SIMDLength, rank_: Int, alignment: Int
-    ](coords: IndexList[rank_], val: SIMD[ln_type, width]) {var out_buf}:
-        var idx = out_buf.layout(Coord(coords))
+        width: SIMDLength, alignment: Int
+    ](coords: Coord, val: SIMD[dtype, width]) {var out_buf}:
+        var idx = out_buf.layout(coords)
         out_buf.raw_store[width=width, alignment=alignment](
-            idx, rebind[SIMD[ln_type, width]](val)
+            idx, rebind[SIMD[dtype, width]](val)
         )
 
-    layer_norm[ln_type, 2, target="gpu"](
+    layer_norm[dtype, 2, target="gpu"](
         input_fn,
         output_fn,
         Coord(shape),
-        Scalar[DType.int](cols),
+        Int(cols),
         gamma,
         beta,
-        epsilon.cast[ln_type](),
+        epsilon.cast[dtype](),
         ctx,
     )
     ctx.synchronize()
 
     if check:
-        var out_h = ctx.enqueue_create_host_buffer[ln_type](rows * cols)
+        var out_h = ctx.enqueue_create_host_buffer[dtype](rows * cols)
         ctx.enqueue_copy(out_h, out_d)
         ctx.synchronize()
-        var ref_h = ctx.enqueue_create_host_buffer[ln_type](rows * cols)
+        var ref_h = ctx.enqueue_create_host_buffer[dtype](rows * cols)
         _layer_norm_ref(
             data_h.as_span(),
             gamma_h.as_span(),
@@ -155,7 +157,7 @@ def run_one_case(
             ref_h.as_span(),
             rows,
             cols,
-            epsilon.cast[DType.float64](),
+            epsilon.cast[.float64](),
         )
         if not numeric_check(out_h.as_span(), ref_h.as_span()):
             raise Error("layer_norm numeric mismatch")

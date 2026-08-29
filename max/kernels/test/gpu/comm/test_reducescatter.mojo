@@ -133,8 +133,8 @@ def reducescatter_test[
     var out_bufs_list = List[DeviceBuffer[dtype]](capacity=ngpus)
     var host_in = List[HostBuffer[dtype]](capacity=ngpus)
 
-    var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
-    var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+    var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
+    var rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS](
         uninitialized=True
     )
 
@@ -161,9 +161,7 @@ def reducescatter_test[
         host_in.append(h^)
 
         signal_buffers.append(
-            list_of_ctx[gpu_idx].create_buffer_sync[DType.uint8](
-                size_of[Signal]()
-            )
+            list_of_ctx[gpu_idx].create_buffer_sync[.uint8](size_of[Signal]())
         )
         init_signal_buffer(signal_buffers[gpu_idx], list_of_ctx[gpu_idx])
         rank_sigs[gpu_idx] = (
@@ -212,7 +210,7 @@ def reducescatter_test[
                 row_major(shape),
             )
 
-    comptime shape_type = DynamicCoord[DType.int, rank]
+    comptime shape_type = DynamicCoord[.int, rank]
 
     comptime OutputTileType = type_of(
         TileTensor[mut=True](
@@ -418,8 +416,8 @@ def grouped_reducescatter_test(list_of_ctx: List[DeviceContext]) raises:
     var out_bufs_list = List[DeviceBuffer[dtype]](capacity=ngpus)
     var host_in = List[HostBuffer[dtype]](capacity=ngpus)
 
-    var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
-    var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+    var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
+    var rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS](
         uninitialized=True
     )
 
@@ -447,9 +445,7 @@ def grouped_reducescatter_test(list_of_ctx: List[DeviceContext]) raises:
         host_in.append(h^)
 
         signal_buffers.append(
-            list_of_ctx[gpu_idx].create_buffer_sync[DType.uint8](
-                size_of[Signal]()
-            )
+            list_of_ctx[gpu_idx].create_buffer_sync[.uint8](size_of[Signal]())
         )
         init_signal_buffer(signal_buffers[gpu_idx], list_of_ctx[gpu_idx])
         rank_sigs[gpu_idx] = (
@@ -462,7 +458,7 @@ def grouped_reducescatter_test(list_of_ctx: List[DeviceContext]) raises:
     comptime for i in range(ngpus):
         list_of_ctx[i].synchronize()
 
-    comptime shape_type = DynamicCoord[DType.int, rank]
+    comptime shape_type = DynamicCoord[.int, rank]
     comptime InputTileType = type_of(
         TileTensor[mut=False](
             in_bufs_list[0].unsafe_ptr().as_unsafe_any_origin(),
@@ -506,9 +502,9 @@ def grouped_reducescatter_test(list_of_ctx: List[DeviceContext]) raises:
     comptime for group_idx in range(ngpus // group_size):
         comptime group_start = group_idx * group_size
         var group_in_bufs = Array[InputTileType, group_size](uninitialized=True)
-        var group_rank_sigs = Array[
-            UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS
-        ](uninitialized=True)
+        var group_rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS](
+            uninitialized=True
+        )
 
         comptime for local_idx in range(group_size):
             group_in_bufs[local_idx] = in_bufs[group_start + local_idx]

@@ -82,20 +82,20 @@ def _bench_fp8_shape(
     """
     # Host inputs: values exactly representable in both E4M3 and bf16 (harmless
     # for timing, keeps the two weight buffers numerically consistent).
-    var act_host = ctx.enqueue_create_host_buffer[DType.bfloat16](m * k)
-    var w_fp8_host = ctx.enqueue_create_host_buffer[DType.float8_e4m3fn](n * k)
-    var w_bf16_host = ctx.enqueue_create_host_buffer[DType.bfloat16](n * k)
+    var act_host = ctx.enqueue_create_host_buffer[.bfloat16](m * k)
+    var w_fp8_host = ctx.enqueue_create_host_buffer[.float8_e4m3fn](n * k)
+    var w_bf16_host = ctx.enqueue_create_host_buffer[.bfloat16](n * k)
     for i in range(m * k):
-        act_host[i] = Scalar[DType.bfloat16](Float32((i % 5) - 2))
+        act_host[i] = BFloat16(Float32((i % 5) - 2))
     for i in range(n * k):
         var v = Float32((i % 7) - 3) * Float32(0.5)
-        w_fp8_host[i] = v.cast[DType.float8_e4m3fn]()
-        w_bf16_host[i] = v.cast[DType.bfloat16]()
+        w_fp8_host[i] = v.cast[.float8_e4m3fn]()
+        w_bf16_host[i] = v.cast[.bfloat16]()
 
-    var act_dev = ctx.enqueue_create_buffer[DType.bfloat16](m * k)
-    var w_fp8_dev = ctx.enqueue_create_buffer[DType.float8_e4m3fn](n * k)
-    var w_bf16_dev = ctx.enqueue_create_buffer[DType.bfloat16](n * k)
-    var out_dev = ctx.enqueue_create_buffer[DType.float32](m * n)
+    var act_dev = ctx.enqueue_create_buffer[.bfloat16](m * k)
+    var w_fp8_dev = ctx.enqueue_create_buffer[.float8_e4m3fn](n * k)
+    var w_bf16_dev = ctx.enqueue_create_buffer[.bfloat16](n * k)
+    var out_dev = ctx.enqueue_create_buffer[.float32](m * n)
     ctx.enqueue_copy(act_dev, act_host)
     ctx.enqueue_copy(w_fp8_dev, w_fp8_host)
     ctx.enqueue_copy(w_bf16_dev, w_bf16_host)
@@ -145,13 +145,13 @@ def _bench_fp8_shape(
     # --- materialize+dense (fp8 -> transient bf16 [N,K] -> dense bf16 MMA): the
     # M>1 narrow-N route as it dispatches today. Moves ~5*N*K bytes. ---
     for _ in range(warmup):
-        _enqueue_apple_fp8_materialize_dense[DType.float32, None](
+        _enqueue_apple_fp8_materialize_dense[.float32, None](
             out_tt, act_tt, w_fp8_tt, m, n, k, ctx
         )
         ctx.synchronize()
     var t_mat = perf_counter()
     for _ in range(hot):
-        _enqueue_apple_fp8_materialize_dense[DType.float32, None](
+        _enqueue_apple_fp8_materialize_dense[.float32, None](
             out_tt, act_tt, w_fp8_tt, m, n, k, ctx
         )
     ctx.synchronize()

@@ -187,6 +187,21 @@ class Settings(BaseSettings):
         alias="MAX_SERVE_MAX_PENDING_REQUESTS",
     )
 
+    max_request_bytes: int = Field(
+        description=(
+            "Maximum size in bytes of an accepted HTTP request body. Requests "
+            "whose body exceeds this are rejected with HTTP 413 before the body "
+            "is buffered, bounding per-request memory so a client cannot "
+            "exhaust host memory with an oversized payload. The default (100 "
+            "MiB) leaves ample headroom for multimodal requests that inline "
+            "base64 media; raise it for larger inline payloads, or set 0 to "
+            "disable the limit."
+        ),
+        default=100 * 1024 * 1024,  # 100 MiB
+        ge=0,
+        alias="MAX_SERVE_MAX_REQUEST_BYTES",
+    )
+
     # File URI configuration
     allowed_image_roots: list[str] = Field(
         description="List of allowed root directories for file:// URI access",
@@ -219,6 +234,26 @@ class Settings(BaseSettings):
         ),
         default="image",
         alias="MAX_SERVE_MEDIA_KIND",
+    )
+    media_url_ssrf_protection_enabled: bool = Field(
+        description=(
+            "Guard client-supplied http(s):// media URLs against SSRF. On by"
+            " default. Break-glass switch: disable only to restore the legacy"
+            " unvalidated fetch, and prefer MAX_SERVE_MEDIA_URL_ALLOWED_HOSTS to"
+            " permit specific internal hosts instead."
+        ),
+        default=True,
+        alias="MAX_SERVE_MEDIA_URL_SSRF_PROTECTION_ENABLED",
+    )
+    media_url_allowed_hosts: list[str] = Field(
+        description=(
+            "Allowlist permitting otherwise-blocked internal hosts to be fetched"
+            " while SSRF protection stays on. Each entry is an exact hostname"
+            " (case-insensitive) or an IP/CIDR (e.g. '10.0.0.0/8',"
+            " '192.168.1.10')."
+        ),
+        default_factory=list,
+        alias="MAX_SERVE_MEDIA_URL_ALLOWED_HOSTS",
     )
     generated_media_storage_mb: int = Field(
         description="Maximum amount of local disk space in MiB to use for generated image/video artifacts served via /content routes.",
@@ -478,6 +513,12 @@ class Settings(BaseSettings):
             f"    max_pending_requests   : "
             f"{self.max_pending_requests if self.max_pending_requests is not None else 'unbounded'}"
         )
+        max_request_str = (
+            to_human_readable_bytes(self.max_request_bytes)
+            if self.max_request_bytes
+            else "unbounded"
+        )
+        logger.info(f"    max_request_bytes      : {max_request_str}")
         logger.info("")
 
         # File System Configuration
@@ -494,6 +535,17 @@ class Settings(BaseSettings):
         )
         logger.info(f"    max_bytes              : {max_bytes_str}")
         logger.info(f"    media_kind             : {self.media_kind}")
+        media_url_allowed_hosts_str = (
+            ", ".join(self.media_url_allowed_hosts)
+            if self.media_url_allowed_hosts
+            else "None"
+        )
+        logger.info(
+            f"    media_url_ssrf_guard   : {'enabled' if self.media_url_ssrf_protection_enabled else 'DISABLED'}"
+        )
+        logger.info(
+            f"    media_url_allowed_hosts: {media_url_allowed_hosts_str}"
+        )
         logger.info("")
 
         # Metrics and Telemetry Configuration

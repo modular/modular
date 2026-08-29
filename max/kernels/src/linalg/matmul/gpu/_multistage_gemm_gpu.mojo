@@ -102,14 +102,9 @@ def warp_split_k_reduction[
 ](
     warp_k_part_id: Int,
     c_reg_tile: LayoutTensor[
-        mut=True, c_type, c_layout, address_space=AddressSpace.LOCAL, ...
+        mut=True, c_type, c_layout, address_space=.LOCAL, ...
     ],
-    smem: UnsafePointer[
-        mut=True,
-        Scalar[c_type],
-        _,
-        address_space=AddressSpace.SHARED,
-    ],
+    smem: UnsafePointer[mut=True, Scalar[c_type], _, address_space=.SHARED],
 ):
     comptime red_layout = Layout.row_major(1, num_threads_per_warp_k_part)
 
@@ -125,7 +120,7 @@ def warp_split_k_reduction[
             c_type,
             Layout.row_major(1, BM * BN),
             MutAnyOrigin,
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
         ](
             (
                 smem.bitcast[Scalar[c_type]]()
@@ -165,14 +160,14 @@ def warp_split_k_reduction[
 ](
     warp_k_part_id: Int,
     c_reg_tile: LayoutTensor[
-        mut=True, c_type, c_layout, address_space=AddressSpace.LOCAL, ...
+        mut=True, c_type, c_layout, address_space=.LOCAL, ...
     ],
 ):
     comptime c_frag_size = c_layout.shape[1].value()
 
     var smem = external_memory[
         Scalar[c_type],
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=align_of[SIMD[c_type, c_frag_size]](),
     ]()
 
@@ -212,27 +207,25 @@ def multistage_mma[
     b_next_smem_layout: Layout = Layout(),
     next_op_b_iter_masked: Bool = False,
     next_op_b_iter_alignment: Int = align_of[b_type](),
-    next_op_b_layout_int_type: DType = DType.int64,
-    next_op_b_linear_idx_type: DType = DType.int64,
+    next_op_b_layout_int_type: DType = .int64,
+    next_op_b_linear_idx_type: DType = .int64,
     k_group_size: Int = 1,
 ](
-    c: LayoutTensor[
-        mut=True, c_type, c_layout, address_space=AddressSpace.LOCAL, ...
-    ],
+    c: LayoutTensor[mut=True, c_type, c_layout, address_space=.LOCAL, ...],
     a_iter_arg: LayoutTensorIter[_, a_layout, ...],
     b_iter_arg: LayoutTensorIter[b_type, b_layout, ...],
     a_smem_iter_arg: LayoutTensorIter[
         mut=True,
         a_type,
         a_smem_layout,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         ...,
     ],
     mut b_smem_iter: LayoutTensorIter[
         mut=True,
         b_type,
         b_smem_layout,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         ...,
     ],
     num_iters: Int,
@@ -336,7 +329,7 @@ def multistage_mma[
     # Prefetch (num_pipeline_stages - 1) stages.
     comptime if prefetch_init:
         comptime for stage in range(num_pipeline_stages - 1):
-            comptime if a_iter.address_space == AddressSpace.GENERIC:
+            comptime if a_iter.address_space == .GENERIC:
                 var a_smem_tile = a_smem_iter.next_unsafe(
                     a_smem_iter.linear_uint_type(stage)
                 )[]
@@ -346,7 +339,7 @@ def multistage_mma[
 
                 a_iter._incr()
 
-            comptime if b_iter.address_space == AddressSpace.GENERIC:
+            comptime if b_iter.address_space == .GENERIC:
                 var b_smem_tile = b_smem_iter.next_unsafe(
                     b_smem_iter.linear_uint_type(stage)
                 )[]
@@ -402,7 +395,7 @@ def multistage_mma[
             a_type,
             a_reg_layout,
             MutAnyOrigin,
-            address_space=AddressSpace.LOCAL,
+            address_space=.LOCAL,
         ]
         .stack_allocation()
         .split[2 * k_group_size]()
@@ -416,7 +409,7 @@ def multistage_mma[
             b_type,
             b_reg_layout,
             MutAnyOrigin,
-            address_space=AddressSpace.LOCAL,
+            address_space=.LOCAL,
         ]
         .stack_allocation()
         .vectorize[1, b_frag_size]()
@@ -440,7 +433,7 @@ def multistage_mma[
     ]() if swizzle_a else Optional[Swizzle]()
 
     comptime for i in range(k_group_size):
-        comptime if a_iter.address_space == AddressSpace.LOCAL:
+        comptime if a_iter.address_space == .LOCAL:
             # Assume input is the 16x8 output of 16x8x16 or 16x8x8 mma.
             # Need to cast address space because it's not known at parse time to be LOCAL.
             copy_local_to_local(a_reg_tiles[i], a_iter[])
@@ -454,8 +447,7 @@ def multistage_mma[
 
     comptime if static_num_iters >= 0:
         comptime assert (
-            a_iter.address_space == AddressSpace.SHARED
-            or a_iter.address_space == AddressSpace.LOCAL
+            a_iter.address_space == .SHARED or a_iter.address_space == .LOCAL
         ), (
             "Using input in registers or shared memory requires static"
             " iteration bound.\n"
@@ -480,7 +472,7 @@ def multistage_mma[
 
                         # Prefetch one k tile (if valid) from global memory to current
                         # shared memory buffer.
-                        comptime if b_iter.address_space == AddressSpace.GENERIC:
+                        comptime if b_iter.address_space == .GENERIC:
                             comptime if prefetch_tile_id < static_num_iters:
                                 var b_smem_prefetch_tile = (
                                     b_smem_iter.next_unsafe(
@@ -517,7 +509,7 @@ def multistage_mma[
                             )
                             barrier()
 
-                        comptime if a_iter.address_space == AddressSpace.SHARED:
+                        comptime if a_iter.address_space == .SHARED:
                             a_smem_iter._incr()
                         b_smem_iter._incr()
 
@@ -528,7 +520,7 @@ def multistage_mma[
 
                     comptime kidx = Int(k_mma_next % UInt32(num_k_mmas))
 
-                    comptime if a_iter.address_space == AddressSpace.SHARED:
+                    comptime if a_iter.address_space == .SHARED:
                         mma_op.load_a[swizzle_a_pattern](
                             a_warp_tile,
                             a_reg_tiles[next].vectorize[1, a_frag_size](),
@@ -578,7 +570,7 @@ def multistage_mma[
                     # Prefetch one k tile (if valid) from global memory to current
                     # shared memory buffer.
                     if prefetch_tile_id < num_iters:
-                        comptime if a_iter.address_space == AddressSpace.GENERIC:
+                        comptime if a_iter.address_space == .GENERIC:
                             var a_smem_prefetch_tile = a_smem_iter.next_unsafe(
                                 a_smem_iter.linear_uint_type(
                                     num_pipeline_stages - 1
@@ -590,7 +582,7 @@ def multistage_mma[
 
                             a_iter._incr()
 
-                        comptime if b_iter.address_space == AddressSpace.GENERIC:
+                        comptime if b_iter.address_space == .GENERIC:
                             var b_smem_prefetch_tile = b_smem_iter.next_unsafe(
                                 b_smem_iter.linear_uint_type(
                                     num_pipeline_stages - 1
@@ -734,7 +726,7 @@ def multistage_gemm_kernel[
     ) or (
         a_type in (DType.float8_e4m3fn, DType.float8_e5m2)
         and a_type == b_type
-        and c_type == DType.float32
+        and c_type == .float32
     ), "Pipeline gemm only supports tf32, F16, BF16, E4M3, and E5M2 mma"
     comptime simd_size = simd_width_of[c_type]()
 
@@ -784,7 +776,7 @@ def multistage_gemm_kernel[
     comptime alignment = align_of[SIMD[a_type, simd_size]]()
     var a_smem = external_memory[
         Scalar[a_type],
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=alignment,
     ]()
     comptime a_smem_size: Int = num_pipeline_stages * BM * BK
@@ -813,7 +805,7 @@ def multistage_gemm_kernel[
         b_type,
         b_smem_layout,
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         circular=True,
     ]
     var b_smem_iter = IteratorTypeB(
@@ -861,7 +853,7 @@ def multistage_gemm_kernel[
             accum_type,
             c_reg_layout,
             MutAnyOrigin,
-            address_space=AddressSpace.LOCAL,
+            address_space=.LOCAL,
         ]
         .stack_allocation()  # ALIGN-TODO: pass alignment here?
         .fill(0)
@@ -1037,7 +1029,7 @@ def multistage_gemm_kernel[
             c_type,
             Layout.row_major(WM, WN),
             MutAnyOrigin,
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
         ](
             (
                 a_smem.bitcast[Scalar[c_type]]() + warp_id * WM * WN
@@ -1123,7 +1115,7 @@ def multistage_gemm_kernel[
                     c_type,
                     c_reg_tile.layout,
                     MutAnyOrigin,
-                    address_space=AddressSpace.LOCAL,
+                    address_space=.LOCAL,
                 ].stack_allocation()
 
                 comptime for i in range(c_reg_tile.shape[0]()):

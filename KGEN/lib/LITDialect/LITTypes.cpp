@@ -535,7 +535,7 @@ LIT::StructType::canElideSugarFor(TypedAttr attr) const {
     }
   }
 
-  if (isa<SingletonAttr>(attr)) {
+  if (isa<LITStructAttr>(attr)) {
     auto typeName = getTypeName();
     if (typeName == "IntLiteral" || typeName == "FloatLiteral" ||
         typeName == "StringLiteral" || typeName == "Origin")
@@ -1603,8 +1603,7 @@ Type FnTypeGeneratorType::replaceImplicitOriginsWithIndexes(
 
   // Replace named implicit origin parameter references with index-based
   // references in the signature.
-  NameToImplicitOriginRefRemapper<ParamDeclRefAttr> remapper(originDecls,
-                                                             depthOffset);
+  NameToImplicitOriginRefRemapper remapper(originDecls, depthOffset);
   return remapper.replace(origType);
 }
 

@@ -48,17 +48,17 @@ def _single_mfma_kernel[
     matrix_format: CDNA4F8F6F4MatrixFormat,
     accum_width: Int,
 ](
-    a_in: UnsafePointer[UInt8, ImmutAnyOrigin],
-    b_in: UnsafePointer[UInt8, ImmutAnyOrigin],
-    scales: UnsafePointer[Int32, ImmutAnyOrigin],
-    dst: UnsafePointer[Float32, MutAnyOrigin],
+    a_in: ImmPointer[UInt8, ImmutAnyOrigin],
+    b_in: ImmPointer[UInt8, ImmutAnyOrigin],
+    scales: ImmPointer[Int32, ImmutAnyOrigin],
+    dst: MutPointer[Float32, MutAnyOrigin],
 ):
     comptime fragment_width = matrix_format.simd_width()
     var lane = Int(lane_id())
 
     var a_frag = a_in.load[width=fragment_width](lane * fragment_width)
     var b_frag = b_in.load[width=fragment_width](lane * fragment_width)
-    var acc = SIMD[DType.float32, accum_width](0.0)
+    var acc = SIMD[.float32, accum_width](0.0)
 
     cdna4_block_scaled_mfma[0, 0, matrix_format, matrix_format](
         acc, a_frag, b_frag, scales[0], scales[1]

@@ -930,8 +930,8 @@ struct BlackwellBlockScaledMatmulKernel[
 
         # ===== Shared Memory Setup (structured pattern with typed accessors) =====
         ref smem = external_memory[
-            Scalar[DType.uint8],
-            address_space=AddressSpace.SHARED,
+            UInt8,
+            address_space=.SHARED,
             alignment=128,
         ]().bitcast[Self.SmemType]()[]
 

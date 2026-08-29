@@ -90,16 +90,12 @@ def grouped_matmul_sm90[
     ] = default_config_sm90[a_type, b_type, c_type, transpose_b, wgmma_shape](),
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
-    c: TileTensor[mut=True, c_type, address_space=AddressSpace.GENERIC, ...],
-    a: TileTensor[a_type, address_space=AddressSpace.GENERIC, ...],
-    a_offsets: TileTensor[
-        mut=False, DType.uint32, address_space=AddressSpace.GENERIC, ...
-    ],
+    c: TileTensor[mut=True, c_type, address_space=.GENERIC, ...],
+    a: TileTensor[a_type, address_space=.GENERIC, ...],
+    a_offsets: TileTensor[mut=False, .uint32, address_space=.GENERIC, ...],
     max_num_tokens_per_expert: Int,
-    b: TileTensor[b_type, address_space=AddressSpace.GENERIC, ...],
-    expert_ids: TileTensor[
-        mut=False, DType.int32, address_space=AddressSpace.GENERIC, ...
-    ],
+    b: TileTensor[b_type, address_space=.GENERIC, ...],
+    expert_ids: TileTensor[mut=False, .int32, address_space=.GENERIC, ...],
     num_active_experts: Int,
     ctx: DeviceContext,
 ) raises:
@@ -207,6 +203,11 @@ def grouped_matmul_sm90[
         promotion_frequency=1,
         pdl_level=config.pdl_level(),
         elementwise_lambda_fn=elementwise_lambda_fn,
+        a_storage=type_of(a).Storage,
+        b_storage=type_of(b_flat).Storage,
+        c_storage=type_of(c).Storage,
+        a_offsets_storage=type_of(a_offsets).Storage,
+        expert_ids_storage=type_of(expert_ids).Storage,
     ].run_grouped[
         type_of(a_tma_op).rank,
         type_of(b_tma_op).rank,

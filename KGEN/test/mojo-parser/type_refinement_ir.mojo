@@ -77,11 +77,11 @@ struct GuardedParamBox[T: GuardedParam](Movable where False):
     pass
 
 
-def use_base[T: Base](read x: T):
+def use_base[T: Base](imm x: T):
     pass
 
 
-def use_extra[T: Extra](read x: T):
+def use_extra[T: Extra](imm x: T):
     pass
 
 
@@ -165,7 +165,7 @@ def refine_type_base_alias_static_member_preserves_original_bound[
 # CHECK: lit.call{{.*}}#kgen.get_witness<:!AnyType_StaticOriginal T, @type_refinement_ir::@StaticOriginal, "original_static_value{{.*}}">
 def refine_type_of_static_member_preserves_original_bound[
     T: StaticOriginal
-](read x: T):
+](imm x: T):
     comptime if conforms_to(T, StaticRefined):
         _ = type_of(x).refined_static_value()
         _ = type_of(x).original_static_value()
@@ -233,60 +233,60 @@ def refine_type_value_associated_binding_preserves_original_bound[C: AnyType]():
 
 
 # CHECK-LABEL: lit.fn @"refine_from_where
-# CHECK-SAME: ([[ARG:%.*]]: !lit.ref<:!AnyType_Base T, imm *"x`"> read_mem)
+# CHECK-SAME: ([[ARG:%.*]]: !lit.ref<:!AnyType_Base T, imm *"x`"> imm_mem)
 # CHECK: [[WHERE_REF:%.*]] = kgen.rebind [[ARG]] : {{.*}} to {{.*}}Base_Extra downcast(:!AnyType_Base T){{.*}}
 # CHECK: lit.call{{.*}}@{{.*}}@"use_base
 # CHECK: lit.call{{.*}}@{{.*}}@"use_extra
-def refine_from_where[T: Base](read x: T) where conforms_to(T, Extra):
+def refine_from_where[T: Base](imm x: T) where conforms_to(T, Extra):
     use_base(x)
     use_extra(x)
 
 
 # CHECK-LABEL: lit.fn @"refine_in_comptime_if
-# CHECK-SAME: ([[ARG:%.*]]: !lit.ref<:!AnyType_Base T, imm *"x`"> read_mem)
+# CHECK-SAME: ([[ARG:%.*]]: !lit.ref<:!AnyType_Base T, imm *"x`"> imm_mem)
 # CHECK: kgen.param.if <{{.*}}conforms_to(:!AnyType_Base T, :meta<!{{.*}}Extra> !{{.*}}Extra){{.*}}> {
 # CHECK: [[IF_REF:%.*]] = kgen.rebind [[ARG]] : {{.*}} to {{.*}}Base_Extra downcast(:!AnyType_Base T){{.*}}
 # CHECK: lit.call{{.*}}@{{.*}}@"use_base
 # CHECK: lit.call{{.*}}@{{.*}}@"use_extra
-def refine_in_comptime_if[T: Base](read x: T):
+def refine_in_comptime_if[T: Base](imm x: T):
     comptime if conforms_to(T, Extra):
         use_base(x)
         use_extra(x)
 
 
 # CHECK-LABEL: lit.fn @"refine_after_comptime_assert
-# CHECK-SAME: ([[ARG:%.*]]: !lit.ref<:!AnyType_Base T, imm *"x`"> read_mem)
+# CHECK-SAME: ([[ARG:%.*]]: !lit.ref<:!AnyType_Base T, imm *"x`"> imm_mem)
 # CHECK: kgen.param.assert <{{.*}}conforms_to(:!AnyType_Base T, :meta<!{{.*}}Extra> !{{.*}}Extra){{.*}}>
 # CHECK: [[ASSERT_REF:%.*]] = kgen.rebind [[ARG]] : {{.*}} to {{.*}}Base_Extra downcast(:!AnyType_Base T){{.*}}
 # CHECK: lit.call{{.*}}@{{.*}}@"use_base
 # CHECK: lit.call{{.*}}@{{.*}}@"use_extra
-def refine_after_comptime_assert[T: Base](read x: T):
+def refine_after_comptime_assert[T: Base](imm x: T):
     comptime assert conforms_to(T, Extra)
     use_base(x)
     use_extra(x)
 
 
 # CHECK-LABEL: lit.fn @"refinement_does_not_leak_after_comptime_if
-# CHECK-SAME: ([[ARG:%.*]]: !lit.ref<:!AnyType_Base T, imm *"x`"> read_mem)
+# CHECK-SAME: ([[ARG:%.*]]: !lit.ref<:!AnyType_Base T, imm *"x`"> imm_mem)
 # CHECK: kgen.param.if <{{.*}}conforms_to(:!AnyType_Base T, :meta<!{{.*}}Extra> !{{.*}}Extra){{.*}}> {
 # CHECK: [[IF_REF:%.*]] = kgen.rebind [[ARG]] : {{.*}} to {{.*}}Base_Extra downcast(:!AnyType_Base T){{.*}}
 # CHECK: lit.call{{.*}}@{{.*}}@"use_extra
 # CHECK-NOT: kgen.rebind [[ARG]]
 # CHECK: lit.call{{.*}}@{{.*}}@"use_base
-def refinement_does_not_leak_after_comptime_if[T: Base](read x: T):
+def refinement_does_not_leak_after_comptime_if[T: Base](imm x: T):
     comptime if conforms_to(T, Extra):
         use_extra(x)
     use_base(x)
 
 
 # CHECK-LABEL: lit.fn @"no_refinement_before_comptime_assert
-# CHECK-SAME: ([[ARG:%.*]]: !lit.ref<:!AnyType_Base T, imm *"x`"> read_mem)
+# CHECK-SAME: ([[ARG:%.*]]: !lit.ref<:!AnyType_Base T, imm *"x`"> imm_mem)
 # CHECK-NOT: kgen.rebind [[ARG]]
 # CHECK: lit.call{{.*}}@{{.*}}@"use_base
 # CHECK: kgen.param.assert <{{.*}}conforms_to(:!AnyType_Base T, :meta<!{{.*}}Extra> !{{.*}}Extra){{.*}}>
 # CHECK: [[ASSERT_REF:%.*]] = kgen.rebind [[ARG]] : {{.*}} to {{.*}}Base_Extra downcast(:!AnyType_Base T){{.*}}
 # CHECK: lit.call{{.*}}@{{.*}}@"use_extra
-def no_refinement_before_comptime_assert[T: Base](read x: T):
+def no_refinement_before_comptime_assert[T: Base](imm x: T):
     use_base(x)
     comptime assert conforms_to(T, Extra)
     use_extra(x)

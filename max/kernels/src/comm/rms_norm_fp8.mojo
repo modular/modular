@@ -147,8 +147,7 @@ def rms_norm_fused_fp8[
 
     # Tracing for performance profiling
     @always_inline
-    @__parameter
-    def description_fn() -> String:
+    def description_fn() {imm} -> String:
         return (
             trace_arg("input", shape, in_dtype)
             + " -> "
@@ -157,7 +156,7 @@ def rms_norm_fused_fp8[
 
     with Trace[TraceLevel.OP, target=target](
         "rms_norm_fused_fp8",
-        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+        Trace[TraceLevel.OP]._get_detail_str(description_fn),
         task_id=Int(ctx.id()),
     ):
         if target == "gpu":
@@ -455,8 +454,8 @@ def _rms_norm_fused_fp8_gpu_launch[
             ctx.enqueue_function[kernel](
                 gamma,
                 scale_output,
-                epsilon.cast[DType.float32](),
-                weight_offset.cast[DType.float32](),
+                epsilon.cast[.float32](),
+                weight_offset.cast[.float32](),
                 Int32(cols),
                 Float32(scale_ub),
                 grid_dim=grid_dim,
@@ -486,8 +485,8 @@ def _rms_norm_fused_fp8_gpu_launch[
             ctx.enqueue_function[kernel](
                 gamma,
                 scale_output,
-                epsilon.cast[DType.float32](),
-                weight_offset.cast[DType.float32](),
+                epsilon.cast[.float32](),
+                weight_offset.cast[.float32](),
                 Int32(cols),
                 Float32(scale_ub),
                 grid_dim=grid_dim,

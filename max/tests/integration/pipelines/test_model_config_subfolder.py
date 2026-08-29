@@ -26,8 +26,10 @@ from max.pipelines.lib import (
     MAXModelConfig,
     PipelineConfig,
 )
+from max.pipelines.lib.config.model_config import _build_model_config
 from max.pipelines.lib.model_manifest import ModelManifest
 from max.pipelines.weights.hf_utils import HuggingFaceRepo
+from pydantic import ConfigDict, ValidationError
 from test_common.fake_weights import write_fake_safetensors
 from test_common.mocks import (
     mock_pipeline_config_resolve,
@@ -62,7 +64,11 @@ class TestMAXModelConfigSubfolder:
         """Test that subfolder defaults to None."""
         config = PipelineConfig(
             models=ModelManifest(
-                {"main": MAXModelConfig(model_path="test/model")}
+                {
+                    "main": _build_model_config(
+                        MAXModelConfig, model_path="test/model"
+                    )
+                }
             )
         )
         assert config.model.subfolder is None
@@ -73,8 +79,8 @@ class TestMAXModelConfigSubfolder:
         config = PipelineConfig(
             models=ModelManifest(
                 {
-                    "main": MAXModelConfig(
-                        model_path="test/model", subfolder="vae"
+                    "main": _build_model_config(
+                        MAXModelConfig, model_path="test/model", subfolder="vae"
                     )
                 }
             )
@@ -84,7 +90,8 @@ class TestMAXModelConfigSubfolder:
     @mock_pipeline_config_resolve
     def test_subfolder_passed_to_huggingface_weight_repo(self) -> None:
         """Test that subfolder is propagated to the HuggingFaceRepo for weights."""
-        model_config = MAXModelConfig(
+        model_config = _build_model_config(
+            MAXModelConfig,
             model_path="/tmp/fake-local-model",
             subfolder="text_encoder",
         )
@@ -97,7 +104,9 @@ class TestMAXModelConfigSubfolder:
     @mock_pipeline_config_resolve
     def test_subfolder_none_does_not_set_on_repo(self) -> None:
         """Test that subfolder=None results in None on HuggingFaceRepo."""
-        model_config = MAXModelConfig(model_path="/tmp/fake-local-model")
+        model_config = _build_model_config(
+            MAXModelConfig, model_path="/tmp/fake-local-model"
+        )
         with patch("os.path.exists", return_value=True):
             repo = model_config.huggingface_weight_repo
             assert repo.subfolder is None
@@ -106,7 +115,8 @@ class TestMAXModelConfigSubfolder:
     def test_subfolder_passed_to_huggingface_config_loading(self) -> None:
         """Test that subfolder is on the repo passed to AutoConfig loading."""
         mock_auto_config = Mock()
-        model_config = MAXModelConfig(
+        model_config = _build_model_config(
+            MAXModelConfig,
             model_path="test/model",
             subfolder="vae",
         )
@@ -129,7 +139,9 @@ class TestMAXModelConfigSubfolder:
     def test_subfolder_none_passed_to_huggingface_config_loading(self) -> None:
         """Test that subfolder=None is on the repo passed to AutoConfig loading."""
         mock_auto_config = Mock()
-        model_config = MAXModelConfig(model_path="test/model")
+        model_config = _build_model_config(
+            MAXModelConfig, model_path="test/model"
+        )
         with (
             patch("os.path.exists", return_value=True),
             patch(
@@ -231,7 +243,8 @@ class TestMAXModelConfigSubfolderWeightPathPrefixing:
             "max.pipelines.lib.config.model_config.WeightPathParser.parse",
             return_value=([Path("model.safetensors")], None),
         ):
-            config = MAXModelConfig(
+            config = _build_model_config(
+                MAXModelConfig,
                 model_path="org/model",
                 subfolder="vae",
                 weight_path=[Path("model.safetensors")],
@@ -244,7 +257,8 @@ class TestMAXModelConfigSubfolderWeightPathPrefixing:
             "max.pipelines.lib.config.model_config.WeightPathParser.parse",
             return_value=([Path("vae/model.safetensors")], None),
         ):
-            config = MAXModelConfig(
+            config = _build_model_config(
+                MAXModelConfig,
                 model_path="org/model",
                 subfolder="vae",
                 weight_path=[Path("vae/model.safetensors")],
@@ -259,7 +273,8 @@ class TestMAXModelConfigSubfolderWeightPathPrefixing:
                 "max.pipelines.lib.config.model_config.WeightPathParser.parse",
                 return_value=([abs_path], None),
             ):
-                config = MAXModelConfig(
+                config = _build_model_config(
+                    MAXModelConfig,
                     model_path="org/model",
                     subfolder="vae",
                     weight_path=[abs_path],
@@ -272,7 +287,8 @@ class TestMAXModelConfigSubfolderWeightPathPrefixing:
             "max.pipelines.lib.config.model_config.WeightPathParser.parse",
             return_value=([Path("model.safetensors")], None),
         ):
-            config = MAXModelConfig(
+            config = _build_model_config(
+                MAXModelConfig,
                 model_path="org/model",
                 weight_path=[Path("model.safetensors")],
             )
@@ -291,7 +307,8 @@ class TestExternalWeightRepoRevision:
             "max.pipelines.lib.config.model_config.WeightPathParser.parse",
             return_value=([Path("w.safetensors")], "org/quant-repo"),
         ):
-            return MAXModelConfig(
+            return _build_model_config(
+                MAXModelConfig,
                 model_path="org/base-model",
                 weight_path=[Path("org/quant-repo/w.safetensors")],
                 huggingface_model_revision=model_rev,
@@ -321,7 +338,8 @@ class TestExternalWeightRepoRevision:
             "max.pipelines.lib.config.model_config.WeightPathParser.parse",
             return_value=([Path("model.safetensors")], None),
         ):
-            config = MAXModelConfig(
+            config = _build_model_config(
+                MAXModelConfig,
                 model_path="org/model",
                 weight_path=[Path("model.safetensors")],
                 huggingface_weight_revision="rev123",
@@ -350,3 +368,24 @@ class TestExternalWeightRepoRevision:
             mock_download.call_args.kwargs["revision"]
             == hf_hub_constants.DEFAULT_REVISION
         )
+
+
+def test_create_survives_a_frozen_subclass() -> None:
+    """Pins that the ``create`` factory works under ``frozen=True``: the
+    resolved paths arrive through construction and a copy, never through
+    field assignment, and the object stays frozen after."""
+
+    class _FrozenModelConfig(MAXModelConfig):
+        model_config = ConfigDict(frozen=True)
+
+    config = _build_model_config(
+        _FrozenModelConfig,
+        model_path="test/model",
+        weight_path=[Path("model.safetensors")],
+    )
+    assert config.model_path == "test/model"
+    assert config.weight_path == [Path("model.safetensors")]
+    with pytest.raises(ValidationError):
+        # setattr, because the linter rejects a literal assignment to a
+        # frozen field; the illegal write is the point of the test.
+        setattr(config, "model_path", "other/model")  # noqa: B010

@@ -48,6 +48,7 @@ from max.pipelines.lib.vlm_utils import merge_multimodal_embeddings
 
 from .layers.attention import Qwen3_5Attention
 from .layers.gated_deltanet import GatedDeltaNet, GatedDeltaReplayInputs
+from .layers.text_rotary import Qwen3_5TextRotaryEmbedding
 from .layers.visual_transformer import VisionTransformer
 from .model_config import Qwen3_5Config
 from .quantization import storage_dtype
@@ -161,6 +162,7 @@ class Qwen3_5FullAttentionBlock(Module):
         attention_dispatch_metadata: list[TensorValue],
         freqs_cis: list[TensorValue],
         input_row_offsets: list[TensorValue],
+        freq_row_ids: list[TensorValue] | None = None,
     ) -> list[TensorValue]:
         norm_xs = forward_sharded_layers(self.input_layernorm_shards, xs)
         # `o_proj` is row-parallel, so each device holds a partial sum.
@@ -181,6 +183,7 @@ class Qwen3_5FullAttentionBlock(Module):
                     ),
                     freqs_cis[i],
                     input_row_offsets[i],
+                    None if freq_row_ids is None else freq_row_ids[i],
                 )
                 for i, shard in enumerate(self.self_attn_shards)
             ],
@@ -323,15 +326,42 @@ class Qwen3_5(DistributedLogitsPostprocessMixin, Module):
         rotary_dim = int(
             config.kv_params.head_dim * config.partial_rotary_factor
         )
-        rope = Llama3RotaryEmbedding(
-            dim=config.hidden_size,
-            n_heads=config.num_attention_heads,
-            theta=config.rope_theta,
-            max_seq_len=config.max_seq_len,
-            head_dim=rotary_dim,
-            interleaved=config.interleaved_rope_weights,
-            scaling_params=config.rope_scaling_params,
+        # An image compresses many soft-token patches into far fewer
+        # position steps on each of three axes, so every token after it needs
+        # an explicit 3-axis position rather than the kernels' default
+        # `cache_length + token_idx`. Text-only checkpoints have no image to
+        # splice and degenerate to that default on all three axes, so they
+        # keep the static table.
+        #
+        # The KV cache dtype does not enter into this: rope is applied to K
+        # before the value is cast into the cache.
+        self.mrope_enabled = (
+            config.mrope_section is not None
+            and config.vision_config is not None
         )
+        rope: Llama3RotaryEmbedding
+        if self.mrope_enabled:
+            assert config.mrope_section is not None
+            rope = Qwen3_5TextRotaryEmbedding(
+                dim=config.hidden_size,
+                n_heads=config.num_attention_heads,
+                theta=config.rope_theta,
+                max_seq_len=config.max_seq_len,
+                mrope_section=config.mrope_section,
+                head_dim=rotary_dim,
+                interleaved=config.interleaved_rope_weights,
+                scaling_params=config.rope_scaling_params,
+            )
+        else:
+            rope = Llama3RotaryEmbedding(
+                dim=config.hidden_size,
+                n_heads=config.num_attention_heads,
+                theta=config.rope_theta,
+                max_seq_len=config.max_seq_len,
+                head_dim=rotary_dim,
+                interleaved=config.interleaved_rope_weights,
+                scaling_params=config.rope_scaling_params,
+            )
         self.rope = rope
 
         # Norm factory (uses (1 + weight) offset for Qwen3.5)
@@ -457,6 +487,7 @@ class Qwen3_5(DistributedLogitsPostprocessMixin, Module):
         recurrent_pools: list[list[BufferValue]],
         image_embeddings: list[TensorValue] | None = None,
         image_token_indices: list[TensorValue] | None = None,
+        position_ids: TensorValue | None = None,
     ) -> tuple[TensorValue, ...]:
         """Forward pass through the hybrid model.
 
@@ -488,6 +519,11 @@ class Qwen3_5(DistributedLogitsPostprocessMixin, Module):
             image_token_indices: Per-device scatter indices for placing image
                 embeddings in the token sequence. Shape
                 [vision_merged_seq_len]. None for text-only.
+            position_ids: ``[3, total_seq_len]`` temporal/height/width M-RoPE
+                positions, one column per token of the ragged batch. Required
+                when :attr:`mrope_enabled`; ``None`` leaves the rotary on the
+                static table indexed by ``cache_length + token_idx``, which is
+                what the speculative graph's text-only draft uses.
 
         Returns:
             Tuple of (logits,).
@@ -504,7 +540,32 @@ class Qwen3_5(DistributedLogitsPostprocessMixin, Module):
                 )
             ]
 
-        freqs_cis = [self.rope.freqs_cis.to(device) for device in self.devices]
+        # With M-RoPE the table is per token, not per position: row `i` holds
+        # the frequencies for token `i` of the ragged batch. The rope kernels
+        # index it by an explicit position id, so they are handed the token's
+        # own row index instead of their default cache-derived position.
+        freq_row_ids: list[TensorValue] | None = None
+        if position_ids is not None:
+            assert isinstance(self.rope, Qwen3_5TextRotaryEmbedding)
+            table = self.rope.freqs_cis_position_ids(position_ids)
+            freqs_cis = [table.to(device) for device in self.devices]
+            freq_row_ids = [
+                ops.unsqueeze(
+                    ops.range(
+                        0,
+                        hs[0].shape[0],
+                        1,
+                        device=device,
+                        dtype=DType.uint32,
+                    ),
+                    0,
+                )
+                for device in self.devices
+            ]
+        else:
+            freqs_cis = [
+                self.rope.freqs_cis.to(device) for device in self.devices
+            ]
         row_offsets = ops.distributed_broadcast(
             input_row_offsets.to(self.devices[0]), signal_buffers
         )
@@ -538,7 +599,7 @@ class Qwen3_5(DistributedLogitsPostprocessMixin, Module):
                 # ``forward_sequential_layers`` only introspects ``Value`` and
                 # sequences of them, so the per-device dataclasses are
                 # unpacked field by field.
-                return [
+                full_attn_inputs: list[Value[Any] | Sequence[Value[Any]]] = [
                     hs,
                     layer_idx_tensor,
                     signal_buffers,
@@ -555,6 +616,9 @@ class Qwen3_5(DistributedLogitsPostprocessMixin, Module):
                     freqs_cis,
                     row_offsets,
                 ]
+                if freq_row_ids is not None:
+                    full_attn_inputs.append(freq_row_ids)
+                return full_attn_inputs
             vals: list[Value[Any] | Sequence[Value[Any]]] = [
                 hs,
                 signal_buffers,
@@ -680,6 +744,16 @@ class Qwen3_5(DistributedLogitsPostprocessMixin, Module):
                 for device in self.devices
             )
 
+        # One shared table drives every full-attention layer, so the M-RoPE
+        # positions arrive once rather than per device.
+        position_ids_types: list[TensorType | BufferType] = []
+        if self.mrope_enabled:
+            position_ids_types.append(
+                TensorType(
+                    DType.int64, shape=[3, "total_seq_len"], device=device_ref
+                )
+            )
+
         return tuple(
             base_inputs
             + signal_buffer_types
@@ -688,4 +762,5 @@ class Qwen3_5(DistributedLogitsPostprocessMixin, Module):
             + conv_pool_types
             + recurrent_pool_types
             + vision_types
+            + position_ids_types
         )

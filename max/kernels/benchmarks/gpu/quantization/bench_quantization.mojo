@@ -185,7 +185,7 @@ def bench_1d1d_quantization[
 
 
 def main() raises:
-    comptime in_dtype = get_defined_dtype["dtype", DType.bfloat16]()
+    comptime in_dtype = get_defined_dtype["dtype", .bfloat16]()
 
     var rows = Int(arg_parse("M", 1))
     comptime cols = get_defined_int["N", 1024]()

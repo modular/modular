@@ -62,8 +62,8 @@ from std.utils import IndexList
 
 from kv_cache_test_utils import CacheLengthsTable, PagedLookupTable
 
-# M3 per-device (TP=4) BF16 parameters. All tensors (hidden state, weight,
-# combined output, both KV caches) are BF16 — attention in M3 is NOT quantized.
+# M3 per-device (TP=4) BF16 parameters. Hidden/weight/Q outputs stay BF16.
+# IndexK may be e4m3 (`index_kv_dtype`); main KV stays BF16.
 comptime DATA_DTYPE = DType.bfloat16  # hidden state + weight
 comptime OUT_DTYPE = DType.bfloat16  # combined output + KV caches
 comptime KV_DTYPE = DType.bfloat16
@@ -87,6 +87,7 @@ comptime index_kv_params = KVCacheStaticParams(
 
 
 def execute_dual_cache_fused_bf16[
+    index_kv_dtype: DType = DType.bfloat16,
     rtol: Float32 = 1e-2,
     atol: Float32 = 1e-2,
 ](
@@ -120,7 +121,7 @@ def execute_dual_cache_fused_bf16[
         KV_DTYPE, main_kv_params, page_size, ...
     ]
     comptime IndexCollection = PagedKVCacheCollection[
-        KV_DTYPE, index_kv_params, page_size, ...
+        index_kv_dtype, index_kv_params, page_size, ...
     ]
 
     # ---- ragged inputs ----
@@ -161,10 +162,10 @@ def execute_dual_cache_fused_bf16[
     var index_block_shape = IndexList[6](
         num_paged_blocks, 2, num_layers, page_size, 1, HEAD_SIZE
     )
-    var index_blocks = ManagedLayoutTensor[KV_DTYPE, kv_block_layout](
+    var index_blocks = ManagedLayoutTensor[index_kv_dtype, kv_block_layout](
         RuntimeLayout[kv_block_layout].row_major(index_block_shape), ctx
     )
-    var index_blocks_ref = ManagedLayoutTensor[KV_DTYPE, kv_block_layout](
+    var index_blocks_ref = ManagedLayoutTensor[index_kv_dtype, kv_block_layout](
         RuntimeLayout[kv_block_layout].row_major(index_block_shape), ctx
     )
 
@@ -314,12 +315,8 @@ def execute_dual_cache_fused_bf16[
     var q_max_rel = Float32(0)
     for m in range(total_length):
         for c in range(q_dim):
-            var a = rebind[Scalar[DType.float32]](
-                fused_host[m, c].cast[DType.float32]()
-            )
-            var b = rebind[Scalar[DType.float32]](
-                q_host[m, c].cast[DType.float32]()
-            )
+            var a = rebind[Float32](fused_host[m, c].cast[.float32]())
+            var b = rebind[Float32](q_host[m, c].cast[.float32]())
             var d = abs(a - b)
             if a != b:
                 q_mism += 1
@@ -336,12 +333,8 @@ def execute_dual_cache_fused_bf16[
     var iq_max_rel = Float32(0)
     for m in range(total_length):
         for c in range(iq_dim):
-            var a = rebind[Scalar[DType.float32]](
-                fused_host[m, q_dim + c].cast[DType.float32]()
-            )
-            var b = rebind[Scalar[DType.float32]](
-                iq_host[m, c].cast[DType.float32]()
-            )
+            var a = rebind[Float32](fused_host[m, q_dim + c].cast[.float32]())
+            var b = rebind[Float32](iq_host[m, c].cast[.float32]())
             var d = abs(a - b)
             if a != b:
                 iq_mism += 1
@@ -358,8 +351,8 @@ def execute_dual_cache_fused_bf16[
     var main_max_abs = Float32(0)
     var main_max_rel = Float32(0)
     for i in range(main_n):
-        var a = main_host.ptr[i].cast[DType.float32]()
-        var b = main_ref_host.ptr[i].cast[DType.float32]()
+        var a = main_host.ptr[i].cast[.float32]()
+        var b = main_ref_host.ptr[i].cast[.float32]()
         var d = abs(a - b)
         if a != b:
             main_mism += 1
@@ -376,8 +369,8 @@ def execute_dual_cache_fused_bf16[
     var index_max_abs = Float32(0)
     var index_max_rel = Float32(0)
     for i in range(index_n):
-        var a = index_host.ptr[i].cast[DType.float32]()
-        var b = index_ref_host.ptr[i].cast[DType.float32]()
+        var a = index_host.ptr[i].cast[.float32]()
+        var b = index_ref_host.ptr[i].cast[.float32]()
         var d = abs(a - b)
         if a != b:
             index_mism += 1
@@ -471,4 +464,7 @@ def main() raises:
         for _ in range(4):
             tg_lens.append(1)
         execute_dual_cache_fused_bf16(tg_lens, 4, 2, ctx)
+
+        print("[case ce-e4m3-indexk] ragged prefill, e4m3 IndexK")
+        execute_dual_cache_fused_bf16[DType.float8_e4m3fn](ce_lens, 4, 1, ctx)
     print("\n=== ALL TESTS PASSED ===\n")

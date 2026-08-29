@@ -71,21 +71,21 @@ def launch_grouped_gemm_with_templates[
         a_type, b_type, c_type, scales_dtype, scales_dtype, transpose_b
     ],
 ](
-    a_ptrs: TileTensor[DType.uint64, ...],
-    b_ptrs: TileTensor[DType.uint64, ...],
-    c_ptrs: TileTensor[DType.uint64, ...],
-    sfa_ptrs: TileTensor[DType.uint64, ...],
-    sfb_ptrs: TileTensor[DType.uint64, ...],
-    problem_sizes: TileTensor[DType.int32, ...],
+    a_ptrs: TileTensor[.uint64, ...],
+    b_ptrs: TileTensor[.uint64, ...],
+    c_ptrs: TileTensor[.uint64, ...],
+    sfa_ptrs: TileTensor[.uint64, ...],
+    sfb_ptrs: TileTensor[.uint64, ...],
+    problem_sizes: TileTensor[.int32, ...],
     num_groups: Int,
     total_tiles: Int,
     k_array_val: Int,
     k_sf_val: Int,
-    a_ptr: UnsafePointer[Scalar[a_type], ...],
-    b_ptr: UnsafePointer[Scalar[b_type], ...],
-    c_ptr: UnsafePointer[Scalar[c_type], ...],
-    sfa_ptr: UnsafePointer[Scalar[scales_dtype], ...],
-    sfb_ptr: UnsafePointer[Scalar[scales_dtype], ...],
+    a_ptr: ImmPointer[Scalar[a_type], ...],
+    b_ptr: ImmPointer[Scalar[b_type], ...],
+    c_ptr: ImmPointer[Scalar[c_type], ...],
+    sfa_ptr: ImmPointer[Scalar[scales_dtype], ...],
+    sfb_ptr: ImmPointer[Scalar[scales_dtype], ...],
     ctx: DeviceContext,
 ) raises:
     """Create template TileTensors and launch grouped block-scaled GEMM."""
@@ -358,8 +358,8 @@ def test_existing_kernel_single_group[
     var max_diff: Float32 = 0.0
     var sum_diff: Float32 = 0.0
     for i in range(c_size):
-        var kernel_val = c_host_ptr[i].cast[DType.float32]()
-        var ref_val = c_host_ref_ptr[i].cast[DType.float32]()
+        var kernel_val = c_host_ptr[i].cast[.float32]()
+        var ref_val = c_host_ref_ptr[i].cast[.float32]()
         var diff = abs(kernel_val - ref_val)
         max_diff = max(max_diff, diff)
         sum_diff += diff
@@ -535,7 +535,7 @@ def test_grouped_kernel_single_group[
     print("  Setting up grouped kernel inputs...")
 
     # Problem sizes tensor: (max_groups, 4) with [M, N, K, L=1]
-    var problem_sizes_host = ctx.enqueue_create_host_buffer[DType.int32](
+    var problem_sizes_host = ctx.enqueue_create_host_buffer[.int32](
         max_groups * 4
     )
     for i in range(max_groups * 4):
@@ -545,9 +545,7 @@ def test_grouped_kernel_single_group[
     problem_sizes_host[2] = Int32(Int(k.value()))  # K
     problem_sizes_host[3] = 1  # L (batch=1)
 
-    var problem_sizes_device = ctx.enqueue_create_buffer[DType.int32](
-        max_groups * 4
-    )
+    var problem_sizes_device = ctx.enqueue_create_buffer[.int32](max_groups * 4)
     ctx.enqueue_copy(problem_sizes_device, problem_sizes_host)
     ctx.synchronize()
 
@@ -575,11 +573,11 @@ def test_grouped_kernel_single_group[
     print("  Computed total_tiles on host:", total_tiles)
 
     # Pointer arrays: (max_groups, 1)
-    var a_ptrs_host = ctx.enqueue_create_host_buffer[DType.uint64](max_groups)
-    var b_ptrs_host = ctx.enqueue_create_host_buffer[DType.uint64](max_groups)
-    var c_ptrs_host = ctx.enqueue_create_host_buffer[DType.uint64](max_groups)
-    var sfa_ptrs_host = ctx.enqueue_create_host_buffer[DType.uint64](max_groups)
-    var sfb_ptrs_host = ctx.enqueue_create_host_buffer[DType.uint64](max_groups)
+    var a_ptrs_host = ctx.enqueue_create_host_buffer[.uint64](max_groups)
+    var b_ptrs_host = ctx.enqueue_create_host_buffer[.uint64](max_groups)
+    var c_ptrs_host = ctx.enqueue_create_host_buffer[.uint64](max_groups)
+    var sfa_ptrs_host = ctx.enqueue_create_host_buffer[.uint64](max_groups)
+    var sfb_ptrs_host = ctx.enqueue_create_host_buffer[.uint64](max_groups)
     for i in range(max_groups):
         a_ptrs_host[i] = UInt64(0)
         b_ptrs_host[i] = UInt64(0)
@@ -593,11 +591,11 @@ def test_grouped_kernel_single_group[
     sfa_ptrs_host[0] = UInt64(Int(a_scales_device.unsafe_ptr()))
     sfb_ptrs_host[0] = UInt64(Int(b_scales_device.unsafe_ptr()))
 
-    var a_ptrs_device = ctx.enqueue_create_buffer[DType.uint64](max_groups)
-    var b_ptrs_device = ctx.enqueue_create_buffer[DType.uint64](max_groups)
-    var c_ptrs_device = ctx.enqueue_create_buffer[DType.uint64](max_groups)
-    var sfa_ptrs_device = ctx.enqueue_create_buffer[DType.uint64](max_groups)
-    var sfb_ptrs_device = ctx.enqueue_create_buffer[DType.uint64](max_groups)
+    var a_ptrs_device = ctx.enqueue_create_buffer[.uint64](max_groups)
+    var b_ptrs_device = ctx.enqueue_create_buffer[.uint64](max_groups)
+    var c_ptrs_device = ctx.enqueue_create_buffer[.uint64](max_groups)
+    var sfa_ptrs_device = ctx.enqueue_create_buffer[.uint64](max_groups)
+    var sfb_ptrs_device = ctx.enqueue_create_buffer[.uint64](max_groups)
 
     ctx.enqueue_copy(a_ptrs_device, a_ptrs_host)
     ctx.enqueue_copy(b_ptrs_device, b_ptrs_host)
@@ -676,8 +674,8 @@ def test_grouped_kernel_single_group[
     var max_diff: Float32 = 0.0
     var sum_diff: Float32 = 0.0
     for i in range(c_size):
-        var kernel_val = c_host_ptr[i].cast[DType.float32]()
-        var ref_val = c_host_ref_ptr[i].cast[DType.float32]()
+        var kernel_val = c_host_ptr[i].cast[.float32]()
+        var ref_val = c_host_ref_ptr[i].cast[.float32]()
         var diff = abs(kernel_val - ref_val)
         max_diff = max(max_diff, diff)
         sum_diff += diff
@@ -703,7 +701,7 @@ def test_grouped_kernel_single_group[
         raise Error("Grouped kernel output does not match cuBLAS")
 
     # FIXME(MSTDL-2742): HostBuffer is origin incorrect.
-    _ = UnsafePointer(to=a_ptrs_host).as_unsafe_any_origin()[]
+    _ = Pointer(to=a_ptrs_host).as_unsafe_any_origin()[]
 
 
 def test_grouped_kernel_multi_group_same_ptr[
@@ -866,7 +864,7 @@ def test_grouped_kernel_multi_group_same_ptr[
     comptime max_groups = num_groups
 
     # Problem sizes tensor: (max_groups, 4) with [M, N, K, L=1]
-    var problem_sizes_host = ctx.enqueue_create_host_buffer[DType.int32](
+    var problem_sizes_host = ctx.enqueue_create_host_buffer[.int32](
         max_groups * 4
     )
     for i in range(max_groups * 4):
@@ -877,17 +875,15 @@ def test_grouped_kernel_multi_group_same_ptr[
         problem_sizes_host[g * 4 + 2] = Int32(Int(k.value()))  # K
         problem_sizes_host[g * 4 + 3] = 1  # L (batch=1)
 
-    var problem_sizes_device = ctx.enqueue_create_buffer[DType.int32](
-        max_groups * 4
-    )
+    var problem_sizes_device = ctx.enqueue_create_buffer[.int32](max_groups * 4)
     ctx.enqueue_copy(problem_sizes_device, problem_sizes_host)
 
     # Pointer tensors - ALL groups point to the SAME tensors
-    var a_ptrs_host = ctx.enqueue_create_host_buffer[DType.uint64](max_groups)
-    var b_ptrs_host = ctx.enqueue_create_host_buffer[DType.uint64](max_groups)
-    var c_ptrs_host = ctx.enqueue_create_host_buffer[DType.uint64](max_groups)
-    var sfa_ptrs_host = ctx.enqueue_create_host_buffer[DType.uint64](max_groups)
-    var sfb_ptrs_host = ctx.enqueue_create_host_buffer[DType.uint64](max_groups)
+    var a_ptrs_host = ctx.enqueue_create_host_buffer[.uint64](max_groups)
+    var b_ptrs_host = ctx.enqueue_create_host_buffer[.uint64](max_groups)
+    var c_ptrs_host = ctx.enqueue_create_host_buffer[.uint64](max_groups)
+    var sfa_ptrs_host = ctx.enqueue_create_host_buffer[.uint64](max_groups)
+    var sfb_ptrs_host = ctx.enqueue_create_host_buffer[.uint64](max_groups)
     for i in range(max_groups):
         a_ptrs_host[i] = UInt64(0)
         b_ptrs_host[i] = UInt64(0)
@@ -902,11 +898,11 @@ def test_grouped_kernel_multi_group_same_ptr[
         sfa_ptrs_host[g] = UInt64(Int(a_scales_device.unsafe_ptr()))
         sfb_ptrs_host[g] = UInt64(Int(b_scales_device.unsafe_ptr()))
 
-    var a_ptrs_device = ctx.enqueue_create_buffer[DType.uint64](max_groups)
-    var b_ptrs_device = ctx.enqueue_create_buffer[DType.uint64](max_groups)
-    var c_ptrs_device = ctx.enqueue_create_buffer[DType.uint64](max_groups)
-    var sfa_ptrs_device = ctx.enqueue_create_buffer[DType.uint64](max_groups)
-    var sfb_ptrs_device = ctx.enqueue_create_buffer[DType.uint64](max_groups)
+    var a_ptrs_device = ctx.enqueue_create_buffer[.uint64](max_groups)
+    var b_ptrs_device = ctx.enqueue_create_buffer[.uint64](max_groups)
+    var c_ptrs_device = ctx.enqueue_create_buffer[.uint64](max_groups)
+    var sfa_ptrs_device = ctx.enqueue_create_buffer[.uint64](max_groups)
+    var sfb_ptrs_device = ctx.enqueue_create_buffer[.uint64](max_groups)
 
     ctx.enqueue_copy(a_ptrs_device, a_ptrs_host)
     ctx.enqueue_copy(b_ptrs_device, b_ptrs_host)
@@ -999,8 +995,8 @@ def test_grouped_kernel_multi_group_same_ptr[
     var max_diff: Float32 = 0.0
     var sum_diff: Float32 = 0.0
     for i in range(c_size):
-        var kernel_val = c_host_ptr[i].cast[DType.float32]()
-        var ref_val = c_host_ref_ptr[i].cast[DType.float32]()
+        var kernel_val = c_host_ptr[i].cast[.float32]()
+        var ref_val = c_host_ref_ptr[i].cast[.float32]()
         var diff = abs(kernel_val - ref_val)
         max_diff = max(max_diff, diff)
         sum_diff += diff
@@ -1016,7 +1012,7 @@ def test_grouped_kernel_multi_group_same_ptr[
         )
 
     # FIXME(MSTDL-2742): HostBuffer is origin incorrect.
-    _ = UnsafePointer(to=avg_diff).as_unsafe_any_origin()[]
+    _ = Pointer(to=avg_diff).as_unsafe_any_origin()[]
 
 
 def test_grouped_kernel_two_groups_different_ptrs[
@@ -1233,7 +1229,7 @@ def test_grouped_kernel_two_groups_different_ptrs[
     print("  Setting up grouped kernel inputs...")
 
     # Problem sizes: both groups have same size
-    var problem_sizes_host = ctx.enqueue_create_host_buffer[DType.int32](
+    var problem_sizes_host = ctx.enqueue_create_host_buffer[.int32](
         max_groups * 4
     )
     for i in range(max_groups * 4):
@@ -1244,17 +1240,15 @@ def test_grouped_kernel_two_groups_different_ptrs[
         problem_sizes_host[g * 4 + 2] = Int32(Int(k.value()))
         problem_sizes_host[g * 4 + 3] = 1
 
-    var problem_sizes_device = ctx.enqueue_create_buffer[DType.int32](
-        max_groups * 4
-    )
+    var problem_sizes_device = ctx.enqueue_create_buffer[.int32](max_groups * 4)
     ctx.enqueue_copy(problem_sizes_device, problem_sizes_host)
 
     # Pointer arrays - DIFFERENT pointers per group
-    var a_ptrs_host = ctx.enqueue_create_host_buffer[DType.uint64](max_groups)
-    var b_ptrs_host = ctx.enqueue_create_host_buffer[DType.uint64](max_groups)
-    var c_ptrs_host = ctx.enqueue_create_host_buffer[DType.uint64](max_groups)
-    var sfa_ptrs_host = ctx.enqueue_create_host_buffer[DType.uint64](max_groups)
-    var sfb_ptrs_host = ctx.enqueue_create_host_buffer[DType.uint64](max_groups)
+    var a_ptrs_host = ctx.enqueue_create_host_buffer[.uint64](max_groups)
+    var b_ptrs_host = ctx.enqueue_create_host_buffer[.uint64](max_groups)
+    var c_ptrs_host = ctx.enqueue_create_host_buffer[.uint64](max_groups)
+    var sfa_ptrs_host = ctx.enqueue_create_host_buffer[.uint64](max_groups)
+    var sfb_ptrs_host = ctx.enqueue_create_host_buffer[.uint64](max_groups)
     for i in range(max_groups):
         a_ptrs_host[i] = UInt64(0)
         b_ptrs_host[i] = UInt64(0)
@@ -1276,11 +1270,11 @@ def test_grouped_kernel_two_groups_different_ptrs[
     sfa_ptrs_host[1] = UInt64(Int(sfa1_device.unsafe_ptr()))
     sfb_ptrs_host[1] = UInt64(Int(sfb1_device.unsafe_ptr()))
 
-    var a_ptrs_device = ctx.enqueue_create_buffer[DType.uint64](max_groups)
-    var b_ptrs_device = ctx.enqueue_create_buffer[DType.uint64](max_groups)
-    var c_ptrs_device = ctx.enqueue_create_buffer[DType.uint64](max_groups)
-    var sfa_ptrs_device = ctx.enqueue_create_buffer[DType.uint64](max_groups)
-    var sfb_ptrs_device = ctx.enqueue_create_buffer[DType.uint64](max_groups)
+    var a_ptrs_device = ctx.enqueue_create_buffer[.uint64](max_groups)
+    var b_ptrs_device = ctx.enqueue_create_buffer[.uint64](max_groups)
+    var c_ptrs_device = ctx.enqueue_create_buffer[.uint64](max_groups)
+    var sfa_ptrs_device = ctx.enqueue_create_buffer[.uint64](max_groups)
+    var sfb_ptrs_device = ctx.enqueue_create_buffer[.uint64](max_groups)
 
     ctx.enqueue_copy(a_ptrs_device, a_ptrs_host)
     ctx.enqueue_copy(b_ptrs_device, b_ptrs_host)
@@ -1375,8 +1369,8 @@ def test_grouped_kernel_two_groups_different_ptrs[
     var max_diff0: Float32 = 0.0
     var sum_diff0: Float32 = 0.0
     for i in range(c_size):
-        var kernel_val = c0_host[i].cast[DType.float32]()
-        var ref_val = c0_ref_host[i].cast[DType.float32]()
+        var kernel_val = c0_host[i].cast[.float32]()
+        var ref_val = c0_ref_host[i].cast[.float32]()
         var diff = abs(kernel_val - ref_val)
         max_diff0 = max(max_diff0, diff)
         sum_diff0 += diff
@@ -1386,8 +1380,8 @@ def test_grouped_kernel_two_groups_different_ptrs[
     var max_diff1: Float32 = 0.0
     var sum_diff1: Float32 = 0.0
     for i in range(c_size):
-        var kernel_val = c1_host[i].cast[DType.float32]()
-        var ref_val = c1_ref_host[i].cast[DType.float32]()
+        var kernel_val = c1_host[i].cast[.float32]()
+        var ref_val = c1_ref_host[i].cast[.float32]()
         var diff = abs(kernel_val - ref_val)
         max_diff1 = max(max_diff1, diff)
         sum_diff1 += diff
@@ -1404,7 +1398,7 @@ def test_grouped_kernel_two_groups_different_ptrs[
         raise Error("Multi-group different pointers test failed")
 
     # FIXME(MSTDL-2742): HostBuffer is origin incorrect.
-    _ = UnsafePointer(to=passed).as_unsafe_any_origin()[]
+    _ = Pointer(to=passed).as_unsafe_any_origin()[]
 
 
 def main() raises:

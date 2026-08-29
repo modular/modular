@@ -29,7 +29,7 @@ from max.gpu.primitives.grid_controls import (
 from std.sys import align_of, is_amd_gpu, simd_width_of, size_of
 from max.gpu.memory import Consistency, multimem_st
 from std.gpu.intrinsics import Scope
-from layout import TensorLayout, TileTensor
+from layout import TensorLayout, TensorStorage, TileTensor
 
 from .sync import (
     MAX_GPUS,
@@ -56,11 +56,13 @@ def broadcast_multimem_kernel[
     Layout: TensorLayout,
     BLOCK_SIZE: Int,
     ngpus: Int,
+    out_store: TensorStorage,
+    in_store: TensorStorage,
     simd_width: Int = simd_width_of[dtype, target=get_gpu_target()](),
 ](
-    output: TileTensor[dtype, Layout, MutAnyOrigin],
-    input: TileTensor[dtype, Layout, ImmutAnyOrigin],
-    rank_sigs: Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
+    output: TileTensor[dtype, Layout, MutAnyOrigin, Storage=out_store],
+    input: TileTensor[dtype, Layout, ImmutAnyOrigin, Storage=in_store],
+    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS],
     my_rank: Int32,
     root: Int32,
 ):
@@ -74,6 +76,8 @@ def broadcast_multimem_kernel[
         Layout: `TensorLayout` shared by both tensors.
         BLOCK_SIZE: Number of threads per thread block.
         ngpus: Number of GPUs participating in the broadcast.
+        out_store: `TensorStorage` policy of the output tensor.
+        in_store: `TensorStorage` policy of the input tensor.
         simd_width: Vector width used for memory access (defaults to the
             device-native SIMD width for `dtype`).
 
@@ -104,12 +108,8 @@ def broadcast_multimem_kernel[
             comptime alignment = align_of[SIMD[dtype, simd_width]]()
 
             # Get multicast output pointer and input pointer
-            var out_ptr = output._storage.address_space_cast[
-                AddressSpace.GLOBAL
-            ]()
-            var in_ptr = input._storage.address_space_cast[
-                _target_address_space
-            ]()
+            var out_ptr = output.ptr.address_space_cast[.GLOBAL]()
+            var in_ptr = input.ptr.address_space_cast[_target_address_space]()
 
             # Grid-strided loop to cover all elements (vectorized)
             for idx in range(global_tid, num_simd_vectors, stride):
@@ -175,11 +175,13 @@ def broadcast_pull_1stage_kernel[
     layout: TensorLayout,
     BLOCK_SIZE: Int,
     ngpus: Int,
+    out_store: TensorStorage,
+    in_store: TensorStorage,
     simd_width: Int = simd_width_of[dtype, target=get_gpu_target()](),
 ](
-    output: TileTensor[dtype, layout, MutAnyOrigin],
-    input: TileTensor[dtype, layout, ImmutAnyOrigin],
-    rank_sigs: Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
+    output: TileTensor[dtype, layout, MutAnyOrigin, Storage=out_store],
+    input: TileTensor[dtype, layout, ImmutAnyOrigin, Storage=in_store],
+    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS],
     my_rank: Int32,
 ):
     """Single-stage pull broadcast kernel: each GPU reads root's input directly.
@@ -195,6 +197,8 @@ def broadcast_pull_1stage_kernel[
         layout: `TensorLayout` shared by both tensors.
         BLOCK_SIZE: Number of threads per thread block.
         ngpus: Number of GPUs participating in the broadcast.
+        out_store: `TensorStorage` policy of the output tensor.
+        in_store: `TensorStorage` policy of the input tensor.
         simd_width: Vector width used for memory access (defaults to the
             device-native SIMD width for `dtype`).
 
@@ -216,10 +220,8 @@ def broadcast_pull_1stage_kernel[
         _multi_gpu_barrier[ngpus, is_start=True](rank_sigs, my_sig, _my_rank)
 
         comptime alignment = align_of[SIMD[dtype, simd_width]]()
-        var in_ptr = input._storage.address_space_cast[_target_address_space]()
-        var out_ptr = output._storage.address_space_cast[
-            _target_address_space
-        ]()
+        var in_ptr = input.ptr.address_space_cast[_target_address_space]()
+        var out_ptr = output.ptr.address_space_cast[_target_address_space]()
 
         var num_elements = input.num_elements()
         var num_simd_vectors = num_elements // simd_width
@@ -251,12 +253,13 @@ def broadcast_pull_2stage_kernel[
     dtype: DType,
     OutputLayout: TensorLayout,
     ngpus: Int,
+    result_store: TensorStorage,
     *,
     BLOCK_SIZE: Int,
 ](
-    result: TileTensor[dtype, OutputLayout, MutAnyOrigin],
-    root_input_ptr: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    rank_sigs: Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
+    result: TileTensor[dtype, OutputLayout, MutAnyOrigin, Storage=result_store],
+    root_input_ptr: ImmPointer[Scalar[dtype], ImmutAnyOrigin],
+    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS],
     num_elements: Int32,
     my_rank: Int32,
     root: Int32,
@@ -276,6 +279,7 @@ def broadcast_pull_2stage_kernel[
         dtype: Data dtype of tensor elements.
         OutputLayout: Layout of the output TileTensor.
         ngpus: Number of GPUs participating.
+        result_store: `TensorStorage` policy of the output tensor.
         BLOCK_SIZE: Number of threads per block.
 
     Args:
@@ -306,14 +310,12 @@ def broadcast_pull_2stage_kernel[
 
     # Get payload buffers from signal pointers (skip Signal header)
     # These are used as scratch space for the scatter-gather pattern
-    var payloads = Array[UnsafePointer[Scalar[dtype], MutAnyOrigin], ngpus](
-        uninitialized=True
-    )
-
-    comptime for i in range(ngpus):
-        payloads[i] = (
-            rank_sigs[i].address_space_cast[AddressSpace.GENERIC]() + 1
+    comptime PtrType = MutPointer[Scalar[dtype], MutAnyOrigin]
+    var payloads = Array[_, ngpus](
+        fill_with=lambda (i: Int) -> PtrType: (
+            rank_sigs[i].address_space_cast[.GENERIC]() + 1
         ).bitcast[Scalar[dtype]]()
+    )
 
     with PDL():
         # === Stage 1: Scatter from root ===
@@ -321,9 +323,7 @@ def broadcast_pull_2stage_kernel[
         _multi_gpu_barrier[ngpus, is_start=True](rank_sigs, my_sig, _my_rank)
 
         var is_root = _my_rank == _root
-        var result_ptr = result._storage.address_space_cast[
-            _target_address_space
-        ]()
+        var result_ptr = result.ptr.address_space_cast[_target_address_space]()
         # Each GPU reads its chunk from root's input and writes to payload
         var my_chunk_start = _my_rank * part_size
         var my_chunk_end = (
@@ -473,14 +473,16 @@ def broadcast[
     dtype: DType,
     in_layout: TensorLayout,
     in_origin: Origin,
+    in_store: TensorStorage,
+    out_store: TensorStorage,
     //,
     ngpus: Int,
     pdl_level: PDLLevel = PDLLevel(),
     use_multimem: Bool = False,
 ](
-    input_tensor: TileTensor[dtype, in_layout, in_origin],
-    output_tensor: TileTensor[mut=True, dtype, in_layout, _],
-    rank_sigs: Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
+    input_tensor: TileTensor[dtype, in_layout, in_origin, Storage=in_store],
+    output_tensor: TileTensor[mut=True, dtype, in_layout, _, Storage=out_store],
+    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS],
     ctx: DeviceContext,
     root: Int,
     _max_num_blocks: Optional[Int] = None,
@@ -493,6 +495,8 @@ def broadcast[
         dtype: Data type of the tensor elements.
         in_layout: Layout of the input TileTensor.
         in_origin: Origin of the input TileTensor.
+        in_store: `TensorStorage` policy of the input tensor.
+        out_store: `TensorStorage` policy of the output tensor.
         ngpus: Number of GPUs participating in the broadcast.
         pdl_level: Controls PDL behavior for P2P kernels.
         use_multimem: Whether to use multimem mode for improved performance.
@@ -547,6 +551,8 @@ def broadcast[
             in_layout,
             BLOCK_SIZE,
             ngpus,
+            out_store,
+            in_store,
         ]
 
         ctx.enqueue_function[bcast_kernel](
@@ -577,6 +583,8 @@ def broadcast[
                 in_layout,
                 BLOCK_SIZE,
                 ngpus,
+                out_store,
+                in_store,
             ]
 
             ctx.enqueue_function[bcast_kernel](
@@ -594,13 +602,15 @@ def broadcast_2stage[
     dtype: DType,
     in_layout: TensorLayout,
     in_origin: Origin,
+    in_store: TensorStorage,
+    out_store: TensorStorage,
     //,
     ngpus: Int,
     pdl_level: PDLLevel,
 ](
-    input_tensor: TileTensor[dtype, in_layout, in_origin],
-    output_tensor: TileTensor[mut=True, dtype, in_layout, _],
-    rank_sigs: Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
+    input_tensor: TileTensor[dtype, in_layout, in_origin, Storage=in_store],
+    output_tensor: TileTensor[mut=True, dtype, in_layout, _, Storage=out_store],
+    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS],
     ctx: DeviceContext,
     root: Int,
     _max_num_blocks: Optional[Int] = None,
@@ -629,6 +639,8 @@ def broadcast_2stage[
         dtype: Data dtype of tensor elements.
         in_layout: Layout of the input TileTensor.
         in_origin: Origin of the input TileTensor.
+        in_store: `TensorStorage` policy of the input tensor.
+        out_store: `TensorStorage` policy of the output tensor.
         ngpus: Number of GPUs participating.
         pdl_level: Control PDL behavior for the kernel.
 
@@ -664,16 +676,20 @@ def broadcast_2stage[
         ceildiv(ceildiv(num_elements, simd_width * ngpus), BLOCK_SIZE),
     )
 
+    # `OutputLayout` and `in_layout` are the same here: broadcast writes the
+    # shape it reads. The root's input is passed as a host-resolved bare
+    # pointer (all GPUs read it via P2P), so the kernel takes no input tile.
     comptime kernel = broadcast_pull_2stage_kernel[
         dtype,
         in_layout,
         ngpus,
+        out_store,
         BLOCK_SIZE=BLOCK_SIZE,
     ]
 
     ctx.enqueue_function[kernel](
         output_tensor,
-        input_tensor.as_immut()._storage,
+        rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](input_tensor.ptr),
         rank_sigs,
         Int32(num_elements),
         Int32(my_rank),

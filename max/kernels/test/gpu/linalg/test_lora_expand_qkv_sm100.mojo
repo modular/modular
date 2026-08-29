@@ -97,10 +97,10 @@ def test[
     var b_host_ptr = ctx.enqueue_create_host_buffer[b_type](b_size)
     var q_host_ptr = ctx.enqueue_create_host_buffer[out_q_type](q_size)
     var kv_host_ptr = ctx.enqueue_create_host_buffer[out_kv_type](kv_size)
-    var a_offsets_host_ptr = ctx.enqueue_create_host_buffer[DType.uint32](
+    var a_offsets_host_ptr = ctx.enqueue_create_host_buffer[.uint32](
         num_experts + 1
     )
-    var expert_ids_host_ptr = ctx.enqueue_create_host_buffer[DType.int32](
+    var expert_ids_host_ptr = ctx.enqueue_create_host_buffer[.int32](
         num_experts
     )
 
@@ -124,12 +124,10 @@ def test[
     var b_dev_buffer = ctx.enqueue_create_buffer[b_type](b_size)
     var q_dev_buffer = ctx.enqueue_create_buffer[out_q_type](q_size)
     var kv_dev_buffer = ctx.enqueue_create_buffer[out_kv_type](kv_size)
-    var a_offsets_dev_buffer = ctx.enqueue_create_buffer[DType.uint32](
+    var a_offsets_dev_buffer = ctx.enqueue_create_buffer[.uint32](
         num_experts + 1
     )
-    var expert_ids_dev_buffer = ctx.enqueue_create_buffer[DType.int32](
-        num_experts
-    )
+    var expert_ids_dev_buffer = ctx.enqueue_create_buffer[.int32](num_experts)
 
     # The planar P, viewed both as [3, M, R] and as three [M, R] planes for the
     # oracle (planes are contiguous so plane `t` starts at offset t*M*R).
@@ -309,8 +307,8 @@ def main() raises:
 
         # Single group, GQA (q_dim != kv_dim), small R, aligned tokens.
         test[
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
             num_experts=1,
             q_dim=256,
             kv_dim=64,
@@ -319,8 +317,8 @@ def main() raises:
 
         # Single group, GQA, unaligned token count, R=32.
         test[
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
             num_experts=1,
             q_dim=256,
             kv_dim=64,
@@ -329,8 +327,8 @@ def main() raises:
 
         # q_dim == kv_dim case, R=64.
         test[
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
             num_experts=1,
             q_dim=128,
             kv_dim=128,
@@ -340,8 +338,8 @@ def main() raises:
         # Multiple active adapters with routing (expert_ids select a subset),
         # GQA, mixed aligned/unaligned token counts.
         test[
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
             num_experts=6,
             q_dim=512,
             kv_dim=128,
@@ -351,8 +349,8 @@ def main() raises:
         # Routing with an inactive adapter in the middle (expert id -1): output
         # for that group must be zero. Place -1 as the second active group.
         test[
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
             num_experts=4,
             q_dim=256,
             kv_dim=64,
@@ -361,8 +359,8 @@ def main() raises:
 
         # Larger token counts to exercise multiple M-tiles per group.
         test[
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
             num_experts=2,
             q_dim=512,
             kv_dim=128,
@@ -377,8 +375,8 @@ def main() raises:
 
         # Single group, GQA, aligned dims, small R.
         test[
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
             num_experts=1,
             q_dim=512,
             kv_dim=256,
@@ -388,8 +386,8 @@ def main() raises:
         # Multiple active adapters with routing (subset) + an inactive id (-1),
         # aligned dims, R=32, mixed aligned/unaligned token counts.
         test[
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
             num_experts=6,
             q_dim=768,
             kv_dim=256,
@@ -399,8 +397,8 @@ def main() raises:
         # Larger token counts to exercise multiple token-tiles per group on the
         # SM100 path, aligned dims, R=64.
         test[
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
             num_experts=2,
             q_dim=512,
             kv_dim=256,
@@ -411,8 +409,8 @@ def main() raises:
         # output-D tile is 128: dims that are 128-aligned (but not 256-aligned)
         # still take the SM100 path. Exercises the tighter `128 * cta_group` gate.
         test[
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
             num_experts=1,
             q_dim=384,
             kv_dim=128,
@@ -425,8 +423,8 @@ def main() raises:
         # c_type != float32) to the naive fallback. Direct kernel-level regression for
         # that dispatch fix; also checks route_qkv + a_plane_splits under fp32.
         test[
-            DType.float32,
-            DType.float32,
+            .float32,
+            .float32,
             num_experts=1,
             q_dim=512,
             kv_dim=256,

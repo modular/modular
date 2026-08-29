@@ -26,13 +26,13 @@ from std.utils.index import Index, IndexList
 def compute_layer_norm_rope_ragged_ref[
     dtype: DType, output_dtype: DType, freq_dtype: DType
 ](
-    input_h: UnsafePointer[Scalar[dtype], _],
-    gamma_h: UnsafePointer[Scalar[dtype], _],
-    beta_h: UnsafePointer[Scalar[dtype], _],
-    row_offsets_h: UnsafePointer[UInt32, _],
-    start_pos_h: UnsafePointer[UInt32, _],
-    freqs_h: UnsafePointer[Scalar[freq_dtype], _],
-    output_ref: UnsafePointer[mut=True, Scalar[output_dtype], _],
+    input_h: Pointer[Scalar[dtype], _],
+    gamma_h: Pointer[Scalar[dtype], _],
+    beta_h: Pointer[Scalar[dtype], _],
+    row_offsets_h: Pointer[UInt32, _],
+    start_pos_h: Pointer[UInt32, _],
+    freqs_h: Pointer[Scalar[freq_dtype], _],
+    output_ref: MutPointer[Scalar[output_dtype], _],
     rows: Int,
     cols: Int,
     rope_dim: Int,
@@ -129,10 +129,8 @@ def run_layer_norm_rope_ragged_gpu[
     var data_h = ctx.enqueue_create_host_buffer[dtype](rows * cols)
     var gamma_h = ctx.enqueue_create_host_buffer[dtype](cols)
     var beta_h = ctx.enqueue_create_host_buffer[dtype](cols)
-    var row_offsets_h = ctx.enqueue_create_host_buffer[DType.uint32](
-        num_batches + 1
-    )
-    var start_pos_h = ctx.enqueue_create_host_buffer[DType.uint32](num_batches)
+    var row_offsets_h = ctx.enqueue_create_host_buffer[.uint32](num_batches + 1)
+    var start_pos_h = ctx.enqueue_create_host_buffer[.uint32](num_batches)
     var freqs_h = ctx.enqueue_create_host_buffer[freq_dtype](
         max_seq_len * rope_dim
     )
@@ -174,8 +172,8 @@ def run_layer_norm_rope_ragged_gpu[
     var data_d = ctx.enqueue_create_buffer[dtype](rows * cols)
     var gamma_d = ctx.enqueue_create_buffer[dtype](cols)
     var beta_d = ctx.enqueue_create_buffer[dtype](cols)
-    var row_offsets_d = ctx.enqueue_create_buffer[DType.uint32](num_batches + 1)
-    var start_pos_d = ctx.enqueue_create_buffer[DType.uint32](num_batches)
+    var row_offsets_d = ctx.enqueue_create_buffer[.uint32](num_batches + 1)
+    var start_pos_d = ctx.enqueue_create_buffer[.uint32](num_batches)
     var freqs_d = ctx.enqueue_create_buffer[freq_dtype](max_seq_len * rope_dim)
     var output_d = ctx.enqueue_create_buffer[output_dtype](rows * cols)
 
@@ -196,20 +194,18 @@ def run_layer_norm_rope_ragged_gpu[
 
     @always_inline
     def input_fn[
-        width: Int, alignment: Int, _rank: Int
-    ](coords: IndexList[_rank]) {var data_buf} -> SIMD[dtype, width]:
-        var idx = data_buf.layout(Coord(coords))
+        width: Int, alignment: Int
+    ](coords: Coord) {var data_buf} -> SIMD[dtype, width]:
+        var idx = data_buf.layout(coords)
         return data_buf.raw_load[
             width=width, alignment=alignment * align_of[dtype]()
         ](idx)
 
     @always_inline
     def output_fn[
-        width: SIMDLength, _rank: Int, alignment: Int
-    ](coords: IndexList[_rank], val: SIMD[output_dtype, width]) {
-        var output_buf
-    } -> None:
-        var idx = output_buf.layout(Coord(coords))
+        width: SIMDLength, alignment: Int
+    ](coords: Coord, val: SIMD[output_dtype, width]) {var output_buf} -> None:
+        var idx = output_buf.layout(coords)
         output_buf.raw_store[
             width=width, alignment=alignment * align_of[output_dtype]()
         ](idx, val)
@@ -225,7 +221,7 @@ def run_layer_norm_rope_ragged_gpu[
         input_fn,
         output_fn,
         Coord(shape),
-        Scalar[DType.int](cols),
+        Int(cols),
         gamma,
         beta,
         epsilon.cast[dtype](),

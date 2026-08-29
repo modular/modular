@@ -428,18 +428,18 @@ def select_mla_prefill_config[
 @always_inline
 def split_smem[
     first_size: Int, second_size: Int, first_dtype: DType, second_dtype: DType
-](tensor: TileTensor[address_space=AddressSpace.SHARED, ...]) -> Tuple[
+](tensor: TileTensor[address_space=.SHARED, ...]) -> Tuple[
     TileTensor[
         first_dtype,
         type_of(tt_row_major[first_size]()),
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ],
     TileTensor[
         second_dtype,
         type_of(tt_row_major[second_size]()),
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ],
 ]:
     """Split a shared memory tensor into two TileTensors at the boundary
@@ -449,7 +449,7 @@ def split_smem[
     InternalLayout equivalents of swizzled layouts.
     """
     comptime SmemPtr[dt: DType] = UnsafePointer[
-        Scalar[dt], MutAnyOrigin, address_space=AddressSpace.SHARED
+        Scalar[dt], MutAnyOrigin, address_space=.SHARED
     ]
     var ptr = rebind[SmemPtr[first_dtype]](tensor.ptr)
     comptime first_layout = tt_row_major[first_size]()
@@ -459,13 +459,13 @@ def split_smem[
             first_dtype,
             type_of(first_layout),
             MutAnyOrigin,
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
         ](ptr, first_layout),
         TileTensor[
             second_dtype,
             type_of(second_layout),
             MutAnyOrigin,
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
         ](
             rebind[SmemPtr[second_dtype]](ptr + first_size),
             second_layout,
@@ -699,9 +699,9 @@ def cvt_block_fp8_to_bf16_with_scale[
     swizzle_fp8: Swizzle,
     swizzle_bf16: Swizzle,
 ](
-    input: TileTensor[input_type, _, address_space=AddressSpace.SHARED, ...],
+    input: TileTensor[input_type, _, address_space=.SHARED, ...],
     mut output: TileTensor[
-        mut=True, output_dtype, _, address_space=AddressSpace.SHARED, ...
+        mut=True, output_dtype, _, address_space=.SHARED, ...
     ],
     k_rope_lut: KRopeType,
     seq_info: SeqInfo,
@@ -712,7 +712,7 @@ def cvt_block_fp8_to_bf16_with_scale[
     """TileTensor overload — standalone implementation using `.ptr` and
     comptime `static_shape`/`static_stride` directly."""
     comptime assert (
-        input_type == DType.float8_e4m3fn and output_dtype == DType.bfloat16
+        input_type == .float8_e4m3fn and output_dtype == .bfloat16
     ), "Only support float8_e4m3fn to bfloat16 conversion"
 
     comptime num_regs = (

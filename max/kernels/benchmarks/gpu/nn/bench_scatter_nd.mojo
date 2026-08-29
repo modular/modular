@@ -157,7 +157,7 @@ def run_elem_scatter[
 
 def main() raises:
     var mode = arg_parse("mode", "row")
-    comptime dtype = get_defined_dtype["dtype", DType.float32]()
+    comptime dtype = get_defined_dtype["dtype", .float32]()
     comptime rows = get_defined_int["rows", 131072]()
     comptime cols = get_defined_int["cols", 1024]()
     comptime num_idx = get_defined_int["num_idx", 4096]()

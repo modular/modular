@@ -54,7 +54,7 @@ from nn.conv.gpu.amd.amd_4wave_conv import amd_4wave_conv
 # Dtype to test, set via `-D DTYPE=<dtype>` in BUILD.bazel. Defaults to
 # BF16 so `mojo test_amd_4wave_conv_dtypes.mojo` (no -D) still runs
 # locally with sensible behavior.
-comptime IN_DTYPE = get_defined_dtype["DTYPE", DType.bfloat16]()
+comptime IN_DTYPE = get_defined_dtype["DTYPE", .bfloat16]()
 
 # Output dtype: BF16 when input is FP8 (the 4-wave kernel doesn't
 # support FP8 output today); otherwise matches the input.
@@ -78,8 +78,8 @@ def _host_im2col_general[
     stride_w: Int,
     K_padded: Int,
 ](
-    input_host_ptr: UnsafePointer[mut=False, Scalar[a_type], _],
-    im2col_host_ptr: UnsafePointer[mut=True, Scalar[a_type], _],
+    input_host_ptr: ImmPointer[Scalar[a_type], _],
+    im2col_host_ptr: MutPointer[Scalar[a_type], _],
 ):
     """Materializes the im2col matrix with halo zeros and K-padding zeros."""
     for n in range(N):

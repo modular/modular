@@ -56,7 +56,6 @@ from .batch_processor import UnifiedDSparkGemma4_12BBatchProcessor
 from .model_config import (
     UnifiedDSparkGemma4_12BConfig,
     construct_draft_kv_params,
-    resolve_dspark_num_speculative_tokens,
 )
 from .unified_dspark_gemma4_12b import (
     UnifiedDSparkGemma4_12B as UnifiedDSparkGemma4_12BModule,
@@ -129,10 +128,9 @@ class UnifiedDSparkGemma4_12BModel(
         return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
         max_batch_size: int = 1,
     ) -> None:
-        # The drafter's trained width, resolved from the draft checkpoint;
-        # exposed for the overlap pipeline's spec-decode buffers.
+        assert pipeline_config.speculative is not None
         self.resolved_num_speculative_tokens = (
-            resolve_dspark_num_speculative_tokens(pipeline_config)
+            pipeline_config.speculative.draft_width
         )
         super().__init__(
             pipeline_config,
@@ -168,9 +166,8 @@ class UnifiedDSparkGemma4_12BModel(
             kv_cache_config,
             cache_dtype,
         )
-        resolved_spec = resolve_dspark_num_speculative_tokens(
-            pipeline_config, warn=False
-        )
+        assert pipeline_config.speculative is not None
+        resolved_spec = pipeline_config.speculative.draft_width
         children: dict[str, KVCacheParamInterface] = {}
         for name, leaf in params.children.items():
             assert isinstance(leaf, KVCacheParams)

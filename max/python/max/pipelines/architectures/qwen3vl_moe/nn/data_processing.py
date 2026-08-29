@@ -19,6 +19,13 @@ import numpy as np
 import numpy.typing as npt
 from max.profiler import traced
 
+QWEN3VL_MAX_PIXELS = 16777216
+"""Qwen3VL's default ``longest_edge``: the post-resize pixel ceiling per image.
+
+The process-wide resolution bound, so it is also the image hash's size tier and
+the largest image an arch config can be asked to size a cache entry for.
+"""
+
 
 @traced
 def get_rope_index(

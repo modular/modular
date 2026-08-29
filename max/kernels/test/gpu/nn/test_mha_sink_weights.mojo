@@ -212,7 +212,7 @@ def test[
                 ]()
                 var actual = flash_output_ptr[
                     d + depth * (h + s * num_heads)
-                ].cast[DType.float64]()
+                ].cast[.float64]()
                 count += 1
                 if not isclose(actual, expect, atol=1e-5, rtol=rtol):
                     mismatches += 1

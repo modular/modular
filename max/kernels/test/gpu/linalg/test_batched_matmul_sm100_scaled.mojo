@@ -166,22 +166,18 @@ def test_batched_matmul_sm100_blockwise_scaled_fp8[
     var c_device_ref = ctx.enqueue_create_buffer[c_type](c_size)
     var c_device_ref_nd = TileTensor(c_device_ref, c_shape)
 
-    var a_scales_host_ptr = ctx.enqueue_create_host_buffer[DType.float32](
+    var a_scales_host_ptr = ctx.enqueue_create_host_buffer[.float32](
         a_scales_size
     )
     var a_scales_host = TileTensor(a_scales_host_ptr, a_scales_shape)
-    var b_scales_host_ptr = ctx.enqueue_create_host_buffer[DType.float32](
+    var b_scales_host_ptr = ctx.enqueue_create_host_buffer[.float32](
         b_scales_size
     )
     var b_scales_host = TileTensor(b_scales_host_ptr, b_scales_shape)
 
-    var a_scales_device = ctx.enqueue_create_buffer[DType.float32](
-        a_scales_size
-    )
+    var a_scales_device = ctx.enqueue_create_buffer[.float32](a_scales_size)
     var a_scales_device_nd = TileTensor(a_scales_device, a_scales_shape)
-    var b_scales_device = ctx.enqueue_create_buffer[DType.float32](
-        b_scales_size
-    )
+    var b_scales_device = ctx.enqueue_create_buffer[.float32](b_scales_size)
     var b_scales_device_nd = TileTensor(b_scales_device, b_scales_shape)
 
     var c_tensor = c_device_nd
@@ -376,22 +372,18 @@ def test_batched_matmul_sm100_blockwise_scaled_fp8_non_row_major_c[
     var c_device_ref = ctx.enqueue_create_buffer[c_type](c_size)
     var c_device_ref_nd = TileTensor(c_device_ref, c_shape)
 
-    var a_scales_host_ptr = ctx.enqueue_create_host_buffer[DType.float32](
+    var a_scales_host_ptr = ctx.enqueue_create_host_buffer[.float32](
         a_scales_size
     )
     var a_scales_host = TileTensor(a_scales_host_ptr, a_scales_shape)
-    var b_scales_host_ptr = ctx.enqueue_create_host_buffer[DType.float32](
+    var b_scales_host_ptr = ctx.enqueue_create_host_buffer[.float32](
         b_scales_size
     )
     var b_scales_host = TileTensor(b_scales_host_ptr, b_scales_shape)
 
-    var a_scales_device = ctx.enqueue_create_buffer[DType.float32](
-        a_scales_size
-    )
+    var a_scales_device = ctx.enqueue_create_buffer[.float32](a_scales_size)
     var a_scales_device_nd = TileTensor(a_scales_device, a_scales_shape)
-    var b_scales_device = ctx.enqueue_create_buffer[DType.float32](
-        b_scales_size
-    )
+    var b_scales_device = ctx.enqueue_create_buffer[.float32](b_scales_size)
     var b_scales_device_nd = TileTensor(b_scales_device, b_scales_shape)
 
     rand(a_host._storage, a_host.num_elements())
@@ -471,9 +463,9 @@ def test_batched_matmul_sm100_blockwise_scaled_fp8_non_row_major_c[
 def main() raises:
     with DeviceContext() as ctx:
         test_batched_matmul_sm100_blockwise_scaled_fp8[
-            DType.float8_e4m3fn,
-            DType.float8_e4m3fn,
-            DType.bfloat16,
+            .float8_e4m3fn,
+            .float8_e4m3fn,
+            .bfloat16,
             umma_shape=Index(64, 256, 32),
             swizzle=TensorMapSwizzle.SWIZZLE_128B,
             transpose_b=True,
@@ -485,9 +477,9 @@ def main() raises:
             Int(3),
         )
         test_batched_matmul_sm100_blockwise_scaled_fp8[
-            DType.float8_e4m3fn,
-            DType.float8_e4m3fn,
-            DType.bfloat16,
+            .float8_e4m3fn,
+            .float8_e4m3fn,
+            .bfloat16,
             umma_shape=Index(64, 32, 32),
             swizzle=TensorMapSwizzle.SWIZZLE_128B,
             transpose_b=True,
@@ -500,9 +492,9 @@ def main() raises:
         )
 
         test_batched_matmul_sm100_blockwise_scaled_fp8[
-            DType.float8_e4m3fn,
-            DType.float8_e4m3fn,
-            DType.float32,
+            .float8_e4m3fn,
+            .float8_e4m3fn,
+            .float32,
             umma_shape=Index(64, 128, 32),
             swizzle=TensorMapSwizzle.SWIZZLE_128B,
             transpose_b=True,
@@ -515,9 +507,9 @@ def main() raises:
         )
 
         test_batched_matmul_sm100_blockwise_scaled_fp8[
-            DType.float8_e4m3fn,
-            DType.float8_e4m3fn,
-            DType.float32,
+            .float8_e4m3fn,
+            .float8_e4m3fn,
+            .float32,
             umma_shape=Index(64, 64, 32),
             swizzle=TensorMapSwizzle.SWIZZLE_128B,
             transpose_b=True,
@@ -530,9 +522,9 @@ def main() raises:
         )
 
         test_batched_matmul_sm100_blockwise_scaled_fp8[
-            DType.float8_e4m3fn,
-            DType.float8_e4m3fn,
-            DType.bfloat16,
+            .float8_e4m3fn,
+            .float8_e4m3fn,
+            .bfloat16,
             umma_shape=Index(64, 16, 32),
             swizzle=TensorMapSwizzle.SWIZZLE_128B,
             transpose_b=True,
@@ -545,9 +537,9 @@ def main() raises:
         )
 
         test_batched_matmul_sm100_blockwise_scaled_fp8[
-            DType.float8_e4m3fn,
-            DType.float8_e4m3fn,
-            DType.bfloat16,
+            .float8_e4m3fn,
+            .float8_e4m3fn,
+            .bfloat16,
             umma_shape=Index(64, 8, 32),
             swizzle=TensorMapSwizzle.SWIZZLE_128B,
             transpose_b=True,
@@ -560,9 +552,9 @@ def main() raises:
         )
 
         test_batched_matmul_sm100_blockwise_scaled_fp8[
-            DType.float8_e4m3fn,
-            DType.float8_e4m3fn,
-            DType.bfloat16,
+            .float8_e4m3fn,
+            .float8_e4m3fn,
+            .bfloat16,
             umma_shape=Index(64, 64, 32),
             swizzle=TensorMapSwizzle.SWIZZLE_128B,
             transpose_b=True,
@@ -575,9 +567,9 @@ def main() raises:
         )
 
         test_batched_matmul_sm100_blockwise_scaled_fp8[
-            DType.float8_e4m3fn,
-            DType.float8_e4m3fn,
-            DType.bfloat16,
+            .float8_e4m3fn,
+            .float8_e4m3fn,
+            .bfloat16,
             umma_shape=Index(64, 64, 32),
             swizzle=TensorMapSwizzle.SWIZZLE_128B,
             transpose_b=True,
@@ -589,9 +581,9 @@ def main() raises:
             Int(128),
         )
         test_batched_matmul_sm100_blockwise_scaled_fp8[
-            DType.float8_e4m3fn,
-            DType.float8_e4m3fn,
-            DType.bfloat16,
+            .float8_e4m3fn,
+            .float8_e4m3fn,
+            .bfloat16,
             umma_shape=Index(64, 64, 32),
             swizzle=TensorMapSwizzle.SWIZZLE_128B,
             transpose_b=True,
@@ -605,9 +597,9 @@ def main() raises:
         )
 
         test_batched_matmul_sm100_blockwise_scaled_fp8[
-            DType.float8_e4m3fn,
-            DType.float8_e4m3fn,
-            DType.bfloat16,
+            .float8_e4m3fn,
+            .float8_e4m3fn,
+            .bfloat16,
             umma_shape=Index(64, 128, 32),
             swizzle=TensorMapSwizzle.SWIZZLE_128B,
             transpose_b=True,
@@ -619,9 +611,9 @@ def main() raises:
             Int(3),
         )
         test_batched_matmul_sm100_blockwise_scaled_fp8[
-            DType.float8_e4m3fn,
-            DType.float8_e4m3fn,
-            DType.bfloat16,
+            .float8_e4m3fn,
+            .float8_e4m3fn,
+            .bfloat16,
             umma_shape=Index(64, 128, 32),
             swizzle=TensorMapSwizzle.SWIZZLE_128B,
             transpose_b=True,
@@ -635,9 +627,9 @@ def main() raises:
 
         # test non-row-major layout for C only
         test_batched_matmul_sm100_blockwise_scaled_fp8_non_row_major_c[
-            DType.float8_e4m3fn,
-            DType.float8_e4m3fn,
-            DType.bfloat16,
+            .float8_e4m3fn,
+            .float8_e4m3fn,
+            .bfloat16,
             umma_shape=Index(64, 64, 32),
             swizzle=TensorMapSwizzle.SWIZZLE_128B,
             transpose_b=True,
@@ -647,9 +639,9 @@ def main() raises:
         ](ctx, 12)
 
         test_batched_matmul_sm100_blockwise_scaled_fp8_non_row_major_c[
-            DType.float8_e4m3fn,
-            DType.float8_e4m3fn,
-            DType.bfloat16,
+            .float8_e4m3fn,
+            .float8_e4m3fn,
+            .bfloat16,
             umma_shape=Index(64, 64, 32),
             swizzle=TensorMapSwizzle.SWIZZLE_128B,
             transpose_b=True,

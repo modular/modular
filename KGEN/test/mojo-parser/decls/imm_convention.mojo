@@ -11,8 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-# 'imm' is the preferred spelling of the immutable-borrow argument and
-# closure-capture convention; 'read' is a deprecated synonym that warns with a
+# 'imm' is the new spelling of the immutable-borrow argument and
+# closure-capture convention; 'read' is a removed synonym that warns with a
 # fixit (fixit positions are covered by imm_convention_fixit.mojo, IR
 # equivalence by imm_convention_ir.mojo).
 
@@ -38,7 +38,7 @@ def imm_capture() -> Int:
 
 # 'read' still parses but is deprecated in argument position...
 
-# expected-warning @below {{'read' is deprecated; use 'imm'}}
+# expected-error @below {{'read' was removed; use 'imm'}}
 def read_arg(read x: Int) -> Int:
     return x
 
@@ -50,7 +50,7 @@ def read_arg(read x: Int) -> Int:
 def read_capture() -> Int:
     var base = 0
 
-    # expected-warning @below {{'read' is deprecated; use 'imm'}}
+    # expected-error @below {{'read' was removed; use 'imm'}}
     def closure() {read base} -> Int:
         return base
 

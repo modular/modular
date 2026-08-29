@@ -37,3 +37,18 @@ def generic_access():
     # CHECK: lit.ref.struct.ger {{.*}}[value]
     # CHECK-SAME: sugar_member_alias({{.*}}, "Output", !Int)
     var _v = w.value
+
+
+trait AWithTypeAlias:
+    comptime T: Deinitable
+
+
+trait BWithTypeAlias:
+    comptime T: Movable
+
+
+def take_trait_union[t: AWithTypeAlias & BWithTypeAlias]():
+    # Merge same type alias to a trait union bound
+    #
+    # CHECK: lit.alias.decl *"T_merged`": !AnyType_Deinitable_Movable
+    comptime T_merged = t.T

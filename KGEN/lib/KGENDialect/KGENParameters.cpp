@@ -35,38 +35,31 @@ using namespace M;
 using namespace M::KGEN;
 
 //===----------------------------------------------------------------------===//
-// NameToIndexRefRemapper
+// IndexRefRemapper
 //===----------------------------------------------------------------------===//
 
 /// Populate the remapper with named input and result parameters.
-template <typename NameDeclT, typename NameRefT>
-NameToIndexRefRemapper<NameDeclT, NameRefT>::NameToIndexRefRemapper(
-    ArrayRef<NameDeclT> inputParams, size_t offset)
+IndexRefRemapper::IndexRefRemapper(ArrayRef<ParamDeclAttr> inputParams,
+                                   size_t offset)
     : offset(offset) {
   for (auto [idx, param] : llvm::enumerate(inputParams))
     mapping.try_emplace(param.getName(), idx);
 }
-template <typename NameDeclT, typename NameRefT>
-NameToIndexRefRemapper<NameDeclT, NameRefT>::NameToIndexRefRemapper(
-    ArrayRef<NameRefT> inputParams, size_t offset)
+IndexRefRemapper::IndexRefRemapper(ArrayRef<ParamDeclRefAttr> inputParams,
+                                   size_t offset)
     : offset(offset) {
   for (auto [idx, param] : llvm::enumerate(inputParams))
     mapping.try_emplace(param.getName(), idx);
 }
 
 /// Append a parameter declaration to the remapper.
-template <typename NameDeclT, typename NameRefT>
-void NameToIndexRefRemapper<NameDeclT, NameRefT>::appendParamDecl(
-    NameDeclT paramDecl) {
+void IndexRefRemapper::appendParamDecl(ParamDeclAttr paramDecl) {
   mapping.try_emplace(paramDecl.getName(), mapping.size());
 }
 
 // CRTP methods.
-template <typename NameDeclT, typename NameRefT>
-Attribute
-NameToIndexRefRemapper<NameDeclT, NameRefT>::tryReplace(Attribute attr,
-                                                        size_t depth) {
-  if (auto ref = dyn_cast<NameRefT>(attr)) {
+Attribute IndexRefRemapper::tryReplace(Attribute attr, size_t depth) {
+  if (auto ref = dyn_cast<ParamDeclRefAttr>(attr)) {
     if (auto it = mapping.find(ref.getName()); it != mapping.end())
       return ParamIndexRefAttr::get(depth, it->second,
                                     Base::replaceImpl(ref.getType(), depth));
@@ -80,11 +73,6 @@ NameToIndexRefRemapper<NameDeclT, NameRefT>::tryReplace(Attribute attr,
   }
   return nullptr;
 }
-
-// Explicit instantiation, these are the only two variants.
-template class M::KGEN::NameToIndexRefRemapper<ParamDeclAttr, ParamDeclRefAttr>;
-template class M::KGEN::NameToIndexRefRemapper<FnGenBuilderParamDeclAttr,
-                                               FnGenBuilderParamDeclRefAttr>;
 
 //===----------------------------------------------------------------------===//
 // IndexDepthAdjuster
@@ -125,7 +113,7 @@ void ParameterCollector::collectUsesFromAttr(
     Attribute attr, SmallVectorImpl<ParamDeclRefAttr> &uses,
     bool &hasCtxEvalExpr, size_t &requiredSignatureDepth) {
   if (auto sig = dyn_cast<ParameterScopeAttrInterface>(attr)) {
-    signatures.push_back(sig.getInputParamTypes());
+    signatures.push_back(sig);
     collectUsesFromAttrImpl(attr, uses, hasCtxEvalExpr, requiredSignatureDepth);
     signatures.pop_back();
     // The result is intrinsic to `attr` itself; stepping out one signature
@@ -191,8 +179,21 @@ void ParameterCollector::collectUsesFromAttrImpl(
                    << " exceeds depth of contextual signatures: "
                    << signatures.size();
           }
-          ArrayRef<Type> types =
-              signatures[signatures.size() - 1 - indexRef.getDepth()];
+          auto sig = signatures[signatures.size() - 1 - indexRef.getDepth()];
+          auto typesOrQuote = [sig]() -> std::optional<ArrayRef<Type>> {
+            if (auto attrScope = dyn_cast<ParameterScopeAttrInterface>(sig)) {
+              if (isa<QuoteAttr>(attrScope))
+                return std::nullopt;
+              return attrScope.getInputParamTypes();
+            }
+            return cast<ParameterScopeTypeInterface>(sig).getInputParamTypes();
+          }();
+          // A QuoteAttr forms a yet to be built scope, the index ref on the
+          // "deferred scope" can not be verified (until the scope is formed).
+          if (!typesOrQuote.has_value())
+            return success();
+
+          ArrayRef<Type> types = *typesOrQuote;
           if (indexRef.getIndex() >= types.size()) {
             return emitError() << "index reference " << indexRef.getIndex()
                                << " is out of bounds: referenced signature has "
@@ -274,7 +275,7 @@ void ParameterCollector::collectUsesFromType(
     Type type, SmallVectorImpl<ParamDeclRefAttr> &uses, bool &hasCtxEvalExpr,
     size_t &requiredSignatureDepth) {
   if (auto sig = dyn_cast<ParameterScopeTypeInterface>(type)) {
-    signatures.push_back(sig.getInputParamTypes());
+    signatures.push_back(sig);
     collectUsesFromTypesImpl(type, uses, hasCtxEvalExpr,
                              requiredSignatureDepth);
     signatures.pop_back();

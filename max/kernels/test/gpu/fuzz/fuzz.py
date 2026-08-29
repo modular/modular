@@ -111,6 +111,17 @@ _TARGETS: dict[str, FuzzTarget] = {
         description="softmax _softmax_gpu boundary fuzz (memory-safety oracle)",
         default_oracle="memcheck",
     ),
+    "reductions": FuzzTarget(
+        name="reductions",
+        bazel_target="//max/kernels/test/gpu/fuzz:fuzz_reductions.mojo.test",
+        binary="bazel-bin/max/kernels/test/gpu/fuzz/fuzz_reductions.mojo.test",
+        description=(
+            "algorithm.reductions sum/max/min/mean/argmax/argmin over the"
+            " rowwise GPU scaffolder; reduced axis drawn from 0, outputs"
+            " sentinel-checked for a missing write (ref oracle)"
+        ),
+        default_oracle="ref",
+    ),
     "rms_norm": FuzzTarget(
         name="rms_norm",
         bazel_target="//max/kernels/test/gpu/fuzz:fuzz_rms_norm.mojo.test",

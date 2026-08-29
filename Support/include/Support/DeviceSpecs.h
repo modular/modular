@@ -227,7 +227,19 @@ struct DeviceSpecCollection {
 bool hasFeature(StringRef llvmFeatureStr, StringRef feature);
 
 /// Returns the SIMD bit width implied by a single plain (unsigned) feature
-/// name, e.g. "avx512f" → 512, "avx2" → 256, anything else → 128.
+/// name, e.g. "avx512f" → 512, "avx2" → 256, "hvx-length128b" → 1024,
+/// anything else → 128. The result is in bits, whatever unit the feature
+/// spells its length in.
+///
+/// This feeds `TargetInfoAttr`'s `simd_bit_width`, which is the width of one
+/// vector register as seen by a *single execution context* — one CPU thread,
+/// one GPU lane, one DSP hardware thread. It is not the width of the whole
+/// vector unit and it is not scaled by how many contexts run together, which
+/// is why every GPU target declares 128 (the widest per-lane vector access)
+/// rather than a warp-sized number, and why a DSP whose one thread owns a
+/// 128-byte vector register declares 1024. A target's entry answers "how much
+/// work fits in one register here", so that a kernel deriving its vector shape
+/// from the field lands on a shape the target can issue.
 size_t simdWidthFromFeature(StringRef plainFeature);
 
 /// Returns the SIMD bit width implied by a comma-separated signed LLVM feature

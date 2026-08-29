@@ -502,7 +502,7 @@ struct MhaPrefillV2[config: MhaConfigV2]:
             Self.config.dtype, _q_thread_layout, warp_scope=True
         ](q_warp_2d)
 
-        comptime if Self.config.dtype == DType.float8_e4m3fn:
+        comptime if Self.config.dtype == .float8_e4m3fn:
             # FP8: per-lane fragment = 32 FP8 = 32 B. To match the MFMA's
             # B-operand lane layout (which is the same convention as the
             # A-operand K loader in `MhaMmaOp.load_K` FP8 32x32x64 path),
@@ -595,7 +595,7 @@ struct MhaPrefillV2[config: MhaConfigV2]:
             comptime for h in range(_H):
                 comptime for w in range(_W):
                     q_v[h, w, 0] = (
-                        q_v[h, w, 0].cast[DType.float32]() * scale_log2e
+                        q_v[h, w, 0].cast[.float32]() * scale_log2e
                     ).cast[Self.config.dtype]()
 
         return q_reg
@@ -837,7 +837,7 @@ struct MhaPrefillV2[config: MhaConfigV2]:
         s_waitcnt[lgkmcnt=UInt32(0)]()
         comptime _ATT_H = Self._ATT_LAYOUT_T.static_shape[0]
         comptime _ATT_W = Self._ATT_LAYOUT_T.static_shape[1]
-        comptime if Self._SOFTMAX_DTYPE == DType.float32:
+        comptime if Self._SOFTMAX_DTYPE == .float32:
             _ = att_block.fill(0)
             Self._MmaOp.mma_QK(att_block, k_reg, q_reg)
             comptime if not Self.prescale_q:
@@ -859,7 +859,7 @@ struct MhaPrefillV2[config: MhaConfigV2]:
             # FP8 attention path: MFMA + scale in FP32, cast to BF16
             # in a fused per-fragment expression. Always applies the
             # post-QK scale (the FP8 path has `prescale_q == False`).
-            var att_fp32 = reg_alloc[DType.float32](Self._MmaOp.ATT_LAYOUT)
+            var att_fp32 = reg_alloc[.float32](Self._MmaOp.ATT_LAYOUT)
             _ = att_fp32.fill(0)
             Self._MmaOp.mma_QK(att_fp32, k_reg, q_reg)
             var att_fp32_v = att_fp32.vectorize[1, 1, 16]()
@@ -913,7 +913,7 @@ struct MhaPrefillV2[config: MhaConfigV2]:
             Self._MmaOp.ATT_BF16_SUB_LAYOUT
         )
         var src_v = att_block.vectorize[1, 1, 16]()
-        comptime if Self.config.dtype == DType.float8_e4m3fn:
+        comptime if Self.config.dtype == .float8_e4m3fn:
             # FP8: 2 source strips JOIN into one 32-FP8/lane sub-tile.
             # src is BF16 (sub-step 8): BF16 → FP32 → FP8 round-trip.
             # Bare `v_cvt_pk_fp8_f32` for FP32→FP8 — P ∈ [0, 1] post-
@@ -923,8 +923,8 @@ struct MhaPrefillV2[config: MhaConfigV2]:
             # force the ±448 saturation constants into VGPRs across
             # cluster boundaries.
             var dst_v = result.vectorize[1, 1, 32]()
-            var fp32_lo = src_v[0, 0, 0].cast[DType.float32]()
-            var fp32_hi = src_v[1, 0, 0].cast[DType.float32]()
+            var fp32_lo = src_v[0, 0, 0].cast[.float32]()
+            var fp32_hi = src_v[1, 0, 0].cast[.float32]()
             var fp8_lo = _cast_f32_to_fp8_raw[Self.config.dtype](fp32_lo)
             var fp8_hi = _cast_f32_to_fp8_raw[Self.config.dtype](fp32_hi)
             dst_v[0, 0, 0] = fp8_lo.join(fp8_hi)
@@ -967,13 +967,13 @@ struct MhaPrefillV2[config: MhaConfigV2]:
         sub-tile (32 FP8/lane): `_NUM_PV_SUBTILES=1`. BF16 → FP32 →
         FP8 because gfx950 has no direct BF16→FP8 v_cvt."""
         var src_v = att_block.vectorize[1, 1, 16]()
-        comptime if Self.config.dtype == DType.float8_e4m3fn:
+        comptime if Self.config.dtype == .float8_e4m3fn:
             # FP8 path: src is BF16; cast through FP32 → FP8 and JOIN.
             # Bare `v_cvt_pk_fp8_f32` (see `_att_bf16_sub` for the
             # safety/perf rationale).
             var dst_v = dst.vectorize[1, 1, 32]()
-            var fp32_lo = src_v[0, 0, 0].cast[DType.float32]()
-            var fp32_hi = src_v[1, 0, 0].cast[DType.float32]()
+            var fp32_lo = src_v[0, 0, 0].cast[.float32]()
+            var fp32_hi = src_v[1, 0, 0].cast[.float32]()
             var fp8_lo = _cast_f32_to_fp8_raw[Self.config.dtype](fp32_lo)
             var fp8_hi = _cast_f32_to_fp8_raw[Self.config.dtype](fp32_hi)
             dst_v[0, 0, 0] = fp8_lo.join(fp8_hi)
@@ -1005,7 +1005,7 @@ struct MhaPrefillV2[config: MhaConfigV2]:
         att_bf16_full: RegTile[
             Self.config.dtype, Self._ATT_BF16_FULL_LAYOUT_T, MutUntrackedOrigin
         ],
-        mut o_reg: RegTile[DType.float32, Self._O_LAYOUT_T, MutUntrackedOrigin],
+        mut o_reg: RegTile[.float32, Self._O_LAYOUT_T, MutUntrackedOrigin],
     ):
         """Whole-V PV MFMA over a pre-cast `att_bf16_full`. No fused
         softmax; used by the epilogue PV clusters."""
@@ -1026,7 +1026,7 @@ struct MhaPrefillV2[config: MhaConfigV2]:
         mut att_bf16_full: RegTile[
             Self.config.dtype, Self._ATT_BF16_FULL_LAYOUT_T, MutUntrackedOrigin
         ],
-        mut o_reg: RegTile[DType.float32, Self._O_LAYOUT_T, MutUntrackedOrigin],
+        mut o_reg: RegTile[.float32, Self._O_LAYOUT_T, MutUntrackedOrigin],
         mut softmax: OnlineSoftmax[Self._SOFTMAX_DTYPE],
         mut att_block_qk: RegTile[
             Self._SOFTMAX_DTYPE, Self._ATT_LAYOUT_T, MutUntrackedOrigin
@@ -1101,7 +1101,7 @@ struct MhaPrefillV2[config: MhaConfigV2]:
         att_bf16_full: RegTile[
             Self.config.dtype, Self._ATT_BF16_FULL_LAYOUT_T, MutUntrackedOrigin
         ],
-        mut o_reg: RegTile[DType.float32, Self._O_LAYOUT_T, MutUntrackedOrigin],
+        mut o_reg: RegTile[.float32, Self._O_LAYOUT_T, MutUntrackedOrigin],
         mut softmax: OnlineSoftmax[Self._SOFTMAX_DTYPE],
         mut att_block_qk: RegTile[
             Self._SOFTMAX_DTYPE, Self._ATT_LAYOUT_T, MutUntrackedOrigin
@@ -1139,7 +1139,7 @@ struct MhaPrefillV2[config: MhaConfigV2]:
         output_dtype: DType,
         epilogue_chunk_width: Int = 1,
     ](
-        o_reg_t: RegTile[DType.float32, Self._O_T_LAYOUT_T, MutUntrackedOrigin],
+        o_reg_t: RegTile[.float32, Self._O_T_LAYOUT_T, MutUntrackedOrigin],
         epilogue_writer: RegTileEpilogue[output_dtype, epilogue_chunk_width],
         l_id: Int,
         valid_q_rows_in_warp: Int,
@@ -1174,9 +1174,9 @@ struct MhaPrefillV2[config: MhaConfigV2]:
             comptime k_in_base = k_local % 16
             comptime d_within_4 = (k_in_base // 4) * 8 + (k_in_base % 4)
             var output_col = i * 32 + d_within_4 + d_extra
-            var v_fp32 = SIMD[DType.float32, 1](o_reg_t.ptr[k_local])
+            var v_fp32 = Float32(o_reg_t.ptr[k_local])
             if q_in_bounds:
-                comptime if output_dtype == DType.float32:
+                comptime if output_dtype == .float32:
                     epilogue_writer.store(
                         rebind[SIMD[output_dtype, 1]](v_fp32),
                         m=q_in_tile,
@@ -1652,7 +1652,7 @@ struct MhaPrefillV2[config: MhaConfigV2]:
         # `exp2(score - max) = exp2(0) = 1` contribution. Subsequent
         # tiles update through the normal recurrence; the sink is
         # rescaled implicitly as the running max grows.
-        var o_reg = reg_alloc[DType.float32](Self._MmaOp.O_LAYOUT)
+        var o_reg = reg_alloc[.float32](Self._MmaOp.O_LAYOUT)
         # `OnlineSoftmax` owns the 4 row-state scalars (`max_vec`,
         # `max_vec_prev`, `norm_vec`, `scale_vec`) as `Float32` fields
         # — 1 VGPR/lane each.
@@ -1695,7 +1695,7 @@ struct MhaPrefillV2[config: MhaConfigV2]:
             # `log2(e)` (same constant used for Q prescale at line
             # `scale_log2e = scale * 1.4426950408889634`).
             var sw_raw = sink_weights_ptr[head_idx]
-            var sw_log2 = sw_raw.cast[DType.float32]() * 1.4426950408889634
+            var sw_log2 = sw_raw.cast[.float32]() * 1.4426950408889634
             softmax.reseed_with_sink(sw_log2)
 
         # Two `att_block` slots; the loop ping-pongs which one is the
@@ -2205,10 +2205,10 @@ struct MhaPrefillV2[config: MhaConfigV2]:
         # hold the normalized output.
         comptime _o_view_layout = Self._MmaOp.O_T_LAYOUT
         var o_normalized_view = TileTensor[
-            DType.float32,
+            .float32,
             type_of(_o_view_layout),
             MutUntrackedOrigin,
-            address_space=AddressSpace.LOCAL,
+            address_space=.LOCAL,
         ](o_reg.ptr, _o_view_layout)
         var epilogue_writer = RegTileEpilogue[output_dtype, 1](o_warp_2d)
         # Partial-Q-tile bound: for sequences whose length is not a
@@ -2259,12 +2259,8 @@ struct MhaPrefillV2[config: MhaConfigV2]:
         output_ptr: UnsafePointer[Scalar[output_dtype], MutAnyOrigin],
         mask_functor: mask_t,
         scale: Float32,
-        input_row_offsets_ptr: UnsafePointer[
-            Scalar[DType.uint32], ImmutAnyOrigin
-        ],
-        kv_input_row_offsets_ptr: UnsafePointer[
-            Scalar[DType.uint32], ImmutAnyOrigin
-        ],
+        input_row_offsets_ptr: UnsafePointer[UInt32, ImmutAnyOrigin],
+        kv_input_row_offsets_ptr: UnsafePointer[UInt32, ImmutAnyOrigin],
         sink_weights_ptr: UnsafePointer[Scalar[qkv_dtype], ImmutAnyOrigin],
     ):
         """Ragged-batch GPU kernel entry: per-sequence setup + `run`.
@@ -2409,10 +2405,8 @@ def mha_prefill_v2_ragged[
     output_ptr: UnsafePointer[Scalar[output_dtype], MutAnyOrigin],
     mask_functor: mask_t,
     scale: Float32,
-    input_row_offsets_ptr: UnsafePointer[Scalar[DType.uint32], ImmutAnyOrigin],
-    kv_input_row_offsets_ptr: UnsafePointer[
-        Scalar[DType.uint32], ImmutAnyOrigin
-    ],
+    input_row_offsets_ptr: UnsafePointer[UInt32, ImmutAnyOrigin],
+    kv_input_row_offsets_ptr: UnsafePointer[UInt32, ImmutAnyOrigin],
     max_prompt_len: Int,
     batch_size: Int,
     ctx: DeviceContext,

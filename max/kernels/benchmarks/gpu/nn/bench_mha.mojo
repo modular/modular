@@ -358,8 +358,8 @@ struct MHA_cfg(ImplicitlyCopyable, Writable):
 
 
 def main() raises:
-    comptime qkv_type = get_defined_dtype["qkv_type", DType.bfloat16]()
-    comptime mask_type = get_defined_dtype["mask_type", DType.float32]()
+    comptime qkv_type = get_defined_dtype["qkv_type", .bfloat16]()
+    comptime mask_type = get_defined_dtype["mask_type", .float32]()
     comptime depth = get_defined_int["depth", 128]()
     comptime num_heads = get_defined_int["num_heads", 32]()
     comptime group = get_defined_int["group", 1]()

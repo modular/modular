@@ -19,7 +19,7 @@ from max.gpu.host.func_attribute import Attribute
 
 
 def test_function_attributes() raises:
-    def kernel(x: UnsafePointer[Int, MutAnyOrigin]):
+    def kernel(x: MutPointer[Int, MutAnyOrigin]):
         x[0] = thread_idx.x
 
     with DeviceContext() as ctx:

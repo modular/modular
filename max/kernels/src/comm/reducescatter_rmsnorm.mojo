@@ -100,7 +100,7 @@ def _reducescatter_rmsnorm_kernel[
     domain_id: Int = 0,
     pdl_level: PDLLevel = PDLLevel(),
 ](
-    src_ptrs: Array[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin], ngpus],
+    src_ptrs: Array[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin], ngpus],
     gamma: TileTensor[in_dtype, GammaLayoutType, origin],
     normed_out: TileTensor[mut=True, in_dtype, NormedLayoutType, normed_origin],
     sum_out: TileTensor[mut=True, in_dtype, SumLayoutType, sum_origin],
@@ -114,7 +114,7 @@ def _reducescatter_rmsnorm_kernel[
     weight_offset: Scalar[in_dtype],
     rows_dev: Int32,
     cols_dev: Int32,
-    rank_sigs: Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
+    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS],
     my_rank_dev: Int32,
 ):
     """Reduce-scatter each owned row in f32, then RMSNorm it in registers.
@@ -159,11 +159,10 @@ def _reducescatter_rmsnorm_kernel[
     # Round-robin peer order (RS's `circular_add`): peer 0 is self, so accum
     # from 0 over all peers is bit-for-bit RS's `accum = peer[0]` init (AMD
     # non-multimem).
-    var ptrs = Array[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin], ngpus](
-        uninitialized=True
+    comptime PtrType = ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]
+    var ptrs = Array[_, ngpus](
+        fill_with=lambda (i: Int) -> PtrType: src_ptrs[(my_rank + i) % ngpus]
     )
-    comptime for i in range(ngpus):
-        ptrs[i] = src_ptrs[(my_rank + i) % ngpus]
 
     # Gamma is a model weight, not predecessor output, so it can be loaded ahead
     # of the wait below (local data, latency-hidden).
@@ -275,13 +274,13 @@ def _reducescatter_rmsnorm_launch[
 ](
     rows: Int,
     cols: Int,
-    src_ptrs: Array[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin], ngpus],
+    src_ptrs: Array[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin], ngpus],
     normed_out: TileTensor[mut=True, in_dtype, ...],
     sum_out: TileTensor[mut=True, in_dtype, ...],
     gamma: TileTensor[in_dtype, ...],
     epsilon: Float32,
     weight_offset: Scalar[in_dtype],
-    rank_sigs: Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
+    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS],
     my_rank: Int,
     ctx: DeviceContext,
     residual: _ComptimeConditionalTileTensor[
@@ -403,7 +402,7 @@ def reducescatter_rmsnorm[
     gamma: TileTensor[in_dtype, ...],
     epsilon: Float32,
     weight_offset: Scalar[in_dtype],
-    rank_sigs: Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
+    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS],
     ctx: DeviceContext,
     local_rank: Optional[Int] = None,
     residual: _ComptimeConditionalTileTensor[
@@ -483,11 +482,12 @@ def reducescatter_rmsnorm[
     var rows = in_num_elems // cols
 
     # Raw peer pointers, origin erased to ImmutAnyOrigin (matches standalone RS).
-    var src_ptrs = Array[
-        UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin], ngpus
-    ](uninitialized=True)
-    comptime for i in range(ngpus):
-        src_ptrs[i] = input_buffers[i]._storage.as_imm().as_unsafe_any_origin()
+    comptime PtrType = ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]
+    var src_ptrs = Array[_, ngpus](
+        fill_with=lambda (i: Int) -> PtrType: input_buffers[i]
+        ._storage.as_imm()
+        .as_unsafe_any_origin()
+    )
 
     # Each thread owns `simd_width` cols; H=6144 fits the base width
     # (64*8*16=8192) on all targets (no AR two-width dispatch). Assert fit +
@@ -621,7 +621,7 @@ def _dispatch_rs_norm[
     gamma: TileTensor[in_dtype, ...],
     epsilon: Float32,
     weight_offset: Scalar[in_dtype],
-    rank_sigs: Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
+    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS],
     ctx: DeviceContext,
     threshold: Int = RS_NORM_FUSE_THRESHOLD,
     local_rank: Optional[Int] = None,
@@ -675,7 +675,7 @@ def _dispatch_rs_norm[
     # Threshold is a bf16 row-count crossover in bytes; another element size
     # maps to the wrong row count and could fuse a diverging shape. Fail loud.
     comptime assert (
-        in_dtype == DType.bfloat16
+        in_dtype == .bfloat16
     ), "_dispatch_rs_norm fuse threshold is bf16-calibrated (bf16 in/out only)"
 
     # Fuse-vs-two-launch MUST be group-invariant: the paths issue different

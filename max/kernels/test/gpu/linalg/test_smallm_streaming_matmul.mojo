@@ -45,9 +45,9 @@ def test_smallm_streaming[N: Int, K: Int](m: Int, ctx: DeviceContext) raises:
     var device_a = ctx.enqueue_create_buffer[dtype](max_m * K)
     var device_b = ctx.enqueue_create_buffer[dtype](N * K)
     var device_b_shuf = ctx.enqueue_create_buffer[dtype](N * K)
-    var device_c = ctx.enqueue_create_buffer[DType.float32](max_m * N)
+    var device_c = ctx.enqueue_create_buffer[.float32](max_m * N)
     var device_scratch = ctx.enqueue_create_buffer[dtype](max_m * K)
-    var device_c_ref = ctx.enqueue_create_buffer[DType.float32](max_m * N)
+    var device_c_ref = ctx.enqueue_create_buffer[.float32](max_m * N)
 
     with device_a.map_to_host() as host_a, device_b.map_to_host() as host_b:
         for i in range(max_m * K):
@@ -72,32 +72,32 @@ def test_smallm_streaming[N: Int, K: Int](m: Int, ctx: DeviceContext) raises:
 
     # The production entry points take graph-marshaled AnyOrigin tensors;
     # rebind the test's concretely-originated buffers to match.
-    var b_shuf_dst = UnsafePointer[Scalar[dtype], MutAnyOrigin](
+    var b_shuf_dst = MutPointer[Scalar[dtype], MutAnyOrigin](
         unsafe_from_address=Int(device_b_shuf.unsafe_ptr())
     )
-    var b_src = UnsafePointer[Scalar[dtype], ImmutAnyOrigin](
+    var b_src = ImmPointer[Scalar[dtype], ImmutAnyOrigin](
         unsafe_from_address=Int(device_b.unsafe_ptr())
     )
     smallm_preshuffle_b[dtype, k_static=K](b_shuf_dst, b_src, N, ctx)
 
-    var a_ptr = UnsafePointer[Scalar[dtype], ImmutAnyOrigin](
+    var a_ptr = ImmPointer[Scalar[dtype], ImmutAnyOrigin](
         unsafe_from_address=Int(device_a.unsafe_ptr())
     )
     comptime a_layout = row_major[max_m, K]()
     var a_any = TileTensor[dtype, type_of(a_layout), ImmutAnyOrigin](
         a_ptr, a_layout
     )
-    var c_ptr = UnsafePointer[Scalar[DType.float32], MutAnyOrigin](
+    var c_ptr = MutPointer[Float32, MutAnyOrigin](
         unsafe_from_address=Int(device_c.unsafe_ptr())
     )
     comptime c_layout = row_major[max_m, N]()
-    var c_any = TileTensor[DType.float32, type_of(c_layout), MutAnyOrigin](
+    var c_any = TileTensor[.float32, type_of(c_layout), MutAnyOrigin](
         c_ptr, c_layout
     )
-    var b_shuf_src = UnsafePointer[Scalar[dtype], ImmutAnyOrigin](
+    var b_shuf_src = ImmPointer[Scalar[dtype], ImmutAnyOrigin](
         unsafe_from_address=Int(device_b_shuf.unsafe_ptr())
     )
-    var scratch_ptr = UnsafePointer[Scalar[dtype], MutAnyOrigin](
+    var scratch_ptr = MutPointer[Scalar[dtype], MutAnyOrigin](
         unsafe_from_address=Int(device_scratch.unsafe_ptr())
     )
 

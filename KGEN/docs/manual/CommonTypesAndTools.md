@@ -365,12 +365,12 @@ For example, in this mojo snippet:
 struct Spaceship:
     var hp: Int64
 
-def launch(read ship: Spaceship):
+def launch(imm ship: Spaceship):
     var x: Int64 = ship.hp
 ```
 
 Our parser will see that `ship` as a `MBValue` because it's a memory type, and
-we're borrowing it as a `read` reference.
+we're borrowing it as a `imm` reference.
 
 All the above mostly applies to the parser. In later passes, we more often
 interact directly with our MLIR nodes and the built-in MLIR classes like

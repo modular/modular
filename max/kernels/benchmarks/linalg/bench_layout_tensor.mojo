@@ -168,8 +168,7 @@ def matmul_tiled_layout(mut C: Matrix, A: Matrix, B: Matrix):
     comptime assert N % tile_n == 0, "N must be a multiple of tile_n"
     comptime assert K % tile_k == 0, "K must be a multiple of tile_k"
 
-    @__parameter
-    def calc_row(m_1: Int):
+    def calc_row(m_1: Int) {imm}:
         for k_1 in range(K // tile_k):
             for n_1 in range(N // tile_n):
                 var lhs_view = lhs.tile[tile_m, tile_k](m_1, k_1)
@@ -202,7 +201,7 @@ def matmul_tiled_layout(mut C: Matrix, A: Matrix, B: Matrix):
                             unroll_factor=unroll_factor,
                         ](dot)
 
-    sync_parallelize[calc_row](M // tile_m)
+    sync_parallelize(calc_row, M // tile_m)
 
 
 def matmul_tiled_layout_cache(mut C: Matrix, A: Matrix, B: Matrix):
@@ -230,8 +229,7 @@ def matmul_tiled_layout_cache(mut C: Matrix, A: Matrix, B: Matrix):
     comptime assert N % tile_n == 0, "N must be a multiple of tile_n"
     comptime assert K % tile_k == 0, "K must be a multiple of tile_k"
 
-    @__parameter
-    def calc_row(m_1: Int):
+    def calc_row(m_1: Int) {imm}:
         var rhs_cache = LayoutTensor[
             dtype, Layout.row_major(tile_k, tile_n), MutAnyOrigin
         ].stack_allocation()
@@ -268,7 +266,7 @@ def matmul_tiled_layout_cache(mut C: Matrix, A: Matrix, B: Matrix):
                             unroll_factor=unroll_factor,
                         ](dot)
 
-    sync_parallelize[calc_row](M // tile_m)
+    sync_parallelize(calc_row, M // tile_m)
 
 
 def matmul_layout_transposed(mut C: Matrix, A: Matrix, B: Matrix):
@@ -300,8 +298,7 @@ def matmul_layout_transposed(mut C: Matrix, A: Matrix, B: Matrix):
         tile_k % vec_size == 0
     ), "tile_k must be a multiple of vec_size"
 
-    @__parameter
-    def calc_row(m_1: Int):
+    def calc_row(m_1: Int) {imm}:
         var rhs_cache = LayoutTensor[
             dtype, Layout.row_major(tile_n, tile_k), MutAnyOrigin
         ].stack_allocation()
@@ -338,7 +335,7 @@ def matmul_layout_transposed(mut C: Matrix, A: Matrix, B: Matrix):
 
                         dst_view[m, n] += sum.reduce_add()
 
-    sync_parallelize[calc_row](M // tile_m)
+    sync_parallelize(calc_row, M // tile_m)
 
 
 @always_inline

@@ -938,10 +938,9 @@ def _try_find_dylib[
     """Load a dynamically linked library given a variadic list of possible names.
     """
     # Convert the variadic pack to a list.
-    var paths_list = List[Path](capacity=len(paths))
-    for path in paths:
-        paths_list.append(path)
-    return _try_find_dylib[name](paths_list)
+    return _try_find_dylib[name](
+        List(length=len(paths), fill_with=lambda (i: Int) -> Path: paths[i])
+    )
 
 
 def _find_dylib[

@@ -60,21 +60,21 @@ from linalg.matmul.gpu.amd import (
 # ===----------------------------------------------------------------------=== #
 
 
-def _fill_random_bytes(buf: HostBuffer[DType.uint8], n: Int):
+def _fill_random_bytes(buf: HostBuffer[.uint8], n: Int):
     for i in range(n):
         buf[i] = UInt8(random_ui64(0, 255))
 
 
-def _fill_random_e8m0(buf: HostBuffer[DType.float8_e8m0fnu], n: Int):
+def _fill_random_e8m0(buf: HostBuffer[.float8_e8m0fnu], n: Int):
     """Scales clamped to E8M0 byte range [125..129] = magnitudes [0.25..4],
     keeping f32 accumulators in range while still exercising scale-dequant."""
     for i in range(n):
-        buf[i] = bitcast[DType.float8_e8m0fnu](UInt8(random_ui64(125, 129)))
+        buf[i] = bitcast[.float8_e8m0fnu](UInt8(random_ui64(125, 129)))
 
 
 def _build_routing(
-    a_offsets_host: HostBuffer[DType.uint32],
-    expert_ids_host: HostBuffer[DType.int32],
+    a_offsets_host: HostBuffer[.uint32],
+    expert_ids_host: HostBuffer[.int32],
     num_tokens_by_expert: List[Int],
     expert_ids_list: List[Int],
 ):
@@ -98,13 +98,13 @@ def _gpu_per_expert_reference[
 ](
     ctx: DeviceContext,
     num_active: Int,
-    a_offsets_host: HostBuffer[DType.uint32],
-    expert_ids_host: HostBuffer[DType.int32],
-    a_dev: DeviceBuffer[DType.uint8],
-    b_dev: DeviceBuffer[DType.uint8],
-    a_scales_dev: DeviceBuffer[DType.float8_e8m0fnu],
-    b_scales_dev: DeviceBuffer[DType.float8_e8m0fnu],
-    mut c_ref_dev: DeviceBuffer[DType.float32],
+    a_offsets_host: HostBuffer[.uint32],
+    expert_ids_host: HostBuffer[.int32],
+    a_dev: DeviceBuffer[.uint8],
+    b_dev: DeviceBuffer[.uint8],
+    a_scales_dev: DeviceBuffer[.float8_e8m0fnu],
+    b_scales_dev: DeviceBuffer[.float8_e8m0fnu],
+    mut c_ref_dev: DeviceBuffer[.float32],
 ) raises:
     comptime packed_K = K // 2
     comptime scale_K = K // MXFP4_SF_VECTOR_SIZE
@@ -122,19 +122,19 @@ def _gpu_per_expert_reference[
             a_dev.unsafe_ptr() + token_start * packed_K,
             row_major(Coord(num_tokens, Idx[packed_K])),
         )
-        var b_expert = TileTensor[mut=False](
+        var b_expert = TileTensor(
             b_dev.unsafe_ptr() + expert_id * N * packed_K,
             row_major[N, packed_K](),
-        )
-        var sfa_expert = TileTensor[mut=False](
+        ).as_immut()
+        var sfa_expert = TileTensor(
             a_scales_dev.unsafe_ptr() + token_start * scale_K,
             row_major(Coord(num_tokens, Idx[scale_K])),
-        )
-        var sfb_expert = TileTensor[mut=False](
+        ).as_immut()
+        var sfb_expert = TileTensor(
             b_scales_dev.unsafe_ptr() + expert_id * N * scale_K,
             row_major[N, scale_K](),
-        )
-        var c_expert = TileTensor[mut=True](
+        ).as_immut()
+        var c_expert = TileTensor(
             c_ref_dev.unsafe_ptr() + token_start * N,
             row_major(Coord(num_tokens, Idx[N])),
         )
@@ -212,20 +212,16 @@ def _run_preb[
     )
 
     # Host buffers + random init.
-    var a_h = ctx.enqueue_create_host_buffer[DType.uint8](
-        total_tokens * packed_K
-    )
-    var b_h = ctx.enqueue_create_host_buffer[DType.uint8](
-        num_experts * N * packed_K
-    )
-    var a_sc_h = ctx.enqueue_create_host_buffer[DType.float8_e8m0fnu](
+    var a_h = ctx.enqueue_create_host_buffer[.uint8](total_tokens * packed_K)
+    var b_h = ctx.enqueue_create_host_buffer[.uint8](num_experts * N * packed_K)
+    var a_sc_h = ctx.enqueue_create_host_buffer[.float8_e8m0fnu](
         total_tokens * scale_K
     )
-    var b_sc_h = ctx.enqueue_create_host_buffer[DType.float8_e8m0fnu](
+    var b_sc_h = ctx.enqueue_create_host_buffer[.float8_e8m0fnu](
         num_experts * N * scale_K
     )
-    var a_off_h = ctx.enqueue_create_host_buffer[DType.uint32](num_active + 1)
-    var eid_h = ctx.enqueue_create_host_buffer[DType.int32](num_active)
+    var a_off_h = ctx.enqueue_create_host_buffer[.uint32](num_active + 1)
+    var eid_h = ctx.enqueue_create_host_buffer[.int32](num_active)
     ctx.synchronize()
 
     _fill_random_bytes(a_h, total_tokens * packed_K)
@@ -242,30 +238,28 @@ def _run_preb[
     var max_padded_M = align_up(ascale_toks, 32)
 
     # Device buffers + upload.
-    var a_d = ctx.enqueue_create_buffer[DType.uint8](total_tokens * packed_K)
-    var b_d = ctx.enqueue_create_buffer[DType.uint8](num_experts * N * packed_K)
-    var b_pre_d = ctx.enqueue_create_buffer[DType.uint8](
-        num_experts * N * packed_K
-    )
-    var a_sc_d = ctx.enqueue_create_buffer[DType.float8_e8m0fnu](
+    var a_d = ctx.enqueue_create_buffer[.uint8](total_tokens * packed_K)
+    var b_d = ctx.enqueue_create_buffer[.uint8](num_experts * N * packed_K)
+    var b_pre_d = ctx.enqueue_create_buffer[.uint8](num_experts * N * packed_K)
+    var a_sc_d = ctx.enqueue_create_buffer[.float8_e8m0fnu](
         total_tokens * scale_K
     )
-    var b_sc_d = ctx.enqueue_create_buffer[DType.float8_e8m0fnu](
+    var b_sc_d = ctx.enqueue_create_buffer[.float8_e8m0fnu](
         num_experts * N * scale_K
     )
     # Preshuffled scale buffers (uint8 — opaque bytes). The dispatcher
     # expects scale tensors in scale-4d byte order; we produce them
     # below via the GPU launcher (A) and CPU helper (B, static weights).
-    var a_sc_pre_d = ctx.enqueue_create_buffer[DType.uint8](
+    var a_sc_pre_d = ctx.enqueue_create_buffer[.uint8](
         num_experts * max_padded_M * scale_K
     )
-    var b_sc_pre_d = ctx.enqueue_create_buffer[DType.uint8](
+    var b_sc_pre_d = ctx.enqueue_create_buffer[.uint8](
         num_experts * N * scale_K
     )
-    var a_off_d = ctx.enqueue_create_buffer[DType.uint32](num_active + 1)
-    var eid_d = ctx.enqueue_create_buffer[DType.int32](num_active)
-    var c_d = ctx.enqueue_create_buffer[DType.float32](total_tokens * N)
-    var c_ref_d = ctx.enqueue_create_buffer[DType.float32](total_tokens * N)
+    var a_off_d = ctx.enqueue_create_buffer[.uint32](num_active + 1)
+    var eid_d = ctx.enqueue_create_buffer[.int32](num_active)
+    var c_d = ctx.enqueue_create_buffer[.float32](total_tokens * N)
+    var c_ref_d = ctx.enqueue_create_buffer[.float32](total_tokens * N)
 
     # Zero c_d and c_ref_d. Inactive slots (M=0 or expert_id=-1) leave their
     # output range unwritten by both the kernel and the reference, so the
@@ -281,10 +275,10 @@ def _run_preb[
     ctx.enqueue_copy(eid_d, eid_h)
 
     # GPU preshuffle b_d → b_pre_d.
-    var b_raw_tt = TileTensor[mut=False](
+    var b_raw_tt = TileTensor(
         b_d, row_major[num_experts, N, packed_K]()
-    )
-    var b_pre_dst_tt = TileTensor[mut=True](
+    ).as_immut()
+    var b_pre_dst_tt = TileTensor(
         b_pre_d,
         Shuffler[num_experts].b_5d_grouped_layout[N=N, K_BYTES=packed_K],
     )
@@ -293,17 +287,17 @@ def _run_preb[
     )
 
     # GPU preshuffle of A-scales into per-expert fixed-stride slots.
-    var a_sc_raw_u8_tt = TileTensor[mut=False](
-        a_sc_d.unsafe_ptr().bitcast[Scalar[DType.uint8]](),
+    var a_sc_raw_u8_tt = TileTensor(
+        a_sc_d.unsafe_ptr().bitcast[Scalar[.uint8]](),
         row_major(Coord(total_tokens, Idx[scale_K])),
-    )
-    var a_sc_pre_tt = TileTensor[mut=True](
+    ).as_immut()
+    var a_sc_pre_tt = TileTensor(
         a_sc_pre_d,
         row_major(Coord(num_experts * max_padded_M, Idx[scale_K])),
     )
-    var a_off_tt_for_pre = TileTensor[mut=False](
+    var a_off_tt_for_pre = TileTensor(
         a_off_d, row_major(Coord(num_active + 1))
-    )
+    ).as_immut()
     Shuffler[1].preshuffle_grouped_scale_4d_gpu[K_SCALES=scale_K](
         a_sc_raw_u8_tt,
         a_sc_pre_tt,
@@ -317,12 +311,12 @@ def _run_preb[
     # CPU preshuffle of B-scales. B-scales are static weights — in
     # production this runs once at session.load. Done here on host since
     # the existing helper takes comptime MN; for B that's the static N.
-    var b_sc_pre_h = ctx.enqueue_create_host_buffer[DType.uint8](
+    var b_sc_pre_h = ctx.enqueue_create_host_buffer[.uint8](
         num_experts * N * scale_K
     )
     ctx.synchronize()
     var b_sc_raw_u8_tt = TileTensor(
-        b_sc_h.unsafe_ptr().bitcast[Scalar[DType.uint8]](),
+        b_sc_h.unsafe_ptr().bitcast[UInt8](),
         row_major(Coord(Idx[num_experts], Idx[N], Idx[scale_K])),
     )
     Shuffler[num_experts].preshuffle_scale_4d[MN=N, K_SCALES=scale_K](
@@ -347,23 +341,23 @@ def _run_preb[
     # buffers; bitcast uint8 ptr → float8_e8m0fnu to match the dispatcher
     # signature (the kernel internally bitcasts back to uint8 for V#
     # construction; the dtype here is a wrapping convention).
-    var a_tt = TileTensor[mut=False](
+    var a_tt = TileTensor(
         a_d, row_major(Coord(total_tokens, Idx[packed_K]))
-    )
-    var b_pre_tt = TileTensor[mut=False](
+    ).as_immut()
+    var b_pre_tt = TileTensor(
         b_pre_d, row_major[num_experts, N * packed_K]()
-    )
-    var a_sc_tt = TileTensor[mut=False](
-        a_sc_pre_d.unsafe_ptr().bitcast[Scalar[DType.float8_e8m0fnu]](),
+    ).as_immut()
+    var a_sc_tt = TileTensor(
+        a_sc_pre_d.unsafe_ptr().bitcast[Float8_e8m0fnu](),
         row_major(Coord(num_experts * max_padded_M, Idx[scale_K])),
-    )
-    var b_sc_tt = TileTensor[mut=False](
-        b_sc_pre_d.unsafe_ptr().bitcast[Scalar[DType.float8_e8m0fnu]](),
+    ).as_immut()
+    var b_sc_tt = TileTensor(
+        b_sc_pre_d.unsafe_ptr().bitcast[Float8_e8m0fnu](),
         row_major[num_experts, N, scale_K](),
-    )
+    ).as_immut()
     var a_off_tt = TileTensor(a_off_d, row_major(Coord(num_active + 1)))
     var eid_tt = TileTensor(eid_d, row_major(Coord(num_active)))
-    var c_tt = TileTensor[mut=True](c_d, row_major(Coord(total_tokens, Idx[N])))
+    var c_tt = TileTensor(c_d, row_major(Coord(total_tokens, Idx[N])))
 
     PreShuffledBGroupedGEMM[cu_count=cu_count, wg_per_cu=wg_per_cu].launch[
         BM=BM,
@@ -393,10 +387,8 @@ def _run_preb[
     ctx.synchronize()
 
     # Compare.
-    var c_h = ctx.enqueue_create_host_buffer[DType.float32](total_tokens * N)
-    var c_ref_h = ctx.enqueue_create_host_buffer[DType.float32](
-        total_tokens * N
-    )
+    var c_h = ctx.enqueue_create_host_buffer[.float32](total_tokens * N)
+    var c_ref_h = ctx.enqueue_create_host_buffer[.float32](total_tokens * N)
     ctx.enqueue_copy(c_h, c_d)
     ctx.enqueue_copy(c_ref_h, c_ref_d)
     ctx.synchronize()

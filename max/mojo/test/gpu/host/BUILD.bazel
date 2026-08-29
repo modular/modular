@@ -50,6 +50,19 @@ mojo_test(
     ],
 )
 
+# `//:has_gpu` excludes CPU-only build configs, where `DeviceContext` fails the
+# compile-time GPU-arch constraint.
+mojo_test(
+    name = "test_device_is_host_unified.mojo.test",
+    srcs = ["test_device_is_host_unified.mojo"],
+    tags = ["gpu"],
+    target_compatible_with = ["//:has_gpu"],
+    deps = [
+        "//max:max_mojo",
+        "@mojo//:std",
+    ],
+)
+
 # Real by-value GPU launch test for `Coord`'s `DevicePassable` conformance.
 # Vendor-agnostic: `//:has_gpu` excludes CPU-only build configs (where
 # `DeviceContext` fails the compile-time GPU-arch constraint) without pinning

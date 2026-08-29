@@ -124,7 +124,7 @@ def _reduce_along_inner_dimension[
     *,
     reduce_dim: Int,
 ](
-    shape: IndexList[_, element_type=DType.int64],
+    shape: IndexList[_, element_type=.int64],
     init_value: StaticTuple[Scalar[init_type], num_reductions],
 ):
     """Reduces the innermost (or specified) dimension of a tensor using SIMD-
@@ -264,8 +264,7 @@ def _reduce_along_inner_dimension[
             output_0_fn(indices, acc_scalar_tup)
 
     @always_inline
-    @__parameter
-    def reduce_rows(i: Int):
+    def reduce_rows(i: Int) {imm}:
         var start_parallel_offset = i * chunk_size
         var end_parallel_offset = _min((i + 1) * chunk_size, parallelism_size)
 
@@ -275,7 +274,7 @@ def _reduce_along_inner_dimension[
 
         reduce_rows_unrolled(start_parallel_offset, end_parallel_offset)
 
-    sync_parallelize[reduce_rows](num_workers)
+    sync_parallelize(reduce_rows, num_workers)
     _ = reduce_dim_size
     _ = parallelism_size
     _ = chunk_size
@@ -299,7 +298,7 @@ def _reduce_along_outer_dimension[
     *,
     reduce_dim: Int,
 ](
-    shape: IndexList[_, element_type=DType.int64],
+    shape: IndexList[_, element_type=.int64],
     init: StaticTuple[Scalar[init_type], num_reductions],
 ):
     """Reduce the given tensor using the given reduction function. The
@@ -343,8 +342,7 @@ def _reduce_along_outer_dimension[
 
     var chunk_size = ceildiv(parallelism_size, num_workers)
 
-    @__parameter
-    def reduce_slices(i: Int):
+    def reduce_slices(i: Int) {imm}:
         var start_parallel_offset = i * chunk_size
         var end_parallel_offset = _min((i + 1) * chunk_size, parallelism_size)
 
@@ -386,4 +384,4 @@ def _reduce_along_outer_dimension[
 
             vectorize[simd_width](inner_dim, reduce_chunk)
 
-    sync_parallelize[reduce_slices](num_workers)
+    sync_parallelize(reduce_slices, num_workers)

@@ -59,7 +59,7 @@ from max.gpu.host.info import _is_sm10x_gpu, MI355X
 
 def legalize_topk_ids[
     n_experts: Int, top_k: Int
-](topk_ids: UnsafePointer[Int32, MutUntrackedOrigin], n_tokens: Int):
+](topk_ids: MutPointer[Int32, MutUntrackedOrigin], n_tokens: Int):
     for tok_id in range(n_tokens):
         var topk_ids_for_token = topk_ids + tok_id * top_k
 
@@ -147,26 +147,24 @@ struct BF16DispatchTest[
         output_layout=type_of(Self.output_layout), Self.hidden_size, Self.top_k
     ]
 
-    var device_output_bufs_list: List[DeviceBuffer[DType.bfloat16]]
-    var host_output_bufs_list: List[
-        UnsafePointer[Scalar[DType.bfloat16], MutUntrackedOrigin]
-    ]
+    var device_output_bufs_list: List[DeviceBuffer[.bfloat16]]
+    var host_output_bufs_list: List[MutPointer[BFloat16, MutUntrackedOrigin]]
 
     def __init__(out self, list_of_ctx: List[DeviceContext]) raises:
-        self.device_output_bufs_list = List[DeviceBuffer[DType.bfloat16]](
+        self.device_output_bufs_list = List[DeviceBuffer[.bfloat16]](
             capacity=Self.n_ranks
         )
         self.host_output_bufs_list = List[
-            UnsafePointer[Scalar[DType.bfloat16], MutUntrackedOrigin]
+            MutPointer[BFloat16, MutUntrackedOrigin]
         ](capacity=Self.n_ranks)
         for i in range(Self.n_ranks):
             self.device_output_bufs_list.append(
-                list_of_ctx[i].enqueue_create_buffer[DType.bfloat16](
+                list_of_ctx[i].enqueue_create_buffer[.bfloat16](
                     Self.n_slots * Self.max_recv_num_tokens * Self.hidden_size
                 )
             )
             self.host_output_bufs_list.append(
-                alloc[Scalar[DType.bfloat16]](
+                alloc[BFloat16](
                     Self.n_slots * Self.max_recv_num_tokens * Self.hidden_size
                 )
             )
@@ -273,10 +271,10 @@ struct BlockwiseFP8DispatchTest[
     var device_output_bufs_list: List[DeviceBuffer[Self.fp8_dtype]]
     var device_output_scales_bufs_list: List[DeviceBuffer[Self.scales_dtype]]
     var host_output_bufs_list: List[
-        UnsafePointer[Scalar[Self.fp8_dtype], MutUntrackedOrigin]
+        MutPointer[Scalar[Self.fp8_dtype], MutUntrackedOrigin]
     ]
     var host_output_scales_bufs_list: List[
-        UnsafePointer[Scalar[Self.scales_dtype], MutUntrackedOrigin]
+        MutPointer[Scalar[Self.scales_dtype], MutUntrackedOrigin]
     ]
 
     def __init__(out self, list_of_ctx: List[DeviceContext]) raises:
@@ -287,10 +285,10 @@ struct BlockwiseFP8DispatchTest[
             DeviceBuffer[Self.scales_dtype]
         ](capacity=Self.n_ranks)
         self.host_output_bufs_list = List[
-            UnsafePointer[Scalar[Self.fp8_dtype], MutUntrackedOrigin]
+            MutPointer[Scalar[Self.fp8_dtype], MutUntrackedOrigin]
         ](capacity=Self.n_ranks)
         self.host_output_scales_bufs_list = List[
-            UnsafePointer[Scalar[Self.scales_dtype], MutUntrackedOrigin]
+            MutPointer[Scalar[Self.scales_dtype], MutUntrackedOrigin]
         ](capacity=Self.n_ranks)
         for i in range(Self.n_ranks):
             self.device_output_bufs_list.append(
@@ -394,7 +392,7 @@ struct BlockwiseFP8DispatchTest[
 
         assert_almost_equal(
             expected_val,
-            token_val.cast[DType.bfloat16](),
+            token_val.cast[.bfloat16](),
             "Output value mismatch for dev "
             + String(dev_idx)
             + " slot "
@@ -459,15 +457,15 @@ struct NVFP4DispatchTest[
 
     var device_output_bufs_list: List[DeviceBuffer[Self.fp4_dtype]]
     var device_output_scales_bufs_list: List[DeviceBuffer[Self.scales_dtype]]
-    var device_output_scales_offset_bufs_list: List[DeviceBuffer[DType.uint32]]
+    var device_output_scales_offset_bufs_list: List[DeviceBuffer[.uint32]]
     var host_output_bufs_list: List[
-        UnsafePointer[Scalar[Self.fp4_dtype], MutUntrackedOrigin]
+        MutPointer[Scalar[Self.fp4_dtype], MutUntrackedOrigin]
     ]
     var host_output_scales_bufs_list: List[
-        UnsafePointer[Scalar[Self.scales_dtype], MutUntrackedOrigin]
+        MutPointer[Scalar[Self.scales_dtype], MutUntrackedOrigin]
     ]
     var host_output_scales_offset_bufs_list: List[
-        UnsafePointer[Scalar[DType.uint32], MutUntrackedOrigin]
+        MutPointer[UInt32, MutUntrackedOrigin]
     ]
 
     def __init__(out self, list_of_ctx: List[DeviceContext]) raises:
@@ -478,16 +476,16 @@ struct NVFP4DispatchTest[
             DeviceBuffer[Self.scales_dtype]
         ](capacity=Self.n_ranks)
         self.device_output_scales_offset_bufs_list = List[
-            DeviceBuffer[DType.uint32]
+            DeviceBuffer[.uint32]
         ](capacity=Self.n_ranks)
         self.host_output_bufs_list = List[
-            UnsafePointer[Scalar[Self.fp4_dtype], MutUntrackedOrigin]
+            MutPointer[Scalar[Self.fp4_dtype], MutUntrackedOrigin]
         ](capacity=Self.n_ranks)
         self.host_output_scales_bufs_list = List[
-            UnsafePointer[Scalar[Self.scales_dtype], MutUntrackedOrigin]
+            MutPointer[Scalar[Self.scales_dtype], MutUntrackedOrigin]
         ](capacity=Self.n_ranks)
         self.host_output_scales_offset_bufs_list = List[
-            UnsafePointer[Scalar[DType.uint32], MutUntrackedOrigin]
+            MutPointer[UInt32, MutUntrackedOrigin]
         ](capacity=Self.n_ranks)
         for i in range(Self.n_ranks):
             self.device_output_bufs_list.append(
@@ -506,7 +504,7 @@ struct NVFP4DispatchTest[
                 )
             )
             self.device_output_scales_offset_bufs_list.append(
-                list_of_ctx[i].enqueue_create_buffer[DType.uint32](
+                list_of_ctx[i].enqueue_create_buffer[.uint32](
                     Self.n_slots * (Self.n_experts // Self.n_ranks)
                 )
             )
@@ -526,9 +524,7 @@ struct NVFP4DispatchTest[
                 )
             )
             self.host_output_scales_offset_bufs_list.append(
-                alloc[Scalar[DType.uint32]](
-                    Self.n_slots * (Self.n_experts // Self.n_ranks)
-                )
+                alloc[UInt32](Self.n_slots * (Self.n_experts // Self.n_ranks))
             )
 
     def __deinit__(deinit self):
@@ -644,12 +640,12 @@ struct NVFP4DispatchTest[
                     & 0x0F
                 )
             ]
-            * token_scale.cast[DType.float32]()
+            * token_scale.cast[.float32]()
         )
 
         assert_almost_equal(
             expected_val,
-            token_val.cast[DType.bfloat16](),
+            token_val.cast[.bfloat16](),
             "Scaled by :"
             + String(token_scale)
             + "Output value mismatch for dev "
@@ -711,10 +707,10 @@ struct MXFP4DispatchTest[
     var device_output_bufs_list: List[DeviceBuffer[Self.fp4_dtype]]
     var device_output_scales_bufs_list: List[DeviceBuffer[Self.scales_dtype]]
     var host_output_bufs_list: List[
-        UnsafePointer[Scalar[Self.fp4_dtype], MutUntrackedOrigin]
+        MutPointer[Scalar[Self.fp4_dtype], MutUntrackedOrigin]
     ]
     var host_output_scales_bufs_list: List[
-        UnsafePointer[Scalar[Self.scales_dtype], MutUntrackedOrigin]
+        MutPointer[Scalar[Self.scales_dtype], MutUntrackedOrigin]
     ]
 
     def __init__(out self, list_of_ctx: List[DeviceContext]) raises:
@@ -725,10 +721,10 @@ struct MXFP4DispatchTest[
             DeviceBuffer[Self.scales_dtype]
         ](capacity=Self.n_ranks)
         self.host_output_bufs_list = List[
-            UnsafePointer[Scalar[Self.fp4_dtype], MutUntrackedOrigin]
+            MutPointer[Scalar[Self.fp4_dtype], MutUntrackedOrigin]
         ](capacity=Self.n_ranks)
         self.host_output_scales_bufs_list = List[
-            UnsafePointer[Scalar[Self.scales_dtype], MutUntrackedOrigin]
+            MutPointer[Scalar[Self.scales_dtype], MutUntrackedOrigin]
         ](capacity=Self.n_ranks)
         for i in range(Self.n_ranks):
             self.device_output_bufs_list.append(
@@ -846,12 +842,12 @@ struct MXFP4DispatchTest[
                     & 0x0F
                 )
             ]
-            * token_scale.cast[DType.float32]()
+            * token_scale.cast[.float32]()
         )
 
         assert_almost_equal(
             expected_val,
-            token_val.cast[DType.bfloat16](),
+            token_val.cast[.bfloat16](),
             "Scaled by :"
             + String(token_scale)
             + "Output value mismatch for dev "
@@ -904,27 +900,27 @@ def test_dispatch_common[
     )
 
     # fmt: off
-    var send_bufs_list = List[DeviceBuffer[DType.uint8]](capacity=n_ranks)
-    var recv_bufs_list = List[DeviceBuffer[DType.uint8]](capacity=n_ranks)
-    var recv_count_bufs_list = List[DeviceBuffer[DType.uint64]](capacity=n_ranks)
-    var atomic_counters_list = List[DeviceBuffer[DType.int32]](capacity=n_ranks)
+    var send_bufs_list = List[DeviceBuffer[.uint8]](capacity=n_ranks)
+    var recv_bufs_list = List[DeviceBuffer[.uint8]](capacity=n_ranks)
+    var recv_count_bufs_list = List[DeviceBuffer[.uint64]](capacity=n_ranks)
+    var atomic_counters_list = List[DeviceBuffer[.int32]](capacity=n_ranks)
 
-    var host_topk_ids_list = Array[UnsafePointer[Int32, MutUntrackedOrigin], n_ranks](uninitialized=True)
-    var host_input_tokens_list = Array[UnsafePointer[Scalar[input_type], MutUntrackedOrigin], n_ranks](uninitialized=True)
+    var host_topk_ids_list = Array[MutPointer[Int32, MutUntrackedOrigin], n_ranks](uninitialized=True)
+    var host_input_tokens_list = Array[MutPointer[Scalar[input_type], MutUntrackedOrigin], n_ranks](uninitialized=True)
 
-    var device_topk_bufs_list = List[DeviceBuffer[DType.int32]](capacity=n_ranks)
+    var device_topk_bufs_list = List[DeviceBuffer[.int32]](capacity=n_ranks)
     var device_input_bufs_list = List[DeviceBuffer[input_type]](capacity=n_ranks)
-    var device_row_offsets_bufs_list = List[DeviceBuffer[DType.uint32]](capacity=n_ranks)
-    var device_expert_ids_bufs_list = List[DeviceBuffer[DType.int32]](capacity=n_ranks)
-    var device_src_token_info_bufs_list = List[DeviceBuffer[DType.int32]](capacity=n_ranks)
+    var device_row_offsets_bufs_list = List[DeviceBuffer[.uint32]](capacity=n_ranks)
+    var device_expert_ids_bufs_list = List[DeviceBuffer[.int32]](capacity=n_ranks)
+    var device_src_token_info_bufs_list = List[DeviceBuffer[.int32]](capacity=n_ranks)
 
 
     for i in range(n_ranks):
         var ctx = list_of_ctx[i]
-        send_bufs_list.append(list_of_ctx[i].enqueue_create_buffer[DType.uint8](n_slots * n_tokens_per_rank * msg_bytes))
-        recv_bufs_list.append(ctx.enqueue_create_buffer[DType.uint8](n_slots * max_recv_num_tokens * msg_bytes))
-        recv_count_bufs_list.append(ctx.enqueue_create_buffer[DType.uint64](n_slots * n_experts))
-        atomic_counters_list.append(ctx.enqueue_create_buffer[DType.int32](
+        send_bufs_list.append(list_of_ctx[i].enqueue_create_buffer[.uint8](n_slots * n_tokens_per_rank * msg_bytes))
+        recv_bufs_list.append(ctx.enqueue_create_buffer[.uint8](n_slots * max_recv_num_tokens * msg_bytes))
+        recv_count_bufs_list.append(ctx.enqueue_create_buffer[.uint64](n_slots * n_experts))
+        atomic_counters_list.append(ctx.enqueue_create_buffer[.int32](
             n_slots * EPLocalSyncCounters[n_experts].total_size()
         ))
         ctx.enqueue_memset(atomic_counters_list[i], Int32(0))
@@ -933,11 +929,11 @@ def test_dispatch_common[
         host_topk_ids_list[i] = alloc[Int32](n_slots * n_tokens_per_rank * top_k)
         host_input_tokens_list[i] = alloc[Scalar[input_type]](n_slots * n_tokens_per_rank * hidden_size)
 
-        device_topk_bufs_list.append(ctx.enqueue_create_buffer[DType.int32](n_slots * n_tokens_per_rank * top_k))
+        device_topk_bufs_list.append(ctx.enqueue_create_buffer[.int32](n_slots * n_tokens_per_rank * top_k))
         device_input_bufs_list.append(ctx.enqueue_create_buffer[input_type](n_slots * n_tokens_per_rank * hidden_size))
-        device_row_offsets_bufs_list.append(ctx.enqueue_create_buffer[DType.uint32](n_slots * (n_local_experts + 1)))
-        device_expert_ids_bufs_list.append(ctx.enqueue_create_buffer[DType.int32](n_slots * n_local_experts))
-        device_src_token_info_bufs_list.append(ctx.enqueue_create_buffer[DType.int32](n_slots * max_recv_num_tokens * 2))
+        device_row_offsets_bufs_list.append(ctx.enqueue_create_buffer[.uint32](n_slots * (n_local_experts + 1)))
+        device_expert_ids_bufs_list.append(ctx.enqueue_create_buffer[.int32](n_slots * n_local_experts))
+        device_src_token_info_bufs_list.append(ctx.enqueue_create_buffer[.int32](n_slots * max_recv_num_tokens * 2))
     # fmt: on
 
     var topk_ids_layout = row_major(n_tokens_per_rank, Idx[top_k])
@@ -1001,29 +997,29 @@ def test_dispatch_common[
 
     @always_inline
     @__parameter
-    def get_send_ptrs_tensor(slot_idx: Int, out result: TileTensor[DType.uint64, type_of(ptrs_layout), ImmutAnyOrigin]) raises:
+    def get_send_ptrs_tensor(slot_idx: Int, out result: TileTensor[.uint64, type_of(ptrs_layout), ImmutAnyOrigin]) raises:
         return type_of(result)(ptr=(send_ptrs_inputs + slot_idx * n_ranks).as_unsafe_any_origin(), layout=ptrs_layout)
 
     @always_inline
     @__parameter
-    def get_recv_ptrs_tensor(slot_idx: Int, out result: TileTensor[DType.uint64, type_of(ptrs_layout), ImmutAnyOrigin]) raises:
+    def get_recv_ptrs_tensor(slot_idx: Int, out result: TileTensor[.uint64, type_of(ptrs_layout), ImmutAnyOrigin]) raises:
         return type_of(result)( ptr=(recv_ptrs_inputs + slot_idx * n_ranks).as_unsafe_any_origin(), layout=ptrs_layout)
 
     @always_inline
     @__parameter
-    def get_recv_count_ptrs_tensor(slot_idx: Int, out result: TileTensor[DType.uint64, type_of(ptrs_layout), ImmutAnyOrigin]) raises:
+    def get_recv_count_ptrs_tensor(slot_idx: Int, out result: TileTensor[.uint64, type_of(ptrs_layout), ImmutAnyOrigin]) raises:
         return type_of(result)(ptr=(recv_count_ptrs_inputs + slot_idx * n_ranks).as_unsafe_any_origin(), layout=ptrs_layout)
 
     @always_inline
     @__parameter
-    def get_atomic_counters_tensor( dev_idx: Int, slot_idx: Int, out result: TileTensor[DType.int32, type_of(counters_layout), MutAnyOrigin]) raises:
+    def get_atomic_counters_tensor( dev_idx: Int, slot_idx: Int, out result: TileTensor[.int32, type_of(counters_layout), MutAnyOrigin]) raises:
         return type_of(result)(
             ptr=(atomic_counters_list[dev_idx].unsafe_ptr() + slot_idx * counters_size).as_unsafe_any_origin(), layout=counters_layout
         )
 
     @always_inline
     @__parameter
-    def get_topk_ids_tensor(dev_idx: Int, slot_idx: Int, out result: TileTensor[DType.int32, type_of(topk_ids_layout), ImmutAnyOrigin]) raises:
+    def get_topk_ids_tensor(dev_idx: Int, slot_idx: Int, out result: TileTensor[.int32, type_of(topk_ids_layout), ImmutAnyOrigin]) raises:
         return type_of(result)(ptr=(device_topk_bufs_list[dev_idx].unsafe_ptr() + slot_idx * n_tokens_per_rank * top_k).as_unsafe_any_origin(), layout=topk_ids_layout)
 
     @always_inline
@@ -1033,17 +1029,17 @@ def test_dispatch_common[
 
     @always_inline
     @__parameter
-    def get_row_offsets_tensor(dev_idx: Int, slot_idx: Int, out result: TileTensor[DType.uint32, type_of(row_offsets_layout), MutAnyOrigin]) raises:
+    def get_row_offsets_tensor(dev_idx: Int, slot_idx: Int, out result: TileTensor[.uint32, type_of(row_offsets_layout), MutAnyOrigin]) raises:
         return type_of(result)(ptr=(device_row_offsets_bufs_list[dev_idx].unsafe_ptr() + slot_idx * (n_local_experts + 1)).as_unsafe_any_origin(), layout=row_offsets_layout)
 
     @always_inline
     @__parameter
-    def get_expert_ids_tensor(dev_idx: Int, slot_idx: Int, out result: TileTensor[DType.int32, type_of(expert_ids_layout), MutAnyOrigin]) raises:
+    def get_expert_ids_tensor(dev_idx: Int, slot_idx: Int, out result: TileTensor[.int32, type_of(expert_ids_layout), MutAnyOrigin]) raises:
         return type_of(result)(ptr=(device_expert_ids_bufs_list[dev_idx].unsafe_ptr() + slot_idx * n_local_experts).as_unsafe_any_origin(), layout=expert_ids_layout)
 
     @always_inline
     @__parameter
-    def get_src_token_info_tensor(dev_idx: Int, slot_idx: Int, out result: TileTensor[DType.int32, type_of(src_token_info_layout), MutAnyOrigin]) raises:
+    def get_src_token_info_tensor(dev_idx: Int, slot_idx: Int, out result: TileTensor[.int32, type_of(src_token_info_layout), MutAnyOrigin]) raises:
         return type_of(result)(ptr=(device_src_token_info_bufs_list[dev_idx].unsafe_ptr() + slot_idx * max_recv_num_tokens * 2).as_unsafe_any_origin(), layout=src_token_info_layout)
     # fmt: on
 
@@ -1131,22 +1127,23 @@ def test_dispatch_common[
         var dev_id = Int(ctx.id())
         run_dispatch_async(dev_id, cache_iter)
 
-    def per_gpu_dispatch(i: Int) raises capturing:
+    def per_gpu_dispatch(i: Int) raises {mut results_b, imm}:
         @always_inline
-        def bench_iter(mut b: Bencher) raises capturing:
+        def bench_iter(mut b: Bencher) raises {imm}:
             bencher_iter_custom(b, call_fn_dispatch, list_of_ctx[i])
 
         var bench_config = BenchConfig()
         bench_config.show_progress = False
         var b = Bench(bench_config^)
-        b.bench_function[bench_iter](
+        b.bench_function(
+            bench_iter,
             BenchId("bench dispatch"),
             [ThroughputMeasure(BenchMetric.bytes, 0)],
             fixed_iterations=n_slots,
         )
         results_b[i] = b.info_vec[0].copy()
 
-    sync_parallelize[per_gpu_dispatch](n_ranks)
+    sync_parallelize(per_gpu_dispatch, n_ranks)
 
     var max_time = 0.0
     var max_loc = 0
@@ -1170,22 +1167,23 @@ def test_dispatch_common[
         var dev_id = Int(ctx.id())
         run_dispatch_async_wait(dev_id, cache_iter)
 
-    def per_gpu_dispatch_wait(i: Int) raises capturing:
+    def per_gpu_dispatch_wait(i: Int) raises {mut results_b, imm}:
         @always_inline
-        def bench_iter(mut b: Bencher) raises capturing:
+        def bench_iter(mut b: Bencher) raises {imm}:
             bencher_iter_custom(b, call_fn_dispatch_wait, list_of_ctx[i])
 
         var bench_config = BenchConfig()
         bench_config.show_progress = False
         var b = Bench(bench_config^)
-        b.bench_function[bench_iter](
+        b.bench_function(
+            bench_iter,
             BenchId("bench dispatch_wait"),
             [ThroughputMeasure(BenchMetric.bytes, 0)],
             fixed_iterations=n_slots,
         )
         results_b[i] = b.info_vec[0].copy()
 
-    sync_parallelize[per_gpu_dispatch_wait](n_ranks)
+    sync_parallelize(per_gpu_dispatch_wait, n_ranks)
 
     max_time = 0.0
     max_loc = 0
@@ -1213,9 +1211,9 @@ def test_dispatch_common[
             run_dispatch_async(dev_id, cache_iter + 1)
             run_dispatch_async_wait(dev_id, cache_iter + 1)
 
-        def per_gpu_e2e(i: Int) raises capturing:
+        def per_gpu_e2e(i: Int) raises {mut results_b, imm}:
             @always_inline
-            def bench_iter(mut b: Bencher) raises capturing:
+            def bench_iter(mut b: Bencher) raises {imm}:
                 bencher_iter_custom(b, call_fn_e2e, list_of_ctx[i])
 
             run_e2e(i, 0)
@@ -1224,14 +1222,15 @@ def test_dispatch_common[
             var bench_config = BenchConfig()
             bench_config.show_progress = False
             var b = Bench(bench_config^)
-            b.bench_function[bench_iter](
+            b.bench_function(
+                bench_iter,
                 BenchId("bench dispatch e2e"),
                 [ThroughputMeasure(BenchMetric.bytes, num_bytes)],
                 fixed_iterations=n_slots - 1,
             )
             results_b[i] = b.info_vec[0].copy()
 
-        sync_parallelize[per_gpu_e2e](n_ranks)
+        sync_parallelize(per_gpu_e2e, n_ranks)
 
         max_time = 0.0
         max_loc = 0
@@ -1249,9 +1248,8 @@ def test_dispatch_common[
     # Verify the results for each device and each slot
     print("Verifying results...")
 
-    @__parameter
     @always_inline
-    def verify_results(dev_idx: Int) raises:
+    def verify_results(dev_idx: Int) raises {imm}:
         var ctx = list_of_ctx[dev_idx]
 
         # Allocate host buffers for copying device outputs
@@ -1398,7 +1396,7 @@ def test_dispatch_common[
         host_atomic_counter.free()
 
     dispatch_test.save_outputs_to_host(list_of_ctx)
-    sync_parallelize[verify_results](n_ranks)
+    sync_parallelize(verify_results, n_ranks)
     print("All results verified successfully!")
 
     for dev_idx in range(n_ranks):

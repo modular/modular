@@ -30,7 +30,7 @@ from nn.normalization import rms_norm_fused_fp8
 
 def initialize_test_data[
     dtype: DType
-](data: UnsafePointer[mut=True, Scalar[dtype], _], size: Int):
+](data: MutPointer[Scalar[dtype], _], size: Int):
     """Initialize test data with diverse positive values to avoid FP8 saturation.
 
     Creates a mix of small, medium, and large magnitudes (0.05 to 3.0) that will
@@ -62,10 +62,10 @@ def compute_reference_dynamic_scaling[
     out_dtype: DType,
     scales_dtype: DType,
 ](
-    input_data: UnsafePointer[Scalar[in_dtype], _],
-    gamma_data: UnsafePointer[Scalar[in_dtype], _],
-    output_data: UnsafePointer[mut=True, Scalar[out_dtype], _],
-    scales_data: UnsafePointer[mut=True, Scalar[scales_dtype], _],
+    input_data: Pointer[Scalar[in_dtype], _],
+    gamma_data: Pointer[Scalar[in_dtype], _],
+    output_data: MutPointer[Scalar[out_dtype], _],
+    scales_data: MutPointer[Scalar[scales_dtype], _],
     rows: Int,
     cols: Int,
     epsilon: Float32,
@@ -77,13 +77,13 @@ def compute_reference_dynamic_scaling[
     var fp8_min = Float32(min_finite[out_dtype]())
 
     # Allocate temporary storage for normalized values
-    var temp_storage = List(length=cols, fill=Scalar[DType.float32](0))
+    var temp_storage = List(length=cols, fill=Float32(0))
 
     for row in range(rows):
         # Step 1: Compute mean square for RMSNorm
         var mean_square = Float32(0.0)
         for col in range(cols):
-            var val = input_data[row * cols + col].cast[DType.float32]()
+            var val = input_data[row * cols + col].cast[.float32]()
             mean_square += val * val
         mean_square = mean_square / Float32(cols)
 
@@ -93,9 +93,9 @@ def compute_reference_dynamic_scaling[
         # Step 3: Normalize and apply gamma (store in temp buffer)
         var row_max = Float32(0.0)
         for col in range(cols):
-            var val = input_data[row * cols + col].cast[DType.float32]()
+            var val = input_data[row * cols + col].cast[.float32]()
             var normalized = val * norm_factor
-            var gamma_val = gamma_data[col].cast[DType.float32]()
+            var gamma_val = gamma_data[col].cast[.float32]()
             var scaled_val = normalized * (gamma_val + weight_offset)
 
             # Track max for dynamic scaling
@@ -115,8 +115,7 @@ def compute_reference_dynamic_scaling[
         )
         scales_data[row] = scale_sd
         var scale_factor_recip = (
-            Float32(0.0) if scale_sd
-            == 0.0 else 1.0 / scale_sd.cast[DType.float32]()
+            Float32(0.0) if scale_sd == 0.0 else 1.0 / scale_sd.cast[.float32]()
         )
 
         for col in range(cols):
@@ -164,7 +163,7 @@ def test_dynamic[
     # same value.
     var epsilon = Float32(1e-5)
     var weight_offset_id = Scalar[in_dtype](weight_offset)
-    var weight_offset_f32 = weight_offset_id.cast[DType.float32]()
+    var weight_offset_f32 = weight_offset_id.cast[.float32]()
 
     # Compute reference
     compute_reference_dynamic_scaling[in_dtype, out_dtype](
@@ -246,9 +245,7 @@ def test_dynamic[
 
     var num_mismatches = 0
     for i in range(input_size):
-        if bitcast[DType.uint8](out_host[i]) != bitcast[DType.uint8](
-            expected_host[i]
-        ):
+        if bitcast[.uint8](out_host[i]) != bitcast[.uint8](expected_host[i]):
             num_mismatches += 1
             if num_mismatches <= 5:
                 print("Mismatch at", i)
@@ -273,88 +270,88 @@ def main() raises:
     comptime for scales_dtype in [DType.float32, DType.bfloat16]:
         print("\nTesting scales dtype: ", scales_dtype)
         # Rank-2 tests: Small sizes (warp-tiling)
-        test_dynamic[DType.bfloat16, DType.float8_e4m3fn, scales_dtype, 2](
+        test_dynamic[.bfloat16, DType.float8_e4m3fn, scales_dtype, 2](
             ctx, Index(16, 128)
         )
-        test_dynamic[DType.bfloat16, DType.float8_e4m3fn, scales_dtype, 2](
+        test_dynamic[.bfloat16, DType.float8_e4m3fn, scales_dtype, 2](
             ctx, Index(32, 256)
         )
-        test_dynamic[DType.bfloat16, DType.float8_e4m3fn, scales_dtype, 2](
+        test_dynamic[.bfloat16, DType.float8_e4m3fn, scales_dtype, 2](
             ctx, Index(8, 512)
         )
 
-        test_dynamic[DType.bfloat16, DType.float8_e4m3fn, scales_dtype, 2](
+        test_dynamic[.bfloat16, DType.float8_e4m3fn, scales_dtype, 2](
             ctx, Index(64, 4096)
         )
 
-        test_dynamic[DType.bfloat16, DType.float8_e4m3fn, scales_dtype, 2](
+        test_dynamic[.bfloat16, DType.float8_e4m3fn, scales_dtype, 2](
             ctx, Index(16, 8192)
         )
 
-        test_dynamic[DType.bfloat16, DType.float8_e4m3fn, scales_dtype, 2](
+        test_dynamic[.bfloat16, DType.float8_e4m3fn, scales_dtype, 2](
             ctx, Index(16, 16384)
         )
 
         # Rank-2 tests: Large (block-tiling)
-        test_dynamic[DType.bfloat16, DType.float8_e4m3fn, scales_dtype, 2](
+        test_dynamic[.bfloat16, DType.float8_e4m3fn, scales_dtype, 2](
             ctx, Index(16, 32768)
         )
 
         # Rank-2 tests: Non-power-of-2 dimensions
         print("\nTesting non-power-of-2 dimensions...")
-        test_dynamic[DType.bfloat16, DType.float8_e4m3fn, scales_dtype, 2](
+        test_dynamic[.bfloat16, DType.float8_e4m3fn, scales_dtype, 2](
             ctx, Index(13, 97)
         )
-        test_dynamic[DType.bfloat16, DType.float8_e4m3fn, scales_dtype, 2](
+        test_dynamic[.bfloat16, DType.float8_e4m3fn, scales_dtype, 2](
             ctx, Index(7, 333)
         )
-        test_dynamic[DType.bfloat16, DType.float8_e4m3fn, scales_dtype, 2](
+        test_dynamic[.bfloat16, DType.float8_e4m3fn, scales_dtype, 2](
             ctx, Index(17, 513)
         )
-        test_dynamic[DType.bfloat16, DType.float8_e4m3fn, scales_dtype, 2](
+        test_dynamic[.bfloat16, DType.float8_e4m3fn, scales_dtype, 2](
             ctx, Index(23, 1001)
         )
 
         # Rank-3 and Rank-4 tests
         print("\nTesting higher rank tensors...")
-        test_dynamic[DType.bfloat16, DType.float8_e4m3fn, scales_dtype, 3](
+        test_dynamic[.bfloat16, DType.float8_e4m3fn, scales_dtype, 3](
             ctx, Index(4, 8, 128)
         )
-        test_dynamic[DType.bfloat16, DType.float8_e4m3fn, scales_dtype, 3](
+        test_dynamic[.bfloat16, DType.float8_e4m3fn, scales_dtype, 3](
             ctx, Index(2, 16, 256)
         )
-        test_dynamic[DType.bfloat16, DType.float8_e4m3fn, scales_dtype, 3](
+        test_dynamic[.bfloat16, DType.float8_e4m3fn, scales_dtype, 3](
             ctx, Index(3, 5, 97)
         )  # Non-power-of-2
 
-        test_dynamic[DType.bfloat16, DType.float8_e4m3fn, scales_dtype, 4](
+        test_dynamic[.bfloat16, DType.float8_e4m3fn, scales_dtype, 4](
             ctx, Index(2, 4, 8, 128)
         )
-        test_dynamic[DType.bfloat16, DType.float8_e4m3fn, scales_dtype, 4](
+        test_dynamic[.bfloat16, DType.float8_e4m3fn, scales_dtype, 4](
             ctx, Index(2, 3, 5, 64)
         )
-        test_dynamic[DType.bfloat16, DType.float8_e4m3fn, scales_dtype, 4](
+        test_dynamic[.bfloat16, DType.float8_e4m3fn, scales_dtype, 4](
             ctx, Index(2, 3, 7, 97)
         )  # Non-power-of-2
 
         # Tests with nonzero weight_offset
         print("\nTesting nonzero weight_offset...")
-        test_dynamic[DType.bfloat16, DType.float8_e4m3fn, scales_dtype, 2](
+        test_dynamic[.bfloat16, DType.float8_e4m3fn, scales_dtype, 2](
             ctx, Index(16, 128), weight_offset=0.5
         )
-        test_dynamic[DType.bfloat16, DType.float8_e4m3fn, scales_dtype, 3](
+        test_dynamic[.bfloat16, DType.float8_e4m3fn, scales_dtype, 3](
             ctx, Index(4, 8, 128), weight_offset=0.1
         )
 
         # Tests with low scale_ub to exercise the clamping path
         print("\nTesting low scale_ub...")
-        test_dynamic[DType.bfloat16, DType.float8_e4m3fn, scales_dtype, 2](
+        test_dynamic[.bfloat16, DType.float8_e4m3fn, scales_dtype, 2](
             ctx, Index(16, 128), scale_ub=0.5
         )
-        test_dynamic[DType.bfloat16, DType.float8_e4m3fn, scales_dtype, 2](
+        test_dynamic[.bfloat16, DType.float8_e4m3fn, scales_dtype, 2](
             ctx, Index(32, 256), scale_ub=0.1
         )
-        test_dynamic[DType.bfloat16, DType.float8_e4m3fn, scales_dtype, 3](
+        test_dynamic[.bfloat16, DType.float8_e4m3fn, scales_dtype, 3](
             ctx, Index(4, 8, 128), scale_ub=0.25
         )
 

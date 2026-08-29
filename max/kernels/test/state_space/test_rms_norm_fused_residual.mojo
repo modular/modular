@@ -32,13 +32,13 @@ from std.utils.index import Index, IndexList
 
 def compute_rms_ref[
     dtype: DType
-](data_ptr: UnsafePointer[Scalar[dtype], _], size: Int, eps: Float32) -> Scalar[
+](data_ptr: ImmPointer[Scalar[dtype], _], size: Int, eps: Float32) -> Scalar[
     DType.float32
 ]:
     """Compute reference RMS value."""
     var sum_of_squares = Float32()
     for i in range(size):
-        var d = data_ptr[i].cast[DType.float32]()
+        var d = data_ptr[i].cast[.float32]()
         sum_of_squares += d * d
     return sqrt((sum_of_squares / Float32(size)) + eps)
 
@@ -197,7 +197,7 @@ def run_rms_norm_fused_residual_cpu[
         # Verify normalized output
         for c in range(cols):
             var idx = r * cols + c
-            var sum_val = sum_ptr[c].cast[DType.float32]()
+            var sum_val = sum_ptr[c].cast[.float32]()
             var expected_norm = (sum_val / rms_val).cast[dtype]() * (
                 gamma_ptr[c] + weight_offset
             )
@@ -206,29 +206,29 @@ def run_rms_norm_fused_residual_cpu[
 
 def test_rms_norm_fused_residual_float32_2d() raises:
     """Test rms_norm_fused_residual with float32 and 2D shape."""
-    run_rms_norm_fused_residual_cpu[DType.float32](Index(4, 16), rtol=1e-3)
+    run_rms_norm_fused_residual_cpu[.float32](Index(4, 16), rtol=1e-3)
 
 
 def test_rms_norm_fused_residual_float32_small() raises:
     """Test rms_norm_fused_residual with small dimensions."""
-    run_rms_norm_fused_residual_cpu[DType.float32](Index(2, 8), rtol=1e-3)
+    run_rms_norm_fused_residual_cpu[.float32](Index(2, 8), rtol=1e-3)
 
 
 def test_rms_norm_fused_residual_float32_large_cols() raises:
     """Test rms_norm_fused_residual with larger column count."""
-    run_rms_norm_fused_residual_cpu[DType.float32](Index(2, 128), rtol=1e-3)
+    run_rms_norm_fused_residual_cpu[.float32](Index(2, 128), rtol=1e-3)
 
 
 def test_rms_norm_fused_residual_float32_3d() raises:
     """Test rms_norm_fused_residual with 3D shape."""
-    run_rms_norm_fused_residual_cpu[DType.float32](Index(2, 3, 16), rtol=1e-3)
+    run_rms_norm_fused_residual_cpu[.float32](Index(2, 3, 16), rtol=1e-3)
 
 
 def test_rms_norm_fused_residual_bfloat16() raises:
     """Test rms_norm_fused_residual with bfloat16."""
 
     comptime if not CompilationTarget.has_neon():
-        run_rms_norm_fused_residual_cpu[DType.bfloat16](Index(4, 16), rtol=1e-2)
+        run_rms_norm_fused_residual_cpu[.bfloat16](Index(4, 16), rtol=1e-2)
 
 
 # =============================================================================
@@ -238,21 +238,21 @@ def test_rms_norm_fused_residual_bfloat16() raises:
 
 def test_rms_norm_fused_residual_dropout_float32_2d() raises:
     """Test rms_norm_fused_residual CPU with dropout enabled (float32, 2D)."""
-    run_rms_norm_fused_residual_cpu[DType.float32](
+    run_rms_norm_fused_residual_cpu[.float32](
         Index(4, 16), rtol=1e-3, dropout_p=0.3, seed=42
     )
 
 
 def test_rms_norm_fused_residual_dropout_float32_3d() raises:
     """Test rms_norm_fused_residual CPU with dropout enabled (float32, 3D)."""
-    run_rms_norm_fused_residual_cpu[DType.float32](
+    run_rms_norm_fused_residual_cpu[.float32](
         Index(2, 3, 16), rtol=1e-3, dropout_p=0.5, seed=123
     )
 
 
 def test_rms_norm_fused_residual_dropout_float32_large_cols() raises:
     """Test CPU dropout path with larger column count."""
-    run_rms_norm_fused_residual_cpu[DType.float32](
+    run_rms_norm_fused_residual_cpu[.float32](
         Index(2, 128), rtol=1e-3, dropout_p=0.1, seed=7
     )
 
@@ -261,7 +261,7 @@ def test_rms_norm_fused_residual_dropout_bfloat16() raises:
     """Test rms_norm_fused_residual CPU with dropout enabled (bfloat16)."""
 
     comptime if not CompilationTarget.has_neon():
-        run_rms_norm_fused_residual_cpu[DType.bfloat16](
+        run_rms_norm_fused_residual_cpu[.bfloat16](
             Index(4, 16), rtol=1e-2, dropout_p=0.2, seed=99
         )
 

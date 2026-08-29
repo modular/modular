@@ -37,11 +37,11 @@ from linalg.fp4_utils import MXFP4_SF_VECTOR_SIZE
 def block_scaled_matmul_ref[
     output_dtype: DType
 ](
-    a_ptr: UnsafePointer[Scalar[DType.uint8], ImmutAnyOrigin],
-    b_ptr: UnsafePointer[Scalar[DType.uint8], ImmutAnyOrigin],
-    a_scales_ptr: UnsafePointer[Scalar[DType.float8_e8m0fnu], ImmutAnyOrigin],
-    b_scales_ptr: UnsafePointer[Scalar[DType.float8_e8m0fnu], ImmutAnyOrigin],
-    c_ptr: UnsafePointer[Scalar[output_dtype], MutAnyOrigin],
+    a_ptr: ImmPointer[UInt8, ImmutAnyOrigin],
+    b_ptr: ImmPointer[UInt8, ImmutAnyOrigin],
+    a_scales_ptr: ImmPointer[Float8_e8m0fnu, ImmutAnyOrigin],
+    b_scales_ptr: ImmPointer[Float8_e8m0fnu, ImmutAnyOrigin],
+    c_ptr: MutPointer[Scalar[output_dtype], MutAnyOrigin],
     M_dev: Int32,
     N_dev: Int32,
     K_dev: Int32,
@@ -54,10 +54,10 @@ def block_scaled_matmul_ref[
     @always_inline
     def cast_fp2em1x2_to_fp32x2[
         byte_select: Int
-    ](packed: Int32, scale: Float32) -> SIMD[DType.float32, 2]:
+    ](packed: Int32, scale: Float32) -> SIMD[.float32, 2]:
         return llvm_intrinsic[
             "llvm.amdgcn.cvt.scalef32.pk.f32.fp4",
-            SIMD[DType.float32, 2],
+            SIMD[.float32, 2],
         ](packed, scale, Int32(byte_select))
 
     var m = global_idx.x
@@ -74,15 +74,15 @@ def block_scaled_matmul_ref[
     var am_ptr = a_ptr + m * (K // 2)
     var bn_ptr = b_ptr + n * (K // 2)
 
-    var accum = SIMD[DType.float32, 2](0)
+    var accum = SIMD[.float32, 2](0)
 
     for ko in range(k_groups):
-        var a_scale = am_scales_ptr[ko].cast[DType.float32]()
-        var b_scale = bn_scales_ptr[ko].cast[DType.float32]()
+        var a_scale = am_scales_ptr[ko].cast[.float32]()
+        var b_scale = bn_scales_ptr[ko].cast[.float32]()
 
         for ki in range(0, MXFP4_SF_VECTOR_SIZE // 2, 4):
-            var a_data = bitcast[DType.int32, 1](am_ptr.load[width=4](ki))
-            var b_data = bitcast[DType.int32, 1](bn_ptr.load[width=4](ki))
+            var a_data = bitcast[.int32, 1](am_ptr.load[width=4](ki))
+            var b_data = bitcast[.int32, 1](bn_ptr.load[width=4](ki))
 
             comptime for byte_select in range(4):
                 accum += cast_fp2em1x2_to_fp32x2[byte_select](
@@ -189,7 +189,7 @@ def test_block_scaled_mxfp4_hipblaslt[
     var a_scales_lt = LayoutTensor[
         scales_dtype, a_scales_layout, ImmutAnyOrigin
     ](
-        rebind[UnsafePointer[Scalar[scales_dtype], ImmutAnyOrigin]](
+        rebind[ImmPointer[Scalar[scales_dtype], ImmutAnyOrigin]](
             a_scales_device_nd._storage
         ),
         RuntimeLayout[a_scales_layout].row_major(
@@ -202,7 +202,7 @@ def test_block_scaled_mxfp4_hipblaslt[
     var b_scales_lt = LayoutTensor[
         scales_dtype, b_scales_layout, ImmutAnyOrigin
     ](
-        rebind[UnsafePointer[Scalar[scales_dtype], ImmutAnyOrigin]](
+        rebind[ImmPointer[Scalar[scales_dtype], ImmutAnyOrigin]](
             b_scales_device_nd._storage
         ),
         RuntimeLayout[b_scales_layout].row_major(
@@ -255,9 +255,9 @@ def test_block_scaled_mxfp4_hipblaslt[
 
 def main() raises:
     with DeviceContext() as ctx:
-        test_block_scaled_mxfp4_hipblaslt[DType.bfloat16](
+        test_block_scaled_mxfp4_hipblaslt[.bfloat16](
             ctx, Idx[128], Idx[128], Idx[256]
         )
-        test_block_scaled_mxfp4_hipblaslt[DType.bfloat16](
+        test_block_scaled_mxfp4_hipblaslt[.bfloat16](
             ctx, Idx[64], Idx[224], Idx[512]
         )

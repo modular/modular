@@ -66,9 +66,9 @@ def run_layer_norm_gpu[
 
     @always_inline
     def input_fn[
-        width: Int, alignment: Int, _rank: Int
-    ](coords: IndexList[_rank]) {var data_buf} -> SIMD[dtype, width]:
-        var idx = data_buf.layout(Coord(coords))
+        width: Int, alignment: Int
+    ](coords: Coord) {var data_buf} -> SIMD[dtype, width]:
+        var idx = data_buf.layout(coords)
 
         return data_buf.raw_load[
             width=width, alignment=alignment * align_of[dtype]()
@@ -76,9 +76,9 @@ def run_layer_norm_gpu[
 
     @always_inline
     def output_fn[
-        width: SIMDLength, rank_: Int, alignment: Int
-    ](coords: IndexList[rank_], val: SIMD[dtype, width]) {var out_buf}:
-        var idx = out_buf.layout(Coord(coords))
+        width: SIMDLength, alignment: Int
+    ](coords: Coord, val: SIMD[dtype, width]) {var out_buf}:
+        var idx = out_buf.layout(coords)
         out_buf.raw_store[width=width, alignment=alignment * align_of[dtype]()](
             idx, rebind[SIMD[dtype, width]](val)
         )
@@ -87,7 +87,7 @@ def run_layer_norm_gpu[
         input_fn,
         output_fn,
         Coord(shape),
-        Scalar[DType.int](cols),
+        Int(cols),
         gamma,
         beta,
         epsilon,
@@ -121,13 +121,13 @@ def main() raises:
         # End-to-end layer_norm across shapes. The blocked/warp-tiled kernel
         # selection is a scaffolder implementation detail, so only the op's
         # end-to-end behavior is tested here.
-        run_layer_norm_gpu[DType.float32](ctx, Index(3, 5))
-        run_layer_norm_gpu[DType.float32](ctx, Index(3, 8))
-        run_layer_norm_gpu[DType.float32](ctx, Index(7, 33))
-        run_layer_norm_gpu[DType.float32](ctx, Index(1, 1024))
-        run_layer_norm_gpu[DType.float32](ctx, Index(1, 8192), rtol=0.1)
-        run_layer_norm_gpu[DType.float32](ctx, Index(10, 4096))
+        run_layer_norm_gpu[.float32](ctx, Index(3, 5))
+        run_layer_norm_gpu[.float32](ctx, Index(3, 8))
+        run_layer_norm_gpu[.float32](ctx, Index(7, 33))
+        run_layer_norm_gpu[.float32](ctx, Index(1, 1024))
+        run_layer_norm_gpu[.float32](ctx, Index(1, 8192), rtol=0.1)
+        run_layer_norm_gpu[.float32](ctx, Index(10, 4096))
         # variable rank
-        run_layer_norm_gpu[DType.float32](ctx, Index(5))
-        run_layer_norm_gpu[DType.float32](ctx, Index(3, 4, 10, 20, 8))
-        run_layer_norm_gpu[DType.float32](ctx, Index(1, 5, 6, 10, 128))
+        run_layer_norm_gpu[.float32](ctx, Index(5))
+        run_layer_norm_gpu[.float32](ctx, Index(3, 4, 10, 20, 8))
+        run_layer_norm_gpu[.float32](ctx, Index(1, 5, 6, 10, 128))

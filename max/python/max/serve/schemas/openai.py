@@ -78,6 +78,9 @@ from openai.types.completion_usage import (
     CompletionTokensDetails,
     PromptTokensDetails,
 )
+from openai.types.audio.speech_create_params import (
+    SpeechCreateParams as _OpenAISpeechParams,
+)
 from openai.types.embedding_create_params import (
     EmbeddingCreateParams as _OpenAIEmbeddingParams,
 )
@@ -385,6 +388,9 @@ _TextCompletionParamsBase = _model_from_typeddict(
 _EmbeddingParamsBase = _model_from_typeddict(
     "_EmbeddingParamsBase", _OpenAIEmbeddingParams
 )
+_SpeechParamsBase = _model_from_typeddict(
+    "_SpeechParamsBase", _OpenAISpeechParams
+)
 
 
 class CreateChatCompletionRequest(
@@ -534,6 +540,48 @@ class CreateEmbeddingRequest(_EmbeddingParamsBase):  # type: ignore[misc,valid-t
 
     model: str
     input: str | list[str] | list[int] | list[list[int]]
+
+
+class CreateSpeechRequest(_SpeechParamsBase):  # type: ignore[misc,valid-type]
+    """OpenAI speech request, extended for generative audio models.
+
+    ``input`` is the text the audio renders, which for a model that sings is
+    its lyrics, and ``instructions`` -- OpenAI's field for describing how the
+    audio should sound -- carries the style prompt such a model conditions on.
+
+    ``voice`` is required by OpenAI and has no meaning for a model with no
+    voice catalog, so it is optional here and ignored. The MAX extensions
+    below are the generation controls an audio model has and a text-to-speech
+    model does not; each one left unset keeps the model's own default.
+    """
+
+    model: str
+    input: str
+
+    voice: str | None = None
+
+    audio_duration: float | None = Field(
+        default=None,
+        gt=0.0,
+        description="Upper bound on the generated audio, in seconds.",
+    )
+    steps: int | None = Field(
+        default=None,
+        gt=0,
+        description=(
+            "Denoising steps, for models whose audio comes from a diffusion "
+            "or flow-matching stage."
+        ),
+    )
+    guidance_scale: float | None = Field(
+        default=None,
+        gt=0.0,
+        description="Classifier-free guidance scale.",
+    )
+    seed: int | None = Field(
+        default=None,
+        description="Seed for the sampling and noise draws.",
+    )
 
 
 # ---------------------------------------------------------------------------

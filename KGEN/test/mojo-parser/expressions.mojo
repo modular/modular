@@ -53,7 +53,7 @@ struct MemoryOnlyPair(ImplicitlyCopyable):
   var x: MemoryOnlyInt
   var y: Int
 
-  # CHECK: lit.fn @"__init__{{.*}}(*, %copy: !lit.ref<!MemoryOnlyPair, imm {{.*}}> read_mem,
+  # CHECK: lit.fn @"__init__{{.*}}(*, %copy: !lit.ref<!MemoryOnlyPair, imm {{.*}}> imm_mem,
   # CHECK-SAME: %self: !lit.ref<!MemoryOnlyPair, mut {{.*}}> byref_result)
   def __init__(out self, *, copy: MemoryOnlyPair):
     # CHECK-NEXT: %0 = lit.ref.struct.ger %self[x]
@@ -78,7 +78,7 @@ struct MemoryOnlyPair(ImplicitlyCopyable):
     _ = self.y+arg.x
 
 def inferred_function_with_memory_result[
-  width: SIMDLength](x: SIMD[DType.float32, width]) -> MemoryOnlyInt: pass
+  width: SIMDLength](x: SIMD[.float32, width]) -> MemoryOnlyInt: pass
 
 # CHECK-LABEL: lit.fn @"memoryOnlyOps
 def memoryOnlyOps(mut a: MemoryOnlyPair) -> MemoryOnlyPair:
@@ -138,7 +138,7 @@ def memoryOnlyOps(mut a: MemoryOnlyPair) -> MemoryOnlyPair:
 
   # CHECK: [[TMP:%.*]] = lit.var.decl "__call_result_tmp__"
   # CHECK-NEXT: lit.call {{.*}}inferred_function_with_memory_result{{.*}}([[SIMDVAL]], [[TMP]])
-  _ = inferred_function_with_memory_result(SIMD[DType.float32, 4]())
+  _ = inferred_function_with_memory_result(SIMD[.float32, 4]())
   # CHECK-NEXT: lit.ownership.use [[TMP]]
 
   # Memory-only default argument with memory-only result.
@@ -633,7 +633,7 @@ def test_param_if_cond[cond: Bool]() -> Int:
   # CHECK-NEXT: %[[I:.*]] = kgen.param.constant: !alias_Int1 = <#alias_i>
   return i
 
-# CHECK-LABEL: lit.fn @"callable_mv[def(::SIMD[::DType(int), ::SIMDLength(1)]) thin -> ::SIMD[::DType(int), ::SIMDLength(1)]](::SIMD[::DType(int), ::SIMDLength(1)])"
+# CHECK-LABEL: lit.fn @"callable_mv[def(::SIMD[DType.int, 1]) thin -> ::SIMD[DType.int, 1]](::SIMD[DType.int, 1])"
 # CHECK-SAME: <callable: !lit.generator<(!Int, |) -> !alias_Int1>>(%a: !Int) -> !alias_Int1
 def callable_mv[callable: def (Int) thin -> Int](a: Int) -> Int:
   # CHECK-NEXT: lit.call tail[!lit.generator<(!Int, |) -> !alias_Int1>: callable](%a)
@@ -659,7 +659,7 @@ def returnIndex2() -> Int:
   # CHECK-NEXT: return %0
   return takeIndexParam[returnIndex()]()
 
-# CHECK-LABEL: lit.fn @"callInParam[def[::SIMD[::DType(int), ::SIMDLength(1)]](::SIMD[::DType(int), ::SIMDLength(1)]) thin -> ::SIMD[::DType(int), ::SIMDLength(1)]]()"
+# CHECK-LABEL: lit.fn @"callInParam[def[::SIMD[DType.int, 1]](::SIMD[DType.int, 1]) thin -> ::SIMD[DType.int, 1]]()"
 # CHECK-SAME: <callable: !lit.generator<<"x": !Int>(!Int, |) -> !alias_Int1>>() -> !alias_Int1
 def callInParam[callable: def[x: Int](Int) thin -> Int]() -> Int:
   # CHECK-NEXT: %0 = lit.call {{.*}}takeIndexParam{{.*}}()"<:!Int apply({{.*}}bind_params({{.*}}callable, :!Int {:scalar<index> 1}), {:scalar<index> 1})>()
@@ -710,10 +710,10 @@ def patterns():
   # CHECK: %someSIMD = lit.var.decl "someSIMD" var
   # CHECK: [[SIMD:%.*]] = lit.ref.load %someSIMD
   # CHECK: {{%.*}} = lit.call {{.*}}@SIMD::@"__iadd__({{.*}}(%someSIMD, [[SIMD]])
-  var someSIMD : SIMD[DType.float64, 4]
+  var someSIMD : SIMD[.float64, 4]
   (someSIMD) += someSIMD
 
-# CHECK-LABEL: lit.fn @"byval_byref_function(::SIMD[::DType(int), ::SIMDLength(1)],::SIMD[::DType(int), ::SIMDLength(1)])"{{.*}}(%a: !Int, %b: !lit.ref<!Int, mut {{.*}}> mut) -> !kgen.none
+# CHECK-LABEL: lit.fn @"byval_byref_function(::SIMD[DType.int, 1],::SIMD[DType.int, 1])"{{.*}}(%a: !Int, %b: !lit.ref<!Int, mut {{.*}}> mut) -> !kgen.none
 def byval_byref_function(a: Int, mut b: Int):
   # CHECK-NEXT: lit.ref.store %a, %b
   b = a
@@ -971,7 +971,7 @@ def testMemoryOnlyIntArray(mut arr: MemoryOnlyIntArray, x: Int, var moi: MemoryO
 struct MyInlineIntInit(Movable where False):
     var value: MemoryOnlyInt
     # CHECK-LABEL: lit.fn @"__init__(expressions::MemoryOnlyInt)"
-    # CHECK-SAME: (%value: !lit.ref<!MemoryOnlyInt, imm {{.*}}> read_mem, ?, %self: !lit.ref<!MyInlineIntInit, mut {{.*}}> byref_result) -> !kgen.none
+    # CHECK-SAME: (%value: !lit.ref<!MemoryOnlyInt, imm {{.*}}> imm_mem, ?, %self: !lit.ref<!MyInlineIntInit, mut {{.*}}> byref_result) -> !kgen.none
     @implicit
     def __init__(out self, value: MemoryOnlyInt):
         # CHECK: %0 = lit.ref.struct.ger %self[value]
@@ -1051,13 +1051,13 @@ def function_types():
 
   # CHECK: lit.alias.decl *"p2{{.*}}"Ts": !lit.struct<#TypeList{{.*}} pos_vararg{{.*}}(!lit.ref<{{.*}}#VariadicPack
   # CHECK-SAME: <:!Bool {:scalar<bool> false},  :origin<false> *(0,2){{.*}}, :meta<!AnyType> !AnyType, :param_list<!AnyType> *(0,0), :!Bool {:scalar<bool> false}, {{.*}}>>, imm *[0,0]>
-  # CHECK-SAME: read_mem|pack_vararg, ?, "__result__": !lit.ref<none, mut *[0,1]> byref_result) async
+  # CHECK-SAME: imm_mem|pack_vararg, ?, "__result__": !lit.ref<none, mut *[0,1]> byref_result) async
   comptime p2 = async def[*Ts: AnyType](* *Ts) thin -> None
 
   # CHECK: lit.var.decl "float0"{{.*}}(!Int, |) -> !alias_Int1
   var float0: def(Int) thin -> Int
 
-  # CHECK: lit.var.decl "float1"{{.*}}(!lit.ref<!MemoryType, imm {{.*}}> read_mem, |, ?, "__result__": !lit.ref<!MemoryType, mut {{.*}}> byref_result) -> !kgen.none
+  # CHECK: lit.var.decl "float1"{{.*}}(!lit.ref<!MemoryType, imm {{.*}}> imm_mem, |, ?, "__result__": !lit.ref<!MemoryType, mut {{.*}}> byref_result) -> !kgen.none
   var float1: def(MemoryType) thin -> MemoryType
 
   # CHECK: lit.var.decl "float2"{{.*}}(!lit.ref<!RegType, mut *[0,0]> owned_in_mem, |) -> !RegType
@@ -1075,14 +1075,14 @@ def function_types():
   # CHECK: lit.var.decl "float6"{{.*}}(!Int, |, ?, "__result__": !lit.ref<none, mut *[0,0]> byref_result) async|capturing -> !kgen.none
   var float6: async def(Int) capturing thin -> None
 
-  # CHECK: lit.var.decl "float7"{{.*}}(!lit.ref<!lit.struct<#VariadicList <:!Bool {:scalar<bool> false}, :origin<false> *(0,0), :!lit.struct<#Origin <:!Bool {:scalar<bool> false}, :origin<false> *(0,0)>> *(0,1), :!AnyType !Int, :!Bool {:scalar<bool> false}>>, imm *[0,0]> read_mem|pos_vararg, ?, {{.*}}) throws -> !kgen.scalar<bool>
+  # CHECK: lit.var.decl "float7"{{.*}}(!lit.ref<!lit.struct<#VariadicList <:!Bool {:scalar<bool> false}, :origin<false> *(0,0), :!lit.struct<#Origin <:!Bool {:scalar<bool> false}, :origin<false> *(0,0)>> *(0,1), :!AnyType !Int, :!Bool {:scalar<bool> false}>>, imm *[0,0]> imm_mem|pos_vararg, ?, {{.*}}) throws -> !kgen.scalar<bool>
   var float7: def(*Int) thin raises -> None
 
   # CHECK: lit.var.decl "float12"{{.*}}<(!Int = {:scalar<index> 10}, {{.*}}StringLiteral <:string "foo">
   # CHECK-SAME: , |) -> !kgen.none>
   var float12: def(Int = 10, StaticString = "foo") thin -> None
 
-  # CHECK: lit.var.decl "named"{{.*}}<[1]("x": !lit.ref<!MemoryType, imm {{.*}}> read_mem) -> !alias_Int1>
+  # CHECK: lit.var.decl "named"{{.*}}<[1]("x": !lit.ref<!MemoryType, imm {{.*}}> imm_mem) -> !alias_Int1>
   var named: def(x: MemoryType) thin -> Int
 
 # CHECK-LABEL: lit.struct.decl @Mem
@@ -1143,7 +1143,7 @@ def testTransferWarning():
 # Test nonmaterializable IntLiteral beyond Int bounds.
 ##===----------------------------------------------------------------------===##
 
-# CHECK: lit.alias.decl *"bigggNumber{{.*}}#IntLiteral <:!pop.int_literal 115792089237316195423570985008687907853269984665640564039457584007913129639936>> = <*()>
+# CHECK: lit.alias.decl *"bigggNumber{{.*}}#IntLiteral <:!pop.int_literal 115792089237316195423570985008687907853269984665640564039457584007913129639936>> = <{}>
 comptime bigggNumber = 2 << 255
 def useBigNumber() -> Int:
   # CHECK: [[VAR:%.*]] = kgen.param.constant: !alias_Int1 = <rebind(:!Int {:scalar<index> 512})>

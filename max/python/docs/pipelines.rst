@@ -18,6 +18,7 @@ Submodules
    :maxdepth: 1
 
    pipelines.architectures
+   pipelines.audio
    pipelines.context
    pipelines.diffusion
    pipelines.kv_cache
@@ -25,6 +26,7 @@ Submodules
    pipelines.lib.interfaces
    pipelines.lib.log_probabilities
    pipelines.lib.registry
+   pipelines.lib.request_text
    pipelines.logging_utils
    pipelines.modeling.base
    pipelines.modeling.dataprocessing

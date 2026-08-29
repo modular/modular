@@ -44,9 +44,15 @@ from std.sys import size_of
 from std.sys.info import simd_width_of
 
 from std.utils.coord import Coord, coord_to_index_list
-from std.utils.index import IndexList
 
-from algorithm.rowwise_types import Context, ContextParams, ReduceTier, RowBody
+from algorithm.rowwise_types import (
+    Context,
+    ContextParams,
+    ReduceTier,
+    RowBody,
+    RowCoord,
+    _num_outputs_excluding_axis,
+)
 from max.algorithm.backend.cpu.parallelize import (
     _get_num_workers,
     sync_parallelize,
@@ -179,8 +185,9 @@ def _simd_walk_unrolled[
     W: Int,
     rank: Int,
     //,
-    TileFn: ImplicitlyCopyable & (def[ws: Int, _r: Int](IndexList[_r]) -> None),
-](mut coords: IndexList[rank], axis: Int, lo: Int, hi: Int, tile_fn: TileFn):
+    axis: Int,
+    TileFn: ImplicitlyCopyable & (def[ws: Int](RowCoord[rank]) -> None),
+](mut coords: RowCoord[rank], lo: Int, hi: Int, tile_fn: TileFn):
     """8-way-unrolled SIMD walk over `[lo, hi)` along `axis`, then SIMD
     and scalar tails. Shared by the split-axis tier (`[lo, hi)` a
     per-worker stripe) and the inner-axis cooperative tier
@@ -195,16 +202,16 @@ def _simd_walk_unrolled[
     var k = lo
     while k < simd_unrolled:
         comptime for u in range(UNROLL):
-            coords[axis] = k + u * W
-            tile_fn[W, rank](coords)
+            coords.write_axis[axis](k + u * W)
+            tile_fn[W](coords)
         k += W_U
     while k < simd_aligned:
-        coords[axis] = k
-        tile_fn[W, rank](coords)
+        coords.write_axis[axis](k)
+        tile_fn[W](coords)
         k += W
     while k < hi:
-        coords[axis] = k
-        tile_fn[1, rank](coords)
+        coords.write_axis[axis](k)
+        tile_fn[1](coords)
         k += 1
 
 
@@ -214,11 +221,11 @@ def _simd_walk_unrolled[
     W: Int,
     rank: Int,
     //,
-    TileFn: ImplicitlyCopyable
-    & (def[ws: Int, _r: Int](mut State, IndexList[_r]) -> None),
-](
-    mut coords: IndexList[rank],
     axis: Int,
+    TileFn: ImplicitlyCopyable
+    & (def[ws: Int](mut State, RowCoord[rank]) -> None),
+](
+    mut coords: RowCoord[rank],
     lo: Int,
     hi: Int,
     mut state: State,
@@ -234,25 +241,31 @@ def _simd_walk_unrolled[
     var k = lo
     while k < simd_unrolled:
         comptime for u in range(UNROLL):
-            coords[axis] = k + u * W
-            tile_fn[W, rank](state, coords)
+            coords.write_axis[axis](k + u * W)
+            tile_fn[W](state, coords)
         k += W_U
     while k < simd_aligned:
-        coords[axis] = k
-        tile_fn[W, rank](state, coords)
+        coords.write_axis[axis](k)
+        tile_fn[W](state, coords)
         k += W
     while k < hi:
-        coords[axis] = k
-        tile_fn[1, rank](state, coords)
+        coords.write_axis[axis](k)
+        tile_fn[1](state, coords)
         k += 1
 
 
 @always_inline
 def reduce[
     params: ContextParams,
+    rank: Int,
     //,
-    TileFn: ImplicitlyCopyable & (def[ws: Int, _r: Int](IndexList[_r]) -> None),
-](row_coords: Coord, axis_size: Int, ctx: Context[params], tile_fn: TileFn):
+    TileFn: ImplicitlyCopyable & (def[ws: Int](RowCoord[rank]) -> None),
+](
+    row_coords: RowCoord[rank],
+    axis_size: Int,
+    ctx: Context[params],
+    tile_fn: TileFn,
+):
     """Drives `tile_fn` over the reduce axis, CPU-side, with no monoid
     state — pure per-tile iteration for map/emit terminals (see the
     state-carrying overload below for reduce phases).
@@ -271,8 +284,7 @@ def reduce[
             params reads).
         tile_fn: Per-tile callback; closes over input/output closures.
     """
-    comptime rank = row_coords.rank
-    var coords = coord_to_index_list(row_coords)
+    var coords = row_coords
 
     comptime if ctx._tier == ReduceTier.Splitk:
         var num_splits = Int(ctx._blocks_per_row)
@@ -280,17 +292,17 @@ def reduce[
         var stripe = ceildiv(axis_size, num_splits)
         var lo = split * stripe
         var hi = _min((split + 1) * stripe, axis_size)
-        _simd_walk_unrolled[W=ctx.simd_width, rank=rank](
-            coords, ctx.axis, lo, hi, tile_fn
+        _simd_walk_unrolled[W=ctx.simd_width, rank=rank, axis=ctx.axis](
+            coords, lo, hi, tile_fn
         )
     elif ctx.emit_tile_width > 1:
         comptime W = ctx.emit_tile_width
         for k in range(axis_size):
-            coords[ctx.axis] = k
-            tile_fn[W, rank](coords)
+            coords.write_axis[ctx.axis](k)
+            tile_fn[W](coords)
     else:
-        _simd_walk_unrolled[W=ctx.simd_width, rank=rank](
-            coords, ctx.axis, 0, axis_size, tile_fn
+        _simd_walk_unrolled[W=ctx.simd_width, rank=rank, axis=ctx.axis](
+            coords, 0, axis_size, tile_fn
         )
 
 
@@ -298,11 +310,12 @@ def reduce[
 def reduce[
     State: ReduceOp,
     params: ContextParams,
+    rank: Int,
     //,
     TileFn: ImplicitlyCopyable
-    & (def[ws: Int, _r: Int](mut State, IndexList[_r]) -> None),
+    & (def[ws: Int](mut State, RowCoord[rank]) -> None),
 ](
-    row_coords: Coord,
+    row_coords: RowCoord[rank],
     axis_size: Int,
     ctx: Context[params],
     mut state: State,
@@ -343,8 +356,7 @@ def reduce[
         tile_fn: Per-tile callback; closes over input closures and
             folds each tile into `state`.
     """
-    comptime rank = row_coords.rank
-    var coords = coord_to_index_list(row_coords)
+    var coords = row_coords
 
     comptime if ctx._tier == ReduceTier.Splitk:
         # Split-axis tier: each worker walks ONE stripe of the reduce
@@ -358,21 +370,21 @@ def reduce[
         var stripe = ceildiv(axis_size, num_splits)
         var lo = split * stripe
         var hi = _min((split + 1) * stripe, axis_size)
-        _simd_walk_unrolled[W=ctx.simd_width, rank=rank](
-            coords, ctx.axis, lo, hi, state, tile_fn
+        _simd_walk_unrolled[W=ctx.simd_width, rank=rank, axis=ctx.axis](
+            coords, lo, hi, state, tile_fn
         )
     elif ctx.emit_tile_width > 1:
         comptime W = ctx.emit_tile_width
         for k in range(axis_size):
-            coords[ctx.axis] = k
-            tile_fn[W, rank](state, coords)
+            coords.write_axis[ctx.axis](k)
+            tile_fn[W](state, coords)
     else:
         # 8-way unrolled SIMD walk along the whole axis (unroll factor
         # from `_reduce_along_inner_dimension`); the unroll lets the OoO
         # core overlap loads + reduces. Shared with the split-axis tier
         # above via `_simd_walk_unrolled` — same walk, `[0, axis_size)`.
-        _simd_walk_unrolled[W=ctx.simd_width, rank=rank](
-            coords, ctx.axis, 0, axis_size, state, tile_fn
+        _simd_walk_unrolled[W=ctx.simd_width, rank=rank, axis=ctx.axis](
+            coords, 0, axis_size, state, tile_fn
         )
 
 
@@ -540,9 +552,16 @@ def launch[
     var shape_il = coord_to_index_list(shape)
     var axis_size = shape_il[axis]
     var total_size = shape_il.flattened_length()
-    if total_size == 0 or axis_size == 0:
+    # `num_outputs` is the product of every dim other than `axis`, so it
+    # stays well-defined when the reduce axis itself is empty
+    # (`axis_size == 0`) — unlike `total_size // axis_size`, which is a
+    # `0 // 0` form in that case. A reduce-shaped body still owns one
+    # output per row when the axis is empty (the monoid identity), so
+    # only `num_outputs == 0` (no rows at all) means there is truly
+    # nothing to run.
+    var num_outputs = _num_outputs_excluding_axis[axis](shape)
+    if num_outputs == 0:
         return
-    var num_outputs = total_size // axis_size
 
     var num_workers = _get_num_workers(total_size)
 
@@ -599,9 +618,15 @@ def launch[
             unsafe_memset_zero(counters_buf, num_outputs)
 
             @always_inline
-            @__parameter
-            @__copy_capture(partials_buf, counters_buf, num_splits, body)
-            def split_worker(w: Int):
+            def split_worker(
+                w: Int,
+            ) {
+                var partials_buf,
+                var counters_buf,
+                var num_splits,
+                var body,
+                imm,
+            }:
                 var row_idx = w // num_splits
                 var split_idx = w % num_splits
                 var row_coords = _get_nd_indices_from_flat_index(
@@ -617,7 +642,7 @@ def launch[
                 )
                 body[params_splitk](Coord(row_coords.canonicalize()), ctx)
 
-            sync_parallelize[split_worker](total_workers)
+            sync_parallelize(split_worker, total_workers)
             partials_buf.free()
             counters_buf.free()
         else:
@@ -632,12 +657,9 @@ def launch[
             var chunk = ceildiv(num_outputs, actual_workers)
 
             @always_inline
-            @__parameter
-            def run_coop[params: ContextParams]():
+            def run_coop[params: ContextParams]() {imm}:
                 @always_inline
-                @__parameter
-                @__copy_capture(body)
-                def row_worker(w: Int):
+                def row_worker(w: Int) {var body, imm}:
                     var start = w * chunk
                     var end = _min((w + 1) * chunk, num_outputs)
                     if start >= end:
@@ -649,7 +671,7 @@ def launch[
                         )
                         body[params](Coord(row_coords.canonicalize()), ctx)
 
-                sync_parallelize[row_worker](actual_workers)
+                sync_parallelize(row_worker, actual_workers)
 
             # Opt-in wide-bf16-accumulator path for large rows (`associative`,
             # sum/mean only): a `_CPU_ILP_ACCUMULATORS * simd_width`-wide monoid
@@ -671,7 +693,12 @@ def launch[
     else:
         comptime inner_axis = rank - 1
         var inner_dim = shape_il[inner_axis]
-        var slice_size = total_size // (axis_size * inner_dim)
+        # `num_outputs // inner_dim` rather than `total_size // (axis_size *
+        # inner_dim)`: the latter is `0 // 0` when `axis_size == 0`.
+        # `inner_dim` is one of the dims `num_outputs` multiplies over (it
+        # isn't `axis` in this non-inner-axis branch), so `num_outputs > 0`
+        # (checked above) guarantees `inner_dim > 0` here.
+        var slice_size = num_outputs // inner_dim
         var chunk = ceildiv(slice_size, num_workers)
 
         # NON-inner axis. Two sub-tiers, mirroring the GPU non-inner split:
@@ -708,9 +735,7 @@ def launch[
         )
 
         @always_inline
-        @__parameter
-        @__copy_capture(body)
-        def slice_worker(w: Int):
+        def slice_worker(w: Int) {var body, imm}:
             var s_start = w * chunk
             var s_end = _min((w + 1) * chunk, slice_size)
             if s_start >= s_end:
@@ -740,4 +765,4 @@ def launch[
                     body[params_scalar_strided](Coord(slice_coords), ctx_scalar)
                     k += 1
 
-        sync_parallelize[slice_worker](num_workers)
+        sync_parallelize(slice_worker, num_workers)

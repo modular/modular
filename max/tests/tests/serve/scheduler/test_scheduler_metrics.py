@@ -64,13 +64,13 @@ def _make_metrics(**overrides: Any) -> BatchMetrics:
         cache_miss_tokens=19,
         device_blocks_served=0,
         used_host_kv_pct=0.20,
-        total_host_kv_blocks=21,
-        h2d_blocks_copied=22,
-        d2h_blocks_copied=23,
-        disk_blocks_read=0,
-        disk_blocks_written=0,
+        total_host_kv_bytes=21 * 1024,
+        h2d_bytes_copied=22 * 1024,
+        d2h_bytes_copied=23 * 1024,
+        disk_bytes_read=0,
+        disk_bytes_written=0,
         used_disk_kv_pct=0.0,
-        total_disk_kv_blocks=0,
+        total_disk_kv_bytes=0,
         inflight_disk_ops=0,
         draft_tokens_generated=0,
         draft_tokens_accepted=0,
@@ -111,13 +111,13 @@ def test_metric_to_string() -> None:
         cache_miss_tokens=19,
         device_blocks_served=0,
         used_host_kv_pct=0.20,
-        total_host_kv_blocks=21,
-        h2d_blocks_copied=22,
-        d2h_blocks_copied=23,
-        disk_blocks_read=0,
-        disk_blocks_written=0,
+        total_host_kv_bytes=21 * 1024,
+        h2d_bytes_copied=22 * 1024,
+        d2h_bytes_copied=23 * 1024,
+        disk_bytes_read=0,
+        disk_bytes_written=0,
         used_disk_kv_pct=0.0,
-        total_disk_kv_blocks=0,
+        total_disk_kv_bytes=0,
         inflight_disk_ops=0,
         draft_tokens_generated=0,
         draft_tokens_accepted=0,
@@ -133,11 +133,11 @@ def test_metric_to_string() -> None:
 
     assert (
         metrics.pretty_format()
-        == r"Executed CE batch with 1 reqs | Terminated: 4 reqs, Pending: 5 reqs | Input Tokens: 6/7 toks | Context Tokens: 8/9 toks | Prompt Tput: 12.0 tok/s, Generation Tput: 13.0 tok/s | Batch creation: 10.00s, Execution: 11.00s | KVCache usage: 15.0% of 16 blocks, Cache hit rate: 17.0% (18 hit, 19 miss) | Host KVCache Usage: 20.0% of 21 blocks, Blocks copied: 22 H2D, 23 D2H | All Preemptions: 14 reqs"
+        == r"Executed CE batch with 1 reqs | Terminated: 4 reqs, Pending: 5 reqs | Input Tokens: 6/7 toks | Context Tokens: 8/9 toks | Prompt Tput: 12.0 tok/s, Generation Tput: 13.0 tok/s | Batch creation: 10.00s, Execution: 11.00s | KVCache usage: 15.0% of 16 blocks, Cache hit rate: 17.0% (18 hit, 19 miss) | Host KVCache Usage: 20.0% of 21.00 KiB, Copied: 22.00 KiB H2D, 23.00 KiB D2H | All Preemptions: 14 reqs"
     )
 
     metrics.total_kv_blocks = 0
-    metrics.total_host_kv_blocks = 0
+    metrics.total_host_kv_bytes = 0
     assert (
         metrics.pretty_format()
         == r"Executed CE batch with 1 reqs | Terminated: 4 reqs, Pending: 5 reqs | Input Tokens: 6/7 toks | Context Tokens: 8/9 toks | Prompt Tput: 12.0 tok/s, Generation Tput: 13.0 tok/s | Batch creation: 10.00s, Execution: 11.00s | All Preemptions: 14 reqs"
@@ -164,19 +164,19 @@ def test_metric_to_string_with_disk_kv() -> None:
     # When the tiered connector is active, the log line shows Disk: read/written
     # counts inside the host clause and a separate Disk KVCache Usage clause.
     metrics = _make_metrics(
-        disk_blocks_read=24,
-        disk_blocks_written=25,
+        disk_bytes_read=24 * 1024,
+        disk_bytes_written=25 * 1024,
         used_disk_kv_pct=0.30,
-        total_disk_kv_blocks=100,
+        total_disk_kv_bytes=100 * 1024,
         inflight_disk_ops=99,
     )
 
     formatted = metrics.pretty_format()
     assert (
-        "Host KVCache Usage: 20.0% of 21 blocks, "
-        "Blocks copied: 22 H2D, 23 D2H, "
-        "Disk: 24 read, 25 written | "
-        "Disk KVCache Usage: 30.0% of 100 blocks, "
+        "Host KVCache Usage: 20.0% of 21.00 KiB, "
+        "Copied: 22.00 KiB H2D, 23.00 KiB D2H, "
+        "Disk: 24.00 KiB read, 25.00 KiB written | "
+        "Disk KVCache Usage: 30.0% of 100.00 KiB, "
         "Inflight Disk Ops: 99 |"
     ) in formatted
 
@@ -193,10 +193,10 @@ def _overlap_metrics_overrides(**overrides: Any) -> dict[str, Any]:
         cache_hit_tokens=0,
         cache_miss_tokens=0,
         device_blocks_served=0,
-        total_host_kv_blocks=0,
+        total_host_kv_bytes=0,
         used_host_kv_pct=0.0,
-        h2d_blocks_copied=0,
-        d2h_blocks_copied=0,
+        h2d_bytes_copied=0,
+        d2h_bytes_copied=0,
     )
     base.update(overrides)
     return base
@@ -351,14 +351,14 @@ def test_metric_to_string_continuation_only_ce_batch() -> None:
         cache_miss_tokens=0,
         device_blocks_served=0,
         used_host_kv_pct=0.0,
-        total_host_kv_blocks=0,
-        h2d_blocks_copied=0,
-        d2h_blocks_copied=0,
-        disk_blocks_read=0,
-        disk_blocks_written=0,
+        total_host_kv_bytes=0,
+        h2d_bytes_copied=0,
+        d2h_bytes_copied=0,
+        disk_bytes_read=0,
+        disk_bytes_written=0,
         inflight_disk_ops=0,
         used_disk_kv_pct=0.0,
-        total_disk_kv_blocks=0,
+        total_disk_kv_bytes=0,
         draft_tokens_generated=0,
         draft_tokens_accepted=0,
         avg_acceptance_length=0.0,
@@ -399,7 +399,7 @@ def test_to_log_extra_required_fields() -> None:
     assert extra["cache_miss_tokens"] == 19
 
     assert extra["used_host_kv_pct"] == 0.20
-    assert extra["total_host_kv_blocks"] == 21
+    assert extra["total_host_kv_bytes"] == 21 * 1024
 
     # ensure data is flat
     for k, v in extra.items():
@@ -417,10 +417,10 @@ def test_to_log_extra_covers_every_pretty_format_number() -> None:
     """
     metrics = _make_metrics(
         batch_type=BatchType.TG,
-        disk_blocks_read=24,
-        disk_blocks_written=25,
+        disk_bytes_read=24 * 1024,
+        disk_bytes_written=25 * 1024,
         used_disk_kv_pct=0.30,
-        total_disk_kv_blocks=100,
+        total_disk_kv_bytes=100 * 1024,
         inflight_disk_ops=99,
         draft_tokens_generated=95,
         draft_tokens_accepted=42,
@@ -435,8 +435,8 @@ def test_to_log_extra_covers_every_pretty_format_number() -> None:
     extra = metrics.to_log_extra()
 
     assert extra["inflight_disk_ops"] == 99
-    assert extra["disk_blocks_read"] == 24
-    assert extra["disk_blocks_written"] == 25
+    assert extra["disk_bytes_read"] == 24 * 1024
+    assert extra["disk_bytes_written"] == 25 * 1024
 
     assert extra["max_acceptance_length"] == 5
     assert extra["draft_token_acceptance_rate"] == 42 / 95
@@ -465,10 +465,10 @@ def test_to_log_extra_gating_continuation_only_ce() -> None:
         cache_hit_tokens=0,
         cache_miss_tokens=0,
         device_blocks_served=0,
-        total_host_kv_blocks=0,
+        total_host_kv_bytes=0,
         used_host_kv_pct=0.0,
-        h2d_blocks_copied=0,
-        d2h_blocks_copied=0,
+        h2d_bytes_copied=0,
+        d2h_bytes_copied=0,
     ).to_log_extra()
 
     assert "used_kv_pct" in extra
@@ -480,9 +480,9 @@ def test_to_log_extra_gating_continuation_only_ce() -> None:
     assert "device_blocks_served" not in extra
 
     assert "used_host_kv_pct" not in extra
-    assert "total_host_kv_blocks" not in extra
-    assert "h2d_blocks_copied" not in extra
-    assert "d2h_blocks_copied" not in extra
+    assert "total_host_kv_bytes" not in extra
+    assert "h2d_bytes_copied" not in extra
+    assert "d2h_bytes_copied" not in extra
 
     assert "inflight_disk_ops" not in extra
 
@@ -607,13 +607,14 @@ def test_publish_metrics_default_path() -> None:
     # Device KV cluster.
     mock_metrics.cache_num_total_blocks.assert_called_once_with(16)
     mock_metrics.cache_used_kv_pct.assert_called_once_with(15.0)
-    # Cache-hit clause (CE + num_new_admissions=1).
-    mock_metrics.cache_hits.assert_called_once_with(18)
+    # Cache-hit clause (CE + num_new_admissions=1). No connector in this
+    # fixture, so every hit token is tagged to the device tier.
+    mock_metrics.cache_hits.assert_called_once_with(18, tier="g0")
     mock_metrics.cache_misses.assert_called_once_with(19)
-    # Host KV clause (total_host_kv_blocks=21).
+    # Host KV clause (total_host_kv_bytes nonzero).
     mock_metrics.cache_used_host_kv_pct.assert_called_once_with(20.0)
-    mock_metrics.cache_h2d_blocks_copied.assert_called_once_with(22)
-    mock_metrics.cache_d2h_blocks_copied.assert_called_once_with(23)
+    mock_metrics.cache_h2d_bytes_copied.assert_called_once_with(22 * 1024)
+    mock_metrics.cache_d2h_bytes_copied.assert_called_once_with(23 * 1024)
     # Inactive subsystems must not emit anything.
     mock_metrics.spec_decode_avg_acceptance_length.assert_not_called()
     mock_metrics.spec_decode_acceptance_rate_per_position.assert_not_called()
@@ -623,7 +624,7 @@ def test_publish_metrics_default_path() -> None:
     mock_metrics.dkv_nixl_write_gib_per_s.assert_not_called()
     mock_metrics.dkv_rpc_acquire_latency.assert_not_called()
     mock_metrics.dkv_rpc_read_latency.assert_not_called()
-    # Disk KV gated off (total_disk_kv_blocks=0).
+    # Disk KV gated off (total_disk_kv_bytes=0).
     mock_metrics.cache_used_disk_kv_pct.assert_not_called()
 
 
@@ -641,10 +642,10 @@ def test_publish_metrics_subsystem_gating() -> None:
         cache_hit_tokens=0,
         cache_miss_tokens=0,
         device_blocks_served=0,
-        total_host_kv_blocks=0,
+        total_host_kv_bytes=0,
         used_host_kv_pct=0.0,
-        h2d_blocks_copied=0,
-        d2h_blocks_copied=0,
+        h2d_bytes_copied=0,
+        d2h_bytes_copied=0,
         draft_tokens_generated=10,
         draft_tokens_accepted=5,
         avg_acceptance_length=2.5,
@@ -671,8 +672,8 @@ def test_publish_metrics_subsystem_gating() -> None:
     mock_metrics.cache_misses.assert_not_called()
     # Host KV gated off.
     mock_metrics.cache_used_host_kv_pct.assert_not_called()
-    mock_metrics.cache_h2d_blocks_copied.assert_not_called()
-    mock_metrics.cache_d2h_blocks_copied.assert_not_called()
+    mock_metrics.cache_h2d_bytes_copied.assert_not_called()
+    mock_metrics.cache_d2h_bytes_copied.assert_not_called()
     # Spec-decode active.
     mock_metrics.spec_decode_avg_acceptance_length.assert_called_once_with(2.5)
     assert mock_metrics.spec_decode_acceptance_rate_per_position.call_count == 2
@@ -684,14 +685,14 @@ def test_publish_metrics_subsystem_gating() -> None:
     # RPC inactive (rpc_*_avg_ms=0.0).
     mock_metrics.dkv_rpc_acquire_latency.assert_not_called()
     mock_metrics.dkv_rpc_read_latency.assert_not_called()
-    # Disk KV gated off (total_disk_kv_blocks=0).
+    # Disk KV gated off (total_disk_kv_bytes=0).
     mock_metrics.cache_used_disk_kv_pct.assert_not_called()
 
 
 def test_publish_metrics_disk_kv_active() -> None:
     """Batch with disk KV cache active emits the disk usage metric."""
     metrics = _make_metrics(
-        total_disk_kv_blocks=100,
+        total_disk_kv_bytes=100 * 1024,
         used_disk_kv_pct=0.30,
     )
     with patch("max.serve.scheduler.utils.METRICS") as mock_metrics:
@@ -1577,3 +1578,153 @@ def test_dp_context_occupancy_in_log_line_and_extra() -> None:
     plain = _make_metrics(batch_type=BatchType.TG)
     assert "DP Occupancy" not in plain.pretty_format()
     assert "dp_context_token_occupancy_pct" not in plain.to_log_extra()
+
+
+def test_cache_hit_tiers_sum_to_the_untagged_total() -> None:
+    """CLIN-1785: ``maxserve.cache.hits`` carries a ``tier`` attribute.
+
+    The whole design rests on one invariant: the per-tier points SUM to the
+    counter's untagged total. That is what lets the dashboard replace a
+    cross-service subtraction (which went negative) with a direct grouped query
+    while every ungrouped query keeps reading the same number.
+
+    MAX resolves two tiers: ``g0`` for the device prefix cache and ``external``
+    for the KV connector, whose host/disk split does not cross the connector
+    boundary. Reporting those as ``g1`` would charge tokens to a tier that may
+    not have served them.
+    """
+    metrics = _make_metrics(
+        cache_hit_tokens=100,
+        cache_hit_external_tokens=30,
+        cache_miss_tokens=20,
+    )
+    with patch("max.serve.scheduler.utils.METRICS") as mock_metrics:
+        metrics.publish_metrics()
+
+    tiered = {
+        call.kwargs["tier"]: call.args[0]
+        for call in mock_metrics.cache_hits.call_args_list
+    }
+    assert tiered == {"g0": 70, "external": 30}
+    # THE invariant: the tiers partition the hit total exactly.
+    assert sum(tiered.values()) == metrics.cache_hit_tokens
+    # Every point carries a tier; an untagged one would double any ungrouped
+    # query's total.
+    assert all(
+        "tier" in call.kwargs for call in mock_metrics.cache_hits.call_args_list
+    )
+    # Misses stay untagged: a missed token was served by no tier.
+    mock_metrics.cache_misses.assert_called_once_with(20)
+
+
+def test_cache_hits_without_a_connector_emit_device_tier_only() -> None:
+    """No connector means no external tokens, and no idle ``external`` series.
+
+    A zero-token tier is skipped rather than stamped, so a deployment with no
+    dKV tier never mints a flat-zero series the dashboard would have to filter.
+    """
+    metrics = _make_metrics(
+        cache_hit_tokens=64,
+        cache_hit_external_tokens=0,
+        cache_miss_tokens=0,
+    )
+    with patch("max.serve.scheduler.utils.METRICS") as mock_metrics:
+        metrics.publish_metrics()
+
+    mock_metrics.cache_hits.assert_called_once_with(64, tier="g0")
+    mock_metrics.dkv_read_blocks.assert_not_called()
+
+
+def test_cold_cache_still_stamps_the_device_tier() -> None:
+    """A CE batch that admitted requests but hit nothing still emits g0=0.
+
+    Before the tier label this recorded ``cache_hits(0)``, which creates and
+    keeps the series alive. Skipping every empty tier would leave
+    ``maxserve_cache_hits_tokens_total`` absent on a cold server, and
+    ``rate()``/``sum()`` over an absent series returns no data rather than
+    zero, which reads as a broken panel instead of a cold cache.
+    """
+    metrics = _make_metrics(
+        cache_hit_tokens=0,
+        cache_hit_external_tokens=0,
+        cache_miss_tokens=512,
+    )
+    with patch("max.serve.scheduler.utils.METRICS") as mock_metrics:
+        metrics.publish_metrics()
+
+    mock_metrics.cache_hits.assert_called_once_with(0, tier="g0")
+    mock_metrics.cache_misses.assert_called_once_with(512)
+
+
+def test_dkv_read_blocks_publishes_outside_the_cache_hit_clause() -> None:
+    """``dkv_read_blocks`` must not be gated on new admissions.
+
+    It is a per-window delta that ``reset_metrics`` clears after every batch,
+    so a window published under any other batch type would lose its count for
+    good. That matters because a load posted on a CE iteration can have its
+    blocks accounted on a later ``wait_for_loads``, which also runs on TG
+    iterations: under the old placement those blocks were dropped, letting the
+    counter read *below* ``cache.hits{tier=external}`` despite being
+    documented as an upper bound on it.
+    """
+    metrics = _make_metrics(
+        batch_type=BatchType.TG,
+        num_new_admissions=0,
+        dkv_read_blocks=7,
+    )
+    with patch("max.serve.scheduler.utils.METRICS") as mock_metrics:
+        metrics.publish_metrics()
+
+    mock_metrics.dkv_read_blocks.assert_called_once_with(7)
+    # The cache-hit clause is genuinely skipped on a TG batch, so this proves
+    # the counter is published from outside it rather than alongside it.
+    mock_metrics.cache_hits.assert_not_called()
+
+
+def test_create_sums_the_external_share_across_admissions() -> None:
+    """CLIN-1785: ``BatchMetrics.create`` carries the per-tier split through.
+
+    The other ``create`` tests build contexts with bare ``MagicMock``s, whose
+    auto-created ``_cache_metrics_emitted`` attribute is truthy, so the
+    admission loop skips every one and its body never runs. That leaves the
+    accumulation of ``cached_prefix_external_length`` unexercised: drop it and
+    ``g0`` silently absorbs the connector's tokens, which is the pre-change
+    reading this metric exists to replace.
+
+    Two admitted requests, each with half its cached prefix served externally,
+    so the batch total must be the sum and the device remainder the complement.
+    """
+    contexts = []
+    for _ in range(2):
+        ctx = MagicMock()
+        ctx._is_padding_ctx = False
+        # Explicit False: the auto-created attribute is truthy and would make
+        # the admission loop skip this context entirely.
+        ctx._cache_metrics_emitted = False
+        ctx.tokens.active_length = 8
+        ctx.tokens.processed_length = 0
+        ctx.tokens.generated_length = 0
+        ctx.tokens.prompt_length = 100
+        ctx.cached_prefix_length = 40
+        ctx.cached_prefix_external_length = 15
+        contexts.append(ctx)
+
+    inputs: TextGenerationInputs[Any] = TextGenerationInputs(batches=[contexts])
+    object.__setattr__(inputs, "batch_type", BatchType.CE)
+
+    metrics = BatchMetrics.create(
+        sch_config=_mock_sch_config(),
+        inputs=inputs,
+        kv_cache=None,
+        batch_creation_time_s=0.001,
+        batch_execution_time_s=0.1,
+        num_pending_reqs=0,
+        num_terminated_reqs=0,
+        total_preemption_count=0,
+    )
+
+    assert metrics.num_new_admissions == 2
+    assert metrics.cache_hit_tokens == 80
+    assert metrics.cache_hit_external_tokens == 30
+    # The device share is the complement, and the two partition the hit total.
+    assert metrics.cache_hit_tokens - metrics.cache_hit_external_tokens == 50

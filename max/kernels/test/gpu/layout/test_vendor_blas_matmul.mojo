@@ -16,7 +16,6 @@ from std.os import abort
 from std.sys import has_amd_gpu_accelerator, has_nvidia_gpu_accelerator
 
 from max.gpu.host import DeviceContext
-from std.memory import UnsafePointer
 from internal_utils import assert_almost_equal
 from std.random import rand
 from layout import Coord, Idx, TileTensor, row_major
@@ -31,16 +30,16 @@ def test_matmul[
 
     var a_host_ptr = ctx.enqueue_create_host_buffer[input_type](M * K)
     var b_host_ptr = ctx.enqueue_create_host_buffer[input_type](N * K)
-    var c_host_ptr = ctx.enqueue_create_host_buffer[DType.float32](M * N)
-    var c_host_ref_ptr = ctx.enqueue_create_host_buffer[DType.float32](M * N)
+    var c_host_ptr = ctx.enqueue_create_host_buffer[.float32](M * N)
+    var c_host_ref_ptr = ctx.enqueue_create_host_buffer[.float32](M * N)
 
     rand(a_host_ptr.unsafe_ptr(), M * K)
     rand(b_host_ptr.unsafe_ptr(), N * K)
 
     var a_device = ctx.enqueue_create_buffer[input_type](M * K)
     var b_device = ctx.enqueue_create_buffer[input_type](N * K)
-    var c_device = ctx.enqueue_create_buffer[DType.float32](M * N)
-    var c_device_ref = ctx.enqueue_create_buffer[DType.float32](M * N)
+    var c_device = ctx.enqueue_create_buffer[.float32](M * N)
+    var c_device_ref = ctx.enqueue_create_buffer[.float32](M * N)
 
     ctx.enqueue_copy(a_device, a_host_ptr)
     ctx.enqueue_copy(b_device, b_host_ptr)
@@ -75,13 +74,13 @@ def test_matmul[
         row_major(Coord(M, N)),
     )
     var a_immut_tt = TileTensor(
-        UnsafePointer[Scalar[input_type], ImmutAnyOrigin](
+        ImmPointer[Scalar[input_type], ImmutAnyOrigin](
             unsafe_from_address=Int(a_device.unsafe_ptr())
         ),
         row_major(Coord(M, K)),
     )
     var b_immut_tt = TileTensor(
-        UnsafePointer[Scalar[input_type], ImmutAnyOrigin](
+        ImmPointer[Scalar[input_type], ImmutAnyOrigin](
             unsafe_from_address=Int(b_device.unsafe_ptr())
         ),
         row_major(Coord(N, K)),

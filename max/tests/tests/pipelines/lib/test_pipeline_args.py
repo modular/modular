@@ -130,6 +130,10 @@ _MATRIX_SKIP = {
     "kv_connector_config": "dict-valued: a merge policy, not precedence",
     "denoising_cache": "a subtree, driven via its own dotted path",
     "enable_lora": "enables its subtree; presence is the signal",
+    "first_block_caching": (
+        "mutually exclusive with taylorseer, the sibling the matrix would "
+        "pair it with"
+    ),
     "speculative_method": "enables its subtree; presence is the signal",
 }
 

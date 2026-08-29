@@ -37,7 +37,8 @@ from max.pipelines.context import PixelContext
 from max.pipelines.modeling.base.component_model import ComponentModel
 from tqdm import tqdm
 
-from .cache import DenoisingCacheConfig, DenoisingCacheState
+from .cache import DenoisingCacheState
+from .config import DEFAULT_DENOISING_CACHE_CONFIG, DenoisingCacheConfig
 from .first_block_cache import FirstBlockCache
 from .taylorseer import TaylorSeer, run_denoising_step
 
@@ -85,27 +86,6 @@ class DiffusionPipeline(ABC):
     Used when the request does not specify a ``residual_threshold``.
     """
 
-    default_taylorseer_cache_interval: int = 5
-    """Model-specific default for the TaylorSeer cache interval.
-
-    Subclasses may override this to provide a model-appropriate default.
-    Used when ``DenoisingCacheConfig.taylorseer_cache_interval`` is ``None``.
-    """
-
-    default_taylorseer_warmup_steps: int = 9
-    """Model-specific default for the TaylorSeer warmup steps.
-
-    Subclasses may override this to provide a model-appropriate default.
-    Used when ``DenoisingCacheConfig.taylorseer_warmup_steps`` is ``None``.
-    """
-
-    default_taylorseer_max_order: int = 1
-    """Model-specific default for the TaylorSeer expansion order.
-
-    Subclasses may override this to provide a model-appropriate default.
-    Used when ``DenoisingCacheConfig.taylorseer_max_order`` is ``None``.
-    """
-
     def __init__(
         self,
         pipeline_config: PipelineConfig,
@@ -116,9 +96,10 @@ class DiffusionPipeline(ABC):
         **kwargs: Any,
     ) -> None:
         self.cache_config: DenoisingCacheConfig = (
-            cache_config or DenoisingCacheConfig()
+            cache_config
+            if cache_config is not None
+            else DEFAULT_DENOISING_CACHE_CONFIG
         )
-        self._resolve_cache_defaults()
         self.pipeline_config = pipeline_config
         self.session = session
         self.devices = devices
@@ -127,24 +108,6 @@ class DiffusionPipeline(ABC):
             setattr(self, name, model)
 
         self.init_remaining_components()
-
-    def _resolve_cache_defaults(self) -> None:
-        """Resolve nullable DenoisingCacheConfig fields using pipeline defaults.
-
-        Uses class-level ``default_*`` attributes so that subclasses can
-        override model-specific defaults.  Called before ``_load_sub_models()``
-        so that ComponentModels receive a fully-resolved cache config.
-        """
-        # Mutates in-place; DenoisingCacheConfig is unfrozen.
-        cc = self.cache_config
-        if cc.taylorseer_cache_interval is None:
-            cc.taylorseer_cache_interval = (
-                self.default_taylorseer_cache_interval
-            )
-        if cc.taylorseer_warmup_steps is None:
-            cc.taylorseer_warmup_steps = self.default_taylorseer_warmup_steps
-        if cc.taylorseer_max_order is None:
-            cc.taylorseer_max_order = self.default_taylorseer_max_order
 
     @abstractmethod
     def init_remaining_components(self) -> None:
@@ -270,7 +233,6 @@ class DiffusionPipeline(ABC):
         """
         self._taylorseer = None
         if self.cache_config.taylorseer:
-            assert self.cache_config.taylorseer_max_order is not None
             self._taylorseer = TaylorSeer(
                 max_order=self.cache_config.taylorseer_max_order,
                 dtype=dtype,

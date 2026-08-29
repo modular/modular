@@ -156,7 +156,6 @@ from max.profiler import Tracer, traced
 from ..memory_estimation import MemoryPlan
 from .structured_output_overlap import StructuredOutputOverlapState
 from .text_generation import TextGenerationPipelineInterface, load_kv_manager
-from .unified_spec_decode_model import _UnifiedSpecDecodeModelMixin
 from .utils import (
     StructuredOutputHelper,
     update_context_and_prepare_responses,
@@ -439,17 +438,10 @@ class SpecDecodeState:
             available_cache_memory=available_cache_memory,
         )
 
-        # Dflash-style block drafters resolve the draft width from the
-        # draft checkpoint at model construction and expose it on the
-        # model; eagle/mtp resolve theirs at SpeculativeConfig construction.
-        num_speculative_tokens: int | None = None
-        if isinstance(model, _UnifiedSpecDecodeModelMixin):
-            num_speculative_tokens = model.resolved_num_speculative_tokens
-        if num_speculative_tokens is None:
-            assert pipeline_config.speculative is not None
-            num_speculative_tokens = (
-                pipeline_config.speculative.num_speculative_tokens
-            )
+        assert pipeline_config.speculative is not None
+        num_speculative_tokens = (
+            pipeline_config.speculative.num_speculative_tokens
+        )
         assert num_speculative_tokens is not None
         total_max_batch = (
             max_batch_size * pipeline_config.model.data_parallel_degree
@@ -1743,8 +1735,8 @@ class OverlapTextGenerationPipeline(
                 requested without a valid tokenizer delegate.
         """
         self._pipeline_config = pipeline_config
-        self._max_batch_size = memory_plan.max_batch_size
-        max_batch_size = memory_plan.max_batch_size
+        self._max_batch_size = memory_plan.planned_max_batch_size
+        max_batch_size = memory_plan.planned_max_batch_size
 
         model_config: MAXModelConfig = pipeline_config.model
         huggingface_config = model_config.huggingface_config
@@ -3389,13 +3381,10 @@ class OverlapTextGenerationPipeline(
         ``has_precomputed_bitmask`` is primed for
         :meth:`_assign_bitmask_inputs`.
 
-        Returns early without enqueuing when ``--enable-structured-output`` is
-        off, when there is no previous batch, when the previous batch did not
-        verify drafts (a prefill / mixed batch has no committed tokens to
-        advance through -- its successor cold-starts via prime instead), when
-        structured output is not configured, or when no request in this batch
-        is actually constrained (a grammar matcher, grammar, or JSON schema
-        present).
+        Returns early without enqueuing when there is no previous batch, when
+        the previous batch did not verify drafts (a prefill / mixed batch has
+        no committed tokens to advance through -- its successor cold-starts via
+        prime instead), or when structured output is not configured.
 
         Args:
             curr_context_batch: This iteration's contexts, in logits row order.
@@ -3404,20 +3393,6 @@ class OverlapTextGenerationPipeline(
             True if the callback was enqueued.
         """
         if not self._pipeline_config.needs_bitmask_constraints:
-            return False
-
-        # ``needs_bitmask_constraints`` is also True with just a tool parser
-        # configured (the architecture default), so without this the callback
-        # would run even with the flag off. Tool-call grammars without the
-        # flag are still enforced -- they just fall back to the synchronous
-        # early-sync + cold-start prime path instead of the async overlap.
-        if not self._pipeline_config.sampling.enable_structured_output:
-            return False
-
-        # Skip too when no request in the batch is actually constrained --
-        # nothing to advance or fill. ``_assign_bitmask_inputs`` still
-        # cold-starts an all-valid bitmask on that path.
-        if not StructuredOutputHelper.any_constrained(curr_context_batch):
             return False
 
         spec_state = self._spec_decode_state
@@ -3859,19 +3834,9 @@ class OverlapTextGenerationPipeline(
         advances `ctx.matcher` and full overlap is preserved — the guard does
         not fire for it.
 
-        `needs_bitmask_constraints` alone is not enough to gate this: it is a
-        static, process-wide signal, but `_enqueue_prev_bitmask_callback` also
-        skips the callback whenever `--enable-structured-output` is off,
-        regardless of whether the batch is constrained. Gating only on
-        `needs_bitmask_constraints` would then fire this sync every decode
-        step for the life of the server in that configuration, defeating the
-        overlap scheduler even for requests that never use a tool call.
-
-        `StructuredOutputHelper.any_constrained` closes that gap: a previous
-        batch with no matcher, grammar, or json_schema has no FSM to advance,
-        so the sync is skipped regardless of why the callback didn't run.
-        Mirrors the same check `_enqueue_prev_bitmask_callback` applies to the
-        current batch, applied here to the previous batch instead.
+        Gated on `needs_bitmask_constraints`: when structured output is off, no
+        callback is ever enqueued, so `fsm_advanced_by_callback` is always
+        False. Without this gate the guard would fire every decode step.
 
         IMPORTANT: even when this returns True, `_prev_batch` is NOT cleared
         by the caller. `_run_forward` needs it so `realize_future_tokens` can
@@ -3885,14 +3850,11 @@ class OverlapTextGenerationPipeline(
         instead saved so the normal sync path below can skip re-syncing the
         same batch.
         """
-        if not self._pipeline_config.needs_bitmask_constraints:
-            return False
-        if self._prev_batch is None or self._prev_batch.spec_decode is None:
-            return False
-        if self._prev_batch.spec_decode.fsm_advanced_by_callback:
-            return False
-        return StructuredOutputHelper.any_constrained(
-            self._prev_batch.inputs.flat_batch
+        return (
+            self._pipeline_config.needs_bitmask_constraints
+            and self._prev_batch is not None
+            and self._prev_batch.spec_decode is not None
+            and not self._prev_batch.spec_decode.fsm_advanced_by_callback
         )
 
     @traced

@@ -72,17 +72,17 @@ def topk_topp_masked_probs[
 ](
     ctx: DeviceContext,
     logits: TileTensor[mut=False, dtype, ...],
-    probs: TileTensor[DType.float32, ProbsLayoutType, MutAnyOrigin],
+    probs: TileTensor[.float32, ProbsLayoutType, MutAnyOrigin],
     top_k_val: Int,
     top_p_val: Float32 = 1.0,
     top_k_arr: Optional[
-        TileTensor[DType.int64, TopKArrLayoutType, ImmutAnyOrigin]
+        TileTensor[.int64, TopKArrLayoutType, ImmutAnyOrigin]
     ] = None,
     top_p_arr: Optional[
-        TileTensor[DType.float32, TopPArrLayoutType, ImmutAnyOrigin]
+        TileTensor[.float32, TopPArrLayoutType, ImmutAnyOrigin]
     ] = None,
     temperature: Optional[
-        TileTensor[DType.float32, TemperatureLayoutType, ImmutAnyOrigin]
+        TileTensor[.float32, TemperatureLayoutType, ImmutAnyOrigin]
     ] = None,
 ) raises:
     """Computes per-row top-k/top-p masked softmax.
@@ -125,7 +125,7 @@ def topk_topp_sampling_from_prob[
     block_size: Int = 1024,
     from_logits: Bool = False,
     emit_dist: Bool = False,
-    dist_dtype: DType = DType.float32,
+    dist_dtype: DType = .float32,
     DistLayoutType: TensorLayout = Layout[
         shape_types=Coord[Int64, Int64].element_types,
         stride_types=Coord[Int64, ComptimeInt[1]].element_types,
@@ -169,10 +169,7 @@ def topk_topp_sampling_from_prob[
     deterministic: Bool = False,
     rng_seed: Optional[
         TileTensor[
-            DType.uint64,
-            SeedLayoutType,
-            ImmutAnyOrigin,
-            Storage=SeedStorageType,
+            .uint64, SeedLayoutType, ImmutAnyOrigin, Storage=SeedStorageType
         ]
     ] = None,
     rng_offset: UInt64 = 0,
@@ -194,7 +191,7 @@ def topk_topp_sampling_from_prob[
     ] = None,
     top_p_arr: Optional[
         TileTensor[
-            DType.float32,
+            .float32,
             TopPArrLayoutType,
             ImmutAnyOrigin,
             Storage=TopPArrStorageType,
@@ -202,7 +199,7 @@ def topk_topp_sampling_from_prob[
     ] = None,
     temperature: Optional[
         TileTensor[
-            DType.float32,
+            .float32,
             TemperatureLayoutType,
             ImmutAnyOrigin,
             Storage=TemperatureStorageType,
@@ -210,10 +207,7 @@ def topk_topp_sampling_from_prob[
     ] = None,
     min_p: Optional[
         TileTensor[
-            DType.float32,
-            MinPLayoutType,
-            ImmutAnyOrigin,
-            Storage=MinPStorageType,
+            .float32, MinPLayoutType, ImmutAnyOrigin, Storage=MinPStorageType
         ]
     ] = None,
     out_dist: Optional[

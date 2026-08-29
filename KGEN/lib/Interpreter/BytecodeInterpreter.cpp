@@ -395,7 +395,8 @@ BytecodeInterpreter::callFunctionBody(Region &body,
   return success();
 }
 
-void BytecodeInterpreter::returnFromFunction(ArrayRef<Attribute> returnValues) {
+ErrorTreeOrSuccess
+BytecodeInterpreter::returnFromFunction(ArrayRef<Attribute> returnValues) {
   if constexpr (KGEN::kIsTracingEnabled)
     KGEN::InterpreterProfilerEntry::endAndPop();
 
@@ -416,7 +417,7 @@ void BytecodeInterpreter::returnFromFunction(ArrayRef<Attribute> returnValues) {
 #endif
     // Set the return values as the interpreter exit values.
     exitValues = returnValues;
-    return;
+    return success();
   }
 
   // Restore the values vector and map the call results.
@@ -424,15 +425,22 @@ void BytecodeInterpreter::returnFromFunction(ArrayRef<Attribute> returnValues) {
   auto *op = bc->at<BCOperation>(pc);
   for (unsigned i = 0, e = op->numResults; i != e; ++i) {
     uint32_t idx = op->getResult(i)->idx;
+    if (!isAttributeTypeCompatible(returnValues[i],
+                                   op->op->getResult(i).getType()))
+      return ErrorTree(op->op->getLoc(),
+                       "internal error: returned attribute type does not match "
+                       "the call result type it is bound to");
     values[idx] = returnValues[i];
   }
 
   // Advance to the next instruction.
   pc = op->nextOffset;
+  return success();
 }
 
-void BytecodeInterpreter::transferControlFlowTo(Operation *target,
-                                                ArrayRef<Attribute> results) {
+ErrorTreeOrSuccess
+BytecodeInterpreter::transferControlFlowTo(Operation *target,
+                                           ArrayRef<Attribute> results) {
   assert(bc && "expected an active function frame");
 
   // FIXME: This is the only hashmap lookup in the bytecode interpreter. Is
@@ -448,16 +456,22 @@ void BytecodeInterpreter::transferControlFlowTo(Operation *target,
 
   for (unsigned i = 0, e = op->numResults; i != e; ++i) {
     uint32_t idx = op->getResult(i)->idx;
+    if (!isAttributeTypeCompatible(results[i], op->op->getResult(i).getType()))
+      return ErrorTree(op->op->getLoc(),
+                       "internal error: attribute type does not match the "
+                       "result type it is bound to");
     values[idx] = results[i];
   }
 
   // Advance to the next operation.
   pc = op->nextOffset;
   didTransfer = true;
+  return success();
 }
 
-void BytecodeInterpreter::transferControlFlowTo(Region &target,
-                                                ArrayRef<Attribute> arguments) {
+ErrorTreeOrSuccess
+BytecodeInterpreter::transferControlFlowTo(Region &target,
+                                           ArrayRef<Attribute> arguments) {
   assert(bc && "expected an active function frame");
 
   // FIXME: This is the only hashmap lookup in the bytecode interpreter. Is
@@ -469,6 +483,8 @@ void BytecodeInterpreter::transferControlFlowTo(Region &target,
   // Map the entry arguments of the region.
   auto *bcRegion = bc->at<BCRegion>(offset);
   assert(bcRegion->numArgs == arguments.size() && "arg count mismatch");
+  // Argument types may still be symbolic in the un-substituted callee body, so
+  // only the argument count is checked.
   for (unsigned i = 0, e = bcRegion->numArgs; i != e; ++i) {
     uint32_t idx = bcRegion->getArgument(i)->idx;
     values[idx] = arguments[i];
@@ -477,9 +493,11 @@ void BytecodeInterpreter::transferControlFlowTo(Region &target,
   // Advance to the first operation.
   pc = bcRegion->firstOpOffset;
   didTransfer = true;
+  return success();
 }
 
-void BytecodeInterpreter::mapResults(ArrayRef<Attribute> results) {
+ErrorTreeOrSuccess
+BytecodeInterpreter::mapResults(ArrayRef<Attribute> results) {
   assert(bc && "expected an active function frame");
 
   auto *op = bc->at<BCOperation>(pc);
@@ -487,8 +505,13 @@ void BytecodeInterpreter::mapResults(ArrayRef<Attribute> results) {
 
   for (uint32_t i = 0, e = op->numResults; i != e; ++i) {
     uint32_t idx = op->getResult(i)->idx;
+    if (!isAttributeTypeCompatible(results[i], op->op->getResult(i).getType()))
+      return ErrorTree(op->op->getLoc(),
+                       "internal error: attribute type does not match the "
+                       "result type it is bound to");
     values[idx] = results[i];
   }
+  return success();
 }
 
 ErrorTree BytecodeInterpreter::addStackTrace(ErrorTree err) {
@@ -612,6 +635,5 @@ BytecodeInterpreter::interpretOpWithFolder(Operation *op,
     }
     resultAttrs.push_back(value);
   }
-  mapResults(resultAttrs);
-  return success();
+  return mapResults(resultAttrs);
 }

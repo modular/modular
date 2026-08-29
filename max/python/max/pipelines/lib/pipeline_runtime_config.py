@@ -18,9 +18,12 @@ from __future__ import annotations
 import os
 
 from max.config import ConfigFileModel
-from max.pipelines.diffusion.cache import DenoisingCacheConfig
+from max.pipelines.diffusion.config import (
+    DEFAULT_DENOISING_CACHE_CONFIG,
+    DenoisingCacheConfig,
+)
 from max.pipelines.modeling.config_enums import PipelineRole
-from pydantic import Field, PrivateAttr
+from pydantic import ConfigDict, Field, PrivateAttr
 
 # Default max batch input tokens for chunked prefill and memory estimation.
 DEFAULT_MAX_BATCH_INPUT_TOKENS = 8192
@@ -37,6 +40,8 @@ class PipelineRuntimeConfig(ConfigFileModel):
     Contains batching, scheduling, and execution configuration that is
     independent of any particular model architecture.
     """
+
+    model_config = ConfigDict(frozen=True)
 
     pipeline_role: PipelineRole = Field(
         default="prefill_and_decode",
@@ -528,10 +533,10 @@ class PipelineRuntimeConfig(ConfigFileModel):
     )
 
     denoising_cache: DenoisingCacheConfig = Field(
-        default_factory=DenoisingCacheConfig,
+        default=DEFAULT_DENOISING_CACHE_CONFIG,
         description=(
-            "Cache configuration for diffusion model denoising "
-            "(FBCache, TaylorSeer)."
+            "Resolved denoising-cache config. Construction fills this from "
+            "top-level settings and architecture defaults."
         ),
     )
 

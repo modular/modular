@@ -130,10 +130,10 @@ comptime IndexCollection = PagedKVCacheCollection[
 
 @always_inline
 def _any(
-    ptr: UnsafePointer[Scalar[OUT_DTYPE], ...],
-) -> UnsafePointer[Scalar[OUT_DTYPE], MutAnyOrigin]:
+    ptr: MutPointer[Scalar[OUT_DTYPE], ...],
+) -> MutPointer[Scalar[OUT_DTYPE], MutAnyOrigin]:
     """Erase a pointer's origin so one helper serves every band."""
-    return UnsafePointer[Scalar[OUT_DTYPE], MutAnyOrigin](
+    return MutPointer[Scalar[OUT_DTYPE], MutAnyOrigin](
         unsafe_from_address=Int(ptr)
     )
 
@@ -165,9 +165,7 @@ def bench_shape[
 
     var total_seq = 0
     var max_seq = 0
-    var iro_host = List[Scalar[DType.uint32]](
-        length=batch_size + 1, fill=Scalar[DType.uint32](0)
-    )
+    var iro_host = List[UInt32](length=batch_size + 1, fill=UInt32(0))
     for i in range(batch_size):
         iro_host[i] = UInt32(total_seq)
         total_seq += prompt_lens[i]
@@ -175,10 +173,10 @@ def bench_shape[
     iro_host[batch_size] = UInt32(total_seq)
     var max_ctx = max_seq
 
-    var iro_dev = ctx.enqueue_create_buffer[DType.uint32](batch_size + 1)
+    var iro_dev = ctx.enqueue_create_buffer[.uint32](batch_size + 1)
     ctx.enqueue_copy(iro_dev, iro_host)
     var iro_tensor = LayoutTensor[
-        mut=False, DType.uint32, Layout.row_major(UNKNOWN_VALUE)
+        mut=False, .uint32, Layout.row_major(UNKNOWN_VALUE)
     ](
         iro_dev.unsafe_ptr(),
         RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
@@ -186,13 +184,11 @@ def bench_shape[
         ),
     )
 
-    var cache_lengths_host = List[Scalar[DType.uint32]](
-        length=batch_size, fill=Scalar[DType.uint32](0)
-    )
-    var cache_lengths_dev = ctx.enqueue_create_buffer[DType.uint32](batch_size)
+    var cache_lengths_host = List[UInt32](length=batch_size, fill=UInt32(0))
+    var cache_lengths_dev = ctx.enqueue_create_buffer[.uint32](batch_size)
     ctx.enqueue_copy(cache_lengths_dev, cache_lengths_host)
     var cache_lengths_tensor = LayoutTensor[
-        mut=False, DType.uint32, Layout(UNKNOWN_VALUE)
+        mut=False, .uint32, Layout(UNKNOWN_VALUE)
     ](
         cache_lengths_dev.unsafe_ptr(),
         RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(
@@ -201,20 +197,16 @@ def bench_shape[
     )
 
     var lut_cols = ((ceildiv(max_ctx, page_size) + 7) // 8) * 8 + 16
-    var lut_host = List[Scalar[DType.uint32]](
-        length=batch_size * lut_cols, fill=Scalar[DType.uint32](0)
-    )
+    var lut_host = List[UInt32](length=batch_size * lut_cols, fill=UInt32(0))
     var block_counter = 0
     for b in range(batch_size):
         var pages = ceildiv(prompt_lens[b], page_size)
         for p in range(pages):
             lut_host[b * lut_cols + p] = UInt32(block_counter)
             block_counter += 1
-    var lut_dev = ctx.enqueue_create_buffer[DType.uint32](batch_size * lut_cols)
+    var lut_dev = ctx.enqueue_create_buffer[.uint32](batch_size * lut_cols)
     ctx.enqueue_copy(lut_dev, lut_host)
-    var lut_tensor = LayoutTensor[
-        mut=False, DType.uint32, Layout.row_major[2]()
-    ](
+    var lut_tensor = LayoutTensor[mut=False, .uint32, Layout.row_major[2]()](
         lut_dev.unsafe_ptr(),
         RuntimeLayout[Layout.row_major[2]()].row_major(
             IndexList[2](batch_size, lut_cols)
@@ -232,12 +224,10 @@ def bench_shape[
     # E8M0 has no zero encoding, so a `CacheBustingBuffer` of it trips an
     # APFloat assertion in the compiler; hold the scale bytes as uint8 and
     # reinterpret them at the tensor seam instead.
-    var cb_asf = CacheBustingBuffer[DType.uint8](
+    var cb_asf = CacheBustingBuffer[.uint8](
         total_seq * k_scales, simd_size, ctx
     )
-    var cb_bsf = CacheBustingBuffer[DType.uint8](
-        n_total * k_scales, simd_size, ctx
-    )
+    var cb_bsf = CacheBustingBuffer[.uint8](n_total * k_scales, simd_size, ctx)
     cb_hs.init_on_device(InitializationType.uniform_distribution, ctx)
     cb_w.init_on_device(InitializationType.uniform_distribution, ctx)
     cb_asf.init_on_device(InitializationType.uniform_distribution, ctx)
@@ -403,12 +393,12 @@ def bench_shape[
                 ctx,
             )
 
-    @__parameter
     @always_inline
-    def fused_bench(mut b: Bencher) raises:
+    def fused_bench(mut b: Bencher) raises {imm}:
         bencher_iter_custom(b, fused_launch, ctx)
 
-    m.bench_function[fused_bench](
+    m.bench_function(
+        fused_bench,
         BenchId(
             "fused   "
             + variant
@@ -452,7 +442,7 @@ def bench_shape[
                 IndexList[2](total_seq, k_scales)
             ),
         )
-        var hs_tt = lt_to_tt(hs).bitcast[DType.uint8]()
+        var hs_tt = lt_to_tt(hs).bitcast[.uint8]()
         var asf_tt = lt_to_tt(asf)
 
         # Q band: the only wide one (N=2048); the rest are N=128.
@@ -462,7 +452,7 @@ def bench_shape[
             band_n: Int
         ](
             col_off: Int,
-            out_ptr: UnsafePointer[Scalar[OUT_DTYPE], MutAnyOrigin],
+            out_ptr: MutPointer[Scalar[OUT_DTYPE], MutAnyOrigin],
         ) raises:
             var w = LayoutTensor[
                 mut=False, OPERAND_DTYPE, Layout.row_major(band_n, hidden)
@@ -492,7 +482,7 @@ def bench_shape[
             block_scaled_matmul_amd[lane_bytes=32](
                 lt_to_tt(c),
                 hs_tt,
-                lt_to_tt(w).bitcast[DType.uint8](),
+                lt_to_tt(w).bitcast[.uint8](),
                 asf_tt,
                 lt_to_tt(bsf),
                 ctx,
@@ -508,8 +498,8 @@ def bench_shape[
         # Placing K/V (and IndexK) is the other half of what the fused epilogue
         # does, so the unfused path pays for those paged-store launches on top
         # of its band GEMMs.
-        @__parameter
         @always_inline
+        @__copy_capture(kv_out_ptr)
         def k_in[
             width: Int, alignment: Int
         ](idx: IndexList[3]) capturing -> SIMD[OUT_DTYPE, width]:
@@ -517,8 +507,8 @@ def bench_shape[
                 width=width
             ]()
 
-        @__parameter
         @always_inline
+        @__copy_capture(kv_out_ptr, total_seq)
         def v_in[
             width: Int, alignment: Int
         ](idx: IndexList[3]) capturing -> SIMD[OUT_DTYPE, width]:
@@ -526,8 +516,8 @@ def bench_shape[
                 _any(kv_out_ptr) + total_seq * kv_dim + idx[0] * kv_dim + idx[2]
             ).load[width=width]()
 
-        @__parameter
         @always_inline
+        @__copy_capture(kv_out_ptr, total_seq)
         def ik_in[
             width: Int, alignment: Int
         ](idx: IndexList[3]) capturing -> SIMD[OUT_DTYPE, width]:
@@ -558,12 +548,12 @@ def bench_shape[
                 ctx,
             )
 
-    @__parameter
     @always_inline
-    def unfused_bench(mut b: Bencher) raises:
+    def unfused_bench(mut b: Bencher) raises {imm}:
         bencher_iter_custom(b, unfused_launch, ctx)
 
-    m.bench_function[unfused_bench](
+    m.bench_function(
+        unfused_bench,
         BenchId(
             "unfused "
             + variant

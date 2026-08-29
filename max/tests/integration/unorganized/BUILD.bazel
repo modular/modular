@@ -63,8 +63,10 @@ modular_py_test(
     srcs = [
         "conftest.py",
         "test_bfloat16_utils.py",
+        "test_config_vision_budgets.py",
         "test_context.py",
         "test_dtype.py",
+        "test_host_memory.py",
         "test_logits_processor.py",
         "test_memory_estimation.py",
         "test_speculative_config.py",
@@ -100,6 +102,7 @@ modular_py_test(
         "//max/tests/integration/test_common:pipeline_model_dummy",
         requirement("hypothesis"),
         requirement("numpy"),
+        requirement("pydantic"),
     ],
 )
 
@@ -443,6 +446,57 @@ modular_py_test(
     ],
 )
 
+# The grammar bitmask must not resurrect -inf logits (vocab-tail safety).
+modular_py_test(
+    name = "test-bitmask-preserves-vocab-mask",
+    size = "medium",
+    srcs = [
+        "conftest.py",
+        "sampling/test_bitmask_preserves_vocab_mask.py",
+    ],
+    env = {
+        "MODULAR_PATH": ".",
+    },
+    exec_properties = {
+        "test.resources:gpu-memory": "9",
+    },
+    gpu_constraints = _SAMPLING_GPU_CONSTRAINTS,
+    tags = [
+        "gpu",
+        "no-sandbox",
+    ],
+    deps = _SAMPLING_BASE_DEPS + [
+        "//max/python/max/nn",
+        # conftest.py imports generate_local_model_path.
+        "//max/python/max/pipelines/lib",
+    ],
+)
+
+# Acceptance-sampler behaviour on a draft that proposes masked padded ids.
+modular_py_test(
+    name = "test-padded-tail-acceptance",
+    size = "medium",
+    srcs = [
+        "conftest.py",
+        "sampling/test_padded_tail_acceptance.py",
+    ],
+    env = {
+        "MODULAR_PATH": ".",
+    },
+    exec_properties = {
+        "test.resources:gpu-memory": "9",
+    },
+    gpu_constraints = _SAMPLING_GPU_CONSTRAINTS,
+    tags = [
+        "gpu",
+        "no-sandbox",
+    ],
+    deps = _SAMPLING_BASE_DEPS + [
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/lib",
+    ],
+)
+
 # Test for gumbel sampling
 modular_py_test(
     name = "test-gumbel-sampling",
@@ -475,6 +529,57 @@ modular_py_test(
     srcs = [
         "conftest.py",
         "sampling/test_stochastic_acceptance_distribution.py",
+    ],
+    env = {
+        "MODULAR_PATH": ".",
+    },
+    exec_properties = {
+        "test.resources:gpu-memory": "8",
+    },
+    gpu_constraints = _SAMPLING_GPU_CONSTRAINTS,
+    tags = [
+        "gpu",
+        "no-sandbox",
+    ],
+    deps = _SAMPLING_BASE_DEPS + [
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/lib",
+    ],
+)
+
+# Output-distribution test for the acceptance sampler under top_p truncation
+# (speculative decoding)
+modular_py_test(
+    name = "test-stochastic-acceptance-truncated",
+    size = "medium",
+    srcs = [
+        "conftest.py",
+        "sampling/test_stochastic_acceptance_truncated.py",
+    ],
+    env = {
+        "MODULAR_PATH": ".",
+    },
+    exec_properties = {
+        "test.resources:gpu-memory": "8",
+    },
+    gpu_constraints = _SAMPLING_GPU_CONSTRAINTS,
+    tags = [
+        "gpu",
+        "no-sandbox",
+    ],
+    deps = _SAMPLING_BASE_DEPS + [
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/lib",
+    ],
+)
+
+# Is the sampled verdict lossless, and what does a miscalibrated q look like?
+modular_py_test(
+    name = "test-sampled-draft-q-calibration",
+    size = "medium",
+    srcs = [
+        "conftest.py",
+        "sampling/test_sampled_draft_q_calibration.py",
     ],
     env = {
         "MODULAR_PATH": ".",

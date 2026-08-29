@@ -16,7 +16,7 @@
 This module defines the set of supported pipeline tasks for the MAX API, encapsulated
 in the `PipelineTask` enumeration. Pipeline tasks represent the high-level operations
 that can be performed by a pipeline, such as text generation, embeddings generation,
-and pixel generation.
+pixel generation, and audio generation.
 
 Each task type is associated with a specific input/output contract and is used to
 route requests to the appropriate pipeline implementation. The `PipelineTask` enum
@@ -32,6 +32,7 @@ Available tasks:
     - TEXT_GENERATION: Generate text sequences from input prompts.
     - EMBEDDINGS_GENERATION: Generate vector embeddings for input data.
     - PIXEL_GENERATION: Generate/Edit images/videos from input data.
+    - AUDIO_GENERATION: Generate audio waveforms from input data.
 
 See the `PipelineTask` enum for further details on each task type.
 """
@@ -62,5 +63,7 @@ class PipelineTask(str, Enum):
     """Task for generating embeddings."""
     PIXEL_GENERATION = "pixel_generation"
     """Task for generating pixels."""
+    AUDIO_GENERATION = "audio_generation"
+    """Task for generating audio waveforms."""
     UNDEFINED = "undefined"
     """Undefined task, used as default when task should be auto-detected."""

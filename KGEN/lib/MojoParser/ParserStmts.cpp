@@ -3154,11 +3154,10 @@ ParseResult StmtParser::parseFromImportStmt(bool hasStableOverride) {
     if (hasStableOverride)
       emitError(importLoc, "@stable(recursive=True) is not supported on "
                            "wildcard imports");
-    LIT::UnresolvedWildcardImportOp::create(builder,
-                                            translateLocation(importLoc),
-                                            moduleAttr, /*fullImport=*/false);
-    getParentDecl().addUnresolvedWildcardImport(UnresolvedWildcardImport{
-        moduleAttr, importLoc, /*isFullImport=*/false});
+    LIT::UnresolvedWildcardImportOp::create(
+        builder, translateLocation(importLoc), moduleAttr);
+    getParentDecl().addUnresolvedWildcardImport(
+        UnresolvedWildcardImport{moduleAttr, importLoc});
     return success();
   }
 

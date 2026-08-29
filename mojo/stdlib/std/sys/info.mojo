@@ -1351,7 +1351,7 @@ def size_of[type: AnyType, target: _TargetType = _current_target()]() -> Int:
             size_of[Int32]() == 4,
             size_of[Float64]() == 8,
             size_of[
-                SIMD[DType.uint8, 4]
+                SIMD[.uint8, 4]
             ]() == 4,
         )
     ```

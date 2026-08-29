@@ -155,12 +155,7 @@ trait SMemTileWriter(TrivialRegisterPassable):
     @always_inline
     def write_tile(
         self,
-        src: TileTensor[
-            mut=True,
-            dtype=Self._dtype,
-            address_space=AddressSpace.SHARED,
-            ...,
-        ],
+        src: TileTensor[mut=True, Self._dtype, address_space=.SHARED, ...],
         coords: Tuple[Int, Int],
     ):
         """Write a tile from shared memory to global memory.
@@ -218,12 +213,7 @@ struct TileWriterTMA[
     @always_inline
     def write_tile(
         self,
-        src: TileTensor[
-            mut=True,
-            dtype=Self._dtype,
-            address_space=AddressSpace.SHARED,
-            ...,
-        ],
+        src: TileTensor[mut=True, Self._dtype, address_space=.SHARED, ...],
         coords: Tuple[Int, Int],
     ):
         """Write a tile using TMA hardware acceleration.
@@ -288,11 +278,11 @@ struct TileWriterThreadwise[
 
     comptime DstType = TileTensor[
         mut=True,
-        dtype=Self.dtype,
+        Self.dtype,
         LayoutType=Self.dst_layout,
         origin=Self.dst_origin,
         Storage=Self.dst_storage,
-        address_space=AddressSpace.GENERIC,
+        address_space=.GENERIC,
         linear_idx_type=Self.dst_linear_idx_type,
     ]
     var dst: Self.DstType
@@ -316,12 +306,7 @@ struct TileWriterThreadwise[
     @always_inline
     def write_tile(
         self,
-        src: TileTensor[
-            mut=True,
-            dtype=Self._dtype,
-            address_space=AddressSpace.SHARED,
-            ...,
-        ],
+        src: TileTensor[mut=True, Self._dtype, address_space=.SHARED, ...],
         coords: Tuple[Int, Int],
     ):
         """Write a tile using thread-distributed stores.
@@ -485,8 +470,8 @@ struct FragmentToSMemWriter[
 
     comptime st_matrix_rt_layout_type = RuntimeLayout[
         Self.st_matrix_layout_regular if not Self.swapAB else Self.st_matrix_layout_transpose,
-        element_type=DType.int32,
-        linear_idx_type=DType.int32,
+        element_type=.int32,
+        linear_idx_type=.int32,
     ]
 
     comptime st_matrix_tile_layout_regular = row_major[
@@ -499,10 +484,10 @@ struct FragmentToSMemWriter[
     @__allow_legacy_any_origin_fields
     var c_tile: TileTensor[
         mut=True,
-        dtype=Self.c_type,
+        Self.c_type,
         LayoutType=Self.c_tile_layout,
         origin=MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]
     var warp_group_thread_idx: Int
     var local_warp_group_idx: Int
@@ -513,10 +498,10 @@ struct FragmentToSMemWriter[
         out self,
         c_tile: TileTensor[
             mut=True,
-            dtype=Self.c_type,
+            Self.c_type,
             LayoutType=Self.c_tile_layout,
             origin=MutAnyOrigin,
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
         ],
         warp_group_thread_idx: Int,
         local_warp_group_idx: Int,
@@ -567,9 +552,9 @@ struct FragmentToSMemWriter[
         self,
         smem_tile: TileTensor[
             mut=True,
-            dtype=Self.c_type,
+            Self.c_type,
             origin=MutAnyOrigin,
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
             Storage=PointerStorage[element_width=1],
             ...,
         ],
@@ -589,7 +574,7 @@ struct FragmentToSMemWriter[
         comptime packed_width = elements_per_op // 2  # BF16 pairs packed as float32
 
         # Pack BF16 pairs into float32 (hardware requirement)
-        var packed_data = bitcast[DType.float32, packed_width](data)
+        var packed_data = bitcast[.float32, packed_width](data)
 
         # Get swizzled offset for bank conflict avoidance
         var swizzled_offset = self._compute_swizzled_offset[n_frag, m_frag]()
@@ -624,10 +609,10 @@ struct FragmentToSMemWriter[
         comptime flat_tile_layout = row_major[1, elements_per_tile]()
         var dest_tile_flat = TileTensor[
             mut=True,
-            dtype=Self.c_type,
+            Self.c_type,
             LayoutType=type_of(flat_tile_layout),
             origin=MutAnyOrigin,
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
         ](
             self.c_tile._storage + tile_linear_idx * elements_per_tile,
             flat_tile_layout,
@@ -742,11 +727,11 @@ struct RegisterToGMemWriter[
 
     comptime DstType = TileTensor[
         mut=True,
-        dtype=Self.c_type,
+        Self.c_type,
         LayoutType=Self.dst_layout,
         origin=Self.dst_origin,
         Storage=Self.dst_storage,
-        address_space=AddressSpace.GENERIC,
+        address_space=.GENERIC,
         linear_idx_type=Self.dst_linear_idx_type,
     ]
     var dst: Self.DstType

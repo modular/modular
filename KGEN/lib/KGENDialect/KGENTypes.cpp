@@ -44,8 +44,8 @@ constexpr llvm::StringLiteral kStructElemLayoutError =
 /// Return a string like "imm" or "mut".
 const char *KGEN::getUserSyntax(ArgConvention convention) {
   switch (convention) {
-  case ArgConvention::ReadReg:
-  case ArgConvention::ReadMem:
+  case ArgConvention::ImmReg:
+  case ArgConvention::ImmMem:
     return "imm";
   case ArgConvention::OwnedReg:
   case ArgConvention::OwnedMem:
@@ -200,11 +200,9 @@ LogicalResult ParamType::printValue(AsmPrinter &p, TypedAttr value) const {
 //===----------------------------------------------------------------------===//
 
 Type TypeValueType::get(TypedAttr typeValue) {
-  // If the type-value is already resolved to a type constant, and it is
-  // trivially a mlir Type, fold this to the indicated type.
+  // Simply forward the value domain type from a TypeParamAttr.
   if (auto constant = dyn_cast<TypeParamAttr>(typeValue))
-    if (constant.hasIdenticalRepresentation())
-      return constant.getMlirType();
+    return constant.getTypeValue();
 
   // Otherwise, form the TypeValueType like normal.
   return Base::get(typeValue.getContext(), typeValue);
@@ -509,68 +507,38 @@ GeneratorType GeneratorType::getSpecializedGenerator(
 
 Type FuncGeneratorTypeBuilderType::get(MLIRContext *ctx, TypedAttr paramDecls,
                                        TypedAttr argTypes, TypedAttr resultType,
-                                       TypedAttr metadata,
-                                       TypedAttr implicitOriginDecls) {
+                                       TypedAttr metadata) {
   auto cstParamDecls = dyn_cast<ParamListAttr>(paramDecls);
   auto cstArgTypes = dyn_cast<ParamListAttr>(argTypes);
   auto cstMetadata = dyn_cast<FnMetadataAttr>(metadata);
-  auto cstImplicitOriginDecls = dyn_cast<ParamListAttr>(implicitOriginDecls);
 
   // If any of the components are not constants, skip.
-  if (!cstParamDecls || !cstArgTypes || !cstMetadata || !cstImplicitOriginDecls)
-    return Base::get(ctx, paramDecls, argTypes, resultType, metadata,
-                     implicitOriginDecls);
-  assert(llvm::all_of(cstParamDecls.getValues(),
-                      llvm::IsaPred<FnGenBuilderParamDeclAttr>) &&
+  if (!cstParamDecls || !cstArgTypes || !cstMetadata)
+    return Base::get(ctx, paramDecls, argTypes, resultType, metadata);
+  assert(llvm::all_of(cstParamDecls.getValues(), llvm::IsaPred<QuoteAttr>) &&
          "malformed fn gen builder param decls");
 
-  // We are going to introduce a new scope, adjust the depth of the existing
-  // index ref by one. Don't adjust implicit origin reference depth (those are
-  // not remapped to a named reference for the builder, but should we?).
-  IndexDepthAdjuster adjuster(1, /*onlyAdjustIndexRef=*/true);
-  cstParamDecls = adjuster.replace(cstParamDecls);
-  cstArgTypes = adjuster.replace(cstArgTypes);
-  cstMetadata = adjuster.replace(cstMetadata);
-  resultType = adjuster.replace(resultType);
+  // Unquote before we assemble a FnTypeGeneratorType.
+  auto unquote = [](TypedAttr value) -> TypedAttr {
+    return cast<QuoteAttr>(value).getQuotedParam();
+  };
 
-  SmallVector<Type> inputParamTypes;
-  FnGenIndexRefRemapper remapper;
-  for (TypedAttr value : cstParamDecls.getValues()) {
-    auto remapped = cast<FnGenBuilderParamDeclAttr>(remapper.replace(value));
-    remapper.appendParamDecl(remapped);
-    // record the declared parameter type.
-    inputParamTypes.push_back(remapped.getDeclaredType());
-  }
+  SmallVector<Type> inputParamTypes = llvm::map_to_vector(
+      cstParamDecls.getValues(),
+      [&](TypedAttr attr) -> Type { return ParamType::get(unquote(attr)); });
 
-  cstParamDecls = remapper.replace(cstParamDecls);
-  cstArgTypes = remapper.replace(cstArgTypes);
-  resultType = remapper.replace(resultType);
-  if (!cstImplicitOriginDecls.getValues().empty()) {
-    assert(cstMetadata.getMetadata() &&
-           "origin metadata must be present for implicit origin decls");
-
-    SmallVector<StringAttr> names = llvm::map_to_vector(
-        cstImplicitOriginDecls.getValues(),
-        [](TypedAttr attr) -> StringAttr { return cast<StringAttr>(attr); });
-    // map implicit origin back to index refs.
-    cstArgTypes = cast<ParamListAttr>(
-        cstMetadata.getMetadata().remapNameToImplicitOriginIndexRef(
-            names, cstArgTypes));
-    resultType = cstMetadata.getMetadata().remapNameToImplicitOriginIndexRef(
-        names, resultType);
-  }
   SmallVector<Type> inputArgTypes =
-      llvm::map_to_vector(cstArgTypes.getValues(), [](TypedAttr attr) -> Type {
-        return ParamType::get(attr);
+      llvm::map_to_vector(cstArgTypes.getValues(), [&](TypedAttr attr) -> Type {
+        return ParamType::get(unquote(attr));
       });
 
   // Fold to the generator type this builder describes.
   return KGEN::FuncTypeGeneratorType::get(
       inputParamTypes,
-      FuncType::get(
-          FunctionType::get(ctx, inputArgTypes, ParamType::get(resultType)),
-          cstMetadata.getArgConventions(), cstMetadata.getFnEffects(),
-          cstMetadata.getMetadata()),
+      FuncType::get(FunctionType::get(ctx, inputArgTypes,
+                                      ParamType::get(unquote(resultType))),
+                    cstMetadata.getArgConventions(), cstMetadata.getFnEffects(),
+                    cstMetadata.getMetadata()),
       // When it has a metadata, we need a empty pog list (instead of nullptr)
       // to round trip, since the existence of the pog list might redirect the
       // mlir parser/printer to a lit-specific format...
@@ -580,18 +548,15 @@ Type FuncGeneratorTypeBuilderType::get(MLIRContext *ctx, TypedAttr paramDecls,
 Type FuncGeneratorTypeBuilderType::getChecked(
     function_ref<InFlightDiagnostic()> emitError, MLIRContext *ctx,
     TypedAttr paramDecls, TypedAttr argTypes, TypedAttr resultType,
-    TypedAttr metadata, TypedAttr implicitOriginDecls) {
-  if (failed(verify(emitError, paramDecls, argTypes, resultType, metadata,
-                    implicitOriginDecls)))
+    TypedAttr metadata) {
+  if (failed(verify(emitError, paramDecls, argTypes, resultType, metadata)))
     return {};
-  return get(ctx, paramDecls, argTypes, resultType, metadata,
-             implicitOriginDecls);
+  return get(ctx, paramDecls, argTypes, resultType, metadata);
 }
 
 LogicalResult FuncGeneratorTypeBuilderType::verify(
     function_ref<InFlightDiagnostic()> emitError, TypedAttr paramDecls,
-    TypedAttr argTypes, TypedAttr resultType, TypedAttr metadata,
-    TypedAttr implicitOriginDecls) {
+    TypedAttr argTypes, TypedAttr resultType, TypedAttr metadata) {
 
   // NOTE:we can not easily verify that this is a list of type values (since
   // type expressions might in different forms between lit/kgen)
@@ -607,14 +572,6 @@ LogicalResult FuncGeneratorTypeBuilderType::verify(
     return emitError()
            << "function metadata should have !kgen.non_struct_type type, not "
            << metadata.getType();
-
-  auto implicitOriginDeclsType =
-      dyn_cast<ParamListType>(implicitOriginDecls.getType());
-  if (!implicitOriginDeclsType ||
-      !isa<StringType>(implicitOriginDeclsType.getElementType()))
-    return emitError() << " expect to have !kgen.param_list<!kgen.string> "
-                          "type for implicit origin decl list, not "
-                       << implicitOriginDecls.getType();
 
   return success();
 }
@@ -701,10 +658,15 @@ bool FuncType::isKwVarArg(size_t index) {
 bool FuncType::isPack(size_t index) { return getArgListAttrs().isPack(index); }
 
 std::optional<size_t> FuncType::findPackVarArgIndex() {
-  size_t numUserArgs = getNumArguments() - hasMemoryOnlyResult();
+  size_t numUserArgs = getNumArguments() - hasMemoryOnlyResult() - isThrows();
   if (numUserArgs == 0)
     return std::nullopt;
   size_t lastUserArgIndex = numUserArgs - 1;
+  if (isKwVarArg(lastUserArgIndex)) {
+    if (lastUserArgIndex == 0)
+      return std::nullopt;
+    --lastUserArgIndex;
+  }
   if (isPack(lastUserArgIndex))
     return std::make_optional(lastUserArgIndex);
   return std::nullopt;

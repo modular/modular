@@ -21,7 +21,7 @@
 # Issue #12358
 # CHECK-LABEL: lit.fn @"raise_error
 def raise_error() raises:
-    # CHECK-NEXT: [[TMP:%.*]] = kgen.param.constant: {{.*}}#StringLiteral <:string "thing">> = <*()>
+    # CHECK-NEXT: [[TMP:%.*]] = kgen.param.constant: {{.*}}#StringLiteral <:string "thing">> = <{}>
     # CHECK-NEXT: [[ERR:%.*]] = lit.call {{.*}}Error::@"__init__{{.*}}([[TMP]], %__error__)
     # CHECK-NEXT: lit.raise
     raise "thing"

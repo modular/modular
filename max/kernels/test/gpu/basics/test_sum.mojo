@@ -26,8 +26,8 @@ comptime dtype = DType.uint64
 def warp_sum_kernel[
     dtype: DType,
 ](
-    output: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    input: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
+    output: MutPointer[Scalar[dtype], MutAnyOrigin],
+    input: ImmPointer[Scalar[dtype], ImmutAnyOrigin],
     size_dev: Int32,
 ):
     var size = Int(size_dev)
@@ -81,8 +81,8 @@ def block_sum_kernel[
     dtype: DType,
     block_size: Int,
 ](
-    output: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    input: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
+    output: MutPointer[Scalar[dtype], MutAnyOrigin],
+    input: ImmPointer[Scalar[dtype], ImmutAnyOrigin],
     size_dev: Int32,
 ):
     var size = Int(size_dev)

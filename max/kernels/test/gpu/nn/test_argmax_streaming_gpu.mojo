@@ -29,9 +29,7 @@ from nn.argmaxmin_gpu import argmax_gpu, argmin_gpu
 
 def _reference_index[
     dtype: DType, largest: Bool
-](
-    row: UnsafePointer[Scalar[dtype], MutUntrackedOrigin], num_elements: Int
-) -> Int:
+](row: MutPointer[Scalar[dtype], MutUntrackedOrigin], num_elements: Int) -> Int:
     """Scalar first-index scan: strict comparison, so ties keep the lowest index.
     """
     var best: Scalar[dtype]
@@ -58,7 +56,7 @@ def _check[
     out_idx_type: DType,
     largest: Bool,
     fill_fn: def[dtype: DType](
-        UnsafePointer[Scalar[dtype], MutUntrackedOrigin], Int, Int
+        MutPointer[Scalar[dtype], MutUntrackedOrigin], Int, Int
     ) capturing[_] -> None,
 ](ctx: DeviceContext, batch: Int, num_elements: Int, label: String) raises:
     var in_host = ctx.enqueue_create_host_buffer[dtype](batch * num_elements)
@@ -104,21 +102,21 @@ def _run_dtype[dtype: DType, out_idx_type: DType](ctx: DeviceContext) raises:
     @__parameter
     def fill_random[
         dtype: DType
-    ](row: UnsafePointer[Scalar[dtype], MutUntrackedOrigin], n: Int, b: Int):
+    ](row: MutPointer[Scalar[dtype], MutUntrackedOrigin], n: Int, b: Int):
         for i in range(n):
             row[i] = random_float64(-1e4, 1e4).cast[dtype]()
 
     @__parameter
     def fill_all_equal[
         dtype: DType
-    ](row: UnsafePointer[Scalar[dtype], MutUntrackedOrigin], n: Int, b: Int):
+    ](row: MutPointer[Scalar[dtype], MutUntrackedOrigin], n: Int, b: Int):
         for i in range(n):
             row[i] = Scalar[dtype](1.5)
 
     @__parameter
     def fill_peak_first[
         dtype: DType
-    ](row: UnsafePointer[Scalar[dtype], MutUntrackedOrigin], n: Int, b: Int):
+    ](row: MutPointer[Scalar[dtype], MutUntrackedOrigin], n: Int, b: Int):
         for i in range(n):
             row[i] = Scalar[dtype](-1.0)
         row[0] = Scalar[dtype](7.0)
@@ -126,7 +124,7 @@ def _run_dtype[dtype: DType, out_idx_type: DType](ctx: DeviceContext) raises:
     @__parameter
     def fill_peak_last[
         dtype: DType
-    ](row: UnsafePointer[Scalar[dtype], MutUntrackedOrigin], n: Int, b: Int):
+    ](row: MutPointer[Scalar[dtype], MutUntrackedOrigin], n: Int, b: Int):
         for i in range(n):
             row[i] = Scalar[dtype](-1.0)
         row[n - 1] = Scalar[dtype](7.0)
@@ -134,7 +132,7 @@ def _run_dtype[dtype: DType, out_idx_type: DType](ctx: DeviceContext) raises:
     @__parameter
     def fill_infs[
         dtype: DType
-    ](row: UnsafePointer[Scalar[dtype], MutUntrackedOrigin], n: Int, b: Int):
+    ](row: MutPointer[Scalar[dtype], MutUntrackedOrigin], n: Int, b: Int):
         for i in range(n):
             row[i] = neg_inf[dtype]() if i % 3 == 0 else Scalar[dtype](
                 Float64(i % 17) - 8.0
@@ -146,14 +144,14 @@ def _run_dtype[dtype: DType, out_idx_type: DType](ctx: DeviceContext) raises:
     @__parameter
     def fill_all_neg_inf[
         dtype: DType
-    ](row: UnsafePointer[Scalar[dtype], MutUntrackedOrigin], n: Int, b: Int):
+    ](row: MutPointer[Scalar[dtype], MutUntrackedOrigin], n: Int, b: Int):
         for i in range(n):
             row[i] = neg_inf[dtype]()
 
     @__parameter
     def fill_nans[
         dtype: DType
-    ](row: UnsafePointer[Scalar[dtype], MutUntrackedOrigin], n: Int, b: Int):
+    ](row: MutPointer[Scalar[dtype], MutUntrackedOrigin], n: Int, b: Int):
         for i in range(n):
             row[i] = nan[dtype]() if i % 5 == 0 else Scalar[dtype](
                 Float64(i % 11) - 5.0
@@ -162,7 +160,7 @@ def _run_dtype[dtype: DType, out_idx_type: DType](ctx: DeviceContext) raises:
     @__parameter
     def fill_all_nan[
         dtype: DType
-    ](row: UnsafePointer[Scalar[dtype], MutUntrackedOrigin], n: Int, b: Int):
+    ](row: MutPointer[Scalar[dtype], MutUntrackedOrigin], n: Int, b: Int):
         for i in range(n):
             row[i] = nan[dtype]()
 
@@ -223,7 +221,7 @@ def _run_dtype[dtype: DType, out_idx_type: DType](ctx: DeviceContext) raises:
 def main() raises:
     seed(24301)
     with DeviceContext() as ctx:
-        _run_dtype[DType.float32, DType.int64](ctx)
-        _run_dtype[DType.bfloat16, DType.int64](ctx)
-        _run_dtype[DType.bfloat16, DType.int32](ctx)
+        _run_dtype[.float32, DType.int64](ctx)
+        _run_dtype[.bfloat16, DType.int64](ctx)
+        _run_dtype[.bfloat16, DType.int32](ctx)
     print("OK")

@@ -89,17 +89,17 @@ struct SelectiveScanFwd[delta_softplus: Bool = False]:
         var n_groups = B.dim_size(1)
         var group_size = dim // n_groups
 
-        var output_tt = output.to_tile_tensor[DType.int32]()
-        var x_tt = x.to_tile_tensor[DType.int32]()
-        var out_z_tt = out_z.to_tile_tensor[DType.int32]()
-        var u_tt = u.to_tile_tensor[DType.int32]()
-        var delta_tt = delta.to_tile_tensor[DType.int32]()
-        var A_tt = A.to_tile_tensor[DType.int32]()
-        var B_tt = B.to_tile_tensor[DType.int32]()
-        var C_tt = C.to_tile_tensor[DType.int32]()
-        var D_tt = D.to_tile_tensor[DType.int32]()
-        var z_tt = z.to_tile_tensor[DType.int32]()
-        var delta_bias_tt = delta_bias.to_tile_tensor[DType.int32]()
+        var output_tt = output.to_tile_tensor[.int32]()
+        var x_tt = x.to_tile_tensor[.int32]()
+        var out_z_tt = out_z.to_tile_tensor[.int32]()
+        var u_tt = u.to_tile_tensor[.int32]()
+        var delta_tt = delta.to_tile_tensor[.int32]()
+        var A_tt = A.to_tile_tensor[.int32]()
+        var B_tt = B.to_tile_tensor[.int32]()
+        var C_tt = C.to_tile_tensor[.int32]()
+        var D_tt = D.to_tile_tensor[.int32]()
+        var z_tt = z.to_tile_tensor[.int32]()
+        var delta_bias_tt = delta_bias.to_tile_tensor[.int32]()
 
         var output_strides = output.strides()
         var x_strides = x.strides()
@@ -216,6 +216,7 @@ struct SelectiveScanFwd[delta_softplus: Bool = False]:
                         D_tt.LayoutType,
                         z_tt.LayoutType,
                         delta_bias_tt.LayoutType,
+                        output_tt.Storage,
                     ]
                 ]()
                 gpu_ctx.enqueue_function(
@@ -268,6 +269,7 @@ struct SelectiveScanFwd[delta_softplus: Bool = False]:
                         D_tt.LayoutType,
                         z_tt.LayoutType,
                         delta_bias_tt.LayoutType,
+                        output_tt.Storage,
                     ]
                 ]()
                 gpu_ctx.enqueue_function(
@@ -388,13 +390,13 @@ struct SelectiveScanFwdMinimal[delta_softplus: Bool = False]:
         var n_groups = B.dim_size(1)
         var group_size = dim // n_groups
 
-        var output_tt = output.to_tile_tensor[DType.int32]()
-        var x_tt = x.to_tile_tensor[DType.int32]()
-        var u_tt = u.to_tile_tensor[DType.int32]()
-        var delta_tt = delta.to_tile_tensor[DType.int32]()
-        var A_tt = A.to_tile_tensor[DType.int32]()
-        var B_tt = B.to_tile_tensor[DType.int32]()
-        var C_tt = C.to_tile_tensor[DType.int32]()
+        var output_tt = output.to_tile_tensor[.int32]()
+        var x_tt = x.to_tile_tensor[.int32]()
+        var u_tt = u.to_tile_tensor[.int32]()
+        var delta_tt = delta.to_tile_tensor[.int32]()
+        var A_tt = A.to_tile_tensor[.int32]()
+        var B_tt = B.to_tile_tensor[.int32]()
+        var C_tt = C.to_tile_tensor[.int32]()
 
         var output_strides = output.strides()
         var x_strides = x.strides()
@@ -485,6 +487,7 @@ struct SelectiveScanFwdMinimal[delta_softplus: Bool = False]:
                         A_tt.LayoutType,
                         B_tt.LayoutType,
                         C_tt.LayoutType,
+                        output_tt.Storage,
                     ]
                 ]()
                 gpu_ctx.enqueue_function(
@@ -525,6 +528,7 @@ struct SelectiveScanFwdMinimal[delta_softplus: Bool = False]:
                         A_tt.LayoutType,
                         B_tt.LayoutType,
                         C_tt.LayoutType,
+                        output_tt.Storage,
                     ]
                 ]()
                 gpu_ctx.enqueue_function(
@@ -631,17 +635,17 @@ struct SelectiveScanUpdate[delta_softplus: Bool = False]:
         var n_groups = B.dim_size(1)
         var group_size = dim // n_groups
 
-        var state_out_tt = state_out.to_tile_tensor[DType.int32]()
-        var output_tt = output.to_tile_tensor[DType.int32]()
-        var state_in_tt = state_in.to_tile_tensor[DType.int32]()
-        var x_tt = x.to_tile_tensor[DType.int32]()
-        var dt_tt = dt.to_tile_tensor[DType.int32]()
-        var A_tt = A.to_tile_tensor[DType.int32]()
-        var B_tt = B.to_tile_tensor[DType.int32]()
-        var C_tt = C.to_tile_tensor[DType.int32]()
-        var D_tt = D.to_tile_tensor[DType.int32]()
-        var z_tt = z.to_tile_tensor[DType.int32]()
-        var dt_bias_tt = dt_bias.to_tile_tensor[DType.int32]()
+        var state_out_tt = state_out.to_tile_tensor[.int32]()
+        var output_tt = output.to_tile_tensor[.int32]()
+        var state_in_tt = state_in.to_tile_tensor[.int32]()
+        var x_tt = x.to_tile_tensor[.int32]()
+        var dt_tt = dt.to_tile_tensor[.int32]()
+        var A_tt = A.to_tile_tensor[.int32]()
+        var B_tt = B.to_tile_tensor[.int32]()
+        var C_tt = C.to_tile_tensor[.int32]()
+        var D_tt = D.to_tile_tensor[.int32]()
+        var z_tt = z.to_tile_tensor[.int32]()
+        var dt_bias_tt = dt_bias.to_tile_tensor[.int32]()
 
         var state_out_strides = state_out.strides()
         var output_strides = output.strides()
@@ -754,6 +758,7 @@ struct SelectiveScanUpdate[delta_softplus: Bool = False]:
                         D_tt.LayoutType,
                         z_tt.LayoutType,
                         dt_bias_tt.LayoutType,
+                        state_out_tt.Storage,
                     ]
                 ]()
                 gpu_ctx.enqueue_function(
@@ -805,6 +810,7 @@ struct SelectiveScanUpdate[delta_softplus: Bool = False]:
                         D_tt.LayoutType,
                         z_tt.LayoutType,
                         dt_bias_tt.LayoutType,
+                        state_out_tt.Storage,
                     ]
                 ]()
                 gpu_ctx.enqueue_function(

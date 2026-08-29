@@ -67,7 +67,7 @@ struct TopK:
         target: StaticString,
     ](
         out_vals: OutputTensor[dtype=dtype, rank=rank, ...],
-        out_idxs: OutputTensor[dtype=DType.int32, rank=rank, ...],
+        out_idxs: OutputTensor[dtype=.int32, rank=rank, ...],
         in_vals: InputTensor[dtype=dtype, rank=rank, ...],
         ctx: DeviceContext,
     ) raises:
@@ -98,7 +98,7 @@ struct TopK:
             # Get a pointer to shared memory for the indices and values
             var top_k_sram = external_memory[
                 TopKElement[dtype],
-                address_space=AddressSpace.SHARED,
+                address_space=.SHARED,
                 alignment=align_of[TopKElement[dtype]](),
             ]()
 

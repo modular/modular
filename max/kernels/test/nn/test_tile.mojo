@@ -33,7 +33,7 @@ def test_tile_eg1() raises:
     input[1, 0] = 2
     input[1, 1] = 3
 
-    # type_repeats is always DType.int64
+    # type_repeats is always .int64
     comptime type_repeats = DType.int64
 
     var repeats_stack = Array[Scalar[type_repeats], 2](uninitialized=True)
@@ -48,9 +48,9 @@ def test_tile_eg1() raises:
     var output = TileTensor(output_stack, row_major[4, 4]())
 
     tile[type, type_repeats](
-        input.make_dynamic[DType.int64](),
-        repeats.make_dynamic[DType.int64](),
-        output.make_dynamic[DType.int64](),
+        input.make_dynamic[.int64](),
+        repeats.make_dynamic[.int64](),
+        output.make_dynamic[.int64](),
     )
 
     print()
@@ -80,7 +80,7 @@ def test_tile_eg2() raises:
     input[1, 0] = 2
     input[1, 1] = 3
 
-    # type_repeats is always DType.int64
+    # type_repeats is always .int64
     comptime type_repeats = DType.int64
 
     var repeats_stack = Array[Scalar[type_repeats], 2](uninitialized=True)
@@ -95,9 +95,9 @@ def test_tile_eg2() raises:
     var output = TileTensor(output_stack, row_major[6, 4]())
 
     tile[type, type_repeats](
-        input.make_dynamic[DType.int64](),
-        repeats.make_dynamic[DType.int64](),
-        output.make_dynamic[DType.int64](),
+        input.make_dynamic[.int64](),
+        repeats.make_dynamic[.int64](),
+        output.make_dynamic[.int64](),
     )
 
     print()
@@ -125,7 +125,7 @@ def test_tile_eg3() raises:
     input[1, 0] = 2
     input[1, 1] = 3
 
-    # type_repeats is always DType.int64
+    # type_repeats is always .int64
     comptime type_repeats = DType.int64
 
     var repeats_stack = Array[Scalar[type_repeats], 2](uninitialized=True)
@@ -140,9 +140,9 @@ def test_tile_eg3() raises:
     var output = TileTensor(output_stack, row_major[4, 6]())
 
     tile[type, type_repeats](
-        input.make_dynamic[DType.int64](),
-        repeats.make_dynamic[DType.int64](),
-        output.make_dynamic[DType.int64](),
+        input.make_dynamic[.int64](),
+        repeats.make_dynamic[.int64](),
+        output.make_dynamic[.int64](),
     )
 
     print()
@@ -179,7 +179,7 @@ def test_tile_eg4() raises:
     input[1, 1, 0] = 6
     input[1, 1, 1] = 7
 
-    # type_repeats is always DType.int64
+    # type_repeats is always .int64
     comptime type_repeats = DType.int64
 
     var repeats_stack = Array[Scalar[type_repeats], 3](uninitialized=True)
@@ -195,9 +195,9 @@ def test_tile_eg4() raises:
     var output = TileTensor(output_stack, row_major[4, 2, 2]())
 
     tile[type, type_repeats](
-        input.make_dynamic[DType.int64](),
-        repeats.make_dynamic[DType.int64](),
-        output.make_dynamic[DType.int64](),
+        input.make_dynamic[.int64](),
+        repeats.make_dynamic[.int64](),
+        output.make_dynamic[.int64](),
     )
 
     print()
@@ -236,7 +236,7 @@ def test_tile_eg5() raises:
     input[1, 1, 0] = 6
     input[1, 1, 1] = 7
 
-    # type_repeats is always DType.int64
+    # type_repeats is always .int64
     comptime type_repeats = DType.int64
 
     var repeats_stack = Array[Scalar[type_repeats], 3](uninitialized=True)
@@ -252,9 +252,9 @@ def test_tile_eg5() raises:
     var output = TileTensor(output_stack, row_major[4, 2, 4]())
 
     tile[type, type_repeats](
-        input.make_dynamic[DType.int64](),
-        repeats.make_dynamic[DType.int64](),
-        output.make_dynamic[DType.int64](),
+        input.make_dynamic[.int64](),
+        repeats.make_dynamic[.int64](),
+        output.make_dynamic[.int64](),
     )
 
     print()
@@ -282,7 +282,7 @@ def test_tile_eg6() raises:
     input[1, 0] = 3
     input[1, 1] = 4
 
-    # type_repeats is always DType.int64
+    # type_repeats is always .int64
     comptime type_repeats = DType.int64
 
     var repeats_stack = Array[Scalar[type_repeats], 2](uninitialized=True)
@@ -297,9 +297,9 @@ def test_tile_eg6() raises:
     var output = TileTensor(output_stack, row_major[2, 4]())
 
     tile[type, type_repeats](
-        input.make_dynamic[DType.int64](),
-        repeats.make_dynamic[DType.int64](),
-        output.make_dynamic[DType.int64](),
+        input.make_dynamic[.int64](),
+        repeats.make_dynamic[.int64](),
+        output.make_dynamic[.int64](),
     )
 
     print()
@@ -327,7 +327,7 @@ def test_tile_eg7() raises:
     input[1, 0] = 3
     input[1, 1] = 4
 
-    # type_repeats is always DType.int64
+    # type_repeats is always .int64
     comptime type_repeats = DType.int64
 
     var repeats_stack = Array[Scalar[type_repeats], 2](uninitialized=True)
@@ -342,9 +342,9 @@ def test_tile_eg7() raises:
     var output = TileTensor(output_stack, row_major[4, 2]())
 
     tile[type, type_repeats](
-        input.make_dynamic[DType.int64](),
-        repeats.make_dynamic[DType.int64](),
-        output.make_dynamic[DType.int64](),
+        input.make_dynamic[.int64](),
+        repeats.make_dynamic[.int64](),
+        output.make_dynamic[.int64](),
     )
 
     print()
@@ -372,7 +372,7 @@ def test_tile_eg8() raises:
     input[0, 2] = 3
     input[0, 3] = 4
 
-    # type_repeats is always DType.int64
+    # type_repeats is always .int64
     comptime type_repeats = DType.int64
 
     var repeats_stack = Array[Scalar[type_repeats], 2](uninitialized=True)
@@ -387,9 +387,9 @@ def test_tile_eg8() raises:
     var output = TileTensor(output_stack, row_major[4, 4]()).fill(0)
 
     tile[type, type_repeats](
-        input.make_dynamic[DType.int64](),
-        repeats.make_dynamic[DType.int64](),
-        output.make_dynamic[DType.int64](),
+        input.make_dynamic[.int64](),
+        repeats.make_dynamic[.int64](),
+        output.make_dynamic[.int64](),
     )
 
     print()
@@ -434,7 +434,7 @@ def test_tile_eg9() raises:
     input[1, 1, 0] = 6
     input[1, 1, 1] = 7
 
-    # type_repeats is always DType.int64
+    # type_repeats is always .int64
     comptime type_repeats = DType.int64
 
     var repeats_stack = Array[Scalar[type_repeats], 3](uninitialized=True)
@@ -450,9 +450,9 @@ def test_tile_eg9() raises:
     var output = TileTensor(output_stack, row_major[4, 4, 2]()).fill(0)
 
     tile[type, type_repeats](
-        input.make_dynamic[DType.int64](),
-        repeats.make_dynamic[DType.int64](),
-        output.make_dynamic[DType.int64](),
+        input.make_dynamic[.int64](),
+        repeats.make_dynamic[.int64](),
+        output.make_dynamic[.int64](),
     )
 
     print()
@@ -507,7 +507,7 @@ def test_tile_eg10() raises:
     input[1, 1, 0] = 6
     input[1, 1, 1] = 7
 
-    # type_repeats is always DType.int64
+    # type_repeats is always .int64
     comptime type_repeats = DType.int64
 
     var repeats_stack = Array[Scalar[type_repeats], 3](uninitialized=True)
@@ -523,9 +523,9 @@ def test_tile_eg10() raises:
     var output = TileTensor(output_stack, row_major[6, 4, 6]())
 
     tile[type, type_repeats](
-        input.make_dynamic[DType.int64](),
-        repeats.make_dynamic[DType.int64](),
-        output.make_dynamic[DType.int64](),
+        input.make_dynamic[.int64](),
+        repeats.make_dynamic[.int64](),
+        output.make_dynamic[.int64](),
     )
 
     print()
@@ -597,7 +597,7 @@ def test_tile_eg11() raises:
     input[2, 1, 0] = 10
     input[2, 1, 1] = 11
 
-    # type_repeats is always DType.int64
+    # type_repeats is always .int64
     comptime type_repeats = DType.int64
 
     var repeats_stack = Array[Scalar[type_repeats], 3](uninitialized=True)
@@ -613,9 +613,9 @@ def test_tile_eg11() raises:
     var output = TileTensor(output_stack, row_major[6, 6, 2]()).fill(0)
 
     tile[type, type_repeats](
-        input.make_dynamic[DType.int64](),
-        repeats.make_dynamic[DType.int64](),
-        output.make_dynamic[DType.int64](),
+        input.make_dynamic[.int64](),
+        repeats.make_dynamic[.int64](),
+        output.make_dynamic[.int64](),
     )
 
     print()
@@ -645,7 +645,7 @@ def test_tile_eg12() raises:
     input[0, 0, 1, 0] = 2
     input[0, 0, 1, 1] = 3
 
-    # type_repeats is always DType.int64
+    # type_repeats is always .int64
     comptime type_repeats = DType.int64
 
     var repeats_stack = Array[Scalar[type_repeats], 4](uninitialized=True)
@@ -662,9 +662,9 @@ def test_tile_eg12() raises:
     var output = TileTensor(output_stack, row_major[1, 1, 4, 6]()).fill(0)
 
     tile[type, type_repeats](
-        input.make_dynamic[DType.int64](),
-        repeats.make_dynamic[DType.int64](),
-        output.make_dynamic[DType.int64](),
+        input.make_dynamic[.int64](),
+        repeats.make_dynamic[.int64](),
+        output.make_dynamic[.int64](),
     )
 
     print()
@@ -723,7 +723,7 @@ def test_tile_eg13() raises:
     input[1, 1, 1, 0] = 14
     input[1, 1, 1, 1] = 15
 
-    # type_repeats is always DType.int64
+    # type_repeats is always .int64
     comptime type_repeats = DType.int64
 
     var repeats_stack = Array[Scalar[type_repeats], 4](uninitialized=True)
@@ -740,9 +740,9 @@ def test_tile_eg13() raises:
     var output = TileTensor(output_stack, row_major[2, 4, 4, 6]()).fill(0)
 
     tile[type, type_repeats](
-        input.make_dynamic[DType.int64](),
-        repeats.make_dynamic[DType.int64](),
-        output.make_dynamic[DType.int64](),
+        input.make_dynamic[.int64](),
+        repeats.make_dynamic[.int64](),
+        output.make_dynamic[.int64](),
     )
 
     print()
@@ -817,7 +817,7 @@ def test_tile_eg14() raises:
     input[1, 1, 1, 0] = 14
     input[1, 1, 1, 1] = 15
 
-    # type_repeats is always DType.int64
+    # type_repeats is always .int64
     comptime type_repeats = DType.int64
 
     var repeats_stack = Array[Scalar[type_repeats], 4](uninitialized=True)
@@ -834,9 +834,9 @@ def test_tile_eg14() raises:
     var output = TileTensor(output_stack, row_major[4, 4, 4, 6]()).fill(0)
 
     tile[type, type_repeats](
-        input.make_dynamic[DType.int64](),
-        repeats.make_dynamic[DType.int64](),
-        output.make_dynamic[DType.int64](),
+        input.make_dynamic[.int64](),
+        repeats.make_dynamic[.int64](),
+        output.make_dynamic[.int64](),
     )
 
     print()
@@ -877,9 +877,9 @@ def test_tile_1d() raises:
     var output = TileTensor(output_stack, row_major[9]())
 
     tile[type, type_repeats](
-        input.make_dynamic[DType.int64](),
-        repeats.make_dynamic[DType.int64](),
-        output.make_dynamic[DType.int64](),
+        input.make_dynamic[.int64](),
+        repeats.make_dynamic[.int64](),
+        output.make_dynamic[.int64](),
     )
 
     # Expected: [1, 2, 3] repeated 3 times

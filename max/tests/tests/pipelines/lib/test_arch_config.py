@@ -15,7 +15,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
 from unittest.mock import MagicMock, NonCallableMock
 
 import pytest
@@ -30,6 +29,7 @@ from max.dtype import DType
 from max.graph import DeviceRef
 from max.nn.kv_cache import (
     KVCacheParams,
+    KVConnectorConfigInterface,
     KVConnectorType,
     MHAKVCacheParams,
 )
@@ -45,6 +45,8 @@ from max.pipelines.lib.interfaces.arch_config import (
     ArchConfigWithKVCache,
 )
 from max.pipelines.modeling.config_enums import SupportedEncoding
+from pydantic import ValidationError
+from transformers import AutoConfig
 
 
 @dataclass
@@ -66,11 +68,10 @@ class ConcreteArchConfig(ArchConfigWithAttentionKVCache):
     @classmethod
     def calculate_max_seq_len(
         cls,
-        pipeline_config: PipelineConfig,
-        huggingface_config: Any,
-        model_config: MAXModelConfig | None = None,
+        huggingface_config: AutoConfig,
+        model_config: MAXModelConfig,
     ) -> int:
-        del pipeline_config, huggingface_config, model_config
+        del huggingface_config, model_config
         return 2048
 
 
@@ -143,9 +144,8 @@ def test_arch_config_protocol_check() -> None:
         @classmethod
         def calculate_max_seq_len(
             cls,
-            pipeline_config: PipelineConfig,
-            huggingface_config: Any,
-            model_config: MAXModelConfig | None = None,
+            huggingface_config: AutoConfig,
+            model_config: MAXModelConfig,
         ) -> int:
             return 2048
 
@@ -174,9 +174,8 @@ def test_arch_config_with_cache_protocol_check() -> None:
         @classmethod
         def calculate_max_seq_len(
             cls,
-            pipeline_config: PipelineConfig,
-            huggingface_config: Any,
-            model_config: MAXModelConfig | None = None,
+            huggingface_config: AutoConfig,
+            model_config: MAXModelConfig,
         ) -> int:
             return 2048
 
@@ -366,26 +365,6 @@ class TestArchConfigWithAttentionKVCache:
         assert config.cache_dtype == DType.bfloat16
 
 
-def test_to_params_reads_allow_kv_head_replication_from_config() -> None:
-    """``to_params`` falls back to the config's allow_kv_head_replication.
-
-    The base Llama3/M2 ``construct_kv_params`` paths call ``to_params`` without
-    threading the flag, so architectures (e.g. MiniMax-M3) enable wide tensor
-    parallelism by setting it on the shared ``KVCacheConfig``.
-    """
-    kv_cache_config = KVCacheConfig(allow_kv_head_replication=True)
-    # 4 KV heads over 8 devices would normally fail the divisibility check; the
-    # config flag relaxes it so each head replicates across 2 devices.
-    params = kv_cache_config.to_params(
-        dtype=DType.bfloat16,
-        n_kv_heads=4,
-        head_dim=128,
-        num_layers=1,
-        devices=[DeviceRef.GPU(i) for i in range(8)],
-    )
-    assert params.n_kv_heads_per_device == 1
-
-
 def test_to_params_replication_disabled_by_default() -> None:
     """Without the config flag, wide TP still raises the strict error."""
     kv_cache_config = KVCacheConfig()
@@ -402,9 +381,11 @@ def test_to_params_replication_disabled_by_default() -> None:
         )
 
 
-def test_to_params_explicit_arg_overrides_config() -> None:
-    """An explicit allow_kv_head_replication argument wins over the config."""
-    kv_cache_config = KVCacheConfig(allow_kv_head_replication=False)
+def test_to_params_replication_argument_replicates_heads() -> None:
+    """The allow_kv_head_replication argument replicates each KV head.
+
+    4 KV heads over 8 devices: each head spans a group of 2 devices."""
+    kv_cache_config = KVCacheConfig()
     params = kv_cache_config.to_params(
         dtype=DType.bfloat16,
         n_kv_heads=4,
@@ -414,3 +395,33 @@ def test_to_params_explicit_arg_overrides_config() -> None:
         allow_kv_head_replication=True,
     )
     assert params.n_kv_heads_per_device == 1
+
+
+def test_kv_cache_config_is_frozen() -> None:
+    kv_cache_config = KVCacheConfig()
+    field = "enable_prefix_caching"
+    with pytest.raises(ValidationError, match="frozen"):
+        setattr(kv_cache_config, field, False)
+    assert kv_cache_config.enable_prefix_caching is True
+
+
+def test_kv_connector_config_is_frozen() -> None:
+    connector = KVCacheConfig().kv_connector_config
+    field = "type"
+    with pytest.raises(ValidationError, match="frozen"):
+        setattr(connector, field, KVConnectorType.tiered)
+    assert connector.type is KVConnectorType.null
+
+
+def test_frozen_kv_connector_config_matches_interface() -> None:
+    connector = KVConnectorConfig()
+    assert isinstance(connector, KVConnectorConfigInterface)
+
+
+def test_kv_cache_config_model_copy_update() -> None:
+    kv_cache_config = KVCacheConfig()
+    patched = kv_cache_config.model_copy(
+        update={"enable_prefix_caching": False}
+    )
+    assert patched.enable_prefix_caching is False
+    assert kv_cache_config.enable_prefix_caching is True

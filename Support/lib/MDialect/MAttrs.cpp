@@ -1374,6 +1374,10 @@ DeviceRefAttr M::getHostDevice(Operation *op) {
   return getHostDevice(op->getContext());
 }
 
+bool M::isHostPlaced(DeviceRefAttr device) {
+  return device.getLabel() == kCPULabel;
+}
+
 //===----------------------------------------------------------------------===//
 // DeviceSpecAttr
 //===----------------------------------------------------------------------===//

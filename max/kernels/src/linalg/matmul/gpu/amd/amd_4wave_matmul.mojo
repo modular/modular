@@ -53,7 +53,7 @@ from max.gpu.host.info import MI355X
 from std.gpu.intrinsics import AMDBufferResource
 from max.gpu.sync import schedule_barrier, s_waitcnt
 
-from layout import TensorLayout, TileTensor
+from layout import TensorLayout, TensorStorage, TileTensor
 from layout.swizzle import Swizzle
 from layout.tile_layout import row_major
 from layout.tile_tensor import stack_allocation
@@ -778,12 +778,15 @@ struct AMD4WaveMatmul[
         a_layout: TensorLayout,
         b_layout: TensorLayout,
         c_layout: TensorLayout,
+        a_store: TensorStorage,
+        b_store: TensorStorage,
+        c_store: TensorStorage,
         *,
         num_splits: Int = 1,
     ](
-        a: TileTensor[Self.a_type, a_layout, ImmutAnyOrigin],
-        b: TileTensor[Self.b_type, b_layout, ImmutAnyOrigin],
-        c: TileTensor[Self.c_type, c_layout, MutAnyOrigin],
+        a: TileTensor[Self.a_type, a_layout, ImmutAnyOrigin, Storage=a_store],
+        b: TileTensor[Self.b_type, b_layout, ImmutAnyOrigin, Storage=b_store],
+        c: TileTensor[Self.c_type, c_layout, MutAnyOrigin, Storage=c_store],
     ):
         """Runs the 4-wave GEMM kernel for one workgroup tile.
 
@@ -797,6 +800,9 @@ struct AMD4WaveMatmul[
             a_layout: Logical layout of `a`.
             b_layout: Logical layout of `b`.
             c_layout: Logical layout of `c`.
+            a_store: Storage policy of `a`.
+            b_store: Storage policy of `b`.
+            c_store: Storage policy of `c`.
             num_splits: Split-K factor (1 means no split).
 
         Args:
@@ -865,30 +871,30 @@ struct AMD4WaveMatmul[
 
         # === SMEM: 2 stages x 2 M-subtiles for A, 2 stages x 2 N-subtiles for B
         comptime a_half_layout = row_major[half_BM, BK]()
-        var a_s0_g0 = stack_allocation[Self.in_type, AddressSpace.SHARED](
+        var a_s0_g0 = stack_allocation[Self.in_type, address_space=.SHARED](
             a_half_layout
         )
-        var a_s0_g1 = stack_allocation[Self.in_type, AddressSpace.SHARED](
+        var a_s0_g1 = stack_allocation[Self.in_type, address_space=.SHARED](
             a_half_layout
         )
-        var a_s1_g0 = stack_allocation[Self.in_type, AddressSpace.SHARED](
+        var a_s1_g0 = stack_allocation[Self.in_type, address_space=.SHARED](
             a_half_layout
         )
-        var a_s1_g1 = stack_allocation[Self.in_type, AddressSpace.SHARED](
+        var a_s1_g1 = stack_allocation[Self.in_type, address_space=.SHARED](
             a_half_layout
         )
 
         comptime b_half_layout = row_major[half_BN, BK]()
-        var b_s0_h0 = stack_allocation[Self.in_type, AddressSpace.SHARED](
+        var b_s0_h0 = stack_allocation[Self.in_type, address_space=.SHARED](
             b_half_layout
         )
-        var b_s0_h1 = stack_allocation[Self.in_type, AddressSpace.SHARED](
+        var b_s0_h1 = stack_allocation[Self.in_type, address_space=.SHARED](
             b_half_layout
         )
-        var b_s1_h0 = stack_allocation[Self.in_type, AddressSpace.SHARED](
+        var b_s1_h0 = stack_allocation[Self.in_type, address_space=.SHARED](
             b_half_layout
         )
-        var b_s1_h1 = stack_allocation[Self.in_type, AddressSpace.SHARED](
+        var b_s1_h1 = stack_allocation[Self.in_type, address_space=.SHARED](
             b_half_layout
         )
 
@@ -1408,30 +1414,30 @@ struct AMD4WaveMatmul[
 
         # === SMEM: 2 stages x 2 M-subtiles for A, 2 stages x 2 N-subtiles for B
         comptime a_half_layout = row_major[half_BM, BK]()
-        var a_s0_g0 = stack_allocation[Self.in_type, AddressSpace.SHARED](
+        var a_s0_g0 = stack_allocation[Self.in_type, address_space=.SHARED](
             a_half_layout
         )
-        var a_s0_g1 = stack_allocation[Self.in_type, AddressSpace.SHARED](
+        var a_s0_g1 = stack_allocation[Self.in_type, address_space=.SHARED](
             a_half_layout
         )
-        var a_s1_g0 = stack_allocation[Self.in_type, AddressSpace.SHARED](
+        var a_s1_g0 = stack_allocation[Self.in_type, address_space=.SHARED](
             a_half_layout
         )
-        var a_s1_g1 = stack_allocation[Self.in_type, AddressSpace.SHARED](
+        var a_s1_g1 = stack_allocation[Self.in_type, address_space=.SHARED](
             a_half_layout
         )
 
         comptime b_half_layout = row_major[half_BN, BK]()
-        var b_s0_h0 = stack_allocation[Self.in_type, AddressSpace.SHARED](
+        var b_s0_h0 = stack_allocation[Self.in_type, address_space=.SHARED](
             b_half_layout
         )
-        var b_s0_h1 = stack_allocation[Self.in_type, AddressSpace.SHARED](
+        var b_s0_h1 = stack_allocation[Self.in_type, address_space=.SHARED](
             b_half_layout
         )
-        var b_s1_h0 = stack_allocation[Self.in_type, AddressSpace.SHARED](
+        var b_s1_h0 = stack_allocation[Self.in_type, address_space=.SHARED](
             b_half_layout
         )
-        var b_s1_h1 = stack_allocation[Self.in_type, AddressSpace.SHARED](
+        var b_s1_h1 = stack_allocation[Self.in_type, address_space=.SHARED](
             b_half_layout
         )
 
@@ -1924,10 +1930,8 @@ struct AMD4WaveMatmul[
                         comptime if has_residual:
                             var skip = prefetched[
                                 m_mma * num_n_mmas + n_mma
-                            ].cast[DType.float32]()
-                            var fused_f32 = (
-                                v.cast[DType.float32]() + beta * skip
-                            )
+                            ].cast[.float32]()
+                            var fused_f32 = v.cast[.float32]() + beta * skip
                             v = fused_f32.cast[Self.c_type]()
                         c_writer.store(v, m=m_dram, n=n_global)
 
@@ -2020,9 +2024,7 @@ def structured_4wave_matmul[
     """
     comptime assert a_type == b_type, "A and B must have the same type"
     comptime assert (
-        a_type.is_float8()
-        or a_type == DType.bfloat16
-        or a_type == DType.float16
+        a_type.is_float8() or a_type == .bfloat16 or a_type == .float16
     ), "4-wave supports float8_e4m3fn, bfloat16, or float16"
 
     # MMA K-dim selection: FP8 uses MFMA 16x16x128; bf16/fp16 use MFMA
@@ -2061,12 +2063,16 @@ def structured_4wave_matmul[
             enable_swizzle,
             elementwise_lambda_fn=elementwise_lambda_fn,
         ].run[
-            a.LayoutType,
-            b.LayoutType,
-            c.LayoutType,
+            type_of(a).LayoutType,
+            type_of(b).LayoutType,
+            type_of(c).LayoutType,
+            type_of(a).Storage,
+            type_of(b).Storage,
+            type_of(c).Storage,
         ]
 
         var num_blocks_n = ceildiv(N, config.block_shape[1])
+
         var num_blocks_m = ceildiv(M, config.block_shape[0])
         comptime if dump_asm_path != "":
             ctx.enqueue_function[kernel, dump_asm=dump_asm_path](

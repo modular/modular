@@ -186,7 +186,7 @@ ArrayRef<ParamDeclAttr> FileModuleOp::getInputParams() { return {}; }
 
 void PackageOp::build(OpBuilder &builder, OperationState &state,
                       StringAttr name) {
-  build(builder, state, name, /*docString=*/{},
+  build(builder, state, name, /*sym_visibility=*/nullptr, /*docString=*/{},
         /*dependencies=*/{}, /*externLLVMBitcodeModules=*/{});
   assert(state.regions.size() == 1);
   state.regions.back()->push_back(new Block());
@@ -1208,7 +1208,8 @@ void FnOp::build(OpBuilder &builder, OperationState &result, StringAttr name,
                  StringAttr sourceName, FuncTypeGeneratorType signature) {
   MLIRContext *ctx = builder.getContext();
   UnitAttr none;
-  build(builder, result, name, ParamDeclAttr(), TypeAttr::get(signature),
+  build(builder, result, name, /*sym_visibility=*/nullptr, ParamDeclAttr(),
+        TypeAttr::get(signature),
         TypeAttr::get(signature.getBody().getValues()),
         ParamDeclArrayAttr::get(ctx, {}), DecoratorsAttr::get(ctx, {}),
         /*isStatic=*/none, /*isSynthetic=*/none,
@@ -1424,7 +1425,8 @@ LogicalResult StructDeclOp::verifyRegions() {
 void StructDeclOp::build(OpBuilder &builder, OperationState &result,
                          StringAttr name) {
   MLIRContext *ctx = builder.getContext();
-  build(builder, result, name, TypeAttr::get(TypeSignatureType::get(ctx)),
+  build(builder, result, name, /*sym_visibility=*/nullptr,
+        TypeAttr::get(TypeSignatureType::get(ctx)),
         ParamDeclArrayAttr::get(ctx, {}), DecoratorsAttr::get(ctx, {}),
         TypeAttr::get(TraitType::get(ctx, {})),
         /*isSynthetic=*/{},
@@ -1603,7 +1605,8 @@ DebugInfo::DIScopeAttr ExtensionDeclOp::getLocScope() {
 void ExtensionDeclOp::build(OpBuilder &builder, OperationState &result,
                             StringAttr name, StringAttr targetStructName) {
   MLIRContext *ctx = builder.getContext();
-  build(builder, result, name, TypeAttr::get(TypeSignatureType::get(ctx)),
+  build(builder, result, name, /*sym_visibility=*/nullptr,
+        TypeAttr::get(TypeSignatureType::get(ctx)),
         ParamDeclArrayAttr::get(ctx, {}), targetStructName, /*targetStruct=*/{},
         /*immediateParents=*/TraitSymbolArrayAttr::get(ctx, {}),
         /*canonicalTrait=*/{});
@@ -2044,7 +2047,8 @@ void TraitDeclOp::build(OpBuilder &builder, OperationState &result,
                         StringAttr name) {
   MLIRContext *ctx = builder.getContext();
   UnitAttr none;
-  build(builder, result, name, TypeAttr::get(TypeSignatureType::get(ctx)),
+  build(builder, result, name, /*sym_visibility=*/nullptr,
+        TypeAttr::get(TypeSignatureType::get(ctx)),
         ParamDeclArrayAttr::get(ctx, {}),
         TypeAttr::get(TraitType::get(ctx, {})),
         TraitSymbolArrayAttr::get(ctx, {}),
@@ -2080,8 +2084,7 @@ ValueRange TryOp::getEntryArguments(std::optional<unsigned> target) {
 
 ErrorTreeOrSuccess TryOp::interpret(ArrayRef<Attribute> operands,
                                     InterpreterState &state) {
-  state.transferControlFlowTo(getTryRegion(), operands);
-  return success();
+  return state.transferControlFlowTo(getTryRegion(), operands);
 }
 
 ErrorTreeOrSuccess
@@ -2137,13 +2140,11 @@ ErrorTreeOrSuccess TryYieldOp::interpret(ArrayRef<Attribute> operands,
   switch ((*this)->getParentRegion()->getRegionNumber()) {
   case TryOp::kTRY:
     // Yield from the 'try' region branches to the 'else' region.
-    state.transferControlFlowTo(tryOp.getElseRegion(), operands);
-    return success();
+    return state.transferControlFlowTo(tryOp.getElseRegion(), operands);
   case TryOp::kELSE:
     // Yield from either the 'except' or 'else' regions branches back to the
     // parent region which continues after the try.
-    state.transferControlFlowTo(tryOp, operands);
-    return success();
+    return state.transferControlFlowTo(tryOp, operands);
   case TryOp::kFINALLY:
     llvm_unreachable("Should be processed by LowerSemanticCF");
   default:
@@ -2191,8 +2192,7 @@ ErrorTreeOrSuccess TryRaiseOp::interpret(ArrayRef<Attribute> operands,
   }
   assert(tryOp && "LowerSemanticCF ensures this before elaboration");
 
-  state.transferControlFlowTo(tryOp.getExceptRegion(), operands);
-  return success();
+  return state.transferControlFlowTo(tryOp.getExceptRegion(), operands);
 }
 
 ErrorTreeOrSuccess

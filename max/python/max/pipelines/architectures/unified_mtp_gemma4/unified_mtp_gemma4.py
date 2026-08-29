@@ -199,7 +199,9 @@ class UnifiedMTPGemma4(Module):
                 self.acceptance_sampler,
                 draft_tokens,
                 logits,
-                seed=seed[0],
+                # Per-row seeds: each row's sampling is keyed off its own
+                # seed, never coupled to co-residents' draws.
+                seed=seed,
                 temperature=temperature,
                 top_k=top_k,
                 max_k=max_k,

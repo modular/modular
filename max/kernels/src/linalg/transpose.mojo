@@ -386,7 +386,7 @@ def _permute_data[
 ](
     input: UnsafePointer[mut=False, Scalar[dtype], _],
     output: UnsafePointer[mut=True, Scalar[dtype], _],
-    perms: UnsafePointer[mut=False, Scalar[DType.int], _],
+    perms: UnsafePointer[mut=False, Int, _],
 ):
     """
     Ensures that output[i] = input[perms[i]] for i ∈ [0, size)
@@ -402,7 +402,7 @@ def _fill_strides[
     dtype: DType,
 ](
     buf: TileTensor[mut=False, dtype, ...],
-    strides: TileTensor[mut=True, DType.int, ...],
+    strides: TileTensor[mut=True, .int, ...],
 ):
     """
     Fill `strides`, which will be an array of strides indexed by axis, assuming
@@ -538,7 +538,7 @@ def _simplify_transpose_perms[
 @always_inline
 def _convert_transpose_perms_to_static_int_tuple[
     rank: Int
-](perms: UnsafePointer[mut=False, Scalar[DType.int], _]) -> IndexList[rank]:
+](perms: UnsafePointer[mut=False, Int, _]) -> IndexList[rank]:
     var simplified_perms = IndexList[rank]()
     # TODO: unroll
     for j in range(rank):
@@ -582,13 +582,9 @@ def _process_tile[
 def _transpose_2d_serial_tiled[
     rank: Int, dtype: DType, //
 ](
-    output: TileTensor[
-        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
-    ],
-    input: TileTensor[
-        mut=False, dtype, address_space=AddressSpace.GENERIC, ...
-    ],
-    perms: UnsafePointer[Scalar[DType.int], _],
+    output: TileTensor[mut=True, dtype, address_space=.GENERIC, ...],
+    input: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
+    perms: UnsafePointer[Int, _],
     simplified_input_shape: IndexList[rank],
     simplified_rank: Int,
     offset: Int,
@@ -645,13 +641,9 @@ def _should_run_parallel(
 def _transpose_2d_parallel_tiled[
     rank: Int, dtype: DType, //
 ](
-    output: TileTensor[
-        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
-    ],
-    input: TileTensor[
-        mut=False, dtype, address_space=AddressSpace.GENERIC, ...
-    ],
-    perms: UnsafePointer[Scalar[DType.int], _],
+    output: TileTensor[mut=True, dtype, address_space=.GENERIC, ...],
+    input: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
+    perms: UnsafePointer[Int, _],
     simplified_input_shape: IndexList[rank],
     simplified_rank: Int,
     offset: Int,
@@ -687,10 +679,10 @@ def _transpose_2d_parallel_tiled[
 
     var work_block_size = ceildiv(work, num_tasks)
 
-    @__parameter
-    @__copy_capture(work_block_size, m_tiles, N, M)
     @always_inline
-    def _parallel_tile(thread_id: Int):
+    def _parallel_tile(
+        thread_id: Int,
+    ) {var work_block_size, var m_tiles, var N, var M, imm}:
         var n_tile_begin = work_block_size * thread_id
         var n_tile_end = min(work_block_size * (thread_id + 1), work)
 
@@ -707,19 +699,15 @@ def _transpose_2d_parallel_tiled[
                     input.ptr + offset,
                 )
 
-    sync_parallelize[_parallel_tile](num_tasks, ctx)
+    sync_parallelize(_parallel_tile, num_tasks, ctx)
 
 
 def transpose_2d[
     rank: Int, dtype: DType, //
 ](
-    output: TileTensor[
-        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
-    ],
-    input: TileTensor[
-        mut=False, dtype, address_space=AddressSpace.GENERIC, ...
-    ],
-    perms: UnsafePointer[Scalar[DType.int], _],
+    output: TileTensor[mut=True, dtype, address_space=.GENERIC, ...],
+    input: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
+    perms: UnsafePointer[Int, _],
     simplified_input_shape: IndexList[rank],
     simplified_rank: Int,
     offset: Int,
@@ -820,10 +808,8 @@ def _transpose_4d_swap_middle_helper[
 
         var work_block_size = ceildiv(work, num_tasks)
 
-        @__parameter
-        @__copy_capture(work, work_block_size)
         @always_inline
-        def _parallel_copy(thread_id: Int):
+        def _parallel_copy(thread_id: Int) {var work, var work_block_size, imm}:
             var begin = work_block_size * thread_id
             var end = min(work_block_size * (thread_id + 1), work)
             for block_idx in range(begin, end):
@@ -838,19 +824,15 @@ def _transpose_4d_swap_middle_helper[
                     count=K,
                 )
 
-        sync_parallelize[_parallel_copy](num_tasks, ctx)
+        sync_parallelize(_parallel_copy, num_tasks, ctx)
 
 
 def transpose_4d_swap_middle[
     rank: Int, dtype: DType, //
 ](
-    output: TileTensor[
-        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
-    ],
-    input: TileTensor[
-        mut=False, dtype, address_space=AddressSpace.GENERIC, ...
-    ],
-    perms: UnsafePointer[Scalar[DType.int], _],
+    output: TileTensor[mut=True, dtype, address_space=.GENERIC, ...],
+    input: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
+    perms: UnsafePointer[Int, _],
     simplified_input_shape: IndexList[rank],
     simplified_rank: Int,
     ctx: Optional[DeviceContext] = None,
@@ -890,13 +872,9 @@ def transpose_4d_swap_middle[
 def transpose_3d_swap_outer[
     rank: Int, dtype: DType, //
 ](
-    output: TileTensor[
-        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
-    ],
-    input: TileTensor[
-        mut=False, dtype, address_space=AddressSpace.GENERIC, ...
-    ],
-    perms: UnsafePointer[Scalar[DType.int], _],
+    output: TileTensor[mut=True, dtype, address_space=.GENERIC, ...],
+    input: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
+    perms: UnsafePointer[Int, _],
     simplified_input_shape: IndexList[rank],
     simplified_rank: Int,
 ):
@@ -935,13 +913,9 @@ def transpose_3d_swap_outer[
 def transpose_3d_swap_inner[
     rank: Int, dtype: DType, //
 ](
-    output: TileTensor[
-        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
-    ],
-    input: TileTensor[
-        mut=False, dtype, address_space=AddressSpace.GENERIC, ...
-    ],
-    perms: UnsafePointer[Scalar[DType.int], _],
+    output: TileTensor[mut=True, dtype, address_space=.GENERIC, ...],
+    input: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
+    perms: UnsafePointer[Int, _],
     simplified_input_shape: IndexList[rank],
     simplified_rank: Int,
 ):
@@ -987,12 +961,8 @@ def transpose_3d_swap_inner[
 def transpose_trivial_memcpy[
     dtype: DType, //
 ](
-    output: TileTensor[
-        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
-    ],
-    input: TileTensor[
-        mut=False, dtype, address_space=AddressSpace.GENERIC, ...
-    ],
+    output: TileTensor[mut=True, dtype, address_space=.GENERIC, ...],
+    input: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
     ctx: Optional[DeviceContext] = None,
 ):
     """Copies the input buffer to the output buffer as a trivial transpose.
@@ -1045,8 +1015,8 @@ def _copy_with_strides[
     output_shape: IndexList[rank],
     output_bytecount: Int,
     input_ptr: UnsafePointer[mut=False, Scalar[dtype], _],
-    input_strides: UnsafePointer[mut=False, Scalar[DType.int], _],
-    output_strides: UnsafePointer[mut=False, Scalar[DType.int], _],
+    input_strides: UnsafePointer[mut=False, Int, _],
+    output_strides: UnsafePointer[mut=False, Int, _],
     input_offset: Int,
     output_offset: Int,
     ctx: Optional[DeviceContext] = None,
@@ -1139,15 +1109,16 @@ def _copy_with_strides[
         var work_block_size = ceildiv(work, num_tasks)
 
         @always_inline
-        @__copy_capture(
-            work_block_size,
-            work,
-            next_axis,
-            input_axis_stride,
-            output_axis_stride,
-        )
-        @__parameter
-        def _parallel_copy(thread_id: Int) raises:
+        def _parallel_copy(
+            thread_id: Int,
+        ) raises {
+            var work_block_size,
+            var work,
+            var next_axis,
+            var input_axis_stride,
+            var output_axis_stride,
+            imm,
+        }:
             var next_input_offset = (
                 thread_id * work_block_size * input_axis_stride + input_offset
             )
@@ -1176,20 +1147,16 @@ def _copy_with_strides[
 
         # TODO: transpose_strided is using stack allocated structures and
         # so depends on us being synchronous. We need a better way to do this.
-        sync_parallelize[_parallel_copy](num_tasks, ctx)
+        sync_parallelize(_parallel_copy, num_tasks, ctx)
 
 
 def transpose_strided[
     rank: Int,
     dtype: DType,
 ](
-    output: TileTensor[
-        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
-    ],
-    input: TileTensor[
-        mut=False, dtype, address_space=AddressSpace.GENERIC, ...
-    ],
-    perms: UnsafePointer[Scalar[DType.int], _],
+    output: TileTensor[mut=True, dtype, address_space=.GENERIC, ...],
+    input: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
+    perms: UnsafePointer[Int, _],
     ctx: Optional[DeviceContext] = None,
 ) raises:
     """Transposes a tensor with arbitrary strides via a generic strided copy.
@@ -1208,7 +1175,7 @@ def transpose_strided[
         ctx: The context to execute the work on.
     """
     # Compute row-major strides for input.
-    var input_strides_arr = Array[Scalar[DType.int], rank](uninitialized=True)
+    var input_strides_arr = Array[Int, rank](uninitialized=True)
     input_strides_arr[rank - 1] = 1
     comptime for idx in range(rank - 1):
         comptime axis = rank - idx - 2
@@ -1217,9 +1184,7 @@ def transpose_strided[
         ](Int(input.dim[axis + 1]()))
 
     # Permute input strides.
-    var permuted_strides_arr = Array[Scalar[DType.int], rank](
-        uninitialized=True
-    )
+    var permuted_strides_arr = Array[Int, rank](uninitialized=True)
     _permute_data[rank, DType.int](
         input_strides_arr.unsafe_ptr(),
         permuted_strides_arr.unsafe_ptr(),
@@ -1227,7 +1192,7 @@ def transpose_strided[
     )
 
     # Compute row-major strides for output.
-    var output_strides_arr = Array[Scalar[DType.int], rank](uninitialized=True)
+    var output_strides_arr = Array[Int, rank](uninitialized=True)
     output_strides_arr[rank - 1] = 1
     comptime for idx in range(rank - 1):
         comptime axis = rank - idx - 2
@@ -1268,13 +1233,9 @@ def transpose_strided[
 def transpose[
     dtype: DType, //
 ](
-    output: TileTensor[
-        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
-    ],
-    input: TileTensor[
-        mut=False, dtype, address_space=AddressSpace.GENERIC, ...
-    ],
-    perms: UnsafePointer[Scalar[DType.int], _],
+    output: TileTensor[mut=True, dtype, address_space=.GENERIC, ...],
+    input: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
+    perms: UnsafePointer[Int, _],
     ctx: Optional[DeviceContext] = None,
 ) raises:
     """

@@ -149,7 +149,7 @@ def memcpy_or_fuse[
             )
 
             func[dtype, rank, simd_width](
-                out_index.cast[DType.int64](),
+                out_index.cast[.int64](),
                 load,
             )
             return
@@ -189,7 +189,7 @@ struct _CanonicallyReshapedBuffer[mut: Bool, //, origin: Origin[mut=mut]](
 def _canonical_reshape[
     dtype: DType
 ](
-    buf: TileTensor[dtype, address_space=AddressSpace.GENERIC, ...],
+    buf: TileTensor[dtype, address_space=.GENERIC, ...],
     axis: Int,
 ) -> _CanonicallyReshapedBuffer[buf.origin]:
     var shape = coord_to_index_list(buf.layout.shape_coord())
@@ -205,9 +205,7 @@ def _canonical_reshape_output[
     //,
     dtype: DType,
 ](
-    out_buf: TileTensor[
-        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
-    ],
+    out_buf: TileTensor[mut=True, dtype, address_space=.GENERIC, ...],
     axis: Int,
     inputs: List[TileTensor[dtype, InputLayoutType, input_origin]],
 ) -> _CanonicallyReshapedBuffer[out_buf.origin]:
@@ -230,9 +228,7 @@ def _concat_parallel[
     dtype: DType,
     epilogue_fn: Optional[elementwise_epilogue_type],
 ](
-    output: TileTensor[
-        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
-    ],
+    output: TileTensor[mut=True, dtype, address_space=.GENERIC, ...],
     axis: Int,
     inputs: List[TileTensor[dtype, InputLayoutType, input_origin]],
     ctx: Optional[DeviceContext] = None,
@@ -246,16 +242,26 @@ def _concat_parallel[
     var output_data = output_canon.data
 
     var total_output_bytes = output_h * output_wc
+    var output_shape = rebind[IndexList[output.rank]](
+        coord_to_index_list(output.layout.shape_coord())
+    )
 
     comptime KB = 1024
     comptime parallel_chunk_size = 64 * KB  # TODO autotune
     var num_chunks = ceildiv(total_output_bytes, parallel_chunk_size)
 
-    @__copy_capture(
-        total_output_bytes, output_h, output_c, output_data, output_wc
-    )
-    @__parameter
-    def do_chunk(chunk_index: Int) raises:
+    def do_chunk(
+        chunk_index: Int,
+    ) raises {
+        var total_output_bytes,
+        var output_h,
+        var output_c,
+        var output_data,
+        var output_wc,
+        var output_shape,
+        imm inputs,
+        imm axis,
+    }:
         # "Amount" refers to byte-offsets into logical copy order, not into
         # output buffer.
         var chunk_start_amount = chunk_index * parallel_chunk_size
@@ -306,9 +312,7 @@ def _concat_parallel[
                         + overlap_rel_start % input_wc,
                         input_data.unsafe_offset(overlap_rel_start),
                         overlap_rel_end - overlap_rel_start,
-                        rebind[IndexList[output.rank]](
-                            coord_to_index_list(output.layout.shape_coord())
-                        ),
+                        output_shape,
                     )
                 else:
                     # OK, we have maybe stragglers on the start and end, and a
@@ -322,9 +326,7 @@ def _concat_parallel[
                         + overlap_rel_start % input_wc,
                         input_data.unsafe_offset(overlap_rel_start),
                         overlap_full_rel_start - overlap_rel_start,
-                        rebind[IndexList[output.rank]](
-                            coord_to_index_list(output.layout.shape_coord())
-                        ),
+                        output_shape,
                     )
                     # Now, fully-aligned sections:
                     var in_ptr = input_data.unsafe_offset(
@@ -344,9 +346,7 @@ def _concat_parallel[
                             out_ptr_offset,
                             in_ptr,
                             input_wc,
-                            rebind[IndexList[output.rank]](
-                                coord_to_index_list(output.layout.shape_coord())
-                            ),
+                            output_shape,
                         )
                         in_ptr = in_ptr.unsafe_offset(input_wc)
                         out_ptr_offset += output_wc
@@ -356,9 +356,7 @@ def _concat_parallel[
                         out_ptr_offset,
                         in_ptr,
                         overlap_rel_end - overlap_full_rel_end,
-                        rebind[IndexList[output.rank]](
-                            coord_to_index_list(output.layout.shape_coord())
-                        ),
+                        output_shape,
                     )
 
             amount_traversed += input_byte_size
@@ -370,7 +368,7 @@ def _concat_parallel[
 
     # The do_chunk closure captures the stack allocated Buffer,
     # so this kernel must be run synchronously.
-    sync_parallelize[do_chunk](num_chunks, ctx)
+    sync_parallelize(do_chunk, num_chunks, ctx)
 
 
 @always_inline
@@ -381,9 +379,7 @@ def _concat[
     dtype: DType,
     epilogue_fn: Optional[elementwise_epilogue_type],
 ](
-    output: TileTensor[
-        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
-    ],
+    output: TileTensor[mut=True, dtype, address_space=.GENERIC, ...],
     axis: Int,
     inputs: List[TileTensor[dtype, InputLayoutType, input_origin]],
 ) raises:
@@ -445,9 +441,7 @@ def _concat_inner[
     dtype: DType,
     epilogue_fn: Optional[elementwise_epilogue_type],
 ](
-    output: TileTensor[
-        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
-    ],
+    output: TileTensor[mut=True, dtype, address_space=.GENERIC, ...],
     inputs: List[TileTensor[dtype, InputLayoutType, input_origin]],
 ) raises:
     var num_elems_copied: Int = 0
@@ -491,9 +485,7 @@ def _concat_serial[
     dtype: DType,
     epilogue_fn: Optional[elementwise_epilogue_type],
 ](
-    output: TileTensor[
-        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
-    ],
+    output: TileTensor[mut=True, dtype, address_space=.GENERIC, ...],
     axis: Int,
     inputs: List[TileTensor[dtype, InputLayoutType, input_origin]],
 ) raises:
@@ -522,9 +514,7 @@ def _concat_cpu[
     dtype: DType,
     epilogue_fn: Optional[elementwise_epilogue_type],
 ](
-    output: TileTensor[
-        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
-    ],
+    output: TileTensor[mut=True, dtype, address_space=.GENERIC, ...],
     axis: Int,
     inputs: List[TileTensor[dtype, InputLayoutType, input_origin]],
     ctx: Optional[DeviceContext] = None,
@@ -532,8 +522,7 @@ def _concat_cpu[
     _check_input_consistency[dtype](axis, inputs)
 
     @always_inline
-    @__parameter
-    def dispatch_serial(unused_thread_idx: Int) raises:
+    def dispatch_serial(unused_thread_idx: Int) raises {imm}:
         _concat_serial[dtype, epilogue_fn](output, axis, inputs)
 
     comptime KB = 1024
@@ -544,7 +533,7 @@ def _concat_cpu[
     if output_bytes < min_work_for_parallel:
         # The dispatch_serial closure captures the stack allocated
         # Buffer, so this kernel must be run synchronously.
-        sync_parallelize[dispatch_serial](1, ctx)
+        sync_parallelize(dispatch_serial, 1, ctx)
     else:
         _concat_parallel[epilogue_fn=epilogue_fn](output, axis, inputs, ctx=ctx)
 
@@ -623,9 +612,7 @@ def concat[
     target: StaticString = "cpu",
     epilogue_fn: Optional[elementwise_epilogue_type] = None,
 ](
-    output: TileTensor[
-        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
-    ],
+    output: TileTensor[mut=True, dtype, address_space=.GENERIC, ...],
     axis: Int,
     inputs: StaticTuple[
         TileTensor[dtype, InputLayoutType, input_origin],
@@ -662,12 +649,13 @@ def concat[
         if output.num_elements() == 0:
             return
         comptime if is_cpu[target]():
-            var inputVec = List[
-                TileTensor[dtype, InputLayoutType, input_origin]
-            ](capacity=len(inputs))
-
-            for i in range(inputs.size):
-                inputVec.append(inputs[i])
+            comptime InputTileType = TileTensor[
+                dtype, InputLayoutType, input_origin
+            ]
+            var inputVec = List(
+                length=inputs.size,
+                fill_with=lambda (i: Int) -> InputTileType: inputs[i],
+            )
 
             # Dynamic input length is required by `mo.concat_from_list`
             # TODO: Should we just provide a separate implementation for
@@ -823,13 +811,7 @@ def _concat_gpu_elementwise[
     num_inputs: Int,
     epilogue_fn: Optional[elementwise_epilogue_type],
 ](
-    output: TileTensor[
-        mut=True,
-        dtype,
-        address_space=AddressSpace.GENERIC,
-        Storage=_,
-        ...,
-    ],
+    output: TileTensor[mut=True, dtype, address_space=.GENERIC, Storage=_, ...],
     axis: Int,
     inputs: StaticTuple[
         TileTensor[dtype, InputLayoutType, input_origin, Storage=InputStorage],
@@ -856,13 +838,7 @@ def _concat_gpu_elementwise[
     num_inputs: Int,
     epilogue_fn: Optional[elementwise_epilogue_type],
 ](
-    output: TileTensor[
-        mut=True,
-        dtype,
-        address_space=AddressSpace.GENERIC,
-        Storage=_,
-        ...,
-    ],
+    output: TileTensor[mut=True, dtype, address_space=.GENERIC, Storage=_, ...],
     inputs: StaticTuple[
         TileTensor[dtype, InputLayoutType, input_origin, Storage=InputStorage],
         num_inputs,
@@ -993,13 +969,7 @@ def _concat_gpu[
     dtype: DType,
     epilogue_fn: Optional[elementwise_epilogue_type],
 ](
-    output: TileTensor[
-        mut=True,
-        dtype,
-        address_space=AddressSpace.GENERIC,
-        Storage=_,
-        ...,
-    ],
+    output: TileTensor[mut=True, dtype, address_space=.GENERIC, Storage=_, ...],
     axis: Int,
     inputs: StaticTuple[
         TileTensor[dtype, InputLayoutType, input_origin, Storage=InputStorage],
@@ -1092,13 +1062,7 @@ def _fused_concat_cpu[
 ](
     axis: Int,
     input_shapes: StaticTuple[IndexList[rank], size],
-    output: TileTensor[
-        mut=True,
-        dtype,
-        address_space=AddressSpace.GENERIC,
-        Storage=_,
-        ...,
-    ],
+    output: TileTensor[mut=True, dtype, address_space=.GENERIC, Storage=_, ...],
     ctx: Optional[DeviceContext],
 ) raises:
     var offset = 0
@@ -1327,13 +1291,7 @@ def _fused_concat_gpu_elementwise[
     size: Int,
 ](
     input_shapes: StaticTuple[IndexList[rank], size],
-    output: TileTensor[
-        mut=True,
-        dtype,
-        address_space=AddressSpace.GENERIC,
-        Storage=_,
-        ...,
-    ],
+    output: TileTensor[mut=True, dtype, address_space=.GENERIC, Storage=_, ...],
     ctx: DeviceContext,
 ) raises:
     comptime num_inputs = input_shapes.size
@@ -1423,19 +1381,11 @@ def _fused_dual_concat_gpu_elementwise[
 ](
     input_shapes_0: StaticTuple[IndexList[rank], size_0],
     output_0: TileTensor[
-        mut=True,
-        dtype,
-        address_space=AddressSpace.GENERIC,
-        Storage=_,
-        ...,
+        mut=True, dtype, address_space=.GENERIC, Storage=_, ...
     ],
     input_shapes_1: StaticTuple[IndexList[rank], size_1],
     output_1: TileTensor[
-        mut=True,
-        dtype,
-        address_space=AddressSpace.GENERIC,
-        Storage=_,
-        ...,
+        mut=True, dtype, address_space=.GENERIC, Storage=_, ...
     ],
     ctx: DeviceContext,
 ) raises:

@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 import time
+from collections.abc import Mapping, Sequence
 from unittest.mock import Mock
 
 import numpy as np
@@ -100,7 +101,7 @@ def create_mock_kv_cache() -> Mock:
     cache.get_total_num_pages = Mock(return_value=128)
     cache.get_free_blocks_pct = Mock(return_value=0.5)
 
-    cache.alloc = Mock(return_value=CompletedTransfer(TransferDirection.LOAD))
+    cache.alloc = Mock(return_value=CompletedTransfer.load())
     cache.claim = Mock()
     cache.release = Mock()
     cache.contains = Mock(return_value=False)
@@ -174,7 +175,7 @@ def test_text_batch_constructor__batch_construction_without_chunked_prefill_no_p
 
     kv_cache = Mock()
     kv_cache.alloc = Mock()
-    kv_cache.alloc.return_value = CompletedTransfer(TransferDirection.LOAD)
+    kv_cache.alloc.return_value = CompletedTransfer.load()
     kv_cache.claim = Mock()
     kv_cache.contains = Mock()
     set_mock_kv_usage(kv_cache, 0.0)
@@ -276,7 +277,7 @@ def test_text_batch_constructor__batch_construction_no_requests(
 
     kv_cache = Mock()
     kv_cache.alloc = Mock()
-    kv_cache.alloc.return_value = CompletedTransfer(TransferDirection.LOAD)
+    kv_cache.alloc.return_value = CompletedTransfer.load()
     kv_cache.claim = Mock()
     kv_cache.contains = Mock()
     set_mock_kv_usage(kv_cache, 0.0)
@@ -347,8 +348,8 @@ def test_text_batch_constructor__insufficient_blocks_defers_then_retries(
     kv_cache.alloc = Mock(
         side_effect=[
             InsufficientBlocksError("insufficient blocks"),
-            CompletedTransfer(TransferDirection.LOAD),
-            CompletedTransfer(TransferDirection.LOAD),
+            CompletedTransfer.load(),
+            CompletedTransfer.load(),
         ]
     )
     kv_cache.claim = Mock()
@@ -551,7 +552,7 @@ def test_text_batch_constructor__tg_insufficient_blocks_preempts_ce_block_holder
         # Blocks free up only once the parked prefill is preempted.
         if not released:
             raise InsufficientBlocksError("insufficient blocks")
-        return CompletedTransfer(TransferDirection.LOAD)
+        return CompletedTransfer.load()
 
     kv_cache = Mock()
     kv_cache.alloc = Mock(side_effect=alloc)
@@ -603,7 +604,7 @@ def test_text_batch_constructor__batch_construction_with_chunked_prefill_and_pre
     )
     kv_cache = Mock()
     kv_cache.alloc = Mock()
-    kv_cache.alloc.return_value = CompletedTransfer(TransferDirection.LOAD)
+    kv_cache.alloc.return_value = CompletedTransfer.load()
     kv_cache.claim = Mock()
     kv_cache.contains = Mock()
     kv_cache.pending_transfers_exist = Mock(return_value=False)
@@ -688,11 +689,11 @@ def test_text_batch_constructor__batch_construction_with_chunked_prefill_and_pre
     # then succeeding and returning 0 (no prefix cache skip) for the remaining calls.
     kv_cache.alloc.side_effect = [
         InsufficientBlocksError(),
-        CompletedTransfer(TransferDirection.LOAD),
-        CompletedTransfer(TransferDirection.LOAD),
-        CompletedTransfer(TransferDirection.LOAD),
-        CompletedTransfer(TransferDirection.LOAD),
-        CompletedTransfer(TransferDirection.LOAD),
+        CompletedTransfer.load(),
+        CompletedTransfer.load(),
+        CompletedTransfer.load(),
+        CompletedTransfer.load(),
+        CompletedTransfer.load(),
     ]
 
     last_request_id = list(batch_constructor.replicas[0].tg_reqs.keys())[-1]
@@ -729,7 +730,7 @@ def test_text_batch_constructor__batch_construction_with_chunked_prefill_and_inf
     )
     kv_cache = Mock()
     kv_cache.alloc = Mock()
-    kv_cache.alloc.return_value = CompletedTransfer(TransferDirection.LOAD)
+    kv_cache.alloc.return_value = CompletedTransfer.load()
     kv_cache.claim = Mock()
     kv_cache.contains = Mock()
     set_mock_kv_usage(kv_cache, 0.0)
@@ -793,7 +794,7 @@ def test_text_batch_constructor__batch_construction_without_chunked_prefill_and_
     )
     kv_cache = Mock()
     kv_cache.alloc = Mock()
-    kv_cache.alloc.return_value = CompletedTransfer(TransferDirection.LOAD)
+    kv_cache.alloc.return_value = CompletedTransfer.load()
     kv_cache.claim = Mock()
     kv_cache.contains = Mock()
     set_mock_kv_usage(kv_cache, 0.0)
@@ -1057,7 +1058,7 @@ def test_tg_pure_age_based_preemption() -> None:
 
     kv_cache.alloc = Mock(
         side_effect=[
-            CompletedTransfer(TransferDirection.LOAD),
+            CompletedTransfer.load(),
             InsufficientBlocksError,
             InsufficientBlocksError,
         ]
@@ -2150,8 +2151,8 @@ class _IncompleteOnload:
         return TransferDirection.LOAD
 
     @property
-    def g0_blocks(self) -> list[int]:
-        return []
+    def g0_blocks_per_leaf(self) -> Mapping[str, Sequence[int]]:
+        return {}
 
     def is_complete(self) -> bool:
         return self.complete
@@ -2222,7 +2223,7 @@ def test_text_batch_constructor__readmits_request_when_onload_completes(
     # First alloc cordons (incomplete); the re-admit pass re-allocs and the
     # prefix is now device-resident, so the second alloc completes immediately.
     kv_cache = _make_cordon_kv_cache(
-        Mock(side_effect=[onload, CompletedTransfer(TransferDirection.LOAD)])
+        Mock(side_effect=[onload, CompletedTransfer.load()])
     )
     batch_constructor = TextBatchConstructor(
         scheduler_config=_cordon_config(),

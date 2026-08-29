@@ -124,18 +124,14 @@ def run_bit_exact_vs_dense[
     # `physical_block * PAGE_SIZE + tok_in_page`, so the sparse TMA row sequence
     # is the same.
     var lut_size = batch_size * pages_per_batch
-    var lookup_table_host = ctx.enqueue_create_host_buffer[DType.uint32](
-        lut_size
-    )
+    var lookup_table_host = ctx.enqueue_create_host_buffer[.uint32](lut_size)
     for bi in range(batch_size):
         for p in range(pages_per_batch):
             lookup_table_host[bi * pages_per_batch + p] = UInt32(
                 bi * pages_per_batch + p
             )
 
-    var cache_lengths_host = ctx.enqueue_create_host_buffer[DType.uint32](
-        batch_size
-    )
+    var cache_lengths_host = ctx.enqueue_create_host_buffer[.uint32](batch_size)
     for i in range(batch_size):
         cache_lengths_host[i] = UInt32(cache_len)
 
@@ -149,7 +145,7 @@ def run_bit_exact_vs_dense[
     # `physical_block * PAGE_SIZE + tok_in_page` with the identity page table
     # collapses to just `t` (since physical_block == logical_block).
     var total_indices = batch_size * topk
-    var h_indices = ctx.enqueue_create_host_buffer[DType.int32](total_indices)
+    var h_indices = ctx.enqueue_create_host_buffer[.int32](total_indices)
     for bi in range(batch_size):
         for i in range(topk):
             # logical token i; identity page table -> physical_block == logical_block.
@@ -164,12 +160,10 @@ def run_bit_exact_vs_dense[
     var blocks_device = ctx.enqueue_create_buffer[q_type](block_elems)
     ctx.enqueue_copy(blocks_device, blocks_host)
 
-    var cache_lengths_device = ctx.enqueue_create_buffer[DType.uint32](
-        batch_size
-    )
+    var cache_lengths_device = ctx.enqueue_create_buffer[.uint32](batch_size)
     ctx.enqueue_copy(cache_lengths_device, cache_lengths_host)
 
-    var lookup_table_device = ctx.enqueue_create_buffer[DType.uint32](lut_size)
+    var lookup_table_device = ctx.enqueue_create_buffer[.uint32](lut_size)
     ctx.enqueue_copy(lookup_table_device, lookup_table_host)
 
     var q_device = ctx.enqueue_create_buffer[q_type](q_size)
@@ -182,7 +176,7 @@ def run_bit_exact_vs_dense[
         batch_size * q_max_seq_len * num_heads * V_DEPTH
     )
 
-    var d_indices_device = ctx.enqueue_create_buffer[DType.int32](total_indices)
+    var d_indices_device = ctx.enqueue_create_buffer[.int32](total_indices)
     ctx.enqueue_copy(d_indices_device, h_indices)
 
     ctx.synchronize()
@@ -193,13 +187,13 @@ def run_bit_exact_vs_dense[
     )
 
     comptime cl_layout = Layout(UNKNOWN_VALUE)
-    var cache_lengths_lt = LayoutTensor[DType.uint32, cl_layout](
+    var cache_lengths_lt = LayoutTensor[.uint32, cl_layout](
         cache_lengths_device.unsafe_ptr(),
         RuntimeLayout[cl_layout].row_major(IndexList[1](batch_size)),
     )
 
     comptime lt_layout_2d = Layout.row_major[2]()
-    var lookup_table_lt = LayoutTensor[DType.uint32, lt_layout_2d](
+    var lookup_table_lt = LayoutTensor[.uint32, lt_layout_2d](
         lookup_table_device.unsafe_ptr(),
         RuntimeLayout[lt_layout_2d].row_major(
             IndexList[2](batch_size, pages_per_batch)
@@ -214,14 +208,14 @@ def run_bit_exact_vs_dense[
                 blocks_lt.runtime_layout.stride.value,
             ),
         ),
-        LayoutTensor[mut=False, DType.uint32, cl_layout](
+        LayoutTensor[mut=False, .uint32, cl_layout](
             cache_lengths_lt.ptr,
             RuntimeLayout[cl_layout](
                 cache_lengths_lt.runtime_layout.shape.value,
                 cache_lengths_lt.runtime_layout.stride.value,
             ),
         ),
-        LayoutTensor[mut=False, DType.uint32, lt_layout_2d](
+        LayoutTensor[mut=False, .uint32, lt_layout_2d](
             lookup_table_lt.ptr,
             RuntimeLayout[lt_layout_2d](
                 lookup_table_lt.runtime_layout.shape.value,
@@ -248,14 +242,12 @@ def run_bit_exact_vs_dense[
         row_major((total_q_tokens, Idx[num_heads], Idx[V_DEPTH])),
     )
 
-    var row_offsets_host = ctx.enqueue_create_host_buffer[DType.uint32](
+    var row_offsets_host = ctx.enqueue_create_host_buffer[.uint32](
         batch_size + 1
     )
     for i in range(batch_size + 1):
         row_offsets_host[i] = UInt32(i * q_max_seq_len)
-    var row_offsets_device = ctx.enqueue_create_buffer[DType.uint32](
-        batch_size + 1
-    )
+    var row_offsets_device = ctx.enqueue_create_buffer[.uint32](batch_size + 1)
     ctx.enqueue_copy(row_offsets_device, row_offsets_host)
     ctx.synchronize()
 
@@ -310,7 +302,7 @@ def run_bit_exact_vs_dense[
         scale,
         ctx,
         scalar_args_sparse_tt,
-        d_indices=rebind[UnsafePointer[Int32, MutAnyOrigin]](
+        d_indices=rebind[MutPointer[Int32, MutAnyOrigin]](
             d_indices_device.unsafe_ptr()
         ),
         indices_stride=topk,
@@ -394,9 +386,9 @@ def _coprime_multiplier(n: Int) -> Int:
 def host_reference_varkeys[
     q_type: DType,
 ](
-    q_ptr: UnsafePointer[Scalar[q_type], _],
-    k_ptr: UnsafePointer[Scalar[q_type], _],
-    output_ptr: UnsafePointer[mut=True, Scalar[q_type], _],
+    q_ptr: Pointer[Scalar[q_type], _],
+    k_ptr: Pointer[Scalar[q_type], _],
+    output_ptr: MutPointer[Scalar[q_type], _],
     batch_size: Int,
     num_heads: Int,
     num_keys_per_batch: List[Int],
@@ -416,15 +408,15 @@ def host_reference_varkeys[
         var k_base_offset = k_offsets[b]
         for h in range(num_heads):
             var q_base = b * num_heads * depth + h * depth
-            var max_s = Float64(min_or_neg_inf[DType.float32]())
+            var max_s = Float64(min_or_neg_inf[.float32]())
             var s_buf = List(length=num_keys, fill=Float64(0))
             for k in range(num_keys):
                 var k_base = k_base_offset + k * depth
                 var dot = Float64(0)
                 for d in range(depth):
                     dot += (
-                        q_ptr[q_base + d].cast[DType.float64]()
-                        * k_ptr[k_base + d].cast[DType.float64]()
+                        q_ptr[q_base + d].cast[.float64]()
+                        * k_ptr[k_base + d].cast[.float64]()
                     )
                 s_buf[k] = dot * Float64(scale)
                 if s_buf[k] > max_s:
@@ -442,7 +434,7 @@ def host_reference_varkeys[
                 var acc = Float64(0)
                 for k in range(num_keys):
                     var k_base = k_base_offset + k * depth
-                    acc += s_buf[k] * k_ptr[k_base + d].cast[DType.float64]()
+                    acc += s_buf[k] * k_ptr[k_base + d].cast[.float64]()
                 output_ptr[o_base + d] = acc.cast[q_type]()
             _ = s_buf^
     _ = k_offsets^
@@ -451,10 +443,10 @@ def host_reference_varkeys[
 def host_reference_with_attn_sink[
     q_type: DType,
 ](
-    q_ptr: UnsafePointer[Scalar[q_type], _],
-    k_ptr: UnsafePointer[Scalar[q_type], _],
-    output_ptr: UnsafePointer[mut=True, Scalar[q_type], _],
-    attn_sink_host: UnsafePointer[Float32, _],
+    q_ptr: Pointer[Scalar[q_type], _],
+    k_ptr: Pointer[Scalar[q_type], _],
+    output_ptr: MutPointer[Scalar[q_type], _],
+    attn_sink_host: Pointer[Float32, _],
     batch_size: Int,
     num_heads: Int,
     num_keys: Int,
@@ -466,15 +458,15 @@ def host_reference_with_attn_sink[
     for b in range(batch_size):
         for h in range(num_heads):
             var q_base = b * num_heads * depth + h * depth
-            var max_s = Float64(min_or_neg_inf[DType.float32]())
+            var max_s = Float64(min_or_neg_inf[.float32]())
             var s_buf = List(length=num_keys, fill=Float64(0))
             for k in range(num_keys):
                 var k_base = b * num_keys * depth + k * depth
                 var dot = Float64(0)
                 for d in range(depth):
                     dot += (
-                        q_ptr[q_base + d].cast[DType.float64]()
-                        * k_ptr[k_base + d].cast[DType.float64]()
+                        q_ptr[q_base + d].cast[.float64]()
+                        * k_ptr[k_base + d].cast[.float64]()
                     )
                 s_buf[k] = dot * Float64(scale)
                 if s_buf[k] > max_s:
@@ -498,7 +490,7 @@ def host_reference_with_attn_sink[
                 var acc = Float64(0)
                 for k in range(num_keys):
                     var k_base = b * num_keys * depth + k * depth
-                    acc += s_buf[k] * k_ptr[k_base + d].cast[DType.float64]()
+                    acc += s_buf[k] * k_ptr[k_base + d].cast[.float64]()
                 output_ptr[o_base + d] = acc.cast[q_type]()
             _ = s_buf^
 
@@ -582,9 +574,7 @@ def run_test_sparse_kv_bf16[
 
     # Build shuffled page table so gather4 exercises scatter.
     var lut_size = batch_size * max_pages_per_batch
-    var lookup_table_host = ctx.enqueue_create_host_buffer[DType.uint32](
-        lut_size
-    )
+    var lookup_table_host = ctx.enqueue_create_host_buffer[.uint32](lut_size)
     for i in range(lut_size):
         lookup_table_host[i] = UInt32(0)
     var page_offset = 0
@@ -598,9 +588,7 @@ def run_test_sparse_kv_bf16[
             )
         page_offset += np
 
-    var cache_lengths_host = ctx.enqueue_create_host_buffer[DType.uint32](
-        batch_size
-    )
+    var cache_lengths_host = ctx.enqueue_create_host_buffer[.uint32](batch_size)
     for i in range(batch_size):
         cache_lengths_host[i] = UInt32(cache_len)
 
@@ -676,22 +664,22 @@ def run_test_sparse_kv_bf16[
                         + s * num_heads * Q_DEPTH
                         + h * Q_DEPTH
                     )
-                    var max_s = Float64(min_or_neg_inf[DType.float32]())
+                    var max_s = Float64(min_or_neg_inf[.float32]())
                     var s_buf = List(length=topk, fill=Float64(0))
                     var valid = List(length=topk, fill=False)
                     for i in range(topk):
                         var tok = selected_tokens[g * topk + i]
                         if tok >= causal_limit:
                             valid[i] = False
-                            s_buf[i] = Float64(min_or_neg_inf[DType.float32]())
+                            s_buf[i] = Float64(min_or_neg_inf[.float32]())
                             continue
                         valid[i] = True
                         var k_base = g * topk * Q_DEPTH + i * Q_DEPTH
                         var dot = Float64(0)
                         for d in range(Q_DEPTH):
                             dot += (
-                                q_host[q_base + d].cast[DType.float64]()
-                                * k_sparse_ref[k_base + d].cast[DType.float64]()
+                                q_host[q_base + d].cast[.float64]()
+                                * k_sparse_ref[k_base + d].cast[.float64]()
                             )
                         s_buf[i] = dot * Float64(scale)
                         if s_buf[i] > max_s:
@@ -722,7 +710,7 @@ def run_test_sparse_kv_bf16[
                             var k_base = g * topk * Q_DEPTH + i * Q_DEPTH
                             acc += (
                                 s_buf[i]
-                                * k_sparse_ref[k_base + d].cast[DType.float64]()
+                                * k_sparse_ref[k_base + d].cast[.float64]()
                             )
                         ref_host[o_base + d] = acc.cast[q_type]()
                     _ = valid^
@@ -740,15 +728,15 @@ def run_test_sparse_kv_bf16[
                         + s * num_heads * Q_DEPTH
                         + h * Q_DEPTH
                     )
-                    var max_s = Float64(min_or_neg_inf[DType.float32]())
+                    var max_s = Float64(min_or_neg_inf[.float32]())
                     var s_buf = List(length=topk, fill=Float64(0))
                     for i in range(topk):
                         var k_base = g * topk * Q_DEPTH + i * Q_DEPTH
                         var dot = Float64(0)
                         for d in range(Q_DEPTH):
                             dot += (
-                                q_host[q_base + d].cast[DType.float64]()
-                                * k_sparse_ref[k_base + d].cast[DType.float64]()
+                                q_host[q_base + d].cast[.float64]()
+                                * k_sparse_ref[k_base + d].cast[.float64]()
                             )
                         s_buf[i] = dot * Float64(scale)
                         if s_buf[i] > max_s:
@@ -772,7 +760,7 @@ def run_test_sparse_kv_bf16[
                             var k_base = g * topk * Q_DEPTH + i * Q_DEPTH
                             acc += (
                                 s_buf[i]
-                                * k_sparse_ref[k_base + d].cast[DType.float64]()
+                                * k_sparse_ref[k_base + d].cast[.float64]()
                             )
                         ref_host[o_base + d] = acc.cast[q_type]()
                     _ = s_buf^
@@ -780,11 +768,9 @@ def run_test_sparse_kv_bf16[
     # Device uploads.
     var blocks_device = ctx.enqueue_create_buffer[q_type](block_elems)
     ctx.enqueue_copy(blocks_device, blocks_host)
-    var cache_lengths_device = ctx.enqueue_create_buffer[DType.uint32](
-        batch_size
-    )
+    var cache_lengths_device = ctx.enqueue_create_buffer[.uint32](batch_size)
     ctx.enqueue_copy(cache_lengths_device, cache_lengths_host)
-    var lookup_table_device = ctx.enqueue_create_buffer[DType.uint32](lut_size)
+    var lookup_table_device = ctx.enqueue_create_buffer[.uint32](lut_size)
     ctx.enqueue_copy(lookup_table_device, lookup_table_host)
     var q_device = ctx.enqueue_create_buffer[q_type](q_size)
     ctx.enqueue_copy(q_device, q_host)
@@ -794,7 +780,7 @@ def run_test_sparse_kv_bf16[
     # kernel gathers per query token (global index g = batch * q_max_seq_len
     # + s), each row using that token's own selected_tokens set.
     var total_indices = total_q_tokens * topk
-    var h_indices = ctx.enqueue_create_host_buffer[DType.int32](total_indices)
+    var h_indices = ctx.enqueue_create_host_buffer[.int32](total_indices)
     for bi in range(batch_size):
         for s in range(q_max_seq_len):
             var g = bi * q_max_seq_len + s
@@ -808,7 +794,7 @@ def run_test_sparse_kv_bf16[
                 h_indices[g * topk + i] = Int32(
                     block_id * PAGE_SIZE + tok_in_page
                 )
-    var d_indices_device = ctx.enqueue_create_buffer[DType.int32](total_indices)
+    var d_indices_device = ctx.enqueue_create_buffer[.int32](total_indices)
     ctx.enqueue_copy(d_indices_device, h_indices)
 
     ctx.synchronize()
@@ -818,12 +804,12 @@ def run_test_sparse_kv_bf16[
         RuntimeLayout[Layout.row_major[6]()].row_major(block_shape),
     )
     comptime cl_layout = Layout(UNKNOWN_VALUE)
-    var cache_lengths_lt = LayoutTensor[DType.uint32, cl_layout](
+    var cache_lengths_lt = LayoutTensor[.uint32, cl_layout](
         cache_lengths_device.unsafe_ptr(),
         RuntimeLayout[cl_layout].row_major(IndexList[1](batch_size)),
     )
     comptime lt_layout_2d = Layout.row_major[2]()
-    var lookup_table_lt = LayoutTensor[DType.uint32, lt_layout_2d](
+    var lookup_table_lt = LayoutTensor[.uint32, lt_layout_2d](
         lookup_table_device.unsafe_ptr(),
         RuntimeLayout[lt_layout_2d].row_major(
             IndexList[2](batch_size, max_pages_per_batch)
@@ -838,14 +824,14 @@ def run_test_sparse_kv_bf16[
                 blocks_lt.runtime_layout.stride.value,
             ),
         ),
-        LayoutTensor[mut=False, DType.uint32, cl_layout](
+        LayoutTensor[mut=False, .uint32, cl_layout](
             cache_lengths_lt.ptr,
             RuntimeLayout[cl_layout](
                 cache_lengths_lt.runtime_layout.shape.value,
                 cache_lengths_lt.runtime_layout.stride.value,
             ),
         ),
-        LayoutTensor[mut=False, DType.uint32, lt_layout_2d](
+        LayoutTensor[mut=False, .uint32, lt_layout_2d](
             lookup_table_lt.ptr,
             RuntimeLayout[lt_layout_2d](
                 lookup_table_lt.runtime_layout.shape.value,
@@ -866,14 +852,12 @@ def run_test_sparse_kv_bf16[
         row_major((total_q_tokens, Idx[num_heads], Idx[V_DEPTH])),
     )
 
-    var row_offsets_host = ctx.enqueue_create_host_buffer[DType.uint32](
+    var row_offsets_host = ctx.enqueue_create_host_buffer[.uint32](
         batch_size + 1
     )
     for i in range(batch_size + 1):
         row_offsets_host[i] = UInt32(i * q_max_seq_len)
-    var row_offsets_device = ctx.enqueue_create_buffer[DType.uint32](
-        batch_size + 1
-    )
+    var row_offsets_device = ctx.enqueue_create_buffer[.uint32](batch_size + 1)
     ctx.enqueue_copy(row_offsets_device, row_offsets_host)
     ctx.synchronize()
 
@@ -911,7 +895,7 @@ def run_test_sparse_kv_bf16[
             scale,
             ctx,
             scalar_args_buf_tt,
-            d_indices=rebind[UnsafePointer[Int32, MutAnyOrigin]](
+            d_indices=rebind[MutPointer[Int32, MutAnyOrigin]](
                 d_indices_device.unsafe_ptr()
             ),
             indices_stride=indices_stride,
@@ -931,7 +915,7 @@ def run_test_sparse_kv_bf16[
             scale,
             ctx,
             scalar_args_buf_tt,
-            d_indices=rebind[UnsafePointer[Int32, MutAnyOrigin]](
+            d_indices=rebind[MutPointer[Int32, MutAnyOrigin]](
                 d_indices_device.unsafe_ptr()
             ),
             indices_stride=indices_stride,
@@ -957,8 +941,8 @@ def run_test_sparse_kv_bf16[
                         + h * V_DEPTH
                         + d
                     )
-                    var ref_val = ref_host[idx].cast[DType.float64]()
-                    var actual_val = out_host[idx].cast[DType.float64]()
+                    var ref_val = ref_host[idx].cast[.float64]()
+                    var actual_val = out_host[idx].cast[.float64]()
                     if isnan(actual_val):
                         nan_count += 1
                         if nan_count <= 5:
@@ -1015,8 +999,8 @@ def run_test_sparse_kv_bf16[
                         + h * V_DEPTH
                         + d
                     )
-                    var ref_val = ref_host[idx].cast[DType.float64]()
-                    var actual_val = out_host[idx].cast[DType.float64]()
+                    var ref_val = ref_host[idx].cast[.float64]()
+                    var actual_val = out_host[idx].cast[.float64]()
                     assert_almost_equal(
                         actual_val, ref_val, atol=atol, rtol=rtol
                     )
@@ -1122,9 +1106,7 @@ def run_test_sparse_kv_bf16_variable_topk[
     for i in range(block_elems):
         blocks_host[i] = Scalar[q_type](0)
     var lut_size = batch_size * max_pages_per_batch
-    var lookup_table_host = ctx.enqueue_create_host_buffer[DType.uint32](
-        lut_size
-    )
+    var lookup_table_host = ctx.enqueue_create_host_buffer[.uint32](lut_size)
     for i in range(lut_size):
         lookup_table_host[i] = UInt32(0)
     var page_offset = 0
@@ -1138,9 +1120,7 @@ def run_test_sparse_kv_bf16_variable_topk[
             )
         page_offset += np_bi
 
-    var cache_lengths_host = ctx.enqueue_create_host_buffer[DType.uint32](
-        batch_size
-    )
+    var cache_lengths_host = ctx.enqueue_create_host_buffer[.uint32](batch_size)
     for i in range(batch_size):
         cache_lengths_host[i] = UInt32(cache_lengths[i])
 
@@ -1182,7 +1162,7 @@ def run_test_sparse_kv_bf16_variable_topk[
 
     # d_indices: padded to max_topk per batch.
     var total_indices = batch_size * max_topk
-    var h_indices = ctx.enqueue_create_host_buffer[DType.int32](total_indices)
+    var h_indices = ctx.enqueue_create_host_buffer[.int32](total_indices)
     for i in range(total_indices):
         h_indices[i] = Int32(0)
 
@@ -1237,24 +1217,20 @@ def run_test_sparse_kv_bf16_variable_topk[
     # Device uploads.
     var blocks_device = ctx.enqueue_create_buffer[q_type](block_elems)
     ctx.enqueue_copy(blocks_device, blocks_host)
-    var cache_lengths_device = ctx.enqueue_create_buffer[DType.uint32](
-        batch_size
-    )
+    var cache_lengths_device = ctx.enqueue_create_buffer[.uint32](batch_size)
     ctx.enqueue_copy(cache_lengths_device, cache_lengths_host)
-    var lookup_table_device = ctx.enqueue_create_buffer[DType.uint32](lut_size)
+    var lookup_table_device = ctx.enqueue_create_buffer[.uint32](lut_size)
     ctx.enqueue_copy(lookup_table_device, lookup_table_host)
     var q_device = ctx.enqueue_create_buffer[q_type](q_size)
     ctx.enqueue_copy(q_device, q_host)
     var out_device = ctx.enqueue_create_buffer[q_type](out_size)
-    var d_indices_device = ctx.enqueue_create_buffer[DType.int32](total_indices)
+    var d_indices_device = ctx.enqueue_create_buffer[.int32](total_indices)
     ctx.enqueue_copy(d_indices_device, h_indices)
 
-    var topk_lengths_host = ctx.enqueue_create_host_buffer[DType.int32](
-        batch_size
-    )
+    var topk_lengths_host = ctx.enqueue_create_host_buffer[.int32](batch_size)
     for bi in range(batch_size):
         topk_lengths_host[bi] = Int32(topk_per_batch[bi])
-    var topk_lengths_device = ctx.enqueue_create_buffer[DType.int32](batch_size)
+    var topk_lengths_device = ctx.enqueue_create_buffer[.int32](batch_size)
     ctx.enqueue_copy(topk_lengths_device, topk_lengths_host)
 
     ctx.synchronize()
@@ -1264,12 +1240,12 @@ def run_test_sparse_kv_bf16_variable_topk[
         RuntimeLayout[Layout.row_major[6]()].row_major(block_shape),
     )
     comptime cl_layout = Layout(UNKNOWN_VALUE)
-    var cache_lengths_lt = LayoutTensor[DType.uint32, cl_layout](
+    var cache_lengths_lt = LayoutTensor[.uint32, cl_layout](
         cache_lengths_device.unsafe_ptr(),
         RuntimeLayout[cl_layout].row_major(IndexList[1](batch_size)),
     )
     comptime lt_layout_2d = Layout.row_major[2]()
-    var lookup_table_lt = LayoutTensor[DType.uint32, lt_layout_2d](
+    var lookup_table_lt = LayoutTensor[.uint32, lt_layout_2d](
         lookup_table_device.unsafe_ptr(),
         RuntimeLayout[lt_layout_2d].row_major(
             IndexList[2](batch_size, max_pages_per_batch)
@@ -1283,14 +1259,14 @@ def run_test_sparse_kv_bf16_variable_topk[
                 blocks_lt.runtime_layout.stride.value,
             ),
         ),
-        LayoutTensor[mut=False, DType.uint32, cl_layout](
+        LayoutTensor[mut=False, .uint32, cl_layout](
             cache_lengths_lt.ptr,
             RuntimeLayout[cl_layout](
                 cache_lengths_lt.runtime_layout.shape.value,
                 cache_lengths_lt.runtime_layout.stride.value,
             ),
         ),
-        LayoutTensor[mut=False, DType.uint32, lt_layout_2d](
+        LayoutTensor[mut=False, .uint32, lt_layout_2d](
             lookup_table_lt.ptr,
             RuntimeLayout[lt_layout_2d](
                 lookup_table_lt.runtime_layout.shape.value,
@@ -1311,14 +1287,12 @@ def run_test_sparse_kv_bf16_variable_topk[
         row_major((batch_size, Idx[num_heads], Idx[V_DEPTH])),
     )
 
-    var row_offsets_host = ctx.enqueue_create_host_buffer[DType.uint32](
+    var row_offsets_host = ctx.enqueue_create_host_buffer[.uint32](
         batch_size + 1
     )
     for i in range(batch_size + 1):
         row_offsets_host[i] = UInt32(i)
-    var row_offsets_device = ctx.enqueue_create_buffer[DType.uint32](
-        batch_size + 1
-    )
+    var row_offsets_device = ctx.enqueue_create_buffer[.uint32](batch_size + 1)
     ctx.enqueue_copy(row_offsets_device, row_offsets_host)
     ctx.synchronize()
 
@@ -1348,11 +1322,11 @@ def run_test_sparse_kv_bf16_variable_topk[
         scale,
         ctx,
         scalar_args_buf_tt,
-        d_indices=rebind[UnsafePointer[Int32, MutAnyOrigin]](
+        d_indices=rebind[MutPointer[Int32, MutAnyOrigin]](
             d_indices_device.unsafe_ptr()
         ),
         indices_stride=max_topk,
-        topk_lengths=rebind[UnsafePointer[Int32, MutAnyOrigin]](
+        topk_lengths=rebind[MutPointer[Int32, MutAnyOrigin]](
             topk_lengths_device.unsafe_ptr()
         ),
     )
@@ -1370,10 +1344,10 @@ def run_test_sparse_kv_bf16_variable_topk[
             for d in range(V_DEPTH):
                 var ref_val = ref_host[
                     b * num_heads * V_DEPTH + h * V_DEPTH + d
-                ].cast[DType.float64]()
+                ].cast[.float64]()
                 var actual_val = out_host[
                     b * num_heads * V_DEPTH + h * V_DEPTH + d
-                ].cast[DType.float64]()
+                ].cast[.float64]()
                 var err = abs(actual_val - ref_val)
                 if err > max_err:
                     max_err = err
@@ -1461,9 +1435,7 @@ def run_test_sparse_kv_bf16_attn_sink[
     var tok_stride = kv_params.head_size
 
     var lut_size = batch_size * max_pages_per_batch
-    var lookup_table_host = ctx.enqueue_create_host_buffer[DType.uint32](
-        lut_size
-    )
+    var lookup_table_host = ctx.enqueue_create_host_buffer[.uint32](lut_size)
     for i in range(lut_size):
         lookup_table_host[i] = UInt32(0)
     var page_offset = 0
@@ -1515,9 +1487,7 @@ def run_test_sparse_kv_bf16_attn_sink[
                 k_sparse_ref[dst + d] = k_host[src + d]
 
     # attn_sink per head (natural log domain).
-    var attn_sink_host = ctx.enqueue_create_host_buffer[DType.float32](
-        num_heads
-    )
+    var attn_sink_host = ctx.enqueue_create_host_buffer[.float32](num_heads)
     for h in range(num_heads):
         attn_sink_host[h] = Float32(
             -1.0 + 3.0 * Float32(h) / Float32(num_heads)
@@ -1545,21 +1515,17 @@ def run_test_sparse_kv_bf16_attn_sink[
     # Device uploads.
     var blocks_device = ctx.enqueue_create_buffer[q_type](block_elems)
     ctx.enqueue_copy(blocks_device, blocks_host)
-    var cache_lengths_host = ctx.enqueue_create_host_buffer[DType.uint32](
-        batch_size
-    )
+    var cache_lengths_host = ctx.enqueue_create_host_buffer[.uint32](batch_size)
     for i in range(batch_size):
         cache_lengths_host[i] = UInt32(cache_len)
-    var cache_lengths_device = ctx.enqueue_create_buffer[DType.uint32](
-        batch_size
-    )
+    var cache_lengths_device = ctx.enqueue_create_buffer[.uint32](batch_size)
     ctx.enqueue_copy(cache_lengths_device, cache_lengths_host)
-    var lookup_table_device = ctx.enqueue_create_buffer[DType.uint32](lut_size)
+    var lookup_table_device = ctx.enqueue_create_buffer[.uint32](lut_size)
     ctx.enqueue_copy(lookup_table_device, lookup_table_host)
     var q_device = ctx.enqueue_create_buffer[q_type](q_size)
     ctx.enqueue_copy(q_device, q_host)
     var out_device = ctx.enqueue_create_buffer[q_type](out_size)
-    var attn_sink_device = ctx.enqueue_create_buffer[DType.float32](num_heads)
+    var attn_sink_device = ctx.enqueue_create_buffer[.float32](num_heads)
     ctx.enqueue_copy(attn_sink_device, attn_sink_host)
     ctx.synchronize()
 
@@ -1568,12 +1534,12 @@ def run_test_sparse_kv_bf16_attn_sink[
         RuntimeLayout[Layout.row_major[6]()].row_major(block_shape),
     )
     comptime cl_layout = Layout(UNKNOWN_VALUE)
-    var cache_lengths_lt = LayoutTensor[DType.uint32, cl_layout](
+    var cache_lengths_lt = LayoutTensor[.uint32, cl_layout](
         cache_lengths_device.unsafe_ptr(),
         RuntimeLayout[cl_layout].row_major(IndexList[1](batch_size)),
     )
     comptime lt_layout_2d = Layout.row_major[2]()
-    var lookup_table_lt = LayoutTensor[DType.uint32, lt_layout_2d](
+    var lookup_table_lt = LayoutTensor[.uint32, lt_layout_2d](
         lookup_table_device.unsafe_ptr(),
         RuntimeLayout[lt_layout_2d].row_major(
             IndexList[2](batch_size, max_pages_per_batch)
@@ -1587,14 +1553,14 @@ def run_test_sparse_kv_bf16_attn_sink[
                 blocks_lt.runtime_layout.stride.value,
             ),
         ),
-        LayoutTensor[mut=False, DType.uint32, cl_layout](
+        LayoutTensor[mut=False, .uint32, cl_layout](
             cache_lengths_lt.ptr,
             RuntimeLayout[cl_layout](
                 cache_lengths_lt.runtime_layout.shape.value,
                 cache_lengths_lt.runtime_layout.stride.value,
             ),
         ),
-        LayoutTensor[mut=False, DType.uint32, lt_layout_2d](
+        LayoutTensor[mut=False, .uint32, lt_layout_2d](
             lookup_table_lt.ptr,
             RuntimeLayout[lt_layout_2d](
                 lookup_table_lt.runtime_layout.shape.value,
@@ -1608,7 +1574,7 @@ def run_test_sparse_kv_bf16_attn_sink[
 
     # Build d_indices.
     var total_indices = batch_size * topk
-    var h_indices = ctx.enqueue_create_host_buffer[DType.int32](total_indices)
+    var h_indices = ctx.enqueue_create_host_buffer[.int32](total_indices)
     for bi in range(batch_size):
         for i in range(topk):
             var t = selected_tokens[bi * topk + i]
@@ -1618,7 +1584,7 @@ def run_test_sparse_kv_bf16_attn_sink[
                 lookup_table_host[bi * max_pages_per_batch + page_idx]
             )
             h_indices[bi * topk + i] = Int32(block_id * PAGE_SIZE + tok_in_page)
-    var d_indices_device = ctx.enqueue_create_buffer[DType.int32](total_indices)
+    var d_indices_device = ctx.enqueue_create_buffer[.int32](total_indices)
     ctx.enqueue_copy(d_indices_device, h_indices)
     ctx.synchronize()
 
@@ -1631,14 +1597,12 @@ def run_test_sparse_kv_bf16_attn_sink[
         row_major((batch_size, Idx[num_heads], Idx[V_DEPTH])),
     )
 
-    var row_offsets_host = ctx.enqueue_create_host_buffer[DType.uint32](
+    var row_offsets_host = ctx.enqueue_create_host_buffer[.uint32](
         batch_size + 1
     )
     for i in range(batch_size + 1):
         row_offsets_host[i] = UInt32(i)
-    var row_offsets_device = ctx.enqueue_create_buffer[DType.uint32](
-        batch_size + 1
-    )
+    var row_offsets_device = ctx.enqueue_create_buffer[.uint32](batch_size + 1)
     ctx.enqueue_copy(row_offsets_device, row_offsets_host)
     ctx.synchronize()
 
@@ -1668,13 +1632,13 @@ def run_test_sparse_kv_bf16_attn_sink[
         scale,
         ctx,
         scalar_args_buf_tt,
-        d_indices=rebind[UnsafePointer[Int32, MutAnyOrigin]](
+        d_indices=rebind[MutPointer[Int32, MutAnyOrigin]](
             d_indices_device.unsafe_ptr()
         ),
         indices_stride=topk,
-        attn_sink_ptr=rebind[
-            UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin]
-        ](attn_sink_device.unsafe_ptr()),
+        attn_sink_ptr=rebind[MutPointer[Float32, origin=MutAnyOrigin]](
+            attn_sink_device.unsafe_ptr()
+        ),
     )
     ctx.synchronize()
 
@@ -1691,10 +1655,10 @@ def run_test_sparse_kv_bf16_attn_sink[
             for d in range(V_DEPTH):
                 var ref_val = ref_host[
                     b * num_heads * V_DEPTH + h * V_DEPTH + d
-                ].cast[DType.float64]()
+                ].cast[.float64]()
                 var actual_val = out_host[
                     b * num_heads * V_DEPTH + h * V_DEPTH + d
-                ].cast[DType.float64]()
+                ].cast[.float64]()
                 var err = abs(actual_val - ref_val)
                 if err > max_err:
                     max_err = err
@@ -1815,9 +1779,7 @@ def run_test_sparse_kv_bf16_extra_kv[
     for i in range(block_elems):
         blocks_host[i] = Scalar[q_type](0)
     var lut_size = batch_size * max_pages_per_batch
-    var lookup_table_host = ctx.enqueue_create_host_buffer[DType.uint32](
-        lut_size
-    )
+    var lookup_table_host = ctx.enqueue_create_host_buffer[.uint32](lut_size)
     for i in range(lut_size):
         lookup_table_host[i] = UInt32(0)
     var page_offset = 0
@@ -1831,9 +1793,7 @@ def run_test_sparse_kv_bf16_extra_kv[
             )
         page_offset += np_bi
 
-    var cache_lengths_host = ctx.enqueue_create_host_buffer[DType.uint32](
-        batch_size
-    )
+    var cache_lengths_host = ctx.enqueue_create_host_buffer[.uint32](batch_size)
     for i in range(batch_size):
         cache_lengths_host[i] = UInt32(cache_lengths[i])
 
@@ -1899,7 +1859,7 @@ def run_test_sparse_kv_bf16_extra_kv[
     for i in range(extra_block_elems):
         extra_blocks_host[i] = Scalar[q_type](0)
     var extra_lut_size = batch_size * max_extra_pages_per_batch
-    var extra_lookup_table_host = ctx.enqueue_create_host_buffer[DType.uint32](
+    var extra_lookup_table_host = ctx.enqueue_create_host_buffer[.uint32](
         extra_lut_size
     )
     for i in range(extra_lut_size):
@@ -1915,7 +1875,7 @@ def run_test_sparse_kv_bf16_extra_kv[
             ] = UInt32(extra_page_offset + shuffled_p)
         extra_page_offset += np_bi
 
-    var extra_cache_lengths_host = ctx.enqueue_create_host_buffer[DType.uint32](
+    var extra_cache_lengths_host = ctx.enqueue_create_host_buffer[.uint32](
         batch_size
     )
     for i in range(batch_size):
@@ -1953,11 +1913,11 @@ def run_test_sparse_kv_bf16_extra_kv[
     # matches what the kernel sees (orig tokens first, then extras, per
     # batch).
     var total_indices = batch_size * max_topk
-    var h_indices = ctx.enqueue_create_host_buffer[DType.int32](total_indices)
+    var h_indices = ctx.enqueue_create_host_buffer[.int32](total_indices)
     for i in range(total_indices):
         h_indices[i] = Int32(0)
     var extra_total_indices = batch_size * max_extra_topk
-    var extra_h_indices = ctx.enqueue_create_host_buffer[DType.int32](
+    var extra_h_indices = ctx.enqueue_create_host_buffer[.int32](
         extra_total_indices
     )
     for i in range(extra_total_indices):
@@ -2045,21 +2005,19 @@ def run_test_sparse_kv_bf16_extra_kv[
     # Device uploads.
     var blocks_device = ctx.enqueue_create_buffer[q_type](block_elems)
     ctx.enqueue_copy(blocks_device, blocks_host)
-    var cache_lengths_device = ctx.enqueue_create_buffer[DType.uint32](
-        batch_size
-    )
+    var cache_lengths_device = ctx.enqueue_create_buffer[.uint32](batch_size)
     ctx.enqueue_copy(cache_lengths_device, cache_lengths_host)
-    var lookup_table_device = ctx.enqueue_create_buffer[DType.uint32](lut_size)
+    var lookup_table_device = ctx.enqueue_create_buffer[.uint32](lut_size)
     ctx.enqueue_copy(lookup_table_device, lookup_table_host)
     var extra_blocks_device = ctx.enqueue_create_buffer[q_type](
         extra_block_elems
     )
     ctx.enqueue_copy(extra_blocks_device, extra_blocks_host)
-    var extra_cache_lengths_device = ctx.enqueue_create_buffer[DType.uint32](
+    var extra_cache_lengths_device = ctx.enqueue_create_buffer[.uint32](
         batch_size
     )
     ctx.enqueue_copy(extra_cache_lengths_device, extra_cache_lengths_host)
-    var extra_lookup_table_device = ctx.enqueue_create_buffer[DType.uint32](
+    var extra_lookup_table_device = ctx.enqueue_create_buffer[.uint32](
         extra_lut_size
     )
     ctx.enqueue_copy(extra_lookup_table_device, extra_lookup_table_host)
@@ -2068,27 +2026,25 @@ def run_test_sparse_kv_bf16_extra_kv[
     ctx.enqueue_copy(q_device, q_host)
     var out_device = ctx.enqueue_create_buffer[q_type](out_size)
 
-    var d_indices_device = ctx.enqueue_create_buffer[DType.int32](total_indices)
+    var d_indices_device = ctx.enqueue_create_buffer[.int32](total_indices)
     ctx.enqueue_copy(d_indices_device, h_indices)
-    var extra_d_indices_device = ctx.enqueue_create_buffer[DType.int32](
+    var extra_d_indices_device = ctx.enqueue_create_buffer[.int32](
         extra_total_indices
     )
     ctx.enqueue_copy(extra_d_indices_device, extra_h_indices)
 
-    var topk_lengths_host = ctx.enqueue_create_host_buffer[DType.int32](
-        batch_size
-    )
+    var topk_lengths_host = ctx.enqueue_create_host_buffer[.int32](batch_size)
     for bi in range(batch_size):
         topk_lengths_host[bi] = Int32(topk_per_batch[bi])
-    var topk_lengths_device = ctx.enqueue_create_buffer[DType.int32](batch_size)
+    var topk_lengths_device = ctx.enqueue_create_buffer[.int32](batch_size)
     ctx.enqueue_copy(topk_lengths_device, topk_lengths_host)
 
-    var extra_topk_lengths_host = ctx.enqueue_create_host_buffer[DType.int32](
+    var extra_topk_lengths_host = ctx.enqueue_create_host_buffer[.int32](
         batch_size
     )
     for bi in range(batch_size):
         extra_topk_lengths_host[bi] = Int32(extra_topk_per_batch[bi])
-    var extra_topk_lengths_device = ctx.enqueue_create_buffer[DType.int32](
+    var extra_topk_lengths_device = ctx.enqueue_create_buffer[.int32](
         batch_size
     )
     ctx.enqueue_copy(extra_topk_lengths_device, extra_topk_lengths_host)
@@ -2100,12 +2056,12 @@ def run_test_sparse_kv_bf16_extra_kv[
         RuntimeLayout[Layout.row_major[6]()].row_major(block_shape),
     )
     comptime cl_layout = Layout(UNKNOWN_VALUE)
-    var cache_lengths_lt = LayoutTensor[DType.uint32, cl_layout](
+    var cache_lengths_lt = LayoutTensor[.uint32, cl_layout](
         cache_lengths_device.unsafe_ptr(),
         RuntimeLayout[cl_layout].row_major(IndexList[1](batch_size)),
     )
     comptime lt_layout_2d = Layout.row_major[2]()
-    var lookup_table_lt = LayoutTensor[DType.uint32, lt_layout_2d](
+    var lookup_table_lt = LayoutTensor[.uint32, lt_layout_2d](
         lookup_table_device.unsafe_ptr(),
         RuntimeLayout[lt_layout_2d].row_major(
             IndexList[2](batch_size, max_pages_per_batch)
@@ -2119,14 +2075,14 @@ def run_test_sparse_kv_bf16_extra_kv[
                 blocks_lt.runtime_layout.stride.value,
             ),
         ),
-        LayoutTensor[mut=False, DType.uint32, cl_layout](
+        LayoutTensor[mut=False, .uint32, cl_layout](
             cache_lengths_lt.ptr.as_unsafe_any_origin(),
             RuntimeLayout[cl_layout](
                 cache_lengths_lt.runtime_layout.shape.value,
                 cache_lengths_lt.runtime_layout.stride.value,
             ),
         ),
-        LayoutTensor[mut=False, DType.uint32, lt_layout_2d](
+        LayoutTensor[mut=False, .uint32, lt_layout_2d](
             lookup_table_lt.ptr.as_unsafe_any_origin(),
             RuntimeLayout[lt_layout_2d](
                 lookup_table_lt.runtime_layout.shape.value,
@@ -2142,11 +2098,11 @@ def run_test_sparse_kv_bf16_extra_kv[
         extra_blocks_device.unsafe_ptr(),
         RuntimeLayout[Layout.row_major[6]()].row_major(extra_block_shape),
     )
-    var extra_cache_lengths_lt = LayoutTensor[DType.uint32, cl_layout](
+    var extra_cache_lengths_lt = LayoutTensor[.uint32, cl_layout](
         extra_cache_lengths_device.unsafe_ptr(),
         RuntimeLayout[cl_layout].row_major(IndexList[1](batch_size)),
     )
-    var extra_lookup_table_lt = LayoutTensor[DType.uint32, lt_layout_2d](
+    var extra_lookup_table_lt = LayoutTensor[.uint32, lt_layout_2d](
         extra_lookup_table_device.unsafe_ptr(),
         RuntimeLayout[lt_layout_2d].row_major(
             IndexList[2](batch_size, max_extra_pages_per_batch)
@@ -2162,14 +2118,14 @@ def run_test_sparse_kv_bf16_extra_kv[
                 extra_blocks_lt.runtime_layout.stride.value,
             ),
         ),
-        LayoutTensor[mut=False, DType.uint32, cl_layout](
+        LayoutTensor[mut=False, .uint32, cl_layout](
             extra_cache_lengths_lt.ptr.as_unsafe_any_origin(),
             RuntimeLayout[cl_layout](
                 extra_cache_lengths_lt.runtime_layout.shape.value,
                 extra_cache_lengths_lt.runtime_layout.stride.value,
             ),
         ),
-        LayoutTensor[mut=False, DType.uint32, lt_layout_2d](
+        LayoutTensor[mut=False, .uint32, lt_layout_2d](
             extra_lookup_table_lt.ptr.as_unsafe_any_origin(),
             RuntimeLayout[lt_layout_2d](
                 extra_lookup_table_lt.runtime_layout.shape.value,
@@ -2190,14 +2146,12 @@ def run_test_sparse_kv_bf16_extra_kv[
         row_major((batch_size, Idx[num_heads], Idx[V_DEPTH])),
     )
 
-    var row_offsets_host = ctx.enqueue_create_host_buffer[DType.uint32](
+    var row_offsets_host = ctx.enqueue_create_host_buffer[.uint32](
         batch_size + 1
     )
     for i in range(batch_size + 1):
         row_offsets_host[i] = UInt32(i)
-    var row_offsets_device = ctx.enqueue_create_buffer[DType.uint32](
-        batch_size + 1
-    )
+    var row_offsets_device = ctx.enqueue_create_buffer[.uint32](batch_size + 1)
     ctx.enqueue_copy(row_offsets_device, row_offsets_host)
     ctx.synchronize()
 
@@ -2232,19 +2186,19 @@ def run_test_sparse_kv_bf16_extra_kv[
         scale,
         ctx,
         scalar_args_buf_tt,
-        d_indices=rebind[UnsafePointer[Int32, MutAnyOrigin]](
+        d_indices=rebind[MutPointer[Int32, MutAnyOrigin]](
             d_indices_device.unsafe_ptr()
         ),
         indices_stride=max_topk,
-        topk_lengths=rebind[UnsafePointer[Int32, MutAnyOrigin]](
+        topk_lengths=rebind[MutPointer[Int32, MutAnyOrigin]](
             topk_lengths_device.unsafe_ptr()
         ),
         extra_k=extra_kv_cache,
-        extra_d_indices=rebind[UnsafePointer[Int32, MutAnyOrigin]](
+        extra_d_indices=rebind[MutPointer[Int32, MutAnyOrigin]](
             extra_d_indices_device.unsafe_ptr()
         ),
         extra_indices_stride=max_extra_topk,
-        extra_topk_lengths=rebind[UnsafePointer[Int32, MutAnyOrigin]](
+        extra_topk_lengths=rebind[MutPointer[Int32, MutAnyOrigin]](
             extra_topk_lengths_device.unsafe_ptr()
         ),
     )
@@ -2260,10 +2214,10 @@ def run_test_sparse_kv_bf16_extra_kv[
             for d in range(V_DEPTH):
                 var ref_val = ref_host[
                     b * num_heads * V_DEPTH + h * V_DEPTH + d
-                ].cast[DType.float64]()
+                ].cast[.float64]()
                 var actual_val = out_host[
                     b * num_heads * V_DEPTH + h * V_DEPTH + d
-                ].cast[DType.float64]()
+                ].cast[.float64]()
                 var err = abs(actual_val - ref_val)
                 if err > max_err:
                     max_err = err
@@ -2391,9 +2345,7 @@ def run_test_sparse_kv_bf16_topk_clamping[
     for i in range(block_elems):
         blocks_host[i] = Scalar[q_type](0)
     var lut_size = batch_size * max_pages_per_batch
-    var lookup_table_host = ctx.enqueue_create_host_buffer[DType.uint32](
-        lut_size
-    )
+    var lookup_table_host = ctx.enqueue_create_host_buffer[.uint32](lut_size)
     for i in range(lut_size):
         lookup_table_host[i] = UInt32(0)
     var page_offset = 0
@@ -2407,9 +2359,7 @@ def run_test_sparse_kv_bf16_topk_clamping[
             )
         page_offset += np_bi
 
-    var cache_lengths_host = ctx.enqueue_create_host_buffer[DType.uint32](
-        batch_size
-    )
+    var cache_lengths_host = ctx.enqueue_create_host_buffer[.uint32](batch_size)
     for i in range(batch_size):
         cache_lengths_host[i] = UInt32(cache_lengths[i])
 
@@ -2455,7 +2405,7 @@ def run_test_sparse_kv_bf16_topk_clamping[
 
     # d_indices: first effective_topk entries valid; rest are -1 sentinel.
     var total_indices = batch_size * max_topk
-    var h_indices = ctx.enqueue_create_host_buffer[DType.int32](total_indices)
+    var h_indices = ctx.enqueue_create_host_buffer[.int32](total_indices)
     for i in range(total_indices):
         h_indices[i] = Int32(-1)
 
@@ -2514,24 +2464,20 @@ def run_test_sparse_kv_bf16_topk_clamping[
     # Uploads.
     var blocks_device = ctx.enqueue_create_buffer[q_type](block_elems)
     ctx.enqueue_copy(blocks_device, blocks_host)
-    var cache_lengths_device = ctx.enqueue_create_buffer[DType.uint32](
-        batch_size
-    )
+    var cache_lengths_device = ctx.enqueue_create_buffer[.uint32](batch_size)
     ctx.enqueue_copy(cache_lengths_device, cache_lengths_host)
-    var lookup_table_device = ctx.enqueue_create_buffer[DType.uint32](lut_size)
+    var lookup_table_device = ctx.enqueue_create_buffer[.uint32](lut_size)
     ctx.enqueue_copy(lookup_table_device, lookup_table_host)
     var q_device = ctx.enqueue_create_buffer[q_type](q_size)
     ctx.enqueue_copy(q_device, q_host)
     var out_device = ctx.enqueue_create_buffer[q_type](out_size)
-    var d_indices_device = ctx.enqueue_create_buffer[DType.int32](total_indices)
+    var d_indices_device = ctx.enqueue_create_buffer[.int32](total_indices)
     ctx.enqueue_copy(d_indices_device, h_indices)
 
-    var topk_lengths_host = ctx.enqueue_create_host_buffer[DType.int32](
-        batch_size
-    )
+    var topk_lengths_host = ctx.enqueue_create_host_buffer[.int32](batch_size)
     for bi in range(batch_size):
         topk_lengths_host[bi] = Int32(topk_per_batch[bi])  # UNCLAMPED
-    var topk_lengths_device = ctx.enqueue_create_buffer[DType.int32](batch_size)
+    var topk_lengths_device = ctx.enqueue_create_buffer[.int32](batch_size)
     ctx.enqueue_copy(topk_lengths_device, topk_lengths_host)
 
     ctx.synchronize()
@@ -2541,12 +2487,12 @@ def run_test_sparse_kv_bf16_topk_clamping[
         RuntimeLayout[Layout.row_major[6]()].row_major(block_shape),
     )
     comptime cl_layout = Layout(UNKNOWN_VALUE)
-    var cache_lengths_lt = LayoutTensor[DType.uint32, cl_layout](
+    var cache_lengths_lt = LayoutTensor[.uint32, cl_layout](
         cache_lengths_device.unsafe_ptr(),
         RuntimeLayout[cl_layout].row_major(IndexList[1](batch_size)),
     )
     comptime lt_layout_2d = Layout.row_major[2]()
-    var lookup_table_lt = LayoutTensor[DType.uint32, lt_layout_2d](
+    var lookup_table_lt = LayoutTensor[.uint32, lt_layout_2d](
         lookup_table_device.unsafe_ptr(),
         RuntimeLayout[lt_layout_2d].row_major(
             IndexList[2](batch_size, max_pages_per_batch)
@@ -2561,14 +2507,14 @@ def run_test_sparse_kv_bf16_topk_clamping[
                 blocks_lt.runtime_layout.stride.value,
             ),
         ),
-        LayoutTensor[mut=False, DType.uint32, cl_layout](
+        LayoutTensor[mut=False, .uint32, cl_layout](
             cache_lengths_lt.ptr,
             RuntimeLayout[cl_layout](
                 cache_lengths_lt.runtime_layout.shape.value,
                 cache_lengths_lt.runtime_layout.stride.value,
             ),
         ),
-        LayoutTensor[mut=False, DType.uint32, lt_layout_2d](
+        LayoutTensor[mut=False, .uint32, lt_layout_2d](
             lookup_table_lt.ptr,
             RuntimeLayout[lt_layout_2d](
                 lookup_table_lt.runtime_layout.shape.value,
@@ -2589,14 +2535,12 @@ def run_test_sparse_kv_bf16_topk_clamping[
         row_major((batch_size, Idx[num_heads], Idx[V_DEPTH])),
     )
 
-    var row_offsets_host = ctx.enqueue_create_host_buffer[DType.uint32](
+    var row_offsets_host = ctx.enqueue_create_host_buffer[.uint32](
         batch_size + 1
     )
     for i in range(batch_size + 1):
         row_offsets_host[i] = UInt32(i)
-    var row_offsets_device = ctx.enqueue_create_buffer[DType.uint32](
-        batch_size + 1
-    )
+    var row_offsets_device = ctx.enqueue_create_buffer[.uint32](batch_size + 1)
     ctx.enqueue_copy(row_offsets_device, row_offsets_host)
     ctx.synchronize()
 
@@ -2651,11 +2595,11 @@ def run_test_sparse_kv_bf16_topk_clamping[
         scale,
         ctx,
         scalar_args_buf_tt,
-        d_indices=rebind[UnsafePointer[Int32, MutAnyOrigin]](
+        d_indices=rebind[MutPointer[Int32, MutAnyOrigin]](
             d_indices_device.unsafe_ptr()
         ),
         indices_stride=indices_stride,
-        topk_lengths=rebind[UnsafePointer[Int32, MutAnyOrigin]](
+        topk_lengths=rebind[MutPointer[Int32, MutAnyOrigin]](
             topk_lengths_device.unsafe_ptr()
         ),
     )
@@ -2675,10 +2619,10 @@ def run_test_sparse_kv_bf16_topk_clamping[
             for d in range(V_DEPTH):
                 var ref_val = ref_host[
                     b * num_heads * V_DEPTH + h * V_DEPTH + d
-                ].cast[DType.float64]()
+                ].cast[.float64]()
                 var actual_val = out_host[
                     b * num_heads * V_DEPTH + h * V_DEPTH + d
-                ].cast[DType.float64]()
+                ].cast[.float64]()
                 if isnan(actual_val):
                     nan_count += 1
                     if nan_count <= 5:
@@ -2706,10 +2650,10 @@ def run_test_sparse_kv_bf16_topk_clamping[
             for d in range(V_DEPTH):
                 var ref_val = ref_host[
                     b * num_heads * V_DEPTH + h * V_DEPTH + d
-                ].cast[DType.float64]()
+                ].cast[.float64]()
                 var actual_val = out_host[
                     b * num_heads * V_DEPTH + h * V_DEPTH + d
-                ].cast[DType.float64]()
+                ].cast[.float64]()
                 assert_almost_equal(actual_val, ref_val, atol=atol, rtol=rtol)
 
     print("  PASSED: max_err=", max_err, " checked=", total_checked)
@@ -2733,13 +2677,13 @@ def main() raises:
             seed(42)
 
             # Bit-exact vs dense (topk == cache_len).
-            run_bit_exact_vs_dense[DType.bfloat16, 128](
+            run_bit_exact_vs_dense[.bfloat16, 128](
                 ctx, batch_size=1, cache_len=2048
             )
 
             # Sparse selection (topk < cache_len).
             # bs=1, h=64, cl=256, topk=16.
-            run_test_sparse_kv_bf16[DType.bfloat16, 64](
+            run_test_sparse_kv_bf16[.bfloat16, 64](
                 "sparse_kv_bf16_b1_h64_cl256_topk16",
                 1,
                 256,
@@ -2747,7 +2691,7 @@ def main() raises:
                 topk=16,
             )
             # bs=1, h=128, cl=512, topk=64.
-            run_test_sparse_kv_bf16[DType.bfloat16, 128](
+            run_test_sparse_kv_bf16[.bfloat16, 128](
                 "sparse_kv_bf16_b1_h128_cl512_topk64",
                 1,
                 512,
@@ -2755,7 +2699,7 @@ def main() raises:
                 topk=64,
             )
             # bs=4, h=64, cl=2048, topk=128 (split-K likely).
-            run_test_sparse_kv_bf16[DType.bfloat16, 64](
+            run_test_sparse_kv_bf16[.bfloat16, 64](
                 "sparse_kv_bf16_b4_h64_cl2048_topk128",
                 4,
                 2048,
@@ -2764,7 +2708,7 @@ def main() raises:
             )
 
             # CausalMask.
-            run_test_sparse_kv_bf16[DType.bfloat16, 64, use_causal=True](
+            run_test_sparse_kv_bf16[.bfloat16, 64, use_causal=True](
                 "sparse_kv_bf16_causal_b1_h64_cl256_topk64",
                 1,
                 256,
@@ -2773,7 +2717,7 @@ def main() raises:
             )
 
             # Speculative decode (q_max_seq_len > 1).
-            run_test_sparse_kv_bf16[DType.bfloat16, 64](
+            run_test_sparse_kv_bf16[.bfloat16, 64](
                 "sparse_kv_bf16_b1_h64_cl256_topk64_seq4",
                 1,
                 256,
@@ -2781,7 +2725,7 @@ def main() raises:
                 topk=64,
                 q_max_seq_len=4,
             )
-            run_test_sparse_kv_bf16[DType.bfloat16, 64](
+            run_test_sparse_kv_bf16[.bfloat16, 64](
                 "sparse_kv_bf16_b1_h64_cl256_topk64_seq2",
                 1,
                 256,
@@ -2789,7 +2733,7 @@ def main() raises:
                 topk=64,
                 q_max_seq_len=2,
             )
-            run_test_sparse_kv_bf16[DType.bfloat16, 64](
+            run_test_sparse_kv_bf16[.bfloat16, 64](
                 "sparse_kv_bf16_b2_h64_cl256_topk64_seq8",
                 2,
                 256,
@@ -2801,7 +2745,7 @@ def main() raises:
             # Variable per-batch topk.
             var vt_cls: List[Int] = [256, 384, 128, 512]
             var vt_topk: List[Int] = [64, 128, 32, 64]
-            run_test_sparse_kv_bf16_variable_topk[DType.bfloat16, 64](
+            run_test_sparse_kv_bf16_variable_topk[.bfloat16, 64](
                 "sparse_kv_bf16_variable_topk_b4_h64",
                 vt_cls,
                 vt_topk,
@@ -2809,14 +2753,14 @@ def main() raises:
             )
 
             # Attention sink.
-            run_test_sparse_kv_bf16_attn_sink[DType.bfloat16, 64](
+            run_test_sparse_kv_bf16_attn_sink[.bfloat16, 64](
                 "sparse_kv_bf16_attn_sink_b1_h64_cl256_topk64",
                 1,
                 256,
                 ctx,
                 topk=64,
             )
-            run_test_sparse_kv_bf16_attn_sink[DType.bfloat16, 128](
+            run_test_sparse_kv_bf16_attn_sink[.bfloat16, 128](
                 "sparse_kv_bf16_attn_sink_b1_h128_cl512_topk64",
                 1,
                 512,
@@ -2829,7 +2773,7 @@ def main() raises:
             var ek_topk_1: List[Int] = [64]
             var ek_ecls_1: List[Int] = [64]
             var ek_etopk_1: List[Int] = [64]
-            run_test_sparse_kv_bf16_extra_kv[DType.bfloat16, 64](
+            run_test_sparse_kv_bf16_extra_kv[.bfloat16, 64](
                 "sparse_kv_bf16_extra_kv_b1_h64_topk64_extra64",
                 ek_cls_1,
                 ek_topk_1,
@@ -2842,7 +2786,7 @@ def main() raises:
             var ek_topk_2: List[Int] = [64, 64]
             var ek_ecls_2: List[Int] = [64, 128]
             var ek_etopk_2: List[Int] = [64, 64]
-            run_test_sparse_kv_bf16_extra_kv[DType.bfloat16, 64](
+            run_test_sparse_kv_bf16_extra_kv[.bfloat16, 64](
                 "sparse_kv_bf16_extra_kv_b2_h64_variable",
                 ek_cls_2,
                 ek_topk_2,
@@ -2858,7 +2802,7 @@ def main() raises:
             # First decode: cache_length=0, actual=1, topk=64 -> clamp to 1.
             var tc_cls_1: List[Int] = [0]
             var tc_topk_1: List[Int] = [64]
-            run_test_sparse_kv_bf16_topk_clamping[DType.bfloat16, 64](
+            run_test_sparse_kv_bf16_topk_clamping[.bfloat16, 64](
                 "sparse_kv_bf16_topk_clamp_first_exec_b1_h64",
                 tc_cls_1,
                 tc_topk_1,
@@ -2868,7 +2812,7 @@ def main() raises:
             # Small cache: cache_length=5, actual=6, topk=64 -> clamp to 6.
             var tc_cls_2: List[Int] = [5]
             var tc_topk_2: List[Int] = [64]
-            run_test_sparse_kv_bf16_topk_clamping[DType.bfloat16, 64](
+            run_test_sparse_kv_bf16_topk_clamping[.bfloat16, 64](
                 "sparse_kv_bf16_topk_clamp_small_cache_b1_h64",
                 tc_cls_2,
                 tc_topk_2,
@@ -2878,7 +2822,7 @@ def main() raises:
             # Mixed batch: cl=0 and cl=256.
             var tc_cls_3: List[Int] = [0, 256]
             var tc_topk_3: List[Int] = [64, 64]
-            run_test_sparse_kv_bf16_topk_clamping[DType.bfloat16, 64](
+            run_test_sparse_kv_bf16_topk_clamping[.bfloat16, 64](
                 "sparse_kv_bf16_topk_clamp_mixed_b2_h64",
                 tc_cls_3,
                 tc_topk_3,

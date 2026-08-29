@@ -303,11 +303,9 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
     @classmethod
     def calculate_max_seq_len(
         cls,
-        pipeline_config: PipelineConfig,
         huggingface_config: AutoConfig,
-        model_config: MAXModelConfig | None = None,
+        model_config: MAXModelConfig,
     ) -> int:
-        model_config = model_config or pipeline_config.model
         max_seq_len = model_config.max_length
         if max_seq_len:
             return max_seq_len
@@ -320,6 +318,8 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
         devices: list[DeviceRef],
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
+        *,
+        allow_kv_head_replication: bool = False,
     ) -> KVCacheParams:
         """Allocate KV cache only for the (4) full-attention layers.
 
@@ -341,6 +341,7 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
         kinds = parse_hybrid_pattern(huggingface_config.hybrid_override_pattern)
         num_attention_layers = sum(1 for k in kinds if k == "attention")
         return kv_cache_config.to_params(
+            allow_kv_head_replication=allow_kv_head_replication,
             dtype=cache_dtype,
             n_kv_heads=huggingface_config.num_key_value_heads,
             head_dim=resolve_attention_head_dim(huggingface_config),

@@ -59,25 +59,25 @@ struct ConvShape[rank: Int](TrivialRegisterPassable):
 
     var n: Int  # Input batch size.
 
-    var input_dims: DynamicCoord[DType.int64, Self.rank]  # Ex H and W for 2D
+    var input_dims: DynamicCoord[.int64, Self.rank]  # Ex H and W for 2D
     var output_dims: DynamicCoord[
         DType.int64, Self.rank
     ]  # Ex HO and WO for 2D.
-    var filter_dims: DynamicCoord[DType.int64, Self.rank]  # Ex R and S for 2D.
+    var filter_dims: DynamicCoord[.int64, Self.rank]  # Ex R and S for 2D.
 
     var c: Int  # Input channel.
     var f: Int  # Output channel.
 
-    var stride: DynamicCoord[DType.int64, Self.rank]
+    var stride: DynamicCoord[.int64, Self.rank]
 
-    var dilation: DynamicCoord[DType.int64, Self.rank]
+    var dilation: DynamicCoord[.int64, Self.rank]
 
     # TODO: change paddings to
     # pad_lower: DynamicCoord[DType.int64, rank]
     # pad_upper: DynamicCoord[DType.int64, rank]
-    var pad_d: DynamicCoord[DType.int64, 2]
-    var pad_h: DynamicCoord[DType.int64, 2]
-    var pad_w: DynamicCoord[DType.int64, 2]
+    var pad_d: DynamicCoord[.int64, 2]
+    var pad_h: DynamicCoord[.int64, 2]
+    var pad_w: DynamicCoord[.int64, 2]
 
     var num_groups: Int
 
@@ -85,16 +85,16 @@ struct ConvShape[rank: Int](TrivialRegisterPassable):
     def __init__(
         out self,
         n: Int,
-        input_dims: DynamicCoord[DType.int64, Self.rank],
-        output_dims: DynamicCoord[DType.int64, Self.rank],
-        filter_dims: DynamicCoord[DType.int64, Self.rank],
+        input_dims: DynamicCoord[.int64, Self.rank],
+        output_dims: DynamicCoord[.int64, Self.rank],
+        filter_dims: DynamicCoord[.int64, Self.rank],
         c: Int,
         f: Int,
-        stride: DynamicCoord[DType.int64, Self.rank],
-        dilation: DynamicCoord[DType.int64, Self.rank],
-        pad_d: DynamicCoord[DType.int64, 2],
-        pad_h: DynamicCoord[DType.int64, 2],
-        pad_w: DynamicCoord[DType.int64, 2],
+        stride: DynamicCoord[.int64, Self.rank],
+        dilation: DynamicCoord[.int64, Self.rank],
+        pad_d: DynamicCoord[.int64, 2],
+        pad_h: DynamicCoord[.int64, 2],
+        pad_w: DynamicCoord[.int64, 2],
         num_groups: Int,
     ):
         self.n = n
@@ -378,25 +378,25 @@ def get_conv_shape[
     Returns:
         A populated `ConvShape` describing the convolution dimensions.
     """
-    var output_dims = DynamicCoord[DType.int64, rank]()
-    var input_dims = DynamicCoord[DType.int64, rank]()
-    var filter_dims = DynamicCoord[DType.int64, rank]()
+    var output_dims = DynamicCoord[.int64, rank]()
+    var input_dims = DynamicCoord[.int64, rank]()
+    var filter_dims = DynamicCoord[.int64, rank]()
 
     comptime for i in range(rank):
         output_dims[i] = rebind[output_dims.element_types[i]](
-            Scalar[DType.int64](output.dim[i + 1]())
+            Int64(output.dim[i + 1]())
         )
         input_dims[i] = rebind[input_dims.element_types[i]](
-            Scalar[DType.int64](input.dim[i + 1]())
+            Int64(input.dim[i + 1]())
         )
 
         comptime if filter_packed:
             filter_dims[i] = rebind[filter_dims.element_types[i]](
-                Scalar[DType.int64](filter.dim[i + 1]())
+                Int64(filter.dim[i + 1]())
             )
         else:
             filter_dims[i] = rebind[filter_dims.element_types[i]](
-                Scalar[DType.int64](filter.dim[i]())
+                Int64(filter.dim[i]())
             )
 
     return ConvShape[rank](

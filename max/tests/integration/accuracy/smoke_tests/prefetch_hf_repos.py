@@ -56,17 +56,53 @@ def _log(msg: str) -> None:
     click.echo(msg, err=True)
 
 
-def _snapshot_incomplete_reason(path: str) -> str | None:
-    """Return why the snapshot can't serve weights, or None if it looks whole.
+def _manifest_files(snapshot: Path) -> dict[str, int] | None:
+    """The file map (path -> size) the cache populator recorded, or None.
 
-    A cached snapshot directory can resolve while missing content: an
-    interrupted download or blob eviction leaves the small config files in
-    place with no weights, and snapshot_download(local_files_only=True) only
-    checks that the directory exists (offline there is no manifest to verify
-    against). Serving needs every cached entry readable, at least one weight
-    file, and every shard named by a safetensors index.
+    The populator writes manifests/<repo-dirname>/<revision>.json beside the
+    hub/ tree, listing the repo's upstream files. None means no usable
+    manifest: an unmanifested repo, a non-hub layout, or an unknown schema.
+    """
+    if len(snapshot.parents) < 4 or snapshot.parents[2].name != "hub":
+        return None
+    manifest = (
+        snapshot.parents[3]
+        / "manifests"
+        / snapshot.parents[1].name
+        / f"{snapshot.name}.json"
+    )
+    try:
+        doc = json.loads(manifest.read_bytes())
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(doc, dict) or doc.get("version") != 1:
+        return None
+    files = doc.get("files")
+    return files if isinstance(files, dict) else None
+
+
+def _snapshot_incomplete_reason(path: str) -> str | None:
+    """Return why the snapshot can't serve the model, or None if it looks whole.
+
+    A cached snapshot directory can resolve while missing content:
+    snapshot_download(local_files_only=True) only checks that the directory
+    exists. With a populator manifest, compare against the repo's exact file
+    list. Otherwise fall back to heuristics: every cached entry readable, at
+    least one weight file, and every shard named by a safetensors index.
     """
     root = Path(path)
+    if (files := _manifest_files(root)) is not None:
+        for name in sorted(files):
+            try:
+                actual = (root / name).stat().st_size
+            except OSError:
+                return f"{name} is in the populator manifest but not cached"
+            if actual != files[name]:
+                return (
+                    f"{name} is {actual} bytes, the populator manifest "
+                    f"says {files[name]}"
+                )
+        return None
     weight_files: list[Path] = []
     index_files: list[Path] = []
     for entry in root.rglob("*"):
@@ -95,6 +131,14 @@ def _snapshot_incomplete_reason(path: str) -> str | None:
                 f"shard(s), e.g. {missing[0]}"
             )
     return None
+
+
+def _pinned_revision(repo: str) -> str | None:
+    """The revision the local cache pins for the repo, if it has one."""
+    try:
+        return Path(snapshot_download(repo, local_files_only=True)).name
+    except LocalEntryNotFoundError:
+        return None
 
 
 def _cache_path(repo: str) -> str | None:
@@ -159,7 +203,7 @@ def _ensure(repo: str, *, allow_canonicalize: bool) -> str:
             _log("  Canonical name matches the input.")
 
     _log(f"  Downloading '{resolved}' from Hugging Face...")
-    path = snapshot_download(resolved)
+    path = snapshot_download(resolved, revision=_pinned_revision(resolved))
     _log(f"  Cached '{resolved}' to {path}")
     return resolved
 
@@ -177,7 +221,7 @@ def main(model: str) -> None:
     resolved_base = _ensure(base_repo, allow_canonicalize=True)
 
     for repo in extras:
-        _log(f"Draft model: '{repo}'")
+        _log(f"Also needed: '{repo}'")
         _ensure(repo, allow_canonicalize=False)
 
     # Stdout is the resolved base name; emit last so a partial run leaves it

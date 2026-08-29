@@ -29,15 +29,13 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from max.pipelines.context import BaseContext
 from max.pipelines.lib import PIPELINE_REGISTRY, MemoryPlan, PipelineConfig
-from max.pipelines.lib.pipeline_variants.structured_output_backend import (
-    make_grammar_validator,
-)
 from max.pipelines.modeling.types import (
     PipelineOutput,
     PipelinesFactory,
     PipelineTask,
     PipelineTokenizer,
 )
+from max.serve._body_size_limit import RequestBodySizeLimitMiddleware
 from max.serve._error_envelope import openai_error_body
 from max.serve.config import APIType, MetricRecordingMethod, Settings
 from max.serve.media import GeneratedMediaStore
@@ -212,6 +210,14 @@ async def lifespan(
                 model_worker=model_worker,
                 lora_queue=lora_queue,
             ),
+            # Audio generation serves /v1/audio/speech and /v1/responses, both
+            # of which go through GeneralPipelineHandler.
+            PipelineTask.AUDIO_GENERATION: lambda: GeneralPipelineHandler(
+                model_name=serving_settings.pipeline_config.models.model_name,
+                tokenizer=serving_settings.tokenizer,
+                model_worker=model_worker,
+                lora_queue=lora_queue,
+            ),
         }[serving_settings.task]()
 
         # Store pipeline (may be GeneralPipelineHandler or modality-specific wrapper)
@@ -220,27 +226,18 @@ async def lifespan(
         app.state.pipeline = pipeline
         app.state.pipeline_config = serving_settings.pipeline_config
         app.state.memory_plan = serving_settings.memory_plan
-
-        # Admission-time grammar validator (text generation only). Rejects a
-        # response_format / tool schema the active backend cannot compile with a
-        # 400 up front.
-        app.state.grammar_validator = None
-        if serving_settings.task == PipelineTask.TEXT_GENERATION and hasattr(
-            serving_settings.tokenizer, "delegate"
-        ):
-            delegate = serving_settings.tokenizer.delegate
-            app.state.grammar_validator = make_grammar_validator(
-                serving_settings.pipeline_config.sampling.structured_output_backend,
-                delegate,
-                len(delegate),
-                tool_parser_name=serving_settings.pipeline_config.runtime.tool_parser,
-                any_whitespace=serving_settings.pipeline_config.sampling.structured_output_any_whitespace,
-            )
+        # The served task, for routes that only mean something for one of them:
+        # every API type is mounted regardless, so a route with no counterpart
+        # in the served model has to refuse the request itself.
+        app.state.task = serving_settings.task
 
         # Also store as handler for OpenResponses API route compatibility
-        # For pixel generation, this is the same as pipeline
+        # For the media tasks, this is the same as pipeline
         # For other tasks, we also create a separate handler instance
-        if serving_settings.task == PipelineTask.PIXEL_GENERATION:
+        if serving_settings.task in (
+            PipelineTask.PIXEL_GENERATION,
+            PipelineTask.AUDIO_GENERATION,
+        ):
             app.state.handler = pipeline
         else:
             app.state.handler = GeneralPipelineHandler(
@@ -346,6 +343,12 @@ def fastapi_app(
 
     app = FastAPI(title="MAX Serve", lifespan=lifespan_wrap)
     app.state.zmq_endpoint_base = zmq_endpoint_base
+
+    if settings.max_request_bytes > 0:
+        app.add_middleware(
+            RequestBodySizeLimitMiddleware,
+            max_bytes=settings.max_request_bytes,
+        )
 
     if settings.transaction_recording_file is not None:
         transaction_recording_file = settings.transaction_recording_file

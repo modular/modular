@@ -16,9 +16,7 @@
 #include "KGEN/Interpreter/ParametricInterpreterState.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
-#include "KGEN/POPDialect/POPTypes.h"
 #include "mlir/IR/Matchers.h"
-#include "mlir/IR/PatternMatch.h"
 
 using namespace M;
 using namespace HLCF;
@@ -190,8 +188,7 @@ ValueRange ForOp::getEntryArguments(std::optional<unsigned> target) {
 
 ErrorTreeOrSuccess ForOp::interpret(ArrayRef<Attribute> operands,
                                     InterpreterState &state) {
-  state.transferControlFlowTo(getBody(), operands);
-  return success();
+  return state.transferControlFlowTo(getBody(), operands);
 }
 
 ErrorTreeOrSuccess
@@ -312,8 +309,7 @@ ValueRange LoopOp::getEntryArguments(std::optional<unsigned> target) {
 
 ErrorTreeOrSuccess LoopOp::interpret(ArrayRef<Attribute> operands,
                                      InterpreterState &state) {
-  state.transferControlFlowTo(getBody(), operands);
-  return success();
+  return state.transferControlFlowTo(getBody(), operands);
 }
 
 ErrorTreeOrSuccess
@@ -374,9 +370,8 @@ ErrorTreeOrSuccess IfOp::interpret(ArrayRef<Attribute> operands,
   if (!cond)
     return ErrorTree(getLoc(), "non-constant condition");
 
-  state.transferControlFlowTo(
+  return state.transferControlFlowTo(
       cond.getAsBool() ? getThenRegion() : getElseRegion(), {});
-  return success();
 }
 
 ErrorTreeOrSuccess
@@ -465,13 +460,11 @@ ErrorTreeOrSuccess SwitchOp::interpret(ArrayRef<Attribute> operands,
   for (auto [i, caseValue] : llvm::enumerate(getCaseValues())) {
     if (cond.getInt() == caseValue) {
       // Matching case branch.
-      state.transferControlFlowTo(getCaseRegions()[i], {});
-      return success();
+      return state.transferControlFlowTo(getCaseRegions()[i], {});
     }
   }
   // Default branch.
-  state.transferControlFlowTo(getDefaultRegion(), {});
-  return success();
+  return state.transferControlFlowTo(getDefaultRegion(), {});
 }
 
 ErrorTreeOrSuccess
@@ -513,8 +506,7 @@ void ContinueOp::getBranchTargets(ArrayRef<Attribute> operands,
 ErrorTreeOrSuccess ContinueOp::interpret(ArrayRef<Attribute> operands,
                                          InterpreterState &state) {
   LoopOp loop = getParentLoop(*this, getLabelAttr());
-  state.transferControlFlowTo(loop.getBody(), operands);
-  return success();
+  return state.transferControlFlowTo(loop.getBody(), operands);
 }
 
 ErrorTreeOrSuccess
@@ -553,8 +545,7 @@ void BreakOp::getBranchTargets(ArrayRef<Attribute> operands,
 ErrorTreeOrSuccess BreakOp::interpret(ArrayRef<Attribute> operands,
                                       InterpreterState &state) {
   LoopOp loop = getParentLoop(*this, getLabelAttr());
-  state.transferControlFlowTo(loop, operands);
-  return success();
+  return state.transferControlFlowTo(loop, operands);
 }
 
 ErrorTreeOrSuccess
@@ -580,8 +571,7 @@ void YieldOp::getBranchTargets(ArrayRef<Attribute> operands,
 
 ErrorTreeOrSuccess YieldOp::interpret(ArrayRef<Attribute> operands,
                                       InterpreterState &state) {
-  state.transferControlFlowTo((*this)->getParentOp(), operands);
-  return success();
+  return state.transferControlFlowTo((*this)->getParentOp(), operands);
 }
 
 ErrorTreeOrSuccess
@@ -767,8 +757,7 @@ ValueRange ElifOp::getEntryArguments(std::optional<unsigned int> target) {
 
 ErrorTreeOrSuccess ElifOp::interpret(ArrayRef<Attribute> operands,
                                      InterpreterState &state) {
-  state.transferControlFlowTo(getElifRegions()[0], operands);
-  return success();
+  return state.transferControlFlowTo(getElifRegions()[0], operands);
 }
 
 ErrorTreeOrSuccess
@@ -817,16 +806,16 @@ ErrorTreeOrSuccess ElifYieldOp::interpret(ArrayRef<Attribute> operands,
   ArrayRef<Attribute> blockArguments = operands.slice(1);
   if (auto cond = dyn_cast_if_present<KGEN::SIMDAttr>(operands[0])) {
     if (cond.getAsBool()) {
-      state.transferControlFlowTo(parent.getElifRegions()[myIndex + 1],
-                                  blockArguments);
-      return success();
+      return state.transferControlFlowTo(parent.getElifRegions()[myIndex + 1],
+                                         blockArguments);
     }
     unsigned nextIndex = myIndex + 2;
     if (nextIndex < parent.getElifRegions().size()) {
-      state.transferControlFlowTo(parent.getElifRegions()[myIndex + 2],
-                                  blockArguments);
+      return state.transferControlFlowTo(parent.getElifRegions()[myIndex + 2],
+                                         blockArguments);
     } else {
-      state.transferControlFlowTo(parent.getElseRegion(), blockArguments);
+      return state.transferControlFlowTo(parent.getElseRegion(),
+                                         blockArguments);
     }
     return success();
   }

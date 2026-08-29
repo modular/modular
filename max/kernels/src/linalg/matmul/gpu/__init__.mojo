@@ -165,12 +165,12 @@ def matmul_kernel[
     var a_shared = unsafe_stack_allocation[
         tile_size * tile_size,
         a_type,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
     var b_shared = unsafe_stack_allocation[
         tile_size * tile_size,
         b_type,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
 
     # Global index in C.
@@ -506,7 +506,7 @@ def _matmul_gpu[
     # targets whose fp32 matmul paths have no TF32 opt-out wired up.
     comptime assert (
         use_tf32
-        or a_type != DType.float32
+        or a_type != .float32
         or (has_nvidia_gpu_accelerator() and _has_blackwell_tcgen05())
     ), "use_tf32=False is only implemented for the SM100 matmul dispatch"
 
@@ -550,11 +550,15 @@ def _matmul_gpu[
 
     comptime matmul_supported_format = matmul_supported_format_amd if has_amd_gpu_accelerator() else matmul_supported_format_nvidia
 
+    # Capture the raw pointer: `@__copy_capture` byte-copies, so a
+    # `DeviceBuffer`-backed tile would reach the device as a host reference.
+    var c_epilogue = TileTensor(c.ptr, c.layout)
+
     # Only the H100 version of gemm supports the compute lambda.
     # For the other kernels we wrap it around an epilogue lambda instead.
     @__parameter
     @always_inline
-    @__copy_capture(c)
+    @__copy_capture(c_epilogue)
     def compute_lambda_wrapper[
         _dtype: DType, _width: SIMDLength, *, alignment: Int = 1
     ](coords: IndexList[2], val: SIMD[_dtype, _width]):
@@ -564,7 +568,7 @@ def _matmul_gpu[
             comptime assert (
                 output.dtype == c_type
             ), "compute epilogue lambda output and c type mismatch"
-            c.store_linear[alignment=alignment * size_of[c_type]()](
+            c_epilogue.store_linear[alignment=alignment * size_of[c_type]()](
                 coords, rebind[SIMD[c_type, _width]](output)
             )
 
@@ -587,7 +591,7 @@ def _matmul_gpu[
     var h100_matmul_cond = (
         materialize[ctx.default_device_info == H100]()
         and n % 8 == 0
-        and a_type == DType.bfloat16
+        and a_type == .bfloat16
     )
     var amdgpu_matmul_cond = has_amd_gpu_accelerator() and n % 4 == 0
     # AMD matmul kernels require K % BK == 0 and K >= 2*BK due to the
@@ -894,8 +898,8 @@ def _matmul_gpu[
                 #     1024-aligned.
                 comptime _4wave_dtype_ok = (
                     a_type.is_float8()
-                    or a_type == DType.bfloat16
-                    or a_type == DType.float16
+                    or a_type == .bfloat16
+                    or a_type == .float16
                 )
                 comptime if (
                     _4wave_dtype_ok
@@ -1247,7 +1251,7 @@ def _matmul_gpu[
                 # at BM=16.
                 comptime split_k_p = 16
                 comptime if (
-                    a_type == DType.float32
+                    a_type == .float32
                     and transpose_b
                     and static_N <= 256
                     and static_K >= 2048
@@ -1670,7 +1674,14 @@ def multistage_gemm[
                     pingpong_config,
                     enable_swizzle=True,
                     elementwise_lambda_fn=elementwise_lambda_fn,
-                ].run[a.LayoutType, b.LayoutType, c.LayoutType]
+                ].run[
+                    type_of(a).LayoutType,
+                    type_of(b).LayoutType,
+                    type_of(c).LayoutType,
+                    type_of(a).Storage,
+                    type_of(b).Storage,
+                    type_of(c).Storage,
+                ]
                 ctx.enqueue_function[k](
                     a,
                     b,
@@ -1694,7 +1705,14 @@ def multistage_gemm[
                     skinny_config,
                     enable_swizzle=True,
                     elementwise_lambda_fn=elementwise_lambda_fn,
-                ].run[a.LayoutType, b.LayoutType, c.LayoutType]
+                ].run[
+                    type_of(a).LayoutType,
+                    type_of(b).LayoutType,
+                    type_of(c).LayoutType,
+                    type_of(a).Storage,
+                    type_of(b).Storage,
+                    type_of(c).Storage,
+                ]
                 ctx.enqueue_function[k](
                     a,
                     b,
@@ -1962,7 +1980,14 @@ def multistage_gemm[
                     pingpong_config,
                     enable_swizzle=True,
                     elementwise_lambda_fn=elementwise_lambda_fn,
-                ].run[a.LayoutType, b.LayoutType, c.LayoutType]
+                ].run[
+                    type_of(a).LayoutType,
+                    type_of(b).LayoutType,
+                    type_of(c).LayoutType,
+                    type_of(a).Storage,
+                    type_of(b).Storage,
+                    type_of(c).Storage,
+                ]
                 ctx.enqueue_function[k](
                     a,
                     b,
@@ -1986,7 +2011,14 @@ def multistage_gemm[
                     skinny_config,
                     enable_swizzle=True,
                     elementwise_lambda_fn=elementwise_lambda_fn,
-                ].run[a.LayoutType, b.LayoutType, c.LayoutType]
+                ].run[
+                    type_of(a).LayoutType,
+                    type_of(b).LayoutType,
+                    type_of(c).LayoutType,
+                    type_of(a).Storage,
+                    type_of(b).Storage,
+                    type_of(c).Storage,
+                ]
                 ctx.enqueue_function[k](
                     a,
                     b,

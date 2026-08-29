@@ -47,31 +47,23 @@ def execute_ragged_flash_attention() raises:
     var batch_size = len(true_ce_prompt_lens)
 
     comptime layout_1d = Layout.row_major[1]()
-    var true_ce_row_offsets_buf = List(
-        length=batch_size + 1, fill=Scalar[DType.uint32](0)
-    )
-    var true_ce_row_offsets = LayoutTensor[DType.uint32, layout_1d](
+    var true_ce_row_offsets_buf = List(length=batch_size + 1, fill=UInt32(0))
+    var true_ce_row_offsets = LayoutTensor[.uint32, layout_1d](
         true_ce_row_offsets_buf,
         RuntimeLayout[layout_1d].row_major(IndexList[1](batch_size + 1)),
     )
-    var true_ce_cache_lengths_buf = List(
-        length=batch_size, fill=Scalar[DType.uint32](0)
-    )
-    var true_ce_cache_lengths = LayoutTensor[DType.uint32, layout_1d](
+    var true_ce_cache_lengths_buf = List(length=batch_size, fill=UInt32(0))
+    var true_ce_cache_lengths = LayoutTensor[.uint32, layout_1d](
         true_ce_cache_lengths_buf,
         RuntimeLayout[layout_1d].row_major(IndexList[1](batch_size)),
     )
-    var mixed_ce_row_offsets_buf = List(
-        length=batch_size + 1, fill=Scalar[DType.uint32](0)
-    )
-    var mixed_ce_row_offsets = LayoutTensor[DType.uint32, layout_1d](
+    var mixed_ce_row_offsets_buf = List(length=batch_size + 1, fill=UInt32(0))
+    var mixed_ce_row_offsets = LayoutTensor[.uint32, layout_1d](
         mixed_ce_row_offsets_buf,
         RuntimeLayout[layout_1d].row_major(IndexList[1](batch_size + 1)),
     )
-    var mixed_ce_cache_lengths_buf = List(
-        length=batch_size, fill=Scalar[DType.uint32](0)
-    )
-    var mixed_ce_cache_lengths = LayoutTensor[DType.uint32, layout_1d](
+    var mixed_ce_cache_lengths_buf = List(length=batch_size, fill=UInt32(0))
+    var mixed_ce_cache_lengths = LayoutTensor[.uint32, layout_1d](
         mixed_ce_cache_lengths_buf,
         RuntimeLayout[layout_1d].row_major(IndexList[1](batch_size)),
     )
@@ -210,9 +202,9 @@ def execute_ragged_flash_attention() raises:
     comptime layout_2d = Layout.row_major[2]()
     var paged_lut_buf = List(
         length=batch_size * ceildiv(true_ce_max_full_context_length, page_size),
-        fill=Scalar[DType.uint32](0),
+        fill=UInt32(0),
     )
-    var paged_lut = LayoutTensor[DType.uint32, layout_2d](
+    var paged_lut = LayoutTensor[.uint32, layout_2d](
         paged_lut_buf,
         RuntimeLayout[layout_2d].row_major(
             IndexList[2](

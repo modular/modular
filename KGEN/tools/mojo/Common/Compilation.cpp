@@ -19,7 +19,7 @@
 #include "KGEN/MojoParser/EntryPoint.h"
 #include "KGEN/Support/Configuration.h"
 #include "KGEN/ToolCommon/InitAllDialects.h"
-#include "KGEN/ToolCommon/LLVMTimingRegions.h"
+#include "KGEN/ToolCommon/PipelineTiming.h"
 #include "Support/Compiler/Diags.h"
 #include "Support/MArchTarget/MArchTarget.h"
 #include "Support/MDialect/MAttrs.h"
@@ -666,6 +666,11 @@ M::MLIRPassTiming::configure(const llvm::opt::InputArgList &args,
   if (displayMode == kList)
     manager.setDisplayMode(mlir::DefaultTimingManager::DisplayMode::List);
   root = manager.getRootScope();
+  // The pass manager of an offload target is deep inside the elaboration of
+  // the host. The function that makes this pass manager gets no scope. That
+  // function reads the root from here. Then that function puts its own scope
+  // under the root.
+  KGEN::setMLIRTimingRoot(&root);
   return success();
 }
 
@@ -700,6 +705,8 @@ void M::MLIRPassTiming::finish() {
   // Stop the root scope first. Then the total covers the compilation, and the
   // scope is empty, so a later nest operation records nothing.
   root.stop();
+  // A scope must not go under `root` after `root` stops.
+  KGEN::setMLIRTimingRoot(nullptr);
   printTimingReportTitle("MLIR pass timing (--mlir-timing)");
   manager.print();
   // The destructor of the manager also prints. A manager that is off prints

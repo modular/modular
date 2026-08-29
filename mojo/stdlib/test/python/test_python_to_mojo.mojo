@@ -87,5 +87,23 @@ def test_numpy_float() raises:
     assert_equal(Float64(py=py_numpy_float), mojo_float)
 
 
+def test_scalar_from_python_unsigned() raises:
+    # Values in [2**63, 2**64) survived the Mojo -> Python leg (via the
+    # unsigned `PyLong_FromSize_t`) and must survive the read-back too.
+    assert_equal(UInt64(py=PythonObject(UInt64.MAX)), UInt64.MAX)
+    var two_63 = UInt64(1) << 63
+    assert_equal(UInt64(py=PythonObject(two_63)), two_63)
+    assert_equal(UInt32(py=PythonObject(UInt32.MAX)), UInt32.MAX)
+
+    # A negative Python int must raise for an unsigned scalar, matching
+    # CPython's `PyLong_AsSize_t` (`OverflowError` for negatives), rather than
+    # wrapping to `UInt64.MAX`.
+    with assert_raises():
+        _ = UInt64(py=PythonObject(-1))
+
+    # Signed scalars still accept negatives.
+    assert_equal(Int64(py=PythonObject(-1)), -1)
+
+
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

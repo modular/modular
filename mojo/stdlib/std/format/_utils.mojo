@@ -421,11 +421,9 @@ struct _WriteBufferHeap(Writable, Writer):
         var len_bytes = string.byte_length()
         if len_bytes + self._pos > HEAP_BUFFER_BYTES:
             _heap_buffer_exceeded()
-        unsafe_memcpy(
-            dest=self._data.unsafe_offset(self._pos),
-            src=string.as_bytes().unsafe_ptr(),
-            count=len_bytes,
-        )
+        Span(
+            unsafe_ptr=self._data.unsafe_offset(self._pos), length=len_bytes
+        ).copy_from(string.as_bytes())
         self._pos += len_bytes
 
     def write_to(self, mut writer: Some[Writer]):
@@ -502,11 +500,10 @@ struct _WriteBufferStack[
         elif self.pos + len_bytes > Int(Self.stack_buffer_bytes):
             self.flush()
         # Continue writing to buffer
-        unsafe_memcpy(
-            dest=self.data.unsafe_ptr().unsafe_offset(self.pos),
-            src=string.as_bytes().unsafe_ptr(),
-            count=len_bytes,
-        )
+        Span(
+            unsafe_ptr=self.data.unsafe_ptr().unsafe_offset(self.pos),
+            length=len_bytes,
+        ).copy_from(string.as_bytes())
         self.pos += len_bytes
 
 
@@ -543,7 +540,7 @@ def _ord_ascii(s: StringSlice) -> UInt8:
 
 
 # fmt: off
-comptime _hex_table = SIMD[DType.uint8, 16](
+comptime _hex_table = SIMD[.uint8, 16](
     _ord_ascii("0"), _ord_ascii("1"), _ord_ascii("2"), _ord_ascii("3"), _ord_ascii("4"),
     _ord_ascii("5"), _ord_ascii("6"), _ord_ascii("7"), _ord_ascii("8"), _ord_ascii("9"),
     _ord_ascii("a"), _ord_ascii("b"), _ord_ascii("c"), _ord_ascii("d"), _ord_ascii("e"), _ord_ascii("f"),
@@ -554,7 +551,7 @@ comptime _hex_table = SIMD[DType.uint8, 16](
 @always_inline
 def _hex_digits_to_hex_chars(
     decimal: Scalar,
-) -> SIMD[DType.uint8, size_of[decimal.dtype]() * 2]:
+) -> SIMD[.uint8, size_of[decimal.dtype]() * 2]:
     """Return a fixed width hexadecimal value according to the scalar dtype.
 
     Examples:
@@ -578,9 +575,9 @@ def _hex_digits_to_hex_chars(
     ```
     """
     comptime size = size_of[decimal.dtype]()
-    var bytes = bitcast[DType.uint8, size](byte_swap(decimal))
+    var bytes = bitcast[.uint8, size](byte_swap(decimal))
     var nibbles = (bytes >> 4).interleave(bytes & 0xF)
-    return SIMD[DType.uint8, size_of[decimal.dtype]() * 2](
+    return SIMD[.uint8, size_of[decimal.dtype]() * 2](
         _hex_table._dynamic_shuffle(nibbles)
     )
 

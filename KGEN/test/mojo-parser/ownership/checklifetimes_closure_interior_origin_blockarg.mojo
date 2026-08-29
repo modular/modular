@@ -23,8 +23,7 @@ struct MyList[T: AnyType](Movable where False):
 
     def __init__(out self):
         self.data = UnsafePointer[
-            Self.T, UntrackedOrigin[mut=True]
-        ].unsafe_dangling()
+            Self.T, UntrackedOrigin[mut=True]].unsafe_dangling()
 
     def __deinit__(deinit self):
         pass

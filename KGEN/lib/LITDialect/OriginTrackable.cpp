@@ -171,11 +171,11 @@ OriginTrackable::OriginTrackable(Value v) {
 
   unsigned argIdx = bbArg.getArgNumber();
   switch (signature.getArgConvention(argIdx)) {
-  case ArgConvention::ReadReg:
+  case ArgConvention::ImmReg:
     // This is immutable so don't need to be tracked.
     return;
 
-  case ArgConvention::ReadMem:
+  case ArgConvention::ImmMem:
   case ArgConvention::Mut:
   case ArgConvention::MutRef:
   case ArgConvention::Ref:
@@ -302,9 +302,9 @@ void OperationEffects::analyzeCallOp(Operation &op) {
     case ArgConvention::OwnedMem:
     case ArgConvention::DeinitMem:
       return OperandEffect::memConsume;
-    case ArgConvention::ReadReg:
+    case ArgConvention::ImmReg:
       return OperandEffect::regUse;
-    case ArgConvention::ReadMem:
+    case ArgConvention::ImmMem:
       return OperandEffect::memLoad;
     case ArgConvention::Mut:
     case ArgConvention::MutRef:
@@ -722,13 +722,21 @@ OriginTrackable::decodeIndividualVariadicArguments(Value callArgVal,
       result.push_back(RefImmutOp::stripRebinds(elt));
   } else if (auto fromPointerPackOp =
                  ctorArg.getDefiningOp<RefPackFromPointerPackOp>()) {
-    // This is either a RefPackFromPointerPackOp directly.
+    // This is either a RefPackFromPointerPackOp directly...
+    extraOrigin = OriginMutCastAttr::get(
+        cast<RefPackType>(fromPointerPackOp.getResult().getType()).getOrigin(),
+        false);
   } else if (auto refLoad = ctorArg.getDefiningOp<RefLoadOp>()) {
-    assert(findSingleStoreToVarDecl(
-               refLoad.getOperand().getDefiningOp<VarDeclOp>())
-               .getDefiningOp<RefPackFromPointerPackOp>() &&
+    // ...or a load of a RefPackFromPointerPackOp result
+    auto fromPointerPackOp =
+        findSingleStoreToVarDecl(
+            refLoad.getOperand().getDefiningOp<VarDeclOp>())
+            .getDefiningOp<RefPackFromPointerPackOp>();
+    assert(fromPointerPackOp &&
            "expected to find a ref pack from pointer pack");
-
+    extraOrigin = OriginMutCastAttr::get(
+        cast<RefPackType>(fromPointerPackOp.getResult().getType()).getOrigin(),
+        false);
   } else {
     auto varDecl = ctorArg.getDefiningOp<VarDeclOp>();
     assert(varDecl && "expected to find a var decl");

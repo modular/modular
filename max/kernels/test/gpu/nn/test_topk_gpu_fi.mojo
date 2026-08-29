@@ -79,7 +79,7 @@ def compute_topk_mask[
     dtype: DType,
 ](
     values: TileTensor[dtype, ...],
-    mask: TileTensor[mut=True, DType.bool, ...],
+    mask: TileTensor[mut=True, .bool, ...],
     K: Int,
     batch_size: Int,
     N: Int,
@@ -119,7 +119,7 @@ def validate_sampling_results[
     out_idx_type: DType,
 ](
     sampled_idxs: TileTensor[out_idx_type, ...],
-    mask: TileTensor[DType.bool, ...],
+    mask: TileTensor[.bool, ...],
     batch_size: Int,
     N: Int,
     trial_num: Int,
@@ -193,7 +193,7 @@ def compute_topp_mask[
     dtype: DType,
 ](
     probs: TileTensor[dtype, ...],
-    mask: TileTensor[mut=True, DType.bool, ...],
+    mask: TileTensor[mut=True, .bool, ...],
     p: Float32,
     batch_size: Int,
     N: Int,
@@ -227,7 +227,7 @@ def compute_topp_mask[
             var idx = prob_idx[i][1]
             if cumsum < p:
                 mask[b, idx] = True
-                cumsum += prob.cast[DType.float32]()
+                cumsum += prob.cast[.float32]()
             else:
                 mask[b, idx] = False
 
@@ -236,8 +236,8 @@ def validate_topk_topp_sampling_results[
     out_idx_type: DType,
 ](
     sampled_idxs: TileTensor[out_idx_type, ...],
-    topk_mask: TileTensor[DType.bool, ...],
-    topp_mask: TileTensor[DType.bool, ...],
+    topk_mask: TileTensor[.bool, ...],
+    topp_mask: TileTensor[.bool, ...],
     batch_size: Int,
     N: Int,
     trial_num: Int,
@@ -292,7 +292,7 @@ def validate_topk_topp_sampling_results[
 
 def test_topk_topp_sampling[
     dtype: DType,
-    out_idx_type: DType = DType.int32,
+    out_idx_type: DType = .int32,
     block_size: Int = 1024,
 ](ctx: DeviceContext, batch_size: Int, N: Int, K: Int, p: Float32) raises:
     """Test joint top-K + top-P sampling by validating samples are in both sets.
@@ -323,10 +323,10 @@ def test_topk_topp_sampling[
     var device_output = ctx.enqueue_create_buffer[out_idx_type](
         output_shape.flattened_length()
     )
-    var topk_mask_buffer = ctx.enqueue_create_buffer[DType.bool](
+    var topk_mask_buffer = ctx.enqueue_create_buffer[.bool](
         input_shape.flattened_length()
     )
-    var topp_mask_buffer = ctx.enqueue_create_buffer[DType.bool](
+    var topp_mask_buffer = ctx.enqueue_create_buffer[.bool](
         input_shape.flattened_length()
     )
 
@@ -354,7 +354,7 @@ def test_topk_topp_sampling[
     # Per-row seed buffer: the kernel indexes rng_seed by row_idx (the
     # request's logical row), so every row needs an entry even though all
     # rows share the same seed value here.
-    var seed_buf = ctx.enqueue_create_buffer[DType.uint64](batch_size)
+    var seed_buf = ctx.enqueue_create_buffer[.uint64](batch_size)
     var seed_layout = row_major(batch_size)
 
     # Run sampling trials.
@@ -406,7 +406,7 @@ def test_topk_topp_sampling[
 
 def test_topk_topp_rng_offset_batch_invariant[
     dtype: DType,
-    out_idx_type: DType = DType.int32,
+    out_idx_type: DType = .int32,
     block_size: Int = 1024,
 ](ctx: DeviceContext, N: Int, K: Int, p: Float32) raises:
     """Regression test: the same request samples the same token regardless of
@@ -454,7 +454,7 @@ def test_topk_topp_rng_offset_batch_invariant[
         fill_random_for_test[dtype, normalized=True](input_host_tensor)
 
     # Single seed for logical row 0.
-    var seed_buf = ctx.enqueue_create_buffer[DType.uint64](1)
+    var seed_buf = ctx.enqueue_create_buffer[.uint64](1)
     var seed_layout = row_major(Idx[1])
     with seed_buf.map_to_host() as seed_host:
         seed_host[0] = UInt64(12345)
@@ -507,7 +507,7 @@ def test_topk_topp_rng_offset_batch_invariant[
 
 def test_topk_sampling[
     dtype: DType,
-    out_idx_type: DType = DType.int32,
+    out_idx_type: DType = .int32,
     block_size: Int = 1024,
     sampling_from_prob: Bool = True,
 ](ctx: DeviceContext, test_case: TestCase) raises:
@@ -555,7 +555,7 @@ def test_topk_sampling[
     var device_output = ctx.enqueue_create_buffer[out_idx_type](
         output_shape.flattened_length()
     )
-    var mask_buffer = ctx.enqueue_create_buffer[DType.bool](
+    var mask_buffer = ctx.enqueue_create_buffer[.bool](
         input_shape.flattened_length()
     )
 
@@ -762,7 +762,7 @@ def extract_topk_from_masked[
 
 def test_case_batched[
     dtype: DType,
-    out_idx_type: DType = DType.int,
+    out_idx_type: DType = .int,
 ](
     ctx: DeviceContext,
     test_case: TestCase,
@@ -809,7 +809,7 @@ def test_case_batched[
     var topk_vals_cpu_buf = ctx.enqueue_create_buffer[dtype](
         topk_shape.flattened_length()
     )
-    var topk_idxs_cpu_buf = ctx.enqueue_create_buffer[DType.int64](
+    var topk_idxs_cpu_buf = ctx.enqueue_create_buffer[.int64](
         topk_shape.flattened_length()
     )
 
@@ -1040,7 +1040,7 @@ def _cpu_softmax[
     dtype: DType,
 ](
     logits: TileTensor[dtype, ...],
-    probs_out: TileTensor[mut=True, DType.float32, ...],
+    probs_out: TileTensor[mut=True, .float32, ...],
     batch_size: Int,
     N: Int,
     T: Float32,
@@ -1050,17 +1050,16 @@ def _cpu_softmax[
     comptime assert probs_out.flat_rank == 2, "expected rank-2 TileTensor"
     comptime assert logits.flat_rank >= 2
     for b in range(batch_size):
-        var max_val = logits.load[width=1]((b, Idx[0])).cast[DType.float32]()
+        var max_val = logits.load[width=1]((b, Idx[0])).cast[.float32]()
         for i in range(1, N):
-            var v = logits.load[width=1]((b, i)).cast[DType.float32]()
+            var v = logits.load[width=1]((b, i)).cast[.float32]()
             if v > max_val:
                 max_val = v
 
         var exp_sum = Float32(0.0)
         for i in range(N):
             var e = exp(
-                (logits.load[width=1]((b, i)).cast[DType.float32]() - max_val)
-                / T
+                (logits.load[width=1]((b, i)).cast[.float32]() - max_val) / T
             )
             probs_out[b, i] = e
             exp_sum += e
@@ -1070,7 +1069,7 @@ def _cpu_softmax[
 
 def test_topk_topp_sampling_fi[
     dtype: DType,
-    out_idx_type: DType = DType.int32,
+    out_idx_type: DType = .int32,
 ](
     ctx: DeviceContext,
     batch_size: Int,
@@ -1110,22 +1109,22 @@ def test_topk_topp_sampling_fi[
         input_shape.flattened_length()
     )
     var out_buf = ctx.enqueue_create_buffer[out_idx_type](batch_size)
-    var temp_buf = ctx.enqueue_create_buffer[DType.float32](batch_size)
+    var temp_buf = ctx.enqueue_create_buffer[.float32](batch_size)
 
     # Per-row K, P, and seed arrays.
     var k_buf = ctx.enqueue_create_buffer[out_idx_type](batch_size)
-    var p_buf = ctx.enqueue_create_buffer[DType.float32](batch_size)
-    var seed_buf = ctx.enqueue_create_buffer[DType.uint64](batch_size)
+    var p_buf = ctx.enqueue_create_buffer[.float32](batch_size)
+    var seed_buf = ctx.enqueue_create_buffer[.uint64](batch_size)
     var batch_layout = row_major(batch_size)
 
     # CPU reference buffers: probs after softmax, and masks.
-    var probs_buf = ctx.enqueue_create_buffer[DType.float32](
+    var probs_buf = ctx.enqueue_create_buffer[.float32](
         input_shape.flattened_length()
     )
-    var topk_mask_buf = ctx.enqueue_create_buffer[DType.bool](
+    var topk_mask_buf = ctx.enqueue_create_buffer[.bool](
         input_shape.flattened_length()
     )
-    var topp_mask_buf = ctx.enqueue_create_buffer[DType.bool](
+    var topp_mask_buf = ctx.enqueue_create_buffer[.bool](
         input_shape.flattened_length()
     )
 
@@ -1140,15 +1139,11 @@ def test_topk_topp_sampling_fi[
 
             with topk_mask_buf.map_to_host() as topk_host:
                 var topk_tt = TileTensor(topk_host, mask_layout)
-                compute_topk_mask[DType.float32](
-                    probs_tt, topk_tt, K, batch_size, N
-                )
+                compute_topk_mask[.float32](probs_tt, topk_tt, K, batch_size, N)
 
             with topp_mask_buf.map_to_host() as topp_host:
                 var topp_tt = TileTensor(topp_host, mask_layout)
-                compute_topp_mask[DType.float32](
-                    probs_tt, topp_tt, p, batch_size, N
-                )
+                compute_topp_mask[.float32](probs_tt, topp_tt, p, batch_size, N)
 
     # Fill temperature.
     with temp_buf.map_to_host() as temp_host:

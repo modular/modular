@@ -40,7 +40,6 @@ from nn.attention.gpu.mla_graph import mla_decode_branch_fp8
 from nn.attention.gpu.nvidia.sm100.mla_decode_dispatch import (
     MLADispatchScalarArgs,
 )
-from std.memory import UnsafePointer
 from std.utils import IndexList
 from std.utils.numerics import isfinite
 
@@ -102,7 +101,7 @@ def _run_arm[
     cache_len: Int,
     q_len: Int,
     topk: Int,
-    out_host: UnsafePointer[Scalar[DType.bfloat16], MutAnyOrigin],
+    out_host: MutPointer[BFloat16, MutAnyOrigin],
     ctx: DeviceContext,
 ) raises:
     """Runs the fused decode branch once and copies its output to the host.
@@ -158,25 +157,19 @@ def _run_arm[
     ctx.enqueue_copy(blocks_device, blocks_host)
 
     var lut_size = batch_size * max_pages_per_batch
-    var lookup_table_host = ctx.enqueue_create_host_buffer[DType.uint32](
-        lut_size
-    )
+    var lookup_table_host = ctx.enqueue_create_host_buffer[.uint32](lut_size)
     for bi in range(batch_size):
         for p in range(max_pages_per_batch):
             lookup_table_host[bi * max_pages_per_batch + p] = UInt32(
                 bi * max_pages_per_batch + p
             )
-    var lookup_table_device = ctx.enqueue_create_buffer[DType.uint32](lut_size)
+    var lookup_table_device = ctx.enqueue_create_buffer[.uint32](lut_size)
     ctx.enqueue_copy(lookup_table_device, lookup_table_host)
 
-    var cache_lengths_host = ctx.enqueue_create_host_buffer[DType.uint32](
-        batch_size
-    )
+    var cache_lengths_host = ctx.enqueue_create_host_buffer[.uint32](batch_size)
     for i in range(batch_size):
         cache_lengths_host[i] = UInt32(cache_len)
-    var cache_lengths_device = ctx.enqueue_create_buffer[DType.uint32](
-        batch_size
-    )
+    var cache_lengths_device = ctx.enqueue_create_buffer[.uint32](batch_size)
     ctx.enqueue_copy(cache_lengths_device, cache_lengths_host)
 
     var q_size = total_q_tokens * num_heads * Q_HEAD_DIM
@@ -251,7 +244,7 @@ def _run_arm[
     ctx.enqueue_memset(out_device, 0)
 
     var total_indices = total_q_tokens * topk
-    var h_indices = ctx.enqueue_create_host_buffer[DType.int32](total_indices)
+    var h_indices = ctx.enqueue_create_host_buffer[.int32](total_indices)
     var mult = _coprime_multiplier(num_keys)
     for bi in range(batch_size):
         for s in range(q_len):
@@ -266,17 +259,15 @@ def _run_arm[
                 h_indices[g * topk + i] = Int32(
                     block_id * page_size + tok_in_page
                 )
-    var d_indices_device = ctx.enqueue_create_buffer[DType.int32](total_indices)
+    var d_indices_device = ctx.enqueue_create_buffer[.int32](total_indices)
     ctx.enqueue_copy(d_indices_device, h_indices)
 
-    var row_offsets_host = ctx.enqueue_create_host_buffer[DType.uint32](
+    var row_offsets_host = ctx.enqueue_create_host_buffer[.uint32](
         batch_size + 1
     )
     for i in range(batch_size + 1):
         row_offsets_host[i] = UInt32(i * q_len)
-    var row_offsets_device = ctx.enqueue_create_buffer[DType.uint32](
-        batch_size + 1
-    )
+    var row_offsets_device = ctx.enqueue_create_buffer[.uint32](batch_size + 1)
     ctx.enqueue_copy(row_offsets_device, row_offsets_host)
     ctx.synchronize()
 
@@ -290,11 +281,11 @@ def _run_arm[
             blocks_device.unsafe_ptr().as_unsafe_any_origin(),
             RuntimeLayout[blocks_layout].row_major(block_shape),
         ),
-        LayoutTensor[DType.uint32, cl_layout, ImmutAnyOrigin](
+        LayoutTensor[.uint32, cl_layout, ImmutAnyOrigin](
             cache_lengths_device.unsafe_ptr().as_unsafe_any_origin(),
             RuntimeLayout[cl_layout].row_major(IndexList[1](batch_size)),
         ),
-        LayoutTensor[DType.uint32, lut_layout, ImmutAnyOrigin](
+        LayoutTensor[.uint32, lut_layout, ImmutAnyOrigin](
             lookup_table_device.unsafe_ptr().as_unsafe_any_origin(),
             RuntimeLayout[lut_layout].row_major(
                 IndexList[2](batch_size, max_pages_per_batch)
@@ -380,7 +371,7 @@ def _run_arm[
         w_uv_scale_tt,
         scalar_args_buf_tt,
         ctx,
-        d_indices=rebind[UnsafePointer[Int32, MutAnyOrigin]](
+        d_indices=rebind[MutPointer[Int32, MutAnyOrigin]](
             d_indices_device.unsafe_ptr()
         ),
         indices_stride=topk,

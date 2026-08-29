@@ -92,7 +92,7 @@ def _load_reduce[
             accum_type=accum_type,
         ](
             (in_tiles[0].ptr_at_offset(Coord(elem_idx))).address_space_cast[
-                AddressSpace.GLOBAL
+                .GLOBAL
             ]()
         )
     else:
@@ -278,7 +278,7 @@ def _reducescatter_kernel[
         1 if use_multimem else ngpus,
     ],
     out_buf: TileTensor[dtype, out_layout, MutAnyOrigin],
-    rank_sigs: Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
+    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS],
     axis_size: Int32,
     unit_numel: Int32,
     my_rank: Int32,
@@ -308,12 +308,12 @@ def _reducescatter_kernel[
         )
 
         # Round-robin access pattern to balance NVLink traffic across GPUs.
-        var reordered = Array[
-            TileTensor[dtype, in_layout, ImmutAnyOrigin], num_buffers
-        ](uninitialized=True)
-
-        comptime for i in range(num_buffers):
-            reordered[i] = in_bufs[circular_add[num_buffers](_my_rank, i)]
+        comptime TileType = TileTensor[dtype, in_layout, ImmutAnyOrigin]
+        var reordered = Array[_, num_buffers](
+            fill_with=lambda (i: Int) -> TileType: in_bufs[
+                circular_add[num_buffers](_my_rank, i)
+            ]
+        )
 
         var u_start = config.rank_unit_start(_my_rank)
         var n_units = config.rank_units(_my_rank)
@@ -323,14 +323,13 @@ def _reducescatter_kernel[
             # Flat: construct sliced 1D tiles from input TileTensors (any rank).
             comptime FlatLayout = type_of(row_major(n_elements))
             comptime FlatTile = TileTensor[dtype, FlatLayout, ImmutAnyOrigin]
-            var flat_tiles = Array[FlatTile, num_buffers](uninitialized=True)
             var elem_start = u_start * config.unit_numel
-
-            comptime for i in range(num_buffers):
-                flat_tiles[i] = FlatTile(
+            var flat_tiles = Array[_, num_buffers](
+                fill_with=lambda (i: Int) -> FlatTile: FlatTile(
                     reordered[i]._storage + elem_start,
                     row_major(n_elements),
                 )
+            )
 
             _reduce_scatter_impl[
                 ngpus, output_lambda=output_lambda, use_multimem=use_multimem
@@ -404,7 +403,7 @@ def _reducescatter_p2p[
         1 if use_multimem else ngpus,
     ],
     output_buffer: TileTensor[mut=True, dtype, ...],
-    rank_sigs: Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
+    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS],
     max_num_blocks: Int,
     ctx: DeviceContext,
     my_rank: Int,
@@ -505,7 +504,7 @@ def reducescatter[
         1 if use_multimem else ngpus,
     ],
     output_buffer: TileTensor[mut=True, dtype, ...],
-    rank_sigs: Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
+    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS],
     ctx: DeviceContext,
     _max_num_blocks: Optional[Int] = None,
     local_rank: Optional[Int] = None,

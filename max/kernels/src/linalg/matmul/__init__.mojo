@@ -58,9 +58,9 @@ def matmul[
     # op) are unaffected; set it by keyword.
     use_tf32: Bool = True,
 ](
-    c: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
-    a: TileTensor[address_space=AddressSpace.GENERIC, ...],
-    b: TileTensor[address_space=AddressSpace.GENERIC, ...],
+    c: TileTensor[mut=True, address_space=.GENERIC, ...],
+    a: TileTensor[address_space=.GENERIC, ...],
+    b: TileTensor[address_space=.GENERIC, ...],
     ctx: Optional[DeviceContext] = None,
 ) raises:
     """Primary TileTensor matmul implementation. Routes GPU directly, delegates
@@ -114,8 +114,7 @@ def matmul[
             return
 
         @always_inline
-        @__parameter
-        def description_fn() -> String:
+        def description_fn() {imm} -> String:
             var shape = GemmShape.get[transpose_b](c, a, b)
             # fmt: off
             return String(
@@ -135,7 +134,7 @@ def matmul[
                 "matmul",
                 _trace_description if _trace_description else "",
             ](),
-            Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+            Trace[TraceLevel.OP]._get_detail_str(description_fn),
             task_id=OptionalReg(Int(ctx.value().id())),
         ):
             _matmul_gpu[
@@ -155,8 +154,7 @@ def matmul[
             return
 
         @always_inline
-        @__parameter
-        def cpu_description_fn() -> String:
+        def cpu_description_fn() {imm} -> String:
             var shape = GemmShape.get[transpose_b](c, a, b)
             # fmt: off
             return String(
@@ -177,7 +175,7 @@ def matmul[
                 "matmul",
                 _trace_description if _trace_description else "",
             ](),
-            Trace[TraceLevel.OP]._get_detail_str[cpu_description_fn](),
+            Trace[TraceLevel.OP]._get_detail_str(cpu_description_fn),
             task_id=OptionalReg(Int(ctx.value().id())) if ctx else None,
         ):
             var kernel_type_m = (

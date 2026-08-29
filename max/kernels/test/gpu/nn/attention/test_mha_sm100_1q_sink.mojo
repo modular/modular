@@ -44,9 +44,9 @@ divergence from naive.
 `flash_attention[ragged=True]` on a paged cache sets
 `is_token_generation = (max_prompt_len == 1) and not empty_cache()`
 (`mha.mojo` ~L424). A true decode (`valid_length == 1` with a non-empty cache)
-routes to the SM100 *decode* kernel (`mha_1q.mojo`), NOT to `fa4_softmax`. To
-exercise the FA4 1Q path we therefore use a prefill with `max_prompt_len` in
-`(32, 128]`:
+takes the SM100 FA4 `fa4_route` (`mha.mojo`) → `mha_sm100_2q_dispatch`, which
+runs `fa4_softmax` for the 1Q sink path. To exercise that 1Q path we therefore
+use a prefill with `max_prompt_len` in `(32, 128]`:
 
   * lower bound `> 32`: `max_prompt_len <= 32` now routes to the WS BM=32
     packed-TMEM datapath (`fa4_config_ws` -- also `fa4_softmax`, but the 8-way
@@ -174,12 +174,10 @@ def execute_1q_sink_test[
     comptime sink_layout = Layout.row_major(UNKNOWN_VALUE)
 
     # --- Host metadata: row offsets + cache lengths ---
-    var input_row_offsets = ctx.enqueue_create_host_buffer[DType.uint32](
+    var input_row_offsets = ctx.enqueue_create_host_buffer[.uint32](
         batch_size + 1
     )
-    var cache_lengths_host = ctx.enqueue_create_host_buffer[DType.uint32](
-        batch_size
-    )
+    var cache_lengths_host = ctx.enqueue_create_host_buffer[.uint32](batch_size)
     var running_offset: UInt32 = 0
     for i in range(batch_size):
         input_row_offsets[i] = running_offset
@@ -187,10 +185,10 @@ def execute_1q_sink_test[
         running_offset += UInt32(valid_lengths[i])
     input_row_offsets[batch_size] = running_offset
 
-    var input_row_offsets_dev = ctx.enqueue_create_buffer[DType.uint32](
+    var input_row_offsets_dev = ctx.enqueue_create_buffer[.uint32](
         batch_size + 1
     )
-    var cache_lengths_dev = ctx.enqueue_create_buffer[DType.uint32](batch_size)
+    var cache_lengths_dev = ctx.enqueue_create_buffer[.uint32](batch_size)
     ctx.enqueue_copy(input_row_offsets_dev, input_row_offsets)
     ctx.enqueue_copy(cache_lengths_dev, cache_lengths_host)
 
@@ -239,7 +237,7 @@ def execute_1q_sink_test[
     # --- Paged lookup table (unique random physical blocks per (bs, blk)) ---
     var lut_cols = padded_lut_cols(ceildiv(max_full_context_length, page_size))
     var paged_lut_shape = IndexList[2](batch_size, lut_cols)
-    var paged_lut_host = ctx.enqueue_create_host_buffer[DType.uint32](
+    var paged_lut_host = ctx.enqueue_create_host_buffer[.uint32](
         batch_size * lut_cols
     )
     var paged_lut_set = Set[Int]()
@@ -251,7 +249,7 @@ def execute_1q_sink_test[
                 randval = Int(random_ui64(0, UInt64(num_paged_blocks - 1)))
             paged_lut_set.add(randval)
             paged_lut_host[bs * lut_cols + block_idx] = UInt32(randval)
-    var paged_lut_dev = ctx.enqueue_create_buffer[DType.uint32](
+    var paged_lut_dev = ctx.enqueue_create_buffer[.uint32](
         batch_size * lut_cols
     )
     ctx.enqueue_copy(paged_lut_dev, paged_lut_host)
@@ -267,8 +265,7 @@ def execute_1q_sink_test[
         rand(sinks_host.as_span())
         for h in range(num_q_heads):
             sinks_host[h] = (
-                sinks_host[h].cast[DType.float32]() * Float32(8.0)
-                - Float32(2.0)
+                sinks_host[h].cast[.float32]() * Float32(8.0) - Float32(2.0)
             ).cast[dtype]()
     else:
         sinks_host.as_span().fill(Scalar[dtype](0))
@@ -279,7 +276,7 @@ def execute_1q_sink_test[
     # `cache_lengths`/`lookup_table` at ImmutAnyOrigin; the ragged FA4 path
     # wants `input_row_offsets` immutable. Bake the origins into the types.
     var input_row_offsets_lt = LayoutTensor[
-        mut=False, DType.uint32, row_offsets_layout
+        mut=False, .uint32, row_offsets_layout
     ](
         input_row_offsets_dev,
         RuntimeLayout[row_offsets_layout].row_major(
@@ -287,12 +284,12 @@ def execute_1q_sink_test[
         ),
     )
     var cache_lengths_lt = LayoutTensor[
-        mut=False, DType.uint32, cache_lengths_layout
+        mut=False, .uint32, cache_lengths_layout
     ](
         cache_lengths_dev,
         RuntimeLayout[cache_lengths_layout].row_major(IndexList[1](batch_size)),
     )
-    var paged_lut_lt = LayoutTensor[mut=False, DType.uint32, paged_lut_layout](
+    var paged_lut_lt = LayoutTensor[mut=False, .uint32, paged_lut_layout](
         paged_lut_dev,
         RuntimeLayout[paged_lut_layout].row_major(paged_lut_shape),
     )
@@ -425,8 +422,8 @@ def execute_1q_sink_test[
     var max_abs_diff: Float32 = 0.0
     var argmax_idx = 0
     for i in range(test_out_size):
-        var a = test_out_host[i].cast[DType.float32]()
-        var b = ref_out_host[i].cast[DType.float32]()
+        var a = test_out_host[i].cast[.float32]()
+        var b = ref_out_host[i].cast[.float32]()
         var d = abs(a - b)
         if d > max_abs_diff:
             max_abs_diff = d

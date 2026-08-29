@@ -258,7 +258,7 @@ def test_attention[
                 ]()
                 var actual = flash_output_ptr[
                     d + depth * (h + s * num_heads)
-                ].cast[DType.float64]()
+                ].cast[.float64]()
                 if not isclose(actual, expect, atol=1e-5, rtol=rtol):
                     var rerr = abs((actual - expect) / expect)
                     print(h, s, d, actual, expect, rerr)
@@ -387,14 +387,14 @@ def test_mask_apply() raises:
     comptime local_window_size = 4
     var mask = ChunkedCausalMask[local_window_size]()
 
-    var score_vec = SIMD[DType.float32, 4](0.0)
+    var score_vec = SIMD[.float32, 4](0.0)
     score_vec[0] = 1.0
     score_vec[1] = 2.0
     score_vec[2] = 3.0
     score_vec[3] = 4.0
 
     comptime simd_width = 4
-    comptime SIMD_T = SIMD[DType.float32, simd_width]
+    comptime SIMD_T = SIMD[.float32, simd_width]
     comptime UNMASKED_INPUT = SIMD_T(0.0)
     var inf_vec = SIMD_T(MASK_VALUE)
 

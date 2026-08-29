@@ -317,8 +317,7 @@ def _elementwise_impl[
     trace_description: StaticString,
 ](func: FuncType, shape: Coord, context: DeviceContext) raises:
     @always_inline
-    @__parameter
-    def description_fn() -> String:
+    def description_fn() {imm} -> String:
         var shape_str = trace_arg("shape", coord_to_index_list(shape))
         var vector_width_str = String(t"vector_width={simd_width}")
         return ";".join([shape_str^, vector_width_str^])
@@ -330,7 +329,7 @@ def _elementwise_impl[
 
     with Trace[TraceLevel.OP, target=target](
         kind,
-        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+        Trace[TraceLevel.OP]._get_detail_str(description_fn),
         task_id=get_safe_task_id(context),
     ):
         # Check the host (CPU) path first: a CPU-targeted op must run on the
@@ -445,8 +444,7 @@ def _dual_elementwise_impl[
     context: DeviceContext,
 ) raises:
     @always_inline
-    @__parameter
-    def description_fn() -> String:
+    def description_fn() {imm} -> String:
         var s0 = trace_arg("shape_0", coord_to_index_list(shape_0))
         var s1 = trace_arg("shape_1", coord_to_index_list(shape_1))
         var vw = String(t"vector_width={simd_width}")
@@ -458,7 +456,7 @@ def _dual_elementwise_impl[
 
     with Trace[TraceLevel.OP, target=target](
         kind,
-        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+        Trace[TraceLevel.OP]._get_detail_str(description_fn),
         task_id=get_safe_task_id(context),
     ):
         comptime assert is_gpu[

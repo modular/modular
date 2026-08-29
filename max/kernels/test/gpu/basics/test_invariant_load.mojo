@@ -18,12 +18,12 @@ from layout import Layout, LayoutTensor
 from std.testing import assert_true
 
 
-def ldg_kernel(i8: UnsafePointer[Int8, MutAnyOrigin]):
+def ldg_kernel(i8: MutPointer[Int8, MutAnyOrigin]):
     i8.store(1, ldg(i8))
 
 
 def layout_kernel(
-    a: LayoutTensor[mut=False, DType.int8, Layout.row_major(1), _],
+    a: LayoutTensor[mut=False, .int8, Layout.row_major(1), _],
     mut b: type_of(a[0]),
 ):
     b = a[0]

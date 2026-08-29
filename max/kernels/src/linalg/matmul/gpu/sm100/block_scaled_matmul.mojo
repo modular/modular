@@ -429,13 +429,13 @@ def load_AB_SFA_SFB[
                 sfa_tma_dtype,
                 sfa_smem_tile.LayoutType,
                 MutAnyOrigin,
-                address_space=AddressSpace.SHARED,
+                address_space=.SHARED,
             ](
                 rebind[
                     UnsafePointer[
                         Scalar[sfa_tma_dtype],
                         MutAnyOrigin,
-                        address_space=AddressSpace.SHARED,
+                        address_space=.SHARED,
                     ]
                 ](sfa_smem_tile.ptr),
                 sfa_smem_tile.layout,
@@ -455,13 +455,13 @@ def load_AB_SFA_SFB[
                 sfb_tma_dtype,
                 sfb_smem_tile.LayoutType,
                 MutAnyOrigin,
-                address_space=AddressSpace.SHARED,
+                address_space=.SHARED,
             ](
                 rebind[
                     UnsafePointer[
                         Scalar[sfb_tma_dtype],
                         MutAnyOrigin,
-                        address_space=AddressSpace.SHARED,
+                        address_space=.SHARED,
                     ]
                 ](sfb_smem_tile.ptr),
                 sfb_smem_tile.layout,
@@ -616,13 +616,13 @@ def _prefetch_weight_tiles[
                     sfb_tma_dtype,
                     sfb_smem_tile.LayoutType,
                     MutAnyOrigin,
-                    address_space=AddressSpace.SHARED,
+                    address_space=.SHARED,
                 ](
                     rebind[
                         UnsafePointer[
                             Scalar[sfb_tma_dtype],
                             MutAnyOrigin,
-                            address_space=AddressSpace.SHARED,
+                            address_space=.SHARED,
                         ]
                     ](sfb_smem_tile.ptr),
                     sfb_smem_tile.layout,
@@ -658,13 +658,13 @@ def _prefetch_weight_tiles[
                     sfa_tma_dtype,
                     sfa_smem_tile.LayoutType,
                     MutAnyOrigin,
-                    address_space=AddressSpace.SHARED,
+                    address_space=.SHARED,
                 ](
                     rebind[
                         UnsafePointer[
                             Scalar[sfa_tma_dtype],
                             MutAnyOrigin,
-                            address_space=AddressSpace.SHARED,
+                            address_space=.SHARED,
                         ]
                     ](sfa_smem_tile.ptr),
                     sfa_smem_tile.layout,
@@ -793,13 +793,13 @@ def _complete_activation_tiles[
                     sfa_tma_dtype,
                     sfa_smem_tile.LayoutType,
                     MutAnyOrigin,
-                    address_space=AddressSpace.SHARED,
+                    address_space=.SHARED,
                 ](
                     rebind[
                         UnsafePointer[
                             Scalar[sfa_tma_dtype],
                             MutAnyOrigin,
-                            address_space=AddressSpace.SHARED,
+                            address_space=.SHARED,
                         ]
                     ](sfa_smem_tile.ptr),
                     sfa_smem_tile.layout,
@@ -835,13 +835,13 @@ def _complete_activation_tiles[
                     sfb_tma_dtype,
                     sfb_smem_tile.LayoutType,
                     MutAnyOrigin,
-                    address_space=AddressSpace.SHARED,
+                    address_space=.SHARED,
                 ](
                     rebind[
                         UnsafePointer[
                             Scalar[sfb_tma_dtype],
                             MutAnyOrigin,
-                            address_space=AddressSpace.SHARED,
+                            address_space=.SHARED,
                         ]
                     ](sfb_smem_tile.ptr),
                     sfb_smem_tile.layout,
@@ -1034,7 +1034,7 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
 ):
     """Implements the warp-specialized block-scaled matmul kernel for SM100 GPUs using TMA for global-to-shared loads and UMMA for tensor core MMA.
     """
-    comptime assert c_type != DType.float32, "c_type cannot be float32"
+    comptime assert c_type != .float32, "c_type cannot be float32"
     comptime assert transpose_b, "only support k-major B"
 
     comptime register_based_epilogue = config.register_based_epilogue
@@ -1118,8 +1118,8 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
     ]
 
     ref smem_storage = external_memory[
-        Scalar[DType.uint8],
-        address_space=AddressSpace.SHARED,
+        UInt8,
+        address_space=.SHARED,
         alignment=128,
     ]().bitcast[SmemType]()[]
 
@@ -1235,21 +1235,19 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
     )
 
     var ptr_tmem_addr: UnsafePointer[
-        UInt32,
-        origin_of(tmem_addr_storage),
-        address_space=AddressSpace.SHARED,
+        UInt32, origin_of(tmem_addr_storage), address_space=.SHARED
     ] = tmem_addr_storage.unsafe_ptr()
 
     var clc_response = clc_response_storage.unsafe_ptr()
     var clc_full_mbar: UnsafePointer[
         SharedMemBarrier,
         origin_of(clc_mbars_full_storage),
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ] = clc_mbars_full_storage.unsafe_ptr()
     var clc_empty_mbar: UnsafePointer[
         SharedMemBarrier,
         origin_of(clc_mbars_empty_storage),
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ] = clc_mbars_empty_storage.unsafe_ptr()
 
     var tmem_dealloc_mbar = tmem_dealloc_mbar_storage.unsafe_ptr()
@@ -1838,11 +1836,9 @@ def _create_tma_and_launch[
     )
     var sfa_4d_layout = tt_row_major(sfa_4d_shape)
     var sfa_4d_tensor = TileTensor[
-        DType.uint16, type_of(sfa_4d_layout), ImmutAnyOrigin
+        .uint16, type_of(sfa_4d_layout), ImmutAnyOrigin
     ](
-        rebind[UnsafePointer[Scalar[DType.uint16], ImmutAnyOrigin]](
-            sfa_5d_tensor.ptr
-        ),
+        rebind[UnsafePointer[UInt16, ImmutAnyOrigin]](sfa_5d_tensor.ptr),
         sfa_4d_layout,
     )
     var sfb_4d_shape = Coord(
@@ -1853,11 +1849,9 @@ def _create_tma_and_launch[
     )
     var sfb_4d_layout = tt_row_major(sfb_4d_shape)
     var sfb_4d_tensor = TileTensor[
-        DType.uint16, type_of(sfb_4d_layout), ImmutAnyOrigin
+        .uint16, type_of(sfb_4d_layout), ImmutAnyOrigin
     ](
-        rebind[UnsafePointer[Scalar[DType.uint16], ImmutAnyOrigin]](
-            sfb_5d_tensor.ptr
-        ),
+        rebind[UnsafePointer[UInt16, ImmutAnyOrigin]](sfb_5d_tensor.ptr),
         sfb_4d_layout,
     )
 

@@ -102,9 +102,7 @@ struct KVCacheIterator[
         ].element_types,
     ]
     comptime GmemTileType = TileTensor[
-        Self.cache_t.dtype,
-        Self.GmemTileLayout,
-        ImmutAnyOrigin,
+        Self.cache_t.dtype, Self.GmemTileLayout, ImmutAnyOrigin
     ]
 
     var cache: Self.cache_t
@@ -364,7 +362,7 @@ struct KVBuffer[
         Self.kv_t.dtype,
         type_of(Self.mma_layout),
         MutUntrackedOrigin,
-        address_space=AddressSpace.LOCAL,
+        address_space=.LOCAL,
     ]
     comptime KVMmaOpType = KVMmaOp[
         Self.kv_t.dtype,
@@ -386,7 +384,7 @@ struct KVBuffer[
         Self.kv_t.dtype,
         Self._SmemParentLayout,
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]
 
     @__allow_legacy_any_origin_fields
@@ -415,7 +413,7 @@ struct KVBuffer[
         Self.kv_t.dtype,
         type_of(row_major[tile_rows, Self.bk_smem]()),
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]:
         """Get a (tile_rows, bk_smem) row-major sub-tile from SMEM.
 
@@ -561,7 +559,7 @@ struct KVBuffer[
         Self.kv_t.dtype,
         type_of(row_major[Self._rows_per_k_mma, Self.input_frag_size]()),
         MutUntrackedOrigin,
-        address_space=AddressSpace.LOCAL,
+        address_space=.LOCAL,
     ]:
         comptime reg_slot = bk_tile_idx % Self._reg_num_k_tiles
         return self.kv_mma_op.mma_tile_at[reg_slot, k_mma_tile_idx]()
@@ -574,7 +572,7 @@ struct KVBuffer[
         Self.kv_t.dtype,
         type_of(row_major[Self._rows_per_k_mma, Self.input_frag_size]()),
         MutUntrackedOrigin,
-        address_space=AddressSpace.LOCAL,
+        address_space=.LOCAL,
     ]:
         """Alias for get_mma_tile, kept for decode-call-site symmetry.
 
@@ -898,7 +896,7 @@ struct DecodeStreamingKVBuffer[
         Self.kv_t.dtype,
         type_of(Self.mma_layout),
         MutUntrackedOrigin,
-        address_space=AddressSpace.LOCAL,
+        address_space=.LOCAL,
     ]
     comptime KVMmaOpType = KVMmaOp[
         Self.kv_t.dtype,
@@ -940,9 +938,7 @@ struct DecodeStreamingKVBuffer[
 
     @__allow_legacy_any_origin_fields
     var smem_ptr: UnsafePointer[
-        Scalar[Self.kv_t.dtype],
-        MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        Scalar[Self.kv_t.dtype], MutAnyOrigin, address_space=.SHARED
     ]
     var warp_id: UInt32
 
@@ -953,9 +949,7 @@ struct DecodeStreamingKVBuffer[
         batch_idx: Int,
         head_idx: Int,
         smem_ptr: UnsafePointer[
-            Scalar[Self.kv_t.dtype],
-            MutAnyOrigin,
-            address_space=AddressSpace.SHARED,
+            Scalar[Self.kv_t.dtype], MutAnyOrigin, address_space=.SHARED
         ],
         num_keys: Int,
         warp_id: UInt32,
@@ -971,14 +965,14 @@ struct DecodeStreamingKVBuffer[
         Self.kv_t.dtype,
         Self._KSmemParentLayout,
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]:
         """Single-stage K SMEM view (BN × BK) with strides (BK, BN)."""
         return TileTensor[
             Self.kv_t.dtype,
             Self._KSmemParentLayout,
             MutAnyOrigin,
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
         ](self.smem_ptr, Self._KSmemParentLayout())
 
     @always_inline
@@ -988,7 +982,7 @@ struct DecodeStreamingKVBuffer[
         Self.kv_t.dtype,
         type_of(row_major[tile_rows, Self.BK]()),
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]:
         """Get a (tile_rows, BK) row-major sub-tile from the K SMEM.
 
@@ -1055,7 +1049,7 @@ struct DecodeStreamingKVBuffer[
                 ](gmem_tile)
 
                 var load_buf = stack_allocation[
-                    Self.kv_t.dtype, AddressSpace.LOCAL
+                    Self.kv_t.dtype, address_space=.LOCAL
                 ](row_major[_k_rows_per_stage, _k_sw]())
 
                 var dram_strip = gmem_tile.tile[Self.BN, Self.BK](0, strip_idx)
@@ -1069,7 +1063,7 @@ struct DecodeStreamingKVBuffer[
                     Self.kv_t.dtype,
                     type_of(_k_smem_layout),
                     MutAnyOrigin,
-                    address_space=AddressSpace.SHARED,
+                    address_space=.SHARED,
                 ](self.smem_ptr, _k_smem_layout)
 
                 RegTileWriterLDS[
@@ -1125,7 +1119,7 @@ struct DecodeStreamingKVBuffer[
             ](gmem_tile)
 
             var load_buf = stack_allocation[
-                Self.kv_t.dtype, AddressSpace.LOCAL
+                Self.kv_t.dtype, address_space=.LOCAL
             ](row_major[_v_rows_per_stage, _v_sw]())
 
             var dram_strip = gmem_tile.tile[Self.BK, Self.depth](strip_idx, 0)
@@ -1140,7 +1134,7 @@ struct DecodeStreamingKVBuffer[
                 Self.kv_t.dtype,
                 type_of(_v_smem_layout),
                 MutAnyOrigin,
-                address_space=AddressSpace.SHARED,
+                address_space=.SHARED,
             ](self.smem_ptr, _v_smem_layout)
 
             RegTileWriterLDS[
@@ -1212,7 +1206,7 @@ struct DecodeStreamingKVBuffer[
                 Self.kv_t.dtype,
                 type_of(_v_smem_layout),
                 MutAnyOrigin,
-                address_space=AddressSpace.SHARED,
+                address_space=.SHARED,
             ](self.smem_ptr, _v_smem_layout)
             var warp_tile = smem_tile.tile[Self.BK, _v_warp_depth](
                 0, Int(warp_col)
@@ -1241,7 +1235,7 @@ struct DecodeStreamingKVBuffer[
         Self.kv_t.dtype,
         type_of(row_major[Self.num_mmas, Self.input_frag_size]()),
         MutUntrackedOrigin,
-        address_space=AddressSpace.LOCAL,
+        address_space=.LOCAL,
     ]:
         """Get register tile for one k_mma group within the single strip.
 
@@ -1426,7 +1420,7 @@ struct DecodeKVBuffer[
         Self.dtype,
         type_of(Self._load_layout),
         MutUntrackedOrigin,
-        address_space=AddressSpace.LOCAL,
+        address_space=.LOCAL,
     ]
     var load_tile: Self.LoadTile
 
@@ -1438,7 +1432,7 @@ struct DecodeKVBuffer[
         Self.dtype,
         type_of(Self._mma_layout),
         MutUntrackedOrigin,
-        address_space=AddressSpace.LOCAL,
+        address_space=.LOCAL,
     ]
     var mma_tile: Self.MmaTile
 
@@ -1459,7 +1453,7 @@ struct DecodeKVBuffer[
         Self.dtype,
         type_of(Self._smem_layout),
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]
 
     @__allow_legacy_any_origin_fields
@@ -1488,10 +1482,10 @@ struct DecodeKVBuffer[
         gmem_tile: Self.GmemTileType,
         smem_tile: Self.SmemTile,
     ):
-        self.load_tile = stack_allocation[Self.dtype, AddressSpace.LOCAL](
+        self.load_tile = stack_allocation[Self.dtype, address_space=.LOCAL](
             Self._load_layout
         )
-        self.mma_tile = stack_allocation[Self.dtype, AddressSpace.LOCAL](
+        self.mma_tile = stack_allocation[Self.dtype, address_space=.LOCAL](
             Self._mma_layout
         )
         self.smem_tile = smem_tile
@@ -1527,14 +1521,14 @@ struct DecodeKVBuffer[
         Self.dtype,
         type_of(row_major[Self._mma_rows, Self._mma_cols]()),
         MutAnyOrigin,
-        address_space=AddressSpace.LOCAL,
+        address_space=.LOCAL,
     ]:
         return rebind[
             TileTensor[
                 Self.dtype,
                 type_of(row_major[Self._mma_rows, Self._mma_cols]()),
                 MutAnyOrigin,
-                address_space=AddressSpace.LOCAL,
+                address_space=.LOCAL,
             ]
         ](self.mma_tile)
 

@@ -144,27 +144,25 @@ def kernel_5[
         a_type,
         sub_a_smem_layout,
         _,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
     ]
     comptime sub_b_smem_tile_t = LayoutTensor[
         b_type,
         sub_b_smem_layout,
         _,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
     ]
     comptime c_smem_tile_t = LayoutTensor[
         c_type,
         c_smem_layout,
         _,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
     ]
 
-    var smem = external_memory[
-        UInt8, address_space=AddressSpace.SHARED, alignment=8
-    ]()
+    var smem = external_memory[UInt8, address_space=.SHARED, alignment=8]()
 
     comptime a_smem_bytes = a_smem_layout.size() * size_of[a_type]()
     comptime b_smem_bytes = b_smem_layout.size() * size_of[b_type]()
@@ -363,8 +361,8 @@ def kernel_5[
 
     var st_matrix_rt_layout = RuntimeLayout[
         st_matrix_n_layout[c_type, TMA_BN, num_m_mmas, 1](),
-        element_type=DType.int32,
-        linear_idx_type=DType.int32,
+        element_type=.int32,
+        linear_idx_type=.int32,
     ]()
 
     comptime st_matrix_swizzle = make_swizzle[c_type, c_swizzle]()
@@ -390,27 +388,23 @@ def kernel_5[
         var lower = c_smem_warp_tile.tile[16, TMA_BN](1, 0)
 
         comptime for i in range(TMA_BN // 16):
-            var d_reg_upper = SIMD[DType.bfloat16, 8]()
-            var d_reg_lower = SIMD[DType.bfloat16, 8]()
+            var d_reg_upper = SIMD[.bfloat16, 8]()
+            var d_reg_lower = SIMD[.bfloat16, 8]()
 
             comptime for _ei in range(4):
                 comptime _src_offset = (
                     i + tma_n * (TMA_BN // 16)
                 ) * 8 + 2 * _ei
-                var upper_pair = SIMD[DType.float32, 2](
-                    rebind[Scalar[DType.float32]](c_frag_upper[_src_offset]),
-                    rebind[Scalar[DType.float32]](
-                        c_frag_upper[_src_offset + 1]
-                    ),
+                var upper_pair = SIMD[.float32, 2](
+                    rebind[Float32](c_frag_upper[_src_offset]),
+                    rebind[Float32](c_frag_upper[_src_offset + 1]),
                 )
-                var lower_pair = SIMD[DType.float32, 2](
-                    rebind[Scalar[DType.float32]](c_frag_lower[_src_offset]),
-                    rebind[Scalar[DType.float32]](
-                        c_frag_lower[_src_offset + 1]
-                    ),
+                var lower_pair = SIMD[.float32, 2](
+                    rebind[Float32](c_frag_lower[_src_offset]),
+                    rebind[Float32](c_frag_lower[_src_offset + 1]),
                 )
-                var upper_casted = upper_pair.cast[DType.bfloat16]()
-                var lower_casted = lower_pair.cast[DType.bfloat16]()
+                var upper_casted = upper_pair.cast[.bfloat16]()
+                var lower_casted = lower_pair.cast[.bfloat16]()
                 d_reg_upper[2 * _ei] = upper_casted[0]
                 d_reg_upper[2 * _ei + 1] = upper_casted[1]
                 d_reg_lower[2 * _ei] = lower_casted[0]
@@ -427,8 +421,8 @@ def kernel_5[
                 )
             ](lane_id(), i, 0, 0)
 
-            var d_reg_upper_packed = bitcast[DType.float32, 4](d_reg_upper)
-            var d_reg_lower_packed = bitcast[DType.float32, 4](d_reg_lower)
+            var d_reg_upper_packed = bitcast[.float32, 4](d_reg_upper)
+            var d_reg_lower_packed = bitcast[.float32, 4](d_reg_lower)
 
             st_matrix[simd_width=4](
                 upper.ptr
@@ -457,7 +451,7 @@ def kernel_5[
         var c_tma_tile = LayoutTensor[
             c_type,
             Layout.row_major(c_tile_shape[0], c_tile_shape[1]),
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
             alignment=128,
         ](c_smem_offset)
 
@@ -788,9 +782,9 @@ def benchmark_blackwell_matmul(ctx: DeviceContext) raises:
             "]",
         )
         test_blackwell_kernel_5[
-            DType.bfloat16,
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
+            .bfloat16,
             block_tile_shape,
             umma_shape,
             cluster_shape=StaticTuple[Int32, 3](2, 1, 1),
@@ -816,9 +810,9 @@ def main() raises:
         comptime umma_shape = Index(256, 256, 16)
 
         test_blackwell_kernel_5[
-            DType.bfloat16,
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
+            .bfloat16,
             block_tile_shape,
             umma_shape,
             cluster_shape=StaticTuple[Int32, 3](2, 1, 1),

@@ -58,14 +58,14 @@ comptime E8M0_NAN = UInt8(0xFF)
 def _e8m0_to_f32(bits: UInt8) -> Float32:
     """Decodes an E8M0 byte exactly as `_convert_float8_ue8m0_to_f32` does."""
     if bits == UInt8(0):
-        return bitcast[DType.float32](UInt32(0x00400000))  # 2^-127, subnormal
+        return bitcast[.float32](UInt32(0x00400000))  # 2^-127, subnormal
     if bits == E8M0_NAN:
-        return bitcast[DType.float32](UInt32(0x7FFFFFFF))  # NaN
-    return bitcast[DType.float32](UInt32(bits) << UInt32(23))
+        return bitcast[.float32](UInt32(0x7FFFFFFF))  # NaN
+    return bitcast[.float32](UInt32(bits) << UInt32(23))
 
 
 def _f32(bits: UInt32) -> Float32:
-    return bitcast[DType.float32](bits)
+    return bitcast[.float32](bits)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -77,30 +77,22 @@ comptime probe_layout = row_major[NPROBE]()
 
 
 def _cast_probe_kernel(
-    vals: TileTensor[DType.float32, type_of(probe_layout), MutAnyOrigin],
-    e8m0_out: TileTensor[
-        DType.float8_e8m0fnu, type_of(probe_layout), MutAnyOrigin
-    ],
-    e8m0_back: TileTensor[DType.float32, type_of(probe_layout), MutAnyOrigin],
-    e4m3_out: TileTensor[
-        DType.float8_e4m3fn, type_of(probe_layout), MutAnyOrigin
-    ],
-    recip_out: TileTensor[DType.float32, type_of(probe_layout), MutAnyOrigin],
+    vals: TileTensor[.float32, type_of(probe_layout), MutAnyOrigin],
+    e8m0_out: TileTensor[.float8_e8m0fnu, type_of(probe_layout), MutAnyOrigin],
+    e8m0_back: TileTensor[.float32, type_of(probe_layout), MutAnyOrigin],
+    e4m3_out: TileTensor[.float8_e4m3fn, type_of(probe_layout), MutAnyOrigin],
+    recip_out: TileTensor[.float32, type_of(probe_layout), MutAnyOrigin],
     n: Int32,
 ):
     var i = global_idx.x
     if i < Int(n):
-        var x = rebind[Scalar[DType.float32]](vals[i])
-        var s = x.cast[DType.float8_e8m0fnu]()
+        var x = rebind[Float32](vals[i])
+        var s = x.cast[.float8_e8m0fnu]()
         e8m0_out[i] = rebind[e8m0_out.ElementType](s)
-        e8m0_back[i] = rebind[e8m0_back.ElementType](s.cast[DType.float32]())
-        e4m3_out[i] = rebind[e4m3_out.ElementType](
-            x.cast[DType.float8_e4m3fn]()
-        )
+        e8m0_back[i] = rebind[e8m0_back.ElementType](s.cast[.float32]())
+        e4m3_out[i] = rebind[e4m3_out.ElementType](x.cast[.float8_e4m3fn]())
         # The production `out_scale`: reciprocal of the decoded E8M0 scale.
-        recip_out[i] = rebind[recip_out.ElementType](
-            recip(s.cast[DType.float32]())
-        )
+        recip_out[i] = rebind[recip_out.ElementType](recip(s.cast[.float32]()))
 
 
 def test_cast_behavior(ctx: DeviceContext) raises:
@@ -168,15 +160,15 @@ def test_cast_behavior(ctx: DeviceContext) raises:
     vals.append(_f32(0x7FC00000))
     names.append("NaN")
 
-    var vals_d = ctx.enqueue_create_buffer[DType.float32](NPROBE)
+    var vals_d = ctx.enqueue_create_buffer[.float32](NPROBE)
     with vals_d.map_to_host() as h:
         for i in range(NPROBE):
             h[i] = vals[i] if i < len(vals) else Float32(0.0)
 
-    var e8m0_d = ctx.enqueue_create_buffer[DType.float8_e8m0fnu](NPROBE)
-    var back_d = ctx.enqueue_create_buffer[DType.float32](NPROBE)
-    var e4m3_d = ctx.enqueue_create_buffer[DType.float8_e4m3fn](NPROBE)
-    var recip_d = ctx.enqueue_create_buffer[DType.float32](NPROBE)
+    var e8m0_d = ctx.enqueue_create_buffer[.float8_e8m0fnu](NPROBE)
+    var back_d = ctx.enqueue_create_buffer[.float32](NPROBE)
+    var e4m3_d = ctx.enqueue_create_buffer[.float8_e4m3fn](NPROBE)
+    var recip_d = ctx.enqueue_create_buffer[.float32](NPROBE)
 
     ctx.enqueue_function[_cast_probe_kernel](
         TileTensor[origin=MutAnyOrigin](vals_d, probe_layout),
@@ -189,11 +181,11 @@ def test_cast_behavior(ctx: DeviceContext) raises:
         block_dim=NPROBE,
     )
 
-    var vals_h = ctx.enqueue_create_host_buffer[DType.float32](NPROBE)
-    var e8m0_h = ctx.enqueue_create_host_buffer[DType.float8_e8m0fnu](NPROBE)
-    var back_h = ctx.enqueue_create_host_buffer[DType.float32](NPROBE)
-    var e4m3_h = ctx.enqueue_create_host_buffer[DType.float8_e4m3fn](NPROBE)
-    var recip_h = ctx.enqueue_create_host_buffer[DType.float32](NPROBE)
+    var vals_h = ctx.enqueue_create_host_buffer[.float32](NPROBE)
+    var e8m0_h = ctx.enqueue_create_host_buffer[.float8_e8m0fnu](NPROBE)
+    var back_h = ctx.enqueue_create_host_buffer[.float32](NPROBE)
+    var e4m3_h = ctx.enqueue_create_host_buffer[.float8_e4m3fn](NPROBE)
+    var recip_h = ctx.enqueue_create_host_buffer[.float32](NPROBE)
     ctx.enqueue_copy(recip_h, recip_d)
     ctx.enqueue_copy(vals_h, vals_d)
     ctx.enqueue_copy(e8m0_h, e8m0_d)
@@ -205,8 +197,8 @@ def test_cast_behavior(ctx: DeviceContext) raises:
         "  x -> e8m0 byte (value) | recip(e8m0 value) | x -> e4m3 byte (value)"
     )
     for i in range(len(names)):
-        var sb = bitcast[DType.uint8](e8m0_h[i])
-        var qb = bitcast[DType.uint8](e4m3_h[i])
+        var sb = bitcast[.uint8](e8m0_h[i])
+        var qb = bitcast[.uint8](e4m3_h[i])
         print(
             "    ",
             names[i],
@@ -221,13 +213,13 @@ def test_cast_behavior(ctx: DeviceContext) raises:
             " | e4m3=",
             Int(qb),
             " (",
-            e4m3_h[i].cast[DType.float32](),
+            e4m3_h[i].cast[.float32](),
             ")",
         )
 
     # The bound `|value * recip(scale)| <= 448` holds only if the E8M0 cast
     # never lands BELOW the requested scale. Assert the discriminating cases.
-    var one_ulp_up = Int(bitcast[DType.uint8](e8m0_h[1]))
+    var one_ulp_up = Int(bitcast[.uint8](e8m0_h[1]))
     assert_true(
         one_ulp_up == 128,
         String(
@@ -237,11 +229,11 @@ def test_cast_behavior(ctx: DeviceContext) raises:
         + String(one_ulp_up),
     )
     assert_true(
-        Int(bitcast[DType.uint8](e8m0_h[3])) == 128,
+        Int(bitcast[.uint8](e8m0_h[3])) == 128,
         "e8m0(1.5) should round up to 128 (=2.0)",
     )
     assert_true(
-        Int(bitcast[DType.uint8](e8m0_h[0])) == 127,
+        Int(bitcast[.uint8](e8m0_h[0])) == 127,
         "e8m0(1.0) should be exact: 127",
     )
 
@@ -273,12 +265,12 @@ def test_quantize_bf16_exhaustive[
     comptime scale_K = SWEEP_K // MXFP8_SF_VECTOR_SIZE
     comptime N = SWEEP_M * SWEEP_K
 
-    var input_d = ctx.enqueue_create_buffer[DType.bfloat16](N)
+    var input_d = ctx.enqueue_create_buffer[.bfloat16](N)
     with input_d.map_to_host() as h:
         for g in range(NUM_BF16_MAGS):
-            var v = bitcast[DType.bfloat16](UInt16(g))
-            var neg = bitcast[DType.bfloat16](UInt16(g) | UInt16(0x8000))
-            var tiny = (v.cast[DType.float32]() * Float32(1.0e-9)).cast[
+            var v = bitcast[.bfloat16](UInt16(g))
+            var neg = bitcast[.bfloat16](UInt16(g) | UInt16(0x8000))
+            var tiny = (v.cast[.float32]() * Float32(1.0e-9)).cast[
                 DType.bfloat16
             ]()
             for j in range(MXFP8_SF_VECTOR_SIZE):
@@ -288,10 +280,8 @@ def test_quantize_bf16_exhaustive[
                 else:
                     h[idx] = neg if j % 2 == 1 else v
 
-    var out_d = ctx.enqueue_create_buffer[DType.float8_e4m3fn](N)
-    var scales_d = ctx.enqueue_create_buffer[DType.float8_e8m0fnu](
-        SWEEP_M * scale_K
-    )
+    var out_d = ctx.enqueue_create_buffer[.float8_e4m3fn](N)
+    var scales_d = ctx.enqueue_create_buffer[.float8_e8m0fnu](SWEEP_M * scale_K)
     var input_tt = TileTensor(input_d, row_major((Idx[SWEEP_M], Idx[SWEEP_K])))
     var out_tt = TileTensor(out_d, row_major((Idx[SWEEP_M], Idx[SWEEP_K])))
     var scales_tt = TileTensor(
@@ -299,9 +289,9 @@ def test_quantize_bf16_exhaustive[
     )
     quantize_mx_amd(ctx, out_tt, scales_tt, input_tt)
 
-    var input_h = ctx.enqueue_create_host_buffer[DType.bfloat16](N)
-    var out_h = ctx.enqueue_create_host_buffer[DType.float8_e4m3fn](N)
-    var scales_h = ctx.enqueue_create_host_buffer[DType.float8_e8m0fnu](
+    var input_h = ctx.enqueue_create_host_buffer[.bfloat16](N)
+    var out_h = ctx.enqueue_create_host_buffer[.float8_e4m3fn](N)
+    var scales_h = ctx.enqueue_create_host_buffer[.float8_e8m0fnu](
         SWEEP_M * scale_K
     )
     ctx.enqueue_copy(input_h, input_d)
@@ -323,7 +313,7 @@ def test_quantize_bf16_exhaustive[
     var max_rel_err_group = 0
 
     for g in range(NUM_BF16_MAGS):
-        var scale_bits = bitcast[DType.uint8](scales_h[g])
+        var scale_bits = bitcast[.uint8](scales_h[g])
         if scale_bits == E8M0_NAN:
             nan_scales += 1
             continue
@@ -332,9 +322,7 @@ def test_quantize_bf16_exhaustive[
         for j in range(MXFP8_SF_VECTOR_SIZE):
             group_max = max(
                 group_max,
-                abs(
-                    input_h[g * MXFP8_SF_VECTOR_SIZE + j].cast[DType.float32]()
-                ),
+                abs(input_h[g * MXFP8_SF_VECTOR_SIZE + j].cast[.float32]()),
             )
         # `out_scale` is exactly what the kernel applied: recip of the stored
         # power-of-two scale (0 for an all-zero block).
@@ -349,7 +337,7 @@ def test_quantize_bf16_exhaustive[
 
         for j in range(MXFP8_SF_VECTOR_SIZE):
             var idx = g * MXFP8_SF_VECTOR_SIZE + j
-            var orig = input_h[idx].cast[DType.float32]()
+            var orig = input_h[idx].cast[.float32]()
             var product = abs(orig) * out_scale
             # The `<= 448` bound is a statement about the FINITE domain. A
             # non-finite input has no representable E4M3 image at all, so the
@@ -358,7 +346,7 @@ def test_quantize_bf16_exhaustive[
             if isfinite(orig) and product > worst_product:
                 worst_product = product
                 worst_product_group = g
-            var ob = bitcast[DType.uint8](out_h[idx])
+            var ob = bitcast[.uint8](out_h[idx])
             if ob == E4M3_NAN_LO or ob == E4M3_NAN_HI:
                 nan_outputs += 1
                 if nan_outputs <= 4:
@@ -381,7 +369,7 @@ def test_quantize_bf16_exhaustive[
                         Int(ob),
                     )
                 continue
-            var dequant = out_h[idx].cast[DType.float32]() * scale
+            var dequant = out_h[idx].cast[.float32]() * scale
             if not isfinite(dequant):
                 dequant_overflow += 1
                 if (
@@ -485,13 +473,13 @@ def _pattern_name(p: Int) -> String:
 
 
 def _fill_pattern(
-    mut h: HostBuffer[DType.bfloat16],
+    mut h: HostBuffer[.bfloat16],
     token: Int,
     group: Int,
     p: Int,
 ):
     comptime input_dim = SILU_HIDDEN * 2
-    var bf16_denorm = bitcast[DType.bfloat16](UInt16(1))
+    var bf16_denorm = bitcast[.bfloat16](UInt16(1))
     for j in range(MXFP8_SF_VECTOR_SIZE):
         var k = group * MXFP8_SF_VECTOR_SIZE + j
         var gi = token * input_dim + k
@@ -528,11 +516,11 @@ def _fill_pattern(
                 h[gi] = bf16_denorm
                 h[ui] = bf16_denorm
             else:
-                h[gi] = Scalar[DType.bfloat16](0)
-                h[ui] = Scalar[DType.bfloat16](0)
+                h[gi] = BFloat16(0)
+                h[ui] = BFloat16(0)
             continue
-        h[gi] = gv.cast[DType.bfloat16]()
-        h[ui] = uv.cast[DType.bfloat16]()
+        h[gi] = gv.cast[.bfloat16]()
+        h[ui] = uv.cast[.bfloat16]()
 
 
 def test_fused_silu_adversarial[
@@ -544,10 +532,10 @@ def test_fused_silu_adversarial[
     comptime n_off = 2
     comptime hw = ctx.default_device_info
 
-    var input_h = ctx.enqueue_create_host_buffer[DType.bfloat16](
+    var input_h = ctx.enqueue_create_host_buffer[.bfloat16](
         SILU_TOKENS * input_dim
     )
-    var off_h = ctx.enqueue_create_host_buffer[DType.uint32](n_off)
+    var off_h = ctx.enqueue_create_host_buffer[.uint32](n_off)
     ctx.synchronize()
     for t in range(SILU_TOKENS):
         for g in range(scale_K):
@@ -555,10 +543,8 @@ def test_fused_silu_adversarial[
     off_h[0] = UInt32(0)
     off_h[1] = UInt32(SILU_TOKENS)
 
-    var input_d = ctx.enqueue_create_buffer[DType.bfloat16](
-        SILU_TOKENS * input_dim
-    )
-    var off_d = ctx.enqueue_create_buffer[DType.uint32](n_off)
+    var input_d = ctx.enqueue_create_buffer[.bfloat16](SILU_TOKENS * input_dim)
+    var off_d = ctx.enqueue_create_buffer[.uint32](n_off)
     ctx.enqueue_copy(input_d, input_h)
     ctx.enqueue_copy(off_d, off_h)
 
@@ -592,14 +578,14 @@ def test_fused_silu_adversarial[
         clamp_activation=clamp_activation,
     ]
 
-    var out_d = ctx.enqueue_create_buffer[DType.float8_e4m3fn](
+    var out_d = ctx.enqueue_create_buffer[.float8_e4m3fn](
         SILU_TOKENS * output_dim
     )
-    var scales_d = ctx.enqueue_create_buffer[DType.float8_e8m0fnu](
+    var scales_d = ctx.enqueue_create_buffer[.float8_e8m0fnu](
         SILU_TOKENS * scale_K
     )
-    out_d.enqueue_fill(Scalar[DType.float8_e4m3fn](0))
-    scales_d.enqueue_fill(Scalar[DType.float8_e8m0fnu](0))
+    out_d.enqueue_fill(Float8_e4m3fn(0))
+    scales_d.enqueue_fill(Float8_e8m0fnu(0))
 
     ctx.enqueue_function[kernel](
         TileTensor[origin=MutAnyOrigin](
@@ -617,10 +603,10 @@ def test_fused_silu_adversarial[
         block_dim=hw.max_thread_block_size,
     )
 
-    var out_h = ctx.enqueue_create_host_buffer[DType.float8_e4m3fn](
+    var out_h = ctx.enqueue_create_host_buffer[.float8_e4m3fn](
         SILU_TOKENS * output_dim
     )
-    var scales_host = ctx.enqueue_create_host_buffer[DType.float8_e8m0fnu](
+    var scales_host = ctx.enqueue_create_host_buffer[.float8_e8m0fnu](
         SILU_TOKENS * scale_K
     )
     ctx.enqueue_copy(out_h, out_d)
@@ -632,7 +618,7 @@ def test_fused_silu_adversarial[
     for t in range(SILU_TOKENS):
         for g in range(scale_K):
             var p = (t * scale_K + g) % NUM_PATTERNS
-            var scale_bits = bitcast[DType.uint8](scales_host[t * scale_K + g])
+            var scale_bits = bitcast[.uint8](scales_host[t * scale_K + g])
             var scale = _e8m0_to_f32(scale_bits)
 
             # Host reference for the same activation the kernel computes.
@@ -640,7 +626,7 @@ def test_fused_silu_adversarial[
             var ref_nonfinite = False
             for j in range(MXFP8_SF_VECTOR_SIZE):
                 var k = g * MXFP8_SF_VECTOR_SIZE + j
-                var gp = input_h[t * input_dim + k].cast[DType.float32]()
+                var gp = input_h[t * input_dim + k].cast[.float32]()
                 var up = input_h[t * input_dim + SILU_HIDDEN + k].cast[
                     DType.float32
                 ]()
@@ -664,11 +650,11 @@ def test_fused_silu_adversarial[
             var worst_dequant = Float32(0.0)
             for j in range(MXFP8_SF_VECTOR_SIZE):
                 var idx = t * output_dim + g * MXFP8_SF_VECTOR_SIZE + j
-                var ob = bitcast[DType.uint8](out_h[idx])
+                var ob = bitcast[.uint8](out_h[idx])
                 if ob == E4M3_NAN_LO or ob == E4M3_NAN_HI:
                     bad_out += 1
                     continue
-                var dq = out_h[idx].cast[DType.float32]() * scale
+                var dq = out_h[idx].cast[.float32]() * scale
                 if not isfinite(dq):
                     # Encoding is finite but exceeds fp32 range; only reachable
                     # for inputs already at the top of the BF16 range.
@@ -680,14 +666,14 @@ def test_fused_silu_adversarial[
                 violations += 1
                 for j in range(MXFP8_SF_VECTOR_SIZE):
                     var k = g * MXFP8_SF_VECTOR_SIZE + j
-                    var ob2 = bitcast[DType.uint8](out_h[t * output_dim + k])
+                    var ob2 = bitcast[.uint8](out_h[t * output_dim + k])
                     if ob2 != E4M3_NAN_LO and ob2 != E4M3_NAN_HI:
                         continue
                     print(
                         "        nan lane ",
                         j,
                         " gate=",
-                        input_h[t * input_dim + k].cast[DType.float32](),
+                        input_h[t * input_dim + k].cast[.float32](),
                         " up=",
                         input_h[t * input_dim + SILU_HIDDEN + k].cast[
                             DType.float32

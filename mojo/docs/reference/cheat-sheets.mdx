@@ -4,8 +4,6 @@ sidebar_label: Cheat sheets
 description: Quick reference cards for Mojo essentials.
 ---
 
-import useBaseUrl from '@docusaurus/useBaseUrl';
-
 <!-- markdownlint-disable MD033 -->
 
 import {useColorMode} from '@docusaurus/theme-common';
@@ -14,48 +12,60 @@ export const basicsSheet = {
   id: 'mojo-cheat-sheet-basics',
   lightPng: require('./assets/basics/mojo-cheat-sheet-basics-light.png').default,
   lightPdf: require('./assets/basics/mojo-cheat-sheet-basics-light.pdf').default,
+  lightSvg: require('./assets/basics/mojo-cheat-sheet-basics-light.svg').default,
   darkPng: require('./assets/basics/mojo-cheat-sheet-basics-dark.png').default,
   darkPdf: require('./assets/basics/mojo-cheat-sheet-basics-dark.pdf').default,
+  darkSvg: require('./assets/basics/mojo-cheat-sheet-basics-dark.svg').default,
 };
 
 export const compiletimeSheet = {
   id: 'mojo-cheat-sheet-compile-time',
   lightPng: require('./assets/compile-time/mojo-cheat-sheet-compile-time-light.png').default,
   lightPdf: require('./assets/compile-time/mojo-cheat-sheet-compile-time-light.pdf').default,
+  lightSvg: require('./assets/compile-time/mojo-cheat-sheet-compile-time-light.svg').default,
   darkPng: require('./assets/compile-time/mojo-cheat-sheet-compile-time-dark.png').default,
   darkPdf: require('./assets/compile-time/mojo-cheat-sheet-compile-time-dark.pdf').default,
+  darkSvg: require('./assets/compile-time/mojo-cheat-sheet-compile-time-dark.svg').default,
 };
 
 export const traitsSheet = {
   id: 'mojo-cheat-sheet-traits',
   lightPng: require('./assets/traits/mojo-cheat-sheet-traits-light.png').default,
   lightPdf: require('./assets/traits/mojo-cheat-sheet-traits-light.pdf').default,
+  lightSvg: require('./assets/traits/mojo-cheat-sheet-traits-light.svg').default,
   darkPng: require('./assets/traits/mojo-cheat-sheet-traits-dark.png').default,
   darkPdf: require('./assets/traits/mojo-cheat-sheet-traits-dark.pdf').default,
+  darkSvg: require('./assets/traits/mojo-cheat-sheet-traits-dark.svg').default,
 };
 
 export const ownershipSheet = {
   id: 'mojo-cheat-sheet-ownership',
   lightPng: require('./assets/ownership/mojo-cheat-sheet-ownership-light.png').default,
   lightPdf: require('./assets/ownership/mojo-cheat-sheet-ownership-light.pdf').default,
+  lightSvg: require('./assets/ownership/mojo-cheat-sheet-ownership-light.svg').default,
   darkPng: require('./assets/ownership/mojo-cheat-sheet-ownership-dark.png').default,
   darkPdf: require('./assets/ownership/mojo-cheat-sheet-ownership-dark.pdf').default,
+  darkSvg: require('./assets/ownership/mojo-cheat-sheet-ownership-dark.svg').default,
 };
 
 export const typesSheet = {
   id: 'mojo-cheat-sheet-types-and-literals',
   lightPng: require('./assets/types-literals/mojo-cheat-sheet-types-and-literals-light.png').default,
   lightPdf: require('./assets/types-literals/mojo-cheat-sheet-types-and-literals-light.pdf').default,
+  lightSvg: require('./assets/types-literals/mojo-cheat-sheet-types-and-literals-light.svg').default,
   darkPng: require('./assets/types-literals/mojo-cheat-sheet-types-and-literals-dark.png').default,
   darkPdf: require('./assets/types-literals/mojo-cheat-sheet-types-and-literals-dark.pdf').default,
+  darkSvg: require('./assets/types-literals/mojo-cheat-sheet-types-and-literals-dark.svg').default,
 };
 
 export const convertSheet = {
   id: 'mojo-cheat-sheet-conversions',
   lightPng: require('./assets/conversions/mojo-cheat-sheet-conversions-light.png').default,
   lightPdf: require('./assets/conversions/mojo-cheat-sheet-conversions-light.pdf').default,
+  lightSvg: require('./assets/conversions/mojo-cheat-sheet-conversions-light.svg').default,
   darkPng: require('./assets/conversions/mojo-cheat-sheet-conversions-dark.png').default,
   darkPdf: require('./assets/conversions/mojo-cheat-sheet-conversions-dark.pdf').default,
+  darkSvg: require('./assets/conversions/mojo-cheat-sheet-conversions-dark.svg').default,
 };
 
 export const Preview = ({sheet, alt}) => {
@@ -102,7 +112,7 @@ export const Preview = ({sheet, alt}) => {
   );
 };
 
-export const DownloadRow = ({label, png, pdf, name}) => (
+export const DownloadRow = ({label, svg, png, pdf, name}) => (
   <div style={{display: 'flex', alignItems: 'center', gap: '0.75rem'}}>
     <span
       style={{
@@ -114,7 +124,7 @@ export const DownloadRow = ({label, png, pdf, name}) => (
       {label}
     </span>
     <div className="button-group">
-      <a className="button button--sm button--outline button--primary" href={useBaseUrl(`/img/cheatsheet-assets/${name}.svg`)} download={`${name}.svg`}>SVG</a>
+      <a className="button button--sm button--outline button--primary" href={svg} download={`${name}.svg`}>SVG</a>
       <a className="button button--sm button--outline button--primary" href={png} download={`${name}.png`}>PNG</a>
       <a className="button button--sm button--outline button--primary" href={pdf} download={`${name}.pdf`}>PDF</a>
     </div>
@@ -131,8 +141,8 @@ export const Downloads = ({sheet}) => (
       flexDirection: 'column',
       gap: '0.5rem',
     }}>
-    <DownloadRow label="Download light" png={sheet.lightPng} pdf={sheet.lightPdf} name={`${sheet.id}-light`} />
-    <DownloadRow label="Download dark" png={sheet.darkPng} pdf={sheet.darkPdf} name={`${sheet.id}-dark`} />
+    <DownloadRow label="Download light" svg={sheet.lightSvg} png={sheet.lightPng} pdf={sheet.lightPdf} name={`${sheet.id}-light`} />
+    <DownloadRow label="Download dark" svg={sheet.darkSvg} png={sheet.darkPng} pdf={sheet.darkPdf} name={`${sheet.id}-dark`} />
   </div>
 );
 

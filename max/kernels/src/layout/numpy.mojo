@@ -25,7 +25,7 @@ from .tile_tensor import TileTensor
 
 
 comptime _NumPyLayout[rank: Int] = RowMajorLayout[
-    *DynamicCoord[DType.int, rank].element_types
+    *DynamicCoord[.int, rank].element_types
 ]
 """The layout of a `TileTensor` borrowed from a NumPy array: row-major with
 one runtime extent per axis."""
@@ -52,7 +52,7 @@ def from_numpy[
 
     var np = Python.import_module("numpy")
     var array = np.arange(6, dtype="float64").reshape(2, 3)
-    var tensor = from_numpy[DType.float64, 2](array)
+    var tensor = from_numpy[.float64, 2](array)
     var value = tensor[1, 2]
     ```
 
@@ -143,11 +143,11 @@ def to_numpy[
         " copying."
     )
 
-    var shape = DynamicCoord[DType.int, LayoutType.rank]()
+    var shape = DynamicCoord[.int, LayoutType.rank]()
 
     comptime for i in range(LayoutType.rank):
         shape[i] = rebind[type_of(shape[i])](
-            Scalar[DType.int](Int(tensor.layout.shape[i]().value()))
+            Int(Int(tensor.layout.shape[i]().value()))
         )
 
     var n = tensor.layout.size()
@@ -160,7 +160,7 @@ def to_numpy[
     # Gather into a contiguous buffer in C order, following the strides, then
     # hand that to the flat copy.
     var gathered = List[Scalar[dtype]](capacity=n)
-    var read_coord = DynamicCoord[DType.int, LayoutType.rank]()
+    var read_coord = DynamicCoord[.int, LayoutType.rank]()
 
     for _ in range(n):
         gathered.append(tensor[read_coord])

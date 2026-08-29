@@ -71,9 +71,9 @@ def _make_epilogue[
 def _add_residual_and_assert[
     c_type: DType, //
 ](
-    c_host_ptr: UnsafePointer[Scalar[c_type], MutAnyOrigin],
-    c_ref_host_ptr: UnsafePointer[Scalar[c_type], MutAnyOrigin],
-    resid_host_ptr: UnsafePointer[Scalar[c_type], MutAnyOrigin],
+    c_host_ptr: MutPointer[Scalar[c_type], MutAnyOrigin],
+    c_ref_host_ptr: MutPointer[Scalar[c_type], MutAnyOrigin],
+    resid_host_ptr: MutPointer[Scalar[c_type], MutAnyOrigin],
     M: Int,
     N: Int,
     epilogue_is_1d: Bool,

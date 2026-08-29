@@ -138,7 +138,7 @@ def gated_delta_recurrence_fwd_gpu[
     recurrent_state: TileTensor[
         state_dtype, recurrent_state_LT, MutUntrackedOrigin
     ],
-    slot_idx: TileTensor[DType.uint32, slot_idx_LT, MutUntrackedOrigin],
+    slot_idx: TileTensor[.uint32, slot_idx_LT, MutUntrackedOrigin],
     qkv_conv_output: TileTensor[
         work_dtype, qkv_conv_output_LT, MutUntrackedOrigin
     ],
@@ -149,7 +149,7 @@ def gated_delta_recurrence_fwd_gpu[
         work_dtype, beta_per_token_LT, MutUntrackedOrigin
     ],
     input_row_offsets: TileTensor[
-        DType.uint32, input_row_offsets_LT, MutUntrackedOrigin
+        .uint32, input_row_offsets_LT, MutUntrackedOrigin
     ],
     # Strides for [total_seq_len, conv_dim] tensors
     qkv_conv_output_seqlen_stride: UInt32,
@@ -271,17 +271,17 @@ def gated_delta_recurrence_fwd_gpu[
     # Shared memory: raw Q and K for the current token (one element per kd).
     var q_raw_s = unsafe_stack_allocation[
         KEY_HEAD_DIM,
-        Scalar[DType.float32],
-        address_space=AddressSpace.SHARED,
+        Float32,
+        address_space=.SHARED,
     ]()
     var k_raw_s = unsafe_stack_allocation[
         KEY_HEAD_DIM,
-        Scalar[DType.float32],
-        address_space=AddressSpace.SHARED,
+        Float32,
+        address_space=.SHARED,
     ]()
 
     # ── Load this thread's KD-element state column from pool[slot, ...] ──────
-    var state_col = SIMD[DType.float32, KEY_HEAD_DIM](0.0)
+    var state_col = SIMD[.float32, KEY_HEAD_DIM](0.0)
     comptime for kd in range(KEY_HEAD_DIM):
         var off = (
             UInt32(slot) * recurrent_state_slot_stride
@@ -289,7 +289,7 @@ def gated_delta_recurrence_fwd_gpu[
             + UInt32(kd) * recurrent_state_key_dim_stride
             + UInt32(tid) * recurrent_state_value_dim_stride
         )
-        state_col[kd] = Scalar[DType.float32](recurrent_state._storage[off])
+        state_col[kd] = Float32(recurrent_state._storage[off])
 
     var sequence_start_flat_idx = Int(
         input_row_offsets._storage[batch_item_idx]

@@ -20,7 +20,7 @@
 
 
 # CHECK-LABEL: lit.fn @"variadic_kwargs
-# CHECK-SAME: %a: !Int, %b: !Int, %args: !lit.ref<!lit.struct<#VariadicList{{.*}}> read_mem|pos_vararg, *, %c: !Int, %d: !Int,
+# CHECK-SAME: %a: !Int, %b: !Int, %args: !lit.ref<!lit.struct<#VariadicList{{.*}}> imm_mem|pos_vararg, *, %c: !Int, %d: !Int,
 # CHECK-SAME: %kwargs: !lit.ref<!lit.struct<#StringDict <:!AnyType_Copyable_ImplicitlyCopyable_Movable !Int>>, mut {{.*}}> owned_in_mem|kw_vararg)
 def variadic_kwargs(a: Int, b: Int, *args: Int, c: Int, d: Int, var **kwargs: Int):
     pass

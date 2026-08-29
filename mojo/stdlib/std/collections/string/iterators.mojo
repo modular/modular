@@ -165,13 +165,9 @@ struct CodepointSliceIter[
         if self._slice.byte_length() > 0:
             # SAFETY: Will not read out of bounds because `_slice` is guaranteed
             #   to contain valid UTF-8.
-            var curr_ptr = self._slice.as_bytes().unsafe_ptr()
-            var byte_len = _utf8_first_byte_sequence_length(curr_ptr[])
-            return StringSlice[Self.origin](
-                unsafe_from_utf8=Span[Byte, Self.origin](
-                    unsafe_ptr=curr_ptr, length=byte_len
-                )
-            )
+            var bytes = self._slice.as_bytes()
+            var byte_len = _utf8_first_byte_sequence_length(bytes[0])
+            return StringSlice[Self.origin](unsafe_from_utf8=bytes[:byte_len])
         else:
             return None
 
@@ -211,24 +207,17 @@ struct CodepointSliceIter[
         ```
         """
         if self._slice.byte_length() > 0:
-            var byte_len = 1
-            var back_ptr = (
-                self._slice.as_bytes()
-                .unsafe_ptr()
-                .unsafe_offset(self._slice.byte_length() - 1)
-            )
+            var bytes = self._slice.as_bytes()
+            var idx = len(bytes) - 1
             # SAFETY:
             #   Guaranteed not to go out of bounds because UTF-8
             #   guarantees there is always a "start" byte eventually before any
             #   continuation bytes.
-            while _is_utf8_continuation_byte(back_ptr[]):
-                byte_len += 1
-                back_ptr = back_ptr.unsafe_offset(-1)
+            while _is_utf8_continuation_byte(bytes.unsafe_get(idx)):
+                idx -= 1
 
             return StringSlice[Self.origin](
-                unsafe_from_utf8=Span[Byte, Self.origin](
-                    unsafe_ptr=back_ptr, length=byte_len
-                )
+                unsafe_from_utf8=bytes[idx : self._slice.byte_length()]
             )
         else:
             return None
@@ -581,12 +570,14 @@ struct GraphemeSliceIter[
         # The state machine reports a break at start-of-text (GB1) via its
         # initial `prev_gbp = GBP_CONTROL`, so every grapheme cluster --
         # including the first -- is signalled by a `True` return.
+        var remaining = self._slice
+        var total = remaining.byte_length()
+        if total == 0:
+            return 0
         var count = 0
         var state = _GraphemeBreakState()
-        var remaining = self._slice
-        var ptr = remaining.as_bytes().unsafe_ptr()
+        var bytes = remaining.as_bytes()
         var pos = 0
-        var total = remaining.byte_length()
 
         while pos < total:
             # ASCII fast path. Safe-ASCII bytes all have GBP_OTHER. Two
@@ -594,12 +585,12 @@ struct GraphemeSliceIter[
             # (GB999), and the first in such a run is a break start provided
             # the previous codepoint's GBP is not Prepend (GB9b). Runs of
             # safe-ASCII bytes are therefore one-grapheme-per-byte.
-            if _is_safe_ascii_for_grapheme(ptr[unsafe_offset=pos]) and (
+            if _is_safe_ascii_for_grapheme(bytes.unsafe_get(pos)) and (
                 state.prev_gbp != GBP_PREPEND
             ):
                 var run_start = pos
                 while pos < total and _is_safe_ascii_for_grapheme(
-                    ptr[unsafe_offset=pos]
+                    bytes.unsafe_get(pos)
                 ):
                     pos += 1
                 count += pos - run_start
@@ -607,9 +598,7 @@ struct GraphemeSliceIter[
                 continue
 
             # Slow path: decode one codepoint and feed the state machine.
-            var sub = Span[Byte, Self.origin](
-                unsafe_ptr=ptr.unsafe_offset(pos), length=total - pos
-            )
+            var sub = bytes[pos:total]
             var cp, num_bytes = Codepoint.unsafe_decode_utf8_codepoint(sub)
             if _is_grapheme_break(state, cp.to_u32()):
                 count += 1
@@ -644,7 +633,7 @@ struct GraphemeSliceIter[
         if self._slice.byte_length() <= 0:
             return None
 
-        var start_ptr = self._slice.as_bytes().unsafe_ptr()
+        var start_bytes = self._slice.as_bytes()
         var total_bytes = self._slice.byte_length()
         var consumed = 0
 
@@ -665,12 +654,7 @@ struct GraphemeSliceIter[
         # Continue consuming codepoints until we hit a break.
         var found_break = False
         while consumed < total_bytes:
-            var remaining = Span[Byte, Self.origin](
-                unsafe_ptr=self._slice.as_bytes()
-                .unsafe_ptr()
-                .unsafe_offset(consumed),
-                length=total_bytes - consumed,
-            )
+            var remaining = start_bytes[consumed:total_bytes]
             cp, num_bytes = Codepoint.unsafe_decode_utf8_codepoint(remaining)
 
             if _is_grapheme_break(self._state, cp.to_u32()):
@@ -693,11 +677,7 @@ struct GraphemeSliceIter[
         self._slice._slice._len -= consumed
         self._back_safe_known = False
 
-        return StringSlice[Self.origin](
-            unsafe_from_utf8=Span[Byte, Self.origin](
-                unsafe_ptr=start_ptr, length=consumed
-            )
-        )
+        return StringSlice[Self.origin](unsafe_from_utf8=start_bytes[:consumed])
 
     def peek_back(mut self) -> Optional[StringSlice[Self.origin]]:
         """Return the last grapheme cluster without advancing the iterator.
@@ -716,12 +696,7 @@ struct GraphemeSliceIter[
             return None
         var grapheme_start = self._grapheme_start_of_last_cluster(total)
         return StringSlice[Self.origin](
-            unsafe_from_utf8=Span[Byte, Self.origin](
-                unsafe_ptr=self._slice.as_bytes()
-                .unsafe_ptr()
-                .unsafe_offset(grapheme_start),
-                length=total - grapheme_start,
-            )
+            unsafe_from_utf8=self._slice.as_bytes()[grapheme_start:total]
         )
 
     def next_back(mut self) -> Optional[StringSlice[Self.origin]]:
@@ -753,12 +728,7 @@ struct GraphemeSliceIter[
             return None
         var grapheme_start = self._grapheme_start_of_last_cluster(total)
         var result = StringSlice[Self.origin](
-            unsafe_from_utf8=Span[Byte, Self.origin](
-                unsafe_ptr=self._slice.as_bytes()
-                .unsafe_ptr()
-                .unsafe_offset(grapheme_start),
-                length=total - grapheme_start,
-            )
+            unsafe_from_utf8=self._slice.as_bytes()[grapheme_start:total]
         )
         # Shrink the range from the end. Data pointer is unchanged, so the
         # cached `_back_safe_start` (if set) remains valid for future calls

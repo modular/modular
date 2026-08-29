@@ -82,7 +82,7 @@ def _get_index_type(address_space: AddressSpace) -> DType:
 
 def _get_index_type(layout: Layout) -> DType:
     """Returns int32 if layout size fits in int32 range, int64 otherwise."""
-    if layout.cosize() <= Int(max_finite[DType.int32]()):
+    if layout.cosize() <= Int(max_finite[.int32]()):
         return DType.int32
 
     return DType.int64
@@ -99,13 +99,11 @@ def _get_index_type(layout: Layout, address_space: AddressSpace) -> DType:
 def _get_unsigned_type(layout: Layout, address_space: AddressSpace) -> DType:
     """Returns int32 if layout fits in int32 range or index type is int32, otherwise index.
     """
-    if layout.all_dims_known() and layout.cosize() < Int(
-        max_finite[DType.int32]()
-    ):
+    if layout.all_dims_known() and layout.cosize() < Int(max_finite[.int32]()):
         return DType.int32
     else:
         var dtype = _get_index_type(address_space)
-        return DType.int32 if dtype == DType.int32 else DType.int64
+        return DType.int32 if dtype == .int32 else DType.int64
 
 
 def _get_layout_type(layout: Layout, address_space: AddressSpace) -> DType:
@@ -116,7 +114,7 @@ def _get_layout_type(layout: Layout, address_space: AddressSpace) -> DType:
         var shape = layout.shape.flatten()
 
         for i in range(len(shape)):
-            if shape[i].value() > Int(max_finite[DType.int32]()):
+            if shape[i].value() > Int(max_finite[.int32]()):
                 return DType.int64
 
         return DType.int32
@@ -134,7 +132,7 @@ struct IntArray(ImplicitlyCopyable, RegisterPassable):
     data structures, optimized for high-performance tensor operations.
     """
 
-    var _data: Optional[UnsafePointer[Int, MutUntrackedOrigin]]
+    var _data: Optional[MutPointer[Int, MutUntrackedOrigin]]
     var _size: Int
 
     @always_inline("nodebug")
@@ -588,7 +586,7 @@ struct IntTuple(
         self._store = _owned^
 
     @always_inline
-    def __init__(out self, existing: Self, rng: _StridedRange[DType.int]):
+    def __init__(out self, existing: Self, rng: _StridedRange[.int]):
         """Initialize an `IntTuple` as a slice of an existing `IntTuple`.
 
         Creates a new `IntTuple` containing only the elements from the existing
@@ -1508,19 +1506,21 @@ def is_tuple(t: IntTuple) -> Bool:
 
 
 def reduce[
-    reducer: def(a: Int, b: IntTuple) capturing[_] -> Int
-](t: IntTuple, initializer: Int) -> Int:
+    FuncType: def(a: Int, b: IntTuple) -> Int
+](t: IntTuple, initializer: Int, reducer: FuncType) -> Int:
     """Apply a reduction function to an `IntTuple` with an initial value.
 
     This function iterates through each element of the `IntTuple` and applies
     the provided reduction function cumulatively, starting with the initializer.
 
     Parameters:
-        reducer: A function that combines the accumulated result with the next element.
+        FuncType: The reduction function type.
 
     Args:
         t: The `IntTuple` to reduce.
         initializer: The initial value for the reduction operation.
+        reducer: A function that combines the accumulated result with the next
+            element.
 
     Returns:
         The final accumulated result after applying the reduction function
@@ -1728,13 +1728,12 @@ def sum(t: IntTuple) -> Int:
     """
 
     @always_inline
-    @__parameter
     def reducer(a: Int, b: IntTuple) -> Int:
         return UNKNOWN_VALUE if a == UNKNOWN_VALUE else a + (
             Int(b) if is_int(b) else sum(b)
         )
 
-    return reduce[reducer](t, 0)
+    return reduce(t, 0, reducer)
 
 
 @always_inline("nodebug")
@@ -1753,13 +1752,12 @@ def product(t: IntTuple) -> Int:
     """
 
     @always_inline
-    @__parameter
     def reducer(a: Int, b: IntTuple) -> Int:
         return UNKNOWN_VALUE if a == UNKNOWN_VALUE else a * (
             Int(b) if is_int(b) else product(b)
         )
 
-    return reduce[reducer](t, 1)
+    return reduce(t, 1, reducer)
 
 
 # TODO: Can't call this `max` otherwise the compiler incorrectly
@@ -1779,25 +1777,25 @@ def tuple_max(t: IntTuple) -> Int:
     """
 
     @always_inline
-    @__parameter
     def reducer(a: Int, b: IntTuple) -> Int:
         return max(a, Int(b) if is_int(b) else tuple_max(b))
 
     comptime int_min_val = 0
-    return reduce[reducer](t, int_min_val)
+    return reduce(t, int_min_val, reducer)
 
 
-def apply[func: def(Int) capturing[_] -> Int](t: IntTuple) -> IntTuple:
+def apply[FuncType: def(Int) -> Int](t: IntTuple, func: FuncType) -> IntTuple:
     """Apply a function to each integer value in an `IntTuple`.
 
     This function recursively applies the given function to each integer value
     in a potentially nested `IntTuple` structure, preserving the structure.
 
     Parameters:
-        func: Function to apply to each integer value.
+        FuncType: The transform function type.
 
     Args:
         t: The `IntTuple` to transform.
+        func: Function to apply to each integer value.
 
     Returns:
         A new `IntTuple` with the same structure but with each integer value
@@ -1807,7 +1805,7 @@ def apply[func: def(Int) capturing[_] -> Int](t: IntTuple) -> IntTuple:
         return func(Int(t))
     var res = IntTuple()
     for e in t:
-        res.append(apply[func](e))
+        res.append(apply(e, func))
     return res
 
 
@@ -1859,18 +1857,20 @@ def apply_zip[
 
 @always_inline("nodebug")
 def apply_zip[
-    func: def(IntTuple, IntTuple) capturing[_] -> IntTuple
-](t1: IntTuple, t2: IntTuple) -> IntTuple:
-    """Apply a capturing function to pairs of elements from two `IntTuple`s.
+    FuncType: def(IntTuple, IntTuple) -> IntTuple
+](t1: IntTuple, t2: IntTuple, func: FuncType) -> IntTuple:
+    """Apply a function to pairs of elements from two `IntTuple`s.
 
-    This overload allows the function to capture variables from its environment.
+    This overload takes the function as a runtime value so unified closures can
+    capture from their environment.
 
     Parameters:
-        func: Capturing function that takes two `IntTuple`s and returns an `IntTuple`.
+        FuncType: The zip function type.
 
     Args:
         t1: First `IntTuple`.
         t2: Second `IntTuple`.
+        func: Function that takes two `IntTuple`s and returns an `IntTuple`.
 
     Returns:
         A new `IntTuple` containing the results of applying func to each pair.
@@ -1909,19 +1909,21 @@ def apply_zip[
 
 @always_inline("nodebug")
 def apply_zip[
-    func: def(IntTuple, IntTuple, IntTuple) capturing[_] -> IntTuple
-](t1: IntTuple, t2: IntTuple, t3: IntTuple) -> IntTuple:
-    """Apply a capturing function to triplets of elements from three `IntTuple`s.
+    FuncType: def(IntTuple, IntTuple, IntTuple) -> IntTuple
+](t1: IntTuple, t2: IntTuple, t3: IntTuple, func: FuncType) -> IntTuple:
+    """Apply a function to triplets of elements from three `IntTuple`s.
 
-    This overload allows the function to capture variables from its environment.
+    This overload takes the function as a runtime value so unified closures can
+    capture from their environment.
 
     Parameters:
-        func: Capturing function that takes three `IntTuple`s and returns an `IntTuple`.
+        FuncType: The zip function type.
 
     Args:
         t1: First `IntTuple`.
         t2: Second `IntTuple`.
         t3: Third `IntTuple`.
+        func: Function that takes three `IntTuple`s and returns an `IntTuple`.
 
     Returns:
         A new `IntTuple` containing the results of applying func to each triplet.
@@ -2011,11 +2013,10 @@ def abs(t: IntTuple) -> IntTuple:
         A new `IntTuple` with the same structure but with absolute values.
     """
 
-    @__parameter
     def int_abs(x: Int) -> Int:
         return x.__abs__()
 
-    return apply[int_abs](t)
+    return apply(t, int_abs)
 
 
 @always_inline("nodebug")
@@ -2469,11 +2470,10 @@ def idx2crd2(
                 len(stride),
             )
 
-            @__parameter
-            def idx2crd2(shape: IntTuple, stride: IntTuple) -> IntTuple:
+            def idx2crd2(shape: IntTuple, stride: IntTuple) {imm} -> IntTuple:
                 return idx2crd(idx, shape, stride)
 
-            return apply_zip[idx2crd2](shape, stride)
+            return apply_zip(shape, stride, idx2crd2)
         else:  # "int" "int" "int"
             return UNKNOWN_VALUE if (
                 Int(idx) == UNKNOWN_VALUE
@@ -2792,11 +2792,8 @@ particularly for operations like permutations and indices.
 def _sorted_perm(tuple: IntTuple) -> IntList:
     """Returns permutation indices that would sort the tuple."""
     var n = len(tuple)
-    var indices = IntList(capacity=n)
+    var indices = IntList(length=n, fill_with=lambda (i: Int) -> Int: i)
     var values = tuple
-
-    for i in range(n):
-        indices.append(i)
 
     # Insertion sort
     for i in range(1, n):
@@ -2893,7 +2890,7 @@ def compact_order(shape: IntTuple, order: IntTuple) -> IntTuple:
 
 
 def to_index_list[
-    rank: Int, element_type: DType = DType.int64
+    rank: Int, element_type: DType = .int64
 ](t: IntTuple) -> IndexList[rank, element_type=element_type]:
     """
     Converts an IntTuple to a flattened IndexList with the same values.
@@ -3021,7 +3018,7 @@ Example:
 
     # Known values become ComptimeInt, UNKNOWN_VALUE becomes Scalar
     comptime shape = IntTuple(3, -1, 5)
-    comptime coord_types = _IntTupleToCoordLike[DType.int32, shape]
+    comptime coord_types = _IntTupleToCoordLike[.int32, shape]
     # coord_types is equivalent to TypeList.of[Trait=CoordLike, ComptimeInt[3], Scalar, ComptimeInt[5]]()
 
     # Can be used to create a Coord type

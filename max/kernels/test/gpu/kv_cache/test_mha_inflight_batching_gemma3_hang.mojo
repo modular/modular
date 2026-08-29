@@ -130,11 +130,11 @@ def test_paged_ragged_attention[
     var q_ragged_rl = RuntimeLayout[q_ragged_layout].row_major(q_ragged_shape)
     var output_rl = RuntimeLayout[output_layout].row_major(output_shape)
 
-    var input_row_offsets = ManagedLayoutTensor[
-        DType.uint32, row_offsets_layout
-    ](row_offsets_rl, ctx)
+    var input_row_offsets = ManagedLayoutTensor[.uint32, row_offsets_layout](
+        row_offsets_rl, ctx
+    )
     var cache_lengths_managed = ManagedLayoutTensor[
-        DType.uint32, cache_lengths_layout
+        .uint32, cache_lengths_layout
     ](cache_lengths_rl, ctx)
     var q_ragged = ManagedLayoutTensor[dtype, q_ragged_layout](q_ragged_rl, ctx)
     var test_output = ManagedLayoutTensor[dtype, output_layout](output_rl, ctx)
@@ -177,7 +177,7 @@ def test_paged_ragged_attention[
     var kv_block_paged = ManagedLayoutTensor[dtype, kv_block_6d_layout](
         kv_block_paged_rl, ctx
     )
-    var paged_lut = ManagedLayoutTensor[DType.uint32, paged_lut_layout](
+    var paged_lut = ManagedLayoutTensor[.uint32, paged_lut_layout](
         paged_lut_rl, ctx
     )
 

@@ -24,14 +24,19 @@ Covers the two building blocks added for prefix-aware data-parallel routing:
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from types import SimpleNamespace
 from typing import cast
 
 import numpy as np
+from max.nn.kv_cache import KVCacheGroupId
 from max.pipelines.context import TextContext
 from max.pipelines.kv_cache.connectors.null_connector import NullConnector
-from max.pipelines.kv_cache.kv_connector import BlockCount
+from max.pipelines.kv_cache.kv_connector import (
+    ByteCount,
+    CompletedTransfer,
+    TransferDirection,
+)
 from max.pipelines.kv_cache.paged_kv_cache.block_manager import (
     BlockManager,
     PrefixCacheHits,
@@ -115,12 +120,16 @@ class _TierStubConnector:
         self.received_hashes: list[bytes] | None = None
 
     @property
+    def leaves(self) -> Mapping[str, KVCacheGroupId]:
+        return {"full": KVCacheGroupId.full()}
+
+    @property
     def name(self) -> str:
         return "TierStubConnector"
 
     @property
-    def host_block_count(self) -> BlockCount:
-        return BlockCount(free=4, total=4)
+    def host_byte_count(self) -> ByteCount:
+        return ByteCount(free=4 * 4096, total=4 * 4096)
 
     def count_cached_prefix(
         self, block_hashes: Sequence[bytes]
@@ -140,17 +149,85 @@ class _TierStubConnector:
 
     def load(
         self,
-        device_block_ids: list[int],
+        block_ids: Mapping[str, Sequence[int]],
         block_hashes: Sequence[bytes],
     ) -> int:
         raise NotImplementedError("must not be called by count paths")
 
     def offload(
         self,
-        block_ids: list[int],
+        block_ids: Mapping[str, Sequence[int]],
         block_hashes: Sequence[bytes],
     ) -> None:
         raise NotImplementedError("must not be called by count paths")
+
+
+class _ReusableTierStubConnector:
+    """KVConnector-shaped stub that actually serves blocks from its host tier.
+
+    Separate from :class:`_TierStubConnector`, whose ``load`` raises on purpose
+    to prove the count path never transfers. This one drives the *reuse* path,
+    so it implements ``load`` and ``touch``.
+    """
+
+    def __init__(self, host_hashes: set[bytes] | None = None) -> None:
+        self._host_hashes = host_hashes or set()
+        self.touched: list[bytes] | None = None
+
+    @property
+    def leaves(self) -> Mapping[str, KVCacheGroupId]:
+        return {"full": KVCacheGroupId.full()}
+
+    @property
+    def name(self) -> str:
+        return "ReusableTierStubConnector"
+
+    @property
+    def host_byte_count(self) -> ByteCount:
+        return ByteCount(free=8 * 4096, total=8 * 4096)
+
+    def count_cached_prefix(
+        self, block_hashes: Sequence[bytes]
+    ) -> tuple[int, int]:
+        num_host = 0
+        for h in block_hashes:
+            if h not in self._host_hashes:
+                break
+            num_host += 1
+        return (num_host, 0)
+
+    def load(
+        self,
+        block_ids: Mapping[str, Sequence[int]],
+        block_hashes: Sequence[bytes],
+        replica_idx: int = 0,
+    ) -> CompletedTransfer:
+        # Serve the leading run this stub holds; the manager frees the surplus
+        # staging blocks past what we report as loaded.
+        bids = list(block_ids["full"])
+        num_loaded = 0
+        for h in block_hashes:
+            if h not in self._host_hashes:
+                break
+            num_loaded += 1
+        return CompletedTransfer(
+            TransferDirection.LOAD,
+            leaves=["full"],
+            g0_blocks=bids[:num_loaded],
+        )
+
+    def touch(
+        self, block_hashes: Sequence[bytes], replica_idx: int = 0
+    ) -> None:
+        self.touched = list(block_hashes)
+
+    def offload(
+        self,
+        block_ids: Mapping[str, Sequence[int]],
+        block_hashes: Sequence[bytes],
+        replica_idx: int = 0,
+    ) -> None:
+        raise NotImplementedError("this stub does not exercise offload")
 
 
 # ---------------------------------------------------------------------------
@@ -283,6 +360,92 @@ def test_device_hit_increments_device_blocks_served() -> None:
     assert bm._metrics.device_blocks_served == 2
     assert bm._metrics.cross_replica_blocks_copied == 0
     assert bm._metrics.cross_replica_bytes_copied == 0
+
+
+def test_device_hit_attributes_no_cached_prefix_to_the_external_tier() -> None:
+    """CLIN-1785: a pure device hit leaves ``cached_prefix_external_length`` 0.
+
+    This is the field the scheduler subtracts from ``cached_prefix_length`` to
+    tag ``maxserve.cache.hits`` per tier, so a non-zero value here would charge
+    an on-device hit to the connector and understate the device share. Asserted
+    on the admission path rather than on ``get_full_blocks_from_prefix_cache``'s
+    block count, because the scheduler reads the context field, not the count.
+    """
+    bm = _make_block_manager()
+
+    num_prompt_tokens = 2 * BLOCK_SIZE + 1
+    ctx = create_text_context(np.arange(num_prompt_tokens))
+    bm.claim(ctx)
+    bm.compute_hashes_for_request(ctx)
+    hashes = cast("list[bytes]", list(bm.req_to_hashes[ctx.request_id]))
+    _seed_device_prefix_cache(bm, hashes)
+
+    skip_amount, _ = bm.reuse_blocks_from_prefix_cache(ctx)
+
+    assert skip_amount == 2 * BLOCK_SIZE
+    assert ctx.cached_prefix_length == 2 * BLOCK_SIZE
+    assert ctx.cached_prefix_external_length == 0
+    # The whole cached prefix is therefore attributed to the device tier.
+    assert (
+        ctx.cached_prefix_length - ctx.cached_prefix_external_length
+        == 2 * BLOCK_SIZE
+    )
+
+
+def test_external_tier_hit_is_attributed_away_from_the_device() -> None:
+    """CLIN-1785: a connector-served prefix lands in ``external``, not ``g0``.
+
+    This is the only place the non-zero split is produced end to end. Without
+    it, dropping the ``cached_prefix_external_length`` assignment in
+    ``reuse_blocks_from_prefix_cache`` leaves every test green while ``g0``
+    silently absorbs the connector's blocks -- which is the pre-change reading
+    and the exact misattribution this metric exists to prevent.
+
+    Block 0 is on device and block 1 only in the connector's host tier, so the
+    cached prefix spans both tiers and the split must divide it 1:1.
+    """
+    connector = _ReusableTierStubConnector()
+    bm = _make_block_manager(connector=connector)
+
+    ctx = create_text_context(np.arange(2 * BLOCK_SIZE + 1))
+    bm.claim(ctx)
+    bm.compute_hashes_for_request(ctx)
+    hashes = cast("list[bytes]", list(bm.req_to_hashes[ctx.request_id]))
+    assert len(hashes) == 2
+
+    _seed_device_prefix_cache(bm, hashes[:1])
+    connector._host_hashes = {hashes[1]}
+
+    skip_amount, _ = bm.reuse_blocks_from_prefix_cache(ctx)
+
+    assert skip_amount == 2 * BLOCK_SIZE
+    assert ctx.cached_prefix_length == 2 * BLOCK_SIZE
+    # One block from the connector, one from the device prefix cache.
+    assert ctx.cached_prefix_external_length == BLOCK_SIZE
+    assert (
+        ctx.cached_prefix_length - ctx.cached_prefix_external_length
+        == BLOCK_SIZE
+    )
+
+
+def test_a_full_miss_zeroes_both_cached_prefix_fields() -> None:
+    """Both fields are written together, so neither can go stale.
+
+    A request admitted with nothing cached must leave the pair at ``(0, 0)``:
+    if only ``cached_prefix_length`` were reset, a later admission would
+    subtract a previous request's external length and misattribute the split.
+    """
+    bm = _make_block_manager()
+
+    ctx = create_text_context(np.arange(2 * BLOCK_SIZE + 1))
+    bm.claim(ctx)
+    bm.compute_hashes_for_request(ctx)
+
+    skip_amount, _ = bm.reuse_blocks_from_prefix_cache(ctx)
+
+    assert skip_amount == 0
+    assert ctx.cached_prefix_length == 0
+    assert ctx.cached_prefix_external_length == 0
 
 
 def test_count_is_read_only() -> None:

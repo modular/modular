@@ -216,8 +216,8 @@ def grouped_matmul_block_scaled[
     # and the K arithmetic below would count bytes as elements. The FP4-only
     # kinds want exactly that dense layout, hence the kind guard.
     comptime assert config.scaling_kind != UMMAKind.KIND_MXF8F6F4 or (
-        (a_device.dtype != DType.uint8 or a_packed_fp4)
-        and (_b_device.dtype != DType.uint8 or b_packed_fp4)
+        (a_device.dtype != .uint8 or a_packed_fp4)
+        and (_b_device.dtype != .uint8 or b_packed_fp4)
     ), String(
         (
             "kind::mxf8f6f4 accepts a nibble-packed operand only as the W4A8"
@@ -378,8 +378,8 @@ def grouped_matmul_block_scaled[
         Idx[sf_atom_u16],
     )
     var sfa_4d_layout = row_major(sfa_4d_shape)
-    var sfa_4d = TileTensor[DType.uint16, type_of(sfa_4d_layout), MutAnyOrigin](
-        rebind[Ptr[Scalar[DType.uint16], MutAnyOrigin]](a_scales.ptr),
+    var sfa_4d = TileTensor[.uint16, type_of(sfa_4d_layout), MutAnyOrigin](
+        rebind[Ptr[UInt16, MutAnyOrigin]](a_scales.ptr),
         sfa_4d_layout,
     )
 
@@ -395,8 +395,8 @@ def grouped_matmul_block_scaled[
         Idx[sf_atom_u16],
     )
     var sfb_4d_layout = row_major(sfb_4d_shape)
-    var sfb_4d = TileTensor[DType.uint16, type_of(sfb_4d_layout), MutAnyOrigin](
-        rebind[Ptr[Scalar[DType.uint16], MutAnyOrigin]](_b_scales.ptr),
+    var sfb_4d = TileTensor[.uint16, type_of(sfb_4d_layout), MutAnyOrigin](
+        rebind[Ptr[UInt16, MutAnyOrigin]](_b_scales.ptr),
         sfb_4d_layout,
     )
 
@@ -502,10 +502,10 @@ def grouped_matmul_block_scaled[
             c_tma_op,
             sfa_tma_op,
             sfb_tma_op,
-            _to_1d[DType.uint32](a_offsets),
-            _to_1d[DType.uint32](a_scale_offsets),
-            _to_1d[DType.int32](expert_ids),
-            _to_1d[DType.float32](expert_scales),
+            _to_1d[.uint32](a_offsets),
+            _to_1d[.uint32](a_scale_offsets),
+            _to_1d[.int32](expert_ids),
+            _to_1d[.float32](expert_scales),
             c_device,
             Int32(num_active_experts),
             UInt32(K),
@@ -577,10 +577,10 @@ def grouped_matmul_block_scaled[
             c_tma_op,
             sfa_tma_op,
             sfb_tma_op,
-            _to_1d[DType.uint32](a_offsets),
-            _to_1d[DType.uint32](a_scale_offsets),
-            _to_1d[DType.int32](expert_ids),
-            _to_1d[DType.float32](expert_scales),
+            _to_1d[.uint32](a_offsets),
+            _to_1d[.uint32](a_scale_offsets),
+            _to_1d[.int32](expert_ids),
+            _to_1d[.float32](expert_scales),
             c_device,
             Int32(num_active_experts),
             UInt32(K),

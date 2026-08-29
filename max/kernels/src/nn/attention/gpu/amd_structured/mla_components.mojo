@@ -455,9 +455,7 @@ struct MlaPrefillV2Core[config: MlaConfigV2]:
         ), "MlaPrefillV2Core: k op dtype must equal `config.dtype`"
         return rebind[
             TileTensor[
-                Self.config.dtype,
-                Self._KFullPerTileLayoutT,
-                ImmutAnyOrigin,
+                Self.config.dtype, Self._KFullPerTileLayoutT, ImmutAnyOrigin
             ]
         ](
             k_op.block_paged_tile[Self.KV_BLOCK](
@@ -495,11 +493,7 @@ struct MlaPrefillV2Core[config: MlaConfigV2]:
             v_t.dtype == Self.config.dtype
         ), "MlaPrefillV2Core: V dtype must equal `config.dtype`"
         return rebind[
-            TileTensor[
-                Self.config.dtype,
-                Self._VPerTileLayoutT,
-                ImmutAnyOrigin,
-            ]
+            TileTensor[Self.config.dtype, Self._VPerTileLayoutT, ImmutAnyOrigin]
         ](
             v_op.block_paged_tile[Self.KV_BLOCK](
                 batch_idx,
@@ -637,7 +631,7 @@ struct MlaPrefillV2Core[config: MlaConfigV2]:
             Self.config.dtype, _q_thread_layout, warp_scope=True
         ](q_warp_2d)
 
-        comptime if Self.config.dtype == DType.float8_e4m3fn:
+        comptime if Self.config.dtype == .float8_e4m3fn:
             # FP8: per-lane fragment = 32 FP8 = 32 B. To match the MFMA's
             # B-operand lane layout (which is the same convention as the
             # A-operand K loader in `MhaMmaOp.load_K` FP8 32x32x64 path),
@@ -711,7 +705,7 @@ struct MlaPrefillV2Core[config: MlaConfigV2]:
             comptime for h in range(_H):
                 comptime for w in range(_W):
                     q_v[h, w, 0] = (
-                        q_v[h, w, 0].cast[DType.float32]() * scale_log2e
+                        q_v[h, w, 0].cast[.float32]() * scale_log2e
                     ).cast[Self.config.dtype]()
 
         return q_reg
@@ -767,7 +761,7 @@ struct MlaPrefillV2Core[config: MlaConfigV2]:
         `PRegisterBuffer.mma_tile` lazy-cast safety analysis.
         """
         var src_v = att_block.vectorize[1, 1, 16]()
-        comptime if Self.config.dtype == DType.float8_e4m3fn:
+        comptime if Self.config.dtype == .float8_e4m3fn:
             # FP8 path: 2 source strips (16 FP32/lane each) → 1 sub-tile
             # (32 FP8/lane), `_NUM_PV_SUBTILES=1` at MLA-FP8 KV=64,
             # or 2 sub-tiles at KV=128.
@@ -778,8 +772,8 @@ struct MlaPrefillV2Core[config: MlaConfigV2]:
             # the full argument.
             var dst_v = dst.vectorize[1, 1, 32]()
             comptime for sub in range(Self._NUM_PV_SUBTILES):
-                var fp32_lo = src_v[2 * sub, 0, 0].cast[DType.float32]()
-                var fp32_hi = src_v[2 * sub + 1, 0, 0].cast[DType.float32]()
+                var fp32_lo = src_v[2 * sub, 0, 0].cast[.float32]()
+                var fp32_hi = src_v[2 * sub + 1, 0, 0].cast[.float32]()
                 var fp8_lo = _cast_f32_to_fp8_raw[Self.config.dtype](fp32_lo)
                 var fp8_hi = _cast_f32_to_fp8_raw[Self.config.dtype](fp32_hi)
                 dst_v[sub, 0, 0] = fp8_lo.join(fp8_hi)
@@ -851,7 +845,7 @@ struct MlaPrefillV2Core[config: MlaConfigV2]:
         output_dtype: DType,
         epilogue_chunk_width: Int = 1,
     ](
-        o_reg_t: RegTile[DType.float32, Self._O_T_LAYOUT_T, MutUntrackedOrigin],
+        o_reg_t: RegTile[.float32, Self._O_T_LAYOUT_T, MutUntrackedOrigin],
         epilogue_writer: RegTileEpilogue[output_dtype, epilogue_chunk_width],
         l_id: Int,
         valid_q_rows_in_warp: Int,
@@ -872,9 +866,9 @@ struct MlaPrefillV2Core[config: MlaConfigV2]:
             comptime k_in_base = k_local % 16
             comptime d_within_4 = (k_in_base // 4) * 8 + (k_in_base % 4)
             var output_col = i * 32 + d_within_4 + d_extra
-            var v_fp32 = SIMD[DType.float32, 1](o_reg_t.ptr[k_local])
+            var v_fp32 = Float32(o_reg_t.ptr[k_local])
             if q_in_bounds:
-                comptime if output_dtype == DType.float32:
+                comptime if output_dtype == .float32:
                     epilogue_writer.store(
                         rebind[SIMD[output_dtype, 1]](v_fp32),
                         m=q_in_tile,

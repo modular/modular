@@ -11,12 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from max.dtype import DType
 from max.graph.weights import WeightsFormat
 from max.pipelines.architectures.qwen3vl_moe.context import (
     Qwen3VLTextAndVisionContext,
 )
 from max.pipelines.lib import SupportedArchitecture
 from max.pipelines.modeling.types import PipelineTask
+from transformers import AutoConfig
 
 from ..qwen3_5.memory_planner import Qwen3_5MemoryPlanner
 from ..qwen3_5.model_config import Qwen3_5Config
@@ -26,6 +28,30 @@ from ..qwen3_5.tool_parser import Qwen3_5ToolParser  # noqa: F401
 from .batch_processor import UnifiedMTPQwen3_5BatchProcessor
 from .model import UnifiedMTPQwen3_5Model
 from .weight_adapters import convert_qwen3_5_with_mtp_state_dict
+
+
+class UnifiedMTPQwen3_5Config(Qwen3_5Config):
+    """Qwen3.5's config with the vision-cache facts withdrawn.
+
+    The fused MTP graph is text-only -- ``_create_model_config`` drops
+    ``vision_config`` so no encoder is compiled -- while the checkpoint it
+    reads still declares a vision tower. Reporting the base architecture's
+    per-entry estimate would make memory planning reserve a slice of the KV
+    pool for an encoder cache this graph can never fill.
+    """
+
+    @classmethod
+    def estimate_vision_cache_entry_bytes(
+        cls, huggingface_config: AutoConfig
+    ) -> int:
+        return 0
+
+    @classmethod
+    def get_vision_cache_row_spec(
+        cls, huggingface_config: AutoConfig
+    ) -> tuple[int, DType] | None:
+        return None
+
 
 unified_mtp_qwen3_5_arch = SupportedArchitecture(
     name="UnifiedMTPQwen3_5ForConditionalGeneration",
@@ -43,7 +69,7 @@ unified_mtp_qwen3_5_arch = SupportedArchitecture(
     required_arguments={
         "enable_prefix_caching": False,
     },
-    config=Qwen3_5Config,
+    config=UnifiedMTPQwen3_5Config,
     batching=UnifiedMTPQwen3_5BatchProcessor,
     multi_gpu_supported=True,
     tool_parser="qwen3_5",

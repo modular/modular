@@ -48,6 +48,7 @@ family.
    pipelines.architectures.llama4
    pipelines.architectures.mamba
    pipelines.architectures.minimax_m2
+   pipelines.architectures.minimax_music3
    pipelines.architectures.mistral
    pipelines.architectures.mistral3
    pipelines.architectures.mpnet
@@ -159,3 +160,11 @@ Image generation
    ~max.pipelines.architectures.qwen_image
    ~max.pipelines.architectures.qwen_image_edit
    ~max.pipelines.architectures.wan
+
+Audio generation
+----------------
+
+.. autosummary::
+   :nosignatures:
+
+   ~max.pipelines.architectures.minimax_music3

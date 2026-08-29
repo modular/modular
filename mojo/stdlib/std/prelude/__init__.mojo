@@ -99,6 +99,7 @@ from std.builtin.simd import (
     SIMD,
     BFloat16,
     Byte,
+    Float4_e2m1fn,
     Float8_e4m3fn,
     Float8_e4m3fnuz,
     Float8_e5m2,
@@ -188,3 +189,4 @@ from std.traits import (
     ImplicitlyCopyable,
     Movable,
 )
+from std.traits.deinitable import deinit

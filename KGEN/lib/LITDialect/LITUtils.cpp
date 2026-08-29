@@ -76,6 +76,16 @@ bool LIT::isFirstLevelTypeExpr(TypedAttr typeExpr) {
   return false;
 }
 
+TypedAttr LIT::getEmptyStructValue(Type type) {
+  auto structType = sugarDynCast<StructType>(type);
+  if (!structType)
+    return {};
+
+  // LITStructAttr's type must be a StructType, so a sugared type comes back
+  // wrapped in a rebind.
+  return ParamOperatorAttr::getRebind(LITStructAttr::get({}, structType), type);
+}
+
 bool LIT::isTypeExpr(TypedAttr attr) { return isMetaType(attr.getType()); }
 bool LIT::isVariadicOfTypeExpr(TypedAttr attr) {
   auto va = sugarDynCast<ParamListAttr>(attr);
@@ -467,7 +477,7 @@ void LIT::printFnType(AsmPrinter &p, FuncType signature) {
     VariadicKind variadicness = argListAttr.getVariadicKind(i);
     if (variadicness == VariadicKind::PosVarArg ||
         variadicness == VariadicKind::PackVarArg) {
-      assert(argConv == ArgConvention::ReadMem ||
+      assert(argConv == ArgConvention::ImmMem ||
              argConv == ArgConvention::Mut ||
              argConv == ArgConvention::OwnedMem ||
              argConv == ArgConvention::OwnedReg);
@@ -919,12 +929,36 @@ Attribute IndexToDeclRefRemapper::tryReplace(Attribute attr, size_t depth) {
 }
 
 //===----------------------------------------------------------------------===//
+// TraitSelfBinder
+//===----------------------------------------------------------------------===//
+
+Attribute TraitSelfBinder::tryReplace(Attribute attr, size_t depth) {
+  // Replace a reference to $(0,0) with the new selfValue.
+  auto paramRef = dyn_cast<ParamIndexRefAttr>(attr);
+  if (!paramRef || paramRef.getIndex() != 0 ||
+      // Check to see if this is a param ref referring to our Self or some
+      // other Self (perhaps in a signature parameter-value that declares its
+      // own self or something), see PSTIAIRAID.
+      paramRef.getDepth() + 1 != depth)
+    return {};
+  return selfValue;
+}
+
+FnTypeGeneratorType
+TraitSelfBinder::bindTraitFnSignature(FnTypeGeneratorType sig) {
+  SmallVector<Type> inputTypes(sig.getInputParamTypes());
+  inputTypes[0] = ParamType::get(selfValue);
+
+  sig = FnTypeGeneratorType::get(inputTypes, sig.getBodyFnType(),
+                                 sig.getParamListAttrs());
+  return replace(sig);
+}
+
+//===----------------------------------------------------------------------===//
 // ImplicitOriginRefAttrReplacer
 //===----------------------------------------------------------------------===//
 
-template <typename NameRefT>
-Attribute
-ImplicitOriginToNameRefAttrReplacer<NameRefT>::tryReplace(Attribute attr,
+Attribute ImplicitOriginToNameRefAttrReplacer::tryReplace(Attribute attr,
                                                           size_t depth) {
   auto implicitOriginRef = dyn_cast<ImplicitOriginRefAttr>(attr);
   if (!implicitOriginRef || implicitOriginRef.getDepth() != depth)
@@ -938,41 +972,26 @@ ImplicitOriginToNameRefAttrReplacer<NameRefT>::tryReplace(Attribute attr,
                                              "_unnamed`" + namePostfix);
   originDecls.push_back(
       ParamDeclAttr::get(originName, implicitOriginRef.getType()));
-  auto originParamRef = NameRefT::get(originName, implicitOriginRef.getType());
+  auto originParamRef =
+      ParamDeclRefAttr::get(originName, implicitOriginRef.getType());
   implicitOriginToNewParamRef.insert({implicitOriginRef, originParamRef});
   return originParamRef;
 }
-
-// Explicit instantiation, these are the only two variants.
-template class M::KGEN::LIT::ImplicitOriginToNameRefAttrReplacer<
-    ParamDeclRefAttr>;
-template class M::KGEN::LIT::ImplicitOriginToNameRefAttrReplacer<
-    FnGenBuilderParamDeclRefAttr>;
 
 //===----------------------------------------------------------------------===//
 // OriginDeclRemapper
 //===----------------------------------------------------------------------===//
 
-template <typename NameRefT>
-NameToImplicitOriginRefRemapper<NameRefT>::NameToImplicitOriginRefRemapper(
+NameToImplicitOriginRefRemapper::NameToImplicitOriginRefRemapper(
     ArrayRef<ParamDeclAttr> originDecls, size_t depthOffset)
     : depthOffset(depthOffset) {
   for (auto [index, decl] : llvm::enumerate(originDecls))
     mapping.try_emplace(decl.getName().strref(), index);
 }
 
-template <typename NameRefT>
-NameToImplicitOriginRefRemapper<NameRefT>::NameToImplicitOriginRefRemapper(
-    ArrayRef<StringAttr> originDecls, size_t depthOffset)
-    : depthOffset(depthOffset) {
-  for (auto [index, decl] : llvm::enumerate(originDecls))
-    mapping.try_emplace(decl.strref(), index);
-}
-
-template <typename NameRefT>
-Attribute NameToImplicitOriginRefRemapper<NameRefT>::tryReplace(Attribute attr,
-                                                                size_t depth) {
-  auto ref = dyn_cast<NameRefT>(attr);
+Attribute NameToImplicitOriginRefRemapper::tryReplace(Attribute attr,
+                                                      size_t depth) {
+  auto ref = dyn_cast<ParamDeclRefAttr>(attr);
   if (!ref)
     return nullptr;
   // If it's in the mapping, then we know it's an *origin* param ref, so no
@@ -983,11 +1002,6 @@ Attribute NameToImplicitOriginRefRemapper<NameRefT>::tryReplace(Attribute attr,
   return ImplicitOriginRefAttr::get(depth - depthOffset, it->second,
                                     ref.getType());
 }
-
-// Explicit instantiation, these are the only two variants.
-template class M::KGEN::LIT::NameToImplicitOriginRefRemapper<ParamDeclRefAttr>;
-template class M::KGEN::LIT::NameToImplicitOriginRefRemapper<
-    FnGenBuilderParamDeclRefAttr>;
 
 //===----------------------------------------------------------------------===//
 // Constraint Implication

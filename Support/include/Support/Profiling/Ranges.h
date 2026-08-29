@@ -215,10 +215,13 @@ void activatePendingTrace();
 // Block until the most recent disable()'s trace has been serialized.
 void waitForTrace();
 
-// Returns the error message recorded by the most recent disable(), or empty
-// if the trace was written successfully (or if no disable has run yet).  An
-// enable() call clears the error so a fresh session starts from a known
-// state.
+// Returns the message recorded by the most recent trace stop — disable() or
+// a daemon-driven stop — or empty when the trace was written successfully
+// (or no trace has stopped yet).  A trace that was written but is incomplete
+// — the profiler dropped range spans past its recording cap — is reported
+// here too; the message says how many spans were dropped and what the cap
+// is.  Cleared by enable() (even when no trace actually starts) and by a
+// daemon-driven trace start.
 std::string lastTraceError();
 
 // Runtime predicate: true iff a profiler integration is attached to this

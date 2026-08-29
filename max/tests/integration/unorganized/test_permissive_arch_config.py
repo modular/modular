@@ -34,28 +34,27 @@ from transformers.models.olmo2.configuration_olmo2 import (
 
 
 def _olmo2_pipeline_config(user_max_length: int | None) -> DummyPipelineConfig:
-    pipeline_config = DummyPipelineConfig(
-        model_path="allenai/OLMo-2-1124-7B",
-        quantization_encoding="bfloat16",
-        max_batch_size=1,
-        max_length=user_max_length,
-        device_specs=[DeviceSpec.cpu()],
-    )
     hf_config = HFOlmo2Config()
     if getattr(hf_config, "rope_parameters", None) is None:
         hf_config.rope_parameters = {
             "rope_type": "default",
             "rope_theta": hf_config.rope_theta,
         }
-    pipeline_config.model._huggingface_config = hf_config
-    pipeline_config.model.weight_path = [Path("model.safetensors")]
-    return pipeline_config
+    return DummyPipelineConfig(
+        model_path="allenai/OLMo-2-1124-7B",
+        quantization_encoding="bfloat16",
+        max_batch_size=1,
+        max_length=user_max_length,
+        device_specs=[DeviceSpec.cpu()],
+        weight_path=[Path("model.safetensors")],
+        huggingface_config=hf_config,
+    )
 
 
 def _olmo2_max_seq_len(pipeline_config: DummyPipelineConfig) -> int:
     hf_config = pipeline_config.model.huggingface_config
     assert hf_config is not None
-    return Olmo2Config.calculate_max_seq_len(pipeline_config, hf_config)
+    return Olmo2Config.calculate_max_seq_len(hf_config, pipeline_config.model)
 
 
 @pytest.mark.parametrize("user_max_length", [None, 64])

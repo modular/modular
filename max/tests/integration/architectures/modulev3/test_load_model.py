@@ -19,12 +19,23 @@ without needing real checkpoints.
 
 from __future__ import annotations
 
+from unittest.mock import MagicMock
+
 import pytest
 import torch
+from max.driver import Buffer, load_devices, scan_available_devices
+from max.engine import InferenceSession, Model
+from max.experimental import functional as F
 from max.graph.weights import SafetensorWeights
 from max.pipelines.architectures.gemma4_modulev3.model import Gemma4Model
+from max.pipelines.architectures.gemma4_modulev3.vision_model.vision_model import (
+    Gemma4VisionModel,
+)
 from max.pipelines.architectures.gemma4_modulev3.weight_adapters import (
     convert_safetensor_state_dict as convert_gemma4_state_dict,
+)
+from max.pipelines.architectures.gemma4_modulev3.weight_adapters import (
+    convert_vision_state_dict_for_module,
 )
 from max.pipelines.architectures.llama3_modulev3.model import Llama3Model
 from max.pipelines.architectures.llama3_modulev3.weight_adapters import (
@@ -32,6 +43,7 @@ from max.pipelines.architectures.llama3_modulev3.weight_adapters import (
 )
 from max.pipelines.architectures.olmo_modulev3.model import OlmoModel
 from max.pipelines.architectures.phi3_modulev3.model import Phi3Model
+from max.pipelines.lib import MemoryPlan
 from test_common.load_model_helpers import (
     assert_load_model_succeeds,
     make_pipeline_config_factory,
@@ -118,7 +130,95 @@ def make_small_gemma4_config() -> PretrainedConfig:
     return hf_config
 
 
-def make_gemma4_zero_weights(hf_config: PretrainedConfig) -> SafetensorWeights:
+def make_small_gemma4_vision_config() -> PretrainedConfig:
+    """Small gemma4 config WITH a vision tower (model_type ``gemma4``).
+
+    ``Gemma4VisionConfig.initialize_from_config`` reads every field set here;
+    ``hidden_activation`` stays in its HuggingFace spelling because that
+    classmethod applies ``_HIDDEN_ACTIVATION_MAP``.
+    """
+    hf_config = make_small_gemma4_config()
+    hf_config.model_type = "gemma4"
+    hf_config.architectures = ["Gemma4ForConditionalGeneration"]
+    hf_config.vision_config = PretrainedConfig(
+        hidden_size=64,
+        intermediate_size=128,
+        num_hidden_layers=2,
+        num_attention_heads=4,
+        num_key_value_heads=4,
+        # head_dim // (2 * ndim) must be integral for the 2-D vision rope.
+        head_dim=16,
+        patch_size=4,
+        position_embedding_size=16,
+        pooling_kernel_size=2,
+        rms_norm_eps=1e-6,
+        max_position_embeddings=4096,
+        attention_bias=False,
+        hidden_activation="gelu_pytorch_tanh",
+        standardize=True,
+        rope_parameters={"rope_theta": 10_000.0},
+    )
+    return hf_config
+
+
+def _gemma4_vision_zero_weights(
+    wm: dict[str, torch.Tensor], hf_config: PretrainedConfig
+) -> None:
+    """Add checkpoint-shaped vision keys to ``wm``.
+
+    Names are the inverse of ``GEMMA4_VISION_SAFETENSOR_MAP`` in
+    ``gemma4/weight_adapters.py``: the tower lives under
+    ``model.vision_tower.`` (stripped) and the projector under
+    ``model.embed_vision.`` (kept as ``embed_vision.``).
+    """
+    v = hf_config.vision_config
+
+    def z(*shape: int) -> torch.Tensor:
+        return torch.zeros(*shape, dtype=torch.bfloat16)
+
+    prefix = "model.vision_tower."
+    wm[prefix + "patch_embedder.input_proj.weight"] = z(
+        v.hidden_size, 3 * v.patch_size**2
+    )
+    wm[prefix + "patch_embedder.position_embedding_table"] = z(
+        2, v.position_embedding_size, v.hidden_size
+    )
+    for i in range(v.num_hidden_layers):
+        lp = f"{prefix}encoder.layers.{i}."
+        wm[lp + "self_attn.q_proj.weight"] = z(
+            v.num_attention_heads * v.head_dim, v.hidden_size
+        )
+        wm[lp + "self_attn.k_proj.weight"] = z(
+            v.num_key_value_heads * v.head_dim, v.hidden_size
+        )
+        wm[lp + "self_attn.v_proj.weight"] = z(
+            v.num_key_value_heads * v.head_dim, v.hidden_size
+        )
+        wm[lp + "self_attn.o_proj.weight"] = z(
+            v.hidden_size, v.num_attention_heads * v.head_dim
+        )
+        wm[lp + "self_attn.q_norm.weight"] = z(v.head_dim)
+        wm[lp + "self_attn.k_norm.weight"] = z(v.head_dim)
+        for norm in (
+            "input_layernorm",
+            "post_attention_layernorm",
+            "pre_feedforward_layernorm",
+            "post_feedforward_layernorm",
+        ):
+            wm[lp + norm + ".weight"] = z(v.hidden_size)
+        wm[lp + "mlp.gate_proj.weight"] = z(v.intermediate_size, v.hidden_size)
+        wm[lp + "mlp.up_proj.weight"] = z(v.intermediate_size, v.hidden_size)
+        wm[lp + "mlp.down_proj.weight"] = z(v.hidden_size, v.intermediate_size)
+    wm[prefix + "std_bias"] = z(v.hidden_size)
+    wm[prefix + "std_scale"] = z(v.hidden_size)
+    wm["model.embed_vision.embedding_projection.weight"] = z(
+        hf_config.text_config.hidden_size, v.hidden_size
+    )
+
+
+def _gemma4_language_zero_weights(
+    hf_config: PretrainedConfig,
+) -> dict[str, torch.Tensor]:
     t = hf_config.text_config
 
     def z(*shape: int) -> torch.Tensor:
@@ -157,15 +257,43 @@ def make_gemma4_zero_weights(hf_config: PretrainedConfig) -> SafetensorWeights:
         wm[lp + "mlp.up_proj.weight"] = z(t.intermediate_size, t.hidden_size)
         wm[lp + "mlp.down_proj.weight"] = z(t.hidden_size, t.intermediate_size)
         wm[lp + "layer_scalar"] = z(1)
+    return wm
+
+
+def _as_safetensor_weights(wm: dict[str, torch.Tensor]) -> SafetensorWeights:
+    """Wrap the torch tensors as MAX buffers.
+
+    ``SafetensorWeights._st_weight_map`` is a ``dict[str, Buffer]`` and
+    ``WeightData.dtype`` is taken straight off the entry, so raw torch tensors
+    would leak a ``torch.dtype`` into the model config (gemma4 derives
+    ``unquantized_dtype`` from the checkpoint, and the vision tower builds
+    ``TensorType``s from it).
+    """
     return SafetensorWeights(
         [],
         tensors=set(wm.keys()),
         tensors_to_file_idx={},
-        _st_weight_map=wm,
+        _st_weight_map={
+            name: Buffer.from_dlpack(tensor) for name, tensor in wm.items()
+        },
     )
 
 
+def make_gemma4_zero_weights(hf_config: PretrainedConfig) -> SafetensorWeights:
+    return _as_safetensor_weights(_gemma4_language_zero_weights(hf_config))
+
+
+def make_gemma4_vision_zero_weights(
+    hf_config: PretrainedConfig,
+) -> SafetensorWeights:
+    wm = _gemma4_language_zero_weights(hf_config)
+    _gemma4_vision_zero_weights(wm, hf_config)
+    return _as_safetensor_weights(wm)
+
+
 def test_load_model_gemma4_modulev3() -> None:
+    """Text-only ``gemma4_unified`` checkpoint: the ``vision_config is None``
+    path through the multi-graph base (no vision tower is compiled)."""
     hf_config = make_small_gemma4_config()
     weights = make_gemma4_zero_weights(hf_config)
     make_pipeline_config = make_pipeline_config_factory(
@@ -174,3 +302,74 @@ def test_load_model_gemma4_modulev3() -> None:
     assert_load_model_succeeds(
         Gemma4Model, make_pipeline_config, weights, convert_gemma4_state_dict
     )
+
+
+def _build_gemma4_model(
+    hf_config: PretrainedConfig, weights: SafetensorWeights
+) -> Gemma4Model:
+    """Construct a ``Gemma4Model`` the way ``assert_load_model_succeeds`` does.
+
+    Returns the model so callers can assert on which towers were compiled;
+    only ``InferenceSession`` is mocked, so config parsing, weight adaptation
+    and module construction all run for real.
+    """
+    device_specs = scan_available_devices()[:1]
+    pipeline_config = make_pipeline_config_factory(
+        hf_config, "google/gemma-4-31B-it"
+    )(device_specs)
+
+    mock_session = MagicMock(spec=InferenceSession)
+    mock_session.load.return_value = MagicMock(spec=Model, input_metadata=[])
+    return Gemma4Model(
+        pipeline_config=pipeline_config,
+        session=mock_session,
+        devices=load_devices(device_specs),
+        kv_cache_config=pipeline_config.model.kv_cache,
+        weights=weights,
+        adapter=convert_gemma4_state_dict,
+        # Mirrors assert_load_model_succeeds: the factory pins max_length
+        # to the checkpoint bound, so the planned value equals what the
+        # arch policies derived before plans became required.
+        memory_plan=MemoryPlan(
+            planned_max_batch_size=1,
+            footprint=0,
+            planned_max_length=pipeline_config.model.max_length,
+        ),
+    )
+
+
+def test_load_model_gemma4_modulev3_vision() -> None:
+    """Full ``gemma4`` checkpoint: vision tower + language tower both compile."""
+    hf_config = make_small_gemma4_vision_config()
+    model = _build_gemma4_model(
+        hf_config, make_gemma4_vision_zero_weights(hf_config)
+    )
+    assert model.vision_model is not None
+    assert model.language_model is not None
+
+
+def test_gemma4_modulev3_vision_weight_keys_match_module_tree() -> None:
+    """The vision converter's output keys must exactly cover the eager tower.
+
+    ``Module.compile(weights=...)`` silently ignores unmatched entries, so
+    without this the load test would pass on a misnamed checkpoint key and the
+    tower would serve its zero-initialized defaults.
+    """
+    hf_config = make_small_gemma4_vision_config()
+    weights = make_gemma4_vision_zero_weights(hf_config)
+    model = _build_gemma4_model(hf_config, weights)
+
+    with F.lazy():
+        tower = Gemma4VisionModel(model.config)
+
+    converted = set(convert_vision_state_dict_for_module(dict(weights.items())))
+    assert converted == set(dict(tower.parameters))
+
+
+def test_load_model_gemma4_modulev3_text_only_skips_vision() -> None:
+    """A ``gemma4_unified`` checkpoint has ``vision_config is None``, so the
+    multi-graph base must compile the language tower only."""
+    hf_config = make_small_gemma4_config()
+    model = _build_gemma4_model(hf_config, make_gemma4_zero_weights(hf_config))
+    assert model.vision_model is None
+    assert model.language_model is not None

@@ -26,11 +26,9 @@ def standardize_string_slice(
     var standardized_x = Array[Byte, CONTAINER_SIZE](fill=Byte(ord("0")))
     var std_x_ptr = standardized_x.unsafe_ptr()
     var x_len = x.byte_length()
-    unsafe_memcpy(
-        dest=std_x_ptr.unsafe_offset(CONTAINER_SIZE - x_len),
-        src=x.as_bytes().unsafe_ptr(),
-        count=x_len,
-    )
+    Span(
+        unsafe_ptr=std_x_ptr.unsafe_offset(CONTAINER_SIZE - x_len), length=x_len
+    ).copy_from(x.as_bytes())
     return standardized_x^
 
 
@@ -87,7 +85,7 @@ def to_integer(standardized_x: Array[Byte, CONTAINER_SIZE]) raises -> UInt64:
     # change 24 to be adapted to the simd width.
     comptime simd_width = min(simd_width_of[DType.uint64](), 8)
 
-    var accumulator = SIMD[DType.uint64, simd_width](0)
+    var accumulator = SIMD[.uint64, simd_width](0)
 
     # We use unsafe_memcmp to check that the number is not too large.
     comptime max_standardized_x = String(UInt64.MAX).ascii_rjust(
@@ -120,8 +118,8 @@ def to_integer(standardized_x: Array[Byte, CONTAINER_SIZE]) raises -> UInt64:
         var ascii_vector = std_x_ptr.unsafe_offset(i * simd_width).unsafe_load[
             width=simd_width
         ]()
-        var as_digits = ascii_vector - SIMD[DType.uint8, simd_width](ord("0"))
-        var as_digits_index = as_digits.cast[DType.uint64]()
+        var as_digits = ascii_vector - SIMD[.uint8, simd_width](ord("0"))
+        var as_digits_index = as_digits.cast[.uint64]()
         comptime vector_slice = vector_with_exponents.unsafe_ptr().unsafe_offset(
             i * simd_width
         ).unsafe_load[
@@ -133,7 +131,9 @@ def to_integer(standardized_x: Array[Byte, CONTAINER_SIZE]) raises -> UInt64:
 
 def get_vector_with_exponents() -> Array[UInt64, CONTAINER_SIZE]:
     """Returns (0, 0, 0, 0, 10**19, 10**18, 10**17, ..., 10, 1)."""
-    var result = Array[UInt64, CONTAINER_SIZE](uninitialized=True)
-    for i in range(4, CONTAINER_SIZE):
-        result[i] = UInt64(10) ** UInt64(CONTAINER_SIZE - i - 1)
-    return result^
+    return Array[_, CONTAINER_SIZE](
+        fill_with=lambda (i: Int) -> UInt64: (
+            UInt64(10) ** UInt64(CONTAINER_SIZE - i - 1) if i
+            >= 4 else UInt64(0)
+        )
+    )

@@ -17,7 +17,7 @@ from std.sys import argv, size_of
 from std.sys.defines import get_defined_int
 
 from std.gpu import *
-from max.gpu.host import DeviceContext
+from max.gpu.host import DeviceBuffer, DeviceContext
 from max.gpu.host.info import A100, H100, _is_sm10x_gpu
 from layout import (
     Idx,
@@ -202,17 +202,17 @@ def test[
                 ]()
                 var actual = flash_output_ptr[
                     d + depth * (h + s * num_heads)
-                ].cast[DType.float64]()
+                ].cast[.float64]()
                 if not isclose(actual, expect, atol=1e-5, rtol=rtol):
                     var next_expect = 0 * expect
                     var next_actual = 0 * actual
                     if h < num_heads and s < seq_len and d < depth - 1:
                         next_expect = output_ptr[
                             d + depth * (h + s * num_heads) + 1
-                        ].cast[DType.float64]()
+                        ].cast[.float64]()
                         next_actual = flash_output_ptr[
                             d + depth * (h + s * num_heads) + 1
-                        ].cast[DType.float64]()
+                        ].cast[.float64]()
                     var rerr = abs((actual - expect) / expect)
                     print(
                         "s, h, d = ",
@@ -270,7 +270,7 @@ def main() raises:
 
         comptime if depth <= 128:
             # fp32 tf32-fp32 mma
-            test[DType.float32, depth, 1](
+            test[.float32, depth, 1](
                 128, 128, CausalMask(), ctx, is_benchmark=is_benchmark()
             )
 
@@ -502,59 +502,76 @@ def main() raises:
             ](1, 1025, SlidingWindowCausalMask[512](), ctx)
 
         # CausalPaddingMask tests: allocate valid_lengths on device.
-        @__parameter
-        def make_vl(
+        #
+        # `CausalPaddingMask` stores only a raw device pointer, so the buffer
+        # backing it has to stay alive across the whole launch, and TWO things
+        # are needed for that. Returning the view alone would destroy the
+        # buffer at the helper's return, so the helper hands back the
+        # `DeviceBuffer` and the view is built at the call site. That is not
+        # sufficient on its own: `MutUntrackedOrigin` opts the view out of
+        # origin tracking, so the buffer's last use is the `vl_view(...)`
+        # argument expression, and ASAP destruction is free to free it before
+        # `test` has launched anything. Each call site therefore consumes its
+        # buffer with `_ = ...^` AFTER the `test` call, which is what actually
+        # pins the allocation across the kernel. `test` synchronizes before it
+        # returns, so that is the full extent of the launch.
+        def vl_buffer(
             val: UInt32, ctx: DeviceContext
-        ) raises -> LayoutTensor[
-            DType.uint32, Layout.row_major(1), MutUntrackedOrigin
-        ]:
-            var dev_buf = ctx.enqueue_create_buffer[DType.uint32](1)
+        ) raises -> DeviceBuffer[.uint32]:
+            var dev_buf = ctx.enqueue_create_buffer[.uint32](1)
             ctx.enqueue_memset(dev_buf, val)
-            # TODO(KERN-3155): This is a bug!
-            # The returned device buffer will have its deleter run
-            # before the return potentially causing a read/writer-after-free.
-            return {
-                dev_buf.unsafe_ptr().unsafe_origin_cast[MutUntrackedOrigin]()
-            }
+            return dev_buf
+
+        # `mut buf`: `unsafe_origin_cast` can only retarget an origin of the
+        # same mutability, so the pointer has to come from a mutable borrow.
+        def vl_view(
+            mut buf: DeviceBuffer[.uint32],
+        ) -> LayoutTensor[.uint32, Layout.row_major(1), MutUntrackedOrigin]:
+            return {buf.unsafe_ptr().unsafe_origin_cast[MutUntrackedOrigin]()}
 
         # valid_length == num_keys (equivalent to CausalMask).
-        var vl_128_t = make_vl(128, ctx)
+        var vl_128_buf = vl_buffer(128, ctx)
         test[
             DType.bfloat16,
             depth,
             1,
-        ](128, 128, CausalPaddingMask(vl_128_t), ctx)
+        ](128, 128, CausalPaddingMask(vl_view(vl_128_buf)), ctx)
+        _ = vl_128_buf^
 
         # valid_length < num_keys (padding active).
-        var vl_100_t = make_vl(100, ctx)
+        var vl_100_buf = vl_buffer(100, ctx)
         test[
             DType.bfloat16,
             depth,
             1,
-        ](128, 128, CausalPaddingMask(vl_100_t), ctx)
+        ](128, 128, CausalPaddingMask(vl_view(vl_100_buf)), ctx)
+        _ = vl_100_buf^
 
         # CausalPaddingMask with GQA.
-        var vl_384_t = make_vl(384, ctx)
+        var vl_384_buf = vl_buffer(384, ctx)
         test[
             DType.bfloat16,
             depth,
             24,
             group=3,
-        ](384, 384, CausalPaddingMask(vl_384_t), ctx)
+        ](384, 384, CausalPaddingMask(vl_view(vl_384_buf)), ctx)
+        _ = vl_384_buf^
 
         # CausalPaddingMask with padding and GQA.
-        var vl_300_t = make_vl(300, ctx)
+        var vl_300_buf = vl_buffer(300, ctx)
         test[
             DType.bfloat16,
             depth,
             24,
             group=3,
-        ](384, 384, CausalPaddingMask(vl_300_t), ctx)
+        ](384, 384, CausalPaddingMask(vl_view(vl_300_buf)), ctx)
+        _ = vl_300_buf^
 
         # CausalPaddingMask: token gen with padding.
-        var vl_400_t = make_vl(400, ctx)
+        var vl_400_buf = vl_buffer(400, ctx)
         test[
             DType.bfloat16,
             depth,
             32,
-        ](1, 512, CausalPaddingMask(vl_400_t), ctx)
+        ](1, 512, CausalPaddingMask(vl_view(vl_400_buf)), ctx)
+        _ = vl_400_buf^

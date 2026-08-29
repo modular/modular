@@ -42,8 +42,8 @@ def all_gather_test[
     var host_buffers = List[HostBuffer[dtype]](capacity=ngpus)
 
     # Create signal buffers for synchronization
-    var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
-    var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+    var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
+    var rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS](
         uninitialized=True
     )
 
@@ -73,7 +73,7 @@ def all_gather_test[
 
         # Create and initialize signal buffers.
         signal_buffers.append(
-            list_of_ctx[i].create_buffer_sync[DType.uint8](
+            list_of_ctx[i].create_buffer_sync[.uint8](
                 size_of[Signal]() + temp_buffer_num_bytes
             )
         )
@@ -235,8 +235,8 @@ def grouped_all_gather_test[
     var in_bufs_list = List[DeviceBuffer[dtype]](capacity=ngpus)
     var out_bufs_list = List[List[DeviceBuffer[dtype]]](capacity=ngpus)
     var host_buffers = List[HostBuffer[dtype]](capacity=ngpus)
-    var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
-    var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+    var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
+    var rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS](
         uninitialized=True
     )
 
@@ -251,7 +251,7 @@ def grouped_all_gather_test[
             host_buffer[j] = Scalar[dtype](i * 1000 + j)
 
         signal_buffers.append(
-            list_of_ctx[i].create_buffer_sync[DType.uint8](size_of[Signal]())
+            list_of_ctx[i].create_buffer_sync[.uint8](size_of[Signal]())
         )
         init_signal_buffer(signal_buffers[i], list_of_ctx[i])
         rank_sigs[i] = (
@@ -312,9 +312,9 @@ def grouped_all_gather_test[
     comptime for group_idx in range(ngpus // group_size):
         comptime group_start = group_idx * group_size
         var group_in_bufs = Array[InTileType, group_size](uninitialized=True)
-        var group_rank_sigs = Array[
-            UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS
-        ](uninitialized=True)
+        var group_rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS](
+            uninitialized=True
+        )
 
         comptime for local_idx in range(group_size):
             group_in_bufs[local_idx] = tt_in_bufs[group_start + local_idx]
@@ -407,9 +407,7 @@ def main() raises -> None:
             ctx.append(DeviceContext(device_id=i))
 
         print("  Testing configuration:", test_idx, "with", num_gpus, "GPUs")
-        all_gather_test[DType.bfloat16, ngpus=num_gpus](
-            ctx, materialize[lengths]()
-        )
+        all_gather_test[.bfloat16, ngpus=num_gpus](ctx, materialize[lengths]())
 
     if DeviceContext.number_of_devices() >= 4:
         var ctx = List[DeviceContext]()
@@ -422,6 +420,6 @@ def main() raises -> None:
             6 * 1024,
             2 * 1024,
         ]
-        grouped_all_gather_test[DType.bfloat16, ngpus=4, group_size=2](
+        grouped_all_gather_test[.bfloat16, ngpus=4, group_size=2](
             ctx, materialize[grouped_lengths]()
         )

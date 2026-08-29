@@ -89,7 +89,7 @@ createFunction(ASTDecl &parent, StringRef name, ArrayRef<ParamDeclAttr> params,
 
   // Replace all `ImplicitOriginRefAttr` with `ParamRefDeclAttr`s that point to
   // explicitly *named* parameter-decls.
-  ImplicitOriginToNameRefAttrReplacer<ParamDeclRefAttr> indexReplacer(ctx);
+  ImplicitOriginToNameRefAttrReplacer indexReplacer(ctx);
 
   // The caller specifies all the input types, which means that all the input
   // reference types that carry implicit origins will already have them
@@ -558,7 +558,7 @@ FnOp StructEmitter::synthesizeFieldwiseInit() {
       conv = ArgConvention::OwnedMem;
       break;
     case TypeConvention::RegisterPassableTrivial:
-      conv = ArgConvention::ReadReg;
+      conv = ArgConvention::ImmReg;
       break;
     }
     argTypes.push_back(fieldType);
@@ -647,13 +647,13 @@ FnOp StructEmitter::synthesizeFieldwiseInit(
     switch (argConventions[idx]) {
     default:
       llvm_unreachable("unknown convention");
-    case ArgConvention::ReadReg:
+    case ArgConvention::ImmReg:
       argVal = SRValue(arg);
       break;
     case ArgConvention::OwnedMem:
       argVal = MRValue(arg);
       break;
-    case ArgConvention::ReadMem:
+    case ArgConvention::ImmMem:
       argVal = MBValue(arg);
       break;
     }
@@ -759,7 +759,7 @@ FnOp StructEmitter::synthesizeEmptyMoveOrCopyInit(
   // passed as a register, otherwise a reference.
   Type srcArgType = selfType.getRefForArgument(srcName.strref(), isMove);
   ArgConvention srcConv =
-      isMove ? ArgConvention::DeinitMem : ArgConvention::ReadMem;
+      isMove ? ArgConvention::DeinitMem : ArgConvention::ImmMem;
 
   SmallVector<ConstraintAttr> constraints;
   if (conformanceConstraint &&

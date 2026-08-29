@@ -564,6 +564,14 @@ size_t M::simdWidthFromFeature(StringRef plainFeature) {
     return 512;
   if (plainFeature.contains("avx2"))
     return 256;
+  // HVX states its vector length in bytes, so "length128b" is a 1024-bit
+  // register. Without these two the Hexagon targets take the default below and
+  // every width derived from the field is 8x short — which de-vectorizes the
+  // kernel rather than miscomputing it, so nothing downstream complains.
+  if (plainFeature.contains("hvx-length128b"))
+    return 1024;
+  if (plainFeature.contains("hvx-length64b"))
+    return 512;
   return 128;
 }
 

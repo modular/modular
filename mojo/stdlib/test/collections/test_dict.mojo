@@ -785,6 +785,43 @@ def test_dict_popitem() raises:
         _ = dict.popitem()
 
 
+def test_dict_popitem_full_drain() raises:
+    # `popitem` truncates the insertion-order array as it goes, so drain a dict
+    # big enough to have resized and confirm LIFO order still holds throughout,
+    # both with and without interleaved removals leaving tombstones behind.
+    var dict: Dict[Int, Int] = {}
+    for i in range(64):
+        dict[i] = i * 10
+
+    for i in range(63, -1, -1):
+        var item = dict.popitem()
+        assert_equal(item.key, i)
+        assert_equal(item.value, i * 10)
+        assert_equal(len(dict), i)
+
+    with assert_raises(contains="EmptyDictError"):
+        _ = dict.popitem()
+
+    for i in range(32):
+        dict[i] = i
+    # Remove the odd keys, so the order array is half stale.
+    for i in range(1, 32, 2):
+        _ = dict.pop(i)
+
+    var seen = List[Int]()
+    while len(dict) > 0:
+        seen.append(dict.popitem().key)
+    assert_equal(len(seen), 16)
+    for i in range(16):
+        assert_equal(seen[i], 30 - 2 * i)
+
+    # A dict emptied by `pop` rather than `popitem` still reports empty.
+    dict[1] = 1
+    _ = dict.pop(1)
+    with assert_raises(contains="EmptyDictError"):
+        _ = dict.popitem()
+
+
 def test_pop_string_values() raises:
     var dict: Dict[String, String] = {}
     dict["mojo"] = "lang"
@@ -1378,6 +1415,17 @@ def test_dict_hash() raises:
 
     # Empty dicts
     assert_equal(hash(Dict[String, Int]()), hash(Dict[String, Int]()))
+
+
+def test_dict_float_signed_zero_key() raises:
+    var d = Dict[Float64, String]()
+    d[Float64(0.0)] = "zero"
+    d[Float64(-0.0)] = "negzero"
+
+    # `-0.0 == 0.0`, so the second insert overwrites rather than adding a key.
+    assert_equal(len(d), 1)
+    assert_equal(d[Float64(0.0)], "negzero")
+    assert_equal(d[Float64(-0.0)], "negzero")
 
 
 struct NonWritable(Copyable, Deinitable):

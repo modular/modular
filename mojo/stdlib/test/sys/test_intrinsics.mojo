@@ -24,8 +24,8 @@ from std.sys.intrinsics import assume, likely, unlikely
 from std.testing import assert_equal
 from std.testing import TestSuite
 
-comptime F32x4 = SIMD[DType.float32, 4]
-comptime F32x8 = SIMD[DType.float32, 8]
+comptime F32x4 = SIMD[.float32, 4]
+comptime F32x8 = SIMD[.float32, 8]
 comptime iota_4 = F32x4(0.0, 1.0, 2.0, 3.0)
 comptime iota_8 = F32x8(0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0)
 
@@ -44,7 +44,7 @@ def test_compressed_store() raises:
     )
 
     # Just clear the buffer.
-    vector.unsafe_ptr().unsafe_store(0, SIMD[DType.float32, 4](0))
+    vector.unsafe_ptr().unsafe_store(0, SIMD[.float32, 4](0))
 
     var val = F32x4(0.0, 1.0, 3.0, 0.0)
     compressed_store(val, vector.unsafe_ptr(), val.ne(0))
@@ -110,16 +110,14 @@ def test_strided_load() raises:
         vector[i] = Float32(i)
 
     var s = strided_load[4](vector.unsafe_ptr(), 4)
-    assert_equal(s, SIMD[DType.float32, 4](0, 4, 8, 12))
+    assert_equal(s, SIMD[.float32, 4](0, 4, 8, 12))
 
 
 def test_strided_store() raises:
     comptime size = 8
     var vector = List(length=size, fill=Float32(0))
 
-    strided_store(
-        SIMD[DType.float32, 4](99, 12, 23, 56), vector.unsafe_ptr(), 2
-    )
+    strided_store(SIMD[.float32, 4](99, 12, 23, 56), vector.unsafe_ptr(), 2)
     assert_equal(vector[0], 99.0)
     assert_equal(vector[1], 0.0)
     assert_equal(vector[2], 12.0)

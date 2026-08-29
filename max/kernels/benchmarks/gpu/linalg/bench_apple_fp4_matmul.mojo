@@ -49,8 +49,8 @@ from linalg.matmul.gpu.apple.fp4_matmul import (
 
 
 def _fill_packed(
-    packed: UnsafePointer[mut=True, Scalar[DType.uint8], _],
-    scales: UnsafePointer[mut=True, Scalar[DType.float8_e4m3fn], _],
+    packed: MutPointer[UInt8, _],
+    scales: MutPointer[Float8_e4m3fn, _],
     npacked: Int,
     nscale: Int,
     seed: UInt64,
@@ -68,7 +68,7 @@ def _fill_packed(
         state ^= state >> UInt64(7)
         state ^= state << UInt64(17)
         var v = Int(state % UInt64(4)) + 1
-        scales[i] = (Float32(v) * Float32(0.5)).cast[DType.float8_e4m3fn]()
+        scales[i] = (Float32(v) * Float32(0.5)).cast[.float8_e4m3fn]()
 
 
 def _bench_fp4_shape(
@@ -79,13 +79,11 @@ def _bench_fp4_shape(
     var packed_k = k // 2
     var scale_k = (k + NVFP4_SF_VECTOR_SIZE - 1) // NVFP4_SF_VECTOR_SIZE
 
-    var act_host = ctx.enqueue_create_host_buffer[DType.bfloat16](m * k)
-    var packed_host = ctx.enqueue_create_host_buffer[DType.uint8](n * packed_k)
-    var scale_host = ctx.enqueue_create_host_buffer[DType.float8_e4m3fn](
-        n * scale_k
-    )
+    var act_host = ctx.enqueue_create_host_buffer[.bfloat16](m * k)
+    var packed_host = ctx.enqueue_create_host_buffer[.uint8](n * packed_k)
+    var scale_host = ctx.enqueue_create_host_buffer[.float8_e4m3fn](n * scale_k)
     for i in range(m * k):
-        act_host[i] = Scalar[DType.bfloat16](Float32((i % 5) - 2))
+        act_host[i] = BFloat16(Float32((i % 5) - 2))
     _fill_packed(
         packed_host.unsafe_ptr(),
         scale_host.unsafe_ptr(),
@@ -94,11 +92,11 @@ def _bench_fp4_shape(
         UInt64(0xF94ED7042B),
     )
 
-    var act_dev = ctx.enqueue_create_buffer[DType.bfloat16](m * k)
-    var packed_dev = ctx.enqueue_create_buffer[DType.uint8](n * packed_k)
-    var scale_dev = ctx.enqueue_create_buffer[DType.float8_e4m3fn](n * scale_k)
-    var wdense_dev = ctx.enqueue_create_buffer[DType.bfloat16](n * k)
-    var out_dev = ctx.enqueue_create_buffer[DType.float32](m * n)
+    var act_dev = ctx.enqueue_create_buffer[.bfloat16](m * k)
+    var packed_dev = ctx.enqueue_create_buffer[.uint8](n * packed_k)
+    var scale_dev = ctx.enqueue_create_buffer[.float8_e4m3fn](n * scale_k)
+    var wdense_dev = ctx.enqueue_create_buffer[.bfloat16](n * k)
+    var out_dev = ctx.enqueue_create_buffer[.float32](m * n)
     ctx.enqueue_copy(act_dev, act_host)
     ctx.enqueue_copy(packed_dev, packed_host)
     ctx.enqueue_copy(scale_dev, scale_host)
@@ -153,13 +151,13 @@ def _bench_fp4_shape(
 
     # --- mat-alloc: materialize->dense WITH the real per-call alloc + free. ---
     for _ in range(warmup):
-        _enqueue_apple_fp4_materialize_dense[DType.float32, None](
+        _enqueue_apple_fp4_materialize_dense[.float32, None](
             out_tt, act_tt, packed_tt, scale_tt, m, n, k, ctx
         )
         ctx.synchronize()
     var t2 = perf_counter()
     for _ in range(hot):
-        _enqueue_apple_fp4_materialize_dense[DType.float32, None](
+        _enqueue_apple_fp4_materialize_dense[.float32, None](
             out_tt, act_tt, packed_tt, scale_tt, m, n, k, ctx
         )
         ctx.synchronize()
@@ -167,18 +165,14 @@ def _bench_fp4_shape(
 
     # --- mat-prealloc: materialize->dense reusing a buffer (alloc-free ceiling). ---
     for _ in range(warmup):
-        enqueue_fp4_materialize[DType.bfloat16](
-            wdense_tt, packed_tt, scale_tt, ctx
-        )
+        enqueue_fp4_materialize[.bfloat16](wdense_tt, packed_tt, scale_tt, ctx)
         enqueue_apple_matmul[
             in_type=DType.bfloat16, c_type=DType.float32, transpose_b=True
         ](out_tt, act_tt, wdense_tt.as_immut(), ctx)
         ctx.synchronize()
     var t3 = perf_counter()
     for _ in range(hot):
-        enqueue_fp4_materialize[DType.bfloat16](
-            wdense_tt, packed_tt, scale_tt, ctx
-        )
+        enqueue_fp4_materialize[.bfloat16](wdense_tt, packed_tt, scale_tt, ctx)
         enqueue_apple_matmul[
             in_type=DType.bfloat16, c_type=DType.float32, transpose_b=True
         ](out_tt, act_tt, wdense_tt.as_immut(), ctx)

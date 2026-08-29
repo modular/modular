@@ -51,8 +51,7 @@ struct MetalEnqueueFunctionArgs:
     var arg_is_device_ptr: Pointer[Bool, MutUntrackedOrigin]
     var buffers: Optional[
         Pointer[
-            Pointer[_DeviceBufferCpp, MutUntrackedOrigin],
-            MutUntrackedOrigin,
+            Pointer[_DeviceBufferCpp, MutUntrackedOrigin], MutUntrackedOrigin
         ]
     ]
     var num_buffers: Int32

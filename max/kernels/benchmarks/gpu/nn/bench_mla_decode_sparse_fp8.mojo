@@ -46,7 +46,6 @@ from nn.attention.mha_utils import MHAConfig
 from nn.attention.gpu.nvidia.sm100.mla_decode_dispatch import (
     MLADispatchScalarArgs,
 )
-from std.memory import UnsafePointer
 from std.utils.index import IndexList
 
 comptime KV_LATENT_DIM = 512
@@ -151,14 +150,12 @@ def execute_mla_decode_sparse[
         rand(blocks_host.as_span())
 
     var lut_size = batch_size * pages_per_seq
-    var lookup_table_device = ctx.enqueue_create_buffer[DType.uint32](lut_size)
+    var lookup_table_device = ctx.enqueue_create_buffer[.uint32](lut_size)
     with lookup_table_device.map_to_host() as lut_host:
         for i in range(lut_size):
             lut_host[i] = UInt32(i)
 
-    var cache_lengths_device = ctx.enqueue_create_buffer[DType.uint32](
-        batch_size
-    )
+    var cache_lengths_device = ctx.enqueue_create_buffer[.uint32](batch_size)
     with cache_lengths_device.map_to_host() as cl_host:
         for i in range(batch_size):
             cl_host[i] = UInt32(cache_len)
@@ -169,13 +166,13 @@ def execute_mla_decode_sparse[
     with q_device.map_to_host() as q_host:
         rand(q_host.as_span())
 
-    var out_device = ctx.enqueue_create_buffer[DType.bfloat16](
+    var out_device = ctx.enqueue_create_buffer[.bfloat16](
         total_q_tokens * num_heads * V_DEPTH
     )
 
     # Physical slot ids, spread across the sequence's pages the way a real
     # top-k list is rather than clustered.
-    var d_indices_device = ctx.enqueue_create_buffer[DType.int32](
+    var d_indices_device = ctx.enqueue_create_buffer[.int32](
         total_q_tokens * top_k
     )
     var mult = _coprime_multiplier(num_keys)
@@ -190,9 +187,7 @@ def execute_mla_decode_sparse[
                         block_id * page_size + t % page_size
                     )
 
-    var row_offsets_device = ctx.enqueue_create_buffer[DType.uint32](
-        batch_size + 1
-    )
+    var row_offsets_device = ctx.enqueue_create_buffer[.uint32](batch_size + 1)
     with row_offsets_device.map_to_host() as ro_host:
         for i in range(batch_size + 1):
             ro_host[i] = UInt32(i * seq_len)
@@ -207,11 +202,11 @@ def execute_mla_decode_sparse[
             blocks_device.unsafe_ptr().as_unsafe_any_origin(),
             RuntimeLayout[blocks_layout].row_major(block_shape),
         ),
-        LayoutTensor[DType.uint32, cl_layout, ImmutAnyOrigin](
+        LayoutTensor[.uint32, cl_layout, ImmutAnyOrigin](
             cache_lengths_device.unsafe_ptr().as_unsafe_any_origin(),
             RuntimeLayout[cl_layout].row_major(IndexList[1](batch_size)),
         ),
-        LayoutTensor[DType.uint32, lut_layout, ImmutAnyOrigin](
+        LayoutTensor[.uint32, lut_layout, ImmutAnyOrigin](
             lookup_table_device.unsafe_ptr().as_unsafe_any_origin(),
             RuntimeLayout[lut_layout].row_major(
                 IndexList[2](batch_size, pages_per_seq)
@@ -238,7 +233,7 @@ def execute_mla_decode_sparse[
         batch_size, cache_len, seq_len, ctx
     )
     var scalar_args_buf_tt = mla_args.gpu_tile_tensor()
-    var d_indices = rebind[UnsafePointer[Int32, MutAnyOrigin]](
+    var d_indices = rebind[MutPointer[Int32, MutAnyOrigin]](
         d_indices_device.unsafe_ptr()
     )
 
@@ -295,7 +290,7 @@ def execute_mla_decode_sparse[
 
 
 def main() raises:
-    comptime q_dtype = get_defined_dtype["q_dtype", DType.float8_e4m3fn]()
+    comptime q_dtype = get_defined_dtype["q_dtype", .float8_e4m3fn]()
     comptime num_heads = get_defined_int["num_heads", 8]()
     comptime page_size = get_defined_int["page_size", 128]()
     comptime top_k = get_defined_int["top_k", 2048]()

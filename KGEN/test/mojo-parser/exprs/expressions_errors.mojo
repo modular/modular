@@ -1208,7 +1208,7 @@ def test_origin_of_deprecated[T: AnyType](a: T):
 
 def some_complex_calculation() -> Int: return 4
 comptime ideal_width = some_complex_calculation()*4
-comptime IdealSIMD = SIMD[DType.int32, ideal_width]
+comptime IdealSIMD = SIMD[.int32, ideal_width]
 
 def get_data() -> IdealSIMD: return IdealSIMD()
 
@@ -1223,20 +1223,20 @@ def sugar_test():
     sugar_test1(HasIntParam[int_fn(0)])
 
     var a = get_data()  # Ok
-    var b : SIMD[DType.int32, 4]
+    var b : SIMD[.int32, 4]
 
-    # expected-error @below {{cannot implicitly convert 'IdealSIMD' value to 'SIMD[DType.int32, SIMDLength(4)]'}}
-    # expected-note @below {{'IdealSIMD' is aka 'SIMD[DType.int32, Int((mul some_complex_calculation(), 4))]'}}
+    # expected-error @below {{cannot implicitly convert 'IdealSIMD' value to 'SIMD[.int32, 4]'}}
+    # expected-note @below {{'IdealSIMD' is aka 'SIMD[.int32, Int((mul some_complex_calculation(), 4))]'}}
     b = get_data()
 
     var c = a.join(a) # c has twice the width.
 
-    # expected-error @below {{cannot implicitly convert 'SIMD[DType.int32, (SIMDLength(Int((mul some_complex_calculation(), 4))) * SIMDLength(2))]' value to 'SIMD[DType.int32, SIMDLength(4)]'}}
-    # expected-note @below {{.size of the first value is '(SIMDLength(Int((mul some_complex_calculation(), 4))) * SIMDLength(2))' but the second value is 'SIMDLength(4)'}}
+    # expected-error @below {{cannot implicitly convert 'SIMD[.int32, (SIMDLength(Int((mul some_complex_calculation(), 4))) * 2)]' value to 'SIMD[.int32, 4]'}}
+    # expected-note @below {{.size of the first value is '(SIMDLength(Int((mul some_complex_calculation(), 4))) * 2)' but the second value is '4'}}
     b = c
 
-    # expected-error @below {{cannot implicitly convert 'IdealSIMD' value to 'SIMD[DType.int32, SIMDLength(4)]'}}
-    # expected-note @below {{'IdealSIMD' is aka 'SIMD[DType.int32, Int((mul some_complex_calculation(), 4))]'}}
+    # expected-error @below {{cannot implicitly convert 'IdealSIMD' value to 'SIMD[.int32, 4]'}}
+    # expected-note @below {{'IdealSIMD' is aka 'SIMD[.int32, Int((mul some_complex_calculation(), 4))]'}}
     b = a+a
 
 
@@ -1359,3 +1359,7 @@ def test_inferred_attribute_ref():
   # expected-error @below {{cannot implicitly convert 'Int' value to 'Color'}}
   # expected-error @below {{invalid call to 'takes_color': cannot resolve inferred attribute reference}}
   takes_color(.size)
+
+def test_dtype_error_message():
+    # expected-error @below {{cannot implicitly convert 'SIMD[.float32, 3]' value to 'SIMD[.float32, 4]'}}
+    var x: SIMD[DType.float32, 4] = SIMD[DType.float32, 3](1.0)

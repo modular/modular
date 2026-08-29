@@ -8,6 +8,7 @@ modular_py_library(
     deps = [
         "//max/python/max/driver",
         "//max/python/max/nn",
+        "//max/python/max/pipelines/audio",
         "//max/python/max/pipelines/context",
         "//max/python/max/pipelines/diffusion",
         "//max/python/max/pipelines/kv_cache",

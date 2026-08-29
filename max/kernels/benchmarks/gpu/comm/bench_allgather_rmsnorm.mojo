@@ -75,9 +75,9 @@ def _launch_norm_full[
     in_dtype: DType,
     num_cols: Int,
 ](
-    in_ptr: UnsafePointer[Scalar[in_dtype], MutAnyOrigin],
-    out_ptr: UnsafePointer[Scalar[in_dtype], MutAnyOrigin],
-    gamma_ptr: UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin],
+    in_ptr: MutPointer[Scalar[in_dtype], MutAnyOrigin],
+    out_ptr: MutPointer[Scalar[in_dtype], MutAnyOrigin],
+    gamma_ptr: ImmPointer[Scalar[in_dtype], ImmutAnyOrigin],
     rows: Int,
     epsilon: Float32,
     weight_offset: Scalar[in_dtype],
@@ -118,9 +118,9 @@ def _verify_results[
 ](
     num_rows: Int,
     list_of_ctx: List[DeviceContext],
-    signal_buffers: List[DeviceBuffer[DType.uint8]],
+    signal_buffers: List[DeviceBuffer[.uint8]],
     cb_shards: List[CacheBustingBuffer[in_dtype]],
-    rank_sigs: Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
+    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS],
     gamma_dev: DeviceBuffer[in_dtype],
     gamma_host: List[Scalar[in_dtype]],
     epsilon: Float32,
@@ -148,13 +148,13 @@ def _verify_results[
     var in_shards = Array[ShardType, ngpus](uninitialized=True)
     comptime for i in range(ngpus):
         in_shards[i] = ShardType(
-            rebind[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin]](
+            rebind[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]](
                 cb_shards[i].offset_ptr(0)
             ),
             row_major(Coord(Index(config.rank_units(i), num_cols))),
         )
     var gamma_view = GammaType(
-        rebind[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin]](
+        rebind[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]](
             gamma_dev.unsafe_ptr()
         ),
         row_major(Coord(Index(num_cols))),
@@ -203,7 +203,7 @@ def _verify_results[
         list_of_ctx[i].synchronize()
     group_start()
     for i in range(ngpus):
-        var out_base = rebind[UnsafePointer[Scalar[in_dtype], MutAnyOrigin]](
+        var out_base = rebind[MutPointer[Scalar[in_dtype], MutAnyOrigin]](
             ag_r[i].unsafe_ptr()
         )
         var out_views = Array[FullType, ngpus](uninitialized=True)
@@ -218,7 +218,7 @@ def _verify_results[
         list_of_ctx[i].synchronize()
 
     # Host oracle + comparison on GPU 0.
-    var woff = weight_offset.cast[DType.float32]()
+    var woff = weight_offset.cast[.float32]()
     var normed_h = List[Scalar[in_dtype]](
         length=full_n, fill=Scalar[in_dtype](0)
     )
@@ -236,14 +236,14 @@ def _verify_results[
         var base = r * num_cols
         var m2 = Float32(0)
         for c in range(num_cols):
-            var x = _gathered_value[in_dtype](r, c).cast[DType.float32]()
+            var x = _gathered_value[in_dtype](r, c).cast[.float32]()
             m2 += x * x
         var nf = rsqrt(m2 / Float32(num_cols) + epsilon)
         for c in range(num_cols):
-            var x = _gathered_value[in_dtype](r, c).cast[DType.float32]()
-            var g_f = gamma_host[c].cast[DType.float32]() + woff
-            var ref_v = ((x * nf) * g_f).cast[DType.bfloat16]()
-            var gpu = normed_h[base + c].cast[DType.bfloat16]()
+            var x = _gathered_value[in_dtype](r, c).cast[.float32]()
+            var g_f = gamma_host[c].cast[.float32]() + woff
+            var ref_v = ((x * nf) * g_f).cast[.bfloat16]()
+            var gpu = normed_h[base + c].cast[.bfloat16]()
             var ulp = abs(Int(gpu.to_bits()) - Int(ref_v.to_bits()))
             if ulp > max_ulp:
                 max_ulp = ulp
@@ -318,8 +318,8 @@ def bench_allgather_rmsnorm[
     var normed = List[DeviceBuffer[in_dtype]](capacity=ngpus)
     var sum_full = List[DeviceBuffer[in_dtype]](capacity=ngpus)
     var ag_full = List[DeviceBuffer[in_dtype]](capacity=ngpus)
-    var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
-    var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+    var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
+    var rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS](
         uninitialized=True
     )
 
@@ -365,7 +365,7 @@ def bench_allgather_rmsnorm[
         _ = cold_h^
 
         signal_buffers.append(
-            list_of_ctx[i].create_buffer_sync[DType.uint8](size_of[Signal]())
+            list_of_ctx[i].create_buffer_sync[.uint8](size_of[Signal]())
         )
         init_signal_buffer(signal_buffers[i], list_of_ctx[i])
         rank_sigs[i] = (
@@ -405,7 +405,7 @@ def bench_allgather_rmsnorm[
     var sum_views = Array[FullType, ngpus](uninitialized=True)
     for i in range(ngpus):
         in_shards[i] = ShardType(
-            rebind[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin]](
+            rebind[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]](
                 cb_shards[i].unsafe_ptr()
             ),
             row_major(Coord(Index(config.rank_units(i), num_cols))),
@@ -419,7 +419,7 @@ def bench_allgather_rmsnorm[
             row_major(Coord(Index(num_rows, num_cols))),
         )
     var gamma_shard = GammaType(
-        rebind[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin]](
+        rebind[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]](
             gamma_dev.unsafe_ptr()
         ),
         row_major(Coord(Index(num_cols))),
@@ -429,16 +429,16 @@ def bench_allgather_rmsnorm[
         rank_counts[i] = config.rank_units(i)
 
     # Per-GPU ptrs captured once for the timed closures.
-    var cold_ptrs = Array[UnsafePointer[Scalar[in_dtype], MutAnyOrigin], ngpus](
+    var cold_ptrs = Array[MutPointer[Scalar[in_dtype], MutAnyOrigin], ngpus](
         uninitialized=True
     )
-    var ag_ptrs = Array[UnsafePointer[Scalar[in_dtype], MutAnyOrigin], ngpus](
+    var ag_ptrs = Array[MutPointer[Scalar[in_dtype], MutAnyOrigin], ngpus](
         uninitialized=True
     )
-    var normed_ptrs = Array[
-        UnsafePointer[Scalar[in_dtype], MutAnyOrigin], ngpus
-    ](uninitialized=True)
-    var gamma_ptr = rebind[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin]](
+    var normed_ptrs = Array[MutPointer[Scalar[in_dtype], MutAnyOrigin], ngpus](
+        uninitialized=True
+    )
+    var gamma_ptr = rebind[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]](
         gamma_dev.unsafe_ptr().as_unsafe_any_origin()
     )
     for i in range(ngpus):
@@ -467,27 +467,26 @@ def bench_allgather_rmsnorm[
     ) {imm}:
         comptime for _j in range(ngpus):
             in_shards[_j] = ShardType(
-                rebind[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin]](
+                rebind[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]](
                     cb_shards[_j].offset_ptr(cache_iter)
                 ),
                 row_major(Coord(Index(rank_counts[_j], num_cols))),
             )
 
     # ===== Variant 1: all-gather only -> t_AG =====
-    @__parameter
     @always_inline
     def bench_ag_iter(
         mut bench: Bencher, ctx: DeviceContext, ctx_idx: Int
-    ) raises:
+    ) raises {mut in_shards, imm}:
         @always_inline
         def call_fn(
             ctx_inner: DeviceContext, cache_iter: Int
         ) raises {mut in_shards, imm}:
             _rebuild_shards(cache_iter, in_shards)
             # Rebuild per-rank all-gather output views (into ag_full) for the timed AG.
-            var out_base = rebind[
-                UnsafePointer[Scalar[in_dtype], MutAnyOrigin]
-            ](ag_full[ctx_idx].unsafe_ptr())
+            var out_base = rebind[MutPointer[Scalar[in_dtype], MutAnyOrigin]](
+                ag_full[ctx_idx].unsafe_ptr()
+            )
             var out_views = Array[FullType, ngpus](uninitialized=True)
             comptime for src in range(ngpus):
                 out_views[src] = FullType(
@@ -498,19 +497,19 @@ def bench_allgather_rmsnorm[
 
         bencher_iter_custom(bench, call_fn, ctx)
 
-    bench_multicontext[bench_ag_iter](
+    bench_multicontext(
         b,
+        bench_ag_iter,
         list_of_ctx,
         BenchId("allgather_only", input_id=bench_name_prefix),
         [ThroughputMeasure(BenchMetric.bytes, total_bytes)],
     )
 
     # ===== Variant 2: standalone RMSNorm on a cold full tensor -> t_norm =====
-    @__parameter
     @always_inline
     def bench_norm_cold_iter(
         mut bench: Bencher, ctx: DeviceContext, ctx_idx: Int
-    ) raises:
+    ) raises {imm}:
         @always_inline
         def call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises {imm}:
             if num_rows > 0:
@@ -526,28 +525,28 @@ def bench_allgather_rmsnorm[
 
         bencher_iter_custom(bench, call_fn, ctx)
 
-    bench_multicontext[bench_norm_cold_iter](
+    bench_multicontext(
         b,
+        bench_norm_cold_iter,
         list_of_ctx,
         BenchId("rms_norm_full_cold", input_id=bench_name_prefix),
         [ThroughputMeasure(BenchMetric.bytes, total_bytes)],
     )
 
     # ===== Variant 3: AG then RMSNorm on the live gathered output -> t_chained =
-    @__parameter
     @always_inline
     def bench_chained_iter(
         mut bench: Bencher, ctx: DeviceContext, ctx_idx: Int
-    ) raises:
+    ) raises {mut in_shards, imm}:
         @always_inline
         def call_fn(
             ctx_inner: DeviceContext, cache_iter: Int
         ) raises {mut in_shards, imm}:
             _rebuild_shards(cache_iter, in_shards)
             # Rebuild per-rank all-gather output views (into ag_full) for the timed AG.
-            var out_base = rebind[
-                UnsafePointer[Scalar[in_dtype], MutAnyOrigin]
-            ](ag_full[ctx_idx].unsafe_ptr())
+            var out_base = rebind[MutPointer[Scalar[in_dtype], MutAnyOrigin]](
+                ag_full[ctx_idx].unsafe_ptr()
+            )
             var out_views = Array[FullType, ngpus](uninitialized=True)
             comptime for src in range(ngpus):
                 out_views[src] = FullType(
@@ -568,19 +567,19 @@ def bench_allgather_rmsnorm[
 
         bencher_iter_custom(bench, call_fn, ctx)
 
-    bench_multicontext[bench_chained_iter](
+    bench_multicontext(
         b,
+        bench_chained_iter,
         list_of_ctx,
         BenchId("allgather_then_rms_norm_chained", input_id=bench_name_prefix),
         [ThroughputMeasure(BenchMetric.bytes, total_bytes)],
     )
 
     # ===== Variant 4: fused all-gather + RMSNorm kernel -> t_fused =====
-    @__parameter
     @always_inline
     def bench_fused_iter(
         mut bench: Bencher, ctx: DeviceContext, ctx_idx: Int
-    ) raises:
+    ) raises {mut in_shards, imm}:
         @always_inline
         def call_fn(
             ctx_inner: DeviceContext, cache_iter: Int
@@ -599,19 +598,19 @@ def bench_allgather_rmsnorm[
 
         bencher_iter_custom(bench, call_fn, ctx)
 
-    bench_multicontext[bench_fused_iter](
+    bench_multicontext(
         b,
+        bench_fused_iter,
         list_of_ctx,
         BenchId("allgather_rmsnorm_fused", input_id=bench_name_prefix),
         [ThroughputMeasure(BenchMetric.bytes, total_bytes)],
     )
 
     # ===== Variant 5: shape-gated dispatch =====
-    @__parameter
     @always_inline
     def bench_dispatch_iter(
         mut bench: Bencher, ctx: DeviceContext, ctx_idx: Int
-    ) raises:
+    ) raises {mut in_shards, imm}:
         @always_inline
         def call_fn(
             ctx_inner: DeviceContext, cache_iter: Int
@@ -621,7 +620,7 @@ def bench_allgather_rmsnorm[
             @always_inline
             def two_launch() raises capturing:
                 var out_base = rebind[
-                    UnsafePointer[Scalar[in_dtype], MutAnyOrigin]
+                    MutPointer[Scalar[in_dtype], MutAnyOrigin]
                 ](sum_full[ctx_idx].unsafe_ptr())
                 var out_views = Array[FullType, ngpus](uninitialized=True)
                 comptime for src in range(ngpus):
@@ -634,7 +633,7 @@ def bench_allgather_rmsnorm[
                 allgather(in_shards, out_views, rank_sigs, ctx_inner, ctx_idx)
                 if num_rows > 0:
                     _launch_norm_full[in_dtype, num_cols](
-                        rebind[UnsafePointer[Scalar[in_dtype], MutAnyOrigin]](
+                        rebind[MutPointer[Scalar[in_dtype], MutAnyOrigin]](
                             sum_full[ctx_idx].unsafe_ptr()
                         ),
                         normed_ptrs[ctx_idx],
@@ -658,8 +657,9 @@ def bench_allgather_rmsnorm[
 
         bencher_iter_custom(bench, call_fn, ctx)
 
-    bench_multicontext[bench_dispatch_iter](
+    bench_multicontext(
         b,
+        bench_dispatch_iter,
         list_of_ctx,
         BenchId("allgather_rmsnorm_dispatch", input_id=bench_name_prefix),
         [ThroughputMeasure(BenchMetric.bytes, total_bytes)],
@@ -692,7 +692,7 @@ def bench_allgather_rmsnorm[
 
 
 def main() raises:
-    comptime in_dtype = get_defined_dtype["in_dtype", DType.bfloat16]()
+    comptime in_dtype = get_defined_dtype["in_dtype", .bfloat16]()
     comptime quantize = get_defined_bool["quantize", False]()
     comptime num_gpus = get_defined_int["num_gpus", 4]()
     var num_rows = Int(arg_parse("num_rows", 1))
