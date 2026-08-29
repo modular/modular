@@ -14,7 +14,7 @@
 from std.algorithm.functional import unswitch
 from std.collections import OptionalReg
 from std.math import ceildiv, clamp, gcd
-from std.sys import size_of
+from std.sys import get_defined_int, size_of
 from max.gpu.host import DeviceBuffer, DeviceContext, FuncAttribute
 from max.gpu.primitives.grid_controls import pdl_launch_attributes, PDLLevel
 from layout import (
@@ -46,7 +46,7 @@ from nn.attention.mha_utils import (
     MHAConfig,
 )
 from nn.attention.gpu.nvidia.common import KVTMATile
-from std.utils.numerics import get_accum_type
+from std.utils.numerics import get_accum_type, nan
 from std.utils.index import Index, IndexList
 
 comptime logger = Logger()
@@ -1143,6 +1143,20 @@ def mla_decode_sm100_dispatch[
 # ------------------------------------------------------------------------------
 # Inner dispatch implementation parameterized on split_page_size
 # ------------------------------------------------------------------------------
+# Mirrors `FA4_WS_POISON` in `sm100/dispatch.mojo`: the split-K workspaces
+# below are deliberately allocated without a fill, because an empty partition
+# skips its O store while still writing `-inf` to its LSE slot, and
+# `mla_decode_combine`'s scale check is what keeps the unwritten O slots from
+# contributing. `mla_decode_combine.mojo`'s prefetch load therefore reads
+# uninitialized memory by design and initcheck reports it. NaN-filling both
+# workspaces initializes them (silencing the false report) and grades that
+# contract: a dropped scale check or a missing `-inf` write propagates NaN into
+# the output and trips the test's own assert. Off by default and
+# comptime-pruned, so production codegen is untouched. Shares the FA4 flag so
+# one `-D` covers every attention split-K workspace. See KERN-3535.
+comptime MLA_WS_POISON: Bool = get_defined_int["FA4_WS_POISON", 0]() != 0
+
+
 def _mla_decode_sm100_dispatch_impl[
     q_type: DType,
     k_t: MHAOperand,
@@ -1238,6 +1252,9 @@ def _mla_decode_sm100_dispatch_impl[
         var lse_accum_data = ctx.enqueue_create_buffer[AccumType](
             Int(num_partitions * batch_size * q_max_seq_len * num_heads)
         )
+        comptime if MLA_WS_POISON:
+            ctx.enqueue_memset(o_accum_split_data, nan[output_type]())
+            ctx.enqueue_memset(lse_accum_data, nan[AccumType]())
         var lse_accum_split = TileTensor(
             lse_accum_data,
             row_major(
