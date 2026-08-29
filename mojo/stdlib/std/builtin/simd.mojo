@@ -927,10 +927,13 @@ struct SIMD[dtype: DType, length: SIMDLength](
         """
         _simd_construction_checks[Self.dtype, Self.length]()
 
-        # TODO: Make this a compile-time check when possible.
-        assert Self.length == len(
-            elems
-        ), "mismatch in the number of elements in the SIMD variadic constructor"
+        debug_assert[assert_mode="safe"](
+            Self.length == len(elems),
+            "SIMD: expected ",
+            Int(Self.length),
+            " elements, received ",
+            len(elems),
+        )
 
         __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
 

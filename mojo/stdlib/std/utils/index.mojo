@@ -248,9 +248,13 @@ struct IndexList[size: Int, *, element_type: DType = .int64](
         ), "Element type must be of integral type."
         var num_elements = len(elems)
 
-        assert (
-            Self.size == num_elements
-        ), "[IndexList] mismatch in the number of elements"
+        debug_assert[assert_mode="safe"](
+            Self.size == num_elements,
+            "IndexList: expected ",
+            Self.size,
+            " elements, received ",
+            num_elements,
+        )
 
         self = Self()
         comptime for idx in range(Self.size):
