@@ -201,33 +201,6 @@ def walrus_in_chain():
     use(d)
 
 
-# An assignment whose name resolves only to something immutable outside this
-# scope declares a local instead of assigning it.
-def shadow_module_level():
-    # expected-warning @+1 {{implicit declaration of 'one' is deprecated; add 'var' before the name}}
-    one = 2
-    use(one)
-
-
-# The shadowed declaration need not be at module level: an enclosing function's
-# immutable argument qualifies too.
-def shadow_enclosing_argument(p: Int):
-    def inner():
-        # expected-warning @+1 {{implicit declaration of 'p' is deprecated; add 'var' before the name}}
-        p = 2
-        use(p)
-
-    inner()
-
-
-def shadow_in_tuple_target():
-    # expected-warning @+2 {{implicit declaration of 'one' is deprecated; add 'var' before the assignment target}}
-    # expected-warning @+1 {{implicit declaration of 'x' is deprecated; add 'var' before the assignment target}}
-    one, x = Tuple(1, 2)
-    use(one)
-    use(x)
-
-
 # ===----------------------------------------------------------------------=== #
 # Sites inside a nested block, where 'var' in place would be scoped to the block
 # instead of to the function.
@@ -286,29 +259,11 @@ def nested_tuple_target(c: Bool):
     use(1)
 
 
-def nested_shadow(c: Bool):
-    # expected-warning @+2 {{implicit declaration of 'one' is deprecated; declare it with 'var' in the function body}}
-    if c:
-        one = 2
-    use(1)
-
-
 def nested_while(c: Bool):
     # expected-warning @+2 {{implicit declaration of 'x' is deprecated; declare it with 'var' in the function body}}
     while c:
         x = 1
     use(1)
-
-
-def nested_try() raises:
-    # expected-warning @+2 {{implicit declaration of 'x' is deprecated; declare it with 'var' in the function body}}
-    try:
-        x = one()
-    # expected-warning @+2 {{implicit declaration of 'y' is deprecated; declare it with 'var' in the function body}}
-    except err:
-        y = 1
-    use(1)
-
 
 def nested_comptime_if():
     # expected-warning @+2 {{implicit declaration of 'x' is deprecated; declare it with 'var' in the function body}}

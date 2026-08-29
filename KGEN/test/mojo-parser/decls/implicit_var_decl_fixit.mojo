@@ -100,30 +100,3 @@ def tuple_target():
     c, d = Tuple(1, 2)
     use(c)
     use(d)
-
-
-def shadow():
-    # CHECK: "fixIts":[{"end":{"column":5,"line":[[#@LINE+2]]},"start":{"column":5,"line":[[#@LINE+2]]},"text":"var "}]
-    # CHECK-SAME: "message":"implicit declaration of 'one' is deprecated; add 'var' before the name"
-    one = 2
-    use(one)
-
-
-# A shadowing site takes whichever base message its position calls for, so pin
-# the other two positions here too.
-def nested_shadow(c: Bool):
-    # CHECK: "fixIts":[]
-    # CHECK-SAME: "message":"implicit declaration of 'one' is deprecated; declare it with 'var' in the function body"
-    if c:
-        one = 2
-    use(1)
-
-
-def tuple_shadow():
-    # CHECK: "fixIts":[]
-    # CHECK-SAME: "message":"implicit declaration of 'one' is deprecated; add 'var' before the assignment target"
-    # CHECK: "fixIts":[]
-    # CHECK-SAME: "message":"implicit declaration of 'x' is deprecated; add 'var' before the assignment target"
-    one, x = Tuple(1, 2)
-    use(one)
-    use(x)

@@ -769,25 +769,6 @@ AnyValue SyntheticNode::emitIR(ExprDest &dest, IREmitter &emitter) const {
   return emitter.emitResult(irValue, this, dest);
 }
 
-/// When analyzing a DeclRefNode lookup result in a context that allows implicit
-/// variable definitions, check to see if the lookup set contains immutable
-/// symbols found through global lookup. If so, return true.
-static bool isImmutableValuesInOtherScope(const LookupResult &lookup,
-                                          IREmitter &emitter) {
-  for (ASTDecl *decl : lookup.getIfSuccess()) {
-    // If this contains anything mutable, return false.
-    if (isa_and_nonnull<VarDeclOp>(decl->getIfOperation()) ||
-        decl->getIfIRValue().getIfLValue())
-      return false;
-
-    // If this is an immutable thing in the current scope, then return false.
-    if (decl->getParentDecl() == &emitter.declScope)
-      return false;
-  }
-
-  return true;
-}
-
 LogicalResult DeclRefNode::emitDestructuringPValue(PValue toBind,
                                                    IREmitter &emitter) const {
   assert(toBind && "No PValue provided when binding a parameter?");
@@ -1214,24 +1195,6 @@ DeclRefNode::emitUnqualLookup(StringRef spelling, const ExprNode *expr,
   // Perform a lookup of the specified decl in the current lookupScope.
   LookupResult lookup = emitter.shared.lookupAndResolveDecl(
       spelling, loc, lookupScope, /*searchParentScopes=*/true);
-
-  // If we're in a function and have a contextual type, then this may be an
-  // implicit declaration of a variable.  However, name lookup could find
-  // global symbols (e.g. the "slice" function in `slice = foo()`) which are
-  // obviously not mutable.  Handle this by filtering out the overload set if
-  // it is obviously not mutable, but we know we're in an lvalue context with
-  // inferred type.
-  if (emitter.varDeclCursor && !lookup.isFailure() &&
-      isImmutableValuesInOtherScope(lookup, emitter)) {
-    // If we're declaring a local definition that shadows a global immutable
-    // symbol like a function, then we pretend we don't see it so the code below
-    // will synthesize it.  If we are speculatively resolving this, then we
-    // return unknown since we don't have a contextual type.
-    if (dest.getIfInitializerType())
-      lookup = LookupResult::getFailure({});
-    else if (isSpeculative)
-      return expr;
-  }
 
   // If that lookup failed, but we can synthesize a variable declaration in this
   // scope, do that.  We can only do this if there is a varDeclCursor,
