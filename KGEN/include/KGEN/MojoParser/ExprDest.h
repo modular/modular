@@ -213,20 +213,6 @@ public:
   PatternDeclKind getPatternDeclKind() const { return patternDeclKind; }
   void setPatternDeclKind(PatternDeclKind kind) { patternDeclKind = kind; }
 
-  /// True when this destination is one element of a tuple target and a 'var' or
-  /// 'ref' appears elsewhere in that target, either in a sibling element or at
-  /// an enclosing level of it.  The deprecation diagnostic must not then
-  /// suggest prefixing the whole target, because `var a, var b = pair()` is
-  /// rejected.
-  bool hasSiblingPatternDecl() const { return siblingPatternDecl; }
-  void setHasSiblingPatternDecl(bool value) { siblingPatternDecl = value; }
-
-  /// True when this destination is a target of a walrus assignment.  The
-  /// deprecation diagnostic must not then advise 'var' at all, because 'var'
-  /// and 'ref' on a walrus target are being removed from the language.
-  bool isWalrusTarget() const { return walrusTarget; }
-  void setIsWalrusTarget(bool value) { walrusTarget = value; }
-
   /// Return true if there is a specification for this destination.  If not,
   /// an expression will be emitted to generate a PValue, SRValue, LValue, etc.
   bool isSpecified() const { return !isa<NullRepresentation>(representation); }

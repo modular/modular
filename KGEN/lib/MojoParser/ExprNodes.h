@@ -640,6 +640,7 @@ struct BinOpNode final : public ExprNode {
 private:
   AnyValue emitAndOr(ExprDest &dest, IREmitter &emitter) const;
   AnyValue emitAssign(ExprDest &dest, IREmitter &emitter) const;
+  AnyValue emitWalrus(ExprDest &dest, IREmitter &emitter) const;
   AnyValue emitInplace(ExprDest &dest, IREmitter &emitter) const;
 };
 

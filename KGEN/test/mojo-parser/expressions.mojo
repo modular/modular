@@ -788,38 +788,36 @@ def basic_assignments(a0: Int, b: Int, c: RegPassable, d: RegPassable):
   # CHECK-NEXT: lit.call {{.*}}simpleMath{{.*}}(%[[A]], %[[SEVENI]])
   _ = simpleMath(a, x := 7)
 
-# Issue #20145: Walrus operator should implicitly declare variable in def functions.
-# CHECK-LABEL: lit.fn @"walrus_implicit_decl
-def walrus_implicit_decl() raises:
-  # CHECK:      %d = lit.var.decl "d" imp
-  # CHECK:      %c = lit.var.decl "c" imp
-  # CHECK:      %b = lit.var.decl "b" imp
-  # CHECK:      %a = lit.var.decl "a" imp
+# Walrus assigns into an existing LValue and yields the assigned value.
+# CHECK-LABEL: lit.fn @"walrus_assign
+def walrus_assign() raises:
+  # CHECK: %a = lit.var.decl "a"
+  # CHECK: %b = lit.var.decl "b"
+  # CHECK: %c = lit.var.decl "c"
+  # CHECK: %d = lit.var.decl "d"
+  var a: Int
+  var b: Int
+  var c: Int
+  var d: Int
 
-  # CHECK-NEXT: [[THREE:%.*]] = kgen.param.constant: !alias_Int1 = <rebind(:!Int {:scalar<index> 3})>
+  # CHECK: [[THREE:%.*]] = kgen.param.constant: !alias_Int1 = <rebind(:!Int {:scalar<index> 3})>
   # CHECK-NEXT: lit.ref.store [[THREE]], %a
   # CHECK-NEXT: [[THREEI:%.*]] = kgen.rebind [[THREE]]
   # CHECK-NEXT: [[AREF:%.*]] = kgen.rebind %a
   # CHECK-NEXT: [[VAR_A:%.*]] = lit.ref.load [[AREF]]
   # CHECK-NEXT: [[TMP:%.*]] = lit.call {{.*}}simpleMath{{.*}}([[THREEI]], [[VAR_A]])
-  # expected-warning @+1 {{implicit declaration of 'a' is deprecated; declare it with 'var' in the function body}}
   _ = simpleMath(a := 3, a)
   # CHECK-NEXT: lit.ownership.use [[TMP]]
 
   # CHECK-NEXT: hlcf.elif {
   # CHECK-NEXT: [[FOUR:%.*]] = kgen.param.constant: !alias_Int1 = <rebind(:!Int {:scalar<index> 4})>
   # CHECK-NEXT: lit.ref.store [[FOUR]], %b
-  # expected-warning @+1 {{implicit declaration of 'b' is deprecated; declare it with 'var' in the function body}}
   if b := 4:
     b = simpleMath(b, b)
 
   # CHECK: [[FIVE:%.*]] = kgen.param.constant: !alias_Int1 = <rebind(:!Int {:scalar<index> 5})>
   # CHECK-NEXT: lit.ref.store [[FIVE]], %c
   # CHECK-NEXT: lit.ref.store [[FIVE]], %d
-  # Only 'c' is a walrus target; 'd' is a plain assignment target, and 'var d'
-  # remains a valid edit.
-  # expected-warning @+2 {{implicit declaration of 'c' is deprecated; declare it with 'var' in the function body}}
-  # expected-warning @+1 {{implicit declaration of 'd' is deprecated; add 'var' before the name}}
   d = c := 5
 
 ##===----------------------------------------------------------------------===##

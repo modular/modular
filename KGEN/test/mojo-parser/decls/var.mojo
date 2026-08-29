@@ -120,17 +120,18 @@ def use_int(x: Int):
 
 # CHECK-LABEL: lit.fn @"walrus_control_flow
 def walrus_control_flow(a: Int) raises:
-    # CHECK: %b = lit.var.decl
     # CHECK: %curr = lit.var.decl "curr"
+    # CHECK: %b = lit.var.decl "b"
     # expected-warning @+1 {{implicit declaration of 'curr' is deprecated; add 'var' before the name}}
     curr = a
+    var b: Int
 
     # CHECK: lit.loop {
     # CHECK-NEXT: lit.ref.load %curr
-    # expected-warning @+1 {{implicit declaration of 'b' is deprecated; declare it with 'var' in the function body}}
     while b := curr + 1:
         # lit.loop.break.else
-        # CHECK: lit.ref.load %b
+        # CHECK: lit.ref.load
+        # CHECK: use_int
         use_int(b)
         curr = b
 

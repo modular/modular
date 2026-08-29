@@ -559,10 +559,9 @@ def bad_assignment2():
   a = 1
 
 
-def bad_walrus_implicit_decl_in_fn():
-  # Implicit definition in an 'def' is ok.
-  # expected-warning @+1 {{implicit declaration of 'a' is deprecated; declare it with 'var' in the function body}}
-  if a := 4:
+def bad_walrus_undeclared():
+  # Walrus requires an existing LValue; it does not implicitly declare.
+  if a := 4: # expected-error {{use of unknown declaration 'a'}}
     pass
 
 def unused_assignments():

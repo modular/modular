@@ -13,14 +13,13 @@
 
 # Tests for the fixit on the implicit-declaration warning. Uses the JSON
 # diagnostic format to verify the exact fixit position, 'var ' immediately
-# before the declared name, and the three shapes that deliberately offer no
-# fixit: a tuple element, because one 'var' covers the whole target; a site
-# inside a nested block, because 'var' there would be scoped to the block; and a
-# walrus target, because 'var' and 'ref' on one are being removed from the
-# language.
+# before the declared name, and the shapes that deliberately offer no fixit: a
+# tuple element, because one 'var' covers the whole target; and a site inside a
+# nested block, because 'var' there would be scoped to the block. Walrus targets
+# no longer implicitly declare at all.
 # Related to MOCO-3182.
 
-# RUN: %parse-mojo-isolated --diagnostic-format json --use-mlir-diagnostics=false %s -o /dev/null 2>&1 | FileCheck %s
+# RUN: not %parse-mojo-isolated --diagnostic-format json --use-mlir-diagnostics=false %s -o /dev/null 2>&1 | FileCheck %s
 
 
 def one() -> Int:
@@ -50,19 +49,16 @@ def annotated():
     use(y)
 
 
-# A walrus target gets no fixit even at function-body level, where inserting
-# 'var' at the name would have been the equivalent edit for a plain assignment.
+# A walrus target must already be an LValue; it does not implicitly declare.
 def walrus_in_call():
-    # CHECK: "fixIts":[]
-    # CHECK-SAME: "message":"implicit declaration of 'v' is deprecated; declare it with 'var' in the function body"
+    # CHECK: "message":"use of unknown declaration 'v'"
     use(v := one())
     use(v)
 
 
-# A walrus in a condition is a nested site as well, and reads the same.
+# Same for a walrus in a condition.
 def walrus():
-    # CHECK: "fixIts":[]
-    # CHECK-SAME: "message":"implicit declaration of 'z' is deprecated; declare it with 'var' in the function body"
+    # CHECK: "message":"use of unknown declaration 'z'"
     if z := truthy():
         use(1)
 
@@ -77,11 +73,9 @@ def nested_block(c: Bool):
     use(1)
 
 
-# A short-circuit operand is reachable only by a walrus, and gets a block of its
-# own besides.
+# A short-circuit walrus operand also requires a prior declaration.
 def and_operand(c: Bool) -> Bool:
-    # CHECK: "fixIts":[]
-    # CHECK-SAME: "message":"implicit declaration of 'w' is deprecated; declare it with 'var' in the function body"
+    # CHECK: "message":"use of unknown declaration 'w'"
     return c and (w := truthy())
 
 
@@ -106,19 +100,6 @@ def tuple_target():
     c, d = Tuple(1, 2)
     use(c)
     use(d)
-
-
-# A binder one level up in the target rules out the outer 'var' for the names
-# nested inside it, so they take the hoisted-declaration message and no fixit.
-def nested_tuple_sibling():
-    # CHECK: "fixIts":[]
-    # CHECK-SAME: "message":"implicit declaration of 'f' is deprecated; declare it with 'var' in the function body"
-    # CHECK: "fixIts":[]
-    # CHECK-SAME: "message":"implicit declaration of 'g' is deprecated; declare it with 'var' in the function body"
-    (f, g), var h = Tuple(Tuple(1, 2), 3)
-    use(f)
-    use(g)
-    use(h)
 
 
 def shadow():

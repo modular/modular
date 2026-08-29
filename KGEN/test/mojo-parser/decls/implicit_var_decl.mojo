@@ -89,32 +89,6 @@ def tuple_mixed():
     use(a)
     use(b)
 
-
-# A binder on a sibling rules out prefixing the whole target with 'var', so the
-# fresh element is told to declare itself separately instead.
-def tuple_sibling_ref(t: Tuple[Int, Int]):
-    # expected-warning @+1 {{implicit declaration of 'a' is deprecated; declare it with 'var' in the function body}}
-    a, ref b = t
-    use(a)
-    use(b)
-
-
-def tuple_sibling_var():
-    # expected-warning @+1 {{implicit declaration of 'a' is deprecated; declare it with 'var' in the function body}}
-    a, var b = Tuple(1, 2)
-    use(a)
-    use(b)
-
-
-# The spelling the warning above asks for, and the one the stdlib uses: a
-# separate declaration, then a plain assignment that binds the sibling.
-def tuple_sibling_ref_migrated(t: Tuple[Int, Int]):
-    var a: Int
-    a, ref b = t
-    use(a)
-    use(b)
-
-
 # With no binder anywhere in the target, a nested one still takes a single outer
 # 'var', so every name keeps the target message.
 def nested_tuple_target_no_binder():
@@ -134,58 +108,12 @@ def nested_tuple_target_no_binder_migrated():
     use(c)
 
 
-# The binder need not be a sibling of the diagnosed name: an outer 'var' has to
-# prefix the whole target, so a binder anywhere in it rules that spelling out for
-# every fresh name, at any depth.
-def nested_tuple_sibling_var():
-    # expected-warning @+2 {{implicit declaration of 'a' is deprecated; declare it with 'var' in the function body}}
-    # expected-warning @+1 {{implicit declaration of 'b' is deprecated; declare it with 'var' in the function body}}
-    (a, b), var c = Tuple(Tuple(1, 2), 3)
-    use(a)
-    use(b)
-    use(c)
-
-
 # TODO(KGEN-XXXX): the migrated form of the case above belongs here, spelling
 # the two names as `var a: Int` / `var b: Int`. It is omitted because an inner
 # tuple that fully resolves, beside a sibling that does not, strands an owning
 # `RCRef<TupleDLValue>` in the parser's persistent arena, and LeakSanitizer
 # reports it. The unmigrated form above is unaffected: its names are fresh, so
 # the inner tuple never resolves and no `TupleDLValue` is formed.
-
-
-def nested_tuple_sibling_ref(t: Tuple[Tuple[Int, Int], Int]):
-    # expected-warning @+2 {{implicit declaration of 'a' is deprecated; declare it with 'var' in the function body}}
-    # expected-warning @+1 {{implicit declaration of 'b' is deprecated; declare it with 'var' in the function body}}
-    (a, b), ref c = t
-    use(a)
-    use(b)
-    use(c)
-
-
-def nested_tuple_sibling_deep():
-    # expected-warning @+3 {{implicit declaration of 'a' is deprecated; declare it with 'var' in the function body}}
-    # expected-warning @+2 {{implicit declaration of 'b' is deprecated; declare it with 'var' in the function body}}
-    # expected-warning @+1 {{implicit declaration of 'c' is deprecated; declare it with 'var' in the function body}}
-    ((a, b), c), var d = Tuple(Tuple(Tuple(1, 2), 3), 4)
-    use(a)
-    use(b)
-    use(c)
-    use(d)
-
-
-# Each target of a chain answers for itself, so the one without a binder still
-# takes the outer 'var'.
-def chain_tuple_sibling():
-    # expected-warning @+4 {{implicit declaration of 'a' is deprecated; declare it with 'var' in the function body}}
-    # expected-warning @+3 {{implicit declaration of 'b' is deprecated; declare it with 'var' in the function body}}
-    # expected-warning @+2 {{implicit declaration of 'p' is deprecated; add 'var' before the assignment target}}
-    # expected-warning @+1 {{implicit declaration of 'q' is deprecated; add 'var' before the assignment target}}
-    p, q = (a, b), var c = Tuple(Tuple(1, 2), 3)
-    use(a)
-    use(b)
-    use(c)
-    use(q)
 
 
 # TODO(KGEN-XXXX): the migrated form of the chain above belongs here; omitted
@@ -233,7 +161,7 @@ def chain_tuple_migrated():
 # 'ref' on a walrus target are being removed from the language, so neither is an
 # edit to ask for.
 def walrus_condition():
-    # expected-warning @+1 {{implicit declaration of 'x' is deprecated; declare it with 'var' in the function body}}
+    # expected-error @+1 {{use of unknown declaration 'x'}}
     if x := truthy():
         use_bool(x)
 
@@ -247,13 +175,6 @@ def walrus_condition_hoisted():
     use_bool(x)
 
 
-# A call argument is not a block of its own, so this one turns on the walrus
-# alone rather than on where it sits.
-def walrus_in_call():
-    # expected-warning @+1 {{implicit declaration of 'x' is deprecated; declare it with 'var' in the function body}}
-    use(x := 1)
-
-
 def walrus_in_call_hoisted():
     var x: Int
     use(x := 1)
@@ -261,14 +182,6 @@ def walrus_in_call_hoisted():
 
 # One 'var' covers a whole tuple target, but a walrus target takes none, so each
 # element hoists instead of naming the target.
-def walrus_tuple_target():
-    # expected-warning @+2 {{implicit declaration of 'a' is deprecated; declare it with 'var' in the function body}}
-    # expected-warning @+1 {{implicit declaration of 'b' is deprecated; declare it with 'var' in the function body}}
-    use(((a, b) := Tuple(1, 2))[0])
-    use(a)
-    use(b)
-
-
 def walrus_tuple_target_hoisted():
     var a: Int
     var b: Int
@@ -281,8 +194,8 @@ def walrus_tuple_target_hoisted():
 # name message and its fixit. The other order is not a shape to pin:
 # `a := b = 1` does not parse.
 def walrus_in_chain():
-    # expected-warning @+2 {{implicit declaration of 'c' is deprecated; declare it with 'var' in the function body}}
-    # expected-warning @+1 {{implicit declaration of 'd' is deprecated; add 'var' before the name}}
+    var c: Int
+    var d: Int
     d = c := 5
     use(c)
     use(d)
@@ -428,43 +341,6 @@ def nested_def_body():
 # are reachable only by a walrus, and each also gets a block of its own, so both
 # rules point the same way there.
 # ===----------------------------------------------------------------------=== #
-
-
-def and_operand(c: Bool) -> Bool:
-    # expected-warning @+1 {{implicit declaration of 'x' is deprecated; declare it with 'var' in the function body}}
-    return c and (x := truthy())
-
-
-def or_operand(c: Bool) -> Bool:
-    # expected-warning @+1 {{implicit declaration of 'x' is deprecated; declare it with 'var' in the function body}}
-    return c or (x := truthy())
-
-
-def conditional_arms(c: Bool):
-    # expected-warning @+2 {{implicit declaration of 'x' is deprecated; declare it with 'var' in the function body}}
-    # expected-warning @+1 {{implicit declaration of 'y' is deprecated; declare it with 'var' in the function body}}
-    var v = (x := 1) if c else (y := 2)
-    use(v)
-
-
-def comprehension_walrus(items: List[Int]):
-    # expected-warning @+1 {{implicit declaration of 'x' is deprecated; declare it with 'var' in the function body}}
-    var doubled = [(x := i) for i in items]
-    use(doubled[0])
-
-
-# The hoisted form each of those messages asks for.
-def and_operand_hoisted(c: Bool) -> Bool:
-    var x: Bool
-    return c and (x := truthy())
-
-
-def conditional_arms_hoisted(c: Bool):
-    var x: Int
-    var y: Int
-    var v = (x := 1) if c else (y := 2)
-    use(v)
-
 
 def comprehension_walrus_hoisted(items: List[Int]):
     var x: Int

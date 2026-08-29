@@ -1249,26 +1249,17 @@ DeclRefNode::emitUnqualLookup(StringRef spelling, const ExprNode *expr,
         emitter.builder && emitter.builder->getInsertionBlock() !=
                                emitter.varDeclCursor->getInsertionBlock();
     bool isTupleElement = dest.getContext() == EC_TupleElement;
-    bool needsSeparateDecl =
-        isNestedBlock ||
-        // 'var' and 'ref' on a walrus target are being removed from the
-        // language, so neither edit is one to advise for `x := 1`.
-        dest.isWalrusTarget() ||
-        // For `a, var b = pair()` the whole-target edit reads
-        // `var a, var b = pair()`, which does not compile.
-        (isTupleElement && dest.hasSiblingPatternDecl());
     auto diag = emitter.emitWarning(loc);
     diag << "implicit declaration of '" << spelling << "' is deprecated; ";
-    if (needsSeparateDecl)
+    if (isNestedBlock)
       diag << "declare it with 'var' in the function body";
-    else
+    else {
       diag << "add 'var' before "
            << (isTupleElement ? "the assignment target" : "the name");
+      if (!isNestedBlock && !isTupleElement)
+        diag << FixIt::insertBeforeToken(loc, "var ");
+    }
     diag << expr->getRange();
-    // A tuple element gets no fixit: one 'var' covers the whole target, and an
-    // element's destination cannot reach that target's position to anchor one.
-    if (!needsSeparateDecl && !isTupleElement)
-      diag << FixIt::insertBeforeToken(loc, "var ");
 
     // NOTE: We intentionally do NOT apply type refinement to contextual types
     // for implicit variable declarations. The contextual type comes from the
@@ -3731,9 +3722,6 @@ static AnyValue emitBinOpCall(ASTExprAnd<AnyValue> lhs,
 }
 
 /// Emit a simple assignment statement.
-///
-/// The walrus := operator in Python requires the left side to be a simple
-/// identifier, but Mojo allows arbitrary lvalues like the assign stmt.
 AnyValue BinOpNode::emitAssign(ExprDest &dest, IREmitter &emitter) const {
   // Assignments might need to infer the LHS from the RHS when the LHS is
   // unresolved, and the RHS from the LHS when it is known:
@@ -3802,7 +3790,6 @@ AnyValue BinOpNode::emitAssign(ExprDest &dest, IREmitter &emitter) const {
   } else {
     assignDest = ExprDest(lhsResult.getIfPartiallyBoundLV(), assignDestKind);
   }
-  assignDest.setIsWalrusTarget(kind == kWalrus);
 
   // Emit the RHS into the context of the LHS.  If we got an LValue, then we can
   // infer the type of the RHS from the LHS LValue.  If we got an unresolved
@@ -3818,8 +3805,26 @@ AnyValue BinOpNode::emitAssign(ExprDest &dest, IREmitter &emitter) const {
     resultValue = UnknownAttr::get(emitter.shared.getTypeCheckErrorType());
   }
 
-  // To support the walrus operator and chained assignment like `x = y = 1`, the
-  /// assignment operation returns a borrowed version of the dest value.
+  // Support chained assignment like `x = y = 1`: the assignment operation
+  // returns a borrowed version of the dest value.
+  return emitter.emitResult(resultValue, this, dest);
+}
+
+/// Emit a walrus assignment expression like `x := y`.
+///
+/// Unlike general assignment, walrus does not use speculative bidirectional
+/// type inference: the LHS is emitted directly as an LValue, then the RHS is
+/// stored into it. The expression result is the assigned value.
+AnyValue BinOpNode::emitWalrus(ExprDest &dest, IREmitter &emitter) const {
+  LValue lhsLV = emitter.emitExprLValue(lhs, EC_Assignment);
+  if (!lhsLV)
+    return {};
+
+  ExprDest assignDest(lhsLV, EC_Assignment);
+  auto resultValue = emitter.emitExpr(rhs, assignDest);
+  if (!resultValue)
+    return {};
+
   return emitter.emitResult(resultValue, this, dest);
 }
 
@@ -3830,15 +3835,10 @@ AnyValue BinOpNode::emitAssign(ExprDest &dest, IREmitter &emitter) const {
 ///    a[test1()] += test2()
 ///  ==> test1; test2
 AnyValue BinOpNode::emitInplace(ExprDest &dest, IREmitter &emitter) const {
-  AnyValue lhsRep;
-  RValue rhsRep;
-
-  // Inplace operations evaluate the LHS first, so emit the LHS pattern as an
-  // lvalue.
+  // Inplace operations evaluate the LHS first.
   LValue lhsLV = emitter.emitExprLValue(lhs, EC_InplaceBinOpDest);
   if (!lhsLV)
     return {};
-
   // Then emit the right side.
   AnyValue rhsV = emitter.emitExpr(rhs, EC_OperatorOperandValue);
   if (!rhsV)
@@ -3874,8 +3874,10 @@ AnyValue BinOpNode::emitIR(ExprDest &dest, IREmitter &emitter) const {
   // Handle weird binary operators specially if we have them.
   if (kind == kBoolAnd || kind == kBoolOr) // `x and y`, `x or y`
     return emitAndOr(dest, emitter);
-  if (kind == kAssign || kind == kWalrus) // `x = y` and `x := y`
+  if (kind == kAssign) // `x = y`
     return emitAssign(dest, emitter);
+  if (kind == kWalrus) // `x := y`
+    return emitWalrus(dest, emitter);
   if (isAssignmentStmt()) // `x += y`
     return emitInplace(dest, emitter);
 
@@ -5693,12 +5695,6 @@ auto TupleNode::emitLCVIR(ExprDest &dest, IREmitter &emitter,
     }
   }
 
-  // A binder anywhere in the target rules out an outer 'var' for every fresh
-  // name in it, at any nesting depth.
-  bool anyEltPatternDecl = llvm::any_of(exprs, [](const ExprNode *elt) {
-    return elt->kind == kVarPat || elt->kind == kRefPat;
-  });
-
   bool allEltsLValue = true;
   SmallVector<ASTExprAnd<AnyValue>> elements;
   for (auto [i, expr] : llvm::enumerate(exprs)) {
@@ -5714,9 +5710,6 @@ auto TupleNode::emitLCVIR(ExprDest &dest, IREmitter &emitter,
 
     // Propagate var/ref context.
     eltDest.setPatternDeclKind(dest.getPatternDeclKind());
-    eltDest.setHasSiblingPatternDecl(anyEltPatternDecl ||
-                                     dest.hasSiblingPatternDecl());
-    eltDest.setIsWalrusTarget(dest.isWalrusTarget());
     auto exprVal = emitter.emitExpr(expr, eltDest);
     if (!exprVal)
       return {};

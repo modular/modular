@@ -546,3 +546,6 @@ This release completes the removal of APIs deprecated during the v1.0 cycle.
   Python's `base64.b64decode()`, any other byte outside the base64 alphabet
   still raises. The "length must be divisible by 4" error now counts only the
   significant characters.
+
+- The deprecated "implicitly declare variables" in the walrus operator behavior
+  has been removed, such code will now produce an error.
