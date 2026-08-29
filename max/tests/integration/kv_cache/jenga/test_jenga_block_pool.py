@@ -44,7 +44,10 @@ def check_invariants(pool: JengaBlockPool) -> None:
             assert huge_block.ref_cnt == 0
         for cache_id, blocks in huge_block.little_blocks.items():
             queue = pool.free_little_blocks[cache_id]
-            claimed = not parked and huge_block.little_block_type == cache_id
+            # A parked huge block's little blocks stay directly allocable on
+            # its owning cache's free list (see the class docstring), so
+            # "claimed" here means typed to this cache, parked or not.
+            claimed = huge_block.little_block_type == cache_id
             for block in blocks:
                 if not claimed:
                     assert block.ref_cnt == 0
@@ -198,11 +201,27 @@ def test_partly_freed_huge_block_stays_with_its_cache() -> None:
 
     pool.free_block(blocks[1])
     assert len(pool.free_huge_blocks) == 2
-    # The huge block went idle, so its little blocks left circulation rather
-    # than staying on the global cache's free list where only it could reach
-    # them.
-    assert len(pool.free_little_blocks[GLOBAL]) == 0
+    # The huge block went idle, but its little blocks stay on the global
+    # cache's free list -- still directly allocable without a reclaim.
+    assert len(pool.free_little_blocks[GLOBAL]) == 2
     assert pool.num_free_blocks(SLIDING) == 4
+
+
+def test_freeing_a_pristine_block_is_reused_before_a_committed_one() -> None:
+    pool = JengaBlockPool(num_huge_blocks=2, cache_ratios={GLOBAL: 2})
+
+    blocks = [pool.alloc_block(GLOBAL) for _ in range(2)]
+    pool.commit_into_prefix_cache(b"prefix", blocks[0])
+    # Free the committed block first, then the pristine one -- despite that
+    # order, the pristine one is reused first.
+    pool.free_block(blocks[0])
+    pool.free_block(blocks[1])
+
+    next_block = pool.alloc_block(GLOBAL)
+
+    assert next_block is blocks[1]
+    assert blocks[0].block_hash == b"prefix"
+    check_invariants(pool)
 
 
 def test_idle_huge_block_can_be_retyped() -> None:
@@ -217,7 +236,30 @@ def test_idle_huge_block_can_be_retyped() -> None:
     assert pool.huge_blocks[0].little_block_type == SLIDING
     assert retyped.cache_id == SLIDING
     assert block.ref_cnt == 0
+    # The stolen-from cache must not still think its parked-and-typed huge
+    # block counts as headroom now that it's gone.
     assert pool.num_free_blocks(GLOBAL) == 0
+    check_invariants(pool)
+
+
+def test_prefer_claim_huge_avoids_evicting_a_commit() -> None:
+    pool = JengaBlockPool(num_huge_blocks=3, cache_ratios={GLOBAL: 2})
+
+    blocks = [pool.alloc_block(GLOBAL) for _ in range(2)]
+    pool.commit_into_prefix_cache(b"apple", blocks[0])
+    pool.free_block(blocks[0])
+    pool.commit_into_prefix_cache(b"banana", blocks[1])
+    pool.free_block(blocks[1])
+
+    # Huge block 2 is still virgin, so the next alloc claims it instead of
+    # evicting either commit.
+    new = pool.alloc_block(GLOBAL)
+
+    assert new.huge_block.bid == 2
+    assert pool.prefix_caches[GLOBAL] == {
+        b"apple": blocks[0],
+        b"banana": blocks[1],
+    }
     check_invariants(pool)
 
 

@@ -195,6 +195,12 @@ class JengaBlockPool:
         self.prefix_caches: dict[str, dict[bytes, LittleKVCacheBlock]] = {
             cache_id: {} for cache_id in cache_ratios
         }
+        # How many parked huge blocks are still typed to each cache. Their
+        # little blocks are already counted in free_little_blocks, so
+        # num_free_blocks must not also count the huge block for that cache.
+        self._parked_and_typed: dict[str, int] = {
+            cache_id: 0 for cache_id in cache_ratios
+        }
 
         # The block dummy and padding requests point at. Its reference count is
         # pinned so no path can free it, evict it, or hand it out.
@@ -220,20 +226,62 @@ class JengaBlockPool:
         free_little_block_queue = self.free_little_blocks[cache_id]
 
         # If no free little blocks are available, allocate a huge block and
-        # split it into little blocks.
-        if len(free_little_block_queue) == 0:
+        # split it into little blocks. Also prefer claiming a huge block even
+        # when a little block is available, to avoid evicting a commit.
+        if len(free_little_block_queue) == 0 or self._prefer_claim_huge(
+            cache_id
+        ):
             if len(self.free_huge_blocks) == 0:
                 raise InsufficientBlocksError(
                     f"No free blocks available for {cache_id}"
                 )
-            self._claim_huge_block(self.free_huge_blocks.popleft(), cache_id)
+            huge_block = self.free_huge_blocks.popleft()
+            # If the huge block is already typed to a different cache, it is
+            # parked, so all of that cache's little blocks in it are
+            # unreferenced and still sitting on that cache's free list.
+            # Remove them there before handing the bytes over.
+            old_type = huge_block.little_block_type
+            if old_type is not None:
+                # A huge block parked under cache_id keeps its little blocks on
+                # cache_id's own free list, so we would have popped one of those
+                # rather than reaching for a huge block at all.
+                assert old_type != cache_id
+                # The huge block just left free_huge_blocks, so it stops
+                # counting toward old_type's parked-and-typed total.
+                self._parked_and_typed[old_type] -= 1
+                old_free = self.free_little_blocks[old_type]
+                for sibling in huge_block.little_blocks[old_type]:
+                    old_free.remove(sibling)
+            self._claim_huge_block(huge_block, cache_id)
 
         little_block = free_little_block_queue.popleft()
+        # This may be a little block of a huge block that's still parked (see
+        # the class docstring): referencing it directly un-parks the huge
+        # block without going through _claim_huge_block, since its little
+        # blocks never left this cache's free list in the first place.
+        huge_block = little_block.huge_block
+        if huge_block in self.free_huge_blocks:
+            self.free_huge_blocks.remove(huge_block)
+            self._parked_and_typed[cache_id] -= 1
         # Handing out a committed block evicts it: its bytes are about to be
         # overwritten, so it can no longer serve its hash.
         self.uncommit_block(little_block)
         little_block.ref_cnt += 1
         return little_block
+
+    def _prefer_claim_huge(self, cache_id: str) -> bool:
+        """Whether claiming a huge block beats evicting a committed little one."""
+        free_little_block_queue = self.free_little_blocks[cache_id]
+        if len(free_little_block_queue) == 0 or len(self.free_huge_blocks) == 0:
+            return False
+        little_candidate = free_little_block_queue.peek_front()
+        huge_candidate = self.free_huge_blocks.peek_front()
+        assert little_candidate is not None
+        assert huge_candidate is not None
+        return (
+            little_candidate.block_hash is not None
+            and huge_candidate.little_block_type is None
+        )
 
     def _claim_huge_block(
         self, huge_block: HugeKVCacheBlock, cache_id: str
@@ -246,17 +294,30 @@ class JengaBlockPool:
         them.
         """
         assert huge_block.ref_cnt == 0
+        prev_type = huge_block.little_block_type
         if huge_block in self.free_huge_blocks:
             self.free_huge_blocks.remove(huge_block)
+            if prev_type is not None:
+                self._parked_and_typed[prev_type] -= 1
 
-        prev_type = huge_block.little_block_type
-        if prev_type is not None and prev_type != cache_id:
+        if prev_type == cache_id:
+            # Reclaiming our own parked huge block: its little blocks never
+            # left free_little_blocks[cache_id], so there is nothing left to
+            # put back in circulation.
+            return
+
+        if prev_type is not None:
             for block in huge_block.little_blocks[prev_type]:
                 self.uncommit_block(block)
 
         huge_block.little_block_type = cache_id
-        for little_block in huge_block.little_blocks[cache_id]:
-            self.free_little_blocks[cache_id].append(little_block)
+        # Reversed so the front-appended pristine blocks come off in
+        # ascending bid order, not descending.
+        for little_block in reversed(huge_block.little_blocks[cache_id]):
+            if little_block.block_hash is None:
+                self.free_little_blocks[cache_id].appendleft(little_block)
+            else:
+                self.free_little_blocks[cache_id].append(little_block)
 
     def uncommit_block(self, block: LittleKVCacheBlock) -> None:
         """Drops a block from its cache's prefix cache, if it is committed."""
@@ -285,18 +346,21 @@ class JengaBlockPool:
         assert block.ref_cnt >= 0
         if block.ref_cnt == 0:
             free_block_queue = self.free_little_blocks[block.cache_id]
-            free_block_queue.append(block)
+            if block.block_hash is None:
+                free_block_queue.appendleft(block)
+            else:
+                free_block_queue.append(block)
 
             huge_block = block.huge_block
             if huge_block.ref_cnt == 0:
-                # The whole huge block went idle, so park it where any cache can
-                # claim it. Its little blocks leave circulation but stay
-                # committed, and the block stays typed: whoever claims it next
-                # needs to know whose commits its bytes still back, to evict
-                # them only if the bytes change hands.
+                # The whole huge block went idle, so park it where any cache
+                # can claim it. Its little blocks stay on this cache's own
+                # free list -- still directly allocable without a reclaim --
+                # and the block stays typed: whoever claims it next needs to
+                # know whose commits its bytes still back, to evict them only
+                # if the bytes change hands.
                 assert huge_block.little_block_type == block.cache_id
-                for little_block in huge_block.little_blocks[block.cache_id]:
-                    free_block_queue.remove(little_block)
+                self._parked_and_typed[block.cache_id] += 1
                 self.free_huge_blocks.append(huge_block)
 
     def get_or_commit_into_prefix_cache(
@@ -346,9 +410,18 @@ class JengaBlockPool:
 
     def num_free_blocks(self, cache_id: str) -> int:
         """Returns how many more blocks of ``cache_id`` the pool can still serve."""
-        num_huge_blocks = len(self.free_huge_blocks)
+        # Parked huge blocks already typed to cache_id contribute nothing
+        # extra: their little blocks are already counted in
+        # free_little_blocks[cache_id], so only the other free huge blocks
+        # (pristine, or typed to a different cache) would yield new ones.
+        claimable_huge_blocks = (
+            len(self.free_huge_blocks) - self._parked_and_typed[cache_id]
+        )
         num_little_blocks = len(self.free_little_blocks[cache_id])
-        return num_huge_blocks * self.cache_ratios[cache_id] + num_little_blocks
+        return (
+            claimable_huge_blocks * self.cache_ratios[cache_id]
+            + num_little_blocks
+        )
 
     def reset_prefix_cache(self) -> dict[str, int]:
         """Drops every commit no request is holding, in every cache.
