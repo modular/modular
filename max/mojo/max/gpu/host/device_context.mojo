@@ -6912,12 +6912,15 @@ struct DeviceContextArray[length: Int](Copyable, Sized):
             __list_literal__: Marker that lets this constructor accept
                 list-literal syntax (`var l: DeviceContextArray[N] = [c0, c1]`).
         """
-        assert (
-            len(device_contexts) == Self.length
-        ), "mismatch in the number of elements"
-        self.device_contexts = Array[
-            DeviceContext, __literal_size__
-        ]._from_variadic(*device_contexts^)
+        self.device_contexts = {uninitialized = True}
+        var ptr = self.device_contexts.unsafe_ptr()
+        comptime for i in range(__literal_size__):
+            ptr.unsafe_offset(i).unsafe_write_move_from(
+                Pointer(to=device_contexts[i])
+            )
+
+        # Do not destroy the elements when their backing storage goes away.
+        device_contexts^._annihilate()
 
     def __getitem_param__[index: Int](self) -> DeviceContext:
         """Access a `DeviceContext` at a compile-time known index.

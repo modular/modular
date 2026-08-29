@@ -536,27 +536,11 @@ struct Array[T: AnyType, length: Int](
         var arr: Array[Int, 3] = [1, 2, 3]
         ```
         """
-        self = type_of(self)._from_variadic(*elems^)
-
-    # TODO(MOCO-4439): maintain static dims on homogeneous variadic packs.
-    @staticmethod
-    def _from_variadic(
-        out result: Self,
-        var *elems: Self.T,
-    ) where conforms_to(Self.T, Movable):
-        debug_assert[assert_mode="safe"](
-            len(elems) == Self.length,
-            "Array: expected ",
-            Self.length,
-            " elements, received ",
-            len(elems),
-        )
-        _array_construction_checks[Self.length]()
-        result = Self(uninitialized=True)
-        var ptr = result.unsafe_ptr()
+        self = {uninitialized = True}
+        var ptr = self.unsafe_ptr()
 
         # Move each element into the array storage.
-        comptime for i in range(Self.length):
+        comptime for i in range(__literal_size__):
             # Safety: We own the elements in the variadic list.
             # The `where conforms_to(Self.T, Movable)` clause narrows the
             # `elems` pack element to `T(Movable)`, but `self.unsafe_ptr()`
@@ -564,10 +548,9 @@ struct Array[T: AnyType, length: Int](
             # `unsafe_write_move_from`. Reconcile the source pointer's element
             # view. (MOCO-4058 fixed the `where`-evidence gap for parametric
             # overloads, but not this pack-element-vs-field-type case.)
-            ptr.unsafe_write_move_from(
+            ptr.unsafe_offset(i).unsafe_write_move_from(
                 Pointer(to=elems[i]).unsafe_bitcast[Self.T]()
             )
-            ptr = ptr.unsafe_offset(1)
 
         # Do not destroy the elements when their backing storage goes away.
         # FIXME: Why doesn't consume_elements work here?
