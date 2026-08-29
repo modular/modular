@@ -44,6 +44,7 @@ buffer pointers and compute-stream handles to the Rust connector.
 from __future__ import annotations
 
 import logging
+import tempfile
 import time
 from collections.abc import Mapping, Sequence
 from pathlib import Path
@@ -54,20 +55,84 @@ from max.driver import (
     Buffer,
     _unsafe_alloc_fast_pinned_buffer,
     _unsafe_free_fast_pinned_buffer,
+    accelerator_api,
 )
 from max.dtype import DType
 from max.nn.kv_cache import KVCacheGroupId
-from max.nn.kv_cache.cache_params import KVCacheMemory
+from max.nn.kv_cache.cache_params import (
+    KVCacheMemory,
+    KVConnectorConfigInterface,
+    KVConnectorType,
+)
 from max.nn.kv_cache.metrics import KVCacheMetrics
 from max.support.human_readable_formatter import to_human_readable_bytes
 
 from ..kv_connector import ByteCount, KVConnector, KVConnectorTransfer
-from ..paged_kv_cache.block_copy_engine import _check_host_memory_capacity
 from ..paged_kv_cache.block_manager import (
     _resolve_only_use_kv_connector_last_level_cache,
 )
 
 logger = logging.getLogger("max.pipelines")
+
+# Prefix for auto-created tiered-connector disk offload directories. Owned by
+# the connectors package (which creates, warns about, and cleans up these
+# dirs); the pipeline config imports it only to name the mkdtemp it creates.
+KV_OFFLOAD_DIR_PREFIX = "max_kv_tiered_"
+
+
+def warn_stale_offload_dirs(offload_dir: str) -> None:
+    """Warns about leftover KV cache offload directories from previous runs.
+
+    The tiered connectors delete their own offload directory on graceful
+    shutdown, but a forceful shutdown (SIGKILL, OOM-kill, or a crash) skips
+    that cleanup and leaves the directory (and its cached blocks) on disk.
+    Scan the sibling directory for such leftovers and warn so operators can
+    reclaim the space.
+
+    Args:
+        offload_dir: The offload directory this run will use. Its siblings
+            matching ``{KV_OFFLOAD_DIR_PREFIX}*`` are treated as leftovers.
+    """
+    parent = Path(offload_dir).parent
+    try:
+        stale = sorted(
+            str(p)
+            for p in parent.glob(f"{KV_OFFLOAD_DIR_PREFIX}*")
+            if p.is_dir() and str(p) != offload_dir
+        )
+    except OSError:
+        return
+    if not stale:
+        return
+    logger.warning(
+        "Found %d leftover KV cache offload director%s from a previous run "
+        "in %s:\n  %s\n"
+        "MAX Serve deletes its offload directory on graceful shutdown, but a "
+        "forceful shutdown (SIGKILL / OOM-kill) leaves it behind. If no MAX "
+        "Serve process is currently using them, delete these directories to "
+        "reclaim disk space.",
+        len(stale),
+        "y" if len(stale) == 1 else "ies",
+        parent,
+        "\n  ".join(stale),
+    )
+
+
+def _resolve_disk_offload_dir(cfg: KVConnectorConfigInterface) -> str:
+    """Returns the disk offload dir, auto-creating one if unset.
+
+    A single connector serves every DP replica, so the directory is created
+    once here (not per replica). Warns about leftovers from previous runs.
+    """
+    disk_dir = cfg.disk_offload_dir
+    if disk_dir is None:
+        disk_dir = tempfile.mkdtemp(prefix=KV_OFFLOAD_DIR_PREFIX)
+        logger.info(
+            "Tiered connector: auto-created disk offload dir %s",
+            disk_dir,
+        )
+    warn_stale_offload_dirs(disk_dir)
+    return disk_dir
 
 
 def host_bytes_per_page(memories: Sequence[KVCacheMemory]) -> int:
@@ -105,6 +170,29 @@ def _check_disk_capacity(
         )
 
 
+_GIB = 1024**3
+
+
+def _check_host_memory_capacity(requested_bytes: int) -> None:
+    """Raises when a pinned host allocation exceeds host availability."""
+    try:
+        available_bytes = psutil.virtual_memory().available
+    except (OSError, RuntimeError) as error:
+        logger.warning(
+            "Unable to determine available host memory; skipping KV cache "
+            "host capacity preflight: %s",
+            error,
+        )
+        return
+    if requested_bytes > available_bytes:
+        raise RuntimeError(
+            "KV cache host offload buffer requires "
+            f"{requested_bytes / _GIB:.1f} GiB of pinned host memory but only "
+            f"{available_bytes / _GIB:.1f} GiB is available. Reduce "
+            "host_offload_max_gb or provision more host memory."
+        )
+
+
 # A device KV buffer endpoint the Rust connector copies to/from. These are
 # ``NamedTuple``s (still plain tuples to pyo3, but self-documenting) that the
 # Rust ``TierConnector`` extracts positionally.
@@ -134,6 +222,61 @@ class _Replica(NamedTuple):
 
 class RustTierConnector(KVConnector):
     """KVConnector backed by the Rust host/disk tiered connector."""
+
+    @classmethod
+    def create(
+        cls,
+        leaves: Mapping[str, KVCacheGroupId],
+        replica_kv_memory: Sequence[Sequence[KVCacheMemory]],
+        cfg: KVConnectorConfigInterface,
+    ) -> RustTierConnector:
+        """Builds the connector from a KV connector config.
+
+        Both budgets may be ``None``: the connector then sizes each tier from
+        its own device page pool.
+        """
+        # Check the KV memory's own device before the build's accelerator API,
+        # so a CPU-device pipeline fails the same way on every host rather
+        # than reporting "no CUDA/HIP" only on GPU-less ones.
+        if (
+            replica_kv_memory
+            and replica_kv_memory[0][0].buffers[0].device.is_host
+        ):
+            raise ValueError("KVCacheMemory is on the CPU; cannot offload")
+        # The Rust connector drives the GPU copy engines directly via its own
+        # dlopen'd driver shim, supporting NVIDIA (CUDA) and AMD (HIP) but not
+        # Metal/CPU.
+        api = accelerator_api()
+        if api not in ("cuda", "hip"):
+            raise ValueError(
+                f"kv_connector '{cfg.type.value}' requires a CUDA or HIP GPU, "
+                f"found incompatible accelerator API: '{api}'."
+            )
+
+        disk_dir = _resolve_disk_offload_dir(cfg)
+        if cfg.type != KVConnectorType.rust_tiered:
+            logger.warning(
+                "kv_connector '%s' is deprecated: its Python implementation "
+                "was removed and it now runs the Rust 'rust_tiered' connector. "
+                'Pass --kv-connector-config \'{"type": "rust_tiered"}\' '
+                "instead.",
+                cfg.type.value,
+            )
+        logger.debug(
+            "Creating RustTierConnector: "
+            f"host_max_gb={cfg.host_offload_max_gb}, "
+            f"disk_dir={disk_dir}, "
+            f"disk_max_gb={cfg.disk_offload_max_gb}, "
+            f"num_disk_workers={cfg.num_disk_workers}"
+        )
+        return cls(
+            leaves=leaves,
+            replica_kv_memory=replica_kv_memory,
+            disk_cache_dir=disk_dir,
+            host_offload_max_gb=cfg.host_offload_max_gb,
+            disk_offload_max_gb=cfg.disk_offload_max_gb,
+            num_disk_workers=cfg.num_disk_workers,
+        )
 
     def __init__(
         self,
