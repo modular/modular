@@ -10,16 +10,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Coverage for MXF-338: SM100 matmul with a fused compute-lambda epilogue
-on a shape where ``block_tile_N`` does not evenly divide ``N``.
+"""Coverage for the transposed elementwise epilogue's per-row bounds check.
 
-Shape: M=64, N=128, K=128, ``block_tile_N=88`` — last N-tile spans
-[88, 176), so cols [128, 176) are OOB. ``apply_to_fragment`` must skip
-the lambda for those lanes; otherwise, the lambda's load reads past the
-broadcast operand and faults whenever the next page is unmapped.
+Under swapAB the kernel's M dimension is the problem's N, so a fragment's
+(top_row, bot_row) pair sits 8 apart along N and each row needs its own
+bound check. Warp row origins step by 16 or 32 depending on the tcgen05
+data-path layout, so any N that is not a multiple of 16 puts one warp's
+pairs astride N under every layout.
 
-Both ``transpose_c`` branches of ``apply_to_fragment`` are exercised
-(``swapAB=False/True``); each branch has its own bounds checks.
+The cases below cover all three row-origin layouts the epilogue selects
+between: layout F (MMA_M 64, cta_group 1), layout A/D (MMA_M 128,
+cta_group 1) and layout B (cta_group 2).
+
+test_matmul_sm100_partial_n_tile_epilogue covers the compute-lambda path.
 """
 
 from std.collections import Optional
@@ -36,13 +39,13 @@ from linalg.matmul.gpu.sm100_structured.default.matmul import (
 from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
     MatmulConfig,
 )
-from linalg.utils import elementwise_compute_lambda_type
+from linalg.utils import elementwise_epilogue_type
 import linalg.matmul.vendor.blas as vendor_blas
 from std.utils.index import Index, IndexList
 from std.utils.static_tuple import StaticTuple
 
 
-def test_partial_n_tile_compute_epilogue[
+def test_transposed_epilogue_row_straddle[
     MType: CoordLike,
     NType: CoordLike,
     KType: CoordLike,
@@ -55,22 +58,23 @@ def test_partial_n_tile_compute_epilogue[
     cluster_shape: StaticTuple[Int32, 3],
     cta_group: Int,
     transpose_b: Bool = True,
-    swapAB: Bool = False,
+    swapAB: Bool = True,
 ](ctx: DeviceContext, m: MType, n: NType, k: KType) raises:
     var M = Int(m.value())
     var N = Int(n.value())
     var K = Int(k.value())
 
     print(
-        t"MXF-338 regression: in/out=({a_type},{b_type},{c_type})"
-        t" shape=({M},{N},{K}) mma={mma_shape} block_tile={block_tile_shape}"
-        t" swapAB={swapAB}"
+        t"in/out=({a_type},{b_type},{c_type}) shape=({M},{N},{K})"
+        t" mma={mma_shape} block_tile={block_tile_shape} swapAB={swapAB}"
     )
 
-    comptime assert block_tile_shape[1] == 88, (
-        "fixed to block_tile_N=88 (the partial-N-tile path); N must not be"
-        " a multiple of 88"
-    )
+    comptime assert (
+        NType.static_value % 16 != 0
+    ), "N must not be a multiple of 16 so a row pair straddles N"
+    comptime assert (
+        NType.static_value * size_of[c_type]() % 16 == 0
+    ), "N must keep C's row stride TMA-aligned"
 
     var a_shape = row_major(Coord(m, Idx[KType.static_value]))
     var b_shape = row_major(
@@ -89,13 +93,11 @@ def test_partial_n_tile_compute_epilogue[
     var b_host_ptr = alloc[Scalar[b_type]](b_size)
     var c_host_ptr = alloc[Scalar[c_type]](c_size)
     var c_host_ref_ptr = alloc[Scalar[c_type]](c_size)
-    var c_host_copy_ptr = alloc[Scalar[c_type]](c_size)
 
     var a_host = TileTensor(a_host_ptr, a_shape)
     var b_host = TileTensor(b_host_ptr, b_shape)
     var c_host = TileTensor(c_host_ptr, c_shape)
     var c_host_ref = TileTensor(c_host_ref_ptr, c_shape)
-    var c_host_copy = TileTensor(c_host_copy_ptr, c_shape)
 
     var a_device = ctx.enqueue_create_buffer[a_type](a_size)
     var b_device = ctx.enqueue_create_buffer[b_type](b_size)
@@ -112,24 +114,24 @@ def test_partial_n_tile_compute_epilogue[
     @__parameter
     @always_inline
     @__copy_capture(c_tensor_lt)
-    def in_bounds_compute_lambda[
+    def store_epilogue[
         _dtype: DType,
         width: SIMDLength,
         *,
         alignment: Int = align_of[SIMD[_dtype, width]](),
-    ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> SIMD[
-        _dtype, width
-    ]:
-        return val + c_tensor_lt.load[width=width](idx).cast[_dtype]()
+    ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> None:
+        c_tensor_lt.store[width=width](idx, val.cast[c_type]())
 
     seed(1234)
     rand(a_host._storage, a_host.num_elements())
     rand(b_host._storage, b_host.num_elements())
+
+    # C is zeroed, so a dropped store reads back as 0 against a reference
+    # the random operands make nonzero.
     for i in range(M):
         for j in range(N):
             comptime assert c_host.flat_rank == 2
             c_host[i, j] = Scalar[c_type](0)
-            c_host_copy[i, j] = c_host[i, j]
 
     ctx.enqueue_copy(a_device, a_host_ptr)
     ctx.enqueue_copy(b_device, b_host_ptr)
@@ -144,14 +146,14 @@ def test_partial_n_tile_compute_epilogue[
         AB_swapped=swapAB,
     )
 
-    comptime optional_lambda_fn = Optional[elementwise_compute_lambda_type](
-        in_bounds_compute_lambda
+    comptime optional_lambda_fn = Optional[elementwise_epilogue_type](
+        store_epilogue
     )
 
     blackwell_matmul_tma_umma_warp_specialized[
         transpose_b=transpose_b,
         config=matmul_config,
-        elementwise_compute_lambda_fn=optional_lambda_fn,
+        elementwise_lambda_fn=optional_lambda_fn,
     ](c_tensor, a_tensor, b_tensor, ctx)
 
     var a_lt = a_tensor.to_layout_tensor()
@@ -172,44 +174,20 @@ def test_partial_n_tile_compute_epilogue[
     ctx.enqueue_copy(c_host_ref_ptr, c_device_ref)
     ctx.synchronize()
 
-    var c_host_copy_lt = c_host_copy.to_layout_tensor()
-
-    @__parameter
-    @always_inline
-    @__copy_capture(c_host_copy_lt)
-    def in_bounds_compute_lambda_local[
-        _dtype: DType,
-        width: SIMDLength,
-        *,
-        alignment: Int = align_of[SIMD[_dtype, width]](),
-    ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> SIMD[
-        _dtype, width
-    ]:
-        return val + c_host_copy_lt.load[width=width](idx).cast[_dtype]()
-
-    for i in range(M):
-        for j in range(N):
-            comptime assert c_host_ref.flat_rank == 2
-            c_host_ref[i, j] = in_bounds_compute_lambda_local(
-                IndexList[2](i, j), c_host_ref[i, j]
-            )
-
-    comptime rtol = 1e-2
     assert_almost_equal(
         c_host._storage,
         c_host_ref._storage,
         c_host.num_elements(),
         atol=0.0001,
-        rtol=rtol,
+        rtol=1e-2,
     )
 
-    print("=== MXF-338 regression: TEST PASSED ===")
+    print("=== TEST PASSED ===")
 
     a_host_ptr.free()
     b_host_ptr.free()
     c_host_ptr.free()
     c_host_ref_ptr.free()
-    c_host_copy_ptr.free()
     _ = a_device^
     _ = b_device^
     _ = c_device^
@@ -221,30 +199,38 @@ def main() raises:
     comptime BK = (TensorMapSwizzle.SWIZZLE_128B.bytes() // size_of[dtype]())
     comptime MMA_K = 16
 
-    comptime block_tile_shape_1sm = Index(64, 88, BK)
-    comptime mma_shape_1sm = Index(64, 88, MMA_K)
-
     with DeviceContext() as ctx:
-        # transpose_c=False: `if top_col >= self.N: return` branch.
-        test_partial_n_tile_compute_epilogue[
+        # Layout F: warp row origins step by 16.
+        test_transposed_epilogue_row_straddle[
             dtype,
             dtype,
             dtype,
-            block_tile_shape_1sm,
-            mma_shape_1sm,
+            Index(64, 64, BK),
+            Index(64, 64, MMA_K),
             cluster_shape=StaticTuple[Int32, 3](2, 1, 1),
             cta_group=1,
-            swapAB=False,
-        ](ctx, Int(64), Idx[128], Idx[128])
+        ](ctx, Int(64), Idx[136], Idx[128])
 
-        # transpose_c=True: the per-row `top_row`/`bot_row` bound checks.
-        test_partial_n_tile_compute_epilogue[
+        # Layout A/D: warp row origins step by 32. N and M here are the
+        # shape the bug was reported on, which leaves an 8-row partial tile.
+        test_transposed_epilogue_row_straddle[
             dtype,
             dtype,
             dtype,
-            block_tile_shape_1sm,
-            mma_shape_1sm,
+            Index(128, 64, BK),
+            Index(128, 64, MMA_K),
             cluster_shape=StaticTuple[Int32, 3](2, 1, 1),
             cta_group=1,
-            swapAB=True,
-        ](ctx, Int(64), Idx[128], Idx[128])
+        ](ctx, Int(300), Idx[776], Idx[128])
+
+        # Layout B: warp row origins step by 32 within a CTA pair, and the
+        # odd warps offset along the column axis instead.
+        test_transposed_epilogue_row_straddle[
+            dtype,
+            dtype,
+            dtype,
+            Index(64, 32, BK),
+            Index(128, 64, MMA_K),
+            cluster_shape=StaticTuple[Int32, 3](2, 1, 1),
+            cta_group=2,
+        ](ctx, Int(300), Idx[776], Idx[128])

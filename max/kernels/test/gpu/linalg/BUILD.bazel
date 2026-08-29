@@ -241,6 +241,7 @@ _B200_TESTS = [
     "test_matmul_sm100_epilogue.mojo",
     "test_matmul_sm100_partial_n_tile_epilogue.mojo",
     "test_matmul_sm100_swapAB_epilogue.mojo",
+    "test_matmul_sm100_transposed_epilogue_bounds.mojo",
     "test_matmul_sm100_1sm_bf16_1d_bias.mojo",
     "test_matmul_sm100_2sm_bf16_1d_bias.mojo",
     "test_matmul_sm100_2sm_bf16.mojo",

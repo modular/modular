@@ -828,6 +828,9 @@ the [container](/container) page now links to the new page.
 
 ## MAX kernels
 
+- SM100 matmuls with an elementwise epilogue no longer leave output columns
+  unwritten when `N` is not a multiple of 16, such as `N=136` or `N=776`.
+
 - The SM100 MLA decode dispatch now enumerates 12, 24 and 48 query heads
   alongside the powers of two it already covered, so a model whose per-device
   head count is not a power of two can bind its dispatch metadata.
