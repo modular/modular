@@ -62,6 +62,7 @@ from std.memory import unsafe_memcpy
 from std.memory.unsafe_pointer import unsafe_cast
 
 from nn.concat import concat
+from nn.reshape import reshape
 from nn.slice import slice_as_view
 from layout.coord import DynamicCoord
 from layout.int_tuple import _IntTupleToCoordLike, UNKNOWN_VALUE
@@ -2517,6 +2518,55 @@ def mogg_tensor_create_broadcast[
             else:
                 new_strides[i] = input.stride_length[i - delta]()
     return {input.unsafe_ptr(), new_shape, new_strides}
+
+
+@register_internal("mogg._tensor.create.reshape")
+def mogg_tensor_create_reshape[
+    dtype: DType,
+    in_rank: Int,
+    //,
+    output_static_shape: IntTuple,
+](
+    input: ManagedTensorSlice[dtype=dtype, rank=in_rank, ...],
+) -> ManagedTensorSlice[
+    io_spec=input.io_spec,
+    static_spec=input.static_spec.with_row_major_int_tuple_layout[
+        len(output_static_shape),
+        output_static_shape,
+    ](),
+]:
+    """Backing primitive for `mogg._tensor.create.reshape`: a zero-copy view
+    of `input` reinterpreted under `output_static_shape` -- valid only
+    because `input` is contiguous, so de-linearizing/re-linearizing through
+    one shared flat index produces row-major strides for the new shape.
+    Preserves whatever static shape information is known at compile time,
+    mirroring `StaticReshape.update_input_view`.
+
+    Parameters:
+        dtype: The element type of `input`.
+        in_rank: The rank of `input`.
+        output_static_shape: The view's shape (reshape shapes are always
+            statically known by Mojo emission time; see
+            `mo.static.reshape`'s own docstring).
+
+    Args:
+        input: The tensor to reshape.
+    """
+    comptime out_rank = len(output_static_shape)
+    var new_shape = IndexList[out_rank]()
+    comptime for i in range(out_rank):
+        new_shape[i] = Int(output_static_shape[i])
+
+    var view = reshape(input.to_tile_tensor[DType.int64](), new_shape)
+    return {
+        view._storage,
+        rebind[IndexList[out_rank]](
+            coord_to_index_list(view.layout.shape_coord())
+        ),
+        rebind[IndexList[out_rank]](
+            coord_to_index_list(view.layout.stride_coord())
+        ),
+    }
 
 
 comptime _MoggTransposeStrideTypesTabulator[
