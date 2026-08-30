@@ -1243,16 +1243,17 @@ DeclRefNode::emitUnqualLookup(StringRef spelling, const ExprNode *expr,
   LookupResult lookup = emitter.shared.lookupAndResolveDecl(
       spelling, loc, lookupScope, /*searchParentScopes=*/true);
 
-  // If that lookup failed, but we can synthesize a variable declaration in this
-  // scope, do that. We only do this if we have a contextual type because we
-  // don't want to suggest turning "x = {}" into "var x = {}" which would be a
-  // different error.
+  // Only report this when we have a contextual type: we don't want to suggest
+  // turning "x = {}" into "var x = {}", which is a different error.
   if (lookup.isFailure() && dest.getIfInitializerType()) {
     auto diag = emitter.emitError(loc);
     diag << "implicit declaration of '" << spelling << "' is not allowed; ";
     diag << "add 'var' to declare a new name";
     diag << FixIt::insertBeforeToken(loc, "var ");
     diag << expr->getRange();
+    // An assignment outside any function is rejected before name resolution.
+    if (ASTDecl *fn = lookupScope.getNearestDeclOfType<FnOp>())
+      emitter.getDeclResolver().addErroneousDecl(spelling, loc, fn);
     return {};
   }
 
