@@ -811,6 +811,48 @@ static FailureOr<ASTDecl *> getTargetStructDecl(ASTDecl *referencedDecl,
   return nullptr;
 }
 
+/// Find a unique in-scope spelling within edit distance of `spelling`, walking
+/// parent scopes the same way unqualified lookup does. Returns empty when there
+/// is no close match, or when several names tie for best distance.
+static StringRef findClosestInScopeSpelling(StringRef spelling,
+                                            ASTDecl &lookupScope) {
+  // Short names are too ambiguous for useful suggestions (`x` vs `y`).
+  if (spelling.size() < 3)
+    return {};
+
+  // Cap at 2 edits; scale down for shorter names (length 3 → at most 1).
+  unsigned maxDistance = (spelling.size() + 2) / 3;
+  if (maxDistance > 2)
+    maxDistance = 2;
+  StringRef best;
+  unsigned bestDistance = maxDistance + 1;
+  bool tied = false;
+
+  for (ASTDecl *scope = &lookupScope; scope; scope = scope->getParentDecl()) {
+    for (auto &[nameAttr, decls] : scope->getDeclsInScope()) {
+      if (decls.empty())
+        continue;
+      StringRef candidate = nameAttr.getValue();
+      if (candidate.empty() || candidate == spelling)
+        continue;
+
+      unsigned distance = spelling.edit_distance(
+          candidate, /*AllowReplacements=*/true, bestDistance);
+      if (distance > maxDistance)
+        continue;
+      if (distance < bestDistance) {
+        best = candidate;
+        bestDistance = distance;
+        tied = false;
+      } else if (distance == bestDistance && candidate != best) {
+        tied = true;
+      }
+    }
+  }
+
+  return tied ? StringRef() : best;
+}
+
 /// Utility function to diagnose unknown declarations, providing fixits or hints
 /// whenever possible.
 static ExprNode::ELVIITResult
@@ -882,6 +924,11 @@ diagnoseUnknownDeclaration(StringRef spelling, ASTDecl &lookupScope,
              spelling == "originof") {
     diag << "; did you mean 'origin_of'?"
          << FixIt::replaceToken(loc, "origin_of");
+  } else if (StringRef nearMiss =
+                 findClosestInScopeSpelling(spelling, lookupScope);
+             !nearMiss.empty()) {
+    diag << "; did you mean '" << nearMiss << "'?"
+         << FixIt::replaceToken(loc, nearMiss);
   } else {
     // The name is unambiguously part of a standard-library package that wasn't
     // imported; point the user at the missing import.
