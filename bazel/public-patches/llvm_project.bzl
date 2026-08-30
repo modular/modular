@@ -5,6 +5,7 @@ load("@llvm-raw//utils/bazel:configure.bzl", _llvm_configure = "llvm_configure")
 BACKENDS = [
     "AArch64",
     "RISCV",
+    "WebAssembly",
     "X86",
 ]
 

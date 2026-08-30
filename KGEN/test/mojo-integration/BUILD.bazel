@@ -29,7 +29,7 @@ lit_tests(
             "**/*.mlir",
             "**/*.mojo",
         ],
-        exclude = _DATA,
+        exclude = _DATA + ["mojo_build_wasm_object.mojo"],
     ),
     data = [":fixtures"],
     mojo_deps = [
@@ -53,6 +53,15 @@ lit_tests(
         "@llvm-project//llvm:llvm-nm",
         "@llvm-project//llvm:llvm-objdump",
     ],
+)
+
+# Keep this compiler-only smoke test independent of MAX so it can validate the
+# WebAssembly backend without downloading or building the runtime stack.
+lit_tests(
+    name = "wasm_object_test",
+    srcs = ["mojo_build_wasm_object.mojo"],
+    mojo_deps = ["@mojo//:std"],
+    tools = ["//KGEN/tools/mojo"],
 )
 
 lit_tests(
