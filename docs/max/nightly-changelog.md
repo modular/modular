@@ -409,6 +409,11 @@ the [container](/container) page now links to the new page.
   `host_offload_max_gb` now sizes one shared host pool of that size for
   the whole deployment, rather than allocating a separate pool of that size per
   replica.
+- `--kv-connector-config '{"type": "rust_tiered", "disk_offload_max_gb": 0}'`
+  now runs the tiered connector with no disk last level: offloaded blocks stop
+  at the pinned host tier and no offload directory is created. Leaving
+  `disk_offload_max_gb` unset still sizes the disk tier from the device page
+  pool, and a negative budget is now rejected instead of silently accepted.
 - The dKV external KV-cache connector (`--kv-connector-config '{"type":
   "dkv"}'`) now supports
   data-parallel (DP) serving and shares its prefix cache across DP replicas on
@@ -1137,6 +1142,12 @@ the [container](/container) page now links to the new page.
   caching together.
 
 ## Fixes
+
+- Fixed the `disk_bytes_written` KV cache metric counting blocks the tiered
+  connector's disk tier declined to write because they were already saved or
+  had a write pending. Re-offloading a block that had been evicted from the
+  host tier but was still on disk inflated the count, and with it any
+  disk-throughput figure derived from it.
 
 - Fixed `generate_async` raising `KeyError: Request ID not found in replica
   batch` when requests in one batch finish on different steps, which happens
