@@ -1186,8 +1186,6 @@ def test_anyof_compiles() -> None:
 
 
 def test_unsupported_keyword_in_tag_compiles_by_default() -> None:
-    # Same permissive default on the structural-tag path: JSONSchemaFormat
-    # defaults reject_unsupported to False.
     tag = xgr.StructuralTag(
         format=JSONSchemaFormat(
             json_schema={
@@ -3892,10 +3890,6 @@ def _gemma_tool_with_params(params: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def _gemma_compile(params: dict[str, Any]) -> xgr.CompiledGrammar:
-    # No test-level flag walker: the gemma_4 builtin tag already sets
-    # require_object_root and reject_unsupported on every arg-schema
-    # JSONSchemaFormat (model-scoped enable in JSON_CONFIG), so the flags are
-    # real on the gemma path without a stand-in.
     tag = xgr.get_builtin_structural_tag(
         "gemma_4",
         tools=_gemma_tool_with_params(params),
@@ -3906,9 +3900,6 @@ def _gemma_compile(params: dict[str, Any]) -> xgr.CompiledGrammar:
 
 
 def test_gemma_4_tool_call_rejects_unsupported_keyword_without_walker() -> None:
-    # The JSON_CONFIG enable makes reject_unsupported real on the gemma path:
-    # an unenforceable keyword (multipleOf) in an arg schema is rejected
-    # fail-closed, with NO test-level flag walker.
     with pytest.raises(Exception):
         _gemma_compile(
             {
@@ -3927,9 +3918,6 @@ def test_gemma_4_tool_call_non_object_root_rejected_without_walker() -> None:
 
 
 def test_qwen_tool_call_permits_unsupported_keyword_by_default() -> None:
-    # Scoping: the enable is gemma-only. A non-gemma model's builtin tag leaves
-    # reject_unsupported at its False default, so an unenforceable keyword
-    # (multipleOf) falls back to unconstrained decoding and still compiles.
     tag = xgr.get_builtin_structural_tag(
         "qwen_3_5",
         tools=_qwen_tool(

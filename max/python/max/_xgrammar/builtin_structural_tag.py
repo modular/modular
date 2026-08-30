@@ -648,7 +648,10 @@ def get_kimi_structural_tag(
                         elements=[
                             RegexFormat(pattern=r"\d+"),
                             ConstStringFormat(value=TOOL_CALL_ARGUMENT_BEGIN),
-                            JSONSchemaFormat(json_schema=parameters),
+                            JSONSchemaFormat(
+                                json_schema=parameters,
+                                reject_unsupported=True,
+                            ),
                         ]
                     ),
                     end=TOOL_CALL_END,
@@ -681,7 +684,10 @@ def get_kimi_structural_tag(
                         elements=[
                             RegexFormat(pattern=r"\d+"),
                             ConstStringFormat(value=TOOL_CALL_ARGUMENT_BEGIN),
-                            JSONSchemaFormat(json_schema=_get_function_parameters(function)),
+                            JSONSchemaFormat(
+                                json_schema=_get_function_parameters(function),
+                                reject_unsupported=True,
+                            ),
                         ]
                     ),
                     end=TOOL_CALL_END,
@@ -702,7 +708,10 @@ def get_kimi_structural_tag(
                         elements=[
                             RegexFormat(pattern=r"\d+"),
                             ConstStringFormat(value=TOOL_CALL_ARGUMENT_BEGIN),
-                            JSONSchemaFormat(json_schema=parameters),
+                            JSONSchemaFormat(
+                                json_schema=parameters,
+                                reject_unsupported=True,
+                            ),
                         ]
                     ),
                     end=TOOL_CALL_END,
@@ -1543,8 +1552,6 @@ def get_glm_4_7_structural_tag(
     # Shared JSONSchemaFormat config for every tool's argument schema: GLM emits
     # bare (glm_xml) values and compiles fail-closed (an object root, plus
     # unenforceable JSON Schema keywords rejected rather than silently dropped).
-    # TODO(CENG-813): the per-model enables become redundant once the flags
-    # default on for all models.
     JSON_CONFIG: dict[str, Any] = {
         "style": XML_STYLE,
         "strict_mode": False,
@@ -1685,7 +1692,6 @@ def get_gemma_4_structural_tag(
         "bare_key_pattern_forbidden": r" \t\n\r\f:{},\"\\\x00-\x1f",
         "max_whitespace_cnt": 1,
         "strict_mode": False,
-        # TODO(CENG-813): these per-model enables become redundant once the flags default on for all models.
         "require_object_root": True,
         "reject_unsupported": True,
     }
