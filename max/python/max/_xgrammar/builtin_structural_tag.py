@@ -2129,6 +2129,137 @@ def get_deepseek_v4_structural_tag(
     return StructuralTag(format=sequence_format)
 
 
+@register_model_structural_tag("minimax_m3")
+def get_minimax_m3_structural_tag(
+    tools: Optional[List[FunctionToolParam]] = None,
+    builtin_tools: Optional[List[BuiltinToolParam]] = None,
+    tool_choice: Literal["auto", "required", "forced"] = "auto",
+    reasoning: bool = True,
+    **kwargs: Any,
+) -> StructuralTag:
+    """Get MiniMax-M3 style structural tag format.
+
+    Corresponding model key: ``"minimax_m3"``.
+
+    The MiniMax-M3 tool calling format uses tag-prefixed XML:
+
+    ``]<]minimax[>[<tool_call>``
+    ``]<]minimax[>[<invoke name="get_weather">]<]minimax[>[<location>Beijing]<]minimax[>[</location>]<]minimax[>[</invoke>``
+    ``]<]minimax[>[</tool_call>``
+
+    Supported models:
+
+    - MiniMax-M3
+    """
+    SECTION_SEPARATOR = "\n"
+    TAG_PREFIX = "]<]minimax[>["
+    INVOKE_BEGIN_PREFIX = TAG_PREFIX + '<invoke name="'
+    INVOKE_BEGIN_SUFFIX = '">'
+    INVOKE_END = TAG_PREFIX + "</invoke>"
+    INVOKE_SEPARATOR = "\n"
+    TOOL_CALL_BEGIN = "<tool_call>"
+    TOOL_CALL_END = "</tool_call>"
+    THINK_BEGIN = "<mm:think>"
+    THINK_END = "</mm:think>"
+
+    tools = tools or []
+    builtin_tools = builtin_tools or []
+
+    def _invoke_tag(name: str, parameters: Any) -> TagFormat:
+        return TagFormat(
+            begin=INVOKE_BEGIN_PREFIX + name + INVOKE_BEGIN_SUFFIX,
+            content=JSONSchemaFormat(
+                json_schema=parameters,
+                style="minimax_m3_xml",
+                xml_tag_prefix=TAG_PREFIX,
+                reject_unsupported=True,
+            ),
+            end=INVOKE_END,
+        )
+
+    def _forced_or_required_section(invokes: Format) -> SequenceFormat:
+        return SequenceFormat(
+            elements=[
+                ConstStringFormat(value=TAG_PREFIX),
+                TagFormat(
+                    begin=TokenFormat(token=TOOL_CALL_BEGIN),
+                    content=SequenceFormat(
+                        elements=[
+                            ConstStringFormat(value=SECTION_SEPARATOR),
+                            invokes,
+                            ConstStringFormat(value=SECTION_SEPARATOR + TAG_PREFIX),
+                        ]
+                    ),
+                    end=TokenFormat(token=TOOL_CALL_END),
+                ),
+            ]
+        )
+
+    if tool_choice == "auto":
+        tags = [
+            _invoke_tag(t.function.name, _get_function_parameters(t.function))
+            for t in tools
+        ]
+        if tags:
+            invokes = TagsWithSeparatorFormat(
+                tags=tags, separator=INVOKE_SEPARATOR, at_least_one=True
+            )
+            suffix_tag = TriggeredTagsFormat(
+                triggers=[TAG_PREFIX],
+                tags=[
+                    TagFormat(
+                        begin=TAG_PREFIX,
+                        content=SequenceFormat(
+                            elements=[
+                                TokenFormat(token=TOOL_CALL_BEGIN),
+                                ConstStringFormat(value=SECTION_SEPARATOR),
+                                invokes,
+                                ConstStringFormat(value=SECTION_SEPARATOR + TAG_PREFIX),
+                            ]
+                        ),
+                        end=TokenFormat(token=TOOL_CALL_END),
+                    )
+                ],
+                excludes=[THINK_BEGIN, THINK_END],
+            )
+        else:
+            suffix_tag = AnyTextFormat(excludes=[THINK_BEGIN, THINK_END])
+
+    elif tool_choice == "forced":
+        if not tools:
+            raise ValueError("Forced tool choice must resolve to exactly one tool.")
+        function = tools[0].function
+        suffix_tag = _forced_or_required_section(
+            _invoke_tag(function.name, _get_function_parameters(function))
+        )
+
+    elif tool_choice == "required":
+        tags = [
+            _invoke_tag(t.function.name, _get_function_parameters(t.function))
+            for t in tools
+        ]
+        assert len(tags) > 0
+        suffix_tag = _forced_or_required_section(
+            TagsWithSeparatorFormat(
+                tags=tags, separator=INVOKE_SEPARATOR, at_least_one=True
+            )
+        )
+
+    if not reasoning:
+        return StructuralTag(format=suffix_tag)
+
+    prefix_tag = TagFormat(
+        begin=THINK_BEGIN,
+        content=AnyTextFormat(excludes=[TAG_PREFIX + TOOL_CALL_BEGIN]),
+        end=THINK_END,
+    )
+    return StructuralTag(
+        format=SequenceFormat(
+            elements=[OptionalFormat(content=prefix_tag), suffix_tag]
+        )
+    )
+
+
 # Backward-compatible alias
 get_builtin_structural_tag = get_model_structural_tag
 """Alias for :func:`get_model_structural_tag`. Deprecated."""
