@@ -63,8 +63,9 @@ def test_constant(a: Bool) -> Bool:
     # CHECK-NEXT: hlcf.elif {
     # CHECK-NEXT: [[FIVE:%.*]] = kgen.param.constant{{.*}}5
     # CHECK-NEXT: store [[FIVE]], %z
-    # CHECK-NEXT: [[FIVE_R:%.*]] = kgen.rebind [[FIVE]]
-    # CHECK-NEXT: [[BOOL:%.*]] = lit.call {{.*}}__bool__{{.*}}([[FIVE_R]])
+    # CHECK-NEXT: [[ZREF:%.*]] = kgen.rebind %z
+    # CHECK-NEXT: [[ZVAL:%.*]] = lit.ref.load [[ZREF]]
+    # CHECK-NEXT: [[BOOL:%.*]] = lit.call {{.*}}__bool__{{.*}}([[ZVAL]])
     # CHECK-NEXT: [[SB:%.*]] = lit.call {{.*}}__mlir_bool__{{.*}}([[BOOL]])
     # CHECK-NEXT: hlcf.elif.yield [[SB]]
     if z := 5:
