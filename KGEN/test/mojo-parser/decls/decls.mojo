@@ -31,11 +31,6 @@ def testThing(a: Int, b: Int) -> Int:
     return 1
 
 
-def implicit_variable_decls(a: Int) -> Int:
-    b = a + a
-    return b
-
-
 comptime IntToFloat32Type = def (:Int) thin -> FloatDyn
 
 

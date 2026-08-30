@@ -14,7 +14,7 @@
 
 @always_inline
 def callee_regular(a: Int):
-    b = a * 2  # ensure callsite breakpoint cannot fuse with callee breakpoint
+    var b = a * 2  # ensure callsite breakpoint cannot fuse with callee
     print(b)  # breakpoint
 
 

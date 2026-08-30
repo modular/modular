@@ -101,19 +101,18 @@ def test():
 
     # The failed 'Iterable' conformance makes the target an ordinary assignment,
     # so it declares.
-    # expected-error @+3 {{'my_iter_no_next' does not conform to 'Iterable'; add conformance to use in a 'for' loop}}
-    # expected-note @+2 {{to conform to 'Iterable', add it to the struct declaration: 'struct Foo(Iterable):'}}
-    # expected-warning @+1 {{implicit declaration of 'item' is deprecated; add 'var' before the name}}
-    for item in my_list_no_next:
+    # expected-error @+2 {{'my_iter_no_next' does not conform to 'Iterable'; add conformance to use in a 'for' loop}}
+    # expected-note @+1 {{to conform to 'Iterable', add it to the struct declaration: 'struct Foo(Iterable):'}}
+    for var item in my_list_no_next:
         pass
 
     # expected-error @+1 {{'MyList_no_iter' does not implement the '__iter__' method}}
-    for item in my_list_no_iter:
+    for var item in my_list_no_iter:
         pass
 
     # expected-error @+2 {{'my_iter_no_next' does not conform to 'Iterable'; add conformance to use in a 'for' loop}}
     # expected-note @+1 {{to conform to 'Iterable', add it to the struct declaration: 'struct Foo(Iterable):'}}
-    for key, item in my_list_no_next:
+    for var key, item in my_list_no_next:
         pass
 
 # Issue #18599
@@ -215,4 +214,3 @@ def noIndentError():
     # expected-error @+1 {{value passed to 'self' cannot be converted from type value 'MyBool' to an instance of 'MyBool'; did you mean to instantiate 'MyBool'?}}
     if MyBool: # no error 'statements must start at the beginning of a line' should be printed
       pass
-

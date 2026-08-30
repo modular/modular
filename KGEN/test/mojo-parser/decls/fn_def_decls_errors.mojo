@@ -22,7 +22,7 @@ def test_never_declared_fn():
     never_declared_fn()
 
 def implicit_var_decl(a: Int):
-    # expected-warning @+1 {{implicit declaration of 'c' is deprecated; add 'var' before the name}}
+    # expected-error @+1 {{implicit declaration of 'c' is not allowed; add 'var' to declare a new name}}
     c = a
 
 struct BadMethod(Movable where False):

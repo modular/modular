@@ -222,8 +222,7 @@ def testWithInDef(a: ExampleCM) raises:
     # mutable function scope variables.
     # CHECK: [[VAL1R:%.*]] = kgen.rebind %val1
     # CHECK: [[VAL1:%.*]] = lit.ref.load [[VAL1R]]
-    # expected-warning @+1 {{implicit declaration of 'val1' is deprecated; add 'var' before the name}}
-    val1 = 77
+    var val1 = 77
     # CHECK: lit.call {{.*}}noop{{.*}}([[VAL1]])
     noop(val1)
     with a as val1:
@@ -239,8 +238,7 @@ def testWithInDef(a: ExampleCM) raises:
         noop(val2)
     # CHECK: [[VAL2R:%.*]] = kgen.rebind %val2
     # CHECK: [[VAL2:%.*]] = lit.ref.load [[VAL2R]]
-    # expected-warning @+1 {{implicit declaration of 'val2' is deprecated; add 'var' before the name}}
-    val2 = 78
+    var val2 = 78
     # CHECK: lit.call {{.*}}noop{{.*}}([[VAL2]])
     noop(val2)
 

@@ -1197,70 +1197,16 @@ DeclRefNode::emitUnqualLookup(StringRef spelling, const ExprNode *expr,
       spelling, loc, lookupScope, /*searchParentScopes=*/true);
 
   // If that lookup failed, but we can synthesize a variable declaration in this
-  // scope, do that.  We can only do this if there is a varDeclCursor,
-  // indicating that we're in a `def` node, and if we have a contextual type
-  // (which tells us we need to emit an LValue).
-  if (lookup.isFailure() && emitter.varDeclCursor &&
-      dest.getIfInitializerType()) {
-    auto contextualType = dest.getIfInitializerType();
-    assert(contextualType && "must have contextual type");
-
-    // Inserting 'var' at the name would scope the variable to this block, while
-    // this declaration is function-scoped -- so the two spellings differ
-    // exactly when the declaration lands in a different block.
-    bool isNestedBlock =
-        emitter.builder && emitter.builder->getInsertionBlock() !=
-                               emitter.varDeclCursor->getInsertionBlock();
-    bool isTupleElement = dest.getContext() == EC_TupleElement;
-    auto diag = emitter.emitWarning(loc);
-    diag << "implicit declaration of '" << spelling << "' is deprecated; ";
-    if (isNestedBlock)
-      diag << "declare it with 'var' in the function body";
-    else {
-      diag << "add 'var' before "
-           << (isTupleElement ? "the assignment target" : "the name");
-      if (!isNestedBlock && !isTupleElement)
-        diag << FixIt::insertBeforeToken(loc, "var ");
-    }
+  // scope, do that. We only do this if we have a contextual type because we
+  // don't want to suggest turning "x = {}" into "var x = {}" which would be a
+  // different error.
+  if (lookup.isFailure() && dest.getIfInitializerType()) {
+    auto diag = emitter.emitError(loc);
+    diag << "implicit declaration of '" << spelling << "' is not allowed; ";
+    diag << "add 'var' to declare a new name";
+    diag << FixIt::insertBeforeToken(loc, "var ");
     diag << expr->getRange();
-
-    // NOTE: We intentionally do NOT apply type refinement to contextual types
-    // for implicit variable declarations. The contextual type comes from the
-    // source expression (e.g., iterator element type), and refining it here
-    // would cause type mismatches when the source value isn't refined.
-    // Refinement is only applied to explicitly declared variables (var x: T).
-
-    // Use this builder to place any VarDeclOps. In Python there is only one
-    // scope for the whole def and all variables belong to that scope.
-    OpBuilder varDeclBuilder(
-        emitter.varDeclCursor->getInsertionBlock(),
-        std::next(emitter.varDeclCursor->getInsertionPoint()));
-    IREmitter varDeclEmitter(emitter.declScope, varDeclBuilder);
-
-    // Add implicitly declared variable to the name table OF THE FUNCTION, so
-    // subsequent uses find this one.  We don't want implicit declarations in
-    // different subscopes to get different implicit declarations.
-    ASTDecl *scopeToInsert = lookupScope.getNearestDeclOfType<FnOp>();
-
-    // Get the raw FileLineColLoc, and fuse with the debug scope of the
-    // container if it exists.
-    Location varDeclLoc = emitter.shared.diags.translateLocation(loc);
-    if (DebugInfo::DISubprogramAttr varDeclSubprogram =
-            DebugInfo::extractScope(cast_or_null<mlir::FunctionOpInterface>(
-                scopeToInsert->getIfOperation()))) {
-      varDeclLoc = mlir::FusedLoc::get(emitter.getContext(), {varDeclLoc},
-                                       varDeclSubprogram);
-    }
-    VarDeclOp varDecl =
-        varDeclEmitter.emitVarDecl(spelling, contextualType, varDeclLoc,
-                                   // Marked Implicit to disable warnings.
-                                   VarDeclKind::Implicit);
-
-    ASTDecl &varASTDecl = emitter.getDeclResolver().addFullyResolvedDecl(
-        DeclIRValue(varDecl), varDecl.getNameAttr(), loc, scopeToInsert);
-    emitter.shared.notifyListenerOnVariableDecl(varASTDecl, loc);
-
-    return emitter.emitCResult(MLValue(varDecl), expr, dest);
+    return {};
   }
 
   ArrayRef<ASTDecl *> declsRef = lookup.getIfSuccess();

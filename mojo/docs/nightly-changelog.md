@@ -324,6 +324,10 @@ This version is still a work in progress.
 
 This release completes the removal of APIs deprecated during the v1.0 cycle.
 
+- Implicit variable declaration now produces an error instead of a warning. The
+  walrus operator also only overwrite existing values, not implicitly declare
+  new ones.
+
 - Removed the temporary `InlineArray` alias for `Array`, including its
   re-exports from `std.collections` and the prelude. Use `Array` directly.
 
@@ -546,6 +550,3 @@ This release completes the removal of APIs deprecated during the v1.0 cycle.
   Python's `base64.b64decode()`, any other byte outside the base64 alphabet
   still raises. The "length must be divisible by 4" error now counts only the
   significant characters.
-
-- The deprecated "implicitly declare variables" in the walrus operator behavior
-  has been removed, such code will now produce an error.

@@ -1129,23 +1129,23 @@ struct OriginStructInferenceParSpecialized[mut: Bool, //, origin: Origin[mut=mut
 def test_origin_struct_inf[imm_data: Int](mut data: Int):
    # This needs to infer the origin through an implicit conversion
    # CHECK: %0 = lit.ref.immut %data
-   # CHECK-NEXT: lit.call {{.*}}OriginStructInferenceImm::@"__init__
+   # CHECK: lit.call {{.*}}OriginStructInferenceImm::@"__init__
    # CHECK-SAME: :origin<false> (mutcast mut *"data`"){{.*}}>(%0, %immTest)
-   immTest = OriginStructInferenceImm(data)
+   var immTest = OriginStructInferenceImm(data)
 
-   # CHECK-NEXT: lit.call {{.*}}OriginStructInferencePar::@"__init__
+   # CHECK: lit.call {{.*}}OriginStructInferencePar::@"__init__
    # CHECK-SAME: :origin<true> *"data`">> {}>(%data, %parTest)
-   parTest = OriginStructInferencePar(data)
+   var parTest = OriginStructInferencePar(data)
 
-   # CHECK-NEXT: lit.call {{.*}}OriginStructInferenceParWrapped::@"__init__
+   # CHECK: lit.call {{.*}}OriginStructInferenceParWrapped::@"__init__
    # CHECK-SAME: :origin<true> *"data`">> {}>(%data, %parWrappedTest)
-   parWrappedTest = OriginStructInferenceParWrapped(data)
+   var parWrappedTest = OriginStructInferenceParWrapped(data)
 
    # CHECK: %[[IMMUT:.+]] = lit.ref.immut {{.*}} : <!Int, mut [[IMMUT_REF:.+]]>
-   # CHECK-NEXT: lit.call {{.*}}OriginStructInferenceParSpecialized::@"__init__
+   # CHECK: lit.call {{.*}}OriginStructInferenceParSpecialized::@"__init__
    # CHECK-SAME: :!Bool {:scalar<bool> false},
    # CHECK-SAME: (%[[IMMUT]], %parSpecializedTest)
-   parSpecializedTest = OriginStructInferenceParSpecialized(imm_data)
+   var parSpecializedTest = OriginStructInferenceParSpecialized(imm_data)
 
 
 # MOCO-2194: Parameter inference correctly folds contextually-evaluated params.
