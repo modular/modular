@@ -1423,6 +1423,10 @@ def get_minimax_structural_tag(
     EMPTY_THINK_CONTENT = "\n</think>\n\n"
     THINK_EXCLUDE_TOKENS = ["<think>", "</think>"]
     XML_STYLE = "minimax_xml"
+    JSON_CONFIG: dict[str, Any] = {
+        "style": XML_STYLE,
+        "reject_unsupported": True,
+    }
 
     tools = tools or []
     builtin_tools = builtin_tools or []
@@ -1435,7 +1439,7 @@ def get_minimax_structural_tag(
             tags.append(
                 TagFormat(
                     begin=(INVOKE_BEGIN_PREFIX + name + INVOKE_BEGIN_SUFFIX),
-                    content=JSONSchemaFormat(json_schema=parameters, style=XML_STYLE),
+                    content=JSONSchemaFormat(json_schema=parameters, **JSON_CONFIG),
                     end=INVOKE_END,
                 )
             )
@@ -1468,7 +1472,7 @@ def get_minimax_structural_tag(
                 TagFormat(
                     begin=(INVOKE_BEGIN_PREFIX + function.name + INVOKE_BEGIN_SUFFIX),
                     content=JSONSchemaFormat(
-                        json_schema=_get_function_parameters(function), style=XML_STYLE
+                        json_schema=_get_function_parameters(function), **JSON_CONFIG
                     ),
                     end=INVOKE_END,
                 ),
@@ -1484,7 +1488,7 @@ def get_minimax_structural_tag(
             tags.append(
                 TagFormat(
                     begin=(INVOKE_BEGIN_PREFIX + name + INVOKE_BEGIN_SUFFIX),
-                    content=JSONSchemaFormat(json_schema=parameters, style=XML_STYLE),
+                    content=JSONSchemaFormat(json_schema=parameters, **JSON_CONFIG),
                     end=INVOKE_END,
                 )
             )
