@@ -131,11 +131,9 @@ static void maybeApplyTypeRefinement(VarDeclOp varOp, ASTDecl &declScope,
 //===----------------------------------------------------------------------===//
 
 /// Create an IREmitter for a dynamic context with a builder.
-IREmitter::IREmitter(ASTDecl &declScope, OpBuilder builder,
-                     std::optional<OpBuilder> varDeclCursor)
+IREmitter::IREmitter(ASTDecl &declScope, OpBuilder builder)
     : SharedStateUser(declScope.getShared()), builder(builder),
-      paramContext(EC_InvalidContext), declScope(declScope),
-      varDeclCursor(varDeclCursor) {}
+      paramContext(EC_InvalidContext), declScope(declScope) {}
 
 /// Create an IREmitter for a parameter context.
 IREmitter::IREmitter(ASTDecl &declScope, ExprContext paramContext,

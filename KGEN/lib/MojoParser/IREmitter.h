@@ -97,8 +97,7 @@ private:
 class IREmitter : public SharedStateUser {
 public:
   /// Create an IREmitter for a dynamic context with a builder.
-  IREmitter(ASTDecl &declScope, OpBuilder builder,
-            std::optional<OpBuilder> varDeclCursor = {});
+  IREmitter(ASTDecl &declScope, OpBuilder builder);
   /// Create an IREmitter for a parameter context.
   IREmitter(ASTDecl &declScope, ExprContext paramContext,
             DeferredTypingContext *deferredTypingContext = nullptr);
@@ -124,9 +123,6 @@ public:
 
   /// This is scope to resolve declaration references against.
   ASTDecl &declScope;
-
-  /// If specified, implicitly declared variables are added after this iterator.
-  std::optional<OpBuilder> varDeclCursor;
 
   /// When non-null, body-constraint inconclusiveness during emission is
   /// silently accepted at single-candidate emission sites, and the unprovable

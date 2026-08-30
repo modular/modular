@@ -4450,8 +4450,7 @@ AnyValue IfElseOpNode::emitIR(ExprDest &dest, IREmitter &emitter) const {
         &emitter.declScope);
     branchScope.insertKnownAssumptions(assumption);
     if (emitter.builder) {
-      IREmitter branchEmitter(branchScope, *emitter.builder,
-                              emitter.varDeclCursor);
+      IREmitter branchEmitter(branchScope, *emitter.builder);
       AnyValue result = branchEmitter.emitExpr(branchExpr, EC_CondExpr);
       // Propagate the advanced insertion point back to the parent emitter.
       emitter.builder = branchEmitter.builder;
