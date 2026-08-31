@@ -45,7 +45,7 @@ mojo_library(
     use_production_compiler_for_asan = True,
     validate_missing_docs = True,
     deps = [
-        "//KGEN:CompilerRT",
+        "//Mojo:CompilerRT",
     ],
 )
 

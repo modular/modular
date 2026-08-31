@@ -23,7 +23,7 @@ tensor full of misplaced bytes, so the reference is compared element by
 element, not just in aggregate.
 
 Usage (plain `mojo` is shadowed by the installed shmem package -- use bazel):
-  ./bazelw run //KGEN/tools/mojo -- \
+  ./bazelw run //Mojo/tools/mojo -- \
       max/kernels/test/gpu/shmem/test_mxfp6_fused_silu.mojo
 """
 

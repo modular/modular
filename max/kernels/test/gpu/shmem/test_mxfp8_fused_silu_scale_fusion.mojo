@@ -25,7 +25,7 @@ Two gates per case, because neither alone is sufficient:
    an off-by-one: gate 1 stayed green, gate 2 caught it.
 
 Usage (plain `mojo` is shadowed by the installed shmem package — use bazel):
-  ./bazelw run //KGEN/tools/mojo -- \
+  ./bazelw run //Mojo/tools/mojo -- \
       max/kernels/test/gpu/shmem/test_mxfp8_fused_silu_scale_fusion.mojo
 """
 
