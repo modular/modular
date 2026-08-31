@@ -15,7 +15,7 @@
 from enum import Enum
 
 import pytest
-from max.driver import Accelerator, Buffer
+from max.driver import Accelerator, Buffer, Usage
 from max.dtype import DType
 from max.support import to_human_readable_bytes
 
@@ -86,5 +86,5 @@ class MemType(str, Enum):
             shape=(size,),
             dtype=DType.int8,
             device=Accelerator(),
-            pinned=self == MemType.PINNED,
+            usage=Usage.STAGING if self == MemType.PINNED else Usage.DEFAULT,
         )

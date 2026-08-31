@@ -28,6 +28,7 @@ from max.gpu.host import (
     FuncAttribute,
 )
 from nn.attention.gpu.nvidia.common import ImmutTileTensor1D
+from layout import TensorStorage
 from layout.tma_async import RaggedTMA3DTile
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.logger import Logger
@@ -306,6 +307,8 @@ def mha_sm100_dispatch[
     MaskType: MHAMask,
     output_type: DType,
     MaxPromptLenType: OptionallyStaticInt,
+    KVRowOffsetsStorage: TensorStorage,
+    SinkStorage: TensorStorage,
     //,
     config: MHAConfig,
     group: Int,
@@ -323,10 +326,12 @@ def mha_sm100_dispatch[
     max_prompt_len_arg: MaxPromptLenType,
     max_cache_valid_length_arg: Int,
     scale: Float32,
-    kv_input_row_offsets: OptionalReg[ImmutTileTensor1D[.uint32]],
+    kv_input_row_offsets: OptionalReg[
+        ImmutTileTensor1D[.uint32, Storage=KVRowOffsetsStorage]
+    ],
     batch_size_arg: Int,
     ctx: DeviceContext,
-    sink_weights: OptionalReg[ImmutTileTensor1D[q_type]],
+    sink_weights: OptionalReg[ImmutTileTensor1D[q_type, Storage=SinkStorage]],
     # Caller-supplied EXACT split-K partition count (`mha.mojo`'s
     # `num_partitions`). `0` => auto (the `ws_p_ceiling` / `_bucket_ws` ladder
     # picks `P`); non-zero is honored verbatim rather than bucketed -- pinning
@@ -355,6 +360,9 @@ def mha_sm100_dispatch[
         output_type: Element type of the attention output buffer (inferred).
         MaxPromptLenType: Optionally-static type encoding the maximum prompt
             length (inferred).
+        KVRowOffsetsStorage: `TensorStorage` policy of `kv_input_row_offsets`
+            (inferred).
+        SinkStorage: `TensorStorage` policy of `sink_weights` (inferred).
         config: MHA configuration supplying dtype, head count, depth, and
             swizzle mode.
         group: Number of query heads per KV head (GQA group size).

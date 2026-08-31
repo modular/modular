@@ -21,7 +21,7 @@ from max.nn.kv_cache import KVCacheGroupId
 from max.nn.kv_cache.metrics import KVCacheMetrics
 from max.pipelines.kv_cache.connectors.null_connector import NullConnector
 from max.pipelines.kv_cache.kv_connector import (
-    BlockCount,
+    ByteCount,
     CompletedTransfer,
     KVConnectorTransfer,
     TransferDirection,
@@ -33,10 +33,10 @@ class _CountingConnector:
     """Minimal connector stub with mutable transfer counters."""
 
     def __init__(self) -> None:
-        self._h2d_blocks_copied = 0
-        self._d2h_blocks_copied = 0
-        self._disk_blocks_written = 0
-        self._disk_blocks_read = 0
+        self._h2d_bytes_copied = 0
+        self._d2h_bytes_copied = 0
+        self._disk_bytes_written = 0
+        self._disk_bytes_read = 0
         # dKV health that mirrors the real connector, so connected and total
         # are a live level and reconnect_attempts is a lifetime counter that
         # reset_metrics deliberately does not clear.
@@ -85,20 +85,20 @@ class _CountingConnector:
     def reset_prefix_cache(self) -> None: ...
 
     @property
-    def host_block_count(self) -> BlockCount:
-        return BlockCount(free=0, total=0)
+    def host_byte_count(self) -> ByteCount:
+        return ByteCount(free=0, total=0)
 
     @property
-    def disk_block_count(self) -> BlockCount:
-        return BlockCount(free=0, total=0)
+    def disk_byte_count(self) -> ByteCount:
+        return ByteCount(free=0, total=0)
 
     @property
     def metrics(self) -> KVCacheMetrics:
         return KVCacheMetrics(
-            h2d_blocks_copied=self._h2d_blocks_copied,
-            d2h_blocks_copied=self._d2h_blocks_copied,
-            disk_blocks_written=self._disk_blocks_written,
-            disk_blocks_read=self._disk_blocks_read,
+            h2d_bytes_copied=self._h2d_bytes_copied,
+            d2h_bytes_copied=self._d2h_bytes_copied,
+            disk_bytes_written=self._disk_bytes_written,
+            disk_bytes_read=self._disk_bytes_read,
             dkv_connected_clients=self._connected_clients,
             dkv_total_clients=self._total_clients,
             dkv_reconnect_attempts=self._reconnect_attempts,
@@ -108,16 +108,16 @@ class _CountingConnector:
         # Only the per-batch transfer counters reset. The health fields are a
         # live level and a lifetime counter, so they are intentionally left
         # alone here, mirroring the real dKV connector.
-        self._h2d_blocks_copied = 0
-        self._d2h_blocks_copied = 0
-        self._disk_blocks_written = 0
-        self._disk_blocks_read = 0
+        self._h2d_bytes_copied = 0
+        self._d2h_bytes_copied = 0
+        self._disk_bytes_written = 0
+        self._disk_bytes_read = 0
 
 
 def test_block_manager_reset_metrics_clears_connector_counters() -> None:
     connector = _CountingConnector()
-    connector._d2h_blocks_copied = 5
-    connector._h2d_blocks_copied = 2
+    connector._d2h_bytes_copied = 5
+    connector._h2d_bytes_copied = 2
     bm = BlockManager(
         total_num_blocks=64,
         block_size=16,
@@ -125,16 +125,16 @@ def test_block_manager_reset_metrics_clears_connector_counters() -> None:
         connector=connector,
     )
 
-    assert bm.metrics.d2h_blocks_copied == 5
-    assert bm.metrics.h2d_blocks_copied == 2
+    assert bm.metrics.d2h_bytes_copied == 5
+    assert bm.metrics.h2d_bytes_copied == 2
 
     bm.reset_metrics()
 
-    assert bm.metrics.d2h_blocks_copied == 0
-    assert bm.metrics.h2d_blocks_copied == 0
+    assert bm.metrics.d2h_bytes_copied == 0
+    assert bm.metrics.h2d_bytes_copied == 0
 
-    connector._d2h_blocks_copied = 3
-    assert bm.metrics.d2h_blocks_copied == 3
+    connector._d2h_bytes_copied = 3
+    assert bm.metrics.d2h_bytes_copied == 3
 
 
 def test_scheduler_sampling_cycle_reports_per_batch_deltas() -> None:
@@ -152,8 +152,8 @@ def test_scheduler_sampling_cycle_reports_per_batch_deltas() -> None:
     )
 
     def sample_and_reset(d2h_delta: int, h2d_delta: int) -> KVCacheMetrics:
-        connector._d2h_blocks_copied += d2h_delta
-        connector._h2d_blocks_copied += h2d_delta
+        connector._d2h_bytes_copied += d2h_delta
+        connector._h2d_bytes_copied += h2d_delta
         sampled = bm.metrics
         bm.reset_metrics()
         return sampled
@@ -161,15 +161,13 @@ def test_scheduler_sampling_cycle_reports_per_batch_deltas() -> None:
     batch_one = sample_and_reset(d2h_delta=5, h2d_delta=2)
     batch_two = sample_and_reset(d2h_delta=3, h2d_delta=0)
 
-    assert batch_one.d2h_blocks_copied == 5
-    assert batch_one.h2d_blocks_copied == 2
-    assert batch_two.d2h_blocks_copied == 3
-    assert batch_two.h2d_blocks_copied == 0
+    assert batch_one.d2h_bytes_copied == 5
+    assert batch_one.h2d_bytes_copied == 2
+    assert batch_two.d2h_bytes_copied == 3
+    assert batch_two.h2d_bytes_copied == 0
 
     # OTEL counter.add() with these per-batch samples totals 8, not 23.
-    otel_counter_total = (
-        batch_one.d2h_blocks_copied + batch_two.d2h_blocks_copied
-    )
+    otel_counter_total = batch_one.d2h_bytes_copied + batch_two.d2h_bytes_copied
     assert otel_counter_total == 8
     assert otel_counter_total != 5 + 8  # pre-fix cumulative double-count
 
@@ -207,15 +205,15 @@ def test_kv_cache_metrics_add_sums_tier_attribution_fields() -> None:
         device_blocks_served=5,
         cross_replica_blocks_copied=2,
         cross_replica_bytes_copied=1024,
-        h2d_blocks_copied=10,
-        disk_blocks_read=3,
+        h2d_bytes_copied=10,
+        disk_bytes_read=3,
     )
     replica_1 = KVCacheMetrics(
         device_blocks_served=7,
         cross_replica_blocks_copied=1,
         cross_replica_bytes_copied=512,
-        h2d_blocks_copied=4,
-        disk_blocks_read=1,
+        h2d_bytes_copied=4,
+        disk_bytes_read=1,
     )
 
     total = replica_0 + replica_1
@@ -223,8 +221,8 @@ def test_kv_cache_metrics_add_sums_tier_attribution_fields() -> None:
     assert total.device_blocks_served == 12
     assert total.cross_replica_blocks_copied == 3
     assert total.cross_replica_bytes_copied == 1536
-    assert total.h2d_blocks_copied == 14
-    assert total.disk_blocks_read == 4
+    assert total.h2d_bytes_copied == 14
+    assert total.disk_bytes_read == 4
     # defaults stay zero
     assert KVCacheMetrics().device_blocks_served == 0
     assert KVCacheMetrics().cross_replica_bytes_copied == 0

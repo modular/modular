@@ -832,13 +832,12 @@ def rms_norm_fused_residual[
         output_residual_fn[width, rank, alignment](idx, val)
 
     @always_inline
-    @__parameter
-    def description_fn() -> String:
+    def description_fn() {imm} -> String:
         return trace_arg("input", shape, dtype)
 
     with Trace[TraceLevel.OP, target=target](
         "rms_norm_fused_residual",
-        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+        Trace[TraceLevel.OP]._get_detail_str(description_fn),
         task_id=Int(ctx.id()),
     ):
         _rms_norm_fused_residual_impl[

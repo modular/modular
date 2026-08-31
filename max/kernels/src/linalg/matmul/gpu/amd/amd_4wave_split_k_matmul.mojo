@@ -287,9 +287,12 @@ def amd_4wave_split_k_matmul[
             config,
             enable_swizzle,
         ].run[
-            a.LayoutType,
-            b.LayoutType,
-            ws_tile.LayoutType,
+            type_of(a).LayoutType,
+            type_of(b).LayoutType,
+            type_of(ws_tile).LayoutType,
+            type_of(a).Storage,
+            type_of(b).Storage,
+            type_of(ws_tile).Storage,
             num_splits=num_splits,
         ]
 

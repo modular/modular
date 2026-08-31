@@ -25,7 +25,7 @@ Example with DP=4, TP=2, 8 GPUs:
 Uses a pull-based approach: each GPU reads its chunk from root via P2P.
 """
 
-from layout import TileTensor
+from layout import TensorStorage, TileTensor
 from layout.tile_layout import TensorLayout
 from std.collections import Array
 from max.gpu.host import DeviceContext, get_gpu_target
@@ -51,6 +51,7 @@ from .sync import (
     is_p2p_enabled,
 )
 
+
 # --- Pull kernel: each GPU reads its own chunk from root ---
 
 
@@ -75,7 +76,7 @@ def scatter_pull_kernel[
     """Pull-based scatter+broadcast: each GPU reads its chunk from root.
 
     Each GPU determines its replica index (my_rank // tp_size), then copies
-    from input_ptrs[replica] on the root GPU to its own output buffer.
+    from `input_ptrs[replica]` on the root GPU to its own output buffer.
     """
     var _my_rank = Int(my_rank)
     var my_sig = rank_sigs[_my_rank]
@@ -122,9 +123,12 @@ def scatter[
     dp_size: Int,
     in_layout: TensorLayout,
     in_origin: Origin,
+    in_store: TensorStorage,
     pdl_level: PDLLevel = PDLLevel(),
 ](
-    input_buffers: Array[TileTensor[dtype, in_layout, in_origin], dp_size],
+    input_buffers: Array[
+        TileTensor[dtype, in_layout, in_origin, Storage=in_store], dp_size
+    ],
     output_buffer: TileTensor[mut=True, dtype, ...],
     rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS],
     ctx: DeviceContext,
@@ -140,6 +144,7 @@ def scatter[
         dp_size: Number of data-parallel replicas.
         in_layout: Layout of the input TileTensors.
         in_origin: Origin of the input TileTensors.
+        in_store: `TensorStorage` policy of the input TileTensors.
         pdl_level: Controls PDL behavior for P2P kernels.
 
     Args:
@@ -155,12 +160,11 @@ def scatter[
     if not is_p2p_enabled():
         raise Error("Scatter currently requires P2P access between GPUs")
 
-    # Extract raw pointers and sizes from TileTensors for the kernel.
     comptime PtrType = ImmPointer[Scalar[dtype], ImmutAnyOrigin]
     var input_ptrs = Array[_, dp_size](
         fill_with=lambda (i: Int) -> PtrType: rebind[
             ImmPointer[Scalar[dtype], ImmutAnyOrigin]
-        ](input_buffers[i]._storage)
+        ](input_buffers[i].ptr)
     )
     var chunk_num_elems_int = Array[Int, dp_size](fill=0)
     var chunk_num_elems = Array[Int32, dp_size](fill=Int32(0))
@@ -187,7 +191,7 @@ def scatter[
     ]
 
     ctx.enqueue_function[kernel](
-        rebind[MutPointer[Scalar[dtype], MutAnyOrigin]](output_buffer._storage),
+        rebind[MutPointer[Scalar[dtype], MutAnyOrigin]](output_buffer.ptr),
         input_ptrs,
         chunk_num_elems,
         rank_sigs,

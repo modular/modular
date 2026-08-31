@@ -26,6 +26,7 @@ fragment / scale word the MFMA needs at its `(lane_nlane, lane_klane)` slot.
     by logical `(mn, k_scale)` through `scale_4d_layout`.
 """
 
+from std.gpu import lane_id
 from std.gpu.intrinsics import AMDBufferResource
 from max.gpu.memory import CacheOperation
 from std.memory.unsafe import bitcast
@@ -69,7 +70,7 @@ struct PreshuffledBLoader[
     @always_inline
     def __init__(
         out self,
-        b_gmem_tile: TileTensor[.uint8, Storage=PointerStorage[], ...],
+        b_gmem_tile: TileTensor[.uint8, ...],
     ):
         """Builds the V# from a preshuffled per-expert B byte buffer.
 
@@ -116,6 +117,57 @@ struct PreshuffledBLoader[
             )
         return frag
 
+    @always_inline
+    def lane_plane_off(self, n: Int, lane_k_byte: Int) -> Int32:
+        """Returns the K-invariant per-lane part of a single-plane address.
+
+        Pair with `load_at`, which supplies the wave-uniform whole-tile part.
+        Splitting the address this way lets a caller hoist the per-lane term
+        out of an unrolled K loop instead of rematerialising it per tile.
+
+        Args:
+            n: Logical N row index into the `[N, K_BYTES]` tile.
+            lane_k_byte: The lane's own K byte offset within its K tile,
+                i.e. `(lane // 16) * lane_bytes`.
+        """
+        comptime assert (
+            Self.lane_bytes == Shuffler[1].MFMA_LANE_BYTES
+        ), "the split address form assumes a single 16-byte plane per lane"
+        return Int32(
+            Shuffler[1].b_plane_byte_off[
+                N=Self.N,
+                K_BYTES=Self.K_BYTES,
+                lane_bytes=Self.lane_bytes,
+                plane=0,
+            ](0, n, lane_k_byte)
+        )
+
+    @always_inline
+    def load_at(
+        self, lane_off: Int32, k_byte_uniform: Int
+    ) -> SIMD[.uint8, Shuffler[1].MFMA_LANE_BYTES]:
+        """Loads one 16-byte plane at `lane_off` plus a wave-uniform K offset.
+
+        `k_byte_uniform` is a whole number of `(n0, k0)` tiles, so it rides
+        `soffset` while `lane_off` stays in `voffset`.
+
+        Args:
+            lane_off: The per-lane offset from `lane_plane_off`.
+            k_byte_uniform: Logical K byte base of the tile, wave-uniform and
+                a multiple of the K0 tile width.
+        """
+        comptime assert (
+            Self.lane_bytes == Shuffler[1].MFMA_LANE_BYTES
+        ), "the split address form assumes a single 16-byte plane per lane"
+        comptime K0_BYTES = Shuffler[1].MFMA_K_LANES * Self.lane_bytes
+        comptime TILE_BYTES = Shuffler[1].MFMA_MN_LANES * K0_BYTES
+        return self.bc.load[
+            .uint8, Shuffler[1].MFMA_LANE_BYTES, cache_policy=Self.cache_policy
+        ](
+            lane_off,
+            scalar_offset=Int32((k_byte_uniform // K0_BYTES) * TILE_BYTES),
+        )
+
 
 struct PreshuffledScaleLoader[MN_padded: Int, K_SCALES: Int](
     TrivialRegisterPassable
@@ -136,7 +188,7 @@ struct PreshuffledScaleLoader[MN_padded: Int, K_SCALES: Int](
     @always_inline
     def __init__(
         out self,
-        scale_gmem_tile: TileTensor[.uint8, Storage=PointerStorage[], ...],
+        scale_gmem_tile: TileTensor[.uint8, ...],
     ):
         """Builds the V# from a preshuffled per-expert scale byte buffer.
 
@@ -171,3 +223,33 @@ struct PreshuffledScaleLoader[MN_padded: Int, K_SCALES: Int](
         )
         var v = self.bc.load[.uint8, 4](byte_off)
         return bitcast[.int32, 1](v)[0]
+
+    @always_inline
+    def load_group[
+        GROUP: Int
+    ](self, mn_base: Int, k_pair_base: Int) -> SIMD[.uint8, GROUP * 4]:
+        """Loads `GROUP` consecutive packed-scale atoms with one VMEM op.
+
+        Consecutive `k_pair` atoms are contiguous 256-byte blocks, so one
+        `GROUP * 4`-byte load per lane tiles `GROUP` of them across a wave64.
+
+        The window is lane-transposed: lane `l` holds the words `load_packed`
+        would give lanes `GROUP*l .. GROUP*l + GROUP - 1`, and the caller must
+        undo that.
+
+        Parameters:
+            GROUP: Atoms per window; `GROUP * 4` must be a legal load width.
+
+        Args:
+            mn_base: Logical MN index of the window's atom row; must be
+                16-aligned so the lane term is the whole in-atom offset.
+            k_pair_base: First `k_pair` of the window.
+        """
+        comptime assert GROUP == 4, "scale group load must be one dwordx4"
+        var byte_off = Int32(
+            Shuffler[1].scale_4d_byte_off[
+                K_SCALES=Self.K_SCALES, packed_mode=True
+            ](mn_base, k_pair_base * Shuffler[1].S_K_BLOCK)
+            + Int(lane_id()) * (GROUP * 4)
+        )
+        return self.bc.load[.uint8, GROUP * 4](byte_off)

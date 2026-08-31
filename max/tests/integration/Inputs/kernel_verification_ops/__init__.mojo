@@ -14,6 +14,8 @@
 import extensibility
 from max.gpu.host import DeviceContext
 from max.gpu.host.device_context import DeviceExternalFunction
+from std.gpu import global_idx
+from std.math import ceildiv
 from std.os import abort, getenv
 from extensibility import (
     foreach,
@@ -310,3 +312,40 @@ struct IntentionalGpuCrash:
 
         gpu_ctx.enqueue_function[crash_kernel](grid_dim=(1,), block_dim=(1,))
         gpu_ctx.synchronize()
+
+
+@extensibility.register("fill_from_host_scalar")
+struct FillFromHostScalar:
+    """Fills the GPU output with the value of a host-resident scalar input.
+
+    The value is read on the host at enqueue time -- the dispatch-metadata
+    pattern (attention cache lengths and friends). Under device-graph
+    synthesis the read happens while recording, so the value bakes into the
+    recorded kernel and the input's contents must key the graph cache:
+    a changed value must re-record, never replay stale dispatch.
+    """
+
+    @staticmethod
+    def execute[
+        dtype: DType, rank: Int
+    ](
+        output: OutputTensor[dtype=dtype, rank=rank, ...],
+        h: InputTensor[dtype=dtype, rank=1, ...],
+        ctx: DeviceContext,
+    ) raises:
+        var value = h.unsafe_ptr()[unsafe_offset=0]
+        var ptr = output.unsafe_ptr()
+        var length = Int32(output.size())
+
+        def fill_kernel() {var}:
+            var tid = global_idx.x
+            if tid >= Int(length):
+                return
+            ptr[unsafe_offset=tid] = value
+
+        comptime block_dim = 256
+        ctx.enqueue_function(
+            fill_kernel,
+            grid_dim=ceildiv(length, block_dim),
+            block_dim=block_dim,
+        )

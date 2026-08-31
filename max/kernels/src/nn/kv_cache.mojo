@@ -109,8 +109,7 @@ def generic_fused_qkv_matmul_kv_cache_bshd_paged[
     """
 
     @always_inline
-    @__parameter
-    def description_fn() -> String:
+    def description_fn() {imm} -> String:
         return String(";").join(
             Span(
                 [
@@ -135,7 +134,7 @@ def generic_fused_qkv_matmul_kv_cache_bshd_paged[
         + String(kv_collection.kv_params.num_heads)
         + ".hdim_"
         + String(kv_collection.kv_params.head_size),
-        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+        Trace[TraceLevel.OP]._get_detail_str(description_fn),
         task_id=get_safe_task_id(ctx),
     ):
         return _fused_qkv_matmul_kv_cache[
@@ -421,8 +420,7 @@ def generic_fused_qk_rope_bshd_paged[
     """
 
     @always_inline
-    @__parameter
-    def description_fn() -> String:
+    def description_fn() {imm} -> String:
         return String(";").join(
             Span(
                 [
@@ -455,7 +453,7 @@ def generic_fused_qk_rope_bshd_paged[
         + String(kv_collection.kv_params.num_heads)
         + ".hdim_"
         + String(kv_collection.kv_params.head_size),
-        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+        Trace[TraceLevel.OP]._get_detail_str(description_fn),
         task_id=get_safe_task_id(context),
     ):
         fused_qk_rope[
@@ -501,8 +499,7 @@ def generic_flash_attention_kv_cache_padded[
     ] = None,
 ) raises:
     @always_inline
-    @__parameter
-    def description_fn() -> String:
+    def description_fn() {imm} -> String:
         return String(";").join(
             Span(
                 [
@@ -528,7 +525,7 @@ def generic_flash_attention_kv_cache_padded[
         + String(collection_t.kv_params.num_heads)
         + ".hdim_"
         + String(collection_t.kv_params.head_size),
-        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+        Trace[TraceLevel.OP]._get_detail_str(description_fn),
         task_id=get_safe_task_id(context),
     ):
         return _flash_attention_dispatch[
@@ -803,8 +800,7 @@ def fused_qk_rms_norm_ragged_paged[
     var rows = q_rows + k_rows
 
     @always_inline
-    @__parameter
-    def description_fn() -> String:
+    def description_fn() {imm} -> String:
         return (
             trace_arg(
                 "q_proj", coord_to_index_list(q_proj.layout.shape_coord())
@@ -822,7 +818,7 @@ def fused_qk_rms_norm_ragged_paged[
         + String(params.num_heads)
         + ".hdim_"
         + String(params.head_size),
-        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+        Trace[TraceLevel.OP]._get_detail_str(description_fn),
         task_id=get_safe_task_id(context),
     ):
         comptime simd_width = simd_width_of[dtype, target=get_gpu_target()]()
@@ -1313,8 +1309,7 @@ def fused_qk_rms_norm_rope_ragged_paged[
     var rows = q_rows + k_rows
 
     @always_inline
-    @__parameter
-    def description_fn() -> String:
+    def description_fn() {imm} -> String:
         return (
             trace_arg(
                 "q_output", coord_to_index_list(q_output.layout.shape_coord())
@@ -1336,7 +1331,7 @@ def fused_qk_rms_norm_rope_ragged_paged[
         + String(params.head_size)
         + ".rope_"
         + String(rope_dim),
-        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+        Trace[TraceLevel.OP]._get_detail_str(description_fn),
         task_id=get_safe_task_id(context),
     ):
         comptime simd_width = simd_width_of[dtype, target=get_gpu_target()]()
@@ -1742,8 +1737,7 @@ def fused_dual_qk_rms_norm_rope_ragged_paged[
     var rows = q_main_rows + k_main_rows + q_index_rows + k_index_rows
 
     @always_inline
-    @__parameter
-    def description_fn() -> String:
+    def description_fn() {imm} -> String:
         return (
             trace_arg(
                 "q_main_output",
@@ -1768,7 +1762,7 @@ def fused_dual_qk_rms_norm_rope_ragged_paged[
         + String(main_params.head_size)
         + ".rope_"
         + String(rope_dim),
-        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+        Trace[TraceLevel.OP]._get_detail_str(description_fn),
         task_id=get_safe_task_id(context),
     ):
         comptime simd_width = simd_width_of[dtype, target=get_gpu_target()]()

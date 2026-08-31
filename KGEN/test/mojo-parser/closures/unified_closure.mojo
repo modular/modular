@@ -315,11 +315,11 @@ def s15_bindIt(z: Int, mem: String):
 # S16-DAG: lit.struct.decl @MultipleClosure
 # S16-DAG: kgen.conformance @"def(Bool) -> Int"
 # S16-DAG: kgen.witness "__call__($0,::Bool)"
-# S16-DAG: imm_mem, !Bool, |) capturing -> !Int{{.*}}> = rebind(:!lit.generator<[1]("self": !lit.ref<!MultipleClosure, imm *[0,0]> imm_mem, "x": !Bool) capturing -> !alias_Int{{.*}}>
+# S16-DAG: imm_mem, !Bool, |) capturing -> !Int{{.*}}> = rebind(:!lit.generator<[1]({{.*}}imm_mem, !Bool) capturing -> !Int>
 # S16-DAG: @{{.*}}::@MultipleClosure::@"__call__(unified_closure::MultipleClosure,::Bool)"
 # S16-DAG: kgen.conformance @"def(Int) -> Int"
 # S16-DAG: kgen.witness "__call__($0,::SIMD[DType.int, 1])"
-# S16-DAG: imm_mem, !Int{{.*}}, |) capturing -> !Int{{.*}}> = rebind(:!lit.generator<[1]("self": !lit.ref<!MultipleClosure, imm *[0,0]> imm_mem, "x": !Int{{.*}}) capturing -> !alias_Int{{.*}}>
+# S16-DAG: imm_mem, !Int{{.*}}, |) capturing -> !Int{{.*}}> = rebind(:!lit.generator<[1]({{.*}}imm_mem, !Int) capturing -> !Int>
 # S16-DAG: @{{.*}}::@MultipleClosure::@"__call__(unified_closure::MultipleClosure,::SIMD[DType.int, 1])"
 
 

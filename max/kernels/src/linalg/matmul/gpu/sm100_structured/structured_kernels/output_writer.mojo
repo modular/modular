@@ -1533,24 +1533,22 @@ struct TileWriter[
                 and c_col + UInt32(Self.MMA_N) <= c_shape[1]
             )
 
-        var upper_frag_casted = Array[
-            Scalar[Self.epilogue_dtype], Self.rep_frag_size
-        ](uninitialized=True)
-        var lower_frag_casted = Array[
-            Scalar[Self.epilogue_dtype], Self.rep_frag_size
-        ](uninitialized=True)
-
         comptime for stage in range(Self.num_stages):
             # 1. Load fragments from TMEM tile
             var frags = accum_tiles[stage].load_fragments[Self.rep]()
             Self.AccumTmemArray.Tile.wait_load()
             var casted = frags.cast[Self.epilogue_dtype]()
 
-            comptime for _i in range(Self.rep_frag_size):
-                upper_frag_casted[_i] = casted.upper[_i]
-
-            comptime for _i in range(Self.rep_frag_size):
-                lower_frag_casted[_i] = casted.lower[_i]
+            var upper_frag_casted = Array[_, Self.rep_frag_size](
+                fill_with=lambda (_i: Int) -> Scalar[
+                    Self.epilogue_dtype
+                ]: casted.upper[_i]
+            )
+            var lower_frag_casted = Array[_, Self.rep_frag_size](
+                fill_with=lambda (_i: Int) -> Scalar[
+                    Self.epilogue_dtype
+                ]: casted.lower[_i]
+            )
 
             comptime if stage == Self.num_stages - 1:
                 AccumBarrier[Self.cta_group].arrive(

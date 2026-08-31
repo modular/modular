@@ -401,8 +401,7 @@ def flare_mla_decoding[
     )
 
     @always_inline
-    @__parameter
-    def description_fn() -> String:
+    def description_fn() {imm} -> String:
         return String(";").join(
             Span(
                 [
@@ -422,7 +421,7 @@ def flare_mla_decoding[
         "flare_mla_decoding",
         Trace[
             TraceLevel.OP, target=ctx.default_device_info.api
-        ]._get_detail_str[description_fn](),
+        ]._get_detail_str(description_fn),
         task_id=Int(ctx.id()),
     ):
         comptime kv_num_heads = cache_t.kv_params.num_heads
@@ -766,9 +765,24 @@ def flare_mla_decoding_dispatch[
             type_of(q).static_shape[q.rank - 1] == 640
         ), "per_token_scale_rope_aware requires Q physical dim == 640."
     else:
+        # 576 = 512 latent + 64 rotary. A NoPE model stores the 512 latent alone.
+        # The kernels keep SMEM at 576 and zero-fill the tail, so both rows run.
+        comptime assert depth == type_of(q).static_shape[q.rank - 1] and (
+            depth == 576 or depth == 512
+        ), (
+            "flareMLA_decoding only supports head_dim 576 (rotary) or 512"
+            " (NoPE)."
+        )
+        # The mixed BF16-Q / FP8-KV converter narrowed its TMA widths but not
+        # the byte counts its barriers wait for, so a 512 row hangs rather
+        # than returns wrong. Refuse it here while the combination is legible.
         comptime assert (
-            depth == type_of(q).static_shape[q.rank - 1] == 576
-        ), "flareMLA_decoding only supports head_dim == 576."
+            depth == 576 or q.dtype != .bfloat16 or k_t.dtype == .bfloat16
+        ), (
+            "the NoPE 512-wide row is supported with a BF16 KV cache (BF16 Q)"
+            " or with an all-FP8 QKV cache. The BF16-Q / FP8-KV combination"
+            " still expects the 576-wide rotary row"
+        )
     comptime assert (
         kv_num_heads == 1
     ), "flareMLA_decoding only supports kv_num_heads == 1."
@@ -2724,8 +2738,7 @@ def flare_mla_prefill[
         comptime assert False, "Q, K, V, output dtype combination not supported"
 
     @always_inline
-    @__parameter
-    def description_fn() -> String:
+    def description_fn() {imm} -> String:
         return String(";").join(
             Span(
                 [
@@ -2747,7 +2760,7 @@ def flare_mla_prefill[
         "flare_mla_prefill",
         Trace[
             TraceLevel.OP, target=ctx.default_device_info.api
-        ]._get_detail_str[description_fn](),
+        ]._get_detail_str(description_fn),
         task_id=Int(ctx.id()),
     ):
         var max_prompt_len: Int
@@ -2860,8 +2873,7 @@ def flare_mla_prefill[
         comptime assert False, "Q, K, V, output dtype combination not supported"
 
     @always_inline
-    @__parameter
-    def description_fn() -> String:
+    def description_fn() {imm} -> String:
         return String(";").join(
             Span(
                 [
@@ -2889,7 +2901,7 @@ def flare_mla_prefill[
         "flare_mla_prefill",
         Trace[
             TraceLevel.OP, target=ctx.default_device_info.api
-        ]._get_detail_str[description_fn](),
+        ]._get_detail_str(description_fn),
         task_id=Int(ctx.id()),
     ):
         var max_prompt_len: Int = Int(q.dim[0]())
@@ -2976,8 +2988,7 @@ def flare_mla_prefill[
     ), "Only support single and half precision."
 
     @always_inline
-    @__parameter
-    def description_fn() -> String:
+    def description_fn() {imm} -> String:
         return String(";").join(
             Span(
                 [
@@ -3005,7 +3016,7 @@ def flare_mla_prefill[
         "flare_mla_prefill",
         Trace[
             TraceLevel.OP, target=ctx.default_device_info.api
-        ]._get_detail_str[description_fn](),
+        ]._get_detail_str(description_fn),
         task_id=Int(ctx.id()),
     ):
         var max_prompt_len: Int = Int(q.dim[0]())
@@ -3085,8 +3096,7 @@ def flare_mla_prefill[
     ] = None,
 ) raises:
     @always_inline
-    @__parameter
-    def description_fn() -> String:
+    def description_fn() {imm} -> String:
         return String(";").join(
             Span(
                 [
@@ -3118,7 +3128,7 @@ def flare_mla_prefill[
         "flare_mla_prefill",
         Trace[
             TraceLevel.OP, target=ctx.default_device_info.api
-        ]._get_detail_str[description_fn](),
+        ]._get_detail_str(description_fn),
         task_id=Int(ctx.id()),
     ):
         var max_prompt_len: Int = Int(q_nope.dim[0]())
@@ -3226,8 +3236,7 @@ def flare_mla_prefill[
     ] = None,
 ) raises:
     @always_inline
-    @__parameter
-    def description_fn() -> String:
+    def description_fn() {imm} -> String:
         return String(";").join(
             Span(
                 [
@@ -3259,7 +3268,7 @@ def flare_mla_prefill[
         "flare_mla_prefill",
         Trace[
             TraceLevel.OP, target=ctx.default_device_info.api
-        ]._get_detail_str[description_fn](),
+        ]._get_detail_str(description_fn),
         task_id=Int(ctx.id()),
     ):
         var max_prompt_len: Int

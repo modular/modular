@@ -134,9 +134,7 @@ trait TensorStorage:
         //,
     ](
         storage: Self.StorageType[dtype, origin, address_space],
-    ) raises -> UnsafePointer[
-        Scalar[dtype], origin, address_space=address_space
-    ]:
+    ) raises -> Pointer[Scalar[dtype], origin, address_space=address_space]:
         """Returns a raw scalar pointer to the borrowed storage.
 
         Reinterprets the storage handle as a `Pointer` to the scalar
@@ -1994,7 +1992,7 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
         dtype: DType,
         origin: Origin[mut=mut],
         address_space: AddressSpace,
-    ]: TrivialRegisterPassable = UnsafePointer[
+    ]: TrivialRegisterPassable = Pointer[
         SIMD[dtype, Self.element_width], origin, address_space=address_space
     ]
     """A raw `Pointer` to `Scalar[dtype]` borrowing the storage.
@@ -2026,9 +2024,7 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
         //,
     ](
         storage: Self.StorageType[dtype, origin, address_space],
-    ) raises -> UnsafePointer[
-        Scalar[dtype], origin, address_space=address_space
-    ]:
+    ) raises -> Pointer[Scalar[dtype], origin, address_space=address_space]:
         """Returns a raw scalar pointer to the borrowed storage.
 
         Parameters:
@@ -2044,7 +2040,7 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
             A `Pointer` to `Scalar[dtype]` referring to the base of the
             borrowed storage.
         """
-        # `storage` is an `UnsafePointer[SIMD[dtype, element_width]]`. Bitcast
+        # `storage` is a `Pointer[SIMD[dtype, element_width]]`. Bitcast
         # it to the scalar base pointer. For non-vectorized storage
         # (`element_width == 1`) this is the identity; for a vectorized view it
         # yields the scalar base address of the underlying storage.
@@ -2265,7 +2261,7 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
             A handle of the same type starting the given number of scalar
             elements into the referenced storage.
         """
-        # `storage` is an `UnsafePointer[SIMD[dtype, element_width]]`. Reinterpret
+        # `storage` is a `Pointer[SIMD[dtype, element_width]]`. Reinterpret
         # it as a scalar pointer so `+ offset` advances in scalar (not SIMD)
         # units, then `rebind` back to the original handle type.
         comptime assert offset_coord.flat_rank == 1
@@ -3609,7 +3605,7 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
 @always_inline
 def _device_leaf_ptr[
     dtype: DType, //
-](storage: DevicePointer[dtype, _]) -> UnsafePointer[
+](storage: DevicePointer[dtype, _]) -> MutPointer[
     Scalar[dtype], MutAnyOrigin, address_space=.GLOBAL
 ]:
     """Returns the encoded device-leaf pointer held in `storage`'s first bytes.
@@ -3645,8 +3641,8 @@ def _device_leaf_ptr[
         # Reinterpret the handle's first bytes as the encoded device address.
         # The leaf must be `GLOBAL` (device), not `GENERIC` — see the docstring:
         # a `GENERIC` leaf silently misses device memory on Metal.
-        return UnsafePointer(to=storage).bitcast[
-            UnsafePointer[Scalar[dtype], MutAnyOrigin, address_space=.GLOBAL]
+        return Pointer(to=storage).bitcast[
+            MutPointer[Scalar[dtype], MutAnyOrigin, address_space=.GLOBAL]
         ]()[]
     else:
         abort("DevicePointerStorage operations are not supported on host")
@@ -3729,7 +3725,9 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
         //,
     ](
         storage: Self.StorageType[dtype, origin, address_space],
-    ) -> UnsafePointer[Scalar[dtype], origin, address_space=address_space]:
+    ) -> Pointer[
+        Scalar[dtype], origin, address_space=address_space
+    ]:
         """Returns a raw scalar pointer to the base of the borrowed storage.
 
         On device the owning `DeviceBuffer` is unavailable, so this reinterprets
@@ -3750,7 +3748,7 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
         Returns:
             A bare `Pointer` to the first scalar element of the storage.
         """
-        comptime ResultPtr = UnsafePointer[
+        comptime ResultPtr = Pointer[
             Scalar[dtype], origin, address_space=address_space
         ]
         # `_device_leaf_ptr` returns a `GLOBAL` (device) leaf because Metal has
@@ -3805,7 +3803,7 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
             A handle referring to the same storage, viewed with the new type
             parameters.
         """
-        result = UnsafePointer(to=storage).bitcast[type_of(result)]()[]
+        result = Pointer(to=storage).bitcast[type_of(result)]()[]
 
     @staticmethod
     @always_inline
@@ -3999,8 +3997,8 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
         comptime assert offset_coord.flat_rank == 1
         comptime if is_gpu():
             var result = storage
-            var leaf = UnsafePointer(to=result).bitcast[
-                UnsafePointer[Scalar[type_of(storage).dtype], MutAnyOrigin]
+            var leaf = Pointer(to=result).bitcast[
+                MutPointer[Scalar[type_of(storage).dtype], MutAnyOrigin]
             ]()
             leaf[] = leaf[] + offset_coord[0].value()
             return result
@@ -5403,7 +5401,7 @@ struct StaticOffsetStorage[*, static_offset: Int, element_width: Int = 1](
         dtype: DType,
         origin: Origin[mut=mut],
         address_space: AddressSpace,
-    ]: TrivialRegisterPassable = UnsafePointer[
+    ]: TrivialRegisterPassable = Pointer[
         SIMD[dtype, Self.element_width], origin, address_space=address_space
     ]
     """A raw `Pointer` borrowing the storage, `static_offset` scalar
@@ -5427,9 +5425,7 @@ struct StaticOffsetStorage[*, static_offset: Int, element_width: Int = 1](
         //,
     ](
         storage: Self.StorageType[dtype, origin, address_space],
-    ) raises -> UnsafePointer[
-        Scalar[dtype], origin, address_space=address_space
-    ]:
+    ) raises -> Pointer[Scalar[dtype], origin, address_space=address_space]:
         """Returns a raw scalar pointer to the start of the viewed region.
 
         Parameters:

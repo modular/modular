@@ -16,6 +16,9 @@ This version is still a work in progress.
 
 ## Language enhancements
 
+- Unknown declaration errors now suggest a unique near-miss spelling from the
+  enclosing scopes (for example `coun` → `count`), with a replace-token fixit.
+
 - Mojo now supports contextually inferred member references: a leading-dot form
   such as `.red` or `.float64` resolves against the expected type of the
   expression, so you can omit a redundant type name when context already
@@ -127,6 +130,19 @@ This version is still a work in progress.
   total build time scales with how many t-string literals a file has.
 
 ## Library changes
+
+- `Coord` has a new `replace[at](value)` method that returns a `Coord` with
+  the element at `at` swapped for `value`, keeping the other elements' types. A
+  statically known element (`ComptimeInt`) has no runtime storage to assign
+  into, so overwriting one with a runtime value yields a `Coord` of a different
+  type rather than mutating in place. Unlike `make_dynamic()`, which converts
+  every element to a `Scalar`, the untouched dimensions keep their compile-time
+  values:
+
+  ```mojo
+  var c = Coord(ComptimeInt[3](), ComptimeInt[4]())
+  var moved = c.replace[1](Int64(7))  # Coord(ComptimeInt[3](), Int64(7))
+  ```
 
 - `List.extend` and `List.resize` now grow geometrically, so repeatedly
   extending or resizing by a small increment is no longer quadratic. As a
@@ -255,6 +271,9 @@ This version is still a work in progress.
   turns what would otherwise be silent memory-safety bugs into compile-time
   errors.
 
+- Added `deinit()`, for any `Deinitable` type, to explicitly extend a value's
+  lifetime up to a specific point and run its deinitializer there.
+
 - `Atomic` is now parameterized on a value type `T` instead of a `DType`.
   Update call sites from `Atomic[DType.float32]` to `Atomic[Float32]`. The
   atomic operations (`load()`, `store()`, `fetch_add()`, `compare_exchange()`,
@@ -307,6 +326,10 @@ This version is still a work in progress.
 ## Removed
 
 This release completes the removal of APIs deprecated during the v1.0 cycle.
+
+- Implicit variable declaration now produces an error instead of a warning. The
+  walrus operator also only overwrite existing values, not implicitly declare
+  new ones.
 
 - Removed the temporary `InlineArray` alias for `Array`, including its
   re-exports from `std.collections` and the prelude. Use `Array` directly.

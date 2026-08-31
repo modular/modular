@@ -11,9 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-# Tests for the deprecation warning on an implicitly declared variable, and for
-# the binding forms that must stay silent because they already spell out how
-# they bind.
+# Tests for the error on an implicitly declared variable, and for the binding
+# forms that must stay silent because they already spell out how they bind.
 # Related to MOCO-3182.
 
 # RUN: %parse-mojo-isolated %s -verify-diagnostics -o /dev/null
@@ -44,103 +43,67 @@ def use_bool(x: Bool):
 
 
 def simple():
-    # expected-warning @+1 {{implicit declaration of 'x' is deprecated; add 'var' before the name}}
+    # expected-error @+1 {{implicit declaration of 'x' is not allowed; add 'var' to declare a new name}}
     x = 1
     use(x)
 
 
 def annotated():
-    # expected-warning @+1 {{implicit declaration of 'x' is deprecated; add 'var' before the name}}
+    # expected-error @+1 {{implicit declaration of 'x' is not allowed; add 'var' to declare a new name}}
     x: Int = 5
     use(x)
 
 
 # An annotation with no initializer declares just as much as an assignment does.
 def annotated_no_initializer():
-    # expected-warning @+1 {{implicit declaration of 'x' is deprecated; add 'var' before the name}}
+    # expected-error @+1 {{implicit declaration of 'x' is not allowed; add 'var' to declare a new name}}
     x: Int
     x = 5
     use(x)
 
 
-# Only the declaration warns; later assignments to the same name are stores.
+# Only the first assignment is diagnosed; the name is then registered, so later
+# assignments and uses resolve against it.
 def reassigned():
-    # expected-warning @+1 {{implicit declaration of 'x' is deprecated; add 'var' before the name}}
+    # expected-error @+1 {{implicit declaration of 'x' is not allowed; add 'var' to declare a new name}}
     x = 1
     x = 2
     use(x)
 
 
-# A single 'var' covers a whole tuple target, so each name gets the target
-# message rather than the name message a lone assignment gets.
+# A single 'var' covers a whole tuple target. Emission stops after the first
+# unresolved element, so only that name is diagnosed and only it is registered;
+# later elements stay unknown.
 def tuple_target():
-    # expected-warning @+2 {{implicit declaration of 'a' is deprecated; add 'var' before the assignment target}}
-    # expected-warning @+1 {{implicit declaration of 'b' is deprecated; add 'var' before the assignment target}}
+    # expected-error @+1 {{implicit declaration of 'a' is not allowed; add 'var' to declare a new name}}
     a, b = Tuple(1, 2)
     use(a)
+    # expected-error @+1 {{use of unknown declaration 'b'}}
     use(b)
 
 
-# Only the fresh element warns when the target mixes declared and fresh names.
+# Only the fresh element is diagnosed when the target mixes declared and fresh names.
 def tuple_mixed():
     var a = 0
-    # expected-warning @+1 {{implicit declaration of 'b' is deprecated; add 'var' before the assignment target}}
+    # expected-error @+1 {{implicit declaration of 'b' is not allowed; add 'var' to declare a new name}}
     a, b = Tuple(1, 2)
     use(a)
     use(b)
 
-
-# A binder on a sibling rules out prefixing the whole target with 'var', so the
-# fresh element is told to declare itself separately instead.
-def tuple_sibling_ref(t: Tuple[Int, Int]):
-    # expected-warning @+1 {{implicit declaration of 'a' is deprecated; declare it with 'var' in the function body}}
-    a, ref b = t
-    use(a)
-    use(b)
-
-
-def tuple_sibling_var():
-    # expected-warning @+1 {{implicit declaration of 'a' is deprecated; declare it with 'var' in the function body}}
-    a, var b = Tuple(1, 2)
-    use(a)
-    use(b)
-
-
-# The spelling the warning above asks for, and the one the stdlib uses: a
-# separate declaration, then a plain assignment that binds the sibling.
-def tuple_sibling_ref_migrated(t: Tuple[Int, Int]):
-    var a: Int
-    a, ref b = t
-    use(a)
-    use(b)
-
-
-# With no binder anywhere in the target, a nested one still takes a single outer
-# 'var', so every name keeps the target message.
+# With no binder anywhere in the target, emission still stops at the first
+# unresolved name.
 def nested_tuple_target_no_binder():
-    # expected-warning @+3 {{implicit declaration of 'a' is deprecated; add 'var' before the assignment target}}
-    # expected-warning @+2 {{implicit declaration of 'b' is deprecated; add 'var' before the assignment target}}
-    # expected-warning @+1 {{implicit declaration of 'c' is deprecated; add 'var' before the assignment target}}
+    # expected-error @+1 {{implicit declaration of 'a' is not allowed; add 'var' to declare a new name}}
     (a, b), c = Tuple(Tuple(1, 2), 3)
     use(a)
+    # expected-error @+1 {{use of unknown declaration 'b'}}
     use(b)
+    # expected-error @+1 {{use of unknown declaration 'c'}}
     use(c)
 
 
 def nested_tuple_target_no_binder_migrated():
     var (a, b), c = Tuple(Tuple(1, 2), 3)
-    use(a)
-    use(b)
-    use(c)
-
-
-# The binder need not be a sibling of the diagnosed name: an outer 'var' has to
-# prefix the whole target, so a binder anywhere in it rules that spelling out for
-# every fresh name, at any depth.
-def nested_tuple_sibling_var():
-    # expected-warning @+2 {{implicit declaration of 'a' is deprecated; declare it with 'var' in the function body}}
-    # expected-warning @+1 {{implicit declaration of 'b' is deprecated; declare it with 'var' in the function body}}
-    (a, b), var c = Tuple(Tuple(1, 2), 3)
     use(a)
     use(b)
     use(c)
@@ -154,48 +117,14 @@ def nested_tuple_sibling_var():
 # the inner tuple never resolves and no `TupleDLValue` is formed.
 
 
-def nested_tuple_sibling_ref(t: Tuple[Tuple[Int, Int], Int]):
-    # expected-warning @+2 {{implicit declaration of 'a' is deprecated; declare it with 'var' in the function body}}
-    # expected-warning @+1 {{implicit declaration of 'b' is deprecated; declare it with 'var' in the function body}}
-    (a, b), ref c = t
-    use(a)
-    use(b)
-    use(c)
-
-
-def nested_tuple_sibling_deep():
-    # expected-warning @+3 {{implicit declaration of 'a' is deprecated; declare it with 'var' in the function body}}
-    # expected-warning @+2 {{implicit declaration of 'b' is deprecated; declare it with 'var' in the function body}}
-    # expected-warning @+1 {{implicit declaration of 'c' is deprecated; declare it with 'var' in the function body}}
-    ((a, b), c), var d = Tuple(Tuple(Tuple(1, 2), 3), 4)
-    use(a)
-    use(b)
-    use(c)
-    use(d)
-
-
-# Each target of a chain answers for itself, so the one without a binder still
-# takes the outer 'var'.
-def chain_tuple_sibling():
-    # expected-warning @+4 {{implicit declaration of 'a' is deprecated; declare it with 'var' in the function body}}
-    # expected-warning @+3 {{implicit declaration of 'b' is deprecated; declare it with 'var' in the function body}}
-    # expected-warning @+2 {{implicit declaration of 'p' is deprecated; add 'var' before the assignment target}}
-    # expected-warning @+1 {{implicit declaration of 'q' is deprecated; add 'var' before the assignment target}}
-    p, q = (a, b), var c = Tuple(Tuple(1, 2), 3)
-    use(a)
-    use(b)
-    use(c)
-    use(q)
-
-
 # TODO(KGEN-XXXX): the migrated form of the chain above belongs here; omitted
 # for the same arena leak.
 
 
 # Each target of a chain declares, and 'var' on each is a valid spelling.
 def chained():
-    # expected-warning @+2 {{implicit declaration of 'a' is deprecated; add 'var' before the name}}
-    # expected-warning @+1 {{implicit declaration of 'b' is deprecated; add 'var' before the name}}
+    # expected-error @+2 {{implicit declaration of 'a' is not allowed; add 'var' to declare a new name}}
+    # expected-error @+1 {{implicit declaration of 'b' is not allowed; add 'var' to declare a new name}}
     a = b = 1
     use(a)
     use(b)
@@ -207,17 +136,16 @@ def chained_migrated():
     use(b)
 
 
-# A chain of tuple targets has one 'var' per target, so the same message points
-# at two different targets in the one statement.
+# A chain of tuple targets diagnoses the first unresolved name in each target.
 def chain_tuple():
-    # expected-warning @+4 {{implicit declaration of 'a' is deprecated; add 'var' before the assignment target}}
-    # expected-warning @+3 {{implicit declaration of 'b' is deprecated; add 'var' before the assignment target}}
-    # expected-warning @+2 {{implicit declaration of 'c' is deprecated; add 'var' before the assignment target}}
-    # expected-warning @+1 {{implicit declaration of 'd' is deprecated; add 'var' before the assignment target}}
+    # expected-error @+2 {{implicit declaration of 'a' is not allowed; add 'var' to declare a new name}}
+    # expected-error @+1 {{implicit declaration of 'c' is not allowed; add 'var' to declare a new name}}
     a, b = c, d = Tuple(1, 2)
     use(a)
+    # expected-error @+1 {{use of unknown declaration 'b'}}
     use(b)
     use(c)
+    # expected-error @+1 {{use of unknown declaration 'd'}}
     use(d)
 
 
@@ -233,7 +161,7 @@ def chain_tuple_migrated():
 # 'ref' on a walrus target are being removed from the language, so neither is an
 # edit to ask for.
 def walrus_condition():
-    # expected-warning @+1 {{implicit declaration of 'x' is deprecated; declare it with 'var' in the function body}}
+    # expected-error @+1 {{use of unknown declaration 'x'}}
     if x := truthy():
         use_bool(x)
 
@@ -247,13 +175,6 @@ def walrus_condition_hoisted():
     use_bool(x)
 
 
-# A call argument is not a block of its own, so this one turns on the walrus
-# alone rather than on where it sits.
-def walrus_in_call():
-    # expected-warning @+1 {{implicit declaration of 'x' is deprecated; declare it with 'var' in the function body}}
-    use(x := 1)
-
-
 def walrus_in_call_hoisted():
     var x: Int
     use(x := 1)
@@ -261,14 +182,6 @@ def walrus_in_call_hoisted():
 
 # One 'var' covers a whole tuple target, but a walrus target takes none, so each
 # element hoists instead of naming the target.
-def walrus_tuple_target():
-    # expected-warning @+2 {{implicit declaration of 'a' is deprecated; declare it with 'var' in the function body}}
-    # expected-warning @+1 {{implicit declaration of 'b' is deprecated; declare it with 'var' in the function body}}
-    use(((a, b) := Tuple(1, 2))[0])
-    use(a)
-    use(b)
-
-
 def walrus_tuple_target_hoisted():
     var a: Int
     var b: Int
@@ -281,71 +194,43 @@ def walrus_tuple_target_hoisted():
 # name message and its fixit. The other order is not a shape to pin:
 # `a := b = 1` does not parse.
 def walrus_in_chain():
-    # expected-warning @+2 {{implicit declaration of 'c' is deprecated; declare it with 'var' in the function body}}
-    # expected-warning @+1 {{implicit declaration of 'd' is deprecated; add 'var' before the name}}
+    var c: Int
+    var d: Int
     d = c := 5
     use(c)
     use(d)
 
 
-# An assignment whose name resolves only to something immutable outside this
-# scope declares a local instead of assigning it.
-def shadow_module_level():
-    # expected-warning @+1 {{implicit declaration of 'one' is deprecated; add 'var' before the name}}
-    one = 2
-    use(one)
-
-
-# The shadowed declaration need not be at module level: an enclosing function's
-# immutable argument qualifies too.
-def shadow_enclosing_argument(p: Int):
-    def inner():
-        # expected-warning @+1 {{implicit declaration of 'p' is deprecated; add 'var' before the name}}
-        p = 2
-        use(p)
-
-    inner()
-
-
-def shadow_in_tuple_target():
-    # expected-warning @+2 {{implicit declaration of 'one' is deprecated; add 'var' before the assignment target}}
-    # expected-warning @+1 {{implicit declaration of 'x' is deprecated; add 'var' before the assignment target}}
-    one, x = Tuple(1, 2)
-    use(one)
-    use(x)
-
-
 # ===----------------------------------------------------------------------=== #
-# Sites inside a nested block, where 'var' in place would be scoped to the block
-# instead of to the function.
+# Sites inside a nested block still reject implicit declarations the same way.
 # ===----------------------------------------------------------------------=== #
 
 
 def nested_if(c: Bool):
-    # expected-warning @+2 {{implicit declaration of 'x' is deprecated; declare it with 'var' in the function body}}
+    # expected-error @+2 {{implicit declaration of 'x' is not allowed; add 'var' to declare a new name}}
     if c:
         x = 1
     use(1)
 
 
 def nested_loop(items: List[Int]):
-    # expected-warning @+2 {{implicit declaration of 'x' is deprecated; declare it with 'var' in the function body}}
+    # expected-error @+2 {{implicit declaration of 'x' is not allowed; add 'var' to declare a new name}}
     for i in items:
         x = i
     use(1)
 
 
 def nested_with(cm: ExampleCM):
-    # expected-warning @+2 {{implicit declaration of 'x' is deprecated; declare it with 'var' in the function body}}
+    # expected-error @+2 {{implicit declaration of 'x' is not allowed; add 'var' to declare a new name}}
     with cm as v:
         x = v
     use(1)
 
 
-# The declaration is function-scoped wherever it is written, so the second arm
-# assigns the same variable and the use after the statement sees it.
+# The first arm is diagnosed and registers the name, so the second arm and the
+# use after the statement resolve against it.
 def nested_both_arms(c: Bool):
-    # expected-warning @+2 {{implicit declaration of 'x' is deprecated; declare it with 'var' in the function body}}
+    # expected-error @+2 {{implicit declaration of 'x' is not allowed; add 'var' to declare a new name}}
     if c:
         x = 1
     else:
@@ -353,7 +238,7 @@ def nested_both_arms(c: Bool):
     use(x)
 
 
-# The hoisted form that message asks for.
+# Explicit declaration before the nested statement.
 def nested_hoisted(c: Bool):
     var x: Int
     if c:
@@ -363,42 +248,23 @@ def nested_hoisted(c: Bool):
     use(x)
 
 
-# Each name of a nested tuple target hoists on its own, so the hoist message
-# replaces the target message.
+# Nested tuple targets get the same message; emission stops at the first
+# unresolved name.
 def nested_tuple_target(c: Bool):
-    # expected-warning @+3 {{implicit declaration of 'a' is deprecated; declare it with 'var' in the function body}}
-    # expected-warning @+2 {{implicit declaration of 'b' is deprecated; declare it with 'var' in the function body}}
+    # expected-error @+2 {{implicit declaration of 'a' is not allowed; add 'var' to declare a new name}}
     if c:
         a, b = Tuple(1, 2)
     use(1)
 
 
-def nested_shadow(c: Bool):
-    # expected-warning @+2 {{implicit declaration of 'one' is deprecated; declare it with 'var' in the function body}}
-    if c:
-        one = 2
-    use(1)
-
-
 def nested_while(c: Bool):
-    # expected-warning @+2 {{implicit declaration of 'x' is deprecated; declare it with 'var' in the function body}}
+    # expected-error @+2 {{implicit declaration of 'x' is not allowed; add 'var' to declare a new name}}
     while c:
         x = 1
     use(1)
 
-
-def nested_try() raises:
-    # expected-warning @+2 {{implicit declaration of 'x' is deprecated; declare it with 'var' in the function body}}
-    try:
-        x = one()
-    # expected-warning @+2 {{implicit declaration of 'y' is deprecated; declare it with 'var' in the function body}}
-    except err:
-        y = 1
-    use(1)
-
-
 def nested_comptime_if():
-    # expected-warning @+2 {{implicit declaration of 'x' is deprecated; declare it with 'var' in the function body}}
+    # expected-error @+2 {{implicit declaration of 'x' is not allowed; add 'var' to declare a new name}}
     comptime if True:
         x = 1
     use(1)
@@ -407,20 +273,63 @@ def nested_comptime_if():
 def nested_for_else(items: List[Int]):
     for i in items:
         use(i)
-    # expected-warning @+2 {{implicit declaration of 'x' is deprecated; declare it with 'var' in the function body}}
+    # expected-error @+2 {{implicit declaration of 'x' is not allowed; add 'var' to declare a new name}}
     else:
         x = 1
     use(1)
 
 
-# A nested 'def' has its own function body, so its own top level is not nested.
+# A nested 'def' has its own function body; implicit decls there are rejected
+# the same way.
 def nested_def_body():
     def inner():
-        # expected-warning @+1 {{implicit declaration of 'x' is deprecated; add 'var' before the name}}
+        # expected-error @+1 {{implicit declaration of 'x' is not allowed; add 'var' to declare a new name}}
         x = 1
         use(x)
 
     inner()
+
+
+# Registration is on the enclosing function, so a nested 'def' resolves the name
+# through parent scope rather than reporting it again.
+def nested_def_reads_outer():
+    # expected-error @+1 {{implicit declaration of 'x' is not allowed; add 'var' to declare a new name}}
+    x = 1
+
+    def inner():
+        use(x)
+
+    inner()
+
+
+# A capture list resolves through a lookup of its own, so it is pinned too.
+def closure_reads_outer():
+    # expected-error @+1 {{implicit declaration of 'x' is not allowed; add 'var' to declare a new name}}
+    x = 1
+
+    def cl(z: Int) {imm x} -> Int:
+        return x + z
+
+    use(cl(1))
+
+
+# A lambda's capture list reaches that lookup by a different path.
+def lambda_capture_reads_outer():
+    # expected-error @+1 {{implicit declaration of 'x' is not allowed; add 'var' to declare a new name}}
+    x = 1
+
+    use((lambda (z: Int) {imm x} -> Int: x + z)(1))
+
+
+# Registration is per name, so a later 'var' of that name is a redefinition and
+# is reported as one.
+def redeclared_with_var():
+    # expected-error @+2 {{implicit declaration of 'x' is not allowed; add 'var' to declare a new name}}
+    # expected-note @+1 {{previous definition here}}
+    x = 1
+    # expected-error @+1 {{invalid redefinition of 'x'}}
+    var x = 2
+    use(x)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -428,43 +337,6 @@ def nested_def_body():
 # are reachable only by a walrus, and each also gets a block of its own, so both
 # rules point the same way there.
 # ===----------------------------------------------------------------------=== #
-
-
-def and_operand(c: Bool) -> Bool:
-    # expected-warning @+1 {{implicit declaration of 'x' is deprecated; declare it with 'var' in the function body}}
-    return c and (x := truthy())
-
-
-def or_operand(c: Bool) -> Bool:
-    # expected-warning @+1 {{implicit declaration of 'x' is deprecated; declare it with 'var' in the function body}}
-    return c or (x := truthy())
-
-
-def conditional_arms(c: Bool):
-    # expected-warning @+2 {{implicit declaration of 'x' is deprecated; declare it with 'var' in the function body}}
-    # expected-warning @+1 {{implicit declaration of 'y' is deprecated; declare it with 'var' in the function body}}
-    var v = (x := 1) if c else (y := 2)
-    use(v)
-
-
-def comprehension_walrus(items: List[Int]):
-    # expected-warning @+1 {{implicit declaration of 'x' is deprecated; declare it with 'var' in the function body}}
-    var doubled = [(x := i) for i in items]
-    use(doubled[0])
-
-
-# The hoisted form each of those messages asks for.
-def and_operand_hoisted(c: Bool) -> Bool:
-    var x: Bool
-    return c and (x := truthy())
-
-
-def conditional_arms_hoisted(c: Bool):
-    var x: Int
-    var y: Int
-    var v = (x := 1) if c else (y := 2)
-    use(v)
-
 
 def comprehension_walrus_hoisted(items: List[Int]):
     var x: Int

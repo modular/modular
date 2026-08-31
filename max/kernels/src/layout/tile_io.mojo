@@ -670,10 +670,10 @@ struct GenericToSharedAsyncTileCopier[
         # non-raising context, so mirror the old `TileTensor.ptr` accessor by
         # trapping any failure here.
         comptime dtype = src.dtype
-        var src_global_ptr: UnsafePointer[
+        var src_global_ptr: ImmPointer[
             Scalar[dtype], ImmutAnyOrigin, address_space=.GLOBAL
         ]
-        var dst_shared_ptr: UnsafePointer[
+        var dst_shared_ptr: MutPointer[
             Scalar[dtype], MutAnyOrigin, address_space=.SHARED
         ]
         try:

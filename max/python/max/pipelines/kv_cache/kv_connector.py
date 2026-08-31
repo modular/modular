@@ -33,7 +33,12 @@ class TransferDirection(str, Enum):
 
 @dataclass(frozen=True, slots=True)
 class BlockCount:
-    """A point-in-time snapshot of a block pool's occupancy."""
+    """A point-in-time snapshot of a block pool's occupancy.
+
+    Used for the device (G0) pools, whose blocks are the unit the manager
+    actually allocates in. The connector's external tiers report
+    :class:`ByteCount` instead.
+    """
 
     free: int
     total: int
@@ -55,6 +60,43 @@ class BlockCount:
     @property
     def free_pct(self) -> float:
         """Returns the percentage of blocks not currently in use, in ``[0, 100]``.
+
+        ``0`` when ``total`` is ``0``, rather than dividing by zero.
+        """
+        return 100 * self.free / self.total if self.total else 0.0
+
+
+@dataclass(frozen=True, slots=True)
+class ByteCount:
+    """A point-in-time snapshot of an external cache tier's occupancy, in bytes.
+
+    Bytes rather than blocks because a connector's host and disk tiers are
+    byte budgets that the operator sizes in bytes (``host_offload_max_gb``,
+    ``disk_offload_max_gb``), and because their block width need not match the
+    device's -- an MLA-replicated unit is stored once on the host and broadcast
+    back on load. Bytes also rate directly against PCIe and disk bandwidth.
+    """
+
+    free: int
+    total: int
+
+    @property
+    def used(self) -> int:
+        """Returns the bytes currently in use."""
+        return self.total - self.free
+
+    @property
+    def used_pct(self) -> float:
+        """Returns the percentage of bytes currently in use, in ``[0, 100]``.
+
+        ``0`` when ``total`` is ``0`` (e.g. a tier with no configured
+        capacity), rather than dividing by zero.
+        """
+        return 100 * self.used / self.total if self.total else 0.0
+
+    @property
+    def free_pct(self) -> float:
+        """Returns the percentage of bytes not currently in use, in ``[0, 100]``.
 
         ``0`` when ``total`` is ``0``, rather than dividing by zero.
         """
@@ -364,14 +406,14 @@ class KVConnector(Protocol):
 
     # Optional properties with default implementations
     @property
-    def host_block_count(self) -> BlockCount:
-        """Host block occupancy. Empty (0 of 0) if not applicable."""
-        return BlockCount(free=0, total=0)
+    def host_byte_count(self) -> ByteCount:
+        """Host tier occupancy in bytes. Empty (0 of 0) if not applicable."""
+        return ByteCount(free=0, total=0)
 
     @property
-    def disk_block_count(self) -> BlockCount:
-        """Disk block occupancy. Empty (0 of 0) if not applicable."""
-        return BlockCount(free=0, total=0)
+    def disk_byte_count(self) -> ByteCount:
+        """Disk tier occupancy in bytes. Empty (0 of 0) if not applicable."""
+        return ByteCount(free=0, total=0)
 
     def reset_prefix_cache(self) -> None:
         """Reset prefix cache. No-op by default."""

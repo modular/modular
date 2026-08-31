@@ -431,11 +431,11 @@ class Qwen3_5Attention(Module, Shardable):
         key = ops.concat([k_pass, k_rope_interleaved], axis=-1)
 
         if self.kv_params.is_fp8_kv_dtype:
-            # `store_k_cache_ragged` and `store_v_cache_ragged` are monomorphic
-            # on the cache dtype, so they cannot write bf16-computed K/V into an
-            # FP8 `kv_blocks`. The fused rope+store converts at store time. Q is
-            # emitted in the cache dtype so flash attention's
-            # `input.dtype == kv_params.dtype` guard passes.
+            # The bf16 branch below stores raw K and ropes it in place inside
+            # the cache, which on FP8 would round twice around the rope. The
+            # fused rope+store ropes in registers and casts once, so it is the
+            # right topology here with or without M-RoPE position ids. Q is
+            # emitted in the cache dtype for flash attention's dtype guard.
             qkv = ops.concat(
                 (
                     ops.reshape(query, [total_seq_len, -1]),
@@ -444,17 +444,6 @@ class Qwen3_5Attention(Module, Shardable):
                 ),
                 axis=-1,
             )
-            if freq_row_ids is not None:
-                # `mo.rope_split_store.ragged.paged.with_position_id` ties its
-                # Q output and cache blocks to the QKV dtype, so it cannot
-                # take the BF16-in/FP8-out shape this branch needs.
-                raise NotImplementedError(
-                    "Qwen3.5 M-RoPE is not supported with an FP8 KV cache: "
-                    "the position-id variant of rope_split_store is "
-                    "monomorphic in dtype. Serve images with a bfloat16 KV "
-                    "cache until it takes independent Q-output and cache "
-                    "dtypes like `mo.rope_split_store.ragged.paged` does."
-                )
             query = rope_split_store_ragged(
                 kv_params=self.kv_params,
                 qkv=qkv,
@@ -464,6 +453,7 @@ class Qwen3_5Attention(Module, Shardable):
                 layer_idx=layer_idx,
                 n_heads=self.n_heads,
                 interleaved=self.rope.interleaved,
+                position_ids=freq_row_ids,
                 q_out_dtype=self.kv_params.dtype,
             )
             query = ops.reshape(

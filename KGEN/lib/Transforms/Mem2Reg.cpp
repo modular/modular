@@ -21,6 +21,8 @@
 #include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
 #include "mlir/IR/PatternMatch.h"
 #include "mlir/Pass/Pass.h"
+#include "llvm/ADT/ScopedHashTable.h"
+#include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/TypeSwitch.h"
 
 using namespace M;
@@ -49,7 +51,7 @@ using NodeVariantMap = DenseMap<Operation *, SmallVector<StackAllocationOp>>;
 
 /// Return the pointer element type of an allocation.
 static Type getAllocType(StackAllocationOp alloc) {
-  return cast<PointerType>(alloc.getType()).getElementType();
+  return alloc.getType().getElementType();
 }
 
 /// We can promote a stack allocation if all its uses are as the pointer to
@@ -64,8 +66,7 @@ static Type getAllocType(StackAllocationOp alloc) {
 static bool canPromote(StackAllocationOp alloc, NodeVariantMap &nodeVariants) {
   // Only committed to `nodeVariants` once the allocation is known to be
   // promotable, since the checks below bail out on the first bad user.
-  SmallVector<Operation *> variantNodes;
-  SmallPtrSet<Operation *, 8> seenNodes;
+  llvm::SmallSetVector<Operation *, 8> variantNodes;
   SmallVector<Operation *> enclosingNodes;
 
   for (Operation *user : alloc->getUsers()) {
@@ -89,10 +90,7 @@ static bool canPromote(StackAllocationOp alloc, NodeVariantMap &nodeVariants) {
     if (userCrossesFunctionCFG(alloc, store, &enclosingNodes))
       return false;
     // Several stores can share an enclosing node; record each node once.
-    for (Operation *node : enclosingNodes) {
-      if (seenNodes.insert(node).second)
-        variantNodes.push_back(node);
-    }
+    variantNodes.insert_range(enclosingNodes);
   }
 
   for (Operation *node : variantNodes)
@@ -124,6 +122,13 @@ struct PromotedStackAlloc {
     DebugInfo::DIExprAttr conversionExpr;
   };
   DenseMap<DebugInfo::DISubprogramAttr, DebugValue> debugValues;
+
+  /// The scope this binding belongs to. A binding inherited from an enclosing
+  /// region has to be shadowed before it is mutated, rather than updated in
+  /// place; see `PromotionState::forWrite`. This is purely an optimization, we
+  /// could always insert a new binding, but that incurs additional allocations.
+  llvm::ScopedHashTableScope<StackAllocationOp, PromotedStackAlloc> *owner =
+      nullptr;
 
   /// Get the current value of this promoted stack allocation. If none exist
   /// yet, create an undef with the same type and return that.
@@ -243,16 +248,116 @@ private:
         loc, DebugInfo::LocWalkPolicy::CalleePriority);
   }
 };
+/// The promoted stack allocations visible at the current point of the walk,
+/// along with their current values.
+///
+/// Each region opens a `Scope`, so a region inherits the values of the
+/// allocations around it without copying them, and the bindings it adds
+/// disappear when it closes.
+class PromotionState {
+  using Table = llvm::ScopedHashTable<StackAllocationOp, PromotedStackAlloc>;
+
+public:
+  /// Opens the state scope covering the walk of one region.
+  ///
+  /// The table cannot enumerate its keys, so the allocations promoted inside
+  /// the region are also pushed onto a stack. Scopes close in reverse order of
+  /// opening, which makes the entries above this scope's watermark exactly the
+  /// allocations it promoted.
+  class Scope {
+  public:
+    explicit Scope(PromotionState &state)
+        : scope(state.table), state(state), watermark(state.promoted.size()) {}
+    ~Scope() { state.promoted.truncate(watermark); }
+
+    Scope(const Scope &) = delete;
+    Scope &operator=(const Scope &) = delete;
+
+    /// The allocations promoted within this scope.
+    ArrayRef<StackAllocationOp> promotedAllocs() const {
+      return ArrayRef<StackAllocationOp>(state.promoted).drop_front(watermark);
+    }
+
+  private:
+    Table::ScopeTy scope;
+    PromotionState &state;
+    size_t watermark;
+  };
+
+  /// Return true if `alloc` has been promoted and is visible here.
+  bool contains(StackAllocationOp alloc) const { return table.count(alloc); }
+
+  /// Start tracking `alloc`, whose value is initially undefined.
+  void promote(StackAllocationOp alloc) {
+    insertOwned(alloc, PromotedStackAlloc());
+    promoted.push_back(alloc);
+  }
+
+  /// Bind `alloc` to a value that only holds within the current scope, carrying
+  /// over the debug values it has in the enclosing one.
+  void bind(StackAllocationOp alloc, Value value) {
+    PromotedStackAlloc bound;
+    bound.currValue = value;
+    bound.debugValues = find(alloc)->debugValues;
+    insertOwned(alloc, bound);
+  }
+
+  /// Return the current value of `alloc`, materializing an undef if it does not
+  /// have one yet.
+  Value currValueOrUndef(StackAllocationOp alloc, Operation *user) {
+    PromotedStackAlloc *entry = find(alloc);
+    assert(entry && "expected the allocation to be promoted");
+    // Reading an allocation that already has a value leaves the state alone, so
+    // it does not need a binding of its own.
+    if (LLVM_LIKELY(entry->currValue))
+      return entry->currValue;
+    return forWrite(alloc).getCurrValueOrUndef(alloc, user);
+  }
+
+  /// Return a binding of `alloc` that can be mutated, shadowing the one it was
+  /// read from with a copy in the current scope.
+  ///
+  /// Mutations must not escape the region being walked: the undef constants and
+  /// debug values they materialize are placed inside that region, so an
+  /// enclosing region that picked them up would reference values that do not
+  /// reach it. Shadowing leaves the enclosing region's value to be restored
+  /// when the scope closes.
+  PromotedStackAlloc &forWrite(StackAllocationOp alloc) {
+    PromotedStackAlloc *entry = find(alloc);
+    assert(entry && "expected the allocation to be promoted");
+    // A binding this scope already owns can be mutated in place, which keeps
+    // repeated writes to one allocation from each costing a binding.
+    if (entry->owner == table.getCurScope())
+      return *entry;
+    return insertOwned(alloc, *entry);
+  }
+
+private:
+  /// Return the innermost binding of `alloc`, or null if it is not promoted.
+  PromotedStackAlloc *find(StackAllocationOp alloc) {
+    Table::iterator it = table.begin(alloc);
+    return it == table.end() ? nullptr : &*it;
+  }
+
+  /// Add a binding for `alloc` owned by the current scope, and return it.
+  PromotedStackAlloc &insertOwned(StackAllocationOp alloc,
+                                  PromotedStackAlloc value) {
+    value.owner = table.getCurScope();
+    table.insert(alloc, value);
+    return *find(alloc);
+  }
+
+  Table table;
+  SmallVector<StackAllocationOp> promoted;
+};
 } // namespace
 
-static LogicalResult
-processRegion(Region &region, const HLCF::CFGAnalysis &cfg,
-              llvm::MapVector<StackAllocationOp, PromotedStackAlloc> &state,
-              DenseMap<HLCF::ControlFlowTerminator, ArrayRef<StackAllocationOp>>
-                  &termVariants,
-              NodeVariantMap &nodeVariants,
-              DebugInfo::DIExprLeafReplacer &exprLeafReplacer,
-              PassStats &stats) {
+static LogicalResult processRegion(
+    Region &region, const HLCF::CFGAnalysis &cfg, PromotionState &state,
+    DenseMap<HLCF::ControlFlowTerminator, ArrayRef<StackAllocationOp>>
+        &termVariants,
+    NodeVariantMap &nodeVariants,
+    DebugInfo::DIExprLeafReplacer &exprLeafReplacer, PassStats &stats) {
   if (region.empty())
     return success();
   // This analysis only works on single-block regions.
@@ -267,7 +372,7 @@ processRegion(Region &region, const HLCF::CFGAnalysis &cfg,
       // If we can promote this stack allocation, initialize its state with an
       // undefined value.
       if (canPromote(alloc, nodeVariants))
-        state.try_emplace(alloc);
+        state.promote(alloc);
       continue;
     }
     if (auto load = dyn_cast<LoadOp>(op)) {
@@ -276,8 +381,8 @@ processRegion(Region &region, const HLCF::CFGAnalysis &cfg,
       // If we can elide this load, replace the result of the load with the last
       // value of the stack allocation.
       if (auto alloc = load.getPtr().getDefiningOp<StackAllocationOp>()) {
-        if (auto it = state.find(alloc); it != state.end()) {
-          load.replaceAllUsesWith(it->second.getCurrValueOrUndef(alloc, load));
+        if (state.contains(alloc)) {
+          load.replaceAllUsesWith(state.currValueOrUndef(alloc, load));
           load.erase();
           ++stats.numLoadsElided;
         }
@@ -287,9 +392,9 @@ processRegion(Region &region, const HLCF::CFGAnalysis &cfg,
     if (auto value = dyn_cast<DebugInfo::ValueOp>(op)) {
       // Delete stale debuginfo for the old stack allocation op.
       if (auto alloc = value.getValue().getDefiningOp<StackAllocationOp>()) {
-        if (auto it = state.find(alloc); it != state.end()) {
-          auto newValue =
-              it->second.registerDebugValue(alloc, value, exprLeafReplacer);
+        if (state.contains(alloc)) {
+          auto newValue = state.forWrite(alloc).registerDebugValue(
+              alloc, value, exprLeafReplacer);
           if (failed(newValue))
             return value.emitError() << newValue.getError();
           value.erase();
@@ -310,8 +415,8 @@ processRegion(Region &region, const HLCF::CFGAnalysis &cfg,
       // If we can elide this store, capture the last written value and erase
       // the operation.
       if (auto alloc = store.getPtr().getDefiningOp<StackAllocationOp>()) {
-        if (auto it = state.find(alloc); it != state.end()) {
-          it->second.updateValue(store, store.getArg());
+        if (state.contains(alloc)) {
+          state.forWrite(alloc).updateValue(store, store.getArg());
           store.erase();
           ++stats.numStoresElided;
         }
@@ -326,8 +431,7 @@ processRegion(Region &region, const HLCF::CFGAnalysis &cfg,
       // Bind the last values to the operands.
       SmallVector<Value> newOperands;
       for (StackAllocationOp alloc : it->second) {
-        newOperands.push_back(
-            state.find(alloc)->second.getCurrValueOrUndef(alloc, &op));
+        newOperands.push_back(state.currValueOrUndef(alloc, &op));
       }
       term.insertVariants(newOperands);
       continue;
@@ -394,45 +498,50 @@ processRegion(Region &region, const HLCF::CFGAnalysis &cfg,
     // and variant allocations, introduce block arguments.
     bool parentHasInit = false;
     for (Region &region : op.getRegions()) {
-      // Copy the current state.
-      llvm::MapVector<StackAllocationOp, PromotedStackAlloc> nestedState =
-          state;
+      // Determine if there are any region predecessors.
+      bool hasRegionPreds =
+          !variant.empty() && regionPreds[region.getRegionNumber()];
 
-      if (!variant.empty()) {
-        // Determine if there are any region predecessors.
-        if (regionPreds[region.getRegionNumber()]) {
-          for (auto [i, alloc] : llvm::enumerate(variant)) {
-            Type allocType = getAllocType(alloc);
-            // Bind the block argument to the value of the variant allocation.
-            nestedState[alloc] = {
-                node.insertArgumentToRegion(op.getLoc(), allocType, i, region),
-                state.find(alloc)->second.debugValues};
+      // These operations mutate the node itself, so they run before the
+      // region's scope opens: the initializer values are materialized in the
+      // enclosing region and have to bind to its state, not the region's.
+      SmallVector<Value> blockArgs;
+      if (hasRegionPreds) {
+        for (auto [i, alloc] : llvm::enumerate(variant)) {
+          Type allocType = getAllocType(alloc);
+          blockArgs.push_back(
+              node.insertArgumentToRegion(op.getLoc(), allocType, i, region));
+        }
+        // If one of the predecessors is the parent operation, we need to
+        // add initializer operands to it if this hasn't already been done.
+        if (!parentHasInit && parentPred[region.getRegionNumber()]) {
+          parentHasInit = true;
+          SmallVector<Value> initOperands;
+          for (StackAllocationOp alloc : variant) {
+            initOperands.push_back(state.currValueOrUndef(alloc, &op));
           }
-          // If one of the predecessors is the parent operation, we need to
-          // add initializer operands to it if this hasn't already been done.
-          if (!parentHasInit && parentPred[region.getRegionNumber()]) {
-            parentHasInit = true;
-            SmallVector<Value> initOperands;
-            for (StackAllocationOp alloc : variant) {
-              initOperands.push_back(
-                  state.find(alloc)->second.getCurrValueOrUndef(alloc, &op));
-            }
 
-            node.insertVariants(initOperands);
-          }
+          node.insertVariants(initOperands);
         }
       }
+
+      PromotionState::Scope regionScope(state);
+
+      // Bind the block arguments to the values of the variant allocations.
+      if (hasRegionPreds) {
+        for (auto [alloc, blockArg] : llvm::zip(variant, blockArgs))
+          state.bind(alloc, blockArg);
+      }
+
       // Okay, now recurse into the region.
-      if (failed(processRegion(region, cfg, nestedState, termVariants,
-                               nodeVariants, exprLeafReplacer, stats)))
+      if (failed(processRegion(region, cfg, state, termVariants, nodeVariants,
+                               exprLeafReplacer, stats)))
         return failure();
 
       // Erase elided allocations in the nested region.
-      for (StackAllocationOp alloc : llvm::make_first_range(nestedState)) {
-        if (!state.contains(alloc)) {
-          alloc.erase();
-          ++stats.numAllocsElided;
-        }
+      for (StackAllocationOp alloc : regionScope.promotedAllocs()) {
+        alloc.erase();
+        ++stats.numAllocsElided;
       }
     }
 
@@ -447,9 +556,10 @@ processRegion(Region &region, const HLCF::CFGAnalysis &cfg,
       SmallVector<Type> newTypes = llvm::to_vector(op.getResultTypes());
       for (StackAllocationOp alloc : variant)
         newTypes.push_back(getAllocType(alloc));
-      Operation *newOp = Operation::create(
-          op.getLoc(), op.getName(), newTypes, op.getOperands(),
-          op.getAttrDictionary(), mlir::PropertyRef{}, {}, op.getNumRegions());
+      Operation *newOp =
+          Operation::create(op.getLoc(), op.getName(), newTypes,
+                            op.getOperands(), op.getDiscardableAttrDictionary(),
+                            op.getPropertiesStorage(), {}, op.getNumRegions());
       OpBuilder(&op).insert(newOp);
       for (unsigned i = 0, e = op.getNumRegions(); i != e; ++i)
         newOp->getRegion(i).takeBody(op.getRegion(i));
@@ -458,7 +568,7 @@ processRegion(Region &region, const HLCF::CFGAnalysis &cfg,
         // Update currValue without creating a new debug value, since the
         // mutator inside the nested scope will have noted when the value was
         // updated.
-        state.find(alloc)->second.currValue = newOp->getResult(iterStart + i);
+        state.forWrite(alloc).currValue = newOp->getResult(iterStart + i);
       }
       op.replaceAllUsesWith(newOp->getResults().slice(0, iterStart));
       op.erase();
@@ -477,21 +587,22 @@ struct Mem2RegPass : public M::KGEN::impl::Mem2RegBase<Mem2RegPass> {
 void Mem2RegPass::runOnOperation() {
   auto &cfg = getAnalysis<HLCF::CFGAnalysis>();
   PassStats stats;
-  llvm::MapVector<StackAllocationOp, PromotedStackAlloc> entryState;
+  PromotionState state;
   DenseMap<HLCF::ControlFlowTerminator, ArrayRef<StackAllocationOp>>
       termVariants;
   NodeVariantMap nodeVariants;
   for (Region &region : getOperation()->getRegions()) {
     // Reuse the same memory for the maps each time.
-    entryState.clear();
     termVariants.clear();
     nodeVariants.clear();
     DebugInfo::DIExprLeafReplacer exprLeafReplacer(mem2RegLeafConversion);
-    if (failed(processRegion(region, cfg, entryState, termVariants,
-                             nodeVariants, exprLeafReplacer, stats)))
+    // The scope has to close before the state is reused for the next region.
+    PromotionState::Scope entryScope(state);
+    if (failed(processRegion(region, cfg, state, termVariants, nodeVariants,
+                             exprLeafReplacer, stats)))
       return signalPassFailure();
     // Erase elided allocations.
-    for (StackAllocationOp alloc : llvm::make_first_range(entryState)) {
+    for (StackAllocationOp alloc : entryScope.promotedAllocs()) {
       alloc.erase();
       ++stats.numAllocsElided;
     }

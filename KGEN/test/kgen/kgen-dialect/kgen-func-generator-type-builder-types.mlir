@@ -13,8 +13,7 @@
   #kgen.param_list<> : !kgen.param_list<!kgen.type>,
   #kgen.param_list<#kgen.quote<!lit.ref<index, imm #lit.implicit.origin.ref<0, 0>>>> : !kgen.param_list<!kgen.type>,
   #kgen.quote<#kgen.type<index>>,
-  #kgen.fn_metadata<[imm, imm], "throws", #lit.fn_meta_origin_data<1>>,
-  #kgen.param_list<> : !kgen.param_list<!kgen.string>>
+  #kgen.fn_metadata<[imm, imm], "throws", #lit.fn_meta_origin_data<1>>>
 
 // The argument and result types reference the declared parameters by frozen
 // index reference, which the fold rewrites into index references of the
@@ -25,8 +24,7 @@
   #kgen.param_list<#kgen.quote<#kgen.type<!kgen.type>>, #kgen.quote<#kgen.type<!kgen.type>>> : !kgen.param_list<!kgen.type>,
   #kgen.param_list<#kgen.quote<*(0,0)>, #kgen.quote<*(0,1)>> : !kgen.param_list<!kgen.type>,
   #kgen.quote<*(0,0)>,
-  #kgen.fn_metadata<[imm, imm], "none">,
-  #kgen.param_list<> : !kgen.param_list<!kgen.string>>
+  #kgen.fn_metadata<[imm, imm], "none">>
 
 // A parameter may be declared in terms of a parameter declared before it.
 // CHECK-LABEL: "func_gen_type_builder.dependent_param"
@@ -35,8 +33,7 @@
   #kgen.param_list<#kgen.quote<#kgen.type<!kgen.type>>, #kgen.quote<*(0,0)>> : !kgen.param_list<!kgen.type>,
   #kgen.param_list<#kgen.quote<*(0,0)>> : !kgen.param_list<!kgen.type>,
   #kgen.quote<*(0,0)>,
-  #kgen.fn_metadata<[imm], "none">,
-  #kgen.param_list<> : !kgen.param_list<!kgen.string>>
+  #kgen.fn_metadata<[imm], "none">>
 
 // Every component is a parameter expression, so a builder that is still
 // symbolic survives until elaboration.
@@ -46,5 +43,4 @@
   #kgen.param.decl.ref<"Ps"> : !kgen.param_list<!kgen.type>,
   #kgen.param.decl.ref<"Ts"> : !kgen.param_list<!kgen.type>,
   #kgen.param.decl.ref<"R"> : !kgen.type,
-  #kgen.fn_metadata<[imm, mut], "throws">,
-  #kgen.param_list<> : !kgen.param_list<!kgen.string>>
+  #kgen.fn_metadata<[imm, mut], "throws">>

@@ -245,20 +245,7 @@ td_library(
 mlir_nanobind(
     name = "KGENDialectNanobindInc",
     srcs = glob(["include/KGEN/KGENDialect/*.td"]),
-    exclude = [
-        # BytecodeOpInterface uses internally defined payload types
-        "KGEN_ParamConstantOp",
-        # Uses `Res<AnyType, " ", [MemAlloc]>` which isn't implemented
-        "KGEN_ParamMaterializeOp",
-        "KGEN_NoneAttr",  # Can't bind NoneAttr::get for some reason
-        "KGEN_CallOp",  # Can't bind CallOp::setCalleeAttr for some reason
-        # These classes use internally defined evaluation context type
-        "ContextuallyEvaluatedAttrInterface",
-        "ContextuallyEvaluatedTypeInterface",
-        "DeclRefAttrInterface",
-        "StructTypeInterface",
-        "KGEN_BindParamsAttr",
-    ],
+    allowlist = "//max/python/max/_core/internal/modules/dialects:allowlist.txt",
     output_dir = "include/KGEN/KGENDialect/Nanobind",
     deps = [
         ":KGENDialectTdFiles",
@@ -540,7 +527,6 @@ modular_cc_library(
         ":HLCFInterfacesIncGen",
         ":Interpreter",
         ":KGENDialect.headers",
-        ":POPDialect.headers",
         "//Support:ADT",
         "//Support:Base",
         "//Support:Compiler",
@@ -844,20 +830,6 @@ modular_cc_library(
         ":KGENInterfacesIncGen",
         ":KGENTypeInterfacesIncGen",
         ":ToolCommon.headers",
-    ],
-)
-
-modular_cc_library(
-    name = "POPDialect.headers",
-    hdrs = glob(["include/KGEN/POPDialect/*.h"]),
-    tags = ["no-clang-tidy-headers"],
-    visibility = ["//visibility:private"],
-    deps = [
-        ":Interpreter",
-        ":KGENDialect.headers",
-        ":POPAttrsIncGen",
-        ":POPDialectIncGen",
-        ":POPEnumsIncGen",
     ],
 )
 

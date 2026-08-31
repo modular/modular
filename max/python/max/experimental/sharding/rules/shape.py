@@ -523,7 +523,7 @@ def reshape_rule(x: TensorLayout, shape: Any) -> ActionSet:
             rows.append(
                 AxisAssignment(
                     (p,),
-                    Sharded(landings[k], even=p.even),
+                    Sharded(landings[k]),
                 )
             )
             continue
@@ -532,14 +532,12 @@ def reshape_rule(x: TensorLayout, shape: Any) -> ActionSet:
         # so the picker cannot guess a wrong target axis.
         route = _structural_split_route(k, x, new_shape)
         if route is not None:
-            rows.append(AxisAssignment((p,), Sharded(route, even=p.even)))
+            rows.append(AxisAssignment((p,), Sharded(route)))
             continue
         # ``-1`` shorthand: unique sharded source + unique ``-1`` in
         # target ⇒ land on the ``-1`` slot.
         if len(minus_one_axes) == 1 and len(sharded_src_axes) == 1:
-            rows.append(
-                AxisAssignment((p,), Sharded(minus_one_axes[0], even=p.even))
-            )
+            rows.append(AxisAssignment((p,), Sharded(minus_one_axes[0])))
     rows.append(AxisAssignment((P,), P))
     return build_action_set(
         rows,

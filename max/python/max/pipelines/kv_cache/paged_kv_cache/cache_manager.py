@@ -46,6 +46,7 @@ from max.nn.kv_cache.utils import build_max_lengths_tensors
 from max.pipelines.context import TextContext
 from max.pipelines.kv_cache.kv_connector import (
     BlockCount,
+    ByteCount,
     KVConnector,
     KVConnectorTransfer,
 )
@@ -841,13 +842,13 @@ class PagedKVCacheManager(PagedKVCacheManagerInterface):
         """Returns block IDs the request holds on the replica it was claimed on."""
         return self._block_manager.get_req_blocks(ctx)
 
-    def host_block_count(self, replica_idx: int = 0) -> BlockCount:
-        """Returns the host KV cache block occupancy for the given replica."""
-        return self._replica[replica_idx].connector.host_block_count
+    def host_byte_count(self, replica_idx: int = 0) -> ByteCount:
+        """Returns the host KV tier occupancy in bytes for the given replica."""
+        return self._replica[replica_idx].connector.host_byte_count
 
-    def disk_block_count(self, replica_idx: int = 0) -> BlockCount:
-        """Returns the disk KV cache block occupancy for the given replica."""
-        return self._replica[replica_idx].connector.disk_block_count
+    def disk_byte_count(self, replica_idx: int = 0) -> ByteCount:
+        """Returns the disk KV tier occupancy in bytes for the given replica."""
+        return self._replica[replica_idx].connector.disk_byte_count
 
     def get_device_buffer(self, replica_idx: int) -> KVCacheBufferInterface:
         """Returns the replica's KV buffer (single leaf or tree).

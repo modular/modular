@@ -237,7 +237,7 @@ def main() raises:
             swapAB=False,
         ](ctx, Int(64), Idx[128], Idx[128])
 
-        # transpose_c=True: `if top_row >= self.N or bot_row >= self.N: return` branch.
+        # transpose_c=True: the per-row `top_row`/`bot_row` bound checks.
         test_partial_n_tile_compute_epilogue[
             dtype,
             dtype,

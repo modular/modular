@@ -44,7 +44,8 @@ class KGENOp<string mnemonic, list<Trait> traits = []> :
 //===----------------------------------------------------------------------===//
 
 def KGEN_FuncOp : KGENOp<"func", [
-    HasParent<"ModuleOp">, FunctionOpInterface, Symbol, IsolatedFromAbove,
+    HasParent<"ModuleOp">, FunctionOpInterface, SymbolName, SymbolVisibility,
+    Symbol, IsolatedFromAbove,
     SingleBlock, DeclInterface, FuncInterface, FunctionLike, ExportInterface,
     KGEN_InstantiatedOpInterface]> {
   let summary = "Concrete function definition.";
@@ -88,6 +89,7 @@ def KGEN_FuncOp : KGENOp<"func", [
 
   let arguments = (ins
     SymbolNameAttr:$sym_name,
+    OptionalAttr<StrAttr>:$sym_visibility,
     TypeAttrOf<KGEN_FuncTypeGeneratorType>:$funcTypeGenerator,
     KGEN_DecoratorsAttr:$decorators,
     KGEN_InlineLevelAttr:$inlineLevel,
@@ -143,7 +145,8 @@ def KGEN_FuncOp : KGENOp<"func", [
       if (!llvmArgMetadata)
         llvmArgMetadata = ArrayAttr::get(name.getContext(), {});
       auto sigGen = GeneratorType::get(/*inputParamTypes=*/{}, type);
-      build($_builder, $_state, name, sigGen, decorators, inlineLevel,
+      build($_builder, $_state, name, /*sym_visibility=*/nullptr, sigGen,
+            decorators, inlineLevel,
             exportKind, external, convergent, llvmMetadata, llvmArgMetadata,
             /*crossDeviceCaptures=*/{}, /*coroutineType=*/{}, linkageName);
     }]>,
@@ -157,7 +160,8 @@ def KGEN_FuncOp : KGENOp<"func", [
 //===----------------------------------------------------------------------===//
 
 def KGEN_GeneratorOp : KGENOp<"generator", [
-    HasParent<"ModuleOp">, FunctionOpInterface, Symbol, IsolatedFromAbove,
+    HasParent<"ModuleOp">, FunctionOpInterface, SymbolName, SymbolVisibility,
+    Symbol, IsolatedFromAbove,
     SingleBlock, DeclInterface, FuncInterface, FunctionLike, ExportInterface,
     KGEN_GeneratorOpInterface]> {
   let summary = "Function generator definition.";
@@ -183,6 +187,7 @@ def KGEN_GeneratorOp : KGENOp<"generator", [
 
   let arguments = (ins
     SymbolNameAttr:$sym_name,
+    OptionalAttr<StrAttr>:$sym_visibility,
     OptionalAttr<StrAttr>:$sourceName,
     TypeAttrOf<KGEN_FuncTypeGeneratorType>:$funcTypeGenerator,
     TypeAttrOf<FunctionType>:$functionType,
@@ -264,7 +269,8 @@ def KGEN_GeneratorOp : KGENOp<"generator", [
       if (!llvmArgMetadataArray)
         llvmArgMetadataArray = ArrayAttr::get(symName.getContext(), {});
       build($_builder, $_state,
-            symName, sourceName, type, functionType, inputParams,
+            symName, /*sym_visibility=*/nullptr, sourceName, type,
+            functionType, inputParams,
             /*decorators=*/{}, inlineLevel, ExportKind::NotExported,
             /*external=*/false, inlinedForm, linkageNameAttr, llvmMetadataArray,
             llvmArgMetadataArray, /*sourceParamList=*/PogListAttr(),
@@ -283,7 +289,8 @@ def KGEN_GeneratorOp : KGENOp<"generator", [
 //===----------------------------------------------------------------------===//
 
 def KGEN_ExternGeneratorOp : KGENOp<"extern.generator", [
-    HasParent<"ModuleOp">, Symbol, DeclInterface, FuncInterface,
+    HasParent<"ModuleOp">, SymbolName, SymbolVisibility, Symbol, DeclInterface,
+    FuncInterface,
     ExportInterface, DeclareOpInterfaceMethods<FunctionOpInterface>]> {
   let summary = "External generator declaration.";
   let description = [{
@@ -302,6 +309,7 @@ def KGEN_ExternGeneratorOp : KGENOp<"extern.generator", [
 
   let arguments = (ins
     SymbolNameAttr:$sym_name,
+    OptionalAttr<StrAttr>:$sym_visibility,
     TypeAttrOf<KGEN_FuncTypeGeneratorType>:$funcTypeGenerator,
     TypeAttrOf<FunctionType>:$functionType,
     KGEN_ParamDeclArrayAttr:$inputParams,
@@ -332,7 +340,7 @@ def KGEN_ExternGeneratorOp : KGENOp<"extern.generator", [
 // StructGeneratorOp
 //===----------------------------------------------------------------------===//
 
-def KGEN_StructGeneratorOp : KGENOp<"struct.generator", [Symbol, SymbolTable, DeclInterface, SingleBlock,
+def KGEN_StructGeneratorOp : KGENOp<"struct.generator", [SymbolName, SymbolVisibility, Symbol, SymbolTable, DeclInterface, SingleBlock,
     NoTerminator, KGEN_GeneratorOpInterface,
     DeclareOpInterfaceMethods<ExportInterface>,
     DeclareOpInterfaceMethods<StructDeclInterface>]> {
@@ -353,6 +361,7 @@ def KGEN_StructGeneratorOp : KGENOp<"struct.generator", [Symbol, SymbolTable, De
   }];
 
   let arguments = (ins SymbolNameAttr:$sym_name,
+                       OptionalAttr<StrAttr>:$sym_visibility,
                        KGEN_ParamDeclArrayAttr:$inputParams,
                        TypeAttr:$valueDomainType,
                        TypeAttr:$metaType);
@@ -371,7 +380,8 @@ def KGEN_StructGeneratorOp : KGENOp<"struct.generator", [Symbol, SymbolTable, De
 //===----------------------------------------------------------------------===//
 
 def KGEN_StructInstanceOp : KGENOp<"struct.instance", [
-    HasParent<"ModuleOp">, Symbol, SymbolTable, SingleBlock, NoTerminator,
+    HasParent<"ModuleOp">, SymbolName, SymbolVisibility, Symbol, SymbolTable,
+    SingleBlock, NoTerminator,
     KGEN_InstantiatedOpInterface]> {
   let summary = "Concretized struct instance.";
   let description = [{
@@ -390,6 +400,7 @@ def KGEN_StructInstanceOp : KGENOp<"struct.instance", [
   }];
 
   let arguments = (ins SymbolNameAttr:$sym_name,
+                       OptionalAttr<StrAttr>:$sym_visibility,
                        TypeAttr:$valueDomainType,
                        TypeAttr:$metaType);
   let regions = (region SizedRegion<1>:$body);
@@ -505,7 +516,7 @@ def KGEN_ConformanceOp : KGENOp<"conformance", [
 //===----------------------------------------------------------------------===//
 
 def KGEN_WitnessOp : KGENOp<"witness", [
-    Symbol, HasParent<"ConformanceOp">]> {
+    SymbolName, SymbolVisibility, Symbol, HasParent<"ConformanceOp">]> {
   let summary = "Witness table entry of a struct type.";
   let description = [{
     The `kgen.witness` operation defines a witness table entry in a
@@ -526,6 +537,7 @@ def KGEN_WitnessOp : KGENOp<"witness", [
   }];
 
   let arguments = (ins SymbolNameAttr:$sym_name,
+                       OptionalAttr<StrAttr>:$sym_visibility,
                        TypedAttrInterface:$value);
 
   let assemblyFormat = [{
@@ -824,6 +836,7 @@ def KGEN_ParamDeclareOp : KGENOp<"param.declare",
 
 def KGEN_ParamDeclareRegionOp : KGENOp<"param.declare.region", [
     DeclInterface, FuncInterface, FunctionOpInterface, FunctionLike,
+    SymbolName, SymbolVisibility,
     DeclareOpInterfaceMethods<ParamOpInterface, ["collectParameterUses"]>,
     SingleBlock
   ]>, OneParamDecl {
@@ -862,6 +875,10 @@ def KGEN_ParamDeclareRegionOp : KGENOp<"param.declare.region", [
   }];
 
   let arguments = (ins
+    // `kgen.param.declare.region` is anonymous: it satisfies SymbolOpInterface
+    // through FunctionOpInterface but never carries a name of its own.
+    OptionalAttr<SymbolNameAttr>:$sym_name,
+    OptionalAttr<StrAttr>:$sym_visibility,
     KGEN_ParamDeclAttr:$paramDecl,
     StrAttr:$sourceName,
     TypeAttrOf<KGEN_FuncTypeGeneratorType>:$funcTypeGenerator,

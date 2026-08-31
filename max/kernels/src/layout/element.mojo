@@ -158,7 +158,12 @@ struct Element[
     @always_inline("nodebug")
     @staticmethod
     def load(
-        ptr: UnsafePointer[Scalar[Self.dtype], ...],
+        # Bare `Pointer`, not `ImmPointer`: a `mut=True` source pointer (the
+        # usual case, since `MemoryElement` wraps a mutable `LayoutTensor`'s
+        # `.ptr`) passed to `ImmPointer[Scalar, ...]` would force a mut->imm
+        # conversion whose `...`-elided `address_space` falls back to `.GENERIC`,
+        # silently breaking `.LOCAL`/`.SHARED` loads on the GPU.
+        ptr: Pointer[Scalar[Self.dtype], ...],
         runtime_layout: RuntimeLayout[
             Self.layout,
             element_type=.int32,
@@ -242,7 +247,7 @@ struct Element[
     @always_inline("nodebug")
     @staticmethod
     def masked_load(
-        ptr: UnsafePointer[Scalar[Self.dtype], ...],
+        ptr: Pointer[Scalar[Self.dtype], ...],
         runtime_layout: RuntimeLayout[
             Self.layout,
             element_type=.int32,
@@ -370,7 +375,7 @@ struct Element[
         return Element(element_data, runtime_layout)
 
     @always_inline("nodebug")
-    def store(self, ptr: UnsafePointer[mut=True, Scalar[Self.dtype], ...]):
+    def store(self, ptr: MutPointer[Scalar[Self.dtype], ...]):
         """Stores element data to memory according to the specified layout.
 
         This method performs a layout-aware store operation, writing data to memory
@@ -442,9 +447,7 @@ struct Element[
                 )
 
     @always_inline("nodebug")
-    def masked_store(
-        self, ptr: UnsafePointer[mut=True, Scalar[Self.dtype], ...]
-    ):
+    def masked_store(self, ptr: MutPointer[Scalar[Self.dtype], ...]):
         """Stores element data to memory with masking for partial stores.
 
         This method performs a layout-aware store operation with boundary checking.
@@ -617,7 +620,7 @@ struct MemoryElement[
         index_type=Self.index_type,
     ]
 
-    var ptr: UnsafePointer[
+    var ptr: Pointer[
         Scalar[Self.dtype], Self.origin, address_space=Self.address_space
     ]
     """Pointer to the memory location where the data is stored.
@@ -641,7 +644,7 @@ struct MemoryElement[
 
     def __init__(
         out self,
-        ptr: UnsafePointer[
+        ptr: Pointer[
             Scalar[Self.dtype], Self.origin, address_space=Self.address_space
         ],
         runtime_layout: RuntimeLayout[

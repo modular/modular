@@ -51,6 +51,7 @@ if TYPE_CHECKING:
         EmbeddingsContext,
         PipelineTokenizer,
     )
+    from max.pipelines.speculative import SpeculativeConfig
     from max.pipelines.weights.hf_utils import HuggingFaceRepo
 
     from .config import PipelineConfig
@@ -309,6 +310,14 @@ class SupportedArchitecture:
 
     denoising_cache_defaults: TaylorSeerDefaults | None = None
     """TaylorSeer tuning for this architecture. User-set fields always win."""
+
+    checkpoint_draft_width: (
+        Callable[[SpeculativeConfig, Any, Any], int] | None
+    ) = None
+    """Returns the draft width this checkpoint was trained for.
+
+    Set it when the checkpoint fixes the width rather than the user.
+    """
 
     supports_overlap_scheduler: bool = True
     """Whether this architecture supports auto-enabling the overlap scheduler.

@@ -241,8 +241,7 @@ def flash_attention[
     """
 
     @always_inline
-    @__parameter
-    def description_fn() -> String:
+    def description_fn() {imm} -> String:
         return String(";").join(
             Span(
                 [
@@ -258,7 +257,7 @@ def flash_attention[
         "flash_attention",
         Trace[
             TraceLevel.OP, target=context.default_device_info.api
-        ]._get_detail_str[description_fn](),
+        ]._get_detail_str(description_fn),
         task_id=Int(context.id()),
     ):
         return flash_attention[
@@ -708,8 +707,7 @@ def flash_attention[
 
     # TODO docstring
     @always_inline
-    @__parameter
-    def description_fn() -> String:
+    def description_fn() {imm} -> String:
         return String(";").join(
             Span(
                 [
@@ -723,7 +721,7 @@ def flash_attention[
         "flash_attention",
         Trace[
             TraceLevel.OP, target=ctx.default_device_info.api
-        ]._get_detail_str[description_fn](),
+        ]._get_detail_str(description_fn),
         task_id=Int(ctx.id()),
     ):
         var max_prompt_len: Int
@@ -6336,7 +6334,9 @@ def mha_gpu_naive[
     )
     # FIXME: RUNP-356 Direct access to CUDA within DeviceContext
     var p_buffer = TileTensor(
-        p_device,
+        # FIXME: GEX-4123 Force use of PointerStorage until the
+        # `input_fn_device` legacy closure is replaced.
+        p_device.unsafe_ptr(),
         row_major(
             (
                 batch_size * num_heads,

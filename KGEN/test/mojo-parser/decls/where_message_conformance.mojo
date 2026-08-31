@@ -58,7 +58,7 @@ def use_ok(b: OkBox[Yes]):
 
 
 struct GenBox[T: Deinitable](
-    # expected-note @below {{failed conditional conformance: GenBox[T] requires T to be a Marker}}
+    # expected-note @below {{failed constraint: GenBox[T] requires T to be a Marker}}
     Marker where (conforms_to(T, Marker), "GenBox[T] requires T to be a Marker")
 ):
     pass
@@ -80,7 +80,7 @@ def use_gen(b: GenBox[No]):
 
 
 struct PlainBox[T: Deinitable](
-    # expected-note @below {{failed conditional conformance}}
+    # expected-note @below {{failed constraint}}
     Marker where conforms_to(T, Marker)
 ):
     pass
@@ -112,7 +112,7 @@ trait Refined(Base):
 
 
 struct RefinedBox[T: Deinitable](
-    # expected-note @below {{failed conditional conformance: RefinedBox[T] requires T to be a Marker}}
+    # expected-note @below {{failed constraint: RefinedBox[T] requires T to be a Marker}}
     Refined where (conforms_to(T, Marker), "RefinedBox[T] requires T to be a Marker")
 ):
     pass
@@ -154,7 +154,7 @@ trait CommonB:
 
 struct TwoBox[T: Deinitable](
     CommonA where (conforms_to(T, MarkerA), "TwoBox needs MarkerA for CommonA"),
-    # expected-note @below {{unproven conditional conformance: TwoBox needs MarkerB for CommonB}}
+    # expected-note @below {{unproven constraint: TwoBox needs MarkerB for CommonB}}
     CommonB where (conforms_to(T, MarkerB), "TwoBox needs MarkerB for CommonB"),
 ):
     pass
@@ -181,9 +181,9 @@ def use_two[V: Deinitable](b: TwoBox[V]) where (
 
 
 struct BothBox[T: Deinitable](
-    # expected-note @below {{unproven conditional conformance: BothBox needs MarkerA for CommonA}}
+    # expected-note @below {{unproven constraint: BothBox needs MarkerA for CommonA}}
     CommonA where (conforms_to(T, MarkerA), "BothBox needs MarkerA for CommonA"),
-    # expected-note @below {{unproven conditional conformance: BothBox needs MarkerB for CommonB}}
+    # expected-note @below {{unproven constraint: BothBox needs MarkerB for CommonB}}
     CommonB where (conforms_to(T, MarkerB), "BothBox needs MarkerB for CommonB"),
 ):
     pass
@@ -205,7 +205,7 @@ def use_both_none[V: Deinitable](b: BothBox[V]):
 
 
 struct PackBox[T: Deinitable](
-    # expected-note @below {{failed conditional conformance: PackBox[T] requires T to be a Marker}}
+    # expected-note @below {{failed constraint: PackBox[T] requires T to be a Marker}}
     Marker where (conforms_to(T, Marker), "PackBox[T] requires T to be a Marker")
 ):
     pass

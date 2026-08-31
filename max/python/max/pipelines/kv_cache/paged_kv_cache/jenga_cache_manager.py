@@ -41,7 +41,7 @@ from max.nn.kv_cache.data_parallelism_utils import split_into_groups
 from max.nn.kv_cache.metrics import KVCacheMetrics
 from max.nn.kv_cache.utils import build_max_lengths_tensors
 from max.pipelines.context import TextContext
-from max.pipelines.kv_cache.kv_connector import BlockCount
+from max.pipelines.kv_cache.kv_connector import BlockCount, ByteCount
 from max.profiler import traced
 from max.support import to_human_readable_bytes
 from max.support.math import ceildiv
@@ -496,13 +496,13 @@ class JengaKVCacheManager(JengaBlockManager, PagedKVCacheManagerInterface):
         """Polls for transfers to complete."""
         return
 
-    def host_block_count(self, replica_idx: int = 0) -> BlockCount:
-        """Returns the host KV cache block occupancy for the given replica."""
-        return BlockCount(free=0, total=0)
+    def host_byte_count(self, replica_idx: int = 0) -> ByteCount:
+        """Returns the host KV tier occupancy in bytes for the given replica."""
+        return ByteCount(free=0, total=0)
 
-    def disk_block_count(self, replica_idx: int = 0) -> BlockCount:
-        """Returns the disk KV cache block occupancy for the given replica."""
-        return BlockCount(free=0, total=0)
+    def disk_byte_count(self, replica_idx: int = 0) -> ByteCount:
+        """Returns the disk KV tier occupancy in bytes for the given replica."""
+        return ByteCount(free=0, total=0)
 
     def shutdown(self) -> None:
         """Shuts down the connector."""

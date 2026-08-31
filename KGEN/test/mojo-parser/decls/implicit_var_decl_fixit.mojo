@@ -11,16 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-# Tests for the fixit on the implicit-declaration warning. Uses the JSON
-# diagnostic format to verify the exact fixit position, 'var ' immediately
-# before the declared name, and the three shapes that deliberately offer no
-# fixit: a tuple element, because one 'var' covers the whole target; a site
-# inside a nested block, because 'var' there would be scoped to the block; and a
-# walrus target, because 'var' and 'ref' on one are being removed from the
-# language.
+# Tests for the fixit on the implicit-declaration error. Uses the JSON
+# diagnostic format to verify the exact fixit position: 'var ' immediately
+# before the undeclared name. Walrus targets no longer implicitly declare at
+# all.
 # Related to MOCO-3182.
 
-# RUN: %parse-mojo-isolated --diagnostic-format json --use-mlir-diagnostics=false %s -o /dev/null 2>&1 | FileCheck %s
+# RUN: not %parse-mojo-isolated --diagnostic-format json --use-mlir-diagnostics=false %s -o /dev/null 2>&1 | FileCheck %s
 
 
 def one() -> Int:
@@ -37,7 +34,7 @@ def use(x: Int):
 
 def simple():
     # CHECK: "fixIts":[{"end":{"column":5,"line":[[#@LINE+2]]},"start":{"column":5,"line":[[#@LINE+2]]},"text":"var "}]
-    # CHECK-SAME: "message":"implicit declaration of 'x' is deprecated; add 'var' before the name"
+    # CHECK-SAME: "message":"implicit declaration of 'x' is not allowed; add 'var' to declare a new name"
     x = 1
     use(x)
 
@@ -45,104 +42,56 @@ def simple():
 # The insertion goes before the name, not before the type annotation.
 def annotated():
     # CHECK: "fixIts":[{"end":{"column":5,"line":[[#@LINE+2]]},"start":{"column":5,"line":[[#@LINE+2]]},"text":"var "}]
-    # CHECK-SAME: "message":"implicit declaration of 'y' is deprecated; add 'var' before the name"
+    # CHECK-SAME: "message":"implicit declaration of 'y' is not allowed; add 'var' to declare a new name"
     y: Int = 5
     use(y)
 
 
-# A walrus target gets no fixit even at function-body level, where inserting
-# 'var' at the name would have been the equivalent edit for a plain assignment.
+# A walrus target must already be an LValue; it does not implicitly declare.
 def walrus_in_call():
-    # CHECK: "fixIts":[]
-    # CHECK-SAME: "message":"implicit declaration of 'v' is deprecated; declare it with 'var' in the function body"
+    # CHECK: "message":"use of unknown declaration 'v'"
     use(v := one())
     use(v)
 
 
-# A walrus in a condition is a nested site as well, and reads the same.
+# Same for a walrus in a condition.
 def walrus():
-    # CHECK: "fixIts":[]
-    # CHECK-SAME: "message":"implicit declaration of 'z' is deprecated; declare it with 'var' in the function body"
+    # CHECK: "message":"use of unknown declaration 'z'"
     if z := truthy():
         use(1)
 
 
-# No fixit inside a nested block either: 'var e' there would be scoped to the
-# block, while the declaration is scoped to the function.
+# Nested blocks get the same fixit as top-level assignments.
 def nested_block(c: Bool):
-    # CHECK: "fixIts":[]
-    # CHECK-SAME: "message":"implicit declaration of 'e' is deprecated; declare it with 'var' in the function body"
+    # CHECK: "fixIts":[{"end":{"column":9,"line":[[#@LINE+3]]},"start":{"column":9,"line":[[#@LINE+3]]},"text":"var "}]
+    # CHECK-SAME: "message":"implicit declaration of 'e' is not allowed; add 'var' to declare a new name"
     if c:
         e = 1
     use(1)
 
 
-# A short-circuit operand is reachable only by a walrus, and gets a block of its
-# own besides.
+# A short-circuit walrus operand also requires a prior declaration.
 def and_operand(c: Bool) -> Bool:
-    # CHECK: "fixIts":[]
-    # CHECK-SAME: "message":"implicit declaration of 'w' is deprecated; declare it with 'var' in the function body"
+    # CHECK: "message":"use of unknown declaration 'w'"
     return c and (w := truthy())
 
 
 # Both targets of a chain get their own fixit, and 'var a = var b = 1' compiles.
 def chained():
     # CHECK: "fixIts":[{"end":{"column":9,"line":[[#@LINE+4]]},"start":{"column":9,"line":[[#@LINE+4]]},"text":"var "}]
-    # CHECK-SAME: "message":"implicit declaration of 'b' is deprecated; add 'var' before the name"
+    # CHECK-SAME: "message":"implicit declaration of 'b' is not allowed; add 'var' to declare a new name"
     # CHECK: "fixIts":[{"end":{"column":5,"line":[[#@LINE+2]]},"start":{"column":5,"line":[[#@LINE+2]]},"text":"var "}]
-    # CHECK-SAME: "message":"implicit declaration of 'a' is deprecated; add 'var' before the name"
+    # CHECK-SAME: "message":"implicit declaration of 'a' is not allowed; add 'var' to declare a new name"
     a = b = 1
     use(a)
     use(b)
 
 
-# No fixit on a tuple element: 'var c, var d = ...' is a nested pattern, which
-# the compiler rejects.
+# Tuple targets get a fixit before the first unresolved name. Emission stops
+# after that element.
 def tuple_target():
-    # CHECK: "fixIts":[]
-    # CHECK-SAME: "message":"implicit declaration of 'c' is deprecated; add 'var' before the assignment target"
-    # CHECK: "fixIts":[]
-    # CHECK-SAME: "message":"implicit declaration of 'd' is deprecated; add 'var' before the assignment target"
+    # CHECK: "fixIts":[{"end":{"column":5,"line":[[#@LINE+2]]},"start":{"column":5,"line":[[#@LINE+2]]},"text":"var "}]
+    # CHECK-SAME: "message":"implicit declaration of 'c' is not allowed; add 'var' to declare a new name"
     c, d = Tuple(1, 2)
     use(c)
     use(d)
-
-
-# A binder one level up in the target rules out the outer 'var' for the names
-# nested inside it, so they take the hoisted-declaration message and no fixit.
-def nested_tuple_sibling():
-    # CHECK: "fixIts":[]
-    # CHECK-SAME: "message":"implicit declaration of 'f' is deprecated; declare it with 'var' in the function body"
-    # CHECK: "fixIts":[]
-    # CHECK-SAME: "message":"implicit declaration of 'g' is deprecated; declare it with 'var' in the function body"
-    (f, g), var h = Tuple(Tuple(1, 2), 3)
-    use(f)
-    use(g)
-    use(h)
-
-
-def shadow():
-    # CHECK: "fixIts":[{"end":{"column":5,"line":[[#@LINE+2]]},"start":{"column":5,"line":[[#@LINE+2]]},"text":"var "}]
-    # CHECK-SAME: "message":"implicit declaration of 'one' is deprecated; add 'var' before the name"
-    one = 2
-    use(one)
-
-
-# A shadowing site takes whichever base message its position calls for, so pin
-# the other two positions here too.
-def nested_shadow(c: Bool):
-    # CHECK: "fixIts":[]
-    # CHECK-SAME: "message":"implicit declaration of 'one' is deprecated; declare it with 'var' in the function body"
-    if c:
-        one = 2
-    use(1)
-
-
-def tuple_shadow():
-    # CHECK: "fixIts":[]
-    # CHECK-SAME: "message":"implicit declaration of 'one' is deprecated; add 'var' before the assignment target"
-    # CHECK: "fixIts":[]
-    # CHECK-SAME: "message":"implicit declaration of 'x' is deprecated; add 'var' before the assignment target"
-    one, x = Tuple(1, 2)
-    use(one)
-    use(x)

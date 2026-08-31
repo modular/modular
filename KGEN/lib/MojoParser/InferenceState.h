@@ -159,7 +159,8 @@ public:
   InferenceState(ASTDecl &declScope, ArrayRef<Type> declaredParamTypes,
                  PogListAttr declaredParamPogs, SMLoc defaultLoc,
                  bool discardError,
-                 DeferredTypingContext *deferredTypingContext = nullptr);
+                 DeferredTypingContext *deferredTypingContext = nullptr,
+                 ArrayRef<ConstraintAttr> additionalAssumptions = {});
   virtual ~InferenceState() = default;
 
   ASTDecl &getDeclScope() const { return declScope; }
@@ -194,6 +195,11 @@ public:
   /// policy, similar to `discardError`, set once for the lifetime of an
   /// inference operation.
   DeferredTypingContext *deferredTypingContext;
+
+  /// Facts that hold at the site driving this inference but are not reachable
+  /// from `declScope`'s lexical assumptions. This is set once for the lifetime
+  /// of an inference operation. The storage is owned by the caller.
+  ArrayRef<ConstraintAttr> additionalAssumptions;
 
   // Debug util.
   void dump() const;

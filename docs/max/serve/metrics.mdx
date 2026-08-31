@@ -124,7 +124,9 @@ The following metrics track batch composition and per-batch throughput.
 ### KV cache
 
 The following metrics track KV cache utilization, prefix cache hit rates, and
-block movement across memory tiers and replicas.
+KV movement across memory tiers and replicas. Device figures are in blocks, the
+unit the cache allocates in; the connector's host and disk tiers are in bytes,
+since those are byte budgets whose block width need not match the device's.
 
 | Metric                                                    | Type      | Description                                                                                                                                                                                                                    |
 |-----------------------------------------------------------|-----------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
@@ -135,15 +137,15 @@ block movement across memory tiers and replicas.
 | `maxserve_cache_hits_tokens_total`                        | Counter   | Cumulative KV cache hit tokens (prompt tokens served from the prefix cache). Tagged with a `tier` label (`g0` for the on-device prefix cache, `external` for the KV connector). The per-tier series sum to the untagged total. |
 | `maxserve_cache_misses_tokens_total`                      | Counter   | Cumulative KV cache miss tokens (prompt tokens actually prefilled by the model).                                                                                                                                               |
 | `maxserve_cache_used_kv_pct_percent`                      | Histogram | Percentage of device KV cache blocks in use (0-100%), sampled once per scheduler batch.                                                                                                                                        |
-| `maxserve_cache_used_host_kv_pct_percent`                 | Histogram | Percentage of host KV cache blocks in use (0-100%), sampled once per scheduler batch when host paging is enabled.                                                                                                              |
-| `maxserve_cache_used_disk_kv_pct_percent`                 | Histogram | Percentage of disk KV cache blocks in use (0-100%), sampled once per scheduler batch when disk paging is enabled.                                                                                                              |
+| `maxserve_cache_used_host_kv_pct_percent`                 | Histogram | Percentage of the host KV tier's bytes in use (0-100%), sampled once per scheduler batch when host paging is enabled.                                                                                                          |
+| `maxserve_cache_used_disk_kv_pct_percent`                 | Histogram | Percentage of the disk KV tier's bytes in use (0-100%), sampled once per scheduler batch when disk paging is enabled.                                                                                                          |
 | `maxserve_cache_device_blocks_served_blocks_total`        | Counter   | Cumulative KV blocks served directly from the local device prefix cache.                                                                                                                                                       |
-| `maxserve_cache_h2d_blocks_copied_blocks_total`           | Counter   | Cumulative host-to-device KV block copies.                                                                                                                                                                                     |
-| `maxserve_cache_d2h_blocks_copied_blocks_total`           | Counter   | Cumulative device-to-host KV block copies.                                                                                                                                                                                     |
+| `maxserve_cache_h2d_bytes_copied_bytes_total`             | Counter   | Cumulative KV bytes copied from the connector's host tier to device. Rate this to see the PCIe bandwidth host paging consumes.                                                                                                 |
+| `maxserve_cache_d2h_bytes_copied_bytes_total`             | Counter   | Cumulative KV bytes copied from device to the connector's host tier.                                                                                                                                                           |
 | `maxserve_cache_cross_replica_blocks_copied_blocks_total` | Counter   | Cumulative KV blocks copied device-to-device across data-parallel replicas to reuse a prefix-cache hit on another replica.                                                                                                     |
 | `maxserve_cache_cross_replica_bytes_copied_bytes_total`   | Counter   | Cumulative bytes moved by device-to-device KV copies across data-parallel replicas.                                                                                                                                            |
-| `maxserve_cache_disk_blocks_read_blocks_total`            | Counter   | Cumulative KV blocks read from the disk cache tier.                                                                                                                                                                            |
-| `maxserve_cache_disk_blocks_written_blocks_total`         | Counter   | Cumulative KV blocks written to the disk cache tier.                                                                                                                                                                           |
+| `maxserve_cache_disk_bytes_read_bytes_total`              | Counter   | Cumulative KV bytes read from the disk cache tier.                                                                                                                                                                             |
+| `maxserve_cache_disk_bytes_written_bytes_total`           | Counter   | Cumulative KV bytes written to the disk cache tier.                                                                                                                                                                            |
 
 ### Data parallel
 

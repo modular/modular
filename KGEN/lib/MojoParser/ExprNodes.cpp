@@ -769,25 +769,6 @@ AnyValue SyntheticNode::emitIR(ExprDest &dest, IREmitter &emitter) const {
   return emitter.emitResult(irValue, this, dest);
 }
 
-/// When analyzing a DeclRefNode lookup result in a context that allows implicit
-/// variable definitions, check to see if the lookup set contains immutable
-/// symbols found through global lookup. If so, return true.
-static bool isImmutableValuesInOtherScope(const LookupResult &lookup,
-                                          IREmitter &emitter) {
-  for (ASTDecl *decl : lookup.getIfSuccess()) {
-    // If this contains anything mutable, return false.
-    if (isa_and_nonnull<VarDeclOp>(decl->getIfOperation()) ||
-        decl->getIfIRValue().getIfLValue())
-      return false;
-
-    // If this is an immutable thing in the current scope, then return false.
-    if (decl->getParentDecl() == &emitter.declScope)
-      return false;
-  }
-
-  return true;
-}
-
 LogicalResult DeclRefNode::emitDestructuringPValue(PValue toBind,
                                                    IREmitter &emitter) const {
   assert(toBind && "No PValue provided when binding a parameter?");
@@ -828,6 +809,48 @@ static FailureOr<ASTDecl *> getTargetStructDecl(ASTDecl *referencedDecl,
     return &emitter.shared.declResolver->getDeclForTypeSymbol(targetStructRef);
   }
   return nullptr;
+}
+
+/// Find a unique in-scope spelling within edit distance of `spelling`, walking
+/// parent scopes the same way unqualified lookup does. Returns empty when there
+/// is no close match, or when several names tie for best distance.
+static StringRef findClosestInScopeSpelling(StringRef spelling,
+                                            ASTDecl &lookupScope) {
+  // Short names are too ambiguous for useful suggestions (`x` vs `y`).
+  if (spelling.size() < 3)
+    return {};
+
+  // Cap at 2 edits; scale down for shorter names (length 3 → at most 1).
+  unsigned maxDistance = (spelling.size() + 2) / 3;
+  if (maxDistance > 2)
+    maxDistance = 2;
+  StringRef best;
+  unsigned bestDistance = maxDistance + 1;
+  bool tied = false;
+
+  for (ASTDecl *scope = &lookupScope; scope; scope = scope->getParentDecl()) {
+    for (auto &[nameAttr, decls] : scope->getDeclsInScope()) {
+      if (decls.empty())
+        continue;
+      StringRef candidate = nameAttr.getValue();
+      if (candidate.empty() || candidate == spelling)
+        continue;
+
+      unsigned distance = spelling.edit_distance(
+          candidate, /*AllowReplacements=*/true, bestDistance);
+      if (distance > maxDistance)
+        continue;
+      if (distance < bestDistance) {
+        best = candidate;
+        bestDistance = distance;
+        tied = false;
+      } else if (distance == bestDistance && candidate != best) {
+        tied = true;
+      }
+    }
+  }
+
+  return tied ? StringRef() : best;
 }
 
 /// Utility function to diagnose unknown declarations, providing fixits or hints
@@ -901,6 +924,11 @@ diagnoseUnknownDeclaration(StringRef spelling, ASTDecl &lookupScope,
              spelling == "originof") {
     diag << "; did you mean 'origin_of'?"
          << FixIt::replaceToken(loc, "origin_of");
+  } else if (StringRef nearMiss =
+                 findClosestInScopeSpelling(spelling, lookupScope);
+             !nearMiss.empty()) {
+    diag << "; did you mean '" << nearMiss << "'?"
+         << FixIt::replaceToken(loc, nearMiss);
   } else {
     // The name is unambiguously part of a standard-library package that wasn't
     // imported; point the user at the missing import.
@@ -1215,98 +1243,18 @@ DeclRefNode::emitUnqualLookup(StringRef spelling, const ExprNode *expr,
   LookupResult lookup = emitter.shared.lookupAndResolveDecl(
       spelling, loc, lookupScope, /*searchParentScopes=*/true);
 
-  // If we're in a function and have a contextual type, then this may be an
-  // implicit declaration of a variable.  However, name lookup could find
-  // global symbols (e.g. the "slice" function in `slice = foo()`) which are
-  // obviously not mutable.  Handle this by filtering out the overload set if
-  // it is obviously not mutable, but we know we're in an lvalue context with
-  // inferred type.
-  if (emitter.varDeclCursor && !lookup.isFailure() &&
-      isImmutableValuesInOtherScope(lookup, emitter)) {
-    // If we're declaring a local definition that shadows a global immutable
-    // symbol like a function, then we pretend we don't see it so the code below
-    // will synthesize it.  If we are speculatively resolving this, then we
-    // return unknown since we don't have a contextual type.
-    if (dest.getIfInitializerType())
-      lookup = LookupResult::getFailure({});
-    else if (isSpeculative)
-      return expr;
-  }
-
-  // If that lookup failed, but we can synthesize a variable declaration in this
-  // scope, do that.  We can only do this if there is a varDeclCursor,
-  // indicating that we're in a `def` node, and if we have a contextual type
-  // (which tells us we need to emit an LValue).
-  if (lookup.isFailure() && emitter.varDeclCursor &&
-      dest.getIfInitializerType()) {
-    auto contextualType = dest.getIfInitializerType();
-    assert(contextualType && "must have contextual type");
-
-    // Inserting 'var' at the name would scope the variable to this block, while
-    // this declaration is function-scoped -- so the two spellings differ
-    // exactly when the declaration lands in a different block.
-    bool isNestedBlock =
-        emitter.builder && emitter.builder->getInsertionBlock() !=
-                               emitter.varDeclCursor->getInsertionBlock();
-    bool isTupleElement = dest.getContext() == EC_TupleElement;
-    bool needsSeparateDecl =
-        isNestedBlock ||
-        // 'var' and 'ref' on a walrus target are being removed from the
-        // language, so neither edit is one to advise for `x := 1`.
-        dest.isWalrusTarget() ||
-        // For `a, var b = pair()` the whole-target edit reads
-        // `var a, var b = pair()`, which does not compile.
-        (isTupleElement && dest.hasSiblingPatternDecl());
-    auto diag = emitter.emitWarning(loc);
-    diag << "implicit declaration of '" << spelling << "' is deprecated; ";
-    if (needsSeparateDecl)
-      diag << "declare it with 'var' in the function body";
-    else
-      diag << "add 'var' before "
-           << (isTupleElement ? "the assignment target" : "the name");
+  // Only report this when we have a contextual type: we don't want to suggest
+  // turning "x = {}" into "var x = {}", which is a different error.
+  if (lookup.isFailure() && dest.getIfInitializerType()) {
+    auto diag = emitter.emitError(loc);
+    diag << "implicit declaration of '" << spelling << "' is not allowed; ";
+    diag << "add 'var' to declare a new name";
+    diag << FixIt::insertBeforeToken(loc, "var ");
     diag << expr->getRange();
-    // A tuple element gets no fixit: one 'var' covers the whole target, and an
-    // element's destination cannot reach that target's position to anchor one.
-    if (!needsSeparateDecl && !isTupleElement)
-      diag << FixIt::insertBeforeToken(loc, "var ");
-
-    // NOTE: We intentionally do NOT apply type refinement to contextual types
-    // for implicit variable declarations. The contextual type comes from the
-    // source expression (e.g., iterator element type), and refining it here
-    // would cause type mismatches when the source value isn't refined.
-    // Refinement is only applied to explicitly declared variables (var x: T).
-
-    // Use this builder to place any VarDeclOps. In Python there is only one
-    // scope for the whole def and all variables belong to that scope.
-    OpBuilder varDeclBuilder(
-        emitter.varDeclCursor->getInsertionBlock(),
-        std::next(emitter.varDeclCursor->getInsertionPoint()));
-    IREmitter varDeclEmitter(emitter.declScope, varDeclBuilder);
-
-    // Add implicitly declared variable to the name table OF THE FUNCTION, so
-    // subsequent uses find this one.  We don't want implicit declarations in
-    // different subscopes to get different implicit declarations.
-    ASTDecl *scopeToInsert = lookupScope.getNearestDeclOfType<FnOp>();
-
-    // Get the raw FileLineColLoc, and fuse with the debug scope of the
-    // container if it exists.
-    Location varDeclLoc = emitter.shared.diags.translateLocation(loc);
-    if (DebugInfo::DISubprogramAttr varDeclSubprogram =
-            DebugInfo::extractScope(cast_or_null<mlir::FunctionOpInterface>(
-                scopeToInsert->getIfOperation()))) {
-      varDeclLoc = mlir::FusedLoc::get(emitter.getContext(), {varDeclLoc},
-                                       varDeclSubprogram);
-    }
-    VarDeclOp varDecl =
-        varDeclEmitter.emitVarDecl(spelling, contextualType, varDeclLoc,
-                                   // Marked Implicit to disable warnings.
-                                   VarDeclKind::Implicit);
-
-    ASTDecl &varASTDecl = emitter.getDeclResolver().addFullyResolvedDecl(
-        DeclIRValue(varDecl), varDecl.getNameAttr(), loc, scopeToInsert);
-    emitter.shared.notifyListenerOnVariableDecl(varASTDecl, loc);
-
-    return emitter.emitCResult(MLValue(varDecl), expr, dest);
+    // An assignment outside any function is rejected before name resolution.
+    if (ASTDecl *fn = lookupScope.getNearestDeclOfType<FnOp>())
+      emitter.getDeclResolver().addErroneousDecl(spelling, loc, fn);
+    return {};
   }
 
   ArrayRef<ASTDecl *> declsRef = lookup.getIfSuccess();
@@ -3731,9 +3679,6 @@ static AnyValue emitBinOpCall(ASTExprAnd<AnyValue> lhs,
 }
 
 /// Emit a simple assignment statement.
-///
-/// The walrus := operator in Python requires the left side to be a simple
-/// identifier, but Mojo allows arbitrary lvalues like the assign stmt.
 AnyValue BinOpNode::emitAssign(ExprDest &dest, IREmitter &emitter) const {
   // Assignments might need to infer the LHS from the RHS when the LHS is
   // unresolved, and the RHS from the LHS when it is known:
@@ -3802,7 +3747,6 @@ AnyValue BinOpNode::emitAssign(ExprDest &dest, IREmitter &emitter) const {
   } else {
     assignDest = ExprDest(lhsResult.getIfPartiallyBoundLV(), assignDestKind);
   }
-  assignDest.setIsWalrusTarget(kind == kWalrus);
 
   // Emit the RHS into the context of the LHS.  If we got an LValue, then we can
   // infer the type of the RHS from the LHS LValue.  If we got an unresolved
@@ -3818,9 +3762,57 @@ AnyValue BinOpNode::emitAssign(ExprDest &dest, IREmitter &emitter) const {
     resultValue = UnknownAttr::get(emitter.shared.getTypeCheckErrorType());
   }
 
-  // To support the walrus operator and chained assignment like `x = y = 1`, the
-  /// assignment operation returns a borrowed version of the dest value.
+  // Support chained assignment like `x = y = 1`: the assignment operation
+  // returns a borrowed version of the dest value.
   return emitter.emitResult(resultValue, this, dest);
+}
+
+/// Emit a walrus assignment expression like `x := y`.
+///
+/// Unlike general assignment, walrus does not use speculative bidirectional
+/// type inference: the LHS is emitted directly as an LValue, then the RHS is
+/// stored into it. It yields a borrowed version of the LHS after the store.
+AnyValue BinOpNode::emitWalrus(ExprDest &dest, IREmitter &emitter) const {
+  LValue lhsLV = emitter.emitExprLValue(lhs, EC_Assignment);
+  if (!lhsLV)
+    return {};
+
+  // Mutable memory LValue: store into it, then yield an immutable borrow.
+  if (MLValue mlValue = lhsLV.getIfMLValue()) {
+    ExprDest assignDest(lhsLV, EC_Assignment);
+    if (!emitter.emitExpr(rhs, assignDest))
+      return {};
+    return emitter.emitResult(MBValue(mlValue), this, dest);
+  }
+
+  // Otherwise must be a DLValue.
+  if (!lhsLV.getIfDLValue()) {
+    emitter.emitError(lhs->getLoc(),
+                      "walrus operator target must be a mutable memory "
+                      "location");
+    return {};
+  }
+
+  // Computed LValue (e.g. subscript / attribute): we need to pass it into the
+  // setter but also need to return it.
+  auto rhsRValue =
+      emitter.emitExprRValue(rhs, EC_Assignment, lhsLV.getRValueType());
+  if (!rhsRValue)
+    return {};
+
+  // The logic below won't work for SRValue's (because emitBValue takes
+  // ownership of the value), so promote to MRValue if we have one.
+  if (rhsRValue.getIfSRValue())
+    rhsRValue = emitter.emitMRValue({rhsRValue, rhs}, EC_Assignment);
+
+  // We will ultimately return the RValue, but we can't have the setter consume
+  // it if it takes a 'var' argument.  Decay to a BValue before passing on.
+  BValue bValue = emitter.emitBValue({rhsRValue, rhs}, EC_Assignment);
+  if (!bValue)
+    return {};
+  if (!emitter.emitStoreToLValue({bValue, rhs}, lhsLV, EC_Assignment))
+    return {};
+  return emitter.emitResult(rhsRValue, this, dest);
 }
 
 /// Emit a inplace assignment statement like `x += y`. Python evaluates the RHS
@@ -3830,15 +3822,10 @@ AnyValue BinOpNode::emitAssign(ExprDest &dest, IREmitter &emitter) const {
 ///    a[test1()] += test2()
 ///  ==> test1; test2
 AnyValue BinOpNode::emitInplace(ExprDest &dest, IREmitter &emitter) const {
-  AnyValue lhsRep;
-  RValue rhsRep;
-
-  // Inplace operations evaluate the LHS first, so emit the LHS pattern as an
-  // lvalue.
+  // Inplace operations evaluate the LHS first.
   LValue lhsLV = emitter.emitExprLValue(lhs, EC_InplaceBinOpDest);
   if (!lhsLV)
     return {};
-
   // Then emit the right side.
   AnyValue rhsV = emitter.emitExpr(rhs, EC_OperatorOperandValue);
   if (!rhsV)
@@ -3874,8 +3861,10 @@ AnyValue BinOpNode::emitIR(ExprDest &dest, IREmitter &emitter) const {
   // Handle weird binary operators specially if we have them.
   if (kind == kBoolAnd || kind == kBoolOr) // `x and y`, `x or y`
     return emitAndOr(dest, emitter);
-  if (kind == kAssign || kind == kWalrus) // `x = y` and `x := y`
+  if (kind == kAssign) // `x = y`
     return emitAssign(dest, emitter);
+  if (kind == kWalrus) // `x := y`
+    return emitWalrus(dest, emitter);
   if (isAssignmentStmt()) // `x += y`
     return emitInplace(dest, emitter);
 
@@ -4539,8 +4528,7 @@ AnyValue IfElseOpNode::emitIR(ExprDest &dest, IREmitter &emitter) const {
         &emitter.declScope);
     branchScope.insertKnownAssumptions(assumption);
     if (emitter.builder) {
-      IREmitter branchEmitter(branchScope, *emitter.builder,
-                              emitter.varDeclCursor);
+      IREmitter branchEmitter(branchScope, *emitter.builder);
       AnyValue result = branchEmitter.emitExpr(branchExpr, EC_CondExpr);
       // Propagate the advanced insertion point back to the parent emitter.
       emitter.builder = branchEmitter.builder;
@@ -5693,12 +5681,6 @@ auto TupleNode::emitLCVIR(ExprDest &dest, IREmitter &emitter,
     }
   }
 
-  // A binder anywhere in the target rules out an outer 'var' for every fresh
-  // name in it, at any nesting depth.
-  bool anyEltPatternDecl = llvm::any_of(exprs, [](const ExprNode *elt) {
-    return elt->kind == kVarPat || elt->kind == kRefPat;
-  });
-
   bool allEltsLValue = true;
   SmallVector<ASTExprAnd<AnyValue>> elements;
   for (auto [i, expr] : llvm::enumerate(exprs)) {
@@ -5714,9 +5696,6 @@ auto TupleNode::emitLCVIR(ExprDest &dest, IREmitter &emitter,
 
     // Propagate var/ref context.
     eltDest.setPatternDeclKind(dest.getPatternDeclKind());
-    eltDest.setHasSiblingPatternDecl(anyEltPatternDecl ||
-                                     dest.hasSiblingPatternDecl());
-    eltDest.setIsWalrusTarget(dest.isWalrusTarget());
     auto exprVal = emitter.emitExpr(expr, eltDest);
     if (!exprVal)
       return {};

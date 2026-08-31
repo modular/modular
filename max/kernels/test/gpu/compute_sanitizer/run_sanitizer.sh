@@ -23,7 +23,15 @@
 #                use `redzone` to catch realistic off-by-one global overflows.
 #   racecheck  - intra-block shared-memory data races (pool-independent).
 #   initcheck  - uninitialized global-memory reads.
-#   synccheck  - divergent / mismatched __syncthreads / named-barrier.
+#   synccheck  - divergent / mismatched __syncthreads / named-barrier. NOTE:
+#                this lane reports "Divergent thread(s) in block" for every
+#                `named_barrier` in the warp-specialized SM100 attention/MLA
+#                family. PTX permits warps to arrive at different `bar.sync`
+#                instructions sharing a barrier name -- exactly what those
+#                partial-CTA rendezvous do -- but synccheck accepts arrivals
+#                from only one instruction address, and NVIDIA supports
+#                `--suppressions` for memcheck/initcheck/racecheck but NOT for
+#                synccheck. Expect ~48 noise findings on SM100. KERN-3536.
 #   redzone    - MAX's own guard-region allocator (no compute-sanitizer): fast,
 #                catches small global OOB at free time (host alloc/free trace).
 #
@@ -78,7 +86,11 @@ COMMON=(
 # sanitizer sees true per-buffer bounds (small OOBs / OOB reads are otherwise
 # masked inside the shared ~205MB pool). racecheck/synccheck are pool-
 # independent; redzone validates *within* the pool, so neither gets the flag.
+#
+# MOJOCOPTS: extra `-D` defines a lane needs on top of the shared line-tables
+# build.
 POOL=""
+MOJOCOPTS=()
 case "$TOOL" in
   memcheck)  EXTRA="--leak-check no --report-api-errors no"; POOL="--//:gpu_disable_memory_manager" ;;
   racecheck) EXTRA="--racecheck-report all" ;;
@@ -86,7 +98,19 @@ case "$TOOL" in
   # defaults to OFF (the noisy unused-memory check we want disabled anyway), so
   # we omit it. (The design doc's `--track-unused-memory no` is wrong: it makes
   # `no` the target application -> "Target application doesn't exist".)
-  initcheck) EXTRA=""; POOL="--//:gpu_disable_memory_manager" ;;
+  #
+  # FA4_WS_POISON: `launch_workspace` (sm100/dispatch.mojo) deliberately leaves
+  # the split-K `o_partial`/`lse_partial` workspace unfilled -- an empty
+  # partition skips its O store while still writing `lse_p = -inf`, and
+  # `fa4_splitk_combine`'s `scale != 0` select is what substitutes a literal 0
+  # instead of evaluating `0 * garbage`. initcheck sees only the load, so
+  # without this every empty partition reads as an uninitialized-memory
+  # finding. NaN-filling the workspace both silences that (the memory IS
+  # initialized) and GRADES the no-initialization contract: a dropped select or
+  # a missing `-inf` LSE write now propagates NaN into the output and trips the
+  # test's own assert. See KERN-3535.
+  initcheck) EXTRA=""; POOL="--//:gpu_disable_memory_manager"
+             MOJOCOPTS=(--mojocopt=-D --mojocopt=FA4_WS_POISON=1) ;;
   synccheck) EXTRA="" ;;
   redzone)   EXTRA="" ;;
   *) usage ;;
@@ -95,8 +119,8 @@ esac
 LOG="$RESULTS/run.log"
 echo ">>> tool=$TOOL targets=$# results=$RESULTS" | tee "$LOG"
 
-# Targets go after a `--` separator so per-lane excludes expressed as negative
-# patterns (e.g. `-//pkg:target`) are parsed as target patterns, not flags.
+# Targets go after a `--` separator so negative patterns (e.g. `-//pkg:target`)
+# passed by the caller are parsed as target patterns, not flags.
 if [ "$TOOL" = "redzone" ]; then
   # No compute-sanitizer; the allocator validates guard patterns at free time.
   ./bazelw test "${COMMON[@]}" \
@@ -112,6 +136,7 @@ else
     --test_tag_filters=gpu,-filecheck \
     --run_under="$RUNUNDER" \
     --mojocopt=--debug-level --mojocopt=line-tables \
+    ${MOJOCOPTS[@]+"${MOJOCOPTS[@]}"} \
     -- "$@" 2>&1 | tee -a "$LOG"
 fi
 
@@ -156,6 +181,48 @@ for tgt in "${EXPANDED[@]}"; do
   fi
 done
 [ "$found_any" = 0 ] && echo "(no findings markers in scanned test logs)" | tee -a "$LOG"
+
+# Bazel test failures stay ungated in general -- under `--error-exitcode 1` a
+# lane's benign findings turn ~33 PASSING initcheck targets into bazel FAILs,
+# which is exactly why the gate keys off violation markers instead.
+#
+# The initcheck lane needs one addition. `-D FA4_WS_POISON=1` makes a broken
+# split-K no-initialization contract surface as the test's own AssertionError
+# rather than as a sanitizer marker, so the marker grep alone would report
+# green over it. `_startup.mojo` prints "Unhandled exception caught during
+# execution" whenever `main` raises, which distinguishes a test that actually
+# raised from one that merely inherited compute-sanitizer's exit code.
+#
+# A raise is NOT sufficient on its own, though. `test_mla_index_kpool` raises
+# `CUDA call failed: CUDA_ERROR_INVALID_VALUE` on a device-to-device copy
+# under this lane on PLAIN MAIN, with no poison and no local changes -- it is
+# the pool being disabled (`--//:gpu_disable_memory_manager`), not the
+# workspace fill. Gating on any raise therefore reports an unrelated
+# pre-existing failure as a poison finding. Driver/API errors are excluded:
+# a violated no-initialization contract propagates NaN and fails the test's
+# own numerical comparison, it does not make a CUDA call reject its arguments.
+#
+# Scoped to initcheck deliberately: memcheck, racecheck and synccheck each
+# have pre-existing raisers (test_toppminp_gpu's AssertionError under warp
+# serialization, test_topk_topp_sampling_with_dist's CUDA_ERROR_LAUNCH_FAILED),
+# so gating them here would just trade one red lane for another. Those want
+# their own tickets, not a gate flip.
+if [ "$TOOL" = "initcheck" ]; then
+  for tgt in "${EXPANDED[@]}"; do
+    rel="${tgt#//}"; rel="${rel/://}"
+    tl="bazel-testlogs/$rel/test.log"
+    raise="$(grep -m1 -A1 'Unhandled exception caught during execution' "$tl" \
+      2>/dev/null)"
+    [ -n "$raise" ] || continue
+    # Driver/API failure, not a numerical contract violation -- see above.
+    case "$raise" in *"CUDA call failed"*) continue ;; esac
+    found_any=1
+    echo "" | tee -a "$LOG"
+    echo "### $tgt raised while -D FA4_WS_POISON=1 was set" | tee -a "$LOG"
+    echo "$raise" | tee -a "$LOG"
+    cp "$tl" "$RESULTS/$(echo "$rel" | tr '/:' '__').log"
+  done
+fi
 echo "==================================================================" | tee -a "$LOG"
 echo ">>> full logs under $RESULTS" | tee -a "$LOG"
 

@@ -91,6 +91,22 @@ class Device:
         """
 
     @property
+    def is_host_unified(self) -> bool:
+        """
+        Whether this device and the host draw from one physical memory pool.
+
+        Reports hardware topology, so it does not predict whether a particular
+        buffer is readable from the host.
+
+        .. code-block:: python
+
+            from max import driver
+
+            device = driver.Accelerator()
+            device.is_host_unified
+        """
+
+    @property
     def stats(self) -> Mapping[str, Any]:
         """
         Returns utilization data for the device.
@@ -1003,6 +1019,34 @@ def get_virtual_cpu_target() -> str:
         str: The CPU target string, or empty string if not set (host CPU).
     """
 
+class Usage(enum.Flag):
+    """
+    Allocation-intent descriptor for :obj:`Buffer`.
+
+    Flags compose with ``|`` and are tested with ``in``. ``max.driver``
+    owns the flag set and its per-backend mapping.
+    """
+
+    _boundary_: enum.FlagBoundary = ...
+
+    _flag_mask_: int = 1
+
+    _singles_mask_: int = 1
+
+    _all_bits_: int = 3
+
+    _inverted_: None = None
+
+    DEFAULT = 0
+    """
+    The allocation Buffer performs today: device memory for a non-host device, ordinary host memory for the CPU.
+    """
+
+    STAGING = 1
+    """
+    Host memory for staging transfers to and from the given device. May be page-locked, depending on the backend.
+    """
+
 class Buffer:
     """
     Device-resident buffer representation.
@@ -1030,8 +1074,9 @@ class Buffer:
         dtype (DType): Data type of buffer elements.
         shape (Sequence[int]): Tuple of positive, non-zero integers denoting the buffer shape.
         device (Device, optional): Device to allocate buffer onto. Defaults to the CPU.
-        pinned (bool, optional): If True, memory is page-locked (pinned). Defaults to False.
         stream (DeviceQueue, optional): Queue to associate the buffer with.
+        usage (Usage, optional): Allocation intent, see :obj:`Usage`.
+            Defaults to ``Usage.DEFAULT``.
     """
 
     @overload
@@ -1040,7 +1085,7 @@ class Buffer:
         dtype: max._core.dtype.DType,
         shape: Sequence[int],
         device: Device | None = None,
-        pinned: bool = False,
+        usage: Usage = Usage.DEFAULT,
     ) -> None: ...
     @overload
     def __init__(
@@ -1048,7 +1093,7 @@ class Buffer:
         dtype: max._core.dtype.DType,
         shape: Sequence[int],
         stream: DeviceQueue,
-        pinned: bool = False,
+        usage: Usage = Usage.DEFAULT,
     ) -> None: ...
     @overload
     def __init__(
@@ -1280,7 +1325,13 @@ class Buffer:
 
     @property
     def pinned(self) -> bool:
-        """Whether or not the underlying memory is pinned (page-locked)."""
+        """
+        Whether the allocation landed in the device's host memory space. Ask ``usage`` for what was requested.
+        """
+
+    @property
+    def usage(self) -> Usage:
+        """Allocation intent. Slices and views report their parent's usage."""
 
     def view(
         self, dtype: max._core.dtype.DType, shape: Sequence[int] | None = None
@@ -1297,7 +1348,7 @@ class Buffer:
         shape: Sequence[int],
         dtype: max._core.dtype.DType,
         device: Device | None = None,
-        pinned: bool = False,
+        usage: Usage = Usage.DEFAULT,
     ) -> Buffer:
         """
         Allocates a buffer with all elements initialized to zero.
@@ -1307,8 +1358,8 @@ class Buffer:
             dtype (DType): The data type of the buffer.
             device (Device, optional): The device to allocate the buffer on.
                 Defaults to None (CPU).
-            pinned (bool, optional): If True, allocate pinned host memory for
-                non-CPU devices. Defaults to False.
+            usage (Usage, optional): Allocation intent, see :obj:`Usage`.
+                Defaults to ``Usage.DEFAULT``.
 
         Returns:
             Buffer: A new buffer filled with zeros.

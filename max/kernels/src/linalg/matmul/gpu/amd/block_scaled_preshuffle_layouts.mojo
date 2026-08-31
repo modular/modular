@@ -55,7 +55,8 @@ from std.math import align_up, ceildiv
 from std.math.uutils import udivmod, uceildiv
 from std.memory import bitcast
 
-from layout import Coord, Idx, TileTensor, row_major
+from layout import Coord, Idx, TensorStorage, TileTensor, row_major
+
 from layout.tile_layout import Layout, TensorLayout, col_major
 from layout.tile_tensor import stack_allocation
 
@@ -376,9 +377,11 @@ struct Shuffler[E: Int]:
         K_BYTES: Int,
         RawLayout: TensorLayout,
         DstLayout: TensorLayout,
+        RawStore: TensorStorage,
+        DstStore: TensorStorage,
     ](
-        raw: TileTensor[.uint8, RawLayout, ImmutAnyOrigin],
-        dst: TileTensor[.uint8, DstLayout, MutAnyOrigin],
+        raw: TileTensor[.uint8, RawLayout, ImmutAnyOrigin, Storage=RawStore],
+        dst: TileTensor[.uint8, DstLayout, MutAnyOrigin, Storage=DstStore],
     ):
         """LDS-staged per-tile B 5D preshuffle on AMD GPU.
 
@@ -601,6 +604,8 @@ struct Shuffler[E: Int]:
             K_BYTES,
             type_of(raw_any).LayoutType,
             type_of(dst_any).LayoutType,
+            type_of(raw_any).Storage,
+            type_of(dst_any).Storage,
         ]
         ctx.enqueue_function[kernel](
             raw_any,
@@ -674,10 +679,22 @@ struct Shuffler[E: Int]:
         SrcLayout: TensorLayout,
         DstLayout: TensorLayout,
         AOffsetsLayout: TensorLayout,
+        SrcStore: TensorStorage,
+        DstStore: TensorStorage,
+        AOffsetsStore: TensorStorage,
     ](
-        sfa_raw: TileTensor[.uint8, SrcLayout, ImmutAnyOrigin],
-        sfa_pre: TileTensor[mut=True, .uint8, DstLayout, MutAnyOrigin],
-        a_offsets: TileTensor[.uint32, AOffsetsLayout, ImmutAnyOrigin],
+        sfa_raw: TileTensor[
+            .uint8, SrcLayout, ImmutAnyOrigin, Storage=SrcStore
+        ],
+        sfa_pre: TileTensor[
+            mut=True, .uint8, DstLayout, MutAnyOrigin, Storage=DstStore
+        ],
+        a_offsets: TileTensor[
+            .uint32,
+            AOffsetsLayout,
+            ImmutAnyOrigin,
+            Storage=AOffsetsStore,
+        ],
         num_active_experts: Int32,
         max_padded_M: Int32,
         total_wg: Int32,
@@ -715,9 +732,10 @@ struct Shuffler[E: Int]:
         var current_tile = 0
 
         for expert_slot in range(_num_active_experts):
-            var token_start = Int(a_offsets[Coord(expert_slot)])
+            var token_start = Int(a_offsets.load[width=1](Coord(expert_slot)))
             var num_tokens = (
-                Int(a_offsets[Coord(expert_slot + 1)]) - token_start
+                Int(a_offsets.load[width=1](Coord(expert_slot + 1)))
+                - token_start
             )
 
             # Empty slot — contributes zero tiles to the global counter,
@@ -764,7 +782,9 @@ struct Shuffler[E: Int]:
                         if src_mn < num_tokens:
                             cell_bytes[
                                 k_pack * Self.S_MN_PACK + mn_pack
-                            ] = sfa_raw[Coord((token_start + src_mn), src_k)]
+                            ] = sfa_raw.load[width=1](
+                                Coord((token_start + src_mn), src_k)
+                            )
 
                 var cell_byte_off = Self.scale_4d_slot_byte_off[
                     K_SCALES=K_SCALES, packed_mode=True
@@ -812,6 +832,9 @@ struct Shuffler[E: Int]:
             type_of(raw_any).LayoutType,
             type_of(pre_any).LayoutType,
             type_of(a_off_any).LayoutType,
+            type_of(raw_any).Storage,
+            type_of(pre_any).Storage,
+            type_of(a_off_any).Storage,
         ]
         ctx.enqueue_function[kernel](
             raw_any,

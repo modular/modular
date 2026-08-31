@@ -131,11 +131,9 @@ static void maybeApplyTypeRefinement(VarDeclOp varOp, ASTDecl &declScope,
 //===----------------------------------------------------------------------===//
 
 /// Create an IREmitter for a dynamic context with a builder.
-IREmitter::IREmitter(ASTDecl &declScope, OpBuilder builder,
-                     std::optional<OpBuilder> varDeclCursor)
+IREmitter::IREmitter(ASTDecl &declScope, OpBuilder builder)
     : SharedStateUser(declScope.getShared()), builder(builder),
-      paramContext(EC_InvalidContext), declScope(declScope),
-      varDeclCursor(varDeclCursor) {}
+      paramContext(EC_InvalidContext), declScope(declScope) {}
 
 /// Create an IREmitter for a parameter context.
 IREmitter::IREmitter(ASTDecl &declScope, ExprContext paramContext,
@@ -1904,8 +1902,6 @@ ASTDecl *IREmitter::createParametricClosureTrait(SharedState &shared) {
       ParamDeclAttr::get("R#2", TypeType::get(ctx)),
       // The metadata.
       ParamDeclAttr::get("M#3", NonStructTypeType::get(ctx)),
-      // The implicit origin decl list.
-      ParamDeclAttr::get("O#4", ParamListType::get(StringType::get(ctx))),
   };
   SmallVector<PassingKind> passingKinds(decls.size(), PassingKind::PosOnly);
 
@@ -1938,9 +1934,6 @@ ASTDecl *IREmitter::createParametricClosureTrait(SharedState &shared) {
   auto mutSelf =
       QuoteAttr::get(TypeParamAttr::get(mutSelfRef, TypeType::get(ctx)));
 
-  // An extra implicit origin for `_Self` parameter.
-  auto selfOrigin = StringAttr::get("_self_origin`", StringType::get(ctx));
-
   ImplicitLocOpBuilder builder = ImplicitLocOpBuilder::atBlockEnd(
       closureTrait.getLoc(), &closureTrait.getFields().front());
 
@@ -1948,13 +1941,11 @@ ASTDecl *IREmitter::createParametricClosureTrait(SharedState &shared) {
   auto args = prependParamList(mutSelf, ParamDeclRefAttr::get(decls[1]));
   auto retTy = ParamDeclRefAttr::get(decls[2]);
   auto metadata = ParamDeclRefAttr::get(decls[3]);
-  auto origins = prependParamList(selfOrigin, ParamDeclRefAttr::get(decls[4]));
 
   auto aliasOp = AliasDeclOp::create(
-      builder,
-      ParamDeclAttr::get(builder.getStringAttr("__call__"),
-                         KGEN::FuncGeneratorTypeBuilderType::get(
-                             ctx, params, args, retTy, metadata, origins)));
+      builder, ParamDeclAttr::get(builder.getStringAttr("__call__"),
+                                  KGEN::FuncGeneratorTypeBuilderType::get(
+                                      ctx, params, args, retTy, metadata)));
 
   (void)shared.declResolver->addFullyResolvedDecl(aliasOp, "__call__", SMLoc(),
                                                   &traitDecl);
@@ -2042,12 +2033,6 @@ TraitType IREmitter::bindParamsToClosureTraitFromSig(const ExprNode *expr,
       traitSig.getParamName(3),
       FnMetadataAttr::get(ctx, argConventions,
                           sig.getFnMetadata().getFnEffects(), originData));
-
-  // 5th, the implicit origin decl list. Origins are index-based and frozen in
-  // the quoted arguments now, so the builder needs no name declarations.
-  evaluator.setDeclBinding(
-      traitSig.getParamName(4),
-      ParamListAttr::get({}, ParamListType::get(StringType::get(ctx))));
 
   auto traitType = closureTraitDecl->getTypeDeclSelf().extractMetaType();
   return cast<TraitType>(evaluator.getReboundType(traitType));

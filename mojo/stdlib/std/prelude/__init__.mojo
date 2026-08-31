@@ -189,3 +189,4 @@ from std.traits import (
     ImplicitlyCopyable,
     Movable,
 )
+from std.traits.deinitable import deinit

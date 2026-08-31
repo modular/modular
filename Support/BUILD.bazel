@@ -1165,6 +1165,7 @@ modular_cc_library(
 mlir_nanobind(
     name = "MDialectNanobindInc",
     srcs = glob(["include/Support/MDialect/*.td"]),
+    allowlist = "//max/python/max/_core/internal/modules/dialects:allowlist.txt",
     output_dir = "include/Support/MDialect/Nanobind",
     deps = [
         ":MTdFiles",

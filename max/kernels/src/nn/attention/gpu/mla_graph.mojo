@@ -687,15 +687,21 @@ def mla_prefill_branch_fp8[
 
     comptime num_heads = q.static_shape[1]
     comptime q_head_dim = q.static_shape[2]
-    comptime qk_rope_head_dim = freqs_cis.static_shape[1]
-    comptime qk_nope_head_dim = q_head_dim - qk_rope_head_dim
     comptime v_head_dim = output.static_shape[2]
+    comptime k_cache_dim = kv_params.head_size
 
     comptime assert w_k.shape_known, "w_k's shape should be static"
+    comptime kv_latent_dim = w_k.static_shape[1]
+    # Derive the rotary width from cache+latent, not freqs_cis, so a NoPE model
+    # with no rotary table can still reach this op.
+    comptime qk_rope_head_dim = k_cache_dim - kv_latent_dim
+    comptime qk_nope_head_dim = q_head_dim - qk_rope_head_dim
+    comptime assert (
+        qk_rope_head_dim == 0 or freqs_cis.static_shape[1] == qk_rope_head_dim
+    ), "freqs_cis's width should be k_cache_dim - kv_latent_dim."
     comptime assert (
         w_k.static_shape[0] == num_heads * qk_nope_head_dim
     ), "w_k.shape[0] should be equal to num_heads * qk_nope_head_dim"
-    comptime kv_latent_dim = w_k.static_shape[1]
     comptime assert w_uv.shape_known, "w_uv's shape should be static"
     comptime assert (
         w_uv.static_shape[0] == num_heads
@@ -1171,24 +1177,24 @@ def mla_decode_branch_fp8[
 
     comptime num_heads = q.static_shape[1]
     comptime q_head_dim = q.static_shape[2]
-    comptime qk_rope_head_dim = freqs_cis.static_shape[1]
-    comptime qk_nope_head_dim = q_head_dim - qk_rope_head_dim
     comptime v_head_dim = output.static_shape[2]
     comptime k_cache_dim = kv_params.head_size
 
     comptime assert (
         w_uk.shape_known and w_uv.shape_known
     ), "w_uk and w_uv's shapes should be static"
+    comptime kv_latent_dim = w_uk.static_shape[1]
+    comptime qk_rope_head_dim = k_cache_dim - kv_latent_dim
+    comptime qk_nope_head_dim = q_head_dim - qk_rope_head_dim
+    comptime assert (
+        qk_rope_head_dim == 0 or freqs_cis.static_shape[1] == qk_rope_head_dim
+    ), "freqs_cis's width should be k_cache_dim - kv_latent_dim."
     comptime assert (
         w_uk.static_shape[2] == qk_nope_head_dim
     ), "w_uk.static_shape[2] should be equal to qk_nope_head_dim"
     comptime assert (
         w_uv.static_shape[1] == v_head_dim
     ), "w_uv.static_shape[1] should be equal to v_head_dim"
-    comptime kv_latent_dim = w_uk.static_shape[1]
-    comptime assert (
-        kv_latent_dim + qk_rope_head_dim == k_cache_dim
-    ), "kv_latent_dim + qk_rope_head_dim should be equal to kv_params.head_size"
 
     var seq_len = Int(q.dim(0))
 
@@ -1405,24 +1411,24 @@ def mla_prefill_branch_sparse_fp8[
 
     comptime num_heads = q.static_shape[1]
     comptime q_head_dim = q.static_shape[2]
-    comptime qk_rope_head_dim = freqs_cis.static_shape[1]
-    comptime qk_nope_head_dim = q_head_dim - qk_rope_head_dim
     comptime v_head_dim = output.static_shape[2]
     comptime k_cache_dim = kv_params.head_size
 
     comptime assert (
         w_uk.shape_known and w_uv.shape_known
     ), "w_uk and w_uv's shapes should be static"
+    comptime kv_latent_dim = w_uk.static_shape[1]
+    comptime qk_rope_head_dim = k_cache_dim - kv_latent_dim
+    comptime qk_nope_head_dim = q_head_dim - qk_rope_head_dim
+    comptime assert (
+        qk_rope_head_dim == 0 or freqs_cis.static_shape[1] == qk_rope_head_dim
+    ), "freqs_cis's width should be k_cache_dim - kv_latent_dim."
     comptime assert (
         w_uk.static_shape[2] == qk_nope_head_dim
     ), "w_uk.static_shape[2] should be equal to qk_nope_head_dim"
     comptime assert (
         w_uv.static_shape[1] == v_head_dim
     ), "w_uv.static_shape[1] should be equal to v_head_dim"
-    comptime kv_latent_dim = w_uk.static_shape[1]
-    comptime assert (
-        kv_latent_dim + qk_rope_head_dim == k_cache_dim
-    ), "kv_latent_dim + qk_rope_head_dim should be equal to kv_params.head_size"
 
     var seq_len = Int(q.dim(0))
     if seq_len == 0:
@@ -1548,7 +1554,9 @@ def mla_prefill_branch_sparse_fp8[
             ](
                 num_q_heads=num_heads,
                 num_kv_heads=1,
-                qk_depth=k_cache_dim,
+                # Tile stays laid out for 576. The kernel zero-fills the NoPE tail.
+                qk_depth=kv_latent_dim + 64,
+                input_qk_depth=k_cache_dim,
                 v_depth=kv_latent_dim,
                 indices_stride=indices_stride,
                 group=num_heads,
@@ -2037,15 +2045,19 @@ def mla_prefill_branch_bf16[
 
     comptime num_heads = q.static_shape[1]
     comptime q_head_dim = q.static_shape[2]
-    comptime qk_rope_head_dim = freqs_cis.static_shape[1]
-    comptime qk_nope_head_dim = q_head_dim - qk_rope_head_dim
     comptime v_head_dim = output.static_shape[2]
+    comptime k_cache_dim = kv_params.head_size
 
     comptime assert w_k.shape_known, "w_k's shape should be static"
+    comptime kv_latent_dim = w_k.static_shape[1]
+    comptime qk_rope_head_dim = k_cache_dim - kv_latent_dim
+    comptime qk_nope_head_dim = q_head_dim - qk_rope_head_dim
+    comptime assert (
+        qk_rope_head_dim == 0 or freqs_cis.static_shape[1] == qk_rope_head_dim
+    ), "freqs_cis's width should be k_cache_dim - kv_latent_dim."
     comptime assert (
         w_k.static_shape[0] == num_heads * qk_nope_head_dim
     ), "w_k.shape[0] should be equal to num_heads * qk_nope_head_dim"
-    comptime kv_latent_dim = w_k.static_shape[1]
     comptime assert w_uv.shape_known, "w_uv's shape should be static"
     comptime assert (
         w_uv.static_shape[0] == num_heads
@@ -2346,18 +2358,21 @@ def mla_decode_branch_bf16[
 
     comptime num_heads = q.static_shape[1]
     comptime q_head_dim = q.static_shape[2]
-    comptime qk_rope_head_dim = freqs_cis.static_shape[1]
-    comptime qk_nope_head_dim = q_head_dim - qk_rope_head_dim
     comptime v_head_dim = output.static_shape[2]
     comptime k_cache_dim = kv_params.head_size
 
     comptime assert (
         w_uk.shape_known and w_uv.shape_known
     ), "w_uk and w_uv's shapes should be static"
+    comptime kv_latent_dim = w_uk.static_shape[1]
+    comptime qk_rope_head_dim = k_cache_dim - kv_latent_dim
+    comptime qk_nope_head_dim = q_head_dim - qk_rope_head_dim
+    comptime assert (
+        qk_rope_head_dim == 0 or freqs_cis.static_shape[1] == qk_rope_head_dim
+    ), "freqs_cis's width should be k_cache_dim - kv_latent_dim."
     comptime assert (
         w_uk.static_shape[2] == qk_nope_head_dim
     ), "w_uk.static_shape[2] should be equal to qk_nope_head_dim"
-    comptime kv_latent_dim = w_uk.static_shape[1]
     comptime assert (
         w_uv.static_shape[2] == kv_latent_dim
     ), "w_uv.static_shape[2] should be equal to kv_latent_dim"
@@ -2561,24 +2576,24 @@ def mla_prefill_branch_sparse_bf16[
 
     comptime num_heads = q.static_shape[1]
     comptime q_head_dim = q.static_shape[2]
-    comptime qk_rope_head_dim = freqs_cis.static_shape[1]
-    comptime qk_nope_head_dim = q_head_dim - qk_rope_head_dim
     comptime v_head_dim = output.static_shape[2]
     comptime k_cache_dim = kv_params.head_size
 
     comptime assert (
         w_uk.shape_known and w_uv.shape_known
     ), "w_uk and w_uv's shapes should be static"
+    comptime kv_latent_dim = w_uk.static_shape[1]
+    comptime qk_rope_head_dim = k_cache_dim - kv_latent_dim
+    comptime qk_nope_head_dim = q_head_dim - qk_rope_head_dim
+    comptime assert (
+        qk_rope_head_dim == 0 or freqs_cis.static_shape[1] == qk_rope_head_dim
+    ), "freqs_cis's width should be k_cache_dim - kv_latent_dim."
     comptime assert (
         w_uk.static_shape[2] == qk_nope_head_dim
     ), "w_uk.static_shape[2] should be equal to qk_nope_head_dim"
     comptime assert (
         w_uv.static_shape[1] == v_head_dim
     ), "w_uv.static_shape[1] should be equal to v_head_dim"
-    comptime kv_latent_dim = w_uk.static_shape[1]
-    comptime assert (
-        kv_latent_dim + qk_rope_head_dim == k_cache_dim
-    ), "kv_latent_dim + qk_rope_head_dim should be equal to kv_params.head_size"
 
     var seq_len = Int(q.dim(0))
     if seq_len == 0:
@@ -2696,7 +2711,9 @@ def mla_prefill_branch_sparse_bf16[
             ](
                 num_q_heads=num_heads,
                 num_kv_heads=1,
-                qk_depth=k_cache_dim,
+                # Tile stays laid out for 576. The kernel zero-fills the NoPE tail.
+                qk_depth=kv_latent_dim + 64,
+                input_qk_depth=k_cache_dim,
                 v_depth=kv_latent_dim,
                 indices_stride=indices_stride,
                 group=num_heads,

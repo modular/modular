@@ -173,32 +173,28 @@ def test_ref_decl_patterns(a: List[Int], mut b: List[Int]):
 
 # CHECK-LABEL: lit.fn @"test_type_patterns
 def test_type_patterns():
-    # Implicitly declared variables go at the top.
-    # CHECK-NEXT: %c = lit.var.decl "c" imp : !lit.ref<!lit.struct<#List <:!AnyType_Copyable_Movable !Int>>,
-    # CHECK-NEXT: %b = lit.var.decl "b" imp : !lit.ref<!UInt8,
-
     # CHECK-NEXT: lit.call {{.*}}marker
     marker()
 
     # CHECK: %a = lit.var.decl "a" var : !lit.ref<:meta<!Int> #alias_Int,
     (var a): Int
 
+    # CHECK: %b = lit.var.decl "b" var : !lit.ref<!UInt8,
     # CHECK-NEXT: [[TMP:%.*]] = kgen.param.constant: {{.*}}int_literal 4>
     # CHECK-NEXT: [[TMP2:%.*]] = lit.call {{.*}}UInt8::@"__init__{{.*}}([[TMP]])
     # CHECK-NEXT: lit.ref.store [[TMP2]], %b
-    # expected-warning @+1 {{implicit declaration of 'b' is deprecated; add 'var' before the name}}
-    b: UInt8 = 4
+    var b: UInt8 = 4
 
     # Show that the type annotation allows us to use the type in the pattern to
     # infer the RHS type of the collection.
+    # CHECK: %c = lit.var.decl "c" var : !lit.ref<!lit.struct<#List <:!AnyType_Copyable_Movable !Int>>,
     # CHECK: lit.call {{.*}}List::@"__init__
-    # expected-warning @+1 {{implicit declaration of 'c' is deprecated; add 'var' before the name}}
-    c: List[Int] = []
+    var c: List[Int] = []
 
     # declare multiple variables at once.
     # CHECK: %d = lit.var.decl "d" var : !lit.ref<!Int,
     # CHECK: %e = lit.var.decl "e" var : !lit.ref<!Int,
-    (var d, e): Tuple[Int, Int]
+    var (d, e): Tuple[Int, Int]
 
 
 ##===----------------------------------------------------------------------===##

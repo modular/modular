@@ -337,7 +337,9 @@ def mha_cross_gpu_naive[
 
     # FIXME: RUNP-356 Direct access to CUDA within DeviceContext
     var p_buffer = TileTensor(
-        p_device,
+        # FIXME: GEX-4123 Force use of PointerStorage until the
+        # `input_fn_device` legacy closure is replaced.
+        p_device.unsafe_ptr(),
         row_major((batch_size * num_heads, q_max_seq_len, num_keys)),
     )
     var q_device = DeviceBuffer[q_type](

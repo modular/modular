@@ -51,7 +51,6 @@ from .batch_processor import UnifiedDflashLlama3BatchProcessor
 from .model_config import (
     UnifiedDflashLlama3Config,
     parse_dflash_draft_hf_config,
-    resolve_dflash_num_speculative_tokens,
 )
 from .unified_dflash_llama3 import (
     UnifiedDflashLlama3 as UnifiedDflashLlama3Module,
@@ -115,10 +114,9 @@ class UnifiedDflashLlama3Model(
         return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
         max_batch_size: int = 1,
     ) -> None:
-        # The drafter's trained width, resolved from the draft checkpoint;
-        # exposed for the overlap pipeline's spec-decode buffers.
+        assert pipeline_config.speculative is not None
         self.resolved_num_speculative_tokens = (
-            resolve_dflash_num_speculative_tokens(pipeline_config)
+            pipeline_config.speculative.draft_width
         )
         super().__init__(
             pipeline_config,
@@ -146,6 +144,7 @@ class UnifiedDflashLlama3Model(
         # The KV bake in ``PipelineModelWithKVCache.__init__`` reads the raw
         # speculative section, where the unset width would bake
         # num_draft_tokens=0; rebake at the drafter's trained width.
+        assert pipeline_config.speculative is not None
         return replace(
             Llama3Config.construct_kv_params(
                 huggingface_config,
@@ -154,9 +153,7 @@ class UnifiedDflashLlama3Model(
                 kv_cache_config,
                 cache_dtype,
             ),
-            num_draft_tokens=resolve_dflash_num_speculative_tokens(
-                pipeline_config, warn=False
-            ),
+            num_draft_tokens=pipeline_config.speculative.draft_width,
         )
 
     def _load_state_dict(self) -> dict[str, Any]:
@@ -237,6 +234,7 @@ class UnifiedDflashLlama3Model(
             target=target_config,
             draft=draft_config,
             speculative_config=self.pipeline_config.speculative,
+            resolved_num_speculative_tokens=resolved_spec,
             target_layer_ids=list(dflash_hf.target_layer_ids),
             mask_token_id=int(dflash_hf.mask_token_id),
             block_size=int(dflash_hf.block_size or 0),

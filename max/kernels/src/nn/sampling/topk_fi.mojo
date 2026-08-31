@@ -414,8 +414,7 @@ def topk_mask_logits[
     var batch_size = shape[0]
     var d = shape[1]
 
-    @__parameter
-    def trace_information() -> String:
+    def trace_information() {imm} -> String:
         return String(";").join(
             Span(
                 [
@@ -427,7 +426,7 @@ def topk_mask_logits[
 
     with Trace[TraceLevel.OP, target=StaticString("gpu")](
         "topk_mask_logits",
-        Trace[TraceLevel.OP]._get_detail_str[trace_information](),
+        Trace[TraceLevel.OP]._get_detail_str(trace_information),
         task_id=Int(ctx.id()),
     ):
         var out_shape = coord_to_index_list(masked_logits.layout.shape_coord())
@@ -1160,8 +1159,7 @@ def topk_sampling_from_prob[
     var batch_size = shape[0]
     var d = shape[1]
 
-    @__parameter
-    def trace_information() -> String:
+    def trace_information() {imm} -> String:
         return String(";").join(
             Span(
                 [
@@ -1173,7 +1171,7 @@ def topk_sampling_from_prob[
 
     with Trace[TraceLevel.OP, target=StaticString("gpu")](
         "topk_sampling_from_prob",
-        Trace[TraceLevel.OP]._get_detail_str[trace_information](),
+        Trace[TraceLevel.OP]._get_detail_str(trace_information),
         task_id=Int(ctx.id()),
     ):
         var out_shape = coord_to_index_list(output.layout.shape_coord())
@@ -2306,8 +2304,7 @@ def topk_topp_sampling_from_prob[
     var batch_size = shape[0]
     var d = shape[1]
 
-    @__parameter
-    def trace_information() -> String:
+    def trace_information() {imm} -> String:
         return String(";").join(
             Span(
                 [
@@ -2320,7 +2317,7 @@ def topk_topp_sampling_from_prob[
 
     with Trace[TraceLevel.OP, target=StaticString("gpu")](
         "topk_topp_sampling_from_prob",
-        Trace[TraceLevel.OP]._get_detail_str[trace_information](),
+        Trace[TraceLevel.OP]._get_detail_str(trace_information),
         task_id=Int(ctx.id()),
     ):
         var out_shape = coord_to_index_list(output.layout.shape_coord())
@@ -2728,8 +2725,7 @@ def topk_softmax_sample[
     var batch_size = shape[0]
     var d = shape[1]
 
-    @__parameter
-    def trace_information() -> String:
+    def trace_information() {imm} -> String:
         return String(";").join(
             Span(
                 [
@@ -2741,7 +2737,7 @@ def topk_softmax_sample[
 
     with Trace[TraceLevel.OP, target=StaticString("gpu")](
         "topk_softmax_sample",
-        Trace[TraceLevel.OP]._get_detail_str[trace_information](),
+        Trace[TraceLevel.OP]._get_detail_str(trace_information),
         task_id=Int(ctx.id()),
     ):
         var out_shape = coord_to_index_list(
@@ -3019,8 +3015,7 @@ def topk_topp_masked_probs[
     var batch_size = shape[0]
     var d = shape[1]
 
-    @__parameter
-    def trace_information() -> String:
+    def trace_information() {imm} -> String:
         return String(";").join(
             Span(
                 [
@@ -3032,7 +3027,7 @@ def topk_topp_masked_probs[
 
     with Trace[TraceLevel.OP, target=StaticString("gpu")](
         "topk_topp_masked_probs",
-        Trace[TraceLevel.OP]._get_detail_str[trace_information](),
+        Trace[TraceLevel.OP]._get_detail_str(trace_information),
         task_id=Int(ctx.id()),
     ):
         var probs_shape = coord_to_index_list(probs.layout.shape_coord())

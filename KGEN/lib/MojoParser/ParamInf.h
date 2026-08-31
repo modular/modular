@@ -38,7 +38,8 @@ public:
   ParamInf(const ParamBindings &paramBinding, ArrayRef<Type> declaredParamTypes,
            PogListAttr declaredParamPogs, bool allowImplicitConversions,
            ASTDecl *declIfDirect, bool discardError,
-           DeferredTypingContext *deferredTypingContext = nullptr);
+           DeferredTypingContext *deferredTypingContext = nullptr,
+           ArrayRef<ConstraintAttr> additionalAssumptions = {});
 
   // Infer the parameter binding for a struct given a (potentially incomplete)
   // parameter binding. On success, returns the verified bindings (which can be
@@ -172,7 +173,8 @@ public:
                bool discardError, FnTypeGeneratorType calleeSignature,
                const CallOperands &callOperands,
                const CallOperands::PogAssignment &pogAssignment,
-               OperandsNeedingOriginsList &operandsNeedingOrigins);
+               OperandsNeedingOriginsList &operandsNeedingOrigins,
+               ArrayRef<ConstraintAttr> additionalAssumptions = {});
 
   /// Given an incomplete parameter binding set and the arguments for a call to
   /// the specified signature, try to infer the verified parameter bindings. On

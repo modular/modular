@@ -62,6 +62,9 @@ from max.pipelines.architectures.speculators_common import (
     DSparkSpeculatorsDraftConfig,
     construct_draft_kv_params,
 )
+from max.pipelines.architectures.speculators_common.draft_config import (
+    speculators_dspark_width,
+)
 from max.pipelines.architectures.unified_dspark_gemma4_31b.model import (
     UnifiedDSparkGemma4_31BInputs,
 )
@@ -409,45 +412,42 @@ def test_validate_rejects_vocab_mismatch() -> None:
         config.validate_dspark_fields()
 
 
-def test_validate_honors_user_num_speculative_tokens() -> None:
+def test_construction_honors_user_num_speculative_tokens() -> None:
     # K=4 below the trained width (8 - 1 = 7) is honored: the draft block
     # is causal, so truncating trailing mask slots is prefix-stable. KV
     # headroom follows as the effective anchor+drafts width.
     config = _make_unified(_parse(_raw()), num_speculative_tokens=4)
-    config.validate_dspark_fields()
-    assert config.speculative_config.num_speculative_tokens == 4
+    assert config.resolved_num_speculative_tokens == 4
     assert config.effective_block_size == 5
 
 
-def test_validate_warns_num_speculative_tokens_beyond_trained(
+def test_construction_warns_num_speculative_tokens_beyond_trained(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     # K=9 above the trained width (8 - 1 = 7) is honored too: the block is
     # width-generic and the extra positions run as extrapolation, so a
     # warning names the trained geometry. KV headroom still follows the
     # effective anchor+drafts width.
-    config = _make_unified(_parse(_raw()), num_speculative_tokens=9)
     with caplog.at_level(logging.WARNING, logger="max.pipelines"):
-        config.validate_dspark_fields()
-    assert config.speculative_config.num_speculative_tokens == 9
+        config = _make_unified(_parse(_raw()), num_speculative_tokens=9)
+    assert config.resolved_num_speculative_tokens == 9
     assert config.effective_block_size == 10
     assert any(
         "trained at block_size=8" in record.message for record in caplog.records
     )
 
 
-def test_validate_rejects_non_positive_num_speculative_tokens() -> None:
-    config = _make_unified(_parse(_raw()), num_speculative_tokens=0)
+def test_construction_rejects_non_positive_num_speculative_tokens() -> None:
     with pytest.raises(ValueError, match="num_speculative_tokens=0"):
-        config.validate_dspark_fields()
+        _make_unified(_parse(_raw()), num_speculative_tokens=0)
 
 
-def test_validate_defaults_num_speculative_tokens_to_trained() -> None:
+def test_construction_defaults_num_speculative_tokens_to_trained() -> None:
     # Unset keeps the drafter's trained width (block_size 8 -> 7 drafts).
     config = _make_unified(_parse(_raw()), num_speculative_tokens=None)
-    config.validate_dspark_fields()
-    assert config.speculative_config.num_speculative_tokens == 7
+    assert config.resolved_num_speculative_tokens == 7
     assert config.effective_block_size == 8
+    assert config.speculative_config.num_speculative_tokens is None
 
 
 def _kv_pipeline_stand_in(kv_cache: KVCacheConfig) -> PipelineConfig:
@@ -1013,3 +1013,13 @@ def test_block_dispatch_metadata_rebuild_content() -> None:
     )
     assert isinstance(out, Buffer)
     np.testing.assert_array_equal(out.to_numpy(), [3, 8, 0, 4321])
+
+
+def test_width_honors_explicit() -> None:
+    draft_hf = _raw()
+    unset = SpeculativeConfig(speculative_method="dflash")
+    assert speculators_dspark_width(unset, None, draft_hf) == 7
+    explicit = SpeculativeConfig(
+        speculative_method="dflash", num_speculative_tokens=4
+    )
+    assert speculators_dspark_width(explicit, None, draft_hf) == 4

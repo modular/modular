@@ -136,7 +136,7 @@ def _make_payload(model: str, reasoning_key: str | None) -> dict[str, Any]:
         "messages": _build_messages(reasoning_key),
         "tools": _TOOLS,
         "tool_choice": "none",
-        "max_tokens": 48,
+        "max_tokens": 96,
         "temperature": 0,
     }
 

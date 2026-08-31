@@ -29,10 +29,14 @@
 #include "TypeSystem/MojoTypeSystem.h"
 #include "lldb/API/SBCommandInterpreter.h"
 #include "lldb/API/SBDebugger.h"
+#include "lldb/API/SBModule.h"
+#include "lldb/API/SBTarget.h"
 #include "llvm/ExecutionEngine/MCJIT.h"
 #include "llvm/Support/TargetSelect.h"
 
+#include <cassert>
 #include <cstdlib>
+#include <memory>
 
 using namespace M;
 using namespace M::KGEN::Mojo;
@@ -46,6 +50,11 @@ static std::atomic<M::Context *> existingContext;
 
 // One-time initialisation flag for the global AsyncRT context.
 static std::once_flag g_context_init_flag;
+
+// Set only when the plugin created the context itself. An embedder can hand one
+// in via setLLDBPluginContext before loading the plugin (MojoJupyter does), and
+// its lifetime is then not ours to manage.
+static std::atomic<bool> g_plugin_owns_context{false};
 
 void M::KGEN::setLLDBPluginContext(ContextRef ctx) {
   auto oldCtx = ContextRef::take(existingContext.exchange(ctx.release()));
@@ -63,12 +72,9 @@ static ErrorOr<ContextRef> getOrCreateGlobalContext() {
   // place to put this, since the only better place ('main' function of the
   // LLDB driver) is upstream and hard to patch in our build.
   //
-  // Ownership note: existingContext is the *sole* holder of the ContextRef.
-  // We deliberately avoid keeping a separate static copy so that releasing
-  // existingContext (ref-count → 0) immediately triggers CPUDevice::~Runtime()
-  // → workQueue->shutdown(), which synchronously joins all AsyncRT worker
-  // threads.  See the AddDestroyCallback in PluginInitialize for why this
-  // ordering matters.
+  // Ownership note: the plugin keeps no holder besides existingContext, so
+  // that releasing it, once LLDB's holders are gone, drops the ref-count to
+  // zero.  See the AddDestroyCallback in PluginInitialize.
   std::call_once(g_context_init_flag, []() {
     auto ctxOr = Init::createContext(
         "mojo-lldb-plugin",
@@ -81,6 +87,7 @@ static ErrorOr<ContextRef> getOrCreateGlobalContext() {
     } else {
       // Move ownership directly into existingContext — no extra copy retained.
       M::KGEN::setLLDBPluginContext(ctxOr.takeValue());
+      g_plugin_owns_context = true;
     }
   });
 
@@ -89,8 +96,11 @@ static ErrorOr<ContextRef> getOrCreateGlobalContext() {
   return Error("failed to create mojo-lldb-plugin context (see stderr)");
 }
 
+/// Returns the plugin's AsyncRT context, or an empty ref once it has been
+/// released during teardown.
 static ContextRef getGlobalContext() {
-  return getOrCreateGlobalContext().takeValue();
+  ErrorOr<ContextRef> ctxOr = getOrCreateGlobalContext();
+  return ctxOr.isError() ? ContextRef{} : ctxOr.takeValue();
 }
 
 /// LLDB has two different types of plugin initialization, we support them both
@@ -183,20 +193,43 @@ MODULAR_VISIBILITY_EXPORT bool PluginInitialize(SBDebugger debugger) {
     registered = true;
   }
 
-  // When this debugger is destroyed (SBDebugger::Destroy), release the AsyncRT
-  // context before SBDebugger::Terminate() is called.  existingContext is the
-  // sole ContextRef holder, so releasing it drops the ref-count to zero, which
-  // triggers CPUDevice::~Runtime() -> workQueue->shutdown().  shutdown() blocks
-  // until all AsyncRT worker threads have joined.  Without this sequencing the
-  // live worker threads race with LLDB's internal thread pool teardown inside
-  // Debugger::Terminate() and corrupt the heap.
+  // Join the AsyncRT workers before Debugger::Terminate() tears down LLDB's
+  // thread pool, live workers racing that teardown corrupt the heap.  That
+  // needs a zero ref-count, and releasing existingContext alone will not get
+  // there: every MojoTypeSystem holds a ref, kept alive by LLDB's targets and
+  // by its deliberately-leaked shared module list.  Drop those first.
+  //
+  // The debugger comes through the baton because Debugger::Terminate() runs
+  // destroy callbacks holding the non-recursive debugger-list mutex, so
+  // FindDebuggerWithID would deadlock.
   debugger.AddDestroyCallback(
-      [](lldb::user_id_t, void *) {
+      [](lldb::user_id_t, void *baton) {
+        std::unique_ptr<lldb::SBDebugger> dbg(
+            static_cast<lldb::SBDebugger *>(baton));
+        if (!g_plugin_owns_context)
+          return;
+
+        for (uint32_t i = dbg->GetNumTargets(); i > 0; --i) {
+          lldb::SBTarget target = dbg->GetTargetAtIndex(i - 1);
+          dbg->DeleteTarget(target);
+        }
+        lldb::SBModule::GarbageCollectAllocatedModules();
+
+        // GarbageCollectAllocatedModules only try_locks, and LLDB has not
+        // drained its thread pool yet, so a task still holding a module can
+        // make this a no-op. The assert and log below are what catch that.
+        M::Context *ctx = existingContext.load();
+        if (ctx && !ctx->isUnique()) {
+          llvm::errs() << "warning: mojo-lldb: AsyncRT context still shared"
+                          "at teardown\n";
+          assert(false && "AsyncRT context is still shared at teardown");
+        }
+
         M::KGEN::setLLDBPluginContext(ContextRef{});
       },
-      /*baton=*/nullptr);
+      /*baton=*/new lldb::SBDebugger(debugger));
 
-  registerMojoCommands(debugger, getGlobalContext());
+  registerMojoCommands(debugger, &getGlobalContext);
   registerLLVMDebugCommands(debugger);
   // We enable JIT debugging here so that this feature doesn't depend on
   // lldb init files or how LLDB was launched.

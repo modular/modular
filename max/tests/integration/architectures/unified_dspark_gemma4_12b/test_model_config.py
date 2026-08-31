@@ -37,6 +37,7 @@ from max.pipelines.architectures.unified_dspark_gemma4_12b.dspark_gemma4 import 
 )
 from max.pipelines.architectures.unified_dspark_gemma4_12b.model_config import (
     UnifiedDSparkGemma4_12BConfig,
+    gemma4_dspark_12b_width,
     resolve_dspark_num_speculative_tokens,
 )
 from max.pipelines.lib import (
@@ -265,3 +266,15 @@ def test_validate_never_mutates_speculative_config(
     # Module construction reads the trained width off the arch config
     # regardless of the CLI value.
     assert config.resolve_block_size() == BLOCK_SIZE
+
+
+def test_width_forces_block_size() -> None:
+    draft_hf = SimpleNamespace(
+        architectures=["Gemma4DSparkModel"], block_size=BLOCK_SIZE
+    )
+    unset = SpeculativeConfig(speculative_method="dflash")
+    assert gemma4_dspark_12b_width(unset, None, draft_hf) == BLOCK_SIZE
+    explicit = SpeculativeConfig(
+        speculative_method="dflash", num_speculative_tokens=4
+    )
+    assert gemma4_dspark_12b_width(explicit, None, draft_hf) == BLOCK_SIZE

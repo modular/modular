@@ -353,7 +353,8 @@ LITLowerer::lowerFunction(FnOp func, ArrayRef<ParamDeclAttr> parentInputParams,
 
   // Directly lower since these operations are exactly identical right now.
   OperationState state(func.getLoc(), GeneratorOp::getOperationName());
-  GeneratorOp::build(b, state, func.getSymNameAttr(), func.getSourceNameAttr(),
+  GeneratorOp::build(b, state, func.getSymNameAttr(),
+                     /*sym_visibility=*/nullptr, func.getSourceNameAttr(),
                      sigAttr, func.getFunctionTypeAttr(), inputParamsArr,
                      func.getDecoratorsAttr(), func.getInlineLevelAttr(),
                      func.getExportKindAttr(), func.getExternalAttr(),
@@ -395,8 +396,9 @@ void LITLowerer::lowerNestedFunction(FnOp func) {
   if (!sourceName)
     sourceName = decl.getName();
   auto region = ParamDeclareRegionOp::create(
-      b, decl, sourceName, func.getFuncTypeGenerator(), func.getFunctionType(),
-      inputParams, func.getInlineLevel(), func.getLinkageNameAttr(),
+      b, /*sym_name=*/nullptr, /*sym_visibility=*/nullptr, decl, sourceName,
+      func.getFuncTypeGenerator(), func.getFunctionType(), inputParams,
+      func.getInlineLevel(), func.getLinkageNameAttr(),
       func.getLLVMMetadataArray(), func.getLLVMArgMetadataArray());
   region.getBodyRegion().takeBody(func.getBodyRegion());
   func.erase();
@@ -462,7 +464,8 @@ LITLowerer::lowerStructDecl(StructDeclOp structDecl,
 
   OpBuilder b(structDecl->getContext());
   auto structGen = StructGeneratorOp::create(
-      b, info.loc, structName, info.decls, structInstType, typeType);
+      b, info.loc, structName, /*sym_visibility=*/nullptr, info.decls,
+      structInstType, typeType);
   Block *structGenBody = b.createBlock(&structGen.getRegion());
 
   for (Operation &member : llvm::make_early_inc_range(

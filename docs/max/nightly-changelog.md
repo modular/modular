@@ -227,6 +227,11 @@ the [container](/container) page now links to the new page.
 
 ## MAX framework
 
+- Added `Device.is_host_unified` (`max.driver`) and
+  `DeviceContext.is_host_unified()` (Mojo): whether a device and the host draw
+  from one physical memory pool. Reports hardware topology, so it does not imply
+  any given buffer is host-readable. Driver plugins answer it through the new
+  optional `host_unified` device property.
 - Greedy speculative acceptance (`greedy_acceptance_sampler`,
   `AcceptanceSampler` in greedy mode) now applies the structured-output
   grammar bitmask to the target logits (with a `-inf` fill) before the
@@ -404,6 +409,11 @@ the [container](/container) page now links to the new page.
   `host_offload_max_gb` now sizes one shared host pool of that size for
   the whole deployment, rather than allocating a separate pool of that size per
   replica.
+- `--kv-connector-config '{"type": "rust_tiered", "disk_offload_max_gb": 0}'`
+  now runs the tiered connector with no disk last level: offloaded blocks stop
+  at the pinned host tier and no offload directory is created. Leaving
+  `disk_offload_max_gb` unset still sizes the disk tier from the device page
+  pool, and a negative budget is now rejected instead of silently accepted.
 - The dKV external KV-cache connector (`--kv-connector-config '{"type":
   "dkv"}'`) now supports
   data-parallel (DP) serving and shares its prefix cache across DP replicas on
@@ -556,6 +566,10 @@ the [container](/container) page now links to the new page.
 - `DeviceContext.create_event()` on NVIDIA GPUs now honors the default
   `disable_timing` flag (previously inverted) and recycles events through the
   driver's event cache instead of growing it on every create/destroy cycle.
+- Device-to-device copies on Apple GPUs no longer race when the source was
+  written on another `DeviceStream`.
+- `MODULAR_DEBUG=device-sync-mode` now works on Apple GPUs, where it
+  previously did nothing.
 - Capturing `DeviceContext.enqueue_function()` now encodes the closure
   through `DevicePassable` before launch, matching explicit kernel
   arguments. Host handles such as `DevicePointer` reach the device as
@@ -790,6 +804,19 @@ the [container](/container) page now links to the new page.
   by its `dtype`, `shape`, and `device`. `repr(buffer)` still returns the
   metadata-only representation.
 
+- Added `max.driver.Usage`, an allocation-intent flag for `Buffer`.
+  `Buffer(..., usage=Usage.STAGING)` requests host memory for staging
+  transfers to and from the given device, which may be page-locked
+  depending on the backend. `Buffer.usage` reports the intent;
+  `Buffer.pinned` reports whether the memory is page-locked.
+
+- **Breaking:** the `pinned=` argument to `Buffer(...)` and
+  `Buffer.zeros(...)` is removed. Use `usage=Usage.STAGING` instead.
+
+- DLPack export of a staging buffer (`__dlpack__`, and `to_numpy()` in
+  turn) does not synchronize pending device work. Synchronize explicitly
+  before reading one after a device operation.
+
 - `max.nn.sampling.AcceptanceSampler` and
   `max.nn.sampling.stochastic_acceptance_sampler` take a `draft_proposal`
   argument. The default, `"argmax"`, is unchanged: the draft proposes
@@ -805,6 +832,9 @@ the [container](/container) page now links to the new page.
 ### C API
 
 ## MAX kernels
+
+- SM100 matmuls with an elementwise epilogue no longer leave output columns
+  unwritten when `N` is not a multiple of 16, such as `N=136` or `N=776`.
 
 - The SM100 MLA decode dispatch now enumerates 12, 24 and 48 query heads
   alongside the powers of two it already covered, so a model whose per-device
@@ -913,6 +943,30 @@ the [container](/container) page now links to the new page.
 
 ## Breaking changes
 
+- The KV connector's external host and disk tiers now report occupancy and
+  transfer volume in bytes rather than in blocks. Those tiers are byte budgets
+  the operator sizes in bytes (`host_offload_max_gb`, `disk_offload_max_gb`),
+  their block width need not match the device's, and bytes rate directly
+  against PCIe and disk bandwidth. The device (G0) cache is unchanged and
+  still reports blocks.
+
+  `KVConnector` replaces `host_block_count` / `disk_block_count` with
+  `host_byte_count` / `disk_byte_count`, returning a new `ByteCount` (the same
+  `free` / `total` / `used` / `used_pct` / `free_pct` surface as `BlockCount`,
+  measured in bytes). The KV cache managers make the same swap;
+  `block_count()` is untouched. `KVCacheMetrics` renames `h2d_blocks_copied`,
+  `d2h_blocks_copied`, `disk_blocks_read`, and `disk_blocks_written` to
+  `h2d_bytes_copied`, `d2h_bytes_copied`, `disk_bytes_read`, and
+  `disk_bytes_written`.
+
+  The exported metrics follow: `maxserve.cache.h2d_blocks_copied`,
+  `maxserve.cache.d2h_blocks_copied`, `maxserve.cache.disk_blocks_read`, and
+  `maxserve.cache.disk_blocks_written` become `h2d_bytes_copied`,
+  `d2h_bytes_copied`, `disk_bytes_read`, and `disk_bytes_written`, with unit
+  `bytes`. `maxserve.cache.used_host_kv_pct` and
+  `maxserve.cache.used_disk_kv_pct` keep their names and are now computed over
+  bytes. Dashboards and alerts on the old tier counter names need updating.
+
 - The pipeline configs are now immutable: `PipelineArgs`,
   `PipelineConfig`, `PipelineRuntimeConfig`, `SamplingConfig`,
   `MAXModelConfig`, `KVCacheConfig` and its nested `KVConnectorConfig`,
@@ -925,6 +979,16 @@ the [container](/container) page now links to the new page.
   `ModelManifest.resolve()` is removed — a manifest is complete when built.
   Construct it with the component configs you need. The unused
   `total_weights_size` property is also removed.
+- `SpeculativeConfig` is now immutable: assigning to a field after
+  construction raises a pydantic `ValidationError`. Construct it with the
+  values you need. A failed speculative target-architecture rewrite now
+  raises from `PipelineConfig.from_args()` instead of being logged and
+  ignored.
+
+- An architecture can set `checkpoint_draft_width` on its
+  registration to supply the draft width its checkpoint was trained for,
+  so users of those models do not have to pass `--num-speculative-tokens`.
+  A width that disagrees with the checkpoint is replaced, with a warning.
 
 - Constructing a `MAXModelConfig` directly now only validates the fields
   you pass. It no longer fills in the weight and model paths or loads the
@@ -1036,6 +1100,15 @@ the [container](/container) page now links to the new page.
   `@__copy_capture(x)` with an explicit capture list such as `{imm}` or
   `{var x, imm}`.
 
+- Removed the parametric capturing `layout.int_tuple.apply[func](t)`,
+  `reduce[reducer](t, initializer)`, and capturing `apply_zip[func](...)`
+  overloads. Pass the closure as a runtime value: `apply(t, func)`,
+  `reduce(t, initializer, reducer)`, and `apply_zip(t1, t2, func)` (or
+  `apply_zip(t1, t2, t3, func)`). Nested closures passed this way are
+  unified closures, so replace `@__parameter` with an explicit capture list
+  such as `{}` or `{imm}`. Thin `apply_zip[func](t1, t2)` function-pointer
+  overloads are unchanged.
+
 - `DeviceGraphBuilder.add_function[kernel](*args, ...)` takes a thin
   function pointer (`func: def(...) thin -> None`), the same identity as
   `DeviceContext.compile_function[kernel]()`. The capturing compile-and-add
@@ -1069,6 +1142,12 @@ the [container](/container) page now links to the new page.
   caching together.
 
 ## Fixes
+
+- Fixed the `disk_bytes_written` KV cache metric counting blocks the tiered
+  connector's disk tier declined to write because they were already saved or
+  had a write pending. Re-offloading a block that had been evicted from the
+  host tier but was still on disk inflated the count, and with it any
+  disk-throughput figure derived from it.
 
 - Fixed `generate_async` raising `KeyError: Request ID not found in replica
   batch` when requests in one batch finish on different steps, which happens

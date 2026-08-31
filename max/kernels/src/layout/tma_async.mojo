@@ -493,7 +493,7 @@ struct SharedMemBarrier(TrivialRegisterPassable):
         origin: Origin
     ](
         ref[origin, AddressSpace.SHARED] self,
-    ) -> UnsafePointer[
+    ) -> Pointer[
         Int64, origin=origin, address_space=.SHARED
     ]:
         """Get an unsafe pointer to the barrier's memory location.
@@ -509,7 +509,7 @@ struct SharedMemBarrier(TrivialRegisterPassable):
             An unsafe pointer to the barrier's memory location in shared memory,
             properly typed and aligned for barrier operations.
         """
-        return UnsafePointer(to=self.mbar).unsafe_origin_cast[origin]()
+        return Pointer(to=self.mbar).unsafe_origin_cast[origin]()
 
     @always_inline
     def arrive_cluster(
@@ -814,7 +814,7 @@ struct TMATensorTile[
         This method helps hide memory access latency by prefetching the descriptor
         before it's needed for actual data transfers.
         """
-        var desc_ptr = UnsafePointer(to=self.descriptor).bitcast[NoneType]()
+        var desc_ptr = Pointer(to=self.descriptor).bitcast[NoneType]()
         prefetch_tma_descriptor(desc_ptr)
 
     @always_inline
@@ -898,7 +898,7 @@ struct TMATensorTile[
                     eviction_policy=eviction_policy,
                 ](
                     dst.ptr + copy_offset,
-                    UnsafePointer(to=self.descriptor).bitcast[NoneType](),
+                    Pointer(to=self.descriptor).bitcast[NoneType](),
                     mem_barrier.unsafe_ptr(),
                     Index(
                         coords[0] + (j * copy_dim1),
@@ -973,7 +973,7 @@ struct TMATensorTile[
                     eviction_policy=eviction_policy,
                 ](
                     dst.ptr.unsafe_mut_cast[True]() + copy_offset,
-                    UnsafePointer(to=self.descriptor).bitcast[NoneType](),
+                    Pointer(to=self.descriptor).bitcast[NoneType](),
                     mem_barrier.unsafe_ptr(),
                     Index(
                         coords[0] + (j * copy_dim1),
@@ -1024,7 +1024,7 @@ struct TMATensorTile[
                     eviction_policy=eviction_policy,
                 ](
                     dst.ptr + copy_offset,
-                    UnsafePointer(to=self.descriptor).bitcast[NoneType](),
+                    Pointer(to=self.descriptor).bitcast[NoneType](),
                     mem_barrier.unsafe_ptr(),
                     Index(
                         coords[0] + (j * copy_dim1),
@@ -1079,7 +1079,7 @@ struct TMATensorTile[
                     eviction_policy=eviction_policy,
                 ](
                     dst.ptr + copy_offset,
-                    UnsafePointer(to=self.descriptor).bitcast[NoneType](),
+                    Pointer(to=self.descriptor).bitcast[NoneType](),
                     mem_barrier.unsafe_ptr(),
                     Index(
                         coords[0] + (j * copy_dim1),
@@ -1167,7 +1167,7 @@ struct TMATensorTile[
                         eviction_policy=eviction_policy,
                     ](
                         dst.ptr + copy_offset,
-                        UnsafePointer(to=self.descriptor).bitcast[NoneType](),
+                        Pointer(to=self.descriptor).bitcast[NoneType](),
                         mem_barrier.unsafe_ptr(),
                         Index(
                             coords[0] + (j * copy_dim2),
@@ -1239,7 +1239,7 @@ struct TMATensorTile[
                         eviction_policy=eviction_policy,
                     ](
                         dst.ptr + copy_offset,
-                        UnsafePointer(to=self.descriptor).bitcast[NoneType](),
+                        Pointer(to=self.descriptor).bitcast[NoneType](),
                         mem_barrier.unsafe_ptr(),
                         Index(
                             coords[0] + (j * copy_dim2),
@@ -1306,7 +1306,7 @@ struct TMATensorTile[
                         eviction_policy=eviction_policy,
                     ](
                         dst.ptr + copy_offset,
-                        UnsafePointer(to=self.descriptor).bitcast[NoneType](),
+                        Pointer(to=self.descriptor).bitcast[NoneType](),
                         mem_barrier.unsafe_ptr(),
                         Index(
                             coords[0] + (j * copy_dim2),
@@ -1371,7 +1371,7 @@ struct TMATensorTile[
                         eviction_policy=eviction_policy,
                     ](
                         dst.ptr + copy_offset,
-                        UnsafePointer(to=self.descriptor).bitcast[NoneType](),
+                        Pointer(to=self.descriptor).bitcast[NoneType](),
                         mem_barrier.unsafe_ptr(),
                         Index(
                             coords[0] + (j * copy_dim2),
@@ -1454,9 +1454,7 @@ struct TMATensorTile[
                             eviction_policy=eviction_policy,
                         ](
                             dst.ptr + copy_offset,
-                            UnsafePointer(to=self.descriptor).bitcast[
-                                NoneType
-                            ](),
+                            Pointer(to=self.descriptor).bitcast[NoneType](),
                             mem_barrier.unsafe_ptr(),
                             Index(
                                 coords[0] + (j * copy_dim3),
@@ -1530,9 +1528,7 @@ struct TMATensorTile[
                             eviction_policy=eviction_policy,
                         ](
                             dst.ptr + copy_offset,
-                            UnsafePointer(to=self.descriptor).bitcast[
-                                NoneType
-                            ](),
+                            Pointer(to=self.descriptor).bitcast[NoneType](),
                             mem_barrier.unsafe_ptr(),
                             Index(
                                 coords[0] + (j * copy_dim3),
@@ -1602,9 +1598,7 @@ struct TMATensorTile[
                             eviction_policy=eviction_policy,
                         ](
                             dst.ptr + copy_offset,
-                            UnsafePointer(to=self.descriptor).bitcast[
-                                NoneType
-                            ](),
+                            Pointer(to=self.descriptor).bitcast[NoneType](),
                             mem_barrier.unsafe_ptr(),
                             Index(
                                 coords[0] + (j * copy_dim3),
@@ -1673,9 +1667,7 @@ struct TMATensorTile[
                             eviction_policy=eviction_policy,
                         ](
                             dst.ptr + copy_offset,
-                            UnsafePointer(to=self.descriptor).bitcast[
-                                NoneType
-                            ](),
+                            Pointer(to=self.descriptor).bitcast[NoneType](),
                             mem_barrier.unsafe_ptr(),
                             Index(
                                 coords[0] + (j * copy_dim3),
@@ -1763,9 +1755,7 @@ struct TMATensorTile[
                                 eviction_policy=eviction_policy,
                             ](
                                 dst.ptr + copy_offset,
-                                UnsafePointer(to=self.descriptor).bitcast[
-                                    NoneType
-                                ](),
+                                Pointer(to=self.descriptor).bitcast[NoneType](),
                                 mem_barrier.unsafe_ptr(),
                                 Index(
                                     coords[0] + (j * copy_dim4),
@@ -1844,9 +1834,7 @@ struct TMATensorTile[
                                 eviction_policy=eviction_policy,
                             ](
                                 dst.ptr + copy_offset,
-                                UnsafePointer(to=self.descriptor).bitcast[
-                                    NoneType
-                                ](),
+                                Pointer(to=self.descriptor).bitcast[NoneType](),
                                 mem_barrier.unsafe_ptr(),
                                 Index(
                                     coords[0] + (j * copy_dim4),
@@ -1921,9 +1909,7 @@ struct TMATensorTile[
                                 eviction_policy=eviction_policy,
                             ](
                                 dst.ptr + copy_offset,
-                                UnsafePointer(to=self.descriptor).bitcast[
-                                    NoneType
-                                ](),
+                                Pointer(to=self.descriptor).bitcast[NoneType](),
                                 mem_barrier.unsafe_ptr(),
                                 Index(
                                     coords[0] + (j * copy_dim4),
@@ -1997,9 +1983,7 @@ struct TMATensorTile[
                                 eviction_policy=eviction_policy,
                             ](
                                 dst.ptr + copy_offset,
-                                UnsafePointer(to=self.descriptor).bitcast[
-                                    NoneType
-                                ](),
+                                Pointer(to=self.descriptor).bitcast[NoneType](),
                                 mem_barrier.unsafe_ptr(),
                                 Index(
                                     coords[0] + (j * copy_dim4),
@@ -2366,7 +2350,7 @@ struct TMATensorTile[
             eviction_policy=eviction_policy,
         ](
             dst.ptr,
-            UnsafePointer(to=self.descriptor).bitcast[NoneType](),
+            Pointer(to=self.descriptor).bitcast[NoneType](),
             mem_barrier.unsafe_ptr(),
             col_idx,
             row0,
@@ -2433,7 +2417,7 @@ struct TMATensorTile[
             eviction_policy=eviction_policy,
         ](
             dst.ptr,
-            UnsafePointer(to=self.descriptor).bitcast[NoneType](),
+            Pointer(to=self.descriptor).bitcast[NoneType](),
             mem_barrier.unsafe_ptr(),
             col_idx,
             row0,
@@ -2469,11 +2453,9 @@ struct TMATensorTile[
         d_indices_addr_space: AddressSpace = .GENERIC,
     ](
         self,
-        smem_base: UnsafePointer[
-            mut=True, Scalar[Self.dtype], _, address_space=.SHARED
-        ],
+        smem_base: MutPointer[Scalar[Self.dtype], _, address_space=.SHARED],
         ref[AddressSpace.SHARED] mem_barrier: SharedMemBarrier,
-        d_indices: UnsafePointer[Int32, _, address_space=d_indices_addr_space],
+        d_indices: ImmPointer[Int32, _, address_space=d_indices_addr_space],
         start_idx: Int = 0,
     ):
         """Loads a full tile of ``tile_height`` rows via gather4 in 4-row chunks.
@@ -2511,7 +2493,7 @@ struct TMATensorTile[
         comptime num_col_groups = ceildiv(tile_width, box_w)
         comptime num_4row_chunks = BN // 4
 
-        var desc_ptr = UnsafePointer(to=self.descriptor).bitcast[NoneType]()
+        var desc_ptr = Pointer(to=self.descriptor).bitcast[NoneType]()
         var mbar_ptr = mem_barrier.unsafe_ptr()
 
         comptime for cg in range(num_col_groups):
@@ -2690,7 +2672,7 @@ struct TMATensorTile[
                     cta_group=cta_group
                 ](
                     dst.ptr.unsafe_mut_cast[True]() + copy_offset,
-                    UnsafePointer(to=self.descriptor).bitcast[NoneType](),
+                    Pointer(to=self.descriptor).bitcast[NoneType](),
                     mem_barrier.unsafe_ptr(),
                     Index(
                         coords[0] + j * copy_dim1,
@@ -2741,7 +2723,7 @@ struct TMATensorTile[
                     cta_group=cta_group
                 ](
                     dst.ptr + copy_offset,
-                    UnsafePointer(to=self.descriptor).bitcast[NoneType](),
+                    Pointer(to=self.descriptor).bitcast[NoneType](),
                     mem_barrier.unsafe_ptr(),
                     Index(
                         coords[0] + j * copy_dim1,
@@ -2826,7 +2808,7 @@ struct TMATensorTile[
                         cta_group=cta_group
                     ](
                         dst.ptr + copy_offset,
-                        UnsafePointer(to=self.descriptor).bitcast[NoneType](),
+                        Pointer(to=self.descriptor).bitcast[NoneType](),
                         mem_barrier.unsafe_ptr(),
                         Index(
                             coords[0] + j * copy_dim2,
@@ -2890,7 +2872,7 @@ struct TMATensorTile[
                         cta_group=cta_group
                     ](
                         dst.ptr + copy_offset,
-                        UnsafePointer(to=self.descriptor).bitcast[NoneType](),
+                        Pointer(to=self.descriptor).bitcast[NoneType](),
                         mem_barrier.unsafe_ptr(),
                         Index(
                             coords[0] + j * copy_dim2,
@@ -2957,9 +2939,7 @@ struct TMATensorTile[
                             cta_group=cta_group
                         ](
                             dst.ptr + copy_offset,
-                            UnsafePointer(to=self.descriptor).bitcast[
-                                NoneType
-                            ](),
+                            Pointer(to=self.descriptor).bitcast[NoneType](),
                             mem_barrier.unsafe_ptr(),
                             Index(
                                 coords[0] + (j * copy_dim3),
@@ -3118,7 +3098,7 @@ struct TMATensorTile[
 
                 cp_async_bulk_tensor_global_shared_cta(
                     src.ptr + copy_offset,
-                    UnsafePointer(to=self.descriptor).bitcast[NoneType](),
+                    Pointer(to=self.descriptor).bitcast[NoneType](),
                     Index(
                         coords[0] + j * copy_dim1,
                         coords[1] + i * copy_dim0,
@@ -3159,7 +3139,7 @@ struct TMATensorTile[
 
                 cp_async_bulk_tensor_global_shared_cta(
                     src.ptr + copy_offset,
-                    UnsafePointer(to=self.descriptor).bitcast[NoneType](),
+                    Pointer(to=self.descriptor).bitcast[NoneType](),
                     Index(
                         coords[0] + j * copy_dim1,
                         coords[1] + i * copy_dim0,
@@ -3228,7 +3208,7 @@ struct TMATensorTile[
 
                     cp_async_bulk_tensor_global_shared_cta(
                         src.ptr + copy_offset,
-                        UnsafePointer(to=self.descriptor).bitcast[NoneType](),
+                        Pointer(to=self.descriptor).bitcast[NoneType](),
                         Index(
                             coords[0] + j * copy_dim2,
                             coords[1] + i * copy_dim1,
@@ -3278,7 +3258,7 @@ struct TMATensorTile[
 
                     cp_async_bulk_tensor_global_shared_cta(
                         src.ptr + copy_offset,
-                        UnsafePointer(to=self.descriptor).bitcast[NoneType](),
+                        Pointer(to=self.descriptor).bitcast[NoneType](),
                         Index(
                             coords[0] + j * copy_dim2,
                             coords[1] + i * copy_dim1,
@@ -3343,9 +3323,7 @@ struct TMATensorTile[
 
                         cp_async_bulk_tensor_global_shared_cta(
                             src.ptr + copy_offset,
-                            UnsafePointer(to=self.descriptor).bitcast[
-                                NoneType
-                            ](),
+                            Pointer(to=self.descriptor).bitcast[NoneType](),
                             Index(
                                 coords[0] + j * copy_dim3,
                                 coords[1] + i * copy_dim2,
@@ -3399,9 +3377,7 @@ struct TMATensorTile[
 
                         cp_async_bulk_tensor_global_shared_cta(
                             src.ptr + copy_offset,
-                            UnsafePointer(to=self.descriptor).bitcast[
-                                NoneType
-                            ](),
+                            Pointer(to=self.descriptor).bitcast[NoneType](),
                             Index(
                                 coords[0] + j * copy_dim3,
                                 coords[1] + i * copy_dim2,
@@ -3471,9 +3447,7 @@ struct TMATensorTile[
 
                             cp_async_bulk_tensor_global_shared_cta(
                                 src.ptr + copy_offset,
-                                UnsafePointer(to=self.descriptor).bitcast[
-                                    NoneType
-                                ](),
+                                Pointer(to=self.descriptor).bitcast[NoneType](),
                                 Index(
                                     coords[0] + j * copy_dim4,
                                     coords[1] + i * copy_dim3,
@@ -3518,7 +3492,7 @@ struct TMATensorTile[
             reduction_kind=reduction_kind
         ](
             src.ptr,
-            UnsafePointer(to=self.descriptor).bitcast[NoneType](),
+            Pointer(to=self.descriptor).bitcast[NoneType](),
             Index(coords[0], coords[1]),
         )
 
@@ -3548,7 +3522,7 @@ struct TMATensorTile[
     @always_inline
     def smem_tensormap_init(
         self,
-        smem_tma_descriptor_ptr: UnsafePointer[
+        smem_tma_descriptor_ptr: MutPointer[
             TMADescriptor, _, address_space=.SHARED
         ],
     ):
@@ -3571,7 +3545,7 @@ struct TMATensorTile[
         # NOTE: Only one thread should call this
 
         var src_desc = (
-            UnsafePointer(to=self.descriptor)
+            Pointer(to=self.descriptor)
             .bitcast[UInt8]()
             .address_space_cast[.GLOBAL]()
         )
@@ -3594,7 +3568,7 @@ struct TMATensorTile[
     @always_inline
     def replace_tensormap_global_address_in_gmem[
         _dtype: DType,
-    ](self, src_ptr: UnsafePointer[Scalar[_dtype], _]):
+    ](self, src_ptr: ImmPointer[Scalar[_dtype], _]):
         """
         Replaces the global memory address in the TMA descriptor stored in global memory.
 
@@ -3620,7 +3594,7 @@ struct TMATensorTile[
             AddressSpace.GLOBAL,
         ), "src address space must be GENERIC or GLOBAL."
 
-        var desc_ptr = UnsafePointer(to=self.descriptor).bitcast[NoneType]()
+        var desc_ptr = Pointer(to=self.descriptor).bitcast[NoneType]()
 
         inlined_assembly[
             "tensormap.replace.tile.global_address.global.b1024.b64 [$0], $1;",
@@ -3651,7 +3625,7 @@ struct TMATensorTile[
         llvm_intrinsic[
             "llvm.nvvm.fence.proxy.tensormap_generic.acquire.gpu", NoneType
         ](
-            UnsafePointer(to=self.descriptor).bitcast[NoneType](),
+            Pointer(to=self.descriptor).bitcast[NoneType](),
             Int32(128),
         )
 
@@ -3683,10 +3657,10 @@ struct TMATensorTile[
         _dtype: DType,
     ](
         self,
-        smem_tma_descriptor_ptr: UnsafePointer[
+        smem_tma_descriptor_ptr: MutPointer[
             TMADescriptor, _, address_space=.SHARED
         ],
-        src_ptr: UnsafePointer[Scalar[_dtype], _],
+        src_ptr: ImmPointer[Scalar[_dtype], _],
     ):
         """
         Replaces the global memory address in the TMA descriptor stored in shared memory.
@@ -3734,7 +3708,7 @@ struct TMATensorTile[
     @always_inline
     def tensormap_cp_fence_release(
         self,
-        smem_tma_descriptor_ptr: UnsafePointer[
+        smem_tma_descriptor_ptr: ImmPointer[
             TMADescriptor, _, address_space=.SHARED
         ],
     ):
@@ -3761,7 +3735,7 @@ struct TMATensorTile[
         """
         # This fence is needed when modifying tensormap directly in SMEM
         # NOTE: Entire warp must call this function as the instruction is aligned
-        var gmem_tma_descriptor_ptr = UnsafePointer(to=self.descriptor).bitcast[
+        var gmem_tma_descriptor_ptr = Pointer(to=self.descriptor).bitcast[
             NoneType
         ]()
 
@@ -3784,7 +3758,7 @@ struct TMATensorTile[
         tensor_rank: Int,
     ](
         self,
-        smem_tma_descriptor_ptr: UnsafePointer[
+        smem_tma_descriptor_ptr: MutPointer[
             TMADescriptor, address_space=.SHARED, ...
         ],
         gmem_dims: IndexList[tensor_rank],
@@ -3862,7 +3836,7 @@ struct TMATensorTile[
         dim_idx: Int,
     ](
         self,
-        smem_tma_descriptor_ptr: UnsafePointer[
+        smem_tma_descriptor_ptr: MutPointer[
             TMADescriptor, address_space=.SHARED, ...
         ],
         dim_value: UInt32,
@@ -4142,7 +4116,7 @@ def create_tma_tile_gather4[
     l2_promotion: TensorMapL2Promotion = TensorMapL2Promotion.NONE,
 ](
     ctx: DeviceContext,
-    ptr: UnsafePointer[Scalar[dtype], _],
+    ptr: ImmPointer[Scalar[dtype], _],
     num_rows: Int,
 ) raises -> TMATensorTile[
     dtype,
@@ -4778,7 +4752,7 @@ def _split_tma_gmem_tensor[
     shape: IndexList[rank],
     swizzle_mode: TensorMapSwizzle,
 ](
-    ptr: UnsafePointer[Scalar[dtype], _],
+    ptr: Pointer[Scalar[dtype], _],
     dim0: Int,
     out ret: LayoutTensor[
         dtype,
@@ -4804,7 +4778,7 @@ def _split_tma_gmem_tensor[
     shape: IndexList[rank],
     swizzle_mode: TensorMapSwizzle,
 ](
-    ptr: UnsafePointer[Scalar[dtype], _],
+    ptr: Pointer[Scalar[dtype], _],
     dim0: Int,
     dim1: Int,
     out ret: LayoutTensor[
@@ -4838,7 +4812,7 @@ def _create_split_tma_folded[
     row_major: Bool = False,
 ](
     ctx: DeviceContext,
-    ptr: UnsafePointer[Scalar[dtype], _],
+    ptr: ImmPointer[Scalar[dtype], _],
     runtime_rows: Int,
     num_heads: Int,
     out res: SplitLastDimTMATensorTile[
@@ -4960,7 +4934,7 @@ def create_split_tma[
     row_major: Bool = False,
 ](
     ctx: DeviceContext,
-    ptr: UnsafePointer[Scalar[dtype], _],
+    ptr: ImmPointer[Scalar[dtype], _],
     runtime_dim0: Int,
     out res: SplitLastDimTMATensorTile[
         dtype,
@@ -5031,7 +5005,7 @@ def create_split_tma[
     row_major: Bool = False,
 ](
     ctx: DeviceContext,
-    ptr: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
+    ptr: ImmPointer[Scalar[dtype], ImmutAnyOrigin],
     runtime_dim0: Int,
     runtime_dim1: Int,
     out res: SplitLastDimTMATensorTile[
@@ -5190,7 +5164,7 @@ struct TMATensorTileArray[
             to accommodate hardware requirements like WGMMA.
     """
 
-    var tensormaps_ptr: UnsafePointer[UInt8, MutUntrackedOrigin]
+    var tensormaps_ptr: MutPointer[UInt8, MutUntrackedOrigin]
     """A static tuple of pointers to TMA descriptors.
 
     This field stores an array of pointers to `TMATensorTile` instances, where each pointer
@@ -5257,7 +5231,7 @@ struct TMATensorTileArray[
     @always_inline
     def __getitem__(
         self, index: Int
-    ) -> UnsafePointer[
+    ) -> MutPointer[
         TMATensorTile[
             Self.dtype, Self.rank, Self.cta_tile_shape, Self.desc_shape
         ],
@@ -5402,7 +5376,7 @@ struct RaggedTMA3DTile[
         depth: Int = Self.BN,
     ](
         ctx: DeviceContext,
-        ptr: UnsafePointer[Scalar[Self.dtype], _],
+        ptr: ImmPointer[Scalar[Self.dtype], _],
         *,
         rows: Int,
     ) raises -> Self:
@@ -5533,7 +5507,7 @@ struct RaggedTMA3DTile[
         eviction_policy: CacheEviction = CacheEviction.EVICT_FIRST,
     ](
         self,
-        src: UnsafePointer[Scalar[Self.dtype], _, address_space=.SHARED],
+        src: ImmPointer[Scalar[Self.dtype], _, address_space=.SHARED],
         *,
         ragged_idx: UInt32,
         dynamic_dim: UInt32,
@@ -5575,7 +5549,7 @@ struct RaggedTMA3DTile[
                 eviction_policy=eviction_policy
             ](
                 src + copy_offset,
-                UnsafePointer(to=self.descriptor).bitcast[NoneType](),
+                Pointer(to=self.descriptor).bitcast[NoneType](),
                 # dims (inner->outer): (depth, group, BM_seq, merged)
                 Index(
                     col * Self.swizzle_granularity,
@@ -5592,7 +5566,7 @@ struct RaggedTMA3DTile[
                 eviction_policy=eviction_policy
             ](
                 src + copy_offset,
-                UnsafePointer(to=self.descriptor).bitcast[NoneType](),
+                Pointer(to=self.descriptor).bitcast[NoneType](),
                 # dims (inner->outer): (depth, BM, merged)
                 Index(
                     col * Self.swizzle_granularity,
@@ -5608,7 +5582,7 @@ struct RaggedTMA3DTile[
         eviction_policy: CacheEviction = CacheEviction.EVICT_FIRST,
     ](
         self,
-        src: UnsafePointer[Scalar[Self.dtype], _, address_space=.SHARED],
+        src: ImmPointer[Scalar[Self.dtype], _, address_space=.SHARED],
         *,
         ragged_idx: UInt32,
         dynamic_dim: UInt32,
@@ -5657,7 +5631,7 @@ struct RaggedTMA3DTile[
                 eviction_policy=eviction_policy
             ](
                 src + copy_offset,
-                UnsafePointer(to=self.descriptor).bitcast[NoneType](),
+                Pointer(to=self.descriptor).bitcast[NoneType](),
                 Index(0, 0, box_idx, col_start, merged),
                 elect,
             )
@@ -5668,7 +5642,7 @@ struct RaggedTMA3DTile[
                 eviction_policy=eviction_policy
             ](
                 src + copy_offset,
-                UnsafePointer(to=self.descriptor).bitcast[NoneType](),
+                Pointer(to=self.descriptor).bitcast[NoneType](),
                 Index(0, box_idx, col_start, merged),
                 elect,
             )
@@ -5679,9 +5653,7 @@ struct RaggedTMA3DTile[
         Prefetches the TMA descriptor into cache.
         """
 
-        prefetch_tma_descriptor(
-            UnsafePointer(to=self.descriptor).bitcast[NoneType]()
-        )
+        prefetch_tma_descriptor(Pointer(to=self.descriptor).bitcast[NoneType]())
 
 
 struct RaggedTensorMap[
@@ -5834,7 +5806,7 @@ struct RaggedTensorMap[
     def __init__(
         out self,
         ctx: DeviceContext,
-        global_ptr: UnsafePointer[Scalar[Self.dtype], _],
+        global_ptr: ImmPointer[Scalar[Self.dtype], _],
         max_length: Int,
         ragged_stride: Int,
         batch_size: Int,
@@ -5924,9 +5896,9 @@ struct RaggedTensorMap[
         self.global_stride = Coord(global_stride)
 
     @always_inline
-    def _get_descriptor_ptr(self) -> UnsafePointer[NoneType, MutAnyOrigin]:
+    def _get_descriptor_ptr(self) -> MutPointer[NoneType, MutAnyOrigin]:
         return (
-            UnsafePointer(to=self.descriptor)
+            Pointer(to=self.descriptor)
             .bitcast[NoneType]()
             .unsafe_mut_cast[True]()
             .unsafe_origin_cast[MutAnyOrigin]()
@@ -6203,7 +6175,7 @@ struct TMATensorTileIm2col[
     @always_inline
     def prefetch_descriptor(self):
         """Prefetches the TMA descriptor into cache."""
-        var desc_ptr = UnsafePointer(to=self.descriptor).bitcast[NoneType]()
+        var desc_ptr = Pointer(to=self.descriptor).bitcast[NoneType]()
         prefetch_tma_descriptor(desc_ptr)
 
     @always_inline
@@ -6298,7 +6270,7 @@ struct TMATensorTileIm2col[
                     cta_group=cta_group,
                 ](
                     dst.ptr + copy_offset,
-                    UnsafePointer(to=self.descriptor).bitcast[NoneType](),
+                    Pointer(to=self.descriptor).bitcast[NoneType](),
                     mem_barrier.unsafe_ptr(),
                     Index(c, w, h, n),
                     Index(s, r),
@@ -6407,7 +6379,7 @@ struct TMATensorTileIm2col[
                     cta_group=cta_group,
                 ](
                     dst.ptr + copy_offset,
-                    UnsafePointer(to=self.descriptor).bitcast[NoneType](),
+                    Pointer(to=self.descriptor).bitcast[NoneType](),
                     mem_barrier.unsafe_ptr(),
                     Index(c, w, h, n),
                     Index(s, r),
@@ -6510,7 +6482,7 @@ struct TMATensorTileIm2col[
                     cta_group=cta_group,
                 ](
                     dst.ptr + copy_offset,
-                    UnsafePointer(to=self.descriptor).bitcast[NoneType](),
+                    Pointer(to=self.descriptor).bitcast[NoneType](),
                     mem_barrier.unsafe_ptr(),
                     Index(c, w, h, n),
                     Index(s, r),
@@ -6614,7 +6586,7 @@ struct TMATensorTileIm2col[
                     cta_group=cta_group,
                 ](
                     dst.ptr + copy_offset,
-                    UnsafePointer(to=self.descriptor).bitcast[NoneType](),
+                    Pointer(to=self.descriptor).bitcast[NoneType](),
                     mem_barrier.unsafe_ptr(),
                     Index(c, w, h, n),
                     Index(s, r),
@@ -6668,7 +6640,7 @@ def _build_im2col_descriptor[
     __desc_shape: IndexList[2],
 ](
     ctx: DeviceContext,
-    ptr: UnsafePointer[mut=True, Scalar[dtype], _],
+    ptr: ImmPointer[Scalar[dtype], _],
     batch: Int,
     height: Int,
     width: Int,

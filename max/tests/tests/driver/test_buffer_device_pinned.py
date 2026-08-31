@@ -22,6 +22,7 @@ from max.driver import (
     Buffer,
     CompletionFlag,
     DevicePinnedBuffer,
+    Usage,
     accelerator_count,
 )
 from max.dtype import DType
@@ -288,3 +289,103 @@ def test_device_pinned_buffer_to_numpy_is_zero_copy_view() -> None:
     written = np.arange(10, 18, dtype=np.int32)
     pinned.to_numpy()[:] = written
     np.testing.assert_array_equal(view, written)
+
+
+@pytest.mark.skipif(
+    accelerator_count() == 0,
+    reason="staging Buffer GPU tests require GPU",
+)
+def test_buffer_staging_matches_device_pinned() -> None:
+    """Buffer(usage=STAGING) allocates what DevicePinnedBuffer allocates."""
+    gpu = Accelerator()
+    buf = Buffer(
+        dtype=DType.float32, shape=[10], device=gpu, usage=Usage.STAGING
+    )
+    pinned = DevicePinnedBuffer(dtype=DType.float32, shape=[10], device=gpu)
+
+    assert buf.pinned == pinned.pinned == True  # noqa: E712
+    assert buf.usage == pinned.usage == Usage.STAGING
+    assert not buf.device.is_host
+
+
+@pytest.mark.skipif(
+    accelerator_count() == 0,
+    reason="staging Buffer GPU tests require GPU",
+)
+def test_staging_usage_survives_slice_and_view() -> None:
+    """Slices/views share storage, so they keep the staging contract."""
+    gpu = Accelerator()
+    buf = Buffer(
+        dtype=DType.float32, shape=[4, 4], device=gpu, usage=Usage.STAGING
+    )
+    # Buffer.get requires as many indices as the rank.
+    assert buf[0, :].usage == Usage.STAGING
+    assert buf[0, :].pinned
+    assert buf.view(DType.int32, [4, 4]).usage == Usage.STAGING
+
+
+@pytest.mark.skipif(
+    accelerator_count() == 0,
+    reason="staging Buffer GPU tests require GPU",
+)
+def test_staging_zeros() -> None:
+    gpu = Accelerator()
+    buf = Buffer.zeros(
+        shape=[5, 3], dtype=DType.int32, device=gpu, usage=Usage.STAGING
+    )
+    assert buf.usage == Usage.STAGING
+    # zeros() enqueues an async memset and the staging export does not
+    # synchronize, so the caller must order the read itself.
+    gpu.synchronize()
+    np.testing.assert_array_equal(
+        buf.to_numpy(), np.zeros((5, 3), dtype=np.int32)
+    )
+
+
+@pytest.mark.skipif(
+    accelerator_count() == 0,
+    reason="staging Buffer GPU tests require GPU",
+)
+@pytest.mark.parametrize("make_buffer", ["staging", "device_pinned"])
+def test_staging_dlpack_does_not_synchronize(make_buffer: str) -> None:
+    """The staging read returns while gated work is still pending.
+
+    Inverse of DRIV-311 contract 1: a host read of staging memory must NOT
+    absorb pending device work. The stream is gated on a host-signalled
+    CompletionFlag; a non-synchronizing read finishes while the gate is
+    held. DevicePinnedBuffer is parametrized alongside to pin parity.
+    """
+    gpu = Accelerator()
+    if gpu.api not in ("cuda", "hip"):
+        pytest.skip("stream host-value gating requires CUDA/HIP")
+
+    if make_buffer == "staging":
+        host_buf = Buffer(
+            dtype=DType.int32, shape=[4], device=gpu, usage=Usage.STAGING
+        )
+    else:
+        host_buf = DevicePinnedBuffer(dtype=DType.int32, shape=[4], device=gpu)
+    src = Buffer.from_numpy(np.arange(1, 5, dtype=np.int32)).to(gpu)
+
+    flag = CompletionFlag(gpu)
+    done = threading.Event()
+
+    def worker() -> None:
+        host_buf.to_numpy()
+        done.set()
+
+    worker_thread = threading.Thread(target=worker, daemon=True)
+    gpu.default_queue.wait_for_host_value(flag, 1)
+    try:
+        host_buf.inplace_copy_from(src)
+        worker_thread.start()
+        completed_while_gated = done.wait(timeout=2.0)
+    finally:
+        flag.signal(1)
+        worker_thread.join(timeout=60.0)
+
+    assert not worker_thread.is_alive()
+    assert completed_while_gated, (
+        "to_numpy()/__dlpack__ on a staging buffer blocked on gated device"
+        " work; the staging export must not synchronize"
+    )

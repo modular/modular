@@ -1095,23 +1095,26 @@ struct EpilogueApplier[
                         IndexList[2](Int(bot_col + 1), Int(bot_row)), elems[3]
                     )
                 else:
-                    # For N we already know that `static_N * size_of[c_type]() % 16 == 0` so we can skip the write for OOB cols
-                    if top_row >= self.N or bot_row >= self.N:
-                        return
+                    # The pair's rows sit 8 apart along N, so each needs
+                    # its own bound check.
+                    var valid_top_row = top_row < self.N
+                    var valid_bot_row = bot_row < self.N
 
-                    if top_col < self.M:
+                    if valid_top_row and top_col < self.M:
                         elementwise_lambda_fn[epilogue_dtype](
                             IndexList[2](Int(top_col), Int(top_row)), elems[0]
                         )
+                    if valid_bot_row and top_col < self.M:
                         elementwise_lambda_fn[epilogue_dtype](
                             IndexList[2](Int(bot_col), Int(bot_row)), elems[2]
                         )
 
-                    if (top_col + 1) < self.M:
+                    if valid_top_row and (top_col + 1) < self.M:
                         elementwise_lambda_fn[epilogue_dtype](
                             IndexList[2](Int(top_col + 1), Int(top_row)),
                             elems[1],
                         )
+                    if valid_bot_row and (top_col + 1) < self.M:
                         elementwise_lambda_fn[epilogue_dtype](
                             IndexList[2](Int(bot_col + 1), Int(bot_row)),
                             elems[3],
@@ -1134,7 +1137,10 @@ struct EpilogueApplier[
                         ),
                     )
                 else:
-                    # For N we already know that `static_N * size_of[c_type]() % 16 == 0` so we can skip the write for OOB cols
+                    # self.N is alignment-bound: static_N * size_of[c_type]()
+                    # % 16 == 0 makes it even, and column pairs start on an
+                    # even column, so top_col and top_col + 1 cross it
+                    # together.
                     if top_col >= self.N:
                         return
 

@@ -147,8 +147,7 @@ def rms_norm_fused_fp8[
 
     # Tracing for performance profiling
     @always_inline
-    @__parameter
-    def description_fn() -> String:
+    def description_fn() {imm} -> String:
         return (
             trace_arg("input", shape, in_dtype)
             + " -> "
@@ -157,7 +156,7 @@ def rms_norm_fused_fp8[
 
     with Trace[TraceLevel.OP, target=target](
         "rms_norm_fused_fp8",
-        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+        Trace[TraceLevel.OP]._get_detail_str(description_fn),
         task_id=Int(ctx.id()),
     ):
         if target == "gpu":

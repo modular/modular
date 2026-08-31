@@ -28,7 +28,7 @@ from max.pipelines.kv_cache.kv_connector import (
 )
 from max.pipelines.modeling.types import RequestID
 
-from .cache_manager import BlockCount, PagedKVCacheManager
+from .cache_manager import BlockCount, ByteCount, PagedKVCacheManager
 
 
 class DummyKVCache(PagedKVCacheManager):
@@ -66,13 +66,13 @@ class DummyKVCache(PagedKVCacheManager):
         """Returns a single block; this cache never allocates, so it stays free."""
         return BlockCount(free=1, total=1)
 
-    def host_block_count(self, replica_idx: int = 0) -> BlockCount:
-        """Returns a single, permanently used block."""
-        return BlockCount(free=0, total=1)
+    def host_byte_count(self, replica_idx: int = 0) -> ByteCount:
+        """Returns one permanently used byte."""
+        return ByteCount(free=0, total=1)
 
-    def disk_block_count(self, replica_idx: int = 0) -> BlockCount:
-        """Returns a single, permanently used block."""
-        return BlockCount(free=0, total=1)
+    def disk_byte_count(self, replica_idx: int = 0) -> ByteCount:
+        """Returns one permanently used byte."""
+        return ByteCount(free=0, total=1)
 
     def get_metrics_aggregated(self) -> KVCacheMetrics:
         """Returns empty aggregated metrics."""

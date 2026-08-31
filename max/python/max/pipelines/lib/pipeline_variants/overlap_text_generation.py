@@ -156,7 +156,6 @@ from max.profiler import Tracer, traced
 from ..memory_estimation import MemoryPlan
 from .structured_output_overlap import StructuredOutputOverlapState
 from .text_generation import TextGenerationPipelineInterface, load_kv_manager
-from .unified_spec_decode_model import _UnifiedSpecDecodeModelMixin
 from .utils import (
     StructuredOutputHelper,
     update_context_and_prepare_responses,
@@ -439,17 +438,10 @@ class SpecDecodeState:
             available_cache_memory=available_cache_memory,
         )
 
-        # Dflash-style block drafters resolve the draft width from the
-        # draft checkpoint at model construction and expose it on the
-        # model; eagle/mtp resolve theirs at SpeculativeConfig construction.
-        num_speculative_tokens: int | None = None
-        if isinstance(model, _UnifiedSpecDecodeModelMixin):
-            num_speculative_tokens = model.resolved_num_speculative_tokens
-        if num_speculative_tokens is None:
-            assert pipeline_config.speculative is not None
-            num_speculative_tokens = (
-                pipeline_config.speculative.num_speculative_tokens
-            )
+        assert pipeline_config.speculative is not None
+        num_speculative_tokens = (
+            pipeline_config.speculative.num_speculative_tokens
+        )
         assert num_speculative_tokens is not None
         total_max_batch = (
             max_batch_size * pipeline_config.model.data_parallel_degree

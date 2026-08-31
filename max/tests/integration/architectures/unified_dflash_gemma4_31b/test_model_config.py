@@ -143,12 +143,9 @@ def test_mismatched_width_is_overridden_to_fifteen(
     assert "overridden from 4 to 15" in caplog.text
 
 
-def test_unset_width_bakes_fifteen_into_every_kv_leaf() -> None:
-    """The KV bake in ``PipelineModelWithKVCache.__init__`` goes through the
-    model's ``get_kv_params``; the raw speculative section would bake
-    num_draft_tokens=0 on both Gemma4 leaves — a silently wrong draft width
-    the serving stack never re-checks."""
-    pipeline_config = _make_pipeline_config(None)
+def test_width_bakes_into_every_kv_leaf() -> None:
+    """Both Gemma4 leaves bake the width the config was built with."""
+    pipeline_config = _make_pipeline_config(15)
     huggingface_config = SimpleNamespace(
         text_config=SimpleNamespace(
             layer_types=["sliding_attention", "full_attention"],
@@ -170,9 +167,6 @@ def test_unset_width_bakes_fifteen_into_every_kv_leaf() -> None:
     for leaf in kv_params.children.values():
         assert isinstance(leaf, KVCacheParams)
         assert leaf.num_draft_tokens == 15
-    # The threading never writes back to the caller's config.
-    assert pipeline_config.speculative is not None
-    assert pipeline_config.speculative.num_speculative_tokens is None
 
 
 def _make_target_stub(

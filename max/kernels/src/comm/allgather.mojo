@@ -32,7 +32,7 @@ from std.collections import Array
 from std.math import ceildiv
 from std.sys import simd_width_of, align_of, size_of
 
-from layout import TileTensor
+from layout import TensorStorage, TileTensor
 from layout.tile_layout import TensorLayout
 from layout.tma_async import SharedMemBarrier
 from std.gpu import (
@@ -73,6 +73,7 @@ from .sync import (
     is_p2p_enabled,
     circular_add,
 )
+
 
 # Tuning table to get num_blocks for allgather.
 # Arch-specific defaults use ngpus=-1, num_bytes=-1 with the arch's sm_version.
@@ -116,10 +117,15 @@ def _allgather_naive[
     in_origin: Origin,
     out_layout: TensorLayout,
     out_origin: MutOrigin,
+    in_store: TensorStorage,
+    out_store: TensorStorage,
 ](
-    input_buffers: Array[TileTensor[dtype, in_layout, in_origin], ngpus],
+    input_buffers: Array[
+        TileTensor[dtype, in_layout, in_origin, Storage=in_store], ngpus
+    ],
     output_buffers: Array[
-        TileTensor[mut=True, dtype, out_layout, out_origin], ngpus
+        TileTensor[mut=True, dtype, out_layout, out_origin, Storage=out_store],
+        ngpus,
     ],
     ctx: DeviceContext,
 ) raises:
@@ -136,7 +142,7 @@ def _allgather_naive[
             DeviceBuffer(
                 rctx,
                 rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](
-                    input_buffers[i]._storage
+                    input_buffers[i].ptr
                 ),
                 input_buffers[i].num_elements(),
                 owning=False,
@@ -147,7 +153,7 @@ def _allgather_naive[
         var output_device_buffer = DeviceBuffer(
             ctx,
             rebind[MutPointer[Scalar[dtype], MutAnyOrigin]](
-                output_buffers[input_idx]._storage
+                output_buffers[input_idx].ptr
             ),
             output_buffers[input_idx].num_elements(),
             owning=False,
@@ -438,11 +444,16 @@ def _allgather_p2p[
     in_origin: Origin,
     out_layout: TensorLayout,
     out_origin: MutOrigin,
+    in_store: TensorStorage,
+    out_store: TensorStorage,
     domain_id: Int = 0,
 ](
-    input_buffers: Array[TileTensor[dtype, in_layout, in_origin], ngpus],
+    input_buffers: Array[
+        TileTensor[dtype, in_layout, in_origin, Storage=in_store], ngpus
+    ],
     output_buffers: Array[
-        TileTensor[mut=True, dtype, out_layout, out_origin], ngpus
+        TileTensor[mut=True, dtype, out_layout, out_origin, Storage=out_store],
+        ngpus,
     ],
     rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS],
     _max_num_blocks: Optional[Int],
@@ -451,7 +462,6 @@ def _allgather_p2p[
 ) raises:
     """Per-device P2P allgather: each GPU reads from all peers directly."""
 
-    # Extract raw pointers and sizes from TileTensors.
     var list_of_in_ptrs = StaticTuple[
         ImmPointer[Scalar[dtype], ImmutAnyOrigin], ngpus
     ]()
@@ -459,7 +469,7 @@ def _allgather_p2p[
 
     comptime for i in range(ngpus):
         list_of_in_ptrs[i] = rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](
-            input_buffers[i]._storage
+            input_buffers[i].ptr
         )
         lengths[i] = input_buffers[i].num_elements()
 
@@ -470,7 +480,7 @@ def _allgather_p2p[
 
     comptime for src_idx in range(ngpus):
         output_ptrs[src_idx] = rebind[MutPointer[Scalar[dtype], MutAnyOrigin]](
-            output_buffers[src_idx]._storage
+            output_buffers[src_idx].ptr
         )
 
     # Build Int32 versions for passing to GPU kernels.
@@ -547,11 +557,16 @@ def allgather[
     in_origin: Origin,
     out_layout: TensorLayout,
     out_origin: MutOrigin,
+    in_store: TensorStorage,
+    out_store: TensorStorage,
     domain_id: Int = 0,
 ](
-    input_buffers: Array[TileTensor[dtype, in_layout, in_origin], ngpus],
+    input_buffers: Array[
+        TileTensor[dtype, in_layout, in_origin, Storage=in_store], ngpus
+    ],
     output_buffers: Array[
-        TileTensor[mut=True, dtype, out_layout, out_origin], ngpus
+        TileTensor[mut=True, dtype, out_layout, out_origin, Storage=out_store],
+        ngpus,
     ],
     rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], MAX_GPUS],
     ctx: DeviceContext,
@@ -574,6 +589,8 @@ def allgather[
         in_origin: Origin of the input TileTensors.
         out_layout: Layout of the output TileTensors.
         out_origin: Origin of the output TileTensors.
+        in_store: `TensorStorage` policy of the input TileTensors.
+        out_store: `TensorStorage` policy of the output TileTensors.
         domain_id: Barrier counter bank to use (0 for full-world; a distinct
             nonzero value for grouped collectives sharing the same Signal
             buffers). See `_multi_gpu_barrier`.

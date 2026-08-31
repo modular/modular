@@ -182,17 +182,17 @@ def _test_case[
     ctx.enqueue_copy(sfa_d, sfa_h)
     ctx.enqueue_copy(sfb_d, sfb_h)
 
-    var c_tt = TileTensor[mut=True](c_d, row_major[M_static, N_static]())
-    var a_tt = TileTensor[mut=False](a_d, row_major[M_static, K_BYTES]())
-    var b_tt = TileTensor[mut=False](b_d, row_major[N_static, K_BYTES]())
-    var sfa_tt = TileTensor[mut=False](
+    var c_tt = TileTensor(c_d, row_major[M_static, N_static]())
+    var a_tt = TileTensor(a_d, row_major[M_static, K_BYTES]()).as_immut()
+    var b_tt = TileTensor(b_d, row_major[N_static, K_BYTES]()).as_immut()
+    var sfa_tt = TileTensor(
         sfa_d.unsafe_ptr().unsafe_bitcast[Float8_e8m0fnu](),
         row_major[M_static, K_SCALES](),
-    )
-    var sfb_tt = TileTensor[mut=False](
+    ).as_immut()
+    var sfb_tt = TileTensor(
         sfb_d.unsafe_ptr().unsafe_bitcast[Float8_e8m0fnu](),
         row_major[N_static, K_SCALES](),
-    )
+    ).as_immut()
 
     comptime Kernel = BlockScaledMatmulAMD[
         BM=BM,
@@ -210,6 +210,11 @@ def _test_case[
         type_of(b_tt).LayoutType,
         type_of(sfa_tt).LayoutType,
         type_of(sfb_tt).LayoutType,
+        type_of(c_tt).Storage,
+        type_of(a_tt).Storage,
+        type_of(b_tt).Storage,
+        type_of(sfa_tt).Storage,
+        type_of(sfb_tt).Storage,
     ]
     ctx.enqueue_function[kernel](
         c_tt,
@@ -327,17 +332,17 @@ def test_mxfp8_matmul_split_k[
     ctx.enqueue_copy(sfa_d, sfa_h)
     ctx.enqueue_copy(sfb_d, sfb_h)
 
-    var c_tt = TileTensor[mut=True](c_d, row_major[M_static, N_static]())
-    var a_tt = TileTensor[mut=False](a_d, row_major[M_static, K_BYTES]())
-    var b_tt = TileTensor[mut=False](b_d, row_major[N_static, K_BYTES]())
-    var sfa_tt = TileTensor[mut=False](
+    var c_tt = TileTensor(c_d, row_major[M_static, N_static]())
+    var a_tt = TileTensor(a_d, row_major[M_static, K_BYTES]()).as_immut()
+    var b_tt = TileTensor(b_d, row_major[N_static, K_BYTES]()).as_immut()
+    var sfa_tt = TileTensor(
         sfa_d.unsafe_ptr().unsafe_bitcast[Float8_e8m0fnu](),
         row_major[M_static, K_SCALES](),
-    )
-    var sfb_tt = TileTensor[mut=False](
+    ).as_immut()
+    var sfb_tt = TileTensor(
         sfb_d.unsafe_ptr().unsafe_bitcast[Float8_e8m0fnu](),
         row_major[N_static, K_SCALES](),
-    )
+    ).as_immut()
 
     _launch_block_scaled_split_k[
         BM=BM,
@@ -438,17 +443,17 @@ def _test_dispatch[
     ctx.enqueue_copy(sfa_d, sfa_h)
     ctx.enqueue_copy(sfb_d, sfb_h)
 
-    var c_tt = TileTensor[mut=True](c_d, row_major[M_static, N_static]())
-    var a_tt = TileTensor[mut=False](a_d, row_major[M_static, K_BYTES]())
-    var b_tt = TileTensor[mut=False](b_d, row_major[N_static, K_BYTES]())
-    var sfa_tt = TileTensor[mut=False](
+    var c_tt = TileTensor(c_d, row_major[M_static, N_static]())
+    var a_tt = TileTensor(a_d, row_major[M_static, K_BYTES]()).as_immut()
+    var b_tt = TileTensor(b_d, row_major[N_static, K_BYTES]()).as_immut()
+    var sfa_tt = TileTensor(
         sfa_d.unsafe_ptr().unsafe_bitcast[Float8_e8m0fnu](),
         row_major[M_static, K_SCALES](),
-    )
-    var sfb_tt = TileTensor[mut=False](
+    ).as_immut()
+    var sfb_tt = TileTensor(
         sfb_d.unsafe_ptr().unsafe_bitcast[Float8_e8m0fnu](),
         row_major[N_static, K_SCALES](),
-    )
+    ).as_immut()
 
     block_scaled_matmul_amd[lane_bytes=FP8_LANE_BYTES](
         c_tt, a_tt, b_tt, sfa_tt, sfb_tt, ctx

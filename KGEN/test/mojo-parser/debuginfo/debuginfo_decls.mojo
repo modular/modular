@@ -41,32 +41,6 @@ def testAlwaysInlineNoDebug():
 # // -----
 
 
-# CHECK-LABEL: lit.fn @"testImplicitVarDeclScope
-def testImplicitVarDeclScope() raises:
-    # CHECK-DAG: lit.var.decl "outer" imp {{.*}} loc(#[[LOC_OUTER:.+]])
-    # CHECK-DAG: lit.var.decl "inner" imp {{.*}} loc(#[[LOC_INNER:.+]])
-    outer = 8
-    if True:
-        inner = 5
-
-
-# CHECK-LABEL: lit.fn @"testImplicitVarDeclScopeNoDebug
-# CHECK-SAME: always_inline_no_debug
-@always_inline("nodebug")
-def testImplicitVarDeclScopeNoDebug() raises:
-    # CHECK-DAG: lit.var.decl "inner" imp {{.*}} loc(#[[LOC_INNER_NODEBUG:.+]])
-    if True:
-        inner = 5
-
-
-# CHECK-DAG: #[[SP:.+]] = #debuginfo.subprogram<{{.*}}linkageName = "testImplicitVarDeclScope()"
-# CHECK-DAG: #[[LOC_OUTER]] = loc(fused<#[[SP]]>
-# CHECK-DAG: #[[LOC_INNER]] = loc(fused<#[[SP]]>
-# CHECK-DAG: #[[LOC_INNER_NODEBUG]] = loc("{{.*}}":{{[0-9]+}}:{{[0-9]+}})
-
-# // -----
-
-
 # CHECK-DAG: lit.fn @"fn_where_clause{{.*}}, #[[LOC_WHERE_FN:loc[0-9]+]]>}{{.*}} attributes
 def fn_where_clause[x: Int]() where x:
     pass

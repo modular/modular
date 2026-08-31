@@ -1186,8 +1186,6 @@ def test_anyof_compiles() -> None:
 
 
 def test_unsupported_keyword_in_tag_compiles_by_default() -> None:
-    # Same permissive default on the structural-tag path: JSONSchemaFormat
-    # defaults reject_unsupported to False.
     tag = xgr.StructuralTag(
         format=JSONSchemaFormat(
             json_schema={
@@ -2212,12 +2210,41 @@ def test_format_overlapping_the_length_bounds_rejected() -> None:
         )
 
 
-def test_format_and_pattern_together_rejected() -> None:
-    with pytest.raises(Exception, match="only one is enforced"):
+def test_format_beside_pattern_rejected() -> None:
+    for schema in (
+        '{"type": "string", "format": "email", "pattern": "a+"}',
+        '{"allOf": [{"type": "string", "format": "email"}, {"pattern": "a+"}]}',
+    ):
+        with pytest.raises(Exception, match="only one is enforced"):
+            _compiler().compile_json_schema(schema, reject_unsupported=True)
+
+
+def test_unenforceable_format_beside_pattern_rejected() -> None:
+    with pytest.raises(Exception, match="unsupported string format"):
         _compiler().compile_json_schema(
-            '{"type": "string", "format": "email", "pattern": "a+"}',
+            '{"type": "string", "format": "phone", "pattern": "a+"}',
             reject_unsupported=True,
         )
+
+
+def test_format_beside_pattern_rejected_on_an_older_draft() -> None:
+    # The converter enforces format regardless of the declared draft.
+    with pytest.raises(Exception, match="only one is enforced"):
+        _compiler().compile_json_schema(
+            '{"$schema": "http://json-schema.org/draft-04/schema#",'
+            ' "type": "string", "format": "email", "pattern": "a+"}',
+            reject_unsupported=True,
+        )
+
+
+def test_format_beside_pattern_permissive_keeps_the_pattern() -> None:
+    for string_format in ("email", "phone"):
+        compiled = _compiler().compile_json_schema(
+            f'{{"type": "string", "format": "{string_format}",'
+            ' "pattern": "a+"}'
+        )
+        assert _accepts(compiled, '"aa"'), string_format
+        assert not _accepts(compiled, '"b"'), string_format
 
 
 def test_non_ascii_pattern_with_length_bounds_rejected() -> None:
@@ -3863,10 +3890,6 @@ def _gemma_tool_with_params(params: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def _gemma_compile(params: dict[str, Any]) -> xgr.CompiledGrammar:
-    # No test-level flag walker: the gemma_4 builtin tag already sets
-    # require_object_root and reject_unsupported on every arg-schema
-    # JSONSchemaFormat (model-scoped enable in JSON_CONFIG), so the flags are
-    # real on the gemma path without a stand-in.
     tag = xgr.get_builtin_structural_tag(
         "gemma_4",
         tools=_gemma_tool_with_params(params),
@@ -3877,9 +3900,6 @@ def _gemma_compile(params: dict[str, Any]) -> xgr.CompiledGrammar:
 
 
 def test_gemma_4_tool_call_rejects_unsupported_keyword_without_walker() -> None:
-    # The JSON_CONFIG enable makes reject_unsupported real on the gemma path:
-    # an unenforceable keyword (multipleOf) in an arg schema is rejected
-    # fail-closed, with NO test-level flag walker.
     with pytest.raises(Exception):
         _gemma_compile(
             {
@@ -3898,9 +3918,6 @@ def test_gemma_4_tool_call_non_object_root_rejected_without_walker() -> None:
 
 
 def test_qwen_tool_call_permits_unsupported_keyword_by_default() -> None:
-    # Scoping: the enable is gemma-only. A non-gemma model's builtin tag leaves
-    # reject_unsupported at its False default, so an unenforceable keyword
-    # (multipleOf) falls back to unconstrained decoding and still compiles.
     tag = xgr.get_builtin_structural_tag(
         "qwen_3_5",
         tools=_qwen_tool(
@@ -4412,6 +4429,80 @@ def test_finite_value_beside_dropped_sibling_rejected() -> None:
     ):
         with pytest.raises(Exception, match="takes dispatch priority"):
             _compiler().compile_json_schema(schema, reject_unsupported=True)
+
+
+def test_finite_value_beside_satisfied_sibling_compiles() -> None:
+    cases = (
+        ('{"type": "string", "enum": ["a", "ab"], "maxLength": 2}', '"ab"'),
+        ('{"enum": ["ab"], "minLength": 2}', '"ab"'),
+        (
+            '{"type": "object", "enum": [{"a": 1}], "required": ["a"]}',
+            '{"a":1}',
+        ),
+        # Two bytes, one character.
+        ('{"enum": ["\u00e9"], "maxLength": 1}', '"\u00e9"'),
+    )
+    for schema, accepted in cases:
+        compiled = _compiler().compile_json_schema(
+            schema, reject_unsupported=True
+        )
+        assert _accepts(compiled, accepted), schema
+        assert not _accepts(compiled, '"zzz"'), schema
+
+
+def test_finite_value_beside_violated_sibling_rejected() -> None:
+    for schema in (
+        # One character, two bytes.
+        '{"enum": ["\u00e9"], "minLength": 2}',
+        '{"type": "object", "enum": [{}], "required": ["a"]}',
+    ):
+        with pytest.raises(Exception, match="takes dispatch priority"):
+            _compiler().compile_json_schema(schema, reject_unsupported=True)
+
+
+def test_finite_value_beside_malformed_sibling_rejected() -> None:
+    for schema in (
+        '{"enum": [1], "minLength": -1}',
+        '{"enum": [1], "maxLength": -1}',
+        '{"enum": ["a"], "minLength": -1}',
+        '{"enum": [1], "required": [1]}',
+        '{"enum": [{"a": 1}], "required": ["a", "a"]}',
+        '{"enum": ["a"], "type": ["string", "string"]}',
+    ):
+        with pytest.raises(Exception, match="takes dispatch priority"):
+            _compiler().compile_json_schema(schema, reject_unsupported=True)
+
+
+def test_finite_value_sibling_walk_is_budgeted() -> None:
+    repeats = 70000
+    schema = (
+        '{"enum": [1], "required": ['
+        + ",".join(f'"a{i}"' for i in range(repeats))
+        + "]}"
+    )
+    with pytest.raises(Exception, match="takes dispatch priority"):
+        _compiler().compile_json_schema(schema, reject_unsupported=True)
+
+
+def test_finite_value_beside_undecidable_sibling_rejected() -> None:
+    for schema in (
+        '{"enum": ["a"], "pattern": "^a$"}',
+        '{"enum": ["a"], "nullable": true}',
+        '{"enum": [{"a": "xy"}],'
+        ' "properties": {"a": {"type": "string", "maxLength": 2}}}',
+        '{"type": "integer", "enum": [5, 7], "minimum": 5}',
+    ):
+        with pytest.raises(Exception, match="takes dispatch priority"):
+            _compiler().compile_json_schema(schema, reject_unsupported=True)
+
+
+def test_enum_with_annotation_only_sibling_compiles() -> None:
+    compiled = _compiler().compile_json_schema(
+        '{"type": "string", "enum": ["a"], "enumDescriptions": ["first"]}',
+        reject_unsupported=True,
+    )
+    assert _accepts(compiled, '"a"')
+    assert not _accepts(compiled, '"b"')
 
 
 def test_enum_with_sibling_type_still_compiles() -> None:

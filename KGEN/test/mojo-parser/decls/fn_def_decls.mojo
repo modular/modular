@@ -193,9 +193,9 @@ def returnsMultiple() -> Tuple[Int, MemoryOnly]:
 # MOCO-687: Unable to destructure multiple outputs in a def function without explicit var declarations
 # CHECK-LABEL: test_multi_tuple_def_value
 def test_multi_tuple_def_value() raises:
-    # CHECK: %b = lit.var.decl "b"
     # CHECK: %a = lit.var.decl "a"
-    a, b = returnsMultiple()
+    # CHECK: %b = lit.var.decl "b"
+    var a, b = returnsMultiple()
 
 
 # CHECK-LABEL: lit.fn @"ref_result

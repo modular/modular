@@ -93,16 +93,14 @@ def test_shadowing_reference_shadowed(cond: Bool):
 
 
 # ===----------------------------------------------------------------------=== #
-# Implicitly declared variables.
+# Explicitly declared mutable variables used across control flow.
 # ===----------------------------------------------------------------------=== #
 
 
-# CHECK-LABEL: lit.fn @"var_decls_implicit()
-def var_decls_implicit() raises -> None:
-    # Implicit declaration is mutable.
-    # CHECK: %x = lit.var.decl "x" imp
-    # expected-warning @+1 {{implicit declaration of 'x' is deprecated; add 'var' before the name}}
-    x = 123
+# CHECK-LABEL: lit.fn @"var_decls_mutable()
+def var_decls_mutable() raises -> None:
+    # CHECK: %x = lit.var.decl "x" var
+    var x = 123
 
     # CHECK: [[TMP:%.*]] = kgen.param.constant: !Int = <{:scalar<index> 42}>
     # CHECK: [[F:%.*]] = lit.call {{.*}}::@"fudge_int{{.*}}([[TMP]])
@@ -114,51 +112,25 @@ def use_int(x: Int):
     pass
 
 
-# Check implicit values are declared at top level where they belong.
+# Check values are declared at top level where they belong.
 # https://github.com/modularml/modular/issues/34368
 
 
 # CHECK-LABEL: lit.fn @"walrus_control_flow
 def walrus_control_flow(a: Int) raises:
-    # CHECK: %b = lit.var.decl
     # CHECK: %curr = lit.var.decl "curr"
-    # expected-warning @+1 {{implicit declaration of 'curr' is deprecated; add 'var' before the name}}
-    curr = a
+    # CHECK: %b = lit.var.decl "b"
+    var curr = a
+    var b: Int
 
     # CHECK: lit.loop {
     # CHECK-NEXT: lit.ref.load %curr
-    # expected-warning @+1 {{implicit declaration of 'b' is deprecated; declare it with 'var' in the function body}}
     while b := curr + 1:
         # lit.loop.break.else
-        # CHECK: lit.ref.load %b
+        # CHECK: lit.ref.load
+        # CHECK: use_int
         use_int(b)
         curr = b
-
-
-# Check that we only get one implicit declaration and all three scopes use it.
-# CHECK-LABEL: lit.fn @"reuse_implicit
-def reuse_implicit(a: Int, cond: __mlir_type.`!kgen.scalar<bool>`) raises:
-    # CHECK: %implicit = lit.var.decl
-
-    # CHECK: hlcf.elif
-    if cond:
-        # CHECK: lit.ref.store %a, %implicit :
-        # expected-warning @+1 {{implicit declaration of 'implicit' is deprecated; declare it with 'var' in the function body}}
-        implicit = a
-        # CHECK: lit.ref.load %implicit :
-        use_int(implicit)
-
-    # CHECK: hlcf.elif
-    if cond:
-        # CHECK: lit.ref.store %a, %implicit :
-        implicit = a
-        # CHECK: lit.ref.load %implicit :
-        use_int(implicit)
-
-    # CHECK: lit.ref.store %a, %implicit :
-    implicit = a
-    # CHECK: lit.ref.load %implicit :
-    use_int(implicit)
 
 
 # CHECK-LABEL: lit.fn @"addrSpaces

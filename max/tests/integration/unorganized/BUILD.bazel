@@ -102,6 +102,7 @@ modular_py_test(
         "//max/tests/integration/test_common:pipeline_model_dummy",
         requirement("hypothesis"),
         requirement("numpy"),
+        requirement("pydantic"),
     ],
 )
 

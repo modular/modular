@@ -37,7 +37,14 @@ from std.sys import size_of
 from std.utils import StaticTuple
 
 from internal_utils import assert_almost_equal
-from layout import Coord, Idx, TensorLayout, TileTensor, row_major
+from layout import (
+    Coord,
+    Idx,
+    TensorLayout,
+    TensorStorage,
+    TileTensor,
+    row_major,
+)
 from linalg.arch.amd.block_scaled_mma import CDNA4F8F6F4MatrixFormat
 from linalg.fp4_utils import MXFP8_SF_VECTOR_SIZE
 from linalg.matmul.gpu.amd import (
@@ -120,6 +127,8 @@ def block_scaled_matmul_fp8_ref(
                 BK_ELEMS=BK_ELEMS,
                 WN=WN,
                 b_prefetch=b_prefetch,
+                scale_group=scale_group,
+                b_addr_split=b_addr_split,
                 matrix_format=CDNA4F8F6F4MatrixFormat.FLOAT8_E4M3,
             ].num_threads
         )
@@ -131,20 +140,31 @@ def _preb_fp8_grid_kernel[
     BK_ELEMS: Int,
     WN: Int,
     b_prefetch: Bool,
+    scale_group: Int,
+    b_addr_split: Bool,
     out_dtype: DType,
     LayoutC: TensorLayout,
     LayoutA: TensorLayout,
     LayoutBPre: TensorLayout,
     LayoutSFA: TensorLayout,
     LayoutSFB: TensorLayout,
+    StoreC: TensorStorage,
+    StoreA: TensorStorage,
+    StoreBPre: TensorStorage,
+    StoreSFA: TensorStorage,
+    StoreSFB: TensorStorage,
     N: Int,
     K_BYTES: Int,
 ](
-    c: TileTensor[mut=True, out_dtype, LayoutC, MutAnyOrigin],
-    a: TileTensor[.uint8, LayoutA, ImmutAnyOrigin],
-    b_pre: TileTensor[.uint8, LayoutBPre, ImmutAnyOrigin],
-    sfa: TileTensor[.float8_e8m0fnu, LayoutSFA, ImmutAnyOrigin],
-    sfb: TileTensor[.float8_e8m0fnu, LayoutSFB, ImmutAnyOrigin],
+    c: TileTensor[mut=True, out_dtype, LayoutC, MutAnyOrigin, Storage=StoreC],
+    a: TileTensor[.uint8, LayoutA, ImmutAnyOrigin, Storage=StoreA],
+    b_pre: TileTensor[.uint8, LayoutBPre, ImmutAnyOrigin, Storage=StoreBPre],
+    sfa: TileTensor[
+        .float8_e8m0fnu, LayoutSFA, ImmutAnyOrigin, Storage=StoreSFA
+    ],
+    sfb: TileTensor[
+        .float8_e8m0fnu, LayoutSFB, ImmutAnyOrigin, Storage=StoreSFB
+    ],
 ):
     BlockScaledMatmulAMD_PreB[
         BM=BM,
@@ -152,6 +172,8 @@ def _preb_fp8_grid_kernel[
         BK_ELEMS=BK_ELEMS,
         WN=WN,
         b_prefetch=b_prefetch,
+        scale_group=scale_group,
+        b_addr_split=b_addr_split,
         matrix_format=CDNA4F8F6F4MatrixFormat.FLOAT8_E4M3,
     ].run[
         out_dtype,
@@ -160,6 +182,11 @@ def _preb_fp8_grid_kernel[
         LayoutBPre,
         LayoutSFA,
         LayoutSFB,
+        StoreC,
+        StoreA,
+        StoreBPre,
+        StoreSFA,
+        StoreSFB,
         N,
         K_BYTES,
     ](
@@ -211,6 +238,8 @@ def _test_case[
     BK_ELEMS: Int = 256,
     WN: Int = 64,
     b_prefetch: Bool = False,
+    scale_group: Int = 1,
+    b_addr_split: Bool = False,
 ](name: String, ctx: DeviceContext) raises:
     """One direct-launch MXFP8 correctness case for the preb kernel."""
     # BK_ELEMS % 256 == 0 keeps num_k_mmas even (preshuffled-scale k_pack=2).
@@ -298,8 +327,8 @@ def _test_case[
     ctx.enqueue_copy(sfb_pre_d, sfb_pre_h)
 
     # ---- GPU preshuffle B -> b_pre_d (matrix_format=CDNA4F8F6F4MatrixFormat.FLOAT8_E4M3 strides) ----
-    var b_raw_tt = TileTensor[mut=False](b_d, row_major[1, N_static, K_BYTES]())
-    var b_pre_dst_tt = TileTensor[mut=True](
+    var b_raw_tt = TileTensor(b_d, row_major[1, N_static, K_BYTES]()).as_immut()
+    var b_pre_dst_tt = TileTensor(
         b_pre_d,
         Shuffler[1].b_5d_grouped_layout[N=N_static, K_BYTES=K_BYTES],
     )
@@ -323,23 +352,23 @@ def _test_case[
     )
 
     # ---- Preb kernel under test ----
-    var a_tt = TileTensor[mut=False](
+    var a_tt = TileTensor(
         a_d, row_major(Coord(M_static, Idx[K_BYTES]))
-    )
-    var b_pre_tt = TileTensor[mut=False](
+    ).as_immut()
+    var b_pre_tt = TileTensor(
         b_pre_d, row_major[1, N_static * K_BYTES]()
-    )
+    ).as_immut()
     # Preshuffled scale buffers wrapped row-major: the kernel addresses the
     # bytes through `PreshuffledScaleLoader`, so this layout is bookkeeping.
-    var sfa_tt = TileTensor[mut=False](
+    var sfa_tt = TileTensor(
         sfa_pre_d.unsafe_ptr().unsafe_bitcast[Float8_e8m0fnu](),
         row_major[padded_M, scale_K](),
-    )
-    var sfb_tt = TileTensor[mut=False](
+    ).as_immut()
+    var sfb_tt = TileTensor(
         sfb_pre_d.unsafe_ptr().unsafe_bitcast[Float8_e8m0fnu](),
         row_major[N_static, scale_K](),
-    )
-    var c_tt = TileTensor[mut=True](c_d, row_major[M_static, N_static]())
+    ).as_immut()
+    var c_tt = TileTensor(c_d, row_major[M_static, N_static]())
 
     comptime kernel = _preb_fp8_grid_kernel[
         BM,
@@ -347,12 +376,19 @@ def _test_case[
         BK_ELEMS,
         WN,
         b_prefetch,
+        scale_group,
+        b_addr_split,
         .float32,
         type_of(c_tt).LayoutType,
         type_of(a_tt).LayoutType,
         type_of(b_pre_tt).LayoutType,
         type_of(sfa_tt).LayoutType,
         type_of(sfb_tt).LayoutType,
+        type_of(c_tt).Storage,
+        type_of(a_tt).Storage,
+        type_of(b_pre_tt).Storage,
+        type_of(sfa_tt).Storage,
+        type_of(sfb_tt).Storage,
         N_static,
         K_BYTES,
     ]
@@ -487,10 +523,10 @@ def _test_grouped_case[
     ctx.enqueue_copy(eid_d, eid_h)
 
     # B weights + B scales: preshuffled once, as at session.load in production.
-    var b_raw_tt = TileTensor[mut=False](
+    var b_raw_tt = TileTensor(
         b_d, row_major[num_experts, N, K_BYTES]()
-    )
-    var b_pre_dst_tt = TileTensor[mut=True](
+    ).as_immut()
+    var b_pre_dst_tt = TileTensor(
         b_pre_d,
         Shuffler[num_experts].b_5d_grouped_layout[N=N, K_BYTES=K_BYTES],
     )
@@ -506,15 +542,15 @@ def _test_grouped_case[
     ctx.enqueue_copy(sfb_pre_d, sfb_pre_h)
 
     # A scales: per-expert fixed-stride slots, same launcher as the FP4 path.
-    var sfa_raw_tt = TileTensor[mut=False](
+    var sfa_raw_tt = TileTensor(
         sfa_d, row_major(Coord(total_tokens, Idx[scale_K]))
-    )
-    var sfa_pre_tt = TileTensor[mut=True](
+    ).as_immut()
+    var sfa_pre_tt = TileTensor(
         sfa_pre_d, row_major(Coord(num_experts * max_padded_M, Idx[scale_K]))
     )
-    var a_off_pre_tt = TileTensor[mut=False](
+    var a_off_pre_tt = TileTensor(
         a_off_d, row_major(Coord(num_active + 1))
-    )
+    ).as_immut()
     Shuffler[1].preshuffle_grouped_scale_4d_gpu[K_SCALES=scale_K](
         sfa_raw_tt,
         sfa_pre_tt,
@@ -551,25 +587,25 @@ def _test_grouped_case[
         )
 
     # Public dispatcher at matrix_format=CDNA4F8F6F4MatrixFormat.FLOAT8_E4M3.
-    var c_tt = TileTensor[mut=True](c_d, row_major(Coord(total_tokens, Idx[N])))
-    var a_tt = TileTensor[mut=False](
+    var c_tt = TileTensor(c_d, row_major(Coord(total_tokens, Idx[N])))
+    var a_tt = TileTensor(
         a_d, row_major(Coord(total_tokens, Idx[K_BYTES]))
-    )
-    var b_pre_flat = TileTensor[mut=False](
+    ).as_immut()
+    var b_pre_flat = TileTensor(
         b_pre_d, row_major[num_experts, N * K_BYTES]()
-    )
-    var sfa_tt = TileTensor[mut=False](
+    ).as_immut()
+    var sfa_tt = TileTensor(
         sfa_pre_d.unsafe_ptr().unsafe_bitcast[Float8_e8m0fnu](),
         row_major(Coord(num_experts * max_padded_M, Idx[scale_K])),
-    )
-    var sfb_tt = TileTensor[mut=False](
+    ).as_immut()
+    var sfb_tt = TileTensor(
         sfb_pre_d.unsafe_ptr().unsafe_bitcast[Float8_e8m0fnu](),
         row_major[num_experts * N, scale_K](),
-    )
-    var a_off_tt = TileTensor[mut=False](
+    ).as_immut()
+    var a_off_tt = TileTensor(
         a_off_d, row_major(Coord(num_active + 1))
-    )
-    var eid_tt = TileTensor[mut=False](eid_d, row_major(Coord(num_active)))
+    ).as_immut()
+    var eid_tt = TileTensor(eid_d, row_major(Coord(num_active))).as_immut()
 
     block_scaled_grouped_matmul_amd_preb[lane_bytes=FP8_LANE_BYTES](
         c_tt,
@@ -704,10 +740,10 @@ def _probe_grouped_determinism[
     ctx.enqueue_copy(a_off_d, a_off_h)
     ctx.enqueue_copy(eid_d, eid_h)
 
-    var b_raw_tt = TileTensor[mut=False](
+    var b_raw_tt = TileTensor(
         b_d, row_major[num_experts, N, K_BYTES]()
-    )
-    var b_pre_dst_tt = TileTensor[mut=True](
+    ).as_immut()
+    var b_pre_dst_tt = TileTensor(
         b_pre_d,
         Shuffler[num_experts].b_5d_grouped_layout[N=N, K_BYTES=K_BYTES],
     )
@@ -722,15 +758,15 @@ def _probe_grouped_determinism[
     )
     ctx.enqueue_copy(sfb_pre_d, sfb_pre_h)
 
-    var sfa_raw_tt = TileTensor[mut=False](
+    var sfa_raw_tt = TileTensor(
         sfa_d, row_major(Coord(total_tokens, Idx[scale_K]))
-    )
-    var sfa_pre_tt = TileTensor[mut=True](
+    ).as_immut()
+    var sfa_pre_tt = TileTensor(
         sfa_pre_d, row_major(Coord(num_experts * max_padded_M, Idx[scale_K]))
     )
-    var a_off_pre_tt = TileTensor[mut=False](
+    var a_off_pre_tt = TileTensor(
         a_off_d, row_major(Coord(num_active + 1))
-    )
+    ).as_immut()
     Shuffler[1].preshuffle_grouped_scale_4d_gpu[K_SCALES=scale_K](
         sfa_raw_tt,
         sfa_pre_tt,
@@ -766,25 +802,25 @@ def _probe_grouped_determinism[
             block_dim=(BLOCK_DIM, BLOCK_DIM),
         )
 
-    var c_tt = TileTensor[mut=True](c_d, row_major(Coord(total_tokens, Idx[N])))
-    var a_tt = TileTensor[mut=False](
+    var c_tt = TileTensor(c_d, row_major(Coord(total_tokens, Idx[N])))
+    var a_tt = TileTensor(
         a_d, row_major(Coord(total_tokens, Idx[K_BYTES]))
-    )
-    var b_pre_flat = TileTensor[mut=False](
+    ).as_immut()
+    var b_pre_flat = TileTensor(
         b_pre_d, row_major[num_experts, N * K_BYTES]()
-    )
-    var sfa_tt = TileTensor[mut=False](
+    ).as_immut()
+    var sfa_tt = TileTensor(
         sfa_pre_d.unsafe_ptr().unsafe_bitcast[Float8_e8m0fnu](),
         row_major(Coord(num_experts * max_padded_M, Idx[scale_K])),
-    )
-    var sfb_tt = TileTensor[mut=False](
+    ).as_immut()
+    var sfb_tt = TileTensor(
         sfb_pre_d.unsafe_ptr().unsafe_bitcast[Float8_e8m0fnu](),
         row_major[num_experts * N, scale_K](),
-    )
-    var a_off_tt = TileTensor[mut=False](
+    ).as_immut()
+    var a_off_tt = TileTensor(
         a_off_d, row_major(Coord(num_active + 1))
-    )
-    var eid_tt = TileTensor[mut=False](eid_d, row_major(Coord(num_active)))
+    ).as_immut()
+    var eid_tt = TileTensor(eid_d, row_major(Coord(num_active))).as_immut()
 
     var c_h = ctx.enqueue_create_host_buffer[.float32](n_elem)
     var c_ref_h = ctx.enqueue_create_host_buffer[.float32](n_elem)
@@ -881,6 +917,32 @@ def main() raises:
         "prefetch", ctx
     )
 
+    # Reach the two band-table scheduling knobs directly, so their coverage
+    # does not depend on a dispatcher band continuing to select them. K=1024
+    # gives 4 outer-K tiles, the minimum `scale_group=4` can fold; a wrong
+    # lane transpose or LDS-strip offset is silently wrong scales, not a crash,
+    # and the scales here are randomised so the reference can see it.
+    _test_case[
+        M_static=64,
+        N_static=128,
+        K_static=1024,
+        BK_ELEMS=256,
+        b_prefetch=True,
+        scale_group=4,
+    ]("scale-group-4", ctx)
+    _test_case[M_static=64, N_static=128, K_static=1024, b_addr_split=True](
+        "b-addr-split", ctx
+    )
+    _test_case[
+        M_static=64,
+        N_static=128,
+        K_static=1024,
+        BK_ELEMS=256,
+        b_prefetch=True,
+        scale_group=4,
+        b_addr_split=True,
+    ]("scale-group-4-b-addr-split", ctx)
+
     # Decode-shaped: BM=16 / WN=16 exercises the odd-num_mmas scale-cell
     # straddle (the `_a_scale_shift` / `_b_scale_shift` rotation).
     _test_case[M_static=16, N_static=64, K_static=512, BM=16, BN=64, WN=16](
@@ -906,6 +968,14 @@ def main() raises:
     # Real M3 down shape; its (N, packed_K) key also collides with MXFP4 gate_up.
     _test_grouped_case[num_experts=2, N=6144, K=3072](
         "grouped-m3-down", [24, 8], ctx
+    )
+    # Top band (etm > 2048) against a reference, at a real token count. `1290`
+    # leaves a 10-row tail in the last BM=128 m-tile and pads the A scales to
+    # 1312, which is the ragged shape production routing produces and the one
+    # the wide scale fetch and the soffset-split B addressing clamp differently
+    # from the per-tile loads they replace.
+    _test_grouped_case[num_experts=2, N=6144, K=6144](
+        "grouped-m3-gate_up etm=2580 ragged", [1290, 1290], ctx
     )
 
     print(
@@ -933,13 +1003,21 @@ def main() raises:
     # count above to reach the `etm > 2048` band -- the one real serving
     # traffic hits -- without paying for a huge per-element reference matmul.
     # Both shapes' `LB==32` dispatch has a single band above 2048 (no further
-    # split), so one value per shape covers it -- a second value in the same
-    # band would compile to the same tile and add no branch coverage.
+    # split), so one value per shape covers the branch; the second pair below
+    # re-enters the same tile with a ragged token count, which is a data case
+    # the aligned lists cannot reach.
     det_ok &= _probe_grouped_determinism[2, 6144, 6144](
         "m3-gate_up etm=2049", [256, 256], 2049, ctx
     )
     det_ok &= _probe_grouped_determinism[2, 6144, 3072](
         "m3-down etm=2049", [512, 512], 2049, ctx
+    )
+    # Both top bands run BM=128; 266 and 246 leave 10- and 118-row tails.
+    det_ok &= _probe_grouped_determinism[2, 6144, 6144](
+        "m3-gate_up etm=2049 ragged", [266, 246], 2049, ctx
+    )
+    det_ok &= _probe_grouped_determinism[2, 6144, 3072](
+        "m3-down etm=2049 ragged", [266, 246], 2049, ctx
     )
     if not det_ok:
         raise Error(

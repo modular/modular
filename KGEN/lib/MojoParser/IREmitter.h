@@ -51,12 +51,12 @@ public:
   /// Rejected without recording a reason.
   struct None {};
 
-  /// A conditional trait conformance was refuted or could not be proven.
-  struct UnsatisfiedConformance {
+  /// A constraint was refuted or could not be proven.
+  struct UnsatisfiedConstraints {
     ConstraintFailure constraints;
   };
 
-  using Reason = std::variant<None, UnsatisfiedConformance>;
+  using Reason = std::variant<None, UnsatisfiedConstraints>;
 
   ConversionFailure() = default;
   ConversionFailure(ConversionFailure &&) = default;
@@ -75,6 +75,14 @@ public:
   /// Attach a note per captured reason, consuming it. No-op when empty.
   void addExplanation(MojoInflightDiag &diag) &&;
 
+  /// The recorded reason if it is a `T`, else null. Callers case on the
+  /// alternative they can act on; a null result means a different reason was
+  /// recorded, or none was, which is not the same as that reason being empty.
+  template <typename T>
+  const T *getReasonIf() const {
+    return std::get_if<T>(&reason);
+  }
+
 private:
   Reason reason;
 };
@@ -89,8 +97,7 @@ private:
 class IREmitter : public SharedStateUser {
 public:
   /// Create an IREmitter for a dynamic context with a builder.
-  IREmitter(ASTDecl &declScope, OpBuilder builder,
-            std::optional<OpBuilder> varDeclCursor = {});
+  IREmitter(ASTDecl &declScope, OpBuilder builder);
   /// Create an IREmitter for a parameter context.
   IREmitter(ASTDecl &declScope, ExprContext paramContext,
             DeferredTypingContext *deferredTypingContext = nullptr);
@@ -116,9 +123,6 @@ public:
 
   /// This is scope to resolve declaration references against.
   ASTDecl &declScope;
-
-  /// If specified, implicitly declared variables are added after this iterator.
-  std::optional<OpBuilder> varDeclCursor;
 
   /// When non-null, body-constraint inconclusiveness during emission is
   /// silently accepted at single-candidate emission sites, and the unprovable
@@ -169,10 +173,15 @@ public:
   /// `declScope` supplies the `where` assumptions used to discharge generator
   /// body constraints; `additionalAssumptions` are extra facts to consider
   /// alongside it.
+  ///
+  /// When `failure` is non-null and the verdict is `unknown`, it receives the
+  /// body constraints that lacked evidence, so a caller needing to name them
+  /// does not have to repeat the discharge.
   static TriState
   canZeroCostConvert(ASTType fromType, ASTType toType, SharedState &shared,
                      ASTDecl &declScope,
-                     ArrayRef<ConstraintAttr> additionalAssumptions = {});
+                     ArrayRef<ConstraintAttr> additionalAssumptions = {},
+                     ConversionFailure *failure = nullptr);
 
   /// Same as the above, using this emitter's shared state and scope.
   TriState
@@ -385,11 +394,26 @@ public:
   // When `failure` is non-null it receives why the conversion was rejected.
   // Only the strategies that know a reason record one, so it can come back
   // empty even for a rejection.
-  static bool canImplicitlyConvertToType(
+  static TriState classifyImplicitConversion(
       ASTExprAnd<CValue> value, ASTType requiredType, ASTDecl &declScope,
       ArrayRef<ConstraintAttr> additionalAssumptions = {},
       DeferredTypingContext *deferralCtx = nullptr,
       ConversionFailure *failure = nullptr);
+
+  /// Boolean form of `classifyImplicitConversion`, collapsing an undecided
+  /// verdict the way callers that cannot represent one have always seen it.
+  static bool canImplicitlyConvertToType(
+      ASTExprAnd<CValue> value, ASTType requiredType, ASTDecl &declScope,
+      ArrayRef<ConstraintAttr> additionalAssumptions = {},
+      DeferredTypingContext *deferralCtx = nullptr,
+      ConversionFailure *failure = nullptr) {
+    TriState verdict =
+        classifyImplicitConversion(value, requiredType, declScope,
+                                   additionalAssumptions, deferralCtx, failure);
+    if (verdict.isUnknown())
+      return deferralCtx != nullptr;
+    return verdict.isTrue();
+  }
 
   /// This emits an implicit conversion to the specified type if the types
   /// differ, including emitting any implicit constructor calls as well as

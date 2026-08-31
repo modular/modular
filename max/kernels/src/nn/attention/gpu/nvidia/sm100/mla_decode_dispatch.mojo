@@ -14,7 +14,7 @@
 from std.algorithm.functional import unswitch
 from std.collections import OptionalReg
 from std.math import ceildiv, clamp, gcd
-from std.sys import size_of
+from std.sys import get_defined_int, size_of
 from max.gpu.host import DeviceBuffer, DeviceContext, FuncAttribute
 from max.gpu.primitives.grid_controls import pdl_launch_attributes, PDLLevel
 from layout import (
@@ -46,7 +46,7 @@ from nn.attention.mha_utils import (
     MHAConfig,
 )
 from nn.attention.gpu.nvidia.common import KVTMATile
-from std.utils.numerics import get_accum_type
+from std.utils.numerics import get_accum_type, nan
 from std.utils.index import Index, IndexList
 
 comptime logger = Logger()
@@ -1143,6 +1143,20 @@ def mla_decode_sm100_dispatch[
 # ------------------------------------------------------------------------------
 # Inner dispatch implementation parameterized on split_page_size
 # ------------------------------------------------------------------------------
+# Mirrors `FA4_WS_POISON` in `sm100/dispatch.mojo`: the split-K workspaces
+# below are deliberately allocated without a fill, because an empty partition
+# skips its O store while still writing `-inf` to its LSE slot, and
+# `mla_decode_combine`'s scale check is what keeps the unwritten O slots from
+# contributing. `mla_decode_combine.mojo`'s prefetch load therefore reads
+# uninitialized memory by design and initcheck reports it. NaN-filling both
+# workspaces initializes them (silencing the false report) and grades that
+# contract: a dropped scale check or a missing `-inf` write propagates NaN into
+# the output and trips the test's own assert. Off by default and
+# comptime-pruned, so production codegen is untouched. Shares the FA4 flag so
+# one `-D` covers every attention split-K workspace. See KERN-3535.
+comptime MLA_WS_POISON: Bool = get_defined_int["FA4_WS_POISON", 0]() != 0
+
+
 def _mla_decode_sm100_dispatch_impl[
     q_type: DType,
     k_t: MHAOperand,
@@ -1194,7 +1208,9 @@ def _mla_decode_sm100_dispatch_impl[
     comptime _half_sms = sm_count // 2
 
     comptime AccumType = get_accum_type[output.dtype]()
-    comptime v_depth = depth - 64
+    # The split-K output is the 512 latent (shared by both rows), not the row
+    # width the model stores, so it stays 512 under NoPE.
+    comptime v_depth = 512
     comptime _is_fp8_kv = (k_t.dtype == DType.float8_e4m3fn)
 
     # Ensure KV cache page_size is evenly divisible by split_page_size.
@@ -1236,6 +1252,9 @@ def _mla_decode_sm100_dispatch_impl[
         var lse_accum_data = ctx.enqueue_create_buffer[AccumType](
             Int(num_partitions * batch_size * q_max_seq_len * num_heads)
         )
+        comptime if MLA_WS_POISON:
+            ctx.enqueue_memset(o_accum_split_data, nan[output_type]())
+            ctx.enqueue_memset(lse_accum_data, nan[AccumType]())
         var lse_accum_split = TileTensor(
             lse_accum_data,
             row_major(
@@ -1674,11 +1693,16 @@ def mla_decode_sm100_sink_split_k[
     # existing single-buffer SW64-gather kernel bodies, so
     # native_fp8_unified_gather must be False there.
     comptime _native_fp8_unified_gather = sparse and _native_fp8
+    # V/output is the 512 latent. SMEM stays 576 so the trailing block P
+    # aliases survives a NoPE row. Neither tracks the row the model stores.
+    comptime _latent_depth = 512
+    comptime _smem_q_depth = 576
     comptime mla_config = MLA_SM100_Decode_Config(
         num_q_heads=num_heads,
         group=group,  # num_q_heads/h_k(1)
-        depth=(depth - 64),  # 512
-        q_depth=depth,  # 576
+        depth=_latent_depth,
+        q_depth=_smem_q_depth,
+        input_q_depth=depth,  # 576 with rotary, 512 NoPE
         dtype_size=_dtype_size,
         kv_type_size=size_of[k_t.dtype](),
         swizzle_mode=config.swizzle_mode,
@@ -1693,10 +1717,11 @@ def mla_decode_sm100_sink_split_k[
     )
     var num_rows_q = num_matrix_view_rows_decode(q)
 
+    # `depth` and `BK` are the row as the model stores it (NoPE narrows both).
     var k_tma_op = k.create_tma_tile[
         BN=mla_config.BK_PV,  # tile_m =64
-        depth=mla_config.q_depth,
-        BK=mla_config.BK_QK,  # tile_n =576
+        depth=mla_config.input_q_depth,
+        BK=mla_config.input_q_depth,
         swizzle_mode=mla_config.kv_tma_swizzle_mode,
     ](ctx)
     var o_ptr = rebind[UnsafePointer[Scalar[output_type], origin=MutAnyOrigin]](
@@ -1729,7 +1754,7 @@ def mla_decode_sm100_sink_split_k[
             # BF16 KV cache: single BF16 + SWIZZLE_128B gather4 TMA
             # descriptor covering the full 576-element row (1152 bytes).
             comptime if k_t.dtype == .bfloat16:
-                comptime _kv_bf16_tile_width = mla_config.padded_q_depth
+                comptime _kv_bf16_tile_width = mla_config.input_q_depth
                 var k_gather4_tma_bf16 = k.create_gather4_tma_tile[
                     tile_width=_kv_bf16_tile_width,
                     tile_stride=_kv_bf16_tile_width,
@@ -1754,8 +1779,8 @@ def mla_decode_sm100_sink_split_k[
                 var q_tma_sparse = tma_tile_qo[
                     swizzle_mode=mla_config.swizzle_mode,
                     BM=mla_config.BM,
-                    BK=mla_config.BK_QK,
-                    depth=mla_config.q_depth,
+                    BK=mla_config.input_q_depth,
+                    depth=mla_config.input_q_depth,
                 ](ctx, q_ptr, num_rows_q)
 
                 @__parameter
@@ -1856,7 +1881,7 @@ def mla_decode_sm100_sink_split_k[
             # ---------- FP8 KV sparse dispatch (default) ----------
             # Single K gather4 TMA covering full 576-byte row
             # (INT64, SWIZZLE_NONE, tile_width=72 INT64 = 576 B).
-            comptime _kv_tile_width = mla_config.padded_q_depth // 8
+            comptime _kv_tile_width = mla_config.input_q_depth // 8
             var k_gather4_tma = k.create_gather4_tma_tile[
                 tile_width=_kv_tile_width,
                 tile_stride=_kv_tile_width,
@@ -1881,8 +1906,8 @@ def mla_decode_sm100_sink_split_k[
                 var q_tma_sparse_fp8 = tma_tile_qo[
                     swizzle_mode=mla_config.kv_tma_swizzle_mode,
                     BM=mla_config.BM,
-                    BK=mla_config.BK_QK,
-                    depth=mla_config.q_depth,
+                    BK=mla_config.input_q_depth,
+                    depth=mla_config.input_q_depth,
                 ](ctx, q_ptr, num_rows_q)
 
                 # Unified gather: reuse the SAME contiguous INT64/
@@ -2033,8 +2058,8 @@ def mla_decode_sm100_sink_split_k[
                 var q_tma_sparse = tma_tile_qo[
                     swizzle_mode=mla_config.swizzle_mode,
                     BM=mla_config.BM,
-                    BK=mla_config.BK_QK,
-                    depth=mla_config.q_depth,
+                    BK=mla_config.input_q_depth,
+                    depth=mla_config.input_q_depth,
                 ](ctx, q_ptr, num_rows_q)
 
                 @__parameter
@@ -2222,8 +2247,8 @@ def mla_decode_sm100_sink_split_k[
             var q_tma_sparse = tma_tile_qo[
                 swizzle_mode=mla_config.swizzle_mode,
                 BM=mla_config.BM,
-                BK=mla_config.BK_QK,
-                depth=mla_config.q_depth,
+                BK=mla_config.input_q_depth,
+                depth=mla_config.input_q_depth,
             ](ctx, q_ptr, num_rows_q)
 
             @__parameter
@@ -2473,8 +2498,8 @@ def mla_decode_sm100_sink_split_k[
         var q_tma_fp8 = tma_tile_qo[
             swizzle_mode=mla_config.kv_tma_swizzle_mode,  # SWIZZLE_64B
             BM=mla_config.BM,
-            BK=mla_config.BK_QK,
-            depth=mla_config.q_depth,
+            BK=mla_config.input_q_depth,
+            depth=mla_config.input_q_depth,
         ](ctx, q_ptr_fp8, num_rows_q)
 
         # Layout G config + BM=32 Q TMA tile. Built unconditionally so the
@@ -2485,6 +2510,7 @@ def mla_decode_sm100_sink_split_k[
             group=mla_config.group,
             depth=mla_config.depth,
             q_depth=mla_config.q_depth,
+            input_q_depth=mla_config.input_q_depth,
             dtype_size=mla_config.dtype_size,
             kv_type_size=size_of[k_t.dtype](),
             swizzle_mode=mla_config.swizzle_mode,
@@ -2500,8 +2526,8 @@ def mla_decode_sm100_sink_split_k[
         var q_tma_fp8_g = tma_tile_qo[
             swizzle_mode=mla_config_g.kv_tma_swizzle_mode,  # SWIZZLE_64B
             BM=mla_config_g.BM,  # 32
-            BK=mla_config_g.BK_QK,
-            depth=mla_config_g.q_depth,
+            BK=mla_config_g.input_q_depth,
+            depth=mla_config_g.input_q_depth,
         ](ctx, q_ptr_fp8, num_rows_q)
 
         # Dispatch is routed at comptime by num_q_heads × q_max_seq_len.
@@ -2718,8 +2744,8 @@ def mla_decode_sm100_sink_split_k[
         var q_tma_op = tma_tile_qo[
             swizzle_mode=mla_config.swizzle_mode,
             BM=mla_config.BM,
-            BK=mla_config.BK_QK,
-            depth=mla_config.q_depth,
+            BK=mla_config.input_q_depth,
+            depth=mla_config.input_q_depth,
         ](ctx, q_ptr, num_rows_q)
 
         if ragged:
@@ -2801,14 +2827,14 @@ def launch_mla_sm100_decode_enqueue_kernel[
     q_tma: QOTMATile[
         dtype=q_type,
         BM=config.BM,  # tile_m =64
-        BK=config.BK_QK,  # tile_n =576
+        BK=config.input_q_depth,
         swizzle_mode=config.swizzle_mode,
     ],
     k_tma: KVTMATile[
         dtype=KVLUTType.dtype,
         swizzle_mode=config.kv_tma_swizzle_mode,
         BN=config.BK_PV,  # tile_m =64
-        BK=config.BK_QK,  # tile_n =576
+        BK=config.input_q_depth,
     ],
     o_tma: ORaggedTMATile[
         dtype=output_type,
@@ -2973,14 +2999,14 @@ def launch_mla_sm100_decode_native_fp8[
     q_tma: QOTMATile[
         dtype=KVLUTType.dtype,  # FP8 Q TMA
         BM=config.BM,
-        BK=config.BK_QK,
+        BK=config.input_q_depth,
         swizzle_mode=config.kv_tma_swizzle_mode,  # SWIZZLE_64B
     ],
     k_tma: KVTMATile[
         dtype=KVLUTType.dtype,
         swizzle_mode=config.kv_tma_swizzle_mode,
         BN=config.BK_PV,
-        BK=config.BK_QK,
+        BK=config.input_q_depth,
     ],
     o_tma: ORaggedTMATile[
         dtype=output_type,
@@ -3079,14 +3105,14 @@ def launch_mla_sm100_decode_native_fp8_layout_g[
     q_tma: QOTMATile[
         dtype=KVLUTType.dtype,
         BM=config_g.BM,
-        BK=config_g.BK_QK,
+        BK=config_g.input_q_depth,
         swizzle_mode=config_g.kv_tma_swizzle_mode,  # SWIZZLE_64B
     ],
     k_tma: KVTMATile[
         dtype=KVLUTType.dtype,
         swizzle_mode=config_e.kv_tma_swizzle_mode,
         BN=config_e.BK_PV,
-        BK=config_e.BK_QK,
+        BK=config_e.input_q_depth,
     ],
     o_tma: ORaggedTMATile[
         dtype=output_type,
@@ -3301,7 +3327,7 @@ def launch_mla_sm100_decode_sparse[
     q_tma: QOTMATile[
         dtype=q_type,
         BM=config.BM,
-        BK=config.BK_QK,
+        BK=config.input_q_depth,
         swizzle_mode=config.swizzle_mode,
     ],
     # K_nope gather4 TMA: INT64, SWIZZLE_NONE (linear SMEM layout).
@@ -3518,7 +3544,7 @@ def launch_mla_sm100_decode_sparse_kv_fp8[
     q_tma: QOTMATile[
         dtype=q_type,
         BM=config.BM,
-        BK=config.BK_QK,
+        BK=config.input_q_depth,
         swizzle_mode=config.swizzle_mode,
     ],
     # Single K gather4 TMA: INT64, SWIZZLE_NONE, tile_width=72 INT64 (576 B).
@@ -3529,7 +3555,7 @@ def launch_mla_sm100_decode_sparse_kv_fp8[
             config.BK_PV,
             _gather4_box_width[
                 DType.int64,
-                config.padded_q_depth // 8,
+                config.input_q_depth // 8,
                 TensorMapSwizzle.SWIZZLE_NONE,
             ](),
         ),
@@ -3537,7 +3563,7 @@ def launch_mla_sm100_decode_sparse_kv_fp8[
             1,
             _gather4_box_width[
                 DType.int64,
-                config.padded_q_depth // 8,
+                config.input_q_depth // 8,
                 TensorMapSwizzle.SWIZZLE_NONE,
             ](),
         ),
@@ -3570,7 +3596,7 @@ def launch_mla_sm100_decode_sparse_kv_fp8[
             config.BK_PV,
             _gather4_box_width[
                 DType.int64,
-                config.padded_q_depth // 8,
+                config.input_q_depth // 8,
                 TensorMapSwizzle.SWIZZLE_NONE,
             ](),
         ),
@@ -3578,7 +3604,7 @@ def launch_mla_sm100_decode_sparse_kv_fp8[
             1,
             _gather4_box_width[
                 DType.int64,
-                config.padded_q_depth // 8,
+                config.input_q_depth // 8,
                 TensorMapSwizzle.SWIZZLE_NONE,
             ](),
         ),
@@ -3689,11 +3715,12 @@ def launch_mla_sm100_decode_sparse_kv_bf16[
     q_tma: QOTMATile[
         dtype=q_type,
         BM=config.BM,
-        BK=config.BK_QK,
+        BK=config.input_q_depth,
         swizzle_mode=config.swizzle_mode,
     ],
-    # Single BF16 gather4 TMA: SWIZZLE_128B, BN_QK rows,
-    # tile_width=padded_q_depth (576 BF16 elems = 1152 bytes).
+    # Single BF16 gather4 TMA: SWIZZLE_128B, BN_QK rows, tile_width =
+    # `input_q_depth` (the row as stored). The box width is swizzle-derived
+    # and so is the same at either row width. Only the column-group count moves.
     k_tma: TMATensorTile[
         DType.bfloat16,
         2,
@@ -3701,7 +3728,7 @@ def launch_mla_sm100_decode_sparse_kv_bf16[
             config.BK_PV,
             _gather4_box_width[
                 DType.bfloat16,
-                config.padded_q_depth,
+                config.input_q_depth,
                 TensorMapSwizzle.SWIZZLE_128B,
             ](),
         ),
@@ -3709,7 +3736,7 @@ def launch_mla_sm100_decode_sparse_kv_bf16[
             1,
             _gather4_box_width[
                 DType.bfloat16,
-                config.padded_q_depth,
+                config.input_q_depth,
                 TensorMapSwizzle.SWIZZLE_128B,
             ](),
         ),
@@ -3742,7 +3769,7 @@ def launch_mla_sm100_decode_sparse_kv_bf16[
             config.BK_PV,
             _gather4_box_width[
                 DType.bfloat16,
-                config.padded_q_depth,
+                config.input_q_depth,
                 TensorMapSwizzle.SWIZZLE_128B,
             ](),
         ),
@@ -3750,7 +3777,7 @@ def launch_mla_sm100_decode_sparse_kv_bf16[
             1,
             _gather4_box_width[
                 DType.bfloat16,
-                config.padded_q_depth,
+                config.input_q_depth,
                 TensorMapSwizzle.SWIZZLE_128B,
             ](),
         ),
@@ -3852,7 +3879,7 @@ def launch_mla_sm100_decode_sparse_qkv_fp8[
     q_tma: QOTMATile[
         dtype=q_type,
         BM=config.BM,
-        BK=config.BK_QK,
+        BK=config.input_q_depth,
         swizzle_mode=config.kv_tma_swizzle_mode,
     ],
     # Single K gather4 TMA covering the full 576-byte row: INT64,
@@ -3867,7 +3894,7 @@ def launch_mla_sm100_decode_sparse_qkv_fp8[
             config.BK_PV,
             _gather4_box_width[
                 DType.int64,
-                config.padded_q_depth // 8,
+                config.input_q_depth // 8,
                 TensorMapSwizzle.SWIZZLE_NONE,
             ](),
         ),
@@ -3875,7 +3902,7 @@ def launch_mla_sm100_decode_sparse_qkv_fp8[
             1,
             _gather4_box_width[
                 DType.int64,
-                config.padded_q_depth // 8,
+                config.input_q_depth // 8,
                 TensorMapSwizzle.SWIZZLE_NONE,
             ](),
         ),
@@ -3907,7 +3934,7 @@ def launch_mla_sm100_decode_sparse_qkv_fp8[
             config.BK_PV,
             _gather4_box_width[
                 DType.int64,
-                config.padded_q_depth // 8,
+                config.input_q_depth // 8,
                 TensorMapSwizzle.SWIZZLE_NONE,
             ](),
         ),
@@ -3915,7 +3942,7 @@ def launch_mla_sm100_decode_sparse_qkv_fp8[
             1,
             _gather4_box_width[
                 DType.int64,
-                config.padded_q_depth // 8,
+                config.input_q_depth // 8,
                 TensorMapSwizzle.SWIZZLE_NONE,
             ](),
         ),

@@ -1332,7 +1332,7 @@ class KVCacheParams(KVCacheParamInterface):
             _prefix + str(self.group_id): KVLeafRegion(
                 leaf_id=_prefix + str(self.group_id),
                 group_id=self.group_id,
-                bytes_per_page=self.bytes_per_block,
+                bytes_per_page=self.bytes_per_value_block,
             )
         }
 

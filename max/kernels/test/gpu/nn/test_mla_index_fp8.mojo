@@ -130,15 +130,15 @@ def test_mla_index_fp8_paged_variable_lengths[
             catches the topk_gpu out_vals/out_idxs row-stride desync bug,
             where higher query rows collapsed to all -1 (see the regression
             cases in main()).
-        kpool: Tokens per pooled cache row. With `kpool > 1` the cache rows are
-            pooled keys, so the indexer selects pool ids and each token's
-            candidate count is its visible-token count floored by `kpool`.
         check_scores: When True (B200 only, NULL mask), run the SM100 tensor-core
             scorer on the paged KV cache and compare every (token, key) logit
             against a host reference computed over the paged layout. A wrong
             paged TMA row mapping (page_size / LUT) reads the wrong K rows, so
             this catches it -- coverage the index-only checks and
             `test_index_fp8` (page_size == 0) never exercise.
+        kpool: Tokens per pooled cache row. With `kpool > 1` the cache rows are
+            pooled keys, so the indexer selects pool ids and each token's
+            candidate count is its visible-token count floored by `kpool`.
 
     Args:
         seq_lens: Length of each sequence (new tokens) per batch item.

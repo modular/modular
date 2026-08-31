@@ -50,7 +50,8 @@ class LITOp<string mnemonic, list<Trait> traits = []> :
 //===----------------------------------------------------------------------===//
 
 def LIT_FnOp : LITOp<"fn", [
-    FunctionLike, FunctionOpInterface, SymbolTable, SingleBlock,
+    FunctionLike, FunctionOpInterface, SymbolName, SymbolVisibility,
+    SymbolTable, SingleBlock,
     DeclareOpInterfaceMethods<OpAsmOpInterface, ["getAsmBlockArgumentNames"]>,
     DeclareOpInterfaceMethods<ParamOpInterface, ["collectParameterUses"]>,
     ASTDeclInterface, DeclInterface, FuncInterface, ExportInterface,
@@ -60,6 +61,7 @@ def LIT_FnOp : LITOp<"fn", [
 
   let arguments = (ins
     OptionalAttr<SymbolNameAttr>:$sym_name,
+    OptionalAttr<StrAttr>:$sym_visibility,
     OptionalAttr<KGEN_ParamDeclAttr>:$paramDecl,
     TypeAttrOf<LIT_FnTypeGeneratorType>:$funcTypeGenerator,
     TypeAttrOf<FunctionType>:$functionType,
@@ -327,7 +329,8 @@ def LIT_BindParamsOp : LITOp<"bind_params", [Pure, InferTypeOpAdaptor]> {
 //===----------------------------------------------------------------------===//
 
 def LIT_FileModuleOp : LITOp<"file_module", [
-    ASTDeclInterface, IsolatedFromAbove, NoRegionArguments, SymbolTable, Symbol,
+    ASTDeclInterface, IsolatedFromAbove, NoRegionArguments, SymbolTable,
+    SymbolName, SymbolVisibility, Symbol,
     DeclareOpInterfaceMethods<DeclInterface>,
   ] # GraphRegionNoTerminator.traits> {
   let summary = "source file module";
@@ -345,6 +348,7 @@ def LIT_FileModuleOp : LITOp<"file_module", [
 
   let arguments = (ins
     SymbolNameAttr:$sym_name,
+    OptionalAttr<StrAttr>:$sym_visibility,
     OptionalAttr<LIT_DocStringAttr>:$docString
   );
   let regions = (region SizedRegion<1>:$bodyRegion);
@@ -366,7 +370,8 @@ def LIT_FileModuleOp : LITOp<"file_module", [
 //===----------------------------------------------------------------------===//
 
 def LIT_PackageOp : LITOp<"package", [
-    ASTDeclInterface, IsolatedFromAbove, NoRegionArguments, SymbolTable, Symbol,
+    ASTDeclInterface, IsolatedFromAbove, NoRegionArguments, SymbolTable,
+    SymbolName, SymbolVisibility, Symbol,
     DeclareOpInterfaceMethods<DeclInterface>,
   ] # GraphRegionNoTerminator.traits> {
   let summary = "mojo source package";
@@ -389,6 +394,7 @@ def LIT_PackageOp : LITOp<"package", [
 
   let arguments = (ins
     SymbolNameAttr:$sym_name,
+    OptionalAttr<StrAttr>:$sym_visibility,
     OptionalAttr<LIT_DocStringAttr>:$docString,
     // References to the dependencies of this package.
     OptionalAttr<KGEN_LinkDependencyArrayAttr>:$dependencies,
@@ -413,7 +419,8 @@ def LIT_PackageOp : LITOp<"package", [
 //===----------------------------------------------------------------------===//
 
 def LIT_StructDeclOp : LITOp<"struct.decl", [
-    IsolatedFromAbove, Symbol, SymbolTable, DeclInterface, SingleBlock,
+    IsolatedFromAbove, SymbolName, SymbolVisibility, Symbol, SymbolTable,
+    DeclInterface, SingleBlock,
     ASTDeclInterface, NoTerminator,
     DeclareOpInterfaceMethods<StructDeclInterface>,
     DeclareOpInterfaceMethods<DebugInfo_ScopedLocation>,
@@ -448,6 +455,7 @@ def LIT_StructDeclOp : LITOp<"struct.decl", [
 
   let arguments = (ins
     SymbolNameAttr:$sym_name,
+    OptionalAttr<StrAttr>:$sym_visibility,
     TypeAttrOf<LIT_TypeSignatureType>:$signature,
     KGEN_ParamDeclArrayAttr:$params,
     KGEN_DecoratorsAttr:$decorators,
@@ -647,7 +655,8 @@ def LIT_StructExtractOp : LITOp<"struct.extract", [Pure,
 //===----------------------------------------------------------------------===//
 
 def LIT_ExtensionDeclOp : LITOp<"extension.decl", [
-    IsolatedFromAbove, Symbol, SymbolTable, DeclInterface, SingleBlock,
+    IsolatedFromAbove, SymbolName, SymbolVisibility, Symbol, SymbolTable,
+    DeclInterface, SingleBlock,
     ASTDeclInterface, NoTerminator,
     DeclareOpInterfaceMethods<DebugInfo_ScopedLocation>
   ]> {
@@ -677,6 +686,7 @@ def LIT_ExtensionDeclOp : LITOp<"extension.decl", [
   }];
   let arguments = (ins
     SymbolNameAttr:$sym_name,
+    OptionalAttr<StrAttr>:$sym_visibility,
     TypeAttrOf<LIT_TypeSignatureType>:$signature,
     KGEN_ParamDeclArrayAttr:$params,
     // String name of the target struct (e.g., the "MyStruct" in `extension MyStruct`).
@@ -719,7 +729,8 @@ def LIT_ExtensionDeclOp : LITOp<"extension.decl", [
 //===----------------------------------------------------------------------===//
 
 def LIT_TraitDeclOp : LITOp<"trait.decl", [
-    IsolatedFromAbove, Symbol, SymbolTable, DeclInterface, SingleBlock,
+    IsolatedFromAbove, SymbolName, SymbolVisibility, Symbol, SymbolTable,
+    DeclInterface, SingleBlock,
     ASTDeclInterface, NoTerminator,
     DeclareOpInterfaceMethods<DebugInfo_ScopedLocation>,
     StabilityDecoratorInterface
@@ -743,6 +754,7 @@ def LIT_TraitDeclOp : LITOp<"trait.decl", [
   }];
   let arguments = (ins
     SymbolNameAttr:$sym_name,
+    OptionalAttr<StrAttr>:$sym_visibility,
     TypeAttrOf<LIT_TypeSignatureType>:$signature,
     KGEN_ParamDeclArrayAttr:$params,
     TypeAttrOf<LIT_TraitType>:$canonicalTrait,
@@ -1407,7 +1419,8 @@ def LIT_UnresolvedWildcardImportOp : LITOp<"unresolved_wildcard_import"> {
 // ImportOp
 //===----------------------------------------------------------------------===//
 
-def LIT_ImportOp : LITOp<"import", [NoRegionArguments, Symbol, SymbolTable]
+def LIT_ImportOp : LITOp<"import", [NoRegionArguments, SymbolName,
+    SymbolVisibility, Symbol, SymbolTable]
     # GraphRegionNoTerminator.traits> {
   let summary = "Resolved module import with scoped child access.";
   let description = [{
@@ -1420,6 +1433,7 @@ def LIT_ImportOp : LITOp<"import", [NoRegionArguments, Symbol, SymbolTable]
 
   let arguments = (ins
     SymbolNameAttr:$sym_name,
+    OptionalAttr<StrAttr>:$sym_visibility,
     LIT_ImportPathAttr:$modulePath
   );
   let regions = (region SizedRegion<1>:$bodyRegion);

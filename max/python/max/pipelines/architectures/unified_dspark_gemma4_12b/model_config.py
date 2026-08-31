@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from typing import ClassVar
+from typing import Any, ClassVar
 
 from max.dtype import DType
 from max.graph import DeviceRef
@@ -44,26 +44,14 @@ from .dspark_gemma4 import DSparkGemma4DraftConfig, _get
 logger = logging.getLogger("max.pipelines")
 
 
-def resolve_dspark_num_speculative_tokens(
-    pipeline_config: PipelineConfig,
+def dspark_draft_width(
+    speculative: SpeculativeConfig,
+    draft_huggingface_config: Any,
     *,
     warn: bool = True,
 ) -> int:
-    """Returns the resolved DSpark draft width.
-
-    DSpark drafts at every block position, so the width is the drafter's
-    trained ``block_size`` itself (no ``- 1``); a mismatching explicit
-    ``num_speculative_tokens`` is overridden with a warning. When the draft
-    config declares no ``block_size``, an explicit
-    ``--num-speculative-tokens`` is required and returned as-is. Pure: the
-    caller's config is never mutated or copied.
-    """
-    speculative = pipeline_config.speculative
-    assert speculative is not None
-    assert pipeline_config.draft_model is not None
-    raw_block_size = _get(
-        pipeline_config.draft_model.huggingface_config, "block_size", None
-    )
+    """Returns the resolved DSpark draft width from the draft HF config."""
+    raw_block_size = _get(draft_huggingface_config, "block_size", None)
     block_size = int(raw_block_size) if raw_block_size is not None else 0
     if block_size <= 0:
         if speculative.num_speculative_tokens is None:
@@ -83,6 +71,29 @@ def resolve_dspark_num_speculative_tokens(
             block_size,
         )
     return block_size
+
+
+def resolve_dspark_num_speculative_tokens(
+    pipeline_config: PipelineConfig,
+    *,
+    warn: bool = True,
+) -> int:
+    """Returns the resolved DSpark draft width.
+
+    DSpark drafts at every block position, so the width is the drafter's
+    trained ``block_size`` itself (no ``- 1``); a mismatching explicit
+    ``num_speculative_tokens`` is overridden with a warning. When the draft
+    config declares no ``block_size``, an explicit
+    ``--num-speculative-tokens`` is required and returned as-is. Pure: the
+    caller's config is never mutated or copied.
+    """
+    assert pipeline_config.speculative is not None
+    assert pipeline_config.draft_model is not None
+    return dspark_draft_width(
+        pipeline_config.speculative,
+        pipeline_config.draft_model.huggingface_config,
+        warn=warn,
+    )
 
 
 def construct_draft_kv_params(
@@ -321,3 +332,15 @@ class UnifiedDSparkGemma4_12BConfig(ArchConfigWithKVCache):
         return Gemma4ForConditionalGenerationConfig.calculate_max_seq_len(
             huggingface_config, model_config
         )
+
+
+def gemma4_dspark_12b_width(
+    speculative: SpeculativeConfig,
+    target_huggingface_config: Any,
+    draft_huggingface_config: Any,
+) -> int:
+    """Returns the block size: on the 12B draft every slot drafts a token."""
+    del target_huggingface_config
+    if draft_huggingface_config is None:
+        raise ValueError("DSpark requires a draft model.")
+    return dspark_draft_width(speculative, draft_huggingface_config)

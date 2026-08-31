@@ -688,7 +688,12 @@ class JengaBlockManager:
                 for leaf_id, blocks in pool.free_little_blocks.items()
             },
         )
-        num_free = len(pool.free_huge_blocks)
+        # A parked huge block already typed to one of these leaves is already
+        # counted in that leaf's own free little blocks (see JengaBlockPool),
+        # so it must not also count as extra headroom here.
+        num_free = len(pool.free_huge_blocks) - sum(
+            pool._parked_and_typed[leaf_id] for leaf_id in demand
+        )
         if num_huge_blocks_needed > num_free:
             raise InsufficientBlocksError(
                 f"Serving {demand} needs {num_huge_blocks_needed} huge blocks "

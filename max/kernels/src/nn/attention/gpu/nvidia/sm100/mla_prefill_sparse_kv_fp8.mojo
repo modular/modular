@@ -207,7 +207,7 @@ struct MLAPrefillSparseFP8[
     # lands at the PADDED (64-row) depth-tile stride the BMN=64 QK-MMA reads
     # (see the Q-load in `kernel`). NFC at 64/128 (real == padded).
     comptime q_tile_shape = Index(
-        1, Self.NUM_Q_HEADS_PER_CTA, Self.config.qk_depth
+        1, Self.NUM_Q_HEADS_PER_CTA, Self.config.input_qk_depth
     )
     comptime q_desc_shape = _default_desc_shape[
         3, Self.qkv_dtype, Self.q_tile_shape, Self.config.q_swizzle_mode
@@ -1256,14 +1256,11 @@ struct MLAPrefillSparseFP8[
                 # was prefetched above, chunks 1..N-1 load sequentially.
                 if k > 0 and should_scale_o:
                     tcgen05_load_wait()
-                    var o_scaled_0 = Array[Float32, O_RESCALE_CHUNK](
-                        uninitialized=True
-                    )
-                    comptime for j in range(O_RESCALE_CHUNK):
-                        o_scaled_0[j] = mul_ftz(
-                            o_chunk_prefetch[j],
-                            scale_for_old,
+                    var o_scaled_0 = Array[_, O_RESCALE_CHUNK](
+                        fill_with=lambda (j: Int) -> Float32: mul_ftz(
+                            o_chunk_prefetch[j], scale_for_old
                         )
+                    )
                     tcgen05_st[
                         datapaths=32,
                         bits=32,
@@ -1283,14 +1280,11 @@ struct MLAPrefillSparseFP8[
                             + UInt32(chunk_idx * O_RESCALE_CHUNK)
                         )
                         tcgen05_load_wait()
-                        var o_scaled = Array[Float32, O_RESCALE_CHUNK](
-                            uninitialized=True
-                        )
-                        comptime for j in range(O_RESCALE_CHUNK):
-                            o_scaled[j] = mul_ftz(
-                                o_chunk[j],
-                                scale_for_old,
+                        var o_scaled = Array[_, O_RESCALE_CHUNK](
+                            fill_with=lambda (j: Int) -> Float32: mul_ftz(
+                                o_chunk[j], scale_for_old
                             )
+                        )
                         tcgen05_st[
                             datapaths=32,
                             bits=32,
@@ -1700,6 +1694,15 @@ def mla_prefill_sparse_fp8[
 ) raises:
     comptime assert q_depth == config.qk_depth
     comptime assert config.qk_depth == 576
+    # This backend has not been given the narrow-row treatment its BF16-KV and
+    # native-FP8 siblings have (no tail zero-fill, byte counts still derived
+    # from the full width), so refuse the narrow row rather than transfer fewer
+    # bytes than the barriers wait for.
+    comptime assert config.input_qk_depth == config.qk_depth, (
+        "the FP8-KV converter prefill takes only the full rotary-carrying row."
+        " the narrow NoPE row is supported by the BF16-KV and native-FP8"
+        " prefill kernels"
+    )
     # Same head-count contract as the BF16 `mla_prefill_sparse` above: 128 (2-CTA
     # tile) or a multiple of 8 in (0, 64] (single-CTA tile padded to a legal
     # 64-row MMA M-tile). Q is BF16 in both paths, so the sub-64 padded Q load

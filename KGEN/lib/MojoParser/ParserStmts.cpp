@@ -179,9 +179,8 @@ ParserBase::parseDecorators(ssize_t indentation) {
   return result;
 }
 
-static void
-initializeBuilderForFunctions(ASTDecl &curDeclScope, OpBuilder &builder,
-                              std::optional<OpBuilder> &varDeclCursor) {
+static void initializeBuilderForFunctions(ASTDecl &curDeclScope,
+                                          OpBuilder &builder) {
   // Special logic for functions.
   if (auto funcOp = dyn_cast_or_null<FnOp>(curDeclScope.getIfOperation())) {
     // The default of inserting at the end of the function isn't right,
@@ -189,13 +188,6 @@ initializeBuilderForFunctions(ASTDecl &curDeclScope, OpBuilder &builder,
     assert(isa<EndFnOp>(funcOp.getBody()->back()) &&
            "expected lit.endfn at the end of a function body");
     builder.setInsertionPoint(&funcOp.getBody()->back());
-
-    // If we are parsing into a function, then we need a position to
-    // synthesize variable definitions at the top of the function.
-    // The operation builder inserts before its insertion point, but for a
-    // stable insertion point, keep the previous iterator position.
-    varDeclCursor = OpBuilder(builder.getInsertionBlock(),
-                              std::prev(builder.getInsertionPoint()));
   }
 }
 
@@ -248,18 +240,15 @@ struct StmtParser : public ParserBase {
   StmtParser(Lexer &lexer, ASTDecl &curDeclScope)
       : ParserBase(curDeclScope.getShared(), lexer), parentDecl(curDeclScope),
         curDeclScope(&curDeclScope), builder(curDeclScope.getDeclEndBuilder()) {
-    initializeBuilderForFunctions(curDeclScope, builder, varDeclCursor);
+    initializeBuilderForFunctions(curDeclScope, builder);
   }
   StmtParser(Lexer &lexer, IREmitter &emitter)
       : ParserBase(emitter.shared, lexer), parentDecl(emitter.getDeclScope()),
         curDeclScope(&emitter.getDeclScope()),
         builder(emitter.builder ? emitter.builder.value()
-                                : curDeclScope->getDeclEndBuilder()),
-        varDeclCursor(emitter.varDeclCursor) {
-    if (!emitter.builder) {
-      initializeBuilderForFunctions(emitter.getDeclScope(), builder,
-                                    varDeclCursor);
-    }
+                                : curDeclScope->getDeclEndBuilder()) {
+    if (!emitter.builder)
+      initializeBuilderForFunctions(emitter.getDeclScope(), builder);
   }
 
   ASTDecl &getDeclScope() const { return *curDeclScope; }
@@ -272,9 +261,7 @@ struct StmtParser : public ParserBase {
 
   // Expression emission.
 
-  IREmitter getEmitter() {
-    return IREmitter(*curDeclScope, builder, varDeclCursor);
-  }
+  IREmitter getEmitter() { return IREmitter(*curDeclScope, builder); }
 
   /// Get an expression emitter for a parameter expression.
   IREmitter getParamEmitter(ExprContext context) {
@@ -397,13 +384,6 @@ private:
 
   /// This is the builder that we are constructing IR into.
   OpBuilder builder;
-
-  /// This is the insertion point we should install VarDecl's after if we are
-  /// parsing into a 'def'.  This ensures they are emitted ahead of anything
-  /// else in the region for the decl, and in decls with multiple regions (e.g.
-  /// function bodies with if statements) it ensures the decl dominates the
-  /// whole body.
-  std::optional<OpBuilder> varDeclCursor;
 };
 } // namespace
 
@@ -4258,8 +4238,7 @@ static AnyValue emitComprehension(const ComprehensionNode *node, ExprDest &dest,
   // temporary operation so we can find it later.
   auto cursor = LIT::ReturnOp::create(stmtEmitter.getBuilder(), location,
                                       ArrayRef<Value>());
-  IREmitter cursorEmitter(emitter.declScope, OpBuilder(cursor),
-                          emitter.varDeclCursor);
+  IREmitter cursorEmitter(emitter.declScope, OpBuilder(cursor));
   DebugInfo::DIBuilder cursorDIBuilder(emitter.getContext());
   if (shared.diBuilder)
     cursorDIBuilder = shared.diBuilder->copy();

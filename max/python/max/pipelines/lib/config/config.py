@@ -595,6 +595,9 @@ def _apply_speculative_target_architecture(
 
     draft_model = models.get("draft")
     target_archs = models["main"].huggingface_config.architectures
+    if not target_archs:
+        # Nothing to rewrite; the lookup below reports the real problem.
+        return
     if target_archs[0] == "LlamaForCausalLM":
         if speculative.is_dflash():
             target_archs[0] = "UnifiedDflashLlama3ForCausalLM"
@@ -1406,22 +1409,12 @@ class PipelineConfig(ConfigFileModel):
             args.runtime, denoising_cache=denoising_cache
         )
         lora = args.lora.model_copy(deep=True) if args.lora else None
-        speculative = (
-            args.speculative.model_copy(deep=True) if args.speculative else None
-        )
 
-        _apply_speculative_draft_architecture(speculative, models.get("draft"))
-        # Must precede the arch lookups so every consumer resolves the
-        # overridden arch (#88511). Best-effort: repos whose HF config
-        # cannot load fail downstream instead.
-        try:
-            _apply_speculative_target_architecture(speculative, models)
-        except Exception:
-            logger.debug(
-                "Could not apply the speculative target-architecture "
-                "override at construction.",
-                exc_info=True,
-            )
+        _apply_speculative_draft_architecture(
+            args.speculative, models.get("draft")
+        )
+        if args.speculative is not None and "main" in models:
+            _apply_speculative_target_architecture(args.speculative, models)
         for model in models.values():
             model.validate_repo_access()
 
@@ -1475,6 +1468,26 @@ class PipelineConfig(ConfigFileModel):
                 raise ValueError(
                     "MAX-Optimized architecture not found for `draft_model`"
                 )
+
+        # The architecture names the draft family, so it can say what width
+        # the checkpoint was trained for. Unset means the user picks.
+        speculative = None
+        if args.speculative is not None:
+            width = (
+                arch.checkpoint_draft_width(
+                    args.speculative,
+                    models["main"].huggingface_config,
+                    draft.huggingface_config
+                    if (draft := models.get("draft")) is not None
+                    else None,
+                )
+                if arch is not None and arch.checkpoint_draft_width is not None
+                else None
+            )
+            speculative = _construct_from_user_fields(
+                args.speculative,
+                **({"num_speculative_tokens": width} if width else {}),
+            )
 
         top_level: dict[str, Any] = {}
         if arch is not None:

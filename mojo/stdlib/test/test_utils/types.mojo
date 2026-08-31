@@ -575,6 +575,23 @@ struct PinnedExplicitDelOnly(Deinitable where False, Movable where False):
 
 
 # ===----------------------------------------------------------------------=== #
+# PinnedExplicitDelOnly
+# ===----------------------------------------------------------------------=== #
+
+
+@fieldwise_init
+struct Pinned(Movable where False):
+    """Utility testing container which is non-movable."""
+
+    var data: Int
+    """Test data payload."""
+
+    def __init__(out self):
+        """Default initialize a `Pinned`."""
+        self.data = 0
+
+
+# ===----------------------------------------------------------------------=== #
 # DelCounter
 # ===----------------------------------------------------------------------=== #
 

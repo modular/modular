@@ -18,8 +18,10 @@
 #include "lldb/API/LLDB.h"
 
 namespace M::KGEN::Mojo {
+using GetContextFn = M::ContextRef (*)();
+
 /// Register all related `mojo` commands in the given debugger.
-void registerMojoCommands(lldb::SBDebugger debugger, M::ContextRef ctx);
+void registerMojoCommands(lldb::SBDebugger debugger, GetContextFn getContext);
 } // namespace M::KGEN::Mojo
 
 #endif // KGEN_LIB_MOJOLLDB_REPL_COMMANDOBJECTMOJO_H

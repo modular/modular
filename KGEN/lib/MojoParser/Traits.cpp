@@ -113,43 +113,6 @@ static bool isInheritedFnOp(FnOp fnOp) {
   return fnOp.getInheritedFrom().has_value() || fnOp.isDefaultedTraitFn();
 }
 
-/// Check method constraints against a conformance constraint for witness table
-/// selection. Following overload selection rules, all candidates must be
-/// definitively satisfied or violated - unprovable constraints trigger errors.
-///
-/// If the result is `no`, `violatedConstraint` (when non-null) is set to the
-/// specific method constraint that contradicts the conformance.
-///
-/// Returns:
-///   - `yes`: conformance implies all method constraints
-///   - `no`: method constraints contradict the conformance
-///   - `unknown`: constraints cannot be proven or disproven (error case)
-static TriState
-canDischargeMethodConstraints(FnOp method, ConstraintAttr conformanceConstraint,
-                              ConstraintAttr *violatedConstraint = nullptr) {
-  ArrayRef<ConstraintAttr> methodConstraints =
-      method.getFuncTypeGenerator().getParamListAttrs().getBodyConstraints();
-  if (methodConstraints.empty())
-    return TriState::yes();
-
-  TypedAttr confProp = getCanonicalAttr(conformanceConstraint.getProposition());
-
-  TriState result = TriState::yes();
-  for (ConstraintAttr methodConstraint : methodConstraints) {
-    TriState verdict = isPropositionImplied(
-        getCanonicalAttr(methodConstraint.getProposition()), confProp);
-    if (verdict.isFalse()) {
-      if (violatedConstraint)
-        *violatedConstraint = methodConstraint;
-      return TriState::no();
-    }
-    if (verdict.isUnknown())
-      result &= TriState::unknown();
-  }
-
-  return result;
-}
-
 // Signature resolves any methods in 'structDecl' with 'name' that were
 // inherited from 'traitDecl'. This will also catch any errors where multiple
 // parent traits define a function of the same signature/name with no override
@@ -255,40 +218,28 @@ static LogicalResult signatureResolveDefaultTraitFnStubs(
     // such differences.
     OverloadSet ov(name, structDefinesMethods, std::move(bindings),
                    CallSyntax::kMethodCallSynthetic);
+    // This runs in the struct's scope, not the conformance's, so the
+    // conformance `where` clause is not among the scope's own assumptions and
+    // has to be handed over explicitly.
+    if (conformanceConstraint &&
+        !isTriviallyTrueConstraint(conformanceConstraint))
+      ov.additionalAssumptions.push_back(conformanceConstraint);
 
     auto [_, decl] =
         ov.filterOverloadSetForValueType(wrapperSignature, nullptr);
     if (decl) {
-      // Check if this method's constraints are valid for the conformance.
-      // Following overload selection rules, we require constraints to be
-      // definitively provable or disproved - unprovable constraints are errors.
-      TriState status = canDischargeMethodConstraints(
-          cast<FnOp>(decl->getIfOperation()), conformanceConstraint);
-      if (status.isTrue()) {
-        // Since we are not using the default implementation, set the ASTDecl
-        // which were inserted for referencing default method to be fully
-        // resolved.
-        assert(structFnDecl->resolvedness <= DeclResolvedness::signature &&
-               "synthesizeMethodInStruct is only valid on non-body resolved Fn "
-               "ASTDecls");
-        // This was pointed to the trait default implementation, now that we
-        // know this decl is useless, simply disable it. We mark the ASTDecl as
-        // disabled instead of creating a fake FnOp and mark the FnOp to be
-        // disabled.
-        structFnDecl->markDisabled();
-        return success();
-      }
-      if (status.isUnknown()) {
-        // Cannot prove or disprove - error per overload selection rules.
-        shared.emitError(decl->getLoc())
-            << "method '" << name.str()
-            << "' has constraints that cannot be proven or disproven from "
-               "conformance constraint; all candidates must have provable "
-               "or contradicted constraints";
-        return failure();
-      }
-      // Violated: method constraints contradict conformance - not a valid
-      // override.
+      // Since we are not using the default implementation, set the ASTDecl
+      // which were inserted for referencing default method to be fully
+      // resolved.
+      assert(structFnDecl->resolvedness <= DeclResolvedness::signature &&
+             "synthesizeMethodInStruct is only valid on non-body resolved Fn "
+             "ASTDecls");
+      // This was pointed to the trait default implementation, now that we
+      // know this decl is useless, simply disable it. We mark the ASTDecl as
+      // disabled instead of creating a fake FnOp and mark the FnOp to be
+      // disabled.
+      structFnDecl->markDisabled();
+      return success();
     }
 
     // The struct doesn't provide an override, see if the wrapper def we're
@@ -647,84 +598,15 @@ LIT::verifyAndBuildConformance(ASTDecl &structDecl, TraitSymbolAttr parent,
         getTraitFunctionSignature(conformanceDecl, fullSig, selfType, parent,
                                   &syntheticNode, traitAliasReplacer);
 
-    // Get the conformance constraint for checking method constraints.
-    ConstraintAttr conformanceConstraint = op.getConstraintAttr();
-
-    // Check each candidate's constraint status. Candidates with provable
-    // constraints are valid, those with disproved constraints are rejected,
-    // and those with unprovable constraints cause an error if any match the
-    // trait signature (since we can't definitively select a witness).
-    SmallVector<ASTDecl *> provableDecls;
-    SmallVector<ASTDecl *> unprovableDecls;
-    SmallVector<std::pair<ASTDecl *, ConstraintAttr>> contradictedUserDecls;
-    for (ASTDecl *decl : decls) {
-      auto fnOp = dyn_cast_or_null<FnOp>(decl->getIfOperation());
-      if (!fnOp) {
-        provableDecls.push_back(decl);
-        continue;
-      }
-
-      ConstraintAttr violatedConstraint;
-      TriState status = canDischargeMethodConstraints(
-          fnOp, conformanceConstraint, &violatedConstraint);
-      if (status.isTrue()) {
-        provableDecls.push_back(decl);
-      } else if (status.isUnknown()) {
-        // Track unprovable candidates - if any match the trait signature,
-        // we must error since we can't definitively select a witness.
-        unprovableDecls.push_back(decl);
-      } else if (!isNeverCallableSynthesizedCandidate(decl)) {
-        contradictedUserDecls.emplace_back(decl, violatedConstraint);
-      }
-    }
-
-    // Check if there are unprovable candidates whose signature matches the
-    // trait requirement. Following overload selection rules, if ANY candidate
-    // has unprovable constraints and could match the signature, we must error
-    // because we can't rule it out as a potential witness table entry.
-    if (!unprovableDecls.empty()) {
-      ParamBindings unprovableBindings = ParamBindings::getForDeclaredType(
-          emitter.getDeclScope(), selfType, &syntheticNode);
-      OverloadSet unprovableOv(name, unprovableDecls,
-                               std::move(unprovableBindings),
-                               CallSyntax::kMethodCallSynthetic);
-      auto [unprovableResult, _] =
-          unprovableOv.filterOverloadSetForValueType(traitSignature, nullptr);
-      if (unprovableResult) {
-        // An unprovable candidate matches the signature - error.
-        // This follows overload selection rules: we can't prove or disprove
-        // this candidate, so we can't definitively select a witness.
-        for (ASTDecl *unprovableDecl : unprovableDecls) {
-          diag->attachNote(*unprovableDecl)
-              << "method '" << name.str()
-              << "' has constraints that cannot be proven or disproven from "
-                 "conformance constraint";
-        }
-        diag->attachNote(*traitFnDecl) << "required by trait method here";
-        return failure();
-      }
-    }
-
-    // Every candidate's constraints contradicted the conformance.
-    if (provableDecls.empty()) {
-      // Ignore synthesized, uncallable candidates as usual.
-      if (contradictedUserDecls.empty())
-        return reportNotImplemented();
-
-      for (auto &[decl, violatedConstraint] : contradictedUserDecls) {
-        TypedAttr prop = violatedConstraint.getProposition();
-        MojoInflightDiag &note =
-            diag->attachNote(violatedConstraint.getLoc(), prop)
-            << "constraint declared here evaluated to False, expected " << prop;
-        if (StringAttr message = violatedConstraint.getMessage())
-          note << ": " << message.getValue();
-      }
-      diag->attachNote(*traitFnDecl) << "required by trait method here";
-      return failure();
-    }
-
-    // Now try to find a match among the provable candidates.
-    OverloadSet ov(name, provableDecls, std::move(bindings),
+    // Every candidate goes to the overload set, which decides each one against
+    // the conformance constraint: a candidate whose `where` clause contradicts
+    // it is rejected, one that can be neither proven nor disproven is
+    // inconclusive and blocks selection entirely (we cannot rule it out as the
+    // witness), and what remains must name a single winner.
+    // `bindings` is scoped to the conformance decl, which carries the
+    // conformance's `where` clause as a known assumption, so candidate
+    // filtering picks it up from the scope without being handed it here.
+    OverloadSet ov(name, decls, std::move(bindings),
                    CallSyntax::kMethodCallSynthetic);
     auto emitError = [&](SMLoc loc) -> MojoInflightDiag & {
       // `attachNote(decl)` also appends the requirement's synthesized
@@ -736,11 +618,20 @@ LIT::verifyAndBuildConformance(ASTDecl &structDecl, TraitSymbolAttr parent,
         return diag->attachNote(op->getLoc());
       return diag->attachNote(*traitFnDecl);
     };
-    auto [result, selectedStructMethod] =
-        ov.filterOverloadSetForValueType(traitSignature, emitError);
+    bool inconclusive = false;
+    auto [result, selectedStructMethod] = ov.filterOverloadSetForValueType(
+        traitSignature, emitError, &inconclusive);
 
-    if (!result)
+    if (!result) {
+      // When a candidate was undecidable rather than simply mismatched, point
+      // at the requirement: the reader has to weigh the candidate's `where`
+      // clause against what the conformance demands, and needs both in view.
+      // A plain signature mismatch is already self-explanatory, and the note
+      // would drag the requirement's synthesized signature along with it.
+      if (inconclusive)
+        diag->attachNote(*traitFnDecl) << "required by trait method here";
       return failure();
+    }
 
     // Check for API author error: stable struct implementing stable trait
     // must use stable methods for stable trait methods.
@@ -749,7 +640,7 @@ LIT::verifyAndBuildConformance(ASTDecl &structDecl, TraitSymbolAttr parent,
           structDecl, traitDecl, *selectedStructMethod, *traitFnDecl, shared);
     }
 
-    WitnessOp::create(b, fnSymName, result.get());
+    WitnessOp::create(b, fnSymName, /*sym_visibility=*/nullptr, result.get());
     return success();
   };
 
@@ -904,7 +795,7 @@ LIT::verifyAndBuildConformance(ASTDecl &structDecl, TraitSymbolAttr parent,
     checkStableTraitMemberImplementation(
         structDecl, traitDecl, *structAliasDecl, *traitAliasDecl, shared);
 
-    WitnessOp::create(b, name, aliasValue.get());
+    WitnessOp::create(b, name, /*sym_visibility=*/nullptr, aliasValue.get());
     traitAliasReplacer.setDeclBinding(traitAlias.getParamDecl(), aliasValue);
 
     return success();

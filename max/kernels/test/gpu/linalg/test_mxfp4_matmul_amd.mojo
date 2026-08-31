@@ -228,11 +228,11 @@ def test_mxfp4_matmul[
     ctx.enqueue_copy(a_scales_dev, a_scales_host)
     ctx.enqueue_copy(b_scales_dev, b_scales_host)
 
-    var a_tt = TileTensor[mut=False](a_dev, a_shape)
-    var b_tt = TileTensor[mut=False](b_dev, b_shape)
-    var c_tt = TileTensor[mut=True](c_dev, c_shape)
-    var a_scales_tt = TileTensor[mut=False](a_scales_dev, a_scales_shape)
-    var b_scales_tt = TileTensor[mut=False](b_scales_dev, b_scales_shape)
+    var a_tt = TileTensor(a_dev, a_shape).as_immut()
+    var b_tt = TileTensor(b_dev, b_shape).as_immut()
+    var c_tt = TileTensor(c_dev, c_shape)
+    var a_scales_tt = TileTensor(a_scales_dev, a_scales_shape).as_immut()
+    var b_scales_tt = TileTensor(b_scales_dev, b_scales_shape).as_immut()
 
     # --- Direct launch with explicit tile params ---
     comptime Kernel = BlockScaledMatmulAMD[
@@ -252,6 +252,11 @@ def test_mxfp4_matmul[
         type_of(b_tt).LayoutType,
         type_of(a_scales_tt).LayoutType,
         type_of(b_scales_tt).LayoutType,
+        type_of(c_tt).Storage,
+        type_of(a_tt).Storage,
+        type_of(b_tt).Storage,
+        type_of(a_scales_tt).Storage,
+        type_of(b_scales_tt).Storage,
     ]
     ctx.enqueue_function[kernel](
         c_tt,
@@ -381,11 +386,11 @@ def test_mxfp4_matmul_split_k[
     ctx.enqueue_copy(a_scales_dev, a_scales_host)
     ctx.enqueue_copy(b_scales_dev, b_scales_host)
 
-    var a_tt = TileTensor[mut=False](a_dev, a_shape)
-    var b_tt = TileTensor[mut=False](b_dev, b_shape)
-    var c_tt = TileTensor[mut=True](c_dev, c_shape)
-    var a_scales_tt = TileTensor[mut=False](a_scales_dev, a_scales_shape)
-    var b_scales_tt = TileTensor[mut=False](b_scales_dev, b_scales_shape)
+    var a_tt = TileTensor(a_dev, a_shape).as_immut()
+    var b_tt = TileTensor(b_dev, b_shape).as_immut()
+    var c_tt = TileTensor(c_dev, c_shape)
+    var a_scales_tt = TileTensor(a_scales_dev, a_scales_shape).as_immut()
+    var b_scales_tt = TileTensor(b_scales_dev, b_scales_shape).as_immut()
 
     # --- Split-K launch (workspace + reduce path) ---
     _launch_block_scaled_split_k[

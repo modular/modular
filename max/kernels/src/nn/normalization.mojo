@@ -576,9 +576,10 @@ def rms_norm_gpu_warp_per_row[
 # Rebuild a statically-typed `Coord` from a runtime `IndexList`, preserving the
 # `Coord`'s static dims (`ComptimeInt`) and filling its dynamic leaves from the
 # `IndexList`. Needed at the rms_norm/layer_norm call sites: the static-divisor
-# `divmod` fold needs the `Coord` *type* (its static dims), but a static-typed
-# `Coord` is not `DevicePassable`, so the device closures capture the
-# `DevicePassable` `IndexList` and rebuild the typed `Coord` in-kernel here.
+# `divmod` fold needs the `Coord` *type*, but a `Coord` does
+# not survive the trip to a device, and captured into a `capturing` closure it
+# fails the launch the same way. So the device closures capture the `IndexList`
+# and rebuild the typed `Coord` in-kernel here.
 @always_inline
 def _index_list_to_typed_coord[
     element_types: TypeList[Trait=CoordLike, ...]
@@ -634,11 +635,9 @@ def rms_norm_gpu_warp_tiling[
     max_warps_per_block: Int,
     chunks_per_thread: Int,
     exact_fit: Bool,
-    input_fn: def[width: Int, rank: Int](IndexList[rank]) capturing -> SIMD[
-        dtype, width
-    ],
+    input_fn: def[width: Int](Coord) capturing -> SIMD[dtype, width],
     output_fn: def[width: SIMDLength, alignment: Int](
-        IndexList[rank], SIMD[dtype, width]
+        Coord, SIMD[dtype, width]
     ) capturing -> None,
     multiply_before_cast: Bool,
     pdl_level: PDLLevel = PDLLevel.ON,
@@ -682,7 +681,7 @@ def rms_norm_gpu_warp_tiling[
             var col = (c * bdim + tid) * simd_width
             comptime if exact_fit:
                 base[rank - 1] = col
-                vec_data[c] = input_fn[simd_width](base.canonicalize()).cast[
+                vec_data[c] = input_fn[simd_width](Coord(base)).cast[
                     accum_type
                 ]()
                 gamma_val[c] = gamma.load[width=simd_width, alignment=align](
@@ -692,9 +691,9 @@ def rms_norm_gpu_warp_tiling[
             else:
                 if col < _num_cols:
                     base[rank - 1] = col
-                    vec_data[c] = input_fn[simd_width](
-                        base.canonicalize()
-                    ).cast[accum_type]()
+                    vec_data[c] = input_fn[simd_width](Coord(base)).cast[
+                        accum_type
+                    ]()
                     gamma_val[c] = gamma.load[
                         width=simd_width, alignment=align
                     ](Coord(col))
@@ -727,13 +726,11 @@ def rms_norm_gpu_warp_tiling[
 
             comptime if exact_fit:
                 base[rank - 1] = col
-                output_fn[simd_width, align](base.canonicalize(), _normalize())
+                output_fn[simd_width, align](Coord(base), _normalize())
             else:
                 if col < _num_cols:
                     base[rank - 1] = col
-                    output_fn[simd_width, align](
-                        base.canonicalize(), _normalize()
-                    )
+                    output_fn[simd_width, align](Coord(base), _normalize())
 
 
 @always_inline
@@ -857,34 +854,18 @@ def rms_norm_gpu[
     weight_offset: Scalar[dtype],
     ctx: DeviceContext,
 ) raises:
-    # Boundary `IndexList` -> `Coord` migration (mirror of softmax PR #88203):
-    # the public `shape` arrives as a `Coord` (statically-known outer dims are
-    # encoded in its type), then is materialized to a runtime `IndexList` once.
-    # All existing runtime arithmetic and the IndexList-form GPU kernels run on
-    # `shape_il`; the public n-D lambdas are Coord-form and re-wrapped to the
-    # internal IndexList interface the kernels expect.
+    # `shape` arrives as a `Coord`, with statically-known outer dims encoded in
+    # its type, and the lambdas are `Coord`-form all the way down to the
+    # kernels. `shape_il` materializes the runtime `IndexList` once, for the
+    # two things that cannot take a coord: the warp-tiling kernel's shape
+    # argument, and the row-translation wrappers' capture (see
+    # `_index_list_to_typed_coord` for why).
     comptime assert gamma.flat_rank == 1, "gamma must have rank 1"
+    comptime assert shape.rank == rank, "shape.rank must be the same as rank"
     if rank == 0:
         return
 
     var shape_il = rebind[IndexList[rank]](coord_to_index_list(shape))
-
-    # Internal IndexList-form adapters: the warp-tiling / block GPU kernels
-    # consume `def[width, rank](IndexList[rank])` lambdas (they build the n-D
-    # index in-kernel), so wrap the Coord-form public lambdas back to that shape.
-    @__parameter
-    @always_inline
-    def input_fn_il[
-        simd_width: Int, _rank: Int
-    ](indices: IndexList[_rank]) -> SIMD[dtype, simd_width]:
-        return input_fn[simd_width](Coord(rebind[IndexList[rank]](indices)))
-
-    @__parameter
-    @always_inline
-    def output_fn_il[
-        simd_width: SIMDLength, alignment: Int
-    ](indices: IndexList[rank], val: SIMD[dtype, simd_width]) -> None:
-        output_fn[simd_width, alignment](Coord(indices), val)
 
     # Derive the number of columns from the `gamma` input as this value may be
     # statically known.
@@ -893,7 +874,7 @@ def rms_norm_gpu[
     if cols == 0:
         return
 
-    var rows = shape_il.flattened_length() // cols
+    var rows = Int(shape.product()) // cols
 
     # A rank owns an empty shard when rows < TP group size (bs=1 decode at TP4)
     # and `enqueue_function` rejects the zero `grid_dim` every launch derives.
@@ -917,12 +898,10 @@ def rms_norm_gpu[
     # dims on device (rank-2 is unaffected since its outer translation is
     # trivial; rank>=3 produces wrong results / launch failures).
     #
-    # The static-divisor fold needs the `Coord` *type* (its static dims): a
-    # static-typed `Coord` local `var` captured into a `capturing` closure is
-    # not carried to the device, so capture the `DevicePassable` `shape_il`
-    # (`IndexList`) and rebuild the typed `Coord` in-kernel. `type_of(shape)()`
-    # reconstructs the static dims at comptime; the dynamic leaves are filled
-    # from `shape_il`.
+    # The fold needs the `Coord` *type*, but a `Coord` captured here fails the
+    # launch (see `_index_list_to_typed_coord`), so the capture is the
+    # `IndexList` and the typed coord is rebuilt in-kernel: `type_of(shape)()`
+    # supplies the static dims at comptime, `shape_il` the dynamic leaves.
     @__copy_capture(shape_il)
     @__parameter
     @always_inline
@@ -1056,12 +1035,13 @@ def rms_norm_gpu[
                 LayoutType=gamma.LayoutType,
                 origin=gamma.origin,
                 Storage=gamma.Storage,
+                rank=rank,
                 eff_simd,
                 max_warps_per_block,
                 chunks,
                 exact_fit,
-                input_fn_il,
-                output_fn_il,
+                input_fn,
+                output_fn,
                 multiply_before_cast=multiply_before_cast,
                 pdl_level=pdl_level,
             ]
@@ -1293,15 +1273,16 @@ def rms_norm_cpu[
     gamma: TileTensor[mut=False, dtype, ...],
     epsilon: Float32,
     weight_offset: Scalar[dtype],
-    out_shape: IndexList[2],
+    out_shape: Coord,
 ):
     comptime assert gamma.flat_rank == 1, "gamma must have rank 1"
     comptime assert gamma.flat_rank >= 1
+    comptime assert out_shape.rank == 2, "out_shape must be rank 2"
 
     comptime simd_width = simd_width_of[dtype]()
 
-    var num_rows = out_shape[0]
-    var num_cols = out_shape[1]
+    var num_rows = Int(out_shape[0].value())
+    var num_cols = Int(out_shape[1].value())
 
     var simd_loop_end = align_down(num_cols, simd_width)
     comptime intermediate_type = get_accum_type[dtype]()
@@ -1348,26 +1329,24 @@ def rms_norm_cpu[
 
 def rms_norm_cpu[
     dtype: DType,
-    rank: Int,
     //,
-    input_fn: def[width: Int, rank: Int](IndexList[rank]) capturing -> SIMD[
-        dtype, width
-    ],
+    input_fn: def[width: Int](Coord) capturing -> SIMD[dtype, width],
     output_fn: def[width: SIMDLength, alignment: Int](
-        IndexList[rank], SIMD[dtype, width]
+        Coord, SIMD[dtype, width]
     ) capturing -> None,
     multiply_before_cast: Bool,
 ](
-    shape: IndexList[rank],
+    shape: Coord,
     gamma: TileTensor[mut=False, dtype, ...],
     epsilon: Float32,
     weight_offset: Scalar[dtype],
     ctx: Optional[DeviceContext] = None,
 ):
     comptime assert gamma.flat_rank == 1, "gamma must have rank 1"
+    comptime rank = shape.rank
 
-    var last_dim = shape[rank - 1]
-    var prod_all_but_last_dim = shape.flattened_length() // last_dim
+    var last_dim = Int(shape[rank - 1].value())
+    var prod_all_but_last_dim = Int(shape.product()) // last_dim
 
     var num_workers = min(parallelism_level(ctx), prod_all_but_last_dim)
     var chunk_size = ceildiv(prod_all_but_last_dim, num_workers)
@@ -1394,11 +1373,11 @@ def rms_norm_cpu[
             simd_width: SIMDLength, alignment: Int
         ](row: Int, col: Int, val: SIMD[dtype, simd_width]) -> None:
             # Translate a given 2D index back to the original n-D tensor.
-            var indices = _get_start_indices_of_nth_subvolume(
+            var indices = _get_start_indices_of_nth_subvolume_static(
                 row_idx + row, shape
             )
             indices[rank - 1] = col
-            output_fn[simd_width, alignment](indices, val)
+            output_fn[simd_width, alignment](Coord(indices), val)
 
         @__copy_capture(row_idx)
         @__parameter
@@ -1407,11 +1386,11 @@ def rms_norm_cpu[
             simd_width: Int
         ](row: Int, col: Int) -> SIMD[dtype, simd_width]:
             # Translate a given 2D index back to the original n-D tensor.
-            var indices = _get_start_indices_of_nth_subvolume(
+            var indices = _get_start_indices_of_nth_subvolume_static(
                 row_idx + row, shape
             )
             indices[rank - 1] = col
-            return input_fn[simd_width, rank](indices)
+            return input_fn[simd_width](Coord(indices))
 
         rms_norm_cpu[
             input_fn_2d,
@@ -1421,7 +1400,7 @@ def rms_norm_cpu[
             gamma,
             epsilon,
             weight_offset,
-            out_shape=IndexList[2](num_rows, last_dim),
+            out_shape=Coord(num_rows, last_dim),
         )
 
     sync_parallelize(task_func, num_workers, ctx)
@@ -1463,27 +1442,26 @@ def _rms_norm_impl[
     weight_offset: Scalar[dtype],
     ctx: DeviceContext,
 ) raises:
-    # Boundary `IndexList` -> `Coord` migration (softmax PR #88203 form). The
-    # public n-D lambdas + `shape` are `Coord`; `shape_il` materializes the
-    # runtime `IndexList` once for the rank-check, the empty-tensor guard, and
-    # the IndexList-form CPU path. Callers whose lambdas need runtime index
-    # subscripts (`kv_cache.mojo`) wrap their IndexList-form lambdas to
-    # `Coord`-form at the call site (see `coord_to_index_list`).
+    # Everything here is `Coord`-form: the rank check, the empty guard and both
+    # target paths read the coord directly. Callers whose lambdas need runtime
+    # index subscripts (`kv_cache.mojo`) wrap theirs to `Coord`-form at the call
+    # site (see `coord_to_index_list`).
     comptime assert gamma.flat_rank == 1, "gamma must have rank 1"
+    comptime assert shape.rank == rank, "shape.rank must be the same as rank"
 
-    var shape_il = rebind[IndexList[rank]](coord_to_index_list(shape))
+    var reduce_dim_size = Int(shape[rank - 1].value())
 
     # Note: we only support reduction along the last dimension
-    if Int(gamma.layout.shape[0]().value()) != shape_il[rank - 1]:
+    if Int(gamma.layout.shape[0]().value()) != reduce_dim_size:
         raise Error(
             "Gamma size "
             + String(gamma.layout.shape[0]().value())
             + " does not match dimension of reduction "
-            + String(shape_il[rank - 1])
+            + String(reduce_dim_size)
             + "."
         )
 
-    if shape_il.flattened_length() == 0:
+    if Int(shape.product()) == 0:
         # Nothing to do.
         return
 
@@ -1494,28 +1472,12 @@ def _rms_norm_impl[
         return input_0_fn[width, align](coords)
 
     comptime if is_cpu[target]():
-        # The CPU path consumes n-D `IndexList`-form lambdas; wrap the Coord
-        # public lambdas back to that interface.
-        @__parameter
-        @always_inline
-        def input_fn_il[
-            width: Int, _rank: Int
-        ](indices: IndexList[_rank]) -> SIMD[dtype, width]:
-            return input_fn_target[width](
-                Coord(rebind[IndexList[rank]](indices))
-            )
-
-        @__parameter
-        @always_inline
-        def output_fn_il[
-            width: SIMDLength, alignment: Int
-        ](indices: IndexList[rank], val: SIMD[dtype, width]) -> None:
-            output_fn[width, alignment](Coord(indices), val)
-
         rms_norm_cpu[
-            input_fn_il, output_fn_il, multiply_before_cast=multiply_before_cast
+            input_fn_target,
+            output_fn,
+            multiply_before_cast=multiply_before_cast,
         ](
-            shape_il,
+            shape,
             gamma,
             epsilon,
             weight_offset,
@@ -1912,13 +1874,12 @@ def apply_qk_rms_norm[
     """
 
     @always_inline
-    @__parameter
-    def description_fn() -> String:
-        return trace_arg("qk", IndexList[2](rows, q_cols + k_cols), in_dtype)
+    def description_fn() {imm} -> String:
+        return trace_arg("qk", Coord(rows, q_cols + k_cols), in_dtype)
 
     with Trace[TraceLevel.OP, target=target](
         "apply_qk_rms_norm",
-        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+        Trace[TraceLevel.OP]._get_detail_str(description_fn),
         task_id=Int(ctx.id()),
     ):
         if rows == 0:
@@ -1961,7 +1922,7 @@ def group_norm_reshape[
     dtype: DType,
     rank: Int,
 ](
-    shape: IndexList[rank, ...],
+    shape: Coord,
     buf: TileTensor[dtype, ...],
     channels_per_group: Int,
     spatial: Int,
@@ -1982,8 +1943,9 @@ def group_norm_reshape[
     channels_per_group and spatial.
     """
     comptime assert buf.rank == rank, "buf.rank must equal rank"
+    comptime assert shape.rank == rank, "shape.rank must be the same as rank"
     var group_size = channels_per_group * spatial
-    var prod_all_but_group_dim = shape.flattened_length() // group_size
+    var prod_all_but_group_dim = Int(shape.product()) // group_size
     var new_shape = IndexList[2](prod_all_but_group_dim, group_size)
     var reshaped = reshape[2](buf, new_shape)
     result = {
@@ -2373,17 +2335,21 @@ def group_norm_gpu[
 ) raises:
     comptime assert output.rank == rank, "output.rank must be the same as rank"
     comptime accum_type = get_accum_type[dtype]()
+    comptime assert shape.rank == rank, "shape.rank must be the same as rank"
 
-    var shape_il = rebind[IndexList[rank]](coord_to_index_list(shape))
+    var N = Int(shape[0].value())
+    var C = Int(shape[1].value())
 
-    var N = shape_il[0]
-    var C = shape_il[1]
+    var spatial = Int(shape.product()) // (N * C)
 
-    var spatial = shape_il.flattened_length() // (N * C)
+    # The device closure reads only the innermost dim; a typed `Coord` capture
+    # fails the launch (CUDA_ERROR_INVALID_VALUE), so unwrap it here and let the
+    # closure capture plain `Int`s.
+    var last_dim = Int(shape[rank - 1].value())
     var channels_per_group = C // num_groups
 
     var output_rs = group_norm_reshape[dtype, rank](
-        shape_il, output, channels_per_group, spatial
+        shape, output, channels_per_group, spatial
     )
 
     comptime OutputLinearIdxType = Scalar[output_rs.linear_idx_type]
@@ -2403,21 +2369,18 @@ def group_norm_gpu[
 
     @__parameter
     @always_inline
-    @__copy_capture(shape_il, num_groups, channels_per_group)
+    @__copy_capture(spatial, last_dim, num_groups, channels_per_group)
     def input_fn_2d[
         simd_width: Int
     ](row: Int, col: Int) capturing -> SIMD[dtype, simd_width]:
         var n, g = divmod(row, num_groups)
         var c = g * channels_per_group
 
-        var indices = IndexList[rank]()  # placeholder to satisfy compiler
-
         comptime if rank == 4:
-            var inner_volume = shape_il[2] * shape_il[3]
+            var inner_volume = spatial
             var c_offset, hw = divmod(col, inner_volume)
             c += c_offset
-            var h, w = divmod(hw, shape_il[3])
-            indices = IndexList[rank](n, c, h, w)
+            var h, w = divmod(hw, last_dim)
 
             # Guard against c_offset boundary straddling.  A view-fused
             # NHWC→NCHW transpose generates a strided_load(stride=C) for
@@ -2434,21 +2397,18 @@ def group_norm_gpu[
                 for i in range(simd_width):
                     var cur_col = col + i
                     var c_off, hw_i = divmod(cur_col, inner_volume)
-                    var h_i, w_i = divmod(hw_i, shape_il[3])
+                    var h_i, w_i = divmod(hw_i, last_dim)
                     result[i] = input_fn[1](
-                        Coord(
-                            IndexList[rank](
-                                n, g * channels_per_group + c_off, h_i, w_i
-                            )
-                        )
+                        Coord(n, g * channels_per_group + c_off, h_i, w_i)
                     )[0]
                 return result
 
+            return input_fn[simd_width](Coord(n, c, h, w))
+
         elif rank == 3:
-            var inner_volume = shape_il[2]
+            var inner_volume = spatial
             var c_offset, l = divmod(col, inner_volume)
             c += c_offset
-            indices = IndexList[rank](n, c, l)
 
             if ceildiv(col + simd_width - 1, inner_volume) != c_offset:
                 var result = SIMD[dtype, simd_width]()
@@ -2456,15 +2416,14 @@ def group_norm_gpu[
                     var cur_col = col + i
                     var c_off, l_i = divmod(cur_col, inner_volume)
                     result[i] = input_fn[1](
-                        Coord(
-                            IndexList[rank](
-                                n, g * channels_per_group + c_off, l_i
-                            )
-                        )
+                        Coord(n, g * channels_per_group + c_off, l_i)
                     )[0]
                 return result
 
-        return input_fn[simd_width](Coord(indices))
+            return input_fn[simd_width](Coord(n, c, l))
+
+        else:
+            comptime assert False, "group_norm_gpu requires a rank of 3 or 4"
 
     comptime simd_width = simd_width_of[dtype, target=get_gpu_target()]()
     if num_cols < OutputLinearIdxType(simd_width):
@@ -2686,12 +2645,11 @@ def group_norm_cpu[
     """
     comptime assert output.rank == rank, "output.rank must be the same as rank"
     comptime accum_type = get_accum_type[dtype]()
+    comptime assert shape.rank == rank, "shape.rank must be the same as rank"
 
-    var shape_il = rebind[IndexList[rank]](coord_to_index_list(shape))
-
-    var N = shape_il[0]
-    var C = shape_il[1]
-    var spatial = shape_il.flattened_length() // (N * C)
+    var N = Int(shape[0].value())
+    var C = Int(shape[1].value())
+    var spatial = Int(shape.product()) // (N * C)
     var channels_per_group = C // num_groups
     var group_size = channels_per_group * spatial
     var num_rows = N * num_groups
@@ -2705,7 +2663,7 @@ def group_norm_cpu[
     def task_func(
         thread_id: Int,
     ) raises {
-        var shape_il,
+        var shape,
         var num_groups,
         var channels_per_group,
         var spatial,
@@ -2719,36 +2677,43 @@ def group_norm_cpu[
             var n, g = divmod(row, num_groups)
             var c_base = g * channels_per_group
 
-            @__copy_capture(shape_il, n, c_base, spatial)
+            @__copy_capture(shape, n, c_base, spatial)
             @__parameter
             @always_inline
-            def indices_for(col: Int) -> IndexList[rank]:
+            def indices_for(col: Int) -> DynamicCoord[.int64, rank]:
                 var c_offset, s = divmod(col, spatial)
                 comptime if rank == 4:
-                    var h, w = divmod(s, shape_il[3])
-                    return IndexList[rank](n, c_base + c_offset, h, w)
+                    var h, w = divmod(s, Int(shape[3].value()))
+                    return rebind[DynamicCoord[.int64, rank]](
+                        Coord(
+                            Int64(n),
+                            Int64(c_base + c_offset),
+                            Int64(h),
+                            Int64(w),
+                        )
+                    )
                 else:
-                    return IndexList[rank](n, c_base + c_offset, s)
+                    return rebind[DynamicCoord[.int64, rank]](
+                        Coord(Int64(n), Int64(c_base + c_offset), Int64(s))
+                    )
 
             # Single-pass Welford mean/variance over the group.
             var mean = Scalar[accum_type]()
             var m2 = Scalar[accum_type]()
             var count = Scalar[accum_type]()
             for col in range(group_size):
-                var val = input_fn[1](Coord(indices_for(col)))[0].cast[
-                    accum_type
-                ]()
+                var val = input_fn[1](indices_for(col))[0].cast[accum_type]()
                 welford_update(val, mean, m2, count)
 
             var norm_factor = rsqrt(m2 / count + epsilon.cast[accum_type]())
 
             for col in range(group_size):
                 var idx = indices_for(col)
-                var val = input_fn[1](Coord(idx))[0].cast[accum_type]()
+                var val = input_fn[1](idx)[0].cast[accum_type]()
                 var gamma_val = gamma_fn[1](Coord(idx[1]))[0].cast[accum_type]()
                 var beta_val = beta_fn[1](Coord(idx[1]))[0].cast[accum_type]()
                 var norm_val = (val - mean) * norm_factor * gamma_val + beta_val
-                output.store(Coord(idx), norm_val.cast[dtype]())
+                output.store(idx, norm_val.cast[dtype]())
 
     sync_parallelize(task_func, num_workers, ctx)
 
@@ -2792,13 +2757,12 @@ def group_norm[
         )
 
     @always_inline
-    @__parameter
-    def description_fn() -> String:
+    def description_fn() {imm} -> String:
         return trace_arg("input", shape_il, dtype)
 
     with Trace[TraceLevel.OP, target=target](
         "group_norm",
-        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+        Trace[TraceLevel.OP]._get_detail_str(description_fn),
         task_id=Int(ctx.id()),
     ):
         comptime if is_cpu[target]():
@@ -3703,9 +3667,7 @@ def row_mean_of_squares_qk[
         width: SIMDLength
     ](oc: Coord, val: SIMD[out_dtype, width]) {var output}:
         comptime for i in range(width):
-            output.store[width=1](
-                Coord(IndexList[2](Int(oc[0].value()) + i, 0)), val[i]
-            )
+            output.store[width=1](Coord(Int(oc[0].value()) + i, 0), val[i])
 
     row_mean_of_squares[in_dtype, out_dtype, 2, target=target](
         q_in, q_out, Coord(rows, q_cols), ctx
@@ -3720,9 +3682,7 @@ def row_mean_of_squares_qk[
         width: SIMDLength
     ](oc: Coord, val: SIMD[out_dtype, width]) {var output}:
         comptime for i in range(width):
-            output.store[width=1](
-                Coord(IndexList[2](Int(oc[0].value()) + i, 1)), val[i]
-            )
+            output.store[width=1](Coord(Int(oc[0].value()) + i, 1), val[i])
 
     row_mean_of_squares[in_dtype, out_dtype, 2, target=target](
         k_in, k_out, Coord(rows, k_cols), ctx

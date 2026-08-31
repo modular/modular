@@ -13,10 +13,21 @@ package(default_visibility = [
 ])
 
 modular_py_test(
+    name = "test_arch_parity",
+    srcs = ["test_arch_parity.py"],
+    deps = [
+        "//max/python/max/pipelines/architectures/gemma4",
+        "//max/python/max/pipelines/architectures/gemma4_modulev3",
+        "//max/python/max/pipelines/lib",
+    ],
+)
+
+modular_py_test(
     name = "tests_gpu",
     size = "enormous",
     srcs = glob(
         ["test_*.py"],
+        exclude = ["test_arch_parity.py"],
     ),
     exec_properties = {
         "test.resources:gpu-memory": "2",

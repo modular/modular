@@ -624,8 +624,7 @@ def mean[
     var input_shape_index_list = coord_to_index_list(input_shape)
 
     @always_inline
-    @__parameter
-    def description_fn() -> String:
+    def description_fn() {imm} -> String:
         return ";".join(
             Span(
                 [
@@ -639,7 +638,7 @@ def mean[
 
     with Trace[TraceLevel.OP, target=target](
         "mean",
-        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+        Trace[TraceLevel.OP]._get_detail_str(description_fn),
         task_id=get_safe_task_id(context),
     ):
 

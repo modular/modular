@@ -684,15 +684,15 @@ def test_quantizer_feeds_matmul[
 
     quantize_mxfp6_amd[fmt](
         ctx,
-        TileTensor[mut=True](a_q, row_major((M, Idx[K_BYTES]))),
-        TileTensor[mut=True](a_sf, row_major((M, Idx[K_SCALES]))),
-        TileTensor[mut=False](a_bf_d, row_major((M, Idx[K]))),
+        TileTensor(a_q, row_major((M, Idx[K_BYTES]))),
+        TileTensor(a_sf, row_major((M, Idx[K_SCALES]))),
+        TileTensor(a_bf_d, row_major((M, Idx[K]))).as_immut(),
     )
     quantize_mxfp6_amd[fmt](
         ctx,
-        TileTensor[mut=True](b_q, row_major[N, K_BYTES]()),
-        TileTensor[mut=True](b_sf, row_major[N, K_SCALES]()),
-        TileTensor[mut=False](b_bf_d, row_major[N, K]()),
+        TileTensor(b_q, row_major[N, K_BYTES]()),
+        TileTensor(b_sf, row_major[N, K_SCALES]()),
+        TileTensor(b_bf_d, row_major[N, K]()).as_immut(),
     )
 
     var c_d = ctx.enqueue_create_buffer[.float32](M * N)

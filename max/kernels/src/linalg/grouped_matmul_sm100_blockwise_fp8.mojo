@@ -3001,9 +3001,9 @@ def grouped_matmul_dynamic_scaled_fp8[
         return
 
     @always_inline
-    @__parameter
-    @__copy_capture(c, a, a_scales, b_scales)
-    def description_fn() -> String:
+    def description_fn() {
+        var c, var a, var a_scales, var b_scales, imm
+    } -> String:
         # fmt: off
         return String(
             "(gpu",
@@ -3025,7 +3025,7 @@ def grouped_matmul_dynamic_scaled_fp8[
             String(a_type) + "x" + String(b_type) + "_to_" + String(c_type),
             "_scales_" + String(a_scales_type),
         ](),
-        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+        Trace[TraceLevel.OP]._get_detail_str(description_fn),
         task_id=get_safe_task_id(ctx),
     ):
         comptime if _is_sm10x_gpu(ctx.default_device_info):

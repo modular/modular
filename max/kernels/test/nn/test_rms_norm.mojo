@@ -63,10 +63,8 @@ def run_rms_norm_cpu[
     @__copy_capture(input_buf)
     @always_inline
     @__parameter
-    def input_fn[
-        width: Int, _rank: Int
-    ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
-        var idx = input_buf.layout(Coord(coords))
+    def input_fn[width: Int](coords: Coord) -> SIMD[dtype, width]:
+        var idx = input_buf.layout(coords)
         return input_buf.raw_load[width=width](idx)
 
     @always_inline
@@ -74,12 +72,12 @@ def run_rms_norm_cpu[
     @__parameter
     def identity_output_fn[
         width: SIMDLength, alignment: Int
-    ](coords: IndexList[rank], val: SIMD[dtype, width]) -> None:
-        var idx = output_buf.layout(Coord(coords))
+    ](coords: Coord, val: SIMD[dtype, width]) -> None:
+        var idx = output_buf.layout(coords)
         output_buf.raw_store[width=width, alignment=alignment](idx, val)
 
     rms_norm_cpu[input_fn, identity_output_fn, multiply_before_cast=True](
-        shape,
+        Coord(shape),
         gamma,
         epsilon,
         weight_offset,
@@ -115,8 +113,8 @@ def run_rms_norm_tests[dtype: DType](rtol: Float64 = 0.001) raises:
 
     # # variable rank
     # run_rms_norm_cpu[dtype](Index(0), rtol)
-    # run_rms_norm_cpu[dtype](Index(5), rtol)
-    # run_rms_norm_cpu[dtype](Index(3, 4, 10, 20, 8), rtol)
+    run_rms_norm_cpu[dtype](Index(5), rtol)
+    run_rms_norm_cpu[dtype](Index(3, 4, 10, 20, 8), rtol)
     # run_rms_norm_cpu[dtype](Index(1, 5, 6, 10, 128), rtol)
 
 

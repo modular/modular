@@ -43,7 +43,14 @@ modular_py_binary(
     # the runfiles tree via the kv_cache dep's :nixl_host_plugins; UCCL is
     # staged only here, not in that shared set, so it does not flip the gating
     # AMD transfer tests onto the default-UCCL resolver path.
-    data = ["@nixl_upstream//:rocm_uccl_host_plugin"],
+    data = [
+        "@nixl_upstream//:rocm_uccl_host_plugin",
+        # GEX-4139: pin the vendored efa_libfabric_prebuilt_cuda shared objects into
+        # the harness's runfiles so ci/nixl-perf-smoke-row.sh can LD_PRELOAD them
+        # (deterministic resolution of libibverbs/libefa) on runners whose system
+        # rdma-core generation does not match the bundled libefa.
+        "@efa_libfabric_prebuilt_cuda//:runtime_libs",
+    ],
     main = "test_transfer_engine_cross_node.py",
     target_compatible_with = [
         "@platforms//cpu:x86_64",

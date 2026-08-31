@@ -363,7 +363,7 @@ struct LayoutTensor[
     comptime rank = Self.layout.rank()
     """The number of dimensions in the tensor's layout."""
 
-    var ptr: UnsafePointer[
+    var ptr: Pointer[
         Scalar[Self.dtype], address_space=Self.address_space, origin=Self.origin
     ]
     """Pointer to the underlying memory buffer containing the tensor data.
@@ -511,7 +511,7 @@ struct LayoutTensor[
     @always_inline
     def __init__(
         out self,
-        unsafe_ptr: UnsafePointer[
+        unsafe_ptr: Pointer[
             Scalar[Self.dtype], Self.origin, address_space=Self.address_space
         ],
     ):
@@ -553,7 +553,7 @@ struct LayoutTensor[
     @always_inline
     def __init__(
         out self,
-        unsafe_ptr: UnsafePointer[
+        unsafe_ptr: Pointer[
             Scalar[Self.dtype], Self.origin, address_space=Self.address_space
         ],
         runtime_layout: RuntimeLayout[Self.layout, ...],
@@ -601,7 +601,7 @@ struct LayoutTensor[
     @always_inline
     def __init__(
         out self,
-        unsafe_ptr: UnsafePointer[
+        unsafe_ptr: Pointer[
             Scalar[Self.dtype],
             origin=Self.origin,
             address_space=Self.address_space,
@@ -1156,7 +1156,7 @@ struct LayoutTensor[
     @always_inline("nodebug")
     def ptr_at_offset(
         self, coords: IndexList
-    ) -> UnsafePointer[
+    ) -> Pointer[
         Scalar[Self.dtype], address_space=Self.address_space, origin=self.origin
     ]:
         """Get a pointer offset at the given flattened coordinates.
@@ -5263,8 +5263,8 @@ struct LayoutTensor[
     @always_inline
     def distance(
         self: Self.Immut,
-        addr: UnsafePointer[
-            mut=False, Scalar[Self.dtype], address_space=Self.address_space, ...
+        addr: ImmPointer[
+            Scalar[Self.dtype], address_space=Self.address_space, ...
         ],
     ) -> Scalar[Self.linear_idx_type]:
         """Calculate the element-wise distance between this tensor's pointer
@@ -8098,7 +8098,7 @@ struct LayoutTensorIter[
     ]
     """The unsigned integer type used for indexing into memory."""
 
-    var ptr: UnsafePointer[
+    var ptr: Pointer[
         Scalar[Self.dtype], address_space=Self.address_space, origin=Self.origin
     ]
     """Pointer to the memory region being iterated, with appropriate type and memory attributes."""
@@ -8143,10 +8143,10 @@ struct LayoutTensorIter[
 
         # TODO: Temporary stop-gap to avoid refactoring all `LayoutTensor`s
         # to expect a non-null pointer. Do NOT copy this pattern; new code
-        # should use a properly-initialized `UnsafePointer` instead.
-        # Or to explicitly model nullability, use `Optional[UnsafePointer]`.
+        # should use a properly-initialized `Pointer` instead.
+        # Or to explicitly model nullability, use `Optional[Pointer]`.
         var this_is_a_hack = 0
-        self.ptr = UnsafePointer[
+        self.ptr = Pointer[
             Scalar[Self.dtype],
             address_space=Self.address_space,
             origin=Self.origin,
@@ -8161,7 +8161,7 @@ struct LayoutTensorIter[
     @always_inline
     def __init__(
         out self,
-        ptr: UnsafePointer[
+        ptr: Pointer[
             Scalar[Self.dtype],
             address_space=Self.address_space,
             origin=Self.origin,
@@ -8207,7 +8207,7 @@ struct LayoutTensorIter[
     @always_inline
     def __init__(
         out self,
-        ptr: UnsafePointer[
+        ptr: Pointer[
             Scalar[Self.dtype],
             address_space=Self.address_space,
             origin=Self.origin,
@@ -8228,7 +8228,7 @@ struct LayoutTensorIter[
     @always_inline
     def __init__(
         out self,
-        ptr: UnsafePointer[
+        ptr: Pointer[
             Scalar[Self.dtype],
             address_space=Self.address_space,
             origin=Self.origin,

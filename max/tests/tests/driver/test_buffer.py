@@ -24,7 +24,7 @@ import pytest
 import torch
 from hypothesis import given, settings
 from hypothesis import strategies as st
-from max.driver import CPU, Accelerator, Buffer, accelerator_count
+from max.driver import CPU, Accelerator, Buffer, Usage, accelerator_count
 from max.dtype import DType
 
 
@@ -366,10 +366,14 @@ def test_host_host_copy() -> None:
 
 
 def test_pinning() -> None:
-    # We're not actually testing the behavior of pinning here,
-    # just the construction and accessor.
+    # A host device can't page-lock, so staging there is a plain allocation.
     assert not Buffer(DType.int32, (1, 1), device=CPU()).pinned
-    assert Buffer(DType.int32, (1, 1), device=CPU(), pinned=True).pinned
+
+    staging_on_host = Buffer(
+        DType.int32, (1, 1), device=CPU(), usage=Usage.STAGING
+    )
+    assert not staging_on_host.pinned
+    assert staging_on_host.usage == Usage.STAGING
 
     if accelerator_count():
         tensor = Buffer(DType.int32, (1, 1), device=CPU())

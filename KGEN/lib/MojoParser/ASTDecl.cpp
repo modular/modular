@@ -202,6 +202,7 @@ void ASTDecl::takeDecls(ASTDecl &src) {
       child->parentDecl = this;
   declsInScope = std::move(src.declsInScope);
   counter = src.counter;
+  assert(!knownAssumptions && "assumptions should be empty before overwriting");
   knownAssumptions = std::move(src.knownAssumptions);
 }
 

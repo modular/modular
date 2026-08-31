@@ -718,12 +718,11 @@ struct TMemTile[
                         m_mma=m_mma,
                     ]()
                     var tmem = self.tmem_addr + UInt32(offsets.tmem_offset)
-                    var frag = Array[UInt32, offsets.local_frag_size_b32](
-                        uninitialized=True
+                    var frag = Array[_, offsets.local_frag_size_b32](
+                        fill_with=lambda (_i: Int) -> UInt32: ptr.load(
+                            offsets.ptr_offset + _i
+                        )
                     )
-
-                    comptime for _i in range(offsets.local_frag_size_b32):
-                        frag[_i] = ptr.load(offsets.ptr_offset + _i)
                     # 16 x 256b results in repeated 8x4 matrix of <1,2> vector pattern
                     tcgen05_st[
                         datapaths=16,  # first dimension of the shape

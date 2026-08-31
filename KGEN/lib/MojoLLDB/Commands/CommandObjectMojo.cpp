@@ -105,7 +105,7 @@ public:
 //===----------------------------------------------------------------------===//
 class CommandStats : public SBCommandPluginInterface {
 public:
-  CommandStats(ContextRef ctx) : ctx(std::move(ctx)) {}
+  CommandStats(GetContextFn getContext) : getContext(getContext) {}
 
   bool DoExecute(SBDebugger debugger, char **command,
                  SBCommandReturnObject &result) override {
@@ -119,6 +119,11 @@ public:
       StringRef event = args[1];
       StringRef interface = args[2];
 
+      ContextRef ctx = getContext();
+      if (!ctx) {
+        result.SetError("the Mojo runtime context has already been released");
+        return false;
+      }
       auto &telemetryCtx = *ctx->get<M::Telemetry::TelemetryContext>();
       auto logger = telemetryCtx.getLogger("debugger");
       logger->emitL1Event(event, {{"interface", interface}});
@@ -129,12 +134,13 @@ public:
     return false;
   }
 
-  ContextRef ctx;
+  GetContextFn getContext;
 };
 
 } // namespace
 
-void M::KGEN::Mojo::registerMojoCommands(SBDebugger debugger, ContextRef ctx) {
+void M::KGEN::Mojo::registerMojoCommands(SBDebugger debugger,
+                                         GetContextFn getContext) {
   SBCommandInterpreter interpreter = debugger.GetCommandInterpreter();
   SBCommand root = interpreter.AddMultiwordCommand(
       "mojo", "Commands related to the Mojo language support.");
@@ -144,7 +150,7 @@ void M::KGEN::Mojo::registerMojoCommands(SBDebugger debugger, ContextRef ctx) {
                   "current selected target. If no arguments are specified, "
                   "this feature will be enabled.",
                   "mojo break-on-raise ([enable|disable])");
-  root.AddCommand("statistics", new CommandStats(ctx),
+  root.AddCommand("statistics", new CommandStats(getContext),
                   "Internal commands related to statistics of Mojo");
 
   SBCommand help = root.AddMultiwordCommand(

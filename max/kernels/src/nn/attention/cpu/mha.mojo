@@ -121,10 +121,11 @@ struct _Matmul[dtype: DType, simd_width: Int]:
         def loop_body[
             lane_count: Int
         ](k: Int) {mut ak_ptr, mut bk_ptr, mut c_tile, imm}:
-            var a_tile = Array[SIMD[Self.dtype, lane_count], tile_m](fill=0)
-
-            comptime for m in range(tile_m):
-                a_tile[m] = ak_ptr.load[width=lane_count](m * a_stride)
+            var a_tile = Array[_, tile_m](
+                fill_with=lambda (m: Int) -> SIMD[
+                    Self.dtype, lane_count
+                ]: ak_ptr.load[width=lane_count](m * a_stride)
+            )
 
             ak_ptr += lane_count
 
@@ -1216,8 +1217,7 @@ def flash_attention_split_kv[
     comptime assert rank == 4
 
     @always_inline
-    @__parameter
-    def description_fn() -> String:
+    def description_fn() {imm} -> String:
         return String(";").join(
             Span(
                 [
@@ -1233,7 +1233,7 @@ def flash_attention_split_kv[
 
     with Trace[TraceLevel.OP, target=StaticString("cpu")](
         "flash_attention_split_kv",
-        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+        Trace[TraceLevel.OP]._get_detail_str(description_fn),
     ):
         comptime kv_rank = rank + 1
 

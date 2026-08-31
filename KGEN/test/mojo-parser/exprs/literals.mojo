@@ -115,7 +115,7 @@ def test_list_literal():
     inspect([1.0, 2])
 
     # MOCO-2085: List comprehensive fails without explicit use of var
-    impl_definition = [i for i in SimpleIntRange()]
+    var impl_definition = [i for i in SimpleIntRange()]
 
 
 struct ParametricList[T: Movable](Movable where False):

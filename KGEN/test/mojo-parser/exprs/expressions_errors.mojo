@@ -142,7 +142,7 @@ def test_member_access() raises:
     # MOCO-2006: This crashed because it was trying to synthesize the vardecl in
     # the package.
     # expected-error @+2 {{dynamic type values not permitted yet}}
-    # expected-warning @+1 {{implicit declaration of 'localvar' is deprecated; add 'var' before the name}}
+    # expected-error @+1 {{implicit declaration of 'localvar' is not allowed; add 'var' to declare a new name}}
     localvar = std.builtin.Int
 
 ##===----------------------------------------------------------------------===##
@@ -559,10 +559,9 @@ def bad_assignment2():
   a = 1
 
 
-def bad_walrus_implicit_decl_in_fn():
-  # Implicit definition in an 'def' is ok.
-  # expected-warning @+1 {{implicit declaration of 'a' is deprecated; declare it with 'var' in the function body}}
-  if a := 4:
+def bad_walrus_undeclared():
+  # Walrus requires an existing LValue; it does not implicitly declare.
+  if a := 4: # expected-error {{use of unknown declaration 'a'}}
     pass
 
 def unused_assignments():

@@ -3570,8 +3570,7 @@ def conv_nhwc_direct[
     ), "Filter and input ranks mismatch."
 
     @always_inline
-    @__parameter
-    def description_fn() -> String:
+    def description_fn() {imm} -> String:
         return ";".join(
             [
                 trace_arg("input", input_lt.runtime_layout.shape.value),
@@ -3586,7 +3585,7 @@ def conv_nhwc_direct[
 
     with Trace[TraceLevel.OP, target=StaticString("cpu")](
         "conv",
-        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+        Trace[TraceLevel.OP]._get_detail_str(description_fn),
     ):
         var conv_shape = get_conv_shape[conv_info_rank, filter_packed](
             output,
