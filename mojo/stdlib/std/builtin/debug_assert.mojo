@@ -110,7 +110,7 @@ def _debug_assert_fail[*Ts: Writable](*messages: *Ts, location: SourceLocation):
         var cstr = message.nul_terminate()
         var bytes_with_nul = cstr.as_bytes_with_nul()
         _debug_assert_msg(
-            cstr.ptr().unsafe_bitcast[Byte](), len(bytes_with_nul), location
+            bytes_with_nul.unsafe_ptr(), len(bytes_with_nul), location
         )
 
 
@@ -601,7 +601,12 @@ def _debug_assert_msg(
             # just past the returned range.
             var fmt_str = get_static_string[fmt]()
             _ = printf_append_string_n(
-                fd, fmt_str.as_c_string_slice().as_bytes_with_nul(), False
+                fd,
+                Span(
+                    unsafe_ptr=fmt_str.as_bytes().unsafe_ptr(),
+                    length=fmt_str.byte_length() + 1,
+                ),
+                False,
             )
             # Runtime %s types must be passed as separate append_string calls.
             # `file_name()` is a string literal, so its trailing nul lives in
@@ -609,7 +614,12 @@ def _debug_assert_msg(
             # path relies on).
             var file_name = loc.file_name()
             _ = printf_append_string_n(
-                fd, file_name.as_c_string_slice().as_bytes_with_nul(), False
+                fd,
+                Span(
+                    unsafe_ptr=file_name.as_bytes().unsafe_ptr(),
+                    length=file_name.byte_length() + 1,
+                ),
+                False,
             )
             # Can only pass 7 args at a time
             _ = printf_append_args(
