@@ -449,6 +449,13 @@ the [container](/container) page now links to the new page.
   now resolve on this path, folded into the handshake's `kv_config_hash`. A
   single-tenant node spanning more than one GPU must set the dKV server's
   `--fair-share-partitions` to its GPU count.
+- The dKV external KV-cache connector now accepts a KV cache tree that mixes
+  TP-replicated and head-sharded caches, instead of failing model load. Only
+  an all-replicated tree produces a block that is byte-identical across TP
+  shards, so a mixed tree offloads over the ordinary per-shard path. On that
+  path a replicated cache is stored once per TP shard rather than once, so
+  size the dKV share above what the `rust_tiered` connector needs for the
+  same model.
 - Added `MODULAR_MAX_RELEASE_FREE_HOST_MEMORY`, an opt-in serving knob that
   returns free host-allocator pages to the OS once model compilation finishes,
   before graph capture. Graph compilation leaves tens of GiB free-but-unreturned
