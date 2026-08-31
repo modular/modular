@@ -198,6 +198,10 @@ public:
   /// Return true if this is a TupleNode with no subexpressions.
   bool isEmptyTuple() const;
 
+  /// To support destructuring patterns in comptime expressions, this value
+  /// binds the RHS of the comptime declaration to the pattern being declared,
+  /// e.g. consider: "comptime for (a, b) in list:", we destructure the result
+  /// of __next__ into the pattern (a, b).
   virtual llvm::LogicalResult emitDestructuringPValue(PValue value,
                                                       IREmitter &emitter) const;
 

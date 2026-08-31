@@ -45,3 +45,11 @@ trait A:
 comptime a, b = 1, 2
 # expected-error @below {{invalid redefinition of 'b'}}
 comptime b, c = 2, 3
+
+
+# // -----
+
+def example[list: List[Int]]():
+    # expected-error @below {{cannot destructure into list patterns yet}}
+    comptime for [a, b] in list:
+      pass

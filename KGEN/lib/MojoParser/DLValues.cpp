@@ -330,3 +330,102 @@ CValue TupleDLValue::emitStore(ASTExprAnd<CValue> value,
 
   return bvalue;
 }
+
+//===----------------------------------------------------------------------===//
+// ListPatternDLValue
+//===----------------------------------------------------------------------===//
+
+ListPatternDLValue::ListPatternDLValue(ArrayRef<ExprNode *> eltExprs,
+                                       ASTType listType,
+                                       PatternDeclKind patternDeclKind,
+                                       const ExprNode *expr)
+    : BaseDLValue(listType), expr(expr),
+      eltExprs(eltExprs.begin(), eltExprs.end()),
+      patternDeclKind(patternDeclKind) {}
+
+void ListPatternDLValue::print(raw_ostream &os) const {
+  os << "(list pattern lvalue): " << elementType << " ";
+}
+
+CValue ListPatternDLValue::emitLoad(ExprDest &dest, IREmitter &emitter) const {
+  // ListPatternDLValue should only be formed in destination context.
+  emitter.emitError(expr->getLoc(), "cannot load from list pattern")
+      << expr->getRange();
+  return {};
+}
+
+CValue ListPatternDLValue::emitStore(ASTExprAnd<CValue> value,
+                                     IREmitter &emitter) const {
+  // Okay we have a type like List[T] that has a __len__ and __getitem__ method.
+  // First call __len__ to see if it agrees with the number of elements in the
+  // pattern.
+
+  // Build `value.__len__()` and the expected pattern length, then call
+  // `check_list_length(actual, expected)` which raises on mismatch.
+  SMLoc loc = expr->getLoc();
+
+  SyntheticNode valueNode(loc, value.ir);
+  AttributeRefNode lenAttr(&valueNode, loc, "__len__");
+  CallNode lenCall(&lenAttr, loc, /*operands=*/{}, loc);
+  AnyValue actualLen = emitter.emitExpr(&lenCall, EC_CollectionLiteral);
+  if (!actualLen)
+    return {};
+
+  TypedAttr countAttr =
+      IntegerAttr::get(IndexType::get(emitter.getContext()), eltExprs.size());
+  CValue expectedLen = emitter.emitInt(
+      ASTExprAnd<PValue>{PValue(countAttr), expr}, EC_CallParamValue);
+  if (!expectedLen)
+    return {};
+
+  // Look up check_list_length the same way paramfor_has_next is resolved.
+  ArrayRef<ASTDecl *> checkFns = emitter.shared.getBuiltinFunction(
+      emitter.getDeclScope(), {"std", "builtin", "_stubs"}, "check_list_length",
+      loc);
+  if (checkFns.empty())
+    return {};
+
+  CallOperands checkOperands(CallSyntax::kDirectCall, expr,
+                             EC_CollectionLiteral);
+  checkOperands.add({actualLen, expr});
+  checkOperands.add({expectedLen, expr});
+
+  ParamBindings bindings(emitter.getDeclScope(), expr);
+  OverloadSet checkCall("check_list_length", checkFns, std::move(bindings),
+                        CallSyntax::kDirectCall);
+  if (!checkCall.emitCall(std::move(checkOperands), emitter))
+    return {};
+
+  // Okay, now that we know the length is correct, loop over each element of the
+  // collection, calling __getitem__ to get the element and store it into the
+  // corresponding list pattern element.
+
+  // Emit the input to a BValue so each __getitem__ can reuse it without
+  // reloading an LValue or consuming an RValue multiple times.
+  BValue bvalue = emitter.emitBValue(value, EC_CollectionLiteral);
+  if (!bvalue)
+    return {};
+
+  SyntheticNode baseNode(loc, bvalue);
+  for (auto [index, eltExpr] : llvm::enumerate(eltExprs)) {
+    // Build `base.__getitem__(42)` syntactically.
+    TypedAttr indexAttr =
+        IntegerAttr::get(IndexType::get(emitter.getContext()), index);
+    CValue indexCValue = emitter.emitInt(
+        ASTExprAnd<PValue>{PValue(indexAttr), expr}, EC_CallParamValue);
+    if (!indexCValue)
+      return {};
+    SyntheticNode indexNode(loc, indexCValue);
+    Operand indexOperand(&indexNode, loc, ArgUnpackStyle::kPositional);
+
+    AttributeRefNode getItemAttr(&baseNode, loc, "__getitem__");
+    CallNode getItemCall(&getItemAttr, loc, indexOperand, loc);
+
+    ExprDest eltDest(eltExpr, EC_CollectionLiteral);
+    eltDest.setPatternDeclKind(patternDeclKind);
+    if (!emitter.emitExpr(&getItemCall, eltDest))
+      return {};
+  }
+
+  return bvalue;
+}

@@ -443,6 +443,9 @@ def tuple_pattern(a: Int) raises:
   # expected-error @+1 {{cannot unpack value of type 'Int' into 2 values}}
   (b, c) = a
 
+def list_pattern():
+  # expected-error @+1 {{'Int' value has no attribute '__len__'}}
+  [_] = 4
 
 
 # Issue https://github.com/modular/mojo/issues/1917

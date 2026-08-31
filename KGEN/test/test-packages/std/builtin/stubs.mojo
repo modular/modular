@@ -1545,6 +1545,16 @@ struct StopIteration(TrivialRegisterPassable):
     pass
 
 
+@fieldwise_init
+struct ListLengthError(ErrorConversionTrait, TrivialRegisterPassable):
+    pass
+
+
+def check_list_length(actual: Int, expected: Int) raises ListLengthError:
+    if actual != expected:
+        raise ListLengthError()
+
+
 trait Iterator(Deinitable, Movable):
     comptime Element: Movable
 

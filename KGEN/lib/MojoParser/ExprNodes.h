@@ -479,11 +479,11 @@ struct TupleNode final : public LValueCapableExprNode {
 };
 
 /// [a, b, c]
-struct ListLiteralNode final : public ExprNode {
+struct ListLiteralNode final : public LValueCapableExprNode {
   ListLiteralNode(SMLoc lsquareLoc, ArrayRef<ExprNode *> exprs,
                   SMLoc rsquareLoc)
-      : ExprNode(kListLiteral), lsquareLoc(lsquareLoc), exprs(exprs),
-        rsquareLoc(rsquareLoc) {}
+      : LValueCapableExprNode(kListLiteral), lsquareLoc(lsquareLoc),
+        exprs(exprs), rsquareLoc(rsquareLoc) {}
 
   const SMLoc lsquareLoc;
   ArrayRef<ExprNode *> exprs;
@@ -494,7 +494,10 @@ struct ListLiteralNode final : public ExprNode {
   }
   SMLoc getLoc() const override { return lsquareLoc; }
   SourceRange getRange() const override { return {lsquareLoc, rsquareLoc}; }
-  AnyValue emitIR(ExprDest &dest, IREmitter &emitter) const override;
+  ELVIITResult emitLCVIR(ExprDest &dest, IREmitter &emitter,
+                         bool isSpeculative) const override;
+  LogicalResult emitDestructuringPValue(PValue value,
+                                        IREmitter &emitter) const override;
   void print(mlir::raw_indented_ostream &os) const override;
 };
 

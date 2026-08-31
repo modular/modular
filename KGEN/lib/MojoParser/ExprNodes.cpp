@@ -3493,8 +3493,34 @@ static AnyValue emitListLiteral(const ExprNode *expr,
                                    std::move(operands));
 }
 
-AnyValue ListLiteralNode::emitIR(ExprDest &dest, IREmitter &emitter) const {
+ExprNode::ELVIITResult ListLiteralNode::emitLCVIR(ExprDest &dest,
+                                                  IREmitter &emitter,
+                                                  bool isSpeculative) const {
+  // Speculative emission is used for LHS patterns like `var [a, b] = …`. We
+  // don't do anything with it, because `[var x:Int] = ...` isn't enough to
+  // infer the type of the RHS anyway.  Just wait for the RHS to get emitted.
+  if (isSpeculative)
+    return {this};
+
+  // If this is the LHS of an assignment, then we unpack the list pattern into
+  // the subexpressions of the pattern.
+  if (auto expectedType = dest.getIfInitializerType()) {
+    if (sugarIsa<TypeCheckErrorType>(expectedType))
+      return {};
+    DLValue result(RCRef<ListPatternDLValue>::create(
+        exprs, expectedType, dest.getPatternDeclKind(), this));
+    return emitter.emitResult(result, this, dest);
+  }
+
+  // Normal RHS emission: `[a, b, c]` as a list literal initializer.
   return emitter.emitResult(emitListLiteral(this, exprs, emitter), this, dest);
+}
+
+LogicalResult
+ListLiteralNode::emitDestructuringPValue(PValue value,
+                                         IREmitter &emitter) const {
+  emitter.emitError(getLoc(), "cannot destructure into list patterns yet");
+  return failure();
 }
 
 AnyValue DictLiteralNode::emitIR(ExprDest &dest, IREmitter &emitter) const {
@@ -3697,7 +3723,6 @@ AnyValue BinOpNode::emitAssign(ExprDest &dest, IREmitter &emitter) const {
   //     a[test1()] = test2()
   //   ==> test2; test1
   //
-  // If we care, we will have to change this in a 'def'.
 
   // Check out the LHS speculatively.
   ELVIITResult lhsResult = lhs->emitLValueIfImplicitlyTyped(
@@ -3715,7 +3740,7 @@ AnyValue BinOpNode::emitAssign(ExprDest &dest, IREmitter &emitter) const {
     }
   }
 
-  // Figure out if the LHS is syntactically a var pattern.
+  // Figure out if the LHS is syntactically a var pattern, to tune diagnostics.
   auto isVarPat = [&](ExprNode *expr) -> bool {
     while (1) {
       if (expr->kind == kVarPat)
@@ -5498,6 +5523,7 @@ AnyValue MagicFunctionNode::emitStructFieldRef(ExprDest &dest,
 
 LogicalResult TupleNode::emitDestructuringPValue(PValue toUnpack,
                                                  IREmitter &emitter) const {
+
   auto getTupleItem = [&](Type eltType, unsigned index) {
     // Get the item from the tuple into the corresponding LValue.
     ExprDest eltDest(eltType, EC_TupleElement);
@@ -5587,7 +5613,7 @@ auto TupleNode::emitLCVIR(ExprDest &dest, IREmitter &emitter,
 
   // If this tuple is being speculatively emitted on the LHS of an assignment,
   // speculatively emit each subelement.  It is possible that some will remain
-  // unresolvable, e.g. for `(x, y) = foo()` when 'x' is implicitly declared but
+  // unresolvable, e.g. for `(var x, y) = foo()` when 'x' is declared but
   // 'y' is not.  When this happens, we need to bundle things up and return a
   // new TupleNode.
   if (isSpeculative) {
@@ -5657,7 +5683,7 @@ auto TupleNode::emitLCVIR(ExprDest &dest, IREmitter &emitter,
   SmallVector<ASTType> eltTypes;
   bool isLValueType = false;
   if (auto expectedType = dest.getExpectedTypeIfSpecified()) {
-    isLValueType = !dest.getIfInitializerType().isNull(); //&& !tuplePVal;
+    isLValueType = !dest.getIfInitializerType().isNull();
     // Special case the element type of Tuple.  We could be more general than
     // this when there was a reason to, e.g. looking up a __getitem__
     // implementation.

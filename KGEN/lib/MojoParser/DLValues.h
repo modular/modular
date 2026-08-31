@@ -84,10 +84,28 @@ class TupleDLValue : public BaseDLValue {
 public:
   const ExprNode *expr;
   // These are the LValues for the sub-elements.
-  std::vector<ASTExprAnd<AnyValue>> eltLValues;
+  SmallVector<ASTExprAnd<AnyValue>, 4> eltLValues;
 
   TupleDLValue(ArrayRef<ASTExprAnd<AnyValue>> eltLValues, ASTType tupleType,
                const ExprNode *expr);
+
+  void print(raw_ostream &os) const override;
+  CValue emitLoad(ExprDest &dest, IREmitter &emitter) const override;
+  CValue emitStore(ASTExprAnd<CValue> value, IREmitter &emitter) const override;
+};
+
+/// This DLValue implementation represents list-pattern lvalues, e.g.
+/// `[a, b] = x` or `var [a, b] = x`.
+class ListPatternDLValue : public BaseDLValue {
+public:
+  const ExprNode *expr;
+  // These are the subexpressions of the list pattern; emitted on store.
+  SmallVector<ExprNode *, 4> eltExprs;
+  // Captured from the assignment dest so `var [a, b] = …` declares elements.
+  PatternDeclKind patternDeclKind;
+
+  ListPatternDLValue(ArrayRef<ExprNode *> eltExprs, ASTType listType,
+                     PatternDeclKind patternDeclKind, const ExprNode *expr);
 
   void print(raw_ostream &os) const override;
   CValue emitLoad(ExprDest &dest, IREmitter &emitter) const override;
