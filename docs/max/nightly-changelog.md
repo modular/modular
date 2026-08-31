@@ -511,6 +511,8 @@ the [container](/container) page now links to the new page.
   through `DevicePassable` before launch, matching explicit kernel
   arguments. Host handles such as `DevicePointer` reach the device as
   device addresses rather than raw host bytes.
+- Added `max.nn.state_space.kda_decode`, a wrapper over the Kimi Delta
+  Attention recurrence op.
 
 ### Inference server
 
