@@ -13,6 +13,7 @@ import MultipleStarsIcon from '@site/static/img/multiple-stars.svg';
 import StarIcon from '@site/static/img/star.svg';
 import WrenchIcon from '@site/static/img/wrench.svg';
 import InfoIcon from '@site/static/img/info.svg';
+import LightBulbIcon from '@site/static/img/lightbulb.svg';
 
 import { PuzzleIcon } from '@site/src/shared/Svgs';
 
@@ -21,54 +22,65 @@ export const getStartedCards = [
     icon: <PowerIcon />,
     title: 'Quickstart',
     url: '/docs/manual/quickstart/',
-    description: 'Install Mojo and quickly learn the basics',
+    description:
+      'Install Mojo, tour the core syntax, and start writing code.'
   },
   {
     icon: <MultipleStarsIcon />,
-    title: 'Agent skills',
-    url: '/docs/tools/skills/',
-    description: 'Start building with Mojo agent skills',
+    title: 'Get started with Mojo tutorial',
+    url: '/docs/manual/get-started/',
+    description: 'Go beyond the basics and build a complete Mojo application',
   },
   {
-    icon: <PuzzleIcon />,
-    title: 'Mojo Quest',
-    url: 'https://quest.mojolang.org/',
-    description: 'Learn Mojo by fixing bugs, right in the browser',
+    icon: <LightBulbIcon />,
+    title: 'Mojo Cheatsheets',
+    url: '/docs/reference/cheat-sheets/',
+    description:
+      'Essential Mojo concepts, connected and condensed ' +
+      'for quick reference',
   },
 ];
 
 export const guidesReferencesCards = [
   {
-    title: 'Mojo Manual',
+    title: 'Mojo manual',
     url: '/docs/manual/',
     description:
-      'Learn Mojo language concepts, syntax, and programming patterns',
+      'Learn how Mojo works, from core concepts and syntax ' +
+      'to programming patterns',
   },
   {
-    title: 'Standard library',
+    title: 'Standard library API reference',
     url: '/docs/std/',
-    description: 'The complete reference for the Mojo standard library',
-  },
-  {
-    title: 'Language reference',
-    url: '/docs/reference/',
-    description: 'Reference for Mojo\'s syntax, keywords, decorators, and more',
-  },
-  {
-    title: 'Mojo CLI',
-    url: '/docs/cli/',
-    description: 'The complete reference for the `mojo` command line tool',
-  },
-  {
-    title: 'GPU programming',
-    url: 'https://max.modular.com/gpu/intro-tutorial/',
-    description: 'Learn to program GPUs with Mojo and MAX',
-  },
-  {
-    title: 'GPU Puzzles',
-    url: 'https://puzzles.modular.com/',
     description:
-      'Practice GPU programming with hands-on Mojo coding challenges',
+      'Find Mojo standard library APIs, structs, traits, functions, ' +
+      'and more',
+  },
+  {
+    title: 'Mojo language reference',
+    url: '/docs/reference/',
+    description:
+      'Explore Mojo\'s syntax, keywords, expressions, statements, and ' +
+      'more, or look up specific language details',
+  },
+  {
+    title: 'Agent skills',
+    url: '/docs/tools/skills/',
+    description:
+      'Keep your AI coding assistant up to date with the latest Mojo syntax',
+  },
+  {
+    title: 'Mojo Quest',
+    url: 'https://quest.mojolang.org/',
+    description:
+      'Fix bugs, close tickets, and learn Mojo as you play this ' +
+      'interactive browser-based coding game.',
+  },
+  {
+    title: 'Mojo CLI compiler reference',
+    url: '/docs/cli/',
+    description:
+      'Read through the commands and options for the CLI `mojo` compiler',
   },
 ];
 
