@@ -22,7 +22,7 @@ Examples:
 
 ```mojo
 # Create an array of 3 integers
-var arr: Array[Int, 3] = [1, 2, 3]
+var arr = [1, 2, 3]
 
 # Access elements
 print(arr[0])  # Prints 1
@@ -251,7 +251,7 @@ struct Array[T: AnyType, length: Int](
 
     ```mojo
     # Create array of 3 integers
-    var arr: Array[Int, 3] = [1, 2, 3]
+    var arr = [1, 2, 3]
 
     # Create array filled with value
     var filled = Array[Int, 5](fill=42)
@@ -533,7 +533,7 @@ struct Array[T: AnyType, length: Int](
         Examples:
 
         ```mojo
-        var arr: Array[Int, 3] = [1, 2, 3]
+        var arr = [1, 2, 3]
         ```
         """
         self = {uninitialized = True}
@@ -581,7 +581,7 @@ struct Array[T: AnyType, length: Int](
         Examples:
 
         ```mojo
-        var arr: Array[Int, 3] = [1, 2, 3]
+        var arr = [1, 2, 3]
         var copy = arr.copy()  # Creates new array [1, 2, 3]
         ```
         """
@@ -682,7 +682,7 @@ struct Array[T: AnyType, length: Int](
         Examples:
 
         ```mojo
-        var arr: Array[Int, 3] = [1, 2, 3]
+        var arr = [1, 2, 3]
         print(arr[0])            # Prints 1 - first element
         print(arr[1])            # Prints 2 - second element
         print(arr[len(arr) - 1]) # Prints 3 - last element
@@ -710,7 +710,7 @@ struct Array[T: AnyType, length: Int](
         Examples:
 
         ```mojo
-        var arr: Array[Int, 3] = [1, 2, 3]
+        var arr = [1, 2, 3]
         print(arr[0])            # Prints 1 - first element
         print(arr[1])            # Prints 2 - second element
         print(arr[len(arr) - 1]) # Prints 3 - last element
@@ -742,7 +742,7 @@ struct Array[T: AnyType, length: Int](
         Examples:
 
         ```mojo
-        var arr: Array[Int, 3] = [1, 2, 3]
+        var arr = [1, 2, 3]
         print(arr[0])            # Prints 1 - first element
         print(arr[1])            # Prints 2 - second element
         print(arr[len(arr) - 1]) # Prints 3 - last element
@@ -790,8 +790,8 @@ struct Array[T: AnyType, length: Int](
         Examples:
 
         ```mojo
-        var a: Array[Int, 2] = [1, 2]
-        var b: Array[Int, 3] = [3, 4, 5]
+        var a = [1, 2]
+        var b = [3, 4, 5]
         var c = a^.concat(b^)  # [1, 2, 3, 4, 5]
         ```
         """
@@ -819,7 +819,7 @@ struct Array[T: AnyType, length: Int](
         Examples:
 
         ```mojo
-        var arr: Array[Int, 3] = [1, 2, 3]
+        var arr = [1, 2, 3]
         print(len(arr))  # Prints 3
         ```
 
@@ -970,7 +970,7 @@ struct Array[T: AnyType, length: Int](
         Examples:
 
         ```mojo
-        var arr: Array[Int, 3] = [1, 2, 3]
+        var arr = [1, 2, 3]
         print(arr.unsafe_get(0))  # Prints 1
         ```
 
@@ -1006,7 +1006,7 @@ struct Array[T: AnyType, length: Int](
         Examples:
 
         ```mojo
-        var arr:Array[Int, 3] = [1, 2, 3]
+        var arr = [1, 2, 3]
         var ptr = arr.unsafe_ptr()
         print(ptr[0])  # Prints 1
         ```
@@ -1046,7 +1046,7 @@ struct Array[T: AnyType, length: Int](
         Examples:
 
         ```mojo
-        var arr: Array[Int, 3] = [1, 2, 3]
+        var arr = [1, 2, 3]
         print(3 in arr)  # Prints True - value exists
         print(4 in arr)  # Prints False - value not found
         ```
