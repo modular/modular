@@ -1,68 +1,53 @@
-# M1.2 (#124) compiler-defect reproducer: `ioctl(fd, FIONREAD, &n)`
-# declared as a fixed-arity `@extern("ioctl")` binding never actually
-# delivers `&n`'s address to the kernel correctly. Observed TWO different
-# failure shapes for the exact same code, depending on what happened to
-# be sitting in the stack slot the real ioctl() reads its variadic
-# argument from:
-#   - in this standalone file: the call returns -1 with errno 14
-#     (EFAULT) — the kernel rejects whatever address it actually read;
-#   - in a larger program (spike/abi/libc_calls_test.mojo, same
-#     declaration, same FIONREAD constant, more prior stack activity):
-#     the call returns 0 (claimed SUCCESS) and the output cell is simply
-#     never written — it stays at its initial sentinel no matter how many
-#     times the call is retried, despite a real byte genuinely queued the
-#     whole time.
-# Both outcomes are consistent with the kernel receiving garbage instead
-# of the real pointer: sometimes the garbage fails an address-validity
-# check (EFAULT), sometimes it happens to look like a harmless-but-wrong
-# address the ioctl still "succeeds" against without ever touching `n`.
-# Undefined, stack-contents-dependent behavior for identical Mojo source
-# is itself part of the finding.
+# Reproducer for: a fixed-arity `@extern("ioctl")` declaration of the
+# variadic `ioctl(fd, FIONREAD, &n)` never delivers the pointer argument
+# to the kernel. The out-cell is never written; the observed failure
+# shape depends on what garbage happens to sit in the stack slot the
+# real ioctl() reads its variadic argument from:
+#   - rc -1 with errno 14 (EFAULT): the kernel rejects the address it
+#     actually read;
+#   - rc 0 (claimed success) with the cell untouched: the garbage
+#     happened to look like an address the ioctl "succeeds" against.
+# Within one binary the outcome is stable (10/10 identical runs in my
+# re-testing); it varies across program contexts, not run to run.
 #
-# Bisected to the ARGUMENT ITSELF, not its declared type: the same
-# outcome class happens whether `arg` is declared as a typed
-# `UnsafePointer[Int32, MutAnyOrigin]` or as a raw `UInt64` machine word
-# carrying the exact same address.
+# Cause (confirmed, not a theory): Apple's arm64 ABI passes arguments
+# past a variadic function's last FIXED parameter on the stack, never in
+# a register. `ioctl`'s real C prototype is
+# `int ioctl(int fd, unsigned long request, ...)`, two fixed parameters,
+# so a genuine variadic call site puts the third argument on the stack.
+# An `@extern` declaration has no way to mark a parameter as the
+# variadic tail, so it lowers all 3 declared parameters via the fixed
+# (register) convention, and ioctl()'s own va_arg reads a stack slot
+# nothing populated. Confirmed three ways:
+#   1. A C program calling ioctl through a fixed 3-arg function pointer
+#      fails identically (rc -1 / EFAULT / cell untouched) while the
+#      proper variadic call succeeds, on the same host.
+#   2. Mojo 1.0.0 fixed this exact class for external_call (commit
+#      8e783b63, "Support variadic C functions in external_call"):
+#      external_call["ioctl", Int32, num_fixed_args=2](fd, FIONREAD, p)
+#      delivers the pointer correctly (verified: the cell becomes 1).
+#   3. This file's fixed-arity @extern declaration still silently
+#      miscompiles on 1.0.0 stable (5/5 runs).
 #
-# Leading theory (consistent with every observation here, though not
-# independently proven from Mojo's own compiler internals): Apple's arm64
-# ABI requires arguments PAST a variadic function's last FIXED parameter
-# to be passed on the STACK, never in a register. `ioctl`'s real C
-# prototype is `int ioctl(int fd, unsigned long request, ...)` — only 2
-# fixed parameters — so a genuine variadic call site puts `arg` on the
-# stack. A Mojo `@extern` declaration has no way to mark a parameter as
-# "the variadic tail"; it lowers all 3 declared parameters via the
-# ordinary (register) calling convention. The real ioctl() implementation
-# then reads its variadic argument via va_arg from the stack slot a
-# non-variadic caller never populated — reading whatever garbage is
-# there, which explains both observed outcomes above.
+# What remains open in the linked issue is the @extern-side gap: no way
+# to declare a variadic tail, and no diagnostic when a fixed-arity
+# declaration targets a known-variadic symbol.
 #
-# fcntl (also nominally variadic, exercised in
-# spike/abi/libc_calls_test.mojo) does NOT show this for its F_SETFL
-# case: its variadic argument is a plain scalar `int`, and this repo's
-# own test proves that value DOES reach the real fcntl(). Whether that
-# is because a scalar happens to survive the mismatch, or because
-# Darwin's fcntl() is implemented differently under the hood, is not
-# established here.
+# `fcntl`'s scalar F_SETFL argument happening to survive the same
+# mis-declaration on this target is consistent with the mechanism: the
+# garbage only bites when the callee reads a slot the caller never
+# populated in the right place.
 #
-# Toolchain: Mojo 1.0.0b2 (2cf4d08a), macOS arm64. Requires a live TCP
-# loopback pair, so this reproducer sets one up itself (no oracle dylib
-# needed — every symbol here is a raw libc/OS call).
+# Verified on: Mojo 1.0.0b2 (2cf4d08a) and 1.0.0 (ed45d567), macOS
+# arm64. Requires a live TCP loopback pair, so this reproducer sets one
+# up itself (every symbol here is a raw libc/OS call).
 #
-# Run: mojo run m1-2-ioctl-pointer-arg-lost.mojo
-# Expected (bug, this file): NON-DETERMINISTIC across runs on this exact
-# unmodified file — sometimes "ioctl rc: -1 errno: 14 avail: -99" (EFAULT),
-# sometimes "ioctl rc: 0 errno: 0 avail: -99" (claimed success, still
-# unwritten). Either way `avail` never becomes 1. This run-to-run
-# variance for byte-identical source is itself the strongest evidence for
-# the garbage-stack-slot theory above. A SEPARATE, likely unrelated
-# flakiness was also observed on some runs: a b2 runtime crash AFTER the
-# ioctl line prints ("recursive_mutex lock failed" inside
-# libKGENCompilerRTShared.dylib during process exit) — consistent with
-# the b2 toolchain's already-documented intermittent lowering/runtime
-# crashes elsewhere in this repo (e.g. spike/completion/run.sh's retry-
-# on-"Stack dump" convention); the ioctl finding itself is fully visible
-# in the printed line before that crash, so it is not conflated with it.
+# Run: mojo run repro.mojo
+# Expected (bug): "avail: -99" — the cell is never written, whatever
+# rc/errno pair this context produces. Expected (fixed): "avail: 1".
+# Separately, some runs crash AFTER the ioctl line prints
+# ("recursive_mutex lock failed" during process exit); that is a known
+# unrelated b2 runtime flake and does not affect the printed finding.
 
 from std.io import FileDescriptor
 from std.memory import stack_allocation
@@ -84,6 +69,8 @@ def mjo_accept(fd: Int32, addr: ByteBuf, len: ByteBuf) abi("C") -> Int32: ...
 def mjo_getsockname(fd: Int32, addr: ByteBuf, len: ByteBuf) abi("C") -> Int32: ...
 @extern("__error")
 def mjo_errno_ptr() abi("C") -> UInt64: ...
+@extern("usleep")
+def mjo_usleep(usec: UInt32) abi("C") -> Int32: ...
 @extern("ioctl")
 def mjo_ioctl(fd: Int32, request: UInt64, arg: I32Slot) abi("C") -> Int32: ...
 
@@ -105,9 +92,13 @@ def main() raises:
     var dummy2 = stack_allocation[1, UInt32]()
     var server = mjo_accept(listener, dummy1.bitcast[Byte](), dummy2.bitcast[Byte]())
 
-    # Queue exactly 1 real byte via the stdlib's own direct write binding.
+    # Queue exactly 1 real byte via the stdlib's own direct write binding,
+    # then give loopback delivery a moment so FIONREAD has something to
+    # count (matters once the call is fixed; without the settle delay a
+    # correctly delivered FIONREAD can legitimately report 0).
     var server_fd = FileDescriptor(Int(server))
     server_fd.write("X")
+    _ = mjo_usleep(100000)
 
     var avail = stack_allocation[1, Int32]()
     avail[0] = -99
