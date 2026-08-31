@@ -1,39 +1,32 @@
-# M1.2 (#124) feature-gap reproducer (not a crash — an expressiveness
-# gap issue #124 explicitly asks to be written up "with what it would
-# need"): Mojo 1.0.0b2 has no attribute or mechanism to declare a struct
-# with alignment LESS than its members' natural alignment — i.e. no
-# equivalent of C's `#pragma pack(N)` / `__attribute__((packed))`.
+# TDD red test for a feature gap: Mojo has no way to force a struct's
+# alignment BELOW its members' natural alignment, i.e. no equivalent of
+# C's `#pragma pack(N)` / `__attribute__((packed))`.
 #
-# This matters for real: Apple's <sys/event.h> wraps `struct kevent` in
-# `#pragma pack(4)`, which forces the struct's own alignment to 4 despite
-# every member being naturally 8-byte aligned (ident/data/udata are
-# uintptr_t/intptr_t/void*) — confirmed on this host via
-# spike/abi/oracle.c (`_Alignof(struct kevent)` reports 4). A plain Mojo
-# struct with the identical field types (spike/abi/types.mojo's `Kevent`)
-# computes alignment 8, matching neither `@packed` (doesn't exist, tried
-# below) nor any other override.
+# What exists today is `@align(N)`, and it is explicitly a MINIMUM: the
+# decorator reference says "You can't reduce alignment below the natural
+# alignment of the struct." Verified on both 1.0.0b2 and 1.0.0:
+# `@align(4)` on a struct of 8-aligned members is accepted SILENTLY and
+# clamped to 8 (align_of still reports 8). That silent clamp is its own
+# little trap for anyone mirroring a `#pragma pack(4)` C struct, since
+# it reads like success; the linked issue asks for a warning there even
+# if the packing feature itself is declined.
 #
-# Consequence for THIS specific struct: harmless, because kevent's last
-# field ends at byte offset 32, already a multiple of 8, so the extra
-# alignment Mojo computes doesn't change the struct's own size or its
-# stride inside an array (verified: spike/abi/struct_layout_test.mojo's
-# kevent size/offset checks all pass). It WOULD matter for a
-# hypothetical struct whose tail field ended on a 4-but-not-8 byte
-# boundary, where Mojo's over-alignment would insert real trailing
-# padding a C caller does not expect.
+# Why it matters: Apple's <sys/event.h> wraps `struct kevent` in
+# `#pragma pack(4)`, forcing alignment 4 despite every member being
+# naturally 8-byte aligned. Confirmed with a C oracle on macOS arm64:
+# _Alignof(struct kevent) == 4, sizeof == 32. A Mojo struct with the
+# identical field types computes alignment 8. For kevent itself that is
+# harmless (the last field ends on an 8-byte boundary), but any packed
+# struct whose tail ends on a 4-but-not-8 boundary would silently gain
+# trailing padding a C caller does not have.
 #
-# What full fidelity would need: a struct-level attribute (e.g.
-# `@packed(4)`) or an alternate declaration form that lets a struct's
-# reported/enforced alignment be set below its natural maximum-member
-# alignment — either a compiler feature or, short of that, a documented
-# policy that any struct needing sub-natural alignment is described as a
-# byte blob with manual offset arithmetic instead of a native Mojo struct
-# (the AGGREGATE RULE convention mojito_sys/io/externs.mojo already uses
-# for cases it treats as opaque).
-#
-# Toolchain: Mojo 1.0.0b2 (2cf4d08a), macOS arm64.
-# Run: mojo run m1-2-no-packed-struct-attribute.mojo
-# Expected (gap): fails to parse — "use of unknown declaration 'packed'".
+# Toolchains checked: Mojo 1.0.0b2 (2cf4d08a) and 1.0.0 (ed45d567),
+# macOS arm64.
+# Run: mojo run repro.mojo
+# Expected (gap, today): fails to parse,
+#   "use of unknown declaration 'packed'".
+# Goes green once some below-natural alignment override ships (whether
+# that is @packed, @packed(N), or @align(N) learning to reduce).
 
 @packed
 struct Kevent:
