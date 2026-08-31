@@ -1,14 +1,13 @@
-# M1.3 (#126) compiler defect reproducer, PASS side: see
-# m1-3-owned-param-main-vs-import.mojo for the full write-up. This file
-# imports the BYTE-FOR-BYTE IDENTICAL struct (m1_3_owned_param_lib.mojo,
-# same directory) instead of defining it inline, and compiles/runs
-# cleanly — the same `owned existing: Self` __moveinit__ parameter that
-# fails to PARSE as a main-file entry point parses fine as an imported
-# module member.
+# Defect half of this reproducer: imports the byte-for-byte identical
+# struct from lib.mojo (same directory) instead of defining it inline,
+# and compiles and runs cleanly, even though the legacy `__moveinit__`
+# spelling it contains was removed in 1.0.0b1 and the same source is
+# rejected when compiled as the entry file. See main_vs_import.mojo for
+# the full write-up and the per-spelling error matrix.
 #
-# Toolchain: Mojo 1.0.0b2 (2cf4d08a), macOS arm64 (Darwin 25.6.0).
-# Run: mojo run -I <this-directory> m1-3-owned-param-via-import.mojo
-# Expected: PASSES, prints "-1".
+# Verified on Mojo 1.0.0b2 (2cf4d08a) and 1.0.0 (ed45d567), macOS arm64.
+# Run: mojo run -I <this-directory> via_import.mojo
+# Today: PASSES and prints "-1" (that acceptance is the bug).
 
 from lib import IoEventLike
 

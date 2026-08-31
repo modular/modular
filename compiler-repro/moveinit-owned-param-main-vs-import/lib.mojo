@@ -1,7 +1,9 @@
-# Companion module for m1-3-owned-param-main-vs-import.mojo /
-# m1-3-owned-param-via-import.mojo — byte-for-byte the same struct,
-# defined here so it can be IMPORTED rather than run directly. See the
-# other two files for what this demonstrates.
+# Companion module for via_import.mojo: byte-for-byte the same struct as
+# the one defined inline in main_vs_import.mojo, placed here so it can be
+# IMPORTED rather than compiled as the entry file. The legacy
+# `__moveinit__` spelling below was removed in 1.0.0b1 (unified-__init__
+# migration), yet this file still compiles fine when imported. See
+# main_vs_import.mojo for the full write-up.
 
 struct IoEventLike(ImplicitlyCopyable):
     var token: UInt64
