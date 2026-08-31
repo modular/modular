@@ -36,6 +36,7 @@ comptime TileProjection[
     TensorType.dtype,
     LayoutType=TensorType.LayoutType,
     origin=UntrackedOrigin[mut=mut],
+    Engine=TensorType.Engine,
 ]
 
 
