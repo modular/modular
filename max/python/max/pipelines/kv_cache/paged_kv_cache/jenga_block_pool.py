@@ -19,6 +19,7 @@ from functools import reduce
 from math import gcd
 
 from max.support.human_readable_formatter import to_human_readable_bytes
+from max.support.math import ceildiv
 
 from .block_utils import (
     FreeHugeKVCacheBlockQueue,
@@ -421,6 +422,11 @@ class JengaBlockPool:
 
         block.ref_cnt += 1
 
+    def block(self, cache_id: str, bid: int) -> LittleKVCacheBlock:
+        """Returns the little block ``bid`` of ``cache_id``."""
+        # Bid 0 is the null block, so a cache's own blocks start at its ratio.
+        return self.little_blocks[cache_id][bid - self.cache_ratios[cache_id]]
+
     def num_free_blocks(self, cache_id: str) -> int:
         """Returns how many more blocks of ``cache_id`` the pool can still serve."""
         # Parked huge blocks already typed to cache_id contribute nothing
@@ -435,6 +441,38 @@ class JengaBlockPool:
             claimable_huge_blocks * self.cache_ratios[cache_id]
             + num_little_blocks
         )
+
+    def can_satisfy_demand(
+        self, demand: dict[str, int], at_capacity: bool = False
+    ) -> bool:
+        """Returns whether the pool can allocate the demanded number of little blocks.
+
+        ``at_capacity`` asks the same of a pool that has handed nothing out
+        yet, making the answer a property of the pool's geometry rather than
+        of what it currently holds.
+        """
+        if at_capacity:
+            claimable = len(self.huge_blocks)
+            carved: dict[str, int] = dict.fromkeys(demand, 0)
+        else:
+            claimable = len(self.free_huge_blocks) - sum(
+                self._parked_and_typed[cache_id] for cache_id in demand
+            )
+            carved = {
+                cache_id: len(self.free_little_blocks[cache_id])
+                for cache_id in demand
+            }
+        # A huge block is carved for exactly one cache, so the demands compete
+        # for the same claimable huge blocks: each cache's shortfall is
+        # converted at its own ratio and charged against a shared budget.
+        # Asking each cache on its own with num_free_blocks would instead let
+        # every one of them believe it has room while together they overrun
+        # the pool.
+        for cache_id, num_blocks in demand.items():
+            shortfall = num_blocks - carved[cache_id]
+            if shortfall > 0:
+                claimable -= ceildiv(shortfall, self.cache_ratios[cache_id])
+        return claimable >= 0
 
     def reset_prefix_cache(self) -> dict[str, int]:
         """Drops every commit no request is holding, in every cache.

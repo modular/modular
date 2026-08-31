@@ -447,3 +447,55 @@ def test_the_null_block_cannot_be_committed() -> None:
         )
 
     assert pool.prefix_caches[GLOBAL] == {}
+
+
+def test_can_satisfy_demand_charges_every_cache_to_one_budget() -> None:
+    # 4 allocatable huge blocks: 8 GLOBAL pages or 16 SCALES pages on their
+    # own, but only 3 huge blocks' worth once both are asked for at once.
+    pool = JengaBlockPool(
+        num_huge_blocks=5, cache_ratios={GLOBAL: 2, SCALES: 4}
+    )
+    assert pool.num_free_blocks(GLOBAL) == 8
+    assert pool.num_free_blocks(SCALES) == 16
+
+    assert pool.can_satisfy_demand({GLOBAL: 8})
+    assert pool.can_satisfy_demand({SCALES: 16})
+    # 8 GLOBAL pages take all 4 huge blocks, leaving none for the scales.
+    assert not pool.can_satisfy_demand({GLOBAL: 8, SCALES: 1})
+    assert pool.can_satisfy_demand({GLOBAL: 6, SCALES: 4})
+
+
+def test_can_satisfy_demand_credits_pages_already_carved() -> None:
+    pool = JengaBlockPool(
+        num_huge_blocks=3, cache_ratios={GLOBAL: 2, SCALES: 4}
+    )
+    # Carve one huge block for each cache and hand a page back, so both have
+    # free pages while no huge block is left to claim.
+    for cache_id in (GLOBAL, SCALES):
+        pool.free_block(pool.alloc_block(cache_id))
+
+    # Each cache alone would retype the other's parked huge block, so on its
+    # own it counts far more than the pages both can hold at once.
+    assert pool.num_free_blocks(GLOBAL) == 4
+    assert pool.num_free_blocks(SCALES) == 8
+    assert pool.can_satisfy_demand({GLOBAL: 2, SCALES: 4})
+    assert not pool.can_satisfy_demand({GLOBAL: 3, SCALES: 4})
+    assert not pool.can_satisfy_demand({GLOBAL: 4, SCALES: 8})
+    check_invariants(pool)
+
+
+def test_can_satisfy_demand_at_capacity_ignores_what_is_out() -> None:
+    pool = JengaBlockPool(
+        num_huge_blocks=5, cache_ratios={GLOBAL: 2, SCALES: 4}
+    )
+    demand = {GLOBAL: 6, SCALES: 4}
+    assert pool.can_satisfy_demand(demand)
+
+    # Drain the pool: the live answer flips, the geometric one does not.
+    for _ in range(8):
+        pool.alloc_block(GLOBAL)
+
+    assert not pool.can_satisfy_demand(demand)
+    assert pool.can_satisfy_demand(demand, at_capacity=True)
+    # Still bounded by the geometry -- 4 huge blocks is all there ever is.
+    assert not pool.can_satisfy_demand({GLOBAL: 8, SCALES: 1}, at_capacity=True)
