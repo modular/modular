@@ -1277,6 +1277,11 @@ class DistributedAllreduceSumOp(max._core.Operation):
     Allreduce takes in inputs each coming from a different device with
     the same shape as the final output and performs a sum reduction
     across the devices.
+
+    When `group_size` is set to a nonzero value smaller than the number of
+    inputs, contiguous runs of `group_size` devices form independent
+    allreduce groups (e.g. tensor-parallel groups under data parallelism);
+    shapes must then only match within each group.
     """
 
     def __init__(
@@ -1288,6 +1293,7 @@ class DistributedAllreduceSumOp(max._core.Operation):
         inputs: Sequence[max._core.Value[max._core.Type]],
         signal_buffers: Sequence[max._core.Value[max._core.Type]],
         in_chain: max._core.Value[ChainType],
+        group_size: max._core.dialects.builtin.IntegerAttr,
     ) -> None: ...
     @property
     def inputs(self) -> Sequence[max._core.Value[max._core.Type]]: ...
@@ -1295,6 +1301,12 @@ class DistributedAllreduceSumOp(max._core.Operation):
     def signal_buffers(self) -> Sequence[max._core.Value[max._core.Type]]: ...
     @property
     def in_chain(self) -> max._core.Value[ChainType]: ...
+    @property
+    def group_size(self) -> int: ...
+    @group_size.setter
+    def group_size(
+        self, arg: max._core.dialects.builtin.IntegerAttr, /
+    ) -> None: ...
 
 class AndOp(max._core.Operation):
     """
