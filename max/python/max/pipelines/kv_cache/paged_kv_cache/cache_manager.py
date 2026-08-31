@@ -324,9 +324,16 @@ class PagedKVCacheManager(PagedKVCacheManagerInterface):
             params.allocate_buffers(total_num_pages + 1)
         )
 
-        # Per-replica offload-ready KV memory (each replica's device buffers).
+        # Per-replica offload-ready KV memory, keyed by leaf id (each buffer's
+        # `to_memory()` emits one unit per leaf in `params.leaves()` order).
         replica_kv_memory = [
-            self._kv_buffers[replica_idx].to_memory()
+            dict(
+                zip(
+                    params.leaves(),
+                    self._kv_buffers[replica_idx].to_memory(),
+                    strict=True,
+                )
+            )
             for replica_idx in range(num_replicas)
         ]
 
@@ -336,6 +343,7 @@ class PagedKVCacheManager(PagedKVCacheManagerInterface):
             devices=devices,
             replica_kv_memory=replica_kv_memory,
             params=params,
+            device_memory_bytes=(total_num_pages + 1) * params.bytes_per_block,
         )
 
         persistent_buffers: list[_PersistentKVDeviceInputBuffers] = [
@@ -353,7 +361,9 @@ class PagedKVCacheManager(PagedKVCacheManagerInterface):
         # block manager needs each replica's device memory to perform the copy.
         cross_replica_kv_memory: Sequence[Sequence[KVCacheMemory]] | None = None
         if num_replicas > 1 and params.enable_prefix_caching:
-            cross_replica_kv_memory = replica_kv_memory
+            cross_replica_kv_memory = [
+                list(memories.values()) for memories in replica_kv_memory
+            ]
 
         # A single block manager owns every replica's device block pool and the
         # single shared connector.

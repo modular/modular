@@ -35,7 +35,9 @@ def lcm(*numbers: int) -> int:
 
 
 def compute_jenga_ratios(
-    available_bytes: int, cache_sizes: Mapping[str, int]
+    available_bytes: int,
+    cache_sizes: Mapping[str, int],
+    include_null_block: bool = True,
 ) -> tuple[int, int, dict[str, int]]:
     """Fits a byte budget to a huge block geometry every cache tiles exactly.
 
@@ -48,6 +50,7 @@ def compute_jenga_ratios(
     Args:
         available_bytes: The per-device KV budget the pool may occupy.
         cache_sizes: Each cache's page size in bytes.
+        include_null_block: Whether to include the null block.
 
     Returns:
         How many huge blocks the budget holds, size of each huge block in bytes,
@@ -68,11 +71,12 @@ def compute_jenga_ratios(
 
     huge_page_bytes = lcm(*cache_sizes.values())
     num_huge_blocks = available_bytes // huge_page_bytes
-    if num_huge_blocks < 2:
-        pages = ", ".join(
-            f"{cache_id}={to_human_readable_bytes(size)}"
-            for cache_id, size in cache_sizes.items()
-        )
+
+    pages = ", ".join(
+        f"{cache_id}={to_human_readable_bytes(size)}"
+        for cache_id, size in cache_sizes.items()
+    )
+    if include_null_block and num_huge_blocks < 2:
         raise ValueError(
             f"{to_human_readable_bytes(available_bytes)} is too small to "
             f"build a pool. A huge block is the least common multiple of the "
@@ -82,6 +86,15 @@ def compute_jenga_ratios(
             f"{to_human_readable_bytes(2 * huge_page_bytes)} -- because huge "
             f"block 0 is the null page every cache shares."
         )
+    if num_huge_blocks < 1:
+        raise ValueError(
+            f"{to_human_readable_bytes(available_bytes)} is too small to "
+            f"build a pool. A huge block is the least common multiple of the "
+            f"page sizes ({pages}), so it takes "
+            f"{to_human_readable_bytes(huge_page_bytes)}, and the pool needs "
+            f"at least one of them."
+        )
+
     return (
         num_huge_blocks,
         huge_page_bytes,
