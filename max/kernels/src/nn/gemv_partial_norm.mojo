@@ -68,6 +68,7 @@ from layout import (
     Coord,
     Idx,
     TensorLayout,
+    TensorStorage,
     TileTensor,
     row_major,
     stack_allocation as tt_stack_allocation,
@@ -137,6 +138,11 @@ def gemv_partial_norm_kernel[
     a_layout: TensorLayout,
     b_layout: TensorLayout,
     gamma_layout: TensorLayout,
+    normed_storage: TensorStorage,
+    unnormed_storage: TensorStorage,
+    a_storage: TensorStorage,
+    b_storage: TensorStorage,
+    gamma_storage: TensorStorage,
     TraceBufT: TraceBuf,
     //,
     simd_width: Int,
@@ -145,11 +151,17 @@ def gemv_partial_norm_kernel[
     enable_trace: Bool = False,
     pdl_level: PDLLevel = PDLLevel(),
 ](
-    normed_output: TileTensor[c_type, normed_layout, MutAnyOrigin],
-    unnormed_output: TileTensor[c_type, unnormed_layout, MutAnyOrigin],
-    act: TileTensor[a_type, a_layout, ImmutAnyOrigin],
-    weight: TileTensor[b_type, b_layout, ImmutAnyOrigin],
-    gamma: TileTensor[a_type, gamma_layout, ImmutAnyOrigin],
+    normed_output: TileTensor[
+        c_type, normed_layout, MutAnyOrigin, Storage=normed_storage
+    ],
+    unnormed_output: TileTensor[
+        c_type, unnormed_layout, MutAnyOrigin, Storage=unnormed_storage
+    ],
+    act: TileTensor[a_type, a_layout, ImmutAnyOrigin, Storage=a_storage],
+    weight: TileTensor[b_type, b_layout, ImmutAnyOrigin, Storage=b_storage],
+    gamma: TileTensor[
+        a_type, gamma_layout, ImmutAnyOrigin, Storage=gamma_storage
+    ],
     finish_counter: MutPointer[Int32, MutAnyOrigin],
     trace_buf: TraceBufT,
     eps: Float32,
@@ -177,6 +189,11 @@ def gemv_partial_norm_kernel[
         a_layout: Layout of `act`.
         b_layout: Layout of `weight`.
         gamma_layout: Layout of `gamma`.
+        normed_storage: Storage policy of `normed_output`.
+        unnormed_storage: Storage policy of `unnormed_output`.
+        a_storage: Storage policy of `act`.
+        b_storage: Storage policy of `weight`.
+        gamma_storage: Storage policy of `gamma`.
         TraceBufT: Trace-buffer implementation (`NullTrace` or
             `GmemTrace`). Pass `NullTrace` for zero-overhead untraced
             runs.
@@ -495,6 +512,11 @@ def _gemv_partial_norm_fused[
     comptime assert act.rank == 2 and weight.rank == 2
     comptime assert normed_output.rank == 2 and unnormed_output.rank == 2
     comptime assert gamma.flat_rank == 1
+    comptime assert normed_output.element_size == 1
+    comptime assert unnormed_output.element_size == 1
+    comptime assert act.element_size == 1
+    comptime assert weight.element_size == 1
+    comptime assert gamma.element_size == 1
 
     var m = Int(act.dim[0]())
     assert m == 1, (
@@ -529,6 +551,11 @@ def _gemv_partial_norm_fused[
         a_layout=type_of(act).LayoutType,
         b_layout=type_of(weight).LayoutType,
         gamma_layout=type_of(gamma).LayoutType,
+        normed_storage=type_of(normed_output).Storage,
+        unnormed_storage=type_of(unnormed_output).Storage,
+        a_storage=type_of(act).Storage,
+        b_storage=type_of(weight).Storage,
+        gamma_storage=type_of(gamma).Storage,
         TraceBufT=TraceBufT,
         simd_width=simd_width,
         tile_n=tile_n,
