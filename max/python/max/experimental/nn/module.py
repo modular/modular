@@ -1361,7 +1361,7 @@ def subgraphable(module: _T, *, name: str | None = None) -> _T:
     is used to determine whether an existing subgraph can be used (this process
     is slow, but guarantees correctness).
 
-    .. warning::
+    .. caution::
 
         Kernel fusion cannot cross a subgraph boundary, so prefer marking larger
         modules, like encoder/decoder blocks.
