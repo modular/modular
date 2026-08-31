@@ -428,6 +428,7 @@ kgen.generator @sum_from_zero<upper>() -> index {
   %0 = kgen.param.for i in upper
     has_next :(index) -> i1 @count_to_zero_has_next
     get_next_iter :(!kgen.pointer<index> imm_mem, !kgen.pointer<index> byref_result) -> !kgen.none @count_to_zero
+    lower_bound :(index) -> index @count_to_zero_lower_bound
     (%arg0 = %idx0 : index) -> index {
     kgen.unreachable
   } else {
@@ -456,6 +457,10 @@ kgen.generator @count_to_zero_has_next(%arg0: index) -> !kgen.scalar<bool> {
   %0 = index.cmp ne(%idx0, %arg0)
   %1 = pop.cast_from_builtin %0 : i1 to !kgen.scalar<bool>
   kgen.return %1 : !kgen.scalar<bool>
+}
+
+kgen.generator @count_to_zero_lower_bound(%arg0: index) -> index {
+  kgen.return %arg0 : index
 }
 
 // -----

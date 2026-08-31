@@ -502,6 +502,7 @@ def test_param_for1(cond: Bool, cond2: Bool):
     # CHECK: kgen.param.for [[ITER:[*].*]]: !TrivialRange in
     # CHECK-NEXT: has_next
     # CHECK-NEXT: get_next_iter
+    # CHECK-NEXT: lower_bound
     # CHECK-SAME: {
     comptime for x in TrivialRange():
         # CHECK-NEXT: kgen.param.if {{.*}}paramfor_has_next
@@ -567,6 +568,7 @@ def test_param_for2():
     # CHECK: kgen.param.for [[ITER:[*].*]]: !TrivialRange in
     # CHECK-NEXT: has_next
     # CHECK-NEXT: get_next_iter
+    # CHECK-NEXT: lower_bound
     # CHECK-SAME: {
     comptime for x in TrivialRange():
         # CHECK-NEXT: kgen.param.if {{.*}}paramfor_has_next

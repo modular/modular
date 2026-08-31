@@ -14,6 +14,7 @@
 #include "ElaboratorHelper.h"
 #include "IREvaluatorContext.h"
 #include "KGEN/KGENDialect/KGENAttrs.h"
+#include "KGEN/KGENDialect/KGENEnums.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/Support/NameMangling.h"
 #include "KGEN/TransformUtils/ManglingUtils.h"
@@ -204,4 +205,27 @@ ErrorTreeOrSuccess KGEN::sortAndBundleOffloadOps(
   }
 
   return success();
+}
+
+TypedAttr KGEN::paramForIteratorFuncInput(FuncType funcType,
+                                          TypedAttr iterator) {
+  if (hasAddress(funcType.getArgConvention(0)))
+    return StoreToMemAttr::get(iterator, funcType.getArguments()[0]);
+  return iterator;
+}
+
+ErrorTreeOr<int64_t> KGEN::readParamForLowerBoundResult(mlir::Location loc,
+                                                        TypedAttr result) {
+  if (auto simd = dyn_cast<SIMDAttr>(result))
+    return simd.getValues().front().getIntVal().getSExtValue();
+  if (auto intAttr = dyn_cast<IntegerAttr>(result))
+    return intAttr.getValue().getSExtValue();
+  return ErrorTree(loc, "INTERNAL ERROR: paramfor_lower_bound should return "
+                        "an Int or index");
+}
+
+void KGEN::reserveParamForIteratorStates(
+    llvm::SmallVectorImpl<TypedAttr> &values, int64_t lower) {
+  if (lower >= 0)
+    values.reserve(static_cast<size_t>(lower) + 1);
 }

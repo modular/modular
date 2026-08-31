@@ -176,6 +176,7 @@ kgen.generator @foo<DT>() {
   // CHECK:        kgen.param.for
   // CHECK-NEXT: has_next
   // CHECK-NEXT: get_next_iter
+  // CHECK-NEXT: lower_bound
   // CHECK-SAME:     (%arg1 loc(fused<#[[SP0]]>[#[[LOC_ORI]]]) = %arg0 : !kgen.simd<N, DT0>) -> !kgen.simd<N, DT0>
   // CHECK:        } else (%arg1: !kgen.simd<N, DT0> loc(fused<#[[SP0]]>[#[[LOC_ORI]]]))
   kgen.call @bar() : () -> ()
@@ -192,6 +193,7 @@ kgen.generator @bar() always_inline {
     %0 = kgen.param.for I in ?
       has_next :() -> i1 ?
       get_next_iter :() -> () ?
+      lower_bound :() -> index ?
     (%arg1 loc(#loc) = %arg0 : !kgen.simd<N, DT>) -> !kgen.simd<N, DT> {
       kgen.param.yield %arg1 : !kgen.simd<N, DT> loc(#loc)
     } else (%arg1 : !kgen.simd<N, DT> loc(#loc)) {

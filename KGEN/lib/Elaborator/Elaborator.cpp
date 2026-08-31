@@ -1253,11 +1253,49 @@ ElaborationState Elaborator::processParamForOp(ImplNode *parent,
     return failure();
   }
 
+  Attribute getLowerBound;
+  HANDLE_EVALUATOR_CONC(getLowerBound, parent, op.getLoc(), op.getGetLowerBound());
+  auto getLowerBoundSymbol =
+      extractSymbolConstantAttr(cast<TypedAttr>(getLowerBound));
+  if (!getLowerBoundSymbol) {
+    parent->setToError(
+        ErrorTree(op.getLoc(), "INTERNAL ERROR: paramfor_lower_bound should "
+                               "resolve to a concrete function"));
+    return failure();
+  }
+  ErrorTreeOr<FuncOp> getLowerBoundFunc =
+      getConcreteFunction(parent, op.getLoc(), getLowerBoundSymbol);
+  if (getLowerBoundFunc.isError()) {
+    parent->setToError(getLowerBoundFunc.takeError());
+    return failure();
+  }
+  if (!*getLowerBoundFunc)
+    return ElaborationState::skipNode();
+
   // Generate the series of values.
   auto iterator = cast<TypedAttr>(initial);
 
   SmallVector<TypedAttr> values;
   int64_t loopUnrollCount = 0;
+
+  FuncType getLowerBoundType =
+      FuncOp(*getLowerBoundFunc).getFuncTypeGenerator().getBody();
+  parent->getEvaluator().setErrorLoc(op.getLoc());
+  ErrorTreeOr<TypedAttr> lowerBoundResult =
+      parent->getEvaluator().evaluateFunction(
+          *getLowerBoundFunc,
+          paramForIteratorFuncInput(getLowerBoundType, iterator));
+  if (lowerBoundResult.isError()) {
+    parent->setToError(lowerBoundResult.takeError());
+    return failure();
+  }
+  ErrorTreeOr<int64_t> lower =
+      readParamForLowerBoundResult(op.getLoc(), *lowerBoundResult);
+  if (lower.isError()) {
+    parent->setToError(lower.takeError());
+    return failure();
+  }
+  reserveParamForIteratorStates(values, *lower);
 
   while (true) {
     // We will unroll the loop N+1 times, because we have to run the body on the
@@ -1271,10 +1309,8 @@ ElaborationState Elaborator::processParamForOp(ImplNode *parent,
 
     // Check if the iterator is a memory-only type, then hasNextFunc will take
     // a pointer input.
-    TypedAttr hasNextInput = iterator;
-    if (hasAddress(hasNextType.getArgConvention(0)))
-      hasNextInput =
-          StoreToMemAttr::get(iterator, hasNextType.getArguments()[0]);
+    TypedAttr hasNextInput =
+        paramForIteratorFuncInput(hasNextType, iterator);
 
     ErrorTreeOr<TypedAttr> hasNextResult =
         parent->getEvaluator().evaluateFunction(*hasNextFunc, hasNextInput);

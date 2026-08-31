@@ -15,8 +15,10 @@
 #define KGEN_ELABORATOR_ELABORATORHELPER_H
 
 #include "KGEN/KGENDialect/KGENOps.h"
+#include "KGEN/KGENDialect/KGENTypes.h"
 #include "Support/Compiler/ErrorTree.h"
 #include "mlir/IR/BuiltinOps.h"
+#include "llvm/ADT/SmallVector.h"
 #include "mlir/IR/SymbolTable.h"
 #include "llvm/ADT/STLFunctionalExtras.h"
 #include "llvm/ADT/SetVector.h"
@@ -69,6 +71,17 @@ ErrorTreeOrSuccess sortAndBundleOffloadOps(
     mlir::SymbolTable &symTab,
     llvm::function_ref<ErrorTreeOrSuccess(CompileOffloadOp, mlir::StringAttr)>
         bundleOp);
+
+/// Wrap an iterator value for a paramfor_* stub when the stub takes imm_mem.
+TypedAttr paramForIteratorFuncInput(FuncType funcType, TypedAttr iterator);
+
+/// Read the integer result of `paramfor_lower_bound` (`Int` or MLIR `index`).
+ErrorTreeOr<int64_t> readParamForLowerBoundResult(mlir::Location loc,
+                                                  TypedAttr result);
+
+/// Pre-size iterator-state storage from a lower-bound hint (N+1 slots).
+void reserveParamForIteratorStates(llvm::SmallVectorImpl<TypedAttr> &values,
+                                   int64_t lower);
 
 } // namespace M::KGEN
 
