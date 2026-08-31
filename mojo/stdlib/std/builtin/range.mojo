@@ -598,20 +598,40 @@ def _len_as_int[dtype: DType](n: Scalar[dtype]) -> Int:
     is a bug: assert instead. Use `bounds()`, whose upper bound is `None`, for
     the size hint of such a range.
     """
-    comptime if size_of[Scalar[dtype]]() >= size_of[Int]():
+    comptime if size_of[Scalar[dtype]]() > size_of[Int]() or (
+        size_of[Scalar[dtype]]() == size_of[Int]() and dtype.is_unsigned()
+    ):
         assert UInt(n) <= UInt(Int.MAX), "range length exceeds Int.MAX"
 
     return Int(n)
 
 
+def _scalar_range_lower_bound[dtype: DType](len: Scalar[dtype]) -> Int:
+    """Converts a non-negative range length to an `Int` lower-bound hint.
+
+    Unlike `_len_as_int`, lengths above `Int.MAX` clamp to `Int.MAX` rather
+    than asserting.
+    """
+    comptime if size_of[Scalar[dtype]]() > size_of[Int]() or (
+        size_of[Scalar[dtype]]() == size_of[Int]() and dtype.is_unsigned()
+    ):
+        if unlikely(UInt(len) > UInt(Int.MAX)):
+            return Int.MAX
+
+    return Int(len)
+
+
 def _scalar_range_bounds[
     dtype: DType
 ](len: Scalar[dtype]) -> Tuple[Int, Optional[Int]]:
-    comptime if size_of[Scalar[dtype]]() >= size_of[Int]():
+    var lower = _scalar_range_lower_bound(len)
+    comptime if size_of[Scalar[dtype]]() > size_of[Int]() or (
+        size_of[Scalar[dtype]]() == size_of[Int]() and dtype.is_unsigned()
+    ):
         if unlikely(UInt(len) > UInt(Int.MAX)):
-            return (Int.MAX, None)
+            return (lower, None)
 
-    return (Int(len), {Int(len)})
+    return (lower, {lower})
 
 
 @always_inline

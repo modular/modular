@@ -1111,6 +1111,7 @@ def KGEN_ParamForOp : KGENOp<"param.for", [DeclInterface,
     TypedAttrInterface:$initial,
     AttrOfType<KGEN_FuncTypeGeneratorType>:$hasNext,
     AttrOfType<KGEN_FuncTypeGeneratorType>:$getNextIter,
+    AttrOfType<KGEN_FuncTypeGeneratorType>:$getLowerBound,
     KGEN_ParamDeclAttr:$paramDecl,
     Variadic<AnyType>:$operands,
     UnitAttr:$bodyIsolated,
@@ -1121,16 +1122,18 @@ def KGEN_ParamForOp : KGENOp<"param.for", [DeclInterface,
 
   let builders = [
     OpBuilder<(ins "TypedAttr":$initial, "TypedAttr":$hasNext,
-                   "TypedAttr":$getNextIter, "ParamDeclAttr":$paramDecl), [{
-      build($_builder, $_state, {}, initial, hasNext, getNextIter, paramDecl,
-            {}, {}, {});
+                   "TypedAttr":$getNextIter, "TypedAttr":$getLowerBound,
+                   "ParamDeclAttr":$paramDecl), [{
+      build($_builder, $_state, {}, initial, hasNext, getNextIter,
+            getLowerBound, paramDecl, {}, {}, {});
     }]>
   ];
 
   let assemblyFormat = [{
     custom<ParamDecl>($paramDecl) `in` custom<ColonTypeParamValue>($initial)`\n`
     `has_next` custom<ColonTypeParamValue>($hasNext) `\n`
-    `get_next_iter` custom<ColonTypeParamValue>($getNextIter)
+    `get_next_iter` custom<ColonTypeParamValue>($getNextIter) `\n`
+    `lower_bound` custom<ColonTypeParamValue>($getLowerBound)
     custom<Loop>($operands, type($operands), type($results), $body)
     `else` custom<RegionWithArgs>($elseRegion) attr-dict
   }];

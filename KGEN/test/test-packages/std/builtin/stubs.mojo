@@ -1600,6 +1600,12 @@ def paramfor_next_value[
         abort()
 
 
+def paramfor_lower_bound[
+    IteratorType: Iterator
+](it: IteratorType) -> Int:
+    return 0
+
+
 struct Optional[T: Movable](Copyable):
     def __deinit__(deinit self):
         pass

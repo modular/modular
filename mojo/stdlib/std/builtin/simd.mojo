@@ -974,9 +974,8 @@ struct SIMD[dtype: DType, length: SIMDLength](
             int_dtype.is_integral()
         ), "the SIMD type must be integral"
 
-        comptime if Self.dtype == DType.bool and int_dtype in (
-            DType.uint8,
-            DType.int8,
+        comptime if Self.dtype == DType.bool and (
+            int_dtype == DType.uint8 or int_dtype == DType.int8
         ):
             self = from_bits.ne(0)._refine[Self.dtype]()
         else:
@@ -2281,11 +2280,11 @@ struct SIMD[dtype: DType, length: SIMDLength](
                 # use the optimizations defined above.
                 return self.cast[DType.float32]().cast[target]()
 
-        comptime if target in (
-            DType.float8_e4m3fn,
-            DType.float8_e4m3fnuz,
-            DType.float8_e5m2,
-            DType.float8_e5m2fnuz,
+        comptime if (
+            target == DType.float8_e4m3fn
+            or target == DType.float8_e4m3fnuz
+            or target == DType.float8_e5m2
+            or target == DType.float8_e5m2fnuz
         ):
             # TODO(KERN-1488): use gpu (H100) instruction to convert from fp16 to fp8
             return _convert_f32_to_float8[target](self.cast[DType.float32]())
@@ -2295,17 +2294,17 @@ struct SIMD[dtype: DType, length: SIMDLength](
                 self.cast[DType.float32]()
             )
 
-        comptime if Self.dtype in (
-            DType.float8_e4m3fn,
-            DType.float8_e4m3fnuz,
-            DType.float8_e5m2,
-            DType.float8_e5m2fnuz,
+        comptime if (
+            Self.dtype == DType.float8_e4m3fn
+            or Self.dtype == DType.float8_e4m3fnuz
+            or Self.dtype == DType.float8_e5m2
+            or Self.dtype == DType.float8_e5m2fnuz
         ):
-            comptime assert target in (
-                DType.bfloat16,
-                DType.float16,
-                DType.float32,
-                DType.float64,
+            comptime assert (
+                target == DType.bfloat16
+                or target == DType.float16
+                or target == DType.float32
+                or target == DType.float64
             ), String(
                 (
                     "Only FP8->F64, FP8->F32, FP8->F16, and FP8->BF16"
@@ -2335,7 +2334,11 @@ struct SIMD[dtype: DType, length: SIMDLength](
                 self._refine[DType.bfloat16](),
             ).cast[target]()
 
-        comptime if Self.dtype in (DType._uint1, DType._uint2, DType._uint4):
+        comptime if (
+            Self.dtype == DType._uint1
+            or Self.dtype == DType._uint2
+            or Self.dtype == DType._uint4
+        ):
             # `pop.cast` doesn't support some conversions from `ui1`, `ui2`, or `ui4`
             var uint = __mlir_op.`pop.cast`[
                 _type=SIMD[.uint32, Self.length]._mlir_type,
@@ -3767,7 +3770,7 @@ def _convert_float8_to_f32_scalar[
     if exp_mantissa == 0x00:
         result = Scalar[result_dtype](0)
 
-    comptime if dtype in (DType.float8_e4m3fn, DType.float8_e5m2):
+    comptime if (dtype == DType.float8_e4m3fn or dtype == DType.float8_e5m2):
         comptime if dtype == DType.float8_e4m3fn:
             if exp_mantissa == 0x7F:
                 result = _nan[result_dtype]()
@@ -3779,7 +3782,9 @@ def _convert_float8_to_f32_scalar[
 
     result = FPUtils.set_sign(result, FPUtils.get_sign(x))
 
-    comptime if dtype in (DType.float8_e4m3fnuz, DType.float8_e5m2fnuz):
+    comptime if (
+        dtype == DType.float8_e4m3fnuz or dtype == DType.float8_e5m2fnuz
+    ):
         if x_bits == 0x80:
             result = _nan[result_dtype]()
 
@@ -3791,26 +3796,17 @@ def _convert_float8_to_f32[
     dtype: DType,
     size: SIMDLength,
 ](val: SIMD[dtype, size]) -> SIMD[.float32, size]:
-    comptime if _is_sm_9x_or_newer() and not _is_sm_120x_or_newer() and dtype in (
-        DType.float8_e4m3fn,
-        DType.float8_e5m2,
+    comptime if _is_sm_9x_or_newer() and not _is_sm_120x_or_newer() and (
+        dtype == DType.float8_e4m3fn or dtype == DType.float8_e5m2
     ):
         return _convert_float8_to_f16(val).cast[DType.float32]()
 
     elif (
         _is_amd_mi300x()
-        and dtype
-        in (
-            DType.float8_e4m3fnuz,
-            DType.float8_e5m2fnuz,
-        )
+        and (dtype == DType.float8_e4m3fnuz or dtype == DType.float8_e5m2fnuz)
     ) or (
         _cdna_4_or_newer()
-        and dtype
-        in (
-            DType.float8_e4m3fn,
-            DType.float8_e5m2,
-        )
+        and (dtype == DType.float8_e4m3fn or dtype == DType.float8_e5m2)
     ):
         var res = __mlir_op.`pop.cast`[_type=SIMD[.float32, size]._mlir_type](
             val._mlir_value
@@ -3833,9 +3829,8 @@ def _convert_float8_to_f16[
     dtype: DType,
     size: SIMDLength,
 ](val: SIMD[dtype, size]) -> SIMD[.float16, size]:
-    comptime if _is_sm_9x_or_newer() and not _is_sm_120x_or_newer() and dtype in (
-        DType.float8_e4m3fn,
-        DType.float8_e5m2,
+    comptime if _is_sm_9x_or_newer() and not _is_sm_120x_or_newer() and (
+        dtype == DType.float8_e4m3fn or dtype == DType.float8_e5m2
     ):
         # do not call `SIMD.cast` here; the inliner will diverge
         var res = __mlir_op.`pop.cast`[_type=SIMD[.float16, size]._mlir_type](
@@ -3855,18 +3850,16 @@ def _convert_f32_to_float8[
 ](val: SIMD[dtype, size]) -> SIMD[target, size]:
     comptime if (
         _is_sm_9x_or_newer() or _cdna_4_or_newer()
-    ) and not _is_sm_120x_or_newer() and target in (
-        DType.float8_e4m3fn,
-        DType.float8_e5m2,
+    ) and not _is_sm_120x_or_newer() and (
+        target == DType.float8_e4m3fn or target == DType.float8_e5m2
     ):
         # do not call `SIMD.cast` here; the inliner will diverge
         var res = __mlir_op.`pop.cast`[_type=SIMD[target, size]._mlir_type](
             val._mlir_value
         )
         return SIMD(mlir_value=res)
-    elif _is_amd_mi300x() and target in (
-        DType.float8_e4m3fnuz,
-        DType.float8_e5m2fnuz,
+    elif _is_amd_mi300x() and (
+        target == DType.float8_e4m3fnuz or target == DType.float8_e5m2fnuz
     ):
         var res = __mlir_op.`pop.cast`[_type=SIMD[target, size]._mlir_type](
             val._mlir_value
@@ -3895,7 +3888,9 @@ def _convert_f32_to_float8_scalar[
     def max_finite_byte() -> UInt8:
         comptime if target == DType.float8_e4m3fn:
             return UInt8(0x7E)
-        elif target in (DType.float8_e4m3fnuz, DType.float8_e5m2fnuz):
+        elif (
+            target == DType.float8_e4m3fnuz or target == DType.float8_e5m2fnuz
+        ):
             return UInt8(0x7F)
         else:
             comptime assert target == DType.float8_e5m2
@@ -3921,12 +3916,14 @@ def _convert_f32_to_float8_scalar[
 
     # NaN => NaN
     if _isnan(x):
-        comptime if target in (DType.float8_e4m3fn, DType.float8_e5m2):
+        comptime if (
+            target == DType.float8_e4m3fn or target == DType.float8_e5m2
+        ):
             return bitcast[target](UInt8(0x7F))
         else:
-            comptime assert target in (
-                DType.float8_e4m3fnuz,
-                DType.float8_e5m2fnuz,
+            comptime assert (
+                target == DType.float8_e4m3fnuz
+                or target == DType.float8_e5m2fnuz
             )
             return bitcast[target](UInt8(0x80))
 
@@ -3984,7 +3981,9 @@ def _convert_f32_to_float8_scalar[
         u = (u + 1).cast[DType.uint8]()
 
     # Special case for dtypes that lack a representation for signed zero.
-    comptime if target in (DType.float8_e4m3fnuz, DType.float8_e5m2fnuz):
+    comptime if (
+        target == DType.float8_e4m3fnuz or target == DType.float8_e5m2fnuz
+    ):
         if u == 0:
             return bitcast[target](UInt8(0))
 

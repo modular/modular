@@ -1918,13 +1918,17 @@ ParseResult StmtParser::parseParamFor(size_t curIndent, SMLoc forLoc,
   PValue getNextValue = getMutFnWrapper("paramfor_next_value");
   if (!getNextValue)
     return failure();
+  PValue getLowerBound = getMutFnWrapper("paramfor_lower_bound");
+  if (!getLowerBound)
+    return failure();
 
   // Build the iterator value parameter.
   auto iterDecl = ParamDeclAttr::get(scope.mangleParamName("iter"), iterType);
 
   // Create the loop and parse the body into it.
   auto paramFor = ParamForOp::create(builder, forLocation, initialIterVal,
-                                     hasNext, getNextIter, iterDecl);
+                                     hasNext, getNextIter, getLowerBound,
+                                     iterDecl);
 
   builder.createBlock(&paramFor.getBody());
 

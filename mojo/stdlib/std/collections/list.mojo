@@ -56,7 +56,7 @@ struct _ListIter[
     T: Copyable,
     origin: Origin[mut=mut],
     forward: Bool = True,
-](ImplicitlyCopyable, Iterable, Iterator):
+](ImplicitlyCopyable, Iterable, Iterator, Sized):
     """Iterator for List.
 
     Parameters:
@@ -95,20 +95,21 @@ struct _ListIter[
             return self._data[unsafe_offset=self._index]
 
     @always_inline
-    def bounds(self) -> Tuple[Int, Optional[Int]]:
-        var iter_len: Int
-
+    def __len__(self) -> Int:
         comptime if Self.forward:
-            iter_len = self._length - self._index
+            return self._length - self._index
         else:
-            iter_len = self._index
+            return self._index
 
+    @always_inline
+    def bounds(self) -> Tuple[Int, Optional[Int]]:
+        var iter_len = len(self)
         return (iter_len, {iter_len})
 
 
 @fieldwise_init
 struct _ListIterOwned[T: Movable & Deinitable](
-    IterableOwned, Iterator, Movable
+    IterableOwned, Iterator, Movable, Sized
 ):
     """An owning iterator for List.
 
@@ -147,8 +148,12 @@ struct _ListIterOwned[T: Movable & Deinitable](
         )
 
     @always_inline
+    def __len__(self) -> Int:
+        return len(self._list) - self._index
+
+    @always_inline
     def bounds(self) -> Tuple[Int, Optional[Int]]:
-        var iter_len = len(self._list) - self._index
+        var iter_len = len(self)
         return (iter_len, {iter_len})
 
 

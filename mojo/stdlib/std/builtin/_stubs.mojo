@@ -78,3 +78,13 @@ def paramfor_next_value[
         return result.__next__()
     except:
         _abort_base()
+
+
+def paramfor_lower_bound[IteratorType: Iterator](it: IteratorType) -> Int:
+    # Lower-bound hint for elaborator `values.reserve` only. Prefer `len()`
+    # when the iterator is Sized; otherwise 0. The has_next/next walk remains
+    # authoritative. Avoids an Iterator trait hook and `bounds()` (Optional /
+    # Variant / Tuple can recurse during elaboration).
+    comptime if conforms_to(IteratorType, Sized):
+        return len(it)
+    return 0
