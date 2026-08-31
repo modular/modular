@@ -69,7 +69,7 @@ comptime FA4_WS_POISON: Bool = get_defined_int["FA4_WS_POISON", 0]() != 0
 
 
 @always_inline
-def _bucket_ws[sm_count: Int](n: Int, p_max: Int) -> Int:
+def _bucket_ws[sm_count: Int](n: Int, p_max: Int, raw_grid: Int) -> Int:
     """Snap a desired workspace split-K partition count UP to the nearest
     `splitk_p_ladder` rung, then CAP at `p_max` (`ws_p_ceiling`'s
     capture-invariant ceiling).
@@ -88,8 +88,30 @@ def _bucket_ws[sm_count: Int](n: Int, p_max: Int) -> Int:
     Rungs below 12 (`2,4,6,8,10`) keep a short cache at a mid/high-batch
     `raw_grid` from jumping straight to 12 partitions; `2`, `4`, and `10` double
     as the fill-all-SM cluster candidates (`_cluster_splitk_candidates`).
+
+    A partition is useful only if it fills an idle SM. An FA4 CTA uses the full
+    TMEM of one SM. A `raw_grid` of `sm_count` or more thus fills every wave
+    but the last one. The last wave leaves some SMs idle when `raw_grid` is not
+    a multiple of `sm_count`.
+
+    The guard below returns one partition for a short cache. But it keeps the
+    split while the last wave is half full or less
+    (`0 < raw_grid % sm_count <= sm_count // 2`). A split then fills SMs that
+    are idle. A fuller last wave has too few idle SMs, and the split costs a
+    wave instead.
     """
     comptime _LADDER = splitk_p_ladder[sm_count]()
+    comptime first_rung: Int = _LADDER[0]
+    # A split to `first_rung` divides the per-CTA work by `first_rung`, so it
+    # pays only if it cuts the wave count by more than that same factor.
+    var waves_unsplit = ceildiv(raw_grid, sm_count)
+    var waves_split = ceildiv(first_rung * raw_grid, sm_count)
+    var split_saves_a_wave = waves_split < first_rung * waves_unsplit
+
+    var short_cache = n < first_rung
+    var grid_saturated = raw_grid >= sm_count
+    if short_cache and grid_saturated and not split_saves_a_wave:
+        return 1
     comptime for v in _LADDER:
         if n <= v:
             return min(v, p_max)
@@ -1140,7 +1162,9 @@ def mha_sm100_dispatch[
                         # pre-clamping against the ceiling first.
                         p_bucket_ws = UInt32(
                             _bucket_ws[ctx.default_device_info.sm_count](
-                                Int(by_cache_ws), Int(p_ceiling_ws)
+                                Int(by_cache_ws),
+                                Int(p_ceiling_ws),
+                                Int(raw_grid_ws),
                             )
                         )
                     if p_bucket_ws > UInt32(1):
@@ -1219,7 +1243,9 @@ def mha_sm100_dispatch[
                         )
                         p_bucket_ws_e = UInt32(
                             _bucket_ws[ctx.default_device_info.sm_count](
-                                Int(by_cache_ws_e), Int(p_ceiling_ws_e)
+                                Int(by_cache_ws_e),
+                                Int(p_ceiling_ws_e),
+                                Int(raw_grid_ws_e),
                             )
                         )
                     if p_bucket_ws_e > UInt32(1):
@@ -1359,7 +1385,9 @@ def mha_sm100_dispatch[
                     ](raw_grid_1q)
                     p_bucket = UInt32(
                         _bucket_ws[ctx.default_device_info.sm_count](
-                            Int(by_cache), Int(p_ceiling)
+                            Int(by_cache),
+                            Int(p_ceiling),
+                            Int(raw_grid_1q),
                         )
                     )
                 if p_bucket > UInt32(1):
