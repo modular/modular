@@ -1549,49 +1549,168 @@ def block_scaled_grouped_matmul_amd_preb[
             # Direct dispatch beats the prior persistent-grid tile here.
             return run_kernel[128, 128, 256, 64, False, waves_per_eu=2]()
 
-    comptime if LB == 24 and N == 6144 and K_LOGICAL == 6144:  # M3 gate+up
-        if etm <= 256:
-            if decode_grid_m_cap > 0 and etm <= decode_grid_m_cap:
-                return run_kernel[
-                    16,
-                    64,
-                    512,
-                    16,
-                    False,
-                    STREAM,
-                    use_decode_cap=True,
-                    pipeline_depth=3,
-                ]()
-            return run_kernel[16, 128, 512, 32, True, STREAM]()
-        elif etm <= 512:
-            return run_kernel[32, 128, 512, 32, True, STREAM]()
-        elif etm <= 2100:
-            return run_kernel[64, 128, 512, 32, True]()
-        elif etm <= 4095:
-            return run_kernel[128, 128, 512, 64, True]()
+    comptime if LB == 24 and N == 4096 and K_LOGICAL == 7168:  # gate+up
+        if etm <= 20:
+            return run_kernel[16, 64, 512, 16, False]()
+        elif etm <= 127:
+            return run_kernel[16, 128, 512, 32, False]()
+        elif etm <= 255:
+            return run_kernel[32, 128, 512, 64, False]()
         else:
-            return run_kernel[64, 128, 512, 64, False]()
+            return run_kernel[32, 64, 256, 64, False]()
+
+    comptime if LB == 24 and N == 6144 and K_LOGICAL == 6144:  # M3 gate+up
+        if decode_grid_m_cap > 0 and etm <= decode_grid_m_cap:
+            return run_kernel[
+                16,
+                64,
+                512,
+                16,
+                False,
+                STREAM,
+                use_decode_cap=True,
+                pipeline_depth=3,
+            ]()
+        if etm <= 3:
+            return run_kernel[
+                16, 64, 512, 16, False, cluster_drain_sched=True, mfma_cluster=2
+            ]()
+        elif etm <= 7:
+            return run_kernel[
+                16,
+                128,
+                512,
+                32,
+                False,
+                cluster_drain_sched=True,
+                mfma_cluster=2,
+            ]()
+        elif etm <= 31:
+            return run_kernel[
+                16, 64, 256, 16, False, cluster_drain_sched=True, mfma_cluster=2
+            ]()
+        elif etm <= 255:
+            return run_kernel[
+                16,
+                128,
+                256,
+                32,
+                False,
+                cluster_drain_sched=True,
+                mfma_cluster=2,
+            ]()
+        else:
+            return run_kernel[
+                32,
+                128,
+                256,
+                64,
+                False,
+                cluster_drain_sched=True,
+                mfma_cluster=2,
+            ]()
 
     comptime if LB == 24 and N == 6144 and K_LOGICAL == 3072:  # M3 down
-        if etm <= 256:
-            if decode_grid_m_cap > 0 and etm <= decode_grid_m_cap:
-                return run_kernel[
-                    16,
-                    64,
-                    512,
-                    16,
-                    False,
-                    STREAM,
-                    use_decode_cap=True,
-                    pipeline_depth=3,
-                ]()
-            return run_kernel[16, 128, 512, 32, True, STREAM]()
-        elif etm <= 512:
-            return run_kernel[32, 128, 512, 32, True, STREAM]()
-        elif etm <= 2100:
-            return run_kernel[64, 128, 512, 32, True]()
+        if decode_grid_m_cap > 0 and etm <= decode_grid_m_cap:
+            return run_kernel[
+                16,
+                64,
+                512,
+                16,
+                False,
+                STREAM,
+                use_decode_cap=True,
+                pipeline_depth=3,
+            ]()
+        if etm <= 3:
+            return run_kernel[
+                16, 64, 512, 16, False, cluster_drain_sched=True, mfma_cluster=2
+            ]()
+        elif etm <= 7:
+            return run_kernel[
+                16,
+                128,
+                512,
+                32,
+                False,
+                cluster_drain_sched=True,
+                mfma_cluster=2,
+            ]()
+        elif etm <= 31:
+            return run_kernel[
+                16, 64, 256, 16, False, cluster_drain_sched=True, mfma_cluster=2
+            ]()
+        elif etm <= 255:
+            return run_kernel[
+                16,
+                128,
+                256,
+                32,
+                False,
+                cluster_drain_sched=True,
+                mfma_cluster=2,
+            ]()
         else:
-            return run_kernel[128, 128, 512, 64, True]()
+            return run_kernel[
+                32,
+                128,
+                256,
+                64,
+                False,
+                cluster_drain_sched=True,
+                mfma_cluster=2,
+            ]()
+
+    comptime if LB == 24:
+        if decode_grid_m_cap > 0 and etm <= decode_grid_m_cap:
+            return run_kernel[
+                16,
+                64,
+                512,
+                16,
+                False,
+                STREAM,
+                use_decode_cap=True,
+                pipeline_depth=3,
+            ]()
+        if etm <= 3:
+            return run_kernel[
+                16, 64, 512, 16, False, cluster_drain_sched=True, mfma_cluster=2
+            ]()
+        elif etm <= 7:
+            return run_kernel[
+                16,
+                128,
+                512,
+                32,
+                False,
+                cluster_drain_sched=True,
+                mfma_cluster=2,
+            ]()
+        elif etm <= 31:
+            return run_kernel[
+                16, 64, 256, 16, False, cluster_drain_sched=True, mfma_cluster=2
+            ]()
+        elif etm <= 255:
+            return run_kernel[
+                16,
+                128,
+                256,
+                32,
+                False,
+                cluster_drain_sched=True,
+                mfma_cluster=2,
+            ]()
+        else:
+            return run_kernel[
+                32,
+                128,
+                256,
+                64,
+                False,
+                cluster_drain_sched=True,
+                mfma_cluster=2,
+            ]()
 
     # Other shapes: persistent below the threshold, direct at/above it.
     # Not a typo: BK counts ELEMENTS, so 256 at MXFP8 is the same LDS/register
