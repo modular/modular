@@ -351,8 +351,8 @@ def radix_sort_pairs_kernel[
     ]()
 
     # Initialize counts[NUM_BUCKETS]
-    var counts_stack = Array[Int32, NUM_BUCKETS](uninitialized=True)
-    var counts_buf = TileTensor(counts_stack, row_major[NUM_BUCKETS]()).fill(0)
+    var counts_stack = Array[Int32, NUM_BUCKETS](fill=0)
+    var counts_buf = TileTensor(counts_stack, row_major[NUM_BUCKETS]())
     var counts = counts_buf.ptr
 
     # Process elements and compute counts for each thread
@@ -437,10 +437,10 @@ def radix_sort_pairs_kernel[
         barrier()
 
     # Each thread initializes local_offsets[NUM_BUCKETS] = 0
-    var local_offsets_stack = Array[Int32, NUM_BUCKETS](uninitialized=True)
+    var local_offsets_stack = Array[Int32, NUM_BUCKETS](fill=0)
     var local_offsets_buf = TileTensor(
         local_offsets_stack, row_major[NUM_BUCKETS]()
-    ).fill(0)
+    )
     var local_offsets = local_offsets_buf.ptr
 
     # Now, each thread processes its elements, computes destination index, write to output

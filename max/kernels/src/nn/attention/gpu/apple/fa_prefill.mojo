@@ -219,15 +219,15 @@ def _softmax_update[
       5. `output *= alpha`
     """
     var m_tile = _softmax_row_max[num_n_mmas](scores)
-    var m_new = Array[Float32, _SOFTMAX_FRAG_ROWS](uninitialized=True)
-    m_new[0] = max(sm_m[0], m_tile[0])
-    m_new[1] = max(sm_m[1], m_tile[1])
+    var m_new = Array[_, _SOFTMAX_FRAG_ROWS](
+        fill_with=lambda (i: Int) -> Float32: max(sm_m[i], m_tile[i])
+    )
     # A still-fully-masked row keeps its running max at the finite NEG_INF floor
     # (finite, so the subtraction never NaNs), and resolves once its first real
     # key arrives in a later tile.
-    var alpha = Array[Float32, _SOFTMAX_FRAG_ROWS](uninitialized=True)
-    alpha[0] = exp2(sm_m[0] - m_new[0])
-    alpha[1] = exp2(sm_m[1] - m_new[1])
+    var alpha = Array[_, _SOFTMAX_FRAG_ROWS](
+        fill_with=lambda (i: Int) -> Float32: exp2(sm_m[i] - m_new[i])
+    )
 
     # Accumulate `l` from each P fragment while it is still register-live (vs a
     # second pass re-reading the written-back scores), shortening the softmax
@@ -275,9 +275,10 @@ def _softmax_normalize[
     window and the key range; causal always attends its own position and the sink
     seed keeps `l >= 1`, so the guard is a no-op there.
     """
-    var inv = Array[Float32, _SOFTMAX_FRAG_ROWS](uninitialized=True)
-    inv[0] = Float32(1) / sm_l[0] if sm_l[0] > Float32(0) else Float32(0)
-    inv[1] = Float32(1) / sm_l[1] if sm_l[1] > Float32(0) else Float32(0)
+    var inv = Array[_, _SOFTMAX_FRAG_ROWS](
+        fill_with=lambda (i: Int) -> Float32: Float32(1) / sm_l[i] if sm_l[i]
+        > Float32(0) else Float32(0)
+    )
     comptime for ni in range(out_num_n_mmas):
         var o = output[ni]
         var o_lo = o.slice[4, offset=0]() * SIMD[.float32, 4](inv[0])

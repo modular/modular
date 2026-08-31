@@ -321,15 +321,13 @@ def mla_combine_kernel[
     ).as_imm()
 
     # Prefetch first split's data into registers
-    var datas = Array[SIMD[output_type, vec_size], elems_per_thread](
-        uninitialized=True
-    )
-
-    comptime for i in range(elems_per_thread):
-        var offset = (
+    var datas = Array[_, elems_per_thread](
+        fill_with_unrolled=lambda [i: Int]() -> SIMD[
+            output_type, vec_size
+        ]: oaccum_base.load[width=vec_size](
             head_dim_offset + lane_idx * vec_size + i * (WARP_SIZE * vec_size)
         )
-        datas[i] = oaccum_base.load[width=vec_size](offset)
+    )
 
     # =========================================================================
     # Step 2: Load LSE values and compute global LSE

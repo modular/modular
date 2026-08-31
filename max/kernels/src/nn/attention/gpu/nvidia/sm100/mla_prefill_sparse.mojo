@@ -681,14 +681,11 @@ struct MLAPrefillSparse[
                 # was prefetched above, chunks 1..N-1 load sequentially.
                 if k > 0 and should_scale_o:
                     tcgen05_load_wait()
-                    var o_scaled_0 = Array[Float32, O_RESCALE_CHUNK](
-                        uninitialized=True
-                    )
-                    comptime for j in range(O_RESCALE_CHUNK):
-                        o_scaled_0[j] = mul_ftz(
-                            o_chunk_prefetch[j],
-                            scale_for_old,
+                    var o_scaled_0 = Array[_, O_RESCALE_CHUNK](
+                        fill_with=lambda (j: Int) -> Float32: mul_ftz(
+                            o_chunk_prefetch[j], scale_for_old
                         )
+                    )
                     tcgen05_st[
                         datapaths=32,
                         bits=32,
@@ -708,14 +705,11 @@ struct MLAPrefillSparse[
                             + UInt32(chunk_idx * O_RESCALE_CHUNK)
                         )
                         tcgen05_load_wait()
-                        var o_scaled = Array[Float32, O_RESCALE_CHUNK](
-                            uninitialized=True
-                        )
-                        comptime for j in range(O_RESCALE_CHUNK):
-                            o_scaled[j] = mul_ftz(
-                                o_chunk[j],
-                                scale_for_old,
+                        var o_scaled = Array[_, O_RESCALE_CHUNK](
+                            fill_with=lambda (j: Int) -> Float32: mul_ftz(
+                                o_chunk[j], scale_for_old
                             )
+                        )
                         tcgen05_st[
                             datapaths=32,
                             bits=32,
