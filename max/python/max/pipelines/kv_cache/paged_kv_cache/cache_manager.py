@@ -416,8 +416,10 @@ class PagedKVCacheManager(PagedKVCacheManagerInterface):
             block_manager.kv_hash_seed,
         )
         return [
-            replica.block_manager.count_cached_prefix_blocks(block_hashes)
-            for replica in self._replica
+            replica.block_manager.count_cached_prefix_blocks(
+                block_hashes, replica_idx
+            )
+            for replica_idx, replica in enumerate(self._replica)
         ]
 
     def alloc(self, ctx: TextContext) -> KVConnectorTransfer:
