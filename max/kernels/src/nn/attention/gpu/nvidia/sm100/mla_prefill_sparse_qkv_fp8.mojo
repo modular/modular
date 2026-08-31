@@ -114,7 +114,7 @@ from layout import (
     row_major,
     Idx,
     TensorLayout,
-    TensorStorage,
+    TensorEngine,
     Coord,
 )
 from layout.swizzle import make_swizzle, make_ldmatrix_swizzle
@@ -723,8 +723,8 @@ struct MLAPrefillSparseQKVFP8[
     def kernel[
         TopKLengthLayout: TensorLayout,
         IndicesLayout: TensorLayout,
-        TopKLengthStorage: TensorStorage,
-        IndicesStorage: TensorStorage,
+        TopKLengthEngine: TensorEngine,
+        IndicesEngine: TensorEngine,
     ](
         q_tma_op: TMATensorTile[
             FP8_TYPE, 3, Self.q_tile_shape, Self.q_desc_shape
@@ -736,10 +736,10 @@ struct MLAPrefillSparseQKVFP8[
             Self.output_dtype, 2, Self.o_tile_shape, Self.o_desc_shape
         ],
         topk_lengths: TileTensor[
-            .uint32, TopKLengthLayout, MutAnyOrigin, Storage=TopKLengthStorage
+            .uint32, TopKLengthLayout, MutAnyOrigin, Engine=TopKLengthEngine
         ],
         indices: TileTensor[
-            .uint32, IndicesLayout, MutAnyOrigin, Storage=IndicesStorage
+            .uint32, IndicesLayout, MutAnyOrigin, Engine=IndicesEngine
         ],
         kv_lut: Self.KVLUTType,
         scale: Float32,
@@ -1647,8 +1647,8 @@ def mla_prefill_sparse_qkv_fp8[
     ].kernel[
         type_of(topk_lengths).LayoutType,
         type_of(indices).LayoutType,
-        type_of(topk_lengths).Storage,
-        type_of(indices).Storage,
+        type_of(topk_lengths).Engine,
+        type_of(indices).Engine,
     ]
 
     comptime smem_size = size_of[MLASparseSharedMemoryQKVFP8[config]]()

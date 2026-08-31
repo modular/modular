@@ -68,7 +68,7 @@ from layout import (
     Coord,
     Idx,
     TensorLayout,
-    TensorStorage,
+    TensorEngine,
     TileTensor,
     row_major,
     stack_allocation as tt_stack_allocation,
@@ -138,11 +138,11 @@ def gemv_partial_norm_kernel[
     a_layout: TensorLayout,
     b_layout: TensorLayout,
     gamma_layout: TensorLayout,
-    normed_storage: TensorStorage,
-    unnormed_storage: TensorStorage,
-    a_storage: TensorStorage,
-    b_storage: TensorStorage,
-    gamma_storage: TensorStorage,
+    normed_engine: TensorEngine,
+    unnormed_engine: TensorEngine,
+    a_engine: TensorEngine,
+    b_engine: TensorEngine,
+    gamma_engine: TensorEngine,
     TraceBufT: TraceBuf,
     //,
     simd_width: Int,
@@ -152,15 +152,15 @@ def gemv_partial_norm_kernel[
     pdl_level: PDLLevel = PDLLevel(),
 ](
     normed_output: TileTensor[
-        c_type, normed_layout, MutAnyOrigin, Storage=normed_storage
+        c_type, normed_layout, MutAnyOrigin, Engine=normed_engine
     ],
     unnormed_output: TileTensor[
-        c_type, unnormed_layout, MutAnyOrigin, Storage=unnormed_storage
+        c_type, unnormed_layout, MutAnyOrigin, Engine=unnormed_engine
     ],
-    act: TileTensor[a_type, a_layout, ImmutAnyOrigin, Storage=a_storage],
-    weight: TileTensor[b_type, b_layout, ImmutAnyOrigin, Storage=b_storage],
+    act: TileTensor[a_type, a_layout, ImmutAnyOrigin, Engine=a_engine],
+    weight: TileTensor[b_type, b_layout, ImmutAnyOrigin, Engine=b_engine],
     gamma: TileTensor[
-        a_type, gamma_layout, ImmutAnyOrigin, Storage=gamma_storage
+        a_type, gamma_layout, ImmutAnyOrigin, Engine=gamma_engine
     ],
     finish_counter: MutPointer[Int32, MutAnyOrigin],
     trace_buf: TraceBufT,
@@ -189,11 +189,11 @@ def gemv_partial_norm_kernel[
         a_layout: Layout of `act`.
         b_layout: Layout of `weight`.
         gamma_layout: Layout of `gamma`.
-        normed_storage: Storage policy of `normed_output`.
-        unnormed_storage: Storage policy of `unnormed_output`.
-        a_storage: Storage policy of `act`.
-        b_storage: Storage policy of `weight`.
-        gamma_storage: Storage policy of `gamma`.
+        normed_engine: Engine policy of `normed_output`.
+        unnormed_engine: Engine policy of `unnormed_output`.
+        a_engine: Engine policy of `act`.
+        b_engine: Engine policy of `weight`.
+        gamma_engine: Engine policy of `gamma`.
         TraceBufT: Trace-buffer implementation (`NullTrace` or
             `GmemTrace`). Pass `NullTrace` for zero-overhead untraced
             runs.
@@ -551,11 +551,11 @@ def _gemv_partial_norm_fused[
         a_layout=type_of(act).LayoutType,
         b_layout=type_of(weight).LayoutType,
         gamma_layout=type_of(gamma).LayoutType,
-        normed_storage=type_of(normed_output).Storage,
-        unnormed_storage=type_of(unnormed_output).Storage,
-        a_storage=type_of(act).Storage,
-        b_storage=type_of(weight).Storage,
-        gamma_storage=type_of(gamma).Storage,
+        normed_engine=type_of(normed_output).Engine,
+        unnormed_engine=type_of(unnormed_output).Engine,
+        a_engine=type_of(act).Engine,
+        b_engine=type_of(weight).Engine,
+        gamma_engine=type_of(gamma).Engine,
         TraceBufT=TraceBufT,
         simd_width=simd_width,
         tile_n=tile_n,

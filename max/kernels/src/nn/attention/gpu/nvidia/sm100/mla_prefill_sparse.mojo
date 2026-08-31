@@ -100,7 +100,7 @@ from layout import (
     row_major,
     Idx,
     TensorLayout,
-    TensorStorage,
+    TensorEngine,
     Coord,
     stack_allocation as tt_stack_allocation,
 )
@@ -298,8 +298,8 @@ struct MLAPrefillSparse[
     def kernel[
         TopKLengthLayout: TensorLayout,
         IndicesLayout: TensorLayout,
-        TopKLengthStorage: TensorStorage,
-        IndicesStorage: TensorStorage,
+        TopKLengthEngine: TensorEngine,
+        IndicesEngine: TensorEngine,
     ](
         q_tma_op: TMATensorTile[
             Self.qkv_dtype,
@@ -326,10 +326,10 @@ struct MLAPrefillSparse[
             Self.o_desc_shape,
         ],
         topk_lengths: TileTensor[
-            .uint32, TopKLengthLayout, MutAnyOrigin, Storage=TopKLengthStorage
+            .uint32, TopKLengthLayout, MutAnyOrigin, Engine=TopKLengthEngine
         ],
         indices: TileTensor[
-            .uint32, IndicesLayout, MutAnyOrigin, Storage=IndicesStorage
+            .uint32, IndicesLayout, MutAnyOrigin, Engine=IndicesEngine
         ],
         kv_lut: Self.KVLUTType,
         scale: Float32,
@@ -1513,8 +1513,8 @@ def mla_prefill_sparse[
     ].kernel[
         type_of(topk_lengths).LayoutType,
         type_of(indices).LayoutType,
-        type_of(topk_lengths).Storage,
-        type_of(indices).Storage,
+        type_of(topk_lengths).Engine,
+        type_of(indices).Engine,
     ]
 
     comptime smem_size = size_of[MLASparseSharedMemory[config]]()
