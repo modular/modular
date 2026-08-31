@@ -210,6 +210,13 @@ def test_sum_pos_arg_and_kwargs() -> None:
     assert result == 100
 
 
+def test_kwargs_functions_returning_none() -> None:
+    values: list[int] = []
+    assert def_function.append_kwarg(values, value=42) is None
+    assert values == [42]
+    assert def_function.ignore_kwargs(a=1, b=2) is None
+
+
 def test_fastcall_concat_direct_overload() -> None:
     # Exercises the def_py_c_function(PyCFunctionFast, ...) overload: a
     # hand-written METH_FASTCALL wrapper registered without the

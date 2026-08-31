@@ -144,6 +144,10 @@ This version is still a work in progress.
   var moved = c.replace[1](Int64(7))  # Coord(ComptimeInt[3](), Int64(7))
   ```
 
+- Python functions exposed through `PythonModuleBuilder.def_function()`,
+  `PythonTypeBuilder.def_method()`, and `PythonTypeBuilder.def_staticmethod()`
+  no longer have a library-imposed limit on positional arguments.
+
 - `List.extend` and `List.resize` now grow geometrically, so repeatedly
   extending or resizing by a small increment is no longer quadratic. As a
   result `capacity()` can report more than was asked for. `reserve` is

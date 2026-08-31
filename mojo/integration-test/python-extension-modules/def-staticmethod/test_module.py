@@ -179,3 +179,13 @@ def test_takes_three_raises() -> None:
     assert cm.value.args == ("list_obj must have length 3",)
 
     _test_takes_three(dummy.takes_three_raises)
+
+
+def test_kwargs_staticmethods() -> None:
+    dummy = def_staticmethod.Dummy
+    assert dummy.sum_pos_arg_and_kwargs(20, bonus=10, extra=5) == 35
+
+    values: list[int] = []
+    assert dummy.append_kwarg(values, value=42) is None
+    assert values == [42]
+    assert dummy.ignore_kwargs(a=1, b=2) is None
