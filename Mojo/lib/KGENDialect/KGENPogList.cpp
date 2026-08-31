@@ -257,6 +257,10 @@ SmallVector<PogMetadataAttr> PogListAttr::toPogs(
   return pogs;
 }
 
+bool PogListAttr::isConstant() const {
+  return llvm::all_of(getPogs(), ParameterAttr::isSimpleConstant);
+}
+
 //===----------------------------------------------------------------------===//
 // PogListAttr generator hooks
 //===----------------------------------------------------------------------===//

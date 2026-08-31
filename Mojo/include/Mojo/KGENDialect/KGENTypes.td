@@ -281,15 +281,17 @@ def KGEN_FuncGeneratorTypeBuilderType : KGENType<"FuncGeneratorTypeBuilder",
     from its components: the parameters declared by the generator (an array of
     `fn_gen_builder.param.decl`s), the argument types (a `param_list` of
     `kgen.type`), the result type (a `kgen.type`), the function metadata (a
-    `fn_metadata`), and the implicit origin declarations (a `param_list` of
-    `kgen.string` names). It folds into the generator type itself once all of
-    its components are constant.
+    `fn_metadata`), the generator's parameter pog list (a `pog_list` of the
+    declared parameters' metadata), and the argument pog list (a `pog_list` of
+    the arguments' metadata). It folds into the generator type itself once all
+    of its components are constant.
 
     Every component is a parameter expression, so a still-symbolic piece (e.g.
     an argument pack referenced by name) can be represented before elaboration.
 
-    NOTE: the builder constructs a bare FuncTypeGeneratorType, poglist for
-    param/arg should be attached later.
+    The two pog lists are attached to the folded result: the parameter pog
+    list becomes the `paramListAttrs` of the constructed `GeneratorType`, and
+    the argument pog list becomes the `argListAttrs` of the wrapped `FuncType`.
 
     Example:
 
@@ -299,7 +301,9 @@ def KGEN_FuncGeneratorTypeBuilderType : KGENType<"FuncGeneratorTypeBuilder",
       #kgen.param.decl.ref<"Ts"> : !kgen.param_list<!kgen.type>,
       #kgen.fn_gen_builder.param.decl.ref<"T", type>,
       #kgen.fn_metadata<[read], "none">,
-      #kgen.param_list<> : !kgen.param_list<!kgen.string>>
+      #kgen.pog_list<["T"], [pos]>,
+      #kgen.pog_list<["x"], [pos_or_kw]>
+    >
     ```
   }];
 
@@ -307,11 +311,14 @@ def KGEN_FuncGeneratorTypeBuilderType : KGENType<"FuncGeneratorTypeBuilder",
     "TypedAttr":$paramDecls,
     "TypedAttr":$argTypes,
     "TypedAttr":$resultType,
-    "TypedAttr":$metadata
+    "TypedAttr":$metadata,
+    OptionalParameter<"TypedAttr">:$paramListAttrs,
+    OptionalParameter<"TypedAttr">:$argListAttrs
   );
 
   let assemblyFormat = [{
-    `<` $paramDecls `,` $argTypes `,` $resultType `,` $metadata  `>`
+    `<` $paramDecls `,` $argTypes `,` $resultType `,` $metadata
+        (`,` $paramListAttrs^)? (`,` $argListAttrs^)? `>`
   }];
 
   let genVerifyDecl = 1;
@@ -325,14 +332,17 @@ def KGEN_FuncGeneratorTypeBuilderType : KGENType<"FuncGeneratorTypeBuilder",
     TypeBuilderWithInferredContext<(ins "TypedAttr":$paramDecls,
                                         "TypedAttr":$argTypes,
                                         "TypedAttr":$resultType,
-                                        "TypedAttr":$metadata), [{
+                                        "TypedAttr":$metadata,
+                                        "TypedAttr":$paramListAttrs,
+                                        "TypedAttr":$argListAttrs), [{
       return get(paramDecls.getContext(), paramDecls, argTypes, resultType,
-                 metadata);
+                 metadata, paramListAttrs, argListAttrs);
     }], "Type">,
 
     // Verbose form with MLIRContext, used by the generated parser.
     TypeBuilder<(ins "TypedAttr":$paramDecls, "TypedAttr":$argTypes,
-                     "TypedAttr":$resultType, "TypedAttr":$metadata),
+                     "TypedAttr":$resultType, "TypedAttr":$metadata,
+                     "TypedAttr":$paramListAttrs, "TypedAttr":$argListAttrs),
                 "", "Type">
   ];
 }

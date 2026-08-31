@@ -1902,6 +1902,10 @@ ASTDecl *IREmitter::createParametricClosureTrait(SharedState &shared) {
       ParamDeclAttr::get("R#2", TypeType::get(ctx)),
       // The metadata.
       ParamDeclAttr::get("M#3", NonStructTypeType::get(ctx)),
+      // The pog_list for parameters
+      ParamDeclAttr::get("POG_P#4", NonStructTypeType::get(ctx)),
+      // The pog_list for arguments.
+      ParamDeclAttr::get("POG_A#5", NonStructTypeType::get(ctx)),
   };
   SmallVector<PassingKind> passingKinds(decls.size(), PassingKind::PosOnly);
 
@@ -1941,11 +1945,14 @@ ASTDecl *IREmitter::createParametricClosureTrait(SharedState &shared) {
   auto args = prependParamList(mutSelf, ParamDeclRefAttr::get(decls[1]));
   auto retTy = ParamDeclRefAttr::get(decls[2]);
   auto metadata = ParamDeclRefAttr::get(decls[3]);
+  auto paramListPog = ParamDeclRefAttr::get(decls[4]);
+  auto argListPog = ParamDeclRefAttr::get(decls[5]);
 
   auto aliasOp = AliasDeclOp::create(
       builder, ParamDeclAttr::get(builder.getStringAttr("__call__"),
                                   KGEN::FuncGeneratorTypeBuilderType::get(
-                                      ctx, params, args, retTy, metadata)));
+                                      ctx, params, args, retTy, metadata,
+                                      paramListPog, argListPog)));
 
   (void)shared.declResolver->addFullyResolvedDecl(aliasOp, "__call__", SMLoc(),
                                                   &traitDecl);
@@ -1978,8 +1985,6 @@ TraitType IREmitter::bindParamsToClosureTraitFromSig(const ExprNode *expr,
                                                      FnTypeGeneratorType sig) {
   MLIRContext *ctx = shared.getContext();
   ASTDecl *closureTraitDecl = shared.getUniversalParametricClosureTrait();
-  TypeSignatureType traitSig =
-      cast<TraitDeclOp>(closureTraitDecl->getIfOperation()).getSignature();
 
   // The universal closure trait prepends a `_Self` parameter and a `mut self`
   // argument/origin, so shift the closure's own parameter and implicit-origin
@@ -1996,26 +2001,23 @@ TraitType IREmitter::bindParamsToClosureTraitFromSig(const ExprNode *expr,
         getCanonicalType(shifter.replace(type)), TypeType::get(ctx)));
   };
 
-  ParameterEvaluator evaluator;
   // NOTE: this has to be in sync with `createParametricClosureTrait`.
 
   // 1st, the parameter decl list.
   SmallVector<TypedAttr> paramDecls =
       llvm::map_to_vector(sig.getInputParamTypes(), quote);
-  evaluator.setDeclBinding(
-      traitSig.getParamName(0),
-      ParamListAttr::get(paramDecls, ParamListType::get(TypeType::get(ctx))));
+
+  auto paramDeclList =
+      ParamListAttr::get(paramDecls, ParamListType::get(TypeType::get(ctx)));
 
   // 2nd, the argument type list.
   SmallVector<TypedAttr> argTypes =
       llvm::map_to_vector(sig.getBody().getArguments(), quote);
-  evaluator.setDeclBinding(
-      traitSig.getParamName(1),
-      ParamListAttr::get(argTypes, ParamListType::get(TypeType::get(ctx))));
+  auto argTypeList =
+      ParamListAttr::get(argTypes, ParamListType::get(TypeType::get(ctx)));
 
   // 3rd, the result type.
-  evaluator.setDeclBinding(traitSig.getParamName(2),
-                           quote(sig.getBody().getResultType()));
+  auto resultType = quote(sig.getBody().getResultType());
 
   // 4th, the metadata. Adjust for the extra `mut self` argument (prepend a Mut
   // convention and one implicit origin decl); we can only do it here since we
@@ -2029,11 +2031,28 @@ TraitType IREmitter::bindParamsToClosureTraitFromSig(const ExprNode *expr,
   SmallVector<ArgConvention> argConventions;
   argConventions.push_back(ArgConvention::Mut);
   llvm::append_range(argConventions, sig.getFnMetadata().getArgConventions());
-  evaluator.setDeclBinding(
-      traitSig.getParamName(3),
-      FnMetadataAttr::get(ctx, argConventions,
-                          sig.getFnMetadata().getFnEffects(), originData));
+  auto metadata = FnMetadataAttr::get(
+      ctx, argConventions, sig.getFnMetadata().getFnEffects(), originData);
 
-  auto traitType = closureTraitDecl->getTypeDeclSelf().extractMetaType();
-  return cast<TraitType>(evaluator.getReboundType(traitType));
+  // Account for `_Self`/`self` inserted when constructing the closure trait.
+  // We have to do it here since we can not parametrize a pog_list. (So we can
+  // not build a concat(_Self, pog_list)) at the construction site. It would be
+  // nicer if we can fully parametrize a pog list construction, but for now,
+  // closure trait is the only user, and the pattern is fixed.
+  SmallVector<PogMetadataAttr> pogParams;
+  pogParams.push_back(PogMetadataAttr::get(StringAttr::get(ctx, "_Self"),
+                                           PassingKind::Inferred));
+  llvm::append_range(pogParams, sig.getParamListAttrs().getPogs());
+
+  SmallVector<PogMetadataAttr> pogArgs;
+  pogArgs.push_back(
+      PogMetadataAttr::get(StringAttr::get(ctx, ""), PassingKind::PosOnly));
+  llvm::append_range(pogArgs, sig.getArgListAttrs().getPogs());
+
+  auto traitDeclOp = cast<TraitDeclOp>(closureTraitDecl->getIfOperation());
+  TraitSymbolAttr boundClosure = traitDeclOp.bindReference(
+      {paramDeclList, argTypeList, resultType, metadata,
+       PogListAttr::get(ctx, pogParams), PogListAttr::get(ctx, pogArgs)});
+
+  return shared.declResolver->getCanonicalTrait(boundClosure);
 }

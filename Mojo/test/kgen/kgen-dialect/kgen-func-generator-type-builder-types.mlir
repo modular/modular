@@ -4,6 +4,7 @@
 // "quoted" parameter expressions: the quote freezes the index references so
 // they can be pulled out of their enclosing scope, and the fold unquotes them
 // into the generator type it describes.
+// ===----------------------------------------------------------------------=== //
 
 // A builder whose components are all constant folds into the generator type it
 // describes. The single argument carries a frozen implicit-origin reference.
@@ -13,7 +14,9 @@
   #kgen.param_list<> : !kgen.param_list<!kgen.type>,
   #kgen.param_list<#kgen.quote<!lit.ref<index, imm #lit.implicit.origin.ref<0, 0>>>> : !kgen.param_list<!kgen.type>,
   #kgen.quote<#kgen.type<index>>,
-  #kgen.fn_metadata<[imm, imm], "throws", #lit.fn_meta_origin_data<1>>>
+  #kgen.fn_metadata<[imm, imm], "throws", #lit.fn_meta_origin_data<1>>,
+  #kgen.pog_list<[]>,
+  #kgen.pog_list<[]>>
 
 // The argument and result types reference the declared parameters by frozen
 // index reference, which the fold rewrites into index references of the

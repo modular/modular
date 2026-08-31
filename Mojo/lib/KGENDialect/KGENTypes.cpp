@@ -507,14 +507,23 @@ GeneratorType GeneratorType::getSpecializedGenerator(
 
 Type FuncGeneratorTypeBuilderType::get(MLIRContext *ctx, TypedAttr paramDecls,
                                        TypedAttr argTypes, TypedAttr resultType,
-                                       TypedAttr metadata) {
+                                       TypedAttr metadata,
+                                       TypedAttr paramListAttrs,
+                                       TypedAttr argListAttrs) {
   auto cstParamDecls = dyn_cast<ParamListAttr>(paramDecls);
   auto cstArgTypes = dyn_cast<ParamListAttr>(argTypes);
   auto cstMetadata = dyn_cast<FnMetadataAttr>(metadata);
 
+  // Two optional pogs.
+  auto cstParamListAttrs = dyn_cast_or_null<PogListAttr>(paramListAttrs);
+  auto cstArgListAttrs = dyn_cast_or_null<PogListAttr>(argListAttrs);
+
   // If any of the components are not constants, skip.
-  if (!cstParamDecls || !cstArgTypes || !cstMetadata)
-    return Base::get(ctx, paramDecls, argTypes, resultType, metadata);
+  if (!cstParamDecls || !cstArgTypes || !cstMetadata ||
+      (paramListAttrs && !cstParamListAttrs) || // has a non-constant param pog
+      (argListAttrs && !cstArgListAttrs))       // has a non-constant arg pog
+    return Base::get(ctx, paramDecls, argTypes, resultType, metadata,
+                     paramListAttrs, argListAttrs);
   assert(llvm::all_of(cstParamDecls.getValues(), llvm::IsaPred<QuoteAttr>) &&
          "malformed fn gen builder param decls");
 
@@ -538,25 +547,25 @@ Type FuncGeneratorTypeBuilderType::get(MLIRContext *ctx, TypedAttr paramDecls,
       FuncType::get(FunctionType::get(ctx, inputArgTypes,
                                       ParamType::get(unquote(resultType))),
                     cstMetadata.getArgConventions(), cstMetadata.getFnEffects(),
-                    cstMetadata.getMetadata()),
-      // When it has a metadata, we need a empty pog list (instead of nullptr)
-      // to round trip, since the existence of the pog list might redirect the
-      // mlir parser/printer to a lit-specific format...
-      cstMetadata.getMetadata() ? PogListAttr::get(ctx) : PogListAttr(nullptr));
+                    cstMetadata.getMetadata(), cstArgListAttrs),
+      cstParamListAttrs);
 }
 
 Type FuncGeneratorTypeBuilderType::getChecked(
     function_ref<InFlightDiagnostic()> emitError, MLIRContext *ctx,
     TypedAttr paramDecls, TypedAttr argTypes, TypedAttr resultType,
-    TypedAttr metadata) {
-  if (failed(verify(emitError, paramDecls, argTypes, resultType, metadata)))
+    TypedAttr metadata, TypedAttr paramListAttrs, TypedAttr argListAttrs) {
+  if (failed(verify(emitError, paramDecls, argTypes, resultType, metadata,
+                    paramListAttrs, argListAttrs)))
     return {};
-  return get(ctx, paramDecls, argTypes, resultType, metadata);
+  return get(ctx, paramDecls, argTypes, resultType, metadata, paramListAttrs,
+             argListAttrs);
 }
 
 LogicalResult FuncGeneratorTypeBuilderType::verify(
     function_ref<InFlightDiagnostic()> emitError, TypedAttr paramDecls,
-    TypedAttr argTypes, TypedAttr resultType, TypedAttr metadata) {
+    TypedAttr argTypes, TypedAttr resultType, TypedAttr metadata,
+    TypedAttr paramListAttrs, TypedAttr argListAttrs) {
 
   // NOTE:we can not easily verify that this is a list of type values (since
   // type expressions might in different forms between lit/kgen)
@@ -572,6 +581,18 @@ LogicalResult FuncGeneratorTypeBuilderType::verify(
     return emitError()
            << "function metadata should have !kgen.non_struct_type type, not "
            << metadata.getType();
+
+  // The pog list components are typed `!kgen.non_struct_type` parameter
+  // expressions: a concrete `#kgen.pog_list` or a symbolic reference.
+  if (paramListAttrs && !isa<NonStructTypeType>(paramListAttrs.getType()))
+    return emitError()
+           << "parameter pog list should have !kgen.non_struct_type type, not "
+           << paramListAttrs.getType();
+
+  if (argListAttrs && !isa<NonStructTypeType>(argListAttrs.getType()))
+    return emitError()
+           << "argument pog list should have !kgen.non_struct_type type, not "
+           << argListAttrs.getType();
 
   return success();
 }

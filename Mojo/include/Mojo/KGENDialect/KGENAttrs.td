@@ -2911,7 +2911,7 @@ def KGEN_OptionalConventionParameter : OptionalParameter<"ArgConvention"> {
   let defaultValue = "ArgConvention::ByRefError";
 }
 
-def KGEN_PogListAttr : KGENAttr<"PogList", "pog_list"> {
+def KGEN_PogListAttr : KGEN_ExprAttr<"PogList", "pog_list"> {
   let summary = "Argument or parameter list metadata.";
   let description = [{
     The `#kgen.pog_list` attribute contains metadata about an argument or
@@ -2969,6 +2969,9 @@ def KGEN_PogListAttr : KGENAttr<"PogList", "pog_list"> {
   ];
 
   let extraClassDeclaration = [{
+    /// TODO: probably a dedicate type would make more sense here.
+    Type getType() const {return NonStructTypeType::get(getContext());}
+
     /// Create a new argument/parameter list attr with the given array of
     /// individual argument/parameter metadata attributes.
     PogListAttr cloneWith(ArrayRef<PogMetadataAttr> pogs) const;
