@@ -13,8 +13,12 @@ _RUN_BENCHMARKS = [
     "nn/bench_gather_reduce.mojo",
 ]
 
+# Benchmarks that need sources not pulled in by the default deps.
 _EXTRA_DEPS = {
     "algorithm/parallelize_overhead.mojo": ["//max:max_mojo"],
+    "gpu/state_space/bench_selective_scan_update.mojo": [
+        "//max/kernels/src/state_space",
+    ],
     "linalg/bench_layout_tensor.mojo": ["//max:max_mojo"],
 }
 
@@ -238,7 +242,7 @@ _CPU_TESTS = glob(
             "//max:shmem",
             "//max:structured_kernels",
             "@mojo//:std",
-        ],
+        ] + _EXTRA_DEPS.get(src, []),
     )
     for src in glob(
         ["gpu/**/*.mojo"],
