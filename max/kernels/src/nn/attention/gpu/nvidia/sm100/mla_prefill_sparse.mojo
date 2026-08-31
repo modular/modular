@@ -100,6 +100,7 @@ from layout import (
     row_major,
     Idx,
     TensorLayout,
+    TensorStorage,
     Coord,
     stack_allocation as tt_stack_allocation,
 )
@@ -297,6 +298,8 @@ struct MLAPrefillSparse[
     def kernel[
         TopKLengthLayout: TensorLayout,
         IndicesLayout: TensorLayout,
+        TopKLengthStorage: TensorStorage,
+        IndicesStorage: TensorStorage,
     ](
         q_tma_op: TMATensorTile[
             Self.qkv_dtype,
@@ -322,8 +325,12 @@ struct MLAPrefillSparse[
             Self.o_tile_shape,
             Self.o_desc_shape,
         ],
-        topk_lengths: TileTensor[.uint32, TopKLengthLayout, MutAnyOrigin],
-        indices: TileTensor[.uint32, IndicesLayout, MutAnyOrigin],
+        topk_lengths: TileTensor[
+            .uint32, TopKLengthLayout, MutAnyOrigin, Storage=TopKLengthStorage
+        ],
+        indices: TileTensor[
+            .uint32, IndicesLayout, MutAnyOrigin, Storage=IndicesStorage
+        ],
         kv_lut: Self.KVLUTType,
         scale: Float32,
         attn_sink_ptr: Optional[UnsafePointer[Float32, ImmutAnyOrigin]],
@@ -335,7 +342,7 @@ struct MLAPrefillSparse[
         var warp_idx = warp_id()
         var lane_idx = thread_idx.x % WARP_SIZE
         var warpgroup_idx = warp.broadcast(thread_idx.x // WARPGROUP_SIZE)
-        var top_k_length = topk_lengths[seq_idx]
+        var top_k_length = topk_lengths.load[width=1](Coord(seq_idx))
         var num_k_blocks = max(
             ceildiv(top_k_length, UInt32(Self.config.B_TOPK)), 1
         )
@@ -1497,6 +1504,8 @@ def mla_prefill_sparse[
 
     comptime assert type_of(topk_lengths).flat_rank == 1
     comptime assert type_of(indices).flat_rank == 1
+    comptime assert topk_lengths.element_size == 1
+    comptime assert indices.element_size == 1
     comptime kernel = MLAPrefillSparse[
         KVLUTType=type_of(kv_operand),
         output_dtype=output_dtype,
@@ -1504,6 +1513,8 @@ def mla_prefill_sparse[
     ].kernel[
         type_of(topk_lengths).LayoutType,
         type_of(indices).LayoutType,
+        type_of(topk_lengths).Storage,
+        type_of(indices).Storage,
     ]
 
     comptime smem_size = size_of[MLASparseSharedMemory[config]]()

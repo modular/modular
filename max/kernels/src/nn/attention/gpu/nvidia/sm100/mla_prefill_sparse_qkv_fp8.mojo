@@ -109,7 +109,14 @@ from max.gpu.compute.arch.mma_nvidia_sm100 import (
 )
 from linalg.arch.sm100.mma import smem_descriptor
 
-from layout import TileTensor, row_major, Idx, TensorLayout, Coord
+from layout import (
+    TileTensor,
+    row_major,
+    Idx,
+    TensorLayout,
+    TensorStorage,
+    Coord,
+)
 from layout.swizzle import make_swizzle, make_ldmatrix_swizzle
 from layout.tma_async import (
     create_tensor_tile,
@@ -716,6 +723,8 @@ struct MLAPrefillSparseQKVFP8[
     def kernel[
         TopKLengthLayout: TensorLayout,
         IndicesLayout: TensorLayout,
+        TopKLengthStorage: TensorStorage,
+        IndicesStorage: TensorStorage,
     ](
         q_tma_op: TMATensorTile[
             FP8_TYPE, 3, Self.q_tile_shape, Self.q_desc_shape
@@ -726,8 +735,12 @@ struct MLAPrefillSparseQKVFP8[
         o_tma_op: TMATensorTile[
             Self.output_dtype, 2, Self.o_tile_shape, Self.o_desc_shape
         ],
-        topk_lengths: TileTensor[.uint32, TopKLengthLayout, MutAnyOrigin],
-        indices: TileTensor[.uint32, IndicesLayout, MutAnyOrigin],
+        topk_lengths: TileTensor[
+            .uint32, TopKLengthLayout, MutAnyOrigin, Storage=TopKLengthStorage
+        ],
+        indices: TileTensor[
+            .uint32, IndicesLayout, MutAnyOrigin, Storage=IndicesStorage
+        ],
         kv_lut: Self.KVLUTType,
         scale: Float32,
         attn_sink_ptr: Optional[UnsafePointer[Float32, ImmutAnyOrigin]],
@@ -738,7 +751,7 @@ struct MLAPrefillSparseQKVFP8[
         var warp_idx = warp_id()
         var lane_idx = thread_idx.x % WARP_SIZE
         var warpgroup_idx = warp.broadcast(thread_idx.x // WARPGROUP_SIZE)
-        var top_k_length = topk_lengths[seq_idx]
+        var top_k_length = topk_lengths.load[width=1](Coord(seq_idx))
         var num_k_blocks = max(
             ceildiv(top_k_length, UInt32(Self.config.B_TOPK)), 1
         )
@@ -1625,6 +1638,8 @@ def mla_prefill_sparse_qkv_fp8[
 
     comptime assert type_of(topk_lengths).flat_rank == 1
     comptime assert type_of(indices).flat_rank == 1
+    comptime assert topk_lengths.element_size == 1
+    comptime assert indices.element_size == 1
     comptime kernel = MLAPrefillSparseQKVFP8[
         KVLUTType=type_of(kv_operand),
         output_dtype=output_dtype,
@@ -1632,6 +1647,8 @@ def mla_prefill_sparse_qkv_fp8[
     ].kernel[
         type_of(topk_lengths).LayoutType,
         type_of(indices).LayoutType,
+        type_of(topk_lengths).Storage,
+        type_of(indices).Storage,
     ]
 
     comptime smem_size = size_of[MLASparseSharedMemoryQKVFP8[config]]()
