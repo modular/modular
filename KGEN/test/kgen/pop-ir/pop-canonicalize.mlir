@@ -1174,6 +1174,49 @@ kgen.func @zext_and_zext(%v0 : !kgen.simd<2, ui16>) -> !kgen.simd<2, ui64> {
   kgen.return %v2 : !kgen.simd<2, ui64>
 }
 
+// The chain zero-extends; a direct si32 -> ui64 cast would sign-extend.
+// CHECK-LABEL: @sign_flip_at_same_width_then_extend
+kgen.func @sign_flip_at_same_width_then_extend(
+    %v0 : !kgen.scalar<si32>) -> !kgen.scalar<ui64> {
+  // CHECK-NEXT: pop.cast %arg0 : !kgen.scalar<si32> to !kgen.scalar<ui32>
+  %v1 = pop.cast %v0 : !kgen.scalar<si32> to !kgen.scalar<ui32>
+  // CHECK-NEXT: pop.cast {{.*}} : !kgen.scalar<ui32> to !kgen.scalar<ui64>
+  %v2 = pop.cast %v1 : !kgen.scalar<ui32> to !kgen.scalar<ui64>
+  kgen.return %v2 : !kgen.scalar<ui64>
+}
+
+// Same flip while widening: still zero-extends, so it cannot collapse.
+// CHECK-LABEL: @sign_flip_while_widening_then_extend
+kgen.func @sign_flip_while_widening_then_extend(
+    %v0 : !kgen.scalar<si16>) -> !kgen.scalar<ui64> {
+  // CHECK-NEXT: pop.cast %arg0 : !kgen.scalar<si16> to !kgen.scalar<ui32>
+  %v1 = pop.cast %v0 : !kgen.scalar<si16> to !kgen.scalar<ui32>
+  // CHECK-NEXT: pop.cast {{.*}} : !kgen.scalar<ui32> to !kgen.scalar<ui64>
+  %v2 = pop.cast %v1 : !kgen.scalar<ui32> to !kgen.scalar<ui64>
+  kgen.return %v2 : !kgen.scalar<ui64>
+}
+
+// The mirror flip: the chain sign-extends, a direct ui32 -> si64 zero-extends.
+// CHECK-LABEL: @unsigned_to_signed_flip_at_same_width
+kgen.func @unsigned_to_signed_flip_at_same_width(
+    %v0 : !kgen.scalar<ui32>) -> !kgen.scalar<si64> {
+  // CHECK-NEXT: pop.cast %arg0 : !kgen.scalar<ui32> to !kgen.scalar<si32>
+  // CHECK-NEXT: pop.cast {{.*}} : !kgen.scalar<si32> to !kgen.scalar<si64>
+  %v1 = pop.cast %v0 : !kgen.scalar<ui32> to !kgen.scalar<si32>
+  %v2 = pop.cast %v1 : !kgen.scalar<si32> to !kgen.scalar<si64>
+  kgen.return %v2 : !kgen.scalar<si64>
+}
+
+// Foldable: zero-extending to si32 clears the sign bit, so the sext matches.
+// CHECK-LABEL: @unsigned_to_signed_flip_still_folds
+kgen.func @unsigned_to_signed_flip_still_folds(
+    %v0 : !kgen.scalar<ui16>) -> !kgen.scalar<si64> {
+  // CHECK-NEXT: pop.cast %arg0 : !kgen.scalar<ui16> to !kgen.scalar<si64>
+  %v1 = pop.cast %v0 : !kgen.scalar<ui16> to !kgen.scalar<si32>
+  %v2 = pop.cast %v1 : !kgen.scalar<si32> to !kgen.scalar<si64>
+  kgen.return %v2 : !kgen.scalar<si64>
+}
+
 // CHECK-LABEL: @fpext_and_fptoint
 kgen.func @fpext_and_fptoint(%arg0 : !kgen.simd<2, f16>) -> (!kgen.simd<2, si32>, !kgen.simd<2, ui32>) {
   // COM: fptosi(fpext)
@@ -1229,6 +1272,70 @@ kgen.func @fpext_and_fptrunc(%arg0 : !kgen.simd<2, f16>) -> !kgen.simd<2, f32> {
   // CHECK-NEXT: pop.cast %arg0 : !kgen.simd<2, f16> to !kgen.simd<2, f32>
   %v11 = pop.cast %v10 : !kgen.simd<2, f64> to !kgen.simd<2, f32>
   kgen.return %v11 : !kgen.simd<2, f32>
+}
+
+// Rounding twice can differ from rounding once, so T2 has to stay.
+// CHECK-LABEL: @fptrunc_and_fptrunc
+kgen.func @fptrunc_and_fptrunc(%v0 : !kgen.simd<2, f64>) -> !kgen.simd<2, f16> {
+  // CHECK-NEXT: pop.cast %arg0 : !kgen.simd<2, f64> to !kgen.simd<2, f32>
+  // CHECK-NEXT: pop.cast {{.*}} : !kgen.simd<2, f32> to !kgen.simd<2, f16>
+  %v1 = pop.cast %v0 : !kgen.simd<2, f64> to !kgen.simd<2, f32>
+  %v2 = pop.cast %v1 : !kgen.simd<2, f32> to !kgen.simd<2, f16>
+  kgen.return %v2 : !kgen.simd<2, f16>
+}
+
+// A `fast` cast accepts a result that differs from the double rounding.
+// CHECK-LABEL: @fptrunc_and_fptrunc_fast
+kgen.func @fptrunc_and_fptrunc_fast(
+    %v0 : !kgen.simd<2, f64>) -> !kgen.simd<2, f16> {
+  // CHECK-NEXT: pop.cast %arg0 : !kgen.simd<2, f64> to !kgen.simd<2, f16>
+  %v1 = pop.cast fast %v0 : !kgen.simd<2, f64> to !kgen.simd<2, f32>
+  %v2 = pop.cast fast %v1 : !kgen.simd<2, f32> to !kgen.simd<2, f16>
+  kgen.return %v2 : !kgen.simd<2, f16>
+}
+
+// Only the rewritten cast's own `fast` licenses dropping T2's rounding.
+// CHECK-LABEL: @fptrunc_and_fptrunc_inner_fast_only
+kgen.func @fptrunc_and_fptrunc_inner_fast_only(
+    %v0 : !kgen.simd<2, f64>) -> !kgen.simd<2, f16> {
+  // CHECK-NEXT: pop.cast fast %arg0 : !kgen.simd<2, f64> to !kgen.simd<2, f32>
+  // CHECK-NEXT: pop.cast {{.*}} : !kgen.simd<2, f32> to !kgen.simd<2, f16>
+  %v1 = pop.cast fast %v0 : !kgen.simd<2, f64> to !kgen.simd<2, f32>
+  %v2 = pop.cast %v1 : !kgen.simd<2, f32> to !kgen.simd<2, f16>
+  kgen.return %v2 : !kgen.simd<2, f16>
+}
+
+// T3 is still wider than T1, so T2 keeps bits the folded cast would drop.
+// CHECK-LABEL: @widen_then_truncate_below_t2
+kgen.func @widen_then_truncate_below_t2(
+    %v0 : !kgen.simd<2, si16>) -> !kgen.simd<2, si32> {
+  // CHECK-NEXT: pop.cast %arg0 : !kgen.simd<2, si16> to !kgen.simd<2, si64>
+  // CHECK-NEXT: pop.cast {{.*}} : !kgen.simd<2, si64> to !kgen.simd<2, si32>
+  %v1 = pop.cast %v0 : !kgen.simd<2, si16> to !kgen.simd<2, si64>
+  %v2 = pop.cast %v1 : !kgen.simd<2, si64> to !kgen.simd<2, si32>
+  kgen.return %v2 : !kgen.simd<2, si32>
+}
+
+// T3 reinterprets T2 at its width, but T2 truncated T1 first.
+// CHECK-LABEL: @truncate_then_reinterpret
+kgen.func @truncate_then_reinterpret(
+    %v0 : !kgen.simd<2, si64>) -> !kgen.simd<2, ui32> {
+  // CHECK-NEXT: pop.cast %arg0 : !kgen.simd<2, si64> to !kgen.simd<2, si32>
+  // CHECK-NEXT: pop.cast {{.*}} : !kgen.simd<2, si32> to !kgen.simd<2, ui32>
+  %v1 = pop.cast %v0 : !kgen.simd<2, si64> to !kgen.simd<2, si32>
+  %v2 = pop.cast %v1 : !kgen.simd<2, si32> to !kgen.simd<2, ui32>
+  kgen.return %v2 : !kgen.simd<2, ui32>
+}
+
+// T3 reinterprets T2 at its width with the opposite sign.
+// CHECK-LABEL: @widen_then_reinterpret_other_sign
+kgen.func @widen_then_reinterpret_other_sign(
+    %v0 : !kgen.simd<2, si16>) -> !kgen.simd<2, ui32> {
+  // CHECK-NEXT: pop.cast %arg0 : !kgen.simd<2, si16> to !kgen.simd<2, si32>
+  // CHECK-NEXT: pop.cast {{.*}} : !kgen.simd<2, si32> to !kgen.simd<2, ui32>
+  %v1 = pop.cast %v0 : !kgen.simd<2, si16> to !kgen.simd<2, si32>
+  %v2 = pop.cast %v1 : !kgen.simd<2, si32> to !kgen.simd<2, ui32>
+  kgen.return %v2 : !kgen.simd<2, ui32>
 }
 
 // COM: test chain of int2fp/fp2int conversions
@@ -2269,4 +2376,30 @@ kgen.func @load_bitcast_deeper_non_leading(
   %c = pop.pointer.bitcast %p : !kgen.pointer<struct<(struct<(scalar<f32>, scalar<f64>)>)>> to !kgen.pointer<scalar<f64>>
   %l = pop.load %c : !kgen.pointer<scalar<f64>>
   kgen.return %l : !kgen.scalar<f64>
+}
+
+// -----
+
+module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="e-p:64:64", simd_bit_width = 128, index_bit_width = 32>} {
+
+// A same-width T2 is never folded away, even when its sign matches T1's.
+// CHECK-LABEL: @same_width_same_sign_does_not_fold
+kgen.func @same_width_same_sign_does_not_fold(%v0 : !kgen.scalar<si32>) -> !kgen.scalar<si64> {
+  // CHECK-NEXT: pop.cast %arg0 : !kgen.scalar<si32> to !kgen.scalar<index>
+  // CHECK-NEXT: pop.cast {{.*}} : !kgen.scalar<index> to !kgen.scalar<si64>
+  %v1 = pop.cast %v0 : !kgen.scalar<si32> to !kgen.scalar<index>
+  %v2 = pop.cast %v1 : !kgen.scalar<index> to !kgen.scalar<si64>
+  kgen.return %v2 : !kgen.scalar<si64>
+}
+
+// Same width but T2 is signed where T1 is not, so the sext must stay.
+// CHECK-LABEL: @same_width_sign_differs_does_not_fold
+kgen.func @same_width_sign_differs_does_not_fold(%v0 : !kgen.scalar<ui32>) -> !kgen.scalar<si64> {
+  // CHECK-NEXT: pop.cast %arg0 : !kgen.scalar<ui32> to !kgen.scalar<index>
+  // CHECK-NEXT: pop.cast {{.*}} : !kgen.scalar<index> to !kgen.scalar<si64>
+  %v1 = pop.cast %v0 : !kgen.scalar<ui32> to !kgen.scalar<index>
+  %v2 = pop.cast %v1 : !kgen.scalar<index> to !kgen.scalar<si64>
+  kgen.return %v2 : !kgen.scalar<si64>
+}
+
 }

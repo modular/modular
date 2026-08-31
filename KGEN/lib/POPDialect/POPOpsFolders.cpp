@@ -1002,9 +1002,11 @@ LogicalResult CastOp::canonicalize(CastOp op, PatternRewriter &b) {
     return b.notifyMatchFailure(op.getLoc(),
                                 "intermediate cast has multiple uses");
 
-  auto inType = cast.getType().getResolvedDType();
-  auto outType = op.getType().getResolvedDType();
-  auto intermediateType = cast.getInput().getType().getResolvedDType();
+  // The chain is `cast(cast(x : T1 to T2) : T3)`.
+  std::optional<KGENDType> inType =
+      cast.getInput().getType().getResolvedDType();
+  std::optional<KGENDType> intermediateType = cast.getType().getResolvedDType();
+  std::optional<KGENDType> outType = op.getType().getResolvedDType();
 
   auto isUnsupportedType = [](auto t) {
     return !t || (!t->isIntLike() && (t->isComplex() || !t->isFloat()));
@@ -1012,10 +1014,10 @@ LogicalResult CastOp::canonicalize(CastOp op, PatternRewriter &b) {
 
   Location loc = op.getLoc();
   // Both cast should convert to/from integer-like or floating point types.
-  if (isUnsupportedType(inType) || isUnsupportedType(outType) ||
-      isUnsupportedType(intermediateType) ||
-      inType->isIntLike() != outType->isIntLike() ||
-      inType->isIntLike() != intermediateType->isIntLike())
+  if (isUnsupportedType(inType) || isUnsupportedType(intermediateType) ||
+      isUnsupportedType(outType) ||
+      intermediateType->isIntLike() != inType->isIntLike() ||
+      intermediateType->isIntLike() != outType->isIntLike())
     return b.notifyMatchFailure(loc, "not all types are known or supported");
 
   auto getWidthInBits = [&](KGENDType type) -> ssize_t {
@@ -1030,44 +1032,47 @@ LogicalResult CastOp::canonicalize(CastOp op, PatternRewriter &b) {
   };
 
   ssize_t inWidth = getWidthInBits(*inType);
-  ssize_t outWidth = getWidthInBits(*outType);
   ssize_t intermediateWidth = getWidthInBits(*intermediateType);
+  ssize_t outWidth = getWidthInBits(*outType);
 
-  if (inWidth == -1 || outWidth == -1 || intermediateWidth == -1)
+  if (inWidth == -1 || intermediateWidth == -1 || outWidth == -1)
     return b.notifyMatchFailure(loc, "bitwidths of types are unknown");
 
-  if (outWidth < inWidth) {
-    // Except for floating point, intermediate cast is redundant if the final
-    // cast truncates its result.
-    // For the floating point allows fptrunc(fpext)
-    if (outWidth > intermediateWidth && intermediateType->isIntLike()) {
+  if (outWidth < intermediateWidth) {
+    // T2 is redundant unless it already changed the value: an int T2 dropped
+    // bits T3 keeps, or a float T2 rounded (`fast` accepts double rounding).
+    if ((inType->isIntLike() && outWidth > inWidth) ||
+        (!inType->isIntLike() && intermediateWidth <= inWidth &&
+         !op.getFastAttr())) {
       return b.notifyMatchFailure(loc,
                                   "intermediate truncation affects result");
     }
-  } else if (outWidth > inWidth) {
-    // Final cast converts input to wider type. Possible to optimize:
+  } else if (outWidth > intermediateWidth) {
+    // T3 is wider than T2. Possible to optimize:
     //  - zext(zext)
     //  - sext(sext)
     //  - fpext(fpext)
-    if (inWidth < intermediateWidth ||
-        (inType->isIntLike() && inType->isSInt() != outType->isSInt())) {
+    if (intermediateType->isIntLike() &&
+        intermediateType->isSInt() != outType->isSInt()) {
+      return b.notifyMatchFailure(loc, "intermediate extension affects result");
+    }
+
+    // Because `pop.cast` allows `si32 -> ui32`, need to be extra careful with
+    // sign in a chain of casts.
+    if (intermediateWidth <= inWidth ||
+        (inType->isSInt() && !intermediateType->isSInt())) {
       return b.notifyMatchFailure(loc, "intermediate extension affects result");
     }
   } else {
-    // Final cast converts either index to/from integer or index/integer to/from
-    // floating point of the same width. Possible to optimize:
-    // - fptosi(fpext)
-    // - fptoui(fpext)
-    // - uitofp(zext)
-    // - sitofp(sext)
-    if (inWidth < intermediateWidth ||
-        intermediateType->isIntLike() != inType->isIntLike()) {
+    // T3 reinterprets T2, so only a truncating T2 or a sign change matters.
+    if (intermediateWidth < inWidth) {
       return b.notifyMatchFailure(loc, "intermediate extension affects result");
     }
 
     // Final cast converts integer to/from integer of a different sign.
-    if (inType->isInt() && !outType->isIndex() && !outType->isUIndex() &&
-        inType->isSInt() != outType->isSInt()) {
+    if (intermediateType->isInt() && !outType->isIndex() &&
+        !outType->isUIndex() &&
+        intermediateType->isSInt() != outType->isSInt()) {
       return b.notifyMatchFailure(loc, "intermediate extension affects result");
     }
   }
