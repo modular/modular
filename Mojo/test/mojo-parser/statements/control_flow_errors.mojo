@@ -99,8 +99,9 @@ def test():
     var my_list_no_iter = MyList_no_iter()
 
 
-    # The failed 'Iterable' conformance makes the target an ordinary assignment,
-    # so it declares.
+    # The failed 'Iterable' conformance makes this target an ordinary
+    # assignment, so it declares and needs the 'var'. The two loops below
+    # reach no such check: one has no '__iter__', the other a tuple target.
     # expected-error @+2 {{'my_iter_no_next' does not conform to 'Iterable'; add conformance to use in a 'for' loop}}
     # expected-note @+1 {{to conform to 'Iterable', add it to the struct declaration: 'struct Foo(Iterable):'}}
     for var item in my_list_no_next:

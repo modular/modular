@@ -109,7 +109,7 @@ def nested_tuple_target_no_binder_migrated():
     use(c)
 
 
-# TODO(KGEN-XXXX): the migrated form of the case above belongs here, spelling
+# TODO(MOCO-4520): the migrated form of the case above belongs here, spelling
 # the two names as `var a: Int` / `var b: Int`. It is omitted because an inner
 # tuple that fully resolves, beside a sibling that does not, strands an owning
 # `RCRef<TupleDLValue>` in the parser's persistent arena, and LeakSanitizer
@@ -117,8 +117,8 @@ def nested_tuple_target_no_binder_migrated():
 # the inner tuple never resolves and no `TupleDLValue` is formed.
 
 
-# TODO(KGEN-XXXX): the migrated form of the chain above belongs here; omitted
-# for the same arena leak.
+# TODO(MOCO-4520): the same spelling is missing for the tuple chain below;
+# omitted for the same arena leak.
 
 
 # Each target of a chain declares, and 'var' on each is a valid spelling.
@@ -157,17 +157,16 @@ def chain_tuple_migrated():
     use(d)
 
 
-# A walrus target takes the hoisting message wherever it appears: 'var' and
-# 'ref' on a walrus target are being removed from the language, so neither is an
-# edit to ask for.
+# A walrus target must already be an LValue, so it never reaches the
+# implicit-declaration path at all.
 def walrus_condition():
     # expected-error @+1 {{use of unknown declaration 'x'}}
     if x := truthy():
         use_bool(x)
 
 
-# The hoisted form that message asks for: the walrus then assigns the
-# declaration instead of introducing one.
+# Hoisting the declaration leaves the walrus assigning it rather than
+# introducing one, so nothing is reported.
 def walrus_condition_hoisted():
     var x: Bool
     if x := truthy():

@@ -310,7 +310,6 @@ ASTType ExprDest::resolveImpliedType(SMLoc loc, Type existingValueType,
     // Propagate var/ref context (if any) into the generated declarations.
     ExprDest dest(LValueInitializerType{existingValueType}, context);
     dest.patternDeclKind = patternDeclKind;
-    dest.walrusTarget = walrusTarget;
 
     // Emit the target as an LValue to understand what we're assigning into.
     LValue exprLValue = emitter.emitExprLValue(expr, dest);
@@ -382,7 +381,6 @@ MLValue ExprDest::getDefinedMLValueIfExists(ASTType resultType,
 
     ExprDest dest(LValueInitializerType{resultType}, getContext());
     dest.patternDeclKind = patternDeclKind;
-    dest.walrusTarget = walrusTarget;
     if (LValue lValue = emitter.emitExprLValue(target, dest)) {
       representation = lValue;
     } else {
