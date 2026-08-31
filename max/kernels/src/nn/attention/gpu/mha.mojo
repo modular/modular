@@ -6334,7 +6334,7 @@ def mha_gpu_naive[
     )
     # FIXME: RUNP-356 Direct access to CUDA within DeviceContext
     var p_buffer = TileTensor(
-        # FIXME: GEX-4123 Force use of PointerStorage until the
+        # FIXME: GEX-4123 Force use of DefaultEngine until the
         # `input_fn_device` legacy closure is replaced.
         p_device.unsafe_ptr(),
         row_major(

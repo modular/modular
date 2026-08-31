@@ -35,10 +35,10 @@ from layout import (
     IntTuple,
     Layout,
     LayoutTensor,
-    PointerStorage,
+    DefaultEngine,
     RuntimeLayout,
     RuntimeTuple,
-    TensorStorage,
+    TensorEngine,
     TileTensor,
     UNKNOWN_VALUE,
     row_major,
@@ -128,8 +128,8 @@ comptime _1d_row_major_tt_layout = InternalLayout[
     stride_types=Coord[ComptimeInt[1]].element_types,
 ]
 comptime ImmutTileTensor1D[
-    dtype: DType, *, Storage: TensorStorage = PointerStorage[element_width=1]
-] = TileTensor[dtype, _1d_row_major_tt_layout, ImmutAnyOrigin, Storage=Storage]
+    dtype: DType, *, Engine: TensorEngine = DefaultEngine[element_width=1]
+] = TileTensor[dtype, _1d_row_major_tt_layout, ImmutAnyOrigin, Engine=Engine]
 
 
 struct Pack[

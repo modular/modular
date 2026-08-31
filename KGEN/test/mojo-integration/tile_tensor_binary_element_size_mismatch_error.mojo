@@ -11,8 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-# TileTensor's in-place binary ops accept an rhs with a different storage
-# policy, but the two policies must agree on logical element size. A
+# TileTensor's in-place binary ops accept an rhs with a different engine,
+# but the two engines must agree on logical element size. A
 # vectorized rhs (element_width=4) against a scalar destination is rejected
 # at compile time.
 

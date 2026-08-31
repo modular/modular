@@ -459,13 +459,13 @@ def _run_case[
                     attn_res_mix_gpu[
                         dtype,
                         out_tt.LayoutType,
-                        out_tt.Storage,
+                        out_tt.Engine,
                         cands_tt.LayoutType,
-                        cands_tt.Storage,
+                        cands_tt.Engine,
                         proj_tt.LayoutType,
-                        proj_tt.Storage,
+                        proj_tt.Engine,
                         norm_tt.LayoutType,
-                        norm_tt.Storage,
+                        norm_tt.Engine,
                         c,
                         BLOCK,
                     ]

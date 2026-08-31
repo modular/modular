@@ -252,11 +252,11 @@ def test_mxfp4_matmul[
         type_of(b_tt).LayoutType,
         type_of(a_scales_tt).LayoutType,
         type_of(b_scales_tt).LayoutType,
-        type_of(c_tt).Storage,
-        type_of(a_tt).Storage,
-        type_of(b_tt).Storage,
-        type_of(a_scales_tt).Storage,
-        type_of(b_scales_tt).Storage,
+        type_of(c_tt).Engine,
+        type_of(a_tt).Engine,
+        type_of(b_tt).Engine,
+        type_of(a_scales_tt).Engine,
+        type_of(b_scales_tt).Engine,
     ]
     ctx.enqueue_function[kernel](
         c_tt,

@@ -15,7 +15,7 @@ from std.math import isclose
 from std.random import rand
 
 from layout import TileTensor, row_major
-from layout.tensor_storage import PointerStorage
+from layout.tensor_engine import DefaultEngine
 from nn.conv.conv import Naive2dConvolution
 
 from std.utils.index import Index
@@ -25,11 +25,9 @@ from std.utils.index import Index
 def matmul[
     dtype: DType, //, N: Int, K: Int, M: Int, transpose_b: Bool
 ](
-    C: TileTensor[
-        mut=True, dtype, Storage=PointerStorage[element_width=1], ...
-    ],
-    A: TileTensor[dtype, Storage=PointerStorage[element_width=1], ...],
-    B: TileTensor[dtype, Storage=PointerStorage[element_width=1], ...],
+    C: TileTensor[mut=True, dtype, Engine=DefaultEngine[element_width=1], ...],
+    A: TileTensor[dtype, Engine=DefaultEngine[element_width=1], ...],
+    B: TileTensor[dtype, Engine=DefaultEngine[element_width=1], ...],
 ):
     comptime assert C.flat_rank == 2
     comptime assert A.flat_rank == 2
@@ -60,12 +58,12 @@ def matmul[
 def winograd_2d_convolution_3x3[
     dtype: DType
 ](
-    signal: TileTensor[dtype, Storage=PointerStorage[element_width=1], ...],
+    signal: TileTensor[dtype, Engine=DefaultEngine[element_width=1], ...],
     kernel: TileTensor[
-        dtype, Storage=PointerStorage[element_width=1], ...
+        dtype, Engine=DefaultEngine[element_width=1], ...
     ],  # must be 3x3, let's comptime assert  somehow. Or parameter
     output: TileTensor[
-        mut=True, dtype, Storage=PointerStorage[element_width=1], ...
+        mut=True, dtype, Engine=DefaultEngine[element_width=1], ...
     ],
 ):
     comptime assert signal.flat_rank == 2
@@ -151,11 +149,9 @@ def winograd_2d_convolution_3x3[
 def outputs_are_close[
     dtype: DType
 ](
-    output_naive: TileTensor[
-        dtype, Storage=PointerStorage[element_width=1], ...
-    ],
+    output_naive: TileTensor[dtype, Engine=DefaultEngine[element_width=1], ...],
     output_winograd: TileTensor[
-        dtype, Storage=PointerStorage[element_width=1], ...
+        dtype, Engine=DefaultEngine[element_width=1], ...
     ],
     Oh: Int,
     Ow: Int,

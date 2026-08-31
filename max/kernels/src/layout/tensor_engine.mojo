@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Defines storage abstractions for tile-backed tensor views."""
+"""Defines the engines that operate on tile-backed tensor storage."""
 
 
 from std.builtin.device_passable import DevicePassable
@@ -50,7 +50,7 @@ def _copy_widen_factor[
     src_row_major: Bool,
     num_elements: Int,
 ]() -> Int:
-    """Returns the SIMD widen factor for `TensorStorage.copy_from`.
+    """Returns the SIMD widen factor for `TensorEngine.copy_from`.
 
     Returns the number of elements to load/store together in a single
     SIMD op. Returns 1 (no widening) unless both tensors are row-major
@@ -73,22 +73,23 @@ def _copy_widen_factor[
     return 1
 
 
-trait TensorStorage:
-    """Defines a non-owning interface for accessing tensor storage.
+trait TensorEngine:
+    """Defines how tile tensor operates on borrowed storage.
 
-    A conforming type describes how to access storage that is owned elsewhere.
-    It provides a concrete `StorageType` handle along with static operations to
-    load from, store into, and reinterpret values of that handle. The
-    trait never owns the underlying memory; the handle's `origin` parameter
-    tracks the lifetime and mutability of the borrowed storage.
+    A conforming engine names a concrete, register-passable `StorageType`
+    handle for storage that is owned elsewhere, and supplies the static
+    operations that act on it: load, store, offset, distance, and
+    reinterpretation. An engine never owns the underlying memory; the handle's
+    `origin` parameter tracks the lifetime and mutability of the borrowed
+    storage.
     """
 
     comptime element_size: Int = 1
 
     comptime _BASE_TYPE_NAME: StaticString
-    """The unparameterized name of the conforming storage policy.
+    """The unparameterized name of the conforming engine.
 
-    Used to gate same-policy constraints at compile time. This exists as a
+    Used to gate same-engine constraints at compile time. This exists as a
     workaround for `reflect[T].base_name()` comparisons never folding inside
     `comptime assert` (MOCO-4353); drop it in favor of `reflect` once that is
     fixed.
@@ -117,7 +118,7 @@ trait TensorStorage:
 
     @staticmethod
     def write_type_name_to(mut writer: Some[Writer]):
-        """Writes the storage type name representation to the writer.
+        """Writes the engine type name representation to the writer.
 
         Args:
             writer: The `Writer` to output to.
@@ -289,8 +290,8 @@ trait TensorStorage:
 
         The caller is responsible for ensuring the storage is actually mutable.
         The `dtype`, `origin`, and `address_space` are inferred from the
-        `storage` argument for concrete storage types; callers using the trait
-        through an abstract `TensorStorage` bound must pass them explicitly
+        `storage` argument for concrete engines; callers using the trait
+        through an abstract `TensorEngine` bound must pass them explicitly
         (before `alignment`).
 
         Parameters:
@@ -308,7 +309,7 @@ trait TensorStorage:
 
     comptime OffsetResultType[
         offset_types: TypeList[Trait=CoordLike, ...],
-    ]: TensorStorage
+    ]: TensorEngine
     """The storage type produced by offsetting with a given coordinate.
 
     Parameters:
@@ -365,14 +366,14 @@ trait TensorStorage:
         //,
         dst_dtype: DType,
         src_dtype: DType,
-        OtherStorage: TensorStorage,
+        OtherEngine: TensorEngine,
     ](
         storage: Tuple[
             Self.StorageType[dst_dtype, self_origin, self_address_space],
             SelfLayoutType,
         ],
         other: Tuple[
-            OtherStorage.StorageType[
+            OtherEngine.StorageType[
                 src_dtype, other_origin, other_address_space
             ],
             OtherLayoutType,
@@ -399,8 +400,8 @@ trait TensorStorage:
             other_address_space: The address space of the source storage.
             dst_dtype: The element data type of the destination storage.
             src_dtype: The element data type of the source storage.
-            OtherStorage: The storage policy of the source. May differ from
-                `Self` as long as the two policies are copy-compatible (same
+            OtherEngine: The engine of the source. May differ from
+                `Self` as long as the two engines are copy-compatible (same
                 logical element size).
 
         Constraints:
@@ -455,26 +456,26 @@ def _copy_from[
     src_dtype: DType,
     self_address_space: AddressSpace,
     other_address_space: AddressSpace,
-    DstStorage: TensorStorage,
-    OtherStorage: TensorStorage,
+    DstEngine: TensorEngine,
+    OtherEngine: TensorEngine,
 ](
     storage: Tuple[
-        DstStorage.StorageType[dst_dtype, self_origin, self_address_space],
+        DstEngine.StorageType[dst_dtype, self_origin, self_address_space],
         SelfLayoutType,
     ],
     other: Tuple[
-        OtherStorage.StorageType[src_dtype, other_origin, other_address_space],
+        OtherEngine.StorageType[src_dtype, other_origin, other_address_space],
         OtherLayoutType,
     ],
 ):
-    """Shared copy loop backing every `TensorStorage.copy_from` implementation.
+    """Shared copy loop backing every `TensorEngine.copy_from` implementation.
 
     Copies each logical element of `other` into `storage`, loading through the
-    source policy (`OtherStorage`) and storing through the destination policy
-    (`DstStorage`). When both operands have fully static, row-major layouts and
+    source engine (`OtherEngine`) and storing through the destination engine
+    (`DstEngine`). When both operands have fully static, row-major layouts and
     a scalar logical element, the copy widens to SIMD load + cast + SIMD store
     using the narrower of the two dtypes' native SIMD widths. Expressed entirely
-    in terms of each policy's `load`, `store`, and `unsafe_cast`.
+    in terms of each engine's `load`, `store`, and `unsafe_cast`.
 
     Parameters:
         SelfLayoutType: The layout type of the destination storage.
@@ -486,8 +487,8 @@ def _copy_from[
         src_dtype: The element data type of the source storage.
         self_address_space: The address space of the destination storage.
         other_address_space: The address space of the source storage.
-        DstStorage: The storage policy of the destination.
-        OtherStorage: The storage policy of the source.
+        DstEngine: The engine of the destination.
+        OtherEngine: The engine of the source.
 
     Args:
         storage: A tuple of the destination storage (modified in place) and its
@@ -500,37 +501,37 @@ def _copy_from[
 
     # An immutable view of the source, needed because `load` requires an
     # immutable-origin handle while the source may be mutable.
-    var src_storage = OtherStorage.unsafe_cast[
+    var src_engine = OtherEngine.unsafe_cast[
         src_dtype,
         other_origin.unsafe_mut_cast[False](),
         other_address_space,
     ](other[0])
 
     comptime assert (
-        DstStorage.element_size == OtherStorage.element_size
-    ), "TensorStorage.copy_from requires matching logical element size"
+        DstEngine.element_size == OtherEngine.element_size
+    ), "TensorEngine.copy_from requires matching logical element size"
 
     comptime assert (
         SelfLayoutType.shape_known and OtherLayoutType.shape_known
-    ), "TensorStorage.copy_from requires statically known shapes"
+    ), "TensorEngine.copy_from requires statically known shapes"
 
     comptime src_static = OtherLayoutType.static_product
     comptime dst_static = SelfLayoutType.static_product
     comptime assert (
         src_static == dst_static
-    ), "TensorStorage.copy_from requires matching total element count"
+    ), "TensorEngine.copy_from requires matching total element count"
 
     comptime num_elements = dst_static
     comptime widen = _copy_widen_factor[
         dst_dtype=dst_dtype,
         src_dtype=src_dtype,
-        element_size=DstStorage.element_size,
+        element_size=DstEngine.element_size,
         dst_row_major=_layout_row_major[SelfLayoutType](),
         src_row_major=_layout_row_major[OtherLayoutType](),
         num_elements=num_elements,
     ]()
 
-    comptime width = DstStorage.element_size * widen
+    comptime width = DstEngine.element_size * widen
     comptime dst_alignment = align_of[
         SIMD[dst_dtype, width]
     ]() if is_gpu() else 1
@@ -544,26 +545,26 @@ def _copy_from[
         # contiguous scalar run, so we walk raw scalar offsets in chunks of
         # `width` scalars instead of indexing through the layout (whose
         # flat-index unravel doesn't step by 1 in memory for rank >= 2).
-        comptime num_scalars = num_elements * DstStorage.element_size
+        comptime num_scalars = num_elements * DstEngine.element_size
         comptime num_chunks = num_scalars // width
         comptime for i in range(num_chunks):
-            DstStorage.store[alignment=dst_alignment](
+            DstEngine.store[alignment=dst_alignment](
                 dst_storage,
                 i * width,
-                OtherStorage.load[width=width, alignment=src_alignment](
-                    src_storage, i * width
+                OtherEngine.load[width=width, alignment=src_alignment](
+                    src_engine, i * width
                 ).cast[dst_dtype](),
             )
     else:
         comptime for i in range(num_elements):
             var src_offset = src_layout(Idx[i])
             var dst_offset = dst_layout(Idx[i])
-            DstStorage.store[alignment=dst_alignment](
+            DstEngine.store[alignment=dst_alignment](
                 dst_storage,
                 dst_offset,
-                OtherStorage.load[
-                    width=DstStorage.element_size, alignment=src_alignment
-                ](src_storage, src_offset).cast[dst_dtype](),
+                OtherEngine.load[
+                    width=DstEngine.element_size, alignment=src_alignment
+                ](src_engine, src_offset).cast[dst_dtype](),
             )
 
 
@@ -583,20 +584,20 @@ def _elementwise_binary_out_with_broadcast[
     dst_address_space: AddressSpace,
     lhs_address_space: AddressSpace,
     rhs_address_space: AddressSpace,
-    DstStorage: TensorStorage,
-    LhsStorage: TensorStorage,
-    RhsStorage: TensorStorage,
+    DstEngine: TensorEngine,
+    LhsEngine: TensorEngine,
+    RhsEngine: TensorEngine,
 ](
     dst: Tuple[
-        DstStorage.StorageType[dtype, dst_origin, dst_address_space],
+        DstEngine.StorageType[dtype, dst_origin, dst_address_space],
         DstLayoutType,
     ],
     lhs: Tuple[
-        LhsStorage.StorageType[dtype, lhs_origin, lhs_address_space],
+        LhsEngine.StorageType[dtype, lhs_origin, lhs_address_space],
         LhsLayoutType,
     ],
     rhs: Tuple[
-        RhsStorage.StorageType[dtype, rhs_origin, rhs_address_space],
+        RhsEngine.StorageType[dtype, rhs_origin, rhs_address_space],
         RhsLayoutType,
     ],
     func: Some[
@@ -607,8 +608,8 @@ def _elementwise_binary_out_with_broadcast[
 
     Applies `func` between elements of `lhs` and `rhs` with limited
     broadcasting support, writing results into `dst`. Each operand is loaded
-    or stored through its own storage policy. Expressed entirely in terms of
-    each policy's `load`, `store`, and `unsafe_cast`.
+    or stored through its own engine. Expressed entirely in terms of
+    each engine's `load`, `store`, and `unsafe_cast`.
 
     Parameters:
         DstLayoutType: The layout type of the destination storage.
@@ -621,15 +622,15 @@ def _elementwise_binary_out_with_broadcast[
         rhs_origin: The origin of the right-hand storage operand.
         dtype: The dtype of all three tensors' elements.
         width: The number of scalar elements per logical element. Must equal
-            all three policies' `element_size`.
+            all three engines' `element_size`.
         dst_address_space: The address space of the destination storage.
         lhs_address_space: The address space of the left-hand storage
             operand.
         rhs_address_space: The address space of the right-hand storage
             operand.
-        DstStorage: The storage policy of the destination.
-        LhsStorage: The storage policy of the left-hand operand.
-        RhsStorage: The storage policy of the right-hand operand.
+        DstEngine: The engine of the destination.
+        LhsEngine: The engine of the left-hand operand.
+        RhsEngine: The engine of the right-hand operand.
 
     Args:
         dst: A tuple of the destination storage and its layout.
@@ -653,21 +654,21 @@ def _elementwise_binary_out_with_broadcast[
 
     # Immutable views for loading: `load` requires an immutable-origin handle
     # while operands may be mutable.
-    var lhs_storage = LhsStorage.unsafe_cast[
+    var lhs_storage = LhsEngine.unsafe_cast[
         dtype,
         lhs_origin.unsafe_mut_cast[False](),
         lhs_address_space,
     ](lhs[0])
-    var rhs_storage = RhsStorage.unsafe_cast[
+    var rhs_storage = RhsEngine.unsafe_cast[
         dtype,
         rhs_origin.unsafe_mut_cast[False](),
         rhs_address_space,
     ](rhs[0])
 
     comptime assert (
-        width == DstStorage.element_size
-        and width == LhsStorage.element_size
-        and width == RhsStorage.element_size
+        width == DstEngine.element_size
+        and width == LhsEngine.element_size
+        and width == RhsEngine.element_size
     ), "elementwise binary operations require matching logical element size"
 
     comptime dst_rank = type_of(dst_layout).rank
@@ -728,14 +729,14 @@ def _elementwise_binary_out_with_broadcast[
             var lhs_idx = lhs_layout(Idx[i])
             var rhs_idx = rhs_layout(Idx[i % rhs_size])
 
-            DstStorage.store[alignment=alignment](
+            DstEngine.store[alignment=alignment](
                 dst_storage,
                 dst_idx,
                 func(
-                    LhsStorage.load[width=width, alignment=alignment](
+                    LhsEngine.load[width=width, alignment=alignment](
                         lhs_storage, lhs_idx
                     ),
-                    RhsStorage.load[width=width, alignment=alignment](
+                    RhsEngine.load[width=width, alignment=alignment](
                         rhs_storage, rhs_idx
                     ),
                 ),
@@ -745,14 +746,14 @@ def _elementwise_binary_out_with_broadcast[
             var dst_idx = dst_layout(Idx[i])
             var lhs_idx = lhs_layout(Idx[i])
             var rhs_idx = rhs_layout(Idx[i])
-            DstStorage.store[alignment=alignment](
+            DstEngine.store[alignment=alignment](
                 dst_storage,
                 dst_idx,
                 func(
-                    LhsStorage.load[width=width, alignment=alignment](
+                    LhsEngine.load[width=width, alignment=alignment](
                         lhs_storage, lhs_idx
                     ),
-                    RhsStorage.load[width=width, alignment=alignment](
+                    RhsEngine.load[width=width, alignment=alignment](
                         rhs_storage, rhs_idx
                     ),
                 ),
@@ -771,15 +772,15 @@ def _elementwise_binary_with_broadcast[
     width: Int,
     self_address_space: AddressSpace,
     other_address_space: AddressSpace,
-    DstStorage: TensorStorage,
-    OtherStorage: TensorStorage,
+    DstEngine: TensorEngine,
+    OtherEngine: TensorEngine,
 ](
     storage: Tuple[
-        DstStorage.StorageType[dtype, self_origin, self_address_space],
+        DstEngine.StorageType[dtype, self_origin, self_address_space],
         SelfLayoutType,
     ],
     other: Tuple[
-        OtherStorage.StorageType[dtype, other_origin, other_address_space],
+        OtherEngine.StorageType[dtype, other_origin, other_address_space],
         OtherLayoutType,
     ],
     func: Some[
@@ -799,19 +800,19 @@ def _elementwise_binary_with_broadcast[
 
     # Immutable views for loading: `load` requires an immutable-origin handle
     # while both operands may be mutable.
-    var lhs_storage = DstStorage.unsafe_cast[
+    var lhs_storage = DstEngine.unsafe_cast[
         dtype,
         self_origin.unsafe_mut_cast[False](),
         self_address_space,
     ](storage[0])
-    var rhs_storage = OtherStorage.unsafe_cast[
+    var rhs_storage = OtherEngine.unsafe_cast[
         dtype,
         other_origin.unsafe_mut_cast[False](),
         other_address_space,
     ](other[0])
 
     comptime assert (
-        width == DstStorage.element_size and width == OtherStorage.element_size
+        width == DstEngine.element_size and width == OtherEngine.element_size
     ), "elementwise binary operations require matching logical element size"
 
     comptime self_rank = type_of(self_layout).rank
@@ -855,14 +856,14 @@ def _elementwise_binary_with_broadcast[
             var lhs_idx = self_layout(Idx[i])
             var rhs_idx = other_layout(Idx[i % other_size])
 
-            DstStorage.store[alignment=alignment](
+            DstEngine.store[alignment=alignment](
                 dst_storage,
                 lhs_idx,
                 func(
-                    DstStorage.load[width=width, alignment=alignment](
+                    DstEngine.load[width=width, alignment=alignment](
                         lhs_storage, lhs_idx
                     ),
-                    OtherStorage.load[width=width, alignment=alignment](
+                    OtherEngine.load[width=width, alignment=alignment](
                         rhs_storage, rhs_idx
                     ),
                 ),
@@ -871,14 +872,14 @@ def _elementwise_binary_with_broadcast[
         comptime for i in range(type_of(self_layout).static_product):
             var lhs_idx = self_layout(Idx[i])
             var rhs_idx = other_layout(Idx[i])
-            DstStorage.store[alignment=alignment](
+            DstEngine.store[alignment=alignment](
                 dst_storage,
                 lhs_idx,
                 func(
-                    DstStorage.load[width=width, alignment=alignment](
+                    DstEngine.load[width=width, alignment=alignment](
                         lhs_storage, lhs_idx
                     ),
-                    OtherStorage.load[width=width, alignment=alignment](
+                    OtherEngine.load[width=width, alignment=alignment](
                         rhs_storage, rhs_idx
                     ),
                 ),
@@ -897,15 +898,15 @@ def _elementwise_unary_out[
     width: Int,
     dst_address_space: AddressSpace,
     src_address_space: AddressSpace,
-    DstStorage: TensorStorage,
-    SrcStorage: TensorStorage,
+    DstEngine: TensorEngine,
+    SrcEngine: TensorEngine,
 ](
     dst: Tuple[
-        DstStorage.StorageType[dtype, dst_origin, dst_address_space],
+        DstEngine.StorageType[dtype, dst_origin, dst_address_space],
         DstLayoutType,
     ],
     src: Tuple[
-        SrcStorage.StorageType[dtype, src_origin, src_address_space],
+        SrcEngine.StorageType[dtype, src_origin, src_address_space],
         SrcLayoutType,
     ],
     func: Some[def(SIMD[dtype, width]) -> (SIMD[dtype, width])],
@@ -913,7 +914,7 @@ def _elementwise_unary_out[
     """Shared loop backing out-of-place `TensorOps` elementwise unary ops.
 
     Applies `func` to each element of `src` and writes the result into `dst`.
-    Each operand is accessed through its own storage policy.
+    Each operand is accessed through its own engine.
 
     Parameters:
         DstLayoutType: The layout type of the destination storage.
@@ -923,11 +924,11 @@ def _elementwise_unary_out[
         src_origin: The origin of the source storage.
         dtype: The dtype of both tensors' elements.
         width: The number of scalar elements per logical element. Must equal
-            both policies' `element_size`.
+            both engines' `element_size`.
         dst_address_space: The address space of the destination storage.
         src_address_space: The address space of the source storage.
-        DstStorage: The storage policy of the destination.
-        SrcStorage: The storage policy of the source.
+        DstEngine: The engine of the destination.
+        SrcEngine: The engine of the source.
 
     Args:
         dst: A tuple of the destination storage and its layout.
@@ -938,14 +939,14 @@ def _elementwise_unary_out[
     ref dst_layout = dst[1]
     ref src_layout = src[1]
 
-    var src_storage = SrcStorage.unsafe_cast[
+    var src_engine = SrcEngine.unsafe_cast[
         dtype,
         src_origin.unsafe_mut_cast[False](),
         src_address_space,
     ](src[0])
 
     comptime assert (
-        width == DstStorage.element_size and width == SrcStorage.element_size
+        width == DstEngine.element_size and width == SrcEngine.element_size
     ), "elementwise unary operations require matching logical element size"
 
     comptime assert (
@@ -965,22 +966,22 @@ def _elementwise_unary_out[
     comptime for i in range(type_of(dst_layout).static_product):
         var dst_idx = dst_layout(Idx[i])
         var src_idx = src_layout(Idx[i])
-        DstStorage.store[alignment=alignment](
+        DstEngine.store[alignment=alignment](
             dst_storage,
             dst_idx,
             func(
-                SrcStorage.load[width=width, alignment=alignment](
-                    src_storage, src_idx
+                SrcEngine.load[width=width, alignment=alignment](
+                    src_engine, src_idx
                 )
             ),
         )
 
 
-trait TensorOps(TensorStorage):
-    """Extends `TensorStorage` with elementwise arithmetic.
+trait TensorOps(TensorEngine):
+    """Extends `TensorEngine` with elementwise arithmetic.
 
     A conforming type provides the same non-owning storage handle as
-    `TensorStorage`, plus families of in-place (`i*`) and out-of-place
+    `TensorEngine`, plus families of in-place (`i*`) and out-of-place
     elementwise operations. Binary and out-of-place unary operations take
     their operands as `(storage, layout)` tuples, so the layout describing a
     handle travels alongside it. Out-of-place operations are keyword-only
@@ -998,14 +999,14 @@ trait TensorOps(TensorStorage):
         other_address_space: AddressSpace,
         //,
         dtype: DType,
-        OtherStorage: TensorStorage,
+        OtherEngine: TensorEngine,
     ](
         storage: Tuple[
             Self.StorageType[dtype, self_origin, self_address_space],
             SelfLayoutType,
         ],
         other: Tuple[
-            OtherStorage.StorageType[dtype, other_origin, other_address_space],
+            OtherEngine.StorageType[dtype, other_origin, other_address_space],
             OtherLayoutType,
         ],
     ):
@@ -1021,8 +1022,8 @@ trait TensorOps(TensorStorage):
             other_address_space: The address space of the right-hand storage
                 operand.
             dtype: The element data type of both storages.
-            OtherStorage: The storage policy of the right-hand operand. May
-                differ from `Self` as long as the two policies have the same
+            OtherEngine: The engine of the right-hand operand. May
+                differ from `Self` as long as the two engines have the same
                 logical element size.
 
         Args:
@@ -1043,14 +1044,14 @@ trait TensorOps(TensorStorage):
         other_address_space: AddressSpace,
         //,
         dtype: DType,
-        OtherStorage: TensorStorage,
+        OtherEngine: TensorEngine,
     ](
         storage: Tuple[
             Self.StorageType[dtype, self_origin, self_address_space],
             SelfLayoutType,
         ],
         other: Tuple[
-            OtherStorage.StorageType[dtype, other_origin, other_address_space],
+            OtherEngine.StorageType[dtype, other_origin, other_address_space],
             OtherLayoutType,
         ],
     ):
@@ -1066,8 +1067,8 @@ trait TensorOps(TensorStorage):
             other_address_space: The address space of the right-hand storage
                 operand.
             dtype: The element data type of both storages.
-            OtherStorage: The storage policy of the right-hand operand. May
-                differ from `Self` as long as the two policies have the same
+            OtherEngine: The engine of the right-hand operand. May
+                differ from `Self` as long as the two engines have the same
                 logical element size.
 
         Args:
@@ -1088,14 +1089,14 @@ trait TensorOps(TensorStorage):
         other_address_space: AddressSpace,
         //,
         dtype: DType,
-        OtherStorage: TensorStorage,
+        OtherEngine: TensorEngine,
     ](
         storage: Tuple[
             Self.StorageType[dtype, self_origin, self_address_space],
             SelfLayoutType,
         ],
         other: Tuple[
-            OtherStorage.StorageType[dtype, other_origin, other_address_space],
+            OtherEngine.StorageType[dtype, other_origin, other_address_space],
             OtherLayoutType,
         ],
     ):
@@ -1111,8 +1112,8 @@ trait TensorOps(TensorStorage):
             other_address_space: The address space of the right-hand storage
                 operand.
             dtype: The element data type of both storages.
-            OtherStorage: The storage policy of the right-hand operand. May
-                differ from `Self` as long as the two policies have the same
+            OtherEngine: The engine of the right-hand operand. May
+                differ from `Self` as long as the two engines have the same
                 logical element size.
 
         Args:
@@ -1133,14 +1134,14 @@ trait TensorOps(TensorStorage):
         other_address_space: AddressSpace,
         //,
         dtype: DType,
-        OtherStorage: TensorStorage,
+        OtherEngine: TensorEngine,
     ](
         storage: Tuple[
             Self.StorageType[dtype, self_origin, self_address_space],
             SelfLayoutType,
         ],
         other: Tuple[
-            OtherStorage.StorageType[dtype, other_origin, other_address_space],
+            OtherEngine.StorageType[dtype, other_origin, other_address_space],
             OtherLayoutType,
         ],
     ):
@@ -1156,8 +1157,8 @@ trait TensorOps(TensorStorage):
             other_address_space: The address space of the right-hand storage
                 operand.
             dtype: The element data type of both storages.
-            OtherStorage: The storage policy of the right-hand operand. May
-                differ from `Self` as long as the two policies have the same
+            OtherEngine: The engine of the right-hand operand. May
+                differ from `Self` as long as the two engines have the same
                 logical element size.
 
         Args:
@@ -1178,14 +1179,14 @@ trait TensorOps(TensorStorage):
         other_address_space: AddressSpace,
         //,
         dtype: DType,
-        OtherStorage: TensorStorage,
+        OtherEngine: TensorEngine,
     ](
         storage: Tuple[
             Self.StorageType[dtype, self_origin, self_address_space],
             SelfLayoutType,
         ],
         other: Tuple[
-            OtherStorage.StorageType[dtype, other_origin, other_address_space],
+            OtherEngine.StorageType[dtype, other_origin, other_address_space],
             OtherLayoutType,
         ],
     ):
@@ -1201,8 +1202,8 @@ trait TensorOps(TensorStorage):
             other_address_space: The address space of the right-hand storage
                 operand.
             dtype: The element data type of both storages.
-            OtherStorage: The storage policy of the right-hand operand. May
-                differ from `Self` as long as the two policies have the same
+            OtherEngine: The engine of the right-hand operand. May
+                differ from `Self` as long as the two engines have the same
                 logical element size.
 
         Args:
@@ -1223,14 +1224,14 @@ trait TensorOps(TensorStorage):
         other_address_space: AddressSpace,
         //,
         dtype: DType,
-        OtherStorage: TensorStorage,
+        OtherEngine: TensorEngine,
     ](
         storage: Tuple[
             Self.StorageType[dtype, self_origin, self_address_space],
             SelfLayoutType,
         ],
         other: Tuple[
-            OtherStorage.StorageType[dtype, other_origin, other_address_space],
+            OtherEngine.StorageType[dtype, other_origin, other_address_space],
             OtherLayoutType,
         ],
     ):
@@ -1246,8 +1247,8 @@ trait TensorOps(TensorStorage):
             other_address_space: The address space of the right-hand storage
                 operand.
             dtype: The element data type of both storages.
-            OtherStorage: The storage policy of the right-hand operand. May
-                differ from `Self` as long as the two policies have the same
+            OtherEngine: The engine of the right-hand operand. May
+                differ from `Self` as long as the two engines have the same
                 logical element size.
 
         Args:
@@ -1268,14 +1269,14 @@ trait TensorOps(TensorStorage):
         other_address_space: AddressSpace,
         //,
         dtype: DType,
-        OtherStorage: TensorStorage,
+        OtherEngine: TensorEngine,
     ](
         storage: Tuple[
             Self.StorageType[dtype, self_origin, self_address_space],
             SelfLayoutType,
         ],
         other: Tuple[
-            OtherStorage.StorageType[dtype, other_origin, other_address_space],
+            OtherEngine.StorageType[dtype, other_origin, other_address_space],
             OtherLayoutType,
         ],
     ):
@@ -1291,8 +1292,8 @@ trait TensorOps(TensorStorage):
             other_address_space: The address space of the right-hand storage
                 operand.
             dtype: The element data type of both storages.
-            OtherStorage: The storage policy of the right-hand operand. May
-                differ from `Self` as long as the two policies have the same
+            OtherEngine: The engine of the right-hand operand. May
+                differ from `Self` as long as the two engines have the same
                 logical element size.
 
         Args:
@@ -1391,8 +1392,8 @@ trait TensorOps(TensorStorage):
         rhs_address_space: AddressSpace,
         //,
         dtype: DType,
-        LhsStorage: TensorStorage,
-        RhsStorage: TensorStorage,
+        LhsEngine: TensorEngine,
+        RhsEngine: TensorEngine,
     ](
         *,
         dst: Tuple[
@@ -1400,11 +1401,11 @@ trait TensorOps(TensorStorage):
             DstLayoutType,
         ],
         lhs: Tuple[
-            LhsStorage.StorageType[dtype, lhs_origin, lhs_address_space],
+            LhsEngine.StorageType[dtype, lhs_origin, lhs_address_space],
             LhsLayoutType,
         ],
         rhs: Tuple[
-            RhsStorage.StorageType[dtype, rhs_origin, rhs_address_space],
+            RhsEngine.StorageType[dtype, rhs_origin, rhs_address_space],
             RhsLayoutType,
         ],
     ):
@@ -1425,11 +1426,11 @@ trait TensorOps(TensorStorage):
             rhs_address_space: The address space of the right-hand storage
                 operand.
             dtype: The element data type of all three storages.
-            LhsStorage: The storage policy of the left-hand operand. May
-                differ from `Self` as long as the policies have the same
+            LhsEngine: The engine of the left-hand operand. May
+                differ from `Self` as long as the engines have the same
                 logical element size.
-            RhsStorage: The storage policy of the right-hand operand. May
-                differ from `Self` as long as the policies have the same
+            RhsEngine: The engine of the right-hand operand. May
+                differ from `Self` as long as the engines have the same
                 logical element size.
 
         Args:
@@ -1454,8 +1455,8 @@ trait TensorOps(TensorStorage):
         rhs_address_space: AddressSpace,
         //,
         dtype: DType,
-        LhsStorage: TensorStorage,
-        RhsStorage: TensorStorage,
+        LhsEngine: TensorEngine,
+        RhsEngine: TensorEngine,
     ](
         *,
         dst: Tuple[
@@ -1463,11 +1464,11 @@ trait TensorOps(TensorStorage):
             DstLayoutType,
         ],
         lhs: Tuple[
-            LhsStorage.StorageType[dtype, lhs_origin, lhs_address_space],
+            LhsEngine.StorageType[dtype, lhs_origin, lhs_address_space],
             LhsLayoutType,
         ],
         rhs: Tuple[
-            RhsStorage.StorageType[dtype, rhs_origin, rhs_address_space],
+            RhsEngine.StorageType[dtype, rhs_origin, rhs_address_space],
             RhsLayoutType,
         ],
     ):
@@ -1488,11 +1489,11 @@ trait TensorOps(TensorStorage):
             rhs_address_space: The address space of the right-hand storage
                 operand.
             dtype: The element data type of all three storages.
-            LhsStorage: The storage policy of the left-hand operand. May
-                differ from `Self` as long as the policies have the same
+            LhsEngine: The engine of the left-hand operand. May
+                differ from `Self` as long as the engines have the same
                 logical element size.
-            RhsStorage: The storage policy of the right-hand operand. May
-                differ from `Self` as long as the policies have the same
+            RhsEngine: The engine of the right-hand operand. May
+                differ from `Self` as long as the engines have the same
                 logical element size.
 
         Args:
@@ -1517,8 +1518,8 @@ trait TensorOps(TensorStorage):
         rhs_address_space: AddressSpace,
         //,
         dtype: DType,
-        LhsStorage: TensorStorage,
-        RhsStorage: TensorStorage,
+        LhsEngine: TensorEngine,
+        RhsEngine: TensorEngine,
     ](
         *,
         dst: Tuple[
@@ -1526,11 +1527,11 @@ trait TensorOps(TensorStorage):
             DstLayoutType,
         ],
         lhs: Tuple[
-            LhsStorage.StorageType[dtype, lhs_origin, lhs_address_space],
+            LhsEngine.StorageType[dtype, lhs_origin, lhs_address_space],
             LhsLayoutType,
         ],
         rhs: Tuple[
-            RhsStorage.StorageType[dtype, rhs_origin, rhs_address_space],
+            RhsEngine.StorageType[dtype, rhs_origin, rhs_address_space],
             RhsLayoutType,
         ],
     ):
@@ -1551,11 +1552,11 @@ trait TensorOps(TensorStorage):
             rhs_address_space: The address space of the right-hand storage
                 operand.
             dtype: The element data type of all three storages.
-            LhsStorage: The storage policy of the left-hand operand. May
-                differ from `Self` as long as the policies have the same
+            LhsEngine: The engine of the left-hand operand. May
+                differ from `Self` as long as the engines have the same
                 logical element size.
-            RhsStorage: The storage policy of the right-hand operand. May
-                differ from `Self` as long as the policies have the same
+            RhsEngine: The engine of the right-hand operand. May
+                differ from `Self` as long as the engines have the same
                 logical element size.
 
         Args:
@@ -1580,8 +1581,8 @@ trait TensorOps(TensorStorage):
         rhs_address_space: AddressSpace,
         //,
         dtype: DType,
-        LhsStorage: TensorStorage,
-        RhsStorage: TensorStorage,
+        LhsEngine: TensorEngine,
+        RhsEngine: TensorEngine,
     ](
         *,
         dst: Tuple[
@@ -1589,11 +1590,11 @@ trait TensorOps(TensorStorage):
             DstLayoutType,
         ],
         lhs: Tuple[
-            LhsStorage.StorageType[dtype, lhs_origin, lhs_address_space],
+            LhsEngine.StorageType[dtype, lhs_origin, lhs_address_space],
             LhsLayoutType,
         ],
         rhs: Tuple[
-            RhsStorage.StorageType[dtype, rhs_origin, rhs_address_space],
+            RhsEngine.StorageType[dtype, rhs_origin, rhs_address_space],
             RhsLayoutType,
         ],
     ):
@@ -1614,11 +1615,11 @@ trait TensorOps(TensorStorage):
             rhs_address_space: The address space of the right-hand storage
                 operand.
             dtype: The element data type of all three storages.
-            LhsStorage: The storage policy of the left-hand operand. May
-                differ from `Self` as long as the policies have the same
+            LhsEngine: The engine of the left-hand operand. May
+                differ from `Self` as long as the engines have the same
                 logical element size.
-            RhsStorage: The storage policy of the right-hand operand. May
-                differ from `Self` as long as the policies have the same
+            RhsEngine: The engine of the right-hand operand. May
+                differ from `Self` as long as the engines have the same
                 logical element size.
 
         Args:
@@ -1643,8 +1644,8 @@ trait TensorOps(TensorStorage):
         rhs_address_space: AddressSpace,
         //,
         dtype: DType,
-        LhsStorage: TensorStorage,
-        RhsStorage: TensorStorage,
+        LhsEngine: TensorEngine,
+        RhsEngine: TensorEngine,
     ](
         *,
         dst: Tuple[
@@ -1652,11 +1653,11 @@ trait TensorOps(TensorStorage):
             DstLayoutType,
         ],
         lhs: Tuple[
-            LhsStorage.StorageType[dtype, lhs_origin, lhs_address_space],
+            LhsEngine.StorageType[dtype, lhs_origin, lhs_address_space],
             LhsLayoutType,
         ],
         rhs: Tuple[
-            RhsStorage.StorageType[dtype, rhs_origin, rhs_address_space],
+            RhsEngine.StorageType[dtype, rhs_origin, rhs_address_space],
             RhsLayoutType,
         ],
     ):
@@ -1677,11 +1678,11 @@ trait TensorOps(TensorStorage):
             rhs_address_space: The address space of the right-hand storage
                 operand.
             dtype: The element data type of all three storages.
-            LhsStorage: The storage policy of the left-hand operand. May
-                differ from `Self` as long as the policies have the same
+            LhsEngine: The engine of the left-hand operand. May
+                differ from `Self` as long as the engines have the same
                 logical element size.
-            RhsStorage: The storage policy of the right-hand operand. May
-                differ from `Self` as long as the policies have the same
+            RhsEngine: The engine of the right-hand operand. May
+                differ from `Self` as long as the engines have the same
                 logical element size.
 
         Args:
@@ -1706,8 +1707,8 @@ trait TensorOps(TensorStorage):
         rhs_address_space: AddressSpace,
         //,
         dtype: DType,
-        LhsStorage: TensorStorage,
-        RhsStorage: TensorStorage,
+        LhsEngine: TensorEngine,
+        RhsEngine: TensorEngine,
     ](
         *,
         dst: Tuple[
@@ -1715,11 +1716,11 @@ trait TensorOps(TensorStorage):
             DstLayoutType,
         ],
         lhs: Tuple[
-            LhsStorage.StorageType[dtype, lhs_origin, lhs_address_space],
+            LhsEngine.StorageType[dtype, lhs_origin, lhs_address_space],
             LhsLayoutType,
         ],
         rhs: Tuple[
-            RhsStorage.StorageType[dtype, rhs_origin, rhs_address_space],
+            RhsEngine.StorageType[dtype, rhs_origin, rhs_address_space],
             RhsLayoutType,
         ],
     ):
@@ -1740,11 +1741,11 @@ trait TensorOps(TensorStorage):
             rhs_address_space: The address space of the right-hand storage
                 operand.
             dtype: The element data type of all three storages.
-            LhsStorage: The storage policy of the left-hand operand. May
-                differ from `Self` as long as the policies have the same
+            LhsEngine: The engine of the left-hand operand. May
+                differ from `Self` as long as the engines have the same
                 logical element size.
-            RhsStorage: The storage policy of the right-hand operand. May
-                differ from `Self` as long as the policies have the same
+            RhsEngine: The engine of the right-hand operand. May
+                differ from `Self` as long as the engines have the same
                 logical element size.
 
         Args:
@@ -1769,8 +1770,8 @@ trait TensorOps(TensorStorage):
         rhs_address_space: AddressSpace,
         //,
         dtype: DType,
-        LhsStorage: TensorStorage,
-        RhsStorage: TensorStorage,
+        LhsEngine: TensorEngine,
+        RhsEngine: TensorEngine,
     ](
         *,
         dst: Tuple[
@@ -1778,11 +1779,11 @@ trait TensorOps(TensorStorage):
             DstLayoutType,
         ],
         lhs: Tuple[
-            LhsStorage.StorageType[dtype, lhs_origin, lhs_address_space],
+            LhsEngine.StorageType[dtype, lhs_origin, lhs_address_space],
             LhsLayoutType,
         ],
         rhs: Tuple[
-            RhsStorage.StorageType[dtype, rhs_origin, rhs_address_space],
+            RhsEngine.StorageType[dtype, rhs_origin, rhs_address_space],
             RhsLayoutType,
         ],
     ):
@@ -1803,11 +1804,11 @@ trait TensorOps(TensorStorage):
             rhs_address_space: The address space of the right-hand storage
                 operand.
             dtype: The element data type of all three storages.
-            LhsStorage: The storage policy of the left-hand operand. May
-                differ from `Self` as long as the policies have the same
+            LhsEngine: The engine of the left-hand operand. May
+                differ from `Self` as long as the engines have the same
                 logical element size.
-            RhsStorage: The storage policy of the right-hand operand. May
-                differ from `Self` as long as the policies have the same
+            RhsEngine: The engine of the right-hand operand. May
+                differ from `Self` as long as the engines have the same
                 logical element size.
 
         Args:
@@ -1828,7 +1829,7 @@ trait TensorOps(TensorStorage):
         src_address_space: AddressSpace,
         //,
         dtype: DType,
-        SrcStorage: TensorStorage,
+        SrcEngine: TensorEngine,
     ](
         *,
         dst: Tuple[
@@ -1836,7 +1837,7 @@ trait TensorOps(TensorStorage):
             DstLayoutType,
         ],
         src: Tuple[
-            SrcStorage.StorageType[dtype, src_origin, src_address_space],
+            SrcEngine.StorageType[dtype, src_origin, src_address_space],
             SrcLayoutType,
         ],
     ):
@@ -1853,8 +1854,8 @@ trait TensorOps(TensorStorage):
             src_origin: The origin of the source storage.
             src_address_space: The address space of the source storage.
             dtype: The element data type of both storages.
-            SrcStorage: The storage policy of the source. May differ from
-                `Self` as long as the two policies have the same logical
+            SrcEngine: The engine of the source. May differ from
+                `Self` as long as the two engines have the same logical
                 element size.
 
         Args:
@@ -1874,7 +1875,7 @@ trait TensorOps(TensorStorage):
         src_address_space: AddressSpace,
         //,
         dtype: DType,
-        SrcStorage: TensorStorage,
+        SrcEngine: TensorEngine,
     ](
         *,
         dst: Tuple[
@@ -1882,7 +1883,7 @@ trait TensorOps(TensorStorage):
             DstLayoutType,
         ],
         src: Tuple[
-            SrcStorage.StorageType[dtype, src_origin, src_address_space],
+            SrcEngine.StorageType[dtype, src_origin, src_address_space],
             SrcLayoutType,
         ],
     ):
@@ -1900,8 +1901,8 @@ trait TensorOps(TensorStorage):
             src_origin: The origin of the source storage.
             src_address_space: The address space of the source storage.
             dtype: The element data type of both storages.
-            SrcStorage: The storage policy of the source. May differ from
-                `Self` as long as the two policies have the same logical
+            SrcEngine: The engine of the source. May differ from
+                `Self` as long as the two engines have the same logical
                 element size.
 
         Args:
@@ -1920,7 +1921,7 @@ trait TensorOps(TensorStorage):
         src_origin: Origin[mut=src_mut],
         src_address_space: AddressSpace,
         dtype: DType,
-        SrcStorage: TensorStorage,
+        SrcEngine: TensorEngine,
         scale_dtype: DType = dtype,
         //,
         scale: Scalar[scale_dtype] = 1,
@@ -1931,7 +1932,7 @@ trait TensorOps(TensorStorage):
             DstLayoutType,
         ],
         src: Tuple[
-            SrcStorage.StorageType[dtype, src_origin, src_address_space],
+            SrcEngine.StorageType[dtype, src_origin, src_address_space],
             SrcLayoutType,
         ],
     ):
@@ -1951,8 +1952,8 @@ trait TensorOps(TensorStorage):
             src_address_space: The address space of the source storage.
             dtype: The element data type of both storages. Must be a
                 floating-point type.
-            SrcStorage: The storage policy of the source. May differ from
-                `Self` as long as the two policies have the same logical
+            SrcEngine: The engine of the source. May differ from
+                `Self` as long as the two engines have the same logical
                 element size.
             scale_dtype: The data type of the scale factor. Defaults to
                 `dtype`; the scale is cast to `dtype` before the
@@ -1967,10 +1968,10 @@ trait TensorOps(TensorStorage):
         ...
 
 
-struct PointerStorage[*, element_width: Int = 1](TensorOps):
+struct DefaultEngine[*, element_width: Int = 1](TensorOps):
     """Implements `TensorOps` backed by a raw `Pointer`.
 
-    `PointerStorage` is the default storage policy for `TileTensor`. Its
+    `DefaultEngine` is the default engine for `TileTensor`. Its
     `StorageType` handle is a plain `Pointer`, and every operation is
     expressed directly in terms of the underlying pointer.
 
@@ -1983,8 +1984,8 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
     comptime element_size = Self.element_width
     """Number of scalar elements per logical element (alias of `element_width`)."""
 
-    comptime _BASE_TYPE_NAME: StaticString = "PointerStorage"
-    """The unparameterized name of this storage policy."""
+    comptime _BASE_TYPE_NAME: StaticString = "DefaultEngine"
+    """The unparameterized name of this engine."""
 
     comptime StorageType[
         mut: Bool,
@@ -2006,12 +2007,12 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
 
     @staticmethod
     def write_type_name_to(mut writer: Some[Writer]):
-        """Writes the storage type name representation to the writer.
+        """Writes the engine type name representation to the writer.
 
         Args:
             writer: The `Writer` to output to.
         """
-        t"PointerStorage[element_size={Self.element_size}]".write_to(writer)
+        t"DefaultEngine[element_size={Self.element_size}]".write_to(writer)
 
     @doc_hidden
     @staticmethod
@@ -2208,10 +2209,10 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
 
     comptime OffsetResultType[
         offset_types: TypeList[Trait=CoordLike, ...],
-    ]: TensorStorage = Self
+    ]: TensorEngine = Self
     """The storage type produced by offsetting with a given coordinate.
 
-    Offsetting never changes the storage policy, so this is `Self`.
+    Offsetting never changes the engine, so this is `Self`.
 
     Parameters:
         offset_types: The coordinate element types of the applied offset.
@@ -2306,14 +2307,14 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
         //,
         dst_dtype: DType,
         src_dtype: DType,
-        OtherStorage: TensorStorage,
+        OtherEngine: TensorEngine,
     ](
         storage: Tuple[
             Self.StorageType[dst_dtype, self_origin, self_address_space],
             SelfLayoutType,
         ],
         other: Tuple[
-            OtherStorage.StorageType[
+            OtherEngine.StorageType[
                 src_dtype, other_origin, other_address_space
             ],
             OtherLayoutType,
@@ -2322,8 +2323,8 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
         """Copies the elements of `other` into `storage`, in place.
 
         Loads each logical element from `other` through its (possibly
-        different) storage policy and stores it into `storage` through
-        `PointerStorage`, casting to the destination dtype. Delegates to the
+        different) engine and stores it into `storage` through
+        `DefaultEngine`, casting to the destination dtype. Delegates to the
         shared `_copy_from` loop.
 
         Parameters:
@@ -2336,8 +2337,8 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
             other_address_space: The address space of the source storage.
             dst_dtype: The element data type of the destination storage.
             src_dtype: The element data type of the source storage.
-            OtherStorage: The storage policy of the source. May differ from
-                `Self` as long as the two policies are copy-compatible (same
+            OtherEngine: The engine of the source. May differ from
+                `Self` as long as the two engines are copy-compatible (same
                 logical element size).
 
         Constraints:
@@ -2354,7 +2355,7 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
             other: A tuple of the source storage and its layout.
         """
         _copy_from[
-            DstStorage=Self,
+            DstEngine=Self,
             self_address_space=self_address_space,
             other_address_space=other_address_space,
         ](storage, other)
@@ -2370,14 +2371,14 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
         other_address_space: AddressSpace,
         //,
         dtype: DType,
-        OtherStorage: TensorStorage,
+        OtherEngine: TensorEngine,
     ](
         storage: Tuple[
             Self.StorageType[dtype, self_origin, self_address_space],
             SelfLayoutType,
         ],
         other: Tuple[
-            OtherStorage.StorageType[dtype, other_origin, other_address_space],
+            OtherEngine.StorageType[dtype, other_origin, other_address_space],
             OtherLayoutType,
         ],
     ):
@@ -2393,8 +2394,8 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
             other_address_space: The address space of the right-hand storage
                 operand.
             dtype: The element data type of both storages.
-            OtherStorage: The storage policy of the right-hand operand. May
-                differ from `Self` as long as the two policies have the same
+            OtherEngine: The engine of the right-hand operand. May
+                differ from `Self` as long as the two engines have the same
                 logical element size.
 
         Args:
@@ -2407,7 +2408,7 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
             width=Self.element_size,
             self_address_space=self_address_space,
             other_address_space=other_address_space,
-            DstStorage=Self,
+            DstEngine=Self,
         ](storage, other, SIMD[dtype, Self.element_size].__add__)
 
     @staticmethod
@@ -2421,14 +2422,14 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
         other_address_space: AddressSpace,
         //,
         dtype: DType,
-        OtherStorage: TensorStorage,
+        OtherEngine: TensorEngine,
     ](
         storage: Tuple[
             Self.StorageType[dtype, self_origin, self_address_space],
             SelfLayoutType,
         ],
         other: Tuple[
-            OtherStorage.StorageType[dtype, other_origin, other_address_space],
+            OtherEngine.StorageType[dtype, other_origin, other_address_space],
             OtherLayoutType,
         ],
     ):
@@ -2444,8 +2445,8 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
             other_address_space: The address space of the right-hand storage
                 operand.
             dtype: The element data type of both storages.
-            OtherStorage: The storage policy of the right-hand operand. May
-                differ from `Self` as long as the two policies have the same
+            OtherEngine: The engine of the right-hand operand. May
+                differ from `Self` as long as the two engines have the same
                 logical element size.
 
         Args:
@@ -2458,7 +2459,7 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
             width=Self.element_size,
             self_address_space=self_address_space,
             other_address_space=other_address_space,
-            DstStorage=Self,
+            DstEngine=Self,
         ](storage, other, SIMD[dtype, Self.element_size].__mul__)
 
     @staticmethod
@@ -2472,14 +2473,14 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
         other_address_space: AddressSpace,
         //,
         dtype: DType,
-        OtherStorage: TensorStorage,
+        OtherEngine: TensorEngine,
     ](
         storage: Tuple[
             Self.StorageType[dtype, self_origin, self_address_space],
             SelfLayoutType,
         ],
         other: Tuple[
-            OtherStorage.StorageType[dtype, other_origin, other_address_space],
+            OtherEngine.StorageType[dtype, other_origin, other_address_space],
             OtherLayoutType,
         ],
     ):
@@ -2495,8 +2496,8 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
             other_address_space: The address space of the right-hand storage
                 operand.
             dtype: The element data type of both storages.
-            OtherStorage: The storage policy of the right-hand operand. May
-                differ from `Self` as long as the two policies have the same
+            OtherEngine: The engine of the right-hand operand. May
+                differ from `Self` as long as the two engines have the same
                 logical element size.
 
         Args:
@@ -2509,7 +2510,7 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
             width=Self.element_size,
             self_address_space=self_address_space,
             other_address_space=other_address_space,
-            DstStorage=Self,
+            DstEngine=Self,
         ](storage, other, SIMD[dtype, Self.element_size].__sub__)
 
     @staticmethod
@@ -2523,14 +2524,14 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
         other_address_space: AddressSpace,
         //,
         dtype: DType,
-        OtherStorage: TensorStorage,
+        OtherEngine: TensorEngine,
     ](
         storage: Tuple[
             Self.StorageType[dtype, self_origin, self_address_space],
             SelfLayoutType,
         ],
         other: Tuple[
-            OtherStorage.StorageType[dtype, other_origin, other_address_space],
+            OtherEngine.StorageType[dtype, other_origin, other_address_space],
             OtherLayoutType,
         ],
     ):
@@ -2546,8 +2547,8 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
             other_address_space: The address space of the right-hand storage
                 operand.
             dtype: The element data type of both storages.
-            OtherStorage: The storage policy of the right-hand operand. May
-                differ from `Self` as long as the two policies have the same
+            OtherEngine: The engine of the right-hand operand. May
+                differ from `Self` as long as the two engines have the same
                 logical element size.
 
         Args:
@@ -2560,7 +2561,7 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
             width=Self.element_size,
             self_address_space=self_address_space,
             other_address_space=other_address_space,
-            DstStorage=Self,
+            DstEngine=Self,
         ](storage, other, SIMD[dtype, Self.element_size].__floordiv__)
 
     @staticmethod
@@ -2574,14 +2575,14 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
         other_address_space: AddressSpace,
         //,
         dtype: DType,
-        OtherStorage: TensorStorage,
+        OtherEngine: TensorEngine,
     ](
         storage: Tuple[
             Self.StorageType[dtype, self_origin, self_address_space],
             SelfLayoutType,
         ],
         other: Tuple[
-            OtherStorage.StorageType[dtype, other_origin, other_address_space],
+            OtherEngine.StorageType[dtype, other_origin, other_address_space],
             OtherLayoutType,
         ],
     ):
@@ -2597,8 +2598,8 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
             other_address_space: The address space of the right-hand storage
                 operand.
             dtype: The element data type of both storages.
-            OtherStorage: The storage policy of the right-hand operand. May
-                differ from `Self` as long as the two policies have the same
+            OtherEngine: The engine of the right-hand operand. May
+                differ from `Self` as long as the two engines have the same
                 logical element size.
 
         Args:
@@ -2611,7 +2612,7 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
             width=Self.element_size,
             self_address_space=self_address_space,
             other_address_space=other_address_space,
-            DstStorage=Self,
+            DstEngine=Self,
         ](storage, other, SIMD[dtype, Self.element_size].__truediv__)
 
     @staticmethod
@@ -2625,14 +2626,14 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
         other_address_space: AddressSpace,
         //,
         dtype: DType,
-        OtherStorage: TensorStorage,
+        OtherEngine: TensorEngine,
     ](
         storage: Tuple[
             Self.StorageType[dtype, self_origin, self_address_space],
             SelfLayoutType,
         ],
         other: Tuple[
-            OtherStorage.StorageType[dtype, other_origin, other_address_space],
+            OtherEngine.StorageType[dtype, other_origin, other_address_space],
             OtherLayoutType,
         ],
     ):
@@ -2648,8 +2649,8 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
             other_address_space: The address space of the right-hand storage
                 operand.
             dtype: The element data type of both storages.
-            OtherStorage: The storage policy of the right-hand operand. May
-                differ from `Self` as long as the two policies have the same
+            OtherEngine: The engine of the right-hand operand. May
+                differ from `Self` as long as the two engines have the same
                 logical element size.
 
         Args:
@@ -2662,7 +2663,7 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
             width=Self.element_size,
             self_address_space=self_address_space,
             other_address_space=other_address_space,
-            DstStorage=Self,
+            DstEngine=Self,
         ](
             storage,
             other,
@@ -2682,14 +2683,14 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
         other_address_space: AddressSpace,
         //,
         dtype: DType,
-        OtherStorage: TensorStorage,
+        OtherEngine: TensorEngine,
     ](
         storage: Tuple[
             Self.StorageType[dtype, self_origin, self_address_space],
             SelfLayoutType,
         ],
         other: Tuple[
-            OtherStorage.StorageType[dtype, other_origin, other_address_space],
+            OtherEngine.StorageType[dtype, other_origin, other_address_space],
             OtherLayoutType,
         ],
     ):
@@ -2705,8 +2706,8 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
             other_address_space: The address space of the right-hand storage
                 operand.
             dtype: The element data type of both storages.
-            OtherStorage: The storage policy of the right-hand operand. May
-                differ from `Self` as long as the two policies have the same
+            OtherEngine: The engine of the right-hand operand. May
+                differ from `Self` as long as the two engines have the same
                 logical element size.
 
         Args:
@@ -2719,7 +2720,7 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
             width=Self.element_size,
             self_address_space=self_address_space,
             other_address_space=other_address_space,
-            DstStorage=Self,
+            DstEngine=Self,
         ](
             storage,
             other,
@@ -2901,8 +2902,8 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
         rhs_address_space: AddressSpace,
         //,
         dtype: DType,
-        LhsStorage: TensorStorage,
-        RhsStorage: TensorStorage,
+        LhsEngine: TensorEngine,
+        RhsEngine: TensorEngine,
     ](
         *,
         dst: Tuple[
@@ -2910,11 +2911,11 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
             DstLayoutType,
         ],
         lhs: Tuple[
-            LhsStorage.StorageType[dtype, lhs_origin, lhs_address_space],
+            LhsEngine.StorageType[dtype, lhs_origin, lhs_address_space],
             LhsLayoutType,
         ],
         rhs: Tuple[
-            RhsStorage.StorageType[dtype, rhs_origin, rhs_address_space],
+            RhsEngine.StorageType[dtype, rhs_origin, rhs_address_space],
             RhsLayoutType,
         ],
     ):
@@ -2935,11 +2936,11 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
             rhs_address_space: The address space of the right-hand storage
                 operand.
             dtype: The element data type of all three storages.
-            LhsStorage: The storage policy of the left-hand operand. May
-                differ from `Self` as long as the policies have the same
+            LhsEngine: The engine of the left-hand operand. May
+                differ from `Self` as long as the engines have the same
                 logical element size.
-            RhsStorage: The storage policy of the right-hand operand. May
-                differ from `Self` as long as the policies have the same
+            RhsEngine: The engine of the right-hand operand. May
+                differ from `Self` as long as the engines have the same
                 logical element size.
 
         Args:
@@ -2953,7 +2954,7 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
             dst_address_space=dst_address_space,
             lhs_address_space=lhs_address_space,
             rhs_address_space=rhs_address_space,
-            DstStorage=Self,
+            DstEngine=Self,
         ](dst, lhs, rhs, SIMD[dtype, Self.element_size].__add__)
 
     @staticmethod
@@ -2971,8 +2972,8 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
         rhs_address_space: AddressSpace,
         //,
         dtype: DType,
-        LhsStorage: TensorStorage,
-        RhsStorage: TensorStorage,
+        LhsEngine: TensorEngine,
+        RhsEngine: TensorEngine,
     ](
         *,
         dst: Tuple[
@@ -2980,11 +2981,11 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
             DstLayoutType,
         ],
         lhs: Tuple[
-            LhsStorage.StorageType[dtype, lhs_origin, lhs_address_space],
+            LhsEngine.StorageType[dtype, lhs_origin, lhs_address_space],
             LhsLayoutType,
         ],
         rhs: Tuple[
-            RhsStorage.StorageType[dtype, rhs_origin, rhs_address_space],
+            RhsEngine.StorageType[dtype, rhs_origin, rhs_address_space],
             RhsLayoutType,
         ],
     ):
@@ -3005,11 +3006,11 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
             rhs_address_space: The address space of the right-hand storage
                 operand.
             dtype: The element data type of all three storages.
-            LhsStorage: The storage policy of the left-hand operand. May
-                differ from `Self` as long as the policies have the same
+            LhsEngine: The engine of the left-hand operand. May
+                differ from `Self` as long as the engines have the same
                 logical element size.
-            RhsStorage: The storage policy of the right-hand operand. May
-                differ from `Self` as long as the policies have the same
+            RhsEngine: The engine of the right-hand operand. May
+                differ from `Self` as long as the engines have the same
                 logical element size.
 
         Args:
@@ -3023,7 +3024,7 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
             dst_address_space=dst_address_space,
             lhs_address_space=lhs_address_space,
             rhs_address_space=rhs_address_space,
-            DstStorage=Self,
+            DstEngine=Self,
         ](dst, lhs, rhs, SIMD[dtype, Self.element_size].__mul__)
 
     @staticmethod
@@ -3041,8 +3042,8 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
         rhs_address_space: AddressSpace,
         //,
         dtype: DType,
-        LhsStorage: TensorStorage,
-        RhsStorage: TensorStorage,
+        LhsEngine: TensorEngine,
+        RhsEngine: TensorEngine,
     ](
         *,
         dst: Tuple[
@@ -3050,11 +3051,11 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
             DstLayoutType,
         ],
         lhs: Tuple[
-            LhsStorage.StorageType[dtype, lhs_origin, lhs_address_space],
+            LhsEngine.StorageType[dtype, lhs_origin, lhs_address_space],
             LhsLayoutType,
         ],
         rhs: Tuple[
-            RhsStorage.StorageType[dtype, rhs_origin, rhs_address_space],
+            RhsEngine.StorageType[dtype, rhs_origin, rhs_address_space],
             RhsLayoutType,
         ],
     ):
@@ -3075,11 +3076,11 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
             rhs_address_space: The address space of the right-hand storage
                 operand.
             dtype: The element data type of all three storages.
-            LhsStorage: The storage policy of the left-hand operand. May
-                differ from `Self` as long as the policies have the same
+            LhsEngine: The engine of the left-hand operand. May
+                differ from `Self` as long as the engines have the same
                 logical element size.
-            RhsStorage: The storage policy of the right-hand operand. May
-                differ from `Self` as long as the policies have the same
+            RhsEngine: The engine of the right-hand operand. May
+                differ from `Self` as long as the engines have the same
                 logical element size.
 
         Args:
@@ -3093,7 +3094,7 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
             dst_address_space=dst_address_space,
             lhs_address_space=lhs_address_space,
             rhs_address_space=rhs_address_space,
-            DstStorage=Self,
+            DstEngine=Self,
         ](dst, lhs, rhs, SIMD[dtype, Self.element_size].__sub__)
 
     @staticmethod
@@ -3111,8 +3112,8 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
         rhs_address_space: AddressSpace,
         //,
         dtype: DType,
-        LhsStorage: TensorStorage,
-        RhsStorage: TensorStorage,
+        LhsEngine: TensorEngine,
+        RhsEngine: TensorEngine,
     ](
         *,
         dst: Tuple[
@@ -3120,11 +3121,11 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
             DstLayoutType,
         ],
         lhs: Tuple[
-            LhsStorage.StorageType[dtype, lhs_origin, lhs_address_space],
+            LhsEngine.StorageType[dtype, lhs_origin, lhs_address_space],
             LhsLayoutType,
         ],
         rhs: Tuple[
-            RhsStorage.StorageType[dtype, rhs_origin, rhs_address_space],
+            RhsEngine.StorageType[dtype, rhs_origin, rhs_address_space],
             RhsLayoutType,
         ],
     ):
@@ -3145,11 +3146,11 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
             rhs_address_space: The address space of the right-hand storage
                 operand.
             dtype: The element data type of all three storages.
-            LhsStorage: The storage policy of the left-hand operand. May
-                differ from `Self` as long as the policies have the same
+            LhsEngine: The engine of the left-hand operand. May
+                differ from `Self` as long as the engines have the same
                 logical element size.
-            RhsStorage: The storage policy of the right-hand operand. May
-                differ from `Self` as long as the policies have the same
+            RhsEngine: The engine of the right-hand operand. May
+                differ from `Self` as long as the engines have the same
                 logical element size.
 
         Args:
@@ -3163,7 +3164,7 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
             dst_address_space=dst_address_space,
             lhs_address_space=lhs_address_space,
             rhs_address_space=rhs_address_space,
-            DstStorage=Self,
+            DstEngine=Self,
         ](dst, lhs, rhs, SIMD[dtype, Self.element_size].__floordiv__)
 
     @staticmethod
@@ -3181,8 +3182,8 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
         rhs_address_space: AddressSpace,
         //,
         dtype: DType,
-        LhsStorage: TensorStorage,
-        RhsStorage: TensorStorage,
+        LhsEngine: TensorEngine,
+        RhsEngine: TensorEngine,
     ](
         *,
         dst: Tuple[
@@ -3190,11 +3191,11 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
             DstLayoutType,
         ],
         lhs: Tuple[
-            LhsStorage.StorageType[dtype, lhs_origin, lhs_address_space],
+            LhsEngine.StorageType[dtype, lhs_origin, lhs_address_space],
             LhsLayoutType,
         ],
         rhs: Tuple[
-            RhsStorage.StorageType[dtype, rhs_origin, rhs_address_space],
+            RhsEngine.StorageType[dtype, rhs_origin, rhs_address_space],
             RhsLayoutType,
         ],
     ):
@@ -3215,11 +3216,11 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
             rhs_address_space: The address space of the right-hand storage
                 operand.
             dtype: The element data type of all three storages.
-            LhsStorage: The storage policy of the left-hand operand. May
-                differ from `Self` as long as the policies have the same
+            LhsEngine: The engine of the left-hand operand. May
+                differ from `Self` as long as the engines have the same
                 logical element size.
-            RhsStorage: The storage policy of the right-hand operand. May
-                differ from `Self` as long as the policies have the same
+            RhsEngine: The engine of the right-hand operand. May
+                differ from `Self` as long as the engines have the same
                 logical element size.
 
         Args:
@@ -3233,7 +3234,7 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
             dst_address_space=dst_address_space,
             lhs_address_space=lhs_address_space,
             rhs_address_space=rhs_address_space,
-            DstStorage=Self,
+            DstEngine=Self,
         ](dst, lhs, rhs, SIMD[dtype, Self.element_size].__truediv__)
 
     @staticmethod
@@ -3251,8 +3252,8 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
         rhs_address_space: AddressSpace,
         //,
         dtype: DType,
-        LhsStorage: TensorStorage,
-        RhsStorage: TensorStorage,
+        LhsEngine: TensorEngine,
+        RhsEngine: TensorEngine,
     ](
         *,
         dst: Tuple[
@@ -3260,11 +3261,11 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
             DstLayoutType,
         ],
         lhs: Tuple[
-            LhsStorage.StorageType[dtype, lhs_origin, lhs_address_space],
+            LhsEngine.StorageType[dtype, lhs_origin, lhs_address_space],
             LhsLayoutType,
         ],
         rhs: Tuple[
-            RhsStorage.StorageType[dtype, rhs_origin, rhs_address_space],
+            RhsEngine.StorageType[dtype, rhs_origin, rhs_address_space],
             RhsLayoutType,
         ],
     ):
@@ -3285,11 +3286,11 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
             rhs_address_space: The address space of the right-hand storage
                 operand.
             dtype: The element data type of all three storages.
-            LhsStorage: The storage policy of the left-hand operand. May
-                differ from `Self` as long as the policies have the same
+            LhsEngine: The engine of the left-hand operand. May
+                differ from `Self` as long as the engines have the same
                 logical element size.
-            RhsStorage: The storage policy of the right-hand operand. May
-                differ from `Self` as long as the policies have the same
+            RhsEngine: The engine of the right-hand operand. May
+                differ from `Self` as long as the engines have the same
                 logical element size.
 
         Args:
@@ -3303,7 +3304,7 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
             dst_address_space=dst_address_space,
             lhs_address_space=lhs_address_space,
             rhs_address_space=rhs_address_space,
-            DstStorage=Self,
+            DstEngine=Self,
         ](
             dst,
             lhs,
@@ -3328,8 +3329,8 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
         rhs_address_space: AddressSpace,
         //,
         dtype: DType,
-        LhsStorage: TensorStorage,
-        RhsStorage: TensorStorage,
+        LhsEngine: TensorEngine,
+        RhsEngine: TensorEngine,
     ](
         *,
         dst: Tuple[
@@ -3337,11 +3338,11 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
             DstLayoutType,
         ],
         lhs: Tuple[
-            LhsStorage.StorageType[dtype, lhs_origin, lhs_address_space],
+            LhsEngine.StorageType[dtype, lhs_origin, lhs_address_space],
             LhsLayoutType,
         ],
         rhs: Tuple[
-            RhsStorage.StorageType[dtype, rhs_origin, rhs_address_space],
+            RhsEngine.StorageType[dtype, rhs_origin, rhs_address_space],
             RhsLayoutType,
         ],
     ):
@@ -3362,11 +3363,11 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
             rhs_address_space: The address space of the right-hand storage
                 operand.
             dtype: The element data type of all three storages.
-            LhsStorage: The storage policy of the left-hand operand. May
-                differ from `Self` as long as the policies have the same
+            LhsEngine: The engine of the left-hand operand. May
+                differ from `Self` as long as the engines have the same
                 logical element size.
-            RhsStorage: The storage policy of the right-hand operand. May
-                differ from `Self` as long as the policies have the same
+            RhsEngine: The engine of the right-hand operand. May
+                differ from `Self` as long as the engines have the same
                 logical element size.
 
         Args:
@@ -3380,7 +3381,7 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
             dst_address_space=dst_address_space,
             lhs_address_space=lhs_address_space,
             rhs_address_space=rhs_address_space,
-            DstStorage=Self,
+            DstEngine=Self,
         ](
             dst,
             lhs,
@@ -3401,7 +3402,7 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
         src_address_space: AddressSpace,
         //,
         dtype: DType,
-        SrcStorage: TensorStorage,
+        SrcEngine: TensorEngine,
     ](
         *,
         dst: Tuple[
@@ -3409,7 +3410,7 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
             DstLayoutType,
         ],
         src: Tuple[
-            SrcStorage.StorageType[dtype, src_origin, src_address_space],
+            SrcEngine.StorageType[dtype, src_origin, src_address_space],
             SrcLayoutType,
         ],
     ):
@@ -3424,8 +3425,8 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
             src_origin: The origin of the source storage.
             src_address_space: The address space of the source storage.
             dtype: The element data type of both storages.
-            SrcStorage: The storage policy of the source. May differ from
-                `Self` as long as the two policies have the same logical
+            SrcEngine: The engine of the source. May differ from
+                `Self` as long as the two engines have the same logical
                 element size.
 
         Args:
@@ -3437,7 +3438,7 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
             width=Self.element_size,
             dst_address_space=dst_address_space,
             src_address_space=src_address_space,
-            DstStorage=Self,
+            DstEngine=Self,
         ](
             dst,
             src,
@@ -3457,7 +3458,7 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
         src_address_space: AddressSpace,
         //,
         dtype: DType,
-        SrcStorage: TensorStorage,
+        SrcEngine: TensorEngine,
     ](
         *,
         dst: Tuple[
@@ -3465,7 +3466,7 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
             DstLayoutType,
         ],
         src: Tuple[
-            SrcStorage.StorageType[dtype, src_origin, src_address_space],
+            SrcEngine.StorageType[dtype, src_origin, src_address_space],
             SrcLayoutType,
         ],
     ):
@@ -3480,8 +3481,8 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
             src_origin: The origin of the source storage.
             src_address_space: The address space of the source storage.
             dtype: The element data type of both storages.
-            SrcStorage: The storage policy of the source. May differ from
-                `Self` as long as the two policies have the same logical
+            SrcEngine: The engine of the source. May differ from
+                `Self` as long as the two engines have the same logical
                 element size.
 
         Args:
@@ -3496,7 +3497,7 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
             width=Self.element_size,
             dst_address_space=dst_address_space,
             src_address_space=src_address_space,
-            DstStorage=Self,
+            DstEngine=Self,
         ](
             dst,
             src,
@@ -3515,7 +3516,7 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
         src_origin: Origin[mut=src_mut],
         src_address_space: AddressSpace,
         dtype: DType,
-        SrcStorage: TensorStorage,
+        SrcEngine: TensorEngine,
         scale_dtype: DType = dtype,
         //,
         scale: Scalar[scale_dtype] = 1,
@@ -3526,7 +3527,7 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
             DstLayoutType,
         ],
         src: Tuple[
-            SrcStorage.StorageType[dtype, src_origin, src_address_space],
+            SrcEngine.StorageType[dtype, src_origin, src_address_space],
             SrcLayoutType,
         ],
     ):
@@ -3542,8 +3543,8 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
             src_address_space: The address space of the source storage.
             dtype: The element data type of both storages. Must be a
                 floating-point type.
-            SrcStorage: The storage policy of the source. May differ from
-                `Self` as long as the two policies have the same logical
+            SrcEngine: The engine of the source. May differ from
+                `Self` as long as the two engines have the same logical
                 element size.
             scale_dtype: The data type of the scale factor. Defaults to
                 `dtype`; the scale is cast to `dtype` before the
@@ -3568,13 +3569,13 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
         ), "exp requires matching total element count"
 
         comptime assert (
-            Self.element_size == SrcStorage.element_size
+            Self.element_size == SrcEngine.element_size
         ), "elementwise unary operations require matching logical element size"
 
         ref dst_storage = dst[0]
         ref dst_layout = dst[1]
         ref src_layout = src[1]
-        var src_storage = SrcStorage.unsafe_cast[
+        var src_engine = SrcEngine.unsafe_cast[
             dtype,
             src_origin.unsafe_mut_cast[False](),
             src_address_space,
@@ -3594,8 +3595,8 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
                 dst_storage,
                 dst_idx,
                 exp(
-                    SrcStorage.load[width=width, alignment=alignment](
-                        src_storage, src_idx
+                    SrcEngine.load[width=width, alignment=alignment](
+                        src_engine, src_idx
                     )
                     * scale.cast[dtype]()
                 ),
@@ -3645,14 +3646,14 @@ def _device_leaf_ptr[
             MutPointer[Scalar[dtype], MutAnyOrigin, address_space=.GLOBAL]
         ]()[]
     else:
-        abort("DevicePointerStorage operations are not supported on host")
+        abort("DevicePointerEngine operations are not supported on host")
 
 
-struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
+struct DevicePointerEngine[*, element_width: Int = 1](TensorOps):
     """Implements `TensorOps` backed by a `DevicePointer` handle.
 
-    `DevicePointerStorage` is the device-pointer-backed analogue of
-    `PointerStorage`, accepting the same `element_width` parameter. Its
+    `DevicePointerEngine` is the device-pointer-backed analogue of
+    `DefaultEngine`, accepting the same `element_width` parameter. Its
     `StorageType` handle is a `DevicePointer`, which on the host carries the
     buffer's owning reference plus an element offset and size, and which
     substitutes to a bare device `Pointer` at the kernel boundary
@@ -3675,14 +3676,14 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
             The `DevicePointer` handle is always scalar-typed and every
             operation works in scalar-element units, so `element_width` only
             sets `element_size` (and thus the tile's vectorized `ElementType`),
-            exactly as for `PointerStorage`.
+            exactly as for `DefaultEngine`.
     """
 
     comptime element_size = Self.element_width
     """Number of scalar elements per logical element (alias of `element_width`)."""
 
-    comptime _BASE_TYPE_NAME: StaticString = "DevicePointerStorage"
-    """The unparameterized name of this storage policy."""
+    comptime _BASE_TYPE_NAME: StaticString = "DevicePointerEngine"
+    """The unparameterized name of this engine."""
 
     comptime StorageType[
         mut: Bool,
@@ -3693,7 +3694,7 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
     ]: DevicePassable & TrivialRegisterPassable = DevicePointer[dtype, origin]
     """A `DevicePointer` handle borrowing the storage.
 
-    The `address_space` is part of the `TensorStorage` interface but is unused:
+    The `address_space` is part of the `TensorEngine` interface but is unused:
     a `DevicePointer` always refers to GENERIC device memory.
 
     Parameters:
@@ -3705,12 +3706,12 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
 
     @staticmethod
     def write_type_name_to(mut writer: Some[Writer]):
-        """Writes the storage type name representation to the writer.
+        """Writes the engine type name representation to the writer.
 
         Args:
             writer: The `Writer` to output to.
         """
-        t"DevicePointerStorage[element_size={Self.element_size}]".write_to(
+        t"DevicePointerEngine[element_size={Self.element_size}]".write_to(
             writer
         )
 
@@ -3944,10 +3945,10 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
 
     comptime OffsetResultType[
         offset_types: TypeList[Trait=CoordLike, ...],
-    ]: TensorStorage = Self
+    ]: TensorEngine = Self
     """The storage type produced by offsetting with a given coordinate.
 
-    Offsetting never changes the storage policy, so this is `Self`.
+    Offsetting never changes the engine, so this is `Self`.
 
     Parameters:
         offset_types: The coordinate element types of the applied offset.
@@ -4003,13 +4004,13 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
             leaf[] = leaf[] + offset_coord[0].value()
             return result
         else:
-            # Keep this non-raising (matching the pointer-backed policy and
+            # Keep this non-raising (matching the pointer-backed engine and
             # `TileTensor`'s `DeviceBuffer` constructor) by aborting on the
             # out-of-bounds case `DevicePointer` arithmetic raises on.
             try:
                 return storage + Int(offset_coord[0].value())
             except e:
-                abort(String("DevicePointerStorage.offset: ", e))
+                abort(String("DevicePointerEngine.offset: ", e))
 
     @staticmethod
     def distance[
@@ -4055,14 +4056,14 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
         //,
         dst_dtype: DType,
         src_dtype: DType,
-        OtherStorage: TensorStorage,
+        OtherEngine: TensorEngine,
     ](
         storage: Tuple[
             Self.StorageType[dst_dtype, self_origin, self_address_space],
             SelfLayoutType,
         ],
         other: Tuple[
-            OtherStorage.StorageType[
+            OtherEngine.StorageType[
                 src_dtype, other_origin, other_address_space
             ],
             OtherLayoutType,
@@ -4071,8 +4072,8 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
         """Copies the elements of `other` into `storage`, in place.
 
         Loads each logical element from `other` through its (possibly
-        different) storage policy and stores it into `storage` through
-        `DevicePointerStorage`, casting to the destination dtype. Delegates to
+        different) engine and stores it into `storage` through
+        `DevicePointerEngine`, casting to the destination dtype. Delegates to
         the shared `_copy_from` loop. Device-only: the underlying loads and
         stores reinterpret the encoded device pointer and abort on host.
 
@@ -4086,8 +4087,8 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
             other_address_space: The address space of the source storage.
             dst_dtype: The element data type of the destination storage.
             src_dtype: The element data type of the source storage.
-            OtherStorage: The storage policy of the source. May differ from
-                `Self` as long as the two policies are copy-compatible (same
+            OtherEngine: The engine of the source. May differ from
+                `Self` as long as the two engines are copy-compatible (same
                 logical element size).
 
         Constraints:
@@ -4104,7 +4105,7 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
             other: A tuple of the source storage and its layout.
         """
         _copy_from[
-            DstStorage=Self,
+            DstEngine=Self,
             self_address_space=self_address_space,
             other_address_space=other_address_space,
         ](storage, other)
@@ -4120,14 +4121,14 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
         other_address_space: AddressSpace,
         //,
         dtype: DType,
-        OtherStorage: TensorStorage,
+        OtherEngine: TensorEngine,
     ](
         storage: Tuple[
             Self.StorageType[dtype, self_origin, self_address_space],
             SelfLayoutType,
         ],
         other: Tuple[
-            OtherStorage.StorageType[dtype, other_origin, other_address_space],
+            OtherEngine.StorageType[dtype, other_origin, other_address_space],
             OtherLayoutType,
         ],
     ):
@@ -4143,8 +4144,8 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
             other_address_space: The address space of the right-hand storage
                 operand.
             dtype: The element data type of both storages.
-            OtherStorage: The storage policy of the right-hand operand. May
-                differ from `Self` as long as the two policies have the same
+            OtherEngine: The engine of the right-hand operand. May
+                differ from `Self` as long as the two engines have the same
                 logical element size.
 
         Args:
@@ -4157,7 +4158,7 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
             width=Self.element_size,
             self_address_space=self_address_space,
             other_address_space=other_address_space,
-            DstStorage=Self,
+            DstEngine=Self,
         ](storage, other, SIMD[dtype, Self.element_size].__add__)
 
     @staticmethod
@@ -4171,14 +4172,14 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
         other_address_space: AddressSpace,
         //,
         dtype: DType,
-        OtherStorage: TensorStorage,
+        OtherEngine: TensorEngine,
     ](
         storage: Tuple[
             Self.StorageType[dtype, self_origin, self_address_space],
             SelfLayoutType,
         ],
         other: Tuple[
-            OtherStorage.StorageType[dtype, other_origin, other_address_space],
+            OtherEngine.StorageType[dtype, other_origin, other_address_space],
             OtherLayoutType,
         ],
     ):
@@ -4194,8 +4195,8 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
             other_address_space: The address space of the right-hand storage
                 operand.
             dtype: The element data type of both storages.
-            OtherStorage: The storage policy of the right-hand operand. May
-                differ from `Self` as long as the two policies have the same
+            OtherEngine: The engine of the right-hand operand. May
+                differ from `Self` as long as the two engines have the same
                 logical element size.
 
         Args:
@@ -4208,7 +4209,7 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
             width=Self.element_size,
             self_address_space=self_address_space,
             other_address_space=other_address_space,
-            DstStorage=Self,
+            DstEngine=Self,
         ](storage, other, SIMD[dtype, Self.element_size].__mul__)
 
     @staticmethod
@@ -4222,14 +4223,14 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
         other_address_space: AddressSpace,
         //,
         dtype: DType,
-        OtherStorage: TensorStorage,
+        OtherEngine: TensorEngine,
     ](
         storage: Tuple[
             Self.StorageType[dtype, self_origin, self_address_space],
             SelfLayoutType,
         ],
         other: Tuple[
-            OtherStorage.StorageType[dtype, other_origin, other_address_space],
+            OtherEngine.StorageType[dtype, other_origin, other_address_space],
             OtherLayoutType,
         ],
     ):
@@ -4245,8 +4246,8 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
             other_address_space: The address space of the right-hand storage
                 operand.
             dtype: The element data type of both storages.
-            OtherStorage: The storage policy of the right-hand operand. May
-                differ from `Self` as long as the two policies have the same
+            OtherEngine: The engine of the right-hand operand. May
+                differ from `Self` as long as the two engines have the same
                 logical element size.
 
         Args:
@@ -4259,7 +4260,7 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
             width=Self.element_size,
             self_address_space=self_address_space,
             other_address_space=other_address_space,
-            DstStorage=Self,
+            DstEngine=Self,
         ](storage, other, SIMD[dtype, Self.element_size].__sub__)
 
     @staticmethod
@@ -4273,14 +4274,14 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
         other_address_space: AddressSpace,
         //,
         dtype: DType,
-        OtherStorage: TensorStorage,
+        OtherEngine: TensorEngine,
     ](
         storage: Tuple[
             Self.StorageType[dtype, self_origin, self_address_space],
             SelfLayoutType,
         ],
         other: Tuple[
-            OtherStorage.StorageType[dtype, other_origin, other_address_space],
+            OtherEngine.StorageType[dtype, other_origin, other_address_space],
             OtherLayoutType,
         ],
     ):
@@ -4296,8 +4297,8 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
             other_address_space: The address space of the right-hand storage
                 operand.
             dtype: The element data type of both storages.
-            OtherStorage: The storage policy of the right-hand operand. May
-                differ from `Self` as long as the two policies have the same
+            OtherEngine: The engine of the right-hand operand. May
+                differ from `Self` as long as the two engines have the same
                 logical element size.
 
         Args:
@@ -4310,7 +4311,7 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
             width=Self.element_size,
             self_address_space=self_address_space,
             other_address_space=other_address_space,
-            DstStorage=Self,
+            DstEngine=Self,
         ](storage, other, SIMD[dtype, Self.element_size].__floordiv__)
 
     @staticmethod
@@ -4324,14 +4325,14 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
         other_address_space: AddressSpace,
         //,
         dtype: DType,
-        OtherStorage: TensorStorage,
+        OtherEngine: TensorEngine,
     ](
         storage: Tuple[
             Self.StorageType[dtype, self_origin, self_address_space],
             SelfLayoutType,
         ],
         other: Tuple[
-            OtherStorage.StorageType[dtype, other_origin, other_address_space],
+            OtherEngine.StorageType[dtype, other_origin, other_address_space],
             OtherLayoutType,
         ],
     ):
@@ -4347,8 +4348,8 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
             other_address_space: The address space of the right-hand storage
                 operand.
             dtype: The element data type of both storages.
-            OtherStorage: The storage policy of the right-hand operand. May
-                differ from `Self` as long as the two policies have the same
+            OtherEngine: The engine of the right-hand operand. May
+                differ from `Self` as long as the two engines have the same
                 logical element size.
 
         Args:
@@ -4361,7 +4362,7 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
             width=Self.element_size,
             self_address_space=self_address_space,
             other_address_space=other_address_space,
-            DstStorage=Self,
+            DstEngine=Self,
         ](storage, other, SIMD[dtype, Self.element_size].__truediv__)
 
     @staticmethod
@@ -4375,14 +4376,14 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
         other_address_space: AddressSpace,
         //,
         dtype: DType,
-        OtherStorage: TensorStorage,
+        OtherEngine: TensorEngine,
     ](
         storage: Tuple[
             Self.StorageType[dtype, self_origin, self_address_space],
             SelfLayoutType,
         ],
         other: Tuple[
-            OtherStorage.StorageType[dtype, other_origin, other_address_space],
+            OtherEngine.StorageType[dtype, other_origin, other_address_space],
             OtherLayoutType,
         ],
     ):
@@ -4398,8 +4399,8 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
             other_address_space: The address space of the right-hand storage
                 operand.
             dtype: The element data type of both storages.
-            OtherStorage: The storage policy of the right-hand operand. May
-                differ from `Self` as long as the two policies have the same
+            OtherEngine: The engine of the right-hand operand. May
+                differ from `Self` as long as the two engines have the same
                 logical element size.
 
         Args:
@@ -4412,7 +4413,7 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
             width=Self.element_size,
             self_address_space=self_address_space,
             other_address_space=other_address_space,
-            DstStorage=Self,
+            DstEngine=Self,
         ](
             storage,
             other,
@@ -4432,14 +4433,14 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
         other_address_space: AddressSpace,
         //,
         dtype: DType,
-        OtherStorage: TensorStorage,
+        OtherEngine: TensorEngine,
     ](
         storage: Tuple[
             Self.StorageType[dtype, self_origin, self_address_space],
             SelfLayoutType,
         ],
         other: Tuple[
-            OtherStorage.StorageType[dtype, other_origin, other_address_space],
+            OtherEngine.StorageType[dtype, other_origin, other_address_space],
             OtherLayoutType,
         ],
     ):
@@ -4455,8 +4456,8 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
             other_address_space: The address space of the right-hand storage
                 operand.
             dtype: The element data type of both storages.
-            OtherStorage: The storage policy of the right-hand operand. May
-                differ from `Self` as long as the two policies have the same
+            OtherEngine: The engine of the right-hand operand. May
+                differ from `Self` as long as the two engines have the same
                 logical element size.
 
         Args:
@@ -4469,7 +4470,7 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
             width=Self.element_size,
             self_address_space=self_address_space,
             other_address_space=other_address_space,
-            DstStorage=Self,
+            DstEngine=Self,
         ](
             storage,
             other,
@@ -4662,8 +4663,8 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
         rhs_address_space: AddressSpace,
         //,
         dtype: DType,
-        LhsStorage: TensorStorage,
-        RhsStorage: TensorStorage,
+        LhsEngine: TensorEngine,
+        RhsEngine: TensorEngine,
     ](
         *,
         dst: Tuple[
@@ -4671,11 +4672,11 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
             DstLayoutType,
         ],
         lhs: Tuple[
-            LhsStorage.StorageType[dtype, lhs_origin, lhs_address_space],
+            LhsEngine.StorageType[dtype, lhs_origin, lhs_address_space],
             LhsLayoutType,
         ],
         rhs: Tuple[
-            RhsStorage.StorageType[dtype, rhs_origin, rhs_address_space],
+            RhsEngine.StorageType[dtype, rhs_origin, rhs_address_space],
             RhsLayoutType,
         ],
     ):
@@ -4696,11 +4697,11 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
             rhs_address_space: The address space of the right-hand storage
                 operand.
             dtype: The element data type of all three storages.
-            LhsStorage: The storage policy of the left-hand operand. May
-                differ from `Self` as long as the policies have the same
+            LhsEngine: The engine of the left-hand operand. May
+                differ from `Self` as long as the engines have the same
                 logical element size.
-            RhsStorage: The storage policy of the right-hand operand. May
-                differ from `Self` as long as the policies have the same
+            RhsEngine: The engine of the right-hand operand. May
+                differ from `Self` as long as the engines have the same
                 logical element size.
 
         Args:
@@ -4714,7 +4715,7 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
             dst_address_space=dst_address_space,
             lhs_address_space=lhs_address_space,
             rhs_address_space=rhs_address_space,
-            DstStorage=Self,
+            DstEngine=Self,
         ](dst, lhs, rhs, SIMD[dtype, Self.element_size].__add__)
 
     @staticmethod
@@ -4732,8 +4733,8 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
         rhs_address_space: AddressSpace,
         //,
         dtype: DType,
-        LhsStorage: TensorStorage,
-        RhsStorage: TensorStorage,
+        LhsEngine: TensorEngine,
+        RhsEngine: TensorEngine,
     ](
         *,
         dst: Tuple[
@@ -4741,11 +4742,11 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
             DstLayoutType,
         ],
         lhs: Tuple[
-            LhsStorage.StorageType[dtype, lhs_origin, lhs_address_space],
+            LhsEngine.StorageType[dtype, lhs_origin, lhs_address_space],
             LhsLayoutType,
         ],
         rhs: Tuple[
-            RhsStorage.StorageType[dtype, rhs_origin, rhs_address_space],
+            RhsEngine.StorageType[dtype, rhs_origin, rhs_address_space],
             RhsLayoutType,
         ],
     ):
@@ -4766,11 +4767,11 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
             rhs_address_space: The address space of the right-hand storage
                 operand.
             dtype: The element data type of all three storages.
-            LhsStorage: The storage policy of the left-hand operand. May
-                differ from `Self` as long as the policies have the same
+            LhsEngine: The engine of the left-hand operand. May
+                differ from `Self` as long as the engines have the same
                 logical element size.
-            RhsStorage: The storage policy of the right-hand operand. May
-                differ from `Self` as long as the policies have the same
+            RhsEngine: The engine of the right-hand operand. May
+                differ from `Self` as long as the engines have the same
                 logical element size.
 
         Args:
@@ -4784,7 +4785,7 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
             dst_address_space=dst_address_space,
             lhs_address_space=lhs_address_space,
             rhs_address_space=rhs_address_space,
-            DstStorage=Self,
+            DstEngine=Self,
         ](dst, lhs, rhs, SIMD[dtype, Self.element_size].__mul__)
 
     @staticmethod
@@ -4802,8 +4803,8 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
         rhs_address_space: AddressSpace,
         //,
         dtype: DType,
-        LhsStorage: TensorStorage,
-        RhsStorage: TensorStorage,
+        LhsEngine: TensorEngine,
+        RhsEngine: TensorEngine,
     ](
         *,
         dst: Tuple[
@@ -4811,11 +4812,11 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
             DstLayoutType,
         ],
         lhs: Tuple[
-            LhsStorage.StorageType[dtype, lhs_origin, lhs_address_space],
+            LhsEngine.StorageType[dtype, lhs_origin, lhs_address_space],
             LhsLayoutType,
         ],
         rhs: Tuple[
-            RhsStorage.StorageType[dtype, rhs_origin, rhs_address_space],
+            RhsEngine.StorageType[dtype, rhs_origin, rhs_address_space],
             RhsLayoutType,
         ],
     ):
@@ -4836,11 +4837,11 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
             rhs_address_space: The address space of the right-hand storage
                 operand.
             dtype: The element data type of all three storages.
-            LhsStorage: The storage policy of the left-hand operand. May
-                differ from `Self` as long as the policies have the same
+            LhsEngine: The engine of the left-hand operand. May
+                differ from `Self` as long as the engines have the same
                 logical element size.
-            RhsStorage: The storage policy of the right-hand operand. May
-                differ from `Self` as long as the policies have the same
+            RhsEngine: The engine of the right-hand operand. May
+                differ from `Self` as long as the engines have the same
                 logical element size.
 
         Args:
@@ -4854,7 +4855,7 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
             dst_address_space=dst_address_space,
             lhs_address_space=lhs_address_space,
             rhs_address_space=rhs_address_space,
-            DstStorage=Self,
+            DstEngine=Self,
         ](dst, lhs, rhs, SIMD[dtype, Self.element_size].__sub__)
 
     @staticmethod
@@ -4872,8 +4873,8 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
         rhs_address_space: AddressSpace,
         //,
         dtype: DType,
-        LhsStorage: TensorStorage,
-        RhsStorage: TensorStorage,
+        LhsEngine: TensorEngine,
+        RhsEngine: TensorEngine,
     ](
         *,
         dst: Tuple[
@@ -4881,11 +4882,11 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
             DstLayoutType,
         ],
         lhs: Tuple[
-            LhsStorage.StorageType[dtype, lhs_origin, lhs_address_space],
+            LhsEngine.StorageType[dtype, lhs_origin, lhs_address_space],
             LhsLayoutType,
         ],
         rhs: Tuple[
-            RhsStorage.StorageType[dtype, rhs_origin, rhs_address_space],
+            RhsEngine.StorageType[dtype, rhs_origin, rhs_address_space],
             RhsLayoutType,
         ],
     ):
@@ -4906,11 +4907,11 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
             rhs_address_space: The address space of the right-hand storage
                 operand.
             dtype: The element data type of all three storages.
-            LhsStorage: The storage policy of the left-hand operand. May
-                differ from `Self` as long as the policies have the same
+            LhsEngine: The engine of the left-hand operand. May
+                differ from `Self` as long as the engines have the same
                 logical element size.
-            RhsStorage: The storage policy of the right-hand operand. May
-                differ from `Self` as long as the policies have the same
+            RhsEngine: The engine of the right-hand operand. May
+                differ from `Self` as long as the engines have the same
                 logical element size.
 
         Args:
@@ -4924,7 +4925,7 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
             dst_address_space=dst_address_space,
             lhs_address_space=lhs_address_space,
             rhs_address_space=rhs_address_space,
-            DstStorage=Self,
+            DstEngine=Self,
         ](dst, lhs, rhs, SIMD[dtype, Self.element_size].__floordiv__)
 
     @staticmethod
@@ -4942,8 +4943,8 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
         rhs_address_space: AddressSpace,
         //,
         dtype: DType,
-        LhsStorage: TensorStorage,
-        RhsStorage: TensorStorage,
+        LhsEngine: TensorEngine,
+        RhsEngine: TensorEngine,
     ](
         *,
         dst: Tuple[
@@ -4951,11 +4952,11 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
             DstLayoutType,
         ],
         lhs: Tuple[
-            LhsStorage.StorageType[dtype, lhs_origin, lhs_address_space],
+            LhsEngine.StorageType[dtype, lhs_origin, lhs_address_space],
             LhsLayoutType,
         ],
         rhs: Tuple[
-            RhsStorage.StorageType[dtype, rhs_origin, rhs_address_space],
+            RhsEngine.StorageType[dtype, rhs_origin, rhs_address_space],
             RhsLayoutType,
         ],
     ):
@@ -4976,11 +4977,11 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
             rhs_address_space: The address space of the right-hand storage
                 operand.
             dtype: The element data type of all three storages.
-            LhsStorage: The storage policy of the left-hand operand. May
-                differ from `Self` as long as the policies have the same
+            LhsEngine: The engine of the left-hand operand. May
+                differ from `Self` as long as the engines have the same
                 logical element size.
-            RhsStorage: The storage policy of the right-hand operand. May
-                differ from `Self` as long as the policies have the same
+            RhsEngine: The engine of the right-hand operand. May
+                differ from `Self` as long as the engines have the same
                 logical element size.
 
         Args:
@@ -4994,7 +4995,7 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
             dst_address_space=dst_address_space,
             lhs_address_space=lhs_address_space,
             rhs_address_space=rhs_address_space,
-            DstStorage=Self,
+            DstEngine=Self,
         ](dst, lhs, rhs, SIMD[dtype, Self.element_size].__truediv__)
 
     @staticmethod
@@ -5012,8 +5013,8 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
         rhs_address_space: AddressSpace,
         //,
         dtype: DType,
-        LhsStorage: TensorStorage,
-        RhsStorage: TensorStorage,
+        LhsEngine: TensorEngine,
+        RhsEngine: TensorEngine,
     ](
         *,
         dst: Tuple[
@@ -5021,11 +5022,11 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
             DstLayoutType,
         ],
         lhs: Tuple[
-            LhsStorage.StorageType[dtype, lhs_origin, lhs_address_space],
+            LhsEngine.StorageType[dtype, lhs_origin, lhs_address_space],
             LhsLayoutType,
         ],
         rhs: Tuple[
-            RhsStorage.StorageType[dtype, rhs_origin, rhs_address_space],
+            RhsEngine.StorageType[dtype, rhs_origin, rhs_address_space],
             RhsLayoutType,
         ],
     ):
@@ -5046,11 +5047,11 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
             rhs_address_space: The address space of the right-hand storage
                 operand.
             dtype: The element data type of all three storages.
-            LhsStorage: The storage policy of the left-hand operand. May
-                differ from `Self` as long as the policies have the same
+            LhsEngine: The engine of the left-hand operand. May
+                differ from `Self` as long as the engines have the same
                 logical element size.
-            RhsStorage: The storage policy of the right-hand operand. May
-                differ from `Self` as long as the policies have the same
+            RhsEngine: The engine of the right-hand operand. May
+                differ from `Self` as long as the engines have the same
                 logical element size.
 
         Args:
@@ -5064,7 +5065,7 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
             dst_address_space=dst_address_space,
             lhs_address_space=lhs_address_space,
             rhs_address_space=rhs_address_space,
-            DstStorage=Self,
+            DstEngine=Self,
         ](
             dst,
             lhs,
@@ -5089,8 +5090,8 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
         rhs_address_space: AddressSpace,
         //,
         dtype: DType,
-        LhsStorage: TensorStorage,
-        RhsStorage: TensorStorage,
+        LhsEngine: TensorEngine,
+        RhsEngine: TensorEngine,
     ](
         *,
         dst: Tuple[
@@ -5098,11 +5099,11 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
             DstLayoutType,
         ],
         lhs: Tuple[
-            LhsStorage.StorageType[dtype, lhs_origin, lhs_address_space],
+            LhsEngine.StorageType[dtype, lhs_origin, lhs_address_space],
             LhsLayoutType,
         ],
         rhs: Tuple[
-            RhsStorage.StorageType[dtype, rhs_origin, rhs_address_space],
+            RhsEngine.StorageType[dtype, rhs_origin, rhs_address_space],
             RhsLayoutType,
         ],
     ):
@@ -5123,11 +5124,11 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
             rhs_address_space: The address space of the right-hand storage
                 operand.
             dtype: The element data type of all three storages.
-            LhsStorage: The storage policy of the left-hand operand. May
-                differ from `Self` as long as the policies have the same
+            LhsEngine: The engine of the left-hand operand. May
+                differ from `Self` as long as the engines have the same
                 logical element size.
-            RhsStorage: The storage policy of the right-hand operand. May
-                differ from `Self` as long as the policies have the same
+            RhsEngine: The engine of the right-hand operand. May
+                differ from `Self` as long as the engines have the same
                 logical element size.
 
         Args:
@@ -5141,7 +5142,7 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
             dst_address_space=dst_address_space,
             lhs_address_space=lhs_address_space,
             rhs_address_space=rhs_address_space,
-            DstStorage=Self,
+            DstEngine=Self,
         ](
             dst,
             lhs,
@@ -5162,7 +5163,7 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
         src_address_space: AddressSpace,
         //,
         dtype: DType,
-        SrcStorage: TensorStorage,
+        SrcEngine: TensorEngine,
     ](
         *,
         dst: Tuple[
@@ -5170,11 +5171,11 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
             DstLayoutType,
         ],
         src: Tuple[
-            SrcStorage.StorageType[dtype, src_origin, src_address_space],
+            SrcEngine.StorageType[dtype, src_origin, src_address_space],
             SrcLayoutType,
         ],
     ):
-        """Out-of-place elementwise `abs` into `dst`. Device-only when `Self` or `SrcStorage` reinterprets a device pointer.
+        """Out-of-place elementwise `abs` into `dst`. Device-only when `Self` or `SrcEngine` reinterprets a device pointer.
 
         Parameters:
             DstLayoutType: The layout type of the destination storage.
@@ -5185,8 +5186,8 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
             src_origin: The origin of the source storage.
             src_address_space: The address space of the source storage.
             dtype: The element data type of both storages.
-            SrcStorage: The storage policy of the source. May differ from
-                `Self` as long as the two policies have the same logical
+            SrcEngine: The engine of the source. May differ from
+                `Self` as long as the two engines have the same logical
                 element size.
 
         Args:
@@ -5198,7 +5199,7 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
             width=Self.element_size,
             dst_address_space=dst_address_space,
             src_address_space=src_address_space,
-            DstStorage=Self,
+            DstEngine=Self,
         ](
             dst,
             src,
@@ -5218,7 +5219,7 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
         src_address_space: AddressSpace,
         //,
         dtype: DType,
-        SrcStorage: TensorStorage,
+        SrcEngine: TensorEngine,
     ](
         *,
         dst: Tuple[
@@ -5226,11 +5227,11 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
             DstLayoutType,
         ],
         src: Tuple[
-            SrcStorage.StorageType[dtype, src_origin, src_address_space],
+            SrcEngine.StorageType[dtype, src_origin, src_address_space],
             SrcLayoutType,
         ],
     ):
-        """Out-of-place elementwise `recip` into `dst`. Device-only when `Self` or `SrcStorage` reinterprets a device pointer.
+        """Out-of-place elementwise `recip` into `dst`. Device-only when `Self` or `SrcEngine` reinterprets a device pointer.
 
         Parameters:
             DstLayoutType: The layout type of the destination storage.
@@ -5241,8 +5242,8 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
             src_origin: The origin of the source storage.
             src_address_space: The address space of the source storage.
             dtype: The element data type of both storages.
-            SrcStorage: The storage policy of the source. May differ from
-                `Self` as long as the two policies have the same logical
+            SrcEngine: The engine of the source. May differ from
+                `Self` as long as the two engines have the same logical
                 element size.
 
         Args:
@@ -5261,7 +5262,7 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
             width=Self.element_size,
             dst_address_space=dst_address_space,
             src_address_space=src_address_space,
-            DstStorage=Self,
+            DstEngine=Self,
         ](
             dst,
             src,
@@ -5280,7 +5281,7 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
         src_origin: Origin[mut=src_mut],
         src_address_space: AddressSpace,
         dtype: DType,
-        SrcStorage: TensorStorage,
+        SrcEngine: TensorEngine,
         scale_dtype: DType = dtype,
         //,
         scale: Scalar[scale_dtype] = 1,
@@ -5291,11 +5292,11 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
             DstLayoutType,
         ],
         src: Tuple[
-            SrcStorage.StorageType[dtype, src_origin, src_address_space],
+            SrcEngine.StorageType[dtype, src_origin, src_address_space],
             SrcLayoutType,
         ],
     ):
-        """Writes `exp(scale * x)` for each element `x` of `src` into `dst`. Device-only when `Self` or `SrcStorage` reinterprets a device pointer.
+        """Writes `exp(scale * x)` for each element `x` of `src` into `dst`. Device-only when `Self` or `SrcEngine` reinterprets a device pointer.
 
         Parameters:
             DstLayoutType: The layout type of the destination storage.
@@ -5307,8 +5308,8 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
             src_address_space: The address space of the source storage.
             dtype: The element data type of both storages. Must be a
                 floating-point type.
-            SrcStorage: The storage policy of the source. May differ from
-                `Self` as long as the two policies have the same logical
+            SrcEngine: The engine of the source. May differ from
+                `Self` as long as the two engines have the same logical
                 element size.
             scale_dtype: The data type of the scale factor. Defaults to
                 `dtype`; the scale is cast to `dtype` before the
@@ -5333,13 +5334,13 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
         ), "exp requires matching total element count"
 
         comptime assert (
-            Self.element_size == SrcStorage.element_size
+            Self.element_size == SrcEngine.element_size
         ), "elementwise unary operations require matching logical element size"
 
         ref dst_storage = dst[0]
         ref dst_layout = dst[1]
         ref src_layout = src[1]
-        var src_storage = SrcStorage.unsafe_cast[
+        var src_engine = SrcEngine.unsafe_cast[
             dtype,
             src_origin.unsafe_mut_cast[False](),
             src_address_space,
@@ -5361,24 +5362,24 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
             _device_leaf_ptr(dst_storage).store(
                 dst_idx,
                 exp(
-                    SrcStorage.load[width=width, alignment=alignment](
-                        src_storage, src_idx
+                    SrcEngine.load[width=width, alignment=alignment](
+                        src_engine, src_idx
                     )
                     * scale.cast[dtype]()
                 ),
             )
 
 
-struct StaticOffsetStorage[*, static_offset: Int, element_width: Int = 1](
-    TensorStorage
+struct StaticOffsetEngine[*, static_offset: Int, element_width: Int = 1](
+    TensorEngine
 ):
-    """Stub of the planned static-offset storage policy family.
+    """Stub of the planned static-offset engine family.
 
-    Views externally owned memory like `PointerStorage`, but starts every
+    Views externally owned memory like `DefaultEngine`, but starts every
     access `static_offset` scalar elements past the handle. The offset is
-    encoded in the policy's parameters, so it costs nothing at runtime and
+    encoded in the engine's parameters, so it costs nothing at runtime and
     survives `unsafe_cast`. This is a minimal placeholder used by the
-    TensorOps binary-op tests to exercise per-operand storage policies until
+    TensorOps binary-op tests to exercise per-operand engines until
     the full static-offset design lands.
 
     Parameters:
@@ -5392,8 +5393,8 @@ struct StaticOffsetStorage[*, static_offset: Int, element_width: Int = 1](
     comptime element_size = Self.element_width
     """Number of scalar elements per logical element (alias of `element_width`)."""
 
-    comptime _BASE_TYPE_NAME: StaticString = "StaticOffsetStorage"
-    """The unparameterized name of this storage policy."""
+    comptime _BASE_TYPE_NAME: StaticString = "StaticOffsetEngine"
+    """The unparameterized name of this engine."""
 
     comptime StorageType[
         mut: Bool,
@@ -5439,7 +5440,7 @@ struct StaticOffsetStorage[*, static_offset: Int, element_width: Int = 1](
 
         Returns:
             A `Pointer` to `Scalar[dtype]` referring to the first
-            element the policy exposes, i.e. `static_offset` scalar elements
+            element the engine exposes, i.e. `static_offset` scalar elements
             past the handle.
         """
         return storage.bitcast[Scalar[dtype]]() + Self.static_offset
@@ -5460,7 +5461,7 @@ struct StaticOffsetStorage[*, static_offset: Int, element_width: Int = 1](
     ):
         """Reinterprets a storage handle with new type parameters.
 
-        The static offset lives in the policy's parameters, so it is
+        The static offset lives in the engine's parameters, so it is
         unaffected by the reinterpret.
 
         Parameters:
@@ -5611,10 +5612,10 @@ struct StaticOffsetStorage[*, static_offset: Int, element_width: Int = 1](
 
     comptime OffsetResultType[
         offset_types: TypeList[Trait=CoordLike, ...],
-    ]: TensorStorage = Self
+    ]: TensorEngine = Self
     """The storage type produced by offsetting with a given coordinate.
 
-    Dynamic offsetting never changes the storage policy, so this is `Self`;
+    Dynamic offsetting never changes the engine, so this is `Self`;
     the static offset stays encoded in the parameters.
 
     Parameters:
@@ -5641,7 +5642,7 @@ struct StaticOffsetStorage[*, static_offset: Int, element_width: Int = 1](
         """Returns a storage handle offset by a number of scalar elements.
 
         The dynamic offset advances the handle itself; the static offset
-        remains in the policy's parameters and continues to apply on top.
+        remains in the engine's parameters and continues to apply on top.
 
         Parameters:
             offset_mut: The mutability of the storage, inferred from
@@ -5705,14 +5706,14 @@ struct StaticOffsetStorage[*, static_offset: Int, element_width: Int = 1](
         //,
         dst_dtype: DType,
         src_dtype: DType,
-        OtherStorage: TensorStorage,
+        OtherEngine: TensorEngine,
     ](
         storage: Tuple[
             Self.StorageType[dst_dtype, self_origin, self_address_space],
             SelfLayoutType,
         ],
         other: Tuple[
-            OtherStorage.StorageType[
+            OtherEngine.StorageType[
                 src_dtype, other_origin, other_address_space
             ],
             OtherLayoutType,
@@ -5721,7 +5722,7 @@ struct StaticOffsetStorage[*, static_offset: Int, element_width: Int = 1](
         """Copies the elements of `other` into `storage`, in place.
 
         Delegates to the shared `_copy_from` loop; destination accesses go
-        through this policy's `load`/`store`, so the static offset applies.
+        through this engine's `load`/`store`, so the static offset applies.
 
         Parameters:
             SelfLayoutType: The layout type of the destination storage.
@@ -5733,8 +5734,8 @@ struct StaticOffsetStorage[*, static_offset: Int, element_width: Int = 1](
             other_address_space: The address space of the source storage.
             dst_dtype: The element data type of the destination storage.
             src_dtype: The element data type of the source storage.
-            OtherStorage: The storage policy of the source. May differ from
-                `Self` as long as the two policies are copy-compatible (same
+            OtherEngine: The engine of the source. May differ from
+                `Self` as long as the two engines are copy-compatible (same
                 logical element size).
 
         Args:
@@ -5743,7 +5744,7 @@ struct StaticOffsetStorage[*, static_offset: Int, element_width: Int = 1](
             other: A tuple of the source storage and its layout.
         """
         _copy_from[
-            DstStorage=Self,
+            DstEngine=Self,
             self_address_space=self_address_space,
             other_address_space=other_address_space,
         ](storage, other)

@@ -69,7 +69,7 @@ __extension HopperMatmulSM90Kernel:
         b_tma_op: TMATensorTile[b_type, b_tma_rank, b_tile_shape, b_desc_shape],
         c_tma_op: TMATensorTile[c_type, c_tma_rank, c_tile_shape, c_desc_shape],
         c: TileTensor[
-            c_type, c_tensor_layout, MutAnyOrigin, Storage=Self.c_storage
+            c_type, c_tensor_layout, MutAnyOrigin, Engine=Self.c_engine
         ],
         problem_shape: IndexList[3],
     ):
@@ -190,9 +190,9 @@ __extension HopperMatmulSM90Kernel:
         c_desc_shape: IndexList[c_tma_rank],
     ](
         c_tma_op: TMATensorTile[c_type, c_tma_rank, c_tile_shape, c_desc_shape],
-        a: TileTensor[a_type, a_layout, ImmutAnyOrigin, Storage=Self.a_storage],
-        b: TileTensor[b_type, b_layout, ImmutAnyOrigin, Storage=Self.b_storage],
-        c: TileTensor[c_type, c_layout, MutAnyOrigin, Storage=Self.c_storage],
+        a: TileTensor[a_type, a_layout, ImmutAnyOrigin, Engine=Self.a_engine],
+        b: TileTensor[b_type, b_layout, ImmutAnyOrigin, Engine=Self.b_engine],
+        c: TileTensor[c_type, c_layout, MutAnyOrigin, Engine=Self.c_engine],
     ):
         """Kernel using cp.async for A/B loading when K alignment doesn't meet TMA requirements.
         """

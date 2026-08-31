@@ -24,7 +24,7 @@ from std.reflection import reflect
 from std.sys import has_accelerator, simd_width_of
 
 from layout import TileTensor
-from layout.tensor_storage import PointerStorage
+from layout.tensor_engine import DefaultEngine
 from layout.tile_layout import Layout, row_major
 from extensibility import InputTensor, OutputTensor
 
@@ -45,20 +45,20 @@ def vector_add(
     a: TileTensor[
         float_dtype,
         type_of(layout),
-        Storage=PointerStorage[element_width=1],
+        Engine=DefaultEngine[element_width=1],
         ...,
     ],
     b: TileTensor[
         float_dtype,
         type_of(layout),
-        Storage=PointerStorage[element_width=1],
+        Engine=DefaultEngine[element_width=1],
         ...,
     ],
     result: TileTensor[
         mut=True,
         float_dtype,
         type_of(layout),
-        Storage=PointerStorage[element_width=1],
+        Engine=DefaultEngine[element_width=1],
         ...,
     ],
 ):

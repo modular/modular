@@ -31,7 +31,7 @@ from max.gpu.primitives.grid_controls import (
 )
 from std.utils import StaticTuple
 from std.gpu import MAX_THREADS_PER_BLOCK_METADATA
-from layout import TensorStorage, TileTensor
+from layout import TensorEngine, TileTensor
 from layout.coord import Coord, Idx
 from layout.tile_layout import TensorLayout
 from .fp4_utils import cast_uint_to_fp4e2m1, MXFP4_SF_VECTOR_SIZE
@@ -52,9 +52,9 @@ def _dequant_mxfp4_to_fp8_kernel[
     output_layout: TensorLayout,
     scales_layout: TensorLayout,
     input_layout: TensorLayout,
-    output_storage: TensorStorage,
-    scales_storage: TensorStorage,
-    input_storage: TensorStorage,
+    output_engine: TensorEngine,
+    scales_engine: TensorEngine,
+    input_engine: TensorEngine,
     *,
     SF_VECTOR_SIZE: Int = 32,
     ELEMENTS_PER_THREAD: Int = 8,
@@ -201,7 +201,7 @@ def dequant_mxfp4[
             in_dtype,
             type_of(input).LayoutType,
             MutAnyOrigin,
-            Storage=type_of(input).Storage,
+            Engine=type_of(input).Engine,
         ]
     ](input)
     var scales_tt = rebind[
@@ -209,7 +209,7 @@ def dequant_mxfp4[
             scales_dtype,
             type_of(scales).LayoutType,
             MutAnyOrigin,
-            Storage=type_of(scales).Storage,
+            Engine=type_of(scales).Engine,
         ]
     ](scales)
 
@@ -220,9 +220,9 @@ def dequant_mxfp4[
         type_of(output).LayoutType,
         type_of(scales_tt).LayoutType,
         type_of(input_tt).LayoutType,
-        type_of(output).Storage,
-        type_of(scales_tt).Storage,
-        type_of(input_tt).Storage,
+        type_of(output).Engine,
+        type_of(scales_tt).Engine,
+        type_of(input_tt).Engine,
         SF_VECTOR_SIZE=SF_VECTOR_SIZE,
         ELEMENTS_PER_THREAD=ELEMENTS_PER_THREAD,
     ]

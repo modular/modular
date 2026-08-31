@@ -39,7 +39,7 @@ from layout import (
     Coord,
     Idx,
     IntTuple,
-    PointerStorage,
+    DefaultEngine,
     TileTensor,
     UNKNOWN_VALUE,
     coord_to_index_list,
@@ -1420,7 +1420,7 @@ def _apple_int8_w8a8_dispatch[
 ](
     c_tt: TileTensor[mut=True, c_type, ...],
     a_tt: TileTensor[.bfloat16, ...],
-    b_tt: TileTensor[.int8, Storage=PointerStorage[], ...],
+    b_tt: TileTensor[.int8, Engine=DefaultEngine[], ...],
     bs_tt: TileTensor[.float32, ...],
     bias_tt: TileTensor[c_type, ...],
     context: DeviceContext,

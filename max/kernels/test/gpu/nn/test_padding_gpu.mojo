@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from max.gpu.host import DeviceContext
-from layout import Coord, Idx, PointerStorage, TileTensor, row_major
+from layout import Coord, Idx, DefaultEngine, TileTensor, row_major
 
 from nn.pad import pad_constant as pad_cpu
 from nn.pad_gpu import get_padding_output_shape, pad_constant
@@ -30,7 +30,7 @@ def test_pad_constant_gpu[
         .int,
         address_space=.GENERIC,
         ...,
-        Storage=PointerStorage[element_width=1],
+        Engine=DefaultEngine[element_width=1],
     ],
     ctx: DeviceContext,
     verbose: Bool = False,

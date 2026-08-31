@@ -28,7 +28,7 @@ from max.gpu.host import (
     FuncAttribute,
 )
 from nn.attention.gpu.nvidia.common import ImmutTileTensor1D
-from layout import TensorStorage
+from layout import TensorEngine
 from layout.tma_async import RaggedTMA3DTile
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.logger import Logger
@@ -329,8 +329,8 @@ def mha_sm100_dispatch[
     MaskType: MHAMask,
     output_type: DType,
     MaxPromptLenType: OptionallyStaticInt,
-    KVRowOffsetsStorage: TensorStorage,
-    SinkStorage: TensorStorage,
+    KVRowOffsetsEngine: TensorEngine,
+    SinkEngine: TensorEngine,
     //,
     config: MHAConfig,
     group: Int,
@@ -349,11 +349,11 @@ def mha_sm100_dispatch[
     max_cache_valid_length_arg: Int,
     scale: Float32,
     kv_input_row_offsets: OptionalReg[
-        ImmutTileTensor1D[.uint32, Storage=KVRowOffsetsStorage]
+        ImmutTileTensor1D[.uint32, Engine=KVRowOffsetsEngine]
     ],
     batch_size_arg: Int,
     ctx: DeviceContext,
-    sink_weights: OptionalReg[ImmutTileTensor1D[q_type, Storage=SinkStorage]],
+    sink_weights: OptionalReg[ImmutTileTensor1D[q_type, Engine=SinkEngine]],
     # Caller-supplied EXACT split-K partition count (`mha.mojo`'s
     # `num_partitions`). `0` => auto (the `ws_p_ceiling` / `_bucket_ws` ladder
     # picks `P`); non-zero is honored verbatim rather than bucketed -- pinning
@@ -382,9 +382,9 @@ def mha_sm100_dispatch[
         output_type: Element type of the attention output buffer (inferred).
         MaxPromptLenType: Optionally-static type encoding the maximum prompt
             length (inferred).
-        KVRowOffsetsStorage: `TensorStorage` policy of `kv_input_row_offsets`
+        KVRowOffsetsEngine: `TensorEngine` policy of `kv_input_row_offsets`
             (inferred).
-        SinkStorage: `TensorStorage` policy of `sink_weights` (inferred).
+        SinkEngine: `TensorEngine` policy of `sink_weights` (inferred).
         config: MHA configuration supplying dtype, head count, depth, and
             swizzle mode.
         group: Number of query heads per KV head (GQA group size).

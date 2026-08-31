@@ -53,7 +53,7 @@ from max.gpu.host.info import MI355X
 from std.gpu.intrinsics import AMDBufferResource
 from max.gpu.sync import schedule_barrier, s_waitcnt
 
-from layout import TensorLayout, TensorStorage, TileTensor
+from layout import TensorLayout, TensorEngine, TileTensor
 from layout.swizzle import Swizzle
 from layout.tile_layout import row_major
 from layout.tile_tensor import stack_allocation
@@ -778,15 +778,15 @@ struct AMD4WaveMatmul[
         a_layout: TensorLayout,
         b_layout: TensorLayout,
         c_layout: TensorLayout,
-        a_store: TensorStorage,
-        b_store: TensorStorage,
-        c_store: TensorStorage,
+        a_engine: TensorEngine,
+        b_engine: TensorEngine,
+        c_engine: TensorEngine,
         *,
         num_splits: Int = 1,
     ](
-        a: TileTensor[Self.a_type, a_layout, ImmutAnyOrigin, Storage=a_store],
-        b: TileTensor[Self.b_type, b_layout, ImmutAnyOrigin, Storage=b_store],
-        c: TileTensor[Self.c_type, c_layout, MutAnyOrigin, Storage=c_store],
+        a: TileTensor[Self.a_type, a_layout, ImmutAnyOrigin, Engine=a_engine],
+        b: TileTensor[Self.b_type, b_layout, ImmutAnyOrigin, Engine=b_engine],
+        c: TileTensor[Self.c_type, c_layout, MutAnyOrigin, Engine=c_engine],
     ):
         """Runs the 4-wave GEMM kernel for one workgroup tile.
 
@@ -800,9 +800,9 @@ struct AMD4WaveMatmul[
             a_layout: Logical layout of `a`.
             b_layout: Logical layout of `b`.
             c_layout: Logical layout of `c`.
-            a_store: Storage policy of `a`.
-            b_store: Storage policy of `b`.
-            c_store: Storage policy of `c`.
+            a_engine: Engine of `a`.
+            b_engine: Engine of `b`.
+            c_engine: Engine of `c`.
             num_splits: Split-K factor (1 means no split).
 
         Args:
@@ -2066,9 +2066,9 @@ def structured_4wave_matmul[
             type_of(a).LayoutType,
             type_of(b).LayoutType,
             type_of(c).LayoutType,
-            type_of(a).Storage,
-            type_of(b).Storage,
-            type_of(c).Storage,
+            type_of(a).Engine,
+            type_of(b).Engine,
+            type_of(c).Engine,
         ]
 
         var num_blocks_n = ceildiv(N, config.block_shape[1])

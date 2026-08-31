@@ -943,6 +943,26 @@ the [container](/container) page now links to the new page.
 
 ## Breaking changes
 
+- The tile-tensor storage policy is renamed to an engine, and the
+  `layout.tensor_storage` module is renamed `layout.tensor_engine`. The
+  `TensorStorage` trait becomes `TensorEngine`, `TileTensor`'s `Storage`
+  parameter becomes `Engine`, and the conforming policies `PointerStorage`,
+  `DevicePointerStorage`, and `StaticOffsetStorage` become `DefaultEngine`,
+  `DevicePointerEngine`, and `StaticOffsetEngine`. The trait describes the
+  operations a tile tensor performs on its handle (load, store, bitcast,
+  elementwise) rather than the memory it points at, so the old name described
+  the wrong thing. Update `Storage=` keyword arguments to `Engine=` and any
+  `tensor.Storage` accesses to `tensor.Engine`. The `TensorOps` trait and the
+  associated `StorageType` handle keep their names, since they still describe
+  the borrowed memory itself.
+
+  Kernel signatures follow. Every comptime parameter bound to `TensorEngine`
+  or `TensorOps` now ends in `Engine`, replacing the three spellings that
+  were in use: `OutputStorage` and `XStorage` become `OutputEngine` and
+  `XEngine`, `QStorageType` and `SeedStorageType` become `QEngine` and
+  `SeedEngine`, and the snake_case `q_storage` and `x_store` become
+  `q_engine` and `x_engine`. Callers passing any of these by keyword need to
+  update the name.
 - The KV connector's external host and disk tiers now report occupancy and
   transfer volume in bytes rather than in blocks. Those tiers are byte budgets
   the operator sizes in bytes (`host_offload_max_gb`, `disk_offload_max_gb`),

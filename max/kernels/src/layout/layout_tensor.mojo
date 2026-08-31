@@ -5416,12 +5416,12 @@ struct LayoutTensor[
         ```mojo
         from layout import LayoutTensor, Layout
 
-        var src_storage = Array[Float32, 2 * 3](uninitialized=True)
+        var src_engine = Array[Float32, 2 * 3](uninitialized=True)
         var dst_storage = Array[Float32, 3 * 2](uninitialized=True)
         var src = LayoutTensor[
             DType.float32,
             Layout([2, 3]),
-        ](src_storage).fill(1.0)
+        ](src_engine).fill(1.0)
 
         var dst = LayoutTensor[
             DType.float32,

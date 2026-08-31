@@ -210,11 +210,11 @@ def _test_case[
         type_of(b_tt).LayoutType,
         type_of(sfa_tt).LayoutType,
         type_of(sfb_tt).LayoutType,
-        type_of(c_tt).Storage,
-        type_of(a_tt).Storage,
-        type_of(b_tt).Storage,
-        type_of(sfa_tt).Storage,
-        type_of(sfb_tt).Storage,
+        type_of(c_tt).Engine,
+        type_of(a_tt).Engine,
+        type_of(b_tt).Engine,
+        type_of(sfa_tt).Engine,
+        type_of(sfb_tt).Engine,
     ]
     ctx.enqueue_function[kernel](
         c_tt,

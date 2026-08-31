@@ -45,7 +45,7 @@ from layout import (
     MixedLayout,
     TensorLayout,
     TileTensor,
-    PointerStorage,
+    DefaultEngine,
 )
 from layout.tile_layout import row_major
 from layout.tile_tensor import stack_allocation
@@ -1007,7 +1007,7 @@ struct DecodeStreamingKVBuffer[
         strip_idx: Int
     ](
         self,
-        gmem_tile: TileTensor[Self.kv_t.dtype, Storage=PointerStorage[], ...],
+        gmem_tile: TileTensor[Self.kv_t.dtype, Engine=DefaultEngine[], ...],
     ):
         """Load one BK-wide strip from an external DRAM tile to SMEM.
 

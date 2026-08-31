@@ -572,7 +572,7 @@ def _parity_and_hostref[
     var wdense_tt = TileTensor(wdense.unsafe_ptr(), row_major(N, K))
 
     # --- the matmul2d FP4 path ---
-    # `DevicePointerStorage`-backed views, constructed straight from the
+    # `DevicePointerEngine`-backed views, constructed straight from the
     # DeviceBuffers: the fused path runs on device-pointer tiles (exercising
     # the entry points' Storage threading) while the oracle keeps the
     # pointer-backed views above.

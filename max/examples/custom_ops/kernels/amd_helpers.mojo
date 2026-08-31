@@ -29,7 +29,7 @@ from max.gpu.host import DeviceBuffer, DeviceContext
 from max.gpu.sync import AMDScheduleBarrierMask, schedule_group_barrier
 from layout import (
     Layout,
-    PointerStorage,
+    DefaultEngine,
     TensorLayout,
     TileTensor,
     row_major,
@@ -142,9 +142,9 @@ def copy_local_to_dram_32_32_8[
     dst_thread_layout: Layout,
     thread_scope: ThreadScope = ThreadScope.BLOCK,
 ](
-    dst: TileTensor[Storage=PointerStorage[], ...],
-    src: TileTensor[Storage=PointerStorage[], ...],
-    dst_base: TileTensor[Storage=PointerStorage[], ...],
+    dst: TileTensor[Engine=DefaultEngine[], ...],
+    src: TileTensor[Engine=DefaultEngine[], ...],
+    dst_base: TileTensor[Engine=DefaultEngine[], ...],
 ):
     # TODO: use copy_local_to_dram instead once fixed. This is a workaround for now.
 

@@ -39,9 +39,9 @@ from layout import (
     ComptimeInt,
     Coord,
     Idx,
-    PointerStorage,
+    DefaultEngine,
     TensorLayout,
-    TensorStorage,
+    TensorEngine,
     TileTensor,
     coord_to_index_list,
     row_major,
@@ -1562,14 +1562,12 @@ def TopKTopPSamplingFromProbKernel[
     from_logits: Bool = False,
     emit_dist: Bool = False,
     dist_dtype: DType = .float32,
-    ProbsStorageType: TensorStorage = PointerStorage[element_width=1],
-    OutputStorageType: TensorStorage = PointerStorage[element_width=1],
+    ProbsEngine: TensorEngine = DefaultEngine[element_width=1],
+    OutputEngine: TensorEngine = DefaultEngine[element_width=1],
 ](
-    probs: TileTensor[
-        dtype, ProbsLayoutType, probs_origin, Storage=ProbsStorageType
-    ],
+    probs: TileTensor[dtype, ProbsLayoutType, probs_origin, Engine=ProbsEngine],
     output: TileTensor[
-        out_idx_type, OutputLayoutType, output_origin, Storage=OutputStorageType
+        out_idx_type, OutputLayoutType, output_origin, Engine=OutputEngine
     ],
     out_dist: Optional[UnsafePointer[Scalar[dist_dtype], MutAnyOrigin]],
     indices: Optional[UnsafePointer[Scalar[out_idx_type], ImmutAnyOrigin]],
@@ -1627,8 +1625,8 @@ def TopKTopPSamplingFromProbKernel[
         emit_dist: If True, also write the masked distribution to
             `out_dist` (defaults to False).
         dist_dtype: Element type of `out_dist`.
-        ProbsStorageType: Storage type of the input `probs` tile.
-        OutputStorageType: Storage type of the output `output` tile.
+        ProbsEngine: Engine of the input `probs` tile.
+        OutputEngine: Engine of the output `output` tile.
 
     Args:
         probs: Input probability distribution [batch_size, _d].
@@ -2172,12 +2170,12 @@ def topk_topp_sampling_from_prob[
         shape_types=Coord[Int64].element_types,
         stride_types=Coord[ComptimeInt[1]].element_types,
     ],
-    TopKArrStorageType: TensorStorage = PointerStorage[element_width=1],
-    IndicesStorageType: TensorStorage = PointerStorage[element_width=1],
-    TopPArrStorageType: TensorStorage = PointerStorage[element_width=1],
-    SeedStorageType: TensorStorage = PointerStorage[element_width=1],
-    TemperatureStorageType: TensorStorage = PointerStorage[element_width=1],
-    MinPStorageType: TensorStorage = PointerStorage[element_width=1],
+    TopKArrEngine: TensorEngine = DefaultEngine[element_width=1],
+    IndicesEngine: TensorEngine = DefaultEngine[element_width=1],
+    TopPArrEngine: TensorEngine = DefaultEngine[element_width=1],
+    SeedEngine: TensorEngine = DefaultEngine[element_width=1],
+    TemperatureEngine: TensorEngine = DefaultEngine[element_width=1],
+    MinPEngine: TensorEngine = DefaultEngine[element_width=1],
 ](
     ctx: DeviceContext,
     probs: TileTensor[mut=False, dtype, ...],
@@ -2186,9 +2184,7 @@ def topk_topp_sampling_from_prob[
     top_p_val: Float32 = 1.0,
     deterministic: Bool = False,
     rng_seed: Optional[
-        TileTensor[
-            .uint64, SeedLayoutType, ImmutAnyOrigin, Storage=SeedStorageType
-        ]
+        TileTensor[.uint64, SeedLayoutType, ImmutAnyOrigin, Engine=SeedEngine]
     ] = None,
     rng_offset: UInt64 = 0,
     indices: Optional[
@@ -2196,7 +2192,7 @@ def topk_topp_sampling_from_prob[
             out_idx_type,
             IndicesLayoutType,
             ImmutAnyOrigin,
-            Storage=IndicesStorageType,
+            Engine=IndicesEngine,
         ]
     ] = None,
     top_k_arr: Optional[
@@ -2204,7 +2200,7 @@ def topk_topp_sampling_from_prob[
             out_idx_type,
             TopKArrLayoutType,
             ImmutAnyOrigin,
-            Storage=TopKArrStorageType,
+            Engine=TopKArrEngine,
         ]
     ] = None,
     top_p_arr: Optional[
@@ -2212,7 +2208,7 @@ def topk_topp_sampling_from_prob[
             .float32,
             TopPArrLayoutType,
             ImmutAnyOrigin,
-            Storage=TopPArrStorageType,
+            Engine=TopPArrEngine,
         ]
     ] = None,
     temperature: Optional[
@@ -2220,13 +2216,11 @@ def topk_topp_sampling_from_prob[
             .float32,
             TemperatureLayoutType,
             ImmutAnyOrigin,
-            Storage=TemperatureStorageType,
+            Engine=TemperatureEngine,
         ]
     ] = None,
     min_p: Optional[
-        TileTensor[
-            .float32, MinPLayoutType, ImmutAnyOrigin, Storage=MinPStorageType
-        ]
+        TileTensor[.float32, MinPLayoutType, ImmutAnyOrigin, Engine=MinPEngine]
     ] = None,
     out_dist: Optional[
         TileTensor[dist_dtype, DistLayoutType, MutAnyOrigin]
@@ -2264,13 +2258,13 @@ def topk_topp_sampling_from_prob[
         TemperatureLayoutType: Memory layout of the optional `temperature`
             tensor.
         MinPLayoutType: Memory layout of the optional `min_p` tensor.
-        TopKArrStorageType: Storage type of the optional `top_k_arr` tensor.
-        IndicesStorageType: Storage type of the optional `indices` tensor.
-        TopPArrStorageType: Storage type of the optional `top_p_arr` tensor.
-        SeedStorageType: Storage type of the optional `rng_seed` tensor.
-        TemperatureStorageType: Storage type of the optional `temperature`
+        TopKArrEngine: Engine of the optional `top_k_arr` tensor.
+        IndicesEngine: Engine of the optional `indices` tensor.
+        TopPArrEngine: Engine of the optional `top_p_arr` tensor.
+        SeedEngine: Engine of the optional `rng_seed` tensor.
+        TemperatureEngine: Engine of the optional `temperature`
             tensor.
-        MinPStorageType: Storage type of the optional `min_p` tensor.
+        MinPEngine: Engine of the optional `min_p` tensor.
 
     Args:
         ctx: Device context for kernel execution.
@@ -2389,8 +2383,8 @@ def topk_topp_sampling_from_prob[
                 from_logits,
                 emit_dist,
                 dist_dtype,
-                ProbsStorageType=probs.Storage,
-                OutputStorageType=output.Storage,
+                ProbsEngine=probs.Engine,
+                OutputEngine=output.Engine,
             ]
             ctx.enqueue_function[kernel](
                 probs.as_immut(),

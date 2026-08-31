@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 # The TensorOps elementwise binary ops accept an rhs with a different storage
-# policy than the destination. `StaticOffsetStorage` (the stub of the planned
+# engine than the destination. `StaticOffsetEngine` (the stub of the planned
 # static-offset storage family) views its handle `static_offset` scalar
 # elements ahead, so a rhs read through it skips a header region the plain
 # pointer would see. The header is filled with a sentinel that would corrupt
@@ -21,7 +21,7 @@
 # RUN: %mojo %s | FileCheck %s
 
 from layout import TileTensor, row_major
-from layout.tensor_storage import PointerStorage, StaticOffsetStorage
+from layout.tensor_engine import DefaultEngine, StaticOffsetEngine
 
 comptime _OFFSET = 3
 
@@ -40,9 +40,9 @@ def main():
 
     var dst_ptr: Pointer[Float32, origin_of(dst_data)] = dst_data.unsafe_ptr()
     var rhs_ptr: Pointer[Float32, origin_of(rhs_data)] = rhs_data.unsafe_ptr()
-    PointerStorage[element_width=1].iadd[
+    DefaultEngine[element_width=1].iadd[
         dtype=DType.float32,
-        OtherStorage=StaticOffsetStorage[static_offset=_OFFSET],
+        OtherEngine=StaticOffsetEngine[static_offset=_OFFSET],
     ](
         (dst_ptr, row_major[2, 4]()),
         (rhs_ptr, row_major[2, 4]()),
@@ -50,7 +50,7 @@ def main():
     # CHECK{LITERAL}: [[10.0, 21.0, 32.0, 43.0], [54.0, 65.0, 76.0, 87.0]]
     print(dst)
 
-    # Rank-1 broadcast through the offset policy: bias[0] applies to row 0,
+    # Rank-1 broadcast through the offset engine: bias[0] applies to row 0,
     # bias[1] to row 1.
     var bias_data = Array[Float32, _OFFSET + 2](fill=-1000)
     bias_data[_OFFSET] = 100.0
@@ -59,9 +59,9 @@ def main():
     var bias_ptr: Pointer[
         Float32, origin_of(bias_data)
     ] = bias_data.unsafe_ptr()
-    PointerStorage[element_width=1].iadd[
+    DefaultEngine[element_width=1].iadd[
         dtype=DType.float32,
-        OtherStorage=StaticOffsetStorage[static_offset=_OFFSET],
+        OtherEngine=StaticOffsetEngine[static_offset=_OFFSET],
     ](
         (dst_ptr, row_major[2, 4]()),
         (bias_ptr, row_major[2]()),
