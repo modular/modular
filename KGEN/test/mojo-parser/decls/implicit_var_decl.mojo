@@ -45,14 +45,12 @@ def use_bool(x: Bool):
 def simple():
     # expected-error @+1 {{implicit declaration of 'x' is not allowed; add 'var' to declare a new name}}
     x = 1
-    # expected-error @+1 {{use of unknown declaration 'x'}}
     use(x)
 
 
 def annotated():
     # expected-error @+1 {{implicit declaration of 'x' is not allowed; add 'var' to declare a new name}}
     x: Int = 5
-    # expected-error @+1 {{use of unknown declaration 'x'}}
     use(x)
 
 
@@ -60,28 +58,25 @@ def annotated():
 def annotated_no_initializer():
     # expected-error @+1 {{implicit declaration of 'x' is not allowed; add 'var' to declare a new name}}
     x: Int
-    # expected-error @+1 {{implicit declaration of 'x' is not allowed; add 'var' to declare a new name}}
     x = 5
-    # expected-error @+1 {{use of unknown declaration 'x'}}
     use(x)
 
 
-# Each assignment attempts to declare; none succeed, so later uses are unknown.
+# Only the first assignment is diagnosed; the name is then registered, so later
+# assignments and uses resolve against it.
 def reassigned():
     # expected-error @+1 {{implicit declaration of 'x' is not allowed; add 'var' to declare a new name}}
     x = 1
-    # expected-error @+1 {{implicit declaration of 'x' is not allowed; add 'var' to declare a new name}}
     x = 2
-    # expected-error @+1 {{use of unknown declaration 'x'}}
     use(x)
 
 
 # A single 'var' covers a whole tuple target. Emission stops after the first
-# unresolved element, so only that name is diagnosed here.
+# unresolved element, so only that name is diagnosed and only it is registered;
+# later elements stay unknown.
 def tuple_target():
     # expected-error @+1 {{implicit declaration of 'a' is not allowed; add 'var' to declare a new name}}
     a, b = Tuple(1, 2)
-    # expected-error @+1 {{use of unknown declaration 'a'}}
     use(a)
     # expected-error @+1 {{use of unknown declaration 'b'}}
     use(b)
@@ -93,7 +88,6 @@ def tuple_mixed():
     # expected-error @+1 {{implicit declaration of 'b' is not allowed; add 'var' to declare a new name}}
     a, b = Tuple(1, 2)
     use(a)
-    # expected-error @+1 {{use of unknown declaration 'b'}}
     use(b)
 
 # With no binder anywhere in the target, emission still stops at the first
@@ -101,7 +95,6 @@ def tuple_mixed():
 def nested_tuple_target_no_binder():
     # expected-error @+1 {{implicit declaration of 'a' is not allowed; add 'var' to declare a new name}}
     (a, b), c = Tuple(Tuple(1, 2), 3)
-    # expected-error @+1 {{use of unknown declaration 'a'}}
     use(a)
     # expected-error @+1 {{use of unknown declaration 'b'}}
     use(b)
@@ -133,9 +126,7 @@ def chained():
     # expected-error @+2 {{implicit declaration of 'a' is not allowed; add 'var' to declare a new name}}
     # expected-error @+1 {{implicit declaration of 'b' is not allowed; add 'var' to declare a new name}}
     a = b = 1
-    # expected-error @+1 {{use of unknown declaration 'a'}}
     use(a)
-    # expected-error @+1 {{use of unknown declaration 'b'}}
     use(b)
 
 
@@ -150,11 +141,9 @@ def chain_tuple():
     # expected-error @+2 {{implicit declaration of 'a' is not allowed; add 'var' to declare a new name}}
     # expected-error @+1 {{implicit declaration of 'c' is not allowed; add 'var' to declare a new name}}
     a, b = c, d = Tuple(1, 2)
-    # expected-error @+1 {{use of unknown declaration 'a'}}
     use(a)
     # expected-error @+1 {{use of unknown declaration 'b'}}
     use(b)
-    # expected-error @+1 {{use of unknown declaration 'c'}}
     use(c)
     # expected-error @+1 {{use of unknown declaration 'd'}}
     use(d)
@@ -238,15 +227,14 @@ def nested_with(cm: ExampleCM):
     use(1)
 
 
-# Both arms reject the undeclared name; the use after the statement is unknown.
+# The first arm is diagnosed and registers the name, so the second arm and the
+# use after the statement resolve against it.
 def nested_both_arms(c: Bool):
     # expected-error @+2 {{implicit declaration of 'x' is not allowed; add 'var' to declare a new name}}
     if c:
         x = 1
     else:
-        # expected-error @+1 {{implicit declaration of 'x' is not allowed; add 'var' to declare a new name}}
         x = 2
-    # expected-error @+1 {{use of unknown declaration 'x'}}
     use(x)
 
 
@@ -297,10 +285,51 @@ def nested_def_body():
     def inner():
         # expected-error @+1 {{implicit declaration of 'x' is not allowed; add 'var' to declare a new name}}
         x = 1
-        # expected-error @+1 {{use of unknown declaration 'x'}}
         use(x)
 
     inner()
+
+
+# Registration is on the enclosing function, so a nested 'def' resolves the name
+# through parent scope rather than reporting it again.
+def nested_def_reads_outer():
+    # expected-error @+1 {{implicit declaration of 'x' is not allowed; add 'var' to declare a new name}}
+    x = 1
+
+    def inner():
+        use(x)
+
+    inner()
+
+
+# A capture list resolves through a lookup of its own, so it is pinned too.
+def closure_reads_outer():
+    # expected-error @+1 {{implicit declaration of 'x' is not allowed; add 'var' to declare a new name}}
+    x = 1
+
+    def cl(z: Int) {imm x} -> Int:
+        return x + z
+
+    use(cl(1))
+
+
+# A lambda's capture list reaches that lookup by a different path.
+def lambda_capture_reads_outer():
+    # expected-error @+1 {{implicit declaration of 'x' is not allowed; add 'var' to declare a new name}}
+    x = 1
+
+    use((lambda (z: Int) {imm x} -> Int: x + z)(1))
+
+
+# Registration is per name, so a later 'var' of that name is a redefinition and
+# is reported as one.
+def redeclared_with_var():
+    # expected-error @+2 {{implicit declaration of 'x' is not allowed; add 'var' to declare a new name}}
+    # expected-note @+1 {{previous definition here}}
+    x = 1
+    # expected-error @+1 {{invalid redefinition of 'x'}}
+    var x = 2
+    use(x)
 
 
 # ===----------------------------------------------------------------------=== #

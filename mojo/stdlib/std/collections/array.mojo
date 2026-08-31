@@ -426,7 +426,7 @@ struct Array[T: AnyType, length: Int](
 
     @always_inline
     def __init__[
-        batch_size: SIMDLength = 64
+        batch_size: Int = 64
     ](out self, *, fill: Self.T) where conforms_to(Self.T, Copyable):
         """Constructs an array where each element is initialized to the supplied
         value.
@@ -461,11 +461,44 @@ struct Array[T: AnyType, length: Int](
             further improve compilation speed while still maintaining good
             runtime performance.
         """
-        self = Self(fill_with=lambda (_i: Int) -> Self.T: fill.copy())
+        self = Self.__init__[batch_size=batch_size](
+            fill_with=lambda (_i: Int) -> Self.T: fill.copy()
+        )
+
+    @always_inline
+    def __init__(out self, *, fill_with_unrolled: Some[def[Int]() -> Self.T]):
+        """Constructs an array by calling `fill_with_unrolled[i]()` for each
+        index `i`.
+
+        Usually prefer the `fill_with` initializer. `fill_with_unrolled` unrolls
+        the entire initialization loop, which on a large array hurts compile
+        time and doesn't always lead to the best runtime performance.
+
+        Args:
+            fill_with_unrolled: A function parameterized on each index in
+                `[0, length)`, whose result is written to that position.
+
+        Examples:
+
+        ```mojo
+        var simd = SIMD[.uint32, 4](10, 20, 30, 40)
+        var extracted = Array[UInt32, 4](
+            fill_with_unrolled=lambda[i: Int]() -> UInt32: simd[i]
+        )
+        # [10, 20, 30, 40]
+        ```
+        """
+        self = {uninitialized = True}
+        var ptr = self.unsafe_ptr()
+
+        comptime for i in range(Self.length):
+            ptr.unsafe_offset(i).unsafe_write(
+                init_with=lambda () {ref} -> Self.T: fill_with_unrolled[i]()
+            )
 
     @always_inline
     def __init__[
-        batch_size: SIMDLength = 64
+        batch_size: Int = 64
     ](out self, *, fill_with: Some[def(Int) -> Self.T]):
         """Constructs an array by calling `fill_with(i)` for each index `i`.
 
@@ -483,35 +516,36 @@ struct Array[T: AnyType, length: Int](
         # [0, 1, 4, 9, 16]
         ```
         """
-        _array_construction_checks[Self.length]()
-        self = Self(uninitialized=True)
+        comptime if batch_size >= Self.length:
+            self = {
+                fill_with_unrolled = lambda [i: Int]() {
+                    ref
+                } -> Self.T: fill_with(i)
+            }
+        else:
+            comptime unroll_end = std.math.align_down(Self.length, batch_size)
 
-        comptime unroll_end = std.math.align_down(Self.length, batch_size)
+            self = {uninitialized = True}
+            var ptr = self.unsafe_ptr()
 
-        var base = self.unsafe_ptr()
-        var ptr = base
+            # Skip the batched loop entirely when it cannot run. Emitting it for
+            # `unroll_end == 0` leaves the inlined iterator's line-table marker
+            # behind as an irremovable barrier, even though the loop is dead.
+            comptime if unroll_end > 0:
+                for batch_start in range(0, unroll_end, batch_size):
+                    comptime for i in range(batch_size):
+                        var idx = batch_start + i
+                        ptr.unsafe_write(
+                            init_with=lambda () {ref} -> Self.T: fill_with(idx)
+                        )
+                        ptr = ptr.unsafe_offset(1)
 
-        # Skip the batched loop entirely when it cannot run. Emitting it for
-        # `unroll_end == 0` leaves the inlined iterator's line-table marker
-        # behind as an irremovable barrier, even though the loop is dead.
-        comptime if unroll_end > 0:
-            for batch_start in range(0, unroll_end, batch_size):
-                comptime for i in range(batch_size):
-                    var idx = batch_start + i
-                    ptr.unsafe_write(
-                        init_with=lambda () {ref} -> Self.T: fill_with(idx)
-                    )
-                    ptr = ptr.unsafe_offset(1)
-
-        # Fill the remainder
-        comptime for i in range(unroll_end, Self.length):
-            ptr.unsafe_write(init_with=lambda () {ref} -> Self.T: fill_with(i))
-            ptr = ptr.unsafe_offset(1)
-        debug_assert(
-            ptr == base.unsafe_offset(Self.length),
-            "error during `Array` initialization , please file a bug",
-            " report.",
-        )
+            # Fill the remainder
+            comptime for i in range(unroll_end, Self.length):
+                ptr.unsafe_write(
+                    init_with=lambda () {ref} -> Self.T: fill_with(i)
+                )
+                ptr = ptr.unsafe_offset(1)
 
     def __init__[
         *, __literal_size__: Int

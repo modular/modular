@@ -233,7 +233,7 @@ class RustTierConnector(KVConnector):
         """Builds the connector from a KV connector config.
 
         Both budgets may be ``None``: the connector then sizes each tier from
-        its own device page pool.
+        its own device page pool. A 0 disk budget instead drops the tier.
         """
         # Check the KV memory's own device before the build's accelerator API,
         # so a CPU-device pipeline fails the same way on every host rather
@@ -253,7 +253,12 @@ class RustTierConnector(KVConnector):
                 f"found incompatible accelerator API: '{api}'."
             )
 
-        disk_dir = _resolve_disk_offload_dir(cfg)
+        # A zero disk budget drops the disk tier, so don't create a dir for it.
+        disk_dir = (
+            None
+            if cfg.disk_offload_max_gb == 0
+            else _resolve_disk_offload_dir(cfg)
+        )
         if cfg.type != KVConnectorType.rust_tiered:
             logger.warning(
                 "kv_connector '%s' is deprecated: its Python implementation "
@@ -282,7 +287,7 @@ class RustTierConnector(KVConnector):
         self,
         leaves: Mapping[str, KVCacheGroupId],
         replica_kv_memory: Sequence[Sequence[KVCacheMemory]],
-        disk_cache_dir: str,
+        disk_cache_dir: str | None,
         host_offload_max_gb: float | None = None,
         disk_offload_max_gb: float | None = None,
         num_disk_workers: int = 32,
@@ -292,11 +297,12 @@ class RustTierConnector(KVConnector):
         Args:
             leaves: The leaves / group ids for the connector.
             replica_kv_memory: Per-DP-replica offload-ready KV memory units.
-            disk_cache_dir: Directory backing the disk last level.
+            disk_cache_dir: Directory backing the disk last level, or
+                ``None`` for a host-only connector with no disk last level.
             host_offload_max_gb: Host budget. ``None`` sizes the host pool to
                 hold 1.5 times the device page pool.
             disk_offload_max_gb: Disk budget. ``None`` sizes it to hold twice
-                the device page pool.
+                the device page pool; 0 drops the disk last level.
             num_disk_workers: Disk I/O worker threads.
         """
         # Lazy import: OSS MAX can import this module without the extension.
@@ -319,6 +325,14 @@ class RustTierConnector(KVConnector):
 
         bytes_per_page = host_bytes_per_page(replica_kv_memory[0])
         total_num_pages = replica_kv_memory[0][0].total_num_pages
+
+        # A zero disk budget means no disk last level, whichever arg set it. The
+        # tier sizes its capacity from the budget, so a 0 that still opened one
+        # would disable eviction rather than disable the tier.
+        if disk_offload_max_gb == 0:
+            disk_cache_dir = None
+        if disk_cache_dir is None:
+            disk_offload_max_gb = 0.0
 
         # Both tiers default to a multiple of the device pool: sizing them in
         # pages keeps the ratio meaningful across models, where a fixed byte
@@ -346,8 +360,9 @@ class RustTierConnector(KVConnector):
         # explicitly freed in `shutdown`.
         total_bytes = total_num_host_blocks * bytes_per_page
         _check_host_memory_capacity(total_bytes)
-        Path(disk_cache_dir).mkdir(parents=True, exist_ok=True)
-        _check_disk_capacity(disk_cache_dir, int(disk_offload_max_gb * GiB))
+        if disk_cache_dir is not None:
+            Path(disk_cache_dir).mkdir(parents=True, exist_ok=True)
+            _check_disk_capacity(disk_cache_dir, int(disk_offload_max_gb * GiB))
         total_gib = total_bytes / (1024**3)
         start = time.perf_counter()
         logger.info("Allocating %.1f GiB pinned host KV cache...", total_gib)
@@ -393,6 +408,16 @@ class RustTierConnector(KVConnector):
                 )
             )
 
+        only_last_level = _resolve_only_use_kv_connector_last_level_cache()
+        if only_last_level and disk_cache_dir is None:
+            # Rust's `only_last_level` skips the host lookup, so with no disk
+            # tier it would leave nothing to hit.
+            only_last_level = False
+            logger.warning(
+                "Ignoring MODULAR_ONLY_USE_KV_CONNECTOR_LAST_LEVEL_CACHE: with "
+                "no disk tier the host tier is the last level."
+            )
+
         self._rust = TierConnector(
             list(self._leaves.keys()),
             total_num_host_blocks,
@@ -400,7 +425,7 @@ class RustTierConnector(KVConnector):
             bytes_per_page,
             total_num_pages,
             replicas,
-            _resolve_only_use_kv_connector_last_level_cache(),
+            only_last_level,
             disk_cache_dir,
             disk_offload_max_gb,
             num_disk_workers,
@@ -410,7 +435,7 @@ class RustTierConnector(KVConnector):
             "RustTierConnector initialized: host=%d blocks, disk=%s, "
             "num_disk_workers=%d",
             total_num_host_blocks,
-            disk_cache_dir,
+            disk_cache_dir or "disabled (host-only)",
             num_disk_workers,
         )
 

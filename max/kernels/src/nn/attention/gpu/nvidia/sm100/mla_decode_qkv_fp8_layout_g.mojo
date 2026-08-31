@@ -991,12 +991,11 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
                         float2_register[j] = element * SIMD[Self.AccumType, 2](
                             scale_value
                         )
-                    var _o_st_corr = Array[
-                        Scalar[Self.AccumType], per_warp_corr_elems
-                    ](uninitialized=True)
-
-                    comptime for _i in range(per_warp_corr_elems):
-                        _o_st_corr[_i] = o_row_subtile.raw_load(_i)
+                    var _o_st_corr = Array[_, per_warp_corr_elems](
+                        fill_with=lambda (_i: Int) -> Scalar[
+                            Self.AccumType
+                        ]: o_row_subtile.raw_load(_i)
+                    )
                     tcgen05_st[
                         datapaths=32,
                         bits=32,

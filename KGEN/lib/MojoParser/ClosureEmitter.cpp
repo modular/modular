@@ -3143,8 +3143,12 @@ static FailureOr<ASTDecl *> findCapture(SharedState &shared, StringRef name,
     FailureOr<ASTDecl *> result = partialLookup(nameAttr, *current, loc);
     if (failed(result))
       return failure();
-    if (result.value())
+    if (result.value()) {
+      // Error already diagnosed.
+      if (result.value()->isErroneous())
+        return failure();
       return result.value();
+    }
     if (current == upperBound)
       break;
   } while ((current = current->getParentDecl()));

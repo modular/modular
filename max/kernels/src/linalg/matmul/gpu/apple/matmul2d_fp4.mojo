@@ -669,13 +669,13 @@ struct Matmul2dFp4[
         )
 
         # A frag: base map. B frag: transpose_right map (n, k) w/ k contiguous.
-        var a_rc = Array[IndexList[2], 8](uninitialized=True)
-        comptime for i in range(8):
-            a_rc[i] = a_frag_coord(lane, i)
+        var a_rc = Array[_, 8](
+            fill_with=lambda (i: Int) -> IndexList[2]: a_frag_coord(lane, i)
+        )
         # C store: UNCHANGED base bc map (transpose_right permutes only B).
-        var c_rc = Array[IndexList[2], 16](uninitialized=True)
-        comptime for i in range(16):
-            c_rc[i] = bc_frag_coord(lane, i)
+        var c_rc = Array[_, 16](
+            fill_with=lambda (i: Int) -> IndexList[2]: bc_frag_coord(lane, i)
+        )
 
         # This lane's fragment (n, k) base for the transpose_right B map. The 16
         # B-frag elements are 4 N-rows x 4 contiguous K, one 2-byte packed load +
@@ -695,14 +695,7 @@ struct Matmul2dFp4[
             scale_storage,
         ].from_kernel_args(a, packed, scales, M, N, K)
 
-        var accs = Array[SIMD[.float32, 16], Self.tm * Self.tn](
-            uninitialized=True
-        )
-        comptime for t in range(Self.tm * Self.tn):
-            accs[t] = SIMD[.float32, 16](0)
-
-        var a_frag = Array[SIMD[.bfloat16, 8], Self.tm](uninitialized=True)
-        var b_frag = Array[SIMD[.bfloat16, 16], Self.tn](uninitialized=True)
+        var accs = Array[_, Self.tm * Self.tn](fill=SIMD[.float32, 16](0))
 
         var k0 = 0
         while k0 < K:
@@ -711,14 +704,22 @@ struct Matmul2dFp4[
             # zero-fill them (the ragged-M A over-read fix) rather than reading
             # OOB. (The reg `run` is the test-only path; the deep-K production
             # path is `run_smem_decode` below.)
-            comptime for im in range(Self.tm):
-                var arow = sg_row0 + im * Self.MMA_M
-                a_frag[im] = loader.load_a_frag[bounded=True](arow, k0, a_rc)
+            var a_frag = Array[_, Self.tm](
+                fill_with_unrolled=lambda [im: Int]() -> SIMD[
+                    .bfloat16, 8
+                ]: loader.load_a_frag[bounded=True](
+                    sg_row0 + im * Self.MMA_M, k0, a_rc
+                )
+            )
 
             # B fragments: decode packed FP4 -> bf16, K-contiguous (coalesced).
-            comptime for jn in range(Self.tn):
-                var bcol0 = sg_col0 + jn * Self.MMA_N
-                b_frag[jn] = loader.decode_b_frag_regc(bcol0, k0, rb, cb)
+            var b_frag = Array[_, Self.tn](
+                fill_with_unrolled=lambda [jn: Int]() -> SIMD[
+                    .bfloat16, 16
+                ]: loader.decode_b_frag_regc(
+                    sg_col0 + jn * Self.MMA_N, k0, rb, cb
+                )
+            )
 
             comptime for im in range(Self.tm):
                 comptime for jn in range(Self.tn):
@@ -844,16 +845,16 @@ struct Matmul2dFp4[
         ]()
         var b_view = TileTensor(b_sm, Layout(Coord(BN, BK), Coord(BK, Idx[1])))
 
-        var a_rc = Array[IndexList[2], 8](uninitialized=True)
-        comptime for i in range(8):
-            a_rc[i] = a_frag_coord(lane, i)
+        var a_rc = Array[_, 8](
+            fill_with=lambda (i: Int) -> IndexList[2]: a_frag_coord(lane, i)
+        )
         # B fragment (n, k) local coords under transpose_right; k contiguous.
-        var b_nk = Array[IndexList[2], 16](uninitialized=True)
-        comptime for i in range(16):
-            b_nk[i] = bt_frag_coord(lane, i)
-        var c_rc = Array[IndexList[2], 16](uninitialized=True)
-        comptime for i in range(16):
-            c_rc[i] = bc_frag_coord(lane, i)
+        var b_nk = Array[_, 16](
+            fill_with=lambda (i: Int) -> IndexList[2]: bt_frag_coord(lane, i)
+        )
+        var c_rc = Array[_, 16](
+            fill_with=lambda (i: Int) -> IndexList[2]: bc_frag_coord(lane, i)
+        )
 
         # The FP4 decode / A-gather owner: all packed/scale/A/SMEM addressing
         # goes through it via TileTensor indexing (no raw pointer arithmetic).
@@ -867,14 +868,7 @@ struct Matmul2dFp4[
             scale_storage,
         ].from_kernel_args(a, packed, scales, M, N, K)
 
-        var accs = Array[SIMD[.float32, 16], Self.tm * Self.tn](
-            uninitialized=True
-        )
-        comptime for t in range(Self.tm * Self.tn):
-            accs[t] = SIMD[.float32, 16](0)
-
-        var a_frag = Array[SIMD[.bfloat16, 8], Self.tm](uninitialized=True)
-        var b_frag = Array[SIMD[.bfloat16, 16], Self.tn](uninitialized=True)
+        var accs = Array[_, Self.tm * Self.tn](fill=SIMD[.float32, 16](0))
 
         # This thread's cooperative-decode slot: N-row + contiguous byte-run.
         var dec_nrow = tid // THREADS_PER_ROW
@@ -904,20 +898,26 @@ struct Matmul2dFp4[
                 # ---- per-SG: read tn register B frags from SMEM, matmul2d ----
                 var ks = 0
                 while ks < BK:
-                    comptime for im in range(Self.tm):
-                        var arow = sg_row0 + im * Self.MMA_M
-                        a_frag[im] = loader.load_a_frag[bounded=bounded](
-                            arow, k0 + ks, a_rc
+                    var a_frag = Array[_, Self.tm](
+                        fill_with_unrolled=lambda [im: Int]() -> SIMD[
+                            Self.in_type, 8
+                        ]: loader.load_a_frag[bounded=bounded](
+                            sg_row0 + im * Self.MMA_M, k0 + ks, a_rc
                         )
-                    comptime for jn in range(Self.tn):
+                    )
+
+                    def b_frag_at[jn: Int]() {imm} -> SIMD[Self.in_type, 16]:
                         # SG's N-subtile within the (BN) strip.
                         var n_local0 = (sg_n * Self.tn + jn) * Self.MMA_N
-                        var v = SIMD[.bfloat16, 16](0)
+                        var v = SIMD[Self.in_type, 16](0)
                         comptime for i in range(16):
                             var nl = n_local0 + b_nk[i][0]  # local N in [0, BN)
                             var kl = ks + b_nk[i][1]  # local K in [0, BK)
                             v[i] = b_view[nl, kl][0]
-                        b_frag[jn] = v
+                        return v
+
+                    var b_frag = Array[_, Self.tn](fill_with_unrolled=b_frag_at)
+
                     comptime for im in range(Self.tm):
                         comptime for jn in range(Self.tn):
                             comptime t = im * Self.tn + jn

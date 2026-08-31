@@ -535,14 +535,18 @@ struct AppleM5Int8MatMul[
             var kb_valid = max(
                 0, min(Int(Self.MMA_K), k_valid - ki * Self.MMA_K)
             )
-            var b_frags = Array[SIMD[.int8, 8], Self.NUM_MMA_N](
-                uninitialized=True
-            )
-            comptime for ni in range(Self.NUM_MMA_N):
-                var b_sub = b_strip.tile[16, 16](ni, ki)
-                b_frags[ni] = Self._masked_frag(
-                    b_sub, b_rs, rb, cb, valid_cols - ni * 16, kb_valid
+            var b_frags = Array[_, Self.NUM_MMA_N](
+                fill_with_unrolled=lambda [ni: Int]() -> SIMD[
+                    .int8, 8
+                ]: Self._masked_frag(
+                    b_strip.tile[16, 16](ni, ki),
+                    b_rs,
+                    rb,
+                    cb,
+                    valid_cols - ni * 16,
+                    kb_valid,
                 )
+            )
             comptime for mi in range(Self.NUM_MMA_M):
                 var a_sub = a_strip.tile[16, 16](mi, ki)
                 var a_frag = Self._masked_frag(
@@ -783,9 +787,7 @@ struct AppleM5Int8MatMul[
         var sg_col = Int(col_base // SG_N_i)
 
         var mma_op = Self.Mma()
-        var accum = Self.Mma.AccumType(uninitialized=True)
-        comptime for i in range(Self.Mma.num_accum):
-            accum[i] = SIMD[.int32, 8](0)
+        var accum = Self.Mma.AccumType(fill=SIMD[.int32, 8](0))
 
         var is_edge = (row_base + SG_M_i > m) or (col_base + SG_N_i > n)
         var n_full_strips = k // Self.BK

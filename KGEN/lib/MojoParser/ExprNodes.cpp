@@ -1243,16 +1243,17 @@ DeclRefNode::emitUnqualLookup(StringRef spelling, const ExprNode *expr,
   LookupResult lookup = emitter.shared.lookupAndResolveDecl(
       spelling, loc, lookupScope, /*searchParentScopes=*/true);
 
-  // If that lookup failed, but we can synthesize a variable declaration in this
-  // scope, do that. We only do this if we have a contextual type because we
-  // don't want to suggest turning "x = {}" into "var x = {}" which would be a
-  // different error.
+  // Only report this when we have a contextual type: we don't want to suggest
+  // turning "x = {}" into "var x = {}", which is a different error.
   if (lookup.isFailure() && dest.getIfInitializerType()) {
     auto diag = emitter.emitError(loc);
     diag << "implicit declaration of '" << spelling << "' is not allowed; ";
     diag << "add 'var' to declare a new name";
     diag << FixIt::insertBeforeToken(loc, "var ");
     diag << expr->getRange();
+    // An assignment outside any function is rejected before name resolution.
+    if (ASTDecl *fn = lookupScope.getNearestDeclOfType<FnOp>())
+      emitter.getDeclResolver().addErroneousDecl(spelling, loc, fn);
     return {};
   }
 
@@ -3770,18 +3771,48 @@ AnyValue BinOpNode::emitAssign(ExprDest &dest, IREmitter &emitter) const {
 ///
 /// Unlike general assignment, walrus does not use speculative bidirectional
 /// type inference: the LHS is emitted directly as an LValue, then the RHS is
-/// stored into it. The expression result is the assigned value.
+/// stored into it. It yields a borrowed version of the LHS after the store.
 AnyValue BinOpNode::emitWalrus(ExprDest &dest, IREmitter &emitter) const {
   LValue lhsLV = emitter.emitExprLValue(lhs, EC_Assignment);
   if (!lhsLV)
     return {};
 
-  ExprDest assignDest(lhsLV, EC_Assignment);
-  auto resultValue = emitter.emitExpr(rhs, assignDest);
-  if (!resultValue)
+  // Mutable memory LValue: store into it, then yield an immutable borrow.
+  if (MLValue mlValue = lhsLV.getIfMLValue()) {
+    ExprDest assignDest(lhsLV, EC_Assignment);
+    if (!emitter.emitExpr(rhs, assignDest))
+      return {};
+    return emitter.emitResult(MBValue(mlValue), this, dest);
+  }
+
+  // Otherwise must be a DLValue.
+  if (!lhsLV.getIfDLValue()) {
+    emitter.emitError(lhs->getLoc(),
+                      "walrus operator target must be a mutable memory "
+                      "location");
+    return {};
+  }
+
+  // Computed LValue (e.g. subscript / attribute): we need to pass it into the
+  // setter but also need to return it.
+  auto rhsRValue =
+      emitter.emitExprRValue(rhs, EC_Assignment, lhsLV.getRValueType());
+  if (!rhsRValue)
     return {};
 
-  return emitter.emitResult(resultValue, this, dest);
+  // The logic below won't work for SRValue's (because emitBValue takes
+  // ownership of the value), so promote to MRValue if we have one.
+  if (rhsRValue.getIfSRValue())
+    rhsRValue = emitter.emitMRValue({rhsRValue, rhs}, EC_Assignment);
+
+  // We will ultimately return the RValue, but we can't have the setter consume
+  // it if it takes a 'var' argument.  Decay to a BValue before passing on.
+  BValue bValue = emitter.emitBValue({rhsRValue, rhs}, EC_Assignment);
+  if (!bValue)
+    return {};
+  if (!emitter.emitStoreToLValue({bValue, rhs}, lhsLV, EC_Assignment))
+    return {};
+  return emitter.emitResult(rhsRValue, this, dest);
 }
 
 /// Emit a inplace assignment statement like `x += y`. Python evaluates the RHS

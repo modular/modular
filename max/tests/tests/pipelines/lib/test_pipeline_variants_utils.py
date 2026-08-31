@@ -31,7 +31,6 @@ from max.pipelines.context import (
 from max.pipelines.context.exceptions import InputError
 from max.pipelines.lib.pipeline_variants.structured_output_backend import (
     GrammarBackend,
-    XgrammarBackend,
 )
 from max.pipelines.lib.pipeline_variants.utils import (
     StructuredOutputHelper,
@@ -847,46 +846,6 @@ class TestXgrammarCacheBound:
             tokenizer_info, max_memory_bytes=limit
         )
         assert compiler._impl.cache_limit_bytes == limit
-
-
-def _xgrammar_backend(reject_unsupported: bool) -> XgrammarBackend:
-    vocab = [chr(c) for c in range(32, 127)] + ["<eos>"]
-    tokenizer_info = xgrammar.TokenizerInfo(
-        vocab,
-        vocab_type=xgrammar.VocabType.RAW,
-        stop_token_ids=[len(vocab) - 1],
-    )
-    return XgrammarBackend(
-        xgrammar.GrammarCompiler(tokenizer_info),
-        reject_unsupported=reject_unsupported,
-    )
-
-
-# An unenforceable keyword: multipleOf has no faithful CFG encoding.
-_UNSUPPORTED_SCHEMA = {"type": "number", "multipleOf": 5}
-
-
-class TestXgrammarBackendRejectUnsupported:
-    """response_format compilation honors the per-backend reject_unsupported
-    flag threaded for Gemma (ENABLE B/C). The default (all other models) stays
-    permissive."""
-
-    def test_default_permits_unsupported_keyword(self) -> None:
-        backend = _xgrammar_backend(reject_unsupported=False)
-        compiled = backend.compile_json_schema(_UNSUPPORTED_SCHEMA)
-        assert isinstance(compiled, xgrammar.CompiledGrammar)
-
-    def test_reject_unsupported_rejects_unsupported_keyword(self) -> None:
-        backend = _xgrammar_backend(reject_unsupported=True)
-        with pytest.raises(Exception):
-            backend.compile_json_schema(_UNSUPPORTED_SCHEMA)
-
-    def test_reject_unsupported_permits_enforceable_schema(self) -> None:
-        backend = _xgrammar_backend(reject_unsupported=True)
-        compiled = backend.compile_json_schema(
-            {"type": "object", "properties": {"x": {"type": "string"}}}
-        )
-        assert isinstance(compiled, xgrammar.CompiledGrammar)
 
 
 class _FillRecordingBackend(_NoopBackend):
