@@ -1,7 +1,6 @@
 ---
-title: Value creation
-sidebar_position: 2
-description: Learn how and when Mojo creates values.
+title: Creating values
+description: Construct values with generated and custom initializers.
 ---
 
 A value's life in Mojo begins when you construct it, directly or
@@ -286,23 +285,3 @@ address. For example:
   interior pointer referring to the old, invalid address.
 - An external system tracks the value by address while an operation is in
   progress. Moving it would invalidate that association.
-
-## Trivial lifecycle methods
-
-For many types, lifecycle operations are *trivial*: they have no custom
-behavior, so the compiler can optimize or eliminate them.
-
-Use the `comptime` predicates in `std.traits` to test for trivial lifecycle
-behavior:
-
-```mojo
-from std.traits import (
-    IsTriviallyCopyable,
-    IsTriviallyMovable,
-)
-```
-
-- `IsTriviallyCopyable[T]` is true when `T` is `Copyable` and copying a
-  value's bits has no side effects.
-- `IsTriviallyMovable[T]` is true when `T` is `Movable` and moving a
-  value's bits has no side effects.

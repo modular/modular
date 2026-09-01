@@ -16,7 +16,7 @@
 from std.math import align_up, ceildiv
 from std.math.uutils import uceildiv, udivmod, ufloordiv
 from std.memory import unsafe_stack_allocation
-from std.gpu import (
+from max.gpu import (
     block_idx,
     thread_idx,
     grid_dim,
@@ -39,8 +39,8 @@ from layout import (
 )
 from layout.tile_layout import TensorLayout
 from std.logger import Logger
-from std.gpu.primitives import warp
-from std.gpu.primitives.warp import lane_group_max, shuffle_xor
+from max.gpu.primitives import warp
+from max.gpu.primitives.warp import lane_group_max, shuffle_xor
 from std.math import recip
 from .block_scaled_utils import compute_mxfp8_block_scale
 from .fp4_utils import (
@@ -72,7 +72,7 @@ from std.utils.index import Index, IndexList
 from linalg.matmul.vendor.blas import matmul
 from std.memory import bitcast
 from max.gpu.sync import named_barrier
-from std.gpu.intrinsics import warpgroup_reg_dealloc
+from max.gpu.intrinsics import warpgroup_reg_dealloc
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from layout.tma_async import (
     SharedMemBarrier,

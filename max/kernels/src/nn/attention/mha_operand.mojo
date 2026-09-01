@@ -32,8 +32,8 @@ from kv_cache.types import (
 from layout import (
     Layout,
     LayoutTensor,
-    PointerStorage,
-    TensorStorage,
+    DefaultEngine,
+    TensorEngine,
     UNKNOWN_VALUE,
 )
 from layout.tile_layout import (
@@ -1026,8 +1026,8 @@ struct LayoutTensorMHAOperand[
         shape_types=Coord[].element_types,
         stride_types=Coord[].element_types,
     ],
-    buffer_storage: TensorStorage = PointerStorage[element_width=1],
-    scale_buffer_storage: TensorStorage = PointerStorage[element_width=1],
+    buffer_engine: TensorEngine = DefaultEngine[element_width=1],
+    scale_buffer_engine: TensorEngine = DefaultEngine[element_width=1],
 ](MHAOperand, TrivialRegisterPassable):
     """An implementation for contiguous tensor arguments to MHA kernels.
 
@@ -1042,10 +1042,10 @@ struct LayoutTensorMHAOperand[
         scale_buffer_layout: `TensorLayout` of the `scale_buffer`. A
             rank-0 layout disables quantization (defaults to a rank-0
             `MixedLayout`).
-        buffer_storage: `TensorStorage` of the K/V `buffer` (defaults to
-            `PointerStorage`).
-        scale_buffer_storage: `TensorStorage` of the `scale_buffer`
-            (defaults to `PointerStorage`).
+        buffer_engine: `TensorEngine` of the K/V `buffer` (defaults to
+            `DefaultEngine`).
+        scale_buffer_engine: `TensorEngine` of the `scale_buffer`
+            (defaults to `DefaultEngine`).
     """
 
     comptime dtype = Self.dtype_
@@ -1068,13 +1068,13 @@ struct LayoutTensorMHAOperand[
     comptime quantization_enabled: Bool = Self.scale_buffer_layout.rank != 0
 
     var buffer: TileTensor[
-        Self.dtype, Self.buffer_layout, Self.origin, Storage=Self.buffer_storage
+        Self.dtype, Self.buffer_layout, Self.origin, Engine=Self.buffer_engine
     ]
     var scale_buffer: TileTensor[
         Self.scale_dtype,
         Self.scale_buffer_layout,
         Self.scale_origin,
-        Storage=Self.scale_buffer_storage,
+        Engine=Self.scale_buffer_engine,
     ]
     comptime device_type: AnyType = Self
 
@@ -1093,13 +1093,13 @@ struct LayoutTensorMHAOperand[
             Self.dtype,
             Self.buffer_layout,
             Self.origin,
-            Storage=Self.buffer_storage,
+            Engine=Self.buffer_engine,
         ],
         scale_buffer: TileTensor[
             Self.scale_dtype,
             Self.scale_buffer_layout,
             Self.scale_origin,
-            Storage=Self.scale_buffer_storage,
+            Engine=Self.scale_buffer_engine,
         ] = _null_scale_tile_tensor[
             Self.scale_dtype, Self.scale_buffer_layout
         ](),

@@ -79,7 +79,7 @@ When building the Mojo compiler, you can run arbitrary Mojo code using the
 following command:
 
 ```sh
-./bazelw run --config=build-mojo //KGEN:mojo -- run my_file.mojo
+./bazelw run --config=build-mojo //Mojo:mojo -- run my_file.mojo
 ```
 
 ## Testing one-off scripts

@@ -70,7 +70,7 @@ from std.math import exp2, recip, isnan
 from std.random import randn, seed
 from std.sys import size_of
 
-from std.gpu import thread_idx
+from max.gpu import thread_idx
 from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext, FuncAttribute
 from max.gpu.host.info import _is_sm10x_gpu

@@ -7696,6 +7696,7 @@ def dynamic_block_scaled_matmul_mxfp6(
     b_scales: TensorValue,
     fp6_format: str = "e2m3",
     out_type: DType = DType.bfloat16,
+    preshuffled_b: bool = False,
 ) -> TensorValue:
     """Performs a matmul of two MXFP6 tensors with E8M0 block scales.
 
@@ -7713,6 +7714,11 @@ def dynamic_block_scaled_matmul_mxfp6(
         b_scales: E8M0 weight scales ``[N, K // 32]``.
         fp6_format: The FP6 element encoding, ``"e2m3"`` or ``"e3m2"``.
         out_type: The dtype of the result.
+        preshuffled_b: When True, ``b`` and ``b_scales`` must already be in
+            the plane-split / packed-scale layouts produced by
+            ``preshuffle_block_scaled_b_dense`` (a one-time, load-time cost
+            for the static weight). Ignored (falls back to the row-major
+            kernel) for small ``M`` -- see ``mxfp6_block_scaled_matmul_amd``.
 
     Returns:
         The result of the matmul operation, ``[M, N]``.
@@ -7771,7 +7777,7 @@ def dynamic_block_scaled_matmul_mxfp6(
                 dtype=out_type, shape=[a.shape[0], b.shape[0]], device=a.device
             )
         ],
-        parameters={"FP6_FORMAT": fp6_code},
+        parameters={"FP6_FORMAT": fp6_code, "preshuffled_b": preshuffled_b},
     )[0].tensor
 
 

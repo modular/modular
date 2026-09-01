@@ -35,7 +35,7 @@ comptime _CHUNK_SIZE = 64
 
 
 @always_inline
-def _metal_os_log_chunk(data: Array[UInt8, 64]):
+def _metal_os_log_chunk(data: Pointer[UInt8, MutUntrackedOrigin]):
     """Emit a single 64-byte chunk via the os_log sentinel.
 
     The compiler's InstructionRewrite pass replaces this sentinel call
@@ -44,7 +44,7 @@ def _metal_os_log_chunk(data: Array[UInt8, 64]):
     Args:
         data: Pointer to exactly 64 bytes of data (zero-padded).
     """
-    external_call["__mojo_metal_os_log_64", NoneType](data.unsafe_ptr())
+    external_call["__mojo_metal_os_log_64", NoneType](data)
 
 
 @always_inline
@@ -57,6 +57,7 @@ def _metal_print_write(text: StringSlice[_]):
     Args:
         text: Sequence of bytes to write.
     """
+    var data_ptr = text.as_bytes().unsafe_ptr()
     var length = text.byte_length()
 
     if length <= 0:
@@ -65,13 +66,14 @@ def _metal_print_write(text: StringSlice[_]):
     var offset = 0
     while offset < length:
         # Allocate a zero-initialized 64-byte buffer on the stack.
-        var chunk = Array[UInt8, _CHUNK_SIZE](fill=0)
+        var chunk = unsafe_stack_allocation[_CHUNK_SIZE, UInt8]()
+        unsafe_memset(chunk, 0, _CHUNK_SIZE)
 
         # Copy up to 64 bytes from the source.
         var remaining = length - offset
         var copy_len = remaining if remaining < _CHUNK_SIZE else _CHUNK_SIZE
-        Span(chunk)[:copy_len].copy_from(
-            text.as_bytes()[offset : offset + copy_len]
+        unsafe_memcpy(
+            dest=chunk, src=data_ptr.unsafe_offset(offset), count=copy_len
         )
 
         # Emit the chunk.

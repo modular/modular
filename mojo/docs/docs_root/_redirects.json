@@ -60,7 +60,7 @@
     "status": 302
   },
   {
-    "source": "/docs/std/gpu/(compute(?:/.*)?|host/(?:compile|constant_memory_mapping|device_attribute|device_context|device_graph|dim|func_attribute|launch_attribute|nvidia)(?:/.*)?|memory(?:/.*)?|primitives/(?:block|cluster|grid_controls)(?:/.*)?|sync(?:/.*)?)",
+    "source": "/docs/std/gpu/(.*)",
     "dest": "https://max.modular.com/api/mojo/max/gpu/{0}",
     "status": 302
   },

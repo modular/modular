@@ -255,7 +255,10 @@ struct StringSpan[mut: Bool, //, origin: Origin[mut=mut]](
         # debug_assert(
         #     _is_valid_utf8(value.as_bytes()), "value is not valid utf8"
         # )
-        self._slice = unsafe_from_utf8
+        self._slice = Span[Byte, Self.origin](
+            unsafe_ptr=unsafe_from_utf8.unsafe_ptr(),
+            length=unsafe_from_utf8.__len__(),
+        )
 
     @always_inline
     def __init__[
@@ -880,7 +883,14 @@ struct StringSpan[mut: Bool, //, origin: Origin[mut=mut]](
         var start_bytes = total_bytes - iter.remaining_byte_length()
 
         if not end_opt:
-            return Self(unsafe_from_utf8=self._slice[start_bytes:total_bytes])
+            return Self(
+                unsafe_from_utf8=Span[Byte, Self.origin](
+                    unsafe_ptr=self._slice.unsafe_ptr().unsafe_offset(
+                        start_bytes
+                    ),
+                    length=total_bytes - start_bytes,
+                )
+            )
 
         var end_idx = end_opt.unsafe_value()
         while i < end_idx:
@@ -890,7 +900,12 @@ struct StringSpan[mut: Bool, //, origin: Origin[mut=mut]](
             i += 1
         var end_bytes = total_bytes - iter.remaining_byte_length()
 
-        return Self(unsafe_from_utf8=self._slice[start_bytes:end_bytes])
+        return Self(
+            unsafe_from_utf8=Span[Byte, Self.origin](
+                unsafe_ptr=self._slice.unsafe_ptr().unsafe_offset(start_bytes),
+                length=end_bytes - start_bytes,
+            )
+        )
 
     @always_inline
     def _check_valid_index(self, idx: Int):
@@ -1476,9 +1491,16 @@ struct StringSpan[mut: Bool, //, origin: Origin[mut=mut]](
             split_bytes += g.unsafe_value().byte_length()
 
         var total = len(self._slice)
-        var prefix = Self.Immutable(unsafe_from_utf8=self._slice[0:split_bytes])
+        var prefix = Self.Immutable(
+            unsafe_from_utf8=Span[Byte, ImmOrigin(Self.origin)](
+                unsafe_ptr=self._slice.unsafe_ptr(), length=split_bytes
+            )
+        )
         var suffix = Self.Immutable(
-            unsafe_from_utf8=self._slice[split_bytes:total]
+            unsafe_from_utf8=Span[Byte, ImmOrigin(Self.origin)](
+                unsafe_ptr=self._slice.unsafe_ptr().unsafe_offset(split_bytes),
+                length=total - split_bytes,
+            )
         )
         return (prefix, suffix)
 
@@ -2522,14 +2544,27 @@ def _to_string_list[
     O: ImmOrigin,
     T: Copyable,
     //,
-    as_bytes_fn: def(T) thin -> Span[Byte, O],
+    len_fn: def(T) thin -> Int,
+    unsafe_ptr_fn: def(T) thin -> Pointer[Byte, O],
 ](items: List[T]) -> List[String]:
-    return List(
-        length=len(items),
-        fill_with=lambda (i: Int) -> String: String(
-            StringSpan(unsafe_from_utf8=as_bytes_fn(Pointer(to=items[i])[]))
-        ),
-    )
+    var i_len = len(items)
+
+    var out_list = List[String](capacity=i_len)
+
+    for i in range(i_len):
+        var elt_ptr = Pointer(to=items[i])
+        var og_len = len_fn(elt_ptr[])
+        var og_ptr = unsafe_ptr_fn(elt_ptr[])
+        out_list.append(
+            String(
+                StringSpan(
+                    unsafe_from_utf8=Span[Byte, O](
+                        unsafe_ptr=og_ptr, length=og_len
+                    )
+                )
+            )
+        )
+    return out_list^
 
 
 @always_inline
@@ -2549,7 +2584,8 @@ def _to_string_list[
     """
 
     return _to_string_list[
-        lambda (v: StringSpan[O]) -> Span[Byte, O]: v.as_bytes()
+        lambda (v: StringSpan[O]) -> Int: v.byte_length(),
+        lambda (v: StringSpan[O]) -> Pointer[Byte, O]: v.unsafe_ptr(),
     ](items)
 
 
@@ -2569,7 +2605,10 @@ def _to_string_list[
         The list of created strings.
     """
 
-    return _to_string_list[lambda (v: Span[Byte, O]) -> Span[Byte, O]: v](items)
+    return _to_string_list[
+        lambda (v: Span[Byte, O]) -> Int: len(v),
+        lambda (v: Span[Byte, O]) -> Pointer[Byte, O]: v.unsafe_ptr(),
+    ](items)
 
 
 @always_inline
@@ -2602,9 +2641,11 @@ def _memchr[
         __is_run_in_comptime_interpreter
         or len(source) < simd_width_of[Scalar[dtype]]()
     ):
+        var ptr = source.unsafe_ptr()
+
         for i in range(len(source)):
-            if source.unsafe_get(i) == char:
-                return Pointer(to=source.unsafe_get(i))
+            if ptr[unsafe_offset=i] == char:
+                return ptr.unsafe_offset(i)
         return {}
     else:
         return _memchr_impl(source, char)
@@ -2757,9 +2798,10 @@ def _memrchr[
 ) -> OptionalPointer[
     Scalar[dtype], source.origin
 ]:
+    var base: Pointer[Scalar[dtype], source.origin] = source.unsafe_ptr()
     for i in reversed(range(len(source))):
         if source.unsafe_get(i) == char:
-            return Pointer(to=source.unsafe_get(i))
+            return base.unsafe_offset(i)
     return {}
 
 

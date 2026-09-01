@@ -78,7 +78,7 @@ NVIDIA SM100 only (SS-UMMA / TMA / tcgen05). Verified against
 match via `test_mla_index_fp8`.
 """
 
-from std.gpu import (
+from max.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
     block_idx,
@@ -89,7 +89,7 @@ from max.gpu.host import DeviceContext, FuncAttribute
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu.memory import external_memory
 from max.gpu.sync import barrier, named_barrier
-from std.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
+from max.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
 from max.gpu.compute.arch.tcgen05 import (
     tcgen05_alloc,
     tcgen05_dealloc,
@@ -105,9 +105,9 @@ from std.utils.static_tuple import StaticTuple
 
 from layout import (
     Coord,
-    PointerStorage,
+    DefaultEngine,
     TensorLayout,
-    TensorStorage,
+    TensorEngine,
     TileTensor,
 )
 from layout.tile_layout import row_major as tt_row_major
@@ -502,19 +502,17 @@ def _fp8_index_score_prefill_kernel_sm100[
     _is_cache_length_accurate: Bool,
     kpool: Int = 1,
     *,
-    VLStorageType: TensorStorage = PointerStorage[element_width=1],
-    QSStorageType: TensorStorage = PointerStorage[element_width=1],
-    OutStorageType: TensorStorage = PointerStorage[element_width=1],
+    VLEngine: TensorEngine = DefaultEngine[element_width=1],
+    QSEngine: TensorEngine = DefaultEngine[element_width=1],
+    OutEngine: TensorEngine = DefaultEngine[element_width=1],
 ](
     q_tma: QTMATileT[dtype, N_TOKENS * num_heads, depth],
     k_tma: KTMATileT[dtype, BM_key, depth],
     k_operand: KOperand,
     ks_operand: KSOperand,
-    valid_length: TileTensor[
-        .uint32, VLLT, ImmutAnyOrigin, Storage=VLStorageType
-    ],
-    q_s: TileTensor[.float32, QSLT, ImmutAnyOrigin, Storage=QSStorageType],
-    output: TileTensor[.float32, OutLT, MutAnyOrigin, Storage=OutStorageType],
+    valid_length: TileTensor[.uint32, VLLT, ImmutAnyOrigin, Engine=VLEngine],
+    q_s: TileTensor[.float32, QSLT, ImmutAnyOrigin, Engine=QSEngine],
+    output: TileTensor[.float32, OutLT, MutAnyOrigin, Engine=OutEngine],
     max_num_keys_dev: Int32,
     causal_dev: Int32,
     num_key_parts_dev: Int32,
@@ -1364,17 +1362,17 @@ def fp8_index_score_sm100_prefill[
     _is_cache_length_accurate: Bool,
     kpool: Int = 1,
     *,
-    VLStorageType: TensorStorage = PointerStorage[element_width=1],
-    QSStorageType: TensorStorage = PointerStorage[element_width=1],
-    OutStorageType: TensorStorage = PointerStorage[element_width=1],
+    VLEngine: TensorEngine = DefaultEngine[element_width=1],
+    QSEngine: TensorEngine = DefaultEngine[element_width=1],
+    OutEngine: TensorEngine = DefaultEngine[element_width=1],
 ](
     q_tma: QTMATileT[dtype, N_TOKENS * num_heads, depth],
     k_tma: KTMATileT[dtype, BM_key, depth],
     k_operand: KOperand,
     ks_operand: KSOperand,
-    valid_length: TileTensor[mut=False, .uint32, ..., Storage=VLStorageType],
-    q_s: TileTensor[mut=False, .float32, ..., Storage=QSStorageType],
-    output: TileTensor[.float32, ..., Storage=OutStorageType],
+    valid_length: TileTensor[mut=False, .uint32, ..., Engine=VLEngine],
+    q_s: TileTensor[mut=False, .float32, ..., Engine=QSEngine],
+    output: TileTensor[.float32, ..., Engine=OutEngine],
     batch_size: Int,
     max_seq_len: Int,
     max_num_keys: Int,
@@ -1488,9 +1486,9 @@ def fp8_index_score_sm100_prefill[
         N_TOKENS,
         _is_cache_length_accurate,
         kpool,
-        VLStorageType=type_of(valid_length.as_immut()).Storage,
-        QSStorageType=q_s.Storage,
-        OutStorageType=output.Storage,
+        VLEngine=type_of(valid_length.as_immut()).Engine,
+        QSEngine=q_s.Engine,
+        OutEngine=output.Engine,
     ]
     # The `setmaxnreg` caps redistribute a fixed file: 65536 registers/SM shared
     # by `CTAS_PER_SM` CTAs, and every thread of a warpgroup holds that

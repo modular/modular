@@ -42,7 +42,7 @@ here as well would blank a correct row.
 """
 
 from std.math import rsqrt
-from std.gpu import WARP_SIZE, block_dim, block_idx, thread_idx
+from max.gpu import WARP_SIZE, block_dim, block_idx, thread_idx
 from layout import TensorLayout, TileTensor
 
 from nn.normalization import block_reduce_dual_sum

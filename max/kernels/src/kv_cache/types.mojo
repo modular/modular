@@ -60,7 +60,7 @@ from std.sys import size_of
 from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 from std.math import ceildiv
 
-from std.gpu import thread_idx
+from max.gpu import thread_idx
 
 
 @always_inline
@@ -558,7 +558,7 @@ struct PagedRowIndices[
         dispatch deliberately out-of-bounds TMAs for the remaining
         `[valid_pages, pages_per_iter)` page slots. With `OOBFill.NONE`
         (the default for our descriptors, see
-        `mojo/stdlib/std/gpu/host/nvidia/tma.mojo:431`), OOB coordinates
+        `max/mojo/max/gpu/host/nvidia/tma.mojo:431`), OOB coordinates
         return 0, so the corresponding SMEM rows are zero-initialized.
         This is required by callers whose downstream MMA reads the full
         `pages_per_iter` row range regardless of mask, e.g. depth-512

@@ -99,7 +99,7 @@ default-True path for the FP8 KV=128 target shape, every reused
 primitive exercises the exact codegen this kernel ships.
 """
 
-from std.gpu import (
+from max.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
     block_idx,
@@ -116,7 +116,7 @@ from std.sys import get_defined_bool, get_defined_int, size_of
 from std.sys.intrinsics import readfirstlane
 from std.utils import StaticTuple
 
-from layout import TensorLayout, TileTensor, PointerStorage
+from layout import TensorLayout, TileTensor, DefaultEngine
 from layout.coord import Coord, Idx
 from layout.tile_layout import row_major
 from layout._utils import make_amd_buffer_resource
@@ -418,7 +418,7 @@ struct MlaPrefillV2[config: MlaConfigV2]:
         layout: TensorLayout,
     ](
         q_warp_2d: TileTensor[
-            Self.config.dtype, layout, Storage=PointerStorage[], ...
+            Self.config.dtype, layout, Engine=DefaultEngine[], ...
         ],
         q_lds: SMemTile[Self.config.dtype, _, MutUntrackedOrigin, ...],
         w_id: Int,

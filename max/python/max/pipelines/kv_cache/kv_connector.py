@@ -193,14 +193,14 @@ class CompletedTransfer:
         return
 
     @classmethod
-    def load(cls) -> CompletedTransfer:
+    def load(cls, leaves: Sequence[str] | None = None) -> CompletedTransfer:
         """Create a completed load transfer."""
-        return cls(TransferDirection.LOAD)
+        return cls(TransferDirection.LOAD, leaves)
 
     @classmethod
-    def offload(cls) -> CompletedTransfer:
+    def offload(cls, leaves: Sequence[str] | None = None) -> CompletedTransfer:
         """Create a completed offload transfer."""
-        return cls(TransferDirection.OFFLOAD)
+        return cls(TransferDirection.OFFLOAD, leaves)
 
 
 @runtime_checkable

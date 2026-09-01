@@ -1684,7 +1684,8 @@ struct VariadicPack[
 
 @always_inline
 def _call_with_dynamic_pack_pointers[
-    Args: TypeList[Trait=AnyType, ...],
+    ArgTrait: type_of(AnyType),
+    Args: TypeList[Trait=ArgTrait, ...],
     RetType: AnyType,
     RaiseType: AnyType,
     MakeElemPtr: def[idx: Int]() -> Pointer[Args[idx], MutUnsafeAnyOrigin],
@@ -1717,7 +1718,7 @@ def _call_with_dynamic_pack_pointers[
             for a given index. The pointer origin must be valid for the duration
             of the call to `user_func`.
     """
-    comptime ToPointer[T: AnyType]: ImplicitlyCopyable & Deinitable = Pointer[
+    comptime ToPointer[T: ArgTrait]: ImplicitlyCopyable & Deinitable = Pointer[
         T, MutUnsafeAnyOrigin
     ]
 
@@ -1736,7 +1737,7 @@ def _call_with_dynamic_pack_pointers[
     # Construct a pack from the initialized locals
     comptime BorrowedPack = VariadicPack[
         origin=MutUnsafeAnyOrigin,
-        element_trait=AnyType,
+        element_trait=ArgTrait,
         False,
         *Args,
     ]

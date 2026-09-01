@@ -421,9 +421,11 @@ struct _WriteBufferHeap(Writable, Writer):
         var len_bytes = string.byte_length()
         if len_bytes + self._pos > HEAP_BUFFER_BYTES:
             _heap_buffer_exceeded()
-        Span(
-            unsafe_ptr=self._data.unsafe_offset(self._pos), length=len_bytes
-        ).copy_from(string.as_bytes())
+        unsafe_memcpy(
+            dest=self._data.unsafe_offset(self._pos),
+            src=string.as_bytes().unsafe_ptr(),
+            count=len_bytes,
+        )
         self._pos += len_bytes
 
     def write_to(self, mut writer: Some[Writer]):
@@ -500,10 +502,11 @@ struct _WriteBufferStack[
         elif self.pos + len_bytes > Int(Self.stack_buffer_bytes):
             self.flush()
         # Continue writing to buffer
-        Span(
-            unsafe_ptr=self.data.unsafe_ptr().unsafe_offset(self.pos),
-            length=len_bytes,
-        ).copy_from(string.as_bytes())
+        unsafe_memcpy(
+            dest=self.data.unsafe_ptr().unsafe_offset(self.pos),
+            src=string.as_bytes().unsafe_ptr(),
+            count=len_bytes,
+        )
         self.pos += len_bytes
 
 

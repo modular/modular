@@ -230,7 +230,7 @@ def run_mamba2_ssd_fwd_gpu_vs_cpu[
             fs_gtt.LayoutType,
             qsl_gtt.LayoutType,
             his_gtt.LayoutType,
-            x_gtt.Storage,
+            x_gtt.Engine,
         ]
     ]()
     ctx.enqueue_function(
@@ -969,7 +969,7 @@ def run_mamba2_ssd_inplace_vs_functional[
                 slot_gtt.LayoutType,
                 state_dtype,
                 4,
-                x_gtt.Storage,
+                x_gtt.Engine,
             ]
         ]()
         ctx.enqueue_function(
@@ -1024,7 +1024,7 @@ def run_mamba2_ssd_inplace_vs_functional[
                 qsl_gtt.LayoutType,
                 his_gtt.LayoutType,
                 slot_gtt.LayoutType,
-                x_gtt.Storage,
+                x_gtt.Engine,
             ]
         ]()
         ctx.enqueue_function(

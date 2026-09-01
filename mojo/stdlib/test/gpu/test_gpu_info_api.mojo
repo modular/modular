@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.gpu.host.info import GPUInfo, _all_targets
+from std._gpu.host.info import GPUInfo, _all_targets
 from std.sys.info import Vendor, _vendor_from_arch
 from std.testing import TestSuite, assert_equal
 

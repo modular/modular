@@ -17,12 +17,27 @@ from std.stat import S_IFMT, S_IFREG, S_ISREG
 
 from std.reflection import source_location
 from std.testing import TestSuite, assert_equal, assert_not_equal, assert_true
+from std.python import Python
 
 
 def test_stat() raises:
     var st = stat(source_location().file_name())
     assert_not_equal(String(st), "")
     assert_true(S_ISREG(st.st_mode))
+
+
+def test_stat_mtime_ns_against_python() raises:
+    var filename = source_location().file_name()
+
+    var st = stat(filename)
+
+    var py_os = Python.import_module("os")
+    var py_st = py_os.stat(filename.__fspath__())
+
+    assert_equal(st.st_atimespec.as_nanoseconds(), Int(py=py_st.st_atime_ns))
+    assert_equal(st.st_mtimespec.as_nanoseconds(), Int(py=py_st.st_mtime_ns))
+    assert_equal(st.st_ctimespec.as_nanoseconds(), Int(py=py_st.st_ctime_ns))
+    assert_equal(st.st_mtimespec.as_nanoseconds(), Int(py=py_st.st_mtime_ns))
 
 
 def test_stat_regular_file_mode_is_positive() raises:

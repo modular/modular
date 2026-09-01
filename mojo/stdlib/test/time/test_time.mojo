@@ -19,7 +19,8 @@ from std.time import (
     time_function,
 )
 
-from std.testing import assert_true, TestSuite
+from std.time.time import _CTimeSpec
+from std.testing import assert_equal, assert_true, TestSuite
 
 
 @always_inline
@@ -74,6 +75,13 @@ def test_time() raises:
     var t5 = perf_counter_ns()
     assert_true((t5 - t4) > 1 * ns_per_sec)
     assert_true((t5 - t4) < 10 * ns_per_sec)
+
+
+def test_ctimespec_as_nanoseconds() raises:
+    assert_equal(_CTimeSpec().as_nanoseconds(), 0)
+    assert_equal(_CTimeSpec(0, 1).as_nanoseconds(), 1)
+    assert_equal(_CTimeSpec(1, 0).as_nanoseconds(), 1_000_000_000)
+    assert_equal(_CTimeSpec(1, 500_000_000).as_nanoseconds(), 1_500_000_000)
 
 
 def main() raises:

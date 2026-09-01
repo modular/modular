@@ -93,7 +93,7 @@ this config at all.)
 """
 
 from std.math import ceildiv, exp2, log2, max, min
-from std.gpu import WARP_SIZE, block_idx, lane_id
+from max.gpu import WARP_SIZE, block_idx, lane_id
 from max.gpu.host import DeviceContext
 from max.gpu.primitives.grid_controls import (
     PDLLevel,
@@ -106,7 +106,7 @@ from std.utils.numerics import min_or_neg_inf
 from nn.attention.gpu.nvidia.sm100.attention import MHA_PDL_LEVEL
 from nn.attention.gpu.nvidia.sm100.attention_utils import splitk_p_ladder
 
-import std.gpu.primitives.warp as warp
+import max.gpu.primitives.warp as warp
 
 # LSE and reduction accumulate in f32 (matches the workspace `lse_partial`
 # dtype and the FA4 softmax accumulator).

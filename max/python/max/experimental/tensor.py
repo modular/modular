@@ -1146,7 +1146,7 @@ class Tensor(DLPackArray, HasTensorValue):
             Use ``Tensor(value, dtype=dtype, device=device)`` instead.
             ``Tensor.constant`` will be removed in a future release.
 
-        .. warning::
+        .. caution::
 
             Loading a constant can lose precision. For example, loading
             ``16777217`` as a ``float32`` produces ``16777216.0``.

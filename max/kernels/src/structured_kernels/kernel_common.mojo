@@ -20,9 +20,9 @@ This module contains common components used by all SM100 matmul kernel variants:
 - _Batched3DLayout / _to_batched_3d: Reshape 2D TileTensor to 3D (batch=1)
 """
 
-from std.gpu import WARP_SIZE, lane_id, thread_idx
-from std.gpu import warp_id as get_warp_id
-from std.gpu import block_id_in_cluster
+from max.gpu import WARP_SIZE, lane_id, thread_idx
+from max.gpu import warp_id as get_warp_id
+from max.gpu import block_id_in_cluster
 from max.gpu.primitives.cluster import (
     block_rank_in_cluster,
     elect_one_sync_with_mask,

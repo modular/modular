@@ -34,17 +34,17 @@ from std.collections import OptionalReg
 from std.math import ceildiv, exp2, log2, recip
 from std.math.constants import log2e
 from std.sys import size_of
-from std.gpu import (
+from max.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     block_idx,
     thread_idx,
     warp_id,
 )
 from max.gpu.sync import barrier
-from std.gpu.globals import WARPGROUP_SIZE
+from max.gpu.globals import WARPGROUP_SIZE
 from max.gpu.primitives.grid_controls import launch_dependent_grids
-from std.gpu.primitives.warp import _vote_nvidia_helper
-from std.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
+from max.gpu.primitives.warp import _vote_nvidia_helper
+from max.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu.memory import external_memory, fence_async_view_proxy
 from max.gpu.sync import named_barrier

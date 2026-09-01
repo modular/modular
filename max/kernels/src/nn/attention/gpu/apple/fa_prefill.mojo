@@ -39,7 +39,7 @@ default; set `MODULAR_ENABLE_APPLE_FA_PREFILL=0` to fall back to `mha_gpu_naive`
 """
 
 from std.collections import OptionalReg
-from std.gpu import (
+from max.gpu import (
     WARP_SIZE,
     block_idx,
     lane_id,
@@ -51,7 +51,7 @@ from max.gpu.compute.arch.mma_apple import (
     _mma_apple_transposable,
 )
 from max.gpu.host import DeviceContext
-from std.gpu.primitives.warp import shuffle_xor
+from max.gpu.primitives.warp import shuffle_xor
 from std.math import ceildiv, exp2
 from std.math.constants import log2e
 from std.os.env import getenv

@@ -14,7 +14,7 @@
 # Tested on T4 GPU 2 Dec 2025
 
 
-from std.gpu import thread_idx
+from max.gpu import thread_idx
 from max.gpu.host import DeviceContext
 from layout import TileTensor, row_major
 from std.sys import has_accelerator

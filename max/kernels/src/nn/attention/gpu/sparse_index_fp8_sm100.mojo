@@ -68,7 +68,7 @@ NVIDIA SM100 only (SS-UMMA / TMA / tcgen05). Verified against
 match via `test_mla_index_fp8`.
 """
 
-from std.gpu import (
+from max.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
     block_idx,
@@ -94,9 +94,9 @@ from std.utils.index import Index
 from std.utils.static_tuple import StaticTuple
 
 from layout import (
-    PointerStorage,
+    DefaultEngine,
     TensorLayout,
-    TensorStorage,
+    TensorEngine,
     TileTensor,
     UNKNOWN_VALUE,
 )
@@ -232,19 +232,17 @@ def _fp8_index_body[
     kpool: Int = 1,
     epilogue_chunk: Int = _EPILOGUE_CHUNK,
     *,
-    VLStorageType: TensorStorage = PointerStorage[element_width=1],
-    QSStorageType: TensorStorage = PointerStorage[element_width=1],
-    OutStorageType: TensorStorage = PointerStorage[element_width=1],
+    VLEngine: TensorEngine = DefaultEngine[element_width=1],
+    QSEngine: TensorEngine = DefaultEngine[element_width=1],
+    OutEngine: TensorEngine = DefaultEngine[element_width=1],
 ](
     q_tma: QTMATileT[dtype, N_TOKENS * num_heads, depth],
     k_tma: KTMATileT[dtype, BM_key, depth],
     k_operand: KOperand,
     ks_operand: KSOperand,
-    valid_length: TileTensor[
-        .uint32, VLLT, ImmutAnyOrigin, Storage=VLStorageType
-    ],
-    q_s: TileTensor[.float32, QSLT, ImmutAnyOrigin, Storage=QSStorageType],
-    output: TileTensor[.float32, OutLT, MutAnyOrigin, Storage=OutStorageType],
+    valid_length: TileTensor[.uint32, VLLT, ImmutAnyOrigin, Engine=VLEngine],
+    q_s: TileTensor[.float32, QSLT, ImmutAnyOrigin, Engine=QSEngine],
+    output: TileTensor[.float32, OutLT, MutAnyOrigin, Engine=OutEngine],
     max_num_keys: Int,
     causal: Int,
     nt_start: Int,
@@ -630,19 +628,17 @@ def _fp8_index_score_kernel_sm100[
     _is_cache_length_accurate: Bool,
     kpool: Int = 1,
     *,
-    VLStorageType: TensorStorage = PointerStorage[element_width=1],
-    QSStorageType: TensorStorage = PointerStorage[element_width=1],
-    OutStorageType: TensorStorage = PointerStorage[element_width=1],
+    VLEngine: TensorEngine = DefaultEngine[element_width=1],
+    QSEngine: TensorEngine = DefaultEngine[element_width=1],
+    OutEngine: TensorEngine = DefaultEngine[element_width=1],
 ](
     q_tma: QTMATileT[dtype, N_TOKENS * num_heads, depth],
     k_tma: KTMATileT[dtype, BM_key, depth],
     k_operand: KOperand,
     ks_operand: KSOperand,
-    valid_length: TileTensor[
-        .uint32, VLLT, ImmutAnyOrigin, Storage=VLStorageType
-    ],
-    q_s: TileTensor[.float32, QSLT, ImmutAnyOrigin, Storage=QSStorageType],
-    output: TileTensor[.float32, OutLT, MutAnyOrigin, Storage=OutStorageType],
+    valid_length: TileTensor[.uint32, VLLT, ImmutAnyOrigin, Engine=VLEngine],
+    q_s: TileTensor[.float32, QSLT, ImmutAnyOrigin, Engine=QSEngine],
+    output: TileTensor[.float32, OutLT, MutAnyOrigin, Engine=OutEngine],
     max_num_keys_dev: Int32,
     causal_dev: Int32,
     out_row_begin_dev: Int32,
@@ -686,9 +682,9 @@ def _fp8_index_score_kernel_sm100[
         N_TOKENS,
         _is_cache_length_accurate,
         kpool,
-        VLStorageType=VLStorageType,
-        QSStorageType=QSStorageType,
-        OutStorageType=OutStorageType,
+        VLEngine=VLEngine,
+        QSEngine=QSEngine,
+        OutEngine=OutEngine,
     ](
         q_tma,
         k_tma,
@@ -726,19 +722,17 @@ def _fp8_index_score_kernel_sm100_split[
     _is_cache_length_accurate: Bool,
     kpool: Int = 1,
     *,
-    VLStorageType: TensorStorage = PointerStorage[element_width=1],
-    QSStorageType: TensorStorage = PointerStorage[element_width=1],
-    OutStorageType: TensorStorage = PointerStorage[element_width=1],
+    VLEngine: TensorEngine = DefaultEngine[element_width=1],
+    QSEngine: TensorEngine = DefaultEngine[element_width=1],
+    OutEngine: TensorEngine = DefaultEngine[element_width=1],
 ](
     q_tma: QTMATileT[dtype, N_TOKENS * num_heads, depth],
     k_tma: KTMATileT[dtype, BM_key, depth],
     k_operand: KOperand,
     ks_operand: KSOperand,
-    valid_length: TileTensor[
-        .uint32, VLLT, ImmutAnyOrigin, Storage=VLStorageType
-    ],
-    q_s: TileTensor[.float32, QSLT, ImmutAnyOrigin, Storage=QSStorageType],
-    output: TileTensor[.float32, OutLT, MutAnyOrigin, Storage=OutStorageType],
+    valid_length: TileTensor[.uint32, VLLT, ImmutAnyOrigin, Engine=VLEngine],
+    q_s: TileTensor[.float32, QSLT, ImmutAnyOrigin, Engine=QSEngine],
+    output: TileTensor[.float32, OutLT, MutAnyOrigin, Engine=OutEngine],
     max_num_keys_dev: Int32,
     causal_dev: Int32,
     out_row_begin_dev: Int32,
@@ -788,9 +782,9 @@ def _fp8_index_score_kernel_sm100_split[
         N_TOKENS,
         _is_cache_length_accurate,
         kpool,
-        VLStorageType=VLStorageType,
-        QSStorageType=QSStorageType,
-        OutStorageType=OutStorageType,
+        VLEngine=VLEngine,
+        QSEngine=QSEngine,
+        OutEngine=OutEngine,
     ](
         q_tma,
         k_tma,
@@ -1139,9 +1133,9 @@ def fp8_index_score_sm100[
                         N_ALT,
                         _is_cache_length_accurate,
                         kpool,
-                        VLStorageType=type_of(valid_length.as_immut()).Storage,
-                        QSStorageType=q_s.Storage,
-                        OutStorageType=output.Storage,
+                        VLEngine=type_of(valid_length.as_immut()).Engine,
+                        QSEngine=q_s.Engine,
+                        OutEngine=output.Engine,
                     ](
                         rebind[QTMATileT[dtype, MMA_N_ALT, depth]](q_tma_alt),
                         rebind[KTMATileT[dtype, BM_key, depth]](k_tma_tile),
@@ -1168,9 +1162,9 @@ def fp8_index_score_sm100[
                 N_TOKENS,
                 _is_cache_length_accurate,
                 kpool,
-                VLStorageType=type_of(valid_length.as_immut()).Storage,
-                QSStorageType=q_s.Storage,
-                OutStorageType=output.Storage,
+                VLEngine=type_of(valid_length.as_immut()).Engine,
+                QSEngine=q_s.Engine,
+                OutEngine=output.Engine,
             ](
                 rebind[QTMATileT[dtype, N_TOKENS * num_heads, depth]](
                     q_tma_tile
@@ -1209,9 +1203,9 @@ def fp8_index_score_sm100[
             N_TOKENS,
             _is_cache_length_accurate,
             kpool,
-            VLStorageType=type_of(valid_length.as_immut()).Storage,
-            QSStorageType=q_s.Storage,
-            OutStorageType=output.Storage,
+            VLEngine=type_of(valid_length.as_immut()).Engine,
+            QSEngine=q_s.Engine,
+            OutEngine=output.Engine,
         ]
         comptime kernel_split = _fp8_index_score_kernel_sm100_split[
             dtype,
@@ -1226,9 +1220,9 @@ def fp8_index_score_sm100[
             N_TOKENS,
             _is_cache_length_accurate,
             kpool,
-            VLStorageType=type_of(valid_length.as_immut()).Storage,
-            QSStorageType=q_s.Storage,
-            OutStorageType=output.Storage,
+            VLEngine=type_of(valid_length.as_immut()).Engine,
+            QSEngine=q_s.Engine,
+            OutEngine=output.Engine,
         ]
 
         comptime q1_offset = _Q1SmemOffset[dtype, BM_key, MMA_N, depth]

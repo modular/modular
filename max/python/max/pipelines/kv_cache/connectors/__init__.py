@@ -23,7 +23,7 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 
 from max.driver import Device
 from max.nn.kv_cache import KVCacheGroupId
@@ -41,8 +41,9 @@ logger = logging.getLogger("max.pipelines")
 
 def create_connector(
     devices: Sequence[Device],
-    replica_kv_memory: Sequence[Sequence[KVCacheMemory]],
+    replica_kv_memory: Sequence[Mapping[str, KVCacheMemory]],
     params: KVCacheParamInterface,
+    device_memory_bytes: int,
 ) -> KVConnector:
     """Create a KV cache connector instance from ``params.kv_connector_config``.
 
@@ -61,11 +62,16 @@ def create_connector(
 
     Args:
         devices: Devices for the KV cache tensors (all participating devices).
-        replica_kv_memory: Per-replica offload-ready KV memory units (one inner
-            sequence per DP replica).
+        replica_kv_memory: Per-replica offload-ready KV memory units, one
+            mapping per DP replica, keyed by the leaf ids ``params.leaves()``
+            names.
         params: KV-cache parameters. Carries the connector config (type and
             settings); the ``dkv`` connector also uses them to derive its
             multi-tenant per-GPU handshake identity.
+        device_memory_bytes: The device page pool this connector sizes its
+            tiers against. The caller states it rather than deriving it from
+            ``params``, because the managers measure it differently: the paged
+            manager counts its flat pages, Jenga its huge blocks.
 
     Returns:
         A connector instance implementing the KVConnector protocol.
@@ -87,8 +93,12 @@ def create_connector(
             "Creating DKVConnector: endpoint=%s",
             cfg.block_store_endpoint,
         )
+        # list[dict] -> list[list]
+        replica_kv_memory_list = [
+            list(memory.values()) for memory in replica_kv_memory
+        ]
         return DKVConnector(
-            replica_kv_memory=replica_kv_memory,
+            replica_kv_memory=replica_kv_memory_list,
             local_block_store_endpoint=cfg.block_store_endpoint,
             devices=devices,
             params=params,
@@ -102,7 +112,8 @@ def create_connector(
         return RustTierConnector.create(
             leaves=leaves,
             replica_kv_memory=replica_kv_memory,
-            cfg=cfg,
+            params=params,
+            device_memory_bytes=device_memory_bytes,
         )
 
     logger.debug("Creating NullConnector: no KV cache connector configured")
