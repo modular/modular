@@ -132,16 +132,13 @@ def test_simd_load_store() raises:
 
 def test_to_layout_tensor() raises:
     """Test to_layout_tensor() conversion."""
-    var storage = Array[Float32, 3 * 4](uninitialized=True)
+    var storage = Array[Float32, 3 * 4](
+        fill_with=lambda (i: Int) -> Float32: Float32(i)
+    )
     comptime spec = get_row_major_tensor_spec_static[.float32, 2, 3, 4]()
     var tensor = ManagedTensorSlice[
         mut=True, io_spec=IOSpec.Unknown, static_spec=spec
     ](storage.unsafe_ptr(), IndexList[2](3, 4))
-
-    # Initialize data
-    for i in range(3):
-        for j in range(4):
-            tensor[i, j] = Float32(i * 4 + j)
 
     # Convert to LayoutTensor
     var layout_tensor = tensor.to_layout_tensor()
@@ -154,6 +151,11 @@ def test_to_layout_tensor() raises:
     # Verify dimensions
     assert_equal(Int(layout_tensor.runtime_layout.shape[0]), 3)
     assert_equal(Int(layout_tensor.runtime_layout.shape[1]), 4)
+
+    # TODO(GEX-4147): ManagedTensorSlice needs to carry the Array's origin
+    # `tensor` holds an untracked pointer into `storage`; keep `storage` alive
+    # until the last read through it.
+    _ = storage^
 
 
 def test_stride_length() raises:
@@ -212,16 +214,13 @@ def test_simd_load_store_2d() raises:
 
 def test_to_tile_tensor() raises:
     """Test to_tile_tensor() conversion."""
-    var storage = Array[Float32, 3 * 4](uninitialized=True)
+    var storage = Array[Float32, 3 * 4](
+        fill_with=lambda (i: Int) -> Float32: Float32(i)
+    )
     comptime spec = get_row_major_tensor_spec_static[.float32, 2, 3, 4]()
     var tensor = ManagedTensorSlice[
         mut=True, io_spec=IOSpec.Unknown, static_spec=spec
     ](storage.unsafe_ptr(), IndexList[2](3, 4))
-
-    # Initialize data
-    for i in range(3):
-        for j in range(4):
-            tensor[i, j] = Float32(i * 4 + j)
 
     # Convert to TileTensor
     var tile_tensor = tensor.to_tile_tensor[.int64]()
@@ -235,6 +234,11 @@ def test_to_tile_tensor() raises:
     # Verify dimensions
     assert_equal(tile_tensor.layout.shape[0]().value(), 3)
     assert_equal(tile_tensor.layout.shape[1]().value(), 4)
+
+    # TODO(GEX-4147): ManagedTensorSlice needs to carry the Array's origin
+    # `tensor` holds an untracked pointer into `storage`; keep `storage` alive
+    # until the last read through it.
+    _ = storage^
 
 
 def test_shape_coord_static() raises:

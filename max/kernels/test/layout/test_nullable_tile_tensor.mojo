@@ -77,9 +77,9 @@ def test_dim_3d() raises:
 
 def test_value_returns_working_tile_tensor() raises:
     """Value() unwraps the pointer and allows element access."""
-    var data = Array[Int32, 6](uninitialized=True)
-    for i in range(6):
-        data[i] = Int32(i * 10)
+    var data = Array[Int32, 6](
+        fill_with=lambda (i: Int) -> Int32: Int32(i * 10)
+    )
 
     var tile = TileTensor(data, row_major[2, 3]())
     var nullable = NullableTileTensor(tile)
@@ -115,9 +115,9 @@ def test_layout_field_accessible() raises:
 
 def test_to_layout_tensor() raises:
     """To_layout_tensor() gives a LayoutTensor with matching shape."""
-    var data = Array[Float32, 6](uninitialized=True)
-    for i in range(6):
-        data[i] = Float32(i)
+    var data = Array[Float32, 6](
+        fill_with=lambda (i: Int) -> Float32: Float32(i)
+    )
 
     var nullable = NullableTileTensor(TileTensor(data, row_major[2, 3]()))
     var lt = nullable.to_layout_tensor()

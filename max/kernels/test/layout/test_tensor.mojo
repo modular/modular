@@ -1484,9 +1484,9 @@ def test_layout_tensor_iterator():
     comptime size = 64
     comptime type = DType.float32
 
-    var arr = Array[Scalar[type], size](uninitialized=True)
-    for i in range(size):
-        arr[i] = Float32(i)
+    var arr = Array[Scalar[type], size](
+        fill_with=lambda (i: Int) -> Scalar[type]: Float32(i)
+    )
 
     comptime layout_2x2_8x1 = Layout(IntTuple(2, 2), IntTuple(8, 1))
 
@@ -1585,9 +1585,9 @@ def test_nested_layout_tensor_iterator():
     comptime size = N * K
     comptime type = DType.float32
 
-    var arr = Array[Scalar[type], size](uninitialized=True)
-    for i in range(size):
-        arr[i] = Float32(i)
+    var arr = Array[Scalar[type], size](
+        fill_with=lambda (i: Int) -> Scalar[type]: Float32(i)
+    )
 
     # Here we define a float32 tensor (64 * TN, 2 * TK):
     #              K
