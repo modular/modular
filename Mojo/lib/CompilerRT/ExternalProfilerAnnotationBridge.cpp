@@ -26,7 +26,7 @@
 
 #if MODULAR_KGEN_PROFILING_ENABLED
 #include "Support/Profiling/ExternalProfilerAnnotation.h"
-#include <string_view>
+#include "llvm/ADT/StringRef.h"
 #endif
 
 #include <cstddef>
@@ -56,14 +56,14 @@ extern "C" {
 /// from hot paths.
 ///
 /// Precondition: `namePtr` must be non-null even when `nameLen == 0` (same
-/// contract, for the same C++17 std::string_view reason, as
+/// contract, for the same llvm::StringRef reason, as
 /// KGEN_CompilerRT_RangeBegin).
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT size_t
 KGEN_CompilerRT_ExternalProfilerAnnotationPush(const char *namePtr,
                                                size_t nameLen, uint32_t color) {
 #if MODULAR_KGEN_PROFILING_ENABLED
   if (const ExternalProfilerAnnotationSink *sink = externalSink())
-    return sink->rangePush(std::string_view(namePtr, nameLen), color) ? 1 : 0;
+    return sink->rangePush(llvm::StringRef(namePtr, nameLen), color) ? 1 : 0;
 #endif
   return 0;
 }
@@ -82,7 +82,7 @@ KGEN_CompilerRT_ExternalProfilerAnnotationMark(const char *namePtr,
                                                size_t nameLen, uint32_t color) {
 #if MODULAR_KGEN_PROFILING_ENABLED
   if (const ExternalProfilerAnnotationSink *sink = externalSink())
-    sink->mark(std::string_view(namePtr, nameLen), color);
+    sink->mark(llvm::StringRef(namePtr, nameLen), color);
 #endif
 }
 

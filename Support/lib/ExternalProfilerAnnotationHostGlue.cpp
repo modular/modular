@@ -47,7 +47,6 @@
 #include <cstring>
 #include <mutex>
 #include <string>
-#include <string_view>
 
 #include "Support/Profiling/ExternalProfilerAnnotation.h"
 #include "Support/StringExtras.h"
@@ -241,7 +240,7 @@ static const ShimAPI *apiIfRequested() {
   return attemptLoad();
 }
 
-static bool sinkRangePush(std::string_view name, uint32_t colorARGB) {
+static bool sinkRangePush(StringRef name, uint32_t colorARGB) {
   const ShimAPI *api = apiIfRequested();
   if (api == nullptr)
     return false;
@@ -260,7 +259,7 @@ static void sinkRangePop() {
     api->rangePop();
 }
 
-static void sinkMark(std::string_view name, uint32_t colorARGB) {
+static void sinkMark(StringRef name, uint32_t colorARGB) {
   const ShimAPI *api = apiIfRequested();
   if (api == nullptr)
     return;

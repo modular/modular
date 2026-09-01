@@ -29,24 +29,25 @@
 #define SUPPORT_PROFILING_EXTERNALPROFILERANNOTATION_H
 
 #include <cstdint>
-#include <string_view>
+
+#include "Support/LLVMForwardDecls.h"
 
 namespace M::Profiling::Detail {
 
 /// The optional external profiler annotation integration, as a function
-/// table. Strings cross as std::string_view because sink and caller always
-/// compile into the same link unit with one toolchain.
+/// table. Strings cross as StringRef because sink and caller always compile
+/// into the same link unit with one toolchain.
 struct ExternalProfilerAnnotationSink {
   /// Pushes a nested, thread-local annotation range. Returns true iff an
   /// annotation was actually emitted; the caller must call rangePop exactly
   /// once, on the same thread, for each push that returned true (popping
   /// for a suppressed push would close an unrelated outer range).
-  bool (*rangePush)(std::string_view name, uint32_t colorARGB);
+  bool (*rangePush)(StringRef name, uint32_t colorARGB);
   /// Pops the innermost range pushed on this thread. Runs even after
   /// setEnabled(false), so a range opened while enabled still closes.
   void (*rangePop)();
   /// Emits an instantaneous marker.
-  void (*mark)(std::string_view name, uint32_t colorARGB);
+  void (*mark)(StringRef name, uint32_t colorARGB);
   /// Programmatically requests or suppresses annotation, overriding the
   /// integration's environment default.
   void (*setEnabled)(bool enabled);

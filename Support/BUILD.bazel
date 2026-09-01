@@ -464,6 +464,8 @@ modular_cc_library(
         # Holds the process-global gates + cached sink, so every statically
         # linked copy of the shim observes the same state (see Ranges.h).
         ":Globals",
+        ":Base",
+        "@llvm-project//llvm:Support",
     ],
 )
 
@@ -476,6 +478,7 @@ modular_cc_library(
     name = "ProfilingRangesHeaders",
     hdrs = ["include/Support/Profiling/Ranges.h"],
     visibility = ["//max/internal/profiler:__pkg__"],
+    deps = [":Base"],
 )
 
 # The C ABI between :ProfilerHostGlue and the runtime-loaded profiler plugin
@@ -520,6 +523,7 @@ modular_cc_library(
         ":Configuration",
         ":ProfilerPluginABI",
         ":ProfilingRanges",
+        "@llvm-project//llvm:Support",
     ],
     alwayslink = True,
 )
