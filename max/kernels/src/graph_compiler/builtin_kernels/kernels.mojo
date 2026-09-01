@@ -4799,10 +4799,12 @@ struct CausalConv1DVarlenFwd[
                     ]()
                     # Host-side safe upper bound on the per-sequence tile
                     # count, avoiding a host max-reduction over ragged
-                    # seqlens: `ceildiv(total_seqlen, TILE_SEQ)` covers the
-                    # tile count if all tokens were in one sequence, plus one
-                    # extra tile per sequence (`batch`) covers the remainder
-                    # from splitting total_seqlen across `batch` sequences.
+                    # seqlens: grid-z indexes each sequence's LOCAL tile, and
+                    # no sequence is longer than total_seqlen, so
+                    # `ceildiv(total_seqlen, TILE_SEQ)` bounds every
+                    # sequence's tile count (tile 0 stays alive for every
+                    # sequence, including empty ones, since the dispatcher
+                    # only reaches this kernel when total_seqlen > batch > 0).
                     # Blocks whose z-index exceeds a given sequence's actual
                     # tile count early-return inside the kernel.
                     gpu_ctx.enqueue_function(
@@ -4836,7 +4838,7 @@ struct CausalConv1DVarlenFwd[
                         grid_dim=(
                             batch,
                             ceildiv(dim, BLOCK_DIM),
-                            ceildiv(total_seqlen, TILE_SEQ) + batch,
+                            ceildiv(total_seqlen, TILE_SEQ),
                         ),
                         block_dim=(BLOCK_DIM, 1),
                     )
