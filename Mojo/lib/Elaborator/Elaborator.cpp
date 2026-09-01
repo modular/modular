@@ -698,32 +698,39 @@ Elaborator::instantiateGeneratorReference(
   StringAttr name = cast<FlatSymbolRefAttr>(calleeSymbol.getSymbol()).getAttr();
   Operation *calleeOp = oldSymTab.lookup(name);
 
+  ParamNode *calleeNode;
   if (!calleeOp || !isa<GeneratorOpInterface>(calleeOp)) {
     ImplNode *node =
         concreteNodes.read([name](auto &map) { return map.at(name); });
 
-    return {ElaborationState::advance(), node};
+    // An instance is registered under its concrete name before its expansion
+    // node has elaborated, so reaching it by that name must wait on the same
+    // readiness protocol as a call by generator name; otherwise its body
+    // reaches the interpreter with `kgen.param.*` ops still in it. An instance
+    // without an expansion node is already concrete.
+    if (!node->parent)
+      return {ElaborationState::advance(), node};
+    calleeNode = node->parent;
+  } else {
+    // Add in the mapping for parameters in the calls.
+    inputParamKey = ParameterExprArrayAttr::get(user->getContext(),
+                                                calleeSymbol.getParamValues());
+
+    // If we already have a binding for this, we're done.
+    gen = cast<GeneratorOpInterface>(calleeOp);
+
+    // Check for excessive instantiation depth.
+    if (parent->parent->depth > config.maxDepth) {
+      parent->setToError(ErrorTree(parent->parent->gen.getLoc(),
+                                   "elaborator expansion is " +
+                                       Twine(config.maxDepth + 1) +
+                                       " levels deep - infinite recursion?"));
+      return {ElaborationState::error(), nullptr};
+    }
+
+    // Find the tree node that corresponds to the thing we're calling.
+    calleeNode = getOrCreateNode(inputParamKey, gen, parent->parent->depth + 1);
   }
-
-  // Add in the mapping for parameters in the calls.
-  inputParamKey = ParameterExprArrayAttr::get(user->getContext(),
-                                              calleeSymbol.getParamValues());
-
-  // If we already have a binding for this, we're done.
-  gen = cast<GeneratorOpInterface>(calleeOp);
-
-  // Check for excessive instantiation depth.
-  if (parent->parent->depth > config.maxDepth) {
-    parent->setToError(ErrorTree(parent->parent->gen.getLoc(),
-                                 "elaborator expansion is " +
-                                     Twine(config.maxDepth + 1) +
-                                     " levels deep - infinite recursion?"));
-    return {ElaborationState::error(), nullptr};
-  }
-
-  // Find the tree node that corresponds to the thing we're calling.
-  ParamNode *calleeNode =
-      getOrCreateNode(inputParamKey, gen, parent->parent->depth + 1);
   ElaborationState result = specializeGenerator(
       parent, calleeNode, user->getLoc(), shouldWait(calleeNode));
   if (result.shouldSkipNode())
