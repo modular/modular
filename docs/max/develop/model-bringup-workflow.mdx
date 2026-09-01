@@ -56,7 +56,10 @@ Each file serves a distinct role:
 - `arch.py`: registers the architecture with MAX, declaring its name (which must
   match the `architectures[0]` value in the model's Hugging Face `config.json`),
   supported encodings, and the classes that implement the config, model, and
-  weight adapter.
+  weight adapter. Models that use a KV cache should also set the
+  `memory_planner` field (usually
+  [`PagedMemoryPlanner`](/api/python/generated/max.pipelines.kv_cache.PagedMemoryPlanner/))
+  so MAX can size the KV cache and batch limits.
 - `batch_processor.py`: optional batch processor that prepares model inputs for
   each scheduled batch. Create one only when the model has unique batching
   logic; if batching matches an existing family, reuse that family's processor
@@ -401,6 +404,11 @@ instances that point MAX at your config class, model class, weight adapters, and
 more:
 
 ```python title="arch.py"
+from max.pipelines.architectures.llama3.batch_processor import (
+    Llama3BatchProcessor,
+)
+from max.pipelines.kv_cache.memory_planner import PagedMemoryPlanner
+
 qwen2_arch = SupportedArchitecture(
     name="Qwen2ForCausalLM",
     task=PipelineTask.TEXT_GENERATION,
@@ -410,6 +418,9 @@ qwen2_arch = SupportedArchitecture(
     weight_adapters={
         WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
     },
+    # Reuse the Llama 3 family's batch processor and the paged memory planner.
+    batching=Llama3BatchProcessor,
+    memory_planner=PagedMemoryPlanner,
     # ... tokenizer, context_type, default_weights_format, ...
 )
 ```
