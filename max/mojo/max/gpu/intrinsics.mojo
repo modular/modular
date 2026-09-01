@@ -25,25 +25,25 @@ directly to hardware instructions and require understanding of the
 underlying GPU architecture.
 """
 
-import std.gpu.intrinsics
+import std._gpu.intrinsics
 from std.memory import AddressSpace
 from std.sys import align_of
 
-# `std.gpu.intrinsics` makes this visible by importing it, and call sites import
+# `std._gpu.intrinsics` makes this visible by importing it, and call sites import
 # it from there rather than from `std.sys._assembly`. Keep that path working.
 from std.sys._assembly import inlined_assembly
 
 # `mojo doc` renders an aliased struct as a bare `comptime` entry, dropping the
-# fields and methods that `std.gpu.intrinsics` documents on pages of their own.
+# fields and methods that `std._gpu.intrinsics` documents on pages of their own.
 # These three keep only their summary until the definitions themselves move.
 
-comptime AMDBufferResource = std.gpu.intrinsics.AMDBufferResource
+comptime AMDBufferResource = std._gpu.intrinsics.AMDBufferResource
 """128-bit descriptor for a buffer resource on AMD GPUs.
 
 Used for buffer_load/buffer_store instructions.
 """
 
-comptime CacheOperation = std.gpu.intrinsics.CacheOperation
+comptime CacheOperation = std._gpu.intrinsics.CacheOperation
 """Represents different GPU cache operation policies.
 
 This struct defines various caching behaviors for GPU memory operations,
@@ -51,7 +51,7 @@ controlling how data is cached and evicted at different cache levels.
 The policies affect performance and memory coherency.
 """
 
-comptime Scope = std.gpu.intrinsics.Scope
+comptime Scope = std._gpu.intrinsics.Scope
 """Represents memory synchronization scope levels for GPU memory operations.
 
 Defines different scopes of memory visibility and synchronization, from
@@ -96,7 +96,7 @@ def ldg[
         - Particularly beneficial for read-only texture-like access patterns.
         - May improve performance on memory-bound kernels.
     """
-    return std.gpu.intrinsics.ldg[width, alignment=alignment](x)
+    return std._gpu.intrinsics.ldg[width, alignment=alignment](x)
 
 
 @always_inline("nodebug")
@@ -119,7 +119,7 @@ def warpgroup_reg_alloc[count: Int]():
         - Pair with `warpgroup_reg_dealloc() when extra registers are no
           longer needed
     """
-    std.gpu.intrinsics.warpgroup_reg_alloc[count]()
+    std._gpu.intrinsics.warpgroup_reg_alloc[count]()
 
 
 @always_inline("nodebug")
@@ -140,7 +140,7 @@ def warpgroup_reg_dealloc[count: Int]():
         - Performance optimization hint that may be ignored by the hardware.
         - Pair with `warpgroup_reg_alloc()` when extra registers are needed.
     """
-    std.gpu.intrinsics.warpgroup_reg_dealloc[count]()
+    std._gpu.intrinsics.warpgroup_reg_dealloc[count]()
 
 
 @always_inline("nodebug")
@@ -166,7 +166,7 @@ def lop[lut: Int32](a: Int32, b: Int32, c: Int32) -> Int32:
         - Maps to the LOP3.B32 PTX instruction.
         - Lookup table value determines output for each possible input combo.
     """
-    return std.gpu.intrinsics.lop[lut](a, b, c)
+    return std._gpu.intrinsics.lop[lut](a, b, c)
 
 
 @always_inline("nodebug")
@@ -191,7 +191,7 @@ def byte_permute(a: UInt32, b: UInt32, c: UInt32) -> UInt32:
         - On NVIDIA: Maps to PRMT instruction
         - On AMD: Maps to PERM instruction.
     """
-    return std.gpu.intrinsics.byte_permute(a, b, c)
+    return std._gpu.intrinsics.byte_permute(a, b, c)
 
 
 @always_inline("nodebug")
@@ -214,7 +214,7 @@ def mulhi(a: UInt16, b: UInt16) -> UInt32:
         On NVIDIA GPUs, this maps directly to the MULHI.U16 PTX instruction.
         On others, it performs multiplication using 32-bit arithmetic.
     """
-    return std.gpu.intrinsics.mulhi(a, b)
+    return std._gpu.intrinsics.mulhi(a, b)
 
 
 @always_inline("nodebug")
@@ -236,7 +236,7 @@ def mulhi(a: Int16, b: Int16) -> Int32:
         On NVIDIA GPUs, this maps directly to the MULHI.S16 PTX instruction.
         On others, it performs multiplication using 32-bit arithmetic.
     """
-    return std.gpu.intrinsics.mulhi(a, b)
+    return std._gpu.intrinsics.mulhi(a, b)
 
 
 @always_inline("nodebug")
@@ -258,7 +258,7 @@ def mulhi(a: UInt32, b: UInt32) -> UInt32:
         On NVIDIA GPUs, this maps directly to the MULHI.U32 PTX instruction.
         On others, it performs multiplication using 64-bit arithmetic.
     """
-    return std.gpu.intrinsics.mulhi(a, b)
+    return std._gpu.intrinsics.mulhi(a, b)
 
 
 @always_inline("nodebug")
@@ -280,7 +280,7 @@ def mulhi(a: Int32, b: Int32) -> Int32:
         On NVIDIA GPUs, this maps directly to the MULHI.S32 PTX instruction.
         On others, it performs multiplication using 64-bit arithmetic.
     """
-    return std.gpu.intrinsics.mulhi(a, b)
+    return std._gpu.intrinsics.mulhi(a, b)
 
 
 @always_inline("nodebug")
@@ -302,7 +302,7 @@ def mulhi(a: UInt64, b: UInt64) -> UInt64:
         On NVIDIA GPUs, this maps directly to the MULHI.U64 PTX instruction.
         On others, it performs multiplication using 128-bit arithmetic.
     """
-    return std.gpu.intrinsics.mulhi(a, b)
+    return std._gpu.intrinsics.mulhi(a, b)
 
 
 @always_inline("nodebug")
@@ -324,7 +324,7 @@ def mulhi(a: Int64, b: Int64) -> Int64:
         On NVIDIA GPUs, this maps directly to the MULHI.S64 PTX instruction.
         On others, it performs multiplication using 128-bit arithmetic.
     """
-    return std.gpu.intrinsics.mulhi(a, b)
+    return std._gpu.intrinsics.mulhi(a, b)
 
 
 @always_inline("nodebug")
@@ -345,7 +345,7 @@ def mulwide(a: UInt32, b: UInt32) -> UInt64:
         On NVIDIA GPUs, this maps directly to the MUL.WIDE.U32 PTX instruction.
         On others, it performs multiplication using 64-bit casts.
     """
-    return std.gpu.intrinsics.mulwide(a, b)
+    return std._gpu.intrinsics.mulwide(a, b)
 
 
 @always_inline("nodebug")
@@ -366,7 +366,7 @@ def mulwide(a: Int32, b: Int32) -> Int64:
         On NVIDIA GPUs, this maps directly to the MUL.WIDE.S32 PTX instruction.
         On others, it performs multiplication using 64-bit casts.
     """
-    return std.gpu.intrinsics.mulwide(a, b)
+    return std._gpu.intrinsics.mulwide(a, b)
 
 
 @always_inline("nodebug")
@@ -376,7 +376,7 @@ def get_ib_sts() -> Int32:
     Returns:
         The IB status of the current thread.
     """
-    return std.gpu.intrinsics.get_ib_sts()
+    return std._gpu.intrinsics.get_ib_sts()
 
 
 @always_inline("nodebug")
@@ -399,7 +399,7 @@ def threadfence[scope: Scope = Scope.GPU]():
         - Critical for synchronizing memory access in parallel algorithms.
         - Performance impact increases with broader scopes.
     """
-    std.gpu.intrinsics.threadfence[scope]()
+    std._gpu.intrinsics.threadfence[scope]()
 
 
 @always_inline("nodebug")
@@ -425,7 +425,7 @@ def ds_read_tr16_b64[
         - Maps directly to llvm.amdgcn.ds.read.tr16.b64 intrinsic.
         - Result width is fixed to 4 elements of dtype.
     """
-    return std.gpu.intrinsics.ds_read_tr16_b64(shared_ptr)
+    return std._gpu.intrinsics.ds_read_tr16_b64(shared_ptr)
 
 
 @always_inline("nodebug")
@@ -454,7 +454,7 @@ def ds_read_tr8_b64[
         - Maps directly to llvm.amdgcn.ds.read.tr8.b64 intrinsic.
         - Return type must use v2i32 intermediate to avoid LLVM type legalizer crash.
     """
-    return std.gpu.intrinsics.ds_read_tr8_b64(shared_ptr)
+    return std._gpu.intrinsics.ds_read_tr8_b64(shared_ptr)
 
 
 @always_inline("nodebug")
@@ -485,7 +485,7 @@ def cvt_pk_fp8_f32_raw[
         - Use only when input domain is provably bounded (e.g. softmax
           output, where values are in (0, 1]).
     """
-    return std.gpu.intrinsics.cvt_pk_fp8_f32_raw[dtype](src)
+    return std._gpu.intrinsics.cvt_pk_fp8_f32_raw[dtype](src)
 
 
 @always_inline("nodebug")
@@ -505,7 +505,7 @@ def permlane_swap[
     Returns:
         SIMD vector containing the swapped values.
     """
-    return std.gpu.intrinsics.permlane_swap[stride](val1, val2)
+    return std._gpu.intrinsics.permlane_swap[stride](val1, val2)
 
 
 @always_inline("nodebug")
@@ -525,7 +525,7 @@ def permlane_shuffle[
     Returns:
         Shuffled SIMD vector in the `res` output parameter.
     """
-    return std.gpu.intrinsics.permlane_shuffle[stride](val)
+    return std._gpu.intrinsics.permlane_shuffle[stride](val)
 
 
-from std.gpu.intrinsics import _get_nvtx_register_constraint
+from std._gpu.intrinsics import _get_nvtx_register_constraint

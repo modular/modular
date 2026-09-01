@@ -21,7 +21,7 @@ from std.sys.intrinsics import (
     sendmsg,
 )
 
-from std.gpu.primitives.id import lane_id
+from std._gpu.primitives.id import lane_id
 from std.collections import Span
 from std.memory.pointer import _Null
 from std.os import abort

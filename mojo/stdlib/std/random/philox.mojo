@@ -43,7 +43,7 @@ from std.math import cos, fma, log, pi, sin, sqrt
 
 from std.memory import bitcast
 
-from std.gpu.intrinsics import mulwide
+from std._gpu.intrinsics import mulwide
 
 
 def _mulhilow(a: UInt32, b: UInt32) -> SIMD[.uint32, 2]:

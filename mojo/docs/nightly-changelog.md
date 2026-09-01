@@ -324,6 +324,12 @@ This version is still a work in progress.
   it a complete entry point for accelerator programming. Prefer `max.gpu`, which
   is becoming the only public source for these utilities.
 
+- The `std.gpu` package is now private, as `std._gpu`. `max.gpu` is the only
+  public source for the GPU primitives, and its API reference is the only
+  published one; `/docs/std/gpu/...` pages redirect to `/api/mojo/max/gpu/...`.
+  Replace `from std.gpu import ...` with `from max.gpu import ...`; a failed
+  `std.gpu` import carries a note pointing at the new home.
+
 ## Tooling changes
 
 - `mojo doc` now reports the condition of a conditional trait conformance, and

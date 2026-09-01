@@ -24,7 +24,7 @@ working through the codebase for the first time, start here.
   compiler runtime).
 
 - [adding-gpu-targets.md](adding-gpu-targets.md)—**Adding a new GPU target**:
-  Contributor guide for extending `std/gpu/host/info.mojo` with a new GPU
+  Contributor guide for extending `std/_gpu/host/info.mojo` with a new GPU
   architecture, covering the MLIR target configuration and the `data_layout`
   string format.
 

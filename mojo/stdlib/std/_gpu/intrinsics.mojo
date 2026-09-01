@@ -51,8 +51,8 @@ from std.sys.info import (
 from std.sys.intrinsics import llvm_intrinsic, readfirstlane
 from std.math.uutils import ufloordiv, umod
 
-from std.gpu._utils import to_i32
-from std.gpu import lane_id
+from std._gpu._utils import to_i32
+from std._gpu import lane_id
 
 from std.memory.unsafe import bitcast
 

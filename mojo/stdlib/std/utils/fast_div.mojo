@@ -19,7 +19,7 @@ multiplications, significantly optimizing division performance.
 
 from std.bit import log2_ceil
 from std.builtin.dtype import _uint_type_of_width
-from std.gpu.intrinsics import mulhi
+from std._gpu.intrinsics import mulhi
 from std.sys.info import bit_width_of
 
 

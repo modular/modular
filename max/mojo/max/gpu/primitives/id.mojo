@@ -16,34 +16,34 @@ It defines aliases and functions for accessing GPU grid, block, and thread
 indices and dimensions.
 """
 
-import std.gpu.primitives.id
+import std._gpu.primitives.id
 
-comptime block_dim = std.gpu.primitives.id.block_dim
+comptime block_dim = std._gpu.primitives.id.block_dim
 """Contains the dimensions of the block as `x`, `y`, and `z` values.
 
 For example: `block_dim.y`."""
 
-comptime block_id_in_cluster = std.gpu.primitives.id.block_id_in_cluster
+comptime block_id_in_cluster = std._gpu.primitives.id.block_id_in_cluster
 """Contains the block id of the threadblock within a cluster, as `x`, `y`, and `z` values."""
 
-comptime block_idx = std.gpu.primitives.id.block_idx
+comptime block_idx = std._gpu.primitives.id.block_idx
 """Contains the block index in the grid, as `x`, `y`, and `z` values."""
 
-comptime cluster_dim = std.gpu.primitives.id.cluster_dim
+comptime cluster_dim = std._gpu.primitives.id.cluster_dim
 """Contains the dimensions of the cluster, as `x`, `y`, and `z` values."""
 
-comptime cluster_idx = std.gpu.primitives.id.cluster_idx
+comptime cluster_idx = std._gpu.primitives.id.cluster_idx
 """Contains the cluster index in the grid, as `x`, `y`, and `z` values."""
 
-comptime global_idx = std.gpu.primitives.id.global_idx
+comptime global_idx = std._gpu.primitives.id.global_idx
 """Contains the global offset of the kernel launch, as `x`, `y`, and `z`
 values."""
 
-comptime grid_dim = std.gpu.primitives.id.grid_dim
+comptime grid_dim = std._gpu.primitives.id.grid_dim
 """Provides accessors for getting the `x`, `y`, and `z`
 dimensions of a grid."""
 
-comptime thread_idx = std.gpu.primitives.id.thread_idx
+comptime thread_idx = std._gpu.primitives.id.thread_idx
 """Contains the thread index in the block, as `x`, `y`, and `z` values."""
 
 
@@ -58,7 +58,7 @@ def lane_id() -> Int:
     Returns:
         The lane ID (0 to WARP_SIZE-1) of the current thread.
     """
-    return std.gpu.primitives.id.lane_id()
+    return std._gpu.primitives.id.lane_id()
 
 
 @always_inline("nodebug")
@@ -75,7 +75,7 @@ def sm_id() -> Int:
     Returns:
         The SM ID of the current thread.
     """
-    return std.gpu.primitives.id.sm_id()
+    return std._gpu.primitives.id.sm_id()
 
 
 @always_inline("nodebug")
@@ -93,4 +93,4 @@ def warp_id[*, broadcast: Bool = False]() -> Int:
     Returns:
         The warp ID (0 to BLOCK_SIZE/WARP_SIZE-1) of the current thread.
     """
-    return std.gpu.primitives.id.warp_id[broadcast=broadcast]()
+    return std._gpu.primitives.id.warp_id[broadcast=broadcast]()

@@ -31,9 +31,9 @@ implementations of the core operations. It supports various data types including
 integers, floats, and half-precision floats, with SIMD vectorization.
 """
 
-import std.gpu.primitives.warp
-from std.gpu.globals import WARP_SIZE
-from std.gpu.primitives.warp import (
+import std._gpu.primitives.warp
+from std._gpu.globals import WARP_SIZE
+from std._gpu.primitives.warp import (
     _ReduceFn,
     # Reached directly by the MSA top-k kernels and the SM100 attention
     # kernels; a private name needs an explicit re-export.
@@ -77,7 +77,7 @@ def shuffle_idx[
             result = shuffle_idx(val, 5)
         ```
     """
-    return std.gpu.primitives.warp.shuffle_idx(val, offset)
+    return std._gpu.primitives.warp.shuffle_idx(val, offset)
 
 
 @always_inline("nodebug")
@@ -116,7 +116,7 @@ def shuffle_idx[
             var result = shuffle_idx(mask, val, 5)
         ```
     """
-    return std.gpu.primitives.warp.shuffle_idx(mask, val, offset)
+    return std._gpu.primitives.warp.shuffle_idx(mask, val, offset)
 
 
 @always_inline("nodebug")
@@ -145,7 +145,7 @@ def shuffle_up[
         The SIMD value from the thread offset lanes lower in the warp.
         Returns undefined values for threads where lane_id - offset < 0.
     """
-    return std.gpu.primitives.warp.shuffle_up(val, offset)
+    return std._gpu.primitives.warp.shuffle_up(val, offset)
 
 
 @always_inline("nodebug")
@@ -180,7 +180,7 @@ def shuffle_up[
         Returns undefined values for threads where lane_id - offset < 0 or
         threads not in the mask.
     """
-    return std.gpu.primitives.warp.shuffle_up(mask, val, offset)
+    return std._gpu.primitives.warp.shuffle_up(mask, val, offset)
 
 
 @always_inline("nodebug")
@@ -210,7 +210,7 @@ def shuffle_down[
         The SIMD value from the thread offset lanes higher in the warp.
         Returns undefined values for threads where lane_id + offset >= WARP_SIZE.
     """
-    return std.gpu.primitives.warp.shuffle_down(val, offset)
+    return std._gpu.primitives.warp.shuffle_down(val, offset)
 
 
 @always_inline("nodebug")
@@ -246,7 +246,7 @@ def shuffle_down[
         Returns undefined values for threads where lane_id + offset >= WARP_SIZE
         or where the corresponding mask bit is not set.
     """
-    return std.gpu.primitives.warp.shuffle_down(mask, val, offset)
+    return std._gpu.primitives.warp.shuffle_down(mask, val, offset)
 
 
 @always_inline("nodebug")
@@ -271,7 +271,7 @@ def shuffle_xor[
     Returns:
         The SIMD value from the thread at lane (current_lane XOR offset).
     """
-    return std.gpu.primitives.warp.shuffle_xor(val, offset)
+    return std._gpu.primitives.warp.shuffle_xor(val, offset)
 
 
 @always_inline("nodebug")
@@ -312,7 +312,7 @@ def shuffle_xor[
             var result = shuffle_xor(mask, val, 4)
         ```
     """
-    return std.gpu.primitives.warp.shuffle_xor(mask, val, offset)
+    return std._gpu.primitives.warp.shuffle_xor(mask, val, offset)
 
 
 @always_inline("nodebug")
@@ -362,7 +362,7 @@ def lane_group_reduce[
             var result = lane_group_reduce[shuffle_down, add, num_lanes=16](val)
         ```
     """
-    return std.gpu.primitives.warp.lane_group_reduce[
+    return std._gpu.primitives.warp.lane_group_reduce[
         shuffle, func, num_lanes, stride=stride
     ](val)
 
@@ -410,7 +410,7 @@ def reduce[
         result = reduce[shuffle_down, add](val)
     ```
     """
-    return std.gpu.primitives.warp.reduce[shuffle, func](val)
+    return std._gpu.primitives.warp.reduce[shuffle, func](val)
 
 
 @always_inline("nodebug")
@@ -440,7 +440,7 @@ def lane_group_sum[
         A SIMD value where all participating lanes contain the sum found across the lane group.
         Non-participating lanes (lane_id >= num_lanes) retain their original values.
     """
-    return std.gpu.primitives.warp.lane_group_sum[num_lanes, stride](val)
+    return std._gpu.primitives.warp.lane_group_sum[num_lanes, stride](val)
 
 
 @always_inline("nodebug")
@@ -457,7 +457,7 @@ def sum(val: SIMD) -> Scalar[val.dtype]:
     Returns:
         The scalar sum of values across all lanes in the warp.
     """
-    return std.gpu.primitives.warp.sum(val)
+    return std._gpu.primitives.warp.sum(val)
 
 
 @always_inline("nodebug")
@@ -502,7 +502,7 @@ def prefix_sum[
         A scalar containing the prefix sum at the current thread's position in
         the warp, cast to the specified output dtype.
     """
-    return std.gpu.primitives.warp.prefix_sum[
+    return std._gpu.primitives.warp.prefix_sum[
         intermediate_type, output_type=output_type, exclusive=exclusive
     ](x)
 
@@ -534,7 +534,7 @@ def lane_group_max[
         A SIMD value where all participating lanes contain the maximum value found across the lane group.
         Non-participating lanes (lane_id >= num_lanes) retain their original values.
     """
-    return std.gpu.primitives.warp.lane_group_max[num_lanes, stride](val)
+    return std._gpu.primitives.warp.lane_group_max[num_lanes, stride](val)
 
 
 @always_inline("nodebug")
@@ -551,7 +551,7 @@ def max(val: SIMD) -> Scalar[val.dtype]:
     Returns:
         The scalar maximum value across all lanes in the warp.
     """
-    return std.gpu.primitives.warp.max(val)
+    return std._gpu.primitives.warp.max(val)
 
 
 @always_inline("nodebug")
@@ -581,7 +581,7 @@ def lane_group_min[
         A SIMD value where all participating lanes contain the minimum value found across the lane group.
         Non-participating lanes (lane_id >= num_lanes) retain their original values.
     """
-    return std.gpu.primitives.warp.lane_group_min[num_lanes, stride](val)
+    return std._gpu.primitives.warp.lane_group_min[num_lanes, stride](val)
 
 
 @always_inline("nodebug")
@@ -598,7 +598,7 @@ def min(val: SIMD) -> Scalar[val.dtype]:
     Returns:
         The scalar minimum value across all lanes in the warp.
     """
-    return std.gpu.primitives.warp.min(val)
+    return std._gpu.primitives.warp.min(val)
 
 
 @always_inline("nodebug")
@@ -621,7 +621,7 @@ def broadcast[
     Returns:
         A SIMD value where all lanes contain a copy of the input value from lane 0.
     """
-    return std.gpu.primitives.warp.broadcast(val)
+    return std._gpu.primitives.warp.broadcast(val)
 
 
 @always_inline("nodebug")
@@ -637,7 +637,7 @@ def broadcast(val: Int) -> Int:
     Returns:
         The broadcast integer value, where all lanes receive a copy of the input from lane 0.
     """
-    return std.gpu.primitives.warp.broadcast(val)
+    return std._gpu.primitives.warp.broadcast(val)
 
 
 @always_inline("nodebug")
@@ -653,7 +653,7 @@ def broadcast(val: UInt) -> UInt:
     Returns:
         The broadcast unsigned integer value, where all lanes receive a copy of the input from lane 0.
     """
-    return std.gpu.primitives.warp.broadcast(val)
+    return std._gpu.primitives.warp.broadcast(val)
 
 
 @always_inline("nodebug")
@@ -676,7 +676,7 @@ def vote[ret_type: DType](val: Bool) -> Scalar[ret_type]:
     Returns:
         A mask containing the vote of all threads in the warp.
     """
-    return std.gpu.primitives.warp.vote[ret_type](val)
+    return std._gpu.primitives.warp.vote[ret_type](val)
 
 
 @always_inline("nodebug")
@@ -725,7 +725,7 @@ def match_any[
         `DType.uint64` (NVIDIA returns a 32-bit mask, so `mask_type` must be
         `DType.uint32` there).
     """
-    return std.gpu.primitives.warp.match_any[mask_type](value)
+    return std._gpu.primitives.warp.match_any[mask_type](value)
 
 
 @always_inline("nodebug")
@@ -773,4 +773,4 @@ def match_all[
         `DType.uint64` (NVIDIA returns a 32-bit mask, so `mask_type` must be
         `DType.uint32` there).
     """
-    return std.gpu.primitives.warp.match_all[mask_type](value)
+    return std._gpu.primitives.warp.match_all[mask_type](value)

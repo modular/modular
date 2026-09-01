@@ -105,7 +105,7 @@ def comptime_type_value() -> __mlir_type.i32:
 
 
 # Conditional comptime alias: picks an MLIR type based on the parameter.
-# Mirrors `_dtype_to_llvm_type_f8[dtype]` in stdlib/std/gpu/_utils.mojo.
+# Mirrors `_dtype_to_llvm_type_f8[dtype]` in stdlib/std/_gpu/_utils.mojo.
 comptime _selected_type[
     wide: Bool
 ] = __mlir_type.i64 if wide else __mlir_type.i32

@@ -19,11 +19,11 @@ filegroup(
     srcs = glob(
         ["**/*.mojo"],
         exclude = [
-            "gpu/host/device_context.mojo",
-            "gpu/host/info.mojo",
-            "gpu/host/compile.mojo",
-            "gpu/host/__init__.mojo",
-            "gpu/__init__.mojo",
+            "_gpu/host/device_context.mojo",
+            "_gpu/host/info.mojo",
+            "_gpu/host/compile.mojo",
+            "_gpu/host/__init__.mojo",
+            "_gpu/__init__.mojo",
             "sys/info.mojo",
             "sys/__init__.mojo",
             "math/math.mojo",

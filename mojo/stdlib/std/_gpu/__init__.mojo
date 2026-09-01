@@ -10,9 +10,24 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Re-exports LLVM pointer and struct conversion helpers from `std._gpu._utils`."""
+"""Implementation of the GPU primitives re-exported by `max.gpu`.
 
-from std._gpu._utils import *
+This package is private: `max.gpu` is the documented public home for
+everything here.
+"""
 
-# Not covered by the wildcard, and imported by `max.gpu.compute.mma`.
-from std._gpu._utils import _get_llvm_struct_fields
+# Import from sub-packages which now properly export their symbols
+from .primitives import (
+    block_dim,
+    block_id_in_cluster,
+    block_idx,
+    cluster_dim,
+    cluster_idx,
+    global_idx,
+    grid_dim,
+    lane_id,
+    sm_id,
+    thread_idx,
+    warp_id,
+)
+from .globals import MAX_THREADS_PER_BLOCK_METADATA, WARP_SIZE

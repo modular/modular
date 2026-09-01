@@ -27,7 +27,7 @@ from std.format.tstring import TString
 from std.io import FileDescriptor
 from std.ffi import c_char, c_int, external_call, get_errno
 from std.reflection import SourceLocation, call_location
-from std.gpu import thread_idx, block_idx
+from std._gpu import thread_idx, block_idx
 from std.sys import CompilationTarget, is_gpu, is_apple_gpu
 
 from .path import isdir, split, exists
