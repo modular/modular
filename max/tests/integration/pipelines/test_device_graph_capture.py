@@ -21,7 +21,7 @@ captured graph; ``replay`` copies inputs into the captured buffers and replays.
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from typing import Any, cast
 from unittest.mock import MagicMock
@@ -139,6 +139,8 @@ def _make_runner(
     kv_params: MagicMock | None = None,
     warmup_model_inputs: Any = None,
     fold_sampler_into_graph: bool = False,
+    verify_widths: Sequence[int] | None = None,
+    width_lookup: Sequence[int] | None = None,
 ) -> ServeGraphCaptureRunner:
     return ServeGraphCaptureRunner(
         model=cast(Model, model),
@@ -147,6 +149,8 @@ def _make_runner(
         max_cache_length_upper_bound=10,
         max_batch_size=max_batch_size,
         num_speculative_tokens=num_speculative_tokens,
+        verify_widths=verify_widths,
+        width_lookup=width_lookup,
         fold_sampler_into_graph=fold_sampler_into_graph,
     )
 
@@ -338,7 +342,9 @@ def test_align_q_mismatch_raises() -> None:
     runner._recorded_cache_lengths = [10]
     runner._records = {_bc(1, 1, 10): _gk(num_partitions=10, q_max_seq_len=1)}
 
-    with pytest.raises(RuntimeError, match=r"q_max_seq_len=2 != 1"):
+    with pytest.raises(
+        RuntimeError, match=r"verify width 1, which is not captured"
+    ):
         runner.align(_bc(1, 2, 5))
 
 
