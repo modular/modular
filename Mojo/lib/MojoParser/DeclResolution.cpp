@@ -4940,6 +4940,9 @@ DeclResolver::resolveSyntheticSignature(FnOp inheritedFnOp,
                               PValue(childTraitSelfType).get());
   clonedFunc.setInheritedFromAttr(TraitSymbolAttr::get(parentTraitRef));
 
+  if (!clonedFunc.getDefaultFnRef())
+    clonedFunc.setDefaultFnRefAttr(inheritedFnDecl->getSymbolRef());
+
   childTraitDeclOp.getBody()->push_back(clonedFunc);
   childTraitFnDecl.setIRValue(clonedFunc.getOperation());
   childTraitFnDecl.resolvedness = DeclResolvedness::body;
