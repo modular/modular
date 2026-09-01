@@ -120,6 +120,71 @@ static bool isSafeUnionReprType(const LLVMDataLayout &dl, Type type) {
   return dl.getTypeSizeInBits(type) == 8 * dl.getTypeStoreSize(type);
 }
 
+namespace {
+/// A union member paired with the LLVM type it converts to. The payload size
+/// and the representative type are separate readings of the same set, so they
+/// are derived from one conversion rather than accumulated side by side.
+struct UnionMember {
+  Type kgenType;
+  Type llvmType;
+};
+} // namespace
+
+/// Bytes the union's payload must span: the widest member, measured in KGEN's
+/// data layout where it knows the type and LLVM's otherwise (MOCO-4689). A
+/// simd<N, bool> is N bytes to KGEN but converts to vector<N x i1>, which LLVM
+/// allocates in ceil(N/8). Types outside KGEN's layout interface, such as f80,
+/// are sized by LLVM alone.
+static int64_t getUnionPayloadSize(const LLVMDataLayout &dl,
+                                   TargetInfoAttr target,
+                                   ArrayRef<UnionMember> members) {
+  int64_t payloadSize = 0;
+  for (const UnionMember &member : members) {
+    int64_t memberSize = dl.getTypeAllocSize(member.llvmType);
+    if (std::optional<int64_t> kgenSize =
+            DataLayoutInterface::getTypeAllocSize(target, member.kgenType))
+      memberSize = std::max(memberSize, *kgenSize);
+    payloadSize = std::max(payloadSize, memberSize);
+  }
+  return payloadSize;
+}
+
+/// The type heading the lowered struct, chosen to carry the union's alignment.
+/// It is sized independently of the payload: whatever it does not cover is
+/// made up by the trailing byte array.
+static Type getUnionReprType(const LLVMDataLayout &dl, TargetInfoAttr target,
+                             POP::UnionType unionType,
+                             ArrayRef<UnionMember> members) {
+  // The most-aligned member, skipping null candidates (MOCO-3275) and types
+  // that do not fill their own storage (MOCO-3900).
+  std::pair<int64_t, Type> maxAlignAndType(1, nullptr);
+  for (const UnionMember &member : members) {
+    auto curAlignAndMember = dl.getTypeABIAlignAndType(member.llvmType);
+    if (curAlignAndMember.second &&
+        isSafeUnionReprType(dl, curAlignAndMember.second) &&
+        curAlignAndMember.first >= maxAlignAndType.first)
+      maxAlignAndType = curAlignAndMember;
+  }
+
+  // Fall back to i8 if no member offered a safe candidate.
+  MLIRContext *ctx = unionType.getContext();
+  Type reprType = maxAlignAndType.second ? maxAlignAndType.second
+                                         : IntegerType::get(ctx, 8);
+
+  // That candidate can still under-report the union's true alignment, e.g.
+  // when a wider member was excluded as unsafe. Try to synthesize a plain
+  // integer matching the true alignment in that case.
+  if (auto trueAlign = unionType.getTypeAlign(target);
+      trueAlign && *trueAlign > dl.getTypeABIAlign(reprType)) {
+    Type widened = IntegerType::get(ctx, 8 * *trueAlign);
+    // FIXME(MOCO-4441): Depending on the exact target, the integer may or may
+    // not have the desired alignment. Use widened only when it succeeds.
+    if (dl.getTypeABIAlign(widened) >= *trueAlign)
+      reprType = widened;
+  }
+  return reprType;
+}
+
 //===----------------------------------------------------------------------===//
 // TargetInfoAttr
 //===----------------------------------------------------------------------===//
@@ -386,56 +451,35 @@ POPToLLVMTypeConverter::POPToLLVMTypeConverter(TargetInfoAttr target)
     // TODO: The generated assembly is sensitive to the content type of the
     // union type. This needs to be optimized. For now, use an array of
     // word-size integers.
-    int64_t maxSize = 0;
-    std::pair<int64_t, Type> maxAlignAndType(1, nullptr);
-    for (Type unionType : unionType.getTypes()) {
-      Type type = convertType(unionType);
-      if (!type)
+    SmallVector<UnionMember> members;
+    members.reserve(unionType.getNumTypes());
+    for (Type memberType : unionType.getTypes()) {
+      Type llvmType = convertType(memberType);
+      if (!llvmType)
         return {};
-      maxSize = std::max(maxSize, getTypeAllocSize(type));
-
-      // Record the max-aligned member field, skipping null candidates
-      // (MOCO-3275) and unsafe representative types (MOCO-3900).
-      auto curAlignAndMember = getTypeABIAlignAndType(type);
-      if (curAlignAndMember.second &&
-          isSafeUnionReprType(*this, curAlignAndMember.second) &&
-          curAlignAndMember.first >= maxAlignAndType.first)
-        maxAlignAndType = curAlignAndMember;
+      members.push_back({memberType, llvmType});
     }
-    if (maxSize == 0)
+
+    int64_t payloadSize = getUnionPayloadSize(*this, getTarget(), members);
+    if (payloadSize == 0)
       return LLVM::LLVMStructType::getLiteral(&getContext(), {});
 
-    // Lower union to {max_align_t, [(max_size - sizeof(max_align_t)) x i8]}.
-    // `max_align_t` ensure whole structure alignment, the tailing array ensures
-    // that we allocate enough memory to hold the maximum variant of the union.
-    // Fall back to i8 if no member offered a safe representative type.
-    Type maxAlignTp = maxAlignAndType.second
-                          ? maxAlignAndType.second
-                          : IntegerType::get(&getContext(), 8);
-
-    // The chosen representative can still under-report the union's true
-    // alignment (e.g. a wider member was excluded as unsafe). Try to synthesize
-    // a plain integer matching the true alignment in that case.
-    if (auto trueAlign = unionType.getTypeAlign(getTarget());
-        trueAlign && *trueAlign > getTypeABIAlign(maxAlignTp)) {
-      Type widened = IntegerType::get(&getContext(), 8 * *trueAlign);
-      // FIXME(MOCO-4441): Depending on the exact target, the integer may or may
-      // not have the desired alignment. Use widened only when it succeeds.
-      if (getTypeABIAlign(widened) >= *trueAlign)
-        maxAlignTp = widened;
-    }
+    // Lower union to {repr, [(payloadSize - sizeof(repr)) x i8]}. The
+    // representative gives the whole structure its alignment, the trailing
+    // array covers the payload it does not span.
+    Type reprType = getUnionReprType(*this, getTarget(), unionType, members);
 
     SmallVector<Type, 2> structElemTp;
-    structElemTp.push_back(maxAlignTp);
+    structElemTp.push_back(reprType);
 
-    int64_t remLen = maxSize - getTypeAllocSize(maxAlignTp);
-    if (remLen != 0) {
-      structElemTp.push_back(
-          LLVM::LLVMArrayType::get(IntegerType::get(&getContext(), 8), remLen));
+    if (int64_t tailLen = payloadSize - getTypeAllocSize(reprType);
+        tailLen != 0) {
+      structElemTp.push_back(LLVM::LLVMArrayType::get(
+          IntegerType::get(&getContext(), 8), tailLen));
     }
 
     auto ret = LLVM::LLVMStructType::getLiteral(&getContext(), structElemTp);
-    assert(maxSize == getTypeAllocSize(ret) &&
+    assert(payloadSize == getTypeAllocSize(ret) &&
            "expect lowered UnionType to have the same size as the biggest "
            "union variant.");
     return ret;

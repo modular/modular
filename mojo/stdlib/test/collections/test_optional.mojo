@@ -634,5 +634,30 @@ def test_optional_construct_in_place_destroys_value_once() raises:
     assert_equal(del_count, 1)
 
 
+def _assert_simd_bool_round_trips[width: SIMDLength]() raises:
+    var all_true = Optional(SIMD[DType.bool, width](fill=True))
+    assert_true(all_true.value().reduce_and())
+
+    var all_false = Optional(SIMD[DType.bool, width](fill=False))
+    assert_false(all_false.value().reduce_or())
+
+    # A mixed pattern catches a payload that is wide enough but misplaced.
+    var mixed = SIMD[DType.bool, width](fill=False)
+    mixed[0] = True
+    mixed[width - 1] = True
+    assert_equal(Optional(mixed).value(), mixed)
+
+
+def test_optional_simd_bool() raises:
+    # A `SIMD[bool, N]` payload is N bytes to the compiler's own layout but
+    # lowers to `vector<N x i1>`, which LLVM allocates in ceil(N/8). Sizing the
+    # union from the lowered type undersized it and crashed the compiler
+    # (MOCO-4689).
+    _assert_simd_bool_round_trips[2]()
+    _assert_simd_bool_round_trips[4]()
+    _assert_simd_bool_round_trips[8]()
+    _assert_simd_bool_round_trips[16]()
+
+
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

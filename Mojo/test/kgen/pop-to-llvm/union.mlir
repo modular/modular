@@ -480,4 +480,46 @@ kgen.func @union_i15_i8(%arg0: i8) -> !pop.union<i15, i8> {
   kgen.return %0 : !pop.union<i15, i8>
 }
 
+
+// Regression test for MOCO-4689: simd<N, bool> is N bytes to KGEN but converts
+// to vector<N x i1>, which LLVM allocates in ceil(N/8). Sizing the payload from
+// the converted type undersized it below the representative the alignment step
+// then picks.
+// CHECK-LABEL: @union_simd_bool_2
+// CHECK-SAME:  -> !llvm.struct<(i16)>
+kgen.func @union_simd_bool_2(%arg0: !kgen.simd<2, bool>) -> !pop.union<!kgen.simd<2, bool>> {
+  // CHECK: llvm.return %{{.*}} : !llvm.struct<(i16)>
+  %0 = pop.union.wrap %arg0 : !kgen.simd<2, bool> as <!kgen.simd<2, bool>>
+  kgen.return %0 : !pop.union<!kgen.simd<2, bool>>
+}
+
+// CHECK-LABEL: @union_simd_bool_4
+// CHECK-SAME:  -> !llvm.struct<(i32)>
+kgen.func @union_simd_bool_4(%arg0: !kgen.simd<4, bool>) -> !pop.union<!kgen.simd<4, bool>> {
+  // CHECK: llvm.return %{{.*}} : !llvm.struct<(i32)>
+  %0 = pop.union.wrap %arg0 : !kgen.simd<4, bool> as <!kgen.simd<4, bool>>
+  kgen.return %0 : !pop.union<!kgen.simd<4, bool>>
+}
+
+// A sibling member wide enough to dominate the payload masked the bug before,
+// and must keep lowering to the same 8-byte union.
+// CHECK-LABEL: @union_simd_bool_2_i64
+// CHECK-SAME:  -> !llvm.struct<(i64)>
+kgen.func @union_simd_bool_2_i64(%arg0: i64) -> !pop.union<!kgen.simd<2, bool>, i64> {
+  // CHECK: llvm.return %{{.*}} : !llvm.struct<(i64)>
+  %0 = pop.union.wrap %arg0 : i64 as <!kgen.simd<2, bool>, i64>
+  kgen.return %0 : !pop.union<!kgen.simd<2, bool>, i64>
+}
+
+// i16 is the wider member to LLVM, simd<4, bool> to KGEN, so the payload must
+// size on the latter. The representative widens to i32 to carry the union's
+// alignment, leaving no tail.
+// CHECK-LABEL: @union_simd_bool_4_i16
+// CHECK-SAME:  -> !llvm.struct<(i32)>
+kgen.func @union_simd_bool_4_i16(%arg0: i16) -> !pop.union<!kgen.simd<4, bool>, i16> {
+  // CHECK: llvm.return %{{.*}} : !llvm.struct<(i32)>
+  %0 = pop.union.wrap %arg0 : i16 as <!kgen.simd<4, bool>, i16>
+  kgen.return %0 : !pop.union<!kgen.simd<4, bool>, i16>
+}
+
 }

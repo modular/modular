@@ -475,6 +475,9 @@ This release completes the removal of APIs deprecated during the v1.0 cycle.
   int in `[2**63, 2**64)` no longer overflows, and a negative Python int now
   raises instead of silently wrapping to the maximum value.
 
+- A union whose widest member is a `SIMD[DType.bool, N]` with `N > 1`, such as
+  `Optional[SIMD[DType.bool, 2]]`, now compiles.
+
 - A `where` clause naming a type that an enclosing `where` clause constrained
   to a tighter trait can now be proven. Calling a method declared
   `where Ts.contains[T]()` with such a `T` failed with `lacking evidence to
