@@ -3250,6 +3250,47 @@ def test_gemma_4_property_names_with_pattern_properties_rejected() -> None:
         )
 
 
+def test_pattern_properties_with_additional_properties_rejected() -> None:
+    # patternProperties + additionalProperties (non-false) needs per-key
+    # priority: a matching key takes the pattern's subschema, a non-matching
+    # key falls back to additionalProperties. The fallback arm needs the
+    # complement of a regex as a key pattern, which xgrammar cannot express.
+    # Reject the combination under reject_unsupported rather than emit an
+    # unsound un-excluded fallback (which would accept a matching key with
+    # the additionalProperties value) or silently drop the fallback.
+    #
+    # All open forms are rejected: a schema value, an empty schema (which
+    # accepts any value, same as true), and boolean true.
+    schema_base = (
+        '{"type":"object",'
+        '"patternProperties":{"^[a-z]+$":{"type":"string"}},'
+        '"additionalProperties":'
+    )
+    for addl in ('{"type":"integer"}', "{}", "true"):
+        with pytest.raises(Exception, match="patternProperties"):
+            _compiler().compile_json_schema(
+                schema_base + addl + "}",
+                reject_unsupported=True,
+            )
+
+
+def test_pattern_properties_with_additional_properties_false_compiles() -> None:
+    # additionalProperties:false closes the object: no fallback arm exists,
+    # so the reject guard does not fire and the schema compiles under
+    # reject_unsupported. The pattern is still enforced -- a matching key
+    # must conform to the pattern's subschema, and a non-matching key is
+    # not admitted at all.
+    compiled = _compiler().compile_json_schema(
+        '{"type":"object",'
+        '"patternProperties":{"^[a-z]+$":{"type":"string"}},'
+        '"additionalProperties":false}',
+        reject_unsupported=True,
+    )
+    assert _accepts(compiled, '{"a":"a"}')
+    assert not _accepts(compiled, '{"a":1}')
+    assert not _accepts(compiled, '{"1":1}')
+
+
 def test_gemma_4_property_names_ref_max_length_zero_rejected() -> None:
     # The propertyNames bare-key guards must inspect the COMPLETE schema, not
     # only the literal propertyNames object: a $ref to a maxLength:0 subschema
