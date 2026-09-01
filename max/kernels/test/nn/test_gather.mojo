@@ -35,23 +35,19 @@ def test_gather() raises:
 
         # Setup input.
         var input_stack = Array[Float32, num_rows * row_size](
-            uninitialized=True
+            fill_with=lambda (idx: Int) -> Float32: Float32(idx // row_size)
         )
         var input = TileTensor(input_stack, row_major[num_rows, row_size]())
-
-        for i in range(num_rows):
-            for j in range(row_size):
-                input[i, j] = Float32(i)
 
         # Setup indices.
         comptime num_indices = 16
         var indices_stack = Array[Scalar[indices_type], num_indices](
-            uninitialized=True
+            fill_with=lambda (i: Int) -> Scalar[indices_type]: Scalar[
+                indices_type
+            ](i // 2)
         )
         var indices = TileTensor(indices_stack, row_major[num_indices]())
 
-        for i in range(num_indices):
-            indices[i] = Scalar[indices_type](i // 2)
         indices[0] = -1
         indices[1] = -num_rows
 
@@ -103,23 +99,18 @@ def test_gather_3d() raises:
 
         # Setup input.
         var input_stack = Array[Float32, num_rows * row_size * 1](
-            uninitialized=True
+            fill_with=lambda (idx: Int) -> Float32: Float32(idx // row_size)
         )
         var input = TileTensor(input_stack, row_major[num_rows, row_size, 1]())
-
-        for i in range(num_rows):
-            for j in range(row_size):
-                input[i, j, 0] = Float32(i)
 
         # Setup indices.
         comptime num_indices = 16
         var indices_stack = Array[Scalar[indices_type], num_indices * 1](
-            uninitialized=True
+            fill_with=lambda (i: Int) -> Scalar[indices_type]: Scalar[
+                indices_type
+            ](i // 2)
         )
         var indices = TileTensor(indices_stack, row_major[num_indices, 1]())
-
-        for i in range(num_indices):
-            indices[i, 0] = Scalar[indices_type](i // 2)
 
         # create output
         var output_stack = Array[Float32, num_indices * 1 * row_size * 1](
@@ -169,13 +160,9 @@ def test_gather_empty_indices() raises:
 
         # Setup input.
         var input_stack = Array[Float32, num_rows * row_size](
-            uninitialized=True
+            fill_with=lambda (idx: Int) -> Float32: Float32(idx // row_size)
         )
         var input = TileTensor(input_stack, row_major[num_rows, row_size]())
-
-        for i in range(num_rows):
-            for j in range(row_size):
-                input[i, j] = Float32(i)
 
         # Setup indices.
         # There isn't a way to represent a stack size of 0 with Array

@@ -38,24 +38,19 @@ def test_convtranspose_pads():
 
     comptime input_layout = row_major[1, 1, 3, 3, 1]()
     var input_stack = Array[Scalar[type], input_layout.product()](
-        uninitialized=True
+        fill_with=lambda (i: Int) -> Scalar[type]: Float32(i)
     )
     var input_stack_ptr: MutPointer[
         Scalar[type], origin_of(input_stack)
     ] = input_stack.unsafe_ptr()
     var input = TileTensor(input_stack_ptr, input_layout)
-    for i in range(9):
-        input.raw_store(i, Float32(i))
 
     comptime filter_layout = row_major[1, 3, 3, 2, 1]()
-    var filter_stack = Array[Scalar[type], filter_layout.product()](
-        uninitialized=True
-    )
+    var filter_stack = Array[Scalar[type], filter_layout.product()](fill=1.0)
     var filter_stack_ptr: MutPointer[
         Scalar[type], origin_of(filter_stack)
     ] = filter_stack.unsafe_ptr()
     var filter = TileTensor(filter_stack_ptr, filter_layout)
-    _ = filter.fill(1.0)
 
     comptime output_layout = row_major[1, 1, 7, 3, 2]()
     var output_stack = Array[Scalar[type], output_layout.product()](
@@ -119,24 +114,19 @@ def test_convtranspose():
 
     comptime input_layout = row_major[1, 1, 3, 3, 1]()
     var input_stack = Array[Scalar[type], input_layout.product()](
-        uninitialized=True
+        fill_with=lambda (i: Int) -> Scalar[type]: Float32(i)
     )
     var input_stack_ptr: MutPointer[
         Scalar[type], origin_of(input_stack)
     ] = input_stack.unsafe_ptr()
     var input = TileTensor(input_stack_ptr, input_layout)
-    for i in range(9):
-        input.raw_store(i, Float32(i))
 
     comptime filter_layout = row_major[1, 3, 3, 2, 1]()
-    var filter_stack = Array[Scalar[type], filter_layout.product()](
-        uninitialized=True
-    )
+    var filter_stack = Array[Scalar[type], filter_layout.product()](fill=1.0)
     var filter_stack_ptr: MutPointer[
         Scalar[type], origin_of(filter_stack)
     ] = filter_stack.unsafe_ptr()
     var filter = TileTensor(filter_stack_ptr, filter_layout)
-    _ = filter.fill(1.0)
 
     comptime output_layout = row_major[1, 1, 5, 5, 2]()
     var output_stack = Array[Scalar[type], output_layout.product()](
@@ -295,24 +285,19 @@ def test_convtranspose_attributes():
 
     comptime input_layout = row_major[1, 1, 3, 3, 1]()
     var input_stack = Array[Scalar[type], input_layout.product()](
-        uninitialized=True
+        fill_with=lambda (i: Int) -> Scalar[type]: Float32(i)
     )
     var input_stack_ptr: MutPointer[
         Scalar[type], origin_of(input_stack)
     ] = input_stack.unsafe_ptr()
     var input = TileTensor(input_stack_ptr, input_layout)
-    for i in range(9):
-        input.raw_store(i, Float32(i))
 
     comptime filter_layout = row_major[1, 3, 3, 2, 1]()
-    var filter_stack = Array[Scalar[type], filter_layout.product()](
-        uninitialized=True
-    )
+    var filter_stack = Array[Scalar[type], filter_layout.product()](fill=1.0)
     var filter_stack_ptr: MutPointer[
         Scalar[type], origin_of(filter_stack)
     ] = filter_stack.unsafe_ptr()
     var filter = TileTensor(filter_stack_ptr, filter_layout)
-    _ = filter.fill(1.0)
 
     comptime output_layout = row_major[1, 1, 10, 8, 2]()
     var output_stack = Array[Scalar[type], output_layout.product()](

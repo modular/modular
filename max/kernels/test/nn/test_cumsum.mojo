@@ -50,15 +50,11 @@ def test_cumsum_1d_precision():
     comptime axis = 0
     comptime size = 1024
 
-    var f32_stack = Array[Float32, size](uninitialized=True)
+    var f32_stack = Array[Float32, size](fill=1.1)
     var f32_matrix = TileTensor(f32_stack, row_major[size]())
-    for i in range(size):
-        f32_stack[i] = 1.1
 
-    var f64_stack = Array[Float64, size](uninitialized=True)
+    var f64_stack = Array[Float64, size](fill=1.1)
     var f64_matrix = TileTensor(f64_stack, row_major[size]())
-    for i in range(size):
-        f64_stack[i] = 1.1
 
     var cumsum_f32_stack = Array[Float32, size](uninitialized=True)
     var cumsum_f32 = TileTensor(cumsum_f32_stack, row_major[size]())

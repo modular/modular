@@ -119,36 +119,20 @@ def test_where_1d() raises:
     comptime num_elements = 12
     comptime num_indices = 6
 
-    var values_stack = Array[Float32, num_elements](uninitialized=True)
+    var values_stack = Array[Float32, num_elements](
+        fill_with=lambda (i: Int) -> Float32: Float32(i % 2)
+    )
     var values = TileTensor(values_stack, row_major[num_elements]())
-
-    values[0] = 0.0
-    values[1] = 1.0
-    values[2] = 0.0
-    values[3] = 1.0
-    values[4] = 0.0
-    values[5] = 1.0
-    values[6] = 0.0
-    values[7] = 1.0
-    values[8] = 0.0
-    values[9] = 1.0
-    values[10] = 0.0
-    values[11] = 1.0
 
     var computed_stack = Array[Int, num_indices](uninitialized=True)
     var computed_outputs = TileTensor(
         computed_stack, row_major[num_indices, 1]()
     )
 
-    var golden_stack = Array[Int, num_indices](uninitialized=True)
+    var golden_stack = Array[Int, num_indices](
+        fill_with=lambda (i: Int) -> Int: 2 * i + 1
+    )
     var golden_outputs = TileTensor(golden_stack, row_major[num_indices]())
-
-    golden_outputs[0] = 1
-    golden_outputs[1] = 3
-    golden_outputs[2] = 5
-    golden_outputs[3] = 7
-    golden_outputs[4] = 9
-    golden_outputs[5] = 11
 
     arg_nonzero(
         values.make_dynamic[.int64](),

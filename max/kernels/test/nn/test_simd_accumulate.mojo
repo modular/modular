@@ -22,9 +22,7 @@ def test_maybe_partial_load() raises:
     comptime simd_size = 4
     comptime size = simd_size + 1
 
-    var a = Array[Float32, size](uninitialized=True)
-    for i in range(size):
-        a[i] = 1.0
+    var a = Array[Float32, size](fill=1.0)
 
     var vec = _simd_load_maybe_partial[simd_size, False](a.unsafe_ptr(), 0)
     assert_equal(vec, SIMD[.float32, simd_size](1.0))
@@ -158,10 +156,10 @@ def test_accumulate_with_offsets[
         comptime for j in range(num_cols):
             (b_ptr + j * simd_size).store(SIMD[type, simd_size](i))
 
-    var a_base_stack = Array[Int32, num_rows](uninitialized=True)
+    var a_base_stack = Array[Int32, num_rows](
+        fill_with=lambda (i: Int) -> Int32: Int32(i * length)
+    )
     var a_base_offsets = TileTensor(a_base_stack, row_major[num_rows]())
-    a_base_offsets[0] = 0
-    a_base_offsets[1] = Int32(length)
 
     var acc = _Accumulator[type, num_rows, num_cols, simd_size]()
     acc.init(0)
