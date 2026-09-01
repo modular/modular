@@ -2994,15 +2994,6 @@ Value ClosureEmitter::emitClosure(ASTDecl &moduleDecl, ASTDecl &nestedFnDecl,
   if (allCapturesEncodable &&
       highestCaptureConvention == TypeConvention::MemoryOnly)
     allCapturesEncodable = false;
-  FnTypeGeneratorType traitSig = FnTypeGeneratorType::get(
-      closureSig.getInputParamTypes(), closureSig.getValues(),
-      closureSig.getArgConventions(), closureSig.getFnEffects(),
-      closureSig.getFnMetaOriginData(), closureSig.getParamListAttrs(),
-      closureSig.getArgListAttrs());
-  trait = cast<TraitDeclOp>(
-      shared
-          .getOrCreateClosureTrait(nestedFnDecl.getLoc(), moduleDecl, traitSig)
-          ->getIfOperation());
 
   SmallVector<ClosureParent> closureParents{
       ClosureParent(trait, getFnOpNamed(trait, "__call__"),
