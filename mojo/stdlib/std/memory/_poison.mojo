@@ -27,7 +27,7 @@ debug pass when kernels leave allocation padding un-overwritten.
 """
 
 from std.builtin.dtype import _unsigned_integral_type_of
-from std.gpu import block_idx, thread_idx
+from std._gpu import block_idx, thread_idx
 from std.os import abort
 from std.reflection import SourceLocation, call_location
 from std.sys import is_apple_gpu, is_gpu

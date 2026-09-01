@@ -118,6 +118,24 @@ convention. By default, all arguments use the default convention of an
 immutable read-only reference. In the following sections, we'll explain
 each of these conventions in more detail.
 
+### Deinitializing arguments (`deinit`)
+
+The `deinit` convention isn't limited to `self`. You can write methods
+and functions that destruct other instances:
+
+```mojo
+struct Pair:
+    def destroy_other(self, deinit other: Self):
+        # Can take from fields of `other` here
+```
+
+Like `deinit self`, the `deinit` convention in this example tells the
+compiler that `other` is tagged for destruction.
+
+Using `deinit` means `other` is logically deinitialized at the end of the
+method. Because of this, it's safe to move values out of `other`, since
+the instance's lifetime is guaranteed to complete.
+
 ## Immutable arguments (default)
 
 The default convention is an immutable read-only reference. The callee

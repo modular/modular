@@ -110,20 +110,21 @@ def _group_units_by_shard(
 
     Each unit carries every TP shard, so shard ``s`` is ``mem.buffers[s]``
     whether the unit is replicated or sharded; the two layouts need no separate
-    handling. The Rust client concatenates each shard's units in this order into
-    one dKV block, matching the CPU block the tiered connector builds from the
-    same units.
+    handling. The Rust client concatenates each shard's units in this order
+    into one dKV block. That block matches the CPU block the tiered connector
+    builds only when every unit is sharded, because the tiered connector
+    stores a replicated unit once while dKV stores it once per shard.
 
     Args:
         kv_memory: One replica's offload-ready KV memory units.
 
     Returns:
-        A ``(shards, is_mla)`` pair, where ``shards`` has one
+        A ``(shards, shards_are_identical)`` pair, where ``shards`` has one
         ``(device_id, [(ptr, nbytes), ...])`` entry per TP shard in canonical
-        device order, and ``is_mla`` reports whether every unit is replicated.
+        device order, and ``shards_are_identical`` reports whether every unit
+        is replicated.
 
     Raises:
-        NotImplementedError: If replicated and non-replicated units are mixed.
         ValueError: If unit page counts disagree, or if units span different
             device topologies.
     """
@@ -139,16 +140,9 @@ def _group_units_by_shard(
             f"{unique_total_num_pages}"
         )
 
-    # ``is_mla`` lets the Rust client dedup byte-identical shards, which one
-    # sharded unit falsifies for the concatenated block.
-    replicated = [mem for mem in kv_memory if mem.replicated]
-    is_mla = bool(replicated)
-    if is_mla and len(replicated) != len(kv_memory):
-        raise NotImplementedError(
-            "the dKV connector cannot mix replicated (MLA) and "
-            "non-replicated KV memory units in one replica; every unit "
-            "must be replicated across the same TP shards"
-        )
+    # every unit replicated makes each shard's block byte-identical, so the
+    # client may store shard 0 alone; one sharded unit makes them differ.
+    shards_are_identical = all(mem.replicated for mem in kv_memory)
 
     # every unit must span the same device topology so shard s names the same
     # device in every unit (mirrors BlockOffloadEngine)
@@ -175,7 +169,7 @@ def _group_units_by_shard(
         )
         for rank, device_id in enumerate(topology)
     ]
-    return shards, is_mla
+    return shards, shards_are_identical
 
 
 def _shard_unit_strides(kv_memory: Sequence[KVCacheMemory]) -> list[int]:
@@ -184,7 +178,7 @@ def _shard_unit_strides(kv_memory: Sequence[KVCacheMemory]) -> list[int]:
     A dKV block holds one shard's buffer units concatenated, so the layout
     fingerprint folds the strides of a single shard's unit list rather than
     the flat per-physical-buffer list. This keeps the folded shape identical
-    between replicated (MLA) and sharded layouts, where the flat list would
+    between replicated and sharded layouts, where the flat list would
     otherwise repeat each unit once per shard. Shard 0 stands in for every
     shard because each shard carries one entry per unit by construction and
     the Rust config validates that the stride vectors match.
@@ -388,7 +382,7 @@ def _kv_config_hash(
       tree, so any change to the unit set or its ordering makes stored blocks
       byte-incompatible and must flip the hash. Folding one shard's subsequence
       rather than the flat physical buffer list keeps the folded shape identical
-      between replicated (MLA) and sharded layouts; the shard count is already
+      between replicated and sharded layouts; the shard count is already
       pinned by ``tensor_parallel_degree``.
 
     Model/weights identity is deliberately NOT folded here: a different model is
@@ -688,7 +682,30 @@ class DKVConnector(KVConnector):
         # because every DP replica runs the same model and config and so the
         # same layout; folded into the layout hash because a shard's dKV block
         # is these strides concatenated
-        unit_strides = _shard_unit_strides(replica_kv_memory[0])
+        units = replica_kv_memory[0]
+        unit_strides = _shard_unit_strides(units)
+        # A mixed tree rides the per-shard path, where a replicated unit is
+        # stored once per TP shard rather than once, so this tenant's dKV
+        # footprint exceeds what the tiered connector's host row needs for the
+        # same model. The multiplier is on the offloaded AND loaded bytes, not
+        # just on capacity, and it is small only when the replicated unit is,
+        # as M3's one-head index-K cache is; an MLA target paired with a
+        # non-MLA draft replicates the whole latent cache. Say it at model
+        # load rather than leave it to be inferred from a share that never
+        # fills.
+        if {mem.replicated for mem in units} == {True, False}:
+            replicated_bytes = sum(
+                mem.bytes_per_page for mem in units if mem.replicated
+            )
+            _logger.warning(
+                "dKV KV tree mixes replicated and sharded caches, so each of "
+                "the %d TP shards stores its own copy of %d replicated byte(s) "
+                "per block. This tenant needs %d byte(s) per block more than "
+                "the tiered connector's sizing.",
+                params.tensor_parallel_degree,
+                replicated_bytes,
+                replicated_bytes * (params.tensor_parallel_degree - 1),
+            )
         kv_config_hash, replica_identities = _resolve_replica_identities(
             num_replicas, params, unit_strides
         )
@@ -842,10 +859,12 @@ class DKVConnector(KVConnector):
         # per TP shard. The Rust client concatenates each shard's units, in
         # this order, into one dKV block, so a quantized cache's scale buffers
         # and a multi-cache buffer's extra caches (speculative draft and
-        # target) all land inside the block rather than being dropped, and the
-        # stored bytes are identical to the shard's portion of the CPU block
-        # the local and tiered connectors build (CLIN-1460).
-        shards, is_mla = _group_units_by_shard(kv_memory)
+        # target) all land inside the block rather than being dropped. The
+        # stored bytes are the shard's portion of the CPU block the local and
+        # tiered connectors build (CLIN-1460) only for an all-sharded tree;
+        # those connectors keep one copy of a replicated unit, dKV one per
+        # shard.
+        shards, shards_are_identical = _group_units_by_shard(kv_memory)
 
         # MAX's compute stream per device ordinal, so the same-host offload can
         # order each device's D2H after the forward pass that wrote its blocks
@@ -891,7 +910,9 @@ class DKVConnector(KVConnector):
             0,  # page_size (tokens): unused by the Rust client
             total_num_pages,
             len(shards),
-            is_mla,
+            # the client's parameter is still named ``is_mla``, but
+            # replication is not MLA-specific: M3's index-K cache replicates.
+            shards_are_identical,
             listen_port=listen_port,
             backend=backend,
             compute_streams=compute_streams,

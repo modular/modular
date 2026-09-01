@@ -52,6 +52,8 @@ def PyInit_mojo_module() abi("C") -> PythonObject:
         # kwargs test functions
         b.def_function[sum_kwargs_ints]("sum_kwargs_ints")
         b.def_function[sum_pos_arg_and_kwargs]("sum_pos_arg_and_kwargs")
+        b.def_function[append_kwarg]("append_kwarg")
+        b.def_function[ignore_kwargs]("ignore_kwargs")
 
         # Direct METH_FASTCALL registration via def_py_c_function overload.
         b.def_py_c_function(fastcall_concat, "fastcall_concat")
@@ -231,6 +233,14 @@ def sum_pos_arg_and_kwargs(
     arg1: PythonObject, var **kwargs: PythonObject
 ) raises -> PythonObject:
     return PythonObject(Int(py=arg1) + Int(py=sum_kwargs_ints(**kwargs^)))
+
+
+def append_kwarg(list_obj: PythonObject, var **kwargs: PythonObject) raises:
+    list_obj.append(kwargs["value"])
+
+
+def ignore_kwargs(var **kwargs: PythonObject):
+    pass
 
 
 def fastcall_concat(

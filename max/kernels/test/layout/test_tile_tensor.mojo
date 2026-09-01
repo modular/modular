@@ -26,7 +26,7 @@ from layout import (
 )
 from layout.tile_layout import Layout as TileLayout
 from layout.swizzle import Swizzle
-from layout.tensor_storage import TensorOps
+from layout.tensor_engine import TensorOps
 from std.math import exp
 from std.testing import (
     TestSuite,
@@ -40,14 +40,14 @@ def _storage_add(
     dst: TileTensor,
     lhs: TileTensor[dst.dtype, ...],
     rhs: TileTensor[dst.dtype, ...],
-) where dst.mut and conforms_to(dst.Storage, TensorOps):
-    """Storage-level out-of-place `TensorOps.add`.
+) where dst.mut and conforms_to(dst.Engine, TensorOps):
+    """Engine-level out-of-place `TensorOps.add`.
 
-    `LhsStorage`/`RhsStorage` are only inferable from symbolic operand
+    `LhsEngine`/`RhsEngine` are only inferable from symbolic operand
     storages, so calls go through this generic helper rather than a direct
     call with concrete handles.
     """
-    type_of(dst).Storage.add(
+    type_of(dst).Engine.add(
         dst=(dst._unsafe_storage_cast[to_mut=True](), dst.layout),
         lhs=(lhs._storage, lhs.layout),
         rhs=(rhs._storage, rhs.layout),
@@ -56,9 +56,9 @@ def _storage_add(
 
 def _storage_abs(
     dst: TileTensor, src: TileTensor[dst.dtype, ...]
-) where dst.mut and conforms_to(dst.Storage, TensorOps):
-    """Storage-level out-of-place `TensorOps.abs`."""
-    type_of(dst).Storage.abs(
+) where dst.mut and conforms_to(dst.Engine, TensorOps):
+    """Engine-level out-of-place `TensorOps.abs`."""
+    type_of(dst).Engine.abs(
         dst=(dst._unsafe_storage_cast[to_mut=True](), dst.layout),
         src=(src._storage, src.layout),
     )
@@ -68,9 +68,9 @@ def _storage_exp[
     scale_dtype: DType, //, scale: Scalar[scale_dtype] = 1
 ](
     dst: TileTensor, src: TileTensor[dst.dtype, ...]
-) where dst.mut and conforms_to(dst.Storage, TensorOps):
-    """Storage-level out-of-place `TensorOps.exp`."""
-    type_of(dst).Storage.exp[scale](
+) where dst.mut and conforms_to(dst.Engine, TensorOps):
+    """Engine-level out-of-place `TensorOps.exp`."""
+    type_of(dst).Engine.exp[scale](
         dst=(dst._unsafe_storage_cast[to_mut=True](), dst.layout),
         src=(src._storage, src.layout),
     )

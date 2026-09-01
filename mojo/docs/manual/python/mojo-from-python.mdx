@@ -696,11 +696,6 @@ Mojo to be the best way to extend Python—this feature is still in early and
 active development, and there are some limitations to be aware of. These will
 be lifted over time.
 
-- **Functions taking more than 6 arguments.** Currently
-  `PyTypeBuilder.add_function()` and related function bindings only support Mojo
-  functions that take up to 6 `PythonObject` arguments:
-  `def(PythonObject, PythonObject, PythonObject, PythonObject, PythonObject, PythonObject)`.
-
 - **Keyword arguments syntax.**
   Currently, Mojo functions called from Python only accept keyword arguments
   when using a trailing `kwargs: StringDict[PythonObject]` argument.

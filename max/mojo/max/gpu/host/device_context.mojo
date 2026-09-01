@@ -82,8 +82,8 @@ from std.utils import Variant
 from std.utils._serialize import _serialize_elements
 from std.utils.static_tuple import StaticTuple
 
-from std.gpu.host import get_gpu_target
-from std.gpu.host.info import GPUInfo
+from std._gpu.host import get_gpu_target
+from std._gpu.host.info import GPUInfo
 
 from .compile import (
     _compile_code,
@@ -3899,7 +3899,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
 
     ```mojo
     from max.gpu.host import DeviceContext
-    from std.gpu import thread_idx
+    from max.gpu import thread_idx
 
     def kernel():
         print("hello from thread:", thread_idx.x, thread_idx.y, thread_idx.z)
@@ -4739,7 +4739,8 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
         your kernel captures variables from its surrounding scope:
 
         ```text
-        from std.gpu import DeviceContext, global_idx
+        from max.gpu import global_idx
+        from max.gpu.host import DeviceContext
         from layout import TileTensor, row_major
 
 

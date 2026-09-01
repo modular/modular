@@ -28,7 +28,7 @@ discriminators and split-K plumbing — are `_`-prefixed.
 """
 
 from std.memory import UnsafePointer
-from std.gpu.host.info import is_cpu
+from max.gpu.host.info import is_cpu
 from std.utils.coord import Coord, DynamicCoord
 
 

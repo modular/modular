@@ -84,7 +84,7 @@ jobs:
             -//Cache/... \
             -//Config/... \
             -//Init/... \
-            -//KGEN/... \
+            -//Mojo/... \
             -//Support/...
         env:
           BUILDBUDDY_TOKEN: ${{ secrets.BUILDBUDDY_TOKEN }}

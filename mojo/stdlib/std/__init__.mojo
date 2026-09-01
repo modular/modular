@@ -18,4 +18,4 @@ writing Mojo programs, including basic data types like
 [`SIMD`](/docs/std/builtin/simd/SIMD/), collection types like
 [`List`](/docs/std/collections/list/List/), reusable
 [algorithms](/docs/std/algorithm/), and modules to support
-[GPU programming](/docs/std/gpu/)."""
+[GPU programming](https://max.modular.com/api/mojo/max/gpu/)."""

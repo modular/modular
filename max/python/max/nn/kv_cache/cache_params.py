@@ -273,6 +273,19 @@ class KVCacheMemory:
         return self.buffers[0].shape[1]
 
     @property
+    def host_bytes_per_page(self) -> int:
+        """Returns the width of one host block row holding this unit's page.
+
+        A replicated (MLA) unit contributes its stride once -- one copy is
+        stored and broadcast back on load, so counting its peers would double
+        the pinned host allocation. Must match across replicas, so a block
+        written by one is readable by another.
+        """
+        return self.bytes_per_page * (
+            1 if self.replicated else len(self.buffers)
+        )
+
+    @property
     def total_num_pages(self) -> int:
         """Returns the total number of pages (including the null block)."""
         return self.buffers[0].shape[0]

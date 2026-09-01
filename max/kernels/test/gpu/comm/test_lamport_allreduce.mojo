@@ -230,6 +230,7 @@ def lamport_allreduce_test[
                 rank_sigs,
                 lamport_cfg,
                 list_of_ctx[i],
+                i,
             )
         for i in range(ngpus):
             list_of_ctx[i].synchronize()
@@ -429,6 +430,7 @@ def lamport_mixed_size_test[
                     rank_sigs,
                     cfg,
                     list_of_ctx[i],
+                    i,
                 )
             for i in range(ngpus):
                 list_of_ctx[i].synchronize()
@@ -626,6 +628,7 @@ def lamport_coexist_test[
                 rank_sigs,
                 cfg,
                 list_of_ctx[i],
+                i,
             )
         for i in range(ngpus):
             list_of_ctx[i].synchronize()
@@ -800,6 +803,7 @@ def lamport_unsynced_skew_test[
                 rank_sigs,
                 cfg,
                 list_of_ctx[i],
+                i,
             )
         # NO synchronize() here -- ranks are free to drift in `flag`.
 

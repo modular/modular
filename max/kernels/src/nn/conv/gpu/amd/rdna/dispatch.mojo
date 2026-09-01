@@ -24,7 +24,7 @@ Provides two paths for 2-D convolution on RDNA 3+:
 """
 
 from std.math import ceildiv
-from std.gpu import global_idx, WARP_SIZE
+from max.gpu import global_idx, WARP_SIZE
 from max.gpu.host import DeviceContext
 from layout import Coord, Idx, TileTensor, row_major
 from linalg.matmul.gpu import _matmul_gpu

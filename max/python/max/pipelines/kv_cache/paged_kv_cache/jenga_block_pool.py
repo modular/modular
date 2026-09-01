@@ -19,6 +19,7 @@ from functools import reduce
 from math import gcd
 
 from max.support.human_readable_formatter import to_human_readable_bytes
+from max.support.math import ceildiv
 
 from .block_utils import (
     FreeHugeKVCacheBlockQueue,
@@ -35,7 +36,9 @@ def lcm(*numbers: int) -> int:
 
 
 def compute_jenga_ratios(
-    available_bytes: int, cache_sizes: Mapping[str, int]
+    available_bytes: int,
+    cache_sizes: Mapping[str, int],
+    include_null_block: bool = True,
 ) -> tuple[int, int, dict[str, int]]:
     """Fits a byte budget to a huge block geometry every cache tiles exactly.
 
@@ -48,6 +51,7 @@ def compute_jenga_ratios(
     Args:
         available_bytes: The per-device KV budget the pool may occupy.
         cache_sizes: Each cache's page size in bytes.
+        include_null_block: Whether to include the null block.
 
     Returns:
         How many huge blocks the budget holds, size of each huge block in bytes,
@@ -68,11 +72,12 @@ def compute_jenga_ratios(
 
     huge_page_bytes = lcm(*cache_sizes.values())
     num_huge_blocks = available_bytes // huge_page_bytes
-    if num_huge_blocks < 2:
-        pages = ", ".join(
-            f"{cache_id}={to_human_readable_bytes(size)}"
-            for cache_id, size in cache_sizes.items()
-        )
+
+    pages = ", ".join(
+        f"{cache_id}={to_human_readable_bytes(size)}"
+        for cache_id, size in cache_sizes.items()
+    )
+    if include_null_block and num_huge_blocks < 2:
         raise ValueError(
             f"{to_human_readable_bytes(available_bytes)} is too small to "
             f"build a pool. A huge block is the least common multiple of the "
@@ -82,6 +87,15 @@ def compute_jenga_ratios(
             f"{to_human_readable_bytes(2 * huge_page_bytes)} -- because huge "
             f"block 0 is the null page every cache shares."
         )
+    if num_huge_blocks < 1:
+        raise ValueError(
+            f"{to_human_readable_bytes(available_bytes)} is too small to "
+            f"build a pool. A huge block is the least common multiple of the "
+            f"page sizes ({pages}), so it takes "
+            f"{to_human_readable_bytes(huge_page_bytes)}, and the pool needs "
+            f"at least one of them."
+        )
+
     return (
         num_huge_blocks,
         huge_page_bytes,
@@ -408,6 +422,11 @@ class JengaBlockPool:
 
         block.ref_cnt += 1
 
+    def block(self, cache_id: str, bid: int) -> LittleKVCacheBlock:
+        """Returns the little block ``bid`` of ``cache_id``."""
+        # Bid 0 is the null block, so a cache's own blocks start at its ratio.
+        return self.little_blocks[cache_id][bid - self.cache_ratios[cache_id]]
+
     def num_free_blocks(self, cache_id: str) -> int:
         """Returns how many more blocks of ``cache_id`` the pool can still serve."""
         # Parked huge blocks already typed to cache_id contribute nothing
@@ -422,6 +441,38 @@ class JengaBlockPool:
             claimable_huge_blocks * self.cache_ratios[cache_id]
             + num_little_blocks
         )
+
+    def can_satisfy_demand(
+        self, demand: dict[str, int], at_capacity: bool = False
+    ) -> bool:
+        """Returns whether the pool can allocate the demanded number of little blocks.
+
+        ``at_capacity`` asks the same of a pool that has handed nothing out
+        yet, making the answer a property of the pool's geometry rather than
+        of what it currently holds.
+        """
+        if at_capacity:
+            claimable = len(self.huge_blocks)
+            carved: dict[str, int] = dict.fromkeys(demand, 0)
+        else:
+            claimable = len(self.free_huge_blocks) - sum(
+                self._parked_and_typed[cache_id] for cache_id in demand
+            )
+            carved = {
+                cache_id: len(self.free_little_blocks[cache_id])
+                for cache_id in demand
+            }
+        # A huge block is carved for exactly one cache, so the demands compete
+        # for the same claimable huge blocks: each cache's shortfall is
+        # converted at its own ratio and charged against a shared budget.
+        # Asking each cache on its own with num_free_blocks would instead let
+        # every one of them believe it has room while together they overrun
+        # the pool.
+        for cache_id, num_blocks in demand.items():
+            shortfall = num_blocks - carved[cache_id]
+            if shortfall > 0:
+                claimable -= ceildiv(shortfall, self.cache_ratios[cache_id])
+        return claimable >= 0
 
     def reset_prefix_cache(self) -> dict[str, int]:
         """Drops every commit no request is holding, in every cache.

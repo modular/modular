@@ -19,11 +19,11 @@ from std.memory import ThinAllocation, alloc, dealloc
 from std.memory.alloc import Layout as AllocLayout
 from std.sys import align_of, simd_width_of, size_of
 
-import std.gpu.primitives.warp as warp
+import max.gpu.primitives.warp as warp
 from max.algorithm.functional import parallelize_over_rows
 from max.algorithm.reduction import _get_nd_indices_from_flat_index
 from std.bit import log2_floor
-from std.gpu import (
+from max.gpu import (
     WARP_SIZE,
     thread_idx,
     block_dim,
@@ -42,10 +42,10 @@ from layout import (
     Coord,
     CoordLike,
     Idx,
-    PointerStorage,
+    DefaultEngine,
     RowMajorLayout,
     TensorLayout,
-    TensorStorage,
+    TensorEngine,
     TileTensor,
     coord_to_index_list,
     row_major,
@@ -1360,11 +1360,11 @@ def _topk_gpu[
     TopPLayoutType: TensorLayout = RowMajorLayout[Int64],
     MinPLayoutType: TensorLayout = RowMajorLayout[Int64],
     SeedLayoutType: TensorLayout = RowMajorLayout[Int64],
-    KStorageType: TensorStorage = PointerStorage[element_width=1],
-    TemperatureStorageType: TensorStorage = PointerStorage[element_width=1],
-    TopPStorageType: TensorStorage = PointerStorage[element_width=1],
-    MinPStorageType: TensorStorage = PointerStorage[element_width=1],
-    SeedStorageType: TensorStorage = PointerStorage[element_width=1],
+    KEngine: TensorEngine = DefaultEngine[element_width=1],
+    TemperatureEngine: TensorEngine = DefaultEngine[element_width=1],
+    TopPEngine: TensorEngine = DefaultEngine[element_width=1],
+    MinPEngine: TensorEngine = DefaultEngine[element_width=1],
+    SeedEngine: TensorEngine = DefaultEngine[element_width=1],
 ](
     ctx: DeviceContext,
     max_k: Int,
@@ -1374,32 +1374,26 @@ def _topk_gpu[
     out_vals: TileTensor[mut=True, dtype, ...],
     out_idxs: TileTensor[mut=True, out_idx_type, ...],
     k: Optional[
-        TileTensor[.int64, KLayoutType, ImmutAnyOrigin, Storage=KStorageType]
+        TileTensor[.int64, KLayoutType, ImmutAnyOrigin, Engine=KEngine]
     ] = None,
     temperature: Optional[
         TileTensor[
             .float32,
             TemperatureLayoutType,
             ImmutAnyOrigin,
-            Storage=TemperatureStorageType,
+            Engine=TemperatureEngine,
         ]
     ] = None,
     block_size: Int = 256,
     num_blocks_per_input: Optional[Int] = None,
     top_p: Optional[
-        TileTensor[
-            .float32, TopPLayoutType, ImmutAnyOrigin, Storage=TopPStorageType
-        ]
+        TileTensor[.float32, TopPLayoutType, ImmutAnyOrigin, Engine=TopPEngine]
     ] = None,
     min_p: Optional[
-        TileTensor[
-            .float32, MinPLayoutType, ImmutAnyOrigin, Storage=MinPStorageType
-        ]
+        TileTensor[.float32, MinPLayoutType, ImmutAnyOrigin, Engine=MinPEngine]
     ] = None,
     seed: Optional[
-        TileTensor[
-            .uint64, SeedLayoutType, ImmutAnyOrigin, Storage=SeedStorageType
-        ]
+        TileTensor[.uint64, SeedLayoutType, ImmutAnyOrigin, Engine=SeedEngine]
     ] = None,
     valid: Optional[UnsafePointer[Int8, MutAnyOrigin]] = None,
 ) raises:
@@ -1419,11 +1413,11 @@ def _topk_gpu[
         TopPLayoutType: Layout type of the top_p buffer.
         MinPLayoutType: Layout type of the min_p buffer.
         SeedLayoutType: Layout type of the seed buffer.
-        KStorageType: Storage type of the k buffer.
-        TemperatureStorageType: Storage type of the temperature buffer.
-        TopPStorageType: Storage type of the top_p buffer.
-        MinPStorageType: Storage type of the min_p buffer.
-        SeedStorageType: Storage type of the seed buffer.
+        KEngine: Engine of the k buffer.
+        TemperatureEngine: Engine of the temperature buffer.
+        TopPEngine: Engine of the top_p buffer.
+        MinPEngine: Engine of the min_p buffer.
+        SeedEngine: Engine of the seed buffer.
 
     Args:
         ctx: DeviceContext
@@ -1612,11 +1606,11 @@ def topk_gpu[
     TopPLayoutType: TensorLayout = RowMajorLayout[Int64],
     MinPLayoutType: TensorLayout = RowMajorLayout[Int64],
     SeedLayoutType: TensorLayout = RowMajorLayout[Int64],
-    KStorageType: TensorStorage = PointerStorage[element_width=1],
-    TemperatureStorageType: TensorStorage = PointerStorage[element_width=1],
-    TopPStorageType: TensorStorage = PointerStorage[element_width=1],
-    MinPStorageType: TensorStorage = PointerStorage[element_width=1],
-    SeedStorageType: TensorStorage = PointerStorage[element_width=1],
+    KEngine: TensorEngine = DefaultEngine[element_width=1],
+    TemperatureEngine: TensorEngine = DefaultEngine[element_width=1],
+    TopPEngine: TensorEngine = DefaultEngine[element_width=1],
+    MinPEngine: TensorEngine = DefaultEngine[element_width=1],
+    SeedEngine: TensorEngine = DefaultEngine[element_width=1],
 ](
     ctx: DeviceContext,
     max_k: Int,
@@ -1626,30 +1620,24 @@ def topk_gpu[
     block_size: Optional[Int] = None,
     num_blocks_per_input: Optional[Int] = None,
     k: Optional[
-        TileTensor[.int64, KLayoutType, ImmutAnyOrigin, Storage=KStorageType]
+        TileTensor[.int64, KLayoutType, ImmutAnyOrigin, Engine=KEngine]
     ] = None,
     temperature: Optional[
         TileTensor[
             .float32,
             TemperatureLayoutType,
             ImmutAnyOrigin,
-            Storage=TemperatureStorageType,
+            Engine=TemperatureEngine,
         ]
     ] = None,
     top_p: Optional[
-        TileTensor[
-            .float32, TopPLayoutType, ImmutAnyOrigin, Storage=TopPStorageType
-        ]
+        TileTensor[.float32, TopPLayoutType, ImmutAnyOrigin, Engine=TopPEngine]
     ] = None,
     min_p: Optional[
-        TileTensor[
-            .float32, MinPLayoutType, ImmutAnyOrigin, Storage=MinPStorageType
-        ]
+        TileTensor[.float32, MinPLayoutType, ImmutAnyOrigin, Engine=MinPEngine]
     ] = None,
     seed: Optional[
-        TileTensor[
-            .uint64, SeedLayoutType, ImmutAnyOrigin, Storage=SeedStorageType
-        ]
+        TileTensor[.uint64, SeedLayoutType, ImmutAnyOrigin, Engine=SeedEngine]
     ] = None,
     valid: Optional[UnsafePointer[Int8, MutAnyOrigin]] = None,
 ) raises:
@@ -1668,11 +1656,11 @@ def topk_gpu[
         TopPLayoutType: Layout type of the top_p buffer.
         MinPLayoutType: Layout type of the min_p buffer.
         SeedLayoutType: Layout type of the seed buffer.
-        KStorageType: Storage type of the k buffer.
-        TemperatureStorageType: Storage type of the temperature buffer.
-        TopPStorageType: Storage type of the top_p buffer.
-        MinPStorageType: Storage type of the min_p buffer.
-        SeedStorageType: Storage type of the seed buffer.
+        KEngine: Engine of the k buffer.
+        TemperatureEngine: Engine of the temperature buffer.
+        TopPEngine: Engine of the top_p buffer.
+        MinPEngine: Engine of the min_p buffer.
+        SeedEngine: Engine of the seed buffer.
 
     Args:
         ctx: DeviceContext
@@ -1757,7 +1745,7 @@ def topk_gpu[
             ],
             input.origin,
             address_space=input.address_space,
-            Storage=input.Storage,
+            Engine=input.Engine,
         ]
         var internal_out_idxs: TileTensor[
             out_idx_type,
@@ -1767,7 +1755,7 @@ def topk_gpu[
             ],
             out_idxs.origin,
             address_space=out_idxs.address_space,
-            Storage=out_idxs.Storage,
+            Engine=out_idxs.Engine,
         ]
         var internal_out_vals: TileTensor[
             dtype,
@@ -1777,7 +1765,7 @@ def topk_gpu[
             ],
             out_vals.origin,
             address_space=out_vals.address_space,
-            Storage=out_vals.Storage,
+            Engine=out_vals.Engine,
         ]
 
         comptime if input.rank == 1:
@@ -1922,11 +1910,11 @@ def _topk_topp_sampling_fi[
     TopPLayoutType: TensorLayout = RowMajorLayout[Int64],
     MinPLayoutType: TensorLayout = RowMajorLayout[Int64],
     SeedLayoutType: TensorLayout = RowMajorLayout[Int64],
-    KStorageType: TensorStorage = PointerStorage[element_width=1],
-    TemperatureStorageType: TensorStorage = PointerStorage[element_width=1],
-    TopPStorageType: TensorStorage = PointerStorage[element_width=1],
-    MinPStorageType: TensorStorage = PointerStorage[element_width=1],
-    SeedStorageType: TensorStorage = PointerStorage[element_width=1],
+    KEngine: TensorEngine = DefaultEngine[element_width=1],
+    TemperatureEngine: TensorEngine = DefaultEngine[element_width=1],
+    TopPEngine: TensorEngine = DefaultEngine[element_width=1],
+    MinPEngine: TensorEngine = DefaultEngine[element_width=1],
+    SeedEngine: TensorEngine = DefaultEngine[element_width=1],
 ](
     ctx: DeviceContext,
     max_k: Int,
@@ -1934,32 +1922,24 @@ def _topk_topp_sampling_fi[
     input: TileTensor[mut=False, dtype, ...],
     out_idxs: TileTensor[mut=True, out_idx_type, ...],
     k: Optional[
-        TileTensor[
-            out_idx_type, KLayoutType, ImmutAnyOrigin, Storage=KStorageType
-        ]
+        TileTensor[out_idx_type, KLayoutType, ImmutAnyOrigin, Engine=KEngine]
     ] = None,
     temperature: Optional[
         TileTensor[
             .float32,
             TemperatureLayoutType,
             ImmutAnyOrigin,
-            Storage=TemperatureStorageType,
+            Engine=TemperatureEngine,
         ]
     ] = None,
     top_p: Optional[
-        TileTensor[
-            .float32, TopPLayoutType, ImmutAnyOrigin, Storage=TopPStorageType
-        ]
+        TileTensor[.float32, TopPLayoutType, ImmutAnyOrigin, Engine=TopPEngine]
     ] = None,
     min_p: Optional[
-        TileTensor[
-            .float32, MinPLayoutType, ImmutAnyOrigin, Storage=MinPStorageType
-        ]
+        TileTensor[.float32, MinPLayoutType, ImmutAnyOrigin, Engine=MinPEngine]
     ] = None,
     rng_seed: Optional[
-        TileTensor[
-            .uint64, SeedLayoutType, ImmutAnyOrigin, Storage=SeedStorageType
-        ]
+        TileTensor[.uint64, SeedLayoutType, ImmutAnyOrigin, Engine=SeedEngine]
     ] = None,
 ) raises:
     """Top-K + top-P + min-P sampling.
@@ -1999,11 +1979,11 @@ def fused_token_sampling_gpu[
     TopPLayoutType: TensorLayout = RowMajorLayout[Int64],
     MinPLayoutType: TensorLayout = RowMajorLayout[Int64],
     SeedLayoutType: TensorLayout = RowMajorLayout[Int64],
-    KStorageType: TensorStorage = PointerStorage[element_width=1],
-    TemperatureStorageType: TensorStorage = PointerStorage[element_width=1],
-    TopPStorageType: TensorStorage = PointerStorage[element_width=1],
-    MinPStorageType: TensorStorage = PointerStorage[element_width=1],
-    SeedStorageType: TensorStorage = PointerStorage[element_width=1],
+    KEngine: TensorEngine = DefaultEngine[element_width=1],
+    TemperatureEngine: TensorEngine = DefaultEngine[element_width=1],
+    TopPEngine: TensorEngine = DefaultEngine[element_width=1],
+    MinPEngine: TensorEngine = DefaultEngine[element_width=1],
+    SeedEngine: TensorEngine = DefaultEngine[element_width=1],
 ](
     ctx: DeviceContext,
     max_k: Int,
@@ -2013,30 +1993,24 @@ def fused_token_sampling_gpu[
     block_size: Optional[Int] = None,
     num_blocks_per_input: Optional[Int] = None,
     k: Optional[
-        TileTensor[.int64, KLayoutType, ImmutAnyOrigin, Storage=KStorageType]
+        TileTensor[.int64, KLayoutType, ImmutAnyOrigin, Engine=KEngine]
     ] = None,
     temperature: Optional[
         TileTensor[
             .float32,
             TemperatureLayoutType,
             ImmutAnyOrigin,
-            Storage=TemperatureStorageType,
+            Engine=TemperatureEngine,
         ]
     ] = None,
     top_p: Optional[
-        TileTensor[
-            .float32, TopPLayoutType, ImmutAnyOrigin, Storage=TopPStorageType
-        ]
+        TileTensor[.float32, TopPLayoutType, ImmutAnyOrigin, Engine=TopPEngine]
     ] = None,
     min_p: Optional[
-        TileTensor[
-            .float32, MinPLayoutType, ImmutAnyOrigin, Storage=MinPStorageType
-        ]
+        TileTensor[.float32, MinPLayoutType, ImmutAnyOrigin, Engine=MinPEngine]
     ] = None,
     seed: Optional[
-        TileTensor[
-            .uint64, SeedLayoutType, ImmutAnyOrigin, Storage=SeedStorageType
-        ]
+        TileTensor[.uint64, SeedLayoutType, ImmutAnyOrigin, Engine=SeedEngine]
     ] = None,
 ) raises:
     """
@@ -2100,7 +2074,7 @@ def fused_token_sampling_gpu[
                             out_idx_type,
                             KLayoutType,
                             ImmutAnyOrigin,
-                            Storage=KStorageType,
+                            Engine=KEngine,
                         ]
                     ]
                 ](k),
@@ -2314,18 +2288,18 @@ def _gumbel_argmax_fused_kernel[
     InputLayoutType: TensorLayout,
     OutIdxLayoutType: TensorLayout,
     from_probs: Bool = False,
-    InputStorageType: TensorStorage = PointerStorage[element_width=1],
-    OutIdxStorageType: TensorStorage = PointerStorage[element_width=1],
+    InputEngine: TensorEngine = DefaultEngine[element_width=1],
+    OutIdxEngine: TensorEngine = DefaultEngine[element_width=1],
 ](
     input: TileTensor[
-        dtype, InputLayoutType, ImmutAnyOrigin, Storage=InputStorageType
+        dtype, InputLayoutType, ImmutAnyOrigin, Engine=InputEngine
     ],
     out_idxs: TileTensor[
         mut=True,
         out_idx_type,
         OutIdxLayoutType,
         MutAnyOrigin,
-        Storage=OutIdxStorageType,
+        Engine=OutIdxEngine,
     ],
     temperature: Optional[UnsafePointer[Float32, ImmutAnyOrigin]],
     seed: Optional[UnsafePointer[UInt64, ImmutAnyOrigin]],
@@ -2351,8 +2325,8 @@ def _gumbel_argmax_fused_kernel[
         InputLayoutType: Layout of the `[batch, vocab]` input.
         OutIdxLayoutType: Layout of the `[batch, 1]` output indices.
         from_probs: Treat the input as unnormalized probabilities.
-        InputStorageType: Storage policy of the `[batch, vocab]` input.
-        OutIdxStorageType: Storage policy of the `[batch, 1]` output indices.
+        InputEngine: Engine of the `[batch, vocab]` input.
+        OutIdxEngine: Engine of the `[batch, 1]` output indices.
 
     Args:
         input: Input logits `[batch, vocab]`.
@@ -2469,8 +2443,8 @@ def gumbel_sampling_fused_gpu[
     TemperatureLayoutType: TensorLayout = RowMajorLayout[Int64],
     SeedLayoutType: TensorLayout = RowMajorLayout[Int64],
     from_probs: Bool = False,
-    TemperatureStorageType: TensorStorage = PointerStorage[element_width=1],
-    SeedStorageType: TensorStorage = PointerStorage[element_width=1],
+    TemperatureEngine: TensorEngine = DefaultEngine[element_width=1],
+    SeedEngine: TensorEngine = DefaultEngine[element_width=1],
 ](
     ctx: DeviceContext,
     input: TileTensor[mut=False, dtype, ...],
@@ -2480,13 +2454,11 @@ def gumbel_sampling_fused_gpu[
             .float32,
             TemperatureLayoutType,
             ImmutAnyOrigin,
-            Storage=TemperatureStorageType,
+            Engine=TemperatureEngine,
         ]
     ] = None,
     seed: Optional[
-        TileTensor[
-            .uint64, SeedLayoutType, ImmutAnyOrigin, Storage=SeedStorageType
-        ]
+        TileTensor[.uint64, SeedLayoutType, ImmutAnyOrigin, Engine=SeedEngine]
     ] = None,
 ) raises:
     """
@@ -2539,8 +2511,8 @@ def gumbel_sampling_fused_gpu[
             input.LayoutType,
             out_idxs.LayoutType,
             from_probs=from_probs,
-            InputStorageType=input.Storage,
-            OutIdxStorageType=out_idxs.Storage,
+            InputEngine=input.Engine,
+            OutIdxEngine=out_idxs.Engine,
         ]
 
         var temperature_ptr: Optional[
@@ -2570,8 +2542,8 @@ def gumbel_sampling_gpu[
     //,
     TemperatureLayoutType: TensorLayout = RowMajorLayout[Int64],
     SeedLayoutType: TensorLayout = RowMajorLayout[Int64],
-    TemperatureStorageType: TensorStorage = PointerStorage[element_width=1],
-    SeedStorageType: TensorStorage = PointerStorage[element_width=1],
+    TemperatureEngine: TensorEngine = DefaultEngine[element_width=1],
+    SeedEngine: TensorEngine = DefaultEngine[element_width=1],
 ](
     ctx: DeviceContext,
     input: TileTensor[mut=False, dtype, ...],
@@ -2581,13 +2553,11 @@ def gumbel_sampling_gpu[
             .float32,
             TemperatureLayoutType,
             ImmutAnyOrigin,
-            Storage=TemperatureStorageType,
+            Engine=TemperatureEngine,
         ]
     ] = None,
     seed: Optional[
-        TileTensor[
-            .uint64, SeedLayoutType, ImmutAnyOrigin, Storage=SeedStorageType
-        ]
+        TileTensor[.uint64, SeedLayoutType, ImmutAnyOrigin, Engine=SeedEngine]
     ] = None,
 ) raises:
     """

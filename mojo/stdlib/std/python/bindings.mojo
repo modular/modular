@@ -26,6 +26,7 @@ from std.sys.info import size_of
 from std.collections import StringDict
 
 from std.builtin._startup import _ensure_runtime_init
+from std.builtin.variadics import _call_with_dynamic_pack_pointers
 from std.reflection import reflect
 from std.memory import OpaquePointer, unsafe_stack_allocation
 from std.python import Python, PythonObject
@@ -44,7 +45,6 @@ from std.python._cpython import (
     PyTypeObject,
     PyTypeObjectPtr,
 )
-from std.python._python_func import PyObjectFunction
 from std.python.python_object import _unsafe_alloc, _unsafe_init
 
 from std.utils import Variant
@@ -452,13 +452,19 @@ struct PythonModuleBuilder:
         )
 
     def def_function[
-        func_type: TrivialRegisterPassable,
+        PyArgs: TypeList[Trait=type_of(PythonObject), ...],
+        RetType: Deinitable & Movable,
         //,
-        func: PyObjectFunction[func_type, has_kwargs=_],
-    ](mut self, func_name: StaticString, docstring: StaticString = ""):
+        func: def(
+            * args: * PyArgs, var ** kwargs: PythonObject
+        ) raises thin -> RetType,
+    ](mut self, func_name: StaticString, docstring: StaticString = "") where (
+        RetType == PythonObject or RetType == type_of(None),
+        "function return type must be PythonObject or None",
+    ):
         """Declare a binding for a module-level function.
 
-        Accepts functions with PythonObject arguments (up to 8), can optionally
+        Accepts functions with PythonObject arguments, can optionally
         return a PythonObject, and can raise. Functions can also accept keyword
         arguments via `var **kwargs: PythonObject`.
 
@@ -477,35 +483,39 @@ struct PythonModuleBuilder:
         ```
 
         Parameters:
-            func_type: The type of the function to declare a binding for (inferred).
-            func: The function to declare a binding for. Users can pass their
-                function directly, and it will be implicitly converted to a
-                PyObjectFunction if and only if its signature is supported.
+            func: The function to declare a binding for.
 
         Args:
             func_name: The name with which the function will be exposed in the
                 module.
             docstring: The docstring for the function in the module.
         """
-        comptime if func.has_kwargs:
-            # Keyword-accepting functions still go through the
-            # `METH_VARARGS | METH_KEYWORDS` dispatch path. The
-            # corresponding `METH_FASTCALL | METH_KEYWORDS` protocol (with
-            # `kwnames`) is a separate vectorcall shape and is not
-            # implemented here yet.
-            self._generic_def_py_function[_py_kwargs_function_wrapper[func]()](
-                func_name, docstring
-            )
-        else:
-            # Non-kwargs functions register directly as `METH_FASTCALL`,
-            # so CPython never packs the positional arguments into a
-            # tuple and we read them straight out of the `PyObject *const*`
-            # array via `_dispatch_fast`.
-            self.def_py_c_function(
-                _py_function_fastcall_wrapper[func](),
-                func_name,
-                docstring,
-            )
+        # Keyword-accepting functions still go through the
+        # `METH_VARARGS | METH_KEYWORDS` dispatch path. The
+        # corresponding `METH_FASTCALL | METH_KEYWORDS` protocol (with
+        # `kwnames`) is a separate vectorcall shape and is not
+        # implemented here yet.
+        self._generic_def_py_function[_py_kwargs_function_wrapper[func]()](
+            func_name, docstring
+        )
+
+    # Hidden overload that supports functions with non-kwargs signatures. Avoids
+    # repeating the full docstring for a minor implementation detail.
+    @doc_hidden
+    def def_function[
+        PyArgs: TypeList[Trait=type_of(PythonObject), ...],
+        RetType: Deinitable & Movable,
+        //,
+        func: def(* args: * PyArgs) raises thin -> RetType,
+    ](mut self, func_name: StaticString, docstring: StaticString = "") where (
+        RetType == PythonObject or RetType == type_of(None),
+        "function return type must be PythonObject or None",
+    ):
+        self.def_py_c_function(
+            _py_function_fastcall_wrapper[func],
+            func_name,
+            docstring,
+        )
 
     def finalize(mut self) raises -> PythonObject:
         """Finalize the module builder, creating the module object.
@@ -946,18 +956,26 @@ struct PythonTypeBuilder(Copyable):
         )
 
     def def_method[
-        method_type: TrivialRegisterPassable,
+        SelfType: Deinitable,
+        PyArgs: TypeList[Trait=type_of(PythonObject), ...],
+        RetType: Deinitable & Movable,
         //,
-        method: PyObjectFunction[method_type, self_type=_, has_kwargs=_],
+        method: def(
+            self_: Pointer[SelfType, MutUnsafeAnyOrigin], * args: * PyArgs,
+            var ** kwargs: PythonObject,
+        ) raises thin -> RetType,
     ](
         mut self: Self,
         method_name: StaticString,
         docstring: StaticString = "",
-    ) -> ref[self] Self:
-        """Declare a binding for a method that receives self as PythonObject.
+    ) -> ref[self] Self where (
+        RetType == PythonObject or RetType == type_of(None),
+        "function return type must be PythonObject or None",
+    ):
+        """Declares a binding for a method with an automatically downcast self.
 
-        Use this when you need generic Python object access. For direct access to the wrapped
-        Mojo self type, use the typed self `def_method` overload instead.
+        The method receives a pointer to the wrapped Mojo value. Methods that
+        need generic Python object access can receive `PythonObject` instead.
 
         Non-kwargs methods register through CPython's `METH_FASTCALL`
         calling convention; kwargs-accepting methods use
@@ -967,15 +985,18 @@ struct PythonTypeBuilder(Copyable):
         ```mojo
         from std.python import PythonObject
 
-        def method(mut self: PythonObject) -> PythonObject: ...
-        def method(mut self: PythonObject, arg1: PythonObject) raises: ...
+        def method(
+            self: Pointer[Self, MutUnsafeAnyOrigin],
+            arg: PythonObject,
+            var **kwargs: PythonObject,
+        ) raises -> PythonObject: ...
         ```
 
         Parameters:
-            method_type: The type of the method to declare a binding for.
-            method: The method to declare a binding for. Users can pass their
-                function directly, and it will be implicitly converted to a
-                PyObjectFunction if and only if its signature is supported.
+            SelfType: The wrapped Mojo self type.
+            PyArgs: The method's positional Python argument types.
+            RetType: The method's return type.
+            method: The method to declare a binding for.
 
         Args:
             method_name: The name with which the method will be exposed on the
@@ -985,31 +1006,102 @@ struct PythonTypeBuilder(Copyable):
         Returns:
             The builder with the method binding declared.
         """
-        comptime if method.has_kwargs:
-            return self._generic_def_py_method[
-                _py_kwargs_function_wrapper[method, is_method=True](),
-                static_method=False,
-            ](method_name, docstring)
-        else:
-            return self.def_py_c_method[static_method=False](
-                _py_function_fastcall_wrapper[method, is_method=True](),
-                method_name,
-                docstring,
-            )
+        return self._generic_def_py_method[
+            _py_kwargs_method_wrapper[method](),
+            static_method=False,
+        ](method_name, docstring)
+
+    # Hidden overload to support slightly different signatures. Avoids
+    # repeating the full docstring for a minor implementation detail.
+    @doc_hidden
+    def def_method[
+        PyArgs: TypeList[Trait=type_of(PythonObject), ...],
+        RetType: Deinitable & Movable,
+        //,
+        method: def(
+            self_: PythonObject, * args: * PyArgs, var ** kwargs: PythonObject
+        ) raises thin -> RetType,
+    ](
+        mut self: Self,
+        method_name: StaticString,
+        docstring: StaticString = "",
+    ) -> ref[self] Self where (
+        RetType == PythonObject or RetType == type_of(None),
+        "function return type must be PythonObject or None",
+    ):
+        return self._generic_def_py_method[
+            _py_kwargs_method_wrapper[method](),
+            static_method=False,
+        ](method_name, docstring)
+
+    # Hidden overload to support slightly different signatures. Avoids
+    # repeating the full docstring for a minor implementation detail.
+    @doc_hidden
+    def def_method[
+        SelfType: Deinitable,
+        PyArgs: TypeList[Trait=type_of(PythonObject), ...],
+        RetType: Deinitable & Movable,
+        //,
+        method: def(
+            self_: Pointer[SelfType, MutUnsafeAnyOrigin], * args: * PyArgs
+        ) raises thin -> RetType,
+    ](
+        mut self: Self,
+        method_name: StaticString,
+        docstring: StaticString = "",
+    ) -> ref[self] Self where (
+        RetType == PythonObject or RetType == type_of(None),
+        "function return type must be PythonObject or None",
+    ):
+        return self.def_py_c_method[static_method=False](
+            _py_method_typed_fastcall_wrapper[method],
+            method_name,
+            docstring,
+        )
+
+    # Hidden overload to support slightly different signatures. Avoids
+    # repeating the full docstring for a minor implementation detail.
+    @doc_hidden
+    def def_method[
+        PyArgs: TypeList[Trait=type_of(PythonObject), ...],
+        RetType: Deinitable & Movable,
+        //,
+        method: def(
+            self_: PythonObject, * args: * PyArgs
+        ) raises thin -> RetType,
+    ](
+        mut self: Self,
+        method_name: StaticString,
+        docstring: StaticString = "",
+    ) -> ref[self] Self where (
+        RetType == PythonObject or RetType == type_of(None),
+        "function return type must be PythonObject or None",
+    ):
+        return self.def_py_c_method[static_method=False](
+            _py_method_fastcall_wrapper[method],
+            method_name,
+            docstring,
+        )
 
     def def_staticmethod[
-        method_type: TrivialRegisterPassable,
+        PyArgs: TypeList[Trait=type_of(PythonObject), ...],
+        RetType: Deinitable & Movable,
         //,
-        method: PyObjectFunction[method_type, has_kwargs=_],
+        method: def(
+            * args: * PyArgs, var ** kwargs: PythonObject
+        ) raises thin -> RetType,
     ](
         mut self: Self,
         method_name: StaticString,
         docstring: StaticString = StaticString(),
-    ) -> ref[self] Self:
-        """Declare a binding for a static method (no self parameter).
+    ) -> ref[self] Self where (
+        RetType == PythonObject or RetType == type_of(None),
+        "function return type must be PythonObject or None",
+    ):
+        """Declares a binding for a static method with optional keyword arguments.
 
-        Accepts functions with PythonObject arguments (up to 8), can optionally
-        return a PythonObject, and can raise.
+        Accepts methods with `PythonObject` positional and keyword arguments.
+        The method can return a `PythonObject` or `None`, and can raise.
 
         Non-kwargs static methods register through CPython's `METH_FASTCALL`
         calling convention; kwargs-accepting static methods use
@@ -1021,13 +1113,13 @@ struct PythonTypeBuilder(Copyable):
 
         def static_method(arg1: PythonObject) -> PythonObject: ...
         def static_method(arg1: PythonObject, arg2: PythonObject) raises: ...
+        def static_method(
+            arg: PythonObject, var **kwargs: PythonObject
+        ) raises -> PythonObject: ...
         ```
 
         Parameters:
-            method_type: The type of the method to declare a binding for (inferred).
-            method: The method to declare a binding for. Users can pass their
-                function directly, and it will be implicitly converted to a
-                PyObjectFunction if and only if its signature is supported.
+            method: The static method to declare a binding for.
 
         Args:
             method_name: The name with which the method will be exposed on the
@@ -1037,16 +1129,31 @@ struct PythonTypeBuilder(Copyable):
         Returns:
             The builder with the method binding declared.
         """
-        comptime if method.has_kwargs:
-            return self._generic_def_py_method[
-                _py_kwargs_function_wrapper[method](), static_method=True
-            ](method_name, docstring)
-        else:
-            return self.def_py_c_method[static_method=True](
-                _py_function_fastcall_wrapper[method](),
-                method_name,
-                docstring,
-            )
+        return self._generic_def_py_method[
+            _py_kwargs_function_wrapper[method](), static_method=True
+        ](method_name, docstring)
+
+    # Hidden overload that supports functions with non-kwargs signatures. Avoids
+    # repeating the full docstring for a minor implementation detail.
+    @doc_hidden
+    def def_staticmethod[
+        PyArgs: TypeList[Trait=type_of(PythonObject), ...],
+        RetType: Deinitable & Movable,
+        //,
+        method: def(* args: * PyArgs) raises thin -> RetType,
+    ](
+        mut self: Self,
+        method_name: StaticString,
+        docstring: StaticString = StaticString(),
+    ) -> ref[self] Self where (
+        RetType == PythonObject or RetType == type_of(None),
+        "function return type must be PythonObject or None",
+    ):
+        return self.def_py_c_method[static_method=True](
+            _py_function_fastcall_wrapper[method],
+            method_name,
+            docstring,
+        )
 
 
 # ===-----------------------------------------------------------------------===#
@@ -1302,24 +1409,19 @@ def _convert_kwargs(
 
 @always_inline
 def _py_kwargs_function_wrapper[
-    method_type: TrivialRegisterPassable,
-    self_type: Deinitable,
+    PyArgs: TypeList[Trait=type_of(PythonObject), ...],
+    RetType: Deinitable & Movable,
     //,
-    # TODO(MOCO-4568): Use `has_kwargs=True` here instead of a `where` clause
-    func: PyObjectFunction[method_type, self_type, has_kwargs=_],
-    *,
-    is_method: Bool = False,
-]() -> GenericPyFunction where (
-    func.has_kwargs,
-    "non-kwargs functions should use _py_function_fastcall_wrapper",
-):
-    """Converts a kwargs-accepting PyObjectFunction to a GenericPyFunction.
+    func: def(
+        * args: * PyArgs, var ** kwargs: PythonObject
+    ) raises thin -> RetType,
+]() -> GenericPyFunction:
+    """Converts a kwargs-accepting user signature to a GenericPyFunction.
 
     Wraps the user's function in a `METH_VARARGS | METH_KEYWORDS` dispatch
     shim. Non-kwargs callables go through `_py_function_fastcall_wrapper`
     (METH_FASTCALL) instead.
     """
-    comptime FuncT = type_of(func)
 
     @always_inline
     def wrapper_with_kwargs(
@@ -1327,9 +1429,54 @@ def _py_kwargs_function_wrapper[
         mut py_args: PythonObject,
         mut py_kwargs: PythonObject,
     ) raises -> PythonObject:
-        var kwargs = _convert_kwargs(py_kwargs)
-        return FuncT._dispatch_kwargs[is_method](
-            func._func, py_self, py_args, **kwargs^
+        _ = py_self
+        return _dispatch_python_object_kwargs_function[func](py_args, py_kwargs)
+
+    return GenericPyFunction(wrapper_with_kwargs)
+
+
+@always_inline
+def _py_kwargs_method_wrapper[
+    SelfType: Deinitable,
+    PyArgs: TypeList[Trait=type_of(PythonObject), ...],
+    RetType: Deinitable & Movable,
+    //,
+    method: def(
+        self_: Pointer[SelfType, MutUnsafeAnyOrigin], * args: * PyArgs,
+        var ** kwargs: PythonObject,
+    ) raises thin -> RetType,
+]() -> GenericPyFunction:
+    @always_inline
+    def wrapper_with_kwargs(
+        mut py_self: PythonObject,
+        mut py_args: PythonObject,
+        mut py_kwargs: PythonObject,
+    ) raises -> PythonObject:
+        var self_ptr = py_self.downcast_value_ptr[SelfType]()
+        return _dispatch_python_object_kwargs_method[method](
+            self_ptr, py_args, py_kwargs
+        )
+
+    return GenericPyFunction(wrapper_with_kwargs)
+
+
+@always_inline
+def _py_kwargs_method_wrapper[
+    PyArgs: TypeList[Trait=type_of(PythonObject), ...],
+    RetType: Deinitable & Movable,
+    //,
+    method: def(
+        self_: PythonObject, * args: * PyArgs, var ** kwargs: PythonObject
+    ) raises thin -> RetType,
+]() -> GenericPyFunction:
+    @always_inline
+    def wrapper_with_kwargs(
+        mut py_self: PythonObject,
+        mut py_args: PythonObject,
+        mut py_kwargs: PythonObject,
+    ) raises -> PythonObject:
+        return _dispatch_python_object_kwargs_method[method](
+            py_self, py_args, py_kwargs
         )
 
     return GenericPyFunction(wrapper_with_kwargs)
@@ -1342,66 +1489,291 @@ def _py_kwargs_function_wrapper[
 
 @always_inline
 def _py_function_fastcall_wrapper[
-    method_type: TrivialRegisterPassable,
-    self_type: Deinitable,
+    PyArgs: TypeList[Trait=type_of(PythonObject), ...],
+    RetType: Deinitable & Movable,
     //,
-    # TODO(MOCO-4568): Use `has_kwargs=False` here instead of a `where` clause
-    func: PyObjectFunction[method_type, self_type, has_kwargs=_],
-    *,
-    is_method: Bool = False,
-]() -> PyCFunctionFast where (
-    not func.has_kwargs,
-    "fastcall wrapper requires a non-kwargs function",
-):
-    """Build a `METH_FASTCALL`-shaped wrapper around a non-kwargs
-    `PyObjectFunction`.
+    func: def(* args: * PyArgs) raises thin -> RetType,
+](
+    py_self_ptr: PyObjectPtr,
+    args: Pointer[PyObjectPtr, MutUntrackedOrigin],
+    nargs: Py_ssize_t,
+) abi("C") -> PyObjectPtr:
+    """Build a `METH_FASTCALL`-shaped wrapper around a non-kwargs user Python
+    function.
 
     CPython will invoke the returned wrapper through the `PyCFunctionFast`
     calling convention: `self` is a borrowed `PyObject*`, `args` is a
     borrowed C array of `PyObject*` of length `nargs`, and no tuple is
     ever constructed for the positional arguments. The wrapper forwards
-    `args` directly to `PyObjectFunction._dispatch_fast`, which reads
+    `args` directly to `_dispatch_python_object_function`, which reads
     `args[i]` without going through the tuple-mapping protocol.
     Exceptions raised by the user function are translated into Python
     exceptions and signaled by returning a NULL `PyObject*`.
 
     Parameters:
-        method_type: Inferred from `func`.
-        self_type: Inferred from `func`.
         func: The wrapped Mojo function being registered with the module
             or type.
-        is_method: Whether the wrapper is being installed as a method
-            (consumes `py_self` as the receiver) vs a free function
-            (`py_self` is the module).
 
     Returns:
         A function value of type `PyCFunctionFast` suitable for passing to
         `PyMethodDef.function` for `METH_FASTCALL` registration.
     """
-    comptime FuncT = type_of(func)
 
-    @always_inline
-    def fastcall(
-        py_self_ptr: PyObjectPtr,
-        args: Pointer[PyObjectPtr, MutUntrackedOrigin],
-        nargs: Py_ssize_t,
-    ) abi("C") -> PyObjectPtr:
-        var py_self = PythonObject(from_borrowed=py_self_ptr)
+    _ = py_self_ptr
 
+    try:
         # CPython's vectorcall protocol (PEP 590) guarantees `args` is
         # non-null for every METH_FASTCALL invocation, including the
         # `nargs == 0` case (CPython hands the callee a pointer into a
         # cached empty tuple). `_dispatch_fast` therefore accepts a plain
         # `Pointer` rather than `OptionalPointer`.
-        try:
-            return FuncT._dispatch_fast[is_method](
-                func._func, py_self, args, Int(nargs)
-            ).steal_data()
-        except e:
-            # Return a NULL `PyObject*`, with the Python error indicator set.
-            return raise_python_exception(e)
+        return _dispatch_python_object_function[func](
+            args, Int(nargs)
+        ).steal_data()
+    except e:
+        # Return a NULL `PyObject*`, with the Python error indicator set.
+        return raise_python_exception(e)
 
-    return fastcall
+
+@always_inline
+def _py_method_typed_fastcall_wrapper[
+    SelfType: Deinitable,
+    PyArgs: TypeList[Trait=type_of(PythonObject), ...],
+    RetType: Deinitable & Movable,
+    //,
+    method: def(
+        self_: Pointer[SelfType, MutUnsafeAnyOrigin], * args: * PyArgs
+    ) raises thin -> RetType,
+](
+    py_self_ptr: PyObjectPtr,
+    args: Pointer[PyObjectPtr, MutUntrackedOrigin],
+    nargs: Py_ssize_t,
+) abi("C") -> PyObjectPtr:
+    try:
+        var py_self = PythonObject(from_borrowed=py_self_ptr)
+        var self_ptr = py_self.downcast_value_ptr[SelfType]()
+        return _dispatch_python_object_method[method](
+            self_ptr, args, Int(nargs)
+        ).steal_data()
+    except e:
+        return raise_python_exception(e)
+
+
+@always_inline
+def _py_method_fastcall_wrapper[
+    PyArgs: TypeList[Trait=type_of(PythonObject), ...],
+    RetType: Deinitable & Movable,
+    //,
+    method: def(self_: PythonObject, * args: * PyArgs) raises thin -> RetType,
+](
+    py_self_ptr: PyObjectPtr,
+    args: Pointer[PyObjectPtr, MutUntrackedOrigin],
+    nargs: Py_ssize_t,
+) abi("C") -> PyObjectPtr:
+    try:
+        var py_self = PythonObject(from_borrowed=py_self_ptr)
+        return _dispatch_python_object_method[method](
+            py_self, args, Int(nargs)
+        ).steal_data()
+    except e:
+        return raise_python_exception(e)
+
+
+# ===-----------------------------------------------------------------------===#
+# VariadicPack PythonObject function calling wrappers
+# ===-----------------------------------------------------------------------===#
+#
+# Using variadics and return type generics, we can effectively support calling
+# user functions of any arity and either `-> None` or `-> PythonObject` return
+# type. However, in Mojo today we can't easily abstract over:
+#
+#   1) presence of a trailing `**kwargs` argument
+#   2) leading method `SelfArg` type, which may or may not be `PythonObject`
+#
+# The four function "shapes" that we can't currently abstract over:
+#
+#     def(*args: *PyArgs) raises thin -> RetType
+#     def(*args: *PyArgs, var **kwargs: PythonObject) raises thin -> RetType
+#     def(self_: SelfArg, *args: *PyArgs) raises thin -> RetType
+#     def(self_: SelfArg, *args: *PyArgs, var **kwargs: PythonObject) raises thin -> RetType,
+#
+# are each handled by a dedicated dispatcher below.
+
+
+@always_inline("nodebug")
+def _dispatch_python_object_function[
+    PyArgs: TypeList[Trait=type_of(PythonObject), ...],
+    RetType: Deinitable & Movable,
+    //,
+    func: def(* args: * PyArgs) raises thin -> RetType,
+](
+    args: Pointer[PyObjectPtr, MutUntrackedOrigin],
+    nargs: Int,
+) raises -> PythonObject:
+    check_arguments_arity(PyArgs.length, nargs)
+
+    def get_arg_ptr[
+        idx: Int
+    ]() {args} -> Pointer[PyArgs[idx], MutUnsafeAnyOrigin]:
+        var p: Pointer[PyObjectPtr, _] = Pointer(to=args[unsafe_offset=idx])
+        return rebind_var[Pointer[PyArgs[idx], MutUnsafeAnyOrigin]](
+            p.unsafe_bitcast[PythonObject]().as_unsafe_any_origin()
+        )
+
+    var result = _call_with_dynamic_pack_pointers[
+        ArgTrait=type_of(PythonObject), func
+    ](get_arg_ptr)
+
+    return _return_python_object(result^)
+
+
+@always_inline("nodebug")
+def _dispatch_python_object_method[
+    SelfArg: Deinitable,
+    PyArgs: TypeList[Trait=type_of(PythonObject), ...],
+    RetType: Deinitable & Movable,
+    //,
+    method: def(self_: SelfArg, * args: * PyArgs) raises thin -> RetType,
+](
+    self_arg: SelfArg,
+    args: Pointer[PyObjectPtr, MutUntrackedOrigin],
+    nargs: Int,
+) raises -> PythonObject:
+    check_arguments_arity(PyArgs.length, nargs)
+
+    comptime ToPointer[
+        T: type_of(PythonObject)
+    ]: ImplicitlyCopyable & Deinitable = Pointer[T, MutUnsafeAnyOrigin]
+    var pointers: Tuple[*PyArgs.map[ToPointer]()]
+    __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(pointers))
+    comptime for i in range(PyArgs.length):
+        var p: Pointer[PyObjectPtr, _] = Pointer(to=args[unsafe_offset=i])
+        pointers[i] = rebind[type_of(pointers[i])](
+            p.unsafe_bitcast[PythonObject]().as_unsafe_any_origin()
+        )
+
+    comptime BorrowedPack = VariadicPack[
+        origin=MutUnsafeAnyOrigin,
+        element_trait=type_of(PythonObject),
+        False,
+        *PyArgs,
+    ]
+    var borrowed = BorrowedPack(
+        __mlir_op.`lit.ref.pack.from_pointer_pack`[
+            _type=BorrowedPack._mlir_type
+        ](pointers._mlir_value)
+    )
+    var result = method(self_arg, *borrowed)
+
+    return _return_python_object(result^)
+
+
+# TODO: Combine this overload if/when it's possible to make
+#       `_call_with_dynamic_pack_pointers` generic over presence of kwargs.
+@always_inline("nodebug")
+def _dispatch_python_object_kwargs_function[
+    PyArgs: TypeList[Trait=type_of(PythonObject), ...],
+    RetType: Deinitable & Movable,
+    //,
+    func: def(
+        * args: * PyArgs, var ** kwargs: PythonObject
+    ) raises thin -> RetType,
+](py_args: PythonObject, py_kwargs: PythonObject) raises -> PythonObject:
+    check_arguments_arity(PyArgs.length, py_args)
+
+    var positional_args = Array[PythonObject, PyArgs.length](uninitialized=True)
+    comptime for i in range(PyArgs.length):
+        positional_args.unsafe_ptr().unsafe_offset(i).unsafe_write(py_args[i])
+
+    comptime ToPointer[
+        T: type_of(PythonObject)
+    ]: ImplicitlyCopyable & Deinitable = Pointer[T, MutUnsafeAnyOrigin]
+    var pointers: Tuple[*PyArgs.map[ToPointer]()]
+    __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(pointers))
+    comptime for i in range(PyArgs.length):
+        var element = (
+            positional_args.unsafe_ptr().unsafe_offset(i).as_unsafe_any_origin()
+        )
+        pointers[i] = rebind[type_of(pointers[i])](element)
+
+    comptime BorrowedPack = VariadicPack[
+        origin=MutUnsafeAnyOrigin,
+        element_trait=type_of(PythonObject),
+        False,
+        *PyArgs,
+    ]
+    var borrowed = BorrowedPack(
+        __mlir_op.`lit.ref.pack.from_pointer_pack`[
+            _type=BorrowedPack._mlir_type
+        ](pointers._mlir_value)
+    )
+    var kwargs = _convert_kwargs(py_kwargs)
+    var result = func(*borrowed, **kwargs^)
+
+    return _return_python_object(result^)
+
+
+# TODO: Combine this overload if/when it's possible to make
+#       `_call_with_dynamic_pack_pointers` generic over presence of `SelfArg`
+#       and kwargs.
+@always_inline("nodebug")
+def _dispatch_python_object_kwargs_method[
+    SelfArg: Deinitable,
+    PyArgs: TypeList[Trait=type_of(PythonObject), ...],
+    RetType: Deinitable & Movable,
+    //,
+    method: def(
+        self_: SelfArg, * args: * PyArgs,
+        var ** kwargs: PythonObject,
+    ) raises thin -> RetType,
+](
+    self_arg: SelfArg,
+    py_args: PythonObject,
+    py_kwargs: PythonObject,
+) raises -> PythonObject:
+    check_arguments_arity(PyArgs.length, py_args)
+
+    var positional_args = Array[PythonObject, PyArgs.length](uninitialized=True)
+    comptime for i in range(PyArgs.length):
+        positional_args.unsafe_ptr().unsafe_offset(i).unsafe_write(py_args[i])
+
+    comptime ToPointer[
+        T: type_of(PythonObject)
+    ]: ImplicitlyCopyable & Deinitable = Pointer[T, MutUnsafeAnyOrigin]
+    var pointers: Tuple[*PyArgs.map[ToPointer]()]
+    __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(pointers))
+    comptime for i in range(PyArgs.length):
+        var element = (
+            positional_args.unsafe_ptr().unsafe_offset(i).as_unsafe_any_origin()
+        )
+        pointers[i] = rebind[type_of(pointers[i])](element)
+
+    comptime BorrowedPack = VariadicPack[
+        origin=MutUnsafeAnyOrigin,
+        element_trait=type_of(PythonObject),
+        False,
+        *PyArgs,
+    ]
+    var borrowed = BorrowedPack(
+        __mlir_op.`lit.ref.pack.from_pointer_pack`[
+            _type=BorrowedPack._mlir_type
+        ](pointers._mlir_value)
+    )
+    var kwargs = _convert_kwargs(py_kwargs)
+    var result = method(self_arg, *borrowed, **kwargs^)
+
+    return _return_python_object(result^)
+
+
+def _return_python_object[
+    RetType: Movable & Deinitable
+](var result: RetType,) -> PythonObject:
+    comptime if RetType == PythonObject:
+        # TODO: This rebind shouldn't be necessary
+        return rebind_var[PythonObject](result^)
+    else:
+        comptime assert RetType == type_of(None)
+        return PythonObject(None)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -1550,7 +1922,7 @@ def check_arguments_arity(
 def check_and_get_arg[
     T: Deinitable
 ](func_name: StaticString, py_args: PythonObject, index: Int) raises -> Pointer[
-    T, MutAnyOrigin
+    T, MutUnsafeAnyOrigin
 ]:
     """Get the argument at the given index and downcast it to a given Mojo type.
 
@@ -1604,7 +1976,7 @@ def _try_convert_arg[
 def check_and_get_or_convert_arg[
     T: ConvertibleFromPython
 ](func_name: StaticString, py_args: PythonObject, index: Int) raises -> Pointer[
-    T, MutAnyOrigin
+    T, MutUnsafeAnyOrigin
 ]:
     """Get the argument at the given index and convert it to a given Mojo type.
 

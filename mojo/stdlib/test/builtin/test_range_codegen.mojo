@@ -43,8 +43,8 @@ the cursor rather than removed is what it is calibrated against.
 """
 
 from std.compile import compile_info
-from std.gpu import block_dim, thread_idx
-from std.gpu.host import get_gpu_target
+from std._gpu import block_dim, thread_idx
+from std._gpu.host import get_gpu_target
 from std.testing import assert_equal, assert_false, assert_true
 
 comptime _TargetType = __mlir_type.`!kgen.target`

@@ -17,9 +17,9 @@ from std.math import ceildiv
 from std.sys import bit_width_of
 
 from std.builtin.dtype import _uint_type_of_width
-from std.gpu import WARP_SIZE, block_idx, thread_idx
+from max.gpu import WARP_SIZE, block_idx, thread_idx
 from max.gpu.sync import barrier
-import std.gpu.primitives.warp as warp
+import max.gpu.primitives.warp as warp
 from max.gpu.host import DeviceContext, DeviceBuffer
 from max.gpu.host import Dim
 from std.sys.info import has_apple_gpu_accelerator
