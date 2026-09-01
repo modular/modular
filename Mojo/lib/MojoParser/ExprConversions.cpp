@@ -2106,17 +2106,11 @@ TriState IREmitter::classifyImplicitConversion(
       OverloadSet::canConstructType(requiredType, operands, declScope);
   bool isConvertible = succeeded(result) && result->isYes();
 
-  // A negative answer is only definitive if no other convertibility branch
-  // returned `unknown`.
-  if (!isConvertible && sawUnknown)
+  // A negative answer is only definitive if nothing along the way came back
+  // undecided.
+  if (!isConvertible &&
+      (sawUnknown || (succeeded(result) && result->isUnknown())))
     return TriState::unknown();
-
-  // TODO(MOCO-4261): a `no` verdict from `canConstructType` is usually a
-  // definitive "cannot construct", but not when a candidate was left
-  // inconclusive because its body constraints could be neither proven nor
-  // disproven here: that verdict belongs to this scope, not to the type pair
-  // the cache is keyed on, so caching it lets one scope answer for another.
-  // `canConstructType` now reports that as `unknown`; this needs to read it.
   // Must cache the overall value type, not just its stripped down rvType.
   shared.cacheImplicitConvertibility(value.ir.getType(), requiredType,
                                      isConvertible);
