@@ -322,14 +322,16 @@ config = PipelineConfig.from_args(
 tokenizer, pipeline = PIPELINE_REGISTRY.retrieve(config)
 
 # Or get a factory for deferred compilation
-tokenizer, pipeline_factory = PIPELINE_REGISTRY.retrieve_factory(config)
-pipeline = pipeline_factory()  # Compile when ready
+retrieved = PIPELINE_REGISTRY.retrieve_factory(config)
+pipeline = retrieved.factory()  # Compile when ready
 ```
 
 In this example, `retrieve()` returns a ready-to-use pipeline, while
-`retrieve_factory()` returns a callable that performs compilation when invoked.
-The factory pattern is useful when you need to pass the pipeline across process
-boundaries, since it avoids serializing the compiled model.
+`retrieve_factory()` returns a `RetrievedPipeline` with the tokenizer, a
+factory that performs compilation when invoked, and the memory plan the
+pipeline was sized against. The factory pattern is useful when you need to
+pass the pipeline across process boundaries, since it avoids serializing the
+compiled model.
 
 ### Supported architecture
 
