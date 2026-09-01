@@ -18,9 +18,6 @@ _PLATFORM_CONSTRAINTS = {
 
 _LIT_TESTS = [
     "test_number_parsing_lut_optimization.mojo",
-    "test_string_unicode_panic.mojo",
-    "test_string_span_bounds_abort.mojo",
-    "test_string_span_codepoint_grapheme_bounds_abort.mojo",
 ]
 
 [

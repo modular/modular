@@ -11,22 +11,34 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-# RUN: not %mojo -DALLOC_TEST=1 %s 2>&1 | FileCheck %s --check-prefix=CHECK-TEST1
-# RUN: not %mojo -DALLOC_TEST=2 %s 2>&1 | FileCheck %s --check-prefix=CHECK-TEST2
-
-import std.sys
+from std.testing import _assert_aborts, TestSuite
 
 from std.memory import Layout
 
 
-def main() raises:
-    comptime if std.sys.get_defined_int["ALLOC_TEST"]() == 1:
-        var too_small = 2
-        # CHECK-TEST1: ABORT: {{.*}}: Alignment is invalid. Must be a power of two and >= to the types natural alignment.
+def test_alignment_too_small() raises:
+    var too_small = 2
+
+    def trigger() raises {too_small} -> None:
         var _layout = Layout[Int32](count=1, alignment=too_small)
-    elif std.sys.get_defined_int["ALLOC_TEST"]() == 2:
-        var not_pow_of_2 = 127
-        # CHECK-TEST2: ABORT: {{.*}}: Alignment is invalid. Must be a power of two and >= to the types natural alignment.
+
+    _assert_aborts(
+        trigger,
+        contains="Alignment is invalid. Must be a power of two and >= to the types natural alignment.",
+    )
+
+
+def test_alignment_not_pow_of_2() raises:
+    var not_pow_of_2 = 127
+
+    def trigger() raises {not_pow_of_2} -> None:
         var _layout = Layout[Int32](count=1, alignment=not_pow_of_2)
-    else:
-        comptime assert False, "unreachable!"
+
+    _assert_aborts(
+        trigger,
+        contains="Alignment is invalid. Must be a power of two and >= to the types natural alignment.",
+    )
+
+
+def main() raises:
+    TestSuite.discover_tests[__functions_in_module()]().run()

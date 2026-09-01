@@ -11,17 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-# RUN: not %mojo -Dtest=1 %s 2>&1 | FileCheck --check-prefix CHECK_1 %s
-
 from std.memory.alloc import alloc, dealloc, Layout, ThinAllocation
 from std.sys import align_of, size_of
-from std.sys.defines import get_defined_int
 
 from std.testing import (
-    assert_equal,
-    assert_not_equal,
-    assert_false,
-    assert_true,
+    _assert_aborts,
     TestSuite,
 )
 
@@ -32,19 +26,17 @@ def test_alloc_zst_count_negative_fails() raises:
         size_of[ZST]() == 0
     ), "Please find a ZST to use for this test."
 
-    # CHECK_1: alloc: `Layout.count()` must be > 0
-    var layout = Layout[ZST](count=-1)
-    var ptr = alloc(layout).unsafe_leak()
+    def trigger() raises -> None:
+        var layout = Layout[ZST](count=-1)
+        var ptr = alloc(layout).unsafe_leak()
+        assert_equal(0, len(ptr[]))
+        dealloc(ThinAllocation(unsafe_owned_ptr=ptr).unsafe_with_layout(layout))
 
-    # CHECK_1-NOT: is never reached
-    assert_equal(0, len(ptr[]))
-
-    dealloc(ThinAllocation(unsafe_owned_ptr=ptr).unsafe_with_layout(layout))
+    _assert_aborts(
+        trigger,
+        contains="alloc: `Layout.count()` must be > 0",
+    )
 
 
 def main() raises:
-    comptime test = get_defined_int["test"]()
-    comptime if test == 1:
-        test_alloc_zst_count_negative_fails()
-    else:
-        raise t"Invalid `test` value {test}"
+    TestSuite.discover_tests[__functions_in_module()]().run()

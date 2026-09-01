@@ -17,31 +17,57 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: not %mojo -D test=1 %s 2>&1 | FileCheck --check-prefix CHECK_1 %s
-# RUN: not %mojo -D test=2 %s 2>&1 | FileCheck --check-prefix CHECK_2 %s
-# RUN: not %mojo -D test=3 %s 2>&1 | FileCheck --check-prefix CHECK_3 %s
-# RUN: not %mojo -D test=4 %s 2>&1 | FileCheck --check-prefix CHECK_4 %s
+from std.testing import _assert_aborts, TestSuite
 
-from std.sys import get_defined_int
+
+def test_end_oob() raises:
+    var s = StringSlice("abc")
+
+    def trigger() raises {s} -> None:
+        _ = s[byte=0:100]
+
+    _assert_aborts(
+        trigger,
+        contains="slice end index 100 is out of bounds, valid range is 0 to 3",
+    )
+
+
+def test_reversed() raises:
+    var s = StringSlice("abc")
+
+    def trigger() raises {s} -> None:
+        _ = s[byte=3:1]
+
+    _assert_aborts(
+        trigger,
+        contains="slice start index 3 is greater than slice end index 1",
+    )
+
+
+def test_negative_start() raises:
+    var s = StringSlice("abc")
+
+    def trigger() raises {s} -> None:
+        _ = s[byte=-1:]
+
+    _assert_aborts(
+        trigger,
+        contains="slice start index -1 is out of bounds, valid range is 0 to 3",
+    )
+
+
+def test_string_end_oob() raises:
+    # Through `String`'s `byte=` accessor, which delegates to `StringSlice`.
+    var s = String("abc")
+
+    def trigger() raises {s} -> None:
+        _ = s[byte=0:100]
+
+    _assert_aborts(
+        trigger,
+        contains="slice end index 100 is out of bounds, valid range is 0 to 3",
+    )
 
 
 def main() raises:
-    comptime if get_defined_int["test"]() == 1:
-        var s = StringSlice("abc")
-        # CHECK_1: {{.*}}: Assert Error: slice end index 100 is out of bounds, valid range is 0 to 3
-        _ = s[byte=0:100]
-    elif get_defined_int["test"]() == 2:
-        var s = StringSlice("abc")
-        # CHECK_2: {{.*}}: Assert Error: slice start index 3 is greater than slice end index 1
-        _ = s[byte=3:1]
-    elif get_defined_int["test"]() == 3:
-        var s = StringSlice("abc")
-        # CHECK_3: {{.*}}: Assert Error: slice start index -1 is out of bounds, valid range is 0 to 3
-        _ = s[byte= -1:]
-    elif get_defined_int["test"]() == 4:
-        # Through `String`'s `byte=` accessor, which delegates to `StringSlice`.
-        var s = String("abc")
-        # CHECK_4: {{.*}}: Assert Error: slice end index 100 is out of bounds, valid range is 0 to 3
-        _ = s[byte=0:100]
-    else:
-        comptime assert False, "unreachable!"
+    TestSuite.discover_tests[__functions_in_module()]().run()
