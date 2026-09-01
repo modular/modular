@@ -411,12 +411,13 @@ struct Process:
         Raises:
             Error: If the process fails to spawn.
         """
+        var c_env = env.copy()
         var envp_list = List[Optional[CStringSlice[ImmutAnyOrigin]]](
-            length=len(env) + 1, fill={}
+            length=len(c_env) + 1, fill={}
         )
-        for i in range(len(env)):
+        for i in range(len(c_env)):
             envp_list[i] = rebind[CStringSlice[ImmutAnyOrigin]](
-                env[i].as_c_string_slice()
+                c_env[i].as_c_string_slice()
             )
         return Self._spawn(
             path,
@@ -442,7 +443,8 @@ struct Process:
         var parts = path.split(sep)
         var file_name = String(parts[len(parts) - 1])
 
-        var arg_count = len(argv)
+        var c_argv = argv.copy()
+        var arg_count = len(c_argv)
         var argv_array_ptr_cstr_ptr = List[
             Optional[CStringSlice[ImmutAnyOrigin]]
         ](
@@ -455,10 +457,10 @@ struct Process:
         )
         offset += 1
 
-        for var arg in argv:
+        for i in range(len(c_argv)):
             argv_array_ptr_cstr_ptr[offset] = rebind[
                 CStringSlice[ImmutAnyOrigin]
-            ](arg.as_c_string_slice())
+            ](c_argv[i].as_c_string_slice())
             offset += 1
 
         argv_array_ptr_cstr_ptr[offset] = {}

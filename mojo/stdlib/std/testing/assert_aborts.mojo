@@ -120,7 +120,7 @@ def _build_child_env(location: SourceLocation, write_fd: Int) -> List[String]:
     if not envp:
         env.append(String(t"{_LOCATION_ENV}={location}"))
         env.append(String(t"{_OUTPUT_ENV}={write_fd}"))
-        return env
+        return env^
 
     var ptr = envp.value()
     var i = 0
@@ -137,7 +137,7 @@ def _build_child_env(location: SourceLocation, write_fd: Int) -> List[String]:
 
     env.append(String(t"{_LOCATION_ENV}={location}"))
     env.append(String(t"{_OUTPUT_ENV}={write_fd}"))
-    return env
+    return env^
 
 
 def _read_all(mut p: Pipe) raises -> String:
