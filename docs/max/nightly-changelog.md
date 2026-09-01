@@ -232,6 +232,12 @@ the [container](/container) page now links to the new page.
   from one physical memory pool. Reports hardware topology, so it does not imply
   any given buffer is host-readable. Driver plugins answer it through the new
   optional `host_unified` device property.
+- Host-side profiling spans (`max.profiler.Tracer`, `@traced`, and Mojo
+  `Trace` scopes) now annotate external profiler tools on release builds:
+  with `MODULAR_ENABLE_PROFILING` set, spans appear as NVTX ranges in
+  NVIDIA Nsight Systems captures and as roctx ranges in rocprofv3 captures,
+  with no build flags required. Previously these spans were only emitted in
+  special profiling builds.
 - Greedy speculative acceptance (`greedy_acceptance_sampler`,
   `AcceptanceSampler` in greedy mode) now applies the structured-output
   grammar bitmask to the target logits (with a `-inf` fill) before the
