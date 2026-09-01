@@ -320,6 +320,10 @@ This version is still a work in progress.
 
 ## GPU programming
 
+- The `max.gpu` package now mirrors everything reachable from `std.gpu`, making
+  it a complete entry point for accelerator programming. Prefer `max.gpu`, which
+  is becoming the only public source for these utilities.
+
 ## Tooling changes
 
 - `mojo doc` now reports the condition of a conditional trait conformance, and
