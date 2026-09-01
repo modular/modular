@@ -366,3 +366,32 @@ def test_alloc_reserves_the_draft_positions_runtime_inputs_will_ask_for() -> (
     # Not raising is the assertion: the boundary check reads the live
     # ``num_draft_tokens`` and must find the pages alloc already drew.
     mgr.runtime_inputs([[ctx]])
+
+
+# ===--------------------------------------------------------------------=== #
+# max_seq_len startup validation
+# ===--------------------------------------------------------------------=== #
+
+
+def test_create_rejects_oversized_max_seq_len() -> None:
+    params = make_leaf(n_kv_heads=1, page_size=128)
+    huge_page_bytes = next(iter(params.leaves().values())).bytes_per_page
+    with pytest.raises(RuntimeError, match="max sequence length"):
+        JengaKVCacheManager.create(
+            params=params,
+            available_bytes=2 * huge_page_bytes,
+            max_batch_size=1,
+            max_seq_len=10_000,
+        )
+
+
+def test_create_accepts_max_seq_len_that_fits() -> None:
+    params = make_leaf(n_kv_heads=1, page_size=128)
+    huge_page_bytes = next(iter(params.leaves().values())).bytes_per_page
+    manager = JengaKVCacheManager.create(
+        params=params,
+        available_bytes=40 * huge_page_bytes,
+        max_batch_size=8,
+        max_seq_len=128,
+    )
+    assert manager.effective_max_seq_length is not None

@@ -36,6 +36,7 @@ from max.nn.kv_cache.cache_params import (
     KVCacheAssignments,
     KVCacheBufferInterface,
     KVConnectorType,
+    spec_decode_cache_slack,
 )
 from max.nn.kv_cache.data_parallelism_utils import split_into_groups
 from max.nn.kv_cache.metrics import KVCacheMetrics
@@ -154,6 +155,7 @@ class JengaKVCacheManager(JengaBlockManager, PagedKVCacheManagerInterface):
         available_bytes: int,
         max_batch_size: int,
         max_num_input_tokens: int | None = None,
+        max_seq_len: int | None = None,
     ) -> JengaKVCacheManager:
         """Creates a JengaKVCacheManager."""
         leaves = params.leaves()
@@ -211,7 +213,7 @@ class JengaKVCacheManager(JengaBlockManager, PagedKVCacheManagerInterface):
             device_memory_bytes=num_huge_blocks * huge_page_bytes,
         )
 
-        return cls(
+        manager = cls(
             params=params,
             leaf_infos=leaf_infos,
             kv_buffers=kv_buffers,
@@ -220,6 +222,26 @@ class JengaKVCacheManager(JengaBlockManager, PagedKVCacheManagerInterface):
             max_num_input_tokens=max_num_input_tokens,
             connector=connector,
         )
+        if max_seq_len is not None:
+            slack = spec_decode_cache_slack(params)
+            seq_len_with_slack = max_seq_len + slack
+            if not manager._fits_in_cache(seq_len_with_slack):
+                effective = manager.effective_max_seq_length
+                max_tokens = effective if effective is not None else 0
+                slack_str = (
+                    f" (plus {slack} speculative-decode slack tokens)"
+                    if slack > 0
+                    else ""
+                )
+                raise RuntimeError(
+                    "Insufficient cache memory to support a batch containing one"
+                    f" request at the max sequence length of {max_seq_len} tokens"
+                    f"{slack_str}. A request approaching the max sequence length would"
+                    " exhaust the KV cache and crash the model worker. Reduce"
+                    f" --max-length to at most {max_tokens} or increase the available"
+                    " KV cache memory (e.g. raise --device-memory-utilization)."
+                )
+        return manager
 
     def __init__(
         self,
