@@ -4565,9 +4565,9 @@ struct MLA_SM100_Decode_Common[
                                 type_of(float2_register[j])
                             ](element * SIMD[Self.AccumType, 2](scale_value))
                         var _o_st_corr = Array[_, Self.config.BN_QK](
-                            fill_with=lambda (_i: Int) -> Scalar[
+                            fill_with_unrolled=lambda [i: Int]() -> Scalar[
                                 Self.AccumType
-                            ]: o_row_subtile.raw_load(_i)
+                            ]: o_row_subtile.raw_load(i)
                         )
                         tcgen05_st[
                             datapaths=32,

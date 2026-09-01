@@ -1264,8 +1264,8 @@ struct MLAPrefillSparseFP8[
                 if k > 0 and should_scale_o:
                     tcgen05_load_wait()
                     var o_scaled_0 = Array[_, O_RESCALE_CHUNK](
-                        fill_with=lambda (j: Int) -> Float32: mul_ftz(
-                            o_chunk_prefetch[j], scale_for_old
+                        fill_with_unrolled=lambda [j: Int]() -> Float32: (
+                            mul_ftz(o_chunk_prefetch[j], scale_for_old)
                         )
                     )
                     tcgen05_st[
@@ -1288,8 +1288,8 @@ struct MLAPrefillSparseFP8[
                         )
                         tcgen05_load_wait()
                         var o_scaled = Array[_, O_RESCALE_CHUNK](
-                            fill_with=lambda (j: Int) -> Float32: mul_ftz(
-                                o_chunk[j], scale_for_old
+                            fill_with_unrolled=lambda [j: Int]() -> Float32: (
+                                mul_ftz(o_chunk[j], scale_for_old)
                             )
                         )
                         tcgen05_st[

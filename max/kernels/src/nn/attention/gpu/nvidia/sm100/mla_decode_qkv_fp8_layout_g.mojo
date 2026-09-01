@@ -992,9 +992,9 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
                             scale_value
                         )
                     var _o_st_corr = Array[_, per_warp_corr_elems](
-                        fill_with=lambda (_i: Int) -> Scalar[
+                        fill_with_unrolled=lambda [i: Int]() -> Scalar[
                             Self.AccumType
-                        ]: o_row_subtile.raw_load(_i)
+                        ]: o_row_subtile.raw_load(i)
                     )
                     tcgen05_st[
                         datapaths=32,
