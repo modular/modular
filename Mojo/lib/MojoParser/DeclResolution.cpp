@@ -1420,10 +1420,10 @@ static bool allCopyable(ArrayRef<Capture> captures, SharedState &shared,
   return true;
 }
 
-static MLValue
-emitClosureInstance(ArrayRef<Capture> captures, ASTDecl &nestedFnDecl,
-                    SharedState &shared,
-                    ArrayRef<ParamDeclRefAttr> bodyParamCaptures) {
+static MLValue emitClosureInstance(ArrayRef<Capture> captures,
+                                   ASTDecl &nestedFnDecl, SharedState &shared,
+                                   ArrayRef<ParamDeclRefAttr> bodyParamCaptures,
+                                   bool useParametricTrait) {
   FnOp nestedFn = cast<FnOp>(nestedFnDecl.getIfOperation());
   SMLoc loc = nestedFnDecl.getLoc();
   Location mlirLoc = shared.translateLocation(loc);
@@ -1453,7 +1453,9 @@ emitClosureInstance(ArrayRef<Capture> captures, ASTDecl &nestedFnDecl,
   }
 
   ASTDecl *closureTrait =
-      shared.getOrCreateClosureTrait(loc, *moduleDecl, closureSig);
+      useParametricTrait
+          ? shared.getUniversalParametricClosureTrait()
+          : shared.getOrCreateClosureTrait(loc, *moduleDecl, closureSig);
   bool isCopyable = allCopyable(captures, shared, loc, nestedFnDecl);
 
   ClosureEmitter &emitter = shared.getClosureEmitter();
@@ -1537,7 +1539,7 @@ constructClosure(SharedState &shared, ASTDecl &decl, FnOp funcOp,
                  ArrayRef<ParamDeclRefAttr> paramCaptures,
                  const ParsedCaptureList &captureSignature,
                  ArrayRef<ConstraintAttr> closureExternalRefConstraints,
-                 FnTypeGeneratorType signature) {
+                 FnTypeGeneratorType signature, bool useParametricTrait) {
   // abi("C") functions must be bare function pointers with no captured
   // state, even in closure form.
   if (signature.getFnEffects().isCABI() && !captures.empty()) {
@@ -1556,7 +1558,8 @@ constructClosure(SharedState &shared, ASTDecl &decl, FnOp funcOp,
     return success();
   }
 
-  MLValue instance = emitClosureInstance(captures, decl, shared, paramCaptures);
+  MLValue instance = emitClosureInstance(captures, decl, shared, paramCaptures,
+                                         useParametricTrait);
   if (!instance)
     return failure();
   decl.setIRValue(instance);
@@ -1936,8 +1939,9 @@ AnyValue DeclResolver::resolveAnonymousClosure(const LambdaNode *node,
     return emitter.emitResult(AnyValue(literal), node, dest);
   }
 
-  MLValue instance = emitClosureInstance(bodyCaptures.values, decl, shared,
-                                         bodyCaptures.paramRefs);
+  MLValue instance =
+      emitClosureInstance(bodyCaptures.values, decl, shared,
+                          bodyCaptures.paramRefs, /*useParametricTrait=*/false);
   if (!instance)
     return {};
 
@@ -2321,7 +2325,7 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
   if (isNonlegacyClosure)
     return constructClosure(shared, decl, funcOp, captures, paramCaptures,
                             captureSignature, closureExternalRefConstraints,
-                            signature);
+                            signature, fnSignature.isExperimentalParamTrait);
 
   if (captures.empty() && captureSignature.parsedCaptures.empty() &&
       !captureSignature.captureAllByConvention) {
