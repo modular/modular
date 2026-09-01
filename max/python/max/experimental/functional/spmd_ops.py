@@ -3272,14 +3272,17 @@ convolution):
 
 .. code-block:: python
 
+    from max.driver import CPU
     from max.experimental import Tensor
     from max.experimental import functional as F
+    from max.experimental.tensor import default_device
 
-    # NHWC input: batch 1, 1x1 spatial, 1 channel.
-    x = Tensor([[[[3.0]]]])
-    # RSCF filter: 2x2 kernel, 1 out-channel, 1 in-channel, all ones.
-    filter = Tensor([[[[1.0]], [[1.0]]], [[[1.0]], [[1.0]]]])
-    result = F.conv2d_transpose(x, filter)
+    with default_device(CPU()):
+        # NHWC input: batch 1, 1x1 spatial, 1 channel.
+        x = Tensor([[[[3.0]]]])
+        # RSCF filter: 2x2 kernel, 1 out-channel, 1 in-channel, all ones.
+        filter = Tensor([[[[1.0]], [[1.0]]], [[[1.0]], [[1.0]]]])
+        result = F.conv2d_transpose(x, filter)
 
 Args:
     x: An NHWC input tensor to perform the deconvolution upon.
@@ -3434,15 +3437,18 @@ resize.__doc__ = """Resizes a tensor to a given shape using a specified interpol
 
 .. code-block:: python
 
+    from max.driver import CPU
     from max.experimental import Tensor
     from max.experimental import functional as F
+    from max.experimental.tensor import default_device
     from max.graph.ops import InterpolationMode
 
-    # NCHW input: batch 1, 1 channel, 2x2 spatial.
-    x = Tensor([[[[1.0, 2.0], [3.0, 4.0]]]])
-    # Upscale the spatial dimensions to 4x4.
-    result = F.resize(x, [1, 1, 4, 4], InterpolationMode.BILINEAR)
-    # result has shape (1, 1, 4, 4)
+    with default_device(CPU()):
+        # NCHW input: batch 1, 1 channel, 2x2 spatial.
+        x = Tensor([[[[1.0, 2.0], [3.0, 4.0]]]])
+        # Upscale the spatial dimensions to 4x4.
+        result = F.resize(x, [1, 1, 4, 4], InterpolationMode.BILINEAR)
+        # result has shape (1, 1, 4, 4)
 
 Args:
     input: The input tensor to resize. Must be rank 4 in channels-first
@@ -4039,14 +4045,17 @@ back to input coordinates according to ``coordinate_transform_mode``.
 
 .. code-block:: python
 
+    from max.driver import CPU
     from max.experimental import Tensor
     from max.experimental import functional as F
+    from max.experimental.tensor import default_device
 
-    # NCHW input: batch 1, 1 channel, 2x2 spatial.
-    x = Tensor([[[[1.0, 2.0], [3.0, 4.0]]]])
-    # Upscale the spatial dimensions to 4x4.
-    result = F.resize_linear(x, [1, 1, 4, 4])
-    # result has shape (1, 1, 4, 4)
+    with default_device(CPU()):
+        # NCHW input: batch 1, 1 channel, 2x2 spatial.
+        x = Tensor([[[[1.0, 2.0], [3.0, 4.0]]]])
+        # Upscale the spatial dimensions to 4x4.
+        result = F.resize_linear(x, [1, 1, 4, 4])
+        # result has shape (1, 1, 4, 4)
 
 Args:
     input: The input tensor to resize.
@@ -4083,14 +4092,17 @@ selecting the nearest input sample for each output coordinate.
 
 .. code-block:: python
 
+    from max.driver import CPU
     from max.experimental import Tensor
     from max.experimental import functional as F
+    from max.experimental.tensor import default_device
 
-    # NCHW input: batch 1, 1 channel, 2x2 spatial.
-    x = Tensor([[[[1.0, 2.0], [3.0, 4.0]]]])
-    # Upscale the spatial dimensions to 4x4.
-    result = F.resize_nearest(x, [1, 1, 4, 4])
-    # result has shape (1, 1, 4, 4)
+    with default_device(CPU()):
+        # NCHW input: batch 1, 1 channel, 2x2 spatial.
+        x = Tensor([[[[1.0, 2.0], [3.0, 4.0]]]])
+        # Upscale the spatial dimensions to 4x4.
+        result = F.resize_nearest(x, [1, 1, 4, 4])
+        # result has shape (1, 1, 4, 4)
 
 Args:
     input: The input tensor to resize.

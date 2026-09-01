@@ -34,7 +34,7 @@ class Conv2d(Module[[Tensor], Tensor]):
     Example:
         .. code-block:: python
 
-            from max.driver import Accelerator
+            from max.driver import Accelerator, accelerator_count
             from max.dtype import DType
             from max.experimental.nn import Conv2d
             from max.experimental.tensor import Tensor
@@ -48,13 +48,16 @@ class Conv2d(Module[[Tensor], Tensor]):
                 permute=True,
             )
             x = Tensor.ones([1, 3, 32, 32], dtype=DType.float32)
-            result = conv(x.to(Accelerator()))
+            # permute=True uses the FCRS filter layout, which requires a GPU.
+            if accelerator_count():
+                result = conv(x.to(Accelerator()))
 
         .. invisible-code-block: python
 
-            # permute=True: NCHW in -> NCHW out. 3x3 kernel, no padding,
-            # so 32x32 -> 30x30 and channels go 3 -> 64.
-            assert tuple(int(d) for d in result.shape) == (1, 64, 30, 30)
+            if accelerator_count():
+                # permute=True: NCHW in -> NCHW out. 3x3 kernel, no padding,
+                # so 32x32 -> 30x30 and channels go 3 -> 64.
+                assert tuple(int(d) for d in result.shape) == (1, 64, 30, 30)
 
     """
 
