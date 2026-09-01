@@ -48,7 +48,7 @@ To build and test your changes to the Mojo standard library, run the following
 To build the standard library, you can run:
 
 ```sh
-./bazelw build //mojo/stdlib/...
+./bazelw build //Mojo/stdlib/...
 ```
 
 ## Testing the standard library
@@ -56,7 +56,7 @@ To build the standard library, you can run:
 To run the tests for the standard library, you can run:
 
 ```sh
-./bazelw test //mojo/stdlib/test/...
+./bazelw test //Mojo/stdlib/test/...
 ```
 
 Tests build with assertions enabled, which compiles them with `-D ASSERT=all`
@@ -70,13 +70,13 @@ You can run all the tests within a specific subdirectory by simply
 specifying the subdirectory and using `/...`. For example:
 
 ```sh
-./bazelw test //mojo/stdlib/test/math/...
+./bazelw test //Mojo/stdlib/test/math/...
 ```
 
 To find all the test targets, you can run:
 
 ```sh
-./bazelw query 'tests(//mojo/stdlib/...)'
+./bazelw query 'tests(//Mojo/stdlib/...)'
 ```
 
 If you have `pixi` installed, you can use the `pixi run tests` convenience

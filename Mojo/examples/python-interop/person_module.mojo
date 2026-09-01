@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-# DOC: mojo/docs/manual/python/mojo-from-python.mdx
+# DOC: Mojo/docs/stdlib/manual/python/mojo-from-python.mdx
 
 from std.os import abort
 

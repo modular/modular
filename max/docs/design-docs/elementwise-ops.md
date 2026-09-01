@@ -287,7 +287,7 @@ Results with `offset = (iteration*n2)%n`
 ## The element-wise algorithm
 
 See
-[`_elementwise_impl_gpu`](https://github.com/modular/modular/blob/9855690a6a40f87f7c2948a59d417dee21d966f1/mojo/stdlib/std/algorithm/functional.mojo#L1594),
+[`_elementwise_impl_gpu`](https://github.com/modular/modular/blob/9855690a6a40f87f7c2948a59d417dee21d966f1/Mojo/stdlib/std/algorithm/functional.mojo#L1594),
 based on
 ["OneFlow’s Optimization of CUDA Elementwise Template Library"](https://archive.md/Tye9y#selection-1101.2-1151.3).
 
@@ -590,13 +590,13 @@ It needs 14 instructions or 5 more than the 32-bit iterator version.
 - 2 instructions: the pointer arithmetic requires one extra instruction to add
   the upper 32-bits (two pointers)
 
-    The `.X` in `IADD3.X R3, R5, c[0x0][0x164], RZ, P0, !PT` and `IADD3.X R5,
-    R5, c[0x0][0x16c], RZ, P0, !PT` means add the carry.
+  The `.X` in `IADD3.X R3, R5, c[0x0][0x164], RZ, P0, !PT` and `IADD3.X R5,
+  R5, c[0x0][0x16c], RZ, P0, !PT` means add the carry.
 
 - 1 instruction: The conditional needs to compare the high 32-bits of the
   64-bit `n`.
 
-    `IMAD.X R7, RZ, RZ, R7, P0`
+  `IMAD.X R7, RZ, RZ, R7, P0`
 
 - 1 instruction: The iterator needs to add the carry to the high 32-bits of the
   64-bit iterator `ISETP.GE.U32.AND.EX P0, PT, R7, c[0x0][0x174], PT, P0`.

@@ -26,7 +26,7 @@ Every `bench_*.mojo` source produces two Bazel targets:
   reports timings. Tagged `manual` + `stdlib-benchmark` so it is excluded
   from `//...` wildcards and only runs on explicit request.
 
-There is also a `//mojo/stdlib/benchmarks:all_benchmarks` `test_suite` that
+There is also a `//Mojo/stdlib/benchmarks:all_benchmarks` `test_suite` that
 expands to every `.bench` target.
 
 ### Benchmarks that embed CPython
@@ -64,14 +64,14 @@ See `python/bench_bindings/` for an example. Conventions for these:
 Run a single benchmark with full measurements:
 
 ```bash
-./bazelw test //mojo/stdlib/benchmarks/collections:bench_dict.mojo.bench \
+./bazelw test //Mojo/stdlib/benchmarks/collections:bench_dict.mojo.bench \
   --test_output=all
 ```
 
 Run every stdlib benchmark with full measurements:
 
 ```bash
-./bazelw test //mojo/stdlib/benchmarks:all_benchmarks \
+./bazelw test //Mojo/stdlib/benchmarks:all_benchmarks \
   --local_test_jobs=1 --test_output=all
 ```
 
@@ -81,7 +81,7 @@ perturb each other's timings.
 To only run the smoke-test variants (what presubmit does):
 
 ```bash
-./bazelw test //mojo/stdlib/benchmarks/...
+./bazelw test //Mojo/stdlib/benchmarks/...
 ```
 
 No flag toggling is required — `//...` expansion skips the `.bench` targets

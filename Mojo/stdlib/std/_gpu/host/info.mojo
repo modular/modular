@@ -18,7 +18,7 @@ memory specifications, thread organization, and performance characteristics.
 """
 
 # Contributor note: if you're adding support for a new GPU architecture, see
-# `mojo/stdlib/docs/adding-gpu-targets.md` for a step-by-step guide covering
+# `Mojo/stdlib/docs/adding-gpu-targets.md` for a step-by-step guide covering
 # the MLIR target configuration, the `data_layout` string format, and the
 # locations in this file that need to be updated.
 
@@ -2051,7 +2051,7 @@ def _build_unsupported_arch_error[target_arch: StaticString]() -> String:
 #                "amdgpu:gfx942" -> "gfx942", "metal:4" -> "apple-m4".
 #
 # SYNC: This list must stay in sync with the TargetTraits accelerator tables
-#       in KGEN/lib/Target/. Run the following test to verify:
+#       in Mojo/lib/Target/. Run the following test to verify:
 #       bazel test //Mojo/test/mojo-tool:build/verify_supported_accelerators_sync.mojo.test
 comptime _all_targets = (
     StaticString("sm_52"),

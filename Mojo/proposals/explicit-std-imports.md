@@ -425,7 +425,7 @@ This explicitness is valuable because:
 ### Compiler Changes
 
 The implementation requires changes to
-`KGEN/lib/MojoLLDB/SharedState.cpp` and related import resolution
+`Mojo/lib/MojoLLDB/SharedState.cpp` and related import resolution
 code:
 
 1. **Remove implicit std injection**: Stop automatically adding

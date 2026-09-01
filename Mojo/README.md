@@ -20,9 +20,9 @@ the [Modular Platform](https://www.modular.com).
 
 This directory includes:
 
-- Mojo standard library: [/mojo/stdlib](stdlib)
-- Mojo proposals: [/mojo/proposals](proposals)
-- Mojo documentation: [/mojo/docs](docs)
+- Mojo standard library: [/Mojo/stdlib](stdlib)
+- Mojo proposals: [/Mojo/proposals](proposals)
+- Mojo documentation: [/Mojo/docs](docs)
 
 To learn more about Mojo, see the
 [Mojo Manual](https://mojolang.org/docs/manual/).

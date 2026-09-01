@@ -56,8 +56,8 @@ contribution guidelines:
 - [MAX API and models](/max/CONTRIBUTING.md)
 - [MAX accelerator library](/max/kernels/CONTRIBUTING.md)
 - [Code examples](/max/examples#contributing) and
-  [mojo/examples#contributing](mojo/examples#contributing)
-- [Mojo documentation](mojo/docs#contributing)
+  [Mojo/examples#contributing](Mojo/examples#contributing)
+- [Mojo documentation](Mojo/docs#contributing)
 
 #### Please open an issue before opening a pull request
 
@@ -100,7 +100,7 @@ If you're experienced with GitHub, here's the basic process:
 2. Create a branch from `main`.
 
    If you're contributing to the Mojo standard library, see the
-   [Mojo standard library developer guide](mojo/stdlib/docs/development.md).
+   [Mojo standard library developer guide](Mojo/stdlib/docs/development.md).
 
 3. Create a PR into the `main` branch of this repo.
 
@@ -139,7 +139,7 @@ Before submitting, make sure your changes are correct and complete:
 
 - **Run the relevant tests.** If you changed code, run the tests for the
   affected area. For the Mojo standard library, see the
-  [development guide](mojo/stdlib/docs/development.md) for instructions.
+  [development guide](Mojo/stdlib/docs/development.md) for instructions.
 - **Check for regressions.** Run a broader test pass if your change touches
   shared infrastructure or has wide impact.
 - **Assess quality.** Review your diff as a maintainer would. Is the logic
@@ -195,7 +195,7 @@ pull request:
 
    Now start your work on the repo! If you're contributing to the Mojo
    standard library, see the [Mojo standard library developer
-   guide](mojo/stdlib/docs/development.md).
+   guide](Mojo/stdlib/docs/development.md).
 
    Although not necessary right now, you should periodically make sure you have
    the latest code, especially right before you create the pull request:

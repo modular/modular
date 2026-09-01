@@ -476,19 +476,19 @@ def target(self) -> _TargetType:
 Build the standard library to verify your changes:
 
 ```bash
-./bazelw build //mojo/stdlib/std
+./bazelw build //Mojo/stdlib/std
 ```
 
 Test with a simple GPU program:
 
 ```bash
-MODULAR_MOJO_MAX_IMPORT_PATH=bazel-bin/mojo/stdlib/std mojo your_test.mojo
+MODULAR_MOJO_MAX_IMPORT_PATH=bazel-bin/Mojo/stdlib/std mojo your_test.mojo
 ```
 
 Run existing GPU tests to ensure nothing broke:
 
 ```bash
-./bazelw test //mojo/stdlib/test/gpu/...
+./bazelw test //Mojo/stdlib/test/gpu/...
 ```
 
 ## Common pitfalls

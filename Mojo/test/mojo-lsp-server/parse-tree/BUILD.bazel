@@ -144,7 +144,7 @@ modular_py_binary(
 # import-path resolution for doubly-nested Mojo packages; as of 2026-07-09
 # that's confirmed false. Their imports are flat names (`import
 # extensibility`, not `graph_compiler.extensibility`), `resolveModulePath`
-# (KGEN/lib/MojoParser/SharedState.cpp) resolves by flat name against each
+# (Mojo/lib/MojoParser/SharedState.cpp) resolves by flat name against each
 # import-path directory with nothing nesting-specific about it, and
 # `//:install` ships their `.mojoc`s flat, same as every other kernel
 # package -- confirmed by direct `kgen -lsp` runs. The actual cause of the

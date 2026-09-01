@@ -29,7 +29,7 @@ if [[ $# -gt 0 ]]; then
     FILTER="//mojo/${FILTER}/..."
   fi
 else
-  FILTER="//mojo/stdlib/test/..."
+  FILTER="//Mojo/stdlib/test/..."
 fi
 
 exec "$REPO_ROOT"/bazelw test "$FILTER"

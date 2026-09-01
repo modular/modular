@@ -18,11 +18,11 @@ Bazel is the build system of choice for this repo and you can build
 the Mojo Standard Library with:
 
 ```bash
-./bazelw build //mojo/stdlib/std
+./bazelw build //Mojo/stdlib/std
 ```
 
 This creates a `std.mojoc` (the built artifact) from the Bazel build
-directory: `bazel-bin/mojo/stdlib/std/std.mojoc`.
+directory: `bazel-bin/Mojo/stdlib/std/std.mojoc`.
 
 ### Running Tests
 
@@ -33,13 +33,13 @@ Using bazel:
 
 ```bash
 # Run all the stdlib tests
-./bazelw test mojo/stdlib/test/...
+./bazelw test Mojo/stdlib/test/...
 
 # Run specific test file
-./bazelw test //mojo/stdlib/test/collections:test_span.mojo.test
+./bazelw test //Mojo/stdlib/test/collections:test_span.mojo.test
 
 # Run tests in specific directory
-./bazelw test mojo/stdlib/test/collections/...
+./bazelw test Mojo/stdlib/test/collections/...
 ```
 
 For those are not as familiar with Bazel, we provide a wrapper
@@ -48,13 +48,13 @@ are some equivalent examples:
 
 ```bash
 # Run all tests
-./mojo/stdlib/scripts/run-tests.sh
+./Mojo/stdlib/scripts/run-tests.sh
 
 # Run specific test file
-./mojo/stdlib/scripts/run-tests.sh ./mojo/stdlib/test/collections/test_span.mojo
+./Mojo/stdlib/scripts/run-tests.sh ./Mojo/stdlib/test/collections/test_span.mojo
 
 # Run tests in specific directory
-./mojo/stdlib/scripts/run-tests.sh ./mojo/stdlib/test/collections
+./Mojo/stdlib/scripts/run-tests.sh ./Mojo/stdlib/test/collections
 
 # Run specific test suites with lit directly
 lit -sv stdlib/test/builtin stdlib/test/collections
@@ -64,7 +64,7 @@ Tests are run with `-D ASSERT=all` by default.
 
 ### Running Benchmarks
 
-Read the `mojo/stdlib/benchmarks/README.md` for details on how to run
+Read the `Mojo/stdlib/benchmarks/README.md` for details on how to run
 benchmarks.
 
 ### Code Formatting
@@ -107,10 +107,10 @@ modules:
 
 ```bash
 # Build the standard library first
-./bazelw build //mojo/stdlib/std
+./bazelw build //Mojo/stdlib/std
 
 # Use the locally built std
-MODULAR_MOJO_MAX_IMPORT_PATH=bazel-bin/mojo/stdlib/std mojo main.mojo
+MODULAR_MOJO_MAX_IMPORT_PATH=bazel-bin/Mojo/stdlib/std mojo main.mojo
 ```
 
 #### Memory Management

@@ -453,7 +453,7 @@ available at runtime or in `comptime if`.
 ## Origin attribute canonicalization
 
 Given a closed algebra of attributes, every attribute builder in
-`KGEN/lib/LITDialect/LITAttrs.cpp` normalizes its result on construction. The IR
+`Mojo/lib/LITDialect/LITAttrs.cpp` normalizes its result on construction. The IR
 you see in dumps is therefore always canonical, and the compiler relies on these
 rules so downstream code (origin comparison, exclusivity, lifetime extension)
 can treat syntactically different forms as equivalent.

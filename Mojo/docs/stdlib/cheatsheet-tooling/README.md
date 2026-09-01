@@ -93,12 +93,12 @@ Override a single knob when a card needs more room:
 ## Update a card
 
 1. Edit `src/body-<topic>.html` and align its tests
-   (`mojo/docs/code/reference/cheat-sheets/test_<topic>.mojo`).
+   (`Mojo/docs/code/reference/cheat-sheets/test_<topic>.mojo`).
    Test names must use underscores, not hyphens.
 1. Keep each card's title, subtitle, and optional `layout` in the comment lines
    at the top of its body file (see Card shape).
 1. Verify every behavioral claim against the Mojo reference docs
-   (`mojo/docs/reference/`) or a runnable compiler check.
+   (`Mojo/docs/stdlib/reference/`) or a runnable compiler check.
 1. Rebuild the card and open the PNG to review it.
 
 ## Publishing
@@ -111,6 +111,6 @@ open a pull request.
 **Maintainers**:
 
 - PNGs and PDFs (4 files per sheet, dark and light mode):
-  `modular/mojo/docs/reference/assets`. Use a named subfolder.
+  `modular/Mojo/docs/stdlib/reference/assets`. Use a named subfolder.
 - SVGs (2 files per sheet, dark and light mode):
   `mojosite/static/img/cheatsheet-assets`. No subfolders.

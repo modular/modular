@@ -33,7 +33,7 @@ package_group(
         "//GraphCompiler/...",
         "//Kernels/...",
         "//Mojo/...",
-        "//Mojo/docs/...",
+        "//Mojo/docs/stdlib/...",
         "//bazel/...",
         "//docs/...",
         "//max/python/max/_core/internal/...",
@@ -64,7 +64,7 @@ pkg_files(
         ":LITDialect.doc",
         ":POPDialect.doc",
     ],
-    prefix = "KGEN/docs",
+    prefix = "Mojo/docs/compiler",
 )
 
 td_library(

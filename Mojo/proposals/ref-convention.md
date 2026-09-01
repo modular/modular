@@ -44,7 +44,7 @@ Along the way, we’ve had a number of challenges to address:
    to `Reference`. It would be awesome to clarify this.
 
 5. We still need to
-   [reconsider which keywords](https://github.com/modular/modular/blob/main/mojo/proposals/lifetimes-keyword-renaming.md)
+   [reconsider which keywords](https://github.com/modular/modular/blob/main/Mojo/proposals/lifetimes-keyword-renaming.md)
    to use for argument conventions. The `inout` keyword, for example, is
    problematic because it works with types that are not movable or copyable. The
    callee doesn’t actually move things in and out, it takes a mutable reference.
