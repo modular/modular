@@ -3250,6 +3250,72 @@ def test_gemma_4_property_names_with_pattern_properties_rejected() -> None:
         )
 
 
+def test_gemma_4_property_names_ref_max_length_zero_rejected() -> None:
+    # The propertyNames bare-key guards must inspect the COMPLETE schema, not
+    # only the literal propertyNames object: a $ref to a maxLength:0 subschema
+    # admits only the empty key and must be rejected the same as a literal
+    # maxLength:0.
+    with pytest.raises(Exception, match="propertyNames"):
+        _gemma_compile(
+            {
+                "type": "object",
+                "propertyNames": {"$ref": "#/$defs/k"},
+                "$defs": {"k": {"maxLength": 0}},
+            }
+        )
+
+
+def test_gemma_4_property_names_ref_explicit_min_length_zero_rejected() -> None:
+    # min-length guard through a $ref: an explicit minLength:0 behind a ref
+    # affirmatively permits the empty key and must be rejected.
+    with pytest.raises(Exception, match="minLength"):
+        _gemma_compile(
+            {
+                "type": "object",
+                "propertyNames": {"$ref": "#/$defs/k"},
+                "$defs": {"k": {"type": "string", "minLength": 0}},
+            }
+        )
+
+
+def test_gemma_4_property_names_anyof_empty_pattern_rejected() -> None:
+    # empty-match guard through a combinator: an anyOf branch whose pattern
+    # matches the empty string can emit a zero-length bare key through the
+    # union, so the guard must see into the combinator and reject.
+    with pytest.raises(Exception):
+        _gemma_compile(
+            {
+                "type": "object",
+                "propertyNames": {"anyOf": [{"pattern": "^a*$"}]},
+            }
+        )
+
+
+def test_gemma_4_property_names_allof_forbidden_char_rejected() -> None:
+    # forbidden-char guard through a combinator: an allOf member pattern that
+    # needs a structural byte (`:`) not allowed in a bare key must be rejected.
+    with pytest.raises(Exception):
+        _gemma_compile(
+            {
+                "type": "object",
+                "propertyNames": {"allOf": [{"pattern": "^a:b$"}]},
+            }
+        )
+
+
+def test_gemma_4_property_names_ref_bare_safe_compiles() -> None:
+    # The complete-schema resolution must not over-reject: a $ref to a
+    # bare-safe key schema still compiles.
+    compiled = _gemma_compile(
+        {
+            "type": "object",
+            "propertyNames": {"$ref": "#/$defs/k"},
+            "$defs": {"k": {"type": "string", "pattern": "^[a-z_]+$"}},
+        }
+    )
+    assert isinstance(compiled, xgr.CompiledGrammar)
+
+
 def test_xml_root_forbidden_key_excluded_from_additional_branch() -> None:
     # The XML formats must honor forbidden (false-schema) keys like every
     # other format: `bar` must never be emittable, even though
