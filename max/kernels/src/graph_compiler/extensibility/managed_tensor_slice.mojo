@@ -67,7 +67,7 @@ from .decorators import register_internal
 # ===----------------------------------------------------------------------=== #
 
 
-struct IO(TrivialRegisterPassable):
+struct IO(Equatable, TrivialRegisterPassable):
     """Tags the direction and fusion kind of a tensor argument to a DPS kernel.
 
     An `IO` value distinguishes plain inputs, outputs, mutable inputs, and the
@@ -100,12 +100,6 @@ struct IO(TrivialRegisterPassable):
     @always_inline("builtin")
     def __init__(out self, value: Int):
         self.value = value
-
-    def __eq__(self, other: IO) -> Bool:
-        return self.value == other.value
-
-    def __ne__(self, other: IO) -> Bool:
-        return self.value != other.value
 
     @always_inline("nodebug")
     def is_fused(self) -> Bool:
