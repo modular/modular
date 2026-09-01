@@ -38,6 +38,7 @@ from max.support.math import ceildiv
 from .block_manager import (
     CompletedTransfer,
     KVConnectorTransfer,
+    PrefixCacheHits,
     _compute_seq_len,
     _resolve_only_use_kv_connector_last_level_cache,
     compute_block_hashes,
@@ -352,6 +353,7 @@ class JengaBlockManager:
         self._num_draft_tokens = num_draft_tokens
         self._num_draft_tokens_per_step = num_draft_tokens_per_step
         self._metrics = KVCacheMetrics()
+        self._num_replicas = num_replicas
 
         ratios = {leaf_id: leaf.ratio for leaf_id, leaf in leaf_infos.items()}
         self.pools = [
@@ -525,6 +527,37 @@ class JengaBlockManager:
         num_filled_blocks = self._num_filled_blocks(ctx)
         for group in self._groups.values():
             group.null_pad_blocks(rows, num_filled_blocks, replica_idx)
+
+    def get_prefix_cache_hit_counts(
+        self, ctx: TextContext
+    ) -> list[PrefixCacheHits]:
+        """Counts the number of prefix cache hits for a request per replica.
+
+        Returns:
+            A list of PrefixCacheHits for each replica.
+        """
+        desired_hashes = self._compute_block_hashes(ctx, [])
+        hit_counts: list[PrefixCacheHits] = []
+        for replica_idx in range(self._num_replicas):
+            num_hit_blocks = self._find_longest_device_prefix_cache_hit(
+                desired_hashes, replica_idx
+            )
+            # Ask the connector to load the hashes that are remaining.
+            (num_hit_host_blocks, num_hit_disk_blocks) = (
+                self._connector.count_cached_prefix(
+                    desired_hashes[num_hit_blocks:]
+                )
+                if self._connector is not None
+                else (0, 0)
+            )
+            hit_counts.append(
+                PrefixCacheHits(
+                    device_blocks=num_hit_blocks,
+                    host_blocks=num_hit_host_blocks,
+                    disk_blocks=num_hit_disk_blocks,
+                )
+            )
+        return hit_counts
 
     def reset_prefix_cache(self) -> None:
         """Drops every commit no request is holding, in every cache."""
@@ -792,6 +825,13 @@ class JengaBlockManager:
             for leaf_id, leaf in self._leaves.items()
         }
 
+    def get_req_blocks(self, ctx: TextContext) -> list[int]:
+        """Returns block IDs the request holds for the first leaf.
+
+        TODO: Delete this method after refactoring downstream callers.
+        """
+        return next(iter(self.get_req_blocks_per_leaf(ctx).values()))
+
     def huge_block_count(self, replica_idx: int = 0) -> BlockCount:
         """Returns the huge-block occupancy for the given replica.
 
@@ -857,32 +897,29 @@ class JengaBlockManager:
         )
 
     @traced
+    def _compute_block_hashes(
+        self, ctx: TextContext, existing_hashes: Sequence[bytes]
+    ) -> list[bytes]:
+        return compute_block_hashes(
+            ctx,
+            existing_hashes,
+            self._block_size,
+            self._kv_hash_algo,
+            self._kv_hash_seed,
+        )
+
+    @traced
     def _compute_hashes_for_request(self, ctx: TextContext) -> list[bytes]:
         """Extends the request's hash chain to cover its newest full blocks."""
         hashes = self._req_to_hashes[ctx.request_id]
-        hashes.extend(
-            compute_block_hashes(
-                ctx,
-                hashes,
-                self._block_size,
-                self._kv_hash_algo,
-                self._kv_hash_seed,
-            )
-        )
+        hashes.extend(self._compute_block_hashes(ctx, hashes))
         return hashes
 
-    def _lookup_device_prefix_cache_hit(
-        self, desired_hashes: Sequence[bytes], replica_idx: int = 0
-    ) -> tuple[dict[str, list[LittleKVCacheBlock]], int]:
-        """Finds the longest run of ``desired_hashes`` the device cache holds.
-
-        Returns:
-            The hit pages of each leaf, and how many blocks long the run is.
-            The caller splices the pages onto the request.
-        """
-        if self._only_use_kv_connector_last_level_cache:
-            return {leaf_id: [] for leaf_id in self._leaves}, 0
-
+    def _find_longest_device_prefix_cache_hit(
+        self,
+        desired_hashes: Sequence[bytes],
+        replica_idx: int = 0,
+    ) -> int:
         # Global caches first: they read their whole history, so their run from
         # the root is the tightest bound available and it costs the cheapest
         # scan to find.
@@ -912,16 +949,37 @@ class JengaBlockManager:
             if not shrank or len(windowed) == 1:
                 break
 
+        return len(desired_hashes)
+
+    def _lookup_device_prefix_cache_hit(
+        self,
+        desired_hashes: Sequence[bytes],
+        replica_idx: int = 0,
+    ) -> tuple[dict[str, list[LittleKVCacheBlock]], int]:
+        """Finds the longest run of ``desired_hashes`` the device cache holds.
+
+        Returns:
+            The hit pages of each leaf, and how many blocks long the run is.
+            The caller splices the pages onto the request.
+        """
+        if self._only_use_kv_connector_last_level_cache:
+            return {leaf_id: [] for leaf_id in self._leaves}, 0
+
+        num_hit_blocks = self._find_longest_device_prefix_cache_hit(
+            desired_hashes, replica_idx
+        )
+        hit_hashes = desired_hashes[:num_hit_blocks]
+
         hit_blocks: dict[str, list[LittleKVCacheBlock]] = {}
         for group in self._groups.values():
             hit_blocks.update(
                 group.claim_hit_blocks(
-                    desired_hashes,
+                    hit_hashes,
                     replica_idx,
                 )
             )
 
-        return hit_blocks, len(desired_hashes)
+        return hit_blocks, num_hit_blocks
 
     def _reuse_blocks_from_prefix_cache(
         self, ctx: TextContext, replica_idx: int = 0

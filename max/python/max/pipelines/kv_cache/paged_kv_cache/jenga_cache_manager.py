@@ -52,7 +52,7 @@ from max.support import to_human_readable_bytes
 from max.support.math import ceildiv
 
 from ..connectors import create_connector
-from .block_manager import PrefixCacheHits, _compute_seq_len
+from .block_manager import _compute_seq_len
 from .cache_manager import (
     _contiguous_prefix_2d,
     _padded_lut_cols,
@@ -583,16 +583,6 @@ class JengaKVCacheManager(JengaBlockManager, PagedKVCacheManagerInterface):
     # Misc
     # ============================================================================
 
-    def get_prefix_cache_hit_counts(
-        self, ctx: TextContext
-    ) -> list[PrefixCacheHits]:
-        """Counts each replica's contiguous cached prefix for a request.
-
-        Unimplemented: this only feeds prefix-aware replica selection, which
-        fails open to weighting every replica by the full prompt.
-        """
-        raise NotImplementedError
-
     def runtime_inputs_for_leaf(
         self,
         batches: Sequence[Sequence[TextContext]],
@@ -612,13 +602,3 @@ class JengaKVCacheManager(JengaBlockManager, PagedKVCacheManagerInterface):
     def get_device_buffer(self, replica_idx: int) -> KVCacheBufferInterface:
         """Returns the device buffer for the given replica."""
         return self._kv_buffers[replica_idx]
-
-    def get_req_blocks(self, ctx: TextContext) -> list[int]:
-        """Returns block IDs the request holds on the replica it was claimed on.
-
-        Unimplemented: this interface method assumes one leaf (it backs the
-        KVConnector / disaggregated-serving transfer path, which Jenga does
-        not support -- see the ``kv_connector`` guard in ``__init__``).
-        Jenga's own per-leaf equivalent is :meth:`get_req_blocks_per_leaf`.
-        """
-        raise NotImplementedError
