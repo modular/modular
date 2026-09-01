@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-# DOC: Mojo/docs/stdlib/manual/get-started.mdx
+# DOC: Mojo/docs/site/manual/get-started.mdx
 
 from std import time
 

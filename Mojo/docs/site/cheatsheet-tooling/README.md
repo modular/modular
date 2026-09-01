@@ -98,7 +98,7 @@ Override a single knob when a card needs more room:
 1. Keep each card's title, subtitle, and optional `layout` in the comment lines
    at the top of its body file (see Card shape).
 1. Verify every behavioral claim against the Mojo reference docs
-   (`Mojo/docs/stdlib/reference/`) or a runnable compiler check.
+   (`Mojo/docs/site/reference/`) or a runnable compiler check.
 1. Rebuild the card and open the PNG to review it.
 
 ## Publishing
@@ -111,6 +111,6 @@ open a pull request.
 **Maintainers**:
 
 - PNGs and PDFs (4 files per sheet, dark and light mode):
-  `modular/Mojo/docs/stdlib/reference/assets`. Use a named subfolder.
+  `modular/Mojo/docs/site/reference/assets`. Use a named subfolder.
 - SVGs (2 files per sheet, dark and light mode):
   `mojosite/static/img/cheatsheet-assets`. No subfolders.

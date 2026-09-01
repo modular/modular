@@ -1397,7 +1397,7 @@ def foo():
 | `Support/include/Support/DebugInfoDialect/` | Debug info dialect headers and TableGen           |
 | `Mojo/include/Mojo/*/`                      | Headers and TableGen definitions                  |
 | `Mojo/test/`                                | Compiler tests (lit + FileCheck)                  |
-| `Mojo/docs/stdlib/`                         | Documentation                                     |
+| `Mojo/docs/site/`                           | Documentation                                     |
 
 ---
 

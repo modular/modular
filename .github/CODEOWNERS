@@ -18,8 +18,9 @@
 /Mojo/CLAUDE.md @modular/stdlib
 /Mojo/CONTRIBUTING.md @modular/stdlib
 /Mojo/README.md @modular/stdlib
-/Mojo/docs/stdlib @modular/mojo-docs
+/Mojo/docs/site/ @modular/mojo-docs
 /Mojo/docs/compiler/ @modular/compiler
+/Mojo/docs/stdlib/ @modular/stdlib
 /Mojo/examples/ @modular/mojo-docs
 /Mojo/include/ @modular/compiler
 /Mojo/integration-test/ @modular/stdlib

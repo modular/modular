@@ -18,7 +18,7 @@ memory specifications, thread organization, and performance characteristics.
 """
 
 # Contributor note: if you're adding support for a new GPU architecture, see
-# `Mojo/stdlib/docs/adding-gpu-targets.md` for a step-by-step guide covering
+# `Mojo/docs/stdlib/adding-gpu-targets.md` for a step-by-step guide covering
 # the MLIR target configuration, the `data_layout` string format, and the
 # locations in this file that need to be updated.
 

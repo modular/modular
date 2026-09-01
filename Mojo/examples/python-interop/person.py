@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-# DOC: Mojo/docs/stdlib/manual/python/mojo-from-python.mdx
+# DOC: Mojo/docs/site/manual/python/mojo-from-python.mdx
 
 # The Mojo importer module will handle compilation of the Mojo files.
 import mojo.importer  # noqa: F401, I001

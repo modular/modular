@@ -217,7 +217,7 @@ Currently accepting contributions for:
 - MAX accelerator library (`/max/kernels/`)
 - MAX API and models (`/max/`)
 - Code examples (`/max/examples/`, `/Mojo/examples/`)
-- Mojo documentation (`/Mojo/docs/stdlib/`)
+- Mojo documentation (`/Mojo/docs/site/`)
 
 Each area has its own guidelines in the nearest `CONTRIBUTING.md`; the root
 `CONTRIBUTING.md` is the full contributor guide. Other areas are not open for

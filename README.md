@@ -53,7 +53,7 @@ to the following documentation about how to develop in the repo:
 
 - [`/max/docs`](/max/docs): Docs for developers working in the MAX framework
   codebase.
-- [`/Mojo/stdlib/docs`](/Mojo/stdlib/docs): Docs for developers working in the
+- [`/Mojo/docs/stdlib`](/Mojo/docs/stdlib): Docs for developers working in the
   Mojo standard library.
 
 We also welcome your bug reports. If you have a bug, please [file an issue

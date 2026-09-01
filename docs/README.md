@@ -9,7 +9,7 @@ configuration is in [/max/python/docs/](/max/python/docs).
 - [`/Mojo/docs`](/Mojo/docs): Source docs for mojolang.org.
 - [`/max/docs`](/max/docs): Docs for developers working in the MAX framework
   codebase.
-- [`/Mojo/stdlib/docs`](/Mojo/stdlib/docs): Docs for developers working in the
+- [`/Mojo/docs/stdlib`](/Mojo/docs/stdlib): Docs for developers working in the
   Mojo standard library.
 - [`/max/docs/design-docs`](/max/docs/design-docs): Engineering docs that
   describe how core Modular technologies work.

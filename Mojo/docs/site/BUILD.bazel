@@ -23,14 +23,14 @@ package(default_visibility = ["//oss/modular/docs:__subpackages__"])
 # Stable CI labels (aliases): :mojodocs, :releases
 #
 # CI / artifacts:
-#   ./bazelw build --config=ci -- //Mojo/docs/stdlib:mojodocs //Mojo/docs/stdlib:releases
+#   ./bazelw build --config=ci -- //Mojo/docs/site:mojodocs //Mojo/docs/site:releases
 # Outputs under bazel-bin/.../mojodocs.tar, docs.tar (pre-post-process), and releases.tar.
 #
 # Local dev (requires modular-fe cloned under .derived/modular-fe/; rsyncs from those tars):
-#   ./bazelw run //Mojo/docs/stdlib:install
+#   ./bazelw run //Mojo/docs/site:install
 # Or run separately:
-#   ./bazelw run //Mojo/docs/stdlib:install-docs
-#   ./bazelw run //Mojo/docs/stdlib:install-releases
+#   ./bazelw run //Mojo/docs/site:install-docs
+#   ./bazelw run //Mojo/docs/site:install-releases
 # -----------------------------------------------------------------------------
 
 install_docs(
@@ -89,7 +89,7 @@ pkg_files(
     name = "mojosite_releases_nightly_md",
     srcs = [":mojosite_releases_nightly_gen"],
     renames = {
-        "//Mojo/docs/stdlib:mojosite_releases_nightly_gen": "nightly.md",
+        "//Mojo/docs/site:mojosite_releases_nightly_gen": "nightly.md",
     },
     tags = ["manual"],
 )

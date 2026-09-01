@@ -33,7 +33,7 @@ package_group(
         "//GraphCompiler/...",
         "//Kernels/...",
         "//Mojo/...",
-        "//Mojo/docs/stdlib/...",
+        "//Mojo/docs/site/...",
         "//bazel/...",
         "//docs/...",
         "//max/python/max/_core/internal/...",

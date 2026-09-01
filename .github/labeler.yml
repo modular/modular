@@ -25,5 +25,5 @@ mojo-stdlib:
 mojo-docs:
   - changed-files:
       - any-glob-to-any-file:
-          - "Mojo/docs/stdlib/**"
+          - "Mojo/docs/site/**"
           - "Mojo/examples/**"
