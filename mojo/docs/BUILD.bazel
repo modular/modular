@@ -182,7 +182,7 @@ mojo_commands = [
 
 pkg_files(
     name = "mojosite_docs_docs_cli",
-    srcs = ["//KGEN/tools/mojo:" + command + ".md_files" for command in mojo_commands],
+    srcs = ["//Mojo/tools/mojo:" + command + ".md_files" for command in mojo_commands],
     prefix = "docs/cli",
     strip_prefix = strip_prefix.files_only(),
     tags = ["manual"],

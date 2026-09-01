@@ -689,21 +689,25 @@ def test_dynamic_variadic_pack() raises:
             comptime assert idx == 3
             return rebind_var[ArgPtr](Pointer(to=a3).as_unsafe_any_origin())
 
-    _call_with_dynamic_pack_pointers[format_args](make_elem_ptr)
+    _call_with_dynamic_pack_pointers[ArgTrait=AnyType, format_args](
+        make_elem_ptr
+    )
 
     assert_equal(buffer, "5 hello [1, 20, 300]")
 
     # Test that dynamic pack call works with callees that return a value
     assert_equal(
-        _call_with_dynamic_pack_pointers[return_from_dynamic_pack](
-            make_elem_ptr
-        ),
+        _call_with_dynamic_pack_pointers[
+            ArgTrait=AnyType, return_from_dynamic_pack
+        ](make_elem_ptr),
         5,
     )
 
     # Test that dynamic pack call works with callees that `raises`
     with assert_raises(contains="StopIteration"):
-        _call_with_dynamic_pack_pointers[raise_from_dynamic_pack](make_elem_ptr)
+        _call_with_dynamic_pack_pointers[
+            ArgTrait=AnyType, raise_from_dynamic_pack
+        ](make_elem_ptr)
 
 
 def main() raises:

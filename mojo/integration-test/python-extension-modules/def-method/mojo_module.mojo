@@ -51,6 +51,9 @@ def PyInit_mojo_module() abi("C") -> PythonObject:
             .def_py_method[Person.sum_kwargs_ints_py]("sum_kwargs_ints_py")
             # auto-convert self + kwargs test method
             .def_method[Person.add_kwargs_to_age_auto]("add_kwargs_to_age_auto")
+            .def_method[Person.set_age_from_kwargs_auto](
+                "set_age_from_kwargs_auto"
+            )
         )
         return b.finalize()
     except e:
@@ -252,3 +255,13 @@ struct Person(Defaultable, ImplicitlyCopyable, Writable):
 
         self_ptr[].age += total
         return PythonObject(self_ptr[].age)
+
+    @staticmethod
+    def set_age_from_kwargs_auto(
+        self_ptr: Pointer[Self, MutAnyOrigin],
+        base: PythonObject,
+        var **kwargs: PythonObject,
+    ) raises:
+        self_ptr[].age = Int(py=base)
+        for entry in kwargs.items():
+            self_ptr[].age += Int(py=entry.value)

@@ -16,7 +16,7 @@ from std.os import abort
 from std.sys import has_accelerator
 
 from std.complex import ComplexSIMD, ComplexScalar
-from std.gpu import global_idx
+from max.gpu import global_idx
 from max.gpu.host import DeviceContext
 from layout import Layout, LayoutTensor
 from std.python import PythonObject

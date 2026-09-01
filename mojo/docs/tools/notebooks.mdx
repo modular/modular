@@ -242,7 +242,7 @@ Each GPU thread updates one element.
 ```mojo
 %%mojo
 
-from std.gpu import thread_idx
+from max.gpu import thread_idx
 from max.gpu.host import DeviceContext
 from layout import TileTensor, row_major
 from std.sys import has_accelerator

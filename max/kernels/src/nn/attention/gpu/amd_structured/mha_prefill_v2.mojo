@@ -92,7 +92,7 @@ The cluster decomposition and overlap pattern are inspired by the
 reference attention kernel.
 """
 
-from std.gpu import (
+from max.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
     block_idx,
@@ -117,7 +117,7 @@ from std.sys.intrinsics import (
 )
 from std.utils import StaticTuple
 
-from layout import TensorLayout, TileTensor, PointerStorage
+from layout import TensorLayout, TileTensor, DefaultEngine
 from layout._utils import make_amd_buffer_resource
 from layout.coord import Coord
 from layout.swizzle import Swizzle
@@ -468,7 +468,7 @@ struct MhaPrefillV2[config: MhaConfigV2]:
         layout: TensorLayout
     ](
         q_warp_2d: TileTensor[
-            Self.config.dtype, layout, Storage=PointerStorage[], ...
+            Self.config.dtype, layout, Engine=DefaultEngine[], ...
         ],
     ) -> RegTile[Self.config.dtype, Self._Q_LAYOUT_T, MutUntrackedOrigin]:
         """Loads the warp's Q sub-tile from gmem into a row_l register
@@ -570,7 +570,7 @@ struct MhaPrefillV2[config: MhaConfigV2]:
         layout: TensorLayout
     ](
         q_warp_2d: TileTensor[
-            Self.config.dtype, layout, Storage=PointerStorage[], ...
+            Self.config.dtype, layout, Engine=DefaultEngine[], ...
         ],
         scale_log2e: Float32,
     ) -> RegTile[Self.config.dtype, Self._Q_LAYOUT_T, MutUntrackedOrigin]:

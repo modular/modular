@@ -22,9 +22,9 @@ from std.atomic import Atomic
 from std.sys import has_apple_gpu_accelerator, is_apple_gpu
 from std.sys.info import simd_width_of
 
-import std.gpu.primitives.warp as warp
+import max.gpu.primitives.warp as warp
 from std.bit import pop_count, log2_floor
-from std.gpu import (
+from max.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
     block_idx,

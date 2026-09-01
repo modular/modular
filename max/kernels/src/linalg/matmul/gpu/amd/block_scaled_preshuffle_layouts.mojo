@@ -41,7 +41,7 @@ Layout reference (canonical):
         : `preShuffleWeight` (B 5D) and `preShuffleScale` (scale 4D).
 """
 
-from std.gpu import (
+from max.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     block_dim,
     block_idx,
@@ -55,7 +55,7 @@ from std.math import align_up, ceildiv
 from std.math.uutils import udivmod, uceildiv
 from std.memory import bitcast
 
-from layout import Coord, Idx, TensorStorage, TileTensor, row_major
+from layout import Coord, Idx, TensorEngine, TileTensor, row_major
 
 from layout.tile_layout import Layout, TensorLayout, col_major
 from layout.tile_tensor import stack_allocation
@@ -377,11 +377,11 @@ struct Shuffler[E: Int]:
         K_BYTES: Int,
         RawLayout: TensorLayout,
         DstLayout: TensorLayout,
-        RawStore: TensorStorage,
-        DstStore: TensorStorage,
+        RawEngine: TensorEngine,
+        DstEngine: TensorEngine,
     ](
-        raw: TileTensor[.uint8, RawLayout, ImmutAnyOrigin, Storage=RawStore],
-        dst: TileTensor[.uint8, DstLayout, MutAnyOrigin, Storage=DstStore],
+        raw: TileTensor[.uint8, RawLayout, ImmutAnyOrigin, Engine=RawEngine],
+        dst: TileTensor[.uint8, DstLayout, MutAnyOrigin, Engine=DstEngine],
     ):
         """LDS-staged per-tile B 5D preshuffle on AMD GPU.
 
@@ -604,8 +604,8 @@ struct Shuffler[E: Int]:
             K_BYTES,
             type_of(raw_any).LayoutType,
             type_of(dst_any).LayoutType,
-            type_of(raw_any).Storage,
-            type_of(dst_any).Storage,
+            type_of(raw_any).Engine,
+            type_of(dst_any).Engine,
         ]
         ctx.enqueue_function[kernel](
             raw_any,
@@ -679,21 +679,21 @@ struct Shuffler[E: Int]:
         SrcLayout: TensorLayout,
         DstLayout: TensorLayout,
         AOffsetsLayout: TensorLayout,
-        SrcStore: TensorStorage,
-        DstStore: TensorStorage,
-        AOffsetsStore: TensorStorage,
+        SrcEngine: TensorEngine,
+        DstEngine: TensorEngine,
+        AOffsetsEngine: TensorEngine,
     ](
         sfa_raw: TileTensor[
-            .uint8, SrcLayout, ImmutAnyOrigin, Storage=SrcStore
+            .uint8, SrcLayout, ImmutAnyOrigin, Engine=SrcEngine
         ],
         sfa_pre: TileTensor[
-            mut=True, .uint8, DstLayout, MutAnyOrigin, Storage=DstStore
+            mut=True, .uint8, DstLayout, MutAnyOrigin, Engine=DstEngine
         ],
         a_offsets: TileTensor[
             .uint32,
             AOffsetsLayout,
             ImmutAnyOrigin,
-            Storage=AOffsetsStore,
+            Engine=AOffsetsEngine,
         ],
         num_active_experts: Int32,
         max_padded_M: Int32,
@@ -832,9 +832,9 @@ struct Shuffler[E: Int]:
             type_of(raw_any).LayoutType,
             type_of(pre_any).LayoutType,
             type_of(a_off_any).LayoutType,
-            type_of(raw_any).Storage,
-            type_of(pre_any).Storage,
-            type_of(a_off_any).Storage,
+            type_of(raw_any).Engine,
+            type_of(pre_any).Engine,
+            type_of(a_off_any).Engine,
         ]
         ctx.enqueue_function[kernel](
             raw_any,

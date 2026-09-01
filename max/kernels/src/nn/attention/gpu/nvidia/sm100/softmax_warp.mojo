@@ -18,9 +18,9 @@ from std.memory import bitcast
 from std.utils.numerics import min_or_neg_inf
 from std.sys import size_of, get_defined_int, get_defined_bool
 from std.sys.info import _accelerator_arch
-import std.gpu.primitives.warp as warp
-from std.gpu import block_idx
-from std.gpu.globals import WARPGROUP_SIZE
+import max.gpu.primitives.warp as warp
+from max.gpu import block_idx
+from max.gpu.globals import WARPGROUP_SIZE
 from max.gpu.memory import fence_async_view_proxy
 from max.gpu.sync import (
     named_barrier,
@@ -41,7 +41,7 @@ from max.gpu.compute.arch.tcgen05 import (
     tcgen05_release_allocation_lock,
     tcgen05_store_wait,
 )
-from std.gpu.primitives.warp import _vote_nvidia_helper
+from max.gpu.primitives.warp import _vote_nvidia_helper
 from layout.swizzle import make_swizzle
 from layout.tma_async import RaggedTMA3DTile
 from max.gpu.host.nvidia.tma import TensorMapSwizzle

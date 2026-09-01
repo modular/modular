@@ -18,7 +18,7 @@ from std.os import abort
 from std.sys import size_of
 from std.sys.info import align_of, simd_width_of
 
-from std.gpu import (
+from max.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
     block_idx,

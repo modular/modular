@@ -61,7 +61,7 @@ register-cliff optimum (KB `apple-m5-gpu-perf-model`); do NOT exceed 4
 accumulators.
 """
 
-from std.gpu import WARP_SIZE, block_idx, thread_idx
+from max.gpu import WARP_SIZE, block_idx, thread_idx
 from max.gpu.host import DeviceContext
 from std.math import ceildiv
 from std.sys import align_of
@@ -480,9 +480,9 @@ def enqueue_matmul2d_fp8[
         type_of(c).LayoutType,
         type_of(a).LayoutType,
         type_of(weight).LayoutType,
-        type_of(c).Storage,
-        type_of(a).Storage,
-        type_of(weight).Storage,
+        type_of(c).Engine,
+        type_of(a).Engine,
+        type_of(weight).Engine,
     ]
     ctx.enqueue_function[kernel](
         c,

@@ -23,9 +23,9 @@ from std.math.uutils import umod, uceildiv
 from std.math.constants import log2e
 from std.sys import align_of, get_defined_int, simd_width_of
 
-import std.gpu.primitives.warp as warp
+import max.gpu.primitives.warp as warp
 from std.collections import OptionalReg
-from std.gpu import (
+from max.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
     block_dim,
@@ -33,11 +33,11 @@ from std.gpu import (
     thread_idx,
 )
 from max.gpu.sync import barrier
-from std.gpu.globals import WARPGROUP_SIZE
+from max.gpu.globals import WARPGROUP_SIZE
 from max.gpu.host import DeviceContext, FuncAttribute, DeviceBuffer
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu.host.info import H100
-from std.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
+from max.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
 from max.gpu.memory import external_memory
 from max.gpu.sync import named_barrier
 from layout import IntTuple, Layout, LayoutTensor, UNKNOWN_VALUE

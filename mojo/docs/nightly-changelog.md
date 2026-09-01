@@ -16,6 +16,9 @@ This version is still a work in progress.
 
 ## Language enhancements
 
+- Unknown declaration errors now suggest a unique near-miss spelling from the
+  enclosing scopes (for example `coun` → `count`), with a replace-token fixit.
+
 - Mojo now supports contextually inferred member references: a leading-dot form
   such as `.red` or `.float64` resolves against the expected type of the
   expression, so you can omit a redundant type name when context already
@@ -140,6 +143,10 @@ This version is still a work in progress.
   var c = Coord(ComptimeInt[3](), ComptimeInt[4]())
   var moved = c.replace[1](Int64(7))  # Coord(ComptimeInt[3](), Int64(7))
   ```
+
+- Python functions exposed through `PythonModuleBuilder.def_function()`,
+  `PythonTypeBuilder.def_method()`, and `PythonTypeBuilder.def_staticmethod()`
+  no longer have a library-imposed limit on positional arguments.
 
 - `List.extend` and `List.resize` now grow geometrically, so repeatedly
   extending or resizing by a small increment is no longer quadratic. As a
@@ -313,6 +320,16 @@ This version is still a work in progress.
 
 ## GPU programming
 
+- The `max.gpu` package now mirrors everything reachable from `std.gpu`, making
+  it a complete entry point for accelerator programming. Prefer `max.gpu`, which
+  is becoming the only public source for these utilities.
+
+- The `std.gpu` package is now private, as `std._gpu`. `max.gpu` is the only
+  public source for the GPU primitives, and its API reference is the only
+  published one; `/docs/std/gpu/...` pages redirect to `/api/mojo/max/gpu/...`.
+  Replace `from std.gpu import ...` with `from max.gpu import ...`; a failed
+  `std.gpu` import carries a note pointing at the new home.
+
 ## Tooling changes
 
 - `mojo doc` now reports the condition of a conditional trait conformance, and
@@ -323,6 +340,10 @@ This version is still a work in progress.
 ## Removed
 
 This release completes the removal of APIs deprecated during the v1.0 cycle.
+
+- Implicit variable declaration now produces an error instead of a warning. The
+  walrus operator also only overwrite existing values, not implicitly declare
+  new ones.
 
 - Removed the temporary `InlineArray` alias for `Array`, including its
   re-exports from `std.collections` and the prelude. Use `Array` directly.
@@ -454,6 +475,9 @@ This release completes the removal of APIs deprecated during the v1.0 cycle.
   int in `[2**63, 2**64)` no longer overflows, and a negative Python int now
   raises instead of silently wrapping to the maximum value.
 
+- A union whose widest member is a `SIMD[DType.bool, N]` with `N > 1`, such as
+  `Optional[SIMD[DType.bool, 2]]`, now compiles.
+
 - A `where` clause naming a type that an enclosing `where` clause constrained
   to a tighter trait can now be proven. Calling a method declared
   `where Ts.contains[T]()` with such a `T` failed with `lacking evidence to
@@ -523,6 +547,11 @@ This release completes the removal of APIs deprecated during the v1.0 cycle.
   aliases were declared as signed 16-bit integers, but macOS defines them as
   unsigned, so any mode with the `S_IFREG` bit set (every regular file)
   sign-extended into a negative `Int`.
+
+- On macOS, `os.stat()` and `os.lstat()` now report file timestamps with the
+  correct nanosecond values. `_CTimeSpec.as_nanoseconds()` previously treated
+  the `timespec.tv_nsec` field as microseconds, inflating the subsecond
+  component by a factor of up to 1,000.
 
 - `PythonObject` no longer leaks a CPython reference per positional argument
   when calling a Python object, nor when setting an item, attribute, or set

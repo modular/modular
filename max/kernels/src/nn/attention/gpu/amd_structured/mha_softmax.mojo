@@ -33,8 +33,8 @@ here would lower to `ds_bpermute_b32` (LDS-routed), so we go through
 `permlane_swap` directly.
 """
 
-from std.gpu.intrinsics import permlane_swap
-from std.gpu.primitives.warp import vote as warp_vote
+from max.gpu.intrinsics import permlane_swap
+from max.gpu.primitives.warp import vote as warp_vote
 from std.math import exp2 as math_exp2, recip
 from std.sys.intrinsics import unlikely
 

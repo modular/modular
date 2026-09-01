@@ -1,560 +1,186 @@
 ---
-title: Value destruction
-sidebar_position: 3
-description: An explanation of when and how Mojo destroys values.
+title: Automatic destruction
+description: Let Mojo destroy values automatically after their last use.
 ---
 
-As soon as a value/object is no longer used, Mojo destroys it. Mojo does *not*
-wait until the end of a code block—or even until the end of an expression—to
-destroy an unused value. It destroys values using an "as soon as possible"
-(ASAP) destruction policy that runs after every sub-expression. Even within an
-expression like `a+b+c+d`, Mojo destroys the intermediate values as soon as
-they're no longer needed.
+Mojo destroys values as soon as they're no longer used. It doesn't wait for
+the end of a code block or even the end of an expression. With Mojo's
+*as-soon-as-possible* (ASAP) destruction policy, intermediate values in an
+expression such as `a + (b - c) * d` can be destroyed as soon as their last
+use completes.
 
-Mojo uses static analysis at compile-time to determine the last use of a
-value. At that point, it immediately ends the value's lifetime and calls
-the *implicit* `__deinit__()` deinitializer. You can override
-`__deinit__()` in your structs to perform any required cleanup.
+At compile time, Mojo determines the last use of each value. After its last
+use, the value's lifetime ends and Mojo calls its `__deinit__()`
+deinitializer.
 
-:::note
-For types that require stronger guarantees, Mojo also supports *explicit*
-compiler-checked deinitializers, which provide an additional layer of safety
-for managing cleanup. For details, read about [explicit
-destruction](#explicitly-destroyed-types) below.
-:::
+For cleanup that must happen at a specific, compiler-checked point, Mojo
+also supports *explicit* deinitializers. See
+[Explicit value destruction](/docs/manual/lifecycle/explicit-destroy/).
 
-For example, notice when the `__deinit__()` deinitializer is called for each
-instance of `Balloon`:
+## When Mojo destroys values
+
+Track when each Number instance is deinitialized by overloading `__deinit__()`
+to print a message:
 
 ```mojo
 @fieldwise_init
-struct Balloon(Writable):
-    var color: String
+struct Number(Writable):
+    var value: Int
 
-    def write_to(self, mut writer: Some[Writer]):
-        writer.write(String("a ", self.color, " balloon"))
-
+    # Track the destruction of each Number instance
     def __deinit__(deinit self):
-        print("Destroyed", String(self))
+        print(t"Destroying Number(value={self.value})")
 
+    # Add two Number values together
+    def __add__(self, other: Number) -> Number:
+        return Number(self.value + other.value)
+
+    # Subtract a Number value from another
+    def __sub__(self, other: Number) -> Number:
+        return Number(self.value - other.value)
+
+    # Multiply two Number values together
+    def __mul__(self, other: Number) -> Number:
+        return Number(self.value * other.value)
 
 def main():
-    var a = Balloon("red")
-    var b = Balloon("blue")
-    print(a)
-    # a.__deinit__() runs here for "red" Balloon
+    var a = Number(1)
+    var b = Number(2)
+    var c = Number(3)
+    var d = Number(4)
 
-    a = Balloon("green")
-    # a.__deinit__() runs immediately because "green" Balloon is never used
+    #     1    2   3    4
+    print(a + (b - c) * d)
 
-    print(b)
-    # b.__deinit__() runs here
+    # The output shows the order of destruction for each value.
+    # Expression precedence determines the order of evaluation, and
+    # therefore the order in which these last uses occur:
+
+    # Destroying Number(value=3)   # PARENTHESIZED SUBTRACTION FIRST
+    # Destroying Number(value=2)   # PARENTHESIZED SUBTRACTION FIRST
+    # Destroying Number(value=-1)  # MULTIPLICATION SECOND, intermediate value
+    # Destroying Number(value=4)   # MULTIPLICATION SECOND
+    # Destroying Number(value=-4)  # ADDITION THIRD, intermediate value
+    # Destroying Number(value=1)   # ADDITION THIRD
+
+    # Number(value=-3)  # PRINTS RESULT
+
+    # Destroying Number(value=-3)  # RESULT IS DESTROYED; DEINITIALIZER RUNS
 ```
 
-```output
-a red balloon
-Destroyed a red balloon
-Destroyed a green balloon
-a blue balloon
-Destroyed a blue balloon
-```
+Every value is initialized once and deinitialized once. This happens as the
+expression is evaluated in precedence order: the parenthesized subtraction
+first, then multiplication, then addition. Values are destroyed as soon as
+their last use completes.
 
-Each initialization of a value is matched with a call to the
-deinitializer, and `a` is actually destroyed multiple times—once for each time
-it receives a new value.
+Intermediate values that aren't bound to variables (-1, -4, and -3 in this
+example) also have lifecycles. They're destroyed after their last use.
 
-Also notice that this `__deinit__()` implementation doesn't actually do
-anything. Most structs don't require a custom deinitializer, and Mojo
-automatically adds a no-op deinitializer if you don't define one.
+## Deinitializer behavior
 
-The `__deinit__()` method takes its argument using the `deinit`
-[argument
-convention](/docs/manual/values/ownership/#argument-conventions),
-which indicates that the value is being deinitialized.
+`__deinit__()` uses the `deinit`
+[argument convention](/docs/manual/values/ownership/#argument-conventions)
+for `self`. The value and its fields remain valid while `__deinit__()`
+performs cleanup. When the method returns, the instance becomes logically
+deinitialized.
 
-## Default deinitializer behavior
+Mojo generates a `__deinit__()` for every struct with deinitializable fields.
 
-You may be wondering how Mojo can destroy a type without a custom
-deinitializer, or why a no-op deinitializer is useful. If a type is simply
-a collection of fields, like the `Balloon` example, Mojo only needs to
-destroy the fields: `Balloon` doesn't dynamically allocate memory or use
-any long-lived resources (like file handles). There's no special action to
-take when a `Balloon` value is destroyed.
+In general, don't call `__deinit__()` directly. If you need that level of
+control, use [explicit value
+destruction](/docs/manual/lifecycle/explicit-destroy/). You may also need
+to call `__deinit__()` directly when wrapping a deinitializer for
+parameterized types.
 
-When a `Balloon` value is destroyed, the `String` value in its `color` field is
-no longer used, and it is also immediately destroyed.
+## Moving values out of fields
 
-The `String` value is a little more complicated. Mojo strings are mutable. The
-`String` object has an internal buffer—a
-[`List`](/docs/std/collections/list/List/) field,
-which holds the characters that make up the string. A `List` stores
-its contents in dynamically allocated memory on the heap, so the string can
-The string itself doesn't have any special deinitializer logic,
-but when Mojo destroys a string, it calls the deinitializer for the
-`List` field, which de-allocates the memory.
+Deinitializers are the only place where you can safely move values out of an
+instance's fields without having to reinitialize the field before its
+next use.
 
-Since `String` doesn't require any custom deinitializer logic, it has a
-no-op deinitializer: literally, a `__deinit__()` method that doesn't do
-anything. This may seem pointless, but it means that Mojo can call the
-deinitializer on any value when its lifetime ends. This makes it easier to
-write type-generic containers and algorithms.
-
-### Benefits of ASAP destruction
-
-Similar to other languages, Mojo follows the principle that objects/values
-acquire resources in an initializer (`__init__()`) and release resources in
-a deinitializer (`__deinit__()`). However, Mojo's ASAP destruction has some
-advantages over scope-based destruction (such as the C++ [RAII
-pattern](https://en.cppreference.com/w/cpp/language/raii), which waits until
-the end of the code scope to destroy values):
-
-- Destroying values immediately at last-use composes nicely with the "move"
-  optimization, which transforms a "copy+del" pair into a "move" operation.
-
-- Destroying values at end-of-scope in C++ is problematic for some common
-  patterns like tail recursion, because the destructor call happens after the
-  tail call. This can be a significant performance and memory problem for
-  certain functional programming patterns, which is not a problem in Mojo,
-  because the destructor call always happens before the tail call.
-
-The Mojo destruction policy is more similar to how Rust and Swift work, because
-they both have strong value ownership tracking and provide memory safety. One
-difference is that Rust and Swift require the use of a [dynamic "drop
-flag"](https://doc.rust-lang.org/nomicon/drop-flags.html)—they maintain hidden
-shadow variables to keep track of the state of your values to provide safety.
-These are often optimized away, but the Mojo approach eliminates this overhead
-entirely, making the generated code faster and avoiding ambiguity.
-
-## Implicit deinitializer {#destructor}
-
-Mojo calls a value's deinitializer after the value's last use unless a type
-opts out of `Deinitable` with `Deinitable where False`. This trait provides
-a default no-op deinitializer (`__deinit__()`), which you can override.
-
-For the implicit deinitializer, create a custom `__deinit__()`
-implementation to perform any required cleanup. This might include freeing
-dynamically allocated memory (for example, through `dealloc()`) or
-releasing long-lived resources such as file handles.
-
-Types that are simple collections of other types usually don't need to
-override `__deinit__()`.
-
-For example, consider this simple struct:
+This special rule isn't about where the code lives. It's about
+guarantees:
 
 ```mojo
-@fieldwise_init
-struct Balloons:
-    var color: String
-    var count: Int
+def __deinit__(deinit self):
+    var name = self.name^  # OK: can take ownership of fields
 ```
 
-There's no need to define the `__deinit__()` deinitializer for this,
-because it's a simple collection of other types (`String` and `Int`),
-and it doesn't dynamically allocate memory.
+The compiler knows that deinitializers like `__deinit__()` are the final
+use of an instance. Because of this, it allows you to move values out of
+fields without reinitializing them.
 
-Whereas, the following struct allocates memory, so it must define the
-`__deinit__()` method to free that memory. The
-[`ThinAllocation`](/docs/std/memory/alloc/ThinAllocation/) type used
-here is a handle to the allocated memory.
+This ensures that fields are only moved out of struct instances when the
+compiler can guarantee the instance is at the end of its lifetime.
+
+Like instances, struct fields use ASAP destruction within `__deinit__()`
+methods. For example:
 
 ```mojo
-from std.memory import alloc, dealloc, ThinAllocation
+struct S:
+   var a: String
+   var b: String
 
-struct HeapArray(Writable):
-    var data: ThinAllocation[Int]
-    var size: Int
+   def __deinit__(deinit self):
+       # Mojo calls a.__deinit__() here.
+       use(b)
+       # Mojo calls b.__deinit__() here.
+```
 
-    def __init__(out self, *values: Int):
-        self.size = len(values)
-        self.data = alloc[Int]({count = self.size}).into_thin()
-        var ptr = self.data.unsafe_ptr()
-        for i in range(self.size):
-            ptr.unsafe_offset(i).unsafe_write(values[i])
+## Custom deinitializers
 
-    def write_to(self, mut writer: Some[Writer]):
-        writer.write("[")
-        var ptr = self.data.unsafe_ptr()
-        for i in range(self.size):
-            writer.write(ptr[unsafe_offset=i])
-            if i < self.size - 1:
-                writer.write(", ")
-        writer.write("]")
+Define a custom `__deinit__()` when your type needs to perform cleanup as
+it's destroyed. For example, you might free manually allocated memory or
+close a long-lived resource such as a file.
+
+This logger owns a temporary file. Its deinitializer closes the file when
+the logger is destroyed:
+
+```mojo
+from std.tempfile import NamedTemporaryFile
+
+struct QuickLogger:
+    var temporary_file: NamedTemporaryFile
+
+    def __init__(out self) raises:
+        self.temporary_file = NamedTemporaryFile(mode="w", delete=False)
+
+    # Log a message to the temporary file
+    def log(mut self, message: String) raises:
+        self.temporary_file.write(message + "\n")
 
     def __deinit__(deinit self):
-        print("Destroying", self.size, "elements")
-        var ptr = self.data.unsafe_ptr()
-        for i in range(self.size):
-            ptr.unsafe_offset(i).unsafe_deinit_pointee()
-        dealloc(self.data^.unsafe_with_layout({count = self.size}))
+        try:
+            print(t"Closing: {self.temporary_file.name}")
+            self.temporary_file.close()
+        except e:
+            print(t"Error: {e}")
 
-def main():
-    var a = HeapArray(10, 1, 3, 9)
-    print(a)
+def main() raises:
+    var ql = QuickLogger()
+    ql.log("This is a test log message.")
+    ql.log("This is the last use of 'ql'")
 ```
-
-```output
-[10, 1, 3, 9]
-Destroying 4 elements
-```
-
-The deinitializer takes its `self` argument using the `deinit` [argument
-convention](/docs/manual/values/ownership#argument-conventions), which
-grants exclusive ownership of the value and marks it as destroyed at the
-end of the function. (For more information on the `deinit` convention, see
-[Instance initialization](/docs/manual/lifecycle/initialization/)).
-
-Note that a pointer doesn't *own* any values in the memory it points to, so
-when a pointer is destroyed, Mojo doesn't call the deinitializers on those
-values. Likewise, an allocation is a handle to memory, but it doesn't own
-the values stored in that memory.
-
-So in the `HeapArray` example above, calling `dealloc()` releases the
-memory, but doesn't call the deinitializers on the stored values. That's
-why the deinitializer loops over the elements first, invoking the
-`unsafe_deinit_pointee()` method provided by the `Pointer` type, and only
-then deallocates.
-
-:::note
-You shouldn't call the deinitializer explicitly. If you need to ensure that
-a deinitializer is called at a specific point, use the discard pattern
-described in [explicit lifetime extension](#explicit-lifetime-extension).
-:::
-
-It's important to notice that the `__deinit__()` method is an "extra" cleanup
-event, and your implementation does not override any default deinitialization
-behaviors. For example, Mojo still destroys all the fields in `Balloons` even
-if you add a `__deinit__()` method that does nothing:
-
-```mojo
-@fieldwise_init
-struct Balloons:
-    var color: String
-    var count: Int
-
-    def __deinit__(deinit self):
-        # Mojo destroys all the fields when they're last used
-        pass
-```
-
-However, the `self` value inside the `__deinit__()` deinitializer is still
-whole (so all fields are still usable) until the deinitializer returns.
-
-## Explicitly-destroyed types
-
-Mojo supports both implicit and explicit value destruction. Each approach
-balances different needs around safety, performance, and overhead:
-
-```mojo
-# All type are Deinitable by default
-struct MyType: # ...
-
-# Explicitly declare the conformance
-struct MyType(Deinitable): # ...
-
-# Explicit destruction. Disables the default deinitializer `__deinit__()`
-struct MyType(Deinitable where False): # ...
-
-# Use a message to explain other destruction paths
-struct MyType(Deinitable where(False, "Must call cleanup()")): # ...
-```
-
-One way to think about explicitly destroyed types is that they create a
-future requirement, a promise of action. Creating an instance commits you
-to performing specific actions (for example, flushing, closing, committing,
-or discarding) when the value has no further uses.
-
-This ability to "control the future" is a powerful tool for developers.
-It allows teardown requirements to be added directly into the type
-system. It guides users toward valid cleanup paths, making programs that
-skip those paths impossible to compile and elevating safe destruction
-to a first-class part of a value's lifecycle.
-
-With *implicit destruction*, the compiler manages cleanup. It automatically
-calls `__deinit__()` when a value has no further uses, based on lifetime
-analysis. You do not invoke the deinitializer yourself.
-
-With *explicit destruction*, you take over cleanup responsibilities. You
-must define and call a named cleanup method (such as `cleanup()` or
-`save_and_close()`) and you must call that cleanup method before the end of
-the scope in which your value lives. The compiler disables automatic
-deinitializers. It requires you to consume the value. Failing to do so
-results in a compiler error.
-
-### Building explicit destruction
-
-To mark a type for explicit destruction add `Deinitable where False`
-conformance to the type's declaration. This disables automatic destruction
-and requires you to define and call a named cleanup method.
-
-Define a method that takes a `deinit self` argument. This enables
-compile-time checks for your deinitializers and gives you space to add
-actions that must be performed before destruction.
-
-Unlike the `__deinit__()` method, named deinitializers can raise errors.
-This supports callers when handling cleanup failures.
-
-Because `deinit self` consumes the value even on an error path, the caller
-can't invoke another deinitializer on that same instance:
-
-```mojo
-struct FileBuffer(Deinitable where False):
-    var path: String
-    var data: String
-
-    def __init__(out self, path: String):
-        self.path = path
-        self.data = ""
-
-    def write(mut self, content: String):
-        self.data += content
-
-    # Choose one cleanup path from these two options
-    def save_and_close(deinit self) raises:
-        write_to_disk(self.path, self.data)
-
-    def discard(deinit self):
-        # Abandon buffered data without writing
-        pass
-```
-
-When used, you must invoke one of the deinitializers:
-
-```mojo
-def write_log(path: String, message: String) raises:
-    var buffer = FileBuffer(path)
-    buffer.write(message)
-    buffer^.save_and_close()  # Required: explicit destruction
-```
-
-The compiler verifies that a deinitializer is called for each explicitly
-destroyed value and emits an error about abandoned values if it cannot find
-one. If you supply a custom message, that message appears in the error
-output:
-
-```mojo
-struct CustomFileHandle(
-    Deinitable where(False, "Must call save_and_close() or discard()")
-):
-
-# ...
-```
-
-### When to use explicit destruction
-
-Choose explicit destruction when cleanup cannot be handled automatically
-and must be controlled in code. Common cases include:
-
-- Cleanup can fail and requires error handling.
-- Multiple cleanup paths are possible.
-- The order of cleanup operations matters.
-- Cleanup is expensive and should be deliberate.
-
-Examples:
-
-```mojo
-# Multiple cleanup paths
-struct Transaction(
-    Deinitable where(False, "Use commit() or rollback()")
-)
-    def commit(deinit self) raises:  # Offers error handling
-        # ...
-
-    def rollback(deinit self):
-        # ...
-
-# Order matters
-struct MutexGuard(Deinitable where False):
-    # Must be called to release the lock before other operations
-    def unlock(deinit self):
-        # ...
-
-# Cleanup is expensive
-struct BatchProcessor(Deinitable where False):
-    # Expensive operation user should explicitly trigger
-    def finalize(deinit self) raises:
-        # ...
-```
-
-### Explicit destruction in parameterized code
-
-Code parameterized over `AnyType` can accept both `Deinitable` and
-explicitly destroyed values. However, it cannot automatically destroy
-values that require explicit destruction.
-
-Explicit deinitializers are specific to their types. Type-generic code
-has no way to name or invoke them unless the type is constrained:
-
-```mojo
-def parameterized_function_1[T: AnyType](var value: T):
-    pass  # Error: value abandoned here
-
-def parameterized_function_2[T: Deinitable](var value: T):
-    # OK: T can be implicitly destroyed
-    pass  # value.__deinit__() called automatically
-```
-
-If a parameterized function may consume its argument, it must ensure that the
-value can be safely destroyed at the end of its lifetime. Parameterized code has
-no way to invoke type-specific explicit deinitializers unless that behavior is
-constrained. Choose one of the following approaches:
-
-- Accept the value by mutable or immutable reference instead of by ownership,
-  so the function does not consume it.
-- Return the value or transfer ownership instead of consuming it.
-- Require implicit destruction with the `Deinitable` trait, which
-  guarantees that a `__deinit__()` deinitializer is available and can be
-  called automatically:
-
-  ```mojo
-  def parameterized_function_3[T: Deinitable](var value: T):
-      pass  # value.__deinit__() called automatically
-  ```
-
-## The `deinit` argument convention
-
-In a method, adding the `deinit` convention to `self` means
-the method fully consumes the value by the time it returns.
-Specifically, `deinit self` signals that:
-
-- The method takes ownership of `self`.
-- No automatic deinitializer is called after the method returns.
-- Fields may be transferred or explicitly destroyed inside the method.
-- Additional cleanup work may take place within the method.
-- The value is considered destroyed when the method completes.
-
-```mojo
-struct Example(Deinitable where False):
-    var field: String
-
-    def consume_example(deinit self, mut other: Self):
-        # Can transfer field values
-        other.field = self.field^
-        # No automatic deinitializer called
-        # self is considered destroyed when method returns
-```
-
-Methods marked with `deinit self` can transfer ownership of `self` to
-other `deinit` methods. Chaining deinitialization methods allows cleanup
-responsibilities to be delegated and centralized:
-
-```mojo
-def cleanup_method1(deinit self):
-    # perform some cleanup tasks here
-    self^.cleanup_method2()  # delegate to specialized method
-
-def cleanup_method2(deinit self):
-    # Perform shared cleanup duties
-    pass
-```
-
-## Field lifetimes
-
-In addition to tracking the lifetime of all objects in a program, Mojo also
-tracks each field of a structure independently. That is, Mojo keeps track of
-whether a "whole object" is fully or partially initialized/destroyed, and it
-destroys each field independently with its ASAP destruction policy.
-
-For example, consider this code that changes the value of a field:
-
-```mojo
-@fieldwise_init
-struct Balloons:
-    var color: String
-    var count: Int
-
-
-def main():
-    var balloons = Balloons("red", 5)
-    print(balloons.color)
-    # balloons.color.__deinit__() runs here, because this instance is
-    # no longer used; it's replaced below
-
-    balloons.color = "blue"  # Overwrite balloons.color
-    print(balloons.color)
-    # balloons.__deinit__() runs here
-```
-
-The `balloons.color` field is destroyed after the first `print()`, because Mojo
-knows that it will be overwritten below. You can also see this behavior when
-using the transfer sigil:
-
-```mojo
-def consume(var arg: String):
-    pass
-
-def use(arg: Balloons):
-    print(arg.count, arg.color, "balloons.")
-
-def consume_and_use():
-    var balloons = Balloons("blue", 8)
-    consume(balloons.color^)
-    # String(take=) runs here, which invalidates balloons.color
-    # Now balloons is only partially initialized
-
-    # use(balloons)  # This fails because balloons.color is uninitialized
-
-    balloons.color = String("orange")  # All together now
-    use(balloons)  # This is ok
-    # balloons.__deinit__() runs here (and only if the object is whole)
-```
-
-Notice that the code transfers ownership of the `color` field to `consume()`.
-For a period of time after that, the `color` field is uninitialized. Then
-`color` is reinitialized before it is passed to the `use()` function. If you try
-calling `use()` before `color` is re-initialized, Mojo rejects the code with an
-uninitialized field error.
-
-Also, if you don't re-initialize `color` by the end of the `balloons` lifetime,
-the compiler complains because it's unable to destroy a partially initialized
-object.
-
-Mojo's policy here is powerful and intentionally straight-forward: fields can
-be temporarily transferred, but the "whole object" must be constructed with the
-aggregate type's initializer and destroyed with the aggregate
-deinitializer. This means it's impossible to create an object by
-initializing only its fields, and it's likewise impossible to destroy an
-object by destroying only its fields.
-
-### Field lifetimes during move and destruction {#field-lifetimes-during-destruct-and-move}
-
-Both the consuming move initializer and the deinitializer take their operand
-with the `deinit` argument convention. This grants exclusive ownership of
-the value and marks it as destroyed at the end of the function. Within the
-function body, Mojo's ASAP policy still applies to fields: each field is
-destroyed immediately after its last use.
-
-To read more about the `deinit` convention, see
-[Instance initialization](/docs/manual/lifecycle/initialization/).
 
 ## Explicit lifetime extension
 
-Most of the time, Mojo's ASAP destruction "just works." Very rarely, you may
+Most of the time, Mojo's ASAP destruction requires no extra effort. You may
 need to explicitly mark the last use of a value to control when its
-deinitializer runs. Think of this as an explicit last-use marker for the
-lifetime checker, not a general-purpose pattern.
+deinitializer runs.
 
-You might do this:
+Use explicit lifetime extension when something outside the value's ordinary
+uses still requires it to remain alive and you can't use origins or
+references to do this.
 
-- When writing tests that intentionally create otherwise-unused values (to avoid
-  warnings or dead-code elimination).
-
-- When writing unsafe/advanced code (for example, code that manipulates a
-  value's [origin](/docs/manual/values/lifetimes/)).
-
-- When you need deterministic timing relative to specific side
-  effects (such as logging or profiling).
-
-Mark the last use by assigning the value to the `_` discard pattern at the point
-where it is okay to destroy it. This sets the last use at that line, so the
-deinitializer runs immediately after the statement:
+Assign the value to the `_` *discard pattern* where you want its lifetime to
+end. This marks its last use, so the deinitializer runs immediately after
+the statement:
 
 ```mojo
-# Without explicit extension: s is last used in the print() call, so it is
-# destroyed immediately afterwards.
 var s = "abc"
 print(s)  # s.__deinit__() runs after this line
 
-# With explicit extension: push last-use to the discard line.
+# Extend t's lifetime to the discard line
 var t = "xyz"
 print(t)
 
@@ -562,10 +188,17 @@ print(t)
 _ = t  # t.__deinit__() runs after this line
 ```
 
+Two cases particularly need explicit lifetime extension: an RAII guard, such
+as a lock, that would otherwise be released too early, and a pointer whose
+origin has been erased, which can lead to a use-after-free. Neither produces
+a compiler error. `_ = value` keeps the value alive until the point where you
+need it released or need the pointer to remain valid.
+
 :::note
-Previous versions of Mojo required the transfer sigil (`^`) when discarding a
-move-only type. This is no longer required, since the compiler doesn't actually
-move the discarded value. For more information on the transfer sigil, see the
-section on
-[ownership transfer](/docs/manual/values/ownership/#transfer-arguments-var-and-).
+Previous versions of Mojo required the transfer sigil (`^`) when
+discarding a move-only type. This is no longer required, since the
+compiler doesn't move the discarded value. For more on the
+transfer sigil, see
+[ownership
+transfer](/docs/manual/values/ownership/#transfer-arguments-var-and-).
 :::

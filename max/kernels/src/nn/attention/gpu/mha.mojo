@@ -38,7 +38,7 @@ from std.sys import (
     size_of,
 )
 from std.sys.info import _is_amd_rdna
-import std.gpu.primitives.warp as warp
+import max.gpu.primitives.warp as warp
 from max.gpu.primitives.grid_controls import (
     PDLLevel,
     launch_dependent_grids,
@@ -48,7 +48,7 @@ from max.gpu.primitives.grid_controls import (
 from max.algorithm import elementwise
 from std.algorithm.functional import tile_and_unswitch, unswitch, vectorize
 from std.bit import next_power_of_two
-from std.gpu import (
+from max.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
     block_dim,
@@ -6334,7 +6334,7 @@ def mha_gpu_naive[
     )
     # FIXME: RUNP-356 Direct access to CUDA within DeviceContext
     var p_buffer = TileTensor(
-        # FIXME: GEX-4123 Force use of PointerStorage until the
+        # FIXME: GEX-4123 Force use of DefaultEngine until the
         # `input_fn_device` legacy closure is replaced.
         p_device.unsafe_ptr(),
         row_major(

@@ -184,7 +184,7 @@ write a simple kernel function that prints the thread block and thread indices.
 Add the following code to your `vector_addition.mojo` file:
 
 ```mojo title="vector_addition.mojo"
-from std.gpu import block_idx, thread_idx
+from max.gpu import block_idx, thread_idx
 
 def print_threads():
     """Print thread IDs."""
@@ -205,7 +205,7 @@ Modify the `main()` function so that your program looks like this:
 from std.sys import has_accelerator
 
 from max.gpu.host import DeviceContext
-from std.gpu import block_idx, thread_idx
+from max.gpu import block_idx, thread_idx
 
 
 def print_threads():
@@ -475,7 +475,7 @@ this:
 
 ```mojo title="vector_addition.mojo"
 from max.gpu.host import DeviceContext
-from std.gpu import block_idx, thread_idx
+from max.gpu import block_idx, thread_idx
 from std.sys import has_accelerator
 
 # Vector data type and size
@@ -662,7 +662,7 @@ Now we're ready to write the kernel function. First, add the following imports
 (note that we've added `block_dim` to the list of imports from `gpu`):
 
 ```mojo title="vector_addition.mojo"
-from std.gpu import block_dim, block_idx, thread_idx
+from max.gpu import block_dim, block_idx, thread_idx
 from std.math import ceildiv
 ```
 
@@ -712,13 +712,13 @@ on.
 
 :::note
 
-As a convenience, the [`gpu`](https://mojolang.org/docs/std/gpu/) package
-includes a `global_idx` `comptime` value that contains the unique "global" `x`,
-`y`, and `z` indices of the thread within the grid of thread blocks. So for our
-one-dimensional grid of one-dimensional thread blocks, `global_idx.x` is
-equivalent to the value of `tid` that we calculated above. However, for this
-tutorial, it's best that you learn how to calculate `tid` manually so that you
-understand how the grid and thread block dimensions work.
+As a convenience, the [`gpu`](https://docs.modular.com/api/mojo/max/gpu/)
+package includes a `global_idx` `comptime` value that contains the unique
+"global" `x`, `y`, and `z` indices of the thread within the grid of thread
+blocks. So for our one-dimensional grid of one-dimensional thread blocks,
+`global_idx.x` is equivalent to the value of `tid` that we calculated above.
+However, for this tutorial, it's best that you learn how to calculate `tid`
+manually so that you understand how the grid and thread block dimensions work.
 
 :::
 
@@ -766,7 +766,7 @@ from std.math import ceildiv
 from std.sys import has_accelerator
 
 from max.gpu.host import DeviceContext
-from std.gpu import block_dim, block_idx, thread_idx
+from max.gpu import block_dim, block_idx, thread_idx
 from layout import TileTensor, row_major
 
 # Vector data type and size

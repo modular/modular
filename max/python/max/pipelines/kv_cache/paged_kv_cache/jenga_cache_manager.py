@@ -41,11 +41,16 @@ from max.nn.kv_cache.data_parallelism_utils import split_into_groups
 from max.nn.kv_cache.metrics import KVCacheMetrics
 from max.nn.kv_cache.utils import build_max_lengths_tensors
 from max.pipelines.context import TextContext
-from max.pipelines.kv_cache.kv_connector import BlockCount, ByteCount
+from max.pipelines.kv_cache.kv_connector import (
+    BlockCount,
+    ByteCount,
+    KVConnector,
+)
 from max.profiler import traced
 from max.support import to_human_readable_bytes
 from max.support.math import ceildiv
 
+from ..connectors import create_connector
 from .block_manager import PrefixCacheHits, _compute_seq_len
 from .cache_manager import (
     _contiguous_prefix_2d,
@@ -192,6 +197,20 @@ class JengaKVCacheManager(JengaBlockManager, PagedKVCacheManagerInterface):
                 f"\t{leaf_id:<{max_leaf_id_len}}: {leaf_info.ratio * num_huge_blocks} pages of {to_human_readable_bytes(leaf.bytes_per_page)}  ({leaf_info.ratio} per huge page)"
             )
 
+        # A single connector serves every replica; each load/offload passes the
+        # replica_idx that selects the device endpoint. `to_memory()` emits one
+        # unit per leaf in `params.leaves()` order.
+        replica_kv_memory = [
+            dict(zip(leaves, buf.to_memory(), strict=True))
+            for buf in kv_buffers
+        ]
+        connector = create_connector(
+            devices=devices,
+            replica_kv_memory=replica_kv_memory,
+            params=params,
+            device_memory_bytes=num_huge_blocks * huge_page_bytes,
+        )
+
         return cls(
             params=params,
             leaf_infos=leaf_infos,
@@ -199,6 +218,7 @@ class JengaKVCacheManager(JengaBlockManager, PagedKVCacheManagerInterface):
             num_huge_blocks=num_huge_blocks,
             max_batch_size=max_batch_size,
             max_num_input_tokens=max_num_input_tokens,
+            connector=connector,
         )
 
     def __init__(
@@ -210,14 +230,29 @@ class JengaKVCacheManager(JengaBlockManager, PagedKVCacheManagerInterface):
         kv_buffers: Sequence[KVCacheBufferInterface],
         max_batch_size: int,
         max_num_input_tokens: int | None = None,
+        connector: KVConnector | None = None,
     ) -> None:
         # Publicly accessible alias for the params object since it is accessed
         # by callers (e.g. scheduler).
         self.params = params
 
-        if params.kv_connector_config.type != KVConnectorType.null:
+        # `create_connector` hands back a NullConnector when none is
+        # configured; treat that as "no connector" so the guard and the
+        # transfer paths below stay inert for the common case.
+        if params.kv_connector_config.type == KVConnectorType.null:
+            connector = None
+        self._connector = connector
+        if connector is not None and not all(
+            leaf.group_id.is_full() for leaf in leaf_infos.values()
+        ):
+            # HACK(SERVOPT-1588): Jenga + KVConnector is full-attention only
+            # for now. A windowed cache drops the blocks its window slid past,
+            # so its committed run is not a prefix of the request -- which is
+            # what the external tiers and the offload run both assume.
             raise ValueError(
-                "JengaKVCacheManager does not support KVConnectors."
+                "JengaKVCacheManager supports KVConnectors for full-attention "
+                "groups only, found "
+                f"{sorted({str(leaf.group_id) for leaf in leaf_infos.values()})}"
             )
 
         self._leaf_infos = leaf_infos
@@ -255,6 +290,7 @@ class JengaKVCacheManager(JengaBlockManager, PagedKVCacheManagerInterface):
             max_num_input_tokens=self._max_num_input_tokens,
             num_draft_tokens=self.params.num_draft_tokens,
             num_draft_tokens_per_step=self.params.num_draft_tokens_per_step,
+            connector=connector,
         )
 
     # ============================================================================
@@ -273,6 +309,16 @@ class JengaKVCacheManager(JengaBlockManager, PagedKVCacheManagerInterface):
             raise ValueError(
                 f"Number of batches must match number of replicas. Expected {self.params.data_parallel_degree}, got {len(batches)}"
             )
+
+        if self._connector is not None:
+            # Pre-forward load barrier (dKV-only): dKV posts its READs in
+            # `load` and orders them here. Asynchronous connectors instead hold
+            # a request out of the batch until its onload polls complete, so
+            # this is a no-op for them.
+            self._connector.wait_for_loads()
+            for replica_idx in range(len(batches)):
+                # Initiate saves of everything committed since the last forward.
+                self.offload(replica_idx)
 
         assignments = [
             self._compute_kv_cache_assignments(
@@ -485,28 +531,31 @@ class JengaKVCacheManager(JengaBlockManager, PagedKVCacheManagerInterface):
         return self.huge_block_count(replica_idx)
 
     # ============================================================================
-    # KVConnector APIs: Unimplemented as Jenga does not support KVConnector yet
+    # KVConnector APIs (full-attention groups only -- see __init__)
     # ============================================================================
-
-    def pending_transfers_exist(self, replica_idx: int = 0) -> bool:
-        """Returns whether there are pending transfers for the replica."""
-        return False
-
-    def poll_transfers(self) -> None:
-        """Polls for transfers to complete."""
-        return
 
     def host_byte_count(self, replica_idx: int = 0) -> ByteCount:
         """Returns the host KV tier occupancy in bytes for the given replica."""
-        return ByteCount(free=0, total=0)
+        if self._connector is None:
+            return ByteCount(free=0, total=0)
+        return self._connector.host_byte_count
 
     def disk_byte_count(self, replica_idx: int = 0) -> ByteCount:
         """Returns the disk KV tier occupancy in bytes for the given replica."""
-        return ByteCount(free=0, total=0)
+        if self._connector is None:
+            return ByteCount(free=0, total=0)
+        return self._connector.disk_byte_count
 
     def shutdown(self) -> None:
-        """Shuts down the connector."""
-        return
+        """Releases the connector's external resources.
+
+        Drains in-flight host/disk transfers and frees the shared pinned host
+        buffer; for the tiered connector this also removes its offload
+        directory. One connector backs every replica, so this shuts it down
+        once. A no-op for the ``null`` connector.
+        """
+        if self._connector is not None:
+            self._connector.shutdown()
 
     # ============================================================================
     # Misc

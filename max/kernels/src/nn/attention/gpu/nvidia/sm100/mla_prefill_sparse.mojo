@@ -23,7 +23,7 @@ fed directly to the shared QK/SV MMA pipeline.  The dtype-agnostic machinery
 from std.sys import size_of
 from std.utils.index import Index, IndexList
 from std.utils.static_tuple import StaticTuple
-from std.gpu import (
+from max.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     block_idx,
     warp_id,
@@ -35,7 +35,7 @@ from std.math import ceildiv, exp2
 from std.math.constants import log2e
 from max.gpu.primitives.cluster import elect_one_sync
 from max.gpu.primitives.cluster import cluster_sync
-import std.gpu.primitives.warp as warp
+import max.gpu.primitives.warp as warp
 from max.gpu.memory import (
     cp_async_bulk_tensor_shared_cluster_global,
     external_memory,
@@ -47,10 +47,10 @@ from max.gpu.sync import (
     cp_async_bulk_commit_group,
     cp_async_bulk_wait_group,
 )
-from std.gpu.globals import WARPGROUP_SIZE
+from max.gpu.globals import WARPGROUP_SIZE
 from max.gpu.host import DeviceContext, FuncAttribute
 from std.ffi import UnsafeUnion
-from std.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
+from max.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
 from max.gpu.compute.arch.tcgen05 import (
     tcgen05_alloc,
     tcgen05_dealloc,
@@ -100,6 +100,7 @@ from layout import (
     row_major,
     Idx,
     TensorLayout,
+    TensorEngine,
     Coord,
     stack_allocation as tt_stack_allocation,
 )
@@ -297,6 +298,8 @@ struct MLAPrefillSparse[
     def kernel[
         TopKLengthLayout: TensorLayout,
         IndicesLayout: TensorLayout,
+        TopKLengthEngine: TensorEngine,
+        IndicesEngine: TensorEngine,
     ](
         q_tma_op: TMATensorTile[
             Self.qkv_dtype,
@@ -322,8 +325,12 @@ struct MLAPrefillSparse[
             Self.o_tile_shape,
             Self.o_desc_shape,
         ],
-        topk_lengths: TileTensor[.uint32, TopKLengthLayout, MutAnyOrigin],
-        indices: TileTensor[.uint32, IndicesLayout, MutAnyOrigin],
+        topk_lengths: TileTensor[
+            .uint32, TopKLengthLayout, MutAnyOrigin, Engine=TopKLengthEngine
+        ],
+        indices: TileTensor[
+            .uint32, IndicesLayout, MutAnyOrigin, Engine=IndicesEngine
+        ],
         kv_lut: Self.KVLUTType,
         scale: Float32,
         attn_sink_ptr: Optional[UnsafePointer[Float32, ImmutAnyOrigin]],
@@ -335,7 +342,7 @@ struct MLAPrefillSparse[
         var warp_idx = warp_id()
         var lane_idx = thread_idx.x % WARP_SIZE
         var warpgroup_idx = warp.broadcast(thread_idx.x // WARPGROUP_SIZE)
-        var top_k_length = topk_lengths[seq_idx]
+        var top_k_length = topk_lengths.load[width=1](Coord(seq_idx))
         var num_k_blocks = max(
             ceildiv(top_k_length, UInt32(Self.config.B_TOPK)), 1
         )
@@ -681,14 +688,11 @@ struct MLAPrefillSparse[
                 # was prefetched above, chunks 1..N-1 load sequentially.
                 if k > 0 and should_scale_o:
                     tcgen05_load_wait()
-                    var o_scaled_0 = Array[Float32, O_RESCALE_CHUNK](
-                        uninitialized=True
-                    )
-                    comptime for j in range(O_RESCALE_CHUNK):
-                        o_scaled_0[j] = mul_ftz(
-                            o_chunk_prefetch[j],
-                            scale_for_old,
+                    var o_scaled_0 = Array[_, O_RESCALE_CHUNK](
+                        fill_with=lambda (j: Int) -> Float32: mul_ftz(
+                            o_chunk_prefetch[j], scale_for_old
                         )
+                    )
                     tcgen05_st[
                         datapaths=32,
                         bits=32,
@@ -708,14 +712,11 @@ struct MLAPrefillSparse[
                             + UInt32(chunk_idx * O_RESCALE_CHUNK)
                         )
                         tcgen05_load_wait()
-                        var o_scaled = Array[Float32, O_RESCALE_CHUNK](
-                            uninitialized=True
-                        )
-                        comptime for j in range(O_RESCALE_CHUNK):
-                            o_scaled[j] = mul_ftz(
-                                o_chunk[j],
-                                scale_for_old,
+                        var o_scaled = Array[_, O_RESCALE_CHUNK](
+                            fill_with=lambda (j: Int) -> Float32: mul_ftz(
+                                o_chunk[j], scale_for_old
                             )
+                        )
                         tcgen05_st[
                             datapaths=32,
                             bits=32,
@@ -1503,6 +1504,8 @@ def mla_prefill_sparse[
 
     comptime assert type_of(topk_lengths).flat_rank == 1
     comptime assert type_of(indices).flat_rank == 1
+    comptime assert topk_lengths.element_size == 1
+    comptime assert indices.element_size == 1
     comptime kernel = MLAPrefillSparse[
         KVLUTType=type_of(kv_operand),
         output_dtype=output_dtype,
@@ -1510,6 +1513,8 @@ def mla_prefill_sparse[
     ].kernel[
         type_of(topk_lengths).LayoutType,
         type_of(indices).LayoutType,
+        type_of(topk_lengths).Engine,
+        type_of(indices).Engine,
     ]
 
     comptime smem_size = size_of[MLASparseSharedMemory[config]]()

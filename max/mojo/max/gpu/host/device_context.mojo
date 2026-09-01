@@ -82,8 +82,8 @@ from std.utils import Variant
 from std.utils._serialize import _serialize_elements
 from std.utils.static_tuple import StaticTuple
 
-from std.gpu.host import get_gpu_target
-from std.gpu.host.info import GPUInfo
+from std._gpu.host import get_gpu_target
+from std._gpu.host.info import GPUInfo
 
 from .compile import (
     _compile_code,
@@ -3899,7 +3899,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
 
     ```mojo
     from max.gpu.host import DeviceContext
-    from std.gpu import thread_idx
+    from max.gpu import thread_idx
 
     def kernel():
         print("hello from thread:", thread_idx.x, thread_idx.y, thread_idx.z)
@@ -4739,7 +4739,8 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
         your kernel captures variables from its surrounding scope:
 
         ```text
-        from std.gpu import DeviceContext, global_idx
+        from max.gpu import global_idx
+        from max.gpu.host import DeviceContext
         from layout import TileTensor, row_major
 
 
@@ -6912,12 +6913,15 @@ struct DeviceContextArray[length: Int](Copyable, Sized):
             __list_literal__: Marker that lets this constructor accept
                 list-literal syntax (`var l: DeviceContextArray[N] = [c0, c1]`).
         """
-        assert (
-            len(device_contexts) == Self.length
-        ), "mismatch in the number of elements"
-        self.device_contexts = Array[
-            DeviceContext, __literal_size__
-        ]._from_variadic(*device_contexts^)
+        self.device_contexts = {uninitialized = True}
+        var ptr = self.device_contexts.unsafe_ptr()
+        comptime for i in range(__literal_size__):
+            ptr.unsafe_offset(i).unsafe_write_move_from(
+                Pointer(to=device_contexts[i])
+            )
+
+        # Do not destroy the elements when their backing storage goes away.
+        device_contexts^._annihilate()
 
     def __getitem_param__[index: Int](self) -> DeviceContext:
         """Access a `DeviceContext` at a compile-time known index.

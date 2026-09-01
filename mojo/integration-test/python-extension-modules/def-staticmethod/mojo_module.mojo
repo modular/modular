@@ -53,6 +53,12 @@ def PyInit_mojo_module() abi("C") -> PythonObject:
             .def_staticmethod[Dummy.takes_one]("takes_one")
             .def_staticmethod[Dummy.takes_two]("takes_two")
             .def_staticmethod[Dummy.takes_three]("takes_three")
+            # def_staticmethod with kwargs
+            .def_staticmethod[Dummy.sum_pos_arg_and_kwargs](
+                "sum_pos_arg_and_kwargs"
+            )
+            .def_staticmethod[Dummy.append_kwarg]("append_kwarg")
+            .def_staticmethod[Dummy.ignore_kwargs]("ignore_kwargs")
         )
 
         return b.finalize()
@@ -184,3 +190,20 @@ struct Dummy(Defaultable, Movable, Writable):
             Self.takes_three_raises(list_obj, obj, obj2)
         except e:
             abort(String("Unexpected Python error: ", e))
+
+    @staticmethod
+    def sum_pos_arg_and_kwargs(
+        base: PythonObject, var **kwargs: PythonObject
+    ) raises -> PythonObject:
+        var total = Int(py=base)
+        for entry in kwargs.items():
+            total += Int(py=entry.value)
+        return PythonObject(total)
+
+    @staticmethod
+    def append_kwarg(list_obj: PythonObject, var **kwargs: PythonObject) raises:
+        list_obj.append(kwargs["value"])
+
+    @staticmethod
+    def ignore_kwargs(var **kwargs: PythonObject):
+        pass

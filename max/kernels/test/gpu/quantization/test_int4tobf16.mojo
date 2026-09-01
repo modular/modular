@@ -19,7 +19,7 @@
 from std.sys.info import is_amd_gpu, is_apple_gpu
 
 from max.gpu.host import DeviceContext
-from std.gpu.intrinsics import lop
+from max.gpu.intrinsics import lop
 from std.memory.unsafe import bitcast
 from std.testing import assert_equal
 from layout import TileTensor, row_major

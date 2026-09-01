@@ -34,8 +34,8 @@ from std.math import exp2, recip
 from std.math.constants import log2e
 from std.memory import bitcast
 from std.sys import size_of
-import std.gpu.primitives.warp as warp
-from std.gpu.globals import WARPGROUP_SIZE, WARP_SIZE
+import max.gpu.primitives.warp as warp
+from max.gpu.globals import WARPGROUP_SIZE, WARP_SIZE
 from max.gpu.memory import fence_async_view_proxy
 from max.gpu.sync import (
     named_barrier,
@@ -51,7 +51,7 @@ from max.gpu.compute.arch.tcgen05 import (
     tcgen05_release_allocation_lock,
     tcgen05_store_wait,
 )
-from std.gpu.primitives.warp import _vote_nvidia_helper
+from max.gpu.primitives.warp import _vote_nvidia_helper
 from max.gpu.primitives.cluster import block_rank_in_cluster
 from linalg.matmul.gpu.sm100_structured.structured_kernels.tmem import (
     TmemAddress,

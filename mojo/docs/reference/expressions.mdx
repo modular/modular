@@ -288,24 +288,27 @@ a value to a name and evaluates to that value. You can assign and use the
 result in a single step:
 
 ```mojo
-var n: Int
-if (n := len(items)) > 10:
-    print(n)
+def main() raises:
+    var items = List(range(20))
+    var n: Int
+    if (n := len(items)) > 10:
+        print(n)
 
-var name: String
-while (name := input("Prompt: ")) != "quit":
-    print(name)
+    var name: String
+    while name := input("Prompt: "):  # input is raising
+        print("Hello,", name)
 ```
 
-The name can be declared beforehand, as in the examples above, or introduced
-by the walrus itself. It's most often used for temporary values created as
-part of a statement, although the binding remains available for the rest of
-its scope.
+Strings are truthy. The loop ends when you press Return without entering
+text.
 
-The value on the right side of a walrus assignment doesn't have to exist in
-memory. For example, it might be a computed value that exists only in
-registers. The walrus operator doesn't imply anything about ownership or
-reference semantics.
+The name must already be declared. Walrus only assigns into existing values.
+
+Walrus assignment is most useful for temporary values created as part of an
+expression. Its binding remains available for the rest of its scope. Walrus
+assignment doesn't imply ownership, reference, or memory semantics. The
+value on the right needn't exist in memory; it might exist only in a
+register.
 
 The walrus operator has the lowest precedence of any expression operator.
 Use parentheses when needed to make your intent clear:

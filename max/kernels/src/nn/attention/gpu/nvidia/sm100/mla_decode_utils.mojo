@@ -22,9 +22,9 @@ from std.collections import OptionalReg
 from std.math import exp2, recip, align_up, log2, ceildiv
 from std.math.constants import log2e
 from std.sys import size_of, _RegisterPackType
-from std.gpu import thread_idx, block_idx, warp_id
+from max.gpu import thread_idx, block_idx, warp_id
 from max.gpu.sync import barrier
-from std.gpu.globals import WARPGROUP_SIZE
+from max.gpu.globals import WARPGROUP_SIZE
 from max.gpu.host import DeviceBuffer, DeviceContext
 from max.gpu.host.nvidia.tma import TensorMapSwizzle, create_tma_descriptor
 from max.gpu.host.info import B200
@@ -43,7 +43,7 @@ from max.gpu.compute.arch.tcgen05 import (
     tcgen05_st,
     tcgen05_store_wait,
 )
-from std.gpu.primitives.warp import _vote_nvidia_helper
+from max.gpu.primitives.warp import _vote_nvidia_helper
 from max.gpu.compute.arch.mma_nvidia_sm100 import MMASmemDescriptorPair
 from layout import (
     IntTuple,
@@ -4564,12 +4564,11 @@ struct MLA_SM100_Decode_Common[
                             float2_register[j] = rebind[
                                 type_of(float2_register[j])
                             ](element * SIMD[Self.AccumType, 2](scale_value))
-                        var _o_st_corr = Array[
-                            Scalar[Self.AccumType], Self.config.BN_QK
-                        ](uninitialized=True)
-
-                        comptime for _i in range(Self.config.BN_QK):
-                            _o_st_corr[_i] = o_row_subtile.raw_load(_i)
+                        var _o_st_corr = Array[_, Self.config.BN_QK](
+                            fill_with=lambda (_i: Int) -> Scalar[
+                                Self.AccumType
+                            ]: o_row_subtile.raw_load(_i)
+                        )
                         tcgen05_st[
                             datapaths=32,
                             bits=32,

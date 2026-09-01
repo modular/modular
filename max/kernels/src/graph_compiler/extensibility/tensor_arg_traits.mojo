@@ -37,6 +37,8 @@ the host or is projected to a device.
 from layout import (
     Coord,
     CoordLike,
+    DefaultEngine,
+    TensorEngine,
     TensorLayout,
     TileTensor,
 )
@@ -101,13 +103,22 @@ trait Tensor:
 trait DenseTensor(Tensor):
     """Metadata trait: a `Tensor` backed by a dense (contiguous) layout.
 
-    Adds the layout type and preferred alignment on top of `Tensor`, giving the
-    kernel enough to build a `TileTensor` view over the argument's storage. The
-    dense-vs-plain distinction is invisible to the distilled contract.
+    Adds the layout type, preferred alignment, and engine on top of
+    `Tensor`, giving the kernel enough to build a `TileTensor` view over the
+    argument's storage. The dense-vs-plain distinction is invisible to the
+    distilled contract.
     """
 
     comptime LayoutType: TensorLayout
     comptime alignment: Int
+    comptime Engine: TensorEngine = DefaultEngine[element_width=1]
+    """How the argument's backing memory is referenced.
+
+    Per-target instantiation metadata like `alignment`, not part of the
+    distilled contract: the graph compiler picks it per device label when it
+    instantiates the argument, so a host-pointer argument and a device-pointer
+    argument differ here while sharing one contract.
+    """
 
     def layout(self) -> Self.LayoutType:
         """Returns the tensor's layout (shape and strides).
@@ -237,6 +248,11 @@ trait TileTensorable(DenseTensor):
     Lets the kernel work on a non-fused argument directly as a `TileTensor` (via
     `to_tile_tensor`) instead of going through the fused load/store/transform
     access.
+
+    The projection's origin is `UntrackedOrigin` because the backing memory
+    belongs to the graph executor: its liveness guarantee is invisible to the
+    origin system, and the generated argument has no call-site origin it could
+    name instead.
     """
 
     comptime mut: Bool
@@ -247,6 +263,7 @@ trait TileTensorable(DenseTensor):
         Self.dtype,
         LayoutType=Self.LayoutType,
         origin=UntrackedOrigin[mut=Self.mut],
+        Engine=Self.Engine,
     ]:
         """Projects the argument to a `TileTensor` over its storage.
 

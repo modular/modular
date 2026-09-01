@@ -46,7 +46,7 @@ tail loop, cast/epilogue store). The dense fp16/bf16/fp32 path is untouched.
 """
 
 from std.collections import Optional
-from std.gpu import WARP_SIZE, block_idx, thread_idx
+from max.gpu import WARP_SIZE, block_idx, thread_idx
 from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
 from std.math import ceildiv
@@ -796,9 +796,9 @@ def _enqueue_apple_fp4_materialize_dense[
             type_of(c).LayoutType,
             type_of(a).LayoutType,
             type_of(wdense_tt).LayoutType,
-            type_of(c).Storage,
-            type_of(a).Storage,
-            type_of(wdense_tt).Storage,
+            type_of(c).Engine,
+            type_of(a).Engine,
+            type_of(wdense_tt).Engine,
             transpose_b=True,
             elementwise_lambda_fn=elementwise_lambda_fn,
             BLOCK_M=64,

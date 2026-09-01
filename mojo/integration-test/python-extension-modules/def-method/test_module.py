@@ -177,3 +177,9 @@ def test_add_kwargs_to_age_auto() -> None:
     expected_age = initial_age + 15
     assert result == expected_age
     assert person.get_age() == expected_age
+
+
+def test_set_age_from_kwargs_auto() -> None:
+    person = def_method.Person()
+    assert person.set_age_from_kwargs_auto(20, bonus=10, extra=5) is None
+    assert person.get_age() == 35

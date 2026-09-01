@@ -67,7 +67,7 @@ from std.sys import (
     size_of,
 )
 
-from std.gpu import (
+from max.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
     block_idx,
@@ -956,12 +956,14 @@ def _launch_split_allreduce_rmsnorm_fp8[
     it avoids carrying bf16 residual data through scratch buffers.
     """
     # Construct TileTensor inputs for allreduce.
-    var _tt0 = TileTensor(src_ptrs[0], row_major(Coord(rows, cols)))
-    comptime _TT = type_of(_tt0)
-    var input_buffers = Array[_TT, ngpus](fill=_tt0)
-
-    comptime for i in range(1, ngpus):
-        input_buffers[i] = TileTensor(src_ptrs[i], row_major(Coord(rows, cols)))
+    comptime _TT = type_of(
+        TileTensor(src_ptrs[0], row_major(Coord(rows, cols)))
+    )
+    var input_buffers = Array[_, ngpus](
+        fill_with=lambda (i: Int) -> _TT: TileTensor(
+            src_ptrs[i], row_major(Coord(rows, cols))
+        )
+    )
 
     var _cols = cols
 

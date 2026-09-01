@@ -43,7 +43,7 @@ def PyInit_mojo_module() abi("C") -> PythonObject:
         b.def_function[add_def]("add_def")
 
         # Low-level `def_py_c_function` path. Same observable behavior, but
-        # bypasses the generic PyObjectFunction dispatch.
+        # bypasses the wrapper dispatch.
         # `*_raw` register under METH_VARARGS (hand-written PyCFunction
         # shape); `*_raw_fastcall` register under METH_FASTCALL
         # (hand-written PyCFunctionFast shape). The pair brackets the

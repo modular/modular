@@ -70,10 +70,10 @@ load is an inline TileTensor access (no special decode to own), matching
 """
 
 from std.collections import Optional
-from std.gpu import WARP_SIZE, global_idx, lane_id
+from max.gpu import WARP_SIZE, global_idx, lane_id
 from max.gpu.host import DeviceContext
 from std.math import ceildiv
-import std.gpu.primitives.warp as warp
+import max.gpu.primitives.warp as warp
 from std.utils import IndexList
 
 from layout import Coord, TileTensor, TensorLayout
@@ -397,9 +397,9 @@ def _enqueue_apple_fp8_materialize_dense[
             type_of(c).LayoutType,
             type_of(a).LayoutType,
             type_of(wdense_tt).LayoutType,
-            type_of(c).Storage,
-            type_of(a).Storage,
-            type_of(wdense_tt).Storage,
+            type_of(c).Engine,
+            type_of(a).Engine,
+            type_of(wdense_tt).Engine,
             transpose_b=True,
             elementwise_lambda_fn=elementwise_lambda_fn,
             BLOCK_M=64,

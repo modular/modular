@@ -409,6 +409,11 @@ the [container](/container) page now links to the new page.
   `host_offload_max_gb` now sizes one shared host pool of that size for
   the whole deployment, rather than allocating a separate pool of that size per
   replica.
+- `--kv-connector-config '{"type": "rust_tiered", "disk_offload_max_gb": 0}'`
+  now runs the tiered connector with no disk last level: offloaded blocks stop
+  at the pinned host tier and no offload directory is created. Leaving
+  `disk_offload_max_gb` unset still sizes the disk tier from the device page
+  pool, and a negative budget is now rejected instead of silently accepted.
 - The dKV external KV-cache connector (`--kv-connector-config '{"type":
   "dkv"}'`) now supports
   data-parallel (DP) serving and shares its prefix cache across DP replicas on
@@ -444,6 +449,13 @@ the [container](/container) page now links to the new page.
   now resolve on this path, folded into the handshake's `kv_config_hash`. A
   single-tenant node spanning more than one GPU must set the dKV server's
   `--fair-share-partitions` to its GPU count.
+- The dKV external KV-cache connector now accepts a KV cache tree that mixes
+  TP-replicated and head-sharded caches, instead of failing model load. Only
+  an all-replicated tree produces a block that is byte-identical across TP
+  shards, so a mixed tree offloads over the ordinary per-shard path. On that
+  path a replicated cache is stored once per TP shard rather than once, so
+  size the dKV share above what the `rust_tiered` connector needs for the
+  same model.
 - Added `MODULAR_MAX_RELEASE_FREE_HOST_MEMORY`, an opt-in serving knob that
   returns free host-allocator pages to the OS once model compilation finishes,
   before graph capture. Graph compilation leaves tens of GiB free-but-unreturned
@@ -468,69 +480,6 @@ the [container](/container) page now links to the new page.
   drafters overrode it at load time with a warning; a bare DFlash run now
   also sizes its KV cache draft headroom at the trained width instead of the
   old default.
-- VLM tokenizers can now cache preprocessed media, so an image or video resent
-  on a later conversation turn skips the resize, rescale and patchify (and for
-  video, the whole decode) instead of redoing it. Keyed on the same
-  raw-encoded-bytes digest the vision encoder cache uses, and bounded by host
-  bytes rather than entry count: `--max-vision-preprocess-cache-bytes` and
-  `--max-video-preprocess-cache-bytes` each default to 10 GiB, their combined
-  size is capped at a quarter of the memory the process may use (a cgroup grant
-  where there is one), and `0` disables either. The budget is a ceiling rather
-  than a reservation -- the cache grows into it and evicts to stay under it --
-  and on a host with less than 80 GiB the cap scales both down proportionally
-  rather than overcommitting. Entries unused for
-  `--max-media-preprocess-cache-idle-seconds` (default 300, `0` disables) are
-  dropped on the next cache lookup or insert, so a burst of distinct media does
-  not hold host memory for the life of the process. Enabled for Gemma 4 images
-  and video, Kimi K2.5 images, and Qwen2.5-VL and Qwen3-VL-MoE images.
-- Added `max.driver.begin_launch_trace()` and
-  `max.driver.take_launch_trace()`, exposing the launch trace recorded by the
-  runtime on CUDA and HIP devices. The trace lists the operations enqueued
-  across all streams — kernel launches (name, grid/block dimensions, shared
-  memory), memory copies, and memsets — in one enqueue-ordered list of
-  `max.driver.LaunchTraceEntry` values, each with a `stream_index` identifying
-  its stream and a deterministic, address-free `semantic_hash`. Because it is
-  process-global, work enqueued on streams the caller has no handle to (such as
-  a compiled graph's internal stream) is captured too. Intended for tests and
-  debugging that assert which device work a code path enqueues and on which
-  stream. The `max.driver.launch_trace()` context manager wraps the pair and
-  always stops recording on block exit, even if the block raises.
-- The graph compiler now fuses query/key RMSNorm followed by rotate-half RoPE
-  into a single `rms_norm_rope` GPU kernel even when the RMSNorm upcasts to
-  `float32`; numerics match the unfused graph.
-- Added a `poison-all` mode to `MODULAR_DEBUG_DEVICE_ALLOCATOR` that fills
-  every memory-manager allocation with a configurable NaN-pattern byte
-  (`MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_POISON_PATTERN`), so uninitialized
-  device-memory reads trip differential tests without kernel instrumentation.
-  Manual debugging aid, not a default.
-- Added conda packages `max-benchmark`, `max-serve`, and `max-all`, plus a
-  `max[all]` wheel extra, for parity with the existing wheel extras.
-- Multimodal pipelines now compile their vision and language models in
-  parallel via a shared `Module` container and `session.load_all()`, cutting
-  compile/load time by up to 1.86x (Qwen3-VL-4B: 614s -> 428s).
-- Made the compiled-model (MEF) cache key relocatable across install paths:
-  absolute-path-valued pipeline options no longer enter the key, so a cache
-  warmed under one install path hits under another.
-- ModuleV3 weights are now sharded and transferred to devices inside the
-  compiled graph rather than via eager ops, reducing per-GPU memory use
-  (about 10 GiB for a DP-EP NVFP4 DeepSeek-V3).
-- The VMM defragmenting allocator is now the default memory manager on NVIDIA
-  GPUs, fixing external-fragmentation OOMs ("plenty free but no contiguous
-  block"); override with `MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_VMM=0`. Also
-  fixed the earlier opt-in being a silent no-op.
-- Added a HIP-based VMM defragmenting allocator for AMD GPUs (opt-in via
-  `MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_VMM=1`) on MI300-series hardware.
-- Coalesced consecutive Metal kernel launches into a single shared command
-  buffer with a tunable op cap, reducing per-launch overhead on Apple GPUs;
-  also restored Metal GPU execution aborted by an unimplemented
-  driver-context stub.
-- Improved expert-parallel MoE execution by running the shared expert on a
-  side stream via `ops.side_stream`, overlapping it with the routed-expert
-  computation.
-- Allowed `float16`/`bfloat16` graphs to load `float32` checkpoint weights,
-  with the weight adapter casting at load time.
-- Improved multi-device startup latency by batching replay preface copies
-  into a single submission.
 - The vision encoder cache now stores embeddings in fixed-size blocks.
   Capacity is a byte budget carved into 128-token blocks — a video spans
   many blocks and an image a few — so a video-capable model no longer
@@ -569,6 +518,8 @@ the [container](/container) page now links to the new page.
   through `DevicePassable` before launch, matching explicit kernel
   arguments. Host handles such as `DevicePointer` reach the device as
   device addresses rather than raw host bytes.
+- Added `max.nn.state_space.kda_decode`, a wrapper over the Kimi Delta
+  Attention recurrence op.
 
 ### Inference server
 
@@ -938,6 +889,26 @@ the [container](/container) page now links to the new page.
 
 ## Breaking changes
 
+- The tile-tensor storage policy is renamed to an engine, and the
+  `layout.tensor_storage` module is renamed `layout.tensor_engine`. The
+  `TensorStorage` trait becomes `TensorEngine`, `TileTensor`'s `Storage`
+  parameter becomes `Engine`, and the conforming policies `PointerStorage`,
+  `DevicePointerStorage`, and `StaticOffsetStorage` become `DefaultEngine`,
+  `DevicePointerEngine`, and `StaticOffsetEngine`. The trait describes the
+  operations a tile tensor performs on its handle (load, store, bitcast,
+  elementwise) rather than the memory it points at, so the old name described
+  the wrong thing. Update `Storage=` keyword arguments to `Engine=` and any
+  `tensor.Storage` accesses to `tensor.Engine`. The `TensorOps` trait and the
+  associated `StorageType` handle keep their names, since they still describe
+  the borrowed memory itself.
+
+  Kernel signatures follow. Every comptime parameter bound to `TensorEngine`
+  or `TensorOps` now ends in `Engine`, replacing the three spellings that
+  were in use: `OutputStorage` and `XStorage` become `OutputEngine` and
+  `XEngine`, `QStorageType` and `SeedStorageType` become `QEngine` and
+  `SeedEngine`, and the snake_case `q_storage` and `x_store` become
+  `q_engine` and `x_engine`. Callers passing any of these by keyword need to
+  update the name.
 - The KV connector's external host and disk tiers now report occupancy and
   transfer volume in bytes rather than in blocks. Those tiers are byte budgets
   the operator sizes in bytes (`host_offload_max_gb`, `disk_offload_max_gb`),
@@ -1137,6 +1108,12 @@ the [container](/container) page now links to the new page.
   caching together.
 
 ## Fixes
+
+- Fixed the `disk_bytes_written` KV cache metric counting blocks the tiered
+  connector's disk tier declined to write because they were already saved or
+  had a write pending. Re-offloading a block that had been evicted from the
+  host tier but was still on disk inflated the count, and with it any
+  disk-throughput figure derived from it.
 
 - Fixed `generate_async` raising `KeyError: Request ID not found in replica
   batch` when requests in one batch finish on different steps, which happens

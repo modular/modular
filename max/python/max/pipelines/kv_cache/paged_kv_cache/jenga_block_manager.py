@@ -30,7 +30,7 @@ from dataclasses import dataclass, field
 from max.nn.kv_cache import KVCacheGroupId
 from max.nn.kv_cache.metrics import KVCacheMetrics
 from max.pipelines.context import TextContext
-from max.pipelines.kv_cache.kv_connector import BlockCount
+from max.pipelines.kv_cache.kv_connector import BlockCount, KVConnector
 from max.pipelines.modeling.types import RequestID
 from max.profiler import traced
 from max.support.math import ceildiv
@@ -39,12 +39,27 @@ from .block_manager import (
     CompletedTransfer,
     KVConnectorTransfer,
     _compute_seq_len,
+    _resolve_only_use_kv_connector_last_level_cache,
     compute_block_hashes,
 )
 from .block_utils import InsufficientBlocksError, KVHashAlgo, LittleKVCacheBlock
 from .jenga_block_pool import JengaBlockPool
 
 logger = logging.getLogger("max.pipelines")
+
+
+@dataclass
+class _PendingTransfer:
+    """An in-flight async connector transfer and the pages it pins.
+
+    ``blocks`` are pinned per leaf until the copy lands, so nothing evicts or
+    reuses them mid-copy. ``commit_hashes`` is set only for onloads, whose
+    prefix-cache publish is deferred until the H2D has actually landed.
+    """
+
+    event: KVConnectorTransfer
+    blocks: dict[str, list[LittleKVCacheBlock]]
+    commit_hashes: list[bytes] | None = None
 
 
 @dataclass(frozen=True)
@@ -324,9 +339,13 @@ class JengaBlockManager:
         max_num_input_tokens: int | None = None,
         num_draft_tokens: int = 0,
         num_draft_tokens_per_step: int = 0,
+        connector: KVConnector | None = None,
     ) -> None:
         self._block_size = block_size
         self._enable_prefix_caching = enable_prefix_caching
+        self._only_use_kv_connector_last_level_cache = (
+            _resolve_only_use_kv_connector_last_level_cache()
+        )
         self._kv_hash_algo = kv_hash_algo
         self._kv_hash_seed = kv_hash_seed
         self._max_num_input_tokens = max_num_input_tokens
@@ -370,6 +389,28 @@ class JengaBlockManager:
         self._req_to_hashes: dict[RequestID, list[bytes]] = {}
         self._req_to_committed_idx: dict[RequestID, int] = {}
         self._req_to_replica: dict[RequestID, int] = {}
+
+        # A single connector serves every replica; each load/offload passes the
+        # replica_idx that selects the device endpoint.
+
+        self._connector = connector
+
+        # TODO: We don't support Jenga + KVConnector + SWA groups yet.
+        if connector is not None and not all(
+            group_id.is_full() for group_id in self._groups
+        ):
+            raise ValueError(
+                "Jenga + KVConnector supports full-attention groups only, "
+                f"found {sorted(str(g) for g in self._groups)}"
+            )
+
+        self._pending_transfers: list[list[_PendingTransfer]] = [
+            [] for _ in range(num_replicas)
+        ]
+        # Runs of newly committed hashes awaiting an `offload` call.
+        self._pending_offloads: list[list[list[bytes]]] = [
+            [] for _ in range(num_replicas)
+        ]
 
     # ============================================================================
     # Request Lifecycle APIs
@@ -424,9 +465,11 @@ class JengaBlockManager:
         """
         replica_idx = self._replica_of(ctx)
 
-        # If the request is fresh, try to reuse blocks from the prefix cache.
-        if ctx.tokens.processed_length == 0:
-            self._reuse_blocks_from_prefix_cache(ctx, replica_idx)
+        # Drain landed transfers first: their pinned pages are only returned
+        # here, so skipping this leaks every offload source for the run.
+        self.poll_transfers()
+
+        transfer = self._reuse_blocks_from_prefix_cache(ctx, replica_idx)
 
         self._metrics.input_tokens += ctx.tokens.active_length
 
@@ -436,7 +479,11 @@ class JengaBlockManager:
             leaf_id: self._num_blocks_to_allocate(ctx, leaf_id)
             for leaf_id in self._leaves
         }
-        self._check_admission(pool, demand)
+        if not pool.can_satisfy_demand(demand):
+            raise InsufficientBlocksError(
+                f"Serving {demand} needs more huge blocks than the "
+                f"{len(pool.free_huge_blocks)} that are free"
+            )
 
         # Allocate the new blocks for the request.
         for leaf_id, num_new_blocks in demand.items():
@@ -444,7 +491,7 @@ class JengaBlockManager:
             for _ in range(num_new_blocks):
                 req_blocks.append(pool.alloc_block(leaf_id))
 
-        return CompletedTransfer.load()
+        return transfer
 
     @traced
     def alloc_dummy(self, ctx: TextContext, replica_idx: int = 0) -> None:
@@ -483,6 +530,190 @@ class JengaBlockManager:
         """Drops every commit no request is holding, in every cache."""
         for pool in self.pools:
             pool.reset_prefix_cache()
+        if self._connector is not None:
+            self._connector.reset_prefix_cache()
+
+    # ============================================================================
+    # KVConnector
+    # ============================================================================
+
+    @traced
+    def offload(self, replica_idx: int = 0) -> None:
+        """Offloads the recently produced KV states to the connector."""
+        connector = self._connector
+        if connector is None:
+            return
+        pool = self.pools[replica_idx]
+        for hashes in self._pending_offloads[replica_idx]:
+            src: dict[str, list[LittleKVCacheBlock]] = {
+                leaf_id: [] for leaf_id in self._leaves
+            }
+            block_hashes: list[bytes] = []
+            for block_hash in hashes:
+                if any(
+                    block_hash not in pool.prefix_caches[leaf_id]
+                    for leaf_id in self._leaves
+                ):
+                    # Evicted from at least one leaf since it was committed, so
+                    # the row is no longer whole: truncate the run here.
+                    break
+                for leaf_id in self._leaves:
+                    block = pool.prefix_caches[leaf_id][block_hash]
+                    src[leaf_id].append(block)
+                block_hashes.append(block_hash)
+            if not block_hashes:
+                continue
+            bids = {
+                leaf_id: [b.bid for b in bids] for leaf_id, bids in src.items()
+            }
+            event = connector.offload(
+                bids,
+                block_hashes,
+                replica_idx=replica_idx,
+            )
+            # An asynchronous connector reads these pages on its own engine, so
+            # pin them until the D2H lands. A synchronous one is already done.
+            if not event.is_complete():
+                self._track_transfer(event, src, replica_idx)
+        self._pending_offloads[replica_idx].clear()
+
+    def poll_transfers(self) -> None:
+        """Drains completed async transfers on the scheduler thread.
+
+        For each pending async transfer, check if it has completed. If so, we
+        may commit the hashes into the prefix cache and then unpin the blocks.
+        """
+        for replica_idx, pending_list in enumerate(self._pending_transfers):
+            if not pending_list:
+                continue
+            pool = self.pools[replica_idx]
+            still_pending: list[_PendingTransfer] = []
+            for pending in pending_list:
+                if not pending.event.is_complete():
+                    still_pending.append(pending)
+                    continue
+                if pending.commit_hashes is not None:
+                    self._commit_onloaded_blocks(
+                        pool, pending.blocks, pending.commit_hashes
+                    )
+                for leaf_blocks in pending.blocks.values():
+                    for block in leaf_blocks:
+                        pool.free_block(block)
+            self._pending_transfers[replica_idx] = still_pending
+
+    def pending_transfers_exist(self, replica_idx: int = 0) -> bool:
+        """Returns whether any async transfer is in flight on the replica."""
+        return bool(self._pending_transfers[replica_idx])
+
+    @traced
+    def _lookup_connector_prefix_cache_hit(
+        self, desired: Sequence[bytes], replica_idx: int
+    ) -> KVConnectorTransfer:
+        """Loads the desired hashes from the connector's prefix cache.
+
+        Fresh device pages are allocated for the hashes the connector can
+        serve and filled by its ``load``. The connector may serve some but not
+        all of the desired hashes.
+
+        Currently this is only supported for full-attention groups. SWA groups
+        are not supported yet.
+
+        Returns:
+            The transfer tracking the copy.
+        """
+        connector = self._connector
+        if connector is None or not desired:
+            return CompletedTransfer.load(list(self._leaves))
+
+        pool = self.pools[replica_idx]
+        # Only try to load from connector if we have enough device blocks to
+        # hold the desired hashes.
+        if not pool.can_satisfy_demand(
+            dict.fromkeys(self._leaves, len(desired))
+        ):
+            return CompletedTransfer.load(list(self._leaves))
+
+        blocks = {
+            leaf_id: [pool.alloc_block(leaf_id) for _ in desired]
+            for leaf_id in self._leaves
+        }
+        event = connector.load(
+            {
+                leaf_id: [b.bid for b in leaf_blocks]
+                for leaf_id, leaf_blocks in blocks.items()
+            },
+            desired,
+            replica_idx=replica_idx,
+        )
+
+        # The connector may serve fewer blocks than asked for; its event
+        # reports how many. Give the surplus blocks back.
+        num_loaded = len(next(iter(event.g0_blocks_per_leaf.values())))
+        for leaf_blocks in blocks.values():
+            for surplus in leaf_blocks[num_loaded:]:
+                pool.free_block(surplus)
+        if num_loaded == 0:
+            return CompletedTransfer.load(list(self._leaves))
+        blocks = {
+            leaf_id: leaf_blocks[:num_loaded]
+            for leaf_id, leaf_blocks in blocks.items()
+        }
+
+        loaded_hashes = list(desired[:num_loaded])
+        if event.is_complete():
+            self._commit_onloaded_blocks(pool, blocks, loaded_hashes)
+        else:
+            self._track_transfer(
+                event, blocks, replica_idx, commit_hashes=loaded_hashes
+            )
+        return event
+
+    def _commit_onloaded_blocks(
+        self,
+        pool: JengaBlockPool,
+        blocks: Mapping[str, list[LittleKVCacheBlock]],
+        hashes: Sequence[bytes],
+    ) -> None:
+        """Publishes landed onload pages, skipping any hash already served."""
+        for leaf_id, leaf_blocks in blocks.items():
+            prefix_cache = pool.prefix_caches[leaf_id]
+            for block, block_hash in zip(leaf_blocks, hashes, strict=True):
+                # A concurrent onload of the same hash may have published
+                # first; leave that winner in place.
+                if block.block_hash is None and block_hash not in prefix_cache:
+                    pool.commit_into_prefix_cache(block_hash, block)
+
+    def _track_transfer(
+        self,
+        event: KVConnectorTransfer,
+        blocks: Mapping[str, list[LittleKVCacheBlock]],
+        replica_idx: int,
+        commit_hashes: list[bytes] | None = None,
+    ) -> None:
+        """Tracks an async connector transfer and the pages it pins.
+
+        The pin (a ``touch``) keeps the pages out of the eviction and free
+        paths while the copy engine is still reading or writing them.
+
+        The KVCache will poll the transfer via ``poll_transfers``. When the
+        transfer completes, the pages will be unpinned.
+        """
+        if not any(blocks.values()):
+            return
+        pool = self.pools[replica_idx]
+        for leaf_blocks in blocks.values():
+            for block in leaf_blocks:
+                pool.touch(block)
+        self._pending_transfers[replica_idx].append(
+            _PendingTransfer(
+                event=event,
+                blocks={
+                    leaf_id: list(leaf_blocks)
+                    for leaf_id, leaf_blocks in blocks.items()
+                },
+                commit_hashes=commit_hashes,
+            )
+        )
 
     # ============================================================================
     # Misc
@@ -543,17 +774,10 @@ class JengaBlockManager:
         return demand
 
     def _fits_in_cache(self, seq_len: int) -> bool:
-        """Whether an empty pool could serve one ``seq_len``-token request.
-
-        Measures capacity, not current occupancy, so it counts against every
-        huge block rather than the free ones and credits nothing a live
-        request already holds.
-        """
-        pool = self.pools[0]
-        needed = self._huge_blocks_for_demand(
-            pool, self._blocks_demanded(seq_len)
+        """Whether an empty pool could serve one ``seq_len``-token request."""
+        return self.pools[0].can_satisfy_demand(
+            self._blocks_demanded(seq_len), at_capacity=True
         )
-        return needed <= self.huge_block_count().total
 
     def get_req_blocks_per_leaf(self, ctx: TextContext) -> dict[str, list[int]]:
         """Returns the pages the request holds, per leaf.
@@ -647,64 +871,17 @@ class JengaBlockManager:
         )
         return hashes
 
-    def _huge_blocks_for_demand(
-        self,
-        pool: JengaBlockPool,
-        demand: Mapping[str, int],
-        free_little_blocks: Mapping[str, int] | None = None,
-    ) -> int:
-        """Converts a per-leaf page demand into the huge blocks it must claim.
-
-        A huge block is carved for exactly one leaf, so leaves never share
-        one: each cache's demand is converted at its own ratio and the
-        totals are summed. Counting each cache's free pages on their own
-        would let every one of them believe it has room while together they
-        overrun the pool.
-
-        ``free_little_blocks`` credits pages already carved for a leaf and
-        still free; omit it to size a pool that has carved nothing yet.
-        """
-        num_huge_blocks = 0
-        for leaf_id, num_pages in demand.items():
-            already_free = (
-                free_little_blocks.get(leaf_id, 0) if free_little_blocks else 0
-            )
-            shortfall = num_pages - already_free
-            if shortfall > 0:
-                num_huge_blocks += ceildiv(
-                    shortfall, pool.cache_ratios[leaf_id]
-                )
-        return num_huge_blocks
-
-    def _check_admission(
-        self, pool: JengaBlockPool, demand: dict[str, int]
-    ) -> None:
-        """Rejects a request the pool cannot serve, before it draws anything."""
-        num_huge_blocks_needed = self._huge_blocks_for_demand(
-            pool,
-            demand,
-            {
-                leaf_id: len(blocks)
-                for leaf_id, blocks in pool.free_little_blocks.items()
-            },
-        )
-        num_free = len(pool.free_huge_blocks)
-        if num_huge_blocks_needed > num_free:
-            raise InsufficientBlocksError(
-                f"Serving {demand} needs {num_huge_blocks_needed} huge blocks "
-                f"but only {num_free} are free"
-            )
-
-    def _find_longest_prefix_cache_hit(
-        self, ctx: TextContext, replica_idx: int = 0
+    def _lookup_device_prefix_cache_hit(
+        self, desired_hashes: Sequence[bytes], replica_idx: int = 0
     ) -> tuple[dict[str, list[LittleKVCacheBlock]], int]:
-        """Finds the longest prefix cache hit for the request."""
-        num_committed_blocks = (
-            self._req_to_committed_idx[ctx.request_id] // self._block_size
-        )
-        desired_hashes = self._req_to_hashes[ctx.request_id][
-            num_committed_blocks:
-        ]
+        """Finds the longest run of ``desired_hashes`` the device cache holds.
+
+        Returns:
+            The hit pages of each leaf, and how many blocks long the run is.
+            The caller splices the pages onto the request.
+        """
+        if self._only_use_kv_connector_last_level_cache:
+            return {leaf_id: [] for leaf_id in self._leaves}, 0
 
         # Global caches first: they read their whole history, so their run from
         # the root is the tightest bound available and it costs the cheapest
@@ -748,50 +925,66 @@ class JengaBlockManager:
 
     def _reuse_blocks_from_prefix_cache(
         self, ctx: TextContext, replica_idx: int = 0
-    ) -> int:
+    ) -> KVConnectorTransfer:
         """Splices the longest prefix-cache hit into the request.
 
-        Returns:
-            How many tokens the request may skip because the hit already holds
-            their KV. Zero when nothing was reused.
-        """
-        if not self._enable_prefix_caching:
-            return 0
+        The device hit is extended by whatever the connector's external tiers
+        still hold; both runs are spliced on the same way, so they skip the
+        same tokens and are committed at the same index.
 
-        if ctx.tokens.processed_length != 0:
-            raise ValueError(
-                "Cannot reuse blocks from the prefix cache for a request that "
-                "has already processed tokens."
-            )
+        Returns:
+            The transfer tracking the onload's copy, already complete when
+            nothing was onloaded.
+        """
+        # Only try to reuse blocks if the ctx is fresh (ie: no tokens are processed)
+        if not self._enable_prefix_caching or ctx.tokens.processed_length != 0:
+            return CompletedTransfer.load(list(self._leaves))
 
         self._compute_hashes_for_request(ctx)
 
-        hit_blocks, num_hit_blocks = self._find_longest_prefix_cache_hit(
-            ctx, replica_idx
+        committed_blocks = (
+            self._req_to_committed_idx[ctx.request_id] // self._block_size
         )
+        desired_hashes = self._req_to_hashes[ctx.request_id][committed_blocks:]
 
-        # Updates cache hit metrics. This manager has no KV connector, so every
-        # reused token came from the device prefix cache and none is external.
+        hit_blocks, num_hit_blocks = self._lookup_device_prefix_cache_hit(
+            desired_hashes, replica_idx
+        )
+        # Ask the connector to load the hashes that are remaining.
+        transfer = self._lookup_connector_prefix_cache_hit(
+            desired_hashes[num_hit_blocks:], replica_idx
+        )
+        pool = self.pools[replica_idx]
+        onloaded = {
+            leaf_id: [pool.block(leaf_id, bid) for bid in bids]
+            for leaf_id, bids in transfer.g0_blocks_per_leaf.items()
+        }
+        num_onloaded = len(next(iter(onloaded.values())))
+        num_reused = num_hit_blocks + num_onloaded
+
         self._metrics.device_blocks_served += num_hit_blocks
-        self._metrics.cache_tokens += num_hit_blocks * self._block_size
-        ctx.cached_prefix_length = num_hit_blocks * self._block_size
-        ctx.cached_prefix_external_length = 0
+        self._metrics.cache_tokens += num_reused * self._block_size
+        ctx.cached_prefix_length = num_reused * self._block_size
+        ctx.cached_prefix_external_length = num_onloaded * self._block_size
 
-        if num_hit_blocks == 0:
-            return 0
+        if num_reused == 0:
+            return transfer
 
         # The hit resumes at the committed index, so whatever the request holds
         # beyond it belongs to a chunk that is about to be re-planned.
         self._release_uncommitted_blocks(ctx, replica_idx)
 
         # The claim already nulls the slots a windowed group slid past, so the
-        # rows splice on at the same length in every leaf.
-        for leaf_id, blocks in hit_blocks.items():
-            self._leaves[leaf_id].req_to_blocks[ctx.request_id].extend(blocks)
+        # rows splice on at the same length in every leaf. The onloaded run
+        # follows the device one, which is the order its hashes were taken in.
+        for leaf_id, leaf in self._leaves.items():
+            req_blocks = leaf.req_to_blocks[ctx.request_id]
+            req_blocks.extend(hit_blocks[leaf_id])
+            req_blocks.extend(onloaded[leaf_id])
 
         committed_idx = (
             self._req_to_committed_idx[ctx.request_id]
-            + num_hit_blocks * self._block_size
+            + num_reused * self._block_size
         )
         self._req_to_committed_idx[ctx.request_id] = committed_idx
 
@@ -802,7 +995,7 @@ class JengaBlockManager:
             "leaves nothing to compute logits from, so compute_block_hashes "
             "must never hash the last token."
         )
-        return skip_amount
+        return transfer
 
     def _release_uncommitted_blocks(
         self, ctx: TextContext, replica_idx: int
@@ -850,3 +1043,10 @@ class JengaBlockManager:
         self._req_to_committed_idx[ctx.request_id] = (
             last_block * self._block_size
         )
+
+        # Queue the newly committed run for the next `offload`. Every leaf
+        # commits the same hashes in lockstep, so one run covers them all.
+        if self._connector is not None and last_block > first_block:
+            self._pending_offloads[self._replica_of(ctx)].append(
+                list(req_hashes[first_block:last_block])
+            )
