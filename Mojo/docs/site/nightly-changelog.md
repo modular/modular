@@ -340,6 +340,16 @@ This version is still a work in progress.
   was dropped, making a conditional conformance indistinguishable from an
   unconditional one. Also fixed rendering of some `where` clauses.
 
+- The new `@__doc_inline` decorator on an import statement documents the
+  imported symbols in the importing module, so a package can document an API
+  it re-exports from private modules. Wildcard (`import *`) and renamed
+  (`import ... as ...`) imports are not supported.
+
+  ```mojo
+  @__doc_inline
+  from ._impl import Widget, make_widget
+  ```
+
 ## Removed
 
 This release completes the removal of APIs deprecated during the v1.0 cycle.
