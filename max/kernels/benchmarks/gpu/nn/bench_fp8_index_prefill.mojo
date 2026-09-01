@@ -19,12 +19,24 @@ captured under `kbench --profile ncu-single --set full` for source-correlated
 analysis of the shipped 2-CTA/SM, Q-resident, 1-consumer-WG (128 q-scales in
 registers) behavior.
 
-Run on the B200:
+One invocation benchmarks one shape; the shape set lives in the sibling
+`bench_fp8_index_prefill.yaml`, whose four labelled groups say what each shape
+is there to answer. Run the whole set, or one group, on the B200:
 
-    mojo bench_fp8_index_prefill.mojo --batch_size=1 --seq_len=2048 \\
-        --cache_len=0 --num_keys=2048
+    kbench max/kernels/benchmarks/gpu/nn/bench_fp8_index_prefill.yaml
+    kbench max/kernels/benchmarks/gpu/nn/bench_fp8_index_prefill.yaml \\
+        --filter label=ragged_prefill
 
-Default shape is the nh=32 pure-prefill route (`cache_len=0`, causal, long
+For a source-correlated capture, drive one shape directly -- every field is an
+argument, so nothing is implied by a default. Pass `--run_benchmark=False`
+under `ncu`: the profiler replays the kernel itself for its sampling, so the
+benchmark loop on top of it only multiplies capture time.
+
+    ncu --set full mojo bench_fp8_index_prefill.mojo --run_benchmark=False \\
+        --batch_size=8 --seq_len=512 --cache_len=2048 --max_num_keys=3584 \\
+        --spread=50 --label=ragged_prefill
+
+The bare defaults are the nh=32 pure-prefill route (`cache_len=0`, causal, long
 enough to clear the 448-token-tile gate), which is the configuration whose
 2-CTA/SM residency is too deeply amortized to attribute from nsys.
 """
@@ -117,17 +129,28 @@ def _run_name[
     num_heads: Int,
     depth: Int,
     page_size: Int,
-](batch_size: Int, seq_len: Int, cache_len: Int, max_num_keys: Int) -> String:
+](
+    batch_size: Int,
+    seq_len: Int,
+    cache_len: Int,
+    max_num_keys: Int,
+    spread: Int,
+    label: String,
+) -> String:
+    var kind = String("fp8_index_score_sm100_prefill")
+    if label.byte_length() > 0:
+        kind += "/" + label
     # fmt: off
     return String(
-        "fp8_index_score_sm100_prefill : ",
+        kind, " : ",
         "num_heads=", num_heads, ", ",
         "depth=", depth, ", ",
         "page_size=", page_size, " : ",
         "batch_size=", batch_size, ", ",
         "seq_len=", seq_len, ", ",
         "cache_len=", cache_len, ", ",
-        "max_num_keys=", max_num_keys,
+        "max_num_keys=", max_num_keys, ", ",
+        "spread=", spread,
     )
     # fmt: on
 
@@ -143,6 +166,9 @@ def execute_fp8_index_prefill[
     seq_len: Int,
     cache_len: Int,
     max_num_keys: Int,
+    spread: Int = 0,
+    label: String = String(),
+    run_benchmark: Bool = True,
 ) raises:
     """Benchmark one scorer invocation at one GLM-5.2 prefill shape.
 
@@ -156,6 +182,17 @@ def execute_fp8_index_prefill[
         cache_len: Cached tokens per sequence. 0 reproduces a fresh prefill;
             a nonzero value exercises the chunked-prefill-continuation path.
         max_num_keys: Score-buffer row stride (>= any entry's key count).
+        spread: Cache-depth raggedness, in percent of `cache_len`. 0 gives the
+            uniform batch. Otherwise entry depths run linearly from
+            `cache_len * (1 - spread/100)` to `cache_len * (1 + spread/100)`,
+            so the MEAN depth -- and hence the total key work -- is unchanged
+            and only the distribution differs from the `spread=0` twin.
+        label: Free-form group tag echoed into the benchmark name, so a row in
+            a kbench sweep says which group of the YAML it came from. Nothing
+            branches on it.
+        run_benchmark: Time the kernel over the harness' iteration loop. False
+            launches it exactly once and reports nothing, which is what `ncu`
+            wants -- the profiler does its own replay.
     """
     var total_seq_len = batch_size * seq_len
 
@@ -166,7 +203,12 @@ def execute_fp8_index_prefill[
 
     # Pool holds the live token range; the LUT is one page deep per sequence
     # (the scorer never dereferences past each row's real key count).
-    var keys_per_seq = cache_len + seq_len
+    # Deepest entry sets every allocation: the page pool, the LUT width and the
+    # cache-collection bound are all batch maxima, exactly as production's
+    # captured-graph metadata is.
+    var lo_cache = cache_len - (cache_len * spread) // 100
+    var hi_cache = cache_len + (cache_len * spread) // 100
+    var keys_per_seq = hi_cache + seq_len
     var pages_per_seq = ceildiv(keys_per_seq, page_size)
     var num_blocks = batch_size * pages_per_seq + 1
 
@@ -190,7 +232,14 @@ def execute_fp8_index_prefill[
     var cache_lengths_device = ctx.enqueue_create_buffer[.uint32](batch_size)
     with cache_lengths_device.map_to_host() as cl_host:
         for i in range(batch_size):
-            cl_host[i] = UInt32(cache_len)
+            # Linear grade lo -> hi across the batch; a single-entry batch
+            # takes the mean, so `spread` cannot change a batch of one.
+            if batch_size > 1:
+                cl_host[i] = UInt32(
+                    lo_cache + (hi_cache - lo_cache) * i // (batch_size - 1)
+                )
+            else:
+                cl_host[i] = UInt32(cache_len)
 
     var k_shape = IndexList[6](
         num_blocks,
@@ -270,7 +319,7 @@ def execute_fp8_index_prefill[
             paged_lut_runtime_layout,
         ),
         UInt32(seq_len),
-        UInt32(cache_len),
+        UInt32(hi_cache),
         LayoutTensor[.float32, ks_block_layout](
             ks_block_device,
             ks_block_runtime_layout,
@@ -313,14 +362,18 @@ def execute_fp8_index_prefill[
     def bench_func(mut b: Bencher) raises {imm}:
         bencher_iter_custom(b, kernel_launch, ctx)
 
-    m.bench_function(
-        bench_func,
-        BenchId(
-            _run_name[num_heads, depth, page_size](
-                batch_size, seq_len, cache_len, max_num_keys
-            )
-        ),
-    )
+    if run_benchmark:
+        m.bench_function(
+            bench_func,
+            BenchId(
+                _run_name[num_heads, depth, page_size](
+                    batch_size, seq_len, cache_len, max_num_keys, spread, label
+                )
+            ),
+        )
+    else:
+        kernel_launch(ctx)
+        ctx.synchronize()
 
     _ = q_device
     _ = qs_device
@@ -338,22 +391,6 @@ def main() raises:
     comptime depth = get_defined_int["depth", 128]()
     comptime page_size = get_defined_int["page_size", 128]()
 
-    # Shape grid, so one binary (and one remote invocation) covers a whole
-    # comparison. 0 = the single shape named by the args below. The two grids
-    # are the two route decisions the tile ladder has to make at nh=32:
-    #
-    #   1 prefill -- every cell lands on the default 4-token MMA_N=128 tile (no
-    #     seq_len here is divisible by the alternate tile's 3), so a change that
-    #     is meant to touch only the speculative width must read 1.000 here.
-    #     That makes grid 1 the negative control for every grid 2 result.
-    #   2 decode -- a 6-token speculative step over a deep cache, which routes
-    #     to the 3-token / 96-column alternate tile. `max_num_keys` clears
-    #     `_KEYSPLIT_MIN_KEY_TILES` (64 tiles = 8192) in every cell, without
-    #     which the route never opens. The two 8192-key cells at batch 1 and 8
-    #     sit on the ~6.2 us launch floor and cannot move; quote a geomean over
-    #     the other five, or over all seven as the conservative figure.
-
-    var grid = arg_parse("grid", 0)
     var batch_size = arg_parse("batch_size", 1)
     # Long enough to clear the nh=32 prefill route's 448-token-tile gate
     # (seq >= 1792); 2048 is the production continuation shape in the test.
@@ -362,42 +399,28 @@ def main() raises:
     var cache_len = arg_parse("cache_len", 0)
     # Row stride of the score buffer; >= every entry's live key count.
     var max_num_keys = arg_parse("max_num_keys", seq_len)
+    # Cache-depth raggedness, in percent of `cache_len`; 0 is the uniform batch.
+    var spread = arg_parse("spread", 0)
+    # Which YAML group this shape came from; reporting only.
+    var label = String(arg_parse("label", ""))
+    # False leaves a single launch for `ncu` to replay.
+    var run_benchmark = arg_parse("run_benchmark", True)
 
     seed(0)
 
-    # (batch_size, seq_len, cache_len, max_num_keys)
-    comptime PREFILL_GRID = [
-        (1, 2048, 0, 2048),
-        (1, 2048, 8192, 10240),
-        (1, 8192, 0, 8192),
-        (4, 512, 0, 512),
-        (4, 1024, 4096, 5120),
-        (8, 512, 2048, 2560),
-    ]
-    comptime DECODE_GRID = [
-        (1, 6, 8192, 8198),
-        (8, 6, 8192, 8198),
-        (8, 6, 32768, 32774),
-        (8, 6, 131072, 131078),
-        (32, 6, 8192, 8198),
-        (32, 6, 32768, 32774),
-        (148, 6, 8192, 8198),
-    ]
     var m = Bench()
     with DeviceContext() as ctx:
-        if grid == 1:
-            comptime for c in PREFILL_GRID:
-                execute_fp8_index_prefill[num_heads, depth, page_size](
-                    ctx, m, c[0], c[1], c[2], c[3]
-                )
-        elif grid == 2:
-            comptime for c in DECODE_GRID:
-                execute_fp8_index_prefill[num_heads, depth, page_size](
-                    ctx, m, c[0], c[1], c[2], c[3]
-                )
-        else:
-            execute_fp8_index_prefill[num_heads, depth, page_size](
-                ctx, m, batch_size, seq_len, cache_len, max_num_keys
-            )
+        execute_fp8_index_prefill[num_heads, depth, page_size](
+            ctx,
+            m,
+            batch_size,
+            seq_len,
+            cache_len,
+            max_num_keys,
+            spread,
+            label,
+            run_benchmark,
+        )
 
-    m.dump_report()
+    if run_benchmark:
+        m.dump_report()
