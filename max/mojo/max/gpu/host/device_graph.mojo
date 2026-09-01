@@ -814,6 +814,7 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
         """
         return self._ctx
 
+    @no_inline
     def recording_context(self) raises -> DeviceContext:
         """Returns a `DeviceContext` view that records into this builder.
 
@@ -1200,6 +1201,7 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
             location=location.or_else(call_location()),
         )
 
+    @no_inline
     def add_copy[
         dtype: DType
     ](
@@ -1250,6 +1252,7 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
         )
         return self._last_node().value()
 
+    @no_inline
     def add_copy[
         dtype: DType
     ](
@@ -1300,6 +1303,7 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
         )
         return self._last_node().value()
 
+    @no_inline
     def add_copy[
         dtype: DType
     ](
@@ -1352,6 +1356,7 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
         )
         return self._last_node().value()
 
+    @no_inline
     def add_memset[
         dtype: DType
     ](
@@ -1424,6 +1429,7 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
         )
         return self._last_node().value()
 
+    @no_inline
     def add_empty(
         self,
         *,
@@ -1466,6 +1472,7 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
         )
         return self._last_node().value()
 
+    @no_inline
     def region(
         mut self,
         work: Some[def[o: ImmOrigin](mut DeviceGraphBuilder[o]) raises],
@@ -1575,6 +1582,7 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
 
         return self.add_empty(dependencies=deps^)
 
+    @no_inline
     def add_output(self, var output: AnyAsyncValueRef):
         """Add a value as an output for the resulting device graph.
 
@@ -1592,6 +1600,7 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
             NoneType,
         ](self._handle, output^.take_handle())
 
+    @no_inline
     def num_outputs(self) -> Int:
         """Returns the number of outputs registered on the device graph.
 
@@ -1608,6 +1617,7 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
             ](self._handle)
         )
 
+    @no_inline
     def add_input[T: DeviceGraphInput](mut self, input: T) raises -> T:
         """Gives an input a stable location the graph can record against.
 
@@ -1635,6 +1645,7 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
         """
         return input.allocate_stable(self)
 
+    @no_inline
     def num_inputs(self) -> Int:
         """Returns the number of stable inputs registered on the device graph.
 
@@ -1652,6 +1663,7 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
             ](self._handle)
         )
 
+    @no_inline
     def register_in_place_input(mut self):
         """Registers an in-place input marker at the current input position.
 
@@ -1672,6 +1684,7 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
         ](self._handle)
 
     @doc_hidden
+    @no_inline
     def instantiate(var self) raises -> DeviceGraph:
         """Instantiates the constructed graph into an executable device graph.
 
@@ -1703,6 +1716,7 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
         )
         return DeviceGraph(result)
 
+    @no_inline
     def create_buffer[
         dtype: DType
     ](self, size: Int, is_host: Bool, out result: DeviceBuffer[dtype]) raises:
@@ -1749,6 +1763,7 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
 
         result = {cpp_handle, device_ptr.value()}
 
+    @no_inline
     def create_input_buffer[
         dtype: DType
     ](self, size: Int, is_host: Bool, out result: DeviceBuffer[dtype]) raises:
