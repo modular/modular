@@ -812,10 +812,12 @@ class DKVConnector(KVConnector):
             )
 
         # Surface the Rust connector's MLA NVLink-broadcast status to the serve
-        # process: the Rust side logs it via ``tracing``, which has no subscriber
-        # under MAX. ``broadcast_peer_count`` is ``tp - 1`` once the broadcast
-        # armed at handshake, and 0 for a non-MLA model, a single device, or a
-        # topology without peer access, so log only when it engaged.
+        # process: the Rust side logs it through ``tracing`` at ``info``, and the
+        # subscriber the connector now installs defaults to ``warn``, so it stays
+        # quiet unless ``RUST_LOG`` raises it. ``broadcast_peer_count`` is
+        # ``tp - 1`` once the broadcast armed at handshake, and 0 for a non-MLA
+        # model, a single device, or a topology without peer access, so log only
+        # when it engaged.
         for idx, client in enumerate(self._clients):
             peers = client.broadcast_peer_count()
             if peers:
