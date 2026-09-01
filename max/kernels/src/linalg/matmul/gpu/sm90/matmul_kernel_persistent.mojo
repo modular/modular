@@ -24,10 +24,10 @@ groups that iterate over a persistent tile schedule assigned by a
 from std.math import ceildiv
 from std.sys import size_of
 
-from std.gpu import MAX_THREADS_PER_BLOCK_METADATA
-from std.gpu.globals import WARPGROUP_SIZE
-from std.gpu import thread_idx
-from std.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
+from max.gpu import MAX_THREADS_PER_BLOCK_METADATA
+from max.gpu.globals import WARPGROUP_SIZE
+from max.gpu import thread_idx
+from max.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
 from layout import TensorLayout, TileTensor
 from layout.tma_async import TMATensorTile
 from max.gpu.memory import external_memory

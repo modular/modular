@@ -21,7 +21,7 @@ import extensibility
 from extensibility import InputTensor, OutputTensor
 from max.gpu.host import DeviceContext
 from max.gpu.host.info import is_gpu
-from std.gpu import WARP_SIZE
+from max.gpu import WARP_SIZE
 
 from nn.mtp_eh_norm import mtp_eh_norm_kernel
 

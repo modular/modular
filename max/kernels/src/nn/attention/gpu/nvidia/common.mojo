@@ -25,7 +25,7 @@ from std.memory import (
 from std.sys import size_of
 from std.sys._assembly import inlined_assembly
 
-import std.gpu.primitives.warp as warp
+import max.gpu.primitives.warp as warp
 from max.gpu.host import DeviceContext
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu.compute.mma import st_matrix

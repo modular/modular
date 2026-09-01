@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Implements spatial merge, which compresses vision token grids by merging spatial blocks before attention."""
 
-from std.gpu import block_dim, block_idx, thread_idx
+from max.gpu import block_dim, block_idx, thread_idx
 from max.gpu.host import DeviceContext
 from layout import (
     Coord,

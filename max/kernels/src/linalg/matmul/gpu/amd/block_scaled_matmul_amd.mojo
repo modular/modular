@@ -55,7 +55,7 @@ Entry point: block_scaled_matmul_amd()
 from std.math import ceildiv
 from std.memory import bitcast
 from std.sys import get_defined_bool, get_defined_int, simd_width_of, size_of
-from std.gpu import (
+from max.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
     block_idx,

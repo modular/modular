@@ -25,7 +25,7 @@ without touching the TMA im2col descriptor layer.
 from std.math import ceildiv, gcd
 from std.math.uutils import udivmod
 from std.sys import simd_width_of, size_of
-from std.gpu import block_dim, block_idx, global_idx, thread_idx
+from max.gpu import block_dim, block_idx, global_idx, thread_idx
 from max.gpu.host import DeviceContext
 from layout import (
     Coord,

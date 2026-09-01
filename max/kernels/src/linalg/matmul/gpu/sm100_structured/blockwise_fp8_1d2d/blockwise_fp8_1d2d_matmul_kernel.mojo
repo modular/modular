@@ -30,7 +30,7 @@ from std.math import ceildiv
 from std.math.uutils import ufloordiv, umod
 from std.sys import size_of
 
-from std.gpu import WARP_SIZE, thread_idx
+from max.gpu import WARP_SIZE, thread_idx
 from max.gpu.memory import external_memory, fence_mbarrier_init
 from max.gpu.primitives.cluster import (
     block_rank_in_cluster,

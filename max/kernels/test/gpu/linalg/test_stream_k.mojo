@@ -14,7 +14,7 @@
 from std.math import ceildiv
 from std.math.uutils import umod
 
-from std.gpu import block_dim, block_idx, thread_idx
+from max.gpu import block_dim, block_idx, thread_idx
 from max.gpu.sync import Semaphore
 from max.gpu.host import DeviceBuffer, DeviceContext
 from layout import DefaultEngine, TileTensor, row_major

@@ -27,7 +27,7 @@ from std.memory import dealloc
 from std.memory.alloc import Layout as AllocLayout
 from std.os import getenv
 
-from std.gpu import WARP_SIZE
+from max.gpu import WARP_SIZE
 from max.gpu.primitives.grid_controls import PDLLevel
 from max.gpu.host import DeviceBuffer, DeviceContext
 from max.gpu.host.info import A100

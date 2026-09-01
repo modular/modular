@@ -22,7 +22,7 @@ enables coalesced shared-memory reads and direct MFMA consumption.
 
 from std.math import align_up, ceildiv
 from std.sys import get_defined_bool, get_defined_int
-from std.gpu import (
+from max.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     block_idx,
 )

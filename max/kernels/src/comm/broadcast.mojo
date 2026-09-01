@@ -15,7 +15,7 @@
 from std.collections import Array
 from std.math import align_down, ceildiv
 from max.gpu.host import DeviceContext, get_gpu_target
-from std.gpu import (
+from max.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     global_idx,
     grid_dim,
@@ -28,7 +28,7 @@ from max.gpu.primitives.grid_controls import (
 
 from std.sys import align_of, is_amd_gpu, simd_width_of, size_of
 from max.gpu.memory import Consistency, multimem_st
-from std.gpu.intrinsics import Scope
+from max.gpu.intrinsics import Scope
 from layout import TensorLayout, TensorEngine, TileTensor
 
 from .sync import (

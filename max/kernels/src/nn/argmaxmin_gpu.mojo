@@ -14,7 +14,7 @@
 
 
 from std.bit import next_power_of_two
-from std.gpu import WARP_SIZE, block_dim, block_idx, thread_idx
+from max.gpu import WARP_SIZE, block_dim, block_idx, thread_idx
 from max.gpu.primitives.grid_controls import (
     PDL,
     PDLLevel,

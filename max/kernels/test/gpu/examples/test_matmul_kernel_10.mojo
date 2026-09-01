@@ -33,7 +33,7 @@ from layout import (
     row_major,
     stack_allocation,
 )
-from std.gpu import (
+from max.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
     block_idx,
@@ -43,7 +43,7 @@ from std.gpu import (
 )
 from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
-from std.gpu.intrinsics import ldg
+from max.gpu.intrinsics import ldg
 from linalg.utils import elementwise_epilogue_type
 
 from std.utils import StaticTuple

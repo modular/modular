@@ -33,7 +33,7 @@ Usage:
   br test_mxfp6_matmul_amd_preb.mojo.test
 """
 
-from std.gpu import MAX_THREADS_PER_BLOCK_METADATA, block_idx, global_idx
+from max.gpu import MAX_THREADS_PER_BLOCK_METADATA, block_idx, global_idx
 from max.gpu.host import DeviceContext
 from max.gpu.memory import CacheOperation
 from std.math import ceildiv

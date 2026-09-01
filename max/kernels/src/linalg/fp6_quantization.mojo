@@ -24,11 +24,11 @@ scale, so the group reduction stays in registers and the store is three aligned
 """
 
 from std.math import ceildiv, isfinite, recip
-from std.gpu import block_idx, thread_idx, grid_dim, block_dim
+from max.gpu import block_idx, thread_idx, grid_dim, block_dim
 from max.gpu.host import DeviceContext
 from std.memory import bitcast
 from std.utils import StaticTuple
-from std.gpu import MAX_THREADS_PER_BLOCK_METADATA
+from max.gpu import MAX_THREADS_PER_BLOCK_METADATA
 from layout import TensorEngine, TileTensor
 from layout.coord import Coord
 from layout.tile_layout import TensorLayout

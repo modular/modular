@@ -46,7 +46,7 @@ Partial-buffer layout (partition-last / contiguous):
 """
 
 from std.collections import OptionalReg
-from std.gpu import WARP_SIZE, block_idx, lane_id, thread_idx
+from max.gpu import WARP_SIZE, block_idx, lane_id, thread_idx
 from max.gpu.host import DeviceContext
 from std.math import ceildiv, exp
 from std.sys import llvm_intrinsic

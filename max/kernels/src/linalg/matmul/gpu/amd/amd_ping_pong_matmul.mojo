@@ -20,7 +20,7 @@ from std.math import ceildiv
 from std.sys import align_of, simd_width_of, size_of
 from layout.tile_tensor import stack_allocation
 
-from std.gpu import (
+from max.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
     block_idx,

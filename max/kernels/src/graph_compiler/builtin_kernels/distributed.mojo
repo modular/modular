@@ -38,7 +38,7 @@ from linalg.block_scaled_quantization import (
 )
 from linalg.fp4_utils import MXFP8_SF_VECTOR_SIZE
 from comm.lamport import Lamport
-from std.gpu import WARP_SIZE
+from max.gpu import WARP_SIZE
 from comm.reducescatter import ReduceScatterConfig, reducescatter
 from comm.reducescatter_rmsnorm import _dispatch_rs_norm, reducescatter_rmsnorm
 from nn.normalization import rms_norm_gpu

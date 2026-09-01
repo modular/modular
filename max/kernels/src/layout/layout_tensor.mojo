@@ -33,13 +33,13 @@ from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 from std.builtin.dtype import _unsigned_integral_type_of
 from max.gpu.host import DeviceBuffer, HostBuffer, DeviceContext
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.gpu import (
+from max.gpu import (
     block_dim,
     block_idx,
     lane_id,
     thread_idx,
 )
-from std.gpu.intrinsics import AMDBufferResource
+from max.gpu.intrinsics import AMDBufferResource
 from max.gpu.memory import CacheEviction, CacheOperation, Fill, async_copy
 from layout._fillers import BATCH_SIZE
 from layout._utils import make_amd_buffer_resource
@@ -5555,7 +5555,7 @@ struct LayoutTensor[
 
         ```mojo
         from layout import LayoutTensor, Layout
-        from std.gpu import thread_idx, block_idx, block_dim
+        from max.gpu import thread_idx, block_idx, block_dim
         from max.gpu.memory import async_copy_wait_all
 
         comptime dtype = DType.float32

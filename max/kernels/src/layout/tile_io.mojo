@@ -14,7 +14,7 @@
 
 from std.bit import log2_floor
 from std.collections import Optional, OptionalReg
-from std.gpu import block_dim, lane_id, thread_idx
+from max.gpu import block_dim, lane_id, thread_idx
 from max.gpu.memory import CacheEviction, async_copy
 from std.math.uutils import umod
 from std.os import abort

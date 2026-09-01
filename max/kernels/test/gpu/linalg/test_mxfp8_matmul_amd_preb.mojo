@@ -26,9 +26,9 @@ Usage:
   br test_mxfp8_matmul_amd_preb.mojo.test
 """
 
-from std.gpu import MAX_THREADS_PER_BLOCK_METADATA, block_idx, global_idx
+from max.gpu import MAX_THREADS_PER_BLOCK_METADATA, block_idx, global_idx
 from max.gpu.host import DeviceContext, HostBuffer
-from std.gpu.host.info import MI355X
+from max.gpu.host.info import MI355X
 from max.gpu.memory import CacheOperation
 from std.math import align_up, ceildiv, isnan
 from std.memory import bitcast

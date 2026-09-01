@@ -292,7 +292,7 @@ on the buffer prior to invoking the kernel. The following example shows
 initializing a `TileTensor` from the CPU and passing it to a GPU kernel.
 
 ```mojo
-from std.gpu import global_idx
+from max.gpu import global_idx
 from max.gpu.host import DeviceContext
 from layout import TileTensor, stack_allocation
 from layout.tile_layout import row_major
@@ -597,7 +597,7 @@ var thread_id = thread_idx.z * block_dim.y * block_dim.x
 ```
 
 When dividing work across a single warp, you can use
-[`lane_id()`](https://mojolang.org/docs/std/gpu/primitives/id/lane_id/) as the
+[`lane_id()`](https://docs.modular.com/api/mojo/max/gpu/lane_id/) as the
 thread ID. Lane ID represents a thread's ID within the warp (from 0 to
 `WARP_SIZE - 1`).
 
@@ -745,7 +745,7 @@ The following example exercises the `GenericToSharedAsyncTileCopier` and
 `SharedToGenericTileCopier` types.
 
 ```mojo
-from std.gpu import (
+from max.gpu import (
     thread_idx,
     block_idx,
     global_idx,

@@ -21,7 +21,7 @@ epilogue lambda and for an N that does not divide the row tile.
 from std.math import align_up, ceildiv
 from std.sys import simd_width_of
 
-from std.gpu import WARP_SIZE, global_idx
+from max.gpu import WARP_SIZE, global_idx
 from max.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 from layout import Coord, Idx, TileTensor, row_major
 from linalg.gemv import (

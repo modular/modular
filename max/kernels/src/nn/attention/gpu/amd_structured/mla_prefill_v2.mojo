@@ -99,7 +99,7 @@ default-True path for the FP8 KV=128 target shape, every reused
 primitive exercises the exact codegen this kernel ships.
 """
 
-from std.gpu import (
+from max.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
     block_idx,

@@ -40,8 +40,8 @@ from max.gpu.memory import (
 )
 from ....structuring import SMemBarrier
 from layout.swizzle import make_swizzle
-from std.gpu import thread_idx
-from std.gpu.globals import WARPGROUP_SIZE
+from max.gpu import thread_idx
+from max.gpu.globals import WARPGROUP_SIZE
 from max.gpu.sync import async_copy_arrive
 from structured_kernels.pipeline import (
     ProducerConsumerPipeline,

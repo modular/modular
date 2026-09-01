@@ -63,7 +63,7 @@ would write to a bogus address.
 from layout import TensorLayout, TileTensor, row_major
 from layout.tensor_engine import DevicePointerEngine
 
-from std.gpu import global_idx
+from max.gpu import global_idx
 from max.gpu.host import DeviceContext
 
 from std.testing import assert_equal

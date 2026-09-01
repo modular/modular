@@ -61,7 +61,7 @@ register-cliff optimum (KB `apple-m5-gpu-perf-model`); do NOT exceed 4
 accumulators.
 """
 
-from std.gpu import WARP_SIZE, block_idx, thread_idx
+from max.gpu import WARP_SIZE, block_idx, thread_idx
 from max.gpu.host import DeviceContext
 from std.math import ceildiv
 from std.sys import align_of

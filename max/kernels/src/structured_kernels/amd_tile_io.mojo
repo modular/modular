@@ -72,12 +72,12 @@ from std.sys import (
     simd_width_of,
     size_of,
 )
-from std.gpu import lane_id, thread_idx, WARP_SIZE
-from std.gpu.intrinsics import (
+from max.gpu import lane_id, thread_idx, WARP_SIZE
+from max.gpu.intrinsics import (
     AMDBufferResource,
     ds_read_tr8_b64,
 )
-from std.gpu._utils import to_i32, to_i64
+from max.gpu._utils import to_i32, to_i64
 from max.gpu.memory import CacheOperation
 from std.memory import AddressSpace
 from std.memory.unsafe import bitcast

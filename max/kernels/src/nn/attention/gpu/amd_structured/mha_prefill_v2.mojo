@@ -92,7 +92,7 @@ The cluster decomposition and overlap pattern are inspired by the
 reference attention kernel.
 """
 
-from std.gpu import (
+from max.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
     block_idx,

@@ -35,7 +35,7 @@ from std.math import ceildiv
 from std.sys import align_of
 from std.utils import Index, IndexList
 
-from std.gpu import block_dim, global_idx, grid_dim
+from max.gpu import block_dim, global_idx, grid_dim
 from max.gpu.host import DeviceBuffer, DeviceContext
 
 from layout import Coord, Idx, TileTensor

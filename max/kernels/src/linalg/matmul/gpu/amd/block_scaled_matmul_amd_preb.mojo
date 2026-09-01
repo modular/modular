@@ -36,7 +36,7 @@ from std.math import ceildiv
 from std.math.uutils import udivmod
 from std.memory.unsafe import bitcast
 from std.sys import simd_width_of
-from std.gpu import (
+from max.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
     block_idx,

@@ -29,7 +29,7 @@ applied to the lane's `(M=lane%16, K-group=lane/16)` slot) see the AMD
 CDNA4 ISA section 7.2.1.
 """
 
-from std.gpu import (
+from max.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
     block_idx,

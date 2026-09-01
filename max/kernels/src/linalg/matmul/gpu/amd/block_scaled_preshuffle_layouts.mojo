@@ -41,7 +41,7 @@ Layout reference (canonical):
         : `preShuffleWeight` (B 5D) and `preShuffleScale` (scale 4D).
 """
 
-from std.gpu import (
+from max.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     block_dim,
     block_idx,

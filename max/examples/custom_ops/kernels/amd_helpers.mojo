@@ -17,7 +17,7 @@ from std.sys import align_of, size_of
 # AMD Helper functions and structs for Tensor Core MMA operations
 from std.sys.info import simd_width_of
 
-from std.gpu import (
+from max.gpu import (
     block_dim,
     block_idx,
     global_idx,

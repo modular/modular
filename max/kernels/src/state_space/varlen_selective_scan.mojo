@@ -13,7 +13,7 @@
 
 """Variable-length selective scan kernels for Mamba SSM architecture."""
 
-from std.gpu import (
+from max.gpu import (
     block_dim,
     block_idx,
     thread_idx,

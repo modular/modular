@@ -56,7 +56,7 @@ from std.random import random_ui64, seed
 from max.gpu.host import DeviceContext
 from max.gpu.host.info import MI355X
 from std.testing import assert_true
-from std.gpu import MAX_THREADS_PER_BLOCK_METADATA, global_idx
+from max.gpu import MAX_THREADS_PER_BLOCK_METADATA, global_idx
 from std.utils import StaticTuple
 from layout import Coord, Idx, TileTensor
 from layout.tile_layout import row_major

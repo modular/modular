@@ -32,9 +32,9 @@ from structured_kernels.smem_types import SMemArray
 from structured_kernels.tile_types import SMemTileArray2D
 from layout.swizzle import Swizzle, make_swizzle
 
-import std.gpu.primitives.warp as warp
+import max.gpu.primitives.warp as warp
 from max.algorithm.reduction import _reduce_generator
-from std.gpu import (
+from max.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
     block_idx,

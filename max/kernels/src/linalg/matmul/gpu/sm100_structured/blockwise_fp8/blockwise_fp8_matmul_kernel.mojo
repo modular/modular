@@ -30,7 +30,7 @@ Key differences from standard/block-scaled kernels:
 
 from std.sys import size_of
 
-from std.gpu import WARP_SIZE
+from max.gpu import WARP_SIZE
 from max.gpu.primitives.cluster import (
     cluster_sync,
     elect_one_sync,

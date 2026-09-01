@@ -18,14 +18,14 @@ from std.sys.info import simd_width_of
 
 from max.algorithm import elementwise
 from std.bit import next_power_of_two
-from std.gpu import (
+from max.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     block_idx,
     global_idx,
     thread_idx,
 )
 from max.gpu.sync import barrier
-import std.gpu.primitives.warp as warp
+import max.gpu.primitives.warp as warp
 from max.gpu.host import DeviceContext, get_gpu_target
 from max.gpu.host.info import is_cpu
 from std.memory import unsafe_stack_allocation

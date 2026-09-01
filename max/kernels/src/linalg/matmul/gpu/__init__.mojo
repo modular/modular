@@ -29,7 +29,7 @@ from std.sys.info import _accelerator_arch, _has_blackwell_tcgen05
 from std.algorithm.functional import tile_and_unswitch
 
 from max.algorithm.functional import elementwise
-from std.gpu import (
+from max.gpu import (
     WARP_SIZE,
     global_idx,
     thread_idx,

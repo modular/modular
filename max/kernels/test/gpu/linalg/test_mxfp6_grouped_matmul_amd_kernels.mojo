@@ -40,7 +40,7 @@ Usage:
 """
 
 from max.gpu.host import DeviceBuffer, DeviceContext, HostBuffer
-from std.gpu import MAX_THREADS_PER_BLOCK_METADATA, global_idx
+from max.gpu import MAX_THREADS_PER_BLOCK_METADATA, global_idx
 from max.gpu.memory import CacheOperation
 from std.math import align_up, ceildiv
 from std.memory import bitcast

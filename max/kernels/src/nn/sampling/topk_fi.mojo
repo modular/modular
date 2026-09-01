@@ -13,7 +13,7 @@
 """Implements a float-integer packed top-K kernel that jointly tracks values and indices in a single register."""
 
 from std.bit import log2_floor
-from std.gpu import (
+from max.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
     block_dim,
@@ -24,7 +24,7 @@ from std.gpu import (
 )
 from max.gpu.sync import barrier
 from max.gpu.primitives import block
-from std.gpu.primitives import warp
+from max.gpu.primitives import warp
 from max.gpu.primitives.grid_controls import (
     PDL,
     launch_dependent_grids,

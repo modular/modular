@@ -21,8 +21,8 @@ introducing a comm → nn → comm circular dependency.
 from std.math import rsqrt
 from std.sys import align_of, simd_width_of
 from max.algorithm.functional import _get_start_indices_of_nth_subvolume
-from std.gpu import WARP_SIZE, block_idx, thread_idx
-import std.gpu.primitives.warp as warp
+from max.gpu import WARP_SIZE, block_idx, thread_idx
+import max.gpu.primitives.warp as warp
 from max.gpu.host import DeviceContext, get_gpu_target
 from max.gpu.primitives import block
 from max.gpu.primitives.grid_controls import (

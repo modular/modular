@@ -24,7 +24,7 @@ from max.algorithm.functional import (
     elementwise,
     sync_parallelize,
 )
-from std.gpu import block_idx, thread_idx
+from max.gpu import block_idx, thread_idx
 from max.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 from max.gpu.host.info import is_cpu, is_valid_target
 from layout import (

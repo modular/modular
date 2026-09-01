@@ -49,9 +49,9 @@ from linalg.fp6_utils import (
 from linalg.mx_format import MXFormat
 from linalg.matmul.gpu.amd import Shuffler
 
-import std.gpu.primitives.warp as warp
+import max.gpu.primitives.warp as warp
 from std.collections import OptionalReg
-from std.gpu import (
+from max.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
     thread_idx,

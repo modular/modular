@@ -24,7 +24,7 @@ import extensibility
 from extensibility import InputTensor, OutputTensor
 from max.gpu.host import DeviceContext
 from max.gpu.primitives.grid_controls import PDLLevel, pdl_launch_attributes
-from std.gpu.host.info import is_gpu
+from max.gpu.host.info import is_gpu
 
 from attn_res.mix import attn_res_mix_gpu
 

@@ -17,7 +17,7 @@ from std.random import rand, seed
 from std.testing import assert_equal, assert_true
 
 from layout import TileTensor, row_major
-from std.gpu import WARP_SIZE
+from max.gpu import WARP_SIZE
 from max.gpu.host import DeviceContext, HostBuffer
 
 from nn.mtp_eh_norm import mtp_eh_norm_kernel

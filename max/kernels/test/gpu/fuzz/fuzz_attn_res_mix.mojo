@@ -57,7 +57,7 @@
 from std.math import ceildiv, exp, max, min, sqrt
 from std.random import random_ui64, seed
 from std.sys.defines import get_defined_int
-from std.gpu import block_dim, block_idx, thread_idx
+from max.gpu import block_dim, block_idx, thread_idx
 from std.utils.numerics import inf, isnan, max_finite, min_finite, nan, neg_inf
 
 from max.gpu.host import DeviceContext

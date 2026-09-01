@@ -34,7 +34,7 @@ vLLM Interface:
 from std.math import ceildiv
 
 
-from std.gpu import block_idx, thread_idx
+from max.gpu import block_idx, thread_idx
 
 
 from layout import TensorLayout, TileTensor

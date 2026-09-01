@@ -44,7 +44,7 @@ from std.memory import Pointer, UnsafePointer, bitcast
 from std.math.uutils import ufloordiv, umod
 from std.sys import align_of, size_of
 
-from std.gpu import (
+from max.gpu import (
     WARP_SIZE,
     block_id_in_cluster,
     block_idx,
@@ -63,7 +63,7 @@ from max.gpu.primitives.grid_controls import (
     launch_dependent_grids,
     wait_on_dependent_grids,
 )
-import std.gpu.primitives.warp as warp
+import max.gpu.primitives.warp as warp
 from max.gpu.primitives.cluster import (
     block_rank_in_cluster,
     cluster_sync,

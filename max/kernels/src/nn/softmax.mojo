@@ -20,7 +20,7 @@ from std.collections import Optional, OptionalReg
 from std.sys import align_of, is_amd_gpu, is_nvidia_gpu, simd_width_of, size_of
 from std.sys._assembly import inlined_assembly
 
-import std.gpu.primitives.warp as warp
+import max.gpu.primitives.warp as warp
 from std.algorithm import vectorize
 
 from max.algorithm import sync_parallelize
@@ -36,7 +36,7 @@ from max.gpu.primitives.grid_controls import (
     pdl_launch_attributes,
 )
 from std.bit import log2_floor
-from std.gpu import (
+from max.gpu import (
     WARP_SIZE,
     block_idx,
     grid_dim,

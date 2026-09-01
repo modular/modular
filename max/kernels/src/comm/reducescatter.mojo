@@ -19,7 +19,7 @@ from std.collections.optional import Optional
 from layout import Coord, Idx, TensorLayout, TileTensor, row_major
 from layout.tile_layout import Layout
 from layout.coord import _CoordToDynamic
-from std.gpu import (
+from max.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     global_idx,
     grid_dim,
@@ -34,7 +34,7 @@ from max.gpu.memory import Consistency, ReduceOp, multimem_ld_reduce
 from std.utils import StaticTuple
 from std.utils.numerics import get_accum_type
 
-from std.gpu.intrinsics import (
+from max.gpu.intrinsics import (
     Scope,
 )
 from std.math import ceildiv

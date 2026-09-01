@@ -17,7 +17,7 @@ reduction, and optional epilogue fusion for Hopper matmuls.
 from std.math import ceildiv
 from std.sys import size_of
 
-from std.gpu.globals import WARPGROUP_SIZE
+from max.gpu.globals import WARPGROUP_SIZE
 from max.gpu.primitives.grid_controls import pdl_launch_attributes
 from max.gpu.host import DeviceContext, FuncAttribute
 from max.gpu.host.nvidia.tma import TensorMapSwizzle

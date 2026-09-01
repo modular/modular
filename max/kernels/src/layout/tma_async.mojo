@@ -49,7 +49,7 @@ from max.gpu.host.nvidia.tma import (
     create_tma_descriptor,
     prefetch_tma_descriptor,
 )
-from std.gpu.intrinsics import Scope
+from max.gpu.intrinsics import Scope
 from max.gpu.memory import (
     ReduceOp,
     async_copy,

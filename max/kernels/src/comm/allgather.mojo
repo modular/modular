@@ -35,7 +35,7 @@ from std.sys import simd_width_of, align_of, size_of
 from layout import TensorEngine, TileTensor
 from layout.tile_layout import TensorLayout
 from layout.tma_async import SharedMemBarrier
-from std.gpu import (
+from max.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
     block_idx,

@@ -27,7 +27,7 @@ tails. Operands load DRAM->register directly -- threadgroup-memory staging
 """
 
 from std.collections import Array, Optional
-from std.gpu import WARP_SIZE, block_dim, block_idx, lane_id, thread_idx
+from max.gpu import WARP_SIZE, block_dim, block_idx, lane_id, thread_idx
 from std.math import align_down, ceildiv
 from max.gpu.host import DeviceContext
 from std.sys import align_of, size_of

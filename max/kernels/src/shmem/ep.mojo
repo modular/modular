@@ -24,7 +24,7 @@ from layout import DefaultEngine, TensorLayout, TileTensor, Idx
 from layout.tile_tensor import row_major
 from max.runtime.tracing import Trace, TraceLevel, get_safe_task_id
 from std.sys.info import has_amd_gpu_accelerator, simd_width_of, size_of
-from std.gpu import WARP_SIZE
+from max.gpu import WARP_SIZE
 from std.ffi import external_call, _get_global_or_null
 
 from shmem import shmem_module_init, shmem_my_pe

@@ -22,7 +22,7 @@ position. This enables vectorized 8-wide loads from the NHWC input: the same
 load width as the standard matmul kernel's A-tile loader.
 """
 
-from std.gpu import (
+from max.gpu import (
     WARP_SIZE,
     block_idx,
     thread_idx,

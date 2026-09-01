@@ -20,7 +20,7 @@ SF_VECTOR_SIZE (32) consecutive elements.
 """
 
 from std.math import ceildiv
-from std.gpu import block_idx, thread_idx, grid_dim, block_dim
+from max.gpu import block_idx, thread_idx, grid_dim, block_dim
 from max.gpu.host import DeviceContext
 from max.gpu.host.info import GPUInfo
 from std.sys.info import _accelerator_arch
@@ -30,7 +30,7 @@ from max.gpu.primitives.grid_controls import (
     pdl_launch_attributes,
 )
 from std.utils import StaticTuple
-from std.gpu import MAX_THREADS_PER_BLOCK_METADATA
+from max.gpu import MAX_THREADS_PER_BLOCK_METADATA
 from layout import TensorEngine, TileTensor
 from layout.coord import Coord, Idx
 from layout.tile_layout import TensorLayout

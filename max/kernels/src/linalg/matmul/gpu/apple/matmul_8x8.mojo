@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """8x8 `simdgroup_matrix` GEMM kernel for Apple Silicon GPUs (M1-M4)."""
 
-from std.gpu import (
+from max.gpu import (
     block_idx,
     lane_id,
     warp_id,

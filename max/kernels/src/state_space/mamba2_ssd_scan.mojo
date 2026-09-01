@@ -50,14 +50,14 @@ boundary -- no cross-sequence bleed. `final_states (batch, nheads, head_dim,
 dstate)` is written at each sequence end.
 """
 
-from std.gpu import (
+from max.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     block_dim,
     block_idx,
     thread_idx,
 )
 from max.gpu.host import DeviceContext
-from std.gpu.primitives.warp import lane_group_sum
+from max.gpu.primitives.warp import lane_group_sum
 from max.algorithm import sync_parallelize
 from std.math import exp2
 from std.sys.info import align_of

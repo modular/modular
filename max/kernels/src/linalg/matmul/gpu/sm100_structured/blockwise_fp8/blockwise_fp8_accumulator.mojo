@@ -26,7 +26,7 @@ requires per-K-iteration scaling in CUDA cores:
 from std.math import gcd
 from std.math.uutils import umod, ufloordiv
 
-from std.gpu import WARP_SIZE, lane_id, warp_id as get_warp_id
+from max.gpu import WARP_SIZE, lane_id, warp_id as get_warp_id
 from max.gpu.sync import syncwarp
 from layout import (
     Coord,

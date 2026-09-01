@@ -34,7 +34,7 @@ the default-on path for the FP8 / KV>=128 / 32x32x64 shape, so every
 reused primitive exercises the codegen `MlaPrefillV2` ships.
 """
 
-from std.gpu import WARP_SIZE, lane_id
+from max.gpu import WARP_SIZE, lane_id
 from std.sys.intrinsics import llvm_intrinsic
 
 from layout import TensorLayout, TileTensor, DefaultEngine

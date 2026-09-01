@@ -51,10 +51,10 @@ strided `y`/`gate`/`output` view (a split of the fused in-proj) is read correctl
 with no host-side stride plumbing.
 """
 
-from std.gpu import WARP_SIZE, global_idx, lane_id
+from max.gpu import WARP_SIZE, global_idx, lane_id
 from max.gpu.host import DeviceContext
 from std.math import ceildiv, rsqrt
-import std.gpu.primitives.warp as warp
+import max.gpu.primitives.warp as warp
 
 from layout import Coord, TensorLayout, TensorEngine, TileTensor
 

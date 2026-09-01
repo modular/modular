@@ -26,7 +26,7 @@ Key characteristics:
 from std.math import ceildiv
 from std.math.uutils import ufloordiv
 
-from std.gpu import block_idx, grid_dim
+from max.gpu import block_idx, grid_dim
 from layout import DefaultEngine, TensorEngine, TileTensor
 
 from structured_kernels.tile_types import GMEMLayout1D

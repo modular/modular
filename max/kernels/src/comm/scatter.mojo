@@ -29,7 +29,7 @@ from layout import TensorEngine, TileTensor
 from layout.tile_layout import TensorLayout
 from std.collections import Array
 from max.gpu.host import DeviceContext, get_gpu_target
-from std.gpu import (
+from max.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     global_idx,
     grid_dim,

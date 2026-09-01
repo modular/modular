@@ -16,7 +16,7 @@ from std.math import align_down, align_up, ceildiv, clamp, rsqrt
 from std.math.uutils import umod, ufloordiv, uceildiv
 from std.sys.info import align_of, simd_width_of, size_of
 
-import std.gpu.primitives.warp as warp
+import max.gpu.primitives.warp as warp
 from std.algorithm import vectorize
 from max.algorithm import map_reduce, mean, variance
 from max.algorithm.functional import (
@@ -25,7 +25,7 @@ from max.algorithm.functional import (
 )
 from max.algorithm.reduction import _simd_sum, _simd_sum_elementwise
 from std.bit import log2_floor
-from std.gpu import (
+from max.gpu import (
     WARP_SIZE,
     thread_idx,
     block_dim,
@@ -71,7 +71,6 @@ from std.utils.static_tuple import StaticTuple
 from std.utils.numerics import get_accum_type, max_finite, min_finite
 from comm.rms_norm_fp8 import rms_norm_fused_fp8
 from internal_utils.fp8_utils import compute_dynamic_fp8_scale, fp8_quantize
-from max.gpu.primitives.grid_controls import PDLLevel
 
 # Free-form row-wise scaffolder (Row) + monoids.
 from algorithm import rowwise

@@ -3264,7 +3264,7 @@ def multimem_st[
 
     ```mojo
     from max.gpu.memory.memory import multimem_st, Consistency
-    from std.gpu.intrinsics import Scope
+    from max.gpu.intrinsics import Scope
     from std.utils import StaticTuple
     var addr = Pointer[Float32, MutAnyOrigin, address_space=.GLOBAL].unsafe_dangling()
     %# val1, val2 = Float32(0), Float32(0)

@@ -41,7 +41,7 @@ from std.utils import Index, IndexList, StaticTuple
 from std.collections import Array
 from std.utils.numerics import get_accum_type
 
-from std.gpu import (
+from max.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
     block_idx,
@@ -50,7 +50,7 @@ from std.gpu import (
 )
 from max.gpu.host import DeviceContext
 from max.gpu.host.info import MI355X
-from std.gpu.intrinsics import AMDBufferResource
+from max.gpu.intrinsics import AMDBufferResource
 from max.gpu.sync import schedule_barrier, s_waitcnt
 
 from layout import TensorLayout, TensorEngine, TileTensor
@@ -1833,7 +1833,7 @@ struct AMD4WaveMatmul[
             # The `load` API likewise takes its `vector_offset` argument
             # in elements and multiplies by `size_of[dtype]()` to derive
             # the buffer byte offset — see `AMDBufferResource.load` in
-            # `std.gpu.intrinsics`. Both sides must agree: passing a
+            # `max.gpu.intrinsics`. Both sides must agree: passing a
             # byte-scaled `num_records` paired with a byte-scaled
             # `vector_offset` doubles the effective stride (the bug
             # this fix replaces), making workgroups with

@@ -30,7 +30,7 @@ from extensibility import (
     get_kernel_tile_shape,
 )
 from std.collections import Array
-from std.gpu import block_idx
+from max.gpu import block_idx
 from max.gpu.host import DeviceContext, DeviceBuffer
 from max.gpu.host import (
     DeviceGraph,

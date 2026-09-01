@@ -13,7 +13,7 @@
 """Implements GPU-specific tensor padding kernels with constant or edge-fill strategies."""
 
 from std.algorithm.functional import vectorize
-from std.gpu import block_dim, block_idx, thread_idx
+from max.gpu import block_dim, block_idx, thread_idx
 from max.gpu.host import DeviceContext, DeviceBuffer, DeviceAttribute
 from layout import Coord, TensorLayout, TileTensor
 from layout.tile_layout import Layout

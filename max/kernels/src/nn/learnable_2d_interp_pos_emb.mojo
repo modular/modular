@@ -32,7 +32,7 @@ Tensor layout (all row-major):
 
 from std.math import clamp, floor
 
-from std.gpu import block_dim, block_idx, thread_idx
+from max.gpu import block_dim, block_idx, thread_idx
 from max.gpu.host import DeviceContext
 from layout import TensorLayout, TensorEngine, TileTensor
 

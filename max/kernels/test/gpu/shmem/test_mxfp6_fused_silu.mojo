@@ -28,7 +28,7 @@ Usage (plain `mojo` is shadowed by the installed shmem package -- use bazel):
 """
 
 from max.gpu.host import DeviceContext, HostBuffer
-from std.gpu.host.info import MI355X
+from max.gpu.host.info import MI355X
 from std.math import exp, isfinite
 from std.random import random_float64, seed
 from std.testing import assert_almost_equal, assert_true

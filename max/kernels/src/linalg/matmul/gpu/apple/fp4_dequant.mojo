@@ -32,7 +32,7 @@ The global / tensor scalar scale (`alpha`) folds in once at the matmul epilogue,
 not here -- this routine produces the per-element dequantized weight only.
 """
 
-from std.gpu import global_idx
+from max.gpu import global_idx
 from std.math import ceildiv
 from max.gpu.host import DeviceContext
 

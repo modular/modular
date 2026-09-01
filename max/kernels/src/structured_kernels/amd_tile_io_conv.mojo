@@ -74,8 +74,8 @@ SRD-OOB or filter-zero multiplies in the MMA.
 
 from std.math import ceildiv, min
 from std.sys import size_of, simd_width_of
-from std.gpu import WARP_SIZE
-from std.gpu.intrinsics import AMDBufferResource
+from max.gpu import WARP_SIZE
+from max.gpu.intrinsics import AMDBufferResource
 from std.memory import AddressSpace
 from std.sys.intrinsics import readfirstlane
 from std.collections import Optional

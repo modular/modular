@@ -14,7 +14,7 @@
 # Code examples from the mojolang.org landing page.
 
 from std.algorithm import vectorize
-from std.gpu import global_idx
+from max.gpu import global_idx
 from max.gpu.host import DeviceContext
 from max.gpu.host.info import is_cpu, is_gpu
 from std.math import ceildiv

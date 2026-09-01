@@ -14,8 +14,8 @@
 from std.math import ceildiv
 from std.random import randn, seed, random_float64
 
-import std.gpu.primitives.warp as warp
-from std.gpu import WARP_SIZE
+import max.gpu.primitives.warp as warp
+from max.gpu import WARP_SIZE
 from max.gpu.host import DeviceContext, get_gpu_target
 from std.sys import simd_width_of
 from linalg.gemv import gemv_kernel, gemv_split_k, gevm_kernel

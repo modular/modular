@@ -57,7 +57,7 @@ Activation Support:
 
 from max.algorithm import sync_parallelize
 from max.gpu.host import DeviceContext
-from std.gpu import (
+from max.gpu import (
     block_dim,
     block_idx,
     thread_idx,

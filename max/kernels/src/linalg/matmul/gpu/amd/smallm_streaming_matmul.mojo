@@ -29,7 +29,7 @@ to be L2-resident. C is ``[m, n]``.
 """
 
 from std.math import ceildiv
-from std.gpu import (
+from max.gpu import (
     WARP_SIZE,
     block_idx,
     global_idx,

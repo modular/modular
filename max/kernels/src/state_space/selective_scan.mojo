@@ -18,7 +18,7 @@ scan (SSM) recurrence used by Mamba and Mamba-2, including the SSD
 (state-space duality) combined scan for variable-length batched prefill.
 """
 
-from std.gpu import (
+from max.gpu import (
     block_dim,
     block_idx,
     thread_idx,

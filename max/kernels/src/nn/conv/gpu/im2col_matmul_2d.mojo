@@ -28,7 +28,7 @@ kernel wins on 1×1), K >= 16 (below MMA_K).
 from std.math import ceildiv
 from std.math.uutils import udivmod
 from std.sys.info import has_apple_gpu_accelerator, size_of
-from std.gpu import block_dim, block_idx, global_idx, thread_idx
+from max.gpu import block_dim, block_idx, global_idx, thread_idx
 from max.gpu.host import DeviceContext
 from layout import Coord, Idx, TileTensor, row_major
 from linalg.matmul.gpu import _matmul_gpu

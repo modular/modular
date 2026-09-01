@@ -21,9 +21,9 @@ target has no clusters.
 """
 
 from std.bit import next_power_of_two
-from std.gpu import MAX_THREADS_PER_BLOCK_METADATA, block_idx, thread_idx
-from std.gpu.primitives import warp
-from std.gpu.primitives.id import cluster_dim
+from max.gpu import MAX_THREADS_PER_BLOCK_METADATA, block_idx, thread_idx
+from max.gpu.primitives import warp
+from max.gpu.primitives.id import cluster_dim
 from max.gpu.primitives import block
 from max.gpu.primitives.cluster import (
     block_rank_in_cluster,
