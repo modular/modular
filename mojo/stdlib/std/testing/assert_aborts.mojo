@@ -34,10 +34,9 @@ comptime _LOCATION_ENV = "__MOJO_TEST_EXPECT_ABORT_LOCATION_TARGET"
 # Path the child's stdout/stderr get redirected to before running.
 comptime _OUTPUT_ENV = "__MOJO_TEST_EXPECT_ABORT_OUTPUT"
 # How long to wait for the child to abort before killing it.
-comptime _DEFAULT_TIMEOUT = 60.0
-# How often to check on the child while waiting for it. The child re-execs the
-# whole test binary, so this is small next to the work it does.
-comptime _POLL_INTERVAL = 0.001
+comptime _DEFAULT_TIMEOUT = 30.0
+# How often to check on the child while waiting for it.
+comptime _POLL_INTERVAL = 0.01
 
 
 @always_inline
@@ -165,8 +164,6 @@ def _spawn_and_check(
     var timed_out = False
     try:
         var child = Process.run(String(self_argv[0]), rest)
-        # Poll rather than block, so a closure that hangs instead of aborting
-        # fails here instead of wedging the whole test binary.
         var deadline = perf_counter() + timeout
         status = child.poll()
         while not status.has_exited():
@@ -195,8 +192,6 @@ def _spawn_and_check(
             t" used for assert_aborts.\nError: {e}"
         )
 
-    # Checked before `term_signal`: we killed the child, so it *is* signaled,
-    # and reading that as a pass would turn a hang into a false success.
     if timed_out:
         raise Error(
             t"assert_aborts: expected the process to abort, but it was still"
