@@ -1281,7 +1281,7 @@ ConstraintAttr LIT::fuseConstraints(SharedState &shared,
   // struct conformance lists, and conformance diagnostics read them off the
   // source struct, never a fused meta-type bound. Revisit if traits ever gain
   // `where` clauses with user messages (see the "Failure messages" section of
-  // oss/modular/mojo/proposals/where_clauses.md).
+  // Mojo/proposals/where_clauses.md).
   SmallVector<TypedAttr> props;
   SmallVector<Location> locs;
   props.reserve(constraints.size());

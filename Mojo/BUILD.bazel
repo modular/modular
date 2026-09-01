@@ -33,6 +33,7 @@ package_group(
         "//GraphCompiler/...",
         "//Kernels/...",
         "//Mojo/...",
+        "//Mojo/docs/...",
         "//bazel/...",
         "//docs/...",
         "//max/python/max/_core/internal/...",
@@ -40,7 +41,6 @@ package_group(
         "//oss/modular/bazel/...",
         "//oss/modular/docs/...",
         "//oss/modular/max/python/max/_core/internal/...",  # Only when testing internally
-        "//oss/modular/mojo/docs/...",
         "//plugins/...",
         "//utils/...",
     ],
@@ -978,10 +978,10 @@ modular_shared_library(
     output_name = "KGENCompilerRTShared",
     visibility = [
         "//Mojo:consumers",
+        "//Mojo/stdlib/std:__pkg__",
         "//Mojo/test/internal/profiling:__pkg__",
         "//Mojo/test/tracy:__pkg__",
         "//mojo/stdlib/std:__pkg__",
-        "//oss/modular/mojo/stdlib/std:__pkg__",
     ],
     deps = [
         "//AsyncRT:Runtime",

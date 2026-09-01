@@ -2325,7 +2325,7 @@ struct ManagedTensorSlice[
         self.write_to(writer)
 
 
-# TODO: Move to oss/modular/mojo/stdlib/stdlib/runtime/tracing.mojo and
+# TODO: Move to Mojo/stdlib/stdlib/runtime/tracing.mojo and
 # rename to trace_arg
 @always_inline
 def trace_slice_arg(name: String, buf: ManagedTensorSlice) -> String:
