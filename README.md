@@ -31,7 +31,7 @@ all of it in here.
 
 The main components include:
 
-- Mojo compiler: [/KGEN](KGEN)
+- Mojo compiler: [/Mojo](Mojo)
 - Mojo standard library: [/mojo/stdlib](mojo/stdlib)
 - MAX accelerator library: [/max/kernels](/max/kernels)
 - MAX inference server: [/max/python/max/serve](/max/python/max/serve)
