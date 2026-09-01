@@ -731,7 +731,11 @@ class TestDeadMatcherLeavesSlotUnconstrained:
         """Control: a stopped *accepting* matcher is a satisfied grammar.
 
         Its EOS-only mask is correct and must still constrain the row -- the
-        guard keys on the error state, not on being stopped.
+        guard keys on the error state, not on being stopped. A backend that
+        can't safely compute that mask for a stopped matcher (xgrammar)
+        guards this itself; see
+        ``test_fill_slot_after_stop_token_accepted_does_not_crash`` in
+        ``test_structured_output_backend.py``.
         """
         backend = _FillCountingBackend()
         helper = StructuredOutputHelper(

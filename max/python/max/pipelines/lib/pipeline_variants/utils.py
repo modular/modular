@@ -724,7 +724,12 @@ class StructuredOutputHelper:
         grammar was already unsatisfiable for this request.
 
         A stopped matcher that *is* accepting is a completed grammar, not an
-        error. Its mask allows only EOS, which is correct and still applied.
+        error. Its mask allows only EOS, which is correct and still applied --
+        a backend whose native fill call can't tolerate a stopped matcher
+        (see :meth:`XgrammarBackend.fill_next_token_bitmask`) is responsible
+        for computing that EOS-only mask itself, since llguidance's real,
+        frequently-hit case here is a normal successful completion, not an
+        error state.
 
         Args:
             ctx: The request context, for the report latch and diagnostics.
