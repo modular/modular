@@ -422,11 +422,13 @@ struct Process:
         return Self._spawn(
             path,
             argv,
-            rebind[
-                OptionalPointer[
-                    Optional[CStringSlice[ImmutAnyOrigin]], ImmutAnyOrigin
-                ]
-            ](envp_list.unsafe_ptr()),
+            Optional(
+                rebind[
+                    Pointer[
+                        Optional[CStringSlice[ImmutAnyOrigin]], ImmutAnyOrigin
+                    ]
+                ](envp_list.unsafe_ptr())
+            ),
         )
 
     @staticmethod

@@ -205,4 +205,3 @@ def _spawn_and_check(
                 t" did not contain the expected message.\nExpected substring:"
                 t" '{message}'\nActual output:\n{captured}"
             )
-

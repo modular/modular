@@ -103,9 +103,7 @@ def test_process_run_with_env() raises:
     child_env.append("_MOJO_TEST_CUSTOM_VAR=hello_from_env")
 
     # The custom var should be visible to the child.
-    var p = Process.run(
-        "printenv", ["_MOJO_TEST_CUSTOM_VAR"], env=child_env
-    )
+    var p = Process.run("printenv", ["_MOJO_TEST_CUSTOM_VAR"], env=child_env)
     var status = p.wait()
     assert_equal(status.exit_code.value(), 0)
 
@@ -125,4 +123,3 @@ def main() raises:
     test_pipe()
     test_process_inherits_env()
     test_process_run_with_env()
-
