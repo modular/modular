@@ -238,10 +238,10 @@ class KVCacheMemory:
 
     A unit is one logical tensor — a cache's ``values`` or its ``scales`` —
     holding a 2-D ``[num_pages, bytes_per_page]`` view per TP shard in canonical
-    device order, so ``buffers[s]`` is shard ``s`` regardless of ``replicated``.
+    device order.
 
-    ``replicated`` marks shards holding identical bytes (MLA); what a consumer
-    does with that is its own business.
+    ``replicated`` indicates that all buffers hold identical bytes. This is true
+    for certain cases like TP + MLA, TP + MiniMaxM3IndexerAttn, etc.
     """
 
     replicated: bool
@@ -355,11 +355,9 @@ class KVCacheBuffer(KVCacheBufferInterface):
     quantization) ``scales``. The length of each list corresponds to the
     tensor-parallel degree, with one buffer per TP shard.
 
-    ``page_size`` and ``replicates_kv_across_tp`` describe the physical layout
-    so KV connectors can offload this cache without a separate
-    ``KVCacheParams`` reference: ``replicates_kv_across_tp`` is ``True`` when
-    the KV data is replicated identically across TP shards (MLA) and ``False``
-    when it is sharded (MHA).
+    ``replicates_kv_across_tp`` is ``True`` when the KV data is replicated
+    identically across TP shards and ``False`` when it is sharded. The data is
+    replicated in certain cases like TP + MLA, TP + MiniMaxM3IndexerAttn, etc.
     """
 
     replicates_kv_across_tp: bool
