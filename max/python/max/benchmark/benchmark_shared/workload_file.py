@@ -20,7 +20,7 @@ workload JSON the offline benchmark harness consumes:
 
     {"requests": [{"prompt_tokens": [128000, 9906, ...], "max_new_tokens": 128}]}
 
-Both the standalone ``GenerateWorkload.py`` CLI and the offline benchmark
+Both the standalone ``generate_workload.py`` CLI and the offline benchmark
 engine's mach/model-worker runners build the file from here, so a
 dataset-driven cell samples the same bytes the hand-run tool would, with no
 subprocess hop between them.
