@@ -452,8 +452,14 @@ modular_cc_library(
 # cost. Binaries without the glue get safe no-ops.
 modular_cc_library(
     name = "ProfilingRanges",
-    srcs = ["lib/Profiling/Ranges.cpp"],
-    hdrs = ["include/Support/Profiling/Ranges.h"],
+    srcs = [
+        "lib/Profiling/ExternalProfilerAnnotation.cpp",
+        "lib/Profiling/Ranges.cpp",
+    ],
+    hdrs = [
+        "include/Support/Profiling/ExternalProfilerAnnotation.h",
+        "include/Support/Profiling/Ranges.h",
+    ],
     deps = [
         # Holds the process-global gates + cached sink, so every statically
         # linked copy of the shim observes the same state (see Ranges.h).
