@@ -377,6 +377,11 @@ class KVCacheBuffer(KVCacheBufferInterface):
     :attr:`values_per_layer`). ``scales[shard]`` aliases
     ``scales_per_layer[shard][0]``. ``None`` for a single multi-layer scale
     buffer or an unquantized cache."""
+    is_jenga: bool = False
+    """Whether this buffer is associated with Jenga KV cache
+
+    TODO: Delete this field after reworking KVCacheBufferInterface.
+    """
 
     def __post_init__(self) -> None:
         all_buffers = self.all_buffers
@@ -456,8 +461,11 @@ class KVCacheBuffer(KVCacheBufferInterface):
         if len(unique_shapes) > 1:
             raise ValueError("All scales must have the same shape")
 
+        # Allow the number of pages to be different between values / scales only
+        # for Jenga KV cache.
+        # TODO: Get rid of this hack.
         unique_num_pages = {b.shape[0] for b in all_buffers}
-        if len(unique_num_pages) > 1:
+        if not self.is_jenga and len(unique_num_pages) > 1:
             raise ValueError(
                 "Values and scales must have the same number of pages"
             )
@@ -1359,7 +1367,10 @@ class KVCacheParams(KVCacheParamInterface):
     def slab_to_buffer_views(
         self, buffers: Sequence[Buffer]
     ) -> KVCacheBufferInterface:
-        """Converts a slab of memory into a buffer view."""
+        """Converts a slab of memory into a buffer view.
+
+        This is used by the Jenga KV cache manager.
+        """
 
         def _view(b: Buffer, shape: Sequence[int], dtype: DType) -> Buffer:
             total_bytes = b.num_elements * b.dtype.size_in_bytes
@@ -1380,6 +1391,7 @@ class KVCacheParams(KVCacheParamInterface):
             ]
             if self.quantized_kv_cache and quant_config is not None
             else None,
+            is_jenga=True,
         )
 
 
@@ -2211,6 +2223,7 @@ def compute_num_device_blocks(
     max_batch_size: int | None,
     max_seq_len: int | None,
     require_max_seq_len_fits: bool = False,
+    include_null_block: bool = False,
 ) -> int:
     """Computes the number of blocks that can be allocated based on the available cache memory.
 
@@ -2225,6 +2238,7 @@ def compute_num_device_blocks(
             request at ``max_seq_len`` cannot fit in the allocable device
             blocks. Memory estimation deliberately probes oversized configs,
             so only the actual cache-allocation path should set this.
+        include_null_block: Whether to include room for the null block.
 
     Returns:
         The number of blocks that can be allocated for a single replica.
@@ -2241,6 +2255,8 @@ def compute_num_device_blocks(
             max_seq_len_with_slack / params.page_size
         )
         max_total_blocks = max_blocks_per_req * max_batch_size
+        if include_null_block:
+            max_total_blocks += 1
 
     # Compute total number of blocks allocatable based on available memory.
     available_cache_memory_per_replica = (
@@ -2326,6 +2342,7 @@ def estimated_memory_size(
     available_cache_memory: int,
     max_batch_size: int,
     max_seq_len: int,
+    include_null_block: bool = False,
 ) -> int:
     """Computes the estimated memory size of the KV cache used by all replicas.
 
@@ -2333,6 +2350,7 @@ def estimated_memory_size(
         available_cache_memory: The amount of cache memory available across all devices.
         max_batch_size: The maximum batch size.
         max_seq_len: The maximum sequence length.
+        include_null_block: Whether to include room for the null block.
 
     Returns:
         The estimated memory usage of the KV cache in bytes.
@@ -2342,6 +2360,7 @@ def estimated_memory_size(
         max_batch_size=max_batch_size,
         max_seq_len=max_seq_len,
         params=params,
+        include_null_block=include_null_block,
     )
     return (
         num_device_blocks * params.bytes_per_block * params.data_parallel_degree
@@ -2351,12 +2370,14 @@ def estimated_memory_size(
 def compute_max_seq_len_fitting_in_cache(
     params: KVCacheParamInterface,
     available_cache_memory: int,
+    include_null_block: bool = False,
 ) -> int:
     """Computes the maximum sequence length that can fit in the available memory.
 
     Args:
         available_cache_memory: The amount of cache memory available across
         all devices.
+        include_null_block: Whether to include room for the null block.
 
     Returns:
         The maximum sequence length that can fit in the available cache memory.
@@ -2369,6 +2390,7 @@ def compute_max_seq_len_fitting_in_cache(
         max_batch_size=1,
         # Do not limit the sequence length.
         max_seq_len=None,
+        include_null_block=include_null_block,
     )
     # Reserve the speculative-decode slack a request may occupy past its
     # advertised max_seq_len (see spec_decode_cache_slack). Without this the

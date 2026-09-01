@@ -27,6 +27,7 @@ from max.pipelines.context import (
 )
 from max.pipelines.kv_cache import (
     InsufficientBlocksError,
+    JengaKVCacheManager,
     KVTransferEngine,
     KVTransferEngineMetadata,
     PagedKVCacheManagerInterface,
@@ -134,6 +135,10 @@ class DecodeScheduler(Scheduler):
         dispatcher: DecodeDispatcherClient,
         dp_padder: DPBatchPadder | None = None,
     ) -> None:
+        # TODO(SERVOPT-1590): remove once Jenga supports DI.
+        assert not isinstance(kv_cache, JengaKVCacheManager), (
+            "Jenga KV cache is incompatible with Disaggregated Inference"
+        )
         # Initialize Pipeline and Config
         self.scheduler_config = scheduler_config
         self.pipeline = pipeline

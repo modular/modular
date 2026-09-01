@@ -436,6 +436,8 @@ class SpecDecodeState:
             max_seq_len=model.max_seq_len,
             session=session,
             available_cache_memory=available_cache_memory,
+            is_di_enabled=pipeline_config.runtime.is_disaggregated,
+            model_name=pipeline_config.model.model_name,
         )
 
         assert pipeline_config.speculative is not None
@@ -1847,6 +1849,8 @@ class OverlapTextGenerationPipeline(
                 max_seq_len=self._pipeline_model.max_seq_len,
                 session=session,
                 available_cache_memory=available_cache_memory,
+                is_di_enabled=self._pipeline_config.runtime.is_disaggregated,
+                model_name=pipeline_config.model.model_name,
             )
         else:
             # vocab_size gates bitmask buffer + overlap_state

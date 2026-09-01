@@ -368,7 +368,7 @@ def _resolve_overlap_and_device_graph_capture(
 
     # Raise errors when we detect features that are not compatible with the overlap scheduler.
     if enable_overlap_scheduler:
-        if runtime.pipeline_role in ("decode_only", "prefill_only"):
+        if runtime.is_disaggregated:
             logger.info(
                 "Overlap scheduling enabled for %s worker "
                 "(Disaggregated Inference). THIS IS EXPERIMENTAL.",

@@ -19,9 +19,10 @@ from unittest.mock import MagicMock, Mock, patch
 
 import pytest
 from max.dtype import DType
+from max.engine import InferenceSession
 from max.graph import DeviceRef
 from max.nn.kv_cache import KVCacheParams, MHAKVCacheParams
-from max.pipelines.kv_cache import load_kv_manager
+from max.pipelines.kv_cache import PagedKVCacheManagerInterface, load_kv_manager
 
 
 def create_kv_params(
@@ -42,6 +43,26 @@ def create_kv_params(
     )
 
 
+def _load_kv_manager_with_defaults(
+    params: KVCacheParams,
+    max_batch_size: int,
+    max_seq_len: int,
+    session: InferenceSession,
+    available_cache_memory: int,
+    is_di_enabled: bool = False,
+    model_name: str = "FAKE",
+) -> PagedKVCacheManagerInterface:
+    return load_kv_manager(
+        params=params,
+        max_batch_size=max_batch_size,
+        max_seq_len=max_seq_len,
+        session=session,
+        available_cache_memory=available_cache_memory,
+        is_di_enabled=is_di_enabled,
+        model_name=model_name,
+    )
+
+
 class TestLoadKvManager:
     """Tests for load_kv_manager function."""
 
@@ -56,7 +77,7 @@ class TestLoadKvManager:
         params = create_kv_params()
         mock_session = MagicMock()
 
-        result = load_kv_manager(
+        result = _load_kv_manager_with_defaults(
             params=params,
             max_batch_size=16,
             max_seq_len=2048,
@@ -75,7 +96,7 @@ class TestLoadKvManager:
         params = create_kv_params(num_layers=16)
         mock_session = MagicMock()
 
-        load_kv_manager(
+        _load_kv_manager_with_defaults(
             params=params,
             max_batch_size=8,
             max_seq_len=1024,
@@ -96,7 +117,7 @@ class TestLoadKvManager:
         with pytest.raises(
             ValueError, match="max_batch_size must be greater than 0"
         ):
-            load_kv_manager(
+            _load_kv_manager_with_defaults(
                 params=params,
                 max_batch_size=0,
                 max_seq_len=2048,
@@ -112,7 +133,7 @@ class TestLoadKvManager:
         with pytest.raises(
             ValueError, match="max_batch_size must be greater than 0"
         ):
-            load_kv_manager(
+            _load_kv_manager_with_defaults(
                 params=params,
                 max_batch_size=-1,
                 max_seq_len=2048,
@@ -130,7 +151,7 @@ class TestLoadKvManager:
         with pytest.raises(
             RuntimeError, match="one request at the max sequence length"
         ):
-            load_kv_manager(
+            _load_kv_manager_with_defaults(
                 params=params,
                 max_batch_size=16,
                 max_seq_len=8192 + 1,
@@ -155,7 +176,7 @@ class TestLoadKvManager:
         mock_session = MagicMock()
 
         with pytest.raises(ValueError, match="multiple of 128"):
-            load_kv_manager(
+            _load_kv_manager_with_defaults(
                 params=params,
                 max_batch_size=16,
                 max_seq_len=2048,
@@ -178,7 +199,7 @@ class TestLoadKvManagers:
         params = create_kv_params()
         mock_session = MagicMock()
 
-        result = load_kv_manager(
+        result = _load_kv_manager_with_defaults(
             params=params,
             max_batch_size=16,
             max_seq_len=2048,
@@ -203,7 +224,7 @@ class TestLoadKvManagerVirtualDevice:
         params = create_kv_params()
         mock_session = MagicMock()
 
-        result = load_kv_manager(
+        result = _load_kv_manager_with_defaults(
             params=params,
             max_batch_size=16,
             max_seq_len=2048,

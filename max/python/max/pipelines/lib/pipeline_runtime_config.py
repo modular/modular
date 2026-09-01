@@ -544,3 +544,8 @@ class PipelineRuntimeConfig(ConfigFileModel):
     """The section name to use when loading this config from a MAXConfig file.
     This is used to differentiate between different config sections in a single
     MAXConfig file."""
+
+    @property
+    def is_disaggregated(self) -> bool:
+        """Whether this worker is part of a disaggregated prefill/decode deployment."""
+        return self.pipeline_role in ("prefill_only", "decode_only")

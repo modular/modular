@@ -376,6 +376,7 @@ class MemoryEstimator:
         return compute_max_seq_len_fitting_in_cache(
             params=params,
             available_cache_memory=kvcache_mem,
+            include_null_block=True,
         )
 
     @classmethod
@@ -818,6 +819,7 @@ class MemoryEstimator:
                 max_batch_size=max_batch_size,
                 max_seq_len=max_seq_len,
                 available_cache_memory=available_kv_cache_memory,
+                include_null_block=True,
             )
         else:
             return 0

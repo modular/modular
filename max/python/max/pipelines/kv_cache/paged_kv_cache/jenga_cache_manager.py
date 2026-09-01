@@ -28,6 +28,7 @@ from max.driver import (
 from max.dtype import DType
 from max.nn.kv_cache import (
     BatchCharacteristics,
+    KVCacheGroupId,
     KVCacheInputs,
     KVCacheInputsInterface,
     KVCacheParamInterface,
@@ -165,10 +166,19 @@ class JengaKVCacheManager(JengaBlockManager, PagedKVCacheManagerInterface):
         num_huge_blocks, huge_page_bytes, ratios = compute_jenga_ratios(
             available_bytes, bytes_per_page
         )
+        is_kv_connector_enabled = (
+            params.kv_connector_config.type.value != "null"
+        )
         leaf_infos = {
             leaf_id: KVLeafInfo(
                 ratio=ratios[leaf_id],
-                group_id=leaf.group_id,
+                # If KVConnector is enabled, treat sliding window as if it were
+                # full attention.
+                # TODO(SERVOPT-1525): add proper Jenga + KVConnector support
+                # for sliding window groups.
+                group_id=leaf.group_id
+                if not is_kv_connector_enabled
+                else KVCacheGroupId.full(),
             )
             for leaf_id, leaf in leaves.items()
         }
@@ -275,6 +285,16 @@ class JengaKVCacheManager(JengaBlockManager, PagedKVCacheManagerInterface):
                 "JengaKVCacheManager supports KVConnectors for full-attention "
                 "groups only, found "
                 f"{sorted({str(leaf.group_id) for leaf in leaf_infos.values()})}"
+            )
+
+        if (
+            params.enable_dp_cross_replica_prefix_copy
+            and params.data_parallel_degree > 1
+        ):
+            # TODO(SERVOPT-1591)
+            logger.info(
+                "Ignoring enable_dp_cross_replica_prefix_copy=True as Jenga KV cache is incompatible with this feature. "
+                "Set MODULAR_USE_LEGACY_KV_CACHE=1 if cross-replica prefix cache hits via device-to-device copies is required."
             )
 
         self._leaf_infos = leaf_infos
