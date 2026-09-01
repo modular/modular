@@ -301,8 +301,10 @@ extractChildDecls(const ASTDecl &decl,
       if (!childOp || shouldHideDeclInDocGen(*child, name))
         continue;
 
-      // Skip declarations that were imported from other scopes.
-      if (child->getParentDecl() != &decl || !seenOps.insert(childOp).second)
+      // Skip declarations that were imported from other scopes, unless the
+      // import asked for the target's documentation to appear here.
+      if ((child->getParentDecl() != &decl && !decl.isDocInlineName(name)) ||
+          !seenOps.insert(childOp).second)
         continue;
       // Skip synthetic declarations that don't have accompanying documentation
       // generated with them.

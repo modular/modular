@@ -245,6 +245,13 @@ public:
   /// `typeDecl` is null or has no user-visible name.
   bool hasRecursivelyStableType(const ASTDecl *typeDecl) const;
 
+  /// Record that `name` was imported with @__doc_inline into this scope. Doc
+  /// generation documents such a name here, using the target's declaration.
+  void addDocInlineName(mlir::StringAttr name);
+
+  /// Return true if `name` was imported into this scope with @__doc_inline.
+  bool isDocInlineName(mlir::StringAttr name) const;
+
   /// Return the doc string for this decl, or nullptr if there isn't one.
   DocStringAttr getDocString() const;
 
@@ -521,6 +528,10 @@ private:
   /// @stable(recursive=True) into this scope.  These names suppress stability
   /// warnings for the named binding and all member accesses through it.
   std::unique_ptr<llvm::DenseSet<mlir::StringAttr>> recursivelyStableNames;
+
+  /// Lazily-allocated set of import names brought into this scope with
+  /// @__doc_inline.
+  std::unique_ptr<llvm::DenseSet<mlir::StringAttr>> docInlineNames;
 
   /// A map from each trait symbol that a struct conforms to, to the first
   /// symbol that explicitly inherits from it. This provides better diagnostics
