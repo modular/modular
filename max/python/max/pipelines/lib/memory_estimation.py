@@ -621,7 +621,7 @@ class MemoryEstimator:
             if max_length is None:
                 max_length = kv_capacity
             elif max_length > kv_capacity:
-                logging.warning(
+                logger.warning(
                     "Clamping max_length from %d to %d due to capacity of KV Cache",
                     max_length,
                     kv_capacity,
