@@ -27,16 +27,24 @@ from std.sys._io import stderr, stdout
 from std.sys._libc import dup2
 from std.sys.compile import SanitizeAddress
 from std.tempfile import NamedTemporaryFile
+from std.time import perf_counter, sleep
 
 # Which call site (file:line:col) the re-exec'd child should run.
 comptime _LOCATION_ENV = "__MOJO_TEST_EXPECT_ABORT_LOCATION_TARGET"
 # Path the child's stdout/stderr get redirected to before running.
 comptime _OUTPUT_ENV = "__MOJO_TEST_EXPECT_ABORT_OUTPUT"
+# How long to wait for the child to abort before killing it.
+comptime _DEFAULT_TIMEOUT = 30.0
+# How often to check on the child while waiting for it.
+comptime _POLL_INTERVAL = 0.01
 
 
 @always_inline
 def _assert_aborts(
-    f: Some[def() raises], *, contains: Optional[String] = None
+    f: Some[def() raises],
+    *,
+    contains: Optional[String] = None,
+    timeout: Float64 = _DEFAULT_TIMEOUT,
 ) raises:
     """Asserts that calling `f` aborts the process.
 
@@ -65,11 +73,13 @@ def _assert_aborts(
         contains: A substring expected to appear in the aborting process's
             combined stdout and stderr. If omitted, only the abort itself
             is checked.
+        timeout: How many seconds to wait for the child to abort before
+            killing it and failing.
 
     Raises:
         If `f` returns without aborting, the child isn't killed by a
-        signal, or (when `contains` is given) the captured output doesn't
-        contain it.
+        signal, the child doesn't abort within `timeout` seconds, or (when
+        `contains` is given) the captured output doesn't contain it.
     """
     # TODO: Get this to run under ASAN
     # Every _assert_aborts() call re-execs the whole test binary, and
@@ -78,7 +88,9 @@ def _assert_aborts(
     comptime if SanitizeAddress:
         return
 
-    _assert_aborts_impl(f, contains=contains, location=call_location())
+    _assert_aborts_impl(
+        f, contains=contains, timeout=timeout, location=call_location()
+    )
 
 
 @no_inline
@@ -86,6 +98,7 @@ def _assert_aborts_impl(
     f: Some[def() raises],
     *,
     contains: Optional[String],
+    timeout: Float64,
     location: SourceLocation,
 ) raises:
     var target = getenv(_LOCATION_ENV)
@@ -97,7 +110,7 @@ def _assert_aborts_impl(
 
     # No location set: this is the original, top-level call.
     if not target:
-        _spawn_and_check(location, contains)
+        _spawn_and_check(location, contains, timeout)
         return
 
     # A different (sibling) call site, so we should skip.
@@ -116,7 +129,7 @@ def _run(f: Some[def() raises]) raises:
 
 
 def _spawn_and_check(
-    location: SourceLocation, contains: Optional[String]
+    location: SourceLocation, contains: Optional[String], timeout: Float64
 ) raises:
     """Re-execs this binary scoped to `location`, then checks how it died."""
     var self_argv = argv()
@@ -148,9 +161,19 @@ def _spawn_and_check(
         _ = unsetenv(_OUTPUT_ENV)
 
     var status: ProcessStatus
+    var timed_out = False
     try:
         var child = Process.run(String(self_argv[0]), rest)
-        status = child.wait()
+        var deadline = perf_counter() + timeout
+        status = child.poll()
+        while not status.has_exited():
+            if perf_counter() >= deadline:
+                _ = child.kill()
+                status = child.wait()
+                timed_out = True
+                break
+            sleep(_POLL_INTERVAL)
+            status = child.poll()
     except e:
         # process.run/wait failed!
         # Restore the environment before propagating.
@@ -169,6 +192,13 @@ def _spawn_and_check(
             t" used for assert_aborts.\nError: {e}"
         )
 
+    if timed_out:
+        raise Error(
+            t"assert_aborts: expected the process to abort, but it was still"
+            t" running after {timeout}s and was killed. The code under test"
+            t" may be hanging rather than aborting.\nCaptured output:"
+            t"\n{captured}"
+        )
     if not status.term_signal:
         var note = contains.map(
             lambda (s: String) -> String: String(
