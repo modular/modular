@@ -3796,18 +3796,17 @@ AnyValue BinOpNode::emitAssign(ExprDest &dest, IREmitter &emitter) const {
 ///
 /// Unlike general assignment, walrus does not use speculative bidirectional
 /// type inference: the LHS is emitted directly as an LValue, then the RHS is
-/// stored into it. It yields a borrowed version of the LHS after the store.
+/// stored into it. It yields the RHS, whichever kind of LValue the target is.
 AnyValue BinOpNode::emitWalrus(ExprDest &dest, IREmitter &emitter) const {
   LValue lhsLV = emitter.emitExprLValue(lhs, EC_Assignment);
   if (!lhsLV)
     return {};
 
-  // Mutable memory LValue: store into it, then yield an immutable borrow.
-  if (MLValue mlValue = lhsLV.getIfMLValue()) {
+  // Mutable memory LValue: store into it, then yield the stored value.
+  if (lhsLV.getIfMLValue()) {
     ExprDest assignDest(lhsLV, EC_Assignment);
-    if (!emitter.emitExpr(rhs, assignDest))
-      return {};
-    return emitter.emitResult(MBValue(mlValue), this, dest);
+    auto resultValue = emitter.emitExpr(rhs, assignDest);
+    return emitter.emitResult(resultValue, this, dest);
   }
 
   // Otherwise must be a DLValue.
@@ -3818,8 +3817,8 @@ AnyValue BinOpNode::emitWalrus(ExprDest &dest, IREmitter &emitter) const {
     return {};
   }
 
-  // Computed LValue (e.g. subscript / attribute): we need to pass it into the
-  // setter but also need to return it.
+  // Computed LValue (e.g. subscript / attribute): the setter takes the
+  // right-hand side, which is also what the walrus yields.
   auto rhsRValue =
       emitter.emitExprRValue(rhs, EC_Assignment, lhsLV.getRValueType());
   if (!rhsRValue)
@@ -3830,8 +3829,7 @@ AnyValue BinOpNode::emitWalrus(ExprDest &dest, IREmitter &emitter) const {
   if (rhsRValue.getIfSRValue())
     rhsRValue = emitter.emitMRValue({rhsRValue, rhs}, EC_Assignment);
 
-  // We will ultimately return the RValue, but we can't have the setter consume
-  // it if it takes a 'var' argument.  Decay to a BValue before passing on.
+  // A setter taking a 'var' argument would consume the value we return.
   BValue bValue = emitter.emitBValue({rhsRValue, rhs}, EC_Assignment);
   if (!bValue)
     return {};

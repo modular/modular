@@ -74,6 +74,9 @@ This version is still a work in progress.
 
 ## Language changes
 
+- A walrus expression now always yields its right-hand side, uniformly for
+  every kind of target.
+
 - Binding a constrained function to a function type that declares no matching
   `where` clause is now an error, instead of silently dropping the constraint.
   Declare the obligation on the function type (now that a `thin` function type

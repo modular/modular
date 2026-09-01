@@ -780,16 +780,15 @@ def basic_assignments(a0: Int, b: Int, c: RegPassable, d: RegPassable):
   # CHECK-NEXT: lit.ref.store %[[FOURI]], %a
   a = x = 4
 
-  # Walrus into an MLValue yields an immutable borrow of the LHS.
+  # Walrus into an MLValue yields the stored value, not a re-read of the LHS.
   # CHECK-NEXT: %[[SEVEN:.*]] = kgen.param.constant: !alias_Int1 = <rebind(:!Int {:scalar<index> 7})>
   # CHECK-NEXT: lit.ref.store %[[SEVEN]], %x
-  # CHECK-NEXT: %[[XREF:.*]] = kgen.rebind %x
+  # CHECK-NEXT: %[[SEVENI:.*]] = kgen.rebind %[[SEVEN]]
   # CHECK-NEXT: %[[A:.*]] = lit.ref.load %a
-  # CHECK-NEXT: %[[XVAL:.*]] = lit.ref.load %[[XREF]]
-  # CHECK-NEXT: lit.call {{.*}}simpleMath{{.*}}(%[[A]], %[[XVAL]])
+  # CHECK-NEXT: lit.call {{.*}}simpleMath{{.*}}(%[[A]], %[[SEVENI]])
   _ = simpleMath(a, x := 7)
 
-# Walrus into an MLValue stores, then yields an MBValue borrow of the LHS.
+# Walrus into an MLValue stores the RHS and yields it.
 # CHECK-LABEL: lit.fn @"walrus_assign
 def walrus_assign() raises:
   # CHECK: %a = lit.var.decl "a"
@@ -803,11 +802,10 @@ def walrus_assign() raises:
 
   # CHECK: [[THREE:%.*]] = kgen.param.constant: !alias_Int1 = <rebind(:!Int {:scalar<index> 3})>
   # CHECK-NEXT: lit.ref.store [[THREE]], %a
+  # CHECK-NEXT: [[THREEI:%.*]] = kgen.rebind [[THREE]]
   # CHECK-NEXT: [[AREF:%.*]] = kgen.rebind %a
-  # CHECK-NEXT: [[AREF2:%.*]] = kgen.rebind %a
   # CHECK-NEXT: [[VAR_A:%.*]] = lit.ref.load [[AREF]]
-  # CHECK-NEXT: [[VAR_A2:%.*]] = lit.ref.load [[AREF2]]
-  # CHECK-NEXT: [[TMP:%.*]] = lit.call {{.*}}simpleMath{{.*}}([[VAR_A]], [[VAR_A2]])
+  # CHECK-NEXT: [[TMP:%.*]] = lit.call {{.*}}simpleMath{{.*}}([[THREEI]], [[VAR_A]])
   _ = simpleMath(a := 3, a)
   # CHECK-NEXT: lit.ownership.use [[TMP]]
 
@@ -819,8 +817,7 @@ def walrus_assign() raises:
 
   # CHECK: [[FIVE:%.*]] = kgen.param.constant: !alias_Int1 = <rebind(:!Int {:scalar<index> 5})>
   # CHECK-NEXT: lit.ref.store [[FIVE]], %c
-  # CHECK-NEXT: [[CVAL:%.*]] = lit.ref.load %c
-  # CHECK-NEXT: lit.ref.store [[CVAL]], %d
+  # CHECK-NEXT: lit.ref.store [[FIVE]], %d
   d = c := 5
 
 ##===----------------------------------------------------------------------===##
