@@ -931,6 +931,12 @@ modular_shared_library(
         # processes too. internal_deps: the OSS build drops it, so OSS mojo
         # keeps the inert weak default and never compiles the loader.
         "//Support:ProfilerHostGlue",
+        # Same wiring for the external profiler annotation sink: attaches the
+        # dlopen loader for libmax_profiler_shim.so so the
+        # ExternalProfilerAnnotationBridge entry points annotate external
+        # profiler traces (NVTX/roctx). OSS builds drop it and keep the inert
+        # weak default.
+        "//Support:ExternalProfilerAnnotationHostGlue",
     ] + select({
         # Under --config=hal-device-context we don't link the full DeviceContext,
         # but we need CompilationDevice and the HAL-only CompilerDeviceArch.
