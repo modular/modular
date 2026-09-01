@@ -5956,6 +5956,8 @@ def grouped_dynamic_scaled_mxfp6_matmul(
     estimated_total_m: TensorValue | None = None,
     decode_grid_m_cap: int = 0,
     decode_grid_m_rows: int = 0,
+    a_scales_preshuffled: bool = False,
+    a_scales_max_padded_m: int = 0,
 ) -> TensorValue:
     """Performs a grouped MXFP6 matmul for MoE layers.
 
@@ -6062,13 +6064,26 @@ def grouped_dynamic_scaled_mxfp6_matmul(
     else:
         estimated_total_m_arg = estimated_total_m.cast(DType.uint32)
 
-    a_scales = block_scaled_preshuffle_grouped_scale_4d(
-        a_scales,
-        expert_start_indices,
-        expert_usage_stats_host[0].cast(DType.uint32),
-        expert_usage_stats_host[1].cast(DType.uint32),
-        num_experts=int(weight.shape[0]),
-    )
+    if a_scales_preshuffled:
+        if a_scales_max_padded_m <= 0:
+            raise ValueError(
+                "a_scales_max_padded_m must be > 0 when"
+                " a_scales_preshuffled=True"
+            )
+        max_num_tokens_arg = ops.constant(
+            a_scales_max_padded_m,
+            dtype=expert_usage_stats_host.dtype,
+            device=expert_usage_stats_host.device,
+        )
+    else:
+        a_scales = block_scaled_preshuffle_grouped_scale_4d(
+            a_scales,
+            expert_start_indices,
+            expert_usage_stats_host[0].cast(DType.uint32),
+            expert_usage_stats_host[1].cast(DType.uint32),
+            num_experts=int(weight.shape[0]),
+        )
+        max_num_tokens_arg = expert_usage_stats_host[0]
 
     return ops.custom(
         "mo.grouped.matmul.block.scaled.mxfp6",
@@ -6080,7 +6095,7 @@ def grouped_dynamic_scaled_mxfp6_matmul(
             b_scales,
             expert_start_indices,
             expert_ids,
-            expert_usage_stats_host[0],
+            max_num_tokens_arg,
             expert_usage_stats_host[1],
             estimated_total_m_arg,
             ops.constant(
