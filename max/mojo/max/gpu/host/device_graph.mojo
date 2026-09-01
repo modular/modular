@@ -781,14 +781,25 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
     """The backing device context used to create the builder."""
 
     var _implicit_deps: List[Self.Node]
-    """Ambient predecessor edges injected into every node added while a
-    `region` scope is active.
+    """Predecessor edges the innermost active `region` scope injects into the
+    *first* node added within it.
 
     Outside such a scope this is empty and node-adding methods behave exactly
     as their `dependencies` argument specifies. While a scope is active,
-    `region` pushes the scope's predecessor handles here so each
-    `add_*` call unions them into its own `dependencies`, which is what makes
-    the scope's nodes depend on the scope's incoming predecessors.
+    `region` pushes the scope's predecessor handles here so the scope's first
+    `add_*` call unions them into its own `dependencies`. Later nodes in the
+    scope chain after their predecessor instead (see `_region_floor`), which
+    already covers these edges transitively.
+    """
+
+    var _region_floor: Optional[Int32]
+    """Id of the last node added before the innermost active `region` scope
+    began, or `None` when no scope is active.
+
+    A node whose id exceeds the floor was added by the active scope, so it is
+    the chain predecessor of the next node the scope adds. `-1` is the floor
+    for a scope entered before any node exists, matching the sentinel
+    `AsyncRT_DeviceGraphBuilder_lastNodeIdOrNone` returns for an empty graph.
     """
 
     @doc_hidden
@@ -800,6 +811,7 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
         self._handle = handle
         self._ctx = ctx
         self._implicit_deps = []
+        self._region_floor = None
 
     @always_inline
     def context(self) -> DeviceContext:
@@ -837,11 +849,14 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
         """
         # Dependency tracking lives on the Mojo builder (`_implicit_deps` and
         # `region` scopes); the C++ builder does not model it. Materialize the
-        # current ambient predecessor set as a single empty "seed" node — its
+        # current implicit predecessor as a single empty "seed" node — its
         # dependencies come from `_merge_implicit` inside `add_empty` — and hand
         # that node across the boundary. Operations recorded through the
         # returned context chain after the seed, so they respect whatever
-        # `region` scope is active when `recording_context` is called.
+        # `region` scope is active when `recording_context` is called. Those
+        # recorded nodes land in the same id space, so the last of them becomes
+        # the chain predecessor a later `add_*` in the same scope picks up,
+        # which keeps the scope serial across the boundary.
         var seed = self.add_empty()
         var result: _DeviceContextPtr[mut=True] = {}
         # const char *AsyncRT_DeviceGraphBuilder_recordingContext(
@@ -871,17 +886,37 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
     def _merge_implicit(
         self, var dependencies: List[Self.Node]
     ) -> List[Self.Node]:
-        """Unions the active ambient predecessor set into `dependencies`.
+        """Unions the active scope's implicit predecessor into `dependencies`.
 
-        Returns `dependencies` unchanged when no `region` scope
-        is active (the common case), so node-adding outside a scope is
-        unaffected. The ambient edges are unioned in (order is irrelevant — the
-        dependency list is an unordered predecessor set).
+        Returns `dependencies` unchanged when no `region` scope is active, so
+        node-adding outside a scope is unaffected.
+
+        Within a scope, a node depends on the node the scope added before it,
+        which serializes the scope's nodes; the scope's incoming predecessors
+        go to the first node only, since the chain covers them transitively
+        from there. "The node added before it" is read from the builder rather
+        than tracked here so that nodes recorded through a
+        `recording_context()` — added by the C++ builder, never through this
+        method — still chain correctly.
+
+        The edge is unioned in (order is irrelevant: the dependency list is an
+        unordered predecessor set).
         """
-        if len(self._implicit_deps) == 0:
+        var floor = self._region_floor
+        if not floor:
             return dependencies^
 
-        dependencies.extend(Span(self._implicit_deps))
+        var last = self._last_node_id()
+        if last and last.value() > floor.value():
+            # If the lst dependency is named in the dependencies list, then we
+            # don't need to merge. Merging would produce duplicated dependencies
+            # which some graph APIs reject.
+            for dep in dependencies:
+                if dep.id == last.value():
+                    return dependencies^
+            dependencies.append(Self.Node(last.value()))
+        else:
+            dependencies.extend(Span(self._implicit_deps))
         return dependencies^
 
     def __deinit__(deinit self):
@@ -957,10 +992,10 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
             args: Arguments to pass to the kernel.
             grid_dim: Dimensions of the compute grid.
             block_dim: Dimensions of each thread block.
-            dependencies: Explicit list of predecessor node handles. An
-                empty list makes the new node a graph root with no
-                predecessors; a non-empty list uses those exact handles
-                as predecessors.
+            dependencies: Explicit list of predecessor node handles, unioned
+                with the implicit predecessor of the enclosing `region` scope
+                if there is one. Outside such a scope an empty list makes the
+                new node a graph root with no predecessors.
             cluster_dim: Cluster dimensions (optional).
             shared_mem_bytes: Amount of dynamic shared memory per block.
             attributes: Launch attributes.
@@ -1030,10 +1065,10 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
             args: Arguments to pass to the function.
             grid_dim: Dimensions of the compute grid.
             block_dim: Dimensions of each thread block.
-            dependencies: Explicit list of predecessor node handles. An
-                empty list makes the new node a graph root with no
-                predecessors; a non-empty list uses those exact handles
-                as predecessors.
+            dependencies: Explicit list of predecessor node handles, unioned
+                with the implicit predecessor of the enclosing `region` scope
+                if there is one. Outside such a scope an empty list makes the
+                new node a graph root with no predecessors.
             cluster_dim: Cluster dimensions (optional).
             shared_mem_bytes: Amount of dynamic shared memory per block.
             attributes: Launch attributes.
@@ -1126,10 +1161,10 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
             args: Variadic arguments which are passed to the `func`.
             grid_dim: Dimensions of the compute grid.
             block_dim: Dimensions of each thread block.
-            dependencies: Explicit list of predecessor node handles. An
-                empty list makes the new node a graph root with no
-                predecessors; a non-empty list uses those exact handles
-                as predecessors.
+            dependencies: Explicit list of predecessor node handles, unioned
+                with the implicit predecessor of the enclosing `region` scope
+                if there is one. Outside such a scope an empty list makes the
+                new node a graph root with no predecessors.
             cluster_dim: Cluster dimensions (optional).
             shared_mem_bytes: Amount of dynamic shared memory per block.
             attributes: Launch attributes.
@@ -1222,10 +1257,10 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
         Args:
             dst_buf: Device buffer to copy to.
             src_buf: Host buffer to copy from.
-            dependencies: Explicit list of predecessor node handles. An
-                empty list makes the new node a graph root with no
-                predecessors; a non-empty list uses those exact handles
-                as predecessors.
+            dependencies: Explicit list of predecessor node handles, unioned
+                with the implicit predecessor of the enclosing `region` scope
+                if there is one. Outside such a scope an empty list makes the
+                new node a graph root with no predecessors.
 
         Returns:
             A handle to the newly added memcpy node.
@@ -1273,10 +1308,10 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
         Args:
             dst_buf: Host buffer to copy to.
             src_buf: Device buffer to copy from.
-            dependencies: Explicit list of predecessor node handles. An
-                empty list makes the new node a graph root with no
-                predecessors; a non-empty list uses those exact handles
-                as predecessors.
+            dependencies: Explicit list of predecessor node handles, unioned
+                with the implicit predecessor of the enclosing `region` scope
+                if there is one. Outside such a scope an empty list makes the
+                new node a graph root with no predecessors.
 
         Returns:
             A handle to the newly added memcpy node.
@@ -1326,10 +1361,10 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
             dst_buf: Device buffer to copy to.
             src_buf: Device buffer to copy from. Must be the same size as
                 `dst_buf`.
-            dependencies: Explicit list of predecessor node handles. An
-                empty list makes the new node a graph root with no
-                predecessors; a non-empty list uses those exact handles
-                as predecessors.
+            dependencies: Explicit list of predecessor node handles, unioned
+                with the implicit predecessor of the enclosing `region` scope
+                if there is one. Outside such a scope an empty list makes the
+                new node a graph root with no predecessors.
 
         Returns:
             A handle to the newly added memcpy node.
@@ -1375,10 +1410,10 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
         Args:
             dst: Destination buffer.
             val: Value to set all elements of `dst` to.
-            dependencies: Explicit list of predecessor node handles. An
-                empty list makes the new node a graph root with no
-                predecessors; a non-empty list uses those exact handles
-                as predecessors.
+            dependencies: Explicit list of predecessor node handles, unioned
+                with the implicit predecessor of the enclosing `region` scope
+                if there is one. Outside such a scope an empty list makes the
+                new node a graph root with no predecessors.
 
         Returns:
             A handle to the newly added memset node.
@@ -1445,10 +1480,10 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
         set is not visible to the consumer.
 
         Args:
-            dependencies: Explicit list of predecessor node handles. An
-                empty list makes the new node a graph root with no
-                predecessors; a non-empty list uses those exact handles
-                as predecessors.
+            dependencies: Explicit list of predecessor node handles, unioned
+                with the implicit predecessor of the enclosing `region` scope
+                if there is one. Outside such a scope an empty list makes the
+                new node a graph root with no predecessors.
 
         Returns:
             A handle to the newly added empty node.
@@ -1479,23 +1514,26 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
         *,
         var dependencies: List[Self.Node] = [],
     ) raises -> Self.Node:
-        """Runs `work` and returns a single empty node that joins every
-        node added to this builder during its execution.
+        """Runs `work` with its nodes chained in the order they were added,
+        and returns the last of them.
 
-        The returned handle is suitable for use as a one-element
-        `dependencies=` entry on a downstream `add_*` call. The empty
-        node performs no work at execution time; it exists purely as a
-        fan-in barrier so the caller does not need to thread the
-        producer set's individual handles to every consumer.
+        Each node `work` adds depends on the node `work` added before it, so
+        the region's nodes execute in the order the closure recorded them.
+        That makes the last node the region's sole sink, and the returned
+        handle is suitable as a one-element `dependencies=` entry on a
+        downstream `add_*` call: depending on it means depending on
+        everything the region recorded.
 
-        Every node `work` adds also depends on the predecessors named in
-        `dependencies`: while `work` runs, those handles are injected as
-        ambient predecessors that each `add_*` call unions into its own
-        `dependencies`. This makes the region's nodes run after the named
-        predecessors without the closure having to thread the handles
-        through to every `add_*` call. With the default (empty)
-        `dependencies`, the region's nodes are unconstrained relative to
-        earlier work.
+        The predecessors named in `dependencies` gate the *first* node `work`
+        adds, so the whole region runs after them without the closure having
+        to thread the handles through to every `add_*` call. With the default
+        (empty) `dependencies`, the region's nodes are unconstrained relative
+        to earlier work.
+
+        Chaining is what lets two regions in a linear dependency relationship
+        be fused into one: concatenating their bodies preserves the ordering
+        the dependency edge expressed. It also means a region cannot express
+        two mutually independent nodes — record those in separate regions.
 
         Args:
             work: Closure whose effects on this builder are captured. The
@@ -1504,21 +1542,19 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
                 alias with this method's receiver. The closure may add
                 any number of nodes (zero or more) via any of the
                 `add_*` methods.
-            dependencies: Predecessor node handles that every node added by
-                `work` should depend on. Defaults to empty (no added
-                predecessors).
+            dependencies: Predecessor node handles the first node added by
+                `work` should depend on, and therefore — through the chain —
+                every node it adds. Defaults to empty (no added predecessors).
 
         Returns:
             A handle that successors can depend on to run after everything
-            `work` added. When `work` adds two or more nodes, this is a fresh
-            empty node that joins them; when it adds exactly one node, that
-            node is returned directly (no extra empty node); when it adds none,
-            the returned empty node falls back to depending on `dependencies`
-            so it still chains correctly.
+            `work` added: the last node it added, or — when it added none — a
+            fresh empty node depending on `dependencies`, so the region still
+            chains correctly.
 
         Raises:
             Anything `work` itself raises, or anything raised while
-            adding the join node.
+            adding the fallback empty node.
 
         Example:
 
@@ -1528,59 +1564,49 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
         with DeviceContext() as ctx:
             var buf_a = ctx.enqueue_create_buffer[.uint8](100)
             var buf_b = ctx.enqueue_create_buffer[.uint8](100)
-            var buf_c = ctx.enqueue_create_buffer[.uint8](100)
             var host_src = ctx.enqueue_create_host_buffer[.uint8](100)
 
             def build(mut builder: DeviceGraphBuilder) raises {imm}:
-                def add_producers(mut b: DeviceGraphBuilder) raises {imm} -> None:
-                    _ = b.add_memset(buf_a, UInt8(1), dependencies=[])
-                    _ = b.add_memset(buf_b, UInt8(2), dependencies=[])
+                # The copy is chained after the memset, so it wins.
+                def stage(mut b: DeviceGraphBuilder) raises {imm} -> None:
+                    _ = b.add_memset(buf_a, UInt8(1))
+                    _ = b.add_copy(buf_a, host_src)
 
-                var producers_join = builder.region(add_producers)
-                _ = builder.add_copy(
-                    buf_c, host_src, dependencies=[producers_join]
-                )
+                var staged = builder.region(stage)
+                _ = builder.add_copy(buf_b, buf_a, dependencies=[staged])
 
             var graph = DeviceGraph.create(ctx, build)
             graph.replay()
         ```
         """
+        # Resolve the incoming set in the *enclosing* scope, so a nested
+        # region's first node still chains after whatever the enclosing region
+        # added before it.
+        var incoming = self._merge_implicit(dependencies^)
 
-        # Save the current set of dependencies and replace
-        # self._implicit_deps with an extended version containing the original
-        # plus the new dependencies.
-        var saved_deps = self._implicit_deps.copy()
-        self._implicit_deps.extend(Span(dependencies))
+        var saved_deps = self._implicit_deps^
+        var saved_floor = self._region_floor
+        self._implicit_deps = incoming^
+        self._region_floor = Optional(self._last_node_id().or_else(-1))
 
-        var start_id = self._last_node_id()
-
+        var result: Self.Node
         try:
             work(self)
+
+            # Chaining makes the last node the region's sole sink, so it needs
+            # no join node. A region that added nothing falls back to an empty
+            # node carrying the incoming predecessors, so a downstream consumer
+            # still waits for them.
+            var last = self._last_node_id()
+            if last and last.value() > self._region_floor.value():
+                result = Self.Node(last.value())
+            else:
+                result = self.add_empty()
         finally:
-            # Restore the dependencies to the original value
             self._implicit_deps = saved_deps^
+            self._region_floor = saved_floor
 
-        var end_id = self._last_node_id()
-
-        var deps = List[Self.Node]()
-
-        if end_id:
-            var end_val = end_id.value()
-            var start_val = start_id.or_else(-1)
-            deps.reserve(Int(end_val) - Int(start_val))
-            for id in range(start_val + 1, end_val + 1):
-                deps.append(Self.Node(Int32(id)))
-
-        # If `work` produced no nodes, gate the join on the incoming
-        # predecessors directly so a downstream consumer of the join still
-        # waits for them.
-        if len(deps) == 0:
-            return self.add_empty(dependencies=dependencies^)
-
-        if len(deps) == 1:
-            return deps[0]
-
-        return self.add_empty(dependencies=deps^)
+        return result
 
     @no_inline
     def add_output(self, var output: AnyAsyncValueRef):
