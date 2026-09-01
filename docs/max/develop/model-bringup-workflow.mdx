@@ -127,6 +127,7 @@ features, not model name or family, for example:
 [gemma3-arch]: https://github.com/modular/modular/tree/main/max/python/max/pipelines/architectures/gemma3
 [deepseekV2-arch]: https://github.com/modular/modular/tree/main/max/python/max/pipelines/architectures/deepseekV2
 [deepseekV3-arch]: https://github.com/modular/modular/tree/main/max/python/max/pipelines/architectures/deepseekV3
+[arch-kv-cache]: /api/python/generated/max.pipelines.lib.interfaces.ArchConfigWithAttentionKVCache/
 
 The sections below build on each other. Config field mapping, weight naming,
 and KV cache integration are required for every LLM implementation. If your
@@ -173,8 +174,12 @@ class YourConfig(Llama3Config):
     logits_scaling: float = 16.0
 
     @classmethod
-    def initialize_from_config(cls, pipeline_config, huggingface_config):
-        config = super().initialize_from_config(pipeline_config, huggingface_config)
+    def initialize_from_config(
+        cls, pipeline_config, huggingface_config, model_config=None, *, max_seq_len
+    ):
+        config = super().initialize_from_config(
+            pipeline_config, huggingface_config, model_config, max_seq_len=max_seq_len
+        )
         logit_scale = getattr(huggingface_config, "logit_scale", 0.0625)
         config.logits_scaling = 1.0 / logit_scale  # 0.0625 → 16.0
         return config
@@ -209,13 +214,13 @@ hardware-accelerated kernels require.
 
 MAX pre-allocates the KV cache at startup from values your config provides,
 before the first request arrives. Four values drive the allocation:
-`num_key_value_heads`, `head_dim`, `num_layers`, and `model_max_seq_len`. Wrong
+`num_key_value_heads`, `head_dim`, `num_layers`, and `max_seq_len`. Wrong
 values produce a cache the wrong size: the model runs but generates incoherent
 output rather than raising an error. The interface that carries these values is
-[`ArchConfigWithAttentionKVCache`](/api/python/generated/max.pipelines.lib.interfaces.ArchConfigWithAttentionKVCache/),
-which your config class must subclass and implement.
+[`ArchConfigWithAttentionKVCache`][arch-kv-cache], which your config class must
+subclass and implement.
 
-The four abstract properties your subclass must define are:
+The abstract properties your subclass must define are:
 
 - `num_key_value_heads: int`: total KV heads across all devices. Use
   `num_key_value_heads` from the Hugging Face config, not `num_attention_heads`.
@@ -223,7 +228,9 @@ The four abstract properties your subclass must define are:
   produces a cache sized for the wrong number of heads, silently.
 - `head_dim: int`: dimensionality of each attention head.
 - `num_layers: int`: number of hidden layers.
-- `model_max_seq_len: int`: maximum sequence length the model supports.
+
+`ArchConfigWithAttentionKVCache` stores `max_seq_len` directly, set from the
+required keyword-only `max_seq_len` argument that `initialize()` receives.
 
 MAX calls `get_kv_params()` on your config to size the cache. The standard
 implementation uses a static `construct_kv_params()` helper that calls
