@@ -536,9 +536,10 @@ LIT::StructType::canElideSugarFor(TypedAttr attr) const {
   }
 
   if (isa<LITStructAttr>(attr)) {
-    auto typeName = getTypeName();
+    StringRef typeName = getTypeName();
     if (typeName == "IntLiteral" || typeName == "FloatLiteral" ||
-        typeName == "StringLiteral" || typeName == "Origin")
+        typeName == "StringLiteral" || typeName == "Origin" ||
+        typeName == "TypeList" || typeName == "ParameterList")
       return SugarKind::AlwaysInlineBuiltin;
   }
 

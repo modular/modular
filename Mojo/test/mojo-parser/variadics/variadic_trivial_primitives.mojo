@@ -33,3 +33,14 @@ comptime TabulateIndices = ParameterList.tabulate[5, AddOne]
 # CHECK-LABEL: lit.alias.decl *"TLOf{{[^"]*}}": meta<!lit.struct<#TypeList <:meta<!AnyType> !AnyType_Copyable_Deinitable_ImplicitlyCopyable_Movable_RegisterPassable_TrivialRegisterPassable
 # CHECK-SAME: :param_list<!AnyType_Copyable_Deinitable_ImplicitlyCopyable_Movable_RegisterPassable_TrivialRegisterPassable> [!Int, !Bool]
 comptime TLOf = TypeList.of[Int, Bool]
+
+
+# Make sure sugar is elided for `TypeList` values These must bind `<{}>` and not
+# a `sugar_builtin(apply(...))` wrapper.
+# CHECK-LABEL: lit.alias.decl *"TLOfValue{{[^"]*}}": !lit.struct<#TypeList
+# CHECK-SAME: [!Int, !Bool]>> = <{}>
+comptime TLOfValue = TypeList.of[Int, Bool]()
+
+# CHECK-LABEL: lit.alias.decl *"TLSplatValue{{[^"]*}}": !lit.struct<#TypeList
+# CHECK-SAME: [!Int, !Int, !Int]>> = <{}>
+comptime TLSplatValue = TypeList.splat[Trait=Movable, 3, Int]()
