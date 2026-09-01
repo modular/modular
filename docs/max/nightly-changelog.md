@@ -1123,6 +1123,12 @@ the [container](/container) page now links to the new page.
 
 ## Fixes
 
+- Fixed tool calls being returned as raw markup in the assistant's `content`
+  when a request did not declare a `tools` array. A tool established only by
+  the conversation history, such as retrying a call that previously failed,
+  now comes back as a structured `tool_calls` entry. Parsing runs whenever the
+  model has a tool parser configured; `tool_choice="none"` still opts out.
+
 - Fixed the `disk_bytes_written` KV cache metric counting blocks the tiered
   connector's disk tier declined to write because they were already saved or
   had a write pending. Re-offloading a block that had been evicted from the
