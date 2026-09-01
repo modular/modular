@@ -32,7 +32,10 @@ from max.driver.driver import load_device
 from max.dtype import DType
 from max.experimental.nn._compilation_timer import collect_compilation_stats
 from max.pipelines.context import BaseContextType
-from max.pipelines.kv_cache import DummyKVCache, PagedKVCacheManager
+from max.pipelines.kv_cache import (
+    DummyKVCache,
+    PagedKVCacheManagerInterface,
+)
 from max.pipelines.lib import MemoryPlan, PipelineConfig, PipelineModel
 from max.pipelines.lib.eplb_stats import EplbStatsAccumulator
 from max.pipelines.modeling.types import (
@@ -149,21 +152,23 @@ def _get_eplb_stats_accumulator(
 def get_reset_prefix_cache_backend(
     pipeline: Pipeline[Any, Any],
     zmq_endpoint_base: str,
-) -> tuple[ResetPrefixCacheBackend | None, PagedKVCacheManager | None]:
-    """Get the paged KV cache manager from a pipeline, if available.
+) -> tuple[ResetPrefixCacheBackend | None, PagedKVCacheManagerInterface | None]:
+    """Get the KV cache manager from a pipeline, if reset is supported.
 
     Args:
         pipeline: The pipeline to extract the KV cache manager from.
+        zmq_endpoint_base: Base ZMQ endpoint for the reset-prefix-cache queue.
 
     Returns:
-        The paged KV cache manager if available, None otherwise.
+        A reset backend and the KV cache manager when the pipeline uses a real
+        paged or Jenga manager; ``(None, None)`` otherwise.
     """
 
     if hasattr(pipeline, "kv_manager"):
         kv_manager = pipeline.kv_manager
-        if isinstance(kv_manager, PagedKVCacheManager) and not isinstance(
-            kv_manager, DummyKVCache
-        ):
+        if isinstance(
+            kv_manager, PagedKVCacheManagerInterface
+        ) and not isinstance(kv_manager, DummyKVCache):
             return ResetPrefixCacheBackend(zmq_endpoint_base), kv_manager
     return None, None
 
