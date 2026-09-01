@@ -2184,6 +2184,7 @@ def get_minimax_m3_structural_tag(
                 reject_unsupported=True,
                 max_whitespace_cnt=1,
                 strict_mode=False,
+                require_object_root=True,
             ),
             end=INVOKE_END,
         )
