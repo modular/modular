@@ -1870,7 +1870,8 @@ struct SIMD[dtype: DType, size: SIMDLength](
     def __mlir_index__(self) -> __mlir_type.index:
         return __mlir_op.`pop.cast_to_builtin`[_type=__mlir_type.index](
             __mlir_op.`pop.cast`[
-                _type=SIMD[.int, 1]._mlir_type, fast=__mlir_attr.unit
+                _type=SIMD[.int, 1]._mlir_type,
+                fastmathFlags=__mlir_attr.`#pop<fmf fast>`,
             ](rebind[SIMD[Self.dtype, SIMDLength(1)]](self)._mlir_value)
         )
 

@@ -2027,7 +2027,8 @@ struct SIMD[dtype: DType, length: SIMDLength](
 
         return __mlir_op.`pop.cast_to_builtin`[_type=__mlir_type.index](
             __mlir_op.`pop.cast`[
-                _type=SIMD[.int, 1]._mlir_type, fast=__mlir_attr.unit
+                _type=SIMD[.int, 1]._mlir_type,
+                fastmathFlags=__mlir_attr.`#pop<fmf fast>`,
             ](rebind[SIMD[Self.dtype, SIMDLength(1)]](self)._mlir_value)
         )
 
@@ -2339,12 +2340,13 @@ struct SIMD[dtype: DType, length: SIMDLength](
             # `pop.cast` doesn't support some conversions from `ui1`, `ui2`, or `ui4`
             var uint = __mlir_op.`pop.cast`[
                 _type=SIMD[.uint32, Self.length]._mlir_type,
-                fast=__mlir_attr.unit,
+                fastmathFlags=__mlir_attr.`#pop<fmf fast>`,
             ](self._mlir_value)
             return SIMD[.uint32, Self.length](mlir_value=uint).cast[target]()
 
         var res = __mlir_op.`pop.cast`[
-            _type=SIMD[target, Self.length]._mlir_type, fast=__mlir_attr.unit
+            _type=SIMD[target, Self.length]._mlir_type,
+            fastmathFlags=__mlir_attr.`#pop<fmf fast>`,
         ](self._mlir_value)
         return SIMD(mlir_value=res)
 

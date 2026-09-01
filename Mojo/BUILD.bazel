@@ -748,6 +748,27 @@ gentbl_cc_library(
 )
 
 gentbl_cc_library(
+    name = "POPInterfacesIncGen",
+    includes = ["include"],
+    tbl_outs = [
+        (
+            ["-gen-op-interface-decls"],
+            "include/Mojo/POPDialect/POPInterfaces.h.inc",
+        ),
+        (
+            ["-gen-op-interface-defs"],
+            "include/Mojo/POPDialect/POPInterfaces.cpp.inc",
+        ),
+    ],
+    tblgen = "@llvm-project//mlir:mlir-tblgen",
+    td_file = "include/Mojo/POPDialect/POPInterfaces.td",
+    deps = [
+        ":POPDialectIncGen",
+        ":POPDialectTdFiles",
+    ],
+)
+
+gentbl_cc_library(
     name = "POPDialectBytecodeIncGen",
     includes = ["include"],
     tbl_outs = [
@@ -802,6 +823,7 @@ modular_cc_library(
         ":POPDialectBytecodeIncGen",
         ":POPDialectIncGen",
         ":POPEnumsIncGen",
+        ":POPInterfacesIncGen",
         ":TargetTraits",
         ":ToolCommon.headers",
         "//Support:ADT",
