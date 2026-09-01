@@ -1873,7 +1873,7 @@ ASTDecl *IREmitter::createParametricClosureTrait(SharedState &shared) {
   MLIRContext *ctx = b.getContext();
 
   // A illegal name to avoid collisions.
-  StringRef name = "##__mojo_closure__##";
+  StringRef name = UNI_CLOSURE_TRAIT_NAME;
   auto closureTrait =
       TraitDeclOp::create(b, mlir::UnknownLoc::get(ctx), // synthetic trait
                           StringAttr::get(ctx, name));

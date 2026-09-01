@@ -714,6 +714,9 @@ void LIT::sortAndDeduplicateTraitSymbols(
 std::optional<ParameterEvaluator>
 LIT::populateTraitBindingEvaluator(TraitSymbolAttr traitSymbol,
                                    TraitDeclOp traitDecl) {
+  // Must be the same trait.
+  assert(getFullyResolvedSymbolRef(traitDecl) == traitSymbol.getSymbol());
+
   // No need to populate the evaluator if the trait symbol has no param values.
   // This should be the common case before we expose parametric trait support to
   // users.
@@ -737,7 +740,7 @@ LIT::populateTraitBindingEvaluator(TraitSymbolAttr traitSymbol,
 void LIT::canonicalizeTraitCompositionSymbols(
     SmallVectorImpl<TraitSymbolAttr> &symbols,
     llvm::function_ref<TraitDeclOp(SymbolRefAttr)> traitDeclResolver) {
-
+  // TODO: closure trait need to be deduped differently.
   // Pull in the entire ancestor chain.
   DenseSet<TraitSymbolAttr> seen;
   for (TraitSymbolAttr symbol : symbols) {

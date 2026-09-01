@@ -799,8 +799,8 @@ TypeConformsToTraitAttr::simplify(StructDeclInterface traitTableOp,
 
   SmallVector<TypedAttr> props;
   for (TraitSymbolAttr traitSym : *traitSymbols) {
-    auto conformOp =
-        cast_or_null<ConformanceOp>(traitTableOp.lookupConformance(traitSym));
+    auto conformOp = cast_or_null<ConformanceOp>(
+        traitTableOp.lookupConformance(evaluator, traitSym));
 
     if (!conformOp)
       return {SIMDAttr::getScalarBool(getContext(), false)};

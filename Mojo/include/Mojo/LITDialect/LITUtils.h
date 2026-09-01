@@ -31,6 +31,8 @@
 #include "llvm/ADT/MapVector.h"
 #include "llvm/Support/SMLoc.h"
 
+#define UNI_CLOSURE_TRAIT_NAME "##__mojo_closure__##"
+
 namespace mlir {
 class SymbolOpInterface;
 class SymbolTable;

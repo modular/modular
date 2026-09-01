@@ -5360,18 +5360,26 @@ ParseResult DeclResolver::resolveSignature(WitnessDecl *witness,
         return failure();
 
       auto alias = cast<AliasDeclOp>(decl->getIfOperation());
+      Type aliasType = alias.getType();
+      std::optional<ParameterEvaluator> evaluatorOpt =
+          populateTraitBindingEvaluator(witness->traitSymbol, shared);
+      if (evaluatorOpt) {
+        assert(shared.isUniversalParametricClosureTrait(witness->traitSymbol));
+        aliasType = cast<FnTypeGeneratorType>(evaluatorOpt->replace(aliasType));
+      }
+
       if (!mergedType) {
-        mergedType = alias.getType();
+        mergedType = aliasType;
         if (isa<TraitType>(mergedType))
           traitTypesToMerge.insert(cast<TraitType>(mergedType));
         continue;
       }
 
-      if (ASTType(alias.getType()).isEqualCanon(mergedType))
+      if (ASTType(aliasType).isEqualCanon(mergedType))
         continue;
 
-      if (isa<TraitType>(mergedType) && isa<TraitType>(alias.getType())) {
-        traitTypesToMerge.insert(cast<TraitType>(alias.getType()));
+      if (isa<TraitType>(mergedType) && isa<TraitType>(aliasType)) {
+        traitTypesToMerge.insert(cast<TraitType>(aliasType));
         continue;
       }
 
@@ -5471,13 +5479,6 @@ ParseResult DeclResolver::resolveBody(TraitType traitType, ASTDecl &traitDecl) {
     if (failed(resolveBody(parentDecl, traitDecl.getLoc())))
       return failure();
 
-    if (shared.isUniversalParametricClosureTrait(symbol)) {
-      // TODO: implement this!
-      continue;
-    }
-
-    assert(symbol.getParamValues().empty() &&
-           "non-closure trait should have no param values");
     // Inherit members from the parent.
     for (auto &[name, decls] : parentDecl.getDeclsInScope()) {
       for (ASTDecl *decl : decls) {
