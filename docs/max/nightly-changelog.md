@@ -895,6 +895,14 @@ the [container](/container) page now links to the new page.
 
 ## Breaking changes
 
+- Removed the `NPU` device class from `max.driver` and the corresponding
+  `DeviceRef.NPU()`, `DeviceRef.is_npu()`, and `DeviceKind.NPU` from
+  `max.graph`, along with the `M_newNPUDevice()` C API entry point. `NPU` was
+  a thin subclass of `Accelerator` that differed only in the device label it
+  stamped on the graph; it had no callers, and accelerator backends reached
+  through a driver plugin are already served by `Accelerator`. Construct
+  `Accelerator()` (or `DeviceRef.GPU()`) for any non-CPU device, and read the
+  `Accelerator.api` property to tell the concrete backends apart.
 - The tile-tensor storage policy is renamed to an engine, and the
   `layout.tensor_storage` module is renamed `layout.tensor_engine`. The
   `TensorStorage` trait becomes `TensorEngine`, `TileTensor`'s `Storage`
