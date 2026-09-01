@@ -63,11 +63,11 @@ static Type inferInitializerType(ASTDecl &declScope, InitializerUValue &init,
   // We expect the initializer to return the constructed type.
   // Infer the parameters of this overload candidate against the computed
   // result type of the initializer.
-  FailureOr<PValue> initFn =
+  FailureOr<CalleeResult> initFn =
       OverloadSet::canConstructType(inferredType, operands, declScope);
-  if (failed(initFn) || !initFn.value())
+  if (failed(initFn) || !initFn->isYes())
     return {};
-  return FnOrFnLiteralTypeGeneratorType::get(initFn.value().getType())
+  return FnOrFnLiteralTypeGeneratorType::get(initFn->getYes().getType())
       .getUserResultType();
 }
 
@@ -190,16 +190,16 @@ ParamInf::inferCValue(ASTExprAnd<AnyValue> operand, size_t argIdx,
     if (allowImplicitConversions) {
       CallOperands callOperands(CallSyntax::kImplicitConvert, operand.expr,
                                 EC_OverloadResolution, {operand});
-      FailureOr<PValue> pValue = OverloadSet::canConstructType(
+      FailureOr<CalleeResult> pValue = OverloadSet::canConstructType(
           expectedType.getWithUnknownParametersReplaced(getShared()),
           callOperands, getDeclScope(), forwardedNeedingOrigins);
 
       // If we found one, we succeed if the returned type is compatible with the
       // expected type.  Infer the parameters of this overload candidate against
       // the computed result type of the initializer.
-      if (succeeded(pValue) && pValue.value()) {
+      if (succeeded(pValue) && pValue->isYes()) {
         auto sig =
-            FnOrFnLiteralTypeGeneratorType::get(pValue.value().getType());
+            FnOrFnLiteralTypeGeneratorType::get(pValue->getYes().getType());
         if (succeeded(
                 matcher.matchTypes(sig.getUserResultType(), expectedType))) {
           ++numImplicitConversions;
@@ -422,16 +422,16 @@ ParamInf::inferFromRVType(ASTExprAnd<AnyValue> operand, size_t argIdx,
                                 EC_TypeParamValue, {{argVal, operand.expr}});
       auto nonParamType =
           expectedType.getWithUnknownParametersReplaced(getShared());
-      FailureOr<PValue> pValue = OverloadSet::canConstructType(
+      FailureOr<CalleeResult> pValue = OverloadSet::canConstructType(
           nonParamType, ctorOperands, getDeclScope(), needingOrigins);
-      if (failed(pValue) || !pValue.value())
+      if (failed(pValue) || !pValue->isYes())
         return {};
 
       // If we found one, we succeed if the returned type is compatible with the
       // expected type.  Infer the parameters of this overload candidate against
       // the computed result type of the initializer.
       auto initSig =
-          FnOrFnLiteralTypeGeneratorType::get(pValue.value().getType());
+          FnOrFnLiteralTypeGeneratorType::get(pValue->getYes().getType());
       return initSig.getUserResultType();
     };
 

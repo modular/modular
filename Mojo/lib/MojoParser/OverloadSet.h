@@ -21,7 +21,12 @@
 #include "DeferredTypingContext.h"
 #include "ParamBindings.h"
 
+#include "Mojo/Support/TriResult.h"
+
 namespace M::KGEN::LIT {
+
+/// The callee an overload filter selected, or why none was selected.
+using CalleeResult = TriResult<PValue>;
 
 /// Returns true if `candidate` is a compiler-synthesized function whose own
 /// where clause can never be satisfied (e.g. the move/copy-init synthesized
@@ -154,11 +159,17 @@ public:
   /// When `forwardedNeedingOrigins` is non-null, instead of materializing the
   /// operands that need origins, simply forward the information to the caller.
   ///
+  /// A candidate whose body constraints can be neither proven nor disproven in
+  /// this scope is inconclusive: it is not selected, but it is not rejected
+  /// either. A `no` is a definitive "no viable candidate"; an `unknown` means
+  /// the best surviving candidates were left undecided by this scope, and must
+  /// not be read as a definitive rejection.
+  ///
   /// NOTE: This can mutate the operand list, e.g. when calling a static method
   /// that doesn't need a self value, and by pre-emitting PValues when not in an
   /// parameter context. The actual emission needs to use the updated argument
   /// list.
-  PValue filterOverloadSet(
+  CalleeResult filterOverloadSet(
       CallOperands &operands, bool emitDiagnosticOnFailure, IREmitter &emitter,
       bool disableMaterialization = false,
       OperandsNeedingOriginsList *forwardedNeedingOrigins = nullptr) const;
@@ -219,9 +230,9 @@ public:
       bool *hasInconclusiveCandidates = nullptr) const;
 
   /// If the specified type can be constructed with the specified operands
-  /// return the initializer that would be invoked. If not, return null PValue.
-  /// If there were erroneous declarations when processing return failure so we
-  /// don't indicate downstream errors.
+  /// return the initializer that would be invoked. If not, return a `no`
+  /// answer. If there were erroneous declarations when processing return
+  /// failure so we don't indicate downstream errors.
   ///
   /// If there were erroneous declarations, an error has been raised about a
   /// constructor that likely would have applied, which should be considered in
@@ -229,7 +240,12 @@ public:
   ///
   /// This allows implicit conversions of operands so long as "operands" doesn't
   /// indicate that this is itself an implicit conversion.
-  static FailureOr<PValue> canConstructType(
+  ///
+  /// A `no` means no initializer was selected, a definitive "cannot
+  /// construct". An `unknown` means a candidate was left inconclusive because
+  /// its body constraints could be neither proven nor disproven in
+  /// `declScope`; it must not be read as a definitive answer.
+  static FailureOr<CalleeResult> canConstructType(
       ASTType requiredType, CallOperands &operands, ASTDecl &declScope,
       OperandsNeedingOriginsList *forwardedNeedingOrigins = nullptr);
 

@@ -4407,12 +4407,12 @@ void ClosureEmitter::addStorageConformanceToDevicePassable(
         &syntheticNode, CallSyntax::kMethodCall);
     overloads.paramBindings.add(&syntheticNode, PValue(deviceTypeValue),
                                 StringAttr::get(ctx, "DeviceStructType"));
-    PValue callee = overloads.filterOverloadSet(
+    auto calleeResult = overloads.filterOverloadSet(
         callOperands, /*emitDiagnosticOnFailure=*/true, emitter);
-    if (!callee)
+    if (!calleeResult.isYes())
       return failure();
-    CValue callResult =
-        emitter.emitIndirectCall(callee, std::move(callOperands));
+    CValue callResult = emitter.emitIndirectCall(calleeResult.getYes(),
+                                                 std::move(callOperands));
     if (!callResult)
       return failure();
     auto noneAttr =

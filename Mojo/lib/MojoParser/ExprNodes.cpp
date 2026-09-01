@@ -1938,18 +1938,19 @@ AnyValue emitGetterSetterAccess(const ExprNode *node, ASTExprAnd<CValue> base,
   // might even have computed contextual parameters.
 
   // Resolve the getter to discover the element type.
-  PValue getter =
+  auto getter =
       getterSet.filterOverloadSet(operands,
                                   /*emitDiagnosticOnFailure*/ true, emitter);
-  if (!getter) // Error already emitted.
+  if (!getter.isYes()) // Error already emitted.
     return {};
 
   // ElementType is the result of the getter, processing by-ref results and
   // ignoring the variant for raising functions.
-  ASTType elementType = getter.getType().getSignatureUserResultType();
+  ASTType elementType = getter.getYes().getType().getSignatureUserResultType();
 
   // Also look through ref results.
-  if (FnOrFnLiteralTypeGeneratorType::get(getter.getType()).isRefResult())
+  if (FnOrFnLiteralTypeGeneratorType::get(getter.getYes().getType())
+          .isRefResult())
     elementType = sugarCast<RefType>(elementType).getElementType();
 
   // Ok, now that we know the elementType, we can look up any setter that we
@@ -1994,7 +1995,7 @@ AnyValue emitGetterSetterAccess(const ExprNode *node, ASTExprAnd<CValue> base,
 
   // Otherwise, this expression may be used as an LValue so form it.
   DLValue result(RCRef<SubscriptDLValue>::create(
-      getter, setterValueName, std::move(operands), elementType));
+      getter.getYes(), setterValueName, std::move(operands), elementType));
   return emitter.emitResult(result, node, dest);
 }
 

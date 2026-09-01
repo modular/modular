@@ -1234,14 +1234,14 @@ LogicalResult ParamMatcher::matchSingleEltStruct(TypedAttr actualOrig,
           ASTType(expDRT).getWithUnknownParametersReplaced(shared);
       CallOperands ctorOperands(CallSyntax::kImplicitConvert, expr,
                                 EC_TypeParamValue, {{actual, expr}});
-      FailureOr<PValue> pValue = OverloadSet::canConstructType(
+      FailureOr<CalleeResult> pValue = OverloadSet::canConstructType(
           nonParamDRT, ctorOperands, state.declScope);
-      if (failed(pValue) || !pValue.value())
+      if (failed(pValue) || !pValue->isYes())
         return error(MatchFailure::Unclassified{});
 
       // If we succeeded, figure out what the concrete type being inferred would
       // be with any parameters bound.
-      auto initSig = sugarCast<FnTypeGeneratorType>(pValue.value().getType());
+      auto initSig = sugarCast<FnTypeGeneratorType>(pValue->getYes().getType());
       // The constructed type is the result of the initializer.
       assert(initSig.getNumArguments() != 0);
       expDRT = sugarCast<LIT::StructType>(initSig.getUserResultType());

@@ -1386,9 +1386,9 @@ findCommonType(ASTExprAnd<CValue> val1, ASTExprAnd<CValue> val2,
                           {srcValue});
     auto res = os.filterOverloadSet(
         operands, /*emitDiagnosticsOnFailure=*/false, emitter);
-    if (!res)
+    if (!res.isYes())
       return {{}, {}};
-    return {res, res.getType().getSignatureUserResultType()};
+    return {res.getYes(), res.getYes().getType().getSignatureUserResultType()};
   };
 
   auto [lhsMWPV, lhsMPType] = lookupMergeWith(val1, type1, type2);
@@ -2102,22 +2102,21 @@ TriState IREmitter::classifyImplicitConversion(
   // for future changes to guarantee referential transparency).
   CallOperands operands(CallSyntax::kImplicitConvert, value.expr,
                         EC_OverloadResolution, {value});
-  FailureOr<PValue> result =
+  FailureOr<CalleeResult> result =
       OverloadSet::canConstructType(requiredType, operands, declScope);
-  bool isConvertible = succeeded(result) && result.value();
+  bool isConvertible = succeeded(result) && result->isYes();
 
   // A negative answer is only definitive if no other convertibility branch
   // returned `unknown`.
   if (!isConvertible && sawUnknown)
     return TriState::unknown();
 
-  // TODO(MOCO-4261): a null result from `canConstructType` is usually a
+  // TODO(MOCO-4261): a `no` verdict from `canConstructType` is usually a
   // definitive "cannot construct", but not when a candidate was left
   // inconclusive because its body constraints could be neither proven nor
   // disproven here: that verdict belongs to this scope, not to the type pair
   // the cache is keyed on, so caching it lets one scope answer for another.
-  // `filterOverloadSet` already computes inconclusiveness to decide its own
-  // null return, so reporting it out of `canConstructType` is all this needs.
+  // `canConstructType` now reports that as `unknown`; this needs to read it.
   // Must cache the overall value type, not just its stripped down rvType.
   shared.cacheImplicitConvertibility(value.ir.getType(), requiredType,
                                      isConvertible);
