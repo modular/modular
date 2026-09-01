@@ -33,9 +33,7 @@ from std.time import perf_counter, sleep
 comptime _LOCATION_ENV = "__MOJO_TEST_EXPECT_ABORT_LOCATION_TARGET"
 # Path the child's stdout/stderr get redirected to before running.
 comptime _OUTPUT_ENV = "__MOJO_TEST_EXPECT_ABORT_OUTPUT"
-# How long to wait for the child to abort before killing it. Kept well under a
-# typical CI test timeout so a hang is reported here, with a diagnostic, rather
-# than by the harness killing the whole binary.
+# How long to wait for the child to abort before killing it.
 comptime _DEFAULT_TIMEOUT = 60.0
 # How often to check on the child while waiting for it. The child re-execs the
 # whole test binary, so this is small next to the work it does.
