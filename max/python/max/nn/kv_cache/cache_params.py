@@ -36,6 +36,7 @@ from max.graph import (
     TensorValue,
 )
 from max.support.human_readable_formatter import to_human_readable_bytes
+from max.support.math import ceildiv
 
 from .data_parallelism_utils import split_into_groups
 from .input_types import (
@@ -98,6 +99,11 @@ class KVCacheGroupId:
 
     def is_full(self) -> bool:
         return self.type == "full"
+
+    def blocks_in_window(self, page_size: int) -> int:
+        if self.is_full():
+            return -1
+        return ceildiv(self.window_size - 1, page_size)
 
     @classmethod
     def full(cls) -> KVCacheGroupId:

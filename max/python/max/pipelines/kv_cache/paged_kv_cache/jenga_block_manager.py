@@ -123,6 +123,10 @@ class KVGroupCoordinatorInterface:
         """
         raise NotImplementedError("Subclasses must implement this method.")
 
+    def num_blocks_needed_for_connector_load(self, num_hashes: int) -> int:
+        """The number of blocks needed to service a connector cache hit for all hashes."""
+        raise NotImplementedError("Subclasses must implement this method.")
+
 
 @dataclass(frozen=True)
 class FullKVGroupCoordinator(KVGroupCoordinatorInterface):
@@ -165,6 +169,10 @@ class FullKVGroupCoordinator(KVGroupCoordinatorInterface):
         """Keeps every page: this group reads its whole history."""
         return
 
+    def num_blocks_needed_for_connector_load(self, num_hashes: int) -> int:
+        """The full group needs one block per hash."""
+        return num_hashes
+
 
 @dataclass(frozen=True)
 class SlidingWindowKVGroupCoordinator(KVGroupCoordinatorInterface):
@@ -175,7 +183,7 @@ class SlidingWindowKVGroupCoordinator(KVGroupCoordinatorInterface):
 
     @property
     def _blocks_in_window(self) -> int:
-        return ceildiv(self.group_id.window_size - 1, self.page_size)
+        return self.group_id.blocks_in_window(self.page_size)
 
     def longest_cache_hit(
         self,
@@ -277,6 +285,10 @@ class SlidingWindowKVGroupCoordinator(KVGroupCoordinatorInterface):
                     break
                 pool.free_block(req_blocks[idx])
                 req_blocks[idx] = null_block
+
+    def num_blocks_needed_for_connector_load(self, num_hashes: int) -> int:
+        """The number of blocks needed to service a connector cache hit for all hashes."""
+        return min(num_hashes, self._blocks_in_window)
 
 
 def create_kv_group_coordinator(
@@ -392,19 +404,8 @@ class JengaBlockManager:
         self._req_to_committed_idx: dict[RequestID, int] = {}
         self._req_to_replica: dict[RequestID, int] = {}
 
-        # A single connector serves every replica; each load/offload passes the
-        # replica_idx that selects the device endpoint.
-
+        # State for the KVConnector.
         self._connector = connector
-
-        # TODO: We don't support Jenga + KVConnector + SWA groups yet.
-        if connector is not None and not all(
-            group_id.is_full() for group_id in self._groups
-        ):
-            raise ValueError(
-                "Jenga + KVConnector supports full-attention groups only, "
-                f"found {sorted(str(g) for g in self._groups)}"
-            )
 
         self._pending_transfers: list[list[_PendingTransfer]] = [
             [] for _ in range(num_replicas)
@@ -483,8 +484,7 @@ class JengaBlockManager:
         }
         if not pool.can_satisfy_demand(demand):
             raise InsufficientBlocksError(
-                f"Serving {demand} needs more huge blocks than the "
-                f"{len(pool.free_huge_blocks)} that are free"
+                f"Serving {demand} needs more huge blocks than are available"
             )
 
         # Allocate the new blocks for the request.
@@ -641,65 +641,109 @@ class JengaBlockManager:
     @traced
     def _lookup_connector_prefix_cache_hit(
         self, desired: Sequence[bytes], replica_idx: int
-    ) -> KVConnectorTransfer:
+    ) -> tuple[int, dict[str, list[LittleKVCacheBlock]], KVConnectorTransfer]:
         """Loads the desired hashes from the connector's prefix cache.
 
         Fresh device pages are allocated for the hashes the connector can
         serve and filled by its ``load``. The connector may serve some but not
         all of the desired hashes.
 
-        Currently this is only supported for full-attention groups. SWA groups
-        are not supported yet.
+        Eg:
+        ```
+        > desired_hashes = [h1, h2, h3, h4, h5, h6, h7, h8, h9, h10]
+        > staging_blocks = {
+        >   'sliding_window_group(1024)': [42, 43, 44, 45],
+        >   'full_group': [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+        > }
+        > event = connector.load(staging_blocks, desired_hashes)
+        > # Cache hit on 8 of 10 hashes
+        > assert event.g0_blocks_per_leaf == {
+        >   'sliding_window_group(1024)': [0, 0, 0, 0, 42, 43, 44, 45],
+        >   'full_group': [1, 2, 3, 4, 5, 6, 7, 8]
+        > }
+        ```
 
         Returns:
-            The transfer tracking the copy.
+            A tuple containing:
+                The number of blocks loaded from the connector
+                The blocks that the contents are being loaded into, per leaf
+                The transfer tracking the copy
         """
         connector = self._connector
+        empty: dict[str, list[LittleKVCacheBlock]] = {
+            leaf_id: [] for leaf_id in self._leaves
+        }
         if connector is None or not desired:
-            return CompletedTransfer.load(list(self._leaves))
+            return 0, empty, CompletedTransfer.load(list(self._leaves))
 
         pool = self.pools[replica_idx]
+
         # Only try to load from connector if we have enough device blocks to
         # hold the desired hashes.
-        if not pool.can_satisfy_demand(
-            dict.fromkeys(self._leaves, len(desired))
-        ):
-            return CompletedTransfer.load(list(self._leaves))
+        num_blocks_needed = {
+            leaf_id: group.num_blocks_needed_for_connector_load(len(desired))
+            for group in self._groups.values()
+            for leaf_id in group.leaf_ids
+        }
+        # If there are insufficient blocks available, we will be unable to schedule
+        # this request. Return zero connector cache hits and let the caller raise
+        # InsufficientBlocksError after releasing all resources owned by this request.
+        if not pool.can_satisfy_demand(num_blocks_needed):
+            return 0, empty, CompletedTransfer.load(list(self._leaves))
 
-        blocks = {
-            leaf_id: [pool.alloc_block(leaf_id) for _ in desired]
-            for leaf_id in self._leaves
+        staging_blocks = {
+            leaf_id: [pool.alloc_block(leaf_id) for _ in range(num_blocks)]
+            for leaf_id, num_blocks in num_blocks_needed.items()
         }
         event = connector.load(
             {
                 leaf_id: [b.bid for b in leaf_blocks]
-                for leaf_id, leaf_blocks in blocks.items()
+                for leaf_id, leaf_blocks in staging_blocks.items()
             },
             desired,
             replica_idx=replica_idx,
         )
+        # Note that for SWA groups, we expect the connector to pad the blocks
+        # with 0 to denote the null blocks. As such, the length of the blocks
+        # for each leaf should be the same.
+        unique_num_loaded = {
+            len(blocks) for blocks in event.g0_blocks_per_leaf.values()
+        }
+        if len(unique_num_loaded) != 1:
+            raise ValueError(
+                "Expected all leaves to have the same number of loaded blocks, "
+                f"but got {event.g0_blocks_per_leaf} from KVConnector.load(...)"
+            )
+        num_loaded = unique_num_loaded.pop()
 
-        # The connector may serve fewer blocks than asked for; its event
-        # reports how many. Give the surplus blocks back.
-        num_loaded = len(next(iter(event.g0_blocks_per_leaf.values())))
-        for leaf_blocks in blocks.values():
-            for surplus in leaf_blocks[num_loaded:]:
-                pool.free_block(surplus)
+        # Give the surplus blocks back.
+        for leaf_id in self._leaves:
+            all_bids = {b.bid for b in staging_blocks[leaf_id]}
+            loaded_bids = {bid for bid in event.g0_blocks_per_leaf[leaf_id]}
+            unused = all_bids - loaded_bids
+            for bid in unused:
+                block = pool.block(leaf_id, bid)
+                pool.free_block(block)
+
         if num_loaded == 0:
-            return CompletedTransfer.load(list(self._leaves))
-        blocks = {
-            leaf_id: leaf_blocks[:num_loaded]
-            for leaf_id, leaf_blocks in blocks.items()
+            return 0, empty, CompletedTransfer.load(list(self._leaves))
+
+        logger.debug(
+            f"KVConnector loaded {num_loaded} / {len(desired)} hashes. Blocks: {event.g0_blocks_per_leaf}"
+        )
+        loaded_blocks = {
+            leaf_id: [pool.block(leaf_id, bid) for bid in blocks]
+            for leaf_id, blocks in event.g0_blocks_per_leaf.items()
         }
 
         loaded_hashes = list(desired[:num_loaded])
         if event.is_complete():
-            self._commit_onloaded_blocks(pool, blocks, loaded_hashes)
+            self._commit_onloaded_blocks(pool, loaded_blocks, loaded_hashes)
         else:
             self._track_transfer(
-                event, blocks, replica_idx, commit_hashes=loaded_hashes
+                event, loaded_blocks, replica_idx, commit_hashes=loaded_hashes
             )
-        return event
+        return num_loaded, loaded_blocks, event
 
     def _commit_onloaded_blocks(
         self,
@@ -707,13 +751,15 @@ class JengaBlockManager:
         blocks: Mapping[str, list[LittleKVCacheBlock]],
         hashes: Sequence[bytes],
     ) -> None:
-        """Publishes landed onload pages, skipping any hash already served."""
+        """Publishes landed onload pages, skipping any hash already in cache."""
         for leaf_id, leaf_blocks in blocks.items():
             prefix_cache = pool.prefix_caches[leaf_id]
             for block, block_hash in zip(leaf_blocks, hashes, strict=True):
-                # A concurrent onload of the same hash may have published
-                # first; leave that winner in place.
-                if block.block_hash is None and block_hash not in prefix_cache:
+                if (
+                    block.block_hash is None
+                    and block_hash not in prefix_cache
+                    and not block.is_null
+                ):
                     pool.commit_into_prefix_cache(block_hash, block)
 
     def _track_transfer(
@@ -943,9 +989,8 @@ class JengaBlockManager:
                 desired_hashes = desired_hashes[:num_hit_blocks]
 
             shrank = len(desired_hashes) < old_num_hit_blocks
-            # A lone window group is its own fixed point -- re-asking it under
-            # its own answer returns that answer -- so only a model with two
-            # different windows can need another pass.
+            # A lone window group is its own fixed point.
+            # Only a model with two different window sizes needs another pass.
             if not shrank or len(windowed) == 1:
                 break
 
@@ -1009,21 +1054,17 @@ class JengaBlockManager:
             desired_hashes, replica_idx
         )
         # Ask the connector to load the hashes that are remaining.
-        transfer = self._lookup_connector_prefix_cache_hit(
-            desired_hashes[num_hit_blocks:], replica_idx
+        num_loaded, loaded_blocks, transfer = (
+            self._lookup_connector_prefix_cache_hit(
+                desired_hashes[num_hit_blocks:], replica_idx
+            )
         )
-        pool = self.pools[replica_idx]
-        onloaded = {
-            leaf_id: [pool.block(leaf_id, bid) for bid in bids]
-            for leaf_id, bids in transfer.g0_blocks_per_leaf.items()
-        }
-        num_onloaded = len(next(iter(onloaded.values())))
-        num_reused = num_hit_blocks + num_onloaded
+        num_reused = num_hit_blocks + num_loaded
 
         self._metrics.device_blocks_served += num_hit_blocks
         self._metrics.cache_tokens += num_reused * self._block_size
         ctx.cached_prefix_length = num_reused * self._block_size
-        ctx.cached_prefix_external_length = num_onloaded * self._block_size
+        ctx.cached_prefix_external_length = num_loaded * self._block_size
 
         if num_reused == 0:
             return transfer
@@ -1032,13 +1073,25 @@ class JengaBlockManager:
         # beyond it belongs to a chunk that is about to be re-planned.
         self._release_uncommitted_blocks(ctx, replica_idx)
 
-        # The claim already nulls the slots a windowed group slid past, so the
-        # rows splice on at the same length in every leaf. The onloaded run
-        # follows the device one, which is the order its hashes were taken in.
+        # Add the device hit and connector loaded blocks to the request.
+        pool = self.pools[replica_idx]
         for leaf_id, leaf in self._leaves.items():
             req_blocks = leaf.req_to_blocks[ctx.request_id]
-            req_blocks.extend(hit_blocks[leaf_id])
-            req_blocks.extend(onloaded[leaf_id])
+            hit_blocks_for_leaf = hit_blocks[leaf_id]
+            loaded_blocks_for_leaf = loaded_blocks[leaf_id]
+
+            # If we got a hit from the connector and the first block of that
+            # is a null block (due to SWA null padding), then the device hits
+            # are no longer necessary. We need to free up those blocks and
+            # replace them with null blocks.
+            if loaded_blocks_for_leaf and loaded_blocks_for_leaf[0].is_null:
+                for block in hit_blocks_for_leaf:
+                    pool.free_block(block)
+                null_block = pool.null_little_blocks[leaf_id]
+                hit_blocks_for_leaf = [null_block] * len(hit_blocks_for_leaf)
+
+            req_blocks.extend(hit_blocks_for_leaf)
+            req_blocks.extend(loaded_blocks_for_leaf)
 
         committed_idx = (
             self._req_to_committed_idx[ctx.request_id]

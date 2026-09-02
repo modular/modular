@@ -28,7 +28,6 @@ from max.driver import (
 from max.dtype import DType
 from max.nn.kv_cache import (
     BatchCharacteristics,
-    KVCacheGroupId,
     KVCacheInputs,
     KVCacheInputsInterface,
     KVCacheParamInterface,
@@ -166,20 +165,13 @@ class JengaKVCacheManager(JengaBlockManager, PagedKVCacheManagerInterface):
         num_huge_blocks, huge_page_bytes, ratios = compute_jenga_ratios(
             available_bytes, bytes_per_page
         )
-        is_kv_connector_enabled = (
-            params.kv_connector_config.type.value != "null"
-        )
-        leaf_infos = {
-            leaf_id: KVLeafInfo(
-                ratio=ratios[leaf_id],
-                # If KVConnector is enabled, treat sliding window as if it were
-                # full attention.
-                # TODO(SERVOPT-1525): add proper Jenga + KVConnector support
-                # for sliding window groups.
-                group_id=leaf.group_id
-                if not is_kv_connector_enabled
-                else KVCacheGroupId.full(),
+        if params.kv_connector_config.type.value == "dkv":
+            raise ValueError(
+                "DKV KVConnector is not supported with Jenga KV cache. "
+                "Set MODULAR_USE_LEGACY_KV_CACHE=1 if DKV KVConnector is required."
             )
+        leaf_infos = {
+            leaf_id: KVLeafInfo(ratio=ratios[leaf_id], group_id=leaf.group_id)
             for leaf_id, leaf in leaves.items()
         }
 
@@ -217,6 +209,7 @@ class JengaKVCacheManager(JengaBlockManager, PagedKVCacheManagerInterface):
             for buf in kv_buffers
         ]
         connector = create_connector(
+            leaves={leaf_id: leaf.group_id for leaf_id, leaf in leaves.items()},
             devices=devices,
             replica_kv_memory=replica_kv_memory,
             params=params,
@@ -274,18 +267,6 @@ class JengaKVCacheManager(JengaBlockManager, PagedKVCacheManagerInterface):
         if params.kv_connector_config.type == KVConnectorType.null:
             connector = None
         self._connector = connector
-        if connector is not None and not all(
-            leaf.group_id.is_full() for leaf in leaf_infos.values()
-        ):
-            # HACK(SERVOPT-1588): Jenga + KVConnector is full-attention only
-            # for now. A windowed cache drops the blocks its window slid past,
-            # so its committed run is not a prefix of the request -- which is
-            # what the external tiers and the offload run both assume.
-            raise ValueError(
-                "JengaKVCacheManager supports KVConnectors for full-attention "
-                "groups only, found "
-                f"{sorted({str(leaf.group_id) for leaf in leaf_infos.values()})}"
-            )
 
         if (
             params.enable_dp_cross_replica_prefix_copy

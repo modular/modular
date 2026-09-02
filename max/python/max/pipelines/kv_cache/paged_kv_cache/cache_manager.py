@@ -30,6 +30,7 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.nn.kv_cache import (
     BatchCharacteristics,
+    KVCacheGroupId,
     KVCacheInputs,
     KVCacheInputsInterface,
     KVCacheParamInterface,
@@ -340,6 +341,10 @@ class PagedKVCacheManager(PagedKVCacheManagerInterface):
         # A single connector serves every replica; each ``load``/``offload``
         # passes ``replica_idx`` to select the device endpoint.
         self._connector = create_connector(
+            # Legacy KV cache manager treats all leaves as full attention groups.
+            leaves={
+                leaf_id: KVCacheGroupId.full() for leaf_id in params.leaves()
+            },
             devices=devices,
             replica_kv_memory=replica_kv_memory,
             params=params,
