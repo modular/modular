@@ -4896,11 +4896,6 @@ DeclResolver::resolveSyntheticSignature(FnOp inheritedFnOp,
     }
   }
 
-  // We need to make sure that the decl for the function we're inheriting is now
-  // fully resolved.
-  if (failed(resolveBody(*inheritedFnDecl, inheritedFnDecl->getLoc())))
-    return failure();
-
   auto parentTraitSelfType = parentTraitDecl.getTypeDeclSelf();
   auto childTraitSelfType = childTraitDecl->getTypeDeclSelf();
 
