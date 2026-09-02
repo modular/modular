@@ -358,5 +358,11 @@ def test_owned_dlhandle_automatic_cleanup() raises:
     create_and_destroy_handle()
 
 
+def test_owned_dlhandle_destroy_null_handle() raises:
+    var lib = OwnedDLHandle(unsafe_uninitialized=True)
+    assert_true(not lib.__bool__(), "uninitialized handle should be null")
+    _ = lib^
+
+
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()
