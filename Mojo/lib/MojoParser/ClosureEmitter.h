@@ -242,6 +242,8 @@ public:
 
     FnTypeGeneratorType getSignature() const { return signature; }
 
+    InlineLevel getInlineLevel() const { return inlineLevel; }
+
   private:
     /// Symbol of the parent trait; its declaration is looked up from this.
     TraitSymbolAttr symbol;
@@ -251,6 +253,8 @@ public:
     StringAttr witnessName;
     /// The requirement function signature, null for marker trait.
     FnTypeGeneratorType signature;
+    /// The requirement's inline level, which the synthesized witness inherits.
+    InlineLevel inlineLevel = InlineLevel::Automatic;
   };
 
   /// This is `isEqualCanon` with one relaxation: parameters
@@ -308,7 +312,8 @@ private:
   std::tuple<FnOp, ArrayRef<ParamDeclAttr>, Type> pushBackTraitFunctionImpl(
       FnTypeGeneratorType traitFnSignature, ASTDecl &structDecl, bool synthetic,
       StringAttr fnName, SpecialFunctionKind specialFnID,
-      bool redirectWitnessToImplParam = true, ASTType selfTypeOverride = {});
+      InlineLevel inlineLevel, bool redirectWitnessToImplParam = true,
+      ASTType selfTypeOverride = {});
   struct DevicePassablePopulators {
     llvm::function_ref<FailureOr<SymbolConstantAttr>(FnOp)> isConvertible;
     llvm::function_ref<FailureOr<SymbolConstantAttr>(FnOp)> isEncodable;

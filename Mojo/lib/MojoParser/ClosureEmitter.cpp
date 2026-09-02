@@ -277,6 +277,7 @@ ClosureEmitter::ClosureParent::ClosureParent(SharedState &shared,
   assert(definingFn && "missing function in closure parent trait");
   witnessName = definingFn.getSymNameAttr();
   signature = definingFn.getFullSignature();
+  inlineLevel = definingFn.getInlineLevel();
 }
 
 static StructFieldOp addFieldOpAndDecl(StringAttr name, Type type,
@@ -736,12 +737,10 @@ inline static std::string getTraitMethodParamName(size_t idx) {
 }
 
 std::tuple<FnOp, ArrayRef<ParamDeclAttr>, Type>
-ClosureEmitter::pushBackTraitFunctionImpl(FnTypeGeneratorType traitFnSignature,
-                                          ASTDecl &structDecl, bool synthetic,
-                                          StringAttr fnName,
-                                          SpecialFunctionKind specialFnID,
-                                          bool redirectWitnessToImplParam,
-                                          ASTType selfTypeOverride) {
+ClosureEmitter::pushBackTraitFunctionImpl(
+    FnTypeGeneratorType traitFnSignature, ASTDecl &structDecl, bool synthetic,
+    StringAttr fnName, SpecialFunctionKind specialFnID, InlineLevel inlineLevel,
+    bool redirectWitnessToImplParam, ASTType selfTypeOverride) {
   StructDeclOp structDeclOp = cast<StructDeclOp>(structDecl.getIfOperation());
   ImplicitLocOpBuilder b(structDeclOp.getLoc(), structDeclOp);
   b.setInsertionPointToEnd(&structDeclOp.getFields().front());
@@ -782,7 +781,8 @@ ClosureEmitter::pushBackTraitFunctionImpl(FnTypeGeneratorType traitFnSignature,
       structDecl, fnName, parameters, wrapperSignature.getParamListAttrs(),
       argumentTypes, wrapperSignature.getArgConventions(),
       wrapperSignature.getArgListAttrs(), result, specialFnID,
-      structDecl.getLoc(), b, wrapperSignature.getFnEffects(), "", synthetic);
+      structDecl.getLoc(), b, wrapperSignature.getFnEffects(), "", synthetic,
+      inlineLevel);
   size_t synthesizedOrigins =
       op.getFuncTypeGenerator().getNumImplicitOriginDecls();
   return {op, op.getInputParams().drop_back(synthesizedOrigins), result};
@@ -1139,7 +1139,7 @@ ClosureEmitter::createFnStructWrapper(ASTDecl &moduleDecl, ASTDecl &traitDecl,
   auto [callMethod, parameters, result] = pushBackTraitFunctionImpl(
       callParent.getSignature(), structDecl, /*synthetic=*/false,
       StringAttr::get(shared.getContext(), "__call__"),
-      SpecialFunctionKind::kNormal);
+      SpecialFunctionKind::kNormal, callParent.getInlineLevel());
   callMethod.setInlineLevel(InlineLevel::Always);
   addWitnessEntry(callParent, callMethod);
 
@@ -2646,10 +2646,10 @@ ClosureEmitter::Closure ClosureEmitter::liftClosure(
       structDecl, structOp, promotedCallFunction, smLoc,
       [&](ASTDecl &decl, bool synthetic, StringAttr name) {
         // Storage has no `impl` param — do not redirect Self witnesses to it.
-        return pushBackTraitFunctionImpl(callParent.getSignature(), decl,
-                                         synthetic, name,
-                                         SpecialFunctionKind::kNormal,
-                                         /*redirectWitnessToImplParam=*/false);
+        return pushBackTraitFunctionImpl(
+            callParent.getSignature(), decl, synthetic, name,
+            SpecialFunctionKind::kNormal, callParent.getInlineLevel(),
+            /*redirectWitnessToImplParam=*/false);
       });
   if (!callWitness)
     return {};
@@ -3754,8 +3754,8 @@ void ClosureEmitter::buildCallAdaptorAndAddWitness(
       StringAttr::get(ctx, "__call__$" + getFlattenedSymbolName(traitSymbol));
   auto [adaptorFnOp, _, adaptorResult] = pushBackTraitFunctionImpl(
       traitCallFn.getFullSignature(), structDecl, true, adaptorNameAttr,
-      traitCallFn.getSpecialFunctionKind(), redirectWitnessToImplParam,
-      selfTypeOverride);
+      traitCallFn.getSpecialFunctionKind(), traitCallFn.getInlineLevel(),
+      redirectWitnessToImplParam, selfTypeOverride);
   mlir::AttrTypeReplacer replacer;
   replacer.addReplacement([&](ParamDeclRefAttr ref) -> TypedAttr {
     auto ptr = adapteeParts.adapteeTypeMap.find(ref.getName());
@@ -4351,6 +4351,7 @@ void ClosureEmitter::addStorageConformanceToDevicePassable(
     auto [implementation, parameters, result] = pushBackTraitFunctionImpl(
         function.getFullSignature(), structDecl, /*synthetic=*/true,
         function.getSourceNameAttr(), function.getSpecialFunctionKind(),
+        function.getInlineLevel(),
         /*redirectWitnessToImplParam=*/false);
     emitIsConvertibleToDeviceTypeBody(implementation, parameters, b,
                                       deviceTypeValue);
@@ -4358,11 +4359,11 @@ void ClosureEmitter::addStorageConformanceToDevicePassable(
   };
   auto populateIsEncodable =
       [&](FnOp function) -> FailureOr<SymbolConstantAttr> {
-    auto [implementation, parameters, result] =
-        pushBackTraitFunctionImpl(function.getFullSignature(), structDecl,
-                                  /*synthetic=*/true, function.getSymNameAttr(),
-                                  function.getSpecialFunctionKind(),
-                                  /*redirectWitnessToImplParam=*/false);
+    auto [implementation, parameters, result] = pushBackTraitFunctionImpl(
+        function.getFullSignature(), structDecl,
+        /*synthetic=*/true, function.getSymNameAttr(),
+        function.getSpecialFunctionKind(), function.getInlineLevel(),
+        /*redirectWitnessToImplParam=*/false);
     cloneTraitDefaultBody(implementation, function, structDecl);
     return buildSymbol(implementation, structDeclOp.getInputParams());
   };
@@ -4371,6 +4372,7 @@ void ClosureEmitter::addStorageConformanceToDevicePassable(
     auto [toDevice, params, result] = pushBackTraitFunctionImpl(
         function.getFullSignature(), structDecl, /*synthetic=*/true,
         function.getSourceNameAttr(), function.getSpecialFunctionKind(),
+        function.getInlineLevel(),
         /*redirectWitnessToImplParam=*/false);
     b.setInsertionPointToStart(&toDevice.getBodyRegion().front());
     assert(toDevice.getBodyRegion().getNumArguments() == 3);
@@ -4411,6 +4413,7 @@ void ClosureEmitter::addStorageConformanceToDevicePassable(
     auto [implementation, _, result] = pushBackTraitFunctionImpl(
         function.getFullSignature(), structDecl, /*synthetic=*/true,
         function.getSourceNameAttr(), function.getSpecialFunctionKind(),
+        function.getInlineLevel(),
         /*redirectWitnessToImplParam=*/false);
     auto closureName = StringAttr::get(name, StringType::get(ctx));
     populateDevicePassableTypeName(implementation, structDecl, closureName);
