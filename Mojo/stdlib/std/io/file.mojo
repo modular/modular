@@ -31,7 +31,7 @@ with open("my_file.txt", "r") as f:
 
 """
 
-from std.format._utils import _WriteBufferStack
+from std.format._utils import _FlushingWriteBuffer
 from std.os import PathLike as stdPathLike, abort, makedirs, remove
 from std.os import SEEK_SET, SEEK_END
 from std.os.path import dirname
@@ -629,7 +629,7 @@ struct FileHandle(Defaultable, Movable, Writer):
         assert self.handle >= 0, "invalid file handle in write()"
 
         var file = FileDescriptor(self._get_raw_fd())
-        var buffer = _WriteBufferStack(file)
+        var buffer = _FlushingWriteBuffer(file)
 
         comptime for i in range(args.__len__()):
             args[i].write_to(buffer)

@@ -39,7 +39,7 @@ from std.collections.string.iterators import (
     GraphemeSliceIter,
 )
 from std.hashlib.hasher import Hasher
-from std.format._utils import _TotalWritableBytes, _WriteBufferStack
+from std.format._utils import _TotalWritableBytes, _FlushingWriteBuffer
 from std.math import align_down
 from std.os import PathLike, abort
 from std.sys import simd_width_of
@@ -1003,7 +1003,7 @@ struct StringSpan[mut: Bool, //, origin: Origin[mut=mut]](
             The string concatenated `n` times.
         """
         var string = String()
-        var buffer = _WriteBufferStack(string)
+        var buffer = _FlushingWriteBuffer(string)
         for _ in range(n):
             buffer.write_string(self)
         buffer.flush()
@@ -2485,7 +2485,7 @@ struct StringSpan[mut: Bool, //, origin: Origin[mut=mut]](
                 result.write(self, elems[i])
             return result^
 
-        var buffer = _WriteBufferStack(result)
+        var buffer = _FlushingWriteBuffer(result)
 
         buffer.write(elems[0])
         for i in range(1, len(elems)):

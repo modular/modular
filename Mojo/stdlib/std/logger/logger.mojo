@@ -38,7 +38,7 @@ stdout). Messages below the configured level will be silently ignored.
 """
 
 import std.sys
-from std.format._utils import _WriteBufferStack
+from std.format._utils import _FlushingWriteBuffer
 from std.os import abort
 from std.sys.defines import get_defined_string
 from std.utils._ansi import Text, Color
@@ -448,7 +448,7 @@ struct Logger[level: Level = DEFAULT_LEVEL](ImplicitlyCopyable):
         comptime color = _level.color()
 
         var file = self._fd
-        var buffer = _WriteBufferStack(file)
+        var buffer = _FlushingWriteBuffer(file)
 
         if self._prefix:
             buffer.write(Text[color](self._prefix))

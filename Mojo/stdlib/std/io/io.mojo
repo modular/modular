@@ -17,7 +17,7 @@ These are Mojo built-ins, so you don't need to import them.
 
 from std._plugin import CurrentPlugin
 from std.collections.string.string_span import get_static_string
-from std.format._utils import _WriteBufferHeap, _WriteBufferStack
+from std.format._utils import _FixedWriteBuffer, _FlushingWriteBuffer
 from std.sys import _libc as libc
 from std.ffi import (
     c_char,
@@ -298,7 +298,7 @@ def _printf[
     elif is_apple_gpu():
         # Apple GPU: format the template string and write to the shared
         # print buffer. Metal doesn't support printf-style variadic args.
-        var buf = _WriteBufferHeap()
+        var buf = _FixedWriteBuffer()
         buf.write_string(fmt)
         var cstr = buf.nul_terminate()
         _metal_print_write(
@@ -410,7 +410,7 @@ def print[
     ]()  # satisfy _write_to where clause.
 
     if __is_run_in_comptime_interpreter:
-        var buffer = _WriteBufferStack(file)
+        var buffer = _FlushingWriteBuffer(file)
         values._write_to(buffer, sep=sep, end=end)
 
         buffer.flush()
@@ -420,7 +420,7 @@ def print[
         return
 
     comptime if CurrentPlugin.print_emit_fn:
-        var buffer = _WriteBufferHeap()
+        var buffer = _FixedWriteBuffer()
         values._write_to(buffer, sep=sep, end=end)
 
         var cstr = buffer.nul_terminate()
@@ -430,7 +430,7 @@ def print[
         # FIXME: The origin param of `_emit` should be inferred from `cstr`.
         _emit[origin_of(buffer).unsafe_mut_cast[False]()](cstr, file)
     elif is_gpu():
-        var buffer = _WriteBufferHeap()
+        var buffer = _FixedWriteBuffer()
         values._write_to(buffer, sep=sep, end=end)
 
         var cstr = buffer.nul_terminate()
@@ -451,7 +451,7 @@ def print[
                 operation=__get_current_function_name()
             ]()
     else:
-        var buffer = _WriteBufferStack(file)
+        var buffer = _FlushingWriteBuffer(file)
         values._write_to(buffer, sep=sep, end=end)
 
         buffer.flush()

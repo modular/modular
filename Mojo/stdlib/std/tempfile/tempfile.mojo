@@ -27,7 +27,7 @@ from std.tempfile import gettempdir
 """
 
 import std.os
-from std.format._utils import _WriteBufferStack
+from std.format._utils import _FlushingWriteBuffer
 from std.pathlib import Path
 from std.sys import CompilationTarget
 from std.random import random_ui64
@@ -583,7 +583,7 @@ struct NamedTemporaryFile(Movable):
         ```
         """
         var file = FileDescriptor(self._file_handle._get_raw_fd())
-        var buffer = _WriteBufferStack(file)
+        var buffer = _FlushingWriteBuffer(file)
 
         comptime for i in range(args.__len__()):
             args[i].write_to(buffer)

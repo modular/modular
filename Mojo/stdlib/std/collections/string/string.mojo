@@ -31,9 +31,9 @@ from std.hashlib.hasher import Hasher
 from std.reflection import call_location
 from std.format.tstring import TString
 from std.format._utils import (
-    STACK_BUFFER_BYTES,
+    FLUSHING_WRITE_BUFFER_BYTES,
     _TotalWritableBytes,
-    _WriteBufferStack,
+    _FlushingWriteBuffer,
 )
 from std.os import PathLike, abort
 from std.atomic import Atomic, Ordering, fence
@@ -503,7 +503,7 @@ struct String(
             args._write_to(self, end=end, sep=sep)
         else:
             self = String(capacity_bytes=total_bytes.size)
-            var buffer = _WriteBufferStack[STACK_BUFFER_BYTES](self)
+            var buffer = _FlushingWriteBuffer[FLUSHING_WRITE_BUFFER_BYTES](self)
             args._write_to(buffer, end=end, sep=sep)
             buffer.flush()
 
@@ -526,7 +526,7 @@ struct String(
             args._write_to(self, sep="")
         else:
             self.reserve_bytes(total_bytes.size)
-            var buffer = _WriteBufferStack[STACK_BUFFER_BYTES](self)
+            var buffer = _FlushingWriteBuffer[FLUSHING_WRITE_BUFFER_BYTES](self)
             args._write_to(buffer, sep="")
             buffer.flush()
 

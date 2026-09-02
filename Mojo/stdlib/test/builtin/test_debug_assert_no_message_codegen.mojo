@@ -24,14 +24,14 @@
 # folds the failure path away before it reaches the IR, leaving nothing to check.
 #
 # The check names the buffer type rather than an allocation size, so it keeps
-# its meaning if the size changes. `_WriteBufferHeap` reaches the IR through the
+# its meaning if the size changes. `_FixedWriteBuffer` reaches the IR through the
 # mangled names of the writer specializations the message path instantiates.
 # `--implicit-check-not` scans the whole file; a `CHECK-NOT` directive would only
 # cover the region before the first positive match.
 
 # RUN: mkdir -p %t
 # RUN: %mojo-build-no-debug-no-assert %s -D ASSERT=all -o %t/test_debug_assert_no_message_codegen.ll --emit llvm
-# RUN: FileCheck %s --input-file=%t/test_debug_assert_no_message_codegen.ll --implicit-check-not='_WriteBufferHeap'
+# RUN: FileCheck %s --input-file=%t/test_debug_assert_no_message_codegen.ll --implicit-check-not='_FixedWriteBuffer'
 
 # The static message is emitted only on the no-message path, and the trailing
 # nul is what the reported length counts on.

@@ -20,7 +20,7 @@ intended for public use and may change without notice.
 from std.io.io import _printf
 from std.os import abort
 from std.reflection.type_info import _unqualified_type_name
-from std.sys import align_of, size_of
+from std.sys import size_of
 from std.sys.info import is_gpu
 from std.sys.defines import get_defined_int
 from std.ffi import CStringSlice
@@ -374,110 +374,96 @@ struct FormatStruct[T: Writer, o: MutOrigin](Movable):
         self._writer[].write_string(")")
 
 
-comptime HEAP_BUFFER_BYTES = get_defined_int["HEAP_BUFFER_BYTES", 2048]()
-"""How much memory to pre-allocate for the heap buffer, will abort if exceeded."""
+comptime FIXED_WRITE_BUFFER_BYTES = get_defined_int[
+    "FIXED_WRITE_BUFFER_BYTES", 2048
+]()
+"""The capacity of a `_FixedWriteBuffer`, which aborts if it is exceeded."""
 
-comptime STACK_BUFFER_BYTES = get_defined_int["STACK_BUFFER_BYTES", 4096]()
-"""The size of the stack buffer for IO operations from CPU."""
+comptime FLUSHING_WRITE_BUFFER_BYTES = get_defined_int[
+    "FLUSHING_WRITE_BUFFER_BYTES", 4096
+]()
+"""The default capacity of a `_FlushingWriteBuffer`."""
 
 
 @no_inline
-def _heap_buffer_exceeded() -> Never:
-    """Reports the heap buffer overflow and aborts.
+def _fixed_buffer_exceeded() -> Never:
+    """Reports a `_FixedWriteBuffer` overflow and aborts.
 
     Kept separate from its `@always_inline` callers (and shared between them)
     so this rarely-taken path doesn't duplicate its `_printf`/`abort` sequence
-    at every `_WriteBufferHeap` write site.
+    at every `_FixedWriteBuffer` write site.
     """
     _printf[
-        "HEAP_BUFFER_BYTES exceeded, increase with: `mojo -D"
-        " HEAP_BUFFER_BYTES=4096`\n"
+        "FIXED_WRITE_BUFFER_BYTES exceeded, increase with: `mojo -D"
+        " FIXED_WRITE_BUFFER_BYTES=4096`\n"
     ]()
     abort()
 
 
-struct _WriteBufferHeap(Writable, Writer):
-    var _data: Pointer[Byte, MutUntrackedOrigin]
+struct _FixedWriteBuffer(Writer):
+    """Accumulates a whole message contiguously, aborting if it doesn't fit.
+
+    Unlike `_FlushingWriteBuffer` this has no downstream writer, so the bytes
+    stay put until `nul_terminate()` hands them out as one C string. That is
+    what the `%s`-style sinks (GPU `printf`, plugin emitters) require, and it
+    also keeps a message from interleaving with other GPU threads' output.
+    """
+
+    var _data: Array[Byte, FIXED_WRITE_BUFFER_BYTES]
     var _pos: Int
 
     def __init__(out self):
-        comptime alignment: Int = align_of[Byte]()
-        self._data = {
-            _mlir_value = __mlir_op.`pop.stack_allocation`[
-                count=HEAP_BUFFER_BYTES.__mlir_index__(),
-                _type=type_of(self._data)._mlir_type,
-                alignment=alignment.__mlir_index__(),
-            ]()
-        }
+        self._data = {uninitialized = True}
         self._pos = 0
 
-    # TODO: Removing @always_inline causes some AMD tests to fail.
-    # This is likely because not inlining causes _WriteBufferHeap to
-    # add a conditional allocation branch which is not supported on AMD.
-    # However, when its inlined, the branch (and allocation) are removed.
-    # We should consider uses _WriteBufferStack on AMD instead.
     @always_inline
     def write_string(mut self, string: StringSlice):
         var len_bytes = string.byte_length()
-        if len_bytes + self._pos > HEAP_BUFFER_BYTES:
-            _heap_buffer_exceeded()
+        if len_bytes + self._pos > FIXED_WRITE_BUFFER_BYTES:
+            _fixed_buffer_exceeded()
         unsafe_memcpy(
-            dest=self._data.unsafe_offset(self._pos),
+            dest=self._data.unsafe_ptr().unsafe_offset(self._pos),
             src=string.as_bytes().unsafe_ptr(),
             count=len_bytes,
         )
         self._pos += len_bytes
 
-    def write_to(self, mut writer: Some[Writer]):
-        writer.write_string(
-            StringSlice(
-                unsafe_from_utf8=Span(unsafe_ptr=self._data, length=self._pos)
-            )
-        )
-
     def nul_terminate(
         mut self,
     ) -> CStringSlice[origin_of(self).unsafe_mut_cast[False]()]:
-        if self._pos + 1 > HEAP_BUFFER_BYTES:
-            _heap_buffer_exceeded()
-        self._data[unsafe_offset=self._pos] = 0
+        if self._pos + 1 > FIXED_WRITE_BUFFER_BYTES:
+            _fixed_buffer_exceeded()
+        self._data.unsafe_ptr()[unsafe_offset=self._pos] = 0
         self._pos += 1
 
         return CStringSlice(
-            unsafe_from_ptr=self._data.unsafe_bitcast[Int8]()
+            unsafe_from_ptr=self._data.unsafe_ptr()
+            .unsafe_bitcast[Int8]()
             .as_imm()
-            .unsafe_origin_cast[origin_of(self).unsafe_mut_cast[False]()]()
-        )
-
-    def as_string_slice[
-        mut: Bool, origin: Origin[mut=mut], //
-    ](ref[origin] self) -> StringSlice[origin]:
-        return StringSlice(
-            unsafe_from_utf8=Span[Byte, origin](
-                # `_data` is untracked, so handing it out under `origin` takes
-                # an explicit cast; untracked-to-named is never implicit.
-                unsafe_ptr=self._data.unsafe_mut_cast[mut]().unsafe_origin_cast[
-                    origin
-                ](),
-                length=self._pos,
-            )
+            .unsafe_origin_cast[ImmOrigin(origin_of(self))]()
         )
 
 
-struct _WriteBufferStack[
+struct _FlushingWriteBuffer[
     origin: MutOrigin,
     W: Writer,
     //,
-    stack_buffer_bytes: Int = STACK_BUFFER_BYTES,
+    capacity_bytes: Int = FLUSHING_WRITE_BUFFER_BYTES,
 ](Writer):
-    var data: Array[UInt8, Int(Self.stack_buffer_bytes)]
+    """Batches small writes to a downstream writer, flushing when it fills up.
+
+    This handles output of any size, but the bytes leave in chunks, so callers
+    that need the whole message contiguous want `_FixedWriteBuffer` instead.
+    `flush()` is not automatic; the last write must be followed by one or the
+    tail of the output is dropped.
+    """
+
+    var data: Array[UInt8, Self.capacity_bytes]
     var pos: Int
     var writer: Pointer[Self.W, Self.origin]
 
     def __init__(out self, ref[Self.origin] writer: Self.W):
-        self.data = Array[UInt8, Int(Self.stack_buffer_bytes)](
-            uninitialized=True
-        )
+        self.data = {uninitialized = True}
         self.pos = 0
         self.writer = Pointer(to=writer)
 
@@ -494,12 +480,12 @@ struct _WriteBufferStack[
     def write_string(mut self, string: StringSlice):
         var len_bytes = string.byte_length()
         # If span is too large to fit in buffer, write directly and return
-        if len_bytes > Int(Self.stack_buffer_bytes):
+        if len_bytes > Int(Self.capacity_bytes):
             self.flush()
             self.writer[].write_string(string)
             return
         # If buffer would overflow, flush writer and reset pos to 0.
-        elif self.pos + len_bytes > Int(Self.stack_buffer_bytes):
+        elif self.pos + len_bytes > Self.capacity_bytes:
             self.flush()
         # Continue writing to buffer
         unsafe_memcpy(

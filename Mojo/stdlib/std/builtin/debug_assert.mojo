@@ -16,7 +16,7 @@ These are Mojo built-ins, so you don't need to import them.
 """
 
 from std._plugin import CurrentPlugin
-from std.format._utils import _WriteBufferHeap
+from std.format._utils import _FixedWriteBuffer
 from std.io.io import _printf
 from std.os import abort
 from std.sys import (
@@ -102,7 +102,7 @@ def _debug_assert_fail[*Ts: Writable](*messages: *Ts, location: SourceLocation):
             _NO_MESSAGE.ptr(), _NO_MESSAGE.byte_length() + 1, location
         )
     else:
-        var message = _WriteBufferHeap()
+        var message = _FixedWriteBuffer()
 
         comptime for i in range(messages.__len__()):
             messages[i].write_to(message)
