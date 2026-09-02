@@ -160,6 +160,46 @@ PRIVATE_RECIPE_MODELS = frozenset({"MiniMaxAI/MiniMax-M3-MXFP8__mtp"})
 MODELS: Mapping[str, set[str]] = {**HF_MODELS, **CUSTOM_MODELS}
 # fmt: on
 
+NIGHTLY_MODELS = frozenset(
+    {
+        "google/diffusiongemma-26B-A4B-it",
+        "google/gemma-4-12B-it__dspark",
+        "google/gemma-4-26B-A4B-it",
+        "google/gemma-4-26B-A4B-it__tuned",
+        "google/gemma-4-31B-it",
+        "google/gemma-4-31B-it__tuned",
+        "nvidia/Gemma-4-26B-A4B-NVFP4",
+        "nvidia/Gemma-4-26B-A4B-NVFP4__tuned",
+        "nvidia/Gemma-4-31B-IT-NVFP4",
+        "nvidia/Gemma-4-31B-IT-NVFP4__tuned",
+        "nvidia/diffusiongemma-26B-A4B-it-NVFP4",
+        "MiniMaxAI/MiniMax-M3-MXFP8",
+        "MiniMaxAI/MiniMax-M3-MXFP8__mtp",
+        "amd/MiniMax-M3-MXFP4",
+        "modularai/MiniMax-M3-MXFP6",
+        "nvidia/GLM-5.2-NVFP4__mtp_tpep",
+        "amd/Kimi-K2.7-Code-MXFP4",
+        "nvidia/Kimi-K2.7-Code-NVFP4",
+    }
+)
+
+TIERS = ("nightly", "all")
+
+
+def tier_models(tier: str) -> list[str]:
+    """Lists the models a tier schedules, before framework/GPU exclusions.
+
+    Args:
+        tier: Either ``"nightly"`` for the deployed families or ``"all"`` for
+            every entry in ``MODELS``.
+
+    Returns:
+        The model keys the tier covers.
+    """
+    if tier == "all":
+        return list(MODELS)
+    return [model for model in MODELS if model in NIGHTLY_MODELS]
+
 
 def excluded(framework: str, gpu: str, model: str) -> bool:
     """Check if a model is excluded from a given framework and/or GPU."""
@@ -191,6 +231,13 @@ def parse_override(raw: str | None) -> list[str]:
     default=None,
     help="Comma list of models; skips exclusions.",
 )
+@click.option(
+    "--tier",
+    type=click.Choice(TIERS),
+    default="all",
+    show_default=True,
+    help="Model set: 'nightly' for the deployed families, 'all' for every model.",
+)
 @click.option("--run-on-b200", is_flag=True)
 @click.option("--run-on-mi355", is_flag=True)
 @click.option("--run-on-2xb200", is_flag=True)
@@ -201,6 +248,7 @@ def parse_override(raw: str | None) -> list[str]:
 def main(
     framework: str,
     models_override: str | None,
+    tier: str,
     run_on_b200: bool,
     run_on_mi355: bool,
     run_on_2xb200: bool,
@@ -219,7 +267,7 @@ def main(
         "8xMI355": run_on_8xmi355,
     }
     gpus = [gpu for gpu, ok in flags.items() if ok]
-    models = parse_override(models_override) or list(MODELS)
+    models = parse_override(models_override) or tier_models(tier)
     ignore_exclusions = models_override is not None
 
     job = []
