@@ -168,20 +168,16 @@ public:
   ///   - `yes`     the conversion is free (including shedding generator body
   ///               constraints that `declScope` proves).
   ///   - `no`      the representations differ, or a generator body constraint
-  ///               is unprovable or refuted in `declScope`.
+  ///               is refuted in `declScope`.
+  ///   - `unknown` a generator body constraint is unprovable in `declScope`.
   ///
   /// `declScope` supplies the `where` assumptions used to discharge generator
   /// body constraints; `additionalAssumptions` are extra facts to consider
   /// alongside it.
-  ///
-  /// When `failure` is non-null and the verdict is `unknown`, it receives the
-  /// body constraints that lacked evidence, so a caller needing to name them
-  /// does not have to repeat the discharge.
   static TriState
   canZeroCostConvert(ASTType fromType, ASTType toType, SharedState &shared,
                      ASTDecl &declScope,
-                     ArrayRef<ConstraintAttr> additionalAssumptions = {},
-                     ConversionFailure *failure = nullptr);
+                     ArrayRef<ConstraintAttr> additionalAssumptions = {});
 
   /// Same as the above, using this emitter's shared state and scope.
   TriState
