@@ -679,7 +679,8 @@ struct _DLHandle(Boolable, ImplicitlyCopyable, RegisterPassable):
             using `OwnedDLHandle` which automatically manages the library
             lifetime.
         """
-        _ = dlclose(self.handle)
+        if self.handle:
+            _ = dlclose(self.handle)
         self.handle = {}
 
     def __bool__(self) -> Bool:
