@@ -406,6 +406,8 @@ def get_server_cmd(
         "auto",
         "--limit-mm-per-prompt.video",
         "0",
+        "--limit-mm-per-prompt.audio",
+        "0",
     ]
     # vLLM's KV cache sizing misses Inkling's mamba conv cache and OOMs.
     if "inkling" in model.casefold():
