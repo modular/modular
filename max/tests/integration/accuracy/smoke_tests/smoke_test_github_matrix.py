@@ -147,6 +147,7 @@ CUSTOM_MODELS: Mapping[str, set[str]] = {
     "nvidia/Gemma-4-31B-IT-NVFP4__tuned": MULTI | {"MI355"},
     "meta-llama/Llama-3.1-8B-Instruct__rust_tiered_kvconnector": MULTI | {"MI355"},
     "nvidia/GLM-5.2-NVFP4__mtp_tpep": NON_XL | AMD_XL,
+    "RadixArk/GLM-5.3-NVFP4__mtp_tpep": NON_XL | AMD_XL,
     "thinkingmachines/Inkling-Small-NVFP4__mtp": B200_2X_ONLY,
     "MiniMaxAI/MiniMax-M3-MXFP8__mtp": B200_8X_ONLY | {"max"},
 }
