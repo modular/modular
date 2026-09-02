@@ -904,6 +904,7 @@ the [container](/container) page now links to the new page.
   kernel generates from a per-row seed. This enables sampling a speculative
   decoding rejection residual `max(p_target - q_draft, 0)` that the caller
   builds in graph ops. GPU-only, non-Apple.
+- Improved wide-row FP32 Gumbel sampling performance on AMD GPUs.
 - Retuned the MI355X dispatch table for a grouped block-scaled MoE
   matmul (gate-up and down projections) at the estimated-total-M > 2048
   band that real serving traffic hits, plus the down projection's
