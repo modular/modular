@@ -239,25 +239,39 @@ ensure_checkout() {
 detect_model() {
   if [[ -n "$model" ]]; then return; fi
   echo "[exacto] auto-detecting served model from $url/v1/models"
-  # Copy the id verbatim: MAX serve matches the OpenAI `model` field by exact
-  # string equality, so a reconstructed name 400s every request.
-  model="$(curl -sf -H "Authorization: Bearer ${api_key:-dummy}" \
+  local ids count
+  ids="$(curl -sf -m 30 -H "Authorization: Bearer ${api_key:-dummy}" \
     "$url/v1/models" | vpy -c '
 import json, sys
 data = json.load(sys.stdin).get("data") or []
-if not data:
-    sys.exit("no models returned")
-print(data[0]["id"])
-')"
-  if [[ -z "$model" ]]; then
+print("\n".join(str(m.get("id")) for m in data if m.get("id")))
+' 2>/dev/null || true)"
+  count="$(printf '%s' "$ids" | grep -c . || true)"
+  if [[ "${count:-0}" -eq 0 ]]; then
     cat >&2 <<MSG
 ERROR: could not auto-detect a model from $url/v1/models.
 
-       A mach engine behind the Mammoth orchestrator returns an empty model
-       list, so this is expected there: pass --model with the served name.
+       The list came back empty, which has two usual causes: the credential
+       is missing or rejected (the endpoint 401s and the list reads empty),
+       or this is a mach engine behind the Mammoth orchestrator, which never
+       populates the list. Either way, pass --model with the served name.
 MSG
     exit 1
   fi
+  if [[ "$count" -gt 1 ]]; then
+    # A multi-model gateway lists everything it fronts, in no useful order.
+    # Guessing the first entry once picked an image-generation model and the
+    # whole run 404'd, so refuse and make the caller choose.
+    {
+      echo "ERROR: $url/v1/models lists $count models, so there is nothing to"
+      echo "       auto-detect. Pass --model with one of:"
+      printf '%s\n' "$ids" | sed 's/^/         /'
+    } >&2
+    exit 1
+  fi
+  # Copy the id verbatim: MAX serve matches the OpenAI `model` field by exact
+  # string equality, so a reconstructed name 400s every request.
+  model="$ids"
   echo "[exacto] model: $model"
 }
 
