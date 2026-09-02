@@ -309,6 +309,7 @@ private:
                             ASTType selfTypeOverride = {});
   struct DevicePassablePopulators {
     llvm::function_ref<FailureOr<SymbolConstantAttr>(FnOp)> isConvertible;
+    llvm::function_ref<FailureOr<SymbolConstantAttr>(FnOp)> isEncodable;
     llvm::function_ref<FailureOr<SymbolConstantAttr>(FnOp)> toDeviceType;
     llvm::function_ref<FailureOr<SymbolConstantAttr>(FnOp)> typeName;
     llvm::function_ref<TypedAttr()> deviceType;

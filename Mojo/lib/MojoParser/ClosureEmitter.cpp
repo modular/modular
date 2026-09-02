@@ -27,6 +27,7 @@
 #include "Signatures.h"
 #include "SpecializeInf.h"
 #include "Traits.h"
+#include "mlir/IR/IRMapping.h"
 
 #include "Mojo/HLCFDialect/HLCFOps.h"
 #include "Mojo/Interpreter/InterpreterAttrs.h"
@@ -60,6 +61,8 @@ namespace {
 static constexpr char kToDeviceType[] = "_to_device_type";
 static constexpr char kIsDeviceTypeConvertible[] =
     "_is_convertible_to_device_type";
+static constexpr char kIsImplicitlyEncodableTo[] =
+    "_is_implicitly_encodable_to";
 static constexpr char kDeviceType[] = "device_type";
 
 static bool usesClosurePipeline(FnOp fn) {
@@ -4254,6 +4257,32 @@ static void emitIsConvertibleToDeviceTypeBody(
   IREmitter::emitNormalReturn(b, isConvertibleValue);
 }
 
+// TODO: replace clone with witness entry that binds self parameter once self
+// parameter of traits becomes function level.
+static void cloneTraitDefaultBody(FnOp implementation, FnOp traitFn,
+                                  ASTDecl &structDecl) {
+  implementation.getBodyRegion().getBlocks().clear();
+  IRMapping mapping;
+  traitFn.getBodyRegion().cloneInto(&implementation.getBodyRegion(), mapping);
+
+  ASTType selfType = structDecl.getTypeDeclSelf();
+  mlir::AttrTypeReplacer replacer;
+  replacer.addReplacement([&](GetWitnessAttr getWitness) -> TypedAttr {
+    SmallString<64> buf;
+    llvm::raw_svector_ostream os(buf);
+    getWitness.getTypeValue().print(os);
+    if (!StringRef(buf).contains("_Self"))
+      return getWitness;
+    return GetWitnessAttr::get(PValue(selfType), getWitness.getTraitSymbol(),
+                               getWitness.getWitnessName(),
+                               getWitness.getType());
+  });
+  implementation.walk([&](Operation *op) {
+    replacer.replaceElementsIn(op, /*replaceAttrs=*/true,
+                               /*replaceLocs=*/false, /*replaceUses=*/false);
+  });
+}
+
 static AliasDeclOp getDeviceTypeAlias(SharedState &shared, llvm::SMLoc loc) {
   ASTDecl *devicePassableTrait = shared.getBuiltinDevicePassableTrait(loc);
   assert(devicePassableTrait && "DevicePassable trait should be present");
@@ -4297,6 +4326,8 @@ void ClosureEmitter::addConformanceToDevicePassable(
           [&]() -> FailureOr<SymbolConstantAttr> {
         if (function.getSourceName() == kIsDeviceTypeConvertible)
           return populators.isConvertible(function);
+        if (function.getSourceName() == kIsImplicitlyEncodableTo)
+          return populators.isEncodable(function);
         if (function.getSourceName() == kToDeviceType)
           return populators.toDeviceType(function);
         if (function.getIsStatic() &&
@@ -4355,6 +4386,14 @@ void ClosureEmitter::addStorageConformanceToDevicePassable(
                                       deviceTypeValue);
     return buildSymbol(implementation, structDeclOp.getInputParams());
   };
+  auto populateIsEncodable =
+      [&](FnOp function) -> FailureOr<SymbolConstantAttr> {
+    auto [implementation, parameters, result] = pushBackTraitFunctionImpl(
+        function, structDecl, /*synthetic=*/true, /*customName=*/{},
+        /*redirectWitnessToImplParam=*/false);
+    cloneTraitDefaultBody(implementation, function, structDecl);
+    return buildSymbol(implementation, structDeclOp.getInputParams());
+  };
   auto populateToDeviceType =
       [&](FnOp function) -> FailureOr<SymbolConstantAttr> {
     auto [toDevice, params, result] = pushBackTraitFunctionImpl(
@@ -4409,8 +4448,8 @@ void ClosureEmitter::addStorageConformanceToDevicePassable(
     return deviceTypeValue;
   };
   DevicePassablePopulators populators{populateIsConvertible,
-                                      populateToDeviceType, populateTypeName,
-                                      populateDeviceType};
+                                      populateIsEncodable, populateToDeviceType,
+                                      populateTypeName, populateDeviceType};
   addConformanceToDevicePassable(structDecl, populators);
 }
 

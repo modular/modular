@@ -35,6 +35,49 @@ trait DevicePassable:
         else:
             return SrcT == Self.device_type
 
+    @staticmethod
+    def _is_implicitly_encodable_to[SrcT: AnyType]() -> Bool:
+        """Returns whether this type can occupy a kernel argument declared as `SrcT`.
+
+        Convertibility (`SrcT` is the leaf `device_type`) is sufficient.
+        Otherwise, if `SrcT` and `Self.device_type` are structs with the same
+        field count, each host field is checked with
+        `SrcT.Field[i]._is_implicitly_encodable_to[device_type.Field[i]]()`.
+        `encode()` keeps using convertibility.
+
+        Parameters:
+            SrcT: The kernel's declared argument type.
+
+        Returns:
+            True if this type can occupy a kernel argument declared as `SrcT`.
+        """
+        comptime if Self._is_convertible_to_device_type[SrcT]():
+            return True
+
+        comptime src = reflect[SrcT]
+        comptime dev = reflect[Self.device_type]
+        comptime if not src.is_struct() or not dev.is_struct():
+            return False
+        comptime if (
+            src.field_count() != dev.field_count() or src.field_count() == 0
+        ):
+            return False
+
+        comptime src_fields = src.field_types()
+        comptime dev_fields = dev.field_types()
+        comptime for i in range(src.field_count()):
+            comptime FieldT = src_fields[i]
+            comptime DeviceFieldT = dev_fields[i]
+            comptime if conforms_to(FieldT, DevicePassable):
+                comptime if not FieldT._is_implicitly_encodable_to[
+                    DeviceFieldT
+                ]():
+                    return False
+            else:
+                comptime if FieldT != DeviceFieldT:
+                    return False
+        return True
+
     def _to_device_type(
         self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
     ):
