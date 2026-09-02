@@ -219,8 +219,13 @@ def _cluster_cutoff_search[
         var lo_bits = max(low, Float32(0)).to_bits[.uint32]()
         var hi_bits = max(high, Float32(0)).to_bits[.uint32]()
         var span = hi_bits - lo_bits
-        var pivot_0 = bitcast[.float32](lo_bits + span // 3)
-        var pivot_1 = bitcast[.float32](lo_bits + 2 * (span // 3))
+        # A span below three bits can round both pivots down to `low` and
+        # stall the search.
+        var third = span // 3
+        var off_0 = max(third, UInt32(1))
+        var off_1 = max(2 * third, off_0 + 1)
+        var pivot_0 = bitcast[.float32](lo_bits + off_0)
+        var pivot_1 = bitcast[.float32](lo_bits + off_1)
 
         # Accumulate thread-local counts/masses across the slice. The
         # accumulators stay scalar on purpose: at block_size 1024 only 64
