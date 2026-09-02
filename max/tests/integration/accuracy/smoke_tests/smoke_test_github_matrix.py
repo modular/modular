@@ -135,6 +135,9 @@ CUSTOM_MODELS: Mapping[str, set[str]] = {
     "meta-llama/Llama-3.1-8B-Instruct__dflash": MULTI,
     "nvidia/DeepSeek-V3.1-NVFP4__mtp": NON_XL | AMD_XL,
     "nvidia/DeepSeek-V3.1-NVFP4__mtp_tpep": NON_XL | AMD_XL,
+    # The experimental_device_graph_synthesis flag is not in a released MAX yet, so
+    # max-ci only. Synthesis is single-device (first cut), hence MULTI.
+    "google/gemma-4-12B-it__device_graph_synthesis": MULTI | {"max"},
     # DSpark arch is not in a released MAX yet, so max-ci only.
     "google/gemma-4-12B-it__dspark": MULTI | {"max"},
     # Tuned recipes use an FP8 KV cache that does not support MI355.

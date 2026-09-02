@@ -181,6 +181,7 @@ from ..interfaces import (
     PipelineModelWithKVCache,
     UnifiedEagleOutputs,
 )
+from ..synthesis_bucket_aligner import SynthesisBucketAligner
 from ..utils import CompilationTimer
 from ..vision_encoder_cache import VideoEncoderMetrics, VisionEncoderMetrics
 
@@ -2016,6 +2017,8 @@ class OverlapTextGenerationPipeline(
         self._graph_capture_runner: ServeGraphCaptureRunner | None = None
         # set a default graph capture size, 128
         self._max_graph_capture_batch_size: int = _MAX_GRAPH_CAPTURE_BATCH_SIZE
+        # Cache-length bucket aligner for the device-graph-synthesis pathway.
+        self._synthesis_aligner: SynthesisBucketAligner | None = None
 
         # Fold greedy token selection (argmax) into the captured forward graph
         # so all-greedy decode batches materialize the sampled token during the
@@ -2435,6 +2438,32 @@ class OverlapTextGenerationPipeline(
         graph_capture_runner.warmup_pre_ready()
         logger.info("Completed serve device graph capture warmup.")
 
+    def prepare_graph_synthesis_buckets(self) -> None:
+        """Builds the device-graph-synthesis cache-length bucket aligner.
+
+        Synthesis records into a device graph lazily inside ``execute`` (no
+        pre-capture warmup like graph capture), so this only fixes the
+        cache-length boundaries the runtime cache length snaps up to. The
+        boundaries reuse the KV-cache probe-length policy from graph capture,
+        keeping dispatch-metadata buffer contents stable across consecutive
+        decode steps so the driver ``DeviceGraphCache`` hits instead of
+        rebuilding each step (a ~3.3x decode cost without this).
+        """
+        num_speculative_tokens = (
+            self._spec_decode_state.num_speculative_tokens
+            if self._spec_decode_state is not None
+            else 0
+        )
+        self._synthesis_aligner = SynthesisBucketAligner(
+            kv_params=self._kv_manager.params,
+            max_cache_length_upper_bound=self._effective_max_cache_length,
+            num_speculative_tokens=num_speculative_tokens,
+        )
+        logger.info(
+            "Prepared device-graph-synthesis cache-length buckets: %s",
+            self._synthesis_aligner.recorded_cache_lengths,
+        )
+
     def _build_spec_decode_sampling_buffers(
         self,
         context_batch: list[TextGenerationContextType],
@@ -2671,6 +2700,13 @@ class OverlapTextGenerationPipeline(
             and batch_per_rank <= self._max_graph_capture_batch_size
             and (draft_tokens is None or num_draft_tokens_to_verify > 0)
         )
+        # The device graph synthesis version of `use_graph_capture_replay`.
+        use_graph_synthesis = (
+            self._synthesis_aligner is not None
+            and bool(inputs)
+            and inputs.batch_type == BatchType.TG
+            and (draft_tokens is None or num_draft_tokens_to_verify > 0)
+        )
         debug_verify_replay_enabled = (
             use_graph_capture_replay
             and self._pipeline_config.debug_verify_replay
@@ -2692,6 +2728,24 @@ class OverlapTextGenerationPipeline(
             kv_cache_inputs = self._kv_manager.runtime_inputs(
                 inputs.batches,
                 max_cache_length=self._graph_capture_runner._max_cache_length_upper_bound,
+                batch_characteristics=aligned_characteristics,
+            )
+        elif use_graph_synthesis:
+            assert self._synthesis_aligner is not None
+            # Mirror the use_graph_capture_replay path, substituting the
+            # ServeGraphCaptureRunner for the SynthesisBucketAligner.
+
+            # Align the batch's real (upper-bound) shape to a captured graph,
+            # then prepare dispatch metadata once for the aligned cache length.
+            # The caching infrastructure in the graph synthesis workflow
+            # automatically re-uses the correct device graph.
+            real_characteristics = self._replay_batch_characteristics(inputs)
+            aligned_characteristics = self._synthesis_aligner.align(
+                real_characteristics
+            )
+            kv_cache_inputs = self._kv_manager.runtime_inputs(
+                inputs.batches,
+                max_cache_length=self._synthesis_aligner.max_cache_length_upper_bound,
                 batch_characteristics=aligned_characteristics,
             )
         else:
