@@ -14,14 +14,15 @@
 
 Extracted from ``image_stress`` so the KV-saturation and hang-hunt scenarios
 reuse one liveness probe rather than each growing their own. Every image
-scenario needs the same three things: production-shaped batch sizes, the
-window the deployment actually serves, and a canary that can tell a wedged
-engine from a slow one.
+scenario needs the same four things: production-shaped batch sizes, the
+window the deployment actually serves, a canary that can tell a wedged engine
+from a slow one, and one grader that decides what a batch of failures means.
 """
 
 from __future__ import annotations
 
 import asyncio
+import collections
 import dataclasses
 import json
 import time
@@ -58,6 +59,19 @@ HEAVY_TIMEOUT_SEC = 300.0
 # MiniMax-M3-MXFP4; rounded up so a template change does not push the
 # "largest legal payload" case over the window it was sized against.
 PAYLOAD_OVERHEAD_TOKENS = 512
+
+# Share of failed requests that stops being incidental. Well above the
+# background rate a long run collects from the network path in front of the
+# deployment, and far below the near-total loss a wedged pod produces, so
+# neither reading is a judgement call. Failures at or under this rate are
+# reported, never hidden -- they just do not get to claim the hang.
+MASS_FAILURE_RATE = 0.10
+
+# Dropped connections only count toward that rate once there are two of them.
+# One is the background rate of the network path in front of the deployment
+# (CENG-1050), and in a two-request rung it is 50% -- enough to fail a healthy
+# ramp on arithmetic alone. It is still reported, just not charged.
+MIN_CHARGED_DROPS = 2
 
 
 def unique_parts(
@@ -245,3 +259,156 @@ def probe_result(
         verdict=Verdict.PASS,
         detail=probe.summary(),
     )
+
+
+@dataclasses.dataclass
+class BatchTally:
+    """Running counts over one or more batches of responses.
+
+    Accumulates rather than grading each batch alone, because the soak sends
+    batches for its whole duration and the verdict is about the run.
+    """
+
+    total: int = 0
+    ok: int = 0
+    client_errors: int = 0
+    timeouts: int = 0
+    server_errors: int = 0
+    dropped: int = 0
+    # Statuses no bucket claims -- a 3xx from a proxy, say. Not a failure, but
+    # not a pass either, so it is counted rather than dropped on the floor.
+    other: int = 0
+    # What the failures actually were. A long run collects the occasional
+    # connection reset, and a bare count cannot be told apart from the hang
+    # without re-running the whole phase.
+    causes: collections.Counter[str] = dataclasses.field(
+        default_factory=collections.Counter
+    )
+
+    def add(self, responses: list[Any]) -> BatchTally:
+        # A timeout and a dropped connection both surface as status 0, so the
+        # buckets are kept disjoint -- counting `status == 0` as a server error
+        # as well would report every timeout twice and make the tally read as
+        # though two separate things went wrong.
+        for resp in responses:
+            self.total += 1
+            if resp.status == 200:
+                self.ok += 1
+                continue
+            if resp.error == "TIMEOUT":
+                self.timeouts += 1
+            elif resp.status >= 500:
+                self.server_errors += 1
+            elif resp.status == 0:
+                self.dropped += 1
+            elif 400 <= resp.status < 500:
+                self.client_errors += 1
+            else:
+                self.other += 1
+            self.causes[(resp.error or f"status {resp.status}")[:80]] += 1
+        return self
+
+    @property
+    def failures(self) -> int:
+        """Responses consistent with a hang or a crash. A 4xx is neither."""
+        return self.timeouts + self.server_errors + self.dropped
+
+    @property
+    def failure_rate(self) -> float:
+        return self.failures / self.total if self.total else 0.0
+
+    @property
+    def mass_failure(self) -> bool:
+        """Whether too much of the batch failed to read as incidental."""
+        charged = self.timeouts + self.server_errors
+        if self.dropped >= MIN_CHARGED_DROPS:
+            charged += self.dropped
+        return bool(self.total) and charged / self.total > MASS_FAILURE_RATE
+
+    def summary(self) -> str:
+        return (
+            f"{self.ok}/{self.total} ok, {self.client_errors} 4xx, "
+            f"{self.server_errors} 5xx, {self.timeouts} timeouts, "
+            f"{self.dropped} dropped"
+            + (f", {self.other} other" if self.other else "")
+        )
+
+    def cause_breakdown(self) -> str:
+        return ", ".join(
+            f"{count}x {cause}" for cause, count in self.causes.most_common(4)
+        )
+
+
+def failure_verdict(
+    scenario: str,
+    test: str,
+    tally: BatchTally,
+    config: RunConfig,
+    *,
+    context: str,
+    probe: LivenessProbe | None = None,
+) -> ScenarioResult | None:
+    """Grades the failure axis of a batch, or ``None`` if nothing failed.
+
+    These scenarios hunt a deadlock: the pod stops completing anything until
+    it is restarted. The probe measures that directly, on its own connection
+    pool, so it decides the verdict. The request tally cannot -- a long run at
+    high concurrency collects the occasional connection reset from the network
+    path in front of the deployment, and CENG-1050 saw two of those in 4448
+    requests report a hang against a server whose worst stall was 1s.
+
+    So a stall fails on the probe's evidence, a mass failure fails under its
+    own cause, and anything smaller is reported with that cause rather than
+    dressed up as the deadlock. Whether a *clean* batch passes is the caller's
+    call -- only it knows what a 4xx means for its axis -- hence ``None``.
+
+    The probe's other two states (never ran, majority failing) belong to
+    ``probe_result``; every caller passing a probe emits one.
+    """
+    breakdown = tally.cause_breakdown()
+    threshold = stall_threshold(config)
+
+    if probe is not None and probe.max_gap_sec > threshold:
+        return ScenarioResult(
+            scenario_name=scenario,
+            test_name=test,
+            verdict=Verdict.FAIL,
+            detail=(
+                f"{tally.summary()} -- the server stopped completing "
+                f"requests for {probe.max_gap_sec:.0f}s (threshold "
+                f"{threshold:.0f}s) ({context})"
+                + (f" -- failures: {breakdown}" if breakdown else "")
+            ),
+        )
+
+    # Reported by cause rather than as the hang, so a run that lost this share
+    # of requests without ever wedging still fails -- under what it actually
+    # was -- instead of being filed against a bug the probe just cleared.
+    stayed_live = (
+        f", no stall past {threshold:.0f}s ({probe.summary()})"
+        if probe is not None
+        else ""
+    )
+    if tally.mass_failure:
+        return ScenarioResult(
+            scenario_name=scenario,
+            test_name=test,
+            verdict=Verdict.FAIL,
+            detail=(
+                f"{tally.failure_rate:.0%} of requests failed{stayed_live}: "
+                f"{breakdown} -- {tally.summary()} ({context})"
+            ),
+        )
+    if tally.failures:
+        return ScenarioResult(
+            scenario_name=scenario,
+            test_name=test,
+            verdict=Verdict.INTERESTING,
+            detail=(
+                f"{tally.failures} of {tally.total} requests failed "
+                f"({tally.failure_rate:.2%}){stayed_live}, so these read as "
+                f"incidental rather than the hang: {breakdown} -- "
+                f"{tally.summary()} ({context})"
+            ),
+        )
+    return None

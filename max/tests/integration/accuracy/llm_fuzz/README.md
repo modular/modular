@@ -213,6 +213,26 @@ traffic it is measuring). The probe reports the longest interval in which the
 server completed no trivial request — the signal a hang produces and a
 per-request timeout does not.
 
+That probe, not the request tally, decides whether a phase failed. Failed
+requests on their own are not specific enough: a long run at high concurrency
+collects the occasional connection reset from the network path in front of the
+deployment, and failing on one of those reports a hang against a server that
+never stopped answering. So a stall past the threshold fails on the probe's
+evidence — the pod stopped answering, whether it wedged or died — more than
+10% of requests failing without a stall fails under its own cause, and
+anything smaller is reported as INTERESTING with the cause named.
+
+The axes that send a single request (`single_max_image`, `max_image_count`,
+`max_total_image_tokens`, and the two over-limit cases) have no rate to reason
+about, so they re-send once when the connection drops and fail only if the
+retry drops too — a reset does not survive a retry, a pod that stopped
+answering fails both. `chunk_boundary_straddle` and `skewed_aspect_ratios`
+send small batches with no probe and no retry, and are graded by rate like the
+concurrency phases; because a lone dropped connection would be 20–25% of such
+a batch, drops only count toward the rate once there are two. The health check
+closing the scenario makes up to three attempts before reporting the engine
+wedged.
+
 ### Vision KV saturation (MiniMax-M3)
 
 ```bash
