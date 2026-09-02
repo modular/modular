@@ -259,6 +259,19 @@ class PipelineRuntimeConfig(ConfigFileModel):
         ),
     )
 
+    experimental_device_graph_synthesis: bool = Field(
+        default=False,
+        description=(
+            "Compile model graphs with device-graph synthesis: the compiled "
+            "model constructs a device graph directly and executes it on "
+            "model forward passes. This is an experimental alternative to the "
+            "capture/replay workflow. Honored only by "
+            "architectures that opt in, and mutually exclusive with "
+            "``device_graph_capture``. "
+            "Use ``--experimental-device-graph-synthesis`` to enable."
+        ),
+    )
+
     fold_sampler_into_graph: bool = Field(
         default=True,
         description=(

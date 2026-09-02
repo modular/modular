@@ -256,6 +256,12 @@ the [container](/container) page now links to the new page.
   `dependentSchemas` is now anchored to an object, as one under `properties`
   already was. Such a subschema previously compiled to a grammar admitting an
   unbounded value, letting a looping model run to `max_length`.
+- Added the experimental `--experimental-device-graph-synthesis` flag
+  (`PipelineRuntimeConfig.experimental_device_graph_synthesis`): compiles
+  model graphs with device-graph synthesis, so the compiled model records its
+  kernels into a device graph and replays it on execute. Honored only by
+  architectures that opt in (currently Gemma 4's language graph), and
+  mutually exclusive with `device_graph_capture`.
 - Added `max.pipelines.lib.MemoryPlan`, the result of memory planning when a
   pipeline is loaded: the effective `planned_max_length`, `max_batch_size`,
   `max_batch_total_tokens`, KV-cache budget, and device specs the pipeline
