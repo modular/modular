@@ -141,8 +141,10 @@ def build_response(
 
         # Mark done only when there is no room for even one more token. The
         # per-step commit loop is responsible for not overshooting this cap.
+        # An already-terminated request keeps its status: EOS outranks the
+        # cap, matching ``TextContext.update``'s precedence.
         current_length = context.tokens.processed_length + 1
-        if current_length >= context_max_length:
+        if current_length >= context_max_length and not context.status.is_done:
             context.status = GenerationStatus.MAXIMUM_LENGTH
 
         output = context.to_generation_output()
@@ -297,7 +299,9 @@ def update_spec_decode_context_and_prepare_responses(
 
             num_committed = i + 1
             if ctx.tokens.current_position >= context_max_length:
-                ctx.status = GenerationStatus.MAXIMUM_LENGTH
+                # Same EOS-outranks-cap precedence as build_response above.
+                if not ctx.status.is_done:
+                    ctx.status = GenerationStatus.MAXIMUM_LENGTH
                 break
 
         if track_phase:

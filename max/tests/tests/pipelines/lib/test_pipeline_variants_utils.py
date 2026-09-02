@@ -1013,3 +1013,52 @@ class TestCommittedInteriorEosTerminates:
         )
         # The truncated post-sequence token never reaches the matcher.
         assert [8] not in matcher.consumed, matcher.consumed
+
+
+class TestSpecDecodeEosOutranksLengthCap:
+    """A commit that both ends the sequence and fills the cap reports EOS.
+
+    ``TextContext.update`` gives EOS precedence over the length cap with an
+    ``if``/``elif``. The speculative commit loop applied the cap
+    unconditionally afterwards, so a request whose EOS landed exactly on its
+    last allowed position was reported ``MAXIMUM_LENGTH``. That misreports a
+    completed request as truncated, and only ever on the speculative path --
+    which is precisely the stop-vs-length signal used to compare speculative
+    decoding against plain decode.
+    """
+
+    @staticmethod
+    def _run_one_step(bonus_token: int) -> TextContext:
+        prompt_len = 10
+        max_gen_tokens = 4  # one full accept chunk: 3 drafts + bonus
+        max_length = prompt_len + max_gen_tokens
+
+        ctx = create_text_context(prompt_len=prompt_len, max_length=max_length)
+        ctx.eos_tracker.eos_token_ids = {1}
+        ctx.update_with_future_token()
+
+        update_spec_decode_context_and_prepare_responses(
+            draft_tokens=np.array([[101, 102, 103]], dtype=np.int32),
+            next_draft_tokens=np.array([[201, 202, 203]], dtype=np.int32),
+            num_accepted_draft_tokens=np.array([3], dtype=np.int32),
+            next_tokens=np.array([bonus_token], dtype=np.int32),
+            context_batch=[ctx],
+            max_seq_len=10_000,
+        )
+        assert ctx.tokens.current_position == max_length, (
+            "test must land the final commit exactly on the cap"
+        )
+        return ctx
+
+    def test_eos_on_the_final_allowed_position_reports_eos(self) -> None:
+        ctx = self._run_one_step(bonus_token=1)
+        assert ctx.status == GenerationStatus.END_OF_SEQUENCE, (
+            "a sequence that ended on EOS must not be reported as truncated "
+            "just because the EOS filled the last allowed position"
+        )
+
+    def test_non_eos_on_the_final_allowed_position_reports_max_length(
+        self,
+    ) -> None:
+        ctx = self._run_one_step(bonus_token=999)
+        assert ctx.status == GenerationStatus.MAXIMUM_LENGTH
