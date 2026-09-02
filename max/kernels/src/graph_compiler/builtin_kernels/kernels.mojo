@@ -4345,6 +4345,7 @@ struct Mamba2SSDChunkScanVarlenFwdInplace[dt_softplus: Bool = True]:
                     query_start_loc_tt.LayoutType,
                     has_initial_state_tt.LayoutType,
                     cache_indices_tt.LayoutType,
+                    x_tt.Engine,
                     DSTATE_SPLIT,
                 ]
                 var compiled = ctx.compile_function[kernel]()
