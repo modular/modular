@@ -779,8 +779,9 @@ class StructuredOutputHelper:
 
         Args:
             ctx: The request context.
-            drafts: ``[K]`` candidate draft tokens for the next batch.
-            bitmask_window: ``[K+1, packed_vocab]``, pre-initialized to
+            drafts: Candidate draft tokens for the next batch, already
+                trimmed to ``bitmask_window``'s draft slots.
+            bitmask_window: ``[len(drafts)+1, packed_vocab]``, pre-initialized to
                 ``-1`` (unconstrained). Slot 0 is the position
                 immediately after the committed tokens; slot ``i+1`` is
                 the position after consuming ``drafts[i]``. Slots stay
@@ -791,6 +792,12 @@ class StructuredOutputHelper:
         assert ctx.matcher is not None
         fsm_snap = ctx.snapshot_grammar_state()
 
+        if bitmask_window.shape[0] != drafts.shape[0] + 1:
+            raise ValueError(
+                f"bitmask window has {bitmask_window.shape[0]} slots but "
+                f"{drafts.shape[0]} drafts were passed; the window must hold "
+                "one slot per draft plus the bonus slot."
+            )
         # Speculatively consume drafts on a throwaway copy of the matcher.
         # LLMatcher.rollback() is not a perfect inverse when the consumed
         # span crosses a grammar rule/repetition boundary — e.g.
@@ -944,10 +951,14 @@ class StructuredOutputHelper:
             accepted_draft_tokens: Draft tokens verified this batch, shape [batch, K].
             num_accepted: Count of accepted draft tokens per request, shape [batch].
             bonus_tokens: Bonus (target) tokens per request, shape [batch].
-            next_draft_tokens: Draft tokens for the next batch, shape [batch, K].
+            next_draft_tokens: Draft tokens for the next batch, shape
+                [batch, K], at the configured draft depth. Trimmed to the
+                consuming step's verify width, which may be narrower.
             bitmask_out: Packed int32 bitmask output, shape
-                [len(output_context_batch), K+1, packed_vocab]. Every row is
-                reset to -1 (unconstrained) before filling.
+                [len(output_context_batch), verify_width+1, packed_vocab],
+                where ``verify_width`` is how many drafts the consuming step
+                verifies. Every row is reset to -1 (unconstrained) before
+                filling.
             output_context_batch: Requests in the consuming batch's row order.
                 Defaults to ``context_batch`` when the batch did not change.
         """
@@ -1087,9 +1098,13 @@ class StructuredOutputHelper:
                     continue
                 # A draft that flips enforcement on mid-window causes
                 # downstream slots to be constrained.
+                # The producing batch drafted the configured depth, but the
+                # consuming step may verify fewer, and the window is sized from
+                # what it verifies. Trim to the window's draft slots so a
+                # narrower consumer cannot overrun it.
                 self._speculatively_fill_bitmask_window(
                     ctx,
-                    drafts=next_draft_tokens[src],
+                    drafts=next_draft_tokens[src, : bitmask_out.shape[1] - 1],
                     bitmask_window=bitmask_out[out_idx],
                 )
 
@@ -1115,8 +1130,10 @@ class StructuredOutputHelper:
 
         Args:
             context_batch: List of generation contexts.
-            draft_tokens: Draft tokens to verify, shape [batch, K].
-            num_positions: Number of bitmask positions (K + 1, including bonus).
+            draft_tokens: Draft tokens to verify, shape
+                [batch, verify_width].
+            num_positions: Number of bitmask positions
+                (``verify_width + 1``, including bonus).
 
         Returns:
             Packed int32 bitmask array of shape

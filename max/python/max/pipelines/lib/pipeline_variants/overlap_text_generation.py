@@ -265,21 +265,28 @@ def _host_mirror_realized_drafts(
     Using ``prev_to_curr_map`` (the same scatter map the device graph uses)
     keeps this a line-for-line mirror of the device scatter.
 
+    The previous batch always drafted the configured depth, but this step may
+    verify fewer, so the source row is trimmed to the verify width exactly as
+    the device graph trims ``prev_generated_draft_tokens``. Dropping the tail
+    here rather than raising is what keeps the two mirrors in step.
+
     Args:
-        draft_tokens_np: ``[curr_batch, K]`` pre-scatter device state (the host
-            array copied to the device draft buffer before the realize scatter).
+        draft_tokens_np: ``[curr_batch, verify_width]`` pre-scatter device state
+            (the host array copied to the device draft buffer before the
+            realize scatter).
         prev_to_curr_map: ``[prev_batch]`` mapping prev-batch row -> current
             row, with ``_OOB_IDX`` for prev rows absent from the current batch.
-        prev_next_draft_tokens: ``[prev_batch, K]`` previous batch's next drafts.
+        prev_next_draft_tokens: ``[prev_batch, K]`` previous batch's next
+            drafts, at the configured depth.
 
     Returns:
-        ``[curr_batch, K]`` host mirror of the device draft buffer.
+        ``[curr_batch, verify_width]`` host mirror of the device draft buffer.
     """
     realized = draft_tokens_np.copy()
-    curr_batch_size = realized.shape[0]
+    curr_batch_size, verify_width = realized.shape
     for prev_i, curr_i in enumerate(prev_to_curr_map):
         if 0 <= curr_i < curr_batch_size:
-            realized[curr_i] = prev_next_draft_tokens[prev_i]
+            realized[curr_i] = prev_next_draft_tokens[prev_i, :verify_width]
     return realized
 
 
@@ -1086,7 +1093,7 @@ def build_realize_future_token_graph(
                 DType.int64,
                 shape=[
                     SymbolicDim("prev_batch_size"),
-                    SymbolicDim("num_draft_tokens"),
+                    SymbolicDim("gen_num_draft_tokens"),
                 ],
                 device=device0,
             ),
@@ -1118,7 +1125,7 @@ def build_realize_future_token_graph(
                 DType.float32,
                 shape=[
                     SymbolicDim("prev_batch_size"),
-                    SymbolicDim("num_draft_tokens"),
+                    SymbolicDim("gen_num_draft_tokens"),
                     sampled_draft_vocab_size,
                 ],
                 device=device0,
@@ -1192,14 +1199,17 @@ def build_realize_future_token_graph(
             graph.output(realized_tokens)
         else:
             spec_decode = input_values.spec_decode
-            num_draft_tokens_dim = (
-                spec_decode.prev_generated_draft_tokens.shape[1]
-            )
+            num_draft_tokens_dim = spec_decode.curr_draft_tokens.shape[1]
             num_draft_tokens = _shape_to_scalar(
                 num_draft_tokens_dim, device0, dtype=DType.uint32
             )
+            prev_generated_draft_tokens = (
+                spec_decode.prev_generated_draft_tokens[
+                    :, :num_draft_tokens_dim
+                ]
+            )
 
-            # 0...K
+            # 0...verify_width
             draft_col_range = ops.range(
                 start=0,
                 stop=num_draft_tokens_dim,
@@ -1227,7 +1237,7 @@ def build_realize_future_token_graph(
                 input=spec_decode.curr_draft_tokens.reshape(
                     [total_curr_draft_elems]
                 ),
-                updates=spec_decode.prev_generated_draft_tokens.reshape(
+                updates=prev_generated_draft_tokens.reshape(
                     [total_prev_draft_elems]
                 ),
                 indices=flat_draft_slot_indices,
@@ -1241,11 +1251,16 @@ def build_realize_future_token_graph(
             if spec_decode.curr_draft_probs_full is not None:
                 assert spec_decode.prev_generated_draft_probs_full is not None
                 vocab_dim = spec_decode.curr_draft_probs_full.shape[2]
+                prev_generated_probs = (
+                    spec_decode.prev_generated_draft_probs_full[
+                        :, :num_draft_tokens_dim, :
+                    ]
+                )
                 realized_draft_probs_full = kernels.scatter_nd_skip_oob_indices(
                     input=spec_decode.curr_draft_probs_full.reshape(
                         [total_curr_draft_elems, vocab_dim]
                     ),
-                    updates=spec_decode.prev_generated_draft_probs_full.reshape(
+                    updates=prev_generated_probs.reshape(
                         [total_prev_draft_elems, vocab_dim]
                     ),
                     indices=flat_draft_slot_indices,
@@ -1259,11 +1274,12 @@ def build_realize_future_token_graph(
                 ["curr_batch_size"],
             )
 
-            # The curr cache lengths already account for the draft tokens optimistically
-            # (full speculative depth). Subtract that depth using the configured
-            # ``num_speculative_tokens``, not the realize graph's draft-column count:
-            # when the current batch passes ``draft_tokens`` with shape ``(B, 0)`` we
-            # still must subtract the full K used for optimistic cache extension.
+            # The curr cache lengths optimistically assume every draft the
+            # PREVIOUS step verified was accepted, so roll back by that step's
+            # own verify width ``prev_draft_tokens``, not this step's
+            # draft-column count, which may be 0 or a different width entirely.
+            # It is also the width ``maybe_accepted_draft_tokens`` was filled
+            # to, which is what the host added to the cache length.
             prev_num_draft_tokens = _shape_to_scalar(
                 spec_decode.prev_draft_tokens.shape[1],
                 device0,
@@ -1499,8 +1515,6 @@ class RealizeFutureTokenProcessor:
             "RealizeFutureTokenProcessor is None but there are tokens to scatter."
         )
 
-        device = model_inputs.tokens.device
-
         # Traverse the KV tree and collect the KV cache inputs per device.
         def _recurse_kv_tree(
             kv: KVCacheInputsInterface[Any, Any],
@@ -1565,24 +1579,9 @@ class RealizeFutureTokenProcessor:
                     prev_batch.spec_decode.next_draft_probs_full_device
                 )
 
-            if num_draft_tokens_to_verify == 0:
-                prev_batch_size = prev_generated_draft_tokens.shape[0]
-                prev_generated_draft_tokens = Buffer(
-                    dtype=prev_generated_draft_tokens.dtype,
-                    shape=(prev_batch_size, 0),
-                    device=device,
-                )
-                if prev_generated_draft_probs_full is not None:
-                    prev_generated_draft_probs_full = Buffer(
-                        dtype=prev_generated_draft_probs_full.dtype,
-                        shape=(
-                            prev_batch_size,
-                            0,
-                            prev_generated_draft_probs_full.shape[2],
-                        ),
-                        device=device,
-                    )
-
+            # The generated array binds at its own width and the graph
+            # trims it to this step's verify width, so a zero-verify step needs
+            # no substitute empty buffer here.
             spec_decode: (
                 _RealizeFutureTokenSpecDecodeInputs[Buffer, Buffer] | None
             ) = _RealizeFutureTokenSpecDecodeInputs(
@@ -3469,7 +3468,10 @@ class OverlapTextGenerationPipeline(
 
         prev_batch_size = len(prev_context_batch)
         next_draft_k = prev_batch.spec_decode.next_draft_tokens_host.shape[1]
-        num_positions = next_draft_k + 1
+        # The bitmask is for the consuming step, so its width is how many
+        # drafts that step will verify -- which every step still is, until the
+        # verify width becomes a per-step decision.
+        num_positions = spec_state.num_speculative_tokens + 1
         curr_batch_size = len(curr_context_batch)
 
         # Capture BEFORE enqueue: capture numpy views into the persistent pinned
@@ -3699,6 +3701,9 @@ class OverlapTextGenerationPipeline(
                         MAGIC_DRAFT_TOKEN_ID
                     ] * num_draft_tokens_to_verify
                 tokens = ctx.spec_decoding_state.draft_tokens_to_verify
+                if len(tokens) > num_draft_tokens_to_verify:
+                    tokens = tokens[:num_draft_tokens_to_verify]
+                    ctx.spec_decoding_state.draft_tokens_to_verify = tokens
                 assert len(tokens) == num_draft_tokens_to_verify
                 draft_tokens_np[i, :] = tokens
 
