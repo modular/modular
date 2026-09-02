@@ -456,6 +456,22 @@ ENDPOINT_META="$out_dir/endpoint.json"
 capture_endpoint_meta "$ENDPOINT_META"
 
 REPORT_ARGS=(--reference-user-llm "$reference_user_llm")
+
+# Count the chosen split from the pinned checkout rather than hardcoding the
+# dataset size anywhere: that is what tells a subset run from a full one.
+FULL_TASK_COUNT="$(vpy -c '
+import json, sys
+path, split = sys.argv[1], sys.argv[2]
+try:
+    with open(path) as f:
+        splits = json.load(f)
+except (OSError, json.JSONDecodeError):
+    sys.exit(0)
+tasks = splits.get(split) if isinstance(splits, dict) else None
+if isinstance(tasks, list):
+    print(len(tasks))
+' "$CHECKOUT/data/tau2/domains/airline/split_tasks.json" "$task_split" 2>/dev/null || true)"
+[[ -n "$FULL_TASK_COUNT" ]] && REPORT_ARGS+=(--full-task-count "$FULL_TASK_COUNT")
 [[ -n "$reference_range" ]] && REPORT_ARGS+=(--reference-range "$reference_range")
 [[ -n "$reference_source" ]] && REPORT_ARGS+=(--reference-source "$reference_source")
 

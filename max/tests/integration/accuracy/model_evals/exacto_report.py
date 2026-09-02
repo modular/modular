@@ -593,6 +593,14 @@ def main(argv: list[str] | None = None) -> None:
         help="Prefix for the $GITHUB_ENV metric keys (e.g. EXACTO_GPQA).",
     )
     parser.add_argument(
+        "--full-task-count",
+        type=int,
+        help=(
+            "How many tasks the chosen split holds, so a subset run is "
+            "identifiable without anything hardcoding the dataset size."
+        ),
+    )
+    parser.add_argument(
         "--reference-user-llm",
         help=(
             "The simulator OpenRouter pins, recorded so downstream readers can "
@@ -630,6 +638,8 @@ def main(argv: list[str] | None = None) -> None:
     )
     if args.reference_user_llm:
         summary["reference_user_llm"] = args.reference_user_llm
+    if args.full_task_count:
+        summary["full_task_count"] = args.full_task_count
     write_outputs(args.out_dir, args.dataset, rows, summary, args.metric_prefix)
 
 
