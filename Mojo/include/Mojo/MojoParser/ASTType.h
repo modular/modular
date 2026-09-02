@@ -21,6 +21,8 @@
 #include "Mojo/KGENDialect/KGENEnums.h"
 #include "Mojo/LITDialect/LITUtils.h"
 #include "Mojo/LITDialect/SpecialFunctions.h"
+#include "Mojo/MojoParser/Constraints.h"
+#include "Mojo/Support/TriState.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/IR/Types.h"
 #include "llvm/Support/PointerLikeTypeTraits.h"
@@ -44,7 +46,6 @@ class RefType;
 class RefPackType;
 class SharedState;
 class TraitType;
-struct ConstraintFailure;
 
 /// Context threaded through the recursive ASTType printer.
 struct ASTTypePrinterContext;
@@ -200,12 +201,14 @@ public:
   /// - `no` if the type definitely does not conform
   /// - `unknown` if conformance depends on constraints that cannot be
   ///   evaluated statically
-  ///
-  /// When `failure` is non-null, it receives any failed/unproven provider
-  /// `where` constraints.
   TriState doesConformTo(TraitType trait, SharedState &shared,
-                         ArrayRef<ConstraintAttr> callerAssumptions,
-                         ConstraintFailure *failure = nullptr) const;
+                         ArrayRef<ConstraintAttr> callerAssumptions) const;
+
+  /// Same, additionally collecting the problematic constraints so a diagnosing
+  /// caller can name them.
+  ConstraintResult
+  doesConformToWithDetails(TraitType trait, SharedState &shared,
+                           ArrayRef<ConstraintAttr> callerAssumptions) const;
 
   /// Given a standard trait like Copyable, look up the conformance.  On
   /// success, the ASTDecl of the trait itself is returned, it is otherwise

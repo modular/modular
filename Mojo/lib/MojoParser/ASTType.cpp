@@ -983,16 +983,25 @@ bool ASTType::isMovable(llvm::SMLoc loc, SharedState &shared,
                                       ASTDecl::getAssumptionsFromScope(&scope));
 }
 
-TriState ASTType::doesConformTo(TraitType trait, SharedState &shared,
-                                ArrayRef<ConstraintAttr> callerAssumptions,
-                                ConstraintFailure *details) const {
+TriState
+ASTType::doesConformTo(TraitType trait, SharedState &shared,
+                       ArrayRef<ConstraintAttr> callerAssumptions) const {
   // FIXME: this seems pretty wrong, `getDecl` is type depth insensitive,
   // meaning that it is true for `meta<meta<!struct>> conforms_to AnyType`...
   ASTDecl *typeDecl = getDecl(shared);
   if (!typeDecl)
     return TriState::no();
-  return typeDecl->doesNominalTypeConformTo(trait, *this, callerAssumptions,
-                                            details);
+  return typeDecl->doesNominalTypeConformTo(trait, *this, callerAssumptions);
+}
+
+ConstraintResult ASTType::doesConformToWithDetails(
+    TraitType trait, SharedState &shared,
+    ArrayRef<ConstraintAttr> callerAssumptions) const {
+  ASTDecl *typeDecl = getDecl(shared);
+  if (!typeDecl)
+    return ConstraintResult::no({});
+  return typeDecl->doesNominalTypeConformToWithDetails(trait, *this,
+                                                       callerAssumptions);
 }
 
 /// Given a standard trait like Copyable, look up the conformance.  On

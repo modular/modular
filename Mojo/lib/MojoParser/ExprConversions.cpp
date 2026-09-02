@@ -1745,6 +1745,27 @@ static ASTDecl *getClosureTraitDecl(SharedState &shared,
 FailureOr<TriState> IREmitter::canMetaTypeUpCastTo(
     SharedState &shared, SMLoc loc, ASTType fromType, ASTType toType,
     ASTDecl *declScope, bool *scopeDependent, ConstraintFailure *details) {
+  auto conformanceVerdict = [&](ASTType type, TraitType trait) {
+    // Owned, not an ArrayRef: `getAssumptionsFromScope` returns by value.
+    SmallVector<ConstraintAttr> assumptions =
+        ASTDecl::getAssumptionsFromScope(declScope);
+    if (scopeDependent && !assumptions.empty())
+      *scopeDependent = true;
+    if (!details)
+      return type.doesConformTo(trait, shared, assumptions);
+
+    ConstraintResult result =
+        type.doesConformToWithDetails(trait, shared, assumptions);
+    if (result.isYes())
+      return TriState::yes();
+    if (result.isNo()) {
+      details->failedConstraints = std::move(result).getNo();
+      return TriState::no();
+    }
+    details->unprovenConstraints = std::move(result).getUnknown();
+    return TriState::unknown();
+  };
+
   // By default the verdict depends only on the (fromType, toType) pair. The
   // branches below that consult `declScope`'s assumptions set this, since an
   // assumption-derived verdict is scope-dependent and must not be memoized.
@@ -1822,10 +1843,7 @@ FailureOr<TriState> IREmitter::canMetaTypeUpCastTo(
         // Assumptions needed: implicit conversion of e.g. Tuple[*Ts] to
         // Writable
         // inside a fn with `where AllWritable[*Ts]`.
-        auto assumptions = ASTDecl::getAssumptionsFromScope(declScope);
-        if (scopeDependent && !assumptions.empty())
-          *scopeDependent = true;
-        return fromType.doesConformTo(trait, shared, assumptions, details);
+        return conformanceVerdict(fromType, trait);
       }
     } else if (auto fnGen =
                    sugarDynCastIfPresent<FnLiteralTypeGeneratorMetaType>(
@@ -1879,11 +1897,7 @@ FailureOr<TriState> IREmitter::canMetaTypeUpCastTo(
 
       // Assumptions needed: e.g. AnyTraitType[Copyable] → AnyTraitType[Movable]
       // upcast when the Copyable conformance depends on caller assumptions.
-      auto assumptions = ASTDecl::getAssumptionsFromScope(declScope);
-      if (scopeDependent && !assumptions.empty())
-        *scopeDependent = true;
-      return concreteType.doesConformTo(anyTrait.getTraitType(), shared,
-                                        assumptions, details);
+      return conformanceVerdict(concreteType, anyTrait.getTraitType());
     }
   }
 

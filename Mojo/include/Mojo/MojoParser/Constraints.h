@@ -21,6 +21,7 @@
 #define KGEN_MOJOPARSER_CONSTRAINTS_H
 
 #include "Mojo/LITDialect/LITAttrs.h"
+#include "Mojo/Support/TriResult.h"
 #include "Mojo/Support/TriState.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/BitVector.h"
@@ -61,6 +62,23 @@ struct ConstraintFailure {
   /// if empty.
   void attachNotes(MojoInflightDiag &diag) const;
 };
+
+/// A TriResult that carries the problematic constraints with it: the ones that
+/// were refuted on a `no`, the ones that could not be proven on an `unknown`. A
+/// `yes` carries nothing, having no problem to explain.
+using ConstraintResult = TriResult<void, SmallVector<ConstraintAttr, 2>,
+                                   SmallVector<ConstraintAttr, 2>>;
+
+/// Attach one note per constraint, each labeled `kind` ("failed"/"unproven")
+/// and carrying the constraint's user message when it has one.
+void attachConstraintNotes(MojoInflightDiag &diag,
+                           ArrayRef<ConstraintAttr> constraints,
+                           StringRef kind);
+
+/// Attach a note per problematic constraint, labeled from the verdict. No-op
+/// on `yes`.
+void attachConstraintNotes(MojoInflightDiag &diag,
+                           const ConstraintResult &result);
 
 /// Emit a note explaining why a constraint is inconclusive. The incoming
 /// constraint is expected to be the folded form with all input parameters

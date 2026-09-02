@@ -48,10 +48,6 @@ class [[nodiscard]] TriResult {
   template <typename T>
   using Slot = std::conditional_t<std::is_void_v<T>, Unit, T>;
 
-  // A common shape where both `no` and `unknown` carry the same payload.
-  static constexpr bool SharesNonYesPayload =
-      !std::is_void_v<No> && std::is_same_v<No, Unknown>;
-
   // Distinct per-state storage types, so the states stay distinguishable
   // even when several payloads are `void`.
   struct YesState {
@@ -173,33 +169,6 @@ public:
   {
     assert(isUnknown() && "getUnknown() called on a non-unknown result");
     return std::get<UnknownState>(std::move(storage)).value;
-  }
-
-  /// Access the payload behind a non-`yes` answer without casing on which of
-  /// the two states holds it. Only valid when `!isYes()`, and only available
-  /// for a `SharesNonYesPayload` shape, where a caller that reacts the same
-  /// way to a refutation and to a missing proof does not have to tell them
-  /// apart just to reach the explanation.
-  Slot<No> &getNonYes() &
-    requires SharesNonYesPayload
-  {
-    assert(!isYes() && "getNonYes() called on a yes result");
-    return isNo() ? std::get<NoState>(storage).value
-                  : std::get<UnknownState>(storage).value;
-  }
-  const Slot<No> &getNonYes() const &
-    requires SharesNonYesPayload
-  {
-    assert(!isYes() && "getNonYes() called on a yes result");
-    return isNo() ? std::get<NoState>(storage).value
-                  : std::get<UnknownState>(storage).value;
-  }
-  Slot<No> getNonYes() &&
-    requires SharesNonYesPayload
-  {
-    assert(!isYes() && "getNonYes() called on a yes result");
-    return isNo() ? std::get<NoState>(std::move(storage)).value
-                  : std::get<UnknownState>(std::move(storage)).value;
   }
 
   /// Lift a boolean into a payload-free `yes`/`no` result.

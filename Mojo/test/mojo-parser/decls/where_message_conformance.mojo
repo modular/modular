@@ -219,3 +219,29 @@ def wants_markers[*Ts: Marker & Deinitable](*args: *Ts):
 def use_pack(b: PackBox[No]):
     # expected-error @below {{does not conform to trait}}
     wants_markers(b)
+
+
+##===----------------------------------------------------------------------===##
+# Refuted and unproven in the same query: `U` is concretely not a MarkerA, and
+# nothing is known about `T`. The verdict is `no`, so only the refutation is
+# reported -- proving MarkerB would not make the conformance hold. The absent
+# note is the point of this case, and -verify-diagnostics enforces it.
+##===----------------------------------------------------------------------===##
+
+
+struct MixedBox[T: Deinitable, U: Deinitable](
+    # expected-note @below {{failed constraint: MixedBox needs MarkerA for CommonA}}
+    CommonA where (conforms_to(U, MarkerA), "MixedBox needs MarkerA for CommonA"),
+    CommonB where (conforms_to(T, MarkerB), "MixedBox needs MarkerB for CommonB"),
+):
+    pass
+
+
+# expected-note @below {{function declared here}}
+def wants_both_mixed[W: CommonA & CommonB & Deinitable](x: W):
+    pass
+
+
+def use_mixed[V: Deinitable](b: MixedBox[V, No]):
+    # expected-error @below {{does not conform to trait}}
+    wants_both_mixed(b)

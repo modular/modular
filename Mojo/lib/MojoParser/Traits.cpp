@@ -919,8 +919,7 @@ static TraitType getDeclProvidedTrait(ASTDecl *decl) {
 ///
 /// When `details` is non-null, its `constraints` are populated with the
 /// conditional-conformance constraints behind each failing/unproven required
-/// symbol. Requesting `details` disables the loop's short-circuit so every
-/// failing symbol is reported.
+/// symbol.
 static TriState
 doesNominalTypeConformToUncached(ASTDecl *self, TraitType trait,
                                  ASTType concreteType,
@@ -937,17 +936,16 @@ doesNominalTypeConformToUncached(ASTDecl *self, TraitType trait,
 /// - `no` if the type definitely does not conform
 /// - `unknown` if conformance depends on constraints that cannot be evaluated
 ///   statically
-TriState
-ASTDecl::doesNominalTypeConformTo(TraitType trait, ASTType concreteType,
-                                  ArrayRef<ConstraintAttr> callerAssumptions,
-                                  ConstraintFailure *details) {
+static TriState doesNominalTypeConformToCached(
+    ASTDecl *self, TraitType trait, ASTType concreteType,
+    ArrayRef<ConstraintAttr> callerAssumptions, ConstraintFailure *details) {
   TriState result = TriState::no();
   if (!callerAssumptions.empty()) {
     // Only the assumption-free queries are context-independent enough to
     // memoize; where-clause assumptions make the result caller-dependent, so
     // those bypass the cache entirely.
     result = doesNominalTypeConformToUncached(
-        this, trait, concreteType, callerAssumptions,
+        self, trait, concreteType, callerAssumptions,
         /*sawErroneousExtension=*/nullptr, details);
   } else {
     // Never consult or populate the cache for an erroneous decl: its
@@ -959,12 +957,14 @@ ASTDecl::doesNominalTypeConformTo(TraitType trait, ASTType concreteType,
     // stores only happen at >= signature, so they can have no entry yet and the
     // lookup would always miss.
     const bool mayBeCached =
-        resolvedness >= DeclResolvedness::signature && !isErroneous();
+        self->resolvedness >= DeclResolvedness::signature &&
+        !self->isErroneous();
     // If user requested failure details, we use the cached only if the verdict
     // was true.
     if (mayBeCached) {
       std::optional<bool> conforms =
-          shared.getCachedNominalConformance(this, trait, concreteType);
+          self->getShared().getCachedNominalConformance(self, trait,
+                                                        concreteType);
       if (conforms.has_value() && (!details || *conforms)) {
         if (details)
           details->clear();
@@ -980,7 +980,7 @@ ASTDecl::doesNominalTypeConformTo(TraitType trait, ASTType concreteType,
     // catches the one exception -- an erroneous contributing extension whose
     // contribution may still change.
     bool sawErroneousExtension = false;
-    result = doesNominalTypeConformToUncached(this, trait, concreteType,
+    result = doesNominalTypeConformToUncached(self, trait, concreteType,
                                               callerAssumptions,
                                               &sawErroneousExtension, details);
 
@@ -992,13 +992,34 @@ ASTDecl::doesNominalTypeConformTo(TraitType trait, ASTType concreteType,
     // NB: re-read resolvedness/isErroneous here rather than reuse `mayBeCached`
     // -- the uncached call above resolves the signature, so a first query can
     // still populate the cache even though `mayBeCached` was false.
-    if (result.isDefinite() && resolvedness >= DeclResolvedness::signature &&
-        !isErroneous() && !sawErroneousExtension)
-      shared.cacheNominalConformance(this, trait, concreteType,
-                                     result.isTrue());
+    if (result.isDefinite() &&
+        self->resolvedness >= DeclResolvedness::signature &&
+        !self->isErroneous() && !sawErroneousExtension)
+      self->getShared().cacheNominalConformance(self, trait, concreteType,
+                                                result.isTrue());
   }
 
   return result;
+}
+
+TriState
+ASTDecl::doesNominalTypeConformTo(TraitType trait, ASTType concreteType,
+                                  ArrayRef<ConstraintAttr> callerAssumptions) {
+  return doesNominalTypeConformToCached(this, trait, concreteType,
+                                        callerAssumptions, /*details=*/nullptr);
+}
+
+ConstraintResult ASTDecl::doesNominalTypeConformToWithDetails(
+    TraitType trait, ASTType concreteType,
+    ArrayRef<ConstraintAttr> callerAssumptions) {
+  ConstraintFailure details;
+  TriState result = doesNominalTypeConformToCached(this, trait, concreteType,
+                                                   callerAssumptions, &details);
+  if (result.isTrue())
+    return ConstraintResult::yes();
+  if (result.isFalse())
+    return ConstraintResult::no(std::move(details.failedConstraints));
+  return ConstraintResult::unknown(std::move(details.unprovenConstraints));
 }
 
 static TriState doesNominalTypeConformToUncached(
@@ -1133,9 +1154,9 @@ static TriState doesNominalTypeConformToUncached(
       });
   SmallVector<TypedAttr> scratch;
 
-  // With `details`, bucket every failed/unproven provider constraint (no
-  // short-circuit) and dedupe on (loc, proposition) so derived/ancestor copies
-  // of the same `where` clause emit once. Cold path.
+  // With `details`, bucket every failed/unproven provider constraint and
+  // dedupe on (loc, proposition) so derived/ancestor copies of the same
+  // `where` clause emit once. Cold path.
   const bool collectAll = details != nullptr;
   DenseSet<std::pair<LocationAttr, Attribute>> seenConstraints;
   auto recordFailure = [&](TraitSymbolAttr required, TriState kind) {
@@ -1207,6 +1228,10 @@ static TriState doesNominalTypeConformToUncached(
           continue;
         recordFailure(required, TriState::unknown());
         result &= TriState::unknown();
+        // Not a pure short-circuit: a later refuted symbol can still fold this
+        // to `no`. Bailing here trades that refinement away for the early exit,
+        // which is safe only because `unknown` is the conservative answer.
+        // TODO: fold both paths the same way and delete this exit.
         if (!collectAll)
           return TriState::unknown();
         continue;
@@ -1214,6 +1239,8 @@ static TriState doesNominalTypeConformToUncached(
     }
     recordFailure(required, TriState::no());
     result &= TriState::no();
+    // `no` is a definitive answer, so early exiting here is safe.
+    // Collecting details keeps going only to name every failing symbol.
     if (!collectAll)
       return TriState::no();
   }
@@ -1621,22 +1648,20 @@ PValue IREmitter::emitMetaTypeToTraitConversion(ASTExprAnd<CValue> value,
   // Check that the struct or super trait implements the trait.
   // Assumptions needed: e.g. `where AllWritable[*Ts]` proves
   // Tuple[*Ts]: Writable.
-  ConstraintFailure details;
-  TriState verdict = type.doesConformTo(
-      trait, shared, ASTDecl::getAssumptionsFromScope(&getDeclScope()),
-      &details);
-  if (verdict.isFalse()) {
+  auto conformance = type.doesConformToWithDetails(
+      trait, shared, ASTDecl::getAssumptionsFromScope(&getDeclScope()));
+  if (conformance.isNo()) {
     MojoInflightDiag diag = emitError(value.expr->getLoc(), "cannot bind type ")
                             << type << " to trait " << ASTType(trait)
                             << value.expr->getRange();
-    details.attachNotes(diag);
+    attachConstraintNotes(diag, conformance);
     return {};
   }
 
   // If conformance is unprovable (but not contradicted) and a deferral context
   // is installed, record the conformance obligation as deferred, and emit a
   // downcast into the target trait type.
-  if (verdict.isUnknown() && deferredTypingContext) {
+  if (conformance.isUnknown() && deferredTypingContext) {
     // A parameter's trait bound is always unconditional.
     assert(!trait.hasConstraints() &&
            "deferred conformance bound should always bean unconditional trait");

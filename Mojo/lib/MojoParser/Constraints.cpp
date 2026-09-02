@@ -31,16 +31,27 @@ using namespace M;
 using namespace M::KGEN;
 using namespace M::KGEN::LIT;
 
-void ConstraintFailure::attachNotes(MojoInflightDiag &diag) const {
-  auto emitNote = [&](ConstraintAttr constraint, StringRef kind) {
+void LIT::attachConstraintNotes(MojoInflightDiag &diag,
+                                ArrayRef<ConstraintAttr> constraints,
+                                StringRef kind) {
+  for (ConstraintAttr constraint : constraints) {
     diag.attachNote(constraint.getLoc()) << kind << " constraint";
     if (StringAttr message = constraint.getMessage())
       diag << ": " << message.getValue();
-  };
-  for (ConstraintAttr failed : failedConstraints)
-    emitNote(failed, "failed");
-  for (ConstraintAttr unproven : unprovenConstraints)
-    emitNote(unproven, "unproven");
+  }
+}
+
+void LIT::attachConstraintNotes(MojoInflightDiag &diag,
+                                const ConstraintResult &result) {
+  if (result.isNo())
+    attachConstraintNotes(diag, result.getNo(), "failed");
+  else if (result.isUnknown())
+    attachConstraintNotes(diag, result.getUnknown(), "unproven");
+}
+
+void ConstraintFailure::attachNotes(MojoInflightDiag &diag) const {
+  LIT::attachConstraintNotes(diag, failedConstraints, "failed");
+  LIT::attachConstraintNotes(diag, unprovenConstraints, "unproven");
 }
 
 /// Emit a note explaining why a constraint is inconclusive. The incoming
