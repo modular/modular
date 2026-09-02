@@ -70,9 +70,14 @@ RejectionSamplingStrategy = Literal[
   matching the target distribution.
 - ``typical-acceptance``: accepts drafted tokens that fall within the
   target's typical set, trading a small distributional mismatch for higher
-  acceptance rates. Default for ``eagle`` and ``mtp``.
+  acceptance rates.
 - ``logit-comparison``: compares target and draft logits directly to decide
   acceptance.
+
+No speculative path reads this selection today: every unified speculative
+architecture builds its own ``AcceptanceSampler``
+(``max/python/max/nn/sampling/rejection_sampler.py``), which dispatches on
+``synthetic_acceptance_rate`` and ``use_greedy_acceptance`` instead.
 """
 
 
@@ -105,8 +110,9 @@ class SpeculativeConfig(ConfigFileModel):
     draft step propose several candidate tokens that the larger target
     verifies in one forward pass. This class selects the method
     (:attr:`speculative_method`), how many tokens to draft per step
-    (:attr:`num_speculative_tokens`), and how the target verifies them
-    (:attr:`rejection_sampling_strategy`).
+    (:attr:`num_speculative_tokens`), and the knobs that decide how the
+    target verifies them (:attr:`synthetic_acceptance_rate`,
+    :attr:`use_greedy_acceptance`).
 
     The CLI surfaces these fields as ``--speculative-method``,
     ``--num-speculative-tokens``,
@@ -231,13 +237,15 @@ class SpeculativeConfig(ConfigFileModel):
         default=None,
         description=(
             "Rejection sampling strategy for verifying draft tokens. "
-            "Defaults to ``typical-acceptance`` for ``eagle``/``mtp``."
+            "Currently inert: the architecture's AcceptanceSampler decides "
+            "the acceptance rule."
         ),
     )
-    """The rejection sampling strategy used to verify drafted tokens.
+    """The requested rejection sampling strategy for verifying drafted tokens.
 
-    When ``None``, defaults to ``"typical-acceptance"`` for ``eagle`` and
-    ``mtp``.
+    Inert: see :data:`RejectionSamplingStrategy`. The acceptance rule in
+    effect is ``AcceptanceSampler.acceptance_rule``, and the startup config
+    dump reports it alongside the fields that decide it.
     """
 
     synthetic_acceptance_rate: float | None = Field(
