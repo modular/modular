@@ -340,6 +340,47 @@ def test_tokenizer__propagates_cache_salt(
     assert context_without_salt.cache_salt is None
 
 
+def test_tokenizer__propagates_dkv_cache_hint(
+    llama_3_1_8b_instruct_local_path: str,
+) -> None:
+    """`tokenizer.new_context` must re-serialize `request.dkv_cache_hint` onto
+    `context.dkv_cache_hint`. The dKV connector parses those bytes to route a
+    load at its peers, so dropping them here silently disables remote reads."""
+
+    pipeline_config = _create_mock_pipeline_config(
+        llama_3_1_8b_instruct_local_path
+    )
+    tokenizer = TextTokenizer(
+        llama_3_1_8b_instruct_local_path,
+        pipeline_config=pipeline_config,
+    )
+    hint = {"version": 2, "instances": [{"instance_name": "dkv-peer"}]}
+
+    context = asyncio.run(
+        tokenizer.new_context(
+            TextGenerationRequest(
+                request_id=RequestID(),
+                model_name=llama_3_1_8b_instruct_local_path,
+                prompt="Hello world!",
+                dkv_cache_hint=hint,
+            )
+        )
+    )
+    assert context.dkv_cache_hint is not None
+    assert json.loads(context.dkv_cache_hint) == hint
+
+    context_without_hint = asyncio.run(
+        tokenizer.new_context(
+            TextGenerationRequest(
+                request_id=RequestID(),
+                model_name=llama_3_1_8b_instruct_local_path,
+                prompt="Hello world!",
+            )
+        )
+    )
+    assert context_without_hint.dkv_cache_hint is None
+
+
 def test_tokenizer__with_context_validation(
     llama_3_1_8b_instruct_local_path: str,
 ) -> None:

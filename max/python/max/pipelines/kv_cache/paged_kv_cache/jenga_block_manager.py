@@ -640,13 +640,19 @@ class JengaBlockManager:
 
     @traced
     def _lookup_connector_prefix_cache_hit(
-        self, desired: Sequence[bytes], replica_idx: int
+        self,
+        desired: Sequence[bytes],
+        replica_idx: int,
+        hint: bytes | None,
     ) -> tuple[int, dict[str, list[LittleKVCacheBlock]], KVConnectorTransfer]:
         """Loads the desired hashes from the connector's prefix cache.
 
         Fresh device pages are allocated for the hashes the connector can
         serve and filled by its ``load``. The connector may serve some but not
         all of the desired hashes.
+
+        ``hint`` is the request's raw ``dkv_cache_hint``, passed through to the
+        connector; see :meth:`KVConnector.load`.
 
         Eg:
         ```
@@ -702,6 +708,7 @@ class JengaBlockManager:
             },
             desired,
             replica_idx=replica_idx,
+            hint=hint,
         )
         # Note that for SWA groups, we expect the connector to pad the blocks
         # with 0 to denote the null blocks. As such, the length of the blocks
@@ -1056,7 +1063,9 @@ class JengaBlockManager:
         # Ask the connector to load the hashes that are remaining.
         num_loaded, loaded_blocks, transfer = (
             self._lookup_connector_prefix_cache_hit(
-                desired_hashes[num_hit_blocks:], replica_idx
+                desired_hashes[num_hit_blocks:],
+                replica_idx,
+                hint=ctx.dkv_cache_hint,
             )
         )
         num_reused = num_hit_blocks + num_loaded

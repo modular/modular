@@ -461,6 +461,13 @@ the [container](/container) page now links to the new page.
   now resolve on this path, folded into the handshake's `kv_config_hash`. A
   single-tenant node spanning more than one GPU must set the dKV server's
   `--fair-share-partitions` to its GPU count.
+- A request's `dkv_cache_hint` now reaches the dKV external KV-cache connector,
+  which reads it to load a cached prefix from the instance that holds it rather
+  than only from the co-located one. The serving layer forwards the field
+  without interpreting it, so the hint schema is versioned in one place and a
+  hint this build cannot use costs a cache miss rather than a failed request.
+  Previously the field was parsed into a form nothing read, and every hinted
+  load went to the co-located dKV.
 - The dKV external KV-cache connector now accepts a KV cache tree that mixes
   TP-replicated and head-sharded caches, instead of failing model load. Only
   an all-replicated tree produces a block that is byte-identical across TP

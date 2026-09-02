@@ -63,6 +63,7 @@ def _make_ctx(
         tokens=tokens,
         cache_salt=None,
         pending_future_count=0,
+        dkv_cache_hint=None,
     )
     return cast(TextContext, ctx)
 
@@ -151,6 +152,8 @@ class _TierStubConnector:
         self,
         block_ids: Mapping[str, Sequence[int]],
         block_hashes: Sequence[bytes],
+        replica_idx: int = 0,
+        hint: bytes | None = None,
     ) -> int:
         raise NotImplementedError("must not be called by count paths")
 
@@ -201,6 +204,7 @@ class _ReusableTierStubConnector:
         block_ids: Mapping[str, Sequence[int]],
         block_hashes: Sequence[bytes],
         replica_idx: int = 0,
+        hint: bytes | None = None,
     ) -> CompletedTransfer:
         # Serve the leading run this stub holds; the manager frees the surplus
         # staging blocks past what we report as loaded.

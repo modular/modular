@@ -172,6 +172,7 @@ def test_commit_never_commits_placeholder_block() -> None:
             tokens=np.array(list(range(9)) + [99], dtype=np.int64),
             cache_salt=None,
             pending_future_count=0,
+            dkv_cache_hint=None,
         ),
     )
     bm.claim(ctx_b)
