@@ -44,7 +44,6 @@ see ``failure_verdict`` for why the request tally cannot.
 
 from __future__ import annotations
 
-import asyncio
 import time
 from typing import TYPE_CHECKING, Any
 
@@ -71,23 +70,16 @@ from scenarios._image_stress_common import (
     BatchTally,
     LivenessProbe,
     failure_verdict,
+    post_once,
+    post_stress_liveness,
     probe_result,
     served_context_window,
+    single_response_verdict,
     unique_parts,
 )
 
 if TYPE_CHECKING:
     from client import RunConfig
-
-# Pause before re-sending a request whose connection dropped, and between
-# post-stress health probes. Long enough that a retry is not simply the same
-# instant of whatever reset the first one, short enough to add nothing
-# noticeable to a run that never drops.
-RETRY_GAP_SEC = 2.0
-
-# Attempts the post-stress health check gets before it reports the engine
-# wedged. A wedged engine fails all of them; a healthy one answers the first.
-LIVENESS_ATTEMPTS = 3
 
 
 @register_scenario
@@ -125,7 +117,7 @@ class ImageStress(BaseScenario):
         results.extend(await self._concurrent_uncached_batches(client, config))
         results.extend(await self._mixed_cache_hit_miss(client, config))
 
-        results.append(await self._post_stress_liveness(client))
+        results.append(await post_stress_liveness(client, self.name))
         return results
 
     # ------------------------------------------------------------------
@@ -144,10 +136,11 @@ class ImageStress(BaseScenario):
             model,
             [image_part(MAX_IMAGE_SIDE, MAX_IMAGE_SIDE, "max-single", "high")],
         )
-        resp, dropped = await self._post_once(
+        resp, dropped = await post_once(
             client, payload, timeout=HEAVY_TIMEOUT_SEC
         )
-        return self._classify(
+        return single_response_verdict(
+            self.name,
             "single_max_image",
             resp,
             expect_reject=False,
@@ -160,10 +153,11 @@ class ImageStress(BaseScenario):
     ) -> ScenarioResult:
         """200 images -- the vendor per-request ceiling, exactly at the limit."""
         parts = unique_parts(IMAGE_MAX_COUNT, "count-200", side=224)
-        resp, dropped = await self._post_once(
+        resp, dropped = await post_once(
             client, image_payload(model, parts), timeout=HEAVY_TIMEOUT_SEC
         )
-        return self._classify(
+        return single_response_verdict(
+            self.name,
             "max_image_count",
             resp,
             expect_reject=False,
@@ -176,10 +170,11 @@ class ImageStress(BaseScenario):
     ) -> ScenarioResult:
         """201 images -- one past the limit. Must be a clean 4xx."""
         parts = unique_parts(IMAGE_MAX_COUNT + 1, "count-201", side=224)
-        resp, dropped = await self._post_once(
+        resp, dropped = await post_once(
             client, image_payload(model, parts), timeout=HEAVY_TIMEOUT_SEC
         )
-        return self._classify(
+        return single_response_verdict(
+            self.name,
             "over_max_image_count",
             resp,
             expect_reject=True,
@@ -283,12 +278,13 @@ class ImageStress(BaseScenario):
             )
             for i in range(count)
         ]
-        resp, dropped = await self._post_once(
+        resp, dropped = await post_once(
             client,
             image_payload(config.model, parts),
             timeout=HEAVY_TIMEOUT_SEC,
         )
-        return self._classify(
+        return single_response_verdict(
+            self.name,
             "max_total_image_tokens",
             resp,
             expect_reject=False,
@@ -314,10 +310,11 @@ class ImageStress(BaseScenario):
             image_part(MAX_IMAGE_SIDE, MAX_IMAGE_SIDE, f"over-{i}", "high")
             for i in range(IMAGE_MAX_COUNT)
         ]
-        resp, dropped = await self._post_once(
+        resp, dropped = await post_once(
             client, image_payload(model, parts), timeout=HEAVY_TIMEOUT_SEC
         )
-        return self._classify(
+        return single_response_verdict(
+            self.name,
             "over_budget_request",
             resp,
             expect_reject=True,
@@ -421,182 +418,6 @@ class ImageStress(BaseScenario):
                 self.name, "mixed_cache_hit_miss_liveness", probe, config
             ),
         ]
-
-    async def _post_stress_liveness(self, client: FuzzClient) -> ScenarioResult:
-        """Final forward-progress check once all stress traffic has drained.
-
-        Retried for the reason ``_post_once`` gives: one un-retried request
-        cannot tell an engine that wedged from a connection the network path
-        happened to reset, and this one decides whether the whole scenario
-        ends on a hang. An engine that really wedged fails every attempt.
-        """
-        test = "post_stress_liveness"
-        failures: list[str] = []
-        last_status = 0
-        answered = False
-        for attempt in range(LIVENESS_ATTEMPTS):
-            if attempt:
-                await asyncio.sleep(RETRY_GAP_SEC)
-            resp = await client.health_check()
-            last_status = resp.status
-            if resp.status == 200:
-                if not failures:
-                    return self.make_result(
-                        self.name, test, Verdict.PASS, status_code=200
-                    )
-                return self.make_result(
-                    self.name,
-                    test,
-                    Verdict.INTERESTING,
-                    status_code=200,
-                    detail=(
-                        f"answered on attempt {attempt + 1} of "
-                        f"{LIVENESS_ATTEMPTS}, so the engine was still there "
-                        f"-- earlier attempts: {'; '.join(failures)}"
-                    ),
-                )
-            answered = answered or (resp.status > 0 and resp.error != "TIMEOUT")
-            failures.append(
-                "timeout"
-                if resp.error == "TIMEOUT"
-                else f"status={resp.status} error={resp.error!r}"
-            )
-        # A server that returned three 5xx kept answering; only silence says it
-        # wedged or died. Reporting both the same way loses the distinction
-        # this scenario exists to draw.
-        diagnosis = (
-            "the server answered but never returned healthy"
-            if answered
-            else "the server stopped answering, whether it wedged or died"
-        )
-        return self.make_result(
-            self.name,
-            test,
-            Verdict.FAIL,
-            status_code=last_status,
-            detail=(
-                f"health probe failed {LIVENESS_ATTEMPTS} times running after "
-                f"image stress -- {diagnosis}: {'; '.join(failures)}"
-            ),
-        )
-
-    # ------------------------------------------------------------------
-    # Verdict helpers
-    # ------------------------------------------------------------------
-
-    async def _post_once(
-        self,
-        client: FuzzClient,
-        payload: dict[str, Any],
-        *,
-        timeout: float,
-    ) -> tuple[Any, str | None]:
-        """Sends one request, re-sending it once if the connection drops.
-
-        A dropped connection is not evidence of the deadlock these axes hunt.
-        The network path in front of the deployment resets one occasionally --
-        CENG-1050 saw two in 4448 requests against a server that never stopped
-        answering. The batched axes tell that apart from a wedge by rate, which
-        a single-request test has no way to do, so it re-sends instead: a reset
-        does not survive a retry, and a pod that stopped answering fails every
-        attempt.
-
-        Returns the response to grade and the first attempt's cause if it
-        dropped, so the verdict can name it rather than swallow it. A timeout
-        is not retried -- the server took the request and never answered, which
-        is the signal here, and re-sending a max-size payload would cost
-        another ``HEAVY_TIMEOUT_SEC`` to learn nothing.
-        """
-        resp = await client.post_json(payload, timeout=timeout)
-        if resp.status != 0 or resp.error == "TIMEOUT":
-            return resp, None
-        await asyncio.sleep(RETRY_GAP_SEC)
-        retry = await client.post_json(payload, timeout=timeout)
-        return retry, resp.error or "connection dropped"
-
-    def _classify(
-        self,
-        test: str,
-        resp: Any,
-        *,
-        expect_reject: bool,
-        context: str,
-        dropped_first: str | None = None,
-    ) -> ScenarioResult:
-        """Grades one response against the vendor limits.
-
-        A timeout or a 5xx is always a failure: those are the hang and the OOM.
-        A dropped connection is one only if it survived the retry in
-        ``_post_once``. Everything else depends on whether the request was
-        legal.
-        """
-        retried = f" -- first attempt dropped ({dropped_first})"
-        if resp.error == "TIMEOUT":
-            return self.make_result(
-                self.name,
-                test,
-                Verdict.FAIL,
-                detail=(
-                    f"timeout -- no response ({context})"
-                    + (retried if dropped_first else "")
-                ),
-            )
-        if resp.status == 0:
-            # Held apart from the 5xx branch below: a drop is a transport
-            # failure, not a server error, and reporting one as "server error
-            # 0" hides which of the two happened (CENG-1050).
-            cause = resp.error or "no error reported"
-            return self.make_result(
-                self.name,
-                test,
-                Verdict.FAIL,
-                status_code=resp.status,
-                detail=(
-                    f"connection dropped twice ({dropped_first}, then {cause})"
-                    if dropped_first
-                    else f"connection dropped ({cause})"
-                )
-                + f" ({context})",
-            )
-        if resp.status >= 500:
-            return self.make_result(
-                self.name,
-                test,
-                Verdict.FAIL,
-                status_code=resp.status,
-                detail=f"server error {resp.status} ({context}): {resp.body[:200]!r}"
-                + (retried if dropped_first else ""),
-            )
-        if expect_reject:
-            if 400 <= resp.status < 500:
-                verdict, detail = Verdict.PASS, f"cleanly rejected ({context})"
-            else:
-                verdict, detail = (
-                    Verdict.INTERESTING,
-                    f"accepted a request that exceeds the limits ({context})",
-                )
-        elif resp.status == 200:
-            verdict, detail = Verdict.PASS, context
-        else:
-            verdict, detail = (
-                Verdict.INTERESTING,
-                f"rejected a request within the limits ({context}): "
-                f"{resp.body[:200]!r}",
-            )
-        # The drop is reported rather than hidden; it just does not get to
-        # claim the hang, since the retry proved the server was still there.
-        if dropped_first:
-            verdict = (
-                Verdict.INTERESTING if verdict is Verdict.PASS else verdict
-            )
-            detail += retried
-        return self.make_result(
-            self.name,
-            test,
-            verdict,
-            status_code=resp.status,
-            detail=detail,
-        )
 
     def _classify_many(
         self,

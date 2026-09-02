@@ -166,18 +166,20 @@ These require the `openai` Python package, which Bazel provides automatically.
 
 Run with `--model-profile kimi-k2.5` or `--model-profile glm-5.1`.
 
-| Scenario              | Model      | Tests | What it validates                                                                |
-|-----------------------|------------|-------|----------------------------------------------------------------------------------|
-| `kimi_battle`         | Kimi K2.5  | 15    | xgrammar edge cases, parallel TCs, structural tags                               |
-| `kimi_3am`            | Kimi K2.5  | 12    | Production edge cases, soak tests, precision                                     |
-| `kimi_production`     | Kimi K2.5  | 10    | Long context, error recovery, token counting                                     |
-| `kimi_k2vv`           | Kimi K2.5  | 2K    | K2 Vendor Verifier benchmark (see below)                                         |
-| `kimi_freeze_repro`   | Kimi K2.5  | 6     | Production freeze repro: oneOf/const tool schemas under concurrent load          |
-| `glm_battle`          | GLM-5.1    | 12    | Schema compilation, tool calling, streaming                                      |
-| `glm_3am`             | GLM-5.1    | 10    | Edge cases, soak tests, concurrent stress                                        |
-| `image_stress`        | MiniMax-M3 | 11    | Huge image batches: max count/size/tokens, skewed ratios, cache-miss concurrency |
-| `image_stress_soak`   | MiniMax-M3 | 2     | Sustained image batches for minutes-scale hang reproduction                      |
-| `image_kv_saturation` | MiniMax-M3 | 6     | Concurrent max-payload requests ramped 1→2→4 to fill KV cache with vision tokens |
+| Scenario              | Model      | Tests | What it validates                                                                   |
+|-----------------------|------------|-------|-------------------------------------------------------------------------------------|
+| `kimi_battle`         | Kimi K2.5  | 15    | xgrammar edge cases, parallel TCs, structural tags                                  |
+| `kimi_3am`            | Kimi K2.5  | 12    | Production edge cases, soak tests, precision                                        |
+| `kimi_production`     | Kimi K2.5  | 10    | Long context, error recovery, token counting                                        |
+| `kimi_k2vv`           | Kimi K2.5  | 2K    | K2 Vendor Verifier benchmark (see below)                                            |
+| `kimi_freeze_repro`   | Kimi K2.5  | 6     | Production freeze repro: oneOf/const tool schemas under concurrent load             |
+| `glm_battle`          | GLM-5.1    | 12    | Schema compilation, tool calling, streaming                                         |
+| `glm_3am`             | GLM-5.1    | 10    | Edge cases, soak tests, concurrent stress                                           |
+| `image_stress`        | MiniMax-M3 | 11    | Huge image batches: max count/size/tokens, skewed ratios, cache-miss concurrency    |
+| `image_stress_soak`   | MiniMax-M3 | 2     | Sustained image batches for minutes-scale hang reproduction                         |
+| `image_kv_saturation` | MiniMax-M3 | 6     | Concurrent max-payload requests ramped 1→2→4 to fill KV cache with vision tokens    |
+| `video_stress`        | MiniMax-M3 | 15    | Huge video batches: max count/frames/pixels, fps boundaries, cache-miss concurrency |
+| `video_stress_ramp`   | MiniMax-M3 | 6     | Max-payload video requests ramped 1→2→4 concurrent                                  |
 
 ### Image stress (MiniMax-M3)
 
@@ -256,6 +258,44 @@ downloaded. Uniqueness comes from a `tEXt` nonce, so a cache-missing variant
 costs no re-encode. Note that a max-size image needs `detail: "high"` — the
 default tier caps the long side at 2016 px and silently reduces a
 16384-token image to 5184.
+
+### Video stress (MiniMax-M3)
+
+```bash
+# Boundary matrix plus a cache-miss concurrency phase
+$LLM_FUZZ --url http://localhost:8400 --model minimax-m3 \
+    --model-profile minimax-m3 --scenarios video_stress
+
+# One max-payload request at a time, then several together
+$LLM_FUZZ --url http://localhost:8400 --model minimax-m3 \
+    --model-profile minimax-m3 --scenarios video_stress_ramp
+```
+
+Video shares the vision encoder the image scenarios already stress, so what
+these add is everything upstream of it: a container is demuxed, sampled down
+to the requested rate and resized before a single patch is encoded, on a
+thread pool (`MODULAR_VIDEO_DECODE_THREADS`, 16 by default) that concurrent
+requests contend for. The vendor limits differ from the image ones and are
+worth stating: 20 videos per request, a `w × h × frames` cap of 301,056,000
+post-resize pixels, 512 MiB per encoded clip, and `fps` in [0.2, 5.0] that
+additionally may not exceed the clip's own rate — the vendor samples what was
+recorded and never interpolates.
+
+Two limits behave differently from how they read. The frame cap is not
+enforced at all (`sample_frame_indices` takes `max_frames` and ignores it, so
+long clips keep their final frame), which leaves clip length and `fps` as the
+only bound on sampled frames. And the video detail tiers are much smaller than
+the image ones — 504/672/1288 against 672/2016/3584 — so a max-size frame needs
+`detail: "high"`, and the default tier is 672.
+
+Clips are synthesised in-process from the standard library: an AVI carrying
+PNG-coded frames, reusing the image fixtures' PNG encoder and its prefix cache,
+so a 666-frame clip at the pixel cap builds in a fraction of a second and is
+under 6 MiB on the wire. The container choice is not cosmetic — the server
+falls back to decord whenever container metadata reports no frame count, and
+decord reads far fewer formats than PyAV. AVI declares its length in the
+header, which keeps the server on the PyAV path these scenarios mean to
+exercise; an APNG, otherwise the obvious choice, reports zero frames.
 
 ### K2 Vendor Verifier (K2VV)
 

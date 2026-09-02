@@ -10,13 +10,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Shared machinery for the image stress scenarios.
+"""Shared machinery for the media stress scenarios.
 
-Extracted from ``image_stress`` so the KV-saturation and hang-hunt scenarios
-reuse one liveness probe rather than each growing their own. Every image
-scenario needs the same four things: production-shaped batch sizes, the
-window the deployment actually serves, a canary that can tell a wedged engine
-from a slow one, and one grader that decides what a batch of failures means.
+Extracted from ``image_stress`` so the KV-saturation, hang-hunt and video
+scenarios reuse one liveness probe rather than each growing their own. Every
+one of them needs the same things: production-shaped batch sizes, the window
+the deployment actually serves, a canary that can tell a wedged engine from a
+slow one, and one grader that decides what a failure -- single or batched --
+means.
+
+Nothing here is image-specific except ``unique_parts`` and the batch-size
+table; the video scenarios bring their own fixtures and share the rest.
 """
 
 from __future__ import annotations
@@ -72,6 +76,18 @@ MASS_FAILURE_RATE = 0.10
 # (CENG-1050), and in a two-request rung it is 50% -- enough to fail a healthy
 # ramp on arithmetic alone. It is still reported, just not charged.
 MIN_CHARGED_DROPS = 2
+
+
+# Pause before re-sending a request whose connection dropped, and between
+# post-stress health probes. Long enough that a retry is not simply the same
+# instant of whatever reset the first one, short enough to add nothing
+# noticeable to a run that never drops.
+RETRY_GAP_SEC = 2.0
+
+# Attempts the post-stress health check gets before it reports the server
+# stopped answering. A wedged engine fails all of them; a healthy one
+# answers the first.
+LIVENESS_ATTEMPTS = 3
 
 
 def unique_parts(
@@ -339,6 +355,118 @@ class BatchTally:
         )
 
 
+async def post_once(
+    client: FuzzClient,
+    payload: dict[str, Any],
+    *,
+    timeout: float,
+    retry_gap_sec: float = RETRY_GAP_SEC,
+) -> tuple[Any, str | None]:
+    """Sends one request, re-sending it once if the connection drops.
+
+    A dropped connection is not evidence of the deadlock these scenarios hunt.
+    The network path in front of the deployment resets one occasionally --
+    CENG-1050 saw two in 4448 requests against a server that never stopped
+    answering. The batched axes tell that apart from a wedge by rate, which a
+    single-request test has no way to do, so it re-sends instead: a reset does
+    not survive a retry, and a pod that stopped answering fails every attempt.
+
+    Returns the response to grade and the first attempt's cause if it dropped,
+    so the verdict can name it rather than swallow it. A timeout is not
+    retried -- the server took the request and never answered, which is the
+    signal here, and re-sending a max-size payload would cost another full
+    timeout to learn nothing.
+    """
+    resp = await client.post_json(payload, timeout=timeout)
+    if resp.status != 0 or resp.error == "TIMEOUT":
+        return resp, None
+    await asyncio.sleep(retry_gap_sec)
+    retry = await client.post_json(payload, timeout=timeout)
+    return retry, resp.error or "connection dropped"
+
+
+def single_response_verdict(
+    scenario: str,
+    test: str,
+    resp: Any,
+    *,
+    expect_reject: bool,
+    context: str,
+    dropped_first: str | None = None,
+) -> ScenarioResult:
+    """Grades one response against the vendor limits.
+
+    A timeout or a 5xx is always a failure: those are the hang and the OOM. A
+    dropped connection is one only if it survived the retry in ``post_once``.
+    Everything else depends on whether the request was legal.
+    """
+    retried = f" -- first attempt dropped ({dropped_first})"
+    if resp.error == "TIMEOUT":
+        return ScenarioResult(
+            scenario_name=scenario,
+            test_name=test,
+            verdict=Verdict.FAIL,
+            detail=(
+                f"timeout -- no response ({context})"
+                + (retried if dropped_first else "")
+            ),
+        )
+    if resp.status == 0:
+        # Held apart from the 5xx branch below: a drop is a transport failure,
+        # not a server error, and reporting one as "server error 0" hides
+        # which of the two happened (CENG-1050).
+        cause = resp.error or "no error reported"
+        return ScenarioResult(
+            scenario_name=scenario,
+            test_name=test,
+            verdict=Verdict.FAIL,
+            status_code=resp.status,
+            detail=(
+                f"connection dropped twice ({dropped_first}, then {cause})"
+                if dropped_first
+                else f"connection dropped ({cause})"
+            )
+            + f" ({context})",
+        )
+    if resp.status >= 500:
+        return ScenarioResult(
+            scenario_name=scenario,
+            test_name=test,
+            verdict=Verdict.FAIL,
+            status_code=resp.status,
+            detail=f"server error {resp.status} ({context}): {resp.body[:200]!r}"
+            + (retried if dropped_first else ""),
+        )
+    if expect_reject:
+        if 400 <= resp.status < 500:
+            verdict, detail = Verdict.PASS, f"cleanly rejected ({context})"
+        else:
+            verdict, detail = (
+                Verdict.INTERESTING,
+                f"accepted a request that exceeds the limits ({context})",
+            )
+    elif resp.status == 200:
+        verdict, detail = Verdict.PASS, context
+    else:
+        verdict, detail = (
+            Verdict.INTERESTING,
+            f"rejected a request within the limits ({context}): "
+            f"{resp.body[:200]!r}",
+        )
+    # The drop is reported rather than hidden; it just does not get to claim
+    # the hang, since the retry proved the server was still there.
+    if dropped_first:
+        verdict = Verdict.INTERESTING if verdict is Verdict.PASS else verdict
+        detail += retried
+    return ScenarioResult(
+        scenario_name=scenario,
+        test_name=test,
+        verdict=verdict,
+        status_code=resp.status,
+        detail=detail,
+    )
+
+
 def failure_verdict(
     scenario: str,
     test: str,
@@ -412,3 +540,71 @@ def failure_verdict(
             ),
         )
     return None
+
+
+async def post_stress_liveness(
+    client: FuzzClient, scenario: str, test: str = "post_stress_liveness"
+) -> ScenarioResult:
+    """Final forward-progress check once all stress traffic has drained.
+
+    Retried for the reason ``post_once`` gives: one un-retried request
+    cannot tell an engine that wedged from a connection the network path
+    happened to reset, and this one decides whether the whole scenario
+    ends on a hang. An engine that really wedged fails every attempt.
+    """
+    failures: list[str] = []
+    last_status = 0
+    answered = False
+    for attempt in range(LIVENESS_ATTEMPTS):
+        if attempt:
+            await asyncio.sleep(RETRY_GAP_SEC)
+        resp = await client.health_check()
+        last_status = resp.status
+        if resp.status == 200:
+            if not failures:
+                return ScenarioResult(
+                    scenario_name=scenario,
+                    test_name=test,
+                    verdict=Verdict.PASS,
+                    status_code=200,
+                )
+            return ScenarioResult(
+                scenario_name=scenario,
+                test_name=test,
+                verdict=Verdict.INTERESTING,
+                status_code=200,
+                detail=(
+                    f"answered on attempt {attempt + 1} of "
+                    f"{LIVENESS_ATTEMPTS}, so the engine was still there "
+                    f"-- earlier attempts: {'; '.join(failures)}"
+                ),
+            )
+        answered = answered or (resp.status > 0 and resp.error != "TIMEOUT")
+        failures.append(
+            "timeout"
+            if resp.error == "TIMEOUT"
+            else f"status={resp.status} error={resp.error!r}"
+        )
+    # A server that returned three 5xx kept answering; only silence says it
+    # wedged or died. Reporting both the same way loses the distinction these
+    # scenarios exist to draw.
+    diagnosis = (
+        "the server answered but never returned healthy"
+        if answered
+        else "the server stopped answering, whether it wedged or died"
+    )
+    return ScenarioResult(
+        scenario_name=scenario,
+        test_name=test,
+        verdict=Verdict.FAIL,
+        status_code=last_status,
+        detail=(
+            f"health probe failed {LIVENESS_ATTEMPTS} times running once the "
+            f"stress traffic drained -- {diagnosis}: {'; '.join(failures)}"
+        ),
+    )
+
+
+# ------------------------------------------------------------------
+# Verdict helpers
+# ------------------------------------------------------------------
