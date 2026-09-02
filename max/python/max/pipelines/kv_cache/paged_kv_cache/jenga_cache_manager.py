@@ -40,7 +40,7 @@ from max.nn.kv_cache.cache_params import (
 )
 from max.nn.kv_cache.data_parallelism_utils import split_into_groups
 from max.nn.kv_cache.metrics import KVCacheMetrics
-from max.nn.kv_cache.utils import build_max_lengths_tensors
+from max.nn.kv_cache.utils import build_max_lengths_tensors, padded_lut_cols
 from max.pipelines.context import TextContext
 from max.pipelines.kv_cache.kv_connector import (
     BlockCount,
@@ -55,7 +55,6 @@ from ..connectors import create_connector
 from .block_manager import _compute_seq_len
 from .cache_manager import (
     _contiguous_prefix_2d,
-    _padded_lut_cols,
     cache_valid_length_for_context,
     prompt_tokens_for_context,
 )
@@ -90,7 +89,7 @@ class _PersistentKVDeviceInputBuffers:
         # Pad the inner dim so the SIMD ``populate`` in ``PagedKVCache``
         # can always load up to 16 consecutive uint32s past any valid
         # ``first_lut_idx`` without going OOB of this backing allocation.
-        padded_inner = _padded_lut_cols(max_lut_size)
+        padded_inner = padded_lut_cols(max_lut_size)
         for device in devices:
             lut_table_by_device.append(
                 {
@@ -118,7 +117,7 @@ class _PersistentKVDeviceInputBuffers:
     def view(
         self, batch_size: int, lut_num_pages: int
     ) -> tuple[list[dict[str, Buffer]], list[Buffer]]:
-        padded_lut_num_pages = _padded_lut_cols(lut_num_pages)
+        padded_lut_num_pages = padded_lut_cols(lut_num_pages)
         luts = [
             {
                 leaf_id: _contiguous_prefix_2d(
@@ -421,7 +420,7 @@ class JengaKVCacheManager(JengaBlockManager, PagedKVCacheManagerInterface):
         # ``PagedKVCache`` can safely over-read past any valid
         # ``first_lut_idx``. [0, total_num_pages) are the valid block ids
         # and total_num_pages denotes an unassigned block.
-        padded_lut_num_pages = _padded_lut_cols(lut_num_pages)
+        padded_lut_num_pages = padded_lut_cols(lut_num_pages)
         shape = (batch_size, padded_lut_num_pages)
         dtype = DType.uint32
         device = self._staging_devices[replica_idx]

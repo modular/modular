@@ -51,6 +51,7 @@ from .utils import (
     MLAAttnKey,
     MSAAttnKey,
     build_max_lengths_tensors,
+    padded_lut_cols,
 )
 
 __all__ = [
@@ -88,5 +89,6 @@ __all__ = [
     "compute_max_seq_len_fitting_in_cache",
     "compute_num_device_blocks",
     "estimated_memory_size",
+    "padded_lut_cols",
     "spec_decode_cache_slack",
 ]

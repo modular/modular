@@ -26,8 +26,8 @@ from max.nn.kv_cache import (
     MultiKVCacheInputs,
     MultiKVCacheParams,
 )
+from max.nn.kv_cache.utils import padded_lut_cols
 from max.pipelines.kv_cache import PagedKVCacheManager
-from max.pipelines.kv_cache.paged_kv_cache.cache_manager import _padded_lut_cols
 from test_common.context_utils import create_text_context
 
 
@@ -219,7 +219,7 @@ async def test_fetch_paged_lookup_table_tracks_required_page_capacity() -> None:
     first_inputs = kv_manager.runtime_inputs_for_leaf([[short_context]]).inputs[
         0
     ]
-    assert tuple(first_inputs.lookup_table.shape) == (1, _padded_lut_cols(1))
+    assert tuple(first_inputs.lookup_table.shape) == (1, padded_lut_cols(1))
 
     long_context = create_text_context(np.zeros(256, dtype=np.int64))
     kv_manager.claim(long_context)
@@ -228,7 +228,7 @@ async def test_fetch_paged_lookup_table_tracks_required_page_capacity() -> None:
     second_inputs = kv_manager.runtime_inputs_for_leaf([[long_context]]).inputs[
         0
     ]
-    assert tuple(second_inputs.lookup_table.shape) == (1, _padded_lut_cols(2))
+    assert tuple(second_inputs.lookup_table.shape) == (1, padded_lut_cols(2))
 
 
 @pytest.mark.asyncio
@@ -243,7 +243,7 @@ async def test_runtime_inputs_lookup_table_uses_explicit_max_cache_length() -> (
     kv_manager.alloc(context)
 
     runtime_inputs = kv_manager.runtime_inputs_for_leaf([[context]]).inputs[0]
-    assert tuple(runtime_inputs.lookup_table.shape) == (1, _padded_lut_cols(1))
+    assert tuple(runtime_inputs.lookup_table.shape) == (1, padded_lut_cols(1))
 
     explicit_inputs = kv_manager.runtime_inputs_for_leaf(
         [[context]],
@@ -251,7 +251,7 @@ async def test_runtime_inputs_lookup_table_uses_explicit_max_cache_length() -> (
     ).inputs[0]
     assert tuple(explicit_inputs.lookup_table.shape) == (
         1,
-        _padded_lut_cols(total_num_pages),
+        padded_lut_cols(total_num_pages),
     )
 
 
@@ -304,11 +304,11 @@ async def test_mixed_dp_tp_runtime_inputs_copy_lut_within_replica() -> None:
 
     assert tuple(runtime_inputs.inputs[0].lookup_table.shape) == (
         1,
-        _padded_lut_cols(1),
+        padded_lut_cols(1),
     )
     assert tuple(runtime_inputs.inputs[4].lookup_table.shape) == (
         1,
-        _padded_lut_cols(2),
+        padded_lut_cols(2),
     )
 
     for replica_start in (0, 4):
@@ -609,7 +609,7 @@ def test_lut_tail_padding_sentinel_is_total_num_pages() -> None:
     total_num_pages = 16
     page_size = 4
     # Real request spans 3 pages; dummy has 1 null-block entry.
-    # LUT row width = _padded_lut_cols(3) >> 3, so columns 3.. are tail-padding.
+    # LUT row width = padded_lut_cols(3) >> 3, so columns 3.. are tail-padding.
     num_real_pages = 3
     kv_manager = _make_kv_manager(
         total_num_pages=total_num_pages,
