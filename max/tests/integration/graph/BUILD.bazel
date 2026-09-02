@@ -56,6 +56,7 @@ modular_py_test(
         ["*.py"],
         exclude = _AMD_ONLY_TESTS + _NVIDIA_ONLY_TESTS + _CPU_ONLY_TESTS + _SEPARATE_TARGET_TESTS + [
             "buffer_create_init_shared.py",
+            "fusion_utils.py",
             "test_nan_check.py",
         ],
     ),
@@ -105,6 +106,7 @@ modular_py_test(
         "gpu",
     ],
     deps = [
+        ":fusion_utils",
         "//max/python/max:_core",
         "//max/python/max/driver",
         "//max/python/max/dtype",
@@ -120,6 +122,22 @@ modular_py_test(
         requirement("pytest-asyncio"),
         requirement("torch"),
         requirement("torchvision"),
+    ],
+)
+
+# Shared by every `test_*_fusion.py` file in the bulk `graph` target above:
+# excluded from its own `srcs` glob (it isn't a test module) and depended on
+# instead, the same pattern `buffer_create_init_shared` uses.
+modular_py_library(
+    name = "fusion_utils",
+    testonly = True,
+    srcs = ["fusion_utils.py"],
+    imports = ["."],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        requirement("numpy"),
     ],
 )
 
