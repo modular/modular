@@ -67,6 +67,7 @@ from layout import (
     CoordLike,
     Layout,
     RowMajorLayout,
+    TensorEngine,
     TileTensor,
     row_major,
     stack_allocation as tt_stack_allocation,
@@ -129,6 +130,7 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
     MaskType: MHAMask,
     config: MLA_SM100_Decode_Config,
     ValidLengthType: OptionalPointer,
+    Engine: TensorEngine,
     _is_cache_length_accurate: Bool = False,
     ragged: Bool = False,
     # Layout G handles BOTH fold (fold_q==True, q_len_fold > 1) and non-fold
@@ -162,6 +164,7 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
             stage counts, head counts, and TMEM/SMEM layout.
         ValidLengthType: `OptionalPointer` type for the per-sequence valid
             length buffer consumed under ragged batching.
+        Engine: Engine policy of the `scalar_args` tile operand.
         _is_cache_length_accurate: Whether the supplied cache length is
             exact rather than `cache_length + seq_len` (defaults to `False`).
         ragged: Whether the batch contains variable-length sequences,
@@ -1061,7 +1064,10 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
         ],
         scales_ptr: UnsafePointer[Float32, origin=MutAnyOrigin],
         scalar_args: TileTensor[
-            .int64, RowMajorLayout[ComptimeInt[3]], MutAnyOrigin
+            .int64,
+            RowMajorLayout[ComptimeInt[3]],
+            MutAnyOrigin,
+            Engine=Self.Engine,
         ],
     ):
         comptime assert Self.config.decode_layout_g, (
