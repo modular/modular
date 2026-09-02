@@ -794,6 +794,11 @@ the [container](/container) page now links to the new page.
 - SM100 matmuls with an elementwise epilogue no longer leave output columns
   unwritten when `N` is not a multiple of 16, such as `N=136` or `N=776`.
 
+- SM100 bf16 and fp8-input matmuls whose N leaves the output row stride short
+  of TMA's 16-byte alignment, such as a 258-wide MoE router projection, now
+  take the split-K GEMV at up to 64 rows instead of falling back to vendor
+  BLAS.
+
 - The SM100 MLA decode dispatch now enumerates 12, 24 and 48 query heads
   alongside the powers of two it already covered, so a model whose per-device
   head count is not a power of two can bind its dispatch metadata.
