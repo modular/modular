@@ -31,7 +31,7 @@ speculative:
 runtime:
   ep_size: 8
   max_batch_input_tokens: 2048
-  max_batch_size: 8
+  max_batch_size: 32
 
 sampling:
   enable_structured_output: true
