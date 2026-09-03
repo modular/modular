@@ -1753,9 +1753,14 @@ static ASTDecl *getClosureTraitDecl(SharedState &shared,
 // Returns the upcastability verdict (`yes`/`no`/`unknown`) for converting a
 // type value to a trait. Returns failure for non-applicable cases (i.e.,
 // `fromType` is not a typetype and/or `toType` is not a trait type).
-FailureOr<TriState> IREmitter::canMetaTypeUpCastTo(
-    SharedState &shared, SMLoc loc, ASTType fromType, ASTType toType,
-    ASTDecl *declScope, bool *scopeDependent, ConstraintFailure *details) {
+//
+// Shared body of the two public entry points. `details`, when non-null, is
+// filled with the constraints behind a non-`yes` verdict; when passed null, the
+// conformance query short-circuits.
+static FailureOr<TriState>
+canMetaTypeUpCastToImpl(SharedState &shared, SMLoc loc, ASTType fromType,
+                        ASTType toType, ASTDecl *declScope,
+                        bool *scopeDependent, ConstraintFailure *details) {
   auto conformanceVerdict = [&](ASTType type, TraitType trait) {
     // Owned, not an ArrayRef: `getAssumptionsFromScope` returns by value.
     SmallVector<ConstraintAttr> assumptions =
@@ -1916,6 +1921,30 @@ FailureOr<TriState> IREmitter::canMetaTypeUpCastTo(
   return failure();
 }
 
+FailureOr<TriState> IREmitter::canMetaTypeUpCastTo(SharedState &shared,
+                                                   SMLoc loc, ASTType fromType,
+                                                   ASTType toType,
+                                                   ASTDecl *declScope,
+                                                   bool *scopeDependent) {
+  return canMetaTypeUpCastToImpl(shared, loc, fromType, toType, declScope,
+                                 scopeDependent, /*details=*/nullptr);
+}
+
+FailureOr<ConstraintResult> IREmitter::canMetaTypeUpCastToWithDetails(
+    SharedState &shared, SMLoc loc, ASTType fromType, ASTType toType,
+    ASTDecl *declScope, bool *scopeDependent) {
+  ConstraintFailure details;
+  FailureOr<TriState> verdict = canMetaTypeUpCastToImpl(
+      shared, loc, fromType, toType, declScope, scopeDependent, &details);
+  if (failed(verdict))
+    return failure();
+  if (verdict->isTrue())
+    return ConstraintResult::yes();
+  if (verdict->isFalse())
+    return ConstraintResult::no(std::move(details.failedConstraints));
+  return ConstraintResult::unknown(std::move(details.unprovenConstraints));
+}
+
 //===----------------------------------------------------------------------===//
 // Generalized Implicit Conversions
 //===----------------------------------------------------------------------===//
@@ -2066,7 +2095,7 @@ TriState IREmitter::classifyImplicitConversion(
 
   bool upCastScopeDependent = false;
   ConstraintFailure upCastConstraints;
-  FailureOr<TriState> canUpCast = canMetaTypeUpCastTo(
+  FailureOr<TriState> canUpCast = canMetaTypeUpCastToImpl(
       shared, value.expr->getLoc(), rvType, requiredType, &declScope,
       &upCastScopeDependent, failure ? &upCastConstraints : nullptr);
   if (succeeded(canUpCast))
@@ -2089,11 +2118,11 @@ TriState IREmitter::classifyImplicitConversion(
     // Reuse assumptions from above for variadic element upcast.
     bool eltUpCastScopeDependent = false;
     ConstraintFailure eltUpCastConstraints;
-    FailureOr<TriState> canUpCast = canMetaTypeUpCastTo(
+    FailureOr<TriState> canEltUpCast = canMetaTypeUpCastToImpl(
         shared, value.expr->getLoc(), fromEltTp, toEltTp, &declScope,
         &eltUpCastScopeDependent, failure ? &eltUpCastConstraints : nullptr);
-    if (succeeded(canUpCast))
-      return resolveTriStateVerdict(*canUpCast, eltUpCastScopeDependent,
+    if (succeeded(canEltUpCast))
+      return resolveTriStateVerdict(*canEltUpCast, eltUpCastScopeDependent,
                                     ConversionFailure::UnsatisfiedConstraints{
                                         std::move(eltUpCastConstraints)});
   }

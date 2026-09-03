@@ -201,14 +201,19 @@ public:
   // scope-dependent: the same type pair can yield a different verdict in a
   // scope with a different assumption set, so callers that memoize keyed on the
   // type pair must not cache a scope-dependent verdict.
-  //
-  // When `failure` is non-null, it receives the verdict plus any
-  // failed/unproven provider `where` constraints.
+
   static FailureOr<TriState>
   canMetaTypeUpCastTo(SharedState &shared, SMLoc loc, ASTType fromType,
                       ASTType toType, ASTDecl *declScope,
-                      bool *scopeDependent = nullptr,
-                      ConstraintFailure *failure = nullptr);
+                      bool *scopeDependent = nullptr);
+
+  /// Same, additionally collecting the problematic constraints so a diagnosing
+  /// caller can name them. An upcast to a trait is decided by a conformance
+  /// query, so a rejection reports exactly what that query would have.
+  static FailureOr<ConstraintResult>
+  canMetaTypeUpCastToWithDetails(SharedState &shared, SMLoc loc,
+                                 ASTType fromType, ASTType toType,
+                                 ASTDecl *declScope, bool *scopeDependent);
 
   /// Given a value of a type that can be zero cost converted to another type,
   /// emit a rebind or other operation to get it in the right type.
