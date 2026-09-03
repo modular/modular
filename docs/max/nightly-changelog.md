@@ -883,6 +883,8 @@ the [container](/container) page now links to the new page.
   distribution-producing path now skips its cutoff search. The existing
   single-output path is unchanged. On AMD GPUs, the distribution output also
   serves as temporary storage for exponentiated logits during sampling.
+- MiniMax-M3 sampled MTP now samples only the accepted initial draft row
+  instead of every possible acceptance position.
 - Added `max.nn.kernels.topk_topp_masked_probs`, which computes a row's
   top-k/top-p masked renormalized softmax without sampling and without a
   sort. Speculative decoding verification reads the target's masked
