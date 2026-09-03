@@ -42,7 +42,7 @@ As summarized in the table above, you can serve a model across multiple GPUs usi
 
 ### Tensor parallelism
 
-MAX doesn't provide a separate tensor parallelism flag. For a model that
+For a model that
 supports tensor parallelism, use `--devices` to select the GPUs you want to
 shard across. This example serves a model with TP=4:
 
