@@ -482,3 +482,24 @@ def main() raises:
             temperature=1.0,
             exact_reference=False,
         )
+        # Exercise two- and four-block row groups.
+        run_probs(
+            ctx,
+            rows=100,
+            d=16384,
+            filler=scrambled_logit,
+            k=40,
+            top_p=0.95,
+            temperature=1.0,
+            exact_reference=False,
+        )
+        run_probs(
+            ctx,
+            rows=50,
+            d=32768,
+            filler=scrambled_logit,
+            k=40,
+            top_p=0.95,
+            temperature=1.0,
+            exact_reference=False,
+        )
