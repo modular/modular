@@ -1389,6 +1389,15 @@ def _block_reduce_topp_stats[
     return (results[0], results[1], results[2], results[3])
 
 
+def _topp_budget(p: Float32, z: Float32) -> Float32:
+    """Makes the top-p budget unbounded when ``p >= 1``.
+
+    Independent reductions can disagree by a few ulps, so using ``z`` as the
+    limit can reject a valid pivot.
+    """
+    return Float32.MAX if p >= 1.0 else p * z
+
+
 @always_inline
 def _topk_topp_cutoff_search[
     vec_size: Int,
@@ -1805,7 +1814,7 @@ def TopKTopPSamplingFromProbKernel[
                 ]()
 
         # Top-p budget in the working domain (z == 1.0 in from-prob mode).
-        var p_eff = p * z
+        var p_eff = _topp_budget(p, z)
 
         # The final sampled index, produced by whichever search path runs.
         var sampled_id = 0
@@ -2912,7 +2921,7 @@ def TopKTopPMaskedProbsKernel[
         positive_count = total.count
     else:
         z = block.sum[block_size=block_size, broadcast=True](thread_sum)
-    var p_eff = p * z
+    var p_eff = _topp_budget(p, z)
 
     @__parameter
     @always_inline

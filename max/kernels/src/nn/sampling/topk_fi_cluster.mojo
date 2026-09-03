@@ -65,6 +65,7 @@ from .topk_fi import (
     ValueCount,
     device_sampling_from_prob,
     _block_reduce_value_count,
+    _topp_budget,
 )
 
 # The largest cluster that these kernels use. All CTAs of a cluster must run
@@ -450,7 +451,7 @@ def TopKTopPMaskedProbsClusterKernel[
     )
     var z = totals[0]
     var total_count = Int32(totals[1])
-    var p_eff = p * z
+    var p_eff = _topp_budget(p, z)
 
     var cut = Float32(0)
     var mass_s = z
@@ -1156,7 +1157,7 @@ def TopKTopPSamplingEmitDistClusterKernel[
 
     # Top-p budget in the unnormalized domain. Identical on every CTA because
     # z came out of the rank-ordered cluster fold.
-    var p_eff = p * z
+    var p_eff = _topp_budget(p, z)
 
     # The loop reads staged elements that other threads of this block wrote;
     # it never touches a peer CTA's slice, so a block barrier is enough.
