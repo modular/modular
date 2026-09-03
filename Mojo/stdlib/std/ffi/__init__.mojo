@@ -679,7 +679,8 @@ struct _DLHandle(Boolable, ImplicitlyCopyable, RegisterPassable):
             using `OwnedDLHandle` which automatically manages the library
             lifetime.
         """
-        _ = dlclose(self.handle)
+        if self.handle:
+            _ = dlclose(self.handle)
         self.handle = {}
 
     def __bool__(self) -> Bool:
@@ -1047,14 +1048,17 @@ struct _Global[
     def _deinit_wrapper(
         opaque_ptr: OptionalPointer[NoneType, UntrackedOrigin[mut=True]]
     ):
-        # Deinitialize and deallocate the storage.
+        # Destroy the value, then deallocate the storage.
         if opaque_ptr:
+            var typed_ptr = opaque_ptr.unsafe_value().unsafe_bitcast[
+                Self.StorageType
+            ]()
+            comptime if conforms_to(Self.StorageType, Deinitable):
+                typed_ptr.unsafe_deinit_pointee()
             dealloc(
-                ThinAllocation(
-                    unsafe_owned_ptr=opaque_ptr.unsafe_value().unsafe_bitcast[
-                        Self.StorageType
-                    ]()
-                ).unsafe_with_layout({count = 1})
+                ThinAllocation(unsafe_owned_ptr=typed_ptr).unsafe_with_layout(
+                    {count = 1}
+                )
             )
 
     @staticmethod
