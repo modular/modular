@@ -779,24 +779,28 @@ class StructuredOutputHelper:
 
         Args:
             ctx: The request context.
-            drafts: Candidate draft tokens for the next batch, already
-                trimmed to ``bitmask_window``'s draft slots.
-            bitmask_window: ``[len(drafts)+1, packed_vocab]``, pre-initialized to
+            drafts: Candidate draft tokens for the next batch.
+            bitmask_window: ``[num_positions, packed_vocab]`` with
+                ``num_positions >= len(drafts)+1``, pre-initialized to
                 ``-1`` (unconstrained). Slot 0 is the position
                 immediately after the committed tokens; slot ``i+1`` is
                 the position after consuming ``drafts[i]``. Slots stay
-                ``-1`` wherever grammar enforcement is off, or where the
+                ``-1`` wherever grammar enforcement is off, where the
                 matcher has no valid continuation (see
                 :meth:`_fill_slot_unless_matcher_dead`).
         """
         assert ctx.matcher is not None
         fsm_snap = ctx.snapshot_grammar_state()
 
-        if bitmask_window.shape[0] != drafts.shape[0] + 1:
+        # The window keeps the graph's static width while the realized draft
+        # width can shrink (a prefill->decode batch verifies zero drafts), so a
+        # wider window is normal; unreached slots keep their -1. Too narrow is a
+        # caller bug worth raising on.
+        if drafts.shape[0] + 1 > bitmask_window.shape[0]:
             raise ValueError(
                 f"bitmask window has {bitmask_window.shape[0]} slots but "
                 f"{drafts.shape[0]} drafts were passed; the window must hold "
-                "one slot per draft plus the bonus slot."
+                "at least one slot per draft plus the bonus slot."
             )
         # Speculatively consume drafts on a throwaway copy of the matcher.
         # LLMatcher.rollback() is not a perfect inverse when the consumed

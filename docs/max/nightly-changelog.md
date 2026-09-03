@@ -1267,6 +1267,10 @@ the [container](/container) page now links to the new page.
   less than one and skewed the rejection residual. The sampled token stream
   was and remains unchanged.
 
+- Fixed a model worker crash when constrained decoding and speculative
+  decoding were enabled together. A batch at the prefill-to-decode boundary
+  verifies no drafts, which the grammar bitmask fill rejected.
+
 ## Mojo language
 
 For all the updates to the Mojo language, standard library, and tools,

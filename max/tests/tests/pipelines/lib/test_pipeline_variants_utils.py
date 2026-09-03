@@ -1062,3 +1062,76 @@ class TestSpecDecodeEosOutranksLengthCap:
     ) -> None:
         ctx = self._run_one_step(bonus_token=999)
         assert ctx.status == GenerationStatus.MAXIMUM_LENGTH
+
+
+class TestSpeculativeBitmaskWindowWidth:
+    """``StructuredOutputHelper._speculatively_fill_bitmask_window`` must accept
+    a window wider than the drafts justify.
+
+    ``num_positions`` is the graph's static bitmask width
+    (``num_speculative_tokens + 1``) and cannot shrink per step, but the
+    realized draft width can: at the prefill->decode boundary the batch
+    verifies zero drafts, so ``compute_speculative_bitmasks`` hands this helper
+    a full-width window and an empty draft row. The window arrives
+    pre-initialized to ``-1`` (unconstrained), so slots the drafts never reach
+    are already correct. Only a window too *narrow* for the drafts is a caller
+    bug.
+    """
+
+    @staticmethod
+    def _run(
+        drafts: list[int], num_positions: int
+    ) -> tuple[TextContext, npt.NDArray[np.int32]]:
+        helper = StructuredOutputHelper(
+            enabled=True, vocab_size=32, backend=_FillRecordingBackend()
+        )
+        ctx = create_text_context(prompt_len=4, max_length=128)
+        ctx.update(new_token=99)
+        ctx.set_matcher(_RecordingMatcher())
+        ctx.grammar_enforced = True
+
+        window = np.full((num_positions, 1), -1, dtype=np.int32)
+        helper._speculatively_fill_bitmask_window(
+            ctx,
+            drafts=np.array(drafts, dtype=np.int64),
+            bitmask_window=window,
+        )
+        return ctx, window
+
+    @staticmethod
+    def _constrained(window: npt.NDArray[np.int32]) -> list[bool]:
+        """Per-slot: True where the backend wrote (0), False where still -1."""
+        return [bool((row == 0).all()) for row in window]
+
+    def test_zero_drafts_constrain_only_the_first_slot(self) -> None:
+        """Prefill->decode boundary: zero realized drafts, static 4-slot
+        window. Slot 0 still carries the current matcher state; the rest keep
+        their unconstrained reset."""
+        _, window = self._run(drafts=[], num_positions=4)
+
+        assert self._constrained(window) == [True, False, False, False]
+
+    def test_partial_drafts_leave_the_unreached_tail_alone(self) -> None:
+        """Two realized drafts in a static 4-slot window constrain slots 0..2;
+        slot 3 has no draft to advance into."""
+        ctx, window = self._run(drafts=[3, 4], num_positions=4)
+
+        assert self._constrained(window) == [True, True, True, False]
+        # The walk runs on a deep copy and unwinds, so the request's own
+        # matcher and enforcement state are untouched.
+        assert isinstance(ctx.matcher, _RecordingMatcher)
+        assert ctx.matcher.consumed == []
+        assert ctx.grammar_enforced
+
+    def test_exact_width_constrains_every_slot(self) -> None:
+        """Regression guard: the steady-state case where the drafts exactly
+        fill the window is unchanged."""
+        _, window = self._run(drafts=[3, 4, 5], num_positions=4)
+
+        assert self._constrained(window) == [True, True, True, True]
+
+    def test_more_drafts_than_the_window_holds_raises(self) -> None:
+        """A window too narrow for the drafts is a real caller bug -- silently
+        truncating would drop constraints the sampler needs."""
+        with pytest.raises(ValueError, match="bitmask window"):
+            self._run(drafts=[3, 4, 5, 6], num_positions=4)
