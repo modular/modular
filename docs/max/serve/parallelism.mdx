@@ -109,7 +109,7 @@ choose a hybrid configuration by combining a device count, a data parallelism
 degree, and an expert parallelism size. For example, if you have
 8 GPUs, you have the following hybrid options:
 
-| `--data-parallel-degree` | `--ep-size` | Resulting configuration                                                                                          |
+| <code style={{whiteSpace:'nowrap'}}>--data-parallel-degree</code> | <code style={{whiteSpace:'nowrap'}}>--ep-size</code> | Resulting configuration                                                                                          |
 |--------------------------|-------------|------------------------------------------------------------------------------------------------------------------|
 | `1` (default)            | unset       | TP=8, DP=1: one replica, weights sharded across all GPUs                                                         |
 | `2`                      | unset       | TP=4, DP=2: two replicas, each sharded across four GPUs                                                          |
