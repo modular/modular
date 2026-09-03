@@ -168,20 +168,16 @@ public:
   ///   - `yes`     the conversion is free (including shedding generator body
   ///               constraints that `declScope` proves).
   ///   - `no`      the representations differ, or a generator body constraint
-  ///               is unprovable or refuted in `declScope`.
+  ///               is refuted in `declScope`.
+  ///   - `unknown` a generator body constraint is unprovable in `declScope`.
   ///
   /// `declScope` supplies the `where` assumptions used to discharge generator
   /// body constraints; `additionalAssumptions` are extra facts to consider
   /// alongside it.
-  ///
-  /// When `failure` is non-null and the verdict is `unknown`, it receives the
-  /// body constraints that lacked evidence, so a caller needing to name them
-  /// does not have to repeat the discharge.
   static TriState
   canZeroCostConvert(ASTType fromType, ASTType toType, SharedState &shared,
                      ASTDecl &declScope,
-                     ArrayRef<ConstraintAttr> additionalAssumptions = {},
-                     ConversionFailure *failure = nullptr);
+                     ArrayRef<ConstraintAttr> additionalAssumptions = {});
 
   /// Same as the above, using this emitter's shared state and scope.
   TriState
@@ -205,14 +201,19 @@ public:
   // scope-dependent: the same type pair can yield a different verdict in a
   // scope with a different assumption set, so callers that memoize keyed on the
   // type pair must not cache a scope-dependent verdict.
-  //
-  // When `failure` is non-null, it receives the verdict plus any
-  // failed/unproven provider `where` constraints.
+
   static FailureOr<TriState>
   canMetaTypeUpCastTo(SharedState &shared, SMLoc loc, ASTType fromType,
                       ASTType toType, ASTDecl *declScope,
-                      bool *scopeDependent = nullptr,
-                      ConstraintFailure *failure = nullptr);
+                      bool *scopeDependent = nullptr);
+
+  /// Same, additionally collecting the problematic constraints so a diagnosing
+  /// caller can name them. An upcast to a trait is decided by a conformance
+  /// query, so a rejection reports exactly what that query would have.
+  static FailureOr<ConstraintResult>
+  canMetaTypeUpCastToWithDetails(SharedState &shared, SMLoc loc,
+                                 ASTType fromType, ASTType toType,
+                                 ASTDecl *declScope, bool *scopeDependent);
 
   /// Given a value of a type that can be zero cost converted to another type,
   /// emit a rebind or other operation to get it in the right type.

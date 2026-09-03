@@ -20,7 +20,7 @@ from max.dtype import DType
 from max.graph import DeviceRef
 from max.graph.weights import WeightData
 from max.nn import ReturnLogits, YarnScalingParams
-from max.nn.kv_cache import KVCacheParams
+from max.nn.kv_cache import KVCacheParamInterface
 from max.pipelines.kv_cache import cache_dtype_for_encoding
 from max.pipelines.lib import MAXModelConfig, PipelineConfig
 from max.pipelines.lib.config.model_config import (
@@ -147,7 +147,7 @@ class Olmo3Config(
     return_logits: ReturnLogits
     """Whether to return the last token, all logits, or a variable number of logits."""
 
-    kv_params: KVCacheParams
+    kv_params: KVCacheParamInterface
     """KV cache parameters."""
 
     quantization_encoding: SupportedEncoding | None = None

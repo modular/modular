@@ -20,7 +20,7 @@ from collections.abc import Sequence
 
 from max.dtype import DType
 from max.graph import BufferValue, ShardingStrategy, TensorValue, ops
-from max.nn.kv_cache import PagedCacheValues
+from max.nn.kv_cache import KVCacheParams, PagedCacheValues
 from max.nn.layer import LayerList, Module
 from max.nn.linear import MLP, ColumnParallelLinear
 from max.nn.rotary_embedding import (
@@ -116,6 +116,9 @@ class Gemma3TextModel(DistributedLogitsPostprocessMixin, Module):
             eps=config.rms_norm_eps,
         )
 
+        kv_params = config.kv_params
+        assert isinstance(kv_params, KVCacheParams)
+
         layers = [
             Gemma3TransformerBlock(
                 attention=Gemma3Attention(
@@ -124,7 +127,7 @@ class Gemma3TextModel(DistributedLogitsPostprocessMixin, Module):
                     num_attention_heads=config.num_attention_heads,
                     num_key_value_heads=config.num_key_value_heads,
                     hidden_size=config.hidden_size,
-                    kv_params=config.kv_params,
+                    kv_params=kv_params,
                     layer_idx=i,
                     dtype=config.dtype,
                     devices=config.devices,

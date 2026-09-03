@@ -20,7 +20,7 @@ from max.dtype import DType
 from max.experimental.sharding import DeviceMesh
 from max.graph import DeviceRef
 from max.graph.weights import WeightData
-from max.nn.kv_cache import KVCacheParams
+from max.nn.kv_cache import KVCacheParamInterface
 from max.nn.quant_config import QuantConfig
 from max.nn.rotary_embedding import LinearScalingParams
 from max.nn.transformer import ReturnLogits
@@ -135,7 +135,7 @@ class Gemma3Config(
     return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN
     """Whether to return the last token, all logits, or a variable number of logits."""
 
-    kv_params: KVCacheParams
+    kv_params: KVCacheParamInterface
     """KV cache parameters."""
 
     tie_word_embeddings: bool = False

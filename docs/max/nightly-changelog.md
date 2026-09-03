@@ -256,6 +256,12 @@ the [container](/container) page now links to the new page.
   `dependentSchemas` is now anchored to an object, as one under `properties`
   already was. Such a subschema previously compiled to a grammar admitting an
   unbounded value, letting a looping model run to `max_length`.
+- Added the experimental `--experimental-device-graph-synthesis` flag
+  (`PipelineRuntimeConfig.experimental_device_graph_synthesis`): compiles
+  model graphs with device-graph synthesis, so the compiled model records its
+  kernels into a device graph and replays it on execute. Honored only by
+  architectures that opt in (currently Gemma 4's language graph), and
+  mutually exclusive with `device_graph_capture`.
 - Added `max.pipelines.lib.MemoryPlan`, the result of memory planning when a
   pipeline is loaded: the effective `planned_max_length`, `max_batch_size`,
   `max_batch_total_tokens`, KV-cache budget, and device specs the pipeline
@@ -455,6 +461,13 @@ the [container](/container) page now links to the new page.
   now resolve on this path, folded into the handshake's `kv_config_hash`. A
   single-tenant node spanning more than one GPU must set the dKV server's
   `--fair-share-partitions` to its GPU count.
+- A request's `dkv_cache_hint` now reaches the dKV external KV-cache connector,
+  which reads it to load a cached prefix from the instance that holds it rather
+  than only from the co-located one. The serving layer forwards the field
+  without interpreting it, so the hint schema is versioned in one place and a
+  hint this build cannot use costs a cache miss rather than a failed request.
+  Previously the field was parsed into a form nothing read, and every hinted
+  load went to the co-located dKV.
 - The dKV external KV-cache connector now accepts a KV cache tree that mixes
   TP-replicated and head-sharded caches, instead of failing model load. Only
   an all-replicated tree produces a block that is byte-identical across TP
@@ -788,6 +801,11 @@ the [container](/container) page now links to the new page.
 - SM100 matmuls with an elementwise epilogue no longer leave output columns
   unwritten when `N` is not a multiple of 16, such as `N=136` or `N=776`.
 
+- SM100 bf16 and fp8-input matmuls whose N leaves the output row stride short
+  of TMA's 16-byte alignment, such as a 258-wide MoE router projection, now
+  take the split-K GEMV at up to 64 rows instead of falling back to vendor
+  BLAS.
+
 - The SM100 MLA decode dispatch now enumerates 12, 24 and 48 query heads
   alongside the powers of two it already covered, so a model whose per-device
   head count is not a power of two can bind its dispatch metadata.
@@ -865,6 +883,8 @@ the [container](/container) page now links to the new page.
   distribution-producing path now skips its cutoff search. The existing
   single-output path is unchanged. On AMD GPUs, the distribution output also
   serves as temporary storage for exponentiated logits during sampling.
+- MiniMax-M3 sampled MTP now samples only the accepted initial draft row
+  instead of every possible acceptance position.
 - Added `max.nn.kernels.topk_topp_masked_probs`, which computes a row's
   top-k/top-p masked renormalized softmax without sampling and without a
   sort. Speculative decoding verification reads the target's masked
@@ -886,6 +906,7 @@ the [container](/container) page now links to the new page.
   kernel generates from a per-row seed. This enables sampling a speculative
   decoding rejection residual `max(p_target - q_draft, 0)` that the caller
   builds in graph ops. GPU-only, non-Apple.
+- Improved wide-row FP32 Gumbel sampling performance on AMD GPUs.
 - Retuned the MI355X dispatch table for a grouped block-scaled MoE
   matmul (gate-up and down projections) at the estimated-total-M > 2048
   band that real serving traffic hits, plus the down projection's
@@ -1247,6 +1268,10 @@ the [container](/container) page now links to the new page.
   the unmasked softmax mass instead of the masked kept mass, so it summed to
   less than one and skewed the rejection residual. The sampled token stream
   was and remains unchanged.
+
+- Fixed a model worker crash when constrained decoding and speculative
+  decoding were enabled together. A batch at the prefill-to-decode boundary
+  verifies no drafts, which the grammar bitmask fill rejected.
 
 ## Mojo language
 

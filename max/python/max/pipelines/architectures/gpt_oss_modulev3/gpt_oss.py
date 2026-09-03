@@ -32,6 +32,7 @@ from max.nn.attention import MHAMaskVariant
 from max.nn.kv_cache import (
     KVCacheInputs,
     KVCacheParamInterface,
+    KVCacheParams,
     PagedCacheValues,
 )
 
@@ -97,6 +98,9 @@ class GptOssTextModel(
             eps=config.rms_norm_eps,
         )
 
+        kv_params = config.kv_params
+        assert isinstance(kv_params, KVCacheParams)
+
         layers = []
         for i in range(config.num_hidden_layers):
             if i < len(config.layer_types):
@@ -115,7 +119,7 @@ class GptOssTextModel(
                         num_attention_heads=config.num_attention_heads,
                         num_key_value_heads=config.num_key_value_heads,
                         hidden_size=config.hidden_size,
-                        kv_params=config.kv_params,
+                        kv_params=kv_params,
                         layer_idx=i,
                         local_window_size=config.sliding_window,
                         has_bias=config.attention_bias,

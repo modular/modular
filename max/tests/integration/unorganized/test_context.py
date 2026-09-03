@@ -489,6 +489,26 @@ def test_context_serializable() -> None:
     assert dataclass_equal(msgpack_decoded, original_context)
 
 
+def test_dkv_cache_hint_survives_serialization() -> None:
+    # The hint is carried, never read, so the only thing MAX owes it is that
+    # the bytes reaching the model worker are the bytes that arrived on the
+    # request (CLIN-1630). Its predecessor needed a tagged msgspec struct to
+    # cross this boundary; raw bytes need nothing, and this pins that.
+    hint = b'{"version":2,"instances":[{"instance_name":"dkv-peer"}]}'
+    original_context = TextContext(
+        request_id=RequestID(),
+        max_length=50,
+        tokens=TokenBuffer(np.array([0, 1, 2, 3, 4], dtype=np.int64)),
+        dkv_cache_hint=hint,
+    )
+
+    serialize = msgpack_numpy_encoder()
+    deserialize = msgpack_numpy_decoder(TextContext)
+    decoded = deserialize(serialize(original_context))
+
+    assert decoded.dkv_cache_hint == hint
+
+
 def test_context_tuple_serializable() -> None:
     # Test that we can encode a tuple of (str, TextContext) with Pickle
     original_context = TextContext(

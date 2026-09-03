@@ -1446,15 +1446,12 @@ LIT::getTraitBoundFromAssumptions(TypedAttr typeAttr, SharedState &shared,
 ///        !lit.ref<:trait<@Movable> MTT>, mut *[0,0]> owned_in_mem) -> none>>
 /// Resolving the *(0,0) into the Movable type, as well as the first param type.
 static FnTypeGeneratorType
-createRequirementSignature(FnOp traitFn, ASTType newSelfType,
+createRequirementSignature(FnTypeGeneratorType signature, ASTType newSelfType,
                            ParameterEvaluator *traitAliasReplacer,
                            DeclResolver &declResolver) {
   // Get the selfType as a TypedAttr since we'll be using it as a parameter
   // value below.
   TypedAttr newSelfValue = PValue(newSelfType).get();
-
-  // Start with the full signature for the trait requirement.
-  FnTypeGeneratorType signature = traitFn.getFullSignature();
 
   if (auto paramType = sugarDynCast<ParamType>(newSelfType.extractMetaType())) {
     auto simpleTraitType =
@@ -1518,9 +1515,10 @@ createRequirementSignature(FnOp traitFn, ASTType newSelfType,
   return signature;
 }
 
-FnTypeGeneratorType LIT::specializeSignature(FnOp traitFn, ASTType newSelfType,
-                                             DeclResolver &declResolver) {
-  return createRequirementSignature(traitFn, newSelfType, nullptr,
+FnTypeGeneratorType
+LIT::specializeSignature(FnTypeGeneratorType traitFnSignature,
+                         ASTType newSelfType, DeclResolver &declResolver) {
+  return createRequirementSignature(traitFnSignature, newSelfType, nullptr,
                                     declResolver);
 }
 
@@ -1591,8 +1589,8 @@ FailureOr<TypedAttr> LIT::getUniqueWitnessForTypeIfConforms(
     // name.
     if (failed(shared.declResolver->resolveSignature(entry, errorLoc)))
       return failure();
-    resultType =
-        createRequirementSignature(fnDecl, type, nullptr, *shared.declResolver);
+    resultType = createRequirementSignature(fnDecl.getFullSignature(), type,
+                                            nullptr, *shared.declResolver);
     // Use the mangled name from the trait declaration for function witnesses.
     witnessName = *fnDecl.getSymName();
   } else {

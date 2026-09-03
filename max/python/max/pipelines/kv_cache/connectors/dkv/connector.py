@@ -30,7 +30,6 @@ import os
 import time
 from collections.abc import Callable, Mapping, Sequence
 
-import msgspec
 from max.driver import Buffer, Device
 from max.nn.kv_cache import KVCacheGroupId
 from max.nn.kv_cache.cache_params import (
@@ -561,27 +560,6 @@ def _admit_with_retry(
             backoff *= 2
 
 
-class DKVExternalBlockMetadata(
-    msgspec.Struct, tag=True, kw_only=True, omit_defaults=True
-):
-    """Marker that a block hash is referenced by the orchestrator hint.
-
-    The slim hint only carries ``seq_hash``; the dKV server resolves slab
-    location and length when the connector reads the block. We still wrap the
-    hash in a typed struct so the context payload survives the
-    API-server -> model-worker process boundary via msgspec's tagged-struct
-    serialization.
-
-    The struct is intentionally retained even though it degenerates to a single
-    ``seq_hash`` field today. The orchestrator's hint shape is expected to evolve
-    to mix blocks from multiple source dKV instances in a single hint (per-block
-    ``instance_name`` for routing); keeping the per-block container in place now
-    lets that land without re-introducing a context-side data structure.
-    """
-
-    seq_hash: int
-
-
 class DKVConnector(KVConnector):
     """``KVConnector`` backed by the ``dkv_connector`` Rust client.
 
@@ -625,9 +603,9 @@ class DKVConnector(KVConnector):
                 no default/legacy single-tenant path, so it fails model load
                 rather than silently keying an unfenced shared store.
         """
-        # Deferred so importing this module (e.g. for DKVExternalBlockMetadata,
-        # or by non-dKV pipelines) does not require the optional, runtime-
-        # provided dkv_connector extension to be installed.
+        # Deferred so importing this module (e.g. by a non-dKV pipeline) does
+        # not require the optional, runtime-provided dkv_connector extension to
+        # be installed.
         from dkv_connector import DkvConnector as _DkvConnectorClient
 
         # The Rust client creates a NIXL agent, which dlopens the transport
@@ -936,6 +914,7 @@ class DKVConnector(KVConnector):
         block_ids: Mapping[str, Sequence[int]],
         block_hashes: Sequence[bytes],
         replica_idx: int = 0,
+        hint: bytes | None = None,
     ) -> KVConnectorTransfer:
         """Loads external blocks into ``replica_idx``'s device memory by hash.
 
@@ -943,6 +922,11 @@ class DKVConnector(KVConnector):
         ``ahash64`` / ``sha256_64`` or 32 bytes for full ``sha256``. 32-byte
         digests are truncated to their first 8 bytes at the dkv boundary (see
         :func:`_to_dkv_u64`).
+
+        ``hint`` is the request's ``dkv_cache_hint`` JSON bytes, forwarded
+        unparsed: the Rust client reads it to route each block to the peer that
+        holds it, and treats anything unusable as no hint, which costs a miss
+        rather than a failed load.
 
         Routes to the processing replica's single client (backend dedup: one
         client per DP replica, registering that replica's full TP GPU set). The
@@ -964,6 +948,7 @@ class DKVConnector(KVConnector):
             group_id=_DKV_GROUP_FULL_ATTENTION,
             block_ids=leaf_block_ids,
             block_hashes=dkv_hashes,
+            hint=hint,
         )
         # dKV orders its posted READs before the forward in the deprecated
         # ``wait_for_loads`` barrier, so the manager treats the load as already

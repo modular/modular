@@ -529,11 +529,13 @@ class TextContext:
 
     target_endpoint: str | None = field(default=None)
 
-    external_block_metadata: Any = field(default=None)
-    """Block metadata from the Orchestrator for distributed KV cache (dKV).
+    dkv_cache_hint: bytes | None = field(default=None)
+    """The Orchestrator's ``dkv_cache_hint`` for this request, as JSON bytes.
 
-    When set, the DKVConnector reads this during lookup() to determine
-    which blocks are available in the external BlockStore system.
+    Opaque here. The serving layer only carries it across the API-server to
+    model-worker boundary and hands it to the KV connector's ``load``; the dKV
+    connector parses it in Rust to route each block to the peer that holds it.
+    ``None`` when the request carried no hint.
     """
     cache_salt: str | None = field(default=None)
     """Optional per-request salt that isolates this prompt's prefix-cache
@@ -543,15 +545,6 @@ class TextContext:
     Works under any ``kv_cache_hash_algo``: a cryptographic guarantee
     under ``sha256``/``sha256_64``, best-effort under ``ahash64``. Capped
     at 512 chars at the OpenAI schema layer.
-    """
-
-    dkv_hint_instance_name: str = field(default="")
-    """Instance name from the Orchestrator's dkv_cache_hint identifying
-    the dKV instance that owns the cached blocks. The DKVConnector
-    compares this to its own instance name (learned via
-    ExchangeMetadata) and skips the fetch when they match — those
-    blocks are owned locally and surface through MAX's own prefix
-    cache instead.
     """
 
     cached_prefix_length: int | None = field(default=None)

@@ -1253,6 +1253,28 @@ struct SIMD[dtype: DType, length: SIMDLength](
                 SIMD[exp.dtype, self.length](rebind[Scalar[exp.dtype]](exp)),
             )
 
+    @always_inline("nodebug")
+    def __pow__(self, exp: FloatLiteral) -> Self:
+        """Computes the vector raised to the power of a float literal.
+
+        The literal is converted to `Self`, so the exponent always has the
+        same dtype as the base.
+
+        Constraints:
+            The SIMD dtype must be floating point.
+
+        Args:
+            exp: The exponent value.
+
+        Returns:
+            A SIMD vector where each element is raised to the power of the
+            specified exponent value.
+        """
+        comptime assert (
+            Self.dtype.is_floating_point()
+        ), "a float literal exponent requires a floating point SIMD type"
+        return _pow(self, Self(exp))
+
     # TODO(#22771): remove this overload.
     @always_inline("nodebug")
     def __pow__(self, exp: Self) -> Self:

@@ -183,7 +183,9 @@ def test_repeat_interleave_3d(ctx: DeviceContext) raises:
     comptime rank = 3
     comptime type = DType.float32
 
-    var input_stack: Array[Scalar[type], _] = [0, 1, 2, 3, 4, 5, 6, 7]
+    var input_stack = Array[Scalar[type], 8](
+        fill_with=lambda (i: Int) -> Scalar[type]: Scalar[type](i)
+    )
     var input = TileTensor(input_stack, row_major[2, 2, 2]())
 
     # rank_repeats is always 1

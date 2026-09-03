@@ -19,7 +19,7 @@ from typing import ClassVar
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.graph.weights import WeightData
-from max.nn.kv_cache import KVCacheParams
+from max.nn.kv_cache import KVCacheParamInterface
 from max.nn.quant_config import QuantConfig
 from max.nn.rotary_embedding import YarnScalingParams
 from max.nn.transformer import ReturnLogits
@@ -148,7 +148,7 @@ class GptOssConfig(
     interleaved_rope_weights: bool
     """True if the rope weights are in interleaved complex format."""
 
-    kv_params: KVCacheParams
+    kv_params: KVCacheParamInterface
     """KV cache parameters."""
 
     quant_config: QuantConfig | None = None

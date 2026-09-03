@@ -27,7 +27,7 @@ from max.experimental.nn.common_layers.mlp import MLP
 from max.experimental.nn.sequential import ModuleList
 from max.experimental.sharding import DeviceMesh
 from max.experimental.tensor import Tensor
-from max.nn.kv_cache import KVCacheInputs, KVCacheParamInterface
+from max.nn.kv_cache import KVCacheInputs, KVCacheParamInterface, KVCacheParams
 from max.nn.rotary_embedding import Llama3RopeScalingParams
 from max.nn.transformer import ReturnLogits
 
@@ -109,6 +109,9 @@ class Gemma3TextModel(
             eps=config.rms_norm_eps,
         )
 
+        kv_params = config.kv_params
+        assert isinstance(kv_params, KVCacheParams)
+
         layers = [
             Gemma3TransformerBlock(
                 attention=Gemma3Attention(
@@ -117,7 +120,7 @@ class Gemma3TextModel(
                     num_attention_heads=config.num_attention_heads,
                     num_key_value_heads=config.num_key_value_heads,
                     hidden_size=config.hidden_size,
-                    kv_params=config.kv_params,
+                    kv_params=kv_params,
                     layer_idx=i,
                     sliding_window_pattern=config.sliding_window_pattern,
                     has_bias=config.attention_bias,
