@@ -569,6 +569,12 @@ class CompletedBatchStats:
     """Per-position draft acceptance rates for the completed batch
     (speculative decoding)."""
 
+    early_sync_duration_s: float | None = None
+    """Wall-clock time spent in the early-sync guard's blocking
+    ``sync_and_process_outputs()`` call (see
+    ``_should_early_sync_prev_batch``), when it fired for this batch.
+    ``None`` when the guard did not fire."""
+
     @property
     def prompt_throughput(self) -> float:
         """Prompt-side throughput of the completed batch in tokens/second."""

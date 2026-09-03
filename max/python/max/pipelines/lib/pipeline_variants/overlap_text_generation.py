@@ -2191,6 +2191,7 @@ class OverlapTextGenerationPipeline(
         batch: AsyncBatch[TextGenerationContextType],
         spec_decode_metrics: _SpeculativeDecodingMetrics | None,
         sync_monotonic: float,
+        early_sync_duration_s: float | None = None,
     ) -> None:
         """Records stats for a batch whose outputs were just synchronized.
 
@@ -2200,6 +2201,9 @@ class OverlapTextGenerationPipeline(
         back-to-back on the same stream) — until its outputs were observed on
         the host. On a saturated GPU this converges to the batch's GPU
         duration; it overestimates by any GPU idle gap before the batch.
+
+        ``early_sync_duration_s`` carries the ``_should_early_sync_prev_batch``
+        guard's own blocking duration, when it fired for this batch.
         """
         start_bound = batch.enqueue_monotonic
         if self._last_sync_monotonic is not None:
@@ -2211,6 +2215,7 @@ class OverlapTextGenerationPipeline(
             num_input_tokens=inputs.input_tokens,
             num_context_tokens=inputs.context_tokens,
             execution_time_s=max(sync_monotonic - start_bound, 0.0),
+            early_sync_duration_s=early_sync_duration_s,
         )
         if spec_decode_metrics is not None:
             stats.num_output_tokens = spec_decode_metrics.output_tokens
@@ -3995,6 +4000,7 @@ class OverlapTextGenerationPipeline(
         # below to prevent double-calling sync_and_process_outputs.
         _early_sync_outputs: _AsyncBatchOutput | None = None
         _early_sync_monotonic: float | None = None
+        _early_sync_duration_s: float | None = None
 
         if self._spec_decode_state is not None:
             self._spec_decode_state.batch_metrics = None
@@ -4029,10 +4035,14 @@ class OverlapTextGenerationPipeline(
 
                 if self._should_early_sync_prev_batch():
                     assert self._prev_batch is not None
+                    _early_sync_start_monotonic = time.monotonic()
                     _early_sync_outputs = (
                         self._prev_batch.sync_and_process_outputs()
                     )
                     _early_sync_monotonic = time.monotonic()
+                    _early_sync_duration_s = (
+                        _early_sync_monotonic - _early_sync_start_monotonic
+                    )
 
                 # FSM is advanced asynchronously by the host callback enqueued
                 # just above. The captured graph's ``mo.wait_host_value_with_dep``
@@ -4110,6 +4120,7 @@ class OverlapTextGenerationPipeline(
                 sync_monotonic=_early_sync_monotonic
                 if _early_sync_monotonic is not None
                 else time.monotonic(),
+                early_sync_duration_s=_early_sync_duration_s,
             )
             outputs = wrapped_outputs.output_dict
             self._prev_batch = None
