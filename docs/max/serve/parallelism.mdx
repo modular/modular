@@ -81,11 +81,6 @@ When data parallelism is active, `--max-batch-size` sets the maximum batch size
 `--data-parallel-degree 8` with `--max-batch-size 32` allows up to 32 requests
 per replica and 256 requests across the server.
 
-This changed in [MAX 26.1](/releases/v26.1/#26-1-max-serve). Before that
-release, the same flags meant an aggregate maximum of 32 requests, with each
-replica capped at 4. When carrying a configuration forward from an earlier
-version, divide the previous `--max-batch-size` by the data parallelism degree
-to keep the same aggregate maximum.
 
 ### Expert parallelism
 
