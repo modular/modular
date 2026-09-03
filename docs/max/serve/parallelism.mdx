@@ -20,11 +20,11 @@ architecture and available hardware.
 The following table summarizes how each strategy works, when to use it, and the
 relevant MAX CLI options.
 
-| Strategy                    | How it works                                                              | When to use it                                                              | CLI options                          |
-|-----------------------------|---------------------------------------------------------------------------|-----------------------------------------------------------------------------|--------------------------------------|
-| Tensor parallelism (TP)     | Splits model weights and layer computation across GPUs                    | A model doesn't fit on one GPU                                              | [`--devices`](/cli/serve/#--devices-devices) with multiple GPU IDs  |
-| Data parallelism (DP)       | Runs multiple model replicas and distributes incoming requests among them | A model fits in each replica, and you need higher throughput or concurrency | [`--data-parallel-degree`] (/cli/serve/#--data-parallel-degree-data_parallel_degree)            |
-| Expert parallelism (EP)     | Distributes Mixture of Experts (MoE) expert weights across GPUs           | You need to distribute the expert weights of a supported MoE model          | [`--ep-size`](/cli/serve/#--ep-size-ep_size)                          |
+| Strategy                | How it works                                                              | When to use it                                                              | CLI options                                                                         |
+|-------------------------|---------------------------------------------------------------------------|-----------------------------------------------------------------------------|-------------------------------------------------------------------------------------|
+| Tensor parallelism (TP) | Splits model weights and layer computation across GPUs                    | A model doesn't fit on one GPU                                              | [`--devices`](/cli/serve/#--devices-devices) with multiple GPU IDs                  |
+| Data parallelism (DP)   | Runs multiple model replicas and distributes incoming requests among them | A model fits in each replica, and you need higher throughput or concurrency | [`--data-parallel-degree`](/cli/serve/#--data-parallel-degree-data_parallel_degree) |
+| Expert parallelism (EP) | Distributes Mixture of Experts (MoE) weights across GPUs                  | You need to distribute the expert weights of a supported MoE model          | [`--ep-size`](/cli/serve/#--ep-size-ep_size)                                        |
 
 :::note
 
@@ -38,13 +38,14 @@ in the LLM Inference Handbook.
 
 ## Serve a model on multiple GPUs
 
-As summarized in the table above, you can serve a model across multiple GPUs using one or more parallelism strategies. The following sections provide more information about how to parallelize a model with `max serve` on a single node.
+As summarized in the table above, you can serve a model across multiple GPUs
+using one or more parallelism strategies. The following sections provide more
+information about how to parallelize a model with `max serve` on a single node.
 
 ### Tensor parallelism
 
-For a model that
-supports tensor parallelism, use `--devices` to select the GPUs you want to
-shard across. This example serves a model with TP=4:
+For a model that supports tensor parallelism, use `--devices` to select the GPUs
+you want to shard across. This example serves a model with TP=4:
 
 ```bash
 max serve \
@@ -52,22 +53,22 @@ max serve \
   --devices gpu:0,1,2,3
 ```
 
-MAX applies tensor parallelism automatically across the devices you give it. It
-derives the tensor parallelism degree from the device count and the data
-parallelism degree:
+MAX applies tensor parallelism automatically across the devices you give it.
+
+### Data parallelism
+
+Set `--data-parallel-degree` to the number of replicas you want, combined
+with `--devices` to select which GPUs to use.
+
+The parallelism degree can't exceed the number of devices available. If the
+parallelism degree is less than the number of devices, MAX will enable tensor
+parallelism to a degree based on this simple formula:
 
 ```text
 tensor parallelism degree = number of devices / data parallelism degree
 ```
 
-The device count must be divisible by the data parallelism degree. With the
-default `--data-parallel-degree 1`, serving this model on four GPUs gives you
-TP=4.
-
-### Data parallelism
-
-Set `--data-parallel-degree` to the number of replicas you want. This example
-serves two independent replicas, one per GPU:
+This example serves two independent replicas, one per GPU:
 
 ```bash
 max serve \
@@ -80,7 +81,6 @@ When data parallelism is active, `--max-batch-size` sets the maximum batch size
 **per replica**, not across the whole server. For example,
 `--data-parallel-degree 8` with `--max-batch-size 32` allows up to 32 requests
 per replica and 256 requests across the server.
-
 
 ### Expert parallelism
 
@@ -110,11 +110,14 @@ degree, and an expert parallelism size. For example, if you have
 8 GPUs, you have the following hybrid options:
 
 | <code style={{whiteSpace:'nowrap'}}>--data-parallel-degree</code> | <code style={{whiteSpace:'nowrap'}}>--ep-size</code> | Resulting configuration                                                                                          |
-|--------------------------|-------------|------------------------------------------------------------------------------------------------------------------|
-| `1` (default)            | unset       | TP=8, DP=1: one replica, weights sharded across all GPUs                                                         |
-| `2`                      | unset       | TP=4, DP=2: two replicas, each sharded across four GPUs                                                          |
-| `1`                      | `8`         | TP=8, EP=8: attention layers tensor-sharded across all eight GPUs; MoE experts distributed across all eight GPUs |
-| `8`                      | `8`         | DP=8, EP=8: each GPU runs one attention replica; requests and MoE experts distributed across all eight GPUs      |
+|-------------------------------------------------------------------|------------------------------------------------------|------------------------------------------------------------------------------------------------------------------|
+| `1` (default)                                                     | unset                                                | TP=8, DP=1: one replica, weights sharded across all GPUs                                                         |
+| `2`                                                               | unset                                                | TP=4, DP=2: two replicas, each sharded across four GPUs                                                          |
+| `1`                                                               | `8`                                                  | TP=8, EP=8: attention layers tensor-sharded across all eight GPUs; MoE experts distributed across all eight GPUs |
+| `8`                                                               | `8`                                                  | DP=8, EP=8: each GPU runs one attention replica; requests and MoE experts distributed across all eight GPUs      |
+
+The following examples show the `max serve` command for each hybrid
+combination:
 
 <Tabs>
   <TabItem value="tp-dp" label="TP+DP">
