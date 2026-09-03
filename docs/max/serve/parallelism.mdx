@@ -23,8 +23,8 @@ relevant MAX CLI options.
 | Strategy                    | How it works                                                              | When to use it                                                              | CLI options                          |
 |-----------------------------|---------------------------------------------------------------------------|-----------------------------------------------------------------------------|--------------------------------------|
 | Tensor parallelism (TP)     | Splits model weights and layer computation across GPUs                    | A model doesn't fit on one GPU                                              | [`--devices`](/cli/serve/#--devices-devices) with multiple GPU IDs  |
-| Data parallelism (DP)       | Runs multiple model replicas and distributes incoming requests among them | A model fits in each replica, and you need higher throughput or concurrency | `--data-parallel-degree`             |
-| Expert parallelism (EP)     | Distributes Mixture of Experts (MoE) expert weights across GPUs           | You need to distribute the expert weights of a supported MoE model          | `--ep-size`                          |
+| Data parallelism (DP)       | Runs multiple model replicas and distributes incoming requests among them | A model fits in each replica, and you need higher throughput or concurrency | [`--data-parallel-degree`] (/cli/serve/#--data-parallel-degree-data_parallel_degree)            |
+| Expert parallelism (EP)     | Distributes Mixture of Experts (MoE) expert weights across GPUs           | You need to distribute the expert weights of a supported MoE model          | [`--ep-size`](/cli/serve/#--ep-size-ep_size)                          |
 
 :::note
 
