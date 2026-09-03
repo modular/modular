@@ -106,7 +106,8 @@ combinations depend on support for the selected model.
 
 Because the tensor parallelism degree is derived rather than set directly, you
 choose a hybrid configuration by combining a device count, a data parallelism
-degree, and an expert parallelism size. On eight GPUs:
+degree, and an expert parallelism size. For example, if you have
+8 GPUs, you have the following hybrid options:
 
 | `--data-parallel-degree` | `--ep-size` | Resulting configuration                                                                                          |
 |--------------------------|-------------|------------------------------------------------------------------------------------------------------------------|
