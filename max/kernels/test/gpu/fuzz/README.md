@@ -110,6 +110,13 @@ reference, special-value contract, or split-K decomposition exists; likewise
 the corresponding flag (`--rerun` / `--batch-invariance` / `--batch-variance`).
 Cross-run comparisons always live inside the target process — the orchestrator
 issues one verdict per subprocess and never holds two cases' outputs.
+The M3 decode pair carries the cross-run oracles: `msa_decode` supports
+`determinism` (`--rerun`), and `sparse_indexer_decode` supports
+`batch_invariance` (`--batch-invariance`) on top of its `schedule` mode. The
+indexer's gate is the load-bearing one -- its scorer sizes split-K from the
+batch size, so a request really is decomposed differently depending on its
+neighbours, and its scores pick the blocks attention reads.
+
 Targets that fuzz the input value distribution expose a `dist` spec field
 (uniform/normal/sparse/large/all-equal); NaN/Inf specials are reachable but kept
 out of the auto-mix — they drive the `contract` oracle, not `ref`.
