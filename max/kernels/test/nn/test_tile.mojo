@@ -142,7 +142,9 @@ def test_tile_eg4() raises:
     print("== test_tile_eg4")
     comptime type = DType.float32
 
-    var input_stack: Array[Scalar[type], _] = [0, 1, 2, 3, 4, 5, 6, 7]
+    var input_stack = Array[Scalar[type], 2 * 2 * 2](
+        fill_with=lambda (i: Int) -> Scalar[type]: Scalar[type](i)
+    )
     var input = TileTensor(input_stack, row_major[2, 2, 2]())
 
     # type_repeats is always .int64
@@ -185,7 +187,9 @@ def test_tile_eg5() raises:
     print("== test_tile_eg5")
     comptime type = DType.float32
 
-    var input_stack: Array[Scalar[type], _] = [0, 1, 2, 3, 4, 5, 6, 7]
+    var input_stack = Array[Scalar[type], 2 * 2 * 2](
+        fill_with=lambda (i: Int) -> Scalar[type]: Scalar[type](i)
+    )
     var input = TileTensor(input_stack, row_major[2, 2, 2]())
 
     # type_repeats is always .int64
@@ -222,7 +226,9 @@ def test_tile_eg6() raises:
     print("== test_tile_eg6")
     comptime type = DType.float32
 
-    var input_stack: Array[Scalar[type], _] = [1, 2, 3, 4]
+    var input_stack = Array[Scalar[type], 2 * 2](
+        fill_with=lambda (i: Int) -> Scalar[type]: Scalar[type](i + 1)
+    )
     var input = TileTensor(input_stack, row_major[2, 2]())
 
     # type_repeats is always .int64
@@ -259,7 +265,9 @@ def test_tile_eg7() raises:
     print("== test_tile_eg7")
     comptime type = DType.float32
 
-    var input_stack: Array[Scalar[type], _] = [1, 2, 3, 4]
+    var input_stack = Array[Scalar[type], 2 * 2](
+        fill_with=lambda (i: Int) -> Scalar[type]: Scalar[type](i + 1)
+    )
     var input = TileTensor(input_stack, row_major[2, 2]())
 
     # type_repeats is always .int64
@@ -345,7 +353,9 @@ def test_tile_eg9() raises:
     print("== test_tile_eg9")
     comptime type = DType.float32
 
-    var input_stack: Array[Scalar[type], _] = [0, 1, 2, 3, 4, 5, 6, 7]
+    var input_stack = Array[Scalar[type], 2 * 2 * 2](
+        fill_with=lambda (i: Int) -> Scalar[type]: Scalar[type](i)
+    )
     var input = TileTensor(input_stack, row_major[2, 2, 2]())
 
     # type_repeats is always .int64
@@ -404,7 +414,9 @@ def test_tile_eg10() raises:
     print("== test_tile_eg10")
     comptime type = DType.float32
 
-    var input_stack: Array[Scalar[type], _] = [0, 1, 2, 3, 4, 5, 6, 7]
+    var input_stack = Array[Scalar[type], 2 * 2 * 2](
+        fill_with=lambda (i: Int) -> Scalar[type]: Scalar[type](i)
+    )
     var input = TileTensor(input_stack, row_major[2, 2, 2]())
 
     # type_repeats is always .int64
@@ -520,7 +532,9 @@ def test_tile_eg12() raises:
     print("== test_tile_eg12")
     comptime type = DType.float32
 
-    var input_stack: Array[Scalar[type], _] = [0, 1, 2, 3]
+    var input_stack = Array[Scalar[type], 2 * 2](
+        fill_with=lambda (i: Int) -> Scalar[type]: Scalar[type](i)
+    )
     var input = TileTensor(input_stack, row_major[1, 1, 2, 2]())
 
     # type_repeats is always .int64

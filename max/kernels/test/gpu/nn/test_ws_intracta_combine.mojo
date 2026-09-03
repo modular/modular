@@ -200,9 +200,11 @@ def combine_kernel[
 
     # ---- (A) inject known O_p into this WG's C-TMEM band (shared base per WG) ----
     for t in range(num_d_tiles):
-        var o_frag = Array[Scalar[ACC_TYPE], DEPTH_TILE](uninitialized=True)
-        for j in range(DEPTH_TILE):
-            o_frag[j] = O_in[p * ROWS + row, t * DEPTH_TILE + j][0]
+        var o_frag = Array[_, DEPTH_TILE](
+            fill_with=lambda (j: Int) -> Scalar[ACC_TYPE]: O_in[
+                p * ROWS + row, t * DEPTH_TILE + j
+            ][0]
+        )
         tcgen05_st[datapaths=32, bits=32, repeat=DEPTH_TILE, pack=False](
             c_tmem + UInt32(t) * UInt32(DEPTH_TILE), o_frag
         )

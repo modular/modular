@@ -151,7 +151,9 @@ def main():
         # Example 4
         comptime batch_dims = 0
         comptime data_type = DType.int8
-        var data_stack: Array[Scalar[data_type], _] = [0, 1, 2, 3, 4, 5, 6, 7]
+        var data_stack = Array[Scalar[data_type], 8](
+            fill_with=lambda (i: Int) -> Scalar[data_type]: Scalar[data_type](i)
+        )
         var data = TileTensor(data_stack, row_major[2, 2, 2]())
 
         var indices_stack = Array[Int64, 4](uninitialized=True)
@@ -196,7 +198,9 @@ def main():
         # Example 5
         comptime batch_dims = 1
         comptime data_type = DType.int32
-        var data_stack: Array[Scalar[data_type], _] = [0, 1, 2, 3, 4, 5, 6, 7]
+        var data_stack = Array[Scalar[data_type], 8](
+            fill_with=lambda (i: Int) -> Scalar[data_type]: Scalar[data_type](i)
+        )
         var data = TileTensor(data_stack, row_major[2, 2, 2]())
 
         var indices_stack: Array[Int64, _] = [1, 0]
@@ -291,7 +295,9 @@ def main():
         # Example 4
         comptime batch_dims = 0
         comptime data_type = DType.int8
-        var data_stack: Array[Scalar[data_type], _] = [0, 1, 2, 3, 4, 5, 6, 7]
+        var data_stack = Array[Scalar[data_type], 8](
+            fill_with=lambda (i: Int) -> Scalar[data_type]: Scalar[data_type](i)
+        )
         var data = TileTensor(data_stack, row_major[2, 2, 2]())
 
         var indices_stack: Array[Int64, _] = [0, 1]
@@ -340,7 +346,9 @@ def main():
         # Example 2
         comptime batch_dims = 0
         comptime data_type = DType.int8
-        var data_stack: Array[Scalar[data_type], _] = [0, 1, 2, 3, 4, 5]
+        var data_stack = Array[Scalar[data_type], 6](
+            fill_with=lambda (i: Int) -> Scalar[data_type]: Scalar[data_type](i)
+        )
         var data = TileTensor(data_stack, row_major[2, 3]())
 
         var indices_stack: Array[Int64, _] = [1, 0]
