@@ -119,6 +119,34 @@ out of the auto-mix — they drive the `contract` oracle, not `ref`.
 > orchestrator sets `MEMORY_MANAGER_SIZE=0` in the subprocess env, which works
 > because it runs the built binary directly rather than via `bazel test`).
 
+## Build-time configs
+
+A target compiles once per dtype/config and reads shapes at run time, so any
+parameter the kernel specializes on is a `-D` define rather than a spec field.
+Build the target by name with the define, then run with `--no-build`:
+
+```bash
+./bazelw build //max/kernels/test/gpu/fuzz:fuzz_topk_topp_sampling_dist.mojo.test \
+    --mojocopt=-D --mojocopt=ttsd_bf16=1 --curses=no --noshow_progress
+python3 max/kernels/test/gpu/fuzz/fuzz.py --target topk_topp_sampling_dist \
+    --oracle ref --no-build --budget 24
+```
+
+The sampler targets carry a dtype axis because speculative decoding runs them
+at both precisions: `float32` under `draft_proposal: argmax` and `bfloat16`
+under `draft_proposal: sampled`, which switches `sampling_logits_dtype` for the
+whole sampling path. The in-source default is `float32`, so the bfloat16 arm
+only gets covered when it is built explicitly.
+
+| Define        | Target                    | Effect             |
+|---------------|---------------------------|--------------------|
+| `ttsd_bf16=1` | `topk_topp_sampling_dist` | bfloat16 logits in |
+| `ttmp_bf16=1` | `topk_topp_masked_probs`  | bfloat16 logits in |
+
+The corpus records a spec, not a build config, so a replay entry always runs
+under the in-source default. Alternate configs belong in a live sweep, not the
+replay gate.
+
 ## Adding a kernel target
 
 The `add-kernel-fuzz-target` Claude Code skill walks this end-to-end — picking
