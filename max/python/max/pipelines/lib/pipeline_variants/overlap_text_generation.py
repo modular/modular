@@ -157,6 +157,7 @@ from ..memory_estimation import MemoryPlan
 from .structured_output_overlap import StructuredOutputOverlapState
 from .text_generation import TextGenerationPipelineInterface, load_kv_manager
 from .utils import (
+    CommittedSpanSnapshot,
     StructuredOutputHelper,
     update_context_and_prepare_responses,
     update_spec_decode_context_and_prepare_responses,
@@ -3335,6 +3336,12 @@ class OverlapTextGenerationPipeline(
     ) -> Callable[[], None]:
         """Build a callback closure that advances FSM then computes bitmasks.
 
+        Snapshots each producing row's token history before returning, while
+        still on the main thread. The worker must not read ctx.tokens itself:
+        the enqueuing execute() goes on to realize this batch's committed span
+        into that buffer while the worker runs. Capturing here rather than at
+        the call site is what keeps the snapshots paired with context_batch.
+
         All numpy arrays must be views into persistent pinned buffers owned by
         SpecDecodeState / StructuredOutputOverlapState (or plain copies for
         CPU-only data). Views are safe because the owning state objects
@@ -3371,6 +3378,11 @@ class OverlapTextGenerationPipeline(
         """
         structured_output = self._structured_output
 
+        with Tracer("capture_committed_span_snapshots"):
+            committed_span_snapshots = CommittedSpanSnapshot.capture(
+                context_batch
+            )
+
         def callback() -> None:
             try:
                 # Write the packed int32 FSM bitmask straight into the pinned
@@ -3387,6 +3399,7 @@ class OverlapTextGenerationPipeline(
                     next_draft_tokens=next_draft_tokens_np,
                     bitmask_out=overlap_pinned_np,
                     output_context_batch=output_context_batch,
+                    committed_span_snapshots=committed_span_snapshots,
                 )
             except Exception as e:
                 logger.error(

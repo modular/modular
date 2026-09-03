@@ -1235,15 +1235,17 @@ class TestBuildBitmaskCallback:
 
         callback()
 
-        mock_so.advance_fsm_and_compute_bitmasks.assert_called_once_with(
-            context_batch=[ctx],
-            accepted_draft_tokens=draft_np,
-            num_accepted=num_acc_np,
-            bonus_tokens=bonus_np,
-            next_draft_tokens=next_draft_np,
-            bitmask_out=bitmask_np,
-            output_context_batch=[ctx],
-        )
+        mock_so.advance_fsm_and_compute_bitmasks.assert_called_once()
+        kwargs = mock_so.advance_fsm_and_compute_bitmasks.call_args.kwargs
+        assert kwargs["context_batch"] == [ctx]
+        assert kwargs["output_context_batch"] == [ctx]
+        assert kwargs["accepted_draft_tokens"] is draft_np
+        assert kwargs["num_accepted"] is num_acc_np
+        assert kwargs["bonus_tokens"] is bonus_np
+        assert kwargs["next_draft_tokens"] is next_draft_np
+        assert kwargs["bitmask_out"] is bitmask_np
+        # The builder captures the snapshots itself, one per producing row.
+        assert len(kwargs["committed_span_snapshots"]) == 1
 
     def test_callback_logs_error_on_exception(self) -> None:
         """Callback catches exceptions and logs them instead of propagating."""

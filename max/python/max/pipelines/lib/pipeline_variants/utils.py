@@ -24,7 +24,6 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 import numpy.typing as npt
 from max.pipelines.context import (
-    FUTURE_TOKEN,
     GenerationStatus,
     GrammarMatcher,
     LogProbabilities,
@@ -343,6 +342,50 @@ def get_rope_theta(config: AutoConfig) -> float:
         return rope_params["rope_theta"]
 
     return config.rope_theta
+
+
+@dataclass(frozen=True)
+class CommittedSpanSnapshot:
+    """Token-buffer state of one producing-batch row, captured at enqueue time.
+
+    StructuredOutputHelper.advance_fsm_and_compute_bitmasks runs on an
+    AsyncRT worker while the main thread realizes the same batch's tokens into
+    ctx.tokens, so a worker-side read cannot tell "history before the
+    committed span" from "history including it" -- both end in a
+    FUTURE_TOKEN placeholder. Capturing on the main thread, before the
+    callback is enqueued, is what makes the answer unambiguous.
+    """
+
+    prior_generated: npt.NDArray[np.int64]
+    """Generated tokens preceding the committed span, placeholder-free.
+
+    Only the last EOSTracker.eos_sequence_lookback of them, since
+    that is all EOSTracker.first_eos_offset reads -- a bounded tail per
+    row, whatever the context length. Empty when the request configures
+    no multi-token stop sequence, which is the common case.
+
+    A copy, not a view: realize_future_token overwrites placeholder slots
+    of the context's token array in place.
+    """
+
+    @classmethod
+    def capture(
+        cls, context_batch: Sequence[TextGenerationContextType]
+    ) -> list[CommittedSpanSnapshot]:
+        """Captures one snapshot per row, in context_batch order."""
+        snapshots = []
+        for ctx in context_batch:
+            keep = ctx.eos_tracker.eos_sequence_lookback
+            gen = ctx.tokens.generated
+            end = len(gen) - ctx.pending_future_count
+            snapshots.append(
+                cls(
+                    prior_generated=np.array(
+                        gen[max(0, end - keep) : end], dtype=np.int64
+                    )
+                )
+            )
+        return snapshots
 
 
 @dataclass
@@ -916,6 +959,7 @@ class StructuredOutputHelper:
         next_draft_tokens: npt.NDArray[np.int64],
         bitmask_out: npt.NDArray[np.int32],
         output_context_batch: list[TextGenerationContextType] | None = None,
+        committed_span_snapshots: Sequence[CommittedSpanSnapshot] | None = None,
     ) -> None:
         """Advance FSM through accepted tokens, then compute bitmasks for the next batch.
 
@@ -965,9 +1009,38 @@ class StructuredOutputHelper:
                 filling.
             output_context_batch: Requests in the consuming batch's row order.
                 Defaults to ``context_batch`` when the batch did not change.
+            committed_span_snapshots: Per-context_batch-row token history
+                captured on the main thread at enqueue time. Required from an
+                async caller, whose ctx.tokens reads would otherwise race
+                the main thread's token realization; a synchronous caller may
+                omit it and have it captured here. A count mismatch is logged
+                and falls back to a worker-side read, never raised on.
         """
         if output_context_batch is None:
             output_context_batch = context_batch
+        if committed_span_snapshots is None:
+            committed_span_snapshots = CommittedSpanSnapshot.capture(
+                context_batch
+            )
+        elif len(committed_span_snapshots) != len(context_batch):
+            # Fall back to reading the buffer rather than raising: the batch is
+            # already marked FSM-advanced, so a raise would leave every row this
+            # loop had not reached stuck behind its request's emitted tokens.
+            # Reading here races the main thread's writes: the offset stays
+            # exact for a row with no multi-token stop sequence, whose history
+            # goes unread, and may be wrong for any other row.
+            logger.error(
+                "Async FSM advance got %d committed-span snapshots for %d "
+                "rows; falling back to a worker-side read. The end-of-sequence "
+                "offset may be wrong for a row whose stop sequence straddles "
+                "the newly committed tokens. Capture the snapshots from the "
+                "same batch, before enqueuing.",
+                len(committed_span_snapshots),
+                len(context_batch),
+            )
+            committed_span_snapshots = CommittedSpanSnapshot.capture(
+                context_batch
+            )
         # This method runs on an AsyncRT worker thread. The main thread
         # may try to access the same ``ctx.matcher`` via
         # ``compute_speculative_bitmasks`` for the next iter while this
@@ -998,12 +1071,9 @@ class StructuredOutputHelper:
                     for j in range(n_accepted)
                 ]
                 committed_tokens.append(bonus_token)
-                gen = ctx.tokens.generated
-                prior_generated = (
-                    gen[:-1] if len(gen) and gen[-1] == FUTURE_TOKEN else gen
-                )
                 eos_offset = ctx.eos_tracker.first_eos_offset(
-                    prior_generated, committed_tokens
+                    committed_span_snapshots[ctx_idx].prior_generated,
+                    committed_tokens,
                 )
                 for committed_idx, token in enumerate(committed_tokens):
                     # Generation stops at the first terminating token; tokens
