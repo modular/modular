@@ -26,7 +26,7 @@ from max.graph import (
     Weight,
     ops,
 )
-from max.nn.kv_cache import PagedCacheValues
+from max.nn.kv_cache import KVCacheParams, PagedCacheValues
 from max.nn.layer import LayerList, Module
 from max.nn.linear import MLP, ColumnParallelLinear
 from max.nn.norm import LayerNorm
@@ -134,6 +134,9 @@ class Gemma3LanguageModel(DistributedLogitsPostprocessMixin, Module):
             eps=text_config.rms_norm_eps,
         )
 
+        kv_params = config.kv_params
+        assert isinstance(kv_params, KVCacheParams)
+
         layers = [
             Gemma3TransformerBlock(
                 attention=Gemma3Attention(
@@ -142,7 +145,7 @@ class Gemma3LanguageModel(DistributedLogitsPostprocessMixin, Module):
                     num_attention_heads=text_config.num_attention_heads,
                     num_key_value_heads=text_config.num_key_value_heads,
                     hidden_size=text_config.hidden_size,
-                    kv_params=config.kv_params,
+                    kv_params=kv_params,
                     layer_idx=i,
                     dtype=config.dtype,
                     devices=config.devices,

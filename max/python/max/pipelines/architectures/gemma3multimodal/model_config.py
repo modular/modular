@@ -19,7 +19,7 @@ from typing import ClassVar
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.graph.weights import WeightData
-from max.nn.kv_cache import KVCacheParams
+from max.nn.kv_cache import KVCacheParamInterface
 from max.nn.quant_config import QuantConfig
 from max.nn.transformer import ReturnLogits
 from max.pipelines.architectures.gemma3.model_config import Gemma3Config
@@ -147,7 +147,7 @@ class Gemma3ForConditionalGenerationConfig(
     dtype: DType
     """DType of the model weights and input."""
 
-    kv_params: KVCacheParams
+    kv_params: KVCacheParamInterface
     """KV cache parameters."""
 
     image_token_index: int

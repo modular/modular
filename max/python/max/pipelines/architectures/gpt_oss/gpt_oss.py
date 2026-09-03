@@ -26,7 +26,7 @@ from max.graph import (
     ops,
 )
 from max.nn.embedding import Embedding
-from max.nn.kv_cache import PagedCacheValues
+from max.nn.kv_cache import KVCacheParams, PagedCacheValues
 from max.nn.layer import LayerList, Module
 from max.nn.linear import ColumnParallelLinear
 from max.nn.norm.rms_norm import RMSNorm
@@ -117,6 +117,9 @@ class GptOssTextModel(DistributedLogitsPostprocessMixin, Module):
             multiply_before_cast=True,
         )
 
+        kv_params = config.kv_params
+        assert isinstance(kv_params, KVCacheParams)
+
         layers = [
             GptOssTransformerBlock(
                 attention=GptOssAttention(
@@ -124,7 +127,7 @@ class GptOssTextModel(DistributedLogitsPostprocessMixin, Module):
                     num_attention_heads=config.num_attention_heads,
                     num_key_value_heads=config.num_key_value_heads,
                     hidden_size=config.hidden_size,
-                    kv_params=config.kv_params,
+                    kv_params=kv_params,
                     layer_idx=i,
                     dtype=config.dtype,
                     devices=config.devices,
