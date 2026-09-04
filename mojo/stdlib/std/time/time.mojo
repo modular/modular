@@ -19,7 +19,7 @@ from std.time import perf_counter_ns
 ```
 """
 
-from std.math import floor
+from std.math import ceil, floor
 from std.os import abort
 from std.ffi import external_call, _CPointer
 from std.sys import (
@@ -358,7 +358,7 @@ def sleep(sec: Float64):
 
     comptime NANOSECONDS_IN_SECOND = 1_000_000_000
     var total_secs = floor(sec)
-    var nsecs = Int(round((sec - total_secs) * NANOSECONDS_IN_SECOND))
+    var nsecs = Int(ceil((sec - total_secs) * NANOSECONDS_IN_SECOND))
     # Handle floating-point rounding edge case where the nanosecond value
     # rounds to exactly one second (e.g., 0.9999999999 seconds).
     if nsecs >= NANOSECONDS_IN_SECOND:
