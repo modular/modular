@@ -1,0 +1,20 @@
+Failed to initialize Crashpad.  Crash reporting will not be available.  Cause: while locating crashpad handler: unable to locate crashpad handler executable
+-:0:0: error: parsed use-list orders were invalid and could not be applied
+-:0:0: note: in bytecode version 6 produced by: MLIR23.0.0git
+Please submit a bug report to https://github.com/modular/modular/issues and include the crash backtrace along with all the relevant source codes.
+Stack dump:
+0.	Program arguments: /opt/homebrew/opt/mojolang/libexec/bin/mojo build repro.mojo -I . -Xlinker ./libshim.dylib -o repro
+Stack dump without symbol names (ensure you have llvm-symbolizer in your PATH or set the environment var `LLVM_SYMBOLIZER_PATH` to point to it):
+0  mojo                         0x0000000105149018
+1  mojo                         0x0000000105146698
+2  mojo                         0x0000000105149a34
+3  libsystem_platform.dylib     0x000000018f9b7744 _sigtramp + 56
+4  mojo                         0x00000001018ca6fc
+5  mojo                         0x00000001018cb6a0
+6  libAsyncRTMojoBindings.dylib 0x0000000108d03374
+7  libAsyncRTMojoBindings.dylib 0x0000000108d00600
+8  mojo                         0x00000001012334ec
+9  mojo                         0x0000000101232ef8
+10 mojo                         0x0000000100fbe054
+11 mojo                         0x0000000100fe6448
+12 dyld                         0x000000018f5efe00 start + 6992
