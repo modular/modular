@@ -1,6 +1,6 @@
 [workspace]
 authors = ["Modular <hello@modular.com>"]
-channels = ["conda-forge", "https://conda.modular.com/max-nightly/"]
+channels = ["conda-forge", "https://conda.modular.com/max/"]
 description = "Generating music with MiniMax-Music3"
 name = "Music generation"
 platforms = ["linux-aarch64", "linux-64"]
