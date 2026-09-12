@@ -646,6 +646,34 @@ trait TokenFormat(Deinitable, DevicePassable):
         """
         ...
 
+    @always_inline
+    @staticmethod
+    def scatter_row_scales(
+        recv_base: UnsafePointer[UInt8, MutUntrackedOrigin],
+        send_buf_p: UnsafePointer[UInt8, MutUntrackedOrigin],
+        dst_expert_local_idx: Int32,
+        final_row: Int32,
+        lane: Int,
+    ) -> None:
+        """Scatters this row's scale factors into the format's own arena.
+
+        Called by the sending warp once the destination row is fixed, before
+        the warp joins and publishes readiness. Formats that carry their
+        scales inside the message body -- every format but the block-scaled
+        one, and the block-scaled one until an arena is configured -- do
+        nothing here, so the dispatch kernel needs no knowledge of scale
+        placement or of the target's scale-factor layout.
+
+        Args:
+            recv_base: Base of the destination peer's receive allocation.
+                The arena's offset inside it is the format's own business.
+            send_buf_p: This row's staged send-buffer message.
+            dst_expert_local_idx: Destination-local expert index.
+            final_row: The row this block already reserved in the final layout.
+            lane: Calling lane, used to spread the work across the warp.
+        """
+        pass
+
     @inline(.always)
     def copy_msg_to_output_tensor[
         buf_addr_space: AddressSpace = .GENERIC,
@@ -1106,6 +1134,12 @@ struct BlockwiseFP8TokenFormat[
             )
 
 
+# Scale-factor atom geometry, used by the block-scaled format's arena
+# scatter. Kept beside the format that owns the layout.
+comptime SF_ROW_STRIDE_LOCAL = SF_ATOM_M[1] * SF_ATOM_K
+comptime SF_ATOM_ELEMS_LOCAL = SF_ATOM_M[0] * SF_ROW_STRIDE_LOCAL
+
+
 @align(64)
 struct NVBlockScaledTokenFormat[
     quant_dtype: DType,
@@ -1118,6 +1152,19 @@ struct NVBlockScaledTokenFormat[
     _alignment: Int = 0,
     _n_warps: Int = 32,
     ep_copy_role_split: Bool = False,
+    copy_src_width: Int = EP_COPY_SRC_WIDTH,
+    ep_prequantized: Bool = False,
+    # SF-ATOM SCALE ARENA. When `sf_arena_rows > 0` this format additionally
+    # scatters each row's scale bytes into an SF-atom-layout arena that lives
+    # directly after the message region of the SAME peer receive allocation,
+    # so no extra peer pointer array and no extra host setup are needed.
+    #   r = e*sf_rows_per_expert + fl_row ; g = r/128 ; u = r%128
+    #   addr(r,q,j) = g*(sf_kxg*512) + q*512 + (u%32)*16 + (u/32)*4 + j
+    # Zero => no arena => every other specialization is bit-unchanged.
+    sf_arena_rows: Int = 0,
+    sf_vec4: Bool = False,
+    sf_kxg: Int = 0,
+    sf_rows_per_expert: Int = 0,
 ](ImplicitlyCopyable, TokenFormat):
     """Token format for NVIDIA block-scaled FP4/FP8 quantization.
 
@@ -1141,14 +1188,29 @@ struct NVBlockScaledTokenFormat[
             of 1024 threads); the co-resident megakernel sets it to its comm
             warp count so the staging does not oversize the FFN pipeline
             reservation.
-        ep_copy_role_split: Opt in to the copy/publisher role split in
-            `copy_token_to_send_buf`. Off by default, which keeps the stock
-            strided copy loop byte for byte. `EPDispatchKernel` carries a
-            parameter of the same name for the matching publisher fan-out; a
-            caller that turns one on should turn both on, or the split's
-            empty-store-history property is lost. Either combination stays
-            correct -- every copy item and every top-k destination is covered
-            exactly once on all four pairings.
+        ep_copy_role_split: Whether the per-token copy body uses the split
+            publisher fan-out. Must match the dispatch kernel's parameter of
+            the same name. Off by default, which keeps the stock warp-strided
+            fan-out.
+        copy_src_width: Elements moved per source step by the copy body.
+            Defaults to `EP_COPY_SRC_WIDTH`; must divide the scale group size.
+        ep_prequantized: Whether the source rows already carry canonical
+            quantized payload and scales, so the copy moves bytes instead of
+            quantizing. When set, the BF16 conversion, absolute-max reduction,
+            scale calculation and UE8M0 encoding are not instantiated at all.
+        sf_arena_rows: Row capacity of the destination's message region. The
+            arena starts at `sf_arena_rows * msg_size()` inside the peer
+            receive allocation. Zero disables the arena scatter entirely,
+            which keeps every other specialization bit-unchanged.
+        sf_vec4: Whether to move each scale-factor atom with one 4-byte
+            store instead of four 1-byte stores. Requires a 4-byte atom
+            (`SF_ATOM_K == 4`), which is asserted at the store site.
+        sf_kxg: Number of scale-factor k-tiles per row. The tiles are spread
+            over the warp's lanes so each scale is written exactly once, and
+            it sets the per-128-row block stride.
+        sf_rows_per_expert: Rows reserved per expert in the final layout;
+            forms the arena row as
+            `dst_expert_local_idx * sf_rows_per_expert + final_row`.
     """
 
     comptime hid_dim = Self._hid_dim
@@ -1403,7 +1465,31 @@ struct NVBlockScaledTokenFormat[
         src_p: UnsafePointer[mut=False, Scalar[src_type], ...],
         input_scale: Float32,
     ) -> None:
-        comptime src_width = EP_COPY_SRC_WIDTH
+        # PREFILL QUANTIZE WIDTH. Reads the per-instantiation parameter, whose
+        # default IS `EP_COPY_SRC_WIDTH`, so every untouched instantiation --
+        # including decode and the Baseline -- is bit-identical. The wire
+        # contract does not depend on it: message size, field boundaries,
+        # element order, group size and scale placement are all functions of
+        # `hid_dim` / `group_size` / the dtypes, never of the copy width.
+        comptime src_width = Self.copy_src_width
+        # Quantize-width legality (must live in a function body).
+        comptime assert (
+            Self.hid_dim % src_width == 0
+        ), "hid_dim must be a whole number of copy items"
+        comptime assert Self.group_size % src_width == 0, (
+            "copy_src_width must divide the scale group (NUM_THREADS_PER_SF"
+            " >= 1)"
+        )
+        comptime assert (
+            src_width <= Self.group_size
+        ), "one thread may not span more than one scale group"
+        comptime assert (
+            not Self.ep_copy_role_split
+        ) or src_width == EP_COPY_SRC_WIDTH, (
+            "the EP copy-role split derives its trip count from the"
+            " module-level EP_COPY_SRC_WIDTH, so a non-default width may not"
+            " combine with it"
+        )
         comptime n_items = Self.hid_dim // src_width
         comptime NUM_THREADS_PER_SF = Self.group_size // src_width
         comptime Roles = EPRoleSplit[
@@ -1441,6 +1527,66 @@ struct NVBlockScaledTokenFormat[
 
     @inline(.always)
     @staticmethod
+    def scatter_row_scales(
+        recv_base: UnsafePointer[UInt8, MutUntrackedOrigin],
+        send_buf_p: UnsafePointer[UInt8, MutUntrackedOrigin],
+        dst_expert_local_idx: Int32,
+        final_row: Int32,
+        lane: Int,
+    ) -> None:
+        """Scatters this row's scales into the SF-atom arena.
+
+        Same warp, same final row, no extra reservation and no per-row
+        atomic: the address is a pure function of the row the caller already
+        reserved. One store per (row, k-tile); `sf_kxg` k-tiles are spread
+        over the warp's lanes, so every scale value is written exactly once.
+
+        The source is this format's own scale region inside the staged
+        message (`scales_offset()`), and the destination arena begins after
+        the message region, whose extent is `sf_arena_rows * msg_size()` --
+        both quantities the format already defines, so the caller supplies
+        only the peer base and the routing it already computed.
+
+        Args:
+            recv_base: Base of the destination peer's receive allocation.
+            send_buf_p: This row's staged send-buffer message.
+            dst_expert_local_idx: Destination-local expert index.
+            final_row: Reserved row in the destination's final layout.
+            lane: Calling lane; spreads the k-tiles across the warp.
+        """
+        comptime if Self.sf_arena_rows > 0:
+            var r = Int(dst_expert_local_idx) * Self.sf_rows_per_expert + Int(
+                final_row
+            )
+            var u = r % SF_MN_GROUP_SIZE
+            var base = (
+                (r // SF_MN_GROUP_SIZE) * (Self.sf_kxg * SF_ATOM_ELEMS_LOCAL)
+                + (u % SF_ATOM_M[0]) * SF_ROW_STRIDE_LOCAL
+                + (u // SF_ATOM_M[0]) * SF_ATOM_K
+            )
+            var dst = recv_base + Self.sf_arena_rows * Self.msg_size()
+            var src = send_buf_p + Self.scales_offset()
+            for q in range(lane, Self.sf_kxg, WARP_SIZE):
+                var d = base + q * SF_ATOM_ELEMS_LOCAL
+                var o = q * SF_ATOM_K
+                comptime if Self.sf_vec4:
+                    # The four destinations are contiguous and 4-aligned:
+                    # every term of `base` is a multiple of 4 (SF_ROW_STRIDE
+                    # 16, SF_ATOM_K 4, SF_ATOM_ELEMS a multiple of 4) and
+                    # `o = q * 4`. One 4-byte move instead of four 1-byte
+                    # moves on the only asymmetric term inside the push.
+                    comptime assert (
+                        SF_ATOM_K == 4
+                    ), "sf_vec4 assumes a 4-byte SF atom"
+                    dst.store[width=4, alignment=4](
+                        d, src.load[width=4, alignment=4](o)
+                    )
+                else:
+                    comptime for j in range(SF_ATOM_K):
+                        dst[d + j] = src[o + j]
+
+    @always_inline
+    @staticmethod
     def _copy_one_item[
         src_type: DType,
         buf_addr_space: AddressSpace = AddressSpace.GENERIC,
@@ -1466,9 +1612,68 @@ struct NVBlockScaledTokenFormat[
             input_scale: Global input scale for NVFP4.
             i: Item index within the token.
         """
-        comptime src_width = EP_COPY_SRC_WIDTH
+        comptime src_width = Self.copy_src_width
         comptime byte_width = src_width // 2
         comptime NUM_THREADS_PER_SF = Self.group_size // src_width
+
+        comptime if Self.ep_prequantized:
+            # F1_CORE BOUNDARY CONTROL (R0_CORE_PREQUANTIZED).
+            #
+            # DEAD here, by non-instantiation rather than by branch: the
+            # BF16->E4M3 conversion, the absolute-max reduction, the scale
+            # calculation, the UE8M0 encoding and the quantizer shuffle /
+            # reduction tree. None of them appear in the generated code.
+            #
+            # LIVE here, identically to R0_FULL: the source read, the
+            # send-buffer population at the SAME wire offsets, the SAME scale
+            # placement, and (in the callers) the publisher path, the peer
+            # payload and scale stores, all addressing, readiness publication
+            # and the whole body.
+            #
+            # Source row layout -- a SOURCE-buffer layout choice, which the
+            # CORE boundary explicitly permits: `hid_dim` canonical E4M3
+            # payload bytes followed by `hid_dim // group_size` canonical E8M0
+            # scale bytes for the same token. Carrying the scales in the same
+            # row means NO new kernel argument, so no other instantiation can
+            # be perturbed.
+            comptime assert size_of[src_type]() == 1, (
+                "ep_prequantized requires a 1-byte source element (canonical"
+                " E4M3); a wider source would make the element and byte"
+                " offsets below disagree"
+            )
+            comptime assert (
+                size_of[Self.scales_dtype]() == 1
+            ), "ep_prequantized assumes 1-byte canonical scales (E8M0)"
+            comptime scale_bytes_pq = size_of[Self.scales_dtype]()
+            var q_vec = src_p.load[
+                width=src_width, alignment=Self.alignment, invariant=True
+            ](i * src_width)
+            # Same address, same alignment clamp as the quantized store below,
+            # so the payload bytes land byte-for-byte where R0_FULL puts them.
+            buf_p.store[
+                alignment=src_width if src_width
+                < Self.alignment else Self.alignment
+            ](i * src_width, bitcast[DType.uint8, src_width](q_vec))
+            if i % NUM_THREADS_PER_SF == 0:
+                var sidx_pq = ufloordiv(i * src_width, Self.group_size)
+                # Source offset uses the format's OWN `scales_offset()`, not a
+                # locally recomputed `hid_dim`. For MXFP8 the two are equal
+                # (`quant_size() = align_up(hid_dim * 1, alignment) = 6144`),
+                # but going through `scales_offset()` makes the canonical source
+                # row LITERALLY the format's own token layout -- payload then
+                # scales, total `token_size()` = 6336 B -- so the canonical
+                # producer (the real Q32 quantizer writing one scratch row) and
+                # this consumer agree BY CONSTRUCTION rather than by matching
+                # arithmetic, and stay in agreement if the alignment padding of
+                # either region ever changes.
+                var s_vec = src_p.load[width=scale_bytes_pq, invariant=True](
+                    Self.scales_offset() + sidx_pq * scale_bytes_pq
+                )
+                buf_p.store[alignment=scale_bytes_pq](
+                    Self.scales_offset() + sidx_pq * scale_bytes_pq,
+                    bitcast[DType.uint8, scale_bytes_pq](s_vec),
+                )
+            return
 
         var loaded_vec = src_p.load[
             width=src_width, alignment=Self.alignment, invariant=True
@@ -1513,7 +1718,17 @@ struct NVBlockScaledTokenFormat[
         var input_f32 = loaded_vec.cast[DType.float32]() * output_scale
         comptime if Self.is_mxfp8:
             var output_vector = input_f32.cast[Self.quant_dtype]()
-            buf_p.store[alignment=src_width](
+            # SAFETY (CHECK 1A): the paired load at the top of this body uses
+            # `Self.alignment`; this store must not claim MORE than the buffer
+            # guarantees. At src_width 8/16 the clamp is a no-op
+            # (min(8,16)=8, min(16,16)=16), so the control and the width-16 arm
+            # are bit-identical; it only makes width 32 legal, where
+            # src_width=32 would otherwise assert 32-byte alignment on a
+            # 16-byte-aligned allocation.
+            buf_p.store[
+                alignment=src_width if src_width
+                < Self.alignment else Self.alignment
+            ](
                 i * src_width,
                 bitcast[DType.uint8, src_width](output_vector),
             )
@@ -2397,6 +2612,7 @@ struct EPDispatchKernel[
     comptime n_local_experts = Self.n_experts // Self.n_ranks
     comptime n_warps = Self.num_threads // WARP_SIZE
     comptime top_k = Self.token_fmt_type.top_k
+
     comptime hid_dim = Self.token_fmt_type.hid_dim
     comptime msg_bytes = Self.token_fmt_type.msg_size()
 
@@ -2946,6 +3162,19 @@ struct EPDispatchKernel[
                         dst_recv_buf_ptr,
                         curr_send_buf_ptr,
                         lane_id(),
+                    )
+
+                    # Scale placement is the token format's business: it
+                    # owns the arena layout, the address equation and the
+                    # store width. Called here, before the warp joins and
+                    # publishes readiness, so the scales are visible to the
+                    # consumer on exactly the same edge as the message bytes.
+                    Self.token_fmt_type.scatter_row_scales(
+                        recv_buf_ptrs[dst_p2p_rank],
+                        curr_send_buf_ptr,
+                        dst_expert_local_idx,
+                        _fl_row,
+                        Int(lane_id()),
                     )
 
                     syncwarp()
