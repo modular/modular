@@ -1208,6 +1208,22 @@ class KVCacheParams(KVCacheParamInterface):
     Current constraints: the page size must be a multiple of 128 and at least 128.
     """
 
+    slots_per_page: int | None = None
+    """Number of storage slots a page holds, which may be fewer than the
+    :attr:`page_size` tokens it covers.
+
+    ``None`` (the default) means one slot per token; construction resolves it
+    to ``page_size``, so every later reader sees an ``int``. An architecture
+    whose attention compresses a run of tokens into a single cached entry -- a
+    pooled key, a compressed latent -- sets this to the number of entries a
+    page's tokens compress into, and gets a page that many slots deep instead.
+    It must divide :attr:`page_size` evenly, so a page never ends mid-slot.
+
+    Only the physical buffer shape and the kernels reading it are affected:
+    block allocation, the page table and prefix caching stay in tokens, and a
+    block still covers ``page_size`` of them.
+    """
+
     data_parallel_degree: int = 1
     """Degree of data parallelism. Devices are grouped replica-major, with
     ``n_devices // data_parallel_degree`` TP shards per replica."""
@@ -1251,6 +1267,17 @@ class KVCacheParams(KVCacheParamInterface):
                 f"Number of devices ({self.n_devices}) must be divisible by"
                 " data parallelism degree"
                 f" ({self.data_parallel_degree})"
+            )
+
+        if self.slots_per_page is None:
+            self.slots_per_page = self.page_size
+        if (
+            self.slots_per_page <= 0
+            or self.page_size % self.slots_per_page != 0
+        ):
+            raise ValueError(
+                f"Slots per page ({self.slots_per_page}) must be a positive"
+                f" divisor of the page size ({self.page_size})."
             )
 
         # Validate connector configuration
@@ -1399,16 +1426,21 @@ class KVCacheParams(KVCacheParamInterface):
     def shape_per_block(self) -> list[int]:
         """Returns the shape of each cache block.
 
+        The slot dimension is :attr:`slots_per_page`, which equals
+        :attr:`page_size` unless the architecture stores a page's tokens
+        compressed.
+
         Returns:
             The shape of the cache block.
         """
+        assert self.slots_per_page is not None
         # split k and v caches across a single dim
         # 0 = key
         # 1 = value
         return [
             self.kv_dim,
             self.num_layers,
-            self.page_size,
+            self.slots_per_page,
             self.n_kv_heads_per_device,
             self.head_dim,
         ]
@@ -1424,10 +1456,8 @@ class KVCacheParams(KVCacheParamInterface):
         single-layer buffer (``num_layers == 1``) with ``layer_idx == 0`` is
         self-consistent.
         """
-        kv_dim, _num_layers, page_size, n_kv_heads, head_dim = (
-            self.shape_per_block
-        )
-        return [kv_dim, 1, page_size, n_kv_heads, head_dim]
+        kv_dim, _num_layers, slots, n_kv_heads, head_dim = self.shape_per_block
+        return [kv_dim, 1, slots, n_kv_heads, head_dim]
 
     @property
     def shape_per_scale_block(self) -> list[int]:
