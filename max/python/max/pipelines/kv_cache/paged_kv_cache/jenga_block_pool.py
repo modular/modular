@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+import os
 from collections.abc import Mapping
 from dataclasses import dataclass
 from math import lcm
@@ -30,18 +31,21 @@ from .block_utils import (
 )
 
 # A padded page may spend at most this share of itself on bytes the kernel
-# never reads. Generous enough to rescue a coprime geometry, tight enough that
-# a leaf never pays for more padding than data.
-_MAX_PADDING_FRACTION = 0.25
+# never reads. Zero by default.
+_MAX_PADDING_FRACTION = float(
+    os.getenv("MODULAR_KV_JENGA_MAX_PADDING_FRACTION") or 0.0
+)
 
 # The search will not consider a huge block larger than this. Past it the
 # allocation quantum is coarse enough that stranding beats any padding it saves.
-_MAX_HUGE_PAGE_BYTES = 128 * 1024 * 1024
+_MAX_HUGE_PAGE_BYTES = int(
+    os.getenv("MODULAR_KV_JENGA_MAX_HUGE_PAGE_BYTES") or 128 * 1024 * 1024
+)
 
 # How many little pages of one cache a huge block is considered to hold. Bounds
 # the candidate search; ratios above this imply a page so much smaller than the
 # block that padding it tightly is free anyway.
-_MAX_TILING_RATIO = 256
+_MAX_TILING_RATIO = int(os.getenv("MODULAR_KV_JENGA_MAX_TILING_RATIO") or 256)
 
 
 def compute_jenga_ratios(
@@ -284,7 +288,8 @@ def plan_jenga_geometry(
         include_null_block: Whether to include the null block.
         max_padding_fraction: The most of a page any one cache may spend on
             padding. Caps the search rather than the result: a geometry needing
-            more is simply not considered.
+            more is simply not considered. Defaults to
+            ``MODULAR_KV_JENGA_MAX_PADDING_FRACTION``, itself zero.
 
     Returns:
         The geometry to allocate.
