@@ -694,6 +694,39 @@ class KVCacheBuffer(KVCacheBufferInterface):
 
 
 @dataclass
+class RecurrentStateBuffer(KVCacheBufferInterface):
+    """One replica's recurrent state pool, viewed as the pages it holds."""
+
+    pages: dict[str, list[Buffer]]
+    """Each state leaf's ``[num_blocks, bytes_per_state]`` uint8 pages, one
+    buffer per device."""
+
+    def __post_init__(self) -> None:
+        if not self.pages:
+            raise ValueError("RecurrentStateBuffer needs at least one leaf")
+        for leaf_id, buffers in self.pages.items():
+            if not buffers:
+                raise ValueError(f"state leaf {leaf_id!r} has no device pages")
+
+    @property
+    def total_num_pages(self) -> int:
+        """Returns the first leaf's block count, including the null block."""
+        return next(iter(self.pages.values()))[0].shape[0]
+
+    @property
+    def all_buffers(self) -> list[Buffer]:
+        """Returns every leaf's pages, leaf-major then device order."""
+        return [buffer for buffers in self.pages.values() for buffer in buffers]
+
+    def to_memory(self) -> Mapping[str, KVCacheMemory]:
+        """Returns one unit per state leaf, keyed as ``leaves()`` names it."""
+        return {
+            leaf_id: KVCacheMemory(replicated=False, buffers=list(buffers))
+            for leaf_id, buffers in self.pages.items()
+        }
+
+
+@dataclass
 class KVCacheQuantizationConfig:
     """Configuration for KVCache quantization.
 
@@ -1001,6 +1034,21 @@ class CacheLeafParamInterface(Protocol):
         """
         ...
 
+    def slab_to_buffer_views(
+        self,
+        buffers: Sequence[Buffer],
+        padded_page_bytes: Mapping[str, int] | None = None,
+        _prefix: str = "",
+    ) -> KVCacheBufferInterface:
+        """Converts one replica's slabs into the pages its leaves occupy.
+
+        Args:
+            buffers: One replica's slab per device.
+            padded_page_bytes: Each padded leaf's page stride, or ``None``.
+            _prefix: Names the views' leaves the way :meth:`leaves` does.
+        """
+        ...
+
 
 @runtime_checkable
 class KVCacheParamInterface(CacheLeafParamInterface, Protocol):
@@ -1093,15 +1141,6 @@ class KVCacheParamInterface(CacheLeafParamInterface, Protocol):
         Requires that the model is a basic height-1 tree. This method does not work
         on nested trees.
         """
-        ...
-
-    def slab_to_buffer_views(
-        self,
-        buffers: Sequence[Buffer],
-        padded_page_bytes: Mapping[str, int] | None = None,
-        _prefix: str = "",
-    ) -> KVCacheBufferInterface:
-        """Converts a slab of memory into a buffer view."""
         ...
 
 
@@ -2443,8 +2482,31 @@ class RecurrentStateParams(CacheLeafParamInterface):
     def allocate_buffers(
         self, total_num_pages: int, _prefix: str = ""
     ) -> list[KVCacheBufferInterface]:
-        """Returns nothing: a state is addressed by row rather than by page."""
+        """Returns nothing: a state draws from a slab it does not allocate."""
         return []
+
+    def slab_to_buffer_views(
+        self,
+        buffers: Sequence[Buffer],
+        padded_page_bytes: Mapping[str, int] | None = None,
+        _prefix: str = "",
+    ) -> KVCacheBufferInterface:
+        """Returns each leaf's pages, one state per page."""
+        padded = padded_page_bytes or {}
+        return RecurrentStateBuffer(
+            pages={
+                region.leaf_id: [
+                    page_view(
+                        slab,
+                        (region.bytes_per_state,),
+                        DType.uint8,
+                        padded.get(region.leaf_id),
+                    )
+                    for slab in buffers
+                ]
+                for region in self.regions
+            }
+        )
 
     def get_symbolic_inputs(
         self, namespace: str = ""
@@ -2949,16 +3011,13 @@ class MultiKVCacheParams(KVCacheParamInterface):
         padded_page_bytes: Mapping[str, int] | None = None,
         _prefix: str = "",
     ) -> KVCacheBufferInterface:
-        """Converts a slab of memory into a buffer view.
-
-        Only the attention children have pages to view.
-        """
+        """Converts a slab of memory into every child's view of it."""
         return MultiKVCacheBuffer(
             children={
                 child_id: child.slab_to_buffer_views(
                     buffers, padded_page_bytes, _prefix + child_id + "."
                 )
-                for child_id, child in self._attention_children.items()
+                for child_id, child in self.children.items()
             },
         )
 

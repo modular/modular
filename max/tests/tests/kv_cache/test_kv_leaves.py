@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""The page width each KV cache leaf reports.
+"""The pages each KV cache leaf reports, and the units that hand them out.
 
 ``leaves()`` names the regions a pool tiles, and ``bytes_per_page`` is what
 sizes them. A quantized cache splits into two leaves that own disjoint bytes,
@@ -21,10 +21,18 @@ would be double-counted wherever the two are summed.
 
 from __future__ import annotations
 
+from math import lcm
+
 import pytest
+from max.driver import CPU, Buffer
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.kv_cache import MHAKVCacheParams
+from max.nn.kv_cache import (
+    MHAKVCacheParams,
+    MultiKVCacheParams,
+    RecurrentStateParams,
+    RecurrentStateRegion,
+)
 from max.nn.kv_cache.cache_params import KVCacheQuantizationConfig
 
 
@@ -100,3 +108,72 @@ def test_leaf_widths_match_the_buffers_the_params_allocate(
     assert memories.keys() == leaves.keys()
     for leaf_id, leaf in leaves.items():
         assert leaf.bytes_per_page == memories[leaf_id].bytes_per_page
+
+
+def _hybrid_params() -> MultiKVCacheParams:
+    """An attention leaf beside the state a linear-attention model keeps."""
+    attn = MHAKVCacheParams(
+        dtype=DType.bfloat16,
+        num_layers=1,
+        n_kv_heads=1,
+        head_dim=64,
+        enable_prefix_caching=True,
+        page_size=128,
+        devices=[DeviceRef.CPU()],
+    )
+    state = RecurrentStateParams(
+        regions=(
+            RecurrentStateRegion(
+                leaf_id="conv_state",
+                num_layers=2,
+                row_shape=(8, 3),
+                dtype=DType.float32,
+            ),
+        ),
+        devices=attn.devices,
+    )
+    return MultiKVCacheParams.from_params({"attn": attn, "state": state})
+
+
+def _slab(params: MultiKVCacheParams, num_huge_blocks: int = 4) -> Buffer:
+    """One device's slab, sized the way Jenga sizes it: every leaf tiles it."""
+    huge_page_bytes = lcm(
+        *(leaf.bytes_per_page for leaf in params.leaves().values())
+    )
+    return Buffer.zeros(
+        shape=(num_huge_blocks, huge_page_bytes),
+        dtype=DType.uint8,
+        device=CPU(),
+    )
+
+
+def test_the_state_pool_is_one_of_the_leaves_to_memory_names() -> None:
+    """A consumer that builds its view from ``to_memory()`` can see the state."""
+    params = _hybrid_params()
+
+    units = params.slab_to_buffer_views([_slab(params)]).to_memory()
+
+    assert units.keys() == params.leaves().keys()
+    assert "conv_state" in units
+
+
+def test_a_state_page_is_exactly_the_bytes_its_rows_occupy() -> None:
+    """The page a copy moves for a block is the row span its layers read."""
+    params = _hybrid_params()
+    slab = _slab(params)
+    state = params.children["state"]
+    assert isinstance(state, RecurrentStateParams)
+    (region,) = state.regions
+
+    unit = params.slab_to_buffer_views([slab]).to_memory()[region.leaf_id]
+    (rows,) = state.slab_to_bound_views([slab])[region.pool_key]
+
+    assert unit.bytes_per_page == region.bytes_per_state
+    # Every page of the pool is reachable, each one layer-deep per row.
+    assert unit.total_num_pages * region.num_layers == rows.shape[0]
+
+    block = 3
+    span = region.rows_of(block)
+    # ``row_shape`` is 2-D here, so the row view is ``[rows, 8, 3]``.
+    page = unit.buffers[0][block : block + 1, :]
+    assert page._data_ptr() == rows[span.start : span.stop, :, :]._data_ptr()
