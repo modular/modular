@@ -34,6 +34,7 @@ if TYPE_CHECKING:
 import msgspec
 from max._core import nixl
 from max.driver import Buffer, Device
+from max.nn.kv_cache.cache_params import recurrent_leaf
 from max.pipelines.kv_cache._nixl_backend import (
     NIXL_BACKEND_ENV_VAR,
     NixlBackendType,
@@ -1812,7 +1813,7 @@ class KVTransferEngine(TransferEngine):
     The engine accepts per-replica producer-authored NIXL groups
     (:class:`~max.nn.kv_cache.cache_params.KVCacheMemory`).  The outer list is
     indexed by DP replica; the inner list is that replica's group list — one
-    group per logical ``(child, kind)`` tensor, from ``to_memory()``.
+    group per pool leaf, in the order the cache declares its leaves.
 
     ``KVTransferEngine`` is a thin layer on top of :class:`TransferEngine` that adds:
 
@@ -1840,13 +1841,12 @@ class KVTransferEngine(TransferEngine):
             name: Unique name for this engine.
             memory: Per-replica group lists as ``[replica][group]``.  Each entry
                 is a
-                :class:`~max.nn.kv_cache.cache_params.KVCacheMemory` — one
-                logical ``(child, kind)`` tensor carrying every TP-shard view,
-                as returned by ``KVCacheBuffer.to_memory()``.  All
-                replicas must have the same group count and consistent
-                replication kind.  The page count (including the null block) is
-                read from the groups themselves, so every group must agree on
-                ``total_num_pages``.
+                :class:`~max.nn.kv_cache.cache_params.KVCacheMemory` — one pool
+                leaf's unit, carrying every TP-shard view, ordered by the
+                caller.  All replicas must have the same group count and
+                consistent replication kind.  The page count (including the
+                null block) is read from the groups themselves, so every group
+                must agree on ``total_num_pages``.
         """
         if not memory:
             raise ValueError("tensors must contain at least one replica")
@@ -2020,10 +2020,10 @@ class KVTransferEngine(TransferEngine):
     ) -> KVTransferEngine:
         """Construct an engine wired to a ``PagedKVCacheManager``.
 
-        Calls ``KVCacheBuffer.to_memory()`` on each replica's device
-        buffer to obtain the producer-authored NIXL groups, then passes them to
-        the constructor, which carries each group's ``replicated`` field as
-        ``replicated_per_group``.
+        Calls ``to_memory()`` on each replica's device buffer to obtain the
+        producer-authored NIXL groups, orders them by the leaves the cache
+        declares, and passes them to the constructor, which carries each
+        group's ``replicated`` field as ``replicated_per_group``.
 
         For models with multiple KV caches (e.g., speculative decoding with a
         separate target and draft KV), each child cache contributes its own
@@ -2034,11 +2034,29 @@ class KVTransferEngine(TransferEngine):
         separate group for values and for scales (one group per child x kind).
         For non-quantized caches this collapses to one group per child, which is
         byte-identical to the previous ``all_buffers`` path.
+
+        Raises:
+            NotImplementedError: If the cache keeps recurrent state.
         """
-        dp = kv_cache.params.data_parallel_degree
+        params = kv_cache.params
+        if recurrent_leaf(params) is not None:
+            raise NotImplementedError(
+                "Disaggregated inference cannot transfer a recurrent state"
+                " pool: a state block is a whole request's state, not a span"
+                " of tokens, so it has no page count in common with the"
+                " attention groups this engine registers."
+            )
+        dp = params.data_parallel_degree
         device_buffers = [kv_cache.get_device_buffer(r) for r in range(dp)]
 
+        # The peer engine matches groups by position, so fix the order from the
+        # declared leaves rather than from however a mapping happens to
+        # iterate.
+        leaf_ids = list(params.leaves())
         return cls(
             name=name,
-            memory=[buf.to_memory() for buf in device_buffers],
+            memory=[
+                [units[leaf_id] for leaf_id in leaf_ids]
+                for units in (buf.to_memory() for buf in device_buffers)
+            ],
         )

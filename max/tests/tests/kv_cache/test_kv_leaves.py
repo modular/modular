@@ -94,8 +94,9 @@ def test_leaf_widths_match_the_buffers_the_params_allocate(
     params = _params(quantized=quantized)
 
     memories = params.allocate_buffers(8)[0].to_memory()
+    leaves = params.leaves()
 
-    # `to_memory()` emits one unit per leaf, in `leaves()` order.
-    assert len(memories) == len(params.leaves())
-    for leaf, memory in zip(params.leaves().values(), memories, strict=True):
-        assert leaf.bytes_per_page == memory.bytes_per_page
+    # Both name the same leaves, so the widths line up by id, not by order.
+    assert memories.keys() == leaves.keys()
+    for leaf_id, leaf in leaves.items():
+        assert leaf.bytes_per_page == memories[leaf_id].bytes_per_page
