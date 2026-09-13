@@ -11133,3 +11133,89 @@ def apply_qk_rms_norm(
         ],
     )
     return q_out.tensor, k_out.tensor
+
+
+def latent_sparse_attention_ragged(
+    q: TensorValue,
+    input_row_offsets: TensorValue,
+    comp_indices: TensorValue,
+    attn_sink: TensorValue,
+    swa_collection: PagedCacheValues,
+    comp_collection: PagedCacheValues,
+    layer_swa: TensorValue,
+    layer_comp: TensorValue,
+    *,
+    scale: float,
+    window: int,
+) -> TensorValue:
+    """Sparse attention over a shared K=V latent held in two paged leaves.
+
+    DeepSeek-V4 compressed sparse attention: every head attends to the same
+    latent row per key. A query at absolute position ``pos`` (its sequence's
+    ``cache_lengths`` plus its offset in the step) sees the window positions
+    ``max(0, pos - window + 1) .. pos`` from ``swa_collection`` and the
+    compressed entries listed for it in ``comp_indices`` from
+    ``comp_collection``. Both leaves must already hold the current step's
+    rows; issue the store ops before this one, as for every paged attention.
+
+    ``attn_sink`` enters the denominator only: the max is over the gathered
+    scores and ``den += exp(sink - max)``.
+
+    Args:
+        q: ``[total_rows, num_heads, head_dim]`` queries, ragged over the
+            batch.
+        input_row_offsets: ``[batch + 1]`` uint32 row offsets of ``q``.
+        comp_indices: ``[total_rows, num_comp]`` int32 entry indices into
+            the compressed leaf; ``-1`` marks an unused slot.
+        attn_sink: ``[num_heads]`` float32 per-head sink logits.
+        swa_collection: The sliding-window leaf (single latent head, paged
+            by token position).
+        comp_collection: The compressed leaf (single latent head, paged by
+            entry through ``slots_per_page``).
+        layer_swa: uint32 scalar, this layer's index in the window leaf.
+        layer_comp: uint32 scalar, this layer's index in the compressed leaf.
+        scale: Softmax scale applied to the scores.
+        window: Sliding window length in tokens.
+
+    Returns:
+        ``[total_rows, num_heads, head_dim]`` in ``q``'s dtype.
+    """
+    _check_rank(3, q=q)
+    _check_rank(1, input_row_offsets=input_row_offsets, attn_sink=attn_sink)
+    _check_rank(2, comp_indices=comp_indices)
+    _check_dtype(DType.uint32, input_row_offsets=input_row_offsets)
+    _check_dtype(DType.int32, comp_indices=comp_indices)
+    _check_dtype(DType.float32, attn_sink=attn_sink)
+    _check_dtype(DType.uint32, layer_swa=layer_swa, layer_comp=layer_comp)
+    _check_rank(6, swa_kv_blocks=swa_collection.kv_blocks)
+    _check_rank(6, comp_kv_blocks=comp_collection.kv_blocks)
+    if window <= 0:
+        raise ValueError(f"window must be positive, got {window}")
+
+    return ops.inplace_custom(
+        "mo.latent_sparse_attention.ragged.paged",
+        device=q.device,
+        values=[
+            q,
+            input_row_offsets,
+            comp_indices,
+            attn_sink,
+            swa_collection.kv_blocks,
+            swa_collection.values_page_stride(),
+            swa_collection.cache_lengths,
+            swa_collection.lookup_table,
+            swa_collection.max_prompt_length,
+            swa_collection.max_cache_length,
+            comp_collection.kv_blocks,
+            comp_collection.values_page_stride(),
+            comp_collection.cache_lengths,
+            comp_collection.lookup_table,
+            comp_collection.max_prompt_length,
+            comp_collection.max_cache_length,
+            layer_swa,
+            layer_comp,
+            ops.constant(scale, DType.float32, DeviceRef.CPU()),
+        ],
+        out_types=[TensorType(q.dtype, q.shape, q.device)],
+        parameters={"window": window},
+    )[0].tensor

@@ -76,6 +76,9 @@ from nn.attention.gpu.mla_graph import (
     mla_prefill_decode_graph_bf16,
 )
 from nn.attention.gpu.mla_index_fp8 import mla_indexer_ragged_float8_paged
+from nn.attention.latent_sparse_attention import (
+    latent_sparse_attention_ragged_paged,
+)
 from nn.attention.gpu.mla_decode_dispatch_scalars import (
     mla_decode_dispatch_scalars,
 )
@@ -4159,5 +4162,81 @@ struct Struct_cross_attention_ragged_paged:
             layer_idx,
             scale,
             output.to_layout_tensor(),
+            context,
+        )
+
+
+# ===-----------------------------------------------------------------------===#
+# Latent sparse attention (DeepSeek-V4 CSA): window leaf + compressed leaf
+# ===-----------------------------------------------------------------------===#
+
+
+@extensibility.register("mo.latent_sparse_attention.ragged.paged")
+struct Struct_latent_sparse_attention_ragged_paged:
+    """Registers the `mo.latent_sparse_attention.ragged.paged` graph op with the graph compiler.
+
+    Sparse attention over a shared K=V latent read from two paged leaves: the
+    sliding-window leaf by position range and the compressed leaf by an
+    explicit per-query entry list, with a per-head attention sink in the
+    denominator. See `nn.attention.latent_sparse_attention`.
+    """
+
+    @inline(.always)
+    @staticmethod
+    def execute[
+        q_type: DType,
+        swa_type: DType,
+        comp_type: DType,
+        //,
+        window: Int,
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=q_type, rank=3, ...],
+        q: InputTensor[dtype=q_type, rank=3, ...],
+        input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
+        comp_indices: InputTensor[dtype=.int32, rank=2, ...],
+        attn_sink: InputTensor[dtype=.float32, rank=1, ...],
+        swa_kv_blocks: MutableInputTensor[dtype=swa_type, rank=6, ...],
+        swa_page_stride: InputTensor[dtype=.int64, rank=1, ...],
+        swa_cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
+        swa_kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
+        swa_max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
+        swa_max_cache_length: InputTensor[dtype=.uint32, rank=1, ...],
+        comp_kv_blocks: MutableInputTensor[dtype=comp_type, rank=6, ...],
+        comp_page_stride: InputTensor[dtype=.int64, rank=1, ...],
+        comp_cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
+        comp_kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
+        comp_max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
+        comp_max_cache_length: InputTensor[dtype=.uint32, rank=1, ...],
+        layer_swa: UInt32,
+        layer_comp: UInt32,
+        scale: Float32,
+        context: DeviceContext,
+    ) raises:
+        var swa_collection = generic_get_paged_cache(
+            swa_kv_blocks,
+            swa_page_stride,
+            swa_cache_lengths,
+            swa_kv_lookup_table,
+            swa_max_prompt_length,
+            swa_max_cache_length,
+        )
+        var comp_collection = generic_get_paged_cache(
+            comp_kv_blocks,
+            comp_page_stride,
+            comp_cache_lengths,
+            comp_kv_lookup_table,
+            comp_max_prompt_length,
+            comp_max_cache_length,
+        )
+        latent_sparse_attention_ragged_paged[target=target, window=window](
+            output.to_layout_tensor(),
+            q.to_layout_tensor(),
+            input_row_offsets.to_layout_tensor(),
+            comp_indices.to_layout_tensor(),
+            attn_sink.to_layout_tensor(),
+            swa_collection.get_key_cache(Int(layer_swa)),
+            comp_collection.get_key_cache(Int(layer_comp)),
+            scale,
             context,
         )
