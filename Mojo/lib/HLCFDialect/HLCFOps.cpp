@@ -559,7 +559,12 @@ BreakOp::parametric_interpret(ArrayRef<Attribute> operands,
 //===----------------------------------------------------------------------===//
 
 bool YieldOp::isParentNode(Operation *op) {
-  return isa<IfOp, SwitchOp, ElifOp>(op);
+  if (isa<IfOp, SwitchOp, ElifOp>(op))
+    return true;
+  // Yield in a match targets only the else region; case regions use
+  // match.next / match.complete instead.
+  auto match = dyn_cast<MatchOp>(op);
+  return match && !match.containsInCaseRegion(*this);
 }
 
 void YieldOp::getBranchTargets(ArrayRef<Attribute> operands,
@@ -885,6 +890,163 @@ ErrorTreeOrSuccess ElifYieldOp::interpret(ArrayRef<Attribute> operands,
 ErrorTreeOrSuccess
 ElifYieldOp::parametric_interpret(ArrayRef<Attribute> operands,
                                   ParametricInterpreterState &state) {
+  return interpret(operands, state);
+}
+
+//===----------------------------------------------------------------------===//
+// MatchOp
+//===----------------------------------------------------------------------===//
+
+static ParseResult
+parseMatch(OpAsmParser &parser,
+           SmallVectorImpl<std::unique_ptr<Region>> &caseRegions,
+           Region &elseRegion) {
+  // First case region (required).
+  if (failed(parser.parseRegion(
+          *caseRegions.emplace_back(std::make_unique<Region>()))))
+    return failure();
+
+  // Additional case regions.
+  while (succeeded(parser.parseOptionalKeyword("case"))) {
+    if (failed(parser.parseRegion(
+            *caseRegions.emplace_back(std::make_unique<Region>()))))
+      return failure();
+  }
+
+  if (failed(parser.parseKeyword("else")) ||
+      failed(parser.parseRegion(elseRegion)))
+    return failure();
+  return success();
+}
+
+static void printMatch(OpAsmPrinter &printer, Operation *op,
+                       MutableArrayRef<Region> caseRegions,
+                       Region &elseRegion) {
+  assert(!caseRegions.empty() && "match requires at least one case region");
+  printer.printRegion(caseRegions.front());
+  for (Region &region : caseRegions.drop_front()) {
+    printer.printNewline();
+    printer << "case ";
+    printer.printRegion(region);
+  }
+  printer << " else ";
+  printer.printRegion(elseRegion);
+}
+
+bool MatchOp::containsInCaseRegion(Operation *op) {
+  return getCaseRegionIndexContaining(op).has_value();
+}
+
+std::optional<unsigned> MatchOp::getCaseRegionIndexContaining(Operation *op) {
+  Region *elseRegion = &getElseRegion();
+  for (Region *r = op->getParentRegion(); r; r = r->getParentRegion()) {
+    if (r == elseRegion)
+      return std::nullopt;
+    if (r->getParentOp() == getOperation()) {
+      // Region 0 is else; case regions start at 1.
+      assert(r->getRegionNumber() >= 1 && "expected a case region");
+      return r->getRegionNumber() - 1;
+    }
+  }
+  return std::nullopt;
+}
+
+LogicalResult MatchOp::verify() {
+  if (getCaseRegions().empty())
+    return emitOpError("requires at least one case region");
+  return success();
+}
+
+void MatchOp::getEntryTargets(ArrayRef<Attribute> operands,
+                              SmallVectorImpl<ControlFlowTarget> &targets) {
+  (void)operands;
+  // Begin in the first case region (region #1; #0 is else).
+  targets.emplace_back(1);
+}
+
+ValueRange MatchOp::getEntryArguments(std::optional<unsigned> target) {
+  if (!target)
+    return getResults();
+  assert(*target < getNumRegions());
+  return getRegion(*target).getArguments();
+}
+
+ErrorTreeOrSuccess MatchOp::interpret(ArrayRef<Attribute> operands,
+                                      InterpreterState &state) {
+  (void)operands;
+  return state.transferControlFlowTo(getCaseRegions().front(), {});
+}
+
+ErrorTreeOrSuccess
+MatchOp::parametric_interpret(ArrayRef<Attribute> operands,
+                              ParametricInterpreterState &state) {
+  return interpret(operands, state);
+}
+
+//===----------------------------------------------------------------------===//
+// MatchNextOp
+//===----------------------------------------------------------------------===//
+
+bool MatchNextOp::isParentNode(Operation *op) {
+  auto match = dyn_cast<MatchOp>(op);
+  return match && match.containsInCaseRegion(*this);
+}
+
+void MatchNextOp::getBranchTargets(
+    ArrayRef<Attribute> operands, SmallVectorImpl<ControlFlowTarget> &targets) {
+  (void)operands;
+  auto match = cast<MatchOp>(getParentNode(*this));
+  std::optional<unsigned> caseIdx = match.getCaseRegionIndexContaining(*this);
+  assert(caseIdx && "match.next must be nested in a case region");
+  if (*caseIdx + 1 < match.getCaseRegions().size())
+    // Next case region number is caseIdx+1 + 1 (else is region 0).
+    targets.emplace_back(*caseIdx + 2);
+  else
+    targets.emplace_back(0); // else region
+}
+
+ErrorTreeOrSuccess MatchNextOp::interpret(ArrayRef<Attribute> operands,
+                                          InterpreterState &state) {
+  (void)operands;
+  auto match = cast<MatchOp>(getParentNode(*this));
+  std::optional<unsigned> caseIdx = match.getCaseRegionIndexContaining(*this);
+  assert(caseIdx && "match.next must be nested in a case region");
+  if (*caseIdx + 1 < match.getCaseRegions().size())
+    return state.transferControlFlowTo(match.getCaseRegions()[*caseIdx + 1],
+                                       {});
+  return state.transferControlFlowTo(match.getElseRegion(), {});
+}
+
+ErrorTreeOrSuccess
+MatchNextOp::parametric_interpret(ArrayRef<Attribute> operands,
+                                  ParametricInterpreterState &state) {
+  return interpret(operands, state);
+}
+
+//===----------------------------------------------------------------------===//
+// MatchCompleteOp
+//===----------------------------------------------------------------------===//
+
+bool MatchCompleteOp::isParentNode(Operation *op) {
+  auto match = dyn_cast<MatchOp>(op);
+  return match && match.containsInCaseRegion(*this);
+}
+
+void MatchCompleteOp::getBranchTargets(
+    ArrayRef<Attribute> operands, SmallVectorImpl<ControlFlowTarget> &targets) {
+  assert(operands.size() == getNumOperands());
+  targets.emplace_back(std::nullopt, getOperands());
+}
+
+ErrorTreeOrSuccess MatchCompleteOp::interpret(ArrayRef<Attribute> operands,
+                                              InterpreterState &state) {
+  auto match = cast<MatchOp>(getParentNode(*this));
+  return state.transferControlFlowTo(match, operands);
+}
+
+ErrorTreeOrSuccess
+MatchCompleteOp::parametric_interpret(ArrayRef<Attribute> operands,
+                                      ParametricInterpreterState &state) {
   return interpret(operands, state);
 }
 

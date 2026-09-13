@@ -84,3 +84,41 @@ kgen.func @labelled_break_mismatch(%arg0: i32) {
   }
   kgen.return
 }
+
+// -----
+
+// expected-note @below {{see control-flow root here}}
+kgen.func @match_next_no_match(%arg0: !kgen.scalar<bool>) {
+  hlcf.if %arg0 {
+    kgen.return
+  } else {
+    // expected-error @below {{'hlcf.match.next' op is not nested within a suitable parent operation}}
+    hlcf.match.next
+  }
+}
+
+// -----
+
+// expected-note @below {{see control-flow root here}}
+kgen.func @match_next_in_else_only() {
+  hlcf.match {
+    hlcf.match.complete
+  }
+  else {
+    // expected-error @below {{'hlcf.match.next' op is not nested within a suitable parent operation}}
+    hlcf.match.next
+  }
+}
+
+// -----
+
+kgen.func @match_complete_wrong_types(%arg0: i32) {
+  // expected-note @below {{to end of parent operation here}}
+  %0 = hlcf.match -> i64 {
+    // expected-error @below {{'hlcf.match.complete' op branch input #0 has type 'i32' but target expected 'i64' along control-flow edge from here}}
+    hlcf.match.complete %arg0 : i32
+  }
+  else {
+    kgen.return
+  }
+}

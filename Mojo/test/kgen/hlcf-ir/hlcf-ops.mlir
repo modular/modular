@@ -317,3 +317,90 @@ kgen.func @elifWithArgs(%arg0: index) -> index {
   %1 = index.add %0#1, %0#0
   kgen.return %1 : index
 }
+
+// CHECK-LABEL: @match
+kgen.func @match(%arg0: !kgen.scalar<bool>, %arg1: i32, %arg2: i64) {
+  // CHECK-NEXT: hlcf.match {
+  hlcf.match {
+    // CHECK-NEXT: hlcf.if %arg0 {
+    hlcf.if %arg0 {
+      // CHECK-NEXT: "test.use"() : () -> ()
+      "test.use"() : () -> ()
+      // CHECK-NEXT: hlcf.match.complete
+      hlcf.match.complete
+    // CHECK-NEXT: } else {
+    } else {
+      // CHECK-NEXT: hlcf.match.next
+      hlcf.match.next
+    // CHECK-NEXT: }
+    }
+    // CHECK-NEXT: kgen.unreachable
+    kgen.unreachable
+  // CHECK-NEXT: }
+  // CHECK-NEXT: case {
+  }
+  case {
+    // CHECK-NEXT: "test.other"() : () -> ()
+    "test.other"() : () -> ()
+    // CHECK-NEXT: hlcf.match.complete
+    hlcf.match.complete
+  // CHECK-NEXT: } else {
+  }
+  else {
+    // CHECK-NEXT: hlcf.yield
+    hlcf.yield
+  // CHECK-NEXT: }
+  }
+
+  // CHECK: %[[V:.*]] = hlcf.match -> i32 {
+  %0 = hlcf.match -> i32 {
+    // CHECK-NEXT: hlcf.match.complete %arg1 : i32
+    hlcf.match.complete %arg1 : i32
+  // CHECK-NEXT: } else {
+  }
+  else {
+    // CHECK-NEXT: hlcf.yield %arg1 : i32
+    hlcf.yield %arg1 : i32
+  }
+
+  // CHECK: hlcf.match -> i32, i64 {
+  %1:2 = hlcf.match -> i32, i64 {
+    hlcf.match.next
+  }
+  case {
+    hlcf.match.complete %arg1, %arg2 : i32, i64
+  }
+  else {
+    hlcf.yield %arg1, %arg2 : i32, i64
+  }
+
+  kgen.return
+}
+
+// Nested match: next/complete in an inner else target the enclosing match.
+// CHECK-LABEL: @nested_match
+kgen.func @nested_match(%arg0: !kgen.scalar<bool>) {
+  // CHECK: hlcf.match {
+  hlcf.match {
+    // CHECK: hlcf.match {
+    hlcf.match {
+      // CHECK: hlcf.match.next
+      hlcf.match.next
+    // CHECK-NEXT: } else {
+    }
+    else {
+      // Targets the outer match's next case.
+      // CHECK: hlcf.match.next
+      hlcf.match.next
+    }
+    // CHECK: kgen.unreachable
+    kgen.unreachable
+  }
+  case {
+    hlcf.match.complete
+  }
+  else {
+    hlcf.yield
+  }
+  kgen.return
+}

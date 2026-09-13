@@ -534,14 +534,16 @@ def HLCF_BreakOp : HLCFTerminatorOp<"break", [
 //===----------------------------------------------------------------------===//
 
 def HLCF_YieldOp : HLCFTerminatorOp<"yield", [Pure,
-    ParentOneOf<["IfOp", "SwitchOp", "ElifOp"]>,
+    ParentOneOf<["IfOp", "SwitchOp", "ElifOp", "MatchOp"]>,
     DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
   let summary = "conditional yield operation";
   let description = [{
     The `hlcf.yield` operation is a control-flow terminator that transfers
-    control-flow to after the parent `hlcf.if` operation. The operation expects
-    its operand types to match the types of the results of that operation, if
-    there are any.
+    control-flow to after the parent `hlcf.if`, `hlcf.switch`, `hlcf.elif`, or
+    `hlcf.match` operation. For `hlcf.match`, yield is only valid in the else
+    region (case regions use `hlcf.match.next` / `hlcf.match.complete`). The
+    operation expects its operand types to match the types of the results of
+    that operation, if there are any.
 
     Example:
 
@@ -735,5 +737,147 @@ def HLCF_ElifOp : HLCFParentOp<"elif"> {
 
   let hasVerifier = 1;
   let hasCanonicalizer = 1;
+}
+
+//===----------------------------------------------------------------------===//
+// MatchNextOp
+//===----------------------------------------------------------------------===//
+
+def HLCF_MatchNextOp : HLCFTerminatorOp<"match.next", [
+    DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
+  let summary = "advance to the next match case";
+  let description = [{
+    The `hlcf.match.next` terminator indicates that the current case of the
+    nearest enclosing `hlcf.match` did not match (or its guard failed). It
+    abandons the current case region and begins executing the next case region.
+    If executed from the final case region, control transfers to the `else`
+    region of that match.
+
+    This terminator may appear nested under structured control flow such as
+    `hlcf.if`, and always targets the nearest enclosing `hlcf.match` for which
+    the terminator sits in a *case* region. The `else` region of a match is
+    outside that match's scope: `hlcf.match.next` inside an `else` targets an
+    enclosing match, not the current one.
+
+    Values and partially initialized bindings local to the abandoned case must
+    be cleaned up according to their normal ownership semantics.
+  }];
+
+  let assemblyFormat = "attr-dict";
+}
+
+//===----------------------------------------------------------------------===//
+// MatchCompleteOp
+//===----------------------------------------------------------------------===//
+
+def HLCF_MatchCompleteOp : HLCFTerminatorOp<"match.complete", [
+    DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
+  let summary = "finish a match after selecting a case";
+  let description = [{
+    The `hlcf.match.complete` terminator indicates that the current case of the
+    nearest enclosing `hlcf.match` was selected and its body completed normally.
+    It exits that match and transfers control to the operation following it.
+    Operand types must match the result types of the enclosing match, if any.
+
+    Case bodies that leave through another nonlocal control-flow operation
+    (such as `kgen.return`) do not need an additional `hlcf.match.complete`.
+
+    Like `hlcf.match.next`, this targets the nearest enclosing `hlcf.match` for
+    which the terminator sits in a *case* region; an occurrence in an `else`
+    region targets an enclosing match instead.
+  }];
+
+  let arguments = (ins Variadic<AnyType>:$operands);
+
+  let builders = [
+    OpBuilder<(ins), [{ build($_builder, $_state, ValueRange()); }]>,
+  ];
+
+  let assemblyFormat = "attr-dict ($operands `:` type($operands)^)?";
+}
+
+//===----------------------------------------------------------------------===//
+// MatchOp
+//===----------------------------------------------------------------------===//
+
+def HLCF_MatchOp : HLCFParentOp<"match"> {
+  let summary = "match operation";
+  let description = [{
+    The `hlcf.match` operation represents the structured control flow of a
+    match statement. It contains an ordered list of single-block case regions
+    followed by an else region. Each case region holds the tests, binding
+    initialization, optional guard, and body for its corresponding source-level
+    case. The operation itself does not interpret patterns; pattern matching is
+    lowered into ordinary operations within each region.
+
+    Execution begins in the first case region. A region may terminate with
+    `hlcf.match.next` to continue with the next case, or with
+    `hlcf.match.complete` to finish the match without evaluating later cases.
+    These terminators may occur within nested structured control-flow
+    operations (such as `hlcf.if`) and target the nearest enclosing
+    `hlcf.match`. If `hlcf.match.next` is executed from the final case region,
+    the match enters the else region.
+
+    Case regions are logically in the scope of the match; the else region is
+    not. Therefore `hlcf.match.next` / `hlcf.match.complete` inside the else
+    region target an enclosing match, not the current one. The else region is
+    terminated with `hlcf.yield` (or another nonlocal terminator).
+
+    Example:
+
+    ```mlir
+    hlcf.match {
+      %matches = ...
+      hlcf.if %matches {
+        call @handle_zero()
+        hlcf.match.complete
+      } else {
+        hlcf.match.next
+      }
+      // Case regions are ordinary blocks and need a terminator even when
+      // every nested path already exits via match.next / match.complete.
+      kgen.unreachable
+    }
+    case {
+      call @handle_other()
+      hlcf.match.complete
+    }
+    else {
+      kgen.unreachable
+    }
+    ```
+  }];
+
+  let results = (outs Variadic<AnyType>:$results);
+  // `else` must come before the variadic case list (ODS constraint); the
+  // custom assembly format still prints cases first, then `else`.
+  let regions = (region SizedRegion<1>:$elseRegion,
+                        VariadicRegion<SizedRegion<1>>:$caseRegions);
+
+  let assemblyFormat = [{
+    (`->` type($results)^)?
+    custom<Match>($caseRegions, $elseRegion) attr-dict
+  }];
+
+  let builders = [
+    OpBuilder<(ins), [{
+      build($_builder, $_state, TypeRange(), /*nCaseRegions=*/1);
+    }]>,
+    OpBuilder<(ins "TypeRange":$results), [{
+      build($_builder, $_state, results, /*nCaseRegions=*/1);
+    }]>,
+  ];
+
+  let extraClassDeclaration = [{
+    /// Return true if `op` is nested under a case region of this match
+    /// (not the else region).
+    bool containsInCaseRegion(Operation *op);
+
+    /// Return the case-region index (0-based into `$caseRegions`) containing
+    /// `op`, or nullopt if `op` is not nested under a case of this match.
+    std::optional<unsigned> getCaseRegionIndexContaining(Operation *op);
+  }];
+
+  let hasVerifier = 1;
 }
 #endif // HLCFOPS_TD
